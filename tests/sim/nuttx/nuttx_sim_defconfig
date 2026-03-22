@@ -1,0 +1,48 @@
+# NuttX defconfig overlay for sim-based test runner.
+# Applied on top of sim:nsh base configuration.
+
+# oveRTOS test app
+CONFIG_EXTERNAL_OVE_TEST=y
+CONFIG_EXTERNAL_OVE_TEST_PROGNAME="ove_test"
+CONFIG_EXTERNAL_OVE_TEST_PRIORITY=100
+CONFIG_EXTERNAL_OVE_TEST_STACKSIZE=16384
+
+# Boot directly into the test runner (no NSH shell)
+CONFIG_INIT_ENTRYPOINT="ove_test_main"
+CONFIG_INIT_ENTRYNAME="ove_test"
+
+# POSIX features needed by NuttX backend modules
+CONFIG_LIBC_INLINE_QUEUE=y
+CONFIG_TLS_NELEM=4
+CONFIG_TLS_TASK_NELEM=4
+CONFIG_SIG_EVTHREAD=y
+CONFIG_SIG_EVTHREAD_HPWORK=y
+
+# Pthreads
+CONFIG_PTHREAD_MUTEX_TYPES=y
+CONFIG_PTHREAD_MUTEX_ROBUST=y
+CONFIG_PTHREAD_CLEANUP=y
+CONFIG_PTHREAD_MUTEX_DEFAULT_PRIO_INHERIT=y
+
+# POSIX message queues
+CONFIG_MQ_MAXMSGSIZE=256
+
+# POSIX timers
+CONFIG_DISABLE_POSIX_TIMERS=n
+
+# Memory
+CONFIG_STACK_COLORATION=y
+
+# File system support (for posix_fs/posix_nvs stubs)
+CONFIG_FS_TMPFS=y
+
+# Disable verbose debug logging
+# CONFIG_DEBUG_SCHED_INFO is not set
+# CONFIG_DEBUG_SCHED_WARN is not set
+# CONFIG_DEBUG_SCHED is not set
+
+# Disable NSH shell and ROMFS init scripts (avoids genromfs dependency)
+# CONFIG_NSH_LIBRARY is not set
+# CONFIG_ETC_ROMFS is not set
+# CONFIG_NSH_ROMFSETC is not set
+CONFIG_SCHED_WAITPID=y

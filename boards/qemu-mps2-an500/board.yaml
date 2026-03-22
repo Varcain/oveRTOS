@@ -1,0 +1,36 @@
+board:
+  name: qemu-mps2-an500
+  mcu_family: arm
+  mcu: CMSDK_CM7
+
+clock:
+  hse_freq_mhz: 25
+  sysclk_mhz: 25
+  ahb_div: 1
+  apb1_div: 1
+  apb2_div: 1
+
+memory:
+  flash_kb: 4096
+  ram_kb: 4096
+
+gpio:
+  port_count: 8
+  pins_per_port: 16
+
+leds: []
+
+display:
+  width: 480
+  height: 272
+  color_format: RGB565
+
+serial:
+  console:
+    baud: 115200
+    tx_pin: none
+    rx_pin: none
+    rx_buffer_size: 1024
+
+watchdog:
+  timeout_ms: 5000

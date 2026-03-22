@@ -1,0 +1,86 @@
+# Run
+
+## Running the Firmware
+
+After a successful build, launch the firmware with:
+
+```bash
+make run
+```
+
+The behaviour depends on the selected board:
+
+| Board | Behaviour |
+|---|---|
+| `qemu-mps2-an500` | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
+| `host-pc` | Executes the POSIX binary directly on the host; SDL2 window opens for display and audio |
+
+### QEMU Emulated Targets
+
+When the board is `qemu-mps2-an500`, `make run` invokes QEMU with the generated `.elf` image. Console output is routed via ARM semihosting and appears in the terminal. No physical hardware is required.
+
+To run without an interactive display (useful in CI):
+
+```bash
+make run HEADLESS=1
+```
+
+### POSIX Native Targets
+
+When the board is `host-pc`, the compiled binary runs directly as a Linux or macOS process. SDL2 provides a window that emulates the board display and input. Audio is routed through the host audio subsystem.
+
+```bash
+make run   # starts the SDL2 window
+```
+
+## Flashing to Hardware
+
+To flash firmware onto a physical board (e.g., STM32F746G-Discovery):
+
+```bash
+make flash
+```
+
+This invokes the `ove` CLI, which calls OpenOCD with the configured board file (`OVE_OPENOCD_CFG`, default: `board/stm32f7discovery.cfg`). Connect the board via ST-LINK USB before running.
+
+Ensure OpenOCD is installed:
+
+```bash
+# Debian/Ubuntu
+sudo apt install openocd
+
+# Fedora
+sudo dnf install openocd
+```
+
+## Testing
+
+Run the full test suite:
+
+```bash
+make test
+```
+
+Individual test targets:
+
+```bash
+make test-stub             # Stub backend unit tests
+make test-cpp              # C++ binding tests
+make test-rust             # Rust binding tests
+make test-zig              # Zig binding tests
+
+make test-qemu             # All QEMU ARM tests
+make test-qemu-freertos    # FreeRTOS on QEMU
+make test-qemu-nuttx       # NuttX on QEMU
+make test-qemu-zephyr      # Zephyr on QEMU
+
+make test-all              # All tests (simulation + QEMU)
+```
+
+Zero-heap variants are also available for QEMU tests:
+
+```bash
+make test-qemu-freertos-zeroheap
+make test-qemu-nuttx-zeroheap
+make test-qemu-zephyr-zeroheap
+```

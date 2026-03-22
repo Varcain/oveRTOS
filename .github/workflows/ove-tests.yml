@@ -1,0 +1,274 @@
+name: oveRTOS Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  stub-tests:
+    name: Stub Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+
+      - name: Run tests
+        run: make test-stub
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: stub-tests-logs
+          path: output/
+          retention-days: 7
+
+  cpp-tests:
+    name: C++ Wrapper Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential
+
+      - name: Run tests
+        run: make test-cpp
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cpp-tests-logs
+          path: output/
+          retention-days: 7
+
+  rust-tests:
+    name: Rust Wrapper Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run tests
+        run: make test-rust
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: rust-tests-logs
+          path: output/
+          retention-days: 7
+
+  zig-tests:
+    name: Zig Wrapper Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential xz-utils
+
+      - name: Run tests
+        run: make test-zig
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: zig-tests-logs
+          path: output/
+          retention-days: 7
+
+  nuttx-sim-tests:
+    name: NuttX Simulator Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake build-essential \
+            gperf genromfs xxd python3-pip python3-venv
+
+      - name: Run tests
+        run: timeout 600 make test-nuttx
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: nuttx-sim-tests-logs
+          path: output/
+          retention-days: 7
+
+  zephyr-sim-tests:
+    name: Zephyr native_sim Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake build-essential ninja-build \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import re; m=re.search(r'ZEPHYR_DEFAULT_REV\s*=\s*\"([0-9a-f]+)\"', open('config/ove-cli/ove/constants.py').read()); print(m.group(1))")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Run tests
+        run: timeout 600 make test-zephyr
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: zephyr-sim-tests-logs
+          path: output/
+          retention-days: 7
+
+  qemu-freertos-tests:
+    name: QEMU FreeRTOS Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+
+      - name: Run tests
+        run: timeout 600 make test-qemu-freertos
+
+      - name: Run zeroheap tests
+        run: timeout 600 make test-qemu-freertos-zeroheap
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-freertos-tests-logs
+          path: output/
+          retention-days: 7
+
+  qemu-nuttx-tests:
+    name: QEMU NuttX Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            gperf genromfs xxd python3-pip python3-venv
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+
+      - name: Run tests
+        run: timeout 900 make test-qemu-nuttx
+
+      - name: Run zeroheap tests
+        run: timeout 900 make test-qemu-nuttx-zeroheap
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-nuttx-tests-logs
+          path: output/
+          retention-days: 7
+
+  qemu-zephyr-tests:
+    name: QEMU Zephyr Tests
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential ninja-build qemu-system-arm \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file
+
+      - name: Install Zephyr SDK
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
+          tar xf zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz -C $HOME
+          $HOME/zephyr-sdk-0.17.0/setup.sh -t arm-zephyr-eabi -c
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import re; m=re.search(r'ZEPHYR_DEFAULT_REV\s*=\s*\"([0-9a-f]+)\"', open('config/ove-cli/ove/constants.py').read()); print(m.group(1))")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-qemu-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Run tests
+        run: timeout 600 make test-qemu-zephyr
+
+      - name: Run zeroheap tests
+        run: timeout 600 make test-qemu-zephyr-zeroheap
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-zephyr-tests-logs
+          path: output/
+          retention-days: 7

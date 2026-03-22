@@ -1,0 +1,60 @@
+# NuttX defconfig overlay for QEMU MPS2-AN500 test runner (zero-heap mode).
+# Applied on top of mps2-an500:nsh base configuration.
+
+# oveRTOS test app
+CONFIG_EXTERNAL_OVE_TEST=y
+CONFIG_EXTERNAL_OVE_TEST_PROGNAME="ove_test"
+CONFIG_EXTERNAL_OVE_TEST_PRIORITY=100
+CONFIG_EXTERNAL_OVE_TEST_STACKSIZE=16384
+
+# Boot directly into the test runner (no NSH shell)
+CONFIG_INIT_ENTRYPOINT="ove_test_main"
+
+# POSIX features needed by NuttX backend modules
+CONFIG_LIBC_INLINE_QUEUE=y
+CONFIG_TLS_NELEM=4
+CONFIG_TLS_TASK_NELEM=4
+CONFIG_SIG_EVTHREAD=y
+CONFIG_SIG_EVTHREAD_HPWORK=y
+
+# Pthreads
+CONFIG_PTHREAD_MUTEX_TYPES=y
+CONFIG_PTHREAD_MUTEX_ROBUST=y
+CONFIG_PTHREAD_CLEANUP=y
+CONFIG_PTHREAD_MUTEX_DEFAULT_PRIO_INHERIT=y
+
+# POSIX message queues
+CONFIG_MQ_MAXMSGSIZE=256
+
+# POSIX timers
+CONFIG_DISABLE_POSIX_TIMERS=n
+
+# Memory
+CONFIG_ARCH_INTERRUPTSTACK=2048
+CONFIG_IDLETHREAD_STACKSIZE=2048
+CONFIG_STACK_COLORATION=y
+
+# Enough heap for test suites (NuttX needs system heap for task_create)
+CONFIG_MM_REGIONS=1
+
+# Console (semihosting UART on QEMU)
+CONFIG_DEV_CONSOLE=y
+CONFIG_SERIAL=y
+CONFIG_UART0_SERIAL_CONSOLE=y
+CONFIG_UART0_BAUD=115200
+
+# File system support (for posix_fs/posix_nvs stubs)
+CONFIG_FS_TMPFS=y
+
+# Disable verbose debug logging (base mps2-an500:nsh enables DEBUG_SCHED_INFO
+# which floods the console with pthread_mutex_timedlock/unlock messages)
+# CONFIG_DEBUG_SCHED_INFO is not set
+# CONFIG_DEBUG_SCHED_WARN is not set
+# CONFIG_DEBUG_SCHED is not set
+
+# Disable features not needed for testing
+# CONFIG_NSH_LIBRARY is not set
+CONFIG_SCHED_WAITPID=y
+
+# setjmp/longjmp needed by cmocka test framework
+CONFIG_ARCH_SETJMP_H=y

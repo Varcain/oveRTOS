@@ -1,0 +1,18 @@
+[package]
+name = "ove"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+
+[features]
+default = ["panic-handler"]
+std = []
+panic-handler = []
+
+[build-dependencies]
+bindgen = "0.72"
+
+[package.metadata.docs.rs]
+features = ["std"]
+rustdoc-args = ["--cfg", "docsrs"]

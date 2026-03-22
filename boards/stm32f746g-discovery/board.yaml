@@ -1,0 +1,55 @@
+board:
+  name: stm32f746g-discovery
+  mcu_family: stm32f7
+  mcu: STM32F746xx
+
+clock:
+  hse_freq_mhz: 25
+  sysclk_mhz: 216
+  ahb_div: 1
+  apb1_div: 4
+  apb2_div: 2
+
+memory:
+  flash_kb: 1024
+  ram_kb: 320
+  dtcm_kb: 64
+  sdram_kb: 8192
+  sdram_start: "0xC0000000"
+
+gpio:
+  port_count: 9
+  pins_per_port: 16
+
+leds:
+  - port: 8
+    pin: 1
+    active_low: false
+
+audio:
+  i2s:
+    sample_rate: 44100
+    bit_depth: 16
+    channels: 2
+    buffer_samples: 512
+  codec:
+    type: WM8994
+    i2c_addr: "0x1A"
+
+display:
+  width: 480
+  height: 272
+  color_format: RGB565
+
+serial:
+  console:
+    baud: 115200
+    tx_pin: PA9
+    rx_pin: PB7
+    rx_buffer_size: 1024
+
+sdcard:
+  interface: SDMMC1
+
+watchdog:
+  timeout_ms: 5000

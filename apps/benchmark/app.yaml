@@ -1,0 +1,29 @@
+lang: c
+description: "RTOS Abstraction Benchmark"
+sources:
+  - src/app.c
+  - src/bench_harness.c
+  - src/bench_output.c
+  - src/bench_memory.c
+  - src/bench_time.c
+  - src/bench_thread.c
+  - src/bench_sync.c
+  - src/bench_queue.c
+  - src/bench_timer.c
+  - src/bench_eventgroup.c
+  - src/bench_workqueue.c
+  - src/bench_stream.c
+includes:
+  - include
+kconfig: |
+  config OVE_BENCHMARK_ITERATIONS
+  	int "Number of measurement iterations per benchmark case"
+  	default 1000
+
+  config OVE_BENCHMARK_WARMUP
+  	int "Number of warmup iterations before measurement"
+  	default 100
+
+  config OVE_BENCHMARK_INCLUDE_MEMORY
+  	bool "Include memory usage benchmarks"
+  	default y

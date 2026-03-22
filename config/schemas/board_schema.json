@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "oveRTOS Board Descriptor",
+  "description": "Describes hardware wiring for a oveRTOS-supported board.",
+  "type": "object",
+  "required": ["board"],
+  "properties": {
+    "board": {
+      "type": "object",
+      "required": ["name", "mcu_family", "mcu"],
+      "properties": {
+        "name":       { "type": "string" },
+        "mcu_family": { "type": "string" },
+        "mcu":        { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "clock": {
+      "type": "object",
+      "properties": {
+        "hse_freq_mhz": { "type": "integer", "minimum": 1 },
+        "sysclk_mhz":   { "type": "integer", "minimum": 1 },
+        "ahb_div":       { "type": "integer", "minimum": 1 },
+        "apb1_div":      { "type": "integer", "minimum": 1 },
+        "apb2_div":      { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "flash_kb":    { "type": "integer", "minimum": 0 },
+        "ram_kb":      { "type": "integer", "minimum": 0 },
+        "dtcm_kb":     { "type": "integer", "minimum": 0 },
+        "sdram_kb":    { "type": "integer", "minimum": 0 },
+        "sdram_start": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" }
+      },
+      "additionalProperties": false
+    },
+    "gpio": {
+      "type": "object",
+      "properties": {
+        "port_count":    { "type": "integer", "minimum": 1 },
+        "pins_per_port": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "leds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["port", "pin"],
+        "properties": {
+          "port":       { "type": "integer", "minimum": 0 },
+          "pin":        { "type": "integer", "minimum": 0 },
+          "active_low": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "i2s": {
+          "type": "object",
+          "properties": {
+            "sample_rate":     { "type": "integer", "minimum": 1 },
+            "bit_depth":       { "type": "integer", "enum": [8, 16, 24, 32] },
+            "channels":        { "type": "integer", "minimum": 1 },
+            "buffer_samples":  { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "codec": {
+          "type": "object",
+          "properties": {
+            "type":     { "type": "string" },
+            "i2c_addr": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "display": {
+      "type": "object",
+      "properties": {
+        "width":        { "type": "integer", "minimum": 1 },
+        "height":       { "type": "integer", "minimum": 1 },
+        "color_format": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "serial": {
+      "type": "object",
+      "properties": {
+        "console": {
+          "type": "object",
+          "properties": {
+            "baud":           { "type": "integer", "minimum": 1 },
+            "tx_pin":         { "type": "string" },
+            "rx_pin":         { "type": "string" },
+            "rx_buffer_size": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "sdcard": {
+      "type": "object",
+      "properties": {
+        "interface": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "watchdog": {
+      "type": "object",
+      "properties": {
+        "timeout_ms": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

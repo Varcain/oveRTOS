@@ -1,0 +1,26 @@
+# Auto-generated from app.yaml by oveRTOS build system — do not edit.
+
+APP_LANG = {{ app.lang }}
+
+{% if app.lang == 'c' %}
+{% for src in app.sources %}
+APP_CSRCS += $(OVE_APP_DIR)/{{ src }}
+{% endfor %}
+{% elif app.lang == 'cpp' %}
+{% for src in app.sources %}
+APP_CXXSRCS += $(OVE_APP_DIR)/{{ src }}
+{% endfor %}
+{% elif app.lang == 'rust' %}
+APP_RUST_CRATE_DIR = $(OVE_APP_DIR){% if app.rust.crate_dir != '.' %}/{{ app.rust.crate_dir }}{% endif %}
+
+APP_RUST_LIB_NAME = {{ app.rust.lib_name }}
+{% elif app.lang == 'zig' %}
+APP_ZIG_SRC_DIR = $(OVE_APP_DIR)/{{ app.zig.src_dir }}
+APP_ZIG_LIB_NAME = {{ app.zig.lib_name }}
+{% endif %}
+
+{% if app.includes is defined %}
+{% for inc in app.includes %}
+APP_INCLUDES += -I$(OVE_APP_DIR)/{{ inc }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "oveRTOS Application Descriptor",
+  "description": "Describes build sources and configuration for an oveRTOS application.",
+  "type": "object",
+  "required": ["lang", "description"],
+  "properties": {
+    "lang": {
+      "type": "string",
+      "enum": ["c", "cpp", "rust", "zig"],
+      "description": "Application language."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description shown in Kconfig menu."
+    },
+    "sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Source file paths relative to the app directory (c/cpp only)."
+    },
+    "includes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Include directory paths relative to the app directory."
+    },
+    "rust": {
+      "type": "object",
+      "required": ["lib_name"],
+      "properties": {
+        "crate_dir": {
+          "type": "string",
+          "description": "Path to Cargo.toml directory, relative to app dir. Default: '.'"
+        },
+        "lib_name": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "zig": {
+      "type": "object",
+      "required": ["lib_name"],
+      "properties": {
+        "src_dir": {
+          "type": "string",
+          "description": "Path to Zig sources, relative to app dir. Default: 'src'"
+        },
+        "lib_name": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "kconfig": {
+      "type": "string",
+      "description": "Raw Kconfig content for app-specific configuration options."
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "properties": { "lang": { "const": "c" } } },
+      "then": { "required": ["sources"] }
+    },
+    {
+      "if": { "properties": { "lang": { "const": "cpp" } } },
+      "then": { "required": ["sources"] }
+    },
+    {
+      "if": { "properties": { "lang": { "const": "rust" } } },
+      "then": { "required": ["rust"] }
+    },
+    {
+      "if": { "properties": { "lang": { "const": "zig" } } },
+      "then": { "required": ["zig"] }
+    }
+  ]
+}

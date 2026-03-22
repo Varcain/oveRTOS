@@ -1,0 +1,4 @@
+kconfiglib>=14.1.0
+jinja2>=3.0
+pyyaml>=6.0
+jsonschema>=4.0

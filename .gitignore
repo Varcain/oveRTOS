@@ -1,0 +1,57 @@
+# Build artifacts
+*.o
+*.d
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+*.gcno
+*.gcda
+
+# Build directories
+build/
+build_*/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+_deps/
+compile_commands.json
+
+# IDE / tool caches
+.cache/
+
+# Python
+__pycache__/
+
+# Test output
+Testing/
+*.xml
+
+# NuttX build artifacts
+.built
+.depend
+Make.dep
+
+# Rust / Cargo
+target/
+
+# Ove build system
+.config
+.config.old
+dl/
+output/
+defconfig
+.venv/
+.venv-docs/
+.worktrees/
+
+# Generated documentation artifacts
+docs-site/site/
+docs-site/docs/build-system/kconfig.md
+
+# Zig build cache
+bindings/zig/ove/.zig-cache/

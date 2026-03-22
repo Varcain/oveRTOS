@@ -1,0 +1,42 @@
+site_name: oveRTOS Documentation
+site_url: https://varcain.github.io/oveRTOS/
+site_description: RTOS framework — unified build system, configuration, and API for FreeRTOS, NuttX, Zephyr, and POSIX
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - content.code.copy
+  palette:
+    - scheme: slate
+      primary: indigo
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+plugins:
+  - search
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Overview: getting-started/overview.md
+    - Setup: getting-started/setup.md
+    - Configure: getting-started/configure.md
+    - Build: getting-started/build.md
+    - Run: getting-started/run.md
+  - API Reference:
+    - Overview: api/index.md
+  - Build System:
+    - CMake: build-system/cmake.md
+    - Kconfig: build-system/kconfig.md
+    - Boards: build-system/boards.md
+  - Backends: backends/index.md
+  - Examples:
+    - C: examples/c.md
+    - C++: examples/cpp.md
+    - Rust: examples/rust.md
+    - Zig: examples/zig.md

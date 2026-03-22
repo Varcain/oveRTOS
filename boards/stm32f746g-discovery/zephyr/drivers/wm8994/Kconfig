@@ -1,0 +1,13 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This file is part of oveRTOS.
+
+config AUDIO_CODEC_WM8994
+	bool "Wolfson WM8994 codec support"
+	default y
+	select I2C
+	depends on DT_HAS_WOLFSON_WM8994_ENABLED
+	help
+	  Enable support for the Wolfson/Cirrus Logic WM8994 audio codec.

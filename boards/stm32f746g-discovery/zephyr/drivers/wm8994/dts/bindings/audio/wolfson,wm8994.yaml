@@ -1,0 +1,15 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This file is part of oveRTOS.
+
+description: Wolfson/Cirrus Logic WM8994 Audio Codec
+
+include: [i2c-device.yaml]
+
+compatible: "wolfson,wm8994"
+
+properties:
+  reg:
+    required: true

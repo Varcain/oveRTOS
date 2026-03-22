@@ -1,0 +1,200 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of oveRTOS.
+ */
+
+/**
+ * @defgroup ove_timer Software timer
+ * @brief Periodic and one-shot software timer API backed by the active RTOS.
+ *
+ * @note All functions in this group require @c CONFIG_OVE_TIMER to be defined.
+ *       When @c CONFIG_OVE_TIMER is not set, every function is replaced by a
+ *       static inline stub that returns @c OVE_ERR_NOT_SUPPORTED.
+ *
+ * Two allocation strategies are available:
+ *  - **Static** (zero-heap): use ove_timer_init() / ove_timer_deinit() with
+ *    caller-supplied storage.
+ *  - **Heap** (default): use ove_timer_create() / ove_timer_destroy(); only
+ *    available when @c OVE_HEAP_TIMER is defined (i.e. @c CONFIG_OVE_ZERO_HEAP
+ *    is not set).
+ * @{
+ */
+
+#ifndef OVE_TIMER_H
+#define OVE_TIMER_H
+
+#include "ove/types.h"
+#include "ove_config.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** @brief Opaque handle for a software timer object. */
+typedef struct ove_timer *ove_timer_t;
+
+/**
+ * @brief Timer expiry callback function prototype.
+ *
+ * Invoked by the RTOS timer service task (or equivalent) when the timer
+ * period elapses.  Implementations must be non-blocking and short.
+ *
+ * @param[in] timer      Handle of the timer that fired.
+ * @param[in] user_data  Opaque pointer supplied at timer creation time.
+ */
+typedef void (*ove_timer_fn)(ove_timer_t timer, void *user_data);
+
+#include "ove/storage.h"
+
+#ifdef CONFIG_OVE_TIMER
+
+/**
+ * @brief Initialise a software timer using caller-supplied static storage.
+ *
+ * Creates a timer in the stopped state.  Call ove_timer_start() to arm it.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[out] timer      Receives the opaque timer handle on success.
+ * @param[in]  storage    Pointer to statically allocated backend storage.
+ *                        Must remain valid for the lifetime of the timer.
+ * @param[in]  callback   Function invoked when the timer expires.
+ *                        Must not be NULL.
+ * @param[in]  user_data  Opaque pointer forwarded to @p callback on each
+ *                        expiry.  May be NULL.
+ * @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.
+ * @param[in]  one_shot   Non-zero to create a one-shot timer (fires once
+ *                        then stops automatically); zero for a periodic
+ *                        timer that reloads automatically.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_deinit, ove_timer_create, ove_timer_start
+ */
+int  ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage,
+		    ove_timer_fn callback, void *user_data,
+		    uint32_t period_ms, int one_shot);
+
+/**
+ * @brief Stop and release resources held by a timer initialised with
+ *        ove_timer_init().
+ *
+ * Stops the timer if it is running.  The static storage supplied at init
+ * time is not freed.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[in] timer  Handle returned by ove_timer_init().
+ *
+ * @see ove_timer_init
+ */
+void ove_timer_deinit(ove_timer_t timer);
+
+/* _create / _destroy — heap-gated */
+#ifdef OVE_HEAP_TIMER
+
+/**
+ * @brief Allocate and initialise a software timer from the heap.
+ *
+ * Creates a timer in the stopped state.  Call ove_timer_start() to arm it.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER
+ *       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).
+ *
+ * @param[out] timer      Receives the opaque timer handle on success.
+ * @param[in]  callback   Function invoked when the timer expires.
+ *                        Must not be NULL.
+ * @param[in]  user_data  Opaque pointer forwarded to @p callback on each
+ *                        expiry.  May be NULL.
+ * @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.
+ * @param[in]  one_shot   Non-zero to create a one-shot timer; zero for a
+ *                        periodic auto-reloading timer.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_destroy, ove_timer_init, ove_timer_start
+ */
+int  ove_timer_create(ove_timer_t *timer, ove_timer_fn callback,
+		      void *user_data, uint32_t period_ms, int one_shot);
+
+/**
+ * @brief Stop and free a timer allocated with ove_timer_create().
+ *
+ * @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.
+ *
+ * @param[in] timer  Handle returned by ove_timer_create().
+ *
+ * @see ove_timer_create
+ */
+void ove_timer_destroy(ove_timer_t timer);
+
+#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_TIMER — zero-heap mode */
+#define ove_timer_create(...) \
+	_Static_assert(0, "ove_timer_create() requires heap. Use ove_timer_init() in zero-heap mode.")
+#define ove_timer_destroy(...) \
+	_Static_assert(0, "ove_timer_destroy() requires heap. Use ove_timer_deinit() in zero-heap mode.")
+#endif /* OVE_HEAP_TIMER */
+
+/**
+ * @brief Start (arm) a timer.
+ *
+ * If the timer is already running, it is restarted from the beginning of
+ * its period.  Has no effect if the timer is in a terminated state.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[in] timer  Timer handle to start.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_stop, ove_timer_reset
+ */
+int  ove_timer_start(ove_timer_t timer);
+
+/**
+ * @brief Stop a running timer without invoking its callback.
+ *
+ * If the timer is already stopped, this function has no effect.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[in] timer  Timer handle to stop.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_start, ove_timer_reset
+ */
+int  ove_timer_stop(ove_timer_t timer);
+
+/**
+ * @brief Restart a timer's countdown from the beginning of its period.
+ *
+ * Equivalent to stopping and then starting the timer, but performed
+ * atomically with respect to the RTOS timer service.  Useful for
+ * implementing watchdog-style "kick" patterns.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[in] timer  Timer handle to reset.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_start, ove_timer_stop
+ */
+int  ove_timer_reset(ove_timer_t timer);
+
+#else /* !CONFIG_OVE_TIMER */
+
+static inline int  ove_timer_create(ove_timer_t *t, ove_timer_fn cb, void *ud, uint32_t p, int os) { (void)t; (void)cb; (void)ud; (void)p; (void)os; return OVE_ERR_NOT_SUPPORTED; }
+static inline void ove_timer_destroy(ove_timer_t t) { (void)t; }
+static inline int  ove_timer_start(ove_timer_t t) { (void)t; return OVE_ERR_NOT_SUPPORTED; }
+static inline int  ove_timer_stop(ove_timer_t t) { (void)t; return OVE_ERR_NOT_SUPPORTED; }
+static inline int  ove_timer_reset(ove_timer_t t) { (void)t; return OVE_ERR_NOT_SUPPORTED; }
+
+#endif /* CONFIG_OVE_TIMER */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* OVE_TIMER_H */
+
+/** @} */

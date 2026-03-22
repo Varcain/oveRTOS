@@ -1,0 +1,111 @@
+menu "oveRTOS Modules"
+
+comment "Core modules (always enabled)"
+
+config OVE_THREAD
+    bool
+    default y
+    help
+      Thread management. Always enabled — required by ove_app_run().
+
+config OVE_APP
+    bool
+    default y
+    help
+      Application lifecycle. Always enabled.
+
+comment "Optional modules"
+
+config OVE_SYNC
+    bool "Synchronization primitives (mutex, sem, event, condvar)"
+    default y
+
+config OVE_AUDIO
+    bool "Audio streaming"
+    default y
+
+config OVE_FS
+    bool "File system"
+    default y
+
+config OVE_CONSOLE
+    bool "Console I/O"
+    default y
+
+config OVE_LOG
+    bool "Logging"
+    default y
+    depends on OVE_CONSOLE
+
+config OVE_TIME
+    bool "Time and delay functions"
+    default y
+
+config OVE_BOARD
+    bool "Board descriptor and init"
+    default y
+
+config OVE_GPIO
+    bool "GPIO control"
+    default y
+
+config OVE_LED
+    bool "LED control"
+    default y
+    select OVE_GPIO
+
+config OVE_BSP
+    bool "Board support package (compat — selects board+gpio+led)"
+    default y
+    select OVE_BOARD
+    select OVE_GPIO
+    select OVE_LED
+
+config OVE_LVGL
+    bool "LVGL UI framework"
+    default y
+    select OVE_SYNC
+
+config OVE_QUEUE
+    bool "Message queues"
+    default y
+
+config OVE_TIMER
+    bool "Software timers"
+    default y
+
+config OVE_EVENTGROUP
+    bool "Event groups"
+    default y
+
+config OVE_SHELL
+    bool "Interactive shell"
+    default y
+    depends on OVE_CONSOLE
+
+config OVE_NVS
+    bool "Non-volatile storage"
+    default y
+
+config OVE_WATCHDOG
+    bool "Watchdog timer"
+    default y
+
+config OVE_WORKQUEUE
+    bool "Work queues"
+    default n
+
+config OVE_STREAM
+    bool "Stream I/O"
+    default n
+
+comment "Heap policy"
+
+config OVE_ZERO_HEAP
+    bool "Zero-heap build (disable all dynamic allocation)"
+    default n
+    help
+      When enabled, _create()/_destroy() APIs are removed from all modules.
+      Use _init()/_deinit() with caller-provided storage instead.
+
+endmenu

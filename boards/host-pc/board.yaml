@@ -1,0 +1,53 @@
+board:
+  name: host-pc
+  mcu_family: posix
+  mcu: x86_64
+
+gpio:
+  port_count: 8
+  pins_per_port: 16
+
+leds:
+  - port: 0
+    pin: 0
+    active_low: false
+  - port: 0
+    pin: 1
+    active_low: false
+  - port: 0
+    pin: 2
+    active_low: false
+  - port: 0
+    pin: 3
+    active_low: false
+  - port: 0
+    pin: 4
+    active_low: false
+  - port: 0
+    pin: 5
+    active_low: false
+  - port: 0
+    pin: 6
+    active_low: false
+  - port: 0
+    pin: 7
+    active_low: false
+
+audio:
+  i2s:
+    sample_rate: 44100
+    bit_depth: 16
+    channels: 1
+    buffer_samples: 512
+
+display:
+  width: 480
+  height: 272
+  color_format: RGB565
+
+serial:
+  console:
+    baud: 115200
+    tx_pin: none
+    rx_pin: none
+    rx_buffer_size: 1024

@@ -1,0 +1,16 @@
+description: |
+  oveRTOS semihosting framebuffer display for QEMU.
+  Writes pixels to /dev/shm/ove-fb via ARM semihosting,
+  read by the host display viewer.
+
+compatible: "ove,shmem-display"
+
+include: display-controller.yaml
+
+properties:
+  width:
+    type: int
+    required: true
+  height:
+    type: int
+    required: true

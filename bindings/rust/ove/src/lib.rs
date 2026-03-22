@@ -1,0 +1,477 @@
+// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// This file is part of oveRTOS.
+
+//! oveRTOS Rust SDK — safe wrappers for the oveRTOS embedded RTOS framework.
+//!
+//! Provides RAII types for threads, mutexes, semaphores, queues, timers, etc.
+//! and the `app!` macro that generates all FFI boilerplate so application code
+//! can be written in pure safe Rust.
+
+#![cfg_attr(not(feature = "std"), no_std)]
+
+// Panic handler (only when no_std + feature enabled)
+#[cfg(all(not(feature = "std"), feature = "panic-handler"))]
+mod panic;
+
+#[cfg(not(docsrs))]
+pub(crate) mod bindings;
+#[cfg(docsrs)]
+#[path = "bindings_stub.rs"]
+pub(crate) mod bindings;
+#[cfg(has_audio)]
+pub mod audio;
+#[cfg(has_board)]
+pub mod board;
+#[cfg(has_bsp)]
+pub mod bsp;
+#[cfg(has_gpio)]
+pub mod gpio;
+#[cfg(has_led)]
+pub mod led;
+#[cfg(has_console)]
+pub mod console;
+pub mod error;
+pub mod eventgroup;
+pub mod fmt;
+#[cfg(has_fs)]
+pub mod fs;
+#[cfg(has_lvgl)]
+pub mod lvgl;
+#[cfg(has_nvs)]
+pub mod nvs;
+pub mod priority;
+pub mod queue;
+#[cfg(has_shell)]
+pub mod shell;
+pub mod static_cell;
+pub mod sync;
+pub mod thread;
+#[cfg(has_time)]
+pub mod time;
+pub mod timer;
+#[cfg(has_stream)]
+pub mod stream;
+#[cfg(has_watchdog)]
+pub mod watchdog;
+#[cfg(has_workqueue)]
+pub mod workqueue;
+
+/// Raw FFI bindings re-exported for advanced use cases.
+///
+/// Direct use of these types bypasses all safety checks. Prefer the safe
+/// wrappers in sibling modules whenever possible.
+pub mod ffi {
+    pub use crate::bindings::*;
+}
+
+// Public re-exports for convenience
+pub use error::{Error, Result, WAIT_FOREVER};
+pub use eventgroup::{EventGroup, WaitFlags, EG_CLEAR_ON_EXIT, EG_WAIT_ALL};
+pub use priority::Priority;
+pub use queue::Queue;
+pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
+pub use thread::{Thread, ThreadState, ThreadStats};
+pub use static_cell::{StaticCell, StaticMut};
+pub use timer::Timer;
+pub use fmt::FmtBuf;
+#[cfg(has_stream)]
+pub use stream::Stream;
+#[cfg(has_watchdog)]
+pub use watchdog::Watchdog;
+#[cfg(has_workqueue)]
+pub use workqueue::{Work, Workqueue};
+
+/// Write a message to the oveRTOS console.
+pub fn log(msg: &[u8]) {
+    unsafe {
+        bindings::ove_console_write(msg.as_ptr() as *const _, msg.len() as u32);
+    }
+}
+
+/// Format arguments into a stack buffer and log via [`log()`].
+///
+/// Uses a 128-byte stack buffer.  Output is silently truncated if it exceeds
+/// the buffer capacity.
+///
+/// # Example
+///
+/// ```ignore
+/// ove::log_fmt!("[I] count = {}\n", 42);
+/// ```
+#[macro_export]
+macro_rules! log_fmt {
+    ($($arg:tt)*) => {{
+        use core::fmt::Write;
+        let mut buf = [0u8; 128];
+        let mut w = $crate::FmtBuf::new(&mut buf);
+        let _ = write!(w, $($arg)*);
+        $crate::log(w.as_bytes());
+    }};
+}
+
+/// Generate the `ove_main` entry point from a Rust closure or function.
+///
+/// # Example
+///
+/// ```ignore
+/// ove::main!(app_main);
+///
+/// fn app_main() {
+///     // create resources...
+///     ove::run();
+/// }
+/// ```
+#[macro_export]
+macro_rules! main {
+    ($entry:expr) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn ove_main() {
+            $entry();
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Unified creation macros
+//
+// These macros work in both heap and zero-heap modes. In heap mode they call
+// `new()`. In zero-heap mode they declare function-local `static` storage
+// and call `from_static()`.
+// ---------------------------------------------------------------------------
+
+/// Create a [`Mutex`] that works in both heap and zero-heap modes.
+#[macro_export]
+macro_rules! mutex {
+    () => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Mutex::new().unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_mutex_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::Mutex::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`RecursiveMutex`] that works in both heap and zero-heap modes.
+#[macro_export]
+macro_rules! recursive_mutex {
+    () => {{
+        #[cfg(not(zero_heap))]
+        { $crate::RecursiveMutex::new().unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_mutex_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::RecursiveMutex::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Semaphore`] that works in both heap and zero-heap modes.
+#[macro_export]
+macro_rules! semaphore {
+    ($initial:expr, $max:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Semaphore::new($initial, $max).unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_sem_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::Semaphore::from_static(
+                core::ptr::addr_of_mut!(_S), $initial, $max
+            ) }.unwrap()
+        }
+    }};
+}
+
+/// Create an [`Event`] that works in both heap and zero-heap modes.
+#[macro_export]
+macro_rules! event {
+    () => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Event::new().unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_event_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::Event::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`CondVar`] that works in both heap and zero-heap modes.
+#[macro_export]
+macro_rules! condvar {
+    () => {{
+        #[cfg(not(zero_heap))]
+        { $crate::CondVar::new().unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_condvar_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::CondVar::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+        }
+    }};
+}
+
+/// Create an [`EventGroup`] that works in both heap and zero-heap modes.
+#[macro_export]
+macro_rules! eventgroup {
+    () => {{
+        #[cfg(not(zero_heap))]
+        { $crate::EventGroup::new().unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_eventgroup_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::EventGroup::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Queue`] that works in both heap and zero-heap modes.
+///
+/// # Example
+/// ```ignore
+/// let q = ove::queue!(u32, 8);
+/// ```
+#[macro_export]
+macro_rules! queue {
+    ($T:ty, $N:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Queue::<$T, $N>::new().unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_queue_storage_t =
+                unsafe { core::mem::zeroed() };
+            static mut _B: [core::mem::MaybeUninit<$T>; $N] =
+                unsafe { core::mem::MaybeUninit::uninit().assume_init() };
+            unsafe {
+                $crate::Queue::<$T, $N>::from_static(
+                    core::ptr::addr_of_mut!(_S),
+                    core::ptr::addr_of_mut!(_B) as *mut _,
+                )
+            }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Timer`] that works in both heap and zero-heap modes.
+///
+/// # Example
+/// ```ignore
+/// let t = ove::timer!(my_callback, 100, false);
+/// ```
+#[macro_export]
+macro_rules! timer {
+    ($callback:expr, $period_ms:expr, $one_shot:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Timer::new($callback, $period_ms, $one_shot).unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_timer_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::Timer::from_static(
+                core::ptr::addr_of_mut!(_S), $callback, $period_ms, $one_shot
+            ) }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Thread`] that works in both heap and zero-heap modes.
+///
+/// Uses the safe `fn()` entry pattern (trampoline). The name is
+/// automatically null-terminated.
+///
+/// # Example
+/// ```ignore
+/// let t = ove::thread!("worker", my_entry, Priority::Normal, 4096);
+/// ```
+#[macro_export]
+macro_rules! thread {
+    ($name:expr, $entry:expr, $prio:expr, $stack:expr) => {{
+        #[cfg(not(zero_heap))]
+        {
+            $crate::Thread::spawn(
+                concat!($name, "\0").as_bytes(),
+                $entry, $prio, $stack
+            ).unwrap()
+        }
+        #[cfg(all(zero_heap, not(rtos_zephyr)))]
+        {
+            static mut _S: $crate::ffi::ove_thread_storage_t =
+                unsafe { core::mem::zeroed() };
+            // Align to 8 bytes (ARM AAPCS stack alignment requirement).
+            #[repr(C, align(8))]
+            struct AlignedStack([u8; $stack]);
+            static mut _STACK: AlignedStack = AlignedStack([0u8; $stack]);
+            unsafe {
+                $crate::Thread::spawn_static(
+                    core::ptr::addr_of_mut!(_S),
+                    core::ptr::addr_of_mut!(_STACK) as *mut _,
+                    concat!($name, "\0").as_bytes(),
+                    $entry, $prio, $stack
+                )
+            }.unwrap()
+        }
+        #[cfg(all(zero_heap, rtos_zephyr))]
+        {
+            static mut _S: $crate::ffi::ove_thread_storage_t =
+                unsafe { core::mem::zeroed() };
+            // Zephyr with MPU needs power-of-2 aligned stacks.
+            // Add MPU guard region (128 bytes for FPU), round total
+            // to next power of 2. align(8192) covers stacks up to
+            // ~4000 usable bytes (the common embedded case).
+            const _STACK_TOTAL: usize = ($stack + 128usize).next_power_of_two();
+            #[repr(C, align(8192))]
+            struct ZStack([u8; _STACK_TOTAL]);
+            static mut _STACK: ZStack = ZStack([0u8; _STACK_TOTAL]);
+            unsafe {
+                $crate::Thread::spawn_static(
+                    core::ptr::addr_of_mut!(_S),
+                    core::ptr::addr_of_mut!(_STACK) as *mut _,
+                    concat!($name, "\0").as_bytes(),
+                    $entry, $prio, $stack
+                )
+            }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Stream`] that works in both heap and zero-heap modes.
+///
+/// # Example
+/// ```ignore
+/// let s = ove::stream!(256, 1);
+/// ```
+#[cfg(has_stream)]
+#[macro_export]
+macro_rules! stream {
+    ($N:expr, $trigger:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Stream::<$N>::new($trigger).unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_stream_storage_t =
+                unsafe { core::mem::zeroed() };
+            static mut _B: [u8; $N] = [0u8; $N];
+            unsafe {
+                $crate::Stream::<$N>::from_static(
+                    core::ptr::addr_of_mut!(_S),
+                    core::ptr::addr_of_mut!(_B) as *mut _,
+                    $trigger,
+                )
+            }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Workqueue`] that works in both heap and zero-heap modes.
+///
+/// # Example
+/// ```ignore
+/// let wq = ove::workqueue!("myq", Priority::Normal, 4096);
+/// ```
+#[cfg(has_workqueue)]
+#[macro_export]
+macro_rules! workqueue {
+    ($name:expr, $prio:expr, $stack:expr) => {{
+        #[cfg(not(zero_heap))]
+        {
+            $crate::Workqueue::new(
+                concat!($name, "\0").as_bytes(), $prio, $stack
+            ).unwrap()
+        }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_workqueue_storage_t =
+                unsafe { core::mem::zeroed() };
+            static mut _STACK: [u8; $stack] = [0u8; $stack];
+            unsafe {
+                $crate::Workqueue::from_static(
+                    core::ptr::addr_of_mut!(_S),
+                    concat!($name, "\0").as_bytes(),
+                    $prio, $stack,
+                    core::ptr::addr_of_mut!(_STACK) as *mut _,
+                )
+            }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Work`] item that works in both heap and zero-heap modes.
+#[cfg(has_workqueue)]
+#[macro_export]
+macro_rules! work {
+    ($handler:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Work::new($handler).unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_work_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::Work::from_static(
+                core::ptr::addr_of_mut!(_S), $handler
+            ) }.unwrap()
+        }
+    }};
+}
+
+/// Create a [`Watchdog`] that works in both heap and zero-heap modes.
+#[cfg(has_watchdog)]
+#[macro_export]
+macro_rules! watchdog {
+    ($timeout_ms:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::Watchdog::new($timeout_ms).unwrap() }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_watchdog_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::Watchdog::from_static(
+                core::ptr::addr_of_mut!(_S), $timeout_ms
+            ) }.unwrap()
+        }
+    }};
+}
+
+/// Declare a `static` wrapped in [`StaticCell`] for cross-thread shared state.
+///
+/// # Example
+/// ```ignore
+/// ove::shared!(QUEUE: Queue<u32, 8>);
+/// // then use QUEUE.send(...) directly — Deref eliminates .get()
+/// ```
+#[macro_export]
+macro_rules! shared {
+    ($vis:vis $name:ident : $ty:ty) => {
+        $vis static $name: $crate::StaticCell<$ty> = $crate::StaticCell::new();
+    };
+}
+
+/// Declare a `static` wrapped in [`StaticMut`] for single-owner mutable state.
+///
+/// # Example
+/// ```ignore
+/// ove::shared_mut!(ENGINE: DspEngine);
+/// ```
+#[macro_export]
+macro_rules! shared_mut {
+    ($vis:vis $name:ident : $ty:ty) => {
+        $vis static $name: $crate::StaticMut<$ty> = $crate::StaticMut::new();
+    };
+}
+
+/// Start audio (if enabled) and the RTOS scheduler. Blocks forever.
+///
+/// This function must be called at the end of `ove_main` (or the function
+/// passed to the [`main!`] macro). It transfers control to the RTOS and
+/// never returns.
+pub fn run() {
+    unsafe { bindings::ove_run(); }
+}

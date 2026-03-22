@@ -1,0 +1,92 @@
+menu "Toolchain"
+
+choice
+    prompt "Toolchain source"
+    default OVE_TOOLCHAIN_DOWNLOAD
+    depends on OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX
+
+config OVE_TOOLCHAIN_SYSTEM
+    bool "System toolchain (in PATH)"
+    help
+      Use a toolchain already installed on the system.
+
+config OVE_TOOLCHAIN_DOWNLOAD
+    bool "Download prebuilt ARM GNU toolchain"
+    help
+      Download the official ARM GNU toolchain from developer.arm.com.
+
+config OVE_TOOLCHAIN_CUSTOM
+    bool "Custom toolchain path"
+    help
+      Specify a path to a locally installed toolchain.
+endchoice
+
+config OVE_CROSS_COMPILE
+    string "Cross-compiler prefix"
+    default "arm-none-eabi-"
+    depends on OVE_TOOLCHAIN_SYSTEM
+    help
+      Prefix for the cross-compilation toolchain.
+
+config OVE_TOOLCHAIN_CUSTOM_PATH
+    string "Toolchain installation path"
+    depends on OVE_TOOLCHAIN_CUSTOM
+    help
+      Absolute path to the toolchain installation directory.
+      The bin/ subdirectory should contain arm-none-eabi-gcc.
+
+config OVE_TOOLCHAIN_VERSION
+    string "Toolchain version"
+    default "15.2.rel1"
+    depends on OVE_TOOLCHAIN_DOWNLOAD
+    help
+      ARM GNU toolchain release version.
+
+config OVE_TOOLCHAIN_URL
+    string "Toolchain download URL"
+    default "https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz"
+    depends on OVE_TOOLCHAIN_DOWNLOAD
+    help
+      Direct download URL for the toolchain tarball.
+
+config OVE_OPENOCD_CFG
+    string "OpenOCD configuration file"
+    default "board/stm32f7discovery.cfg"
+    help
+      OpenOCD board configuration file for flashing.
+
+menu "Rust Toolchain"
+    visible if OVE_APP_LANG_RUST
+
+choice
+    prompt "Rust toolchain source"
+    default OVE_RUST_TOOLCHAIN_SYSTEM
+    depends on OVE_APP_LANG_RUST
+
+config OVE_RUST_TOOLCHAIN_SYSTEM
+    bool "System rustup"
+    help
+      Use Rust installed via system rustup.
+      Requires: rustup, thumbv7em-none-eabihf target.
+
+config OVE_RUST_TOOLCHAIN_CUSTOM
+    bool "Custom Rust path"
+    help
+      Specify a custom path to cargo/rustc.
+
+endchoice
+
+config OVE_RUST_TOOLCHAIN_CUSTOM_PATH
+    string "Rust toolchain path"
+    depends on OVE_RUST_TOOLCHAIN_CUSTOM
+    help
+      Absolute path containing cargo and rustc binaries.
+
+config OVE_RUST_TARGET
+    string "Rust target triple"
+    default "thumbv7em-none-eabihf"
+    depends on OVE_APP_LANG_RUST
+
+endmenu
+
+endmenu

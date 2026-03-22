@@ -1,0 +1,12 @@
+/ {
+	chosen {
+		zephyr,display = &shmem_display;
+	};
+
+	shmem_display: shmem_display {
+		compatible = "ove,shmem-display";
+		width = <480>;
+		height = <272>;
+		status = "okay";
+	};
+};

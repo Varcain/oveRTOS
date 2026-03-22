@@ -1,0 +1,36 @@
+menu "Debug Options"
+
+choice
+    prompt "Log level"
+    default OVE_LOG_LEVEL_INF
+
+config OVE_LOG_LEVEL_ERR
+    bool "Error only"
+
+config OVE_LOG_LEVEL_WRN
+    bool "Warning and above"
+
+config OVE_LOG_LEVEL_INF
+    bool "Info and above"
+
+config OVE_LOG_LEVEL_DBG
+    bool "Debug (all)"
+
+endchoice
+
+config OVE_LOG_LEVEL
+    int
+    default 0 if OVE_LOG_LEVEL_ERR
+    default 1 if OVE_LOG_LEVEL_WRN
+    default 2 if OVE_LOG_LEVEL_INF
+    default 3 if OVE_LOG_LEVEL_DBG
+
+config OVE_DEBUG_BUILD
+    bool "Debug build (no optimization, debug symbols)"
+    default n
+
+config OVE_STACK_CANARIES
+    bool "Stack canary protection"
+    default n
+
+endmenu

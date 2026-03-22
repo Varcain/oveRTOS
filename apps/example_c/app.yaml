@@ -1,0 +1,6 @@
+lang: c
+description: "C Demo"
+sources:
+  - src/app.c
+includes:
+  - include

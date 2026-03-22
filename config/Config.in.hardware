@@ -1,0 +1,52 @@
+menu "Hardware Target"
+
+choice
+    prompt "Target board"
+
+config OVE_BOARD_STM32F746G_DISCO
+    bool "STM32F746G-DISCO"
+    help
+      STMicroelectronics STM32F746G Discovery board.
+      ARM Cortex-M7 @ 216 MHz, 1 MB Flash, 320 KB SRAM.
+
+config OVE_BOARD_QEMU_MPS2_AN500
+    bool "QEMU MPS2-AN500 (Cortex-M7)"
+    depends on OVE_RTOS_FREERTOS || OVE_RTOS_ZEPHYR || OVE_RTOS_NUTTX
+    help
+      ARM MPS2-AN500 board emulated by QEMU.
+      Cortex-M7 @ 25 MHz, 4 MB Flash, 4 MB RAM.
+      Uses semihosting for I/O.
+
+config OVE_BOARD_HOST_PC
+    bool "Host PC (native)"
+    depends on OVE_RTOS_POSIX
+    help
+      Native host development. Uses SDL2 for display and audio.
+
+endchoice
+
+config OVE_BOARD_NAME
+    string
+    default "stm32f746g-discovery" if OVE_BOARD_STM32F746G_DISCO
+    default "qemu-mps2-an500" if OVE_BOARD_QEMU_MPS2_AN500
+    default "host-pc" if OVE_BOARD_HOST_PC
+
+config OVE_FLASH_SIZE
+    int
+    default 1048576 if OVE_BOARD_STM32F746G_DISCO
+    default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
+    default 0 if OVE_BOARD_HOST_PC
+
+config OVE_RAM_SIZE
+    int
+    default 327680 if OVE_BOARD_STM32F746G_DISCO
+    default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
+    default 0 if OVE_BOARD_HOST_PC
+
+config OVE_MCU
+    string
+    default "STM32F746xx" if OVE_BOARD_STM32F746G_DISCO
+    default "CMSDK_CM7" if OVE_BOARD_QEMU_MPS2_AN500
+    default "host" if OVE_BOARD_HOST_PC
+
+endmenu

@@ -1,0 +1,77 @@
+oveRTOS - Portable RTOS Abstraction Framework
+Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+
+This product includes software developed by third parties.
+
+================================================================================
+
+Downloaded dependencies (fetched by the build system into dl/):
+
+  FreeRTOS-Kernel
+    Copyright (C) 2021 Amazon.com, Inc. or its affiliates
+    Licensed under the MIT License
+    https://github.com/FreeRTOS/FreeRTOS-Kernel
+
+  Apache NuttX
+    Copyright (C) The Apache Software Foundation
+    Licensed under the Apache License, Version 2.0
+    https://nuttx.apache.org/
+
+  Zephyr Project
+    Copyright (C) The Zephyr Project Contributors
+    Licensed under the Apache License, Version 2.0
+    https://www.zephyrproject.org/
+
+  LVGL
+    Copyright (C) 2021 LVGL Kft
+    Licensed under the MIT License
+    https://lvgl.io/
+
+  LZ4 (bundled within LVGL)
+    Copyright (C) 2011-2020 Yann Collet
+    Licensed under the BSD 2-Clause License
+    https://lz4.github.io/lz4/
+
+  CMSIS-5
+    Copyright (C) 2009-2020 Arm Limited
+    Licensed under the Apache License, Version 2.0
+    https://github.com/ARM-software/CMSIS_5
+
+  CMSIS-DSP
+    Copyright (C) 2010-2021 Arm Limited
+    Licensed under the Apache License, Version 2.0
+    https://github.com/ARM-software/CMSIS-DSP
+
+  CMocka
+    Copyright (C) The CMocka Contributors
+    Licensed under the Apache License, Version 2.0
+    https://cmocka.org/
+
+================================================================================
+
+Vendored third-party files included in the repository:
+
+  boards/stm32f746g-discovery/freertos/src/heap_4.c
+    Copyright (C) 2016 Real Time Engineers Ltd.
+    Originally licensed under GPL v2 with FreeRTOS exception (MIT since 2018)
+    Part of the FreeRTOS distribution
+
+  boards/stm32f746g-discovery/freertos/src/FreeRTOS-openocd.c
+    FreeRTOS OpenOCD thread awareness helper
+    Part of the FreeRTOS community contributions
+
+  boards/stm32f746g-discovery/freertos/src/stm32f7/startup_stm32f746xx.s
+    Copyright (C) 2015 STMicroelectronics
+    Licensed under the BSD 3-Clause License
+
+  boards/stm32f746g-discovery/freertos/src/stm32f7/system_stm32f7xx.c
+    Copyright (C) 2016 STMicroelectronics
+    Licensed under the BSD 3-Clause License
+
+  boards/stm32f746g-discovery/freertos/src/stm32f7/fatfs/sd_diskio.c
+    Copyright (C) 2016 STMicroelectronics
+    Licensed under the BSD 3-Clause License
+
+  boards/stm32f746g-discovery/freertos/inc/ffconf.h
+    Copyright (C) 2015 ChaN
+    Part of FatFs - FAT file system module (R0.11)

@@ -1,0 +1,8 @@
+mainmenu "oveRTOS Configuration"
+
+source "output/kconfig/apps/Config.in"
+source "config/Config.in.rtos"
+source "config/Config.in.hardware"
+source "config/Config.in.modules"
+source "config/Config.in.debug"
+source "config/Config.in.toolchain"

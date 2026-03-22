@@ -1,0 +1,86 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This file is part of oveRTOS.
+
+"""QEMU launch and display viewer."""
+
+import os
+import subprocess
+import sys
+
+from .workspace import Workspace
+
+
+def cmd_run(args):
+    """CLI entry point for 'ove run'."""
+    ws = Workspace()
+    ws.require_config()
+
+    rtos = ws.rtos
+    if not rtos:
+        print("Error: no RTOS selected in .config")
+        sys.exit(1)
+
+    firmware = os.path.join(ws.images_dir, "firmware.elf")
+    if rtos == "posix":
+        posix_bin = os.path.join(ws.images_dir, "ove_posix")
+        if not os.path.isfile(posix_bin):
+            print("Error: POSIX binary not found. Run 'ove build' first.")
+            sys.exit(1)
+        extra = args.extra if hasattr(args, "extra") else []
+        os.execv(posix_bin, [posix_bin] + extra)
+
+    # QEMU or hardware
+    qemu_script = os.path.join(ws.board_dir, "qemu-run.sh")
+    if os.path.isfile(qemu_script):
+        if not os.path.isfile(firmware):
+            print("Error: firmware.elf not found. Run 'ove build' first.")
+            sys.exit(1)
+        cmd = [qemu_script, firmware]
+        if hasattr(args, "headless") and args.headless:
+            cmd.append("--headless")
+        if hasattr(args, "extra"):
+            cmd.extend(args.extra)
+        os.execv(qemu_script, cmd)
+    else:
+        print(f"Error: no run method for board '{ws.board_name}' "
+              f"with RTOS '{rtos}'")
+        print("Use 'ove flash' for hardware targets.")
+        sys.exit(1)
+
+
+def cmd_flash(args):
+    """CLI entry point for 'ove flash'."""
+    ws = Workspace()
+    ws.require_config()
+
+    rtos = ws.rtos
+    firmware = os.path.join(ws.images_dir, "firmware.elf")
+
+    if rtos == "posix":
+        print("POSIX backend doesn't need flashing. Use 'ove run'.")
+        sys.exit(1)
+
+    if rtos == "zephyr":
+        west = os.path.join(ws.venv_dir, "bin", "west")
+        env = ws.toolchain_env()
+        zephyr_ws = os.path.join(ws.ws_dl_dir, "zephyr-workspace", "zephyr")
+        if os.path.isdir(zephyr_ws):
+            env["ZEPHYR_BASE"] = zephyr_ws
+        fw_build = os.path.join(ws.build_dir, "firmware")
+        print("=== Flashing Zephyr firmware ===")
+        subprocess.run(
+            [west, "flash", "-d", fw_build, "--runner", "openocd"],
+            env=env)
+        return
+
+    # FreeRTOS or NuttX: use board flash.sh
+    flash_sh = os.path.join(ws.board_dir, rtos, "flash.sh")
+    if os.path.isfile(flash_sh):
+        print(f"=== Flashing {rtos} firmware ===")
+        os.execv(flash_sh, [flash_sh, firmware])
+    else:
+        print(f"Error: flash.sh not found for {rtos}")
+        sys.exit(1)

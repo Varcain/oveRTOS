@@ -1,0 +1,24 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config EXTERNAL_OVE_APP
+	tristate "oveRTOS Application"
+	default n
+
+if EXTERNAL_OVE_APP
+
+config EXTERNAL_OVE_APP_PROGNAME
+	string "Program name"
+	default "ove_app"
+
+config EXTERNAL_OVE_APP_PRIORITY
+	int "Task priority"
+	default 100
+
+config EXTERNAL_OVE_APP_STACKSIZE
+	int "Stack size"
+	default 8192
+
+endif
