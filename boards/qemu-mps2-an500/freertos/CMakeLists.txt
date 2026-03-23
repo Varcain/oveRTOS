@@ -36,6 +36,12 @@ ove_add_stub_backends(BSP GPIO AUDIO CONSOLE TIME WATCHDOG SHELL NVS FS)
 # BOARD backend excluded — qemu_board.c provides the implementation directly
 ove_exclude_backends(BOARD)
 
+# When audio is enabled, replace the stub with the QEMU semihosting driver
+if(OVE_AUDIO)
+    ove_exclude_backends(AUDIO)
+    ove_add_board_sources(../src/qemu_audio.c)
+endif()
+
 # LVGL library
 ove_build_lvgl()
 

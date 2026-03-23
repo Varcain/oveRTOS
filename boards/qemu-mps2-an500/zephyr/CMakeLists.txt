@@ -39,6 +39,13 @@ list(APPEND DTS_ROOT "${OVE_BOARD_DIR}")
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_firmware)
 
+# Replace Zephyr audio backend with QEMU semihosting audio driver
+if(OVE_AUDIO)
+    list(FILTER OVE_BACKEND_SOURCES EXCLUDE REGEX "_audio\\.c$")
+    list(APPEND OVE_BACKEND_SOURCES
+         "${OVE_BOARD_DIR}/../src/qemu_audio.c")
+endif()
+
 target_sources(app PRIVATE
     ${OVE_BOARD_DIR}/main.c
 
@@ -81,6 +88,7 @@ target_include_directories(app PRIVATE
     ${OVE_DIR}/bindings/cpp
     ${OVE_DIR}/backends/zephyr/include
     ${OVE_DIR}/backends/common
+    ${OVE_BOARD_DIR}/../src
 )
 
 # Redirect malloc/free to k_malloc/k_free so allocations go through
