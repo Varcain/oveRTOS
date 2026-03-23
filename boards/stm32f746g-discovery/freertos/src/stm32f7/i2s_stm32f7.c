@@ -13,7 +13,6 @@
 #include "i2s_stm32f7.h"
 #include "stm32746g_discovery_audio.h"
 #include "stm32f7xx_hal.h"
-#include "app_conf.h"
 #include "serial_wrapper.h"
 #include "board_desc.h"
 
@@ -22,7 +21,7 @@
 /* ========================================================================= */
 
 /** Half-buffer size matches DSP processing block size */
-#define HALF_BUFFER_SIZE (DSP_BUFFER_SIZE)
+#define HALF_BUFFER_SIZE (OVE_AUDIO_I2S_BUFFER_SAMPLES)
 
 /** Total buffer size for double-buffering (ping-pong) */
 #define FULL_BUFFER_SIZE (HALF_BUFFER_SIZE * 2)

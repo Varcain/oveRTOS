@@ -53,12 +53,14 @@ QEMU_ARGS=(
 )
 
 VIEWER_PID=""
+AUDIO_PATH="/dev/shm/ove-audio"
 cleanup() {
     if [ -n "${VIEWER_PID}" ]; then
         kill "${VIEWER_PID}" 2>/dev/null || true
         sleep 0.2 2>/dev/null || true
         wait "${VIEWER_PID}" 2>/dev/null || true
     fi
+    rm -f "${AUDIO_PATH}"
 }
 trap cleanup EXIT
 
@@ -67,6 +69,10 @@ if [ "${HEADLESS}" -eq 0 ]; then
 
     : > "${FB_PATH}"
     truncate -s 512K "${FB_PATH}"
+
+    # Audio shared-memory ringbuffer (header 64B + 2x 128KB rings)
+    : > "${AUDIO_PATH}"
+    truncate -s 262208 "${AUDIO_PATH}"
 
     QEMU_ARGS+=(
         -semihosting-config "enable=on,target=native,arg=${FB_PATH}"

@@ -14,7 +14,7 @@
 #include <zephyr/audio/codec.h>
 #include <zephyr/sys/printk.h>
 #include <string.h>
-#include "app_conf.h"
+#include "board_desc.h"
 
 /* I2S device tree nodes */
 #if DT_NODE_EXISTS(DT_NODELABEL(i2s_rxtx))
@@ -33,7 +33,7 @@
 #if HAVE_I2S_NODES
 
 #define BYTES_PER_SAMPLE   sizeof(int16_t)
-#define BLOCK_SIZE         (BYTES_PER_SAMPLE * DSP_BUFFER_SIZE)
+#define BLOCK_SIZE         (BYTES_PER_SAMPLE * OVE_AUDIO_I2S_BUFFER_SAMPLES)
 #define SLAB_BLOCK_SIZE    ((BLOCK_SIZE + 31) & ~31)
 #define DEFAULT_INITIAL_BLOCKS  4
 #define DEFAULT_BLOCK_COUNT     (DEFAULT_INITIAL_BLOCKS + 4)
@@ -117,7 +117,7 @@ static bool configure_i2s_streams(void)
 	config.channels = 1;
 	config.format = I2S_FMT_DATA_FORMAT_I2S;
 	config.options = I2S_OPT_BIT_CLK_MASTER | I2S_OPT_FRAME_CLK_MASTER;
-	config.frame_clk_freq = DSP_RATE;
+	config.frame_clk_freq = OVE_AUDIO_I2S_SAMPLE_RATE;
 	config.mem_slab = &audio_slab;
 	config.block_size = BLOCK_SIZE;
 	config.timeout = I2S_TIMEOUT;
@@ -242,7 +242,7 @@ int ove_audio_init(const struct ove_audio_config *cfg,
 	audio_cfg.dai_cfg.i2s.channels = 1;
 	audio_cfg.dai_cfg.i2s.format = I2S_FMT_DATA_FORMAT_I2S;
 	audio_cfg.dai_cfg.i2s.options = I2S_OPT_FRAME_CLK_MASTER;
-	audio_cfg.dai_cfg.i2s.frame_clk_freq = DSP_RATE;
+	audio_cfg.dai_cfg.i2s.frame_clk_freq = OVE_AUDIO_I2S_SAMPLE_RATE;
 	audio_cfg.dai_cfg.i2s.mem_slab = &audio_slab;
 	audio_cfg.dai_cfg.i2s.block_size = BLOCK_SIZE;
 	audio_codec_configure(codec_dev, &audio_cfg);

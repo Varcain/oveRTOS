@@ -20,6 +20,7 @@
 #define SH_SYS_OPEN   0x01
 #define SH_SYS_CLOSE  0x02
 #define SH_SYS_WRITE  0x05
+#define SH_SYS_READ   0x06
 #define SH_SYS_SEEK   0x0A
 
 static inline uint32_t sh_call(uint32_t op, void *arg)
@@ -45,6 +46,16 @@ static inline int sh_close(int fd)
 	uint32_t args[1];
 	args[0] = (uint32_t)fd;
 	return (int)sh_call(SH_SYS_CLOSE, args);
+}
+
+/* Read len bytes. Returns 0 on full success, >0 = bytes NOT read. */
+static inline int sh_read(int fd, void *buf, size_t len)
+{
+	uint32_t args[3];
+	args[0] = (uint32_t)fd;
+	args[1] = (uint32_t)(uintptr_t)buf;
+	args[2] = (uint32_t)len;
+	return (int)sh_call(SH_SYS_READ, args);
 }
 
 /* Write len bytes. Returns 0 on full success, >0 = bytes NOT written. */

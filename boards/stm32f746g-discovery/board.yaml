@@ -30,7 +30,7 @@ audio:
   i2s:
     sample_rate: 44100
     bit_depth: 16
-    channels: 2
+    channels: 1
     buffer_samples: 512
   codec:
     type: WM8994

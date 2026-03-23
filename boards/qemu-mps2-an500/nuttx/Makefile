@@ -39,7 +39,13 @@ MAINSRC = main.c
 # Backend sources from generated config
 -include $(OVE_GEN_DIR)/ove_sources.mk
 
+# When audio is enabled, replace NuttX audio backend with QEMU semihosting driver
+ifeq ($(CONFIG_OVE_AUDIO),y)
+CSRCS = $(filter-out %_audio.c,$(OVE_BACKEND_SRCS))
+CSRCS += $(QEMU_SRC_DIR)/qemu_audio.c
+else
 CSRCS = $(OVE_BACKEND_SRCS)
+endif
 CSRCS += $(QEMU_SRC_DIR)/lv_port_disp_nuttx.c
 
 # Application sources (generated from app.yaml by 'ove configure')
