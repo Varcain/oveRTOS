@@ -1,0 +1,442 @@
+name: Build All Defconfigs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: Host POSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential libsdl2-dev libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build all host defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/host -name '*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "host: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All host configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: host-build-logs
+          path: output/host/
+          retention-days: 7
+
+  qemu-freertos:
+    name: QEMU FreeRTOS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+
+      - name: Build all qemu-freertos defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/qemu -name 'qemu_freertos_*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "qemu-freertos: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All qemu-freertos configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-freertos-build-logs
+          path: output/qemu/freertos/
+          retention-days: 7
+
+  qemu-nuttx:
+    name: QEMU NuttX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            gperf genromfs xxd libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+
+      - name: Build all qemu-nuttx defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/qemu -name 'qemu_nuttx_*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "qemu-nuttx: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All qemu-nuttx configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-nuttx-build-logs
+          path: output/qemu/nuttx/
+          retention-days: 7
+
+  qemu-zephyr:
+    name: QEMU Zephyr
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential ninja-build \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file libclang-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Zephyr SDK
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
+          tar xf zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz -C $HOME
+          $HOME/zephyr-sdk-0.17.0/setup.sh -t arm-zephyr-eabi -c
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import re; m=re.search(r'ZEPHYR_DEFAULT_REV\s*=\s*\"([0-9a-f]+)\"', open('config/ove-cli/ove/constants.py').read()); print(m.group(1))")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-alldefconfigs-qemu-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Build all qemu-zephyr defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/qemu -name 'qemu_zephyr_*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "qemu-zephyr: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All qemu-zephyr configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: qemu-zephyr-build-logs
+          path: output/qemu/zephyr/
+          retention-days: 7
+
+  stm32f746-freertos:
+    name: STM32F746 FreeRTOS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+
+      - name: Build all stm32f746-freertos defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/stm32f746 -name 'stm32f746_freertos_*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "stm32f746-freertos: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All stm32f746-freertos configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: stm32f746-freertos-build-logs
+          path: output/stm32f746/freertos/
+          retention-days: 7
+
+  stm32f746-nuttx:
+    name: STM32F746 NuttX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            gperf genromfs xxd libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+
+      - name: Build all stm32f746-nuttx defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/stm32f746 -name 'stm32f746_nuttx_*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "stm32f746-nuttx: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All stm32f746-nuttx configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: stm32f746-nuttx-build-logs
+          path: output/stm32f746/nuttx/
+          retention-days: 7
+
+  stm32f746-zephyr:
+    name: STM32F746 Zephyr
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential ninja-build \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file libclang-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Zephyr SDK
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
+          tar xf zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz -C $HOME
+          $HOME/zephyr-sdk-0.17.0/setup.sh -t arm-zephyr-eabi -c
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import re; m=re.search(r'ZEPHYR_DEFAULT_REV\s*=\s*\"([0-9a-f]+)\"', open('config/ove-cli/ove/constants.py').read()); print(m.group(1))")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-alldefconfigs-stm32f746-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Build all stm32f746-zephyr defconfigs
+        run: |
+          FAILED=""
+          CONFIGS=$(find defconfigs/stm32f746 -name 'stm32f746_zephyr_*_defconfig' -type f | sort)
+          TOTAL=$(echo "$CONFIGS" | wc -l)
+          CURRENT=0
+          for cfg in $CONFIGS; do
+            NAME=$(basename $cfg)
+            CURRENT=$((CURRENT + 1))
+            echo "============================================================"
+            echo "[$CURRENT/$TOTAL] Building $NAME"
+            echo "============================================================"
+            if make $NAME && make; then
+              echo "[$CURRENT/$TOTAL] $NAME: OK"
+            else
+              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
+              FAILED="$FAILED $NAME"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "stm32f746-zephyr: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All stm32f746-zephyr configurations built successfully"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: stm32f746-zephyr-build-logs
+          path: output/stm32f746/zephyr/
+          retention-days: 7
