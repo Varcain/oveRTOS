@@ -149,6 +149,23 @@ function(ove_build_zig_lib TARGET)
         endif()
     endif()
 
+    # Native host multiarch includes (Ubuntu/Debian: /usr/include/x86_64-linux-gnu)
+    if(ZIG_IS_NATIVE AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+        execute_process(
+            COMMAND ${CMAKE_C_COMPILER} -print-multiarch
+            OUTPUT_VARIABLE _MULTIARCH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE _MULTIARCH_RES
+        )
+        if(_MULTIARCH_RES EQUAL 0 AND _MULTIARCH)
+            set(_MULTIARCH_INC "/usr/include/${_MULTIARCH}")
+            if(EXISTS "${_MULTIARCH_INC}")
+                list(APPEND ZIG_INCLUDE_ARGS "-I${_MULTIARCH_INC}")
+            endif()
+        endif()
+    endif()
+
     # ── Inherit include directories from the CMake target ───────────────
     # The board CMakeLists.txt sets include_directories() globally.
     # Also pick up target-specific includes.

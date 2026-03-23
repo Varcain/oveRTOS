@@ -26,7 +26,7 @@ OVE     := $(VENV_DIR)/bin/ove
 REQUIREMENTS := $(OVE_DIR)/config/requirements.txt
 CLI_DIR     := $(OVE_DIR)/config/ove-cli
 
-export PATH := $(VENV_DIR)/bin:$(PATH)
+export PATH := $(OVE_DIR)/config/scripts:$(VENV_DIR)/bin:$(PATH)
 
 # ── Python venv + CLI installation ─────────────────────────────────────────
 
