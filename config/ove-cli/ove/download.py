@@ -432,6 +432,15 @@ def ensure_rust_target(config, dl_dir):
     target = get_str(config, "CONFIG_OVE_RUST_TARGET",
                      "thumbv7em-none-eabihf")
 
+    # Install both soft-float and hard-float variants — at download time
+    # CONFIG_ARCH_FPU isn't known yet (NuttX config is generated later),
+    # and ove_rust.mk picks the actual target based on FPU config.
+    targets = [target]
+    if target == "thumbv7em-none-eabihf":
+        targets.append("thumbv7em-none-eabi")
+    elif target == "thumbv7em-none-eabi":
+        targets.append("thumbv7em-none-eabihf")
+
     if get_bool(config, "CONFIG_OVE_RUST_TOOLCHAIN_CUSTOM"):
         custom_path = get_str(config,
                               "CONFIG_OVE_RUST_TOOLCHAIN_CUSTOM_PATH")
@@ -455,18 +464,18 @@ def ensure_rust_target(config, dl_dir):
     if get_bool(config, "CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM"):
         rustup = shutil.which("rustup")
         if rustup:
-            logger.debug(f"Rust: adding target {target}...")
+            logger.debug(f"Rust: adding targets {targets}...")
             ret = subprocess.run(
-                [rustup, "target", "add", target],
+                [rustup, "target", "add"] + targets,
                 capture_output=True, text=True)
             if ret.returncode != 0:
                 logger.error(f"rustup target add failed: {ret.stderr}")
                 return False
-            logger.debug(f"Rust: target {target} ready")
+            logger.debug(f"Rust: targets {targets} ready")
         else:
             logger.warning("rustup not found, cannot add target "
                   "automatically")
-            logger.debug(f"Ensure target '{target}' is installed.")
+            logger.debug(f"Ensure targets {targets} are installed.")
 
     return True
 
