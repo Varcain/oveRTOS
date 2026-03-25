@@ -105,7 +105,9 @@ config OVE_ZERO_HEAP
     bool "Zero-heap build (disable all dynamic allocation)"
     default n
     help
-      When enabled, _create()/_destroy() APIs are removed from all modules.
-      Use _init()/_deinit() with caller-provided storage instead.
+      When enabled, _create()/_destroy() become macros that auto-generate
+      per-call-site static storage instead of using the heap.  No dynamic
+      allocation occurs.  The _init()/_deinit() APIs with caller-supplied
+      storage remain available for explicit control (loops, arrays, structs).
 
 endmenu

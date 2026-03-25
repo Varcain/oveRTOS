@@ -46,6 +46,7 @@ struct ove_thread {
 	struct k_thread thread;
 	k_thread_stack_t *stack;
 	size_t stack_size;
+	int heap_stack;
 };
 
 typedef struct ove_thread ove_thread_storage_t;
@@ -138,6 +139,12 @@ typedef struct ove_dir  ove_dir_storage_t;
  */
 #define OVE_THREAD_STACK_DEFINE_(name, size) \
 	K_THREAD_STACK_DEFINE(name, size)
+
+/* On Zephyr, block-scope stacks can't use K_THREAD_STACK_DEFINE (needs
+ * file scope for __stackmem section).  Set to NULL so ove_thread_init()
+ * allocates a proper stack via k_thread_stack_alloc(). */
+#define OVE_THREAD_STACK_BLOCK_STATIC_(name, size) \
+	static uint8_t *name = NULL
 
 #define OVE_THREAD_STACK_MEMBER_(name, size) \
 	K_KERNEL_STACK_MEMBER(name, size)

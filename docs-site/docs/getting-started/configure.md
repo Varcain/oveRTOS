@@ -57,7 +57,7 @@ Under `oveRTOS Modules`, each subsystem can be toggled independently. Two module
 
 ### Zero-Heap Mode
 
-At the bottom of `oveRTOS Modules`, enable `Zero-heap build` (`OVE_ZERO_HEAP`) to strip all dynamic `_create()`/`_destroy()` APIs from every module. Use `_init()`/`_deinit()` with caller-supplied static buffers instead.
+At the bottom of `oveRTOS Modules`, enable `Zero-heap build` (`OVE_ZERO_HEAP`) to switch `_create()`/`_destroy()` from heap-backed functions to GCC statement-expression macros that auto-generate per-call-site static storage. Application code using `_create()`/`_destroy()` continues to work unchanged. Use `_init()`/`_deinit()` when you need explicit storage control (arrays, loops, structs). In zero-heap mode, size parameters must be compile-time constants and each `_create()` call site produces one static object.
 
 ### Backend-Specific Submenus
 

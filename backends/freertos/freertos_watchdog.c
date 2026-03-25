@@ -6,17 +6,20 @@
  * This file is part of oveRTOS.
  */
 
-#include "ove/watchdog.h"
-#include "ove/storage.h"
-#include "ove_backend_common.h"
+/* Define the real watchdog struct before storage.h provides its stub. */
 #include "stm32f7xx_hal.h"
-#include "FreeRTOS.h"
 
-/* Board-specific struct definition — IWDG handle requires stm32f7xx_hal.h */
 struct ove_watchdog {
 	IWDG_HandleTypeDef hiwdg;
 	uint32_t timeout_ms;
 };
+
+#define OVE_WATCHDOG_DEFINED
+
+#include "ove/watchdog.h"
+#include "ove/storage.h"
+#include "ove_backend_common.h"
+#include "FreeRTOS.h"
 
 static void compute_prescaler_reload(uint32_t timeout_ms,
 				     uint32_t *prescaler,

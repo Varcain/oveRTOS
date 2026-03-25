@@ -17,10 +17,12 @@
  * available, enabling efficient framing without spin-waiting.
  *
  * Two allocation strategies are supported:
- * - **Static storage** via @ref ove_stream_init / @ref ove_stream_deinit —
- *   no heap required.
- * - **Heap** via @ref ove_stream_create / @ref ove_stream_destroy —
- *   available only when @c OVE_HEAP_STREAM is defined.
+ * - @c _create() / @c _destroy() — unified API that works in both heap and
+ *   zero-heap mode.  In zero-heap mode these are macros that generate
+ *   per-call-site static storage; the buffer size must be a compile-time
+ *   constant.
+ * - @c _init() / @c _deinit() — explicit storage control with caller-supplied
+ *   buffers.  Use when creating objects in loops, arrays, or structs.
  *
  * @note Requires @c CONFIG_OVE_STREAM.
  * @{
@@ -98,10 +100,15 @@ int    ove_stream_create(ove_stream_t *stream, size_t size,
  */
 void   ove_stream_destroy(ove_stream_t stream);
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_STREAM — zero-heap mode */
-#define ove_stream_create(...) \
-	_Static_assert(0, "ove_stream_create() requires heap. Use ove_stream_init() in zero-heap mode.")
-#define ove_stream_destroy(...) \
-	_Static_assert(0, "ove_stream_destroy() requires heap. Use ove_stream_deinit() in zero-heap mode.")
+
+/* Unified macro — size must be a compile-time constant. */
+#define ove_stream_create(pstream, size, trigger) \
+	({ static ove_stream_storage_t _ove_stor_; \
+	   static uint8_t _ove_buf_[(size) + 1]; \
+	   ove_stream_init((pstream), &_ove_stor_, _ove_buf_, \
+			   (size), (trigger)); })
+#define ove_stream_destroy(stream) ove_stream_deinit(stream)
+
 #endif /* OVE_HEAP_STREAM */
 
 /**

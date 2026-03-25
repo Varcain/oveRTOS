@@ -39,6 +39,11 @@ static TaskHandle_t audio_task_handle;
 static volatile buffer_phase_t current_rx_phase;
 static volatile buffer_phase_t current_tx_phase;
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+static StaticTask_t audio_task_tcb;
+static StackType_t audio_task_stack[DEFAULT_AUDIO_STACK];
+#endif
+
 /* ========================================================================= */
 /* ISR CALLBACKS                                                             */
 /* ========================================================================= */
@@ -148,15 +153,23 @@ int ove_audio_init(const struct ove_audio_config *cfg,
 
 int ove_audio_start(void)
 {
+#ifdef CONFIG_OVE_ZERO_HEAP
+	audio_task_handle = xTaskCreateStatic(
+		audio_task_fn, "Audio", DEFAULT_AUDIO_STACK,
+		NULL, g_thread_priority, audio_task_stack, &audio_task_tcb);
+	if (audio_task_handle == NULL) {
+		return OVE_ERR_NO_MEMORY;
+	}
+#else
 	BaseType_t ret;
 
-	/* Create the audio processing task */
 	ret = xTaskCreate(audio_task_fn, "Audio",
 			  g_thread_stack_size, NULL,
 			  g_thread_priority, &audio_task_handle);
 	if (ret != pdPASS) {
 		return OVE_ERR_NO_MEMORY;
 	}
+#endif
 
 	i2s_startStream();
 	return OVE_OK;

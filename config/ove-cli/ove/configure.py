@@ -450,6 +450,27 @@ def generate_app_sources(ws):
             print(f"App YAML validation error: {e.message}")
             sys.exit(1)
 
+    # Resolve platform/board-specific sources
+    platform_sources = app.pop("platform_sources", None)
+    board_sources = app.pop("board_sources", None)
+    if platform_sources or board_sources:
+        rtos = ws.rtos or "posix"
+        board = ws.board_name or ""
+        # Board-specific sources take priority over platform-specific
+        if board_sources and board in board_sources:
+            extra = board_sources[board]
+        elif platform_sources:
+            if rtos in platform_sources:
+                extra = platform_sources[rtos]
+            elif "default" in platform_sources:
+                extra = platform_sources["default"]
+            else:
+                extra = []
+        else:
+            extra = []
+        app.setdefault("sources", [])
+        app["sources"] = list(app["sources"]) + extra
+
     # Normalize defaults
     if app.get("lang") == "rust":
         app.setdefault("rust", {})

@@ -39,10 +39,9 @@ static void thread_create_destroy_run(void *ctx)
 		.entry = dummy_thread,
 		.arg = NULL,
 		.priority = OVE_PRIO_LOW,
-		.stack_size = 1024,
 	};
 
-	ove_thread_create(&th, &desc);
+	ove_thread_create(&th, 1024, &desc);
 	ove_thread_destroy(th);
 }
 #endif
@@ -100,7 +99,7 @@ static void ctx_switch_setup(void *ctx)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_init(&bench_th, &pong_th_storage, &desc);
 #else
-	ove_thread_create(&bench_th, &desc);
+	ove_thread_create_(&bench_th, &desc);
 #endif
 }
 

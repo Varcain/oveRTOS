@@ -46,7 +46,7 @@ int ove_thread_init(ove_thread_t *handle,
 	size_t stack_sz;
 
 	if (handle == NULL || storage == NULL || desc == NULL ||
-	    desc->entry == NULL || desc->stack == NULL) {
+	    desc->entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -55,7 +55,19 @@ int ove_thread_init(ove_thread_t *handle,
 		stack_sz = 8192;
 	}
 
-	storage->stack = (k_thread_stack_t *)desc->stack;
+	/* Use desc->stack if provided (e.g. from K_THREAD_STACK_DEFINE via
+	 * OVE_THREAD_DEFINE_STATIC).  Otherwise allocate via
+	 * k_thread_stack_alloc for proper MPU/cache placement. */
+	if (desc->stack != NULL) {
+		storage->stack = (k_thread_stack_t *)desc->stack;
+		storage->heap_stack = 0;
+	} else {
+		storage->stack = k_thread_stack_alloc(stack_sz, 0);
+		if (storage->stack == NULL) {
+			return OVE_ERR_NO_MEMORY;
+		}
+		storage->heap_stack = 1;
+	}
 	storage->stack_size = stack_sz;
 
 	tid = k_thread_create(&storage->thread, storage->stack, stack_sz,
@@ -81,14 +93,18 @@ int ove_thread_deinit(ove_thread_t handle)
 	if (k_thread_join(&info->thread, K_FOREVER) != 0) {
 		k_thread_abort(&info->thread);
 	}
+	if (info->heap_stack && info->stack != NULL) {
+		k_thread_stack_free(info->stack);
+		info->stack = NULL;
+	}
 	return OVE_OK;
 }
 
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create(ove_thread_t *handle,
-			const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle,
+			   const struct ove_thread_desc *desc)
 {
 	struct ove_thread *info;
 	k_thread_stack_t *stack;

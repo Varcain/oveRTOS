@@ -104,7 +104,7 @@ static void queue_throughput_setup(void *ctx)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_init(&producer_th, &producer_th_storage, &desc);
 #else
-	ove_thread_create(&producer_th, &desc);
+	ove_thread_create_(&producer_th, &desc);
 #endif
 }
 

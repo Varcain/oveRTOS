@@ -51,6 +51,22 @@
     "kconfig": {
       "type": "string",
       "description": "Raw Kconfig content for app-specific configuration options."
+    },
+    "platform_sources": {
+      "type": "object",
+      "description": "RTOS-specific source overrides. Keys are RTOS names (posix, freertos, nuttx, zephyr) or 'default'. Values are arrays of source paths.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "board_sources": {
+      "type": "object",
+      "description": "Board-specific source overrides (takes priority over platform_sources). Keys are board names. Values are arrays of source paths.",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
     }
   },
   "additionalProperties": false,

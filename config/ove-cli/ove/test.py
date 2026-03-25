@@ -28,6 +28,57 @@ class TestResults:
     passed: int = 0
     failed: int = 0
     skipped: int = 0
+    failed_names: list = None
+
+    def __post_init__(self):
+        if self.failed_names is None:
+            self.failed_names = []
+
+
+def _parse_cmocka(stdout: str) -> TestResults:
+    """Parse CMocka test output and return aggregated results.
+
+    Sums all ``[  PASSED  ] N test(s).`` / ``[  FAILED  ] N test(s).``
+    lines and collects individual failed test names from
+    ``[  FAILED  ] test_name`` lines.
+    """
+    passed = failed = 0
+    failed_names = []
+    for line in stdout.splitlines():
+        m = re.match(r'\[\s+PASSED\s+\]\s+(\d+)\s+test', line)
+        if m:
+            passed += int(m.group(1))
+            continue
+        m = re.match(r'\[\s+FAILED\s+\]\s+(\d+)\s+test', line)
+        if m:
+            failed += int(m.group(1))
+            continue
+        # Individual failure: "[  FAILED  ] test_name"  (no digit after])
+        m = re.match(r'\[\s+FAILED\s+\]\s+([A-Za-z_]\w*)', line)
+        if m:
+            failed_names.append(m.group(1))
+    return TestResults(suite="", passed=passed, failed=failed,
+                       failed_names=failed_names)
+
+
+def _run_test_binary(cmd, suite, **kwargs) -> TestResults:
+    """Run a test binary, print its output, and parse CMocka results."""
+    result = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, **kwargs)
+    output = result.stdout or ""
+    print(output, end="")
+    parsed = _parse_cmocka(output)
+    parsed.suite = suite
+    if parsed.passed == 0 and parsed.failed == 0:
+        # Binary produced no CMocka output — treat exit code as pass/fail
+        if result.returncode == 0:
+            parsed.passed = 1
+        else:
+            parsed.failed = 1
+    if result.returncode != 0 and parsed.failed == 0:
+        parsed.failed = 1
+    return parsed
 
 
 def _venv_env(ove_dir, base_env=None):
@@ -94,8 +145,7 @@ def test_stub(ove_dir, output_dir):
     logger.info("Building stub tests")
     _cmake_build(os.path.join(ove_dir, "tests"), build)
     logger.info("Running stub tests")
-    run([os.path.join(build, "ove_test_stub")])
-    return TestResults(suite="stub", passed=1, failed=0)
+    return _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
 
 
 def test_cpp(ove_dir, output_dir):
@@ -104,8 +154,7 @@ def test_cpp(ove_dir, output_dir):
     logger.info("Building C++ tests")
     _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build)
     logger.info("Running C++ tests")
-    run([os.path.join(build, "ove_test_cpp")])
-    return TestResults(suite="cpp", passed=1, failed=0)
+    return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp")
 
 
 def test_rust(ove_dir, output_dir):
@@ -118,6 +167,7 @@ def test_rust(ove_dir, output_dir):
 
     logger.info("Building Rust tests")
     rust_dir = os.path.join(ove_dir, "tests", "rust")
+    target_dir = os.path.join(output_dir, "test", "rust")
     env = dict(os.environ)
     env.update({
         "OVE_DIR": ove_dir,
@@ -132,11 +182,12 @@ def test_rust(ove_dir, output_dir):
                                            "stub", "lvgl"),
         "LVGL_PARENT_PATH": os.path.join(ove_dir, "tests", "backends",
                                           "stub"),
+        "CARGO_TARGET_DIR": target_dir,
     })
     run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
     logger.info("Running Rust tests")
-    run([os.path.join(rust_dir, "target", "release", "ove-tests")])
-    return TestResults(suite="rust", passed=1, failed=0)
+    return _run_test_binary(
+        [os.path.join(target_dir, "release", "ove-tests")], "rust")
 
 
 def _find_zig(ove_dir):
@@ -208,8 +259,7 @@ def test_zig(ove_dir, output_dir):
     run(cmd, cwd=zig_test_dir)
 
     logger.info("Running Zig tests")
-    run([zig_exe])
-    return TestResults(suite="zig", passed=1, failed=0)
+    return _run_test_binary([zig_exe], "zig")
 
 
 def test_nuttx(ove_dir, output_dir):
@@ -316,16 +366,12 @@ def test_nuttx(ove_dir, output_dir):
         stdout = e.stdout.decode() if e.stdout else ""
     print(stdout, end="")
 
-    # Parse CMocka output: "[  PASSED  ] N test(s)." and "[  FAILED  ] N test(s)."
-    passed_match = re.search(r'\[\s+PASSED\s+\]\s+(\d+)\s+test', stdout)
-    failed_match = re.search(r'\[\s+FAILED\s+\]\s+(\d+)\s+test', stdout)
-    passed = int(passed_match.group(1)) if passed_match else 0
-    failed = int(failed_match.group(1)) if failed_match else 0
-
-    if failed > 0 or passed == 0:
+    parsed = _parse_cmocka(stdout)
+    parsed.suite = "nuttx-sim"
+    if parsed.failed > 0 or parsed.passed == 0:
         logger.error("NuttX sim tests had failures")
-        return TestResults(suite="nuttx-sim", passed=passed, failed=max(failed, 1))
-    return TestResults(suite="nuttx-sim", passed=passed, failed=0)
+        parsed.failed = max(parsed.failed, 1)
+    return parsed
 
 
 def test_zephyr(ove_dir, output_dir):
@@ -367,8 +413,8 @@ def test_zephyr(ove_dir, output_dir):
     ], env=env)
 
     logger.info("Running Zephyr native_sim tests")
-    run([os.path.join(build, "zephyr", "zephyr.exe")])
-    return TestResults(suite="zephyr-native-sim", passed=1, failed=0)
+    return _run_test_binary(
+        [os.path.join(build, "zephyr", "zephyr.exe")], "zephyr-native-sim")
 
 
 def test_qemu_freertos(ove_dir, output_dir):
@@ -382,9 +428,9 @@ def test_qemu_freertos(ove_dir, output_dir):
     logger.info("Running FreeRTOS QEMU ARM tests")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
-    run([qemu_run, os.path.join(build, "ove_test_freertos_qemu"),
-          "--headless", "--timeout", "45"])
-    return TestResults(suite="qemu-freertos", passed=1, failed=0)
+    return _run_test_binary(
+        [qemu_run, os.path.join(build, "ove_test_freertos_qemu"),
+         "--headless", "--timeout", "45"], "qemu-freertos")
 
 
 def test_qemu_freertos_zeroheap(ove_dir, output_dir):
@@ -398,9 +444,9 @@ def test_qemu_freertos_zeroheap(ove_dir, output_dir):
     logger.info("Running FreeRTOS QEMU ARM tests (zero-heap)")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
-    run([qemu_run, os.path.join(build, "ove_test_freertos_qemu_zeroheap"),
-          "--headless", "--timeout", "45"])
-    return TestResults(suite="qemu-freertos-zeroheap", passed=1, failed=0)
+    return _run_test_binary(
+        [qemu_run, os.path.join(build, "ove_test_freertos_qemu_zeroheap"),
+         "--headless", "--timeout", "45"], "qemu-freertos-zeroheap")
 
 
 def test_qemu_nuttx(ove_dir, output_dir):
@@ -503,9 +549,9 @@ def test_qemu_nuttx(ove_dir, output_dir):
     logger.info("Running NuttX QEMU ARM tests")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
-    run([qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
-          "--timeout", "45"])
-    return TestResults(suite="qemu-nuttx", passed=1, failed=0)
+    return _run_test_binary(
+        [qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
+         "--timeout", "45"], "qemu-nuttx")
 
 
 def test_qemu_zephyr(ove_dir, output_dir):
@@ -548,9 +594,9 @@ def test_qemu_zephyr(ove_dir, output_dir):
     logger.info("Running Zephyr QEMU ARM tests")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
-    run([qemu_run, os.path.join(build, "zephyr", "zephyr.elf"),
-          "--headless", "--timeout", "120"])
-    return TestResults(suite="qemu-zephyr", passed=1, failed=0)
+    return _run_test_binary(
+        [qemu_run, os.path.join(build, "zephyr", "zephyr.elf"),
+         "--headless", "--timeout", "120"], "qemu-zephyr")
 
 
 def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
@@ -652,9 +698,9 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     logger.info("Running NuttX QEMU ARM tests (zero-heap)")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
-    run([qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
-          "--timeout", "45"])
-    return TestResults(suite="qemu-nuttx-zeroheap", passed=1, failed=0)
+    return _run_test_binary(
+        [qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
+         "--timeout", "45"], "qemu-nuttx-zeroheap")
 
 
 def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
@@ -697,9 +743,9 @@ def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
     logger.info("Running Zephyr QEMU ARM tests (zero-heap)")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
-    run([qemu_run, os.path.join(build, "zephyr", "zephyr.elf"),
-          "--headless", "--timeout", "120"])
-    return TestResults(suite="qemu-zephyr-zeroheap", passed=1, failed=0)
+    return _run_test_binary(
+        [qemu_run, os.path.join(build, "zephyr", "zephyr.elf"),
+         "--headless", "--timeout", "120"], "qemu-zephyr-zeroheap")
 
 
 # Test name -> function mapping
@@ -724,10 +770,33 @@ QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
                "qemu-nuttx-zeroheap", "qemu-zephyr", "qemu-zephyr-zeroheap"]
 
 
+def _save_terminal():
+    """Save terminal settings; returns state or None if not a tty."""
+    try:
+        import termios
+        fd = sys.stdin.fileno()
+        return termios.tcgetattr(fd)
+    except Exception:
+        return None
+
+
+def _restore_terminal(state):
+    """Restore terminal settings saved by _save_terminal."""
+    if state is None:
+        return
+    try:
+        import termios
+        fd = sys.stdin.fileno()
+        termios.tcsetattr(fd, termios.TCSADRAIN, state)
+    except Exception:
+        pass
+
+
 def cmd_test(args):
     """CLI entry point for 'ove test [name]'."""
     ove_dir = find_ove_dir()
     output_dir = os.path.join(ove_dir, "output")
+    term_state = _save_terminal()
 
     names = args.names if args.names else SIM_TESTS
 
@@ -745,17 +814,20 @@ def cmd_test(args):
 
     results = []
     any_failed = False
-    for name in expanded:
-        func = TEST_TARGETS.get(name)
-        if not func:
-            logger.error(f"unknown test target '{name}'")
-            print(f"Available: {', '.join(sorted(TEST_TARGETS.keys()))}")
-            sys.exit(1)
-        result = func(ove_dir, output_dir)
-        if result:
-            results.append(result)
-            if result.failed > 0:
-                any_failed = True
+    try:
+        for name in expanded:
+            func = TEST_TARGETS.get(name)
+            if not func:
+                logger.error(f"unknown test target '{name}'")
+                print(f"Available: {', '.join(sorted(TEST_TARGETS.keys()))}")
+                sys.exit(1)
+            result = func(ove_dir, output_dir)
+            if result:
+                results.append(result)
+                if result.failed > 0:
+                    any_failed = True
+    finally:
+        _restore_terminal(term_state)
 
     # Print summary table
     if results:
@@ -772,4 +844,17 @@ def cmd_test(args):
         print(f"{'TOTAL':<25} {total_p:>8} {total_f:>8} {total_s:>8}")
 
     if any_failed:
+        # Print failed test names grouped by suite
+        all_failures = []
+        for r in results:
+            if r.failed_names:
+                all_failures.extend(
+                    f"  {r.suite}: {name}" for name in r.failed_names)
+            elif r.failed > 0 and not r.failed_names:
+                all_failures.append(f"  {r.suite}: ({r.failed} failure(s))")
+        if all_failures:
+            print()
+            print("Failed tests:")
+            for line in all_failures:
+                print(line)
         sys.exit(1)

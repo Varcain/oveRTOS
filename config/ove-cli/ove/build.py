@@ -308,6 +308,10 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
         f.write(f"OVE_DIR := {ws.ove_dir}\n")
         f.write(f"OVE_GEN_DIR := {ws.gen_dir}\n")
         f.write(f"OVE_APP_DIR := {ws.app_dir}\n")
+        for mod in ("AUDIO", "FS", "SHELL", "NVS", "WATCHDOG"):
+            key = f"CONFIG_OVE_{mod}"
+            if get_bool(ws.config, key):
+                f.write(f"{key} := y\n")
 
     # NuttX board config mapping
     nuttx_board_cfg = NUTTX_BOARD_CONFIGS.get(ws.board_name)
@@ -406,6 +410,11 @@ def build_nuttx(ws):
                                    "rust_target")
     if os.path.isdir(rust_target_dir):
         shutil.rmtree(rust_target_dir)
+    # Remove stale .gcno coverage files so the second pass doesn't mismatch
+    for root, _dirs, files in os.walk(apps_build):
+        for fname in files:
+            if fname.endswith(".gcno"):
+                os.unlink(os.path.join(root, fname))
     for stamp in [os.path.join(apps_build, ".context"),
                   os.path.join(apps_build, ".built"),
                   os.path.join(nuttx_build, ".context")]:
@@ -438,7 +447,7 @@ def build_nuttx(ws):
 
     # Clean stray .o files NuttX places next to source files when CSRCS
     # contains absolute paths (NuttX Application.mk quirk).
-    for search_dir in [ws.ove_dir]:
+    for search_dir in [ws.ove_dir, ws.app_dir]:
         for root, dirs, files in os.walk(search_dir):
             # Skip output/, dl/, .venv/ directories
             if any(skip in root for skip in ["/output/", "/dl/", "/.venv/"]):

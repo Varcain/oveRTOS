@@ -34,7 +34,7 @@ audio:
     buffer_samples: 512
   codec:
     type: WM8994
-    i2c_addr: "0x1A"
+    i2c_addr: "0x34"
 
 display:
   width: 480

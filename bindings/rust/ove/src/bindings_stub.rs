@@ -210,7 +210,7 @@ unsafe extern "C" {
         desc:    *const ove_thread_desc,
     ) -> i32;
     pub fn ove_thread_deinit(handle: ove_thread_t) -> i32;
-    pub fn ove_thread_create(
+    pub fn ove_thread_create_(
         handle: *mut ove_thread_t,
         desc:   *const ove_thread_desc,
     ) -> i32;

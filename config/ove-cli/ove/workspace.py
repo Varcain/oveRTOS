@@ -6,6 +6,7 @@
 
 """Workspace resolution, .config parsing, and directory management."""
 
+import json
 import os
 
 
@@ -166,8 +167,20 @@ class Workspace:
     @property
     def app_dir(self):
         name = self.app_name
-        if name:
-            return os.path.join(self.ove_dir, "apps", name)
+        if not name:
+            return None
+        # Check in-tree first
+        in_tree = os.path.join(self.ove_dir, "apps", name)
+        if os.path.isdir(in_tree):
+            return in_tree
+        # Check app_paths.json for external apps
+        paths_file = os.path.join(self.ove_dir, "output", "kconfig",
+                                  "app_paths.json")
+        if os.path.isfile(paths_file):
+            with open(paths_file) as f:
+                app_paths = json.load(f)
+            if name in app_paths:
+                return app_paths[name]
         return None
 
     @property

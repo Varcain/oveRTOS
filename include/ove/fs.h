@@ -147,55 +147,35 @@ int  ove_fs_closedir_deinit(ove_dir_t dir);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS and @c OVE_HEAP_FS.
  */
-#ifdef OVE_HEAP_FS
+/**
+ * @brief Open a file (heap or backend-managed allocation).
+ *
+ * Opens the file at @p path with the given @p flags. The returned handle
+ * must be closed with @ref ove_fs_close when no longer needed.
+ * In zero-heap mode, the backend uses a static pool instead of malloc.
+ *
+ * @param[out] file   Receives the opened file handle.
+ * @param[in]  path   Absolute path of the file to open.
+ * @param[in]  flags  Combination of @c OVE_FS_O_* flags.
+ * @return OVE_OK on success, negative error code on failure.
+ * @note Requires @c CONFIG_OVE_FS.
+ */
 int  ove_fs_open(ove_file_t *file, const char *path, int flags);
 
 /**
- * @brief Close a heap-allocated file handle.
- *
- * Flushes any pending writes, releases the RTOS file resources, and frees
- * the heap allocation. Must only be called on handles from @ref ove_fs_open.
- *
- * @param[in] file  File handle returned by @ref ove_fs_open.
- * @return OVE_OK on success, negative error code on failure.
- * @note Requires @c CONFIG_OVE_FS and @c OVE_HEAP_FS.
+ * @brief Close a file handle returned by @ref ove_fs_open.
  */
 int  ove_fs_close(ove_file_t file);
 
 /**
- * @brief Open a directory, allocating the handle from the heap.
- *
- * Opens the directory at @p path. The returned handle must be closed with
- * @ref ove_fs_closedir when no longer needed.
- *
- * @param[out] dir   Receives the opened directory handle.
- * @param[in]  path  Absolute path of the directory to open.
- * @return OVE_OK on success, negative error code on failure.
- * @note Requires @c CONFIG_OVE_FS and @c OVE_HEAP_FS.
+ * @brief Open a directory (heap or backend-managed allocation).
  */
 int  ove_fs_opendir(ove_dir_t *dir, const char *path);
 
 /**
- * @brief Close a heap-allocated directory handle.
- *
- * Releases the RTOS directory resources and frees the heap allocation. Must
- * only be called on handles from @ref ove_fs_opendir.
- *
- * @param[in] dir  Directory handle returned by @ref ove_fs_opendir.
- * @return OVE_OK on success, negative error code on failure.
- * @note Requires @c CONFIG_OVE_FS and @c OVE_HEAP_FS.
+ * @brief Close a directory handle returned by @ref ove_fs_opendir.
  */
 int  ove_fs_closedir(ove_dir_t dir);
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_FS — zero-heap mode */
-#define ove_fs_open(...) \
-	_Static_assert(0, "ove_fs_open() requires heap. Use ove_fs_open_init() in zero-heap mode.")
-#define ove_fs_close(...) \
-	_Static_assert(0, "ove_fs_close() requires heap. Use ove_fs_close_deinit() in zero-heap mode.")
-#define ove_fs_opendir(...) \
-	_Static_assert(0, "ove_fs_opendir() requires heap. Use ove_fs_opendir_init() in zero-heap mode.")
-#define ove_fs_closedir(...) \
-	_Static_assert(0, "ove_fs_closedir() requires heap. Use ove_fs_closedir_deinit() in zero-heap mode.")
-#endif /* OVE_HEAP_FS */
 
 /**
  * @brief Mount a storage device at a virtual path prefix.

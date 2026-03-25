@@ -60,14 +60,17 @@ Because the choice is entirely preprocessor-driven, the compiler sees exactly on
 
 ## Heap Mode vs Zero-Heap Mode
 
-Every oveRTOS object type has two sets of lifecycle functions:
+The `_create()` / `_destroy()` functions are the **primary API** and work in both heap and zero-heap modes. In heap mode they allocate from the RTOS heap as normal. In zero-heap mode they become GCC statement-expression macros that auto-generate per-call-site static storage and delegate to `_init()`, so application code does not need to change.
 
-| Mode | Create | Destroy | Memory |
-|---|---|---|---|
-| **Heap mode** (default) | `ove_thread_create(...)` | `ove_thread_destroy(t)` | Allocated from RTOS heap |
-| **Zero-heap mode** | `ove_thread_init(buf, ...)` | `ove_thread_deinit(buf)` | Caller-supplied static buffer |
+| Function | Heap mode (default) | Zero-heap mode (`CONFIG_OVE_ZERO_HEAP=y`) |
+|---|---|---|
+| `_create()` / `_destroy()` | Allocate/free from RTOS heap | Macro-generated static storage per call site |
+| `_init()` / `_deinit()` | Caller-supplied buffer | Caller-supplied buffer |
+| `OVE_*_DEFINE_STATIC()` | File-scope static declaration + auto-init | File-scope static declaration + auto-init |
 
-Zero-heap mode is enabled with `CONFIG_OVE_ZERO_HEAP=y` in Kconfig. When set, the `_create()` and `_destroy()` family of functions are compiled out entirely. This is suitable for safety-critical or resource-constrained targets where dynamic allocation must be provably absent.
+`_init()` / `_deinit()` remain available for **explicit storage control** — use them when you need objects in arrays, loops, or structs. `OVE_*_DEFINE_STATIC()` macros remain the convenient way to declare auto-initialized objects at file scope.
+
+In zero-heap mode, size parameters (queue `item_size`/`max_items`, stream buffer size, thread `stack_sz`) must be compile-time constants, and each `_create()` call site produces exactly one static object — do not call `_create()` in a loop when you need multiple distinct objects.
 
 ## Backend Model
 

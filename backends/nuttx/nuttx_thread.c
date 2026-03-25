@@ -45,6 +45,7 @@ static void tls_set_current(struct ove_thread *t)
 /* Store first thread for join in start_scheduler */
 static struct ove_thread *first_thread;
 
+
 /* SIGUSR1 handler installed once */
 static volatile int sig_handler_installed;
 
@@ -154,15 +155,13 @@ int ove_thread_init(ove_thread_t *handle,
 			ove_thread_storage_t *storage,
 			const struct ove_thread_desc *desc)
 {
-	int ret;
-
 	if (handle == NULL || storage == NULL || desc == NULL ||
 	    desc->entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
 	memset(storage, 0, sizeof(*storage));
-	ret = thread_start(storage, desc);
+	int ret = thread_start(storage, desc);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -204,8 +203,8 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create(ove_thread_t *handle,
-			       const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle,
+				const struct ove_thread_desc *desc)
 {
 	struct ove_thread *t;
 	int ret;
@@ -269,7 +268,9 @@ void ove_thread_yield(void)
 void ove_thread_start_scheduler(void)
 {
 #ifdef __NuttX__
-	/* NuttX scheduler is already running. Block until first thread exits. */
+	/* Block until first thread exits (keeps init task alive).
+	 * Threads were already created by ove_thread_init() via task_create;
+	 * they begin running once this task yields or blocks. */
 	if (first_thread != NULL) {
 		nxsem_wait_uninterruptible(&first_thread->done_sem);
 	}

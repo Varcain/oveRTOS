@@ -95,7 +95,7 @@ impl Thread {
             stack: core::ptr::null_mut(),
         };
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_thread_create(&mut handle, &desc) };
+        let rc = unsafe { bindings::ove_thread_create_(&mut handle, &desc) };
         Error::from_code(rc)?;
         Ok(Self { handle, owned: true })
     }
@@ -129,7 +129,7 @@ impl Thread {
             stack: core::ptr::null_mut(),
         };
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_thread_create(&mut handle, &desc) };
+        let rc = unsafe { bindings::ove_thread_create_(&mut handle, &desc) };
         Error::from_code(rc)?;
         Ok(Self { handle, owned: true })
     }

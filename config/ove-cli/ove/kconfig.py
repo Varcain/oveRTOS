@@ -13,6 +13,22 @@ from .appgen import generate_app_kconfig
 from .workspace import Workspace, find_ove_dir
 
 
+def _find_external_app_for_defconfig(defconfig_path):
+    """If defconfig_path lives under an external app, return that app dir."""
+    ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
+    if not ext_apps_env:
+        return None
+    defconfig_abs = os.path.abspath(defconfig_path)
+    for d in ext_apps_env.split(":"):
+        d = d.strip()
+        if not d:
+            continue
+        app_abs = os.path.abspath(d)
+        if defconfig_abs.startswith(app_abs + os.sep):
+            return app_abs
+    return None
+
+
 def cmd_menuconfig(args):
     """Run Kconfig menuconfig TUI."""
     ove_dir = find_ove_dir()
@@ -55,12 +71,24 @@ def cmd_defconfig(args):
     if not name.endswith("_defconfig"):
         name = name + "_defconfig"
 
-    # Find the defconfig file
-    defconfig_dir = os.path.join(ove_dir, "defconfigs")
+    # Find the defconfig file — search in-tree first, then external apps
+    search_dirs = [os.path.join(ove_dir, "defconfigs")]
+    ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
+    if ext_apps_env:
+        for d in ext_apps_env.split(":"):
+            d = d.strip()
+            if d:
+                ext_defconfigs = os.path.join(os.path.abspath(d), "defconfigs")
+                if os.path.isdir(ext_defconfigs):
+                    search_dirs.append(ext_defconfigs)
+
     defconfig_path = None
-    for root, dirs, files in os.walk(defconfig_dir):
-        if name in files:
-            defconfig_path = os.path.join(root, name)
+    for defconfig_dir in search_dirs:
+        for root, dirs, files in os.walk(defconfig_dir):
+            if name in files:
+                defconfig_path = os.path.join(root, name)
+                break
+        if defconfig_path:
             break
 
     if not defconfig_path:
@@ -84,11 +112,20 @@ def cmd_defconfig(args):
         sys.exit(1)
 
     output_dir = os.path.join(ove_dir, "output")
-    ws_dir = os.path.join(output_dir, ws_board, ws_rtos, ws_app)
 
-    rel_defconfig = os.path.relpath(defconfig_path, ove_dir)
-    print(f"Loading defconfig: {rel_defconfig}")
-    print(f"  Workspace: output/{ws_board}/{ws_rtos}/{ws_app}/")
+    # Determine if this defconfig comes from an external app.
+    # If so, place the workspace under the external app's output/ dir.
+    ext_app_dir = _find_external_app_for_defconfig(defconfig_path)
+    if ext_app_dir:
+        ws_output = os.path.join(ext_app_dir, "output")
+        ws_dir = os.path.join(ws_output, ws_board, ws_rtos, ws_app)
+        print(f"Loading defconfig: {defconfig_path}")
+        print(f"  Workspace: {ws_dir}/")
+    else:
+        ws_dir = os.path.join(output_dir, ws_board, ws_rtos, ws_app)
+        rel_defconfig = os.path.relpath(defconfig_path, ove_dir)
+        print(f"Loading defconfig: {rel_defconfig}")
+        print(f"  Workspace: output/{ws_board}/{ws_rtos}/{ws_app}/")
 
     os.makedirs(ws_dir, exist_ok=True)
 
@@ -114,11 +151,16 @@ def cmd_defconfig(args):
     os.symlink(ws_config, config_link)
 
     # Symlink output/current -> workspace
+    os.makedirs(output_dir, exist_ok=True)
     current_link = os.path.join(output_dir, "current")
-    rel_ws = os.path.join(ws_board, ws_rtos, ws_app)
+    if ext_app_dir:
+        # External app: use absolute path since workspace is outside output/
+        target = ws_dir
+    else:
+        target = os.path.join(ws_board, ws_rtos, ws_app)
     if os.path.islink(current_link):
         os.unlink(current_link)
-    os.symlink(rel_ws, current_link)
+    os.symlink(target, current_link)
 
     # Link toolchain if available
     tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
@@ -134,7 +176,7 @@ def cmd_defconfig(args):
         if os.path.isdir(os.path.join(output_dir, "toolchains", tc_name)):
             os.symlink(rel, tc_link)
 
-    print(f"Active workspace: output/{ws_board}/{ws_rtos}/{ws_app}/")
+    print(f"Active workspace: {ws_dir}/")
 
 
 def cmd_savedefconfig(args):

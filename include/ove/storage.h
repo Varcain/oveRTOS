@@ -38,8 +38,10 @@
  *     (heap mode).
  *
  * @note In zero-heap mode (@c CONFIG_OVE_ZERO_HEAP) the @c OVE_HEAP_*
- *       gates are not defined, disabling heap-only @c _create()/@c _destroy()
- *       APIs.
+ *       gates are not defined, so no heap-backed @c _create()/@c _destroy()
+ *       functions are compiled.  However, each module provides macros with
+ *       the same @c _create()/@c _destroy() names that generate per-call-site
+ *       static storage, giving a unified API in both modes.
  * @{
  */
 
@@ -149,12 +151,15 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
 /**
  * @defgroup ove_storage_heap_gates Heap Gates
  * @ingroup ove_storage
- * @brief Preprocessor flags indicating which heap allocation APIs are available.
+ * @brief Preprocessor flags indicating which heap-backed @c _create()/@c _destroy()
+ *        functions are compiled.
  *
  * When @c CONFIG_OVE_ZERO_HEAP is not defined these macros are set to 1,
- * enabling the corresponding @c _create()/@c _destroy() APIs.  When zero-heap
- * is active none of these macros are defined and only the @c _init()/@c _deinit()
- * APIs backed by caller-supplied storage are available.
+ * enabling the corresponding heap-backed @c _create()/@c _destroy() function
+ * definitions.  When zero-heap is active none of these macros are defined;
+ * instead, each module header provides macros with the same
+ * @c _create()/@c _destroy() names that auto-generate per-call-site static
+ * storage, so application code can use the unified API in either mode.
  * @{
  */
 #if !defined(CONFIG_OVE_ZERO_HEAP)
@@ -232,6 +237,15 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
  */
 #define OVE_THREAD_STACK_DEFINE_(name, size) \
 	static uint8_t name[(size)]
+#endif
+
+/* Block-scope static variant — safe inside ({...}) statement expressions.
+ * OVE_THREAD_STACK_DEFINE_ may use linker section attributes (e.g. Zephyr
+ * __stackmem) that only work at file scope.  This variant always uses plain
+ * 'static' with alignment, suitable for the ove_thread_create() macro. */
+#ifndef OVE_THREAD_STACK_BLOCK_STATIC_
+#define OVE_THREAD_STACK_BLOCK_STATIC_(name, size) \
+	static uint8_t __attribute__((aligned(8))) name[(size)]
 #endif
 
 /* Class-member variant (no 'static') — for C++ class-embedded stacks.
@@ -624,7 +638,7 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
 			.priority = (prio), \
 			.stack_size = (stack_sz), \
 		}; \
-		int _err = ove_thread_create(&hname, &_desc); \
+		int _err = ove_thread_create_(&hname, &_desc); \
 	OVE_DEFINE_STATIC_CTOR_END_(hname)
 
 /**

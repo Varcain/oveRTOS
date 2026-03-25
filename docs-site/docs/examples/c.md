@@ -16,9 +16,21 @@ A periodic software timer fires every 200 ms to read the shared counter and upda
 
 ## Heap vs. zero-heap
 
-The example handles both allocation modes with a compile-time switch.
+The `_create()` / `_destroy()` API works in both heap and zero-heap modes, so the core application code is the same regardless of `CONFIG_OVE_ZERO_HEAP`:
 
-**Zero-heap mode** — objects are declared as static storage at file scope using the `OVE_*_DEFINE_STATIC()` macros:
+```c
+ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
+ove_mutex_create(&value_mutex);
+ove_timer_create(&ui_timer, ui_timer_cb, NULL, 200, 0);
+ove_thread_create(&prod_thread, 4096,
+                  &(ove_thread_desc_t){ .entry = producer_thread,
+                                        .priority = OVE_PRIO_NORMAL,
+                                        .name = "producer" });
+```
+
+In heap mode, `_create()` allocates from the RTOS heap. In zero-heap mode, each `_create()` call site becomes a GCC statement-expression macro that auto-generates static storage. Size parameters (queue sizes, thread `stack_sz`) must be compile-time constants in zero-heap mode, and each call site produces one static object (do not call in a loop for multiple objects).
+
+For **file-scope auto-initialized declarations**, the `OVE_*_DEFINE_STATIC()` macros remain available as an alternative:
 
 ```c
 OVE_QUEUE_DEFINE_STATIC(counter_queue, sizeof(uint32_t), 8);
@@ -28,13 +40,7 @@ OVE_THREAD_DEFINE_STATIC(prod_thread, 4096, producer_thread, NULL,
                           OVE_PRIO_NORMAL, "producer");
 ```
 
-**Heap mode** (default) — objects are created dynamically in `ove_main`:
-
-```c
-ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
-ove_mutex_create(&value_mutex);
-ove_timer_create(&ui_timer, ui_timer_cb, NULL, 200, 0);
-```
+For **explicit storage control** (objects in arrays, loops, or structs), use `_init()` / `_deinit()` directly.
 
 ## Producer thread
 

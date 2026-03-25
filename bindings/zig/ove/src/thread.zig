@@ -92,7 +92,7 @@ pub const Thread = struct {
         };
 
         var h: c.ove_thread_t = null;
-        if (comptime @hasDecl(c, "ove_thread_create")) {
+        if (comptime @hasDecl(c, "ove_thread_create_")) {
             const desc: c.struct_ove_thread_desc = .{
                 .name = name,
                 .entry = &Trampoline.invoke,
@@ -101,7 +101,7 @@ pub const Thread = struct {
                 .stack_size = stack_size,
                 .stack = null,
             };
-            try err.fromCode(c.ove_thread_create(&h, &desc));
+            try err.fromCode(c.ove_thread_create_(&h, &desc));
         } else {
             const desc: c.struct_ove_thread_desc = .{
                 .name = name,
@@ -135,7 +135,7 @@ pub const Thread = struct {
         };
 
         var h: c.ove_thread_t = null;
-        if (comptime @hasDecl(c, "ove_thread_create")) {
+        if (comptime @hasDecl(c, "ove_thread_create_")) {
             const desc: c.struct_ove_thread_desc = .{
                 .name = name,
                 .entry = &Trampoline.invoke,
@@ -144,7 +144,7 @@ pub const Thread = struct {
                 .stack_size = stack_size,
                 .stack = null,
             };
-            try err.fromCode(c.ove_thread_create(&h, &desc));
+            try err.fromCode(c.ove_thread_create_(&h, &desc));
         } else {
             const desc: c.struct_ove_thread_desc = .{
                 .name = name,
