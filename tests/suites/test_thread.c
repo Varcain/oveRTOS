@@ -191,7 +191,7 @@ static void test_create_null_handle(void **state)
 		.name = "t11", .entry = entry_set_flag,
 		.stack_size = 4096, .priority = OVE_PRIO_NORMAL,
 	};
-	assert_int_equal(ove_thread_create(NULL, &desc),
+	assert_int_equal(ove_thread_create_(NULL, &desc),
 			 OVE_ERR_INVALID_PARAM);
 }
 
@@ -200,7 +200,7 @@ static void test_create_null_desc(void **state)
 {
 	(void)state;
 	ove_thread_t h = NULL;
-	assert_int_equal(ove_thread_create(&h, NULL),
+	assert_int_equal(ove_thread_create_(&h, NULL),
 			 OVE_ERR_INVALID_PARAM);
 }
 
@@ -213,7 +213,7 @@ static void test_create_null_entry(void **state)
 		.name = "t13", .entry = NULL,
 		.stack_size = 4096, .priority = OVE_PRIO_NORMAL,
 	};
-	assert_int_equal(ove_thread_create(&h, &desc),
+	assert_int_equal(ove_thread_create_(&h, &desc),
 			 OVE_ERR_INVALID_PARAM);
 }
 #endif

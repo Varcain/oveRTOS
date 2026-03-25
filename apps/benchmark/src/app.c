@@ -87,10 +87,9 @@ void ove_main(void)
 		.entry = benchmark_runner,
 		.arg = NULL,
 		.priority = OVE_PRIO_NORMAL,
-		.stack_size = 8192,
 	};
 
-	int ret = ove_thread_create(&handle, &bench_desc);
+	int ret = ove_thread_create(&handle, 8192, &bench_desc);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to create benchmark thread: %d", ret);
 		return;

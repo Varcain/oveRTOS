@@ -283,7 +283,7 @@ int ove_audio_start(void)
 	if (ove_thread_init(&audio_state.thread, &audio_th_storage,
 			    &desc) != OVE_OK) {
 #else
-	if (ove_thread_create(&audio_state.thread, &desc) != OVE_OK) {
+	if (ove_thread_create_(&audio_state.thread, &desc) != OVE_OK) {
 #endif
 		audio_state.running = 0;
 		return OVE_ERR_NO_MEMORY;

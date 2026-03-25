@@ -6,21 +6,12 @@
  * This file is part of oveRTOS.
  */
 
-#include "ove/fs.h"
-#include "ove/storage.h"
-#include "ove/log.h"
-#include "ove_backend_common.h"
+/* Define the real FS structs before storage.h provides its stubs. */
 #include "FreeRTOS.h"
 #include "ff.h"
 #include "ff_gen_drv.h"
 #include "sd_diskio.h"
-#include <string.h>
 
-/* Static path buffer for FatFS driver linking */
-static char fatfs_path[16];
-static FATFS fatfs;
-
-/* Wrapper structs to hold FatFS handles behind opaque pointers */
 struct ove_file {
 	FIL fil;
 	FILINFO fno;  /* cached info from open */
@@ -29,6 +20,18 @@ struct ove_file {
 struct ove_dir {
 	DIR dir;
 };
+
+#define OVE_FS_DEFINED
+
+#include "ove/fs.h"
+#include "ove/storage.h"
+#include "ove/log.h"
+#include "ove_backend_common.h"
+#include <string.h>
+
+/* Static path buffer for FatFS driver linking */
+static char fatfs_path[16];
+static FATFS fatfs;
 
 int ove_fs_mount(const char *dev_path, const char *mount_point)
 {
@@ -200,6 +203,82 @@ int ove_fs_closedir(ove_dir_t dir)
 {
 	f_closedir(&dir->dir);
 	OVE_BACKEND_FREE(dir);
+	return OVE_OK;
+}
+#else /* zero-heap: use static pool */
+#define FS_POOL_FILES  4
+#define FS_POOL_DIRS   4
+static struct ove_file  file_pool[FS_POOL_FILES];
+static int              file_pool_used[FS_POOL_FILES];
+static struct ove_dir   dir_pool[FS_POOL_DIRS];
+static int              dir_pool_used[FS_POOL_DIRS];
+
+int ove_fs_open(ove_file_t *file, const char *path, int flags)
+{
+	BYTE mode = 0;
+	FRESULT fres;
+
+	if (flags & OVE_FS_O_READ)   mode |= FA_READ;
+	if (flags & OVE_FS_O_WRITE)  mode |= FA_WRITE;
+	if (flags & OVE_FS_O_CREATE) mode |= FA_CREATE_ALWAYS;
+	if (flags & OVE_FS_O_APPEND) mode |= FA_OPEN_APPEND;
+	if (mode == 0) mode = FA_READ;
+
+	for (int i = 0; i < FS_POOL_FILES; i++) {
+		if (!file_pool_used[i]) {
+			file_pool_used[i] = 1;
+			fres = f_open(&file_pool[i].fil, path, mode);
+			if (fres != FR_OK) {
+				file_pool_used[i] = 0;
+				return OVE_ERR_NOT_SUPPORTED;
+			}
+			*file = &file_pool[i];
+			return OVE_OK;
+		}
+	}
+	return OVE_ERR_NO_MEMORY;
+}
+
+int ove_fs_close(ove_file_t file)
+{
+	f_close(&file->fil);
+	for (int i = 0; i < FS_POOL_FILES; i++) {
+		if (&file_pool[i] == file) {
+			file_pool_used[i] = 0;
+			break;
+		}
+	}
+	return OVE_OK;
+}
+
+int ove_fs_opendir(ove_dir_t *dir, const char *path)
+{
+	FRESULT fres;
+
+	for (int i = 0; i < FS_POOL_DIRS; i++) {
+		if (!dir_pool_used[i]) {
+			dir_pool_used[i] = 1;
+			fres = f_opendir(&dir_pool[i].dir, path);
+			if (fres != FR_OK) {
+				dir_pool_used[i] = 0;
+				return OVE_ERR_NOT_SUPPORTED;
+			}
+			*dir = &dir_pool[i];
+			return OVE_OK;
+		}
+	}
+	return OVE_ERR_NO_MEMORY;
+}
+
+int ove_fs_closedir(ove_dir_t dir)
+{
+	f_closedir(&dir->dir);
+	for (int i = 0; i < FS_POOL_DIRS; i++) {
+		if (&dir_pool[i] == dir) {
+			dir_pool_used[i] = 0;
+			break;
+		}
+	}
 	return OVE_OK;
 }
 #endif /* OVE_HEAP_FS */

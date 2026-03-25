@@ -42,12 +42,14 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 
 ## Allocation strategies
 
-Every object-bearing module follows the same dual-allocation pattern:
+`_create()` / `_destroy()` are the **primary API** and work regardless of the `CONFIG_OVE_ZERO_HEAP` setting:
 
-- **Static (zero-heap)** — use `_init()` / `_deinit()` and supply your own storage. No heap allocation occurs. Required when `CONFIG_OVE_ZERO_HEAP` is set.
-- **Heap** — use `_create()` / `_destroy()`. Available when `CONFIG_OVE_ZERO_HEAP` is not set. The `OVE_HEAP_*` symbols gate each heap path individually.
+- **Heap mode** (default) — `_create()` allocates from the RTOS heap.
+- **Zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`) — `_create()` becomes a GCC statement-expression macro that auto-generates per-call-site static storage and calls `_init()`. Size parameters (queue `item_size`/`max_items`, stream size, thread `stack_sz`) must be compile-time constants, and each call site produces exactly one static object.
 
-The `OVE_*_DEFINE_STATIC()` macros (e.g. `OVE_QUEUE_DEFINE_STATIC`, `OVE_THREAD_DEFINE_STATIC`) combine storage declaration and init into a single declaration at file scope.
+`_init()` / `_deinit()` remain available for **explicit storage control** — use them when objects live in arrays, loops, or structs where per-call-site macro expansion is not appropriate.
+
+The `OVE_*_DEFINE_STATIC()` macros (e.g. `OVE_QUEUE_DEFINE_STATIC`, `OVE_THREAD_DEFINE_STATIC`) combine storage declaration and init into a single declaration at file scope, and work in both modes.
 
 ## Error codes
 

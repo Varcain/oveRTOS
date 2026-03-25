@@ -16,11 +16,12 @@
  *       static inline stub that returns @c OVE_ERR_NOT_SUPPORTED.
  *
  * Two allocation strategies are available:
- *  - **Static** (zero-heap): use ove_queue_init() / ove_queue_deinit() with
- *    caller-supplied storage and data buffer.
- *  - **Heap** (default): use ove_queue_create() / ove_queue_destroy(); only
- *    available when @c OVE_HEAP_QUEUE is defined (i.e. @c CONFIG_OVE_ZERO_HEAP
- *    is not set).
+ *  - @c _create() / @c _destroy() — unified API that works in both heap and
+ *    zero-heap mode.  In zero-heap mode these are macros that generate
+ *    per-call-site static storage; size parameters (item count, item size)
+ *    must be compile-time constants.
+ *  - @c _init() / @c _deinit() — explicit storage control with caller-supplied
+ *    buffers.  Use when creating objects in loops, arrays, or structs.
  * @{
  */
 
@@ -113,10 +114,15 @@ int  ove_queue_create(ove_queue_t *q, size_t item_size,
 void ove_queue_destroy(ove_queue_t q);
 
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_QUEUE — zero-heap mode */
-#define ove_queue_create(...) \
-	_Static_assert(0, "ove_queue_create() requires heap. Use ove_queue_init() in zero-heap mode.")
-#define ove_queue_destroy(...) \
-	_Static_assert(0, "ove_queue_destroy() requires heap. Use ove_queue_deinit() in zero-heap mode.")
+
+/* Unified macro — item_size and max_items must be compile-time constants. */
+#define ove_queue_create(pq, item_size, max_items) \
+	({ static ove_queue_storage_t _ove_stor_; \
+	   static uint8_t _ove_buf_[(item_size) * (max_items)]; \
+	   ove_queue_init((pq), &_ove_stor_, _ove_buf_, \
+			  (item_size), (max_items)); })
+#define ove_queue_destroy(q) ove_queue_deinit(q)
+
 #endif /* OVE_HEAP_QUEUE */
 
 /**

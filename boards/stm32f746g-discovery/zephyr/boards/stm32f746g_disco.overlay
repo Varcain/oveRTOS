@@ -33,9 +33,10 @@
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
 #include <dt-bindings/clock/stm32f7_sai_clock.h>
 
-/* Extend SRAM1 to include SRAM2 (contiguous: 256KB + 64KB = 320KB) */
+/* Extend SRAM to include SRAM2 (contiguous from 0x20010000: 256KB + 64KB).
+ * DTCM (0x20000000-0x2000FFFF) is a separate region — must not overlap. */
 &sram0 {
-	reg = <0x20000000 0x50000>;
+	reg = <0x20010000 0x40000>;
 };
 
 /* Define SAI2 Block A and B nodes (not yet in upstream Zephyr) */

@@ -73,8 +73,8 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create(ove_thread_t *handle,
-			  const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle,
+			   const struct ove_thread_desc *desc)
 {
 	if (handle == NULL || desc == NULL || desc->entry == NULL)
 		return OVE_ERR_INVALID_PARAM;

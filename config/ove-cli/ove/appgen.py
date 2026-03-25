@@ -6,6 +6,7 @@
 
 """App Kconfig generation — produces Config.in files from app.yaml descriptors."""
 
+import json
 import os
 import sys
 
@@ -20,34 +21,76 @@ except ImportError:
     Environment = None
 
 
+def _scan_app_dirs(dirs):
+    """Scan a list of directories for app.yaml files.
+
+    Each directory should contain an app.yaml directly (not subdirs).
+    Returns list of (name, path, data) tuples.
+    """
+    results = []
+    for d in dirs:
+        d = os.path.abspath(d)
+        app_yaml_path = os.path.join(d, "app.yaml")
+        if os.path.isfile(app_yaml_path):
+            with open(app_yaml_path) as f:
+                data = yaml.safe_load(f)
+            name = os.path.basename(d)
+            results.append((name, d, data))
+    return results
+
+
 def generate_app_kconfig(ove_dir):
-    """Scan apps/*/app.yaml and generate Kconfig files to output/kconfig/.
+    """Scan apps/*/app.yaml and external apps, generate Kconfig files.
 
     Must be called before kconfiglib parses Config.in, since the root
     Config.in sources output/kconfig/apps/Config.in.
+
+    External apps are discovered via the OVE_EXTERNAL_APPS environment
+    variable (colon-separated list of directories containing app.yaml).
     """
     if yaml is None:
         print("Warning: pyyaml not installed, skipping app Kconfig generation")
         return
 
     apps_dir = os.path.join(ove_dir, "apps")
-    if not os.path.isdir(apps_dir):
-        return
 
-    # Scan all app.yaml files
+    # Scan in-tree apps
     apps = []
-    for entry in sorted(os.listdir(apps_dir)):
-        app_yaml_path = os.path.join(apps_dir, entry, "app.yaml")
-        if os.path.isfile(app_yaml_path):
-            with open(app_yaml_path) as f:
-                data = yaml.safe_load(f)
-            data["name"] = entry
-            # Derive Kconfig symbol name: example_c -> EXAMPLE_C
-            data["config_name"] = entry.upper()
+    app_paths = {}  # name -> absolute path mapping
+    if os.path.isdir(apps_dir):
+        for entry in sorted(os.listdir(apps_dir)):
+            app_yaml_path = os.path.join(apps_dir, entry, "app.yaml")
+            if os.path.isfile(app_yaml_path):
+                with open(app_yaml_path) as f:
+                    data = yaml.safe_load(f)
+                data["name"] = entry
+                data["config_name"] = entry.upper()
+                apps.append(data)
+                app_paths[entry] = os.path.join(apps_dir, entry)
+
+    # Scan external apps from OVE_EXTERNAL_APPS env var
+    ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")
+    if ext_apps_env:
+        ext_dirs = [d.strip() for d in ext_apps_env.split(":")
+                    if d.strip()]
+        for name, path, data in _scan_app_dirs(ext_dirs):
+            if name in app_paths:
+                print(f"Warning: external app '{name}' shadows "
+                      f"in-tree app, skipping")
+                continue
+            data["name"] = name
+            data["config_name"] = name.upper()
             apps.append(data)
+            app_paths[name] = path
 
     if not apps:
         return
+
+    # Write app path mapping so workspace can resolve external apps
+    kconfig_base = os.path.join(ove_dir, "output", "kconfig")
+    os.makedirs(kconfig_base, exist_ok=True)
+    with open(os.path.join(kconfig_base, "app_paths.json"), "w") as f:
+        json.dump(app_paths, f, indent=2)
 
     # Ensure output directory
     kconfig_dir = os.path.join(ove_dir, "output", "kconfig", "apps")

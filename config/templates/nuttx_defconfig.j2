@@ -53,6 +53,11 @@ CONFIG_HAVE_CXXINITIALIZE=y
 # CONFIG_DEBUG_SCHED is not set
 {% endif %}
 
+{% if config.get("CONFIG_OVE_AUDIO") == True %}
+# Audio subsystem
+CONFIG_AUDIO=y
+{% endif %}
+
 {% if config.get("CONFIG_OVE_LVGL") == True %}
 # LVGL display support
 CONFIG_GRAPHICS_LVGL=y

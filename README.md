@@ -131,10 +131,23 @@ void ove_main(void)
 
 ## Zero-Heap Mode
 
-For memory-constrained or safety-critical systems, oveRTOS supports fully static allocation:
+For memory-constrained or safety-critical systems, oveRTOS supports fully static allocation.
+The `_create()`/`_destroy()` API works in both heap and zero-heap mode — no `#ifdef` guards needed:
 
 ```c
-/* Statically allocate all storage at file scope */
+ove_queue_t q;
+ove_mutex_t m;
+
+ove_queue_create(&q, sizeof(uint32_t), 8);   /* heap: malloc, zero-heap: static storage */
+ove_mutex_create(&m);
+/* ... */
+ove_mutex_destroy(m);
+ove_queue_destroy(q);
+```
+
+File-scope declarations with auto-init are also available via `OVE_*_DEFINE_STATIC()`:
+
+```c
 OVE_QUEUE_DEFINE_STATIC(my_queue, sizeof(uint32_t), 8);
 OVE_MUTEX_DEFINE_STATIC(my_mutex);
 OVE_THREAD_DEFINE_STATIC(my_thread, 4096, worker_fn, NULL, OVE_PRIO_NORMAL, "worker");

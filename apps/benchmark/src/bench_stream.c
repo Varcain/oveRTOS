@@ -113,7 +113,7 @@ static void stream_throughput_setup(void *ctx)
 	ove_thread_init(&stream_producer_th, &stream_producer_th_storage,
 			    &desc);
 #else
-	ove_thread_create(&stream_producer_th, &desc);
+	ove_thread_create_(&stream_producer_th, &desc);
 #endif
 }
 

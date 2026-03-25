@@ -112,7 +112,7 @@ static void mutex_contention_setup(void *ctx)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_init(&contention_th, &contention_th_storage, &desc);
 #else
-	ove_thread_create(&contention_th, &desc);
+	ove_thread_create_(&contention_th, &desc);
 #endif
 }
 
@@ -254,7 +254,7 @@ static void event_signal_wait_setup(void *ctx)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_init(&evt_th, &evt_th_storage, &desc);
 #else
-	ove_thread_create(&evt_th, &desc);
+	ove_thread_create_(&evt_th, &desc);
 #endif
 }
 
@@ -336,7 +336,7 @@ static void condvar_signal_wait_setup(void *ctx)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_init(&cv_th, &cv_th_storage, &desc);
 #else
-	ove_thread_create(&cv_th, &desc);
+	ove_thread_create_(&cv_th, &desc);
 #endif
 }
 

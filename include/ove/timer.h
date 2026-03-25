@@ -15,11 +15,11 @@
  *       static inline stub that returns @c OVE_ERR_NOT_SUPPORTED.
  *
  * Two allocation strategies are available:
- *  - **Static** (zero-heap): use ove_timer_init() / ove_timer_deinit() with
- *    caller-supplied storage.
- *  - **Heap** (default): use ove_timer_create() / ove_timer_destroy(); only
- *    available when @c OVE_HEAP_TIMER is defined (i.e. @c CONFIG_OVE_ZERO_HEAP
- *    is not set).
+ *  - @c _create() / @c _destroy() — unified API that works in both heap and
+ *    zero-heap mode.  In zero-heap mode these are macros that generate
+ *    per-call-site static storage.
+ *  - @c _init() / @c _deinit() — explicit storage control with caller-supplied
+ *    buffers.  Use when creating objects in loops, arrays, or structs.
  * @{
  */
 
@@ -130,10 +130,13 @@ int  ove_timer_create(ove_timer_t *timer, ove_timer_fn callback,
 void ove_timer_destroy(ove_timer_t timer);
 
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_TIMER — zero-heap mode */
-#define ove_timer_create(...) \
-	_Static_assert(0, "ove_timer_create() requires heap. Use ove_timer_init() in zero-heap mode.")
-#define ove_timer_destroy(...) \
-	_Static_assert(0, "ove_timer_destroy() requires heap. Use ove_timer_deinit() in zero-heap mode.")
+
+#define ove_timer_create(ptimer, callback, user_data, period_ms, one_shot) \
+	({ static ove_timer_storage_t _ove_stor_; \
+	   ove_timer_init((ptimer), &_ove_stor_, (callback), (user_data), \
+			  (period_ms), (one_shot)); })
+#define ove_timer_destroy(timer) ove_timer_deinit(timer)
+
 #endif /* OVE_HEAP_TIMER */
 
 /**

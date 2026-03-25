@@ -59,9 +59,13 @@ def _merge_nuttx_layers(ws):
         if os.path.isfile(board_overlay):
             apply_defconfig_overlay(merged, board_overlay)
 
-    # Layer 3: app overlay
+    # Layer 3: app overlay (board-specific takes priority over generic)
     if ws.app_dir:
-        app_overlay = os.path.join(ws.app_dir, "nuttx_defconfig")
+        board_specific = os.path.join(ws.app_dir, "nuttx",
+                                      ws.board_name + "_defconfig")
+        generic = os.path.join(ws.app_dir, "nuttx_defconfig")
+        app_overlay = board_specific if os.path.isfile(board_specific) \
+            else generic
         if os.path.isfile(app_overlay):
             apply_defconfig_overlay(merged, app_overlay)
 

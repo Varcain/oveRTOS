@@ -265,8 +265,8 @@ void ove_main(void)
 
 	for (unsigned int i = 0;
 	     i < sizeof(thread_descs) / sizeof(thread_descs[0]); i++) {
-		ret = ove_thread_create(&thread_handles[thread_idx],
-					    &thread_descs[i]);
+		ret = ove_thread_create_(&thread_handles[thread_idx],
+					     &thread_descs[i]);
 		if (ret != OVE_OK) {
 			OVE_LOG_ERR("Failed to create thread '%s': %d",
 					thread_descs[i].name, ret);

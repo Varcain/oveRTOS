@@ -16,9 +16,12 @@
  * and pending items may be cancelled before execution begins.
  *
  * Two allocation strategies are supported for the queue itself:
- * - **Static storage** via @ref ove_workqueue_init / @ref ove_workqueue_deinit.
- * - **Heap** via @ref ove_workqueue_create / @ref ove_workqueue_destroy —
- *   available only when @c OVE_HEAP_WORKQUEUE is defined.
+ * - @c _create() / @c _destroy() — unified API that works in both heap and
+ *   zero-heap mode.  In zero-heap mode these are macros that generate
+ *   per-call-site static storage; the stack size must be a compile-time
+ *   constant.
+ * - @c _init() / @c _deinit() — explicit storage control with caller-supplied
+ *   buffers.  Use when creating objects in loops, arrays, or structs.
  *
  * Work items similarly have static (@ref ove_work_init_static) and heap
  * (@ref ove_work_init / @ref ove_work_free) variants.
@@ -157,11 +160,16 @@ int  ove_workqueue_create(ove_workqueue_t *wq, const char *name,
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
  */
 void ove_workqueue_destroy(ove_workqueue_t wq);
-#else /* !OVE_HEAP_WORKQUEUE — zero-heap mode */
-#define ove_workqueue_create(...) \
-	_Static_assert(0, "ove_workqueue_create() requires heap. Use ove_workqueue_init() in zero-heap mode.")
-#define ove_workqueue_destroy(...) \
-	_Static_assert(0, "ove_workqueue_destroy() requires heap. Use ove_workqueue_deinit() in zero-heap mode.")
+#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_WORKQUEUE — zero-heap mode */
+
+/* Unified macro — stack_size must be a compile-time constant. */
+#define ove_workqueue_create(pwq, name, priority, stack_size) \
+	({ static ove_workqueue_storage_t _ove_stor_; \
+	   static uint8_t _ove_stk_[(stack_size)]; \
+	   ove_workqueue_init((pwq), &_ove_stor_, (name), (priority), \
+			      (stack_size), _ove_stk_); })
+#define ove_workqueue_destroy(wq) ove_workqueue_deinit(wq)
+
 #endif /* OVE_HEAP_WORKQUEUE */
 
 /**

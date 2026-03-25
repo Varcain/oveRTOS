@@ -302,7 +302,7 @@ static inline int ove_test_thread_run(
 #else
     (void)storage;
     (void)stack;
-    return ove_thread_create(th, &desc);
+    return ove_thread_create_(th, &desc);
 #endif
 }
 

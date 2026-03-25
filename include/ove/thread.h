@@ -11,11 +11,13 @@
  * @brief Create, configure, and query RTOS threads across all supported backends.
  *
  * Two allocation strategies are available:
- *  - **Static** (zero-heap): use ove_thread_init() / ove_thread_deinit() with
- *    caller-supplied @c ove_thread_storage_t and stack buffer.
- *  - **Heap** (default): use ove_thread_create() / ove_thread_destroy(); only
- *    available when @c OVE_HEAP_THREAD is defined (i.e. @c CONFIG_OVE_ZERO_HEAP
- *    is not set).
+ *  - @c _create() / @c _destroy() — unified API that works in both heap and
+ *    zero-heap mode.  In zero-heap mode these are macros that generate
+ *    per-call-site static storage; the stack size must be a compile-time
+ *    constant.  @c ove_thread_create() takes three arguments:
+ *    @c (handle, stack_sz, desc).
+ *  - @c _init() / @c _deinit() — explicit storage control with caller-supplied
+ *    buffers.  Use when creating objects in loops, arrays, or structs.
  * @{
  */
 
@@ -120,31 +122,27 @@ int  ove_thread_init(ove_thread_t *handle,
  */
 int  ove_thread_deinit(ove_thread_t handle);
 
-/* _create / _destroy — heap-gated */
+/* _create / _destroy — unified across heap and zero-heap modes */
 #ifdef OVE_HEAP_THREAD
+
 /**
- * @brief Allocate and start a thread using heap memory.
+ * @brief Internal heap-backed thread creation function.
  *
- * The backend allocates all required storage internally.  Pass a
- * descriptor with @c stack set to NULL; the backend will allocate the
- * stack from the heap using @c stack_size.
- *
- * @note Only available when @c OVE_HEAP_THREAD is defined
- *       (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ * Prefer the ove_thread_create() macro which works in both heap and
+ * zero-heap mode.  This function is the underlying implementation used
+ * in heap mode.
  *
  * @param[out] handle  Receives the opaque thread handle on success.
  * @param[in]  desc    Thread descriptor; @c stack should be NULL.
  * @return OVE_OK on success, or a negative error code on failure.
  *
- * @see ove_thread_destroy, ove_thread_init
+ * @see ove_thread_create
  */
-int  ove_thread_create(ove_thread_t *handle,
-		       const struct ove_thread_desc *desc);
+int  ove_thread_create_(ove_thread_t *handle,
+			const struct ove_thread_desc *desc);
 
 /**
  * @brief Stop and free a thread created with ove_thread_create().
- *
- * @note Only available when @c OVE_HEAP_THREAD is defined.
  *
  * @param[in] handle  Handle returned by ove_thread_create().
  * @return OVE_OK on success, or a negative error code on failure.
@@ -152,11 +150,49 @@ int  ove_thread_create(ove_thread_t *handle,
  * @see ove_thread_create
  */
 int  ove_thread_destroy(ove_thread_t handle);
+
+/**
+ * @brief Create a thread (works in both heap and zero-heap mode).
+ *
+ * In heap mode, allocates storage from the heap.  In zero-heap mode,
+ * generates per-call-site static storage and an aligned stack buffer.
+ *
+ * @p stack_sz must be a compile-time integer constant in zero-heap mode.
+ * The macro sets @c desc->stack_size; the caller should not set it.
+ *
+ * @param phandle   Pointer to thread handle to receive the result.
+ * @param stack_sz  Stack size in bytes.
+ * @param pdesc     Pointer to a thread descriptor.
+ */
+#define ove_thread_create(phandle, stack_sz, pdesc) \
+	({ struct ove_thread_desc _ove_d_ = *(pdesc); \
+	   _ove_d_.stack_size = (stack_sz); \
+	   ove_thread_create_((phandle), &_ove_d_); })
+
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_THREAD — zero-heap mode */
-#define ove_thread_create(...) \
-	_Static_assert(0, "ove_thread_create() requires heap. Use ove_thread_init() in zero-heap mode.")
-#define ove_thread_destroy(...) \
-	_Static_assert(0, "ove_thread_destroy() requires heap. Use ove_thread_deinit() in zero-heap mode.")
+
+/**
+ * @brief Create a thread (works in both heap and zero-heap mode).
+ *
+ * In zero-heap mode, generates per-call-site static storage and an
+ * aligned stack buffer.  @p stack_sz must be a compile-time integer
+ * constant.  The macro sets @c desc->stack_size and @c desc->stack;
+ * the caller should not set them.
+ *
+ * @param phandle   Pointer to thread handle to receive the result.
+ * @param stack_sz  Stack size in bytes (compile-time constant).
+ * @param pdesc     Pointer to a thread descriptor.
+ */
+#define ove_thread_create(phandle, stack_sz, pdesc) \
+	({ static ove_thread_storage_t _ove_stor_; \
+	   OVE_THREAD_STACK_BLOCK_STATIC_(_ove_stk_, stack_sz); \
+	   struct ove_thread_desc _ove_d_ = *(pdesc); \
+	   _ove_d_.stack_size = (stack_sz); \
+	   _ove_d_.stack = _ove_stk_; \
+	   ove_thread_init((phandle), &_ove_stor_, &_ove_d_); })
+
+#define ove_thread_destroy(handle) ove_thread_deinit(handle)
+
 #endif /* OVE_HEAP_THREAD */
 
 /**

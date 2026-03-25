@@ -31,15 +31,17 @@ ove_add_freertos_kernel(ARM_CM7/r0p1)
 ove_add_backend_sources()
 
 # Stub backends for hardware-dependent modules not available on QEMU
-ove_add_stub_backends(BSP GPIO AUDIO CONSOLE TIME WATCHDOG SHELL NVS FS)
+ove_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG SHELL NVS FS)
 
 # BOARD backend excluded — qemu_board.c provides the implementation directly
 ove_exclude_backends(BOARD)
 
-# When audio is enabled, replace the stub with the QEMU semihosting driver
+# Audio: use QEMU semihosting driver when enabled, stub otherwise
 if(OVE_AUDIO)
     ove_exclude_backends(AUDIO)
     ove_add_board_sources(../src/qemu_audio.c)
+else()
+    ove_add_stub_backends(AUDIO)
 endif()
 
 # LVGL library

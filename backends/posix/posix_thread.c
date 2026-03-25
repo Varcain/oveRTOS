@@ -102,8 +102,8 @@ int ove_thread_deinit(ove_thread_t handle)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_thread_create(ove_thread_t *handle,
-			  const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle,
+			   const struct ove_thread_desc *desc)
 {
 	if (!handle || !desc || !desc->entry) {
 		return OVE_ERR_INVALID_PARAM;

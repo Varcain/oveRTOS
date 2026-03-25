@@ -68,7 +68,7 @@ public:
 		desc.stack = stack_;
 		int err = ove_thread_init(&handle_, &storage_, &desc);
 #else
-		int err = ove_thread_create(&handle_, &desc);
+		int err = ove_thread_create_(&handle_, &desc);
 #endif
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
