@@ -11,10 +11,6 @@
 
 static ove_timer_t bench_tmr;
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-OVE_TIMER_DEFINE(bench_tmr_storage);
-#endif
-
 static void timer_dummy_cb(ove_timer_t timer, void *user_data)
 {
 	(void)timer;
@@ -23,7 +19,6 @@ static void timer_dummy_cb(ove_timer_t timer, void *user_data)
 
 /* --- create/destroy --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static void timer_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -32,19 +27,13 @@ static void timer_create_destroy_run(void *ctx)
 	ove_timer_create(&t, timer_dummy_cb, NULL, 1000, 0);
 	ove_timer_destroy(t);
 }
-#endif
 
 /* --- start/stop --- */
 
 static void timer_start_stop_setup(void *ctx)
 {
 	(void)ctx;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_timer_init(&bench_tmr, &bench_tmr_storage,
-			   timer_dummy_cb, NULL, 1000, 0);
-#else
 	ove_timer_create(&bench_tmr, timer_dummy_cb, NULL, 1000, 0);
-#endif
 }
 
 static void timer_start_stop_run(void *ctx)
@@ -57,16 +46,11 @@ static void timer_start_stop_run(void *ctx)
 static void timer_start_stop_teardown(void *ctx)
 {
 	(void)ctx;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_timer_deinit(bench_tmr);
-#else
 	ove_timer_destroy(bench_tmr);
-#endif
 }
 
 /* --- memory --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_timer_t mem_timer;
 
 static void timer_memory_run(void *ctx)
@@ -80,7 +64,6 @@ static void timer_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_timer_destroy(mem_timer);
 }
-#endif
 
 /* --- Suite --- */
 
@@ -94,7 +77,6 @@ static int timer_is_enabled(void)
 }
 
 static const bench_case_t timer_cases[] = {
-#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "memory",
 		.type = BENCH_TYPE_MEMORY,
@@ -106,7 +88,6 @@ static const bench_case_t timer_cases[] = {
 		.type = BENCH_TYPE_LATENCY,
 		.run = timer_create_destroy_run,
 	},
-#endif
 	{
 		.name = "start_stop",
 		.type = BENCH_TYPE_LATENCY,

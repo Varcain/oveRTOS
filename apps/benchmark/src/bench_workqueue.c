@@ -14,11 +14,7 @@ static ove_work_t bench_work;
 static volatile int work_executed;
 static ove_sem_t work_sem;
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-OVE_WORKQUEUE_DEFINE(bench_wq_storage, 2048);
-OVE_SEM_DEFINE(work_sem_storage);
 static ove_work_storage_t bench_work_storage;
-#endif
 
 static void work_handler(ove_work_t work)
 {
@@ -29,7 +25,6 @@ static void work_handler(ove_work_t work)
 
 /* --- create/destroy --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static void wq_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -38,26 +33,15 @@ static void wq_create_destroy_run(void *ctx)
 	ove_workqueue_create(&wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
 	ove_workqueue_destroy(wq);
 }
-#endif
 
 /* --- submit/execute --- */
 
 static void wq_submit_setup(void *ctx)
 {
 	(void)ctx;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_sem_init(&work_sem, &work_sem_storage, 0, 1);
-	ove_workqueue_init(&bench_wq, &bench_wq_storage, "bench_wq",
-			       OVE_PRIO_NORMAL, 2048,
-			       bench_wq_storage_stack);
-	ove_work_init_static(&bench_work, &bench_work_storage,
-				  work_handler);
-#else
 	ove_sem_create(&work_sem, 0, 1);
-	ove_workqueue_create(&bench_wq, "bench_wq", OVE_PRIO_NORMAL,
-				 2048);
-	ove_work_init(&bench_work, work_handler);
-#endif
+	ove_workqueue_create(&bench_wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
+	ove_work_init_static(&bench_work, &bench_work_storage, work_handler);
 }
 
 static void wq_submit_run(void *ctx)
@@ -71,19 +55,12 @@ static void wq_submit_run(void *ctx)
 static void wq_submit_teardown(void *ctx)
 {
 	(void)ctx;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_workqueue_deinit(bench_wq);
-	ove_sem_deinit(work_sem);
-#else
-	ove_work_free(bench_work);
 	ove_workqueue_destroy(bench_wq);
 	ove_sem_destroy(work_sem);
-#endif
 }
 
 /* --- memory --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_workqueue_t mem_wq;
 
 static void wq_memory_run(void *ctx)
@@ -97,7 +74,6 @@ static void wq_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_workqueue_destroy(mem_wq);
 }
-#endif
 
 /* --- Suite --- */
 
@@ -111,7 +87,6 @@ static int workqueue_is_enabled(void)
 }
 
 static const bench_case_t workqueue_cases[] = {
-#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "memory",
 		.type = BENCH_TYPE_MEMORY,
@@ -124,7 +99,6 @@ static const bench_case_t workqueue_cases[] = {
 		.run = wq_create_destroy_run,
 		.iterations = 200,
 	},
-#endif
 	{
 		.name = "submit_execute",
 		.type = BENCH_TYPE_LATENCY,

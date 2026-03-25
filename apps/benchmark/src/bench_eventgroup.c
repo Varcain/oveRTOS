@@ -11,20 +11,12 @@
 
 static ove_eventgroup_t bench_eg;
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-OVE_EVENTGROUP_DEFINE(bench_eg_storage);
-#endif
-
 /* --- set/get bits --- */
 
 static void eg_set_get_setup(void *ctx)
 {
 	(void)ctx;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_eventgroup_init(&bench_eg, &bench_eg_storage);
-#else
 	ove_eventgroup_create(&bench_eg);
-#endif
 }
 
 static void eg_set_get_run(void *ctx)
@@ -38,16 +30,11 @@ static void eg_set_get_run(void *ctx)
 static void eg_set_get_teardown(void *ctx)
 {
 	(void)ctx;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_eventgroup_deinit(bench_eg);
-#else
 	ove_eventgroup_destroy(bench_eg);
-#endif
 }
 
 /* --- create/destroy --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static void eg_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -56,11 +43,9 @@ static void eg_create_destroy_run(void *ctx)
 	ove_eventgroup_create(&eg);
 	ove_eventgroup_destroy(eg);
 }
-#endif
 
 /* --- memory --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_eventgroup_t mem_eg;
 
 static void eg_memory_run(void *ctx)
@@ -74,7 +59,6 @@ static void eg_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_eventgroup_destroy(mem_eg);
 }
-#endif
 
 /* --- Suite --- */
 
@@ -88,14 +72,12 @@ static int eventgroup_is_enabled(void)
 }
 
 static const bench_case_t eventgroup_cases[] = {
-#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "memory",
 		.type = BENCH_TYPE_MEMORY,
 		.run = eg_memory_run,
 		.teardown = eg_memory_teardown,
 	},
-#endif
 	{
 		.name = "set_get_bits",
 		.type = BENCH_TYPE_LATENCY,
@@ -103,13 +85,11 @@ static const bench_case_t eventgroup_cases[] = {
 		.run = eg_set_get_run,
 		.teardown = eg_set_get_teardown,
 	},
-#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = eg_create_destroy_run,
 	},
-#endif
 };
 
 const bench_suite_t bench_suite_eventgroup = {
