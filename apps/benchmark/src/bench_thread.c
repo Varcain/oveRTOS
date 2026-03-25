@@ -16,15 +16,8 @@ static ove_sem_t ping_sem;
 static ove_sem_t pong_sem;
 static volatile int ctx_switch_done;
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-OVE_THREAD_DEFINE(pong_th_storage, 2048);
-OVE_SEM_DEFINE(ping_sem_storage);
-OVE_SEM_DEFINE(pong_sem_storage);
-#endif
-
 /* --- create/destroy --- */
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 static void dummy_thread(void *arg)
 {
 	(void)arg;
@@ -44,7 +37,6 @@ static void thread_create_destroy_run(void *ctx)
 	ove_thread_create(&th, 1024, &desc);
 	ove_thread_destroy(th);
 }
-#endif
 
 /* --- yield --- */
 
@@ -78,29 +70,16 @@ static void ctx_switch_setup(void *ctx)
 {
 	(void)ctx;
 	ctx_switch_done = 0;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_sem_init(&ping_sem, &ping_sem_storage, 0, 1);
-	ove_sem_init(&pong_sem, &pong_sem_storage, 0, 1);
-#else
 	ove_sem_create(&ping_sem, 0, 1);
 	ove_sem_create(&pong_sem, 0, 1);
-#endif
 
 	struct ove_thread_desc desc = {
 		.name = "pong",
 		.entry = pong_thread,
 		.arg = NULL,
 		.priority = OVE_PRIO_NORMAL,
-		.stack_size = 2048,
-#ifdef CONFIG_OVE_ZERO_HEAP
-		.stack = pong_th_storage_stack,
-#endif
 	};
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_thread_init(&bench_th, &pong_th_storage, &desc);
-#else
-	ove_thread_create_(&bench_th, &desc);
-#endif
+	ove_thread_create(&bench_th, 2048, &desc);
 }
 
 static void ctx_switch_run(void *ctx)
@@ -117,15 +96,9 @@ static void ctx_switch_teardown(void *ctx)
 	ctx_switch_done = 1;
 	ove_sem_give(ping_sem);
 	ove_thread_sleep_ms(10);
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_thread_deinit(bench_th);
-	ove_sem_deinit(ping_sem);
-	ove_sem_deinit(pong_sem);
-#else
 	ove_thread_destroy(bench_th);
 	ove_sem_destroy(ping_sem);
 	ove_sem_destroy(pong_sem);
-#endif
 }
 
 static int thread_is_enabled(void)
@@ -138,14 +111,12 @@ static int thread_is_enabled(void)
 }
 
 static const bench_case_t thread_cases[] = {
-#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = thread_create_destroy_run,
 		.iterations = 200,
 	},
-#endif
 	{
 		.name = "yield",
 		.type = BENCH_TYPE_LATENCY,

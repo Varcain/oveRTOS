@@ -2,7 +2,7 @@
 
 Source: `apps/example_c/src/app.c`
 
-The C example demonstrates the oveRTOS C API directly, using a producer-consumer pattern with optional LVGL display output. It works in both heap and zero-heap modes and runs on all supported backends.
+The C example demonstrates the oveRTOS unified C API, using a producer-consumer pattern with optional LVGL display output. The same source code compiles unchanged in both heap and zero-heap modes across all supported backends — no `#ifdef CONFIG_OVE_ZERO_HEAP` is needed.
 
 ## What the example does
 
@@ -14,23 +14,31 @@ Three concurrent threads communicate through a shared queue and mutex:
 
 A periodic software timer fires every 200 ms to read the shared counter and update the LVGL label and progress bar.
 
-## Heap vs. zero-heap
+## Unified C API
 
-The `_create()` / `_destroy()` API works in both heap and zero-heap modes, so the core application code is the same regardless of `CONFIG_OVE_ZERO_HEAP`:
+The `_create()` / `_destroy()` API works identically in both heap and zero-heap modes, so the application code needs no `#ifdef` branching:
 
 ```c
 ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
 ove_mutex_create(&value_mutex);
 ove_timer_create(&ui_timer, ui_timer_cb, NULL, 200, 0);
-ove_thread_create(&prod_thread, 4096,
-                  &(ove_thread_desc_t){ .entry = producer_thread,
-                                        .priority = OVE_PRIO_NORMAL,
-                                        .name = "producer" });
+
+struct ove_thread_desc desc = {
+    .name = "producer",
+    .entry = producer_thread,
+    .arg = NULL,
+    .priority = OVE_PRIO_NORMAL,
+};
+ove_thread_create(&thread_handle, 4096, &desc);
 ```
 
-In heap mode, `_create()` allocates from the RTOS heap. In zero-heap mode, each `_create()` call site becomes a GCC statement-expression macro that auto-generates static storage. Size parameters (queue sizes, thread `stack_sz`) must be compile-time constants in zero-heap mode, and each call site produces one static object (do not call in a loop for multiple objects).
+In heap mode, `_create()` allocates from the RTOS heap. In zero-heap mode, each `_create()` call site becomes a GCC statement-expression macro that auto-generates static storage. Size parameters (queue sizes, thread `stack_sz`) must be compile-time constants in zero-heap mode, and each call site produces one static object — do not call in a loop to create multiple independent objects; use `_init()` with separate storage for that.
 
-For **file-scope auto-initialized declarations**, the `OVE_*_DEFINE_STATIC()` macros remain available as an alternative:
+For threads, `ove_thread_create(phandle, stack_sz, pdesc)` is a three-argument macro that sets the stack size (and in zero-heap mode, the stack buffer) automatically. Do not set `.stack_size` or `.stack` in the descriptor — the macro handles both.
+
+### Alternative allocation strategies
+
+For **file-scope auto-initialized declarations**, the `OVE_*_DEFINE_STATIC()` macros declare a handle and initialize it before `main()`:
 
 ```c
 OVE_QUEUE_DEFINE_STATIC(counter_queue, sizeof(uint32_t), 8);
@@ -40,7 +48,7 @@ OVE_THREAD_DEFINE_STATIC(prod_thread, 4096, producer_thread, NULL,
                           OVE_PRIO_NORMAL, "producer");
 ```
 
-For **explicit storage control** (objects in arrays, loops, or structs), use `_init()` / `_deinit()` directly.
+For **explicit storage control** (objects in arrays, loops, or structs), use `_init()` / `_deinit()` with caller-supplied storage buffers.
 
 ## Producer thread
 
@@ -113,23 +121,47 @@ static void ui_timer_cb(ove_timer_t timer, void *user_data)
 ```c
 void ove_main(void)
 {
-    // Create queue, mutex, timer (heap mode)
-    // Create threads
-    // Initialize LVGL and build widget tree
-    ove_run();  // starts the scheduler — does not return on most platforms
+    /* Create primitives — unified API, no heap/zero-heap branching */
+    ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
+    ove_mutex_create(&value_mutex);
+
+    /* Create threads — each in its own block scope for the desc */
+    {
+        struct ove_thread_desc desc = {
+            .name = "producer", .entry = producer_thread,
+            .priority = OVE_PRIO_NORMAL,
+        };
+        ove_thread_create(&thread_handle, 4096, &desc);
+    }
+    {
+        struct ove_thread_desc desc = {
+            .name = "consumer", .entry = consumer_thread,
+            .priority = OVE_PRIO_NORMAL,
+        };
+        ove_thread_create(&thread_handle, 4096, &desc);
+    }
+
+    ove_run();  /* starts the scheduler — does not return on most platforms */
+
+    /* Cleanup (only reached on POSIX) */
+    ove_mutex_destroy(value_mutex);
+    ove_queue_destroy(counter_queue);
 }
 ```
 
-`ove_run()` starts the RTOS scheduler. On POSIX it blocks until all threads finish; on FreeRTOS/Zephyr/NuttX it never returns. Cleanup code after `ove_run()` is reached only on POSIX when used as a desktop test target.
+`ove_run()` starts the RTOS scheduler. On POSIX it blocks until all threads finish; on FreeRTOS/Zephyr/NuttX it never returns. Cleanup code after `ove_run()` uses the matching `_destroy()` calls, which also work in both heap and zero-heap modes.
 
 ## Key APIs demonstrated
 
 | API | Purpose |
 |-----|---------|
-| `ove_queue_create` / `OVE_QUEUE_DEFINE_STATIC` | Create a fixed-size FIFO queue |
+| `ove_queue_create` / `ove_queue_destroy` | Create/destroy a fixed-size FIFO queue |
 | `ove_queue_send` / `ove_queue_receive` | Inter-thread data transfer |
-| `ove_mutex_create` / `ove_mutex_lock` / `ove_mutex_unlock` | Shared state protection |
-| `ove_timer_create` / `ove_timer_start` | Periodic callback |
+| `ove_mutex_create` / `ove_mutex_destroy` | Create/destroy a mutex |
+| `ove_mutex_lock` / `ove_mutex_unlock` | Shared state protection |
+| `ove_timer_create` / `ove_timer_destroy` | Create/destroy a periodic callback timer |
+| `ove_timer_start` / `ove_timer_stop` | Arm/disarm a timer |
+| `ove_thread_create` / `ove_thread_destroy` | Create/destroy a thread (unified 3-arg macro) |
 | `ove_thread_sleep_ms` | Rate-limiting a thread |
 | `OVE_LOG_INF` / `OVE_LOG_WRN` | Compile-time filtered logging |
 | `ove_lvgl_lock` / `ove_lvgl_unlock` | Safe multi-threaded LVGL access |

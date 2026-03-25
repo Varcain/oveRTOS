@@ -16,9 +16,8 @@
  *   - ove_lvgl_* for LVGL display (when enabled)
  *   - OVE_LOG_* macros for logging
  *
- * Supports both heap and zero-heap builds. When CONFIG_OVE_ZERO_HEAP
- * is defined, RTOS objects are declared with OVE_*_DEFINE_STATIC()
- * macros which handle both storage and init automatically.
+ * Uses the unified C API which works transparently in both heap
+ * and zero-heap builds.
  */
 
 #include "ove/ove.h"
@@ -49,25 +48,11 @@ static void graphics_thread(void *arg);
 
 /* --- Primitive handles --- */
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-OVE_QUEUE_DEFINE_STATIC(counter_queue, sizeof(uint32_t), 8);
-OVE_MUTEX_DEFINE_STATIC(value_mutex);
-#ifdef CONFIG_OVE_LVGL
-OVE_TIMER_DEFINE_STATIC(ui_timer, ui_timer_cb, NULL, 200, 0);
-OVE_THREAD_DEFINE_STATIC(gfx_thread, 4096, graphics_thread, NULL,
-			     OVE_PRIO_HIGH, "graphics");
-#endif
-OVE_THREAD_DEFINE_STATIC(prod_thread, 4096, producer_thread, NULL,
-			     OVE_PRIO_NORMAL, "producer");
-OVE_THREAD_DEFINE_STATIC(cons_thread, 4096, consumer_thread, NULL,
-			     OVE_PRIO_NORMAL, "consumer");
-#else
 static ove_queue_t counter_queue;
 static ove_mutex_t value_mutex;
 #ifdef CONFIG_OVE_LVGL
 static ove_timer_t ui_timer;
 #endif
-#endif /* CONFIG_OVE_ZERO_HEAP */
 
 /* --- Producer thread: generates incrementing counter values --- */
 
@@ -204,16 +189,13 @@ static void create_ui(void)
 void ove_main(void)
 {
 	int ret;
-#ifndef CONFIG_OVE_ZERO_HEAP
-	ove_thread_t thread_handles[3];
-	unsigned int thread_idx = 0;
-#endif
+	ove_thread_t thread_handle;
+
 	(void)ret;
 
 	OVE_LOG_INF("C example: init");
 
-	/* Create RTOS primitives (heap mode only) */
-#ifndef CONFIG_OVE_ZERO_HEAP
+	/* Create RTOS primitives */
 	ret = ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to create queue: %d", ret);
@@ -233,48 +215,54 @@ void ove_main(void)
 		return;
 	}
 #endif
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
-	/* Create threads (heap mode — zero-heap uses DEFINE_STATIC above) */
-#ifndef CONFIG_OVE_ZERO_HEAP
-	static const struct ove_thread_desc thread_descs[] = {
+	/* Create threads */
 #ifdef CONFIG_OVE_LVGL
-		{
+	{
+		struct ove_thread_desc desc = {
 			.name = "graphics",
 			.entry = graphics_thread,
 			.arg = NULL,
 			.priority = OVE_PRIO_HIGH,
-			.stack_size = 4096,
-		},
+		};
+		ret = ove_thread_create(&thread_handle, 4096, &desc);
+		if (ret != OVE_OK) {
+			OVE_LOG_ERR("Failed to create thread '%s': %d",
+					desc.name, ret);
+			return;
+		}
+	}
 #endif
-		{
+
+	{
+		struct ove_thread_desc desc = {
 			.name = "producer",
 			.entry = producer_thread,
 			.arg = NULL,
 			.priority = OVE_PRIO_NORMAL,
-			.stack_size = 4096,
-		},
-		{
+		};
+		ret = ove_thread_create(&thread_handle, 4096, &desc);
+		if (ret != OVE_OK) {
+			OVE_LOG_ERR("Failed to create thread '%s': %d",
+					desc.name, ret);
+			return;
+		}
+	}
+
+	{
+		struct ove_thread_desc desc = {
 			.name = "consumer",
 			.entry = consumer_thread,
 			.arg = NULL,
 			.priority = OVE_PRIO_NORMAL,
-			.stack_size = 4096,
-		},
-	};
-
-	for (unsigned int i = 0;
-	     i < sizeof(thread_descs) / sizeof(thread_descs[0]); i++) {
-		ret = ove_thread_create_(&thread_handles[thread_idx],
-					     &thread_descs[i]);
+		};
+		ret = ove_thread_create(&thread_handle, 4096, &desc);
 		if (ret != OVE_OK) {
 			OVE_LOG_ERR("Failed to create thread '%s': %d",
-					thread_descs[i].name, ret);
+					desc.name, ret);
 			return;
 		}
-		thread_idx++;
 	}
-#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 	/* Initialize LVGL and create UI */
 #ifdef CONFIG_OVE_LVGL
@@ -304,18 +292,9 @@ void ove_main(void)
 
 #ifdef CONFIG_OVE_LVGL
 	ove_timer_stop(ui_timer);
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_timer_deinit(ui_timer);
-#else
 	ove_timer_destroy(ui_timer);
 #endif
-#endif
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_mutex_deinit(value_mutex);
-	ove_queue_deinit(counter_queue);
-#else
 	ove_mutex_destroy(value_mutex);
 	ove_queue_destroy(counter_queue);
-#endif
 }

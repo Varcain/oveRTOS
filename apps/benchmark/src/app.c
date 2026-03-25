@@ -33,13 +33,6 @@ static const bench_suite_t *const suites[] = {
 
 /* --- Runner thread --- */
 
-static void benchmark_runner(void *arg);
-
-#ifdef CONFIG_OVE_ZERO_HEAP
-OVE_THREAD_DEFINE_STATIC(bench_thread, 8192, benchmark_runner, NULL,
-			     OVE_PRIO_NORMAL, "bench_run");
-#endif
-
 static void benchmark_runner(void *arg)
 {
 	(void)arg;
@@ -80,7 +73,6 @@ void ove_main(void)
 {
 	OVE_LOG_INF("Benchmark app: init");
 
-#ifndef CONFIG_OVE_ZERO_HEAP
 	ove_thread_t handle;
 	static const struct ove_thread_desc bench_desc = {
 		.name = "bench_run",
@@ -94,7 +86,6 @@ void ove_main(void)
 		OVE_LOG_ERR("Failed to create benchmark thread: %d", ret);
 		return;
 	}
-#endif
 
 	ove_run();
 
