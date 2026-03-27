@@ -9,6 +9,9 @@
 
 #include "ove/types.h"
 #include "ove/audio.h"
+#include "ove/audio_node.h"
+
+#ifdef CONFIG_OVE_AUDIO
 
 /* ── Mock node ops ──────────────────────────────────────────────── */
 
@@ -1367,3 +1370,12 @@ int test_audio_run(void)
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
+
+#else /* !CONFIG_OVE_AUDIO */
+
+int test_audio_run(void)
+{
+    return 0;
+}
+
+#endif /* CONFIG_OVE_AUDIO */
