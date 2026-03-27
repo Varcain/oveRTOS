@@ -173,6 +173,89 @@ static void test_model_last_inference_null(void **state)
 	assert_int_equal((int)us, 0);
 }
 
+static void test_model_input_out_of_bounds(void **state)
+{
+	(void)state;
+	ove_model_t model = NULL;
+	struct ove_model_config cfg = {
+		.model_data = sine_model_data,
+		.model_size = sine_model_data_len,
+		.arena_size = SINE_MODEL_ARENA_SIZE,
+	};
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	int rc = ove_model_init(&model, &s_model_storage, s_arena, &cfg);
+#else
+	int rc = ove_model_create(&model, &cfg);
+#endif
+	assert_int_equal(rc, OVE_OK);
+
+	struct ove_tensor_info info;
+	rc = ove_model_input(model, 999, &info);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_model_deinit(model);
+#else
+	ove_model_destroy(model);
+#endif
+}
+
+static void test_model_output_out_of_bounds(void **state)
+{
+	(void)state;
+	ove_model_t model = NULL;
+	struct ove_model_config cfg = {
+		.model_data = sine_model_data,
+		.model_size = sine_model_data_len,
+		.arena_size = SINE_MODEL_ARENA_SIZE,
+	};
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	int rc = ove_model_init(&model, &s_model_storage, s_arena, &cfg);
+#else
+	int rc = ove_model_create(&model, &cfg);
+#endif
+	assert_int_equal(rc, OVE_OK);
+
+	struct ove_tensor_info info;
+	rc = ove_model_output(model, 999, &info);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_model_deinit(model);
+#else
+	ove_model_destroy(model);
+#endif
+}
+
+static void test_model_input_null_info(void **state)
+{
+	(void)state;
+	ove_model_t model = NULL;
+	struct ove_model_config cfg = {
+		.model_data = sine_model_data,
+		.model_size = sine_model_data_len,
+		.arena_size = SINE_MODEL_ARENA_SIZE,
+	};
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	int rc = ove_model_init(&model, &s_model_storage, s_arena, &cfg);
+#else
+	int rc = ove_model_create(&model, &cfg);
+#endif
+	assert_int_equal(rc, OVE_OK);
+
+	rc = ove_model_input(model, 0, NULL);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_model_deinit(model);
+#else
+	ove_model_destroy(model);
+#endif
+}
+
 int test_infer_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -182,6 +265,9 @@ int test_infer_run(void)
 		cmocka_unit_test(test_model_null_params),
 		cmocka_unit_test(test_model_invoke_null),
 		cmocka_unit_test(test_model_last_inference_null),
+		cmocka_unit_test(test_model_input_out_of_bounds),
+		cmocka_unit_test(test_model_output_out_of_bounds),
+		cmocka_unit_test(test_model_input_null_info),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

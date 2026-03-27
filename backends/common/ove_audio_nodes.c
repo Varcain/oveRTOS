@@ -268,7 +268,10 @@ int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db,
     struct gain_ctx *ctx = calloc(1, sizeof(*ctx));
     if (!ctx)
         return OVE_ERR_NO_MEMORY;
-    ctx->linear_gain = powf(10.0f, gain_db / 20.0f);
+    /* Convert dB to linear gain: 10^(dB/20) = exp(dB * ln(10)/20)
+     * Using expf avoids glibc's optimized powf which references
+     * _dl_x86_cpu_features on some platforms (Zephyr native_sim). */
+    ctx->linear_gain = expf(gain_db * (0.11512925464970229f)); /* ln(10)/20 */
     int idx = ove_audio_graph_add_node(g, &gain_ops, ctx, name,
                                        OVE_AUDIO_NODE_PROCESSOR);
     if (idx < 0)

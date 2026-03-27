@@ -23,6 +23,7 @@ mod test_console;
 mod test_nvs;
 mod test_watchdog;
 mod test_audio;
+mod test_infer;
 mod test_shell;
 mod test_fs;
 mod test_stream;
@@ -52,6 +53,7 @@ fn main() {
         ("NVS", test_nvs::run),
         ("Watchdog", test_watchdog::run),
         ("Audio", test_audio::run),
+        ("Inference", test_infer::run),
         ("Shell", test_shell::run),
         ("Filesystem", test_fs::run),
         ("Stream", test_stream::run),

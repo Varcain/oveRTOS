@@ -1104,19 +1104,78 @@ fn testWatchdogFeedMultiple() !void {
 }
 
 // ---------------------------------------------------------------------------
-// Audio tests (2)
+// Audio tests (4)
 // ---------------------------------------------------------------------------
 
-fn testAudioInitStartStop() !void {
+fn testAudioGraphInitDeinit() !void {
     var g = try ove.audio.Graph.init(256);
     defer g.deinit();
-    // Graph created and torn down without error
+    // Graph created with valid frames_per_period and torn down without error
 }
 
-fn testAudioCallbackReceivesSlices() !void {
-    var g = try ove.audio.Graph.init(128);
+fn testAudioGraphInitZeroFrames() !void {
+    const result = ove.audio.Graph.init(0);
+    if (result) |_| {
+        return error.AssertionFailed; // should have errored
+    } else |_| {
+        return; // expected error for zero frames
+    }
+}
+
+fn testAudioGraphConnectInvalid() !void {
+    var g = try ove.audio.Graph.init(256);
     defer g.deinit();
-    // Graph with different period size works
+    // Connect with no nodes added — indices 0,0 are invalid
+    try expectError(g.connect(0, 0));
+}
+
+fn testAudioGraphBuildEmpty() !void {
+    var g = try ove.audio.Graph.init(256);
+    defer g.deinit();
+    // Build with no nodes succeeds (empty graph is valid)
+    try g.build();
+}
+
+fn testAudioGraphStartNotReady() !void {
+    var g = try ove.audio.Graph.init(256);
+    defer g.deinit();
+    // Graph is IDLE (not built/READY), start should fail
+    try expectError(g.start());
+}
+
+fn testAudioGraphStopNotRunning() !void {
+    var g = try ove.audio.Graph.init(256);
+    defer g.deinit();
+    // Graph is IDLE (not running), stop should fail
+    try expectError(g.stop());
+}
+
+fn testAudioGraphBuildThenStart() !void {
+    var g = try ove.audio.Graph.init(256);
+    defer g.deinit();
+    // Full lifecycle on empty graph: build, start, stop
+    try g.build();
+    try g.start();
+    try g.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Inference tests (3)
+// ---------------------------------------------------------------------------
+
+fn testInferCreateNull() !void {
+    const rc = ove.ffi.ove_model_create(null, null);
+    try expect(rc != 0); // should fail (stub returns NOT_SUPPORTED)
+}
+
+fn testInferInvokeNull() !void {
+    const rc = ove.ffi.ove_model_invoke(null);
+    try expect(rc != 0);
+}
+
+fn testInferLastInferenceNull() !void {
+    const us = ove.ffi.ove_model_last_inference_us(null);
+    try expect(us == 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1600,8 +1659,19 @@ pub fn main() void {
     });
 
     runSuite("Audio", &.{
-        .{ .name = "init_start_stop", .func = testAudioInitStartStop },
-        .{ .name = "callback_receives_slices", .func = testAudioCallbackReceivesSlices },
+        .{ .name = "graph_init_deinit", .func = testAudioGraphInitDeinit },
+        .{ .name = "graph_init_zero_frames", .func = testAudioGraphInitZeroFrames },
+        .{ .name = "graph_connect_invalid", .func = testAudioGraphConnectInvalid },
+        .{ .name = "graph_build_empty", .func = testAudioGraphBuildEmpty },
+        .{ .name = "graph_start_not_ready", .func = testAudioGraphStartNotReady },
+        .{ .name = "graph_stop_not_running", .func = testAudioGraphStopNotRunning },
+        .{ .name = "graph_build_then_start", .func = testAudioGraphBuildThenStart },
+    });
+
+    runSuite("Inference", &.{
+        .{ .name = "create_null", .func = testInferCreateNull },
+        .{ .name = "invoke_null", .func = testInferInvokeNull },
+        .{ .name = "last_inference_null", .func = testInferLastInferenceNull },
     });
 
     runSuite("Shell", &.{

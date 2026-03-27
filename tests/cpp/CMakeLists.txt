@@ -96,6 +96,7 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_stream.cpp
     ${SUITE_DIR}/test_workqueue.cpp
     ${SUITE_DIR}/test_static_init.cpp
+    ${SUITE_DIR}/test_infer.cpp
 )
 
 # --- C++ test target ---

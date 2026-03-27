@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <setjmp.h>
 #include <cmocka.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <stdatomic.h>
@@ -62,6 +63,81 @@ static const struct ove_audio_node_ops mock_sink_ops = {
     .configure = mock_sink_configure,
     .process   = mock_process,
 };
+
+/* ── Mock start/stop ops for state-machine tests ────────────────── */
+
+static int start_call_order[8];
+static int stop_call_order[8];
+static int start_call_count;
+static int stop_call_count;
+static int fail_on_start_idx = -1;
+
+static int mock_start(void *ctx)
+{
+    int idx = ctx ? *(int *)ctx : 0;
+    start_call_order[start_call_count++] = idx;
+    if (idx == fail_on_start_idx)
+        return OVE_ERR_ML_FAILED;
+    return OVE_OK;
+}
+
+static int mock_stop(void *ctx)
+{
+    int idx = ctx ? *(int *)ctx : 0;
+    stop_call_order[stop_call_count++] = idx;
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops mock_startable_source_ops = {
+    .configure = mock_source_configure,
+    .process   = mock_process,
+    .start     = mock_start,
+    .stop      = mock_stop,
+};
+
+static const struct ove_audio_node_ops mock_startable_proc_ops = {
+    .configure = mock_proc_configure,
+    .process   = mock_process,
+    .start     = mock_start,
+    .stop      = mock_stop,
+};
+
+static const struct ove_audio_node_ops mock_startable_sink_ops = {
+    .configure = mock_sink_configure,
+    .process   = mock_process,
+    .start     = mock_start,
+    .stop      = mock_stop,
+};
+
+/* Helper: reset start/stop tracking counters */
+static void reset_start_stop_counters(void)
+{
+    start_call_count = 0;
+    stop_call_count  = 0;
+    fail_on_start_idx = -1;
+    memset(start_call_order, 0, sizeof(start_call_order));
+    memset(stop_call_order, 0, sizeof(stop_call_order));
+}
+
+/* Helper: build a 3-node startable graph (source->proc->sink) */
+static void build_startable_graph(struct ove_audio_graph *g,
+                                  int *node_ids, int *ctxs)
+{
+    ove_audio_graph_init(g, 256);
+    ctxs[0] = 0; ctxs[1] = 1; ctxs[2] = 2;
+    node_ids[0] = ove_audio_graph_add_node(g, &mock_startable_source_ops,
+                                           &ctxs[0], "src",
+                                           OVE_AUDIO_NODE_SOURCE);
+    node_ids[1] = ove_audio_graph_add_node(g, &mock_startable_proc_ops,
+                                           &ctxs[1], "proc",
+                                           OVE_AUDIO_NODE_PROCESSOR);
+    node_ids[2] = ove_audio_graph_add_node(g, &mock_startable_sink_ops,
+                                           &ctxs[2], "sink",
+                                           OVE_AUDIO_NODE_SINK);
+    ove_audio_graph_connect(g, node_ids[0], node_ids[1]);
+    ove_audio_graph_connect(g, node_ids[1], node_ids[2]);
+    ove_audio_graph_build(g);
+}
 
 /* ── Graph construction tests ───────────────────────────────────── */
 
@@ -659,6 +735,587 @@ static void test_tap_node(void **state)
     ove_audio_graph_deinit(&g);
 }
 
+/* ── State machine tests ────────────────────────────────────────── */
+
+static void test_graph_start_stop(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    int ids[3], ctxs[3];
+
+    reset_start_stop_counters();
+    build_startable_graph(&g, ids, ctxs);
+
+    /* READY -> RUNNING */
+    assert_int_equal(ove_audio_graph_start(&g), OVE_OK);
+    assert_int_equal(g.state, OVE_AUDIO_GRAPH_RUNNING);
+    assert_int_equal(start_call_count, 3);
+
+    /* RUNNING -> READY */
+    assert_int_equal(ove_audio_graph_stop(&g), OVE_OK);
+    assert_int_equal(g.state, OVE_AUDIO_GRAPH_READY);
+    assert_int_equal(stop_call_count, 3);
+
+    /* Can start again */
+    reset_start_stop_counters();
+    assert_int_equal(ove_audio_graph_start(&g), OVE_OK);
+    assert_int_equal(g.state, OVE_AUDIO_GRAPH_RUNNING);
+
+    ove_audio_graph_stop(&g);
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_start_from_idle_fails(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 256);
+
+    /* Graph is IDLE (not built), start should fail */
+    assert_int_equal(ove_audio_graph_start(&g), OVE_ERR_NOT_SUPPORTED);
+
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_stop_from_idle_fails(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 256);
+
+    /* Graph is IDLE, stop should fail */
+    assert_int_equal(ove_audio_graph_stop(&g), OVE_ERR_NOT_SUPPORTED);
+
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_start_failure_rollback(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    int ids[3], ctxs[3];
+
+    reset_start_stop_counters();
+    fail_on_start_idx = 2; /* 3rd node (sink) will fail */
+    build_startable_graph(&g, ids, ctxs);
+
+    assert_int_not_equal(ove_audio_graph_start(&g), OVE_OK);
+
+    /* Nodes 0 and 1 started successfully before node 2 failed.
+     * Rollback should have called stop() on nodes 1 and 0. */
+    assert_int_equal(stop_call_count, 2);
+    assert_int_equal(stop_call_order[0], 1);
+    assert_int_equal(stop_call_order[1], 0);
+
+    /* Graph should NOT be in RUNNING state */
+    assert_int_not_equal(g.state, OVE_AUDIO_GRAPH_RUNNING);
+
+    fail_on_start_idx = -1;
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_add_node_after_build_fails(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    int ids[3], ctxs[3];
+
+    build_startable_graph(&g, ids, ctxs);
+    assert_int_equal(g.state, OVE_AUDIO_GRAPH_READY);
+
+    /* Adding a node after build should fail */
+    int ret = ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "extra",
+                                       OVE_AUDIO_NODE_SOURCE);
+    assert_true(ret < 0);
+
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_connect_after_build_fails(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    int ids[3], ctxs[3];
+
+    build_startable_graph(&g, ids, ctxs);
+    assert_int_equal(g.state, OVE_AUDIO_GRAPH_READY);
+
+    /* Connecting after build should fail */
+    assert_int_equal(ove_audio_graph_connect(&g, ids[0], ids[2]),
+                     OVE_ERR_NOT_SUPPORTED);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Capacity tests ─────────────────────────────────────────────── */
+
+static void test_graph_max_nodes(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 256);
+
+    /* Add exactly 16 source nodes */
+    for (int i = 0; i < OVE_AUDIO_GRAPH_MAX_NODES; i++) {
+        int idx = ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src",
+                                           OVE_AUDIO_NODE_SOURCE);
+        assert_true(idx >= 0);
+    }
+
+    /* 17th node should fail */
+    int overflow = ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "extra",
+                                            OVE_AUDIO_NODE_SOURCE);
+    assert_int_equal(overflow, OVE_ERR_QUEUE_FULL);
+
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_max_edges(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 256);
+
+    /* MAX_NODES=16, MAX_EDGES=16. Use 1 source + 15 sinks = 16 nodes, 15 edges.
+     * Then verify we got as many edges as node slots allow (15).
+     * The edge limit (16) can't actually be reached because nodes run out first. */
+    int src = ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src",
+                                       OVE_AUDIO_NODE_SOURCE);
+    assert_true(src >= 0);
+
+    int edges_created = 0;
+    for (int i = 0; i < OVE_AUDIO_GRAPH_MAX_NODES - 1; i++) {
+        int sink = ove_audio_graph_add_node(&g, &mock_sink_ops, NULL, "sink",
+                                            OVE_AUDIO_NODE_SINK);
+        if (sink < 0)
+            break;
+        int ret = ove_audio_graph_connect(&g, src, sink);
+        assert_int_equal(ret, OVE_OK);
+        edges_created++;
+    }
+
+    /* Should have created MAX_NODES-1 edges (15) */
+    assert_int_equal(edges_created, OVE_AUDIO_GRAPH_MAX_NODES - 1);
+    assert_int_equal(g.edge_count, (unsigned int)edges_created);
+
+    /* Node table is full — can't add more nodes to create more edges */
+    int overflow = ove_audio_graph_add_node(&g, &mock_sink_ops, NULL, "xsink",
+                                            OVE_AUDIO_NODE_SINK);
+    assert_int_equal(overflow, OVE_ERR_QUEUE_FULL);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Connect validation tests ───────────────────────────────────── */
+
+static void test_graph_connect_self_loop(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 256);
+
+    ove_audio_graph_add_node(&g, &mock_proc_ops, NULL, "proc",
+                             OVE_AUDIO_NODE_PROCESSOR);
+
+    assert_int_equal(ove_audio_graph_connect(&g, 0, 0), OVE_ERR_INVALID_PARAM);
+
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_connect_invalid_index(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 256);
+
+    ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src",
+                             OVE_AUDIO_NODE_SOURCE);
+
+    assert_int_equal(ove_audio_graph_connect(&g, 99, 0), OVE_ERR_INVALID_PARAM);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Stats tests ────────────────────────────────────────────────── */
+
+static void test_graph_stats_cycle_count(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 4);
+
+    int src  = ove_audio_graph_add_node(&g, &mock_source_ops, NULL, "src",
+                                        OVE_AUDIO_NODE_SOURCE);
+    int sink = ove_audio_graph_add_node(&g, &mock_sink_ops, NULL, "sink",
+                                        OVE_AUDIO_NODE_SINK);
+    ove_audio_graph_connect(&g, src, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+
+    for (int i = 0; i < 5; i++)
+        assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+
+    struct ove_audio_graph_stats stats;
+    assert_int_equal(ove_audio_graph_get_stats(&g, &stats), OVE_OK);
+    assert_int_equal(stats.cycles, 5);
+
+    ove_audio_graph_deinit(&g);
+}
+
+static void test_graph_stats_null_params(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    struct ove_audio_graph_stats stats;
+
+    ove_audio_graph_init(&g, 256);
+
+    assert_int_not_equal(ove_audio_graph_get_stats(NULL, &stats), OVE_OK);
+    assert_int_not_equal(ove_audio_graph_get_stats(&g, NULL), OVE_OK);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Multiple process cycles ────────────────────────────────────── */
+
+/* Sink that counts how many times process was called */
+struct counting_sink_ctx {
+    int process_count;
+};
+
+static int counting_sink_process(void *ctx, const struct ove_audio_buf *in,
+                                 struct ove_audio_buf *out)
+{
+    (void)in;
+    (void)out;
+    struct counting_sink_ctx *cs = (struct counting_sink_ctx *)ctx;
+    cs->process_count++;
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops counting_sink_ops = {
+    .configure = mock_sink_configure,
+    .process   = counting_sink_process,
+};
+
+static void test_graph_process_multiple_cycles(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 4);
+
+    int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "src",
+                                       OVE_AUDIO_NODE_SOURCE);
+
+    struct counting_sink_ctx cs = { .process_count = 0 };
+    int sink = ove_audio_graph_add_node(&g, &counting_sink_ops, &cs, "sink",
+                                        OVE_AUDIO_NODE_SINK);
+
+    ove_audio_graph_connect(&g, src, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+
+    for (int i = 0; i < 10; i++)
+        assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+
+    assert_int_equal(cs.process_count, 10);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Format conversion: F32 to S16 ─────────────────────────────── */
+
+/* Source that outputs F32 samples with known values */
+static int f32_source_configure(void *ctx, const struct ove_audio_fmt *in,
+                                struct ove_audio_fmt *out)
+{
+    (void)ctx; (void)in;
+    out->sample_rate = 48000;
+    out->channels = 1;
+    out->sample_fmt = OVE_AUDIO_FMT_F32;
+    return OVE_OK;
+}
+
+static int f32_source_process(void *ctx, const struct ove_audio_buf *in,
+                              struct ove_audio_buf *out)
+{
+    (void)ctx; (void)in;
+    float *s = (float *)out->data;
+    s[0] =  0.5f;
+    s[1] = -0.5f;
+    s[2] =  1.0f;
+    s[3] = -1.0f;
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops f32_source_ops = {
+    .configure = f32_source_configure,
+    .process   = f32_source_process,
+};
+
+/* Sink that captures S16 data */
+struct s16_sink_ctx {
+    int16_t *captured;
+    unsigned int count;
+};
+
+static int s16_sink_configure(void *ctx, const struct ove_audio_fmt *in,
+                              struct ove_audio_fmt *out)
+{
+    (void)ctx; (void)out;
+    if (in->sample_fmt != OVE_AUDIO_FMT_S16)
+        return OVE_ERR_INVALID_PARAM;
+    return OVE_OK;
+}
+
+static int s16_sink_process(void *ctx, const struct ove_audio_buf *in,
+                            struct ove_audio_buf *out)
+{
+    (void)out;
+    struct s16_sink_ctx *ss = (struct s16_sink_ctx *)ctx;
+    memcpy(ss->captured, in->data, in->frames * sizeof(int16_t));
+    ss->count = in->frames;
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops s16_sink_ops = {
+    .configure = s16_sink_configure,
+    .process   = s16_sink_process,
+};
+
+static void test_converter_f32_to_s16(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 4);
+
+    int src = ove_audio_graph_add_node(&g, &f32_source_ops, NULL, "f32-src",
+                                       OVE_AUDIO_NODE_SOURCE);
+    int conv = ove_audio_node_converter(&g, OVE_AUDIO_FMT_S16, "to-s16");
+
+    int16_t cap[4] = {0};
+    struct s16_sink_ctx ss = { .captured = cap };
+    int sink = ove_audio_graph_add_node(&g, &s16_sink_ops, &ss, "s16-sink",
+                                        OVE_AUDIO_NODE_SINK);
+
+    ove_audio_graph_connect(&g, src, conv);
+    ove_audio_graph_connect(&g, conv, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+    assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+
+    /* 0.5f * 32768 = 16384 */
+    assert_true(abs(cap[0] - 16384) < 2);
+    assert_true(abs(cap[1] - (-16384)) < 2);
+    /* 1.0f should clamp to ~32767 */
+    assert_true(cap[2] > 32000);
+    assert_true(cap[3] < -32000);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Gain edge case: 0dB passthrough ────────────────────────────── */
+
+static void test_gain_0db_passthrough(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 4);
+
+    int src = ove_audio_graph_add_node(&g, &counting_source_ops, NULL, "count",
+                                       OVE_AUDIO_NODE_SOURCE);
+    int gain = ove_audio_node_gain(&g, 0.0f, "unity"); /* 0 dB = 1.0x */
+
+    int16_t captured[4] = {0};
+    struct verify_sink_ctx vs = { .captured = captured };
+    int sink = ove_audio_graph_add_node(&g, &verify_sink_ops, &vs, "verify",
+                                        OVE_AUDIO_NODE_SINK);
+
+    ove_audio_graph_connect(&g, src, gain);
+    ove_audio_graph_connect(&g, gain, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+    assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+
+    /* 0dB gain: output should match source (0,1,2,3) exactly */
+    for (int i = 0; i < 4; i++)
+        assert_int_equal(captured[i], i);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Channel map: stereo→mono (left only) with 4 frames ─────────── */
+
+/* Stereo source producing 4 frames: interleaved [L0,R0,L1,R1,L2,R2,L3,R3]
+ * where sample[i] = i * 100 → L=0,R=100,L=200,R=300,L=400,R=500,L=600,R=700 */
+static int stereo_source_4f_configure(void *ctx, const struct ove_audio_fmt *in,
+                                      struct ove_audio_fmt *out)
+{
+    (void)ctx; (void)in;
+    out->sample_rate = 48000;
+    out->channels = 2;
+    out->sample_fmt = OVE_AUDIO_FMT_S16;
+    return OVE_OK;
+}
+
+static int stereo_source_4f_process(void *ctx, const struct ove_audio_buf *in,
+                                    struct ove_audio_buf *out)
+{
+    (void)ctx; (void)in;
+    int16_t *s = (int16_t *)out->data;
+    /* Interleaved stereo: L0,R0,L1,R1,... */
+    for (unsigned int i = 0; i < out->frames * 2; i++)
+        s[i] = (int16_t)(i * 100); /* L=0,R=100,L=200,R=300,... */
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops stereo_source_4f_ops = {
+    .configure = stereo_source_4f_configure,
+    .process   = stereo_source_4f_process,
+};
+
+/* Mono capture sink: stores captured data and frame count */
+struct mono_capture_ctx {
+    int16_t *captured;
+    unsigned int captured_frames;
+};
+
+static int mono_capture_process(void *ctx, const struct ove_audio_buf *in,
+                                struct ove_audio_buf *out)
+{
+    (void)out;
+    struct mono_capture_ctx *mc = (struct mono_capture_ctx *)ctx;
+    memcpy(mc->captured, in->data, in->frames * sizeof(int16_t));
+    mc->captured_frames = in->frames;
+    return OVE_OK;
+}
+
+static int mono_capture_configure(void *ctx, const struct ove_audio_fmt *in,
+                                  struct ove_audio_fmt *out)
+{
+    (void)ctx; (void)out;
+    if (in->channels != 1)
+        return OVE_ERR_INVALID_PARAM;
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops mono_capture_ops = {
+    .configure = mono_capture_configure,
+    .process   = mono_capture_process,
+};
+
+static void test_channel_map_stereo_to_mono_node(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 4); /* 4 frames */
+
+    int src = ove_audio_graph_add_node(&g, &stereo_source_4f_ops, NULL,
+                                       "stereo-4f", OVE_AUDIO_NODE_SOURCE);
+
+    /* Extract left channel (index 0) to mono */
+    struct ove_audio_channel_map map = {
+        .out_channels = 1,
+        .map = { 0 }, /* out ch0 = in ch0 (left) */
+    };
+    int mapper = ove_audio_node_channel_map(&g, &map, "l-to-mono");
+
+    int16_t captured[4] = {0};
+    struct mono_capture_ctx mc = { .captured = captured };
+    int sink = ove_audio_graph_add_node(&g, &mono_capture_ops, &mc,
+                                        "mono-cap", OVE_AUDIO_NODE_SINK);
+
+    ove_audio_graph_connect(&g, src, mapper);
+    ove_audio_graph_connect(&g, mapper, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+    assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+
+    /* Source interleaved: [0,100,200,300,400,500,600,700]
+     * Left channel (even indices): 0, 200, 400, 600 */
+    assert_int_equal(mc.captured_frames, 4);
+    assert_int_equal(captured[0], 0);
+    assert_int_equal(captured[1], 200);
+    assert_int_equal(captured[2], 400);
+    assert_int_equal(captured[3], 600);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Channel map: silence channel ───────────────────────────────── */
+
+static void test_channel_map_silence_channel(void **state)
+{
+    (void)state;
+    struct ove_audio_graph g;
+    ove_audio_graph_init(&g, 4); /* 4 frames */
+
+    int src = ove_audio_graph_add_node(&g, &stereo_source_4f_ops, NULL,
+                                       "stereo-4f", OVE_AUDIO_NODE_SOURCE);
+
+    /* Map output channel 0 to silence (-1) */
+    struct ove_audio_channel_map map = {
+        .out_channels = 1,
+        .map = { -1 }, /* silence */
+    };
+    int mapper = ove_audio_node_channel_map(&g, &map, "silence");
+
+    int16_t captured[4] = {99, 99, 99, 99};
+    struct mono_capture_ctx mc = { .captured = captured };
+    int sink = ove_audio_graph_add_node(&g, &mono_capture_ops, &mc,
+                                        "mono-cap", OVE_AUDIO_NODE_SINK);
+
+    ove_audio_graph_connect(&g, src, mapper);
+    ove_audio_graph_connect(&g, mapper, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+    assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+
+    /* All samples should be zero (silence) */
+    assert_int_equal(mc.captured_frames, 4);
+    for (int i = 0; i < 4; i++)
+        assert_int_equal(captured[i], 0);
+
+    ove_audio_graph_deinit(&g);
+}
+
+/* ── Format equality tests ──────────────────────────────────────── */
+
+static void test_fmt_equal_same(void **state)
+{
+    (void)state;
+    struct ove_audio_fmt a = {
+        .sample_rate = 48000,
+        .channels = 2,
+        .sample_fmt = OVE_AUDIO_FMT_S16,
+    };
+    struct ove_audio_fmt b = {
+        .sample_rate = 48000,
+        .channels = 2,
+        .sample_fmt = OVE_AUDIO_FMT_S16,
+    };
+    assert_true(ove_audio_fmt_equal(&a, &b));
+}
+
+static void test_fmt_equal_different(void **state)
+{
+    (void)state;
+    struct ove_audio_fmt base = {
+        .sample_rate = 48000,
+        .channels = 2,
+        .sample_fmt = OVE_AUDIO_FMT_S16,
+    };
+
+    /* Different sample_rate */
+    struct ove_audio_fmt diff_rate = base;
+    diff_rate.sample_rate = 44100;
+    assert_false(ove_audio_fmt_equal(&base, &diff_rate));
+
+    /* Different channels */
+    struct ove_audio_fmt diff_ch = base;
+    diff_ch.channels = 1;
+    assert_false(ove_audio_fmt_equal(&base, &diff_ch));
+
+    /* Different sample_fmt */
+    struct ove_audio_fmt diff_fmt = base;
+    diff_fmt.sample_fmt = OVE_AUDIO_FMT_F32;
+    assert_false(ove_audio_fmt_equal(&base, &diff_fmt));
+}
+
 int test_audio_run(void)
 {
     const struct CMUnitTest tests[] = {
@@ -679,6 +1336,34 @@ int test_audio_run(void)
         cmocka_unit_test(test_channel_map_stereo_to_mono),
         cmocka_unit_test(test_gain_node),
         cmocka_unit_test(test_tap_node),
+        /* State machine tests */
+        cmocka_unit_test(test_graph_start_stop),
+        cmocka_unit_test(test_graph_start_from_idle_fails),
+        cmocka_unit_test(test_graph_stop_from_idle_fails),
+        cmocka_unit_test(test_graph_start_failure_rollback),
+        cmocka_unit_test(test_graph_add_node_after_build_fails),
+        cmocka_unit_test(test_graph_connect_after_build_fails),
+        /* Capacity tests */
+        cmocka_unit_test(test_graph_max_nodes),
+        cmocka_unit_test(test_graph_max_edges),
+        /* Connect validation tests */
+        cmocka_unit_test(test_graph_connect_self_loop),
+        cmocka_unit_test(test_graph_connect_invalid_index),
+        /* Stats tests */
+        cmocka_unit_test(test_graph_stats_cycle_count),
+        cmocka_unit_test(test_graph_stats_null_params),
+        /* Multiple process cycles */
+        cmocka_unit_test(test_graph_process_multiple_cycles),
+        /* Format conversion tests */
+        cmocka_unit_test(test_converter_f32_to_s16),
+        /* Gain edge cases */
+        cmocka_unit_test(test_gain_0db_passthrough),
+        /* Channel map tests */
+        cmocka_unit_test(test_channel_map_stereo_to_mono_node),
+        cmocka_unit_test(test_channel_map_silence_channel),
+        /* Format equality tests */
+        cmocka_unit_test(test_fmt_equal_same),
+        cmocka_unit_test(test_fmt_equal_different),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
