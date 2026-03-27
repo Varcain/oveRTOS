@@ -28,6 +28,10 @@
 
 #include "ove/audio_node.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifdef CONFIG_OVE_AUDIO
 
 /* ── Graph limits ───────────────────────────────────────────────── */
@@ -264,6 +268,10 @@ static inline void ove_audio_graph_deinit(struct ove_audio_graph *g)
 { (void)g; }
 
 #endif /* CONFIG_OVE_AUDIO */
+
+#ifdef __cplusplus
+}
+#endif
 
 /** @} */ /* end of ove_audio group */
 

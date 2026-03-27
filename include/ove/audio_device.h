@@ -19,6 +19,10 @@
 
 #include "ove/audio.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ── Transport types ────────────────────────────────────────────── */
 
 /**
@@ -110,6 +114,10 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
                           const char *name);
 
 #endif /* CONFIG_OVE_AUDIO */
+
+#ifdef __cplusplus
+}
+#endif
 
 /** @} */ /* end of ove_audio_device group */
 

@@ -19,6 +19,10 @@
 #ifndef OVE_AUDIO_NODE_H
 #define OVE_AUDIO_NODE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 /** @brief Maximum number of audio channels supported by the channel-map node. */
@@ -290,6 +294,10 @@ typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf,
 int ove_audio_node_tap(struct ove_audio_graph *g,
                        ove_audio_tap_fn fn, void *user_data,
                        const char *name);
+
+#ifdef __cplusplus
+}
+#endif
 
 /** @} */ /* end of ove_audio_node group */
 
