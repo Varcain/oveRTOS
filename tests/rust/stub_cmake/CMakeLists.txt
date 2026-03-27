@@ -37,8 +37,10 @@ add_library(ove_stub STATIC
     ${OVE_SRC}/ove_board.c
     ${OVE_SRC}/ove_gpio.c
     ${OVE_SRC}/ove_led.c
+    # Audio graph engine
+    ${OVE_ROOT}/backends/common/ove_audio_graph.c
+    ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     # Headless stubs
-    ${STUB_DIR}/stub_audio.c
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_lvgl.c

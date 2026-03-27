@@ -45,7 +45,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
 {% for mod in ["THREAD", "APP", "SYNC", "AUDIO", "FS", "CONSOLE", "LOG",
                "TIME", "BSP", "BOARD", "GPIO", "LED", "LVGL", "QUEUE",
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
-               "WORKQUEUE", "STREAM"] %}
+               "WORKQUEUE", "STREAM", "INFER"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}
@@ -59,6 +59,14 @@ set(OVE_{{ mod }} OFF)
 set(OVE_ZERO_HEAP ON)
 {% else %}
 set(OVE_ZERO_HEAP OFF)
+{% endif %}
+
+{% if config.get("CONFIG_OVE_INFER") == True %}
+# ML inference settings
+{% if config.get("CONFIG_OVE_INFER_CMSIS_NN") == True %}
+set(CONFIG_OVE_INFER_CMSIS_NN ON)
+{% endif %}
+set(OVE_INFER_ARENA_SIZE {{ config.get('CONFIG_OVE_INFER_ARENA_SIZE', 65536) }})
 {% endif %}
 
 # Backend sources (ove_app.c + shared modules + only enabled backend modules)
@@ -135,3 +143,9 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% endif %}
 )
+
+# Common audio graph engine sources (platform-independent)
+{% if config.get("CONFIG_OVE_AUDIO") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_graph.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_nodes.c")
+{% endif %}

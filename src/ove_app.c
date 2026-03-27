@@ -31,8 +31,5 @@ int ove_app_run(void)
 
 void ove_run(void)
 {
-#ifdef CONFIG_OVE_AUDIO
-	ove_audio_start();
-#endif
 	ove_thread_start_scheduler();
 }

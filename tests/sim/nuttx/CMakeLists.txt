@@ -59,7 +59,8 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_watchdog.c
     ${STUB_DIR}/stub_nvs.c
     ${STUB_DIR}/stub_fs.c
-    ${STUB_DIR}/stub_audio.c
+    ${OVE_ROOT}/backends/common/ove_audio_graph.c
+    ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     ${STUB_DIR}/stub_bsp.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_gpio.c
@@ -118,6 +119,7 @@ target_link_libraries(ove_test_nuttx PRIVATE
     cmocka-static
     pthread
     rt
+    m
 )
 
 enable_testing()

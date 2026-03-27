@@ -164,14 +164,76 @@ pub struct ove_dirent {
 }
 
 #[repr(C)]
-pub struct ove_audio_config {
-    pub sample_rate:        u32,
-    pub channels:           u32,
-    pub bit_depth:          u32,
-    pub frames_per_buffer:  u32,
-    pub thread_priority:    u32,
-    pub thread_stack_size:  u32,
-    pub num_buffers:        u32,
+pub struct ove_audio_fmt {
+    pub sample_rate: u32,
+    pub channels:    u32,
+    pub sample_fmt:  u32,
+}
+
+#[repr(C)]
+pub struct ove_audio_buf {
+    pub data:   *mut c_void,
+    pub frames: u32,
+    pub fmt:    *const ove_audio_fmt,
+}
+
+#[repr(C)]
+pub struct ove_audio_node_ops {
+    pub configure: Option<unsafe extern "C" fn(*mut c_void, *const ove_audio_fmt, *mut ove_audio_fmt) -> i32>,
+    pub start:     Option<unsafe extern "C" fn(*mut c_void) -> i32>,
+    pub stop:      Option<unsafe extern "C" fn(*mut c_void) -> i32>,
+    pub process:   Option<unsafe extern "C" fn(*mut c_void, *const ove_audio_buf, *mut ove_audio_buf) -> i32>,
+    pub destroy:   Option<unsafe extern "C" fn(*mut c_void)>,
+}
+
+#[repr(C)]
+pub struct ove_audio_node {
+    pub name:    *const core::ffi::c_char,
+    pub type_:   u32,
+    pub ops:     *const ove_audio_node_ops,
+    pub ctx:     *mut c_void,
+    pub out_fmt: ove_audio_fmt,
+}
+
+#[repr(C)]
+pub struct ove_audio_edge {
+    pub from: u32,
+    pub to:   u32,
+}
+
+#[repr(C)]
+pub struct ove_audio_graph_stats {
+    pub cycles:         u32,
+    pub underruns:      u32,
+    pub overruns:       u32,
+    pub node_errors:    u32,
+    pub max_process_us: u32,
+    pub avg_process_us: u32,
+}
+
+#[repr(C)]
+pub struct ove_audio_graph {
+    pub nodes:            [ove_audio_node; 16],
+    pub node_count:       u32,
+    pub edges:            [ove_audio_edge; 16],
+    pub edge_count:       u32,
+    pub exec_order:       [u32; 16],
+    pub exec_count:       u32,
+    pub buffers:          [ove_audio_buf; 16],
+    pub buf_storage:      *mut c_void,
+    pub frames_per_period: u32,
+    pub state:            u32,
+    pub stats:            ove_audio_graph_stats,
+}
+
+#[repr(C)]
+pub struct ove_audio_device_cfg {
+    pub transport:        u32,
+    pub fmt:              ove_audio_fmt,
+    pub num_buffers:      u32,
+    pub thread_priority:  u32,
+    pub thread_stack_size: u32,
+    pub transport_cfg:    [u8; 16], /* union: i2s/pdm/sdl2 */
 }
 
 #[repr(C)]
@@ -188,8 +250,7 @@ pub struct ove_shell_cmd {
 pub type ove_thread_fn      = Option<unsafe extern "C" fn(*mut c_void)>;
 pub type ove_timer_fn       = Option<unsafe extern "C" fn(ove_timer_t, *mut c_void)>;
 pub type ove_work_fn        = Option<unsafe extern "C" fn(ove_work_t)>;
-pub type ove_audio_process_fn =
-    Option<unsafe extern "C" fn(*mut i16, *const i16, u32, *mut c_void)>;
+/* ove_audio_process_fn removed — replaced by graph node vtable */
 pub type ove_gpio_irq_cb    = Option<unsafe extern "C" fn(u32, u32, *mut c_void)>;
 pub type ove_shell_cmd_fn   = Option<unsafe extern "C" fn(i32, *const *const core::ffi::c_char)>;
 
@@ -444,10 +505,18 @@ unsafe extern "C" {
     pub fn ove_fs_closedir(dir: ove_dir_t) -> i32;
     pub fn ove_fs_readdir(dir: ove_dir_t, entry: *mut ove_dirent) -> i32;
 
-    // --- audio ---
-    pub fn ove_audio_init(cfg: *const ove_audio_config, func: ove_audio_process_fn, user_data: *mut c_void) -> i32;
-    pub fn ove_audio_start() -> i32;
-    pub fn ove_audio_stop() -> i32;
+    // --- audio graph ---
+    pub fn ove_audio_graph_init(g: *mut ove_audio_graph, frames_per_period: u32) -> i32;
+    pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
+    pub fn ove_audio_graph_add_node(g: *mut ove_audio_graph, ops: *const ove_audio_node_ops, ctx: *mut c_void, name: *const core::ffi::c_char, node_type: u32) -> i32;
+    pub fn ove_audio_graph_connect(g: *mut ove_audio_graph, from: u32, to: u32) -> i32;
+    pub fn ove_audio_graph_build(g: *mut ove_audio_graph) -> i32;
+    pub fn ove_audio_graph_start(g: *mut ove_audio_graph) -> i32;
+    pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> i32;
+    pub fn ove_audio_graph_process(g: *mut ove_audio_graph) -> i32;
+    pub fn ove_audio_graph_get_stats(g: *const ove_audio_graph, stats: *mut ove_audio_graph_stats) -> i32;
+    pub fn ove_audio_device_source(g: *mut ove_audio_graph, cfg: *const ove_audio_device_cfg, name: *const core::ffi::c_char) -> i32;
+    pub fn ove_audio_device_sink(g: *mut ove_audio_graph, cfg: *const ove_audio_device_cfg, name: *const core::ffi::c_char) -> i32;
 
     // --- NVS ---
     pub fn ove_nvs_init() -> i32;

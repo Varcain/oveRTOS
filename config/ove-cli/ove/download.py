@@ -19,7 +19,7 @@ import tarfile
 import time
 import urllib.request
 
-from .constants import NUTTX_DEFAULT_TAG, ZEPHYR_DEFAULT_REV
+from .manifest import get_component, load_manifest, warn_if_dirty
 from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")
@@ -44,15 +44,19 @@ def rev_hash(revision):
 
 
 def hashed_dir(dl_dir, base_name, revision, ws_dl_dir=None):
-    """Return (hashed_path, link_path) for a versioned download directory.
+    """Return (hashed_path, link_path, global_link) for a versioned download.
 
-    hashed_path: dl/<base_name>-<hash>  (actual content)
-    link_path:   <ws_dl_dir>/<base_name> or dl/<base_name> (symlink)
+    hashed_path:  dl/<base_name>-<hash>  (actual content)
+    link_path:    <ws_dl_dir>/<base_name> or dl/<base_name> (symlink)
+    global_link:  dl/<base_name> when ws_dl_dir is set (else None)
     """
     h = rev_hash(revision)
     link_dir = ws_dl_dir if ws_dl_dir else dl_dir
+    global_link = (os.path.join(dl_dir, base_name)
+                   if ws_dl_dir else None)
     return (os.path.join(dl_dir, f"{base_name}-{h}"),
-            os.path.join(link_dir, base_name))
+            os.path.join(link_dir, base_name),
+            global_link)
 
 
 def update_symlink(link_path, target_path):
@@ -162,11 +166,11 @@ def _write_toolchain_sentinel(extract_dir, toolchain_dir):
         f.write(os.path.abspath(toolchain_dir))
 
 
-def download_toolchain(config, dl_dir, toolchains_dir):
+def download_toolchain(config, dl_dir, toolchains_dir, manifest=None):
     """Download and extract prebuilt ARM GNU toolchain."""
-    url = get_str(config, "CONFIG_OVE_TOOLCHAIN_URL")
+    url = get_component(manifest, "toolchains", "arm-gnu", "url")
     if not url:
-        logger.error("OVE_TOOLCHAIN_URL not set")
+        logger.error("arm-gnu toolchain URL not set in manifest.yaml")
         return False
 
     filename = url.rsplit("/", 1)[-1]
@@ -236,25 +240,29 @@ def symlink_local(src, dest, name):
     return True
 
 
-def download_freertos(config, dl_dir, build_dir, ws_dl_dir=None):
+def download_freertos(config, dl_dir, build_dir, ws_dl_dir=None,
+                      manifest=None):
     """Download FreeRTOS (STM32CubeF7 or standalone kernel) and LVGL."""
     ok = True
     is_qemu = get_bool(config, "CONFIG_OVE_BOARD_QEMU_MPS2_AN500")
 
     if get_bool(config, "CONFIG_FREERTOS_SOURCE_GIT"):
         if is_qemu:
-            freertos_tag = "V11.1.0"
-            dest, link = hashed_dir(dl_dir, "FreeRTOS-Kernel",
+            freertos_tag = get_component(
+                manifest, "rtos", "freertos", "kernel-qemu", "version")
+            freertos_url = get_component(
+                manifest, "rtos", "freertos", "kernel-qemu", "url")
+            dest, link, global_link = hashed_dir(dl_dir, "FreeRTOS-Kernel",
                                     freertos_tag, ws_dl_dir)
-            ok = git_clone(
-                "https://github.com/FreeRTOS/FreeRTOS-Kernel.git",
+            ok = git_clone(freertos_url,
                 freertos_tag, dest, "FreeRTOS-Kernel") and ok
             if os.path.isdir(dest):
                 update_symlink(link, dest)
         else:
-            url = get_str(config, "CONFIG_FREERTOS_GIT_URL",
-                          "https://github.com/STMicroelectronics/STM32CubeF7.git")
-            tag = get_str(config, "CONFIG_FREERTOS_GIT_TAG", "v1.17.2")
+            url = get_component(
+                manifest, "rtos", "freertos", "stm32cubef7", "url")
+            tag = get_component(
+                manifest, "rtos", "freertos", "stm32cubef7", "version")
             stm32cube_submodules = [
                 "Drivers/STM32F7xx_HAL_Driver",
                 "Drivers/CMSIS/Device/ST/STM32F7xx",
@@ -265,19 +273,20 @@ def download_freertos(config, dl_dir, build_dir, ws_dl_dir=None):
                 "Drivers/BSP/Components/stmpe811",
                 "Drivers/BSP/Components/rk043fn48h",
             ]
-            dest, link = hashed_dir(dl_dir, "STM32CubeF7", tag, ws_dl_dir)
+            dest, link, global_link = hashed_dir(dl_dir, "STM32CubeF7", tag, ws_dl_dir)
             ok = git_clone(url, tag, dest, "STM32CubeF7",
                            submodules=stm32cube_submodules) and ok
             if os.path.isdir(dest):
                 update_symlink(link, dest)
 
-        lvgl_url = get_str(config, "CONFIG_FREERTOS_LVGL_GIT_URL",
-                           "https://github.com/lvgl/lvgl.git")
-        lvgl_tag = get_str(config, "CONFIG_FREERTOS_LVGL_GIT_TAG", "v8.3.0")
-        dest, link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+        lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+        lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+        dest, link, global_link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
         ok = git_clone(lvgl_url, lvgl_tag, dest, "LVGL") and ok
         if os.path.isdir(dest):
             update_symlink(link, dest)
+            if global_link:
+                update_symlink(global_link, dest)
 
     elif get_bool(config, "CONFIG_FREERTOS_SOURCE_TARBALL"):
         url = get_str(config, "CONFIG_FREERTOS_TARBALL_URL")
@@ -312,15 +321,13 @@ def _find_west(ove_dir):
 
 
 def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
-                    ove_dir=None):
+                    ove_dir=None, manifest=None):
     """Download Zephyr sources via west or local path."""
     if get_bool(config, "CONFIG_ZEPHYR_SOURCE_WEST"):
-        url = get_str(config, "CONFIG_ZEPHYR_WEST_MANIFEST_URL",
-                      "https://github.com/zephyrproject-rtos/zephyr.git")
-        rev = get_str(config, "CONFIG_ZEPHYR_WEST_MANIFEST_REV",
-                      ZEPHYR_DEFAULT_REV)
+        url = get_component(manifest, "rtos", "zephyr", "url")
+        rev = get_component(manifest, "rtos", "zephyr", "version")
 
-        zephyr_dir, link = hashed_dir(dl_dir, "zephyr-workspace", rev,
+        zephyr_dir, link, global_link = hashed_dir(dl_dir, "zephyr-workspace", rev,
                                       ws_dl_dir)
         if os.path.isdir(zephyr_dir):
             logger.debug(f"Zephyr: workspace already exists at {zephyr_dir}")
@@ -370,37 +377,51 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
     return False
 
 
-def download_nuttx(config, dl_dir, build_dir, ws_dl_dir=None):
+def download_nuttx(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
     """Download NuttX kernel, apps, and CMSIS dependencies."""
     ok = True
 
     if get_bool(config, "CONFIG_NUTTX_SOURCE_GIT"):
-        nuttx_url = get_str(config, "CONFIG_NUTTX_GIT_URL",
-                            "https://github.com/apache/nuttx.git")
-        nuttx_tag = get_str(config, "CONFIG_NUTTX_GIT_TAG", NUTTX_DEFAULT_TAG)
-        dest, link = hashed_dir(dl_dir, "nuttx", nuttx_tag, ws_dl_dir)
+        nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
+        nuttx_tag = get_component(
+            manifest, "rtos", "nuttx", "kernel", "version")
+        dest, link, global_link = hashed_dir(dl_dir, "nuttx", nuttx_tag, ws_dl_dir)
         ok = git_clone(nuttx_url, nuttx_tag, dest, "NuttX") and ok
         if os.path.isdir(dest):
             update_symlink(link, dest)
+            if global_link:
+                update_symlink(global_link, dest)
 
-        apps_url = get_str(config, "CONFIG_NUTTX_APPS_GIT_URL",
-                           "https://github.com/apache/nuttx-apps.git")
-        apps_tag = get_str(config, "CONFIG_NUTTX_APPS_GIT_TAG",
-                           NUTTX_DEFAULT_TAG)
-        dest, link = hashed_dir(dl_dir, "nuttx-apps", apps_tag, ws_dl_dir)
+        apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
+        apps_tag = get_component(
+            manifest, "rtos", "nuttx", "apps", "version")
+        dest, link, global_link = hashed_dir(dl_dir, "nuttx-apps", apps_tag, ws_dl_dir)
         ok = git_clone(apps_url, apps_tag, dest, "NuttX apps") and ok
         if os.path.isdir(dest):
             update_symlink(link, dest)
+            if global_link:
+                update_symlink(global_link, dest)
 
-        cmsis5_url = get_str(config, "CONFIG_NUTTX_CMSIS5_GIT_URL",
-                             "https://github.com/ARM-software/CMSIS_5.git")
-        ok = git_clone(cmsis5_url, "develop",
-                       os.path.join(dl_dir, "CMSIS_5"), "CMSIS-5") and ok
+        cmsis5_url = get_component(manifest, "libraries", "cmsis5", "url")
+        cmsis5_tag = get_component(
+            manifest, "libraries", "cmsis5", "version")
+        dest, link, global_link = hashed_dir(dl_dir, "CMSIS_5", cmsis5_tag, ws_dl_dir)
+        ok = git_clone(cmsis5_url, cmsis5_tag, dest, "CMSIS-5") and ok
+        if os.path.isdir(dest):
+            update_symlink(link, dest)
+            if global_link:
+                update_symlink(global_link, dest)
 
-        cmsis_dsp_url = get_str(config, "CONFIG_NUTTX_CMSIS_DSP_GIT_URL",
-                                "https://github.com/ARM-software/CMSIS-DSP.git")
-        ok = git_clone(cmsis_dsp_url, "main",
-                       os.path.join(dl_dir, "CMSIS-DSP"), "CMSIS-DSP") and ok
+        cmsis_dsp_url = get_component(
+            manifest, "libraries", "cmsis-dsp", "url")
+        cmsis_dsp_tag = get_component(
+            manifest, "libraries", "cmsis-dsp", "version")
+        dest, link, global_link = hashed_dir(dl_dir, "CMSIS-DSP", cmsis_dsp_tag, ws_dl_dir)
+        ok = git_clone(cmsis_dsp_url, cmsis_dsp_tag, dest, "CMSIS-DSP") and ok
+        if os.path.isdir(dest):
+            update_symlink(link, dest)
+            if global_link:
+                update_symlink(global_link, dest)
 
     elif get_bool(config, "CONFIG_NUTTX_SOURCE_LOCAL"):
         path = get_str(config, "CONFIG_NUTTX_LOCAL_PATH")
@@ -414,16 +435,17 @@ def download_nuttx(config, dl_dir, build_dir, ws_dl_dir=None):
     return ok
 
 
-def download_posix(config, dl_dir, build_dir, ws_dl_dir=None):
+def download_posix(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
     """Download LVGL sources for POSIX/SDL2 backend."""
     ok = True
-    lvgl_url = get_str(config, "CONFIG_POSIX_LVGL_GIT_URL",
-                       "https://github.com/lvgl/lvgl.git")
-    lvgl_tag = get_str(config, "CONFIG_POSIX_LVGL_GIT_TAG", "v9.2.0")
-    dest, link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+    lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+    lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+    dest, link, global_link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
     ok = git_clone(lvgl_url, lvgl_tag, dest, "LVGL") and ok
     if os.path.isdir(dest):
         update_symlink(link, dest)
+        if global_link:
+            update_symlink(global_link, dest)
     return ok
 
 
@@ -480,11 +502,11 @@ def ensure_rust_target(config, dl_dir):
     return True
 
 
-def download_zig_toolchain(config, dl_dir, toolchains_dir):
+def download_zig_toolchain(config, dl_dir, toolchains_dir, manifest=None):
     """Download and extract Zig toolchain."""
     import platform
 
-    version = get_str(config, "CONFIG_OVE_ZIG_VERSION", "0.15.2")
+    version = get_component(manifest, "toolchains", "zig", "version")
     arch = platform.machine()
     if arch == "x86_64":
         zig_arch = "x86_64"
@@ -534,9 +556,64 @@ def download_zig_toolchain(config, dl_dir, toolchains_dir):
     return True
 
 
+def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
+    """Download TensorFlow Lite Micro sources for ML inference."""
+    tflm_url = get_component(manifest, "libraries", "tflm", "url")
+    tflm_rev = get_component(manifest, "libraries", "tflm", "version")
+    if not tflm_url or not tflm_rev:
+        logger.error("TFLM URL or version not set in manifest.yaml")
+        return False
+
+    dest, link, global_link = hashed_dir(dl_dir, "tflite-micro",
+                                         tflm_rev, ws_dl_dir)
+    # TFLM uses a commit hash, not a tag — can't shallow clone.
+    # Do a full clone then checkout the specific commit.
+    ok = True
+    if not os.path.isdir(dest):
+        logger.debug(f"TFLM: cloning {tflm_url} ({tflm_rev[:12]})...")
+        ret = subprocess.run(
+            ["git", "clone", tflm_url, dest],
+            capture_output=True, text=True)
+        if ret.returncode != 0:
+            logger.error(f"TFLM clone failed: {ret.stderr}")
+            return False
+        ret = subprocess.run(
+            ["git", "checkout", tflm_rev],
+            cwd=dest, capture_output=True, text=True)
+        if ret.returncode != 0:
+            logger.error(f"TFLM checkout {tflm_rev[:12]} failed: {ret.stderr}")
+            return False
+        logger.debug(f"TFLM: checked out {tflm_rev[:12]}")
+    else:
+        logger.debug(f"TFLM: already downloaded at {dest}")
+
+    if os.path.isdir(dest):
+        update_symlink(link, dest)
+        if global_link:
+            update_symlink(global_link, dest)
+        # Download TFLM third-party dependencies (flatbuffers, gemmlowp, etc.)
+        downloads_dir = os.path.join(
+            dest, "tensorflow", "lite", "micro", "tools", "make", "downloads")
+        if not os.path.isdir(os.path.join(downloads_dir, "flatbuffers")):
+            logger.debug("TFLM: downloading third-party dependencies...")
+            ret = subprocess.run(
+                ["make", "-f",
+                 "tensorflow/lite/micro/tools/make/Makefile",
+                 "third_party_downloads"],
+                cwd=dest, capture_output=True, text=True)
+            if ret.returncode != 0:
+                logger.error(f"TFLM third-party download failed: {ret.stderr}")
+                ok = False
+            else:
+                logger.debug("TFLM: third-party dependencies ready")
+    return ok
+
+
 def download_all(ws):
     """Download all sources based on current .config."""
     ws.require_config()
+    manifest = load_manifest(ws.ove_dir)
+    warn_if_dirty(ws.ove_dir)
     config = ws.config
     os.makedirs(ws.dl_dir, exist_ok=True)
     os.makedirs(ws.ws_dl_dir, exist_ok=True)
@@ -546,7 +623,8 @@ def download_all(ws):
     ok = True
 
     if get_bool(config, "CONFIG_OVE_TOOLCHAIN_DOWNLOAD"):
-        ok = download_toolchain(config, ws.dl_dir, ws.toolchains_dir) and ok
+        ok = download_toolchain(config, ws.dl_dir, ws.toolchains_dir,
+                                manifest=manifest) and ok
         # Create workspace toolchain symlink
         if os.path.isfile(os.path.join(ws.toolchains_dir, "path.txt")) \
                 and os.path.islink(ws.config_path):
@@ -563,23 +641,29 @@ def download_all(ws):
 
     if get_bool(config, "CONFIG_OVE_RTOS_FREERTOS"):
         ok = download_freertos(config, ws.dl_dir, ws.build_dir,
-                               ws.ws_dl_dir) and ok
+                               ws.ws_dl_dir, manifest=manifest) and ok
     elif get_bool(config, "CONFIG_OVE_RTOS_ZEPHYR"):
         ok = download_zephyr(config, ws.dl_dir, ws.build_dir,
-                             ws.ws_dl_dir, ws.ove_dir) and ok
+                             ws.ws_dl_dir, ws.ove_dir,
+                             manifest=manifest) and ok
     elif get_bool(config, "CONFIG_OVE_RTOS_NUTTX"):
         ok = download_nuttx(config, ws.dl_dir, ws.build_dir,
-                            ws.ws_dl_dir) and ok
+                            ws.ws_dl_dir, manifest=manifest) and ok
     elif get_bool(config, "CONFIG_OVE_RTOS_POSIX"):
         ok = download_posix(config, ws.dl_dir, ws.build_dir,
-                            ws.ws_dl_dir) and ok
+                            ws.ws_dl_dir, manifest=manifest) and ok
+
+    if get_bool(config, "CONFIG_OVE_INFER"):
+        ok = download_tflm(config, ws.dl_dir, ws.ws_dl_dir,
+                           manifest=manifest) and ok
 
     if get_bool(config, "CONFIG_OVE_APP_LANG_RUST"):
         ok = ensure_rust_target(config, ws.dl_dir) and ok
 
     if get_bool(config, "CONFIG_OVE_APP_LANG_ZIG"):
         ok = download_zig_toolchain(config, ws.dl_dir,
-                                    ws.toolchains_dir) and ok
+                                    ws.toolchains_dir,
+                                    manifest=manifest) and ok
 
     if not ok:
         logger.error("Some downloads failed.")

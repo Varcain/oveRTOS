@@ -25,7 +25,9 @@ Include every module at once with the umbrella header:
 | @ref ove_eventgroup | `ove/eventgroup.h` | Multi-bit event flags |
 | @ref ove_workqueue | `ove/workqueue.h` | Deferred work on a dedicated thread |
 | @ref ove_stream | `ove/stream.h` | Byte-stream ring buffers |
-| @ref ove_audio | `ove/audio.h` | I2S audio streaming |
+| @ref ove_audio | `ove/audio.h` | Audio graph engine (sources, processors, sinks) |
+| @ref ove_audio_node | `ove/audio_node.h` | Node types, vtable, and built-in processing nodes |
+| @ref ove_audio_device | `ove/audio_device.h` | Transport abstraction and device node factories |
 | @ref ove_fs | `ove/fs.h` | Filesystem abstraction (VFS) |
 | @ref ove_console | `ove/console.h` | Serial I/O |
 | @ref ove_time | `ove/time.h` | Monotonic clock and delays |

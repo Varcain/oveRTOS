@@ -94,6 +94,9 @@ int main(void)
 	printf("=== App Tests ===\n");
 	failures += test_app_run();
 
+	printf("=== Inference Tests ===\n");
+	failures += test_infer_run();
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;
 }

@@ -8,6 +8,7 @@ ove/configure.py
 ove/constants.py
 ove/download.py
 ove/kconfig.py
+ove/manifest.py
 ove/rtos_menuconfig.py
 ove/run.py
 ove/test.py

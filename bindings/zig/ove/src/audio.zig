@@ -4,94 +4,78 @@
 //
 // This file is part of oveRTOS.
 
+//! Audio graph engine bindings for Zig.
+//!
+//! Build a DAG of audio nodes, validate formats, and execute in
+//! topological order — either sink-driven or app-driven.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
 
-/// Configuration for the audio subsystem.
-///
-/// Zero-valued fields are replaced by driver defaults at `init()` time.
-pub const Config = struct {
-    /// Audio sample rate in Hz (e.g. 44100, 48000). Default: 44100.
-    sample_rate: u32 = 44100,
-    /// Number of audio channels (1 = mono, 2 = stereo). Default: 1.
-    channels: u32 = 1,
-    /// Bits per sample (typically 16 or 32). Default: 16.
-    bit_depth: u32 = 16,
-    /// Number of frames processed per callback invocation. Default: 256.
-    frames_per_buffer: u32 = 256,
-    /// Priority of the audio processing thread. 0 means driver default.
-    thread_priority: u32 = 0,
-    /// Stack size of the audio processing thread in bytes. 0 means driver default.
-    thread_stack_size: u32 = 0,
-    /// Number of DMA ping-pong buffers. 0 means driver default.
-    num_buffers: u32 = 0,
+/// Audio graph wrapper.
+pub const Graph = struct {
+    raw: c.struct_ove_audio_graph,
+
+    pub fn init(frames_per_period: u32) Error!Graph {
+        var g: Graph = undefined;
+        try err.fromCode(c.ove_audio_graph_init(&g.raw, frames_per_period));
+        return g;
+    }
+
+    pub fn deinit(self: *Graph) void {
+        c.ove_audio_graph_deinit(&self.raw);
+    }
+
+    pub fn addNode(
+        self: *Graph,
+        ops: *const c.struct_ove_audio_node_ops,
+        ctx: ?*anyopaque,
+        name: [*:0]const u8,
+        node_type: c_uint,
+    ) Error!i32 {
+        const rc = c.ove_audio_graph_add_node(&self.raw, ops, ctx, name, node_type);
+        if (rc < 0) return err.fromCodeRaw(rc);
+        return rc;
+    }
+
+    pub fn connect(self: *Graph, from: u32, to: u32) Error!void {
+        try err.fromCode(c.ove_audio_graph_connect(&self.raw, from, to));
+    }
+
+    pub fn build(self: *Graph) Error!void {
+        try err.fromCode(c.ove_audio_graph_build(&self.raw));
+    }
+
+    pub fn start(self: *Graph) Error!void {
+        try err.fromCode(c.ove_audio_graph_start(&self.raw));
+    }
+
+    pub fn stop(self: *Graph) Error!void {
+        try err.fromCode(c.ove_audio_graph_stop(&self.raw));
+    }
+
+    pub fn process(self: *Graph) Error!void {
+        try err.fromCode(c.ove_audio_graph_process(&self.raw));
+    }
+
+    pub fn deviceSource(
+        self: *Graph,
+        cfg: *const c.struct_ove_audio_device_cfg,
+        name: [*:0]const u8,
+    ) Error!i32 {
+        const rc = c.ove_audio_device_source(&self.raw, cfg, name);
+        if (rc < 0) return err.fromCodeRaw(rc);
+        return rc;
+    }
+
+    pub fn deviceSink(
+        self: *Graph,
+        cfg: *const c.struct_ove_audio_device_cfg,
+        name: [*:0]const u8,
+    ) Error!i32 {
+        const rc = c.ove_audio_device_sink(&self.raw, cfg, name);
+        if (rc < 0) return err.fromCodeRaw(rc);
+        return rc;
+    }
 };
-
-/// Initialize the audio subsystem with the given configuration and processing callback.
-///
-/// `process` is called periodically by the audio driver thread. It receives
-/// a pointer to the output buffer (`out`), input buffer (`in_`), and the
-/// number of frames to process. The callback must not block.
-///
-/// Returns `Error` if the underlying driver fails to initialize.
-pub fn init(
-    cfg: Config,
-    comptime process: fn (out: [*]i16, in_: [*]const i16, frames: u32) void,
-) Error!void {
-    const Trampoline = struct {
-        fn invoke(
-            out: [*c]i16,
-            in_: [*c]const i16,
-            frames: c_uint,
-            _: ?*anyopaque,
-        ) callconv(.c) void {
-            process(out, in_, frames);
-        }
-    };
-
-    var raw_cfg: c.struct_ove_audio_config = .{
-        .sample_rate = cfg.sample_rate,
-        .channels = cfg.channels,
-        .bit_depth = cfg.bit_depth,
-        .frames_per_buffer = cfg.frames_per_buffer,
-        .thread_priority = cfg.thread_priority,
-        .thread_stack_size = cfg.thread_stack_size,
-        .num_buffers = cfg.num_buffers,
-    };
-    try err.fromCode(c.ove_audio_init(&raw_cfg, &Trampoline.invoke, null));
-}
-
-/// Start audio streaming. The processing callback begins receiving frames.
-///
-/// Returns `Error` if the driver is not initialized or start fails.
-pub fn start() Error!void {
-    try err.fromCode(c.ove_audio_start());
-}
-
-/// Stop audio streaming and silence the output.
-///
-/// Returns `Error` if the driver reports a failure.
-pub fn stop() Error!void {
-    try err.fromCode(c.ove_audio_stop());
-}
-
-/// Pause audio streaming without releasing driver resources.
-///
-/// The processing callback stops receiving frames. Resume with `resume_()`.
-/// Returns `Error` if the driver reports a failure.
-pub fn pause() Error!void {
-    try err.fromCode(c.ove_audio_pause());
-}
-
-/// Resume audio streaming after a `pause()` call.
-///
-/// Returns `Error` if the driver reports a failure.
-pub fn resume_() Error!void {
-    try err.fromCode(c.ove_audio_resume());
-}
-
-/// Shut down the audio subsystem and release all driver resources.
-pub fn deinit() void {
-    c.ove_audio_deinit();
-}

@@ -573,9 +573,12 @@ def _check_rtos_config_drift(ws, config_path):
 
 def build(ws):
     """Auto-detect RTOS and build."""
+    from .manifest import warn_if_dirty
+
     global _build_log
     ws.require_config()
     ws.ensure_dirs()
+    warn_if_dirty(ws.ove_dir)
     rtos = ws.rtos
     if not rtos:
         logger.error("no RTOS selected in .config")

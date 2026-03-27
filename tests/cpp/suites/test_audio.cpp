@@ -1,77 +1,39 @@
 #include "../framework/ove_test.hpp"
+#include "ove/audio.h"
 
-static void test_audio_process(int16_t *out, const int16_t *in,
-			       unsigned int frame_count, void *user_data)
-{
-	(void)out;
-	(void)in;
-	(void)frame_count;
-	(void)user_data;
-}
-
-static void test_cpp_audio_init_deinit(void **state)
+static void test_cpp_audio_graph_init_deinit(void **state)
 {
 	(void)state;
-	struct ove_audio_config cfg = {};
-	cfg.sample_rate = 48000;
-	cfg.channels = 2;
-	cfg.bit_depth = 16;
-	cfg.frames_per_buffer = 256;
+	struct ove_audio_graph g;
 
-	int ret = ove::audio::init(&cfg, test_audio_process, nullptr);
+	int ret = ove_audio_graph_init(&g, 256);
 	assert_int_equal(ret, OVE_OK);
 
-	ove::audio::deinit();
+	ove_audio_graph_deinit(&g);
 }
 
-static void test_cpp_audio_start_stop(void **state)
+static void test_cpp_audio_graph_init_null(void **state)
 {
 	(void)state;
-	struct ove_audio_config cfg = {};
-	cfg.sample_rate = 48000;
-	cfg.channels = 2;
-	cfg.bit_depth = 16;
-	cfg.frames_per_buffer = 256;
-
-	(void)ove::audio::init(&cfg, test_audio_process, nullptr);
-
-	int ret = ove::audio::start();
-	assert_int_equal(ret, OVE_OK);
-
-	ret = ove::audio::stop();
-	assert_int_equal(ret, OVE_OK);
-
-	ove::audio::deinit();
+	int ret = ove_audio_graph_init(nullptr, 256);
+	assert_int_not_equal(ret, OVE_OK);
 }
 
-static void test_cpp_audio_pause_resume(void **state)
+static void test_cpp_audio_graph_init_zero_frames(void **state)
 {
 	(void)state;
-	struct ove_audio_config cfg = {};
-	cfg.sample_rate = 48000;
-	cfg.channels = 2;
-	cfg.bit_depth = 16;
-	cfg.frames_per_buffer = 256;
+	struct ove_audio_graph g;
 
-	(void)ove::audio::init(&cfg, test_audio_process, nullptr);
-	(void)ove::audio::start();
-
-	int ret = ove::audio::pause();
-	assert_int_equal(ret, OVE_OK);
-
-	ret = ove::audio::resume();
-	assert_int_equal(ret, OVE_OK);
-
-	(void)ove::audio::stop();
-	ove::audio::deinit();
+	int ret = ove_audio_graph_init(&g, 0);
+	assert_int_not_equal(ret, OVE_OK);
 }
 
 int test_cpp_audio_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_cpp_audio_init_deinit),
-		cmocka_unit_test(test_cpp_audio_start_stop),
-		cmocka_unit_test(test_cpp_audio_pause_resume),
+		cmocka_unit_test(test_cpp_audio_graph_init_deinit),
+		cmocka_unit_test(test_cpp_audio_graph_init_null),
+		cmocka_unit_test(test_cpp_audio_graph_init_zero_frames),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

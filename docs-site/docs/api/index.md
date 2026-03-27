@@ -17,23 +17,24 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 |--------|--------|-----------|-------------|
 | Types | `ove/types.h` | — | Common error codes, opaque handle typedefs, and `OVE_WAIT_FOREVER` |
 | App | `ove/app.h` | 3 | Application entry point (`ove_main`), scheduler start (`ove_run`), and platform bootstrap (`ove_app_run`) |
-| Thread | `ove/thread.h` | 13 | Thread lifecycle (init/create/destroy/deinit), sleep, yield, suspend/resume, state query, stack usage, runtime stats, and priority change |
-| Sync | `ove/sync.h` | 22 | Non-recursive mutex, recursive mutex, counting semaphore, binary event, and condition variable — each with init/deinit and heap create/destroy variants, plus lock/unlock/take/give/wait/signal/broadcast operations |
-| Queue | `ove/queue.h` | 6 | Fixed-size item FIFO queue: init/deinit, heap create/destroy, send/receive (blocking and ISR-safe non-blocking variants) |
-| Timer | `ove/timer.h` | 7 | Software timers: init/deinit, heap create/destroy, start, stop, and reset |
-| EventGroup | `ove/eventgroup.h` | 7 | Multi-bit event flags: init/deinit, heap create/destroy, set/clear bits (including ISR-safe variant), wait-bits with `OVE_EG_WAIT_ALL`/`OVE_EG_CLEAR_ON_EXIT` flags, and get-bits |
-| WorkQueue | `ove/workqueue.h` | 9 | Deferred work on a dedicated thread: queue init/deinit, heap create/destroy, work item init (static and heap), free, submit, submit-delayed, and cancel |
-| Stream | `ove/stream.h` | 8 | Byte-stream ring buffer with trigger threshold: init/deinit, heap create/destroy, send/receive (task and ISR variants), reset, and bytes-available query |
-| Audio | `ove/audio.h` | 6 | I2S streaming with process callback: init, start, stop, pause, resume, and deinit |
-| FS | `ove/fs.h` | 14 | VFS layer: mount/unmount, open/close/read/write/seek/tell/size for files (static and heap variants), opendir/readdir/closedir, unlink, and rename |
-| Console | `ove/console.h` | 4 | Serial I/O: init, getchar, putchar, and write |
-| Time | `ove/time.h` | 4 | Monotonic clock: get microseconds, get nanoseconds, delay milliseconds, and delay microseconds |
-| Board | `ove/board.h` | 3 | Board lifecycle: init, name query, and descriptor pointer |
-| GPIO | `ove/gpio.h` | 6 | Pin configure, set, get, interrupt register, enable, and disable |
-| LED | `ove/led.h` | 3 | On-board LEDs: set, toggle, and count |
-| NVS | `ove/nvs.h` | 5 | Non-volatile key-value store: init, deinit, read, write, and erase |
-| Watchdog | `ove/watchdog.h` | 7 | Hardware watchdog: init/deinit, heap create/destroy, start, stop, and feed |
-| Shell | `ove/shell.h` | 3 | Interactive CLI: init, register command, and process character |
+| Thread | `ove/thread.h` | 13 | Thread lifecycle, sleep, yield, suspend/resume, state query, stack usage, runtime stats. [Guide](threads.md) |
+| Sync | `ove/sync.h` | 22 | Mutex, recursive mutex, semaphore, binary event, condition variable. [Guide](sync.md) |
+| Queue | `ove/queue.h` | 8 | Fixed-size item FIFO with ISR-safe variants. [Guide](ipc.md#message-queues) |
+| Timer | `ove/timer.h` | 7 | Periodic and one-shot software timers. [Guide](timers.md#software-timers) |
+| EventGroup | `ove/eventgroup.h` | 9 | Multi-bit event flags with ISR-safe set. [Guide](ipc.md#event-groups) |
+| WorkQueue | `ove/workqueue.h` | 9 | Deferred work on a dedicated thread. [Guide](timers.md#work-queues) |
+| Stream | `ove/stream.h` | 10 | Byte-stream ring buffer with trigger threshold. [Guide](ipc.md#byte-streams) |
+| Audio | `ove/audio.h` `ove/audio_node.h` `ove/audio_device.h` | 15 | Graph-based audio engine with pluggable nodes and transports. [Guide](audio.md) |
+| FS | `ove/fs.h` | 18 | VFS layer: mount, file I/O, directory enumeration, unlink, rename. [Guide](fs.md) |
+| Console | `ove/console.h` | 4 | Serial I/O: init, getchar, putchar, write. [Guide](shell.md#console) |
+| Time | `ove/time.h` | 4 | Monotonic clock: get microseconds, get nanoseconds, delay milliseconds, delay microseconds |
+| Board | `ove/board.h` | 3 | Board lifecycle: init, name query, descriptor. [Guide](io.md#board) |
+| GPIO | `ove/gpio.h` | 6 | Pin configure, set, get, interrupt register/enable/disable. [Guide](io.md#gpio) |
+| LED | `ove/led.h` | 3 | On-board LEDs: set, toggle, count. [Guide](io.md#leds) |
+| NVS | `ove/nvs.h` | 5 | Non-volatile key-value store. [Guide](nvs.md) |
+| Watchdog | `ove/watchdog.h` | 7 | Hardware watchdog with feed timeout. [Guide](io.md#watchdog) |
+| Shell | `ove/shell.h` | 3 | Interactive CLI: init, register command, process character. [Guide](shell.md) |
+| Infer | `ove/infer.h` | 8 | ML inference engine for TFLite Micro models. [Guide](infer.md) |
 | Log | `ove/log.h` | — | Compile-time filtered macros: `OVE_LOG_ERR`, `OVE_LOG_WRN`, `OVE_LOG_INF`, `OVE_LOG_DBG`, and `OVE_LOG` |
 | LVGL | `ove/lvgl.h` | — | Unified LVGL include: abstraction API (`lvgl_internal.h`) plus upstream LVGL library headers |
 | LVGL Internal | `ove/lvgl_internal.h` | — | Internal LVGL display integration hooks (lock/unlock/tick/handler/init) |

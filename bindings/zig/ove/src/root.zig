@@ -132,6 +132,11 @@ pub const shell = @import("shell.zig");
 /// LVGL UI toolkit bindings (widgets, styles, event callbacks).
 pub const lvgl = @import("lvgl.zig");
 
+/// ML inference engine (LiteRT / TF Lite Micro).
+pub const infer = @import("infer.zig");
+/// ML model session handle. Create with `Model.create()`.
+pub const Model = infer.Model;
+
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
 

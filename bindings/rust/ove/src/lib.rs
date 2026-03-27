@@ -58,6 +58,8 @@ pub mod stream;
 pub mod watchdog;
 #[cfg(has_workqueue)]
 pub mod workqueue;
+#[cfg(has_infer)]
+pub mod infer;
 
 /// Raw FFI bindings re-exported for advanced use cases.
 ///

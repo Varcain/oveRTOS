@@ -30,6 +30,16 @@ nav:
     - Run: getting-started/run.md
   - API Reference:
     - Overview: api/index.md
+    - Threads: api/threads.md
+    - Synchronization: api/sync.md
+    - IPC (Queue, Events, Stream): api/ipc.md
+    - Timers & Work Queues: api/timers.md
+    - Audio Engine: api/audio.md
+    - Filesystem: api/fs.md
+    - Hardware I/O: api/io.md
+    - Shell & Console: api/shell.md
+    - Non-Volatile Storage: api/nvs.md
+    - ML Inference: api/infer.md
   - Build System:
     - CMake: build-system/cmake.md
     - Kconfig: build-system/kconfig.md

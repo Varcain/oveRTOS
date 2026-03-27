@@ -112,7 +112,8 @@ set(CORE_SOURCES
 
 # --- Stub backend for non-FreeRTOS modules ---
 set(STUB_SOURCES
-    ${STUB_DIR}/stub_audio.c
+    ${OVE_ROOT}/backends/common/ove_audio_graph.c
+    ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     ${STUB_DIR}/stub_bsp.c
     ${STUB_DIR}/stub_lvgl.c
     ${STUB_DIR}/stub_gpio.c
@@ -186,6 +187,7 @@ target_include_directories(ove_test_freertos_qemu_zeroheap PRIVATE
 
 target_link_libraries(ove_test_freertos_qemu_zeroheap PRIVATE
     cmocka-static
+    m
 )
 
 # Linker script
