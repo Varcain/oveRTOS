@@ -24,7 +24,7 @@
  * In heap mode the helpers simply ignore the storage parameter.
  */
 #define OVE_TEST_STORAGE(type, name) static type name __attribute__((unused))
-#define OVE_TEST_STACK(name, size)   static uint8_t name[size] __attribute__((unused))
+#define OVE_TEST_STACK(name, size)   static uint8_t name[size] __attribute__((unused, aligned(8)))
 
 /*
  * Portable sleep for test code.
