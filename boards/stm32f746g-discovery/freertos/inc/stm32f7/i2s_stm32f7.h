@@ -12,6 +12,20 @@
 #include "i2s_da.h"
 
 void i2s_stm32f7_init(void);
+
+/**
+ * @brief Set audio input device before init.
+ * @param use_dmic  Non-zero to use on-board digital microphones,
+ *                  zero for line-in (default).
+ */
+void i2s_stm32f7_set_input_device(int use_dmic);
+
+/**
+ * @brief Override the sample rate before init.
+ * @param rate  Sample rate in Hz (e.g. 16000, 44100, 48000).
+ *              0 means use the board default.
+ */
+void i2s_stm32f7_set_sample_rate(unsigned int rate);
 unsigned long i2s_stm32f7_getRxBuffer(void);
 unsigned long i2s_stm32f7_getTxBuffer(void);
 uint8_t i2s_stm32f7_getRxCompletedBufferHalf(void);

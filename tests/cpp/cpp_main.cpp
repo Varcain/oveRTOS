@@ -83,6 +83,9 @@ int main(void)
 	printf("=== C++ Static Init Tests ===\n");
 	failures += test_cpp_static_init_run();
 
+	printf("=== C++ Infer Tests ===\n");
+	failures += test_cpp_infer_run();
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;
 }

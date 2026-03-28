@@ -1,168 +1,281 @@
-/*
- * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- *
- * This file is part of oveRTOS.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+#include "ove/types.h"
+#include "ove/audio_device.h"
 
-#include "ove/audio.h"
-#include "ove_backend_common.h"
-#include <SDL.h>
+#ifdef CONFIG_OVE_AUDIO
+
+#include <SDL2/SDL.h>
+#include <stdlib.h>
 #include <string.h>
 
-static struct {
-	ove_audio_process_fn process_fn;
-	void *user_data;
-	unsigned int frames_per_buffer;
-	unsigned int channels;
-	unsigned int sample_rate;
-	SDL_AudioDeviceID out_dev;
-	SDL_AudioDeviceID in_dev;
-	int initialized;
-	int16_t *capture_buf;
-	size_t capture_buf_samples;
-} audio_ctx;
+/* ═══════════════════════════════════════════════════════════════════
+   SDL2 Source Node
+   ═══════════════════════════════════════════════════════════════════ */
 
-static void audio_output_callback(void *userdata, Uint8 *stream, int len)
+struct sdl_source_ctx {
+    struct ove_audio_fmt    fmt;
+    SDL_AudioDeviceID       dev;
+    const char             *device_name;
+    struct ove_audio_graph *graph;  /* for stats.overruns */
+};
+
+static int sdl_source_configure(void *ctx, const struct ove_audio_fmt *in,
+                                struct ove_audio_fmt *out)
 {
-	(void)userdata;
-	int samples = len / (int)sizeof(int16_t);
-	int frames = samples / (int)audio_ctx.channels;
-	int16_t *out = (int16_t *)stream;
-
-	/* Read captured input if available */
-	if (audio_ctx.in_dev > 0) {
-		Uint32 avail = SDL_GetQueuedAudioSize(audio_ctx.in_dev);
-		if (avail >= (Uint32)len) {
-			SDL_DequeueAudio(audio_ctx.in_dev,
-					 audio_ctx.capture_buf, (Uint32)len);
-		} else {
-			memset(audio_ctx.capture_buf, 0, (size_t)len);
-		}
-	} else {
-		memset(audio_ctx.capture_buf, 0, (size_t)len);
-	}
-
-	if (audio_ctx.process_fn) {
-		audio_ctx.process_fn(out, audio_ctx.capture_buf,
-				     (unsigned int)frames,
-				     audio_ctx.user_data);
-	} else {
-		memset(stream, 0, (size_t)len);
-	}
+    (void)in;
+    struct sdl_source_ctx *sc = (struct sdl_source_ctx *)ctx;
+    *out = sc->fmt;
+    return OVE_OK;
 }
 
-int ove_audio_init(const struct ove_audio_config *cfg,
-		       ove_audio_process_fn fn, void *user_data)
+static SDL_AudioFormat sdl_fmt_from_ove(enum ove_audio_sample_fmt fmt)
 {
-	if (!cfg || !fn) {
-		return OVE_ERR_INVALID_PARAM;
-	}
-
-	audio_ctx.process_fn = fn;
-	audio_ctx.user_data = user_data;
-	audio_ctx.frames_per_buffer = cfg->frames_per_buffer > 0
-					      ? cfg->frames_per_buffer : 512;
-	audio_ctx.channels = cfg->channels > 0 ? cfg->channels : 1;
-	audio_ctx.sample_rate = cfg->sample_rate > 0
-					? cfg->sample_rate : 44100;
-
-	if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
-	}
-
-	/* Allocate capture buffer */
-	audio_ctx.capture_buf_samples = audio_ctx.frames_per_buffer *
-					audio_ctx.channels;
-	audio_ctx.capture_buf = OVE_BACKEND_MALLOC(
-		audio_ctx.capture_buf_samples * sizeof(int16_t));
-	if (!audio_ctx.capture_buf) {
-		return OVE_ERR_NO_MEMORY;
-	}
-	memset(audio_ctx.capture_buf, 0,
-	       audio_ctx.capture_buf_samples * sizeof(int16_t));
-
-	/* Open output device */
-	SDL_AudioSpec want_out, have_out;
-	memset(&want_out, 0, sizeof(want_out));
-	want_out.freq = (int)audio_ctx.sample_rate;
-	want_out.format = AUDIO_S16SYS;
-	want_out.channels = (Uint8)audio_ctx.channels;
-	want_out.samples = (Uint16)audio_ctx.frames_per_buffer;
-	want_out.callback = audio_output_callback;
-
-	audio_ctx.out_dev = SDL_OpenAudioDevice(NULL, 0, &want_out,
-						&have_out, 0);
-	if (audio_ctx.out_dev == 0) {
-		OVE_BACKEND_FREE(audio_ctx.capture_buf);
-		audio_ctx.capture_buf = NULL;
-		return OVE_ERR_NOT_SUPPORTED;
-	}
-
-	/* Try to open input device (not fatal if unavailable) */
-	SDL_AudioSpec want_in, have_in;
-	memset(&want_in, 0, sizeof(want_in));
-	want_in.freq = (int)audio_ctx.sample_rate;
-	want_in.format = AUDIO_S16SYS;
-	want_in.channels = (Uint8)audio_ctx.channels;
-	want_in.samples = (Uint16)audio_ctx.frames_per_buffer;
-	want_in.callback = NULL; /* Use queue mode for capture */
-
-	audio_ctx.in_dev = SDL_OpenAudioDevice(NULL, 1, &want_in,
-					       &have_in, 0);
-	/* in_dev == 0 is fine — we'll provide silence */
-
-	audio_ctx.initialized = 1;
-	return OVE_OK;
+    switch (fmt) {
+    case OVE_AUDIO_FMT_S16: return AUDIO_S16SYS;
+    case OVE_AUDIO_FMT_S32: return AUDIO_S32SYS;
+    case OVE_AUDIO_FMT_F32: return AUDIO_F32SYS;
+    default:                 return AUDIO_S16SYS;
+    }
 }
 
-int ove_audio_start(void)
+static int sdl_source_start(void *ctx)
 {
-	if (!audio_ctx.initialized) {
-		return OVE_ERR_NOT_SUPPORTED;
-	}
+    struct sdl_source_ctx *sc = (struct sdl_source_ctx *)ctx;
 
-	SDL_PauseAudioDevice(audio_ctx.out_dev, 0);
-	if (audio_ctx.in_dev > 0) {
-		SDL_PauseAudioDevice(audio_ctx.in_dev, 0);
-	}
-	return OVE_OK;
+    SDL_AudioSpec want = {0};
+    want.freq     = (int)sc->fmt.sample_rate;
+    want.format   = sdl_fmt_from_ove(sc->fmt.sample_fmt);
+    want.channels = (Uint8)sc->fmt.channels;
+    want.samples  = 1024;
+
+    sc->dev = SDL_OpenAudioDevice(sc->device_name, 1 /* capture */,
+                                  &want, NULL, 0);
+    if (sc->dev == 0)
+        return OVE_ERR_NOT_SUPPORTED;
+
+    SDL_PauseAudioDevice(sc->dev, 0);
+    return OVE_OK;
 }
 
-int ove_audio_stop(void)
+static int sdl_source_stop(void *ctx)
 {
-	if (audio_ctx.out_dev > 0) {
-		SDL_PauseAudioDevice(audio_ctx.out_dev, 1);
-	}
-	if (audio_ctx.in_dev > 0) {
-		SDL_PauseAudioDevice(audio_ctx.in_dev, 1);
-	}
-	return OVE_OK;
+    struct sdl_source_ctx *sc = (struct sdl_source_ctx *)ctx;
+    if (sc->dev) {
+        SDL_PauseAudioDevice(sc->dev, 1);
+        SDL_CloseAudioDevice(sc->dev);
+        sc->dev = 0;
+    }
+    return OVE_OK;
 }
 
-int ove_audio_pause(void)
+static int sdl_source_process(void *ctx, const struct ove_audio_buf *in,
+                              struct ove_audio_buf *out)
 {
-	return ove_audio_stop();
+    (void)in;
+    struct sdl_source_ctx *sc = (struct sdl_source_ctx *)ctx;
+    unsigned int bytes = out->frames * out->fmt->channels *
+                         ove_audio_sample_size(out->fmt->sample_fmt);
+
+    if (sc->dev) {
+        Uint32 avail = SDL_DequeueAudio(sc->dev, out->data, bytes);
+        if (avail < bytes) {
+            memset((char *)out->data + avail, 0, bytes - avail);
+            if (sc->graph)
+                sc->graph->stats.overruns++;
+        }
+    } else {
+        memset(out->data, 0, bytes);
+    }
+
+    return OVE_OK;
 }
 
-int ove_audio_resume(void)
+static void sdl_source_destroy(void *ctx)
 {
-	return ove_audio_start();
+    struct sdl_source_ctx *sc = (struct sdl_source_ctx *)ctx;
+    if (sc->dev)
+        SDL_CloseAudioDevice(sc->dev);
+    free(sc);
 }
 
-void ove_audio_deinit(void)
+static const struct ove_audio_node_ops sdl_source_ops = {
+    .configure = sdl_source_configure,
+    .start     = sdl_source_start,
+    .stop      = sdl_source_stop,
+    .process   = sdl_source_process,
+    .destroy   = sdl_source_destroy,
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   SDL2 Sink Node
+   ═══════════════════════════════════════════════════════════════════ */
+
+struct sdl_sink_ctx {
+    struct ove_audio_fmt     fmt;
+    SDL_AudioDeviceID        dev;
+    const char              *device_name;
+    struct ove_audio_graph  *graph;
+    unsigned int             frames_per_period;
+    /* Set by SDL callback before graph_process(), read by process() */
+    Uint8                   *sdl_stream;
+    unsigned int             sdl_stream_len;
+};
+
+static int sdl_sink_configure(void *ctx, const struct ove_audio_fmt *in,
+                              struct ove_audio_fmt *out)
 {
-	if (audio_ctx.out_dev > 0) {
-		SDL_CloseAudioDevice(audio_ctx.out_dev);
-		audio_ctx.out_dev = 0;
-	}
-	if (audio_ctx.in_dev > 0) {
-		SDL_CloseAudioDevice(audio_ctx.in_dev);
-		audio_ctx.in_dev = 0;
-	}
-	OVE_BACKEND_FREE(audio_ctx.capture_buf);
-	audio_ctx.capture_buf = NULL;
-	audio_ctx.initialized = 0;
-	SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    (void)out;
+    struct sdl_sink_ctx *sc = (struct sdl_sink_ctx *)ctx;
+    if (!ove_audio_fmt_equal(in, &sc->fmt))
+        return OVE_ERR_INVALID_PARAM;
+    return OVE_OK;
 }
+
+static void sdl_sink_callback(void *userdata, Uint8 *stream, int len)
+{
+    struct sdl_sink_ctx *sc = (struct sdl_sink_ctx *)userdata;
+    memset(stream, 0, (size_t)len); /* default silence */
+    sc->sdl_stream = stream;
+    sc->sdl_stream_len = (unsigned int)len;
+    ove_audio_graph_process(sc->graph);
+    sc->sdl_stream = NULL;
+}
+
+static int sdl_sink_start(void *ctx)
+{
+    struct sdl_sink_ctx *sc = (struct sdl_sink_ctx *)ctx;
+
+    SDL_AudioSpec want = {0};
+    want.freq     = (int)sc->fmt.sample_rate;
+    want.format   = sdl_fmt_from_ove(sc->fmt.sample_fmt);
+    want.channels = (Uint8)sc->fmt.channels;
+    want.samples  = (Uint16)sc->frames_per_period;
+    want.callback = sdl_sink_callback;
+    want.userdata = sc;
+
+    sc->dev = SDL_OpenAudioDevice(sc->device_name, 0 /* playback */,
+                                  &want, NULL, 0);
+    if (sc->dev == 0)
+        return OVE_ERR_NOT_SUPPORTED;
+
+    SDL_PauseAudioDevice(sc->dev, 0);
+    return OVE_OK;
+}
+
+static int sdl_sink_stop(void *ctx)
+{
+    struct sdl_sink_ctx *sc = (struct sdl_sink_ctx *)ctx;
+    if (sc->dev) {
+        SDL_PauseAudioDevice(sc->dev, 1);
+        SDL_CloseAudioDevice(sc->dev);
+        sc->dev = 0;
+    }
+    return OVE_OK;
+}
+
+static int sdl_sink_process(void *ctx, const struct ove_audio_buf *in,
+                            struct ove_audio_buf *out)
+{
+    (void)out;
+    struct sdl_sink_ctx *sc = (struct sdl_sink_ctx *)ctx;
+    if (sc->sdl_stream && in && in->data) {
+        unsigned int bytes = in->frames * in->fmt->channels *
+                             ove_audio_sample_size(in->fmt->sample_fmt);
+        if (bytes > sc->sdl_stream_len)
+            bytes = sc->sdl_stream_len;
+        memcpy(sc->sdl_stream, in->data, bytes);
+    }
+    return OVE_OK;
+}
+
+static void sdl_sink_destroy(void *ctx)
+{
+    struct sdl_sink_ctx *sc = (struct sdl_sink_ctx *)ctx;
+    if (sc->dev)
+        SDL_CloseAudioDevice(sc->dev);
+    free(sc);
+}
+
+static const struct ove_audio_node_ops sdl_sink_ops = {
+    .configure = sdl_sink_configure,
+    .start     = sdl_sink_start,
+    .stop      = sdl_sink_stop,
+    .process   = sdl_sink_process,
+    .destroy   = sdl_sink_destroy,
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   Device Node Factories
+   ═══════════════════════════════════════════════════════════════════ */
+
+static int sdl_init_once(void)
+{
+    static int initialized = 0;
+    if (!initialized) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0)
+            return OVE_ERR_NOT_SUPPORTED;
+        initialized = 1;
+    }
+    return OVE_OK;
+}
+
+int ove_audio_device_source(struct ove_audio_graph *g,
+                            const struct ove_audio_device_cfg *cfg,
+                            const char *name)
+{
+    if (!g || !cfg || !name)
+        return OVE_ERR_INVALID_PARAM;
+
+    if (cfg->transport != OVE_AUDIO_TRANSPORT_SDL2)
+        return OVE_ERR_NOT_SUPPORTED;
+
+    int ret = sdl_init_once();
+    if (ret != OVE_OK)
+        return ret;
+
+    struct sdl_source_ctx *ctx = calloc(1, sizeof(*ctx));
+    if (!ctx)
+        return OVE_ERR_NO_MEMORY;
+
+    ctx->fmt = cfg->fmt;
+    ctx->device_name = cfg->sdl2.device_name;
+    ctx->graph = g;
+
+    int idx = ove_audio_graph_add_node(g, &sdl_source_ops, ctx, name,
+                                       OVE_AUDIO_NODE_SOURCE);
+    if (idx < 0)
+        free(ctx);
+    return idx;
+}
+
+int ove_audio_device_sink(struct ove_audio_graph *g,
+                          const struct ove_audio_device_cfg *cfg,
+                          const char *name)
+{
+    if (!g || !cfg || !name)
+        return OVE_ERR_INVALID_PARAM;
+
+    if (cfg->transport != OVE_AUDIO_TRANSPORT_SDL2)
+        return OVE_ERR_NOT_SUPPORTED;
+
+    int ret = sdl_init_once();
+    if (ret != OVE_OK)
+        return ret;
+
+    struct sdl_sink_ctx *ctx = calloc(1, sizeof(*ctx));
+    if (!ctx)
+        return OVE_ERR_NO_MEMORY;
+
+    ctx->fmt = cfg->fmt;
+    ctx->device_name = cfg->sdl2.device_name;
+    ctx->graph = g;
+    ctx->frames_per_period = g->frames_per_period;
+
+    int idx = ove_audio_graph_add_node(g, &sdl_sink_ops, ctx, name,
+                                       OVE_AUDIO_NODE_SINK);
+    if (idx < 0)
+        free(ctx);
+    return idx;
+}
+
+#endif /* CONFIG_OVE_AUDIO */

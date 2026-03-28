@@ -21,7 +21,8 @@
  * | ove/log.h               | Logging                                    |
  * | ove/thread.h            | Thread management                          |
  * | ove/sync.h              | Mutexes, semaphores, events, condvars      |
- * | ove/audio.h             | I2S audio streaming                        |
+ * | ove/audio.h             | Audio graph engine                         |
+ * | ove/audio_device.h      | Audio transport / device nodes             |
  * | ove/fs.h                | Filesystem abstraction                     |
  * | ove/queue.h             | Message queues                             |
  * | ove/timer.h             | Software timers                            |
@@ -53,6 +54,7 @@
 #include "ove/thread.h"
 #include "ove/sync.h"
 #include "ove/audio.h"
+#include "ove/audio_device.h"
 #include "ove/fs.h"
 #include "ove/queue.h"
 #include "ove/timer.h"
@@ -70,6 +72,7 @@
 #include "ove/nvs.h"
 #include "ove/shell.h"
 #include "ove/app.h"
+#include "ove/infer.h"
 
 /** @} */
 

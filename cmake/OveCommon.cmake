@@ -63,9 +63,11 @@ macro(ove_setup_project _proj_name)
         set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     endif()
 
-    # Declare project — include CXX if app language requires it
-    if(OVE_APP_LANG STREQUAL "cpp")
+    # Declare project — include CXX if app language or ML inference requires it
+    if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
         project(${_OVE_PROJ_NAME} C CXX ASM)
+        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD_REQUIRED ON)
     else()
         project(${_OVE_PROJ_NAME} C ASM)
     endif()
@@ -308,10 +310,27 @@ macro(ove_build_lvgl)
 endmacro()
 
 
+# ─── ove_build_tflm_if_enabled() ───────────────────────────────────────
+# Build TFLM as a static library if CONFIG_OVE_INFER is set.
+# Automatically called by ove_link_firmware().  Can also be called
+# explicitly if boards need custom CMSIS-NN paths.
+macro(ove_build_tflm_if_enabled)
+    if(OVE_INFER AND NOT TARGET ove_tflm)
+        set(OVE_INCLUDE_DIR ${OVE_DIR}/include)
+        set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
+        include(${OVE_DIR}/cmake/OveTflm.cmake)
+        ove_build_tflm()
+    endif()
+endmacro()
+
+
 # ─── ove_link_firmware(linker_script) ─────────────────────────────────
 # Assemble all sources into the firmware executable, apply app language,
 # link libraries, and generate post-build artifacts (hex, bin, size).
 macro(ove_link_firmware _linker_script)
+    # Build TFLM if ML inference is enabled
+    ove_build_tflm_if_enabled()
+
     # Resolve linker script path
     if(IS_ABSOLUTE "${_linker_script}")
         set(_OVE_LD "${_linker_script}")
@@ -346,6 +365,10 @@ macro(ove_link_firmware _linker_script)
     # Link LVGL if built, plus libm
     if(TARGET lvgl)
         target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE lvgl)
+    endif()
+    # Link TFLM if built
+    if(TARGET ove_tflm)
+        target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE ove_tflm stdc++)
     endif()
     target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE m ${_OVE_LINK_LIBS})
 

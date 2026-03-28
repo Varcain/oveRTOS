@@ -130,7 +130,7 @@ jobs:
       - name: Compute Zephyr cache hash
         id: zephyr-hash
         run: |
-          REV=$(python3 -c "import re; m=re.search(r'ZEPHYR_DEFAULT_REV\s*=\s*\"([0-9a-f]+)\"', open('config/ove-cli/ove/constants.py').read()); print(m.group(1))")
+          REV=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['rtos']['zephyr']['version'])")
           HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
@@ -173,7 +173,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: output/toolchains
-          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Run tests
         run: timeout 600 make test-qemu-freertos
@@ -205,7 +205,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: output/toolchains
-          key: arm-toolchain-${{ hashFiles('config/ove-cli/ove/constants.py') }}
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Run tests
         run: timeout 900 make test-qemu-nuttx
@@ -236,14 +236,15 @@ jobs:
 
       - name: Install Zephyr SDK
         run: |
-          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz
-          tar xf zephyr-sdk-0.17.0_linux-x86_64_minimal.tar.xz -C $HOME
-          $HOME/zephyr-sdk-0.17.0/setup.sh -t arm-zephyr-eabi -c
+          SDK_VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['toolchains']['zephyr-sdk']['version'])")
+          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
+          tar xf "zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz" -C $HOME
+          "$HOME/zephyr-sdk-${SDK_VERSION}/setup.sh" -t arm-zephyr-eabi -c
 
       - name: Compute Zephyr cache hash
         id: zephyr-hash
         run: |
-          REV=$(python3 -c "import re; m=re.search(r'ZEPHYR_DEFAULT_REV\s*=\s*\"([0-9a-f]+)\"', open('config/ove-cli/ove/constants.py').read()); print(m.group(1))")
+          REV=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['rtos']['zephyr']['version'])")
           HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 

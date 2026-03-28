@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .utils import run, nproc, apply_defconfig_overlay
-from .constants import NUTTX_DEFAULT_TAG, ZEPHYR_DEFAULT_REV, ARM_TOOLCHAIN_URL
+from .manifest import load_manifest, get_component
 from .workspace import Workspace, find_ove_dir
 
 logger = logging.getLogger("ove")
@@ -118,19 +118,8 @@ def _ensure_arm_toolchain(ove_dir):
         if os.path.isfile(os.path.join(tc_dir, "bin", "arm-none-eabi-gcc")):
             return tc_dir
 
-    # Use workspace config if available, otherwise use constant default
-    config = {}
-    config_path = os.path.join(ove_dir, ".config")
-    if os.path.isfile(config_path):
-        with open(config_path) as f:
-            for line in f:
-                if line.startswith("CONFIG_OVE_TOOLCHAIN_URL="):
-                    config["CONFIG_OVE_TOOLCHAIN_URL"] = (
-                        line.split("=", 1)[1].strip().strip('"'))
-    if "CONFIG_OVE_TOOLCHAIN_URL" not in config:
-        config["CONFIG_OVE_TOOLCHAIN_URL"] = ARM_TOOLCHAIN_URL
-
-    ok = download_toolchain(config, dl_dir, toolchains_dir)
+    manifest = load_manifest(ove_dir)
+    ok = download_toolchain({}, dl_dir, toolchains_dir, manifest=manifest)
     if not ok:
         logger.error("ARM toolchain download failed")
         sys.exit(1)
@@ -200,11 +189,12 @@ def _find_zig(ove_dir):
 
     # Download the toolchain into output/toolchains like the example build does
     from .download import download_zig_toolchain
+    manifest = load_manifest(ove_dir)
     dl_dir = os.path.join(ove_dir, "dl")
     toolchains_dir = os.path.join(ove_dir, "output", "toolchains")
     os.makedirs(dl_dir, exist_ok=True)
     os.makedirs(toolchains_dir, exist_ok=True)
-    if download_zig_toolchain({}, dl_dir, toolchains_dir):
+    if download_zig_toolchain({}, dl_dir, toolchains_dir, manifest=manifest):
         matches = glob.glob(pattern)
         if matches:
             return matches[0]
@@ -268,7 +258,10 @@ def test_nuttx(ove_dir, output_dir):
     dl_dir = os.path.join(ove_dir, "dl")
     build_base = os.path.join(output_dir, "test", "nuttx")
 
-    default_tag = NUTTX_DEFAULT_TAG
+    manifest = load_manifest(ove_dir)
+    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
+    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
+    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
     tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
     nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
@@ -281,7 +274,7 @@ def test_nuttx(ove_dir, output_dir):
     if not os.path.isdir(nuttx_hash):
         logger.debug(f"Cloning NuttX {default_tag}...")
         run(["git", "clone", "--depth", "1", "-b", default_tag,
-              "https://github.com/apache/nuttx.git", nuttx_hash])
+              nuttx_url, nuttx_hash])
     link = os.path.join(dl_dir, "nuttx")
     if os.path.islink(link):
         os.unlink(link)
@@ -292,7 +285,7 @@ def test_nuttx(ove_dir, output_dir):
     if not os.path.isdir(apps_hash):
         logger.debug(f"Cloning NuttX apps {default_tag}...")
         run(["git", "clone", "--depth", "1", "-b", default_tag,
-              "https://github.com/apache/nuttx-apps.git", apps_hash])
+              apps_url, apps_hash])
     link = os.path.join(dl_dir, "nuttx-apps")
     if os.path.islink(link):
         os.unlink(link)
@@ -381,7 +374,9 @@ def test_zephyr(ove_dir, output_dir):
     dl_dir = os.path.join(ove_dir, "dl")
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
-    default_rev = ZEPHYR_DEFAULT_REV
+    manifest = load_manifest(ove_dir)
+    default_rev = get_component(manifest, "rtos", "zephyr", "version")
+    zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
     dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
 
     logger.info("Building Zephyr native_sim tests")
@@ -391,7 +386,7 @@ def test_zephyr(ove_dir, output_dir):
     if not os.path.isdir(os.path.join(hash_dir, "zephyr")):
         logger.debug("Zephyr workspace not found -- downloading...")
         run([west, "init", "-m",
-              "https://github.com/zephyrproject-rtos/zephyr.git",
+              zephyr_url,
               "--mr", "main", hash_dir])
         run(["git", "-C", os.path.join(hash_dir, "zephyr"),
               "checkout", default_rev])
@@ -456,7 +451,10 @@ def test_qemu_nuttx(ove_dir, output_dir):
     dl_dir = os.path.join(ove_dir, "dl")
     build_base = os.path.join(output_dir, "test", "qemu-nuttx")
 
-    default_tag = NUTTX_DEFAULT_TAG
+    manifest = load_manifest(ove_dir)
+    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
+    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
+    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
     tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
     nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
@@ -469,7 +467,7 @@ def test_qemu_nuttx(ove_dir, output_dir):
     if not os.path.isdir(nuttx_hash):
         logger.debug(f"Cloning NuttX {default_tag}...")
         run(["git", "clone", "--depth", "1", "-b", default_tag,
-              "https://github.com/apache/nuttx.git", nuttx_hash])
+              nuttx_url, nuttx_hash])
     link = os.path.join(dl_dir, "nuttx")
     if os.path.islink(link):
         os.unlink(link)
@@ -480,7 +478,7 @@ def test_qemu_nuttx(ove_dir, output_dir):
     if not os.path.isdir(apps_hash):
         logger.debug(f"Cloning NuttX apps {default_tag}...")
         run(["git", "clone", "--depth", "1", "-b", default_tag,
-              "https://github.com/apache/nuttx-apps.git", apps_hash])
+              apps_url, apps_hash])
     link = os.path.join(dl_dir, "nuttx-apps")
     if os.path.islink(link):
         os.unlink(link)
@@ -561,7 +559,9 @@ def test_qemu_zephyr(ove_dir, output_dir):
     build = os.path.join(output_dir, "test", "qemu-zephyr")
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
-    default_rev = ZEPHYR_DEFAULT_REV
+    manifest = load_manifest(ove_dir)
+    default_rev = get_component(manifest, "rtos", "zephyr", "version")
+    zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
     dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
 
     logger.info("Building Zephyr QEMU ARM tests")
@@ -571,7 +571,7 @@ def test_qemu_zephyr(ove_dir, output_dir):
     if not os.path.isdir(os.path.join(hash_dir, "zephyr")):
         logger.debug("Zephyr workspace not found -- downloading...")
         run([west, "init", "-m",
-              "https://github.com/zephyrproject-rtos/zephyr.git",
+              zephyr_url,
               "--mr", "main", hash_dir])
         run(["git", "-C", os.path.join(hash_dir, "zephyr"),
               "checkout", default_rev])
@@ -606,7 +606,10 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     dl_dir = os.path.join(ove_dir, "dl")
     build_base = os.path.join(output_dir, "test", "qemu-nuttx-zeroheap")
 
-    default_tag = NUTTX_DEFAULT_TAG
+    manifest = load_manifest(ove_dir)
+    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
+    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
+    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
     tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
     nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
@@ -619,7 +622,7 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     if not os.path.isdir(nuttx_hash):
         logger.debug(f"Cloning NuttX {default_tag}...")
         run(["git", "clone", "--depth", "1", "-b", default_tag,
-              "https://github.com/apache/nuttx.git", nuttx_hash])
+              nuttx_url, nuttx_hash])
     link = os.path.join(dl_dir, "nuttx")
     if os.path.islink(link):
         os.unlink(link)
@@ -630,7 +633,7 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     if not os.path.isdir(apps_hash):
         logger.debug(f"Cloning NuttX apps {default_tag}...")
         run(["git", "clone", "--depth", "1", "-b", default_tag,
-              "https://github.com/apache/nuttx-apps.git", apps_hash])
+              apps_url, apps_hash])
     link = os.path.join(dl_dir, "nuttx-apps")
     if os.path.islink(link):
         os.unlink(link)
@@ -710,7 +713,9 @@ def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
     build = os.path.join(output_dir, "test", "qemu-zephyr-zeroheap")
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
-    default_rev = ZEPHYR_DEFAULT_REV
+    manifest = load_manifest(ove_dir)
+    default_rev = get_component(manifest, "rtos", "zephyr", "version")
+    zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
     dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
 
     logger.info("Building Zephyr QEMU ARM tests (zero-heap)")
@@ -720,7 +725,7 @@ def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
     if not os.path.isdir(os.path.join(hash_dir, "zephyr")):
         logger.debug("Zephyr workspace not found -- downloading...")
         run([west, "init", "-m",
-              "https://github.com/zephyrproject-rtos/zephyr.git",
+              zephyr_url,
               "--mr", "main", hash_dir])
         run(["git", "-C", os.path.join(hash_dir, "zephyr"),
               "checkout", default_rev])

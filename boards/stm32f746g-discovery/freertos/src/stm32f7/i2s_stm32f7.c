@@ -26,8 +26,12 @@
 /** Total buffer size for double-buffering (ping-pong) */
 #define FULL_BUFFER_SIZE (HALF_BUFFER_SIZE * 2)
 
-/** Audio sample rate (Hz) - from board descriptor */
-#define AUDIO_SAMPLE_RATE OVE_AUDIO_I2S_SAMPLE_RATE
+/** Audio sample rate (Hz) - board default, overridable via i2s_stm32f7_set_sample_rate() */
+static unsigned int g_sample_rate = OVE_AUDIO_I2S_SAMPLE_RATE;
+
+/** Input device selection — set before i2s_stm32f7_init() via
+ *  i2s_stm32f7_set_input_device(). Default: line-in. */
+static int g_use_dmic;
 
 /* ========================================================================= */
 /* DMA BUFFERS - PLACED IN DTCM (NON-CACHEABLE MEMORY)                       */
@@ -139,6 +143,17 @@ static struct i2s_drv_ops driver_ops = {
  * - SAI blocks in master/slave configuration
  * - WM8994 codec for line input and headphone output
  */
+void i2s_stm32f7_set_input_device(int use_dmic)
+{
+    g_use_dmic = use_dmic;
+}
+
+void i2s_stm32f7_set_sample_rate(unsigned int rate)
+{
+    if (rate > 0)
+        g_sample_rate = rate;
+}
+
 void i2s_stm32f7_init(void)
 {
     if (g_driver_state.initialized) {
@@ -775,46 +790,87 @@ static void dma_init(void)
  */
 static void sai_init(void)
 {
-    /* === Configure TX SAI (Block A - Master) === */
+    /*
+     * Two configurations depending on input device:
+     *
+     * Line-in (default):
+     *   Block A = Master TX, Block B = Slave RX
+     *   2 slots, 32-bit frame, falling edge clock
+     *
+     * DMIC (g_use_dmic):
+     *   Block A = Master RX, Block B = Slave RX (matches BSP SAIx_In_Init)
+     *   4 slots, 64-bit frame, rising edge clock, slots 1+3 active
+     */
+    uint32_t slot_active;
+    uint32_t slot_number;
+    uint32_t frame_length;
+    uint32_t active_frame_length;
+    uint32_t master_mode;
+    uint32_t clock_strobing_tx;
+    uint32_t fifo_threshold;
+
+    if (g_use_dmic) {
+        /*
+         * DMIC mode: 4 slots, all active, 64-bit frame.
+         * DMIC data arrives in slots 1+3 (Timeslot 1).
+         * TX output goes to slots 0+1 (Timeslot 0, headphone DAC).
+         * All 4 slots active so both timeslots are transferred via DMA.
+         */
+        slot_active = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1 |
+                      SAI_SLOTACTIVE_2 | SAI_SLOTACTIVE_3;
+        slot_number = 4;
+        frame_length = 64;
+        active_frame_length = 32;
+        master_mode = SAI_MODEMASTER_TX;
+        clock_strobing_tx = SAI_CLOCKSTROBING_RISINGEDGE;
+        fifo_threshold = SAI_FIFOTHRESHOLD_1QF;
+    } else {
+        slot_active = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1;
+        slot_number = 2;
+        frame_length = 32;
+        active_frame_length = 16;
+        master_mode = SAI_MODEMASTER_TX;
+        clock_strobing_tx = SAI_CLOCKSTROBING_FALLINGEDGE;
+        fifo_threshold = SAI_FIFOTHRESHOLD_FULL;
+    }
+
+    /* === Configure SAI Block A (Master) === */
     g_driver_state.sai_tx.Instance = AUDIO_OUT_SAIx;
-    
+
     __HAL_SAI_DISABLE(&g_driver_state.sai_tx);
-    
-    /* SAI block configuration — matches Zephyr's HAL_SAI_InitProtocol(SAI_I2S_STANDARD) */
-    g_driver_state.sai_tx.Init.AudioFrequency = AUDIO_SAMPLE_RATE;
-    g_driver_state.sai_tx.Init.AudioMode = SAI_MODEMASTER_TX;
+
+    g_driver_state.sai_tx.Init.AudioFrequency = g_sample_rate;
+    g_driver_state.sai_tx.Init.AudioMode = master_mode;
     g_driver_state.sai_tx.Init.NoDivider = SAI_MASTERDIVIDER_ENABLED;
     g_driver_state.sai_tx.Init.Protocol = SAI_FREE_PROTOCOL;
     g_driver_state.sai_tx.Init.DataSize = SAI_DATASIZE_16;
     g_driver_state.sai_tx.Init.FirstBit = SAI_FIRSTBIT_MSB;
-    g_driver_state.sai_tx.Init.ClockStrobing = SAI_CLOCKSTROBING_FALLINGEDGE;
+    g_driver_state.sai_tx.Init.ClockStrobing = clock_strobing_tx;
     g_driver_state.sai_tx.Init.Synchro = SAI_ASYNCHRONOUS;
     g_driver_state.sai_tx.Init.OutputDrive = SAI_OUTPUTDRIVE_ENABLED;
-    g_driver_state.sai_tx.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
-    g_driver_state.sai_tx.Init.MonoStereoMode = SAI_MONOMODE;
+    g_driver_state.sai_tx.Init.FIFOThreshold = fifo_threshold;
+    if (!g_use_dmic)
+        g_driver_state.sai_tx.Init.MonoStereoMode = SAI_MONOMODE;
 
-    /* Frame configuration: 32-bit frame (16-bit per channel, standard I2S) */
-    g_driver_state.sai_tx.FrameInit.FrameLength = 32;
-    g_driver_state.sai_tx.FrameInit.ActiveFrameLength = 16;
+    g_driver_state.sai_tx.FrameInit.FrameLength = frame_length;
+    g_driver_state.sai_tx.FrameInit.ActiveFrameLength = active_frame_length;
     g_driver_state.sai_tx.FrameInit.FSDefinition = SAI_FS_CHANNEL_IDENTIFICATION;
     g_driver_state.sai_tx.FrameInit.FSPolarity = SAI_FS_ACTIVE_LOW;
     g_driver_state.sai_tx.FrameInit.FSOffset = SAI_FS_BEFOREFIRSTBIT;
 
-    /* Slot configuration: 2 slots (L+R), both active, mono duplicates data */
     g_driver_state.sai_tx.SlotInit.FirstBitOffset = 0;
     g_driver_state.sai_tx.SlotInit.SlotSize = SAI_SLOTSIZE_DATASIZE;
-    g_driver_state.sai_tx.SlotInit.SlotNumber = 2;
-    g_driver_state.sai_tx.SlotInit.SlotActive = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1;
-    
+    g_driver_state.sai_tx.SlotInit.SlotNumber = slot_number;
+    g_driver_state.sai_tx.SlotInit.SlotActive = slot_active;
+
     HAL_SAI_Init(&g_driver_state.sai_tx);
-    
-    /* === Configure RX SAI (Block B - Slave) === */
+
+    /* === Configure SAI Block B (Slave RX) === */
     g_driver_state.sai_rx.Instance = AUDIO_IN_SAIx;
-    
+
     __HAL_SAI_DISABLE(&g_driver_state.sai_rx);
-    
-    /* SAI block configuration - synchronized to TX, matches Zephyr */
-    g_driver_state.sai_rx.Init.AudioFrequency = AUDIO_SAMPLE_RATE;
+
+    g_driver_state.sai_rx.Init.AudioFrequency = g_sample_rate;
     g_driver_state.sai_rx.Init.AudioMode = SAI_MODESLAVE_RX;
     g_driver_state.sai_rx.Init.NoDivider = SAI_MASTERDIVIDER_ENABLED;
     g_driver_state.sai_rx.Init.Protocol = SAI_FREE_PROTOCOL;
@@ -823,24 +879,23 @@ static void sai_init(void)
     g_driver_state.sai_rx.Init.ClockStrobing = SAI_CLOCKSTROBING_RISINGEDGE;
     g_driver_state.sai_rx.Init.Synchro = SAI_SYNCHRONOUS;
     g_driver_state.sai_rx.Init.OutputDrive = SAI_OUTPUTDRIVE_DISABLED;
-    g_driver_state.sai_rx.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
-    g_driver_state.sai_rx.Init.MonoStereoMode = SAI_MONOMODE;
+    g_driver_state.sai_rx.Init.FIFOThreshold = fifo_threshold;
+    if (!g_use_dmic)
+        g_driver_state.sai_rx.Init.MonoStereoMode = SAI_MONOMODE;
 
-    /* Frame configuration - matches TX */
-    g_driver_state.sai_rx.FrameInit.FrameLength = 32;
-    g_driver_state.sai_rx.FrameInit.ActiveFrameLength = 16;
+    g_driver_state.sai_rx.FrameInit.FrameLength = frame_length;
+    g_driver_state.sai_rx.FrameInit.ActiveFrameLength = active_frame_length;
     g_driver_state.sai_rx.FrameInit.FSDefinition = SAI_FS_CHANNEL_IDENTIFICATION;
     g_driver_state.sai_rx.FrameInit.FSPolarity = SAI_FS_ACTIVE_LOW;
     g_driver_state.sai_rx.FrameInit.FSOffset = SAI_FS_BEFOREFIRSTBIT;
 
-    /* Slot configuration - matches TX */
     g_driver_state.sai_rx.SlotInit.FirstBitOffset = 0;
     g_driver_state.sai_rx.SlotInit.SlotSize = SAI_SLOTSIZE_DATASIZE;
-    g_driver_state.sai_rx.SlotInit.SlotNumber = 2;
-    g_driver_state.sai_rx.SlotInit.SlotActive = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1;
-    
+    g_driver_state.sai_rx.SlotInit.SlotNumber = slot_number;
+    g_driver_state.sai_rx.SlotInit.SlotActive = slot_active;
+
     HAL_SAI_Init(&g_driver_state.sai_rx);
-    
+
     /* Enable SAI peripherals to generate clocks */
     __HAL_SAI_ENABLE(&g_driver_state.sai_tx);
     __HAL_SAI_ENABLE(&g_driver_state.sai_rx);
@@ -874,53 +929,66 @@ static void codec_init(void)
     /* Register codec driver */
     g_driver_state.codec_driver = &wm8994_drv;
     
+    /* Select input device based on configuration */
+    uint16_t input_dev = g_use_dmic ? INPUT_DEVICE_DIGITAL_MICROPHONE_2
+                                    : INPUT_DEVICE_INPUT_LINE_1;
+
     /* Initialize codec with application-specific configuration */
     if (g_driver_state.codec_driver->Init(
         OVE_AUDIO_CODEC_I2C_ADDR,
-        INPUT_DEVICE_INPUT_LINE_1 | OUTPUT_DEVICE_HEADPHONE,
+        input_dev | OUTPUT_DEVICE_HEADPHONE,
         70,  /* Volume: 0-100% */
-        AUDIO_SAMPLE_RATE
+        g_sample_rate
     ) != 0) {
 		/* Codec initialization failed */
 		printf("Codec init failed!\n");
 		return;
 	}
 
-    /* Override BSP defaults to match Zephyr codec config exactly */
+    /* Common output path overrides — applied for both line-in and DMIC */
 
-    /* Power Management 1: disable speaker output amps (BSP sets 0x3313).
-     * SPKOUTL_ENA/SPKOUTR_ENA couple extra gain into HP on Discovery board. */
+    /* Power Management 1: disable speaker output amps */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x01, 0x0313);
 
-    /* Power Management 3: disable speaker mixer amps, keep only MIXOUTL/R.
-     * BSP sets 0x0330 (SPKMIXL/R + SPKLVOL/SPKRVOL + MIXOUTL/R).
-     * Speaker mixer amps create internal coupling to HP output. */
+    /* Power Management 3: disable speaker mixer amps */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x03, 0x0030);
 
-    /* Input mixer: remove output-to-input feedback and +30dB boost (BSP sets 0x0035) */
-    AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x29, 0x0020);
-    AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x2A, 0x0020);
-
-    /* Speaker Mixer: disconnect DAC2 from speaker mixers.
-     * BSP sets 0x0300 (DAC2L→SPKMIXL, DAC2R→SPKMIXR).
-     * With speaker mixers powered, this feeds unwanted signal. */
+    /* Speaker Mixer: disconnect DAC2 */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x36, 0x0000);
 
-    /* Output Mixer 1 & 2: route DAC1 to headphone output, disconnect analog bypass.
-     * BSP sets 0x0001 (MIXINL_TO_MIXOUTL = analog bypass) in the common output
-     * section, which disconnects DAC1 from the headphone. This means the DSP-
-     * processed audio never reaches the headphone — only raw analog pass-through.
-     * Set to 0x0100 (DAC1L/R_TO_MIXOUTL/R) so the processed signal is heard. */
+    /* Output Mixer 1 & 2: route DAC1 to headphone output */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x2D, 0x0100);
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x2E, 0x0100);
 
-    /* HP volume: +1dB, VU+MUTE_N+ZC bits (BSP SetVolume(70) sets -13dB = 0x016C) */
+    /* HP volume: +1dB */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x1C, 0x01FA);
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x1D, 0x01FA);
 
-    /* ADC digital volume: 0dB with VU bit (BSP SetVolume(70) sets -9dB = 0x01A8) */
+    /* ADC digital volume: 0dB */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x400, 0x01C0);
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x401, 0x01C0);
+
+    if (!g_use_dmic) {
+        /* Line-in specific: remove feedback and +30dB boost */
+        AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x29, 0x0020);
+        AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x2A, 0x0020);
+    } else {
+        /*
+         * DMIC mode with 4-slot SAI (all slots active):
+         *   RX: DMIC data in slots 1+3 (Timeslot 1) — BSP default
+         *   TX: Headphone DAC reads from Timeslot 0 (slots 0+2)
+         */
+
+        /* Unmute Timeslot 0 DAC for headphone output */
+        AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x420, 0x0000);
+
+        /* AIF1ADC2 digital volume (DMIC path): +6dB boost
+         * Register 0x404 = Left, 0x405 = Right
+         * Range: 0x01 = -71.625dB, 0xC0 = 0dB, 0xEF = +17.625dB
+         * 0xD8 = ~+6dB */
+        AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x404, 0x01D8);
+        AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x405, 0x01D8);
+    }
 
     /* Enable oversampling for better SNR */
     AUDIO_IO_Write(OVE_AUDIO_CODEC_I2C_ADDR, 0x620, 0x0002);

@@ -211,7 +211,9 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	if [ -z "$$ZIG" ]; then \
 		echo "  Zig not found in toolchains, downloading..."; \
 		$(VENV_PYTHON) -c "from ove.download import download_zig_toolchain; \
-			download_zig_toolchain({}, '$(OVE_DIR)/dl', '$(OVE_DIR)/output/toolchains')"; \
+			from ove.manifest import load_manifest; \
+			download_zig_toolchain({}, '$(OVE_DIR)/dl', '$(OVE_DIR)/output/toolchains', \
+			manifest=load_manifest('$(OVE_DIR)'))"; \
 		ZIG=$$(find $(OVE_DIR)/output/toolchains -maxdepth 2 -name zig -type f 2>/dev/null | head -1); \
 	fi; \
 	if [ -z "$$ZIG" ]; then ZIG=$$(command -v zig 2>/dev/null); fi; \

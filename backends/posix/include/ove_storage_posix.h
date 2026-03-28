@@ -158,6 +158,23 @@ struct ove_dir {
 typedef struct ove_file ove_file_storage_t;
 typedef struct ove_dir  ove_dir_storage_t;
 
+/* ── ML inference ─────────────────────────────────────────────────── */
+
+#ifdef CONFIG_OVE_INFER
+struct ove_model {
+	const void *model_data;
+	size_t      model_size;
+	uint8_t    *arena;
+	size_t      arena_size;
+	void       *interpreter;
+	void       *resolver;
+	uint64_t    last_invoke_us;
+	int         heap_allocated;
+};
+
+typedef struct ove_model ove_model_storage_t;
+#endif /* CONFIG_OVE_INFER */
+
 #ifdef __cplusplus
 }
 #endif

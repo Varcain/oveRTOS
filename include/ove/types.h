@@ -40,6 +40,9 @@
 /** @brief Queue send failed because the queue is at maximum capacity. */
 #define OVE_ERR_QUEUE_FULL       (-6)
 
+/** @brief ML inference or model loading failed. */
+#define OVE_ERR_ML_FAILED        (-7)
+
 /**
  * @brief Timeout value that means "block indefinitely".
  *
@@ -83,6 +86,9 @@ typedef struct ove_file *ove_file_t;
 
 /** @brief Opaque handle for an open directory. */
 typedef struct ove_dir *ove_dir_t;
+
+/** @brief Opaque handle for an ML inference model session. @see ove_model_init, ove_model_create */
+typedef struct ove_model *ove_model_t;
 
 /**
  * @brief Bit-mask type used by the event-group API.

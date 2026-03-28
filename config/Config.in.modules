@@ -21,8 +21,25 @@ config OVE_SYNC
     default y
 
 config OVE_AUDIO
-    bool "Audio streaming"
+    bool "Audio subsystem"
     default y
+
+config OVE_AUDIO_NODE_CONVERTER
+    bool "Audio format converter node"
+    depends on OVE_AUDIO
+    default y
+
+config OVE_AUDIO_NODE_GAIN
+    bool "Audio gain node"
+    depends on OVE_AUDIO
+
+config OVE_AUDIO_NODE_TAP
+    bool "Audio tap/observer node"
+    depends on OVE_AUDIO
+
+config OVE_AUDIO_NODE_CHANNEL_MAP
+    bool "Audio channel mapper node"
+    depends on OVE_AUDIO
 
 config OVE_FS
     bool "File system"
@@ -98,6 +115,37 @@ config OVE_WORKQUEUE
 config OVE_STREAM
     bool "Stream I/O"
     default n
+
+menu "Machine learning"
+
+config OVE_INFER
+    bool "ML inference engine (LiteRT / TF Lite Micro)"
+    default n
+    depends on OVE_TIME && OVE_CONSOLE
+    help
+      Portable C API for running .tflite models via LiteRT
+      (formerly TensorFlow Lite Micro). Requires C++ support
+      in the toolchain.
+
+config OVE_INFER_CMSIS_NN
+    bool "CMSIS-NN kernel acceleration"
+    default n
+    depends on OVE_INFER
+    help
+      Use ARM CMSIS-NN optimized kernels for int8 quantized
+      operators. Provides 2-10x speedup on Cortex-M4/M7.
+      Automatically disabled on non-ARM targets.
+
+config OVE_INFER_ARENA_SIZE
+    int "Default tensor arena size (bytes)"
+    default 65536
+    depends on OVE_INFER
+    help
+      Default arena allocation for models that don't specify
+      a custom size. Can be overridden per-model via
+      ove_model_config.arena_size.
+
+endmenu
 
 comment "Heap policy"
 

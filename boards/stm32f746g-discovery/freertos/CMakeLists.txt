@@ -48,10 +48,12 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Project — include CXX if app language requires it
+# Project — include CXX if app language requires it, or if ML inference is enabled
 set(PROJ_NAME firmware)
-if(OVE_APP_LANG STREQUAL "cpp")
+if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
     project(${PROJ_NAME} C CXX ASM)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
 else()
     project(${PROJ_NAME} C ASM)
 endif()
@@ -287,6 +289,19 @@ add_library(lvgl ${LVGL_SOURCES})
 target_include_directories(lvgl SYSTEM PUBLIC ${LVGL_PATH})
 
 #############################################################################
+# ML inference (TensorFlow Lite Micro)
+#############################################################################
+if(OVE_INFER)
+    set(OVE_INCLUDE_DIR ${OVE_DIR}/include)
+    set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
+    # CMSIS_5 is in the global dl/ dir (not workspace-local)
+    set(OVE_CMSIS5_DIR ${OVE_DIR}/dl/CMSIS_5/CMSIS)
+    set(OVE_CMSIS_NN_DIR ${OVE_CMSIS5_DIR}/NN)
+    include(${OVE_DIR}/cmake/OveTflm.cmake)
+    ove_build_tflm()
+endif()
+
+#############################################################################
 # Application language support
 #############################################################################
 include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
@@ -327,7 +342,11 @@ target_link_options(${PROJ_NAME}.elf PRIVATE
 )
 
 # Link libraries
-target_link_libraries(${PROJ_NAME}.elf PRIVATE lvgl m)
+target_link_libraries(${PROJ_NAME}.elf PRIVATE
+    lvgl
+    $<$<BOOL:${OVE_INFER}>:ove_tflm>
+    m
+)
 
 #############################################################################
 # Post-build commands

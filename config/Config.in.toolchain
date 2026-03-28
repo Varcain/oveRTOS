@@ -35,19 +35,8 @@ config OVE_TOOLCHAIN_CUSTOM_PATH
       Absolute path to the toolchain installation directory.
       The bin/ subdirectory should contain arm-none-eabi-gcc.
 
-config OVE_TOOLCHAIN_VERSION
-    string "Toolchain version"
-    default "15.2.rel1"
+comment "Toolchain version and URL are controlled by manifest.yaml"
     depends on OVE_TOOLCHAIN_DOWNLOAD
-    help
-      ARM GNU toolchain release version.
-
-config OVE_TOOLCHAIN_URL
-    string "Toolchain download URL"
-    default "https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz"
-    depends on OVE_TOOLCHAIN_DOWNLOAD
-    help
-      Direct download URL for the toolchain tarball.
 
 config OVE_OPENOCD_CFG
     string "OpenOCD configuration file"

@@ -54,7 +54,8 @@ CSRCS += $(OVE_DIR)/src/ove_led.c
 CSRCS += $(OVE_DIR)/src/ove_app.c
 
 # Stub backends for hardware-dependent modules
-CSRCS += $(STUB_DIR)/stub_audio.c
+CSRCS += $(OVE_DIR)/backends/common/ove_audio_graph.c
+CSRCS += $(OVE_DIR)/backends/common/ove_audio_nodes.c
 CSRCS += $(STUB_DIR)/stub_bsp.c
 CSRCS += $(STUB_DIR)/stub_lvgl.c
 CSRCS += $(STUB_DIR)/stub_gpio.c

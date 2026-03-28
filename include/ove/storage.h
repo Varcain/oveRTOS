@@ -89,6 +89,9 @@ typedef struct { uint8_t _opaque; } ove_stream_storage_t;
 typedef struct { uint8_t _opaque; } ove_watchdog_storage_t;
 typedef struct { uint8_t _opaque; } ove_file_storage_t;
 typedef struct { uint8_t _opaque; } ove_dir_storage_t;
+#ifdef CONFIG_OVE_INFER
+typedef struct { uint8_t _opaque; } ove_model_storage_t;
+#endif
 /** @endcond */
 #elif defined(__ZIG_CIMPORT__) || defined(__BINDGEN__)
 /*
@@ -133,6 +136,9 @@ OVE_OPAQUE_(ove_stream_storage_t,     OVE_SIZEOF_OVE_STREAM_STORAGE,     OVE_ALI
 OVE_OPAQUE_(ove_watchdog_storage_t,   OVE_SIZEOF_OVE_WATCHDOG_STORAGE,   OVE_ALIGNOF_OVE_WATCHDOG_STORAGE);
 OVE_OPAQUE_(ove_file_storage_t,       OVE_SIZEOF_OVE_FILE_STORAGE,       OVE_ALIGNOF_OVE_FILE_STORAGE);
 OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALIGNOF_OVE_DIR_STORAGE);
+#if defined(CONFIG_OVE_INFER) && defined(OVE_SIZEOF_OVE_MODEL_STORAGE)
+OVE_OPAQUE_(ove_model_storage_t,     OVE_SIZEOF_OVE_MODEL_STORAGE,      OVE_ALIGNOF_OVE_MODEL_STORAGE);
+#endif
 /** @endcond */
 
 #undef OVE_OPAQUE_
@@ -172,6 +178,7 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
 #define OVE_HEAP_STREAM     1 /**< Stream buffers support heap allocation. */
 #define OVE_HEAP_WATCHDOG   1 /**< Watchdog timers support heap allocation. */
 #define OVE_HEAP_FS         1 /**< Filesystem handles support heap allocation. */
+#define OVE_HEAP_INFER      1 /**< ML inference sessions support heap allocation. */
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 /** @} */
 
@@ -319,6 +326,20 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
  */
 #define OVE_WATCHDOG_DEFINE(name) \
 	static ove_watchdog_storage_t name
+
+#ifdef CONFIG_OVE_INFER
+/**
+ * @brief Declare a static model storage variable named @p name.
+ */
+#define OVE_MODEL_DEFINE(name) \
+	static ove_model_storage_t name
+
+/**
+ * @brief Declare a 16-byte-aligned static tensor arena of @p size bytes.
+ */
+#define OVE_MODEL_ARENA_DEFINE(name, size) \
+	static uint8_t __attribute__((aligned(16))) name[(size)]
+#endif /* CONFIG_OVE_INFER */
 
 /** @} */ /* ove_storage_define */
 
@@ -558,6 +579,30 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
 			&_##name##_storage, (timeout_ms)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
+#ifdef CONFIG_OVE_INFER
+/**
+ * @brief Declare and auto-initialise a static ML model (zero-heap).
+ *
+ * @param name        Variable name for the resulting @c ove_model_t handle.
+ * @param model_ptr   Pointer to the .tflite FlatBuffer data.
+ * @param model_sz    Size of the FlatBuffer in bytes.
+ * @param arena_sz    Tensor arena size in bytes (must be compile-time constant).
+ */
+#define OVE_MODEL_DEFINE_STATIC(name, model_ptr, model_sz, arena_sz) \
+	static ove_model_storage_t _##name##_storage; \
+	static uint8_t __attribute__((aligned(16))) _##name##_arena[(arena_sz)]; \
+	static ove_model_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		struct ove_model_config _cfg = { \
+			.model_data = (model_ptr), \
+			.model_size = (model_sz), \
+			.arena_size = (arena_sz), \
+		}; \
+		int _err = ove_model_init(&name, \
+			&_##name##_storage, _##name##_arena, &_cfg); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_INFER */
+
 #else /* !CONFIG_OVE_ZERO_HEAP */
 /* ── Heap mode: use _create() — works on all backends ────────────────── */
 
@@ -733,6 +778,27 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
 	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
 		int _err = ove_watchdog_create(&name, (timeout_ms)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
+
+#ifdef CONFIG_OVE_INFER
+/**
+ * @brief Declare and auto-initialise a static ML model (heap mode).
+ *
+ * @param name        Variable name for the resulting @c ove_model_t handle.
+ * @param model_ptr   Pointer to the .tflite FlatBuffer data.
+ * @param model_sz    Size of the FlatBuffer in bytes.
+ * @param arena_sz    Tensor arena size in bytes.
+ */
+#define OVE_MODEL_DEFINE_STATIC(name, model_ptr, model_sz, arena_sz) \
+	static ove_model_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		struct ove_model_config _cfg = { \
+			.model_data = (model_ptr), \
+			.model_size = (model_sz), \
+			.arena_size = (arena_sz), \
+		}; \
+		int _err = ove_model_create(&name, &_cfg); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_INFER */
 
 #endif /* CONFIG_OVE_ZERO_HEAP */
 

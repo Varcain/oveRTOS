@@ -13,6 +13,7 @@
 # Build directories
 build/
 build_*/
+build-*/
 
 # CMake
 CMakeCache.txt
@@ -52,6 +53,7 @@ defconfig
 # Generated documentation artifacts
 docs-site/site/
 docs-site/docs/build-system/kconfig.md
+docs
 
 # Zig build cache
 bindings/zig/ove/.zig-cache/

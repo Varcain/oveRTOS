@@ -57,7 +57,8 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_watchdog.c
     ${STUB_DIR}/stub_nvs.c
     ${STUB_DIR}/stub_fs.c
-    ${STUB_DIR}/stub_audio.c
+    ${OVE_ROOT}/backends/common/ove_audio_graph.c
+    ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     ${STUB_DIR}/stub_bsp.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_gpio.c
@@ -109,4 +110,4 @@ target_include_directories(app PRIVATE
     ${cmocka_SOURCE_DIR}/include
 )
 
-target_link_libraries(app PRIVATE cmocka-static)
+target_link_libraries(app PRIVATE cmocka-static m)

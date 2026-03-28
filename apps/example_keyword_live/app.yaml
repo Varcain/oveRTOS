@@ -1,0 +1,14 @@
+lang: c
+description: "Live DMIC Keyword Detection"
+sources:
+  - src/app.c
+  - include/micro_speech_quantized_model_data.cc
+  - include/audio_preprocessor_int8_model_data.cc
+includes:
+  - src
+  - include
+kconfig: |
+  config OVE_INFER
+      default y
+  config OVE_AUDIO
+      default y

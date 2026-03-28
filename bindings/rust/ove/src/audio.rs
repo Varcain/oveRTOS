@@ -4,88 +4,124 @@
 //
 // This file is part of oveRTOS.
 
-//! Audio subsystem for oveRTOS.
+//! Audio graph engine for oveRTOS.
 //!
-//! Provides [`init`], [`start`], and [`stop`] to drive a platform audio driver
-//! with a safe Rust process callback. The callback is invoked periodically by
-//! the audio thread and must be real-time safe (no blocking, no allocation).
+//! Provides safe wrappers around the C graph API: build a DAG of audio nodes
+//! (sources, processors, sinks), validate formats, and execute in topological
+//! order.
 
 use crate::bindings;
 use crate::error::{Error, Result};
+use core::ffi::c_void;
 
-/// Audio processing callback signature.
-///
-/// `out` — output sample buffer to fill.
-/// `inp` — input sample buffer to read from.
-pub type ProcessFn = fn(out: &mut [i16], inp: &[i16]);
+/// Audio sample format.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SampleFmt {
+    S16,
+    S32,
+    F32,
+}
 
-/// Audio configuration matching `ove_audio_config`.
-pub struct AudioConfig {
-    /// Sample rate in Hz (e.g. 44100, 48000).
+impl SampleFmt {
+    fn to_raw(self) -> u32 {
+        match self {
+            SampleFmt::S16 => 0,
+            SampleFmt::S32 => 1,
+            SampleFmt::F32 => 2,
+        }
+    }
+}
+
+/// Audio format descriptor.
+pub struct AudioFmt {
     pub sample_rate: u32,
-    /// Number of audio channels (1 = mono, 2 = stereo).
     pub channels: u32,
-    /// Bit depth per sample (e.g. 16, 24, 32).
-    pub bit_depth: u32,
-    /// Number of samples processed per callback invocation.
-    pub frames_per_buffer: u32,
-    /// Priority of the audio processing thread (use `ove_prio_t` values).
-    pub thread_priority: u32,
-    /// Stack size in bytes for the audio processing thread.
-    pub thread_stack_size: u32,
-    /// Number of double-buffering rings (typically 2 or 3).
-    pub num_buffers: u32,
+    pub sample_fmt: SampleFmt,
 }
 
-/// Initialize the audio subsystem with a safe Rust callback.
-///
-/// The `process` function is stored as user_data and invoked via a trampoline,
-/// following the same pattern as `Timer`. Call [`start`] to begin audio processing.
+/// Initialize the audio graph.
 ///
 /// # Errors
-/// Returns an error if the hardware audio driver fails to initialize or if
-/// `config` contains invalid parameters.
-pub fn init(config: &AudioConfig, process: ProcessFn) -> Result<()> {
-    let cfg = bindings::ove_audio_config {
-        sample_rate: config.sample_rate,
-        channels: config.channels,
-        bit_depth: config.bit_depth,
-        frames_per_buffer: config.frames_per_buffer,
-        thread_priority: config.thread_priority,
-        thread_stack_size: config.thread_stack_size,
-        num_buffers: config.num_buffers,
+/// Returns an error if `frames_per_period` is zero.
+pub fn graph_init(
+    graph: &mut bindings::ove_audio_graph,
+    frames_per_period: u32,
+) -> Result<()> {
+    let rc = unsafe { bindings::ove_audio_graph_init(graph, frames_per_period) };
+    Error::from_code(rc)
+}
+
+/// Tear down the graph and release all resources.
+pub fn graph_deinit(graph: &mut bindings::ove_audio_graph) {
+    unsafe { bindings::ove_audio_graph_deinit(graph) };
+}
+
+/// Add a node to the graph. Returns the node index.
+///
+/// # Errors
+/// Returns an error if the graph is full or not in IDLE state.
+pub fn graph_add_node(
+    graph: &mut bindings::ove_audio_graph,
+    ops: &bindings::ove_audio_node_ops,
+    ctx: *mut c_void,
+    name: &core::ffi::CStr,
+    node_type: u32,
+) -> core::result::Result<i32, Error> {
+    let rc = unsafe {
+        bindings::ove_audio_graph_add_node(graph, ops, ctx, name.as_ptr(), node_type)
     };
-    let user_data = process as *mut core::ffi::c_void;
-    let rc = unsafe { bindings::ove_audio_init(&cfg, Some(trampoline), user_data) };
-    Error::from_code(rc)
+    if rc < 0 {
+        Err(Error::from_code(rc).unwrap_err())
+    } else {
+        Ok(rc)
+    }
 }
 
-/// Start audio processing (begin invoking the process callback periodically).
+/// Connect two nodes. `from` feeds into `to`.
 ///
 /// # Errors
-/// Returns an error if the audio driver could not be started.
-pub fn start() -> Result<()> {
-    let rc = unsafe { bindings::ove_audio_start() };
+/// Returns an error on invalid indices or type violations.
+pub fn graph_connect(
+    graph: &mut bindings::ove_audio_graph,
+    from: u32,
+    to: u32,
+) -> Result<()> {
+    let rc = unsafe { bindings::ove_audio_graph_connect(graph, from, to) };
     Error::from_code(rc)
 }
 
-/// Stop audio processing (the process callback will no longer be invoked).
+/// Validate formats, resolve execution order, allocate buffers.
 ///
 /// # Errors
-/// Returns an error if the audio driver could not be stopped.
-pub fn stop() -> Result<()> {
-    let rc = unsafe { bindings::ove_audio_stop() };
+/// Returns an error on format mismatch, cycles, or OOM.
+pub fn graph_build(graph: &mut bindings::ove_audio_graph) -> Result<()> {
+    let rc = unsafe { bindings::ove_audio_graph_build(graph) };
     Error::from_code(rc)
 }
 
-unsafe extern "C" fn trampoline(
-    out: *mut i16,
-    inp: *const i16,
-    frame_count: u32,
-    user_data: *mut core::ffi::c_void,
-) {
-    let cb: ProcessFn = unsafe { core::mem::transmute(user_data) };
-    let out_slice = unsafe { core::slice::from_raw_parts_mut(out, frame_count as usize) };
-    let in_slice = unsafe { core::slice::from_raw_parts(inp, frame_count as usize) };
-    cb(out_slice, in_slice);
+/// Start the graph (sink-driven mode).
+///
+/// # Errors
+/// Returns an error if graph is not in READY state.
+pub fn graph_start(graph: &mut bindings::ove_audio_graph) -> Result<()> {
+    let rc = unsafe { bindings::ove_audio_graph_start(graph) };
+    Error::from_code(rc)
+}
+
+/// Stop the graph.
+///
+/// # Errors
+/// Returns an error if graph is not in RUNNING state.
+pub fn graph_stop(graph: &mut bindings::ove_audio_graph) -> Result<()> {
+    let rc = unsafe { bindings::ove_audio_graph_stop(graph) };
+    Error::from_code(rc)
+}
+
+/// Process one cycle (app-driven mode).
+///
+/// # Errors
+/// Returns an error if graph is not built.
+pub fn graph_process(graph: &mut bindings::ove_audio_graph) -> Result<()> {
+    let rc = unsafe { bindings::ove_audio_graph_process(graph) };
+    Error::from_code(rc)
 }

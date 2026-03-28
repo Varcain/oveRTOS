@@ -54,8 +54,10 @@ set(STUB_SOURCES
     ${OVE_SRC}/ove_board.c
     ${OVE_SRC}/ove_gpio.c
     ${OVE_SRC}/ove_led.c
-    # Headless stubs (display, audio, HAL)
-    ${STUB_DIR}/stub_audio.c
+    # Audio graph engine (platform-independent)
+    ${OVE_ROOT}/backends/common/ove_audio_graph.c
+    ${OVE_ROOT}/backends/common/ove_audio_nodes.c
+    # Headless stubs (display, HAL)
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_lvgl.c
@@ -91,6 +93,7 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_lvgl.c
     ${SUITE_DIR}/test_static_define.c
     ${SUITE_DIR}/test_app.c
+    ${SUITE_DIR}/test_infer.c
 )
 
 # --- Stub test target ---
@@ -112,6 +115,7 @@ target_link_libraries(ove_test_stub PRIVATE
     cmocka-static
     pthread
     rt
+    m
 )
 
 # Register with CTest

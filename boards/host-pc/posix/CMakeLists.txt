@@ -35,9 +35,11 @@ if(EXISTS "${OVE_GEN_DIR}/ove_config.cmake")
     include(${OVE_GEN_DIR}/ove_config.cmake)
 endif()
 
-# Include CXX if app language requires it
-if(OVE_APP_LANG STREQUAL "cpp")
+# Include CXX if app language requires it, or if ML inference is enabled (TFLM is C++)
+if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
     project(ove_posix C CXX)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
 else()
     project(ove_posix C)
 endif()
@@ -123,6 +125,15 @@ else()
 endif()
 
 #############################################################################
+# ML inference (TensorFlow Lite Micro)
+#############################################################################
+if(OVE_INFER)
+    set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
+    include(${OVE_DIR}/cmake/OveTflm.cmake)
+    ove_build_tflm()
+endif()
+
+#############################################################################
 # Executable
 #############################################################################
 #############################################################################
@@ -142,6 +153,7 @@ target_compile_definitions(ove_posix PRIVATE
 
 target_link_libraries(ove_posix PRIVATE
     lvgl
+    $<$<BOOL:${OVE_INFER}>:ove_tflm>
     ${SDL2_LIBRARIES}
     pthread
     rt

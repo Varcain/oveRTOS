@@ -13,38 +13,30 @@
  *
  * Falls back to silent in-memory processing when the shared-memory
  * file cannot be opened (headless / no audio viewer).
+ *
+ * Implements ove_audio_device_source() / ove_audio_device_sink() as
+ * graph device nodes. The sink's start() creates the engine thread.
  */
 
 #include "ove/ove.h"
+#include "ove/audio_device.h"
 #include "semihosting.h"
 #include "qemu_audio_shm.h"
 #include <stdlib.h>
 #include <string.h>
 
-static struct {
-	ove_audio_process_fn process_fn;
-	void *user_data;
-	unsigned int sample_rate;
-	unsigned int frames_per_buffer;
-	unsigned int channels;
-	unsigned int bit_depth;
-	ove_thread_t thread;
-	volatile int running;
-	int initialized;
-	int sh_fd;           /* semihosting fd, <0 = headless */
-	uint32_t out_wpos;   /* local copy of output write position */
-	uint32_t in_rpos;    /* local copy of input read position */
-} audio_state;
+#ifdef CONFIG_OVE_AUDIO
 
-/* ------------------------------------------------------------------ */
-/* Ringbuffer helpers                                                   */
-/* ------------------------------------------------------------------ */
+/* ── Ring-buffer helpers (unchanged from original) ──────────────── */
 
-/* Write `len` bytes from `buf` into the output ring, wrapping at end. */
+static int g_sh_fd = -1;
+static uint32_t g_out_wpos;
+static uint32_t g_in_rpos;
+
 static void ring_write_out(const void *buf, uint32_t len)
 {
-	int fd = audio_state.sh_fd;
-	uint32_t wpos = audio_state.out_wpos;
+	int fd = g_sh_fd;
+	uint32_t wpos = g_out_wpos;
 	uint32_t ring_off = AUDIO_SHM_OUT_RING_OFF;
 	uint32_t mask = AUDIO_SHM_RING_SIZE - 1;
 	uint32_t pos_in_ring = wpos & mask;
@@ -59,26 +51,23 @@ static void ring_write_out(const void *buf, uint32_t len)
 		sh_seek(fd, ring_off);
 		sh_write(fd, (const uint8_t *)buf + first, len - first);
 	}
-	audio_state.out_wpos = wpos + len;
+	g_out_wpos = wpos + len;
 }
 
-/* Read `len` bytes from the input ring into `buf`, wrapping at end.
- * Returns the number of bytes actually available (may be < len). */
 static uint32_t ring_read_in(void *buf, uint32_t len)
 {
-	int fd = audio_state.sh_fd;
-	uint32_t rpos = audio_state.in_rpos;
+	int fd = g_sh_fd;
+	uint32_t rpos = g_in_rpos;
 	uint32_t ring_off = AUDIO_SHM_IN_RING_OFF;
 	uint32_t mask = AUDIO_SHM_RING_SIZE - 1;
 
-	/* Read host's current in_write_pos from header */
 	uint32_t in_wpos;
 	sh_seek(fd, offsetof(struct audio_shm_header, in_write_pos));
 	sh_read(fd, &in_wpos, sizeof(in_wpos));
 
 	uint32_t avail = in_wpos - rpos;
 	if (avail > AUDIO_SHM_RING_SIZE)
-		avail = 0; /* underflow — host hasn't written yet */
+		avail = 0;
 	if (len > avail)
 		len = avail;
 	if (len == 0)
@@ -96,172 +85,144 @@ static uint32_t ring_read_in(void *buf, uint32_t len)
 		sh_seek(fd, ring_off);
 		sh_read(fd, (uint8_t *)buf + first, len - first);
 	}
-	audio_state.in_rpos = rpos + len;
+	g_in_rpos = rpos + len;
 	return len;
 }
 
-/* Flush local positions back to the shared header. */
 static void flush_positions(void)
 {
-	int fd = audio_state.sh_fd;
-
+	int fd = g_sh_fd;
 	sh_seek(fd, offsetof(struct audio_shm_header, out_write_pos));
-	sh_write(fd, &audio_state.out_wpos, sizeof(uint32_t));
-
+	sh_write(fd, &g_out_wpos, sizeof(uint32_t));
 	sh_seek(fd, offsetof(struct audio_shm_header, in_read_pos));
-	sh_write(fd, &audio_state.in_rpos, sizeof(uint32_t));
+	sh_write(fd, &g_in_rpos, sizeof(uint32_t));
 }
 
-/* ------------------------------------------------------------------ */
-/* Audio processing thread                                              */
-/* ------------------------------------------------------------------ */
+/* ── QEMU Source Node ───────────────────────────────────────────── */
 
-static void audio_loop(void *arg)
+struct qemu_source_ctx {
+	struct ove_audio_fmt    fmt;
+	struct ove_audio_graph *graph;  /* for stats.overruns */
+};
+
+static struct qemu_source_ctx g_qemu_source;
+
+static int qemu_source_configure(void *ctx, const struct ove_audio_fmt *in,
+				 struct ove_audio_fmt *out)
 {
-	(void)arg;
+	(void)in;
+	struct qemu_source_ctx *sc = (struct qemu_source_ctx *)ctx;
+	*out = sc->fmt;
+	return OVE_OK;
+}
 
-	size_t buf_samples = audio_state.frames_per_buffer *
-			     audio_state.channels;
-	size_t buf_bytes = buf_samples * (audio_state.bit_depth / 8);
+static int qemu_source_process(void *ctx, const struct ove_audio_buf *in,
+			       struct ove_audio_buf *out)
+{
+	struct qemu_source_ctx *sc = (struct qemu_source_ctx *)ctx;
+	(void)in;
+	unsigned int bytes = out->frames * out->fmt->channels *
+			     ove_audio_sample_size(out->fmt->sample_fmt);
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-	static int16_t out_buf[1024];
-	static int16_t in_buf[1024];
-#else
-	int16_t *out_buf = calloc(buf_samples, sizeof(int16_t));
-	int16_t *in_buf = calloc(buf_samples, sizeof(int16_t));
-#endif
-
-	/*
-	 * Pacing strategy: produce N buffers in a batch, then check
-	 * if the ring is getting full.  This amortises the semihosting
-	 * overhead of reading the host's read position over many
-	 * buffers instead of checking every single one.
-	 *
-	 * When the ring is above 50%, sleep and re-check with a long
-	 * virtual sleep (50ms) to reduce polling overhead while
-	 * waiting for the host to drain.
-	 */
-	unsigned int batch = 0;
-	const unsigned int batch_size = 8; /* check every 8 buffers */
-
-	while (audio_state.running) {
-		if (audio_state.process_fn) {
-			/* Read input from host (or keep silence) */
-			if (audio_state.sh_fd >= 0) {
-				uint32_t got = ring_read_in(in_buf, buf_bytes);
-				if (got < buf_bytes)
-					memset((uint8_t *)in_buf + got, 0,
-					       buf_bytes - got);
-			}
-
-			audio_state.process_fn(out_buf, in_buf,
-					       audio_state.frames_per_buffer,
-					       audio_state.user_data);
-
-			/* Write output to host */
-			if (audio_state.sh_fd >= 0) {
-				ring_write_out(out_buf, buf_bytes);
-				flush_positions();
-			}
+	if (g_sh_fd >= 0) {
+		uint32_t got = ring_read_in(out->data, bytes);
+		if (got < bytes) {
+			memset((uint8_t *)out->data + got, 0, bytes - got);
+			if (sc->graph)
+				sc->graph->stats.overruns++;
 		}
+	} else {
+		memset(out->data, 0, bytes);
+	}
+	return OVE_OK;
+}
 
+static const struct ove_audio_node_ops qemu_source_ops = {
+	.configure = qemu_source_configure,
+	.process   = qemu_source_process,
+};
+
+/* ── QEMU Sink Node ─────────────────────────────────────────────── */
+
+struct qemu_sink_ctx {
+	struct ove_audio_fmt    fmt;
+	struct ove_audio_graph *graph;
+	unsigned int            frames_per_period;
+	ove_thread_t            thread;
+	volatile int            running;
+};
+
+static struct qemu_sink_ctx g_qemu_sink;
+
+static int qemu_sink_configure(void *ctx, const struct ove_audio_fmt *in,
+			       struct ove_audio_fmt *out)
+{
+	(void)out;
+	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
+	if (!ove_audio_fmt_equal(in, &sc->fmt))
+		return OVE_ERR_INVALID_PARAM;
+	return OVE_OK;
+}
+
+static int qemu_sink_process(void *ctx, const struct ove_audio_buf *in,
+			     struct ove_audio_buf *out)
+{
+	(void)ctx;
+	(void)out;
+
+	if (g_sh_fd >= 0 && in && in->data) {
+		unsigned int bytes = in->frames * in->fmt->channels *
+				     ove_audio_sample_size(in->fmt->sample_fmt);
+		ring_write_out(in->data, bytes);
+		flush_positions();
+	}
+	return OVE_OK;
+}
+
+static void audio_engine_loop(void *arg)
+{
+	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)arg;
+	unsigned int batch = 0;
+	const unsigned int batch_size = 8;
+
+	while (sc->running) {
+		ove_audio_graph_process(sc->graph);
 		batch++;
 
-		if (audio_state.sh_fd >= 0 && batch >= batch_size) {
+		if (g_sh_fd >= 0 && batch >= batch_size) {
 			batch = 0;
-			/* Check ring fill level */
 			uint32_t host_rpos;
-			sh_seek(audio_state.sh_fd,
+			sh_seek(g_sh_fd,
 				offsetof(struct audio_shm_header,
 					 out_read_pos));
-			sh_read(audio_state.sh_fd, &host_rpos,
-				sizeof(host_rpos));
-			uint32_t buffered =
-				audio_state.out_wpos - host_rpos;
+			sh_read(g_sh_fd, &host_rpos, sizeof(host_rpos));
+			uint32_t buffered = g_out_wpos - host_rpos;
 
-			/* If ring is more than half full, sleep to let
-			 * the host catch up.  Use a long virtual sleep
-			 * to minimise semihosting polling overhead. */
 			while (buffered > AUDIO_SHM_RING_SIZE / 2
-			       && audio_state.running) {
+			       && sc->running) {
 				ove_thread_sleep_ms(50);
-				sh_seek(audio_state.sh_fd,
+				sh_seek(g_sh_fd,
 					offsetof(struct audio_shm_header,
 						 out_read_pos));
-				sh_read(audio_state.sh_fd, &host_rpos,
+				sh_read(g_sh_fd, &host_rpos,
 					sizeof(host_rpos));
-				buffered = audio_state.out_wpos
-					   - host_rpos;
+				buffered = g_out_wpos - host_rpos;
 			}
-		} else if (audio_state.sh_fd < 0) {
+		} else if (g_sh_fd < 0) {
 			unsigned int period_ms =
-				(audio_state.frames_per_buffer * 1000)
-				/ audio_state.sample_rate;
+				(sc->frames_per_period * 1000) /
+				sc->fmt.sample_rate;
 			if (period_ms < 1)
 				period_ms = 1;
 			ove_thread_sleep_ms(period_ms);
 		}
 	}
-
-#ifndef CONFIG_OVE_ZERO_HEAP
-	free(out_buf);
-	free(in_buf);
-#endif
 }
 
-/* ------------------------------------------------------------------ */
-/* ove_audio API                                                        */
-/* ------------------------------------------------------------------ */
-
-int ove_audio_init(const struct ove_audio_config *cfg,
-		       ove_audio_process_fn fn, void *user_data)
+static int qemu_sink_start(void *ctx)
 {
-	if (!cfg || !fn)
-		return OVE_ERR_INVALID_PARAM;
-
-	audio_state.process_fn = fn;
-	audio_state.user_data = user_data;
-	audio_state.sample_rate = cfg->sample_rate > 0
-					  ? cfg->sample_rate : 48000;
-	audio_state.frames_per_buffer = cfg->frames_per_buffer > 0
-						? cfg->frames_per_buffer : 256;
-	audio_state.channels = cfg->channels > 0 ? cfg->channels : 2;
-	audio_state.bit_depth = cfg->bit_depth > 0 ? cfg->bit_depth : 16;
-
-	/* Try to open shared-memory audio file via semihosting.
-	 * mode 7 = "r+b" — file must already exist (created by qemu-run.sh). */
-	audio_state.sh_fd = sh_open(AUDIO_SHM_PATH, 7);
-
-	if (audio_state.sh_fd >= 0) {
-		/* Write header so host viewer knows our format */
-		struct audio_shm_header hdr;
-		memset(&hdr, 0, sizeof(hdr));
-		hdr.magic = AUDIO_SHM_MAGIC;
-		hdr.sample_rate = audio_state.sample_rate;
-		hdr.channels = audio_state.channels;
-		hdr.bit_depth = audio_state.bit_depth;
-		hdr.frames_per_buffer = audio_state.frames_per_buffer;
-		hdr.ring_size = AUDIO_SHM_RING_SIZE;
-
-		sh_seek(audio_state.sh_fd, 0);
-		sh_write(audio_state.sh_fd, &hdr, sizeof(hdr));
-	}
-
-	audio_state.out_wpos = 0;
-	audio_state.in_rpos = 0;
-	audio_state.initialized = 1;
-	return OVE_OK;
-}
-
-int ove_audio_start(void)
-{
-	if (!audio_state.initialized)
-		return OVE_ERR_NOT_REGISTERED;
-	if (audio_state.running)
-		return OVE_OK;
-
-	audio_state.running = 1;
+	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
+	sc->running = 1;
 
 #ifdef CONFIG_OVE_ZERO_HEAP
 	static ove_thread_storage_t audio_th_storage;
@@ -270,8 +231,8 @@ int ove_audio_start(void)
 
 	struct ove_thread_desc desc = {
 		.name = "qemu_audio",
-		.entry = audio_loop,
-		.arg = NULL,
+		.entry = audio_engine_loop,
+		.arg = sc,
 		.priority = OVE_PRIO_NORMAL,
 		.stack_size = 4096,
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -280,52 +241,123 @@ int ove_audio_start(void)
 	};
 
 #ifdef CONFIG_OVE_ZERO_HEAP
-	if (ove_thread_init(&audio_state.thread, &audio_th_storage,
-			    &desc) != OVE_OK) {
+	if (ove_thread_init(&sc->thread, &audio_th_storage, &desc) != OVE_OK) {
 #else
-	if (ove_thread_create_(&audio_state.thread, &desc) != OVE_OK) {
+	if (ove_thread_create_(&sc->thread, &desc) != OVE_OK) {
 #endif
-		audio_state.running = 0;
+		sc->running = 0;
 		return OVE_ERR_NO_MEMORY;
 	}
 	return OVE_OK;
 }
 
-int ove_audio_stop(void)
+static int qemu_sink_stop(void *ctx)
 {
-	if (!audio_state.running)
+	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
+	if (!sc->running)
 		return OVE_OK;
 
-	audio_state.running = 0;
-	if (audio_state.thread) {
+	sc->running = 0;
+	if (sc->thread) {
 		ove_thread_sleep_ms(15);
 #ifdef CONFIG_OVE_ZERO_HEAP
-		ove_thread_deinit(audio_state.thread);
+		ove_thread_deinit(sc->thread);
 #else
-		ove_thread_destroy(audio_state.thread);
+		ove_thread_destroy(sc->thread);
 #endif
-		audio_state.thread = NULL;
+		sc->thread = NULL;
 	}
 	return OVE_OK;
 }
 
-int ove_audio_pause(void)
+static void qemu_sink_destroy(void *ctx)
 {
-	return ove_audio_stop();
-}
-
-int ove_audio_resume(void)
-{
-	return ove_audio_start();
-}
-
-void ove_audio_deinit(void)
-{
-	ove_audio_stop();
-	if (audio_state.sh_fd >= 0) {
-		sh_close(audio_state.sh_fd);
-		audio_state.sh_fd = -1;
+	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
+	qemu_sink_stop(ctx);
+	if (g_sh_fd >= 0) {
+		sh_close(g_sh_fd);
+		g_sh_fd = -1;
 	}
-	memset(&audio_state, 0, sizeof(audio_state));
-	audio_state.sh_fd = -1;
+	memset(sc, 0, sizeof(*sc));
 }
+
+static const struct ove_audio_node_ops qemu_sink_ops = {
+	.configure = qemu_sink_configure,
+	.start     = qemu_sink_start,
+	.stop      = qemu_sink_stop,
+	.process   = qemu_sink_process,
+	.destroy   = qemu_sink_destroy,
+};
+
+/* ── Device Node Factories ──────────────────────────────────────── */
+
+static int qemu_shm_init_once(const struct ove_audio_fmt *fmt,
+			       unsigned int frames_per_buffer)
+{
+	if (g_sh_fd >= 0)
+		return OVE_OK; /* already open */
+
+	g_sh_fd = sh_open(AUDIO_SHM_PATH, 7); /* "r+b" */
+
+	if (g_sh_fd >= 0) {
+		struct audio_shm_header hdr;
+		memset(&hdr, 0, sizeof(hdr));
+		hdr.magic = AUDIO_SHM_MAGIC;
+		hdr.sample_rate = fmt->sample_rate;
+		hdr.channels = fmt->channels;
+		hdr.bit_depth = ove_audio_sample_size(fmt->sample_fmt) * 8;
+		hdr.frames_per_buffer = frames_per_buffer;
+		hdr.ring_size = AUDIO_SHM_RING_SIZE;
+
+		sh_seek(g_sh_fd, 0);
+		sh_write(g_sh_fd, &hdr, sizeof(hdr));
+	}
+	/* Not an error if headless — we fall back to silent processing */
+
+	g_out_wpos = 0;
+	g_in_rpos = 0;
+	return OVE_OK;
+}
+
+int ove_audio_device_source(struct ove_audio_graph *g,
+			    const struct ove_audio_device_cfg *cfg,
+			    const char *name)
+{
+	if (!g || !cfg || !name)
+		return OVE_ERR_INVALID_PARAM;
+	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	qemu_shm_init_once(&cfg->fmt, g->frames_per_period);
+
+	struct qemu_source_ctx *ctx = &g_qemu_source;
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->fmt = cfg->fmt;
+	ctx->graph = g;
+
+	return ove_audio_graph_add_node(g, &qemu_source_ops, ctx, name,
+					OVE_AUDIO_NODE_SOURCE);
+}
+
+int ove_audio_device_sink(struct ove_audio_graph *g,
+			  const struct ove_audio_device_cfg *cfg,
+			  const char *name)
+{
+	if (!g || !cfg || !name)
+		return OVE_ERR_INVALID_PARAM;
+	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	qemu_shm_init_once(&cfg->fmt, g->frames_per_period);
+
+	struct qemu_sink_ctx *ctx = &g_qemu_sink;
+	memset(ctx, 0, sizeof(*ctx));
+	ctx->fmt = cfg->fmt;
+	ctx->graph = g;
+	ctx->frames_per_period = g->frames_per_period;
+
+	return ove_audio_graph_add_node(g, &qemu_sink_ops, ctx, name,
+					OVE_AUDIO_NODE_SINK);
+}
+
+#endif /* CONFIG_OVE_AUDIO */

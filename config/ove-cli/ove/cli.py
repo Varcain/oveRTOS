@@ -73,6 +73,12 @@ def main():
     p.add_argument("--dist", action="store_true",
                    help="Full reset (output/, dl/, .venv, .config)")
 
+    # ── manifest ──────────────────────────────────────────────────────
+    p = sub.add_parser("manifest",
+                       help="Show manifest versions and integrity status")
+    p.add_argument("--check", action="store_true",
+                   help="Exit non-zero if manifest has uncommitted changes")
+
     # ── board ──────────────────────────────────────────────────────────
     p = sub.add_parser("board", help="Board import/sync tools")
     board_sub = p.add_subparsers(dest="board_action")
@@ -149,6 +155,10 @@ def main():
 
     elif args.command == "clean":
         _cmd_clean(args)
+
+    elif args.command == "manifest":
+        from .manifest import cmd_manifest
+        cmd_manifest(args)
 
     elif args.command == "board":
         from .board import cmd_board

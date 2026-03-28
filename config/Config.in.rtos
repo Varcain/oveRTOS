@@ -44,16 +44,6 @@ menu "FreeRTOS"
         bool "Local directory"
     endchoice
 
-    config FREERTOS_GIT_URL
-        string "Git URL"
-        default "https://github.com/STMicroelectronics/STM32CubeF7.git"
-        depends on FREERTOS_SOURCE_GIT
-
-    config FREERTOS_GIT_TAG
-        string "Git tag/branch"
-        default "v1.17.2"
-        depends on FREERTOS_SOURCE_GIT
-
     config FREERTOS_TARBALL_URL
         string "Tarball URL"
         depends on FREERTOS_SOURCE_TARBALL
@@ -62,14 +52,7 @@ menu "FreeRTOS"
         string "Local path"
         depends on FREERTOS_SOURCE_LOCAL
 
-    config FREERTOS_LVGL_GIT_URL
-        string "LVGL Git URL"
-        default "https://github.com/lvgl/lvgl.git"
-        depends on FREERTOS_SOURCE_GIT
-
-    config FREERTOS_LVGL_GIT_TAG
-        string "LVGL Git tag/branch"
-        default "v9.2.0"
+    comment "Git URLs and versions are controlled by manifest.yaml"
         depends on FREERTOS_SOURCE_GIT
 
     menu "Kernel Configuration"
@@ -193,19 +176,12 @@ menu "Zephyr"
         bool "Local Zephyr installation"
     endchoice
 
-    config ZEPHYR_WEST_MANIFEST_URL
-        string "West manifest URL"
-        default "https://github.com/zephyrproject-rtos/zephyr.git"
-        depends on ZEPHYR_SOURCE_WEST
-
-    config ZEPHYR_WEST_MANIFEST_REV
-        string "West manifest revision"
-        default "caa8079a5362cd0437ec4d74c888077857df1a9c"
-        depends on ZEPHYR_SOURCE_WEST
-
     config ZEPHYR_LOCAL_PATH
         string "Local Zephyr base path"
         depends on ZEPHYR_SOURCE_LOCAL
+
+    comment "West manifest URL and revision are controlled by manifest.yaml"
+        depends on ZEPHYR_SOURCE_WEST
 
     menu "Kernel Configuration"
         config ZEPHYR_HEAP_MEM_POOL_SIZE
@@ -261,38 +237,11 @@ menu "NuttX"
         bool "Local directory"
     endchoice
 
-    config NUTTX_GIT_URL
-        string "NuttX kernel Git URL"
-        default "https://github.com/apache/nuttx.git"
-        depends on NUTTX_SOURCE_GIT
-
-    config NUTTX_GIT_TAG
-        string "NuttX kernel Git tag/branch"
-        default "nuttx-12.12.0"
-        depends on NUTTX_SOURCE_GIT
-
-    config NUTTX_APPS_GIT_URL
-        string "NuttX apps Git URL"
-        default "https://github.com/apache/nuttx-apps.git"
-        depends on NUTTX_SOURCE_GIT
-
-    config NUTTX_APPS_GIT_TAG
-        string "NuttX apps Git tag/branch"
-        default "nuttx-12.12.0"
-        depends on NUTTX_SOURCE_GIT
-
     config NUTTX_LOCAL_PATH
         string "Local NuttX path"
         depends on NUTTX_SOURCE_LOCAL
 
-    config NUTTX_CMSIS5_GIT_URL
-        string "CMSIS-5 Git URL"
-        default "https://github.com/ARM-software/CMSIS_5.git"
-        depends on NUTTX_SOURCE_GIT
-
-    config NUTTX_CMSIS_DSP_GIT_URL
-        string "CMSIS-DSP Git URL"
-        default "https://github.com/ARM-software/CMSIS-DSP.git"
+    comment "Git URLs and versions are controlled by manifest.yaml"
         depends on NUTTX_SOURCE_GIT
 
     menu "Kernel Configuration"
@@ -342,13 +291,7 @@ menu "POSIX / SDL2"
         int "Frames per audio buffer"
         default 512
 
-    config POSIX_LVGL_GIT_URL
-        string "LVGL Git URL"
-        default "https://github.com/lvgl/lvgl.git"
-
-    config POSIX_LVGL_GIT_TAG
-        string "LVGL Git tag/branch"
-        default "v9.2.0"
+    comment "LVGL version is controlled by manifest.yaml"
 endmenu
 
 endmenu
