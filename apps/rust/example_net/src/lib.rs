@@ -281,19 +281,10 @@ fn test_http() {
     ove::log_inf!("=== HTTP Client ===");
 
     test("http_client_init");
-    #[cfg(not(zero_heap))]
-    let client = match ove::net_http::Client::new() {
+    let mut http_storage = ove::net_http::ClientStorage::new();
+    let client = match ove::net_http::Client::create(&mut http_storage) {
         Ok(c) => { pass("http_client_init"); c }
         Err(e) => { fail("http_client_init", err_code(e)); return; }
-    };
-    #[cfg(zero_heap)]
-    let client = {
-        static mut S: ove::ffi::ove_http_client_storage_t =
-            unsafe { core::mem::zeroed() };
-        match unsafe { ove::net_http::Client::from_static(core::ptr::addr_of_mut!(S)) } {
-            Ok(c) => { pass("http_client_init"); c }
-            Err(e) => { fail("http_client_init", err_code(e)); return; }
-        }
     };
 
     // GET request
@@ -413,19 +404,10 @@ fn test_mqtt() {
     ove::log_inf!("=== MQTT Client ===");
 
     test("mqtt_client_init");
-    #[cfg(not(zero_heap))]
-    let mut mqtt = match ove::net_mqtt::Client::new() {
+    let mut mqtt_storage = ove::net_mqtt::ClientStorage::new();
+    let mut mqtt = match ove::net_mqtt::Client::create(&mut mqtt_storage) {
         Ok(c) => { pass("mqtt_client_init"); c }
         Err(e) => { fail("mqtt_client_init", err_code(e)); return; }
-    };
-    #[cfg(zero_heap)]
-    let mut mqtt = {
-        static mut S: ove::ffi::ove_mqtt_client_storage_t =
-            unsafe { core::mem::zeroed() };
-        match unsafe { ove::net_mqtt::Client::from_static(core::ptr::addr_of_mut!(S)) } {
-            Ok(c) => { pass("mqtt_client_init"); c }
-            Err(e) => { fail("mqtt_client_init", err_code(e)); return; }
-        }
     };
 
     test("mqtt_connect test.mosquitto.org:1883");

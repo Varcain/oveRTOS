@@ -62,6 +62,28 @@ pub struct Header<'a> {
 }
 
 // ---------------------------------------------------------------------------
+// ClientStorage
+// ---------------------------------------------------------------------------
+
+/// Backing storage for an HTTP client in zero-heap mode.
+///
+/// In heap mode this is a zero-size placeholder.  Pass a `&mut ClientStorage`
+/// to [`Client::create`] — the borrow checker ensures the storage outlives
+/// the client.
+///
+/// ```ignore
+/// let mut storage = ClientStorage::new();
+/// let client = Client::create(&mut storage)?;
+/// ```
+pub struct ClientStorage(bindings::ove_http_client_storage_t);
+
+impl ClientStorage {
+    pub fn new() -> Self {
+        Self(unsafe { core::mem::zeroed() })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Response
 // ---------------------------------------------------------------------------
 
@@ -148,6 +170,23 @@ impl Client {
         let rc = unsafe { bindings::ove_http_client_init(&mut handle, storage) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Create a client that works in both heap and zero-heap modes.
+    ///
+    /// In heap mode, allocates via the RTOS heap.  In zero-heap mode,
+    /// uses caller-provided `storage`.  The borrow checker ensures the
+    /// storage outlives the client.
+    pub fn create(storage: &mut ClientStorage) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            unsafe { Self::from_static(&mut storage.0) }
+        }
     }
 
     /// Perform an HTTP GET request.

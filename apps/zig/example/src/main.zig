@@ -87,8 +87,7 @@ fn uiTimerCallback() void {
     defer guard.deinit();
 
     var buf: [24]u8 = undefined;
-    const text = std.fmt.bufPrint(&buf, "Count: {d}\x00", .{val}) catch return;
-    _ = text;
+    _ = std.fmt.bufPrint(&buf, "Count: {d}\x00", .{val}) catch return;
     _ = counter_label.text(@ptrCast(&buf));
     _ = bar.value(@intCast(val % 101));
 }

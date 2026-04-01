@@ -86,6 +86,20 @@ unsafe extern "C" fn mqtt_trampoline(
 // Client
 // ---------------------------------------------------------------------------
 
+/// Backing storage for an MQTT client in zero-heap mode.
+///
+/// ```ignore
+/// let mut storage = ClientStorage::new();
+/// let mut mqtt = Client::create(&mut storage)?;
+/// ```
+pub struct ClientStorage(bindings::ove_mqtt_client_storage_t);
+
+impl ClientStorage {
+    pub fn new() -> Self {
+        Self(unsafe { core::mem::zeroed() })
+    }
+}
+
 /// MQTT 3.1.1 client.
 ///
 /// Wraps `ove_mqtt_client_t` with automatic cleanup on drop.
@@ -116,6 +130,19 @@ impl Client {
         let rc = unsafe { bindings::ove_mqtt_client_init(&mut handle, storage) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Create a client that works in both heap and zero-heap modes.
+    pub fn create(storage: &mut ClientStorage) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            unsafe { Self::from_static(&mut storage.0) }
+        }
     }
 
     /// Connect to an MQTT broker.

@@ -430,7 +430,7 @@ fn testMqtt() void {
     mqtt_rx_count = 0;
     var i: u32 = 0;
     while (i < 10) : (i += 1) {
-        _ = mqtt.loop_(500) catch {};
+        _ = mqtt.loop_(500) catch {}; // best-effort poll
         if (mqtt_rx_count >= 2) break;
     }
     if (mqtt_rx_count >= 1) {
@@ -458,7 +458,7 @@ fn testMqtt() void {
 
     // Keepalive ping
     testCase("mqtt_loop keepalive ping");
-    _ = mqtt.loop_(100) catch {};
+    _ = mqtt.loop_(100) catch {}; // best-effort keepalive
     passCase("mqtt_loop keepalive");
 
     // Disconnect

@@ -104,9 +104,13 @@ pub const Graph = struct {
 
     /// Register a custom processor node using a typed Zig struct.
     ///
-    /// `NodeType` must have a `pub fn process(self: *NodeType, ...)` method.
-    /// The binding layer generates `callconv(.c)` trampolines at comptime —
-    /// no raw C callbacks needed in application code.
+    /// `NodeType` must have a method with this signature:
+    /// ```zig
+    /// pub fn process(self: *NodeType, input: AudioBuf, output: AudioBuf) void
+    /// ```
+    /// The binding layer generates `callconv(.c)` trampolines at comptime
+    /// and wraps raw C buffers in safe `AudioBuf` types — no `@ptrCast`
+    /// needed in application code.
     pub fn addProcessor(
         self: *Graph,
         comptime NodeType: type,
@@ -131,7 +135,7 @@ pub const Graph = struct {
                 out_buf: [*c]c.struct_ove_audio_buf,
             ) callconv(.c) c_int {
                 const n: *NodeType = @ptrCast(@alignCast(ctx));
-                n.process(in_buf, out_buf);
+                n.process(AudioBuf{ .raw = in_buf }, AudioBuf{ .raw = out_buf });
                 return 0;
             }
 
@@ -152,5 +156,41 @@ pub const Graph = struct {
         );
         if (rc < 0) return err.fromCodeInt(rc);
         return rc;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Safe audio buffer wrapper
+// ---------------------------------------------------------------------------
+
+/// Safe wrapper around the C `ove_audio_buf`.
+///
+/// Provides typed slice accessors so application code never needs
+/// `@ptrCast` or `@alignCast` on raw buffer data.
+pub const AudioBuf = struct {
+    raw: [*c]const c.struct_ove_audio_buf,
+
+    /// Number of frames in this buffer.
+    pub fn frames(self: AudioBuf) u32 {
+        return self.raw.*.frames;
+    }
+
+    /// Total sample count (frames * channels).
+    fn sampleCount(self: AudioBuf) usize {
+        return self.raw.*.frames * self.raw.*.fmt.*.channels;
+    }
+
+    /// Get interleaved S16 samples as a read-only slice.
+    pub fn dataS16(self: AudioBuf) []const i16 {
+        const count = self.sampleCount();
+        const ptr: [*]const i16 = @ptrCast(@alignCast(self.raw.*.data));
+        return ptr[0..count];
+    }
+
+    /// Get interleaved S16 samples as a mutable slice.
+    pub fn dataS16Mut(self: AudioBuf) []i16 {
+        const count = self.sampleCount();
+        const ptr: [*]i16 = @ptrCast(@alignCast(self.raw.*.data));
+        return ptr[0..count];
     }
 };

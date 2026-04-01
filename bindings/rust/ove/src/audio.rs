@@ -155,6 +155,123 @@ pub fn device_cfg_i2s(
 }
 
 // ---------------------------------------------------------------------------
+// Safe Graph wrapper
+// ---------------------------------------------------------------------------
+
+/// Owned audio graph session.
+///
+/// Wraps the C `ove_audio_graph` in a safe API.  All `unsafe` FFI calls
+/// are encapsulated — application code uses only safe methods.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut g = Graph::new(512)?;
+/// let dev = device_cfg_i2s(16000, 1, 1);
+/// let src  = g.device_source(&dev, b"mic\0")?;
+/// let proc = g.add_processor(PROC.get_mut(), b"dsp\0")?;
+/// let sink = g.device_sink(&dev, b"spk\0")?;
+/// g.connect(src, proc)?;
+/// g.connect(proc, sink)?;
+/// g.build()?;
+/// g.start()?;
+/// ```
+pub struct Graph {
+    inner: bindings::ove_audio_graph,
+}
+
+impl Graph {
+    /// Create and initialize a new audio graph.
+    pub fn new(frames_per_period: u32) -> Result<Self> {
+        let mut inner: bindings::ove_audio_graph = unsafe { core::mem::zeroed() };
+        let rc = unsafe { bindings::ove_audio_graph_init(&mut inner, frames_per_period) };
+        Error::from_code(rc)?;
+        Ok(Self { inner })
+    }
+
+    /// Add a hardware audio source node.  Returns the node index.
+    pub fn device_source(
+        &mut self,
+        cfg: &bindings::ove_audio_device_cfg,
+        name: &[u8],
+    ) -> core::result::Result<u32, Error> {
+        let rc = unsafe {
+            bindings::ove_audio_device_source(
+                &mut self.inner,
+                cfg,
+                name.as_ptr() as *const _,
+            )
+        };
+        if rc < 0 {
+            Err(Error::from_code(rc).unwrap_err())
+        } else {
+            Ok(rc as u32)
+        }
+    }
+
+    /// Add a hardware audio sink node.  Returns the node index.
+    pub fn device_sink(
+        &mut self,
+        cfg: &bindings::ove_audio_device_cfg,
+        name: &[u8],
+    ) -> core::result::Result<u32, Error> {
+        let rc = unsafe {
+            bindings::ove_audio_device_sink(
+                &mut self.inner,
+                cfg,
+                name.as_ptr() as *const _,
+            )
+        };
+        if rc < 0 {
+            Err(Error::from_code(rc).unwrap_err())
+        } else {
+            Ok(rc as u32)
+        }
+    }
+
+    /// Register a custom processor node.  Returns the node index.
+    pub fn add_processor<T: AudioProcessor>(
+        &mut self,
+        processor: &'static mut T,
+        name: &[u8],
+    ) -> core::result::Result<u32, Error> {
+        graph_add_processor(&mut self.inner, processor, name)
+            .map(|i| i as u32)
+    }
+
+    /// Connect two nodes.  `from` feeds into `to`.
+    pub fn connect(&mut self, from: u32, to: u32) -> Result<()> {
+        graph_connect(&mut self.inner, from, to)
+    }
+
+    /// Validate formats, resolve execution order, allocate buffers.
+    pub fn build(&mut self) -> Result<()> {
+        graph_build(&mut self.inner)
+    }
+
+    /// Start the graph (sink-driven mode).
+    pub fn start(&mut self) -> Result<()> {
+        graph_start(&mut self.inner)
+    }
+
+    /// Stop the graph.
+    pub fn stop(&mut self) -> Result<()> {
+        graph_stop(&mut self.inner)
+    }
+
+    /// Process one cycle (app-driven mode).
+    pub fn process(&mut self) -> Result<()> {
+        graph_process(&mut self.inner)
+    }
+}
+
+impl Drop for Graph {
+    fn drop(&mut self) {
+        graph_deinit(&mut self.inner);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Safe audio processor trait
 // ---------------------------------------------------------------------------
 
@@ -275,5 +392,38 @@ pub fn graph_add_processor<T: AudioProcessor>(
         Err(Error::from_code(rc).unwrap_err())
     } else {
         Ok(rc)
+    }
+}
+
+/// A static wrapper for an [`AudioProcessor`] that provides safe
+/// `&'static mut` access for [`graph_add_processor`].
+///
+/// # Example
+///
+/// ```ignore
+/// static PROC: StaticProcessor<MyProc> = StaticProcessor::new(MyProc);
+/// let idx = graph_add_processor(&mut graph, PROC.get_mut(), b"my-proc\0")?;
+/// ```
+pub struct StaticProcessor<T> {
+    inner: core::cell::UnsafeCell<T>,
+}
+
+unsafe impl<T: Send> Send for StaticProcessor<T> {}
+unsafe impl<T: Send> Sync for StaticProcessor<T> {}
+
+impl<T> StaticProcessor<T> {
+    /// Create a new static processor wrapper.
+    pub const fn new(val: T) -> Self {
+        Self {
+            inner: core::cell::UnsafeCell::new(val),
+        }
+    }
+
+    /// Obtain a `&'static mut` reference to the inner processor.
+    ///
+    /// Call once during graph setup before the audio thread starts.
+    #[allow(clippy::mut_from_ref)]
+    pub fn get_mut(&self) -> &mut T {
+        unsafe { &mut *self.inner.get() }
     }
 }
