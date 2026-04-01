@@ -42,8 +42,12 @@ extern const g_audio_preprocessor_int8_model_data_len: u32;
 extern const g_micro_speech_quantized_model_data: [*]const u8;
 extern const g_micro_speech_quantized_model_data_len: u32;
 
-const preprocessor_model = infer.modelSlice(g_audio_preprocessor_int8_model_data, g_audio_preprocessor_int8_model_data_len);
-const classifier_model = infer.modelSlice(g_micro_speech_quantized_model_data, g_micro_speech_quantized_model_data_len);
+fn preprocessorModel() infer.ModelSlice {
+    return infer.modelSlice(g_audio_preprocessor_int8_model_data, g_audio_preprocessor_int8_model_data_len);
+}
+fn classifierModel() infer.ModelSlice {
+    return infer.modelSlice(g_micro_speech_quantized_model_data, g_micro_speech_quantized_model_data_len);
+}
 
 // ── Lock-free ring buffer ──────────────────────────────────────────────
 
@@ -114,8 +118,8 @@ var dmic_proc: DmicProcessor = .{};
 
 fn generateFeatures(audio: []const i16) i32 {
     const cfg = c.struct_ove_model_config{
-        .model_data = preprocessor_model.ptr,
-        .model_size = preprocessor_model.len,
+        .model_data = preprocessorModel().ptr,
+        .model_size = preprocessorModel().len,
         .arena_size = ARENA_SIZE,
     };
     var preproc = infer.Model.initWithArena(&model_storage, &arena, &cfg) catch return -1;
@@ -155,8 +159,8 @@ fn generateFeatures(audio: []const i16) i32 {
 
 fn classifyKeyword() ?struct { prediction: usize, confidence: f32 } {
     const cfg = c.struct_ove_model_config{
-        .model_data = classifier_model.ptr,
-        .model_size = classifier_model.len,
+        .model_data = classifierModel().ptr,
+        .model_size = classifierModel().len,
         .arena_size = ARENA_SIZE,
     };
     var classifier = infer.Model.initWithArena(&model_storage, &arena, &cfg) catch return null;
@@ -254,7 +258,7 @@ fn inferThread() void {
 
 fn appMain() void {
     ove.log.inf("=== Live DMIC Keyword Detection (Zig) ===", .{});
-    ove.log.inf("Models: preprocessor {d} + classifier {d} bytes", .{ preprocessor_model.len, classifier_model.len });
+    ove.log.inf("Models: preprocessor {d} + classifier {d} bytes", .{ preprocessorModel().len, classifierModel().len });
 
     // Audio graph
     var graph = ove.audio.Graph.init(512) catch {

@@ -192,9 +192,9 @@ macro_rules! log_err {
 #[macro_export]
 macro_rules! model_data {
     ($fn_name:ident, $data_sym:ident, $len_sym:ident) => {
-        extern "C" {
-            static $data_sym: u8;
-            static $len_sym: u32;
+        unsafe extern "C" {
+            safe static $data_sym: u8;
+            safe static $len_sym: u32;
         }
         fn $fn_name() -> &'static [u8] {
             unsafe {

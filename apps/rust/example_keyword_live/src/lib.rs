@@ -12,6 +12,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use core::ptr::{addr_of, addr_of_mut};
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::Thread;
 
@@ -107,7 +108,7 @@ impl ove::audio::AudioProcessor for DmicProcessor {
             let base = f * 4;
             let mic_l = src[base + 1];
 
-            unsafe { AUDIO_RING.write(mic_l) };
+            unsafe { (*addr_of_mut!(AUDIO_RING)).write(mic_l) };
             SAMPLES_WRITTEN.fetch_add(1, Ordering::Relaxed);
 
             dst[base] = mic_l;
@@ -133,8 +134,8 @@ fn generate_features(audio: &[i16]) -> i32 {
 
     let model = unsafe {
         ove::infer::Model::from_static(
-            &mut MODEL_STORAGE,
-            ARENA.0.as_mut_ptr(),
+            addr_of_mut!(MODEL_STORAGE),
+            (*addr_of_mut!(ARENA)).0.as_mut_ptr(),
             &cfg,
         )
     };
@@ -143,7 +144,7 @@ fn generate_features(audio: &[i16]) -> i32 {
         Err(_) => return -1,
     };
 
-    let actual_rate = unsafe { G_ACTUAL_RATE };
+    let actual_rate = unsafe { addr_of!(G_ACTUAL_RATE).read() };
     let actual_window = (FEATURE_DURATION_MS * actual_rate / 1000) as usize;
     let actual_stride = (FEATURE_STRIDE_MS * actual_rate / 1000) as usize;
 
@@ -154,8 +155,8 @@ fn generate_features(audio: &[i16]) -> i32 {
     let mut offset = 0usize;
     while offset + actual_window <= audio.len() && frame < FEATURE_COUNT {
         let input_ptr = input_info.data as *mut i16;
-        let dc = unsafe { G_DC_OFFSET };
-        let gain = unsafe { G_GAIN };
+        let dc = unsafe { addr_of!(G_DC_OFFSET).read() };
+        let gain = unsafe { addr_of!(G_GAIN).read() };
 
         for i in 0..AUDIO_DURATION_SAMPLES {
             let src_idx = offset + (i as usize * actual_rate as usize / AUDIO_SAMPLE_FREQ as usize);
@@ -175,7 +176,7 @@ fn generate_features(audio: &[i16]) -> i32 {
         unsafe {
             core::ptr::copy_nonoverlapping(
                 output_ptr,
-                FEATURES[frame].as_mut_ptr(),
+                (*addr_of_mut!(FEATURES))[frame].as_mut_ptr(),
                 FEATURE_SIZE,
             );
         }
@@ -198,8 +199,8 @@ fn classify_keyword() -> Option<(usize, f32)> {
 
     let model = unsafe {
         ove::infer::Model::from_static(
-            &mut MODEL_STORAGE,
-            ARENA.0.as_mut_ptr(),
+            addr_of_mut!(MODEL_STORAGE),
+            (*addr_of_mut!(ARENA)).0.as_mut_ptr(),
             &cfg,
         )
     }.ok()?;
@@ -207,7 +208,7 @@ fn classify_keyword() -> Option<(usize, f32)> {
     let input_info = model.input(0).ok()?;
     unsafe {
         core::ptr::copy_nonoverlapping(
-            FEATURES.as_ptr() as *const u8,
+            addr_of!(FEATURES) as *const u8,
             input_info.data as *mut u8,
             FEATURE_ELEMENTS,
         );
@@ -251,36 +252,42 @@ fn infer_thread() {
             AUDIO_SAMPLE_FREQ as usize
         };
 
-        let avail = unsafe { AUDIO_RING.available() } as usize;
+        let avail = unsafe { (*addr_of!(AUDIO_RING)).available() } as usize;
         if avail < read_count { continue; }
 
         unsafe {
-            AUDIO_RING.read_last(&mut AUDIO_WINDOW, read_count);
+            (*addr_of!(AUDIO_RING)).read_last(
+                &mut *core::ptr::slice_from_raw_parts_mut(
+                    addr_of_mut!(AUDIO_WINDOW) as *mut i16,
+                    AUDIO_SAMPLE_FREQ as usize,
+                ),
+                read_count,
+            );
         }
 
         // Peak
         let mut peak: i16 = 0;
         for i in 0..read_count {
-            let s = unsafe { AUDIO_WINDOW[i] };
+            let s = unsafe { (*addr_of!(AUDIO_WINDOW))[i] };
             let a = if s < 0 { -s } else { s };
             if a > peak { peak = a; }
         }
         ove::log_inf!("Audio: peak={}, rate={}, read={}", peak, actual_rate, read_count);
 
-        unsafe { G_ACTUAL_RATE = if actual_rate > 0 { actual_rate } else { AUDIO_SAMPLE_FREQ } };
+        unsafe { addr_of_mut!(G_ACTUAL_RATE).write(if actual_rate > 0 { actual_rate } else { AUDIO_SAMPLE_FREQ }) };
         if peak < 10 { ove::log_inf!("Audio silent"); continue; }
 
         // DC offset
         let mut sum: i64 = 0;
         for i in 0..read_count {
-            sum += unsafe { AUDIO_WINDOW[i] } as i64;
+            sum += unsafe { (*addr_of!(AUDIO_WINDOW))[i] } as i64;
         }
-        unsafe { G_DC_OFFSET = (sum / read_count as i64) as i32 };
+        unsafe { addr_of_mut!(G_DC_OFFSET).write((sum / read_count as i64) as i32) };
 
         // Noise gate + adaptive gain
         let mut dc_peak: i32 = 0;
         for i in 0..read_count {
-            let mut s = unsafe { AUDIO_WINDOW[i] } as i32 - unsafe { G_DC_OFFSET };
+            let mut s = unsafe { (*addr_of!(AUDIO_WINDOW))[i] } as i32 - unsafe { addr_of!(G_DC_OFFSET).read() };
             if s < 0 { s = -s; }
             if s > dc_peak { dc_peak = s; }
         }
@@ -288,12 +295,14 @@ fn infer_thread() {
 
         let gain = TARGET_PEAK / dc_peak;
         unsafe {
-            G_GAIN = gain.clamp(1, 200);
+            addr_of_mut!(G_GAIN).write(gain.clamp(1, 200));
         }
-        ove::log_inf!("  dc_peak={}, gain={}", dc_peak, unsafe { G_GAIN });
+        ove::log_inf!("  dc_peak={}, gain={}", dc_peak, unsafe { addr_of!(G_GAIN).read() });
 
         // Inference pipeline
-        let rc = generate_features(unsafe { &AUDIO_WINDOW[..read_count] });
+        let rc = generate_features(unsafe {
+            core::slice::from_raw_parts(addr_of!(AUDIO_WINDOW) as *const i16, read_count)
+        });
         if rc != 0 { ove::log_err!("Features failed"); continue; }
 
         if let Some((prediction, confidence)) = classify_keyword() {
@@ -326,7 +335,7 @@ fn app_main() {
     };
     let proc_idx = ove::audio::graph_add_processor(
         &mut graph,
-        unsafe { &mut DMIC_PROC },
+        unsafe { &mut *addr_of_mut!(DMIC_PROC) },
         b"dmic-proc\0",
     ).unwrap();
     let sink = unsafe {
