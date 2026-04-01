@@ -8,7 +8,7 @@ A portable RTOS abstraction framework that provides a unified C API across **Fre
 - **Zero overhead** -- compile-time backend dispatch, no function pointers or vtables
 - **Multi-language** -- C, C++, Rust, and Zig bindings
 - **Flexible allocation** -- heap mode (`_create`/`_destroy`) or zero-heap mode (`_init`/`_deinit` with static storage)
-- **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, audio, filesystem, LVGL GUI, shell, logging, and more
+- **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT), ML inference, filesystem, LVGL GUI, shell, logging, and more
 - **Unified configuration** -- single Kconfig-based `.config` drives all backends
 - **Desktop development** -- develop and test on POSIX/SDL2, deploy to embedded hardware
 
@@ -120,7 +120,9 @@ void ove_main(void)
 | `ove_console` | UART serial I/O |
 | `ove_gpio` | Digital I/O |
 | `ove_led` | LED control |
-| `ove_audio` | I2S audio streaming |
+| `ove_audio` | Graph-based audio engine with typed nodes |
+| `ove_net` | TCP/UDP sockets, DNS, TLS, HTTP, MQTT, HTTPD, SNTP |
+| `ove_infer` | ML inference engine (TensorFlow Lite Micro) |
 | `ove_fs` | Virtual filesystem |
 | `ove_nvs` | Non-volatile key-value storage |
 | `ove_lvgl` | LVGL 9.x display integration |
@@ -199,17 +201,16 @@ oveRTOS/
 │   ├── cpp/
 │   ├── rust/
 │   └── zig/
-├── apps/               # Example applications
-│   ├── example_c/
-│   ├── example_cpp/
-│   ├── example_rust/
-│   ├── example_zig/
-│   └── benchmark/
+├── apps/               # Example applications (4 per language)
+│   ├── c/              #   C apps
+│   ├── cpp/            #   C++ apps
+│   ├── rust/           #   Rust apps
+│   └── zig/            #   Zig apps (each: example, benchmark, example_keyword_live, example_net)
+├── models/             # ML model assets (TFLite)
 ├── boards/             # Board definitions
 ├── config/             # Kconfig definitions and ove CLI
 ├── defconfigs/         # Predefined configurations
 ├── tests/              # Test suites
-├── docs/               # Documentation sources
 └── docs-site/          # MkDocs documentation site
 ```
 

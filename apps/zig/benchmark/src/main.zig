@@ -6,15 +6,12 @@
 
 //! oveRTOS Benchmark Application (Zig)
 //!
-//! Measures latency, throughput, and memory usage of all RTOS abstractions.
-//! Output is formatted ASCII tables via the C harness (bench_output.c).
-//!
-//! The Zig suites exercise the raw C FFI layer directly so that the
-//! measurements are comparable with the C benchmark application.
+//! Measures latency, throughput, and memory usage of all RTOS abstractions
+//! using safe Zig bindings. Output is formatted ASCII tables via the C
+//! harness (bench_output.c).
 
 const std = @import("std");
 const ove = @import("ove");
-const c = ove.ffi;
 
 // ---------------------------------------------------------------------------
 // Benchmark types — mirror benchmark.h
@@ -65,16 +62,15 @@ extern fn bench_print_footer() void;
 // =========================================================================
 
 fn timeGetUsOverheadRun(_: ?*anyopaque) callconv(.c) void {
-    var t: u64 = 0;
-    _ = c.ove_time_get_us(&t);
+    _ = ove.time_.getUs() catch return;
 }
 
 fn delay1msRun(_: ?*anyopaque) callconv(.c) void {
-    c.ove_time_delay_ms(1);
+    ove.time_.delayMs(1);
 }
 
 fn timeIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_TIME")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_TIME")) 1 else 0;
 }
 
 const time_cases = [_]BenchCase{
@@ -107,79 +103,62 @@ export const bench_suite_time: BenchSuite = .{
 // Suite: thread
 // =========================================================================
 
-var thread_bench_th: c.ove_thread_t = null;
-var thread_ping_sem: c.ove_sem_t = null;
-var thread_pong_sem: c.ove_sem_t = null;
+var thread_bench_th: ?ove.Thread = null;
+var thread_ping_sem: ?ove.Semaphore = null;
+var thread_pong_sem: ?ove.Semaphore = null;
 var thread_ctx_switch_done: volatile_int = volatile_int.init(0);
 
 const volatile_int = std.atomic.Value(i32);
 
-fn dummyThread(_: ?*anyopaque) callconv(.c) void {}
+fn dummyThread() void {}
 
 fn threadCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var th: c.ove_thread_t = null;
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "bench_tmp",
-        .entry = &dummyThread,
-        .arg = null,
-        .priority = c.OVE_PRIO_LOW,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 1024;
-    _ = c.ove_thread_create_(&th, &desc);
-    _ = c.ove_thread_destroy(th);
+    var th = ove.Thread.spawn("bench_tmp", dummyThread, ove.thread.prio.low, 1024) catch return;
+    th.destroy();
 }
 
 fn threadYieldRun(_: ?*anyopaque) callconv(.c) void {
-    c.ove_thread_yield();
+    ove.Thread.yield_();
 }
 
 fn threadSleep1msRun(_: ?*anyopaque) callconv(.c) void {
-    c.ove_thread_sleep_ms(1);
+    ove.Thread.sleepMs(1);
 }
 
-fn pongThread(_: ?*anyopaque) callconv(.c) void {
+fn pongThread() void {
     while (thread_ctx_switch_done.load(.acquire) == 0) {
-        _ = c.ove_sem_take(thread_pong_sem, c.OVE_WAIT_FOREVER);
-        c.ove_sem_give(thread_ping_sem);
+        thread_pong_sem.?.take(ove.wait_forever) catch {};
+        thread_ping_sem.?.give();
     }
 }
 
 fn ctxSwitchSetup(_: ?*anyopaque) callconv(.c) void {
     thread_ctx_switch_done.store(0, .release);
-    _ = c.ove_sem_create(&thread_ping_sem, 0, 1);
-    _ = c.ove_sem_create(&thread_pong_sem, 0, 1);
-
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "pong",
-        .entry = &pongThread,
-        .arg = null,
-        .priority = c.OVE_PRIO_NORMAL,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 2048;
-    _ = c.ove_thread_create_(&thread_bench_th, &desc);
+    thread_ping_sem = ove.Semaphore.create(0, 1) catch return;
+    thread_pong_sem = ove.Semaphore.create(0, 1) catch return;
+    thread_bench_th = ove.Thread.spawn("pong", pongThread, ove.thread.prio.normal, 2048) catch return;
 }
 
 fn ctxSwitchRun(_: ?*anyopaque) callconv(.c) void {
     // One round-trip = 2 context switches
-    c.ove_sem_give(thread_pong_sem);
-    _ = c.ove_sem_take(thread_ping_sem, c.OVE_WAIT_FOREVER);
+    thread_pong_sem.?.give();
+    thread_ping_sem.?.take(ove.wait_forever) catch {};
 }
 
 fn ctxSwitchTeardown(_: ?*anyopaque) callconv(.c) void {
     thread_ctx_switch_done.store(1, .release);
-    c.ove_sem_give(thread_pong_sem);
-    c.ove_thread_sleep_ms(10);
-    _ = c.ove_thread_destroy(thread_bench_th);
-    c.ove_sem_destroy(thread_ping_sem);
-    c.ove_sem_destroy(thread_pong_sem);
+    thread_pong_sem.?.give();
+    ove.Thread.sleepMs(10);
+    if (thread_bench_th) |*t| t.destroy();
+    thread_bench_th = null;
+    if (thread_ping_sem) |*s| s.destroy();
+    thread_ping_sem = null;
+    if (thread_pong_sem) |*s| s.destroy();
+    thread_pong_sem = null;
 }
 
 fn threadIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_SYNC")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_SYNC")) 1 else 0;
 }
 
 const thread_cases = [_]BenchCase{
@@ -228,246 +207,228 @@ export const bench_suite_thread: BenchSuite = .{
 // Suite: sync
 // =========================================================================
 
-var sync_bench_mtx: c.ove_mutex_t = null;
-var sync_bench_sem: c.ove_sem_t = null;
-var sync_bench_evt: c.ove_event_t = null;
-var sync_bench_cv: c.ove_condvar_t = null;
-var sync_bench_cv_mtx: c.ove_mutex_t = null;
-var sync_bench_rmtx: c.ove_mutex_t = null;
-var sync_contention_th: c.ove_thread_t = null;
+var sync_bench_mtx: ?ove.Mutex = null;
+var sync_bench_sem: ?ove.Semaphore = null;
+var sync_bench_evt: ?ove.Event = null;
+var sync_bench_cv: ?ove.CondVar = null;
+var sync_bench_cv_mtx: ?ove.Mutex = null;
+var sync_bench_rmtx: ?ove.RecursiveMutex = null;
+var sync_contention_th: ?ove.Thread = null;
 var sync_contention_done: volatile_int = volatile_int.init(0);
 var sync_contention_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
-var sync_evt_th: c.ove_thread_t = null;
+var sync_evt_th: ?ove.Thread = null;
 var sync_evt_done: volatile_int = volatile_int.init(0);
-var sync_cv_th: c.ove_thread_t = null;
+var sync_cv_th: ?ove.Thread = null;
 var sync_cv_done: volatile_int = volatile_int.init(0);
-var sync_mem_mutex: c.ove_mutex_t = null;
-var sync_mem_sem: c.ove_sem_t = null;
-var sync_mem_event: c.ove_event_t = null;
-var sync_mem_condvar: c.ove_condvar_t = null;
+var sync_mem_mutex: ?ove.Mutex = null;
+var sync_mem_sem: ?ove.Semaphore = null;
+var sync_mem_event: ?ove.Event = null;
+var sync_mem_condvar: ?ove.CondVar = null;
 
 // --- Mutex lock/unlock ---
 
 fn mutexLockUnlockSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_mutex_create(&sync_bench_mtx);
+    sync_bench_mtx = ove.Mutex.create() catch return;
 }
 
 fn mutexLockUnlockRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_mutex_lock(sync_bench_mtx, c.OVE_WAIT_FOREVER);
-    c.ove_mutex_unlock(sync_bench_mtx);
+    sync_bench_mtx.?.lock(ove.wait_forever) catch {};
+    sync_bench_mtx.?.unlock();
 }
 
 fn mutexLockUnlockTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_mutex_destroy(sync_bench_mtx);
+    if (sync_bench_mtx) |*m| m.destroy();
+    sync_bench_mtx = null;
 }
 
 // --- Mutex create/destroy ---
 
 fn mutexCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var m: c.ove_mutex_t = null;
-    _ = c.ove_mutex_create(&m);
-    c.ove_mutex_destroy(m);
+    var m = ove.Mutex.create() catch return;
+    m.destroy();
 }
 
 // --- Mutex contention (2-thread throughput) ---
 
-fn contentionThread(_: ?*anyopaque) callconv(.c) void {
+fn contentionThread() void {
     while (sync_contention_done.load(.acquire) == 0) {
-        _ = c.ove_mutex_lock(sync_bench_mtx, c.OVE_WAIT_FOREVER);
+        sync_bench_mtx.?.lock(ove.wait_forever) catch {};
         _ = sync_contention_count.fetchAdd(1, .monotonic);
-        c.ove_mutex_unlock(sync_bench_mtx);
+        sync_bench_mtx.?.unlock();
     }
 }
 
 fn mutexContentionSetup(_: ?*anyopaque) callconv(.c) void {
     sync_contention_done.store(0, .release);
     sync_contention_count.store(0, .release);
-    _ = c.ove_mutex_create(&sync_bench_mtx);
-
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "contention",
-        .entry = &contentionThread,
-        .arg = null,
-        .priority = c.OVE_PRIO_NORMAL,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 2048;
-    _ = c.ove_thread_create_(&sync_contention_th, &desc);
+    sync_bench_mtx = ove.Mutex.create() catch return;
+    sync_contention_th = ove.Thread.spawn("contention", contentionThread, ove.thread.prio.normal, 2048) catch return;
 }
 
 fn mutexContentionRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_mutex_lock(sync_bench_mtx, c.OVE_WAIT_FOREVER);
+    sync_bench_mtx.?.lock(ove.wait_forever) catch {};
     _ = sync_contention_count.fetchAdd(1, .monotonic);
-    c.ove_mutex_unlock(sync_bench_mtx);
+    sync_bench_mtx.?.unlock();
 }
 
 fn mutexContentionTeardown(_: ?*anyopaque) callconv(.c) void {
     sync_contention_done.store(1, .release);
-    c.ove_thread_sleep_ms(10);
-    _ = c.ove_thread_destroy(sync_contention_th);
-    c.ove_mutex_destroy(sync_bench_mtx);
+    ove.Thread.sleepMs(10);
+    if (sync_contention_th) |*t| t.destroy();
+    sync_contention_th = null;
+    if (sync_bench_mtx) |*m| m.destroy();
+    sync_bench_mtx = null;
 }
 
 // --- Mutex memory ---
 
 fn mutexMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_mutex_create(&sync_mem_mutex);
+    sync_mem_mutex = ove.Mutex.create() catch return;
 }
 
 fn mutexMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_mutex_destroy(sync_mem_mutex);
+    if (sync_mem_mutex) |*m| m.destroy();
+    sync_mem_mutex = null;
 }
 
 // --- Semaphore take/give ---
 
 fn semTakeGiveSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_sem_create(&sync_bench_sem, 1, 1);
+    sync_bench_sem = ove.Semaphore.create(1, 1) catch return;
 }
 
 fn semTakeGiveRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_sem_take(sync_bench_sem, c.OVE_WAIT_FOREVER);
-    c.ove_sem_give(sync_bench_sem);
+    sync_bench_sem.?.take(ove.wait_forever) catch {};
+    sync_bench_sem.?.give();
 }
 
 fn semTakeGiveTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_sem_destroy(sync_bench_sem);
+    if (sync_bench_sem) |*s| s.destroy();
+    sync_bench_sem = null;
 }
 
 // --- Semaphore create/destroy ---
 
 fn semCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var s: c.ove_sem_t = null;
-    _ = c.ove_sem_create(&s, 0, 1);
-    c.ove_sem_destroy(s);
+    var s = ove.Semaphore.create(0, 1) catch return;
+    s.destroy();
 }
 
 // --- Semaphore memory ---
 
 fn semMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_sem_create(&sync_mem_sem, 0, 1);
+    sync_mem_sem = ove.Semaphore.create(0, 1) catch return;
 }
 
 fn semMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_sem_destroy(sync_mem_sem);
+    if (sync_mem_sem) |*s| s.destroy();
+    sync_mem_sem = null;
 }
 
 // --- Event signal/wait ---
 
-fn evtSignaler(_: ?*anyopaque) callconv(.c) void {
+fn evtSignaler() void {
     while (sync_evt_done.load(.acquire) == 0) {
-        c.ove_event_signal(sync_bench_evt);
-        c.ove_thread_yield();
+        sync_bench_evt.?.signal();
+        ove.Thread.yield_();
     }
 }
 
 fn eventSignalWaitSetup(_: ?*anyopaque) callconv(.c) void {
     sync_evt_done.store(0, .release);
-    _ = c.ove_event_create(&sync_bench_evt);
-
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "evt_sig",
-        .entry = &evtSignaler,
-        .arg = null,
-        .priority = c.OVE_PRIO_NORMAL,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 1024;
-    _ = c.ove_thread_create_(&sync_evt_th, &desc);
+    sync_bench_evt = ove.Event.create() catch return;
+    sync_evt_th = ove.Thread.spawn("evt_sig", evtSignaler, ove.thread.prio.normal, 1024) catch return;
 }
 
 fn eventSignalWaitRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_event_wait(sync_bench_evt, 10);
+    sync_bench_evt.?.wait(10) catch {};
 }
 
 fn eventSignalWaitTeardown(_: ?*anyopaque) callconv(.c) void {
     sync_evt_done.store(1, .release);
-    c.ove_thread_sleep_ms(10);
-    _ = c.ove_thread_destroy(sync_evt_th);
-    c.ove_event_destroy(sync_bench_evt);
+    ove.Thread.sleepMs(10);
+    if (sync_evt_th) |*t| t.destroy();
+    sync_evt_th = null;
+    if (sync_bench_evt) |*e| e.destroy();
+    sync_bench_evt = null;
 }
 
 // --- Event memory ---
 
 fn eventMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_event_create(&sync_mem_event);
+    sync_mem_event = ove.Event.create() catch return;
 }
 
 fn eventMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_event_destroy(sync_mem_event);
+    if (sync_mem_event) |*e| e.destroy();
+    sync_mem_event = null;
 }
 
 // --- Condvar signal/wait ---
 
-fn cvSignaler(_: ?*anyopaque) callconv(.c) void {
+fn cvSignaler() void {
     while (sync_cv_done.load(.acquire) == 0) {
-        c.ove_condvar_signal(sync_bench_cv);
-        c.ove_thread_yield();
+        sync_bench_cv.?.signal();
+        ove.Thread.yield_();
     }
 }
 
 fn condvarSignalWaitSetup(_: ?*anyopaque) callconv(.c) void {
     sync_cv_done.store(0, .release);
-    _ = c.ove_mutex_create(&sync_bench_cv_mtx);
-    _ = c.ove_condvar_create(&sync_bench_cv);
-
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "cv_sig",
-        .entry = &cvSignaler,
-        .arg = null,
-        .priority = c.OVE_PRIO_NORMAL,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 1024;
-    _ = c.ove_thread_create_(&sync_cv_th, &desc);
+    sync_bench_cv_mtx = ove.Mutex.create() catch return;
+    sync_bench_cv = ove.CondVar.create() catch return;
+    sync_cv_th = ove.Thread.spawn("cv_sig", cvSignaler, ove.thread.prio.normal, 1024) catch return;
 }
 
 fn condvarSignalWaitRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_mutex_lock(sync_bench_cv_mtx, c.OVE_WAIT_FOREVER);
-    _ = c.ove_condvar_wait(sync_bench_cv, sync_bench_cv_mtx, 10);
-    c.ove_mutex_unlock(sync_bench_cv_mtx);
+    sync_bench_cv_mtx.?.lock(ove.wait_forever) catch {};
+    sync_bench_cv.?.wait(sync_bench_cv_mtx.?, 10) catch {};
+    sync_bench_cv_mtx.?.unlock();
 }
 
 fn condvarSignalWaitTeardown(_: ?*anyopaque) callconv(.c) void {
     sync_cv_done.store(1, .release);
-    c.ove_condvar_signal(sync_bench_cv);
-    c.ove_thread_sleep_ms(10);
-    _ = c.ove_thread_destroy(sync_cv_th);
-    c.ove_condvar_destroy(sync_bench_cv);
-    c.ove_mutex_destroy(sync_bench_cv_mtx);
+    sync_bench_cv.?.signal();
+    ove.Thread.sleepMs(10);
+    if (sync_cv_th) |*t| t.destroy();
+    sync_cv_th = null;
+    if (sync_bench_cv) |*cv| cv.destroy();
+    sync_bench_cv = null;
+    if (sync_bench_cv_mtx) |*m| m.destroy();
+    sync_bench_cv_mtx = null;
 }
 
 // --- Condvar memory ---
 
 fn condvarMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_condvar_create(&sync_mem_condvar);
+    sync_mem_condvar = ove.CondVar.create() catch return;
 }
 
 fn condvarMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_condvar_destroy(sync_mem_condvar);
+    if (sync_mem_condvar) |*cv| cv.destroy();
+    sync_mem_condvar = null;
 }
 
 // --- Recursive mutex lock/unlock ---
 
 fn rmtxLockUnlockSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_recursive_mutex_create(&sync_bench_rmtx);
+    sync_bench_rmtx = ove.RecursiveMutex.create() catch return;
 }
 
 fn rmtxLockUnlockRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_recursive_mutex_lock(sync_bench_rmtx, c.OVE_WAIT_FOREVER);
-    c.ove_recursive_mutex_unlock(sync_bench_rmtx);
+    sync_bench_rmtx.?.lock(ove.wait_forever) catch {};
+    sync_bench_rmtx.?.unlock();
 }
 
 fn rmtxLockUnlockTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_recursive_mutex_destroy(sync_bench_rmtx);
+    if (sync_bench_rmtx) |*m| m.destroy();
+    sync_bench_rmtx = null;
 }
 
 // --- Sync suite ---
 
 fn syncIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_SYNC")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_SYNC")) 1 else 0;
 }
 
 const sync_cases = [_]BenchCase{
@@ -581,91 +542,82 @@ export const bench_suite_sync: BenchSuite = .{
 // Suite: queue
 // =========================================================================
 
-var queue_bench_q: c.ove_queue_t = null;
-var queue_producer_th: c.ove_thread_t = null;
+var queue_send_recv_q: ?ove.Queue(u32, 16) = null;
+var queue_throughput_q: ?ove.Queue(u32, 64) = null;
+var queue_producer_th: ?ove.Thread = null;
 var queue_throughput_done: volatile_int = volatile_int.init(0);
-var queue_mem_q: c.ove_queue_t = null;
+var queue_mem_q: ?ove.Queue(u32, 8) = null;
 
 // --- send/receive latency ---
 
 fn queueSendRecvSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_queue_create(&queue_bench_q, @sizeOf(u32), 16);
+    queue_send_recv_q = ove.Queue(u32, 16).create() catch return;
 }
 
 fn queueSendRecvRun(_: ?*anyopaque) callconv(.c) void {
     var val: u32 = 42;
-    var buf: u32 = 0;
-    _ = c.ove_queue_send(queue_bench_q, &val, c.OVE_WAIT_FOREVER);
-    _ = c.ove_queue_receive(queue_bench_q, &buf, c.OVE_WAIT_FOREVER);
+    queue_send_recv_q.?.send(&val, ove.wait_forever) catch return;
+    _ = queue_send_recv_q.?.receive(ove.wait_forever) catch return;
 }
 
 fn queueSendRecvTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_queue_destroy(queue_bench_q);
+    if (queue_send_recv_q) |*q| q.destroy();
+    queue_send_recv_q = null;
 }
 
 // --- create/destroy ---
 
 fn queueCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var q: c.ove_queue_t = null;
-    _ = c.ove_queue_create(&q, @sizeOf(u32), 8);
-    c.ove_queue_destroy(q);
+    var q = ove.Queue(u32, 8).create() catch return;
+    q.destroy();
 }
 
 // --- 2-thread throughput ---
 
-fn queueProducerThread(_: ?*anyopaque) callconv(.c) void {
+fn queueProducerThread() void {
     var val: u32 = 0;
     while (queue_throughput_done.load(.acquire) == 0) {
-        _ = c.ove_queue_send(queue_bench_q, &val, c.OVE_WAIT_FOREVER);
+        queue_throughput_q.?.send(&val, ove.wait_forever) catch {};
         val +%= 1;
     }
 }
 
 fn queueThroughputSetup(_: ?*anyopaque) callconv(.c) void {
     queue_throughput_done.store(0, .release);
-    _ = c.ove_queue_create(&queue_bench_q, @sizeOf(u32), 64);
-
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "q_prod",
-        .entry = &queueProducerThread,
-        .arg = null,
-        .priority = c.OVE_PRIO_NORMAL,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 2048;
-    _ = c.ove_thread_create_(&queue_producer_th, &desc);
+    queue_throughput_q = ove.Queue(u32, 64).create() catch return;
+    queue_producer_th = ove.Thread.spawn("q_prod", queueProducerThread, ove.thread.prio.normal, 2048) catch return;
 }
 
 fn queueThroughputRun(_: ?*anyopaque) callconv(.c) void {
-    var buf: u32 = 0;
-    _ = c.ove_queue_receive(queue_bench_q, &buf, c.OVE_WAIT_FOREVER);
+    _ = queue_throughput_q.?.receive(ove.wait_forever) catch return;
 }
 
 fn queueThroughputTeardown(_: ?*anyopaque) callconv(.c) void {
     queue_throughput_done.store(1, .release);
     // Drain queue so producer unblocks
-    var buf: u32 = 0;
-    _ = c.ove_queue_receive(queue_bench_q, &buf, 100);
-    c.ove_thread_sleep_ms(10);
-    _ = c.ove_thread_destroy(queue_producer_th);
-    c.ove_queue_destroy(queue_bench_q);
+    _ = queue_throughput_q.?.receive(100) catch 0;
+    ove.Thread.sleepMs(10);
+    if (queue_producer_th) |*t| t.destroy();
+    queue_producer_th = null;
+    if (queue_throughput_q) |*q| q.destroy();
+    queue_throughput_q = null;
 }
 
 // --- memory ---
 
 fn queueMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_queue_create(&queue_mem_q, @sizeOf(u32), 8);
+    queue_mem_q = ove.Queue(u32, 8).create() catch return;
 }
 
 fn queueMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_queue_destroy(queue_mem_q);
+    if (queue_mem_q) |*q| q.destroy();
+    queue_mem_q = null;
 }
 
 // --- Queue suite ---
 
 fn queueIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_QUEUE")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_QUEUE")) 1 else 0;
 }
 
 const queue_cases = [_]BenchCase{
@@ -714,48 +666,49 @@ export const bench_suite_queue: BenchSuite = .{
 // Suite: timer
 // =========================================================================
 
-var timer_bench_tmr: c.ove_timer_t = null;
-var timer_mem_tmr: c.ove_timer_t = null;
+var timer_bench_tmr: ?ove.Timer = null;
+var timer_mem_tmr: ?ove.Timer = null;
 
-fn timerDummyCb(_: c.ove_timer_t, _: ?*anyopaque) callconv(.c) void {}
+fn timerDummyCb() void {}
 
 // --- create/destroy ---
 
 fn timerCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var t: c.ove_timer_t = null;
-    _ = c.ove_timer_create(&t, &timerDummyCb, null, 1000, 0);
-    c.ove_timer_destroy(t);
+    var t = ove.Timer.create(timerDummyCb, 1000, false) catch return;
+    t.destroy();
 }
 
 // --- start/stop ---
 
 fn timerStartStopSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_timer_create(&timer_bench_tmr, &timerDummyCb, null, 1000, 0);
+    timer_bench_tmr = ove.Timer.create(timerDummyCb, 1000, false) catch return;
 }
 
 fn timerStartStopRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_timer_start(timer_bench_tmr);
-    _ = c.ove_timer_stop(timer_bench_tmr);
+    timer_bench_tmr.?.start() catch {};
+    timer_bench_tmr.?.stop() catch {};
 }
 
 fn timerStartStopTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_timer_destroy(timer_bench_tmr);
+    if (timer_bench_tmr) |*t| t.destroy();
+    timer_bench_tmr = null;
 }
 
 // --- memory ---
 
 fn timerMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_timer_create(&timer_mem_tmr, &timerDummyCb, null, 1000, 0);
+    timer_mem_tmr = ove.Timer.create(timerDummyCb, 1000, false) catch return;
 }
 
 fn timerMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_timer_destroy(timer_mem_tmr);
+    if (timer_mem_tmr) |*t| t.destroy();
+    timer_mem_tmr = null;
 }
 
 // --- Timer suite ---
 
 fn timerIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_TIMER")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_TIMER")) 1 else 0;
 }
 
 const timer_cases = [_]BenchCase{
@@ -796,47 +749,48 @@ export const bench_suite_timer: BenchSuite = .{
 // Suite: eventgroup
 // =========================================================================
 
-var eg_bench_eg: c.ove_eventgroup_t = null;
-var eg_mem_eg: c.ove_eventgroup_t = null;
+var eg_bench_eg: ?ove.EventGroup = null;
+var eg_mem_eg: ?ove.EventGroup = null;
 
 // --- set/get bits ---
 
 fn egSetGetSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_eventgroup_create(&eg_bench_eg);
+    eg_bench_eg = ove.EventGroup.create() catch return;
 }
 
 fn egSetGetRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_eventgroup_set_bits(eg_bench_eg, 0x01);
-    _ = c.ove_eventgroup_get_bits(eg_bench_eg);
-    _ = c.ove_eventgroup_clear_bits(eg_bench_eg, 0x01);
+    _ = eg_bench_eg.?.setBits(0x01);
+    _ = eg_bench_eg.?.getBits();
+    _ = eg_bench_eg.?.clearBits(0x01);
 }
 
 fn egSetGetTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_eventgroup_destroy(eg_bench_eg);
+    if (eg_bench_eg) |*eg| eg.destroy();
+    eg_bench_eg = null;
 }
 
 // --- create/destroy ---
 
 fn egCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var eg: c.ove_eventgroup_t = null;
-    _ = c.ove_eventgroup_create(&eg);
-    c.ove_eventgroup_destroy(eg);
+    var eg = ove.EventGroup.create() catch return;
+    eg.destroy();
 }
 
 // --- memory ---
 
 fn egMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_eventgroup_create(&eg_mem_eg);
+    eg_mem_eg = ove.EventGroup.create() catch return;
 }
 
 fn egMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_eventgroup_destroy(eg_mem_eg);
+    if (eg_mem_eg) |*eg| eg.destroy();
+    eg_mem_eg = null;
 }
 
 // --- EventGroup suite ---
 
 fn eventgroupIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_EVENTGROUP")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_EVENTGROUP")) 1 else 0;
 }
 
 const eventgroup_cases = [_]BenchCase{
@@ -877,59 +831,62 @@ export const bench_suite_eventgroup: BenchSuite = .{
 // Suite: workqueue
 // =========================================================================
 
-var wq_bench_wq: c.ove_workqueue_t = null;
-var wq_bench_work: c.ove_work_t = null;
+var wq_bench_wq: ?ove.Workqueue = null;
+var wq_bench_work: ?ove.Work = null;
 var wq_work_executed: volatile_int = volatile_int.init(0);
-var wq_work_sem: c.ove_sem_t = null;
-var wq_bench_work_storage: c.ove_work_storage_t = std.mem.zeroes(c.ove_work_storage_t);
-var wq_mem_wq: c.ove_workqueue_t = null;
+var wq_work_sem: ?ove.Semaphore = null;
+var wq_mem_wq: ?ove.Workqueue = null;
 
-fn workHandler(_: c.ove_work_t) callconv(.c) void {
+fn workHandler() void {
     wq_work_executed.store(1, .release);
-    c.ove_sem_give(wq_work_sem);
+    wq_work_sem.?.give();
 }
 
 // --- create/destroy ---
 
 fn wqCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var wq: c.ove_workqueue_t = null;
-    _ = c.ove_workqueue_create(&wq, "bench_wq", c.OVE_PRIO_NORMAL, 2048);
-    c.ove_workqueue_destroy(wq);
+    var wq = ove.Workqueue.create("bench_wq", ove.thread.prio.normal, 2048) catch return;
+    wq.destroy();
 }
 
 // --- submit/execute ---
 
 fn wqSubmitSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_sem_create(&wq_work_sem, 0, 1);
-    _ = c.ove_workqueue_create(&wq_bench_wq, "bench_wq", c.OVE_PRIO_NORMAL, 2048);
-    _ = c.ove_work_init_static(&wq_bench_work, &wq_bench_work_storage, &workHandler);
+    wq_work_sem = ove.Semaphore.create(0, 1) catch return;
+    wq_bench_wq = ove.Workqueue.create("bench_wq", ove.thread.prio.normal, 2048) catch return;
+    wq_bench_work = ove.Work.create(workHandler) catch return;
 }
 
 fn wqSubmitRun(_: ?*anyopaque) callconv(.c) void {
     wq_work_executed.store(0, .release);
-    _ = c.ove_work_submit(wq_bench_wq, wq_bench_work);
-    _ = c.ove_sem_take(wq_work_sem, 1000);
+    wq_bench_wq.?.submit(wq_bench_work.?) catch {};
+    wq_work_sem.?.take(1000) catch {};
 }
 
 fn wqSubmitTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_workqueue_destroy(wq_bench_wq);
-    c.ove_sem_destroy(wq_work_sem);
+    if (wq_bench_work) |*w| w.free();
+    wq_bench_work = null;
+    if (wq_bench_wq) |*w| w.destroy();
+    wq_bench_wq = null;
+    if (wq_work_sem) |*s| s.destroy();
+    wq_work_sem = null;
 }
 
 // --- memory ---
 
 fn wqMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_workqueue_create(&wq_mem_wq, "bench_wq", c.OVE_PRIO_NORMAL, 2048);
+    wq_mem_wq = ove.Workqueue.create("bench_wq", ove.thread.prio.normal, 2048) catch return;
 }
 
 fn wqMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_workqueue_destroy(wq_mem_wq);
+    if (wq_mem_wq) |*w| w.destroy();
+    wq_mem_wq = null;
 }
 
 // --- Workqueue suite ---
 
 fn workqueueIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_WORKQUEUE")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_WORKQUEUE")) 1 else 0;
 }
 
 const workqueue_cases = [_]BenchCase{
@@ -973,94 +930,82 @@ export const bench_suite_workqueue: BenchSuite = .{
 const STREAM_BUF_SIZE: usize = 256;
 const STREAM_MSG_SIZE: usize = 64;
 
-var stream_bench_strm: c.ove_stream_t = null;
-var stream_producer_th: c.ove_thread_t = null;
+var stream_bench_strm: ?ove.Stream = null;
+var stream_producer_th: ?ove.Thread = null;
 var stream_done: volatile_int = volatile_int.init(0);
 var stream_tx_buf: [STREAM_MSG_SIZE]u8 = [_]u8{0} ** STREAM_MSG_SIZE;
 var stream_rx_buf: [STREAM_MSG_SIZE]u8 = [_]u8{0} ** STREAM_MSG_SIZE;
-var stream_mem_strm: c.ove_stream_t = null;
+var stream_mem_strm: ?ove.Stream = null;
 
 // --- send/receive 64B ---
 
 fn streamSendRecvSetup(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_stream_create(&stream_bench_strm, STREAM_BUF_SIZE, 1);
+    stream_bench_strm = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
     @memset(&stream_tx_buf, 0xAA);
 }
 
 fn streamSendRecvRun(_: ?*anyopaque) callconv(.c) void {
-    var sent: usize = 0;
-    var received: usize = 0;
-    _ = c.ove_stream_send(stream_bench_strm, &stream_tx_buf, STREAM_MSG_SIZE, c.OVE_WAIT_FOREVER, &sent);
-    _ = c.ove_stream_receive(stream_bench_strm, &stream_rx_buf, STREAM_MSG_SIZE, c.OVE_WAIT_FOREVER, &received);
+    _ = stream_bench_strm.?.send(&stream_tx_buf, ove.wait_forever) catch return;
+    _ = stream_bench_strm.?.receive(&stream_rx_buf, ove.wait_forever) catch return;
 }
 
 fn streamSendRecvTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_stream_destroy(stream_bench_strm);
+    if (stream_bench_strm) |*s| s.destroy();
+    stream_bench_strm = null;
 }
 
 // --- create/destroy ---
 
 fn streamCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
-    var s: c.ove_stream_t = null;
-    _ = c.ove_stream_create(&s, STREAM_BUF_SIZE, 1);
-    c.ove_stream_destroy(s);
+    var s = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
+    s.destroy();
 }
 
 // --- throughput ---
 
-fn streamProducer(_: ?*anyopaque) callconv(.c) void {
+fn streamProducer() void {
     while (stream_done.load(.acquire) == 0) {
-        var sent: usize = 0;
-        _ = c.ove_stream_send(stream_bench_strm, &stream_tx_buf, STREAM_MSG_SIZE, c.OVE_WAIT_FOREVER, &sent);
+        _ = stream_bench_strm.?.send(&stream_tx_buf, ove.wait_forever) catch {};
     }
 }
 
 fn streamThroughputSetup(_: ?*anyopaque) callconv(.c) void {
     stream_done.store(0, .release);
     @memset(&stream_tx_buf, 0xBB);
-    _ = c.ove_stream_create(&stream_bench_strm, STREAM_BUF_SIZE, 1);
-
-    var desc: c.struct_ove_thread_desc = .{
-        .name = "strm_prod",
-        .entry = &streamProducer,
-        .arg = null,
-        .priority = c.OVE_PRIO_NORMAL,
-        .stack_size = 0,
-        .stack = null,
-    };
-    desc.stack_size = 2048;
-    _ = c.ove_thread_create_(&stream_producer_th, &desc);
+    stream_bench_strm = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
+    stream_producer_th = ove.Thread.spawn("strm_prod", streamProducer, ove.thread.prio.normal, 2048) catch return;
 }
 
 fn streamThroughputRun(_: ?*anyopaque) callconv(.c) void {
-    var received: usize = 0;
-    _ = c.ove_stream_receive(stream_bench_strm, &stream_rx_buf, STREAM_MSG_SIZE, c.OVE_WAIT_FOREVER, &received);
+    _ = stream_bench_strm.?.receive(&stream_rx_buf, ove.wait_forever) catch return;
 }
 
 fn streamThroughputTeardown(_: ?*anyopaque) callconv(.c) void {
     stream_done.store(1, .release);
     // Drain so producer can unblock
-    var received: usize = 0;
-    _ = c.ove_stream_receive(stream_bench_strm, &stream_rx_buf, STREAM_MSG_SIZE, 100, &received);
-    c.ove_thread_sleep_ms(10);
-    _ = c.ove_thread_destroy(stream_producer_th);
-    c.ove_stream_destroy(stream_bench_strm);
+    _ = stream_bench_strm.?.receive(&stream_rx_buf, 100) catch 0;
+    ove.Thread.sleepMs(10);
+    if (stream_producer_th) |*t| t.destroy();
+    stream_producer_th = null;
+    if (stream_bench_strm) |*s| s.destroy();
+    stream_bench_strm = null;
 }
 
 // --- memory ---
 
 fn streamMemoryRun(_: ?*anyopaque) callconv(.c) void {
-    _ = c.ove_stream_create(&stream_mem_strm, STREAM_BUF_SIZE, 1);
+    stream_mem_strm = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
 }
 
 fn streamMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
-    c.ove_stream_destroy(stream_mem_strm);
+    if (stream_mem_strm) |*s| s.destroy();
+    stream_mem_strm = null;
 }
 
 // --- Stream suite ---
 
 fn streamIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(c, "CONFIG_OVE_STREAM")) 1 else 0;
+    return if (@hasDecl(ove.ffi, "CONFIG_OVE_STREAM")) 1 else 0;
 }
 
 const stream_cases = [_]BenchCase{
@@ -1123,12 +1068,12 @@ const suites = [_]*const BenchSuite{
 fn benchmarkRunner() void {
     ove.log.inf("=== oveRTOS Benchmark Suite ===", .{});
 
-    const iterations: i32 = if (@hasDecl(c, "CONFIG_OVE_BENCHMARK_ITERATIONS"))
-        c.CONFIG_OVE_BENCHMARK_ITERATIONS
+    const iterations: i32 = if (@hasDecl(ove.ffi, "CONFIG_OVE_BENCHMARK_ITERATIONS"))
+        ove.ffi.CONFIG_OVE_BENCHMARK_ITERATIONS
     else
         1000;
-    const warmup: i32 = if (@hasDecl(c, "CONFIG_OVE_BENCHMARK_WARMUP"))
-        c.CONFIG_OVE_BENCHMARK_WARMUP
+    const warmup: i32 = if (@hasDecl(ove.ffi, "CONFIG_OVE_BENCHMARK_WARMUP"))
+        ove.ffi.CONFIG_OVE_BENCHMARK_WARMUP
     else
         100;
     ove.log.inf("Iterations: {d}  Warmup: {d}", .{ iterations, warmup });

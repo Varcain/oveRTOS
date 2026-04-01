@@ -6,18 +6,22 @@
 
 //! oveRTOS Benchmark Application (Rust)
 //!
-//! Measures latency, throughput, and memory usage of all RTOS abstractions.
-//! Suite symbols are exported as `#[no_mangle]` C-compatible statics so the
-//! shared C harness (`bench_run_case`, `bench_print_*`) can drive them.
+//! Measures latency, throughput, and memory usage of all RTOS abstractions
+//! using safe Rust bindings. Suite symbols are exported as `#[no_mangle]`
+//! C-compatible statics so the shared C harness (`bench_run_case`,
+//! `bench_print_*`) can drive them.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::ffi::c_void;
-use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ove::ffi;
-use ove::Priority;
+use ove::time;
+use ove::{
+    CondVar, Event, EventGroup, Mutex, Priority, Queue, RecursiveMutex, Semaphore, Stream, Thread,
+    Timer, Work, Workqueue, WAIT_FOREVER,
+};
 
 // ---------------------------------------------------------------------------
 // C-compatible types matching benchmark.h
@@ -84,7 +88,7 @@ unsafe extern "C" {
 }
 
 // ---------------------------------------------------------------------------
-// FFI helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
 /// Null pointer constant for optional function pointers.
@@ -95,12 +99,11 @@ const NONE: Option<unsafe extern "C" fn(*mut c_void)> = None;
 // ===========================================================================
 
 unsafe extern "C" fn time_get_us_overhead_run(_ctx: *mut c_void) {
-    let mut t: u64 = 0;
-    unsafe { ffi::ove_time_get_us(&mut t) };
+    let _ = time::get_us();
 }
 
 unsafe extern "C" fn delay_1ms_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_time_delay_ms(1) };
+    time::delay_ms(1);
 }
 
 unsafe extern "C" fn time_is_enabled() -> i32 {
@@ -141,42 +144,30 @@ pub static bench_suite_time: BenchSuite = BenchSuite {
 // Suite: thread
 // ===========================================================================
 
-static mut THREAD_BENCH_TH: ffi::ove_thread_t = core::ptr::null_mut();
-static mut THREAD_PING_SEM: ffi::ove_sem_t = core::ptr::null_mut();
-static mut THREAD_PONG_SEM: ffi::ove_sem_t = core::ptr::null_mut();
+static mut THREAD_BENCH_TH: Option<Thread> = None;
+static mut THREAD_PING_SEM: Option<Semaphore> = None;
+static mut THREAD_PONG_SEM: Option<Semaphore> = None;
 static THREAD_CTX_SWITCH_DONE: AtomicBool = AtomicBool::new(false);
 
-unsafe extern "C" fn dummy_thread(_arg: *mut c_void) {}
+fn dummy_thread() {}
 
 unsafe extern "C" fn thread_create_destroy_run(_ctx: *mut c_void) {
-    let mut th: ffi::ove_thread_t = core::ptr::null_mut();
-    let desc = ffi::ove_thread_desc {
-        name: b"bench_tmp\0".as_ptr() as *const _,
-        entry: Some(dummy_thread),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Low as u32,
-        stack_size: 1024,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe {
-        ffi::ove_thread_create_(&mut th, &desc);
-        ffi::ove_thread_destroy(th);
-    }
+    let _th = Thread::spawn(b"bench_tmp\0", dummy_thread, Priority::Low, 1024).unwrap();
 }
 
 unsafe extern "C" fn thread_yield_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_thread_yield() };
+    Thread::yield_now();
 }
 
 unsafe extern "C" fn thread_sleep_1ms_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_thread_sleep_ms(1) };
+    Thread::sleep_ms(1);
 }
 
-unsafe extern "C" fn pong_thread(_arg: *mut c_void) {
+fn pong_thread() {
     while !THREAD_CTX_SWITCH_DONE.load(Ordering::Relaxed) {
         unsafe {
-            ffi::ove_sem_take(THREAD_PING_SEM, ffi::OVE_WAIT_FOREVER);
-            ffi::ove_sem_give(THREAD_PONG_SEM);
+            let _ = THREAD_PING_SEM.as_ref().unwrap().take(WAIT_FOREVER);
+            THREAD_PONG_SEM.as_ref().unwrap().give();
         }
     }
 }
@@ -184,35 +175,29 @@ unsafe extern "C" fn pong_thread(_arg: *mut c_void) {
 unsafe extern "C" fn ctx_switch_setup(_ctx: *mut c_void) {
     THREAD_CTX_SWITCH_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        ffi::ove_sem_create(addr_of_mut!(THREAD_PING_SEM), 0, 1);
-        ffi::ove_sem_create(addr_of_mut!(THREAD_PONG_SEM), 0, 1);
+        THREAD_PING_SEM = Some(Semaphore::new(0, 1).unwrap());
+        THREAD_PONG_SEM = Some(Semaphore::new(0, 1).unwrap());
+        THREAD_BENCH_TH = Some(
+            Thread::spawn(b"pong\0", pong_thread, Priority::Normal, 2048).unwrap(),
+        );
     }
-    let desc = ffi::ove_thread_desc {
-        name: b"pong\0".as_ptr() as *const _,
-        entry: Some(pong_thread),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Normal as u32,
-        stack_size: 2048,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe { ffi::ove_thread_create_(addr_of_mut!(THREAD_BENCH_TH), &desc) };
 }
 
 unsafe extern "C" fn ctx_switch_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_sem_give(THREAD_PING_SEM);
-        ffi::ove_sem_take(THREAD_PONG_SEM, ffi::OVE_WAIT_FOREVER);
+        THREAD_PING_SEM.as_ref().unwrap().give();
+        let _ = THREAD_PONG_SEM.as_ref().unwrap().take(WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn ctx_switch_teardown(_ctx: *mut c_void) {
     THREAD_CTX_SWITCH_DONE.store(true, Ordering::Relaxed);
     unsafe {
-        ffi::ove_sem_give(THREAD_PING_SEM);
-        ffi::ove_thread_sleep_ms(10);
-        ffi::ove_thread_destroy(THREAD_BENCH_TH);
-        ffi::ove_sem_destroy(THREAD_PING_SEM);
-        ffi::ove_sem_destroy(THREAD_PONG_SEM);
+        THREAD_PING_SEM.as_ref().unwrap().give();
+        Thread::sleep_ms(10);
+        THREAD_BENCH_TH = None;
+        THREAD_PING_SEM = None;
+        THREAD_PONG_SEM = None;
     }
 }
 
@@ -270,57 +255,53 @@ pub static bench_suite_thread: BenchSuite = BenchSuite {
 // Suite: sync
 // ===========================================================================
 
-static mut SYNC_MTX: ffi::ove_mutex_t = core::ptr::null_mut();
-static mut SYNC_SEM: ffi::ove_sem_t = core::ptr::null_mut();
-static mut SYNC_EVT: ffi::ove_event_t = core::ptr::null_mut();
-static mut SYNC_CV: ffi::ove_condvar_t = core::ptr::null_mut();
-static mut SYNC_CV_MTX: ffi::ove_mutex_t = core::ptr::null_mut();
-static mut SYNC_RMTX: ffi::ove_mutex_t = core::ptr::null_mut();
-static mut SYNC_CONTENTION_TH: ffi::ove_thread_t = core::ptr::null_mut();
+static mut SYNC_MTX: Option<Mutex> = None;
+static mut SYNC_SEM: Option<Semaphore> = None;
+static mut SYNC_EVT: Option<Event> = None;
+static mut SYNC_CV: Option<CondVar> = None;
+static mut SYNC_CV_MTX: Option<Mutex> = None;
+static mut SYNC_RMTX: Option<RecursiveMutex> = None;
+static mut SYNC_CONTENTION_TH: Option<Thread> = None;
 static SYNC_CONTENTION_DONE: AtomicBool = AtomicBool::new(false);
 static SYNC_CONTENTION_COUNT: AtomicU32 = AtomicU32::new(0);
-static mut SYNC_EVT_TH: ffi::ove_thread_t = core::ptr::null_mut();
+static mut SYNC_EVT_TH: Option<Thread> = None;
 static SYNC_EVT_DONE: AtomicBool = AtomicBool::new(false);
-static mut SYNC_CV_TH: ffi::ove_thread_t = core::ptr::null_mut();
+static mut SYNC_CV_TH: Option<Thread> = None;
 static SYNC_CV_DONE: AtomicBool = AtomicBool::new(false);
 
 // --- Mutex lock/unlock ---
 
 unsafe extern "C" fn mutex_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_mutex_create(addr_of_mut!(SYNC_MTX)) };
+    unsafe { SYNC_MTX = Some(Mutex::new().unwrap()) };
 }
 
 unsafe extern "C" fn mutex_lock_unlock_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_mutex_lock(SYNC_MTX, ffi::OVE_WAIT_FOREVER);
-        ffi::ove_mutex_unlock(SYNC_MTX);
+        let _ = SYNC_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
+        SYNC_MTX.as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn mutex_lock_unlock_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_mutex_destroy(SYNC_MTX) };
+    unsafe { SYNC_MTX = None };
 }
 
 // --- Mutex create/destroy ---
 
 unsafe extern "C" fn mutex_create_destroy_run(_ctx: *mut c_void) {
-    let mut m: ffi::ove_mutex_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_mutex_create(&mut m);
-        ffi::ove_mutex_destroy(m);
-    }
+    let _m = Mutex::new().unwrap();
 }
 
 // --- Mutex contention (2-thread throughput) ---
 
-unsafe extern "C" fn contention_thread(_arg: *mut c_void) {
+fn contention_thread() {
     while !SYNC_CONTENTION_DONE.load(Ordering::Relaxed) {
         unsafe {
-            ffi::ove_mutex_lock(SYNC_MTX, ffi::OVE_WAIT_FOREVER);
+            let _ = SYNC_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
         }
         SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
         unsafe {
-            ffi::ove_mutex_unlock(SYNC_MTX);
+            SYNC_MTX.as_ref().unwrap().unlock();
         }
     }
 }
@@ -328,212 +309,194 @@ unsafe extern "C" fn contention_thread(_arg: *mut c_void) {
 unsafe extern "C" fn mutex_contention_setup(_ctx: *mut c_void) {
     SYNC_CONTENTION_DONE.store(false, Ordering::Relaxed);
     SYNC_CONTENTION_COUNT.store(0, Ordering::Relaxed);
-    unsafe { ffi::ove_mutex_create(addr_of_mut!(SYNC_MTX)) };
-    let desc = ffi::ove_thread_desc {
-        name: b"contention\0".as_ptr() as *const _,
-        entry: Some(contention_thread),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Normal as u32,
-        stack_size: 2048,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe { ffi::ove_thread_create_(addr_of_mut!(SYNC_CONTENTION_TH), &desc) };
+    unsafe {
+        SYNC_MTX = Some(Mutex::new().unwrap());
+        SYNC_CONTENTION_TH = Some(
+            Thread::spawn(b"contention\0", contention_thread, Priority::Normal, 2048).unwrap(),
+        );
+    }
 }
 
 unsafe extern "C" fn mutex_contention_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_mutex_lock(SYNC_MTX, ffi::OVE_WAIT_FOREVER);
+        let _ = SYNC_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
     }
     SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
     unsafe {
-        ffi::ove_mutex_unlock(SYNC_MTX);
+        SYNC_MTX.as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn mutex_contention_teardown(_ctx: *mut c_void) {
     SYNC_CONTENTION_DONE.store(true, Ordering::Relaxed);
     unsafe {
-        ffi::ove_thread_sleep_ms(10);
-        ffi::ove_thread_destroy(SYNC_CONTENTION_TH);
-        ffi::ove_mutex_destroy(SYNC_MTX);
+        Thread::sleep_ms(10);
+        SYNC_CONTENTION_TH = None;
+        SYNC_MTX = None;
     }
 }
 
 // --- Mutex memory ---
 
-static mut SYNC_MEM_MUTEX: ffi::ove_mutex_t = core::ptr::null_mut();
+static mut SYNC_MEM_MUTEX: Option<Mutex> = None;
 
 unsafe extern "C" fn mutex_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_mutex_create(addr_of_mut!(SYNC_MEM_MUTEX)) };
+    unsafe { SYNC_MEM_MUTEX = Some(Mutex::new().unwrap()) };
 }
 
 unsafe extern "C" fn mutex_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_mutex_destroy(SYNC_MEM_MUTEX) };
+    unsafe { SYNC_MEM_MUTEX = None };
 }
 
 // --- Semaphore take/give ---
 
 unsafe extern "C" fn sem_take_give_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_sem_create(addr_of_mut!(SYNC_SEM), 1, 1) };
+    unsafe { SYNC_SEM = Some(Semaphore::new(1, 1).unwrap()) };
 }
 
 unsafe extern "C" fn sem_take_give_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_sem_take(SYNC_SEM, ffi::OVE_WAIT_FOREVER);
-        ffi::ove_sem_give(SYNC_SEM);
+        let _ = SYNC_SEM.as_ref().unwrap().take(WAIT_FOREVER);
+        SYNC_SEM.as_ref().unwrap().give();
     }
 }
 
 unsafe extern "C" fn sem_take_give_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_sem_destroy(SYNC_SEM) };
+    unsafe { SYNC_SEM = None };
 }
 
 // --- Semaphore create/destroy ---
 
 unsafe extern "C" fn sem_create_destroy_run(_ctx: *mut c_void) {
-    let mut s: ffi::ove_sem_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_sem_create(&mut s, 0, 1);
-        ffi::ove_sem_destroy(s);
-    }
+    let _s = Semaphore::new(0, 1).unwrap();
 }
 
 // --- Semaphore memory ---
 
-static mut SYNC_MEM_SEM: ffi::ove_sem_t = core::ptr::null_mut();
+static mut SYNC_MEM_SEM: Option<Semaphore> = None;
 
 unsafe extern "C" fn sem_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_sem_create(addr_of_mut!(SYNC_MEM_SEM), 0, 1) };
+    unsafe { SYNC_MEM_SEM = Some(Semaphore::new(0, 1).unwrap()) };
 }
 
 unsafe extern "C" fn sem_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_sem_destroy(SYNC_MEM_SEM) };
+    unsafe { SYNC_MEM_SEM = None };
 }
 
 // --- Event signal/wait ---
 
-unsafe extern "C" fn evt_signaler(_arg: *mut c_void) {
+fn evt_signaler() {
     while !SYNC_EVT_DONE.load(Ordering::Relaxed) {
         unsafe {
-            ffi::ove_event_signal(SYNC_EVT);
-            ffi::ove_thread_yield();
+            SYNC_EVT.as_ref().unwrap().signal();
         }
+        Thread::yield_now();
     }
 }
 
 unsafe extern "C" fn event_signal_wait_setup(_ctx: *mut c_void) {
     SYNC_EVT_DONE.store(false, Ordering::Relaxed);
-    unsafe { ffi::ove_event_create(addr_of_mut!(SYNC_EVT)) };
-    let desc = ffi::ove_thread_desc {
-        name: b"evt_sig\0".as_ptr() as *const _,
-        entry: Some(evt_signaler),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Normal as u32,
-        stack_size: 1024,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe { ffi::ove_thread_create_(addr_of_mut!(SYNC_EVT_TH), &desc) };
+    unsafe {
+        SYNC_EVT = Some(Event::new().unwrap());
+        SYNC_EVT_TH = Some(
+            Thread::spawn(b"evt_sig\0", evt_signaler, Priority::Normal, 1024).unwrap(),
+        );
+    }
 }
 
 unsafe extern "C" fn event_signal_wait_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_event_wait(SYNC_EVT, 10) };
+    unsafe { let _ = SYNC_EVT.as_ref().unwrap().wait(10) };
 }
 
 unsafe extern "C" fn event_signal_wait_teardown(_ctx: *mut c_void) {
     SYNC_EVT_DONE.store(true, Ordering::Relaxed);
     unsafe {
-        ffi::ove_thread_sleep_ms(10);
-        ffi::ove_thread_destroy(SYNC_EVT_TH);
-        ffi::ove_event_destroy(SYNC_EVT);
+        Thread::sleep_ms(10);
+        SYNC_EVT_TH = None;
+        SYNC_EVT = None;
     }
 }
 
 // --- Event memory ---
 
-static mut SYNC_MEM_EVENT: ffi::ove_event_t = core::ptr::null_mut();
+static mut SYNC_MEM_EVENT: Option<Event> = None;
 
 unsafe extern "C" fn event_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_event_create(addr_of_mut!(SYNC_MEM_EVENT)) };
+    unsafe { SYNC_MEM_EVENT = Some(Event::new().unwrap()) };
 }
 
 unsafe extern "C" fn event_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_event_destroy(SYNC_MEM_EVENT) };
+    unsafe { SYNC_MEM_EVENT = None };
 }
 
 // --- Condvar signal/wait ---
 
-unsafe extern "C" fn cv_signaler(_arg: *mut c_void) {
+fn cv_signaler() {
     while !SYNC_CV_DONE.load(Ordering::Relaxed) {
         unsafe {
-            ffi::ove_condvar_signal(SYNC_CV);
-            ffi::ove_thread_yield();
+            SYNC_CV.as_ref().unwrap().signal();
         }
+        Thread::yield_now();
     }
 }
 
 unsafe extern "C" fn condvar_signal_wait_setup(_ctx: *mut c_void) {
     SYNC_CV_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        ffi::ove_mutex_create(addr_of_mut!(SYNC_CV_MTX));
-        ffi::ove_condvar_create(addr_of_mut!(SYNC_CV));
+        SYNC_CV_MTX = Some(Mutex::new().unwrap());
+        SYNC_CV = Some(CondVar::new().unwrap());
+        SYNC_CV_TH = Some(
+            Thread::spawn(b"cv_sig\0", cv_signaler, Priority::Normal, 1024).unwrap(),
+        );
     }
-    let desc = ffi::ove_thread_desc {
-        name: b"cv_sig\0".as_ptr() as *const _,
-        entry: Some(cv_signaler),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Normal as u32,
-        stack_size: 1024,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe { ffi::ove_thread_create_(addr_of_mut!(SYNC_CV_TH), &desc) };
 }
 
 unsafe extern "C" fn condvar_signal_wait_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_mutex_lock(SYNC_CV_MTX, ffi::OVE_WAIT_FOREVER);
-        ffi::ove_condvar_wait(SYNC_CV, SYNC_CV_MTX, 10);
-        ffi::ove_mutex_unlock(SYNC_CV_MTX);
+        let _ = SYNC_CV_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
+        let _ = SYNC_CV.as_ref().unwrap().wait(SYNC_CV_MTX.as_ref().unwrap(), 10);
+        SYNC_CV_MTX.as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn condvar_signal_wait_teardown(_ctx: *mut c_void) {
     SYNC_CV_DONE.store(true, Ordering::Relaxed);
     unsafe {
-        ffi::ove_condvar_signal(SYNC_CV);
-        ffi::ove_thread_sleep_ms(10);
-        ffi::ove_thread_destroy(SYNC_CV_TH);
-        ffi::ove_condvar_destroy(SYNC_CV);
-        ffi::ove_mutex_destroy(SYNC_CV_MTX);
+        SYNC_CV.as_ref().unwrap().signal();
+        Thread::sleep_ms(10);
+        SYNC_CV_TH = None;
+        SYNC_CV = None;
+        SYNC_CV_MTX = None;
     }
 }
 
 // --- Condvar memory ---
 
-static mut SYNC_MEM_CONDVAR: ffi::ove_condvar_t = core::ptr::null_mut();
+static mut SYNC_MEM_CONDVAR: Option<CondVar> = None;
 
 unsafe extern "C" fn condvar_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_condvar_create(addr_of_mut!(SYNC_MEM_CONDVAR)) };
+    unsafe { SYNC_MEM_CONDVAR = Some(CondVar::new().unwrap()) };
 }
 
 unsafe extern "C" fn condvar_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_condvar_destroy(SYNC_MEM_CONDVAR) };
+    unsafe { SYNC_MEM_CONDVAR = None };
 }
 
 // --- Recursive mutex lock/unlock ---
 
 unsafe extern "C" fn rmtx_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_recursive_mutex_create(addr_of_mut!(SYNC_RMTX)) };
+    unsafe { SYNC_RMTX = Some(RecursiveMutex::new().unwrap()) };
 }
 
 unsafe extern "C" fn rmtx_lock_unlock_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_recursive_mutex_lock(SYNC_RMTX, ffi::OVE_WAIT_FOREVER);
-        ffi::ove_recursive_mutex_unlock(SYNC_RMTX);
+        let _ = SYNC_RMTX.as_ref().unwrap().lock(WAIT_FOREVER);
+        SYNC_RMTX.as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn rmtx_lock_unlock_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_recursive_mutex_destroy(SYNC_RMTX) };
+    unsafe { SYNC_RMTX = None };
 }
 
 // --- sync suite ---
@@ -657,52 +620,42 @@ pub static bench_suite_sync: BenchSuite = BenchSuite {
 // Suite: queue
 // ===========================================================================
 
-static mut QUEUE_Q: ffi::ove_queue_t = core::ptr::null_mut();
-static mut QUEUE_PRODUCER_TH: ffi::ove_thread_t = core::ptr::null_mut();
+static mut QUEUE_SEND_RECV_Q: Option<Queue<u32, 16>> = None;
+static mut QUEUE_THROUGHPUT_Q: Option<Queue<u32, 64>> = None;
+static mut QUEUE_PRODUCER_TH: Option<Thread> = None;
 static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
 
 // --- send/receive latency ---
 
 unsafe extern "C" fn queue_send_recv_setup(_ctx: *mut c_void) {
-    unsafe {
-        ffi::ove_queue_create(
-            addr_of_mut!(QUEUE_Q),
-            core::mem::size_of::<u32>(),
-            16,
-        )
-    };
+    unsafe { QUEUE_SEND_RECV_Q = Some(Queue::<u32, 16>::new().unwrap()) };
 }
 
 unsafe extern "C" fn queue_send_recv_run(_ctx: *mut c_void) {
     let val: u32 = 42;
-    let mut buf: u32 = 0;
     unsafe {
-        ffi::ove_queue_send(QUEUE_Q, &val as *const u32 as *const _, ffi::OVE_WAIT_FOREVER);
-        ffi::ove_queue_receive(QUEUE_Q, &mut buf as *mut u32 as *mut _, ffi::OVE_WAIT_FOREVER);
+        let _ = QUEUE_SEND_RECV_Q.as_ref().unwrap().send(&val, WAIT_FOREVER);
+        let _ = QUEUE_SEND_RECV_Q.as_ref().unwrap().receive(WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn queue_send_recv_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_queue_destroy(QUEUE_Q) };
+    unsafe { QUEUE_SEND_RECV_Q = None };
 }
 
 // --- create/destroy ---
 
 unsafe extern "C" fn queue_create_destroy_run(_ctx: *mut c_void) {
-    let mut q: ffi::ove_queue_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_queue_create(&mut q, core::mem::size_of::<u32>(), 8);
-        ffi::ove_queue_destroy(q);
-    }
+    let _q = Queue::<u32, 8>::new().unwrap();
 }
 
 // --- 2-thread throughput ---
 
-unsafe extern "C" fn producer_thread(_arg: *mut c_void) {
+fn producer_thread() {
     let mut val: u32 = 0;
     while !QUEUE_THROUGHPUT_DONE.load(Ordering::Relaxed) {
         unsafe {
-            ffi::ove_queue_send(QUEUE_Q, &val as *const u32 as *const _, ffi::OVE_WAIT_FOREVER);
+            let _ = QUEUE_THROUGHPUT_Q.as_ref().unwrap().send(&val, WAIT_FOREVER);
         }
         val = val.wrapping_add(1);
     }
@@ -711,58 +664,40 @@ unsafe extern "C" fn producer_thread(_arg: *mut c_void) {
 unsafe extern "C" fn queue_throughput_setup(_ctx: *mut c_void) {
     QUEUE_THROUGHPUT_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        ffi::ove_queue_create(
-            addr_of_mut!(QUEUE_Q),
-            core::mem::size_of::<u32>(),
-            64,
+        QUEUE_THROUGHPUT_Q = Some(Queue::<u32, 64>::new().unwrap());
+        QUEUE_PRODUCER_TH = Some(
+            Thread::spawn(b"q_prod\0", producer_thread, Priority::Normal, 2048).unwrap(),
         );
     }
-    let desc = ffi::ove_thread_desc {
-        name: b"q_prod\0".as_ptr() as *const _,
-        entry: Some(producer_thread),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Normal as u32,
-        stack_size: 2048,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe { ffi::ove_thread_create_(addr_of_mut!(QUEUE_PRODUCER_TH), &desc) };
 }
 
 unsafe extern "C" fn queue_throughput_run(_ctx: *mut c_void) {
-    let mut buf: u32 = 0;
     unsafe {
-        ffi::ove_queue_receive(QUEUE_Q, &mut buf as *mut u32 as *mut _, ffi::OVE_WAIT_FOREVER);
+        let _ = QUEUE_THROUGHPUT_Q.as_ref().unwrap().receive(WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn queue_throughput_teardown(_ctx: *mut c_void) {
     QUEUE_THROUGHPUT_DONE.store(true, Ordering::Relaxed);
     // Drain queue so producer unblocks
-    let mut buf: u32 = 0;
     unsafe {
-        ffi::ove_queue_receive(QUEUE_Q, &mut buf as *mut u32 as *mut _, 100);
-        ffi::ove_thread_sleep_ms(10);
-        ffi::ove_thread_destroy(QUEUE_PRODUCER_TH);
-        ffi::ove_queue_destroy(QUEUE_Q);
+        let _ = QUEUE_THROUGHPUT_Q.as_ref().unwrap().receive(100);
+        Thread::sleep_ms(10);
+        QUEUE_PRODUCER_TH = None;
+        QUEUE_THROUGHPUT_Q = None;
     }
 }
 
 // --- memory ---
 
-static mut QUEUE_MEM_Q: ffi::ove_queue_t = core::ptr::null_mut();
+static mut QUEUE_MEM_Q: Option<Queue<u32, 8>> = None;
 
 unsafe extern "C" fn queue_memory_run(_ctx: *mut c_void) {
-    unsafe {
-        ffi::ove_queue_create(
-            addr_of_mut!(QUEUE_MEM_Q),
-            core::mem::size_of::<u32>(),
-            8,
-        )
-    };
+    unsafe { QUEUE_MEM_Q = Some(Queue::<u32, 8>::new().unwrap()) };
 }
 
 unsafe extern "C" fn queue_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_queue_destroy(QUEUE_MEM_Q) };
+    unsafe { QUEUE_MEM_Q = None };
 }
 
 // --- queue suite ---
@@ -821,67 +756,43 @@ pub static bench_suite_queue: BenchSuite = BenchSuite {
 // Suite: timer
 // ===========================================================================
 
-static mut TIMER_TMR: ffi::ove_timer_t = core::ptr::null_mut();
+static mut TIMER_TMR: Option<Timer> = None;
 
-unsafe extern "C" fn timer_dummy_cb(
-    _timer: ffi::ove_timer_t,
-    _user_data: *mut c_void,
-) {
-}
+fn timer_dummy_cb() {}
 
 // --- create/destroy ---
 
 unsafe extern "C" fn timer_create_destroy_run(_ctx: *mut c_void) {
-    let mut t: ffi::ove_timer_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_timer_create(&mut t, Some(timer_dummy_cb), core::ptr::null_mut(), 1000, 0);
-        ffi::ove_timer_destroy(t);
-    }
+    let _t = Timer::new(timer_dummy_cb, 1000, false).unwrap();
 }
 
 // --- start/stop ---
 
 unsafe extern "C" fn timer_start_stop_setup(_ctx: *mut c_void) {
-    unsafe {
-        ffi::ove_timer_create(
-            addr_of_mut!(TIMER_TMR),
-            Some(timer_dummy_cb),
-            core::ptr::null_mut(),
-            1000,
-            0,
-        )
-    };
+    unsafe { TIMER_TMR = Some(Timer::new(timer_dummy_cb, 1000, false).unwrap()) };
 }
 
 unsafe extern "C" fn timer_start_stop_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_timer_start(TIMER_TMR);
-        ffi::ove_timer_stop(TIMER_TMR);
+        let _ = TIMER_TMR.as_ref().unwrap().start();
+        let _ = TIMER_TMR.as_ref().unwrap().stop();
     }
 }
 
 unsafe extern "C" fn timer_start_stop_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_timer_destroy(TIMER_TMR) };
+    unsafe { TIMER_TMR = None };
 }
 
 // --- memory ---
 
-static mut TIMER_MEM_TMR: ffi::ove_timer_t = core::ptr::null_mut();
+static mut TIMER_MEM_TMR: Option<Timer> = None;
 
 unsafe extern "C" fn timer_memory_run(_ctx: *mut c_void) {
-    unsafe {
-        ffi::ove_timer_create(
-            addr_of_mut!(TIMER_MEM_TMR),
-            Some(timer_dummy_cb),
-            core::ptr::null_mut(),
-            1000,
-            0,
-        )
-    };
+    unsafe { TIMER_MEM_TMR = Some(Timer::new(timer_dummy_cb, 1000, false).unwrap()) };
 }
 
 unsafe extern "C" fn timer_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_timer_destroy(TIMER_MEM_TMR) };
+    unsafe { TIMER_MEM_TMR = None };
 }
 
 // --- timer suite ---
@@ -932,46 +843,42 @@ pub static bench_suite_timer: BenchSuite = BenchSuite {
 // Suite: eventgroup
 // ===========================================================================
 
-static mut EG_BENCH: ffi::ove_eventgroup_t = core::ptr::null_mut();
+static mut EG_BENCH: Option<EventGroup> = None;
 
 // --- set/get bits ---
 
 unsafe extern "C" fn eg_set_get_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_eventgroup_create(addr_of_mut!(EG_BENCH)) };
+    unsafe { EG_BENCH = Some(EventGroup::new().unwrap()) };
 }
 
 unsafe extern "C" fn eg_set_get_run(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_eventgroup_set_bits(EG_BENCH, 0x01);
-        ffi::ove_eventgroup_get_bits(EG_BENCH);
-        ffi::ove_eventgroup_clear_bits(EG_BENCH, 0x01);
+        EG_BENCH.as_ref().unwrap().set_bits(0x01);
+        EG_BENCH.as_ref().unwrap().get_bits();
+        EG_BENCH.as_ref().unwrap().clear_bits(0x01);
     }
 }
 
 unsafe extern "C" fn eg_set_get_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_eventgroup_destroy(EG_BENCH) };
+    unsafe { EG_BENCH = None };
 }
 
 // --- create/destroy ---
 
 unsafe extern "C" fn eg_create_destroy_run(_ctx: *mut c_void) {
-    let mut eg: ffi::ove_eventgroup_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_eventgroup_create(&mut eg);
-        ffi::ove_eventgroup_destroy(eg);
-    }
+    let _eg = EventGroup::new().unwrap();
 }
 
 // --- memory ---
 
-static mut EG_MEM: ffi::ove_eventgroup_t = core::ptr::null_mut();
+static mut EG_MEM: Option<EventGroup> = None;
 
 unsafe extern "C" fn eg_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_eventgroup_create(addr_of_mut!(EG_MEM)) };
+    unsafe { EG_MEM = Some(EventGroup::new().unwrap()) };
 }
 
 unsafe extern "C" fn eg_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_eventgroup_destroy(EG_MEM) };
+    unsafe { EG_MEM = None };
 }
 
 // --- eventgroup suite ---
@@ -1022,84 +929,58 @@ pub static bench_suite_eventgroup: BenchSuite = BenchSuite {
 // Suite: workqueue
 // ===========================================================================
 
-static mut WQ_BENCH: ffi::ove_workqueue_t = core::ptr::null_mut();
-static mut WQ_WORK: ffi::ove_work_t = core::ptr::null_mut();
+static mut WQ_BENCH: Option<Workqueue> = None;
+static mut WQ_WORK: Option<Work> = None;
 static WQ_WORK_EXECUTED: AtomicBool = AtomicBool::new(false);
-static mut WQ_WORK_SEM: ffi::ove_sem_t = core::ptr::null_mut();
-static mut WQ_WORK_STORAGE: core::mem::MaybeUninit<ffi::ove_work_storage_t> =
-    core::mem::MaybeUninit::uninit();
+static mut WQ_WORK_SEM: Option<Semaphore> = None;
 
 unsafe extern "C" fn work_handler(_work: ffi::ove_work_t) {
     WQ_WORK_EXECUTED.store(true, Ordering::Relaxed);
-    unsafe { ffi::ove_sem_give(WQ_WORK_SEM) };
+    unsafe { WQ_WORK_SEM.as_ref().unwrap().give() };
 }
 
 // --- create/destroy ---
 
 unsafe extern "C" fn wq_create_destroy_run(_ctx: *mut c_void) {
-    let mut wq: ffi::ove_workqueue_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_workqueue_create(
-            &mut wq,
-            b"bench_wq\0".as_ptr() as *const _,
-            Priority::Normal as u32,
-            2048,
-        );
-        ffi::ove_workqueue_destroy(wq);
-    }
+    let _wq = Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap();
 }
 
 // --- submit/execute ---
 
 unsafe extern "C" fn wq_submit_setup(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_sem_create(addr_of_mut!(WQ_WORK_SEM), 0, 1);
-        ffi::ove_workqueue_create(
-            addr_of_mut!(WQ_BENCH),
-            b"bench_wq\0".as_ptr() as *const _,
-            Priority::Normal as u32,
-            2048,
-        );
-        ffi::ove_work_init_static(
-            addr_of_mut!(WQ_WORK),
-            addr_of_mut!(WQ_WORK_STORAGE).cast::<ffi::ove_work_storage_t>(),
-            Some(work_handler),
-        );
+        WQ_WORK_SEM = Some(Semaphore::new(0, 1).unwrap());
+        WQ_BENCH = Some(Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap());
+        WQ_WORK = Some(Work::new(Some(work_handler)).unwrap());
     }
 }
 
 unsafe extern "C" fn wq_submit_run(_ctx: *mut c_void) {
     WQ_WORK_EXECUTED.store(false, Ordering::Relaxed);
     unsafe {
-        ffi::ove_work_submit(WQ_BENCH, WQ_WORK);
-        ffi::ove_sem_take(WQ_WORK_SEM, 1000);
+        let _ = WQ_WORK.as_ref().unwrap().submit(WQ_BENCH.as_ref().unwrap());
+        let _ = WQ_WORK_SEM.as_ref().unwrap().take(1000);
     }
 }
 
 unsafe extern "C" fn wq_submit_teardown(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_workqueue_destroy(WQ_BENCH);
-        ffi::ove_sem_destroy(WQ_WORK_SEM);
+        WQ_WORK = None;
+        WQ_BENCH = None;
+        WQ_WORK_SEM = None;
     }
 }
 
 // --- memory ---
 
-static mut WQ_MEM: ffi::ove_workqueue_t = core::ptr::null_mut();
+static mut WQ_MEM: Option<Workqueue> = None;
 
 unsafe extern "C" fn wq_memory_run(_ctx: *mut c_void) {
-    unsafe {
-        ffi::ove_workqueue_create(
-            addr_of_mut!(WQ_MEM),
-            b"bench_wq\0".as_ptr() as *const _,
-            Priority::Normal as u32,
-            2048,
-        )
-    };
+    unsafe { WQ_MEM = Some(Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap()) };
 }
 
 unsafe extern "C" fn wq_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_workqueue_destroy(WQ_MEM) };
+    unsafe { WQ_MEM = None };
 }
 
 // --- workqueue suite ---
@@ -1153,8 +1034,8 @@ pub static bench_suite_workqueue: BenchSuite = BenchSuite {
 const STREAM_BUF_SIZE: usize = 256;
 const STREAM_MSG_SIZE: usize = 64;
 
-static mut STREAM_BENCH: ffi::ove_stream_t = core::ptr::null_mut();
-static mut STREAM_PRODUCER_TH: ffi::ove_thread_t = core::ptr::null_mut();
+static mut STREAM_BENCH: Option<Stream<STREAM_BUF_SIZE>> = None;
+static mut STREAM_PRODUCER_TH: Option<Thread> = None;
 static STREAM_DONE: AtomicBool = AtomicBool::new(false);
 
 static mut STREAM_TX_BUF: [u8; STREAM_MSG_SIZE] = [0u8; STREAM_MSG_SIZE];
@@ -1164,59 +1045,34 @@ static mut STREAM_RX_BUF: [u8; STREAM_MSG_SIZE] = [0u8; STREAM_MSG_SIZE];
 
 unsafe extern "C" fn stream_send_recv_setup(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_stream_create(addr_of_mut!(STREAM_BENCH), STREAM_BUF_SIZE, 1);
-        addr_of_mut!(STREAM_TX_BUF).write([0xAA; STREAM_MSG_SIZE]);
+        STREAM_BENCH = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap());
+        STREAM_TX_BUF = [0xAA; STREAM_MSG_SIZE];
     }
 }
 
 unsafe extern "C" fn stream_send_recv_run(_ctx: *mut c_void) {
-    let mut sent: usize = 0;
-    let mut received: usize = 0;
     unsafe {
-        ffi::ove_stream_send(
-            STREAM_BENCH,
-            addr_of_mut!(STREAM_TX_BUF) as *const _,
-            STREAM_MSG_SIZE,
-            ffi::OVE_WAIT_FOREVER,
-            &mut sent,
-        );
-        ffi::ove_stream_receive(
-            STREAM_BENCH,
-            addr_of_mut!(STREAM_RX_BUF) as *mut _,
-            STREAM_MSG_SIZE,
-            ffi::OVE_WAIT_FOREVER,
-            &mut received,
-        );
+        let _ = STREAM_BENCH.as_ref().unwrap().send(&STREAM_TX_BUF, WAIT_FOREVER);
+        let _ = STREAM_BENCH.as_ref().unwrap().receive(&mut STREAM_RX_BUF, WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn stream_send_recv_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_stream_destroy(STREAM_BENCH) };
+    unsafe { STREAM_BENCH = None };
 }
 
 // --- create/destroy ---
 
 unsafe extern "C" fn stream_create_destroy_run(_ctx: *mut c_void) {
-    let mut s: ffi::ove_stream_t = core::ptr::null_mut();
-    unsafe {
-        ffi::ove_stream_create(&mut s, STREAM_BUF_SIZE, 1);
-        ffi::ove_stream_destroy(s);
-    }
+    let _s = Stream::<STREAM_BUF_SIZE>::new(1).unwrap();
 }
 
 // --- throughput ---
 
-unsafe extern "C" fn stream_producer(_arg: *mut c_void) {
+fn stream_producer() {
     while !STREAM_DONE.load(Ordering::Relaxed) {
-        let mut sent: usize = 0;
         unsafe {
-            ffi::ove_stream_send(
-                STREAM_BENCH,
-                addr_of_mut!(STREAM_TX_BUF) as *const _,
-                STREAM_MSG_SIZE,
-                ffi::OVE_WAIT_FOREVER,
-                &mut sent,
-            );
+            let _ = STREAM_BENCH.as_ref().unwrap().send(&STREAM_TX_BUF, WAIT_FOREVER);
         }
     }
 }
@@ -1224,61 +1080,41 @@ unsafe extern "C" fn stream_producer(_arg: *mut c_void) {
 unsafe extern "C" fn stream_throughput_setup(_ctx: *mut c_void) {
     STREAM_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        addr_of_mut!(STREAM_TX_BUF).write([0xBB; STREAM_MSG_SIZE]);
-        ffi::ove_stream_create(addr_of_mut!(STREAM_BENCH), STREAM_BUF_SIZE, 1);
+        STREAM_TX_BUF = [0xBB; STREAM_MSG_SIZE];
+        STREAM_BENCH = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap());
+        STREAM_PRODUCER_TH = Some(
+            Thread::spawn(b"strm_prod\0", stream_producer, Priority::Normal, 2048).unwrap(),
+        );
     }
-    let desc = ffi::ove_thread_desc {
-        name: b"strm_prod\0".as_ptr() as *const _,
-        entry: Some(stream_producer),
-        arg: core::ptr::null_mut(),
-        priority: Priority::Normal as u32,
-        stack_size: 2048,
-        stack: core::ptr::null_mut(),
-    };
-    unsafe { ffi::ove_thread_create_(addr_of_mut!(STREAM_PRODUCER_TH), &desc) };
 }
 
 unsafe extern "C" fn stream_throughput_run(_ctx: *mut c_void) {
-    let mut received: usize = 0;
     unsafe {
-        ffi::ove_stream_receive(
-            STREAM_BENCH,
-            addr_of_mut!(STREAM_RX_BUF) as *mut _,
-            STREAM_MSG_SIZE,
-            ffi::OVE_WAIT_FOREVER,
-            &mut received,
-        );
+        let _ = STREAM_BENCH.as_ref().unwrap().receive(&mut STREAM_RX_BUF, WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn stream_throughput_teardown(_ctx: *mut c_void) {
     STREAM_DONE.store(true, Ordering::Relaxed);
     // Drain so producer can unblock
-    let mut received: usize = 0;
     unsafe {
-        ffi::ove_stream_receive(
-            STREAM_BENCH,
-            addr_of_mut!(STREAM_RX_BUF) as *mut _,
-            STREAM_MSG_SIZE,
-            100,
-            &mut received,
-        );
-        ffi::ove_thread_sleep_ms(10);
-        ffi::ove_thread_destroy(STREAM_PRODUCER_TH);
-        ffi::ove_stream_destroy(STREAM_BENCH);
+        let _ = STREAM_BENCH.as_ref().unwrap().receive(&mut STREAM_RX_BUF, 100);
+        Thread::sleep_ms(10);
+        STREAM_PRODUCER_TH = None;
+        STREAM_BENCH = None;
     }
 }
 
 // --- memory ---
 
-static mut STREAM_MEM: ffi::ove_stream_t = core::ptr::null_mut();
+static mut STREAM_MEM: Option<Stream<STREAM_BUF_SIZE>> = None;
 
 unsafe extern "C" fn stream_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_stream_create(addr_of_mut!(STREAM_MEM), STREAM_BUF_SIZE, 1) };
+    unsafe { STREAM_MEM = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap()) };
 }
 
 unsafe extern "C" fn stream_memory_teardown(_ctx: *mut c_void) {
-    unsafe { ffi::ove_stream_destroy(STREAM_MEM) };
+    unsafe { STREAM_MEM = None };
 }
 
 // --- stream suite ---
