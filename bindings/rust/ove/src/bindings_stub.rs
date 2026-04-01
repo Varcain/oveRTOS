@@ -277,6 +277,14 @@ pub struct ove_audio_buf {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ove_audio_node_type {
+    OVE_AUDIO_NODE_SOURCE    = 0,
+    OVE_AUDIO_NODE_PROCESSOR = 1,
+    OVE_AUDIO_NODE_SINK      = 2,
+}
+
+#[repr(C)]
 pub struct ove_audio_node_ops {
     pub configure: Option<unsafe extern "C" fn(*mut c_void, *const ove_audio_fmt, *mut ove_audio_fmt) -> i32>,
     pub start:     Option<unsafe extern "C" fn(*mut c_void) -> i32>,
@@ -288,7 +296,7 @@ pub struct ove_audio_node_ops {
 #[repr(C)]
 pub struct ove_audio_node {
     pub name:    *const core::ffi::c_char,
-    pub type_:   u32,
+    pub type_:   ove_audio_node_type,
     pub ops:     *const ove_audio_node_ops,
     pub ctx:     *mut c_void,
     pub out_fmt: ove_audio_fmt,
@@ -609,7 +617,7 @@ unsafe extern "C" {
     // --- audio graph ---
     pub fn ove_audio_graph_init(g: *mut ove_audio_graph, frames_per_period: u32) -> i32;
     pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
-    pub fn ove_audio_graph_add_node(g: *mut ove_audio_graph, ops: *const ove_audio_node_ops, ctx: *mut c_void, name: *const core::ffi::c_char, node_type: u32) -> i32;
+    pub fn ove_audio_graph_add_node(g: *mut ove_audio_graph, ops: *const ove_audio_node_ops, ctx: *mut c_void, name: *const core::ffi::c_char, node_type: ove_audio_node_type) -> i32;
     pub fn ove_audio_graph_connect(g: *mut ove_audio_graph, from: u32, to: u32) -> i32;
     pub fn ove_audio_graph_build(g: *mut ove_audio_graph) -> i32;
     pub fn ove_audio_graph_start(g: *mut ove_audio_graph) -> i32;
