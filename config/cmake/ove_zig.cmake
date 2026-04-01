@@ -208,13 +208,17 @@ function(ove_build_zig_lib TARGET)
     get_target_property(_DEFS ${TARGET} COMPILE_DEFINITIONS)
     if(_DEFS)
         foreach(_DEF ${_DEFS})
-            list(APPEND ZIG_DEFINE_ARGS "-D${_DEF}")
+            if(NOT _DEF STREQUAL "" AND NOT _DEF MATCHES "^\\$<")
+                list(APPEND ZIG_DEFINE_ARGS "-D${_DEF}")
+            endif()
         endforeach()
     endif()
     get_property(_DIR_DEFS DIRECTORY PROPERTY COMPILE_DEFINITIONS)
     if(_DIR_DEFS)
         foreach(_DEF ${_DIR_DEFS})
-            list(APPEND ZIG_DEFINE_ARGS "-D${_DEF}")
+            if(NOT _DEF STREQUAL "" AND NOT _DEF MATCHES "^\\$<")
+                list(APPEND ZIG_DEFINE_ARGS "-D${_DEF}")
+            endif()
         endforeach()
     endif()
 
@@ -266,6 +270,28 @@ S(ove_watchdog_storage_t)   A(ove_watchdog_storage_t)\n\
 S(ove_file_storage_t)       A(ove_file_storage_t)\n\
 S(ove_dir_storage_t)        A(ove_dir_storage_t)\n"
         )
+        # Conditionally add networking storage types
+        if(OVE_NET)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_socket_storage_t)     A(ove_socket_storage_t)\n\
+S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
+            )
+        endif()
+        if(OVE_NET_HTTP)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_http_client_storage_t) A(ove_http_client_storage_t)\n"
+            )
+        endif()
+        if(OVE_NET_MQTT)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_mqtt_client_storage_t) A(ove_mqtt_client_storage_t)\n"
+            )
+        endif()
+        if(OVE_NET_TLS)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_tls_storage_t)        A(ove_tls_storage_t)\n"
+            )
+        endif()
 
         add_library(_zig_ove_sizes OBJECT ${ZIG_SIZES_C})
 

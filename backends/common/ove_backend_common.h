@@ -19,7 +19,13 @@
  * Memory allocation wrappers — resolve to backend-specific allocators.
  * FreeRTOS and Zephyr use their own heap; POSIX and NuttX use libc.
  */
-#if defined(CONFIG_OVE_RTOS_FREERTOS)
+#ifdef CONFIG_OVE_ZERO_HEAP
+/* In zero-heap mode, any use of the allocator is a compile error.
+ * All allocations must use caller-provided or embedded storage. */
+static inline void *ove_zero_heap_trap(void) { return (void *)0; }
+#define OVE_BACKEND_MALLOC(sz) ove_zero_heap_trap()
+#define OVE_BACKEND_FREE(ptr)  ((void)(ptr))
+#elif defined(CONFIG_OVE_RTOS_FREERTOS)
 #include "FreeRTOS.h"
 #define OVE_BACKEND_MALLOC(sz) pvPortMalloc(sz)
 #define OVE_BACKEND_FREE(ptr)  vPortFree(ptr)

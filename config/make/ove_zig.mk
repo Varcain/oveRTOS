@@ -82,6 +82,19 @@ zig_storage_sizes:
 		ove_file_storage_t ove_dir_storage_t; do \
 		echo "S($$t) A($$t)" >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; \
 	done
+	$(Q) if grep -q 'CONFIG_OVE_NET 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_socket_storage_t) A(ove_socket_storage_t)' \
+			'S(ove_netif_storage_t) A(ove_netif_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_NET_HTTP 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_http_client_storage_t) A(ove_http_client_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_NET_MQTT 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_mqtt_client_storage_t) A(ove_mqtt_client_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_NET_TLS 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_tls_storage_t) A(ove_tls_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
 	$(Q) $(CC) -c -w \
 		-I$(OVE_DIR)/include \
 		-I$(OVE_DIR)/backends/nuttx/include \

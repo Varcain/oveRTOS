@@ -342,5 +342,8 @@ int test_lvgl_run(void);
 int test_static_define_run(void);
 int test_app_run(void);
 int test_infer_run(void);
+int test_net_mqtt_run(void);
+int test_net_httpd_run(void);
+int test_net_sntp_run(void);
 
 #endif /* OVE_TEST_H */

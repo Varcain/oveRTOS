@@ -69,6 +69,13 @@ struct ove_shell_cmd {
 	ove_shell_cmd_fn handler;  /**< @brief Function invoked when the command is matched. */
 };
 
+/**
+ * @brief Shell output hook for capturing command output.
+ * @param[in] data Output text.
+ * @param[in] len  Length in bytes.
+ */
+typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
+
 #ifdef CONFIG_OVE_SHELL
 
 /**
@@ -112,11 +119,34 @@ int  ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
  */
 void ove_shell_process_char(int c);
 
+/**
+ * @brief Process a complete input line through the shell.
+ *
+ * Tokenises @p line and dispatches to the matching command handler.
+ * Equivalent to feeding each character of the line via process_char,
+ * but more convenient for programmatic use (e.g. WebSocket terminal).
+ *
+ * @param[in] line NUL-terminated input line (without trailing newline).
+ */
+void ove_shell_process_line(const char *line);
+
+/**
+ * @brief Set a hook to capture shell output.
+ *
+ * When set, shell command output (normally printed to console) is
+ * also forwarded to this hook.  Pass NULL to remove.
+ *
+ * @param[in] hook Output hook function (or NULL).
+ */
+void ove_shell_set_output_hook(ove_shell_output_hook_t hook);
+
 #else /* !CONFIG_OVE_SHELL */
 
 static inline int  ove_shell_init(void) { return OVE_ERR_NOT_SUPPORTED; }
 static inline int  ove_shell_register_cmd(const struct ove_shell_cmd *c) { (void)c; return OVE_ERR_NOT_SUPPORTED; }
 static inline void ove_shell_process_char(int c) { (void)c; }
+static inline void ove_shell_process_line(const char *l) { (void)l; }
+static inline void ove_shell_set_output_hook(ove_shell_output_hook_t h) { (void)h; }
 
 #endif /* CONFIG_OVE_SHELL */
 

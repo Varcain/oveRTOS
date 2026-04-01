@@ -169,6 +169,33 @@ S(ove_watchdog_storage_t)   A(ove_watchdog_storage_t)\n\
 S(ove_file_storage_t)       A(ove_file_storage_t)\n\
 S(ove_dir_storage_t)        A(ove_dir_storage_t)\n"
     )
+    # Conditionally add networking storage types
+    if(OVE_NET)
+        file(APPEND ${SIZES_C}
+"S(ove_socket_storage_t)     A(ove_socket_storage_t)\n\
+S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
+        )
+    endif()
+    if(OVE_NET_HTTP)
+        file(APPEND ${SIZES_C}
+"S(ove_http_client_storage_t) A(ove_http_client_storage_t)\n"
+        )
+    endif()
+    if(OVE_NET_MQTT)
+        file(APPEND ${SIZES_C}
+"S(ove_mqtt_client_storage_t) A(ove_mqtt_client_storage_t)\n"
+        )
+    endif()
+    if(OVE_NET_TLS)
+        file(APPEND ${SIZES_C}
+"S(ove_tls_storage_t)        A(ove_tls_storage_t)\n"
+        )
+    endif()
+    if(OVE_INFER)
+        file(APPEND ${SIZES_C}
+"S(ove_model_storage_t)      A(ove_model_storage_t)\n"
+        )
+    endif()
 
     # Build the sizes probe as an OBJECT library that inherits all
     # compile settings from the main target.
@@ -251,4 +278,15 @@ S(ove_dir_storage_t)        A(ove_dir_storage_t)\n"
     else()
         target_link_libraries(${TARGET} PRIVATE ${RUST_LIB})
     endif()
+
+    # Link any native libraries compiled by the Rust build.rs (e.g. model data).
+    # Cargo's cc crate places them in the build output directory.
+    file(GLOB _RUST_NATIVE_LIBS "${RUST_LIB_DIR}/build/${APP_RUST_LIB_NAME}-*/out/*.a")
+    foreach(_NATIVE_LIB ${_RUST_NATIVE_LIBS})
+        if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
+            zephyr_link_libraries(${_NATIVE_LIB})
+        else()
+            target_link_libraries(${TARGET} PRIVATE ${_NATIVE_LIB})
+        endif()
+    endforeach()
 endfunction()

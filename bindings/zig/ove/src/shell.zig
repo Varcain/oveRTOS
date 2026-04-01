@@ -51,3 +51,19 @@ pub fn registerCmd(
 pub fn processChar(ch: u8) void {
     c.ove_shell_process_char(@intCast(ch));
 }
+
+/// Process a complete input line through the shell.
+///
+/// Tokenises the line and dispatches to the matching command handler.
+/// More convenient than `processChar` for programmatic use (e.g. WebSocket terminal).
+pub fn processLine(line: [*:0]const u8) void {
+    c.ove_shell_process_line(line);
+}
+
+/// Set a hook to capture shell output.
+///
+/// When set, shell command output (normally printed to console) is also
+/// forwarded to the hook. Pass `null` to remove.
+pub fn setOutputHook(hook: c.ove_shell_output_hook_t) void {
+    c.ove_shell_set_output_hook(hook);
+}

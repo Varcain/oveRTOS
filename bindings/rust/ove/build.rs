@@ -13,7 +13,9 @@ fn main() {
         let modules = [
             "audio", "fs", "lvgl", "nvs", "shell", "watchdog",
             "bsp", "board", "gpio", "led", "time", "console",
-            "stream", "workqueue",
+            "stream", "workqueue", "infer",
+            "net", "net_tls", "net_http", "net_mqtt", "net_httpd",
+            "net_sntp", "net_httpd_ws",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{})", m);
@@ -37,7 +39,9 @@ fn main() {
         let config = std::fs::read_to_string(&config_path).unwrap_or_default();
         let modules = [
             "AUDIO", "FS", "LVGL", "NVS", "SHELL", "WATCHDOG", "BSP", "BOARD",
-            "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE",
+            "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE", "INFER",
+            "NET", "NET_TLS", "NET_HTTP", "NET_MQTT", "NET_HTTPD",
+            "NET_SNTP", "NET_HTTPD_WS",
         ];
         for m in &modules {
             let cfg_name = format!("has_{}", m.to_lowercase());
@@ -289,9 +293,12 @@ fn main() {
         // Native/POSIX build: use std types
     } else {
         // Cross-compilation: freestanding ARM target
+        // -fshort-enums: ARM EABI sizes enums to smallest type; GCC does this
+        // by default but clang does not — must match or struct layouts diverge.
         builder = builder
             .clang_arg("-DARM_MATH_CM7")
             .clang_arg("-D__FPU_PRESENT=1")
+            .clang_arg("-fshort-enums")
             .clang_arg("--target=arm-none-eabihf");
 
         // Add ARM toolchain sysroot include path if available

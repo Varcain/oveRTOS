@@ -74,7 +74,7 @@ pub unsafe fn gpio_irq_register(
     user_data: *mut core::ffi::c_void,
 ) -> Result<()> {
     let rc = unsafe {
-        bindings::ove_gpio_irq_register(port, pin, mode as u32, callback, user_data)
+        bindings::ove_gpio_irq_register(port, pin, mode as bindings::ove_gpio_irq_mode_t, callback, user_data)
     };
     Error::from_code(rc)
 }

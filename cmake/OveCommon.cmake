@@ -32,12 +32,25 @@ macro(ove_setup_project _proj_name)
         get_filename_component(OVE_DIR "${BOARD_DIR}/../../.." ABSOLUTE)
     endif()
 
-    # Application directory
+    # Application directory — resolve from app_paths.json (supports
+    # both flat and two-level apps/<lang>/<app> layouts).
     if(NOT DEFINED OVE_APP_DIR)
         file(STRINGS "${OVE_DIR}/.config" _app_line REGEX "^CONFIG_OVE_APP_NAME=")
         if(_app_line)
             string(REGEX REPLACE ".*=\"(.*)\"" "\\1" _app_name "${_app_line}")
-            set(OVE_APP_DIR "${OVE_DIR}/apps/${_app_name}")
+            set(_app_paths_json "${OVE_DIR}/output/kconfig/app_paths.json")
+            if(EXISTS "${_app_paths_json}")
+                file(READ "${_app_paths_json}" _app_paths_content)
+                # Extract path for this app name from JSON
+                string(REGEX MATCH "\"${_app_name}\"[: ]+\"([^\"]+)\"" _match "${_app_paths_content}")
+                if(CMAKE_MATCH_1)
+                    set(OVE_APP_DIR "${CMAKE_MATCH_1}")
+                endif()
+            endif()
+            # Fallback: flat layout
+            if(NOT DEFINED OVE_APP_DIR OR NOT EXISTS "${OVE_APP_DIR}")
+                set(OVE_APP_DIR "${OVE_DIR}/apps/${_app_name}")
+            endif()
         endif()
     endif()
 
@@ -369,6 +382,14 @@ macro(ove_link_firmware _linker_script)
     # Link TFLM if built
     if(TARGET ove_tflm)
         target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE ove_tflm stdc++)
+    endif()
+    # Link lwIP if built
+    if(TARGET ove_lwip)
+        target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE ove_lwip)
+    endif()
+    # Link mbedTLS if built
+    if(TARGET ove_mbedtls)
+        target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE ove_mbedtls)
     endif()
     target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE m ${_OVE_LINK_LIBS})
 

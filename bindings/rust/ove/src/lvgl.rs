@@ -340,7 +340,7 @@ pub trait EventTarget: Widget + Sized {
     /// Register a callback for an arbitrary LVGL event code.
     ///
     /// `code` is any `LV_EVENT_*` constant. `user_data` is passed through to `cb` unchanged.
-    fn on(self, code: u32, cb: bindings::lv_event_cb_t, user_data: *mut core::ffi::c_void) -> Self {
+    fn on(self, code: bindings::lv_event_code_t, cb: bindings::lv_event_cb_t, user_data: *mut core::ffi::c_void) -> Self {
         unsafe { bindings::lv_obj_add_event_cb(self.raw(), cb, code, user_data) };
         self
     }

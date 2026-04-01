@@ -1,0 +1,7 @@
+lang: c
+config_name: example_net
+description: "Networking Demo"
+sources:
+  - src/app.c
+includes:
+  - include

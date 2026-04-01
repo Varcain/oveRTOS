@@ -31,3 +31,19 @@ set(APP_INCLUDE_DIRS
     ${OVE_APP_DIR}
 )
 {% endif %}
+
+{% if app.c_sources is defined %}
+# Companion C/C++ sources (e.g. model data for Rust/Zig apps)
+set(APP_C_COMPANION_SOURCES
+{% for src in app.c_sources %}
+    ${OVE_APP_DIR}/{{ src }}
+{% endfor %}
+)
+{% if app.c_includes is defined %}
+set(APP_C_COMPANION_INCLUDES
+{% for inc in app.c_includes %}
+    ${OVE_APP_DIR}/{{ inc }}
+{% endfor %}
+)
+{% endif %}
+{% endif %}

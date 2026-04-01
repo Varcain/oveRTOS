@@ -169,11 +169,7 @@ class Workspace:
         name = self.app_name
         if not name:
             return None
-        # Check in-tree first
-        in_tree = os.path.join(self.ove_dir, "apps", name)
-        if os.path.isdir(in_tree):
-            return in_tree
-        # Check app_paths.json for external apps
+        # Check app_paths.json first (handles both flat and two-level layouts)
         paths_file = os.path.join(self.ove_dir, "output", "kconfig",
                                   "app_paths.json")
         if os.path.isfile(paths_file):
@@ -181,6 +177,10 @@ class Workspace:
                 app_paths = json.load(f)
             if name in app_paths:
                 return app_paths[name]
+        # Fallback: flat in-tree layout (backward compat)
+        in_tree = os.path.join(self.ove_dir, "apps", name)
+        if os.path.isdir(in_tree):
+            return in_tree
         return None
 
     @property

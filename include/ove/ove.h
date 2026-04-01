@@ -40,6 +40,7 @@
  * | ove/nvs.h               | Non-volatile storage                       |
  * | ove/shell.h             | Interactive shell                          |
  * | ove/app.h               | Application lifecycle hooks                |
+ * | ove/net.h               | TCP/UDP sockets, DNS, network interfaces   |
  *
  * Application code that prefers fine-grained includes may include individual
  * subsystem headers directly instead.
@@ -73,6 +74,12 @@
 #include "ove/shell.h"
 #include "ove/app.h"
 #include "ove/infer.h"
+#include "ove/net.h"
+#include "ove/net_tls.h"
+#include "ove/net_http.h"
+#include "ove/net_mqtt.h"
+#include "ove/net_sntp.h"
+#include "ove/net_httpd.h"
 
 /** @} */
 

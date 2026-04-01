@@ -10,6 +10,7 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
+#include <string.h>
 
 static int map_priority(ove_prio_t prio)
 {
@@ -297,4 +298,22 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 	(void)stats;
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
+}
+
+int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
+{
+	if (!stats) return OVE_ERR_INVALID_PARAM;
+	/* Zephyr heap stats require CONFIG_SYS_HEAP_RUNTIME_STATS */
+	memset(stats, 0, sizeof(*stats));
+	return OVE_OK;
+}
+
+int ove_thread_list(struct ove_thread_info *out, size_t max_count,
+		    size_t *actual_count)
+{
+	(void)out;
+	(void)max_count;
+	if (actual_count)
+		*actual_count = 0;
+	return OVE_OK;
 }

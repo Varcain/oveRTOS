@@ -68,12 +68,15 @@ impl Model {
         Ok(Self { handle })
     }
 
-    /// Create from caller-provided static storage and arena.
+    /// Create from caller-provided storage and arena.
+    ///
+    /// Available in both heap and zero-heap modes.  Useful when the same
+    /// storage/arena must be reused for different models (e.g. two-stage
+    /// inference pipelines).
     ///
     /// # Safety
     /// Caller must ensure `storage` and `arena` outlive the `Model` and are
     /// not shared with another primitive.
-    #[cfg(zero_heap)]
     pub unsafe fn from_static(
         storage: *mut bindings::ove_model_storage_t,
         arena: *mut u8,

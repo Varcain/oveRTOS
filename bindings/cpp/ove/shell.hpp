@@ -56,6 +56,22 @@ inline void process_char(int c) {
 	ove_shell_process_char(c);
 }
 
+/**
+ * @brief Process a complete input line through the shell.
+ * @param[in] line NUL-terminated command line.
+ */
+inline void process_line(const char *line) {
+	ove_shell_process_line(line);
+}
+
+/**
+ * @brief Set a hook to capture shell output.
+ * @param[in] hook Output hook function (nullptr to remove).
+ */
+inline void set_output_hook(ove_shell_output_hook_t hook) {
+	ove_shell_set_output_hook(hook);
+}
+
 } /* namespace shell */
 
 } // namespace ove

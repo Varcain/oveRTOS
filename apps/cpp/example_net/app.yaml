@@ -1,0 +1,7 @@
+lang: cpp
+config_name: example_net_cpp
+description: "C++ Networking Demo"
+sources:
+  - src/app.cpp
+includes:
+  - include

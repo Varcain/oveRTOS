@@ -107,3 +107,16 @@ $(SIZES_C):
 		'S(ove_watchdog_storage_t) A(ove_watchdog_storage_t)' \
 		'S(ove_file_storage_t) A(ove_file_storage_t)' \
 		'S(ove_dir_storage_t) A(ove_dir_storage_t)' > $@
+	$(Q) if grep -q 'CONFIG_OVE_NET 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_socket_storage_t) A(ove_socket_storage_t)' \
+			'S(ove_netif_storage_t) A(ove_netif_storage_t)' >> $@; fi
+	$(Q) if grep -q 'CONFIG_OVE_NET_HTTP 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_http_client_storage_t) A(ove_http_client_storage_t)' >> $@; fi
+	$(Q) if grep -q 'CONFIG_OVE_NET_MQTT 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_mqtt_client_storage_t) A(ove_mqtt_client_storage_t)' >> $@; fi
+	$(Q) if grep -q 'CONFIG_OVE_NET_TLS 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_tls_storage_t) A(ove_tls_storage_t)' >> $@; fi

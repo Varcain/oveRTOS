@@ -1,0 +1,7 @@
+lang: cpp
+config_name: example_cpp
+description: "C++ Demo"
+sources:
+  - src/app.cpp
+includes:
+  - include

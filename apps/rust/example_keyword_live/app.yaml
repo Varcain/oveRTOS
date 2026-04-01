@@ -1,0 +1,10 @@
+config_name: example_keyword_live_rust
+lang: rust
+description: "Live DMIC Keyword Detection (Rust)"
+rust:
+  lib_name: example_keyword_live_rust
+kconfig: |
+  config OVE_INFER
+      default y
+  config OVE_AUDIO
+      default y

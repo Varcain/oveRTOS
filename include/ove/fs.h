@@ -136,19 +136,7 @@ int  ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
 int  ove_fs_closedir_deinit(ove_dir_t dir);
 
 /**
- * @brief Open a file, allocating the handle from the heap.
- *
- * Opens the file at @p path with the given @p flags. The returned handle
- * must be closed with @ref ove_fs_close when no longer needed.
- *
- * @param[out] file   Receives the opened file handle.
- * @param[in]  path   Absolute path of the file to open.
- * @param[in]  flags  Combination of @c OVE_FS_O_* flags.
- * @return OVE_OK on success, negative error code on failure.
- * @note Requires @c CONFIG_OVE_FS and @c OVE_HEAP_FS.
- */
-/**
- * @brief Open a file (heap or backend-managed allocation).
+ * @brief Open a file.
  *
  * Opens the file at @p path with the given @p flags. The returned handle
  * must be closed with @ref ove_fs_close when no longer needed.

@@ -92,6 +92,19 @@ typedef struct { uint8_t _opaque; } ove_dir_storage_t;
 #ifdef CONFIG_OVE_INFER
 typedef struct { uint8_t _opaque; } ove_model_storage_t;
 #endif
+#ifdef CONFIG_OVE_NET
+typedef struct { uint8_t _opaque; } ove_socket_storage_t;
+typedef struct { uint8_t _opaque; } ove_netif_storage_t;
+#endif
+#ifdef CONFIG_OVE_NET_TLS
+typedef struct { uint8_t _opaque; } ove_tls_storage_t;
+#endif
+#ifdef CONFIG_OVE_NET_HTTP
+typedef struct { uint8_t _opaque; } ove_http_client_storage_t;
+#endif
+#ifdef CONFIG_OVE_NET_MQTT
+typedef struct { uint8_t _opaque; } ove_mqtt_client_storage_t;
+#endif
 /** @endcond */
 #elif defined(__ZIG_CIMPORT__) || defined(__BINDGEN__)
 /*
@@ -139,6 +152,19 @@ OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALI
 #if defined(CONFIG_OVE_INFER) && defined(OVE_SIZEOF_OVE_MODEL_STORAGE)
 OVE_OPAQUE_(ove_model_storage_t,     OVE_SIZEOF_OVE_MODEL_STORAGE,      OVE_ALIGNOF_OVE_MODEL_STORAGE);
 #endif
+#if defined(CONFIG_OVE_NET) && defined(OVE_SIZEOF_OVE_SOCKET_STORAGE)
+OVE_OPAQUE_(ove_socket_storage_t,    OVE_SIZEOF_OVE_SOCKET_STORAGE,     OVE_ALIGNOF_OVE_SOCKET_STORAGE);
+OVE_OPAQUE_(ove_netif_storage_t,     OVE_SIZEOF_OVE_NETIF_STORAGE,      OVE_ALIGNOF_OVE_NETIF_STORAGE);
+#endif
+#if defined(CONFIG_OVE_NET_TLS) && defined(OVE_SIZEOF_OVE_TLS_STORAGE)
+OVE_OPAQUE_(ove_tls_storage_t,       OVE_SIZEOF_OVE_TLS_STORAGE,        OVE_ALIGNOF_OVE_TLS_STORAGE);
+#endif
+#if defined(CONFIG_OVE_NET_HTTP) && defined(OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE)
+OVE_OPAQUE_(ove_http_client_storage_t, OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE, OVE_ALIGNOF_OVE_HTTP_CLIENT_STORAGE);
+#endif
+#if defined(CONFIG_OVE_NET_MQTT) && defined(OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE)
+OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_ALIGNOF_OVE_MQTT_CLIENT_STORAGE);
+#endif
 /** @endcond */
 
 #undef OVE_OPAQUE_
@@ -179,6 +205,10 @@ OVE_OPAQUE_(ove_model_storage_t,     OVE_SIZEOF_OVE_MODEL_STORAGE,      OVE_ALIG
 #define OVE_HEAP_WATCHDOG   1 /**< Watchdog timers support heap allocation. */
 #define OVE_HEAP_FS         1 /**< Filesystem handles support heap allocation. */
 #define OVE_HEAP_INFER      1 /**< ML inference sessions support heap allocation. */
+#define OVE_HEAP_NET        1 /**< Sockets and network interfaces support heap allocation. */
+#define OVE_HEAP_NET_TLS    1 /**< TLS sessions support heap allocation. */
+#define OVE_HEAP_NET_HTTP   1 /**< HTTP clients support heap allocation. */
+#define OVE_HEAP_NET_MQTT   1 /**< MQTT clients support heap allocation. */
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 /** @} */
 
@@ -246,14 +276,13 @@ OVE_OPAQUE_(ove_model_storage_t,     OVE_SIZEOF_OVE_MODEL_STORAGE,      OVE_ALIG
 	static uint8_t name[(size)]
 #endif
 
-/* Block-scope static variant — safe inside ({...}) statement expressions.
- * OVE_THREAD_STACK_DEFINE_ may use linker section attributes (e.g. Zephyr
- * __stackmem) that only work at file scope.  This variant always uses plain
- * 'static' with alignment, suitable for the ove_thread_create() macro. */
+/** @cond INTERNAL */
+/* Block-scope static variant — safe inside ({...}) statement expressions. */
 #ifndef OVE_THREAD_STACK_BLOCK_STATIC_
 #define OVE_THREAD_STACK_BLOCK_STATIC_(name, size) \
 	static uint8_t __attribute__((aligned(8))) name[(size)]
 #endif
+/** @endcond */
 
 /* Class-member variant (no 'static') — for C++ class-embedded stacks.
  * Overridden by backends that need special alignment (e.g. Zephyr MPU). */

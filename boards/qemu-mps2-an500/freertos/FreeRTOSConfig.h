@@ -70,8 +70,12 @@
 
 /* Run-time stats (disabled) */
 #define configGENERATE_RUN_TIME_STATS            0
-#define configUSE_TRACE_FACILITY                 0
+#define configUSE_TRACE_FACILITY                 1
+#if configSUPPORT_DYNAMIC_ALLOCATION
+#define configUSE_STATS_FORMATTING_FUNCTIONS     1
+#else
 #define configUSE_STATS_FORMATTING_FUNCTIONS     0
+#endif
 
 /* Include API functions */
 #define INCLUDE_vTaskPrioritySet                 1

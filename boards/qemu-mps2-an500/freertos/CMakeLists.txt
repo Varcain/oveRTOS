@@ -44,6 +44,17 @@ else()
     ove_add_stub_backends(AUDIO)
 endif()
 
+# lwIP for networking
+if(OVE_NET)
+    ove_add_board_sources(../src/qemu_net.c)
+    include(${OVE_DIR}/cmake/OveLwIP.cmake)
+    ove_build_lwip()
+endif()
+if(OVE_NET_TLS)
+    include(${OVE_DIR}/cmake/OveMbedtls.cmake)
+    ove_build_mbedtls()
+endif()
+
 # LVGL library
 ove_build_lvgl()
 

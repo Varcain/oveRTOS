@@ -1,0 +1,154 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of oveRTOS.
+ */
+
+/*
+ * Stub networking HAL for testing — all functions return OVE_ERR_NOT_SUPPORTED.
+ */
+
+#include "ove/ove.h"
+
+/* ---------- Network interface ---------- */
+
+int ove_netif_init(ove_netif_t *netif, ove_netif_storage_t *storage)
+{
+	(void)netif; (void)storage;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+void ove_netif_deinit(ove_netif_t netif)
+{
+	(void)netif;
+}
+
+int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
+{
+	(void)netif; (void)cfg;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+void ove_netif_down(ove_netif_t netif)
+{
+	(void)netif;
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+int ove_netif_create(ove_netif_t *netif)
+{
+	(void)netif;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+#endif
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+void ove_netif_destroy(ove_netif_t netif)
+{
+	(void)netif;
+}
+#endif
+
+/* ---------- Socket ---------- */
+
+int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage,
+		    ove_af_t af, ove_sock_type_t type)
+{
+	(void)sock; (void)storage; (void)af; (void)type;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+void ove_socket_close(ove_socket_t sock)
+{
+	(void)sock;
+}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type)
+{
+	(void)sock; (void)af; (void)type;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+#endif
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+void ove_socket_destroy(ove_socket_t sock)
+{
+	(void)sock;
+}
+#endif
+
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
+		       uint32_t timeout_ms)
+{
+	(void)sock; (void)addr; (void)timeout_ms;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
+{
+	(void)sock; (void)addr;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_listen(ove_socket_t sock, int backlog)
+{
+	(void)sock; (void)backlog;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
+		      ove_socket_storage_t *client_storage,
+		      uint32_t timeout_ms)
+{
+	(void)sock; (void)client; (void)client_storage; (void)timeout_ms;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_send(ove_socket_t sock, const void *data, size_t len,
+		    size_t *sent)
+{
+	(void)sock; (void)data; (void)len; (void)sent;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len,
+		    size_t *received, uint32_t timeout_ms)
+{
+	(void)sock; (void)buf; (void)len; (void)received; (void)timeout_ms;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len,
+		      size_t *sent, const ove_sockaddr_t *dest)
+{
+	(void)sock; (void)data; (void)len; (void)sent; (void)dest;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len,
+			size_t *received, ove_sockaddr_t *src,
+			uint32_t timeout_ms)
+{
+	(void)sock; (void)buf; (void)len; (void)received; (void)src; (void)timeout_ms;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+/* ---------- DNS ---------- */
+
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr,
+		    uint32_t timeout_ms)
+{
+	(void)hostname; (void)addr; (void)timeout_ms;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
+/* ---------- Address helpers ---------- */
+
+void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b,
+		       uint8_t c, uint8_t d, uint16_t port)
+{
+	(void)addr; (void)a; (void)b; (void)c; (void)d; (void)port;
+}

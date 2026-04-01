@@ -21,6 +21,20 @@ pub enum Error {
     NotSupported,
     /// The queue was full and the item could not be enqueued (`OVE_ERR_QUEUE_FULL`).
     QueueFull,
+    /// ML inference or model loading failed (`OVE_ERR_ML_FAILED`).
+    MlFailed,
+    /// Remote peer refused the connection (`OVE_ERR_NET_REFUSED`).
+    NetRefused,
+    /// Network or host is unreachable (`OVE_ERR_NET_UNREACHABLE`).
+    NetUnreachable,
+    /// Local address already in use (`OVE_ERR_NET_ADDR_IN_USE`).
+    NetAddrInUse,
+    /// Connection was reset by the remote peer (`OVE_ERR_NET_RESET`).
+    NetReset,
+    /// DNS name resolution failed (`OVE_ERR_NET_DNS_FAIL`).
+    NetDnsFail,
+    /// Connection closed by the remote peer (`OVE_ERR_NET_CLOSED`).
+    NetClosed,
     /// An error code not covered by the above variants; the raw code is preserved.
     Unknown(i32),
 }
@@ -44,6 +58,13 @@ impl Error {
             -4 => Err(Error::Timeout),
             -5 => Err(Error::NotSupported),
             -6 => Err(Error::QueueFull),
+            -7 => Err(Error::MlFailed),
+            -8 => Err(Error::NetRefused),
+            -9 => Err(Error::NetUnreachable),
+            -10 => Err(Error::NetAddrInUse),
+            -11 => Err(Error::NetReset),
+            -12 => Err(Error::NetDnsFail),
+            -13 => Err(Error::NetClosed),
             other => Err(Error::Unknown(other)),
         }
     }
@@ -58,6 +79,13 @@ impl core::fmt::Display for Error {
             Error::Timeout => write!(f, "timeout"),
             Error::NotSupported => write!(f, "not supported"),
             Error::QueueFull => write!(f, "queue full"),
+            Error::MlFailed => write!(f, "ML inference failed"),
+            Error::NetRefused => write!(f, "connection refused"),
+            Error::NetUnreachable => write!(f, "network unreachable"),
+            Error::NetAddrInUse => write!(f, "address in use"),
+            Error::NetReset => write!(f, "connection reset"),
+            Error::NetDnsFail => write!(f, "DNS resolution failed"),
+            Error::NetClosed => write!(f, "connection closed"),
             Error::Unknown(c) => write!(f, "unknown error ({})", c),
         }
     }

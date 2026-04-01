@@ -44,6 +44,7 @@
 /* #define HAL_DCMI_MODULE_ENABLED*/
 #define HAL_DMA_MODULE_ENABLED
 #define HAL_DMA2D_MODULE_ENABLED
+/* Enabled conditionally via -DHAL_ETH_MODULE_ENABLED in CMakeLists when OVE_NET is set */
 /* #define HAL_ETH_MODULE_ENABLED */
 #define HAL_FLASH_MODULE_ENABLED
 /* #define HAL_NAND_MODULE_ENABLED */

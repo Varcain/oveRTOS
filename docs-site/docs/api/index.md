@@ -35,6 +35,12 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | Watchdog | `ove/watchdog.h` | 7 | Hardware watchdog with feed timeout. [Guide](io.md#watchdog) |
 | Shell | `ove/shell.h` | 3 | Interactive CLI: init, register command, process character. [Guide](shell.md) |
 | Infer | `ove/infer.h` | 8 | ML inference engine for TFLite Micro models. [Guide](infer.md) |
+| Net | `ove/net.h` | 18 | BSD-like sockets, network interface, DNS resolution. [Guide](net.md) |
+| Net HTTP | `ove/net_http.h` | 9 | HTTP/1.1 client (GET/POST/PUT/DELETE/PATCH). [Guide](net.md#http-client) |
+| Net TLS | `ove/net_tls.h` | 8 | TLS sessions over TCP (mbedTLS). [Guide](net.md#tls) |
+| Net MQTT | `ove/net_mqtt.h` | 10 | MQTT 3.1.1 client with QoS 0/1. [Guide](net.md#mqtt-client) |
+| Net HTTPD | `ove/net_httpd.h` | 15+ | Embedded HTTP server with routing and WebSocket. [Guide](net.md#http-server) |
+| Net SNTP | `ove/net_sntp.h` | 4 | Simple NTP time sync. [Guide](net.md#sntp) |
 | Log | `ove/log.h` | — | Compile-time filtered macros: `OVE_LOG_ERR`, `OVE_LOG_WRN`, `OVE_LOG_INF`, `OVE_LOG_DBG`, and `OVE_LOG` |
 | LVGL | `ove/lvgl.h` | — | Unified LVGL include: abstraction API (`lvgl_internal.h`) plus upstream LVGL library headers |
 | LVGL Internal | `ove/lvgl_internal.h` | — | Internal LVGL display integration hooks (lock/unlock/tick/handler/init) |
@@ -65,3 +71,9 @@ All functions that can fail return `int`. A return value of `OVE_OK` (0) indicat
 | `OVE_ERR_TIMEOUT` | -4 | Deadline expired |
 | `OVE_ERR_NOT_SUPPORTED` | -5 | Feature not supported by backend |
 | `OVE_ERR_QUEUE_FULL` | -6 | Queue at maximum capacity |
+| `OVE_ERR_NET_REFUSED` | -8 | Connection refused by remote host |
+| `OVE_ERR_NET_UNREACHABLE` | -9 | Network or host unreachable |
+| `OVE_ERR_NET_ADDR_IN_USE` | -10 | Local address already bound |
+| `OVE_ERR_NET_RESET` | -11 | Connection reset by peer |
+| `OVE_ERR_NET_DNS_FAIL` | -12 | DNS name resolution failed |
+| `OVE_ERR_NET_CLOSED` | -13 | Connection closed by peer |

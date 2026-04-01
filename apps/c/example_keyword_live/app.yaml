@@ -1,0 +1,13 @@
+lang: c
+config_name: example_keyword_live
+description: "Live DMIC Keyword Detection"
+sources:
+  - src/app.c
+includes:
+  - src
+  - include
+kconfig: |
+  config OVE_INFER
+      default y
+  config OVE_AUDIO
+      default y

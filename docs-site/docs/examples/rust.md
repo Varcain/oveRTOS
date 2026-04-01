@@ -1,6 +1,6 @@
 # Rust Example
 
-Source: `apps/example_rust/src/lib.rs`
+Source: `apps/rust/example/src/lib.rs`
 
 The Rust example demonstrates the oveRTOS Rust SDK. It implements the same producer-consumer pattern as the C and C++ examples with idiomatic Rust error handling, `no_std` support, and safe thread entry functions.
 
@@ -34,7 +34,7 @@ Thread entries are plain Rust functions with no `unsafe` or `extern "C"`:
 
 ```rust
 fn producer_entry() {
-    ove::log(b"[I] Producer started\n");
+    ove::log_inf!("Producer started");
     let mut count: u32 = 0;
 
     loop {
@@ -42,13 +42,13 @@ fn producer_entry() {
         match QUEUE.send(&count, 1000) {
             Ok(()) => {}
             Err(Error::Timeout) => {
-                ove::log(b"[W] Producer: send timeout\n");
+                ove::log_wrn!("Producer: send timeout");
             }
             Err(Error::QueueFull) => {
-                ove::log_fmt!("[W] Producer: queue full, dropped {}\n", count);
+                ove::log_wrn!("Producer: queue full, dropped {}", count);
             }
             Err(_) => {
-                ove::log(b"[E] Producer: unexpected send error\n");
+                ove::log_err!("Producer: unexpected send error");
             }
         }
         Thread::sleep_ms(500);
@@ -56,7 +56,7 @@ fn producer_entry() {
 }
 ```
 
-Error handling uses Rust's `match` on `Result<(), ove::Error>`. The `Error` enum maps directly onto the oveRTOS C error codes. `ove::log_fmt!` formats into a stack-allocated buffer without heap allocation, compatible with `no_std`.
+Error handling uses Rust's `match` on `Result<(), ove::Error>`. The `Error` enum variants map directly onto the oveRTOS C error codes and are used with the structured logging macros. `ove::log_inf!`, `ove::log_wrn!`, and `ove::log_err!` automatically add the `[I]`/`[W]`/`[E]` prefix and newline, and format into a stack-allocated buffer without heap allocation, compatible with `no_std`.
 
 ```rust
 fn consumer_entry() {
@@ -65,10 +65,10 @@ fn consumer_entry() {
             Ok(val) => {
                 LAST_VALUE.store(val, Ordering::Relaxed);
                 if val % 5 == 0 {
-                    ove::log_fmt!("[I] Consumer: count = {}\n", val);
+                    ove::log_inf!("Consumer: count = {}", val);
                 }
             }
-            Err(_) => ove::log(b"[E] Consumer: receive error\n"),
+            Err(_) => ove::log_err!("Consumer: receive error"),
         }
     }
 }
@@ -104,7 +104,7 @@ fn ui_timer_cb() {
 
 ```rust
 fn app_main() {
-    ove::log(b"[I] Rust example: init\n");
+    ove::log_inf!("Rust example: init");
 
     QUEUE.init(ove::queue!(u32, 8));
 
@@ -121,7 +121,7 @@ fn app_main() {
         UI_TIMER.start().expect("Timer start failed");
     }
 
-    ove::log(b"[I] Rust example: ready\n");
+    ove::log_inf!("Rust example: ready");
     ove::run();
 
     // Cleanup (reached only on POSIX)
@@ -143,8 +143,16 @@ ove::main!(app_main);
 | `AtomicU32` | Lock-free shared counter |
 | `ove::thread!` | Spawn a thread from a safe Rust fn |
 | `ove::timer!` | Create a periodic timer |
-| `ove::log` / `ove::log_fmt!` | No-alloc console logging |
+| `ove::log_inf!` / `ove::log_wrn!` / `ove::log_err!` | Structured console logging with auto prefix |
 | `FmtBuf` | Stack-allocated format buffer |
 | `lvgl::lock()` | RAII LVGL display guard |
 | `ove::run()` | Start the RTOS scheduler |
 | `ove::main!` | Export `ove_main` entry point |
+
+---
+
+## Networking Example
+
+Source: `apps/rust/example_net/src/lib.rs`
+
+The Rust networking example demonstrates the safe Rust networking API with a structured test harness (TEST/PASS/FAIL tracking with results summary). DNS, TCP, UDP, HTTP (GET/POST/PUT), SNTP time sync, MQTT pub/sub, and HTTPD are all tested using `ove::net`, `ove::net_http`, `ove::net_sntp`, `ove::net_mqtt`, and `ove::net_httpd` modules. All logging uses structured macros (`ove::log_inf!`, etc.). See the [Networking API Guide](../api/net.md) for the full API.

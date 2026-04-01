@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>oveRTOS</title>
+<style>@@STYLE@@</style>
+</head>
+<body>
+
+<div x-data="dashboard()" x-init="init()" @unload.window="destroy()">
+
+<!-- Toast -->
+<div class="toast" x-show="toastVisible" x-text="toast"
+     x-transition:leave.opacity.duration.300ms></div>
+
+<!-- Header -->
+<div class="hdr">
+  <h1>&#9889; oveRTOS</h1>
+  <span>Device Dashboard</span>
+</div>
+
+<!-- System Info -->
+<div class="card">
+  <h2>System Info</h2>
+  <div>
+    <b>Board:</b> <span x-text="board"></span><br>
+    <b>RTOS:</b> <span x-text="rtos"></span><br>
+    <b>Uptime:</b> <span x-text="fmtUptime(uptime)"></span><br>
+    <b>IP:</b> <span x-text="ip"></span>
+  </div>
+</div>
+
+<!-- Memory -->
+<div class="card" x-show="mem.total > 0">
+  <h2>Memory</h2>
+  <div style="background:#0d1b2a;border-radius:4px;height:20px;margin-bottom:6px">
+    <div style="background:#27ae60;height:100%;border-radius:4px;transition:width .3s"
+         :style="'width:' + (mem.total > 0 ? Math.round(mem.used*100/mem.total) : 0) + '%'"></div>
+  </div>
+  <span style="font-size:12px;color:#a0a0b0">
+    Used: <span x-text="Math.round(mem.used/1024)"></span> KB /
+    <span x-text="Math.round(mem.total/1024)"></span> KB
+    (<span x-text="mem.total > 0 ? Math.round(mem.used*100/mem.total) : 0"></span>%)
+    | Peak: <span x-text="Math.round(mem.peak/1024)"></span> KB
+  </span>
+</div>
+
+<!-- Audio Pipeline -->
+<div class="card" x-show="audio_enabled">
+  <h2>Audio Pipeline</h2>
+  <div style="font-size:12px;color:#a0a0b0">
+    Cycles: <span x-text="audio.cycles"></span> |
+    Underruns: <span x-text="audio.underruns"></span> |
+    Overruns: <span x-text="audio.overruns"></span><br>
+    Latency: <span x-text="audio.avg_us"></span> us avg /
+    <span x-text="audio.max_us"></span> us max
+  </div>
+</div>
+
+<!-- ML Inference -->
+<div class="card" x-show="infer_enabled">
+  <h2>ML Inference</h2>
+  <div style="font-size:12px;color:#a0a0b0">
+    Last inference: <span x-text="infer_us"></span> us
+  </div>
+</div>
+
+<!-- Threads -->
+<div class="card" x-show="threads.length > 0">
+  <h2>Threads</h2>
+  <table>
+    <thead><tr><th>Name</th><th>State</th><th>Pri</th><th>Stack</th></tr></thead>
+    <tbody>
+      <template x-for="t in threads" :key="t.name">
+        <tr>
+          <td x-text="t.name"></td>
+          <td x-text="t.state"></td>
+          <td x-text="t.priority"></td>
+          <td><span x-text="t.stack_used"></span> B</td>
+        </tr>
+      </template>
+    </tbody>
+  </table>
+</div>
+
+<!-- LEDs -->
+<div class="card">
+  <h2>LEDs</h2>
+  <div class="led-grid">
+    <template x-for="led in leds" :key="led.id">
+      <button class="btn" :class="{ on: led.on }"
+              @click="toggleLed(led.id, led.on)">
+        <span class="dot" :class="led.on ? 'on' : 'off'"></span>
+        LED <span x-text="led.id"></span>
+      </button>
+    </template>
+  </div>
+</div>
+
+<!-- GPIO -->
+<div class="card">
+  <h2>GPIO</h2>
+  <table>
+    <thead><tr><th>Port</th><th>Pin</th><th>Value</th><th></th></tr></thead>
+    <tbody>
+      <template x-for="(g, idx) in gpio" :key="idx">
+        <tr>
+          <td x-text="g.port"></td>
+          <td x-text="g.pin"></td>
+          <td x-text="g.value"></td>
+          <td>
+            <button class="btn" @click="readGpio(idx)">Read</button>
+            <button class="btn" style="margin-left:4px"
+                    @click="toggleGpio(idx)">Toggle</button>
+          </td>
+        </tr>
+      </template>
+    </tbody>
+  </table>
+</div>
+
+<!-- Network -->
+<div class="card">
+  <h2>Network</h2>
+  <div style="font-size:12px;color:#a0a0b0;margin-bottom:8px">
+    Current: <span x-text="net_current"></span>
+  </div>
+  <div class="fg">
+    <div><label>IP</label><input type="text" x-model="net_ip"></div>
+    <div><label>Gateway</label><input type="text" x-model="net_gw"></div>
+    <div><label>DNS</label><input type="text" x-model="net_dns"></div>
+  </div>
+  <button class="btn" @click="saveNetwork()">Save</button>
+</div>
+
+<!-- Console -->
+<div class="card">
+  <h2>Console
+    <button class="btn" @click="clearLog()"
+            style="float:right;padding:4px 10px;font-size:11px">Clear</button>
+  </h2>
+  <div id="console" x-ref="console" x-text="logBuf"></div>
+</div>
+
+<!-- Terminal -->
+<div class="card" x-show="shell_enabled">
+  <h2>Terminal</h2>
+  <div id="terminal" x-ref="terminal" x-text="termBuf"
+       style="font-family:monospace;font-size:12px;background:#0d1b2a;
+              padding:8px;border-radius:4px;max-height:200px;
+              overflow-y:auto;white-space:pre-wrap;margin-bottom:8px;
+              color:#27ae60"></div>
+  <form @submit.prevent="sendCmd()">
+    <input type="text" x-model="cmdInput" placeholder="Enter command..."
+           style="width:calc(100% - 70px);display:inline-block">
+    <button class="btn" type="submit" style="margin-left:4px">Send</button>
+  </form>
+</div>
+
+</div><!-- /x-data -->
+
+<script>@@APP@@</script>
+<script>@@ALPINE@@</script>
+</body>
+</html>

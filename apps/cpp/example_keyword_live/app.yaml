@@ -1,0 +1,12 @@
+config_name: example_keyword_live_cpp
+lang: cpp
+description: "Live DMIC Keyword Detection (C++)"
+sources:
+  - src/app.cpp
+includes:
+  - ../../c/example_keyword_live/include
+kconfig: |
+  config OVE_INFER
+      default y
+  config OVE_AUDIO
+      default y

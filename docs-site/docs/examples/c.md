@@ -1,6 +1,6 @@
 # C Example
 
-Source: `apps/example_c/src/app.c`
+Source: `apps/c/example/src/app.c`
 
 The C example demonstrates the oveRTOS unified C API, using a producer-consumer pattern with optional LVGL display output. The same source code compiles unchanged in both heap and zero-heap modes across all supported backends — no `#ifdef CONFIG_OVE_ZERO_HEAP` is needed.
 
@@ -166,3 +166,22 @@ void ove_main(void)
 | `OVE_LOG_INF` / `OVE_LOG_WRN` | Compile-time filtered logging |
 | `ove_lvgl_lock` / `ove_lvgl_unlock` | Safe multi-threaded LVGL access |
 | `ove_run` | Start the RTOS scheduler |
+
+---
+
+## Networking Example
+
+Source: `apps/c/example_net/src/app.c`
+
+The C networking example exercises the full networking stack with a pass/fail test framework. It runs a comprehensive test suite covering:
+
+- **Network interface** — static IP configuration, link-up, address query
+- **DNS resolution** — hostname lookup (positive) and negative test (`invalid.invalid`)
+- **TCP sockets** — connect to `example.com:80`, send HTTP GET, receive and verify 200 OK
+- **UDP sockets** — loopback echo test with data verification
+- **HTTP client** — GET, POST, and PUT with custom headers and response validation
+- **SNTP** — time synchronization with `pool.ntp.org` and UTC retrieval
+- **MQTT client** — connect to `test.mosquitto.org`, subscribe, publish QoS 0/1, receive messages, unsubscribe, keep-alive, disconnect
+- **HTTP server** — built-in web dashboard on port 80 (8080 on POSIX)
+
+Enable with: `CONFIG_OVE_NET=y`, `CONFIG_OVE_NET_HTTP=y`, `CONFIG_OVE_NET_SNTP=y`, `CONFIG_OVE_NET_MQTT=y`, `CONFIG_OVE_NET_HTTPD=y`. See the [Networking API Guide](../api/net.md) for details.

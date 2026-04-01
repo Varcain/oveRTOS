@@ -1,6 +1,6 @@
 # Zig Example
 
-Source: `apps/example_zig/src/main.zig`
+Source: `apps/zig/example/src/main.zig`
 
 The Zig example demonstrates the oveRTOS Zig bindings. It implements the same producer-consumer pattern as the other examples, using Zig's comptime system to conditionally include LVGL code, idiomatic error handling with `catch`, and defer-based RAII for resource cleanup.
 
@@ -39,29 +39,29 @@ else
 
 ```zig
 var queue: Queue(u32, 8) = undefined;
-var last_value: u32 = 0;
+var last_value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 
 var counter_label: if (has_lvgl) lvgl.Label else void = ...;
 var bar: if (has_lvgl) lvgl.Bar else void = ...;
 var ui_timer: Timer = undefined;
 ```
 
-`Queue(u32, 8)` is a generic type parameterised at comptime by the item type and depth. The conditional types for `counter_label` and `bar` collapse to `void` when LVGL is disabled, occupying zero bytes.
+`Queue(u32, 8)` is a generic type parameterised at comptime by the item type and depth. `last_value` is an atomic to ensure thread-safe access between the consumer and timer callback without requiring a mutex. The conditional types for `counter_label` and `bar` collapse to `void` when LVGL is disabled, occupying zero bytes.
 
 ## Producer and consumer threads
 
 ```zig
 fn producerEntry() void {
-    ove.console.write("[I] Producer started\n");
+    ove.log.inf("Producer started", .{});
     var count: u32 = 0;
 
     while (true) {
         count += 1;
         queue.send(&count, 1000) catch |e| {
             switch (e) {
-                error.Timeout   => ove.console.write("[W] Producer: send timeout\n"),
-                error.QueueFull => ove.print("[W] Producer: queue full, dropped {d}\n", .{count}),
-                else            => ove.console.write("[E] Producer: unexpected send error\n"),
+                error.Timeout   => ove.log.wrn("Producer: send timeout", .{}),
+                error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
+                else            => ove.log.err("Producer: unexpected send error", .{}),
             }
             Thread.sleepMs(500);
             continue;
@@ -73,13 +73,13 @@ fn producerEntry() void {
 fn consumerEntry() void {
     while (true) {
         const val = queue.receive(ove.wait_forever) catch {
-            ove.console.write("[E] Consumer: receive error\n");
+            ove.log.err("Consumer: receive error", .{});
             continue;
         };
 
-        last_value = val;
+        last_value.store(val, .release);
         if (val % 5 == 0) {
-            ove.print("[I] Consumer: count = {d}\n", .{val});
+            ove.log.inf("Consumer: count = {d}", .{val});
         }
     }
 }
@@ -93,7 +93,7 @@ Error handling uses Zig's `catch` syntax. `queue.send` and `queue.receive` retur
 fn uiTimerCallback() void {
     if (!has_lvgl) return;
 
-    const val = last_value;
+    const val = last_value.load(.acquire);
     const guard = lvgl.lock();
     defer guard.deinit();   // released on scope exit
 
@@ -111,10 +111,10 @@ fn uiTimerCallback() void {
 
 ```zig
 fn appMain() void {
-    ove.console.write("[I] Zig example: init\n");
+    ove.log.inf("Zig example: init", .{});
 
     queue = Queue(u32, 8).create() catch {
-        ove.console.write("[E] Failed to create queue\n");
+        ove.log.err("Failed to create queue", .{});
         return;
     };
 
@@ -129,14 +129,22 @@ fn appMain() void {
         lvgl.init() catch { ... };
         {
             const guard = lvgl.lock();
+            defer guard.deinit();
             createUi();
-            guard.deinit();
         }
         ui_timer.start() catch { ... };
     }
 
-    ove.console.write("[I] Zig example: ready\n");
+    ove.log.inf("Zig example: ready", .{});
     ove.run();
+
+    // Cleanup (only reached on POSIX)
+    ove.log.inf("Zig example: shutdown", .{});
+    if (has_lvgl) {
+        ui_timer.stop() catch {};
+        ui_timer.destroy();
+    }
+    queue.destroy();
 }
 
 comptime {
@@ -155,8 +163,16 @@ comptime {
 | `Queue.create()` / `Queue.send()` / `Queue.receive()` | Queue lifecycle and operations |
 | `Thread.spawn()` | Spawn a thread from a plain `fn() void` |
 | `Timer.create()` / `Timer.start()` | Software timer |
-| `ove.console.write` / `ove.print` | Console output |
+| `ove.log.inf` / `ove.log.wrn` / `ove.log.err` | Structured console logging with auto prefix |
 | `lvgl.lock()` + `defer guard.deinit()` | RAII LVGL display guard |
 | `std.fmt.bufPrint` | Stack-allocated format |
 | `ove.run()` | Start the RTOS scheduler |
 | `ove.exportMain(appMain)` | Export `ove_main` C entry point |
+
+---
+
+## Networking Example
+
+Source: `apps/zig/example_net/src/main.zig`
+
+The Zig networking example demonstrates comptime-safe networking wrappers with a structured test harness (TEST/PASS/FAIL tracking with results summary). DNS, TCP, UDP, HTTP (GET/POST/PUT), SNTP time sync, MQTT, and HTTPD are all tested using `ove.net`, `ove.net_http`, `ove.net_sntp`, `ove.net_mqtt`, and `ove.net_httpd`. All logging uses structured functions (`ove.log.inf`, etc.). See the [Networking API Guide](../api/net.md) for the full API.

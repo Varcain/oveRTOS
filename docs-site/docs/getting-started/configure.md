@@ -98,8 +98,11 @@ make host_posix_example_rust_defconfig
 | `host_posix_example_rust_zeroheap_defconfig` | Rust example, POSIX, zero-heap |
 | `host_posix_example_zig_defconfig` | Zig example, POSIX backend |
 | `host_posix_example_zig_zeroheap_defconfig` | Zig example, POSIX, zero-heap |
-| `host_posix_benchmark_defconfig` | Benchmark, POSIX backend |
-| `host_posix_benchmark_zeroheap_defconfig` | Benchmark, POSIX, zero-heap |
+| `host_posix_benchmark_defconfig` | C Benchmark, POSIX backend |
+| `host_posix_benchmark_zeroheap_defconfig` | C Benchmark, POSIX, zero-heap |
+| `host_posix_benchmark_cpp_defconfig` | C++ Benchmark, POSIX backend |
+| `host_posix_benchmark_rust_defconfig` | Rust Benchmark, POSIX backend |
+| `host_posix_benchmark_zig_defconfig` | Zig Benchmark, POSIX backend |
 
 **qemu (QEMU MPS2-AN500 Cortex-M7)**
 

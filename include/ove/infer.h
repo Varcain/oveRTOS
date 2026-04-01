@@ -214,12 +214,14 @@ uint64_t ove_model_last_inference_us(ove_model_t model);
 
 #else /* !CONFIG_OVE_INFER */
 
+/** @cond INTERNAL */
 static inline int  ove_model_create(ove_model_t *m, const struct ove_model_config *c) { (void)m; (void)c; return OVE_ERR_NOT_SUPPORTED; }
 static inline void ove_model_destroy(ove_model_t m) { (void)m; }
 static inline int  ove_model_invoke(ove_model_t m) { (void)m; return OVE_ERR_NOT_SUPPORTED; }
 static inline int  ove_model_input(ove_model_t m, unsigned int i, struct ove_tensor_info *t) { (void)m; (void)i; (void)t; return OVE_ERR_NOT_SUPPORTED; }
 static inline int  ove_model_output(ove_model_t m, unsigned int i, struct ove_tensor_info *t) { (void)m; (void)i; (void)t; return OVE_ERR_NOT_SUPPORTED; }
 static inline uint64_t ove_model_last_inference_us(ove_model_t m) { (void)m; return 0; }
+/** @endcond */
 
 #endif /* CONFIG_OVE_INFER */
 

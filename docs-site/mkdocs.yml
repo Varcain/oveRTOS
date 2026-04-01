@@ -40,6 +40,7 @@ nav:
     - Shell & Console: api/shell.md
     - Non-Volatile Storage: api/nvs.md
     - ML Inference: api/infer.md
+    - Networking: api/net.md
   - Build System:
     - CMake: build-system/cmake.md
     - Kconfig: build-system/kconfig.md

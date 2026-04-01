@@ -117,3 +117,24 @@ void ove_shell_process_char(int c)
 		ove_console_putchar(c);
 	}
 }
+
+static ove_shell_output_hook_t s_output_hook;
+
+void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
+{
+	s_output_hook = hook;
+}
+
+void ove_shell_process_line(const char *line)
+{
+	if (!line) return;
+
+	/* Copy into the line buffer and execute */
+	size_t len = strlen(line);
+	if (len >= SHELL_LINE_MAX)
+		len = SHELL_LINE_MAX - 1;
+	memcpy(line_buf, line, len);
+	line_pos = (unsigned int)len;
+	shell_execute(line_buf);
+	line_pos = 0;
+}

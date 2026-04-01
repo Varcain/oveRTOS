@@ -62,27 +62,29 @@ extern "C" {
 #define OVE_LOG_LEVEL OVE_LOG_LEVEL_INF
 #endif
 
-/**
- * @brief Internal helper: format and emit a prefixed log line.
- *
- * Not intended for direct use. Formats @p fmt and variadic arguments with
- * the string @p prefix prepended, appends @c "\\n", and writes the result
- * to the console. Output is truncated to 256 bytes including the newline.
- *
- * @param[in] prefix  Severity prefix string (e.g. @c "[E] ").
- * @param[in] fmt     printf-style format string.
- * @param[in] ...     Format arguments.
- */
+/** @cond INTERNAL */
+#ifdef CONFIG_OVE_NET_HTTPD
+void ove_httpd_log_append(const char *line);
+#define _OVE_LOG_HTTPD_HOOK(buf) ove_httpd_log_append(buf)
+#else
+#define _OVE_LOG_HTTPD_HOOK(buf) ((void)0)
+#endif
+
 #define _OVE_LOG_OUTPUT(prefix, fmt, ...) \
 	do { \
 		char _ove_log_buf[256]; \
 		int _ove_log_len = snprintf(_ove_log_buf, \
-			sizeof(_ove_log_buf), prefix fmt "\n", ##__VA_ARGS__); \
+			sizeof(_ove_log_buf), prefix fmt, ##__VA_ARGS__); \
 		if (_ove_log_len > 0) { \
+			_ove_log_buf[_ove_log_len] = '\n'; \
+			_ove_log_buf[_ove_log_len + 1] = '\0'; \
 			ove_console_write(_ove_log_buf, \
-				(unsigned int)_ove_log_len); \
+				(unsigned int)(_ove_log_len + 1)); \
+			_ove_log_buf[_ove_log_len] = '\0'; \
+			_OVE_LOG_HTTPD_HOOK(_ove_log_buf); \
 		} \
 	} while (0)
+/** @endcond */
 
 /**
  * @brief Log an error message.

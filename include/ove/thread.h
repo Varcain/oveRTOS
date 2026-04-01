@@ -289,6 +289,49 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle);
 int ove_thread_get_runtime_stats(ove_thread_t handle,
 				 struct ove_thread_stats *stats);
 
+/* ── System memory statistics ──────────────────────────────── */
+
+/**
+ * @brief System heap statistics.
+ */
+struct ove_mem_stats {
+	size_t total;      /**< Total heap size in bytes. */
+	size_t free;       /**< Current free heap in bytes. */
+	size_t used;       /**< Current used heap in bytes. */
+	size_t peak_used;  /**< High-water-mark usage in bytes. */
+};
+
+/**
+ * @brief Query system heap statistics.
+ *
+ * @param[out] stats Caller-allocated structure to receive stats.
+ * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable.
+ */
+int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
+
+/* ── Thread enumeration ────────────────────────────────────── */
+
+/**
+ * @brief Snapshot of a single thread's info.
+ */
+struct ove_thread_info {
+	const char         *name;       /**< Thread name (static, do not free). */
+	ove_thread_state_t  state;      /**< Execution state. */
+	int                 priority;   /**< Priority level. */
+	size_t              stack_used; /**< Stack high-water mark (bytes). */
+};
+
+/**
+ * @brief List all threads in the system.
+ *
+ * @param[out] out          Array to fill with thread info.
+ * @param[in]  max_count    Maximum entries in @p out.
+ * @param[out] actual_count Actual number of threads written (may be NULL).
+ * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable.
+ */
+int ove_thread_list(struct ove_thread_info *out, size_t max_count,
+		    size_t *actual_count);
+
 #ifdef __cplusplus
 }
 #endif
