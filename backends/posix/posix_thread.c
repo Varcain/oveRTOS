@@ -14,6 +14,10 @@
 #include <signal.h>
 #include <semaphore.h>
 #include <string.h>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+#include <string.h>
 
 static __thread struct ove_thread *tls_current;
 static struct ove_thread *first_thread;
@@ -184,8 +188,19 @@ void ove_thread_yield(void)
 	sched_yield();
 }
 
+static void sigint_handler(int sig)
+{
+	(void)sig;
+	_exit(0);
+}
+
 void ove_thread_start_scheduler(void)
 {
+	/* Allow Ctrl-C to terminate the process cleanly.  Without this,
+	 * SIGINT interrupts pthread_join but the spawned threads keep the
+	 * process alive because they are blocked in sleep/recv loops. */
+	signal(SIGINT, sigint_handler);
+
 	/* Block the main thread by joining the first app thread.
 	 * POSIX threads run immediately, but the caller (ove_app_run)
 	 * needs to block here to keep the process alive. */
@@ -237,4 +252,32 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 		stats->cpu_percent_x100 = 0;
 	}
 	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
+{
+	if (!stats) return OVE_ERR_INVALID_PARAM;
+
+#ifdef __GLIBC__
+	struct mallinfo2 mi = mallinfo2();
+	stats->total     = mi.arena;
+	stats->used      = mi.uordblks;
+	stats->free      = mi.fordblks;
+	stats->peak_used = 0; /* glibc doesn't track peak */
+#else
+	memset(stats, 0, sizeof(*stats));
+#endif
+	return OVE_OK;
+}
+
+int ove_thread_list(struct ove_thread_info *out, size_t max_count,
+		    size_t *actual_count)
+{
+	/* POSIX has no standard thread enumeration.
+	 * Return an empty list — the dashboard will show "no data". */
+	if (actual_count)
+		*actual_count = 0;
+	(void)out;
+	(void)max_count;
+	return OVE_OK;
 }

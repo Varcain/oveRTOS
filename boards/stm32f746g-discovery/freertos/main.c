@@ -12,8 +12,16 @@
 #include "serial_wrapper.h"
 #include "stm32f7xx_hal.h"
 
-/* FreeRTOS heap in external RAM */
+#if configSUPPORT_DYNAMIC_ALLOCATION
+/* FreeRTOS heap — place in main RAM (.bss) when networking is enabled
+ * (needs >64KB), otherwise use the dedicated .RamData2 section.
+ * Not allocated at all in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0). */
+#ifdef HAL_ETH_MODULE_ENABLED
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8)));
+#else
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".RamData2")));
+#endif
+#endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 
 extern void xPortSysTickHandler(void);
 

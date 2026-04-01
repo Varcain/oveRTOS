@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
+#include <malloc.h>
 
 /* Per-task pointer via NuttX task TLS */
 static int tls_index = -1;
@@ -332,4 +333,25 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 	stats->runtime_us = 0;
 	stats->cpu_percent_x100 = 0;
 	return OVE_ERR_NOT_SUPPORTED;
+}
+
+int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
+{
+	if (!stats) return OVE_ERR_INVALID_PARAM;
+	struct mallinfo mi = mallinfo();
+	stats->total     = (size_t)mi.arena;
+	stats->used      = (size_t)mi.uordblks;
+	stats->free      = (size_t)mi.fordblks;
+	stats->peak_used = 0;
+	return OVE_OK;
+}
+
+int ove_thread_list(struct ove_thread_info *out, size_t max_count,
+		    size_t *actual_count)
+{
+	(void)out;
+	(void)max_count;
+	if (actual_count)
+		*actual_count = 0;
+	return OVE_OK;
 }

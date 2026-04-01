@@ -1,0 +1,30 @@
+lang: cpp
+config_name: benchmark_cpp
+description: "C++ RTOS Abstraction Benchmark"
+sources:
+  - ../../c/benchmark/src/bench_harness.c
+  - ../../c/benchmark/src/bench_output.c
+  - ../../c/benchmark/src/bench_memory.c
+  - src/app.cpp
+  - src/bench_time.cpp
+  - src/bench_thread.cpp
+  - src/bench_sync.cpp
+  - src/bench_queue.cpp
+  - src/bench_timer.cpp
+  - src/bench_eventgroup.cpp
+  - src/bench_workqueue.cpp
+  - src/bench_stream.cpp
+includes:
+  - ../../c/benchmark/include
+kconfig: |
+  config OVE_BENCHMARK_ITERATIONS
+  	int "Number of measurement iterations per benchmark case"
+  	default 1000
+
+  config OVE_BENCHMARK_WARMUP
+  	int "Number of warmup iterations before measurement"
+  	default 100
+
+  config OVE_BENCHMARK_INCLUDE_MEMORY
+  	bool "Include memory usage benchmarks"
+  	default y

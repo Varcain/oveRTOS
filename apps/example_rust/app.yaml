@@ -1,4 +1,0 @@
-lang: rust
-description: "Rust Demo"
-rust:
-  lib_name: example_rust

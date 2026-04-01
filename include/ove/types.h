@@ -43,6 +43,24 @@
 /** @brief ML inference or model loading failed. */
 #define OVE_ERR_ML_FAILED        (-7)
 
+/** @brief Remote peer refused the connection. */
+#define OVE_ERR_NET_REFUSED      (-8)
+
+/** @brief Network or host is unreachable. */
+#define OVE_ERR_NET_UNREACHABLE  (-9)
+
+/** @brief Local address already in use. */
+#define OVE_ERR_NET_ADDR_IN_USE  (-10)
+
+/** @brief Connection was reset by the remote peer. */
+#define OVE_ERR_NET_RESET        (-11)
+
+/** @brief DNS name resolution failed. */
+#define OVE_ERR_NET_DNS_FAIL     (-12)
+
+/** @brief Connection closed by the remote peer. */
+#define OVE_ERR_NET_CLOSED       (-13)
+
 /**
  * @brief Timeout value that means "block indefinitely".
  *
@@ -89,6 +107,21 @@ typedef struct ove_dir *ove_dir_t;
 
 /** @brief Opaque handle for an ML inference model session. @see ove_model_init, ove_model_create */
 typedef struct ove_model *ove_model_t;
+
+/** @brief Opaque handle for a network socket. @see ove_socket_open, ove_socket_create */
+typedef struct ove_socket *ove_socket_t;
+
+/** @brief Opaque handle for a network interface. @see ove_netif_init, ove_netif_create */
+typedef struct ove_netif *ove_netif_t;
+
+/** @brief Opaque handle for a TLS session. @see ove_tls_init, ove_tls_create */
+typedef struct ove_tls *ove_tls_t;
+
+/** @brief Opaque handle for an HTTP client. @see ove_http_client_init, ove_http_client_create */
+typedef struct ove_http_client *ove_http_client_t;
+
+/** @brief Opaque handle for an MQTT client. @see ove_mqtt_client_init, ove_mqtt_client_create */
+typedef struct ove_mqtt_client *ove_mqtt_client_t;
 
 /**
  * @brief Bit-mask type used by the event-group API.

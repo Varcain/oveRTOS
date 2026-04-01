@@ -1,0 +1,23 @@
+lang: rust
+config_name: benchmark_rust
+description: "Rust RTOS Abstraction Benchmark"
+c_sources:
+  - ../../c/benchmark/src/bench_harness.c
+  - ../../c/benchmark/src/bench_output.c
+  - ../../c/benchmark/src/bench_memory.c
+c_includes:
+  - ../../c/benchmark/include
+rust:
+  lib_name: benchmark_rust
+kconfig: |
+  config OVE_BENCHMARK_ITERATIONS
+  	int "Number of measurement iterations per benchmark case"
+  	default 1000
+
+  config OVE_BENCHMARK_WARMUP
+  	int "Number of warmup iterations before measurement"
+  	default 100
+
+  config OVE_BENCHMARK_INCLUDE_MEMORY
+  	bool "Include memory usage benchmarks"
+  	default y

@@ -50,12 +50,6 @@ jobs:
             echo "All host configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: host-build-logs
-          path: output/host/
-          retention-days: 7
 
   qemu-freertos:
     name: QEMU FreeRTOS
@@ -107,12 +101,6 @@ jobs:
             echo "All qemu-freertos configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: qemu-freertos-build-logs
-          path: output/qemu/freertos/
-          retention-days: 7
 
   qemu-nuttx:
     name: QEMU NuttX
@@ -164,12 +152,6 @@ jobs:
             echo "All qemu-nuttx configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: qemu-nuttx-build-logs
-          path: output/qemu/nuttx/
-          retention-days: 7
 
   qemu-zephyr:
     name: QEMU Zephyr
@@ -243,12 +225,6 @@ jobs:
             echo "All qemu-zephyr configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: qemu-zephyr-build-logs
-          path: output/qemu/zephyr/
-          retention-days: 7
 
   stm32f746-freertos:
     name: STM32F746 FreeRTOS
@@ -300,12 +276,6 @@ jobs:
             echo "All stm32f746-freertos configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: stm32f746-freertos-build-logs
-          path: output/stm32f746/freertos/
-          retention-days: 7
 
   stm32f746-nuttx:
     name: STM32F746 NuttX
@@ -357,12 +327,6 @@ jobs:
             echo "All stm32f746-nuttx configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: stm32f746-nuttx-build-logs
-          path: output/stm32f746/nuttx/
-          retention-days: 7
 
   stm32f746-zephyr:
     name: STM32F746 Zephyr
@@ -436,9 +400,3 @@ jobs:
             echo "All stm32f746-zephyr configurations built successfully"
           fi
 
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: stm32f746-zephyr-build-logs
-          path: output/stm32f746/zephyr/
-          retention-days: 7

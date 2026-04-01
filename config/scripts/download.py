@@ -533,6 +533,27 @@ def main():
     elif get_config_bool(config, "CONFIG_OVE_RTOS_POSIX"):
         ok = download_posix(config, dl_dir, build_dir, ws_dl_dir) and ok
 
+    # Download lwIP if networking on FreeRTOS
+    if (get_config_bool(config, "CONFIG_OVE_NET") and
+            get_config_bool(config, "CONFIG_OVE_RTOS_FREERTOS")):
+        lwip_tag = "STABLE-2_2_0_RELEASE"
+        dest, link = hashed_dir(dl_dir, "lwip", lwip_tag, ws_dl_dir)
+        ok = git_clone(
+            "https://github.com/lwip-tcpip/lwip.git",
+            lwip_tag, dest, "lwIP") and ok
+        if os.path.isdir(dest):
+            update_symlink(link, dest)
+
+    # Download mbedTLS if TLS is enabled
+    if get_config_bool(config, "CONFIG_OVE_NET_TLS"):
+        mbedtls_tag = "v3.6.2"
+        dest, link = hashed_dir(dl_dir, "mbedtls", mbedtls_tag, ws_dl_dir)
+        ok = git_clone(
+            "https://github.com/Mbed-TLS/mbedtls.git",
+            mbedtls_tag, dest, "mbedTLS") and ok
+        if os.path.isdir(dest):
+            update_symlink(link, dest)
+
     # Ensure Rust target if Rust language is selected
     if get_config_bool(config, "CONFIG_OVE_APP_LANG_RUST"):
         ok = ensure_rust_target(config, dl_dir) and ok

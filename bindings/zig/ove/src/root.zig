@@ -137,6 +137,38 @@ pub const infer = @import("infer.zig");
 /// ML model session handle. Create with `Model.create()`.
 pub const Model = infer.Model;
 
+/// BSD-like sockets, DNS resolution, and network interface management.
+pub const net = @import("net.zig");
+/// Generic socket address (IPv4/IPv6). Value type.
+pub const Address = net.Address;
+/// Network interface handle.
+pub const NetIf = net.NetIf;
+/// TCP stream socket.
+pub const TcpStream = net.TcpStream;
+/// UDP datagram socket.
+pub const UdpSocket = net.UdpSocket;
+
+/// HTTP/1.1 client.
+pub const net_http = @import("net_http.zig");
+/// HTTP client handle.
+pub const HttpClient = net_http.Client;
+
+/// MQTT 3.1.1 client.
+pub const net_mqtt = @import("net_mqtt.zig");
+/// MQTT client handle.
+pub const MqttClient = net_mqtt.Client;
+
+/// SNTP time synchronization client.
+pub const net_sntp = @import("net_sntp.zig");
+
+/// Embedded HTTP server (singleton).
+pub const net_httpd = @import("net_httpd.zig");
+
+/// TLS/SSL session wrapper (mbedTLS).
+pub const net_tls = @import("net_tls.zig");
+/// TLS session handle.
+pub const TlsSession = net_tls.Session;
+
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
 

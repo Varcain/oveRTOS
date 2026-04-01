@@ -13,13 +13,7 @@ cmake_minimum_required(VERSION 3.14)
 if(NOT DEFINED OVE_DIR)
     get_filename_component(OVE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
 endif()
-if(NOT DEFINED OVE_APP_DIR)
-    file(STRINGS "${OVE_DIR}/.config" _app_line REGEX "^CONFIG_OVE_APP_NAME=")
-    if(_app_line)
-        string(REGEX REPLACE ".*=\"(.*)\"" "\\1" _app_name "${_app_line}")
-        set(OVE_APP_DIR "${OVE_DIR}/apps/${_app_name}")
-    endif()
-endif()
+include(${OVE_DIR}/cmake/OveAppResolve.cmake)
 if(NOT DEFINED OVE_GEN_DIR)
     set(OVE_GEN_DIR ${OVE_DIR}/output/generated)
 endif()
@@ -133,6 +127,11 @@ if(OVE_INFER)
     ove_build_tflm()
 endif()
 
+if(OVE_NET_TLS)
+    include(${OVE_DIR}/cmake/OveMbedtls.cmake)
+    ove_build_mbedtls()
+endif()
+
 #############################################################################
 # Executable
 #############################################################################
@@ -154,6 +153,7 @@ target_compile_definitions(ove_posix PRIVATE
 target_link_libraries(ove_posix PRIVATE
     lvgl
     $<$<BOOL:${OVE_INFER}>:ove_tflm>
+    $<$<BOOL:${OVE_NET_TLS}>:ove_mbedtls>
     ${SDL2_LIBRARIES}
     pthread
     rt

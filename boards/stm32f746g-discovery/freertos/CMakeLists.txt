@@ -21,13 +21,7 @@ endif()
 if(NOT DEFINED BOARD_DIR)
     set(BOARD_DIR ${CMAKE_CURRENT_LIST_DIR})
 endif()
-if(NOT DEFINED OVE_APP_DIR)
-    file(STRINGS "${OVE_DIR}/.config" _app_line REGEX "^CONFIG_OVE_APP_NAME=")
-    if(_app_line)
-        string(REGEX REPLACE ".*=\"(.*)\"" "\\1" _app_name "${_app_line}")
-        set(OVE_APP_DIR "${OVE_DIR}/apps/${_app_name}")
-    endif()
-endif()
+include(${OVE_DIR}/cmake/OveAppResolve.cmake)
 if(NOT DEFINED OVE_GEN_DIR)
     set(OVE_GEN_DIR ${OVE_DIR}/output/generated)
 endif()
@@ -73,6 +67,7 @@ add_compile_definitions(
     USE_HAL_DRIVER
     ARM_MATH_CM7
     LV_CONF_INCLUDE_SIMPLE
+    $<$<BOOL:${OVE_NET}>:HAL_ETH_MODULE_ENABLED>
 )
 
 #############################################################################
@@ -161,6 +156,9 @@ if(OVE_AUDIO)
         ${BOARD_DIR}/src/audio_codec_da.c
         ${BOARD_DIR}/src/i2s_da.c
     )
+endif()
+if(OVE_NET)
+    list(APPEND BOARD_SOURCES ${BOARD_DIR}/src/eth_stm32f7.c)
 endif()
 
 set(STM32F7_SOURCES
@@ -300,6 +298,14 @@ if(OVE_INFER)
     include(${OVE_DIR}/cmake/OveTflm.cmake)
     ove_build_tflm()
 endif()
+if(OVE_NET)
+    include(${OVE_DIR}/cmake/OveLwIP.cmake)
+    ove_build_lwip()
+endif()
+if(OVE_NET_TLS)
+    include(${OVE_DIR}/cmake/OveMbedtls.cmake)
+    ove_build_mbedtls()
+endif()
 
 #############################################################################
 # Application language support
@@ -345,6 +351,8 @@ target_link_options(${PROJ_NAME}.elf PRIVATE
 target_link_libraries(${PROJ_NAME}.elf PRIVATE
     lvgl
     $<$<BOOL:${OVE_INFER}>:ove_tflm>
+    $<$<BOOL:${OVE_NET}>:ove_lwip>
+    $<$<BOOL:${OVE_NET_TLS}>:ove_mbedtls>
     m
 )
 

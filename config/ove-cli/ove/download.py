@@ -329,38 +329,50 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
 
         zephyr_dir, link, global_link = hashed_dir(dl_dir, "zephyr-workspace", rev,
                                       ws_dl_dir)
-        if os.path.isdir(zephyr_dir):
+        west_done_marker = os.path.join(zephyr_dir, ".west_update_done")
+        if os.path.isfile(west_done_marker):
             logger.debug(f"Zephyr: workspace already exists at {zephyr_dir}")
             update_symlink(link, zephyr_dir)
             return True
 
-        logger.debug(f"Zephyr: initializing west workspace (rev: {rev})...")
-        os.makedirs(zephyr_dir, exist_ok=True)
         west = _find_west(ove_dir or ".")
 
-        init_branch = rev if '/' not in rev and len(rev) < 40 else "main"
-        ret = subprocess.run(
-            [west, "init", "-m", url, "--mr", init_branch, zephyr_dir],
-            capture_output=True, text=True)
-        if ret.returncode != 0:
-            logger.error(f"west init failed: {ret.stderr}")
-            return False
+        # Run west init if not already initialized
+        west_config = os.path.join(zephyr_dir, ".west")
+        if not os.path.isdir(west_config):
+            logger.debug(f"Zephyr: initializing west workspace (rev: {rev})...")
+            os.makedirs(zephyr_dir, exist_ok=True)
 
-        if init_branch != rev:
-            zephyr_repo = os.path.join(zephyr_dir, "zephyr")
+            init_branch = rev if '/' not in rev and len(rev) < 40 else "main"
             ret = subprocess.run(
-                ["git", "checkout", rev],
-                cwd=zephyr_repo, capture_output=True, text=True)
+                [west, "init", "-m", url, "--mr", init_branch, zephyr_dir],
+                capture_output=True, text=True)
             if ret.returncode != 0:
-                logger.error(f"git checkout {rev} failed: {ret.stderr}")
+                logger.error(f"west init failed: {ret.stderr}")
                 return False
 
+            if init_branch != rev:
+                zephyr_repo = os.path.join(zephyr_dir, "zephyr")
+                ret = subprocess.run(
+                    ["git", "checkout", rev],
+                    cwd=zephyr_repo, capture_output=True, text=True)
+                if ret.returncode != 0:
+                    logger.error(f"git checkout {rev} failed: {ret.stderr}")
+                    return False
+        else:
+            logger.debug(f"Zephyr: workspace exists, running west update...")
+
+        # Always run west update if marker is missing
         ret = subprocess.run(
             [west, "update"],
             cwd=zephyr_dir, capture_output=True, text=True)
         if ret.returncode != 0:
             logger.error(f"west update failed: {ret.stderr}")
             return False
+
+        # Mark as complete
+        with open(west_done_marker, "w") as f:
+            f.write(rev + "\n")
 
         update_symlink(link, zephyr_dir)
         logger.debug("Zephyr: workspace ready")
@@ -656,6 +668,33 @@ def download_all(ws):
     if get_bool(config, "CONFIG_OVE_INFER"):
         ok = download_tflm(config, ws.dl_dir, ws.ws_dl_dir,
                            manifest=manifest) and ok
+
+    # lwIP for FreeRTOS networking
+    if (get_bool(config, "CONFIG_OVE_NET") and
+            get_bool(config, "CONFIG_OVE_RTOS_FREERTOS")):
+        lwip_url = get_component(manifest, "libraries", "lwip", "url")
+        lwip_ver = get_component(manifest, "libraries", "lwip", "version")
+        if lwip_url and lwip_ver:
+            dest, link, glink = hashed_dir(ws.dl_dir, "lwip",
+                                           lwip_ver, ws.ws_dl_dir)
+            ok = git_clone(lwip_url, lwip_ver, dest, "lwIP") and ok
+            if os.path.isdir(dest):
+                update_symlink(link, dest)
+                if glink:
+                    update_symlink(glink, dest)
+
+    # mbedTLS for TLS support
+    if get_bool(config, "CONFIG_OVE_NET_TLS"):
+        mbed_url = get_component(manifest, "libraries", "mbedtls", "url")
+        mbed_ver = get_component(manifest, "libraries", "mbedtls", "version")
+        if mbed_url and mbed_ver:
+            dest, link, glink = hashed_dir(ws.dl_dir, "mbedtls",
+                                           mbed_ver, ws.ws_dl_dir)
+            ok = git_clone(mbed_url, mbed_ver, dest, "mbedTLS") and ok
+            if os.path.isdir(dest):
+                update_symlink(link, dest)
+                if glink:
+                    update_symlink(glink, dest)
 
     if get_bool(config, "CONFIG_OVE_APP_LANG_RUST"):
         ok = ensure_rust_target(config, ws.dl_dir) and ok

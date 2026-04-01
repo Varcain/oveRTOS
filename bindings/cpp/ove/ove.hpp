@@ -33,3 +33,8 @@
 #include <ove/stream.hpp>
 #include <ove/workqueue.hpp>
 #include <ove/app.hpp>
+#include <ove/net.hpp>
+#include <ove/net_tls.hpp>
+#include <ove/net_http.hpp>
+#include <ove/net_mqtt.hpp>
+#include <ove/net_httpd.hpp>

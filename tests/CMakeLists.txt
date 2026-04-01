@@ -63,6 +63,9 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_lvgl.c
     # App framework
     ${OVE_SRC}/ove_app.c
+    # Networking helpers (SHA-1, Base64 for WebSocket/HTTPD tests)
+    ${OVE_ROOT}/backends/common/ove_sha1.c
+    ${OVE_ROOT}/backends/common/ove_base64.c
 )
 
 # Test suite sources
@@ -94,6 +97,9 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_static_define.c
     ${SUITE_DIR}/test_app.c
     ${SUITE_DIR}/test_infer.c
+    ${SUITE_DIR}/test_net_mqtt.c
+    ${SUITE_DIR}/test_net_httpd.c
+    ${SUITE_DIR}/test_net_sntp.c
 )
 
 # --- Stub test target ---

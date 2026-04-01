@@ -40,8 +40,13 @@ static void prvSetupHardware(void)
 	/* Enable I-Cache */
 	SCB_EnableICache();
 
-	/* Enable D-Cache */
+	/* Enable D-Cache.  Disabled when Ethernet DMA is active — the ETH
+	 * DMA reads/writes descriptors and buffers in SRAM that must be
+	 * cache-coherent.  A proper fix would use MPU to mark the DMA
+	 * region non-cacheable; for now we disable D-Cache entirely. */
+#ifndef HAL_ETH_MODULE_ENABLED
 	SCB_EnableDCache();
+#endif
 
 	HAL_Init();
 

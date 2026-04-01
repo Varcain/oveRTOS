@@ -54,19 +54,39 @@ def generate_app_kconfig(ove_dir):
 
     apps_dir = os.path.join(ove_dir, "apps")
 
-    # Scan in-tree apps
+    # Scan in-tree apps (supports both flat and two-level layout).
+    # Two-level: apps/<lang>/<app>/app.yaml  (preferred)
+    # Flat:      apps/<app>/app.yaml          (backward compat)
     apps = []
-    app_paths = {}  # name -> absolute path mapping
+    app_paths = {}  # config_name -> absolute path mapping
     if os.path.isdir(apps_dir):
-        for entry in sorted(os.listdir(apps_dir)):
-            app_yaml_path = os.path.join(apps_dir, entry, "app.yaml")
-            if os.path.isfile(app_yaml_path):
-                with open(app_yaml_path) as f:
+        for subdir in sorted(os.listdir(apps_dir)):
+            subdir_path = os.path.join(apps_dir, subdir)
+            if not os.path.isdir(subdir_path):
+                continue
+            # Check flat layout: apps/<app>/app.yaml
+            flat_yaml = os.path.join(subdir_path, "app.yaml")
+            if os.path.isfile(flat_yaml):
+                with open(flat_yaml) as f:
                     data = yaml.safe_load(f)
-                data["name"] = entry
-                data["config_name"] = entry.upper()
+                cname = data.get("config_name", subdir)
+                data["name"] = cname
+                data["config_name"] = cname.upper()
                 apps.append(data)
-                app_paths[entry] = os.path.join(apps_dir, entry)
+                app_paths[cname] = subdir_path
+                continue
+            # Two-level layout: apps/<lang>/<app>/app.yaml
+            for entry in sorted(os.listdir(subdir_path)):
+                app_yaml_path = os.path.join(subdir_path, entry, "app.yaml")
+                if os.path.isfile(app_yaml_path):
+                    with open(app_yaml_path) as f:
+                        data = yaml.safe_load(f)
+                    cname = data.get("config_name", entry)
+                    data["name"] = cname
+                    data["config_name"] = cname.upper()
+                    if cname not in app_paths:
+                        apps.append(data)
+                        app_paths[cname] = os.path.join(subdir_path, entry)
 
     # Scan external apps from OVE_EXTERNAL_APPS env var
     ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")

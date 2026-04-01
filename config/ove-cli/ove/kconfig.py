@@ -95,18 +95,24 @@ def cmd_defconfig(args):
         print(f"Error: defconfig '{name}' not found in defconfigs/")
         sys.exit(1)
 
-    # Parse workspace location from defconfig name
-    ws_board = os.path.basename(os.path.dirname(defconfig_path))
-    stem = name.replace(f"{ws_board}_", "", 1).replace("_defconfig", "")
-
-    # Extract RTOS from stem
-    ws_rtos = stem.split("_")[0]
+    # Parse workspace location from defconfig name.
+    # Filename format: <board>_<rtos>_<app>[_zeroheap]_defconfig
+    # Extract board by finding the first known RTOS name in the stem.
+    stem = name.replace("_defconfig", "")
     valid_rtos = ("freertos", "nuttx", "zephyr", "posix")
-    if ws_rtos not in valid_rtos:
-        print(f"Error: unknown RTOS '{ws_rtos}' in defconfig name")
+    ws_board = None
+    ws_rtos = None
+    for rtos in valid_rtos:
+        idx = stem.find(f"_{rtos}_")
+        if idx >= 0:
+            ws_board = stem[:idx]
+            ws_rtos = rtos
+            break
+    if not ws_board or not ws_rtos:
+        print(f"Error: cannot parse board/RTOS from defconfig '{name}'")
         sys.exit(1)
 
-    ws_app = stem[len(ws_rtos) + 1:]
+    ws_app = stem[len(ws_board) + 1 + len(ws_rtos) + 1:]
     if not ws_app:
         print(f"Error: could not parse app name from defconfig '{name}'")
         sys.exit(1)

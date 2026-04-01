@@ -45,7 +45,9 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
 {% for mod in ["THREAD", "APP", "SYNC", "AUDIO", "FS", "CONSOLE", "LOG",
                "TIME", "BSP", "BOARD", "GPIO", "LED", "LVGL", "QUEUE",
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
-               "WORKQUEUE", "STREAM", "INFER"] %}
+               "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
+               "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
+               "NET_SNTP"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}
@@ -85,7 +87,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/freertos/freertos_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/freertos/freertos_{{ mod|lower }}.c
 {% endif %}
@@ -100,7 +102,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_{{ mod|lower }}.c
 {% endif %}
@@ -115,7 +117,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/nuttx/nuttx_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_{{ mod|lower }}.c
 {% endif %}
@@ -130,7 +132,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/posix/posix_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/posix/posix_{{ mod|lower }}.c
 {% endif %}
@@ -148,4 +150,39 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_AUDIO") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_graph.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_nodes.c")
+{% endif %}
+
+# Common networking sources (platform-independent)
+{% if config.get("CONFIG_OVE_NET_TLS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_tls.c")
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_HTTP") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_http.c")
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_MQTT") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_mqtt.c")
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_HTTPD") == True %}
+# Bundle dashboard assets (gzip + xxd → C header) before compiling routes
+add_custom_command(
+    OUTPUT "${OVE_DIR}/backends/common/ove_net_httpd_ui_gz.h"
+    COMMAND bash "${OVE_DIR}/backends/common/httpd_ui/bundle.sh"
+            "${OVE_DIR}/backends/common/ove_net_httpd_ui_gz.h"
+    DEPENDS "${OVE_DIR}/backends/common/httpd_ui/index.html"
+            "${OVE_DIR}/backends/common/httpd_ui/style.css"
+            "${OVE_DIR}/backends/common/httpd_ui/app.js"
+            "${OVE_DIR}/backends/common/httpd_ui/vendor/alpine.min.js"
+    COMMENT "Bundling httpd dashboard assets"
+)
+add_custom_target(httpd_ui_bundle DEPENDS "${OVE_DIR}/backends/common/ove_net_httpd_ui_gz.h")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_httpd.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_httpd_routes.c")
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_HTTPD_WS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_httpd_ws.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_sha1.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_base64.c")
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_SNTP") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_sntp.c")
 {% endif %}

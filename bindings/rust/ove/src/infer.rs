@@ -68,12 +68,15 @@ impl Model {
         Ok(Self { handle })
     }
 
-    /// Create from caller-provided static storage and arena.
+    /// Create from caller-provided storage and arena.
+    ///
+    /// Available in both heap and zero-heap modes.  Useful when the same
+    /// storage/arena must be reused for different models (e.g. two-stage
+    /// inference pipelines).
     ///
     /// # Safety
     /// Caller must ensure `storage` and `arena` outlive the `Model` and are
     /// not shared with another primitive.
-    #[cfg(zero_heap)]
     pub unsafe fn from_static(
         storage: *mut bindings::ove_model_storage_t,
         arena: *mut u8,
@@ -168,3 +171,98 @@ impl Drop for Model {
 
 unsafe impl Send for Model {}
 unsafe impl Sync for Model {}
+
+// ---------------------------------------------------------------------------
+// ModelStorage — safe reusable arena
+// ---------------------------------------------------------------------------
+
+/// Reusable model storage and arena pair for sequential inference.
+///
+/// Owns both the C `ove_model_storage_t` and a 16-byte aligned arena
+/// buffer.  Call [`load()`](ModelStorage::load) to create a [`Model`]
+/// session; the borrow checker ensures the storage is not shared.
+///
+/// # Example
+///
+/// ```ignore
+/// let mut storage = ModelStorage::<32768>::new();
+/// let model = storage.load(&cfg)?;
+/// let input = model.input_slice_mut::<i16>(0)?;
+/// input[0] = 42;
+/// model.invoke()?;
+/// let output = model.output_slice::<i8>(0)?;
+/// ```
+#[repr(C, align(16))]
+pub struct ModelStorage<const ARENA_SIZE: usize> {
+    storage: bindings::ove_model_storage_t,
+    arena: [u8; ARENA_SIZE],
+}
+
+impl<const ARENA_SIZE: usize> ModelStorage<ARENA_SIZE> {
+    /// Create a zeroed storage + arena pair.
+    pub fn new() -> Self {
+        // SAFETY: ove_model_storage_t is a C struct that is valid when zeroed.
+        unsafe {
+            core::mem::zeroed()
+        }
+    }
+
+    /// Load a model into this storage, returning a session handle.
+    ///
+    /// The arena size is supplied by the const generic `ARENA_SIZE` —
+    /// no need to repeat it.  The returned [`Model`] borrows `self`
+    /// mutably, so the compiler prevents concurrent use or re-loading
+    /// until the model is dropped.
+    pub fn load(&mut self, model_data: &[u8]) -> Result<Model> {
+        let config = ModelConfig {
+            model_data,
+            arena_size: ARENA_SIZE,
+        };
+        unsafe {
+            Model::from_static(
+                &mut self.storage,
+                self.arena.as_mut_ptr(),
+                &config,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Typed tensor accessors
+// ---------------------------------------------------------------------------
+
+impl Model {
+    /// Get input tensor data as a mutable typed slice.
+    ///
+    /// The slice length is `tensor_info.size / size_of::<T>()`.
+    ///
+    /// # Errors
+    /// Returns an error if the tensor index is invalid.
+    pub fn input_slice_mut<T>(&self, index: u32) -> Result<&mut [T]> {
+        let info = self.input(index)?;
+        let count = info.size / core::mem::size_of::<T>();
+        // SAFETY: The tensor arena is owned by the model session and
+        // valid for the lifetime of this Model.  We have &self so the
+        // model is alive.  The caller must not alias this slice with
+        // another call to input_slice_mut for the same tensor index.
+        Ok(unsafe {
+            core::slice::from_raw_parts_mut(info.data as *mut T, count)
+        })
+    }
+
+    /// Get output tensor data as a typed slice.
+    ///
+    /// The slice length is `tensor_info.size / size_of::<T>()`.
+    ///
+    /// # Errors
+    /// Returns an error if the tensor index is invalid.
+    pub fn output_slice<T>(&self, index: u32) -> Result<&[T]> {
+        let info = self.output(index)?;
+        let count = info.size / core::mem::size_of::<T>();
+        // SAFETY: Same as input_slice_mut, but immutable.
+        Ok(unsafe {
+            core::slice::from_raw_parts(info.data as *const T, count)
+        })
+    }
+}

@@ -23,12 +23,16 @@ shift
 
 QEMU_MACHINE="mps2-an500"
 HEADLESS=0
+NO_NET=0
 QEMU_TIMEOUT=""
 EXTRA_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --headless)
             HEADLESS=1
+            ;;
+        --no-net)
+            NO_NET=1
             ;;
         --timeout)
             shift
@@ -53,14 +57,21 @@ QEMU_ARGS=(
 )
 
 VIEWER_PID=""
+NET_BRIDGE_PID=""
 AUDIO_PATH="/dev/shm/ove-audio"
+NET_PATH="/dev/shm/ove-net"
+NET_BRIDGE="${OVE_DIR}/config/scripts/qemu-net-bridge.py"
 cleanup() {
     if [ -n "${VIEWER_PID}" ]; then
         kill "${VIEWER_PID}" 2>/dev/null || true
         sleep 0.2 2>/dev/null || true
         wait "${VIEWER_PID}" 2>/dev/null || true
     fi
-    rm -f "${AUDIO_PATH}"
+    if [ -n "${NET_BRIDGE_PID}" ]; then
+        kill "${NET_BRIDGE_PID}" 2>/dev/null || true
+        wait "${NET_BRIDGE_PID}" 2>/dev/null || true
+    fi
+    rm -f "${AUDIO_PATH}" "${NET_PATH}"
 }
 trap cleanup EXIT
 
@@ -84,6 +95,14 @@ else
     QEMU_ARGS+=(
         -semihosting-config "enable=on,target=native"
     )
+fi
+
+# Network shared-memory bridge (runs in both headless and non-headless modes)
+if [ "${NO_NET}" -eq 0 ] && [ -e /dev/net/tun ]; then
+    : > "${NET_PATH}"
+    truncate -s 131136 "${NET_PATH}"  # 64B hdr + 2x 64KB rings
+    "${VENV_PYTHON}" "${NET_BRIDGE}" &
+    NET_BRIDGE_PID=$!
 fi
 
 if [ -n "${QEMU_TIMEOUT}" ]; then

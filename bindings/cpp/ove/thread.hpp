@@ -208,4 +208,71 @@ private:
 #endif
 };
 
+/* ── System memory statistics ──────────────────────────────────── */
+
+/**
+ * @struct MemStats
+ * @brief System heap statistics snapshot.
+ */
+struct MemStats {
+	size_t total{};      /**< Total heap size in bytes. */
+	size_t free{};       /**< Current free heap in bytes. */
+	size_t used{};       /**< Current used heap in bytes. */
+	size_t peak_used{};  /**< High-water-mark usage in bytes. */
+};
+
+/**
+ * @brief Query system heap statistics.
+ * @param[out] stats Structure to fill.
+ * @return `OVE_OK` on success, or a negative error code.
+ */
+[[nodiscard]] inline int get_mem_stats(MemStats &stats) {
+	struct ove_mem_stats ms{};
+	int ret = ove_sys_get_mem_stats(&ms);
+	if (ret == OVE_OK) {
+		stats.total     = ms.total;
+		stats.free      = ms.free;
+		stats.used      = ms.used;
+		stats.peak_used = ms.peak_used;
+	}
+	return ret;
+}
+
+/* ── Thread enumeration ───────────────────────────────────────── */
+
+/**
+ * @struct ThreadInfo
+ * @brief Snapshot of a single thread.
+ */
+struct ThreadInfo {
+	const char *name{};           ///< Thread name.
+	ove_thread_state_t state{OVE_THREAD_STATE_UNKNOWN}; ///< Current state.
+	int priority{};               ///< Scheduling priority.
+	size_t stack_used{};          ///< Peak stack usage in bytes.
+};
+
+/**
+ * @brief List all threads in the system.
+ * @param[out] out   Array to fill with thread info.
+ * @param[in]  max   Maximum entries.
+ * @param[out] count Actual count written (may be nullptr).
+ * @return `OVE_OK` on success, or a negative error code.
+ */
+[[nodiscard]] inline int thread_list(ThreadInfo *out, size_t max,
+				     size_t *count = nullptr) {
+	struct ove_thread_info buf[16];
+	size_t n = 0;
+	int ret = ove_thread_list(buf, max < 16 ? max : 16, &n);
+	if (ret == OVE_OK) {
+		for (size_t i = 0; i < n && i < max; i++) {
+			out[i].name       = buf[i].name;
+			out[i].state      = buf[i].state;
+			out[i].priority   = buf[i].priority;
+			out[i].stack_used = buf[i].stack_used;
+		}
+		if (count) *count = n;
+	}
+	return ret;
+}
+
 } /* namespace ove */

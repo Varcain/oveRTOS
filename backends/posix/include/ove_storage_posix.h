@@ -175,6 +175,98 @@ struct ove_model {
 typedef struct ove_model ove_model_storage_t;
 #endif /* CONFIG_OVE_INFER */
 
+/* ── Networking ──────────────────────────────────────────────────── */
+
+#ifdef CONFIG_OVE_NET
+struct ove_socket {
+	int fd;
+};
+
+struct ove_netif {
+	int initialized;
+};
+
+typedef struct ove_socket ove_socket_storage_t;
+typedef struct ove_netif  ove_netif_storage_t;
+#endif /* CONFIG_OVE_NET */
+
+#ifdef CONFIG_OVE_NET_TLS
+#ifdef CONFIG_OVE_ZERO_HEAP
+#include "mbedtls/ssl.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/x509_crt.h"
+#include "mbedtls/pk.h"
+#endif
+struct ove_tls {
+	ove_socket_t sock;
+	void        *ssl;
+	void        *ssl_ctx;
+	void        *conf;
+	void        *entropy;
+	void        *ctr_drbg;
+	void        *cacert;
+	void        *client_cert;  /* mbedtls_x509_crt * for mTLS */
+	void        *client_key;   /* mbedtls_pk_context * for mTLS */
+#ifdef CONFIG_OVE_ZERO_HEAP
+	mbedtls_ssl_context      _ssl;
+	mbedtls_ssl_config       _conf;
+	mbedtls_entropy_context  _entropy;
+	mbedtls_ctr_drbg_context _ctr_drbg;
+	mbedtls_x509_crt         _cacert;
+	mbedtls_x509_crt         _client_cert;
+	mbedtls_pk_context       _client_key;
+#endif
+};
+
+typedef struct ove_tls ove_tls_storage_t;
+#endif /* CONFIG_OVE_NET_TLS */
+
+#ifdef CONFIG_OVE_NET_HTTP
+struct ove_http_client {
+	void *tls;           /* ove_tls_t or NULL for plain HTTP */
+	ove_socket_t sock;
+	char host[128];
+	uint16_t port;
+	int use_tls;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	char _resp_buf[CONFIG_OVE_NET_HTTP_MAX_RESPONSE];
+#endif
+};
+
+typedef struct ove_http_client ove_http_client_storage_t;
+#endif /* CONFIG_OVE_NET_HTTP */
+
+#ifdef CONFIG_OVE_NET_MQTT
+struct ove_mqtt_client {
+	ove_socket_t sock;
+	ove_socket_storage_t sock_storage;
+	void        *tls;      /* ove_tls_t or NULL */
+	uint8_t     *rx_buf;
+	size_t       rx_size;
+	uint8_t     *tx_buf;
+	size_t       tx_size;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	uint8_t      _rx_buf[CONFIG_OVE_NET_MQTT_RX_BUF];
+	uint8_t      _tx_buf[CONFIG_OVE_NET_MQTT_TX_BUF];
+#endif
+	uint16_t     keep_alive_s;
+	uint16_t     pkt_id;
+	int          connected;
+#ifndef CONFIG_OVE_NET_MQTT_MAX_SUBS
+#define CONFIG_OVE_NET_MQTT_MAX_SUBS 8
+#endif
+	char         sub_filters[CONFIG_OVE_NET_MQTT_MAX_SUBS][64];
+	unsigned int sub_count;
+	void       (*on_message)(const char *topic, size_t topic_len,
+				 const void *payload, size_t payload_len,
+				 void *user_data);
+	void        *user_data;
+};
+
+typedef struct ove_mqtt_client ove_mqtt_client_storage_t;
+#endif /* CONFIG_OVE_NET_MQTT */
+
 #ifdef __cplusplus
 }
 #endif

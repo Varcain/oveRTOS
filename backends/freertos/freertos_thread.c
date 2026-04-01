@@ -202,3 +202,64 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }
+
+int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
+{
+	if (!stats) return OVE_ERR_INVALID_PARAM;
+#if configSUPPORT_DYNAMIC_ALLOCATION
+	stats->total     = configTOTAL_HEAP_SIZE;
+	stats->free      = xPortGetFreeHeapSize();
+	stats->used      = stats->total - stats->free;
+	stats->peak_used = stats->total - xPortGetMinimumEverFreeHeapSize();
+#else
+	stats->total     = 0;
+	stats->free      = 0;
+	stats->used      = 0;
+	stats->peak_used = 0;
+#endif
+	return OVE_OK;
+}
+
+int ove_thread_list(struct ove_thread_info *out, size_t max_count,
+		    size_t *actual_count)
+{
+#if configUSE_TRACE_FACILITY
+	if (!out) {
+		if (actual_count)
+			*actual_count = (size_t)uxTaskGetNumberOfTasks();
+		return OVE_OK;
+	}
+
+	UBaseType_t count = uxTaskGetNumberOfTasks();
+	if (count > (UBaseType_t)max_count)
+		count = (UBaseType_t)max_count;
+
+	TaskStatus_t *tasks = pvPortMalloc(count * sizeof(TaskStatus_t));
+	if (!tasks) return OVE_ERR_NO_MEMORY;
+
+	UBaseType_t filled = uxTaskGetSystemState(tasks, count, NULL);
+	for (UBaseType_t i = 0; i < filled; i++) {
+		out[i].name       = tasks[i].pcTaskName;
+		out[i].priority   = (int)tasks[i].uxCurrentPriority;
+		out[i].stack_used = tasks[i].usStackHighWaterMark *
+				    sizeof(StackType_t);
+		switch (tasks[i].eCurrentState) {
+		case eRunning:   out[i].state = OVE_THREAD_STATE_RUNNING;   break;
+		case eReady:     out[i].state = OVE_THREAD_STATE_READY;     break;
+		case eBlocked:   out[i].state = OVE_THREAD_STATE_BLOCKED;   break;
+		case eSuspended: out[i].state = OVE_THREAD_STATE_SUSPENDED; break;
+		default:         out[i].state = OVE_THREAD_STATE_UNKNOWN;   break;
+		}
+	}
+	if (actual_count)
+		*actual_count = (size_t)filled;
+
+	vPortFree(tasks);
+	return OVE_OK;
+#else
+	(void)out;
+	(void)max_count;
+	(void)actual_count;
+	return OVE_ERR_NOT_SUPPORTED;
+#endif /* configUSE_TRACE_FACILITY */
+}

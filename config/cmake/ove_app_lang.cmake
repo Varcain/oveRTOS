@@ -38,4 +38,18 @@ function(ove_apply_app_language TARGET)
     else()
         message(FATAL_ERROR "Unknown OVE_APP_LANG: ${OVE_APP_LANG}")
     endif()
+
+    # Companion C/C++ sources (e.g. legacy model data for non-C apps)
+    if(DEFINED APP_C_COMPANION_SOURCES AND APP_C_COMPANION_SOURCES)
+        target_sources(${TARGET} PRIVATE ${APP_C_COMPANION_SOURCES})
+        if(DEFINED APP_C_COMPANION_INCLUDES AND APP_C_COMPANION_INCLUDES)
+            target_include_directories(${TARGET} PRIVATE ${APP_C_COMPANION_INCLUDES})
+        endif()
+    endif()
+
+    # Generate and link model data from models/*.tflite when inference is enabled
+    if(OVE_INFER)
+        include(${OVE_DIR}/cmake/OveModels.cmake)
+        ove_generate_models(${TARGET})
+    endif()
 endfunction()

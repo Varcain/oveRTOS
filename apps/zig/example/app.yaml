@@ -1,0 +1,6 @@
+lang: zig
+config_name: example_zig
+description: "Zig Demo"
+zig:
+  src_dir: src
+  lib_name: example_zig

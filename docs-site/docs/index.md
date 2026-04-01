@@ -5,7 +5,7 @@ oveRTOS is an embedded RTOS framework that provides a unified build system, Kcon
 ## Key Features
 
 - **Integrated build system** — downloads RTOS sources and toolchains, generates RTOS-native configuration (FreeRTOSConfig.h, Zephyr prj.conf, NuttX defconfig), and orchestrates cross-compilation via each backend's native build tools
-- **23 API modules** — threads, synchronization, queues, timers, event groups, work queues, streams, audio, filesystem, GPIO, LEDs, console, logging, shell, NVS, watchdog, and more
+- **29 API modules** — threads, synchronization, queues, timers, event groups, work queues, streams, audio, filesystem, GPIO, LEDs, console, logging, shell, NVS, watchdog, networking (sockets, TLS, HTTP, MQTT, HTTPD, SNTP), and more
 - **4 RTOS backends** — FreeRTOS (via STM32CubeF7), Apache NuttX, Zephyr RTOS, and POSIX/SDL2 for native host development
 - **4 language bindings** — C, C++ (RAII wrappers), Rust (no_std crate), and Zig (comptime-safe wrappers)
 - **LVGL integration** — the LVGL graphics library is included and built across all backends, with thread-safe locking and display driver support for hardware, QEMU, and SDL2 targets
@@ -40,6 +40,12 @@ oveRTOS is an embedded RTOS framework that provides a unified build system, Kcon
 | `ove/nvs.h` | Non-volatile storage |
 | `ove/shell.h` | Interactive shell |
 | `ove/storage.h` | Backend-specific opaque storage types and static macros |
+| `ove/net.h` | Networking: sockets, DNS, network interface |
+| `ove/net_http.h` | HTTP/1.1 client |
+| `ove/net_tls.h` | TLS/SSL (mbedTLS) |
+| `ove/net_mqtt.h` | MQTT 3.1.1 client |
+| `ove/net_httpd.h` | Embedded HTTP server |
+| `ove/net_sntp.h` | SNTP time synchronization |
 | `ove/app.h` | Application lifecycle hooks |
 
 Include every module at once with the umbrella header:

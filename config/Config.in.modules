@@ -147,6 +147,117 @@ config OVE_INFER_ARENA_SIZE
 
 endmenu
 
+menu "Networking"
+
+config OVE_NET
+    bool "Socket API (TCP/UDP) and DNS"
+    default n
+    help
+      BSD-like socket API with DNS resolution. Each backend uses
+      its native TCP/IP stack (POSIX sockets, lwIP, Zephyr net,
+      NuttX sockets).
+
+config OVE_NET_TLS
+    bool "TLS (mbedTLS)"
+    default n
+    depends on OVE_NET
+    help
+      Portable TLS layer using mbedTLS. Provides encrypted
+      sockets for HTTPS and secure MQTT.
+
+config OVE_NET_HTTP
+    bool "HTTP/1.1 client"
+    default n
+    depends on OVE_NET
+    help
+      Portable HTTP/1.1 client for REST APIs. Supports both
+      plain HTTP and HTTPS (when OVE_NET_TLS is enabled).
+
+config OVE_NET_MQTT
+    bool "MQTT 3.1.1 client"
+    default n
+    depends on OVE_NET
+    help
+      Lightweight MQTT 3.1.1 client for IoT pub/sub messaging.
+      Supports QoS 0/1, keep-alive, and optional TLS.
+
+config OVE_NET_MQTT_RX_BUF
+    int "MQTT receive buffer size (bytes)"
+    default 1024
+    depends on OVE_NET_MQTT
+
+config OVE_NET_MQTT_TX_BUF
+    int "MQTT transmit buffer size (bytes)"
+    default 512
+    depends on OVE_NET_MQTT
+
+config OVE_NET_MQTT_MAX_SUBS
+    int "Max concurrent MQTT subscriptions"
+    default 8
+    depends on OVE_NET_MQTT
+    help
+      Maximum number of topic filters tracked for wildcard matching.
+
+config OVE_NET_SNTP
+    bool "SNTP time synchronization"
+    default n
+    depends on OVE_NET && OVE_TIME
+    help
+      Simple NTP client that queries a time server over UDP and
+      stores a UTC offset for wall-clock time correction.
+
+config OVE_NET_TLS_HEAP_SIZE
+    int "TLS static heap size (bytes)"
+    default 32768
+    depends on OVE_NET_TLS
+    help
+      Size of the static buffer used by mbedTLS for internal
+      allocations in zero-heap mode. 32KB is sufficient for
+      TLS 1.2 with RSA-2048. Increase for larger certificates.
+
+config OVE_NET_HTTP_MAX_RESPONSE
+    int "HTTP client max response buffer size (bytes)"
+    default 8192
+    depends on OVE_NET_HTTP
+    help
+      Maximum HTTP response size in zero-heap mode where the buffer
+      cannot grow dynamically.
+
+config OVE_NET_HTTPD_MAX_BODY
+    int "HTTPD max POST body size (bytes)"
+    default 1024
+    depends on OVE_NET_HTTPD
+
+config OVE_NET_HTTPD
+    bool "Embedded HTTP server"
+    default n
+    depends on OVE_NET
+    help
+      Lightweight single-threaded HTTP server with REST API
+      routing and a built-in web dashboard for device management
+      (LEDs, GPIO, network config, log console).
+
+config OVE_NET_HTTPD_WS
+    bool "WebSocket support"
+    default n
+    depends on OVE_NET_HTTPD
+    help
+      Adds RFC 6455 WebSocket upgrade and frame parsing to the
+      embedded HTTP server.  Enables real-time bidirectional push
+      from device to browser without polling.
+
+config OVE_NET_HTTPD_WS_MAX_CONNS
+    int "Max concurrent WebSocket connections"
+    default 4
+    depends on OVE_NET_HTTPD_WS
+
+config OVE_NET_HTTPD_WS_MAX_FRAME
+    int "Max WebSocket frame payload (bytes)"
+    default 1024
+    depends on OVE_NET_HTTPD_WS
+
+endmenu
+
 comment "Heap policy"
 
 config OVE_ZERO_HEAP

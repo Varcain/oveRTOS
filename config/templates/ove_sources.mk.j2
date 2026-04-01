@@ -15,7 +15,7 @@ OVE_BACKEND_SRCS = \
     $(OVE_DIR)/backends/nuttx/nuttx_thread.c \
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     $(OVE_DIR)/backends/nuttx/nuttx_{{ mod|lower }}.c \
 {% endif %}
@@ -25,5 +25,30 @@ OVE_BACKEND_SRCS = \
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     $(OVE_DIR)/backends/nuttx/nuttx_board.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_AUDIO") == True %}
+    $(OVE_DIR)/backends/common/ove_audio_graph.c \
+    $(OVE_DIR)/backends/common/ove_audio_nodes.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_TLS") == True %}
+    $(OVE_DIR)/backends/common/ove_net_tls.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_HTTP") == True %}
+    $(OVE_DIR)/backends/common/ove_net_http.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_MQTT") == True %}
+    $(OVE_DIR)/backends/common/ove_net_mqtt.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_HTTPD") == True %}
+    $(OVE_DIR)/backends/common/ove_net_httpd.c \
+    $(OVE_DIR)/backends/common/ove_net_httpd_routes.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_HTTPD_WS") == True %}
+    $(OVE_DIR)/backends/common/ove_net_httpd_ws.c \
+    $(OVE_DIR)/backends/common/ove_sha1.c \
+    $(OVE_DIR)/backends/common/ove_base64.c \
+{% endif %}
+{% if config.get("CONFIG_OVE_NET_SNTP") == True %}
+    $(OVE_DIR)/backends/common/ove_net_sntp.c \
 {% endif %}
 

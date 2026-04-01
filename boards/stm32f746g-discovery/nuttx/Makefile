@@ -32,7 +32,11 @@ ifeq ($(OVE_APP_DIR),)
     OVE_APP_NAME := $(shell grep '^CONFIG_OVE_APP_NAME=' \
         $(OVE_DIR)/.config 2>/dev/null | cut -d'"' -f2)
     ifneq ($(OVE_APP_NAME),)
-        OVE_APP_DIR := $(OVE_DIR)/apps/$(OVE_APP_NAME)
+        # Resolve via app_paths.json (supports two-level apps/<lang>/<app> layout)
+        OVE_APP_DIR := $(shell python3 -c "import json,sys; d=json.load(open('$(OVE_DIR)/output/kconfig/app_paths.json')); print(d.get('$(OVE_APP_NAME)',''))" 2>/dev/null)
+        ifeq ($(OVE_APP_DIR),)
+            OVE_APP_DIR := $(OVE_DIR)/apps/$(OVE_APP_NAME)
+        endif
     endif
 endif
 

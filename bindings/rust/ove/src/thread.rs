@@ -90,7 +90,7 @@ impl Thread {
             name: name.as_ptr() as *const _,
             entry: Some(entry),
             arg: core::ptr::null_mut(),
-            priority: priority as u32,
+            priority: priority as bindings::ove_prio_t,
             stack_size,
             stack: core::ptr::null_mut(),
         };
@@ -124,7 +124,7 @@ impl Thread {
             name: name.as_ptr() as *const _,
             entry: Some(trampoline),
             arg: entry as *mut core::ffi::c_void,
-            priority: priority as u32,
+            priority: priority as bindings::ove_prio_t,
             stack_size,
             stack: core::ptr::null_mut(),
         };
@@ -178,7 +178,7 @@ impl Thread {
             name: name.as_ptr() as *const _,
             entry: Some(trampoline),
             arg: entry as *mut core::ffi::c_void,
-            priority: priority as u32,
+            priority: priority as bindings::ove_prio_t,
             stack_size,
             stack,
         };
@@ -200,7 +200,7 @@ impl Thread {
 
     /// Set this thread's priority.
     pub fn set_priority(&self, prio: Priority) {
-        unsafe { bindings::ove_thread_set_priority(self.handle, prio as u32) }
+        unsafe { bindings::ove_thread_set_priority(self.handle, prio as bindings::ove_prio_t) }
     }
 
     /// Get current stack usage in bytes.
@@ -252,6 +252,95 @@ impl fmt::Debug for Thread {
             .field("owned", &self.owned)
             .finish()
     }
+}
+
+// ---------------------------------------------------------------------------
+// System heap statistics
+// ---------------------------------------------------------------------------
+
+/// System heap statistics.
+#[derive(Debug, Clone, Copy)]
+pub struct MemStats {
+    /// Total heap size in bytes.
+    pub total: usize,
+    /// Current free heap in bytes.
+    pub free: usize,
+    /// Current used heap in bytes.
+    pub used: usize,
+    /// High-water-mark usage in bytes.
+    pub peak_used: usize,
+}
+
+/// Query system heap statistics.
+///
+/// # Errors
+/// Returns an error if the RTOS does not support heap statistics.
+pub fn get_mem_stats() -> Result<MemStats> {
+    let mut raw: bindings::ove_mem_stats = unsafe { core::mem::zeroed() };
+    let rc = unsafe { bindings::ove_sys_get_mem_stats(&mut raw) };
+    Error::from_code(rc)?;
+    Ok(MemStats {
+        total: raw.total,
+        free: raw.free,
+        used: raw.used,
+        peak_used: raw.peak_used,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Thread enumeration
+// ---------------------------------------------------------------------------
+
+/// Snapshot of a single thread's info.
+#[derive(Debug, Clone, Copy)]
+pub struct ThreadInfo {
+    /// Thread name (static string from RTOS).
+    pub name: &'static [u8],
+    /// Execution state.
+    pub state: bindings::ove_thread_state_t,
+    /// Priority level.
+    pub priority: i32,
+    /// Stack high-water mark in bytes.
+    pub stack_used: usize,
+}
+
+/// List all threads in the system.
+///
+/// Fills the provided buffer with thread info snapshots and returns the
+/// slice of entries actually written.
+///
+/// # Errors
+/// Returns an error if the RTOS does not support thread enumeration.
+pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
+    const MAX_THREADS: usize = 32;
+    let count = buf.len().min(MAX_THREADS);
+    let mut raw: [bindings::ove_thread_info; MAX_THREADS] = unsafe { core::mem::zeroed() };
+    let mut actual: usize = 0;
+    let rc = unsafe { bindings::ove_thread_list(raw.as_mut_ptr(), count, &mut actual) };
+    Error::from_code(rc)?;
+
+    let actual = actual.min(count);
+    for i in 0..actual {
+        let name = if raw[i].name.is_null() {
+            &[]
+        } else {
+            unsafe {
+                let p = raw[i].name as *const u8;
+                let mut len = 0;
+                while *p.add(len) != 0 {
+                    len += 1;
+                }
+                core::slice::from_raw_parts(p, len)
+            }
+        };
+        buf[i] = ThreadInfo {
+            name,
+            state: raw[i].state,
+            priority: raw[i].priority,
+            stack_used: raw[i].stack_used,
+        };
+    }
+    Ok(&buf[..actual])
 }
 
 impl Drop for Thread {

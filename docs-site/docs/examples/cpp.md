@@ -1,6 +1,6 @@
 # C++ Example
 
-Source: `apps/example_cpp/src/app.cpp`
+Source: `apps/cpp/example/src/app.cpp`
 
 The C++ example demonstrates the `ove::lvgl` C++20 wrapper layer. It implements the same producer-consumer pattern as the C example, but replaces manual handles and C-style API calls with RAII types, fluent widget builders, and reactive state bindings.
 
@@ -160,3 +160,11 @@ OVE_MAIN()
 | `lv::LvglGuard` | RAII LVGL display lock |
 | `lv::Box` / `lv::Label` / `lv::Bar` | Fluent widget builders |
 | `ove::run()` | Start the RTOS scheduler |
+
+---
+
+## Networking Example
+
+Source: `apps/cpp/example_net/`
+
+The C++ networking example uses RAII wrappers for all network resources with a structured test harness (TEST/PASS/FAIL tracking with results summary). DNS (positive and negative), TCP, UDP echo, HTTP GET/POST/PUT with custom headers, SNTP time sync, MQTT pub/sub, and the built-in HTTPD dashboard are all tested using `ove::NetIf`, `ove::TcpSocket`, `ove::UdpSocket`, `ove::dns`, `ove::http`, `ove::sntp`, `ove::mqtt`, and `ove::httpd` namespaces. Resources clean up automatically via destructors. Entry point uses `OVE_MAIN()` and `ove::run()`. See the [Networking API Guide](../api/net.md) for the full API.

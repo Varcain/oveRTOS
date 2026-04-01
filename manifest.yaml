@@ -51,3 +51,9 @@ libraries:
   tflm:
     version: "f5302ed4fa99b7ec697e578057a1f61445a442fe"
     url: "https://github.com/tensorflow/tflite-micro.git"
+  mbedtls:
+    version: "v3.6.2"
+    url: "https://github.com/Mbed-TLS/mbedtls.git"
+  lwip:
+    version: "STABLE-2_2_0_RELEASE"
+    url: "https://github.com/lwip-tcpip/lwip.git"

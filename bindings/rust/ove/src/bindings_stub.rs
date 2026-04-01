@@ -100,6 +100,12 @@ pub type ove_file_t       = *mut c_void;
 pub type ove_dir_t        = *mut c_void;
 pub type ove_queue_t      = *mut c_void;
 pub type ove_timer_t      = *mut c_void;
+pub type ove_model_t      = *mut c_void;
+pub type ove_netif_t      = *mut c_void;
+pub type ove_socket_t     = *mut c_void;
+pub type ove_http_client_t = *mut c_void;
+pub type ove_mqtt_client_t = *mut c_void;
+pub type ove_tls_t        = *mut c_void;
 
 pub type ove_eventbits_t = u32;
 
@@ -135,6 +141,99 @@ pub struct ove_watchdog_storage_t   { _opaque: [u8; 256] }
 pub struct ove_file_storage_t       { _opaque: [u8; 256] }
 #[repr(C)]
 pub struct ove_dir_storage_t        { _opaque: [u8; 256] }
+#[repr(C)]
+pub struct ove_model_storage_t      { _opaque: [u8; 256] }
+#[repr(C)]
+pub struct ove_netif_storage_t      { _opaque: [u8; 256] }
+#[repr(C)]
+pub struct ove_socket_storage_t     { _opaque: [u8; 256] }
+#[repr(C)]
+pub struct ove_http_client_storage_t { _opaque: [u8; 256] }
+#[repr(C)]
+pub struct ove_mqtt_client_storage_t { _opaque: [u8; 256] }
+#[repr(C)]
+pub struct ove_tls_storage_t        { _opaque: [u8; 256] }
+
+// ---------------------------------------------------------------------------
+// Networking types
+// ---------------------------------------------------------------------------
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ove_sockaddr_t {
+    pub family: u8,
+    pub port: u16,
+    pub addr: [u8; 16],
+}
+
+#[repr(C)]
+pub struct ove_netif_config_t {
+    pub use_dhcp: core::ffi::c_int,
+    pub static_ip: ove_sockaddr_t,
+    pub gateway: ove_sockaddr_t,
+    pub netmask: ove_sockaddr_t,
+    pub dns: ove_sockaddr_t,
+}
+
+pub type ove_http_method_t = u32;
+pub const OVE_HTTP_GET: ove_http_method_t = 0;
+pub const OVE_HTTP_POST: ove_http_method_t = 1;
+pub const OVE_HTTP_PUT: ove_http_method_t = 2;
+pub const OVE_HTTP_DELETE: ove_http_method_t = 3;
+pub const OVE_HTTP_PATCH: ove_http_method_t = 4;
+
+#[repr(C)]
+pub struct ove_http_response_t {
+    pub status: i32,
+    pub body: *mut core::ffi::c_char,
+    pub body_len: usize,
+    pub headers: *mut core::ffi::c_char,
+    pub headers_len: usize,
+}
+
+#[repr(C)]
+pub struct ove_http_header_t {
+    pub name: *const core::ffi::c_char,
+    pub value: *const core::ffi::c_char,
+}
+
+pub type ove_mqtt_qos_t = u32;
+pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
+pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
+
+#[repr(C)]
+pub struct ove_mqtt_config_t {
+    pub host: *const core::ffi::c_char,
+    pub port: u16,
+    pub client_id: *const core::ffi::c_char,
+    pub username: *const core::ffi::c_char,
+    pub password: *const core::ffi::c_char,
+    pub keep_alive_s: u16,
+    pub use_tls: core::ffi::c_int,
+    pub on_message: Option<unsafe extern "C" fn(*const core::ffi::c_char, usize, *const c_void, usize, *mut c_void)>,
+    pub user_data: *mut c_void,
+}
+
+pub type ove_httpd_handler_t = Option<unsafe extern "C" fn(*mut c_void, *mut c_void) -> core::ffi::c_int>;
+pub type ove_httpd_req_t = c_void;
+pub type ove_httpd_resp_t = c_void;
+pub type ove_httpd_ws_handler_t = Option<unsafe extern "C" fn(*mut c_void, *const c_void, usize) -> core::ffi::c_int>;
+pub type ove_httpd_ws_close_handler_t = Option<unsafe extern "C" fn(*mut c_void)>;
+pub type ove_httpd_ws_conn_t = c_void;
+
+#[repr(C)]
+pub struct ove_tls_config_t {
+    pub ca_cert: *const u8,
+    pub ca_cert_len: usize,
+    pub hostname: *const core::ffi::c_char,
+}
+
+#[repr(C)]
+pub struct ove_model_config {
+    pub model_data: *const u8,
+    pub model_size: usize,
+    pub arena_size: usize,
+}
 
 // ---------------------------------------------------------------------------
 // Struct types
@@ -250,6 +349,8 @@ pub struct ove_shell_cmd {
 pub type ove_thread_fn      = Option<unsafe extern "C" fn(*mut c_void)>;
 pub type ove_timer_fn       = Option<unsafe extern "C" fn(ove_timer_t, *mut c_void)>;
 pub type ove_work_fn        = Option<unsafe extern "C" fn(ove_work_t)>;
+pub type ove_shell_output_hook_t = Option<unsafe extern "C" fn(*const core::ffi::c_char)>;
+pub type ove_thread_state_t = u32;
 /* ove_audio_process_fn removed — replaced by graph node vtable */
 pub type ove_gpio_irq_cb    = Option<unsafe extern "C" fn(u32, u32, *mut c_void)>;
 pub type ove_shell_cmd_fn   = Option<unsafe extern "C" fn(i32, *const *const core::ffi::c_char)>;
@@ -574,6 +675,88 @@ unsafe extern "C" {
     pub fn ove_lvgl_tick(ms: u32);
     pub fn ove_lvgl_handler();
 
+    // --- infer (ML model) ---
+    pub fn ove_model_create(m: *mut ove_model_t, cfg: *const ove_model_config) -> i32;
+    pub fn ove_model_destroy(m: ove_model_t);
+    pub fn ove_model_init(m: *mut ove_model_t, storage: *mut ove_model_storage_t, arena: *mut u8, cfg: *const ove_model_config) -> i32;
+    pub fn ove_model_deinit(m: ove_model_t);
+    pub fn ove_model_invoke(m: ove_model_t) -> i32;
+    pub fn ove_model_last_inference_us(m: ove_model_t) -> u64;
+
+    // --- networking ---
+    pub fn ove_sockaddr_ipv4(addr: *mut ove_sockaddr_t, a: u8, b: u8, c: u8, d: u8, port: u16);
+    pub fn ove_dns_resolve(hostname: *const core::ffi::c_char, addr: *mut ove_sockaddr_t, timeout_ms: u32) -> i32;
+    pub fn ove_netif_init(netif: *mut ove_netif_t, storage: *mut ove_netif_storage_t) -> i32;
+    pub fn ove_netif_deinit(netif: ove_netif_t);
+    pub fn ove_netif_create(netif: *mut ove_netif_t) -> i32;
+    pub fn ove_netif_destroy(netif: ove_netif_t);
+    pub fn ove_netif_up(netif: ove_netif_t, cfg: *const ove_netif_config_t) -> i32;
+    pub fn ove_netif_down(netif: ove_netif_t);
+    pub fn ove_netif_get_addr(netif: ove_netif_t, ip: *mut ove_sockaddr_t, gw: *mut ove_sockaddr_t, nm: *mut ove_sockaddr_t) -> i32;
+    pub fn ove_socket_open(sock: *mut ove_socket_t, storage: *mut ove_socket_storage_t, af: u8, sock_type: u8) -> i32;
+    pub fn ove_socket_close(sock: ove_socket_t);
+    pub fn ove_socket_create(sock: *mut ove_socket_t, af: u8, sock_type: u8) -> i32;
+    pub fn ove_socket_destroy(sock: ove_socket_t);
+    pub fn ove_socket_connect(sock: ove_socket_t, addr: *const ove_sockaddr_t, timeout_ms: u32) -> i32;
+    pub fn ove_socket_bind(sock: ove_socket_t, addr: *const ove_sockaddr_t) -> i32;
+    pub fn ove_socket_listen(sock: ove_socket_t, backlog: i32) -> i32;
+    pub fn ove_socket_accept(sock: ove_socket_t, client: *mut ove_socket_t, client_storage: *mut ove_socket_storage_t, timeout_ms: u32) -> i32;
+    pub fn ove_socket_send(sock: ove_socket_t, data: *const c_void, len: usize, sent: *mut usize) -> i32;
+    pub fn ove_socket_recv(sock: ove_socket_t, buf: *mut c_void, len: usize, received: *mut usize, timeout_ms: u32) -> i32;
+    pub fn ove_socket_sendto(sock: ove_socket_t, data: *const c_void, len: usize, sent: *mut usize, dest: *const ove_sockaddr_t) -> i32;
+    pub fn ove_socket_recvfrom(sock: ove_socket_t, buf: *mut c_void, len: usize, received: *mut usize, src: *mut ove_sockaddr_t, timeout_ms: u32) -> i32;
+    pub fn ove_http_client_init(client: *mut ove_http_client_t, storage: *mut ove_http_client_storage_t) -> i32;
+    pub fn ove_http_client_deinit(client: ove_http_client_t);
+    pub fn ove_http_client_create(client: *mut ove_http_client_t) -> i32;
+    pub fn ove_http_client_destroy(client: ove_http_client_t);
+    pub fn ove_http_get(client: ove_http_client_t, url: *const core::ffi::c_char, resp: *mut ove_http_response_t) -> i32;
+    pub fn ove_http_post(client: ove_http_client_t, url: *const core::ffi::c_char, ct: *const core::ffi::c_char, body: *const c_void, body_len: usize, resp: *mut ove_http_response_t) -> i32;
+    pub fn ove_http_request_ex(client: ove_http_client_t, method: ove_http_method_t, url: *const core::ffi::c_char, ct: *const core::ffi::c_char, body: *const c_void, body_len: usize, headers: *const ove_http_header_t, header_count: usize, resp: *mut ove_http_response_t) -> i32;
+    pub fn ove_http_response_free(resp: *mut ove_http_response_t);
+    pub fn ove_mqtt_client_init(client: *mut ove_mqtt_client_t, storage: *mut ove_mqtt_client_storage_t) -> i32;
+    pub fn ove_mqtt_client_deinit(client: ove_mqtt_client_t);
+    pub fn ove_mqtt_client_create(client: *mut ove_mqtt_client_t) -> i32;
+    pub fn ove_mqtt_client_destroy(client: ove_mqtt_client_t);
+    pub fn ove_mqtt_connect(client: ove_mqtt_client_t, cfg: *const ove_mqtt_config_t) -> i32;
+    pub fn ove_mqtt_disconnect(client: ove_mqtt_client_t);
+    pub fn ove_mqtt_publish(client: ove_mqtt_client_t, topic: *const core::ffi::c_char, payload: *const c_void, payload_len: usize, qos: ove_mqtt_qos_t) -> i32;
+    pub fn ove_mqtt_subscribe(client: ove_mqtt_client_t, topic: *const core::ffi::c_char, qos: ove_mqtt_qos_t) -> i32;
+    pub fn ove_mqtt_unsubscribe(client: ove_mqtt_client_t, topic: *const core::ffi::c_char) -> i32;
+    pub fn ove_mqtt_loop(client: ove_mqtt_client_t, timeout_ms: u32) -> i32;
+    pub fn ove_httpd_start(cfg: *const c_void) -> i32;
+    pub fn ove_httpd_stop();
+    pub fn ove_httpd_route(method: *const core::ffi::c_char, path: *const core::ffi::c_char, handler: ove_httpd_handler_t) -> i32;
+    pub fn ove_httpd_register_builtin_routes();
+    pub fn ove_httpd_req_method(req: *mut c_void) -> *const core::ffi::c_char;
+    pub fn ove_httpd_req_path(req: *mut c_void) -> *const core::ffi::c_char;
+    pub fn ove_httpd_req_query(req: *mut c_void) -> *const core::ffi::c_char;
+    pub fn ove_httpd_req_body(req: *mut c_void) -> *const core::ffi::c_char;
+    pub fn ove_httpd_req_body_len(req: *mut c_void) -> usize;
+    pub fn ove_httpd_req_segment(req: *mut c_void, idx: i32) -> *const core::ffi::c_char;
+    pub fn ove_httpd_resp_json(resp: *mut c_void, status: i32, json: *const core::ffi::c_char) -> i32;
+    pub fn ove_httpd_resp_html(resp: *mut c_void, status: i32, html: *const core::ffi::c_char, len: usize) -> i32;
+    pub fn ove_httpd_resp_send(resp: *mut c_void, status: i32, ct: *const core::ffi::c_char, body: *const c_void, len: usize) -> i32;
+    pub fn ove_httpd_resp_send_gz(resp: *mut c_void, status: i32, ct: *const core::ffi::c_char, body: *const c_void, len: usize) -> i32;
+    pub fn ove_httpd_resp_error(resp: *mut c_void, status: i32, msg: *const core::ffi::c_char) -> i32;
+    pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
+    pub fn ove_httpd_set_netif(netif: ove_netif_t);
+    pub fn ove_httpd_ws_route(path: *const core::ffi::c_char, on_msg: ove_httpd_ws_handler_t, on_close: ove_httpd_ws_close_handler_t) -> i32;
+    pub fn ove_httpd_ws_send(conn: *mut ove_httpd_ws_conn_t, data: *const c_void, len: usize) -> i32;
+    pub fn ove_httpd_ws_broadcast(path: *const core::ffi::c_char, data: *const c_void, len: usize) -> i32;
+    pub fn ove_httpd_ws_active_count() -> i32;
+    pub fn ove_tls_init(tls: *mut ove_tls_t, storage: *mut ove_tls_storage_t) -> i32;
+    pub fn ove_tls_deinit(tls: ove_tls_t);
+    pub fn ove_tls_create(tls: *mut ove_tls_t) -> i32;
+    pub fn ove_tls_destroy(tls: ove_tls_t);
+    pub fn ove_tls_handshake(tls: ove_tls_t, sock: ove_socket_t, cfg: *const ove_tls_config_t) -> i32;
+    pub fn ove_tls_send(tls: ove_tls_t, data: *const c_void, len: usize, sent: *mut usize) -> i32;
+    pub fn ove_tls_recv(tls: ove_tls_t, buf: *mut c_void, len: usize, received: *mut usize) -> i32;
+    pub fn ove_tls_close(tls: ove_tls_t);
+    pub fn ove_shell_set_output_hook(hook: ove_shell_output_hook_t);
+    pub fn ove_sntp_sync(cfg: *const c_void) -> i32;
+    pub fn ove_sntp_get_offset_us(offset_us: *mut i64) -> i32;
+    pub fn ove_sntp_get_utc(utc_s: *mut u32) -> i32;
+
 } // extern "C" oveRTOS
 
 // ---------------------------------------------------------------------------
@@ -609,6 +792,8 @@ pub struct lv_style_t {
 
 /// LVGL event callback function pointer type.
 pub type lv_event_cb_t = Option<unsafe extern "C" fn(*mut c_void)>;
+/// LVGL event code type.
+pub type lv_event_code_t = u32;
 
 // ---------------------------------------------------------------------------
 // LVGL constants

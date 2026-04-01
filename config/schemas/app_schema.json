@@ -14,6 +14,20 @@
       "type": "string",
       "description": "Human-readable description shown in Kconfig menu."
     },
+    "config_name": {
+      "type": "string",
+      "description": "Kconfig symbol name for the app. Defaults to directory name if omitted."
+    },
+    "c_sources": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Additional C/C++ source files compiled alongside non-C apps (e.g. model data for Rust/Zig)."
+    },
+    "c_includes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Additional include paths for c_sources."
+    },
     "sources": {
       "type": "array",
       "items": { "type": "string" },

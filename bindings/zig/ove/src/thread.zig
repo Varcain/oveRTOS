@@ -231,3 +231,60 @@ pub const Thread = struct {
         c.ove_thread_yield();
     }
 };
+
+// ---------------------------------------------------------------------------
+// System memory statistics
+// ---------------------------------------------------------------------------
+
+/// System heap statistics.
+pub const MemStats = struct {
+    total: usize,
+    free: usize,
+    used: usize,
+    peak_used: usize,
+};
+
+/// Query system heap statistics.
+///
+/// Returns `Error` if the RTOS does not support heap statistics.
+pub fn getMemStats() Error!MemStats {
+    var raw: c.struct_ove_mem_stats = undefined;
+    try err.fromCode(c.ove_sys_get_mem_stats(&raw));
+    return .{
+        .total = raw.total,
+        .free = raw.free,
+        .used = raw.used,
+        .peak_used = raw.peak_used,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Thread enumeration
+// ---------------------------------------------------------------------------
+
+/// Snapshot of a single thread's info.
+pub const ThreadInfo = struct {
+    name: [*:0]const u8,
+    state: State,
+    priority: i32,
+    stack_used: usize,
+};
+
+/// List all threads in the system.
+///
+/// Returns a slice into `buf` with the actual number of threads found.
+pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
+    const max = @min(buf.len, 16);
+    var raw: [16]c.struct_ove_thread_info = std.mem.zeroes([16]c.struct_ove_thread_info);
+    var actual: usize = 0;
+    try err.fromCode(c.ove_thread_list(&raw, max, &actual));
+    for (0..actual) |i| {
+        buf[i] = .{
+            .name = @ptrCast(raw[i].name),
+            .state = raw[i].state,
+            .priority = raw[i].priority,
+            .stack_used = raw[i].stack_used,
+        };
+    }
+    return buf[0..actual];
+}

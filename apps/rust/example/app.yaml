@@ -1,0 +1,5 @@
+lang: rust
+config_name: example_rust
+description: "Rust Demo"
+rust:
+  lib_name: example_rust

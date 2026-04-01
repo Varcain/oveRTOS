@@ -1,0 +1,7 @@
+lang: c
+config_name: example_c
+description: "C Demo"
+sources:
+  - src/app.c
+includes:
+  - include

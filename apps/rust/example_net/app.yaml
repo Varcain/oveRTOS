@@ -1,0 +1,5 @@
+lang: rust
+config_name: example_net_rust
+description: "Rust Networking Demo"
+rust:
+  lib_name: example_net_rust

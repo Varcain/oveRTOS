@@ -97,6 +97,15 @@ int main(void)
 	printf("=== Inference Tests ===\n");
 	failures += test_infer_run();
 
+	printf("=== Net: MQTT Wildcard Tests ===\n");
+	failures += test_net_mqtt_run();
+
+	printf("=== Net: HTTPD (SHA1/Base64) Tests ===\n");
+	failures += test_net_httpd_run();
+
+	printf("=== Net: SNTP Tests ===\n");
+	failures += test_net_sntp_run();
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;
 }

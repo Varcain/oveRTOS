@@ -118,3 +118,17 @@ unsafe fn cstr_ptr_to_slice<'a>(ptr: *const u8) -> &'a [u8] {
     }
     unsafe { core::slice::from_raw_parts(ptr, len) }
 }
+
+/// Process a complete input line through the shell.
+///
+/// `line` must be a null-terminated byte string (e.g. `b"help\0"`).
+pub fn process_line(line: &[u8]) {
+    unsafe { bindings::ove_shell_process_line(line.as_ptr() as *const _) }
+}
+
+/// Set a hook to capture shell output.
+///
+/// Pass `None` to remove a previously set hook.
+pub fn set_output_hook(hook: bindings::ove_shell_output_hook_t) {
+    unsafe { bindings::ove_shell_set_output_hook(hook) }
+}
