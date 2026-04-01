@@ -166,8 +166,8 @@ unsafe extern "C" fn thread_sleep_1ms_run(_ctx: *mut c_void) {
 fn pong_thread() {
     while !THREAD_CTX_SWITCH_DONE.load(Ordering::Relaxed) {
         unsafe {
-            let _ = THREAD_PING_SEM.as_ref().unwrap().take(WAIT_FOREVER);
-            THREAD_PONG_SEM.as_ref().unwrap().give();
+            let _ = (*(&raw const THREAD_PING_SEM)).as_ref().unwrap().take(WAIT_FOREVER);
+            (*(&raw const THREAD_PONG_SEM)).as_ref().unwrap().give();
         }
     }
 }
@@ -175,9 +175,9 @@ fn pong_thread() {
 unsafe extern "C" fn ctx_switch_setup(_ctx: *mut c_void) {
     THREAD_CTX_SWITCH_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        THREAD_PING_SEM = Some(Semaphore::new(0, 1).unwrap());
-        THREAD_PONG_SEM = Some(Semaphore::new(0, 1).unwrap());
-        THREAD_BENCH_TH = Some(
+        *(&raw mut THREAD_PING_SEM) = Some(Semaphore::new(0, 1).unwrap());
+        *(&raw mut THREAD_PONG_SEM) = Some(Semaphore::new(0, 1).unwrap());
+        *(&raw mut THREAD_BENCH_TH) = Some(
             Thread::spawn(b"pong\0", pong_thread, Priority::Normal, 2048).unwrap(),
         );
     }
@@ -185,19 +185,19 @@ unsafe extern "C" fn ctx_switch_setup(_ctx: *mut c_void) {
 
 unsafe extern "C" fn ctx_switch_run(_ctx: *mut c_void) {
     unsafe {
-        THREAD_PING_SEM.as_ref().unwrap().give();
-        let _ = THREAD_PONG_SEM.as_ref().unwrap().take(WAIT_FOREVER);
+        (*(&raw const THREAD_PING_SEM)).as_ref().unwrap().give();
+        let _ = (*(&raw const THREAD_PONG_SEM)).as_ref().unwrap().take(WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn ctx_switch_teardown(_ctx: *mut c_void) {
     THREAD_CTX_SWITCH_DONE.store(true, Ordering::Relaxed);
     unsafe {
-        THREAD_PING_SEM.as_ref().unwrap().give();
+        (*(&raw const THREAD_PING_SEM)).as_ref().unwrap().give();
         Thread::sleep_ms(10);
-        THREAD_BENCH_TH = None;
-        THREAD_PING_SEM = None;
-        THREAD_PONG_SEM = None;
+        *(&raw mut THREAD_BENCH_TH) = None;
+        *(&raw mut THREAD_PING_SEM) = None;
+        *(&raw mut THREAD_PONG_SEM) = None;
     }
 }
 
@@ -272,18 +272,18 @@ static SYNC_CV_DONE: AtomicBool = AtomicBool::new(false);
 // --- Mutex lock/unlock ---
 
 unsafe extern "C" fn mutex_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { SYNC_MTX = Some(Mutex::new().unwrap()) };
+    unsafe { *(&raw mut SYNC_MTX) = Some(Mutex::new().unwrap()) };
 }
 
 unsafe extern "C" fn mutex_lock_unlock_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = SYNC_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
-        SYNC_MTX.as_ref().unwrap().unlock();
+        let _ = (*(&raw const SYNC_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
+        (*(&raw const SYNC_MTX)).as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn mutex_lock_unlock_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_MTX = None };
+    unsafe { *(&raw mut SYNC_MTX) = None };
 }
 
 // --- Mutex create/destroy ---
@@ -297,11 +297,11 @@ unsafe extern "C" fn mutex_create_destroy_run(_ctx: *mut c_void) {
 fn contention_thread() {
     while !SYNC_CONTENTION_DONE.load(Ordering::Relaxed) {
         unsafe {
-            let _ = SYNC_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
+            let _ = (*(&raw const SYNC_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
         }
         SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
         unsafe {
-            SYNC_MTX.as_ref().unwrap().unlock();
+            (*(&raw const SYNC_MTX)).as_ref().unwrap().unlock();
         }
     }
 }
@@ -310,8 +310,8 @@ unsafe extern "C" fn mutex_contention_setup(_ctx: *mut c_void) {
     SYNC_CONTENTION_DONE.store(false, Ordering::Relaxed);
     SYNC_CONTENTION_COUNT.store(0, Ordering::Relaxed);
     unsafe {
-        SYNC_MTX = Some(Mutex::new().unwrap());
-        SYNC_CONTENTION_TH = Some(
+        *(&raw mut SYNC_MTX) = Some(Mutex::new().unwrap());
+        *(&raw mut SYNC_CONTENTION_TH) = Some(
             Thread::spawn(b"contention\0", contention_thread, Priority::Normal, 2048).unwrap(),
         );
     }
@@ -319,11 +319,11 @@ unsafe extern "C" fn mutex_contention_setup(_ctx: *mut c_void) {
 
 unsafe extern "C" fn mutex_contention_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = SYNC_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
+        let _ = (*(&raw const SYNC_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
     }
     SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
     unsafe {
-        SYNC_MTX.as_ref().unwrap().unlock();
+        (*(&raw const SYNC_MTX)).as_ref().unwrap().unlock();
     }
 }
 
@@ -331,8 +331,8 @@ unsafe extern "C" fn mutex_contention_teardown(_ctx: *mut c_void) {
     SYNC_CONTENTION_DONE.store(true, Ordering::Relaxed);
     unsafe {
         Thread::sleep_ms(10);
-        SYNC_CONTENTION_TH = None;
-        SYNC_MTX = None;
+        *(&raw mut SYNC_CONTENTION_TH) = None;
+        *(&raw mut SYNC_MTX) = None;
     }
 }
 
@@ -341,28 +341,28 @@ unsafe extern "C" fn mutex_contention_teardown(_ctx: *mut c_void) {
 static mut SYNC_MEM_MUTEX: Option<Mutex> = None;
 
 unsafe extern "C" fn mutex_memory_run(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_MUTEX = Some(Mutex::new().unwrap()) };
+    unsafe { *(&raw mut SYNC_MEM_MUTEX) = Some(Mutex::new().unwrap()) };
 }
 
 unsafe extern "C" fn mutex_memory_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_MUTEX = None };
+    unsafe { *(&raw mut SYNC_MEM_MUTEX) = None };
 }
 
 // --- Semaphore take/give ---
 
 unsafe extern "C" fn sem_take_give_setup(_ctx: *mut c_void) {
-    unsafe { SYNC_SEM = Some(Semaphore::new(1, 1).unwrap()) };
+    unsafe { *(&raw mut SYNC_SEM) = Some(Semaphore::new(1, 1).unwrap()) };
 }
 
 unsafe extern "C" fn sem_take_give_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = SYNC_SEM.as_ref().unwrap().take(WAIT_FOREVER);
-        SYNC_SEM.as_ref().unwrap().give();
+        let _ = (*(&raw const SYNC_SEM)).as_ref().unwrap().take(WAIT_FOREVER);
+        (*(&raw const SYNC_SEM)).as_ref().unwrap().give();
     }
 }
 
 unsafe extern "C" fn sem_take_give_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_SEM = None };
+    unsafe { *(&raw mut SYNC_SEM) = None };
 }
 
 // --- Semaphore create/destroy ---
@@ -376,11 +376,11 @@ unsafe extern "C" fn sem_create_destroy_run(_ctx: *mut c_void) {
 static mut SYNC_MEM_SEM: Option<Semaphore> = None;
 
 unsafe extern "C" fn sem_memory_run(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_SEM = Some(Semaphore::new(0, 1).unwrap()) };
+    unsafe { *(&raw mut SYNC_MEM_SEM) = Some(Semaphore::new(0, 1).unwrap()) };
 }
 
 unsafe extern "C" fn sem_memory_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_SEM = None };
+    unsafe { *(&raw mut SYNC_MEM_SEM) = None };
 }
 
 // --- Event signal/wait ---
@@ -388,7 +388,7 @@ unsafe extern "C" fn sem_memory_teardown(_ctx: *mut c_void) {
 fn evt_signaler() {
     while !SYNC_EVT_DONE.load(Ordering::Relaxed) {
         unsafe {
-            SYNC_EVT.as_ref().unwrap().signal();
+            (*(&raw const SYNC_EVT)).as_ref().unwrap().signal();
         }
         Thread::yield_now();
     }
@@ -397,23 +397,23 @@ fn evt_signaler() {
 unsafe extern "C" fn event_signal_wait_setup(_ctx: *mut c_void) {
     SYNC_EVT_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        SYNC_EVT = Some(Event::new().unwrap());
-        SYNC_EVT_TH = Some(
+        *(&raw mut SYNC_EVT) = Some(Event::new().unwrap());
+        *(&raw mut SYNC_EVT_TH) = Some(
             Thread::spawn(b"evt_sig\0", evt_signaler, Priority::Normal, 1024).unwrap(),
         );
     }
 }
 
 unsafe extern "C" fn event_signal_wait_run(_ctx: *mut c_void) {
-    unsafe { let _ = SYNC_EVT.as_ref().unwrap().wait(10) };
+    unsafe { let _ = (*(&raw const SYNC_EVT)).as_ref().unwrap().wait(10); }
 }
 
 unsafe extern "C" fn event_signal_wait_teardown(_ctx: *mut c_void) {
     SYNC_EVT_DONE.store(true, Ordering::Relaxed);
     unsafe {
         Thread::sleep_ms(10);
-        SYNC_EVT_TH = None;
-        SYNC_EVT = None;
+        *(&raw mut SYNC_EVT_TH) = None;
+        *(&raw mut SYNC_EVT) = None;
     }
 }
 
@@ -422,11 +422,11 @@ unsafe extern "C" fn event_signal_wait_teardown(_ctx: *mut c_void) {
 static mut SYNC_MEM_EVENT: Option<Event> = None;
 
 unsafe extern "C" fn event_memory_run(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_EVENT = Some(Event::new().unwrap()) };
+    unsafe { *(&raw mut SYNC_MEM_EVENT) = Some(Event::new().unwrap()) };
 }
 
 unsafe extern "C" fn event_memory_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_EVENT = None };
+    unsafe { *(&raw mut SYNC_MEM_EVENT) = None };
 }
 
 // --- Condvar signal/wait ---
@@ -434,7 +434,7 @@ unsafe extern "C" fn event_memory_teardown(_ctx: *mut c_void) {
 fn cv_signaler() {
     while !SYNC_CV_DONE.load(Ordering::Relaxed) {
         unsafe {
-            SYNC_CV.as_ref().unwrap().signal();
+            (*(&raw const SYNC_CV)).as_ref().unwrap().signal();
         }
         Thread::yield_now();
     }
@@ -443,9 +443,9 @@ fn cv_signaler() {
 unsafe extern "C" fn condvar_signal_wait_setup(_ctx: *mut c_void) {
     SYNC_CV_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        SYNC_CV_MTX = Some(Mutex::new().unwrap());
-        SYNC_CV = Some(CondVar::new().unwrap());
-        SYNC_CV_TH = Some(
+        *(&raw mut SYNC_CV_MTX) = Some(Mutex::new().unwrap());
+        *(&raw mut SYNC_CV) = Some(CondVar::new().unwrap());
+        *(&raw mut SYNC_CV_TH) = Some(
             Thread::spawn(b"cv_sig\0", cv_signaler, Priority::Normal, 1024).unwrap(),
         );
     }
@@ -453,20 +453,20 @@ unsafe extern "C" fn condvar_signal_wait_setup(_ctx: *mut c_void) {
 
 unsafe extern "C" fn condvar_signal_wait_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = SYNC_CV_MTX.as_ref().unwrap().lock(WAIT_FOREVER);
-        let _ = SYNC_CV.as_ref().unwrap().wait(SYNC_CV_MTX.as_ref().unwrap(), 10);
-        SYNC_CV_MTX.as_ref().unwrap().unlock();
+        let _ = (*(&raw const SYNC_CV_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
+        let _ = (*(&raw const SYNC_CV)).as_ref().unwrap().wait((*(&raw const SYNC_CV_MTX)).as_ref().unwrap(), 10);
+        (*(&raw const SYNC_CV_MTX)).as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn condvar_signal_wait_teardown(_ctx: *mut c_void) {
     SYNC_CV_DONE.store(true, Ordering::Relaxed);
     unsafe {
-        SYNC_CV.as_ref().unwrap().signal();
+        (*(&raw const SYNC_CV)).as_ref().unwrap().signal();
         Thread::sleep_ms(10);
-        SYNC_CV_TH = None;
-        SYNC_CV = None;
-        SYNC_CV_MTX = None;
+        *(&raw mut SYNC_CV_TH) = None;
+        *(&raw mut SYNC_CV) = None;
+        *(&raw mut SYNC_CV_MTX) = None;
     }
 }
 
@@ -475,28 +475,28 @@ unsafe extern "C" fn condvar_signal_wait_teardown(_ctx: *mut c_void) {
 static mut SYNC_MEM_CONDVAR: Option<CondVar> = None;
 
 unsafe extern "C" fn condvar_memory_run(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_CONDVAR = Some(CondVar::new().unwrap()) };
+    unsafe { *(&raw mut SYNC_MEM_CONDVAR) = Some(CondVar::new().unwrap()) };
 }
 
 unsafe extern "C" fn condvar_memory_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_MEM_CONDVAR = None };
+    unsafe { *(&raw mut SYNC_MEM_CONDVAR) = None };
 }
 
 // --- Recursive mutex lock/unlock ---
 
 unsafe extern "C" fn rmtx_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { SYNC_RMTX = Some(RecursiveMutex::new().unwrap()) };
+    unsafe { *(&raw mut SYNC_RMTX) = Some(RecursiveMutex::new().unwrap()) };
 }
 
 unsafe extern "C" fn rmtx_lock_unlock_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = SYNC_RMTX.as_ref().unwrap().lock(WAIT_FOREVER);
-        SYNC_RMTX.as_ref().unwrap().unlock();
+        let _ = (*(&raw const SYNC_RMTX)).as_ref().unwrap().lock(WAIT_FOREVER);
+        (*(&raw const SYNC_RMTX)).as_ref().unwrap().unlock();
     }
 }
 
 unsafe extern "C" fn rmtx_lock_unlock_teardown(_ctx: *mut c_void) {
-    unsafe { SYNC_RMTX = None };
+    unsafe { *(&raw mut SYNC_RMTX) = None };
 }
 
 // --- sync suite ---
@@ -628,19 +628,19 @@ static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
 // --- send/receive latency ---
 
 unsafe extern "C" fn queue_send_recv_setup(_ctx: *mut c_void) {
-    unsafe { QUEUE_SEND_RECV_Q = Some(Queue::<u32, 16>::new().unwrap()) };
+    unsafe { *(&raw mut QUEUE_SEND_RECV_Q) = Some(Queue::<u32, 16>::new().unwrap()) };
 }
 
 unsafe extern "C" fn queue_send_recv_run(_ctx: *mut c_void) {
     let val: u32 = 42;
     unsafe {
-        let _ = QUEUE_SEND_RECV_Q.as_ref().unwrap().send(&val, WAIT_FOREVER);
-        let _ = QUEUE_SEND_RECV_Q.as_ref().unwrap().receive(WAIT_FOREVER);
+        let _ = (*(&raw const QUEUE_SEND_RECV_Q)).as_ref().unwrap().send(&val, WAIT_FOREVER);
+        let _ = (*(&raw const QUEUE_SEND_RECV_Q)).as_ref().unwrap().receive(WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn queue_send_recv_teardown(_ctx: *mut c_void) {
-    unsafe { QUEUE_SEND_RECV_Q = None };
+    unsafe { *(&raw mut QUEUE_SEND_RECV_Q) = None };
 }
 
 // --- create/destroy ---
@@ -655,7 +655,7 @@ fn producer_thread() {
     let mut val: u32 = 0;
     while !QUEUE_THROUGHPUT_DONE.load(Ordering::Relaxed) {
         unsafe {
-            let _ = QUEUE_THROUGHPUT_Q.as_ref().unwrap().send(&val, WAIT_FOREVER);
+            let _ = (*(&raw const QUEUE_THROUGHPUT_Q)).as_ref().unwrap().send(&val, WAIT_FOREVER);
         }
         val = val.wrapping_add(1);
     }
@@ -664,8 +664,8 @@ fn producer_thread() {
 unsafe extern "C" fn queue_throughput_setup(_ctx: *mut c_void) {
     QUEUE_THROUGHPUT_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        QUEUE_THROUGHPUT_Q = Some(Queue::<u32, 64>::new().unwrap());
-        QUEUE_PRODUCER_TH = Some(
+        *(&raw mut QUEUE_THROUGHPUT_Q) = Some(Queue::<u32, 64>::new().unwrap());
+        *(&raw mut QUEUE_PRODUCER_TH) = Some(
             Thread::spawn(b"q_prod\0", producer_thread, Priority::Normal, 2048).unwrap(),
         );
     }
@@ -673,7 +673,7 @@ unsafe extern "C" fn queue_throughput_setup(_ctx: *mut c_void) {
 
 unsafe extern "C" fn queue_throughput_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = QUEUE_THROUGHPUT_Q.as_ref().unwrap().receive(WAIT_FOREVER);
+        let _ = (*(&raw const QUEUE_THROUGHPUT_Q)).as_ref().unwrap().receive(WAIT_FOREVER);
     }
 }
 
@@ -681,10 +681,10 @@ unsafe extern "C" fn queue_throughput_teardown(_ctx: *mut c_void) {
     QUEUE_THROUGHPUT_DONE.store(true, Ordering::Relaxed);
     // Drain queue so producer unblocks
     unsafe {
-        let _ = QUEUE_THROUGHPUT_Q.as_ref().unwrap().receive(100);
+        let _ = (*(&raw const QUEUE_THROUGHPUT_Q)).as_ref().unwrap().receive(100);
         Thread::sleep_ms(10);
-        QUEUE_PRODUCER_TH = None;
-        QUEUE_THROUGHPUT_Q = None;
+        *(&raw mut QUEUE_PRODUCER_TH) = None;
+        *(&raw mut QUEUE_THROUGHPUT_Q) = None;
     }
 }
 
@@ -693,11 +693,11 @@ unsafe extern "C" fn queue_throughput_teardown(_ctx: *mut c_void) {
 static mut QUEUE_MEM_Q: Option<Queue<u32, 8>> = None;
 
 unsafe extern "C" fn queue_memory_run(_ctx: *mut c_void) {
-    unsafe { QUEUE_MEM_Q = Some(Queue::<u32, 8>::new().unwrap()) };
+    unsafe { *(&raw mut QUEUE_MEM_Q) = Some(Queue::<u32, 8>::new().unwrap()) };
 }
 
 unsafe extern "C" fn queue_memory_teardown(_ctx: *mut c_void) {
-    unsafe { QUEUE_MEM_Q = None };
+    unsafe { *(&raw mut QUEUE_MEM_Q) = None };
 }
 
 // --- queue suite ---
@@ -769,18 +769,18 @@ unsafe extern "C" fn timer_create_destroy_run(_ctx: *mut c_void) {
 // --- start/stop ---
 
 unsafe extern "C" fn timer_start_stop_setup(_ctx: *mut c_void) {
-    unsafe { TIMER_TMR = Some(Timer::new(timer_dummy_cb, 1000, false).unwrap()) };
+    unsafe { *(&raw mut TIMER_TMR) = Some(Timer::new(timer_dummy_cb, 1000, false).unwrap()) };
 }
 
 unsafe extern "C" fn timer_start_stop_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = TIMER_TMR.as_ref().unwrap().start();
-        let _ = TIMER_TMR.as_ref().unwrap().stop();
+        let _ = (*(&raw const TIMER_TMR)).as_ref().unwrap().start();
+        let _ = (*(&raw const TIMER_TMR)).as_ref().unwrap().stop();
     }
 }
 
 unsafe extern "C" fn timer_start_stop_teardown(_ctx: *mut c_void) {
-    unsafe { TIMER_TMR = None };
+    unsafe { *(&raw mut TIMER_TMR) = None };
 }
 
 // --- memory ---
@@ -788,11 +788,11 @@ unsafe extern "C" fn timer_start_stop_teardown(_ctx: *mut c_void) {
 static mut TIMER_MEM_TMR: Option<Timer> = None;
 
 unsafe extern "C" fn timer_memory_run(_ctx: *mut c_void) {
-    unsafe { TIMER_MEM_TMR = Some(Timer::new(timer_dummy_cb, 1000, false).unwrap()) };
+    unsafe { *(&raw mut TIMER_MEM_TMR) = Some(Timer::new(timer_dummy_cb, 1000, false).unwrap()) };
 }
 
 unsafe extern "C" fn timer_memory_teardown(_ctx: *mut c_void) {
-    unsafe { TIMER_MEM_TMR = None };
+    unsafe { *(&raw mut TIMER_MEM_TMR) = None };
 }
 
 // --- timer suite ---
@@ -848,19 +848,19 @@ static mut EG_BENCH: Option<EventGroup> = None;
 // --- set/get bits ---
 
 unsafe extern "C" fn eg_set_get_setup(_ctx: *mut c_void) {
-    unsafe { EG_BENCH = Some(EventGroup::new().unwrap()) };
+    unsafe { *(&raw mut EG_BENCH) = Some(EventGroup::new().unwrap()) };
 }
 
 unsafe extern "C" fn eg_set_get_run(_ctx: *mut c_void) {
     unsafe {
-        EG_BENCH.as_ref().unwrap().set_bits(0x01);
-        EG_BENCH.as_ref().unwrap().get_bits();
-        EG_BENCH.as_ref().unwrap().clear_bits(0x01);
+        (*(&raw const EG_BENCH)).as_ref().unwrap().set_bits(0x01);
+        (*(&raw const EG_BENCH)).as_ref().unwrap().get_bits();
+        (*(&raw const EG_BENCH)).as_ref().unwrap().clear_bits(0x01);
     }
 }
 
 unsafe extern "C" fn eg_set_get_teardown(_ctx: *mut c_void) {
-    unsafe { EG_BENCH = None };
+    unsafe { *(&raw mut EG_BENCH) = None };
 }
 
 // --- create/destroy ---
@@ -874,11 +874,11 @@ unsafe extern "C" fn eg_create_destroy_run(_ctx: *mut c_void) {
 static mut EG_MEM: Option<EventGroup> = None;
 
 unsafe extern "C" fn eg_memory_run(_ctx: *mut c_void) {
-    unsafe { EG_MEM = Some(EventGroup::new().unwrap()) };
+    unsafe { *(&raw mut EG_MEM) = Some(EventGroup::new().unwrap()) };
 }
 
 unsafe extern "C" fn eg_memory_teardown(_ctx: *mut c_void) {
-    unsafe { EG_MEM = None };
+    unsafe { *(&raw mut EG_MEM) = None };
 }
 
 // --- eventgroup suite ---
@@ -936,7 +936,7 @@ static mut WQ_WORK_SEM: Option<Semaphore> = None;
 
 unsafe extern "C" fn work_handler(_work: ffi::ove_work_t) {
     WQ_WORK_EXECUTED.store(true, Ordering::Relaxed);
-    unsafe { WQ_WORK_SEM.as_ref().unwrap().give() };
+    unsafe { (*(&raw const WQ_WORK_SEM)).as_ref().unwrap().give() };
 }
 
 // --- create/destroy ---
@@ -949,25 +949,25 @@ unsafe extern "C" fn wq_create_destroy_run(_ctx: *mut c_void) {
 
 unsafe extern "C" fn wq_submit_setup(_ctx: *mut c_void) {
     unsafe {
-        WQ_WORK_SEM = Some(Semaphore::new(0, 1).unwrap());
-        WQ_BENCH = Some(Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap());
-        WQ_WORK = Some(Work::new(Some(work_handler)).unwrap());
+        *(&raw mut WQ_WORK_SEM) = Some(Semaphore::new(0, 1).unwrap());
+        *(&raw mut WQ_BENCH) = Some(Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap());
+        *(&raw mut WQ_WORK) = Some(Work::new(Some(work_handler)).unwrap());
     }
 }
 
 unsafe extern "C" fn wq_submit_run(_ctx: *mut c_void) {
     WQ_WORK_EXECUTED.store(false, Ordering::Relaxed);
     unsafe {
-        let _ = WQ_WORK.as_ref().unwrap().submit(WQ_BENCH.as_ref().unwrap());
-        let _ = WQ_WORK_SEM.as_ref().unwrap().take(1000);
+        let _ = (*(&raw const WQ_WORK)).as_ref().unwrap().submit((*(&raw const WQ_BENCH)).as_ref().unwrap());
+        let _ = (*(&raw const WQ_WORK_SEM)).as_ref().unwrap().take(1000);
     }
 }
 
 unsafe extern "C" fn wq_submit_teardown(_ctx: *mut c_void) {
     unsafe {
-        WQ_WORK = None;
-        WQ_BENCH = None;
-        WQ_WORK_SEM = None;
+        *(&raw mut WQ_WORK) = None;
+        *(&raw mut WQ_BENCH) = None;
+        *(&raw mut WQ_WORK_SEM) = None;
     }
 }
 
@@ -976,11 +976,11 @@ unsafe extern "C" fn wq_submit_teardown(_ctx: *mut c_void) {
 static mut WQ_MEM: Option<Workqueue> = None;
 
 unsafe extern "C" fn wq_memory_run(_ctx: *mut c_void) {
-    unsafe { WQ_MEM = Some(Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap()) };
+    unsafe { *(&raw mut WQ_MEM) = Some(Workqueue::new(b"bench_wq\0", Priority::Normal, 2048).unwrap()) };
 }
 
 unsafe extern "C" fn wq_memory_teardown(_ctx: *mut c_void) {
-    unsafe { WQ_MEM = None };
+    unsafe { *(&raw mut WQ_MEM) = None };
 }
 
 // --- workqueue suite ---
@@ -1045,20 +1045,20 @@ static mut STREAM_RX_BUF: [u8; STREAM_MSG_SIZE] = [0u8; STREAM_MSG_SIZE];
 
 unsafe extern "C" fn stream_send_recv_setup(_ctx: *mut c_void) {
     unsafe {
-        STREAM_BENCH = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap());
-        STREAM_TX_BUF = [0xAA; STREAM_MSG_SIZE];
+        *(&raw mut STREAM_BENCH) = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap());
+        *(&raw mut STREAM_TX_BUF) = [0xAA; STREAM_MSG_SIZE];
     }
 }
 
 unsafe extern "C" fn stream_send_recv_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = STREAM_BENCH.as_ref().unwrap().send(&STREAM_TX_BUF, WAIT_FOREVER);
-        let _ = STREAM_BENCH.as_ref().unwrap().receive(&mut STREAM_RX_BUF, WAIT_FOREVER);
+        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().send(&*(&raw const STREAM_TX_BUF), WAIT_FOREVER);
+        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().receive(&mut *(&raw mut STREAM_RX_BUF), WAIT_FOREVER);
     }
 }
 
 unsafe extern "C" fn stream_send_recv_teardown(_ctx: *mut c_void) {
-    unsafe { STREAM_BENCH = None };
+    unsafe { *(&raw mut STREAM_BENCH) = None };
 }
 
 // --- create/destroy ---
@@ -1072,7 +1072,7 @@ unsafe extern "C" fn stream_create_destroy_run(_ctx: *mut c_void) {
 fn stream_producer() {
     while !STREAM_DONE.load(Ordering::Relaxed) {
         unsafe {
-            let _ = STREAM_BENCH.as_ref().unwrap().send(&STREAM_TX_BUF, WAIT_FOREVER);
+            let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().send(&*(&raw const STREAM_TX_BUF), WAIT_FOREVER);
         }
     }
 }
@@ -1080,9 +1080,9 @@ fn stream_producer() {
 unsafe extern "C" fn stream_throughput_setup(_ctx: *mut c_void) {
     STREAM_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        STREAM_TX_BUF = [0xBB; STREAM_MSG_SIZE];
-        STREAM_BENCH = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap());
-        STREAM_PRODUCER_TH = Some(
+        *(&raw mut STREAM_TX_BUF) = [0xBB; STREAM_MSG_SIZE];
+        *(&raw mut STREAM_BENCH) = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap());
+        *(&raw mut STREAM_PRODUCER_TH) = Some(
             Thread::spawn(b"strm_prod\0", stream_producer, Priority::Normal, 2048).unwrap(),
         );
     }
@@ -1090,7 +1090,7 @@ unsafe extern "C" fn stream_throughput_setup(_ctx: *mut c_void) {
 
 unsafe extern "C" fn stream_throughput_run(_ctx: *mut c_void) {
     unsafe {
-        let _ = STREAM_BENCH.as_ref().unwrap().receive(&mut STREAM_RX_BUF, WAIT_FOREVER);
+        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().receive(&mut *(&raw mut STREAM_RX_BUF), WAIT_FOREVER);
     }
 }
 
@@ -1098,10 +1098,10 @@ unsafe extern "C" fn stream_throughput_teardown(_ctx: *mut c_void) {
     STREAM_DONE.store(true, Ordering::Relaxed);
     // Drain so producer can unblock
     unsafe {
-        let _ = STREAM_BENCH.as_ref().unwrap().receive(&mut STREAM_RX_BUF, 100);
+        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().receive(&mut *(&raw mut STREAM_RX_BUF), 100);
         Thread::sleep_ms(10);
-        STREAM_PRODUCER_TH = None;
-        STREAM_BENCH = None;
+        *(&raw mut STREAM_PRODUCER_TH) = None;
+        *(&raw mut STREAM_BENCH) = None;
     }
 }
 
@@ -1110,11 +1110,11 @@ unsafe extern "C" fn stream_throughput_teardown(_ctx: *mut c_void) {
 static mut STREAM_MEM: Option<Stream<STREAM_BUF_SIZE>> = None;
 
 unsafe extern "C" fn stream_memory_run(_ctx: *mut c_void) {
-    unsafe { STREAM_MEM = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap()) };
+    unsafe { *(&raw mut STREAM_MEM) = Some(Stream::<STREAM_BUF_SIZE>::new(1).unwrap()) };
 }
 
 unsafe extern "C" fn stream_memory_teardown(_ctx: *mut c_void) {
-    unsafe { STREAM_MEM = None };
+    unsafe { *(&raw mut STREAM_MEM) = None };
 }
 
 // --- stream suite ---
