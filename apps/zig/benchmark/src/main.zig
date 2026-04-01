@@ -20,7 +20,7 @@ const c = ove.ffi;
 // Benchmark types — mirror benchmark.h
 // ---------------------------------------------------------------------------
 
-const BenchType = enum(c_int) {
+const BenchType = enum(i32) {
     latency = 0,
     throughput = 1,
     memory = 2,
@@ -32,7 +32,7 @@ const BenchCase = extern struct {
     setup: ?*const fn (?*anyopaque) callconv(.c) void,
     run: ?*const fn (?*anyopaque) callconv(.c) void,
     teardown: ?*const fn (?*anyopaque) callconv(.c) void,
-    iterations: c_uint,
+    iterations: u32,
 };
 
 const BenchResult = extern struct {
@@ -46,19 +46,19 @@ const BenchResult = extern struct {
 
 const BenchSuite = extern struct {
     name: [*:0]const u8,
-    is_enabled: *const fn () callconv(.c) c_int,
+    is_enabled: *const fn () callconv(.c) i32,
     cases: [*]const BenchCase,
-    case_count: c_uint,
+    case_count: u32,
 };
 
 // ---------------------------------------------------------------------------
 // Harness functions (linked from bench_harness.c / bench_output.c)
 // ---------------------------------------------------------------------------
 
-extern "c" fn bench_run_case(bc: *const BenchCase, result: *BenchResult) void;
-extern "c" fn bench_print_header(suite_name: [*:0]const u8) void;
-extern "c" fn bench_print_result(bc: *const BenchCase, result: *const BenchResult) void;
-extern "c" fn bench_print_footer() void;
+extern fn bench_run_case(bc: *const BenchCase, result: *BenchResult) void;
+extern fn bench_print_header(suite_name: [*:0]const u8) void;
+extern fn bench_print_result(bc: *const BenchCase, result: *const BenchResult) void;
+extern fn bench_print_footer() void;
 
 // =========================================================================
 // Suite: time
@@ -73,7 +73,7 @@ fn delay1msRun(_: ?*anyopaque) callconv(.c) void {
     c.ove_time_delay_ms(1);
 }
 
-fn timeIsEnabled() callconv(.c) c_int {
+fn timeIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_TIME")) 1 else 0;
 }
 
@@ -110,9 +110,9 @@ export const bench_suite_time: BenchSuite = .{
 var thread_bench_th: c.ove_thread_t = null;
 var thread_ping_sem: c.ove_sem_t = null;
 var thread_pong_sem: c.ove_sem_t = null;
-var thread_ctx_switch_done: volatile_int = 0;
+var thread_ctx_switch_done: volatile_int = volatile_int.init(0);
 
-const volatile_int = std.atomic.Value(c_int);
+const volatile_int = std.atomic.Value(i32);
 
 fn dummyThread(_: ?*anyopaque) callconv(.c) void {}
 
@@ -126,7 +126,8 @@ fn threadCreateDestroyRun(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&th, 1024, &desc);
+    desc.stack_size = 1024;
+    _ = c.ove_thread_create_(&th, &desc);
     _ = c.ove_thread_destroy(th);
 }
 
@@ -158,7 +159,8 @@ fn ctxSwitchSetup(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&thread_bench_th, 2048, &desc);
+    desc.stack_size = 2048;
+    _ = c.ove_thread_create_(&thread_bench_th, &desc);
 }
 
 fn ctxSwitchRun(_: ?*anyopaque) callconv(.c) void {
@@ -176,7 +178,7 @@ fn ctxSwitchTeardown(_: ?*anyopaque) callconv(.c) void {
     c.ove_sem_destroy(thread_pong_sem);
 }
 
-fn threadIsEnabled() callconv(.c) c_int {
+fn threadIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_SYNC")) 1 else 0;
 }
 
@@ -233,12 +235,12 @@ var sync_bench_cv: c.ove_condvar_t = null;
 var sync_bench_cv_mtx: c.ove_mutex_t = null;
 var sync_bench_rmtx: c.ove_mutex_t = null;
 var sync_contention_th: c.ove_thread_t = null;
-var sync_contention_done: volatile_int = 0;
+var sync_contention_done: volatile_int = volatile_int.init(0);
 var sync_contention_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 var sync_evt_th: c.ove_thread_t = null;
-var sync_evt_done: volatile_int = 0;
+var sync_evt_done: volatile_int = volatile_int.init(0);
 var sync_cv_th: c.ove_thread_t = null;
-var sync_cv_done: volatile_int = 0;
+var sync_cv_done: volatile_int = volatile_int.init(0);
 var sync_mem_mutex: c.ove_mutex_t = null;
 var sync_mem_sem: c.ove_sem_t = null;
 var sync_mem_event: c.ove_event_t = null;
@@ -290,7 +292,8 @@ fn mutexContentionSetup(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&sync_contention_th, 2048, &desc);
+    desc.stack_size = 2048;
+    _ = c.ove_thread_create_(&sync_contention_th, &desc);
 }
 
 fn mutexContentionRun(_: ?*anyopaque) callconv(.c) void {
@@ -370,7 +373,8 @@ fn eventSignalWaitSetup(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&sync_evt_th, 1024, &desc);
+    desc.stack_size = 1024;
+    _ = c.ove_thread_create_(&sync_evt_th, &desc);
 }
 
 fn eventSignalWaitRun(_: ?*anyopaque) callconv(.c) void {
@@ -416,7 +420,8 @@ fn condvarSignalWaitSetup(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&sync_cv_th, 1024, &desc);
+    desc.stack_size = 1024;
+    _ = c.ove_thread_create_(&sync_cv_th, &desc);
 }
 
 fn condvarSignalWaitRun(_: ?*anyopaque) callconv(.c) void {
@@ -461,7 +466,7 @@ fn rmtxLockUnlockTeardown(_: ?*anyopaque) callconv(.c) void {
 
 // --- Sync suite ---
 
-fn syncIsEnabled() callconv(.c) c_int {
+fn syncIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_SYNC")) 1 else 0;
 }
 
@@ -578,7 +583,7 @@ export const bench_suite_sync: BenchSuite = .{
 
 var queue_bench_q: c.ove_queue_t = null;
 var queue_producer_th: c.ove_thread_t = null;
-var queue_throughput_done: volatile_int = 0;
+var queue_throughput_done: volatile_int = volatile_int.init(0);
 var queue_mem_q: c.ove_queue_t = null;
 
 // --- send/receive latency ---
@@ -628,7 +633,8 @@ fn queueThroughputSetup(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&queue_producer_th, 2048, &desc);
+    desc.stack_size = 2048;
+    _ = c.ove_thread_create_(&queue_producer_th, &desc);
 }
 
 fn queueThroughputRun(_: ?*anyopaque) callconv(.c) void {
@@ -658,7 +664,7 @@ fn queueMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 
 // --- Queue suite ---
 
-fn queueIsEnabled() callconv(.c) c_int {
+fn queueIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_QUEUE")) 1 else 0;
 }
 
@@ -748,7 +754,7 @@ fn timerMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 
 // --- Timer suite ---
 
-fn timerIsEnabled() callconv(.c) c_int {
+fn timerIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_TIMER")) 1 else 0;
 }
 
@@ -829,7 +835,7 @@ fn egMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 
 // --- EventGroup suite ---
 
-fn eventgroupIsEnabled() callconv(.c) c_int {
+fn eventgroupIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_EVENTGROUP")) 1 else 0;
 }
 
@@ -873,7 +879,7 @@ export const bench_suite_eventgroup: BenchSuite = .{
 
 var wq_bench_wq: c.ove_workqueue_t = null;
 var wq_bench_work: c.ove_work_t = null;
-var wq_work_executed: volatile_int = 0;
+var wq_work_executed: volatile_int = volatile_int.init(0);
 var wq_work_sem: c.ove_sem_t = null;
 var wq_bench_work_storage: c.ove_work_storage_t = std.mem.zeroes(c.ove_work_storage_t);
 var wq_mem_wq: c.ove_workqueue_t = null;
@@ -922,7 +928,7 @@ fn wqMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 
 // --- Workqueue suite ---
 
-fn workqueueIsEnabled() callconv(.c) c_int {
+fn workqueueIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_WORKQUEUE")) 1 else 0;
 }
 
@@ -969,7 +975,7 @@ const STREAM_MSG_SIZE: usize = 64;
 
 var stream_bench_strm: c.ove_stream_t = null;
 var stream_producer_th: c.ove_thread_t = null;
-var stream_done: volatile_int = 0;
+var stream_done: volatile_int = volatile_int.init(0);
 var stream_tx_buf: [STREAM_MSG_SIZE]u8 = [_]u8{0} ** STREAM_MSG_SIZE;
 var stream_rx_buf: [STREAM_MSG_SIZE]u8 = [_]u8{0} ** STREAM_MSG_SIZE;
 var stream_mem_strm: c.ove_stream_t = null;
@@ -1022,7 +1028,8 @@ fn streamThroughputSetup(_: ?*anyopaque) callconv(.c) void {
         .stack_size = 0,
         .stack = null,
     };
-    _ = c.ove_thread_create(&stream_producer_th, 2048, &desc);
+    desc.stack_size = 2048;
+    _ = c.ove_thread_create_(&stream_producer_th, &desc);
 }
 
 fn streamThroughputRun(_: ?*anyopaque) callconv(.c) void {
@@ -1052,7 +1059,7 @@ fn streamMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 
 // --- Stream suite ---
 
-fn streamIsEnabled() callconv(.c) c_int {
+fn streamIsEnabled() callconv(.c) i32 {
     return if (@hasDecl(c, "CONFIG_OVE_STREAM")) 1 else 0;
 }
 
@@ -1116,11 +1123,11 @@ const suites = [_]*const BenchSuite{
 fn benchmarkRunner() void {
     ove.log.inf("=== oveRTOS Benchmark Suite ===", .{});
 
-    const iterations: c_int = if (@hasDecl(c, "CONFIG_OVE_BENCHMARK_ITERATIONS"))
+    const iterations: i32 = if (@hasDecl(c, "CONFIG_OVE_BENCHMARK_ITERATIONS"))
         c.CONFIG_OVE_BENCHMARK_ITERATIONS
     else
         1000;
-    const warmup: c_int = if (@hasDecl(c, "CONFIG_OVE_BENCHMARK_WARMUP"))
+    const warmup: i32 = if (@hasDecl(c, "CONFIG_OVE_BENCHMARK_WARMUP"))
         c.CONFIG_OVE_BENCHMARK_WARMUP
     else
         100;
@@ -1135,7 +1142,7 @@ fn benchmarkRunner() void {
         bench_print_header(suite.name);
 
         const cases: [*]const BenchCase = suite.cases;
-        var i: c_uint = 0;
+        var i: u32 = 0;
         while (i < suite.case_count) : (i += 1) {
             var result: BenchResult = undefined;
             bench_run_case(&cases[i], &result);

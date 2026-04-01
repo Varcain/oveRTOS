@@ -149,7 +149,7 @@ pub const Client = struct {
         var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
         try err.fromCode(c.ove_http_request_ex(
             self.handle,
-            @intFromEnum(method),
+            @intCast(@intFromEnum(method)),
             url.ptr,
             ct_ptr,
             body_ptr,

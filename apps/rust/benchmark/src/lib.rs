@@ -13,6 +13,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::ffi::c_void;
+use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ove::ffi;
@@ -183,8 +184,8 @@ unsafe extern "C" fn pong_thread(_arg: *mut c_void) {
 unsafe extern "C" fn ctx_switch_setup(_ctx: *mut c_void) {
     THREAD_CTX_SWITCH_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        ffi::ove_sem_create(&mut THREAD_PING_SEM, 0, 1);
-        ffi::ove_sem_create(&mut THREAD_PONG_SEM, 0, 1);
+        ffi::ove_sem_create(addr_of_mut!(THREAD_PING_SEM), 0, 1);
+        ffi::ove_sem_create(addr_of_mut!(THREAD_PONG_SEM), 0, 1);
     }
     let desc = ffi::ove_thread_desc {
         name: b"pong\0".as_ptr() as *const _,
@@ -194,7 +195,7 @@ unsafe extern "C" fn ctx_switch_setup(_ctx: *mut c_void) {
         stack_size: 2048,
         stack: core::ptr::null_mut(),
     };
-    unsafe { ffi::ove_thread_create_(&mut THREAD_BENCH_TH, &desc) };
+    unsafe { ffi::ove_thread_create_(addr_of_mut!(THREAD_BENCH_TH), &desc) };
 }
 
 unsafe extern "C" fn ctx_switch_run(_ctx: *mut c_void) {
@@ -286,7 +287,7 @@ static SYNC_CV_DONE: AtomicBool = AtomicBool::new(false);
 // --- Mutex lock/unlock ---
 
 unsafe extern "C" fn mutex_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_mutex_create(&mut SYNC_MTX) };
+    unsafe { ffi::ove_mutex_create(addr_of_mut!(SYNC_MTX)) };
 }
 
 unsafe extern "C" fn mutex_lock_unlock_run(_ctx: *mut c_void) {
@@ -327,7 +328,7 @@ unsafe extern "C" fn contention_thread(_arg: *mut c_void) {
 unsafe extern "C" fn mutex_contention_setup(_ctx: *mut c_void) {
     SYNC_CONTENTION_DONE.store(false, Ordering::Relaxed);
     SYNC_CONTENTION_COUNT.store(0, Ordering::Relaxed);
-    unsafe { ffi::ove_mutex_create(&mut SYNC_MTX) };
+    unsafe { ffi::ove_mutex_create(addr_of_mut!(SYNC_MTX)) };
     let desc = ffi::ove_thread_desc {
         name: b"contention\0".as_ptr() as *const _,
         entry: Some(contention_thread),
@@ -336,7 +337,7 @@ unsafe extern "C" fn mutex_contention_setup(_ctx: *mut c_void) {
         stack_size: 2048,
         stack: core::ptr::null_mut(),
     };
-    unsafe { ffi::ove_thread_create_(&mut SYNC_CONTENTION_TH, &desc) };
+    unsafe { ffi::ove_thread_create_(addr_of_mut!(SYNC_CONTENTION_TH), &desc) };
 }
 
 unsafe extern "C" fn mutex_contention_run(_ctx: *mut c_void) {
@@ -363,7 +364,7 @@ unsafe extern "C" fn mutex_contention_teardown(_ctx: *mut c_void) {
 static mut SYNC_MEM_MUTEX: ffi::ove_mutex_t = core::ptr::null_mut();
 
 unsafe extern "C" fn mutex_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_mutex_create(&mut SYNC_MEM_MUTEX) };
+    unsafe { ffi::ove_mutex_create(addr_of_mut!(SYNC_MEM_MUTEX)) };
 }
 
 unsafe extern "C" fn mutex_memory_teardown(_ctx: *mut c_void) {
@@ -373,7 +374,7 @@ unsafe extern "C" fn mutex_memory_teardown(_ctx: *mut c_void) {
 // --- Semaphore take/give ---
 
 unsafe extern "C" fn sem_take_give_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_sem_create(&mut SYNC_SEM, 1, 1) };
+    unsafe { ffi::ove_sem_create(addr_of_mut!(SYNC_SEM), 1, 1) };
 }
 
 unsafe extern "C" fn sem_take_give_run(_ctx: *mut c_void) {
@@ -402,7 +403,7 @@ unsafe extern "C" fn sem_create_destroy_run(_ctx: *mut c_void) {
 static mut SYNC_MEM_SEM: ffi::ove_sem_t = core::ptr::null_mut();
 
 unsafe extern "C" fn sem_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_sem_create(&mut SYNC_MEM_SEM, 0, 1) };
+    unsafe { ffi::ove_sem_create(addr_of_mut!(SYNC_MEM_SEM), 0, 1) };
 }
 
 unsafe extern "C" fn sem_memory_teardown(_ctx: *mut c_void) {
@@ -422,7 +423,7 @@ unsafe extern "C" fn evt_signaler(_arg: *mut c_void) {
 
 unsafe extern "C" fn event_signal_wait_setup(_ctx: *mut c_void) {
     SYNC_EVT_DONE.store(false, Ordering::Relaxed);
-    unsafe { ffi::ove_event_create(&mut SYNC_EVT) };
+    unsafe { ffi::ove_event_create(addr_of_mut!(SYNC_EVT)) };
     let desc = ffi::ove_thread_desc {
         name: b"evt_sig\0".as_ptr() as *const _,
         entry: Some(evt_signaler),
@@ -431,7 +432,7 @@ unsafe extern "C" fn event_signal_wait_setup(_ctx: *mut c_void) {
         stack_size: 1024,
         stack: core::ptr::null_mut(),
     };
-    unsafe { ffi::ove_thread_create_(&mut SYNC_EVT_TH, &desc) };
+    unsafe { ffi::ove_thread_create_(addr_of_mut!(SYNC_EVT_TH), &desc) };
 }
 
 unsafe extern "C" fn event_signal_wait_run(_ctx: *mut c_void) {
@@ -452,7 +453,7 @@ unsafe extern "C" fn event_signal_wait_teardown(_ctx: *mut c_void) {
 static mut SYNC_MEM_EVENT: ffi::ove_event_t = core::ptr::null_mut();
 
 unsafe extern "C" fn event_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_event_create(&mut SYNC_MEM_EVENT) };
+    unsafe { ffi::ove_event_create(addr_of_mut!(SYNC_MEM_EVENT)) };
 }
 
 unsafe extern "C" fn event_memory_teardown(_ctx: *mut c_void) {
@@ -473,8 +474,8 @@ unsafe extern "C" fn cv_signaler(_arg: *mut c_void) {
 unsafe extern "C" fn condvar_signal_wait_setup(_ctx: *mut c_void) {
     SYNC_CV_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        ffi::ove_mutex_create(&mut SYNC_CV_MTX);
-        ffi::ove_condvar_create(&mut SYNC_CV);
+        ffi::ove_mutex_create(addr_of_mut!(SYNC_CV_MTX));
+        ffi::ove_condvar_create(addr_of_mut!(SYNC_CV));
     }
     let desc = ffi::ove_thread_desc {
         name: b"cv_sig\0".as_ptr() as *const _,
@@ -484,7 +485,7 @@ unsafe extern "C" fn condvar_signal_wait_setup(_ctx: *mut c_void) {
         stack_size: 1024,
         stack: core::ptr::null_mut(),
     };
-    unsafe { ffi::ove_thread_create_(&mut SYNC_CV_TH, &desc) };
+    unsafe { ffi::ove_thread_create_(addr_of_mut!(SYNC_CV_TH), &desc) };
 }
 
 unsafe extern "C" fn condvar_signal_wait_run(_ctx: *mut c_void) {
@@ -511,7 +512,7 @@ unsafe extern "C" fn condvar_signal_wait_teardown(_ctx: *mut c_void) {
 static mut SYNC_MEM_CONDVAR: ffi::ove_condvar_t = core::ptr::null_mut();
 
 unsafe extern "C" fn condvar_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_condvar_create(&mut SYNC_MEM_CONDVAR) };
+    unsafe { ffi::ove_condvar_create(addr_of_mut!(SYNC_MEM_CONDVAR)) };
 }
 
 unsafe extern "C" fn condvar_memory_teardown(_ctx: *mut c_void) {
@@ -521,7 +522,7 @@ unsafe extern "C" fn condvar_memory_teardown(_ctx: *mut c_void) {
 // --- Recursive mutex lock/unlock ---
 
 unsafe extern "C" fn rmtx_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_recursive_mutex_create(&mut SYNC_RMTX) };
+    unsafe { ffi::ove_recursive_mutex_create(addr_of_mut!(SYNC_RMTX)) };
 }
 
 unsafe extern "C" fn rmtx_lock_unlock_run(_ctx: *mut c_void) {
@@ -665,7 +666,7 @@ static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
 unsafe extern "C" fn queue_send_recv_setup(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_queue_create(
-            &mut QUEUE_Q,
+            addr_of_mut!(QUEUE_Q),
             core::mem::size_of::<u32>(),
             16,
         )
@@ -711,7 +712,7 @@ unsafe extern "C" fn queue_throughput_setup(_ctx: *mut c_void) {
     QUEUE_THROUGHPUT_DONE.store(false, Ordering::Relaxed);
     unsafe {
         ffi::ove_queue_create(
-            &mut QUEUE_Q,
+            addr_of_mut!(QUEUE_Q),
             core::mem::size_of::<u32>(),
             64,
         );
@@ -724,7 +725,7 @@ unsafe extern "C" fn queue_throughput_setup(_ctx: *mut c_void) {
         stack_size: 2048,
         stack: core::ptr::null_mut(),
     };
-    unsafe { ffi::ove_thread_create_(&mut QUEUE_PRODUCER_TH, &desc) };
+    unsafe { ffi::ove_thread_create_(addr_of_mut!(QUEUE_PRODUCER_TH), &desc) };
 }
 
 unsafe extern "C" fn queue_throughput_run(_ctx: *mut c_void) {
@@ -753,7 +754,7 @@ static mut QUEUE_MEM_Q: ffi::ove_queue_t = core::ptr::null_mut();
 unsafe extern "C" fn queue_memory_run(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_queue_create(
-            &mut QUEUE_MEM_Q,
+            addr_of_mut!(QUEUE_MEM_Q),
             core::mem::size_of::<u32>(),
             8,
         )
@@ -843,7 +844,7 @@ unsafe extern "C" fn timer_create_destroy_run(_ctx: *mut c_void) {
 unsafe extern "C" fn timer_start_stop_setup(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_timer_create(
-            &mut TIMER_TMR,
+            addr_of_mut!(TIMER_TMR),
             Some(timer_dummy_cb),
             core::ptr::null_mut(),
             1000,
@@ -870,7 +871,7 @@ static mut TIMER_MEM_TMR: ffi::ove_timer_t = core::ptr::null_mut();
 unsafe extern "C" fn timer_memory_run(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_timer_create(
-            &mut TIMER_MEM_TMR,
+            addr_of_mut!(TIMER_MEM_TMR),
             Some(timer_dummy_cb),
             core::ptr::null_mut(),
             1000,
@@ -936,7 +937,7 @@ static mut EG_BENCH: ffi::ove_eventgroup_t = core::ptr::null_mut();
 // --- set/get bits ---
 
 unsafe extern "C" fn eg_set_get_setup(_ctx: *mut c_void) {
-    unsafe { ffi::ove_eventgroup_create(&mut EG_BENCH) };
+    unsafe { ffi::ove_eventgroup_create(addr_of_mut!(EG_BENCH)) };
 }
 
 unsafe extern "C" fn eg_set_get_run(_ctx: *mut c_void) {
@@ -966,7 +967,7 @@ unsafe extern "C" fn eg_create_destroy_run(_ctx: *mut c_void) {
 static mut EG_MEM: ffi::ove_eventgroup_t = core::ptr::null_mut();
 
 unsafe extern "C" fn eg_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_eventgroup_create(&mut EG_MEM) };
+    unsafe { ffi::ove_eventgroup_create(addr_of_mut!(EG_MEM)) };
 }
 
 unsafe extern "C" fn eg_memory_teardown(_ctx: *mut c_void) {
@@ -1052,16 +1053,16 @@ unsafe extern "C" fn wq_create_destroy_run(_ctx: *mut c_void) {
 
 unsafe extern "C" fn wq_submit_setup(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_sem_create(&mut WQ_WORK_SEM, 0, 1);
+        ffi::ove_sem_create(addr_of_mut!(WQ_WORK_SEM), 0, 1);
         ffi::ove_workqueue_create(
-            &mut WQ_BENCH,
+            addr_of_mut!(WQ_BENCH),
             b"bench_wq\0".as_ptr() as *const _,
             Priority::Normal as u32,
             2048,
         );
         ffi::ove_work_init_static(
-            &mut WQ_WORK,
-            WQ_WORK_STORAGE.as_mut_ptr(),
+            addr_of_mut!(WQ_WORK),
+            addr_of_mut!(WQ_WORK_STORAGE).cast::<ffi::ove_work_storage_t>(),
             Some(work_handler),
         );
     }
@@ -1089,7 +1090,7 @@ static mut WQ_MEM: ffi::ove_workqueue_t = core::ptr::null_mut();
 unsafe extern "C" fn wq_memory_run(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_workqueue_create(
-            &mut WQ_MEM,
+            addr_of_mut!(WQ_MEM),
             b"bench_wq\0".as_ptr() as *const _,
             Priority::Normal as u32,
             2048,
@@ -1163,8 +1164,8 @@ static mut STREAM_RX_BUF: [u8; STREAM_MSG_SIZE] = [0u8; STREAM_MSG_SIZE];
 
 unsafe extern "C" fn stream_send_recv_setup(_ctx: *mut c_void) {
     unsafe {
-        ffi::ove_stream_create(&mut STREAM_BENCH, STREAM_BUF_SIZE, 1);
-        STREAM_TX_BUF = [0xAA; STREAM_MSG_SIZE];
+        ffi::ove_stream_create(addr_of_mut!(STREAM_BENCH), STREAM_BUF_SIZE, 1);
+        addr_of_mut!(STREAM_TX_BUF).write([0xAA; STREAM_MSG_SIZE]);
     }
 }
 
@@ -1174,14 +1175,14 @@ unsafe extern "C" fn stream_send_recv_run(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_stream_send(
             STREAM_BENCH,
-            STREAM_TX_BUF.as_ptr() as *const _,
+            addr_of_mut!(STREAM_TX_BUF) as *const _,
             STREAM_MSG_SIZE,
             ffi::OVE_WAIT_FOREVER,
             &mut sent,
         );
         ffi::ove_stream_receive(
             STREAM_BENCH,
-            STREAM_RX_BUF.as_mut_ptr() as *mut _,
+            addr_of_mut!(STREAM_RX_BUF) as *mut _,
             STREAM_MSG_SIZE,
             ffi::OVE_WAIT_FOREVER,
             &mut received,
@@ -1211,7 +1212,7 @@ unsafe extern "C" fn stream_producer(_arg: *mut c_void) {
         unsafe {
             ffi::ove_stream_send(
                 STREAM_BENCH,
-                STREAM_TX_BUF.as_ptr() as *const _,
+                addr_of_mut!(STREAM_TX_BUF) as *const _,
                 STREAM_MSG_SIZE,
                 ffi::OVE_WAIT_FOREVER,
                 &mut sent,
@@ -1223,8 +1224,8 @@ unsafe extern "C" fn stream_producer(_arg: *mut c_void) {
 unsafe extern "C" fn stream_throughput_setup(_ctx: *mut c_void) {
     STREAM_DONE.store(false, Ordering::Relaxed);
     unsafe {
-        STREAM_TX_BUF = [0xBB; STREAM_MSG_SIZE];
-        ffi::ove_stream_create(&mut STREAM_BENCH, STREAM_BUF_SIZE, 1);
+        addr_of_mut!(STREAM_TX_BUF).write([0xBB; STREAM_MSG_SIZE]);
+        ffi::ove_stream_create(addr_of_mut!(STREAM_BENCH), STREAM_BUF_SIZE, 1);
     }
     let desc = ffi::ove_thread_desc {
         name: b"strm_prod\0".as_ptr() as *const _,
@@ -1234,7 +1235,7 @@ unsafe extern "C" fn stream_throughput_setup(_ctx: *mut c_void) {
         stack_size: 2048,
         stack: core::ptr::null_mut(),
     };
-    unsafe { ffi::ove_thread_create_(&mut STREAM_PRODUCER_TH, &desc) };
+    unsafe { ffi::ove_thread_create_(addr_of_mut!(STREAM_PRODUCER_TH), &desc) };
 }
 
 unsafe extern "C" fn stream_throughput_run(_ctx: *mut c_void) {
@@ -1242,7 +1243,7 @@ unsafe extern "C" fn stream_throughput_run(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_stream_receive(
             STREAM_BENCH,
-            STREAM_RX_BUF.as_mut_ptr() as *mut _,
+            addr_of_mut!(STREAM_RX_BUF) as *mut _,
             STREAM_MSG_SIZE,
             ffi::OVE_WAIT_FOREVER,
             &mut received,
@@ -1257,7 +1258,7 @@ unsafe extern "C" fn stream_throughput_teardown(_ctx: *mut c_void) {
     unsafe {
         ffi::ove_stream_receive(
             STREAM_BENCH,
-            STREAM_RX_BUF.as_mut_ptr() as *mut _,
+            addr_of_mut!(STREAM_RX_BUF) as *mut _,
             STREAM_MSG_SIZE,
             100,
             &mut received,
@@ -1273,7 +1274,7 @@ unsafe extern "C" fn stream_throughput_teardown(_ctx: *mut c_void) {
 static mut STREAM_MEM: ffi::ove_stream_t = core::ptr::null_mut();
 
 unsafe extern "C" fn stream_memory_run(_ctx: *mut c_void) {
-    unsafe { ffi::ove_stream_create(&mut STREAM_MEM, STREAM_BUF_SIZE, 1) };
+    unsafe { ffi::ove_stream_create(addr_of_mut!(STREAM_MEM), STREAM_BUF_SIZE, 1) };
 }
 
 unsafe extern "C" fn stream_memory_teardown(_ctx: *mut c_void) {
