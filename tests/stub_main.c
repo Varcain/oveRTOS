@@ -106,6 +106,15 @@ int main(void)
 	printf("=== Net: SNTP Tests ===\n");
 	failures += test_net_sntp_run();
 
+	printf("=== I2C Tests ===\n");
+	failures += test_i2c_run();
+
+	printf("=== SPI Tests ===\n");
+	failures += test_spi_run();
+
+	printf("=== UART Tests ===\n");
+	failures += test_uart_run();
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;
 }

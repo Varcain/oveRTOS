@@ -105,6 +105,18 @@ typedef struct { uint8_t _opaque; } ove_http_client_storage_t;
 #ifdef CONFIG_OVE_NET_MQTT
 typedef struct { uint8_t _opaque; } ove_mqtt_client_storage_t;
 #endif
+#ifdef CONFIG_OVE_UART
+typedef struct { uint8_t _opaque; } ove_uart_storage_t;
+#endif
+#ifdef CONFIG_OVE_SPI
+typedef struct { uint8_t _opaque; } ove_spi_storage_t;
+#endif
+#ifdef CONFIG_OVE_I2C
+typedef struct { uint8_t _opaque; } ove_i2c_storage_t;
+#endif
+#ifdef CONFIG_OVE_I2S
+typedef struct { uint8_t _opaque; } ove_i2s_storage_t;
+#endif
 /** @endcond */
 #elif defined(__ZIG_CIMPORT__) || defined(__BINDGEN__)
 /*
@@ -165,6 +177,18 @@ OVE_OPAQUE_(ove_http_client_storage_t, OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE, OVE_A
 #if defined(CONFIG_OVE_NET_MQTT) && defined(OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE)
 OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_ALIGNOF_OVE_MQTT_CLIENT_STORAGE);
 #endif
+#if defined(CONFIG_OVE_UART) && defined(OVE_SIZEOF_OVE_UART_STORAGE)
+OVE_OPAQUE_(ove_uart_storage_t, OVE_SIZEOF_OVE_UART_STORAGE, OVE_ALIGNOF_OVE_UART_STORAGE);
+#endif
+#if defined(CONFIG_OVE_SPI) && defined(OVE_SIZEOF_OVE_SPI_STORAGE)
+OVE_OPAQUE_(ove_spi_storage_t, OVE_SIZEOF_OVE_SPI_STORAGE, OVE_ALIGNOF_OVE_SPI_STORAGE);
+#endif
+#if defined(CONFIG_OVE_I2C) && defined(OVE_SIZEOF_OVE_I2C_STORAGE)
+OVE_OPAQUE_(ove_i2c_storage_t, OVE_SIZEOF_OVE_I2C_STORAGE, OVE_ALIGNOF_OVE_I2C_STORAGE);
+#endif
+#if defined(CONFIG_OVE_I2S) && defined(OVE_SIZEOF_OVE_I2S_STORAGE)
+OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_STORAGE);
+#endif
 /** @endcond */
 
 #undef OVE_OPAQUE_
@@ -209,6 +233,10 @@ OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_A
 #define OVE_HEAP_NET_TLS    1 /**< TLS sessions support heap allocation. */
 #define OVE_HEAP_NET_HTTP   1 /**< HTTP clients support heap allocation. */
 #define OVE_HEAP_NET_MQTT   1 /**< MQTT clients support heap allocation. */
+#define OVE_HEAP_UART       1 /**< UART peripherals support heap allocation. */
+#define OVE_HEAP_SPI        1 /**< SPI bus controllers support heap allocation. */
+#define OVE_HEAP_I2C        1 /**< I2C bus controllers support heap allocation. */
+#define OVE_HEAP_I2S        1 /**< I2S audio bus controllers support heap allocation. */
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 /** @} */
 
@@ -369,6 +397,34 @@ OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_A
 #define OVE_MODEL_ARENA_DEFINE(name, size) \
 	static uint8_t __attribute__((aligned(16))) name[(size)]
 #endif /* CONFIG_OVE_INFER */
+
+#ifdef CONFIG_OVE_UART
+/**
+ * @brief Declare a static UART storage variable and its RX buffer.
+ *
+ * @param name        Variable name for the UART storage.
+ * @param rx_buf_size RX ring buffer capacity in bytes.
+ */
+#define OVE_UART_DEFINE(name, rx_buf_size) \
+	static ove_uart_storage_t name; \
+	static uint8_t name##_rx_buf[(rx_buf_size)]
+#endif /* CONFIG_OVE_UART */
+
+#ifdef CONFIG_OVE_SPI
+/**
+ * @brief Declare a static SPI storage variable named @p name.
+ */
+#define OVE_SPI_DEFINE(name) \
+	static ove_spi_storage_t name
+#endif /* CONFIG_OVE_SPI */
+
+#ifdef CONFIG_OVE_I2C
+/**
+ * @brief Declare a static I2C storage variable named @p name.
+ */
+#define OVE_I2C_DEFINE(name) \
+	static ove_i2c_storage_t name
+#endif /* CONFIG_OVE_I2C */
 
 /** @} */ /* ove_storage_define */
 
@@ -632,6 +688,60 @@ OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_A
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_INFER */
 
+#ifdef CONFIG_OVE_I2C
+/**
+ * @brief Declare and auto-initialise a static I2C bus (zero-heap).
+ *
+ * @param name      Variable name for the resulting @c ove_i2c_t handle.
+ * @param inst      Peripheral instance index.
+ * @param spd       Bus speed (@c ove_i2c_speed_t).
+ */
+#define OVE_I2C_DEFINE_STATIC(name, inst, spd) \
+	static ove_i2c_storage_t _##name##_storage; \
+	static ove_i2c_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		struct ove_i2c_cfg _cfg = { \
+			.instance = (inst), .speed = (spd), \
+		}; \
+		int _err = ove_i2c_init(&name, \
+			&_##name##_storage, &_cfg); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_I2C */
+
+#ifdef CONFIG_OVE_SPI
+/**
+ * @brief Declare and auto-initialise a static SPI bus (zero-heap).
+ *
+ * @param name      Variable name for the resulting @c ove_spi_t handle.
+ * @param cfg_ptr   Pointer to a @c struct ove_spi_cfg.
+ */
+#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr) \
+	static ove_spi_storage_t _##name##_storage; \
+	static ove_spi_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		int _err = ove_spi_init(&name, \
+			&_##name##_storage, (cfg_ptr)); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_SPI */
+
+#ifdef CONFIG_OVE_UART
+/**
+ * @brief Declare and auto-initialise a static UART (zero-heap).
+ *
+ * @param name       Variable name for the resulting @c ove_uart_t handle.
+ * @param rx_buf_sz  RX buffer size in bytes (must be compile-time constant).
+ * @param cfg_ptr    Pointer to a @c struct ove_uart_cfg.
+ */
+#define OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr) \
+	static ove_uart_storage_t _##name##_storage; \
+	static uint8_t _##name##_rx_buf[(rx_buf_sz)]; \
+	static ove_uart_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		int _err = ove_uart_init(&name, \
+			&_##name##_storage, _##name##_rx_buf, (cfg_ptr)); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_UART */
+
 #else /* !CONFIG_OVE_ZERO_HEAP */
 /* ── Heap mode: use _create() — works on all backends ────────────────── */
 
@@ -828,6 +938,54 @@ OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_A
 		int _err = ove_model_create(&name, &_cfg); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_INFER */
+
+#ifdef CONFIG_OVE_I2C
+/**
+ * @brief Declare and auto-initialise a static I2C bus (heap mode).
+ *
+ * @param name  Variable name for the resulting @c ove_i2c_t handle.
+ * @param inst  Peripheral instance index.
+ * @param spd   Bus speed (@c ove_i2c_speed_t).
+ */
+#define OVE_I2C_DEFINE_STATIC(name, inst, spd) \
+	static ove_i2c_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		struct ove_i2c_cfg _cfg = { \
+			.instance = (inst), .speed = (spd), \
+		}; \
+		int _err = ove_i2c_create(&name, &_cfg); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_I2C */
+
+#ifdef CONFIG_OVE_SPI
+/**
+ * @brief Declare and auto-initialise a static SPI bus (heap mode).
+ *
+ * @param name     Variable name for the resulting @c ove_spi_t handle.
+ * @param cfg_ptr  Pointer to a @c struct ove_spi_cfg.
+ */
+#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr) \
+	static ove_spi_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		int _err = ove_spi_create(&name, (cfg_ptr)); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_SPI */
+
+#ifdef CONFIG_OVE_UART
+/**
+ * @brief Declare and auto-initialise a static UART (heap mode).
+ *
+ * @param name      Variable name for the resulting @c ove_uart_t handle.
+ * @param rx_buf_sz RX buffer size (ignored in heap mode — uses cfg->rx_buf_size).
+ * @param cfg_ptr   Pointer to a @c struct ove_uart_cfg.
+ */
+#define OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr) \
+	static ove_uart_t name; \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
+		(void)(rx_buf_sz); \
+		int _err = ove_uart_create(&name, (cfg_ptr)); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_UART */
 
 #endif /* CONFIG_OVE_ZERO_HEAP */
 

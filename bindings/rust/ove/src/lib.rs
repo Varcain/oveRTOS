@@ -72,6 +72,12 @@ pub mod net_httpd;
 pub mod net_tls;
 #[cfg(has_net_sntp)]
 pub mod net_sntp;
+#[cfg(has_uart)]
+pub mod uart;
+#[cfg(has_spi)]
+pub mod spi;
+#[cfg(has_i2c)]
+pub mod i2c;
 
 /// Raw FFI bindings re-exported for advanced use cases.
 ///

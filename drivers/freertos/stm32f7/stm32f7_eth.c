@@ -4,18 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * This file is part of oveRTOS.
- */
-
-/*
- * STM32F746G-Discovery Ethernet driver for lwIP (HALv2 API).
+ *
+ * STM32F7 Ethernet MAC driver for lwIP (HALv2 API).
  *
  * Uses the STM32 HAL ETH v2 API with the callback-based Rx path.
  * Provides ethernetif_init / ethernetif_input for lwIP integration.
  *
- * Pin mapping (STM32F746G-Discovery, RMII):
- *   PA1  RMII_REF_CLK    PA2  RMII_MDIO     PA7  RMII_CRS_DV
- *   PC1  RMII_MDC        PC4  RMII_RXD0     PC5  RMII_RXD1
- *   PG11 RMII_TX_EN      PG13 RMII_TXD0     PG14 RMII_TXD1
+ * The board must provide HAL_ETH_MspInit() (weak override) to configure
+ * the RMII/MII GPIO pins and enable the ETH clock.
  */
 
 #include "stm32f7xx_hal.h"
@@ -54,39 +50,6 @@ static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE]
     __attribute__((aligned(4)));
 
 static uint8_t MACAddr[6] = {0x02, 0x00, 0x00, 0xDE, 0xAD, 0x01};
-
-/* ── GPIO init ───────────────────────────────────────────────── */
-
-static void eth_gpio_init(void)
-{
-	GPIO_InitTypeDef gpio = {0};
-
-	__HAL_RCC_GPIOA_CLK_ENABLE();
-	__HAL_RCC_GPIOC_CLK_ENABLE();
-	__HAL_RCC_GPIOG_CLK_ENABLE();
-
-	gpio.Mode = GPIO_MODE_AF_PP;
-	gpio.Pull = GPIO_NOPULL;
-	gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-	gpio.Alternate = GPIO_AF11_ETH;
-
-	gpio.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
-	HAL_GPIO_Init(GPIOA, &gpio);
-
-	gpio.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
-	HAL_GPIO_Init(GPIOC, &gpio);
-
-	gpio.Pin = GPIO_PIN_11 | GPIO_PIN_13 | GPIO_PIN_14;
-	HAL_GPIO_Init(GPIOG, &gpio);
-
-	__HAL_RCC_ETH_CLK_ENABLE();
-}
-
-void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
-{
-	(void)h;
-	eth_gpio_init();
-}
 
 /* ── HAL Rx callbacks ────────────────────────────────────────── */
 

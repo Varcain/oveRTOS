@@ -121,6 +121,7 @@ include_directories(
     ${BOARD_DIR}
     ${BOARD_DIR}/inc/stm32f7
     ${BOARD_DIR}/inc/stm32f7/fatfs
+    ${OVE_DIR}/drivers/freertos/stm32f7
     # STM32CubeF7
     ${STM32CUBE_PATH}/Drivers/CMSIS/Include
     ${STM32CUBE_PATH}/Drivers/CMSIS/DSP/Include
@@ -147,28 +148,23 @@ set(BOARD_SOURCES
     ${BOARD_DIR}/src/serial_wrapper.c
 )
 if(NOT OVE_ZERO_HEAP)
-    list(APPEND BOARD_SOURCES ${BOARD_DIR}/src/heap_4.c)
+    list(APPEND BOARD_SOURCES ${STM32CUBE_PATH}/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c)
 else()
     list(APPEND BOARD_SOURCES ${OVE_DIR}/backends/freertos/freertos_heap_stubs.c)
 endif()
-if(OVE_AUDIO)
-    list(APPEND BOARD_SOURCES
-        ${BOARD_DIR}/src/audio_codec_da.c
-        ${BOARD_DIR}/src/i2s_da.c
-    )
-endif()
 if(OVE_NET)
-    list(APPEND BOARD_SOURCES ${BOARD_DIR}/src/eth_stm32f7.c)
+    list(APPEND BOARD_SOURCES ${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_eth.c)
 endif()
 
 set(STM32F7_SOURCES
-    ${BOARD_DIR}/src/stm32f7/system_stm32f7xx.c
+    ${STM32CUBE_PATH}/Drivers/CMSIS/Device/ST/STM32F7xx/Source/Templates/system_stm32f7xx.c
     ${BOARD_DIR}/src/stm32f7/syscalls.c
     ${BOARD_DIR}/src/stm32f7/bsp.c
-    ${BOARD_DIR}/src/stm32f7/startup_stm32f746xx.s
+    ${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_init.c
+    ${STM32CUBE_PATH}/Drivers/CMSIS/Device/ST/STM32F7xx/Source/Templates/gcc/startup_stm32f746xx.s
 )
 if(OVE_AUDIO)
-    list(APPEND STM32F7_SOURCES ${BOARD_DIR}/src/stm32f7/i2s_stm32f7.c)
+    list(APPEND BOARD_SOURCES ${BOARD_DIR}/src/bus_msp_init.c)
 endif()
 
 set(LVGL_PORT_SOURCES

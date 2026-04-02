@@ -42,6 +42,7 @@ fn main() {
             "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE", "INFER",
             "NET", "NET_TLS", "NET_HTTP", "NET_MQTT", "NET_HTTPD",
             "NET_SNTP", "NET_HTTPD_WS",
+            "UART", "SPI", "I2C", "I2S",
         ];
         for m in &modules {
             let cfg_name = format!("has_{}", m.to_lowercase());

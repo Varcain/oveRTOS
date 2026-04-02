@@ -292,6 +292,26 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
 "S(ove_tls_storage_t)        A(ove_tls_storage_t)\n"
             )
         endif()
+        if(OVE_UART)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_uart_storage_t)       A(ove_uart_storage_t)\n"
+            )
+        endif()
+        if(OVE_SPI)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_spi_storage_t)        A(ove_spi_storage_t)\n"
+            )
+        endif()
+        if(OVE_I2C)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_i2c_storage_t)        A(ove_i2c_storage_t)\n"
+            )
+        endif()
+        if(OVE_I2S)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_i2s_storage_t)        A(ove_i2s_storage_t)\n"
+            )
+        endif()
 
         add_library(_zig_ove_sizes OBJECT ${ZIG_SIZES_C})
 

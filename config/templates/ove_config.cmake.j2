@@ -47,7 +47,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
                "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
-               "NET_SNTP"] %}
+               "NET_SNTP", "UART", "SPI", "I2C", "I2S"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}
@@ -83,6 +83,11 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_LED") == True %}
     ${OVE_DIR}/src/ove_led.c
 {% endif %}
+{% for mod in ["UART", "SPI", "I2C", "I2S"] %}
+{% if config.get("CONFIG_OVE_" + mod) == True %}
+    ${OVE_DIR}/src/ove_{{ mod|lower }}.c
+{% endif %}
+{% endfor %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
     ${OVE_DIR}/backends/freertos/freertos_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
@@ -102,7 +107,8 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_{{ mod|lower }}.c
 {% endif %}
@@ -117,7 +123,8 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/nuttx/nuttx_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_{{ mod|lower }}.c
 {% endif %}
@@ -132,7 +139,8 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/posix/posix_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/posix/posix_{{ mod|lower }}.c
 {% endif %}
@@ -185,4 +193,16 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_base64.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_SNTP") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_sntp.c")
+{% endif %}
+
+# FreeRTOS bus drivers are MCU-specific — sourced from drivers/<rtos>/<mcu_family>
+{% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+{% for mod in ["UART", "SPI", "I2C"] %}
+{% if config.get("CONFIG_OVE_" + mod) == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_{{ mod|lower }}.c")
+{% endif %}
+{% endfor %}
+{% if config.get("CONFIG_OVE_I2S") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_i2s.c")
+{% endif %}
 {% endif %}

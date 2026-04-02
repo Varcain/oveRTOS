@@ -23,6 +23,7 @@ config OVE_SYNC
 config OVE_AUDIO
     bool "Audio subsystem"
     default y
+    select OVE_I2S if OVE_RTOS_FREERTOS
 
 config OVE_AUDIO_NODE_CONVERTER
     bool "Audio format converter node"
@@ -115,6 +116,45 @@ config OVE_WORKQUEUE
 config OVE_STREAM
     bool "Stream I/O"
     default n
+
+menu "Bus drivers"
+
+config OVE_UART
+    bool "UART serial"
+    default n
+    select OVE_SYNC
+    select OVE_STREAM
+    help
+      General-purpose UART driver with configurable baud rate,
+      framing, async RX buffering, and thread-safe TX.
+
+config OVE_SPI
+    bool "SPI bus master"
+    default n
+    select OVE_SYNC
+    select OVE_GPIO
+    help
+      SPI master driver with configurable clock, mode, and
+      software CS management via GPIO. Thread-safe bus locking.
+
+config OVE_I2C
+    bool "I2C bus master"
+    default n
+    select OVE_SYNC
+    help
+      I2C master driver with standard/fast/fast-plus speed,
+      register-level convenience APIs, and thread-safe bus locking.
+
+config OVE_I2S
+    bool "I2S / SAI audio bus"
+    default n
+    help
+      I2S audio bus driver with DMA double-buffered streaming,
+      half-buffer completion callbacks, and configurable sample
+      rate, bit depth, and channel count. Codec initialisation
+      is board-specific and not part of this driver.
+
+endmenu
 
 menu "Machine learning"
 
