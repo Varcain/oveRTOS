@@ -106,6 +106,10 @@ pub type ove_socket_t     = *mut c_void;
 pub type ove_http_client_t = *mut c_void;
 pub type ove_mqtt_client_t = *mut c_void;
 pub type ove_tls_t        = *mut c_void;
+pub type ove_uart_t       = *mut c_void;
+pub type ove_spi_t        = *mut c_void;
+pub type ove_i2c_t        = *mut c_void;
+pub type ove_i2s_t        = *mut c_void;
 
 pub type ove_eventbits_t = u32;
 
@@ -233,6 +237,90 @@ pub struct ove_model_config {
     pub model_data: *const u8,
     pub model_size: usize,
     pub arena_size: usize,
+}
+
+// ---------------------------------------------------------------------------
+// GPIO IRQ mode
+// ---------------------------------------------------------------------------
+
+pub type ove_gpio_irq_mode_t = u32;
+
+// ---------------------------------------------------------------------------
+// PM types
+// ---------------------------------------------------------------------------
+
+pub type ove_pm_state_t = u32;
+pub type ove_pm_wake_type_t = u32;
+pub type ove_pm_domain_t = u32;
+pub type ove_pm_event_t = u32;
+
+pub type ove_pm_policy_fn = Option<unsafe extern "C" fn(ove_pm_state_t, u32, *mut c_void) -> ove_pm_state_t>;
+pub type ove_pm_notify_fn = Option<unsafe extern "C" fn(ove_pm_event_t, ove_pm_state_t, ove_pm_state_t, *mut c_void)>;
+
+#[repr(C)]
+pub struct ove_pm_cfg {
+    pub idle_threshold_ms: u32,
+    pub standby_threshold_ms: u32,
+    pub deep_sleep_threshold_ms: u32,
+}
+
+#[repr(C)]
+pub struct ove_pm_wake_src {
+    pub type_: ove_pm_wake_type_t,
+    pub __bindgen_anon_1: ove_pm_wake_src__anon,
+}
+
+#[repr(C)]
+pub union ove_pm_wake_src__anon {
+    pub gpio: ove_pm_wake_src__gpio,
+    pub timer: ove_pm_wake_src__timer,
+    pub uart: ove_pm_wake_src__uart,
+    pub rtc: ove_pm_wake_src__rtc,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ove_pm_wake_src__gpio {
+    pub port: u32,
+    pub pin: u32,
+    pub edge: ove_gpio_irq_mode_t,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ove_pm_wake_src__timer {
+    pub timeout_ms: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ove_pm_wake_src__uart {
+    pub instance: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ove_pm_wake_src__rtc {
+    pub alarm_ms: u32,
+}
+
+#[repr(C)]
+pub struct ove_pm_stats {
+    pub current_state: ove_pm_state_t,
+    pub time_in_state_ms: [u64; 4],
+    pub transition_count: [u32; 4],
+    pub total_runtime_ms: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Bus driver types
+// ---------------------------------------------------------------------------
+
+#[repr(C)]
+pub struct ove_spi_cs {
+    pub port: u32,
+    pub pin: u32,
+    pub active_low: i32,
 }
 
 // ---------------------------------------------------------------------------
@@ -764,6 +852,44 @@ unsafe extern "C" {
     pub fn ove_sntp_sync(cfg: *const c_void) -> i32;
     pub fn ove_sntp_get_offset_us(offset_us: *mut i64) -> i32;
     pub fn ove_sntp_get_utc(utc_s: *mut u32) -> i32;
+
+    // --- PM ---
+    pub fn ove_pm_init(cfg: *const ove_pm_cfg) -> i32;
+    pub fn ove_pm_deinit();
+    pub fn ove_pm_set_state(state: ove_pm_state_t) -> i32;
+    pub fn ove_pm_get_state() -> ove_pm_state_t;
+    pub fn ove_pm_activity();
+    pub fn ove_pm_wake_register(src: *const ove_pm_wake_src) -> i32;
+    pub fn ove_pm_wake_unregister(src: *const ove_pm_wake_src) -> i32;
+    pub fn ove_pm_domain_request(domain: ove_pm_domain_t) -> i32;
+    pub fn ove_pm_domain_release(domain: ove_pm_domain_t) -> i32;
+    pub fn ove_pm_domain_get_refcount(domain: ove_pm_domain_t) -> i32;
+    pub fn ove_pm_set_policy(policy: ove_pm_policy_fn, user_data: *mut c_void) -> i32;
+    pub fn ove_pm_notify_register(cb: ove_pm_notify_fn, user_data: *mut c_void) -> i32;
+    pub fn ove_pm_notify_unregister(cb: ove_pm_notify_fn, user_data: *mut c_void) -> i32;
+    pub fn ove_pm_get_stats(stats: *mut ove_pm_stats) -> i32;
+    pub fn ove_pm_reset_stats() -> i32;
+    pub fn ove_pm_set_budget(target: u32) -> i32;
+    pub fn ove_pm_get_budget_status(actual: *mut u32) -> i32;
+
+    // --- UART ---
+    pub fn ove_uart_write(uart: ove_uart_t, data: *const c_void, len: usize, sent: *mut usize) -> i32;
+    pub fn ove_uart_read(uart: ove_uart_t, buf: *mut c_void, len: usize, received: *mut usize, timeout_ms: u32) -> i32;
+    pub fn ove_uart_flush(uart: ove_uart_t) -> i32;
+    pub fn ove_uart_bytes_available(uart: ove_uart_t) -> usize;
+
+    // --- SPI ---
+    pub fn ove_spi_transfer(spi: ove_spi_t, cs: *const ove_spi_cs, tx: *const c_void, rx: *mut c_void, len: usize) -> i32;
+    pub fn ove_spi_write(spi: ove_spi_t, cs: *const ove_spi_cs, data: *const c_void, len: usize) -> i32;
+    pub fn ove_spi_read(spi: ove_spi_t, cs: *const ove_spi_cs, buf: *mut c_void, len: usize) -> i32;
+
+    // --- I2C ---
+    pub fn ove_i2c_write(i2c: ove_i2c_t, addr: u16, data: *const c_void, len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_i2c_read(i2c: ove_i2c_t, addr: u16, buf: *mut c_void, len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_i2c_write_read(i2c: ove_i2c_t, addr: u16, tx: *const c_void, tx_len: usize, rx: *mut c_void, rx_len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_i2c_probe(i2c: ove_i2c_t, addr: u16, timeout_ms: u32) -> i32;
+    pub fn ove_i2c_reg_write(i2c: ove_i2c_t, addr: u16, reg: u8, data: *const c_void, len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_i2c_reg_read(i2c: ove_i2c_t, addr: u16, reg: u8, buf: *mut c_void, len: usize, timeout_ms: u32) -> i32;
 
 } // extern "C" oveRTOS
 

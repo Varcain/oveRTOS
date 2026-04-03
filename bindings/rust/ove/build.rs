@@ -16,6 +16,7 @@ fn main() {
             "stream", "workqueue", "infer",
             "net", "net_tls", "net_http", "net_mqtt", "net_httpd",
             "net_sntp", "net_httpd_ws", "pm",
+            "uart", "spi", "i2c", "i2s",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{})", m);
