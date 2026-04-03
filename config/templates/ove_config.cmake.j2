@@ -47,7 +47,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
                "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
-               "NET_SNTP", "UART", "SPI", "I2C", "I2S"] %}
+               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "PM"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}
@@ -90,6 +90,9 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% if config.get("CONFIG_OVE_LED") == True %}
     ${OVE_DIR}/src/ove_led.c
+{% endif %}
+{% if config.get("CONFIG_OVE_PM") == True %}
+    ${OVE_DIR}/src/ove_pm.c
 {% endif %}
 {% for mod in ["UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
@@ -156,10 +159,10 @@ set(OVE_BACKEND_SOURCES
 {% set wasm_skip = ["THREAD", "TIMER", "TIME", "CONSOLE", "NET", "UART", "SPI", "I2C", "I2S"] if wasm_on else [] %}
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET",
+               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
                "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
-{% if not (sim_on and mod in ["AUDIO", "LVGL", "NET", "WATCHDOG"]) %}
+{% if not (sim_on and mod in ["AUDIO", "LVGL", "NET", "WATCHDOG", "PM"]) %}
 {% if mod not in wasm_skip %}
     ${OVE_DIR}/backends/posix/posix_{{ mod|lower }}.c
 {% endif %}
@@ -175,7 +178,6 @@ set(OVE_BACKEND_SOURCES
 {% if wasm_on %}
     ${OVE_DIR}/backends/wasm/wasm_console.c
     ${OVE_DIR}/backends/wasm/wasm_bus_stubs.c
-    ${OVE_DIR}/backends/wasm/wasm_net_stubs.c
 {% endif %}
 {% endif %}
 )

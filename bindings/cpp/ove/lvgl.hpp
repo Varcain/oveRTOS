@@ -1273,7 +1273,7 @@ public:
 	 * @return Pointer to the `Derived` component, or `nullptr` if not found.
 	 */
 	static Derived *from_event(lv_event_t *e) {
-		lv_obj_t *target = lv_event_get_target(e);
+		lv_obj_t *target = static_cast<lv_obj_t *>(lv_event_get_target(e));
 		while (target) {
 			void *ud = lv_obj_get_user_data(target);
 			if (ud)

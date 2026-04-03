@@ -57,6 +57,9 @@ jobs:
           for defconfig in defconfigs/wasm/posix/wasm_posix_*_defconfig; do
             # Extract app name: wasm_posix_example_c_defconfig → example_c
             name=$(basename "$defconfig" | sed 's/wasm_posix_//' | sed 's/_defconfig//')
+
+            # Skip Rust/Zig for now — need wasm32 target support
+            case "$name" in *_rust|*_zig) echo "Skipping $name (Rust/Zig WASM not yet supported)"; continue;; esac
             echo ""
             echo "========================================="
             echo "Building: $name"

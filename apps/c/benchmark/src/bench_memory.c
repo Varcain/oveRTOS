@@ -35,7 +35,11 @@ int32_t bench_get_free_heap(void)
 
 int32_t bench_get_free_heap(void)
 {
+#ifdef __EMSCRIPTEN__
+	struct mallinfo mi = mallinfo();
+#else
 	struct mallinfo2 mi = mallinfo2();
+#endif
 	return (int32_t)mi.fordblks;
 }
 

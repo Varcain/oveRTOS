@@ -17,6 +17,14 @@
 #include "ove/log.h"
 #include <string.h>
 
+/* Helper: ove_time_get_us takes a pointer; this returns the value. */
+static inline uint64_t pm_now_us(void)
+{
+	uint64_t t = 0;
+	ove_time_get_us(&t);
+	return t;
+}
+
 #ifndef CONFIG_OVE_PM_MAX_WAKE_SOURCES
 #define CONFIG_OVE_PM_MAX_WAKE_SOURCES 8
 #endif
@@ -157,7 +165,7 @@ int ove_pm_init(const struct ove_pm_cfg *cfg)
 	pm_ctx.cfg = *cfg;
 	pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
 	pm_ctx.policy_fn = default_policy;
-	pm_ctx.last_activity_us = ove_time_get_us();
+	pm_ctx.last_activity_us = pm_now_us();
 	pm_ctx.state_entry_us = pm_ctx.last_activity_us;
 
 	rc = ove_mutex_init(&pm_ctx.mtx, &pm_ctx.mtx_storage);
@@ -204,7 +212,7 @@ int ove_pm_set_state(ove_pm_state_t state)
 		return OVE_OK;
 	}
 
-	now = ove_time_get_us();
+	now = pm_now_us();
 	update_stats(old, now);
 
 	pm_ctx.current_state = state;
@@ -403,7 +411,7 @@ int ove_pm_get_stats(struct ove_pm_stats *stats)
 
 	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
 
-	now = ove_time_get_us();
+	now = pm_now_us();
 
 	/* Copy accumulated stats and add current state's ongoing time */
 	memcpy(stats->time_in_state_us, pm_ctx.time_in_state_us,
@@ -436,7 +444,7 @@ void ove_pm_reset_stats(void)
 
 	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
 
-	now = ove_time_get_us();
+	now = pm_now_us();
 	memset(pm_ctx.time_in_state_us, 0, sizeof(pm_ctx.time_in_state_us));
 	memset(pm_ctx.transition_count, 0, sizeof(pm_ctx.transition_count));
 	pm_ctx.state_entry_us = now;
@@ -490,10 +498,10 @@ void ove_pm_idle_process(void)
 	/* Check and clear activity flag (ISR-safe volatile read) */
 	if (pm_ctx.activity_flag) {
 		pm_ctx.activity_flag = 0;
-		pm_ctx.last_activity_us = ove_time_get_us();
+		pm_ctx.last_activity_us = pm_now_us();
 		if (pm_ctx.current_state != OVE_PM_STATE_ACTIVE) {
 			ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
-			now = ove_time_get_us();
+			now = pm_now_us();
 			update_stats(pm_ctx.current_state, now);
 			pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
 			pm_ctx.transition_count[OVE_PM_STATE_ACTIVE]++;
@@ -502,7 +510,7 @@ void ove_pm_idle_process(void)
 		return;
 	}
 
-	now = ove_time_get_us();
+	now = pm_now_us();
 	idle_ms = (uint32_t)((now - pm_ctx.last_activity_us) / 1000ULL);
 	next_timeout_ms = ove_hal_pm_get_next_timeout_ms();
 
@@ -521,7 +529,7 @@ void ove_pm_idle_process(void)
 	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
 
 	old_state = pm_ctx.current_state;
-	now = ove_time_get_us();
+	now = pm_now_us();
 	update_stats(old_state, now);
 
 	/* Fire pre-sleep notifications */
@@ -540,7 +548,7 @@ void ove_pm_idle_process(void)
 	ove_hal_pm_enter_state(recommended, next_timeout_ms);
 
 	/* Woke up */
-	now = ove_time_get_us();
+	now = pm_now_us();
 	update_stats(recommended, now);
 	pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
 	pm_ctx.transition_count[OVE_PM_STATE_ACTIVE]++;
