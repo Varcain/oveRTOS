@@ -44,15 +44,10 @@ def _run_wasm(ws, args):
 
     # Copy dashboard assets
     dash_dir = os.path.join(ws.ove_dir, "sim", "dashboard")
-    for f in ("app.js", "style.css"):
+    for f in ("app.js", "style.css", "coi-serviceworker.js"):
         src = os.path.join(dash_dir, f)
         if os.path.isfile(src):
             shutil.copy2(src, serve_dir)
-
-    # Write coi-serviceworker.js for SharedArrayBuffer headers
-    coi_path = os.path.join(serve_dir, "coi-serviceworker.js")
-    if not os.path.isfile(coi_path):
-        _write_coi_serviceworker(coi_path)
 
     port = 8080
     headless = hasattr(args, "headless") and args.headless

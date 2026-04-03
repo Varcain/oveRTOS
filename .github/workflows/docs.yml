@@ -43,27 +43,23 @@ jobs:
         with:
           version: '3.1.51'
 
-      - name: Build WASM demo
+      - name: Build WASM example_c
         run: |
           make wasm_posix_example_c_defconfig
           make configure
           make download
           make
 
-      - name: Add WASM demo to docs site
+      - name: Add WASM apps to docs site
         run: |
-          mkdir -p docs-site/site/demo
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.html docs-site/site/demo/index.html
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.js docs-site/site/demo/
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.wasm docs-site/site/demo/
-          cp sim/dashboard/app.js docs-site/site/demo/
-          cp sim/dashboard/style.css docs-site/site/demo/
-          # coi-serviceworker.js for SharedArrayBuffer (Emscripten pthreads)
-          python3 -c "
-          sw = open('docs-site/site/demo/coi-serviceworker.js', 'w')
-          sw.write('''if(typeof window===\"undefined\"){self.addEventListener(\"install\",()=>self.skipWaiting());self.addEventListener(\"activate\",e=>e.waitUntil(self.clients.claim()));self.addEventListener(\"fetch\",e=>{if(e.request.cache===\"only-if-cached\"&&e.request.mode!==\"same-origin\")return;e.respondWith(fetch(e.request).then(r=>{if(r.status===0)return r;const h=new Headers(r.headers);h.set(\"Cross-Origin-Embedder-Policy\",\"require-corp\");h.set(\"Cross-Origin-Opener-Policy\",\"same-origin\");return new Response(r.body,{status:r.status,statusText:r.statusText,headers:h})}).catch(e=>console.error(e)))})}else{(async()=>{if(window.crossOriginIsolated!==false)return;const r=await navigator.serviceWorker.register(window.document.currentScript.src);if(r.active&&!navigator.serviceWorker.controller)window.location.reload();else if(!r.active)r.addEventListener(\"updatefound\",()=>r.installing.addEventListener(\"statechange\",()=>{if(r.installing.state===\"activated\")window.location.reload()}))})()}''')
-          sw.close()
-          "
+          COMMON="sim/dashboard/app.js sim/dashboard/style.css sim/dashboard/coi-serviceworker.js"
+
+          # example_c → /example_c/
+          mkdir -p docs-site/site/example_c
+          cp output/wasm/posix/example_c/build/firmware/ove_wasm.html docs-site/site/example_c/index.html
+          cp output/wasm/posix/example_c/build/firmware/ove_wasm.js docs-site/site/example_c/
+          cp output/wasm/posix/example_c/build/firmware/ove_wasm.wasm docs-site/site/example_c/
+          for f in $COMMON; do cp "$f" docs-site/site/example_c/; done
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
