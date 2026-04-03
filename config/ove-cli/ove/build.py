@@ -548,6 +548,9 @@ def build_posix(ws):
             src = os.path.join(fw_build, name)
             if os.path.isfile(src):
                 shutil.copy2(src, ws.images_dir)
+
+        # Assemble serve directory with all assets needed to run
+        _assemble_wasm_serve(ws, fw_build)
     else:
         src = os.path.join(fw_build, "ove_posix")
         if os.path.isfile(src):
@@ -561,6 +564,80 @@ def build_posix(ws):
             f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
             f.write('exec "$DIR/images/ove_posix" "$@"\n')
         os.chmod(run_script, 0o755)
+
+
+def _assemble_wasm_serve(ws, fw_build):
+    """Assemble the serve/ directory with build artifacts + dashboard assets."""
+    serve_dir = os.path.join(ws.workspace_dir, "serve")
+    os.makedirs(serve_dir, exist_ok=True)
+
+    # Copy build artifacts
+    shutil.copy2(os.path.join(fw_build, "ove_wasm.html"),
+                 os.path.join(serve_dir, "index.html"))
+    for name in ("ove_wasm.js", "ove_wasm.wasm", "ove_wasm.worker.js"):
+        src = os.path.join(fw_build, name)
+        if os.path.isfile(src):
+            shutil.copy2(src, serve_dir)
+
+    # Copy dashboard assets
+    dash_dir = os.path.join(ws.ove_dir, "sim", "dashboard")
+    for f in ("app.js", "style.css", "coi-serviceworker.js"):
+        src = os.path.join(dash_dir, f)
+        if os.path.isfile(src):
+            shutil.copy2(src, serve_dir)
+
+    # Generate run.sh inside serve/
+    _write_wasm_run_sh(os.path.join(serve_dir, "run.sh"))
+
+    # Generate workspace-level run script (matches POSIX convention)
+    run_script = os.path.join(ws.workspace_dir, "run")
+    with open(run_script, "w") as f:
+        f.write('#!/bin/bash\n')
+        f.write('set -e\n')
+        f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
+        f.write('exec "$DIR/serve/run.sh" "$@"\n')
+    os.chmod(run_script, 0o755)
+
+
+def _write_wasm_run_sh(path):
+    """Generate a self-contained run.sh that serves the WASM build."""
+    content = '''#!/usr/bin/env bash
+# Auto-generated — serves this WASM build with COOP/COEP headers.
+# Usage: ./run.sh [PORT]
+
+set -e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+PORT="${1:-8080}"
+
+echo "=== Serving WASM at http://localhost:$PORT ==="
+echo "  Files: $DIR"
+echo "  Press Ctrl+C to stop."
+
+# Open browser (best-effort, non-blocking)
+( sleep 1 && python3 -c "import webbrowser; webbrowser.open('http://localhost:$PORT')" ) 2>/dev/null &
+
+python3 -c "
+import http.server, functools, sys
+
+class H(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
+        self.send_header('Cross-Origin-Embedder-Policy', 'require-corp')
+        super().end_headers()
+    def log_message(self, *a):
+        pass
+
+s = http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])),
+    functools.partial(H, directory=sys.argv[2]))
+try:
+    s.serve_forever()
+except KeyboardInterrupt:
+    print('\\\\nStopped.')
+" "$PORT" "$DIR"
+'''
+    with open(path, "w") as f:
+        f.write(content)
+    os.chmod(path, 0o755)
 
 
 def _copy_images(ws, fw_build):

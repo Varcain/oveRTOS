@@ -93,7 +93,7 @@ static void sensor_thread(void *)
 		pm::activity();
 #endif
 
-		ove::thread::sleep_ms(50);
+		ove::Thread<>::sleep_ms(50);
 		reading += 17;
 		OVE_LOG_INF("sensor: reading = %u", reading % 1000);
 
@@ -101,7 +101,7 @@ static void sensor_thread(void *)
 		pm::domain_release(OVE_PM_DOMAIN_SENSOR);
 #endif
 
-		ove::thread::sleep_ms(5000);
+		ove::Thread<>::sleep_ms(5000);
 	}
 }
 
@@ -112,7 +112,7 @@ static void monitor_thread(void *)
 	OVE_LOG_INF("monitor: started");
 
 	while (true) {
-		ove::thread::sleep_ms(10000);
+		ove::Thread<>::sleep_ms(10000);
 
 #ifdef CONFIG_OVE_PM
 		pm::Stats stats{};

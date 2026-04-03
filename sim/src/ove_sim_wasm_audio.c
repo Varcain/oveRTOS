@@ -16,12 +16,28 @@
 struct ove_sim_wasm_audio ove_wasm_audio;
 
 /* ── Ring buffer helpers (SPSC — no lock needed) ───────────────────── */
+/*
+ * Use __atomic builtins for write_pos/read_pos so that cross-thread
+ * updates between the JS main thread (Atomics.store) and the WASM
+ * pthread are guaranteed visible.  volatile alone is NOT sufficient
+ * on WASM SharedArrayBuffer.
+ */
 
 #define RING_MASK (OVE_SIM_WASM_AUDIO_RING_SIZE - 1)
 
+static uint32_t ring_load_wp(const struct ove_sim_wasm_audio_ring *r)
+{
+	return __atomic_load_n(&r->write_pos, __ATOMIC_ACQUIRE);
+}
+
+static uint32_t ring_load_rp(const struct ove_sim_wasm_audio_ring *r)
+{
+	return __atomic_load_n(&r->read_pos, __ATOMIC_ACQUIRE);
+}
+
 static uint32_t ring_avail(const struct ove_sim_wasm_audio_ring *r)
 {
-	return r->write_pos - r->read_pos;
+	return ring_load_wp(r) - ring_load_rp(r);
 }
 
 static uint32_t ring_free(const struct ove_sim_wasm_audio_ring *r)
@@ -32,21 +48,22 @@ static uint32_t ring_free(const struct ove_sim_wasm_audio_ring *r)
 static void ring_write(struct ove_sim_wasm_audio_ring *r,
 		       const uint8_t *data, uint32_t len)
 {
-	for (uint32_t i = 0; i < len; i++) {
-		r->buf[r->write_pos & RING_MASK] = data[i];
-		r->write_pos++;
-	}
+	uint32_t wp = ring_load_wp(r);
+	for (uint32_t i = 0; i < len; i++)
+		r->buf[(wp + i) & RING_MASK] = data[i];
+	__atomic_store_n(&r->write_pos, wp + len, __ATOMIC_RELEASE);
 }
 
 static uint32_t ring_read(struct ove_sim_wasm_audio_ring *r,
 			   uint8_t *data, uint32_t len)
 {
-	uint32_t avail = ring_avail(r);
+	uint32_t wp = ring_load_wp(r);
+	uint32_t rp = ring_load_rp(r);
+	uint32_t avail = wp - rp;
 	if (len > avail) len = avail;
-	for (uint32_t i = 0; i < len; i++) {
-		data[i] = r->buf[r->read_pos & RING_MASK];
-		r->read_pos++;
-	}
+	for (uint32_t i = 0; i < len; i++)
+		data[i] = r->buf[(rp + i) & RING_MASK];
+	__atomic_store_n(&r->read_pos, rp + len, __ATOMIC_RELEASE);
 	return len;
 }
 
@@ -67,13 +84,15 @@ void *ove_wasm_audio_get_capture_ptr(void)
 EMSCRIPTEN_KEEPALIVE
 uint32_t ove_wasm_audio_playback_available(void)
 {
-	return ring_avail(&ove_wasm_audio.playback);
+	return ring_load_wp(&ove_wasm_audio.playback) -
+	       ring_load_rp(&ove_wasm_audio.playback);
 }
 
 EMSCRIPTEN_KEEPALIVE
 uint32_t ove_wasm_audio_capture_available(void)
 {
-	return ring_avail(&ove_wasm_audio.capture);
+	return ring_load_wp(&ove_wasm_audio.capture) -
+	       ring_load_rp(&ove_wasm_audio.capture);
 }
 
 EMSCRIPTEN_KEEPALIVE

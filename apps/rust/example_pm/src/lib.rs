@@ -128,8 +128,8 @@ fn app_main() {
     }
 
     // Create threads
-    let _sensor = ove::thread!(b"sensor\0", sensor_entry, Priority::Normal, 4096);
-    let _monitor = ove::thread!(b"monitor\0", monitor_entry, Priority::Low, 4096);
+    let _sensor = ove::thread!("sensor", sensor_entry, Priority::Normal, 4096);
+    let _monitor = ove::thread!("monitor", monitor_entry, Priority::Low, 4096);
 
     ove::log_inf!(
         "pm example (Rust): ready (battery={}%)",

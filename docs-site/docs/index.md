@@ -65,4 +65,4 @@ Include every module at once with the umbrella header:
 - [Build](getting-started/build.md)
 - [Run and flash](getting-started/run.md)
 - [API Reference](api/index.md)
-- [Examples](examples/c.md)
+- [Examples](examples/index.md)

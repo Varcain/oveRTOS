@@ -34,6 +34,7 @@ pub mod led;
 #[cfg(has_console)]
 pub mod console;
 pub mod error;
+#[cfg(has_eventgroup)]
 pub mod eventgroup;
 pub mod fmt;
 #[cfg(has_fs)]
@@ -43,14 +44,17 @@ pub mod lvgl;
 #[cfg(has_nvs)]
 pub mod nvs;
 pub mod priority;
+#[cfg(has_queue)]
 pub mod queue;
 #[cfg(has_shell)]
 pub mod shell;
 pub mod static_cell;
+#[cfg(has_sync)]
 pub mod sync;
 pub mod thread;
 #[cfg(has_time)]
 pub mod time;
+#[cfg(has_timer)]
 pub mod timer;
 #[cfg(has_stream)]
 pub mod stream;
@@ -91,12 +95,16 @@ pub mod ffi {
 
 // Public re-exports for convenience
 pub use error::{Error, Result, WAIT_FOREVER};
+#[cfg(has_eventgroup)]
 pub use eventgroup::{EventGroup, WaitFlags, EG_CLEAR_ON_EXIT, EG_WAIT_ALL};
 pub use priority::Priority;
+#[cfg(has_queue)]
 pub use queue::Queue;
+#[cfg(has_sync)]
 pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
 pub use thread::{Thread, ThreadState, ThreadStats, MemStats, ThreadInfo};
 pub use static_cell::{StaticCell, StaticMut};
+#[cfg(has_timer)]
 pub use timer::Timer;
 pub use fmt::FmtBuf;
 #[cfg(has_stream)]
@@ -246,6 +254,7 @@ macro_rules! main {
 // ---------------------------------------------------------------------------
 
 /// Create a [`Mutex`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! mutex {
     () => {{
@@ -261,6 +270,7 @@ macro_rules! mutex {
 }
 
 /// Create a [`RecursiveMutex`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! recursive_mutex {
     () => {{
@@ -276,6 +286,7 @@ macro_rules! recursive_mutex {
 }
 
 /// Create a [`Semaphore`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! semaphore {
     ($initial:expr, $max:expr) => {{
@@ -293,6 +304,7 @@ macro_rules! semaphore {
 }
 
 /// Create an [`Event`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! event {
     () => {{
@@ -308,6 +320,7 @@ macro_rules! event {
 }
 
 /// Create a [`CondVar`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! condvar {
     () => {{
@@ -323,6 +336,7 @@ macro_rules! condvar {
 }
 
 /// Create an [`EventGroup`] that works in both heap and zero-heap modes.
+#[cfg(has_eventgroup)]
 #[macro_export]
 macro_rules! eventgroup {
     () => {{
@@ -343,6 +357,7 @@ macro_rules! eventgroup {
 /// ```ignore
 /// let q = ove::queue!(u32, 8);
 /// ```
+#[cfg(has_queue)]
 #[macro_export]
 macro_rules! queue {
     ($T:ty, $N:expr) => {{
@@ -370,6 +385,7 @@ macro_rules! queue {
 /// ```ignore
 /// let t = ove::timer!(my_callback, 100, false);
 /// ```
+#[cfg(has_timer)]
 #[macro_export]
 macro_rules! timer {
     ($callback:expr, $period_ms:expr, $one_shot:expr) => {{

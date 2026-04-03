@@ -208,12 +208,53 @@ static const struct ove_audio_node_ops sim_source_ops = {
 
 /* ── Sink node (playback to dashboard) ─────────────────────────────── */
 
+#include "ove/thread.h"
+#include "ove/time.h"
+
 struct sim_sink_ctx {
 	struct ove_audio_fmt     fmt;
 	struct ove_sim_audio_fmt sim_fmt;
 	struct ove_audio_graph  *graph;
 	unsigned int             frames_per_period;
+	ove_thread_t             pump_thread;
+	volatile int             running;
 };
+
+static void sim_sink_pump(void *arg)
+{
+	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)arg;
+	/* Period in ms: frames_per_period / sample_rate * 1000 */
+	uint32_t period_ms = (sc->frames_per_period * 1000) /
+			     sc->fmt.sample_rate;
+	if (period_ms < 1) period_ms = 1;
+
+	while (sc->running) {
+		ove_audio_graph_process(sc->graph);
+		ove_thread_sleep_ms(period_ms);
+	}
+}
+
+static int sim_sink_start(void *ctx)
+{
+	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
+	sc->running = 1;
+	struct ove_thread_desc desc = {
+		.name     = "audio-pump",
+		.entry    = sim_sink_pump,
+		.arg      = sc,
+		.priority = OVE_PRIO_HIGH,
+	};
+	return ove_thread_create(&sc->pump_thread, 4096, &desc);
+}
+
+static int sim_sink_stop(void *ctx)
+{
+	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
+	sc->running = 0;
+	/* Thread will exit on next sleep; give it time. */
+	ove_thread_sleep_ms(50);
+	return OVE_OK;
+}
 
 static int sim_sink_configure(void *ctx, const struct ove_audio_fmt *in,
 			      struct ove_audio_fmt *out)
@@ -240,12 +281,17 @@ static int sim_sink_process(void *ctx, const struct ove_audio_buf *in,
 
 static void sim_sink_destroy(void *ctx)
 {
+	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
+	if (sc->running)
+		sim_sink_stop(ctx);
 	free(ctx);
 }
 
 static const struct ove_audio_node_ops sim_sink_ops = {
 	.configure = sim_sink_configure,
 	.process   = sim_sink_process,
+	.start     = sim_sink_start,
+	.stop      = sim_sink_stop,
 	.destroy   = sim_sink_destroy,
 };
 
@@ -277,6 +323,11 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 
 	ctx->fmt = cfg->fmt;
 	ctx->sim_fmt = fmt_from_ove(&cfg->fmt);
+#ifdef __EMSCRIPTEN__
+	ove_wasm_audio_set_capture_fmt(cfg->fmt.sample_rate,
+				       cfg->fmt.channels,
+				       ctx->sim_fmt.bit_depth);
+#endif
 
 	int idx = ove_audio_graph_add_node(g, &sim_source_ops, ctx, name,
 					   OVE_AUDIO_NODE_SOURCE);
@@ -300,6 +351,11 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 	ctx->sim_fmt = fmt_from_ove(&cfg->fmt);
 	ctx->graph = g;
 	ctx->frames_per_period = g->frames_per_period;
+#ifdef __EMSCRIPTEN__
+	ove_wasm_audio_set_playback_fmt(cfg->fmt.sample_rate,
+					cfg->fmt.channels,
+					ctx->sim_fmt.bit_depth);
+#endif
 
 	int idx = ove_audio_graph_add_node(g, &sim_sink_ops, ctx, name,
 					   OVE_AUDIO_NODE_SINK);

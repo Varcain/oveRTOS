@@ -48,7 +48,34 @@ nav:
     - External Apps: build-system/external-apps.md
   - Backends: backends/index.md
   - Examples:
-    - C: examples/c.md
-    - C++: examples/cpp.md
-    - Rust: examples/rust.md
-    - Zig: examples/zig.md
+    - Overview: examples/index.md
+    - Basic Example:
+      - Overview: examples/example/index.md
+      - C: examples/example/c.md
+      - C++: examples/example/cpp.md
+      - Rust: examples/example/rust.md
+      - Zig: examples/example/zig.md
+    - Benchmark:
+      - Overview: examples/benchmark/index.md
+      - C: examples/benchmark/c.md
+      - C++: examples/benchmark/cpp.md
+      - Rust: examples/benchmark/rust.md
+      - Zig: examples/benchmark/zig.md
+    - Networking:
+      - Overview: examples/example_net/index.md
+      - C: examples/example_net/c.md
+      - C++: examples/example_net/cpp.md
+      - Rust: examples/example_net/rust.md
+      - Zig: examples/example_net/zig.md
+    - Power Management:
+      - Overview: examples/example_pm/index.md
+      - C: examples/example_pm/c.md
+      - C++: examples/example_pm/cpp.md
+      - Rust: examples/example_pm/rust.md
+      - Zig: examples/example_pm/zig.md
+    - Keyword Detection:
+      - Overview: examples/example_keyword_live/index.md
+      - C: examples/example_keyword_live/c.md
+      - C++: examples/example_keyword_live/cpp.md
+      - Rust: examples/example_keyword_live/rust.md
+      - Zig: examples/example_keyword_live/zig.md

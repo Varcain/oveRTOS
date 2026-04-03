@@ -43,6 +43,9 @@ jobs:
         with:
           version: '3.1.51'
 
+      - name: Add Rust WASM target
+        run: rustup target add wasm32-unknown-emscripten
+
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
         with:
@@ -58,17 +61,14 @@ jobs:
             # Extract app name: wasm_posix_example_c_defconfig → example_c
             name=$(basename "$defconfig" | sed 's/wasm_posix_//' | sed 's/_defconfig//')
 
-            # Skip Rust/Zig for now — need wasm32 target support
-            case "$name" in *_rust|*_zig) echo "Skipping $name (Rust/Zig WASM not yet supported)"; continue;; esac
+            # Skip Zig — Zig 0.15.x doesn't support wasm32-emscripten yet
+            case "$name" in *_zig) echo "Skipping $name (Zig wasm32-emscripten not supported in Zig 0.15)"; continue;; esac
             echo ""
             echo "========================================="
             echo "Building: $name"
             echo "========================================="
 
-            # Derive workspace name from defconfig (matches what ove creates)
-            # wasm_posix_example_c → output/wasm/posix/example_c/
-            ws_name=$(echo "$name" | sed 's/^benchmark$/benchmark/' ) # identity, just for clarity
-            BUILD_DIR="output/wasm/posix/${ws_name}/build/firmware"
+            BUILD_DIR="output/wasm/posix/${name}/build/firmware"
 
             # Clean this workspace's build
             rm -rf "$BUILD_DIR"

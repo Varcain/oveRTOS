@@ -4,20 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>oveRTOS Browser Simulation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css"/>
     <link rel="stylesheet" href="style.css">
     <script src="coi-serviceworker.js"></script>
 </head>
 <body>
     <header>
         <h1>oveRTOS Simulation Dashboard</h1>
-        <div id="status" class="status">Loading WASM...</div>
+        <div class="header-right">
+            <button id="reset-layout" class="btn btn-small" title="Reset window layout">Reset Layout</button>
+            <div id="status" class="status">Loading WASM...</div>
+        </div>
     </header>
 
-    <main>
-        <!-- Panels hidden by default; shown by onRuntimeInitialized
-             based on compile-time config flags. -->
-        <section class="panel" id="display-panel" style="display:none">
-            <h2>Display</h2>
+    <!-- Panels start hidden; WinBox mount() moves them into windows -->
+    <div id="panel-store" style="display:none">
+        <section class="panel" id="display-panel">
             <div class="display-container">
                 <canvas id="display-canvas"></canvas>
             </div>
@@ -27,18 +29,29 @@
             </div>
         </section>
 
-        <section class="panel" id="audio-panel" style="display:none">
-            <h2>Audio</h2>
+        <section class="panel" id="audio-panel">
             <div class="audio-controls">
                 <button id="audio-play-toggle" class="btn">Enable Playback</button>
                 <button id="audio-mic-toggle" class="btn">Enable Mic</button>
                 <span id="audio-info">--</span>
             </div>
-            <canvas id="audio-waveform" width="400" height="100"></canvas>
+            <div class="audio-devices">
+                <label>Output: <select id="audio-output-select" class="btn"></select></label>
+                <label>Input: <select id="audio-input-select" class="btn"></select></label>
+            </div>
+            <div class="waveform-pair">
+                <div class="waveform-box">
+                    <span class="waveform-label">INPUT</span>
+                    <canvas id="waveform-input" height="80"></canvas>
+                </div>
+                <div class="waveform-box">
+                    <span class="waveform-label">OUTPUT</span>
+                    <canvas id="waveform-output" height="80"></canvas>
+                </div>
+            </div>
         </section>
 
-        <section class="panel" id="console-panel" style="display:none">
-            <h2>Console</h2>
+        <section class="panel" id="console-panel">
             <div style="display:flex;gap:8px;">
                 <input type="text" id="console-input" class="btn"
                        style="flex:1;font-family:inherit;font-size:12px;padding:6px 8px;"
@@ -48,10 +61,12 @@
         </section>
 
         <section class="panel" id="events-panel">
-            <h2>Events</h2>
+            <div class="events-toolbar">
+                <button id="autoscroll-toggle" class="btn btn-small autoscroll-on" title="Toggle auto-scroll">Auto-scroll: ON</button>
+            </div>
             <div id="event-log" class="event-log"></div>
         </section>
-    </main>
+    </div>
 
     <!--
       Guard: if SharedArrayBuffer isn't available yet (service worker
@@ -82,22 +97,32 @@
         /* Log any print/err from the WASM module to the event log. */
         print: function(text) {
             console.log(text);
-            var log = document.getElementById('event-log');
-            if (log) {
-                var el = document.createElement('div');
-                el.className = 'entry';
-                el.textContent = '[wasm] ' + text;
-                log.prepend(el);
+            if (typeof addEvent === 'function') {
+                addEvent('wasm', text);
+            } else {
+                var log = document.getElementById('event-log');
+                if (log) {
+                    var el = document.createElement('div');
+                    el.className = 'entry';
+                    el.textContent = '[wasm] ' + text;
+                    log.appendChild(el);
+                }
             }
         },
         printErr: function(text) {
             console.error(text);
-            var log = document.getElementById('event-log');
-            if (log) {
-                var el = document.createElement('div');
-                el.className = 'entry';
-                el.innerHTML = '<span class="type">[err]</span> ' + text;
-                log.prepend(el);
+            if (text.indexOf('keepRuntimeAlive') !== -1) return;
+            if (text.indexOf('program exited (with status: 0)') !== -1) return;
+            if (typeof addEvent === 'function') {
+                addEvent('err', text);
+            } else {
+                var log = document.getElementById('event-log');
+                if (log) {
+                    var el = document.createElement('div');
+                    el.className = 'entry';
+                    el.innerHTML = '<span class="type">[err]</span> ' + text;
+                    log.appendChild(el);
+                }
             }
         },
         onAbort: function(what) {
@@ -108,14 +133,16 @@
             document.getElementById('status').textContent = 'Connected (WASM)';
             document.getElementById('status').className = 'status connected';
 
-            /* Show panels based on compile-time config. */
-            function showIf(id, flag) {
-                if (Module.ccall(flag, 'number'))
-                    document.getElementById(id).style.display = '';
+            /* Create WinBox windows for panels enabled by compile-time config. */
+            if (window.createDashboardWindow) {
+                if (Module.ccall('ove_wasm_has_lvgl', 'number'))
+                    window.createDashboardWindow('display', 'Display');
+                if (Module.ccall('ove_wasm_has_audio', 'number'))
+                    window.createDashboardWindow('audio', 'Audio');
+                if (Module.ccall('ove_wasm_has_shell', 'number'))
+                    window.createDashboardWindow('console', 'Console');
+                window.createDashboardWindow('events', 'Events');
             }
-            showIf('display-panel', 'ove_wasm_has_lvgl');
-            showIf('audio-panel', 'ove_wasm_has_audio');
-            showIf('console-panel', 'ove_wasm_has_shell');
 
             /* Start polling the shared framebuffer in WASM heap. */
             var lastSeq = 0;
@@ -257,6 +284,56 @@
             var RING_SIZE = 16384;
             var RING_HDR = 16; /* write_pos(4) + read_pos(4) + rate(4) + ch(2) + bits(2) */
 
+            /** Draw a float32 waveform on a canvas. */
+            function drawWave(ctx, cvs, samples, color) {
+                if (!ctx) return;
+                var cw = cvs.width || cvs.clientWidth;
+                var ch = cvs.height;
+                if (cw <= 0) { cw = cvs.clientWidth; cvs.width = cw; }
+                ctx.fillStyle = '#0d1117';
+                ctx.fillRect(0, 0, cw, ch);
+                var step = Math.max(1, Math.floor(samples.length / cw));
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (var x = 0; x < cw && x * step < samples.length; x++) {
+                    var y = (1 - samples[x * step]) * ch / 2;
+                    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            var outSelect = document.getElementById('audio-output-select');
+            var inSelect = document.getElementById('audio-input-select');
+
+            /* ── Enumerate audio devices ─────────────────────────── */
+            function refreshDevices() {
+                navigator.mediaDevices.enumerateDevices().then(function(devs) {
+                    outSelect.innerHTML = '';
+                    inSelect.innerHTML = '';
+                    var oi = 0, ii = 0;
+                    devs.forEach(function(d) {
+                        var opt = document.createElement('option');
+                        opt.value = d.deviceId;
+                        if (d.kind === 'audiooutput') {
+                            opt.textContent = d.label || ('Speaker ' + (++oi));
+                            outSelect.appendChild(opt);
+                        } else if (d.kind === 'audioinput') {
+                            opt.textContent = d.label || ('Microphone ' + (++ii));
+                            inSelect.appendChild(opt);
+                        }
+                    });
+                });
+            }
+            refreshDevices();
+            navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+
+            /* Switch output device on running AudioContext. */
+            outSelect.addEventListener('change', function() {
+                if (audioCtx && audioCtx.setSinkId) {
+                    audioCtx.setSinkId(outSelect.value);
+                }
+            });
+
             document.getElementById('audio-play-toggle').addEventListener('click', function() {
                 if (playbackNode) {
                     playbackNode.disconnect();
@@ -267,17 +344,23 @@
                     return;
                 }
 
-                var sampleRate = 44100;
-                audioCtx = new AudioContext({ sampleRate: sampleRate });
-                Module.ccall('ove_wasm_audio_set_playback_fmt', null,
-                    ['number','number','number'], [sampleRate, 1, 16]);
-
                 var pbPtr = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
-                var wpOff = pbPtr;       /* write_pos offset in HEAP */
-                var rpOff = pbPtr + 4;   /* read_pos offset */
+                var heap32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
+                var sampleRate = heap32[(pbPtr + 8) >> 2] || 16000;
+
+                audioCtx = new AudioContext({ sampleRate: sampleRate });
+                if (audioCtx.setSinkId && outSelect.value) {
+                    audioCtx.setSinkId(outSelect.value);
+                }
+
+                var wpOff = pbPtr;
+                var rpOff = pbPtr + 4;
                 var bufOff = pbPtr + RING_HDR;
 
                 /* ScriptProcessorNode pulls audio at render rate */
+                var outCanvas = document.getElementById('waveform-output');
+                var outCtx = outCanvas ? outCanvas.getContext('2d') : null;
+
                 playbackNode = audioCtx.createScriptProcessor(1024, 0, 1);
                 playbackNode.onaudioprocess = function(e) {
                     var output = e.outputBuffer.getChannelData(0);
@@ -302,6 +385,8 @@
                     }
                     var consumed = Math.min(avail, bytesNeeded);
                     Atomics.store(heap32, rpOff >> 2, rp + consumed);
+
+                    drawWave(outCtx, outCanvas, output, '#e94560');
                 };
                 playbackNode.connect(audioCtx.destination);
                 this.textContent = 'Disable Playback';
@@ -323,21 +408,25 @@
                 }
 
                 var self = this;
-                navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+                var constraints = { audio: inSelect.value ? { deviceId: { exact: inSelect.value } } : true };
+                navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
                     captureStream = stream;
-                    if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 44100 });
-
-                    var sampleRate = audioCtx.sampleRate;
-                    Module.ccall('ove_wasm_audio_set_capture_fmt', null,
-                        ['number','number','number'], [sampleRate, 1, 16]);
 
                     var capPtr = Module.ccall('ove_wasm_audio_get_capture_ptr', 'number');
+                    var tmpHeap32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
+                    var appRate = tmpHeap32[(capPtr + 8) >> 2] || 16000;
+
+                    if (!audioCtx) audioCtx = new AudioContext({ sampleRate: appRate });
+
                     var wpOff = capPtr;
                     var rpOff = capPtr + 4;
                     var bufOff = capPtr + RING_HDR;
 
                     var source = audioCtx.createMediaStreamSource(stream);
                     captureNode = audioCtx.createScriptProcessor(1024, 1, 1);
+                    var inCanvas = document.getElementById('waveform-input');
+                    var inCtx = inCanvas ? inCanvas.getContext('2d') : null;
+
                     captureNode.onaudioprocess = function(e) {
                         var input = e.inputBuffer.getChannelData(0);
                         var heap32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
@@ -357,9 +446,11 @@
                             heap8[idx + 1] = (val >> 8) & 0xFF;
                         }
                         Atomics.store(heap32, wpOff >> 2, wp + samplesToWrite * 2);
+
+                        drawWave(inCtx, inCanvas, input, '#4ecca3');
                     };
                     source.connect(captureNode);
-                    captureNode.connect(audioCtx.destination); /* needed for processing */
+                    captureNode.connect(audioCtx.destination);
                     self.textContent = 'Disable Mic';
                 }).catch(function(err) {
                     console.error('Mic access denied:', err);
@@ -371,7 +462,9 @@
     } /* end else (SharedArrayBuffer available) */
     </script>
 
-    <!-- Dashboard JS (event log, audio, etc.) -->
+    <!-- WinBox floating window manager -->
+    <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/js/winbox.min.js"></script>
+    <!-- Dashboard JS (event log, window layout, etc.) -->
     <script src="app.js"></script>
 
     <!-- Emscripten-generated JS (uses the pre-defined Module) -->

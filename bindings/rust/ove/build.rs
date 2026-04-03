@@ -11,6 +11,7 @@ fn main() {
     // Doc-only builds: skip bindgen, emit all feature flags
     if std::env::var("DOCS_RS").is_ok() {
         let modules = [
+            "sync", "queue", "timer", "eventgroup", "log",
             "audio", "fs", "lvgl", "nvs", "shell", "watchdog",
             "bsp", "board", "gpio", "led", "time", "console",
             "stream", "workqueue", "infer",
@@ -39,6 +40,7 @@ fn main() {
         let config_path = format!("{}/ove_config.h", ove_gen_dir);
         let config = std::fs::read_to_string(&config_path).unwrap_or_default();
         let modules = [
+            "SYNC", "QUEUE", "TIMER", "EVENTGROUP", "LOG",
             "AUDIO", "FS", "LVGL", "NVS", "SHELL", "WATCHDOG", "BSP", "BOARD",
             "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE", "INFER",
             "NET", "NET_TLS", "NET_HTTP", "NET_MQTT", "NET_HTTPD",
@@ -77,6 +79,8 @@ fn main() {
         env::var("LVGL_PARENT_PATH").expect("LVGL_PARENT_PATH env var must be set by build system");
 
     let is_native = env::var("RUST_IS_NATIVE").unwrap_or_default() == "1";
+    let is_wasm = env::var("OVE_WASM_BUILD").unwrap_or_default() == "1"
+        || std::env::var("TARGET").unwrap_or_default().contains("wasm32");
 
     // Detect enabled features from ove_config.h
     let config_path = format!("{}/ove_config.h", ove_gen_dir);
@@ -115,9 +119,35 @@ fn main() {
     };
 
     // Generate storage_sizes.h from build-time measurements.
-    // ove_rust.cmake must produce OVE_STORAGE_SIZES pointing to
-    // a KEY=VALUE file with sizeof/alignof for each storage type.
-    {
+    if is_wasm {
+        // WASM uses heap mode — real sizes not needed.  Provide large
+        // dummy values so the __BINDGEN__ opaque types compile.
+        let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let header_path = out_path.join("storage_sizes.h");
+        let mut header = String::from(
+            "/* Dummy storage sizes for WASM (heap mode only). */\n\
+             #include <stdint.h>\n\n"
+        );
+        let types = [
+            "MUTEX", "SEM", "EVENT", "CONDVAR", "THREAD", "QUEUE",
+            "TIMER", "EVENTGROUP", "WORKQUEUE", "WORK", "STREAM",
+            "WATCHDOG", "FILE", "DIR", "SOCKET", "NETIF",
+            "HTTP_CLIENT", "MQTT_CLIENT", "TLS", "MODEL",
+            "UART", "SPI", "I2C", "I2S",
+        ];
+        for t in &types {
+            header.push_str(&format!(
+                "#define OVE_SIZEOF_OVE_{}_STORAGE 1024\n\
+                 #define OVE_ALIGNOF_OVE_{}_STORAGE 8\n", t, t
+            ));
+        }
+        std::fs::write(&header_path, &header).expect("Failed to write storage_sizes.h");
+        wrapper = format!(
+            "#include \"{}\"\n{}",
+            header_path.to_str().unwrap(),
+            wrapper
+        );
+    } else {
         let sizes_path = env::var("OVE_STORAGE_SIZES")
             .expect("OVE_STORAGE_SIZES env var not set — \
                      ove_rust.cmake must generate storage sizes before cargo runs");
@@ -152,8 +182,14 @@ fn main() {
 
     let mut builder = bindgen::Builder::default()
         .header_contents("wrapper.h", &wrapper)
-        .clang_arg("-D__BINDGEN__")
-        .clang_args(&[
+        .clang_arg("-D__BINDGEN__");
+    // WASM: bindgen parses with host target (x86_64) but Rust compiles
+    // for wasm32 (4-byte pointers).  Disable layout tests to avoid
+    // size assertion mismatches between host and wasm32.
+    if is_wasm {
+        builder = builder.layout_tests(false);
+    }
+    builder = builder.clang_args(&[
             format!("-I{}/include", ove_dir),
             format!("-I{}", ove_gen_dir),
             format!("-I{}", lvgl_include),
@@ -163,8 +199,13 @@ fn main() {
         // lv_event_code_t_LV_EVENT_CLICKED) — matches stub anonymous-enum output.
         .prepend_enum_name(false);
 
-    // Add backend storage header include path (for non-bindgen compilation)
-    if let Some(ref inc) = backend_include {
+    // Add backend storage header include path
+    if is_wasm {
+        // WASM uses its own storage header
+        builder = builder.clang_arg(format!("-I{}/backends/wasm/include", ove_dir));
+        // Also need POSIX include for shared types (sync, queue, etc.)
+        builder = builder.clang_arg(format!("-I{}/backends/posix/include", ove_dir));
+    } else if let Some(ref inc) = backend_include {
         builder = builder.clang_arg(format!("-I{}", inc));
     }
 
@@ -291,26 +332,33 @@ fn main() {
         builder = builder.clang_arg(format!("-I{}", lv_conf_path));
     }
 
-    if is_native {
-        // Native/POSIX build: use std types
+    if is_native || is_wasm {
+        // Native/POSIX or WASM: parse headers using the HOST target.
+        // Bindgen generates .rs source which cargo then cross-compiles
+        // to wasm32.  The header parsing must use host target so clang
+        // finds the correct system headers (pthread.h, etc.).
+        // __BINDGEN__ opaque types make struct layouts irrelevant.
+        if is_wasm {
+            let host = std::env::var("HOST").unwrap_or_default();
+            if !host.is_empty() {
+                builder = builder.clang_arg(format!("--target={}", host));
+            }
+        }
     } else {
-        // Cross-compilation: freestanding ARM target
-        // -fshort-enums: ARM EABI sizes enums to smallest type; GCC does this
-        // by default but clang does not — must match or struct layouts diverge.
+        // ARM cross-compilation: freestanding ARM target
         builder = builder
             .clang_arg("-DARM_MATH_CM7")
             .clang_arg("-D__FPU_PRESENT=1")
             .clang_arg("-fshort-enums")
             .clang_arg("--target=arm-none-eabihf");
 
-        // Add ARM toolchain sysroot include path if available
         if let Ok(sysroot) = env::var("ARM_SYSROOT_INCLUDE") {
             builder = builder.clang_arg(format!("-isystem{}", sysroot));
         }
     }
 
-    if is_native {
-        // Native build: use std-compatible types
+    if is_native || is_wasm {
+        // Native/WASM: use std-compatible types
     } else {
         builder = builder.use_core().ctypes_prefix("core::ffi");
     }

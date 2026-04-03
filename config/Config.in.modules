@@ -18,17 +18,17 @@ comment "Optional modules"
 
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
-    default y
+    default n
 
 config OVE_AUDIO
     bool "Audio subsystem"
-    default y
+    default n
     select OVE_I2S if OVE_RTOS_FREERTOS
 
 config OVE_AUDIO_NODE_CONVERTER
     bool "Audio format converter node"
     depends on OVE_AUDIO
-    default y
+    default n
 
 config OVE_AUDIO_NODE_GAIN
     bool "Audio gain node"
@@ -44,70 +44,70 @@ config OVE_AUDIO_NODE_CHANNEL_MAP
 
 config OVE_FS
     bool "File system"
-    default y
+    default n
 
 config OVE_CONSOLE
     bool "Console I/O"
-    default y
+    default n
 
 config OVE_LOG
     bool "Logging"
-    default y
+    default n
     depends on OVE_CONSOLE
 
 config OVE_TIME
     bool "Time and delay functions"
-    default y
+    default n
 
 config OVE_BOARD
     bool "Board descriptor and init"
-    default y
+    default n
 
 config OVE_GPIO
     bool "GPIO control"
-    default y
+    default n
 
 config OVE_LED
     bool "LED control"
-    default y
+    default n
     select OVE_GPIO
 
 config OVE_BSP
     bool "Board support package (compat — selects board+gpio+led)"
-    default y
+    default n
     select OVE_BOARD
     select OVE_GPIO
     select OVE_LED
 
 config OVE_LVGL
     bool "LVGL UI framework"
-    default y
+    default n
     select OVE_SYNC
 
 config OVE_QUEUE
     bool "Message queues"
-    default y
+    default n
 
 config OVE_TIMER
     bool "Software timers"
-    default y
+    default n
 
 config OVE_EVENTGROUP
     bool "Event groups"
-    default y
+    default n
 
 config OVE_SHELL
     bool "Interactive shell"
-    default y
+    default n
     depends on OVE_CONSOLE
 
 config OVE_NVS
     bool "Non-volatile storage"
-    default y
+    default n
 
 config OVE_WATCHDOG
     bool "Watchdog timer"
-    default y
+    default n
 
 config OVE_WORKQUEUE
     bool "Work queues"

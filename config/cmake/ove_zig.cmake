@@ -38,11 +38,16 @@ function(ove_build_zig_lib TARGET)
         set(ZIG_CMD "zig")
     endif()
 
-    # ── Determine native vs cross build ──────────────────────────────────
-    if(OVE_RTOS STREQUAL "posix")
+    # ── Determine native vs cross vs WASM build ────────────────────────
+    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        set(ZIG_IS_NATIVE FALSE)
+        set(ZIG_IS_WASM TRUE)
+    elseif(OVE_RTOS STREQUAL "posix")
         set(ZIG_IS_NATIVE TRUE)
+        set(ZIG_IS_WASM FALSE)
     else()
         set(ZIG_IS_NATIVE FALSE)
+        set(ZIG_IS_WASM FALSE)
     endif()
 
     # ── Output directory ─────────────────────────────────────────────────
@@ -52,7 +57,10 @@ function(ove_build_zig_lib TARGET)
     # ── Resolve target triple ────────────────────────────────────────────
     set(ZIG_TARGET_ARGS "")
     set(ZIG_CPU_ARGS "")
-    if(ZIG_IS_NATIVE)
+    if(ZIG_IS_WASM)
+        list(APPEND ZIG_TARGET_ARGS "-target" "wasm32-emscripten")
+        list(APPEND ZIG_CPU_ARGS "-fno-stack-check")
+    elseif(ZIG_IS_NATIVE)
         list(APPEND ZIG_TARGET_ARGS "-target" "native-native")
         list(APPEND ZIG_CPU_ARGS "-fPIC" "-fno-stack-check")
     else()
@@ -89,7 +97,10 @@ function(ove_build_zig_lib TARGET)
     list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_GEN_DIR}")
 
     # Backend-specific includes
-    if(OVE_RTOS STREQUAL "posix")
+    if(ZIG_IS_WASM)
+        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/wasm/include")
+        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
+    elseif(OVE_RTOS STREQUAL "posix")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
     elseif(OVE_RTOS STREQUAL "freertos")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/freertos/include")
