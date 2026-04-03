@@ -52,16 +52,29 @@
     </main>
 
     <!--
+      Guard: if SharedArrayBuffer isn't available yet (service worker
+      hasn't activated), show a message and don't load Emscripten.
+      The coi-serviceworker.js will reload the page automatically.
+    -->
+    <script>
+    if (typeof SharedArrayBuffer === 'undefined') {
+        document.getElementById('status').textContent =
+            'Activating service worker... (page will reload)';
+        /* Block Emscripten from loading by defining Module as a no-op. */
+        window.__skip_emscripten = true;
+    }
+    </script>
+
+    <!--
       Pre-define Module BEFORE Emscripten JS loads.
       This lets us hook onRuntimeInitialized and set up frame polling.
     -->
     <script>
-    /* Check for SharedArrayBuffer (required for pthreads). */
-    if (typeof SharedArrayBuffer === 'undefined') {
-        document.getElementById('status').textContent =
-            'Error: SharedArrayBuffer not available (need COOP/COEP headers)';
-        document.getElementById('status').className = 'status disconnected';
-    }
+    if (window.__skip_emscripten) {
+        /* SharedArrayBuffer not available yet — service worker is
+         * activating.  Page will auto-reload.  Don't load Emscripten. */
+        var Module = { noInitialRun: true };
+    } else {
 
     var Module = {
         /* Log any print/err from the WASM module to the event log. */
@@ -343,6 +356,8 @@
             });
         }
     };
+
+    } /* end else (SharedArrayBuffer available) */
     </script>
 
     <!-- Dashboard JS (event log, audio, etc.) -->
