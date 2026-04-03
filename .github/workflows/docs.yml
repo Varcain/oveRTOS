@@ -59,6 +59,7 @@ jobs:
           cp output/wasm/posix/example_c/build/firmware/ove_wasm.html docs-site/site/example_c/index.html
           cp output/wasm/posix/example_c/build/firmware/ove_wasm.js docs-site/site/example_c/
           cp output/wasm/posix/example_c/build/firmware/ove_wasm.wasm docs-site/site/example_c/
+          cp output/wasm/posix/example_c/build/firmware/ove_wasm.worker.js docs-site/site/example_c/ 2>/dev/null || true
           for f in $COMMON; do cp "$f" docs-site/site/example_c/; done
 
       - name: Upload Pages artifact
