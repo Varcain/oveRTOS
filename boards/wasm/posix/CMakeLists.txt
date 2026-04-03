@@ -60,7 +60,7 @@ add_link_options(
     -sALLOW_MEMORY_GROWTH=1
     -sINITIAL_MEMORY=33554432
     -sMAXIMUM_MEMORY=134217728
-    -sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ove_sim_wasm_push_cmd','_ove_wasm_fb_get_seq','_ove_wasm_fb_get_width','_ove_wasm_fb_get_height','_ove_wasm_fb_get_size','_ove_wasm_fb_get_pixels','_ove_wasm_fb_get_ptr','_ove_wasm_input_set','_ove_wasm_console_push','_ove_wasm_audio_get_playback_ptr','_ove_wasm_audio_get_capture_ptr','_ove_wasm_audio_playback_available','_ove_wasm_audio_capture_available','_ove_wasm_audio_set_playback_fmt','_ove_wasm_audio_set_capture_fmt']
+    -sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_ove_sim_wasm_push_cmd','_ove_wasm_fb_get_seq','_ove_wasm_fb_get_width','_ove_wasm_fb_get_height','_ove_wasm_fb_get_size','_ove_wasm_fb_get_pixels','_ove_wasm_fb_get_ptr','_ove_wasm_input_set','_ove_wasm_console_push','_ove_wasm_audio_get_playback_ptr','_ove_wasm_audio_get_capture_ptr','_ove_wasm_audio_playback_available','_ove_wasm_audio_capture_available','_ove_wasm_audio_set_playback_fmt','_ove_wasm_audio_set_capture_fmt','_ove_wasm_has_audio','_ove_wasm_has_lvgl','_ove_wasm_has_shell','_ove_wasm_has_net','_ove_wasm_has_infer']
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPU8','HEAPU32']
     -sENVIRONMENT=web,worker
     -sEXIT_RUNTIME=0
@@ -149,6 +149,7 @@ if(OVE_SIM)
         ${OVE_DIR}/sim/src/ove_sim_wasm_fb.c
         ${OVE_DIR}/sim/src/ove_sim_wasm_input.c
         ${OVE_DIR}/sim/src/ove_sim_wasm_audio.c
+        ${OVE_DIR}/sim/src/ove_sim_wasm_config.c
         ${OVE_DIR}/sim/hal/sim_board.c
     )
     if(OVE_LVGL)

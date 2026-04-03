@@ -43,24 +43,107 @@ jobs:
         with:
           version: '3.1.51'
 
-      - name: Build WASM example_c
-        run: |
-          make wasm_posix_example_c_defconfig
-          make configure
-          make download
-          make
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: '0.15.2'
 
-      - name: Add WASM apps to docs site
+      - name: Build and deploy WASM examples
         run: |
           COMMON="sim/dashboard/app.js sim/dashboard/style.css sim/dashboard/coi-serviceworker.js"
+          BUILT=""
+          FAILED=""
 
-          # example_c → /example_c/
-          mkdir -p docs-site/site/example_c
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.html docs-site/site/example_c/index.html
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.js docs-site/site/example_c/
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.wasm docs-site/site/example_c/
-          cp output/wasm/posix/example_c/build/firmware/ove_wasm.worker.js docs-site/site/example_c/ 2>/dev/null || true
-          for f in $COMMON; do cp "$f" docs-site/site/example_c/; done
+          for defconfig in defconfigs/wasm/posix/wasm_posix_*_defconfig; do
+            # Extract app name: wasm_posix_example_c_defconfig → example_c
+            name=$(basename "$defconfig" | sed 's/wasm_posix_//' | sed 's/_defconfig//')
+            echo ""
+            echo "========================================="
+            echo "Building: $name"
+            echo "========================================="
+
+            # Clean previous build
+            rm -rf output/wasm/posix/*/build/firmware
+
+            # Configure + download + build (don't fail the whole job)
+            if make "wasm_posix_${name}_defconfig" && \
+               make configure && \
+               make download && \
+               make; then
+              # Copy artifacts to docs site
+              # Find the build output directory
+              BUILD_DIR=$(find output/wasm/posix -name 'ove_wasm.wasm' -printf '%h\n' 2>/dev/null | head -1)
+              if [ -n "$BUILD_DIR" ]; then
+                mkdir -p "docs-site/site/$name"
+                cp "$BUILD_DIR/ove_wasm.html" "docs-site/site/$name/index.html"
+                cp "$BUILD_DIR/ove_wasm.js" "docs-site/site/$name/"
+                cp "$BUILD_DIR/ove_wasm.wasm" "docs-site/site/$name/"
+                cp "$BUILD_DIR/ove_wasm.worker.js" "docs-site/site/$name/" 2>/dev/null || true
+                for f in $COMMON; do cp "$f" "docs-site/site/$name/"; done
+                BUILT="$BUILT $name"
+                echo "✓ $name built successfully"
+              else
+                FAILED="$FAILED $name"
+                echo "✗ $name: build output not found"
+              fi
+            else
+              FAILED="$FAILED $name"
+              echo "✗ $name: build failed (continuing)"
+            fi
+          done
+
+          echo ""
+          echo "========================================="
+          echo "Summary:"
+          echo "  Built:  $BUILT"
+          echo "  Failed: ${FAILED:-none}"
+          echo "========================================="
+
+          # Generate gallery index page
+          cat > docs-site/site/examples.html << 'GALLERY_EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>oveRTOS WASM Examples</title>
+            <style>
+              body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+              h1 { color: #333; }
+              .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+              .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; text-decoration: none; color: #333; }
+              .card:hover { border-color: #4ecca3; background: #f8f8f8; }
+              .card h3 { margin: 0 0 8px 0; }
+              .card p { margin: 0; font-size: 14px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <h1>oveRTOS WASM Examples</h1>
+            <p>Interactive demos running entirely in the browser via WebAssembly.</p>
+            <div class="grid" id="apps"></div>
+            <script>
+          GALLERY_EOF
+
+          # Add links for each built app
+          echo "      var apps = [" >> docs-site/site/examples.html
+          for name in $BUILT; do
+            lang=$(echo "$name" | grep -oE '(cpp|rust|zig)$' || echo "c")
+            app=$(echo "$name" | sed "s/_${lang}$//" | sed 's/_c$//')
+            echo "        {name:'$name', app:'$app', lang:'$lang'}," >> docs-site/site/examples.html
+          done
+          cat >> docs-site/site/examples.html << 'GALLERY_EOF2'
+              ];
+              var grid = document.getElementById('apps');
+              apps.forEach(function(a) {
+                var card = document.createElement('a');
+                card.className = 'card';
+                card.href = a.name + '/';
+                card.innerHTML = '<h3>' + a.app + '</h3><p>' + a.lang.toUpperCase() + '</p>';
+                grid.appendChild(card);
+              });
+            </script>
+          </body>
+          </html>
+          GALLERY_EOF2
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

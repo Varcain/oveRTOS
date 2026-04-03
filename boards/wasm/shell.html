@@ -14,7 +14,9 @@
     </header>
 
     <main>
-        <section class="panel" id="display-panel">
+        <!-- Panels hidden by default; shown by onRuntimeInitialized
+             based on compile-time config flags. -->
+        <section class="panel" id="display-panel" style="display:none">
             <h2>Display</h2>
             <div class="display-container">
                 <canvas id="display-canvas"></canvas>
@@ -25,7 +27,7 @@
             </div>
         </section>
 
-        <section class="panel" id="audio-panel">
+        <section class="panel" id="audio-panel" style="display:none">
             <h2>Audio</h2>
             <div class="audio-controls">
                 <button id="audio-play-toggle" class="btn">Enable Playback</button>
@@ -35,7 +37,7 @@
             <canvas id="audio-waveform" width="400" height="100"></canvas>
         </section>
 
-        <section class="panel" id="console-panel">
+        <section class="panel" id="console-panel" style="display:none">
             <h2>Console</h2>
             <div style="display:flex;gap:8px;">
                 <input type="text" id="console-input" class="btn"
@@ -105,6 +107,15 @@
         onRuntimeInitialized: function() {
             document.getElementById('status').textContent = 'Connected (WASM)';
             document.getElementById('status').className = 'status connected';
+
+            /* Show panels based on compile-time config. */
+            function showIf(id, flag) {
+                if (Module.ccall(flag, 'number'))
+                    document.getElementById(id).style.display = '';
+            }
+            showIf('display-panel', 'ove_wasm_has_lvgl');
+            showIf('audio-panel', 'ove_wasm_has_audio');
+            showIf('console-panel', 'ove_wasm_has_shell');
 
             /* Start polling the shared framebuffer in WASM heap. */
             var lastSeq = 0;
