@@ -621,6 +621,52 @@ def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
     return ok
 
 
+def download_emscripten(config, dl_dir, ws_dl_dir=None, manifest=None):
+    """Download and activate the Emscripten SDK."""
+    em_ver = get_component(manifest, "toolchains", "emscripten", "version")
+    em_url = get_component(manifest, "toolchains", "emscripten", "url")
+    if not em_ver or not em_url:
+        logger.error("Emscripten version/url missing from manifest.yaml")
+        return False
+
+    dest, link, glink = hashed_dir(dl_dir, "emsdk", em_ver, ws_dl_dir)
+
+    # Check if already installed
+    emcc_path = os.path.join(dest, "upstream", "emscripten", "emcc")
+    if os.path.isfile(emcc_path):
+        logger.debug(f"Emscripten {em_ver}: already installed at {dest}")
+        update_symlink(link, dest)
+        if glink:
+            update_symlink(glink, dest)
+        return True
+
+    # Clone emsdk
+    if not git_clone(em_url, "main", dest, "emsdk"):
+        return False
+
+    # Install and activate the requested version
+    logger.info(f"Emscripten: installing version {em_ver}...")
+    emsdk = os.path.join(dest, "emsdk")
+    ret = subprocess.run([emsdk, "install", em_ver],
+                         capture_output=True, text=True, cwd=dest)
+    if ret.returncode != 0:
+        logger.error(f"emsdk install failed: {ret.stderr}")
+        return False
+
+    ret = subprocess.run([emsdk, "activate", em_ver],
+                         capture_output=True, text=True, cwd=dest)
+    if ret.returncode != 0:
+        logger.error(f"emsdk activate failed: {ret.stderr}")
+        return False
+
+    update_symlink(link, dest)
+    if glink:
+        update_symlink(glink, dest)
+
+    logger.info(f"Emscripten {em_ver}: installed")
+    return True
+
+
 def download_all(ws):
     """Download all sources based on current .config."""
     ws.require_config()
@@ -695,6 +741,10 @@ def download_all(ws):
                 update_symlink(link, dest)
                 if glink:
                     update_symlink(glink, dest)
+
+    if get_bool(config, "CONFIG_OVE_BOARD_WASM"):
+        ok = download_emscripten(config, ws.dl_dir, ws.ws_dl_dir,
+                                 manifest=manifest) and ok
 
     if get_bool(config, "CONFIG_OVE_APP_LANG_RUST"):
         ok = ensure_rust_target(config, ws.dl_dir) and ok

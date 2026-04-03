@@ -18,6 +18,9 @@ toolchains:
     min_version: "1.85"
   zephyr-sdk:
     version: "0.17.0"
+  emscripten:
+    version: "3.1.51"
+    url: "https://github.com/emscripten-core/emsdk.git"
 
 rtos:
   freertos:

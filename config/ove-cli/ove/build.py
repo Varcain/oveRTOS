@@ -486,15 +486,38 @@ def build_posix(ws):
 
     if is_wasm:
         logger.info("Building WASM/Emscripten target")
-        # Use emcmake to inject Emscripten toolchain
-        emcmake = shutil.which("emcmake")
-        if not emcmake:
-            logger.error("emcmake not found. Install Emscripten SDK first.")
-            logger.error("  git clone https://github.com/emscripten-core/emsdk.git")
-            logger.error("  cd emsdk && ./emsdk install latest && ./emsdk activate latest")
-            logger.error("  source emsdk_env.sh")
+
+        # Find emcmake: first try downloaded emsdk, then PATH
+        emsdk_dir = os.path.join(ws.ws_dl_dir, "emsdk")
+        if not os.path.isdir(emsdk_dir):
+            emsdk_dir = os.path.join(ws.dl_dir, "emsdk")
+        em_bin = os.path.join(emsdk_dir, "upstream", "emscripten")
+        emcmake = os.path.join(em_bin, "emcmake")
+        emmake = os.path.join(em_bin, "emmake")
+
+        if not os.path.isfile(emcmake):
+            # Fallback to PATH
+            emcmake = shutil.which("emcmake")
+            emmake = shutil.which("emmake")
+
+        if not emcmake or not os.path.isfile(emcmake):
+            logger.error("Emscripten SDK not found. Run 'ove download' first.")
             sys.exit(1)
-        emmake = shutil.which("emmake")
+
+        # Add emsdk paths to env so emcmake can find node, etc.
+        emsdk_node = os.path.join(emsdk_dir, "node")
+        node_dirs = [os.path.join(emsdk_node, d, "bin")
+                     for d in os.listdir(emsdk_node)
+                     if os.path.isdir(os.path.join(emsdk_node, d, "bin"))] \
+                    if os.path.isdir(emsdk_node) else []
+        extra_path = os.pathsep.join([em_bin, emsdk_dir] + node_dirs)
+        env["PATH"] = extra_path + os.pathsep + env.get("PATH", "")
+        env["EMSDK"] = emsdk_dir
+        env["EM_CONFIG"] = os.path.join(emsdk_dir, ".emscripten")
+
+        if not emmake or not os.path.isfile(emmake):
+            emmake = os.path.join(em_bin, "emmake")
+
         run([
             emcmake, cmake,
             f"-DOVE_DIR={ws.ove_dir}",
