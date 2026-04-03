@@ -65,18 +65,21 @@ jobs:
             echo "Building: $name"
             echo "========================================="
 
-            # Clean previous build
-            rm -rf output/wasm/posix/*/build/firmware
+            # Derive workspace name from defconfig (matches what ove creates)
+            # wasm_posix_example_c → output/wasm/posix/example_c/
+            ws_name=$(echo "$name" | sed 's/^benchmark$/benchmark/' ) # identity, just for clarity
+            BUILD_DIR="output/wasm/posix/${ws_name}/build/firmware"
+
+            # Clean this workspace's build
+            rm -rf "$BUILD_DIR"
 
             # Configure + download + build (don't fail the whole job)
             if make "wasm_posix_${name}_defconfig" && \
                make configure && \
                make download && \
                make; then
-              # Copy artifacts to docs site
-              # Find the build output directory
-              BUILD_DIR=$(find output/wasm/posix -name 'ove_wasm.wasm' -printf '%h\n' 2>/dev/null | head -1)
-              if [ -n "$BUILD_DIR" ]; then
+              # Copy artifacts from the known build directory
+              if [ -f "$BUILD_DIR/ove_wasm.wasm" ]; then
                 mkdir -p "docs-site/site/$name"
                 cp "$BUILD_DIR/ove_wasm.html" "docs-site/site/$name/index.html"
                 cp "$BUILD_DIR/ove_wasm.js" "docs-site/site/$name/"
