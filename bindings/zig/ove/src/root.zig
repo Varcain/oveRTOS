@@ -176,6 +176,9 @@ pub const spi = @import("spi.zig");
 /// I2C bus master driver.
 pub const i2c = @import("i2c.zig");
 
+/// Power management framework: sleep states, wake sources, power domains.
+pub const pm = @import("pm.zig");
+
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
 

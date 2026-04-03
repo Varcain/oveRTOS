@@ -1,0 +1,7 @@
+lang: cpp
+config_name: example_pm_cpp
+description: "C++ Power Management Demo"
+sources:
+  - src/app.cpp
+includes:
+  - include

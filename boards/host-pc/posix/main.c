@@ -7,10 +7,31 @@
  */
 
 /*
- * POSIX/SDL2 native host entry point.
+ * POSIX native host entry point.
+ *
+ * When CONFIG_OVE_SIM is enabled, the sim framework replaces SDL2 for
+ * display and audio, and provides a browser-based dashboard instead.
  */
 
 #include "ove/ove.h"
+#include "ove_config.h"
+
+#ifdef CONFIG_OVE_SIM
+
+extern int ove_sim_board_init(void);
+
+int main(int argc, char *argv[])
+{
+	(void)argc;
+	(void)argv;
+
+	ove_sim_board_init();
+	ove_app_run();
+	return 0;
+}
+
+#else /* !CONFIG_OVE_SIM */
+
 #include <SDL.h>
 
 int main(int argc, char *argv[])
@@ -27,3 +48,5 @@ int main(int argc, char *argv[])
 	SDL_Quit();
 	return 0;
 }
+
+#endif /* CONFIG_OVE_SIM */

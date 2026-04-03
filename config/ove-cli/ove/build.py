@@ -475,38 +475,69 @@ def _apply_nuttx_defconfig_overlay(ws, nuttx_build, apps_build, env):
 
 
 def build_posix(ws):
-    """Build POSIX native executable via CMake."""
+    """Build POSIX native executable (or WASM) via CMake."""
+    is_wasm = get_bool(ws.config, "CONFIG_OVE_BOARD_WASM")
+
     cmake = _find_cmake()
     env = ws.toolchain_env()
     board_dir = os.path.join(ws.board_dir, "posix")
     fw_build = os.path.join(ws.build_dir, "firmware")
     os.makedirs(fw_build, exist_ok=True)
 
-    logger.info("Building POSIX native executable")
-    run([
-        cmake,
-        f"-DOVE_DIR={ws.ove_dir}",
-        f"-DOVE_APP_DIR={ws.app_dir}",
-        f"-DOVE_GEN_DIR={ws.gen_dir}",
-        f"-DOVE_DL_DIR={ws.ws_dl_dir}",
-        board_dir,
-    ], env=env, cwd=fw_build, log_file=_build_log)
-    run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-        log_file=_build_log)
+    if is_wasm:
+        logger.info("Building WASM/Emscripten target")
+        # Use emcmake to inject Emscripten toolchain
+        emcmake = shutil.which("emcmake")
+        if not emcmake:
+            logger.error("emcmake not found. Install Emscripten SDK first.")
+            logger.error("  git clone https://github.com/emscripten-core/emsdk.git")
+            logger.error("  cd emsdk && ./emsdk install latest && ./emsdk activate latest")
+            logger.error("  source emsdk_env.sh")
+            sys.exit(1)
+        emmake = shutil.which("emmake")
+        run([
+            emcmake, cmake,
+            f"-DOVE_DIR={ws.ove_dir}",
+            f"-DOVE_APP_DIR={ws.app_dir}",
+            f"-DOVE_GEN_DIR={ws.gen_dir}",
+            f"-DOVE_DL_DIR={ws.ws_dl_dir}",
+            board_dir,
+        ], env=env, cwd=fw_build, log_file=_build_log)
+        run([emmake, "make", f"-j{nproc()}"], env=env, cwd=fw_build,
+            log_file=_build_log)
+    else:
+        logger.info("Building POSIX native executable")
+        run([
+            cmake,
+            f"-DOVE_DIR={ws.ove_dir}",
+            f"-DOVE_APP_DIR={ws.app_dir}",
+            f"-DOVE_GEN_DIR={ws.gen_dir}",
+            f"-DOVE_DL_DIR={ws.ws_dl_dir}",
+            board_dir,
+        ], env=env, cwd=fw_build, log_file=_build_log)
+        run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
+            log_file=_build_log)
 
     os.makedirs(ws.images_dir, exist_ok=True)
-    src = os.path.join(fw_build, "ove_posix")
-    if os.path.isfile(src):
-        shutil.copy2(src, ws.images_dir)
+    if is_wasm:
+        for name in ("ove_wasm.html", "ove_wasm.js", "ove_wasm.wasm",
+                      "ove_wasm.worker.js"):
+            src = os.path.join(fw_build, name)
+            if os.path.isfile(src):
+                shutil.copy2(src, ws.images_dir)
+    else:
+        src = os.path.join(fw_build, "ove_posix")
+        if os.path.isfile(src):
+            shutil.copy2(src, ws.images_dir)
 
-    # Create run script
-    run_script = os.path.join(ws.workspace_dir, "run")
-    with open(run_script, "w") as f:
-        f.write('#!/bin/bash\n')
-        f.write('set -e\n')
-        f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-        f.write('exec "$DIR/images/ove_posix" "$@"\n')
-    os.chmod(run_script, 0o755)
+        # Create run script
+        run_script = os.path.join(ws.workspace_dir, "run")
+        with open(run_script, "w") as f:
+            f.write('#!/bin/bash\n')
+            f.write('set -e\n')
+            f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
+            f.write('exec "$DIR/images/ove_posix" "$@"\n')
+        os.chmod(run_script, 0o755)
 
 
 def _copy_images(ws, fw_build):

@@ -77,6 +77,13 @@ include_directories(
     ${SDL2_INCLUDE_DIRS}
 )
 
+if(OVE_SIM)
+    include_directories(
+        ${OVE_DIR}/sim/include
+        ${OVE_DIR}/sim/src
+    )
+endif()
+
 #############################################################################
 # LVGL library
 #############################################################################
@@ -101,11 +108,9 @@ else()
         ${OVE_DIR}/src/ove_app.c
         ${OVE_DIR}/backends/posix/posix_thread.c
         ${OVE_DIR}/backends/posix/posix_sync.c
-        ${OVE_DIR}/backends/posix/posix_audio.c
         ${OVE_DIR}/backends/posix/posix_fs.c
         ${OVE_DIR}/backends/posix/posix_console.c
         ${OVE_DIR}/backends/posix/posix_time.c
-        ${OVE_DIR}/backends/posix/posix_lvgl.c
         ${OVE_DIR}/backends/posix/posix_queue.c
         ${OVE_DIR}/backends/posix/posix_timer.c
         ${OVE_DIR}/backends/posix/posix_eventgroup.c
@@ -116,6 +121,23 @@ else()
         ${OVE_DIR}/backends/posix/posix_shell.c
         ${OVE_DIR}/backends/posix/posix_bsp.c
     )
+
+    # When sim framework is enabled, it provides display + audio.
+    # Otherwise, use the SDL2-based POSIX implementations.
+    if(NOT OVE_SIM)
+        list(APPEND OVE_SOURCES
+            ${OVE_DIR}/backends/posix/posix_lvgl.c
+            ${OVE_DIR}/backends/posix/posix_audio.c
+        )
+    endif()
+endif()
+
+#############################################################################
+# Simulation plugin framework
+#############################################################################
+if(OVE_SIM)
+    include(${OVE_DIR}/sim/CMakeLists.txt)
+    list(APPEND OVE_SOURCES ${SIM_SOURCES})
 endif()
 
 #############################################################################

@@ -298,6 +298,111 @@ config OVE_NET_HTTPD_WS_MAX_FRAME
 
 endmenu
 
+menu "Power Management"
+
+config OVE_PM
+    bool "Power management framework"
+    default n
+    select OVE_SYNC
+    select OVE_TIME
+    help
+      Unified power management with sleep state machine,
+      peripheral power domains, tickless idle integration,
+      wake source management, and runtime power statistics.
+
+config OVE_PM_MAX_WAKE_SOURCES
+    int "Maximum registered wake sources"
+    default 8
+    depends on OVE_PM
+    help
+      Maximum number of concurrently registered wake sources.
+      Each entry consumes ~32 bytes of static RAM.
+
+config OVE_PM_MAX_NOTIFIERS
+    int "Maximum transition notifiers"
+    default 4
+    depends on OVE_PM
+    help
+      Maximum number of pre/post sleep notification callbacks.
+
+config OVE_PM_IDLE_THRESHOLD_MS
+    int "Idle threshold (ms)"
+    default 10
+    depends on OVE_PM
+    help
+      Minimum idle duration before transitioning from ACTIVE to IDLE.
+
+config OVE_PM_STANDBY_THRESHOLD_MS
+    int "Standby threshold (ms)"
+    default 1000
+    depends on OVE_PM
+    help
+      Minimum idle duration before transitioning from IDLE to STANDBY.
+
+config OVE_PM_DEEP_SLEEP_THRESHOLD_MS
+    int "Deep sleep threshold (ms)"
+    default 10000
+    depends on OVE_PM
+    help
+      Minimum idle duration before transitioning to DEEP_SLEEP.
+
+config OVE_PM_STATS
+    bool "Power statistics tracking"
+    default y
+    depends on OVE_PM
+    help
+      Track cumulative time in each power state and transition
+      counts. Adds ~64 bytes of RAM overhead.
+
+config OVE_PM_BUDGET
+    bool "Power budget enforcement"
+    default n
+    depends on OVE_PM && OVE_PM_STATS
+    help
+      Enable power budget target tracking. The policy engine
+      can use the budget to adjust sleep depth automatically.
+
+endmenu
+
+menu "Simulation"
+
+config OVE_SIM
+    bool "Simulation plugin framework"
+    default n
+    help
+      Enable the simulation plugin framework. Replaces bare-stub
+      HAL implementations with plugin-aware versions that support
+      virtual peripherals, sensor injection, and host-side
+      web dashboard visualization.
+
+config OVE_SIM_TRANSPORT_DIRECT
+    bool
+    default y if OVE_RTOS_POSIX && OVE_SIM
+
+config OVE_SIM_TRANSPORT_SHM
+    bool
+    default y if !OVE_RTOS_POSIX && OVE_SIM
+
+config OVE_SIM_TRANSPORT_WASM
+    bool
+    default y if OVE_BOARD_WASM && OVE_SIM
+
+config OVE_SIM_DASHBOARD
+    bool "Web dashboard"
+    default y if OVE_SIM
+    depends on OVE_SIM
+    help
+      Enable the browser-based simulation dashboard served over
+      a local WebSocket server. Displays framebuffer, audio,
+      LED states, GPIO matrix, and sensor controls.
+
+config OVE_SIM_DASHBOARD_PORT
+    int "Dashboard HTTP port"
+    default 8080
+    depends on OVE_SIM_DASHBOARD
+
+endmenu
+
 comment "Heap policy"
 
 config OVE_ZERO_HEAP

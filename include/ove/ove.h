@@ -44,6 +44,7 @@
  * | ove/uart.h              | UART serial bus driver                     |
  * | ove/spi.h               | SPI bus master driver                      |
  * | ove/i2c.h               | I2C bus master driver                      |
+ * | ove/pm.h                | Power management framework                 |
  *
  * Application code that prefers fine-grained includes may include individual
  * subsystem headers directly instead.
@@ -87,6 +88,7 @@
 #include "ove/spi.h"
 #include "ove/i2c.h"
 #include "ove/i2s.h"
+#include "ove/pm.h"
 
 /** @} */
 

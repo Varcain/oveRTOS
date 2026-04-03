@@ -115,6 +115,9 @@ int main(void)
 	printf("=== UART Tests ===\n");
 	failures += test_uart_run();
 
+	printf("=== PM Tests ===\n");
+	failures += test_pm_run();
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;
 }

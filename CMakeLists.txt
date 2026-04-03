@@ -31,6 +31,7 @@ set(OVE_SOURCES
     ${OVE_DIR}/src/ove_spi.c
     ${OVE_DIR}/src/ove_i2c.c
     ${OVE_DIR}/src/ove_i2s.c
+    ${OVE_DIR}/src/ove_pm.c
 )
 
 set(OVE_INCLUDE_DIR ${OVE_DIR}/include)

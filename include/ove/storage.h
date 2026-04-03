@@ -200,7 +200,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
 #include "ove_storage_nuttx.h"
 #elif defined(CONFIG_OVE_RTOS_POSIX)
+#if defined(CONFIG_OVE_BOARD_WASM)
+#include "ove_storage_wasm.h"
+#else
 #include "ove_storage_posix.h"
+#endif
 #endif
 #endif /* __BINDGEN__ */
 

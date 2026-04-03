@@ -1,0 +1,5 @@
+lang: rust
+config_name: example_pm_rust
+description: "Rust Power Management Demo"
+rust:
+  lib_name: example_pm_rust

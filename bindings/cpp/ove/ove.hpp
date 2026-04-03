@@ -38,3 +38,4 @@
 #include <ove/net_http.hpp>
 #include <ove/net_mqtt.hpp>
 #include <ove/net_httpd.hpp>
+#include <ove/pm.hpp>

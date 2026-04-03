@@ -15,7 +15,7 @@ fn main() {
             "bsp", "board", "gpio", "led", "time", "console",
             "stream", "workqueue", "infer",
             "net", "net_tls", "net_http", "net_mqtt", "net_httpd",
-            "net_sntp", "net_httpd_ws",
+            "net_sntp", "net_httpd_ws", "pm",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{})", m);
@@ -42,7 +42,7 @@ fn main() {
             "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE", "INFER",
             "NET", "NET_TLS", "NET_HTTP", "NET_MQTT", "NET_HTTPD",
             "NET_SNTP", "NET_HTTPD_WS",
-            "UART", "SPI", "I2C", "I2S",
+            "UART", "SPI", "I2C", "I2S", "PM",
         ];
         for m in &modules {
             let cfg_name = format!("has_{}", m.to_lowercase());

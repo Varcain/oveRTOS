@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>oveRTOS Sim Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>oveRTOS Simulation Dashboard</h1>
+        <div id="status" class="status disconnected">Disconnected</div>
+    </header>
+
+    <main>
+        <!-- Display Panel -->
+        <section class="panel" id="display-panel">
+            <h2>Display</h2>
+            <div class="display-container">
+                <canvas id="display-canvas"></canvas>
+            </div>
+            <div class="display-info">
+                <span id="display-resolution">--</span>
+                <span id="display-fps">-- FPS</span>
+            </div>
+        </section>
+
+        <!-- Audio Panel -->
+        <section class="panel" id="audio-panel">
+            <h2>Audio</h2>
+            <div class="audio-controls">
+                <button id="audio-toggle" class="btn">Enable Audio</button>
+                <span id="audio-info">--</span>
+            </div>
+            <canvas id="audio-waveform" width="400" height="100"></canvas>
+        </section>
+
+        <!-- Events Log -->
+        <section class="panel" id="events-panel">
+            <h2>Events</h2>
+            <div id="event-log" class="event-log"></div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

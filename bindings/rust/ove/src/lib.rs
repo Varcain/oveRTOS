@@ -78,6 +78,8 @@ pub mod uart;
 pub mod spi;
 #[cfg(has_i2c)]
 pub mod i2c;
+#[cfg(has_pm)]
+pub mod pm;
 
 /// Raw FFI bindings re-exported for advanced use cases.
 ///
