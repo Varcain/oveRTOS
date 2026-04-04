@@ -70,20 +70,7 @@ impl Workqueue {
     }
 }
 
-impl Drop for Workqueue {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_workqueue_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_workqueue_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Workqueue wraps a ove_workqueue_t handle. All RTOS operations on the
-// handle are internally thread-safe. Create/destroy are single-threaded (lifecycle).
-unsafe impl Send for Workqueue {}
-unsafe impl Sync for Workqueue {}
+crate::ove_handle_impl!(Workqueue, ove_workqueue_destroy, ove_workqueue_deinit);
 
 /// A work item that can be submitted to a [`Workqueue`].
 pub struct Work {

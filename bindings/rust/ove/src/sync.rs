@@ -78,28 +78,7 @@ impl Mutex {
     }
 }
 
-impl fmt::Debug for Mutex {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Mutex")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for Mutex {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_mutex_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_mutex_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Lock/unlock are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for Mutex {}
-unsafe impl Sync for Mutex {}
+crate::ove_handle_impl!(Mutex, ove_mutex_destroy, ove_mutex_deinit);
 
 /// RAII guard that unlocks a `Mutex` when dropped.
 pub struct MutexGuard<'a> {
@@ -181,28 +160,7 @@ impl RecursiveMutex {
     }
 }
 
-impl fmt::Debug for RecursiveMutex {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RecursiveMutex")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for RecursiveMutex {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_recursive_mutex_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_mutex_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Lock/unlock are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for RecursiveMutex {}
-unsafe impl Sync for RecursiveMutex {}
+crate::ove_handle_impl!(RecursiveMutex, ove_recursive_mutex_destroy, ove_mutex_deinit);
 
 /// RAII guard that unlocks a `RecursiveMutex` when dropped.
 pub struct RecursiveMutexGuard<'a> {
@@ -273,28 +231,7 @@ impl Semaphore {
     }
 }
 
-impl fmt::Debug for Semaphore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Semaphore")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for Semaphore {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_sem_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_sem_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Take/give are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for Semaphore {}
-unsafe impl Sync for Semaphore {}
+crate::ove_handle_impl!(Semaphore, ove_sem_destroy, ove_sem_deinit);
 
 // ---------------------------------------------------------------------------
 // Event
@@ -349,28 +286,7 @@ impl Event {
     }
 }
 
-impl fmt::Debug for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Event")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for Event {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_event_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_event_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Wait/signal are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for Event {}
-unsafe impl Sync for Event {}
+crate::ove_handle_impl!(Event, ove_event_destroy, ove_event_deinit);
 
 // ---------------------------------------------------------------------------
 // CondVar
@@ -429,25 +345,4 @@ impl CondVar {
     }
 }
 
-impl fmt::Debug for CondVar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CondVar")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for CondVar {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_condvar_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_condvar_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Wait/signal/broadcast are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for CondVar {}
-unsafe impl Sync for CondVar {}
+crate::ove_handle_impl!(CondVar, ove_condvar_destroy, ove_condvar_deinit);

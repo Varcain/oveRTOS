@@ -13,8 +13,6 @@
 //!
 //! Works in both heap and zero-heap modes.
 
-use core::fmt;
-
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -240,24 +238,4 @@ impl Client {
     }
 }
 
-impl fmt::Debug for Client {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Client")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for Client {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_mqtt_client_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_mqtt_client_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Publish/subscribe/poll are thread-safe RTOS
-// calls. Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for Client {}
+crate::ove_handle_impl!(Client, ove_mqtt_client_destroy, ove_mqtt_client_deinit, send_only);

@@ -17,11 +17,11 @@ pub fn transfer(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, tx: ?[]const u8, rx:
 }
 
 /// Write-only SPI transfer (TX only, ignore RX).
-pub fn spiWrite(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, data: []const u8, timeout_ms: u32) Error!void {
+pub fn write(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, data: []const u8, timeout_ms: u32) Error!void {
     try err.fromCode(c.ove_spi_write(spi, cs, data.ptr, data.len, timeout_ms));
 }
 
 /// Read-only SPI transfer (clock out zeros, capture RX).
-pub fn spiRead(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, buf: []u8, timeout_ms: u32) Error!void {
+pub fn read(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, buf: []u8, timeout_ms: u32) Error!void {
     try err.fromCode(c.ove_spi_read(spi, cs, buf.ptr, buf.len, timeout_ms));
 }

@@ -220,6 +220,7 @@ impl<T> core::ops::Deref for StaticMut<T> {
 
 // SAFETY: StaticMut provides `&mut T` access only through an unsafe method
 // that requires the caller to prove exclusive access. Init/shutdown are
-// single-threaded (lifecycle guarantee).
-unsafe impl<T: Send> Sync for StaticMut<T> {}
+// single-threaded (lifecycle guarantee). `T: Sync` is required because
+// shared references (`&T` via `Deref`) may be accessed from multiple threads.
+unsafe impl<T: Send + Sync> Sync for StaticMut<T> {}
 unsafe impl<T: Send> Send for StaticMut<T> {}

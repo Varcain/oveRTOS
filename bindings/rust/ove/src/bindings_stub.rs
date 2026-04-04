@@ -35,6 +35,16 @@ pub const OVE_ERR_NO_MEMORY:     i32 = -3;
 pub const OVE_ERR_TIMEOUT:       i32 = -4;
 pub const OVE_ERR_NOT_SUPPORTED: i32 = -5;
 pub const OVE_ERR_QUEUE_FULL:    i32 = -6;
+pub const OVE_ERR_ML_FAILED:    i32 = -7;
+pub const OVE_ERR_NET_REFUSED:  i32 = -8;
+pub const OVE_ERR_NET_UNREACHABLE: i32 = -9;
+pub const OVE_ERR_NET_ADDR_IN_USE: i32 = -10;
+pub const OVE_ERR_NET_RESET:    i32 = -11;
+pub const OVE_ERR_NET_DNS_FAIL: i32 = -12;
+pub const OVE_ERR_NET_CLOSED:   i32 = -13;
+pub const OVE_ERR_BUS_NACK:     i32 = -14;
+pub const OVE_ERR_BUS_BUSY:     i32 = -15;
+pub const OVE_ERR_BUS_ERROR:    i32 = -16;
 
 pub const OVE_WAIT_FOREVER: u32 = u32::MAX;
 

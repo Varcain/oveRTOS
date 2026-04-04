@@ -85,6 +85,74 @@ pub mod i2c;
 #[cfg(has_pm)]
 pub mod pm;
 
+// ---------------------------------------------------------------------------
+// Internal handle boilerplate macros
+// ---------------------------------------------------------------------------
+
+/// Generate `Debug`, `Drop`, and thread-safety impls for an oveRTOS handle
+/// wrapper struct that stores a nullable handle in a field named `handle`.
+///
+/// # Variants
+///
+/// - `(Name, destroy_fn, deinit_fn)` — Send + Sync
+/// - `(Name, destroy_fn, deinit_fn, send_only)` — Send only (no Sync)
+/// - `(Name<const N: usize>, destroy_fn, deinit_fn)` — const-generic, Send + Sync
+#[doc(hidden)]
+#[macro_export]
+macro_rules! ove_handle_impl {
+    // Non-generic, Send + Sync
+    ($name:ident, $destroy:ident, $deinit:ident) => {
+        $crate::ove_handle_impl!(@debug $name);
+        $crate::ove_handle_impl!(@drop $name, $destroy, $deinit);
+        unsafe impl Send for $name {}
+        unsafe impl Sync for $name {}
+    };
+
+    // Non-generic, Send only (no Sync)
+    ($name:ident, $destroy:ident, $deinit:ident, send_only) => {
+        $crate::ove_handle_impl!(@debug $name);
+        $crate::ove_handle_impl!(@drop $name, $destroy, $deinit);
+        unsafe impl Send for $name {}
+    };
+
+    // Const-generic, Send + Sync
+    ($name:ident<const $N:ident: usize>, $destroy:ident, $deinit:ident) => {
+        impl<const $N: usize> Drop for $name<$N> {
+            fn drop(&mut self) {
+                if self.handle.is_null() { return; }
+                #[cfg(not(zero_heap))]
+                unsafe { $crate::bindings::$destroy(self.handle) }
+                #[cfg(zero_heap)]
+                unsafe { $crate::bindings::$deinit(self.handle) }
+            }
+        }
+        unsafe impl<const $N: usize> Send for $name<$N> {}
+        unsafe impl<const $N: usize> Sync for $name<$N> {}
+    };
+
+    (@debug $name:ident) => {
+        impl core::fmt::Debug for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    .field("handle", &format_args!("{:p}", self.handle))
+                    .finish()
+            }
+        }
+    };
+
+    (@drop $name:ident, $destroy:ident, $deinit:ident) => {
+        impl Drop for $name {
+            fn drop(&mut self) {
+                if self.handle.is_null() { return; }
+                #[cfg(not(zero_heap))]
+                unsafe { $crate::bindings::$destroy(self.handle) }
+                #[cfg(zero_heap)]
+                unsafe { $crate::bindings::$deinit(self.handle) }
+            }
+        }
+    };
+}
+
 /// Raw FFI bindings re-exported for advanced use cases.
 ///
 /// Direct use of these types bypasses all safety checks. Prefer the safe
@@ -161,6 +229,9 @@ macro_rules! _log_prefixed {
 
 /// Log an informational message with `[I]` prefix and automatic newline.
 ///
+/// Uses a 256-byte stack buffer.  Messages longer than ~250 characters
+/// (after prefix and newline) are silently truncated.
+///
 /// Produces the same console output as the C `OVE_LOG_INF` macro.
 ///
 /// # Example
@@ -176,6 +247,9 @@ macro_rules! log_inf {
 
 /// Log a warning message with `[W]` prefix and automatic newline.
 ///
+/// Uses a 256-byte stack buffer.  Messages longer than ~250 characters
+/// (after prefix and newline) are silently truncated.
+///
 /// Produces the same console output as the C `OVE_LOG_WRN` macro.
 #[macro_export]
 macro_rules! log_wrn {
@@ -183,6 +257,9 @@ macro_rules! log_wrn {
 }
 
 /// Log an error message with `[E]` prefix and automatic newline.
+///
+/// Uses a 256-byte stack buffer.  Messages longer than ~250 characters
+/// (after prefix and newline) are silently truncated.
 ///
 /// Produces the same console output as the C `OVE_LOG_ERR` macro.
 #[macro_export]

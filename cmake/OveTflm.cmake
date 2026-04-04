@@ -176,10 +176,6 @@ macro(ove_build_tflm)
 
     # Clean up local variables
     unset(_TFLM_PATH)
-    unset(_TFLM_MICRO_SRC)
-    unset(_TFLM_CORE_SRC)
-    unset(_TFLM_KERNELS_SRC)
-    unset(_TFLM_MICRO_KERNELS_SRC)
     unset(_TFLM_ALL_SRC)
     unset(_CMSIS_NN_KERNELS)
 endmacro()

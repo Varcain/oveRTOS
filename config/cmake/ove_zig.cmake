@@ -303,6 +303,11 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
 "S(ove_tls_storage_t)        A(ove_tls_storage_t)\n"
             )
         endif()
+        if(OVE_INFER)
+            file(APPEND ${ZIG_SIZES_C}
+"S(ove_model_storage_t)      A(ove_model_storage_t)\n"
+            )
+        endif()
         if(OVE_UART)
             file(APPEND ${ZIG_SIZES_C}
 "S(ove_uart_storage_t)       A(ove_uart_storage_t)\n"

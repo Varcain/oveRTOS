@@ -13,8 +13,6 @@
 //!
 //! Works in both heap and zero-heap modes.
 
-use core::fmt;
-
 use crate::bindings;
 use crate::error::{Error, Result};
 use crate::net::TcpStream;
@@ -145,24 +143,4 @@ impl Session {
     }
 }
 
-impl fmt::Debug for Session {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Session")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_tls_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_tls_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Send/recv are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for Session {}
+crate::ove_handle_impl!(Session, ove_tls_destroy, ove_tls_deinit, send_only);

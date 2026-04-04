@@ -95,6 +95,21 @@ zig_storage_sizes:
 	$(Q) if grep -q 'CONFIG_OVE_NET_TLS 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
 		printf '%s\n' \
 			'S(ove_tls_storage_t) A(ove_tls_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_INFER 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_model_storage_t) A(ove_model_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_UART 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_uart_storage_t) A(ove_uart_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_SPI 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_spi_storage_t) A(ove_spi_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_I2C 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_i2c_storage_t) A(ove_i2c_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
+	$(Q) if grep -q 'CONFIG_OVE_I2S 1' $(OVE_GEN_DIR)/ove_config.h 2>/dev/null; then \
+		printf '%s\n' \
+			'S(ove_i2s_storage_t) A(ove_i2s_storage_t)' >> $(ZIG_OUTPUT_DIR)/_zig_sizes.c; fi
 	$(Q) $(CC) -c -w \
 		-I$(OVE_DIR)/include \
 		-I$(OVE_DIR)/backends/nuttx/include \
