@@ -94,6 +94,7 @@ void ove_queue_destroy(ove_queue_t q)
 int ove_queue_send(ove_queue_t q, const void *data,
                             uint32_t timeout_ms)
 {
+	DEBUGASSERT(q != NULL);
 	struct ove_queue *nq = q;
 	irqstate_t flags;
 	int ret;
@@ -121,6 +122,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 int ove_queue_receive(ove_queue_t q, void *buf,
                                uint32_t timeout_ms)
 {
+	DEBUGASSERT(q != NULL);
 	struct ove_queue *nq = q;
 	irqstate_t flags;
 	int ret;
@@ -147,6 +149,7 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 
 int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 {
+	DEBUGASSERT(q != NULL);
 	struct ove_queue *nq = q;
 
 	if (nxsem_trywait(&nq->not_full) < 0) {
@@ -164,6 +167,7 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 
 int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 {
+	DEBUGASSERT(q != NULL);
 	struct ove_queue *nq = q;
 
 	if (nxsem_trywait(&nq->not_empty) < 0) {

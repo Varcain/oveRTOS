@@ -83,6 +83,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 	k_timeout_t timeout;
 	int ret;
 
+	__ASSERT(q != NULL, "NULL queue handle");
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
@@ -102,6 +103,7 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 	k_timeout_t timeout;
 	int ret;
 
+	__ASSERT(q != NULL, "NULL queue handle");
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
@@ -117,6 +119,7 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 
 int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 {
+	__ASSERT(q != NULL, "NULL queue handle");
 	int ret = k_msgq_put(&q->msgq, data, K_NO_WAIT);
 	if (ret != 0) {
 		return OVE_ERR_QUEUE_FULL;
@@ -126,6 +129,7 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 
 int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 {
+	__ASSERT(q != NULL, "NULL queue handle");
 	int ret = k_msgq_get(&q->msgq, buf, K_NO_WAIT);
 	if (ret != 0) {
 		return OVE_ERR_TIMEOUT;

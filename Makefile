@@ -99,9 +99,17 @@ all: $(VENV_STAMP)
 	@$(OVE) configure
 	@$(OVE) build
 
-.PHONY: alldefconfigs
-alldefconfigs: $(VENV_STAMP)
-	@CONFIGS=$$(find $(OVE_DIR)/defconfigs -name '*_defconfig' -type f | sort); \
+# Build all defconfigs under a specific subdirectory.
+# Usage: make defconfigs-host/posix
+#        make defconfigs-qemu/freertos
+#        make defconfigs-stm32f746/zephyr
+.PHONY: defconfigs-%
+defconfigs-%: $(VENV_STAMP)
+	@DIR="$(OVE_DIR)/defconfigs/$*"; \
+	if [ ! -d "$$DIR" ]; then \
+		echo "ERROR: $$DIR does not exist"; exit 1; \
+	fi; \
+	CONFIGS=$$(find "$$DIR" -name '*_defconfig' -type f | sort); \
 	TOTAL=$$(echo "$$CONFIGS" | wc -l); \
 	CURRENT=0; \
 	FAILED=""; \
@@ -121,13 +129,24 @@ alldefconfigs: $(VENV_STAMP)
 	done; \
 	echo ""; \
 	echo "============================================================"; \
-	echo "alldefconfigs: $$TOTAL configurations processed"; \
+	echo "defconfigs-$*: $$TOTAL configurations processed"; \
 	if [ -n "$$FAILED" ]; then \
 		echo "FAILED:$$FAILED"; \
 		exit 1; \
 	else \
 		echo "All configurations built successfully"; \
 	fi
+
+.PHONY: alldefconfigs
+alldefconfigs: $(VENV_STAMP)
+	@for dir in $$(find $(OVE_DIR)/defconfigs -mindepth 2 -maxdepth 2 -type d | sort); do \
+		REL=$${dir#$(OVE_DIR)/defconfigs/}; \
+		echo ""; \
+		echo "############################################################"; \
+		echo "# defconfigs-$$REL"; \
+		echo "############################################################"; \
+		$(MAKE) defconfigs-$$REL || exit 1; \
+	done
 
 # ── Run / Flash / Debug ───────────────────────────────────────────────────
 

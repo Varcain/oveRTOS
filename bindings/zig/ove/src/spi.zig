@@ -25,3 +25,8 @@ pub fn write(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, data: []const u8, timeo
 pub fn read(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, buf: []u8, timeout_ms: u32) Error!void {
     try err.fromCode(c.ove_spi_read(spi, cs, buf.ptr, buf.len, timeout_ms));
 }
+
+/// Execute a sequence of SPI transfers under a single chip-select assertion.
+pub fn transferSeq(spi: c.ove_spi_t, cs: ?*const c.ove_spi_cs, xfers: []const c.ove_spi_xfer, timeout_ms: u32) Error!void {
+    try err.fromCode(c.ove_spi_transfer_seq(spi, cs, xfers.ptr, @intCast(xfers.len), timeout_ms));
+}

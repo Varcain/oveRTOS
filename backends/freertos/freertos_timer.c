@@ -91,6 +91,7 @@ void ove_timer_destroy(ove_timer_t timer)
 
 int ove_timer_start(ove_timer_t timer)
 {
+	configASSERT(timer != NULL);
 	if (xTimerStart(timer->handle, 0) != pdPASS) {
 		return OVE_ERR_TIMEOUT;
 	}
@@ -99,6 +100,7 @@ int ove_timer_start(ove_timer_t timer)
 
 int ove_timer_stop(ove_timer_t timer)
 {
+	configASSERT(timer != NULL);
 	if (xTimerStop(timer->handle, 0) != pdPASS) {
 		return OVE_ERR_TIMEOUT;
 	}
@@ -107,6 +109,7 @@ int ove_timer_stop(ove_timer_t timer)
 
 int ove_timer_reset(ove_timer_t timer)
 {
+	configASSERT(timer != NULL);
 	if (xTimerReset(timer->handle, 0) != pdPASS) {
 		return OVE_ERR_TIMEOUT;
 	}

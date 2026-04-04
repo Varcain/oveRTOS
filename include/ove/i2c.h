@@ -158,17 +158,22 @@ int  ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
 
 /* ── Register convenience ────────────────────────────────────────── */
 
+/** Maximum data bytes per ove_i2c_reg_write() call. */
+#define OVE_I2C_REG_WRITE_MAX  32
+
 /**
  * @brief Write to a single-byte-addressed register.
  *
  * Prepends @p reg to @p data and performs a single I2C write.
  * Implemented in the portable layer — not a HAL function.
  *
+ * @note @p len must not exceed @c OVE_I2C_REG_WRITE_MAX (32 bytes).
+ *
  * @param[in] i2c        I2C handle.
  * @param[in] addr       7-bit device address.
  * @param[in] reg        Register address byte.
  * @param[in] data       Data to write after the register byte.
- * @param[in] len        Number of data bytes.
+ * @param[in] len        Number of data bytes (max OVE_I2C_REG_WRITE_MAX).
  * @param[in] timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */

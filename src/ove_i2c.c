@@ -151,7 +151,7 @@ int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
 		      const void *data, size_t len,
 		      uint32_t timeout_ms)
 {
-	uint8_t buf[1 + 32]; /* reg byte + up to 32 data bytes */
+	uint8_t buf[1 + OVE_I2C_REG_WRITE_MAX];
 	int ret;
 
 	if (i2c == NULL || (data == NULL && len > 0))

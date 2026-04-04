@@ -12,8 +12,9 @@
 
 #include "ove/hal/hal_i2s.h"
 #include "ove_backend_common.h"
+#include <zephyr/drivers/i2s.h>
 
-/* Stub: Zephyr I2S backend not yet implemented. */
+/* TODO: Implement Zephyr I2S backend using zephyr/drivers/i2s.h */
 
 int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 {

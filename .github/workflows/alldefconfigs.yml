@@ -22,33 +22,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build all host defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/host -name '*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "host: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All host configurations built successfully"
-          fi
+        run: make defconfigs-host/posix
 
 
   qemu-freertos:
@@ -73,33 +47,7 @@ jobs:
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Build all qemu-freertos defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/qemu -name 'qemu_freertos_*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "qemu-freertos: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All qemu-freertos configurations built successfully"
-          fi
+        run: make defconfigs-qemu/freertos
 
 
   qemu-nuttx:
@@ -124,33 +72,7 @@ jobs:
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Build all qemu-nuttx defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/qemu -name 'qemu_nuttx_*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "qemu-nuttx: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All qemu-nuttx configurations built successfully"
-          fi
+        run: make defconfigs-qemu/nuttx
 
 
   qemu-zephyr:
@@ -197,33 +119,7 @@ jobs:
           fi
 
       - name: Build all qemu-zephyr defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/qemu -name 'qemu_zephyr_*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "qemu-zephyr: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All qemu-zephyr configurations built successfully"
-          fi
+        run: make defconfigs-qemu/zephyr
 
 
   stm32f746-freertos:
@@ -248,33 +144,7 @@ jobs:
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Build all stm32f746-freertos defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/stm32f746 -name 'stm32f746_freertos_*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "stm32f746-freertos: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All stm32f746-freertos configurations built successfully"
-          fi
+        run: make defconfigs-stm32f746/freertos
 
 
   stm32f746-nuttx:
@@ -299,33 +169,7 @@ jobs:
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Build all stm32f746-nuttx defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/stm32f746 -name 'stm32f746_nuttx_*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "stm32f746-nuttx: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All stm32f746-nuttx configurations built successfully"
-          fi
+        run: make defconfigs-stm32f746/nuttx
 
 
   stm32f746-zephyr:
@@ -372,31 +216,4 @@ jobs:
           fi
 
       - name: Build all stm32f746-zephyr defconfigs
-        run: |
-          FAILED=""
-          CONFIGS=$(find defconfigs/stm32f746 -name 'stm32f746_zephyr_*_defconfig' -type f | sort)
-          TOTAL=$(echo "$CONFIGS" | wc -l)
-          CURRENT=0
-          for cfg in $CONFIGS; do
-            NAME=$(basename $cfg)
-            CURRENT=$((CURRENT + 1))
-            echo "============================================================"
-            echo "[$CURRENT/$TOTAL] Building $NAME"
-            echo "============================================================"
-            if make $NAME && make; then
-              echo "[$CURRENT/$TOTAL] $NAME: OK"
-            else
-              echo "[$CURRENT/$TOTAL] $NAME: FAILED"
-              FAILED="$FAILED $NAME"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "stm32f746-zephyr: $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All stm32f746-zephyr configurations built successfully"
-          fi
-
+        run: make defconfigs-stm32f746/zephyr

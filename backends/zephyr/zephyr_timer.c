@@ -98,6 +98,7 @@ void ove_timer_destroy(ove_timer_t timer)
 
 int ove_timer_start(ove_timer_t timer)
 {
+	__ASSERT(timer != NULL, "NULL timer handle");
 	k_timeout_t period = K_MSEC(timer->period_ms);
 	k_timeout_t duration = period;
 
@@ -111,13 +112,14 @@ int ove_timer_start(ove_timer_t timer)
 
 int ove_timer_stop(ove_timer_t timer)
 {
+	__ASSERT(timer != NULL, "NULL timer handle");
 	k_timer_stop(&timer->timer);
 	return OVE_OK;
 }
 
 int ove_timer_reset(ove_timer_t timer)
 {
-	/* Stop and restart with original parameters */
+	__ASSERT(timer != NULL, "NULL timer handle");
 	ove_timer_stop(timer);
 	return ove_timer_start(timer);
 }

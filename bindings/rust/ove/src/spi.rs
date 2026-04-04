@@ -73,3 +73,23 @@ pub fn read(
     };
     Error::from_code(rc)
 }
+
+/// Execute a sequence of SPI transfers under a single chip-select assertion.
+pub fn transfer_seq(
+    spi: bindings::ove_spi_t,
+    cs: Option<&bindings::ove_spi_cs>,
+    xfers: &[bindings::ove_spi_xfer],
+    timeout_ms: u32,
+) -> Result<()> {
+    let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
+    let rc = unsafe {
+        bindings::ove_spi_transfer_seq(
+            spi,
+            cs_ptr,
+            xfers.as_ptr(),
+            xfers.len() as u32,
+            timeout_ms,
+        )
+    };
+    Error::from_code(rc)
+}
