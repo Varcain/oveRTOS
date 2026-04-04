@@ -438,7 +438,7 @@ pub struct ove_audio_device_cfg {
     pub num_buffers:      u32,
     pub thread_priority:  u32,
     pub thread_stack_size: u32,
-    pub transport_cfg:    [u8; 16], /* union: i2s/pdm/sdl2 */
+    pub transport_cfg:    [u8; 16], /* union: i2s/pdm */
 }
 
 #[repr(C)]

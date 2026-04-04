@@ -76,7 +76,7 @@ if(EXISTS "${OVE_GEN_DIR}/app_sources.cmake")
 endif()
 
 #############################################################################
-# Include directories (no SDL2)
+# Include directories
 #############################################################################
 include_directories(
     ${OVE_GEN_DIR}
@@ -99,7 +99,7 @@ if(OVE_SIM)
 endif()
 
 #############################################################################
-# LVGL library (no SDL2)
+# LVGL library
 #############################################################################
 file(GLOB_RECURSE LVGL_SOURCES ${LVGL_PATH}/src/*.c)
 add_library(lvgl STATIC ${LVGL_SOURCES})

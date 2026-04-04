@@ -448,7 +448,7 @@ def download_nuttx(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
 
 
 def download_posix(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
-    """Download LVGL sources for POSIX/SDL2 backend."""
+    """Download LVGL sources for POSIX backend."""
     ok = True
     lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
     lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")

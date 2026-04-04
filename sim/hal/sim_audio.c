@@ -7,10 +7,10 @@
  */
 
 /*
- * Sim audio device plugin -- replaces posix_audio.c (SDL2-based).
+ * Sim audio device plugin -- provides sim audio device nodes.
  *
  * Provides audio graph source/sink nodes that stream PCM data to/from
- * the web dashboard instead of SDL2.
+ * the web dashboard.
  */
 
 #include "ove/types.h"
@@ -163,7 +163,7 @@ size_t ove_sim_audio_pull_input(void *samples, size_t len,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Sim Audio Graph Source/Sink Nodes (replace SDL2 nodes)
+   Sim Audio Graph Source/Sink Nodes (replace sim nodes)
    ═══════════════════════════════════════════════════════════════════ */
 
 #include "ove/audio.h"
@@ -296,7 +296,7 @@ static const struct ove_audio_node_ops sim_sink_ops = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════
-   Device Node Factories (replace SDL2 factories in posix_audio.c)
+   Device Node Factories (replace sim factories in posix_audio.c)
    ═══════════════════════════════════════════════════════════════════ */
 
 static struct ove_sim_audio_fmt fmt_from_ove(const struct ove_audio_fmt *f)
@@ -315,7 +315,7 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 	if (!g || !cfg || !name)
 		return OVE_ERR_INVALID_PARAM;
 
-	/* Accept both SDL2 and I2S transport -- sim handles both. */
+	/* Accept both sim and I2S transport -- sim handles both. */
 
 	struct sim_source_ctx *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx)

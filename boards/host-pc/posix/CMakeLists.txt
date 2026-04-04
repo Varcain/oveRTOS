@@ -44,12 +44,6 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 
 #############################################################################
-# Find SDL2
-#############################################################################
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
-
-#############################################################################
 # Application source list (generated from app.yaml by 'ove configure')
 #############################################################################
 if(EXISTS "${OVE_GEN_DIR}/app_sources.cmake")
@@ -71,18 +65,12 @@ include_directories(
     ${OVE_DIR}/bindings/cpp
     ${OVE_DIR}/backends/posix/include
     ${OVE_DIR}/backends/common
+    ${OVE_DIR}/sim/include
+    ${OVE_DIR}/sim/src
     ${BOARD_DIR}
     ${LVGL_PATH}
     ${OVE_DL_DIR}
-    ${SDL2_INCLUDE_DIRS}
 )
-
-if(OVE_SIM)
-    include_directories(
-        ${OVE_DIR}/sim/include
-        ${OVE_DIR}/sim/src
-    )
-endif()
 
 #############################################################################
 # LVGL library
@@ -93,9 +81,8 @@ target_include_directories(lvgl SYSTEM PUBLIC
     ${LVGL_PATH}
     ${OVE_DL_DIR}
     ${BOARD_DIR}
-    ${SDL2_INCLUDE_DIRS}
 )
-target_compile_options(lvgl PRIVATE ${SDL2_CFLAGS_OTHER} -Wno-unused-parameter)
+target_compile_options(lvgl PRIVATE -Wno-unused-parameter)
 target_compile_definitions(lvgl PRIVATE LV_CONF_INCLUDE_SIMPLE)
 
 #############################################################################
@@ -121,24 +108,13 @@ else()
         ${OVE_DIR}/backends/posix/posix_shell.c
         ${OVE_DIR}/backends/posix/posix_bsp.c
     )
-
-    # When sim framework is enabled, it provides display + audio.
-    # Otherwise, use the SDL2-based POSIX implementations.
-    if(NOT OVE_SIM)
-        list(APPEND OVE_SOURCES
-            ${OVE_DIR}/backends/posix/posix_lvgl.c
-            ${OVE_DIR}/backends/posix/posix_audio.c
-        )
-    endif()
 endif()
 
 #############################################################################
-# Simulation plugin framework
+# Simulation plugin framework (display + audio via browser dashboard)
 #############################################################################
-if(OVE_SIM)
-    include(${OVE_DIR}/sim/CMakeLists.txt)
-    list(APPEND OVE_SOURCES ${SIM_SOURCES})
-endif()
+include(${OVE_DIR}/sim/CMakeLists.txt)
+list(APPEND OVE_SOURCES ${SIM_SOURCES})
 
 #############################################################################
 # ML inference (TensorFlow Lite Micro)
@@ -157,9 +133,6 @@ endif()
 #############################################################################
 # Executable
 #############################################################################
-#############################################################################
-# Application language support
-#############################################################################
 include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
 
 add_executable(ove_posix
@@ -176,7 +149,6 @@ target_link_libraries(ove_posix PRIVATE
     lvgl
     $<$<BOOL:${OVE_INFER}>:ove_tflm>
     $<$<BOOL:${OVE_NET_TLS}>:ove_mbedtls>
-    ${SDL2_LIBRARIES}
     pthread
     rt
     m
@@ -185,8 +157,7 @@ target_link_libraries(ove_posix PRIVATE
 #############################################################################
 # Print configuration
 #############################################################################
-message(STATUS "oveRTOS POSIX/SDL2 build")
+message(STATUS "oveRTOS POSIX build (browser dashboard)")
 message(STATUS "  OVE_DIR: ${OVE_DIR}")
 message(STATUS "  APP_DIR: ${OVE_APP_DIR}")
 message(STATUS "  LVGL: ${LVGL_PATH}")
-message(STATUS "  SDL2: ${SDL2_LIBRARIES}")

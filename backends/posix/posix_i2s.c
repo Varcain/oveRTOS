@@ -14,7 +14,7 @@
 #include "ove_backend_common.h"
 
 /*
- * POSIX I2S stub.  On host PC the audio subsystem uses SDL2 instead
+ * POSIX I2S stub.  On host PC the audio subsystem uses the sim framework instead
  * of I2S — this backend returns NOT_SUPPORTED.
  */
 

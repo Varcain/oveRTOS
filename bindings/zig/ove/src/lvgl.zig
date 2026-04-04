@@ -38,7 +38,6 @@ pub fn tick(ms: u32) void {
 /// Process all pending LVGL timer events and redraw dirty areas.
 ///
 /// Must be called periodically (typically the same period as `tick`).
-/// On POSIX, this also handles SDL window creation on first call.
 pub fn handler() void {
     c.ove_lvgl_handler();
 }

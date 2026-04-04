@@ -10,7 +10,7 @@
  * QEMU MPS2-AN500 LVGL display port.
  *
  * Flushes rendered pixels to /dev/shm/ove-fb via semihosting file I/O.
- * The host viewer (qemu-display-viewer.py) reads and displays them.
+ * The host viewer (qemu-dashboard-bridge.py) reads and displays them.
  */
 
 #include "lvgl.h"

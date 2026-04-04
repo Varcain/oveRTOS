@@ -9,7 +9,7 @@
 /*
  * Sim LVGL backend -- replaces posix_lvgl.c when CONFIG_OVE_SIM=y.
  *
- * Instead of creating an SDL2 window via lv_sdl_window_create(), this
+ * This
  * backend creates a memory-only LVGL display that flushes framebuffer
  * data to the sim dashboard via WebSocket.
  */
@@ -115,7 +115,7 @@ int ove_lvgl_init(void)
 
 	lv_init();
 
-	/* Create a memory-only display (no SDL2). */
+	/* Create a memory-only display. */
 	lv_display_t *disp = lv_display_create(OVE_DISPLAY_WIDTH,
 					       OVE_DISPLAY_HEIGHT);
 	if (!disp)

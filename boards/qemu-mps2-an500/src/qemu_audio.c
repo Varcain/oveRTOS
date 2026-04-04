@@ -8,8 +8,8 @@
 
 /*
  * QEMU audio driver — streams PCM through /dev/shm/ove-audio via ARM
- * semihosting.  The host-side viewer (qemu-display-viewer.py) mmaps
- * the same file for SDL2 audio playback and capture.
+ * semihosting.  The host-side viewer (qemu-dashboard-bridge.py) mmaps
+ * the same file for audio playback and capture.
  *
  * Falls back to silent in-memory processing when the shared-memory
  * file cannot be opened (headless / no audio viewer).

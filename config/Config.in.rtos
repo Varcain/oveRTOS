@@ -19,9 +19,9 @@ config OVE_RTOS_NUTTX
       Use the Apache NuttX RTOS.
 
 config OVE_RTOS_POSIX
-    bool "POSIX/SDL2 (native host)"
+    bool "POSIX (native host)"
     help
-      Run natively on Linux/macOS using POSIX threads and SDL2 for
+      Run natively on Linux/macOS using POSIX threads for
       display, input, and audio. No cross-compilation needed.
 
 endchoice
@@ -262,9 +262,9 @@ menu "NuttX"
 endmenu
 
 # ==========================================================================
-# POSIX / SDL2
+# POSIX
 # ==========================================================================
-menu "POSIX / SDL2"
+menu "POSIX"
     visible if OVE_RTOS_POSIX
 
     config POSIX_DISPLAY_WIDTH

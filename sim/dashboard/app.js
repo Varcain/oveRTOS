@@ -13,6 +13,7 @@ var FRAME_AUDIO = 0x02;
 var FRAME_EVENT = 0x03;
 var FRAME_CMD   = 0x04;
 var FRAME_STATE = 0x05;
+var FRAME_LOG   = 0x06;
 
 /* ── DOM elements (may be null in WASM mode for missing panels) ───── */
 var statusEl     = document.getElementById("status");
@@ -55,20 +56,77 @@ var WIN_DEFS = {
 
 function isMobile() { return window.innerWidth < MOBILE_BP; }
 
-/** Compute absolute px rect for a window definition. */
-function defaultRect(def) {
+/**
+ * Compute tiled layout rects for all currently open windows.
+ * Returns { id: {x, y, width, height}, ... }.
+ *
+ * 1 window  → full area
+ * 2 windows → split left/right (PC) or top/bottom (mobile)
+ * 3 windows → first takes left half, other two stacked on right half
+ * 4+ windows → 2-column grid
+ */
+function computeLayout() {
+    var ids = [];
+    for (var id in wins) ids.push(id);
+    var n = ids.length;
+    if (n === 0) return {};
+
     var vw = window.innerWidth, vh = window.innerHeight;
     var usableH = vh - HEADER_H - TASKBAR_H;
-    if (isMobile()) {
-        /* Stack full-width, split height equally among rows 0 and 1. */
-        var rowH = usableH / (Object.keys(WIN_DEFS).length);
-        var idx = 0;
-        for (var k in WIN_DEFS) { if (WIN_DEFS[k] === def) break; idx++; }
-        return {
-            x: GAP, y: HEADER_H + GAP + idx * rowH,
-            width: vw - GAP * 2, height: rowH - GAP
-        };
+    var mobile = isMobile();
+    var layout = {};
+
+    if (n === 1) {
+        layout[ids[0]] = { x: GAP, y: HEADER_H + GAP,
+            width: vw - GAP * 2, height: usableH - GAP * 2 };
+    } else if (n === 2) {
+        if (mobile) {
+            var h = (usableH - GAP * 3) / 2;
+            layout[ids[0]] = { x: GAP, y: HEADER_H + GAP, width: vw - GAP * 2, height: h };
+            layout[ids[1]] = { x: GAP, y: HEADER_H + GAP * 2 + h, width: vw - GAP * 2, height: h };
+        } else {
+            var w = (vw - GAP * 3) / 2;
+            layout[ids[0]] = { x: GAP, y: HEADER_H + GAP, width: w, height: usableH - GAP * 2 };
+            layout[ids[1]] = { x: GAP * 2 + w, y: HEADER_H + GAP, width: w, height: usableH - GAP * 2 };
+        }
+    } else if (n === 3 && !mobile) {
+        var lw = (vw - GAP * 3) / 2;
+        var rh = (usableH - GAP * 3) / 2;
+        layout[ids[0]] = { x: GAP, y: HEADER_H + GAP, width: lw, height: usableH - GAP * 2 };
+        layout[ids[1]] = { x: GAP * 2 + lw, y: HEADER_H + GAP, width: lw, height: rh };
+        layout[ids[2]] = { x: GAP * 2 + lw, y: HEADER_H + GAP * 2 + rh, width: lw, height: rh };
+    } else {
+        /* Grid: 2 columns on PC, 1 column on mobile. */
+        var cols = mobile ? 1 : 2;
+        var rows = Math.ceil(n / cols);
+        var cw = (vw - GAP * (cols + 1)) / cols;
+        var rh = (usableH - GAP * (rows + 1)) / rows;
+        for (var i = 0; i < n; i++) {
+            var c = i % cols, r = Math.floor(i / cols);
+            layout[ids[i]] = {
+                x: GAP + c * (cw + GAP),
+                y: HEADER_H + GAP + r * (rh + GAP),
+                width: cw, height: rh
+            };
+        }
     }
+    return layout;
+}
+
+/** Get default rect for a single window (used when first created). */
+function defaultRect(def) {
+    /* If this is the only window, give it full area. Otherwise use
+       the proportional hints from WIN_DEFS as a fallback. */
+    var openCount = Object.keys(wins).length;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var usableH = vh - HEADER_H - TASKBAR_H;
+
+    if (openCount === 0) {
+        /* First window — maximize. */
+        return { x: GAP, y: HEADER_H + GAP,
+            width: vw - GAP * 2, height: usableH - GAP * 2 };
+    }
+    /* Fallback: proportional placement from WIN_DEFS. */
     var hw = vw * def.cw;
     var hh = usableH * def.rh;
     return {
@@ -310,9 +368,19 @@ function createDashboardWindow(id, title) {
         onminimize: function () { saveLayout(); updateBadges(); },
         onrestore: function () { saveLayout(); updateBadges(); },
         onmaximize: function () {
-            /* Override: tile to usable area instead of WinBox default. */
-            var r = tileRect("top");
-            if (r) { wins[id].move(r.x, r.y); wins[id].resize(r.w, r.h); }
+            var w = wins[id];
+            if (w._preMax) {
+                /* Restore previous size/position. */
+                var p = w._preMax;
+                w.move(p.x, p.y);
+                w.resize(p.w, p.h);
+                w._preMax = null;
+            } else {
+                /* Save current state, then tile to usable area. */
+                w._preMax = { x: w.x, y: w.y, w: w.width, h: w.height };
+                var r = tileRect("top");
+                if (r) { w.move(r.x, r.y); w.resize(r.w, r.h); }
+            }
             saveLayout();
             syncWaveformSize();
             return true; /* cancel default maximize */
@@ -332,22 +400,23 @@ function syncWaveformSize() {
         waveCanvas.width = waveCanvas.clientWidth;
 }
 
-/** Re-layout all windows to responsive defaults. */
+/** Re-layout all windows to fill the viewport optimally. */
 function autoLayout() {
-    for (var id in wins) {
-        var def = WIN_DEFS[id];
-        if (!def) continue;
-        var r = defaultRect(def);
+    var layout = computeLayout();
+    for (var id in layout) {
+        if (!wins[id]) continue;
+        var r = layout[id];
         if (wins[id].min) wins[id].minimize(false);
+        wins[id]._preMax = null;
         wins[id].move(r.x, r.y);
         wins[id].resize(r.width, r.height);
-        /* Toggle move/resize classes for mobile. */
         if (isMobile()) {
             wins[id].addClass("no-resize").addClass("no-move");
         } else {
             wins[id].removeClass("no-resize").removeClass("no-move");
         }
     }
+    saveLayout();
     syncWaveformSize();
 }
 
@@ -387,12 +456,11 @@ window.addEventListener("resize", function () {
 var isWasmMode = (typeof Module !== "undefined" && Module.onRuntimeInitialized);
 
 if (!isWasmMode && typeof WinBox !== "undefined") {
-    /* POSIX mode — create windows for all panels present in the DOM. */
-    for (var id in DEFAULT_WINDOWS) {
-        if (document.getElementById(id + "-panel")) {
-            createDashboardWindow(id, DEFAULT_WINDOWS[id].title);
-        }
-    }
+    /* POSIX mode — events window is always useful; display/audio/console
+       windows are created lazily when the first data frame arrives so that
+       only features the firmware actually uses get a panel. */
+    if (document.getElementById("events-panel"))
+        createDashboardWindow("events", WIN_DEFS.events.title);
 }
 
 /* ── WebSocket connection (POSIX mode only) ───────────────────────── */
@@ -410,7 +478,6 @@ function connect() {
     ws.onclose = function () {
         statusEl.textContent = "Disconnected";
         statusEl.className = "status disconnected";
-        addEvent("system", "Disconnected");
         setTimeout(connect, 2000);
     };
 
@@ -427,12 +494,24 @@ function connect() {
             case FRAME_AUDIO: handleAudio(payload); break;
             case FRAME_EVENT: handleEvent(payload); break;
             case FRAME_STATE: handleState(payload); break;
+            case FRAME_LOG:   handleLog(payload); break;
         }
     };
 }
 
+/* ── Lazy window creation for POSIX mode ───────────────────────────── */
+function ensureWindow(id) {
+    if (isWasmMode || !WIN_DEFS[id]) return;
+    if (document.getElementById(id + "-panel") && !wins[id]) {
+        createDashboardWindow(id, WIN_DEFS[id].title);
+        /* Re-tile all windows to accommodate the new one. */
+        autoLayout();
+    }
+}
+
 /* ── Display rendering (POSIX mode) ───────────────────────────────── */
 function handleFramebuffer(payload) {
+    ensureWindow("display");
     if (!ctx || payload.byteLength < 8) return;
 
     var view = new DataView(payload);
@@ -461,15 +540,6 @@ function handleFramebuffer(payload) {
     ctx.putImageData(imgData, x1, y1);
 
     frameCount++;
-    if (frameCount <= 3) {
-        var nonBlack = 0;
-        for (var j = 0; j < w * h; j++) {
-            var o = j * 4;
-            if (pixels[o] || pixels[o+1] || pixels[o+2]) nonBlack++;
-        }
-        addEvent("display", "frame #" + frameCount + ": " + w + "x" + h +
-            " at (" + x1 + "," + y1 + ") " + payload.byteLength + "B, " + nonBlack + " non-black px");
-    }
     var now = performance.now();
     if (now - lastFpsTime >= 1000) {
         fpsEl.textContent = (frameCount - lastFpsCount) + " FPS";
@@ -480,6 +550,7 @@ function handleFramebuffer(payload) {
 
 /* ── Audio handling (POSIX mode) ──────────────────────────────────── */
 function handleAudio(payload) {
+    ensureWindow("audio");
     if (payload.byteLength < 8) return;
     var view = new DataView(payload);
     audioSampleRate = view.getUint32(0, true);
@@ -541,6 +612,17 @@ function handleEvent(payload) {
     var view = new DataView(payload);
     addEvent("plugin:" + view.getUint32(0, true),
              "type=" + view.getUint32(4, true) + " t=" + view.getUint32(8, true) + "ms");
+}
+
+function handleLog(payload) {
+    ensureWindow("events");
+    var text = new TextDecoder().decode(new Uint8Array(payload));
+    /* Split into lines — firmware may send multiple lines at once. */
+    var lines = text.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].replace(/\r$/, "");
+        if (line.length > 0) addEvent("log", line);
+    }
 }
 
 function handleState(payload) {

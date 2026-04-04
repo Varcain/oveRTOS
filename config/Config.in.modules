@@ -368,12 +368,13 @@ menu "Simulation"
 
 config OVE_SIM
     bool "Simulation plugin framework"
-    default n
+    default y if OVE_RTOS_POSIX
     help
       Enable the simulation plugin framework. Replaces bare-stub
       HAL implementations with plugin-aware versions that support
       virtual peripherals, sensor injection, and host-side
       web dashboard visualization.
+      Enabled by default for POSIX builds (browser-based dashboard).
 
 config OVE_SIM_TRANSPORT_DIRECT
     bool

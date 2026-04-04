@@ -67,7 +67,7 @@ struct ove_sim_audio_cfg {
 /**
  * @brief Get the built-in audio plugin ops.
  *
- * The returned ops provide a sim audio device that replaces SDL2.
+ * The returned ops provide a sim audio device.
  * PCM output is streamed to the dashboard; PCM input is received
  * from the dashboard.
  *

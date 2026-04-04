@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OVE_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VENV_PYTHON="${OVE_DIR}/.venv/bin/python"
-VIEWER="${OVE_DIR}/config/scripts/qemu-display-viewer.py"
+VIEWER="${OVE_DIR}/config/scripts/qemu-dashboard-bridge.py"
 
 ELF="${1:?Usage: $0 <elf-file> [--headless] [--machine <name>] [extra-qemu-args...]}"
 shift
@@ -71,7 +71,7 @@ cleanup() {
         kill "${NET_BRIDGE_PID}" 2>/dev/null || true
         wait "${NET_BRIDGE_PID}" 2>/dev/null || true
     fi
-    rm -f "${AUDIO_PATH}" "${NET_PATH}"
+    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${LOG_FIFO:-}"
 }
 trap cleanup EXIT
 
@@ -89,8 +89,28 @@ if [ "${HEADLESS}" -eq 0 ]; then
         -semihosting-config "enable=on,target=native,arg=${FB_PATH}"
     )
 
-    "${VENV_PYTHON}" "${VIEWER}" &
+    # Kill any stale dashboard bridge on the same port.
+    DASHBOARD_PORT=8080
+    STALE_PID=$(lsof -ti tcp:${DASHBOARD_PORT} 2>/dev/null || true)
+    if [ -n "${STALE_PID}" ]; then
+        kill ${STALE_PID} 2>/dev/null || true
+        sleep 0.3
+    fi
+
+    # Named pipe: QEMU stdout → tee → terminal + bridge log.
+    LOG_FIFO=$(mktemp -u -t ove-log.XXXXXX)
+    mkfifo "${LOG_FIFO}"
+
+    "${VENV_PYTHON}" "${VIEWER}" --port ${DASHBOARD_PORT} --log-fd 0 < "${LOG_FIFO}" &
     VIEWER_PID=$!
+
+    # Wait for the dashboard HTTP server to be ready before starting QEMU.
+    for i in $(seq 1 30); do
+        if curl -s -o /dev/null http://localhost:${DASHBOARD_PORT}/ 2>/dev/null; then
+            break
+        fi
+        sleep 0.1
+    done
 else
     QEMU_ARGS+=(
         -semihosting-config "enable=on,target=native"
@@ -106,14 +126,24 @@ if [ "${NO_NET}" -eq 0 ] && [ -e /dev/net/tun ]; then
 fi
 
 if [ -n "${QEMU_TIMEOUT}" ]; then
-    timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
-    QEMU_EXIT=$?
+    if [ -n "${LOG_FIFO:-}" ]; then
+        timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
+        QEMU_EXIT=${PIPESTATUS[0]}
+    else
+        timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
+        QEMU_EXIT=$?
+    fi
     if [ ${QEMU_EXIT} -eq 124 ]; then
         echo "ERROR: QEMU timed out after ${QEMU_TIMEOUT}s" >&2
     fi
 else
-    qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
-    QEMU_EXIT=$?
+    if [ -n "${LOG_FIFO:-}" ]; then
+        qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>&1 | tee "${LOG_FIFO}"
+        QEMU_EXIT=${PIPESTATUS[0]}
+    else
+        qemu-system-arm "${QEMU_ARGS[@]}" "${EXTRA_ARGS[@]}"
+        QEMU_EXIT=$?
+    fi
 fi
 
 cleanup

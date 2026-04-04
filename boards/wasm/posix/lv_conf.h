@@ -7,7 +7,7 @@
  */
 
 /*
- * LVGL v9 configuration for POSIX/SDL2 host backend.
+ * LVGL v9 configuration for WASM host backend.
  */
 
 #ifndef LV_CONF_H
@@ -20,7 +20,7 @@
    COLOR SETTINGS
  *====================*/
 
-/* SDL2 works best with 32-bit color */
+/* 32-bit color for browser dashboard rendering */
 #define LV_COLOR_DEPTH 32
 
 /*=========================
@@ -68,7 +68,7 @@
 
 #define LV_USE_DRAW_SW 1
 #if LV_USE_DRAW_SW == 1
-    /* Desktop: enable ARGB8888 for SDL2 */
+    /* Desktop: enable ARGB8888 for browser dashboard */
     #define LV_DRAW_SW_SUPPORT_RGB565       0
     #define LV_DRAW_SW_SUPPORT_RGB565A8     0
     #define LV_DRAW_SW_SUPPORT_RGB888       1
@@ -87,7 +87,7 @@
     #define LV_USE_DRAW_SW_COMPLEX_GRADIENTS    0
 #endif
 
-/* Enable SDL2 GPU driver */
+/* GPU drivers (disabled) */
 #define LV_USE_DRAW_SDL 0
 #define LV_USE_DRAW_VGLITE 0
 #define LV_USE_PXP 0
@@ -299,16 +299,8 @@
  * DEVICES
  *==================*/
 
-/* SDL2 driver disabled for WASM (no SDL2 in Emscripten). */
+/* Display rendered via SIM framework to browser dashboard. */
 #define LV_USE_SDL              0
-#if LV_USE_SDL
-    #define LV_SDL_INCLUDE_PATH     <SDL2/SDL.h>
-    #define LV_SDL_RENDER_MODE      LV_DISPLAY_RENDER_MODE_DIRECT
-    #define LV_SDL_BUF_COUNT        1
-    #define LV_SDL_FULLSCREEN       0
-    #define LV_SDL_DIRECT_EXIT      1
-    #define LV_SDL_MOUSEWHEEL_MODE  LV_SDL_MOUSEWHEEL_MODE_ENCODER
-#endif
 
 #define LV_USE_X11              0
 #define LV_USE_WAYLAND          0

@@ -11,8 +11,8 @@
  *
  * The guest firmware writes output PCM and reads input PCM through a
  * shared-memory file (/dev/shm/ove-audio) using ARM semihosting.
- * The host-side viewer (qemu-display-viewer.py) mmaps the same file
- * for SDL2 audio playback and capture.
+ * The host-side viewer (qemu-dashboard-bridge.py) mmaps the same file
+ * for audio playback and capture.
  *
  * Layout:
  *   [0 .. 63]                        audio_shm_header

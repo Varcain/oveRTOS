@@ -6,7 +6,7 @@
  * @brief Hardware-backed source and sink node factories for the audio graph.
  *
  * Provides factory functions that register hardware audio devices
- * (I2S, PDM, SDL2) directly as source or sink nodes inside an
+ * (I2S, PDM) directly as source or sink nodes inside an
  * @ref ove_audio_graph.  Each factory allocates and configures the
  * necessary backend driver state and adds the node in one call.
  *
@@ -33,7 +33,6 @@ extern "C" {
 enum ove_audio_transport {
     OVE_AUDIO_TRANSPORT_I2S,  /**< @brief I2S / TDM serial bus (e.g. codec, DAC, ADC). */
     OVE_AUDIO_TRANSPORT_PDM,  /**< @brief PDM microphone interface. */
-    OVE_AUDIO_TRANSPORT_SDL2, /**< @brief SDL2 audio (host PC simulation or testing). */
 };
 
 /* ── Device configuration ───────────────────────────────────────── */
@@ -63,10 +62,6 @@ struct ove_audio_device_cfg {
             unsigned int        decimation;  /**< @brief PDM decimation factor. */
             unsigned int        clock_freq;  /**< @brief PDM clock frequency in Hz. */
         } pdm;
-        /** @brief Parameters specific to SDL2 audio transport. */
-        struct {
-            const char         *device_name; /**< @brief SDL2 audio device name; NULL = system default. */
-        } sdl2;
     };
 };
 

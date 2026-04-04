@@ -38,6 +38,7 @@ enum ove_sim_ws_frame_type {
 	OVE_SIM_WS_FRAME_EVENT    = 0x03, /**< Plugin event. */
 	OVE_SIM_WS_FRAME_CMD      = 0x04, /**< Plugin command (from client). */
 	OVE_SIM_WS_FRAME_STATE    = 0x05, /**< Plugin state JSON. */
+	OVE_SIM_WS_FRAME_LOG      = 0x06, /**< Console log text (UTF-8). */
 };
 
 /**

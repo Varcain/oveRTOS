@@ -10,7 +10,7 @@ A portable RTOS abstraction framework that provides a unified C API across **Fre
 - **Flexible allocation** -- heap mode (`_create`/`_destroy`) or zero-heap mode (`_init`/`_deinit` with static storage)
 - **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT), ML inference, filesystem, LVGL GUI, shell, logging, and more
 - **Unified configuration** -- single Kconfig-based `.config` drives all backends
-- **Desktop development** -- develop and test on POSIX/SDL2, deploy to embedded hardware
+- **Desktop development** -- develop and test on POSIX, deploy to embedded hardware
 
 ## Supported Backends
 

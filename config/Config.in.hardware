@@ -21,7 +21,7 @@ config OVE_BOARD_HOST_PC
     bool "Host PC (native)"
     depends on OVE_RTOS_POSIX
     help
-      Native host development. Uses SDL2 for display and audio.
+      Native host development. Uses browser dashboard for display and audio.
 
 config OVE_BOARD_WASM
     bool "WebAssembly (browser)"
