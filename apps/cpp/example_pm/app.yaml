@@ -5,3 +5,6 @@ sources:
   - src/app.cpp
 includes:
   - include
+defconfig:
+  - CONFIG_OVE_PM=y
+  - CONFIG_OVE_TIMER=y

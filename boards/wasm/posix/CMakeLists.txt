@@ -145,6 +145,7 @@ endif()
 if(OVE_SIM)
     set(SIM_SOURCES
         ${OVE_DIR}/sim/src/ove_sim_registry.c
+        ${OVE_DIR}/sim/src/ove_sim_input.c
         ${OVE_DIR}/sim/src/ove_sim_transport_wasm.c
         ${OVE_DIR}/sim/src/ove_sim_wasm_fb.c
         ${OVE_DIR}/sim/src/ove_sim_wasm_input.c

@@ -19,7 +19,9 @@
  */
 
 #include "ove_sim_ws.h"
+#include "ove_sim_input.h"
 #include "ove/sim/ove_sim_plugin.h"
+#include "ove/sim/ove_sim_transport.h"
 #include "ove/types.h"
 
 #include <arpa/inet.h>
@@ -161,82 +163,95 @@ static int base64_encode(const uint8_t *in, size_t in_len,
 	return (int)j;
 }
 
-/* ── Pending-frame mailbox (any thread -> server thread) ───────────── */
+/* ── Display mailbox (single-slot, latest-wins) ──────────────────── */
 
-/*
- * Double-buffered mailbox so the producer (LVGL/audio thread) can
- * write a new frame without blocking while the server thread sends
- * the previous one.  Only the latest frame matters for display.
- */
+#define DISPLAY_BUF_SIZE (1024 * 1024) /* 1 MB — enough for 480x272 XRGB8888 */
 
-#define MAILBOX_BUF_SIZE (1024 * 1024) /* 1 MB — enough for 480x272 XRGB8888 */
-
-struct mailbox {
+static struct {
 	pthread_mutex_t lock;
-	uint8_t        *buf;       /* Pending frame data (type hdr + payload) */
-	size_t          len;       /* 0 = no pending frame */
-};
+	uint8_t        *buf;
+	size_t          len;
+} display_mbox = { .lock = PTHREAD_MUTEX_INITIALIZER };
 
-static struct mailbox mbox = { .lock = PTHREAD_MUTEX_INITIALIZER };
+static uint8_t *display_drain_buf;
+
+/* ── Audio ring buffer (SPSC, no frame dropping) ─────────────────── */
+
+#define AUDIO_RING_SIZE (256 * 1024) /* 256 KB — ~2.9s at 44.1kHz/16-bit/stereo */
+
+static struct {
+	pthread_mutex_t lock;
+	uint8_t        *buf;
+	uint32_t        write_pos;
+	uint32_t        read_pos;
+} audio_ring = { .lock = PTHREAD_MUTEX_INITIALIZER };
 
 static int mailbox_init(void)
 {
-	mbox.buf = malloc(MAILBOX_BUF_SIZE);
-	if (!mbox.buf)
+	display_mbox.buf = malloc(DISPLAY_BUF_SIZE);
+	audio_ring.buf = malloc(AUDIO_RING_SIZE);
+	if (!display_mbox.buf || !audio_ring.buf)
 		return -1;
-	mbox.len = 0;
+	display_mbox.len = 0;
+	audio_ring.write_pos = 0;
+	audio_ring.read_pos = 0;
 	return 0;
 }
 
 /**
- * Post a frame into the mailbox (called from any thread).
- * Overwrites the previous frame if the server hasn't consumed it yet.
+ * Post a frame (called from any thread).
+ * Display: single-slot latest-wins.  Audio: ring buffer.
  */
 static void mailbox_post(enum ove_sim_ws_frame_type type,
 			 const void *payload, size_t len)
 {
 	size_t total = 4 + len;
-	if (total > MAILBOX_BUF_SIZE)
-		return; /* Frame too large, drop. */
 
-	pthread_mutex_lock(&mbox.lock);
-	uint32_t t = (uint32_t)type;
-	memcpy(mbox.buf, &t, 4);
-	memcpy(mbox.buf + 4, payload, len);
-	mbox.len = total;
-	pthread_mutex_unlock(&mbox.lock);
-}
-
-/**
- * Drain the mailbox (called from server thread only).
- * Returns a pointer to the frame data and its length.
- * The returned pointer is valid until the next drain call.
- * Returns NULL if no frame pending.
- */
-static uint8_t *drain_buf;
-
-static uint8_t *mailbox_drain(size_t *out_len)
-{
-	pthread_mutex_lock(&mbox.lock);
-	if (mbox.len == 0) {
-		pthread_mutex_unlock(&mbox.lock);
-		return NULL;
-	}
-
-	/* Swap into drain buffer. */
-	if (!drain_buf) {
-		drain_buf = malloc(MAILBOX_BUF_SIZE);
-		if (!drain_buf) {
-			pthread_mutex_unlock(&mbox.lock);
-			return NULL;
+	if (type == OVE_SIM_WS_FRAME_AUDIO && audio_ring.buf) {
+		/* Audio: write into ring buffer (length-prefixed). */
+		uint32_t msg_size = (uint32_t)(4 + total); /* 4-byte len prefix + frame */
+		pthread_mutex_lock(&audio_ring.lock);
+		uint32_t free = AUDIO_RING_SIZE -
+			(audio_ring.write_pos - audio_ring.read_pos);
+		if (free >= msg_size) {
+			uint32_t mask = AUDIO_RING_SIZE - 1;
+			uint32_t wp = audio_ring.write_pos;
+			/* Write 4-byte length prefix. */
+			for (int i = 0; i < 4; i++) {
+				audio_ring.buf[wp & mask] =
+					(uint8_t)((total >> (i * 8)) & 0xFF);
+				wp++;
+			}
+			/* Write type header. */
+			uint32_t t = (uint32_t)type;
+			for (int i = 0; i < 4; i++) {
+				audio_ring.buf[wp & mask] =
+					((uint8_t *)&t)[i];
+				wp++;
+			}
+			/* Write payload. */
+			const uint8_t *src = (const uint8_t *)payload;
+			for (size_t i = 0; i < len; i++) {
+				audio_ring.buf[wp & mask] = src[i];
+				wp++;
+			}
+			audio_ring.write_pos = wp;
 		}
+		/* else: ring full, drop (backpressure) */
+		pthread_mutex_unlock(&audio_ring.lock);
+		return;
 	}
-	memcpy(drain_buf, mbox.buf, mbox.len);
-	*out_len = mbox.len;
-	mbox.len = 0;
-	pthread_mutex_unlock(&mbox.lock);
 
-	return drain_buf;
+	/* Display / other: single-slot latest-wins. */
+	if (total > DISPLAY_BUF_SIZE)
+		return;
+
+	pthread_mutex_lock(&display_mbox.lock);
+	uint32_t t = (uint32_t)type;
+	memcpy(display_mbox.buf, &t, 4);
+	memcpy(display_mbox.buf + 4, payload, len);
+	display_mbox.len = total;
+	pthread_mutex_unlock(&display_mbox.lock);
 }
 
 /* ── Client state ──────────────────────────────────────────────────── */
@@ -262,6 +277,7 @@ static pthread_t server_thread;
 static volatile int server_running;
 static char dashboard_dir[512];
 static volatile int ws_client_connected; /* atomic-ish flag for has_clients */
+static struct ove_sim_transport *server_transport; /* transport for events/cmds */
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
@@ -583,10 +599,6 @@ static void handle_http(struct ws_client *c)
 
 /* ── Event pump (reads transport events, sends to WS clients) ──────── */
 
-extern int ove_sim_direct_read_event(void *buf, size_t buf_size,
-				     uint16_t *out_len, uint32_t timeout_ms);
-extern int ove_sim_direct_write_cmd(const void *data, uint16_t len);
-
 static void broadcast_to_ws(const void *frame, size_t frame_len)
 {
 	for (int i = 0; i < client_count; i++) {
@@ -601,10 +613,14 @@ static void broadcast_to_ws(const void *frame, size_t frame_len)
 
 static void pump_events(void)
 {
+	if (!server_transport)
+		return;
+
 	uint8_t buf[4096];
 	uint16_t len = 0;
 
-	while (ove_sim_direct_read_event(buf, sizeof(buf), &len, 0) == 0
+	while (ove_sim_transport_read_event(server_transport,
+					    buf, sizeof(buf), &len, 0) == 0
 	       && len > 0) {
 		uint8_t frame[4100];
 		uint32_t type = OVE_SIM_WS_FRAME_EVENT;
@@ -617,10 +633,58 @@ static void pump_events(void)
 
 static void pump_mailbox(void)
 {
-	size_t len;
-	uint8_t *frame = mailbox_drain(&len);
-	if (frame)
-		broadcast_to_ws(frame, len);
+	/* Display: drain single-slot. */
+	pthread_mutex_lock(&display_mbox.lock);
+	if (display_mbox.len > 0) {
+		if (!display_drain_buf)
+			display_drain_buf = malloc(DISPLAY_BUF_SIZE);
+		if (display_drain_buf) {
+			memcpy(display_drain_buf, display_mbox.buf,
+			       display_mbox.len);
+			size_t dlen = display_mbox.len;
+			display_mbox.len = 0;
+			pthread_mutex_unlock(&display_mbox.lock);
+			broadcast_to_ws(display_drain_buf, dlen);
+		} else {
+			pthread_mutex_unlock(&display_mbox.lock);
+		}
+	} else {
+		pthread_mutex_unlock(&display_mbox.lock);
+	}
+
+	/* Audio: drain ring buffer (all pending messages). */
+	pthread_mutex_lock(&audio_ring.lock);
+	uint32_t avail = audio_ring.write_pos - audio_ring.read_pos;
+	uint32_t rp = audio_ring.read_pos;
+	uint32_t mask = AUDIO_RING_SIZE - 1;
+
+	while (avail >= 4) {
+		/* Read 4-byte length prefix. */
+		uint32_t msg_len = 0;
+		for (int i = 0; i < 4; i++)
+			msg_len |= (uint32_t)audio_ring.buf[(rp + i) & mask]
+				   << (i * 8);
+		if (4 + msg_len > avail)
+			break;
+		rp += 4;
+
+		/* Read frame into a stack buffer and broadcast. */
+		uint8_t abuf[8192];
+		size_t to_send = msg_len < sizeof(abuf) ? msg_len : sizeof(abuf);
+		for (size_t i = 0; i < to_send; i++)
+			abuf[i] = audio_ring.buf[(rp + i) & mask];
+		rp += msg_len;
+		avail = audio_ring.write_pos - rp;
+
+		audio_ring.read_pos = rp;
+		pthread_mutex_unlock(&audio_ring.lock);
+		broadcast_to_ws(abuf, to_send);
+		pthread_mutex_lock(&audio_ring.lock);
+		avail = audio_ring.write_pos - audio_ring.read_pos;
+		rp = audio_ring.read_pos;
+	}
+	audio_ring.read_pos = rp;
+	pthread_mutex_unlock(&audio_ring.lock);
 }
 
 /* ── Server thread ─────────────────────────────────────────────────── */
@@ -735,10 +799,20 @@ static void *server_loop(void *arg)
 						uint32_t ftype;
 						memcpy(&ftype, payload, 4);
 						if (ftype ==
-						    OVE_SIM_WS_FRAME_CMD) {
-							ove_sim_direct_write_cmd(
-								payload + 4,
-								(uint16_t)(plen - 4));
+						    OVE_SIM_WS_FRAME_CMD
+						    && plen > 16) {
+							ove_sim_plugin_dispatch_cmd(
+								(const struct ove_sim_cmd *)(payload + 4));
+
+						} else if (ftype ==
+							   OVE_SIM_WS_FRAME_INPUT
+							   && plen >= 4 + 5) {
+							int16_t ix, iy;
+							uint8_t ip;
+							memcpy(&ix, payload + 4, 2);
+							memcpy(&iy, payload + 6, 2);
+							ip = payload[8];
+							ove_sim_input_set(ix, iy, ip);
 						}
 					}
 					size_t rem = c->recv_len -
@@ -762,10 +836,13 @@ static void *server_loop(void *arg)
 
 /* ── Public API ────────────────────────────────────────────────────── */
 
-int ove_sim_ws_start(uint16_t port, const char *dash_path)
+int ove_sim_ws_start(uint16_t port, const char *dash_path,
+		     struct ove_sim_transport *transport)
 {
 	if (server_running)
 		return OVE_ERR_INVALID_PARAM;
+
+	server_transport = transport;
 
 	snprintf(dashboard_dir, sizeof(dashboard_dir), "%s", dash_path);
 
@@ -831,10 +908,12 @@ void ove_sim_ws_stop(void)
 		server_fd = -1;
 	}
 
-	free(mbox.buf);
-	mbox.buf = NULL;
-	free(drain_buf);
-	drain_buf = NULL;
+	free(display_mbox.buf);
+	display_mbox.buf = NULL;
+	free(display_drain_buf);
+	display_drain_buf = NULL;
+	free(audio_ring.buf);
+	audio_ring.buf = NULL;
 }
 
 /**
@@ -854,4 +933,11 @@ int ove_sim_ws_broadcast(enum ove_sim_ws_frame_type type,
 int ove_sim_ws_has_clients(void)
 {
 	return ws_client_connected;
+}
+
+void ove_sim_log_broadcast(const char *msg, unsigned int len)
+{
+	if (!ws_client_connected || !msg || len == 0)
+		return;
+	ove_sim_ws_broadcast(OVE_SIM_WS_FRAME_LOG, msg, (size_t)len);
 }

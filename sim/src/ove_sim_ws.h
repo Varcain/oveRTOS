@@ -39,7 +39,10 @@ enum ove_sim_ws_frame_type {
 	OVE_SIM_WS_FRAME_CMD      = 0x04, /**< Plugin command (from client). */
 	OVE_SIM_WS_FRAME_STATE    = 0x05, /**< Plugin state JSON. */
 	OVE_SIM_WS_FRAME_LOG      = 0x06, /**< Console log text (UTF-8). */
+	OVE_SIM_WS_FRAME_INPUT    = 0x07, /**< Pointer input (x, y, pressed). */
 };
+
+struct ove_sim_transport;
 
 /**
  * @brief Start the WebSocket server.
@@ -49,9 +52,11 @@ enum ove_sim_ws_frame_type {
  *
  * @param[in] port            TCP port to bind (e.g. 8080).
  * @param[in] dashboard_path  Path to the dashboard static files directory.
+ * @param[in] transport       Transport to read events from and write commands to.
  * @return 0 on success, negative error code on failure.
  */
-int ove_sim_ws_start(uint16_t port, const char *dashboard_path);
+int ove_sim_ws_start(uint16_t port, const char *dashboard_path,
+		     struct ove_sim_transport *transport);
 
 /**
  * @brief Stop the WebSocket server and close all connections.

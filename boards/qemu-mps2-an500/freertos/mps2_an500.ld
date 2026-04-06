@@ -82,7 +82,7 @@ SECTIONS
         end = .;
         PROVIDE(end = .);
         KEEP(*(.heap*))
-        . = . + 0x40000;  /* 256 KB heap for semihosting malloc */
+        . = . + 0x180000;  /* 1.5 MB heap for semihosting malloc (LVGL needs ~1 MB) */
         __HeapLimit = .;
     } > RAM
 

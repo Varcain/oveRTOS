@@ -140,7 +140,7 @@ function(ove_build_zig_lib TARGET)
 
     # Board-specific lv_conf.h
     if(OVE_RTOS STREQUAL "posix")
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/boards/host-pc/posix")
+        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/boards/host/posix")
     elseif(DEFINED OVE_BOARD_DIR)
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_BOARD_DIR}")
         if(EXISTS "${OVE_BOARD_DIR}/inc")

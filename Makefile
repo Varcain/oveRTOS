@@ -71,6 +71,20 @@ menuconfig: $(VENV_STAMP)
 %_defconfig: $(VENV_STAMP)
 	@$(OVE) defconfig $@
 
+# Fragment-based configuration: make <board>.<rtos>.<app> [ZEROHEAP=1]
+# Examples:
+#   make qemu.freertos.example_c
+#   make stm32f746.zephyr.benchmark_rust
+#   make host.posix.example_net_cpp ZEROHEAP=1
+#
+# Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
+_DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(t)))
+ifneq ($(_DOT_TARGETS),)
+.PHONY: $(_DOT_TARGETS)
+$(_DOT_TARGETS): $(VENV_STAMP)
+	@$(OVE) defconfig-fragments "$@" $(if $(ZEROHEAP),--zeroheap)
+endif
+
 .PHONY: savedefconfig
 savedefconfig: $(VENV_STAMP)
 	@$(OVE) savedefconfig
@@ -328,17 +342,38 @@ help:
 	@echo "oveRTOS Build System"
 	@echo "===================="
 	@echo ""
-	@echo "Configuration:"
-	@echo "  menuconfig              - Interactive configuration (TUI)"
-	@echo "  <name>_defconfig        - Load a predefined config from defconfigs/"
-	@echo "  savedefconfig           - Save current config as minimal defconfig"
-	@echo "  nuttx-menuconfig        - NuttX native kernel menuconfig"
-	@echo "  zephyr-menuconfig       - Zephyr native kernel menuconfig"
+	@echo "Configuration:  make <board>.<rtos>.<app> [ZEROHEAP=1]"
 	@echo ""
-	@echo "Available defconfigs:"
-	@for f in $$(find $(OVE_DIR)/defconfigs -name "*_defconfig" -type f | sort); do \
-		echo "  $$(basename $$f)"; \
+	@echo "  Boards:"
+	@for d in $$(find $(OVE_DIR)/boards -maxdepth 1 -mindepth 1 -type d | sort); do \
+		name=$$(basename $$d); \
+		rtoses=$$(find $$d -maxdepth 1 -mindepth 1 -type d -not -name src -not -name cmake | \
+			  sort | xargs -I{} basename {} | tr '\n' ' '); \
+		printf "    %-28s  [%s]\n" "$$name" "$$rtoses"; \
 	done
+	@echo ""
+	@echo "  Apps:"
+	@for lang in c cpp rust zig; do \
+		langdir="$(OVE_DIR)/apps/$$lang"; \
+		[ -d "$$langdir" ] || continue; \
+		printf "    [%s]\n" "$$lang"; \
+		for f in $$(find "$$langdir" -name "app.yaml" -type f | sort); do \
+			cname=$$(grep 'config_name:' $$f | head -1 | sed 's/.*config_name: *//'); \
+			desc=$$(grep 'description:' $$f | head -1 | sed 's/.*description: *"*//;s/"*$$//'); \
+			if [ -n "$$cname" ]; then printf "      %-26s  %s\n" "$$cname" "$$desc"; fi; \
+		done; \
+	done
+	@echo ""
+	@echo "  Examples:"
+	@echo "    make qemu.freertos.example_c"
+	@echo "    make stm32f746.zephyr.benchmark_rust"
+	@echo "    make host.posix.example_net ZEROHEAP=1"
+	@echo ""
+	@echo "  Other:"
+	@echo "    menuconfig              - Interactive configuration (TUI)"
+	@echo "    savedefconfig           - Save current config as minimal defconfig"
+	@echo "    nuttx-menuconfig        - NuttX native kernel menuconfig"
+	@echo "    zephyr-menuconfig       - Zephyr native kernel menuconfig"
 	@echo ""
 	@echo "Build:"
 	@echo "  all (default)           - Full pipeline: download, configure, build"

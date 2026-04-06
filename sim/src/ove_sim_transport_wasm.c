@@ -150,11 +150,48 @@ static int wasm_recv_cmd(struct ove_sim_transport *t,
 	return OVE_OK;
 }
 
+/* ── Display / audio ops (WASM shared memory) ─────────────────────── */
+
+#include "ove_sim_wasm_fb.h"
+#include "ove_sim_wasm_audio.h"
+
+static int wasm_flush_display(struct ove_sim_transport *t,
+			      const void *fb, size_t fb_len,
+			      uint16_t x1, uint16_t y1,
+			      uint16_t x2, uint16_t y2)
+{
+	(void)t; (void)x1; (void)y1; (void)x2; (void)y2;
+	uint16_t w = x2 - x1 + 1;
+	uint16_t h = y2 - y1 + 1;
+	ove_sim_wasm_fb_write(fb, (uint32_t)fb_len, w, h);
+	return OVE_OK;
+}
+
+static int wasm_push_audio(struct ove_sim_transport *t,
+			   const void *samples, size_t len,
+			   uint32_t sample_rate, uint16_t channels,
+			   uint16_t bit_depth)
+{
+	(void)t; (void)sample_rate; (void)channels; (void)bit_depth;
+	ove_wasm_audio_playback_write(samples, (uint32_t)len);
+	return OVE_OK;
+}
+
+static size_t wasm_pull_audio(struct ove_sim_transport *t,
+			      void *samples, size_t len)
+{
+	(void)t;
+	return ove_wasm_audio_capture_read(samples, (uint32_t)len);
+}
+
 static const struct ove_sim_transport_ops wasm_ops = {
-	.open       = wasm_open,
-	.close      = wasm_close,
-	.send_event = wasm_send_event,
-	.recv_cmd   = wasm_recv_cmd,
+	.open          = wasm_open,
+	.close         = wasm_close,
+	.send_event    = wasm_send_event,
+	.recv_cmd      = wasm_recv_cmd,
+	.flush_display = wasm_flush_display,
+	.push_audio    = wasm_push_audio,
+	.pull_audio    = wasm_pull_audio,
 };
 
 /* ── Public factory ────────────────────────────────────────────────── */

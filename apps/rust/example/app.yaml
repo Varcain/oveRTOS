@@ -3,3 +3,8 @@ config_name: example_rust
 description: "Rust Demo"
 rust:
   lib_name: example_rust
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_LVGL=y
+  - CONFIG_OVE_QUEUE=y
+  - CONFIG_OVE_TIMER=y

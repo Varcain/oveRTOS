@@ -17,7 +17,9 @@ set(SIM_INCLUDE_DIRS
 # Core framework
 set(SIM_SOURCES
     ${SIM_DIR}/src/ove_sim_registry.c
+    ${SIM_DIR}/src/ove_sim_input.c
     ${SIM_DIR}/src/ove_sim_transport_direct.c
+    ${SIM_DIR}/src/ove_sim_transport_shm.c
     ${SIM_DIR}/src/ove_sim_ws.c
     ${SIM_DIR}/hal/sim_board.c
 )

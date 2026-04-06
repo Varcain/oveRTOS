@@ -59,6 +59,8 @@ struct i2s_sink_ctx {
 	unsigned int            thread_stack_size;
 	TaskHandle_t            task_handle;
 	ove_i2s_t               i2s;
+	unsigned int            tx_slots[2]; /* slot indices for L, R */
+	unsigned int            tx_slot_count; /* total slots per DMA frame */
 	volatile buffer_phase_t current_rx_phase;
 	volatile buffer_phase_t current_tx_phase;
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -78,6 +80,8 @@ static struct i2s_sink_ctx g_sink_ctx;
 struct i2s_source_ctx {
 	struct ove_audio_fmt fmt;
 	unsigned int         input_device;
+	unsigned int         rx_slots[2]; /* slot indices for L, R */
+	unsigned int         slot_count;  /* total slots per DMA frame */
 };
 
 static int i2s_source_configure(void *ctx, const struct ove_audio_fmt *in,
@@ -92,15 +96,26 @@ static int i2s_source_configure(void *ctx, const struct ove_audio_fmt *in,
 static int i2s_source_process(void *ctx, const struct ove_audio_buf *in,
 			      struct ove_audio_buf *out)
 {
-	(void)ctx;
 	(void)in;
+	struct i2s_source_ctx *sc = (struct i2s_source_ctx *)ctx;
 	struct i2s_sink_ctx *sink = &g_sink_ctx;  /* forward ref */
 	int16_t *rx_ptr = (int16_t *)ove_i2s_rx_buf(sink->i2s);
 	if (rx_ptr == NULL)
 		return OVE_ERR_NOT_SUPPORTED;
-	unsigned int bytes = out->frames * out->fmt->channels *
-			     ove_audio_sample_size(out->fmt->sample_fmt);
-	memcpy(out->data, rx_ptr, bytes);
+
+	/* Extract configured channels from the I2S DMA slot layout.
+	 * DMA delivers [slot0, slot1, ..., slotN-1] per frame.
+	 * We extract the slots specified in rx_slots[] to produce
+	 * clean mono/stereo PCM for the graph. */
+	int16_t *dst = (int16_t *)out->data;
+	unsigned int ch = out->fmt->channels;
+	unsigned int nslots = sc->slot_count;
+	unsigned int frames = out->frames;
+
+	for (unsigned int f = 0; f < frames; f++) {
+		for (unsigned int c = 0; c < ch && c < 2; c++)
+			dst[f * ch + c] = rx_ptr[f * nslots + sc->rx_slots[c]];
+	}
 	return OVE_OK;
 }
 
@@ -131,9 +146,19 @@ static int i2s_sink_process(void *ctx, const struct ove_audio_buf *in,
 	int16_t *tx_ptr = (int16_t *)ove_i2s_tx_buf(sc->i2s);
 	if (tx_ptr == NULL)
 		return OVE_ERR_NOT_SUPPORTED;
-	unsigned int bytes = in->frames * in->fmt->channels *
-			     ove_audio_sample_size(in->fmt->sample_fmt);
-	memcpy(tx_ptr, in->data, bytes);
+
+	/* Place clean PCM into the correct TX DMA slots.
+	 * Zero all other slots to avoid stale data on the bus. */
+	const int16_t *src = (const int16_t *)in->data;
+	unsigned int ch = in->fmt->channels;
+	unsigned int frames = in->frames;
+	unsigned int nslots = sc->tx_slot_count;
+
+	memset(tx_ptr, 0, frames * nslots * sizeof(int16_t));
+	for (unsigned int f = 0; f < frames; f++) {
+		for (unsigned int c = 0; c < ch && c < 2; c++)
+			tx_ptr[f * nslots + sc->tx_slots[c]] = src[f * ch + c];
+	}
 	return OVE_OK;
 }
 
@@ -260,6 +285,12 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 		memset(ctx, 0, sizeof(*ctx));
 		ctx->fmt = cfg->fmt;
 		ctx->input_device = cfg->i2s.input_device;
+		/* Default I2S slot mapping for STM32F746-DISCO (SAI, 2 slots).
+		 * DMIC: L = slot 1, R = slot 0 (swapped in SAI frame).
+		 * Override via cfg->i2s.slot_mask if needed. */
+		ctx->slot_count = 2;
+		ctx->rx_slots[0] = 1;  /* mono/left channel from slot 1 */
+		ctx->rx_slots[1] = 0;  /* right channel from slot 0 */
 
 		int idx = ove_audio_graph_add_node(g, &i2s_source_ops, ctx,
 						   name, OVE_AUDIO_NODE_SOURCE);
@@ -290,14 +321,22 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 		ctx->thread_stack_size = cfg->thread_stack_size
 			? cfg->thread_stack_size : DEFAULT_AUDIO_STACK;
 
-		/* Create I2S bus */
+		/* TX slot mapping: HP DAC L = slot 0, R = slot 1 */
+		ctx->tx_slot_count = 2;
+		ctx->tx_slots[0] = 0;  /* mono/left to slot 0 */
+		ctx->tx_slots[1] = 1;  /* right to slot 1 */
+
+		/* Create I2S bus.
+		 * DMA buffer holds frames_per_period * slot_count * 2 samples
+		 * (slot_count=2 for SAI, *2 for double-buffering). */
+		unsigned int slot_count = 2;
 		struct ove_i2s_cfg i2s_cfg = {
 			.instance        = 1,  /* SAI2 */
 			.sample_rate     = cfg->fmt.sample_rate,
 			.bit_depth       = 16,
 			.channels        = cfg->fmt.channels,
 			.direction       = OVE_I2S_DIR_TXRX,
-			.dma_buf_samples = g->frames_per_period * cfg->fmt.channels * 2,
+			.dma_buf_samples = g->frames_per_period * slot_count * 2,
 		};
 
 		/* DMA buffers MUST be in non-cacheable memory (DTCM on Cortex-M7).

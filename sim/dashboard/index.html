@@ -6,6 +6,7 @@
     <title>oveRTOS Sim Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css"/>
     <link rel="stylesheet" href="style.css">
+    <script src="coi-serviceworker.js"></script>
 </head>
 <body>
     <header>
@@ -30,10 +31,48 @@
 
         <section class="panel" id="audio-panel">
             <div class="audio-controls">
-                <button id="audio-toggle" class="btn">Enable Audio</button>
+                <button id="audio-play-toggle" class="btn">Enable Playback</button>
+                <button id="audio-record-toggle" class="btn">Record Output</button>
                 <span id="audio-info">--</span>
             </div>
-            <canvas id="audio-waveform" height="100"></canvas>
+            <div class="audio-devices">
+                <label>Output: <select id="audio-output-select" class="btn"></select></label>
+            </div>
+            <div class="audio-source">
+                <label>Input:
+                    <select id="audio-source-select" class="btn">
+                        <option value="mic">Microphone</option>
+                        <option value="file">Audio File</option>
+                    </select>
+                </label>
+                <select id="audio-input-select" class="btn"></select>
+                <span id="audio-file-controls" style="display:none">
+                    <input type="file" id="audio-file-input" accept="audio/*,.raw,.pcm,.wav" style="display:none">
+                    <button id="audio-file-browse" class="btn">Browse...</button>
+                    <button id="audio-file-play" class="btn" style="display:none">Play File</button>
+                    <span id="audio-file-name"></span>
+                </span>
+                <a id="audio-download-link" style="display:none"></a>
+            </div>
+            <div class="waveform-pair">
+                <div class="waveform-box">
+                    <span class="waveform-label">INPUT</span>
+                    <canvas id="waveform-input" height="80"></canvas>
+                </div>
+                <div class="waveform-box">
+                    <span class="waveform-label">OUTPUT</span>
+                    <canvas id="waveform-output" height="80"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" id="console-panel">
+            <div style="display:flex;gap:8px;">
+                <input type="text" id="console-input" class="btn"
+                       style="flex:1;font-family:inherit;font-size:12px;padding:6px 8px;"
+                       placeholder="Type command + Enter...">
+                <button id="console-send" class="btn">Send</button>
+            </div>
         </section>
 
         <section class="panel" id="events-panel">

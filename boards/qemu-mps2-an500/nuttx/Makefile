@@ -39,14 +39,20 @@ MAINSRC = main.c
 # Backend sources from generated config
 -include $(OVE_GEN_DIR)/ove_sources.mk
 
-# When audio is enabled, replace NuttX audio backend with QEMU semihosting driver
-ifeq ($(CONFIG_OVE_AUDIO),y)
-CSRCS = $(filter-out %_audio.c,$(OVE_BACKEND_SRCS))
-CSRCS += $(QEMU_SRC_DIR)/qemu_audio.c
-else
+# Sim framework replaces the NuttX display/audio backends on QEMU.
+# Always replace — QEMU uses semihosting transport, never native drivers.
+SIM_DIR := $(OVE_DIR)/sim
+
 CSRCS = $(OVE_BACKEND_SRCS)
-endif
-CSRCS += $(QEMU_SRC_DIR)/lv_port_disp_nuttx.c
+CSRCS := $(filter-out %nuttx_lvgl.c,$(CSRCS))
+CSRCS := $(filter-out %nuttx_audio.c,$(CSRCS))
+CSRCS += $(SIM_DIR)/hal/sim_lvgl.c
+CSRCS += $(SIM_DIR)/hal/sim_audio.c
+CSRCS += $(SIM_DIR)/src/ove_sim_registry.c
+CSRCS += $(SIM_DIR)/src/ove_sim_input.c
+CSRCS += $(SIM_DIR)/src/ove_sim_transport_shm_guest.c
+CSRCS += $(SIM_DIR)/hal/sim_board.c
+CSRCS += $(SIM_DIR)/hal/sim_display.c
 
 # Application sources (generated from app.yaml by 'ove configure')
 -include $(OVE_GEN_DIR)/app_sources.mk
@@ -60,8 +66,14 @@ CFLAGS += $(APP_INCLUDES)
 CFLAGS += -I$(OVE_DIR)/include
 CFLAGS += -I$(OVE_DIR)/backends/nuttx/include
 CFLAGS += -I$(OVE_DIR)/backends/common
+CFLAGS += -I$(OVE_DIR)/sim/include
+CFLAGS += -I$(OVE_DIR)/sim/src
 CFLAGS += -I$(OVE_GEN_DIR)
 CFLAGS += -I$(QEMU_SRC_DIR)
+ifneq ($(LVGL_INCLUDE_PATH),)
+CFLAGS += -I$(LVGL_INCLUDE_PATH)
+CFLAGS += -I$(LVGL_PARENT_PATH)
+endif
 
 ifneq ($(APPDIR),)
 include $(APPDIR)/Application.mk

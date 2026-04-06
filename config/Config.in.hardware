@@ -38,7 +38,7 @@ config OVE_BOARD_NAME
     string
     default "stm32f746g-discovery" if OVE_BOARD_STM32F746G_DISCO
     default "qemu-mps2-an500" if OVE_BOARD_QEMU_MPS2_AN500
-    default "host-pc" if OVE_BOARD_HOST_PC
+    default "host" if OVE_BOARD_HOST_PC
     default "wasm" if OVE_BOARD_WASM
 
 config OVE_FLASH_SIZE

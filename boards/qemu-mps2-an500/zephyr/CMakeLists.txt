@@ -30,27 +30,40 @@ set(DTC_OVERLAY_FILE "${OVE_BOARD_DIR}/dts/shmem_display.overlay" CACHE STRING "
 # DTS binding search path for ove,shmem-display compatible
 list(APPEND DTS_ROOT "${OVE_BOARD_DIR}")
 
+# Shmem display driver (writes to /dev/shm/ove-fb via semihosting)
+list(APPEND ZEPHYR_EXTRA_MODULES ${OVE_BOARD_DIR}/drivers)
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_firmware)
 
-# Replace Zephyr audio backend with QEMU semihosting audio driver
+# ── Sim framework (replaces semihosting display/audio drivers) ──────
+# Exclude old backends; sim framework handles display + audio.
 if(OVE_AUDIO)
     list(FILTER OVE_BACKEND_SOURCES EXCLUDE REGEX "_audio\\.c$")
-    list(APPEND OVE_BACKEND_SOURCES
-         "${OVE_BOARD_DIR}/../src/qemu_audio.c")
+endif()
+if(OVE_LVGL)
+    list(FILTER OVE_BACKEND_SOURCES EXCLUDE REGEX "_lvgl\\.c$")
+endif()
+
+set(SIM_QEMU_SOURCES
+    ${OVE_DIR}/sim/src/ove_sim_registry.c
+    ${OVE_DIR}/sim/src/ove_sim_input.c
+    ${OVE_DIR}/sim/src/ove_sim_transport_shm_guest.c
+    ${OVE_DIR}/sim/hal/sim_board.c
+    ${OVE_DIR}/sim/hal/sim_display.c
+)
+if(OVE_LVGL)
+    list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_lvgl.c)
+endif()
+if(OVE_AUDIO)
+    list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_audio.c)
 endif()
 
 target_sources(app PRIVATE
     ${OVE_BOARD_DIR}/main.c
-
-    # oveRTOS framework + backend (only enabled modules, from ove_config.cmake)
     ${OVE_BACKEND_SOURCES}
+    ${SIM_QEMU_SOURCES}
 )
-
-# Semihosting display driver for QEMU (implements Zephyr display API)
-if(CONFIG_DISPLAY)
-    target_sources(app PRIVATE ${OVE_BOARD_DIR}/drivers/display_shmem.c)
-endif()
 
 # Place lv_conf.h where LVGL's lv_conf_internal.h expects it via
 # relative #include "../../lv_conf.h" from lvgl/src/.  Needed for
@@ -82,6 +95,8 @@ target_include_directories(app PRIVATE
     ${OVE_DIR}/bindings/cpp
     ${OVE_DIR}/backends/zephyr/include
     ${OVE_DIR}/backends/common
+    ${OVE_DIR}/sim/include
+    ${OVE_DIR}/sim/src
     ${OVE_BOARD_DIR}/../src
 )
 

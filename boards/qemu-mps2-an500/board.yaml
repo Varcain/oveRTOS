@@ -34,3 +34,19 @@ serial:
 
 watchdog:
   timeout_ms: 5000
+
+defconfig:
+  - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
+  - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
+
+rtos_defconfig:
+  freertos:
+    - CONFIG_OVE_RUST_TARGET="thumbv7em-none-eabihf"
+  nuttx:
+    - CONFIG_OVE_RUST_TARGET="thumbv7em-none-eabihf"
+  zephyr:
+    - CONFIG_OVE_RUST_TARGET="thumbv7em-none-eabi"
+    - CONFIG_ZEPHYR_HEAP_MEM_POOL_SIZE=1572864
+    - "# CONFIG_ZEPHYR_I2S is not set"
+    - "# CONFIG_ZEPHYR_CMSIS_DSP is not set"
+    - "# CONFIG_ZEPHYR_SD_FILESYSTEM is not set"

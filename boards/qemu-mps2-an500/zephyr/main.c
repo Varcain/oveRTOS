@@ -12,8 +12,11 @@
 
 #include "ove/ove.h"
 
+extern int ove_sim_board_init(void);
+
 int main(void)
 {
+	ove_sim_board_init();
 	ove_app_run();
 	return 0;
 }

@@ -165,7 +165,7 @@ def test_rust(ove_dir, output_dir):
         "STUB_LIB_DIR": stub_build,
         "OVE_STORAGE_SIZES": os.path.join(stub_build,
                                                "ove_storage_sizes.env"),
-        "LV_CONF_PATH": os.path.join(ove_dir, "boards", "host-pc",
+        "LV_CONF_PATH": os.path.join(ove_dir, "boards", "host",
                                       "posix"),
         "LVGL_INCLUDE_PATH": os.path.join(ove_dir, "tests", "backends",
                                            "stub", "lvgl"),
@@ -229,7 +229,7 @@ def test_zig(ove_dir, output_dir):
         "-I" + os.path.join(ove_dir, "backends", "posix", "include"),
         "-I" + os.path.join(ove_dir, "tests", "backends", "stub", "lvgl"),
         "-I" + os.path.join(ove_dir, "tests", "backends", "stub"),
-        "-I" + os.path.join(ove_dir, "boards", "host-pc", "posix"),
+        "-I" + os.path.join(ove_dir, "boards", "host", "posix"),
     ]
 
     logger.info("Building Zig tests")

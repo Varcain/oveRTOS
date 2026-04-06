@@ -38,6 +38,10 @@ struct ove_sim_wasm_fb {
 /* Global instance — address exported to JS. */
 extern struct ove_sim_wasm_fb ove_wasm_fb;
 
+/* Write a frame (called from sim_lvgl.c via transport). */
+void ove_sim_wasm_fb_write(const uint8_t *pixels, uint32_t size,
+			   uint16_t width, uint16_t height);
+
 #ifdef __cplusplus
 }
 #endif

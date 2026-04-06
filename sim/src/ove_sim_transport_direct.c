@@ -206,11 +206,96 @@ static int direct_recv_cmd(struct ove_sim_transport *t,
 	return ring_read(&p->cmd_ring, cmd, cmd_size, &out_len, timeout_ms);
 }
 
+/* ── Host-side ops (WS server reads events, writes commands) ──────── */
+
+static int direct_read_event(struct ove_sim_transport *t,
+			     void *buf, size_t buf_size,
+			     uint16_t *out_len, uint32_t timeout_ms)
+{
+	struct direct_priv *p = (struct direct_priv *)t->priv;
+	return ring_read(&p->event_ring, buf, buf_size, out_len, timeout_ms);
+}
+
+static int direct_write_cmd(struct ove_sim_transport *t,
+			    const void *data, uint16_t len)
+{
+	struct direct_priv *p = (struct direct_priv *)t->priv;
+	return ring_write(&p->cmd_ring, data, len);
+}
+
+/* ── Display / audio ops (delegate to WS server mailbox) ──────────── */
+
+#include "ove_sim_ws.h"
+
+static int direct_flush_display(struct ove_sim_transport *t,
+				const void *fb, size_t fb_len,
+				uint16_t x1, uint16_t y1,
+				uint16_t x2, uint16_t y2)
+{
+	(void)t;
+	if (!ove_sim_ws_has_clients())
+		return OVE_OK;
+
+	size_t hdr_len = 8;
+	size_t total = hdr_len + fb_len;
+	uint8_t *frame = malloc(total);
+	if (!frame)
+		return OVE_ERR_NO_MEMORY;
+
+	uint16_t coords[4] = {x1, y1, x2, y2};
+	memcpy(frame, coords, 8);
+	memcpy(frame + 8, fb, fb_len);
+	ove_sim_ws_broadcast(OVE_SIM_WS_FRAME_FB, frame, total);
+	free(frame);
+	return OVE_OK;
+}
+
+static int direct_push_audio(struct ove_sim_transport *t,
+			     const void *samples, size_t len,
+			     uint32_t sample_rate, uint16_t channels,
+			     uint16_t bit_depth)
+{
+	(void)t;
+	if (!ove_sim_ws_has_clients())
+		return OVE_OK;
+
+	size_t hdr = 8;
+	size_t total = hdr + len;
+	uint8_t *frame = malloc(total);
+	if (!frame)
+		return OVE_ERR_NO_MEMORY;
+
+	memcpy(frame, &sample_rate, 4);
+	memcpy(frame + 4, &channels, 2);
+	memcpy(frame + 6, &bit_depth, 2);
+	memcpy(frame + 8, samples, len);
+	ove_sim_ws_broadcast(OVE_SIM_WS_FRAME_AUDIO, frame, total);
+	free(frame);
+	return OVE_OK;
+}
+
+static size_t direct_pull_audio(struct ove_sim_transport *t, void *samples,
+				size_t len)
+{
+	(void)t;
+	/* Audio input comes via plugin command handler (sim_audio.c).
+	 * Nothing to do here -- the sim_audio plugin's input ring
+	 * is filled by FRAME_CMD / AUDIO_CMD_INJECT from the WS server. */
+	(void)samples;
+	(void)len;
+	return 0;
+}
+
 static const struct ove_sim_transport_ops direct_ops = {
-	.open       = direct_open,
-	.close      = direct_close,
-	.send_event = direct_send_event,
-	.recv_cmd   = direct_recv_cmd,
+	.open          = direct_open,
+	.close         = direct_close,
+	.send_event    = direct_send_event,
+	.recv_cmd      = direct_recv_cmd,
+	.read_event    = direct_read_event,
+	.write_cmd     = direct_write_cmd,
+	.flush_display = direct_flush_display,
+	.push_audio    = direct_push_audio,
+	.pull_audio    = direct_pull_audio,
 };
 
 /* ── Public factory ────────────────────────────────────────────────── */

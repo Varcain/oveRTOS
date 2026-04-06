@@ -20,7 +20,7 @@
 
 #include "ove/sim/ove_sim_audio.h"
 #include "ove/sim/ove_sim_plugin.h"
-#include "../src/ove_sim_ws.h"
+#include "ove/sim/ove_sim_transport.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -96,49 +96,32 @@ const struct ove_sim_plugin_ops *ove_sim_audio_builtin_ops(void)
 	return &sim_audio_ops;
 }
 
-/* ── Push/pull PCM API ─────────────────────────────────────────────── */
-
-#ifdef __EMSCRIPTEN__
-#include "../src/ove_sim_wasm_audio.h"
-#endif
+/* ── Push/pull PCM API (platform-agnostic via transport) ───────────── */
 
 void ove_sim_audio_push_output(const void *samples, size_t len,
 			       const struct ove_sim_audio_fmt *fmt)
 {
-#ifdef __EMSCRIPTEN__
-	/* WASM: write to shared ring buffer → JS AudioWorklet → speaker */
-	ove_wasm_audio_playback_write(samples, (uint32_t)len);
-	(void)fmt;
-#else
-	/* POSIX: stream to dashboard via WebSocket */
-	if (!ove_sim_ws_has_clients())
-		return;
-
-	size_t hdr = 8;
-	size_t total = hdr + len;
-	uint8_t *frame = malloc(total);
-	if (!frame)
-		return;
-
-	memcpy(frame, &fmt->sample_rate, 4);
-	memcpy(frame + 4, &fmt->channels, 2);
-	memcpy(frame + 6, &fmt->bit_depth, 2);
-	memcpy(frame + 8, samples, len);
-
-	ove_sim_ws_broadcast(OVE_SIM_WS_FRAME_AUDIO, frame, total);
-	free(frame);
-#endif
+	struct ove_sim_transport *t = ove_sim_get_transport();
+	ove_sim_transport_push_audio(t, samples, len,
+				     fmt->sample_rate, fmt->channels,
+				     fmt->bit_depth);
 }
 
 size_t ove_sim_audio_pull_input(void *samples, size_t len,
 				const struct ove_sim_audio_fmt *fmt)
 {
-#ifdef __EMSCRIPTEN__
-	/* WASM: read from shared ring buffer ← JS AudioWorklet ← mic */
 	(void)fmt;
-	return ove_wasm_audio_capture_read(samples, (uint32_t)len);
-#else
-	(void)fmt;
+
+	/* Try transport first (WASM / SHM guest). */
+	struct ove_sim_transport *t = ove_sim_get_transport();
+	size_t got = ove_sim_transport_pull_audio(t, samples, len);
+	if (got > 0) {
+		if (got < len)
+			memset((uint8_t *)samples + got, 0, len - got);
+		return got;
+	}
+
+	/* Fallback: local input ring (filled by plugin CMD_INJECT from WS). */
 	struct sim_audio_ctx *a = &audio_ctx;
 	uint32_t avail = a->input_write - a->input_read;
 	if (avail == 0) {
@@ -159,7 +142,6 @@ size_t ove_sim_audio_pull_input(void *samples, size_t len,
 		memset(dst + to_read, 0, len - to_read);
 
 	return to_read;
-#endif
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -323,11 +305,6 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 
 	ctx->fmt = cfg->fmt;
 	ctx->sim_fmt = fmt_from_ove(&cfg->fmt);
-#ifdef __EMSCRIPTEN__
-	ove_wasm_audio_set_capture_fmt(cfg->fmt.sample_rate,
-				       cfg->fmt.channels,
-				       ctx->sim_fmt.bit_depth);
-#endif
 
 	int idx = ove_audio_graph_add_node(g, &sim_source_ops, ctx, name,
 					   OVE_AUDIO_NODE_SOURCE);
@@ -351,11 +328,6 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 	ctx->sim_fmt = fmt_from_ove(&cfg->fmt);
 	ctx->graph = g;
 	ctx->frames_per_period = g->frames_per_period;
-#ifdef __EMSCRIPTEN__
-	ove_wasm_audio_set_playback_fmt(cfg->fmt.sample_rate,
-					cfg->fmt.channels,
-					ctx->sim_fmt.bit_depth);
-#endif
 
 	int idx = ove_audio_graph_add_node(g, &sim_sink_ops, ctx, name,
 					   OVE_AUDIO_NODE_SINK);

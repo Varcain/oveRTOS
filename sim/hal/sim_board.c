@@ -30,6 +30,20 @@
 #define OVE_SIM_DASHBOARD_PORT 8080
 #endif
 
+/* Audio defaults for boards that don't define I2S parameters. */
+#ifndef OVE_AUDIO_I2S_SAMPLE_RATE
+#define OVE_AUDIO_I2S_SAMPLE_RATE    16000
+#endif
+#ifndef OVE_AUDIO_I2S_CHANNELS
+#define OVE_AUDIO_I2S_CHANNELS       1
+#endif
+#ifndef OVE_AUDIO_I2S_BIT_DEPTH
+#define OVE_AUDIO_I2S_BIT_DEPTH      16
+#endif
+#ifndef OVE_AUDIO_I2S_BUFFER_SAMPLES
+#define OVE_AUDIO_I2S_BUFFER_SAMPLES 512
+#endif
+
 /* Forward declarations for registration helpers. */
 extern int ove_sim_display_register(uint16_t width, uint16_t height,
 				    enum ove_sim_color_fmt fmt);
@@ -69,9 +83,11 @@ int ove_sim_board_init(void)
 	int ret;
 
 	/* 1. Create transport. */
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__)
 	extern int ove_sim_transport_wasm_create(struct ove_sim_transport *t);
 	ret = ove_sim_transport_wasm_create(&transport);
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	ret = ove_sim_transport_shm_guest_create(&transport);
 #else
 	ret = ove_sim_transport_direct_create(&transport);
 #endif
@@ -93,7 +109,7 @@ int ove_sim_board_init(void)
 #ifdef CONFIG_OVE_LVGL
 	ret = ove_sim_display_register(OVE_DISPLAY_WIDTH,
 				       OVE_DISPLAY_HEIGHT,
-				       OVE_SIM_COLOR_RGB565);
+				       OVE_SIM_COLOR_XRGB8888);
 	if (ret < 0)
 		fprintf(stderr, "[sim] Display plugin failed: %d\n", ret);
 #endif
@@ -108,10 +124,12 @@ int ove_sim_board_init(void)
 		fprintf(stderr, "[sim] Audio plugin failed: %d\n", ret);
 #endif
 
-	/* 3. Start the WebSocket server (POSIX only — WASM uses postMessage). */
-#ifndef __EMSCRIPTEN__
+	/* 3. Start the WebSocket server (POSIX host only).
+	 *    WASM uses postMessage.  QEMU uses the Python bridge. */
+#if !defined(__EMSCRIPTEN__) && !defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	const char *dash_path = resolve_dashboard_path();
-	ret = ove_sim_ws_start(OVE_SIM_DASHBOARD_PORT, dash_path);
+	ret = ove_sim_ws_start(OVE_SIM_DASHBOARD_PORT, dash_path,
+			       &transport);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] Dashboard failed to start: %d\n", ret);
 #endif

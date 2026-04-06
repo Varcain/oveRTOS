@@ -1,0 +1,7 @@
+config OVE_SHMEM_DISPLAY
+	bool "oveRTOS semihosting framebuffer display"
+	default y
+	depends on DISPLAY
+	help
+	  Display driver that writes pixels to /dev/shm/ove-fb via ARM
+	  semihosting.  Used by the QEMU dashboard bridge.

@@ -5,3 +5,6 @@ sources:
   - src/app.c
 includes:
   - include
+defconfig:
+  - CONFIG_OVE_PM=y
+  - CONFIG_OVE_TIMER=y

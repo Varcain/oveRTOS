@@ -9,6 +9,13 @@ c_includes:
   - ../../c/benchmark/include
 rust:
   lib_name: benchmark_rust
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_QUEUE=y
+  - CONFIG_OVE_TIMER=y
+  - CONFIG_OVE_EVENTGROUP=y
+  - CONFIG_OVE_WORKQUEUE=y
+  - CONFIG_OVE_STREAM=y
 kconfig: |
   config OVE_BENCHMARK_ITERATIONS
   	int "Number of measurement iterations per benchmark case"

@@ -70,6 +70,13 @@ void ove_httpd_log_append(const char *line);
 #define _OVE_LOG_HTTPD_HOOK(buf) ((void)0)
 #endif
 
+#ifdef CONFIG_OVE_SIM
+void ove_sim_log_broadcast(const char *msg, unsigned int len);
+#define _OVE_LOG_SIM_HOOK(buf, len) ove_sim_log_broadcast(buf, len)
+#else
+#define _OVE_LOG_SIM_HOOK(buf, len) ((void)0)
+#endif
+
 #define _OVE_LOG_OUTPUT(prefix, fmt, ...) \
 	do { \
 		char _ove_log_buf[256]; \
@@ -82,6 +89,8 @@ void ove_httpd_log_append(const char *line);
 				(unsigned int)(_ove_log_len + 1)); \
 			_ove_log_buf[_ove_log_len] = '\0'; \
 			_OVE_LOG_HTTPD_HOOK(_ove_log_buf); \
+			_OVE_LOG_SIM_HOOK(_ove_log_buf, \
+				(unsigned int)_ove_log_len); \
 		} \
 	} while (0)
 /** @endcond */

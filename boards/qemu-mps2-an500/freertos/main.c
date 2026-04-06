@@ -19,10 +19,12 @@
 
 extern void xPortSysTickHandler(void);
 extern void initialise_monitor_handles(void);
+extern int ove_sim_board_init(void);
 
 int main(void)
 {
 	initialise_monitor_handles();
+	ove_sim_board_init();
 	ove_app_run();
 	return 0;
 }

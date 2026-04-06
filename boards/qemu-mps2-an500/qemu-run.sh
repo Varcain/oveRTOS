@@ -49,6 +49,14 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# Kill any stale QEMU instance writing to the same shm files.
+STALE_QEMU=$(pgrep -f "qemu-system-arm.*ove-fb" 2>/dev/null || true)
+if [ -n "${STALE_QEMU}" ]; then
+    echo "[qemu-run] Killing stale QEMU process(es): ${STALE_QEMU}"
+    kill ${STALE_QEMU} 2>/dev/null || true
+    sleep 0.3
+fi
+
 QEMU_ARGS=(
     -M "${QEMU_MACHINE}"
     -nographic
@@ -60,6 +68,7 @@ VIEWER_PID=""
 NET_BRIDGE_PID=""
 AUDIO_PATH="/dev/shm/ove-audio"
 NET_PATH="/dev/shm/ove-net"
+SIM_PATH="/dev/shm/ove-sim"
 NET_BRIDGE="${OVE_DIR}/config/scripts/qemu-net-bridge.py"
 cleanup() {
     if [ -n "${VIEWER_PID}" ]; then
@@ -71,7 +80,7 @@ cleanup() {
         kill "${NET_BRIDGE_PID}" 2>/dev/null || true
         wait "${NET_BRIDGE_PID}" 2>/dev/null || true
     fi
-    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${LOG_FIFO:-}"
+    rm -f "${AUDIO_PATH}" "${NET_PATH}" "${SIM_PATH}" "${LOG_FIFO:-}"
 }
 trap cleanup EXIT
 
@@ -79,18 +88,22 @@ if [ "${HEADLESS}" -eq 0 ]; then
     FB_PATH="/dev/shm/ove-fb"
 
     : > "${FB_PATH}"
-    truncate -s 512K "${FB_PATH}"
+    truncate -s 1M "${FB_PATH}"  # header 20B + XRGB8888 pixels (480x272x4 = 522KB)
 
     # Audio shared-memory ringbuffer (header 64B + 2x 128KB rings)
     : > "${AUDIO_PATH}"
     truncate -s 262208 "${AUDIO_PATH}"
+
+    # Plugin events/commands SHM (header 64B + 2x 64KB rings)
+    : > "${SIM_PATH}"
+    truncate -s 131136 "${SIM_PATH}"
 
     QEMU_ARGS+=(
         -semihosting-config "enable=on,target=native,arg=${FB_PATH}"
     )
 
     # Kill any stale dashboard bridge on the same port.
-    DASHBOARD_PORT=8080
+    DASHBOARD_PORT=8081
     STALE_PID=$(lsof -ti tcp:${DASHBOARD_PORT} 2>/dev/null || true)
     if [ -n "${STALE_PID}" ]; then
         kill ${STALE_PID} 2>/dev/null || true

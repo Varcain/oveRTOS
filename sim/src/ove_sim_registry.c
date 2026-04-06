@@ -57,14 +57,21 @@ int ove_sim_plugin_dispatch_cmd(const struct ove_sim_cmd *cmd)
 	if (!cmd)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (cmd->plugin_id >= (uint32_t)plugin_count)
-		return OVE_ERR_INVALID_PARAM;
+	/* Try exact plugin ID first. */
+	if (cmd->plugin_id < (uint32_t)plugin_count) {
+		struct ove_sim_plugin *p = &plugins[cmd->plugin_id];
+		if (p->ops->handle_cmd)
+			return p->ops->handle_cmd(p->ctx, cmd);
+		return OVE_OK;
+	}
 
-	struct ove_sim_plugin *p = &plugins[cmd->plugin_id];
-
-	if (p->ops->handle_cmd)
-		return p->ops->handle_cmd(p->ctx, cmd);
-
+	/* Plugin ID out of range — broadcast to all plugins.
+	 * Each plugin's handle_cmd checks cmd_type and ignores
+	 * commands it doesn't recognize. */
+	for (int i = 0; i < plugin_count; i++) {
+		if (plugins[i].ops->handle_cmd)
+			plugins[i].ops->handle_cmd(plugins[i].ctx, cmd);
+	}
 	return OVE_OK;
 }
 
@@ -94,6 +101,11 @@ void ove_sim_set_transport(struct ove_sim_transport *transport)
 		plugins[i].transport = transport;
 }
 
+struct ove_sim_transport *ove_sim_get_transport(void)
+{
+	return global_transport;
+}
+
 const struct ove_sim_plugin *ove_sim_plugin_get(uint32_t plugin_id)
 {
 	if (plugin_id >= (uint32_t)plugin_count)
@@ -105,4 +117,13 @@ const struct ove_sim_plugin *ove_sim_plugin_get(uint32_t plugin_id)
 int ove_sim_plugin_count(void)
 {
 	return plugin_count;
+}
+
+/* Weak default for platforms that don't link ove_sim_ws.c (WASM, QEMU).
+ * The POSIX WebSocket server provides the strong definition. */
+__attribute__((weak))
+void ove_sim_log_broadcast(const char *msg, unsigned int len)
+{
+	(void)msg;
+	(void)len;
 }

@@ -32,8 +32,7 @@ const NOISE_GATE_THRESHOLD: i32 = 500;
 const TARGET_PEAK: i32 = 15000;
 const RING_CAPACITY: usize = 32768;
 const RING_MASK: usize = RING_CAPACITY - 1;
-/// 4-slot I2S DMA layout: [slot0, slot1, slot2, slot3] per frame.
-const DMA_SLOTS_PER_FRAME: usize = 4;
+// I2S slot handling is now done by the driver — app sees clean PCM.
 
 static LABELS: [&str; CATEGORY_COUNT] = ["silence", "unknown", "yes", "no"];
 
@@ -111,19 +110,18 @@ impl ove::audio::AudioProcessor for DmicProcessor {
     fn process(&mut self, input: &ove::audio::AudioBuf, output: &ove::audio::AudioBuf) {
         let src = input.data_s16();
         let dst = output.data_s16_mut();
-        let num_frames = input.frames() as usize / DMA_SLOTS_PER_FRAME;
+        let frames = input.frames() as usize;
+        let ch = input.channels() as usize;
 
-        for f in 0..num_frames {
-            let base = f * DMA_SLOTS_PER_FRAME;
-            let mic_l = src[base + 1]; // slot 1 = DMIC Left
-
-            AUDIO_RING.write(mic_l);
+        for f in 0..frames {
+            let sample = src[f * ch]; // left / mono
+            AUDIO_RING.write(sample);
             SAMPLES_WRITTEN.fetch_add(1, Ordering::Relaxed);
 
-            dst[base] = mic_l;         // slot 0 = HP Left
-            dst[base + 1] = 0;
-            dst[base + 2] = src[base + 3]; // slot 2 = HP Right (DMIC R)
-            dst[base + 3] = 0;
+            // Passthrough to output for monitoring
+            for c in 0..ch {
+                dst[f * ch + c] = src[f * ch + c];
+            }
         }
     }
 }

@@ -23,7 +23,7 @@ config OVE_SYNC
 config OVE_AUDIO
     bool "Audio subsystem"
     default n
-    select OVE_I2S if OVE_RTOS_FREERTOS
+    select OVE_I2S if OVE_RTOS_FREERTOS && !OVE_BOARD_QEMU_MPS2_AN500
 
 config OVE_AUDIO_NODE_CONVERTER
     bool "Audio format converter node"

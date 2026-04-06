@@ -18,7 +18,7 @@
 #include "ove/sync.h"
 #include "ove_backend_common.h"
 #include "ove/sim/ove_sim_display.h"
-#include "../src/ove_sim_ws.h"
+#include "ove/sim/ove_sim_transport.h"
 #include "lvgl.h"
 #include "board_desc.h"
 
@@ -52,49 +52,30 @@ static void sim_flush_cb(lv_display_t *disp, const lv_area_t *area,
 	/* XRGB8888: 4 bytes per pixel. */
 	size_t fb_len = w * h * 4;
 
-#ifdef __EMSCRIPTEN__
-	/* WASM: write directly to shared framebuffer in WASM heap.
-	 * JS polls it via requestAnimationFrame. */
-	extern void ove_sim_wasm_fb_write(const uint8_t *pixels,
-					  uint32_t size,
-					  uint16_t width, uint16_t height);
-	ove_sim_wasm_fb_write(px_map, (uint32_t)fb_len, w, h);
-#else
-	/* POSIX: send via WS mailbox. */
-	if (ove_sim_ws_has_clients()) {
-		size_t hdr_len = 8;
-		size_t total = hdr_len + fb_len;
-		uint8_t *frame = malloc(total);
-		if (frame) {
-			uint16_t coords[4] = {x1, y1, x2, y2};
-			memcpy(frame, coords, 8);
-			memcpy(frame + 8, px_map, fb_len);
-			ove_sim_ws_broadcast(OVE_SIM_WS_FRAME_FB,
-					     frame, total);
-			free(frame);
-		}
-	}
-	/* Also emit via transport (for QEMU mode). */
-	ove_sim_display_flush(px_map, fb_len, x1, y1, x2, y2);
-#endif
+	/* Deliver framebuffer via the transport (platform-agnostic).
+	 * The transport handles delivery (WS mailbox, shared FB, or
+	 * semihosting file) — no need for a separate plugin event. */
+	struct ove_sim_transport *t = ove_sim_get_transport();
+	ove_sim_transport_flush_display(t, px_map, fb_len, x1, y1, x2, y2);
 
 	lv_display_flush_ready(disp);
 }
 
-/* ── WASM input device callback ────────────────────────────────────── */
+/* ── Pointer input device callback (all modes) ────────────────────── */
 
-#ifdef __EMSCRIPTEN__
-#include "../src/ove_sim_wasm_input.h"
+#include "../src/ove_sim_input.h"
 
 static void sim_indev_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 {
 	(void)indev;
-	data->point.x = ove_wasm_input.x;
-	data->point.y = ove_wasm_input.y;
-	data->state = ove_wasm_input.pressed
+	int16_t x, y;
+	uint8_t pressed;
+	ove_sim_input_get(&x, &y, &pressed);
+	data->point.x = x;
+	data->point.y = y;
+	data->state = pressed
 		? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
-#endif
 
 /* ── Public LVGL API implementation ────────────────────────────────── */
 
@@ -121,17 +102,18 @@ int ove_lvgl_init(void)
 	if (!disp)
 		return OVE_ERR_NO_MEMORY;
 
-	/* Allocate double-buffered framebuffers.
-	 * Use native XRGB8888 to match LV_COLOR_DEPTH=32 (avoids
-	 * format conversion and ensures pixel data is correct). */
+	/* Allocate a single framebuffer in XRGB8888 format.
+	 * Single-buffer is correct here: the sim transport writes each
+	 * frame to a shared file, so there is no hardware double-buffer
+	 * to overlap with.  Double-buffering would cause the dashboard
+	 * to flicker between two out-of-sync frames. */
 	size_t buf_size = (size_t)OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * 4;
 	fb_buf1 = malloc(buf_size);
-	fb_buf2 = malloc(buf_size);
-	if (!fb_buf1 || !fb_buf2)
+	if (!fb_buf1)
 		return OVE_ERR_NO_MEMORY;
 
 	lv_display_set_color_format(disp, LV_COLOR_FORMAT_XRGB8888);
-	lv_display_set_buffers(disp, fb_buf1, fb_buf2, buf_size,
+	lv_display_set_buffers(disp, fb_buf1, NULL, buf_size,
 			       LV_DISPLAY_RENDER_MODE_FULL);
 	lv_display_set_flush_cb(disp, sim_flush_cb);
 
@@ -143,15 +125,14 @@ int ove_lvgl_init(void)
 		true, &lv_font_montserrat_32);
 	lv_display_set_theme(disp, th);
 
-#ifdef __EMSCRIPTEN__
-	/* Register mouse/touch input device for WASM.
-	 * JS forwards canvas events to the shared input struct. */
+	/* Register mouse/touch input device.
+	 * WASM: JS forwards canvas events via ccall.
+	 * POSIX: dashboard sends input frames via WebSocket. */
 	{
 		lv_indev_t *indev = lv_indev_create();
 		lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
 		lv_indev_set_read_cb(indev, sim_indev_read_cb);
 	}
-#endif
 
 	lvgl_ready = 1;
 	return OVE_OK;
