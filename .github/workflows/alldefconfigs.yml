@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+# Reusable build loop: configure each app via fragments, then build.
+# APPS is discovered from apps/*/app.yaml and apps/*/*/app.yaml config_name fields.
+# Zig apps are skipped on WASM (wasm32-emscripten not supported in Zig 0.15).
+
 jobs:
   host:
     name: Host POSIX
@@ -21,8 +25,34 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build all host defconfigs
-        run: make defconfigs-host/posix
+      - name: Build all host/posix apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building host.posix.$app"
+            echo "============================================================"
+            if make "host.posix.$app" && make; then
+              echo "[$TOTAL] host.posix.$app: OK"
+            else
+              echo "[$TOTAL] host.posix.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "host/posix: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi
 
 
   qemu-freertos:
@@ -46,8 +76,34 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all qemu-freertos defconfigs
-        run: make defconfigs-qemu/freertos
+      - name: Build all qemu/freertos apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building qemu.freertos.$app"
+            echo "============================================================"
+            if make "qemu.freertos.$app" && make; then
+              echo "[$TOTAL] qemu.freertos.$app: OK"
+            else
+              echo "[$TOTAL] qemu.freertos.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "qemu/freertos: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi
 
 
   qemu-nuttx:
@@ -71,8 +127,34 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all qemu-nuttx defconfigs
-        run: make defconfigs-qemu/nuttx
+      - name: Build all qemu/nuttx apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building qemu.nuttx.$app"
+            echo "============================================================"
+            if make "qemu.nuttx.$app" && make; then
+              echo "[$TOTAL] qemu.nuttx.$app: OK"
+            else
+              echo "[$TOTAL] qemu.nuttx.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "qemu/nuttx: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi
 
 
   qemu-zephyr:
@@ -118,8 +200,34 @@ jobs:
             echo "Zephyr workspace restored from cache"
           fi
 
-      - name: Build all qemu-zephyr defconfigs
-        run: make defconfigs-qemu/zephyr
+      - name: Build all qemu/zephyr apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building qemu.zephyr.$app"
+            echo "============================================================"
+            if make "qemu.zephyr.$app" && make; then
+              echo "[$TOTAL] qemu.zephyr.$app: OK"
+            else
+              echo "[$TOTAL] qemu.zephyr.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "qemu/zephyr: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi
 
 
   stm32f746-freertos:
@@ -143,8 +251,34 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all stm32f746-freertos defconfigs
-        run: make defconfigs-stm32f746/freertos
+      - name: Build all stm32f746/freertos apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building stm32f746.freertos.$app"
+            echo "============================================================"
+            if make "stm32f746.freertos.$app" && make; then
+              echo "[$TOTAL] stm32f746.freertos.$app: OK"
+            else
+              echo "[$TOTAL] stm32f746.freertos.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "stm32f746/freertos: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi
 
 
   stm32f746-nuttx:
@@ -168,8 +302,34 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all stm32f746-nuttx defconfigs
-        run: make defconfigs-stm32f746/nuttx
+      - name: Build all stm32f746/nuttx apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building stm32f746.nuttx.$app"
+            echo "============================================================"
+            if make "stm32f746.nuttx.$app" && make; then
+              echo "[$TOTAL] stm32f746.nuttx.$app: OK"
+            else
+              echo "[$TOTAL] stm32f746.nuttx.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "stm32f746/nuttx: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi
 
 
   stm32f746-zephyr:
@@ -215,5 +375,31 @@ jobs:
             echo "Zephyr workspace restored from cache"
           fi
 
-      - name: Build all stm32f746-zephyr defconfigs
-        run: make defconfigs-stm32f746/zephyr
+      - name: Build all stm32f746/zephyr apps
+        run: |
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
+          FAILED=""
+          TOTAL=0
+          for app in $APPS; do
+            TOTAL=$((TOTAL + 1))
+            echo ""
+            echo "============================================================"
+            echo "[$TOTAL] Building stm32f746.zephyr.$app"
+            echo "============================================================"
+            if make "stm32f746.zephyr.$app" && make; then
+              echo "[$TOTAL] stm32f746.zephyr.$app: OK"
+            else
+              echo "[$TOTAL] stm32f746.zephyr.$app: FAILED"
+              FAILED="$FAILED $app"
+            fi
+          done
+          echo ""
+          echo "============================================================"
+          echo "stm32f746/zephyr: $TOTAL configurations processed"
+          if [ -n "$FAILED" ]; then
+            echo "FAILED:$FAILED"
+            exit 1
+          else
+            echo "All configurations built successfully"
+          fi

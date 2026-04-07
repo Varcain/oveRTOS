@@ -113,37 +113,39 @@ all: $(VENV_STAMP)
 	@$(OVE) configure
 	@$(OVE) build
 
-# Build all defconfigs under a specific subdirectory.
-# Usage: make defconfigs-host/posix
-#        make defconfigs-qemu/freertos
-#        make defconfigs-stm32f746/zephyr
-.PHONY: defconfigs-%
-defconfigs-%: $(VENV_STAMP)
-	@DIR="$(OVE_DIR)/defconfigs/$*"; \
-	if [ ! -d "$$DIR" ]; then \
-		echo "ERROR: $$DIR does not exist"; exit 1; \
+# Build all app configurations for a given board.rtos pair.
+# Usage: make allconfigs-host.posix
+#        make allconfigs-qemu.freertos
+#        make allconfigs-stm32f746.zephyr
+.PHONY: allconfigs-%
+allconfigs-%: $(VENV_STAMP)
+	@BOARD_RTOS="$*"; \
+	BOARD=$$(echo "$$BOARD_RTOS" | cut -d. -f1); \
+	RTOS=$$(echo "$$BOARD_RTOS" | cut -d. -f2); \
+	if [ -z "$$BOARD" ] || [ -z "$$RTOS" ]; then \
+		echo "ERROR: usage: make allconfigs-<board>.<rtos>"; exit 1; \
 	fi; \
-	CONFIGS=$$(find "$$DIR" -name '*_defconfig' -type f | sort); \
-	TOTAL=$$(echo "$$CONFIGS" | wc -l); \
+	APPS=$$(grep -rh 'config_name:' $(OVE_DIR)/apps/*/app.yaml $(OVE_DIR)/apps/*/*/app.yaml 2>/dev/null \
+		| sed 's/.*config_name: *//' | sort -u); \
+	TOTAL=$$(echo "$$APPS" | wc -w); \
 	CURRENT=0; \
 	FAILED=""; \
-	for cfg in $$CONFIGS; do \
-		NAME=$$(basename $$cfg); \
+	for app in $$APPS; do \
 		CURRENT=$$((CURRENT + 1)); \
 		echo ""; \
 		echo "============================================================"; \
-		echo "[$$CURRENT/$$TOTAL] Building $$NAME"; \
+		echo "[$$CURRENT/$$TOTAL] Building $$BOARD.$$RTOS.$$app"; \
 		echo "============================================================"; \
-		if $(MAKE) $$NAME && $(MAKE); then \
-			echo "[$$CURRENT/$$TOTAL] $$NAME: OK"; \
+		if $(MAKE) "$$BOARD.$$RTOS.$$app" && $(MAKE); then \
+			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: OK"; \
 		else \
-			echo "[$$CURRENT/$$TOTAL] $$NAME: FAILED"; \
-			FAILED="$$FAILED $$NAME"; \
+			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: FAILED"; \
+			FAILED="$$FAILED $$app"; \
 		fi; \
 	done; \
 	echo ""; \
 	echo "============================================================"; \
-	echo "defconfigs-$*: $$TOTAL configurations processed"; \
+	echo "allconfigs-$$BOARD.$$RTOS: $$TOTAL configurations processed"; \
 	if [ -n "$$FAILED" ]; then \
 		echo "FAILED:$$FAILED"; \
 		exit 1; \
@@ -153,13 +155,16 @@ defconfigs-%: $(VENV_STAMP)
 
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
-	@for dir in $$(find $(OVE_DIR)/defconfigs -mindepth 2 -maxdepth 2 -type d | sort); do \
-		REL=$${dir#$(OVE_DIR)/defconfigs/}; \
-		echo ""; \
-		echo "############################################################"; \
-		echo "# defconfigs-$$REL"; \
-		echo "############################################################"; \
-		$(MAKE) defconfigs-$$REL || exit 1; \
+	@BOARDS=$$(find $(OVE_DIR)/boards -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | sort); \
+	RTOSES="freertos nuttx zephyr posix"; \
+	for board in $$BOARDS; do \
+		for rtos in $$RTOSES; do \
+			echo ""; \
+			echo "############################################################"; \
+			echo "# allconfigs-$$board.$$rtos"; \
+			echo "############################################################"; \
+			$(MAKE) "allconfigs-$$board.$$rtos" || true; \
+		done; \
 	done
 
 # ── Run / Flash / Debug ───────────────────────────────────────────────────
@@ -379,7 +384,8 @@ help:
 	@echo "  all (default)           - Full pipeline: download, configure, build"
 	@echo "  download                - Download RTOS sources to dl/"
 	@echo "  configure               - Generate config files from .config"
-	@echo "  alldefconfigs           - Build every defconfig (all boards/RTOSes)"
+	@echo "  allconfigs-<board>.<rtos> - Build all apps for a board/RTOS pair"
+	@echo "  alldefconfigs           - Build every configuration (all boards/RTOSes)"
 	@echo "  setup                   - (Re)create Python venv and install CLI"
 	@echo "  flash                   - Flash firmware to target board"
 	@echo "  run                     - Run firmware (QEMU or POSIX)"

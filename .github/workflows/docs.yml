@@ -57,10 +57,11 @@ jobs:
           BUILT=""
           FAILED=""
 
-          for defconfig in defconfigs/wasm/posix/wasm_posix_*_defconfig; do
-            # Extract app name: wasm_posix_example_c_defconfig → example_c
-            name=$(basename "$defconfig" | sed 's/wasm_posix_//' | sed 's/_defconfig//')
+          # Discover apps from app.yaml config_name fields
+          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+                 | sed 's/.*config_name: *//' | sort -u)
 
+          for name in $APPS; do
             # Skip Zig — Zig 0.15.x doesn't support wasm32-emscripten yet
             case "$name" in *_zig) echo "Skipping $name (Zig wasm32-emscripten not supported in Zig 0.15)"; continue;; esac
             echo ""
@@ -73,10 +74,8 @@ jobs:
             # Clean this workspace's build
             rm -rf "$BUILD_DIR"
 
-            # Configure + download + build (don't fail the whole job)
-            if make "wasm_posix_${name}_defconfig" && \
-               make configure && \
-               make download && \
+            # Configure via fragments + build (don't fail the whole job)
+            if make "wasm.posix.${name}" && \
                make; then
               # Copy artifacts from the known build directory
               if [ -f "$BUILD_DIR/ove_wasm.wasm" ]; then
