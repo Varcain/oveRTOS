@@ -58,8 +58,7 @@ var MOBILE_BP  = 640;  /* viewport width below which we stack full-width */
 var WIN_DEFS = {
     display: { title: "Display", col: 0, row: 0, cw: 1,   rh: 0.6 },
     audio:   { title: "Audio",   col: 0, row: 1, cw: 0.5, rh: 0.4 },
-    console: { title: "Console", col: 0, row: 1, cw: 0.5, rh: 0.4 },
-    events:  { title: "Events",  col: 1, row: 1, cw: 0.5, rh: 0.4 },
+    events:  { title: "Events",  col: 0, row: 1, cw: 0.5, rh: 0.4 },
 };
 
 function isMobile() { return window.innerWidth < MOBILE_BP; }
@@ -466,9 +465,10 @@ window.addEventListener("resize", function () {
 var isWasmMode = (typeof Module !== "undefined" && Module.onRuntimeInitialized);
 
 if (!isWasmMode && typeof WinBox !== "undefined") {
-    /* POSIX mode — events window is always useful; display/audio/console
-       windows are created lazily when the first data frame arrives so that
-       only features the firmware actually uses get a panel. */
+    /* POSIX mode — events + console windows are always useful;
+       display/audio windows are created lazily when the first data
+       frame arrives so that only features the firmware actually uses
+       get a panel. */
     if (document.getElementById("events-panel"))
         createDashboardWindow("events", WIN_DEFS.events.title);
 }
@@ -572,15 +572,16 @@ function drawWave(canvasId, samples, color) {
     if (cw <= 0) { cw = cvs.clientWidth; cvs.width = cw; }
     wCtx.fillStyle = "#0d1117";
     wCtx.fillRect(0, 0, cw, ch);
-    var step = Math.max(1, Math.floor(samples.length / cw));
+    var n = samples.length;
     /* Detect format: Int16Array values exceed [-1,1], Float32 don't. */
     var isInt16 = (samples instanceof Int16Array);
     var scale = isInt16 ? 1.0 / 32768.0 : 1.0;
     wCtx.strokeStyle = color;
     wCtx.lineWidth = 1;
     wCtx.beginPath();
-    for (var x = 0; x < cw && x * step < samples.length; x++) {
-        var v = (samples[x * step] || 0) * scale;
+    for (var x = 0; x < cw; x++) {
+        var idx = Math.min(Math.floor(x * n / cw), n - 1);
+        var v = (samples[idx] || 0) * scale;
         var y = (1 - v) * ch / 2;
         if (x === 0) wCtx.moveTo(x, y); else wCtx.lineTo(x, y);
     }
@@ -657,7 +658,7 @@ function refreshAudioDevices() {
 
 var playToggle = document.getElementById("audio-play-toggle");
 var measureStart = 0;
-if (playToggle) {
+if (playToggle && !isWasmMode) {
     playToggle.addEventListener("click", function () {
         if (playbackNode) {
             if (typeof playbackNode.disconnect === "function") playbackNode.disconnect();
@@ -1216,8 +1217,6 @@ window.initWasmMode = function () {
             window.createDashboardWindow('display', 'Display');
         if (Module.ccall('ove_wasm_has_audio', 'number'))
             window.createDashboardWindow('audio', 'Audio');
-        if (Module.ccall('ove_wasm_has_shell', 'number'))
-            window.createDashboardWindow('console', 'Console');
         window.createDashboardWindow('events', 'Events');
     }
 
@@ -1334,7 +1333,7 @@ window.initWasmMode = function () {
     var wPlayToggle = document.getElementById('audio-play-toggle');
     if (wPlayToggle) {
         wPlayToggle.addEventListener('click', function() {
-            if (playbackNode) {
+            if (playbackNode && typeof playbackNode.disconnect === 'function') {
                 playbackNode.disconnect();
                 playbackNode = null;
                 if (audioCtx) { audioCtx.close(); audioCtx = null; }
@@ -1355,9 +1354,11 @@ window.initWasmMode = function () {
             var rpOff = pbPtr + 4;
             var bufOff = pbPtr + RING_HDR;
 
-            playbackNode = audioCtx.createScriptProcessor(1024, 0, 1);
-            playbackNode.onaudioprocess = function(e) {
-                var output = e.outputBuffer.getChannelData(0);
+            var self = this;
+
+            /* Read samples from WASM heap ring buffer into a Float32Array.
+             * Used by both the ScriptProcessor callback and the waveform poller. */
+            function drainRing(output) {
                 var h32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
                 var h8 = Module.HEAPU8;
                 var wp = Atomics.load(h32, wpOff >> 2);
@@ -1368,19 +1369,26 @@ window.initWasmMode = function () {
                         var idx = bufOff + ((rp + i * 2) & (RING_SIZE - 1));
                         var lo = h8[idx];
                         var hi = h8[idx + 1];
-                        var sample = (hi << 8) | lo;
-                        if (sample > 32767) sample -= 65536;
-                        output[i] = sample / 32768.0;
+                        var s = (hi << 8) | lo;
+                        if (s > 32767) s -= 65536;
+                        output[i] = s / 32768.0;
                     } else {
                         output[i] = 0;
                     }
                 }
                 var consumed = Math.min(avail, output.length * 2);
                 Atomics.store(h32, rpOff >> 2, rp + consumed);
+            }
+
+            /* ScriptProcessorNode: simple, works everywhere. */
+            playbackNode = audioCtx.createScriptProcessor(1024, 0, 1);
+            playbackNode.onaudioprocess = function(e) {
+                var output = e.outputBuffer.getChannelData(0);
+                drainRing(output);
                 drawWave('waveform-output', output, '#e94560');
             };
             playbackNode.connect(audioCtx.destination);
-            this.textContent = 'Disable Playback';
+            self.textContent = 'Disable Playback';
             if (audioInfoEl)
                 audioInfoEl.textContent = sampleRate + ' Hz / mono / 16bit';
         });

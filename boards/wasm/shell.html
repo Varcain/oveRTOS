@@ -69,20 +69,17 @@
             </div>
         </section>
 
-        <section class="panel" id="console-panel">
-            <div style="display:flex;gap:8px;">
-                <input type="text" id="console-input" class="btn"
-                       style="flex:1;font-family:inherit;font-size:12px;padding:6px 8px;"
-                       placeholder="Type command + Enter...">
-                <button id="console-send" class="btn">Send</button>
-            </div>
-        </section>
-
         <section class="panel" id="events-panel">
             <div class="events-toolbar">
                 <button id="autoscroll-toggle" class="btn btn-small autoscroll-on" title="Toggle auto-scroll">Auto-scroll: ON</button>
             </div>
             <div id="event-log" class="event-log"></div>
+            <div id="console-bar" style="display:flex;gap:8px;margin-top:4px;">
+                <input type="text" id="console-input" class="btn"
+                       style="flex:1;font-family:inherit;font-size:12px;padding:6px 8px;"
+                       placeholder="Type command + Enter...">
+                <button id="console-send" class="btn">Send</button>
+            </div>
         </section>
     </div>
 

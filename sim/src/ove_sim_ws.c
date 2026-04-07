@@ -186,15 +186,29 @@ static struct {
 	uint32_t        read_pos;
 } audio_ring = { .lock = PTHREAD_MUTEX_INITIALIZER };
 
+/* ── Log ring buffer (preserves all lines) ────────────────────────── */
+
+#define LOG_RING_SIZE (64 * 1024)
+
+static struct {
+	pthread_mutex_t lock;
+	uint8_t        *buf;
+	uint32_t        write_pos;
+	uint32_t        read_pos;
+} log_ring = { .lock = PTHREAD_MUTEX_INITIALIZER };
+
 static int mailbox_init(void)
 {
 	display_mbox.buf = malloc(DISPLAY_BUF_SIZE);
 	audio_ring.buf = malloc(AUDIO_RING_SIZE);
-	if (!display_mbox.buf || !audio_ring.buf)
+	log_ring.buf = malloc(LOG_RING_SIZE);
+	if (!display_mbox.buf || !audio_ring.buf || !log_ring.buf)
 		return -1;
 	display_mbox.len = 0;
 	audio_ring.write_pos = 0;
 	audio_ring.read_pos = 0;
+	log_ring.write_pos = 0;
+	log_ring.read_pos = 0;
 	return 0;
 }
 
@@ -206,6 +220,42 @@ static void mailbox_post(enum ove_sim_ws_frame_type type,
 			 const void *payload, size_t len)
 {
 	size_t total = 4 + len;
+
+	if (type == OVE_SIM_WS_FRAME_LOG && log_ring.buf) {
+		/* Log: ring buffer (preserves all messages).
+		 * Format: [total:4][type:4][payload:len]
+		 * where total = 4 + len (type header + payload). */
+		uint32_t entry_size = (uint32_t)(4 + total); /* len prefix + data */
+		pthread_mutex_lock(&log_ring.lock);
+		uint32_t free = LOG_RING_SIZE -
+			(log_ring.write_pos - log_ring.read_pos);
+		if (free >= entry_size) {
+			uint32_t mask = LOG_RING_SIZE - 1;
+			uint32_t wp = log_ring.write_pos;
+			/* Write 4-byte length prefix (= total, not entry_size). */
+			for (int i = 0; i < 4; i++) {
+				log_ring.buf[wp & mask] =
+					(uint8_t)((total >> (i * 8)) & 0xFF);
+				wp++;
+			}
+			/* Write type header. */
+			uint32_t t2 = (uint32_t)type;
+			for (int i = 0; i < 4; i++) {
+				log_ring.buf[wp & mask] =
+					((uint8_t *)&t2)[i];
+				wp++;
+			}
+			/* Write payload. */
+			const uint8_t *src = (const uint8_t *)payload;
+			for (size_t i = 0; i < len; i++) {
+				log_ring.buf[wp & mask] = src[i];
+				wp++;
+			}
+			log_ring.write_pos = wp;
+		}
+		pthread_mutex_unlock(&log_ring.lock);
+		return;
+	}
 
 	if (type == OVE_SIM_WS_FRAME_AUDIO && audio_ring.buf) {
 		/* Audio: write into ring buffer (length-prefixed). */
@@ -685,6 +735,38 @@ static void pump_mailbox(void)
 	}
 	audio_ring.read_pos = rp;
 	pthread_mutex_unlock(&audio_ring.lock);
+
+	/* Log: drain ring buffer (all pending messages). */
+	pthread_mutex_lock(&log_ring.lock);
+	avail = log_ring.write_pos - log_ring.read_pos;
+	rp = log_ring.read_pos;
+	mask = LOG_RING_SIZE - 1;
+
+	while (avail >= 4) {
+		uint32_t msg_len = 0;
+		for (int i = 0; i < 4; i++)
+			msg_len |= (uint32_t)log_ring.buf[(rp + i) & mask]
+				   << (i * 8);
+		if (4 + msg_len > avail)
+			break;
+		rp += 4;
+
+		uint8_t lbuf[4096];
+		size_t to_send = msg_len < sizeof(lbuf) ? msg_len : sizeof(lbuf);
+		for (size_t i = 0; i < to_send; i++)
+			lbuf[i] = log_ring.buf[(rp + i) & mask];
+		rp += msg_len;
+		avail = log_ring.write_pos - rp;
+
+		log_ring.read_pos = rp;
+		pthread_mutex_unlock(&log_ring.lock);
+		broadcast_to_ws(lbuf, to_send);
+		pthread_mutex_lock(&log_ring.lock);
+		avail = log_ring.write_pos - log_ring.read_pos;
+		rp = log_ring.read_pos;
+	}
+	log_ring.read_pos = rp;
+	pthread_mutex_unlock(&log_ring.lock);
 }
 
 /* ── Server thread ─────────────────────────────────────────────────── */
@@ -801,8 +883,20 @@ static void *server_loop(void *arg)
 						if (ftype ==
 						    OVE_SIM_WS_FRAME_CMD
 						    && plen > 16) {
-							ove_sim_plugin_dispatch_cmd(
-								(const struct ove_sim_cmd *)(payload + 4));
+							const struct ove_sim_cmd *cmd =
+								(const struct ove_sim_cmd *)(payload + 4);
+							/* plugin 0, cmd 0 = console input */
+							if (cmd->plugin_id == 0 &&
+							    cmd->cmd_type == 0 &&
+							    cmd->data_len > 0) {
+								extern int ove_sim_console_pipe_fd(void);
+								int fd = ove_sim_console_pipe_fd();
+								if (fd >= 0)
+									(void)write(fd, cmd->data,
+										    cmd->data_len);
+							} else {
+								ove_sim_plugin_dispatch_cmd(cmd);
+							}
 
 						} else if (ftype ==
 							   OVE_SIM_WS_FRAME_INPUT

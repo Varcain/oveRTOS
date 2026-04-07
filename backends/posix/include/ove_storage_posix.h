@@ -141,6 +141,7 @@ typedef struct ove_stream ove_stream_storage_t;
 struct ove_watchdog {
 	uint32_t timeout_ms;
 	int started;
+	volatile uint64_t last_feed_us;
 };
 
 typedef struct ove_watchdog ove_watchdog_storage_t;

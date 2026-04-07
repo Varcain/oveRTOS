@@ -333,6 +333,13 @@ pub struct ove_spi_cs {
     pub active_low: i32,
 }
 
+#[repr(C)]
+pub struct ove_spi_xfer {
+    pub tx:  *const c_void,
+    pub rx:  *mut c_void,
+    pub len: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Struct types
 // ---------------------------------------------------------------------------
@@ -889,9 +896,10 @@ unsafe extern "C" {
     pub fn ove_uart_bytes_available(uart: ove_uart_t) -> usize;
 
     // --- SPI ---
-    pub fn ove_spi_transfer(spi: ove_spi_t, cs: *const ove_spi_cs, tx: *const c_void, rx: *mut c_void, len: usize) -> i32;
-    pub fn ove_spi_write(spi: ove_spi_t, cs: *const ove_spi_cs, data: *const c_void, len: usize) -> i32;
-    pub fn ove_spi_read(spi: ove_spi_t, cs: *const ove_spi_cs, buf: *mut c_void, len: usize) -> i32;
+    pub fn ove_spi_transfer(spi: ove_spi_t, cs: *const ove_spi_cs, tx: *const c_void, rx: *mut c_void, len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_spi_write(spi: ove_spi_t, cs: *const ove_spi_cs, data: *const c_void, len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_spi_read(spi: ove_spi_t, cs: *const ove_spi_cs, buf: *mut c_void, len: usize, timeout_ms: u32) -> i32;
+    pub fn ove_spi_transfer_seq(spi: ove_spi_t, cs: *const ove_spi_cs, xfers: *const ove_spi_xfer, num_xfers: u32, timeout_ms: u32) -> i32;
 
     // --- I2C ---
     pub fn ove_i2c_write(i2c: ove_i2c_t, addr: u16, data: *const c_void, len: usize, timeout_ms: u32) -> i32;

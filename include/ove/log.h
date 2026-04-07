@@ -70,12 +70,9 @@ void ove_httpd_log_append(const char *line);
 #define _OVE_LOG_HTTPD_HOOK(buf) ((void)0)
 #endif
 
-#ifdef CONFIG_OVE_SIM
-void ove_sim_log_broadcast(const char *msg, unsigned int len);
-#define _OVE_LOG_SIM_HOOK(buf, len) ove_sim_log_broadcast(buf, len)
-#else
+/* Sim log broadcast is now handled by sim_console.c's ove_console_write,
+ * so no separate hook is needed in the log macro. */
 #define _OVE_LOG_SIM_HOOK(buf, len) ((void)0)
-#endif
 
 #define _OVE_LOG_OUTPUT(prefix, fmt, ...) \
 	do { \

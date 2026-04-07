@@ -114,6 +114,14 @@ endif()
 # Simulation plugin framework (display + audio via browser dashboard)
 #############################################################################
 include(${OVE_DIR}/sim/CMakeLists.txt)
+# Remove POSIX backends that the sim framework replaces
+list(FILTER OVE_SOURCES EXCLUDE REGEX "posix_console\\.c$")
+if(OVE_LVGL)
+    list(FILTER OVE_SOURCES EXCLUDE REGEX "posix_lvgl\\.c$")
+endif()
+if(OVE_AUDIO)
+    list(FILTER OVE_SOURCES EXCLUDE REGEX "posix_audio\\.c$")
+endif()
 list(APPEND OVE_SOURCES ${SIM_SOURCES})
 
 #############################################################################

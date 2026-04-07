@@ -35,7 +35,6 @@ static ove_mutex_storage_t lvgl_mutex_storage;
 
 /* Framebuffer for the memory-based display driver. */
 static uint8_t *fb_buf1;
-static uint8_t *fb_buf2;
 
 /* ── LVGL flush callback ──────────────────────────────────────────── */
 

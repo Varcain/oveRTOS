@@ -134,6 +134,16 @@ int ove_sim_board_init(void)
 		fprintf(stderr, "[sim] Dashboard failed to start: %d\n", ret);
 #endif
 
+#if defined(__EMSCRIPTEN__)
+	/* WASM: start a command pump thread that drains the JS→C command
+	 * queue and dispatches to plugins (audio inject, etc.). */
+	{
+		extern int ove_sim_wasm_cmd_pump_start(
+			struct ove_sim_transport *t);
+		ove_sim_wasm_cmd_pump_start(&transport);
+	}
+#endif
+
 	printf("[sim] Simulation framework initialised (%d plugins)\n",
 	       ove_sim_plugin_count());
 	fflush(stdout);

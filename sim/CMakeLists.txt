@@ -65,13 +65,18 @@ if(OVE_WATCHDOG)
     )
 endif()
 
+# Console simulation (replaces posix_console.c — adds dashboard input)
+list(APPEND SIM_SOURCES
+    ${SIM_DIR}/hal/sim_console.c
+)
+
 # Export to parent scope
 set(SIM_SOURCES ${SIM_SOURCES} PARENT_SCOPE)
 set(SIM_INCLUDE_DIRS ${SIM_INCLUDE_DIRS} PARENT_SCOPE)
 
 # POSIX HAL files that the sim framework REPLACES.
 # The board CMakeLists.txt should exclude these when OVE_SIM is on.
-set(SIM_REPLACED_POSIX_SOURCES "" PARENT_SCOPE)
+set(SIM_REPLACED_POSIX_SOURCES posix_console.c PARENT_SCOPE)
 if(OVE_LVGL)
     list(APPEND SIM_REPLACED_POSIX_SOURCES
         posix_lvgl.c

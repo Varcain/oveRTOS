@@ -167,12 +167,21 @@ static int wasm_flush_display(struct ove_sim_transport *t,
 	return OVE_OK;
 }
 
+static int fmt_set;
+
 static int wasm_push_audio(struct ove_sim_transport *t,
 			   const void *samples, size_t len,
 			   uint32_t sample_rate, uint16_t channels,
 			   uint16_t bit_depth)
 {
-	(void)t; (void)sample_rate; (void)channels; (void)bit_depth;
+	(void)t;
+	if (!fmt_set) {
+		extern void ove_wasm_audio_set_playback_fmt(
+			uint32_t rate, uint16_t ch, uint16_t bits);
+		ove_wasm_audio_set_playback_fmt(sample_rate, channels,
+						bit_depth);
+		fmt_set = 1;
+	}
 	ove_wasm_audio_playback_write(samples, (uint32_t)len);
 	return OVE_OK;
 }
@@ -193,6 +202,33 @@ static const struct ove_sim_transport_ops wasm_ops = {
 	.push_audio    = wasm_push_audio,
 	.pull_audio    = wasm_pull_audio,
 };
+
+/* ── Command pump thread ──────────────────────────────────────────── */
+
+#include "ove/sim/ove_sim_plugin.h"
+
+static struct ove_sim_transport *pump_transport;
+
+static void *cmd_pump_thread(void *arg)
+{
+	(void)arg;
+	struct ove_sim_cmd cmd;
+
+	while (1) {
+		int ret = ove_sim_transport_recv_cmd(pump_transport,
+						     &cmd, sizeof(cmd), 1000);
+		if (ret == OVE_OK)
+			ove_sim_plugin_dispatch_cmd(&cmd);
+	}
+	return NULL;
+}
+
+int ove_sim_wasm_cmd_pump_start(struct ove_sim_transport *t)
+{
+	pump_transport = t;
+	pthread_t th;
+	return pthread_create(&th, NULL, cmd_pump_thread, NULL);
+}
 
 /* ── Public factory ────────────────────────────────────────────────── */
 
