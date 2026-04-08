@@ -21,6 +21,10 @@
 #include "ove/sim/ove_sim_audio.h"
 #include "ove/sim/ove_sim_plugin.h"
 #include "ove/sim/ove_sim_transport.h"
+#include "ove_sim_audio_ring.h"
+#ifdef __EMSCRIPTEN__
+#include "ove_sim_wasm_audio.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,9 +37,7 @@ struct sim_audio_ctx {
 	uint32_t                 plugin_id;
 
 	/* Input ring: dashboard -> firmware (for capture). */
-	uint8_t                  input_ring[32768];
-	uint32_t                 input_write;
-	uint32_t                 input_read;
+	struct ove_sim_audio_ring input_ring;
 };
 
 static struct sim_audio_ctx audio_ctx;
@@ -47,8 +49,10 @@ static int audio_init(void *ctx, const void *config, size_t config_len)
 	struct sim_audio_ctx *a = (struct sim_audio_ctx *)ctx;
 	if (config && config_len >= sizeof(struct ove_sim_audio_cfg))
 		memcpy(&a->cfg, config, sizeof(a->cfg));
-	a->input_write = 0;
-	a->input_read = 0;
+	ove_sim_audio_ring_init(&a->input_ring,
+				a->cfg.fmt.sample_rate,
+				a->cfg.fmt.channels,
+				a->cfg.fmt.bit_depth);
 	return OVE_OK;
 }
 
@@ -57,13 +61,13 @@ static int audio_handle_cmd(void *ctx, const struct ove_sim_cmd *cmd)
 	struct sim_audio_ctx *a = (struct sim_audio_ctx *)ctx;
 
 	if (cmd->cmd_type == OVE_SIM_AUDIO_CMD_INJECT && cmd->data_len > 0) {
-		/* Write incoming PCM into the input ring. */
-		uint32_t ring_mask = sizeof(a->input_ring) - 1;
-		for (uint32_t i = 0; i < cmd->data_len; i++) {
-			a->input_ring[a->input_write & ring_mask] =
-				cmd->data[i];
-			a->input_write++;
-		}
+#ifdef __EMSCRIPTEN__
+		ove_sim_ring_write_atomic(&a->input_ring, cmd->data,
+					  cmd->data_len);
+#else
+		ove_sim_ring_write(&a->input_ring, cmd->data,
+				   cmd->data_len);
+#endif
 	}
 	return OVE_OK;
 }
@@ -123,25 +127,14 @@ size_t ove_sim_audio_pull_input(void *samples, size_t len,
 
 	/* Fallback: local input ring (filled by plugin CMD_INJECT from WS). */
 	struct sim_audio_ctx *a = &audio_ctx;
-	uint32_t avail = a->input_write - a->input_read;
-	if (avail == 0) {
-		memset(samples, 0, len);
-		return 0;
-	}
-
-	uint32_t to_read = avail < (uint32_t)len ? avail : (uint32_t)len;
-	uint32_t ring_mask = sizeof(a->input_ring) - 1;
-	uint8_t *dst = (uint8_t *)samples;
-
-	for (uint32_t i = 0; i < to_read; i++) {
-		dst[i] = a->input_ring[a->input_read & ring_mask];
-		a->input_read++;
-	}
-
-	if (to_read < len)
-		memset(dst + to_read, 0, len - to_read);
-
-	return to_read;
+#ifdef __EMSCRIPTEN__
+	uint32_t nr = ove_sim_ring_read_atomic(&a->input_ring, samples, (uint32_t)len);
+#else
+	uint32_t nr = ove_sim_ring_read(&a->input_ring, samples, (uint32_t)len);
+#endif
+	if (nr < len)
+		memset((uint8_t *)samples + nr, 0, len - nr);
+	return nr;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -205,15 +198,31 @@ struct sim_sink_ctx {
 static void sim_sink_pump(void *arg)
 {
 	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)arg;
-	/* Period in ms: frames_per_period / sample_rate * 1000 */
 	uint32_t period_ms = (sc->frames_per_period * 1000) /
 			     sc->fmt.sample_rate;
 	if (period_ms < 1) period_ms = 1;
 
+#ifdef __EMSCRIPTEN__
+	/* WASM: consumer-driven pacing.  Produce until the playback ring
+	 * is full enough, then yield and let the AudioContext consume.
+	 * This makes the browser's audio clock the timing master. */
+	struct ove_sim_audio_ring *pbr = &ove_wasm_audio.playback;
+	uint32_t target = pbr->size * 3 / 4;
+
+	while (sc->running) {
+		uint32_t avail = ove_sim_ring_avail_atomic(pbr);
+		if (avail < target) {
+			ove_audio_graph_process(sc->graph);
+		} else {
+			ove_thread_sleep_ms(1);
+		}
+	}
+#else
 	while (sc->running) {
 		ove_audio_graph_process(sc->graph);
 		ove_thread_sleep_ms(period_ms);
 	}
+#endif
 }
 
 static int sim_sink_start(void *ctx)

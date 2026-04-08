@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OVE_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VENV_PYTHON="${OVE_DIR}/.venv/bin/python"
-VIEWER="${OVE_DIR}/config/scripts/qemu-dashboard-bridge.py"
+VIEWER="${OVE_DIR}/config/scripts/ove-dashboard-bridge.py"
 
 ELF="${1:?Usage: $0 <elf-file> [--headless] [--machine <name>] [extra-qemu-args...]}"
 shift
@@ -90,9 +90,9 @@ if [ "${HEADLESS}" -eq 0 ]; then
     : > "${FB_PATH}"
     truncate -s 1M "${FB_PATH}"  # header 20B + XRGB8888 pixels (480x272x4 = 522KB)
 
-    # Audio shared-memory ringbuffer (header 64B + 2x 128KB rings)
+    # Audio shared-memory ringbuffer: 2x ove_sim_audio_ring (32B hdr + 64KB buf each)
     : > "${AUDIO_PATH}"
-    truncate -s 262208 "${AUDIO_PATH}"
+    truncate -s 131136 "${AUDIO_PATH}"
 
     # Plugin events/commands SHM (header 64B + 2x 64KB rings)
     : > "${SIM_PATH}"

@@ -7,7 +7,7 @@
 
 "use strict";
 
-/* ── Constants matching ove_sim_ws.h ───────────────────────────────── */
+/* ── Frame type constants (shared with ove-dashboard-bridge.py) ────── */
 var FRAME_FB    = 0x01;
 var FRAME_AUDIO = 0x02;
 var FRAME_EVENT = 0x03;
@@ -674,10 +674,11 @@ if (playToggle && !isWasmMode) {
             return;
         }
 
-        /* Allocate SharedArrayBuffer ring: 8-byte header + ring data. */
-        wsAudioSab = new SharedArrayBuffer(8 + WS_AUDIO_RING_SIZE);
+        /* Allocate SharedArrayBuffer ring: 32-byte header + ring data.
+         * Matches ove_sim_audio_ring layout (OVE_RING_OFF_BUF = 32). */
+        wsAudioSab = new SharedArrayBuffer(32 + WS_AUDIO_RING_SIZE);
         wsAudioPos = new Uint32Array(wsAudioSab, 0, 2);  /* [writePos, readPos] */
-        wsAudioRing = new Uint8Array(wsAudioSab, 8, WS_AUDIO_RING_SIZE);
+        wsAudioRing = new Uint8Array(wsAudioSab, 32, WS_AUDIO_RING_SIZE);
         Atomics.store(wsAudioPos, 0, 0);
         Atomics.store(wsAudioPos, 1, 0);
 
@@ -694,11 +695,8 @@ function startMeasuredPlayback() {
     var actualRate = Math.round((totalWritten / 2) / elapsed);
     if (actualRate < 8000) actualRate = 8000;
     if (actualRate > 48000) actualRate = 48000;
-    console.log("[audio] measured QEMU rate: " + actualRate + " Hz");
-
     audioCtx = new AudioContext({ sampleRate: actualRate });
     audioCtx.resume();
-    console.log("[audio] requested " + actualRate + " Hz, AudioContext gave " + audioCtx.sampleRate + " Hz");
     var outSel = document.getElementById("audio-output-select");
     if (audioCtx.setSinkId && outSel && outSel.value)
         audioCtx.setSinkId(outSel.value);
@@ -706,7 +704,7 @@ function startMeasuredPlayback() {
     /* AudioWorklet runs on audio thread — immune to main-thread jank.
      * Inline Blob URL avoids file-serving/CORS issues. */
     var workletSrc = [
-        "const HDR = 8;",
+        "const HDR = 32;",
         "class P extends AudioWorkletProcessor {",
         "  constructor(o) {",
         "    super();",
@@ -871,7 +869,7 @@ function startMicCapture() {
                 var s = Math.max(-1, Math.min(1, input[i]));
                 view16[i] = (s < 0 ? s * 32768 : s * 32767) | 0;
             }
-            sendCmd(1, 0, new Uint8Array(pcm));
+            sendCmd(audioPluginId, 0, new Uint8Array(pcm));
         };
         captureSource.connect(captureNode);
         captureNode.connect(audioCtx.destination);
@@ -896,7 +894,16 @@ if (fileBrowseBtn && fileInputEl) {
 
         var reader = new FileReader();
         reader.onload = function (ev) {
-            var fwRate = audioSampleRate || 16000;
+            var fwRate = audioSampleRate;
+            /* In WASM mode, audioSampleRate is never updated from FRAME_AUDIO.
+             * Read the actual rate from the playback ring header. */
+            if (typeof Module !== "undefined" && Module && Module.ccall) {
+                var _p = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
+                var _h = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
+                var _sr = _h[(_p + 8) >> 2];
+                if (_sr > 0 && _sr <= 48000) fwRate = _sr;
+            }
+            if (!fwRate || fwRate <= 0) fwRate = 16000;
             /* Temporary AudioContext for decoding. */
             var decodeCtx = new AudioContext();
             decodeCtx.decodeAudioData(ev.target.result).then(function (audioBuffer) {
@@ -919,8 +926,6 @@ if (fileBrowseBtn && fileInputEl) {
                     fileInputPcm[i] = (s < 0 ? s * 32768 : s * 32767) | 0;
                 }
                 fileInputPos = 0;
-                console.log("[audio] File decoded: " + fileInputPcm.length +
-                            " samples at " + fwRate + " Hz");
             }).catch(function (err) {
                 decodeCtx.close();
                 console.error("[audio] File decode failed:", err);
@@ -942,7 +947,14 @@ if (filePlayBtn) {
         stopMicCapture(); /* stop mic if running */
         fileInputPos = 0;
         var chunkSamples = 1024;
-        var fwRate = audioSampleRate || 16000;
+        /* Use firmware's actual rate for injection pacing. */
+        var fwRate = audioSampleRate;
+        if (typeof Module !== "undefined" && Module && Module.ccall) {
+            var _p = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
+            var _sr = (Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer))[(_p + 8) >> 2];
+            if (_sr > 0 && _sr <= 48000) fwRate = _sr;
+        }
+        if (!fwRate || fwRate <= 0) fwRate = 16000;
         var intervalMs = Math.round(chunkSamples / fwRate * 1000);
 
         fileInputTimer = setInterval(function () {
@@ -964,7 +976,7 @@ if (filePlayBtn) {
             fileInputPos = end % fileInputPcm.length;
 
             drawWave("waveform-input", chunk, "#4ecca3");
-            sendCmd(1, 0, new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+            sendCmd(audioPluginId, 0, new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
         }, intervalMs);
 
         this.textContent = "Stop File";
@@ -1054,11 +1066,18 @@ function handleLog(payload) {
     }
 }
 
+var audioPluginId = 0;  /* default; updated from FRAME_STATE */
+
 function handleState(payload) {
     if (payload.byteLength < 4) return;
     var view = new DataView(payload);
-    addEvent("state:" + view.getUint32(0, true),
-             new TextDecoder().decode(new Uint8Array(payload, 4)));
+    var id = view.getUint32(0, true);
+    var json = new TextDecoder().decode(new Uint8Array(payload, 4));
+    addEvent("state:" + id, json);
+    try {
+        var obj = JSON.parse(json);
+        if (obj && obj.type === "audio") audioPluginId = id;
+    } catch (e) {}
 }
 
 var autoScroll = true;
@@ -1164,13 +1183,25 @@ function sendCmd(pluginId, cmdType, data) {
     view.setUint32(12, data ? data.length : 0, true);
     if (data) new Uint8Array(buf, 16).set(data);
 
-    if (typeof wasmWorker !== "undefined" && wasmWorker) {
-        if (typeof Module !== "undefined" && Module && Module.ccall) {
-            var arr = new Uint8Array(buf, 4);
-            var ptr = Module._malloc(arr.length);
-            Module.HEAPU8.set(arr, ptr);
-            Module.ccall('ove_sim_wasm_push_cmd', null, ['number', 'number'], [ptr, arr.length]);
-            Module._free(ptr);
+    if (typeof Module !== "undefined" && Module && Module.HEAPU8) {
+        /* WASM: write audio inject directly to the capture ring,
+         * bypassing the command queue (avoids main-thread mutex). */
+        if (cmdType === 0 && data && data.length > 0) {
+            if (!sendCmd._capPtr)
+                sendCmd._capPtr = Module.ccall('ove_wasm_audio_get_capture_ptr', 'number');
+            var cp = sendCmd._capPtr;
+            var h32 = Module.HEAPU32;
+            var h8 = Module.HEAPU8;
+            var rs = h32[(cp + 16) >> 2] || 65536;
+            var mask = rs - 1;
+            var wp = Atomics.load(h32, cp >> 2);
+            var rp = Atomics.load(h32, (cp + 4) >> 2);
+            var free = rs - (wp - rp);
+            var n = Math.min(data.length, free);
+            var off = cp + 32; /* OVE_RING_OFF_BUF */
+            for (var i = 0; i < n; i++)
+                h8[off + ((wp + i) & mask)] = data[i];
+            Atomics.store(h32, cp >> 2, wp + n);
         }
     } else if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(buf);
@@ -1192,7 +1223,7 @@ function initConsoleInput() {
                     ['number'], [text.charCodeAt(i)]);
         } else {
             for (var i = 0; i < text.length; i++)
-                sendCmd(0, 0, new Uint8Array([text.charCodeAt(i) & 0xFF]));
+                sendCmd(0xFFFFFFFF, 0, new Uint8Array([text.charCodeAt(i) & 0xFF]));  /* console sentinel */
         }
         conInput.value = "";
     }
@@ -1327,8 +1358,8 @@ window.initWasmMode = function () {
     }
 
     /* ── WASM audio: playback via ScriptProcessorNode ──────────── */
-    var RING_SIZE = 16384;
-    var RING_HDR = 16;
+    var RING_SIZE = 65536;  /* matches OVE_SIM_AUDIO_RING_SIZE */
+    var RING_HDR = 32;      /* matches OVE_RING_OFF_BUF */
 
     var wPlayToggle = document.getElementById('audio-play-toggle');
     if (wPlayToggle) {

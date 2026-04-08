@@ -8,11 +8,14 @@
 
 /*
  * QEMU audio driver — streams PCM through /dev/shm/ove-audio via ARM
- * semihosting.  The host-side viewer (qemu-dashboard-bridge.py) mmaps
+ * semihosting.  The host-side viewer (ove-dashboard-bridge.py) mmaps
  * the same file for audio playback and capture.
  *
  * Falls back to silent in-memory processing when the shared-memory
  * file cannot be opened (headless / no audio viewer).
+ *
+ * Uses the common ove_sim_audio_ring layout for the SHM file so all
+ * sim transports share the same ring struct.
  *
  * Implements ove_audio_device_source() / ove_audio_device_sink() as
  * graph device nodes. The sink's start() creates the engine thread.
@@ -27,7 +30,7 @@
 
 #ifdef CONFIG_OVE_AUDIO
 
-/* ── Ring-buffer helpers (unchanged from original) ──────────────── */
+/* ── Ring-buffer helpers (semihosting I/O) ─────────────────────────── */
 
 static int g_sh_fd = -1;
 static uint32_t g_out_wpos;
@@ -37,7 +40,7 @@ static void ring_write_out(const void *buf, uint32_t len)
 {
 	int fd = g_sh_fd;
 	uint32_t wpos = g_out_wpos;
-	uint32_t ring_off = AUDIO_SHM_OUT_RING_OFF;
+	uint32_t ring_off = AUDIO_SHM_OUT_RING_OFF + QEMU_RING_OFF_BUF;
 	uint32_t mask = AUDIO_SHM_RING_SIZE - 1;
 	uint32_t pos_in_ring = wpos & mask;
 	uint32_t first = AUDIO_SHM_RING_SIZE - pos_in_ring;
@@ -58,11 +61,11 @@ static uint32_t ring_read_in(void *buf, uint32_t len)
 {
 	int fd = g_sh_fd;
 	uint32_t rpos = g_in_rpos;
-	uint32_t ring_off = AUDIO_SHM_IN_RING_OFF;
+	uint32_t ring_off = AUDIO_SHM_IN_RING_OFF + QEMU_RING_OFF_BUF;
 	uint32_t mask = AUDIO_SHM_RING_SIZE - 1;
 
 	uint32_t in_wpos;
-	sh_seek(fd, offsetof(struct audio_shm_header, in_write_pos));
+	sh_seek(fd, AUDIO_SHM_IN_RING_OFF + QEMU_RING_OFF_WRITE_POS);
 	sh_read(fd, &in_wpos, sizeof(in_wpos));
 
 	uint32_t avail = in_wpos - rpos;
@@ -92,9 +95,9 @@ static uint32_t ring_read_in(void *buf, uint32_t len)
 static void flush_positions(void)
 {
 	int fd = g_sh_fd;
-	sh_seek(fd, offsetof(struct audio_shm_header, out_write_pos));
+	sh_seek(fd, AUDIO_SHM_OUT_RING_OFF + QEMU_RING_OFF_WRITE_POS);
 	sh_write(fd, &g_out_wpos, sizeof(uint32_t));
-	sh_seek(fd, offsetof(struct audio_shm_header, in_read_pos));
+	sh_seek(fd, AUDIO_SHM_IN_RING_OFF + QEMU_RING_OFF_READ_POS);
 	sh_write(fd, &g_in_rpos, sizeof(uint32_t));
 }
 
@@ -182,40 +185,15 @@ static int qemu_sink_process(void *ctx, const struct ove_audio_buf *in,
 static void audio_engine_loop(void *arg)
 {
 	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)arg;
-	unsigned int batch = 0;
-	const unsigned int batch_size = 8;
+
+	unsigned int period_ms = (sc->frames_per_period * 1000) /
+			sc->fmt.sample_rate;
+	if (period_ms < 1)
+		period_ms = 1;
 
 	while (sc->running) {
 		ove_audio_graph_process(sc->graph);
-		batch++;
-
-		if (g_sh_fd >= 0 && batch >= batch_size) {
-			batch = 0;
-			uint32_t host_rpos;
-			sh_seek(g_sh_fd,
-				offsetof(struct audio_shm_header,
-					 out_read_pos));
-			sh_read(g_sh_fd, &host_rpos, sizeof(host_rpos));
-			uint32_t buffered = g_out_wpos - host_rpos;
-
-			while (buffered > AUDIO_SHM_RING_SIZE / 2
-			       && sc->running) {
-				ove_thread_sleep_ms(50);
-				sh_seek(g_sh_fd,
-					offsetof(struct audio_shm_header,
-						 out_read_pos));
-				sh_read(g_sh_fd, &host_rpos,
-					sizeof(host_rpos));
-				buffered = g_out_wpos - host_rpos;
-			}
-		} else if (g_sh_fd < 0) {
-			unsigned int period_ms =
-				(sc->frames_per_period * 1000) /
-				sc->fmt.sample_rate;
-			if (period_ms < 1)
-				period_ms = 1;
-			ove_thread_sleep_ms(period_ms);
-		}
+		ove_thread_sleep_ms(period_ms);
 	}
 }
 
@@ -300,17 +278,35 @@ static int qemu_shm_init_once(const struct ove_audio_fmt *fmt,
 	g_sh_fd = sh_open(AUDIO_SHM_PATH, 7); /* "r+b" */
 
 	if (g_sh_fd >= 0) {
-		struct audio_shm_header hdr;
-		memset(&hdr, 0, sizeof(hdr));
-		hdr.magic = AUDIO_SHM_MAGIC;
-		hdr.sample_rate = fmt->sample_rate;
-		hdr.channels = fmt->channels;
-		hdr.bit_depth = ove_audio_sample_size(fmt->sample_fmt) * 8;
-		hdr.frames_per_buffer = frames_per_buffer;
-		hdr.ring_size = AUDIO_SHM_RING_SIZE;
+		/* Write output ring header. */
+		uint32_t zero = 0;
+		uint32_t sr = fmt->sample_rate;
+		uint16_t ch = fmt->channels;
+		uint16_t bd = ove_audio_sample_size(fmt->sample_fmt) * 8;
+		uint32_t sz = AUDIO_SHM_RING_SIZE;
 
-		sh_seek(g_sh_fd, 0);
-		sh_write(g_sh_fd, &hdr, sizeof(hdr));
+		sh_seek(g_sh_fd, AUDIO_SHM_OUT_RING_OFF);
+		sh_write(g_sh_fd, &zero, 4);  /* write_pos */
+		sh_write(g_sh_fd, &zero, 4);  /* read_pos */
+		sh_write(g_sh_fd, &sr, 4);    /* sample_rate */
+		sh_write(g_sh_fd, &ch, 2);    /* channels */
+		sh_write(g_sh_fd, &bd, 2);    /* bit_depth */
+		sh_write(g_sh_fd, &sz, 4);    /* size */
+		sh_write(g_sh_fd, &zero, 4);  /* underruns */
+		sh_write(g_sh_fd, &zero, 4);  /* overruns */
+		sh_write(g_sh_fd, &zero, 4);  /* _reserved */
+
+		/* Write input ring header (same format). */
+		sh_seek(g_sh_fd, AUDIO_SHM_IN_RING_OFF);
+		sh_write(g_sh_fd, &zero, 4);
+		sh_write(g_sh_fd, &zero, 4);
+		sh_write(g_sh_fd, &sr, 4);
+		sh_write(g_sh_fd, &ch, 2);
+		sh_write(g_sh_fd, &bd, 2);
+		sh_write(g_sh_fd, &sz, 4);
+		sh_write(g_sh_fd, &zero, 4);
+		sh_write(g_sh_fd, &zero, 4);
+		sh_write(g_sh_fd, &zero, 4);
 	}
 	/* Not an error if headless — we fall back to silent processing */
 
@@ -358,6 +354,15 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 
 	return ove_audio_graph_add_node(g, &qemu_sink_ops, ctx, name,
 					OVE_AUDIO_NODE_SINK);
+}
+
+/* Stub for sim_board.c which calls this during init.  On QEMU the audio
+ * plugin is not used — audio goes directly through semihosting SHM. */
+int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels,
+			   uint16_t bit_depth, uint32_t buffer_frames)
+{
+	(void)sample_rate; (void)channels; (void)bit_depth; (void)buffer_frames;
+	return 0;
 }
 
 #endif /* CONFIG_OVE_AUDIO */

@@ -11,7 +11,7 @@
  *
  * Implements the Zephyr display API by writing RGB565 pixels to
  * /dev/shm/ove-fb via ARM semihosting SVC calls. The host-side
- * display viewer (qemu-dashboard-bridge.py) reads and renders them.
+ * display viewer (ove-dashboard-bridge.py) reads and renders them.
  */
 
 #include <zephyr/device.h>
@@ -60,7 +60,7 @@ static inline int sh_seek(int fd, uint32_t pos)
 	return (int)sh_call(SH_SYS_SEEK, args);
 }
 
-/* Framebuffer header — matches qemu-dashboard-bridge.py protocol */
+/* Framebuffer header — matches ove-dashboard-bridge.py protocol */
 #define FB_MAGIC  0x42465854  /* "TXFB" */
 #define FB_FORMAT 0           /* RGB565 */
 

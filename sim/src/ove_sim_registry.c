@@ -119,8 +119,7 @@ int ove_sim_plugin_count(void)
 	return plugin_count;
 }
 
-/* Weak default for platforms that don't link ove_sim_ws.c (WASM, QEMU).
- * The POSIX WebSocket server provides the strong definition. */
+/* Weak default — dashboard bridge reads logs from shmem/pipe. */
 __attribute__((weak))
 void ove_sim_log_broadcast(const char *msg, unsigned int len)
 {

@@ -25,6 +25,13 @@ display:
   height: 272
   color_format: RGB565
 
+audio:
+  i2s:
+    sample_rate: 16000
+    bit_depth: 16
+    channels: 1
+    buffer_samples: 512
+
 serial:
   console:
     baud: 115200

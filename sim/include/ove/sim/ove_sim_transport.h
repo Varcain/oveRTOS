@@ -201,15 +201,15 @@ static inline size_t ove_sim_transport_pull_audio(struct ove_sim_transport *t,
 /* ── Transport factory declarations ────────────────────────────────── */
 
 /**
- * @brief Create the in-process direct transport (POSIX mode).
+ * @brief Create the local shared-memory transport (host POSIX mode).
  *
- * Uses SPSC ring buffers and a pthread condition variable for
- * signalling between the firmware threads and the WebSocket server.
+ * Creates /dev/shm/ove-{sim,fb,audio} via mmap.  The external
+ * dashboard bridge (ove-dashboard-bridge.py) reads the shmem.
  *
  * @param[out] t  Transport to initialise.
  * @return 0 on success, negative error code on failure.
  */
-int ove_sim_transport_direct_create(struct ove_sim_transport *t);
+int ove_sim_transport_shm_local_create(struct ove_sim_transport *t);
 
 /**
  * @brief Create the shared-memory transport -- host side (QEMU bridge).

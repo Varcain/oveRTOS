@@ -7,13 +7,15 @@
 # This file is part of oveRTOS.
 
 """
-QEMU → browser dashboard bridge for oveRTOS.
+oveRTOS dashboard bridge — shared-memory to WebSocket.
 
 Reads the framebuffer from /dev/shm/ove-fb and audio ring from
-/dev/shm/ove-audio (written by QEMU guest via semihosting), and
-streams them to the browser dashboard over WebSocket.
+/dev/shm/ove-audio (written by firmware via mmap or semihosting),
+and streams them to the browser dashboard over WebSocket.
 
-Architecture mirrors sim/src/ove_sim_ws.c:
+Used by both host POSIX simulation and QEMU emulation.
+
+Architecture:
   - Single server thread: accept, poll, read, write (no blocking).
   - Shmem bridge threads post frames into a mailbox.
   - Server thread drains mailbox and writes WS frames to clients.
@@ -40,19 +42,28 @@ FB_MAGIC = 0x42465854
 FB_HEADER_SIZE = 16
 
 AUDIO_PATH = "/dev/shm/ove-audio"
-AUDIO_SHM_MAGIC = 0x4F564155
-AUDIO_HDR_SIZE = 64
-AUDIO_OFF_MAGIC = 0
-AUDIO_OFF_SAMPLE_RATE = 4
-AUDIO_OFF_CHANNELS = 8
-AUDIO_OFF_BIT_DEPTH = 10
-AUDIO_OFF_RING_SIZE = 16
-AUDIO_OFF_OUT_WPOS = 20
-AUDIO_OFF_OUT_RPOS = 24
-AUDIO_OFF_IN_WPOS = 28
-AUDIO_OFF_IN_RPOS = 32
-AUDIO_RING_SIZE = 1 << 17  # 128 KB per direction
-AUDIO_IN_RING_OFF = AUDIO_HDR_SIZE + AUDIO_RING_SIZE
+
+# Common ring buffer layout (mirrors ove_sim_audio_ring.h):
+#   Each ring: 32-byte header + 64KB data
+#   SHM = [output_ring][input_ring]
+AUDIO_RING_SIZE = 1 << 16  # 64 KB per direction
+AUDIO_RING_HDR  = 32       # OVE_RING_OFF_BUF
+
+# Per-ring field offsets (same as OVE_RING_OFF_*)
+RING_OFF_WRITE_POS   = 0
+RING_OFF_READ_POS    = 4
+RING_OFF_SAMPLE_RATE = 8
+RING_OFF_CHANNELS    = 12
+RING_OFF_BIT_DEPTH   = 14
+RING_OFF_SIZE        = 16
+RING_OFF_UNDERRUNS   = 20
+RING_OFF_OVERRUNS    = 24
+RING_OFF_BUF         = 32
+
+AUDIO_RING_TOTAL = AUDIO_RING_HDR + AUDIO_RING_SIZE
+AUDIO_OUT_RING_OFF = 0
+AUDIO_IN_RING_OFF  = AUDIO_RING_TOTAL
+AUDIO_SHM_TOTAL    = 2 * AUDIO_RING_TOTAL
 
 FRAME_FB    = 0x01
 FRAME_AUDIO = 0x02
@@ -141,28 +152,30 @@ def audio_input_write(pcm_bytes):
         return
 
     # Check how much the guest hasn't consumed yet.
-    guest_rpos = struct.unpack_from("<I", mm, AUDIO_OFF_IN_RPOS)[0]
+    guest_rpos = struct.unpack_from(
+        "<I", mm, AUDIO_IN_RING_OFF + RING_OFF_READ_POS)[0]
     wpos = audio_in_wpos[0]
     buffered = (wpos - guest_rpos) & 0xFFFFFFFF
     # Cap input latency at 500ms (sr * ch * bytes_per_sample * 0.5).
     # Use conservative 16000 * 1 * 2 * 0.5 = 16000 bytes.
     if buffered > 16000:
-        # Drop oldest data by jumping write position forward,
-        # keeping only the latest 250ms.
         audio_in_wpos[0] = (guest_rpos + 8000) & 0xFFFFFFFF
         wpos = audio_in_wpos[0]
 
     data = pcm_bytes
+    buf_off = AUDIO_IN_RING_OFF + RING_OFF_BUF
     mask = AUDIO_RING_SIZE - 1
     pos = wpos & mask
     first = AUDIO_RING_SIZE - pos
     if first >= len(data):
-        os.pwrite(fd, data, AUDIO_IN_RING_OFF + pos)
+        os.pwrite(fd, data, buf_off + pos)
     else:
-        os.pwrite(fd, data[:first], AUDIO_IN_RING_OFF + pos)
-        os.pwrite(fd, data[first:], AUDIO_IN_RING_OFF)
+        os.pwrite(fd, data[:first], buf_off + pos)
+        os.pwrite(fd, data[first:], buf_off)
     audio_in_wpos[0] = (wpos + len(data)) & 0xFFFFFFFF
-    struct.pack_into("<I", mm, AUDIO_OFF_IN_WPOS, audio_in_wpos[0])
+    struct.pack_into("<I", mm,
+                     AUDIO_IN_RING_OFF + RING_OFF_WRITE_POS,
+                     audio_in_wpos[0])
 
 # ── WebSocket frame parser ───────────────────────────────────────────
 
@@ -196,7 +209,7 @@ def ws_parse_frame(buf):
     opcode = b0 & 0x0F
     return (opcode, bytes(payload)), total
 
-# ── Single-threaded server (mirrors ove_sim_ws.c) ────────────────────
+# ── Single-threaded server ────────────────────────────────────────────
 
 MIME = {
     ".html": "text/html", ".js": "application/javascript",
@@ -280,8 +293,10 @@ def serve(port, dashboard_dir):
                             plugin_id = struct.unpack_from("<I", fdata, 0)[0]
                             cmd_type = struct.unpack_from("<I", fdata, 4)[0]
                             pcm = fdata[12:]
-                            # Only route audio inject commands (plugin 1, cmd 0)
-                            if plugin_id == 1 and cmd_type == 0 and pcm:
+                            # Route audio inject (cmd_type 0) for any
+                            # real plugin ID (skip console sentinel).
+                            if (plugin_id != 0xFFFFFFFF
+                                    and cmd_type == 0 and pcm):
                                 audio_input_write(pcm)
                         elif ftype == FRAME_AUDIO and len(fdata) >= 8:
                             # Raw audio frame from dashboard mic
@@ -363,6 +378,18 @@ def _handle_http(c, dashboard_dir):
         except Exception:
             c.sock.close()
             return
+        # Send plugin state so dashboard discovers audio plugin ID.
+        # QEMU board: display=0, audio=1 (when both present).
+        audio_id = 1 if os.path.exists(FB_PATH) else 0
+        state_json = (
+            f'{{"type":"audio","sample_rate":16000,'
+            f'"channels":1,"bit_depth":16}}'
+        ).encode()
+        state_payload = (
+            struct.pack("<II", FRAME_STATE, audio_id) + state_json
+        )
+        c.sock.sendall(ws_frame(state_payload))
+
         c.sock.setblocking(False)
         c.state = ST_WS
         with ws_client_lock:
@@ -388,6 +415,9 @@ def _handle_http(c, dashboard_dir):
     hdr = (f"HTTP/1.1 200 OK\r\n"
            f"Content-Type: {ct}\r\n"
            f"Content-Length: {len(body)}\r\n"
+           f"Cross-Origin-Opener-Policy: same-origin\r\n"
+           f"Cross-Origin-Embedder-Policy: require-corp\r\n"
+           f"Cache-Control: no-cache\r\n"
            f"Connection: close\r\n"
            f"\r\n").encode()
     _send_blocking(c, hdr + body)
@@ -439,6 +469,11 @@ def audio_bridge():
 def _audio_bridge_loop():
     while not os.path.exists(AUDIO_PATH):
         time.sleep(0.2)
+    # Ensure the file is large enough for both rings.
+    with open(AUDIO_PATH, "r+b") as f:
+        f.seek(0, 2)  # seek to end
+        if f.tell() < AUDIO_SHM_TOTAL:
+            f.truncate(AUDIO_SHM_TOTAL)
     with open(AUDIO_PATH, "r+b") as f:
         fd = f.fileno()
         mm = mmap.mmap(fd, 0)
@@ -446,22 +481,32 @@ def _audio_bridge_loop():
         audio_in_fd[0] = fd
         out_rpos = 0
         try:
+            # Wait for guest to write the output ring header.
             while True:
-                magic = struct.unpack_from("<I", mm, AUDIO_OFF_MAGIC)[0]
-                if magic == AUDIO_SHM_MAGIC:
-                    sr = struct.unpack_from("<I", mm, AUDIO_OFF_SAMPLE_RATE)[0]
-                    ch = struct.unpack_from("<H", mm, AUDIO_OFF_CHANNELS)[0]
-                    bd = struct.unpack_from("<H", mm, AUDIO_OFF_BIT_DEPTH)[0]
-                    rs = struct.unpack_from("<I", mm, AUDIO_OFF_RING_SIZE)[0]
-                    if sr and ch and rs:
-                        break
+                sr = struct.unpack_from(
+                    "<I", mm,
+                    AUDIO_OUT_RING_OFF + RING_OFF_SAMPLE_RATE)[0]
+                ch = struct.unpack_from(
+                    "<H", mm,
+                    AUDIO_OUT_RING_OFF + RING_OFF_CHANNELS)[0]
+                bd = struct.unpack_from(
+                    "<H", mm,
+                    AUDIO_OUT_RING_OFF + RING_OFF_BIT_DEPTH)[0]
+                rs = struct.unpack_from(
+                    "<I", mm,
+                    AUDIO_OUT_RING_OFF + RING_OFF_SIZE)[0]
+                if sr and ch and rs:
+                    break
                 time.sleep(0.1)
 
             frame_bytes = ch * (bd // 8)
+            buf_off = AUDIO_OUT_RING_OFF + RING_OFF_BUF
             print(f"Audio bridge: {sr} Hz, {ch} ch, {bd}-bit", flush=True)
 
             while True:
-                wpos = struct.unpack_from("<I", mm, AUDIO_OFF_OUT_WPOS)[0]
+                wpos = struct.unpack_from(
+                    "<I", mm,
+                    AUDIO_OUT_RING_OFF + RING_OFF_WRITE_POS)[0]
                 avail = (wpos - out_rpos) & 0xFFFFFFFF
                 if avail > rs:
                     out_rpos = wpos - (rs >> 1)
@@ -475,12 +520,14 @@ def _audio_bridge_loop():
                 pos = out_rpos & mask
                 first = min(rs - pos, to_read)
                 if first >= to_read:
-                    data = os.pread(fd, to_read, AUDIO_HDR_SIZE + pos)
+                    data = os.pread(fd, to_read, buf_off + pos)
                 else:
-                    data = (os.pread(fd, first, AUDIO_HDR_SIZE + pos) +
-                            os.pread(fd, to_read - first, AUDIO_HDR_SIZE))
+                    data = (os.pread(fd, first, buf_off + pos) +
+                            os.pread(fd, to_read - first, buf_off))
                 out_rpos = (out_rpos + to_read) & 0xFFFFFFFF
-                struct.pack_into("<I", mm, AUDIO_OFF_OUT_RPOS, out_rpos)
+                struct.pack_into(
+                    "<I", mm,
+                    AUDIO_OUT_RING_OFF + RING_OFF_READ_POS, out_rpos)
                 audio_hdr = struct.pack("<IHH", sr, ch, bd)
                 payload = struct.pack("<I", FRAME_AUDIO) + audio_hdr + data
                 frame = ws_frame(payload)
@@ -523,15 +570,20 @@ def log_bridge(read_fd):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="QEMU → browser dashboard bridge for oveRTOS")
+        description="oveRTOS dashboard bridge (shmem → WebSocket)")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--dashboard", type=str, default=None,
+                        help="Path to dashboard static files")
     parser.add_argument("--log-fd", type=int, default=-1,
                         help="File descriptor to read console log from")
     args = parser.parse_args()
 
-    ove_dir = os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))))
-    dashboard_dir = os.path.join(ove_dir, "sim", "dashboard")
+    if args.dashboard:
+        dashboard_dir = args.dashboard
+    else:
+        ove_dir = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        dashboard_dir = os.path.join(ove_dir, "sim", "dashboard")
     if not os.path.isdir(dashboard_dir):
         print(f"ERROR: Dashboard not found at {dashboard_dir}",
               file=sys.stderr)

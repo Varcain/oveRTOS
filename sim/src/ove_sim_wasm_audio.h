@@ -7,44 +7,28 @@
  */
 
 /*
- * Shared audio ring buffers for WASM mode.
+ * WASM audio ring buffers.
  *
  * Playback: firmware writes PCM → playback ring → JS AudioWorklet → speaker
  * Capture:  JS AudioWorklet → capture ring → firmware reads PCM
  *
  * Both rings live in the WASM SharedArrayBuffer heap so JS and C
- * can access them without copies.  Synchronization uses atomic
- * read/write positions (SPSC: one producer, one consumer per ring).
+ * can access them without copies.  Uses the common ove_sim_audio_ring
+ * struct for layout compatibility with POSIX and QEMU transports.
  */
 
 #ifndef OVE_SIM_WASM_AUDIO_H
 #define OVE_SIM_WASM_AUDIO_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include "ove_sim_audio_ring.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Ring size: 16KB per direction.  At 44100 Hz / 16-bit / mono = 88200 B/s,
- * this gives ~180ms of buffer — enough for AudioWorklet's 128-frame chunks.
- */
-#define OVE_SIM_WASM_AUDIO_RING_SIZE (1u << 14) /* 16384 bytes */
-
-struct ove_sim_wasm_audio_ring {
-	volatile uint32_t write_pos;
-	volatile uint32_t read_pos;
-	uint32_t          sample_rate;
-	uint16_t          channels;
-	uint16_t          bit_depth;
-	uint8_t           buf[OVE_SIM_WASM_AUDIO_RING_SIZE];
-};
-
 struct ove_sim_wasm_audio {
-	struct ove_sim_wasm_audio_ring playback; /* firmware → speaker */
-	struct ove_sim_wasm_audio_ring capture;  /* mic → firmware */
+	struct ove_sim_audio_ring playback; /* firmware → speaker */
+	struct ove_sim_audio_ring capture;  /* mic → firmware */
 };
 
 extern struct ove_sim_wasm_audio ove_wasm_audio;

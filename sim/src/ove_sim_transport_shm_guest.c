@@ -30,7 +30,7 @@
 
 #include <string.h>
 
-/* ── Framebuffer protocol (matches qemu-dashboard-bridge.py) ──────── */
+/* ── Framebuffer protocol (matches ove-dashboard-bridge.py) ──────── */
 
 #define FB_PATH       "/dev/shm/ove-fb"
 #define FB_MAGIC      0x42465854  /* "TXFB" */

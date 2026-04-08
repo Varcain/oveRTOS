@@ -49,10 +49,28 @@ def cmd_run(args):
         if not os.path.isfile(posix_bin):
             print("Error: POSIX binary not found. Run 'ove build' first.")
             sys.exit(1)
-        # Export OVE_DIR so the sim dashboard can find its static assets.
         os.environ["OVE_DIR"] = ws.ove_dir
+        headless = hasattr(args, "headless") and args.headless
+
+        # Launch dashboard bridge (shmem → WebSocket) unless headless.
+        bridge_proc = None
+        if not headless:
+            bridge = os.path.join(
+                ws.ove_dir, "config", "scripts", "ove-dashboard-bridge.py")
+            dashboard = os.path.join(ws.ove_dir, "sim", "dashboard")
+            bridge_proc = subprocess.Popen(
+                [sys.executable, bridge,
+                 "--port", "8080", "--dashboard", dashboard],
+                stdout=None, stderr=None)
+
         extra = args.extra if hasattr(args, "extra") else []
-        os.execv(posix_bin, [posix_bin] + extra)
+        try:
+            subprocess.run([posix_bin] + extra)
+        finally:
+            if bridge_proc:
+                bridge_proc.terminate()
+                bridge_proc.wait(timeout=3)
+        return
 
     # QEMU or hardware
     qemu_script = os.path.join(ws.board_dir, "qemu-run.sh")

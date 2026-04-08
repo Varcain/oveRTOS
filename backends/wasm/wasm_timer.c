@@ -15,6 +15,8 @@
  * specific APIs, so this also works on native POSIX.
  */
 
+#ifdef CONFIG_OVE_TIMER
+
 #include "ove/ove.h"
 #include "ove_backend_common.h"
 #include <pthread.h>
@@ -231,3 +233,5 @@ int ove_timer_reset(ove_timer_t timer)
 {
 	return ove_timer_start(timer);
 }
+
+#endif /* CONFIG_OVE_TIMER */

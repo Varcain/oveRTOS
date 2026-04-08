@@ -11,13 +11,15 @@
  *
  * The guest firmware writes output PCM and reads input PCM through a
  * shared-memory file (/dev/shm/ove-audio) using ARM semihosting.
- * The host-side viewer (qemu-dashboard-bridge.py) mmaps the same file
+ * The host-side viewer (ove-dashboard-bridge.py) mmaps the same file
  * for audio playback and capture.
  *
+ * Uses the common ove_sim_audio_ring layout (32-byte header + ring buf)
+ * so all sim transports share the same struct.
+ *
  * Layout:
- *   [0 .. 63]                        audio_shm_header
- *   [64 .. 64+RING_SIZE-1]           Output ring (guest -> host)
- *   [64+RING_SIZE .. 64+2*RING_SIZE-1] Input ring  (host -> guest)
+ *   [0 .. HDR+RING-1]              Output ring (guest -> host)
+ *   [HDR+RING .. 2*(HDR+RING)-1]   Input ring  (host -> guest)
  *
  * Each ring is an SPSC (single-producer single-consumer) byte buffer.
  * Positions are byte offsets that wrap modulo ring_size.
@@ -28,30 +30,44 @@
 
 #include <stdint.h>
 
-#define AUDIO_SHM_MAGIC      0x4F564155  /* "OVAU" little-endian */
-#define AUDIO_SHM_RING_SIZE  (1u << 17)  /* 128 KB per direction */
-#define AUDIO_SHM_HDR_SIZE   64
+/* Use the common ring offset constants. */
+#define AUDIO_SHM_MAGIC         0x4F564155  /* "OVAU" little-endian */
+#define AUDIO_SHM_RING_SIZE     (1u << 16)  /* 64 KB per direction */
+#define AUDIO_SHM_RING_HDR      32          /* matches OVE_RING_OFF_BUF */
 
-#define AUDIO_SHM_OUT_RING_OFF  AUDIO_SHM_HDR_SIZE
-#define AUDIO_SHM_IN_RING_OFF   (AUDIO_SHM_HDR_SIZE + AUDIO_SHM_RING_SIZE)
-#define AUDIO_SHM_TOTAL_SIZE    (AUDIO_SHM_HDR_SIZE + 2u * AUDIO_SHM_RING_SIZE)
+#define AUDIO_SHM_RING_TOTAL    (AUDIO_SHM_RING_HDR + AUDIO_SHM_RING_SIZE)
+#define AUDIO_SHM_OUT_RING_OFF  0
+#define AUDIO_SHM_IN_RING_OFF   AUDIO_SHM_RING_TOTAL
+#define AUDIO_SHM_TOTAL_SIZE    (2u * AUDIO_SHM_RING_TOTAL)
 
-#define AUDIO_SHM_PATH  "/dev/shm/ove-audio"
+#define AUDIO_SHM_PATH          "/dev/shm/ove-audio"
 
-struct audio_shm_header {
-	uint32_t magic;              /* AUDIO_SHM_MAGIC */
-	uint32_t sample_rate;        /* Hz, e.g. 48000 */
-	uint16_t channels;           /* e.g. 2 */
-	uint16_t bit_depth;          /* e.g. 16 */
-	uint32_t frames_per_buffer;  /* frames per callback */
-	uint32_t ring_size;          /* bytes per direction */
-	/* Output: guest writes, host reads */
-	uint32_t out_write_pos;
-	uint32_t out_read_pos;
-	/* Input: host writes, guest reads */
-	uint32_t in_write_pos;
-	uint32_t in_read_pos;
-	uint8_t  _pad[16];          /* pad to 64 bytes */
-};
+/*
+ * Each ring in the SHM file has the same layout as struct ove_sim_audio_ring:
+ *
+ *   Offset  Size  Field
+ *   0       4     write_pos
+ *   4       4     read_pos
+ *   8       4     sample_rate
+ *   12      2     channels
+ *   14      2     bit_depth
+ *   16      4     size (= AUDIO_SHM_RING_SIZE)
+ *   20      4     underruns
+ *   24      4     overruns
+ *   28      4     _reserved
+ *   32      N     buf[N]
+ *
+ * Guest accesses these via semihosting using the OVE_RING_OFF_* constants
+ * from ove_sim_audio_ring.h.  Host accesses via mmap.
+ */
+
+/* Field offsets within each ring (mirrors OVE_RING_OFF_*) */
+#define QEMU_RING_OFF_WRITE_POS    0
+#define QEMU_RING_OFF_READ_POS     4
+#define QEMU_RING_OFF_SAMPLE_RATE  8
+#define QEMU_RING_OFF_CHANNELS    12
+#define QEMU_RING_OFF_BIT_DEPTH   14
+#define QEMU_RING_OFF_SIZE        16
+#define QEMU_RING_OFF_BUF         32
 
 #endif /* QEMU_AUDIO_SHM_H */

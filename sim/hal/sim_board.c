@@ -7,28 +7,26 @@
  */
 
 /*
- * Sim board initialisation -- starts the sim plugin framework,
- * transport, and WebSocket dashboard server.
+ * Sim board initialisation -- starts the sim plugin framework
+ * and transport.
  *
  * Called early during ove_app_run() → ove_board_init() when
  * CONFIG_OVE_SIM is enabled.
+ *
+ * Dashboard serving:
+ *   POSIX / QEMU — external bridge (ove-dashboard-bridge.py)
+ *   WASM         — Emscripten in-browser
  */
 
 #include "ove/sim/ove_sim_plugin.h"
 #include "ove/sim/ove_sim_transport.h"
 #include "ove/sim/ove_sim_display.h"
 #include "ove/sim/ove_sim_audio.h"
-#include "../src/ove_sim_ws.h"
 #include "ove/types.h"
 #include "board_desc.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
-#ifndef OVE_SIM_DASHBOARD_PORT
-#define OVE_SIM_DASHBOARD_PORT 8080
-#endif
 
 /* Audio defaults for boards that don't define I2S parameters. */
 #ifndef OVE_AUDIO_I2S_SAMPLE_RATE
@@ -55,27 +53,6 @@ extern int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels,
 
 static struct ove_sim_transport transport;
 
-/* ── Dashboard path resolution ─────────────────────────────────────── */
-
-static const char *resolve_dashboard_path(void)
-{
-	/* Try OVE_SIM_DASHBOARD_PATH env var first. */
-	const char *env = getenv("OVE_SIM_DASHBOARD_PATH");
-	if (env)
-		return env;
-
-	/* Try relative to OVE_DIR env var. */
-	const char *ove_dir = getenv("OVE_DIR");
-	if (ove_dir) {
-		static char path[512];
-		snprintf(path, sizeof(path), "%s/sim/dashboard", ove_dir);
-		return path;
-	}
-
-	/* Fallback: relative to CWD. */
-	return "sim/dashboard";
-}
-
 /* ── Sim board init ────────────────────────────────────────────────── */
 
 int ove_sim_board_init(void)
@@ -89,7 +66,9 @@ int ove_sim_board_init(void)
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	ret = ove_sim_transport_shm_guest_create(&transport);
 #else
-	ret = ove_sim_transport_direct_create(&transport);
+	extern int ove_sim_transport_shm_local_create(
+		struct ove_sim_transport *t);
+	ret = ove_sim_transport_shm_local_create(&transport);
 #endif
 	if (ret != OVE_OK) {
 		fprintf(stderr, "[sim] Failed to create transport: %d\n", ret);
@@ -122,16 +101,6 @@ int ove_sim_board_init(void)
 		OVE_AUDIO_I2S_BUFFER_SAMPLES);
 	if (ret < 0)
 		fprintf(stderr, "[sim] Audio plugin failed: %d\n", ret);
-#endif
-
-	/* 3. Start the WebSocket server (POSIX host only).
-	 *    WASM uses postMessage.  QEMU uses the Python bridge. */
-#if !defined(__EMSCRIPTEN__) && !defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
-	const char *dash_path = resolve_dashboard_path();
-	ret = ove_sim_ws_start(OVE_SIM_DASHBOARD_PORT, dash_path,
-			       &transport);
-	if (ret != OVE_OK)
-		fprintf(stderr, "[sim] Dashboard failed to start: %d\n", ret);
 #endif
 
 #if defined(__EMSCRIPTEN__)
