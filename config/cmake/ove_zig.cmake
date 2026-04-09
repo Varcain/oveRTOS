@@ -238,6 +238,12 @@ function(ove_build_zig_lib TARGET)
         endforeach()
     endif()
 
+    # Ensure LV_CONF_INCLUDE_SIMPLE is defined for @cImport so LVGL finds
+    # lv_conf.h via include paths rather than relative #include.
+    if(NOT "-DLV_CONF_INCLUDE_SIMPLE" IN_LIST ZIG_DEFINE_ARGS)
+        list(APPEND ZIG_DEFINE_ARGS "-DLV_CONF_INCLUDE_SIMPLE")
+    endif()
+
     # ── Generate storage sizes for zero-heap mode ─────────────────────────
     # When CONFIG_OVE_ZERO_HEAP is enabled, Zig's @cImport needs
     # correctly-sized opaque storage types (not 1-byte stubs).

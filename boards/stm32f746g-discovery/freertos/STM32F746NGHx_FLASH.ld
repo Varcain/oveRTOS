@@ -191,6 +191,7 @@ SECTIONS
   .RamData1 (NOLOAD) : { *(.RamData1) } >RAM1
   .RamData2 (NOLOAD): { *(.RamData2) } >RAM2
   .lcd_framebuffer (NOLOAD) : { *(.lcd_framebuffer) } >SDRAM
+  .sdram_bss (NOLOAD) : { *(.sdram_bss) } >SDRAM
 }
 
 

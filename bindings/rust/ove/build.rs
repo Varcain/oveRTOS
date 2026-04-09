@@ -182,7 +182,8 @@ fn main() {
 
     let mut builder = bindgen::Builder::default()
         .header_contents("wrapper.h", &wrapper)
-        .clang_arg("-D__BINDGEN__");
+        .clang_arg("-D__BINDGEN__")
+        .clang_arg("-DLV_CONF_INCLUDE_SIMPLE");
     // WASM: bindgen parses with host target (x86_64) but Rust compiles
     // for wasm32 (4-byte pointers).  Disable layout tests to avoid
     // size assertion mismatches between host and wasm32.

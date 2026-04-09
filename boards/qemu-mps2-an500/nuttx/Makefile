@@ -46,7 +46,7 @@ SIM_DIR := $(OVE_DIR)/sim
 CSRCS = $(OVE_BACKEND_SRCS)
 CSRCS := $(filter-out %nuttx_lvgl.c,$(CSRCS))
 CSRCS := $(filter-out %nuttx_audio.c,$(CSRCS))
-ifneq ($(LVGL_INCLUDE_PATH),)
+ifneq ($(wildcard $(LVGL_INCLUDE_PATH)/lvgl.h),)
 CSRCS += $(SIM_DIR)/hal/sim_lvgl.c
 endif
 CSRCS += $(SIM_DIR)/hal/sim_audio.c
@@ -73,7 +73,7 @@ CFLAGS += -I$(OVE_DIR)/sim/src
 CFLAGS += -I$(OVE_GEN_DIR)
 CFLAGS += -I$(OVE_GEN_DIR)/generated_models
 CFLAGS += -I$(QEMU_SRC_DIR)
-ifneq ($(LVGL_INCLUDE_PATH),)
+ifneq ($(wildcard $(LVGL_INCLUDE_PATH)/lvgl.h),)
 CFLAGS += -I$(LVGL_INCLUDE_PATH)
 CFLAGS += -I$(LVGL_PARENT_PATH)
 endif

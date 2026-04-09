@@ -27,7 +27,7 @@ impl Workqueue {
             bindings::ove_workqueue_create(
                 &mut handle,
                 name.as_ptr() as *const _,
-                priority as u32,
+                priority as bindings::ove_prio_t,
                 stack_size,
             )
         };
@@ -55,7 +55,7 @@ impl Workqueue {
                 &mut handle,
                 storage,
                 name.as_ptr() as *const _,
-                priority as u32,
+                priority as bindings::ove_prio_t,
                 stack_size,
                 stack,
             )
