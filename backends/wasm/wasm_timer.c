@@ -15,6 +15,8 @@
  * specific APIs, so this also works on native POSIX.
  */
 
+#include "ove_config.h"
+
 #ifdef CONFIG_OVE_TIMER
 
 #include "ove/ove.h"
