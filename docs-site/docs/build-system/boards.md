@@ -1,6 +1,6 @@
 # Board Configurations
 
-oveRTOS ships with three reference board definitions. Each board lives under `boards/<name>/` and supplies:
+oveRTOS ships with four reference board definitions. Each board lives under `boards/<name>/` and supplies:
 
 - `board.yaml` — machine-readable hardware description (clocks, memory, peripherals)
 - A CMakeLists.txt (or equivalent) that selects the correct backend and passes hardware parameters to the build
@@ -89,7 +89,7 @@ The host-pc board uses the POSIX backend and compiles oveRTOS as a native Linux 
 | MCU family | POSIX |
 | Architecture | x86_64 |
 | Flash / RAM | Host OS process memory |
-| Display | 480 × 272 px, RGB565 (rendered via SDL2 or framebuffer) |
+| Display | 480 × 272 px, RGB565 (rendered via sim dashboard in browser) |
 | Audio | 44100 Hz, 16-bit, 1 channel (512-sample buffers) |
 | Console | Standard I/O |
 | GPIO ports | 8 virtual ports, 16 pins each |
@@ -110,3 +110,35 @@ cmake --build build
 ```
 
 This makes it straightforward to run oveRTOS applications in CI pipelines or debuggers without embedded hardware.
+
+---
+
+## WASM (`wasm`)
+
+The WASM board compiles oveRTOS to WebAssembly via Emscripten and runs the firmware entirely in a web browser. LVGL renders into an HTML5 `<canvas>` element, and audio streams through the browser's Web Audio API.
+
+**Hardware summary**
+
+| Parameter | Value |
+|-----------|-------|
+| MCU family | POSIX (wasm32) |
+| Architecture | WebAssembly |
+| Flash / RAM | Browser process memory |
+| Display | 480 × 272 px, XRGB8888 (rendered in HTML canvas via sim dashboard) |
+| Audio | 44100 Hz, 16-bit, 1 channel (512-sample buffers) |
+| Console | Browser console |
+| GPIO ports | 8 virtual ports, 16 pins each |
+| LEDs | 4 virtual LEDs (port 0, pins 0–3, active-high) |
+
+**Backend**
+
+The board uses the WASM backend (`backends/wasm/`), compiled with Emscripten (version 3.1.51). Threads use Emscripten's `SharedArrayBuffer`-based pthread emulation. Bus drivers (UART, SPI, I2C, I2S) are stubbed. HTTP and SNTP use Emscripten's native fetch support.
+
+**Usage**
+
+The WASM board produces an HTML page (`shell.html`) that loads the compiled WebAssembly module. The sim dashboard provides display, audio, LED, and GPIO visualisation in the browser.
+
+**Requirements**
+
+- Emscripten toolchain (3.1.51+)
+- Browser with SharedArrayBuffer support (requires HTTPS or localhost with COOP/COEP headers)

@@ -13,7 +13,7 @@ The behaviour depends on the selected board:
 | Board | Behaviour |
 |---|---|
 | `qemu-mps2-an500` | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
-| `host-pc` | Executes the POSIX binary directly on the host; SDL2 window opens for display and audio |
+| `host-pc` | Executes the POSIX binary directly on the host; browser dashboard opens for display and audio |
 
 ### QEMU Emulated Targets
 
@@ -27,10 +27,10 @@ make run HEADLESS=1
 
 ### POSIX Native Targets
 
-When the board is `host-pc`, the compiled binary runs directly as a Linux or macOS process. SDL2 provides a window that emulates the board display and input. Audio is routed through the host audio subsystem.
+When the board is `host-pc`, the compiled binary runs directly as a Linux or macOS process. The sim framework launches a browser-based dashboard that visualises the board display, LEDs, GPIO, and audio. Audio output plays through the browser's Web Audio API.
 
 ```bash
-make run   # starts the SDL2 window
+make run   # starts the browser dashboard
 ```
 
 ## Flashing to Hardware

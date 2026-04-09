@@ -8,9 +8,9 @@ The oveRTOS audio engine is a graph-based processing framework. Audio flows thro
 graph LR
     subgraph Graph
         direction LR
-        SRC["Source Node<br/><small>I2S / PDM / SDL2</small>"]
+        SRC["Source Node<br/><small>I2S / PDM</small>"]
         PROC["Processor Node<br/><small>DSP / Converter / Gain</small>"]
-        SINK["Sink Node<br/><small>I2S / SDL2</small>"]
+        SINK["Sink Node<br/><small>I2S</small>"]
         SRC --> PROC --> SINK
     end
 
@@ -68,7 +68,7 @@ sequenceDiagram
     Engine->>Proc: process(&in_buf, &out_buf)
     Proc-->>Engine: transforms audio
     Engine->>Sink: process(&in_buf, NULL)
-    Sink-->>Engine: copies to DMA TX / SDL stream
+    Sink-->>Engine: copies to DMA TX buffer
 ```
 
 ### App-driven (testing / offline)
@@ -116,7 +116,6 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 |-----------|--------|------|---------|
 | `OVE_AUDIO_TRANSPORT_I2S` | Yes | Yes | FreeRTOS (STM32 SAI/DMA), Zephyr (device tree), NuttX (`/dev/audio`) |
 | `OVE_AUDIO_TRANSPORT_PDM` | Yes | No | FreeRTOS (STM32 DFSDM), Zephyr |
-| `OVE_AUDIO_TRANSPORT_SDL2` | Yes | Yes | POSIX only (host development) |
 
 ## Custom Nodes
 

@@ -20,6 +20,7 @@ A portable RTOS abstraction framework that provides a unified C API across **Fre
 | NuttX | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
 | Zephyr | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
 | POSIX | Linux / macOS host | Host GCC/Clang |
+| WASM | Browser (WebAssembly) | Emscripten |
 
 ## Quick Start
 
@@ -33,8 +34,8 @@ A portable RTOS abstraction framework that provides a unified C API across **Fre
 ### Build and Run
 
 ```bash
-# 1. Load a predefined configuration
-make host_posix_example_c_defconfig
+# 1. Load a configuration (dot-syntax: <board>.<rtos>.<app>)
+make host.posix.example_c
 
 # 2. Build (downloads RTOS sources, configures, and compiles)
 make
@@ -49,17 +50,16 @@ make run
 make menuconfig
 ```
 
-### Available Defconfigs
+### Configuration Syntax
 
-Predefined configurations follow the pattern `<board>_<rtos>_<app>[_zeroheap]_defconfig`:
+Configurations use dot-separated `<board>.<rtos>.<app>` syntax:
 
-```
-host_posix_example_c_defconfig
-qemu_freertos_example_c_defconfig
-qemu_nuttx_example_rust_defconfig
-qemu_zephyr_example_cpp_defconfig
-stm32f746_freertos_example_zig_defconfig
-...
+```bash
+make host.posix.example_c
+make qemu.freertos.example_c
+make qemu.nuttx.example_rust
+make stm32f746.zephyr.example_cpp
+make host.posix.example_c ZEROHEAP=1    # zero-heap variant
 ```
 
 Run `make help` to see all available configurations and targets.
@@ -130,6 +130,11 @@ void ove_main(void)
 | `ove_log` | Compile-time filtered logging |
 | `ove_stream` | Byte-stream ring buffers |
 | `ove_watchdog` | Hardware watchdog |
+| `ove_pm` | Power management (sleep states, domains, wake sources) |
+| `ove_uart` | UART serial driver |
+| `ove_spi` | SPI bus master driver |
+| `ove_i2c` | I2C bus master driver |
+| `ove_i2s` | I2S / SAI audio bus driver |
 
 ## Zero-Heap Mode
 
@@ -196,6 +201,7 @@ oveRTOS/
 │   ├── nuttx/
 │   ├── zephyr/
 │   ├── posix/
+│   ├── wasm/
 │   └── common/
 ├── bindings/           # Language bindings
 │   ├── cpp/
@@ -207,9 +213,10 @@ oveRTOS/
 │   ├── rust/           #   Rust apps
 │   └── zig/            #   Zig apps (each: example, benchmark, example_keyword_live, example_net)
 ├── models/             # ML model assets (TFLite)
+├── sim/                # Simulation framework (plugins, dashboard, transports)
 ├── boards/             # Board definitions
 ├── config/             # Kconfig definitions and ove CLI
-├── defconfigs/         # Predefined configurations
+├── config/fragments/   # Configuration fragments (board, RTOS, variant)
 ├── tests/              # Test suites
 └── docs-site/          # MkDocs documentation site
 ```

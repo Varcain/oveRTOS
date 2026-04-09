@@ -57,10 +57,13 @@ set(STUB_SOURCES
     # Audio graph engine (platform-independent)
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
+    # Power management (platform-independent)
+    ${OVE_SRC}/ove_pm.c
     # Headless stubs (display, HAL)
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_lvgl.c
+    ${STUB_DIR}/stub_pm.c
     # App framework
     ${OVE_SRC}/ove_app.c
     # Networking helpers (SHA-1, Base64 for WebSocket/HTTPD tests)
@@ -100,6 +103,10 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_net_mqtt.c
     ${SUITE_DIR}/test_net_httpd.c
     ${SUITE_DIR}/test_net_sntp.c
+    ${SUITE_DIR}/test_i2c.c
+    ${SUITE_DIR}/test_spi.c
+    ${SUITE_DIR}/test_uart.c
+    ${SUITE_DIR}/test_pm.c
 )
 
 # --- Stub test target ---

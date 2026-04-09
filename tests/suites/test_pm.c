@@ -822,6 +822,7 @@ static void test_pm_stats_initial(void **state)
 	struct ove_pm_stats stats;
 
 	ove_pm_init(&default_cfg);
+	test_msleep(1); /* ensure measurable elapsed time */
 	int rc = ove_pm_get_stats(&stats);
 	assert_int_equal(rc, OVE_OK);
 
@@ -856,6 +857,7 @@ static void test_pm_stats_tracking(void **state)
 	ove_pm_set_state(OVE_PM_STATE_STANDBY);
 	test_msleep(10);
 	ove_pm_set_state(OVE_PM_STATE_ACTIVE);
+	test_msleep(1); /* ensure measurable active time for active_pct */
 
 	int rc = ove_pm_get_stats(&stats);
 	assert_int_equal(rc, OVE_OK);

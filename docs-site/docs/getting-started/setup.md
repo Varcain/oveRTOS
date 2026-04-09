@@ -68,19 +68,7 @@ Minimum supported Rust version: **1.85**.
 
 Required only when `CONFIG_OVE_APP_LANG_ZIG=y`. Download from [ziglang.org/download](https://ziglang.org/download/).
 
-Minimum supported Zig version: **0.13**.
-
-### SDL2 (for POSIX/host target)
-
-Required when the selected backend is POSIX (`host-pc` board). SDL2 provides the display and audio emulation layer.
-
-```bash
-# Debian/Ubuntu
-sudo apt install libsdl2-dev
-
-# Fedora
-sudo dnf install SDL2-devel
-```
+Minimum supported Zig version: **0.15.2**.
 
 ## Setting Up the ove CLI
 

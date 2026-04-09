@@ -41,6 +41,8 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | Net MQTT | `ove/net_mqtt.h` | 10 | MQTT 3.1.1 client with QoS 0/1. [Guide](net.md#mqtt-client) |
 | Net HTTPD | `ove/net_httpd.h` | 15+ | Embedded HTTP server with routing and WebSocket. [Guide](net.md#http-server) |
 | Net SNTP | `ove/net_sntp.h` | 4 | Simple NTP time sync. [Guide](net.md#sntp) |
+| PM | `ove/pm.h` | 18 | Power management: sleep states, wake sources, power domains, statistics. [Guide](pm.md) |
+| I2S | `ove/i2s.h` | 13 | I2S / SAI audio bus driver with DMA double-buffered streaming. |
 | Log | `ove/log.h` | — | Compile-time filtered macros: `OVE_LOG_ERR`, `OVE_LOG_WRN`, `OVE_LOG_INF`, `OVE_LOG_DBG`, and `OVE_LOG` |
 | LVGL | `ove/lvgl.h` | — | Unified LVGL include: abstraction API (`lvgl_internal.h`) plus upstream LVGL library headers |
 | LVGL Internal | `ove/lvgl_internal.h` | — | Internal LVGL display integration hooks (lock/unlock/tick/handler/init) |

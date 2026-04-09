@@ -41,13 +41,16 @@ Compiled artifacts are placed under `output/`:
 
 ```
 output/
-└── <board>_<rtos>_<app>/
-    ├── build/          # CMake build directory
-    ├── generated/      # Generated config headers (ove_config.h, etc.)
-    └── images/         # Final binary images (.elf, .bin, .hex)
+└── <board>/
+    └── <rtos>/
+        └── <app>/
+            ├── .config         # Expanded Kconfig
+            ├── build/          # CMake build directory
+            ├── generated/      # Generated config headers (ove_config.h, etc.)
+            └── images/         # Final binary images (.elf, .bin, .hex)
 ```
 
-The workspace name is derived from the active configuration. The `.elf` file in `images/` is the primary build product for flashing or QEMU.
+The workspace path is derived from the active configuration. The `.elf` file in `images/` is the primary build product for flashing or QEMU.
 
 ## Cross-Compilation
 
@@ -63,13 +66,21 @@ The POSIX/host backend compiles with the host's native GCC or Clang and requires
 
 ## Building All Configurations
 
-To build every defconfig in sequence and report failures:
+Build all apps for a specific board/RTOS pair:
+
+```bash
+make allconfigs-host.posix
+make allconfigs-qemu.freertos
+make allconfigs-stm32f746.zephyr
+```
+
+Build every configuration across all boards and RTOSes:
 
 ```bash
 make alldefconfigs
 ```
 
-This finds all files matching `defconfigs/**/*_defconfig`, loads each one, and runs the full pipeline. A summary is printed at the end listing any failures. This is the target used in CI to validate all supported configurations.
+These targets iterate over all app definitions, compose the configuration from fragments, and run the full pipeline. A summary is printed at the end listing any failures. This is the target used in CI to validate all supported configurations.
 
 ## Cleaning
 
