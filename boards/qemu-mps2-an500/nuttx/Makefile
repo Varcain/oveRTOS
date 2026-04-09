@@ -46,7 +46,9 @@ SIM_DIR := $(OVE_DIR)/sim
 CSRCS = $(OVE_BACKEND_SRCS)
 CSRCS := $(filter-out %nuttx_lvgl.c,$(CSRCS))
 CSRCS := $(filter-out %nuttx_audio.c,$(CSRCS))
+ifneq ($(LVGL_INCLUDE_PATH),)
 CSRCS += $(SIM_DIR)/hal/sim_lvgl.c
+endif
 CSRCS += $(SIM_DIR)/hal/sim_audio.c
 CSRCS += $(SIM_DIR)/src/ove_sim_registry.c
 CSRCS += $(SIM_DIR)/src/ove_sim_input.c

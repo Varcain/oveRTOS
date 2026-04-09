@@ -16,6 +16,76 @@ var FRAME_STATE = 0x05;
 var FRAME_LOG   = 0x06;
 var FRAME_INPUT = 0x07;
 
+/* ── Shared constants ────────────────────────────────────────────────── */
+var RING_HDR            = 32;     /* OVE_RING_OFF_BUF — ring header size in bytes */
+var MAX_LOG_ENTRIES     = 200;    /* max entries in event log before trimming */
+var RECONNECT_BASE_MS  = 2000;   /* initial WebSocket reconnect delay */
+var RECONNECT_MAX_MS   = 30000;  /* max reconnect delay after backoff */
+var DEFAULT_SAMPLE_RATE = 16000;  /* fallback audio sample rate */
+
+/* ── Shared helpers ──────────────────────────────────────────────────── */
+
+/** Convert XRGB8888 pixels to RGBA8888 in-place into an ImageData buffer.
+ *  Uses Uint32Array for word-at-a-time conversion. */
+function convertXRGBtoRGBA(src, dst, pixelCount) {
+    var src32 = new Uint32Array(src.buffer, src.byteOffset, pixelCount);
+    var dst32 = new Uint32Array(dst.buffer, dst.byteOffset, pixelCount);
+    for (var i = 0; i < pixelCount; i++) {
+        var px = src32[i]; /* little-endian: BB GG RR XX */
+        dst32[i] = (px & 0x0000FF00)            /* G stays */
+                 | ((px & 0x00FF0000) >>> 16)    /* R → byte 0 */
+                 | ((px & 0x000000FF) << 16)     /* B → byte 2 */
+                 | 0xFF000000;                   /* A = 255 */
+    }
+}
+
+/** Compute canvas-relative coordinates from a mouse or touch event. */
+function canvasCoords(cvs, e) {
+    var r = cvs.getBoundingClientRect();
+    var sx = cvs.width / r.width;
+    var sy = cvs.height / r.height;
+    return {
+        x: Math.round((e.clientX - r.left) * sx),
+        y: Math.round((e.clientY - r.top) * sy)
+    };
+}
+
+/** Attach mouse + touch input handlers to a canvas.
+ *  onInput(x, y, pressed) is called for each pointer event. */
+function attachInputHandlers(cvs, onInput) {
+    if (!cvs) return;
+    cvs.style.touchAction = "none";
+
+    cvs.addEventListener("mousedown", function (e) {
+        var c = canvasCoords(cvs, e);
+        onInput(c.x, c.y, 1);
+        e.preventDefault();
+    });
+    cvs.addEventListener("mouseup", function (e) {
+        var c = canvasCoords(cvs, e);
+        onInput(c.x, c.y, 0);
+    });
+    cvs.addEventListener("mousemove", function (e) {
+        if (!(e.buttons & 1)) return;
+        var c = canvasCoords(cvs, e);
+        onInput(c.x, c.y, 1);
+    });
+    cvs.addEventListener("touchstart", function (e) {
+        var c = canvasCoords(cvs, e.touches[0]);
+        onInput(c.x, c.y, 1);
+        e.preventDefault();
+    }, {passive: false});
+    cvs.addEventListener("touchend", function (e) {
+        onInput(0, 0, 0);
+        e.preventDefault();
+    }, {passive: false});
+    cvs.addEventListener("touchmove", function (e) {
+        var c = canvasCoords(cvs, e.touches[0]);
+        onInput(c.x, c.y, 1);
+        e.preventDefault();
+    }, {passive: false});
+}
+
 /* ── DOM elements (may be null in WASM mode for missing panels) ───── */
 var statusEl     = document.getElementById("status");
 var canvas       = document.getElementById("display-canvas");
@@ -474,37 +544,43 @@ if (!isWasmMode && typeof WinBox !== "undefined") {
 }
 
 /* ── WebSocket connection (POSIX mode only) ───────────────────────── */
+var reconnectDelay = RECONNECT_BASE_MS;
+var reconnectAttempt = 0;
+
 function connect() {
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/ws");
     ws.binaryType = "arraybuffer";
 
     ws.onopen = function () {
+        reconnectDelay = RECONNECT_BASE_MS;
+        reconnectAttempt = 0;
         statusEl.textContent = "Connected";
         statusEl.className = "status connected";
         addEvent("system", "Connected to sim server");
     };
 
     ws.onclose = function () {
-        statusEl.textContent = "Disconnected";
+        reconnectAttempt++;
+        statusEl.textContent = "Reconnecting (" + reconnectAttempt + ")...";
         statusEl.className = "status disconnected";
-        setTimeout(connect, 2000);
+        setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
     };
 
     ws.onerror = function () { ws.close(); };
 
     ws.onmessage = function (e) {
         if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 4) return;
-        var view = new DataView(e.data);
-        var type = view.getUint32(0, true);
-        var payload = e.data.slice(4);
+        var buf = e.data;
+        var type = new DataView(buf).getUint32(0, true);
 
         switch (type) {
-            case FRAME_FB:    handleFramebuffer(payload); break;
-            case FRAME_AUDIO: handleAudio(payload); break;
-            case FRAME_EVENT: handleEvent(payload); break;
-            case FRAME_STATE: handleState(payload); break;
-            case FRAME_LOG:   handleLog(payload); break;
+            case FRAME_FB:    handleFramebuffer(buf, 4); break;
+            case FRAME_AUDIO: handleAudio(buf, 4); break;
+            case FRAME_EVENT: handleEvent(buf, 4); break;
+            case FRAME_STATE: handleState(buf, 4); break;
+            case FRAME_LOG:   handleLog(buf, 4); break;
         }
     };
 }
@@ -522,11 +598,11 @@ function ensureWindow(id) {
 }
 
 /* ── Display rendering (POSIX mode) ───────────────────────────────── */
-function handleFramebuffer(payload) {
+function handleFramebuffer(buf, off) {
     ensureWindow("display");
-    if (!ctx || payload.byteLength < 8) return;
+    if (!ctx || buf.byteLength - off < 8) return;
 
-    var view = new DataView(payload);
+    var view = new DataView(buf, off);
     var x1 = view.getUint16(0, true), y1 = view.getUint16(2, true);
     var x2 = view.getUint16(4, true), y2 = view.getUint16(6, true);
     var w = x2 - x1 + 1, h = y2 - y1 + 1;
@@ -539,16 +615,9 @@ function handleFramebuffer(payload) {
         resolutionEl.textContent = displayWidth + "x" + displayHeight;
     }
 
-    var pixels = new Uint8Array(payload, 8);
+    var pixels = new Uint8Array(buf, off + 8);
     var imgData = ctx.createImageData(w, h);
-    var data = imgData.data;
-    for (var i = 0; i < w * h; i++) {
-        var off = i * 4;
-        data[off]     = pixels[off + 2];
-        data[off + 1] = pixels[off + 1];
-        data[off + 2] = pixels[off];
-        data[off + 3] = 255;
-    }
+    convertXRGBtoRGBA(pixels, imgData.data, w * h);
     ctx.putImageData(imgData, x1, y1);
 
     frameCount++;
@@ -562,11 +631,18 @@ function handleFramebuffer(payload) {
 
 /* ── Audio handling (POSIX WebSocket mode) ────────────────────────── */
 
-/** Draw a float32 or int16 waveform on a canvas. */
+/** Draw a float32 or int16 waveform on a canvas.
+ *  Canvas elements and contexts are cached to avoid per-frame DOM lookups. */
+var _waveCache = {};
 function drawWave(canvasId, samples, color) {
-    var cvs = document.getElementById(canvasId);
-    if (!cvs) return;
-    var wCtx = cvs.getContext("2d");
+    var cached = _waveCache[canvasId];
+    if (!cached) {
+        var cvs = document.getElementById(canvasId);
+        if (!cvs) return;
+        cached = { cvs: cvs, ctx: cvs.getContext("2d") };
+        _waveCache[canvasId] = cached;
+    }
+    var cvs = cached.cvs, wCtx = cached.ctx;
     var cw = cvs.width || cvs.clientWidth;
     var ch = cvs.height;
     if (cw <= 0) { cw = cvs.clientWidth; cvs.width = cw; }
@@ -588,42 +664,74 @@ function drawWave(canvasId, samples, color) {
     wCtx.stroke();
 }
 
-function handleAudio(payload) {
+/* Pending waveform data — decouples audio callbacks from DOM rendering. */
+var _wavePending = {};
+var _waveRafScheduled = false;
+function scheduleWaveDraw(canvasId, samples, color) {
+    _wavePending[canvasId] = { samples: samples, color: color };
+    if (!_waveRafScheduled) {
+        _waveRafScheduled = true;
+        requestAnimationFrame(function () {
+            _waveRafScheduled = false;
+            for (var id in _wavePending) {
+                var p = _wavePending[id];
+                drawWave(id, p.samples, p.color);
+            }
+            _wavePending = {};
+        });
+    }
+}
+
+function handleAudio(buf, off) {
     ensureWindow("audio");
-    if (payload.byteLength < 8) return;
-    var view = new DataView(payload);
+    if (buf.byteLength - off < 8) return;
+    var view = new DataView(buf, off);
     audioSampleRate = view.getUint32(0, true);
     audioChannels   = view.getUint16(4, true);
     audioBitDepth   = view.getUint16(6, true);
     if (audioInfoEl)
         audioInfoEl.textContent = audioSampleRate + " Hz / " + audioChannels + "ch / " + audioBitDepth + "bit";
 
-    var pcmData = new Uint8Array(payload, 8);
+    var pcmData = new Uint8Array(buf, off + 8);
     var samples = new Int16Array(pcmData.buffer, pcmData.byteOffset,
                                  Math.floor(pcmData.length / 2));
     drawWave("waveform-output", samples, "#e94560");
 
     /* Record output if active. */
     if (isRecording) {
-        recordBuffer.push(new Uint8Array(pcmData.buffer.slice(
-            pcmData.byteOffset, pcmData.byteOffset + pcmData.length)));
+        if (recordBytes + pcmData.length > MAX_RECORD_BYTES) {
+            /* Auto-stop to prevent memory exhaustion. */
+            isRecording = false;
+            var recBtn = document.getElementById("audio-record-toggle");
+            if (recBtn) recBtn.textContent = "Record Output";
+            console.warn("[audio] Recording stopped: max size reached (" +
+                (MAX_RECORD_BYTES >> 20) + "MB)");
+        } else {
+            var chunk = new Uint8Array(pcmData.buffer.slice(
+                pcmData.byteOffset, pcmData.byteOffset + pcmData.length));
+            recordBuffer.push(chunk);
+            recordBytes += chunk.length;
+        }
     }
 
     /* Write full data to SharedArrayBuffer ring (no dropping on write side).
      * Clock drift compensation happens in the AudioWorklet (read side). */
-    if (playbackNode && wsAudioRing && wsAudioPos) {
+    if (playbackState && wsAudioRing && wsAudioPos) {
         var wp = Atomics.load(wsAudioPos, 0);
+        var rp = Atomics.load(wsAudioPos, 1);
+        var free = WS_AUDIO_RING_SIZE - (wp - rp);
+        var n = Math.min(pcmData.length, free);
         var mask = WS_AUDIO_RING_SIZE - 1;
-        for (var i = 0; i < pcmData.length; i++) {
+        for (var i = 0; i < n; i++) {
             wsAudioRing[(wp + i) & mask] = pcmData[i];
         }
-        Atomics.store(wsAudioPos, 0, wp + pcmData.length);
+        Atomics.store(wsAudioPos, 0, wp + n);
 
         /* Phase 1: measure rate for 1 second, then start worklet. */
-        if (playbackNode === "measuring") {
+        if (playbackState === "measuring") {
             if (measureStart === 0) measureStart = performance.now();
             var totalWritten = Atomics.load(wsAudioPos, 0);
-            var fwRate = audioSampleRate || 16000;
+            var fwRate = audioSampleRate || DEFAULT_SAMPLE_RATE;
             if ((totalWritten / 2) >= fwRate) {
                 startMeasuredPlayback();
             }
@@ -658,11 +766,14 @@ function refreshAudioDevices() {
 
 var playToggle = document.getElementById("audio-play-toggle");
 var measureStart = 0;
+var playbackState = null;  /* null | "measuring" | "playing" */
 if (playToggle && !isWasmMode) {
     playToggle.addEventListener("click", function () {
-        if (playbackNode) {
-            if (typeof playbackNode.disconnect === "function") playbackNode.disconnect();
+        if (playbackState) {
+            if (playbackNode && typeof playbackNode.disconnect === "function")
+                playbackNode.disconnect();
             playbackNode = null;
+            playbackState = null;
             if (audioCtx) { audioCtx.close(); audioCtx = null; }
             wsAudioSab = null; wsAudioPos = null; wsAudioRing = null;
             this.textContent = "Enable Playback";
@@ -676,15 +787,15 @@ if (playToggle && !isWasmMode) {
 
         /* Allocate SharedArrayBuffer ring: 32-byte header + ring data.
          * Matches ove_sim_audio_ring layout (OVE_RING_OFF_BUF = 32). */
-        wsAudioSab = new SharedArrayBuffer(32 + WS_AUDIO_RING_SIZE);
+        wsAudioSab = new SharedArrayBuffer(RING_HDR + WS_AUDIO_RING_SIZE);
         wsAudioPos = new Uint32Array(wsAudioSab, 0, 2);  /* [writePos, readPos] */
-        wsAudioRing = new Uint8Array(wsAudioSab, 32, WS_AUDIO_RING_SIZE);
+        wsAudioRing = new Uint8Array(wsAudioSab, RING_HDR, WS_AUDIO_RING_SIZE);
         Atomics.store(wsAudioPos, 0, 0);
         Atomics.store(wsAudioPos, 1, 0);
 
         /* Phase 1: measure actual QEMU sample rate over 1 second. */
         measureStart = 0;
-        playbackNode = "measuring";
+        playbackState = "measuring";
         this.textContent = "Measuring...";
     });
 }
@@ -697,9 +808,8 @@ function startMeasuredPlayback() {
     if (actualRate > 48000) actualRate = 48000;
     audioCtx = new AudioContext({ sampleRate: actualRate });
     audioCtx.resume();
-    var outSel = document.getElementById("audio-output-select");
-    if (audioCtx.setSinkId && outSel && outSel.value)
-        audioCtx.setSinkId(outSel.value);
+    if (audioCtx.setSinkId && outSelect && outSelect.value)
+        audioCtx.setSinkId(outSelect.value);
 
     /* AudioWorklet runs on audio thread — immune to main-thread jank.
      * Inline Blob URL avoids file-serving/CORS issues. */
@@ -748,6 +858,7 @@ function startMeasuredPlayback() {
     var workletUrl = URL.createObjectURL(workletBlob);
 
     audioCtx.audioWorklet.addModule(workletUrl).then(function () {
+        URL.revokeObjectURL(workletUrl);
         var node = new AudioWorkletNode(audioCtx, "dashboard-audio", {
             processorOptions: {
                 sab: wsAudioSab,
@@ -758,8 +869,8 @@ function startMeasuredPlayback() {
         });
         node.connect(audioCtx.destination);
         playbackNode = node;
-        var btn = document.getElementById("audio-play-toggle");
-        if (btn) btn.textContent = "Disable Playback";
+        playbackState = "playing";
+        if (playToggle) playToggle.textContent = "Disable Playback";
     }).catch(function (err) {
         console.error("[audio] AudioWorklet failed:", err);
         /* Fallback: ScriptProcessorNode (main thread, may have jitter). */
@@ -789,8 +900,8 @@ function startMeasuredPlayback() {
             Atomics.store(wsAudioPos, 1, rp + Math.min(avail, output.length * 2));
         };
         playbackNode.connect(audioCtx.destination);
-        var btn = document.getElementById("audio-play-toggle");
-        if (btn) btn.textContent = "Disable Playback (fallback)";
+        playbackState = "playing";
+        if (playToggle) playToggle.textContent = "Disable Playback (fallback)";
     });
 }
 
@@ -862,7 +973,7 @@ function startMicCapture() {
         captureNode = audioCtx.createScriptProcessor(1024, 1, 1);
         captureNode.onaudioprocess = function (e) {
             var input = e.inputBuffer.getChannelData(0);
-            drawWave("waveform-input", input, "#4ecca3");
+            scheduleWaveDraw("waveform-input", input, "#4ecca3");
             var pcm = new ArrayBuffer(input.length * 2);
             var view16 = new Int16Array(pcm);
             for (var i = 0; i < input.length; i++) {
@@ -903,7 +1014,7 @@ if (fileBrowseBtn && fileInputEl) {
                 var _sr = _h[(_p + 8) >> 2];
                 if (_sr > 0 && _sr <= 48000) fwRate = _sr;
             }
-            if (!fwRate || fwRate <= 0) fwRate = 16000;
+            if (!fwRate || fwRate <= 0) fwRate = DEFAULT_SAMPLE_RATE;
             /* Temporary AudioContext for decoding. */
             var decodeCtx = new AudioContext();
             decodeCtx.decodeAudioData(ev.target.result).then(function (audioBuffer) {
@@ -954,7 +1065,7 @@ if (filePlayBtn) {
             var _sr = (Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer))[(_p + 8) >> 2];
             if (_sr > 0 && _sr <= 48000) fwRate = _sr;
         }
-        if (!fwRate || fwRate <= 0) fwRate = 16000;
+        if (!fwRate || fwRate <= 0) fwRate = DEFAULT_SAMPLE_RATE;
         var intervalMs = Math.round(chunkSamples / fwRate * 1000);
 
         fileInputTimer = setInterval(function () {
@@ -984,7 +1095,9 @@ if (filePlayBtn) {
 }
 
 /* ── Output recording ─────────────────────────────────────────────── */
+var MAX_RECORD_BYTES = 200 * 1024 * 1024;  /* 200MB cap (~1.7h at 16kHz/16bit) */
 var recordBuffer = [];
+var recordBytes = 0;
 var isRecording = false;
 
 function createWavBlob(chunks, sampleRate, channels, bitsPerSample) {
@@ -1021,7 +1134,7 @@ if (recordToggle) {
             /* Create WAV and trigger download. */
             if (recordBuffer.length > 0) {
                 var wav = createWavBlob(recordBuffer,
-                    audioSampleRate || 16000, audioChannels || 1, audioBitDepth || 16);
+                    audioSampleRate || DEFAULT_SAMPLE_RATE, audioChannels || 1, audioBitDepth || 16);
                 var url = URL.createObjectURL(wav);
                 var a = document.getElementById("audio-download-link");
                 if (a) {
@@ -1029,12 +1142,15 @@ if (recordToggle) {
                     a.download = "ove_audio_" +
                         new Date().toISOString().replace(/[:.]/g, "-") + ".wav";
                     a.click();
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
                 }
             }
             recordBuffer = [];
+            recordBytes = 0;
             return;
         }
         recordBuffer = [];
+        recordBytes = 0;
         isRecording = true;
         this.textContent = "Stop & Save";
     });
@@ -1048,16 +1164,16 @@ if (!isWasmMode) {
 }
 
 /* ── Plugin events ─────────────────────────────────────────────────── */
-function handleEvent(payload) {
-    if (payload.byteLength < 16) return;
-    var view = new DataView(payload);
+function handleEvent(buf, off) {
+    if (buf.byteLength - off < 16) return;
+    var view = new DataView(buf, off);
     addEvent("plugin:" + view.getUint32(0, true),
              "type=" + view.getUint32(4, true) + " t=" + view.getUint32(8, true) + "ms");
 }
 
-function handleLog(payload) {
+function handleLog(buf, off) {
     ensureWindow("events");
-    var text = new TextDecoder().decode(new Uint8Array(payload));
+    var text = new TextDecoder().decode(new Uint8Array(buf, off));
     /* Split into lines — firmware may send multiple lines at once. */
     var lines = text.split("\n");
     for (var i = 0; i < lines.length; i++) {
@@ -1068,11 +1184,11 @@ function handleLog(payload) {
 
 var audioPluginId = 0;  /* default; updated from FRAME_STATE */
 
-function handleState(payload) {
-    if (payload.byteLength < 4) return;
-    var view = new DataView(payload);
+function handleState(buf, off) {
+    if (buf.byteLength - off < 4) return;
+    var view = new DataView(buf, off);
     var id = view.getUint32(0, true);
-    var json = new TextDecoder().decode(new Uint8Array(payload, 4));
+    var json = new TextDecoder().decode(new Uint8Array(buf, off + 4));
     addEvent("state:" + id, json);
     try {
         var obj = JSON.parse(json);
@@ -1092,16 +1208,39 @@ if (scrollBtn) {
     });
 }
 
+var _logQueue = [];
+var _logRafScheduled = false;
+
+function _flushLogQueue() {
+    _logRafScheduled = false;
+    if (!eventLog || _logQueue.length === 0) return;
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < _logQueue.length; i++) frag.appendChild(_logQueue[i]);
+    _logQueue = [];
+    eventLog.appendChild(frag);
+    while (eventLog.children.length > MAX_LOG_ENTRIES) eventLog.removeChild(eventLog.firstChild);
+    if (autoScroll) eventLog.scrollTop = eventLog.scrollHeight;
+}
+
 function addEvent(type, msg) {
     if (!eventLog) return;
     var el = document.createElement("div");
     el.className = "entry";
     var time = new Date().toTimeString().split(" ")[0];
-    el.innerHTML = '<span class="time">' + time + '</span>' +
-                   '<span class="type">[' + type + ']</span>' + msg;
-    eventLog.appendChild(el);
-    if (autoScroll) eventLog.scrollTop = eventLog.scrollHeight;
-    while (eventLog.children.length > 200) eventLog.removeChild(eventLog.firstChild);
+    var timeSpan = document.createElement("span");
+    timeSpan.className = "time";
+    timeSpan.textContent = time;
+    var typeSpan = document.createElement("span");
+    typeSpan.className = "type";
+    typeSpan.textContent = "[" + type + "]";
+    el.appendChild(timeSpan);
+    el.appendChild(typeSpan);
+    el.appendChild(document.createTextNode(msg));
+    _logQueue.push(el);
+    if (!_logRafScheduled) {
+        _logRafScheduled = true;
+        requestAnimationFrame(_flushLogQueue);
+    }
 }
 
 /* ── Send pointer input to firmware (POSIX mode) ──────────────────── */
@@ -1118,58 +1257,7 @@ function sendInput(x, y, pressed) {
 
 function attachCanvasInput() {
     if (!canvas || isWasmMode) return;
-
-    canvas.style.touchAction = "none";
-
-    function canvasCoords(e) {
-        var r = canvas.getBoundingClientRect();
-        var sx = canvas.width / r.width;
-        var sy = canvas.height / r.height;
-        return {
-            x: Math.round((e.clientX - r.left) * sx),
-            y: Math.round((e.clientY - r.top) * sy)
-        };
-    }
-
-    canvas.addEventListener("mousedown", function (e) {
-        var c = canvasCoords(e);
-        sendInput(c.x, c.y, 1);
-        e.preventDefault();
-    });
-    canvas.addEventListener("mouseup", function (e) {
-        var c = canvasCoords(e);
-        sendInput(c.x, c.y, 0);
-    });
-    canvas.addEventListener("mousemove", function (e) {
-        if (!(e.buttons & 1)) return;
-        var c = canvasCoords(e);
-        sendInput(c.x, c.y, 1);
-    });
-
-    canvas.addEventListener("touchstart", function (e) {
-        var t = e.touches[0];
-        var r = canvas.getBoundingClientRect();
-        var sx = canvas.width / r.width;
-        var sy = canvas.height / r.height;
-        sendInput(
-            Math.round((t.clientX - r.left) * sx),
-            Math.round((t.clientY - r.top) * sy), 1);
-        e.preventDefault();
-    }, {passive: false});
-    canvas.addEventListener("touchend", function (e) {
-        sendInput(0, 0, 0);
-        e.preventDefault();
-    }, {passive: false});
-    canvas.addEventListener("touchmove", function (e) {
-        var t = e.touches[0];
-        var r = canvas.getBoundingClientRect();
-        var sx = canvas.width / r.width;
-        var sy = canvas.height / r.height;
-        sendInput(
-            Math.round((t.clientX - r.left) * sx),
-            Math.round((t.clientY - r.top) * sy), 1);
-        e.preventDefault();
-    }, {passive: false});
+    attachInputHandlers(canvas, sendInput);
 }
 
 /* ── Send command to firmware ──────────────────────────────────────── */
@@ -1198,7 +1286,7 @@ function sendCmd(pluginId, cmdType, data) {
             var rp = Atomics.load(h32, (cp + 4) >> 2);
             var free = rs - (wp - rp);
             var n = Math.min(data.length, free);
-            var off = cp + 32; /* OVE_RING_OFF_BUF */
+            var off = cp + RING_HDR;
             for (var i = 0; i < n; i++)
                 h8[off + ((wp + i) & mask)] = data[i];
             Atomics.store(h32, cp >> 2, wp + n);
@@ -1222,8 +1310,11 @@ function initConsoleInput() {
                 Module.ccall('ove_wasm_console_push', null,
                     ['number'], [text.charCodeAt(i)]);
         } else {
+            /* Batch entire string into a single WebSocket message. */
+            var bytes = new Uint8Array(text.length);
             for (var i = 0; i < text.length; i++)
-                sendCmd(0xFFFFFFFF, 0, new Uint8Array([text.charCodeAt(i) & 0xFF]));  /* console sentinel */
+                bytes[i] = text.charCodeAt(i) & 0xFF;
+            sendCmd(0xFFFFFFFF, 0, bytes);  /* console sentinel */
         }
         conInput.value = "";
     }
@@ -1282,14 +1373,7 @@ window.initWasmMode = function () {
         var pxPtr = Module.ccall('ove_wasm_fb_get_pixels', 'number');
         var src = new Uint8Array(Module.HEAPU8.buffer, pxPtr, size);
         var imgData = fCtx.createImageData(w, h);
-        var dst = imgData.data;
-        for (var i = 0; i < w * h; i++) {
-            var off = i * 4;
-            dst[off]     = src[off + 2];
-            dst[off + 1] = src[off + 1];
-            dst[off + 2] = src[off];
-            dst[off + 3] = 255;
-        }
+        convertXRGBtoRGBA(src, imgData.data, w * h);
         fCtx.putImageData(imgData, 0, 0);
 
         fFrames++;
@@ -1304,66 +1388,17 @@ window.initWasmMode = function () {
 
     /* ── Mouse/touch input forwarding to LVGL ──────────────────── */
     if (fCanvas) {
-        function wasmCoords(e) {
-            var r = fCanvas.getBoundingClientRect();
-            var sx = fCanvas.width / r.width;
-            var sy = fCanvas.height / r.height;
-            return [Math.round((e.clientX - r.left) * sx),
-                    Math.round((e.clientY - r.top) * sy)];
-        }
-        fCanvas.addEventListener('mousedown', function(e) {
-            var c = wasmCoords(e);
+        attachInputHandlers(fCanvas, function (x, y, pressed) {
             Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'], [c[0], c[1], 1]);
-            e.preventDefault();
+                ['number','number','number'], [x, y, pressed]);
         });
-        fCanvas.addEventListener('mouseup', function(e) {
-            var c = wasmCoords(e);
-            Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'], [c[0], c[1], 0]);
-        });
-        fCanvas.addEventListener('mousemove', function(e) {
-            if (!(e.buttons & 1)) return;
-            var c = wasmCoords(e);
-            Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'], [c[0], c[1], 1]);
-        });
-        fCanvas.addEventListener('touchstart', function(e) {
-            var t = e.touches[0];
-            var r = fCanvas.getBoundingClientRect();
-            var sx = fCanvas.width / r.width;
-            var sy = fCanvas.height / r.height;
-            Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'],
-                [Math.round((t.clientX - r.left) * sx),
-                 Math.round((t.clientY - r.top) * sy), 1]);
-            e.preventDefault();
-        }, {passive: false});
-        fCanvas.addEventListener('touchend', function(e) {
-            Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'], [0, 0, 0]);
-            e.preventDefault();
-        }, {passive: false});
-        fCanvas.addEventListener('touchmove', function(e) {
-            var t = e.touches[0];
-            var r = fCanvas.getBoundingClientRect();
-            var sx = fCanvas.width / r.width;
-            var sy = fCanvas.height / r.height;
-            Module.ccall('ove_wasm_input_set', null,
-                ['number','number','number'],
-                [Math.round((t.clientX - r.left) * sx),
-                 Math.round((t.clientY - r.top) * sy), 1]);
-            e.preventDefault();
-        }, {passive: false});
     }
 
     /* ── WASM audio: playback via ScriptProcessorNode ──────────── */
-    var RING_SIZE = 65536;  /* matches OVE_SIM_AUDIO_RING_SIZE */
-    var RING_HDR = 32;      /* matches OVE_RING_OFF_BUF */
+    var RING_SIZE = WS_AUDIO_RING_SIZE;
 
-    var wPlayToggle = document.getElementById('audio-play-toggle');
-    if (wPlayToggle) {
-        wPlayToggle.addEventListener('click', function() {
+    if (playToggle) {
+        playToggle.addEventListener('click', function() {
             if (playbackNode && typeof playbackNode.disconnect === 'function') {
                 playbackNode.disconnect();
                 playbackNode = null;
@@ -1374,12 +1409,11 @@ window.initWasmMode = function () {
 
             var pbPtr = Module.ccall('ove_wasm_audio_get_playback_ptr', 'number');
             var heap32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-            var sampleRate = heap32[(pbPtr + 8) >> 2] || 16000;
+            var sampleRate = heap32[(pbPtr + 8) >> 2] || DEFAULT_SAMPLE_RATE;
 
             audioCtx = new AudioContext({ sampleRate: sampleRate });
-            var outSel = document.getElementById('audio-output-select');
-            if (audioCtx.setSinkId && outSel && outSel.value)
-                audioCtx.setSinkId(outSel.value);
+            if (audioCtx.setSinkId && outSelect && outSelect.value)
+                audioCtx.setSinkId(outSelect.value);
 
             var wpOff = pbPtr;
             var rpOff = pbPtr + 4;
@@ -1397,9 +1431,9 @@ window.initWasmMode = function () {
                 var avail = wp - rp;
                 for (var i = 0; i < output.length; i++) {
                     if (i * 2 < avail) {
-                        var idx = bufOff + ((rp + i * 2) & (RING_SIZE - 1));
-                        var lo = h8[idx];
-                        var hi = h8[idx + 1];
+                        var bi = (rp + i * 2) & (RING_SIZE - 1);
+                        var lo = h8[bufOff + bi];
+                        var hi = h8[bufOff + ((bi + 1) & (RING_SIZE - 1))];
                         var s = (hi << 8) | lo;
                         if (s > 32767) s -= 65536;
                         output[i] = s / 32768.0;
@@ -1416,7 +1450,7 @@ window.initWasmMode = function () {
             playbackNode.onaudioprocess = function(e) {
                 var output = e.outputBuffer.getChannelData(0);
                 drainRing(output);
-                drawWave('waveform-output', output, '#e94560');
+                scheduleWaveDraw('waveform-output', output, '#e94560');
             };
             playbackNode.connect(audioCtx.destination);
             self.textContent = 'Disable Playback';
@@ -1448,7 +1482,7 @@ window.initWasmMode = function () {
                 captureStream = stream;
                 var capPtr = Module.ccall('ove_wasm_audio_get_capture_ptr', 'number');
                 var tmpH32 = Module.HEAPU32 || new Uint32Array(Module.HEAPU8.buffer);
-                var appRate = tmpH32[(capPtr + 8) >> 2] || 16000;
+                var appRate = tmpH32[(capPtr + 8) >> 2] || DEFAULT_SAMPLE_RATE;
                 if (!audioCtx) audioCtx = new AudioContext({ sampleRate: appRate });
 
                 var wpOff = capPtr;
@@ -1469,12 +1503,12 @@ window.initWasmMode = function () {
                     for (var i = 0; i < samplesToWrite; i++) {
                         var s = Math.max(-1, Math.min(1, input[i]));
                         var val = (s < 0 ? s * 32768 : s * 32767) | 0;
-                        var idx = bufOff + ((wp + i * 2) & (RING_SIZE - 1));
-                        h8[idx] = val & 0xFF;
-                        h8[idx + 1] = (val >> 8) & 0xFF;
+                        var bi = (wp + i * 2) & (RING_SIZE - 1);
+                        h8[bufOff + bi] = val & 0xFF;
+                        h8[bufOff + ((bi + 1) & (RING_SIZE - 1))] = (val >> 8) & 0xFF;
                     }
                     Atomics.store(h32, wpOff >> 2, wp + samplesToWrite * 2);
-                    drawWave('waveform-input', input, '#4ecca3');
+                    scheduleWaveDraw('waveform-input', input, '#4ecca3');
                 };
                 captureSource.connect(captureNode);
                 captureNode.connect(audioCtx.destination);

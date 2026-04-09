@@ -13,10 +13,10 @@
 #include "stm32f7xx_hal.h"
 
 #if configSUPPORT_DYNAMIC_ALLOCATION
-/* FreeRTOS heap — place in main RAM (.bss) when networking is enabled
- * (needs >64KB), otherwise use the dedicated .RamData2 section.
+/* FreeRTOS heap — use dedicated .RamData2 section (64 KB) when the heap fits,
+ * otherwise fall back to main RAM (.bss).
  * Not allocated at all in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0). */
-#ifdef HAL_ETH_MODULE_ENABLED
+#if defined(HAL_ETH_MODULE_ENABLED) || configTOTAL_HEAP_SIZE > 0x10000
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8)));
 #else
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".RamData2")));

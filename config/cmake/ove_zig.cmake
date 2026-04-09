@@ -160,8 +160,11 @@ function(ove_build_zig_lib TARGET)
         endif()
     endif()
 
-    # Native host multiarch includes (Ubuntu/Debian: /usr/include/x86_64-linux-gnu)
+    # Native host system includes (Zig's @cImport doesn't inherit GCC paths)
     if(ZIG_IS_NATIVE AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+        if(EXISTS "/usr/include")
+            list(APPEND ZIG_INCLUDE_ARGS "-I/usr/include")
+        endif()
         execute_process(
             COMMAND ${CMAKE_C_COMPILER} -print-multiarch
             OUTPUT_VARIABLE _MULTIARCH

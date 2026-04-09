@@ -4,15 +4,15 @@
 //
 // This file is part of oveRTOS.
 
-//! Shared build-script logic for oveRTOS Rust applications.
-//!
-//! Include this from an app's `build.rs` via:
-//!
-//! ```ignore
-//! include!("../ove_build_common.rs");
-//! ```
-//!
-//! Then call `ove_detect_config()` in `main()`.
+// Shared build-script logic for oveRTOS Rust applications.
+//
+// Include this from an app's `build.rs` via:
+//
+// ```ignore
+// include!("../ove_build_common.rs");
+// ```
+//
+// Then call `ove_detect_config()` in `main()`.
 
 /// Read `ove_config.h` and emit `cargo:rustc-cfg` flags for all oveRTOS
 /// modules, RTOS backends, and zero-heap mode.

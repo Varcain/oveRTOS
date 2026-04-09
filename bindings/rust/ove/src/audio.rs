@@ -303,6 +303,11 @@ impl AudioBuf {
     pub fn frames(&self) -> u32 {
         unsafe { (*self.raw).frames }
     }
+
+    /// Number of interleaved channels in this buffer.
+    pub fn channels(&self) -> u32 {
+        unsafe { (*(*self.raw).fmt).channels }
+    }
 }
 
 /// Trait for implementing custom audio processing nodes.
