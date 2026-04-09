@@ -76,6 +76,7 @@ CFLAGS += -I$(OVE_DIR)/include
 CFLAGS += -I$(OVE_DIR)/backends/nuttx/include
 CFLAGS += -I$(OVE_DIR)/backends/common
 CFLAGS += -I$(OVE_GEN_DIR)
+CFLAGS += -I$(OVE_GEN_DIR)/generated_models
 
 # FPU flags (ensure hard-float even when base NuttX config lacks it)
 ifeq ($(CONFIG_ARCH_FPU),y)

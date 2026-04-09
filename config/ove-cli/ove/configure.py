@@ -98,6 +98,31 @@ def generate_configs(ws):
                         os.path.join(output_dir, "ove_sources.mk"), config)
         print(f"  Generated: {output_dir}/ove_sources.mk")
 
+    # Generate model C arrays from .tflite files (needed by NuttX and
+    # any other Make-based build that doesn't call OveModels.cmake).
+    if get_bool(config, "CONFIG_OVE_INFER"):
+        model_dir = os.path.join(ws.ove_dir, "models")
+        gen_models_dir = os.path.join(output_dir, "generated_models")
+        convert_script = os.path.join(model_dir, "convert.py")
+        if os.path.isdir(model_dir) and os.path.isfile(convert_script):
+            import glob
+            tflite_files = glob.glob(os.path.join(model_dir, "**/*.tflite"),
+                                     recursive=True)
+            if tflite_files:
+                os.makedirs(gen_models_dir, exist_ok=True)
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, convert_script,
+                     "--model-dir", model_dir,
+                     "--output-dir", gen_models_dir],
+                    capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"  Generated: {gen_models_dir}/ "
+                          f"({len(tflite_files)} models)")
+                else:
+                    print(f"  Warning: model conversion failed: "
+                          f"{result.stderr.strip()}")
+
     print("Config generation complete.")
 
 

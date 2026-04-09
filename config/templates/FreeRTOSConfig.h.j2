@@ -23,7 +23,7 @@
 #define configMAX_PRIORITIES			( {{ config.get("CONFIG_FREERTOS_MAX_PRIORITIES", 12) }})
 #define configSTACK_DEPTH_TYPE			uint32_t
 #define configMINIMAL_STACK_SIZE		( (configSTACK_DEPTH_TYPE) {{ config.get("CONFIG_FREERTOS_MINIMAL_STACK_SIZE", 128) }} )
-#define configTOTAL_HEAP_SIZE			( ( size_t ) ( {{ config.get("CONFIG_FREERTOS_TOTAL_HEAP_SIZE", 65536) }} ) )
+#define configTOTAL_HEAP_SIZE			( {{ config.get("CONFIG_FREERTOS_TOTAL_HEAP_SIZE", 65536) }} )
 #define configMAX_TASK_NAME_LEN			( {{ config.get("CONFIG_FREERTOS_MAX_TASK_NAME_LEN", 16) }} )
 #define configUSE_TRACE_FACILITY		1
 #define configUSE_16_BIT_TICKS			0

@@ -50,9 +50,12 @@ int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 	/* The Zephyr kernel enters the forced state on next idle.
 	 * k_sleep triggers the idle path.
 	 */
-	k_msleep(expected_idle_ms == OVE_WAIT_FOREVER ? K_FOREVER : expected_idle_ms);
+	if (expected_idle_ms == OVE_WAIT_FOREVER)
+		k_sleep(K_FOREVER);
+	else
+		k_msleep(expected_idle_ms);
 #else
-	k_msleep(expected_idle_ms == OVE_WAIT_FOREVER ? 1 : expected_idle_ms);
+	k_msleep(expected_idle_ms == OVE_WAIT_FOREVER ? 1 : (int32_t)expected_idle_ms);
 #endif
 	return OVE_OK;
 }
@@ -97,15 +100,9 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain)
 
 uint32_t ove_hal_pm_get_next_timeout_ms(void)
 {
-	/* Zephyr's timeout infrastructure provides the next event */
-	k_timeout_t next = sys_clock_timeout_end_calc(K_FOREVER);
-	int64_t remaining_ms = k_ticks_to_ms_floor64(next.ticks - k_uptime_ticks());
-
-	if (remaining_ms <= 0)
-		return 0;
-	if (remaining_ms > (int64_t)OVE_WAIT_FOREVER)
-		return OVE_WAIT_FOREVER;
-	return (uint32_t)remaining_ms;
+	/* Return OVE_WAIT_FOREVER — Zephyr's kernel idle path handles
+	 * the actual next-timeout calculation internally. */
+	return OVE_WAIT_FOREVER;
 }
 
 void ove_hal_pm_idle_hook(void)

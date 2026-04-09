@@ -71,6 +71,7 @@ CFLAGS += -I$(OVE_DIR)/backends/common
 CFLAGS += -I$(OVE_DIR)/sim/include
 CFLAGS += -I$(OVE_DIR)/sim/src
 CFLAGS += -I$(OVE_GEN_DIR)
+CFLAGS += -I$(OVE_GEN_DIR)/generated_models
 CFLAGS += -I$(QEMU_SRC_DIR)
 ifneq ($(LVGL_INCLUDE_PATH),)
 CFLAGS += -I$(LVGL_INCLUDE_PATH)

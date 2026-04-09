@@ -8,7 +8,11 @@ APP_CSRCS += $(OVE_APP_DIR)/{{ src }}
 {% endfor %}
 {% elif app.lang == 'cpp' %}
 {% for src in app.sources %}
+{% if src.endswith('.c') %}
+APP_CSRCS += $(OVE_APP_DIR)/{{ src }}
+{% else %}
 APP_CXXSRCS += $(OVE_APP_DIR)/{{ src }}
+{% endif %}
 {% endfor %}
 {% elif app.lang == 'rust' %}
 APP_RUST_CRATE_DIR = $(OVE_APP_DIR){% if app.rust.crate_dir != '.' %}/{{ app.rust.crate_dir }}{% endif %}

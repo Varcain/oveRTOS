@@ -19,7 +19,11 @@
 #include "ove_backend_common.h"
 #include "ove/sim/ove_sim_display.h"
 #include "ove/sim/ove_sim_transport.h"
-#include "lvgl.h"
+#if defined(__ZEPHYR__)
+#include <lvgl.h>
+#else
+#include <lvgl/lvgl.h>
+#endif
 #include "board_desc.h"
 
 #include <stdio.h>

@@ -14,8 +14,10 @@
 #include "ove/log.h"
 #include "ove_backend_common.h"
 
-#include <nuttx/power/pm.h>
 #include <unistd.h>
+
+#ifdef CONFIG_PM
+#include <nuttx/power/pm.h>
 
 /* Map oveRTOS states to NuttX PM states */
 static enum pm_state_e to_nuttx_state(ove_pm_state_t state)
@@ -27,21 +29,24 @@ static enum pm_state_e to_nuttx_state(ove_pm_state_t state)
 	default:                      return PM_NORMAL;
 	}
 }
+#endif /* CONFIG_PM */
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
+#ifdef CONFIG_PM
 	enum pm_state_e nuttx_state = to_nuttx_state(state);
 
 	(void)expected_idle_ms;
 
 	pm_changestate(PM_IDLE_DOMAIN, nuttx_state);
-	/* NuttX handles the actual sleep in the idle loop after
-	 * the state change.  Sleep briefly to yield.
-	 */
 	usleep(expected_idle_ms == OVE_WAIT_FOREVER ? 1000 :
 	       expected_idle_ms * 1000);
-	/* Return to normal on wake */
 	pm_changestate(PM_IDLE_DOMAIN, PM_NORMAL);
+#else
+	(void)state;
+	usleep(expected_idle_ms == OVE_WAIT_FOREVER ? 1000 :
+	       expected_idle_ms * 1000);
+#endif
 	return OVE_OK;
 }
 

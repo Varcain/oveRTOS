@@ -42,6 +42,19 @@ target_sources(app PRIVATE
     ${OVE_BACKEND_SOURCES}
 )
 
+# ML inference (TensorFlow Lite Micro)
+if(OVE_INFER AND NOT TARGET ove_tflm)
+    set(OVE_INCLUDE_DIR ${OVE_DIR}/include)
+    set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
+    set(OVE_CMSIS5_DIR ${OVE_DIR}/dl/CMSIS_5/CMSIS)
+    set(OVE_CMSIS_NN_DIR ${OVE_CMSIS5_DIR}/NN)
+    include(${OVE_DIR}/cmake/OveTflm.cmake)
+    ove_build_tflm()
+    target_link_libraries(ove_tflm PRIVATE zephyr_interface)
+    zephyr_link_libraries(ove_tflm)
+    target_link_libraries(app PRIVATE stdc++)
+endif()
+
 # Application code (generated from app.yaml by 'ove configure')
 if(EXISTS "${OVE_GEN_DIR}/app_sources.cmake")
     include(${OVE_GEN_DIR}/app_sources.cmake)

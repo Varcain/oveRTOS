@@ -74,6 +74,9 @@ if(OVE_NET_TLS)
     ove_build_mbedtls()
 endif()
 
+# ML inference (TensorFlow Lite Micro)
+ove_build_tflm_if_enabled()
+
 # LVGL library
 ove_build_lvgl()
 

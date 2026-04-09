@@ -17,6 +17,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#ifndef __WFI
+#define __WFI() __asm volatile ("wfi" ::: "memory")
+#endif
+
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
 	TickType_t expected_ticks;
@@ -126,7 +130,7 @@ uint32_t ove_hal_pm_get_next_timeout_ms(void)
  * ove_pm_idle_process() explicitly.
  */
 #if configUSE_IDLE_HOOK
-void vApplicationIdleHook(void)
+__attribute__((weak)) void vApplicationIdleHook(void)
 {
 	ove_pm_idle_process();
 }
