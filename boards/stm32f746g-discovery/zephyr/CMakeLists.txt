@@ -44,6 +44,9 @@ target_sources(app PRIVATE
 
 # ML inference (TensorFlow Lite Micro)
 if(OVE_INFER AND NOT TARGET ove_tflm)
+    if(NOT DEFINED OVE_DL_DIR)
+        set(OVE_DL_DIR "${OVE_DIR}/dl")
+    endif()
     set(OVE_INCLUDE_DIR ${OVE_DIR}/include)
     set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
     set(OVE_CMSIS5_DIR ${OVE_DIR}/dl/CMSIS_5/CMSIS)

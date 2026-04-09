@@ -24,7 +24,6 @@
 
 #include "ove/ove.h"
 #include "ove/infer.h"
-#include "board_desc.h"
 
 #include <string.h>
 
@@ -49,15 +48,9 @@ static const char *labels[CATEGORY_COUNT] = {
 };
 
 /* ── Shared static memory ──────────────────────────────────────────── */
-/* Place large buffers in SDRAM on STM32 to avoid overflowing internal RAM */
-#if defined(CONFIG_OVE_RTOS_FREERTOS) && defined(OVE_MEMORY_SDRAM_KB)
-#define SDRAM_BSS __attribute__((section(".sdram_bss")))
-#else
-#define SDRAM_BSS
-#endif
-static ring_buffer_t SDRAM_BSS audio_ring;
+static ring_buffer_t audio_ring;
 static int8_t features[FEATURE_COUNT][FEATURE_SIZE];
-static uint8_t __attribute__((aligned(16))) SDRAM_BSS arena[ARENA_SIZE];
+static uint8_t __attribute__((aligned(16))) arena[ARENA_SIZE];
 static ove_model_storage_t model_storage;
 
 /* ── Audio callback ────────────────────────────────────────────────── */
@@ -243,7 +236,7 @@ static int classify_keyword(int *prediction_idx, float *confidence)
 
 /* ── Inference thread ──────────────────────────────────────────────── */
 
-static int16_t SDRAM_BSS audio_window[AUDIO_SAMPLE_FREQ]; /* 1 second */
+static int16_t audio_window[AUDIO_SAMPLE_FREQ]; /* 1 second */
 
 static void infer_thread(void *arg)
 {

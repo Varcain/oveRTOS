@@ -13,10 +13,14 @@
 #include "stm32f7xx_hal.h"
 
 #if configSUPPORT_DYNAMIC_ALLOCATION
-/* FreeRTOS heap — use dedicated .RamData2 section (64 KB) when the heap fits,
- * otherwise fall back to main RAM (.bss).
+/* FreeRTOS heap placement:
+ * - SDRAM when inference is enabled (TFLM + models need significant RAM)
+ * - .RamData2 (64 KB DTCM) when the heap fits
+ * - Main RAM (.bss) otherwise
  * Not allocated at all in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0). */
-#if defined(HAL_ETH_MODULE_ENABLED) || configTOTAL_HEAP_SIZE > 0x10000
+#if defined(CONFIG_OVE_INFER)
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8), section(".sdram_bss")));
+#elif defined(HAL_ETH_MODULE_ENABLED) || configTOTAL_HEAP_SIZE > 0x10000
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8)));
 #else
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".RamData2")));

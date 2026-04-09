@@ -49,7 +49,8 @@ ZIG_INCLUDE_ARGS := \
 	-I$(OVE_DIR)/backends/nuttx/include \
 	-I$(NUTTX_BUILD_DIR)/include \
 	-I$(LVGL_INCLUDE_PATH) \
-	-I$(LVGL_PARENT_PATH)
+	-I$(LVGL_PARENT_PATH) \
+	-DLV_CONF_INCLUDE_SIMPLE
 
 # ── Generate storage sizes for zero-heap mode ────────────────────────
 # When CONFIG_OVE_ZERO_HEAP is enabled, compile a C probe to measure
