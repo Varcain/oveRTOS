@@ -429,6 +429,169 @@ def build_nuttx(ws):
     if os.path.isfile(dep_file):
         os.unlink(dep_file)
 
+    # Generate TFLM source list for NuttX (compiled as CXXSRCS within
+    # NuttX's own build system, which handles C++ include paths correctly).
+    if ws.config.get("CONFIG_OVE_INFER") in (True, "y"):
+        tflm_dir = os.path.join(ws.ws_dl_dir, "tflite-micro")
+        if os.path.isdir(tflm_dir):
+            import glob
+            tflm_srcs = []
+            for pattern in [
+                "tensorflow/lite/micro/*.cc",
+                "tensorflow/lite/micro/arena_allocator/*.cc",
+                "tensorflow/lite/micro/memory_planner/*.cc",
+                "tensorflow/lite/micro/tflite_bridge/*.cc",
+                "tensorflow/lite/micro/kernels/*.cc",
+                "tensorflow/lite/core/c/*.cc",
+                "tensorflow/lite/core/api/*.cc",
+                "tensorflow/lite/kernels/*.cc",
+                "tensorflow/lite/kernels/internal/*.cc",
+                "tensorflow/compiler/mlir/lite/core/api/*.cc",
+                "tensorflow/compiler/mlir/lite/schema/*.cc",
+                "tensorflow/lite/micro/tflite_bridge/*.cc",
+                "signal/micro/kernels/*.cc",
+                "signal/src/*.cc",
+                "signal/src/kiss_fft_wrappers/*.cc",
+            ]:
+                tflm_srcs.extend(glob.glob(os.path.join(tflm_dir, pattern)))
+            # Exclude test files and files with GCC 15 template issues
+            tflm_srcs = [s for s in tflm_srcs
+                         if not s.endswith("_test.cc")
+                         and "test_helpers" not in s
+                         and "micro_time.cc" not in s]
+            # Add oveRTOS inference wrapper
+            tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
+                                          "ove_infer.cc"))
+            tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
+                                          "tflm", "ove_tflm_debug_log.cc"))
+            tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
+                                          "tflm", "ove_tflm_time.cc"))
+            # Write TFLM source list as a makefile fragment
+            tflm_mk = os.path.join(ws.gen_dir, "ove_tflm_sources.mk")
+            tflm_downloads = os.path.join(tflm_dir,
+                "tensorflow/lite/micro/tools/make/downloads")
+            with open(tflm_mk, "w") as f:
+                f.write("# Auto-generated TFLM sources for NuttX\n")
+                # Override CXXEXT to .cc (NuttX defaults to .cxx)
+                # unless ove_app_lang.mk already set it to .cpp
+                f.write("ifeq ($(APP_LANG),cpp)\n")
+                f.write("# C++ app: keep CXXEXT=.cpp from ove_app_lang.mk\n")
+                f.write("else\n")
+                f.write("CXXEXT = .cc\n")
+                f.write("endif\n\n")
+                # Create .cpp symlinks for C++ apps (CXXEXT=.cpp)
+                link_dir = os.path.join(ws.gen_dir, "tflm_links")
+                cc_srcs = []
+                cpp_srcs = []
+                for s in tflm_srcs:
+                    cc_srcs.append(s)
+                    if s.endswith(".cc"):
+                        rel = os.path.relpath(s, tflm_dir) if s.startswith(tflm_dir) \
+                              else os.path.relpath(s, ws.ove_dir)
+                        link_path = os.path.join(link_dir,
+                                                 rel.replace(".cc", ".cpp"))
+                        os.makedirs(os.path.dirname(link_path), exist_ok=True)
+                        if os.path.exists(link_path):
+                            os.unlink(link_path)
+                        os.symlink(os.path.abspath(s), link_path)
+                        cpp_srcs.append(link_path)
+                    else:
+                        cpp_srcs.append(s)
+                # Use .cc sources when CXXEXT=.cc, .cpp symlinks otherwise
+                f.write("ifeq ($(CXXEXT),.cc)\n")
+                f.write("CXXSRCS +=")
+                for s in cc_srcs:
+                    f.write(f" \\\n    {s}")
+                f.write("\n")
+                f.write("else\n")
+                f.write("CXXSRCS +=")
+                for s in cpp_srcs:
+                    f.write(f" \\\n    {s}")
+                f.write("\n")
+                f.write("endif\n\n")
+                f.write(f"CXXFLAGS += -I{tflm_dir}\n")
+                f.write(f"CXXFLAGS += -I{tflm_downloads}/flatbuffers/include\n")
+                f.write(f"CXXFLAGS += -I{tflm_downloads}/gemmlowp\n")
+                f.write(f"CXXFLAGS += -I{tflm_downloads}/ruy\n")
+                f.write(f"CXXFLAGS += -I{tflm_dir}/signal/micro/kernels\n")
+                f.write(f"CXXFLAGS += -I{tflm_dir}/signal/src\n")
+                f.write(f"CXXFLAGS += -I{tflm_downloads}/kissfft\n")
+                f.write(f"CXXFLAGS += -I{tflm_dir}/signal/src/kiss_fft_wrappers\n")
+                # kissfft C sources
+                kissfft_dir = os.path.join(tflm_downloads, "kissfft")
+                f.write(f"CSRCS += {kissfft_dir}/kiss_fft.c\n")
+                f.write(f"CSRCS += {kissfft_dir}/tools/kiss_fftr.c\n")
+                f.write(f"CFLAGS += -I{kissfft_dir}\n")
+                f.write("CXXFLAGS += -DTF_LITE_STATIC_MEMORY\n")
+                f.write("CXXFLAGS += -DTF_LITE_USE_GLOBAL_MAX\n")
+                f.write("CXXFLAGS += -DTF_LITE_USE_GLOBAL_MIN\n")
+                f.write("CXXFLAGS += -fno-threadsafe-statics\n")
+                f.write("CXXFLAGS += -fno-exceptions -fno-rtti\n")
+                # Note: don't set -std= here. C apps get NuttX default,
+                # C++ apps get -std=c++20 from ove_app_lang.mk.
+                f.write("CXXFLAGS += -w -fpermissive\n")
+                # GCC 15 rejects the int16 LUTPopulate call in
+                # softmax_common.cc (lambda doesn't decay to function
+                # pointer in template overload resolution).  Patch the
+                # source to use an explicit function pointer cast.
+                softmax_src = os.path.join(tflm_dir, "tensorflow", "lite",
+                    "micro", "kernels", "softmax_common.cc")
+                if os.path.isfile(softmax_src):
+                    with open(softmax_src, "r") as sf:
+                        src = sf.read()
+                    old = ("[](float value) { return std::exp(value); }"
+                           ", op_data->exp_lut")
+                    new = ("static_cast<float(*)(float)>("
+                           "[](float value) -> float { return std::exp(value); })"
+                           ", op_data->exp_lut")
+                    if old in src:
+                        with open(softmax_src, "w") as sf:
+                            sf.write(src.replace(old, new))
+                # NuttX adds -nostdinc++ globally.  Re-add the toolchain's
+                # C++ standard library headers via -idirafter (lower priority
+                # than NuttX's cxx/ wrappers).
+                f.write("_TFLM_CXX_SYSROOT := $(shell $(CXX) -print-sysroot)\n")
+                f.write("_TFLM_CXX_VER := $(shell $(CXX) -dumpversion)\n")
+                f.write("_TFLM_CXX_MACHINE := $(shell $(CXX) -dumpmachine)\n")
+                f.write("CXXFLAGS += -idirafter "
+                        "$(_TFLM_CXX_SYSROOT)/include/c++/$(_TFLM_CXX_VER)\n")
+                f.write("CXXFLAGS += -idirafter "
+                        "$(_TFLM_CXX_SYSROOT)/include/c++/"
+                        "$(_TFLM_CXX_VER)/$(_TFLM_CXX_MACHINE)\n")
+                # Provide ctype macros that the toolchain's ctype_base.h
+                # expects (NuttX's ctype.h defines them, but #include_next
+                # in the C++ headers can't find them through -idirafter).
+                f.write("CXXFLAGS += -D_U=01 -D_L=02 -D_N=04 "
+                        "-D_S=010 -D_P=020 -D_C=040 -D_X=0100 -D_B=0200\n")
+                # CMSIS-NN if available
+                cmsis_nn = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
+                                        "CMSIS", "NN")
+                cmsis_core = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
+                                          "CMSIS", "Core", "Include")
+                cmsis_dsp = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
+                                         "CMSIS", "DSP", "Include")
+                if os.path.isdir(cmsis_nn):
+                    nn_srcs = glob.glob(
+                        os.path.join(cmsis_nn, "Source", "**", "*.c"),
+                        recursive=True)
+                    if nn_srcs:
+                        for i, s in enumerate(nn_srcs):
+                            if i == 0:
+                                f.write(f"CSRCS += {s}")
+                            else:
+                                f.write(f" \\\n    {s}")
+                        f.write("\n\n")
+                    f.write(f"CFLAGS += -I{cmsis_nn}/Include\n")
+                    f.write(f"CXXFLAGS += -I{cmsis_nn}/Include\n")
+                    f.write("CXXFLAGS += -DCMSIS_NN\n")
+                if os.path.isdir(cmsis_core):
+                    f.write(f"CFLAGS += -I{cmsis_core}\n")
+                    f.write(f"CXXFLAGS += -I{cmsis_core}\n")
+                if os.path.isdir(cmsis_dsp):
+                    f.write(f"CFLAGS += -I{cmsis_dsp}\n")
+                    f.write(f"CXXFLAGS += -I{cmsis_dsp}\n")
+            logger.info(f"Generated TFLM source list: {tflm_mk}")
+
     # Build
     make_vars.append(f"OVE_APP_DIR={ws.app_dir}")
     run(["make", f"-j{nproc()}"] + make_vars, env=env, cwd=nuttx_build,

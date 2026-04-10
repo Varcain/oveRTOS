@@ -75,8 +75,13 @@ CFLAGS += $(APP_INCLUDES)
 CFLAGS += -I$(OVE_DIR)/include
 CFLAGS += -I$(OVE_DIR)/backends/nuttx/include
 CFLAGS += -I$(OVE_DIR)/backends/common
+CSRCS += $(OVE_MODEL_SRCS)
 CFLAGS += -I$(OVE_GEN_DIR)
 CFLAGS += -I$(OVE_GEN_DIR)/generated_models
+CXXFLAGS += -I$(OVE_GEN_DIR)/generated_models
+
+# TFLM sources (compiled as C++ within NuttX build system)
+-include $(OVE_GEN_DIR)/ove_tflm_sources.mk
 
 # FPU flags (ensure hard-float even when base NuttX config lacks it)
 ifeq ($(CONFIG_ARCH_FPU),y)

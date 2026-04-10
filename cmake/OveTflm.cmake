@@ -49,6 +49,8 @@ macro(ove_build_tflm)
     list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX ".*testing/.*")
     list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX ".*/test_data_generation/.*")
     list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX ".*/examples/.*")
+    # Exclude upstream micro_time.cc — replaced by ove_tflm_time.cc
+    list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX "micro_time\\.cc$")
     list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX ".*/benchmarks/.*")
     list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX ".*/tools/.*")
     list(FILTER _TFLM_ALL_SRC EXCLUDE REGEX ".*/integration_tests/.*")
@@ -170,6 +172,7 @@ macro(ove_build_tflm)
         -w                  # Suppress TFLM warnings (upstream code)
         -fno-exceptions
         -fno-rtti
+        -fno-threadsafe-statics  # Avoids __cxa_guard_* deps (no RTOS-level C++ runtime)
         -DTF_LITE_STATIC_MEMORY
     )
 

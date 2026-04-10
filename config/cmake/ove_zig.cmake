@@ -138,16 +138,18 @@ function(ove_build_zig_lib TARGET)
         list(APPEND ZIG_INCLUDE_ARGS "-I${_LVGL_PARENT}")
     endif()
 
-    # Board-specific lv_conf.h
+    # Board-specific lv_conf.h — search known locations
     if(OVE_RTOS STREQUAL "posix")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/boards/host/posix")
     elseif(DEFINED OVE_BOARD_DIR)
-        # lv_conf.h lives under <board>/<rtos>/ or <board>/<rtos>/inc
-        if(EXISTS "${OVE_BOARD_DIR}/${OVE_RTOS}/inc")
-            list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_BOARD_DIR}/${OVE_RTOS}/inc")
-        elseif(EXISTS "${OVE_BOARD_DIR}/${OVE_RTOS}")
-            list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_BOARD_DIR}/${OVE_RTOS}")
-        endif()
+        foreach(_CANDIDATE "${OVE_BOARD_DIR}" "${OVE_BOARD_DIR}/${OVE_RTOS}"
+                           "${OVE_BOARD_DIR}/${OVE_RTOS}/inc" "${OVE_BOARD_DIR}/inc"
+                           "${OVE_BOARD_DIR}/freertos/inc")
+            if(EXISTS "${_CANDIDATE}/lv_conf.h")
+                list(APPEND ZIG_INCLUDE_ARGS "-I${_CANDIDATE}")
+                break()
+            endif()
+        endforeach()
     endif()
 
     # ARM sysroot include (for cross-compilation: libc headers like stdio.h)

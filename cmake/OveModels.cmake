@@ -46,7 +46,13 @@ function(ove_generate_models TARGET)
         return()
     endif()
 
-    add_library(ove_models OBJECT ${MODEL_SOURCES})
+    # Use STATIC library for Zephyr (OBJECT libraries cause dependency
+    # cycles with zephyr_link_libraries), OBJECT library otherwise.
+    if(OVE_RTOS STREQUAL "zephyr")
+        add_library(ove_models STATIC ${MODEL_SOURCES})
+    else()
+        add_library(ove_models OBJECT ${MODEL_SOURCES})
+    endif()
     target_include_directories(ove_models PUBLIC "${GEN_DIR}")
 
     # Inherit cross-compilation settings from main target
@@ -54,9 +60,13 @@ function(ove_generate_models TARGET)
         target_link_libraries(ove_models PRIVATE zephyr_interface)
     endif()
 
-    # Link into firmware
-    if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
-        zephyr_link_libraries(ove_models)
+    # Link into firmware.
+    # On Zephyr, add model sources directly to the app target so they
+    # are in the same archive as the Rust/Zig app code (avoids link
+    # order issues with model data symbols).
+    if(OVE_RTOS STREQUAL "zephyr")
+        target_sources(${TARGET} PRIVATE ${MODEL_SOURCES})
+        target_include_directories(${TARGET} PRIVATE "${GEN_DIR}")
     else()
         target_link_libraries(${TARGET} PRIVATE ove_models)
     endif()

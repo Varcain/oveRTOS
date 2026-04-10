@@ -78,7 +78,8 @@ menuconfig: $(VENV_STAMP)
 #   make host.posix.example_net_cpp ZEROHEAP=1
 #
 # Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
-_DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(t)))
+# Exclude allconfigs-* and alldefconfigs (handled by their own pattern rules).
+_DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(if $(filter allconfigs-% alldefconfigs,$(t)),,$(t))))
 ifneq ($(_DOT_TARGETS),)
 .PHONY: $(_DOT_TARGETS)
 $(_DOT_TARGETS): $(VENV_STAMP)

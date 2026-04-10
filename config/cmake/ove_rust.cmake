@@ -78,17 +78,22 @@ function(ove_build_rust_crate TARGET)
         set(_BOARD_DIR "${BOARD_DIR}")
     endif()
 
-    # Board-specific lv_conf.h directory for bindgen
+    # Board-specific lv_conf.h directory for bindgen.
+    # Find lv_conf.h by searching known locations relative to _BOARD_DIR.
+    set(LV_CONF_DIR "")
     if(RUST_IS_WASM)
         set(LV_CONF_DIR "${OVE_DIR}/boards/wasm/posix")
     elseif(OVE_RTOS STREQUAL "posix")
         set(LV_CONF_DIR "${OVE_DIR}/boards/host/posix")
-    elseif(OVE_RTOS STREQUAL "freertos")
-        set(LV_CONF_DIR "${_BOARD_DIR}/freertos/inc")
-    elseif(OVE_RTOS STREQUAL "zephyr")
-        set(LV_CONF_DIR "${_BOARD_DIR}/zephyr")
-    elseif(OVE_RTOS STREQUAL "nuttx")
-        set(LV_CONF_DIR "${_BOARD_DIR}/nuttx")
+    else()
+        # Search: _BOARD_DIR itself, then _BOARD_DIR/<rtos>, then _BOARD_DIR/<rtos>/inc
+        foreach(_CANDIDATE "${_BOARD_DIR}" "${_BOARD_DIR}/${OVE_RTOS}" "${_BOARD_DIR}/${OVE_RTOS}/inc"
+                           "${_BOARD_DIR}/inc" "${_BOARD_DIR}/freertos/inc")
+            if(EXISTS "${_CANDIDATE}/lv_conf.h")
+                set(LV_CONF_DIR "${_CANDIDATE}")
+                break()
+            endif()
+        endforeach()
     endif()
 
     # Build environment variables

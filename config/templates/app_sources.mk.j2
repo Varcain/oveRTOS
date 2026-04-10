@@ -23,6 +23,18 @@ APP_ZIG_SRC_DIR = $(OVE_APP_DIR)/{{ app.zig.src_dir }}
 APP_ZIG_LIB_NAME = {{ app.zig.lib_name }}
 {% endif %}
 
+{% if app.c_sources is defined %}
+{% for src in app.c_sources %}
+APP_CSRCS += $(OVE_APP_DIR)/{{ src }}
+{% endfor %}
+{% endif %}
+
+{% if app.c_includes is defined %}
+{% for inc in app.c_includes %}
+APP_INCLUDES += -I$(OVE_APP_DIR)/{{ inc }}
+{% endfor %}
+{% endif %}
+
 {% if app.includes is defined %}
 {% for inc in app.includes %}
 APP_INCLUDES += -I$(OVE_APP_DIR)/{{ inc }}

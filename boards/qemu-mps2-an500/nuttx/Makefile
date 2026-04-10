@@ -70,8 +70,12 @@ CFLAGS += -I$(OVE_DIR)/backends/nuttx/include
 CFLAGS += -I$(OVE_DIR)/backends/common
 CFLAGS += -I$(OVE_DIR)/sim/include
 CFLAGS += -I$(OVE_DIR)/sim/src
+CSRCS += $(OVE_MODEL_SRCS)
 CFLAGS += -I$(OVE_GEN_DIR)
 CFLAGS += -I$(OVE_GEN_DIR)/generated_models
+
+# TFLM sources (compiled as C++ within NuttX build system)
+-include $(OVE_GEN_DIR)/ove_tflm_sources.mk
 CFLAGS += -I$(QEMU_SRC_DIR)
 ifneq ($(wildcard $(LVGL_INCLUDE_PATH)/lvgl.h),)
 CFLAGS += -I$(LVGL_INCLUDE_PATH)

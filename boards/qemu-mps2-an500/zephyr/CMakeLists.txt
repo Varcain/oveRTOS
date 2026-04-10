@@ -85,8 +85,11 @@ if(OVE_INFER AND NOT TARGET ove_tflm)
     set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
     include(${OVE_DIR}/cmake/OveTflm.cmake)
     ove_build_tflm()
+    target_include_directories(ove_tflm PRIVATE
+        ${OVE_DIR}/backends/zephyr/include)
     target_link_libraries(ove_tflm PRIVATE zephyr_interface)
-    zephyr_link_libraries(ove_tflm)
+    target_sources(app PRIVATE $<TARGET_OBJECTS:ove_tflm>)
+    target_include_directories(app PRIVATE $<TARGET_PROPERTY:ove_tflm,INTERFACE_INCLUDE_DIRECTORIES>)
     target_link_libraries(app PRIVATE stdc++)
 endif()
 

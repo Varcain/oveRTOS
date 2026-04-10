@@ -56,3 +56,7 @@ OVE_BACKEND_SRCS = \
     $(OVE_DIR)/backends/common/ove_net_sntp.c \
 {% endif %}
 
+{% if config.get("CONFIG_OVE_INFER") == True %}
+# ML model data (generated from models/*.tflite by ove configure)
+OVE_MODEL_SRCS = $(wildcard $(OVE_GEN_DIR)/generated_models/*.c)
+{% endif %}
