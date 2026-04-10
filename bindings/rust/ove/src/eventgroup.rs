@@ -10,8 +10,6 @@
 //! Other threads can block until specific bit patterns appear, enabling fine-grained
 //! inter-task signalling without dedicated queues.
 
-use core::fmt;
-
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -114,25 +112,4 @@ impl EventGroup {
     }
 }
 
-impl fmt::Debug for EventGroup {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EventGroup")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for EventGroup {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_eventgroup_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_eventgroup_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Wraps a ove handle. Set/clear/wait are thread-safe RTOS calls.
-// Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for EventGroup {}
-unsafe impl Sync for EventGroup {}
+crate::ove_handle_impl!(EventGroup, ove_eventgroup_destroy, ove_eventgroup_deinit);

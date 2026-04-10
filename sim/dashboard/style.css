@@ -1,0 +1,390 @@
+/* oveRTOS Sim Dashboard */
+
+:root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --border: #0f3460;
+    --text: #e0e0e0;
+    --accent: #e94560;
+    --green: #4ecca3;
+    --dim: #e0e0e0;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+}
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    z-index: 100;
+}
+
+header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.status {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.status.connected {
+    background: rgba(78, 204, 163, 0.2);
+    color: var(--green);
+}
+
+.status.disconnected {
+    background: rgba(233, 69, 96, 0.2);
+    color: var(--accent);
+}
+
+/* ── WinBox dark theme ────────────────────────────────────────────── */
+
+.winbox {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.winbox .wb-header {
+    background: var(--surface) !important;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    border-radius: 8px 8px 0 0;
+}
+
+.winbox .wb-body {
+    background: var(--surface);
+    border-radius: 0 0 8px 8px;
+}
+
+.winbox.min {
+    z-index: 2147483647 !important;
+}
+
+.winbox.focus {
+    border-color: var(--accent);
+    box-shadow: 0 4px 24px rgba(233, 69, 96, 0.15);
+}
+
+.winbox .wb-control .wb-min,
+.winbox .wb-control .wb-max,
+.winbox .wb-control .wb-full,
+.winbox .wb-control .wb-close {
+    opacity: 0.5;
+    background-size: 14px auto !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+}
+
+/* Minimize: horizontal line */
+.winbox .wb-control .wb-min {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5'%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E") !important;
+}
+
+/* Maximize: single square */
+.winbox .wb-control .wb-max {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5'%3E%3Crect x='4' y='4' width='16' height='16' rx='1'/%3E%3C/svg%3E") !important;
+}
+
+/* Close: X mark */
+.winbox .wb-control .wb-close {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='2.5'%3E%3Cline x1='6' y1='6' x2='18' y2='18'/%3E%3Cline x1='18' y1='6' x2='6' y2='18'/%3E%3C/svg%3E") !important;
+}
+
+.winbox .wb-control .wb-min:hover,
+.winbox .wb-control .wb-max:hover,
+.winbox .wb-control .wb-full:hover {
+    opacity: 1;
+}
+
+.winbox .wb-control .wb-close:hover {
+    opacity: 1;
+    background: var(--accent);
+}
+
+/* ── Bottom taskbar ───────────────────────────────────────────────── */
+
+#taskbar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 34px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+    z-index: 2147483646;
+}
+
+.taskbar-badge {
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--dim);
+    background: transparent;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.taskbar-badge:hover {
+    background: var(--border);
+    color: var(--text);
+}
+
+.taskbar-badge.active {
+    background: rgba(233, 69, 96, 0.15);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+.taskbar-badge.minimized {
+    opacity: 0.5;
+    font-style: italic;
+}
+
+/* ── Panels (inside WinBox bodies) ────────────────────────────────── */
+
+.panel {
+    background: var(--surface);
+    padding: 12px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Display ──────────────────────────────────────────────────────── */
+
+.display-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #000;
+    border-radius: 4px;
+    padding: 8px;
+}
+
+#display-canvas {
+    image-rendering: pixelated;
+    max-width: 100%;
+    max-height: 100%;
+    height: auto;
+}
+
+.display-info {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--dim);
+    flex-shrink: 0;
+}
+
+/* ── Audio ─────────────────────────────────────────────────────────── */
+
+.audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+
+.btn {
+    background: var(--border);
+    color: var(--text);
+    border: none;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.btn:hover {
+    background: var(--accent);
+}
+
+.btn-small {
+    padding: 4px 10px;
+    font-size: 11px;
+}
+
+#audio-info {
+    font-size: 12px;
+    color: var(--dim);
+}
+
+.audio-devices {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+}
+
+.audio-devices label {
+    font-size: 11px;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.audio-devices select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: 11px;
+    max-width: 180px;
+}
+
+#audio-waveform {
+    width: 100%;
+    flex: 1;
+    min-height: 60px;
+    background: #0d1117;
+    border-radius: 4px;
+}
+
+.waveform-pair {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.waveform-box {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    background: #0d1117;
+    border-radius: 4px;
+}
+
+.waveform-box canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.waveform-label {
+    position: absolute;
+    top: 4px;
+    left: 6px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--dim);
+    opacity: 0.5;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* ── Events ────────────────────────────────────────────────────────── */
+
+.events-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+}
+
+.autoscroll-on {
+    background: rgba(78, 204, 163, 0.2);
+    color: var(--green);
+}
+
+.event-log {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--dim);
+}
+
+.event-log .entry {
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    white-space: pre-wrap;
+    tab-size: 8;
+}
+
+.event-log .entry .time {
+    color: var(--green);
+    margin-right: 8px;
+}
+
+.event-log .entry .type {
+    color: var(--accent);
+    margin-right: 8px;
+}
+
+/* ── Mobile / small viewport ──────────────────────────────────────── */
+
+@media (max-width: 639px) {
+    header h1 { font-size: 13px; }
+    .btn-small { padding: 6px 10px; font-size: 12px; }
+
+    /* Larger touch targets for WinBox controls. */
+    .winbox .wb-control span { width: 36px; height: 36px; }
+    .winbox .wb-header { min-height: 36px; }
+
+    /* Taskbar badges fill width equally. */
+    #taskbar { gap: 2px; padding: 0 4px; height: 38px; }
+    .taskbar-badge {
+        flex: 1;
+        text-align: center;
+        padding: 6px 4px;
+        font-size: 10px;
+    }
+
+    /* Panels: tighter padding. */
+    .panel { padding: 8px; }
+    .display-container { padding: 4px; }
+}

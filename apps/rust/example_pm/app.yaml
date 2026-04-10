@@ -1,0 +1,8 @@
+lang: rust
+config_name: example_pm_rust
+description: "Rust Power Management Demo"
+rust:
+  lib_name: example_pm_rust
+defconfig:
+  - CONFIG_OVE_PM=y
+  - CONFIG_OVE_TIMER=y

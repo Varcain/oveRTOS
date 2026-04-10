@@ -26,11 +26,21 @@ function(ove_build_rust_crate TARGET)
         set(CARGO_CMD "cargo")
     endif()
 
-    # Determine if this is a native (POSIX) or cross-compiled build
-    if(OVE_RTOS STREQUAL "posix")
+    # Defaults (overridden for WASM below)
+    set(RUST_WASM_BUILD_STD "")
+    set(RUST_NIGHTLY_FLAG "")
+
+    # Determine if this is a native (POSIX), WASM, or cross-compiled build
+    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+        set(RUST_IS_NATIVE FALSE)
+        set(RUST_IS_WASM TRUE)
+        set(OVE_RUST_TARGET "wasm32-unknown-emscripten")
+    elseif(OVE_RTOS STREQUAL "posix")
         set(RUST_IS_NATIVE TRUE)
+        set(RUST_IS_WASM FALSE)
     else()
         set(RUST_IS_NATIVE FALSE)
+        set(RUST_IS_WASM FALSE)
     endif()
 
     # Place Rust build artifacts in the CMake build dir, not next to sources
@@ -68,15 +78,22 @@ function(ove_build_rust_crate TARGET)
         set(_BOARD_DIR "${BOARD_DIR}")
     endif()
 
-    # Board-specific lv_conf.h directory for bindgen
-    if(OVE_RTOS STREQUAL "posix")
-        set(LV_CONF_DIR "${OVE_DIR}/boards/host-pc/posix")
-    elseif(OVE_RTOS STREQUAL "freertos")
-        set(LV_CONF_DIR "${_BOARD_DIR}/inc")
-    elseif(OVE_RTOS STREQUAL "zephyr")
-        set(LV_CONF_DIR "${OVE_BOARD_DIR}")
-    elseif(OVE_RTOS STREQUAL "nuttx")
-        set(LV_CONF_DIR "${_BOARD_DIR}/inc")
+    # Board-specific lv_conf.h directory for bindgen.
+    # Find lv_conf.h by searching known locations relative to _BOARD_DIR.
+    set(LV_CONF_DIR "")
+    if(RUST_IS_WASM)
+        set(LV_CONF_DIR "${OVE_DIR}/boards/wasm/posix")
+    elseif(OVE_RTOS STREQUAL "posix")
+        set(LV_CONF_DIR "${OVE_DIR}/boards/host/posix")
+    else()
+        # Search: _BOARD_DIR itself, then _BOARD_DIR/<rtos>, then _BOARD_DIR/<rtos>/inc
+        foreach(_CANDIDATE "${_BOARD_DIR}" "${_BOARD_DIR}/${OVE_RTOS}" "${_BOARD_DIR}/${OVE_RTOS}/inc"
+                           "${_BOARD_DIR}/inc" "${_BOARD_DIR}/freertos/inc")
+            if(EXISTS "${_CANDIDATE}/lv_conf.h")
+                set(LV_CONF_DIR "${_CANDIDATE}")
+                break()
+            endif()
+        endforeach()
     endif()
 
     # Build environment variables
@@ -89,7 +106,7 @@ function(ove_build_rust_crate TARGET)
         "LV_CONF_PATH=${LV_CONF_DIR}"
     )
 
-    if(RUST_IS_NATIVE)
+    if(RUST_IS_NATIVE OR RUST_IS_WASM)
         list(APPEND CARGO_ENV_VARS "RUST_IS_NATIVE=1")
         set(RUST_FEATURE_ARGS "--features;std")
     else()
@@ -112,8 +129,29 @@ function(ove_build_rust_crate TARGET)
         endif()
     endif()
 
-    if(NOT RUST_IS_NATIVE)
-        # Cross-compilation: set linker and ARM sysroot for bindgen
+    if(RUST_IS_WASM)
+        # WASM cross-compilation: use emcc as linker
+        # Find the Emscripten sysroot for bindgen to use correct headers
+        find_program(EMCC_PATH emcc)
+        if(EMCC_PATH)
+            get_filename_component(_EMCC_DIR "${EMCC_PATH}" DIRECTORY)
+            set(_EM_SYSROOT "${_EMCC_DIR}/cache/sysroot/include")
+        endif()
+        list(APPEND CARGO_ENV_VARS
+            "CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER=emcc"
+            "CC_wasm32_unknown_emscripten=emcc"
+            "OVE_WASM_BUILD=1"
+            "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals"
+        )
+        # WASM+pthreads requires rebuilding core/alloc with atomics support.
+        # This needs nightly Rust for -Zbuild-std.
+        set(RUST_WASM_BUILD_STD "-Zbuild-std=std,panic_abort")
+        set(RUST_NIGHTLY_FLAG "+nightly")
+        if(EXISTS "${_EM_SYSROOT}")
+            list(APPEND CARGO_ENV_VARS "EMSCRIPTEN_SYSROOT=${_EM_SYSROOT}")
+        endif()
+    elseif(NOT RUST_IS_NATIVE)
+        # ARM cross-compilation: set linker and ARM sysroot for bindgen
         if(DEFINED CMAKE_C_COMPILER)
             set(RUST_LINKER "${CMAKE_C_COMPILER}")
         else()
@@ -128,7 +166,6 @@ function(ove_build_rust_crate TARGET)
         )
 
         # Resolve ARM sysroot include path for bindgen
-        # Detect triple from compiler name (works for arm-none-eabi-gcc, arm-zephyr-eabi-gcc, etc.)
         get_filename_component(TOOLCHAIN_BIN_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
         get_filename_component(TOOLCHAIN_ROOT "${TOOLCHAIN_BIN_DIR}" DIRECTORY)
         get_filename_component(_COMPILER_NAME "${CMAKE_C_COMPILER}" NAME)
@@ -138,6 +175,12 @@ function(ove_build_rust_crate TARGET)
     endif()
 
     # ── Generate storage type sizes for Rust bindings ──────────────────
+    # WASM uses heap mode (not zero-heap), so storage sizes are not
+    # needed — Rust uses opaque *mut c_void handles.
+    if(RUST_IS_WASM)
+        # Skip the probe; pass empty sizes file path
+        set(SIZES_ENV "")
+    else()
     # Create a tiny object library that compiles a C file with
     # sizeof/alignof arrays using the same flags as the main target.
     # Then extract sizes from the .o and pass them to cargo.
@@ -196,6 +239,26 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
 "S(ove_model_storage_t)      A(ove_model_storage_t)\n"
         )
     endif()
+    if(OVE_UART)
+        file(APPEND ${SIZES_C}
+"S(ove_uart_storage_t)       A(ove_uart_storage_t)\n"
+        )
+    endif()
+    if(OVE_SPI)
+        file(APPEND ${SIZES_C}
+"S(ove_spi_storage_t)        A(ove_spi_storage_t)\n"
+        )
+    endif()
+    if(OVE_I2C)
+        file(APPEND ${SIZES_C}
+"S(ove_i2c_storage_t)        A(ove_i2c_storage_t)\n"
+        )
+    endif()
+    if(OVE_I2S)
+        file(APPEND ${SIZES_C}
+"S(ove_i2s_storage_t)        A(ove_i2s_storage_t)\n"
+        )
+    endif()
 
     # Build the sizes probe as an OBJECT library that inherits all
     # compile settings from the main target.
@@ -233,6 +296,7 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
     )
 
     list(APPEND CARGO_ENV_VARS "OVE_STORAGE_SIZES=${SIZES_ENV}")
+    endif() # NOT RUST_IS_WASM
 
     # Collect all Rust source files for dependency tracking
     file(GLOB_RECURSE RUST_SOURCES "${APP_RUST_CRATE_DIR}/src/*.rs")
@@ -252,9 +316,10 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
         OUTPUT ${RUST_LIB}
         COMMAND ${CMAKE_COMMAND} -E env
             ${CARGO_ENV_VARS}
-            ${CARGO_CMD} build
+            ${CARGO_CMD} ${RUST_NIGHTLY_FLAG} build
                 ${RUST_TARGET_ARGS}
                 ${RUST_FEATURE_ARGS}
+                ${RUST_WASM_BUILD_STD}
                 --release
                 --manifest-path ${APP_RUST_CRATE_DIR}/Cargo.toml
         WORKING_DIRECTORY ${APP_RUST_CRATE_DIR}

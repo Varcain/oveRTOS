@@ -21,7 +21,6 @@ ove_add_board_sources(
     startup_CMSDK_CM7.s
     system_CMSDK_CM7.c
     ../qemu_board.c
-    ../src/lv_port_disp.c
 )
 
 # FreeRTOS kernel (standalone, Cortex-M7 port)
@@ -36,13 +35,33 @@ ove_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG SHELL NVS FS)
 # BOARD backend excluded — qemu_board.c provides the implementation directly
 ove_exclude_backends(BOARD)
 
-# Audio: use QEMU semihosting driver when enabled, stub otherwise
+# ── Sim framework (replaces lv_port_disp.c and qemu_audio.c) ──────
+# The sim framework provides unified display/audio/input through the
+# SHM guest transport (semihosting I/O to /dev/shm files).
+set(OVE_BOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
+ove_add_include_directories(
+    ${OVE_DIR}/sim/include
+    ${OVE_DIR}/sim/src
+    ${OVE_BOARD_DIR}/src
+)
+set(SIM_QEMU_SOURCES
+    ${OVE_DIR}/sim/src/ove_sim_registry.c
+    ${OVE_DIR}/sim/src/ove_sim_input.c
+    ${OVE_DIR}/sim/src/ove_sim_transport_shm_guest.c
+    ${OVE_DIR}/sim/hal/sim_board.c
+    ${OVE_DIR}/sim/hal/sim_display.c
+)
+if(OVE_LVGL)
+    list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_lvgl.c)
+    ove_exclude_backends(LVGL)
+endif()
 if(OVE_AUDIO)
+    list(APPEND SIM_QEMU_SOURCES ${OVE_BOARD_DIR}/src/qemu_audio.c)
     ove_exclude_backends(AUDIO)
-    ove_add_board_sources(../src/qemu_audio.c)
 else()
     ove_add_stub_backends(AUDIO)
 endif()
+ove_add_board_sources(${SIM_QEMU_SOURCES})
 
 # lwIP for networking
 if(OVE_NET)
@@ -54,6 +73,9 @@ if(OVE_NET_TLS)
     include(${OVE_DIR}/cmake/OveMbedtls.cmake)
     ove_build_mbedtls()
 endif()
+
+# ML inference (TensorFlow Lite Micro)
+ove_build_tflm_if_enabled()
 
 # LVGL library
 ove_build_lvgl()

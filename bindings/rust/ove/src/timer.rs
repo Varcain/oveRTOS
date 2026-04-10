@@ -9,8 +9,6 @@
 //! [`Timer`] wraps an RTOS software timer with a safe Rust `fn()` callback.
 //! Timers can be periodic or one-shot and are driven by the RTOS tick.
 
-use core::fmt;
-
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -115,26 +113,4 @@ impl Timer {
     }
 }
 
-impl fmt::Debug for Timer {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Timer")
-            .field("handle", &format_args!("{:p}", self.handle))
-            .finish()
-    }
-}
-
-impl Drop for Timer {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_timer_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_timer_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Timer wraps a ove_timer_t handle. Start/stop/reset are
-// thread-safe RTOS calls. Create/destroy are single-threaded (lifecycle
-// guarantee).
-unsafe impl Send for Timer {}
-unsafe impl Sync for Timer {}
+crate::ove_handle_impl!(Timer, ove_timer_destroy, ove_timer_deinit);

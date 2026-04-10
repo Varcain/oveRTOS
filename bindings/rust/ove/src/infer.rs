@@ -154,23 +154,7 @@ impl Model {
     }
 }
 
-impl Drop for Model {
-    fn drop(&mut self) {
-        if !self.handle.is_null() {
-            #[cfg(not(zero_heap))]
-            unsafe {
-                bindings::ove_model_destroy(self.handle);
-            }
-            #[cfg(zero_heap)]
-            unsafe {
-                bindings::ove_model_deinit(self.handle);
-            }
-        }
-    }
-}
-
-unsafe impl Send for Model {}
-unsafe impl Sync for Model {}
+crate::ove_handle_impl!(Model, ove_model_destroy, ove_model_deinit);
 
 // ---------------------------------------------------------------------------
 // ModelStorage — safe reusable arena

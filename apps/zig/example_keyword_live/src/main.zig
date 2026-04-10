@@ -32,8 +32,7 @@ const noise_gate_threshold: i32 = 500;
 const target_peak: i32 = 15000;
 const ring_capacity: usize = 32768;
 const ring_mask: usize = ring_capacity - 1;
-/// 4-slot I2S DMA layout: [slot0, slot1, slot2, slot3] per frame.
-const dma_slots_per_frame: usize = 4;
+// I2S slot handling is now done by the driver — app sees clean PCM.
 
 const labels = [_][]const u8{ "silence", "unknown", "yes", "no" };
 
@@ -103,19 +102,18 @@ const DmicProcessor = struct {
         _ = self;
         const src = input.dataS16();
         const dst = output.dataS16Mut();
-        const num_frames = input.frames() / dma_slots_per_frame;
+        const frames = input.frames();
+        const ch = input.channels();
 
-        for (0..num_frames) |f| {
-            const base = f * dma_slots_per_frame;
-            const mic_l = src[base + 1]; // slot 1 = DMIC Left
-
-            audio_ring.write(mic_l);
+        for (0..frames) |f| {
+            const sample = src[f * ch]; // left / mono
+            audio_ring.write(sample);
             _ = samples_written.fetchAdd(1, .monotonic);
 
-            dst[base + 0] = mic_l; // slot 0 = HP Left
-            dst[base + 1] = 0;
-            dst[base + 2] = src[base + 3]; // slot 2 = HP Right (DMIC R)
-            dst[base + 3] = 0;
+            // Passthrough to output for monitoring
+            for (0..ch) |c| {
+                dst[f * ch + c] = src[f * ch + c];
+            }
         }
     }
 };

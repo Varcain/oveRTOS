@@ -1,6 +1,6 @@
 # External Applications
 
-oveRTOS applications can live outside the oveRTOS source tree. An **external app** is a standalone directory with its own `app.yaml`, `Makefile`, defconfigs, and optionally RTOS patches and config overlays. The build system discovers it via environment variable and builds it exactly like an in-tree app.
+oveRTOS applications can live outside the oveRTOS source tree. An **external app** is a standalone directory with its own `app.yaml`, `Makefile`, and optionally RTOS patches and config overlays. The build system discovers it via environment variable and builds it exactly like an in-tree app.
 
 ## Directory Layout
 
@@ -13,9 +13,6 @@ my_app/
 ├── src/                            # Source files
 │   ├── app.c
 │   └── ...
-├── defconfigs/                     # Saved configurations
-│   └── <board>/
-│       └── <board>_<rtos>_<appname>_defconfig
 ├── nuttx/                          # NuttX RTOS overlay (optional)
 │   └── <board-name>_defconfig
 ├── patches/                        # RTOS source patches (optional)
@@ -51,7 +48,7 @@ include $(OVE_DIR)/config/make/ove_app.mk
 | Target | Description |
 |--------|-------------|
 | `make` (default) | Full pipeline: download + configure + build |
-| `make <name>_defconfig` | Load a saved defconfig |
+| `make <board>.<rtos>.<app>` | Load a configuration via fragment composition |
 | `make menuconfig` | Interactive Kconfig TUI |
 | `make savedefconfig` | Save current config as minimal defconfig |
 | `make nuttx-menuconfig` | NuttX native menuconfig (layered) |
@@ -61,9 +58,9 @@ include $(OVE_DIR)/config/make/ove_app.mk
 | `make all` | Download + configure + build |
 | `make run` | Run firmware (QEMU or host) |
 | `make flash` | Flash firmware to hardware |
-| `make alldefconfigs` | Build every defconfig in `defconfigs/` |
+| `make alldefconfigs` | Build every configuration (all board/RTOS/app combinations) |
 | `make clean` | Remove `output/` |
-| `make help` | List targets and available defconfigs |
+| `make help` | List targets and available configurations |
 
 All output goes into the app's own `output/` directory, not into the oveRTOS tree.
 
@@ -166,43 +163,31 @@ Access these in C via the generated `ove_config.h`:
 static int16_t buf[CONFIG_DSP_BUFFER_SIZE];
 ```
 
-## Defconfigs
+## Configuration
 
-Defconfigs are minimal Kconfig snapshots that select the app, RTOS, board, and enabled modules. They live under `defconfigs/<board>/` and must follow the naming convention:
+External apps use the same fragment-based configuration system as in-tree apps. The `app.yaml` `config_name` and `defconfig` fields declare the app's config identity and required modules. The build system composes the final `.config` from global, board, RTOS, and app fragments automatically.
 
-```
-<board>_<rtos>_<appname>_defconfig
-```
-
-Example defconfig (`defconfigs/stm32f746/stm32f746_freertos_myapp_defconfig`):
-
-```
-CONFIG_OVE_APP_MYAPP=y
-CONFIG_OVE_APP_LANG_C=y
-CONFIG_OVE_RTOS_FREERTOS=y
-CONFIG_OVE_BOARD_STM32F746G_DISCO=y
-CONFIG_OVE_AUDIO=y
-CONFIG_OVE_FS=y
-CONFIG_OVE_CONSOLE=y
-CONFIG_OVE_LOG=y
-CONFIG_OVE_LOG_LEVEL_INF=y
-CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
-```
-
-The board subdirectory name (e.g. `stm32f746`) is parsed from the path to determine the workspace layout. The RTOS and app name are parsed from the filename.
-
-Load a defconfig:
+Load a configuration using dot-syntax:
 
 ```bash
-make stm32f746_freertos_myapp_defconfig
+make stm32f746.freertos.myapp
+```
+
+The `defconfig` field in `app.yaml` lists the Kconfig symbols the app requires:
+
+```yaml
+defconfig:
+  - CONFIG_OVE_AUDIO=y
+  - CONFIG_OVE_FS=y
+  - CONFIG_OVE_CONSOLE=y
+  - CONFIG_OVE_LOG=y
+  - CONFIG_OVE_LOG_LEVEL_INF=y
 ```
 
 Save the current config as a minimal defconfig:
 
 ```bash
 make savedefconfig
-# writes defconfig to the oveRTOS root — move it to your defconfigs/ dir
-mv /path/to/oveRTOS/defconfig defconfigs/stm32f746/stm32f746_freertos_myapp_defconfig
 ```
 
 ## Configuration Layering
@@ -298,8 +283,8 @@ git diff > /path/to/my_app/patches/nuttx/0001-description.patch
 ```bash
 cd my_app/
 
-# 1. Load a defconfig
-make stm32f746_freertos_myapp_defconfig
+# 1. Load a configuration
+make stm32f746.freertos.myapp
 
 # 2. Build (downloads RTOS sources, generates configs, compiles)
 make
@@ -314,7 +299,7 @@ make flash
 
 ```bash
 # Load config
-make stm32f746_nuttx_myapp_defconfig
+make stm32f746.nuttx.myapp
 
 # Download RTOS sources
 make download
@@ -345,17 +330,17 @@ make nuttx-menuconfig
 make zephyr-menuconfig
 ```
 
-### Building All Defconfigs
+### Building All Configurations
 
 ```bash
 make alldefconfigs
 ```
 
-This iterates over every `*_defconfig` file in `defconfigs/`, loads it, and runs the full build pipeline. A summary is printed at the end. This is useful for CI.
+This iterates over all board/RTOS/app combinations, composes each configuration from fragments, and runs the full build pipeline. A summary is printed at the end. This is useful for CI.
 
 ## Workspace Layout
 
-Each defconfig creates an isolated workspace:
+Each configuration creates an isolated workspace:
 
 ```
 output/
@@ -377,7 +362,7 @@ output/
             └── dl/               # Downloaded RTOS sources
 ```
 
-Multiple workspaces can coexist. Switching between them is done by loading a different defconfig.
+Multiple workspaces can coexist. Switching between them is done by loading a different configuration.
 
 ## Walkthrough: Creating a New External App
 
@@ -430,26 +415,27 @@ void ove_main(void)
 }
 ```
 
-### 5. Create a Defconfig
+### 5. Add Required Modules to app.yaml
 
-```bash
-cat > defconfigs/qemu/qemu_freertos_myapp_defconfig << 'EOF'
-CONFIG_OVE_APP_MYAPP=y
-CONFIG_OVE_APP_LANG_C=y
-CONFIG_OVE_RTOS_FREERTOS=y
-CONFIG_OVE_BOARD_QEMU_MPS2_AN500=y
-CONFIG_OVE_CONSOLE=y
-CONFIG_OVE_LOG=y
-CONFIG_OVE_LOG_LEVEL_INF=y
-CONFIG_FREERTOS_SOURCE_GIT=y
-CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
-EOF
+Add a `defconfig` field to `app.yaml` listing the Kconfig symbols the app needs:
+
+```yaml
+defconfig:
+  - CONFIG_OVE_CONSOLE=y
+  - CONFIG_OVE_LOG=y
+  - CONFIG_OVE_LOG_LEVEL_INF=y
+```
+
+And a `config_name` field for the dot-syntax target:
+
+```yaml
+config_name: myapp
 ```
 
 ### 6. Build and Run
 
 ```bash
-make qemu_freertos_myapp_defconfig
+make qemu.freertos.myapp
 make
 make run
 ```

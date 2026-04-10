@@ -12,9 +12,9 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#include "i2s_da.h"
-#include "i2s_stm32f7.h"
-#include "audio_codec_da.h"
+#ifdef CONFIG_OVE_I2S
+#include "ove/i2s.h"
+#endif
 
 #include <string.h>
 #include <stdlib.h>
@@ -33,13 +33,55 @@ typedef enum {
 #define DEFAULT_AUDIO_PRIORITY  (tskIDLE_PRIORITY + 7)
 #define DEFAULT_AUDIO_STACK     (configMINIMAL_STACK_SIZE * 32)
 
+/*
+ * Board-provided codec initialisation (weak default does nothing).
+ * The board overrides this to configure the audio codec (e.g. WM8994)
+ * via I2C register writes after the I2S bus is configured.
+ */
+__attribute__((weak))
+void ove_board_audio_codec_init(uint32_t sample_rate, int input_device)
+{
+	(void)sample_rate;
+	(void)input_device;
+}
+
+/* ========================================================================= */
+/* I2S SHARED STATE (forward declarations for source/sink)                   */
+/* ========================================================================= */
+
+#ifdef CONFIG_OVE_I2S
+
+struct i2s_sink_ctx {
+	struct ove_audio_fmt    fmt;
+	struct ove_audio_graph *graph;
+	unsigned int            frames_per_period;
+	unsigned int            thread_priority;
+	unsigned int            thread_stack_size;
+	TaskHandle_t            task_handle;
+	ove_i2s_t               i2s;
+	unsigned int            tx_slots[2]; /* slot indices for L, R */
+	unsigned int            tx_slot_count; /* total slots per DMA frame */
+	volatile buffer_phase_t current_rx_phase;
+	volatile buffer_phase_t current_tx_phase;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_i2s_storage_t       i2s_storage;
+	StaticTask_t            task_tcb;
+	StackType_t             task_stack[DEFAULT_AUDIO_STACK];
+#endif
+};
+
+/* Single static sink context — only one I2S graph can be active */
+static struct i2s_sink_ctx g_sink_ctx;
+
 /* ========================================================================= */
 /* I2S SOURCE NODE                                                           */
 /* ========================================================================= */
 
 struct i2s_source_ctx {
 	struct ove_audio_fmt fmt;
-	unsigned int         input_device; /* 0=line-in, 1=dmic */
+	unsigned int         input_device;
+	unsigned int         rx_slots[2]; /* slot indices for L, R */
+	unsigned int         slot_count;  /* total slots per DMA frame */
 };
 
 static int i2s_source_configure(void *ctx, const struct ove_audio_fmt *in,
@@ -54,15 +96,26 @@ static int i2s_source_configure(void *ctx, const struct ove_audio_fmt *in,
 static int i2s_source_process(void *ctx, const struct ove_audio_buf *in,
 			      struct ove_audio_buf *out)
 {
-	(void)ctx;
 	(void)in;
-	/* Copy from the I2S RX DMA buffer into the graph buffer.
-	 * The engine task calls this after being notified by the RX ISR,
-	 * so the DMA pointer is valid and stable for this half. */
-	int16_t *rx_ptr = (int16_t *)i2s_stm32f7_getRxBuffer();
-	unsigned int bytes = out->frames * out->fmt->channels *
-			     ove_audio_sample_size(out->fmt->sample_fmt);
-	memcpy(out->data, rx_ptr, bytes);
+	struct i2s_source_ctx *sc = (struct i2s_source_ctx *)ctx;
+	struct i2s_sink_ctx *sink = &g_sink_ctx;  /* forward ref */
+	int16_t *rx_ptr = (int16_t *)ove_i2s_rx_buf(sink->i2s);
+	if (rx_ptr == NULL)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	/* Extract configured channels from the I2S DMA slot layout.
+	 * DMA delivers [slot0, slot1, ..., slotN-1] per frame.
+	 * We extract the slots specified in rx_slots[] to produce
+	 * clean mono/stereo PCM for the graph. */
+	int16_t *dst = (int16_t *)out->data;
+	unsigned int ch = out->fmt->channels;
+	unsigned int nslots = sc->slot_count;
+	unsigned int frames = out->frames;
+
+	for (unsigned int f = 0; f < frames; f++) {
+		for (unsigned int c = 0; c < ch && c < 2; c++)
+			dst[f * ch + c] = rx_ptr[f * nslots + sc->rx_slots[c]];
+	}
 	return OVE_OK;
 }
 
@@ -74,24 +127,6 @@ static const struct ove_audio_node_ops i2s_source_ops = {
 /* ========================================================================= */
 /* I2S SINK NODE                                                             */
 /* ========================================================================= */
-
-struct i2s_sink_ctx {
-	struct ove_audio_fmt    fmt;
-	struct ove_audio_graph *graph;
-	unsigned int            frames_per_period;
-	unsigned int            thread_priority;
-	unsigned int            thread_stack_size;
-	TaskHandle_t            task_handle;
-	volatile buffer_phase_t current_rx_phase;
-	volatile buffer_phase_t current_tx_phase;
-#ifdef CONFIG_OVE_ZERO_HEAP
-	StaticTask_t            task_tcb;
-	StackType_t             task_stack[DEFAULT_AUDIO_STACK];
-#endif
-};
-
-/* Single static sink context — only one I2S graph can be active at a time */
-static struct i2s_sink_ctx g_sink_ctx;
 
 static int i2s_sink_configure(void *ctx, const struct ove_audio_fmt *in,
 			      struct ove_audio_fmt *out)
@@ -106,44 +141,50 @@ static int i2s_sink_configure(void *ctx, const struct ove_audio_fmt *in,
 static int i2s_sink_process(void *ctx, const struct ove_audio_buf *in,
 			    struct ove_audio_buf *out)
 {
-	(void)ctx;
 	(void)out;
-	/* Copy processed audio into the I2S TX DMA buffer */
-	int16_t *tx_ptr = (int16_t *)i2s_stm32f7_getTxBuffer();
-	unsigned int bytes = in->frames * in->fmt->channels *
-			     ove_audio_sample_size(in->fmt->sample_fmt);
-	memcpy(tx_ptr, in->data, bytes);
+	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)ctx;
+	int16_t *tx_ptr = (int16_t *)ove_i2s_tx_buf(sc->i2s);
+	if (tx_ptr == NULL)
+		return OVE_ERR_NOT_SUPPORTED;
+
+	/* Place clean PCM into the correct TX DMA slots.
+	 * Zero all other slots to avoid stale data on the bus. */
+	const int16_t *src = (const int16_t *)in->data;
+	unsigned int ch = in->fmt->channels;
+	unsigned int frames = in->frames;
+	unsigned int nslots = sc->tx_slot_count;
+
+	memset(tx_ptr, 0, frames * nslots * sizeof(int16_t));
+	for (unsigned int f = 0; f < frames; f++) {
+		for (unsigned int c = 0; c < ch && c < 2; c++)
+			tx_ptr[f * nslots + sc->tx_slots[c]] = src[f * ch + c];
+	}
 	return OVE_OK;
 }
 
 /* ── ISR callbacks ──────────────────────────────────────────────── */
 
-static void audio_rx_complete_callback(void)
+static void audio_rx_complete_callback(ove_i2s_t i2s, void *user_data)
 {
-	if (g_sink_ctx.task_handle == NULL)
+	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)user_data;
+	if (sc->task_handle == NULL)
 		return;
 
-	uint8_t completed_rx_half = i2s_stm32f7_getRxCompletedBufferHalf();
-	g_sink_ctx.current_rx_phase = (buffer_phase_t)completed_rx_half;
+	sc->current_rx_phase = (buffer_phase_t)i2s->rx_completed_half;
 
 	BaseType_t yield_required = pdFALSE;
-	vTaskNotifyGiveFromISR(g_sink_ctx.task_handle, &yield_required);
+	vTaskNotifyGiveFromISR(sc->task_handle, &yield_required);
 	portYIELD_FROM_ISR(yield_required);
 }
 
-static void audio_tx_complete_callback(void)
+static void audio_tx_complete_callback(ove_i2s_t i2s, void *user_data)
 {
-	if (g_sink_ctx.task_handle == NULL)
+	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)user_data;
+	if (sc->task_handle == NULL)
 		return;
 
-	uint8_t completed_tx_half = i2s_stm32f7_getTxCompletedBufferHalf();
-	g_sink_ctx.current_tx_phase = (buffer_phase_t)completed_tx_half;
-
-	/* Do NOT notify the task here — only the RX callback drives the audio
-	 * task.  TX ISR fires at higher NVIC priority than RX, so by the time
-	 * the RX callback notifies the task, tx_phase is already updated.
-	 * Notifying from both callbacks caused a PendSV race: PendSV preempted
-	 * the RX ISR, waking the task with only TX updated → perpetual skip. */
+	sc->current_tx_phase = (buffer_phase_t)i2s->tx_completed_half;
+	/* Only RX callback drives the audio task — see comment in old code */
 }
 
 /* ── Engine task ────────────────────────────────────────────────── */
@@ -154,7 +195,6 @@ static void audio_engine_task(void *pvParameters)
 
 	buffer_phase_t last_rx_phase = BUFFER_SECOND_HALF;
 	buffer_phase_t last_tx_phase = BUFFER_SECOND_HALF;
-
 	for (;;) {
 		ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
@@ -175,8 +215,6 @@ static void audio_engine_task(void *pvParameters)
 			continue;
 		}
 
-		/* Walk the entire graph: source reads DMA RX, processors
-		 * transform, sink writes DMA TX */
 		ove_audio_graph_process(sc->graph);
 	}
 }
@@ -202,15 +240,14 @@ static int i2s_sink_start(void *ctx)
 		return OVE_ERR_NO_MEMORY;
 #endif
 
-	i2s_startStream();
-	return OVE_OK;
+	return ove_i2s_start(sc->i2s);
 }
 
 static int i2s_sink_stop(void *ctx)
 {
 	struct i2s_sink_ctx *sc = (struct i2s_sink_ctx *)ctx;
 
-	i2s_pauseStream();
+	ove_i2s_pause(sc->i2s);
 
 	if (sc->task_handle != NULL) {
 		vTaskDelete(sc->task_handle);
@@ -226,6 +263,8 @@ static const struct ove_audio_node_ops i2s_sink_ops = {
 	.process   = i2s_sink_process,
 };
 
+#endif /* CONFIG_OVE_I2S */
+
 /* ========================================================================= */
 /* DEVICE NODE FACTORIES                                                     */
 /* ========================================================================= */
@@ -237,32 +276,30 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 	if (!g || !cfg || !name)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
-		return OVE_ERR_NOT_SUPPORTED;
+#ifdef CONFIG_OVE_I2S
+	if (cfg->transport == OVE_AUDIO_TRANSPORT_I2S) {
+		struct i2s_source_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
+		if (!ctx)
+			return OVE_ERR_NO_MEMORY;
 
-	/* Use static context embedded in g_sink_ctx — there's only one I2S.
-	 * Source context is lightweight, allocate on heap. */
-	struct i2s_source_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
-	if (!ctx)
-		return OVE_ERR_NO_MEMORY;
+		memset(ctx, 0, sizeof(*ctx));
+		ctx->fmt = cfg->fmt;
+		ctx->input_device = cfg->i2s.input_device;
+		/* Default I2S slot mapping for STM32F746-DISCO (SAI, 2 slots).
+		 * DMIC: L = slot 1, R = slot 0 (swapped in SAI frame).
+		 * Override via cfg->i2s.slot_mask if needed. */
+		ctx->slot_count = 2;
+		ctx->rx_slots[0] = 1;  /* mono/left channel from slot 1 */
+		ctx->rx_slots[1] = 0;  /* right channel from slot 0 */
 
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->fmt = cfg->fmt;
-	ctx->input_device = cfg->i2s.input_device;
-
-	/* Configure I2S hardware */
-	if (!i2s_set_driver(i2s_stm32f7_get()))
-		return OVE_ERR_NOT_SUPPORTED;
-
-	i2s_stm32f7_set_input_device(ctx->input_device ? 1 : 0);
-	if (cfg->fmt.sample_rate)
-		i2s_stm32f7_set_sample_rate(cfg->fmt.sample_rate);
-
-	int idx = ove_audio_graph_add_node(g, &i2s_source_ops, ctx, name,
-					   OVE_AUDIO_NODE_SOURCE);
-	if (idx < 0)
-		OVE_BACKEND_FREE(ctx);
-	return idx;
+		int idx = ove_audio_graph_add_node(g, &i2s_source_ops, ctx,
+						   name, OVE_AUDIO_NODE_SOURCE);
+		if (idx < 0)
+			OVE_BACKEND_FREE(ctx);
+		return idx;
+	}
+#endif
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 int ove_audio_device_sink(struct ove_audio_graph *g,
@@ -272,28 +309,66 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 	if (!g || !cfg || !name)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (cfg->transport != OVE_AUDIO_TRANSPORT_I2S)
-		return OVE_ERR_NOT_SUPPORTED;
+#ifdef CONFIG_OVE_I2S
+	if (cfg->transport == OVE_AUDIO_TRANSPORT_I2S) {
+		struct i2s_sink_ctx *ctx = &g_sink_ctx;
+		memset(ctx, 0, sizeof(*ctx));
+		ctx->fmt = cfg->fmt;
+		ctx->graph = g;
+		ctx->frames_per_period = g->frames_per_period;
+		ctx->thread_priority = cfg->thread_priority
+			? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY;
+		ctx->thread_stack_size = cfg->thread_stack_size
+			? cfg->thread_stack_size : DEFAULT_AUDIO_STACK;
 
-	/* Use static sink context (one I2S sink at a time) */
-	struct i2s_sink_ctx *ctx = &g_sink_ctx;
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->fmt = cfg->fmt;
-	ctx->graph = g;
-	ctx->frames_per_period = g->frames_per_period;
-	ctx->thread_priority = cfg->thread_priority ? cfg->thread_priority
-						    : DEFAULT_AUDIO_PRIORITY;
-	ctx->thread_stack_size = cfg->thread_stack_size ? cfg->thread_stack_size
-							: DEFAULT_AUDIO_STACK;
+		/* TX slot mapping: HP DAC L = slot 0, R = slot 1 */
+		ctx->tx_slot_count = 2;
+		ctx->tx_slots[0] = 0;  /* mono/left to slot 0 */
+		ctx->tx_slots[1] = 1;  /* right to slot 1 */
 
-	/* Register ISR callbacks */
-	i2s_stm32f7_setTxCompleteCb(audio_tx_complete_callback);
-	i2s_setRxCompleteCb(audio_rx_complete_callback);
-	i2s_init();
+		/* Create I2S bus.
+		 * DMA buffer holds frames_per_period * slot_count * 2 samples
+		 * (slot_count=2 for SAI, *2 for double-buffering). */
+		unsigned int slot_count = 2;
+		struct ove_i2s_cfg i2s_cfg = {
+			.instance        = 1,  /* SAI2 */
+			.sample_rate     = cfg->fmt.sample_rate,
+			.bit_depth       = 16,
+			.channels        = cfg->fmt.channels,
+			.direction       = OVE_I2S_DIR_TXRX,
+			.dma_buf_samples = g->frames_per_period * slot_count * 2,
+		};
 
-	int idx = ove_audio_graph_add_node(g, &i2s_sink_ops, ctx, name,
-					   OVE_AUDIO_NODE_SINK);
-	return idx;
+		/* DMA buffers MUST be in non-cacheable memory (DTCM on Cortex-M7).
+		 * Heap is in cached SRAM — cannot use ove_i2s_create() here.
+		 * Board linker script places .RxBUF / .TxBUF in DTCM. */
+		static uint8_t tx_dma[4096] __attribute__((section(".TxBUF"), aligned(32)));
+		static uint8_t rx_dma[4096] __attribute__((section(".RxBUF"), aligned(32)));
+#ifndef CONFIG_OVE_ZERO_HEAP
+		static ove_i2s_storage_t i2s_stor;
+		int ret = ove_i2s_init(&ctx->i2s, &i2s_stor,
+				       tx_dma, rx_dma, &i2s_cfg);
+#else
+		int ret = ove_i2s_init(&ctx->i2s, &ctx->i2s_storage,
+				       tx_dma, rx_dma, &i2s_cfg);
+#endif
+		if (ret != OVE_OK)
+			return ret;
+
+		/* Board-specific codec init (WM8994 etc.) */
+		ove_board_audio_codec_init(cfg->fmt.sample_rate,
+					   cfg->i2s.input_device);
+
+		/* Register ISR callbacks with sink context as user_data */
+		ove_i2s_set_tx_callback(ctx->i2s, audio_tx_complete_callback, ctx);
+		ove_i2s_set_rx_callback(ctx->i2s, audio_rx_complete_callback, ctx);
+
+		int idx = ove_audio_graph_add_node(g, &i2s_sink_ops, ctx,
+						   name, OVE_AUDIO_NODE_SINK);
+		return idx;
+	}
+#endif
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 #endif /* CONFIG_OVE_AUDIO */

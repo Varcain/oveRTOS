@@ -87,6 +87,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 	TickType_t ticks;
 	BaseType_t ret;
 
+	configASSERT(q != NULL);
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		ticks = portMAX_DELAY;
 	} else {
@@ -106,6 +107,7 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 	TickType_t ticks;
 	BaseType_t ret;
 
+	configASSERT(q != NULL);
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		ticks = portMAX_DELAY;
 	} else {
@@ -124,6 +126,7 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 	BaseType_t yield_required = pdFALSE;
 	BaseType_t ret;
 
+	configASSERT(q != NULL);
 	ret = xQueueSendFromISR(q->queue, data, &yield_required);
 	portYIELD_FROM_ISR(yield_required);
 
@@ -138,6 +141,7 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	BaseType_t yield_required = pdFALSE;
 	BaseType_t ret;
 
+	configASSERT(q != NULL);
 	ret = xQueueReceiveFromISR(q->queue, buf, &yield_required);
 	portYIELD_FROM_ISR(yield_required);
 

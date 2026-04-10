@@ -53,3 +53,11 @@ sdcard:
 
 watchdog:
   timeout_ms: 5000
+
+defconfig:
+  - CONFIG_OVE_TOOLCHAIN_DOWNLOAD=y
+  - CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM=y
+
+rtos_defconfig:
+  freertos:
+    - CONFIG_FREERTOS_TOTAL_HEAP_SIZE=131072

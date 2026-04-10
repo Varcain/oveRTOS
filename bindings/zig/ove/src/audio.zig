@@ -175,6 +175,11 @@ pub const AudioBuf = struct {
         return self.raw.*.frames;
     }
 
+    /// Number of interleaved channels in this buffer.
+    pub fn channels(self: AudioBuf) u32 {
+        return self.raw.*.fmt.*.channels;
+    }
+
     /// Total sample count (frames * channels).
     fn sampleCount(self: AudioBuf) usize {
         return self.raw.*.frames * self.raw.*.fmt.*.channels;

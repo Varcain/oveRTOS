@@ -7,7 +7,7 @@
  */
 
 /*
- * Test-only board_desc.h — simulates host-pc board for stub testing.
+ * Test-only board_desc.h — simulates host board for stub testing.
  */
 
 #ifndef OVE_BOARD_DESC_H

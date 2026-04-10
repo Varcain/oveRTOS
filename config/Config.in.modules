@@ -18,16 +18,17 @@ comment "Optional modules"
 
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
-    default y
+    default n
 
 config OVE_AUDIO
     bool "Audio subsystem"
-    default y
+    default n
+    select OVE_I2S if OVE_RTOS_FREERTOS && !OVE_BOARD_QEMU_MPS2_AN500
 
 config OVE_AUDIO_NODE_CONVERTER
     bool "Audio format converter node"
     depends on OVE_AUDIO
-    default y
+    default n
 
 config OVE_AUDIO_NODE_GAIN
     bool "Audio gain node"
@@ -43,70 +44,70 @@ config OVE_AUDIO_NODE_CHANNEL_MAP
 
 config OVE_FS
     bool "File system"
-    default y
+    default n
 
 config OVE_CONSOLE
     bool "Console I/O"
-    default y
+    default n
 
 config OVE_LOG
     bool "Logging"
-    default y
+    default n
     depends on OVE_CONSOLE
 
 config OVE_TIME
     bool "Time and delay functions"
-    default y
+    default n
 
 config OVE_BOARD
     bool "Board descriptor and init"
-    default y
+    default n
 
 config OVE_GPIO
     bool "GPIO control"
-    default y
+    default n
 
 config OVE_LED
     bool "LED control"
-    default y
+    default n
     select OVE_GPIO
 
 config OVE_BSP
     bool "Board support package (compat — selects board+gpio+led)"
-    default y
+    default n
     select OVE_BOARD
     select OVE_GPIO
     select OVE_LED
 
 config OVE_LVGL
     bool "LVGL UI framework"
-    default y
+    default n
     select OVE_SYNC
 
 config OVE_QUEUE
     bool "Message queues"
-    default y
+    default n
 
 config OVE_TIMER
     bool "Software timers"
-    default y
+    default n
 
 config OVE_EVENTGROUP
     bool "Event groups"
-    default y
+    default n
 
 config OVE_SHELL
     bool "Interactive shell"
-    default y
+    default n
     depends on OVE_CONSOLE
 
 config OVE_NVS
     bool "Non-volatile storage"
-    default y
+    default n
 
 config OVE_WATCHDOG
     bool "Watchdog timer"
-    default y
+    default n
 
 config OVE_WORKQUEUE
     bool "Work queues"
@@ -115,6 +116,45 @@ config OVE_WORKQUEUE
 config OVE_STREAM
     bool "Stream I/O"
     default n
+
+menu "Bus drivers"
+
+config OVE_UART
+    bool "UART serial"
+    default n
+    select OVE_SYNC
+    select OVE_STREAM
+    help
+      General-purpose UART driver with configurable baud rate,
+      framing, async RX buffering, and thread-safe TX.
+
+config OVE_SPI
+    bool "SPI bus master"
+    default n
+    select OVE_SYNC
+    select OVE_GPIO
+    help
+      SPI master driver with configurable clock, mode, and
+      software CS management via GPIO. Thread-safe bus locking.
+
+config OVE_I2C
+    bool "I2C bus master"
+    default n
+    select OVE_SYNC
+    help
+      I2C master driver with standard/fast/fast-plus speed,
+      register-level convenience APIs, and thread-safe bus locking.
+
+config OVE_I2S
+    bool "I2S / SAI audio bus"
+    default n
+    help
+      I2S audio bus driver with DMA double-buffered streaming,
+      half-buffer completion callbacks, and configurable sample
+      rate, bit depth, and channel count. Codec initialisation
+      is board-specific and not part of this driver.
+
+endmenu
 
 menu "Machine learning"
 
@@ -255,6 +295,112 @@ config OVE_NET_HTTPD_WS_MAX_FRAME
     int "Max WebSocket frame payload (bytes)"
     default 1024
     depends on OVE_NET_HTTPD_WS
+
+endmenu
+
+menu "Power Management"
+
+config OVE_PM
+    bool "Power management framework"
+    default n
+    select OVE_SYNC
+    select OVE_TIME
+    help
+      Unified power management with sleep state machine,
+      peripheral power domains, tickless idle integration,
+      wake source management, and runtime power statistics.
+
+config OVE_PM_MAX_WAKE_SOURCES
+    int "Maximum registered wake sources"
+    default 8
+    depends on OVE_PM
+    help
+      Maximum number of concurrently registered wake sources.
+      Each entry consumes ~32 bytes of static RAM.
+
+config OVE_PM_MAX_NOTIFIERS
+    int "Maximum transition notifiers"
+    default 4
+    depends on OVE_PM
+    help
+      Maximum number of pre/post sleep notification callbacks.
+
+config OVE_PM_IDLE_THRESHOLD_MS
+    int "Idle threshold (ms)"
+    default 10
+    depends on OVE_PM
+    help
+      Minimum idle duration before transitioning from ACTIVE to IDLE.
+
+config OVE_PM_STANDBY_THRESHOLD_MS
+    int "Standby threshold (ms)"
+    default 1000
+    depends on OVE_PM
+    help
+      Minimum idle duration before transitioning from IDLE to STANDBY.
+
+config OVE_PM_DEEP_SLEEP_THRESHOLD_MS
+    int "Deep sleep threshold (ms)"
+    default 10000
+    depends on OVE_PM
+    help
+      Minimum idle duration before transitioning to DEEP_SLEEP.
+
+config OVE_PM_STATS
+    bool "Power statistics tracking"
+    default y
+    depends on OVE_PM
+    help
+      Track cumulative time in each power state and transition
+      counts. Adds ~64 bytes of RAM overhead.
+
+config OVE_PM_BUDGET
+    bool "Power budget enforcement"
+    default n
+    depends on OVE_PM && OVE_PM_STATS
+    help
+      Enable power budget target tracking. The policy engine
+      can use the budget to adjust sleep depth automatically.
+
+endmenu
+
+menu "Simulation"
+
+config OVE_SIM
+    bool "Simulation plugin framework"
+    default y if OVE_RTOS_POSIX
+    help
+      Enable the simulation plugin framework. Replaces bare-stub
+      HAL implementations with plugin-aware versions that support
+      virtual peripherals, sensor injection, and host-side
+      web dashboard visualization.
+      Enabled by default for POSIX builds (browser-based dashboard).
+
+config OVE_SIM_TRANSPORT_DIRECT
+    bool
+    default y if OVE_RTOS_POSIX && OVE_SIM
+
+config OVE_SIM_TRANSPORT_SHM
+    bool
+    default y if !OVE_RTOS_POSIX && OVE_SIM
+
+config OVE_SIM_TRANSPORT_WASM
+    bool
+    default y if OVE_BOARD_WASM && OVE_SIM
+
+config OVE_SIM_DASHBOARD
+    bool "Web dashboard"
+    default y if OVE_SIM
+    depends on OVE_SIM
+    help
+      Enable the browser-based simulation dashboard served over
+      a local WebSocket server. Displays framebuffer, audio,
+      LED states, GPIO matrix, and sensor controls.
+
+config OVE_SIM_DASHBOARD_PORT
+    int "Dashboard HTTP port"
+    default 8080
+    depends on OVE_SIM_DASHBOARD
 
 endmenu
 

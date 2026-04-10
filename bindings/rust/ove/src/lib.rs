@@ -34,6 +34,7 @@ pub mod led;
 #[cfg(has_console)]
 pub mod console;
 pub mod error;
+#[cfg(has_eventgroup)]
 pub mod eventgroup;
 pub mod fmt;
 #[cfg(has_fs)]
@@ -43,14 +44,17 @@ pub mod lvgl;
 #[cfg(has_nvs)]
 pub mod nvs;
 pub mod priority;
+#[cfg(has_queue)]
 pub mod queue;
 #[cfg(has_shell)]
 pub mod shell;
 pub mod static_cell;
+#[cfg(has_sync)]
 pub mod sync;
 pub mod thread;
 #[cfg(has_time)]
 pub mod time;
+#[cfg(has_timer)]
 pub mod timer;
 #[cfg(has_stream)]
 pub mod stream;
@@ -72,6 +76,82 @@ pub mod net_httpd;
 pub mod net_tls;
 #[cfg(has_net_sntp)]
 pub mod net_sntp;
+#[cfg(has_uart)]
+pub mod uart;
+#[cfg(has_spi)]
+pub mod spi;
+#[cfg(has_i2c)]
+pub mod i2c;
+#[cfg(has_pm)]
+pub mod pm;
+
+// ---------------------------------------------------------------------------
+// Internal handle boilerplate macros
+// ---------------------------------------------------------------------------
+
+/// Generate `Debug`, `Drop`, and thread-safety impls for an oveRTOS handle
+/// wrapper struct that stores a nullable handle in a field named `handle`.
+///
+/// # Variants
+///
+/// - `(Name, destroy_fn, deinit_fn)` — Send + Sync
+/// - `(Name, destroy_fn, deinit_fn, send_only)` — Send only (no Sync)
+/// - `(Name<const N: usize>, destroy_fn, deinit_fn)` — const-generic, Send + Sync
+#[doc(hidden)]
+#[macro_export]
+macro_rules! ove_handle_impl {
+    // Non-generic, Send + Sync
+    ($name:ident, $destroy:ident, $deinit:ident) => {
+        $crate::ove_handle_impl!(@debug $name);
+        $crate::ove_handle_impl!(@drop $name, $destroy, $deinit);
+        unsafe impl Send for $name {}
+        unsafe impl Sync for $name {}
+    };
+
+    // Non-generic, Send only (no Sync)
+    ($name:ident, $destroy:ident, $deinit:ident, send_only) => {
+        $crate::ove_handle_impl!(@debug $name);
+        $crate::ove_handle_impl!(@drop $name, $destroy, $deinit);
+        unsafe impl Send for $name {}
+    };
+
+    // Const-generic, Send + Sync
+    ($name:ident<const $N:ident: usize>, $destroy:ident, $deinit:ident) => {
+        impl<const $N: usize> Drop for $name<$N> {
+            fn drop(&mut self) {
+                if self.handle.is_null() { return; }
+                #[cfg(not(zero_heap))]
+                unsafe { $crate::bindings::$destroy(self.handle) }
+                #[cfg(zero_heap)]
+                unsafe { $crate::bindings::$deinit(self.handle) }
+            }
+        }
+        unsafe impl<const $N: usize> Send for $name<$N> {}
+        unsafe impl<const $N: usize> Sync for $name<$N> {}
+    };
+
+    (@debug $name:ident) => {
+        impl core::fmt::Debug for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    .field("handle", &format_args!("{:p}", self.handle))
+                    .finish()
+            }
+        }
+    };
+
+    (@drop $name:ident, $destroy:ident, $deinit:ident) => {
+        impl Drop for $name {
+            fn drop(&mut self) {
+                if self.handle.is_null() { return; }
+                #[cfg(not(zero_heap))]
+                unsafe { $crate::bindings::$destroy(self.handle) }
+                #[cfg(zero_heap)]
+                unsafe { $crate::bindings::$deinit(self.handle) }
+            }
+        }
+    };
+}
 
 /// Raw FFI bindings re-exported for advanced use cases.
 ///
@@ -83,12 +163,16 @@ pub mod ffi {
 
 // Public re-exports for convenience
 pub use error::{Error, Result, WAIT_FOREVER};
+#[cfg(has_eventgroup)]
 pub use eventgroup::{EventGroup, WaitFlags, EG_CLEAR_ON_EXIT, EG_WAIT_ALL};
 pub use priority::Priority;
+#[cfg(has_queue)]
 pub use queue::Queue;
+#[cfg(has_sync)]
 pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
 pub use thread::{Thread, ThreadState, ThreadStats, MemStats, ThreadInfo};
 pub use static_cell::{StaticCell, StaticMut};
+#[cfg(has_timer)]
 pub use timer::Timer;
 pub use fmt::FmtBuf;
 #[cfg(has_stream)]
@@ -145,6 +229,9 @@ macro_rules! _log_prefixed {
 
 /// Log an informational message with `[I]` prefix and automatic newline.
 ///
+/// Uses a 256-byte stack buffer.  Messages longer than ~250 characters
+/// (after prefix and newline) are silently truncated.
+///
 /// Produces the same console output as the C `OVE_LOG_INF` macro.
 ///
 /// # Example
@@ -160,6 +247,9 @@ macro_rules! log_inf {
 
 /// Log a warning message with `[W]` prefix and automatic newline.
 ///
+/// Uses a 256-byte stack buffer.  Messages longer than ~250 characters
+/// (after prefix and newline) are silently truncated.
+///
 /// Produces the same console output as the C `OVE_LOG_WRN` macro.
 #[macro_export]
 macro_rules! log_wrn {
@@ -167,6 +257,9 @@ macro_rules! log_wrn {
 }
 
 /// Log an error message with `[E]` prefix and automatic newline.
+///
+/// Uses a 256-byte stack buffer.  Messages longer than ~250 characters
+/// (after prefix and newline) are silently truncated.
 ///
 /// Produces the same console output as the C `OVE_LOG_ERR` macro.
 #[macro_export]
@@ -238,6 +331,7 @@ macro_rules! main {
 // ---------------------------------------------------------------------------
 
 /// Create a [`Mutex`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! mutex {
     () => {{
@@ -253,6 +347,7 @@ macro_rules! mutex {
 }
 
 /// Create a [`RecursiveMutex`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! recursive_mutex {
     () => {{
@@ -268,6 +363,7 @@ macro_rules! recursive_mutex {
 }
 
 /// Create a [`Semaphore`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! semaphore {
     ($initial:expr, $max:expr) => {{
@@ -285,6 +381,7 @@ macro_rules! semaphore {
 }
 
 /// Create an [`Event`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! event {
     () => {{
@@ -300,6 +397,7 @@ macro_rules! event {
 }
 
 /// Create a [`CondVar`] that works in both heap and zero-heap modes.
+#[cfg(has_sync)]
 #[macro_export]
 macro_rules! condvar {
     () => {{
@@ -315,6 +413,7 @@ macro_rules! condvar {
 }
 
 /// Create an [`EventGroup`] that works in both heap and zero-heap modes.
+#[cfg(has_eventgroup)]
 #[macro_export]
 macro_rules! eventgroup {
     () => {{
@@ -335,6 +434,7 @@ macro_rules! eventgroup {
 /// ```ignore
 /// let q = ove::queue!(u32, 8);
 /// ```
+#[cfg(has_queue)]
 #[macro_export]
 macro_rules! queue {
     ($T:ty, $N:expr) => {{
@@ -362,6 +462,7 @@ macro_rules! queue {
 /// ```ignore
 /// let t = ove::timer!(my_callback, 100, false);
 /// ```
+#[cfg(has_timer)]
 #[macro_export]
 macro_rules! timer {
     ($callback:expr, $period_ms:expr, $one_shot:expr) => {{

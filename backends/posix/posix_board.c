@@ -13,6 +13,6 @@
 
 int ove_hal_board_init(void)
 {
-	printf("[BOARD] Board initialized (POSIX/SDL2)\n");
+	printf("[BOARD] Board initialized (POSIX)\n");
 	return OVE_OK;
 }

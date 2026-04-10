@@ -61,6 +61,15 @@
 /** @brief Connection closed by the remote peer. */
 #define OVE_ERR_NET_CLOSED       (-13)
 
+/** @brief Bus device did not acknowledge (I2C NACK). */
+#define OVE_ERR_BUS_NACK         (-14)
+
+/** @brief Bus arbitration lost (multi-master). */
+#define OVE_ERR_BUS_BUSY         (-15)
+
+/** @brief Framing, parity, or hardware error on a serial bus. */
+#define OVE_ERR_BUS_ERROR        (-16)
+
 /**
  * @brief Timeout value that means "block indefinitely".
  *
@@ -122,6 +131,18 @@ typedef struct ove_http_client *ove_http_client_t;
 
 /** @brief Opaque handle for an MQTT client. @see ove_mqtt_client_init, ove_mqtt_client_create */
 typedef struct ove_mqtt_client *ove_mqtt_client_t;
+
+/** @brief Opaque handle for a UART peripheral. @see ove_uart_init, ove_uart_create */
+typedef struct ove_uart *ove_uart_t;
+
+/** @brief Opaque handle for an SPI bus controller. @see ove_spi_init, ove_spi_create */
+typedef struct ove_spi *ove_spi_t;
+
+/** @brief Opaque handle for an I2C bus controller. @see ove_i2c_init, ove_i2c_create */
+typedef struct ove_i2c *ove_i2c_t;
+
+/** @brief Opaque handle for an I2S / SAI bus controller. @see ove_i2s_init, ove_i2s_create */
+typedef struct ove_i2s *ove_i2s_t;
 
 /**
  * @brief Bit-mask type used by the event-group API.

@@ -5,13 +5,15 @@
 // This file is part of oveRTOS.
 
 const c = @import("c.zig").raw;
+const err = @import("error.zig");
+const Error = err.Error;
 
 /// Initialize the oveRTOS console driver.
 ///
 /// Must be called before `write()`, `putchar()`, or `getchar()`.
 /// Returns `Error` if the UART or other console hardware fails to initialize.
-pub fn init() @import("error.zig").Error!void {
-    try @import("error.zig").fromCode(c.ove_console_init());
+pub fn init() Error!void {
+    try err.fromCode(c.ove_console_init());
 }
 
 /// Write a byte slice to the console output.

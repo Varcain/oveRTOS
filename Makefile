@@ -71,6 +71,21 @@ menuconfig: $(VENV_STAMP)
 %_defconfig: $(VENV_STAMP)
 	@$(OVE) defconfig $@
 
+# Fragment-based configuration: make <board>.<rtos>.<app> [ZEROHEAP=1]
+# Examples:
+#   make qemu.freertos.example_c
+#   make stm32f746.zephyr.benchmark_rust
+#   make host.posix.example_net_cpp ZEROHEAP=1
+#
+# Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
+# Exclude allconfigs-* and alldefconfigs (handled by their own pattern rules).
+_DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(if $(filter allconfigs-% alldefconfigs,$(t)),,$(t))))
+ifneq ($(_DOT_TARGETS),)
+.PHONY: $(_DOT_TARGETS)
+$(_DOT_TARGETS): $(VENV_STAMP)
+	@$(OVE) defconfig-fragments "$@" $(if $(ZEROHEAP),--zeroheap)
+endif
+
 .PHONY: savedefconfig
 savedefconfig: $(VENV_STAMP)
 	@$(OVE) savedefconfig
@@ -99,35 +114,59 @@ all: $(VENV_STAMP)
 	@$(OVE) configure
 	@$(OVE) build
 
-.PHONY: alldefconfigs
-alldefconfigs: $(VENV_STAMP)
-	@CONFIGS=$$(find $(OVE_DIR)/defconfigs -name '*_defconfig' -type f | sort); \
-	TOTAL=$$(echo "$$CONFIGS" | wc -l); \
+# Build all app configurations for a given board.rtos pair.
+# Usage: make allconfigs-host.posix
+#        make allconfigs-qemu.freertos
+#        make allconfigs-stm32f746.zephyr
+.PHONY: allconfigs-%
+allconfigs-%: $(VENV_STAMP)
+	@BOARD_RTOS="$*"; \
+	BOARD=$$(echo "$$BOARD_RTOS" | cut -d. -f1); \
+	RTOS=$$(echo "$$BOARD_RTOS" | cut -d. -f2); \
+	if [ -z "$$BOARD" ] || [ -z "$$RTOS" ]; then \
+		echo "ERROR: usage: make allconfigs-<board>.<rtos>"; exit 1; \
+	fi; \
+	APPS=$$(grep -rh 'config_name:' $(OVE_DIR)/apps/*/app.yaml $(OVE_DIR)/apps/*/*/app.yaml 2>/dev/null \
+		| sed 's/.*config_name: *//' | sort -u); \
+	TOTAL=$$(echo "$$APPS" | wc -w); \
 	CURRENT=0; \
 	FAILED=""; \
-	for cfg in $$CONFIGS; do \
-		NAME=$$(basename $$cfg); \
+	for app in $$APPS; do \
 		CURRENT=$$((CURRENT + 1)); \
 		echo ""; \
 		echo "============================================================"; \
-		echo "[$$CURRENT/$$TOTAL] Building $$NAME"; \
+		echo "[$$CURRENT/$$TOTAL] Building $$BOARD.$$RTOS.$$app"; \
 		echo "============================================================"; \
-		if $(MAKE) $$NAME && $(MAKE); then \
-			echo "[$$CURRENT/$$TOTAL] $$NAME: OK"; \
+		if $(MAKE) "$$BOARD.$$RTOS.$$app" && $(MAKE); then \
+			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: OK"; \
 		else \
-			echo "[$$CURRENT/$$TOTAL] $$NAME: FAILED"; \
-			FAILED="$$FAILED $$NAME"; \
+			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: FAILED"; \
+			FAILED="$$FAILED $$app"; \
 		fi; \
 	done; \
 	echo ""; \
 	echo "============================================================"; \
-	echo "alldefconfigs: $$TOTAL configurations processed"; \
+	echo "allconfigs-$$BOARD.$$RTOS: $$TOTAL configurations processed"; \
 	if [ -n "$$FAILED" ]; then \
 		echo "FAILED:$$FAILED"; \
 		exit 1; \
 	else \
 		echo "All configurations built successfully"; \
 	fi
+
+.PHONY: alldefconfigs
+alldefconfigs: $(VENV_STAMP)
+	@BOARDS=$$(find $(OVE_DIR)/boards -maxdepth 1 -mindepth 1 -type d -exec basename {} \; | sort); \
+	RTOSES="freertos nuttx zephyr posix"; \
+	for board in $$BOARDS; do \
+		for rtos in $$RTOSES; do \
+			echo ""; \
+			echo "############################################################"; \
+			echo "# allconfigs-$$board.$$rtos"; \
+			echo "############################################################"; \
+			$(MAKE) "allconfigs-$$board.$$rtos" || true; \
+		done; \
+	done
 
 # ── Run / Flash / Debug ───────────────────────────────────────────────────
 
@@ -309,23 +348,45 @@ help:
 	@echo "oveRTOS Build System"
 	@echo "===================="
 	@echo ""
-	@echo "Configuration:"
-	@echo "  menuconfig              - Interactive configuration (TUI)"
-	@echo "  <name>_defconfig        - Load a predefined config from defconfigs/"
-	@echo "  savedefconfig           - Save current config as minimal defconfig"
-	@echo "  nuttx-menuconfig        - NuttX native kernel menuconfig"
-	@echo "  zephyr-menuconfig       - Zephyr native kernel menuconfig"
+	@echo "Configuration:  make <board>.<rtos>.<app> [ZEROHEAP=1]"
 	@echo ""
-	@echo "Available defconfigs:"
-	@for f in $$(find $(OVE_DIR)/defconfigs -name "*_defconfig" -type f | sort); do \
-		echo "  $$(basename $$f)"; \
+	@echo "  Boards:"
+	@for d in $$(find $(OVE_DIR)/boards -maxdepth 1 -mindepth 1 -type d | sort); do \
+		name=$$(basename $$d); \
+		rtoses=$$(find $$d -maxdepth 1 -mindepth 1 -type d -not -name src -not -name cmake | \
+			  sort | xargs -I{} basename {} | tr '\n' ' '); \
+		printf "    %-28s  [%s]\n" "$$name" "$$rtoses"; \
 	done
+	@echo ""
+	@echo "  Apps:"
+	@for lang in c cpp rust zig; do \
+		langdir="$(OVE_DIR)/apps/$$lang"; \
+		[ -d "$$langdir" ] || continue; \
+		printf "    [%s]\n" "$$lang"; \
+		for f in $$(find "$$langdir" -name "app.yaml" -type f | sort); do \
+			cname=$$(grep 'config_name:' $$f | head -1 | sed 's/.*config_name: *//'); \
+			desc=$$(grep 'description:' $$f | head -1 | sed 's/.*description: *"*//;s/"*$$//'); \
+			if [ -n "$$cname" ]; then printf "      %-26s  %s\n" "$$cname" "$$desc"; fi; \
+		done; \
+	done
+	@echo ""
+	@echo "  Examples:"
+	@echo "    make qemu.freertos.example_c"
+	@echo "    make stm32f746.zephyr.benchmark_rust"
+	@echo "    make host.posix.example_net ZEROHEAP=1"
+	@echo ""
+	@echo "  Other:"
+	@echo "    menuconfig              - Interactive configuration (TUI)"
+	@echo "    savedefconfig           - Save current config as minimal defconfig"
+	@echo "    nuttx-menuconfig        - NuttX native kernel menuconfig"
+	@echo "    zephyr-menuconfig       - Zephyr native kernel menuconfig"
 	@echo ""
 	@echo "Build:"
 	@echo "  all (default)           - Full pipeline: download, configure, build"
 	@echo "  download                - Download RTOS sources to dl/"
 	@echo "  configure               - Generate config files from .config"
-	@echo "  alldefconfigs           - Build every defconfig (all boards/RTOSes)"
+	@echo "  allconfigs-<board>.<rtos> - Build all apps for a board/RTOS pair"
+	@echo "  alldefconfigs           - Build every configuration (all boards/RTOSes)"
 	@echo "  setup                   - (Re)create Python venv and install CLI"
 	@echo "  flash                   - Flash firmware to target board"
 	@echo "  run                     - Run firmware (QEMU or POSIX)"

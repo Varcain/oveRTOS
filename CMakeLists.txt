@@ -27,6 +27,11 @@ set(OVE_SOURCES
     ${OVE_DIR}/src/ove_watchdog.c
     ${OVE_DIR}/src/ove_nvs.c
     ${OVE_DIR}/src/ove_shell.c
+    ${OVE_DIR}/src/ove_uart.c
+    ${OVE_DIR}/src/ove_spi.c
+    ${OVE_DIR}/src/ove_i2c.c
+    ${OVE_DIR}/src/ove_i2s.c
+    ${OVE_DIR}/src/ove_pm.c
 )
 
 set(OVE_INCLUDE_DIR ${OVE_DIR}/include)
@@ -40,3 +45,4 @@ set(OVE_SOURCES ${OVE_SOURCES} PARENT_SCOPE)
 set(OVE_INCLUDE_DIR ${OVE_INCLUDE_DIR} PARENT_SCOPE)
 set(OVE_BACKENDS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/backends PARENT_SCOPE)
 set(OVE_BACKENDS_COMMON_DIR ${OVE_BACKENDS_COMMON_DIR} PARENT_SCOPE)
+set(OVE_DRIVERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/drivers PARENT_SCOPE)

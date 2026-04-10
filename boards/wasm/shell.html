@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>oveRTOS Browser Simulation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css"/>
+    <link rel="stylesheet" href="style.css">
+    <script src="coi-serviceworker.js"></script>
+</head>
+<body>
+    <!--
+      Panel markup is identical to sim/dashboard/index.html.
+      All dashboard logic lives in the shared app.js.
+    -->
+    <header>
+        <h1>oveRTOS Simulation Dashboard</h1>
+        <div class="header-right">
+            <button id="reset-layout" class="btn btn-small" title="Reset window layout">Reset Layout</button>
+            <div id="status" class="status">Loading WASM...</div>
+        </div>
+    </header>
+
+    <div id="panel-store" style="display:none">
+        <section class="panel" id="display-panel">
+            <div class="display-container">
+                <canvas id="display-canvas"></canvas>
+            </div>
+            <div class="display-info">
+                <span id="display-resolution">--</span>
+                <span id="display-fps">-- FPS</span>
+            </div>
+        </section>
+
+        <section class="panel" id="audio-panel">
+            <div class="audio-controls">
+                <button id="audio-play-toggle" class="btn">Enable Playback</button>
+                <button id="audio-record-toggle" class="btn">Record Output</button>
+                <span id="audio-info">--</span>
+            </div>
+            <div class="audio-devices">
+                <label>Output: <select id="audio-output-select" class="btn"></select></label>
+            </div>
+            <div class="audio-source">
+                <label>Input:
+                    <select id="audio-source-select" class="btn">
+                        <option value="mic">Microphone</option>
+                        <option value="file">Audio File</option>
+                    </select>
+                </label>
+                <select id="audio-input-select" class="btn"></select>
+                <span id="audio-file-controls" style="display:none">
+                    <input type="file" id="audio-file-input" accept="audio/*,.raw,.pcm,.wav" style="display:none">
+                    <button id="audio-file-browse" class="btn">Browse...</button>
+                    <button id="audio-file-play" class="btn" style="display:none">Play File</button>
+                    <span id="audio-file-name"></span>
+                </span>
+                <a id="audio-download-link" style="display:none"></a>
+            </div>
+            <div class="waveform-pair">
+                <div class="waveform-box">
+                    <span class="waveform-label">INPUT</span>
+                    <canvas id="waveform-input" height="80"></canvas>
+                </div>
+                <div class="waveform-box">
+                    <span class="waveform-label">OUTPUT</span>
+                    <canvas id="waveform-output" height="80"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" id="events-panel">
+            <div class="events-toolbar">
+                <button id="autoscroll-toggle" class="btn btn-small autoscroll-on" title="Toggle auto-scroll">Auto-scroll: ON</button>
+            </div>
+            <div id="event-log" class="event-log"></div>
+            <div id="console-bar" style="display:flex;gap:8px;margin-top:4px;">
+                <input type="text" id="console-input" class="btn"
+                       style="flex:1;font-family:inherit;font-size:12px;padding:6px 8px;"
+                       placeholder="Type command + Enter...">
+                <button id="console-send" class="btn">Send</button>
+            </div>
+        </section>
+    </div>
+
+    <!--
+      SharedArrayBuffer guard: if the service worker hasn't activated yet,
+      block Emscripten from loading.  The page will auto-reload.
+    -->
+    <script>
+    if (typeof SharedArrayBuffer === 'undefined') {
+        document.getElementById('status').textContent =
+            'Activating service worker... (page will reload)';
+        window.__skip_emscripten = true;
+    }
+    </script>
+
+    <!--
+      Minimal Module definition — MUST be before Emscripten JS loads.
+      All dashboard logic lives in the shared app.js (initWasmMode).
+    -->
+    <script>
+    if (window.__skip_emscripten) {
+        var Module = { noInitialRun: true };
+    } else {
+        var Module = {
+            print: function(text) {
+                console.log(text);
+                if (typeof addEvent === 'function') addEvent('wasm', text);
+            },
+            printErr: function(text) {
+                console.error(text);
+                if (text.indexOf('keepRuntimeAlive') !== -1) return;
+                if (text.indexOf('program exited (with status: 0)') !== -1) return;
+                if (typeof addEvent === 'function') addEvent('err', text);
+            },
+            onAbort: function(what) {
+                var s = document.getElementById('status');
+                if (s) { s.textContent = 'WASM Aborted: ' + what; s.className = 'status disconnected'; }
+            },
+            onRuntimeInitialized: function() {
+                /* All WASM dashboard logic lives in app.js */
+                if (typeof window.initWasmMode === 'function')
+                    window.initWasmMode();
+            }
+        };
+    }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/js/winbox.min.js"></script>
+    <script src="app.js"></script>
+
+    <!-- Emscripten-generated JS (uses the pre-defined Module) -->
+    {{{ SCRIPT }}}
+</body>
+</html>

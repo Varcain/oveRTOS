@@ -28,6 +28,14 @@ def main():
     p = sub.add_parser("defconfig", help="Apply a defconfig and set up workspace")
     p.add_argument("name", help="Defconfig name (e.g. qemu_freertos_example_c)")
 
+    # ── defconfig-fragments ──────────────────────────────────────────
+    p = sub.add_parser("defconfig-fragments",
+                       help="Configure from hierarchical fragments "
+                            "(board.rtos.app)")
+    p.add_argument("spec", help="board.rtos.app (e.g. qemu.freertos.example_c)")
+    p.add_argument("--zeroheap", action="store_true",
+                   help="Enable zero-heap build")
+
     # ── menuconfig ─────────────────────────────────────────────────────
     sub.add_parser("menuconfig", help="Interactive configuration (TUI)")
 
@@ -116,6 +124,10 @@ def main():
     if args.command == "defconfig":
         from .kconfig import cmd_defconfig
         cmd_defconfig(args)
+
+    elif args.command == "defconfig-fragments":
+        from .kconfig import cmd_defconfig_fragments
+        cmd_defconfig_fragments(args)
 
     elif args.command == "menuconfig":
         from .kconfig import cmd_menuconfig

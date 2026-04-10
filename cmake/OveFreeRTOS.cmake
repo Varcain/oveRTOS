@@ -29,7 +29,7 @@ macro(ove_add_freertos_kernel _port_path)
         endif()
     endif()
 
-    # Kernel core sources
+    # Kernel core sources (plus shared oveRTOS FreeRTOS hooks)
     set(_OVE_FREERTOS_SOURCES
         ${FREERTOS_PATH}/tasks.c
         ${FREERTOS_PATH}/queue.c
@@ -38,6 +38,7 @@ macro(ove_add_freertos_kernel _port_path)
         ${FREERTOS_PATH}/event_groups.c
         ${FREERTOS_PATH}/stream_buffer.c
         ${FREERTOS_PATH}/portable/GCC/${_port_path}/port.c
+        ${OVE_DIR}/backends/freertos/freertos_hooks.c
     )
     if(NOT OVE_ZERO_HEAP)
         list(APPEND _OVE_FREERTOS_SOURCES

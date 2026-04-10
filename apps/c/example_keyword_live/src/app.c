@@ -59,13 +59,10 @@ static volatile uint32_t audio_cb_count;
 static volatile uint32_t samples_written;
 /* ── DMIC processor node ───────────────────────────────────────────
  *
- * 4-slot DMA layout per frame: [slot0, slot1, slot2, slot3]
- *   RX: DMIC Left = slot1, DMIC Right = slot3
- *   TX: HP DAC Left = slot0, HP DAC Right = slot2
- *
- * This processor node:
- *   1. Extracts DMIC left (slot 1) into the ring buffer for inference
- *   2. Copies DMIC channels to headphone output slots for monitoring
+ * Receives clean mono PCM from the audio source (driver handles
+ * I2S slot extraction) and:
+ *   1. Feeds samples into the ring buffer for inference
+ *   2. Passes audio through to the sink for monitoring
  */
 
 static int dmic_proc_configure(void *ctx, const struct ove_audio_fmt *in_fmt,
@@ -83,23 +80,20 @@ static int dmic_proc_process(void *ctx, const struct ove_audio_buf *in,
 	const int16_t *src = (const int16_t *)in->data;
 	int16_t *dst = (int16_t *)out->data;
 	unsigned int frames = in->frames;
+	unsigned int ch = in->fmt->channels;
 
 	audio_cb_count++;
 
-	unsigned int num_frames = frames / 4;
-	for (unsigned int f = 0; f < num_frames; f++) {
-		unsigned int base = f * 4;
-		int16_t mic_l = src[base + 1];  /* slot 1 = DMIC Left */
+	for (unsigned int f = 0; f < frames; f++) {
+		int16_t sample = src[f * ch]; /* left / mono channel */
 
-		/* Feed mono DMIC to ring buffer for inference */
-		ring_buffer_write(&audio_ring, &mic_l, 1);
+		/* Feed to ring buffer for inference */
+		ring_buffer_write(&audio_ring, &sample, 1);
 		samples_written++;
 
-		/* Passthrough to headphone: copy DMIC to TX slots 0+2 */
-		dst[base + 0] = mic_l;          /* slot 0 = HP Left */
-		dst[base + 1] = 0;              /* slot 1 = unused TX */
-		dst[base + 2] = src[base + 3];  /* slot 2 = HP Right (DMIC R) */
-		dst[base + 3] = 0;              /* slot 3 = unused TX */
+		/* Passthrough to output for monitoring */
+		for (unsigned int c = 0; c < ch; c++)
+			dst[f * ch + c] = src[f * ch + c];
 	}
 
 	return OVE_OK;

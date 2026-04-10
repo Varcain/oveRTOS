@@ -120,6 +120,19 @@
         "timeout_ms": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
+    },
+    "defconfig": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Board-specific Kconfig lines merged during fragment-based configuration."
+    },
+    "rtos_defconfig": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "description": "Per-RTOS Kconfig overrides, keyed by RTOS name (freertos, zephyr, nuttx, posix)."
     }
   },
   "additionalProperties": false

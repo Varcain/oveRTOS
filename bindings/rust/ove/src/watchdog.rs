@@ -63,17 +63,4 @@ impl Watchdog {
     }
 }
 
-impl Drop for Watchdog {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_watchdog_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_watchdog_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Watchdog wraps an opaque RTOS handle. Feed/start are thread-safe
-// RTOS calls. Create/destroy are single-threaded (lifecycle guarantee).
-unsafe impl Send for Watchdog {}
-unsafe impl Sync for Watchdog {}
+crate::ove_handle_impl!(Watchdog, ove_watchdog_destroy, ove_watchdog_deinit);

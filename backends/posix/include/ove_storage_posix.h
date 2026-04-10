@@ -141,6 +141,7 @@ typedef struct ove_stream ove_stream_storage_t;
 struct ove_watchdog {
 	uint32_t timeout_ms;
 	int started;
+	volatile uint64_t last_feed_us;
 };
 
 typedef struct ove_watchdog ove_watchdog_storage_t;
@@ -266,6 +267,76 @@ struct ove_mqtt_client {
 
 typedef struct ove_mqtt_client ove_mqtt_client_storage_t;
 #endif /* CONFIG_OVE_NET_MQTT */
+
+/* ── Bus drivers ─────────────────────────────────────────────────── */
+
+#ifdef CONFIG_OVE_UART
+struct ove_uart {
+	unsigned int         instance;
+	uint32_t             baudrate;
+	ove_stream_storage_t rx_stream_storage;
+	ove_stream_t         rx_stream;
+	uint8_t             *rx_buf;
+	size_t               rx_buf_size;
+	ove_mutex_storage_t  tx_mtx_storage;
+	ove_mutex_t          tx_mtx;
+	int                  fd;
+	pthread_t            rx_thread;
+	volatile int         running;
+};
+
+typedef struct ove_uart ove_uart_storage_t;
+#endif /* CONFIG_OVE_UART */
+
+#ifdef CONFIG_OVE_SPI
+struct ove_spi {
+	unsigned int        instance;
+	uint32_t            clock_hz;
+	uint8_t             mode;
+	uint8_t             bit_order;
+	uint8_t             word_size;
+	ove_mutex_storage_t bus_mtx_storage;
+	ove_mutex_t         bus_mtx;
+	int                 fd;
+};
+
+typedef struct ove_spi ove_spi_storage_t;
+#endif /* CONFIG_OVE_SPI */
+
+#ifdef CONFIG_OVE_I2S
+struct ove_i2s {
+	unsigned int     instance;
+	uint32_t         sample_rate;
+	uint8_t          bit_depth;
+	uint8_t          channels;
+	uint8_t          direction;
+	size_t           dma_buf_samples;
+	size_t           half_buf_bytes;
+	void            *tx_dma_buf;
+	void            *rx_dma_buf;
+	volatile uint8_t rx_completed_half;
+	volatile uint8_t tx_completed_half;
+	void           (*rx_cb)(struct ove_i2s *, void *);
+	void            *rx_cb_user_data;
+	void           (*tx_cb)(struct ove_i2s *, void *);
+	void            *tx_cb_user_data;
+	int              fd;
+};
+
+typedef struct ove_i2s ove_i2s_storage_t;
+#endif /* CONFIG_OVE_I2S */
+
+#ifdef CONFIG_OVE_I2C
+struct ove_i2c {
+	unsigned int        instance;
+	uint32_t            speed_hz;
+	ove_mutex_storage_t bus_mtx_storage;
+	ove_mutex_t         bus_mtx;
+	int                 fd;
+};
+
+typedef struct ove_i2c ove_i2c_storage_t;
+#endif /* CONFIG_OVE_I2C */
 
 #ifdef __cplusplus
 }

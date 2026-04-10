@@ -34,25 +34,7 @@ macro(ove_setup_project _proj_name)
 
     # Application directory — resolve from app_paths.json (supports
     # both flat and two-level apps/<lang>/<app> layouts).
-    if(NOT DEFINED OVE_APP_DIR)
-        file(STRINGS "${OVE_DIR}/.config" _app_line REGEX "^CONFIG_OVE_APP_NAME=")
-        if(_app_line)
-            string(REGEX REPLACE ".*=\"(.*)\"" "\\1" _app_name "${_app_line}")
-            set(_app_paths_json "${OVE_DIR}/output/kconfig/app_paths.json")
-            if(EXISTS "${_app_paths_json}")
-                file(READ "${_app_paths_json}" _app_paths_content)
-                # Extract path for this app name from JSON
-                string(REGEX MATCH "\"${_app_name}\"[: ]+\"([^\"]+)\"" _match "${_app_paths_content}")
-                if(CMAKE_MATCH_1)
-                    set(OVE_APP_DIR "${CMAKE_MATCH_1}")
-                endif()
-            endif()
-            # Fallback: flat layout
-            if(NOT DEFINED OVE_APP_DIR OR NOT EXISTS "${OVE_APP_DIR}")
-                set(OVE_APP_DIR "${OVE_DIR}/apps/${_app_name}")
-            endif()
-        endif()
-    endif()
+    include(${OVE_DIR}/cmake/OveAppResolve.cmake)
 
     # Generated config directory
     if(NOT DEFINED OVE_GEN_DIR)
@@ -299,6 +281,156 @@ macro(ove_add_extra_sources)
 endmacro()
 
 
+# ─── ove_add_stm32cube_hal(FAMILY <f7|f4|h7> [STARTUP <mcu>]) ────────
+# Add STM32CubeXX HAL driver sources, CMSIS device headers, and the
+# system_stm32XXxx.c init file.  Sets OVE_STM32CUBE_PATH as a side-effect
+# for subsequent ove_add_stm32cube_bsp / ove_add_fatfs / ove_add_cmsis_dsp.
+#
+# Arguments:
+#   FAMILY <fam>       Required: f7 / f4 / h7 / etc. (lowercase).
+#   STARTUP <mcu>      Optional: MCU name for the startup file lookup.
+#                      e.g. STARTUP stm32f746xx adds
+#                      Source/Templates/gcc/startup_stm32f746xx.s
+macro(ove_add_stm32cube_hal)
+    cmake_parse_arguments(_OVE_CUBE "" "FAMILY;STARTUP" "" ${ARGN})
+    if(NOT _OVE_CUBE_FAMILY)
+        message(FATAL_ERROR "ove_add_stm32cube_hal: FAMILY not specified (e.g. FAMILY f7)")
+    endif()
+    string(TOUPPER "${_OVE_CUBE_FAMILY}" _CUBE_FAM_UPPER)
+    set(OVE_STM32CUBE_PATH "${OVE_DL_DIR}/STM32Cube${_CUBE_FAM_UPPER}")
+    if(NOT EXISTS "${OVE_STM32CUBE_PATH}")
+        message(FATAL_ERROR
+            "STM32Cube${_CUBE_FAM_UPPER} not found at ${OVE_STM32CUBE_PATH}. "
+            "Run 'make download' first.")
+    endif()
+
+    # HAL driver sources (exclude *_template.c)
+    file(GLOB _HAL_SOURCES
+        "${OVE_STM32CUBE_PATH}/Drivers/STM32${_CUBE_FAM_UPPER}xx_HAL_Driver/Src/*.c")
+    list(FILTER _HAL_SOURCES EXCLUDE REGEX ".*_template\\.c$")
+    list(APPEND _OVE_EXTRA_SOURCES ${_HAL_SOURCES})
+
+    # system_stm32XXxx.c (clock init, family-level)
+    set(_CMSIS_DEVICE_DIR
+        "${OVE_STM32CUBE_PATH}/Drivers/CMSIS/Device/ST/STM32${_CUBE_FAM_UPPER}xx")
+    list(APPEND _OVE_EXTRA_SOURCES
+        "${_CMSIS_DEVICE_DIR}/Source/Templates/system_stm32${_OVE_CUBE_FAMILY}xx.c")
+
+    # Startup assembly (MCU-specific)
+    if(_OVE_CUBE_STARTUP)
+        list(APPEND _OVE_EXTRA_SOURCES
+            "${_CMSIS_DEVICE_DIR}/Source/Templates/gcc/startup_${_OVE_CUBE_STARTUP}.s")
+    endif()
+
+    # Include paths (keep CMSIS/Include — required by Rust bindgen)
+    include_directories(
+        ${OVE_STM32CUBE_PATH}/Drivers/CMSIS/Include
+        ${_CMSIS_DEVICE_DIR}/Include
+        ${OVE_STM32CUBE_PATH}/Drivers/STM32${_CUBE_FAM_UPPER}xx_HAL_Driver/Inc
+    )
+
+    message(STATUS "  STM32Cube: ${OVE_STM32CUBE_PATH}")
+endmacro()
+
+
+# ─── ove_add_stm32cube_bsp(BOARD <name> [FILES <src>...] [COMPONENTS <c>...]) ──
+# Add STM32Cube BSP sources for the given board.  Requires explicit file
+# list because a BSP directory typically contains sources for peripherals
+# the target doesn't use (camera, audio, qspi, ...), some of which have
+# dependencies on sub-components that are not part of COMPONENTS.
+#
+# Arguments:
+#   BOARD <name>              Required: STM32Cube BSP board directory name
+#                             (e.g. STM32746G-Discovery).
+#   FILES <src>...            BSP sources to compile, relative to the BSP
+#                             directory (e.g. stm32746g_discovery.c).
+#   COMPONENTS <c>...         BSP component drivers to compile (assumes
+#                             each component has a single <name>.c file).
+macro(ove_add_stm32cube_bsp)
+    cmake_parse_arguments(_OVE_BSP "" "BOARD" "FILES;COMPONENTS" ${ARGN})
+    if(NOT OVE_STM32CUBE_PATH)
+        message(FATAL_ERROR
+            "ove_add_stm32cube_bsp: call ove_add_stm32cube_hal(...) first")
+    endif()
+    if(NOT _OVE_BSP_BOARD)
+        message(FATAL_ERROR "ove_add_stm32cube_bsp: BOARD not specified")
+    endif()
+
+    set(_BSP_DIR "${OVE_STM32CUBE_PATH}/Drivers/BSP/${_OVE_BSP_BOARD}")
+    include_directories(${_BSP_DIR})
+
+    foreach(_bsp_src ${_OVE_BSP_FILES})
+        list(APPEND _OVE_EXTRA_SOURCES "${_BSP_DIR}/${_bsp_src}")
+    endforeach()
+
+    foreach(_comp ${_OVE_BSP_COMPONENTS})
+        set(_COMP_DIR "${OVE_STM32CUBE_PATH}/Drivers/BSP/Components/${_comp}")
+        list(APPEND _OVE_EXTRA_SOURCES "${_COMP_DIR}/${_comp}.c")
+        include_directories(${_COMP_DIR})
+    endforeach()
+endmacro()
+
+
+# ─── ove_add_cmsis_dsp() ────────────────────────────────────────────
+# Add the full CMSIS-DSP library from the STM32Cube bundle.  Must be
+# called after ove_add_stm32cube_hal.
+macro(ove_add_cmsis_dsp)
+    if(NOT OVE_STM32CUBE_PATH)
+        message(FATAL_ERROR
+            "ove_add_cmsis_dsp: call ove_add_stm32cube_hal(...) first")
+    endif()
+    set(_DSP_DIR "${OVE_STM32CUBE_PATH}/Drivers/CMSIS/DSP")
+    foreach(_sub BasicMathFunctions CommonTables ComplexMathFunctions
+                 ControllerFunctions FastMathFunctions FilteringFunctions
+                 MatrixFunctions StatisticsFunctions SupportFunctions
+                 TransformFunctions)
+        file(GLOB _DSP_SRC "${_DSP_DIR}/Source/${_sub}/*.c")
+        list(APPEND _OVE_EXTRA_SOURCES ${_DSP_SRC})
+    endforeach()
+    file(GLOB _DSP_ASM "${_DSP_DIR}/Source/TransformFunctions/*.S")
+    list(APPEND _OVE_EXTRA_SOURCES ${_DSP_ASM})
+    include_directories(${_DSP_DIR}/Include)
+endmacro()
+
+
+# ─── ove_add_fatfs([BOARD_DISKIO <path>]) ───────────────────────────
+# Add FatFs sources from STM32Cube middleware, plus optional board-supplied
+# sd_diskio.c.  Must be called after ove_add_stm32cube_hal.
+macro(ove_add_fatfs)
+    cmake_parse_arguments(_OVE_FATFS "" "" "BOARD_DISKIO" ${ARGN})
+    if(NOT OVE_STM32CUBE_PATH)
+        message(FATAL_ERROR "ove_add_fatfs: call ove_add_stm32cube_hal(...) first")
+    endif()
+    set(_FATFS_DIR "${OVE_STM32CUBE_PATH}/Middlewares/Third_Party/FatFs/src")
+    file(GLOB _FATFS_SOURCES "${_FATFS_DIR}/*.c")
+    list(APPEND _FATFS_SOURCES "${_FATFS_DIR}/option/ccsbcs.c")
+    list(APPEND _OVE_EXTRA_SOURCES ${_FATFS_SOURCES})
+    include_directories(
+        ${_FATFS_DIR}
+        ${_FATFS_DIR}/drivers
+    )
+    foreach(_diskio ${_OVE_FATFS_BOARD_DISKIO})
+        if(IS_ABSOLUTE "${_diskio}")
+            list(APPEND _OVE_EXTRA_SOURCES "${_diskio}")
+        else()
+            list(APPEND _OVE_EXTRA_SOURCES "${BOARD_DIR}/${_diskio}")
+        endif()
+    endforeach()
+endmacro()
+
+
+# ─── ove_add_cpu_utils() ────────────────────────────────────────────
+# Add STM32Cube CPU utilities (cpu_utils.c).  Optional helper for boards
+# that use runtime CPU load reporting.  Must be called after ove_add_stm32cube_hal.
+macro(ove_add_cpu_utils)
+    if(NOT OVE_STM32CUBE_PATH)
+        message(FATAL_ERROR "ove_add_cpu_utils: call ove_add_stm32cube_hal(...) first")
+    endif()
+    list(APPEND _OVE_EXTRA_SOURCES "${OVE_STM32CUBE_PATH}/Utilities/CPU/cpu_utils.c")
+    include_directories(${OVE_STM32CUBE_PATH}/Utilities/CPU)
+endmacro()
+
+
 # ─── ove_build_lvgl() ────────────────────────────────────────────────
 # Build LVGL as a static library from dl/lvgl/src/*.c.
 macro(ove_build_lvgl)
@@ -337,10 +469,26 @@ macro(ove_build_tflm_if_enabled)
 endmacro()
 
 
-# ─── ove_link_firmware(linker_script) ─────────────────────────────────
+# ─── ove_link_firmware(<linker_script> [PRINT_SIZE_CMAKE <script>]) ──
 # Assemble all sources into the firmware executable, apply app language,
-# link libraries, and generate post-build artifacts (hex, bin, size).
-macro(ove_link_firmware _linker_script)
+# link libraries, and generate post-build artifacts (hex, bin, lst, size).
+#
+# Arguments:
+#   <linker_script>           Positional: path to the .ld file (absolute or
+#                             relative to BOARD_DIR).
+#   PRINT_SIZE_CMAKE <path>   Optional: cmake -P script that prints a memory
+#                             summary (with flash/ram percentages).  When
+#                             omitted, the default ${CMAKE_SIZE} command is
+#                             used.  Path is relative to BOARD_DIR unless
+#                             absolute.
+macro(ove_link_firmware)
+    cmake_parse_arguments(_OVE_LF "" "PRINT_SIZE_CMAKE" "" ${ARGN})
+    list(LENGTH _OVE_LF_UNPARSED_ARGUMENTS _OVE_LF_NUM_POS)
+    if(_OVE_LF_NUM_POS LESS 1)
+        message(FATAL_ERROR "ove_link_firmware: missing linker script argument")
+    endif()
+    list(GET _OVE_LF_UNPARSED_ARGUMENTS 0 _linker_script)
+
     # Build TFLM if ML inference is enabled
     ove_build_tflm_if_enabled()
 
@@ -405,11 +553,35 @@ macro(ove_link_firmware _linker_script)
             ${_OVE_PROJ_NAME}.elf ${_OVE_PROJ_NAME}.bin
         COMMENT "Generating ${_OVE_PROJ_NAME}.bin"
     )
-    # Post-build: size
+    # Post-build: lst (disassembly)
     add_custom_command(TARGET ${_OVE_PROJ_NAME}.elf POST_BUILD
-        COMMAND ${CMAKE_SIZE} ${_OVE_PROJ_NAME}.elf
-        COMMENT "Memory usage:"
+        COMMAND ${CMAKE_OBJDUMP} -h -S
+            ${_OVE_PROJ_NAME}.elf > ${_OVE_PROJ_NAME}.lst
+        COMMENT "Generating ${_OVE_PROJ_NAME}.lst"
     )
+    # Post-build: size.  Either a board-supplied memory-usage script, or
+    # the plain ${CMAKE_SIZE} summary.
+    if(_OVE_LF_PRINT_SIZE_CMAKE)
+        if(IS_ABSOLUTE "${_OVE_LF_PRINT_SIZE_CMAKE}")
+            set(_OVE_SIZE_SCRIPT "${_OVE_LF_PRINT_SIZE_CMAKE}")
+        else()
+            set(_OVE_SIZE_SCRIPT "${BOARD_DIR}/${_OVE_LF_PRINT_SIZE_CMAKE}")
+        endif()
+        add_custom_command(TARGET ${_OVE_PROJ_NAME}.elf POST_BUILD
+            COMMAND ${CMAKE_COMMAND}
+                -DELF_FILE=${CMAKE_BINARY_DIR}/${_OVE_PROJ_NAME}.elf
+                -DSIZE_TOOL=${CMAKE_SIZE}
+                -DFLASH_SIZE=${OVE_FLASH_SIZE}
+                -DRAM_SIZE=${OVE_RAM_SIZE}
+                -P ${_OVE_SIZE_SCRIPT}
+            COMMENT "Memory usage:"
+        )
+    else()
+        add_custom_command(TARGET ${_OVE_PROJ_NAME}.elf POST_BUILD
+            COMMAND ${CMAKE_SIZE} ${_OVE_PROJ_NAME}.elf
+            COMMENT "Memory usage:"
+        )
+    endif()
 
     # QEMU run target (if qemu-run.sh exists at board level)
     if(EXISTS "${BOARD_DIR}/../qemu-run.sh")

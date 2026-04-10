@@ -1,0 +1,20 @@
+[package]
+name = "example_pm_rust"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ove = { path = "../../../bindings/rust/ove" }
+
+[features]
+default = []
+std = ["ove/std"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

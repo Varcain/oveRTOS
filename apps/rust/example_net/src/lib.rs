@@ -34,22 +34,7 @@ static PASS_COUNT: AtomicU32 = AtomicU32::new(0);
 static FAIL_COUNT: AtomicU32 = AtomicU32::new(0);
 
 fn err_code(e: ove::Error) -> i32 {
-    match e {
-        ove::Error::NotRegistered => -1,
-        ove::Error::InvalidParam => -2,
-        ove::Error::NoMemory => -3,
-        ove::Error::Timeout => -4,
-        ove::Error::NotSupported => -5,
-        ove::Error::QueueFull => -6,
-        ove::Error::MlFailed => -7,
-        ove::Error::NetRefused => -8,
-        ove::Error::NetUnreachable => -9,
-        ove::Error::NetAddrInUse => -10,
-        ove::Error::NetReset => -11,
-        ove::Error::NetDnsFail => -12,
-        ove::Error::NetClosed => -13,
-        ove::Error::Unknown(c) => c,
-    }
+    e.to_code()
 }
 
 fn test(name: &str) {

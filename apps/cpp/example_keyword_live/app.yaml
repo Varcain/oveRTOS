@@ -5,6 +5,11 @@ sources:
   - src/app.cpp
 includes:
   - ../../c/example_keyword_live/include
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_INFER=y
+  - CONFIG_OVE_AUDIO=y
+  - CONFIG_OVE_AUDIO_NODE_CONVERTER=y
 kconfig: |
   config OVE_INFER
       default y

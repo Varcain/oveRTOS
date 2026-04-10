@@ -85,18 +85,15 @@ struct DmicProcessor {
     int process(const struct ove_audio_buf *in, struct ove_audio_buf *out) {
         const int16_t *src = static_cast<const int16_t *>(in->data);
         int16_t *dst       = static_cast<int16_t *>(out->data);
-        unsigned num_frames = in->frames / 4;
+        unsigned frames = in->frames;
+        unsigned ch = in->fmt->channels;
 
-        for (unsigned f = 0; f < num_frames; f++) {
-            unsigned base = f * 4;
-            int16_t mic_l = src[base + 1];
-            audio_ring.write(mic_l);
+        for (unsigned f = 0; f < frames; f++) {
+            int16_t sample = src[f * ch];
+            audio_ring.write(sample);
             samples_written++;
-
-            dst[base + 0] = mic_l;
-            dst[base + 1] = 0;
-            dst[base + 2] = src[base + 3];
-            dst[base + 3] = 0;
+            for (unsigned c = 0; c < ch; c++)
+                dst[f * ch + c] = src[f * ch + c];
         }
         return OVE_OK;
     }

@@ -154,6 +154,7 @@ void ove_timer_destroy(ove_timer_t timer)
 
 int ove_timer_start(ove_timer_t timer)
 {
+  DEBUGASSERT(timer != NULL);
   struct ove_timer *ctx = timer;
   struct itimerspec its;
 
@@ -181,6 +182,7 @@ int ove_timer_start(ove_timer_t timer)
 
 int ove_timer_stop(ove_timer_t timer)
 {
+  DEBUGASSERT(timer != NULL);
   struct ove_timer *ctx = timer;
   struct itimerspec its;
 
@@ -196,6 +198,7 @@ int ove_timer_stop(ove_timer_t timer)
 
 int ove_timer_reset(ove_timer_t timer)
 {
+  DEBUGASSERT(timer != NULL);
   ove_timer_stop(timer);
   return ove_timer_start(timer);
 }

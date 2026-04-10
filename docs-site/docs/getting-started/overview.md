@@ -21,7 +21,7 @@ flowchart TD
         D["FreeRTOS<br>backend"] --> H["FreeRTOS<br>kernel"]
         E["NuttX<br>backend"] --> I["NuttX<br>kernel"]
         F["Zephyr<br>backend"] --> J["Zephyr<br>kernel"]
-        G["POSIX<br>backend"] --> K["pthreads<br>SDL2"]
+        G["POSIX<br>backend"] --> K["pthreads<br>sim"]
     end
 
     style A fill:#5c6bc0,stroke:#3949ab,color:#fff
@@ -79,9 +79,9 @@ In zero-heap mode, size parameters (queue `item_size`/`max_items`, stream buffer
 | FreeRTOS | `CONFIG_OVE_RTOS_FREERTOS` | STM32 hardware targets via STM32CubeF7 |
 | Apache NuttX | `CONFIG_OVE_RTOS_NUTTX` | POSIX-compliant embedded systems |
 | Zephyr RTOS | `CONFIG_OVE_RTOS_ZEPHYR` | Broad hardware support via West |
-| POSIX/SDL2 | `CONFIG_OVE_RTOS_POSIX` | Native Linux/macOS development and testing |
+| POSIX | `CONFIG_OVE_RTOS_POSIX` | Native Linux/macOS development and testing |
 
-The POSIX backend runs natively on the host with pthreads for concurrency and SDL2 for display and audio emulation — no cross-compilation or hardware required.
+The POSIX backend runs natively on the host with pthreads for concurrency and a browser-based simulation dashboard for display and audio emulation — no cross-compilation or hardware required.
 
 ## Language Bindings
 
@@ -101,7 +101,7 @@ The [LVGL](https://lvgl.io) graphics library is downloaded, configured, and buil
 | FreeRTOS (STM32) | Hardware LCD via LTDC/DMA2D | Touch controller |
 | Zephyr | Zephyr display subsystem | Zephyr input subsystem |
 | NuttX | NuttX framebuffer (`/dev/fb0`) | NuttX input |
-| POSIX | SDL2 window | SDL2 mouse/keyboard |
+| POSIX | Sim dashboard (browser) | Browser mouse/keyboard |
 | QEMU | Emulated framebuffer | — |
 
 Thread safety is handled through `ove_lvgl_lock()` / `ove_lvgl_unlock()`, which each language binding wraps in its idiomatic RAII pattern (`LvglGuard` in C++, `lvgl::lock()` guard in Rust, `defer guard.deinit()` in Zig). LVGL is enabled via `CONFIG_OVE_LVGL` in Kconfig.

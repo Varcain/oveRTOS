@@ -345,5 +345,9 @@ int test_infer_run(void);
 int test_net_mqtt_run(void);
 int test_net_httpd_run(void);
 int test_net_sntp_run(void);
+int test_i2c_run(void);
+int test_spi_run(void);
+int test_uart_run(void);
+int test_pm_run(void);
 
 #endif /* OVE_TEST_H */

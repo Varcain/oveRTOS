@@ -169,6 +169,16 @@ pub const net_tls = @import("net_tls.zig");
 /// TLS session handle.
 pub const TlsSession = net_tls.Session;
 
+/// UART serial bus driver.
+pub const uart = @import("uart.zig");
+/// SPI bus master driver.
+pub const spi = @import("spi.zig");
+/// I2C bus master driver.
+pub const i2c = @import("i2c.zig");
+
+/// Power management framework: sleep states, wake sources, power domains.
+pub const pm = @import("pm.zig");
+
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
 

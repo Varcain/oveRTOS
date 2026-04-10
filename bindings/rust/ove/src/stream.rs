@@ -148,17 +148,4 @@ impl<const N: usize> Stream<N> {
     }
 }
 
-impl<const N: usize> Drop for Stream<N> {
-    fn drop(&mut self) {
-        if self.handle.is_null() { return; }
-        #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_stream_destroy(self.handle) }
-        #[cfg(zero_heap)]
-        unsafe { bindings::ove_stream_deinit(self.handle) }
-    }
-}
-
-// SAFETY: Stream wraps a ove_stream_t handle. Send/receive are
-// thread-safe RTOS calls. Create/destroy are single-threaded (lifecycle).
-unsafe impl<const N: usize> Send for Stream<N> {}
-unsafe impl<const N: usize> Sync for Stream<N> {}
+crate::ove_handle_impl!(Stream<const N: usize>, ove_stream_destroy, ove_stream_deinit);

@@ -1,0 +1,8 @@
+# oveRTOS board-specific NuttX config for qemu-mps2-an500.
+# Applied on top of the NuttX board base config (mps2-an500:nsh).
+
+# MPS2-AN500 has no on-chip MAC and no on-board ethernet driver wired in.
+# Networking apps rely on loopback only, so tell NuttX to skip the call
+# to arm_netinitialize() from up_initialize() — otherwise the link fails
+# with "undefined reference to arm_netinitialize".
+CONFIG_NETDEV_LATEINIT=y

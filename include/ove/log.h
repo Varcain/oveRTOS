@@ -70,6 +70,10 @@ void ove_httpd_log_append(const char *line);
 #define _OVE_LOG_HTTPD_HOOK(buf) ((void)0)
 #endif
 
+/* Sim log broadcast is now handled by sim_console.c's ove_console_write,
+ * so no separate hook is needed in the log macro. */
+#define _OVE_LOG_SIM_HOOK(buf, len) ((void)0)
+
 #define _OVE_LOG_OUTPUT(prefix, fmt, ...) \
 	do { \
 		char _ove_log_buf[256]; \
@@ -82,6 +86,8 @@ void ove_httpd_log_append(const char *line);
 				(unsigned int)(_ove_log_len + 1)); \
 			_ove_log_buf[_ove_log_len] = '\0'; \
 			_OVE_LOG_HTTPD_HOOK(_ove_log_buf); \
+			_OVE_LOG_SIM_HOOK(_ove_log_buf, \
+				(unsigned int)_ove_log_len); \
 		} \
 	} while (0)
 /** @endcond */

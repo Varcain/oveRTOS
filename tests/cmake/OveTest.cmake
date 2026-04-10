@@ -1,9 +1,3 @@
-# OveTest.cmake - Helper for adding oveRTOS test suites
+# OveTest.cmake - Shared helpers for oveRTOS test suites
 #
-# Usage:
-#   ove_add_test_suite(<target> <suite_source> ...)
-#   Adds the given test suite source files to the target.
-
-function(ove_add_test_suite TARGET)
-    target_sources(${TARGET} PRIVATE ${ARGN})
-endfunction()
+# Currently empty. Include this file for future test infrastructure.

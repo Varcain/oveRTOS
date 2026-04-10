@@ -6,6 +6,11 @@ sources:
 includes:
   - src
   - include
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_INFER=y
+  - CONFIG_OVE_AUDIO=y
+  - CONFIG_OVE_AUDIO_NODE_CONVERTER=y
 kconfig: |
   config OVE_INFER
       default y

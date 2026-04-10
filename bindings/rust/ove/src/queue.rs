@@ -145,7 +145,5 @@ impl<T: Copy, const N: usize> Drop for Queue<T, N> {
     }
 }
 
-// SAFETY: Queue wraps a ove_queue_t handle. Send/receive are thread-safe
-// RTOS calls. Create/destroy are single-threaded (lifecycle guarantee).
 unsafe impl<T: Copy + Send, const N: usize> Send for Queue<T, N> {}
 unsafe impl<T: Copy + Send, const N: usize> Sync for Queue<T, N> {}

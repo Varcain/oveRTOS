@@ -41,6 +41,10 @@
  * | ove/shell.h             | Interactive shell                          |
  * | ove/app.h               | Application lifecycle hooks                |
  * | ove/net.h               | TCP/UDP sockets, DNS, network interfaces   |
+ * | ove/uart.h              | UART serial bus driver                     |
+ * | ove/spi.h               | SPI bus master driver                      |
+ * | ove/i2c.h               | I2C bus master driver                      |
+ * | ove/pm.h                | Power management framework                 |
  *
  * Application code that prefers fine-grained includes may include individual
  * subsystem headers directly instead.
@@ -80,6 +84,11 @@
 #include "ove/net_mqtt.h"
 #include "ove/net_sntp.h"
 #include "ove/net_httpd.h"
+#include "ove/uart.h"
+#include "ove/spi.h"
+#include "ove/i2c.h"
+#include "ove/i2s.h"
+#include "ove/pm.h"
 
 /** @} */
 

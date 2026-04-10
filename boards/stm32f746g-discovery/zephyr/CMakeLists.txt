@@ -4,33 +4,16 @@
 #
 # This file is part of oveRTOS.
 
-# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
-#
-# oveRTOS Zephyr board CMakeLists.txt
-# Paths set by oveRTOS top-level Makefile or defaults.
+# oveRTOS Zephyr board CMakeLists.txt for STM32F746G-Discovery.
 
 cmake_minimum_required(VERSION 3.20.0)
 
-# Path defaults
-if(NOT DEFINED OVE_DIR)
-    get_filename_component(OVE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
-endif()
-include(${OVE_DIR}/cmake/OveAppResolve.cmake)
-if(NOT DEFINED OVE_GEN_DIR)
-    set(OVE_GEN_DIR ${OVE_DIR}/output/generated)
-endif()
-set(OVE_BOARD_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveZephyrCommon.cmake)
 
-# Include generated CMake config (sets OVE_RTOS, OVE_APP_LANG, etc.)
-if(EXISTS "${OVE_GEN_DIR}/ove_config.cmake")
-    include(${OVE_GEN_DIR}/ove_config.cmake)
-endif()
+ove_zephyr_pre_find()
 
 # Add out-of-tree WM8994 driver
 list(APPEND ZEPHYR_EXTRA_MODULES ${OVE_BOARD_DIR}/drivers/wm8994)
-
-# Add app-level DTS include path
-list(APPEND DTS_ROOT ${OVE_BOARD_DIR})
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_firmware)
@@ -42,23 +25,6 @@ target_sources(app PRIVATE
     ${OVE_BACKEND_SOURCES}
 )
 
-# Application code (generated from app.yaml by 'ove configure')
-if(EXISTS "${OVE_GEN_DIR}/app_sources.cmake")
-    include(${OVE_GEN_DIR}/app_sources.cmake)
-elseif(EXISTS "${OVE_APP_DIR}/CMakeLists.txt")
-    message(WARNING "Using legacy app CMakeLists.txt — migrate to app.yaml")
-    include(${OVE_APP_DIR}/CMakeLists.txt)
-else()
-    message(FATAL_ERROR "No app build description found. Run 'ove configure' first.")
-endif()
-include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
-ove_apply_app_language(app)
-
-target_include_directories(app PRIVATE
-    ${OVE_GEN_DIR}
-    ${APP_INCLUDE_DIRS}
-    ${OVE_DIR}/include
-    ${OVE_DIR}/bindings/cpp
-    ${OVE_DIR}/backends/zephyr/include
-    ${OVE_DIR}/backends/common
-)
+ove_zephyr_add_tflm_if_enabled()
+ove_zephyr_include_app_sources()
+ove_zephyr_add_common_includes()

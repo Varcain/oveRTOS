@@ -12,10 +12,14 @@ OVE_BACKEND_SRCS = \
 {% if config.get("CONFIG_OVE_LED") == True %}
     $(OVE_DIR)/src/ove_led.c \
 {% endif %}
+{% if config.get("CONFIG_OVE_PM") == True %}
+    $(OVE_DIR)/src/ove_pm.c \
+{% endif %}
     $(OVE_DIR)/backends/nuttx/nuttx_thread.c \
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     $(OVE_DIR)/backends/nuttx/nuttx_{{ mod|lower }}.c \
 {% endif %}
@@ -52,3 +56,7 @@ OVE_BACKEND_SRCS = \
     $(OVE_DIR)/backends/common/ove_net_sntp.c \
 {% endif %}
 
+{% if config.get("CONFIG_OVE_INFER") == True %}
+# ML model data (generated from models/*.tflite by ove configure)
+OVE_MODEL_SRCS = $(wildcard $(OVE_GEN_DIR)/generated_models/*.c)
+{% endif %}

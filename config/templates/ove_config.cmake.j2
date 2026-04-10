@@ -47,7 +47,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
                "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
-               "NET_SNTP"] %}
+               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "PM"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}
@@ -61,6 +61,14 @@ set(OVE_{{ mod }} OFF)
 set(OVE_ZERO_HEAP ON)
 {% else %}
 set(OVE_ZERO_HEAP OFF)
+{% endif %}
+
+# Simulation framework
+{% if config.get("CONFIG_OVE_SIM") == True %}
+set(OVE_SIM ON)
+set(OVE_SIM_DASHBOARD_PORT {{ config.get('CONFIG_OVE_SIM_DASHBOARD_PORT', 8080) }})
+{% else %}
+set(OVE_SIM OFF)
 {% endif %}
 
 {% if config.get("CONFIG_OVE_INFER") == True %}
@@ -83,11 +91,19 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_LED") == True %}
     ${OVE_DIR}/src/ove_led.c
 {% endif %}
+{% if config.get("CONFIG_OVE_PM") == True %}
+    ${OVE_DIR}/src/ove_pm.c
+{% endif %}
+{% for mod in ["UART", "SPI", "I2C", "I2S"] %}
+{% if config.get("CONFIG_OVE_" + mod) == True %}
+    ${OVE_DIR}/src/ove_{{ mod|lower }}.c
+{% endif %}
+{% endfor %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
     ${OVE_DIR}/backends/freertos/freertos_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET", "PM"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/freertos/freertos_{{ mod|lower }}.c
 {% endif %}
@@ -102,7 +118,8 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_{{ mod|lower }}.c
 {% endif %}
@@ -117,7 +134,8 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/nuttx/nuttx_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_{{ mod|lower }}.c
 {% endif %}
@@ -129,12 +147,26 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/nuttx/nuttx_board.c
 {% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_POSIX") == True %}
+{% set wasm_on = config.get("CONFIG_OVE_BOARD_WASM") == True %}
+{% set sim_on = config.get("CONFIG_OVE_SIM") == True %}
+{% if wasm_on %}
+    ${OVE_DIR}/backends/wasm/wasm_thread.c
+    ${OVE_DIR}/backends/wasm/wasm_timer.c
+    ${OVE_DIR}/backends/wasm/wasm_time.c
+{% else %}
     ${OVE_DIR}/backends/posix/posix_thread.c
+{% endif %}
+{% set wasm_skip = ["THREAD", "TIMER", "TIME", "CONSOLE", "NET", "UART", "SPI", "I2C", "I2S"] if wasm_on else [] %}
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
-               "WATCHDOG", "NVS", "SHELL", "NET"] %}
+               "WATCHDOG", "NVS", "SHELL", "NET", "PM",
+               "UART", "SPI", "I2C", "I2S"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
+{% if not (sim_on and mod in ["AUDIO", "LVGL", "NET", "WATCHDOG", "PM"]) %}
+{% if mod not in wasm_skip %}
     ${OVE_DIR}/backends/posix/posix_{{ mod|lower }}.c
+{% endif %}
+{% endif %}
 {% endif %}
 {% endfor %}
 {% if config.get("CONFIG_OVE_GPIO") == True %}
@@ -142,6 +174,10 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/posix/posix_board.c
+{% endif %}
+{% if wasm_on %}
+    ${OVE_DIR}/backends/wasm/wasm_console.c
+    ${OVE_DIR}/backends/wasm/wasm_bus_stubs.c
 {% endif %}
 {% endif %}
 )
@@ -153,10 +189,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_nodes.c")
 {% endif %}
 
 # Common networking sources (platform-independent)
-{% if config.get("CONFIG_OVE_NET_TLS") == True %}
+{% if config.get("CONFIG_OVE_NET_TLS") == True and config.get("CONFIG_OVE_SIM") != True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_tls.c")
 {% endif %}
-{% if config.get("CONFIG_OVE_NET_HTTP") == True %}
+{% set wasm_board = config.get("CONFIG_OVE_BOARD_WASM") == True %}
+{% if config.get("CONFIG_OVE_NET_HTTP") == True and not wasm_board %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_http.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_MQTT") == True %}
@@ -183,6 +220,18 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_httpd_ws.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_sha1.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_base64.c")
 {% endif %}
-{% if config.get("CONFIG_OVE_NET_SNTP") == True %}
+{% if config.get("CONFIG_OVE_NET_SNTP") == True and not wasm_board %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_sntp.c")
+{% endif %}
+
+# FreeRTOS bus drivers are MCU-specific — sourced from drivers/<rtos>/<mcu_family>
+{% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+{% for mod in ["UART", "SPI", "I2C"] %}
+{% if config.get("CONFIG_OVE_" + mod) == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_{{ mod|lower }}.c")
+{% endif %}
+{% endfor %}
+{% if config.get("CONFIG_OVE_I2S") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_i2s.c")
+{% endif %}
 {% endif %}

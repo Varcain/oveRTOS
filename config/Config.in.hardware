@@ -21,7 +21,16 @@ config OVE_BOARD_HOST_PC
     bool "Host PC (native)"
     depends on OVE_RTOS_POSIX
     help
-      Native host development. Uses SDL2 for display and audio.
+      Native host development. Uses browser dashboard for display and audio.
+
+config OVE_BOARD_WASM
+    bool "WebAssembly (browser)"
+    depends on OVE_RTOS_POSIX
+    select OVE_SIM
+    help
+      Run in a web browser via WebAssembly + Emscripten.
+      Compiles firmware + LVGL to WASM, renders in an HTML
+      canvas, hostable as static files on GitHub Pages.
 
 endchoice
 
@@ -29,24 +38,26 @@ config OVE_BOARD_NAME
     string
     default "stm32f746g-discovery" if OVE_BOARD_STM32F746G_DISCO
     default "qemu-mps2-an500" if OVE_BOARD_QEMU_MPS2_AN500
-    default "host-pc" if OVE_BOARD_HOST_PC
+    default "host" if OVE_BOARD_HOST_PC
+    default "wasm" if OVE_BOARD_WASM
 
 config OVE_FLASH_SIZE
     int
     default 1048576 if OVE_BOARD_STM32F746G_DISCO
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
-    default 0 if OVE_BOARD_HOST_PC
+    default 0 if OVE_BOARD_HOST_PC || OVE_BOARD_WASM
 
 config OVE_RAM_SIZE
     int
     default 327680 if OVE_BOARD_STM32F746G_DISCO
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
-    default 0 if OVE_BOARD_HOST_PC
+    default 0 if OVE_BOARD_HOST_PC || OVE_BOARD_WASM
 
 config OVE_MCU
     string
     default "STM32F746xx" if OVE_BOARD_STM32F746G_DISCO
     default "CMSDK_CM7" if OVE_BOARD_QEMU_MPS2_AN500
     default "host" if OVE_BOARD_HOST_PC
+    default "wasm32" if OVE_BOARD_WASM
 
 endmenu
