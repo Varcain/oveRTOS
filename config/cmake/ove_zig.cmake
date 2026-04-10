@@ -58,8 +58,22 @@ function(ove_build_zig_lib TARGET)
     set(ZIG_TARGET_ARGS "")
     set(ZIG_CPU_ARGS "")
     if(ZIG_IS_WASM)
-        list(APPEND ZIG_TARGET_ARGS "-target" "wasm32-emscripten")
-        list(APPEND ZIG_CPU_ARGS "-fno-stack-check")
+        # Zig 0.15.2's std library has broken emscripten OS support
+        # (std.posix references emscripten `system` fields that don't
+        # exist, and std.Thread aborts at compile time). Use
+        # wasm32-freestanding instead — our Zig code is a library that
+        # emcc links into the final executable, so we only need the
+        # wasm32 C ABI, not any Zig std OS services. C-header
+        # discovery still goes through the emscripten sysroot below.
+        #
+        # The emscripten executable uses -sUSE_PTHREADS which makes
+        # wasm-ld link with --shared-memory. Static libraries linked
+        # into it must be built with the atomics and bulk-memory
+        # features, otherwise wasm-ld rejects them.
+        list(APPEND ZIG_TARGET_ARGS "-target" "wasm32-freestanding")
+        list(APPEND ZIG_CPU_ARGS
+            "-mcpu=baseline+atomics+bulk_memory"
+            "-fno-stack-check")
     elseif(ZIG_IS_NATIVE)
         list(APPEND ZIG_TARGET_ARGS "-target" "native-native")
         list(APPEND ZIG_CPU_ARGS "-fPIC" "-fno-stack-check")
@@ -100,6 +114,19 @@ function(ove_build_zig_lib TARGET)
     if(ZIG_IS_WASM)
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/wasm/include")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
+        # Emscripten sysroot — provides stdio.h, stdlib.h, etc. so that
+        # @cImport (which transitively includes ove/log.h → stdio.h) can
+        # find the C standard library headers used by the final emcc link.
+        if(DEFINED OVE_DL_DIR AND EXISTS "${OVE_DL_DIR}/emsdk")
+            set(_EMSDK_SYSROOT "${OVE_DL_DIR}/emsdk/upstream/emscripten/cache/sysroot/include")
+            if(EXISTS "${_EMSDK_SYSROOT}")
+                list(APPEND ZIG_INCLUDE_ARGS "-I${_EMSDK_SYSROOT}")
+            endif()
+            set(_EMSDK_SYSTEM "${OVE_DL_DIR}/emsdk/upstream/emscripten/system/include")
+            if(EXISTS "${_EMSDK_SYSTEM}")
+                list(APPEND ZIG_INCLUDE_ARGS "-I${_EMSDK_SYSTEM}")
+            endif()
+        endif()
     elseif(OVE_RTOS STREQUAL "posix")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/posix/include")
     elseif(OVE_RTOS STREQUAL "freertos")
@@ -187,17 +214,43 @@ function(ove_build_zig_lib TARGET)
     # ── Inherit include directories from the CMake target ───────────────
     # The board CMakeLists.txt sets include_directories() globally.
     # Also pick up target-specific includes.
+    #
+    # Helper: append "-I<dir>" for each entry in a list, expanding any
+    # $<TARGET_PROPERTY:<tgt>,INTERFACE_INCLUDE_DIRECTORIES> generator
+    # expressions to their constituent paths.  Without this, the gen
+    # expression survives until add_custom_command evaluates it, and
+    # the result is a single -I argument with semicolon-joined paths
+    # which the shell then mis-parses as command separators.
+    function(_zig_append_includes outvar)
+        set(_acc "${${outvar}}")
+        foreach(_INC ${ARGN})
+            if(_INC MATCHES "^\\$<TARGET_PROPERTY:([^,>]+),(INTERFACE_)?INCLUDE_DIRECTORIES>$")
+                set(_src_target "${CMAKE_MATCH_1}")
+                if(TARGET "${_src_target}")
+                    get_target_property(_iface_incs "${_src_target}"
+                        INTERFACE_INCLUDE_DIRECTORIES)
+                    if(_iface_incs)
+                        foreach(_iface_inc ${_iface_incs})
+                            if(NOT _iface_inc MATCHES "^\\$<")
+                                list(APPEND _acc "-I${_iface_inc}")
+                            endif()
+                        endforeach()
+                    endif()
+                endif()
+            elseif(NOT _INC MATCHES "^\\$<")
+                list(APPEND _acc "-I${_INC}")
+            endif()
+        endforeach()
+        set(${outvar} "${_acc}" PARENT_SCOPE)
+    endfunction()
+
     get_target_property(_TARGET_INCS ${TARGET} INCLUDE_DIRECTORIES)
     if(_TARGET_INCS)
-        foreach(_INC ${_TARGET_INCS})
-            list(APPEND ZIG_INCLUDE_ARGS "-I${_INC}")
-        endforeach()
+        _zig_append_includes(ZIG_INCLUDE_ARGS ${_TARGET_INCS})
     endif()
     get_property(_DIR_INCS DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
     if(_DIR_INCS)
-        foreach(_INC ${_DIR_INCS})
-            list(APPEND ZIG_INCLUDE_ARGS "-I${_INC}")
-        endforeach()
+        _zig_append_includes(ZIG_INCLUDE_ARGS ${_DIR_INCS})
     endif()
 
     # ── Collect defines ──────────────────────────────────────────────────

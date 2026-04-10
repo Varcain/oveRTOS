@@ -1,0 +1,15 @@
+# Feature-conditional NuttX overlay for stm32f746g-discovery.
+# Loaded by ove build only when CONFIG_OVE_NET=y in the workspace.
+#
+# STM32F746 on-chip Ethernet MAC (LAN8742A PHY over RMII).
+# These symbols `select NETDEVICES`, which depends on CONFIG_NET — so
+# they must only be present when networking is actually enabled.
+CONFIG_STM32F7_ETHMAC=y
+CONFIG_STM32F7_PHYADDR=0
+# CONFIG_STM32F7_MII is not set
+CONFIG_STM32F7_RMII=y
+CONFIG_STM32F7_PHYSR=31
+CONFIG_STM32F7_PHYSR_SPEED=0x0004
+CONFIG_STM32F7_PHYSR_100MBPS=0x0000
+CONFIG_STM32F7_PHYSR_MODE=0x0010
+CONFIG_STM32F7_PHYSR_FULLDUPLEX=0x0010

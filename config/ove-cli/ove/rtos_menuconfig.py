@@ -41,7 +41,25 @@ def merge_rtos_config_layers(ws, rtos):
 
 
 def _merge_nuttx_layers(ws):
-    """Merge NuttX defconfig layers 1-3 into gen_dir/merged_nuttx_defconfig."""
+    """Merge NuttX defconfig layers 1-3 into gen_dir/merged_nuttx_defconfig.
+
+    Board overlay layer:
+      ove_board_defconfig            — always applied
+      ove_board_defconfig.<feature>  — applied only when CONFIG_OVE_<FEATURE>
+                                       is set in the oveRTOS workspace config
+                                       (e.g. ove_board_defconfig.net loads
+                                       when CONFIG_OVE_NET=y).  Lets a board
+                                       contribute hardware-specific NuttX
+                                       symbols (e.g. STM32F7_ETHMAC) only
+                                       when the relevant oveRTOS feature is
+                                       enabled — without those guards the
+                                       extra symbols would `select` other
+                                       NuttX options (NETDEVICES) and break
+                                       olddefconfig for apps that don't
+                                       enable the feature.
+    """
+    from .workspace import get_bool
+
     base = os.path.join(ws.gen_dir, "nuttx_defconfig")
     merged = os.path.join(ws.gen_dir, "merged_nuttx_defconfig")
 
@@ -54,10 +72,24 @@ def _merge_nuttx_layers(ws):
 
     # Layer 2: board overlay
     if ws.board_dir:
-        board_overlay = os.path.join(ws.board_dir, "nuttx",
-                                     "ove_board_defconfig")
+        board_nuttx_dir = os.path.join(ws.board_dir, "nuttx")
+        board_overlay = os.path.join(board_nuttx_dir, "ove_board_defconfig")
         if os.path.isfile(board_overlay):
             apply_defconfig_overlay(merged, board_overlay)
+
+        # Layer 2b: feature-conditional board overlays.  Loaded when
+        # CONFIG_OVE_<FEATURE> is true in the oveRTOS workspace config.
+        if os.path.isdir(board_nuttx_dir):
+            for fname in sorted(os.listdir(board_nuttx_dir)):
+                if not fname.startswith("ove_board_defconfig."):
+                    continue
+                feature = fname[len("ove_board_defconfig."):]
+                if not feature:
+                    continue
+                kconfig_key = f"CONFIG_OVE_{feature.upper()}"
+                if get_bool(ws.config, kconfig_key):
+                    apply_defconfig_overlay(merged,
+                        os.path.join(board_nuttx_dir, fname))
 
     # Layer 3: app overlay (board-specific takes priority over generic)
     if ws.app_dir:
@@ -130,14 +162,28 @@ def _apply_nuttx_guard(ws, nuttx_build, apps_build, env, log_file):
 
     Precondition: _setup_nuttx_build_tree() must have been called first.
     Uses single-pass olddefconfig after all overlays.
+
+    Restores `.config` from the pristine `.config.ove_base` snapshot
+    (saved during initial configure) before re-applying the overlays.
+    Without this reset, overlay-key removals would not propagate:
+    `apply_defconfig_overlay` can only strip keys present in the new
+    overlay, so a key that used to be in the overlay but is now gone
+    would linger in `.config` indefinitely — and on stm32f746 it would
+    leave `STM32F7_ETHMAC=y` set even for non-network apps, breaking
+    `make olddefconfig`.
     """
     nuttx_config = os.path.join(nuttx_build, ".config")
+    base_snapshot = os.path.join(nuttx_build, ".config.ove_base")
     apps_abs = os.path.abspath(apps_build)
 
     if not os.path.isfile(nuttx_config):
         print("error: NuttX .config not found in build tree. "
               "Build tree may not be set up correctly.")
         sys.exit(1)
+
+    # Reset to the pristine board base before re-applying overlays.
+    if os.path.isfile(base_snapshot):
+        shutil.copy2(base_snapshot, nuttx_config)
 
     # Layers 1-3
     merged = merge_rtos_config_layers(ws, "nuttx")

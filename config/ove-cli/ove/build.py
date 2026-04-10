@@ -320,16 +320,27 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
 
     # Initial configure
     configured_flag = os.path.join(nuttx_build, ".ove_configured")
+    nuttx_config = os.path.join(nuttx_build, ".config")
+    base_snapshot = os.path.join(nuttx_build, ".config.ove_base")
     if not os.path.isfile(configured_flag):
         logger.debug(f"Configuring NuttX for {nuttx_board_cfg}...")
         run(["./tools/configure.sh", "-a", "../nuttx-apps", nuttx_board_cfg],
              env=env, cwd=nuttx_build, log_file=log_file)
 
+        # Snapshot the pristine board defconfig BEFORE any oveRTOS
+        # overlays are applied. _apply_nuttx_guard restores from this
+        # snapshot on every build so that overlay-key removals (which
+        # apply_defconfig_overlay can't detect by itself) actually take
+        # effect — without it, a key that used to be in the overlay but
+        # has since been removed would persist in .config indefinitely
+        # and break NuttX's olddefconfig dependency check.
+        if os.path.isfile(nuttx_config):
+            shutil.copy2(nuttx_config, base_snapshot)
+
         # Apply oveRTOS overlay immediately so architecture-level settings
         # (FPU, stack sizes, etc.) take effect before any compilation.
         overlay = os.path.join(ws.gen_dir, "nuttx_defconfig")
         if os.path.isfile(overlay):
-            nuttx_config = os.path.join(nuttx_build, ".config")
             apply_defconfig_overlay(nuttx_config, overlay)
             apps_abs = os.path.abspath(apps_build)
             run(["make", "olddefconfig", f"APPDIR={apps_abs}"],
@@ -466,6 +477,26 @@ def build_nuttx(ws):
                                           "tflm", "ove_tflm_debug_log.cc"))
             tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
                                           "tflm", "ove_tflm_time.cc"))
+            # Clean any stale TFLM .o files left over from previous builds.
+            # NuttX Application.mk places .o files next to absolute-path
+            # sources (dl/ for C apps, generated/tflm_links/ for C++ apps),
+            # and these survive workspace reconfiguration — masking any
+            # compile-flag changes because make sees them as up-to-date.
+            _tflm_stale_dirs = [
+                tflm_dir,
+                os.path.join(ws.gen_dir, "tflm_links"),
+            ]
+            for _stale_dir in _tflm_stale_dirs:
+                if not os.path.isdir(_stale_dir):
+                    continue
+                for _root, _, _files in os.walk(_stale_dir):
+                    for _f in _files:
+                        if _f.endswith(".o"):
+                            try:
+                                os.unlink(os.path.join(_root, _f))
+                            except OSError:
+                                pass
+
             # Write TFLM source list as a makefile fragment
             tflm_mk = os.path.join(ws.gen_dir, "ove_tflm_sources.mk")
             tflm_downloads = os.path.join(tflm_dir,
@@ -527,6 +558,13 @@ def build_nuttx(ws):
                 f.write("CXXFLAGS += -DTF_LITE_USE_GLOBAL_MIN\n")
                 f.write("CXXFLAGS += -fno-threadsafe-statics\n")
                 f.write("CXXFLAGS += -fno-exceptions -fno-rtti\n")
+                # GCC 15 auto-enables _GLIBCXX_ASSERTIONS for unoptimized
+                # builds, which makes std::array::operator[] (used in
+                # batch_matmul_common.cc) emit calls to std::__glibcxx_
+                # assert_fail — a symbol only defined in libstdc++.a, which
+                # NuttX does not link.  Disable the assertions so the link
+                # succeeds.
+                f.write("CXXFLAGS += -D_GLIBCXX_NO_ASSERTIONS\n")
                 # Note: don't set -std= here. C apps get NuttX default,
                 # C++ apps get -std=c++20 from ove_app_lang.mk.
                 f.write("CXXFLAGS += -w -fpermissive\n")
@@ -568,8 +606,22 @@ def build_nuttx(ws):
                                         "CMSIS", "NN")
                 cmsis_core = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
                                           "CMSIS", "Core", "Include")
-                cmsis_dsp = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
-                                         "CMSIS", "DSP", "Include")
+                # Prefer the standalone CMSIS-DSP repo over the bundled
+                # copy in CMSIS_5/CMSIS/DSP. The bundled headers are
+                # older and don't define ARM_DSP_ATTRIBUTE, which the
+                # newer standalone source files require — mixing the
+                # two leaves boards that pull in CMSIS-DSP sources
+                # (e.g. stm32f746g-discovery) failing with "expected
+                # ';' before 'void'" because the macro is undefined.
+                cmsis_dsp_standalone = os.path.join(
+                    ws.ove_dir, "dl", "CMSIS-DSP", "Include")
+                cmsis_dsp_bundled = os.path.join(
+                    ws.ove_dir, "dl", "CMSIS_5", "CMSIS", "DSP",
+                    "Include")
+                if os.path.isdir(cmsis_dsp_standalone):
+                    cmsis_dsp = cmsis_dsp_standalone
+                else:
+                    cmsis_dsp = cmsis_dsp_bundled
                 if os.path.isdir(cmsis_nn):
                     nn_srcs = glob.glob(
                         os.path.join(cmsis_nn, "Source", "**", "*.c"),
@@ -609,12 +661,19 @@ def build_nuttx(ws):
     _create_run_or_flash_script(ws, rtos="nuttx")
 
     # Clean stray .o files NuttX places next to source files when CSRCS
-    # contains absolute paths (NuttX Application.mk quirk).
-    for search_dir in [ws.ove_dir, ws.app_dir]:
+    # contains absolute paths (NuttX Application.mk quirk). This includes
+    # TFLM sources under dl/tflite-micro-*, whose .o files otherwise persist
+    # across builds and mask flag changes (make sees them as up-to-date
+    # because the source hasn't changed).
+    ove_dl_dir = os.path.join(ws.ove_dir, "dl")
+    search_dirs = [ws.ove_dir, ws.app_dir]
+    for search_dir in search_dirs:
         for root, dirs, files in os.walk(search_dir):
-            # Skip output/, dl/, .venv/ directories
-            if any(skip in root for skip in ["/output/", "/dl/", "/.venv/"]):
+            # Skip output/ and .venv/, but walk dl/ so TFLM .o files
+            # placed next to their sources get cleaned.
+            if any(skip in root for skip in ["/output/", "/.venv/"]):
                 continue
+            # Inside dl/, only clean .o files (not any other artifacts).
             for f in files:
                 if f.endswith(".o"):
                     os.unlink(os.path.join(root, f))

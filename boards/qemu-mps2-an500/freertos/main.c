@@ -9,6 +9,13 @@
 /*
  * QEMU MPS2-AN500 FreeRTOS entry point.
  * Semihosting provides printf/exit — no UART or HAL needed.
+ *
+ * Shared FreeRTOS hooks (static-allocation task memory, default stack
+ * overflow hook) live in backends/freertos/freertos_hooks.c.  Default
+ * ARM Cortex-M exception handlers are weak aliases to Default_Handler
+ * provided by startup_CMSDK_CM7.s.  This file overrides HardFault_Handler
+ * and vApplicationStackOverflowHook to print diagnostics via semihosting,
+ * and provides the SysTick_Handler (QEMU has no HAL tick to increment).
  */
 
 #include "ove/ove.h"
@@ -29,31 +36,8 @@ int main(void)
 	return 0;
 }
 
-/* ========================================================================= */
-/* FREERTOS HOOKS                                                            */
-/* ========================================================================= */
-
-void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
-				   StackType_t **ppxIdleTaskStackBuffer,
-				   configSTACK_DEPTH_TYPE *pulIdleTaskStackSize)
-{
-	static StaticTask_t xIdleTaskTCB;
-	static StackType_t uxIdleTaskStack[configMINIMAL_STACK_SIZE];
-	*ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
-	*ppxIdleTaskStackBuffer = uxIdleTaskStack;
-	*pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
-}
-
-void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
-				    StackType_t **ppxTimerTaskStackBuffer,
-				    configSTACK_DEPTH_TYPE *pulTimerTaskStackSize)
-{
-	static StaticTask_t xTimerTaskTCB;
-	static StackType_t uxTimerTaskStack[configTIMER_TASK_STACK_DEPTH];
-	*ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
-	*ppxTimerTaskStackBuffer = uxTimerTaskStack;
-	*pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
-}
+/* Diagnostic overrides (strong symbols override the weak defaults in
+ * freertos_hooks.c / startup_CMSDK_CM7.s). */
 
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
@@ -65,46 +49,12 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 	}
 }
 
-/* ========================================================================= */
-/* EXCEPTION HANDLERS                                                        */
-/* ========================================================================= */
-
-void NMI_Handler(void)
-{
-	while (1) {
-	}
-}
-
 void HardFault_Handler(void)
 {
 	fprintf(stderr, "\n!!! HARD FAULT !!!\n");
 	fflush(stderr);
 	while (1) {
 		__asm volatile("nop");
-	}
-}
-
-void MemManage_Handler(void)
-{
-	while (1) {
-	}
-}
-
-void BusFault_Handler(void)
-{
-	while (1) {
-	}
-}
-
-void UsageFault_Handler(void)
-{
-	while (1) {
-	}
-}
-
-void DebugMon_Handler(void)
-{
-	while (1) {
 	}
 }
 
