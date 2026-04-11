@@ -8,6 +8,7 @@
 
 import logging
 import os
+import shlex
 import shutil
 import sys
 
@@ -778,13 +779,43 @@ def build_posix(ws):
         if os.path.isfile(src):
             shutil.copy2(src, ws.images_dir)
 
-        # Create run script
+        # Create run script — mirrors 'ove run' for POSIX: launch the
+        # dashboard bridge in the background, then run the binary.
         run_script = os.path.join(ws.workspace_dir, "run")
+        ove_dir_q = shlex.quote(ws.ove_dir)
         with open(run_script, "w") as f:
             f.write('#!/bin/bash\n')
-            f.write('set -e\n')
             f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-            f.write('exec "$DIR/images/ove_posix" "$@"\n')
+            f.write(f'OVE_DIR={ove_dir_q}\n')
+            f.write('export OVE_DIR\n')
+            f.write('\n')
+            f.write('HEADLESS=0\n')
+            f.write('ARGS=()\n')
+            f.write('for arg in "$@"; do\n')
+            f.write('    case "$arg" in\n')
+            f.write('        --headless) HEADLESS=1 ;;\n')
+            f.write('        *) ARGS+=("$arg") ;;\n')
+            f.write('    esac\n')
+            f.write('done\n')
+            f.write('\n')
+            f.write('BRIDGE_PID=""\n')
+            f.write('cleanup() {\n')
+            f.write('    if [ -n "$BRIDGE_PID" ]; then\n')
+            f.write('        kill "$BRIDGE_PID" 2>/dev/null || true\n')
+            f.write('        wait "$BRIDGE_PID" 2>/dev/null || true\n')
+            f.write('    fi\n')
+            f.write('}\n')
+            f.write('trap cleanup EXIT\n')
+            f.write('\n')
+            f.write('if [ "$HEADLESS" != "1" ]; then\n')
+            f.write('    PYTHON="$OVE_DIR/.venv/bin/python3"\n')
+            f.write('    [ -x "$PYTHON" ] || PYTHON=python3\n')
+            f.write('    "$PYTHON" "$OVE_DIR/config/scripts/ove-dashboard-bridge.py" \\\n')
+            f.write('        --port 8080 --dashboard "$OVE_DIR/sim/dashboard" &\n')
+            f.write('    BRIDGE_PID=$!\n')
+            f.write('fi\n')
+            f.write('\n')
+            f.write('"$DIR/images/ove_posix" "${ARGS[@]}"\n')
         os.chmod(run_script, 0o755)
 
 
