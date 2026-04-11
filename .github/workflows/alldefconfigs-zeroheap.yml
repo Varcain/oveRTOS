@@ -6,9 +6,9 @@ on:
 permissions:
   contents: read
 
-# Reusable build loop: configure each app via fragments with ZEROHEAP=1, then build.
-# APPS is discovered from apps/*/app.yaml and apps/*/*/app.yaml config_name fields.
-# Zig apps are skipped on WASM (wasm32-emscripten not supported in Zig 0.15).
+# Builds every app/*.yaml config for each <board>.<rtos> pair using
+# `make allconfigs-<board>.<rtos> ZEROHEAP=1`. Splitting per board/rtos
+# keeps disk usage bounded on GitHub-hosted runners.
 
 jobs:
   host:
@@ -25,34 +25,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build all host/posix apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building host.posix.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "host.posix.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] host.posix.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] host.posix.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "host/posix (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-host.posix ZEROHEAP
+        run: make allconfigs-host.posix ZEROHEAP=1
 
 
   qemu-freertos:
@@ -76,34 +50,8 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all qemu/freertos apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building qemu.freertos.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "qemu.freertos.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] qemu.freertos.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] qemu.freertos.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "qemu/freertos (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-qemu.freertos ZEROHEAP
+        run: make allconfigs-qemu.freertos ZEROHEAP=1
 
 
   qemu-nuttx:
@@ -127,34 +75,8 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all qemu/nuttx apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building qemu.nuttx.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "qemu.nuttx.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] qemu.nuttx.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] qemu.nuttx.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "qemu/nuttx (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-qemu.nuttx ZEROHEAP
+        run: make allconfigs-qemu.nuttx ZEROHEAP=1
 
 
   qemu-zephyr:
@@ -200,34 +122,8 @@ jobs:
             echo "Zephyr workspace restored from cache"
           fi
 
-      - name: Build all qemu/zephyr apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building qemu.zephyr.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "qemu.zephyr.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] qemu.zephyr.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] qemu.zephyr.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "qemu/zephyr (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-qemu.zephyr ZEROHEAP
+        run: make allconfigs-qemu.zephyr ZEROHEAP=1
 
 
   stm32f746-freertos:
@@ -251,34 +147,8 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all stm32f746/freertos apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building stm32f746.freertos.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "stm32f746.freertos.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] stm32f746.freertos.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] stm32f746.freertos.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "stm32f746/freertos (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-stm32f746.freertos ZEROHEAP
+        run: make allconfigs-stm32f746.freertos ZEROHEAP=1
 
 
   stm32f746-nuttx:
@@ -302,34 +172,8 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
-      - name: Build all stm32f746/nuttx apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building stm32f746.nuttx.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "stm32f746.nuttx.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] stm32f746.nuttx.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] stm32f746.nuttx.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "stm32f746/nuttx (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-stm32f746.nuttx ZEROHEAP
+        run: make allconfigs-stm32f746.nuttx ZEROHEAP=1
 
 
   stm32f746-zephyr:
@@ -375,31 +219,5 @@ jobs:
             echo "Zephyr workspace restored from cache"
           fi
 
-      - name: Build all stm32f746/zephyr apps (ZEROHEAP)
-        run: |
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
-                 | sed 's/.*config_name: *//' | sort -u)
-          FAILED=""
-          TOTAL=0
-          for app in $APPS; do
-            TOTAL=$((TOTAL + 1))
-            echo ""
-            echo "============================================================"
-            echo "[$TOTAL] Building stm32f746.zephyr.$app ZEROHEAP=1"
-            echo "============================================================"
-            if make "stm32f746.zephyr.$app" ZEROHEAP=1 && make; then
-              echo "[$TOTAL] stm32f746.zephyr.$app ZEROHEAP=1: OK"
-            else
-              echo "[$TOTAL] stm32f746.zephyr.$app ZEROHEAP=1: FAILED"
-              FAILED="$FAILED $app"
-            fi
-          done
-          echo ""
-          echo "============================================================"
-          echo "stm32f746/zephyr (ZEROHEAP): $TOTAL configurations processed"
-          if [ -n "$FAILED" ]; then
-            echo "FAILED:$FAILED"
-            exit 1
-          else
-            echo "All configurations built successfully"
-          fi
+      - name: Build allconfigs-stm32f746.zephyr ZEROHEAP
+        run: make allconfigs-stm32f746.zephyr ZEROHEAP=1
