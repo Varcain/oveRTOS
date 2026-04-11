@@ -433,7 +433,7 @@ file(READ \"${ZIG_SIZES_ENV}\" _CONTENT)\n\
 set(_HDR \"/* Auto-generated storage sizes for Zig zero-heap builds. */\\n\")\n\
 string(REPLACE \"\\n\" \";\" _LINES \"\${_CONTENT}\")\n\
 foreach(_LINE \${_LINES})\n\
-  if(_LINE MATCHES \"^([A-Z_]+)=([0-9]+)$\")\n\
+  if(_LINE MATCHES \"^([A-Z0-9_]+)=([0-9]+)$\")\n\
     string(APPEND _HDR \"#define OVE_\${CMAKE_MATCH_1} \${CMAKE_MATCH_2}\\n\")\n\
   endif()\n\
 endforeach()\n\

@@ -1,5 +1,13 @@
+// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// This file is part of oveRTOS.
+
+include!("../ove_build_common.rs");
+
 fn main() {
-    // Model data is now compiled by the build system (cmake/OveModels.cmake)
+    ove_detect_config();
+    // Model data is compiled by the build system (cmake/OveModels.cmake)
     // from models/*.tflite. No cc crate compilation needed.
-    println!("cargo:rerun-if-changed=build.rs");
 }
