@@ -16,6 +16,7 @@
 
 #include "ove/lvgl_internal.h"
 #include "ove/sync.h"
+#include "ove/time.h"
 #include "ove_backend_common.h"
 #include "ove/sim/ove_sim_display.h"
 #include "ove/sim/ove_sim_transport.h"
@@ -39,6 +40,21 @@ static ove_mutex_storage_t lvgl_mutex_storage;
 
 /* Framebuffer for the memory-based display driver. */
 static uint8_t *fb_buf1;
+
+/* ── High-resolution tick source ──────────────────────────────────── */
+
+/*
+ * Provide a continuous millisecond tick via ove_time_get_us() so LVGL's
+ * perf monitor can measure intra-frame render/flush times.  Without this,
+ * lv_tick_inc() is only called every ~33ms and all sub-frame measurements
+ * return 0.
+ */
+static uint32_t hires_tick_cb(void)
+{
+	uint64_t us = 0;
+	ove_time_get_us(&us);
+	return (uint32_t)(us / 1000);
+}
 
 /* ── LVGL flush callback ──────────────────────────────────────────── */
 
@@ -98,6 +114,11 @@ int ove_lvgl_init(void)
 		return ret;
 
 	lv_init();
+
+	/* Register a high-resolution tick so LVGL's perf monitor can
+	 * measure intra-frame render/flush times accurately, instead
+	 * of relying on the 33ms-granularity lv_tick_inc() calls. */
+	lv_tick_set_cb(hires_tick_cb);
 
 	/* Create a memory-only display. */
 	lv_display_t *disp = lv_display_create(OVE_DISPLAY_WIDTH,

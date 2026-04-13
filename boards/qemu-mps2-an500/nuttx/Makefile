@@ -54,6 +54,7 @@ CSRCS += $(SIM_DIR)/src/ove_sim_input.c
 CSRCS += $(SIM_DIR)/src/ove_sim_transport_shm_guest.c
 CSRCS += $(SIM_DIR)/hal/sim_board.c
 CSRCS += $(SIM_DIR)/hal/sim_display.c
+CSRCS += $(SIM_DIR)/hal/sim_debug.c
 
 CFLAGS += -I$(OVE_DIR)/sim/include
 CFLAGS += -I$(OVE_DIR)/sim/src

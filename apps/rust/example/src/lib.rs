@@ -9,7 +9,7 @@
 use core::fmt::Write;
 use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(has_lvgl)]
-use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
+use ove::lvgl::{self, Arc, Bar, Button, Color, Label, Layout, Slider, Styleable, Switch};
 use ove::{Error, FmtBuf, Priority, Queue, Thread, Timer, WAIT_FOREVER};
 
 // ---------------------------------------------------------------------------
@@ -72,6 +72,31 @@ fn create_ui() {
         .indicator_color(Color::palette_main(lvgl::PALETTE_BLUE))
         .radius(8)
         .align(lvgl::ALIGN_TOP_MID, 0, 96);
+
+    // Tier S widget smoke test — Slider, Button, Switch, Arc
+    Slider::create(screen)
+        .size(200, 12)
+        .range(0, 100)
+        .value_anim(50, false)
+        .indicator_color(Color::hex(0x4CAF50))
+        .align(lvgl::ALIGN_TOP_MID, 0, 128);
+
+    let btn = Button::create(screen)
+        .size(96, 32)
+        .align(lvgl::ALIGN_TOP_LEFT, 16, 156);
+    Label::create(btn)
+        .text(b"Button\0")
+        .color(Color::white())
+        .center();
+
+    Switch::create(screen).align(lvgl::ALIGN_TOP_RIGHT, -16, 156);
+
+    Arc::create(screen)
+        .size(72, 72)
+        .range(0, 100)
+        .value(75)
+        .indicator_color(Color::hex(0xFF9800))
+        .align(lvgl::ALIGN_TOP_MID, 0, 196);
 
     COUNTER_LABEL.init(counter);
     BAR.init(bar);

@@ -91,6 +91,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_LED") == True %}
     ${OVE_DIR}/src/ove_led.c
 {% endif %}
+{% if config.get("CONFIG_OVE_LVGL") == True %}
+    ${OVE_DIR}/src/ove_lvgl_indev.c
+{% endif %}
 {% if config.get("CONFIG_OVE_PM") == True %}
     ${OVE_DIR}/src/ove_pm.c
 {% endif %}

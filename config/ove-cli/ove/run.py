@@ -10,7 +10,7 @@ import os
 import subprocess
 import sys
 
-from .workspace import Workspace
+from .workspace import Workspace, get_bool
 
 
 def _get_config_bool(ws, key):
@@ -50,7 +50,8 @@ def cmd_run(args):
             print("Error: POSIX binary not found. Run 'ove build' first.")
             sys.exit(1)
         os.environ["OVE_DIR"] = ws.ove_dir
-        headless = hasattr(args, "headless") and args.headless
+        headless = (hasattr(args, "headless") and args.headless) or \
+            not get_bool(ws.config, "CONFIG_OVE_SIM_DASHBOARD")
 
         # Launch dashboard bridge (shmem → WebSocket) unless headless.
         bridge_proc = None
@@ -79,7 +80,9 @@ def cmd_run(args):
             print("Error: firmware.elf not found. Run 'ove build' first.")
             sys.exit(1)
         cmd = [qemu_script, firmware]
-        if hasattr(args, "headless") and args.headless:
+        headless = (hasattr(args, "headless") and args.headless) or \
+            not get_bool(ws.config, "CONFIG_OVE_SIM_DASHBOARD")
+        if headless:
             cmd.append("--headless")
         if hasattr(args, "extra"):
             cmd.extend(args.extra)

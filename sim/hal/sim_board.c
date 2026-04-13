@@ -22,6 +22,7 @@
 #include "ove/sim/ove_sim_transport.h"
 #include "ove/sim/ove_sim_display.h"
 #include "ove/sim/ove_sim_audio.h"
+#include "ove/sim/ove_sim_debug.h"
 #include "ove/types.h"
 #include "board_desc.h"
 
@@ -102,6 +103,11 @@ int ove_sim_board_init(void)
 	if (ret < 0)
 		fprintf(stderr, "[sim] Audio plugin failed: %d\n", ret);
 #endif
+
+	/* Debug plugin (thread + memory snapshots) — always registered. */
+	ret = ove_sim_debug_register();
+	if (ret < 0)
+		fprintf(stderr, "[sim] Debug plugin failed: %d\n", ret);
 
 #if defined(__EMSCRIPTEN__)
 	/* WASM: start a command pump thread that drains the JS→C command

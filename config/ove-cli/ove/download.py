@@ -76,10 +76,10 @@ def update_symlink(link_path, target_path):
 def git_clone(url, tag, dest, name, submodules=None):
     """Clone a git repository to dest with shallow depth."""
     if os.path.isdir(dest):
-        logger.debug(f"{name}: already downloaded at {dest}")
+        logger.info(f"{name}: up to date")
         return True
 
-    logger.debug(f"{name}: cloning {url} (tag: {tag})...")
+    logger.info(f"{name}: cloning (tag: {tag})...")
     cmd = ["git", "clone", "--depth", "1", "--branch", tag, url, dest]
 
     def _do_clone():
@@ -95,7 +95,7 @@ def git_clone(url, tag, dest, name, submodules=None):
         return False
 
     if submodules:
-        logger.debug(f"{name}: initializing submodules...")
+        logger.info(f"{name}: initializing submodules...")
         cmd = ["git", "-C", dest, "submodule", "update",
                "--init", "--depth", "1"] + submodules
         ret = subprocess.run(cmd, capture_output=True, text=True)
@@ -104,7 +104,7 @@ def git_clone(url, tag, dest, name, submodules=None):
             logger.error(f"{ret.stderr}")
             return False
 
-    logger.debug(f"{name}: done")
+    logger.info(f"{name}: done")
     return True
 
 
@@ -115,10 +115,10 @@ def download_tarball(url, dest_dir, name):
     filepath = os.path.join(dest_dir, filename)
 
     if os.path.isfile(filepath):
-        logger.debug(f"{name}: tarball already downloaded at {filepath}")
+        logger.info(f"{name}: tarball up to date")
         return True
 
-    logger.debug(f"{name}: downloading {url}...")
+    logger.info(f"{name}: downloading tarball...")
     try:
         _retry(lambda: urllib.request.urlretrieve(url, filepath),
                f"download {name}")
@@ -126,7 +126,7 @@ def download_tarball(url, dest_dir, name):
         logger.error(f"download failed for {name}: {e}")
         return False
 
-    logger.debug(f"{name}: done")
+    logger.info(f"{name}: done")
     return True
 
 
@@ -186,13 +186,13 @@ def download_toolchain(config, dl_dir, toolchains_dir, manifest=None):
 
     if os.path.isdir(toolchain_dir) and os.path.isfile(
             os.path.join(toolchain_dir, "bin", "arm-none-eabi-gcc")):
-        logger.debug(f"Toolchain: already available at {toolchain_dir}")
+        logger.info("Toolchain: up to date")
         _write_toolchain_sentinel(extract_dir, toolchain_dir)
         return True
 
     if not os.path.isfile(tarball_path):
-        logger.debug(f"Toolchain: downloading {filename}...")
-        logger.debug("(this may take several minutes for ~500 MB)")
+        logger.info(f"Toolchain: downloading {filename}...")
+        logger.info("(this may take several minutes for ~500 MB)")
         try:
             _retry(
                 lambda: urllib.request.urlretrieve(url, tarball_path,
@@ -206,7 +206,7 @@ def download_toolchain(config, dl_dir, toolchains_dir, manifest=None):
                 os.unlink(tarball_path)
             return False
 
-    logger.debug(f"Toolchain: extracting to {extract_dir}...")
+    logger.info("Toolchain: extracting...")
     os.makedirs(extract_dir, exist_ok=True)
     ret = subprocess.run(
         ["tar", "xf", tarball_path, "-C", extract_dir],
@@ -216,7 +216,7 @@ def download_toolchain(config, dl_dir, toolchains_dir, manifest=None):
         return False
 
     _write_toolchain_sentinel(extract_dir, toolchain_dir)
-    logger.debug(f"Toolchain: ready at {toolchain_dir}")
+    logger.info("Toolchain: ready")
     return True
 
 
@@ -331,7 +331,7 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
                                       ws_dl_dir)
         west_done_marker = os.path.join(zephyr_dir, ".west_update_done")
         if os.path.isfile(west_done_marker):
-            logger.debug(f"Zephyr: workspace already exists at {zephyr_dir}")
+            logger.info("Zephyr: workspace up to date")
             update_symlink(link, zephyr_dir)
             return True
 
@@ -340,7 +340,7 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
         # Run west init if not already initialized
         west_config = os.path.join(zephyr_dir, ".west")
         if not os.path.isdir(west_config):
-            logger.debug(f"Zephyr: initializing west workspace (rev: {rev})...")
+            logger.info(f"Zephyr: initializing west workspace (rev: {rev})...")
             os.makedirs(zephyr_dir, exist_ok=True)
 
             init_branch = rev if '/' not in rev and len(rev) < 40 else "main"
@@ -360,7 +360,7 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
                     logger.error(f"git checkout {rev} failed: {ret.stderr}")
                     return False
         else:
-            logger.debug(f"Zephyr: workspace exists, running west update...")
+            logger.info("Zephyr: running west update...")
 
         # Always run west update if marker is missing
         ret = subprocess.run(
@@ -370,13 +370,33 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
             logger.error(f"west update failed: {ret.stderr}")
             return False
 
+        # Replace bundled LVGL with symlink to external LVGL source.
+        # Zephyr's module glue (zephyr/modules/lvgl/) stays intact; only
+        # the library source (modules/lib/gui/lvgl/) is redirected so all
+        # backends compile the same LVGL version.
+        lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+        lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+        lvgl_dest, _, _ = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+        ok = git_clone(lvgl_url, lvgl_tag, lvgl_dest, "LVGL")
+
+        zephyr_lvgl = os.path.join(zephyr_dir, "modules", "lib", "gui",
+                                   "lvgl")
+        if os.path.isdir(zephyr_lvgl) and not os.path.islink(zephyr_lvgl):
+            shutil.rmtree(zephyr_lvgl)
+        update_symlink(zephyr_lvgl, lvgl_dest)
+
+        # Workspace and global LVGL symlinks
+        if ws_dl_dir:
+            update_symlink(os.path.join(ws_dl_dir, "lvgl"), lvgl_dest)
+        update_symlink(os.path.join(dl_dir, "lvgl"), lvgl_dest)
+
         # Mark as complete
         with open(west_done_marker, "w") as f:
             f.write(rev + "\n")
 
         update_symlink(link, zephyr_dir)
-        logger.debug("Zephyr: workspace ready")
-        return True
+        logger.info("Zephyr: workspace ready")
+        return ok
 
     elif get_bool(config, "CONFIG_ZEPHYR_SOURCE_LOCAL"):
         path = get_str(config, "CONFIG_ZEPHYR_LOCAL_PATH")
@@ -430,6 +450,16 @@ def download_nuttx(config, dl_dir, build_dir, ws_dl_dir=None, manifest=None):
             manifest, "libraries", "cmsis-dsp", "version")
         dest, link, global_link = hashed_dir(dl_dir, "CMSIS-DSP", cmsis_dsp_tag, ws_dl_dir)
         ok = git_clone(cmsis_dsp_url, cmsis_dsp_tag, dest, "CMSIS-DSP") and ok
+        if os.path.isdir(dest):
+            update_symlink(link, dest)
+            if global_link:
+                update_symlink(global_link, dest)
+
+        # External LVGL — NuttX no longer uses bundled nuttx-apps LVGL.
+        lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+        lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+        dest, link, global_link = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+        ok = git_clone(lvgl_url, lvgl_tag, dest, "LVGL") and ok
         if os.path.isdir(dest):
             update_symlink(link, dest)
             if global_link:
@@ -493,19 +523,19 @@ def ensure_rust_target(config, dl_dir):
         logger.error(f"rustc not found: {rustc}")
         return False
 
-    logger.debug("Rust: cargo and rustc found")
+    logger.info("Rust: cargo and rustc found")
 
     if get_bool(config, "CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM"):
         rustup = shutil.which("rustup")
         if rustup:
-            logger.debug(f"Rust: adding targets {targets}...")
+            logger.info(f"Rust: adding targets {targets}...")
             ret = subprocess.run(
                 [rustup, "target", "add"] + targets,
                 capture_output=True, text=True)
             if ret.returncode != 0:
                 logger.error(f"rustup target add failed: {ret.stderr}")
                 return False
-            logger.debug(f"Rust: targets {targets} ready")
+            logger.info("Rust: targets ready")
         else:
             logger.warning("rustup not found, cannot add target "
                   "automatically")
@@ -536,12 +566,12 @@ def download_zig_toolchain(config, dl_dir, toolchains_dir, manifest=None):
 
     if os.path.isdir(zig_dir) and os.path.isfile(
             os.path.join(zig_dir, "zig")):
-        logger.debug(f"Zig: already available at {zig_dir}")
+        logger.info("Zig: up to date")
         return True
 
     if not os.path.isfile(tarball_path):
         os.makedirs(dl_dir, exist_ok=True)
-        logger.debug(f"Zig: downloading {filename}...")
+        logger.info(f"Zig: downloading {filename}...")
         try:
             _retry(
                 lambda: urllib.request.urlretrieve(url, tarball_path,
@@ -555,7 +585,7 @@ def download_zig_toolchain(config, dl_dir, toolchains_dir, manifest=None):
                 os.unlink(tarball_path)
             return False
 
-    logger.debug(f"Zig: extracting to {toolchains_dir}...")
+    logger.info("Zig: extracting...")
     os.makedirs(toolchains_dir, exist_ok=True)
     ret = subprocess.run(
         ["tar", "xf", tarball_path, "-C", toolchains_dir],
@@ -564,7 +594,7 @@ def download_zig_toolchain(config, dl_dir, toolchains_dir, manifest=None):
         logger.error(f"extraction failed: {ret.stderr}")
         return False
 
-    logger.debug(f"Zig: ready at {zig_dir}")
+    logger.info("Zig: ready")
     return True
 
 
@@ -582,7 +612,7 @@ def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
     # Do a full clone then checkout the specific commit.
     ok = True
     if not os.path.isdir(dest):
-        logger.debug(f"TFLM: cloning {tflm_url} ({tflm_rev[:12]})...")
+        logger.info(f"TFLM: cloning ({tflm_rev[:12]})...")
         ret = subprocess.run(
             ["git", "clone", tflm_url, dest],
             capture_output=True, text=True)
@@ -597,7 +627,7 @@ def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
             return False
         logger.debug(f"TFLM: checked out {tflm_rev[:12]}")
     else:
-        logger.debug(f"TFLM: already downloaded at {dest}")
+        logger.info("TFLM: up to date")
 
     if os.path.isdir(dest):
         update_symlink(link, dest)
@@ -607,7 +637,7 @@ def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
         downloads_dir = os.path.join(
             dest, "tensorflow", "lite", "micro", "tools", "make", "downloads")
         if not os.path.isdir(os.path.join(downloads_dir, "flatbuffers")):
-            logger.debug("TFLM: downloading third-party dependencies...")
+            logger.info("TFLM: downloading third-party dependencies...")
             ret = subprocess.run(
                 ["make", "-f",
                  "tensorflow/lite/micro/tools/make/Makefile",
@@ -617,7 +647,7 @@ def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
                 logger.error(f"TFLM third-party download failed: {ret.stderr}")
                 ok = False
             else:
-                logger.debug("TFLM: third-party dependencies ready")
+                logger.info("TFLM: third-party dependencies ready")
     return ok
 
 

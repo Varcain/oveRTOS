@@ -12,10 +12,12 @@ config OVE_BOARD_STM32F746G_DISCO
 config OVE_BOARD_QEMU_MPS2_AN500
     bool "QEMU MPS2-AN500 (Cortex-M7)"
     depends on OVE_RTOS_FREERTOS || OVE_RTOS_ZEPHYR || OVE_RTOS_NUTTX
+    select OVE_SIM
+    select OVE_DEBUG_BUILD
     help
       ARM MPS2-AN500 board emulated by QEMU.
       Cortex-M7 @ 25 MHz, 4 MB Flash, 4 MB RAM.
-      Uses semihosting for I/O.
+      Uses semihosting for I/O and sim dashboard for display.
 
 config OVE_BOARD_HOST_PC
     bool "Host PC (native)"

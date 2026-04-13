@@ -76,6 +76,32 @@ fn createUi() void {
         .indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_BLUE))
         .radius(8)
         .alignTo(ove.ffi.LV_ALIGN_TOP_MID, 0, 96);
+
+    // Tier S widget smoke test — Slider, Button, Switch, Arc
+    _ = lvgl.Slider.create(screen)
+        .size(200, 12)
+        .range(0, 100)
+        .value(50)
+        .indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_GREEN))
+        .alignTo(ove.ffi.LV_ALIGN_TOP_MID, 0, 128);
+
+    const btn = lvgl.Button.create(screen)
+        .size(96, 32)
+        .alignTo(ove.ffi.LV_ALIGN_TOP_LEFT, 16, 156);
+    _ = lvgl.Label.create(btn)
+        .text("Button")
+        .color(lvgl.colorWhite())
+        .center();
+
+    _ = lvgl.Switch.create(screen)
+        .alignTo(ove.ffi.LV_ALIGN_TOP_RIGHT, -16, 156);
+
+    _ = lvgl.Arc.create(screen)
+        .size(72, 72)
+        .range(0, 100)
+        .value(75)
+        .indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_ORANGE))
+        .alignTo(ove.ffi.LV_ALIGN_TOP_MID, 0, 196);
 }
 
 fn uiTimerCallback() void {

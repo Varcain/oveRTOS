@@ -34,6 +34,9 @@ endif
 # Model data generated from models/*.tflite
 CSRCS += $(OVE_MODEL_SRCS)
 
+# LVGL sources (external — compiled within NuttX build, not bundled nuttx-apps)
+-include $(OVE_GEN_DIR)/ove_lvgl_sources.mk
+
 # TFLM sources (compiled as C++ within the NuttX build system)
 -include $(OVE_GEN_DIR)/ove_tflm_sources.mk
 

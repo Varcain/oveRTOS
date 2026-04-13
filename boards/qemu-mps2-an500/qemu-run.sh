@@ -18,12 +18,23 @@ OVE_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 VENV_PYTHON="${OVE_DIR}/.venv/bin/python"
 VIEWER="${OVE_DIR}/config/scripts/ove-dashboard-bridge.py"
 
+# Resolve ARM toolchain path for GDB.
+TC_SENTINEL="${OVE_DIR}/output/toolchains/path.txt"
+if [ -f "${TC_SENTINEL}" ]; then
+    TC_DIR="$(cat "${TC_SENTINEL}")"
+    ARM_GDB="${TC_DIR}/bin/arm-none-eabi-gdb"
+else
+    ARM_GDB="arm-none-eabi-gdb"
+fi
+
 ELF="${1:?Usage: $0 <elf-file> [--headless] [--machine <name>] [extra-qemu-args...]}"
 shift
 
 QEMU_MACHINE="mps2-an500"
 HEADLESS=0
 NO_NET=0
+NO_GDB=0
+GDB_PORT=1234
 QEMU_TIMEOUT=""
 EXTRA_ARGS=()
 while [ $# -gt 0 ]; do
@@ -33,6 +44,13 @@ while [ $# -gt 0 ]; do
             ;;
         --no-net)
             NO_NET=1
+            ;;
+        --no-gdb)
+            NO_GDB=1
+            ;;
+        --gdb-port)
+            shift
+            GDB_PORT="${1:?--gdb-port requires a port number}"
             ;;
         --timeout)
             shift
@@ -102,6 +120,11 @@ if [ "${HEADLESS}" -eq 0 ]; then
         -semihosting-config "enable=on,target=native,arg=${FB_PATH}"
     )
 
+    # GDB server: enabled by default (firmware boots normally, dashboard can pause).
+    if [ "${NO_GDB}" -eq 0 ]; then
+        QEMU_ARGS+=( -gdb "tcp::${GDB_PORT}" )
+    fi
+
     # Kill any stale dashboard bridge on the same port.
     DASHBOARD_PORT=8081
     STALE_PID=$(lsof -ti tcp:${DASHBOARD_PORT} 2>/dev/null || true)
@@ -114,7 +137,17 @@ if [ "${HEADLESS}" -eq 0 ]; then
     LOG_FIFO=$(mktemp -u -t ove-log.XXXXXX)
     mkfifo "${LOG_FIFO}"
 
-    "${VENV_PYTHON}" "${VIEWER}" --port ${DASHBOARD_PORT} --log-fd 0 < "${LOG_FIFO}" &
+    # Derive CMake build dir from ELF path for source file indexing.
+    # ELF is in .../images/firmware.elf, build objects are in .../build/firmware/
+    ELF_DIR="$(dirname "$(realpath "${ELF}")")"
+    BUILD_DIR="${ELF_DIR%/images}/build/firmware"
+
+    VIEWER_ARGS=( --port ${DASHBOARD_PORT} --log-fd 0 --build-dir "${BUILD_DIR}" )
+    if [ "${NO_GDB}" -eq 0 ]; then
+        VIEWER_ARGS+=( --gdb-port "${GDB_PORT}" --gdb-toolchain "${ARM_GDB}" --elf-path "${ELF}" )
+    fi
+
+    "${VENV_PYTHON}" "${VIEWER}" "${VIEWER_ARGS[@]}" < "${LOG_FIFO}" &
     VIEWER_PID=$!
 
     # Wait for the dashboard HTTP server to be ready before starting QEMU.

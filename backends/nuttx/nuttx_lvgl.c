@@ -10,7 +10,7 @@
 #include "ove/lvgl_internal.h"
 #include "ove_backend_common.h"
 
-#ifdef CONFIG_GRAPHICS_LVGL
+#ifdef CONFIG_OVE_LVGL
 #include <pthread.h>
 #include <string.h>
 #include <fcntl.h>
@@ -153,7 +153,7 @@ void ove_lvgl_handler(void)
 	lv_timer_handler();
 }
 
-#else /* !CONFIG_GRAPHICS_LVGL */
+#else /* !CONFIG_OVE_LVGL */
 
 int ove_lvgl_init(void) { return OVE_OK; }
 void ove_lvgl_lock(void) {}
@@ -161,4 +161,4 @@ void ove_lvgl_unlock(void) {}
 void ove_lvgl_tick(uint32_t ms) { (void)ms; }
 void ove_lvgl_handler(void) {}
 
-#endif /* CONFIG_GRAPHICS_LVGL */
+#endif /* CONFIG_OVE_LVGL */

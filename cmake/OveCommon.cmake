@@ -53,8 +53,10 @@ macro(ove_setup_project _proj_name)
         include(${OVE_GEN_DIR}/ove_config.cmake)
     endif()
 
-    # Default to Release
-    if(NOT CMAKE_BUILD_TYPE)
+    # OVE_DEBUG_BUILD → Debug config; otherwise Release.
+    if(OVE_DEBUG)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+    elseif(NOT CMAKE_BUILD_TYPE)
         set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     endif()
 

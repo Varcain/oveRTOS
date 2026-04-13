@@ -19,6 +19,7 @@
  */
 
 #include "ove/types.h"
+#include "ove_config.h"
 
 #if !defined(__EMSCRIPTEN__) && !defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 
@@ -62,6 +63,24 @@ struct fb_header {
 #define AUDIO_RING_TOTAL (sizeof(struct ove_sim_audio_ring))
 #define AUDIO_SHM_TOTAL  (2u * AUDIO_RING_TOTAL)
 
+/* ── Pointer input (bridge → firmware) ───────────────────────────── */
+/*
+ * /dev/shm/ove-input — 16-byte struct the dashboard bridge writes to
+ * on every mouse/touch event. The firmware side lazily mmaps it from
+ * ove_sim_input_get() so clicks routed through the browser dashboard
+ * actually reach LVGL's pointer indev.
+ *
+ * Layout (little-endian):
+ *   offset  0: uint32_t magic    ("INPT" = 0x54504E49)
+ *   offset  4: int16_t  x
+ *   offset  6: int16_t  y
+ *   offset  8: uint8_t  pressed
+ *   offset  9: uint8_t  reserved[7]
+ */
+#define INPUT_PATH      "/dev/shm/ove-input"
+#define INPUT_MAGIC     0x54504E49u  /* "INPT" */
+#define INPUT_SHM_SIZE  16
+
 /* ── Private state ───────────────────────────────────────────────── */
 
 struct shm_local_priv {
@@ -81,6 +100,10 @@ struct shm_local_priv {
 	struct ove_sim_audio_ring *audio_out;  /* playback: firmware → bridge */
 	struct ove_sim_audio_ring *audio_in;   /* capture:  bridge → firmware */
 	uint8_t                    audio_init_done;
+
+	/* Pointer input (/dev/shm/ove-input) */
+	int      input_fd;
+	uint8_t *input_base;
 };
 
 /* ── mmap helpers ────────────────────────────────────────────────── */
@@ -183,6 +206,19 @@ static int local_open(struct ove_sim_transport *t, const char *endpoint)
 	p->audio_in = NULL;
 	p->audio_init_done = 0;
 
+	/* Create /dev/shm/ove-input for pointer input from the dashboard
+	 * bridge. Stamp the magic so the bridge (and the firmware's
+	 * ove_sim_input_get() mmap path) can distinguish an initialised
+	 * region from a stale leftover. */
+	if (shm_create(INPUT_PATH, INPUT_SHM_SIZE,
+		       &p->input_fd, &p->input_base) == 0) {
+		uint32_t magic = INPUT_MAGIC;
+		memcpy(p->input_base, &magic, sizeof(magic));
+	} else {
+		p->input_base = NULL;
+		p->input_fd = -1;
+	}
+
 	return OVE_OK;
 }
 
@@ -201,6 +237,11 @@ static void local_close(struct ove_sim_transport *t)
 		shm_destroy(AUDIO_PATH, p->audio_fd,
 			    (uint8_t *)p->audio_out, AUDIO_SHM_TOTAL);
 	p->audio_fd = -1; p->audio_out = NULL; p->audio_in = NULL;
+
+	if (p->input_base)
+		shm_destroy(INPUT_PATH, p->input_fd, p->input_base,
+			    INPUT_SHM_SIZE);
+	p->input_fd = -1; p->input_base = NULL;
 }
 
 /* ── Events / commands (plugin IPC) ──────────────────────────────── */

@@ -84,17 +84,6 @@ CONFIG_NETUTILS_NETLIB=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_LVGL") == True %}
-# LVGL display support
-CONFIG_GRAPHICS_LVGL=y
-CONFIG_LV_USE_NUTTX=y
-CONFIG_LV_USE_LOG=n
-CONFIG_LV_MEM_SIZE=65536
-CONFIG_LV_COLOR_DEPTH_16=y
-CONFIG_LV_FONT_MONTSERRAT_14=y
-CONFIG_LV_FONT_MONTSERRAT_32=y
-CONFIG_LV_USE_THEME_DEFAULT=y
-CONFIG_LV_USE_FLEX=y
-CONFIG_LV_USE_OBSERVER=y
-CONFIG_LV_USE_LABEL=y
-CONFIG_LV_USE_BAR=y
+# LVGL — built externally from dl/lvgl; config via board lv_conf.h.
+# NuttX no longer builds LVGL itself (CONFIG_GRAPHICS_LVGL removed).
 {% endif %}

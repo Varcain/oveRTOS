@@ -43,7 +43,7 @@ rtos:
 
 libraries:
   lvgl:
-    version: "v9.2.0"
+    version: "v9.4.0"
     url: "https://github.com/lvgl/lvgl.git"
   cmsis5:
     version: "5.9.0"

@@ -21,6 +21,7 @@
 
 #ifdef CONFIG_OVE_LVGL
 #include <ove/lvgl.hpp>
+#include "generated_images/lvgl_images.h"
 
 namespace lv = ove::lvgl;
 #endif
@@ -115,6 +116,37 @@ public:
 			.indicator_color(lv_palette_main(LV_PALETTE_BLUE))
 			.radius(8)
 			.align(LV_ALIGN_TOP_MID, 0, 96);
+
+		/* Tier S widget smoke test — Slider, Button, Switch, Arc */
+		lv::Slider::create(root)
+			.size(200, 12)
+			.range(0, 100)
+			.value(50)
+			.indicator_color(lv_palette_main(LV_PALETTE_GREEN))
+			.align(LV_ALIGN_TOP_MID, 0, 128);
+
+		auto btn = lv::Button::create(root)
+			.size(96, 32)
+			.align(LV_ALIGN_TOP_LEFT, 16, 156);
+		lv::Label::create(btn)
+			.text("Button")
+			.color(lv_color_white())
+			.center();
+
+		lv::Switch::create(root)
+			.align(LV_ALIGN_TOP_RIGHT, -16, 156);
+
+		lv::Arc::create(root)
+			.size(72, 72)
+			.range(0, 100)
+			.value(75)
+			.indicator_color(lv_palette_main(LV_PALETTE_ORANGE))
+			.align(LV_ALIGN_TOP_MID, 0, 196);
+
+		/* Logo image from the build-time PNG → C array pipeline */
+		lv::Image::create(root)
+			.src(&logo)
+			.align(LV_ALIGN_BOTTOM_RIGHT, -8, -8);
 
 		return root;
 	}

@@ -29,11 +29,82 @@
 #include "ove/types.h"
 #include "ove_config.h"
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifdef CONFIG_OVE_LVGL
+
+/**
+ * @brief Keypad read callback — the user implements this to deliver
+ *        key events to LVGL via ove_lvgl_register_keypad().
+ *
+ * @param[out] key      Filled with the current LV_KEY_* code if a key
+ *                      is pressed.
+ * @param[out] pressed  Filled with @c true if currently pressed,
+ *                      @c false if released.
+ * @return @c true if the callback wrote `key` and `pressed` (LVGL
+ *         should use them), @c false to indicate no new input.
+ */
+typedef bool (*ove_lvgl_keypad_read_fn_t)(uint32_t *key, bool *pressed);
+
+/**
+ * @brief Encoder read callback — the user implements this to deliver
+ *        rotation/click events to LVGL.
+ *
+ * @param[out] diff     Filled with the accumulated encoder delta since
+ *                      the last read (positive = clockwise).
+ * @param[out] pressed  Filled with @c true if the encoder switch is
+ *                      currently pressed.
+ * @return @c true if the callback wrote `diff` and `pressed`.
+ */
+typedef bool (*ove_lvgl_encoder_read_fn_t)(int16_t *diff, bool *pressed);
+
+/**
+ * @brief Register a keypad input device with LVGL.
+ *
+ * On first call the function creates an `lv_indev_t` of type keypad
+ * and installs an internal read-callback shim that dispatches to @p cb
+ * every refresh cycle. Subsequent calls replace the user callback
+ * without creating another indev.
+ *
+ * Pass @c NULL to deregister (LVGL will still poll but the shim returns
+ * "no input").
+ *
+ * @param[in] cb Callback supplying keypad state, or @c NULL to deregister.
+ * @return OVE_OK on success.
+ */
+int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb);
+
+/**
+ * @brief Register an encoder input device with LVGL.
+ *
+ * Same semantics as ove_lvgl_register_keypad() but for rotary encoder
+ * (+ push) input.
+ */
+int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb);
+
+/**
+ * @brief Returns the keypad LVGL input device handle (`lv_indev_t *`
+ *        as @c void*) or @c NULL if none has been registered. Cast to
+ *        `lv_indev_t *` at the call site and bind to an `lv_group_t`
+ *        via `lv_indev_set_group()`.
+ *
+ * The return type is `void *` so this header does not need to pull in
+ * `<lvgl.h>` or forward-declare LVGL types that conflict with its
+ * own typedefs.
+ */
+void *ove_lvgl_get_keypad_indev(void);
+
+/**
+ * @brief Returns the encoder LVGL input device handle as @c void*, or
+ *        @c NULL if none has been registered.
+ */
+void *ove_lvgl_get_encoder_indev(void);
+
 
 /**
  * @brief Initialise the LVGL library and register the board's display driver.
@@ -80,11 +151,20 @@ void ove_lvgl_handler(void);
 
 #else /* !CONFIG_OVE_LVGL */
 
+typedef bool (*ove_lvgl_keypad_read_fn_t)(uint32_t *key, bool *pressed);
+typedef bool (*ove_lvgl_encoder_read_fn_t)(int16_t *diff, bool *pressed);
+
 static inline int ove_lvgl_init(void) { return OVE_ERR_NOT_SUPPORTED; }
 static inline void ove_lvgl_lock(void) { }
 static inline void ove_lvgl_unlock(void) { }
 static inline void ove_lvgl_tick(uint32_t ms) { (void)ms; }
 static inline void ove_lvgl_handler(void) { }
+static inline int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb)
+    { (void)cb; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb)
+    { (void)cb; return OVE_ERR_NOT_SUPPORTED; }
+static inline void *ove_lvgl_get_keypad_indev(void) { return (void *)0; }
+static inline void *ove_lvgl_get_encoder_indev(void) { return (void *)0; }
 
 #endif /* CONFIG_OVE_LVGL */
 

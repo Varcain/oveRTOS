@@ -16,6 +16,7 @@ defconfig:
   - CONFIG_OVE_EVENTGROUP=y
   - CONFIG_OVE_WORKQUEUE=y
   - CONFIG_OVE_STREAM=y
+  - CONFIG_OVE_SIM_DASHBOARD=n
 kconfig: |
   config OVE_BENCHMARK_ITERATIONS
   	int "Number of measurement iterations per benchmark case"

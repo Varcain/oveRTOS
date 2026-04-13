@@ -62,14 +62,11 @@ function(ove_build_rust_crate TARGET)
 
     set(RUST_LIB "${RUST_LIB_DIR}/lib${APP_RUST_LIB_NAME}.a")
 
-    # Determine LVGL include path per RTOS
-    if(OVE_RTOS STREQUAL "zephyr" AND DEFINED ZEPHYR_BASE)
-        set(LVGL_INC_PATH "${ZEPHYR_BASE}/../modules/lib/gui/lvgl")
-        set(LVGL_PARENT_PATH "${ZEPHYR_BASE}/../modules/lib/gui")
-    else()
-        set(LVGL_INC_PATH "${OVE_DL_DIR}/lvgl")
-        set(LVGL_PARENT_PATH "${OVE_DL_DIR}")
-    endif()
+    # LVGL include path — unified across all RTOSes via workspace dl/ symlink.
+    # Zephyr's bundled LVGL is replaced with a symlink to the same external
+    # source during download, so all backends use OVE_DL_DIR/lvgl.
+    set(LVGL_INC_PATH "${OVE_DL_DIR}/lvgl")
+    set(LVGL_PARENT_PATH "${OVE_DL_DIR}")
 
     # Resolve board directory (some platforms use BOARD_DIR, others OVE_BOARD_DIR)
     if(DEFINED OVE_BOARD_DIR)

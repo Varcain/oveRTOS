@@ -28,6 +28,11 @@
       "items": { "type": "string" },
       "description": "Additional include paths for c_sources."
     },
+    "images": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "PNG/JPG/BMP image paths (relative to app dir) to convert into lv_image_dsc_t C arrays at configure time. Format is picked from the board's LV_COLOR_DEPTH."
+    },
     "sources": {
       "type": "array",
       "items": { "type": "string" },

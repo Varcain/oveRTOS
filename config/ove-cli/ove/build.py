@@ -362,13 +362,6 @@ def build_nuttx(ws):
     nuttx_build, apps_build = _setup_nuttx_build_tree(ws, env,
                                                        log_file=_build_log)
 
-    # Copy lv_conf.h for LVGL
-    lv_conf = os.path.join(ws.board_dir, "nuttx", "lv_conf.h")
-    if os.path.isfile(lv_conf):
-        lv_dest = os.path.join(apps_build, "graphics", "lvgl", "lv_conf.h")
-        os.makedirs(os.path.dirname(lv_dest), exist_ok=True)
-        shutil.copy2(lv_conf, lv_dest)
-
     # Apply layered config (build guard — fresh by construction)
     from .rtos_menuconfig import ensure_rtos_config_applied
     ensure_rtos_config_applied(ws, "nuttx", nuttx_build=nuttx_build,
@@ -376,8 +369,10 @@ def build_nuttx(ws):
                                log_file=_build_log)
 
     apps_abs = os.path.abspath(apps_build)
-    lvgl_inc = os.path.join(apps_abs, "graphics", "lvgl", "lvgl")
-    lvgl_parent = os.path.join(apps_abs, "graphics", "lvgl")
+
+    # LVGL paths — use external LVGL from workspace dl/ symlink
+    lvgl_inc = os.path.join(ws.ws_dl_dir, "lvgl")
+    lvgl_parent = ws.ws_dl_dir
 
     # Export all build paths as environment variables so they reach NuttX's
     # recursive sub-makes and Rust's cargo build. NuttX only passes APPDIR
@@ -402,22 +397,16 @@ def build_nuttx(ws):
         f"LVGL_PARENT_PATH={lvgl_parent}",
     ]
 
-    # Two-pass context build (LVGL headers, then Rust)
+    # Two-pass context build: first pass generates NuttX headers and
+    # .config; second pass retries Rust/Zig bindgen with final FPU flags.
+    # (LVGL headers are already available from the external dl/lvgl tree.)
     run(["make", "-k", "context"] + make_vars,
          env=env, cwd=nuttx_build, check=False, log_file=_build_log)
 
-    # Remove Helium/NEON blend dirs (cause build issues on Cortex-M)
-    for subdir in ("helium", "neon"):
-        p = os.path.join(apps_abs, "graphics", "lvgl", "lvgl",
-                         "src", "draw", "sw", "blend", subdir)
-        if os.path.isdir(p):
-            shutil.rmtree(p)
-
     # Clean stale build artifacts between context passes so the second
-    # pass recompiles everything with the final .config (FPU, LVGL, etc.):
-    # - Rust target dir: retry bindgen with LVGL headers now available
+    # pass recompiles everything with the final .config (FPU flags, etc.):
+    # - Rust target dir: retry bindgen with correct compiler flags
     # - Apps context stamp + staging: recompile with correct compiler flags
-    # Clean Rust build cache in the NuttX apps tree so second pass retries
     rust_target_dir = os.path.join(apps_build, "external", "ove_app",
                                    "rust_target")
     if os.path.isdir(rust_target_dir):
@@ -440,6 +429,32 @@ def build_nuttx(ws):
     dep_file = os.path.join(apps_build, "external", "ove_app", "Make.dep")
     if os.path.isfile(dep_file):
         os.unlink(dep_file)
+
+    # Generate LVGL source list for NuttX (external — no longer bundled
+    # in nuttx-apps). Glob all .c files under dl/lvgl/src/ and write a
+    # makefile fragment that ove_nuttx_common.mk includes.
+    if ws.config.get("CONFIG_OVE_LVGL") in (True, "y"):
+        import glob as _glob
+        lvgl_dir = os.path.join(ws.ws_dl_dir, "lvgl")
+        if os.path.isdir(lvgl_dir):
+            lvgl_srcs = sorted(_glob.glob(
+                os.path.join(lvgl_dir, "src", "**", "*.c"), recursive=True))
+            # Exclude Helium/NEON SIMD blends — Cortex-M only has Thumb
+            lvgl_srcs = [s for s in lvgl_srcs
+                         if "/blend/helium/" not in s
+                         and "/blend/neon/" not in s]
+            lvgl_mk = os.path.join(ws.gen_dir, "ove_lvgl_sources.mk")
+            lv_conf_dir = os.path.join(ws.board_dir, "nuttx")
+            with open(lvgl_mk, "w") as f:
+                f.write("# Auto-generated LVGL sources for NuttX\n")
+                f.write(f"CFLAGS += -I{lvgl_dir}\n")
+                f.write(f"CFLAGS += -I{ws.ws_dl_dir}\n")
+                f.write(f"CFLAGS += -I{lv_conf_dir}\n")
+                f.write("CFLAGS += -DLV_CONF_INCLUDE_SIMPLE\n")
+                f.write("CSRCS +=")
+                for s in lvgl_srcs:
+                    f.write(f" \\\n    {s}")
+                f.write("\n")
 
     # Generate TFLM source list for NuttX (compiled as CXXSRCS within
     # NuttX's own build system, which handles C++ include paths correctly).

@@ -20,6 +20,7 @@
  */
 
 #include "ove/types.h"
+#include "ove_config.h"
 
 #ifdef CONFIG_OVE_BOARD_QEMU_MPS2_AN500
 
