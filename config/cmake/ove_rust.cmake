@@ -109,6 +109,13 @@ function(ove_build_rust_crate TARGET)
     else()
         set(RUST_FEATURE_ARGS "")
 
+        # NuttX generated headers for bindgen (CMake binary dir)
+        if(OVE_RTOS STREQUAL "nuttx")
+            list(APPEND CARGO_ENV_VARS
+                "NUTTX_INCLUDE_DIR=${CMAKE_BINARY_DIR}/include"
+            )
+        endif()
+
         # CMSIS-DSP include paths for bindgen (ARM cross-compilation only)
         if(OVE_RTOS STREQUAL "freertos" AND DEFINED STM32CUBE_PATH)
             set(_CMSIS_DSP_INC "${STM32CUBE_PATH}/Drivers/CMSIS/DSP/Include")
@@ -116,6 +123,9 @@ function(ove_build_rust_crate TARGET)
         elseif(OVE_RTOS STREQUAL "zephyr" AND DEFINED ZEPHYR_BASE)
             set(_CMSIS_DSP_INC "${ZEPHYR_BASE}/../modules/lib/cmsis-dsp/Include")
             set(_CMSIS_CORE_INC "${ZEPHYR_BASE}/../modules/hal/cmsis/CMSIS/Core/Include")
+        elseif(OVE_RTOS STREQUAL "nuttx")
+            set(_CMSIS_DSP_INC "${OVE_DL_DIR}/CMSIS-DSP/Include")
+            set(_CMSIS_CORE_INC "${OVE_DL_DIR}/CMSIS_5/CMSIS/Core/Include")
         endif()
 
         if(DEFINED _CMSIS_DSP_INC AND EXISTS "${_CMSIS_DSP_INC}/arm_math.h")

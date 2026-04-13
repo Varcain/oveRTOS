@@ -143,6 +143,8 @@ function(ove_build_zig_lib TARGET)
         endif()
     elseif(OVE_RTOS STREQUAL "nuttx")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/nuttx/include")
+        # NuttX CMake generated headers (nuttx/config.h etc.)
+        list(APPEND ZIG_INCLUDE_ARGS "-I${CMAKE_BINARY_DIR}/include")
     endif()
 
     # Board directory

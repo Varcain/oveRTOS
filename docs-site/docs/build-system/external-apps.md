@@ -352,7 +352,6 @@ output/
             ├── generated/        # Generated headers and build fragments
             │   ├── ove_config.h
             │   ├── ove_config.cmake
-            │   ├── app_sources.mk
             │   ├── app_sources.cmake
             │   ├── board_desc.h
             │   └── nuttx_defconfig (or prj.conf, FreeRTOSConfig.h)

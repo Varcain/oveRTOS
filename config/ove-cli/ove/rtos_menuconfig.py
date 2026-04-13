@@ -144,8 +144,12 @@ def ensure_rtos_config_applied(ws, rtos, nuttx_build=None, apps_build=None,
                                board_dir=None, env=None, log_file=None):
     """Build guard: unconditionally re-merge all 4 layers and apply.
 
-    Called at the top of build_nuttx() and build_zephyr() to guarantee
-    the RTOS build tree has a fresh, correct config.
+    Called at the top of build_zephyr() to guarantee the RTOS build tree
+    has a fresh, correct config.
+
+    For NuttX CMake builds, defconfig overlays are applied by
+    build_nuttx() directly via _apply_nuttx_defconfig_overlays() before
+    cmake configure.  This function only records the drift sentinel.
 
     For Zephyr, returns the absolute path to the merged prj.conf so the
     caller can pass it via -DCONF_FILE to west build.
@@ -158,50 +162,27 @@ def ensure_rtos_config_applied(ws, rtos, nuttx_build=None, apps_build=None,
 
 
 def _apply_nuttx_guard(ws, nuttx_build, apps_build, env, log_file):
-    """Apply all 4 layers to NuttX build tree .config.
+    """Apply all 4 config layers for the NuttX CMake build.
 
     Precondition: _setup_nuttx_build_tree() must have been called first.
-    Uses single-pass olddefconfig after all overlays.
 
-    Restores `.config` from the pristine `.config.ove_base` snapshot
-    (saved during initial configure) before re-applying the overlays.
-    Without this reset, overlay-key removals would not propagate:
-    `apply_defconfig_overlay` can only strip keys present in the new
-    overlay, so a key that used to be in the overlay but is now gone
-    would linger in `.config` indefinitely — and on stm32f746 it would
-    leave `STM32F7_ETHMAC=y` set even for non-network apps, breaking
-    `make olddefconfig`.
+    With CMake, defconfig overlays are merged into the board's defconfig
+    in the source tree.  NuttX's CMake build reads the defconfig and runs
+    olddefconfig during cmake configure.
+
+    This function is kept as a no-op for the CMake flow since
+    build_nuttx() applies overlays via _apply_nuttx_defconfig_overlays()
+    before cmake configure.  It only records the hash sentinel for
+    post-build drift detection.
     """
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    base_snapshot = os.path.join(nuttx_build, ".config.ove_base")
-    apps_abs = os.path.abspath(apps_build)
+    cmake_build = os.path.join(ws.build_dir, "nuttx-cmake")
+    nuttx_config = os.path.join(cmake_build, ".config")
 
-    if not os.path.isfile(nuttx_config):
-        print("error: NuttX .config not found in build tree. "
-              "Build tree may not be set up correctly.")
-        sys.exit(1)
-
-    # Reset to the pristine board base before re-applying overlays.
-    if os.path.isfile(base_snapshot):
-        shutil.copy2(base_snapshot, nuttx_config)
-
-    # Layers 1-3
-    merged = merge_rtos_config_layers(ws, "nuttx")
-    if merged:
-        apply_defconfig_overlay(nuttx_config, merged)
-
-    # Layer 4: user customizations
-    if os.path.isfile(ws.rtos_config_path):
-        apply_defconfig_overlay(nuttx_config, ws.rtos_config_path)
-
-    # Expand with olddefconfig
-    run(["make", "olddefconfig", f"APPDIR={apps_abs}"],
-        env=env, cwd=nuttx_build, log_file=log_file)
-
-    # Store hash for post-build drift detection
-    sentinel = os.path.join(ws.workspace_dir, ".rtos_config_applied_sha256")
-    with open(sentinel, "w") as f:
-        f.write(_hash_file(nuttx_config) + "\n")
+    if os.path.isfile(nuttx_config):
+        sentinel = os.path.join(ws.workspace_dir,
+                                ".rtos_config_applied_sha256")
+        with open(sentinel, "w") as f:
+            f.write(_hash_file(nuttx_config) + "\n")
 
 
 def _apply_zephyr_guard(ws):
@@ -253,37 +234,66 @@ def ensure_rtos_build_tree(ws, rtos, env):
 
 
 def _run_nuttx_menuconfig(ws, env):
-    """NuttX native menuconfig flow."""
-    nuttx_build, apps_build = ensure_rtos_build_tree(ws, "nuttx", env)
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    apps_abs = os.path.abspath(apps_build)
+    """NuttX native menuconfig flow (CMake-based)."""
+    import shutil as _shutil
 
-    # Layers 1-3: merge and apply as reference baseline
+    nuttx_src, apps_build = ensure_rtos_build_tree(ws, "nuttx", env)
+    cmake_build = os.path.join(ws.build_dir, "nuttx-cmake")
+    os.makedirs(cmake_build, exist_ok=True)
+
+    # Resolve NuttX board config
+    from .build import _find_nuttx_defconfig, _find_cmake
+    nuttx_board_cfg = NUTTX_BOARD_CONFIGS.get(ws.board_name)
+    if not nuttx_board_cfg:
+        from .build import _fallback_rtos_mapping
+        nuttx_board_cfg = _fallback_rtos_mapping(ws, "nuttx") or "mps2-an500:nsh"
+
+    # Layers 1-3: merge into board defconfig
     merged = merge_rtos_config_layers(ws, "nuttx")
-    if merged and os.path.isfile(nuttx_config):
-        apply_defconfig_overlay(nuttx_config, merged)
-    run(["make", "olddefconfig", f"APPDIR={apps_abs}"],
-        env=env, cwd=nuttx_build)
+    defconfig = _find_nuttx_defconfig(nuttx_src, nuttx_board_cfg)
+    if merged and defconfig:
+        apply_defconfig_overlay(defconfig, merged)
+
+    # Export env for CMake
+    env["OVE_DIR"] = ws.ove_dir
+    env["OVE_GEN_DIR"] = ws.gen_dir
+    env["OVE_APP_DIR"] = ws.app_dir
+    env["OVE_DL_DIR"] = ws.ws_dl_dir
+
+    # Ensure cmake is configured (creates .config from merged defconfig)
+    cmake = _find_cmake()
+    apps_abs = os.path.abspath(apps_build)
+    # Remove cached .config to force re-init from modified defconfig
+    config_path = os.path.join(cmake_build, ".config")
+    if os.path.isfile(config_path):
+        os.unlink(config_path)
+    run([cmake,
+         f"-S{os.path.abspath(nuttx_src)}",
+         f"-B{os.path.abspath(cmake_build)}",
+         f"-DBOARD_CONFIG={nuttx_board_cfg}",
+         f"-DNUTTX_APPS_DIR={apps_abs}"],
+        env=env, cwd=nuttx_src)
+
+    nuttx_config = os.path.join(cmake_build, ".config")
 
     # Snapshot reference (layers 1-3 only, no user customizations)
     ref_tmp = os.path.join(ws.gen_dir, ".nuttx_reference_config")
-    shutil.copy2(nuttx_config, ref_tmp)
+    _shutil.copy2(nuttx_config, ref_tmp)
 
     # Layer 4: overlay existing rtos.config so menuconfig shows current state
     if os.path.isfile(ws.rtos_config_path):
         apply_defconfig_overlay(nuttx_config, ws.rtos_config_path)
-        run(["make", "olddefconfig", f"APPDIR={apps_abs}"],
-            env=env, cwd=nuttx_build)
 
     # Snapshot pre-menuconfig for no-save detection
     with open(nuttx_config) as f:
         pre_content = f.read()
 
-    # Launch native menuconfig (interactive)
+    # Launch native menuconfig via cmake build target
     print("=== Launching NuttX native menuconfig ===")
     print("  Save and exit to apply changes. Exit without saving to cancel.")
-    result = run(["make", "menuconfig", f"APPDIR={apps_abs}"],
-                 env=env, cwd=nuttx_build, check=False)
+    result = run([cmake, "--build", os.path.abspath(cmake_build),
+                  "-t", "menuconfig"],
+                 env=env, check=False)
 
     if result.returncode != 0:
         print(f"error: NuttX menuconfig exited with code {result.returncode}")

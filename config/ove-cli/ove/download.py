@@ -498,7 +498,7 @@ def ensure_rust_target(config, dl_dir):
 
     # Install both soft-float and hard-float variants — at download time
     # CONFIG_ARCH_FPU isn't known yet (NuttX config is generated later),
-    # and ove_rust.mk picks the actual target based on FPU config.
+    # and ove_rust.cmake picks the actual target based on FPU config.
     targets = [target]
     if target == "thumbv7em-none-eabihf":
         targets.append("thumbv7em-none-eabi")

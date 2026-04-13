@@ -319,10 +319,14 @@ def test_nuttx(ove_dir, output_dir):
         test_dest)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
         f.write(f'source "$APPSDIR/external/ove_test/Kconfig"\n')
+    # NuttX sim tests still use Make (configure.sh + make) because
+    # the NuttX sim architecture has limited CMake support upstream.
     with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
         f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
         f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
         f.write('endif\n')
+    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
+        f.write('add_subdirectory(ove_test)\n')
 
     # Configure for sim board
     # NuttX's configure.sh -> sethost.sh calls kconfig-tweak from PATH
@@ -512,10 +516,14 @@ def test_qemu_nuttx(ove_dir, output_dir):
         test_dest)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
         f.write(f'source "$APPSDIR/external/ove_test/Kconfig"\n')
+    # NuttX sim tests still use Make (configure.sh + make) because
+    # the NuttX sim architecture has limited CMake support upstream.
     with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
         f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
         f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
         f.write('endif\n')
+    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
+        f.write('add_subdirectory(ove_test)\n')
 
     # Configure
     # NuttX's configure.sh -> sethost.sh calls kconfig-tweak from PATH
@@ -668,10 +676,14 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
         test_dest)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
         f.write(f'source "$APPSDIR/external/ove_test/Kconfig"\n')
+    # NuttX sim tests still use Make (configure.sh + make) because
+    # the NuttX sim architecture has limited CMake support upstream.
     with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
         f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
         f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
         f.write('endif\n')
+    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
+        f.write('add_subdirectory(ove_test)\n')
 
     # Configure
     nuttx_env = _venv_env(ove_dir)

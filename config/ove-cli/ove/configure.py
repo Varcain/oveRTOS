@@ -94,12 +94,11 @@ def generate_configs(ws):
         render_template(env, "nuttx_defconfig.j2",
                         os.path.join(output_dir, "nuttx_defconfig"), config)
         print(f"  Generated: {output_dir}/nuttx_defconfig")
-        render_template(env, "ove_sources.mk.j2",
-                        os.path.join(output_dir, "ove_sources.mk"), config)
-        print(f"  Generated: {output_dir}/ove_sources.mk")
+        # ove_sources.mk is no longer needed — NuttX uses CMake with
+        # ove_config.cmake (OVE_BACKEND_SOURCES) like the other RTOSes.
 
-    # Generate model C arrays from .tflite files (needed by NuttX and
-    # any other Make-based build that doesn't call OveModels.cmake).
+    # Generate model C arrays from .tflite files (pre-generated so they
+    # are available at CMake configure time for all RTOSes).
     if get_bool(config, "CONFIG_OVE_INFER"):
         model_dir = os.path.join(ws.ove_dir, "models")
         gen_models_dir = os.path.join(output_dir, "generated_models")
@@ -595,7 +594,7 @@ def _process_app_images(ws, app, app_dir):
 # ── App source generation (from app.yaml) ────────────────────────────────
 
 def generate_app_sources(ws):
-    """Generate app_sources.mk and app_sources.cmake from app.yaml."""
+    """Generate app_sources.cmake from app.yaml."""
     app_dir = ws.app_dir
     if not app_dir:
         return
@@ -669,14 +668,6 @@ def generate_app_sources(ws):
         trim_blocks=True,
         lstrip_blocks=True,
     )
-
-    # Render app_sources.mk
-    mk_template = env.get_template("app_sources.mk.j2")
-    mk_content = mk_template.render(app=app)
-    mk_path = os.path.join(ws.gen_dir, "app_sources.mk")
-    with open(mk_path, "w") as f:
-        f.write(mk_content)
-    print(f"  Generated: {mk_path}")
 
     # Render app_sources.cmake
     cmake_template = env.get_template("app_sources.cmake.j2")
