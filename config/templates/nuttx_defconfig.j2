@@ -28,6 +28,9 @@ CONFIG_IDLETHREAD_STACKSIZE=2048
 # Stack overflow detection
 CONFIG_STACK_COLORATION=y
 
+# CPU load monitoring (for sim dashboard thread view)
+CONFIG_SCHED_CPULOAD_SYSCLK=y
+
 # Thread-local storage (needed for ove_thread_get_self)
 CONFIG_TLS_NELEM=4
 CONFIG_TLS_TASK_NELEM=4

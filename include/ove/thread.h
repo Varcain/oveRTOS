@@ -315,10 +315,12 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
  * @brief Snapshot of a single thread's info.
  */
 struct ove_thread_info {
-	const char         *name;       /**< Thread name (static, do not free). */
-	ove_thread_state_t  state;      /**< Execution state. */
-	int                 priority;   /**< Priority level. */
-	size_t              stack_used; /**< Stack high-water mark (bytes). */
+	const char         *name;           /**< Thread name (static, do not free). */
+	ove_thread_state_t  state;          /**< Execution state. */
+	int                 priority;       /**< Priority level. */
+	size_t              stack_used;     /**< Stack high-water mark (bytes). */
+	size_t              stack_size;     /**< Total stack allocation (bytes). */
+	uint32_t            cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
 };
 
 /**

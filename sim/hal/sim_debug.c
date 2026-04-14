@@ -73,8 +73,8 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		if (name_len > OVE_SIM_DEBUG_MAX_NAME_LEN)
 			name_len = OVE_SIM_DEBUG_MAX_NAME_LEN;
 
-		/* 1 + name_len + 1 + 1 + 4 + 4 = name_len + 11 */
-		if (p + name_len + 11 > end)
+		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 = name_len + 15 */
+		if (p + name_len + 15 > end)
 			break;
 
 		*p++ = (uint8_t)name_len;
@@ -88,7 +88,11 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		memcpy(p, &stack_used, 4);
 		p += 4;
 
-		uint32_t cpu_x100 = 0;
+		uint32_t stack_size = (uint32_t)threads[i].stack_size;
+		memcpy(p, &stack_size, 4);
+		p += 4;
+
+		uint32_t cpu_x100 = threads[i].cpu_percent_x100;
 		memcpy(p, &cpu_x100, 4);
 		p += 4;
 	}

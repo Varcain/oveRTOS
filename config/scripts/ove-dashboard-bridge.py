@@ -811,36 +811,47 @@ def build_project_file_list(build_dir, ove_dir):
     if not build_dir or not os.path.isdir(build_dir):
         return
 
-    obj_dir = os.path.join(build_dir, "CMakeFiles", "firmware.elf.dir")
-    if not os.path.isdir(obj_dir):
-        return
+    # Scan all .c.obj files in the build tree.  Works with both
+    # FreeRTOS (single CMakeFiles/firmware.elf.dir/) and Zephyr
+    # (objects scattered across app/, zephyr/kernel/, etc.).
+    # Object paths encode the source path — extract it and filter
+    # to files under ove_dir (skip RTOS/SDK internals).
 
     files = []
-    for root, _, names in os.walk(obj_dir):
+    seen = set()
+    for root, _, names in os.walk(build_dir):
         for name in names:
             if not name.endswith(".c.obj"):
                 continue
             obj_path = os.path.join(root, name)
-            rel = os.path.relpath(obj_path, obj_dir)
-            src = rel[:-4]  # strip .obj
-            # Reconstruct absolute path
-            if src.startswith("home/"):
-                abs_path = "/" + src
+            # Extract source path from the obj dir structure.
+            # CMake encodes the full source path in the obj directory.
+            rel = os.path.relpath(obj_path, build_dir)
+            src = rel.replace(".c.obj", ".c")
+            # Strip CMake dir prefixes
+            # FreeRTOS: CMakeFiles/firmware.elf.dir/home/user/.../file.c
+            # Zephyr:   app/CMakeFiles/app.dir/home/user/.../file.c
+            idx = src.find("/home/")
+            if idx >= 0:
+                abs_path = src[idx:]  # "/home/user/.../file.c"
             else:
-                # Relative to board dir (main.c, system_*.c)
-                abs_path = os.path.join(
-                    os.path.dirname(build_dir.rstrip("/").rsplit("/build", 1)[0]),
-                    src) if "/build/" in build_dir else src
-                # Try board source dir
-                if not os.path.isfile(abs_path):
-                    # These are in the board's freertos/ dir
-                    board_dir = os.path.join(
-                        build_dir.split("/build/")[0],
-                        "../../boards")
-                    # Just use the path from the build dir
-                    pass
+                # Relative source (main.c, system_*.c) — resolve
+                # against workspace dir
+                ws_dir = build_dir
+                if "/build/" in ws_dir:
+                    ws_dir = ws_dir.split("/build/")[0]
+                abs_path = os.path.join(ws_dir, src.split("/")[-1])
 
             if not os.path.isfile(abs_path):
+                continue
+            abs_path = os.path.realpath(abs_path)
+            if abs_path in seen:
+                continue
+            seen.add(abs_path)
+
+            # Only include files under ove_dir (skip Zephyr kernel,
+            # SDK, and driver internals).
+            if ove_dir and not abs_path.startswith(ove_dir):
                 continue
 
             # Categorize
@@ -853,11 +864,12 @@ def build_project_file_list(build_dir, ove_dir):
                 cat = "Core"
             elif "/sim/" in abs_path:
                 cat = "Sim"
-            elif "/boards/" in abs_path or "/main.c" in short or "system_" in short:
+            elif "/boards/" in abs_path or short.endswith("main.c") \
+                    or "system_" in short:
                 cat = "Board"
             elif "FreeRTOS" in abs_path or "freertos" in abs_path.lower():
                 cat = "RTOS"
-            elif "/dl/lvgl" in abs_path:
+            elif "/dl/lvgl" in abs_path or "/lvgl/" in abs_path:
                 cat = "LVGL"
             elif "/tests/" in abs_path or "/stub" in abs_path:
                 cat = "Stubs"

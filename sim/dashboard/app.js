@@ -1218,9 +1218,11 @@ function handleThreadSnapshot(buf, off) {
         var state = view.getUint8(pos); pos += 1;
         var priority = view.getUint8(pos); pos += 1;
         var stackUsed = view.getUint32(pos, true); pos += 4;
+        var stackSize = view.getUint32(pos, true); pos += 4;
         var cpuX100 = view.getUint32(pos, true); pos += 4;
         threads.push({ name: name, state: state, priority: priority,
-                        stackUsed: stackUsed, cpuX100: cpuX100 });
+                        stackUsed: stackUsed, stackSize: stackSize,
+                        cpuX100: cpuX100 });
     }
 
     /* Render table */
@@ -1246,11 +1248,19 @@ function handleThreadSnapshot(buf, off) {
               + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
               + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
               + "<td class=\"td-num\">" + t.priority + "</td>"
-              + "<td class=\"td-num\">" + _fmtBytes(t.stackUsed) + "</td>"
+              + "<td class=\"td-num\">" + _fmtStack(t.stackUsed, t.stackSize) + "</td>"
               + "<td class=\"td-num\">" + cpuStr + "%</td>"
               + "</tr>";
     }
     tbody.innerHTML = html;
+}
+
+function _fmtStack(used, total) {
+    if (total > 0)
+        return _fmtBytes(used) + " / " + _fmtBytes(total);
+    if (used > 0)
+        return _fmtBytes(used);
+    return "--";
 }
 
 function _fmtBytes(n) {

@@ -25,7 +25,8 @@
  *     [char     name[name_len]]
  *     [uint8_t  state]          (ove_thread_state_t)
  *     [uint8_t  priority]
- *     [uint32_t stack_used]
+ *     [uint32_t stack_used]     (high-water mark bytes)
+ *     [uint32_t stack_size]     (total allocation bytes, 0 if unknown)
  *     [uint32_t cpu_x100]       (cpu_percent_x100)
  * @{
  */

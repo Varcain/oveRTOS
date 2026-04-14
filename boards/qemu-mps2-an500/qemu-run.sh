@@ -138,9 +138,19 @@ if [ "${HEADLESS}" -eq 0 ]; then
     mkfifo "${LOG_FIFO}"
 
     # Derive CMake build dir from ELF path for source file indexing.
-    # ELF is in .../images/firmware.elf, build objects are in .../build/firmware/
+    # ELF is in .../images/firmware.elf, build objects are in:
+    #   FreeRTOS: .../build/firmware/
+    #   Zephyr:   .../build/firmware/
+    #   NuttX:    .../build/nuttx-cmake/
     ELF_DIR="$(dirname "$(realpath "${ELF}")")"
-    BUILD_DIR="${ELF_DIR%/images}/build/firmware"
+    WS_DIR="${ELF_DIR%/images}"
+    BUILD_DIR="${WS_DIR}/build/firmware"
+    if [ ! -d "${BUILD_DIR}" ]; then
+        BUILD_DIR="${WS_DIR}/build/nuttx-cmake"
+    fi
+    if [ ! -d "${BUILD_DIR}" ]; then
+        BUILD_DIR="${WS_DIR}/build"
+    fi
 
     VIEWER_ARGS=( --port ${DASHBOARD_PORT} --log-fd 0 --build-dir "${BUILD_DIR}" )
     if [ "${NO_GDB}" -eq 0 ]; then

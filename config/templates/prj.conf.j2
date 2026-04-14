@@ -90,6 +90,12 @@ CONFIG_CONSOLE_SUBSYS=y
 CONFIG_CONSOLE_GETCHAR=y
 {% endif %}
 
+# Thread introspection (for sim dashboard thread view)
+CONFIG_THREAD_NAME=y
+CONFIG_THREAD_MONITOR=y
+CONFIG_INIT_STACKS=y
+CONFIG_THREAD_RUNTIME_STATS=y
+
 # Logging thread needs enough stack for vfprintf-based timestamp formatting
 CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=2048
 

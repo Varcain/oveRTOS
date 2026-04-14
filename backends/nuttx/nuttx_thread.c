@@ -11,6 +11,9 @@
 #include "ove_backend_common.h"
 #include <nuttx/semaphore.h>
 #include <nuttx/tls.h>
+#include <nuttx/sched.h>
+#include <nuttx/clock.h>
+#include <nuttx/arch.h>
 #include <sched.h>
 #include <unistd.h>
 #include <string.h>
@@ -342,16 +345,82 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 	stats->total     = (size_t)mi.arena;
 	stats->used      = (size_t)mi.uordblks;
 	stats->free      = (size_t)mi.fordblks;
-	stats->peak_used = 0;
+	stats->peak_used = (size_t)mi.usmblks;
 	return OVE_OK;
+}
+
+struct _nuttx_list_ctx {
+	struct ove_thread_info *out;
+	size_t max;
+	size_t count;
+};
+
+static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
+{
+	struct _nuttx_list_ctx *ctx = (struct _nuttx_list_ctx *)arg;
+	if (ctx->count >= ctx->max)
+		return;
+
+	struct ove_thread_info *info = &ctx->out[ctx->count];
+
+#if CONFIG_TASK_NAME_SIZE > 0
+	info->name = tcb->name;
+#else
+	info->name = "?";
+#endif
+
+	switch (tcb->task_state) {
+	case TSTATE_TASK_RUNNING:
+		info->state = OVE_THREAD_STATE_RUNNING;   break;
+	case TSTATE_TASK_READYTORUN:
+		info->state = OVE_THREAD_STATE_READY;      break;
+	case TSTATE_TASK_INACTIVE:
+		info->state = OVE_THREAD_STATE_TERMINATED; break;
+	default:
+		/* All TSTATE_WAIT_* states are blocked */
+		info->state = OVE_THREAD_STATE_BLOCKED;    break;
+	}
+
+	info->priority = (int)tcb->sched_priority;
+	info->stack_size = tcb->adj_stack_size;
+#ifdef CONFIG_STACK_COLORATION
+	info->stack_used = up_check_tcbstack(tcb, tcb->adj_stack_size);
+#else
+	info->stack_used = tcb->adj_stack_size;
+#endif
+	info->cpu_percent_x100 = 0;
+
+#ifndef CONFIG_SCHED_CPULOAD_NONE
+	{
+		struct cpuload_s cl;
+		if (clock_cpuload(tcb->pid, &cl) == OK && cl.total > 0)
+			info->cpu_percent_x100 =
+				(uint32_t)((uint64_t)cl.active * 10000U
+					   / cl.total);
+	}
+#endif
+
+	ctx->count++;
 }
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		    size_t *actual_count)
 {
-	(void)out;
-	(void)max_count;
+	if (!out) {
+		if (actual_count)
+			*actual_count = 0;
+		return OVE_OK;
+	}
+
+	struct _nuttx_list_ctx ctx = {
+		.out = out,
+		.max = max_count,
+		.count = 0,
+	};
+
+	nxsched_foreach(_nuttx_list_cb, &ctx);
+
 	if (actual_count)
-		*actual_count = 0;
+		*actual_count = ctx.count;
 	return OVE_OK;
 }
