@@ -67,6 +67,11 @@ macro(ove_posix_setup_project)
     set(CMAKE_C_STANDARD 11)
     set(CMAKE_C_STANDARD_REQUIRED ON)
     add_compile_options(-Wall -Wextra -Wno-unused-parameter)
+
+    # Debug build: add -g and -O0 when OVE_DEBUG_BUILD is enabled.
+    if(OVE_DEBUG)
+        add_compile_options(-g -O0)
+    endif()
 endmacro()
 
 

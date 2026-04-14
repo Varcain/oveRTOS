@@ -275,6 +275,7 @@ MIME = {
 
 ST_HTTP = 0
 ST_WS   = 1
+ST_DONE = 2  # HTTP response sent, close on next loop
 
 class Client:
     __slots__ = ("sock", "addr", "state", "buf", "send_lock")
@@ -300,8 +301,8 @@ def serve(port, dashboard_dir):
     clients = []
 
     while True:
-        # Build poll list: server + all client sockets
-        rlist = [srv] + [c.sock for c in clients]
+        # Build poll list: server + active client sockets
+        rlist = [srv] + [c.sock for c in clients if c.state != ST_DONE]
         readable, _, _ = select.select(rlist, [], [], 0.015)
 
         # Accept new connections
@@ -317,7 +318,7 @@ def serve(port, dashboard_dir):
         # Read from clients
         dead = []
         for c in clients:
-            if c.sock not in readable:
+            if c.state == ST_DONE or c.sock not in readable:
                 continue
             try:
                 data = c.sock.recv(16384)
@@ -371,12 +372,25 @@ def serve(port, dashboard_dir):
                         elif ftype == FRAME_FILE_REQ and fdata:
                             handle_file_request(fdata)
 
+        # Remove dead WS clients
         for c in dead:
             clients.remove(c)
             with ws_client_lock:
                 if c in ws_client_list:
                     ws_client_list.remove(c)
-            c.sock.close()
+            try:
+                c.sock.close()
+            except Exception:
+                pass
+
+        # Close completed HTTP clients (static file served)
+        done = [c for c in clients if c.state == ST_DONE]
+        for c in done:
+            clients.remove(c)
+            try:
+                c.sock.close()
+            except Exception:
+                pass
 
         # Drain mailbox and broadcast to WS clients.
         # Audio is sent directly by audio_bridge thread — only fb/logs here.
@@ -403,13 +417,16 @@ def serve(port, dashboard_dir):
 
 
 def _send_http(client, data):
-    """Send an HTTP response and close. Used for static files."""
-    try:
-        client.sock.setblocking(True)
-        client.sock.settimeout(2)
-        client.sock.sendall(data)
-    except Exception:
-        pass
+    """Send an HTTP response in a thread. Marks client for cleanup."""
+    def _do_send():
+        try:
+            client.sock.setblocking(True)
+            client.sock.settimeout(2)
+            client.sock.sendall(data)
+        except Exception:
+            pass
+        client.state = ST_DONE
+    threading.Thread(target=_do_send, daemon=True).start()
 
 
 def _send_nonblock(client, data):
@@ -821,13 +838,18 @@ def build_project_file_list(build_dir, ove_dir):
     seen = set()
     for root, _, names in os.walk(build_dir):
         for name in names:
-            if not name.endswith(".c.obj"):
+            # CMake uses .c.obj (cross) or .c.o (native)
+            if name.endswith(".c.obj"):
+                ext = ".c.obj"
+            elif name.endswith(".c.o"):
+                ext = ".c.o"
+            else:
                 continue
             obj_path = os.path.join(root, name)
             # Extract source path from the obj dir structure.
             # CMake encodes the full source path in the obj directory.
             rel = os.path.relpath(obj_path, build_dir)
-            src = rel.replace(".c.obj", ".c")
+            src = rel[:-(len(ext) - 2)]  # strip extension, keep .c
             # Strip CMake dir prefixes
             # FreeRTOS: CMakeFiles/firmware.elf.dir/home/user/.../file.c
             # Zephyr:   app/CMakeFiles/app.dir/home/user/.../file.c
@@ -1120,8 +1142,10 @@ class GdbController:
                 line = line.rstrip("\n\r")
                 if not line or line == "(gdb)":
                     continue
-                # Log async events and errors (skip verbose result data)
-                if line.startswith("*") or line.startswith("="):
+                # Log only *stopped and *running,thread-id="all"
+                # (skip per-thread *running from short-lived threads)
+                if line.startswith("*stopped") or \
+                        line == '*running,thread-id="all"':
                     short = line[:120] + "..." if len(line) > 120 else line
                     try:
                         sys.stderr.write(f"[gdb] {short}\n")
@@ -1165,7 +1189,9 @@ class GdbController:
             threading.Thread(
                 target=self._handle_stopped, args=(line,),
                 daemon=True).start()
-        elif line.startswith("*running"):
+        elif line == '*running,thread-id="all"':
+            # Only broadcast on "all threads running" — ignore
+            # per-thread *running from short-lived glibc threads.
             self._broadcast_state("running", None, None, None)
 
     def _handle_stopped(self, line):
@@ -1514,13 +1540,24 @@ def main():
         gdb_controller[0] = gdb
         # Start GDB in a thread — connection may take a moment.
         def _start_gdb():
-            time.sleep(1)  # Wait for QEMU to start
+            # Wait for target: QEMU needs time to start gdbserver;
+            # local attach is immediate.
+            if args.gdb_port:
+                time.sleep(1)
+            else:
+                time.sleep(0.2)
             try:
                 gdb.start()
                 print(f"GDB connected ({args.gdb_toolchain})", flush=True)
-            except Exception:
-                print("GDB connection failed:", flush=True)
-                traceback.print_exc()
+            except Exception as e:
+                msg = str(e)
+                if "ptrace" in msg.lower() or "Operation not permitted" in msg:
+                    print("GDB attach failed: ptrace not permitted. "
+                          "Run: sudo sysctl kernel.yama.ptrace_scope=0",
+                          flush=True)
+                else:
+                    print("GDB connection failed:", flush=True)
+                    traceback.print_exc()
         threading.Thread(target=_start_gdb, daemon=True).start()
 
     try:

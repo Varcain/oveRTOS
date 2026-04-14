@@ -6,7 +6,15 @@
     <title>oveRTOS Sim Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css"/>
     <link rel="stylesheet" href="style.css">
-    <script src="coi-serviceworker.js"></script>
+    <script>
+    /* Unregister any stale service worker from previous versions.
+       The bridge server sends COOP/COEP headers directly. */
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+        });
+    }
+    </script>
 </head>
 <body>
     <header>
@@ -83,6 +91,7 @@
                             <th>Pri</th>
                             <th>Stack</th>
                             <th>CPU %</th>
+                            <th>State Time</th>
                         </tr>
                     </thead>
                     <tbody id="thread-tbody"></tbody>

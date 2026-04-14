@@ -53,24 +53,46 @@ def cmd_run(args):
         headless = (hasattr(args, "headless") and args.headless) or \
             not get_bool(ws.config, "CONFIG_OVE_SIM_DASHBOARD")
 
+        # Launch firmware process first to get its PID for GDB attach.
+        extra = args.extra if hasattr(args, "extra") else []
+        fw_proc = subprocess.Popen([posix_bin] + extra)
+
         # Launch dashboard bridge (shmem → WebSocket) unless headless.
         bridge_proc = None
         if not headless:
             bridge = os.path.join(
                 ws.ove_dir, "config", "scripts", "ove-dashboard-bridge.py")
             dashboard = os.path.join(ws.ove_dir, "sim", "dashboard")
+            build_dir = os.path.join(ws.workspace_dir, "build", "firmware")
+            if not os.path.isdir(build_dir):
+                build_dir = os.path.join(ws.workspace_dir, "build")
+            bridge_args = [
+                sys.executable, bridge,
+                "--port", "8080", "--dashboard", dashboard,
+                "--build-dir", build_dir,
+                "--gdb-attach", str(fw_proc.pid),
+                "--gdb-toolchain", "gdb",
+                "--elf-path", posix_bin,
+            ]
             bridge_proc = subprocess.Popen(
-                [sys.executable, bridge,
-                 "--port", "8080", "--dashboard", dashboard],
-                stdout=None, stderr=None)
+                bridge_args, stdout=None, stderr=None)
 
-        extra = args.extra if hasattr(args, "extra") else []
         try:
-            subprocess.run([posix_bin] + extra)
+            fw_proc.wait()
+        except KeyboardInterrupt:
+            pass
         finally:
+            fw_proc.terminate()
+            try:
+                fw_proc.wait(timeout=3)
+            except Exception:
+                fw_proc.kill()
             if bridge_proc:
                 bridge_proc.terminate()
-                bridge_proc.wait(timeout=3)
+                try:
+                    bridge_proc.wait(timeout=3)
+                except Exception:
+                    bridge_proc.kill()
         return
 
     # QEMU or hardware

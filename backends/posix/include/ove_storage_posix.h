@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
+#include "ove/thread_state_stats.h"
 #include <time.h>
 #include <dirent.h>
 
@@ -55,6 +56,11 @@ struct ove_thread {
 	int state;                      /* ove_thread_state_t */
 	sem_t suspend_sem;
 	int started;
+	const char *name;               /* thread name (from desc) */
+	size_t stack_size;              /* allocated stack size */
+	void *stack_base;               /* caller-allocated stack (painted) */
+	struct ove_thread *next;        /* linked list for enumeration */
+	struct ove_state_tracker st;    /* per-state time tracking */
 };
 
 typedef struct ove_thread ove_thread_storage_t;

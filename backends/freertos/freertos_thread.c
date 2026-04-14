@@ -246,12 +246,17 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		{
 			size_t min_free = (size_t)tasks[i].usStackHighWaterMark
 					  * sizeof(StackType_t);
+#if (configRECORD_STACK_HIGH_ADDRESS == 1)
 			size_t total = (size_t)(
 				(uintptr_t)tasks[i].pxEndOfStack
 				- (uintptr_t)tasks[i].pxStackBase)
 				+ sizeof(StackType_t);
 			out[i].stack_size = total;
 			out[i].stack_used = total - min_free;
+#else
+			out[i].stack_size = 0;
+			out[i].stack_used = min_free; /* min-free only */
+#endif
 		}
 		switch (tasks[i].eCurrentState) {
 		case eRunning:   out[i].state = OVE_THREAD_STATE_RUNNING;   break;
@@ -267,6 +272,15 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 					   * 10000U / total_runtime);
 		else
 			out[i].cpu_percent_x100 = 0;
+
+		/* State times: derive from runtime counter (ms).
+		 * running = ulRunTimeCounter, blocked ≈ total - running. */
+		uint64_t run_us = (uint64_t)tasks[i].ulRunTimeCounter * 1000U;
+		uint64_t tot_us = (uint64_t)total_runtime * 1000U;
+		out[i].state_times.running_us   = run_us;
+		out[i].state_times.ready_us     = 0;
+		out[i].state_times.blocked_us   = (tot_us > run_us) ? tot_us - run_us : 0;
+		out[i].state_times.suspended_us = 0;
 	}
 	if (actual_count)
 		*actual_count = (size_t)filled;

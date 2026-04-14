@@ -363,18 +363,29 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	}
 #endif
 
-	/* CPU utilisation */
+	/* CPU utilisation + state times */
+	memset(&info->state_times, 0, sizeof(info->state_times));
 #if defined(CONFIG_THREAD_RUNTIME_STATS)
 	{
 		k_thread_runtime_stats_t rt;
 		if (k_thread_runtime_stats_get((k_tid_t)thread, &rt) == 0) {
 			k_thread_runtime_stats_t all;
 			k_thread_runtime_stats_all_get(&all);
-			if (all.execution_cycles > 0)
+			if (all.execution_cycles > 0) {
 				info->cpu_percent_x100 =
 					(uint32_t)((uint64_t)rt.execution_cycles
 						   * 10000U
 						   / all.execution_cycles);
+				/* Derive state times from cycles.
+				 * Convert to us assuming 1 cycle ≈ 1 us
+				 * (approximate for Zephyr timing). */
+				info->state_times.running_us =
+					rt.execution_cycles;
+				info->state_times.blocked_us =
+					(all.execution_cycles > rt.execution_cycles)
+					? all.execution_cycles - rt.execution_cycles
+					: 0;
+			}
 		}
 	}
 #endif

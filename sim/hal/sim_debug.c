@@ -73,8 +73,8 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		if (name_len > OVE_SIM_DEBUG_MAX_NAME_LEN)
 			name_len = OVE_SIM_DEBUG_MAX_NAME_LEN;
 
-		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 = name_len + 15 */
-		if (p + name_len + 15 > end)
+		/* 1 + name_len + 1 + 1 + 4 + 4 + 4 + 16 = name_len + 31 */
+		if (p + name_len + 31 > end)
 			break;
 
 		*p++ = (uint8_t)name_len;
@@ -95,6 +95,20 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 		uint32_t cpu_x100 = threads[i].cpu_percent_x100;
 		memcpy(p, &cpu_x100, 4);
 		p += 4;
+
+		/* Per-state time percentages (x100). */
+		struct ove_thread_state_times *st = &threads[i].state_times;
+		uint64_t total_us = st->running_us + st->ready_us
+				  + st->blocked_us + st->suspended_us;
+		uint32_t st_pct[4] = {0, 0, 0, 0};
+		if (total_us > 0) {
+			st_pct[0] = (uint32_t)(st->running_us   * 10000U / total_us);
+			st_pct[1] = (uint32_t)(st->ready_us     * 10000U / total_us);
+			st_pct[2] = (uint32_t)(st->blocked_us   * 10000U / total_us);
+			st_pct[3] = (uint32_t)(st->suspended_us * 10000U / total_us);
+		}
+		memcpy(p, st_pct, 16);
+		p += 16;
 	}
 
 	return (size_t)(p - buf);
@@ -186,7 +200,7 @@ int ove_sim_debug_register(void)
 		.arg      = &debug_ctx,
 		.priority = OVE_PRIO_LOW,
 	};
-	int ret = ove_thread_create(&debug_thread_handle, 2048, &desc);
+	int ret = ove_thread_create(&debug_thread_handle, 4096, &desc);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] debug thread create failed: %d\n", ret);
 

@@ -390,13 +390,21 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 #endif
 	info->cpu_percent_x100 = 0;
 
+	memset(&info->state_times, 0, sizeof(info->state_times));
 #ifndef CONFIG_SCHED_CPULOAD_NONE
 	{
 		struct cpuload_s cl;
-		if (clock_cpuload(tcb->pid, &cl) == OK && cl.total > 0)
+		if (clock_cpuload(tcb->pid, &cl) == OK && cl.total > 0) {
 			info->cpu_percent_x100 =
 				(uint32_t)((uint64_t)cl.active * 10000U
 					   / cl.total);
+			/* Derive state times from tick counts (ms). */
+			uint64_t run_us = (uint64_t)cl.active * 10000U;
+			uint64_t tot_us = (uint64_t)cl.total * 10000U;
+			info->state_times.running_us = run_us;
+			info->state_times.blocked_us =
+				(tot_us > run_us) ? tot_us - run_us : 0;
+		}
 	}
 #endif
 

@@ -442,6 +442,21 @@ header h1 {
 .st-terminated { background: #4a0000; color: #ef5350; }
 .st-unknown    { background: #333;    color: #666; }
 
+/* State time bar */
+.state-bar {
+    display: flex;
+    height: 8px;
+    min-width: 60px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--bg);
+}
+.state-bar span { display: block; height: 100%; }
+.sb-run { background: #4caf50; }
+.sb-rdy { background: #2196f3; }
+.sb-blk { background: #ffc107; }
+.sb-sus { background: #666; }
+
 .thread-empty {
     text-align: center;
     color: #555;

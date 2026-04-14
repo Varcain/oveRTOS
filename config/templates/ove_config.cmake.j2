@@ -25,6 +25,9 @@ set(OVE_DEBUG ON)
 {% else %}
 set(OVE_DEBUG OFF)
 {% endif %}
+{% if config.get("CONFIG_OVE_THREAD_STATE_STATS") == True %}
+set(OVE_THREAD_STATE_STATS ON)
+{% endif %}
 
 # Application language
 set(OVE_APP_LANG "{{ config.get('CONFIG_OVE_APP_LANG', 'c') }}")

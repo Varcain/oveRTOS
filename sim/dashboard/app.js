@@ -1220,9 +1220,15 @@ function handleThreadSnapshot(buf, off) {
         var stackUsed = view.getUint32(pos, true); pos += 4;
         var stackSize = view.getUint32(pos, true); pos += 4;
         var cpuX100 = view.getUint32(pos, true); pos += 4;
+        var stRunning = view.getUint32(pos, true); pos += 4;
+        var stReady = view.getUint32(pos, true); pos += 4;
+        var stBlocked = view.getUint32(pos, true); pos += 4;
+        var stSuspended = view.getUint32(pos, true); pos += 4;
         threads.push({ name: name, state: state, priority: priority,
                         stackUsed: stackUsed, stackSize: stackSize,
-                        cpuX100: cpuX100 });
+                        cpuX100: cpuX100,
+                        stRunning: stRunning, stReady: stReady,
+                        stBlocked: stBlocked, stSuspended: stSuspended });
     }
 
     /* Render table */
@@ -1250,9 +1256,30 @@ function handleThreadSnapshot(buf, off) {
               + "<td class=\"td-num\">" + t.priority + "</td>"
               + "<td class=\"td-num\">" + _fmtStack(t.stackUsed, t.stackSize) + "</td>"
               + "<td class=\"td-num\">" + cpuStr + "%</td>"
+              + "<td>" + _fmtStateBar(t) + "</td>"
               + "</tr>";
     }
     tbody.innerHTML = html;
+}
+
+function _fmtStateBar(t) {
+    var r = (t.stRunning || 0) / 100;
+    var rd = (t.stReady || 0) / 100;
+    var b = (t.stBlocked || 0) / 100;
+    var s = (t.stSuspended || 0) / 100;
+    var total = r + rd + b + s;
+    if (total < 0.1) return "<span class=\"td-num\" style=\"color:#555\">--</span>";
+    /* Normalize to 100% */
+    var rp = (r / total * 100).toFixed(0);
+    var rdp = (rd / total * 100).toFixed(0);
+    var bp = (b / total * 100).toFixed(0);
+    var sp = (s / total * 100).toFixed(0);
+    return "<div class=\"state-bar\" title=\"run:" + rp + "% rdy:" + rdp + "% blk:" + bp + "% sus:" + sp + "%\">"
+         + "<span class=\"sb-run\" style=\"width:" + rp + "%\"></span>"
+         + "<span class=\"sb-rdy\" style=\"width:" + rdp + "%\"></span>"
+         + "<span class=\"sb-blk\" style=\"width:" + bp + "%\"></span>"
+         + "<span class=\"sb-sus\" style=\"width:" + sp + "%\"></span>"
+         + "</div>";
 }
 
 function _fmtStack(used, total) {
@@ -1570,6 +1597,8 @@ function handleFileList(buf, off) {
     } catch (e) { return; }
     if (!Array.isArray(json)) return;
     projectFiles = json;
+    /* Show the debug window for the file explorer even without GDB. */
+    if (projectFiles.length > 0) ensureWindow("debug");
     _renderFileExplorer();
 }
 
