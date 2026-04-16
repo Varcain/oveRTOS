@@ -15,7 +15,6 @@
 use core::fmt::Write;
 use core::sync::atomic::{AtomicI32, Ordering};
 
-#[cfg(has_lvgl)]
 use ove::lvgl::{
     self, Arc, Bar, Box, Button, Calendar, Canvas, Chart, Checkbox, Color, Dropdown,
     Image, Keyboard, Label, Layout, Led, List, Msgbox, Obj, Roller, Series, Slider,
@@ -23,7 +22,6 @@ use ove::lvgl::{
 };
 use ove::{FmtBuf, Priority, Thread, Timer};
 
-#[cfg(has_lvgl)]
 mod images {
     include!(concat!(env!("OVE_GEN_DIR"), "/generated_images/lvgl_images.rs"));
 }
@@ -34,38 +32,26 @@ mod images {
 
 static TICK: AtomicI32 = AtomicI32::new(0);
 
-#[cfg(has_lvgl)]
 ove::shared!(UI_TIMER: Timer);
 
-#[cfg(has_lvgl)]
 ove::shared!(BAR_W: Bar);
-#[cfg(has_lvgl)]
 ove::shared!(ARC_W: Arc);
-#[cfg(has_lvgl)]
 ove::shared!(LED_W: Led);
-#[cfg(has_lvgl)]
 ove::shared!(CHART_W: Chart);
-#[cfg(has_lvgl)]
 ove::shared!(SERIES_W: Series);
-#[cfg(has_lvgl)]
 ove::shared!(COUNTER_STATE: State<i32>);
 
-#[cfg(has_lvgl)]
 static mut CANVAS_BUF: [u8; 64 * 64 * 4] = [0u8; 64 * 64 * 4];
 
 // Nav state — single-threaded access from LVGL task.
-#[cfg(has_lvgl)]
 static mut G_PAGE: i32 = 0;
-#[cfg(has_lvgl)]
 static mut G_CONTENT: Option<Obj> = None;
-#[cfg(has_lvgl)]
 static mut G_TITLE: Option<Label> = None;
 
 // ---------------------------------------------------------------------------
 // UI timer
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 fn ui_timer_cb() {
     let tick = TICK.fetch_add(1, Ordering::Relaxed) + 1;
     let _g = lvgl::lock();
@@ -84,7 +70,6 @@ fn ui_timer_cb() {
 // Event callbacks
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn on_prev(_e: *mut ove::ffi::lv_event_t) {
     unsafe {
         G_PAGE = (G_PAGE + N_PAGES - 1) % N_PAGES;
@@ -92,7 +77,6 @@ unsafe extern "C" fn on_prev(_e: *mut ove::ffi::lv_event_t) {
     }
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn on_next(_e: *mut ove::ffi::lv_event_t) {
     unsafe {
         G_PAGE = (G_PAGE + 1) % N_PAGES;
@@ -100,7 +84,6 @@ unsafe extern "C" fn on_next(_e: *mut ove::ffi::lv_event_t) {
     }
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn on_alert_click(_e: *mut ove::ffi::lv_event_t) {
     let _ = Msgbox::create_modal()
         .add_title(b"Hello\0")
@@ -112,10 +95,8 @@ unsafe extern "C" fn on_alert_click(_e: *mut ove::ffi::lv_event_t) {
 // Page builders
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 type PageFn = fn(Obj);
 
-#[cfg(has_lvgl)]
 fn p_label(c: Obj) {
     let lbl = Label::create(c)
         .text(b"Hello, oveRTOS!\0")
@@ -132,53 +113,40 @@ fn p_label(c: Obj) {
     }
 }
 
-#[cfg(has_lvgl)]
 fn p_button(c: Obj)   { Button::create(c).size(160, 48).toggle_mode(true).center(); let btn = Button::create(c).size(160, 48).toggle_mode(true); Label::create(btn).text(b"Toggle me\0").center(); btn.center(); unsafe { ove::ffi::lv_obj_delete(c.as_raw()); } }
 
 // That was getting messy. Let me use a cleaner approach for all pages.
 
-#[cfg(has_lvgl)]
 fn p_button_real(c: Obj) {
     let btn = Button::create(c).size(160, 48).toggle_mode(true);
     Label::create(btn).text(b"Toggle me\0").center();
     btn.center();
 }
 
-#[cfg(has_lvgl)]
 fn p_switch(c: Obj)   { Switch::create(c).checked(true).center(); }
-#[cfg(has_lvgl)]
 fn p_checkbox(c: Obj)  { Checkbox::create(c).text(b"Enable option\0").checked(true).text_color(Color::white()).center(); }
 
-#[cfg(has_lvgl)]
 fn p_bar(c: Obj) {
     let bar = Bar::create(c).size(300, 20).range(0, 100)
         .indicator_color(Color::palette_main(lvgl::PALETTE_BLUE)).radius(10).center();
     BAR_W.init(bar);
 }
 
-#[cfg(has_lvgl)]
 fn p_slider(c: Obj)   { Slider::create(c).size(300, 20).range(0, 100).value(50)
     .indicator_color(Color::hex(0x4CAF50)).center(); }
 
-#[cfg(has_lvgl)]
 fn p_arc(c: Obj) {
     let arc = Arc::create(c).size(120, 120).range(0, 100).value(40)
         .indicator_color(Color::hex(0xFF9800)).center();
     ARC_W.init(arc);
 }
 
-#[cfg(has_lvgl)]
 fn p_spinner(c: Obj)   { Spinner::create(c).size(80, 80).anim_params(1000, 60).center(); }
-#[cfg(has_lvgl)]
 fn p_led(c: Obj)       { let led = Led::create(c).size(60, 60).color(Color::hex(0xF44336)).center(); LED_W.init(led); }
-#[cfg(has_lvgl)]
 fn p_dropdown(c: Obj)  { Dropdown::create(c).options_static(b"Red\nGreen\nBlue\nYellow\0").selected(2).width(200).center(); }
-#[cfg(has_lvgl)]
 fn p_roller(c: Obj)    { Roller::create(c).options(b"Mon\nTue\nWed\nThu\nFri\nSat\nSun\0", lvgl::ROLLER_MODE_NORMAL).visible_row_count(4).width(140).center(); }
-#[cfg(has_lvgl)]
 fn p_spinbox(c: Obj)   { Spinbox::create(c).width(200).digit_format(4, 2).range(-9999, 9999).step(1).value(42).center(); }
 
-#[cfg(has_lvgl)]
 fn p_textarea(c: Obj) {
     unsafe {
         ove::ffi::lv_obj_set_flex_flow(c.as_raw(), ove::ffi::LV_FLEX_FLOW_COLUMN);
@@ -188,7 +156,6 @@ fn p_textarea(c: Obj) {
     Keyboard::create(c).size(400, 140).attach(ta);
 }
 
-#[cfg(has_lvgl)]
 fn p_chart(c: Obj) {
     let chart = Chart::create(c).size(400, 190).chart_type(lvgl::CHART_TYPE_LINE)
         .point_count(60).range(lvgl::CHART_AXIS_PRIMARY_Y, 0, 100)
@@ -198,7 +165,6 @@ fn p_chart(c: Obj) {
     SERIES_W.init(series);
 }
 
-#[cfg(has_lvgl)]
 fn p_table(c: Obj) {
     let t = Table::create(c).column_count(2).row_count(4);
     t.column_width(0, 120).column_width(1, 120)
@@ -209,7 +175,6 @@ fn p_table(c: Obj) {
     t.center();
 }
 
-#[cfg(has_lvgl)]
 fn p_list(c: Obj) {
     let l = List::create(c).size(240, 160);
     l.add_text(b"Navigation\0");
@@ -220,7 +185,6 @@ fn p_list(c: Obj) {
     l.center();
 }
 
-#[cfg(has_lvgl)]
 fn p_image(c: Obj) {
     unsafe {
         let badge_ptr = &images::badge as *const _ as *const core::ffi::c_void;
@@ -228,7 +192,6 @@ fn p_image(c: Obj) {
     }
 }
 
-#[cfg(has_lvgl)]
 fn p_canvas(c: Obj) {
     let canvas = Canvas::create(c).size(64, 64);
     unsafe {
@@ -242,10 +205,8 @@ fn p_canvas(c: Obj) {
     canvas.center();
 }
 
-#[cfg(has_lvgl)]
 fn p_calendar(c: Obj) { Calendar::create(c).size(240, 240).today(2026, 4, 13).showed(2026, 4).center(); }
 
-#[cfg(has_lvgl)]
 fn p_msgbox(c: Obj) {
     let btn = Button::create(c).size(200, 48);
     Label::create(btn).text(b"Show Msgbox\0").center();
@@ -255,13 +216,11 @@ fn p_msgbox(c: Obj) {
     btn.center();
 }
 
-#[cfg(has_lvgl)]
 fn p_box(c: Obj) {
     Box::create(c).size(200, 120).bg_color(Color::hex(0x1A237E)).bg_opa(255)
         .border_color(Color::white()).border_width(2).radius(16).pad_all(16).center();
 }
 
-#[cfg(has_lvgl)]
 fn p_tabview(c: Obj) {
     let tv = Tabview::create(c).size(380, 180).center();
     tv.tab_bar_size(32);
@@ -275,7 +234,6 @@ fn p_tabview(c: Obj) {
 // Page directory
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 static PAGES: &[(&[u8], PageFn)] = &[
     (b"Label\0",    p_label),
     (b"Button\0",   p_button_real),
@@ -301,14 +259,12 @@ static PAGES: &[(&[u8], PageFn)] = &[
     (b"Tabview\0",  p_tabview),
 ];
 
-#[cfg(has_lvgl)]
 const N_PAGES: i32 = 22;
 
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 fn clear_live_widgets() {
     BAR_W.shutdown();
     ARC_W.shutdown();
@@ -317,7 +273,6 @@ fn clear_live_widgets() {
     SERIES_W.shutdown();
 }
 
-#[cfg(has_lvgl)]
 fn rebuild_page() {
     unsafe {
         clear_live_widgets();
@@ -341,7 +296,6 @@ fn rebuild_page() {
 // UI construction
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 fn create_ui() {
     let screen = lvgl::screen_active();
     screen.bg_color(Color::black());
@@ -396,7 +350,6 @@ fn create_ui() {
 // Graphics thread
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 fn graphics_entry() {
     let mut last_us = ove::time::get_us().unwrap_or(0);
     loop {
@@ -415,10 +368,8 @@ fn graphics_entry() {
 fn app_main() {
     ove::log_inf!("LVGL gallery (Rust): init");
 
-    #[cfg(has_lvgl)]
     let _graphics = ove::thread!("graphics", graphics_entry, Priority::High, 4096);
 
-    #[cfg(has_lvgl)]
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));
         if lvgl::init().is_err() { ove::log_err!("Failed to init LVGL"); return; }

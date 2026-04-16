@@ -70,7 +70,7 @@ fn delay1msRun(_: ?*anyopaque) callconv(.c) void {
 }
 
 fn timeIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_TIME")) 1 else 0;
+    return 1;
 }
 
 const time_cases = [_]BenchCase{
@@ -158,7 +158,7 @@ fn ctxSwitchTeardown(_: ?*anyopaque) callconv(.c) void {
 }
 
 fn threadIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_SYNC")) 1 else 0;
+    return 1;
 }
 
 const thread_cases = [_]BenchCase{
@@ -428,7 +428,7 @@ fn rmtxLockUnlockTeardown(_: ?*anyopaque) callconv(.c) void {
 // --- Sync suite ---
 
 fn syncIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_SYNC")) 1 else 0;
+    return 1;
 }
 
 const sync_cases = [_]BenchCase{
@@ -617,7 +617,7 @@ fn queueMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 // --- Queue suite ---
 
 fn queueIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_QUEUE")) 1 else 0;
+    return 1;
 }
 
 const queue_cases = [_]BenchCase{
@@ -708,7 +708,7 @@ fn timerMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 // --- Timer suite ---
 
 fn timerIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_TIMER")) 1 else 0;
+    return 1;
 }
 
 const timer_cases = [_]BenchCase{
@@ -790,7 +790,7 @@ fn egMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 // --- EventGroup suite ---
 
 fn eventgroupIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_EVENTGROUP")) 1 else 0;
+    return 1;
 }
 
 const eventgroup_cases = [_]BenchCase{
@@ -886,7 +886,7 @@ fn wqMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 // --- Workqueue suite ---
 
 fn workqueueIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_WORKQUEUE")) 1 else 0;
+    return 1;
 }
 
 const workqueue_cases = [_]BenchCase{
@@ -1005,7 +1005,7 @@ fn streamMemoryTeardown(_: ?*anyopaque) callconv(.c) void {
 // --- Stream suite ---
 
 fn streamIsEnabled() callconv(.c) i32 {
-    return if (@hasDecl(ove.ffi, "CONFIG_OVE_STREAM")) 1 else 0;
+    return 1;
 }
 
 const stream_cases = [_]BenchCase{

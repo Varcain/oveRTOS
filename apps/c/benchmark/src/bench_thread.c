@@ -103,11 +103,7 @@ static void ctx_switch_teardown(void *ctx)
 
 static int thread_is_enabled(void)
 {
-#ifdef CONFIG_OVE_SYNC
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t thread_cases[] = {

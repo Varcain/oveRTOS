@@ -1191,7 +1191,7 @@ void lv_chart_set_point_count(lv_obj_t *obj, uint32_t count)
 	(void)count;
 }
 
-void lv_chart_set_range(lv_obj_t *obj, uint32_t axis, int32_t min, int32_t max)
+void lv_chart_set_axis_range(lv_obj_t *obj, uint32_t axis, int32_t min, int32_t max)
 {
 	(void)obj;
 	(void)axis;
@@ -1205,7 +1205,7 @@ void lv_chart_set_update_mode(lv_obj_t *obj, uint32_t mode)
 	(void)mode;
 }
 
-void lv_chart_set_div_line_count(lv_obj_t *obj, uint8_t hdiv, uint8_t vdiv)
+void lv_chart_set_div_line_count(lv_obj_t *obj, uint32_t hdiv, uint32_t vdiv)
 {
 	(void)obj;
 	(void)hdiv;
@@ -1233,8 +1233,8 @@ void lv_chart_set_next_value(lv_obj_t *obj, lv_chart_series_t *series, int32_t v
 	(void)value;
 }
 
-void lv_chart_set_value_by_id(lv_obj_t *obj, lv_chart_series_t *series,
-                              uint32_t id, int32_t value)
+void lv_chart_set_series_value_by_id(lv_obj_t *obj, lv_chart_series_t *series,
+                                     uint32_t id, int32_t value)
 {
 	(void)obj;
 	(void)series;
@@ -1456,7 +1456,7 @@ void lv_calendar_set_today_date(lv_obj_t *obj, uint32_t year, uint32_t month,
 	(void)day;
 }
 
-void lv_calendar_set_showed_date(lv_obj_t *obj, uint32_t year, uint32_t month)
+void lv_calendar_set_month_shown(lv_obj_t *obj, uint32_t year, uint32_t month)
 {
 	(void)obj;
 	(void)year;
@@ -1478,13 +1478,13 @@ uint32_t lv_calendar_get_pressed_date(lv_obj_t *obj, lv_calendar_date_t *date)
 	return 0;
 }
 
-lv_obj_t *lv_calendar_header_arrow_create(lv_obj_t *parent)
+lv_obj_t *lv_calendar_add_header_arrow(lv_obj_t *parent)
 {
 	(void)parent;
 	return NULL;
 }
 
-lv_obj_t *lv_calendar_header_dropdown_create(lv_obj_t *parent)
+lv_obj_t *lv_calendar_add_header_dropdown(lv_obj_t *parent)
 {
 	(void)parent;
 	return NULL;
@@ -1696,13 +1696,13 @@ void lv_anim_set_repeat_delay(lv_anim_t *a, uint32_t delay)
 	(void)delay;
 }
 
-void lv_anim_set_playback_duration(lv_anim_t *a, uint32_t duration)
+void lv_anim_set_reverse_duration(lv_anim_t *a, uint32_t duration)
 {
 	(void)a;
 	(void)duration;
 }
 
-void lv_anim_set_playback_delay(lv_anim_t *a, uint32_t delay)
+void lv_anim_set_reverse_delay(lv_anim_t *a, uint32_t delay)
 {
 	(void)a;
 	(void)delay;

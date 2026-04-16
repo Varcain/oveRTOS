@@ -69,11 +69,7 @@ static void timer_memory_teardown(void *ctx)
 
 static int timer_is_enabled(void)
 {
-#ifdef CONFIG_OVE_TIMER
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t timer_cases[] = {

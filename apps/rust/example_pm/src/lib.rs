@@ -16,7 +16,6 @@
 
 use ove::{Priority, Thread};
 
-#[cfg(has_pm)]
 use ove::pm;
 
 // ---------------------------------------------------------------------------
@@ -36,7 +35,6 @@ fn sensor_entry() {
     ove::log_inf!("sensor: started");
 
     loop {
-        #[cfg(has_pm)]
         {
             let _ = pm::domain_request(pm::Domain::Sensor);
             pm::activity();
@@ -46,7 +44,6 @@ fn sensor_entry() {
         reading = reading.wrapping_add(17);
         ove::log_inf!("sensor: reading = {}", reading % 1000);
 
-        #[cfg(has_pm)]
         {
             let _ = pm::domain_release(pm::Domain::Sensor);
         }
@@ -65,7 +62,6 @@ fn monitor_entry() {
     loop {
         Thread::sleep_ms(10000);
 
-        #[cfg(has_pm)]
         {
             if let Ok(stats) = pm::get_stats() {
                 ove::log_inf!("=== Power Stats ===");
@@ -107,7 +103,6 @@ fn monitor_entry() {
 fn app_main() {
     ove::log_inf!("pm example (Rust): init");
 
-    #[cfg(has_pm)]
     {
         let cfg = pm::Cfg {
             idle_threshold_ms: 50,
@@ -138,7 +133,6 @@ fn app_main() {
 
     ove::run();
 
-    #[cfg(has_pm)]
     pm::deinit();
 
     ove::log_inf!("pm example (Rust): shutdown");

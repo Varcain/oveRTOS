@@ -424,14 +424,14 @@ lv_obj_t *lv_keyboard_get_textarea(lv_obj_t *kb);
 lv_obj_t *lv_chart_create(lv_obj_t *parent);
 void lv_chart_set_type(lv_obj_t *obj, uint32_t type);
 void lv_chart_set_point_count(lv_obj_t *obj, uint32_t count);
-void lv_chart_set_range(lv_obj_t *obj, uint32_t axis, int32_t min, int32_t max);
+void lv_chart_set_axis_range(lv_obj_t *obj, uint32_t axis, int32_t min, int32_t max);
 void lv_chart_set_update_mode(lv_obj_t *obj, uint32_t mode);
-void lv_chart_set_div_line_count(lv_obj_t *obj, uint8_t hdiv, uint8_t vdiv);
+void lv_chart_set_div_line_count(lv_obj_t *obj, uint32_t hdiv, uint32_t vdiv);
 lv_chart_series_t *lv_chart_add_series(lv_obj_t *obj, lv_color_t color, uint32_t axis);
 void lv_chart_remove_series(lv_obj_t *obj, lv_chart_series_t *series);
 void lv_chart_set_next_value(lv_obj_t *obj, lv_chart_series_t *series, int32_t value);
-void lv_chart_set_value_by_id(lv_obj_t *obj, lv_chart_series_t *series, uint32_t id,
-                              int32_t value);
+void lv_chart_set_series_value_by_id(lv_obj_t *obj, lv_chart_series_t *series,
+                                     uint32_t id, int32_t value);
 
 /* ── Table ───────────────────────────────────────────────────────── */
 
@@ -478,11 +478,11 @@ void lv_canvas_finish_layer(lv_obj_t *obj, lv_layer_t *layer);
 
 lv_obj_t *lv_calendar_create(lv_obj_t *parent);
 void lv_calendar_set_today_date(lv_obj_t *obj, uint32_t year, uint32_t month, uint32_t day);
-void lv_calendar_set_showed_date(lv_obj_t *obj, uint32_t year, uint32_t month);
+void lv_calendar_set_month_shown(lv_obj_t *obj, uint32_t year, uint32_t month);
 void lv_calendar_set_highlighted_dates(lv_obj_t *obj, lv_calendar_date_t dates[], uint32_t cnt);
 uint32_t lv_calendar_get_pressed_date(lv_obj_t *obj, lv_calendar_date_t *date);
-lv_obj_t *lv_calendar_header_arrow_create(lv_obj_t *parent);
-lv_obj_t *lv_calendar_header_dropdown_create(lv_obj_t *parent);
+lv_obj_t *lv_calendar_add_header_arrow(lv_obj_t *parent);
+lv_obj_t *lv_calendar_add_header_dropdown(lv_obj_t *parent);
 
 /* ── Screen ──────────────────────────────────────────────────────── */
 
@@ -533,8 +533,8 @@ void lv_anim_set_exec_cb(lv_anim_t *a, lv_anim_exec_xcb_t exec_cb);
 void lv_anim_set_path_cb(lv_anim_t *a, lv_anim_path_cb_t path_cb);
 void lv_anim_set_repeat_count(lv_anim_t *a, uint32_t cnt);
 void lv_anim_set_repeat_delay(lv_anim_t *a, uint32_t delay);
-void lv_anim_set_playback_duration(lv_anim_t *a, uint32_t duration);
-void lv_anim_set_playback_delay(lv_anim_t *a, uint32_t delay);
+void lv_anim_set_reverse_duration(lv_anim_t *a, uint32_t duration);
+void lv_anim_set_reverse_delay(lv_anim_t *a, uint32_t delay);
 void lv_anim_set_completed_cb(lv_anim_t *a, lv_anim_completed_cb_t cb);
 void lv_anim_start(const lv_anim_t *a);
 bool lv_anim_delete(void *var, lv_anim_exec_xcb_t exec_cb);

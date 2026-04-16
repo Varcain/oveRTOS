@@ -64,11 +64,7 @@ static void eg_memory_teardown(void *ctx)
 
 static int eventgroup_is_enabled(void)
 {
-#ifdef CONFIG_OVE_EVENTGROUP
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t eventgroup_cases[] = {

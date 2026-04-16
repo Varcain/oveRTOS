@@ -11,8 +11,7 @@ const Queue = ove.Queue;
 const Timer = ove.Timer;
 const prio = ove.thread.prio;
 
-const has_lvgl = @hasDecl(ove.ffi, "ove_lvgl_init");
-const lvgl = if (has_lvgl) ove.lvgl else undefined;
+const lvgl = ove.lvgl;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,8 +35,8 @@ else
 var queue: Queue(u32, 8) = undefined;
 var last_value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 
-var counter_label: if (has_lvgl) lvgl.Label else void = if (has_lvgl) undefined else {};
-var bar: if (has_lvgl) lvgl.Bar else void = if (has_lvgl) undefined else {};
+var counter_label: lvgl.Label = undefined;
+var bar: lvgl.Bar = undefined;
 var ui_timer: Timer = undefined;
 
 // ---------------------------------------------------------------------------
@@ -45,8 +44,6 @@ var ui_timer: Timer = undefined;
 // ---------------------------------------------------------------------------
 
 fn createUi() void {
-    if (!has_lvgl) return;
-
     const screen = lvgl.screenActive();
 
     // Set background to black (must not chain — ABI issues with 3-byte
@@ -105,8 +102,6 @@ fn createUi() void {
 }
 
 fn uiTimerCallback() void {
-    if (!has_lvgl) return;
-
     const val = last_value.load(.acquire);
 
     const guard = lvgl.lock();
@@ -194,12 +189,10 @@ fn appMain() void {
     };
 
     // Create threads
-    if (has_lvgl) {
-        _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
-            ove.log.err("Failed to spawn graphics", .{});
-            return;
-        };
-    }
+    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
+        ove.log.err("Failed to spawn graphics", .{});
+        return;
+    };
 
     _ = Thread.spawn("producer", producerEntry, prio.normal, 4096) catch {
         ove.log.err("Failed to spawn producer", .{});
@@ -212,29 +205,27 @@ fn appMain() void {
     };
 
     // Initialize LVGL and create UI
-    if (has_lvgl) {
-        ui_timer = Timer.create(uiTimerCallback, 200, false) catch {
-            ove.log.err("Failed to create UI timer", .{});
-            return;
-        };
+    ui_timer = Timer.create(uiTimerCallback, 200, false) catch {
+        ove.log.err("Failed to create UI timer", .{});
+        return;
+    };
 
-        lvgl.init() catch {
-            ove.log.err("Failed to init LVGL", .{});
-            return;
-        };
+    lvgl.init() catch {
+        ove.log.err("Failed to init LVGL", .{});
+        return;
+    };
 
-        {
-            const guard = lvgl.lock();
-            defer guard.deinit();
-            createUi();
-        }
-        ove.log.inf("LVGL widgets created", .{});
-
-        ui_timer.start() catch {
-            ove.log.err("Failed to start UI timer", .{});
-            return;
-        };
+    {
+        const guard = lvgl.lock();
+        defer guard.deinit();
+        createUi();
     }
+    ove.log.inf("LVGL widgets created", .{});
+
+    ui_timer.start() catch {
+        ove.log.err("Failed to start UI timer", .{});
+        return;
+    };
 
     ove.log.inf("Zig example: ready", .{});
 
@@ -242,10 +233,8 @@ fn appMain() void {
 
     // Cleanup (only reached if scheduler returns, e.g. POSIX)
     ove.log.inf("Zig example: shutdown", .{});
-    if (has_lvgl) {
-        ui_timer.stop() catch {};
-        ui_timer.destroy();
-    }
+    ui_timer.stop() catch {};
+    ui_timer.destroy();
     queue.destroy();
 }
 

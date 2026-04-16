@@ -111,10 +111,7 @@ unsafe extern "C" fn delay_1ms_run(_ctx: *mut c_void) {
 }
 
 unsafe extern "C" fn time_is_enabled() -> i32 {
-    #[cfg(has_time)]
-    { 1 }
-    #[cfg(not(has_time))]
-    { 0 }
+    1
 }
 
 static TIME_CASES: [BenchCase; 2] = [
@@ -206,10 +203,7 @@ unsafe extern "C" fn ctx_switch_teardown(_ctx: *mut c_void) {
 }
 
 unsafe extern "C" fn thread_is_enabled() -> i32 {
-    #[cfg(has_sync)]
-    { 1 }
-    #[cfg(not(has_sync))]
-    { 0 }
+    1
 }
 
 static THREAD_CASES: [BenchCase; 4] = [
@@ -506,10 +500,7 @@ unsafe extern "C" fn rmtx_lock_unlock_teardown(_ctx: *mut c_void) {
 // --- sync suite ---
 
 unsafe extern "C" fn sync_is_enabled() -> i32 {
-    #[cfg(has_sync)]
-    { 1 }
-    #[cfg(not(has_sync))]
-    { 0 }
+    1
 }
 
 static SYNC_CASES: [BenchCase; 12] = [
@@ -707,10 +698,7 @@ unsafe extern "C" fn queue_memory_teardown(_ctx: *mut c_void) {
 // --- queue suite ---
 
 unsafe extern "C" fn queue_is_enabled() -> i32 {
-    #[cfg(has_queue)]
-    { 1 }
-    #[cfg(not(has_queue))]
-    { 0 }
+    1
 }
 
 static QUEUE_CASES: [BenchCase; 4] = [
@@ -802,10 +790,7 @@ unsafe extern "C" fn timer_memory_teardown(_ctx: *mut c_void) {
 // --- timer suite ---
 
 unsafe extern "C" fn timer_is_enabled() -> i32 {
-    #[cfg(has_timer)]
-    { 1 }
-    #[cfg(not(has_timer))]
-    { 0 }
+    1
 }
 
 static TIMER_CASES: [BenchCase; 3] = [
@@ -888,10 +873,7 @@ unsafe extern "C" fn eg_memory_teardown(_ctx: *mut c_void) {
 // --- eventgroup suite ---
 
 unsafe extern "C" fn eventgroup_is_enabled() -> i32 {
-    #[cfg(has_eventgroup)]
-    { 1 }
-    #[cfg(not(has_eventgroup))]
-    { 0 }
+    1
 }
 
 static EVENTGROUP_CASES: [BenchCase; 3] = [
@@ -990,10 +972,7 @@ unsafe extern "C" fn wq_memory_teardown(_ctx: *mut c_void) {
 // --- workqueue suite ---
 
 unsafe extern "C" fn workqueue_is_enabled() -> i32 {
-    #[cfg(has_workqueue)]
-    { 1 }
-    #[cfg(not(has_workqueue))]
-    { 0 }
+    1
 }
 
 static WORKQUEUE_CASES: [BenchCase; 3] = [
@@ -1124,10 +1103,7 @@ unsafe extern "C" fn stream_memory_teardown(_ctx: *mut c_void) {
 // --- stream suite ---
 
 unsafe extern "C" fn stream_is_enabled() -> i32 {
-    #[cfg(has_stream)]
-    { 1 }
-    #[cfg(not(has_stream))]
-    { 0 }
+    1
 }
 
 static STREAM_CASES: [BenchCase; 4] = [

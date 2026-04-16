@@ -1328,7 +1328,7 @@ impl Series {
 
     /// Set a specific point index.
     pub fn set_value_by_idx(self, idx: u32, v: i32) -> Self {
-        unsafe { bindings::lv_chart_set_value_by_id(self.chart, self.raw, idx, v) };
+        unsafe { bindings::lv_chart_set_series_value_by_id(self.chart, self.raw, idx, v) };
         self
     }
 
@@ -1367,7 +1367,7 @@ impl Chart {
 
     /// Fluent: set the min/max range for an axis.
     pub fn range(self, axis: u32, min: i32, max: i32) -> Self {
-        unsafe { bindings::lv_chart_set_range(self.raw, axis as _, min, max) };
+        unsafe { bindings::lv_chart_set_axis_range(self.raw, axis as _, min, max) };
         self
     }
 
@@ -1379,7 +1379,7 @@ impl Chart {
 
     /// Fluent: set horizontal/vertical division line count.
     pub fn div_line_count(self, hdiv: u8, vdiv: u8) -> Self {
-        unsafe { bindings::lv_chart_set_div_line_count(self.raw, hdiv, vdiv) };
+        unsafe { bindings::lv_chart_set_div_line_count(self.raw, hdiv as u32, vdiv as u32) };
         self
     }
 
@@ -1434,7 +1434,7 @@ impl Calendar {
 
     /// Fluent: set the currently visible month.
     pub fn showed(self, year: u32, month: u32) -> Self {
-        unsafe { bindings::lv_calendar_set_showed_date(self.raw, year, month) };
+        unsafe { bindings::lv_calendar_set_month_shown(self.raw, year, month) };
         self
     }
 
@@ -1452,13 +1452,13 @@ impl Calendar {
 
     /// Add an arrow-header navigation bar as a child. Returns the header.
     pub fn add_header_arrow(self) -> Obj {
-        let raw = unsafe { bindings::lv_calendar_header_arrow_create(self.raw) };
+        let raw = unsafe { bindings::lv_calendar_add_header_arrow(self.raw) };
         unsafe { Obj::from_raw(raw) }
     }
 
     /// Add a dropdown-header navigation bar as a child. Returns the header.
     pub fn add_header_dropdown(self) -> Obj {
-        let raw = unsafe { bindings::lv_calendar_header_dropdown_create(self.raw) };
+        let raw = unsafe { bindings::lv_calendar_add_header_dropdown(self.raw) };
         unsafe { Obj::from_raw(raw) }
     }
 }
@@ -2796,13 +2796,13 @@ impl Animation {
 
     /// Set the duration of the reverse (playback) phase.
     pub fn playback_duration(mut self, ms: u32) -> Self {
-        unsafe { bindings::lv_anim_set_playback_duration(&mut self.inner, ms) };
+        unsafe { bindings::lv_anim_set_reverse_duration(&mut self.inner, ms) };
         self
     }
 
     /// Set the delay before the playback phase.
     pub fn playback_delay(mut self, ms: u32) -> Self {
-        unsafe { bindings::lv_anim_set_playback_delay(&mut self.inner, ms) };
+        unsafe { bindings::lv_anim_set_reverse_delay(&mut self.inner, ms) };
         self
     }
 

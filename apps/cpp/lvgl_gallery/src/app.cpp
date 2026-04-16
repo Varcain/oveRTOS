@@ -19,11 +19,9 @@
  */
 
 #include <ove/ove.hpp>
-#include <cstdio>
-
-#ifdef CONFIG_OVE_LVGL
 #include <ove/lvgl.hpp>
 #include "generated_images/lvgl_images.h"
+#include <cstdio>
 
 namespace lv = ove::lvgl;
 
@@ -443,15 +441,12 @@ static void graphics_thread(void *arg)
 	}
 }
 
-#endif /* CONFIG_OVE_LVGL */
-
 /* ── Application entry point ──────────────────────────────────────── */
 
 OVE_MAIN()
 {
 	OVE_LOG_INF("LVGL gallery (C++): init");
 
-#ifdef CONFIG_OVE_LVGL
 	int ret = ove_lvgl_init();
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("ove_lvgl_init failed: %d", ret);
@@ -462,7 +457,6 @@ OVE_MAIN()
 		lv::LvglGuard guard;
 		create_ui();
 	}
-#endif
 
 	OVE_LOG_INF("LVGL gallery (C++): ready");
 	ove::run();

@@ -16,8 +16,7 @@ const ove = @import("ove");
 const Thread = ove.Thread;
 const prio = ove.thread.prio;
 
-const has_lvgl = @hasDecl(ove.ffi, "ove_lvgl_init");
-const lvgl = if (has_lvgl) ove.lvgl else undefined;
+const lvgl = ove.lvgl;
 const c = ove.ffi;
 
 // lv_anim_enable_t is bool on Zephyr but c_uint on other platforms.
@@ -816,7 +815,6 @@ fn nextSceneTimerCb(timer: ?*c.lv_timer_t) callconv(.c) void {
 // ---------------------------------------------------------------------------
 
 fn sysmonPerfObserverCb(observer: ?*c.lv_observer_t, subject: ?*c.lv_subject_t) callconv(.c) void {
-    if (!has_lvgl) return;
     if (subject == null) return;
 
     var m: BenchPerfMetrics = undefined;
@@ -971,7 +969,6 @@ fn summaryCreate() void {
 // ---------------------------------------------------------------------------
 
 fn graphicsEntry() void {
-    if (!has_lvgl) return;
     var last_us: u64 = 0;
     _ = c.ove_time_get_us(&last_us);
     while (true) {
@@ -996,55 +993,53 @@ fn graphicsEntry() void {
 fn appMain() void {
     ove.log.inf("LVGL benchmark (Zig): init", .{});
 
-    if (has_lvgl) {
-        _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
-            ove.log.err("Failed to spawn graphics", .{});
-            return;
-        };
+    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
+        ove.log.err("Failed to spawn graphics", .{});
+        return;
+    };
 
-        lvgl.init() catch {
-            ove.log.err("LVGL init fail", .{});
-            return;
-        };
+    lvgl.init() catch {
+        ove.log.err("LVGL init fail", .{});
+        return;
+    };
 
-        // Setup benchmark
-        {
-            const guard = lvgl.lock();
-            defer guard.deinit();
+    // Setup benchmark
+    {
+        const guard = lvgl.lock();
+        defer guard.deinit();
 
-            scene_act = 0;
+        scene_act = 0;
 
-            const scr = c.lv_screen_active().?;
-            c.lv_obj_remove_style_all(scr);
-            c.lv_obj_set_style_bg_opa(scr, c.LV_OPA_COVER, 0);
-            c.lv_obj_set_style_text_color(scr, c.lv_color_black(), 0);
-            c.lv_obj_set_style_bg_color(scr, c.lv_palette_lighten(c.LV_PALETTE_GREY, 4), 0);
-            c.lv_obj_set_style_pad_all(scr, 8, 0);
-            c.lv_obj_set_style_pad_top(scr, 40, 0);
-            c.lv_obj_set_style_pad_gap(scr, 8, 0);
+        const scr = c.lv_screen_active().?;
+        c.lv_obj_remove_style_all(scr);
+        c.lv_obj_set_style_bg_opa(scr, c.LV_OPA_COVER, 0);
+        c.lv_obj_set_style_text_color(scr, c.lv_color_black(), 0);
+        c.lv_obj_set_style_bg_color(scr, c.lv_palette_lighten(c.LV_PALETTE_GREY, 4), 0);
+        c.lv_obj_set_style_pad_all(scr, 8, 0);
+        c.lv_obj_set_style_pad_top(scr, 40, 0);
+        c.lv_obj_set_style_pad_gap(scr, 8, 0);
 
-            const title = c.lv_label_create(layerTop()).?;
-            c.lv_obj_set_style_bg_opa(title, c.LV_OPA_COVER, 0);
-            c.lv_obj_set_style_bg_color(title, c.lv_color_white(), 0);
-            c.lv_obj_set_style_text_color(title, c.lv_color_black(), 0);
-            c.lv_obj_set_style_text_font(title, &c.lv_font_montserrat_14, 0);
-            c.lv_obj_set_width(title, c.lv_pct(100));
+        const title = c.lv_label_create(layerTop()).?;
+        c.lv_obj_set_style_bg_opa(title, c.LV_OPA_COVER, 0);
+        c.lv_obj_set_style_bg_color(title, c.lv_color_white(), 0);
+        c.lv_obj_set_style_text_color(title, c.lv_color_black(), 0);
+        c.lv_obj_set_style_text_font(title, &c.lv_font_montserrat_14, 0);
+        c.lv_obj_set_width(title, c.lv_pct(100));
 
-            loadScene(scene_act);
+        loadScene(scene_act);
 
-            _ = c.lv_timer_create(nextSceneTimerCb, scenes[0].scene_time, null);
+        _ = c.lv_timer_create(nextSceneTimerCb, scenes[0].scene_time, null);
 
-            // Setup performance observer
-            const perf_subj = benchmark_get_perf_subject();
-            if (perf_subj) |subj| {
-                _ = c.lv_subject_add_observer_obj(subj, sysmonPerfObserverCb, title, null);
-            } else {
-                c.lv_label_set_text(title, "Perf monitor unavailable");
-            }
+        // Setup performance observer
+        const perf_subj = benchmark_get_perf_subject();
+        if (perf_subj) |subj| {
+            _ = c.lv_subject_add_observer_obj(subj, sysmonPerfObserverCb, title, null);
+        } else {
+            c.lv_label_set_text(title, "Perf monitor unavailable");
         }
-
-        ove.log.inf("LVGL benchmark (Zig): running", .{});
     }
+
+    ove.log.inf("LVGL benchmark (Zig): running", .{});
 
     ove.run();
 }

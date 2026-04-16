@@ -15,7 +15,6 @@
 
 use core::fmt::Write;
 
-#[cfg(has_lvgl)]
 use ove::lvgl::{
     self, Animation, Arc, Button, Image, Label, Layout, Obj,
     Styleable, Table, Widget, ANIM_REPEAT_INFINITE,
@@ -26,7 +25,6 @@ use ove::{FmtBuf, Priority, Thread};
 //  FFI — C benchmark perf helper + LVGL functions not in the Rust binding
 // =========================================================================
 
-#[cfg(has_lvgl)]
 #[repr(C)]
 struct BenchPerfMetrics {
     fps: u32,
@@ -35,7 +33,6 @@ struct BenchPerfMetrics {
     flush_avg_time: u32,
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" {
     // Shared C performance helper
     static img_benchmark_lvgl_logo_rgb: core::ffi::c_void;
@@ -101,10 +98,10 @@ unsafe extern "C" {
     fn lv_chart_set_type(chart: *mut ove::ffi::lv_obj_t, t: u32);
     fn lv_chart_set_point_count(chart: *mut ove::ffi::lv_obj_t, cnt: u32);
     fn lv_chart_add_series(chart: *mut ove::ffi::lv_obj_t, color: ove::ffi::lv_color_t, axis: u32) -> *mut core::ffi::c_void;
-    fn lv_chart_set_value_by_id(chart: *mut ove::ffi::lv_obj_t, ser: *mut core::ffi::c_void, id: u32, v: i32);
+    fn lv_chart_set_series_value_by_id(chart: *mut ove::ffi::lv_obj_t, ser: *mut core::ffi::c_void, id: u32, v: i32);
     fn lv_calendar_create(parent: *mut ove::ffi::lv_obj_t) -> *mut ove::ffi::lv_obj_t;
     fn lv_calendar_set_today_date(cal: *mut ove::ffi::lv_obj_t, y: u32, m: u32, d: u32);
-    fn lv_calendar_set_showed_date(cal: *mut ove::ffi::lv_obj_t, y: u32, m: u32);
+    fn lv_calendar_set_month_shown(cal: *mut ove::ffi::lv_obj_t, y: u32, m: u32);
     fn lv_roller_create(parent: *mut ove::ffi::lv_obj_t) -> *mut ove::ffi::lv_obj_t;
     fn lv_roller_set_options(r: *mut ove::ffi::lv_obj_t, opts: *const u8, mode: u32);
     fn lv_roller_set_visible_row_count(r: *mut ove::ffi::lv_obj_t, cnt: u32);
@@ -130,14 +127,12 @@ unsafe extern "C" {
 }
 
 // Opaque types for draw task FFI
-#[cfg(has_lvgl)]
 #[repr(C)]
 struct LvPoint {
     x: i32,
     y: i32,
 }
 
-#[cfg(has_lvgl)]
 #[repr(C)]
 struct LvObserver {
     _opaque: [u8; 64],
@@ -147,34 +142,22 @@ struct LvObserver {
 //  Constants
 // =========================================================================
 
-#[cfg(has_lvgl)]
 const LV_OPA_COVER: u8 = 255;
-#[cfg(has_lvgl)]
 const LV_OPA_TRANSP: u8 = 0;
-#[cfg(has_lvgl)]
 const LV_OPA_50: u8 = 127;
-#[cfg(has_lvgl)]
 const LV_ANIM_OFF: u32 = 0;
-#[cfg(has_lvgl)]
 const LV_LAYOUT_NONE: u32 = 0;
-#[cfg(has_lvgl)]
 const LV_COORD_MAX: i32 = (1 << 29) - 1;
-#[cfg(has_lvgl)]
 const LV_TEXT_FLAG_NONE: u32 = 0;
-#[cfg(has_lvgl)]
 const LV_IMAGE_ALIGN_TILE: u32 = 12;
-#[cfg(has_lvgl)]
 const LV_PALETTE_GREY: u32 = 18;
-#[cfg(has_lvgl)]
 const LV_PALETTE_BLUE_GREY: u32 = 17;
-#[cfg(has_lvgl)]
 const LV_PART_ITEMS: u32 = 0x050000;
 
 // =========================================================================
 //  PRNG — deterministic random number sequence (matches C reference)
 // =========================================================================
 
-#[cfg(has_lvgl)]
 const RND_MAP: [u32; 64] = [
     0xbd13204f, 0x67d8167f, 0x20211c99, 0xb0a7cc05,
     0x06d5c703, 0xeafb01a7, 0xd0473b5c, 0xc999aaa2,
@@ -194,15 +177,12 @@ const RND_MAP: [u32; 64] = [
     0x35c7562b, 0xd901fe51, 0x8f4e053d, 0xa5b94923,
 ];
 
-#[cfg(has_lvgl)]
 static mut RND_ACT: usize = 0;
 
-#[cfg(has_lvgl)]
 fn rnd_reset() {
     unsafe { RND_ACT = 0; }
 }
 
-#[cfg(has_lvgl)]
 fn rnd_next(min: i32, max: i32) -> i32 {
     if min == max { return min; }
     let (lo, hi) = if min < max { (min, max) } else { (max, min) };
@@ -223,7 +203,6 @@ fn rnd_next(min: i32, max: i32) -> i32 {
 /// Compute an LVGL percentage coordinate, matching the C macro `lv_pct(x)`.
 /// `LV_PCT(x) = (x < 0) ? (1000 - x) | PCT_flag : x | PCT_flag`
 /// where `PCT_flag = 1 << 29 | 1 << 30`.
-#[cfg(has_lvgl)]
 const fn lv_pct(x: i32) -> i32 {
     const PCT_FLAG: i32 = (1 << 29) | (1 << 30);
     if x < 0 {
@@ -234,7 +213,6 @@ const fn lv_pct(x: i32) -> i32 {
 }
 
 /// Compute `lv_dpx(n)` equivalent at runtime (uses display DPI).
-#[cfg(has_lvgl)]
 fn lv_dpx(n: i32) -> i32 {
     let dpi = unsafe { lv_display_get_dpi(core::ptr::null_mut()) };
     if dpi <= 0 { return n; }
@@ -246,7 +224,6 @@ fn lv_dpx(n: i32) -> i32 {
 //  Scene descriptor
 // =========================================================================
 
-#[cfg(has_lvgl)]
 struct SceneDsc {
     name: &'static [u8],
     create_cb: fn(),
@@ -258,7 +235,6 @@ struct SceneDsc {
     measurement_cnt: u32,
 }
 
-#[cfg(has_lvgl)]
 impl SceneDsc {
     const fn new(name: &'static [u8], create_cb: fn(), scene_time: u32) -> Self {
         Self {
@@ -278,10 +254,8 @@ impl SceneDsc {
 //  Mutable global state (single-threaded LVGL task access)
 // =========================================================================
 
-#[cfg(has_lvgl)]
 static mut SCENE_ACT: u32 = 0;
 
-#[cfg(has_lvgl)]
 static mut SCENES: [SceneDsc; 17] = [
     SceneDsc::new(b"Empty screen\0",              empty_screen_cb,              3000),
     SceneDsc::new(b"Moving wallpaper\0",           moving_wallpaper_cb,          3000),
@@ -307,7 +281,6 @@ static mut SCENES: [SceneDsc; 17] = [
 //  Animation helpers
 // =========================================================================
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn color_anim_cb(var: *mut core::ffi::c_void, _v: i32) {
     unsafe {
         let c1 = lv_color_hex3(rnd_next(0x00f, 0xff0) as u32);
@@ -317,7 +290,6 @@ unsafe extern "C" fn color_anim_cb(var: *mut core::ffi::c_void, _v: i32) {
     }
 }
 
-#[cfg(has_lvgl)]
 fn color_anim(obj: *mut ove::ffi::lv_obj_t) {
     Animation::new()
         .target(obj as *mut core::ffi::c_void)
@@ -328,14 +300,12 @@ fn color_anim(obj: *mut ove::ffi::lv_obj_t) {
         .start();
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn shake_anim_y_cb(var: *mut core::ffi::c_void, v: i32) {
     unsafe {
         lv_obj_set_style_translate_y(var as *mut ove::ffi::lv_obj_t, v, 0);
     }
 }
 
-#[cfg(has_lvgl)]
 fn shake_anim(obj: *mut ove::ffi::lv_obj_t, y_max: i32) {
     let t1 = rnd_next(300, 3000) as u32;
     let t2 = rnd_next(300, 3000) as u32;
@@ -350,14 +320,12 @@ fn shake_anim(obj: *mut ove::ffi::lv_obj_t, y_max: i32) {
         .start();
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn scroll_anim_y_cb(var: *mut core::ffi::c_void, v: i32) {
     unsafe {
         lv_obj_scroll_to_y(var as *mut ove::ffi::lv_obj_t, v, LV_ANIM_OFF);
     }
 }
 
-#[cfg(has_lvgl)]
 fn scroll_anim(obj: *mut ove::ffi::lv_obj_t, y_max: i32) {
     let t = unsafe {
         let dpi = lv_display_get_dpi(core::ptr::null_mut());
@@ -374,14 +342,12 @@ fn scroll_anim(obj: *mut ove::ffi::lv_obj_t, y_max: i32) {
         .start();
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn arc_anim_cb(var: *mut core::ffi::c_void, v: i32) {
     unsafe {
         ove::ffi::lv_arc_set_value(var as *mut ove::ffi::lv_obj_t, v);
     }
 }
 
-#[cfg(has_lvgl)]
 fn arc_anim(obj: *mut ove::ffi::lv_obj_t) {
     let t1 = rnd_next(1000, 3000) as u32;
     let t2 = rnd_next(1000, 3000) as u32;
@@ -400,7 +366,6 @@ fn arc_anim(obj: *mut ove::ffi::lv_obj_t) {
 //  Card composite widget (matches C reference)
 // =========================================================================
 
-#[cfg(has_lvgl)]
 fn card_create() -> *mut ove::ffi::lv_obj_t {
     let scr = lvgl::screen_active();
     let panel = Obj::create(scr);
@@ -433,13 +398,11 @@ fn card_create() -> *mut ove::ffi::lv_obj_t {
 // =========================================================================
 
 // Scene 0: Empty screen with color animation
-#[cfg(has_lvgl)]
 fn empty_screen_cb() {
     color_anim(lvgl::screen_active().raw());
 }
 
 // Scene 1: Moving wallpaper (tiled RGB image with shake)
-#[cfg(has_lvgl)]
 fn moving_wallpaper_cb() {
     let scr = lvgl::screen_active();
     scr.pad_all(0);
@@ -455,7 +418,6 @@ fn moving_wallpaper_cb() {
 }
 
 // Scene 2: Single rectangle with color animation
-#[cfg(has_lvgl)]
 fn single_rectangle_cb() {
     let scr = lvgl::screen_active();
     let obj = Obj::create(scr);
@@ -465,7 +427,6 @@ fn single_rectangle_cb() {
 }
 
 // Scene 3: Multiple rectangles in flex layout
-#[cfg(has_lvgl)]
 fn multiple_rectangles_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -487,7 +448,6 @@ fn multiple_rectangles_cb() {
 }
 
 // Scene 4: Multiple RGB images
-#[cfg(has_lvgl)]
 fn multiple_rgb_images_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -525,7 +485,6 @@ fn multiple_rgb_images_cb() {
 }
 
 // Scene 5: Multiple ARGB images
-#[cfg(has_lvgl)]
 fn multiple_argb_images_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -563,7 +522,6 @@ fn multiple_argb_images_cb() {
 }
 
 // Scene 6: Rotated ARGB images
-#[cfg(has_lvgl)]
 fn rotated_argb_images_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -602,7 +560,6 @@ fn rotated_argb_images_cb() {
 }
 
 // Scene 7: Multiple labels with color animation
-#[cfg(has_lvgl)]
 fn multiple_labels_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -642,7 +599,6 @@ fn multiple_labels_cb() {
 }
 
 // Scene 8: Screen-sized scrolling text
-#[cfg(has_lvgl)]
 fn screen_sized_text_cb() {
     let scr = lvgl::screen_active();
     let lbl = Label::create(scr);
@@ -690,7 +646,6 @@ eleifend diam ipsum et eros.\0",
 }
 
 // Scene 9: Multiple arcs with animation
-#[cfg(has_lvgl)]
 fn multiple_arcs_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -741,7 +696,6 @@ fn multiple_arcs_cb() {
 }
 
 // Scene 10: Containers (card widgets with shake)
-#[cfg(has_lvgl)]
 fn containers_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -774,7 +728,6 @@ fn containers_cb() {
 }
 
 // Scene 11: Containers with overlay
-#[cfg(has_lvgl)]
 fn containers_with_overlay_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -811,7 +764,6 @@ fn containers_with_overlay_cb() {
 }
 
 // Scene 12: Containers with per-object opacity
-#[cfg(has_lvgl)]
 fn containers_with_opa_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -845,7 +797,6 @@ fn containers_with_opa_cb() {
 }
 
 // Scene 13: Containers with layered opacity
-#[cfg(has_lvgl)]
 fn containers_with_opa_layer_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -879,7 +830,6 @@ fn containers_with_opa_layer_cb() {
 }
 
 // Scene 14: Containers with scrolling
-#[cfg(has_lvgl)]
 fn containers_with_scrolling_cb() {
     let scr = lvgl::screen_active();
     unsafe {
@@ -902,17 +852,13 @@ fn containers_with_scrolling_cb() {
 }
 
 // Scene 15: Widgets demo
-#[cfg(has_lvgl)]
 static mut G_TABVIEW: *mut ove::ffi::lv_obj_t = core::ptr::null_mut();
-#[cfg(has_lvgl)]
 static mut G_SLIDESHOW_TAB: u32 = 0;
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn slideshow_scroll_cb(var: *mut core::ffi::c_void, v: i32) {
     unsafe { lv_obj_scroll_to_y(var as *mut ove::ffi::lv_obj_t, v, 0); }
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn slideshow_ready_cb(_a: *mut core::ffi::c_void) {
     unsafe {
         if G_TABVIEW.is_null() { return; }
@@ -930,12 +876,10 @@ unsafe extern "C" fn slideshow_ready_cb(_a: *mut core::ffi::c_void) {
     }
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn gauge_arc_exec_cb(var: *mut core::ffi::c_void, v: i32) {
     ove::ffi::lv_arc_set_value(var as *mut ove::ffi::lv_obj_t, v);
 }
 
-#[cfg(has_lvgl)]
 fn widgets_demo_cb() {
     unsafe {
         let scr = lvgl::screen_active();
@@ -1092,7 +1036,7 @@ fn widgets_demo_cb() {
             let ser = lv_chart_add_series(chart, lv_palette_main(4), 0);
             let data: [i32; 12] = [10, 20, 30, 25, 40, 35, 50, 60, 55, 70, 65, 80];
             for (i, &v) in data.iter().enumerate() {
-                lv_chart_set_value_by_id(chart, ser, i as u32, v);
+                lv_chart_set_series_value_by_id(chart, ser, i as u32, v);
             }
         }
 
@@ -1107,7 +1051,7 @@ fn widgets_demo_cb() {
         let cal = lv_calendar_create(tab3);
         ove::ffi::lv_obj_set_size(cal, 200, 200);
         lv_calendar_set_today_date(cal, 2026, 4, 13);
-        lv_calendar_set_showed_date(cal, 2026, 4);
+        lv_calendar_set_month_shown(cal, 2026, 4);
 
         let roller = lv_roller_create(tab3);
         lv_roller_set_options(roller, b"Mon\nTue\nWed\nThu\nFri\nSat\nSun\0".as_ptr(), 0);
@@ -1127,7 +1071,7 @@ fn widgets_demo_cb() {
             let ser = lv_chart_add_series(chart, lv_palette_main(13), 0);
             let data: [i32; 7] = [40, 55, 30, 70, 50, 65, 45];
             for (i, &v) in data.iter().enumerate() {
-                lv_chart_set_value_by_id(chart, ser, i as u32, v);
+                lv_chart_set_series_value_by_id(chart, ser, i as u32, v);
             }
         }
 
@@ -1145,7 +1089,6 @@ fn widgets_demo_cb() {
 //  Scene management
 // =========================================================================
 
-#[cfg(has_lvgl)]
 fn load_scene(scene: u32) {
     let scr = lvgl::screen_active();
     scr.clean();
@@ -1188,7 +1131,6 @@ fn load_scene(scene: u32) {
     }
 }
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn next_scene_timer_cb(timer: *mut ove::ffi::lv_timer_t) {
     unsafe {
         SCENE_ACT += 1;
@@ -1208,7 +1150,6 @@ unsafe extern "C" fn next_scene_timer_cb(timer: *mut ove::ffi::lv_timer_t) {
 //  Performance observer
 // =========================================================================
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn sysmon_perf_observer_cb(
     observer: *mut ove::ffi::lv_observer_t,
     subject: *mut ove::ffi::lv_subject_t,
@@ -1267,7 +1208,6 @@ unsafe extern "C" fn sysmon_perf_observer_cb(
 //  Summary table
 // =========================================================================
 
-#[cfg(has_lvgl)]
 unsafe extern "C" fn table_draw_task_event_cb(_e: *mut ove::ffi::lv_event_t) {
     // The draw-task event callback requires internal struct access that is
     // highly dependent on LVGL's internal layout. For the Rust benchmark
@@ -1275,7 +1215,6 @@ unsafe extern "C" fn table_draw_task_event_cb(_e: *mut ove::ffi::lv_event_t) {
     // The summary table still displays correctly with default styling.
 }
 
-#[cfg(has_lvgl)]
 fn summary_create() {
     let scr = lvgl::screen_active();
     scr.clean();
@@ -1289,7 +1228,7 @@ fn summary_create() {
         lv_obj_set_style_max_height(table.raw(), lv_pct(100), 0);
         ove::ffi::lv_obj_add_flag(table.raw(), ove::ffi::LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
         ove::ffi::lv_obj_set_style_text_font(table.raw(), &ove::ffi::lv_font_montserrat_14, LV_PART_ITEMS);
-        ove::ffi::lv_obj_set_style_text_font(table.raw(), &ove::ffi::lv_font_montserrat_14, LV_PART_MAIN as u32);
+        ove::ffi::lv_obj_set_style_text_font(table.raw(), &ove::ffi::lv_font_montserrat_14, ove::ffi::LV_PART_MAIN);
         ove::ffi::lv_obj_set_style_pad_top(table.raw(), 2, LV_PART_ITEMS);
         ove::ffi::lv_obj_set_style_pad_bottom(table.raw(), 2, LV_PART_ITEMS);
         ove::ffi::lv_obj_set_style_pad_left(table.raw(), 4, LV_PART_ITEMS);
@@ -1411,7 +1350,6 @@ fn summary_create() {
 //  Graphics thread
 // =========================================================================
 
-#[cfg(has_lvgl)]
 fn graphics_entry() {
     let mut last_us = ove::time::get_us().unwrap_or(0);
     loop {
@@ -1434,10 +1372,8 @@ fn graphics_entry() {
 fn app_main() {
     ove::log_inf!("LVGL benchmark (Rust): init");
 
-    #[cfg(has_lvgl)]
     let _graphics = ove::thread!("graphics", graphics_entry, Priority::High, 4096);
 
-    #[cfg(has_lvgl)]
     {
         if lvgl::init().is_err() {
             ove::log_err!("Failed to init LVGL");

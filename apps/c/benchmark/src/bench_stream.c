@@ -130,11 +130,7 @@ static void stream_memory_teardown(void *ctx)
 
 static int stream_is_enabled(void)
 {
-#ifdef CONFIG_OVE_STREAM
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t stream_cases[] = {

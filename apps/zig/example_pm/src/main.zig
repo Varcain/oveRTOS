@@ -17,8 +17,7 @@ const ove = @import("ove");
 const Thread = ove.Thread;
 const prio = ove.thread.prio;
 
-const has_pm = @hasDecl(ove.ffi, "ove_pm_init");
-const pm = if (has_pm) ove.pm else undefined;
+const pm = ove.pm;
 
 // ---------------------------------------------------------------------------
 // Simulated battery level
@@ -36,18 +35,14 @@ fn sensorEntry() void {
     ove.log.inf("sensor: started", .{});
 
     while (true) {
-        if (has_pm) {
-            pm.domainRequest(1) catch {}; // SENSOR = 1
-            pm.activity();
-        }
+        pm.domainRequest(1) catch {}; // SENSOR = 1
+        pm.activity();
 
         Thread.sleepMs(50);
         reading +%= 17;
         ove.log.inf("sensor: reading = {d}", .{reading % 1000});
 
-        if (has_pm) {
-            pm.domainRelease(1) catch {}; // SENSOR = 1
-        }
+        pm.domainRelease(1) catch {}; // SENSOR = 1
 
         Thread.sleepMs(5000);
     }
@@ -63,27 +58,25 @@ fn monitorEntry() void {
     while (true) {
         Thread.sleepMs(10000);
 
-        if (has_pm) {
-            if (pm.getStats()) |stats| {
-                ove.log.inf("=== Power Stats ===", .{});
-                ove.log.inf("  active:  {d} us ({d} trans)", .{
-                    stats.time_in_state_us[0],
-                    stats.transition_count[0],
-                });
-                ove.log.inf("  idle:    {d} us ({d} trans)", .{
-                    stats.time_in_state_us[1],
-                    stats.transition_count[1],
-                });
-                ove.log.inf("  standby: {d} us ({d} trans)", .{
-                    stats.time_in_state_us[2],
-                    stats.transition_count[2],
-                });
-                ove.log.inf("  active%: {d}.{d:0>2}%", .{
-                    stats.active_pct_x100 / 100,
-                    stats.active_pct_x100 % 100,
-                });
-            } else |_| {}
-        }
+        if (pm.getStats()) |stats| {
+            ove.log.inf("=== Power Stats ===", .{});
+            ove.log.inf("  active:  {d} us ({d} trans)", .{
+                stats.time_in_state_us[0],
+                stats.transition_count[0],
+            });
+            ove.log.inf("  idle:    {d} us ({d} trans)", .{
+                stats.time_in_state_us[1],
+                stats.transition_count[1],
+            });
+            ove.log.inf("  standby: {d} us ({d} trans)", .{
+                stats.time_in_state_us[2],
+                stats.transition_count[2],
+            });
+            ove.log.inf("  active%: {d}.{d:0>2}%", .{
+                stats.active_pct_x100 / 100,
+                stats.active_pct_x100 % 100,
+            });
+        } else |_| {}
 
         const batt = battery_pct.load(.monotonic);
         if (batt > 5) {
@@ -100,23 +93,21 @@ fn monitorEntry() void {
 fn appMain() void {
     ove.log.inf("pm example (Zig): init", .{});
 
-    if (has_pm) {
-        pm.init(.{
-            .idle_threshold_ms = 50,
-            .standby_threshold_ms = 5000,
-            .deep_sleep_threshold_ms = 30000,
-        }) catch |e| {
-            ove.log.err("PM init failed: {}", .{e});
-            return;
-        };
+    pm.init(.{
+        .idle_threshold_ms = 50,
+        .standby_threshold_ms = 5000,
+        .deep_sleep_threshold_ms = 30000,
+    }) catch |e| {
+        ove.log.err("PM init failed: {}", .{e});
+        return;
+    };
 
-        // Register wake sources
-        pm.wakeRegisterGpio(0, 13, 0x02) catch {}; // falling edge
-        pm.wakeRegisterUart(0) catch {};
+    // Register wake sources
+    pm.wakeRegisterGpio(0, 13, 0x02) catch {}; // falling edge
+    pm.wakeRegisterUart(0) catch {};
 
-        // Set power budget target: 60% low-power
-        pm.setBudget(6000) catch {};
-    }
+    // Set power budget target: 60% low-power
+    pm.setBudget(6000) catch {};
 
     // Create threads
     _ = Thread.spawn("sensor", sensorEntry, prio.normal, 4096) catch {
@@ -134,9 +125,7 @@ fn appMain() void {
 
     ove.run();
 
-    if (has_pm) {
-        pm.deinit();
-    }
+    pm.deinit();
 
     ove.log.inf("pm example (Zig): shutdown", .{});
 }

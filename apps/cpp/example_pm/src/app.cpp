@@ -21,9 +21,7 @@
 #include <ove/ove.hpp>
 #include <cstdio>
 
-#ifdef CONFIG_OVE_PM
 namespace pm = ove::pm;
-#endif
 
 /* --- Simulated battery level --- */
 
@@ -31,7 +29,6 @@ static int battery_pct = 85;
 
 /* --- PM transition notifier --- */
 
-#ifdef CONFIG_OVE_PM
 static void pm_notify(ove_pm_event_t event, ove_pm_state_t from,
 		       ove_pm_state_t to, void *user_data)
 {
@@ -67,7 +64,6 @@ static ove_pm_state_t battery_policy(ove_pm_state_t current,
 	if (idle_ms < 10000) return OVE_PM_STATE_STANDBY;
 	return OVE_PM_STATE_DEEP_SLEEP;
 }
-#endif /* CONFIG_OVE_PM */
 
 /* --- Thread entry points --- */
 
@@ -88,18 +84,14 @@ static void sensor_thread(void *)
 	OVE_LOG_INF("sensor: started");
 
 	while (true) {
-#ifdef CONFIG_OVE_PM
 		pm::domain_request(OVE_PM_DOMAIN_SENSOR);
 		pm::activity();
-#endif
 
 		ove::Thread<>::sleep_ms(50);
 		reading += 17;
 		OVE_LOG_INF("sensor: reading = %u", reading % 1000);
 
-#ifdef CONFIG_OVE_PM
 		pm::domain_release(OVE_PM_DOMAIN_SENSOR);
-#endif
 
 		ove::Thread<>::sleep_ms(5000);
 	}
@@ -114,7 +106,6 @@ static void monitor_thread(void *)
 	while (true) {
 		ove::Thread<>::sleep_ms(10000);
 
-#ifdef CONFIG_OVE_PM
 		pm::Stats stats{};
 		if (pm::get_stats(stats) == OVE_OK) {
 			OVE_LOG_INF("=== Power Stats ===");
@@ -131,7 +122,6 @@ static void monitor_thread(void *)
 				    stats.active_pct_x100 / 100,
 				    stats.active_pct_x100 % 100);
 		}
-#endif
 
 		if (battery_pct > 5)
 			battery_pct -= 5;
@@ -145,7 +135,6 @@ OVE_MAIN()
 {
 	OVE_LOG_INF("pm example (C++): init");
 
-#ifdef CONFIG_OVE_PM
 	/* Initialize PM */
 	pm::Cfg cfg{
 		.idle_threshold_ms       = 50,
@@ -173,14 +162,11 @@ OVE_MAIN()
 	pm::notify_register(pm_notify);
 	pm::set_policy(battery_policy, &battery_pct);
 	pm::set_budget(6000);
-#endif
 
 	OVE_LOG_INF("pm example (C++): ready (battery=%d%%)", battery_pct);
 
 	ove::run();
 
-#ifdef CONFIG_OVE_PM
 	pm::deinit();
-#endif
 	OVE_LOG_INF("pm example (C++): shutdown");
 }

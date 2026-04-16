@@ -18,13 +18,10 @@
  */
 
 #include <ove/ove.hpp>
-
-#ifdef CONFIG_OVE_LVGL
 #include <ove/lvgl.hpp>
 #include "generated_images/lvgl_images.h"
 
 namespace lv = ove::lvgl;
-#endif
 
 /* --- Forward declarations for thread entry points --- */
 
@@ -37,21 +34,17 @@ static ove::Queue<uint32_t, 8> counter_queue;
 static ove::Mutex value_mutex;
 static uint32_t last_value = 0;
 
-#ifdef CONFIG_OVE_LVGL
 static void ui_timer_cb(ove_timer_t, void *);
 static void graphics_thread(void *arg);
 
 static ove::Timer ui_timer(ui_timer_cb, nullptr, 200);
 static ove::Thread<4096> gfx_thread(graphics_thread, nullptr,
 					 OVE_PRIO_HIGH, "graphics");
-#endif
 
 static ove::Thread<4096> prod_thread(producer_thread, nullptr,
 					  OVE_PRIO_NORMAL, "producer");
 static ove::Thread<4096> cons_thread(consumer_thread, nullptr,
 					  OVE_PRIO_NORMAL, "consumer");
-
-#ifdef CONFIG_OVE_LVGL
 
 /* ================================================================== */
 /*  CounterComponent — demonstrates Component<T>, State, bind_text    */
@@ -165,8 +158,6 @@ public:
 
 static CounterComponent counter_component;
 
-#endif /* CONFIG_OVE_LVGL */
-
 /* --- Producer thread: generates incrementing counter values --- */
 
 static void producer_thread(void *arg)
@@ -211,7 +202,6 @@ static void consumer_thread(void *arg)
 
 /* --- LVGL UI --- */
 
-#ifdef CONFIG_OVE_LVGL
 static void ui_timer_cb(ove_timer_t, void *)
 {
     uint32_t val;
@@ -245,7 +235,6 @@ static void graphics_thread(void *arg)
         ove::Thread<>::sleep_ms(33);
     }
 }
-#endif /* CONFIG_OVE_LVGL */
 
 /* --- App entry point --- */
 
@@ -254,7 +243,6 @@ OVE_MAIN()
     OVE_LOG_INF("C++ example: init");
 
     /* Initialize LVGL and create UI */
-#ifdef CONFIG_OVE_LVGL
     int ret = ove_lvgl_init();
     if (ret != OVE_OK) {
         OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
@@ -271,7 +259,6 @@ OVE_MAIN()
         OVE_LOG_ERR("Failed to start UI timer: %d", ret);
         return;
     }
-#endif
 
     OVE_LOG_INF("C++ example: ready");
 
@@ -279,10 +266,8 @@ OVE_MAIN()
 
     /* Cleanup (only reached if scheduler returns, e.g. POSIX) */
     OVE_LOG_INF("C++ example: shutdown");
-#ifdef CONFIG_OVE_LVGL
     {
         lv::LvglGuard guard;
         counter_component.unmount();
     }
-#endif
 }

@@ -122,11 +122,7 @@ static void queue_memory_teardown(void *ctx)
 
 static int queue_is_enabled(void)
 {
-#ifdef CONFIG_OVE_QUEUE
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t queue_cases[] = {

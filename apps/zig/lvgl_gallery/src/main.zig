@@ -13,8 +13,7 @@ const Thread = ove.Thread;
 const Timer = ove.Timer;
 const prio = ove.thread.prio;
 
-const has_lvgl = @hasDecl(ove.ffi, "ove_lvgl_init");
-const lvgl = if (has_lvgl) ove.lvgl else undefined;
+const lvgl = ove.lvgl;
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -22,12 +21,12 @@ const lvgl = if (has_lvgl) ove.lvgl else undefined;
 
 var tick_counter: std.atomic.Value(i32) = std.atomic.Value(i32).init(0);
 
-var bar_w: if (has_lvgl) lvgl.Bar else void = if (has_lvgl) undefined else {};
-var arc_w: if (has_lvgl) lvgl.Arc else void = if (has_lvgl) undefined else {};
-var led_w: if (has_lvgl) lvgl.Led else void = if (has_lvgl) undefined else {};
-var chart_w: if (has_lvgl) lvgl.Chart else void = if (has_lvgl) undefined else {};
-var series_w: if (has_lvgl) lvgl.Series else void = if (has_lvgl) undefined else {};
-var counter_state: if (has_lvgl) lvgl.State(i32) else void = if (has_lvgl) undefined else {};
+var bar_w: lvgl.Bar = undefined;
+var arc_w: lvgl.Arc = undefined;
+var led_w: lvgl.Led = undefined;
+var chart_w: lvgl.Chart = undefined;
+var series_w: lvgl.Series = undefined;
+var counter_state: lvgl.State(i32) = undefined;
 
 var canvas_buf: [64 * 64 * 4]u8 = undefined;
 var ui_timer: Timer = undefined;
@@ -48,7 +47,6 @@ extern const badge: anyopaque;
 // ---------------------------------------------------------------------------
 
 fn uiTimerCallback() void {
-    if (!has_lvgl) return;
     const tick = tick_counter.fetchAdd(1, .release) + 1;
     const guard = lvgl.lock();
     defer guard.deinit();
@@ -236,7 +234,6 @@ fn clearLiveWidgets() void {
 }
 
 fn rebuildPage() void {
-    if (!has_lvgl) return;
     clearLiveWidgets();
 
     if (g_content) |c| ove.ffi.lv_obj_clean(c);
@@ -258,8 +255,6 @@ fn rebuildPage() void {
 // ---------------------------------------------------------------------------
 
 fn createUi() void {
-    if (!has_lvgl) return;
-
     const screen = lvgl.screenActive();
     ove.ffi.lv_obj_set_style_bg_color(screen.obj, ove.ffi.lv_color_black(), 0);
     ove.ffi.lv_obj_set_style_bg_opa(screen.obj, 255, 0);
@@ -306,7 +301,6 @@ fn createUi() void {
 // ---------------------------------------------------------------------------
 
 fn graphicsEntry() void {
-    if (!has_lvgl) return;
     var last_us: u64 = 0;
     _ = ove.ffi.ove_time_get_us(&last_us);
     while (true) {
@@ -326,14 +320,12 @@ fn graphicsEntry() void {
 fn appMain() void {
     ove.log.inf("LVGL gallery (Zig): init", .{});
 
-    if (has_lvgl) {
-        _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch { ove.log.err("Failed to spawn graphics", .{}); return; };
-        ui_timer = Timer.create(uiTimerCallback, 100, false) catch { ove.log.err("Timer create fail", .{}); return; };
-        lvgl.init() catch { ove.log.err("LVGL init fail", .{}); return; };
-        { const guard = lvgl.lock(); defer guard.deinit(); createUi(); }
-        ove.log.inf("LVGL widgets created", .{});
-        ui_timer.start() catch { ove.log.err("Timer start fail", .{}); return; };
-    }
+    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch { ove.log.err("Failed to spawn graphics", .{}); return; };
+    ui_timer = Timer.create(uiTimerCallback, 100, false) catch { ove.log.err("Timer create fail", .{}); return; };
+    lvgl.init() catch { ove.log.err("LVGL init fail", .{}); return; };
+    { const guard = lvgl.lock(); defer guard.deinit(); createUi(); }
+    ove.log.inf("LVGL widgets created", .{});
+    ui_timer.start() catch { ove.log.err("Timer start fail", .{}); return; };
 
     ove.log.inf("LVGL gallery (Zig): ready", .{});
     ove.run();

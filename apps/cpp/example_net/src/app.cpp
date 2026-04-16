@@ -236,7 +236,6 @@ static void test_udp()
 
 /* ── 5. HTTP client ─────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET_HTTP
 static void test_http()
 {
 	OVE_LOG_INF("=== HTTP Client ===");
@@ -312,11 +311,9 @@ static void test_http()
 		FAIL("http_put", ret);
 	}
 }
-#endif /* CONFIG_OVE_NET_HTTP */
 
 /* ── 5b. SNTP ──────────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET_SNTP
 static void test_sntp()
 {
 	OVE_LOG_INF("=== SNTP ===");
@@ -339,11 +336,9 @@ static void test_sntp()
 		FAIL("sntp_sync", ret);
 	}
 }
-#endif /* CONFIG_OVE_NET_SNTP */
 
 /* ── 6. MQTT client ─────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET_MQTT
 static volatile int mqtt_rx_count;
 static char mqtt_rx_payload[128];
 
@@ -453,7 +448,6 @@ static void test_mqtt()
 	mqtt.disconnect();
 	PASS("mqtt_disconnect");
 }
-#endif /* CONFIG_OVE_NET_MQTT */
 
 /* ── Networking thread ──────────────────────────────────────────── */
 
@@ -463,18 +457,9 @@ static void net_thread(void *)
 	test_dns();
 	test_tcp();
 	test_udp();
-
-#ifdef CONFIG_OVE_NET_HTTP
 	test_http();
-#endif
-
-#ifdef CONFIG_OVE_NET_SNTP
 	test_sntp();
-#endif
-
-#ifdef CONFIG_OVE_NET_MQTT
 	test_mqtt();
-#endif
 
 	OVE_LOG_INF("========================================");
 	OVE_LOG_INF("  Results: %d passed, %d failed", pass_count, fail_count);
@@ -486,7 +471,6 @@ static void net_thread(void *)
 		OVE_LOG_ERR("  %d TEST(S) FAILED", fail_count);
 	}
 
-#ifdef CONFIG_OVE_NET_HTTPD
 	/* Start web dashboard — runs forever */
 	uint16_t httpd_port = 80;
 #ifdef CONFIG_OVE_RTOS_POSIX
@@ -507,7 +491,6 @@ static void net_thread(void *)
 	} else {
 		OVE_LOG_ERR("HTTP server failed to start: %d", ret);
 	}
-#endif
 }
 
 /* ── App entry point ────────────────────────────────────────────── */
@@ -522,8 +505,6 @@ OVE_MAIN()
 	OVE_LOG_INF("C++ networking example: ready");
 	ove::run();
 
-#ifdef CONFIG_OVE_NET_HTTPD
 	/* On POSIX, ove::run() returns — keep alive for the httpd server */
 	while (true) { ove::Thread<0>::sleep_ms(1000); }
-#endif
 }

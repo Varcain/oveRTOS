@@ -16,10 +16,8 @@
  */
 
 #include <ove/ove.hpp>
-#include <cstdio>
-
-#ifdef CONFIG_OVE_LVGL
 #include <ove/lvgl.hpp>
+#include <cstdio>
 
 extern "C" {
 #include "benchmark_perf.h"
@@ -1144,15 +1142,12 @@ static void graphics_thread(void *arg)
 	}
 }
 
-#endif /* CONFIG_OVE_LVGL */
-
 /* ── Application entry point ──────────────────────────────────────── */
 
 OVE_MAIN()
 {
 	OVE_LOG_INF("LVGL benchmark (C++): init");
 
-#ifdef CONFIG_OVE_LVGL
 	int ret = ove_lvgl_init();
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("ove_lvgl_init failed: %d", ret);
@@ -1197,7 +1192,6 @@ OVE_MAIN()
 #endif
 
 	ove_lvgl_unlock();
-#endif /* CONFIG_OVE_LVGL */
 
 	OVE_LOG_INF("LVGL benchmark (C++): running");
 	ove::run();
