@@ -7,1162 +7,907 @@
 //! oveRTOS Benchmark Application (Rust)
 //!
 //! Measures latency, throughput, and memory usage of all RTOS abstractions
-//! using safe Rust bindings. Suite symbols are exported as `#[no_mangle]`
-//! C-compatible statics so the shared C harness (`bench_run_case`,
-//! `bench_print_*`) can drive them.
+//! using safe Rust bindings. Suite symbols are exported as
+//! `#[unsafe(no_mangle)] pub static bench_suite_*` via the
+//! [`ove::bench_suite!`] macro so the shared C harness drives them.
 //!
-//! All resource creation uses the unified `ove::*!` macros (e.g.
-//! `ove::thread!`, `ove::timer!`) so the benchmark builds and runs in
-//! both heap and zero-heap configurations.
+//! All resource creation uses the unified `ove::*!` macros so the
+//! benchmark builds in both heap and zero-heap configurations.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(unsafe_code)]
 
-use core::ffi::c_void;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use ove::ffi;
-use ove::time;
+use ove::bench::{BenchType, CBenchSuite};
 use ove::{
-    CondVar, Event, EventGroup, Mutex, Priority, Queue, RecursiveMutex, Semaphore, Stream, Thread,
-    Timer, Work, Workqueue, WAIT_FOREVER,
+    CondVar, Event, EventGroup, LvCell, Mutex, Priority, Queue, RecursiveMutex, Semaphore, Stream,
+    Thread, Timer, Work, Workqueue, WAIT_FOREVER,
 };
 
-// ---------------------------------------------------------------------------
-// C-compatible types matching benchmark.h
-// ---------------------------------------------------------------------------
+// =========================================================================
+//  Work FFI — tiny escape hatch for the Work handler trampoline
+// =========================================================================
+//
+// `ove_work_t` doesn't expose user_data, so Rust can't provide a safe
+// `fn()` wrapper through runtime dispatch. The one C-ABI trampoline the
+// workqueue suite needs lives here; `allow(unsafe_code)` is scoped to
+// this one module so the rest of the app stays safe.
 
-/// Benchmark type enum, matching `bench_type_t`.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub enum BenchType {
-    Latency = 0,
-    Throughput = 1,
-    Memory = 2,
+#[allow(unsafe_code)]
+mod work_ffi {
+    use super::WQ_WORK_SEM;
+    use core::sync::atomic::Ordering;
+    use ove::ffi::ove_work_t;
+
+    use super::WQ_WORK_EXECUTED;
+
+    pub(super) unsafe extern "C" fn work_handler(_w: ove_work_t) {
+        WQ_WORK_EXECUTED.store(true, Ordering::Relaxed);
+        if let Some(sem) = WQ_WORK_SEM.try_get() {
+            sem.give();
+        }
+    }
 }
 
-/// Benchmark case descriptor, matching `bench_case_t`.
-#[repr(C)]
-pub struct BenchCase {
-    pub name: *const core::ffi::c_char,
-    pub bench_type: BenchType,
-    pub setup: Option<unsafe extern "C" fn(*mut c_void)>,
-    pub run: Option<unsafe extern "C" fn(*mut c_void)>,
-    pub teardown: Option<unsafe extern "C" fn(*mut c_void)>,
-    pub iterations: u32,
+// =========================================================================
+//  Suite: time
+// =========================================================================
+
+fn time_is_enabled() -> bool { true }
+
+fn time_get_us_overhead_run() {
+    let _ = ove::time::get_us();
+}
+fn delay_1ms_run() {
+    ove::time::delay_ms(1);
 }
 
-// SAFETY: BenchCase contains only raw pointers and plain data. The pointed-to
-// data (name strings, function pointers) has `'static` lifetime because they
-// come from const statics.
-unsafe impl Sync for BenchCase {}
+ove::bench_case!(static TIME_GET_US_OVERHEAD: BenchCase = {
+    name: b"time_get_us_overhead\0",
+    kind: BenchType::Latency,
+    run: time_get_us_overhead_run,
+});
 
-/// Benchmark result, matching `bench_result_t`.
-#[repr(C)]
-pub struct BenchResult {
-    pub min_ns: u64,
-    pub max_ns: u64,
-    pub total_ns: u64,
-    pub count: u32,
-    pub ops_per_sec: u32,
-    pub heap_delta: i32,
-}
+ove::bench_case!(static DELAY_1MS: BenchCase = {
+    name: b"delay_1ms\0",
+    kind: BenchType::Latency,
+    run: delay_1ms_run,
+    iterations: 100,
+});
 
-/// Benchmark suite descriptor, matching `bench_suite_t`.
-#[repr(C)]
-pub struct BenchSuite {
-    pub name: *const core::ffi::c_char,
-    pub is_enabled: Option<unsafe extern "C" fn() -> i32>,
-    pub cases: *const BenchCase,
-    pub case_count: u32,
-}
+ove::bench_suite!(
+    symbol = bench_suite_time,
+    name = b"time\0",
+    enabled = time_is_enabled,
+    cases = [TIME_GET_US_OVERHEAD, DELAY_1MS],
+);
 
-// SAFETY: BenchSuite contains only raw pointers and plain data pointing to
-// `'static` const data.
-unsafe impl Sync for BenchSuite {}
+// =========================================================================
+//  Suite: thread
+// =========================================================================
 
-// ---------------------------------------------------------------------------
-// C harness imports (linked from c_sources in app.yaml)
-// ---------------------------------------------------------------------------
-
-unsafe extern "C" {
-    fn bench_run_case(bc: *const BenchCase, result: *mut BenchResult);
-    fn bench_print_header(suite_name: *const core::ffi::c_char);
-    fn bench_print_result(bc: *const BenchCase, result: *const BenchResult);
-    fn bench_print_footer();
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Null pointer constant for optional function pointers.
-const NONE: Option<unsafe extern "C" fn(*mut c_void)> = None;
-
-// ===========================================================================
-// Suite: time
-// ===========================================================================
-
-unsafe extern "C" fn time_get_us_overhead_run(_ctx: *mut c_void) {
-    let _ = time::get_us();
-}
-
-unsafe extern "C" fn delay_1ms_run(_ctx: *mut c_void) {
-    time::delay_ms(1);
-}
-
-unsafe extern "C" fn time_is_enabled() -> i32 {
-    1
-}
-
-static TIME_CASES: [BenchCase; 2] = [
-    BenchCase {
-        name: b"time_get_us_overhead\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(time_get_us_overhead_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"delay_1ms\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(delay_1ms_run),
-        teardown: NONE,
-        iterations: 100,
-    },
-];
-
-#[unsafe(no_mangle)]
-pub static bench_suite_time: BenchSuite = BenchSuite {
-    name: b"time\0".as_ptr() as *const _,
-    is_enabled: Some(time_is_enabled),
-    cases: TIME_CASES.as_ptr(),
-    case_count: TIME_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite: thread
-// ===========================================================================
-
-static mut THREAD_BENCH_TH: Option<Thread> = None;
-static mut THREAD_PING_SEM: Option<Semaphore> = None;
-static mut THREAD_PONG_SEM: Option<Semaphore> = None;
+ove::shared!(THREAD_BENCH_TH: Thread);
+ove::shared!(THREAD_PING_SEM: Semaphore);
+ove::shared!(THREAD_PONG_SEM: Semaphore);
 static THREAD_CTX_SWITCH_DONE: AtomicBool = AtomicBool::new(false);
+
+fn thread_is_enabled() -> bool { true }
 
 fn dummy_thread() {}
 
-unsafe extern "C" fn thread_create_destroy_run(_ctx: *mut c_void) {
+fn thread_create_destroy_run() {
     let _th = ove::thread!("bench_tmp", dummy_thread, Priority::Low, 1024);
 }
 
-unsafe extern "C" fn thread_yield_run(_ctx: *mut c_void) {
+fn thread_yield_run() {
     Thread::yield_now();
 }
 
-unsafe extern "C" fn thread_sleep_1ms_run(_ctx: *mut c_void) {
+fn thread_sleep_1ms_run() {
     Thread::sleep_ms(1);
 }
 
 fn pong_thread() {
     while !THREAD_CTX_SWITCH_DONE.load(Ordering::Relaxed) {
-        unsafe {
-            let _ = (*(&raw const THREAD_PING_SEM)).as_ref().unwrap().take(WAIT_FOREVER);
-            (*(&raw const THREAD_PONG_SEM)).as_ref().unwrap().give();
+        if let (Some(ping), Some(pong)) = (THREAD_PING_SEM.try_get(), THREAD_PONG_SEM.try_get()) {
+            let _ = ping.take(WAIT_FOREVER);
+            pong.give();
+        } else {
+            break;
         }
     }
 }
 
-unsafe extern "C" fn ctx_switch_setup(_ctx: *mut c_void) {
+fn ctx_switch_setup() {
     THREAD_CTX_SWITCH_DONE.store(false, Ordering::Relaxed);
-    unsafe {
-        *(&raw mut THREAD_PING_SEM) = Some(ove::semaphore!(0, 1));
-        *(&raw mut THREAD_PONG_SEM) = Some(ove::semaphore!(0, 1));
-        *(&raw mut THREAD_BENCH_TH) = Some(
-            ove::thread!("pong", pong_thread, Priority::Normal, 2048),
-        );
+    THREAD_PING_SEM.init(ove::semaphore!(0, 1));
+    THREAD_PONG_SEM.init(ove::semaphore!(0, 1));
+    THREAD_BENCH_TH.init(ove::thread!("pong", pong_thread, Priority::Normal, 2048));
+}
+
+fn ctx_switch_run() {
+    if let (Some(ping), Some(pong)) = (THREAD_PING_SEM.try_get(), THREAD_PONG_SEM.try_get()) {
+        ping.give();
+        let _ = pong.take(WAIT_FOREVER);
     }
 }
 
-unsafe extern "C" fn ctx_switch_run(_ctx: *mut c_void) {
-    unsafe {
-        (*(&raw const THREAD_PING_SEM)).as_ref().unwrap().give();
-        let _ = (*(&raw const THREAD_PONG_SEM)).as_ref().unwrap().take(WAIT_FOREVER);
-    }
-}
-
-unsafe extern "C" fn ctx_switch_teardown(_ctx: *mut c_void) {
+fn ctx_switch_teardown() {
     THREAD_CTX_SWITCH_DONE.store(true, Ordering::Relaxed);
-    unsafe {
-        (*(&raw const THREAD_PING_SEM)).as_ref().unwrap().give();
-        Thread::sleep_ms(10);
-        *(&raw mut THREAD_BENCH_TH) = None;
-        *(&raw mut THREAD_PING_SEM) = None;
-        *(&raw mut THREAD_PONG_SEM) = None;
+    if let Some(ping) = THREAD_PING_SEM.try_get() {
+        ping.give();
     }
+    Thread::sleep_ms(10);
+    THREAD_BENCH_TH.shutdown();
+    THREAD_PING_SEM.shutdown();
+    THREAD_PONG_SEM.shutdown();
 }
 
-unsafe extern "C" fn thread_is_enabled() -> i32 {
-    1
-}
+ove::bench_case!(static THREAD_CREATE_DESTROY: BenchCase = {
+    name: b"create_destroy\0",
+    kind: BenchType::Latency,
+    run: thread_create_destroy_run,
+    iterations: 200,
+});
 
-static THREAD_CASES: [BenchCase; 4] = [
-    BenchCase {
-        name: b"create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(thread_create_destroy_run),
-        teardown: NONE,
-        iterations: 200,
-    },
-    BenchCase {
-        name: b"yield\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(thread_yield_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"sleep_1ms\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(thread_sleep_1ms_run),
-        teardown: NONE,
-        iterations: 100,
-    },
-    BenchCase {
-        name: b"context_switch\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(ctx_switch_setup),
-        run: Some(ctx_switch_run),
-        teardown: Some(ctx_switch_teardown),
-        iterations: 500,
-    },
-];
+ove::bench_case!(static THREAD_YIELD: BenchCase = {
+    name: b"yield\0",
+    kind: BenchType::Latency,
+    run: thread_yield_run,
+});
 
-#[unsafe(no_mangle)]
-pub static bench_suite_thread: BenchSuite = BenchSuite {
-    name: b"thread\0".as_ptr() as *const _,
-    is_enabled: Some(thread_is_enabled),
-    cases: THREAD_CASES.as_ptr(),
-    case_count: THREAD_CASES.len() as u32,
-};
+ove::bench_case!(static THREAD_SLEEP_1MS: BenchCase = {
+    name: b"sleep_1ms\0",
+    kind: BenchType::Latency,
+    run: thread_sleep_1ms_run,
+    iterations: 100,
+});
 
-// ===========================================================================
-// Suite: sync
-// ===========================================================================
+ove::bench_case!(static THREAD_CTX_SWITCH: BenchCase = {
+    name: b"ctx_switch\0",
+    kind: BenchType::Latency,
+    run: ctx_switch_run,
+    setup: ctx_switch_setup,
+    teardown: ctx_switch_teardown,
+    iterations: 500,
+});
 
-static mut SYNC_MTX: Option<Mutex> = None;
-static mut SYNC_SEM: Option<Semaphore> = None;
-static mut SYNC_EVT: Option<Event> = None;
-static mut SYNC_CV: Option<CondVar> = None;
-static mut SYNC_CV_MTX: Option<Mutex> = None;
-static mut SYNC_RMTX: Option<RecursiveMutex> = None;
-static mut SYNC_CONTENTION_TH: Option<Thread> = None;
+ove::bench_suite!(
+    symbol = bench_suite_thread,
+    name = b"thread\0",
+    enabled = thread_is_enabled,
+    cases = [THREAD_CREATE_DESTROY, THREAD_YIELD, THREAD_SLEEP_1MS, THREAD_CTX_SWITCH],
+);
+
+// =========================================================================
+//  Suite: sync
+// =========================================================================
+
+ove::shared!(SYNC_MTX: Mutex);
+ove::shared!(SYNC_SEM: Semaphore);
+ove::shared!(SYNC_EVT: Event);
+ove::shared!(SYNC_CV: CondVar);
+ove::shared!(SYNC_CV_MTX: Mutex);
+ove::shared!(SYNC_RMTX: RecursiveMutex);
+ove::shared!(SYNC_CONTENTION_TH: Thread);
+ove::shared!(SYNC_EVT_TH: Thread);
+ove::shared!(SYNC_CV_TH: Thread);
+ove::shared!(SYNC_MEM_MUTEX: Mutex);
+ove::shared!(SYNC_MEM_SEM: Semaphore);
+ove::shared!(SYNC_MEM_EVENT: Event);
+ove::shared!(SYNC_MEM_CONDVAR: CondVar);
+
 static SYNC_CONTENTION_DONE: AtomicBool = AtomicBool::new(false);
 static SYNC_CONTENTION_COUNT: AtomicU32 = AtomicU32::new(0);
-static mut SYNC_EVT_TH: Option<Thread> = None;
 static SYNC_EVT_DONE: AtomicBool = AtomicBool::new(false);
-static mut SYNC_CV_TH: Option<Thread> = None;
 static SYNC_CV_DONE: AtomicBool = AtomicBool::new(false);
 
+fn sync_is_enabled() -> bool { true }
+
 // --- Mutex lock/unlock ---
-
-unsafe extern "C" fn mutex_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MTX) = Some(ove::mutex!()) };
+fn mutex_lock_unlock_setup() {
+    SYNC_MTX.init(ove::mutex!());
 }
-
-unsafe extern "C" fn mutex_lock_unlock_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const SYNC_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
-        (*(&raw const SYNC_MTX)).as_ref().unwrap().unlock();
+fn mutex_lock_unlock_run() {
+    if let Some(m) = SYNC_MTX.try_get() {
+        let _ = m.lock(WAIT_FOREVER);
+        m.unlock();
     }
 }
-
-unsafe extern "C" fn mutex_lock_unlock_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MTX) = None };
+fn mutex_lock_unlock_teardown() {
+    SYNC_MTX.shutdown();
 }
 
 // --- Mutex create/destroy ---
-
-unsafe extern "C" fn mutex_create_destroy_run(_ctx: *mut c_void) {
+fn mutex_create_destroy_run() {
     let _m = ove::mutex!();
 }
 
 // --- Mutex contention (2-thread throughput) ---
-
 fn contention_thread() {
     while !SYNC_CONTENTION_DONE.load(Ordering::Relaxed) {
-        unsafe {
-            let _ = (*(&raw const SYNC_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
-        }
-        SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
-        unsafe {
-            (*(&raw const SYNC_MTX)).as_ref().unwrap().unlock();
+        if let Some(m) = SYNC_MTX.try_get() {
+            let _ = m.lock(WAIT_FOREVER);
+            SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
+            m.unlock();
+        } else {
+            break;
         }
     }
 }
 
-unsafe extern "C" fn mutex_contention_setup(_ctx: *mut c_void) {
+fn mutex_contention_setup() {
     SYNC_CONTENTION_DONE.store(false, Ordering::Relaxed);
     SYNC_CONTENTION_COUNT.store(0, Ordering::Relaxed);
-    unsafe {
-        *(&raw mut SYNC_MTX) = Some(ove::mutex!());
-        *(&raw mut SYNC_CONTENTION_TH) = Some(
-            ove::thread!("contention", contention_thread, Priority::Normal, 2048),
-        );
+    SYNC_MTX.init(ove::mutex!());
+    SYNC_CONTENTION_TH.init(ove::thread!("contention", contention_thread, Priority::Normal, 2048));
+}
+
+fn mutex_contention_run() {
+    if let Some(m) = SYNC_MTX.try_get() {
+        let _ = m.lock(WAIT_FOREVER);
+        SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
+        m.unlock();
     }
 }
 
-unsafe extern "C" fn mutex_contention_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const SYNC_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
-    }
-    SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
-    unsafe {
-        (*(&raw const SYNC_MTX)).as_ref().unwrap().unlock();
-    }
-}
-
-unsafe extern "C" fn mutex_contention_teardown(_ctx: *mut c_void) {
+fn mutex_contention_teardown() {
     SYNC_CONTENTION_DONE.store(true, Ordering::Relaxed);
-    unsafe {
-        Thread::sleep_ms(10);
-        *(&raw mut SYNC_CONTENTION_TH) = None;
-        *(&raw mut SYNC_MTX) = None;
-    }
+    Thread::sleep_ms(10);
+    SYNC_CONTENTION_TH.shutdown();
+    SYNC_MTX.shutdown();
 }
 
 // --- Mutex memory ---
-
-static mut SYNC_MEM_MUTEX: Option<Mutex> = None;
-
-unsafe extern "C" fn mutex_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_MUTEX) = Some(ove::mutex!()) };
+fn mutex_memory_run() {
+    SYNC_MEM_MUTEX.try_init(ove::mutex!()).ok();
 }
-
-unsafe extern "C" fn mutex_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_MUTEX) = None };
+fn mutex_memory_teardown() {
+    SYNC_MEM_MUTEX.shutdown();
 }
 
 // --- Semaphore take/give ---
-
-unsafe extern "C" fn sem_take_give_setup(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_SEM) = Some(ove::semaphore!(1, 1)) };
+fn sem_take_give_setup() {
+    SYNC_SEM.init(ove::semaphore!(1, 1));
 }
-
-unsafe extern "C" fn sem_take_give_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const SYNC_SEM)).as_ref().unwrap().take(WAIT_FOREVER);
-        (*(&raw const SYNC_SEM)).as_ref().unwrap().give();
+fn sem_take_give_run() {
+    if let Some(s) = SYNC_SEM.try_get() {
+        let _ = s.take(WAIT_FOREVER);
+        s.give();
     }
 }
-
-unsafe extern "C" fn sem_take_give_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_SEM) = None };
+fn sem_take_give_teardown() {
+    SYNC_SEM.shutdown();
 }
 
 // --- Semaphore create/destroy ---
-
-unsafe extern "C" fn sem_create_destroy_run(_ctx: *mut c_void) {
+fn sem_create_destroy_run() {
     let _s = ove::semaphore!(0, 1);
 }
 
 // --- Semaphore memory ---
-
-static mut SYNC_MEM_SEM: Option<Semaphore> = None;
-
-unsafe extern "C" fn sem_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_SEM) = Some(ove::semaphore!(0, 1)) };
+fn sem_memory_run() {
+    SYNC_MEM_SEM.try_init(ove::semaphore!(0, 1)).ok();
 }
-
-unsafe extern "C" fn sem_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_SEM) = None };
+fn sem_memory_teardown() {
+    SYNC_MEM_SEM.shutdown();
 }
 
 // --- Event signal/wait ---
-
 fn evt_signaler() {
     while !SYNC_EVT_DONE.load(Ordering::Relaxed) {
-        unsafe {
-            (*(&raw const SYNC_EVT)).as_ref().unwrap().signal();
+        if let Some(e) = SYNC_EVT.try_get() {
+            e.signal();
+        } else {
+            break;
         }
         Thread::yield_now();
     }
 }
 
-unsafe extern "C" fn event_signal_wait_setup(_ctx: *mut c_void) {
+fn event_signal_wait_setup() {
     SYNC_EVT_DONE.store(false, Ordering::Relaxed);
-    unsafe {
-        *(&raw mut SYNC_EVT) = Some(ove::event!());
-        *(&raw mut SYNC_EVT_TH) = Some(
-            ove::thread!("evt_sig", evt_signaler, Priority::Normal, 1024),
-        );
+    SYNC_EVT.init(ove::event!());
+    SYNC_EVT_TH.init(ove::thread!("evt_sig", evt_signaler, Priority::Normal, 1024));
+}
+
+fn event_signal_wait_run() {
+    if let Some(e) = SYNC_EVT.try_get() {
+        let _ = e.wait(10);
     }
 }
 
-unsafe extern "C" fn event_signal_wait_run(_ctx: *mut c_void) {
-    unsafe { let _ = (*(&raw const SYNC_EVT)).as_ref().unwrap().wait(10); }
-}
-
-unsafe extern "C" fn event_signal_wait_teardown(_ctx: *mut c_void) {
+fn event_signal_wait_teardown() {
     SYNC_EVT_DONE.store(true, Ordering::Relaxed);
-    unsafe {
-        Thread::sleep_ms(10);
-        *(&raw mut SYNC_EVT_TH) = None;
-        *(&raw mut SYNC_EVT) = None;
-    }
+    Thread::sleep_ms(10);
+    SYNC_EVT_TH.shutdown();
+    SYNC_EVT.shutdown();
 }
 
 // --- Event memory ---
-
-static mut SYNC_MEM_EVENT: Option<Event> = None;
-
-unsafe extern "C" fn event_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_EVENT) = Some(ove::event!()) };
+fn event_memory_run() {
+    SYNC_MEM_EVENT.try_init(ove::event!()).ok();
 }
-
-unsafe extern "C" fn event_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_EVENT) = None };
+fn event_memory_teardown() {
+    SYNC_MEM_EVENT.shutdown();
 }
 
 // --- Condvar signal/wait ---
-
 fn cv_signaler() {
     while !SYNC_CV_DONE.load(Ordering::Relaxed) {
-        unsafe {
-            (*(&raw const SYNC_CV)).as_ref().unwrap().signal();
+        if let Some(cv) = SYNC_CV.try_get() {
+            cv.signal();
+        } else {
+            break;
         }
         Thread::yield_now();
     }
 }
 
-unsafe extern "C" fn condvar_signal_wait_setup(_ctx: *mut c_void) {
+fn condvar_signal_wait_setup() {
     SYNC_CV_DONE.store(false, Ordering::Relaxed);
-    unsafe {
-        *(&raw mut SYNC_CV_MTX) = Some(ove::mutex!());
-        *(&raw mut SYNC_CV) = Some(ove::condvar!());
-        *(&raw mut SYNC_CV_TH) = Some(
-            ove::thread!("cv_sig", cv_signaler, Priority::Normal, 1024),
-        );
+    SYNC_CV_MTX.init(ove::mutex!());
+    SYNC_CV.init(ove::condvar!());
+    SYNC_CV_TH.init(ove::thread!("cv_sig", cv_signaler, Priority::Normal, 1024));
+}
+
+fn condvar_signal_wait_run() {
+    if let (Some(mtx), Some(cv)) = (SYNC_CV_MTX.try_get(), SYNC_CV.try_get()) {
+        let _ = mtx.lock(WAIT_FOREVER);
+        let _ = cv.wait(mtx, 10);
+        mtx.unlock();
     }
 }
 
-unsafe extern "C" fn condvar_signal_wait_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const SYNC_CV_MTX)).as_ref().unwrap().lock(WAIT_FOREVER);
-        let _ = (*(&raw const SYNC_CV)).as_ref().unwrap().wait((*(&raw const SYNC_CV_MTX)).as_ref().unwrap(), 10);
-        (*(&raw const SYNC_CV_MTX)).as_ref().unwrap().unlock();
-    }
-}
-
-unsafe extern "C" fn condvar_signal_wait_teardown(_ctx: *mut c_void) {
+fn condvar_signal_wait_teardown() {
     SYNC_CV_DONE.store(true, Ordering::Relaxed);
-    unsafe {
-        (*(&raw const SYNC_CV)).as_ref().unwrap().signal();
-        Thread::sleep_ms(10);
-        *(&raw mut SYNC_CV_TH) = None;
-        *(&raw mut SYNC_CV) = None;
-        *(&raw mut SYNC_CV_MTX) = None;
+    if let Some(cv) = SYNC_CV.try_get() {
+        cv.signal();
     }
+    Thread::sleep_ms(10);
+    SYNC_CV_TH.shutdown();
+    SYNC_CV.shutdown();
+    SYNC_CV_MTX.shutdown();
 }
 
 // --- Condvar memory ---
-
-static mut SYNC_MEM_CONDVAR: Option<CondVar> = None;
-
-unsafe extern "C" fn condvar_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_CONDVAR) = Some(ove::condvar!()) };
+fn condvar_memory_run() {
+    SYNC_MEM_CONDVAR.try_init(ove::condvar!()).ok();
 }
-
-unsafe extern "C" fn condvar_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_MEM_CONDVAR) = None };
+fn condvar_memory_teardown() {
+    SYNC_MEM_CONDVAR.shutdown();
 }
 
 // --- Recursive mutex lock/unlock ---
-
-unsafe extern "C" fn rmtx_lock_unlock_setup(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_RMTX) = Some(ove::recursive_mutex!()) };
+fn rmtx_lock_unlock_setup() {
+    SYNC_RMTX.init(ove::recursive_mutex!());
 }
-
-unsafe extern "C" fn rmtx_lock_unlock_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const SYNC_RMTX)).as_ref().unwrap().lock(WAIT_FOREVER);
-        (*(&raw const SYNC_RMTX)).as_ref().unwrap().unlock();
+fn rmtx_lock_unlock_run() {
+    if let Some(rm) = SYNC_RMTX.try_get() {
+        let _ = rm.lock(WAIT_FOREVER);
+        rm.unlock();
     }
 }
-
-unsafe extern "C" fn rmtx_lock_unlock_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut SYNC_RMTX) = None };
+fn rmtx_lock_unlock_teardown() {
+    SYNC_RMTX.shutdown();
 }
 
-// --- sync suite ---
+ove::bench_case!(static MUTEX_MEMORY: BenchCase = {
+    name: b"mutex_memory\0",
+    kind: BenchType::Memory,
+    run: mutex_memory_run,
+    teardown: mutex_memory_teardown,
+});
+ove::bench_case!(static SEM_MEMORY: BenchCase = {
+    name: b"sem_memory\0",
+    kind: BenchType::Memory,
+    run: sem_memory_run,
+    teardown: sem_memory_teardown,
+});
+ove::bench_case!(static EVENT_MEMORY: BenchCase = {
+    name: b"event_memory\0",
+    kind: BenchType::Memory,
+    run: event_memory_run,
+    teardown: event_memory_teardown,
+});
+ove::bench_case!(static CONDVAR_MEMORY: BenchCase = {
+    name: b"condvar_memory\0",
+    kind: BenchType::Memory,
+    run: condvar_memory_run,
+    teardown: condvar_memory_teardown,
+});
+ove::bench_case!(static MUTEX_LOCK_UNLOCK: BenchCase = {
+    name: b"mutex_lock_unlock\0",
+    kind: BenchType::Latency,
+    run: mutex_lock_unlock_run,
+    setup: mutex_lock_unlock_setup,
+    teardown: mutex_lock_unlock_teardown,
+});
+ove::bench_case!(static MUTEX_CREATE_DESTROY: BenchCase = {
+    name: b"mutex_create_destroy\0",
+    kind: BenchType::Latency,
+    run: mutex_create_destroy_run,
+});
+ove::bench_case!(static MUTEX_CONTENTION_2T: BenchCase = {
+    name: b"mutex_contention_2t\0",
+    kind: BenchType::Throughput,
+    run: mutex_contention_run,
+    setup: mutex_contention_setup,
+    teardown: mutex_contention_teardown,
+});
+ove::bench_case!(static SEM_TAKE_GIVE: BenchCase = {
+    name: b"sem_take_give\0",
+    kind: BenchType::Latency,
+    run: sem_take_give_run,
+    setup: sem_take_give_setup,
+    teardown: sem_take_give_teardown,
+});
+ove::bench_case!(static SEM_CREATE_DESTROY: BenchCase = {
+    name: b"sem_create_destroy\0",
+    kind: BenchType::Latency,
+    run: sem_create_destroy_run,
+});
+ove::bench_case!(static EVENT_SIGNAL_WAIT: BenchCase = {
+    name: b"event_signal_wait\0",
+    kind: BenchType::Latency,
+    run: event_signal_wait_run,
+    setup: event_signal_wait_setup,
+    teardown: event_signal_wait_teardown,
+    iterations: 500,
+});
+ove::bench_case!(static CONDVAR_SIGNAL_WAIT: BenchCase = {
+    name: b"condvar_signal_wait\0",
+    kind: BenchType::Latency,
+    run: condvar_signal_wait_run,
+    setup: condvar_signal_wait_setup,
+    teardown: condvar_signal_wait_teardown,
+    iterations: 500,
+});
+ove::bench_case!(static RMTX_LOCK_UNLOCK: BenchCase = {
+    name: b"recursive_mutex_lock_unlock\0",
+    kind: BenchType::Latency,
+    run: rmtx_lock_unlock_run,
+    setup: rmtx_lock_unlock_setup,
+    teardown: rmtx_lock_unlock_teardown,
+});
 
-unsafe extern "C" fn sync_is_enabled() -> i32 {
-    1
-}
+ove::bench_suite!(
+    symbol = bench_suite_sync,
+    name = b"sync\0",
+    enabled = sync_is_enabled,
+    cases = [
+        MUTEX_MEMORY, SEM_MEMORY, EVENT_MEMORY, CONDVAR_MEMORY,
+        MUTEX_LOCK_UNLOCK, MUTEX_CREATE_DESTROY, MUTEX_CONTENTION_2T,
+        SEM_TAKE_GIVE, SEM_CREATE_DESTROY,
+        EVENT_SIGNAL_WAIT, CONDVAR_SIGNAL_WAIT,
+        RMTX_LOCK_UNLOCK,
+    ],
+);
 
-static SYNC_CASES: [BenchCase; 12] = [
-    // Memory tests first -- before thread-heavy tests affect heap state
-    BenchCase {
-        name: b"mutex_memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(mutex_memory_run),
-        teardown: Some(mutex_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"sem_memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(sem_memory_run),
-        teardown: Some(sem_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"event_memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(event_memory_run),
-        teardown: Some(event_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"condvar_memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(condvar_memory_run),
-        teardown: Some(condvar_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"mutex_lock_unlock\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(mutex_lock_unlock_setup),
-        run: Some(mutex_lock_unlock_run),
-        teardown: Some(mutex_lock_unlock_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"mutex_create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(mutex_create_destroy_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"mutex_contention_2t\0".as_ptr() as *const _,
-        bench_type: BenchType::Throughput,
-        setup: Some(mutex_contention_setup),
-        run: Some(mutex_contention_run),
-        teardown: Some(mutex_contention_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"sem_take_give\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(sem_take_give_setup),
-        run: Some(sem_take_give_run),
-        teardown: Some(sem_take_give_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"sem_create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(sem_create_destroy_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"event_signal_wait\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(event_signal_wait_setup),
-        run: Some(event_signal_wait_run),
-        teardown: Some(event_signal_wait_teardown),
-        iterations: 500,
-    },
-    BenchCase {
-        name: b"condvar_signal_wait\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(condvar_signal_wait_setup),
-        run: Some(condvar_signal_wait_run),
-        teardown: Some(condvar_signal_wait_teardown),
-        iterations: 500,
-    },
-    BenchCase {
-        name: b"recursive_mutex_lock_unlock\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(rmtx_lock_unlock_setup),
-        run: Some(rmtx_lock_unlock_run),
-        teardown: Some(rmtx_lock_unlock_teardown),
-        iterations: 0,
-    },
-];
+// =========================================================================
+//  Suite: queue
+// =========================================================================
 
-#[unsafe(no_mangle)]
-pub static bench_suite_sync: BenchSuite = BenchSuite {
-    name: b"sync\0".as_ptr() as *const _,
-    is_enabled: Some(sync_is_enabled),
-    cases: SYNC_CASES.as_ptr(),
-    case_count: SYNC_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite: queue
-// ===========================================================================
-
-static mut QUEUE_SEND_RECV_Q: Option<Queue<u32, 16>> = None;
-static mut QUEUE_THROUGHPUT_Q: Option<Queue<u32, 64>> = None;
-static mut QUEUE_PRODUCER_TH: Option<Thread> = None;
+ove::shared!(QUEUE_SEND_RECV_Q: Queue<u32, 16>);
+ove::shared!(QUEUE_THROUGHPUT_Q: Queue<u32, 64>);
+ove::shared!(QUEUE_PRODUCER_TH: Thread);
+ove::shared!(QUEUE_MEM_Q: Queue<u32, 8>);
 static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
 
-// --- send/receive latency ---
+fn queue_is_enabled() -> bool { true }
 
-unsafe extern "C" fn queue_send_recv_setup(_ctx: *mut c_void) {
-    unsafe { *(&raw mut QUEUE_SEND_RECV_Q) = Some(ove::queue!(u32, 16)) };
+fn queue_send_recv_setup() {
+    QUEUE_SEND_RECV_Q.init(ove::queue!(u32, 16));
 }
-
-unsafe extern "C" fn queue_send_recv_run(_ctx: *mut c_void) {
+fn queue_send_recv_run() {
     let val: u32 = 42;
-    unsafe {
-        let _ = (*(&raw const QUEUE_SEND_RECV_Q)).as_ref().unwrap().send(&val, WAIT_FOREVER);
-        let _ = (*(&raw const QUEUE_SEND_RECV_Q)).as_ref().unwrap().receive(WAIT_FOREVER);
+    if let Some(q) = QUEUE_SEND_RECV_Q.try_get() {
+        let _ = q.send(&val, WAIT_FOREVER);
+        let _ = q.receive(WAIT_FOREVER);
     }
 }
-
-unsafe extern "C" fn queue_send_recv_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut QUEUE_SEND_RECV_Q) = None };
+fn queue_send_recv_teardown() {
+    QUEUE_SEND_RECV_Q.shutdown();
 }
 
-// --- create/destroy ---
-
-unsafe extern "C" fn queue_create_destroy_run(_ctx: *mut c_void) {
+fn queue_create_destroy_run() {
     let _q = ove::queue!(u32, 8);
 }
-
-// --- 2-thread throughput ---
 
 fn producer_thread() {
     let mut val: u32 = 0;
     while !QUEUE_THROUGHPUT_DONE.load(Ordering::Relaxed) {
-        unsafe {
-            let _ = (*(&raw const QUEUE_THROUGHPUT_Q)).as_ref().unwrap().send(&val, WAIT_FOREVER);
+        if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
+            let _ = q.send(&val, WAIT_FOREVER);
+            val = val.wrapping_add(1);
+        } else {
+            break;
         }
-        val = val.wrapping_add(1);
     }
 }
 
-unsafe extern "C" fn queue_throughput_setup(_ctx: *mut c_void) {
+fn queue_throughput_setup() {
     QUEUE_THROUGHPUT_DONE.store(false, Ordering::Relaxed);
-    unsafe {
-        *(&raw mut QUEUE_THROUGHPUT_Q) = Some(ove::queue!(u32, 64));
-        *(&raw mut QUEUE_PRODUCER_TH) = Some(
-            ove::thread!("q_prod", producer_thread, Priority::Normal, 2048),
-        );
+    QUEUE_THROUGHPUT_Q.init(ove::queue!(u32, 64));
+    QUEUE_PRODUCER_TH.init(ove::thread!("q_prod", producer_thread, Priority::Normal, 2048));
+}
+
+fn queue_throughput_run() {
+    if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
+        let _ = q.receive(WAIT_FOREVER);
     }
 }
 
-unsafe extern "C" fn queue_throughput_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const QUEUE_THROUGHPUT_Q)).as_ref().unwrap().receive(WAIT_FOREVER);
-    }
-}
-
-unsafe extern "C" fn queue_throughput_teardown(_ctx: *mut c_void) {
+fn queue_throughput_teardown() {
     QUEUE_THROUGHPUT_DONE.store(true, Ordering::Relaxed);
-    // Drain queue so producer unblocks
-    unsafe {
-        let _ = (*(&raw const QUEUE_THROUGHPUT_Q)).as_ref().unwrap().receive(100);
-        Thread::sleep_ms(10);
-        *(&raw mut QUEUE_PRODUCER_TH) = None;
-        *(&raw mut QUEUE_THROUGHPUT_Q) = None;
+    if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
+        let _ = q.receive(100);
     }
+    Thread::sleep_ms(10);
+    QUEUE_PRODUCER_TH.shutdown();
+    QUEUE_THROUGHPUT_Q.shutdown();
 }
 
-// --- memory ---
-
-static mut QUEUE_MEM_Q: Option<Queue<u32, 8>> = None;
-
-unsafe extern "C" fn queue_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut QUEUE_MEM_Q) = Some(ove::queue!(u32, 8)) };
+fn queue_memory_run() {
+    QUEUE_MEM_Q.try_init(ove::queue!(u32, 8)).ok();
+}
+fn queue_memory_teardown() {
+    QUEUE_MEM_Q.shutdown();
 }
 
-unsafe extern "C" fn queue_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut QUEUE_MEM_Q) = None };
-}
+ove::bench_case!(static QUEUE_MEMORY: BenchCase = {
+    name: b"memory\0",
+    kind: BenchType::Memory,
+    run: queue_memory_run,
+    teardown: queue_memory_teardown,
+});
+ove::bench_case!(static QUEUE_SEND_RECEIVE: BenchCase = {
+    name: b"send_receive\0",
+    kind: BenchType::Latency,
+    run: queue_send_recv_run,
+    setup: queue_send_recv_setup,
+    teardown: queue_send_recv_teardown,
+});
+ove::bench_case!(static QUEUE_CREATE_DESTROY: BenchCase = {
+    name: b"create_destroy\0",
+    kind: BenchType::Latency,
+    run: queue_create_destroy_run,
+});
+ove::bench_case!(static QUEUE_THROUGHPUT_2T: BenchCase = {
+    name: b"throughput_2t\0",
+    kind: BenchType::Throughput,
+    run: queue_throughput_run,
+    setup: queue_throughput_setup,
+    teardown: queue_throughput_teardown,
+});
 
-// --- queue suite ---
+ove::bench_suite!(
+    symbol = bench_suite_queue,
+    name = b"queue\0",
+    enabled = queue_is_enabled,
+    cases = [QUEUE_MEMORY, QUEUE_SEND_RECEIVE, QUEUE_CREATE_DESTROY, QUEUE_THROUGHPUT_2T],
+);
 
-unsafe extern "C" fn queue_is_enabled() -> i32 {
-    1
-}
+// =========================================================================
+//  Suite: timer
+// =========================================================================
 
-static QUEUE_CASES: [BenchCase; 4] = [
-    BenchCase {
-        name: b"memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(queue_memory_run),
-        teardown: Some(queue_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"send_receive\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(queue_send_recv_setup),
-        run: Some(queue_send_recv_run),
-        teardown: Some(queue_send_recv_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(queue_create_destroy_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"throughput_2t\0".as_ptr() as *const _,
-        bench_type: BenchType::Throughput,
-        setup: Some(queue_throughput_setup),
-        run: Some(queue_throughput_run),
-        teardown: Some(queue_throughput_teardown),
-        iterations: 0,
-    },
-];
+ove::shared!(TIMER_TMR: Timer);
+ove::shared!(TIMER_MEM_TMR: Timer);
 
-#[unsafe(no_mangle)]
-pub static bench_suite_queue: BenchSuite = BenchSuite {
-    name: b"queue\0".as_ptr() as *const _,
-    is_enabled: Some(queue_is_enabled),
-    cases: QUEUE_CASES.as_ptr(),
-    case_count: QUEUE_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite: timer
-// ===========================================================================
-
-static mut TIMER_TMR: Option<Timer> = None;
+fn timer_is_enabled() -> bool { true }
 
 fn timer_dummy_cb() {}
 
-// --- create/destroy ---
-
-unsafe extern "C" fn timer_create_destroy_run(_ctx: *mut c_void) {
+fn timer_create_destroy_run() {
     let _t = ove::timer!(timer_dummy_cb, 1000, false);
 }
 
-// --- start/stop ---
-
-unsafe extern "C" fn timer_start_stop_setup(_ctx: *mut c_void) {
-    unsafe { *(&raw mut TIMER_TMR) = Some(ove::timer!(timer_dummy_cb, 1000, false)) };
+fn timer_start_stop_setup() {
+    TIMER_TMR.init(ove::timer!(timer_dummy_cb, 1000, false));
 }
-
-unsafe extern "C" fn timer_start_stop_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const TIMER_TMR)).as_ref().unwrap().start();
-        let _ = (*(&raw const TIMER_TMR)).as_ref().unwrap().stop();
+fn timer_start_stop_run() {
+    if let Some(t) = TIMER_TMR.try_get() {
+        let _ = t.start();
+        let _ = t.stop();
     }
 }
-
-unsafe extern "C" fn timer_start_stop_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut TIMER_TMR) = None };
+fn timer_start_stop_teardown() {
+    TIMER_TMR.shutdown();
 }
 
-// --- memory ---
-
-static mut TIMER_MEM_TMR: Option<Timer> = None;
-
-unsafe extern "C" fn timer_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut TIMER_MEM_TMR) = Some(ove::timer!(timer_dummy_cb, 1000, false)) };
+fn timer_memory_run() {
+    TIMER_MEM_TMR.try_init(ove::timer!(timer_dummy_cb, 1000, false)).ok();
+}
+fn timer_memory_teardown() {
+    TIMER_MEM_TMR.shutdown();
 }
 
-unsafe extern "C" fn timer_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut TIMER_MEM_TMR) = None };
+ove::bench_case!(static TIMER_MEMORY: BenchCase = {
+    name: b"memory\0",
+    kind: BenchType::Memory,
+    run: timer_memory_run,
+    teardown: timer_memory_teardown,
+});
+ove::bench_case!(static TIMER_CREATE_DESTROY: BenchCase = {
+    name: b"create_destroy\0",
+    kind: BenchType::Latency,
+    run: timer_create_destroy_run,
+});
+ove::bench_case!(static TIMER_START_STOP: BenchCase = {
+    name: b"start_stop\0",
+    kind: BenchType::Latency,
+    run: timer_start_stop_run,
+    setup: timer_start_stop_setup,
+    teardown: timer_start_stop_teardown,
+});
+
+ove::bench_suite!(
+    symbol = bench_suite_timer,
+    name = b"timer\0",
+    enabled = timer_is_enabled,
+    cases = [TIMER_MEMORY, TIMER_CREATE_DESTROY, TIMER_START_STOP],
+);
+
+// =========================================================================
+//  Suite: eventgroup
+// =========================================================================
+
+ove::shared!(EG_BENCH: EventGroup);
+ove::shared!(EG_MEM: EventGroup);
+
+fn eventgroup_is_enabled() -> bool { true }
+
+fn eg_set_get_setup() {
+    EG_BENCH.init(ove::eventgroup!());
 }
-
-// --- timer suite ---
-
-unsafe extern "C" fn timer_is_enabled() -> i32 {
-    1
-}
-
-static TIMER_CASES: [BenchCase; 3] = [
-    BenchCase {
-        name: b"memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(timer_memory_run),
-        teardown: Some(timer_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(timer_create_destroy_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"start_stop\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(timer_start_stop_setup),
-        run: Some(timer_start_stop_run),
-        teardown: Some(timer_start_stop_teardown),
-        iterations: 0,
-    },
-];
-
-#[unsafe(no_mangle)]
-pub static bench_suite_timer: BenchSuite = BenchSuite {
-    name: b"timer\0".as_ptr() as *const _,
-    is_enabled: Some(timer_is_enabled),
-    cases: TIMER_CASES.as_ptr(),
-    case_count: TIMER_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite: eventgroup
-// ===========================================================================
-
-static mut EG_BENCH: Option<EventGroup> = None;
-
-// --- set/get bits ---
-
-unsafe extern "C" fn eg_set_get_setup(_ctx: *mut c_void) {
-    unsafe { *(&raw mut EG_BENCH) = Some(ove::eventgroup!()) };
-}
-
-unsafe extern "C" fn eg_set_get_run(_ctx: *mut c_void) {
-    unsafe {
-        (*(&raw const EG_BENCH)).as_ref().unwrap().set_bits(0x01);
-        (*(&raw const EG_BENCH)).as_ref().unwrap().get_bits();
-        (*(&raw const EG_BENCH)).as_ref().unwrap().clear_bits(0x01);
+fn eg_set_get_run() {
+    if let Some(eg) = EG_BENCH.try_get() {
+        eg.set_bits(0x01);
+        eg.get_bits();
+        eg.clear_bits(0x01);
     }
 }
-
-unsafe extern "C" fn eg_set_get_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut EG_BENCH) = None };
+fn eg_set_get_teardown() {
+    EG_BENCH.shutdown();
 }
 
-// --- create/destroy ---
-
-unsafe extern "C" fn eg_create_destroy_run(_ctx: *mut c_void) {
+fn eg_create_destroy_run() {
     let _eg = ove::eventgroup!();
 }
 
-// --- memory ---
-
-static mut EG_MEM: Option<EventGroup> = None;
-
-unsafe extern "C" fn eg_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut EG_MEM) = Some(ove::eventgroup!()) };
+fn eg_memory_run() {
+    EG_MEM.try_init(ove::eventgroup!()).ok();
+}
+fn eg_memory_teardown() {
+    EG_MEM.shutdown();
 }
 
-unsafe extern "C" fn eg_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut EG_MEM) = None };
-}
+ove::bench_case!(static EG_MEMORY: BenchCase = {
+    name: b"memory\0",
+    kind: BenchType::Memory,
+    run: eg_memory_run,
+    teardown: eg_memory_teardown,
+});
+ove::bench_case!(static EG_SET_GET: BenchCase = {
+    name: b"set_get_bits\0",
+    kind: BenchType::Latency,
+    run: eg_set_get_run,
+    setup: eg_set_get_setup,
+    teardown: eg_set_get_teardown,
+});
+ove::bench_case!(static EG_CREATE_DESTROY: BenchCase = {
+    name: b"create_destroy\0",
+    kind: BenchType::Latency,
+    run: eg_create_destroy_run,
+});
 
-// --- eventgroup suite ---
+ove::bench_suite!(
+    symbol = bench_suite_eventgroup,
+    name = b"eventgroup\0",
+    enabled = eventgroup_is_enabled,
+    cases = [EG_MEMORY, EG_SET_GET, EG_CREATE_DESTROY],
+);
 
-unsafe extern "C" fn eventgroup_is_enabled() -> i32 {
-    1
-}
+// =========================================================================
+//  Suite: workqueue
+// =========================================================================
 
-static EVENTGROUP_CASES: [BenchCase; 3] = [
-    BenchCase {
-        name: b"memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(eg_memory_run),
-        teardown: Some(eg_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"set_get_bits\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(eg_set_get_setup),
-        run: Some(eg_set_get_run),
-        teardown: Some(eg_set_get_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(eg_create_destroy_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-];
-
-#[unsafe(no_mangle)]
-pub static bench_suite_eventgroup: BenchSuite = BenchSuite {
-    name: b"eventgroup\0".as_ptr() as *const _,
-    is_enabled: Some(eventgroup_is_enabled),
-    cases: EVENTGROUP_CASES.as_ptr(),
-    case_count: EVENTGROUP_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite: workqueue
-// ===========================================================================
-
-static mut WQ_BENCH: Option<Workqueue> = None;
-static mut WQ_WORK: Option<Work> = None;
+ove::shared!(WQ_BENCH: Workqueue);
+ove::shared!(WQ_WORK: Work);
+ove::shared!(WQ_WORK_SEM: Semaphore);
+ove::shared!(WQ_MEM: Workqueue);
 static WQ_WORK_EXECUTED: AtomicBool = AtomicBool::new(false);
-static mut WQ_WORK_SEM: Option<Semaphore> = None;
 
-unsafe extern "C" fn work_handler(_work: ffi::ove_work_t) {
-    WQ_WORK_EXECUTED.store(true, Ordering::Relaxed);
-    unsafe { (*(&raw const WQ_WORK_SEM)).as_ref().unwrap().give() };
-}
+fn workqueue_is_enabled() -> bool { true }
 
-// --- create/destroy ---
-
-unsafe extern "C" fn wq_create_destroy_run(_ctx: *mut c_void) {
+fn wq_create_destroy_run() {
     let _wq = ove::workqueue!("bench_wq", Priority::Normal, 2048);
 }
 
-// --- submit/execute ---
-
-unsafe extern "C" fn wq_submit_setup(_ctx: *mut c_void) {
-    unsafe {
-        *(&raw mut WQ_WORK_SEM) = Some(ove::semaphore!(0, 1));
-        *(&raw mut WQ_BENCH) = Some(ove::workqueue!("bench_wq", Priority::Normal, 2048));
-        *(&raw mut WQ_WORK) = Some(ove::work!(Some(work_handler)));
-    }
+fn wq_submit_setup() {
+    WQ_WORK_SEM.init(ove::semaphore!(0, 1));
+    WQ_BENCH.init(ove::workqueue!("bench_wq", Priority::Normal, 2048));
+    WQ_WORK.init(ove::work!(Some(work_ffi::work_handler)));
 }
 
-unsafe extern "C" fn wq_submit_run(_ctx: *mut c_void) {
+fn wq_submit_run() {
     WQ_WORK_EXECUTED.store(false, Ordering::Relaxed);
-    unsafe {
-        let _ = (*(&raw const WQ_WORK)).as_ref().unwrap().submit((*(&raw const WQ_BENCH)).as_ref().unwrap());
-        let _ = (*(&raw const WQ_WORK_SEM)).as_ref().unwrap().take(1000);
+    if let (Some(w), Some(wq), Some(sem)) =
+        (WQ_WORK.try_get(), WQ_BENCH.try_get(), WQ_WORK_SEM.try_get())
+    {
+        let _ = w.submit(wq);
+        let _ = sem.take(1000);
     }
 }
 
-unsafe extern "C" fn wq_submit_teardown(_ctx: *mut c_void) {
-    unsafe {
-        *(&raw mut WQ_WORK) = None;
-        *(&raw mut WQ_BENCH) = None;
-        *(&raw mut WQ_WORK_SEM) = None;
-    }
+fn wq_submit_teardown() {
+    WQ_WORK.shutdown();
+    WQ_BENCH.shutdown();
+    WQ_WORK_SEM.shutdown();
 }
 
-// --- memory ---
-
-static mut WQ_MEM: Option<Workqueue> = None;
-
-unsafe extern "C" fn wq_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut WQ_MEM) = Some(ove::workqueue!("bench_wq", Priority::Normal, 2048)) };
+fn wq_memory_run() {
+    WQ_MEM.try_init(ove::workqueue!("bench_wq", Priority::Normal, 2048)).ok();
+}
+fn wq_memory_teardown() {
+    WQ_MEM.shutdown();
 }
 
-unsafe extern "C" fn wq_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut WQ_MEM) = None };
-}
+ove::bench_case!(static WQ_MEMORY_C: BenchCase = {
+    name: b"memory\0",
+    kind: BenchType::Memory,
+    run: wq_memory_run,
+    teardown: wq_memory_teardown,
+});
+ove::bench_case!(static WQ_CREATE_DESTROY: BenchCase = {
+    name: b"create_destroy\0",
+    kind: BenchType::Latency,
+    run: wq_create_destroy_run,
+    iterations: 200,
+});
+ove::bench_case!(static WQ_SUBMIT_EXECUTE: BenchCase = {
+    name: b"submit_execute\0",
+    kind: BenchType::Latency,
+    run: wq_submit_run,
+    setup: wq_submit_setup,
+    teardown: wq_submit_teardown,
+    iterations: 500,
+});
 
-// --- workqueue suite ---
+ove::bench_suite!(
+    symbol = bench_suite_workqueue,
+    name = b"workqueue\0",
+    enabled = workqueue_is_enabled,
+    cases = [WQ_MEMORY_C, WQ_CREATE_DESTROY, WQ_SUBMIT_EXECUTE],
+);
 
-unsafe extern "C" fn workqueue_is_enabled() -> i32 {
-    1
-}
-
-static WORKQUEUE_CASES: [BenchCase; 3] = [
-    BenchCase {
-        name: b"memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(wq_memory_run),
-        teardown: Some(wq_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(wq_create_destroy_run),
-        teardown: NONE,
-        iterations: 200,
-    },
-    BenchCase {
-        name: b"submit_execute\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(wq_submit_setup),
-        run: Some(wq_submit_run),
-        teardown: Some(wq_submit_teardown),
-        iterations: 500,
-    },
-];
-
-#[unsafe(no_mangle)]
-pub static bench_suite_workqueue: BenchSuite = BenchSuite {
-    name: b"workqueue\0".as_ptr() as *const _,
-    is_enabled: Some(workqueue_is_enabled),
-    cases: WORKQUEUE_CASES.as_ptr(),
-    case_count: WORKQUEUE_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite: stream
-// ===========================================================================
+// =========================================================================
+//  Suite: stream
+// =========================================================================
 
 const STREAM_BUF_SIZE: usize = 256;
 const STREAM_MSG_SIZE: usize = 64;
 
-static mut STREAM_BENCH: Option<Stream<STREAM_BUF_SIZE>> = None;
-static mut STREAM_PRODUCER_TH: Option<Thread> = None;
+ove::shared!(STREAM_BENCH: Stream<STREAM_BUF_SIZE>);
+ove::shared!(STREAM_PRODUCER_TH: Thread);
+ove::shared!(STREAM_MEM: Stream<STREAM_BUF_SIZE>);
+ove::shared!(STREAM_BUFS: LvCell<([u8; STREAM_MSG_SIZE], [u8; STREAM_MSG_SIZE])>);
 static STREAM_DONE: AtomicBool = AtomicBool::new(false);
 
-static mut STREAM_TX_BUF: [u8; STREAM_MSG_SIZE] = [0u8; STREAM_MSG_SIZE];
-static mut STREAM_RX_BUF: [u8; STREAM_MSG_SIZE] = [0u8; STREAM_MSG_SIZE];
+fn stream_is_enabled() -> bool { true }
 
-// --- send/receive 64B ---
+fn stream_send_recv_setup() {
+    STREAM_BENCH.init(ove::stream!(STREAM_BUF_SIZE, 1));
+    STREAM_BUFS.get().set(([0xAA; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE]));
+}
 
-unsafe extern "C" fn stream_send_recv_setup(_ctx: *mut c_void) {
-    unsafe {
-        *(&raw mut STREAM_BENCH) = Some(ove::stream!(STREAM_BUF_SIZE, 1));
-        *(&raw mut STREAM_TX_BUF) = [0xAA; STREAM_MSG_SIZE];
+fn stream_send_recv_run() {
+    if let Some(s) = STREAM_BENCH.try_get() {
+        let cell = STREAM_BUFS.get();
+        let mut bufs = cell.get();
+        let _ = s.send(&bufs.0, WAIT_FOREVER);
+        let _ = s.receive(&mut bufs.1, WAIT_FOREVER);
+        cell.set(bufs);
     }
 }
 
-unsafe extern "C" fn stream_send_recv_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().send(&*(&raw const STREAM_TX_BUF), WAIT_FOREVER);
-        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().receive(&mut *(&raw mut STREAM_RX_BUF), WAIT_FOREVER);
-    }
+fn stream_send_recv_teardown() {
+    STREAM_BENCH.shutdown();
 }
 
-unsafe extern "C" fn stream_send_recv_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut STREAM_BENCH) = None };
-}
-
-// --- create/destroy ---
-
-unsafe extern "C" fn stream_create_destroy_run(_ctx: *mut c_void) {
+fn stream_create_destroy_run() {
     let _s = ove::stream!(STREAM_BUF_SIZE, 1);
 }
 
-// --- throughput ---
-
 fn stream_producer() {
     while !STREAM_DONE.load(Ordering::Relaxed) {
-        unsafe {
-            let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().send(&*(&raw const STREAM_TX_BUF), WAIT_FOREVER);
+        if let Some(s) = STREAM_BENCH.try_get() {
+            let bufs = STREAM_BUFS.get().get();
+            let _ = s.send(&bufs.0, WAIT_FOREVER);
+        } else {
+            break;
         }
     }
 }
 
-unsafe extern "C" fn stream_throughput_setup(_ctx: *mut c_void) {
+fn stream_throughput_setup() {
     STREAM_DONE.store(false, Ordering::Relaxed);
-    unsafe {
-        *(&raw mut STREAM_TX_BUF) = [0xBB; STREAM_MSG_SIZE];
-        *(&raw mut STREAM_BENCH) = Some(ove::stream!(STREAM_BUF_SIZE, 1));
-        *(&raw mut STREAM_PRODUCER_TH) = Some(
-            ove::thread!("strm_prod", stream_producer, Priority::Normal, 2048),
-        );
+    STREAM_BUFS.get().set(([0xBB; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE]));
+    STREAM_BENCH.init(ove::stream!(STREAM_BUF_SIZE, 1));
+    STREAM_PRODUCER_TH.init(ove::thread!("strm_prod", stream_producer, Priority::Normal, 2048));
+}
+
+fn stream_throughput_run() {
+    if let Some(s) = STREAM_BENCH.try_get() {
+        let cell = STREAM_BUFS.get();
+        let mut bufs = cell.get();
+        let _ = s.receive(&mut bufs.1, WAIT_FOREVER);
+        cell.set(bufs);
     }
 }
 
-unsafe extern "C" fn stream_throughput_run(_ctx: *mut c_void) {
-    unsafe {
-        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().receive(&mut *(&raw mut STREAM_RX_BUF), WAIT_FOREVER);
-    }
-}
-
-unsafe extern "C" fn stream_throughput_teardown(_ctx: *mut c_void) {
+fn stream_throughput_teardown() {
     STREAM_DONE.store(true, Ordering::Relaxed);
-    // Drain so producer can unblock
-    unsafe {
-        let _ = (*(&raw const STREAM_BENCH)).as_ref().unwrap().receive(&mut *(&raw mut STREAM_RX_BUF), 100);
-        Thread::sleep_ms(10);
-        *(&raw mut STREAM_PRODUCER_TH) = None;
-        *(&raw mut STREAM_BENCH) = None;
+    if let Some(s) = STREAM_BENCH.try_get() {
+        let cell = STREAM_BUFS.get();
+        let mut bufs = cell.get();
+        let _ = s.receive(&mut bufs.1, 100);
+        cell.set(bufs);
     }
+    Thread::sleep_ms(10);
+    STREAM_PRODUCER_TH.shutdown();
+    STREAM_BENCH.shutdown();
 }
 
-// --- memory ---
-
-static mut STREAM_MEM: Option<Stream<STREAM_BUF_SIZE>> = None;
-
-unsafe extern "C" fn stream_memory_run(_ctx: *mut c_void) {
-    unsafe { *(&raw mut STREAM_MEM) = Some(ove::stream!(STREAM_BUF_SIZE, 1)) };
+fn stream_memory_run() {
+    STREAM_MEM.try_init(ove::stream!(STREAM_BUF_SIZE, 1)).ok();
+}
+fn stream_memory_teardown() {
+    STREAM_MEM.shutdown();
 }
 
-unsafe extern "C" fn stream_memory_teardown(_ctx: *mut c_void) {
-    unsafe { *(&raw mut STREAM_MEM) = None };
-}
+ove::bench_case!(static STREAM_MEMORY: BenchCase = {
+    name: b"memory\0",
+    kind: BenchType::Memory,
+    run: stream_memory_run,
+    teardown: stream_memory_teardown,
+});
+ove::bench_case!(static STREAM_SEND_RECV_64B: BenchCase = {
+    name: b"send_recv_64B\0",
+    kind: BenchType::Latency,
+    run: stream_send_recv_run,
+    setup: stream_send_recv_setup,
+    teardown: stream_send_recv_teardown,
+});
+ove::bench_case!(static STREAM_CREATE_DESTROY: BenchCase = {
+    name: b"create_destroy\0",
+    kind: BenchType::Latency,
+    run: stream_create_destroy_run,
+});
+ove::bench_case!(static STREAM_THROUGHPUT: BenchCase = {
+    name: b"throughput\0",
+    kind: BenchType::Throughput,
+    run: stream_throughput_run,
+    setup: stream_throughput_setup,
+    teardown: stream_throughput_teardown,
+});
 
-// --- stream suite ---
+ove::bench_suite!(
+    symbol = bench_suite_stream,
+    name = b"stream\0",
+    enabled = stream_is_enabled,
+    cases = [STREAM_MEMORY, STREAM_SEND_RECV_64B, STREAM_CREATE_DESTROY, STREAM_THROUGHPUT],
+);
 
-unsafe extern "C" fn stream_is_enabled() -> i32 {
-    1
-}
+// =========================================================================
+//  Suite registry & runner
+// =========================================================================
 
-static STREAM_CASES: [BenchCase; 4] = [
-    BenchCase {
-        name: b"memory\0".as_ptr() as *const _,
-        bench_type: BenchType::Memory,
-        setup: NONE,
-        run: Some(stream_memory_run),
-        teardown: Some(stream_memory_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"send_recv_64B\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: Some(stream_send_recv_setup),
-        run: Some(stream_send_recv_run),
-        teardown: Some(stream_send_recv_teardown),
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"create_destroy\0".as_ptr() as *const _,
-        bench_type: BenchType::Latency,
-        setup: NONE,
-        run: Some(stream_create_destroy_run),
-        teardown: NONE,
-        iterations: 0,
-    },
-    BenchCase {
-        name: b"throughput\0".as_ptr() as *const _,
-        bench_type: BenchType::Throughput,
-        setup: Some(stream_throughput_setup),
-        run: Some(stream_throughput_run),
-        teardown: Some(stream_throughput_teardown),
-        iterations: 0,
-    },
-];
-
-#[unsafe(no_mangle)]
-pub static bench_suite_stream: BenchSuite = BenchSuite {
-    name: b"stream\0".as_ptr() as *const _,
-    is_enabled: Some(stream_is_enabled),
-    cases: STREAM_CASES.as_ptr(),
-    case_count: STREAM_CASES.len() as u32,
-};
-
-// ===========================================================================
-// Suite registry & runner
-// ===========================================================================
-
-static SUITES: [&BenchSuite; 8] = [
-    &bench_suite_time,
-    &bench_suite_thread,
-    &bench_suite_sync,
-    &bench_suite_queue,
-    &bench_suite_timer,
-    &bench_suite_eventgroup,
-    &bench_suite_workqueue,
-    &bench_suite_stream,
-];
+// We read the suite statics by reference so the harness can consume them.
+// They're declared via `ove::bench_suite!` with `#[unsafe(no_mangle)]` —
+// the C harness also links against them.
 
 fn benchmark_runner() {
     ove::log_inf!("=== oveRTOS Benchmark Suite ===");
@@ -1172,38 +917,19 @@ fn benchmark_runner() {
         option_env!("OVE_BENCH_WARMUP").unwrap_or("100")
     );
 
-    for suite in &SUITES {
-        let enabled = match suite.is_enabled {
-            Some(f) => unsafe { f() },
-            None => 0,
-        };
+    let suites: [&CBenchSuite; 8] = [
+        &bench_suite_time,
+        &bench_suite_thread,
+        &bench_suite_sync,
+        &bench_suite_queue,
+        &bench_suite_timer,
+        &bench_suite_eventgroup,
+        &bench_suite_workqueue,
+        &bench_suite_stream,
+    ];
 
-        if enabled == 0 {
-            // Log suite skipped -- extract the name for the message
-            ove::log_inf!("Suite: SKIPPED (module disabled)");
-            continue;
-        }
-
-        unsafe { bench_print_header(suite.name) };
-
-        for c in 0..suite.case_count {
-            let bc = unsafe { &*suite.cases.add(c as usize) };
-            let mut result = BenchResult {
-                min_ns: 0,
-                max_ns: 0,
-                total_ns: 0,
-                count: 0,
-                ops_per_sec: 0,
-                heap_delta: -1,
-            };
-
-            unsafe {
-                bench_run_case(bc as *const BenchCase, &mut result as *mut BenchResult);
-                bench_print_result(bc as *const BenchCase, &result as *const BenchResult);
-            }
-        }
-
-        unsafe { bench_print_footer() };
+    for suite in &suites {
+        ove::bench::run_suite(suite);
     }
 
     ove::log_inf!("=== Benchmark complete ===");
@@ -1215,6 +941,9 @@ fn benchmark_runner() {
 
 fn app_main() {
     ove::log_inf!("Benchmark app: init");
+
+    // Stream I/O scratch buffers shared between test helpers.
+    STREAM_BUFS.init(LvCell::new(([0u8; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE])));
 
     let _runner = ove::thread!("bench_run", benchmark_runner, Priority::Normal, 8192);
 

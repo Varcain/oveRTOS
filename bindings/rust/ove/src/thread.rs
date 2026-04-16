@@ -353,3 +353,8 @@ impl Drop for Thread {
         }
     }
 }
+
+// SAFETY: RTOS thread handles are shareable across threads once created.
+// Access to the handle is synchronized by the RTOS itself.
+unsafe impl Send for Thread {}
+unsafe impl Sync for Thread {}

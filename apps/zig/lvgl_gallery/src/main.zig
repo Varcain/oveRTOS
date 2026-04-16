@@ -32,15 +32,15 @@ var canvas_buf: [64 * 64 * 4]u8 = undefined;
 var ui_timer: Timer = undefined;
 
 var g_page: i32 = 0;
-var g_content: ?*ove.ffi.lv_obj_t = null;
-var g_title: ?*ove.ffi.lv_obj_t = null;
+var g_content: ?lvgl.Obj = null;
+var g_title: ?lvgl.Label = null;
 
 var bar_live: bool = false;
 var arc_live: bool = false;
 var led_live: bool = false;
 var chart_live: bool = false;
 
-extern const badge: anyopaque;
+extern const badge: lvgl.ImageDsc;
 
 // ---------------------------------------------------------------------------
 // UI timer
@@ -59,20 +59,20 @@ fn uiTimerCallback() void {
 }
 
 // ---------------------------------------------------------------------------
-// Event callbacks
+// Event handlers — safe Zig fns; the binding generates the C trampolines
 // ---------------------------------------------------------------------------
 
-fn onPrev(_: ?*ove.ffi.lv_event_t) callconv(.c) void {
+fn onPrev(_: lvgl.EventCtx) void {
     g_page = @mod(g_page + N_PAGES - 1, N_PAGES);
     rebuildPage();
 }
 
-fn onNext(_: ?*ove.ffi.lv_event_t) callconv(.c) void {
+fn onNext(_: lvgl.EventCtx) void {
     g_page = @mod(g_page + 1, N_PAGES);
     rebuildPage();
 }
 
-fn onAlertClick(_: ?*ove.ffi.lv_event_t) callconv(.c) void {
+fn onAlertClick(_: lvgl.EventCtx) void {
     const mbox = lvgl.Msgbox.createModal();
     _ = mbox.addTitle("Hello").addText("Zig msgbox from gallery.").addCloseButton();
 }
@@ -85,7 +85,7 @@ fn pLabel(c: lvgl.Obj) void {
     _ = lvgl.Label.create(c).text("Hello, oveRTOS!").font(lvgl.fontMontserrat32()).color(lvgl.colorWhite()).center();
     const lbl2 = lvgl.Label.create(c).color(lvgl.colorHex(0x888888)).font(lvgl.fontMontserrat14());
     _ = lvgl.labelBindText(lbl2, &counter_state, "Tick: %d");
-    ove.ffi.lv_obj_align(lbl2.obj, ove.ffi.LV_ALIGN_BOTTOM_MID, 0, -16);
+    _ = lbl2.alignTo(lvgl.ALIGN_BOTTOM_MID, 0, -16);
 }
 
 fn pButton(c: lvgl.Obj) void {
@@ -94,35 +94,48 @@ fn pButton(c: lvgl.Obj) void {
     _ = btn.center();
 }
 
-fn pSwitch(c: lvgl.Obj) void { _ = lvgl.Switch.create(c).checked(true).center(); }
-fn pCheckbox(c: lvgl.Obj) void { _ = lvgl.Checkbox.create(c).text("Enable option").checked(true).textColor(lvgl.colorWhite()).center(); }
+fn pSwitch(c: lvgl.Obj) void {
+    _ = lvgl.Switch.create(c).checked(true).center();
+}
+fn pCheckbox(c: lvgl.Obj) void {
+    _ = lvgl.Checkbox.create(c).text("Enable option").checked(true).textColor(lvgl.colorWhite()).center();
+}
 
 fn pBar(c: lvgl.Obj) void {
-    bar_w = lvgl.Bar.create(c).size(300, 20).range(0, 100).indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_BLUE)).radius(10).center();
+    bar_w = lvgl.Bar.create(c).size(300, 20).range(0, 100).indicatorColor(lvgl.paletteMain(lvgl.PALETTE_BLUE)).radius(10).center();
     bar_live = true;
 }
 
-fn pSlider(c: lvgl.Obj) void { _ = lvgl.Slider.create(c).size(300, 20).range(0, 100).value(50).indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_GREEN)).center(); }
+fn pSlider(c: lvgl.Obj) void {
+    _ = lvgl.Slider.create(c).size(300, 20).range(0, 100).value(50).indicatorColor(lvgl.paletteMain(lvgl.PALETTE_GREEN)).center();
+}
 
 fn pArc(c: lvgl.Obj) void {
-    arc_w = lvgl.Arc.create(c).size(120, 120).range(0, 100).value(40).indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_ORANGE)).center();
+    arc_w = lvgl.Arc.create(c).size(120, 120).range(0, 100).value(40).indicatorColor(lvgl.paletteMain(lvgl.PALETTE_ORANGE)).center();
     arc_live = true;
 }
 
-fn pSpinner(c: lvgl.Obj) void { _ = lvgl.Spinner.create(c).size(80, 80).animParams(1000, 60).center(); }
+fn pSpinner(c: lvgl.Obj) void {
+    _ = lvgl.Spinner.create(c).size(80, 80).animParams(1000, 60).center();
+}
 
 fn pLed(c: lvgl.Obj) void {
-    led_w = lvgl.Led.create(c).size(60, 60).color(lvgl.paletteMain(ove.ffi.LV_PALETTE_RED)).center();
+    led_w = lvgl.Led.create(c).size(60, 60).color(lvgl.paletteMain(lvgl.PALETTE_RED)).center();
     led_live = true;
 }
 
-fn pDropdown(c: lvgl.Obj) void { _ = lvgl.Dropdown.create(c).optionsStatic("Red\nGreen\nBlue\nYellow").selected(2).width(200).center(); }
-fn pRoller(c: lvgl.Obj) void { _ = lvgl.Roller.create(c).options("Mon\nTue\nWed\nThu\nFri\nSat\nSun", lvgl.ROLLER_MODE_NORMAL).visibleRowCount(4).width(140).center(); }
-fn pSpinbox(c: lvgl.Obj) void { _ = lvgl.Spinbox.create(c).width(200).digitFormat(4, 2).range(-9999, 9999).step(1).value(42).center(); }
+fn pDropdown(c: lvgl.Obj) void {
+    _ = lvgl.Dropdown.create(c).optionsStatic("Red\nGreen\nBlue\nYellow").selected(2).width(200).center();
+}
+fn pRoller(c: lvgl.Obj) void {
+    _ = lvgl.Roller.create(c).options("Mon\nTue\nWed\nThu\nFri\nSat\nSun", lvgl.ROLLER_MODE_NORMAL).visibleRowCount(4).width(140).center();
+}
+fn pSpinbox(c: lvgl.Obj) void {
+    _ = lvgl.Spinbox.create(c).width(200).digitFormat(4, 2).range(-9999, 9999).step(1).value(42).center();
+}
 
 fn pTextarea(c: lvgl.Obj) void {
-    ove.ffi.lv_obj_set_flex_flow(c.obj, ove.ffi.LV_FLEX_FLOW_COLUMN);
-    ove.ffi.lv_obj_set_style_pad_row(c.obj, 8, 0);
+    _ = c.flexFlow(lvgl.FLEX_FLOW_COLUMN).padRow(8);
     const ta = lvgl.Textarea.create(c).oneLine(true).placeholder("Type here...").maxLength(40).width(400);
     _ = lvgl.Keyboard.create(c).size(400, 140).attach(ta);
 }
@@ -153,25 +166,32 @@ fn pList(c: lvgl.Obj) void {
     _ = l.center();
 }
 
-fn pImage(c: lvgl.Obj) void { _ = lvgl.Image.create(c).src(&badge).center(); }
+fn pImage(c: lvgl.Obj) void {
+    _ = lvgl.imageSource(lvgl.Image.create(c), lvgl.ImageSrc.fromDsc(&badge)).center();
+}
 
 fn pCanvas(c: lvgl.Obj) void {
     const canvas = lvgl.Canvas.create(c).size(64, 64);
     _ = canvas.buffer(&canvas_buf, 64, 64, ove.ffi.LV_COLOR_FORMAT_XRGB8888);
     _ = canvas.fillBg(lvgl.colorHex(0x202020), 255);
     var y: i32 = 0;
-    while (y < 64) : (y += 1) { var x: i32 = 0; while (x < 64) : (x += 1) {
-        _ = canvas.setPixel(x, y, lvgl.colorMake(@intCast(@mod(x * 4, 256)), @intCast(@mod(y * 4, 256)), 128));
-    }}
+    while (y < 64) : (y += 1) {
+        var x: i32 = 0;
+        while (x < 64) : (x += 1) {
+            _ = canvas.setPixel(x, y, lvgl.colorMake(@intCast(@mod(x * 4, 256)), @intCast(@mod(y * 4, 256)), 128));
+        }
+    }
     _ = canvas.center();
 }
 
-fn pCalendar(c: lvgl.Obj) void { _ = lvgl.Calendar.create(c).size(240, 240).today(2026, 4, 13).showed(2026, 4).center(); }
+fn pCalendar(c: lvgl.Obj) void {
+    _ = lvgl.Calendar.create(c).size(240, 240).today(2026, 4, 13).showed(2026, 4).center();
+}
 
 fn pMsgbox(c: lvgl.Obj) void {
     const btn = lvgl.Button.create(c).size(200, 48);
     _ = lvgl.Label.create(btn).text("Show Msgbox").center();
-    _ = ove.ffi.lv_obj_add_event_cb(btn.obj, onAlertClick, ove.ffi.LV_EVENT_CLICKED, null);
+    _ = btn.onClicked(onAlertClick);
     _ = btn.center();
 }
 
@@ -196,28 +216,28 @@ fn pTabview(c: lvgl.Obj) void {
 const PageEntry = struct { name: [*:0]const u8, build: *const fn (lvgl.Obj) void };
 
 const pages = [_]PageEntry{
-    .{ .name = "Label",    .build = pLabel    },
-    .{ .name = "Button",   .build = pButton   },
-    .{ .name = "Switch",   .build = pSwitch   },
+    .{ .name = "Label", .build = pLabel },
+    .{ .name = "Button", .build = pButton },
+    .{ .name = "Switch", .build = pSwitch },
     .{ .name = "Checkbox", .build = pCheckbox },
-    .{ .name = "Bar",      .build = pBar      },
-    .{ .name = "Slider",   .build = pSlider   },
-    .{ .name = "Arc",      .build = pArc      },
-    .{ .name = "Spinner",  .build = pSpinner  },
-    .{ .name = "Led",      .build = pLed      },
+    .{ .name = "Bar", .build = pBar },
+    .{ .name = "Slider", .build = pSlider },
+    .{ .name = "Arc", .build = pArc },
+    .{ .name = "Spinner", .build = pSpinner },
+    .{ .name = "Led", .build = pLed },
     .{ .name = "Dropdown", .build = pDropdown },
-    .{ .name = "Roller",   .build = pRoller   },
-    .{ .name = "Spinbox",  .build = pSpinbox  },
+    .{ .name = "Roller", .build = pRoller },
+    .{ .name = "Spinbox", .build = pSpinbox },
     .{ .name = "Text+Kbd", .build = pTextarea },
-    .{ .name = "Chart",    .build = pChart    },
-    .{ .name = "Table",    .build = pTable    },
-    .{ .name = "List",     .build = pList     },
-    .{ .name = "Image",    .build = pImage    },
-    .{ .name = "Canvas",   .build = pCanvas   },
+    .{ .name = "Chart", .build = pChart },
+    .{ .name = "Table", .build = pTable },
+    .{ .name = "List", .build = pList },
+    .{ .name = "Image", .build = pImage },
+    .{ .name = "Canvas", .build = pCanvas },
     .{ .name = "Calendar", .build = pCalendar },
-    .{ .name = "Msgbox",   .build = pMsgbox   },
-    .{ .name = "Box",      .build = pBox      },
-    .{ .name = "Tabview",  .build = pTabview  },
+    .{ .name = "Msgbox", .build = pMsgbox },
+    .{ .name = "Box", .build = pBox },
+    .{ .name = "Tabview", .build = pTabview },
 };
 
 const N_PAGES: i32 = @intCast(pages.len);
@@ -236,17 +256,17 @@ fn clearLiveWidgets() void {
 fn rebuildPage() void {
     clearLiveWidgets();
 
-    if (g_content) |c| ove.ffi.lv_obj_clean(c);
+    if (g_content) |c| c.clean();
 
     const page: usize = @intCast(g_page);
-    if (g_content) |c| pages[page].build(.{ .obj = c });
+    if (g_content) |c| pages[page].build(c);
 
     if (g_title) |t| {
         var buf: [48]u8 = undefined;
-        _ = std.fmt.bufPrint(&buf, "{s} ({d}/{d})\x00", .{
+        const slice = std.fmt.bufPrint(&buf, "{s} ({d}/{d})\x00", .{
             pages[page].name, g_page + 1, N_PAGES,
-        }) catch {};
-        ove.ffi.lv_label_set_text(t, @ptrCast(&buf));
+        }) catch return;
+        _ = t.text(@ptrCast(slice.ptr));
     }
 }
 
@@ -256,40 +276,40 @@ fn rebuildPage() void {
 
 fn createUi() void {
     const screen = lvgl.screenActive();
-    ove.ffi.lv_obj_set_style_bg_color(screen.obj, ove.ffi.lv_color_black(), 0);
-    ove.ffi.lv_obj_set_style_bg_opa(screen.obj, 255, 0);
-    ove.ffi.lv_obj_set_flex_flow(screen.obj, ove.ffi.LV_FLEX_FLOW_COLUMN);
-    ove.ffi.lv_obj_set_style_pad_all(screen.obj, 0, 0);
-    ove.ffi.lv_obj_set_style_pad_row(screen.obj, 0, 0);
+    _ = screen.bgColor(lvgl.colorBlack())
+        .bgOpa(lvgl.OPA_COVER)
+        .flexFlow(lvgl.FLEX_FLOW_COLUMN)
+        .padAll(0)
+        .padRow(0);
 
     // Nav bar
-    const nav = lvgl.Box.create(screen).size(480, 40).bgColor(lvgl.colorHex(0x1A237E)).bgOpa(255).radius(0);
-    ove.ffi.lv_obj_set_flex_flow(nav.obj, ove.ffi.LV_FLEX_FLOW_ROW);
-    ove.ffi.lv_obj_set_flex_align(nav.obj, 3, 2, 2); // SPACE_BETWEEN, CENTER, CENTER
-    ove.ffi.lv_obj_set_style_pad_left(nav.obj, 4, 0);
-    ove.ffi.lv_obj_set_style_pad_right(nav.obj, 4, 0);
+    const nav = lvgl.Box.create(screen).size(480, 40)
+        .bgColor(lvgl.colorHex(0x1A237E)).bgOpa(255).radius(0)
+        .flexFlow(lvgl.FLEX_FLOW_ROW)
+        .flexAlign(lvgl.FLEX_ALIGN_SPACE_BETWEEN, lvgl.FLEX_ALIGN_CENTER, lvgl.FLEX_ALIGN_CENTER)
+        .padLeft(4)
+        .padRight(4);
 
     const prev = lvgl.Button.create(nav).size(40, 32);
     _ = lvgl.Label.create(prev).text("<").center();
-    _ = ove.ffi.lv_obj_add_event_cb(prev.obj, onPrev, ove.ffi.LV_EVENT_CLICKED, null);
+    _ = prev.onClicked(onPrev);
 
-    const title = lvgl.Label.create(nav).text("").color(lvgl.colorWhite()).font(lvgl.fontMontserrat14());
-    ove.ffi.lv_obj_set_flex_grow(title.obj, 1);
-    ove.ffi.lv_obj_set_style_text_align(title.obj, 2, 0); // CENTER
-    g_title = title.obj;
+    const title = lvgl.Label.create(nav).text("").color(lvgl.colorWhite()).font(lvgl.fontMontserrat14())
+        .flexGrow(1)
+        .textAlign(2, lvgl.PART_MAIN); // CENTER
+    g_title = title;
 
     const next = lvgl.Button.create(nav).size(40, 32);
     _ = lvgl.Label.create(next).text(">").center();
-    _ = ove.ffi.lv_obj_add_event_cb(next.obj, onNext, ove.ffi.LV_EVENT_CLICKED, null);
+    _ = next.onClicked(onNext);
 
     // Content area
-    const content = lvgl.Box.create(screen);
-    ove.ffi.lv_obj_set_size(content.obj, 480, 232);
-    ove.ffi.lv_obj_set_flex_grow(content.obj, 1);
-    ove.ffi.lv_obj_set_style_bg_opa(content.obj, 0, 0);
-    ove.ffi.lv_obj_set_style_border_width(content.obj, 0, 0);
-    ove.ffi.lv_obj_set_style_pad_all(content.obj, 8, 0);
-    g_content = content.obj;
+    const content = lvgl.Box.create(screen).size(480, 232)
+        .flexGrow(1)
+        .bgOpa(0)
+        .borderWidth(0)
+        .padAll(8);
+    g_content = .{ .obj = content.obj };
 
     counter_state = lvgl.State(i32).init_(0);
 
@@ -308,7 +328,12 @@ fn graphicsEntry() void {
         _ = ove.ffi.ove_time_get_us(&now_us);
         const elapsed_ms: u32 = @intCast((now_us - last_us) / 1000);
         last_us = now_us;
-        { const guard = lvgl.lock(); defer guard.deinit(); lvgl.tick(elapsed_ms); lvgl.handler(); }
+        {
+            const guard = lvgl.lock();
+            defer guard.deinit();
+            lvgl.tick(elapsed_ms);
+            lvgl.handler();
+        }
         Thread.sleepMs(30);
     }
 }
@@ -320,15 +345,33 @@ fn graphicsEntry() void {
 fn appMain() void {
     ove.log.inf("LVGL gallery (Zig): init", .{});
 
-    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch { ove.log.err("Failed to spawn graphics", .{}); return; };
-    ui_timer = Timer.create(uiTimerCallback, 100, false) catch { ove.log.err("Timer create fail", .{}); return; };
-    lvgl.init() catch { ove.log.err("LVGL init fail", .{}); return; };
-    { const guard = lvgl.lock(); defer guard.deinit(); createUi(); }
+    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
+        ove.log.err("Failed to spawn graphics", .{});
+        return;
+    };
+    ui_timer = Timer.create(uiTimerCallback, 100, false) catch {
+        ove.log.err("Timer create fail", .{});
+        return;
+    };
+    lvgl.init() catch {
+        ove.log.err("LVGL init fail", .{});
+        return;
+    };
+    {
+        const guard = lvgl.lock();
+        defer guard.deinit();
+        createUi();
+    }
     ove.log.inf("LVGL widgets created", .{});
-    ui_timer.start() catch { ove.log.err("Timer start fail", .{}); return; };
+    ui_timer.start() catch {
+        ove.log.err("Timer start fail", .{});
+        return;
+    };
 
     ove.log.inf("LVGL gallery (Zig): ready", .{});
     ove.run();
 }
 
-comptime { ove.exportMain(appMain); }
+comptime {
+    ove.exportMain(appMain);
+}

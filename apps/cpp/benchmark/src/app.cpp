@@ -10,15 +10,12 @@
  * oveRTOS C++ Benchmark Application
  *
  * Measures latency, throughput, and memory usage of all RTOS abstractions
- * using C++ bindings where they add type safety. Output is formatted ASCII
- * tables via OVE_LOG (shared C harness).
+ * through the safe C++ binding layer. Output is formatted ASCII tables
+ * via OVE_LOG (shared C harness).
  */
 
 #include <ove/ove.hpp>
-
-extern "C" {
-#include "benchmark.h"
-}
+#include <ove/bench.hpp>
 
 /* --- Suite registry --- */
 
@@ -48,25 +45,7 @@ static void benchmark_runner(void *arg)
 		    CONFIG_OVE_BENCHMARK_WARMUP);
 
 	for (unsigned int s = 0; s < SUITE_COUNT; s++) {
-		const bench_suite_t *suite = suites[s];
-
-		if (!suite->is_enabled()) {
-			OVE_LOG_INF("Suite '%s': SKIPPED (module disabled)",
-				    suite->name);
-			continue;
-		}
-
-		bench_print_header(suite->name);
-
-		for (unsigned int c = 0; c < suite->case_count; c++) {
-			const bench_case_t *bc = &suite->cases[c];
-			bench_result_t result;
-
-			bench_run_case(bc, &result);
-			bench_print_result(bc, &result);
-		}
-
-		bench_print_footer();
+		ove::bench::run_suite(*suites[s]);
 	}
 
 	OVE_LOG_INF("=== Benchmark complete ===");

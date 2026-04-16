@@ -182,6 +182,9 @@ pub const pm = @import("pm.zig");
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
 
+/// Safe wrappers for the shared C benchmark harness (used by `apps/zig/benchmark`).
+pub const bench = @import("bench.zig");
+
 /// Write a message to the oveRTOS console.
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     log.print(fmt, args);

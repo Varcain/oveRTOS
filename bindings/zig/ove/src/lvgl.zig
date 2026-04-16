@@ -11,6 +11,7 @@
 // cimport) because lvgl/lvgl.h is only available when LVGL is enabled.
 // The oveRTOS LVGL C API (ove_lvgl_*) is imported from the core c.zig.
 
+const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
@@ -501,6 +502,46 @@ pub fn ObjectMixin(comptime Self: type) type {
             return self;
         }
 
+        /// Set the flex grow factor for this child (0 disables growing). Returns `self`.
+        pub fn flexGrow(self: Self, g: u8) Self {
+            c.lv_obj_set_flex_grow(self.obj, g);
+            return self;
+        }
+
+        /// Switch the layout engine on this object (None / Flex / Grid). Returns `self`.
+        pub fn layout(self: Self, kind: u32) Self {
+            c.lv_obj_set_layout(self.obj, kind);
+            return self;
+        }
+
+        /// Scroll the object so `y` is visible. `anim` enables animated scrolling. Returns `self`.
+        pub fn scrollToY(self: Self, y: i32, anim: bool) Self {
+            c.lv_obj_scroll_to_y(self.obj, y, anim);
+            return self;
+        }
+
+        /// Force a layout recomputation (needed before calling `contentWidth`/`scrollBottom`). Returns `self`.
+        pub fn updateLayout(self: Self) Self {
+            c.lv_obj_update_layout(self.obj);
+            return self;
+        }
+
+        /// Return the inner content width (excludes padding/scrollbars).
+        pub fn getContentWidth(self: Self) i32 {
+            return c.lv_obj_get_content_width(self.obj);
+        }
+
+        /// Return the remaining downward scroll distance.
+        pub fn getScrollBottom(self: Self) i32 {
+            return c.lv_obj_get_scroll_bottom(self.obj);
+        }
+
+        /// Remove all inline/reused styles from this object. Returns `self`.
+        pub fn removeStyleAll(self: Self) Self {
+            c.lv_obj_remove_style_all(self.obj);
+            return self;
+        }
+
         /// Configure this object as a grid container.
         ///
         /// Both `cols` and `rows` must terminate with `GRID_TEMPLATE_LAST`.
@@ -604,6 +645,106 @@ pub fn StyleMixin(comptime Self: type) type {
             c.lv_obj_set_style_text_font(self.obj, f, c.LV_PART_MAIN);
             return self;
         }
+
+        // ---- Per-side paddings + row/column gaps ----
+        pub fn padTop(self: Self, p: i32) Self {
+            c.lv_obj_set_style_pad_top(self.obj, p, c.LV_PART_MAIN);
+            return self;
+        }
+        pub fn padBottom(self: Self, p: i32) Self {
+            c.lv_obj_set_style_pad_bottom(self.obj, p, c.LV_PART_MAIN);
+            return self;
+        }
+        pub fn padLeft(self: Self, p: i32) Self {
+            c.lv_obj_set_style_pad_left(self.obj, p, c.LV_PART_MAIN);
+            return self;
+        }
+        pub fn padRight(self: Self, p: i32) Self {
+            c.lv_obj_set_style_pad_right(self.obj, p, c.LV_PART_MAIN);
+            return self;
+        }
+        pub fn padRow(self: Self, p: i32) Self {
+            c.lv_obj_set_style_pad_row(self.obj, p, c.LV_PART_MAIN);
+            return self;
+        }
+        pub fn padColumn(self: Self, p: i32) Self {
+            c.lv_obj_set_style_pad_column(self.obj, p, c.LV_PART_MAIN);
+            return self;
+        }
+
+        // ---- Text alignment + overall opacity ----
+        pub fn textAlign(self: Self, a: u32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_text_align(self.obj, @intCast(a), selector);
+            return self;
+        }
+        pub fn setOpa(self: Self, opa: c.lv_opa_t) Self {
+            c.lv_obj_set_style_opa(self.obj, opa, c.LV_PART_MAIN);
+            return self;
+        }
+
+        // ---- Selector variants (for styling non-MAIN parts) ----
+        pub fn bgColorSel(self: Self, col: Color, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_bg_color(self.obj, col, selector);
+            return self;
+        }
+        pub fn bgOpaSel(self: Self, opa: c.lv_opa_t, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_bg_opa(self.obj, opa, selector);
+            return self;
+        }
+        pub fn borderColorSel(self: Self, col: Color, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_border_color(self.obj, col, selector);
+            return self;
+        }
+        pub fn textColorSel(self: Self, col: Color, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_text_color(self.obj, col, selector);
+            return self;
+        }
+        pub fn arcColorSel(self: Self, col: Color, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_arc_color(self.obj, col, selector);
+            return self;
+        }
+        pub fn arcWidth(self: Self, w: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_arc_width(self.obj, w, selector);
+            return self;
+        }
+        pub fn arcOpa(self: Self, opa: c.lv_opa_t, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_arc_opa(self.obj, opa, selector);
+            return self;
+        }
+        pub fn arcRounded(self: Self, rounded: bool, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_arc_rounded(self.obj, rounded, selector);
+            return self;
+        }
+
+        // ---- Advanced layout/compositing styles ----
+        pub fn translateY(self: Self, v: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_translate_y(self.obj, v, selector);
+            return self;
+        }
+        pub fn marginTop(self: Self, v: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_margin_top(self.obj, v, selector);
+            return self;
+        }
+        pub fn marginBottom(self: Self, v: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_margin_bottom(self.obj, v, selector);
+            return self;
+        }
+        pub fn marginLeft(self: Self, v: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_margin_left(self.obj, v, selector);
+            return self;
+        }
+        pub fn marginRight(self: Self, v: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_margin_right(self.obj, v, selector);
+            return self;
+        }
+        pub fn maxHeight(self: Self, v: i32, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_max_height(self.obj, v, selector);
+            return self;
+        }
+        pub fn opaLayered(self: Self, opa: c.lv_opa_t, selector: c.lv_style_selector_t) Self {
+            c.lv_obj_set_style_opa_layered(self.obj, opa, selector);
+            return self;
+        }
     };
 }
 
@@ -611,26 +752,96 @@ pub fn StyleMixin(comptime Self: type) type {
 //  EventMixin — event callbacks
 // =========================================================================
 
+/// Borrowed view of a live `lv_event_t *`. Only valid inside an event callback.
+pub const EventCtx = struct {
+    raw: *c.lv_event_t,
+
+    pub fn target(self: EventCtx) Obj {
+        return .{ .obj = @ptrCast(c.lv_event_get_target(self.raw).?) };
+    }
+    pub fn currentTarget(self: EventCtx) Obj {
+        return .{ .obj = @ptrCast(c.lv_event_get_current_target(self.raw).?) };
+    }
+    pub fn code(self: EventCtx) c.lv_event_code_t {
+        return c.lv_event_get_code(self.raw);
+    }
+};
+
 /// Mixin providing event-callback registration helpers.
 ///
 /// All methods use a fluent (builder) pattern: they return `Self` so calls
 /// can be chained. `Self` must have an `obj: *lv_obj_t` field.
 pub fn EventMixin(comptime Self: type) type {
     return struct {
-        /// Register an event callback for any LVGL event code. Returns `self`.
+        /// **Legacy escape hatch** — register a raw `lv_event_cb_t`.
         ///
-        /// `user_data` is forwarded to `cb` via `lv_event_get_user_data()`.
+        /// Prefer [`onFn`] or [`onFnWith`] for safe Zig handlers. Retained for
+        /// callbacks already written with `callconv(.c)` signatures.
         pub fn on(self: Self, code: c.lv_event_code_t, cb: c.lv_event_cb_t, user_data: ?*anyopaque) Self {
-            c.lv_obj_add_event_cb(self.obj, cb, code, user_data);
+            _ = c.lv_obj_add_event_cb(self.obj, cb, code, user_data);
             return self;
         }
 
-        /// Register a callback fired on `LV_EVENT_CLICKED`. Returns `self`.
+        /// Register a safe Zig handler for an arbitrary event code.
+        ///
+        /// The handler receives an [`EventCtx`] borrow; no `callconv(.c)` or
+        /// pointer-casting is required on the caller's side — comptime
+        /// generates the C trampoline.
+        pub fn onFn(self: Self, code: c.lv_event_code_t, comptime user_fn: fn (EventCtx) void) Self {
+            const Tramp = struct {
+                fn invoke(e: ?*c.lv_event_t) callconv(.c) void {
+                    user_fn(.{ .raw = e.? });
+                }
+            };
+            _ = c.lv_obj_add_event_cb(self.obj, &Tramp.invoke, code, null);
+            return self;
+        }
+
+        /// Register a stateful safe handler that receives a typed context pointer.
+        pub fn onFnWith(
+            self: Self,
+            code: c.lv_event_code_t,
+            comptime Context: type,
+            ctx: *Context,
+            comptime user_fn: fn (*Context, EventCtx) void,
+        ) Self {
+            const Tramp = struct {
+                fn invoke(e: ?*c.lv_event_t) callconv(.c) void {
+                    const ud = c.lv_event_get_user_data(e);
+                    const p: *Context = @ptrCast(@alignCast(ud));
+                    user_fn(p, .{ .raw = e.? });
+                }
+            };
+            _ = c.lv_obj_add_event_cb(self.obj, &Tramp.invoke, code, @ptrCast(ctx));
+            return self;
+        }
+
+        /// Register a safe click handler.
+        pub fn onClicked(self: Self, comptime user_fn: fn (EventCtx) void) Self {
+            return self.onFn(c.LV_EVENT_CLICKED, user_fn);
+        }
+
+        /// Register a stateful safe click handler with a typed context pointer.
+        pub fn onClickedWith(
+            self: Self,
+            comptime Context: type,
+            ctx: *Context,
+            comptime user_fn: fn (*Context, EventCtx) void,
+        ) Self {
+            return self.onFnWith(c.LV_EVENT_CLICKED, Context, ctx, user_fn);
+        }
+
+        /// Register a safe value-changed handler.
+        pub fn onValueChange(self: Self, comptime user_fn: fn (EventCtx) void) Self {
+            return self.onFn(c.LV_EVENT_VALUE_CHANGED, user_fn);
+        }
+
+        /// **Legacy escape hatch** — raw click callback. Prefer `onClicked`.
         pub fn onClick(self: Self, cb: c.lv_event_cb_t, user_data: ?*anyopaque) Self {
             return self.on(c.LV_EVENT_CLICKED, cb, user_data);
         }
 
-        /// Register a callback fired on `LV_EVENT_VALUE_CHANGED`. Returns `self`.
+        /// **Legacy escape hatch** — raw value-changed callback. Prefer `onValueChange`.
         pub fn onValueChanged(self: Self, cb: c.lv_event_cb_t, user_data: ?*anyopaque) Self {
             return self.on(c.LV_EVENT_VALUE_CHANGED, cb, user_data);
         }
@@ -684,6 +895,13 @@ pub const Obj = struct {
     pub const flexFlow = ObjectMixin(Obj).flexFlow;
     /// Set flex alignment for main axis, cross axis, and tracks. Returns `self`.
     pub const flexAlign = ObjectMixin(Obj).flexAlign;
+    pub const flexGrow = ObjectMixin(Obj).flexGrow;
+    pub const layout = ObjectMixin(Obj).layout;
+    pub const scrollToY = ObjectMixin(Obj).scrollToY;
+    pub const updateLayout = ObjectMixin(Obj).updateLayout;
+    pub const getContentWidth = ObjectMixin(Obj).getContentWidth;
+    pub const getScrollBottom = ObjectMixin(Obj).getScrollBottom;
+    pub const removeStyleAll = ObjectMixin(Obj).removeStyleAll;
 
     // StyleMixin — inline style setters scoped to LV_PART_MAIN.
     /// Set background color. Returns `self`.
@@ -708,6 +926,29 @@ pub const Obj = struct {
     pub const textColor = StyleMixin(Obj).textColor;
     /// Set font for text rendering. Returns `self`.
     pub const textFont = StyleMixin(Obj).textFont;
+    pub const padTop = StyleMixin(Obj).padTop;
+    pub const padBottom = StyleMixin(Obj).padBottom;
+    pub const padLeft = StyleMixin(Obj).padLeft;
+    pub const padRight = StyleMixin(Obj).padRight;
+    pub const padRow = StyleMixin(Obj).padRow;
+    pub const padColumn = StyleMixin(Obj).padColumn;
+    pub const textAlign = StyleMixin(Obj).textAlign;
+    pub const setOpa = StyleMixin(Obj).setOpa;
+    pub const bgColorSel = StyleMixin(Obj).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Obj).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Obj).borderColorSel;
+    pub const textColorSel = StyleMixin(Obj).textColorSel;
+    pub const arcColorSel = StyleMixin(Obj).arcColorSel;
+    pub const arcWidth = StyleMixin(Obj).arcWidth;
+    pub const arcOpa = StyleMixin(Obj).arcOpa;
+    pub const arcRounded = StyleMixin(Obj).arcRounded;
+    pub const translateY = StyleMixin(Obj).translateY;
+    pub const marginTop = StyleMixin(Obj).marginTop;
+    pub const marginBottom = StyleMixin(Obj).marginBottom;
+    pub const marginLeft = StyleMixin(Obj).marginLeft;
+    pub const marginRight = StyleMixin(Obj).marginRight;
+    pub const maxHeight = StyleMixin(Obj).maxHeight;
+    pub const opaLayered = StyleMixin(Obj).opaLayered;
 
     // EventMixin — event callback registration.
     /// Register a callback for any LVGL event code. Returns `self`.
@@ -716,6 +957,11 @@ pub const Obj = struct {
     pub const onClick = EventMixin(Obj).onClick;
     /// Register a callback for `LV_EVENT_VALUE_CHANGED`. Returns `self`.
     pub const onValueChanged = EventMixin(Obj).onValueChanged;
+    pub const onFn = EventMixin(Obj).onFn;
+    pub const onFnWith = EventMixin(Obj).onFnWith;
+    pub const onClicked = EventMixin(Obj).onClicked;
+    pub const onClickedWith = EventMixin(Obj).onClickedWith;
+    pub const onValueChange = EventMixin(Obj).onValueChange;
 
     /// Create a generic LVGL object as a child of `parent_obj`.
     ///
@@ -815,6 +1061,13 @@ pub const Label = struct {
     pub const flexFlow = ObjectMixin(Label).flexFlow;
     /// Set flex alignment for main axis, cross axis, and tracks. Returns `self`.
     pub const flexAlign = ObjectMixin(Label).flexAlign;
+    pub const flexGrow = ObjectMixin(Label).flexGrow;
+    pub const layout = ObjectMixin(Label).layout;
+    pub const scrollToY = ObjectMixin(Label).scrollToY;
+    pub const updateLayout = ObjectMixin(Label).updateLayout;
+    pub const getContentWidth = ObjectMixin(Label).getContentWidth;
+    pub const getScrollBottom = ObjectMixin(Label).getScrollBottom;
+    pub const removeStyleAll = ObjectMixin(Label).removeStyleAll;
 
     // StyleMixin — inline style setters scoped to LV_PART_MAIN.
     /// Set background color. Returns `self`.
@@ -839,6 +1092,29 @@ pub const Label = struct {
     pub const textColor = StyleMixin(Label).textColor;
     /// Set font for text rendering. Returns `self`.
     pub const textFont = StyleMixin(Label).textFont;
+    pub const padTop = StyleMixin(Label).padTop;
+    pub const padBottom = StyleMixin(Label).padBottom;
+    pub const padLeft = StyleMixin(Label).padLeft;
+    pub const padRight = StyleMixin(Label).padRight;
+    pub const padRow = StyleMixin(Label).padRow;
+    pub const padColumn = StyleMixin(Label).padColumn;
+    pub const textAlign = StyleMixin(Label).textAlign;
+    pub const setOpa = StyleMixin(Label).setOpa;
+    pub const bgColorSel = StyleMixin(Label).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Label).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Label).borderColorSel;
+    pub const textColorSel = StyleMixin(Label).textColorSel;
+    pub const arcColorSel = StyleMixin(Label).arcColorSel;
+    pub const arcWidth = StyleMixin(Label).arcWidth;
+    pub const arcOpa = StyleMixin(Label).arcOpa;
+    pub const arcRounded = StyleMixin(Label).arcRounded;
+    pub const translateY = StyleMixin(Label).translateY;
+    pub const marginTop = StyleMixin(Label).marginTop;
+    pub const marginBottom = StyleMixin(Label).marginBottom;
+    pub const marginLeft = StyleMixin(Label).marginLeft;
+    pub const marginRight = StyleMixin(Label).marginRight;
+    pub const maxHeight = StyleMixin(Label).maxHeight;
+    pub const opaLayered = StyleMixin(Label).opaLayered;
 
     // EventMixin — event callback registration.
     /// Register a callback for any LVGL event code. Returns `self`.
@@ -847,6 +1123,11 @@ pub const Label = struct {
     pub const onClick = EventMixin(Label).onClick;
     /// Register a callback for `LV_EVENT_VALUE_CHANGED`. Returns `self`.
     pub const onValueChanged = EventMixin(Label).onValueChanged;
+    pub const onFn = EventMixin(Label).onFn;
+    pub const onFnWith = EventMixin(Label).onFnWith;
+    pub const onClicked = EventMixin(Label).onClicked;
+    pub const onClickedWith = EventMixin(Label).onClickedWith;
+    pub const onValueChange = EventMixin(Label).onValueChange;
 
     /// Create a label widget as a child of `parent_`. Returns the new `Label`.
     pub fn create(parent_: anytype) Label {
@@ -937,6 +1218,13 @@ pub const Bar = struct {
     pub const flexFlow = ObjectMixin(Bar).flexFlow;
     /// Set flex alignment for main axis, cross axis, and tracks. Returns `self`.
     pub const flexAlign = ObjectMixin(Bar).flexAlign;
+    pub const flexGrow = ObjectMixin(Bar).flexGrow;
+    pub const layout = ObjectMixin(Bar).layout;
+    pub const scrollToY = ObjectMixin(Bar).scrollToY;
+    pub const updateLayout = ObjectMixin(Bar).updateLayout;
+    pub const getContentWidth = ObjectMixin(Bar).getContentWidth;
+    pub const getScrollBottom = ObjectMixin(Bar).getScrollBottom;
+    pub const removeStyleAll = ObjectMixin(Bar).removeStyleAll;
 
     // StyleMixin — inline style setters scoped to LV_PART_MAIN.
     /// Set background color. Returns `self`.
@@ -961,6 +1249,29 @@ pub const Bar = struct {
     pub const textColor = StyleMixin(Bar).textColor;
     /// Set font for text rendering. Returns `self`.
     pub const textFont = StyleMixin(Bar).textFont;
+    pub const padTop = StyleMixin(Bar).padTop;
+    pub const padBottom = StyleMixin(Bar).padBottom;
+    pub const padLeft = StyleMixin(Bar).padLeft;
+    pub const padRight = StyleMixin(Bar).padRight;
+    pub const padRow = StyleMixin(Bar).padRow;
+    pub const padColumn = StyleMixin(Bar).padColumn;
+    pub const textAlign = StyleMixin(Bar).textAlign;
+    pub const setOpa = StyleMixin(Bar).setOpa;
+    pub const bgColorSel = StyleMixin(Bar).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Bar).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Bar).borderColorSel;
+    pub const textColorSel = StyleMixin(Bar).textColorSel;
+    pub const arcColorSel = StyleMixin(Bar).arcColorSel;
+    pub const arcWidth = StyleMixin(Bar).arcWidth;
+    pub const arcOpa = StyleMixin(Bar).arcOpa;
+    pub const arcRounded = StyleMixin(Bar).arcRounded;
+    pub const translateY = StyleMixin(Bar).translateY;
+    pub const marginTop = StyleMixin(Bar).marginTop;
+    pub const marginBottom = StyleMixin(Bar).marginBottom;
+    pub const marginLeft = StyleMixin(Bar).marginLeft;
+    pub const marginRight = StyleMixin(Bar).marginRight;
+    pub const maxHeight = StyleMixin(Bar).maxHeight;
+    pub const opaLayered = StyleMixin(Bar).opaLayered;
 
     // EventMixin — event callback registration.
     /// Register a callback for any LVGL event code. Returns `self`.
@@ -969,6 +1280,11 @@ pub const Bar = struct {
     pub const onClick = EventMixin(Bar).onClick;
     /// Register a callback for `LV_EVENT_VALUE_CHANGED`. Returns `self`.
     pub const onValueChanged = EventMixin(Bar).onValueChanged;
+    pub const onFn = EventMixin(Bar).onFn;
+    pub const onFnWith = EventMixin(Bar).onFnWith;
+    pub const onClicked = EventMixin(Bar).onClicked;
+    pub const onClickedWith = EventMixin(Bar).onClickedWith;
+    pub const onValueChange = EventMixin(Bar).onValueChange;
 
     /// Create a bar widget as a child of `parent_`. Returns the new `Bar`.
     pub fn create(parent_: anytype) Bar {
@@ -1052,6 +1368,13 @@ pub const Box = struct {
     pub const flexFlow = ObjectMixin(Box).flexFlow;
     /// Set flex alignment for main axis, cross axis, and tracks. Returns `self`.
     pub const flexAlign = ObjectMixin(Box).flexAlign;
+    pub const flexGrow = ObjectMixin(Box).flexGrow;
+    pub const layout = ObjectMixin(Box).layout;
+    pub const scrollToY = ObjectMixin(Box).scrollToY;
+    pub const updateLayout = ObjectMixin(Box).updateLayout;
+    pub const getContentWidth = ObjectMixin(Box).getContentWidth;
+    pub const getScrollBottom = ObjectMixin(Box).getScrollBottom;
+    pub const removeStyleAll = ObjectMixin(Box).removeStyleAll;
 
     // StyleMixin — inline style setters scoped to LV_PART_MAIN.
     /// Set background color. Returns `self`.
@@ -1076,6 +1399,29 @@ pub const Box = struct {
     pub const textColor = StyleMixin(Box).textColor;
     /// Set font for text rendering. Returns `self`.
     pub const textFont = StyleMixin(Box).textFont;
+    pub const padTop = StyleMixin(Box).padTop;
+    pub const padBottom = StyleMixin(Box).padBottom;
+    pub const padLeft = StyleMixin(Box).padLeft;
+    pub const padRight = StyleMixin(Box).padRight;
+    pub const padRow = StyleMixin(Box).padRow;
+    pub const padColumn = StyleMixin(Box).padColumn;
+    pub const textAlign = StyleMixin(Box).textAlign;
+    pub const setOpa = StyleMixin(Box).setOpa;
+    pub const bgColorSel = StyleMixin(Box).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Box).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Box).borderColorSel;
+    pub const textColorSel = StyleMixin(Box).textColorSel;
+    pub const arcColorSel = StyleMixin(Box).arcColorSel;
+    pub const arcWidth = StyleMixin(Box).arcWidth;
+    pub const arcOpa = StyleMixin(Box).arcOpa;
+    pub const arcRounded = StyleMixin(Box).arcRounded;
+    pub const translateY = StyleMixin(Box).translateY;
+    pub const marginTop = StyleMixin(Box).marginTop;
+    pub const marginBottom = StyleMixin(Box).marginBottom;
+    pub const marginLeft = StyleMixin(Box).marginLeft;
+    pub const marginRight = StyleMixin(Box).marginRight;
+    pub const maxHeight = StyleMixin(Box).maxHeight;
+    pub const opaLayered = StyleMixin(Box).opaLayered;
 
     // EventMixin — event callback registration.
     /// Register a callback for any LVGL event code. Returns `self`.
@@ -1084,6 +1430,11 @@ pub const Box = struct {
     pub const onClick = EventMixin(Box).onClick;
     /// Register a callback for `LV_EVENT_VALUE_CHANGED`. Returns `self`.
     pub const onValueChanged = EventMixin(Box).onValueChanged;
+    pub const onFn = EventMixin(Box).onFn;
+    pub const onFnWith = EventMixin(Box).onFnWith;
+    pub const onClicked = EventMixin(Box).onClicked;
+    pub const onClickedWith = EventMixin(Box).onClickedWith;
+    pub const onValueChange = EventMixin(Box).onValueChange;
 
     /// Create a non-scrollable container object as a child of `parent_`. Returns the new `Box`.
     pub fn create(parent_: anytype) Box {
@@ -1127,6 +1478,13 @@ pub const Button = struct {
     pub const userData = ObjectMixin(Button).userData;
     pub const flexFlow = ObjectMixin(Button).flexFlow;
     pub const flexAlign = ObjectMixin(Button).flexAlign;
+    pub const flexGrow = ObjectMixin(Button).flexGrow;
+    pub const layout = ObjectMixin(Button).layout;
+    pub const scrollToY = ObjectMixin(Button).scrollToY;
+    pub const updateLayout = ObjectMixin(Button).updateLayout;
+    pub const getContentWidth = ObjectMixin(Button).getContentWidth;
+    pub const getScrollBottom = ObjectMixin(Button).getScrollBottom;
+    pub const removeStyleAll = ObjectMixin(Button).removeStyleAll;
     pub const gridCell = ObjectMixin(Button).gridCell;
 
     // StyleMixin aliases
@@ -1141,11 +1499,39 @@ pub const Button = struct {
     pub const padGap = StyleMixin(Button).padGap;
     pub const textColor = StyleMixin(Button).textColor;
     pub const textFont = StyleMixin(Button).textFont;
+    pub const padTop = StyleMixin(Button).padTop;
+    pub const padBottom = StyleMixin(Button).padBottom;
+    pub const padLeft = StyleMixin(Button).padLeft;
+    pub const padRight = StyleMixin(Button).padRight;
+    pub const padRow = StyleMixin(Button).padRow;
+    pub const padColumn = StyleMixin(Button).padColumn;
+    pub const textAlign = StyleMixin(Button).textAlign;
+    pub const setOpa = StyleMixin(Button).setOpa;
+    pub const bgColorSel = StyleMixin(Button).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Button).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Button).borderColorSel;
+    pub const textColorSel = StyleMixin(Button).textColorSel;
+    pub const arcColorSel = StyleMixin(Button).arcColorSel;
+    pub const arcWidth = StyleMixin(Button).arcWidth;
+    pub const arcOpa = StyleMixin(Button).arcOpa;
+    pub const arcRounded = StyleMixin(Button).arcRounded;
+    pub const translateY = StyleMixin(Button).translateY;
+    pub const marginTop = StyleMixin(Button).marginTop;
+    pub const marginBottom = StyleMixin(Button).marginBottom;
+    pub const marginLeft = StyleMixin(Button).marginLeft;
+    pub const marginRight = StyleMixin(Button).marginRight;
+    pub const maxHeight = StyleMixin(Button).maxHeight;
+    pub const opaLayered = StyleMixin(Button).opaLayered;
 
     // EventMixin aliases
     pub const on = EventMixin(Button).on;
     pub const onClick = EventMixin(Button).onClick;
     pub const onValueChanged = EventMixin(Button).onValueChanged;
+    pub const onFn = EventMixin(Button).onFn;
+    pub const onFnWith = EventMixin(Button).onFnWith;
+    pub const onClicked = EventMixin(Button).onClicked;
+    pub const onClickedWith = EventMixin(Button).onClickedWith;
+    pub const onValueChange = EventMixin(Button).onValueChange;
 
     /// Create a button widget as a child of `parent_`.
     pub fn create(parent_: anytype) Button {
@@ -1217,6 +1603,11 @@ pub const Slider = struct {
     pub const on = EventMixin(Slider).on;
     pub const onClick = EventMixin(Slider).onClick;
     pub const onValueChanged = EventMixin(Slider).onValueChanged;
+    pub const onFn = EventMixin(Slider).onFn;
+    pub const onFnWith = EventMixin(Slider).onFnWith;
+    pub const onClicked = EventMixin(Slider).onClicked;
+    pub const onClickedWith = EventMixin(Slider).onClickedWith;
+    pub const onValueChange = EventMixin(Slider).onValueChange;
 
     /// Create a slider widget as a child of `parent_`.
     pub fn create(parent_: anytype) Slider {
@@ -1297,6 +1688,11 @@ pub const Switch = struct {
     pub const on = EventMixin(Switch).on;
     pub const onClick = EventMixin(Switch).onClick;
     pub const onValueChanged = EventMixin(Switch).onValueChanged;
+    pub const onFn = EventMixin(Switch).onFn;
+    pub const onFnWith = EventMixin(Switch).onFnWith;
+    pub const onClicked = EventMixin(Switch).onClicked;
+    pub const onClickedWith = EventMixin(Switch).onClickedWith;
+    pub const onValueChange = EventMixin(Switch).onValueChange;
 
     /// Create a switch widget as a child of `parent_`.
     pub fn create(parent_: anytype) Switch {
@@ -1348,11 +1744,39 @@ pub const Checkbox = struct {
     pub const bgColor = StyleMixin(Checkbox).bgColor;
     pub const textColor = StyleMixin(Checkbox).textColor;
     pub const textFont = StyleMixin(Checkbox).textFont;
+    pub const padTop = StyleMixin(Checkbox).padTop;
+    pub const padBottom = StyleMixin(Checkbox).padBottom;
+    pub const padLeft = StyleMixin(Checkbox).padLeft;
+    pub const padRight = StyleMixin(Checkbox).padRight;
+    pub const padRow = StyleMixin(Checkbox).padRow;
+    pub const padColumn = StyleMixin(Checkbox).padColumn;
+    pub const textAlign = StyleMixin(Checkbox).textAlign;
+    pub const setOpa = StyleMixin(Checkbox).setOpa;
+    pub const bgColorSel = StyleMixin(Checkbox).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Checkbox).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Checkbox).borderColorSel;
+    pub const textColorSel = StyleMixin(Checkbox).textColorSel;
+    pub const arcColorSel = StyleMixin(Checkbox).arcColorSel;
+    pub const arcWidth = StyleMixin(Checkbox).arcWidth;
+    pub const arcOpa = StyleMixin(Checkbox).arcOpa;
+    pub const arcRounded = StyleMixin(Checkbox).arcRounded;
+    pub const translateY = StyleMixin(Checkbox).translateY;
+    pub const marginTop = StyleMixin(Checkbox).marginTop;
+    pub const marginBottom = StyleMixin(Checkbox).marginBottom;
+    pub const marginLeft = StyleMixin(Checkbox).marginLeft;
+    pub const marginRight = StyleMixin(Checkbox).marginRight;
+    pub const maxHeight = StyleMixin(Checkbox).maxHeight;
+    pub const opaLayered = StyleMixin(Checkbox).opaLayered;
 
     // EventMixin aliases
     pub const on = EventMixin(Checkbox).on;
     pub const onClick = EventMixin(Checkbox).onClick;
     pub const onValueChanged = EventMixin(Checkbox).onValueChanged;
+    pub const onFn = EventMixin(Checkbox).onFn;
+    pub const onFnWith = EventMixin(Checkbox).onFnWith;
+    pub const onClicked = EventMixin(Checkbox).onClicked;
+    pub const onClickedWith = EventMixin(Checkbox).onClickedWith;
+    pub const onValueChange = EventMixin(Checkbox).onValueChange;
 
     /// Create a checkbox widget as a child of `parent_`.
     pub fn create(parent_: anytype) Checkbox {
@@ -1424,6 +1848,11 @@ pub const Arc = struct {
     pub const on = EventMixin(Arc).on;
     pub const onClick = EventMixin(Arc).onClick;
     pub const onValueChanged = EventMixin(Arc).onValueChanged;
+    pub const onFn = EventMixin(Arc).onFn;
+    pub const onFnWith = EventMixin(Arc).onFnWith;
+    pub const onClicked = EventMixin(Arc).onClicked;
+    pub const onClickedWith = EventMixin(Arc).onClickedWith;
+    pub const onValueChange = EventMixin(Arc).onValueChange;
 
     /// Create an arc widget as a child of `parent_`.
     pub fn create(parent_: anytype) Arc {
@@ -1782,6 +2211,11 @@ pub const Chart = struct {
 
     pub const on = EventMixin(Chart).on;
     pub const onValueChanged = EventMixin(Chart).onValueChanged;
+    pub const onFn = EventMixin(Chart).onFn;
+    pub const onFnWith = EventMixin(Chart).onFnWith;
+    pub const onClicked = EventMixin(Chart).onClicked;
+    pub const onClickedWith = EventMixin(Chart).onClickedWith;
+    pub const onValueChange = EventMixin(Chart).onValueChange;
 
     pub fn create(parent_: anytype) Chart {
         return .{ .obj = c.lv_chart_create(parentObj(parent_)).? };
@@ -1844,9 +2278,37 @@ pub const Calendar = struct {
     pub const bgColor = StyleMixin(Calendar).bgColor;
     pub const textColor = StyleMixin(Calendar).textColor;
     pub const textFont = StyleMixin(Calendar).textFont;
+    pub const padTop = StyleMixin(Calendar).padTop;
+    pub const padBottom = StyleMixin(Calendar).padBottom;
+    pub const padLeft = StyleMixin(Calendar).padLeft;
+    pub const padRight = StyleMixin(Calendar).padRight;
+    pub const padRow = StyleMixin(Calendar).padRow;
+    pub const padColumn = StyleMixin(Calendar).padColumn;
+    pub const textAlign = StyleMixin(Calendar).textAlign;
+    pub const setOpa = StyleMixin(Calendar).setOpa;
+    pub const bgColorSel = StyleMixin(Calendar).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Calendar).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Calendar).borderColorSel;
+    pub const textColorSel = StyleMixin(Calendar).textColorSel;
+    pub const arcColorSel = StyleMixin(Calendar).arcColorSel;
+    pub const arcWidth = StyleMixin(Calendar).arcWidth;
+    pub const arcOpa = StyleMixin(Calendar).arcOpa;
+    pub const arcRounded = StyleMixin(Calendar).arcRounded;
+    pub const translateY = StyleMixin(Calendar).translateY;
+    pub const marginTop = StyleMixin(Calendar).marginTop;
+    pub const marginBottom = StyleMixin(Calendar).marginBottom;
+    pub const marginLeft = StyleMixin(Calendar).marginLeft;
+    pub const marginRight = StyleMixin(Calendar).marginRight;
+    pub const maxHeight = StyleMixin(Calendar).maxHeight;
+    pub const opaLayered = StyleMixin(Calendar).opaLayered;
 
     pub const on = EventMixin(Calendar).on;
     pub const onValueChanged = EventMixin(Calendar).onValueChanged;
+    pub const onFn = EventMixin(Calendar).onFn;
+    pub const onFnWith = EventMixin(Calendar).onFnWith;
+    pub const onClicked = EventMixin(Calendar).onClicked;
+    pub const onClickedWith = EventMixin(Calendar).onClickedWith;
+    pub const onValueChange = EventMixin(Calendar).onValueChange;
 
     pub fn create(parent_: anytype) Calendar {
         return .{ .obj = c.lv_calendar_create(parentObj(parent_)).? };
@@ -1936,6 +2398,29 @@ pub const Table = struct {
     pub const bgColor = StyleMixin(Table).bgColor;
     pub const textColor = StyleMixin(Table).textColor;
     pub const textFont = StyleMixin(Table).textFont;
+    pub const padTop = StyleMixin(Table).padTop;
+    pub const padBottom = StyleMixin(Table).padBottom;
+    pub const padLeft = StyleMixin(Table).padLeft;
+    pub const padRight = StyleMixin(Table).padRight;
+    pub const padRow = StyleMixin(Table).padRow;
+    pub const padColumn = StyleMixin(Table).padColumn;
+    pub const textAlign = StyleMixin(Table).textAlign;
+    pub const setOpa = StyleMixin(Table).setOpa;
+    pub const bgColorSel = StyleMixin(Table).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Table).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Table).borderColorSel;
+    pub const textColorSel = StyleMixin(Table).textColorSel;
+    pub const arcColorSel = StyleMixin(Table).arcColorSel;
+    pub const arcWidth = StyleMixin(Table).arcWidth;
+    pub const arcOpa = StyleMixin(Table).arcOpa;
+    pub const arcRounded = StyleMixin(Table).arcRounded;
+    pub const translateY = StyleMixin(Table).translateY;
+    pub const marginTop = StyleMixin(Table).marginTop;
+    pub const marginBottom = StyleMixin(Table).marginBottom;
+    pub const marginLeft = StyleMixin(Table).marginLeft;
+    pub const marginRight = StyleMixin(Table).marginRight;
+    pub const maxHeight = StyleMixin(Table).maxHeight;
+    pub const opaLayered = StyleMixin(Table).opaLayered;
 
     pub const on = EventMixin(Table).on;
 
@@ -1994,6 +2479,11 @@ pub const Tabview = struct {
 
     pub const on = EventMixin(Tabview).on;
     pub const onValueChanged = EventMixin(Tabview).onValueChanged;
+    pub const onFn = EventMixin(Tabview).onFn;
+    pub const onFnWith = EventMixin(Tabview).onFnWith;
+    pub const onClicked = EventMixin(Tabview).onClicked;
+    pub const onClickedWith = EventMixin(Tabview).onClickedWith;
+    pub const onValueChange = EventMixin(Tabview).onValueChange;
 
     pub fn create(parent_: anytype) Tabview {
         return .{ .obj = c.lv_tabview_create(parentObj(parent_)).? };
@@ -2099,9 +2589,37 @@ pub const Textarea = struct {
     pub const padAll = StyleMixin(Textarea).padAll;
     pub const textColor = StyleMixin(Textarea).textColor;
     pub const textFont = StyleMixin(Textarea).textFont;
+    pub const padTop = StyleMixin(Textarea).padTop;
+    pub const padBottom = StyleMixin(Textarea).padBottom;
+    pub const padLeft = StyleMixin(Textarea).padLeft;
+    pub const padRight = StyleMixin(Textarea).padRight;
+    pub const padRow = StyleMixin(Textarea).padRow;
+    pub const padColumn = StyleMixin(Textarea).padColumn;
+    pub const textAlign = StyleMixin(Textarea).textAlign;
+    pub const setOpa = StyleMixin(Textarea).setOpa;
+    pub const bgColorSel = StyleMixin(Textarea).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Textarea).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Textarea).borderColorSel;
+    pub const textColorSel = StyleMixin(Textarea).textColorSel;
+    pub const arcColorSel = StyleMixin(Textarea).arcColorSel;
+    pub const arcWidth = StyleMixin(Textarea).arcWidth;
+    pub const arcOpa = StyleMixin(Textarea).arcOpa;
+    pub const arcRounded = StyleMixin(Textarea).arcRounded;
+    pub const translateY = StyleMixin(Textarea).translateY;
+    pub const marginTop = StyleMixin(Textarea).marginTop;
+    pub const marginBottom = StyleMixin(Textarea).marginBottom;
+    pub const marginLeft = StyleMixin(Textarea).marginLeft;
+    pub const marginRight = StyleMixin(Textarea).marginRight;
+    pub const maxHeight = StyleMixin(Textarea).maxHeight;
+    pub const opaLayered = StyleMixin(Textarea).opaLayered;
 
     pub const on = EventMixin(Textarea).on;
     pub const onValueChanged = EventMixin(Textarea).onValueChanged;
+    pub const onFn = EventMixin(Textarea).onFn;
+    pub const onFnWith = EventMixin(Textarea).onFnWith;
+    pub const onClicked = EventMixin(Textarea).onClicked;
+    pub const onClickedWith = EventMixin(Textarea).onClickedWith;
+    pub const onValueChange = EventMixin(Textarea).onValueChange;
 
     pub fn create(parent_: anytype) Textarea {
         return .{ .obj = c.lv_textarea_create(parentObj(parent_)).? };
@@ -2200,9 +2718,37 @@ pub const Dropdown = struct {
     pub const bgColor = StyleMixin(Dropdown).bgColor;
     pub const textColor = StyleMixin(Dropdown).textColor;
     pub const textFont = StyleMixin(Dropdown).textFont;
+    pub const padTop = StyleMixin(Dropdown).padTop;
+    pub const padBottom = StyleMixin(Dropdown).padBottom;
+    pub const padLeft = StyleMixin(Dropdown).padLeft;
+    pub const padRight = StyleMixin(Dropdown).padRight;
+    pub const padRow = StyleMixin(Dropdown).padRow;
+    pub const padColumn = StyleMixin(Dropdown).padColumn;
+    pub const textAlign = StyleMixin(Dropdown).textAlign;
+    pub const setOpa = StyleMixin(Dropdown).setOpa;
+    pub const bgColorSel = StyleMixin(Dropdown).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Dropdown).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Dropdown).borderColorSel;
+    pub const textColorSel = StyleMixin(Dropdown).textColorSel;
+    pub const arcColorSel = StyleMixin(Dropdown).arcColorSel;
+    pub const arcWidth = StyleMixin(Dropdown).arcWidth;
+    pub const arcOpa = StyleMixin(Dropdown).arcOpa;
+    pub const arcRounded = StyleMixin(Dropdown).arcRounded;
+    pub const translateY = StyleMixin(Dropdown).translateY;
+    pub const marginTop = StyleMixin(Dropdown).marginTop;
+    pub const marginBottom = StyleMixin(Dropdown).marginBottom;
+    pub const marginLeft = StyleMixin(Dropdown).marginLeft;
+    pub const marginRight = StyleMixin(Dropdown).marginRight;
+    pub const maxHeight = StyleMixin(Dropdown).maxHeight;
+    pub const opaLayered = StyleMixin(Dropdown).opaLayered;
 
     pub const on = EventMixin(Dropdown).on;
     pub const onValueChanged = EventMixin(Dropdown).onValueChanged;
+    pub const onFn = EventMixin(Dropdown).onFn;
+    pub const onFnWith = EventMixin(Dropdown).onFnWith;
+    pub const onClicked = EventMixin(Dropdown).onClicked;
+    pub const onClickedWith = EventMixin(Dropdown).onClickedWith;
+    pub const onValueChange = EventMixin(Dropdown).onValueChange;
 
     pub fn create(parent_: anytype) Dropdown {
         return .{ .obj = c.lv_dropdown_create(parentObj(parent_)).? };
@@ -2283,9 +2829,37 @@ pub const Roller = struct {
     pub const bgColor = StyleMixin(Roller).bgColor;
     pub const textColor = StyleMixin(Roller).textColor;
     pub const textFont = StyleMixin(Roller).textFont;
+    pub const padTop = StyleMixin(Roller).padTop;
+    pub const padBottom = StyleMixin(Roller).padBottom;
+    pub const padLeft = StyleMixin(Roller).padLeft;
+    pub const padRight = StyleMixin(Roller).padRight;
+    pub const padRow = StyleMixin(Roller).padRow;
+    pub const padColumn = StyleMixin(Roller).padColumn;
+    pub const textAlign = StyleMixin(Roller).textAlign;
+    pub const setOpa = StyleMixin(Roller).setOpa;
+    pub const bgColorSel = StyleMixin(Roller).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Roller).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Roller).borderColorSel;
+    pub const textColorSel = StyleMixin(Roller).textColorSel;
+    pub const arcColorSel = StyleMixin(Roller).arcColorSel;
+    pub const arcWidth = StyleMixin(Roller).arcWidth;
+    pub const arcOpa = StyleMixin(Roller).arcOpa;
+    pub const arcRounded = StyleMixin(Roller).arcRounded;
+    pub const translateY = StyleMixin(Roller).translateY;
+    pub const marginTop = StyleMixin(Roller).marginTop;
+    pub const marginBottom = StyleMixin(Roller).marginBottom;
+    pub const marginLeft = StyleMixin(Roller).marginLeft;
+    pub const marginRight = StyleMixin(Roller).marginRight;
+    pub const maxHeight = StyleMixin(Roller).maxHeight;
+    pub const opaLayered = StyleMixin(Roller).opaLayered;
 
     pub const on = EventMixin(Roller).on;
     pub const onValueChanged = EventMixin(Roller).onValueChanged;
+    pub const onFn = EventMixin(Roller).onFn;
+    pub const onFnWith = EventMixin(Roller).onFnWith;
+    pub const onClicked = EventMixin(Roller).onClicked;
+    pub const onClickedWith = EventMixin(Roller).onClickedWith;
+    pub const onValueChange = EventMixin(Roller).onValueChange;
 
     pub fn create(parent_: anytype) Roller {
         return .{ .obj = c.lv_roller_create(parentObj(parent_)).? };
@@ -2341,9 +2915,37 @@ pub const Spinbox = struct {
     pub const bgColor = StyleMixin(Spinbox).bgColor;
     pub const textColor = StyleMixin(Spinbox).textColor;
     pub const textFont = StyleMixin(Spinbox).textFont;
+    pub const padTop = StyleMixin(Spinbox).padTop;
+    pub const padBottom = StyleMixin(Spinbox).padBottom;
+    pub const padLeft = StyleMixin(Spinbox).padLeft;
+    pub const padRight = StyleMixin(Spinbox).padRight;
+    pub const padRow = StyleMixin(Spinbox).padRow;
+    pub const padColumn = StyleMixin(Spinbox).padColumn;
+    pub const textAlign = StyleMixin(Spinbox).textAlign;
+    pub const setOpa = StyleMixin(Spinbox).setOpa;
+    pub const bgColorSel = StyleMixin(Spinbox).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Spinbox).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Spinbox).borderColorSel;
+    pub const textColorSel = StyleMixin(Spinbox).textColorSel;
+    pub const arcColorSel = StyleMixin(Spinbox).arcColorSel;
+    pub const arcWidth = StyleMixin(Spinbox).arcWidth;
+    pub const arcOpa = StyleMixin(Spinbox).arcOpa;
+    pub const arcRounded = StyleMixin(Spinbox).arcRounded;
+    pub const translateY = StyleMixin(Spinbox).translateY;
+    pub const marginTop = StyleMixin(Spinbox).marginTop;
+    pub const marginBottom = StyleMixin(Spinbox).marginBottom;
+    pub const marginLeft = StyleMixin(Spinbox).marginLeft;
+    pub const marginRight = StyleMixin(Spinbox).marginRight;
+    pub const maxHeight = StyleMixin(Spinbox).maxHeight;
+    pub const opaLayered = StyleMixin(Spinbox).opaLayered;
 
     pub const on = EventMixin(Spinbox).on;
     pub const onValueChanged = EventMixin(Spinbox).onValueChanged;
+    pub const onFn = EventMixin(Spinbox).onFn;
+    pub const onFnWith = EventMixin(Spinbox).onFnWith;
+    pub const onClicked = EventMixin(Spinbox).onClicked;
+    pub const onClickedWith = EventMixin(Spinbox).onClickedWith;
+    pub const onValueChange = EventMixin(Spinbox).onValueChange;
 
     pub fn create(parent_: anytype) Spinbox {
         return .{ .obj = c.lv_spinbox_create(parentObj(parent_)).? };
@@ -2477,6 +3079,13 @@ pub const Screen = struct {
     pub const userData = ObjectMixin(Screen).userData;
     pub const flexFlow = ObjectMixin(Screen).flexFlow;
     pub const flexAlign = ObjectMixin(Screen).flexAlign;
+    pub const flexGrow = ObjectMixin(Screen).flexGrow;
+    pub const layout = ObjectMixin(Screen).layout;
+    pub const scrollToY = ObjectMixin(Screen).scrollToY;
+    pub const updateLayout = ObjectMixin(Screen).updateLayout;
+    pub const getContentWidth = ObjectMixin(Screen).getContentWidth;
+    pub const getScrollBottom = ObjectMixin(Screen).getScrollBottom;
+    pub const removeStyleAll = ObjectMixin(Screen).removeStyleAll;
     pub const gridDsc = ObjectMixin(Screen).gridDsc;
 
     // StyleMixin aliases
@@ -2491,6 +3100,29 @@ pub const Screen = struct {
     pub const padGap = StyleMixin(Screen).padGap;
     pub const textColor = StyleMixin(Screen).textColor;
     pub const textFont = StyleMixin(Screen).textFont;
+    pub const padTop = StyleMixin(Screen).padTop;
+    pub const padBottom = StyleMixin(Screen).padBottom;
+    pub const padLeft = StyleMixin(Screen).padLeft;
+    pub const padRight = StyleMixin(Screen).padRight;
+    pub const padRow = StyleMixin(Screen).padRow;
+    pub const padColumn = StyleMixin(Screen).padColumn;
+    pub const textAlign = StyleMixin(Screen).textAlign;
+    pub const setOpa = StyleMixin(Screen).setOpa;
+    pub const bgColorSel = StyleMixin(Screen).bgColorSel;
+    pub const bgOpaSel = StyleMixin(Screen).bgOpaSel;
+    pub const borderColorSel = StyleMixin(Screen).borderColorSel;
+    pub const textColorSel = StyleMixin(Screen).textColorSel;
+    pub const arcColorSel = StyleMixin(Screen).arcColorSel;
+    pub const arcWidth = StyleMixin(Screen).arcWidth;
+    pub const arcOpa = StyleMixin(Screen).arcOpa;
+    pub const arcRounded = StyleMixin(Screen).arcRounded;
+    pub const translateY = StyleMixin(Screen).translateY;
+    pub const marginTop = StyleMixin(Screen).marginTop;
+    pub const marginBottom = StyleMixin(Screen).marginBottom;
+    pub const marginLeft = StyleMixin(Screen).marginLeft;
+    pub const marginRight = StyleMixin(Screen).marginRight;
+    pub const maxHeight = StyleMixin(Screen).maxHeight;
+    pub const opaLayered = StyleMixin(Screen).opaLayered;
 
     // EventMixin aliases
     pub const on = EventMixin(Screen).on;
@@ -3152,3 +3784,249 @@ pub fn hbox(parent_: anytype) Box {
     c.lv_obj_set_size(b.obj, c.LV_SIZE_CONTENT, c.LV_SIZE_CONTENT);
     return b;
 }
+
+// =========================================================================
+//  Animation extensions — generic tick callback + playback animators
+// =========================================================================
+
+/// Translate `lv_anim_speed` (compute animation duration from movement speed).
+pub fn animDurationForSpeed(speed: u32) u32 {
+    return c.lv_anim_speed(speed);
+}
+
+/// Stop every animation running on the given widget (matches `lv_anim_delete(obj, NULL)`).
+pub fn stopAnimations(widget: anytype) void {
+    _ = c.lv_anim_delete(@ptrCast(widget.obj), null);
+}
+
+// Internal shims for the playback animators.
+fn animTranslateYShim(var_: ?*anyopaque, v: i32) callconv(.c) void {
+    c.lv_obj_set_style_translate_y(@ptrCast(@alignCast(var_)), v, c.LV_PART_MAIN);
+}
+fn animScrollYShim(var_: ?*anyopaque, v: i32) callconv(.c) void {
+    c.lv_obj_scroll_to_y(@ptrCast(@alignCast(var_)), v, false);
+}
+fn animArcValueShim(var_: ?*anyopaque, v: i32) callconv(.c) void {
+    c.lv_arc_set_value(@ptrCast(@alignCast(var_)), v);
+}
+
+/// Animate `translate_y` from `from` to `to` over `forward_ms`, then back over
+/// `playback_ms`, repeating forever. Good fit for subtle "bob"/shake effects.
+pub fn animateTranslateYPlayback(
+    widget: anytype,
+    from: i32,
+    to: i32,
+    forward_ms: u32,
+    playback_ms: u32,
+) void {
+    var a = Animation.init_();
+    _ = a.target(@ptrCast(widget.obj))
+        .values(from, to)
+        .duration(forward_ms)
+        .playbackDuration(playback_ms)
+        .path(pathEaseInOut())
+        .execCb(animTranslateYShim)
+        .repeatCount(ANIM_REPEAT_INFINITE);
+    a.start();
+}
+
+/// Animate the vertical scroll position forward then back, repeating forever.
+pub fn animateScrollYPlayback(
+    widget: anytype,
+    from: i32,
+    to: i32,
+    forward_ms: u32,
+    playback_ms: u32,
+) void {
+    var a = Animation.init_();
+    _ = a.target(@ptrCast(widget.obj))
+        .values(from, to)
+        .duration(forward_ms)
+        .playbackDuration(playback_ms)
+        .path(pathLinear())
+        .execCb(animScrollYShim)
+        .repeatCount(ANIM_REPEAT_INFINITE);
+    a.start();
+}
+
+/// Animate an [`Arc`] widget's value forward then back, repeating forever.
+pub fn animateArcValuePlayback(
+    arc: Arc,
+    from: i32,
+    to: i32,
+    forward_ms: u32,
+    playback_ms: u32,
+) void {
+    var a = Animation.init_();
+    _ = a.target(@ptrCast(arc.obj))
+        .values(from, to)
+        .duration(forward_ms)
+        .playbackDuration(playback_ms)
+        .path(pathEaseInOut())
+        .execCb(animArcValueShim)
+        .repeatCount(ANIM_REPEAT_INFINITE);
+    a.start();
+}
+
+/// Start an animation whose per-frame callback receives the target widget as
+/// [`Obj`] (no `callconv(.c)` / pointer-casting in user code).
+///
+/// Uses LVGL's custom exec callback so the `fn` pointer is smuggled through
+/// the animation's `user_data` slot and recovered by a generic trampoline.
+pub fn animateTickFn(
+    widget: anytype,
+    from: i32,
+    to: i32,
+    duration_ms: u32,
+    repeat_count: u32,
+    comptime user_fn: fn (Obj, i32) void,
+) void {
+    const Tramp = struct {
+        fn invoke(anim: [*c]c.lv_anim_t, v: i32) callconv(.c) void {
+            const var_ptr = c.lv_anim_get_user_data(anim);
+            _ = var_ptr;
+            // `var` field holds the target; use lv_anim_get_var equivalent
+            const obj_ptr = @field(anim.*, "var");
+            user_fn(.{ .obj = @ptrCast(@alignCast(obj_ptr)) }, v);
+        }
+    };
+    var a = Animation.init_();
+    _ = a.target(@ptrCast(widget.obj))
+        .values(from, to)
+        .duration(duration_ms)
+        .repeatCount(repeat_count);
+    c.lv_anim_set_custom_exec_cb(&a.inner, &Tramp.invoke);
+    a.start();
+}
+
+// =========================================================================
+//  ImageSrc — typed safe image source
+// =========================================================================
+
+/// Opaque alias for the LVGL image descriptor type. Zig's cImport treats
+/// `lv_image_dsc_t` as opaque (the embedded header is a bitfield struct),
+/// so apps declare `extern const foo: ImageDsc` and pass `&foo` as pointer.
+pub const ImageDsc = opaque {};
+
+/// A safe LVGL image source. Constructors only accept `*const`-addressable
+/// data, so the pointer is guaranteed to outlive any widget that uses it.
+pub const ImageSrc = struct {
+    raw: *const anyopaque,
+
+    /// Wrap a static LVGL image descriptor (typically generated from C assets).
+    pub fn fromDsc(dsc: *const ImageDsc) ImageSrc {
+        return .{ .raw = @ptrCast(dsc) };
+    }
+
+    /// Wrap a NUL-terminated built-in symbol byte string (e.g. `LV_SYMBOL_OK`).
+    pub fn fromSymbol(sym: [*:0]const u8) ImageSrc {
+        return .{ .raw = @ptrCast(sym) };
+    }
+
+    /// Wrap a NUL-terminated filesystem path (LVGL FS driver required).
+    pub fn fromPath(path: [*:0]const u8) ImageSrc {
+        return .{ .raw = @ptrCast(path) };
+    }
+};
+
+/// Safe alternative to `Image.src(*const anyopaque)` — accepts a typed [`ImageSrc`].
+pub fn imageSource(img: Image, src: ImageSrc) Image {
+    c.lv_image_set_src(img.obj, src.raw);
+    return img;
+}
+
+// =========================================================================
+//  Display info + layer access + text metrics
+// =========================================================================
+
+pub const display = struct {
+    pub fn width() i32 {
+        return c.lv_display_get_horizontal_resolution(null);
+    }
+    pub fn height() i32 {
+        return c.lv_display_get_vertical_resolution(null);
+    }
+    pub fn dpi() i32 {
+        return c.lv_display_get_dpi(null);
+    }
+};
+
+/// Top-most overlay layer of the default display (sits above all screens).
+pub fn layerTop() Obj {
+    return .{ .obj = c.lv_layer_top().? };
+}
+
+/// Measure the rendered size of `text` (NUL-terminated) with `font`.
+/// Returns `.{ w, h }` in pixels.
+pub fn textSize(text: [*:0]const u8, font: *const c.lv_font_t) struct { w: i32, h: i32 } {
+    var p: c.lv_point_t = .{ .x = 0, .y = 0 };
+    c.lv_text_get_size(&p, text, font, 0, 0, std.math.maxInt(i32), 0);
+    return .{ .w = p.x, .h = p.y };
+}
+
+// =========================================================================
+//  Scale widget
+// =========================================================================
+
+pub const SCALE_MODE_HORIZONTAL_TOP: u32 = 0x00;
+pub const SCALE_MODE_HORIZONTAL_BOTTOM: u32 = 0x01;
+pub const SCALE_MODE_VERTICAL_LEFT: u32 = 0x02;
+pub const SCALE_MODE_VERTICAL_RIGHT: u32 = 0x04;
+pub const SCALE_MODE_ROUND_INNER: u32 = 0x08;
+pub const SCALE_MODE_ROUND_OUTER: u32 = 0x10;
+
+pub const Scale = struct {
+    obj: *c.lv_obj_t,
+
+    pub const size = ObjectMixin(Scale).size;
+    pub const width = ObjectMixin(Scale).width;
+    pub const height = ObjectMixin(Scale).height;
+    pub const center = ObjectMixin(Scale).center;
+    pub const alignTo = ObjectMixin(Scale).alignTo;
+
+    pub fn create(parent_obj: anytype) Scale {
+        return .{ .obj = c.lv_scale_create(parentObj(parent_obj)).? };
+    }
+
+    pub fn mode(self: Scale, m: u32) Scale {
+        c.lv_scale_set_mode(self.obj, @intCast(m));
+        return self;
+    }
+    pub fn range(self: Scale, min_v: i32, max_v: i32) Scale {
+        c.lv_scale_set_range(self.obj, min_v, max_v);
+        return self;
+    }
+    pub fn totalTickCount(self: Scale, cnt: u32) Scale {
+        c.lv_scale_set_total_tick_count(self.obj, cnt);
+        return self;
+    }
+    pub fn majorTickEvery(self: Scale, nth: u32) Scale {
+        c.lv_scale_set_major_tick_every(self.obj, nth);
+        return self;
+    }
+    pub fn angleRange(self: Scale, angle: u32) Scale {
+        c.lv_scale_set_angle_range(self.obj, angle);
+        return self;
+    }
+    pub fn rotation(self: Scale, rot: i32) Scale {
+        c.lv_scale_set_rotation(self.obj, @intCast(rot));
+        return self;
+    }
+
+    pub const ScaleSection = struct {
+        raw: *anyopaque,
+
+        pub fn range(self: ScaleSection, min_v: i32, max_v: i32) ScaleSection {
+            c.lv_scale_section_set_range(self.raw, min_v, max_v);
+            return self;
+        }
+        pub fn style(self: ScaleSection, part: u32, s: *Style) ScaleSection {
+            c.lv_scale_section_set_style(self.raw, part, &s.inner);
+            return self;
+        }
+    };
+
+    pub fn addSection(self: Scale) ScaleSection {
+        return .{ .raw = c.lv_scale_add_section(self.obj).? };
+    }
+};

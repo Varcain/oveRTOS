@@ -5,6 +5,7 @@
 // This file is part of oveRTOS.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(unsafe_code)]
 
 use core::fmt::Write;
 use core::sync::atomic::{AtomicU32, Ordering};

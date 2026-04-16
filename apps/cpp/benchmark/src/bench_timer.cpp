@@ -7,12 +7,11 @@
  */
 
 #include <ove/ove.hpp>
+#include <ove/bench.hpp>
 
-extern "C" {
-#include "benchmark.h"
-}
+#include <optional>
 
-static ove_timer_t bench_tmr;
+static std::optional<ove::Timer> bench_tmr;
 
 static void timer_dummy_cb(ove_timer_t timer, void *user_data)
 {
@@ -22,89 +21,73 @@ static void timer_dummy_cb(ove_timer_t timer, void *user_data)
 
 /* --- create/destroy --- */
 
-static void timer_create_destroy_run(void *ctx)
+static void timer_create_destroy_run()
 {
-	(void)ctx;
-	ove_timer_t t;
-
-	ove_timer_create(&t, timer_dummy_cb, nullptr, 1000, 0);
-	ove_timer_destroy(t);
+	ove::Timer t(timer_dummy_cb, nullptr, 1000, /*one_shot=*/false);
 }
 
 /* --- start/stop --- */
 
-static void timer_start_stop_setup(void *ctx)
+static void timer_start_stop_setup()
 {
-	(void)ctx;
-	ove_timer_create(&bench_tmr, timer_dummy_cb, nullptr, 1000, 0);
+	bench_tmr.emplace(timer_dummy_cb, nullptr, 1000, /*one_shot=*/false);
 }
 
-static void timer_start_stop_run(void *ctx)
+static void timer_start_stop_run()
 {
-	(void)ctx;
-	ove_timer_start(bench_tmr);
-	ove_timer_stop(bench_tmr);
+	(void)bench_tmr->start();
+	(void)bench_tmr->stop();
 }
 
-static void timer_start_stop_teardown(void *ctx)
+static void timer_start_stop_teardown()
 {
-	(void)ctx;
-	ove_timer_destroy(bench_tmr);
+	bench_tmr.reset();
 }
 
 /* --- memory --- */
 
-static ove_timer_t mem_timer;
+static std::optional<ove::Timer> mem_timer;
 
-static void timer_memory_run(void *ctx)
+static void timer_memory_run()
 {
-	(void)ctx;
-	ove_timer_create(&mem_timer, timer_dummy_cb, nullptr, 1000, 0);
+	mem_timer.emplace(timer_dummy_cb, nullptr, 1000, /*one_shot=*/false);
 }
 
-static void timer_memory_teardown(void *ctx)
+static void timer_memory_teardown()
 {
-	(void)ctx;
-	ove_timer_destroy(mem_timer);
+	mem_timer.reset();
 }
 
 /* --- Suite --- */
 
-static int timer_is_enabled(void)
+static bool timer_is_enabled()
 {
-	return 1;
+	return true;
 }
 
-static const bench_case_t timer_cases[] = {
-	{
-		"memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		timer_memory_run,
-		timer_memory_teardown,
-		0,
-	},
-	{
-		"create_destroy",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		timer_create_destroy_run,
-		nullptr,
-		0,
-	},
-	{
-		"start_stop",
-		BENCH_TYPE_LATENCY,
-		timer_start_stop_setup,
-		timer_start_stop_run,
-		timer_start_stop_teardown,
-		0,
-	},
+static constexpr ove::bench::CaseSpec timer_memory_spec{
+	.name = "memory",
+	.kind = ove::bench::Type::memory,
+	.run = &timer_memory_run,
+	.teardown = &timer_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec timer_create_destroy_spec{
+	.name = "create_destroy",
+	.kind = ove::bench::Type::latency,
+	.run = &timer_create_destroy_run,
+};
+static constexpr ove::bench::CaseSpec timer_start_stop_spec{
+	.name = "start_stop",
+	.kind = ove::bench::Type::latency,
+	.run = &timer_start_stop_run,
+	.setup = &timer_start_stop_setup,
+	.teardown = &timer_start_stop_teardown,
 };
 
-extern "C" const bench_suite_t bench_suite_timer = {
-	"timer",
-	timer_is_enabled,
-	timer_cases,
-	sizeof(timer_cases) / sizeof(timer_cases[0]),
+static constexpr bench_case_t timer_cases[] = {
+	ove::bench::case_<timer_memory_spec>(),
+	ove::bench::case_<timer_create_destroy_spec>(),
+	ove::bench::case_<timer_start_stop_spec>(),
 };
+
+OVE_BENCH_SUITE(bench_suite_timer, "timer", timer_is_enabled, timer_cases)

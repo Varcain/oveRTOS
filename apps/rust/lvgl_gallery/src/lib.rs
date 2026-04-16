@@ -11,17 +11,23 @@
 //! an arrow cleans the content area and rebuilds with the next page.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(unsafe_code)]
 
 use core::fmt::Write;
+use core::ptr::addr_of;
 use core::sync::atomic::{AtomicI32, Ordering};
 
 use ove::lvgl::{
-    self, Arc, Bar, Box, Button, Calendar, Canvas, Chart, Checkbox, Color, Dropdown,
-    Image, Keyboard, Label, Layout, Led, List, Msgbox, Obj, Roller, Series, Slider,
-    Spinbox, Spinner, State, Styleable, Switch, Tabview, Table, Textarea,
+    self, Arc, Bar, Box, Button, Calendar, Canvas, CanvasBuffer, Chart, Checkbox, Color,
+    ColorFormat, Dropdown, EventCtx, EventTarget, FlexAlign, FlexFlow, Image, ImageSrc, Keyboard,
+    Label, Layout, Led, List, LvCell, Msgbox, Obj, Roller, Series, Slider, Spinbox,
+    Spinner, State, Styleable, Switch, Tabview, Table, Textarea, PART_MAIN, TEXT_ALIGN_CENTER,
 };
 use ove::{FmtBuf, Priority, Thread, Timer};
 
+// Auto-generated glue module — carries the lone `unsafe extern "C"` block
+// for linking against LVGL-formatted C image assets. Narrowly scoped.
+#[allow(unsafe_code)]
 mod images {
     include!(concat!(env!("OVE_GEN_DIR"), "/generated_images/lvgl_images.rs"));
 }
@@ -41,12 +47,18 @@ ove::shared!(CHART_W: Chart);
 ove::shared!(SERIES_W: Series);
 ove::shared!(COUNTER_STATE: State<i32>);
 
-static mut CANVAS_BUF: [u8; 64 * 64 * 4] = [0u8; 64 * 64 * 4];
+// Pixel buffer for the canvas page (XRGB8888, 64×64).
+ove::shared!(CANVAS_BUF: LvCell<[u8; 64 * 64 * 4]>);
 
-// Nav state — single-threaded access from LVGL task.
-static mut G_PAGE: i32 = 0;
-static mut G_CONTENT: Option<Obj> = None;
-static mut G_TITLE: Option<Label> = None;
+/// Navigation state — single-threaded mutation under the LVGL lock.
+#[derive(Clone, Copy)]
+struct NavState {
+    page: i32,
+    content: Option<Obj>,
+    title: Option<Label>,
+}
+
+ove::shared!(NAV: LvCell<NavState>);
 
 // ---------------------------------------------------------------------------
 // UI timer
@@ -67,29 +79,34 @@ fn ui_timer_cb() {
 }
 
 // ---------------------------------------------------------------------------
-// Event callbacks
+// Event handlers
 // ---------------------------------------------------------------------------
 
-unsafe extern "C" fn on_prev(_e: *mut ove::ffi::lv_event_t) {
-    unsafe {
-        G_PAGE = (G_PAGE + N_PAGES - 1) % N_PAGES;
-        rebuild_page();
-    }
+fn on_prev(nav: &LvCell<NavState>, _e: EventCtx<'_>) {
+    nav.update(|s| NavState {
+        page: (s.page + N_PAGES - 1) % N_PAGES,
+        ..s
+    });
+    rebuild_page();
 }
 
-unsafe extern "C" fn on_next(_e: *mut ove::ffi::lv_event_t) {
-    unsafe {
-        G_PAGE = (G_PAGE + 1) % N_PAGES;
-        rebuild_page();
-    }
+fn on_next(nav: &LvCell<NavState>, _e: EventCtx<'_>) {
+    nav.update(|s| NavState {
+        page: (s.page + 1) % N_PAGES,
+        ..s
+    });
+    rebuild_page();
 }
 
-unsafe extern "C" fn on_alert_click(_e: *mut ove::ffi::lv_event_t) {
+fn on_alert_click(_e: EventCtx<'_>) {
     let _ = Msgbox::create_modal()
         .add_title(b"Hello\0")
         .add_text(b"Message box from the gallery.\0")
         .add_close_button();
 }
+
+ove::event_handler!(NAV_PREV: LvCell<NavState> = &NAV, on_prev);
+ove::event_handler!(NAV_NEXT: LvCell<NavState> = &NAV, on_next);
 
 // ---------------------------------------------------------------------------
 // Page builders
@@ -113,11 +130,7 @@ fn p_label(c: Obj) {
     }
 }
 
-fn p_button(c: Obj)   { Button::create(c).size(160, 48).toggle_mode(true).center(); let btn = Button::create(c).size(160, 48).toggle_mode(true); Label::create(btn).text(b"Toggle me\0").center(); btn.center(); unsafe { ove::ffi::lv_obj_delete(c.as_raw()); } }
-
-// That was getting messy. Let me use a cleaner approach for all pages.
-
-fn p_button_real(c: Obj) {
+fn p_button(c: Obj) {
     let btn = Button::create(c).size(160, 48).toggle_mode(true);
     Label::create(btn).text(b"Toggle me\0").center();
     btn.center();
@@ -148,10 +161,7 @@ fn p_roller(c: Obj)    { Roller::create(c).options(b"Mon\nTue\nWed\nThu\nFri\nSa
 fn p_spinbox(c: Obj)   { Spinbox::create(c).width(200).digit_format(4, 2).range(-9999, 9999).step(1).value(42).center(); }
 
 fn p_textarea(c: Obj) {
-    unsafe {
-        ove::ffi::lv_obj_set_flex_flow(c.as_raw(), ove::ffi::LV_FLEX_FLOW_COLUMN);
-        ove::ffi::lv_obj_set_style_pad_row(c.as_raw(), 8, 0);
-    }
+    c.flex_flow(FlexFlow::Column).pad_gap(8);
     let ta = Textarea::create(c).one_line(true).placeholder(b"Type here...\0").max_length(40).width(400);
     Keyboard::create(c).size(400, 140).attach(ta);
 }
@@ -178,41 +188,45 @@ fn p_table(c: Obj) {
 fn p_list(c: Obj) {
     let l = List::create(c).size(240, 160);
     l.add_text(b"Navigation\0");
-    l.add_button(core::ptr::null(), b"Settings\0");
-    l.add_button(core::ptr::null(), b"About\0");
-    l.add_button(core::ptr::null(), b"Help\0");
-    l.add_button(core::ptr::null(), b"Quit\0");
+    l.add_button(None, b"Settings\0");
+    l.add_button(None, b"About\0");
+    l.add_button(None, b"Help\0");
+    l.add_button(None, b"Quit\0");
     l.center();
 }
 
 fn p_image(c: Obj) {
-    unsafe {
-        let badge_ptr = &images::badge as *const _ as *const core::ffi::c_void;
-        Image::create(c).src(badge_ptr).center();
-    }
+    Image::create(c)
+        .source(ImageSrc::from_dsc(addr_of!(images::badge)))
+        .center();
 }
 
 fn p_canvas(c: Obj) {
     let canvas = Canvas::create(c).size(64, 64);
-    unsafe {
-        let buf_ptr = core::ptr::addr_of_mut!(CANVAS_BUF) as *mut core::ffi::c_void;
-        canvas.buffer(buf_ptr, 64, 64, ove::ffi::LV_COLOR_FORMAT_XRGB8888);
+    let buf_cell = CANVAS_BUF.get();
+    // Take a mutable borrow via LvCell::replace+set — we need &mut [u8] for
+    // CanvasBuffer. Move pixel data through the cell using `replace`.
+    let mut pixels = buf_cell.replace([0u8; 64 * 64 * 4]);
+    canvas
+        .set_buffer(CanvasBuffer::new(&mut pixels, 64, 64, ColorFormat::XRGB8888))
+        .fill_bg(Color::hex(0x202020), 255);
+    for y in 0..64i32 {
+        for x in 0..64i32 {
+            canvas.set_pixel(x, y, Color::make((x * 4) as u8, (y * 4) as u8, 128));
+        }
     }
-    canvas.fill_bg(Color::hex(0x202020), 255);
-    for y in 0..64i32 { for x in 0..64i32 {
-        canvas.set_pixel(x, y, Color::make((x * 4) as u8, (y * 4) as u8, 128));
-    }}
+    // Put the (now-LVGL-owned) buffer back so the canvas can keep using it.
+    // LVGL's canvas keeps a pointer to the data, so we MUST store the
+    // backing array somewhere stable. Swap it back into the cell.
+    buf_cell.set(pixels);
     canvas.center();
 }
 
 fn p_calendar(c: Obj) { Calendar::create(c).size(240, 240).today(2026, 4, 13).showed(2026, 4).center(); }
 
 fn p_msgbox(c: Obj) {
-    let btn = Button::create(c).size(200, 48);
+    let btn = Button::create(c).size(200, 48).on_clicked(on_alert_click);
     Label::create(btn).text(b"Show Msgbox\0").center();
-    unsafe {
-        ove::ffi::lv_obj_add_event_cb(btn.as_raw() as *mut _, Some(on_alert_click), ove::ffi::LV_EVENT_CLICKED, core::ptr::null_mut());
-    }
     btn.center();
 }
 
@@ -236,7 +250,7 @@ fn p_tabview(c: Obj) {
 
 static PAGES: &[(&[u8], PageFn)] = &[
     (b"Label\0",    p_label),
-    (b"Button\0",   p_button_real),
+    (b"Button\0",   p_button),
     (b"Switch\0",   p_switch),
     (b"Checkbox\0", p_checkbox),
     (b"Bar\0",      p_bar),
@@ -274,21 +288,20 @@ fn clear_live_widgets() {
 }
 
 fn rebuild_page() {
-    unsafe {
-        clear_live_widgets();
-        if let Some(c) = G_CONTENT { c.clean(); }
+    let nav = NAV.get().get();
+    clear_live_widgets();
+    if let Some(c) = nav.content { c.clean(); }
 
-        let page = G_PAGE as usize;
-        let (_, build_fn) = PAGES[page];
-        if let Some(c) = G_CONTENT { build_fn(c); }
+    let page = nav.page as usize;
+    let (_, build_fn) = PAGES[page];
+    if let Some(c) = nav.content { build_fn(c); }
 
-        if let Some(lbl) = G_TITLE {
-            let mut buf = [0u8; 48];
-            let mut w = FmtBuf::new(&mut buf);
-            let name = core::str::from_utf8(&PAGES[page].0[..PAGES[page].0.len()-1]).unwrap_or("?");
-            let _ = write!(w, "{} ({}/{})", name, G_PAGE + 1, N_PAGES);
-            lbl.set_text(w.as_cstr());
-        }
+    if let Some(lbl) = nav.title {
+        let mut buf = [0u8; 48];
+        let mut w = FmtBuf::new(&mut buf);
+        let name = core::str::from_utf8(&PAGES[page].0[..PAGES[page].0.len() - 1]).unwrap_or("?");
+        let _ = write!(w, "{} ({}/{})", name, nav.page + 1, N_PAGES);
+        lbl.set_text(w.as_cstr());
     }
 }
 
@@ -299,49 +312,54 @@ fn rebuild_page() {
 fn create_ui() {
     let screen = lvgl::screen_active();
     screen.bg_color(Color::black());
-    unsafe {
-        ove::ffi::lv_obj_set_flex_flow(screen.as_raw(), ove::ffi::LV_FLEX_FLOW_COLUMN);
-        ove::ffi::lv_obj_set_style_pad_top(screen.as_raw(), 0, 0);
-        ove::ffi::lv_obj_set_style_pad_row(screen.as_raw(), 0, 0);
-    }
+    screen
+        .flex_flow(FlexFlow::Column)
+        .pad_all(0)
+        .pad_gap(0);
 
     // ── Nav bar ──
-    let nav = Box::create(screen).size(480, 40).bg_color(Color::hex(0x1A237E)).bg_opa(255).radius(0);
-    unsafe {
-        ove::ffi::lv_obj_set_flex_flow(nav.as_raw(), ove::ffi::LV_FLEX_FLOW_ROW);
-        ove::ffi::lv_obj_set_flex_align(nav.as_raw(), 3, 2, 2); // SPACE_BETWEEN, CENTER, CENTER
-        ove::ffi::lv_obj_set_style_pad_left(nav.as_raw(), 4, 0);
-        ove::ffi::lv_obj_set_style_pad_right(nav.as_raw(), 4, 0);
-    }
+    let nav = Box::create(screen)
+        .size(480, 40)
+        .bg_color(Color::hex(0x1A237E))
+        .bg_opa(255)
+        .radius(0)
+        .flex_flow(FlexFlow::Row)
+        .flex_align(FlexAlign::SpaceBetween, FlexAlign::Center, FlexAlign::Center)
+        .pad_left(4)
+        .pad_right(4);
 
-    let prev = Button::create(nav).size(40, 32);
+    let prev = Button::create(nav).size(40, 32).on_clicked_with(&NAV_PREV);
     Label::create(prev).text(b"<\0").center();
-    unsafe { ove::ffi::lv_obj_add_event_cb(prev.as_raw() as *mut _, Some(on_prev), ove::ffi::LV_EVENT_CLICKED, core::ptr::null_mut()); }
 
-    let title = Label::create(nav).text(b"\0").color(Color::white()).font(lvgl::font_montserrat_14());
-    unsafe {
-        ove::ffi::lv_obj_set_flex_grow(title.as_raw() as *mut _, 1);
-        ove::ffi::lv_obj_set_style_text_align(title.as_raw() as *mut _, 2, 0); // CENTER
-        G_TITLE = Some(title);
-    }
+    let title = Label::create(nav)
+        .text(b"\0")
+        .color(Color::white())
+        .font(lvgl::font_montserrat_14())
+        .flex_grow(1)
+        .text_align(TEXT_ALIGN_CENTER, PART_MAIN);
 
-    let next = Button::create(nav).size(40, 32);
+    let next = Button::create(nav).size(40, 32).on_clicked_with(&NAV_NEXT);
     Label::create(next).text(b">\0").center();
-    unsafe { ove::ffi::lv_obj_add_event_cb(next.as_raw() as *mut _, Some(on_next), ove::ffi::LV_EVENT_CLICKED, core::ptr::null_mut()); }
 
     // ── Content ──
     let content = Box::create(screen)
         .size(480, 232)
         .bg_opa(0)
         .border_width(0)
-        .pad_all(8);
-    unsafe {
-        ove::ffi::lv_obj_set_flex_grow(content.as_raw(), 1);
-        G_CONTENT = Some(Obj::from_raw(content.as_raw()));
-    }
+        .pad_all(8)
+        .flex_grow(1);
+
+    NAV.init(LvCell::new(NavState {
+        page: 0,
+        content: Some(*content),
+        title: Some(title),
+    }));
 
     // State for reactive label
     COUNTER_STATE.init(State::<i32>::new(0));
+
+    // Pixel storage for the canvas page
+    CANVAS_BUF.init(LvCell::new([0u8; 64 * 64 * 4]));
 
     rebuild_page();
 }

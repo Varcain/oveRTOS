@@ -49,6 +49,8 @@ pub const PART_MAIN: u32 = 0x000000;
 pub const PART_INDICATOR: u32 = 0x010000;
 /// LVGL style selector for the knob of interactive widgets (slider, arc).
 pub const PART_KNOB: u32 = 0x030000;
+/// LVGL style selector for the items part (e.g. table cells, list items).
+pub const PART_ITEMS: u32 = 0x050000;
 
 /// LVGL v9 `LV_SIZE_CONTENT` — sets widget to size-to-content mode.
 /// Computed from: `LV_COORD_SET_SPEC(LV_COORD_MAX)` where
@@ -79,6 +81,73 @@ pub const GRID_ALIGN_CENTER: u32 = 1;
 pub const GRID_ALIGN_END: u32 = 2;
 /// Grid cell alignment: stretch to fill the cell (`LV_GRID_ALIGN_STRETCH`).
 pub const GRID_ALIGN_STRETCH: u32 = 3;
+
+/// Flex flow direction.
+#[repr(u32)]
+#[derive(Clone, Copy)]
+pub enum FlexFlow {
+    Row = 0x00,
+    Column = 0x01,
+    RowWrap = 0x04,
+    RowReverse = 0x02,
+    RowWrapReverse = 0x06,
+    ColumnWrap = 0x05,
+    ColumnReverse = 0x03,
+    ColumnWrapReverse = 0x07,
+}
+
+/// Flex track / item alignment (matches `lv_flex_align_t`).
+#[repr(u32)]
+#[derive(Clone, Copy)]
+pub enum FlexAlign {
+    Start = 0,
+    End = 1,
+    Center = 2,
+    SpaceEvenly = 3,
+    SpaceAround = 4,
+    SpaceBetween = 5,
+}
+
+/// Container layout kind (matches `lv_obj_set_layout` argument).
+#[repr(u32)]
+#[derive(Clone, Copy)]
+pub enum LayoutKind {
+    None = 0,
+    Flex = 1,
+    Grid = 2,
+}
+
+/// LVGL palette family (matches `LV_PALETTE_*`).
+#[repr(u32)]
+#[derive(Clone, Copy)]
+pub enum Palette {
+    Red = 0,
+    Pink = 1,
+    Purple = 2,
+    DeepPurple = 3,
+    Indigo = 4,
+    Blue = 5,
+    LightBlue = 6,
+    Cyan = 7,
+    Teal = 8,
+    Green = 9,
+    LightGreen = 10,
+    Lime = 11,
+    Yellow = 12,
+    Amber = 13,
+    Orange = 14,
+    DeepOrange = 15,
+    Brown = 16,
+    BlueGrey = 17,
+    Grey = 18,
+    None = 0xFF,
+}
+
+/// Text alignment selector (`LV_TEXT_ALIGN_*`).
+pub const TEXT_ALIGN_AUTO: u32 = 0;
+pub const TEXT_ALIGN_LEFT: u32 = 1;
+pub const TEXT_ALIGN_CENTER: u32 = 2;
+pub const TEXT_ALIGN_RIGHT: u32 = 3;
 
 // =========================================================================
 //  Color
@@ -132,7 +201,31 @@ impl Color {
         }
     }
 
-    fn to_raw(self) -> bindings::lv_color_t {
+    /// Lighten a palette color by `level` (0..=5; 0 = original main).
+    pub fn palette_lighten(p: Palette, level: u8) -> Self {
+        unsafe {
+            let c = bindings::lv_palette_lighten(p as _, level);
+            core::mem::transmute(c)
+        }
+    }
+
+    /// Darken a palette color by `level` (0..=4; 0 = original main).
+    pub fn palette_darken(p: Palette, level: u8) -> Self {
+        unsafe {
+            let c = bindings::lv_palette_darken(p as _, level);
+            core::mem::transmute(c)
+        }
+    }
+
+    /// Construct a color from a packed 12-bit RGB hex value (e.g. `0xF80` → `0xFF8800`).
+    pub fn hex3(hex: u32) -> Self {
+        unsafe {
+            let c = bindings::lv_color_hex3(hex);
+            core::mem::transmute(c)
+        }
+    }
+
+    pub(crate) fn to_raw(self) -> bindings::lv_color_t {
         unsafe { core::mem::transmute(self) }
     }
 }
@@ -333,6 +426,62 @@ pub trait Layout: Widget + Sized {
         };
         self
     }
+
+    /// Configure this widget as a flex container with the given main-axis flow.
+    fn flex_flow(self, flow: FlexFlow) -> Self {
+        unsafe { bindings::lv_obj_set_flex_flow(self.raw(), flow as _) };
+        self
+    }
+
+    /// Set flex container alignment along the main, cross (per item), and
+    /// cross (per track) axes. Equivalent to `lv_obj_set_flex_align`.
+    fn flex_align(self, main: FlexAlign, cross: FlexAlign, track: FlexAlign) -> Self {
+        unsafe {
+            bindings::lv_obj_set_flex_align(
+                self.raw(),
+                main as _,
+                cross as _,
+                track as _,
+            )
+        };
+        self
+    }
+
+    /// Set this child's flex grow factor (0 disables growing).
+    fn flex_grow(self, grow: u8) -> Self {
+        unsafe { bindings::lv_obj_set_flex_grow(self.raw(), grow) };
+        self
+    }
+
+    /// Switch the widget's layout engine (None / Flex / Grid).
+    fn layout(self, kind: LayoutKind) -> Self {
+        unsafe { bindings::lv_obj_set_layout(self.raw(), kind as _) };
+        self
+    }
+
+    /// Scroll the widget so the given Y coordinate is visible. `anim` enables animation.
+    fn scroll_to_y(self, y: i32, anim: bool) -> Self {
+        unsafe {
+            bindings::lv_obj_scroll_to_y(self.raw(), y, anim);
+        }
+        self
+    }
+
+    /// Force layout recomputation immediately (for queries that need live values).
+    fn update_layout(self) -> Self {
+        unsafe { bindings::lv_obj_update_layout(self.raw()) };
+        self
+    }
+
+    /// Width of the inner content area (excludes paddings/scrollbars).
+    fn content_width(self) -> i32 {
+        unsafe { bindings::lv_obj_get_content_width(self.raw()) }
+    }
+
+    /// Distance the widget can still scroll towards its bottom edge.
+    fn scroll_bottom(self) -> i32 {
+        unsafe { bindings::lv_obj_get_scroll_bottom(self.raw()) }
+    }
 }
 
 impl<T: Widget> Layout for T {}
@@ -406,6 +555,27 @@ pub trait Styleable: Widget + Sized {
         self
     }
 
+    /// Set top padding.
+    fn pad_top(self, p: i32) -> Self {
+        unsafe { bindings::lv_obj_set_style_pad_top(self.raw(), p, PART_MAIN) };
+        self
+    }
+    /// Set bottom padding.
+    fn pad_bottom(self, p: i32) -> Self {
+        unsafe { bindings::lv_obj_set_style_pad_bottom(self.raw(), p, PART_MAIN) };
+        self
+    }
+    /// Set left padding.
+    fn pad_left(self, p: i32) -> Self {
+        unsafe { bindings::lv_obj_set_style_pad_left(self.raw(), p, PART_MAIN) };
+        self
+    }
+    /// Set right padding.
+    fn pad_right(self, p: i32) -> Self {
+        unsafe { bindings::lv_obj_set_style_pad_right(self.raw(), p, PART_MAIN) };
+        self
+    }
+
     /// Set the row and column gap between flex children.
     fn pad_gap(self, g: i32) -> Self {
         unsafe {
@@ -429,13 +599,221 @@ pub trait Styleable: Widget + Sized {
     }
 
     /// Apply a reusable [`Style`] to the given style selector (part + state bitmask).
-    fn add_style(self, style: &mut Style, selector: u32) -> Self {
-        unsafe { bindings::lv_obj_add_style(self.raw(), style.as_mut_ptr(), selector) };
+    ///
+    /// Takes `&Style` — LVGL reads the pointer but does not mutate the
+    /// style once added. `style` must outlive the widget (typical use:
+    /// store in a `StaticCell<Style>` or `&'static`).
+    fn add_style(self, style: &Style, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_add_style(self.raw(), style.ptr(), selector) };
+        self
+    }
+
+    /// Apply a vertical translation (post-layout offset, in pixels).
+    fn translate_y(self, v: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_translate_y(self.raw(), v, selector) };
+        self
+    }
+
+    /// Top margin in pixels.
+    fn margin_top(self, v: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_margin_top(self.raw(), v, selector) };
+        self
+    }
+    /// Bottom margin in pixels.
+    fn margin_bottom(self, v: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_margin_bottom(self.raw(), v, selector) };
+        self
+    }
+    /// Left margin in pixels.
+    fn margin_left(self, v: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_margin_left(self.raw(), v, selector) };
+        self
+    }
+    /// Right margin in pixels.
+    fn margin_right(self, v: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_margin_right(self.raw(), v, selector) };
+        self
+    }
+
+    /// Maximum height in pixels (caps `set_height`/content sizing).
+    fn max_height(self, v: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_max_height(self.raw(), v, selector) };
+        self
+    }
+
+    /// Arc opacity for arc-drawing widgets (0..=255).
+    fn arc_opa(self, opa: u8, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_arc_opa(self.raw(), opa, selector) };
+        self
+    }
+
+    /// Whether the arc has rounded ends.
+    fn arc_rounded(self, rounded: bool, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_arc_rounded(self.raw(), rounded, selector) };
+        self
+    }
+
+    /// Layered opacity (composites the whole subtree at the given alpha).
+    fn opa_layered(self, opa: u8, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_opa_layered(self.raw(), opa, selector) };
+        self
+    }
+
+    /// Set the text alignment (`TEXT_ALIGN_*`) for the given selector.
+    fn text_align(self, align: u32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_text_align(self.raw(), align as _, selector) };
+        self
+    }
+
+    // ---- Selector variants of the common style setters ----
+
+    /// Background color with explicit selector (part + state bits).
+    fn bg_color_sel(self, c: Color, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_bg_color(self.raw(), c.to_raw(), selector) };
+        self
+    }
+    /// Background opacity with explicit selector.
+    fn bg_opa_sel(self, opa: u8, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_bg_opa(self.raw(), opa, selector) };
+        self
+    }
+    /// Border color with explicit selector.
+    fn border_color_sel(self, c: Color, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_border_color(self.raw(), c.to_raw(), selector) };
+        self
+    }
+    /// Text color with explicit selector.
+    fn text_color_sel(self, c: Color, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_text_color(self.raw(), c.to_raw(), selector) };
+        self
+    }
+    /// Arc track color with explicit selector.
+    fn arc_color_sel(self, c: Color, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_arc_color(self.raw(), c.to_raw(), selector) };
+        self
+    }
+    /// Arc track width with explicit selector.
+    fn arc_width(self, w: i32, selector: u32) -> Self {
+        unsafe { bindings::lv_obj_set_style_arc_width(self.raw(), w, selector) };
+        self
+    }
+    /// Row gap (flex layout).
+    fn pad_row(self, p: i32) -> Self {
+        unsafe { bindings::lv_obj_set_style_pad_row(self.raw(), p, PART_MAIN) };
+        self
+    }
+    /// Column gap (flex layout).
+    fn pad_column(self, p: i32) -> Self {
+        unsafe { bindings::lv_obj_set_style_pad_column(self.raw(), p, PART_MAIN) };
+        self
+    }
+    /// Overall object opacity (0..=255).
+    fn set_opa(self, opa: u8) -> Self {
+        unsafe { bindings::lv_obj_set_style_opa(self.raw(), opa, PART_MAIN) };
         self
     }
 }
 
 impl<T: Widget> Styleable for T {}
+
+// =========================================================================
+//  EventCtx — borrowed view of a live lv_event_t
+// =========================================================================
+
+/// Borrowed view of an active `lv_event_t`. Valid only inside an event callback.
+///
+/// The lifetime parameter ties the context to the callback invocation —
+/// it cannot escape the handler.
+#[derive(Clone, Copy)]
+pub struct EventCtx<'a> {
+    raw: *mut bindings::lv_event_t,
+    _ph: core::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> EventCtx<'a> {
+    /// Widget that originally fired the event (innermost).
+    pub fn target(self) -> Obj {
+        let raw = unsafe { bindings::lv_event_get_target(self.raw) as *mut bindings::lv_obj_t };
+        Obj { raw }
+    }
+
+    /// Widget the user is interacting with — may differ from `target` for
+    /// bubbled events (this is the widget the callback was registered on).
+    pub fn current_target(self) -> Obj {
+        let raw = unsafe {
+            bindings::lv_event_get_current_target(self.raw) as *mut bindings::lv_obj_t
+        };
+        Obj { raw }
+    }
+
+    /// Numeric event code (`LV_EVENT_*`).
+    pub fn code(self) -> bindings::lv_event_code_t {
+        unsafe { bindings::lv_event_get_code(self.raw) }
+    }
+
+    /// Event-specific parameter (opaque to safe callers — left raw because
+    /// the type depends on the event code; rarely needed in practice).
+    pub fn param_raw(self) -> *mut core::ffi::c_void {
+        unsafe { bindings::lv_event_get_param(self.raw) }
+    }
+}
+
+/// Static descriptor for a stateful event handler.
+///
+/// Bundles a `&'static StaticCell<T>` of shared state with a `fn(&T, EventCtx)`
+/// user callback. Declare with the [`crate::event_handler!`] macro and pass to
+/// [`EventTarget::on_with`] / [`EventTarget::on_clicked_with`].
+pub struct EventHandler<T: 'static> {
+    cell: &'static crate::StaticCell<T>,
+    user: fn(&T, EventCtx<'_>),
+}
+
+impl<T: 'static> EventHandler<T> {
+    /// Construct a handler descriptor — usable in `static` declarations.
+    pub const fn new(
+        cell: &'static crate::StaticCell<T>,
+        user: fn(&T, EventCtx<'_>),
+    ) -> Self {
+        Self { cell, user }
+    }
+}
+
+unsafe impl<T: Send + Sync + 'static> Sync for EventHandler<T> {}
+
+unsafe extern "C" fn event_trampoline_fn(e: *mut bindings::lv_event_t) {
+    let ud = unsafe { bindings::lv_event_get_user_data(e) };
+    if ud.is_null() {
+        return;
+    }
+    // SAFETY: `ud` was set by `EventTarget::on_fn` from a `fn(EventCtx)` pointer.
+    let cb: fn(EventCtx<'_>) = unsafe { core::mem::transmute(ud) };
+    cb(EventCtx {
+        raw: e,
+        _ph: core::marker::PhantomData,
+    });
+}
+
+unsafe extern "C" fn event_trampoline_with<T: Send + Sync + 'static>(
+    e: *mut bindings::lv_event_t,
+) {
+    let ud = unsafe { bindings::lv_event_get_user_data(e) } as *const EventHandler<T>;
+    if ud.is_null() {
+        return;
+    }
+    // SAFETY: `ud` points to a `'static EventHandler<T>` set by `EventTarget::on_with`.
+    let h = unsafe { &*ud };
+    if let Some(state) = h.cell.try_get() {
+        (h.user)(
+            state,
+            EventCtx {
+                raw: e,
+                _ph: core::marker::PhantomData,
+            },
+        );
+    }
+    // If the cell is uninitialized we silently drop the event — defensive
+    // posture matching the existing `if let Some(...) = CELL.try_get()` callsites.
+}
 
 // =========================================================================
 //  EventTarget trait — type-safe event callbacks (blanket impl on Widget)
@@ -444,22 +822,72 @@ impl<T: Widget> Styleable for T {}
 /// Event callback registration. Uses `fn` pointers for `no_std` compatibility.
 /// Blanket-implemented for all `Widget` types.
 pub trait EventTarget: Widget + Sized {
-    /// Register a callback for an arbitrary LVGL event code.
-    ///
-    /// `code` is any `LV_EVENT_*` constant. `user_data` is passed through to `cb` unchanged.
-    fn on(self, code: bindings::lv_event_code_t, cb: bindings::lv_event_cb_t, user_data: *mut core::ffi::c_void) -> Self {
-        unsafe { bindings::lv_obj_add_event_cb(self.raw(), cb, code, user_data) };
+    /// Register a stateless safe handler for any LVGL event code.
+    fn on_fn(self, code: bindings::lv_event_code_t, handler: fn(EventCtx<'_>)) -> Self {
+        let ud = handler as *mut core::ffi::c_void;
+        unsafe {
+            bindings::lv_obj_add_event_cb(self.raw(), Some(event_trampoline_fn), code, ud)
+        };
         self
     }
 
-    /// Register a callback for click (`LV_EVENT_CLICKED`) events.
-    fn on_click(self, cb: bindings::lv_event_cb_t, user_data: *mut core::ffi::c_void) -> Self {
-        self.on(bindings::LV_EVENT_CLICKED, cb, user_data)
+    /// Register a stateless safe handler for click events.
+    fn on_clicked(self, handler: fn(EventCtx<'_>)) -> Self {
+        self.on_fn(bindings::LV_EVENT_CLICKED, handler)
     }
 
-    /// Register a callback for value-changed (`LV_EVENT_VALUE_CHANGED`) events.
-    fn on_value_changed(self, cb: bindings::lv_event_cb_t, user_data: *mut core::ffi::c_void) -> Self {
-        self.on(bindings::LV_EVENT_VALUE_CHANGED, cb, user_data)
+    /// Register a stateless safe handler for value-changed events.
+    fn on_value_change(self, handler: fn(EventCtx<'_>)) -> Self {
+        self.on_fn(bindings::LV_EVENT_VALUE_CHANGED, handler)
+    }
+
+    /// Register a stateful safe handler — the handler receives the shared
+    /// state from the bundled `StaticCell` and an `EventCtx`.
+    fn on_with<T: Send + Sync + 'static>(
+        self,
+        code: bindings::lv_event_code_t,
+        handler: &'static EventHandler<T>,
+    ) -> Self {
+        let ud = handler as *const EventHandler<T> as *mut core::ffi::c_void;
+        unsafe {
+            bindings::lv_obj_add_event_cb(
+                self.raw(),
+                Some(event_trampoline_with::<T>),
+                code,
+                ud,
+            )
+        };
+        self
+    }
+
+    /// Stateful click handler (see [`EventTarget::on_with`]).
+    fn on_clicked_with<T: Send + Sync + 'static>(
+        self,
+        handler: &'static EventHandler<T>,
+    ) -> Self {
+        self.on_with(bindings::LV_EVENT_CLICKED, handler)
+    }
+
+    /// Stateful value-change handler (see [`EventTarget::on_with`]).
+    fn on_value_change_with<T: Send + Sync + 'static>(
+        self,
+        handler: &'static EventHandler<T>,
+    ) -> Self {
+        self.on_with(bindings::LV_EVENT_VALUE_CHANGED, handler)
+    }
+
+    /// **Legacy escape hatch** — register a raw `lv_event_cb_t`. Prefer
+    /// [`EventTarget::on_fn`] or [`EventTarget::on_with`] for typed safe
+    /// callbacks.
+    #[doc(hidden)]
+    fn on(
+        self,
+        code: bindings::lv_event_code_t,
+        cb: bindings::lv_event_cb_t,
+        user_data: *mut core::ffi::c_void,
+    ) -> Self {
+        unsafe { bindings::lv_obj_add_event_cb(self.raw(), cb, code, user_data) };
+        self
     }
 }
 
@@ -541,6 +969,19 @@ impl Obj {
         unsafe { bindings::lv_obj_get_user_data(self.raw) }
     }
 
+    /// Remove all inline and reused styles from this object.
+    pub fn remove_style_all(self) -> Self {
+        unsafe { bindings::lv_obj_remove_style_all(self.raw) };
+        self
+    }
+
+    /// Get the nth child (0-indexed). Returns an [`Obj`] wrapping the
+    /// LVGL pointer — may be null if out of range (check before using).
+    pub fn get_child(self, idx: i32) -> Obj {
+        let raw = unsafe { bindings::lv_obj_get_child(self.raw, idx) };
+        Obj { raw }
+    }
+
     // Legacy API preserved for backward compatibility
     /// Set the size of the widget (legacy, non-fluent variant).
     pub fn set_size(self, w: i32, h: i32) {
@@ -593,6 +1034,15 @@ impl Label {
     /// Create a new label as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_label_create(parent.raw()) };
+        Self { raw }
+    }
+
+    /// Wrap a raw `lv_obj_t *` as a `Label`. The caller is responsible
+    /// for ensuring the pointer was obtained from a Label widget.
+    ///
+    /// # Safety
+    /// `raw` must point to a valid `lv_label_t` object.
+    pub unsafe fn from_raw(raw: *mut bindings::lv_obj_t) -> Self {
         Self { raw }
     }
 
@@ -1499,11 +1949,14 @@ impl Canvas {
         Self { raw }
     }
 
-    /// Fluent: attach a pixel buffer.
+    /// **Legacy escape hatch** — prefer [`Canvas::set_buffer`] which takes
+    /// a typed, lifetime-tracked [`CanvasBuffer`]. Retained for code
+    /// that must supply a raw pointer (e.g. hardware-allocated framebuffers).
     ///
     /// # Safety
     /// `buf` must remain valid for the lifetime of the canvas widget.
     /// The buffer size must be exactly `w * h * bytes_per_pixel(cf)`.
+    #[doc(hidden)]
     pub unsafe fn buffer(
         self,
         buf: *mut core::ffi::c_void,
@@ -1722,12 +2175,11 @@ impl List {
         unsafe { Obj::from_raw(raw) }
     }
 
-    /// Add a button row with optional icon (pass `core::ptr::null()` for none).
-    ///
-    /// Returns the button as an [`Obj`].
-    pub fn add_button(self, icon: *const core::ffi::c_void, text: &[u8]) -> Obj {
+    /// Add a button row with an optional icon. Returns the button as an [`Obj`].
+    pub fn add_button(self, icon: Option<ImageSrc>, text: &[u8]) -> Obj {
+        let icon_ptr = icon.map(|s| s.raw_ptr()).unwrap_or(core::ptr::null());
         let raw = unsafe {
-            bindings::lv_list_add_button(self.raw, icon, text.as_ptr() as *const _)
+            bindings::lv_list_add_button(self.raw, icon_ptr, text.as_ptr() as *const _)
         };
         unsafe { Obj::from_raw(raw) }
     }
@@ -2287,12 +2739,15 @@ impl Image {
         Self { raw }
     }
 
-    /// Fluent: set the image source (descriptor, symbol, or path).
+    /// **Legacy escape hatch** — prefer [`Image::source`] which takes a typed
+    /// [`ImageSrc`]. This raw variant is kept for narrow cases where a
+    /// non-`'static` pointer must be supplied.
     ///
     /// # Safety
     /// `src` must point to an LVGL-compatible image source that outlives
     /// the widget: a static `lv_image_dsc_t`, a symbol string literal, or
     /// a null-terminated path string.
+    #[doc(hidden)]
     pub fn src(self, src: *const core::ffi::c_void) -> Self {
         unsafe { bindings::lv_image_set_src(self.raw, src) };
         self
@@ -2968,6 +3423,26 @@ impl Style {
         &mut self.inner
     }
 
+    /// Return the raw pointer from a shared reference, for APIs where LVGL
+    /// only reads through the pointer (e.g. `lv_obj_add_style`,
+    /// `lv_scale_section_set_style`). LVGL conventionally does not mutate
+    /// styles once they've been applied.
+    pub fn ptr(&self) -> *mut bindings::lv_style_t {
+        &self.inner as *const _ as *mut _
+    }
+
+    /// Set the arc color in this style.
+    pub fn arc_color(mut self, c: Color) -> Self {
+        unsafe { bindings::lv_style_set_arc_color(&mut self.inner, c.to_raw()) };
+        self
+    }
+
+    /// Set the arc width in this style.
+    pub fn arc_width(mut self, w: i32) -> Self {
+        unsafe { bindings::lv_style_set_arc_width(&mut self.inner, w) };
+        self
+    }
+
     /// Set the background color in this style.
     pub fn bg_color(mut self, c: Color) -> Self {
         unsafe { bindings::lv_style_set_bg_color(&mut self.inner, c.to_raw()) };
@@ -3022,6 +3497,10 @@ impl Style {
         self
     }
 }
+
+// SAFETY: Style access is serialized by the global LVGL lock.
+unsafe impl Send for Style {}
+unsafe impl Sync for Style {}
 
 impl Drop for Style {
     fn drop(&mut self) {
@@ -3127,4 +3606,540 @@ pub fn lock() -> LvglGuard {
 pub fn screen_active() -> Obj {
     let raw = unsafe { bindings::lv_screen_active() };
     unsafe { Obj::from_raw(raw) }
+}
+
+// =========================================================================
+//  Display info (default display getters)
+// =========================================================================
+
+/// Helpers querying the default LVGL display.
+pub mod display {
+    use super::bindings;
+
+    /// Horizontal resolution of the default display in pixels.
+    pub fn width() -> i32 {
+        unsafe { bindings::lv_display_get_horizontal_resolution(core::ptr::null_mut()) }
+    }
+
+    /// Vertical resolution of the default display in pixels.
+    pub fn height() -> i32 {
+        unsafe { bindings::lv_display_get_vertical_resolution(core::ptr::null_mut()) }
+    }
+
+    /// DPI of the default display.
+    pub fn dpi() -> i32 {
+        unsafe { bindings::lv_display_get_dpi(core::ptr::null_mut()) }
+    }
+}
+
+// =========================================================================
+//  Top-layer access
+// =========================================================================
+
+/// Top-most overlay layer of the default display (sits above all screens).
+pub fn layer_top() -> Obj {
+    let raw = unsafe { bindings::lv_layer_top() };
+    unsafe { Obj::from_raw(raw) }
+}
+
+// =========================================================================
+//  Text metrics
+// =========================================================================
+
+/// Measure the rendered size of `text` using `font`. Returns `(width, height)`
+/// in pixels.
+///
+/// `text` must be NUL-terminated (LVGL reads C strings).
+pub fn text_size(text: &[u8], font: *const bindings::lv_font_t) -> (i32, i32) {
+    debug_assert!(text.last() == Some(&0), "text_size: text must be NUL-terminated");
+    let mut p = bindings::lv_point_t { x: 0, y: 0 };
+    unsafe {
+        bindings::lv_text_get_size(
+            &mut p,
+            text.as_ptr() as *const _,
+            font,
+            0,
+            0,
+            i32::MAX,
+            0,
+        );
+    }
+    (p.x, p.y)
+}
+
+// =========================================================================
+//  Animation extras
+// =========================================================================
+
+impl Animation {
+    /// Configure the animation duration based on a movement speed
+    /// (LVGL's `lv_anim_speed`). Returns the precomputed duration value.
+    pub fn duration_for_speed(speed: u32) -> u32 {
+        unsafe { bindings::lv_anim_speed(speed) }
+    }
+
+    /// Set both the animation target and a safe tick callback.
+    ///
+    /// `on_tick(obj, v)` is invoked every frame with the target widget
+    /// (as [`Obj`]) and the interpolated value. Uses LVGL's custom exec
+    /// callback so the `fn` pointer is smuggled through `user_data`.
+    pub fn tick_fn<W: Widget>(mut self, obj: W, on_tick: fn(Obj, i32)) -> Self {
+        unsafe {
+            bindings::lv_anim_set_var(&mut self.inner, obj.raw() as *mut _);
+            bindings::lv_anim_set_user_data(&mut self.inner, on_tick as *mut _);
+            bindings::lv_anim_set_custom_exec_cb(
+                &mut self.inner,
+                Some(anim_custom_tick_trampoline),
+            );
+        }
+        self
+    }
+
+}
+
+unsafe extern "C" fn anim_custom_tick_trampoline(
+    a: *mut bindings::lv_anim_t,
+    v: i32,
+) {
+    unsafe {
+        let ud = bindings::lv_anim_get_user_data(a);
+        if ud.is_null() {
+            return;
+        }
+        let cb: fn(Obj, i32) = core::mem::transmute(ud);
+        let var = (*a).var;
+        cb(
+            Obj {
+                raw: var as *mut bindings::lv_obj_t,
+            },
+            v,
+        );
+    }
+}
+
+
+// Internal trampolines for additional convenience animators.
+unsafe extern "C" fn anim_translate_y_shim(var: *mut core::ffi::c_void, v: i32) {
+    unsafe {
+        bindings::lv_obj_set_style_translate_y(var as *mut bindings::lv_obj_t, v, PART_MAIN);
+    }
+}
+
+unsafe extern "C" fn anim_scroll_y_shim(var: *mut core::ffi::c_void, v: i32) {
+    unsafe {
+        bindings::lv_obj_scroll_to_y(var as *mut bindings::lv_obj_t, v, false);
+    }
+}
+
+unsafe extern "C" fn anim_arc_value_shim(var: *mut core::ffi::c_void, v: i32) {
+    unsafe {
+        bindings::lv_arc_set_value(var as *mut bindings::lv_obj_t, v);
+    }
+}
+
+/// Animate the `translate_y` style property from `from` to `to` over
+/// `duration_ms` (ease-in-out).
+pub fn animate_translate_y(obj: impl Widget, from: i32, to: i32, duration_ms: u32) {
+    Animation::new()
+        .target(obj.raw() as *mut _)
+        .values(from, to)
+        .duration(duration_ms)
+        .path(path_ease_in_out())
+        .exec_cb(Some(anim_translate_y_shim))
+        .start();
+}
+
+/// Animate the vertical scroll position to `to` (no easing — direct scroll).
+pub fn animate_scroll_y(obj: impl Widget, from: i32, to: i32, duration_ms: u32) {
+    Animation::new()
+        .target(obj.raw() as *mut _)
+        .values(from, to)
+        .duration(duration_ms)
+        .path(path_linear())
+        .exec_cb(Some(anim_scroll_y_shim))
+        .start();
+}
+
+/// Animate an [`Arc`] widget's value from `from` to `to` over `duration_ms`.
+pub fn animate_arc_value(arc: Arc, from: i32, to: i32, duration_ms: u32) {
+    Animation::new()
+        .target(arc.raw() as *mut _)
+        .values(from, to)
+        .duration(duration_ms)
+        .path(path_ease_in_out())
+        .exec_cb(Some(anim_arc_value_shim))
+        .start();
+}
+
+/// Animate `translate_y` forward for `forward_ms` then back for `playback_ms`,
+/// looping forever. Useful for subtle "shake" / bob animations.
+pub fn animate_translate_y_playback(
+    obj: impl Widget,
+    from: i32,
+    to: i32,
+    forward_ms: u32,
+    playback_ms: u32,
+) {
+    Animation::new()
+        .target(obj.raw() as *mut _)
+        .values(from, to)
+        .duration(forward_ms)
+        .playback_duration(playback_ms)
+        .path(path_ease_in_out())
+        .exec_cb(Some(anim_translate_y_shim))
+        .repeat_count(ANIM_REPEAT_INFINITE)
+        .start();
+}
+
+/// Animate the vertical scroll position forward then back, looping forever.
+pub fn animate_scroll_y_playback(
+    obj: impl Widget,
+    from: i32,
+    to: i32,
+    forward_ms: u32,
+    playback_ms: u32,
+) {
+    Animation::new()
+        .target(obj.raw() as *mut _)
+        .values(from, to)
+        .duration(forward_ms)
+        .playback_duration(playback_ms)
+        .path(path_linear())
+        .exec_cb(Some(anim_scroll_y_shim))
+        .repeat_count(ANIM_REPEAT_INFINITE)
+        .start();
+}
+
+/// Animate an [`Arc`] value forward then back, looping forever.
+pub fn animate_arc_value_playback(
+    arc: Arc,
+    from: i32,
+    to: i32,
+    forward_ms: u32,
+    playback_ms: u32,
+) {
+    Animation::new()
+        .target(arc.raw() as *mut _)
+        .values(from, to)
+        .duration(forward_ms)
+        .playback_duration(playback_ms)
+        .path(path_ease_in_out())
+        .exec_cb(Some(anim_arc_value_shim))
+        .repeat_count(ANIM_REPEAT_INFINITE)
+        .start();
+}
+
+/// Stop all animations with any exec callback running on `obj`.
+///
+/// LVGL's `lv_anim_delete(var, NULL)` matches all callbacks for the given variable.
+pub fn stop_animations(obj: impl Widget) {
+    unsafe {
+        bindings::lv_anim_delete(obj.raw() as *mut _, None);
+    }
+}
+
+// =========================================================================
+//  LvCell / LvRefCell — re-exported from the top-level `cell` module
+// =========================================================================
+
+pub use crate::cell::{LvCell, LvRefCell};
+
+// =========================================================================
+//  ImageSrc — typed safe image source for Image::source
+// =========================================================================
+
+/// A safe LVGL image source, constructible only from `'static` data.
+///
+/// LVGL recognizes three flavours of source pointer: an image descriptor
+/// (`lv_image_dsc_t`), a built-in symbol byte string (`LV_SYMBOL_*`), and
+/// a NUL-terminated filesystem path (FS driver required). All three are
+/// covered with type-safe constructors.
+#[derive(Clone, Copy)]
+pub struct ImageSrc {
+    raw: *const core::ffi::c_void,
+}
+
+// SAFETY: the inner pointer is always `'static` and read-only.
+unsafe impl Send for ImageSrc {}
+unsafe impl Sync for ImageSrc {}
+
+impl ImageSrc {
+    /// Wrap an LVGL image descriptor by pointer. The pointed-to data must
+    /// outlive any widget using this source — `'static` in practice.
+    ///
+    /// Typical call: `ImageSrc::from_dsc(core::ptr::addr_of!(images::badge))`
+    /// where `images::badge` is a generated `extern "C" static` image.
+    pub fn from_dsc(dsc: *const ImageDsc) -> Self {
+        Self {
+            raw: dsc as *const _,
+        }
+    }
+
+    /// Wrap a NUL-terminated symbol byte string (e.g. `LV_SYMBOL_OK`).
+    pub fn from_symbol(sym: &'static [u8]) -> Self {
+        debug_assert!(sym.last() == Some(&0), "ImageSrc::from_symbol: missing NUL");
+        Self {
+            raw: sym.as_ptr() as *const _,
+        }
+    }
+
+    /// Wrap a NUL-terminated filesystem path (LVGL FS driver must be registered).
+    pub fn from_path(path: &'static [u8]) -> Self {
+        debug_assert!(path.last() == Some(&0), "ImageSrc::from_path: missing NUL");
+        Self {
+            raw: path.as_ptr() as *const _,
+        }
+    }
+
+    pub(crate) fn raw_ptr(self) -> *const core::ffi::c_void {
+        self.raw
+    }
+}
+
+/// Safe re-export of the LVGL image descriptor type, so generated asset
+/// modules (e.g. `images::badge`) can declare their externals without
+/// needing to reach into the `ove::ffi` escape hatch.
+pub type ImageDsc = bindings::lv_image_dsc_t;
+
+impl Image {
+    /// Safe replacement for the legacy [`Image::src`] — accepts a typed
+    /// [`ImageSrc`] guaranteeing the underlying memory is `'static`.
+    pub fn source(self, src: ImageSrc) -> Self {
+        unsafe { bindings::lv_image_set_src(self.raw, src.raw) };
+        self
+    }
+
+    /// Set the inner alignment of the image content (`LV_IMAGE_ALIGN_*`).
+    pub fn inner_align(self, align: u32) -> Self {
+        unsafe { bindings::lv_image_set_inner_align(self.raw, align) };
+        self
+    }
+}
+
+// =========================================================================
+//  ColorFormat / CanvasBuffer — typed safe canvas pixel storage
+// =========================================================================
+
+/// LVGL color format selector (matches `LV_COLOR_FORMAT_*`).
+#[derive(Clone, Copy)]
+pub struct ColorFormat(pub bindings::lv_color_format_t);
+
+impl ColorFormat {
+    pub const I1: Self = Self(0x07);
+    pub const A8: Self = Self(0x0E);
+    pub const RGB565: Self = Self(0x12);
+    pub const RGB888: Self = Self(0x0F);
+    pub const ARGB8888: Self = Self(0x10);
+    pub const XRGB8888: Self = Self(0x11);
+
+    /// Bytes per pixel for this format. Panics for unknown formats.
+    pub const fn bpp(self) -> usize {
+        match self.0 {
+            0x10 | 0x11 => 4, // ARGB8888 / XRGB8888
+            0x0F => 3,        // RGB888
+            0x12 => 2,        // RGB565
+            0x0E => 1,        // A8
+            0x07 => 0,        // I1: < 1 byte/px (caller must size externally)
+            _ => panic!("ColorFormat::bpp: unknown format"),
+        }
+    }
+}
+
+/// Pixel storage for a [`Canvas`]. Borrows the buffer for the lifetime `'a`.
+pub struct CanvasBuffer<'a> {
+    ptr: *mut u8,
+    w: i32,
+    h: i32,
+    cf: ColorFormat,
+    _ph: core::marker::PhantomData<&'a mut [u8]>,
+}
+
+impl<'a> CanvasBuffer<'a> {
+    /// Wrap a mutable byte slice as canvas pixel storage.
+    ///
+    /// Asserts `buf.len() == w * h * cf.bpp()`. Panics on mismatch — sizing
+    /// errors are programming bugs, not runtime conditions.
+    pub fn new(buf: &'a mut [u8], w: i32, h: i32, cf: ColorFormat) -> Self {
+        let need = (w as usize) * (h as usize) * cf.bpp();
+        assert!(
+            buf.len() == need,
+            "CanvasBuffer: expected {} bytes, got {}",
+            need,
+            buf.len()
+        );
+        Self {
+            ptr: buf.as_mut_ptr(),
+            w,
+            h,
+            cf,
+            _ph: core::marker::PhantomData,
+        }
+    }
+}
+
+impl Canvas {
+    /// Safe replacement for the legacy [`Canvas::buffer`] — accepts a
+    /// typed [`CanvasBuffer`] borrowed for at least as long as the canvas
+    /// is used.
+    pub fn set_buffer(self, buf: CanvasBuffer<'_>) -> Self {
+        unsafe {
+            bindings::lv_canvas_set_buffer(self.raw, buf.ptr as *mut _, buf.w, buf.h, buf.cf.0);
+        }
+        self
+    }
+}
+
+// =========================================================================
+//  Scale — radial / linear scale widget
+// =========================================================================
+
+/// LVGL scale modes (`LV_SCALE_MODE_*`).
+pub const SCALE_MODE_HORIZONTAL_TOP: u32 = 0x00;
+pub const SCALE_MODE_HORIZONTAL_BOTTOM: u32 = 0x01;
+pub const SCALE_MODE_VERTICAL_LEFT: u32 = 0x02;
+pub const SCALE_MODE_VERTICAL_RIGHT: u32 = 0x04;
+pub const SCALE_MODE_ROUND_INNER: u32 = 0x08;
+pub const SCALE_MODE_ROUND_OUTER: u32 = 0x10;
+
+/// LVGL scale widget — linear or radial scale with ticks and labels.
+#[derive(Clone, Copy)]
+pub struct Scale {
+    raw: *mut bindings::lv_obj_t,
+}
+
+/// Handle to an `lv_scale_section_t *`.
+#[derive(Clone, Copy)]
+pub struct ScaleSection {
+    raw: *mut bindings::lv_scale_section_t,
+}
+
+impl Scale {
+    /// Create a new scale as a child of `parent`.
+    pub fn create(parent: impl Widget) -> Self {
+        let raw = unsafe { bindings::lv_scale_create(parent.raw()) };
+        Self { raw }
+    }
+
+    /// Fluent: set the layout mode (use `SCALE_MODE_*`).
+    pub fn mode(self, mode: u32) -> Self {
+        unsafe { bindings::lv_scale_set_mode(self.raw, mode as _) };
+        self
+    }
+
+    /// Fluent: set the value range.
+    pub fn range(self, min: i32, max: i32) -> Self {
+        unsafe { bindings::lv_scale_set_range(self.raw, min, max) };
+        self
+    }
+
+    /// Fluent: total number of tick marks.
+    pub fn total_tick_count(self, count: u32) -> Self {
+        unsafe { bindings::lv_scale_set_total_tick_count(self.raw, count) };
+        self
+    }
+
+    /// Fluent: every Nth tick is a major tick.
+    pub fn major_tick_every(self, nth: u32) -> Self {
+        unsafe { bindings::lv_scale_set_major_tick_every(self.raw, nth) };
+        self
+    }
+
+    /// Fluent: angle range for round scales.
+    pub fn angle_range(self, angle: u32) -> Self {
+        unsafe { bindings::lv_scale_set_angle_range(self.raw, angle) };
+        self
+    }
+
+    /// Fluent: rotation offset for round scales.
+    pub fn rotation(self, rot: i32) -> Self {
+        unsafe { bindings::lv_scale_set_rotation(self.raw, rot as _) };
+        self
+    }
+
+    /// Add a coloured/styled section to the scale.
+    pub fn add_section(self) -> ScaleSection {
+        let raw = unsafe { bindings::lv_scale_add_section(self.raw) };
+        ScaleSection { raw }
+    }
+}
+
+impl ScaleSection {
+    /// Set the section value range.
+    pub fn range(self, min: i32, max: i32) -> Self {
+        unsafe { bindings::lv_scale_section_set_range(self.raw, min, max) };
+        self
+    }
+
+    /// Apply a [`Style`] to the given part of the section.
+    ///
+    /// Takes `&Style` — the style must outlive the scale (typical use:
+    /// store in a `StaticCell<Style>` or `&'static`).
+    pub fn style(self, part: u32, style: &Style) -> Self {
+        unsafe { bindings::lv_scale_section_set_style(self.raw, part, style.ptr()) };
+        self
+    }
+}
+
+impl Widget for Scale {
+    fn raw(self) -> *mut bindings::lv_obj_t {
+        self.raw
+    }
+}
+
+impl core::ops::Deref for Scale {
+    type Target = Obj;
+    fn deref(&self) -> &Obj {
+        unsafe { &*(self as *const Scale as *const Obj) }
+    }
+}
+
+unsafe impl Send for Scale {}
+unsafe impl Sync for Scale {}
+
+// =========================================================================
+//  LvTimer extension — safe `fn`-callback constructor
+// =========================================================================
+
+unsafe extern "C" fn lvgl_timer_trampoline_fn(t: *mut bindings::lv_timer_t) {
+    let ud = unsafe { bindings::lv_timer_get_user_data(t) };
+    if ud.is_null() {
+        return;
+    }
+    // SAFETY: stored as a `fn()` pointer by `Timer::new_fn`.
+    let cb: fn() = unsafe { core::mem::transmute(ud) };
+    cb();
+}
+
+impl Timer {
+    /// Create an LVGL timer with a safe `fn()` callback.
+    ///
+    /// The function pointer is smuggled through `lv_timer_t::user_data`;
+    /// an internal trampoline calls it with no arguments.
+    pub fn new_fn(callback: fn(), period_ms: u32) -> Self {
+        let ud = callback as *mut core::ffi::c_void;
+        let raw = unsafe {
+            bindings::lv_timer_create(Some(lvgl_timer_trampoline_fn), period_ms, ud)
+        };
+        Self { raw }
+    }
+}
+
+// =========================================================================
+//  Subject extension — safe Obj <-> Subject linking
+// =========================================================================
+
+impl<T: Copy + Into<i32> + TryFrom<i32>> State<T> {
+    /// Attach an observer that automatically refreshes `obj` when this
+    /// state changes. The actual rebinding logic is on the widget side
+    /// (e.g. [`Label::bind_text`]) — this is a low-level escape hatch.
+    pub fn observe(&self, obj: impl Widget) {
+        unsafe {
+            bindings::lv_subject_add_observer_obj(
+                self.subject_ptr(),
+                None,
+                obj.raw(),
+                core::ptr::null_mut(),
+            );
+        }
+    }
 }

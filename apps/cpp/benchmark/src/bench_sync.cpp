@@ -7,53 +7,45 @@
  */
 
 #include <ove/ove.hpp>
+#include <ove/bench.hpp>
 
-extern "C" {
-#include "benchmark.h"
-}
+#include <optional>
 
-/* --- Shared state --- */
+/* --- Shared state (RAII — lives inside std::optional for bench lifecycle) --- */
 
-static ove_mutex_t bench_mtx;
-static ove_sem_t bench_sem;
-static ove_event_t bench_evt;
-static ove_condvar_t bench_cv;
-static ove_mutex_t bench_cv_mtx;
-static ove_mutex_t bench_rmtx;
-static ove_thread_t contention_th;
+static std::optional<ove::Mutex> bench_mtx;
+static std::optional<ove::Semaphore> bench_sem;
+static std::optional<ove::Event> bench_evt;
+static std::optional<ove::CondVar> bench_cv;
+static std::optional<ove::Mutex> bench_cv_mtx;
+static std::optional<ove::RecursiveMutex> bench_rmtx;
+static std::optional<ove::Thread<2048>> contention_th;
 static volatile int contention_done;
 static volatile uint32_t contention_count;
 
 /* --- Mutex lock/unlock --- */
 
-static void mutex_lock_unlock_setup(void *ctx)
+static void mutex_lock_unlock_setup()
 {
-	(void)ctx;
-	ove_mutex_create(&bench_mtx);
+	bench_mtx.emplace();
 }
 
-static void mutex_lock_unlock_run(void *ctx)
+static void mutex_lock_unlock_run()
 {
-	(void)ctx;
-	ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER);
-	ove_mutex_unlock(bench_mtx);
+	(void)bench_mtx->lock(OVE_WAIT_FOREVER);
+	bench_mtx->unlock();
 }
 
-static void mutex_lock_unlock_teardown(void *ctx)
+static void mutex_lock_unlock_teardown()
 {
-	(void)ctx;
-	ove_mutex_destroy(bench_mtx);
+	bench_mtx.reset();
 }
 
 /* --- Mutex create/destroy --- */
 
-static void mutex_create_destroy_run(void *ctx)
+static void mutex_create_destroy_run()
 {
-	(void)ctx;
-	ove_mutex_t m;
-
-	ove_mutex_create(&m);
-	ove_mutex_destroy(m);
+	ove::Mutex m;
 }
 
 /* --- Mutex contention (2-thread throughput) --- */
@@ -61,369 +53,308 @@ static void mutex_create_destroy_run(void *ctx)
 static void contention_thread(void *arg)
 {
 	(void)arg;
-
 	while (!contention_done) {
-		ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER);
+		(void)bench_mtx->lock(OVE_WAIT_FOREVER);
 		contention_count++;
-		ove_mutex_unlock(bench_mtx);
+		bench_mtx->unlock();
 	}
 }
 
-static void mutex_contention_setup(void *ctx)
+static void mutex_contention_setup()
 {
-	(void)ctx;
 	contention_done = 0;
 	contention_count = 0;
-	ove_mutex_create(&bench_mtx);
-
-	struct ove_thread_desc desc = {};
-	desc.name = "contention";
-	desc.entry = contention_thread;
-	desc.arg = nullptr;
-	desc.priority = OVE_PRIO_NORMAL;
-
-	ove_thread_create(&contention_th, 2048, &desc);
+	bench_mtx.emplace();
+	contention_th.emplace(contention_thread, nullptr, OVE_PRIO_NORMAL, "contention");
 }
 
-static void mutex_contention_run(void *ctx)
+static void mutex_contention_run()
 {
-	(void)ctx;
-	ove_mutex_lock(bench_mtx, OVE_WAIT_FOREVER);
+	(void)bench_mtx->lock(OVE_WAIT_FOREVER);
 	contention_count++;
-	ove_mutex_unlock(bench_mtx);
+	bench_mtx->unlock();
 }
 
-static void mutex_contention_teardown(void *ctx)
+static void mutex_contention_teardown()
 {
-	(void)ctx;
 	contention_done = 1;
-	ove_thread_sleep_ms(10);
-	ove_thread_destroy(contention_th);
-	ove_mutex_destroy(bench_mtx);
+	ove::time::delay_ms(10);
+	contention_th.reset();
+	bench_mtx.reset();
 }
 
 /* --- Mutex memory --- */
 
-static ove_mutex_t mem_mutex;
+static std::optional<ove::Mutex> mem_mutex;
 
-static void mutex_memory_run(void *ctx)
+static void mutex_memory_run()
 {
-	(void)ctx;
-	ove_mutex_create(&mem_mutex);
+	mem_mutex.emplace();
 }
 
-static void mutex_memory_teardown(void *ctx)
+static void mutex_memory_teardown()
 {
-	(void)ctx;
-	ove_mutex_destroy(mem_mutex);
+	mem_mutex.reset();
 }
 
 /* --- Semaphore take/give --- */
 
-static void sem_take_give_setup(void *ctx)
+static void sem_take_give_setup()
 {
-	(void)ctx;
-	ove_sem_create(&bench_sem, 1, 1);
+	bench_sem.emplace(1, 1);
 }
 
-static void sem_take_give_run(void *ctx)
+static void sem_take_give_run()
 {
-	(void)ctx;
-	ove_sem_take(bench_sem, OVE_WAIT_FOREVER);
-	ove_sem_give(bench_sem);
+	(void)bench_sem->take(OVE_WAIT_FOREVER);
+	bench_sem->give();
 }
 
-static void sem_take_give_teardown(void *ctx)
+static void sem_take_give_teardown()
 {
-	(void)ctx;
-	ove_sem_destroy(bench_sem);
+	bench_sem.reset();
 }
 
 /* --- Semaphore create/destroy --- */
 
-static void sem_create_destroy_run(void *ctx)
+static void sem_create_destroy_run()
 {
-	(void)ctx;
-	ove_sem_t s;
-
-	ove_sem_create(&s, 0, 1);
-	ove_sem_destroy(s);
+	ove::Semaphore s(0, 1);
 }
 
 /* --- Semaphore memory --- */
 
-static ove_sem_t mem_sem;
+static std::optional<ove::Semaphore> mem_sem;
 
-static void sem_memory_run(void *ctx)
+static void sem_memory_run()
 {
-	(void)ctx;
-	ove_sem_create(&mem_sem, 0, 1);
+	mem_sem.emplace(0, 1);
 }
 
-static void sem_memory_teardown(void *ctx)
+static void sem_memory_teardown()
 {
-	(void)ctx;
-	ove_sem_destroy(mem_sem);
+	mem_sem.reset();
 }
 
 /* --- Event signal/wait --- */
 
-static ove_thread_t evt_th;
+static std::optional<ove::Thread<1024>> evt_th;
 static volatile int evt_done;
 
 static void evt_signaler(void *arg)
 {
 	(void)arg;
-
 	while (!evt_done) {
-		ove_event_signal(bench_evt);
-		ove_thread_yield();
+		bench_evt->signal();
+		ove::Thread<>::yield();
 	}
 }
 
-static void event_signal_wait_setup(void *ctx)
+static void event_signal_wait_setup()
 {
-	(void)ctx;
 	evt_done = 0;
-	ove_event_create(&bench_evt);
-
-	struct ove_thread_desc desc = {};
-	desc.name = "evt_sig";
-	desc.entry = evt_signaler;
-	desc.arg = nullptr;
-	desc.priority = OVE_PRIO_NORMAL;
-
-	ove_thread_create(&evt_th, 1024, &desc);
+	bench_evt.emplace();
+	evt_th.emplace(evt_signaler, nullptr, OVE_PRIO_NORMAL, "evt_sig");
 }
 
-static void event_signal_wait_run(void *ctx)
+static void event_signal_wait_run()
 {
-	(void)ctx;
-	ove_event_wait(bench_evt, 10);
+	(void)bench_evt->wait(10);
 }
 
-static void event_signal_wait_teardown(void *ctx)
+static void event_signal_wait_teardown()
 {
-	(void)ctx;
 	evt_done = 1;
-	ove_thread_sleep_ms(10);
-	ove_thread_destroy(evt_th);
-	ove_event_destroy(bench_evt);
+	ove::time::delay_ms(10);
+	evt_th.reset();
+	bench_evt.reset();
 }
 
 /* --- Event memory --- */
 
-static ove_event_t mem_event;
+static std::optional<ove::Event> mem_event;
 
-static void event_memory_run(void *ctx)
+static void event_memory_run()
 {
-	(void)ctx;
-	ove_event_create(&mem_event);
+	mem_event.emplace();
 }
 
-static void event_memory_teardown(void *ctx)
+static void event_memory_teardown()
 {
-	(void)ctx;
-	ove_event_destroy(mem_event);
+	mem_event.reset();
 }
 
 /* --- Condvar signal/wait --- */
 
-static ove_thread_t cv_th;
+static std::optional<ove::Thread<1024>> cv_th;
 static volatile int cv_done;
 
 static void cv_signaler(void *arg)
 {
 	(void)arg;
-
 	while (!cv_done) {
-		ove_condvar_signal(bench_cv);
-		ove_thread_yield();
+		bench_cv->signal();
+		ove::Thread<>::yield();
 	}
 }
 
-static void condvar_signal_wait_setup(void *ctx)
+static void condvar_signal_wait_setup()
 {
-	(void)ctx;
 	cv_done = 0;
-	ove_mutex_create(&bench_cv_mtx);
-	ove_condvar_create(&bench_cv);
-
-	struct ove_thread_desc desc = {};
-	desc.name = "cv_sig";
-	desc.entry = cv_signaler;
-	desc.arg = nullptr;
-	desc.priority = OVE_PRIO_NORMAL;
-
-	ove_thread_create(&cv_th, 1024, &desc);
+	bench_cv_mtx.emplace();
+	bench_cv.emplace();
+	cv_th.emplace(cv_signaler, nullptr, OVE_PRIO_NORMAL, "cv_sig");
 }
 
-static void condvar_signal_wait_run(void *ctx)
+static void condvar_signal_wait_run()
 {
-	(void)ctx;
-	ove_mutex_lock(bench_cv_mtx, OVE_WAIT_FOREVER);
-	ove_condvar_wait(bench_cv, bench_cv_mtx, 10);
-	ove_mutex_unlock(bench_cv_mtx);
+	(void)bench_cv_mtx->lock(OVE_WAIT_FOREVER);
+	(void)bench_cv->wait(*bench_cv_mtx, 10);
+	bench_cv_mtx->unlock();
 }
 
-static void condvar_signal_wait_teardown(void *ctx)
+static void condvar_signal_wait_teardown()
 {
-	(void)ctx;
 	cv_done = 1;
-	ove_condvar_signal(bench_cv);
-	ove_thread_sleep_ms(10);
-	ove_thread_destroy(cv_th);
-	ove_condvar_destroy(bench_cv);
-	ove_mutex_destroy(bench_cv_mtx);
+	bench_cv->signal();
+	ove::time::delay_ms(10);
+	cv_th.reset();
+	bench_cv.reset();
+	bench_cv_mtx.reset();
 }
 
 /* --- Condvar memory --- */
 
-static ove_condvar_t mem_condvar;
+static std::optional<ove::CondVar> mem_condvar;
 
-static void condvar_memory_run(void *ctx)
+static void condvar_memory_run()
 {
-	(void)ctx;
-	ove_condvar_create(&mem_condvar);
+	mem_condvar.emplace();
 }
 
-static void condvar_memory_teardown(void *ctx)
+static void condvar_memory_teardown()
 {
-	(void)ctx;
-	ove_condvar_destroy(mem_condvar);
+	mem_condvar.reset();
 }
 
 /* --- Recursive mutex lock/unlock --- */
 
-static void rmtx_lock_unlock_setup(void *ctx)
+static void rmtx_lock_unlock_setup()
 {
-	(void)ctx;
-	ove_recursive_mutex_create(&bench_rmtx);
+	bench_rmtx.emplace();
 }
 
-static void rmtx_lock_unlock_run(void *ctx)
+static void rmtx_lock_unlock_run()
 {
-	(void)ctx;
-	ove_recursive_mutex_lock(bench_rmtx, OVE_WAIT_FOREVER);
-	ove_recursive_mutex_unlock(bench_rmtx);
+	(void)bench_rmtx->lock(OVE_WAIT_FOREVER);
+	bench_rmtx->unlock();
 }
 
-static void rmtx_lock_unlock_teardown(void *ctx)
+static void rmtx_lock_unlock_teardown()
 {
-	(void)ctx;
-	ove_recursive_mutex_destroy(bench_rmtx);
+	bench_rmtx.reset();
 }
 
 /* --- Suite --- */
 
-static int sync_is_enabled(void)
+static bool sync_is_enabled()
 {
-	return 1;
+	return true;
 }
 
-static const bench_case_t sync_cases[] = {
-	/* Memory tests first -- before thread-heavy tests affect heap state */
-	{
-		"mutex_memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		mutex_memory_run,
-		mutex_memory_teardown,
-		0,
-	},
-	{
-		"sem_memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		sem_memory_run,
-		sem_memory_teardown,
-		0,
-	},
-	{
-		"event_memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		event_memory_run,
-		event_memory_teardown,
-		0,
-	},
-	{
-		"condvar_memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		condvar_memory_run,
-		condvar_memory_teardown,
-		0,
-	},
-	{
-		"mutex_lock_unlock",
-		BENCH_TYPE_LATENCY,
-		mutex_lock_unlock_setup,
-		mutex_lock_unlock_run,
-		mutex_lock_unlock_teardown,
-		0,
-	},
-	{
-		"mutex_create_destroy",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		mutex_create_destroy_run,
-		nullptr,
-		0,
-	},
-	{
-		"mutex_contention_2t",
-		BENCH_TYPE_THROUGHPUT,
-		mutex_contention_setup,
-		mutex_contention_run,
-		mutex_contention_teardown,
-		0,
-	},
-	{
-		"sem_take_give",
-		BENCH_TYPE_LATENCY,
-		sem_take_give_setup,
-		sem_take_give_run,
-		sem_take_give_teardown,
-		0,
-	},
-	{
-		"sem_create_destroy",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		sem_create_destroy_run,
-		nullptr,
-		0,
-	},
-	{
-		"event_signal_wait",
-		BENCH_TYPE_LATENCY,
-		event_signal_wait_setup,
-		event_signal_wait_run,
-		event_signal_wait_teardown,
-		500,
-	},
-	{
-		"condvar_signal_wait",
-		BENCH_TYPE_LATENCY,
-		condvar_signal_wait_setup,
-		condvar_signal_wait_run,
-		condvar_signal_wait_teardown,
-		500,
-	},
-	{
-		"recursive_mutex_lock_unlock",
-		BENCH_TYPE_LATENCY,
-		rmtx_lock_unlock_setup,
-		rmtx_lock_unlock_run,
-		rmtx_lock_unlock_teardown,
-		0,
-	},
+// Memory tests first — before thread-heavy tests affect heap state.
+static constexpr ove::bench::CaseSpec mutex_memory_spec{
+	.name = "mutex_memory",
+	.kind = ove::bench::Type::memory,
+	.run = &mutex_memory_run,
+	.teardown = &mutex_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec sem_memory_spec{
+	.name = "sem_memory",
+	.kind = ove::bench::Type::memory,
+	.run = &sem_memory_run,
+	.teardown = &sem_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec event_memory_spec{
+	.name = "event_memory",
+	.kind = ove::bench::Type::memory,
+	.run = &event_memory_run,
+	.teardown = &event_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec condvar_memory_spec{
+	.name = "condvar_memory",
+	.kind = ove::bench::Type::memory,
+	.run = &condvar_memory_run,
+	.teardown = &condvar_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec mutex_lock_unlock_spec{
+	.name = "mutex_lock_unlock",
+	.kind = ove::bench::Type::latency,
+	.run = &mutex_lock_unlock_run,
+	.setup = &mutex_lock_unlock_setup,
+	.teardown = &mutex_lock_unlock_teardown,
+};
+static constexpr ove::bench::CaseSpec mutex_create_destroy_spec{
+	.name = "mutex_create_destroy",
+	.kind = ove::bench::Type::latency,
+	.run = &mutex_create_destroy_run,
+};
+static constexpr ove::bench::CaseSpec mutex_contention_spec{
+	.name = "mutex_contention_2t",
+	.kind = ove::bench::Type::throughput,
+	.run = &mutex_contention_run,
+	.setup = &mutex_contention_setup,
+	.teardown = &mutex_contention_teardown,
+};
+static constexpr ove::bench::CaseSpec sem_take_give_spec{
+	.name = "sem_take_give",
+	.kind = ove::bench::Type::latency,
+	.run = &sem_take_give_run,
+	.setup = &sem_take_give_setup,
+	.teardown = &sem_take_give_teardown,
+};
+static constexpr ove::bench::CaseSpec sem_create_destroy_spec{
+	.name = "sem_create_destroy",
+	.kind = ove::bench::Type::latency,
+	.run = &sem_create_destroy_run,
+};
+static constexpr ove::bench::CaseSpec event_signal_wait_spec{
+	.name = "event_signal_wait",
+	.kind = ove::bench::Type::latency,
+	.run = &event_signal_wait_run,
+	.setup = &event_signal_wait_setup,
+	.teardown = &event_signal_wait_teardown,
+	.iterations = 500,
+};
+static constexpr ove::bench::CaseSpec condvar_signal_wait_spec{
+	.name = "condvar_signal_wait",
+	.kind = ove::bench::Type::latency,
+	.run = &condvar_signal_wait_run,
+	.setup = &condvar_signal_wait_setup,
+	.teardown = &condvar_signal_wait_teardown,
+	.iterations = 500,
+};
+static constexpr ove::bench::CaseSpec rmtx_lock_unlock_spec{
+	.name = "recursive_mutex_lock_unlock",
+	.kind = ove::bench::Type::latency,
+	.run = &rmtx_lock_unlock_run,
+	.setup = &rmtx_lock_unlock_setup,
+	.teardown = &rmtx_lock_unlock_teardown,
 };
 
-extern "C" const bench_suite_t bench_suite_sync = {
-	"sync",
-	sync_is_enabled,
-	sync_cases,
-	sizeof(sync_cases) / sizeof(sync_cases[0]),
+static constexpr bench_case_t sync_cases[] = {
+	ove::bench::case_<mutex_memory_spec>(),
+	ove::bench::case_<sem_memory_spec>(),
+	ove::bench::case_<event_memory_spec>(),
+	ove::bench::case_<condvar_memory_spec>(),
+	ove::bench::case_<mutex_lock_unlock_spec>(),
+	ove::bench::case_<mutex_create_destroy_spec>(),
+	ove::bench::case_<mutex_contention_spec>(),
+	ove::bench::case_<sem_take_give_spec>(),
+	ove::bench::case_<sem_create_destroy_spec>(),
+	ove::bench::case_<event_signal_wait_spec>(),
+	ove::bench::case_<condvar_signal_wait_spec>(),
+	ove::bench::case_<rmtx_lock_unlock_spec>(),
 };
+
+OVE_BENCH_SUITE(bench_suite_sync, "sync", sync_is_enabled, sync_cases)

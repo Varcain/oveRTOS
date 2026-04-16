@@ -146,55 +146,59 @@ const SceneDsc = struct {
 var scene_act: u32 = 0;
 
 // ---------------------------------------------------------------------------
-// Animation callbacks (C calling convention)
+// perf_ffi — C-ABI animation callbacks + helpers boundary
+//
+// All callbacks with `callconv(.c)` signatures and their wrapper helpers
+// live inside this namespace struct so the audit boundary between "safe
+// Zig scene code" and "C-linkage glue" is visible at a glance. Scene
+// code calls `perf_ffi.colorAnim(obj)` etc. instead of the raw
+// `callconv(.c)` callbacks.
 // ---------------------------------------------------------------------------
 
-fn colorAnimCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
-    _ = v;
-    const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
-    c.lv_obj_set_style_bg_color(obj, c.lv_color_hex3(@intCast(rndNext(0x00f, 0xff0))), 0);
-    c.lv_obj_set_style_text_color(obj, c.lv_color_hex3(@intCast(rndNext(0x00f, 0xff0))), 0);
-}
+const perf_ffi = struct {
+    pub fn colorAnimCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
+        _ = v;
+        const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
+        c.lv_obj_set_style_bg_color(obj, c.lv_color_hex3(@intCast(rndNext(0x00f, 0xff0))), 0);
+        c.lv_obj_set_style_text_color(obj, c.lv_color_hex3(@intCast(rndNext(0x00f, 0xff0))), 0);
+    }
 
-fn shakeAnimYCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
-    const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
-    c.lv_obj_set_style_translate_y(obj, v, 0);
-}
+    pub fn shakeAnimYCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
+        const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
+        c.lv_obj_set_style_translate_y(obj, v, 0);
+    }
 
-fn scrollAnimYCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
-    const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
-    c.lv_obj_scroll_to_y(obj, v, animOff());
-}
+    pub fn scrollAnimYCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
+        const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
+        c.lv_obj_scroll_to_y(obj, v, animOff());
+    }
 
-fn arcAnimCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
-    const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
-    c.lv_arc_set_value(obj, v);
-}
+    pub fn arcAnimCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
+        const obj: *c.lv_obj_t = @ptrCast(@alignCast(var_ptr));
+        c.lv_arc_set_value(obj, v);
+    }
 
-// ---------------------------------------------------------------------------
-// Animation helpers
-// ---------------------------------------------------------------------------
+    pub fn colorAnim(obj: *c.lv_obj_t) void {
+        benchmark_anim_color(obj, perf_ffi.colorAnimCb);
+    }
 
-fn colorAnim(obj: *c.lv_obj_t) void {
-    benchmark_anim_color(obj, colorAnimCb);
-}
+    pub fn shakeAnim(obj: *c.lv_obj_t, y_max: i32) void {
+        const t1: u32 = @intCast(rndNext(300, 3000));
+        const t2: u32 = @intCast(rndNext(300, 3000));
+        benchmark_anim_shake(obj, perf_ffi.shakeAnimYCb, y_max, t1, t2);
+    }
 
-fn shakeAnim(obj: *c.lv_obj_t, y_max: i32) void {
-    const t1: u32 = @intCast(rndNext(300, 3000));
-    const t2: u32 = @intCast(rndNext(300, 3000));
-    benchmark_anim_shake(obj, shakeAnimYCb, y_max, t1, t2);
-}
+    pub fn scrollAnim(obj: *c.lv_obj_t, y_max: i32) void {
+        const t: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
+        benchmark_anim_scroll(obj, perf_ffi.scrollAnimYCb, y_max, t);
+    }
 
-fn scrollAnim(obj: *c.lv_obj_t, y_max: i32) void {
-    const t: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
-    benchmark_anim_scroll(obj, scrollAnimYCb, y_max, t);
-}
-
-fn arcAnim(obj: *c.lv_obj_t) void {
-    const t1: u32 = @intCast(rndNext(1000, 3000));
-    const t2: u32 = @intCast(rndNext(1000, 3000));
-    benchmark_anim_arc(obj, arcAnimCb, t1, t2);
-}
+    pub fn arcAnim(obj: *c.lv_obj_t) void {
+        const t1: u32 = @intCast(rndNext(1000, 3000));
+        const t2: u32 = @intCast(rndNext(1000, 3000));
+        benchmark_anim_arc(obj, perf_ffi.arcAnimCb, t1, t2);
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Card composite widget
@@ -232,7 +236,7 @@ fn cardCreate() *c.lv_obj_t {
 // ---------------------------------------------------------------------------
 
 fn emptyScreenCb() void {
-    colorAnim(c.lv_screen_active().?);
+    perf_ffi.colorAnim(c.lv_screen_active().?);
 }
 
 fn movingWallpaperCb() void {
@@ -243,7 +247,7 @@ fn movingWallpaperCb() void {
     c.lv_obj_set_size(img, c.lv_pct(150), c.lv_pct(150));
     c.lv_image_set_src(img, &img_benchmark_lvgl_logo_rgb);
     c.lv_image_set_inner_align(img, c.LV_IMAGE_ALIGN_TILE);
-    shakeAnim(img, -@divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))), 3));
+    perf_ffi.shakeAnim(img, -@divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))), 3));
 }
 
 fn singleRectangleCb() void {
@@ -253,7 +257,7 @@ fn singleRectangleCb() void {
     c.lv_obj_set_style_bg_opa(obj, c.LV_OPA_COVER, 0);
     c.lv_obj_center(obj);
     c.lv_obj_set_size(obj, c.lv_pct(30), c.lv_pct(30));
-    colorAnim(obj);
+    perf_ffi.colorAnim(obj);
 }
 
 fn multipleRectanglesCb() void {
@@ -266,7 +270,7 @@ fn multipleRectanglesCb() void {
         c.lv_obj_remove_style_all(obj);
         c.lv_obj_set_style_bg_opa(obj, c.LV_OPA_COVER, 0);
         c.lv_obj_set_size(obj, c.lv_pct(25), c.lv_pct(25));
-        colorAnim(obj);
+        perf_ffi.colorAnim(obj);
     }
 }
 
@@ -289,7 +293,7 @@ fn multipleRgbImagesCb() void {
             c.lv_image_set_src(obj, &img_benchmark_lvgl_logo_rgb);
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-            shakeAnim(obj, 80);
+            perf_ffi.shakeAnim(obj, 80);
         }
     }
 }
@@ -313,7 +317,7 @@ fn multipleArgbImagesCb() void {
             c.lv_image_set_src(obj, &img_benchmark_lvgl_logo_argb);
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-            shakeAnim(obj, 80);
+            perf_ffi.shakeAnim(obj, 80);
         }
     }
 }
@@ -338,7 +342,7 @@ fn rotatedArgbImagesCb() void {
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
             c.lv_image_set_rotation(obj, @intCast(rndNext(100, 3500)));
-            shakeAnim(obj, 80);
+            perf_ffi.shakeAnim(obj, 80);
         }
     }
 }
@@ -360,7 +364,7 @@ fn multipleLabelsCb() void {
     while (i < cnt) : (i += 1) {
         const obj = c.lv_label_create(scr).?;
         c.lv_label_set_text(obj, "Hello LVGL!");
-        colorAnim(obj);
+        perf_ffi.colorAnim(obj);
     }
 }
 
@@ -404,7 +408,7 @@ fn screenSizedTextCb() void {
     c.lv_obj_set_width(obj, c.lv_pct(100));
     c.lv_label_set_text(obj, txt);
     c.lv_obj_update_layout(obj);
-    scrollAnim(scr, c.lv_obj_get_scroll_bottom(scr));
+    perf_ffi.scrollAnim(scr, c.lv_obj_get_scroll_bottom(scr));
 }
 
 fn multipleArcsCb() void {
@@ -433,7 +437,7 @@ fn multipleArcsCb() void {
             c.lv_obj_set_style_arc_width(obj, 10, c.LV_PART_INDICATOR);
             c.lv_obj_set_style_arc_rounded(obj, false, c.LV_PART_INDICATOR);
             c.lv_obj_set_style_arc_color(obj, c.lv_color_hex3(@intCast(rndNext(0x00f, 0xff0))), c.LV_PART_INDICATOR);
-            arcAnim(obj);
+            perf_ffi.arcAnim(obj);
         }
     }
 }
@@ -455,7 +459,7 @@ fn containersCb() void {
             const card = cardCreate();
             if (x == 0)
                 c.lv_obj_add_flag(card, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-            shakeAnim(card, 30);
+            perf_ffi.shakeAnim(card, 30);
         }
     }
 }
@@ -477,13 +481,13 @@ fn containersWithOverlayCb() void {
             const card = cardCreate();
             if (x == 0)
                 c.lv_obj_add_flag(card, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-            shakeAnim(card, 30);
+            perf_ffi.shakeAnim(card, 30);
         }
     }
 
     const layer = layerTop();
     c.lv_obj_set_style_bg_opa(layer, c.LV_OPA_50, 0);
-    colorAnim(layer.?);
+    perf_ffi.colorAnim(layer.?);
 }
 
 fn containersWithOpaCb() void {
@@ -504,7 +508,7 @@ fn containersWithOpaCb() void {
             if (x == 0)
                 c.lv_obj_add_flag(card, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
             c.lv_obj_set_style_opa(card, c.LV_OPA_50, 0);
-            shakeAnim(card, 30);
+            perf_ffi.shakeAnim(card, 30);
         }
     }
 }
@@ -527,7 +531,7 @@ fn containersWithOpaLayerCb() void {
             c.lv_obj_set_style_opa_layered(card, c.LV_OPA_50, 0);
             if (x == 0)
                 c.lv_obj_add_flag(card, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-            shakeAnim(card, 30);
+            perf_ffi.shakeAnim(card, 30);
         }
     }
 }
@@ -542,7 +546,7 @@ fn containersWithScrollingCb() void {
     }
 
     c.lv_obj_update_layout(scr);
-    scrollAnim(scr, c.lv_obj_get_scroll_bottom(scr));
+    perf_ffi.scrollAnim(scr, c.lv_obj_get_scroll_bottom(scr));
 }
 
 // ---------------------------------------------------------------------------
@@ -555,27 +559,75 @@ var g_slideshow_tab: u32 = 0;
 extern fn benchmark_anim_generic(obj: *c.lv_obj_t, cb: c.lv_anim_exec_xcb_t, start: i32, end: i32, t1: u32, t2: u32) void;
 extern fn benchmark_anim_slideshow(obj: *c.lv_obj_t, scroll_cb: c.lv_anim_exec_xcb_t, y_max: i32, speed: u32, ready_cb: ?*const fn (?*anyopaque) callconv(.c) void) void;
 
-fn slideshowScrollCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
-    c.lv_obj_scroll_to_y(@ptrCast(var_ptr), v, animOff());
-}
+// Scene-level C-ABI callbacks (slideshow state machine + gauge anim) —
+// extension of the perf_ffi boundary for callbacks that need scene state.
+const scene_ffi = struct {
+    pub fn slideshowScrollCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
+        c.lv_obj_scroll_to_y(@ptrCast(var_ptr), v, animOff());
+    }
 
-fn slideshowReadyCb(_: ?*anyopaque) callconv(.c) void {
-    const tv = g_tabview orelse return;
-    g_slideshow_tab = (g_slideshow_tab + 1) % 3;
-    c.lv_tabview_set_active(tv, g_slideshow_tab, animOn());
+    pub fn slideshowReadyCb(_: ?*anyopaque) callconv(.c) void {
+        const tv = g_tabview orelse return;
+        g_slideshow_tab = (g_slideshow_tab + 1) % 3;
+        c.lv_tabview_set_active(tv, g_slideshow_tab, animOn());
 
-    const content = c.lv_tabview_get_content(tv) orelse return;
-    const tab = c.lv_obj_get_child(content, @intCast(g_slideshow_tab)) orelse return;
-    c.lv_obj_update_layout(tab);
-    var bot = c.lv_obj_get_scroll_bottom(tab);
-    if (bot <= 0) bot = 1;
-    const spd: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
-    benchmark_anim_slideshow(tab, slideshowScrollCb, bot, spd, slideshowReadyCb);
-}
+        const content = c.lv_tabview_get_content(tv) orelse return;
+        const tab = c.lv_obj_get_child(content, @intCast(g_slideshow_tab)) orelse return;
+        c.lv_obj_update_layout(tab);
+        var bot = c.lv_obj_get_scroll_bottom(tab);
+        if (bot <= 0) bot = 1;
+        const spd: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
+        benchmark_anim_slideshow(tab, scene_ffi.slideshowScrollCb, bot, spd, scene_ffi.slideshowReadyCb);
+    }
 
-fn gaugeArcExecCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
-    c.lv_arc_set_value(@ptrCast(var_ptr), v);
-}
+    pub fn gaugeArcExecCb(var_ptr: ?*anyopaque, v: i32) callconv(.c) void {
+        c.lv_arc_set_value(@ptrCast(var_ptr), v);
+    }
+
+    pub fn nextSceneTimerCb(timer: ?*c.lv_timer_t) callconv(.c) void {
+        scene_act += 1;
+        loadScene(scene_act);
+
+        if (scenes[scene_act].scene_time == 0) {
+            c.lv_timer_delete(timer);
+            summaryCreate();
+        } else {
+            c.lv_timer_set_period(timer, scenes[scene_act].scene_time);
+        }
+    }
+
+    pub fn sysmonPerfObserverCb(observer: ?*c.lv_observer_t, subject: ?*c.lv_subject_t) callconv(.c) void {
+        if (subject == null) return;
+
+        var m: BenchPerfMetrics = undefined;
+        benchmark_extract_perf_metrics(c.lv_subject_get_pointer(subject), &m);
+
+        if (observer) |obs| {
+            const label: ?*c.lv_obj_t = @ptrCast(c.lv_observer_get_target(obs));
+            if (label) |lbl| {
+                var buf: [192]u8 = undefined;
+                const act: usize = @intCast(scene_act);
+                const name = scenes[act].name;
+                const total = m.render_avg_time + m.flush_avg_time;
+
+                const name_prefix: [*:0]const u8 = if (name[0] != 0) name else "";
+                const sep: [*:0]const u8 = if (name[0] != 0) ": " else "";
+                const txt = std.fmt.bufPrint(&buf, "{s}{s}{d} FPS, {d}% CPU\nrefr. {d} ms = {d} ms render + {d} ms flush\x00", .{
+                    name_prefix, sep, m.fps, m.cpu, total, m.render_avg_time, m.flush_avg_time,
+                }) catch "benchmark\x00";
+                c.lv_label_set_text(lbl, @ptrCast(txt.ptr));
+            }
+        }
+
+        if (scenes[scene_act].measurement_cnt != 0) {
+            scenes[scene_act].cpu_avg_usage += m.cpu;
+            scenes[scene_act].fps_avg += m.fps;
+            scenes[scene_act].render_avg_time += m.render_avg_time;
+            scenes[scene_act].flush_avg_time += m.flush_avg_time;
+        }
+        scenes[scene_act].measurement_cnt += 1;
+    }
+};
 
 fn widgetsDemoCb() void {
     const scr = c.lv_screen_active().?;
@@ -656,7 +708,7 @@ fn widgetsDemoCb() void {
             c.lv_obj_set_style_bg_opa(arc, 0, c.LV_PART_KNOB);
             c.lv_obj_set_style_arc_width(arc, 8, c.LV_PART_INDICATOR);
             c.lv_obj_set_style_arc_color(arc, c.lv_palette_main(p.pal), c.LV_PART_INDICATOR);
-            benchmark_anim_generic(arc, gaugeArcExecCb, 20, 100, p.t1, p.t2);
+            benchmark_anim_generic(arc, scene_ffi.gaugeArcExecCb, 20, 100, p.t1, p.t2);
         }
     }
 
@@ -688,7 +740,7 @@ fn widgetsDemoCb() void {
         c.lv_obj_set_style_arc_opa(arc, 0, c.LV_PART_MAIN);
         c.lv_obj_set_style_bg_opa(arc, 0, c.LV_PART_KNOB);
         c.lv_obj_set_style_arc_width(arc, 12, c.LV_PART_INDICATOR);
-        benchmark_anim_generic(arc, gaugeArcExecCb, 10, 60, 4100, 800);
+        benchmark_anim_generic(arc, scene_ffi.gaugeArcExecCb, 10, 60, 4100, 800);
     }
 
     // Line chart: 12 points
@@ -742,7 +794,7 @@ fn widgetsDemoCb() void {
     var bot = c.lv_obj_get_scroll_bottom(tab1);
     if (bot <= 0) bot = 1;
     const spd: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
-    benchmark_anim_slideshow(tab1, slideshowScrollCb, bot, spd, slideshowReadyCb);
+    benchmark_anim_slideshow(tab1, scene_ffi.slideshowScrollCb, bot, spd, scene_ffi.slideshowReadyCb);
 }
 
 // ---------------------------------------------------------------------------
@@ -786,68 +838,20 @@ fn loadScene(scene: u32) void {
     c.lv_obj_set_layout(scr, c.LV_LAYOUT_NONE);
     c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    _ = c.lv_anim_delete(scr, scrollAnimYCb);
-    _ = c.lv_anim_delete(scr, shakeAnimYCb);
-    _ = c.lv_anim_delete(scr, colorAnimCb);
+    _ = c.lv_anim_delete(scr, perf_ffi.scrollAnimYCb);
+    _ = c.lv_anim_delete(scr, perf_ffi.shakeAnimYCb);
+    _ = c.lv_anim_delete(scr, perf_ffi.colorAnimCb);
 
     const layer = layerTop();
-    _ = c.lv_anim_delete(layer, colorAnimCb);
+    _ = c.lv_anim_delete(layer, perf_ffi.colorAnimCb);
     c.lv_obj_set_style_bg_opa(layer, c.LV_OPA_TRANSP, 0);
 
     rndReset();
     if (scenes[scene].create_cb) |cb| cb();
 }
 
-fn nextSceneTimerCb(timer: ?*c.lv_timer_t) callconv(.c) void {
-    scene_act += 1;
-    loadScene(scene_act);
-
-    if (scenes[scene_act].scene_time == 0) {
-        c.lv_timer_delete(timer);
-        summaryCreate();
-    } else {
-        c.lv_timer_set_period(timer, scenes[scene_act].scene_time);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Performance observer
-// ---------------------------------------------------------------------------
-
-fn sysmonPerfObserverCb(observer: ?*c.lv_observer_t, subject: ?*c.lv_subject_t) callconv(.c) void {
-    if (subject == null) return;
-
-    var m: BenchPerfMetrics = undefined;
-    benchmark_extract_perf_metrics(c.lv_subject_get_pointer(subject), &m);
-
-    // Update overlay label text
-    if (observer) |obs| {
-        const label: ?*c.lv_obj_t = @ptrCast(c.lv_observer_get_target(obs));
-        if (label) |lbl| {
-            var buf: [192]u8 = undefined;
-            const act: usize = @intCast(scene_act);
-            const name = scenes[act].name;
-            const total = m.render_avg_time + m.flush_avg_time;
-
-            // Prepend "SceneName: " if name is not empty
-            const name_prefix: [*:0]const u8 = if (name[0] != 0) name else "";
-            const sep: [*:0]const u8 = if (name[0] != 0) ": " else "";
-            const txt = std.fmt.bufPrint(&buf, "{s}{s}{d} FPS, {d}% CPU\nrefr. {d} ms = {d} ms render + {d} ms flush\x00", .{
-                name_prefix, sep, m.fps, m.cpu, total, m.render_avg_time, m.flush_avg_time,
-            }) catch "benchmark\x00";
-            c.lv_label_set_text(lbl, @ptrCast(txt.ptr));
-        }
-    }
-
-    // Ignore first call - stale data from previous scene
-    if (scenes[scene_act].measurement_cnt != 0) {
-        scenes[scene_act].cpu_avg_usage += m.cpu;
-        scenes[scene_act].fps_avg += m.fps;
-        scenes[scene_act].render_avg_time += m.render_avg_time;
-        scenes[scene_act].flush_avg_time += m.flush_avg_time;
-    }
-    scenes[scene_act].measurement_cnt += 1;
-}
+// `scene_ffi.nextSceneTimerCb` and `scene_ffi.sysmonPerfObserverCb` live in `scene_ffi` — see
+// the perf_ffi section near the top of the file.
 
 // ---------------------------------------------------------------------------
 // Draw task event callback for summary table styling
@@ -1028,12 +1032,12 @@ fn appMain() void {
 
         loadScene(scene_act);
 
-        _ = c.lv_timer_create(nextSceneTimerCb, scenes[0].scene_time, null);
+        _ = c.lv_timer_create(scene_ffi.nextSceneTimerCb, scenes[0].scene_time, null);
 
         // Setup performance observer
         const perf_subj = benchmark_get_perf_subject();
         if (perf_subj) |subj| {
-            _ = c.lv_subject_add_observer_obj(subj, sysmonPerfObserverCb, title, null);
+            _ = c.lv_subject_add_observer_obj(subj, scene_ffi.sysmonPerfObserverCb, title, null);
         } else {
             c.lv_label_set_text(title, "Perf monitor unavailable");
         }

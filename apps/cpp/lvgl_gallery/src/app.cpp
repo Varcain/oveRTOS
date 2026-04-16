@@ -54,7 +54,7 @@ static uint8_t g_canvas_buf[64 * 64 * 4];
 
 /* ── Navigation state ─────────────────────────────────────────────── */
 
-static lv::ObjectView g_content{nullptr};
+static lv::Box g_content{nullptr};
 static lv::Label g_title_label{nullptr};
 static int g_page = 0;
 
@@ -368,13 +368,12 @@ static void create_ui()
 		.size(LV_PCT(100), 40)
 		.bg_color(lv_color_hex(0x1A237E))
 		.bg_opa(LV_OPA_COVER)
-		.radius(0);
-	lv_obj_set_flex_flow(nav.get(), LV_FLEX_FLOW_ROW);
-	lv_obj_set_flex_align(nav.get(),
-			      LV_FLEX_ALIGN_SPACE_BETWEEN,
-			      LV_FLEX_ALIGN_CENTER,
-			      LV_FLEX_ALIGN_CENTER);
-	lv_obj_set_style_pad_hor(nav.get(), 4, LV_PART_MAIN);
+		.radius(0)
+		.flex_flow(LV_FLEX_FLOW_ROW)
+		.flex_align(LV_FLEX_ALIGN_SPACE_BETWEEN,
+			    LV_FLEX_ALIGN_CENTER,
+			    LV_FLEX_ALIGN_CENTER)
+		.pad_hor(4);
 
 	/* Left arrow */
 	auto prev_btn = lv::Button::create(nav).size(40, 32);
@@ -385,10 +384,9 @@ static void create_ui()
 	g_title_label = lv::Label::create(nav)
 		.text("")
 		.color(lv_color_white())
-		.font(&lv_font_montserrat_14);
-	lv_obj_set_flex_grow(g_title_label.get(), 1);
-	lv_obj_set_style_text_align(g_title_label.get(),
-				    LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+		.font(&lv_font_montserrat_14)
+		.flex_grow(1)
+		.text_align(LV_TEXT_ALIGN_CENTER);
 
 	/* Right arrow */
 	auto next_btn = lv::Button::create(nav).size(40, 32);
@@ -396,12 +394,12 @@ static void create_ui()
 	next_btn.on_click(&on_next);
 
 	/* ── Content container ─────────────────────────────────────── */
-	g_content = lv::Box::create(screen);
-	lv_obj_set_size(g_content.get(), LV_PCT(100), LV_SIZE_CONTENT);
-	lv_obj_set_flex_grow(g_content.get(), 1);
-	lv_obj_set_style_bg_opa(g_content.get(), LV_OPA_TRANSP, LV_PART_MAIN);
-	lv_obj_set_style_border_width(g_content.get(), 0, LV_PART_MAIN);
-	lv_obj_set_style_pad_all(g_content.get(), 8, LV_PART_MAIN);
+	g_content = lv::Box::create(screen)
+		.size(LV_PCT(100), LV_SIZE_CONTENT)
+		.flex_grow(1)
+		.bg_opa(LV_OPA_TRANSP)
+		.border_width(0)
+		.pad_all(8);
 
 	/* Default group for keyboard nav */
 	static lv::Group nav_group;

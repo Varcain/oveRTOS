@@ -33,6 +33,8 @@ pub mod gpio;
 pub mod led;
 #[cfg(has_console)]
 pub mod console;
+pub mod bench;
+pub mod cell;
 pub mod error;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
@@ -153,10 +155,16 @@ macro_rules! ove_handle_impl {
     };
 }
 
-/// Raw FFI bindings re-exported for advanced use cases.
+/// Raw FFI bindings — **escape hatch** for narrow, app-private interop
+/// that the safe wrappers don't cover (e.g. custom `lv_subject_t` observers,
+/// `ove_work_fn` handlers linking against user C helpers).
 ///
-/// Direct use of these types bypasses all safety checks. Prefer the safe
-/// wrappers in sibling modules whenever possible.
+/// **Do not use from normal app code.** App business logic should rely
+/// exclusively on the safe wrappers in sibling modules (`audio`, `lvgl`,
+/// `net`, `timer`, `thread`, …). Any use of `ove::ffi::*` requires the
+/// surrounding module to be marked `#[allow(unsafe_code)]`, which forms
+/// the de-facto auditability boundary for the app.
+#[doc(hidden)]
 pub mod ffi {
     pub use crate::bindings::*;
 }
@@ -171,6 +179,7 @@ pub use queue::Queue;
 #[cfg(has_sync)]
 pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
 pub use thread::{Thread, ThreadState, ThreadStats, MemStats, ThreadInfo};
+pub use cell::{LvCell, LvRefCell};
 pub use static_cell::{StaticCell, StaticMut};
 #[cfg(has_timer)]
 pub use timer::Timer;
@@ -660,6 +669,154 @@ macro_rules! shared {
 macro_rules! shared_mut {
     ($vis:vis $name:ident : $ty:ty) => {
         $vis static $name: $crate::StaticMut<$ty> = $crate::StaticMut::new();
+    };
+}
+
+/// Declare a static [`bench::CBenchCase`](crate::bench::CBenchCase) from a
+/// safe Rust `fn()` run (and optional setup/teardown) callback.
+///
+/// The macro emits module-scope `unsafe extern "C"` trampolines inside a
+/// const-block initializer — so no extra symbols leak into the user's
+/// namespace and the app never writes `unsafe extern "C"` itself.
+///
+/// # Example
+/// ```ignore
+/// fn time_get_us_overhead_run() { let _ = ove::time::get_us(); }
+/// ove::bench_case!(static TIME_GET_US_OVERHEAD: BenchCase = {
+///     name: b"time_get_us_overhead\0",
+///     kind: BenchType::Latency,
+///     run: time_get_us_overhead_run,
+/// });
+/// ```
+#[macro_export]
+macro_rules! bench_case {
+    ($vis:vis static $name:ident : BenchCase = {
+        name: $byte_name:expr,
+        kind: $kind:expr,
+        run: $run:ident
+        $(, setup: $setup:ident)?
+        $(, teardown: $teardown:ident)?
+        $(, iterations: $iter:expr)?
+        $(,)?
+    }) => {
+        $vis static $name: $crate::bench::CBenchCase = {
+            unsafe extern "C" fn __run_tramp(_ctx: *mut core::ffi::c_void) { $run() }
+            $(unsafe extern "C" fn __setup_tramp(_ctx: *mut core::ffi::c_void) { $setup() })?
+            $(unsafe extern "C" fn __teardown_tramp(_ctx: *mut core::ffi::c_void) { $teardown() })?
+
+            // Construct Option<fn> values — the `$(... $meta ...)?` groups
+            // must include the metavar, so we use a no-op type annotation
+            // referencing it to tie the repetition depth.
+            let setup: Option<unsafe extern "C" fn(*mut core::ffi::c_void)> = {
+                let s: Option<unsafe extern "C" fn(*mut core::ffi::c_void)> = None;
+                $( let s: Option<unsafe extern "C" fn(*mut core::ffi::c_void)> = {
+                    let _ = stringify!($setup);
+                    Some(__setup_tramp)
+                }; )?
+                s
+            };
+            let teardown: Option<unsafe extern "C" fn(*mut core::ffi::c_void)> = {
+                let t: Option<unsafe extern "C" fn(*mut core::ffi::c_void)> = None;
+                $( let t: Option<unsafe extern "C" fn(*mut core::ffi::c_void)> = {
+                    let _ = stringify!($teardown);
+                    Some(__teardown_tramp)
+                }; )?
+                t
+            };
+            let iterations: u32 = {
+                let i: u32 = 0;
+                $( let i: u32 = $iter; )?
+                i
+            };
+
+            $crate::bench::CBenchCase {
+                name: $byte_name.as_ptr() as *const core::ffi::c_char,
+                bench_type: $kind,
+                setup,
+                run: Some(__run_tramp),
+                teardown,
+                iterations,
+            }
+        };
+    };
+}
+
+/// Declare a `#[no_mangle] pub static <symbol>: CBenchSuite` that
+/// aggregates the given bench cases and exposes them to the C harness.
+///
+/// `symbol` must exactly match the `extern const bench_suite_t` name the
+/// C side expects (typically `bench_suite_<name>`).
+///
+/// `enabled` is a safe `fn() -> bool` — the macro wraps it in a C-ABI
+/// trampoline.
+///
+/// # Example
+/// ```ignore
+/// fn time_is_enabled() -> bool { true }
+/// ove::bench_suite!(
+///     symbol = bench_suite_time,
+///     name = b"time\0",
+///     enabled = time_is_enabled,
+///     cases = [TIME_GET_US_OVERHEAD, DELAY_1MS],
+/// );
+/// ```
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __count_bench_cases {
+    () => { 0usize };
+    ($head:ident $(, $tail:ident)*) => {
+        1usize + $crate::__count_bench_cases!($($tail),*)
+    };
+}
+
+#[macro_export]
+macro_rules! bench_suite {
+    (
+        symbol = $symbol:ident,
+        name = $name_bytes:expr,
+        enabled = $enabled_fn:ident,
+        cases = [ $( $case:ident ),* $(,)? ] $(,)?
+    ) => {
+        #[unsafe(no_mangle)]
+        #[allow(non_upper_case_globals)]
+        pub static $symbol: $crate::bench::CBenchSuite = {
+            const CASE_COUNT: usize = $crate::__count_bench_cases!($($case),*);
+            static CASES: [$crate::bench::CBenchCase; CASE_COUNT] = [ $( $case ),* ];
+            unsafe extern "C" fn __enabled_tramp() -> i32 {
+                if $enabled_fn() { 1 } else { 0 }
+            }
+            $crate::bench::CBenchSuite {
+                name: $name_bytes.as_ptr() as *const core::ffi::c_char,
+                is_enabled: Some(__enabled_tramp),
+                cases: CASES.as_ptr(),
+                case_count: CASE_COUNT as u32,
+            }
+        };
+    };
+}
+
+///
+/// Bundles a `&'static StaticCell<T>` of shared state with a safe
+/// `fn(&T, EventCtx)` callback. Pass the resulting static to
+/// [`EventTarget::on_with`](crate::lvgl::EventTarget::on_with) or
+/// [`EventTarget::on_clicked_with`](crate::lvgl::EventTarget::on_clicked_with).
+///
+/// # Example
+/// ```ignore
+/// struct NavState { page: i32 }
+/// ove::shared!(NAV: ove::lvgl::LvCell<NavState>);
+/// fn on_next(state: &ove::lvgl::LvCell<NavState>, _e: ove::lvgl::EventCtx<'_>) {
+///     state.update(|s| NavState { page: s.page + 1 });
+/// }
+/// ove::event_handler!(NAV_NEXT: LvCell<NavState> = &NAV, on_next);
+/// // ...later: button.on_clicked_with(&NAV_NEXT);
+/// ```
+#[cfg(has_lvgl)]
+#[macro_export]
+macro_rules! event_handler {
+    ($vis:vis $name:ident : $t:ty = $cell:expr, $fn:expr) => {
+        $vis static $name: $crate::lvgl::EventHandler<$t> =
+            $crate::lvgl::EventHandler::new($cell, $fn);
     };
 }
 

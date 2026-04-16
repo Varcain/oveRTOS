@@ -382,6 +382,73 @@ public:
 	 * @param[in] row_span   Number of rows to span (default 1).
 	 * @return Reference to the derived object for method chaining.
 	 */
+	/**
+	 * @brief Configure this object as a flex container with the given flow.
+	 */
+	Derived &flex_flow(lv_flex_flow_t flow) {
+		lv_obj_set_flex_flow(self().get(), flow);
+		return self();
+	}
+
+	/**
+	 * @brief Set flex alignment for main axis, cross axis (items), and cross axis (tracks).
+	 */
+	Derived &flex_align(lv_flex_align_t main, lv_flex_align_t cross,
+			    lv_flex_align_t track) {
+		lv_obj_set_flex_align(self().get(), main, cross, track);
+		return self();
+	}
+
+	/**
+	 * @brief Set this child's flex grow factor (0 disables growing).
+	 */
+	Derived &flex_grow(uint8_t grow) {
+		lv_obj_set_flex_grow(self().get(), grow);
+		return self();
+	}
+
+	/**
+	 * @brief Switch the object's layout engine (None / Flex / Grid).
+	 */
+	Derived &layout(uint32_t kind) {
+		lv_obj_set_layout(self().get(), kind);
+		return self();
+	}
+
+	/**
+	 * @brief Scroll the object so `y` is visible. `anim` enables animated scrolling.
+	 */
+	Derived &scroll_to_y(int32_t y, bool anim) {
+		lv_obj_scroll_to_y(self().get(), y, anim);
+		return self();
+	}
+
+	/**
+	 * @brief Force a layout recomputation (needed before `get_content_width`/`get_scroll_bottom`).
+	 */
+	Derived &update_layout() {
+		lv_obj_update_layout(self().get());
+		return self();
+	}
+
+	/** @return Inner content width (excludes padding/scrollbars). */
+	int32_t get_content_width() const {
+		return lv_obj_get_content_width(const_cast<lv_obj_t *>(
+			static_cast<const Derived &>(*this).get()));
+	}
+
+	/** @return Remaining downward scroll distance. */
+	int32_t get_scroll_bottom() const {
+		return lv_obj_get_scroll_bottom(const_cast<lv_obj_t *>(
+			static_cast<const Derived &>(*this).get()));
+	}
+
+	/** Remove all inline and reused styles from this object. */
+	Derived &remove_style_all() {
+		lv_obj_remove_style_all(self().get());
+		return self();
+	}
+
 	Derived &grid_cell(lv_grid_align_t col_align, int32_t col_pos,
 			   int32_t col_span, lv_grid_align_t row_align,
 			   int32_t row_pos, int32_t row_span) {
@@ -680,6 +747,99 @@ public:
 	 */
 	Derived &text_font(const lv_font_t *f) {
 		lv_obj_set_style_text_font(self().get(), f, LV_PART_MAIN);
+		return self();
+	}
+
+	// ---- Per-side paddings + row/column gaps ----
+	Derived &pad_top(int32_t p) {
+		lv_obj_set_style_pad_top(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	Derived &pad_bottom(int32_t p) {
+		lv_obj_set_style_pad_bottom(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	Derived &pad_left(int32_t p) {
+		lv_obj_set_style_pad_left(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	Derived &pad_right(int32_t p) {
+		lv_obj_set_style_pad_right(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	Derived &pad_row(int32_t p) {
+		lv_obj_set_style_pad_row(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	Derived &pad_column(int32_t p) {
+		lv_obj_set_style_pad_column(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+
+	// ---- Text alignment + overall opacity ----
+	Derived &text_align(uint32_t align, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_text_align(self().get(),
+					    static_cast<lv_text_align_t>(align), part);
+		return self();
+	}
+	Derived &set_opa(lv_opa_t opa) {
+		lv_obj_set_style_opa(self().get(), opa, LV_PART_MAIN);
+		return self();
+	}
+
+	// ---- Selector variants ----
+	Derived &text_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_text_color(self().get(), c, part);
+		return self();
+	}
+	Derived &border_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_border_color(self().get(), c, part);
+		return self();
+	}
+	Derived &arc_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_arc_color(self().get(), c, part);
+		return self();
+	}
+	Derived &arc_width(int32_t w, lv_style_selector_t part) {
+		lv_obj_set_style_arc_width(self().get(), w, part);
+		return self();
+	}
+	Derived &arc_opa(lv_opa_t opa, lv_style_selector_t part) {
+		lv_obj_set_style_arc_opa(self().get(), opa, part);
+		return self();
+	}
+	Derived &arc_rounded(bool rounded, lv_style_selector_t part) {
+		lv_obj_set_style_arc_rounded(self().get(), rounded, part);
+		return self();
+	}
+
+	// ---- Advanced layout/compositing styles ----
+	Derived &translate_y(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_translate_y(self().get(), v, part);
+		return self();
+	}
+	Derived &margin_top(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_top(self().get(), v, part);
+		return self();
+	}
+	Derived &margin_bottom(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_bottom(self().get(), v, part);
+		return self();
+	}
+	Derived &margin_left(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_left(self().get(), v, part);
+		return self();
+	}
+	Derived &margin_right(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_right(self().get(), v, part);
+		return self();
+	}
+	Derived &max_height(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_max_height(self().get(), v, part);
+		return self();
+	}
+	Derived &opa_layered(lv_opa_t opa, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_opa_layered(self().get(), opa, part);
 		return self();
 	}
 

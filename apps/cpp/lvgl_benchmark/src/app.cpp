@@ -29,6 +29,38 @@ LV_IMAGE_DECLARE(img_benchmark_avatar);
 
 namespace lv = ove::lvgl;
 
+/*
+ * perf_ffi — C-coupled callback and helper boundary.
+ *
+ * Every entity that crosses into C-ABI land (LVGL animation exec
+ * callbacks, `benchmark_*` perf helpers, the sysmon observer, the
+ * table draw-task event callback) lives in this namespace so the
+ * audit boundary between "safe C++ scene code" and "C-linkage glue"
+ * is visible at a glance. The scene callbacks themselves remain in
+ * the file's top-level scope and reference `perf_ffi::*` as needed.
+ */
+namespace perf_ffi {
+// Forward-declared here; definitions live further down so the scene
+// callbacks that invoke them see declarations.
+void color_anim(lv_obj_t *obj);
+void shake_anim(lv_obj_t *obj, int32_t y_max);
+void scroll_anim(lv_obj_t *obj, int32_t y_max);
+void arc_anim(lv_obj_t *obj);
+
+extern "C" void color_anim_cb(void *var, int32_t v);
+extern "C" void shake_anim_y_cb(void *var, int32_t v);
+extern "C" void scroll_anim_y_cb(void *var, int32_t v);
+extern "C" void arc_anim_cb(void *var, int32_t v);
+extern "C" void slideshow_scroll_cb(void *var, int32_t v);
+extern "C" void slideshow_ready_cb(lv_anim_t *a);
+extern "C" void gauge_arc_exec_cb(void *var, int32_t v);
+extern "C" void table_draw_task_event_cb(lv_event_t *e);
+#if LV_USE_PERF_MONITOR
+extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer,
+					lv_subject_t *subject);
+#endif
+} /* namespace perf_ffi */
+
 /* ── Forward declarations ─────────────────────────────────────────── */
 
 static void graphics_thread(void *arg);
@@ -40,21 +72,9 @@ static void summary_create(void);
 static void rnd_reset(void);
 static int32_t rnd_next(int32_t min, int32_t max);
 
-static void color_anim_cb(void *var, int32_t v);
-static void color_anim(lv_obj_t *obj);
-static void shake_anim_y_cb(void *var, int32_t v);
-static void shake_anim(lv_obj_t *obj, int32_t y_max);
-static void scroll_anim_y_cb(void *var, int32_t v);
-static void scroll_anim(lv_obj_t *obj, int32_t y_max);
-static void arc_anim_cb(void *var, int32_t v);
-static void arc_anim(lv_obj_t *obj);
 static lv_obj_t *card_create(void);
 static void widgets_demo_cb(void);
-
-#if LV_USE_PERF_MONITOR
-static void sysmon_perf_observer_cb(lv_observer_t *observer,
-				    lv_subject_t *subject);
-#endif
+// All animation / perf / observer callbacks live in `perf_ffi` — see top of file.
 
 /* ── Thread ───────────────────────────────────────────────────────── */
 
@@ -78,7 +98,7 @@ struct scene_dsc_t {
 
 static void empty_screen_cb(void)
 {
-	color_anim(lv_screen_active());
+	perf_ffi::color_anim(lv_screen_active());
 }
 
 static void moving_wallpaper_cb(void)
@@ -89,7 +109,7 @@ static void moving_wallpaper_cb(void)
 	img.size(lv_pct(150), lv_pct(150));
 	lv_image_set_src(img.get(), &img_benchmark_lvgl_logo_rgb);
 	lv_image_set_inner_align(img.get(), LV_IMAGE_ALIGN_TILE);
-	shake_anim(img.get(),
+	perf_ffi::shake_anim(img.get(),
 		   -lv_display_get_vertical_resolution(NULL) / 3);
 }
 
@@ -100,7 +120,7 @@ static void single_rectangle_cb(void)
 	lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
 	lv_obj_center(obj);
 	lv_obj_set_size(obj, lv_pct(30), lv_pct(30));
-	color_anim(obj);
+	perf_ffi::color_anim(obj);
 }
 
 static void multiple_rectangles_cb(void)
@@ -116,7 +136,7 @@ static void multiple_rectangles_cb(void)
 		lv_obj_remove_style_all(obj);
 		lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
 		lv_obj_set_size(obj, lv_pct(25), lv_pct(25));
-		color_anim(obj);
+		perf_ffi::color_anim(obj);
 	}
 }
 
@@ -143,7 +163,7 @@ static void multiple_rgb_images_cb(void)
 			if (x == 0)
 				lv_obj_add_flag(img.get(),
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-			shake_anim(img.get(), 80);
+			perf_ffi::shake_anim(img.get(), 80);
 		}
 	}
 }
@@ -171,7 +191,7 @@ static void multiple_argb_images_cb(void)
 			if (x == 0)
 				lv_obj_add_flag(img.get(),
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-			shake_anim(img.get(), 80);
+			perf_ffi::shake_anim(img.get(), 80);
 		}
 	}
 }
@@ -200,7 +220,7 @@ static void rotated_argb_images_cb(void)
 				lv_obj_add_flag(img.get(),
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			img.rotation(rnd_next(100, 3500));
-			shake_anim(img.get(), 80);
+			perf_ffi::shake_anim(img.get(), 80);
 		}
 	}
 }
@@ -227,7 +247,7 @@ static void multiple_labels_cb(void)
 	for (int32_t i = 0; i < cnt; i++) {
 		auto lbl = lv::Label::create(lv::ObjectView(scr));
 		lbl.text("Hello LVGL!");
-		color_anim(lbl.get());
+		perf_ffi::color_anim(lbl.get());
 	}
 }
 
@@ -272,7 +292,7 @@ static void screen_sized_text_cb(void)
 	lbl.width(lv_pct(100));
 	lbl.text(txt);
 	lv_obj_update_layout(lbl.get());
-	scroll_anim(scr, lv_obj_get_scroll_bottom(scr));
+	perf_ffi::scroll_anim(scr, lv_obj_get_scroll_bottom(scr));
 }
 
 static void multiple_arcs_cb(void)
@@ -309,7 +329,7 @@ static void multiple_arcs_cb(void)
 				a.get(),
 				lv_color_hex3(rnd_next(0x00f, 0xff0)),
 				LV_PART_INDICATOR);
-			arc_anim(a.get());
+			perf_ffi::arc_anim(a.get());
 		}
 	}
 }
@@ -334,7 +354,7 @@ static void containers_cb(void)
 			if (x == 0)
 				lv_obj_add_flag(card,
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-			shake_anim(card, 30);
+			perf_ffi::shake_anim(card, 30);
 		}
 	}
 }
@@ -359,12 +379,12 @@ static void containers_with_overlay_cb(void)
 			if (x == 0)
 				lv_obj_add_flag(card,
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-			shake_anim(card, 30);
+			perf_ffi::shake_anim(card, 30);
 		}
 	}
 
 	lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_50, 0);
-	color_anim(lv_layer_top());
+	perf_ffi::color_anim(lv_layer_top());
 }
 
 static void containers_with_opa_cb(void)
@@ -388,7 +408,7 @@ static void containers_with_opa_cb(void)
 				lv_obj_add_flag(card,
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			lv_obj_set_style_opa(card, LV_OPA_50, 0);
-			shake_anim(card, 30);
+			perf_ffi::shake_anim(card, 30);
 		}
 	}
 }
@@ -414,7 +434,7 @@ static void containers_with_opa_layer_cb(void)
 			if (x == 0)
 				lv_obj_add_flag(card,
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
-			shake_anim(card, 30);
+			perf_ffi::shake_anim(card, 30);
 		}
 	}
 }
@@ -431,7 +451,7 @@ static void containers_with_scrolling_cb(void)
 		card_create();
 
 	lv_obj_update_layout(scr);
-	scroll_anim(scr, lv_obj_get_scroll_bottom(scr));
+	perf_ffi::scroll_anim(scr, lv_obj_get_scroll_bottom(scr));
 }
 
 /* ── Widgets demo scene ────────────────────────────────────────────── */
@@ -439,14 +459,14 @@ static void containers_with_scrolling_cb(void)
 static lv_obj_t *g_tabview;
 static uint32_t g_slideshow_tab;
 
-extern "C" {
+namespace perf_ffi {
 
-static void slideshow_scroll_cb(void *var, int32_t v)
+extern "C" void slideshow_scroll_cb(void *var, int32_t v)
 {
 	lv_obj_scroll_to_y(static_cast<lv_obj_t *>(var), v, LV_ANIM_OFF);
 }
 
-static void slideshow_ready_cb(lv_anim_t *a)
+extern "C" void slideshow_ready_cb(lv_anim_t *a)
 {
 	(void)a;
 	if (!g_tabview) return;
@@ -469,12 +489,12 @@ static void slideshow_ready_cb(lv_anim_t *a)
 				 slideshow_ready_cb);
 }
 
-static void gauge_arc_exec_cb(void *var, int32_t v)
+extern "C" void gauge_arc_exec_cb(void *var, int32_t v)
 {
 	lv_arc_set_value(static_cast<lv_obj_t *>(var), v);
 }
 
-} /* extern "C" */
+} /* namespace perf_ffi */
 
 static void widgets_demo_cb(void)
 {
@@ -565,7 +585,7 @@ static void widgets_demo_cb(void)
 			lv_anim_t a;
 			lv_anim_init(&a);
 			lv_anim_set_var(&a, arc.get());
-			lv_anim_set_exec_cb(&a, gauge_arc_exec_cb);
+			lv_anim_set_exec_cb(&a, perf_ffi::gauge_arc_exec_cb);
 			lv_anim_set_values(&a, 20, 100);
 			lv_anim_set_duration(&a, arcs[i].t1);
 			lv_anim_set_playback_duration(&a, arcs[i].t2);
@@ -630,7 +650,7 @@ static void widgets_demo_cb(void)
 		lv_anim_t a;
 		lv_anim_init(&a);
 		lv_anim_set_var(&a, arc.get());
-		lv_anim_set_exec_cb(&a, gauge_arc_exec_cb);
+		lv_anim_set_exec_cb(&a, perf_ffi::gauge_arc_exec_cb);
 		lv_anim_set_values(&a, 10, 60);
 		lv_anim_set_duration(&a, 4100);
 		lv_anim_set_playback_duration(&a, 800);
@@ -699,8 +719,8 @@ static void widgets_demo_cb(void)
 	if (bot <= 0) bot = 1;
 
 	uint32_t spd = lv_anim_speed(lv_display_get_dpi(NULL));
-	benchmark_anim_slideshow(tab1, slideshow_scroll_cb, bot, spd,
-				 slideshow_ready_cb);
+	benchmark_anim_slideshow(tab1, perf_ffi::slideshow_scroll_cb, bot, spd,
+				 perf_ffi::slideshow_ready_cb);
 }
 
 /* ── Scene array ──────────────────────────────────────────────────── */
@@ -744,11 +764,11 @@ static void load_scene(uint32_t scene)
 	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	lv_anim_delete(scr, scroll_anim_y_cb);
-	lv_anim_delete(scr, shake_anim_y_cb);
-	lv_anim_delete(scr, color_anim_cb);
+	lv_anim_delete(scr, perf_ffi::scroll_anim_y_cb);
+	lv_anim_delete(scr, perf_ffi::shake_anim_y_cb);
+	lv_anim_delete(scr, perf_ffi::color_anim_cb);
 
-	lv_anim_delete(lv_layer_top(), color_anim_cb);
+	lv_anim_delete(lv_layer_top(), perf_ffi::color_anim_cb);
 	lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_TRANSP, 0);
 
 	rnd_reset();
@@ -772,8 +792,9 @@ static void next_scene_timer_cb(lv_timer_t *timer)
 /* ── Performance observer ─────────────────────────────────────────── */
 
 #if LV_USE_PERF_MONITOR
-static void sysmon_perf_observer_cb(lv_observer_t *observer,
-				    lv_subject_t *subject)
+namespace perf_ffi {
+extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer,
+					lv_subject_t *subject)
 {
 	benchmark_perf_metrics_t m;
 	benchmark_extract_perf_metrics(lv_subject_get_pointer(subject), &m);
@@ -806,11 +827,13 @@ static void sysmon_perf_observer_cb(lv_observer_t *observer,
 	}
 	scenes[scene_act].measurement_cnt++;
 }
+} /* namespace perf_ffi */
 #endif
 
 /* ── Summary table ────────────────────────────────────────────────── */
 
-static void table_draw_task_event_cb(lv_event_t *e)
+namespace perf_ffi {
+extern "C" void table_draw_task_event_cb(lv_event_t *e)
 {
 	lv_draw_task_t *t = lv_event_get_draw_task(e);
 	lv_draw_dsc_base_t *base = static_cast<lv_draw_dsc_base_t *>(lv_draw_task_get_draw_dsc(t));
@@ -840,6 +863,7 @@ static void table_draw_task_event_cb(lv_event_t *e)
 				LV_PALETTE_BLUE_GREY, 4);
 	}
 }
+} /* namespace perf_ffi */
 
 static void summary_create(void)
 {
@@ -862,7 +886,7 @@ static void summary_create(void)
 	lv_obj_set_style_border_color(table.get(),
 				      lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
 				      LV_PART_ITEMS);
-	lv_obj_add_event_cb(table.get(), table_draw_task_event_cb,
+	lv_obj_add_event_cb(table.get(), perf_ffi::table_draw_task_event_cb,
 			    LV_EVENT_DRAW_TASK_ADDED, NULL);
 
 	table.cell_value(0, 0, "Name");
@@ -954,9 +978,11 @@ static void summary_create(void)
 	}
 }
 
-/* ── Animation helpers ────────────────────────────────────────────── */
+/* ── Animation helpers — live in perf_ffi for C-ABI boundary ─────── */
 
-static void color_anim_cb(void *var, int32_t v)
+namespace perf_ffi {
+
+extern "C" void color_anim_cb(void *var, int32_t v)
 {
 	(void)v;
 	lv_obj_set_style_bg_color(static_cast<lv_obj_t *>(var),
@@ -965,7 +991,7 @@ static void color_anim_cb(void *var, int32_t v)
 				    lv_color_hex3(rnd_next(0x00f, 0xff0)), 0);
 }
 
-static void color_anim(lv_obj_t *obj)
+void color_anim(lv_obj_t *obj)
 {
 	lv::Animation()
 		.target(obj)
@@ -976,12 +1002,12 @@ static void color_anim(lv_obj_t *obj)
 		.start();
 }
 
-static void arc_anim_cb(void *var, int32_t v)
+extern "C" void arc_anim_cb(void *var, int32_t v)
 {
 	lv_arc_set_value(static_cast<lv_obj_t *>(var), v);
 }
 
-static void arc_anim(lv_obj_t *obj)
+void arc_anim(lv_obj_t *obj)
 {
 	uint32_t t1 = rnd_next(1000, 3000);
 	uint32_t t2 = rnd_next(1000, 3000);
@@ -996,12 +1022,12 @@ static void arc_anim(lv_obj_t *obj)
 		.start();
 }
 
-static void scroll_anim_y_cb(void *var, int32_t v)
+extern "C" void scroll_anim_y_cb(void *var, int32_t v)
 {
 	lv_obj_scroll_to_y(static_cast<lv_obj_t *>(var), v, LV_ANIM_OFF);
 }
 
-static void scroll_anim(lv_obj_t *obj, int32_t y_max)
+void scroll_anim(lv_obj_t *obj, int32_t y_max)
 {
 	uint32_t t = lv_anim_speed(lv_display_get_dpi(NULL));
 
@@ -1015,12 +1041,12 @@ static void scroll_anim(lv_obj_t *obj, int32_t y_max)
 		.start();
 }
 
-static void shake_anim_y_cb(void *var, int32_t v)
+extern "C" void shake_anim_y_cb(void *var, int32_t v)
 {
 	lv_obj_set_style_translate_y(static_cast<lv_obj_t *>(var), v, 0);
 }
 
-static void shake_anim(lv_obj_t *obj, int32_t y_max)
+void shake_anim(lv_obj_t *obj, int32_t y_max)
 {
 	uint32_t t1 = rnd_next(300, 3000);
 	uint32_t t2 = rnd_next(300, 3000);
@@ -1034,6 +1060,8 @@ static void shake_anim(lv_obj_t *obj, int32_t y_max)
 		.repeat_count(LV_ANIM_REPEAT_INFINITE)
 		.start();
 }
+
+} /* namespace perf_ffi */
 
 /* ── Card composite widget ────────────────────────────────────────── */
 
@@ -1183,7 +1211,7 @@ OVE_MAIN()
 	lv_subject_t *perf_subj = benchmark_get_perf_subject();
 	if (perf_subj)
 		lv_subject_add_observer_obj(perf_subj,
-					    sysmon_perf_observer_cb,
+					    perf_ffi::sysmon_perf_observer_cb,
 					    title.get(), NULL);
 	else
 		title.text("Perf monitor unavailable");
