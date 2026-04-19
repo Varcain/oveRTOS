@@ -38,6 +38,14 @@
 #define CONFIG_OVE_PM 1
 #define CONFIG_OVE_PM_MAX_WAKE_SOURCES 8
 #define CONFIG_OVE_PM_MAX_NOTIFIERS 4
+/*
+ * CONFIG_OVE_NET is enabled on a per-target basis from tests/CMakeLists.txt
+ * rather than globally here: enabling it project-wide would require the
+ * Rust-bindings sizeof/alignof probe to grow socket/netif entries. The stub
+ * test binary adds CONFIG_OVE_NET=1 via target_compile_definitions so the
+ * TCP loopback suite can exercise the real socket API without disturbing
+ * the Rust build.
+ */
 
 #define CONFIG_OVE_APP_NAME "test"
 #define CONFIG_OVE_APP_VERSION "0.0.0"

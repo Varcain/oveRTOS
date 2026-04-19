@@ -84,6 +84,14 @@ static void test_spi_write_read_wrappers(void **state)
 	ove_spi_destroy(spi);
 }
 
+#else /* !CONFIG_OVE_SPI */
+
+static void test_spi_skipped(void **state)
+{
+	(void)state;
+	skip();
+}
+
 #endif /* CONFIG_OVE_SPI */
 
 /* ── runner ──────────────────────────────────────────────────────────── */
@@ -98,8 +106,10 @@ int test_spi_run(void)
 		cmocka_unit_test(test_spi_transfer_null_handle),
 		cmocka_unit_test(test_spi_write_read_wrappers),
 	};
-	return cmocka_run_group_tests(tests, NULL, NULL);
 #else
-	return 0;
+	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_spi_skipped),
+	};
 #endif
+	return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -87,6 +87,14 @@ static void test_uart_bytes_available_null(void **state)
 	assert_int_equal(avail, 0);
 }
 
+#else /* !CONFIG_OVE_UART */
+
+static void test_uart_skipped(void **state)
+{
+	(void)state;
+	skip();
+}
+
 #endif /* CONFIG_OVE_UART */
 
 /* ── runner ──────────────────────────────────────────────────────────── */
@@ -102,8 +110,10 @@ int test_uart_run(void)
 		cmocka_unit_test(test_uart_read_null_buf),
 		cmocka_unit_test(test_uart_bytes_available_null),
 	};
-	return cmocka_run_group_tests(tests, NULL, NULL);
 #else
-	return 0;
+	const struct CMUnitTest tests[] = {
+		cmocka_unit_test(test_uart_skipped),
+	};
 #endif
+	return cmocka_run_group_tests(tests, NULL, NULL);
 }

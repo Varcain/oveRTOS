@@ -39,7 +39,7 @@ typedef uint8_t lv_opa_t;
 typedef uint32_t lv_align_t;
 typedef uint32_t lv_obj_flag_t;
 typedef uint32_t lv_state_t;
-typedef uint32_t lv_anim_enable_t;
+typedef bool lv_anim_enable_t;
 typedef uint32_t lv_label_long_mode_t;
 typedef void lv_event_t;
 typedef void (*lv_event_cb_t)(lv_event_t *e);
@@ -150,6 +150,7 @@ typedef struct {
 } lv_subject_t;
 
 typedef struct {
+    void *var;
     uint32_t dummy[32];
 } lv_anim_t;
 
@@ -202,7 +203,7 @@ void *lv_obj_get_user_data(lv_obj_t *obj);
 
 void lv_obj_set_flex_flow(lv_obj_t *obj, uint32_t flow);
 void lv_obj_set_flex_align(lv_obj_t *obj, uint32_t main, uint32_t cross, uint32_t track);
-void lv_obj_set_flex_grow(lv_obj_t *obj, uint32_t grow);
+void lv_obj_set_flex_grow(lv_obj_t *obj, uint8_t grow);
 
 /* ── Grid ───────────────────────────────────────────────────────── */
 
@@ -262,10 +263,13 @@ void lv_obj_remove_style_all(lv_obj_t *obj);
 /* ── Color helpers ───────────────────────────────────────────────── */
 
 lv_color_t lv_palette_main(uint32_t p);
+lv_color_t lv_palette_lighten(uint32_t p, uint8_t lvl);
+lv_color_t lv_palette_darken(uint32_t p, uint8_t lvl);
 lv_color_t lv_color_make(uint8_t r, uint8_t g, uint8_t b);
 lv_color_t lv_color_white(void);
 lv_color_t lv_color_black(void);
 lv_color_t lv_color_hex(uint32_t hex);
+lv_color_t lv_color_hex3(uint32_t c);
 
 /* ── Label ───────────────────────────────────────────────────────── */
 
@@ -515,7 +519,9 @@ void lv_subject_init_int(lv_subject_t *subject, int32_t value);
 void lv_subject_set_int(lv_subject_t *subject, int32_t value);
 int32_t lv_subject_get_int(lv_subject_t *subject);
 void lv_subject_deinit(lv_subject_t *subject);
-lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject, void *cb,
+typedef void (*lv_observer_cb_t)(lv_observer_t *observer, lv_subject_t *subject);
+lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject,
+                                           lv_observer_cb_t cb,
                                            lv_obj_t *obj, void *user_data);
 void lv_subject_notify(lv_subject_t *subject);
 void lv_observer_remove(lv_observer_t *observer);
@@ -568,6 +574,78 @@ extern const lv_font_t lv_font_montserrat_20;
 extern const lv_font_t lv_font_montserrat_24;
 extern const lv_font_t lv_font_montserrat_32;
 extern const lv_font_t lv_font_montserrat_48;
+
+/* ── Additional stubs required by the Rust lvgl binding ─────────────────── */
+
+typedef struct {
+    int32_t x;
+    int32_t y;
+} lv_point_t;
+
+typedef struct lv_display_t lv_display_t;
+typedef struct lv_scale_section_t lv_scale_section_t;
+typedef uint32_t lv_scale_mode_t;
+typedef uint32_t lv_image_align_t;
+
+/* Object layout / scrolling */
+void lv_obj_set_layout(lv_obj_t *obj, uint32_t layout);
+void lv_obj_update_layout(const lv_obj_t *obj);
+int32_t lv_obj_get_content_width(const lv_obj_t *obj);
+int32_t lv_obj_get_scroll_bottom(lv_obj_t *obj);
+void lv_obj_scroll_to_y(lv_obj_t *obj, int32_t y, lv_anim_enable_t anim_en);
+lv_obj_t *lv_obj_get_child(const lv_obj_t *obj, int32_t id);
+
+/* Style setters used by the Rust binding */
+void lv_obj_set_style_translate_y(lv_obj_t *obj, int32_t value, lv_state_t state);
+void lv_obj_set_style_margin_top(lv_obj_t *obj, int32_t value, lv_state_t state);
+void lv_obj_set_style_margin_bottom(lv_obj_t *obj, int32_t value, lv_state_t state);
+void lv_obj_set_style_margin_left(lv_obj_t *obj, int32_t value, lv_state_t state);
+void lv_obj_set_style_margin_right(lv_obj_t *obj, int32_t value, lv_state_t state);
+void lv_obj_set_style_max_height(lv_obj_t *obj, int32_t value, lv_state_t state);
+void lv_obj_set_style_arc_opa(lv_obj_t *obj, lv_opa_t value, lv_state_t state);
+void lv_obj_set_style_arc_rounded(lv_obj_t *obj, bool value, lv_state_t state);
+void lv_obj_set_style_opa_layered(lv_obj_t *obj, lv_opa_t value, lv_state_t state);
+void lv_style_set_arc_color(lv_style_t *style, lv_color_t value);
+void lv_style_set_arc_width(lv_style_t *style, int32_t value);
+
+/* Event accessors */
+lv_obj_t *lv_event_get_current_target(lv_event_t *e);
+lv_event_code_t lv_event_get_code(lv_event_t *e);
+void *lv_event_get_param(lv_event_t *e);
+
+/* Display / layer introspection */
+int32_t lv_display_get_horizontal_resolution(const lv_display_t *disp);
+int32_t lv_display_get_vertical_resolution(const lv_display_t *disp);
+int32_t lv_display_get_dpi(const lv_display_t *disp);
+lv_obj_t *lv_layer_top(void);
+
+/* Text metrics */
+void lv_text_get_size(lv_point_t *size_res, const char *text,
+                      const lv_font_t *font, int32_t letter_space,
+                      int32_t line_space, int32_t max_width,
+                      uint32_t flag);
+
+/* Animation extras */
+uint32_t lv_anim_speed(uint32_t speed);
+void lv_anim_set_user_data(lv_anim_t *a, void *user_data);
+void *lv_anim_get_user_data(const lv_anim_t *a);
+void lv_anim_set_custom_exec_cb(lv_anim_t *a,
+    void (*exec_cb)(lv_anim_t *, int32_t));
+
+/* Image / scale widgets */
+void lv_image_set_inner_align(lv_obj_t *img, lv_image_align_t align);
+
+lv_obj_t *lv_scale_create(lv_obj_t *parent);
+void lv_scale_set_mode(lv_obj_t *obj, lv_scale_mode_t mode);
+void lv_scale_set_range(lv_obj_t *obj, int32_t min, int32_t max);
+void lv_scale_set_total_tick_count(lv_obj_t *obj, uint32_t total);
+void lv_scale_set_major_tick_every(lv_obj_t *obj, uint32_t every);
+void lv_scale_set_angle_range(lv_obj_t *obj, uint32_t angle);
+void lv_scale_set_rotation(lv_obj_t *obj, int32_t rot);
+lv_scale_section_t *lv_scale_add_section(lv_obj_t *obj);
+void lv_scale_section_set_range(lv_scale_section_t *s, int32_t min, int32_t max);
+void lv_scale_section_set_style(lv_scale_section_t *s, uint32_t part,
+                                lv_style_t *style);
 
 #ifdef __cplusplus
 }

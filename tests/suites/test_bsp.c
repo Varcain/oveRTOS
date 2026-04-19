@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include "board_desc.h"
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -33,18 +34,23 @@ static void test_bsp_led_set(void **state)
 {
     (void)state;
     ove_bsp_board_init();
-    /* Should not crash */
+
     ove_bsp_led_set(0, 1);
+    assert_int_equal(ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN), 1);
     ove_bsp_led_set(0, 0);
+    assert_int_equal(ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN), 0);
 }
 
 static void test_bsp_led_toggle(void **state)
 {
     (void)state;
     ove_bsp_board_init();
-    /* Should not crash */
+
+    ove_bsp_led_set(0, 0);
     ove_bsp_led_toggle(0);
+    assert_int_equal(ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN), 1);
     ove_bsp_led_toggle(0);
+    assert_int_equal(ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN), 0);
 }
 
 static void test_bsp_gpio_set(void **state)
@@ -63,7 +69,7 @@ static void test_bsp_gpio_get(void **state)
     ove_bsp_gpio_set(0, 0, 1);
 
     int val = ove_bsp_gpio_get(0, 0);
-    assert_true(val != 0);
+    assert_int_equal(val, 1);
 
     ove_bsp_gpio_set(0, 0, 0);
     val = ove_bsp_gpio_get(0, 0);

@@ -10,6 +10,7 @@
 #include "ove/types.h"
 #include "ove/audio.h"
 #include "ove/audio_node.h"
+#include "../framework/ove_test.h"
 
 #ifdef CONFIG_OVE_AUDIO
 
@@ -700,6 +701,71 @@ static void test_gain_node(void **state)
     ove_audio_graph_deinit(&g);
 }
 
+/* ── High-precision gain data-flow test ─────────────────────────── */
+
+/*
+ * Source that emits a known high-amplitude S16 waveform so that the
+ * gain node's output stays well above the 1-LSB integer truncation
+ * floor, letting us verify the linear-gain math with float tolerance.
+ */
+static const int16_t dataflow_source_samples[8] = {
+    8000, 16000, 24000, 32000, -8000, -16000, -24000, -32000,
+};
+
+static int dataflow_source_process(void *ctx, const struct ove_audio_buf *in,
+                                   struct ove_audio_buf *out)
+{
+    (void)ctx;
+    (void)in;
+    int16_t *samples = (int16_t *)out->data;
+    unsigned int n = out->frames < 8 ? out->frames : 8;
+    for (unsigned int i = 0; i < n; i++)
+        samples[i] = dataflow_source_samples[i];
+    return OVE_OK;
+}
+
+static const struct ove_audio_node_ops dataflow_source_ops = {
+    .configure = mock_source_configure,
+    .process   = dataflow_source_process,
+};
+
+/*
+ * Push a known 8-sample S16 waveform through source→gain(-6dB)→sink
+ * and assert each output sample matches the linear-gain prediction
+ * within one LSB. Complements test_gain_node, which only checks
+ * small-integer inputs where integer truncation dominates.
+ */
+static void test_graph_gain_dataflow(void **state)
+{
+    (void)state;
+    memset(&g, 0, sizeof(g));
+    ove_audio_graph_init(&g, 8);
+
+    int src  = ove_audio_graph_add_node(&g, &dataflow_source_ops, NULL,
+                                        "src", OVE_AUDIO_NODE_SOURCE);
+    int gain = ove_audio_node_gain(&g, -6.0f, "gain");
+
+    int16_t captured[8] = {0};
+    struct verify_sink_ctx vs = { .captured = captured };
+    int sink = ove_audio_graph_add_node(&g, &verify_sink_ops, &vs,
+                                        "sink", OVE_AUDIO_NODE_SINK);
+
+    ove_audio_graph_connect(&g, src, gain);
+    ove_audio_graph_connect(&g, gain, sink);
+    assert_int_equal(ove_audio_graph_build(&g), OVE_OK);
+    assert_int_equal(ove_audio_graph_process(&g), OVE_OK);
+    assert_int_equal(vs.captured_frames, 8);
+
+    /* Padé approx of 10^(-6/20) ≈ 0.50119. */
+    const float expected_gain = 0.50119f;
+    for (int i = 0; i < 8; i++) {
+        float expected = (float)dataflow_source_samples[i] * expected_gain;
+        assert_float_within(captured[i], expected, 1.5f);
+    }
+
+    ove_audio_graph_deinit(&g);
+}
+
 /* ── Tap test ───────────────────────────────────────────────────── */
 
 static _Atomic unsigned int tap_call_count;
@@ -1326,54 +1392,70 @@ static void test_fmt_equal_different(void **state)
     assert_false(ove_audio_fmt_equal(&base, &diff_fmt));
 }
 
+/* ── setup/teardown ──────────────────────────────────────────────────── */
+
+static int audio_setup(void **state)
+{
+    (void)state;
+    memset(&g, 0, sizeof(g));
+    start_call_count = 0;
+    stop_call_count  = 0;
+    fail_on_start_idx = -1;
+    memset(start_call_order, 0, sizeof(start_call_order));
+    memset(stop_call_order, 0, sizeof(stop_call_order));
+    atomic_store(&tap_call_count, 0);
+    return 0;
+}
+
 int test_audio_run(void)
 {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_graph_init),
-        cmocka_unit_test(test_graph_init_null),
-        cmocka_unit_test(test_graph_init_zero_frames),
-        cmocka_unit_test(test_graph_add_node),
-        cmocka_unit_test(test_graph_connect),
-        cmocka_unit_test(test_graph_connect_sink_output_rejected),
-        cmocka_unit_test(test_graph_connect_source_input_rejected),
-        cmocka_unit_test(test_graph_build_simple),
-        cmocka_unit_test(test_graph_build_cycle_rejected),
-        cmocka_unit_test(test_graph_build_format_mismatch),
-        cmocka_unit_test(test_graph_data_flow),
-        cmocka_unit_test(test_graph_fan_out),
-        cmocka_unit_test(test_graph_node_error_silence),
-        cmocka_unit_test(test_converter_s16_to_f32),
-        cmocka_unit_test(test_channel_map_stereo_to_mono),
-        cmocka_unit_test(test_gain_node),
-        cmocka_unit_test(test_tap_node),
+        cmocka_unit_test_setup(test_graph_init, audio_setup),
+        cmocka_unit_test_setup(test_graph_init_null, audio_setup),
+        cmocka_unit_test_setup(test_graph_init_zero_frames, audio_setup),
+        cmocka_unit_test_setup(test_graph_add_node, audio_setup),
+        cmocka_unit_test_setup(test_graph_connect, audio_setup),
+        cmocka_unit_test_setup(test_graph_connect_sink_output_rejected, audio_setup),
+        cmocka_unit_test_setup(test_graph_connect_source_input_rejected, audio_setup),
+        cmocka_unit_test_setup(test_graph_build_simple, audio_setup),
+        cmocka_unit_test_setup(test_graph_build_cycle_rejected, audio_setup),
+        cmocka_unit_test_setup(test_graph_build_format_mismatch, audio_setup),
+        cmocka_unit_test_setup(test_graph_data_flow, audio_setup),
+        cmocka_unit_test_setup(test_graph_fan_out, audio_setup),
+        cmocka_unit_test_setup(test_graph_node_error_silence, audio_setup),
+        cmocka_unit_test_setup(test_converter_s16_to_f32, audio_setup),
+        cmocka_unit_test_setup(test_channel_map_stereo_to_mono, audio_setup),
+        cmocka_unit_test_setup(test_gain_node, audio_setup),
+        cmocka_unit_test_setup(test_graph_gain_dataflow, audio_setup),
+        cmocka_unit_test_setup(test_tap_node, audio_setup),
         /* State machine tests */
-        cmocka_unit_test(test_graph_start_stop),
-        cmocka_unit_test(test_graph_start_from_idle_fails),
-        cmocka_unit_test(test_graph_stop_from_idle_fails),
-        cmocka_unit_test(test_graph_start_failure_rollback),
-        cmocka_unit_test(test_graph_add_node_after_build_fails),
-        cmocka_unit_test(test_graph_connect_after_build_fails),
+        cmocka_unit_test_setup(test_graph_start_stop, audio_setup),
+        cmocka_unit_test_setup(test_graph_start_from_idle_fails, audio_setup),
+        cmocka_unit_test_setup(test_graph_stop_from_idle_fails, audio_setup),
+        cmocka_unit_test_setup(test_graph_start_failure_rollback, audio_setup),
+        cmocka_unit_test_setup(test_graph_add_node_after_build_fails, audio_setup),
+        cmocka_unit_test_setup(test_graph_connect_after_build_fails, audio_setup),
         /* Capacity tests */
-        cmocka_unit_test(test_graph_max_nodes),
-        cmocka_unit_test(test_graph_max_edges),
+        cmocka_unit_test_setup(test_graph_max_nodes, audio_setup),
+        cmocka_unit_test_setup(test_graph_max_edges, audio_setup),
         /* Connect validation tests */
-        cmocka_unit_test(test_graph_connect_self_loop),
-        cmocka_unit_test(test_graph_connect_invalid_index),
+        cmocka_unit_test_setup(test_graph_connect_self_loop, audio_setup),
+        cmocka_unit_test_setup(test_graph_connect_invalid_index, audio_setup),
         /* Stats tests */
-        cmocka_unit_test(test_graph_stats_cycle_count),
-        cmocka_unit_test(test_graph_stats_null_params),
+        cmocka_unit_test_setup(test_graph_stats_cycle_count, audio_setup),
+        cmocka_unit_test_setup(test_graph_stats_null_params, audio_setup),
         /* Multiple process cycles */
-        cmocka_unit_test(test_graph_process_multiple_cycles),
+        cmocka_unit_test_setup(test_graph_process_multiple_cycles, audio_setup),
         /* Format conversion tests */
-        cmocka_unit_test(test_converter_f32_to_s16),
+        cmocka_unit_test_setup(test_converter_f32_to_s16, audio_setup),
         /* Gain edge cases */
-        cmocka_unit_test(test_gain_0db_passthrough),
+        cmocka_unit_test_setup(test_gain_0db_passthrough, audio_setup),
         /* Channel map tests */
-        cmocka_unit_test(test_channel_map_stereo_to_mono_node),
-        cmocka_unit_test(test_channel_map_silence_channel),
+        cmocka_unit_test_setup(test_channel_map_stereo_to_mono_node, audio_setup),
+        cmocka_unit_test_setup(test_channel_map_silence_channel, audio_setup),
         /* Format equality tests */
-        cmocka_unit_test(test_fmt_equal_same),
-        cmocka_unit_test(test_fmt_equal_different),
+        cmocka_unit_test_setup(test_fmt_equal_same, audio_setup),
+        cmocka_unit_test_setup(test_fmt_equal_different, audio_setup),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

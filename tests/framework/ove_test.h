@@ -38,6 +38,59 @@ static inline void test_msleep(uint32_t ms)
 	ove_thread_sleep_ms(ms);
 }
 
+/*
+ * Wait until *flag == expected or the timeout expires.
+ *
+ * Returns 1 if the flag reached the expected value within the deadline,
+ * 0 on timeout. Uses monotonic wall-clock (ove_time_get_us) for a real
+ * timeout rather than an iteration-count budget. Sleeps 1 ms between
+ * polls so a quick signal lands within ~one tick.
+ *
+ * Prefer this over hand-rolled `for (i=0; i<N && !flag; i++) msleep(1)`
+ * loops: the budget is in wall-clock time, the exit path is explicit,
+ * and the final flag value is returned so the caller can assert on it.
+ */
+static inline int wait_for_flag(volatile int *flag, int expected,
+                                uint32_t timeout_ms)
+{
+	uint64_t start_us = 0, now_us = 0;
+	(void)ove_time_get_us(&start_us);
+	uint64_t deadline_us = start_us + (uint64_t)timeout_ms * 1000u;
+
+	while (*flag != expected) {
+		(void)ove_time_get_us(&now_us);
+		if (now_us >= deadline_us) {
+			return (*flag == expected);
+		}
+		test_msleep(1);
+	}
+	return 1;
+}
+
+/*
+ * Join-and-destroy helper for threads launched by tests.
+ *
+ * Waits for the thread to exit (bounded by `timeout_ms`) then destroys
+ * its storage. Returns OVE_OK on clean join, negative on timeout or
+ * destroy error. Tests should call this instead of relying on sleeps
+ * to estimate when a thread has finished.
+ *
+ * Note: `ove_thread_destroy` / `ove_thread_deinit` in the current
+ * backends block until the entry function returns, so destroy already
+ * provides the join. The `timeout_ms` argument is reserved for a future
+ * explicit `ove_thread_join()` API — today it's advisory.
+ */
+static inline int ove_test_thread_join_destroy(ove_thread_t th,
+                                               uint32_t timeout_ms)
+{
+	(void)timeout_ms;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	return ove_thread_deinit(th);
+#else
+	return ove_thread_destroy(th);
+#endif
+}
+
 /* ── Object creation helpers ─────────────────────────────────────────── */
 
 static inline int ove_test_mutex_create(ove_mutex_t *mtx,
@@ -345,6 +398,7 @@ int test_infer_run(void);
 int test_net_mqtt_run(void);
 int test_net_httpd_run(void);
 int test_net_sntp_run(void);
+int test_net_loopback_run(void);
 int test_i2c_run(void);
 int test_spi_run(void);
 int test_uart_run(void);

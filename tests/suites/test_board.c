@@ -7,6 +7,7 @@
  */
 
 #include "../framework/ove_test.h"
+#include "board_desc.h"
 
 static void test_board_init(void **state)
 {
@@ -30,8 +31,10 @@ static void test_board_desc(void **state)
     const struct ove_board_desc *desc = ove_board_desc();
     assert_non_null(desc);
     assert_non_null(desc->name);
-    assert_true(desc->gpio_port_count > 0);
-    assert_true(desc->led_count > 0);
+    assert_int_equal(desc->gpio_port_count, OVE_GPIO_PORT_COUNT);
+    assert_int_equal(desc->gpio_pins_per_port, OVE_GPIO_PINS_PER_PORT);
+    assert_int_equal(desc->led_count, OVE_LED_COUNT);
+    assert_non_null(desc->leds);
 }
 
 int test_board_run(void)

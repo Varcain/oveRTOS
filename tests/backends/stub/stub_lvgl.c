@@ -195,7 +195,7 @@ void lv_obj_set_flex_align(lv_obj_t *obj, uint32_t main, uint32_t cross, uint32_
 	(void)track;
 }
 
-void lv_obj_set_flex_grow(lv_obj_t *obj, uint32_t grow)
+void lv_obj_set_flex_grow(lv_obj_t *obj, uint8_t grow)
 {
 	(void)obj;
 	(void)grow;
@@ -1620,7 +1620,8 @@ void lv_subject_deinit(lv_subject_t *subject)
 	(void)subject;
 }
 
-lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject, void *cb,
+lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject,
+                                           lv_observer_cb_t cb,
                                            lv_obj_t *obj, void *user_data)
 {
 	(void)subject;

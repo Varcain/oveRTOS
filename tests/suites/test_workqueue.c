@@ -16,20 +16,20 @@ OVE_TEST_STORAGE(ove_work_storage_t, s_work_storages[3]);
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
-static _Atomic int s_work_called;
+static volatile int s_work_called;
 static _Atomic int s_work_count;
 static _Atomic intptr_t s_received_handle_raw;
 
 static void work_handler(ove_work_t work)
 {
-    s_work_called = 1;
     atomic_store(&s_received_handle_raw, (intptr_t)work);
+    s_work_called = 1;
 }
 
 static void counting_handler(ove_work_t work)
 {
     (void)work;
-    s_work_count++;
+    atomic_fetch_add(&s_work_count, 1);
 }
 
 static void delayed_handler(ove_work_t work)
@@ -86,8 +86,7 @@ static void test_wq_submit_handler_called(void **state)
     int rc = ove_work_submit(wq, w);
     assert_int_equal(rc, OVE_OK);
 
-    test_msleep(100);
-    assert_int_equal(s_work_called, 1);
+    assert_true(wait_for_flag(&s_work_called, 1, 500));
 
 #ifdef CONFIG_OVE_ZERO_HEAP
     ove_test_workqueue_destroy(wq);
@@ -100,7 +99,7 @@ static void test_wq_submit_handler_called(void **state)
 static void test_wq_submit_multiple(void **state)
 {
     (void)state;
-    s_work_count = 0;
+    atomic_store(&s_work_count, 0);
 
     ove_workqueue_t wq = NULL;
     ove_test_workqueue_create(&wq, &s_wq_storage, "multi_wq",
@@ -116,8 +115,16 @@ static void test_wq_submit_multiple(void **state)
         ove_work_submit(wq, works[i]);
     }
 
-    test_msleep(200);
-    assert_int_equal(s_work_count, 3);
+    /* Poll the atomic counter via deadline loop (wait_for_flag only takes
+     * volatile int; atomic_int is not a compatible cast on all compilers). */
+    uint64_t now_us = 0, start_us = 0;
+    (void)ove_time_get_us(&start_us);
+    while (atomic_load(&s_work_count) < 3) {
+        (void)ove_time_get_us(&now_us);
+        if (now_us - start_us >= 500000) break;
+        test_msleep(1);
+    }
+    assert_int_equal(atomic_load(&s_work_count), 3);
 
 #ifdef CONFIG_OVE_ZERO_HEAP
     ove_test_workqueue_destroy(wq);
@@ -148,11 +155,11 @@ static void test_wq_submit_delayed(void **state)
     int rc = ove_work_submit_delayed(wq, w, 50);
     assert_int_equal(rc, OVE_OK);
 
-    /* Should not have fired yet */
+    /* Should not have fired yet — check well before the 50 ms delay */
     test_msleep(10);
-    /* Give it time to fire */
-    test_msleep(150);
-    assert_int_equal(s_work_called, 1);
+    assert_int_equal(s_work_called, 0);
+
+    assert_true(wait_for_flag(&s_work_called, 1, 500));
 
 #ifdef CONFIG_OVE_ZERO_HEAP
     ove_test_workqueue_destroy(wq);
@@ -225,8 +232,7 @@ static void test_wq_handler_receives_handle(void **state)
 
     ove_work_submit(wq, w);
 
-    test_msleep(100);
-    assert_int_equal(s_work_called, 1);
+    assert_true(wait_for_flag(&s_work_called, 1, 500));
     assert_ptr_equal((void *)atomic_load(&s_received_handle_raw), w);
 
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -254,24 +260,35 @@ static void test_wq_init_null_handler(void **state)
 }
 #endif
 
+/* ── setup/teardown ──────────────────────────────────────────────────── */
+
+static int wq_setup(void **state)
+{
+    (void)state;
+    s_work_called = 0;
+    atomic_store(&s_work_count, 0);
+    atomic_store(&s_received_handle_raw, (intptr_t)NULL);
+    return 0;
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_workqueue_run(void)
 {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_wq_create_destroy),
-        cmocka_unit_test(test_wq_init_free_work),
-        cmocka_unit_test(test_wq_submit_handler_called),
-        cmocka_unit_test(test_wq_submit_multiple),
-        cmocka_unit_test(test_wq_submit_delayed),
-        cmocka_unit_test(test_wq_cancel_work),
+        cmocka_unit_test_setup(test_wq_create_destroy, wq_setup),
+        cmocka_unit_test_setup(test_wq_init_free_work, wq_setup),
+        cmocka_unit_test_setup(test_wq_submit_handler_called, wq_setup),
+        cmocka_unit_test_setup(test_wq_submit_multiple, wq_setup),
+        cmocka_unit_test_setup(test_wq_submit_delayed, wq_setup),
+        cmocka_unit_test_setup(test_wq_cancel_work, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
-        cmocka_unit_test(test_wq_destroy_null),
+        cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif
-        cmocka_unit_test(test_wq_handler_receives_handle),
+        cmocka_unit_test_setup(test_wq_handler_receives_handle, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
-        cmocka_unit_test(test_wq_create_null),
-        cmocka_unit_test(test_wq_init_null_handler),
+        cmocka_unit_test_setup(test_wq_create_null, wq_setup),
+        cmocka_unit_test_setup(test_wq_init_null_handler, wq_setup),
 #endif
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

@@ -61,6 +61,17 @@ fn expectError(result: anytype) !void {
     if (result) |_| return error.AssertionFailed else |_| return;
 }
 
+// Stricter variant: asserts the call returned a *specific* error variant.
+// Prefer this over `expectError` for tests whose value depends on the
+// exact error (timeout vs. invalid-arg vs. not-found).
+fn expectErrorIs(result: anytype, comptime expected: anyerror) !void {
+    if (result) |_| {
+        return error.AssertionFailed;
+    } else |got| {
+        if (got != expected) return error.AssertionFailed;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Mutex tests (9)
 // ---------------------------------------------------------------------------
@@ -240,7 +251,7 @@ fn testSemaphoreTakeInitialOne() !void {
 fn testSemaphoreTakeTimeout() !void {
     var s = try ove.Semaphore.create(0, 10);
     defer s.destroy();
-    try expectError(s.take(10));
+    try expectErrorIs(s.take(10), ove.Error.Timeout);
 }
 
 fn testSemaphoreGiveThenTake() !void {
@@ -259,7 +270,7 @@ fn testSemaphoreCounting() !void {
     try s.take(0);
     try s.take(0);
     try s.take(0);
-    try expectError(s.take(10));
+    try expectErrorIs(s.take(10), ove.Error.Timeout);
 }
 
 var sem_for_thread: ove.Semaphore = undefined;
@@ -302,7 +313,7 @@ fn testEventSignalThenWait() !void {
 fn testEventWaitTimeout() !void {
     var e = try ove.Event.create();
     defer e.destroy();
-    try expectError(e.wait(10));
+    try expectErrorIs(e.wait(10), ove.Error.Timeout);
 }
 
 var event_for_thread: ove.Event = undefined;
@@ -333,7 +344,7 @@ fn testEventAutoReset() !void {
     e.signal();
     try e.wait(100);
     // Event should auto-reset; second wait should timeout
-    try expectError(e.wait(10));
+    try expectErrorIs(e.wait(10), ove.Error.Timeout);
 }
 
 fn testEventRaiiDrop() !void {
@@ -382,7 +393,7 @@ fn testCondVarWaitTimeout() !void {
     var cv = try ove.CondVar.create();
     defer cv.destroy();
     try m.lock(1000);
-    try expectError(cv.wait(m, 10));
+    try expectErrorIs(cv.wait(m, 10), ove.Error.Timeout);
     m.unlock();
 }
 
@@ -480,13 +491,13 @@ fn testQueueSendFullTimesOut() !void {
     const c: i32 = 3;
     try q.send(&a, 100);
     try q.send(&b, 100);
-    try expectError(q.send(&c, 10));
+    try expectErrorIs(q.send(&c, 10), ove.Error.Timeout);
 }
 
 fn testQueueReceiveEmptyTimesOut() !void {
     var q = try Q5.create();
     defer q.destroy();
-    try expectError(q.receive(10));
+    try expectErrorIs(q.receive(10), ove.Error.Timeout);
 }
 
 fn testQueueSendFromIsr() !void {
@@ -834,7 +845,7 @@ fn testEventGroupWaitAny() !void {
 fn testEventGroupWaitTimeout() !void {
     var eg = try ove.EventGroup.create();
     defer eg.destroy();
-    try expectError(eg.waitBits(BIT_0, 0, 10));
+    try expectErrorIs(eg.waitBits(BIT_0, 0, 10), ove.Error.Timeout);
 }
 
 fn testEventGroupClearOnExit() !void {
