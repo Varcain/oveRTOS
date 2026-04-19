@@ -130,7 +130,7 @@ def _ensure_arm_toolchain(ove_dir):
 
 def test_stub(ove_dir, output_dir):
     """Build and run stub backend tests."""
-    build = os.path.join(output_dir, "test", "stub")
+    build = os.path.join(output_dir, "tests", "stub")
     logger.info("Building stub tests")
     _cmake_build(os.path.join(ove_dir, "tests"), build)
     logger.info("Running stub tests")
@@ -139,7 +139,7 @@ def test_stub(ove_dir, output_dir):
 
 def test_cpp(ove_dir, output_dir):
     """Build and run C++ binding tests."""
-    build = os.path.join(output_dir, "test", "cpp")
+    build = os.path.join(output_dir, "tests", "cpp")
     logger.info("Building C++ tests")
     _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build)
     logger.info("Running C++ tests")
@@ -148,7 +148,7 @@ def test_cpp(ove_dir, output_dir):
 
 def test_rust(ove_dir, output_dir):
     """Build and run Rust tests."""
-    stub_build = os.path.join(output_dir, "test", "rust_stub")
+    stub_build = os.path.join(output_dir, "tests", "rust_stub")
     logger.info("Building Rust stub library")
     _cmake_build(
         os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
@@ -156,7 +156,7 @@ def test_rust(ove_dir, output_dir):
 
     logger.info("Building Rust tests")
     rust_dir = os.path.join(ove_dir, "tests", "rust")
-    target_dir = os.path.join(output_dir, "test", "rust")
+    target_dir = os.path.join(output_dir, "tests", "rust")
     env = dict(os.environ)
     env.update({
         "OVE_DIR": ove_dir,
@@ -208,7 +208,7 @@ def _find_zig(ove_dir):
 
 def test_zig(ove_dir, output_dir):
     """Build and run Zig binding tests."""
-    stub_build = os.path.join(output_dir, "test", "zig_stub")
+    stub_build = os.path.join(output_dir, "tests", "zig_stub")
     logger.info("Building Zig stub library")
     _cmake_build(
         os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
@@ -218,7 +218,7 @@ def test_zig(ove_dir, output_dir):
     zig_test_dir = os.path.join(ove_dir, "tests", "zig")
     zig_bindings = os.path.join(ove_dir, "bindings", "zig", "ove",
                                 "src", "root.zig")
-    zig_output = os.path.join(output_dir, "test", "zig")
+    zig_output = os.path.join(output_dir, "tests", "zig")
     os.makedirs(zig_output, exist_ok=True)
     zig_exe = os.path.join(zig_output, "ove_test_zig")
 
@@ -256,7 +256,7 @@ def test_nuttx(ove_dir, output_dir):
     """Build and run NuttX sim tests (uses NuttX sim board)."""
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build_base = os.path.join(output_dir, "test", "nuttx")
+    build_base = os.path.join(output_dir, "tests", "nuttx")
 
     manifest = load_manifest(ove_dir)
     default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
@@ -374,7 +374,7 @@ def test_nuttx(ove_dir, output_dir):
 def test_zephyr(ove_dir, output_dir):
     """Build and run Zephyr native_sim tests."""
     import hashlib
-    build = os.path.join(output_dir, "test", "zephyr")
+    build = os.path.join(output_dir, "tests", "zephyr")
     dl_dir = os.path.join(ove_dir, "dl")
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
@@ -420,7 +420,7 @@ def test_zephyr(ove_dir, output_dir):
 def _run_freertos_qemu(ove_dir, output_dir, *, src_subdir, binary, label):
     """Build and run a FreeRTOS QEMU ARM test variant."""
     tc_dir = _ensure_arm_toolchain(ove_dir)
-    build = os.path.join(output_dir, "test", label)
+    build = os.path.join(output_dir, "tests", label)
     logger.info(f"Building {label}")
     _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
                  build,
@@ -459,7 +459,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label):
     tc_dir = _ensure_arm_toolchain(ove_dir)
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build_base = os.path.join(output_dir, "test", label)
+    build_base = os.path.join(output_dir, "tests", label)
 
     manifest = load_manifest(ove_dir)
     default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
@@ -568,7 +568,7 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label):
     """Build and run a Zephyr QEMU ARM test variant."""
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build = os.path.join(output_dir, "test", label)
+    build = os.path.join(output_dir, "tests", label)
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
     manifest = load_manifest(ove_dir)
