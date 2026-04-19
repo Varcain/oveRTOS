@@ -170,6 +170,30 @@ TEST_NAMES := stub cpp rust zig nuttx zephyr \
 $(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
 	@$(OVE) test $* $(if $(filter 1,$(JSON)),--json)
 
+ASAN_BUILD_DIR := $(OVE_DIR)/output/tests/stub_asan
+
+.PHONY: asan
+asan: $(VENV_STAMP)
+	@cmake -S $(OVE_DIR)/tests -B $(ASAN_BUILD_DIR)
+	@cmake --build $(ASAN_BUILD_DIR) --target ove_test_stub_asan -j$$(nproc)
+	@$(ASAN_BUILD_DIR)/ove_test_stub_asan
+
+COVERAGE_BUILD_DIR := $(OVE_DIR)/output/tests/stub_coverage
+
+.PHONY: coverage
+coverage: $(VENV_STAMP)
+	@command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1 || { \
+		echo ""; \
+		echo "ERROR: lcov/genhtml not found."; \
+		echo ""; \
+		echo "  Ubuntu/Debian:  sudo apt install lcov"; \
+		echo ""; \
+		exit 1; \
+	}
+	@cmake -S $(OVE_DIR)/tests -B $(COVERAGE_BUILD_DIR) -DOVE_TEST_BUILD_COVERAGE=ON
+	@cmake --build $(COVERAGE_BUILD_DIR) --target coverage -j$$(nproc)
+	@echo "Coverage report: $(COVERAGE_BUILD_DIR)/coverage/html/index.html"
+
 # ── Quality / CI ──────────────────────────────────────────────────────────
 
 .PHONY: doctor
@@ -384,6 +408,8 @@ help:
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
 	@echo "  test-all                - All tests (sim + QEMU)"
+	@echo "  asan                    - Build and run stub with AddressSanitizer + UBSan"
+	@echo "  coverage                - Build stub with gcov and produce HTML report (needs lcov)"
 	@echo ""
 	@echo "Quality / CI:"
 	@echo "  doctor                  - Check host environment (toolchains, deps, venv)"

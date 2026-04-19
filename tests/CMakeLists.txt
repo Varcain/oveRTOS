@@ -186,8 +186,10 @@ if(OVE_TEST_BUILD_COVERAGE)
             COMMAND ${LCOV_BIN} --remove ${OVE_TEST_COVERAGE_DIR}/coverage.info
                     "'/usr/*'" "'*/_deps/*'" "'*/tests/*'"
                     --output-file ${OVE_TEST_COVERAGE_DIR}/coverage.filtered.info
+                    --ignore-errors unused
             COMMAND ${GENHTML_BIN} ${OVE_TEST_COVERAGE_DIR}/coverage.filtered.info
                     --output-directory ${OVE_TEST_COVERAGE_DIR}/html
+                    --ignore-errors source,mismatch
             DEPENDS ove_test_stub_coverage
             COMMENT "Running tests under gcov and producing HTML report"
             USES_TERMINAL
