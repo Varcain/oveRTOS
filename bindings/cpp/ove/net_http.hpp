@@ -98,7 +98,7 @@ public:
 	 */
 	ove_http_response_t *raw() { return &raw_; }
 
-	ove_http_response_t raw_{};
+	ove_http_response_t raw_{}; /**< Underlying C response struct (populated by the client). */
 };
 
 /**

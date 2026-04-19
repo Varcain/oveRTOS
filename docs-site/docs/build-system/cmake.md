@@ -14,7 +14,8 @@ oveRTOS/
 │   ├── freertos/           # FreeRTOS backend implementation
 │   ├── posix/              # POSIX backend implementation
 │   ├── zephyr/             # Zephyr backend implementation
-│   └── nuttx/              # NuttX backend implementation
+│   ├── nuttx/              # NuttX backend implementation
+│   └── wasm/               # WebAssembly (Emscripten) backend implementation
 └── boards/                 # Per-board CMakeLists and config
 ```
 
@@ -94,7 +95,7 @@ Each board's CMakeLists selects a backend by including the appropriate subdirect
 | `CONFIG_OVE_RTOS_FREERTOS` | FreeRTOS |
 | `CONFIG_OVE_RTOS_ZEPHYR` | Zephyr |
 | `CONFIG_OVE_RTOS_NUTTX` | NuttX |
-| `CONFIG_OVE_RTOS_POSIX` | POSIX threads |
+| `CONFIG_OVE_RTOS_POSIX` | POSIX threads (native host or Emscripten pthreads) |
 
 ## Zero-heap mode
 

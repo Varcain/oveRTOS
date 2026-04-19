@@ -42,7 +42,10 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | Net HTTPD | `ove/net_httpd.h` | 15+ | Embedded HTTP server with routing and WebSocket. [Guide](net.md#http-server) |
 | Net SNTP | `ove/net_sntp.h` | 4 | Simple NTP time sync. [Guide](net.md#sntp) |
 | PM | `ove/pm.h` | 18 | Power management: sleep states, wake sources, power domains, statistics. [Guide](pm.md) |
-| I2S | `ove/i2s.h` | 13 | I2S / SAI audio bus driver with DMA double-buffered streaming. |
+| UART | `ove/uart.h` | 7 | UART serial bus driver with interrupt RX buffering and thread-safe TX. [Guide](uart.md) |
+| SPI | `ove/spi.h` | 6 | SPI master driver with configurable clock/mode and GPIO chip-select. [Guide](spi.md) |
+| I2C | `ove/i2c.h` | 6 | I2C master driver with probe and register-level convenience APIs. [Guide](i2c.md) |
+| I2S | `ove/i2s.h` | 13 | I2S / SAI audio bus driver with DMA double-buffered streaming. [Guide](i2s.md) |
 | Log | `ove/log.h` | — | Compile-time filtered macros: `OVE_LOG_ERR`, `OVE_LOG_WRN`, `OVE_LOG_INF`, `OVE_LOG_DBG`, and `OVE_LOG` |
 | LVGL | `ove/lvgl.h` | — | Unified LVGL include: abstraction API (`lvgl_internal.h`) plus upstream LVGL library headers |
 | LVGL Internal | `ove/lvgl_internal.h` | — | Internal LVGL display integration hooks (lock/unlock/tick/handler/init) |

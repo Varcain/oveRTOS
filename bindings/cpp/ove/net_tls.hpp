@@ -76,14 +76,29 @@ public:
 		return ove_tls_handshake(handle_, sock, &c);
 	}
 
+	/**
+	 * @brief Send encrypted bytes over the TLS session.
+	 * @param[in]  data  Buffer to send.
+	 * @param[in]  len   Buffer length in bytes.
+	 * @param[out] sent  Optional — bytes actually sent.
+	 * @return `OVE_OK` on success or a negative error code.
+	 */
 	[[nodiscard]] int send(const void *data, size_t len, size_t *sent = nullptr) {
 		return ove_tls_send(handle_, data, len, sent);
 	}
 
+	/**
+	 * @brief Receive decrypted bytes from the TLS session.
+	 * @param[out] buf       Destination buffer.
+	 * @param[in]  len       Buffer capacity in bytes.
+	 * @param[out] received  Optional — bytes actually received.
+	 * @return `OVE_OK` on success or a negative error code.
+	 */
 	[[nodiscard]] int recv(void *buf, size_t len, size_t *received = nullptr) {
 		return ove_tls_recv(handle_, buf, len, received);
 	}
 
+	/** @brief Close the TLS session (sends close_notify and tears down state). */
 	void close() {
 		ove_tls_close(handle_);
 	}

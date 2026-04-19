@@ -30,10 +30,16 @@ extern "C" {
 
 #define OVE_STATE_COUNT 5
 
+/**
+ * @brief Per-thread state-occupancy tracker.
+ *
+ * Accumulates time spent in each of `OVE_STATE_COUNT` states since init.
+ * Call `ove_state_track_transition()` on every state change to update.
+ */
 struct ove_state_tracker {
-	uint64_t cumul_us[OVE_STATE_COUNT];
-	uint64_t last_ts_us;
-	int      cur_state;
+	uint64_t cumul_us[OVE_STATE_COUNT]; /**< Cumulative microseconds spent in each state. */
+	uint64_t last_ts_us;                /**< Timestamp of the last transition. */
+	int      cur_state;                 /**< Current state index (0..OVE_STATE_COUNT-1). */
 };
 
 /** Platform-specific: return monotonic time in microseconds. */

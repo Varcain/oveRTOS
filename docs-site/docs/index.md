@@ -19,39 +19,43 @@ oveRTOS is an embedded RTOS framework that provides a unified build system, Kcon
 |---|---|
 | `ove/types.h` | Common types and error codes |
 | `ove/log.h` | Logging |
+| `ove/app.h` | Application lifecycle hooks |
 | `ove/thread.h` | Thread management |
 | `ove/sync.h` | Mutexes, semaphores, events, condvars |
-| `ove/audio.h` | Graph-based audio engine |
-| `ove/fs.h` | Filesystem abstraction |
 | `ove/queue.h` | Message queues |
 | `ove/timer.h` | Software timers |
-| `ove/console.h` | Console / serial output |
-| `ove/time.h` | Monotonic clock and delays |
-| `ove/board.h` | Board initialisation and identification |
-| `ove/gpio.h` | General-purpose I/O |
-| `ove/led.h` | On-board LED control |
-| `ove/bsp.h` | Legacy BSP compatibility shim |
-| `ove/lvgl.h` | Unified LVGL include (abstraction API + upstream library) |
-| `ove/lvgl_internal.h` | LVGL display integration (internal helpers) |
 | `ove/eventgroup.h` | Event groups (multi-bit flags) |
 | `ove/workqueue.h` | Deferred work queues |
 | `ove/stream.h` | Stream buffers |
+| `ove/time.h` | Monotonic clock and delays |
+| `ove/board.h` | Board initialisation and identification |
+| `ove/board_types.h` | Board and LED descriptor struct definitions |
+| `ove/gpio.h` | General-purpose I/O |
+| `ove/led.h` | On-board LED control |
 | `ove/watchdog.h` | Hardware watchdog timer |
+| `ove/console.h` | Console / serial output |
+| `ove/uart.h` | UART serial bus driver |
+| `ove/spi.h` | SPI bus master driver |
+| `ove/i2c.h` | I2C bus master driver |
+| `ove/i2s.h` | I2S / SAI audio bus driver |
+| `ove/audio.h` | Graph-based audio engine |
+| `ove/audio_node.h` | Audio node types and built-in processing nodes |
+| `ove/audio_device.h` | Audio transport abstraction and device node factories |
+| `ove/infer.h` | ML inference engine (LiteRT / TFLM) |
+| `ove/fs.h` | Filesystem abstraction |
 | `ove/nvs.h` | Non-volatile storage |
-| `ove/shell.h` | Interactive shell |
-| `ove/storage.h` | Backend-specific opaque storage types and static macros |
 | `ove/net.h` | Networking: sockets, DNS, network interface |
 | `ove/net_http.h` | HTTP/1.1 client |
 | `ove/net_tls.h` | TLS/SSL (mbedTLS) |
 | `ove/net_mqtt.h` | MQTT 3.1.1 client |
 | `ove/net_httpd.h` | Embedded HTTP server |
 | `ove/net_sntp.h` | SNTP time synchronization |
-| `ove/uart.h` | UART serial bus driver |
-| `ove/spi.h` | SPI bus master driver |
-| `ove/i2c.h` | I2C bus master driver |
-| `ove/i2s.h` | I2S / SAI audio bus driver |
 | `ove/pm.h` | Power management framework |
-| `ove/app.h` | Application lifecycle hooks |
+| `ove/shell.h` | Interactive shell |
+| `ove/lvgl.h` | Unified LVGL include (abstraction API + upstream library) |
+| `ove/lvgl_internal.h` | LVGL display integration (internal helpers) |
+| `ove/storage.h` | Backend-specific opaque storage types and static macros |
+| `ove/bsp.h` | Legacy BSP compatibility shim |
 
 Include every module at once with the umbrella header:
 

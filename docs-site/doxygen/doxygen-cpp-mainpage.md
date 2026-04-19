@@ -12,6 +12,8 @@ Include every module at once with the umbrella header:
 
 ## Wrapper Classes
 
+### Core kernel primitives
+
 | Class | Header | Description |
 |-------|--------|-------------|
 | `ove::Thread<StackSize>` | `ove/thread.hpp` | Compile-time stack-sized thread with move semantics |
@@ -26,10 +28,58 @@ Include every module at once with the umbrella header:
 | `ove::EventGroup` | `ove/eventgroup.hpp` | Multi-bit event flags |
 | `ove::Workqueue` / `ove::Work` | `ove/workqueue.hpp` | Deferred work queue |
 | `ove::Stream` | `ove/stream.hpp` | Byte-stream ring buffer |
+| `ove::time::` | `ove/time.hpp` | Monotonic clock and delay helpers |
+
+### Board, hardware I/O, and bus drivers
+
+| Class / namespace | Header | Description |
+|-------|--------|-------------|
+| `ove::board::` | `ove/board.hpp` | Board lifecycle and descriptor helpers |
+| `ove::gpio::` | `ove/gpio.hpp` | GPIO pin configuration and interrupt callbacks |
+| `ove::led::` | `ove/led.hpp` | On-board LED helpers |
 | `ove::Watchdog` | `ove/watchdog.hpp` | Hardware watchdog timer |
+| `ove::console::` | `ove/console.hpp` | Serial console I/O helpers |
+| `ove::Uart` | `ove/uart.hpp` | UART driver wrapper |
+| `ove::Spi` | `ove/spi.hpp` | SPI driver wrapper |
+| `ove::I2c` | `ove/i2c.hpp` | I2C driver wrapper |
+
+### Storage, filesystem, and NVS
+
+| Class / namespace | Header | Description |
+|-------|--------|-------------|
 | `ove::fs::File` / `ove::fs::Dir` | `ove/fs.hpp` | RAII file and directory handles |
-| `ove::Audio` | `ove/audio.hpp` | I2S audio streaming |
-| `ove::Nvs` | `ove/nvs.hpp` | Non-volatile key-value storage |
+| `ove::nvs::` | `ove/nvs.hpp` | Non-volatile key-value storage helpers |
+
+### Audio and ML
+
+| Class / namespace | Header | Description |
+|-------|--------|-------------|
+| `ove::audio::` | `ove/audio.hpp` | Audio graph engine (sources, processors, sinks) |
+| `ove::infer::` | `ove/infer.hpp` | RAII wrappers for TFLite Micro model lifecycle |
+
+### Networking
+
+| Class / namespace | Header | Description |
+|-------|--------|-------------|
+| `ove::net::` | `ove/net.hpp` | Sockets, addresses, DNS helpers |
+| `ove::tls::` | `ove/net_tls.hpp` | TLS session wrapper (mbedTLS) |
+| `ove::http::Client` | `ove/net_http.hpp` | HTTP/1.1 client |
+| `ove::mqtt::Client` | `ove/net_mqtt.hpp` | MQTT 3.1.1 client |
+| `ove::httpd::` / `ove::ws::` | `ove/net_httpd.hpp` | Embedded HTTP server with WebSocket support |
+| `ove::sntp::` | `ove/net_sntp.hpp` | SNTP time sync helpers |
+
+### Power management
+
+| Class / namespace | Header | Description |
+|-------|--------|-------------|
+| `ove::pm::` | `ove/pm.hpp` | Sleep states, wake sources, power domains |
+
+### Shell and benchmarking
+
+| Class / namespace | Header | Description |
+|-------|--------|-------------|
+| `ove::shell::` | `ove/shell.hpp` | Interactive shell registration helpers |
+| `ove::bench::` | `ove/bench.hpp` | Common latency / throughput benchmarking utilities |
 
 ## LVGL C++ Wrappers
 

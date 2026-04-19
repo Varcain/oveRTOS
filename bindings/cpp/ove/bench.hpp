@@ -37,26 +37,29 @@ enum class Type : int {
 
 /** @brief Spec describing a bench case — pass to `case_` at compile time. */
 struct CaseSpec {
-	const char *name;
-	Type kind;
-	void (*run)();
-	void (*setup)() = nullptr;
-	void (*teardown)() = nullptr;
-	uint32_t iterations = 0;
+	const char *name;          /**< Case name (for harness output). */
+	Type kind;                 /**< Measurement kind (latency/throughput/memory). */
+	void (*run)();             /**< Per-iteration body — required. */
+	void (*setup)() = nullptr; /**< Optional one-time setup. */
+	void (*teardown)() = nullptr; /**< Optional one-time teardown. */
+	uint32_t iterations = 0;   /**< Iteration count (0 = harness default). */
 };
 
 namespace detail {
 
+/** @brief C-ABI trampoline forwarding to the spec's `run` callback. */
 template <const CaseSpec &Spec>
 inline void run_trampoline(void *) {
 	Spec.run();
 }
 
+/** @brief C-ABI trampoline forwarding to the spec's `setup` callback (no-op when null). */
 template <const CaseSpec &Spec>
 inline void setup_trampoline(void *) {
 	if (Spec.setup) Spec.setup();
 }
 
+/** @brief C-ABI trampoline forwarding to the spec's `teardown` callback (no-op when null). */
 template <const CaseSpec &Spec>
 inline void teardown_trampoline(void *) {
 	if (Spec.teardown) Spec.teardown();
@@ -88,14 +91,15 @@ constexpr ::bench_case_t case_() {
 
 /** @brief Spec describing a bench suite. */
 struct SuiteSpec {
-	const char *name;
-	bool (*enabled)();
-	const ::bench_case_t *cases;
-	unsigned int case_count;
+	const char *name;                /**< Suite name (for harness output). */
+	bool (*enabled)();               /**< Gate predicate — suite runs when it returns true. */
+	const ::bench_case_t *cases;     /**< Array of cases, length `case_count`. */
+	unsigned int case_count;         /**< Number of entries in `cases`. */
 };
 
 namespace detail {
 
+/** @brief C-ABI trampoline forwarding the suite's `bool` gate to the harness' `int`. */
 template <const SuiteSpec &Spec>
 inline int enabled_trampoline() {
 	return Spec.enabled() ? 1 : 0;

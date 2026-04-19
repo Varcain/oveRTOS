@@ -8,7 +8,8 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    // Doc-only builds: skip bindgen, emit all feature flags
+    // Doc-only builds: skip bindgen, emit all feature flags so every
+    // module (including `lvgl`) is included in the generated docs.
     if std::env::var("DOCS_RS").is_ok() {
         let modules = [
             "sync", "queue", "timer", "eventgroup", "log",

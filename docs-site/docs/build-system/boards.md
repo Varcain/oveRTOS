@@ -1,6 +1,6 @@
 # Board Configurations
 
-oveRTOS ships with four reference board definitions. Each board lives under `boards/<name>/` and supplies:
+oveRTOS ships with four reference board definitions — `stm32f746g-discovery`, `qemu-mps2-an500`, `host`, and `wasm`. Each board lives under `boards/<name>/` and supplies:
 
 - `board.yaml` — machine-readable hardware description (clocks, memory, peripherals)
 - A CMakeLists.txt (or equivalent) that selects the correct backend and passes hardware parameters to the build
@@ -78,9 +78,9 @@ The `cmake/` subdirectory contains toolchain files and CMake helpers for cross-c
 
 ---
 
-## Host PC (`host-pc`)
+## Host (`host`)
 
-The host-pc board uses the POSIX backend and compiles oveRTOS as a native Linux or macOS process. It is intended for rapid development iteration and unit testing on a desktop machine.
+The `host` board uses the POSIX backend and compiles oveRTOS as a native Linux or macOS process. It is intended for rapid development iteration and unit testing on a desktop machine.
 
 **Hardware summary**
 
@@ -101,15 +101,15 @@ The board directory contains a single `posix` subdirectory. The POSIX backend ma
 
 **Usage**
 
-Building for the host-pc board produces a native executable that can be run directly:
+Build for the `host` board by loading a POSIX configuration and running make:
 
 ```bash
-cmake -B build -DOVE_BOARD=host-pc
-cmake --build build
-./build/firmware
+make host.posix.example_c
+make
+make run
 ```
 
-This makes it straightforward to run oveRTOS applications in CI pipelines or debuggers without embedded hardware.
+The produced binary runs directly on Linux / macOS, so it is straightforward to run oveRTOS applications in CI pipelines or debuggers without embedded hardware.
 
 ---
 

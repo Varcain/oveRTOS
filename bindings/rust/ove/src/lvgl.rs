@@ -1276,7 +1276,7 @@ impl core::ops::Deref for Button {
 
 /// LVGL slider widget. Shares the bar value/range shape and adds knob
 /// styling and drag interaction. Listen for changes with
-/// [`EventTarget::on_value_changed`].
+/// [`EventTarget::on_value_change`].
 #[derive(Clone, Copy)]
 pub struct Slider {
     raw: *mut bindings::lv_obj_t,
@@ -1350,7 +1350,7 @@ impl core::ops::Deref for Slider {
 
 /// LVGL switch widget (binary toggle). State is tracked via
 /// [`STATE_CHECKED`]; listen for changes with
-/// [`EventTarget::on_value_changed`].
+/// [`EventTarget::on_value_change`].
 #[derive(Clone, Copy)]
 pub struct Switch {
     raw: *mut bindings::lv_obj_t,

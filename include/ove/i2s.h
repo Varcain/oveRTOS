@@ -91,10 +91,19 @@ struct ove_i2s_cfg {
 int  ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage,
 		  void *tx_dma_buf, void *rx_dma_buf,
 		  const struct ove_i2s_cfg *cfg);
+/** @brief Release an I2S handle previously created with `ove_i2s_init`. */
 void ove_i2s_deinit(ove_i2s_t i2s);
 
 #ifdef OVE_HEAP_I2S
+/**
+ * @brief Heap-mode counterpart of `ove_i2s_init()` — allocates storage and
+ *        DMA buffers internally.
+ * @param[out] i2s Receives the initialised handle.
+ * @param[in]  cfg I2S configuration descriptor.
+ * @return OVE_OK on success, negative error code on failure.
+ */
 int  ove_i2s_create(ove_i2s_t *i2s, const struct ove_i2s_cfg *cfg);
+/** @brief Destroy an I2S handle previously created with `ove_i2s_create`. */
 void ove_i2s_destroy(ove_i2s_t i2s);
 #elif !defined(__ZIG_CIMPORT__)
 #define ove_i2s_create(pi2s, cfg) \
@@ -188,9 +197,13 @@ size_t ove_i2s_half_buf_size(ove_i2s_t i2s);
 
 /* ── ISR helpers (called by backend, not by application) ─────────── */
 
+/** @brief ISR helper — invoke from backend RX half-complete interrupt. */
 void ove_i2s_rx_half_cplt_isr(ove_i2s_t i2s);
+/** @brief ISR helper — invoke from backend RX full-complete interrupt. */
 void ove_i2s_rx_cplt_isr(ove_i2s_t i2s);
+/** @brief ISR helper — invoke from backend TX half-complete interrupt. */
 void ove_i2s_tx_half_cplt_isr(ove_i2s_t i2s);
+/** @brief ISR helper — invoke from backend TX full-complete interrupt. */
 void ove_i2s_tx_cplt_isr(ove_i2s_t i2s);
 
 #else /* !CONFIG_OVE_I2S */

@@ -61,9 +61,11 @@ public:
 	Model(Model &&) = delete;
 	Model &operator=(Model &&) = delete;
 #else
+	/** @brief Move constructor — transfers handle ownership; source becomes empty. */
 	Model(Model &&other) noexcept : handle_(other.handle_) {
 		other.handle_ = nullptr;
 	}
+	/** @brief Move-assignment — destroys current model, then takes `other`'s handle. */
 	Model &operator=(Model &&other) noexcept {
 		if (this != &other) {
 			if (handle_)

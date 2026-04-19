@@ -373,16 +373,6 @@ public:
 	}
 
 	/**
-	 * @brief Places this object into a cell of its parent grid.
-	 * @param[in] col_align  Horizontal cell alignment (`LV_GRID_ALIGN_*`).
-	 * @param[in] col_pos    Zero-based column index.
-	 * @param[in] col_span   Number of columns to span (default 1).
-	 * @param[in] row_align  Vertical cell alignment (`LV_GRID_ALIGN_*`).
-	 * @param[in] row_pos    Zero-based row index.
-	 * @param[in] row_span   Number of rows to span (default 1).
-	 * @return Reference to the derived object for method chaining.
-	 */
-	/**
 	 * @brief Configure this object as a flex container with the given flow.
 	 */
 	Derived &flex_flow(lv_flex_flow_t flow) {
@@ -449,6 +439,16 @@ public:
 		return self();
 	}
 
+	/**
+	 * @brief Places this object into a cell of its parent grid.
+	 * @param[in] col_align  Horizontal cell alignment (`LV_GRID_ALIGN_*`).
+	 * @param[in] col_pos    Zero-based column index.
+	 * @param[in] col_span   Number of columns to span (default 1).
+	 * @param[in] row_align  Vertical cell alignment (`LV_GRID_ALIGN_*`).
+	 * @param[in] row_pos    Zero-based row index.
+	 * @param[in] row_span   Number of rows to span (default 1).
+	 * @return Reference to the derived object for method chaining.
+	 */
 	Derived &grid_cell(lv_grid_align_t col_align, int32_t col_pos,
 			   int32_t col_span, lv_grid_align_t row_align,
 			   int32_t row_pos, int32_t row_span) {
@@ -751,93 +751,114 @@ public:
 	}
 
 	// ---- Per-side paddings + row/column gaps ----
+	/** @brief Sets top padding in pixels. */
 	Derived &pad_top(int32_t p) {
 		lv_obj_set_style_pad_top(self().get(), p, LV_PART_MAIN);
 		return self();
 	}
+	/** @brief Sets bottom padding in pixels. */
 	Derived &pad_bottom(int32_t p) {
 		lv_obj_set_style_pad_bottom(self().get(), p, LV_PART_MAIN);
 		return self();
 	}
+	/** @brief Sets left padding in pixels. */
 	Derived &pad_left(int32_t p) {
 		lv_obj_set_style_pad_left(self().get(), p, LV_PART_MAIN);
 		return self();
 	}
+	/** @brief Sets right padding in pixels. */
 	Derived &pad_right(int32_t p) {
 		lv_obj_set_style_pad_right(self().get(), p, LV_PART_MAIN);
 		return self();
 	}
+	/** @brief Sets the row gap between children in flex/grid layouts. */
 	Derived &pad_row(int32_t p) {
 		lv_obj_set_style_pad_row(self().get(), p, LV_PART_MAIN);
 		return self();
 	}
+	/** @brief Sets the column gap between children in flex/grid layouts. */
 	Derived &pad_column(int32_t p) {
 		lv_obj_set_style_pad_column(self().get(), p, LV_PART_MAIN);
 		return self();
 	}
 
 	// ---- Text alignment + overall opacity ----
+	/** @brief Sets the horizontal text alignment on the given part. */
 	Derived &text_align(uint32_t align, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_text_align(self().get(),
 					    static_cast<lv_text_align_t>(align), part);
 		return self();
 	}
+	/** @brief Sets the overall object opacity (0–255, or `LV_OPA_*`). */
 	Derived &set_opa(lv_opa_t opa) {
 		lv_obj_set_style_opa(self().get(), opa, LV_PART_MAIN);
 		return self();
 	}
 
 	// ---- Selector variants ----
+	/** @brief Sets text color on a specific part. */
 	Derived &text_color(lv_color_t c, lv_style_selector_t part) {
 		lv_obj_set_style_text_color(self().get(), c, part);
 		return self();
 	}
+	/** @brief Sets border color on a specific part. */
 	Derived &border_color(lv_color_t c, lv_style_selector_t part) {
 		lv_obj_set_style_border_color(self().get(), c, part);
 		return self();
 	}
+	/** @brief Sets arc color on a specific part. */
 	Derived &arc_color(lv_color_t c, lv_style_selector_t part) {
 		lv_obj_set_style_arc_color(self().get(), c, part);
 		return self();
 	}
+	/** @brief Sets arc stroke width on a specific part. */
 	Derived &arc_width(int32_t w, lv_style_selector_t part) {
 		lv_obj_set_style_arc_width(self().get(), w, part);
 		return self();
 	}
+	/** @brief Sets arc opacity on a specific part. */
 	Derived &arc_opa(lv_opa_t opa, lv_style_selector_t part) {
 		lv_obj_set_style_arc_opa(self().get(), opa, part);
 		return self();
 	}
+	/** @brief Enables/disables rounded arc end caps on a specific part. */
 	Derived &arc_rounded(bool rounded, lv_style_selector_t part) {
 		lv_obj_set_style_arc_rounded(self().get(), rounded, part);
 		return self();
 	}
 
 	// ---- Advanced layout/compositing styles ----
+	/** @brief Sets a vertical translation (post-layout offset) on the given part. */
 	Derived &translate_y(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_translate_y(self().get(), v, part);
 		return self();
 	}
+	/** @brief Sets top margin (outer spacing) on the given part. */
 	Derived &margin_top(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_margin_top(self().get(), v, part);
 		return self();
 	}
+	/** @brief Sets bottom margin (outer spacing) on the given part. */
 	Derived &margin_bottom(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_margin_bottom(self().get(), v, part);
 		return self();
 	}
+	/** @brief Sets left margin (outer spacing) on the given part. */
 	Derived &margin_left(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_margin_left(self().get(), v, part);
 		return self();
 	}
+	/** @brief Sets right margin (outer spacing) on the given part. */
 	Derived &margin_right(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_margin_right(self().get(), v, part);
 		return self();
 	}
+	/** @brief Sets the maximum height (in pixels) on the given part. */
 	Derived &max_height(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_max_height(self().get(), v, part);
 		return self();
 	}
+	/** @brief Sets the layered opacity (applied after compositing) on the given part. */
 	Derived &opa_layered(lv_opa_t opa, lv_style_selector_t part = LV_PART_MAIN) {
 		lv_obj_set_style_opa_layered(self().get(), opa, part);
 		return self();
@@ -1367,6 +1388,7 @@ class Button : public ObjectView,
 	       public EventMixin<Button>,
 	       public StyleMixin<Button> {
 public:
+	/** @brief Wraps an existing LVGL button object (non-owning). */
 	explicit Button(lv_obj_t *obj) : ObjectView(obj) {}
 
 	/** @brief Creates a new button as a child of `parent`. */
@@ -1414,8 +1436,10 @@ class Slider : public ObjectView,
 	       public EventMixin<Slider>,
 	       public StyleMixin<Slider> {
 public:
+	/** @brief Wraps an existing LVGL slider object (non-owning). */
 	explicit Slider(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new slider as a child of `parent`. */
 	static Slider create(ObjectView parent) {
 		return Slider(lv_slider_create(parent));
 	}
@@ -1469,8 +1493,10 @@ class Switch : public ObjectView,
 	       public EventMixin<Switch>,
 	       public StyleMixin<Switch> {
 public:
+	/** @brief Wraps an existing LVGL switch object (non-owning). */
 	explicit Switch(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new switch as a child of `parent`. */
 	static Switch create(ObjectView parent) {
 		return Switch(lv_switch_create(parent));
 	}
@@ -1503,8 +1529,10 @@ class Checkbox : public ObjectView,
 		 public EventMixin<Checkbox>,
 		 public StyleMixin<Checkbox> {
 public:
+	/** @brief Wraps an existing LVGL checkbox object (non-owning). */
 	explicit Checkbox(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new checkbox as a child of `parent`. */
 	static Checkbox create(ObjectView parent) {
 		return Checkbox(lv_checkbox_create(parent));
 	}
@@ -1551,8 +1579,10 @@ class Arc : public ObjectView,
 	    public EventMixin<Arc>,
 	    public StyleMixin<Arc> {
 public:
+	/** @brief Wraps an existing LVGL arc object (non-owning). */
 	explicit Arc(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new arc as a child of `parent`. */
 	static Arc create(ObjectView parent) {
 		return Arc(lv_arc_create(parent));
 	}
@@ -1631,8 +1661,10 @@ class Image : public ObjectView,
 	      public EventMixin<Image>,
 	      public StyleMixin<Image> {
 public:
+	/** @brief Wraps an existing LVGL image object (non-owning). */
 	explicit Image(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new image as a child of `parent`. */
 	static Image create(ObjectView parent) {
 		return Image(lv_image_create(parent));
 	}
@@ -1679,6 +1711,7 @@ class Msgbox : public ObjectView,
 	       public EventMixin<Msgbox>,
 	       public StyleMixin<Msgbox> {
 public:
+	/** @brief Wraps an existing LVGL msgbox object (non-owning). */
 	explicit Msgbox(lv_obj_t *obj) : ObjectView(obj) {}
 
 	/** @brief Creates a new modal msgbox. Passing a null parent centers
@@ -1746,8 +1779,10 @@ class Spinner : public ObjectView,
 		public EventMixin<Spinner>,
 		public StyleMixin<Spinner> {
 public:
+	/** @brief Wraps an existing LVGL spinner object (non-owning). */
 	explicit Spinner(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new spinner as a child of `parent`. */
 	static Spinner create(ObjectView parent) {
 		return Spinner(lv_spinner_create(parent));
 	}
@@ -1775,8 +1810,10 @@ class Led : public ObjectView,
 	    public EventMixin<Led>,
 	    public StyleMixin<Led> {
 public:
+	/** @brief Wraps an existing LVGL LED object (non-owning). */
 	explicit Led(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new LED as a child of `parent`. */
 	static Led create(ObjectView parent) {
 		return Led(lv_led_create(parent));
 	}
@@ -1833,8 +1870,10 @@ class Textarea : public ObjectView,
 		 public EventMixin<Textarea>,
 		 public StyleMixin<Textarea> {
 public:
+	/** @brief Wraps an existing LVGL textarea object (non-owning). */
 	explicit Textarea(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new textarea as a child of `parent`. */
 	static Textarea create(ObjectView parent) {
 		return Textarea(lv_textarea_create(parent));
 	}
@@ -1939,8 +1978,10 @@ class Dropdown : public ObjectView,
 		 public EventMixin<Dropdown>,
 		 public StyleMixin<Dropdown> {
 public:
+	/** @brief Wraps an existing LVGL dropdown object (non-owning). */
 	explicit Dropdown(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new dropdown as a child of `parent`. */
 	static Dropdown create(ObjectView parent) {
 		return Dropdown(lv_dropdown_create(parent));
 	}
@@ -2035,8 +2076,10 @@ class Roller : public ObjectView,
 	       public EventMixin<Roller>,
 	       public StyleMixin<Roller> {
 public:
+	/** @brief Wraps an existing LVGL roller object (non-owning). */
 	explicit Roller(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new roller as a child of `parent`. */
 	static Roller create(ObjectView parent) {
 		return Roller(lv_roller_create(parent));
 	}
@@ -2098,8 +2141,10 @@ class Spinbox : public ObjectView,
 		public EventMixin<Spinbox>,
 		public StyleMixin<Spinbox> {
 public:
+	/** @brief Wraps an existing LVGL spinbox object (non-owning). */
 	explicit Spinbox(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new spinbox as a child of `parent`. */
 	static Spinbox create(ObjectView parent) {
 		return Spinbox(lv_spinbox_create(parent));
 	}
@@ -2183,8 +2228,10 @@ class Keyboard : public ObjectView,
 		 public EventMixin<Keyboard>,
 		 public StyleMixin<Keyboard> {
 public:
+	/** @brief Wraps an existing LVGL keyboard object (non-owning). */
 	explicit Keyboard(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new keyboard as a child of `parent`. */
 	static Keyboard create(ObjectView parent) {
 		return Keyboard(lv_keyboard_create(parent));
 	}
@@ -2236,10 +2283,13 @@ public:
 	class Series {
 	public:
 		Series() : chart_(nullptr), ser_(nullptr) {}
+		/** @brief Binds the handle to an existing chart + series pointer pair. */
 		Series(lv_obj_t *chart, lv_chart_series_t *ser)
 			: chart_(chart), ser_(ser) {}
 
+		/** @brief Returns the underlying `lv_chart_series_t *`. */
 		lv_chart_series_t *get() const { return ser_; }
+		/** @brief `true` if this handle references a live series. */
 		explicit operator bool() const { return ser_ != nullptr; }
 
 		/** @brief Pushes a new value using the current update mode. */
@@ -2259,8 +2309,10 @@ public:
 		lv_chart_series_t *ser_;
 	};
 
+	/** @brief Wraps an existing LVGL chart object (non-owning). */
 	explicit Chart(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new chart as a child of `parent`. */
 	static Chart create(ObjectView parent) {
 		return Chart(lv_chart_create(parent));
 	}
@@ -2323,8 +2375,10 @@ class Table : public ObjectView,
 	      public EventMixin<Table>,
 	      public StyleMixin<Table> {
 public:
+	/** @brief Wraps an existing LVGL table object (non-owning). */
 	explicit Table(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new table as a child of `parent`. */
 	static Table create(ObjectView parent) {
 		return Table(lv_table_create(parent));
 	}
@@ -2389,13 +2443,13 @@ class Tabview : public ObjectView,
 		public EventMixin<Tabview>,
 		public StyleMixin<Tabview> {
 public:
+	/** @brief Wraps an existing LVGL tabview object (non-owning). */
 	explicit Tabview(lv_obj_t *obj) : ObjectView(obj) {}
 
 	/**
-	 * @brief Creates a tabview with the given tab-bar position and size.
-	 * @param[in] parent    Parent object (or null for screen).
-	 * @param[in] tab_pos   `LV_DIR_TOP/BOTTOM/LEFT/RIGHT`.
-	 * @param[in] tab_size  Tab bar height (top/bottom) or width (left/right) in pixels.
+	 * @brief Creates a tabview with default bar position/size. Call
+	 *        `tab_bar_position()` / `tab_bar_size()` to customise.
+	 * @param[in] parent  Parent object (or null for screen).
 	 */
 	static Tabview create(ObjectView parent) {
 		return Tabview(lv_tabview_create(parent));
@@ -2461,8 +2515,10 @@ class List : public ObjectView,
 	     public EventMixin<List>,
 	     public StyleMixin<List> {
 public:
+	/** @brief Wraps an existing LVGL list object (non-owning). */
 	explicit List(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new list as a child of `parent`. */
 	static List create(ObjectView parent) {
 		return List(lv_list_create(parent));
 	}
@@ -2504,8 +2560,10 @@ class Canvas : public ObjectView,
 	       public EventMixin<Canvas>,
 	       public StyleMixin<Canvas> {
 public:
+	/** @brief Wraps an existing LVGL canvas object (non-owning). */
 	explicit Canvas(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new canvas as a child of `parent`. */
 	static Canvas create(ObjectView parent) {
 		return Canvas(lv_canvas_create(parent));
 	}
@@ -2564,8 +2622,10 @@ class Calendar : public ObjectView,
 		 public EventMixin<Calendar>,
 		 public StyleMixin<Calendar> {
 public:
+	/** @brief Wraps an existing LVGL calendar object (non-owning). */
 	explicit Calendar(lv_obj_t *obj) : ObjectView(obj) {}
 
+	/** @brief Creates a new calendar as a child of `parent`. */
 	static Calendar create(ObjectView parent) {
 		return Calendar(lv_calendar_create(parent));
 	}
@@ -2656,6 +2716,7 @@ inline Box hbox(ObjectView parent) {
 class Group {
 public:
 	Group() : group_(nullptr) {}
+	/** @brief Takes ownership of an existing `lv_group_t *`. */
 	explicit Group(lv_group_t *g) : group_(g) {}
 
 	~Group() { if (group_) lv_group_delete(group_); }
@@ -2663,10 +2724,12 @@ public:
 	Group(const Group &) = delete;
 	Group &operator=(const Group &) = delete;
 
+	/** @brief Move constructor — transfers ownership; source becomes empty. */
 	Group(Group &&other) noexcept : group_(other.group_) {
 		other.group_ = nullptr;
 	}
 
+	/** @brief Move-assignment — releases current group, then takes `other`'s. */
 	Group &operator=(Group &&other) noexcept {
 		if (this != &other) {
 			if (group_) lv_group_delete(group_);
@@ -2780,6 +2843,7 @@ class Screen : public ObjectView,
 	       public EventMixin<Screen>,
 	       public StyleMixin<Screen> {
 public:
+	/** @brief Wraps an existing LVGL screen object (non-owning). */
 	explicit Screen(lv_obj_t *obj) : ObjectView(obj) {}
 
 	/** @brief Creates a new top-level screen with no parent. */
@@ -2851,10 +2915,12 @@ public:
 	Timer(const Timer &) = delete;
 	Timer &operator=(const Timer &) = delete;
 
+	/** @brief Move constructor — transfers ownership; source becomes empty. */
 	Timer(Timer &&other) noexcept : timer_(other.timer_) {
 		other.timer_ = nullptr;
 	}
 
+	/** @brief Move-assignment — deletes the current timer, then takes `other`'s. */
 	Timer &operator=(Timer &&other) noexcept {
 		if (this != &other) {
 			if (timer_) lv_timer_delete(timer_);
@@ -3222,18 +3288,22 @@ private:
 /*  Display info + top layer helpers                                  */
 /* ================================================================== */
 
+/** @brief Horizontal resolution (pixels) of the default LVGL display. */
 inline int32_t display_width() {
 	return lv_display_get_horizontal_resolution(nullptr);
 }
 
+/** @brief Vertical resolution (pixels) of the default LVGL display. */
 inline int32_t display_height() {
 	return lv_display_get_vertical_resolution(nullptr);
 }
 
+/** @brief DPI of the default LVGL display. */
 inline int32_t display_dpi() {
 	return lv_display_get_dpi(nullptr);
 }
 
+/** @brief Returns the top layer (for overlays that should render above screens). */
 inline ObjectView layer_top() {
 	return ObjectView(lv_layer_top());
 }

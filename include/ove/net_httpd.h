@@ -232,12 +232,23 @@ int ove_httpd_ws_broadcast(const char *path,
 /** @brief Return the number of active WebSocket connections. */
 int ove_httpd_ws_active_count(void);
 
-/* Internal — called by httpd accept loop */
+/* ── Internal — called by httpd accept loop ──────────────────────────── */
+
+/** @brief Return non-zero if the HTTP headers request a WebSocket upgrade. */
 int ove_httpd_ws_is_upgrade(const char *headers);
+
+/**
+ * @brief Complete the WebSocket upgrade handshake on `sock`.
+ *
+ * Invoked by the httpd accept loop after `ove_httpd_ws_is_upgrade()` returns
+ * true.  On success the connection is handed off to the WS subsystem.
+ */
 int ove_httpd_ws_handshake(const char *headers, size_t headers_len,
 			   const char *path,
 			   ove_socket_t sock,
 			   ove_socket_storage_t *storage);
+
+/** @brief Drive the WS subsystem from the httpd task's poll loop. */
 void ove_httpd_ws_poll(void);
 
 #endif /* CONFIG_OVE_NET_HTTPD_WS */

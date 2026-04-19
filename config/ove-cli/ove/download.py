@@ -800,7 +800,7 @@ def cmd_ensure_toolchain(args):
     """
     ws = Workspace()
     manifest = load_manifest(ws.ove_dir)
-    warn_if_dirty(manifest, ws.ove_dir)
+    warn_if_dirty(ws.ove_dir)
     if args.name == "zig":
         os.makedirs(ws.toolchains_dir, exist_ok=True)
         if not download_zig_toolchain({}, ws.dl_dir, ws.toolchains_dir,

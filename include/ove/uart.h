@@ -41,18 +41,21 @@ extern "C" {
 
 /* ── Enums ───────────────────────────────────────────────────────── */
 
+/** @brief UART parity mode. */
 typedef enum {
 	OVE_UART_PARITY_NONE = 0,
 	OVE_UART_PARITY_ODD  = 1,
 	OVE_UART_PARITY_EVEN = 2,
 } ove_uart_parity_t;
 
+/** @brief UART stop-bit count. */
 typedef enum {
 	OVE_UART_STOP_1   = 0,
 	OVE_UART_STOP_1_5 = 1,
 	OVE_UART_STOP_2   = 2,
 } ove_uart_stop_t;
 
+/** @brief UART hardware flow control. */
 typedef enum {
 	OVE_UART_FLOW_NONE    = 0,
 	OVE_UART_FLOW_RTS_CTS = 1,
@@ -89,10 +92,18 @@ struct ove_uart_cfg {
 int  ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage,
 		   void *rx_buf, const struct ove_uart_cfg *cfg);
 
+/** @brief Release a UART handle previously created with `ove_uart_init`. */
 void ove_uart_deinit(ove_uart_t uart);
 
 #ifdef OVE_HEAP_UART
+/**
+ * @brief Heap-mode counterpart of `ove_uart_init()` — allocates storage and RX buffer.
+ * @param[out] uart Receives the initialised handle.
+ * @param[in]  cfg  UART configuration descriptor.
+ * @return OVE_OK on success, negative error code on failure.
+ */
 int  ove_uart_create(ove_uart_t *uart, const struct ove_uart_cfg *cfg);
+/** @brief Destroy a UART handle previously created with `ove_uart_create`. */
 void ove_uart_destroy(ove_uart_t uart);
 #elif !defined(__ZIG_CIMPORT__)
 #define ove_uart_create(puart, cfg) \

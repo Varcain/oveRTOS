@@ -488,7 +488,7 @@ macro_rules! workqueue {
 ///
 /// The oveRTOS C work handler has no `user_data` slot, so this just
 /// generates a `unsafe extern "C"` trampoline that calls the supplied
-/// safe function. Use this with [`work!`] so app code never has to write
+/// safe function. Use this with [`crate::work!`] so app code never has to write
 /// `unsafe extern "C"` itself.
 ///
 /// # Example

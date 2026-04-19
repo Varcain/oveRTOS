@@ -947,6 +947,75 @@ pub type lv_event_cb_t = Option<unsafe extern "C" fn(*mut c_void)>;
 /// LVGL event code type.
 pub type lv_event_code_t = u32;
 
+/// Opaque LVGL event descriptor (passed to event callbacks).
+#[repr(C)]
+pub struct lv_event_t {
+    _opaque: [u8; 64],
+}
+
+/// Opaque LVGL chart series.
+#[repr(C)]
+pub struct lv_chart_series_t {
+    _opaque: [u8; 32],
+}
+
+/// LVGL color format enum (e.g. RGB565, RGB888, ARGB8888).
+pub type lv_color_format_t = u8;
+
+/// LVGL direction bitmask (top/bottom/left/right flags).
+pub type lv_dir_t = u8;
+
+/// Opaque LVGL input group (for keyboard/encoder focus tracking).
+#[repr(C)]
+pub struct lv_group_t {
+    _opaque: [u8; 64],
+}
+
+/// Opaque LVGL image descriptor (header + data).
+#[repr(C)]
+pub struct lv_image_dsc_t {
+    _opaque: [u8; 64],
+}
+
+/// Opaque LVGL scale section (major-tick styling span).
+#[repr(C)]
+pub struct lv_scale_section_t {
+    _opaque: [u8; 64],
+}
+
+/// LVGL screen-load transition animation type.
+pub type lv_screen_load_anim_t = u32;
+
+/// Opaque LVGL reactive subject (observer pattern state holder).
+#[repr(C)]
+pub struct lv_subject_t {
+    _opaque: [u8; 64],
+}
+
+/// Opaque LVGL timer.
+#[repr(C)]
+pub struct lv_timer_t {
+    _opaque: [u8; 64],
+}
+
+/// Opaque LVGL animation descriptor.
+#[repr(C)]
+pub struct lv_anim_t {
+    _opaque: [u8; 128],
+}
+
+/// LVGL timer callback: `fn(timer)`.
+pub type lv_timer_cb_t = Option<unsafe extern "C" fn(*mut lv_timer_t)>;
+
+/// LVGL animation completion callback: `fn(anim)`.
+pub type lv_anim_completed_cb_t = Option<unsafe extern "C" fn(*mut lv_anim_t)>;
+
+/// LVGL animation exec callback: `fn(var, value)`.
+pub type lv_anim_exec_xcb_t = Option<unsafe extern "C" fn(*mut c_void, i32)>;
+
+/// LVGL animation path (easing) callback: `fn(anim) -> value`.
+pub type lv_anim_path_cb_t = Option<unsafe extern "C" fn(*const lv_anim_t) -> i32>;
+
 // ---------------------------------------------------------------------------
 // LVGL constants
 // ---------------------------------------------------------------------------

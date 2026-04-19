@@ -30,8 +30,8 @@ namespace sntp {
  * @brief SNTP client configuration with C++ defaults.
  */
 struct Config {
-	const char *server{"pool.ntp.org"};
-	uint32_t    timeout_ms{5000};
+	const char *server{"pool.ntp.org"}; /**< NTP server hostname. */
+	uint32_t    timeout_ms{5000};       /**< Sync timeout in milliseconds. */
 };
 
 /**

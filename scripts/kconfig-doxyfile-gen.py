@@ -20,6 +20,11 @@ from pathlib import Path
 CONFIG_DIRS = [Path("config"), Path("apps"), Path("boards")]
 DEFAULT_OUT = Path("output/docs/Doxyfile.predefined")
 
+# Symbols that must NOT be force-defined for Doxygen.  ZERO_HEAP hides the
+# heap-mode `_create()`/`_destroy()` functions via `#ifndef`; we always want
+# to document the heap-mode API surface, so leave it undefined.
+EXCLUDED_SYMBOLS = {"OVE_ZERO_HEAP"}
+
 
 def collect_config_symbols(roots):
     """Return sorted unique set of `config OVE_*` identifiers."""
@@ -33,7 +38,7 @@ def collect_config_symbols(roots):
                 m = pat.match(line)
                 if m:
                     names.add(m.group(1))
-    return sorted(names)
+    return sorted(n for n in names if n not in EXCLUDED_SYMBOLS)
 
 
 def render(symbols):
