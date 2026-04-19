@@ -81,6 +81,10 @@ menuconfig: $(VENV_STAMP)
 # Exclude allconfigs-* and alldefconfigs (handled by their own pattern rules).
 _DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(if $(filter allconfigs-% alldefconfigs,$(t)),,$(t))))
 ifneq ($(_DOT_TARGETS),)
+# Each goal calls `ove defconfig-fragments`, which rewrites the single shared
+# .config. Running multiple goals in parallel would race on that file, so
+# serialize when we see more than one dot-target on the command line.
+.NOTPARALLEL:
 .PHONY: $(_DOT_TARGETS)
 $(_DOT_TARGETS): $(VENV_STAMP)
 	@$(OVE) defconfig-fragments "$@" $(if $(ZEROHEAP),--zeroheap)
@@ -120,39 +124,7 @@ all: $(VENV_STAMP)
 #        make allconfigs-stm32f746.zephyr
 .PHONY: allconfigs-%
 allconfigs-%: $(VENV_STAMP)
-	@BOARD_RTOS="$*"; \
-	BOARD=$$(echo "$$BOARD_RTOS" | cut -d. -f1); \
-	RTOS=$$(echo "$$BOARD_RTOS" | cut -d. -f2); \
-	if [ -z "$$BOARD" ] || [ -z "$$RTOS" ]; then \
-		echo "ERROR: usage: make allconfigs-<board>.<rtos>"; exit 1; \
-	fi; \
-	APPS=$$(grep -rh 'config_name:' $(OVE_DIR)/apps/*/app.yaml $(OVE_DIR)/apps/*/*/app.yaml 2>/dev/null \
-		| sed 's/.*config_name: *//' | sort -u); \
-	TOTAL=$$(echo "$$APPS" | wc -w); \
-	CURRENT=0; \
-	FAILED=""; \
-	for app in $$APPS; do \
-		CURRENT=$$((CURRENT + 1)); \
-		echo ""; \
-		echo "============================================================"; \
-		echo "[$$CURRENT/$$TOTAL] Building $$BOARD.$$RTOS.$$app"; \
-		echo "============================================================"; \
-		if $(MAKE) "$$BOARD.$$RTOS.$$app" && $(MAKE); then \
-			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: OK"; \
-		else \
-			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: FAILED"; \
-			FAILED="$$FAILED $$app"; \
-		fi; \
-	done; \
-	echo ""; \
-	echo "============================================================"; \
-	echo "allconfigs-$$BOARD.$$RTOS: $$TOTAL configurations processed"; \
-	if [ -n "$$FAILED" ]; then \
-		echo "FAILED:$$FAILED"; \
-		exit 1; \
-	else \
-		echo "All configurations built successfully"; \
-	fi
+	@$(OVE) allconfigs "$*"
 
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
@@ -184,56 +156,23 @@ flash: $(VENV_STAMP)
 test: $(VENV_STAMP)
 	@$(OVE) test
 
-.PHONY: test-stub test-cpp test-rust test-zig test-nuttx test-zephyr
-test-stub: $(VENV_STAMP)
-	@$(OVE) test stub
-
-test-cpp: $(VENV_STAMP)
-	@$(OVE) test cpp
-
-test-rust: $(VENV_STAMP)
-	@$(OVE) test rust
-
-test-zig: $(VENV_STAMP)
-	@$(OVE) test zig
-
-test-nuttx: $(VENV_STAMP)
-	@$(OVE) test nuttx
-
-test-zephyr: $(VENV_STAMP)
-	@$(OVE) test zephyr
-
-.PHONY: test-qemu test-qemu-freertos test-qemu-freertos-zeroheap test-qemu-nuttx test-qemu-nuttx-zeroheap test-qemu-zephyr test-qemu-zephyr-zeroheap
-test-qemu: $(VENV_STAMP)
-	@$(OVE) test qemu
-
-test-qemu-freertos: $(VENV_STAMP)
-	@$(OVE) test qemu-freertos
-
-test-qemu-freertos-zeroheap: $(VENV_STAMP)
-	@$(OVE) test qemu-freertos-zeroheap
-
-test-qemu-nuttx: $(VENV_STAMP)
-	@$(OVE) test qemu-nuttx
-
-test-qemu-nuttx-zeroheap: $(VENV_STAMP)
-	@$(OVE) test qemu-nuttx-zeroheap
-
-test-qemu-zephyr: $(VENV_STAMP)
-	@$(OVE) test qemu-zephyr
-
-test-qemu-zephyr-zeroheap: $(VENV_STAMP)
-	@$(OVE) test qemu-zephyr-zeroheap
-
-.PHONY: test-all
-test-all: $(VENV_STAMP)
-	@$(OVE) test all
+# Single source of truth for `test-<name>` recipes — each delegates to
+# `ove test <name>`. Add new suites here, not as separate targets.
+TEST_NAMES := stub cpp rust zig nuttx zephyr \
+              qemu qemu-freertos qemu-freertos-zeroheap \
+              qemu-nuttx qemu-nuttx-zeroheap \
+              qemu-zephyr qemu-zephyr-zeroheap all
+.PHONY: $(addprefix test-,$(TEST_NAMES))
+$(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
+	@$(OVE) test $*
 
 # ── Documentation ────────────────────────────────────────────────────────────
 
 .PHONY: docs docs-serve docs-clean
 
 docs: $(VENV_STAMP) ## Build complete documentation site
+	@echo "==> Generating Doxyfile.predefined from Kconfig..."
+	python3 scripts/kconfig-doxyfile-gen.py
 	@echo "==> Generating C API docs (Doxygen)..."
 	@mkdir -p output/docs/doxygen
 	doxygen Doxyfile
@@ -246,15 +185,8 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	@echo "==> Generating Zig API docs (autodoc)..."
 	@mkdir -p output/docs/zig-staging
 	@cp bindings/zig/ove/ove_config_docs.h output/docs/zig-staging/ove_config.h
+	@$(OVE) ensure-toolchain zig
 	@ZIG=$$(find $(OVE_DIR)/output/toolchains -maxdepth 2 -name zig -type f 2>/dev/null | head -1); \
-	if [ -z "$$ZIG" ]; then \
-		echo "  Zig not found in toolchains, downloading..."; \
-		$(VENV_PYTHON) -c "from ove.download import download_zig_toolchain; \
-			from ove.manifest import load_manifest; \
-			download_zig_toolchain({}, '$(OVE_DIR)/dl', '$(OVE_DIR)/output/toolchains', \
-			manifest=load_manifest('$(OVE_DIR)'))"; \
-		ZIG=$$(find $(OVE_DIR)/output/toolchains -maxdepth 2 -name zig -type f 2>/dev/null | head -1); \
-	fi; \
 	if [ -z "$$ZIG" ]; then ZIG=$$(command -v zig 2>/dev/null); fi; \
 	if [ -z "$$ZIG" ]; then echo "ERROR: zig not found"; exit 1; fi; \
 	echo "  Using: $$ZIG"; \

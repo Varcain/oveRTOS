@@ -113,7 +113,7 @@ endmacro()
 # Build LVGL as a static library from dl/lvgl/src/*.c.  Include paths are
 # exported PUBLIC so the final executable sees lv_conf.h from BOARD_DIR.
 macro(ove_posix_build_lvgl)
-    file(GLOB_RECURSE _LVGL_SOURCES ${LVGL_PATH}/src/*.c)
+    file(GLOB_RECURSE _LVGL_SOURCES CONFIGURE_DEPENDS ${LVGL_PATH}/src/*.c)
     add_library(lvgl STATIC ${_LVGL_SOURCES})
     target_include_directories(lvgl SYSTEM PUBLIC
         ${LVGL_PATH}

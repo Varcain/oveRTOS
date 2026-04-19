@@ -11,6 +11,8 @@
 #   OVE_RUST_TARGET           — e.g. thumbv7em-none-eabihf
 #   OVE_RUST_TOOLCHAIN_PATH   — optional custom cargo/rustc path
 
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/OveBindingsCommon.cmake)
+
 function(ove_build_rust_crate TARGET)
     if(NOT DEFINED APP_RUST_CRATE_DIR)
         message(FATAL_ERROR "APP_RUST_CRATE_DIR not set by app CMakeLists.txt")
@@ -31,16 +33,9 @@ function(ove_build_rust_crate TARGET)
     set(RUST_NIGHTLY_FLAG "")
 
     # Determine if this is a native (POSIX), WASM, or cross-compiled build
-    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-        set(RUST_IS_NATIVE FALSE)
-        set(RUST_IS_WASM TRUE)
+    _ove_binding_resolve_target_kind(RUST_IS_NATIVE RUST_IS_WASM)
+    if(RUST_IS_WASM)
         set(OVE_RUST_TARGET "wasm32-unknown-emscripten")
-    elseif(OVE_RTOS STREQUAL "posix")
-        set(RUST_IS_NATIVE TRUE)
-        set(RUST_IS_WASM FALSE)
-    else()
-        set(RUST_IS_NATIVE FALSE)
-        set(RUST_IS_WASM FALSE)
     endif()
 
     # Place Rust build artifacts in the CMake build dir, not next to sources
@@ -69,11 +64,7 @@ function(ove_build_rust_crate TARGET)
     set(LVGL_PARENT_PATH "${OVE_DL_DIR}")
 
     # Resolve board directory (some platforms use BOARD_DIR, others OVE_BOARD_DIR)
-    if(DEFINED OVE_BOARD_DIR)
-        set(_BOARD_DIR "${OVE_BOARD_DIR}")
-    elseif(DEFINED BOARD_DIR)
-        set(_BOARD_DIR "${BOARD_DIR}")
-    endif()
+    _ove_binding_resolve_board_dir(_BOARD_DIR)
 
     # Board lv_conf.h directory — pre-computed by 'ove configure'.
     set(LV_CONF_DIR "${OVE_LV_CONF_DIR}")
@@ -158,144 +149,34 @@ function(ove_build_rust_crate TARGET)
         )
 
         # Resolve ARM sysroot include path for bindgen
-        get_filename_component(TOOLCHAIN_BIN_DIR "${CMAKE_C_COMPILER}" DIRECTORY)
-        get_filename_component(TOOLCHAIN_ROOT "${TOOLCHAIN_BIN_DIR}" DIRECTORY)
-        get_filename_component(_COMPILER_NAME "${CMAKE_C_COMPILER}" NAME)
-        string(REGEX REPLACE "-gcc$" "" _ARM_TRIPLE "${_COMPILER_NAME}")
-        set(ARM_SYSROOT_INCLUDE "${TOOLCHAIN_ROOT}/${_ARM_TRIPLE}/include")
-        list(APPEND CARGO_ENV_VARS "ARM_SYSROOT_INCLUDE=${ARM_SYSROOT_INCLUDE}")
+        _ove_binding_arm_sysroot_include(ARM_SYSROOT_INCLUDE)
+        if(ARM_SYSROOT_INCLUDE)
+            list(APPEND CARGO_ENV_VARS "ARM_SYSROOT_INCLUDE=${ARM_SYSROOT_INCLUDE}")
+        endif()
     endif()
 
     # ── Generate storage type sizes for Rust bindings ──────────────────
     # WASM uses heap mode (not zero-heap), so storage sizes are not
     # needed — Rust uses opaque *mut c_void handles.
     if(RUST_IS_WASM)
-        # Skip the probe; pass empty sizes file path
         set(SIZES_ENV "")
     else()
-    # Create a tiny object library that compiles a C file with
-    # sizeof/alignof arrays using the same flags as the main target.
-    # Then extract sizes from the .o and pass them to cargo.
-    set(SIZES_C "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
-    set(SIZES_ENV "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")
-
-    message(STATUS "[ove-rust] Storage size probe configured: ${SIZES_ENV}")
-    if(NOT EXISTS "${OVE_DIR}/config/scripts/extract_storage_sizes.py")
-        message(FATAL_ERROR "[ove-rust] extract_storage_sizes.py is missing at ${OVE_DIR}/config/scripts/extract_storage_sizes.py")
+        set(SIZES_C "${CMAKE_BINARY_DIR}/ove_storage_sizes.c")
+        set(SIZES_ENV "${CMAKE_BINARY_DIR}/ove_storage_sizes.env")
+        message(STATUS "[ove-rust] Storage size probe configured: ${SIZES_ENV}")
+        _ove_binding_write_sizes_probe(${SIZES_C} "#include \"ove/storage.h\"\n")
+        _ove_binding_build_sizes_probe(_ove_sizes ${TARGET} ${SIZES_C})
+        _ove_binding_extract_sizes(${SIZES_ENV} _ove_sizes
+            "Extracting storage type sizes for Rust bindings")
+        list(APPEND CARGO_ENV_VARS "OVE_STORAGE_SIZES=${SIZES_ENV}")
     endif()
-
-    file(WRITE ${SIZES_C}
-"#include \"ove/storage.h\"\n\
-#include <stddef.h>\n\
-#define S(type) unsigned char _sizeof_##type[sizeof(type)];\n\
-#define A(type) unsigned char _alignof_##type[_Alignof(type)];\n\
-S(ove_thread_storage_t)     A(ove_thread_storage_t)\n\
-S(ove_queue_storage_t)      A(ove_queue_storage_t)\n\
-S(ove_timer_storage_t)      A(ove_timer_storage_t)\n\
-S(ove_mutex_storage_t)      A(ove_mutex_storage_t)\n\
-S(ove_sem_storage_t)        A(ove_sem_storage_t)\n\
-S(ove_event_storage_t)      A(ove_event_storage_t)\n\
-S(ove_condvar_storage_t)    A(ove_condvar_storage_t)\n\
-S(ove_eventgroup_storage_t) A(ove_eventgroup_storage_t)\n\
-S(ove_workqueue_storage_t)  A(ove_workqueue_storage_t)\n\
-S(ove_work_storage_t)       A(ove_work_storage_t)\n\
-S(ove_stream_storage_t)     A(ove_stream_storage_t)\n\
-S(ove_watchdog_storage_t)   A(ove_watchdog_storage_t)\n\
-S(ove_file_storage_t)       A(ove_file_storage_t)\n\
-S(ove_dir_storage_t)        A(ove_dir_storage_t)\n"
-    )
-    # Conditionally add networking storage types
-    if(OVE_NET)
-        file(APPEND ${SIZES_C}
-"S(ove_socket_storage_t)     A(ove_socket_storage_t)\n\
-S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
-        )
-    endif()
-    if(OVE_NET_HTTP)
-        file(APPEND ${SIZES_C}
-"S(ove_http_client_storage_t) A(ove_http_client_storage_t)\n"
-        )
-    endif()
-    if(OVE_NET_MQTT)
-        file(APPEND ${SIZES_C}
-"S(ove_mqtt_client_storage_t) A(ove_mqtt_client_storage_t)\n"
-        )
-    endif()
-    if(OVE_NET_TLS)
-        file(APPEND ${SIZES_C}
-"S(ove_tls_storage_t)        A(ove_tls_storage_t)\n"
-        )
-    endif()
-    if(OVE_INFER)
-        file(APPEND ${SIZES_C}
-"S(ove_model_storage_t)      A(ove_model_storage_t)\n"
-        )
-    endif()
-    if(OVE_UART)
-        file(APPEND ${SIZES_C}
-"S(ove_uart_storage_t)       A(ove_uart_storage_t)\n"
-        )
-    endif()
-    if(OVE_SPI)
-        file(APPEND ${SIZES_C}
-"S(ove_spi_storage_t)        A(ove_spi_storage_t)\n"
-        )
-    endif()
-    if(OVE_I2C)
-        file(APPEND ${SIZES_C}
-"S(ove_i2c_storage_t)        A(ove_i2c_storage_t)\n"
-        )
-    endif()
-    if(OVE_I2S)
-        file(APPEND ${SIZES_C}
-"S(ove_i2s_storage_t)        A(ove_i2s_storage_t)\n"
-        )
-    endif()
-
-    # Build the sizes probe as an OBJECT library that inherits all
-    # compile settings from the main target.
-    add_library(_ove_sizes OBJECT ${SIZES_C})
-
-    if(OVE_RTOS STREQUAL "zephyr" AND TARGET zephyr_interface)
-        # Zephyr: link against zephyr_interface for Zephyr includes,
-        # defines, flags, AND build-order deps (generated syscall headers).
-        # Also add oveRTOS's own includes which aren't in zephyr_interface.
-        target_link_libraries(_ove_sizes PRIVATE zephyr_interface)
-        target_include_directories(_ove_sizes PRIVATE
-            ${OVE_DIR}/include
-            ${OVE_DIR}/backends/zephyr/include
-            ${OVE_GEN_DIR}
-        )
-    else()
-        target_include_directories(_ove_sizes PRIVATE
-            $<TARGET_PROPERTY:${TARGET},INCLUDE_DIRECTORIES>)
-        target_compile_definitions(_ove_sizes PRIVATE
-            $<TARGET_PROPERTY:${TARGET},COMPILE_DEFINITIONS>)
-        target_compile_options(_ove_sizes PRIVATE
-            $<TARGET_PROPERTY:${TARGET},COMPILE_OPTIONS>)
-    endif()
-    target_compile_options(_ove_sizes PRIVATE -w)
-
-    # Extract sizes from the compiled object after it's built
-    add_custom_command(
-        OUTPUT ${SIZES_ENV}
-        COMMAND python3
-            ${OVE_DIR}/config/scripts/extract_storage_sizes.py
-            $<TARGET_OBJECTS:_ove_sizes> ${SIZES_ENV}
-        DEPENDS _ove_sizes
-                ${OVE_DIR}/include/ove/storage.h
-        COMMENT "Extracting storage type sizes for Rust bindings"
-    )
-
-    list(APPEND CARGO_ENV_VARS "OVE_STORAGE_SIZES=${SIZES_ENV}")
-    endif() # NOT RUST_IS_WASM
 
     # Collect all Rust source files for dependency tracking
-    file(GLOB_RECURSE RUST_SOURCES "${APP_RUST_CRATE_DIR}/src/*.rs")
+    file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS "${APP_RUST_CRATE_DIR}/src/*.rs")
 
     # Collect shared ove crate sources for dependency tracking
     set(OVE_RUST_CRATE_DIR "${OVE_DIR}/bindings/rust/ove")
-    file(GLOB_RECURSE OVE_CRATE_SOURCES "${OVE_RUST_CRATE_DIR}/src/*.rs")
+    file(GLOB_RECURSE OVE_CRATE_SOURCES CONFIGURE_DEPENDS "${OVE_RUST_CRATE_DIR}/src/*.rs")
 
     # App build.rs is optional (bindgen may live in shared crate)
     set(APP_BUILD_RS_DEP "")
@@ -328,26 +209,12 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
     add_custom_target(rust_crate ALL DEPENDS ${RUST_LIB})
     add_dependencies(${TARGET} rust_crate)
 
-    # Zephyr and NuttX use special link mechanisms; standard
-    # target_link_libraries on the app target doesn't propagate.
-    if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
-        zephyr_link_libraries(${RUST_LIB})
-    elseif(OVE_RTOS STREQUAL "nuttx")
-        # NuttX link: add to NUTTX_EXTRA_LIBRARIES so it's in the link group.
-        set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ${RUST_LIB})
-        target_link_libraries(${TARGET} PRIVATE ${RUST_LIB})
-    else()
-        target_link_libraries(${TARGET} PRIVATE ${RUST_LIB})
-    endif()
+    _ove_binding_link_lib(${TARGET} ${RUST_LIB})
 
     # Link any native libraries compiled by the Rust build.rs (e.g. model data).
     # Cargo's cc crate places them in the build output directory.
     file(GLOB _RUST_NATIVE_LIBS "${RUST_LIB_DIR}/build/${APP_RUST_LIB_NAME}-*/out/*.a")
     foreach(_NATIVE_LIB ${_RUST_NATIVE_LIBS})
-        if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
-            zephyr_link_libraries(${_NATIVE_LIB})
-        else()
-            target_link_libraries(${TARGET} PRIVATE ${_NATIVE_LIB})
-        endif()
+        _ove_binding_link_lib(${TARGET} ${_NATIVE_LIB})
     endforeach()
 endfunction()

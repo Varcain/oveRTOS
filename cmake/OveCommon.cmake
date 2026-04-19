@@ -72,6 +72,20 @@ macro(ove_setup_project _proj_name)
     endif()
     enable_language(ASM)
 
+    # Always export compile_commands.json for clangd / IDE tooling.
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
+
+    # Speed up rebuilds with ccache when available. OVE_NO_CCACHE=1 opts out.
+    if(NOT OVE_NO_CCACHE)
+        find_program(CCACHE_PROGRAM ccache)
+        if(CCACHE_PROGRAM)
+            set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
+                         "${CCACHE_PROGRAM}")
+            set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK
+                         "${CCACHE_PROGRAM}")
+        endif()
+    endif()
+
     # Include board toolchain file (if not already loaded via CMAKE_TOOLCHAIN_FILE)
     include(${BOARD_DIR}/cmake/arm-none-eabi.cmake OPTIONAL)
 
@@ -261,7 +275,7 @@ macro(ove_add_stm32cube_hal)
     endif()
 
     # HAL driver sources (exclude *_template.c)
-    file(GLOB _HAL_SOURCES
+    file(GLOB _HAL_SOURCES CONFIGURE_DEPENDS
         "${OVE_STM32CUBE_PATH}/Drivers/STM32${_CUBE_FAM_UPPER}xx_HAL_Driver/Src/*.c")
     list(FILTER _HAL_SOURCES EXCLUDE REGEX ".*_template\\.c$")
     list(APPEND _OVE_EXTRA_SOURCES ${_HAL_SOURCES})
@@ -340,10 +354,10 @@ macro(ove_add_cmsis_dsp)
                  ControllerFunctions FastMathFunctions FilteringFunctions
                  MatrixFunctions StatisticsFunctions SupportFunctions
                  TransformFunctions)
-        file(GLOB _DSP_SRC "${_DSP_DIR}/Source/${_sub}/*.c")
+        file(GLOB _DSP_SRC CONFIGURE_DEPENDS "${_DSP_DIR}/Source/${_sub}/*.c")
         list(APPEND _OVE_EXTRA_SOURCES ${_DSP_SRC})
     endforeach()
-    file(GLOB _DSP_ASM "${_DSP_DIR}/Source/TransformFunctions/*.S")
+    file(GLOB _DSP_ASM CONFIGURE_DEPENDS "${_DSP_DIR}/Source/TransformFunctions/*.S")
     list(APPEND _OVE_EXTRA_SOURCES ${_DSP_ASM})
     include_directories(${_DSP_DIR}/Include)
 endmacro()
@@ -358,7 +372,7 @@ macro(ove_add_fatfs)
         message(FATAL_ERROR "ove_add_fatfs: call ove_add_stm32cube_hal(...) first")
     endif()
     set(_FATFS_DIR "${OVE_STM32CUBE_PATH}/Middlewares/Third_Party/FatFs/src")
-    file(GLOB _FATFS_SOURCES "${_FATFS_DIR}/*.c")
+    file(GLOB _FATFS_SOURCES CONFIGURE_DEPENDS "${_FATFS_DIR}/*.c")
     list(APPEND _FATFS_SOURCES "${_FATFS_DIR}/option/ccsbcs.c")
     list(APPEND _OVE_EXTRA_SOURCES ${_FATFS_SOURCES})
     include_directories(
@@ -392,7 +406,7 @@ endmacro()
 macro(ove_build_lvgl)
     set(_LVGL_PATH "${OVE_DL_DIR}/lvgl")
 
-    file(GLOB_RECURSE _LVGL_SOURCES "${_LVGL_PATH}/src/*.c")
+    file(GLOB_RECURSE _LVGL_SOURCES CONFIGURE_DEPENDS "${_LVGL_PATH}/src/*.c")
     add_library(lvgl ${_LVGL_SOURCES})
     target_include_directories(lvgl PRIVATE
         ${BOARD_DIR}/inc

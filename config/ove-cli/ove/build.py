@@ -18,8 +18,6 @@ from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")
 
-_build_log = None
-
 
 def _preflight_check(ws):
     """Validate workspace prerequisites before building."""
@@ -155,12 +153,12 @@ def build_freertos(ws):
         _apply_patches(freertos_src,
                        os.path.join(board_dir, "patches"),
                        patches_stamp, label="board patch",
-                       log_file=_build_log)
+                       log_file=ws.build_log)
         if ws.app_dir:
             _apply_patches(freertos_src,
                            os.path.join(ws.app_dir, "patches", "freertos"),
                            patches_stamp, label="app patch",
-                           log_file=_build_log)
+                           log_file=ws.build_log)
 
     toolchain_file = os.path.join(board_dir, "cmake", "arm-none-eabi.cmake")
 
@@ -183,9 +181,9 @@ def build_freertos(ws):
     cmake_args.append(board_dir)
 
     logger.info("Building FreeRTOS firmware")
-    run(cmake_args, env=env, cwd=fw_build, log_file=_build_log)
+    run(cmake_args, env=env, cwd=fw_build, log_file=ws.build_log)
     run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-        log_file=_build_log)
+        log_file=ws.build_log)
 
     _copy_images(ws, fw_build)
     _create_run_or_flash_script(ws)
@@ -209,12 +207,12 @@ def build_zephyr(ws):
         _apply_patches(zephyr_ws,
                        os.path.join(ws.board_dir, "zephyr", "patches"),
                        patches_stamp, label="board patch",
-                       log_file=_build_log)
+                       log_file=ws.build_log)
         if ws.app_dir:
             _apply_patches(zephyr_ws,
                            os.path.join(ws.app_dir, "patches", "zephyr"),
                            patches_stamp, label="app patch",
-                           log_file=_build_log)
+                           log_file=ws.build_log)
 
     # Apply layered config (build guard — fresh by construction)
     from .rtos_menuconfig import ensure_rtos_config_applied
@@ -244,7 +242,7 @@ def build_zephyr(ws):
     tc = ws.toolchain_dir
     if tc:
         west_args.append(f"-DOVE_TOOLCHAIN_DIR={tc}")
-    run(west_args, env=env, log_file=_build_log)
+    run(west_args, env=env, log_file=ws.build_log)
 
     # Copy images
     os.makedirs(ws.images_dir, exist_ok=True)
@@ -359,15 +357,13 @@ def _apply_nuttx_defconfig_overlays(ws, nuttx_src, board_cfg):
 
 def build_nuttx(ws):
     """Build NuttX firmware via CMake."""
-    import hashlib
-
     cmake = _find_cmake()
     env = ws.toolchain_env()
 
     logger.info("Building NuttX firmware")
 
     nuttx_src, apps_build = _setup_nuttx_build_tree(ws, env,
-                                                     log_file=_build_log)
+                                                     log_file=ws.build_log)
     cmake_build = os.path.join(ws.build_dir, "nuttx-cmake")
     os.makedirs(cmake_build, exist_ok=True)
 
@@ -385,11 +381,8 @@ def build_nuttx(ws):
     # force re-initialisation by removing the cached .config.
     defconfig_path = _find_nuttx_defconfig(nuttx_src, nuttx_board_cfg)
     if defconfig_path:
-        h = hashlib.sha256()
-        with open(defconfig_path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
-        current_hash = h.hexdigest()
+        from .utils import hash_file as _hash_file
+        current_hash = _hash_file(defconfig_path)
         hash_file = os.path.join(cmake_build, ".ove_defconfig_hash")
         force_reconfig = True
         if os.path.isfile(hash_file):
@@ -428,11 +421,11 @@ def build_nuttx(ws):
     ]
 
     logger.debug(f"CMake configure: {' '.join(cmake_args)}")
-    run(cmake_args, env=env, cwd=nuttx_src, log_file=_build_log)
+    run(cmake_args, env=env, cwd=nuttx_src, log_file=ws.build_log)
 
     # Build
     run([cmake, "--build", os.path.abspath(cmake_build), f"-j{nproc()}"],
-        env=env, log_file=_build_log)
+        env=env, log_file=ws.build_log)
 
     # Copy images
     os.makedirs(ws.images_dir, exist_ok=True)
@@ -497,9 +490,9 @@ def build_posix(ws):
             f"-DOVE_GEN_DIR={ws.gen_dir}",
             f"-DOVE_DL_DIR={ws.ws_dl_dir}",
             board_dir,
-        ], env=env, cwd=fw_build, log_file=_build_log)
+        ], env=env, cwd=fw_build, log_file=ws.build_log)
         run([emmake, "make", f"-j{nproc()}"], env=env, cwd=fw_build,
-            log_file=_build_log)
+            log_file=ws.build_log)
     else:
         logger.info("Building POSIX native executable")
         run([
@@ -509,9 +502,9 @@ def build_posix(ws):
             f"-DOVE_GEN_DIR={ws.gen_dir}",
             f"-DOVE_DL_DIR={ws.ws_dl_dir}",
             board_dir,
-        ], env=env, cwd=fw_build, log_file=_build_log)
+        ], env=env, cwd=fw_build, log_file=ws.build_log)
         run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-            log_file=_build_log)
+            log_file=ws.build_log)
 
     os.makedirs(ws.images_dir, exist_ok=True)
     if is_wasm:
@@ -690,25 +683,20 @@ def _check_rtos_config_drift(ws, config_path):
     sentinel = os.path.join(ws.workspace_dir, ".rtos_config_applied_sha256")
     if not os.path.isfile(sentinel) or not os.path.isfile(config_path):
         return
-    import hashlib
-    h = hashlib.sha256()
-    with open(config_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    current_hash = h.hexdigest()
+    from .utils import hash_file
+    current_hash = hash_file(config_path)
     with open(sentinel) as f:
         expected_hash = f.read().strip()
     if current_hash != expected_hash:
         logger.warning("RTOS config was modified during build "
               "(possible CMake reconfigure or Kconfig dependency resolution).")
-        logger.debug("Run 'make nuttx-menuconfig' or 'make zephyr-menuconfig' to inspect.")
+        logger.debug("Run 'ove rtos-menuconfig' to inspect.")
 
 
 def build(ws):
     """Auto-detect RTOS and build."""
     from .manifest import warn_if_dirty
 
-    global _build_log
     ws.require_config()
     ws.ensure_dirs()
     warn_if_dirty(ws.ove_dir)
@@ -735,17 +723,76 @@ def build(ws):
         logger.debug("[zero-heap] Fully static build — no dynamic allocation.")
 
     log_path = os.path.join(ws.workspace_dir, "build.log")
-    _build_log = open(log_path, "w")
-    try:
+    with ws.open_build_log(log_path):
         builder(ws)
-    finally:
-        _build_log.close()
-        _build_log = None
+    _link_compile_commands(ws)
     logger.info("Build complete")
     logger.info(f"Firmware: {ws.images_dir}/")
 
 
+def _link_compile_commands(ws):
+    """Symlink output/compile_commands.json -> active workspace's copy.
+
+    Lets clangd find the active build's compile DB without per-workspace
+    configuration. Preferred candidate is the firmware build dir; falls
+    back to the cmake-build dir used by NuttX.
+    """
+    candidates = [
+        os.path.join(ws.build_dir, "firmware", "compile_commands.json"),
+        os.path.join(ws.build_dir, "nuttx-cmake", "compile_commands.json"),
+    ]
+    src = next((c for c in candidates if os.path.isfile(c)), None)
+    if not src:
+        return
+    link = os.path.join(ws.output_dir, "compile_commands.json")
+    rel = os.path.relpath(src, os.path.dirname(link))
+    if os.path.islink(link) or os.path.exists(link):
+        try:
+            os.unlink(link)
+        except OSError:
+            return
+    try:
+        os.symlink(rel, link)
+    except OSError as e:
+        logger.debug(f"compile_commands.json symlink skipped: {e}")
+
+
 def cmd_build(args):
     """CLI entry point for 'ove build'."""
+    import json
+    import time
+
     ws = Workspace()
-    build(ws)
+    if getattr(args, "dry_run", False):
+        ws.require_config()
+        print(f"[dry-run] would build {ws.rtos} firmware for "
+              f"board={ws.board_name} app={os.path.basename(ws.app_dir or '')}")
+        print(f"[dry-run] workspace:     {ws.workspace_dir}")
+        print(f"[dry-run] build dir:     {ws.build_dir}")
+        print(f"[dry-run] images dir:    {ws.images_dir}")
+        if ws.toolchain_dir:
+            print(f"[dry-run] toolchain dir: {ws.toolchain_dir}")
+        return
+    start = time.time()
+    ok = True
+    try:
+        build(ws)
+    except SystemExit as e:
+        ok = (e.code == 0)
+        raise
+    finally:
+        if getattr(args, "json", False):
+            elapsed = round(time.time() - start, 2)
+            firmware = os.path.join(ws.images_dir, "firmware.elf")
+            payload = {
+                "ok": ok,
+                "rtos": ws.rtos,
+                "board": ws.board_name,
+                "workspace": ws.workspace_dir,
+                "elapsed_s": elapsed,
+                "firmware": firmware if os.path.isfile(firmware) else None,
+                "firmware_bytes": (os.path.getsize(firmware)
+                                   if os.path.isfile(firmware) else None),
+            }
+            json.dump(payload, sys.stdout, indent=2)
+            print()

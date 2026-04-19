@@ -9,7 +9,6 @@
 Absorbs config/scripts/download.py into the ove CLI package.
 """
 
-import hashlib
 import logging
 import os
 import shutil
@@ -20,6 +19,7 @@ import time
 import urllib.request
 
 from .manifest import get_component, load_manifest, warn_if_dirty
+from .utils import hashed_dir, rev_hash, update_symlink
 from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")
@@ -36,41 +36,6 @@ def _retry(fn, description, attempts=3, backoff=2):
             delay = backoff * (2 ** i)
             logger.warning(f"{description}: {e}, retrying in {delay}s ({i+1}/{attempts})")
             time.sleep(delay)
-
-
-def rev_hash(revision):
-    """Return first 8 hex chars of SHA-256 of revision string."""
-    return hashlib.sha256(revision.encode()).hexdigest()[:8]
-
-
-def hashed_dir(dl_dir, base_name, revision, ws_dl_dir=None):
-    """Return (hashed_path, link_path, global_link) for a versioned download.
-
-    hashed_path:  dl/<base_name>-<hash>  (actual content)
-    link_path:    <ws_dl_dir>/<base_name> or dl/<base_name> (symlink)
-    global_link:  dl/<base_name> when ws_dl_dir is set (else None)
-    """
-    h = rev_hash(revision)
-    link_dir = ws_dl_dir if ws_dl_dir else dl_dir
-    global_link = (os.path.join(dl_dir, base_name)
-                   if ws_dl_dir else None)
-    return (os.path.join(dl_dir, f"{base_name}-{h}"),
-            os.path.join(link_dir, base_name),
-            global_link)
-
-
-def update_symlink(link_path, target_path):
-    """Create or update a symlink from link_path -> target_path (relative)."""
-    rel = os.path.relpath(target_path, os.path.dirname(link_path))
-    if os.path.islink(link_path):
-        if os.readlink(link_path) == rel:
-            return
-        os.unlink(link_path)
-    elif os.path.exists(link_path):
-        backup = link_path + ".old"
-        logger.debug(f"NOTE: moving legacy {link_path} -> {backup}")
-        os.rename(link_path, backup)
-    os.symlink(rel, link_path)
 
 
 def git_clone(url, tag, dest, name, submodules=None):
@@ -804,4 +769,43 @@ def download_all(ws):
 def cmd_download(args):
     """CLI entry point for 'ove download'."""
     ws = Workspace()
+    if getattr(args, "dry_run", False):
+        ws.require_config()
+        wanted = []
+        if get_bool(ws.config, "CONFIG_OVE_RTOS_FREERTOS"):
+            wanted += ["FreeRTOS-Kernel", "STM32CubeF7", "lvgl"]
+        elif get_bool(ws.config, "CONFIG_OVE_RTOS_ZEPHYR"):
+            wanted += ["zephyr-workspace", "lvgl"]
+        elif get_bool(ws.config, "CONFIG_OVE_RTOS_NUTTX"):
+            wanted += ["nuttx", "nuttx-apps", "lvgl",
+                       "CMSIS_5", "CMSIS-DSP"]
+        elif get_bool(ws.config, "CONFIG_OVE_RTOS_POSIX"):
+            wanted += ["lvgl"]
+        if get_bool(ws.config, "CONFIG_OVE_INFER"):
+            wanted.append("tflite-micro")
+        if get_bool(ws.config, "CONFIG_OVE_NET"):
+            wanted += ["lwip", "mbedtls"]
+        print(f"[dry-run] would download into {ws.ws_dl_dir}")
+        for name in wanted:
+            print(f"[dry-run]   {name}")
+        return
     download_all(ws)
+
+
+def cmd_ensure_toolchain(args):
+    """CLI entry point for 'ove ensure-toolchain <name>'.
+
+    Workspace-independent: used by `make docs` to fetch a host Zig before
+    .config exists. Currently only `zig` is supported.
+    """
+    ws = Workspace()
+    manifest = load_manifest(ws.ove_dir)
+    warn_if_dirty(manifest, ws.ove_dir)
+    if args.name == "zig":
+        os.makedirs(ws.toolchains_dir, exist_ok=True)
+        if not download_zig_toolchain({}, ws.dl_dir, ws.toolchains_dir,
+                                      manifest=manifest):
+            sys.exit(1)
+    else:
+        logger.error(f"unknown toolchain: {args.name} (supported: zig)")
+        sys.exit(2)

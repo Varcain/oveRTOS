@@ -6,14 +6,13 @@
 
 """RTOS native menuconfig — Buildroot-style nested config with build guard."""
 
-import hashlib
 import os
 import shutil
 import sys
 
 from .configure import configure_all
 from .constants import NUTTX_BOARD_CONFIGS, ZEPHYR_BOARD_MAPPINGS
-from .utils import apply_defconfig_overlay, diff_configs, run
+from .utils import apply_defconfig_overlay, diff_configs, hash_file, run
 from .workspace import Workspace
 
 
@@ -131,15 +130,6 @@ def _merge_zephyr_layers(ws):
     return merged
 
 
-def _hash_file(path):
-    """SHA256 hash of a file's contents."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def ensure_rtos_config_applied(ws, rtos, nuttx_build=None, apps_build=None,
                                board_dir=None, env=None, log_file=None):
     """Build guard: unconditionally re-merge all 4 layers and apply.
@@ -182,7 +172,7 @@ def _apply_nuttx_guard(ws, nuttx_build, apps_build, env, log_file):
         sentinel = os.path.join(ws.workspace_dir,
                                 ".rtos_config_applied_sha256")
         with open(sentinel, "w") as f:
-            f.write(_hash_file(nuttx_config) + "\n")
+            f.write(hash_file(nuttx_config) + "\n")
 
 
 def _apply_zephyr_guard(ws):
@@ -204,7 +194,7 @@ def _apply_zephyr_guard(ws):
     # Store hash for drift detection
     sentinel = os.path.join(ws.workspace_dir, ".rtos_config_applied_sha256")
     with open(sentinel, "w") as f:
-        f.write(_hash_file(merged) + "\n")
+        f.write(hash_file(merged) + "\n")
 
     return os.path.abspath(merged)
 

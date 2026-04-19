@@ -6,12 +6,57 @@
 
 """Shared CLI utilities."""
 
+import hashlib
 import logging
 import os
 import subprocess
 import sys
 
 logger = logging.getLogger("ove")
+
+
+def rev_hash(revision: str) -> str:
+    """Return first 8 hex chars of SHA-256 of revision string."""
+    return hashlib.sha256(revision.encode()).hexdigest()[:8]
+
+
+def hash_file(path: str) -> str:
+    """SHA-256 hex digest of a file's contents (chunked read)."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def hashed_dir(dl_dir, base_name, revision, ws_dl_dir=None):
+    """Return (hashed_path, link_path, global_link) for a versioned download.
+
+    hashed_path:  dl/<base_name>-<hash>  (actual content)
+    link_path:    <ws_dl_dir>/<base_name> or dl/<base_name> (symlink)
+    global_link:  dl/<base_name> when ws_dl_dir is set (else None)
+    """
+    h = rev_hash(revision)
+    link_dir = ws_dl_dir if ws_dl_dir else dl_dir
+    global_link = (os.path.join(dl_dir, base_name)
+                   if ws_dl_dir else None)
+    return (os.path.join(dl_dir, f"{base_name}-{h}"),
+            os.path.join(link_dir, base_name),
+            global_link)
+
+
+def update_symlink(link_path, target_path):
+    """Create or update a symlink from link_path -> target_path (relative)."""
+    rel = os.path.relpath(target_path, os.path.dirname(link_path))
+    if os.path.islink(link_path):
+        if os.readlink(link_path) == rel:
+            return
+        os.unlink(link_path)
+    elif os.path.exists(link_path):
+        backup = link_path + ".old"
+        logger.debug(f"NOTE: moving legacy {link_path} -> {backup}")
+        os.rename(link_path, backup)
+    os.symlink(rel, link_path)
 
 
 def nproc() -> int:

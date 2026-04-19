@@ -50,13 +50,35 @@ def main():
     sub.add_parser("savedefconfig", help="Save current config as minimal defconfig")
 
     # ── download ───────────────────────────────────────────────────────
-    sub.add_parser("download", help="Download RTOS sources and dependencies")
+    p = sub.add_parser("download",
+                       help="Download RTOS sources and dependencies")
+    p.add_argument("--dry-run", action="store_true",
+                   help="List components that would be downloaded "
+                        "and exit")
+
+    # ── ensure-toolchain ───────────────────────────────────────────────
+    p = sub.add_parser("ensure-toolchain",
+                       help="Download a single toolchain "
+                            "(workspace-independent)")
+    p.add_argument("name", choices=["zig"],
+                   help="Toolchain to ensure (currently: zig)")
 
     # ── configure ──────────────────────────────────────────────────────
-    sub.add_parser("configure", help="Generate config files from .config")
+    p = sub.add_parser("configure", help="Generate config files from .config")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print what would be generated, do not write files")
 
     # ── build ──────────────────────────────────────────────────────────
-    sub.add_parser("build", help="Build firmware (auto-detects RTOS)")
+    p = sub.add_parser("build", help="Build firmware (auto-detects RTOS)")
+    p.add_argument("--json", action="store_true",
+                   help="Emit JSON build summary on stdout")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print the build target and exit without invoking "
+                        "cmake/ninja")
+
+    # ── allconfigs ─────────────────────────────────────────────────────
+    from .allconfigs import add_subcommand as _add_allconfigs
+    _add_allconfigs(sub)
 
     # ── run ────────────────────────────────────────────────────────────
     p = sub.add_parser("run", help="Run firmware (QEMU or native)")
@@ -73,6 +95,8 @@ def main():
                    help="Test names (stub, cpp, rust, freertos, nuttx, "
                         "zephyr, qemu-freertos, qemu-nuttx, qemu-zephyr, "
                         "qemu, all)")
+    p.add_argument("--json", action="store_true",
+                   help="Emit JSON test summary on stdout")
 
     # ── clean ──────────────────────────────────────────────────────────
     p = sub.add_parser("clean", help="Clean build artifacts")
@@ -86,6 +110,30 @@ def main():
                        help="Show manifest versions and integrity status")
     p.add_argument("--check", action="store_true",
                    help="Exit non-zero if manifest has uncommitted changes")
+
+    # ── doctor ────────────────────────────────────────────────────────
+    p = sub.add_parser("doctor",
+                       help="Check host environment (toolchains, deps, venv)")
+    p.add_argument("--json", action="store_true",
+                   help="Emit JSON instead of text")
+
+    # ── completion ────────────────────────────────────────────────────
+    p = sub.add_parser("completion",
+                       help="Emit shell completion script (bash/zsh/fish)")
+    p.add_argument("shell", choices=["bash", "zsh", "fish"])
+
+    # ── lint / format ─────────────────────────────────────────────────
+    sub.add_parser("lint",
+                   help="Check formatting (clang-format / cargo fmt / "
+                        "zig fmt / ruff)")
+    sub.add_parser("format",
+                   help="Apply formatters in place (rewrites sources)")
+
+    # ── ci ────────────────────────────────────────────────────────────
+    p = sub.add_parser("ci",
+                       help="Run pre-merge gates (doctor + lint + test all)")
+    p.add_argument("--keep-going", action="store_true",
+                   help="Run all stages even if earlier ones fail")
 
     # ── board ──────────────────────────────────────────────────────────
     p = sub.add_parser("board", help="Board import/sync tools")
@@ -145,6 +193,10 @@ def main():
         from .download import cmd_download
         cmd_download(args)
 
+    elif args.command == "ensure-toolchain":
+        from .download import cmd_ensure_toolchain
+        cmd_ensure_toolchain(args)
+
     elif args.command == "configure":
         from .configure import cmd_configure
         cmd_configure(args)
@@ -152,6 +204,10 @@ def main():
     elif args.command == "build":
         from .build import cmd_build
         cmd_build(args)
+
+    elif args.command == "allconfigs":
+        from .allconfigs import cmd_allconfigs
+        cmd_allconfigs(args)
 
     elif args.command == "run":
         from .run import cmd_run
@@ -171,6 +227,26 @@ def main():
     elif args.command == "manifest":
         from .manifest import cmd_manifest
         cmd_manifest(args)
+
+    elif args.command == "doctor":
+        from .doctor import cmd_doctor
+        cmd_doctor(args)
+
+    elif args.command == "completion":
+        from .completion import cmd_completion
+        cmd_completion(args)
+
+    elif args.command == "lint":
+        from .lint import cmd_lint
+        cmd_lint(args)
+
+    elif args.command == "format":
+        from .lint import cmd_format
+        cmd_format(args)
+
+    elif args.command == "ci":
+        from .ci import cmd_ci
+        cmd_ci(args)
 
     elif args.command == "board":
         from .board import cmd_board

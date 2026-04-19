@@ -17,7 +17,7 @@ macro(ove_build_mbedtls)
     endif()
 
     # Collect mbedTLS library sources
-    file(GLOB _MBEDTLS_LIB_SRC "${_MBEDTLS_PATH}/library/*.c")
+    file(GLOB _MBEDTLS_LIB_SRC CONFIGURE_DEPENDS "${_MBEDTLS_PATH}/library/*.c")
 
     # Create static library
     add_library(ove_mbedtls STATIC ${_MBEDTLS_LIB_SRC})

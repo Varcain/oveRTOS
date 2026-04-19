@@ -30,7 +30,7 @@ macro(ove_build_tflm)
     # memory_planner, tflite_bridge, etc.)
     # Include all TFLM sources including core/api (needed for Parse* functions).
     # The tflite_bridge/ directory wraps ErrorReporter for micro context.
-    file(GLOB_RECURSE _TFLM_ALL_SRC
+    file(GLOB_RECURSE _TFLM_ALL_SRC CONFIGURE_DEPENDS
         "${_TFLM_PATH}/tensorflow/lite/micro/*.cc"
         "${_TFLM_PATH}/tensorflow/lite/micro/*.c"
         "${_TFLM_PATH}/tensorflow/lite/core/api/*.cc"
@@ -87,7 +87,7 @@ macro(ove_build_tflm)
 
     # ── CMSIS-NN optimized kernels (ARM targets only) ────────────────
     if(DEFINED CONFIG_OVE_INFER_CMSIS_NN)
-        file(GLOB _CMSIS_NN_KERNELS
+        file(GLOB _CMSIS_NN_KERNELS CONFIGURE_DEPENDS
             "${_TFLM_PATH}/tensorflow/lite/micro/kernels/cmsis_nn/*.cc"
         )
         if(_CMSIS_NN_KERNELS)
@@ -102,7 +102,7 @@ macro(ove_build_tflm)
     endif()
 
     # ── Signal processing sources (referenced by micro_mutable_op_resolver) ──
-    file(GLOB_RECURSE _TFLM_SIGNAL_SRC
+    file(GLOB_RECURSE _TFLM_SIGNAL_SRC CONFIGURE_DEPENDS
         "${_TFLM_PATH}/signal/src/*.cc"
         "${_TFLM_PATH}/signal/src/*.c"
         "${_TFLM_PATH}/signal/micro/kernels/*.cc"

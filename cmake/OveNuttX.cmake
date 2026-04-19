@@ -6,9 +6,10 @@
 # (copied to nuttx-apps/external/ove_app/) includes this module and uses
 # its macros to register the oveRTOS app via nuttx_add_application().
 #
-# Unlike OveCommon.cmake (which drives a standalone build for FreeRTOS/POSIX),
-# this module must work inside NuttX's project() context — no project()
-# declaration, no toolchain file, no linker script handling.
+# Unlike OveCommon.cmake (which drives a standalone build for FreeRTOS,
+# Zephyr and POSIX), this module must work inside NuttX's project()
+# context — no project() declaration, no toolchain file, no linker
+# script handling.
 #
 # Usage (in boards/<board>/nuttx/CMakeLists.txt):
 #   include(${OVE_DIR}/cmake/OveNuttX.cmake)
@@ -177,7 +178,7 @@ macro(ove_nuttx_build_lvgl)
     if(OVE_LVGL)
         set(_LVGL_PATH "${OVE_DL_DIR}/lvgl")
         if(EXISTS "${_LVGL_PATH}/src")
-            file(GLOB_RECURSE _LVGL_SOURCES "${_LVGL_PATH}/src/*.c")
+            file(GLOB_RECURSE _LVGL_SOURCES CONFIGURE_DEPENDS "${_LVGL_PATH}/src/*.c")
             # Exclude Helium/NEON SIMD blends (Cortex-M only has Thumb)
             list(FILTER _LVGL_SOURCES EXCLUDE REGEX "/blend/helium/")
             list(FILTER _LVGL_SOURCES EXCLUDE REGEX "/blend/neon/")

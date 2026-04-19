@@ -416,44 +416,50 @@ def test_zephyr(ove_dir, output_dir):
         [os.path.join(build, "zephyr", "zephyr.exe")], "zephyr-native-sim")
 
 
-def test_qemu_freertos(ove_dir, output_dir):
-    """Build and run FreeRTOS QEMU ARM tests."""
+# ── FreeRTOS QEMU shared driver ────────────────────────────────────────
+def _run_freertos_qemu(ove_dir, output_dir, *, src_subdir, binary, label):
+    """Build and run a FreeRTOS QEMU ARM test variant."""
     tc_dir = _ensure_arm_toolchain(ove_dir)
-    build = os.path.join(output_dir, "test", "qemu-freertos")
-    logger.info("Building FreeRTOS QEMU ARM tests")
-    _cmake_build(os.path.join(ove_dir, "tests", "sim", "freertos-qemu"),
+    build = os.path.join(output_dir, "test", label)
+    logger.info(f"Building {label}")
+    _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
                  build,
                  extra_args=[f"-DOVE_TOOLCHAIN_DIR={tc_dir}"])
-    logger.info("Running FreeRTOS QEMU ARM tests")
+    logger.info(f"Running {label}")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
-        [qemu_run, os.path.join(build, "ove_test_freertos_qemu"),
-         "--headless", "--timeout", "45"], "qemu-freertos")
+        [qemu_run, os.path.join(build, binary),
+         "--headless", "--timeout", "45"], label)
+
+
+def test_qemu_freertos(ove_dir, output_dir):
+    """Build and run FreeRTOS QEMU ARM tests."""
+    return _run_freertos_qemu(ove_dir, output_dir,
+                              src_subdir="freertos-qemu",
+                              binary="ove_test_freertos_qemu",
+                              label="qemu-freertos")
 
 
 def test_qemu_freertos_zeroheap(ove_dir, output_dir):
     """Build and run FreeRTOS QEMU ARM tests (zero-heap mode)."""
-    tc_dir = _ensure_arm_toolchain(ove_dir)
-    build = os.path.join(output_dir, "test", "qemu-freertos-zeroheap")
-    logger.info("Building FreeRTOS QEMU ARM tests (zero-heap)")
-    _cmake_build(os.path.join(ove_dir, "tests", "sim", "freertos-qemu-zeroheap"),
-                 build,
-                 extra_args=[f"-DOVE_TOOLCHAIN_DIR={tc_dir}"])
-    logger.info("Running FreeRTOS QEMU ARM tests (zero-heap)")
-    qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
-                            "qemu-run.sh")
-    return _run_test_binary(
-        [qemu_run, os.path.join(build, "ove_test_freertos_qemu_zeroheap"),
-         "--headless", "--timeout", "45"], "qemu-freertos-zeroheap")
+    return _run_freertos_qemu(ove_dir, output_dir,
+                              src_subdir="freertos-qemu-zeroheap",
+                              binary="ove_test_freertos_qemu_zeroheap",
+                              label="qemu-freertos-zeroheap")
 
 
-def test_qemu_nuttx(ove_dir, output_dir):
-    """Build and run NuttX QEMU ARM tests (uses NuttX build system)."""
+# ── NuttX QEMU shared driver ───────────────────────────────────────────
+def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label):
+    """Build and run a NuttX QEMU ARM test variant.
+
+    `app_subdir` is the tests/sim/<dir>/ holding nuttx_app/ and
+    nuttx_test_defconfig (e.g. "nuttx-qemu" or "nuttx-qemu-zeroheap").
+    """
     tc_dir = _ensure_arm_toolchain(ove_dir)
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build_base = os.path.join(output_dir, "test", "qemu-nuttx")
+    build_base = os.path.join(output_dir, "test", label)
 
     manifest = load_manifest(ove_dir)
     default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
@@ -463,7 +469,7 @@ def test_qemu_nuttx(ove_dir, output_dir):
     nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
 
-    logger.info("Building NuttX QEMU ARM tests")
+    logger.info(f"Building {label}")
     os.makedirs(build_base, exist_ok=True)
 
     # Fetch NuttX
@@ -512,10 +518,10 @@ def test_qemu_nuttx(ove_dir, output_dir):
     if os.path.exists(test_dest):
         shutil.rmtree(test_dest)
     shutil.copytree(
-        os.path.join(ove_dir, "tests", "sim", "nuttx-qemu", "nuttx_app"),
+        os.path.join(ove_dir, "tests", "sim", app_subdir, "nuttx_app"),
         test_dest)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
-        f.write(f'source "$APPSDIR/external/ove_test/Kconfig"\n')
+        f.write('source "$APPSDIR/external/ove_test/Kconfig"\n')
     # NuttX sim tests still use Make (configure.sh + make) because
     # the NuttX sim architecture has limited CMake support upstream.
     with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
@@ -525,10 +531,8 @@ def test_qemu_nuttx(ove_dir, output_dir):
     with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
         f.write('add_subdirectory(ove_test)\n')
 
-    # Configure
-    # NuttX's configure.sh -> sethost.sh calls kconfig-tweak from PATH
+    # Configure: configure.sh -> sethost.sh calls kconfig-tweak from PATH
     nuttx_env = _venv_env(ove_dir)
-    # Prepend ARM toolchain to PATH so NuttX finds arm-none-eabi-gcc
     tc_bin = os.path.join(tc_dir, "bin")
     nuttx_env["PATH"] = tc_bin + os.pathsep + nuttx_env["PATH"]
     flag = os.path.join(nuttx_build, ".ove_test_configured")
@@ -539,7 +543,7 @@ def test_qemu_nuttx(ove_dir, output_dir):
         Path(flag).write_text("configured\n")
 
     # Apply test defconfig overlay
-    overlay = os.path.join(ove_dir, "tests", "sim", "nuttx-qemu",
+    overlay = os.path.join(ove_dir, "tests", "sim", app_subdir,
                            "nuttx_test_defconfig")
     nuttx_config = os.path.join(nuttx_build, ".config")
     apply_defconfig_overlay(nuttx_config, overlay)
@@ -548,23 +552,23 @@ def test_qemu_nuttx(ove_dir, output_dir):
     nuttx_env["APPDIR"] = apps_abs
     run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
 
-    # Build
     nuttx_env["OVE_DIR"] = ove_dir
     run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
 
-    logger.info("Running NuttX QEMU ARM tests")
+    logger.info(f"Running {label}")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
         [qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
-         "--timeout", "45"], "qemu-nuttx")
+         "--timeout", "45"], label)
 
 
-def test_qemu_zephyr(ove_dir, output_dir):
-    """Build and run Zephyr QEMU ARM tests."""
+# ── Zephyr QEMU shared driver ──────────────────────────────────────────
+def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label):
+    """Build and run a Zephyr QEMU ARM test variant."""
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build = os.path.join(output_dir, "test", "qemu-zephyr")
+    build = os.path.join(output_dir, "test", label)
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
     manifest = load_manifest(ove_dir)
@@ -572,7 +576,7 @@ def test_qemu_zephyr(ove_dir, output_dir):
     zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
     dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
 
-    logger.info("Building Zephyr QEMU ARM tests")
+    logger.info(f"Building {label}")
     os.makedirs(build, exist_ok=True)
 
     hash_dir = os.path.join(dl_dir, f"zephyr-workspace-{dl_hash}")
@@ -596,173 +600,41 @@ def test_qemu_zephyr(ove_dir, output_dir):
         west, "build",
         "-b", "mps2/an500",
         "-d", build,
-        os.path.join(ove_dir, "tests", "sim", "zephyr-qemu"),
+        os.path.join(ove_dir, "tests", "sim", src_subdir),
     ], env=env)
 
-    logger.info("Running Zephyr QEMU ARM tests")
+    logger.info(f"Running {label}")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
         [qemu_run, os.path.join(build, "zephyr", "zephyr.elf"),
-         "--headless", "--timeout", "120"], "qemu-zephyr")
+         "--headless", "--timeout", "120"], label)
+
+
+def test_qemu_nuttx(ove_dir, output_dir):
+    """Build and run NuttX QEMU ARM tests (uses NuttX build system)."""
+    return _run_nuttx_qemu(ove_dir, output_dir,
+                           app_subdir="nuttx-qemu", label="qemu-nuttx")
 
 
 def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     """Build and run NuttX QEMU ARM tests (zero-heap mode)."""
-    tc_dir = _ensure_arm_toolchain(ove_dir)
-    import hashlib
-    dl_dir = os.path.join(ove_dir, "dl")
-    build_base = os.path.join(output_dir, "test", "qemu-nuttx-zeroheap")
+    return _run_nuttx_qemu(ove_dir, output_dir,
+                           app_subdir="nuttx-qemu-zeroheap",
+                           label="qemu-nuttx-zeroheap")
 
-    manifest = load_manifest(ove_dir)
-    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
-    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
-    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
-    tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
-    nuttx_build = os.path.join(build_base, "nuttx")
-    apps_build = os.path.join(build_base, "nuttx-apps")
 
-    logger.info("Building NuttX QEMU ARM tests (zero-heap)")
-    os.makedirs(build_base, exist_ok=True)
-
-    # Fetch NuttX
-    nuttx_hash = os.path.join(dl_dir, f"nuttx-{tag_hash}")
-    if not os.path.isdir(nuttx_hash):
-        logger.debug(f"Cloning NuttX {default_tag}...")
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-              nuttx_url, nuttx_hash])
-    link = os.path.join(dl_dir, "nuttx")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(nuttx_hash, link)
-
-    # Fetch apps
-    apps_hash = os.path.join(dl_dir, f"nuttx-apps-{tag_hash}")
-    if not os.path.isdir(apps_hash):
-        logger.debug(f"Cloning NuttX apps {default_tag}...")
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-              apps_url, apps_hash])
-    link = os.path.join(dl_dir, "nuttx-apps")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(apps_hash, link)
-
-    # Fetch CMocka
-    cmocka_dl = os.path.join(dl_dir, "cmocka")
-    if not os.path.isdir(cmocka_dl):
-        logger.debug("Cloning CMocka...")
-        run(["git", "clone", "--depth", "1", "-b", "cmocka-1.1.7",
-              "https://gitlab.com/cmocka/cmocka.git", cmocka_dl])
-
-    # Copy to build tree
-    if not os.path.isdir(nuttx_build):
-        logger.debug("Copying NuttX to build tree...")
-        shutil.copytree(os.path.join(dl_dir, "nuttx"), nuttx_build,
-                        symlinks=True)
-    if not os.path.isdir(apps_build):
-        logger.debug("Copying NuttX apps to build tree...")
-        shutil.copytree(os.path.join(dl_dir, "nuttx-apps"), apps_build,
-                        symlinks=True)
-
-    # Register test app (use zeroheap app directory)
-    ext_dir = os.path.join(apps_build, "external")
-    os.makedirs(ext_dir, exist_ok=True)
-    test_dest = os.path.join(ext_dir, "ove_test")
-    if os.path.exists(test_dest):
-        shutil.rmtree(test_dest)
-    shutil.copytree(
-        os.path.join(ove_dir, "tests", "sim", "nuttx-qemu-zeroheap",
-                     "nuttx_app"),
-        test_dest)
-    with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
-        f.write(f'source "$APPSDIR/external/ove_test/Kconfig"\n')
-    # NuttX sim tests still use Make (configure.sh + make) because
-    # the NuttX sim architecture has limited CMake support upstream.
-    with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
-        f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
-        f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
-        f.write('endif\n')
-    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
-        f.write('add_subdirectory(ove_test)\n')
-
-    # Configure
-    nuttx_env = _venv_env(ove_dir)
-    tc_bin = os.path.join(tc_dir, "bin")
-    nuttx_env["PATH"] = tc_bin + os.pathsep + nuttx_env["PATH"]
-    flag = os.path.join(nuttx_build, ".ove_test_configured")
-    if not os.path.isfile(flag):
-        logger.debug("Configuring NuttX for mps2-an500:nsh...")
-        run(["./tools/configure.sh", "-a", "../nuttx-apps",
-              "mps2-an500:nsh"], cwd=nuttx_build, env=nuttx_env)
-        Path(flag).write_text("configured\n")
-
-    # Apply test defconfig overlay
-    overlay = os.path.join(ove_dir, "tests", "sim", "nuttx-qemu-zeroheap",
-                           "nuttx_test_defconfig")
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    apply_defconfig_overlay(nuttx_config, overlay)
-
-    apps_abs = os.path.abspath(apps_build)
-    nuttx_env["APPDIR"] = apps_abs
-    run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
-
-    # Build
-    nuttx_env["OVE_DIR"] = ove_dir
-    run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
-
-    logger.info("Running NuttX QEMU ARM tests (zero-heap)")
-    qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
-                            "qemu-run.sh")
-    return _run_test_binary(
-        [qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
-         "--timeout", "45"], "qemu-nuttx-zeroheap")
+def test_qemu_zephyr(ove_dir, output_dir):
+    """Build and run Zephyr QEMU ARM tests."""
+    return _run_zephyr_qemu(ove_dir, output_dir,
+                            src_subdir="zephyr-qemu", label="qemu-zephyr")
 
 
 def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
     """Build and run Zephyr QEMU ARM tests (zero-heap mode)."""
-    import hashlib
-    dl_dir = os.path.join(ove_dir, "dl")
-    build = os.path.join(output_dir, "test", "qemu-zephyr-zeroheap")
-    west = os.path.join(ove_dir, ".venv", "bin", "west")
-
-    manifest = load_manifest(ove_dir)
-    default_rev = get_component(manifest, "rtos", "zephyr", "version")
-    zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
-    dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
-
-    logger.info("Building Zephyr QEMU ARM tests (zero-heap)")
-    os.makedirs(build, exist_ok=True)
-
-    hash_dir = os.path.join(dl_dir, f"zephyr-workspace-{dl_hash}")
-    if not os.path.isdir(os.path.join(hash_dir, "zephyr")):
-        logger.debug("Zephyr workspace not found -- downloading...")
-        run([west, "init", "-m",
-              zephyr_url,
-              "--mr", "main", hash_dir])
-        run(["git", "-C", os.path.join(hash_dir, "zephyr"),
-              "checkout", default_rev])
-        run([west, "update"], cwd=hash_dir)
-
-    link = os.path.join(build, "zephyr-workspace")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(hash_dir, link)
-
-    env = dict(os.environ)
-    env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
-    run([
-        west, "build",
-        "-b", "mps2/an500",
-        "-d", build,
-        os.path.join(ove_dir, "tests", "sim", "zephyr-qemu-zeroheap"),
-    ], env=env)
-
-    logger.info("Running Zephyr QEMU ARM tests (zero-heap)")
-    qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
-                            "qemu-run.sh")
-    return _run_test_binary(
-        [qemu_run, os.path.join(build, "zephyr", "zephyr.elf"),
-         "--headless", "--timeout", "120"], "qemu-zephyr-zeroheap")
+    return _run_zephyr_qemu(ove_dir, output_dir,
+                            src_subdir="zephyr-qemu-zeroheap",
+                            label="qemu-zephyr-zeroheap")
 
 
 # Test name -> function mapping
@@ -859,6 +731,23 @@ def cmd_test(args):
             total_s += r.skipped
         print("-" * 51)
         print(f"{'TOTAL':<25} {total_p:>8} {total_f:>8} {total_s:>8}")
+
+    if getattr(args, "json", False):
+        import json
+        json.dump({
+            "suites": [
+                {"suite": r.suite, "passed": r.passed, "failed": r.failed,
+                 "skipped": r.skipped, "failed_names": r.failed_names}
+                for r in results
+            ],
+            "total": {
+                "passed": sum(r.passed for r in results),
+                "failed": sum(r.failed for r in results),
+                "skipped": sum(r.skipped for r in results),
+            },
+            "ok": not any_failed,
+        }, sys.stdout, indent=2)
+        print()
 
     if any_failed:
         # Print failed test names grouped by suite
