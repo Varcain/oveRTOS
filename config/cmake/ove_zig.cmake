@@ -143,7 +143,11 @@ function(ove_build_zig_lib TARGET)
         endif()
     elseif(OVE_RTOS STREQUAL "nuttx")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/nuttx/include")
-        # NuttX CMake generated headers (nuttx/config.h etc.)
+        # NuttX provides its own libc (stdio.h, stdlib.h, etc.) via
+        # its generated include dir. Add as -isystem so it takes priority
+        # over the ARM toolchain's newlib headers.
+        list(APPEND ZIG_INCLUDE_ARGS "-isystem" "${CMAKE_BINARY_DIR}/include")
+        # NuttX's cmake generated config directory for nuttx/config.h
         list(APPEND ZIG_INCLUDE_ARGS "-I${CMAKE_BINARY_DIR}/include")
     endif()
 
@@ -162,22 +166,16 @@ function(ove_build_zig_lib TARGET)
         list(APPEND ZIG_INCLUDE_ARGS "-I${_LVGL_PARENT}")
     endif()
 
-    # Board-specific lv_conf.h — search known locations
-    if(OVE_RTOS STREQUAL "posix")
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/boards/host/posix")
-    elseif(DEFINED OVE_BOARD_DIR)
-        foreach(_CANDIDATE "${OVE_BOARD_DIR}" "${OVE_BOARD_DIR}/${OVE_RTOS}"
-                           "${OVE_BOARD_DIR}/${OVE_RTOS}/inc" "${OVE_BOARD_DIR}/inc"
-                           "${OVE_BOARD_DIR}/freertos/inc")
-            if(EXISTS "${_CANDIDATE}/lv_conf.h")
-                list(APPEND ZIG_INCLUDE_ARGS "-I${_CANDIDATE}")
-                break()
-            endif()
-        endforeach()
+    # Board lv_conf.h directory — pre-computed by 'ove configure'.
+    if(OVE_LV_CONF_DIR)
+        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_LV_CONF_DIR}")
     endif()
 
-    # ARM sysroot include (for cross-compilation: libc headers like stdio.h)
-    if(NOT ZIG_IS_NATIVE AND DEFINED CMAKE_C_COMPILER)
+    # ARM sysroot include (for cross-compilation: libc headers like stdio.h).
+    # NuttX provides its own libc, so skip the ARM newlib sysroot for NuttX
+    # to avoid header conflicts (newlib's stdio.h requires types NuttX doesn't
+    # define in the same way).
+    if(NOT ZIG_IS_NATIVE AND NOT OVE_RTOS STREQUAL "nuttx" AND DEFINED CMAKE_C_COMPILER)
         get_filename_component(_TOOLCHAIN_BIN "${CMAKE_C_COMPILER}" DIRECTORY)
         get_filename_component(_TOOLCHAIN_ROOT "${_TOOLCHAIN_BIN}" DIRECTORY)
         get_filename_component(_COMPILER_NAME "${CMAKE_C_COMPILER}" NAME)
@@ -495,6 +493,10 @@ file(WRITE \"${ZIG_SIZES_HDR}\" \"\${_HDR}\")\n"
     # ── Link ─────────────────────────────────────────────────────────────
     if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
         zephyr_link_libraries(${ZIG_LIB})
+    elseif(OVE_RTOS STREQUAL "nuttx")
+        # NuttX link: add to NUTTX_EXTRA_LIBRARIES so it's in the link group.
+        set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ${ZIG_LIB})
+        target_link_libraries(${TARGET} PRIVATE ${ZIG_LIB})
     else()
         target_link_libraries(${TARGET} PRIVATE ${ZIG_LIB})
     endif()

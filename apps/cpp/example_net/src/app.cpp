@@ -31,9 +31,9 @@
 static int pass_count;
 static int fail_count;
 
-#define TEST(name) OVE_LOG_INF("  [TEST] %s", name)
-#define PASS(name) do { OVE_LOG_INF("  [PASS] %s", name); pass_count++; } while(0)
-#define FAIL(name, err) do { OVE_LOG_ERR("  [FAIL] %s (%d)", name, err); fail_count++; } while(0)
+static inline void TEST(const char *name) { OVE_LOG_INF("  [TEST] %s", name); }
+static inline void PASS(const char *name) { OVE_LOG_INF("  [PASS] %s", name); pass_count++; }
+static inline void FAIL(const char *name, int err) { OVE_LOG_ERR("  [FAIL] %s (%d)", name, err); fail_count++; }
 
 /* ── 1. Network interface ───────────────────────────────────────── */
 

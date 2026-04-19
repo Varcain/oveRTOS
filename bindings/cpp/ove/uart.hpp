@@ -94,7 +94,7 @@ public:
 		return ove_uart_flush(handle_);
 	}
 
-	ove_uart_t native_handle() const { return handle_; }
+	ove_uart_t handle() const { return handle_; }
 
 private:
 	ove_uart_t handle_ = nullptr;

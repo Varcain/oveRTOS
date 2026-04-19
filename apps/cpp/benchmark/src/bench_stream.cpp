@@ -10,6 +10,7 @@
 #include <ove/bench.hpp>
 #include <cstring>
 
+#include <atomic>
 #include <optional>
 
 static constexpr size_t STREAM_BUF_SIZE = 256;
@@ -19,7 +20,7 @@ using BenchStream = ove::Stream<STREAM_BUF_SIZE>;
 
 static std::optional<BenchStream> bench_strm;
 static std::optional<ove::Thread<2048>> stream_producer_th;
-static volatile int stream_done;
+static std::atomic<bool> stream_done{false};
 
 static uint8_t tx_buf[STREAM_MSG_SIZE];
 static uint8_t rx_buf[STREAM_MSG_SIZE];
@@ -57,7 +58,7 @@ static void stream_create_destroy_run()
 static void stream_producer(void *arg)
 {
 	(void)arg;
-	while (!stream_done) {
+	while (!stream_done.load(std::memory_order_acquire)) {
 		size_t sent = 0;
 		(void)bench_strm->send(tx_buf, STREAM_MSG_SIZE, OVE_WAIT_FOREVER, &sent);
 	}
@@ -65,7 +66,7 @@ static void stream_producer(void *arg)
 
 static void stream_throughput_setup()
 {
-	stream_done = 0;
+	stream_done.store(false, std::memory_order_release);
 	std::memset(tx_buf, 0xBB, STREAM_MSG_SIZE);
 	bench_strm.emplace(1);
 	stream_producer_th.emplace(stream_producer, nullptr, OVE_PRIO_NORMAL,
@@ -80,7 +81,7 @@ static void stream_throughput_run()
 
 static void stream_throughput_teardown()
 {
-	stream_done = 1;
+	stream_done.store(true, std::memory_order_release);
 	/* Drain so producer can unblock */
 	size_t received = 0;
 	(void)bench_strm->receive(rx_buf, STREAM_MSG_SIZE, 100, &received);

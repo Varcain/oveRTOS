@@ -263,10 +263,10 @@ fn rebuildPage() void {
 
     if (g_title) |t| {
         var buf: [48]u8 = undefined;
-        const slice = std.fmt.bufPrint(&buf, "{s} ({d}/{d})\x00", .{
+        const slice = std.fmt.bufPrintZ(&buf, "{s} ({d}/{d})", .{
             pages[page].name, g_page + 1, N_PAGES,
         }) catch return;
-        _ = t.text(@ptrCast(slice.ptr));
+        _ = t.text(slice.ptr);
     }
 }
 

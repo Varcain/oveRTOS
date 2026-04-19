@@ -63,7 +63,7 @@ public:
 	/**
 	 * @brief Destroys the queue, releasing the underlying kernel resource.
 	 */
-	~Queue() {
+	~Queue() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_queue_deinit(handle_);

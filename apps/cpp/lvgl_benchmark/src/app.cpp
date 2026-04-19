@@ -103,55 +103,55 @@ static void empty_screen_cb(void)
 
 static void moving_wallpaper_cb(void)
 {
-	lv_obj_set_style_pad_all(lv_screen_active(), 0, 0);
+	lv::Screen::active().pad_all(0);
 
 	auto img = lv::Image::create(lv::ObjectView(lv_screen_active()));
 	img.size(lv_pct(150), lv_pct(150));
 	lv_image_set_src(img.get(), &img_benchmark_lvgl_logo_rgb);
 	lv_image_set_inner_align(img.get(), LV_IMAGE_ALIGN_TILE);
 	perf_ffi::shake_anim(img.get(),
-		   -lv_display_get_vertical_resolution(NULL) / 3);
+		   -lv::display_height() / 3);
 }
 
 static void single_rectangle_cb(void)
 {
-	lv_obj_t *obj = lv_obj_create(lv_screen_active());
-	lv_obj_remove_style_all(obj);
-	lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-	lv_obj_center(obj);
-	lv_obj_set_size(obj, lv_pct(30), lv_pct(30));
-	perf_ffi::color_anim(obj);
+	auto obj = lv::Box::create(lv::Screen::active());
+	obj.remove_style_all();
+	obj.bg_opa(LV_OPA_COVER);
+	obj.center();
+	obj.size(lv_pct(30), lv_pct(30));
+	perf_ffi::color_anim(obj.get());
 }
 
 static void multiple_rectangles_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_CENTER,
 			      LV_FLEX_ALIGN_SPACE_EVENLY);
 
 	for (uint32_t i = 0; i < 9; i++) {
-		lv_obj_t *obj = lv_obj_create(scr);
-		lv_obj_remove_style_all(obj);
-		lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-		lv_obj_set_size(obj, lv_pct(25), lv_pct(25));
+		auto obj = lv::Box::create(scr);
+		obj.remove_style_all();
+		obj.bg_opa(LV_OPA_COVER);
+		obj.size(lv_pct(25), lv_pct(25));
 		perf_ffi::color_anim(obj);
 	}
 }
 
 static void multiple_rgb_images_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-	lv_obj_set_style_pad_row(scr, 20, 0);
+	scr.pad_row(20);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 116;
+		lv::display_width()) - 16) / 116;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 116) / 116;
+		lv::display_height()) - 116) / 116;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -161,7 +161,7 @@ static void multiple_rgb_images_cb(void)
 				lv::ObjectView(scr));
 			img.src(&img_benchmark_lvgl_logo_rgb);
 			if (x == 0)
-				lv_obj_add_flag(img.get(),
+				img.add_flag(
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(img.get(), 80);
 		}
@@ -170,16 +170,16 @@ static void multiple_rgb_images_cb(void)
 
 static void multiple_argb_images_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-	lv_obj_set_style_pad_row(scr, 20, 0);
+	scr.pad_row(20);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 116;
+		lv::display_width()) - 16) / 116;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 116) / 116;
+		lv::display_height()) - 116) / 116;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -189,7 +189,7 @@ static void multiple_argb_images_cb(void)
 				lv::ObjectView(scr));
 			img.src(&img_benchmark_lvgl_logo_argb);
 			if (x == 0)
-				lv_obj_add_flag(img.get(),
+				img.add_flag(
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(img.get(), 80);
 		}
@@ -198,16 +198,16 @@ static void multiple_argb_images_cb(void)
 
 static void rotated_argb_images_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-	lv_obj_set_style_pad_row(scr, 20, 0);
+	scr.pad_row(20);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 116;
+		lv::display_width()) - 16) / 116;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 116) / 116;
+		lv::display_height()) - 116) / 116;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -217,7 +217,7 @@ static void rotated_argb_images_cb(void)
 				lv::ObjectView(scr));
 			img.src(&img_benchmark_lvgl_logo_argb);
 			if (x == 0)
-				lv_obj_add_flag(img.get(),
+				img.add_flag(
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			img.rotation(rnd_next(100, 3500));
 			perf_ffi::shake_anim(img.get(), 80);
@@ -227,20 +227,20 @@ static void rotated_argb_images_cb(void)
 
 static void multiple_labels_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-	lv_obj_set_style_pad_row(scr, 80, 0);
+	scr.pad_row(80);
 
 	lv_point_t s;
 	lv_text_get_size(&s, "Hello LVGL!",
 			 lv_obj_get_style_text_font(scr, LV_PART_MAIN),
 			 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
 
-	int32_t cnt = (lv_display_get_horizontal_resolution(NULL) - 16)
+	int32_t cnt = (lv::display_width() - 16)
 		      / (s.x + 30);
-	cnt *= ((lv_display_get_vertical_resolution(NULL) - 200)
+	cnt *= ((lv::display_height() - 200)
 		/ (s.y + 50));
 	if (cnt < 1) cnt = 1;
 
@@ -287,24 +287,24 @@ static void screen_sized_text_cb(void)
 		"neque vel tincidunt interdum, sapien nibh finibus lorem, eu "
 		"eleifend diam ipsum et eros.";
 
-	lv_obj_t *scr = lv_screen_active();
+	auto scr = lv::Screen::active();
 	auto lbl = lv::Label::create(lv::ObjectView(scr));
 	lbl.width(lv_pct(100));
 	lbl.text(txt);
 	lv_obj_update_layout(lbl.get());
-	perf_ffi::scroll_anim(scr, lv_obj_get_scroll_bottom(scr));
+	perf_ffi::scroll_anim(scr, scr.get_scroll_bottom());
 }
 
 static void multiple_arcs_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	int32_t hor = (lv_display_get_horizontal_resolution(NULL) - 16)
+	int32_t hor = (lv::display_width() - 16)
 		      / lv_dpx(160);
-	int32_t ver = (lv_display_get_vertical_resolution(NULL) - 16)
+	int32_t ver = (lv::display_height() - 16)
 		      / lv_dpx(160);
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
@@ -313,22 +313,20 @@ static void multiple_arcs_cb(void)
 		for (int32_t x = 0; x < hor; x++) {
 			auto a = lv::Arc::create(lv::ObjectView(scr));
 			if (x == 0)
-				lv_obj_add_flag(a.get(),
+				a.add_flag(
 						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			a.size(lv_dpx(100), lv_dpx(100));
 			a.center();
 			a.bg_angles(0, 360);
-			lv_obj_set_style_margin_all(a.get(), lv_dpx(20), 0);
-			lv_obj_set_style_arc_opa(a.get(), 0, LV_PART_MAIN);
-			lv_obj_set_style_bg_opa(a.get(), 0, LV_PART_KNOB);
-			lv_obj_set_style_arc_width(a.get(), 10,
+			a.margin_top(lv_dpx(20)).margin_bottom(lv_dpx(20)).margin_left(lv_dpx(20)).margin_right(lv_dpx(20));
+			a.arc_opa(0, LV_PART_MAIN);
+			a.bg_opa(0, LV_PART_KNOB);
+			a.arc_width(10,
 						   LV_PART_INDICATOR);
-			lv_obj_set_style_arc_rounded(a.get(), false,
+			a.arc_rounded(false,
 						     LV_PART_INDICATOR);
-			lv_obj_set_style_arc_color(
-				a.get(),
-				lv_color_hex3(rnd_next(0x00f, 0xff0)),
-				LV_PART_INDICATOR);
+			a.arc_color(lv_color_hex3(rnd_next(0x00f, 0xff0)),
+				    LV_PART_INDICATOR);
 			perf_ffi::arc_anim(a.get());
 		}
 	}
@@ -336,15 +334,15 @@ static void multiple_arcs_cb(void)
 
 static void containers_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 300;
+		lv::display_width()) - 16) / 300;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 16) / 150;
+		lv::display_height()) - 16) / 150;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -361,15 +359,15 @@ static void containers_cb(void)
 
 static void containers_with_overlay_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 300;
+		lv::display_width()) - 16) / 300;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 16) / 150;
+		lv::display_height()) - 16) / 150;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -389,15 +387,15 @@ static void containers_with_overlay_cb(void)
 
 static void containers_with_opa_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 300;
+		lv::display_width()) - 16) / 300;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 16) / 150;
+		lv::display_height()) - 16) / 150;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -415,15 +413,15 @@ static void containers_with_opa_cb(void)
 
 static void containers_with_opa_layer_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	auto scr = lv::Screen::active();
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
 	int32_t hor = (static_cast<int32_t>(
-		lv_display_get_horizontal_resolution(NULL)) - 16) / 300;
+		lv::display_width()) - 16) / 300;
 	int32_t ver = (static_cast<int32_t>(
-		lv_display_get_vertical_resolution(NULL)) - 16) / 150;
+		lv::display_height()) - 16) / 150;
 	if (hor < 1) hor = 1;
 	if (ver < 1) ver = 1;
 
@@ -441,17 +439,17 @@ static void containers_with_opa_layer_cb(void)
 
 static void containers_with_scrolling_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
+	auto scr = lv::Screen::active();
 
-	lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_SPACE_EVENLY,
+	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
 			      LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
 
 	for (uint32_t i = 0; i < 50; i++)
 		card_create();
 
-	lv_obj_update_layout(scr);
-	perf_ffi::scroll_anim(scr, lv_obj_get_scroll_bottom(scr));
+	scr.update_layout();
+	perf_ffi::scroll_anim(scr, scr.get_scroll_bottom());
 }
 
 /* ── Widgets demo scene ────────────────────────────────────────────── */
@@ -484,7 +482,7 @@ extern "C" void slideshow_ready_cb(lv_anim_t *a)
 	int32_t bot = lv_obj_get_scroll_bottom(tab);
 	if (bot <= 0) bot = 1;
 
-	uint32_t spd = lv_anim_speed(lv_display_get_dpi(NULL));
+	uint32_t spd = lv_anim_speed(lv::display_dpi());
 	benchmark_anim_slideshow(tab, slideshow_scroll_cb, bot, spd,
 				 slideshow_ready_cb);
 }
@@ -498,8 +496,8 @@ extern "C" void gauge_arc_exec_cb(void *var, int32_t v)
 
 static void widgets_demo_cb(void)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_set_style_pad_all(scr, 0, 0);
+	auto scr = lv::Screen::active();
+	scr.pad_all(0);
 	lv_obj_set_style_pad_top(scr, 0, 0);
 
 	/* ── Tabview ─────────────────────────────────── */
@@ -718,7 +716,7 @@ static void widgets_demo_cb(void)
 	int32_t bot = lv_obj_get_scroll_bottom(tab1);
 	if (bot <= 0) bot = 1;
 
-	uint32_t spd = lv_anim_speed(lv_display_get_dpi(NULL));
+	uint32_t spd = lv_anim_speed(lv::display_dpi());
 	benchmark_anim_slideshow(tab1, perf_ffi::slideshow_scroll_cb, bot, spd,
 				 perf_ffi::slideshow_ready_cb);
 }
@@ -752,16 +750,16 @@ static uint32_t rnd_act;
 
 static void load_scene(uint32_t scene)
 {
-	lv_obj_t *scr = lv_screen_active();
-	lv_obj_clean(scr);
+	auto scr = lv::Screen::active();
+	scr.clean();
 	lv_obj_set_style_bg_color(scr,
 				  lv_palette_lighten(LV_PALETTE_GREY, 4), 0);
 	lv_obj_set_style_text_color(scr, lv_color_black(), 0);
-	lv_obj_set_style_pad_all(scr, 8, 0);
+	scr.pad_all(8);
 	lv_obj_set_style_pad_top(scr, 40, 0);
 	lv_obj_set_style_pad_gap(scr, 8, 0);
-	lv_obj_set_layout(scr, LV_LAYOUT_NONE);
-	lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START,
+	scr.layout(LV_LAYOUT_NONE);
+	scr.flex_align(LV_FLEX_ALIGN_START,
 			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
 	lv_anim_delete(scr, perf_ffi::scroll_anim_y_cb);
@@ -867,8 +865,8 @@ extern "C" void table_draw_task_event_cb(lv_event_t *e)
 
 static void summary_create(void)
 {
-	lv_obj_clean(lv_screen_active());
-	lv_obj_set_style_pad_hor(lv_screen_active(), 0, 0);
+	lv::Screen::active().clean();
+	lv::Screen::active().pad_hor(0);
 
 	auto table = lv::Table::create(lv::ObjectView(lv_screen_active()));
 	lv_obj_set_width(table.get(), lv_pct(100));
@@ -1029,7 +1027,7 @@ extern "C" void scroll_anim_y_cb(void *var, int32_t v)
 
 void scroll_anim(lv_obj_t *obj, int32_t y_max)
 {
-	uint32_t t = lv_anim_speed(lv_display_get_dpi(NULL));
+	uint32_t t = lv_anim_speed(lv::display_dpi());
 
 	lv::Animation()
 		.target(obj)
@@ -1067,7 +1065,7 @@ void shake_anim(lv_obj_t *obj, int32_t y_max)
 
 static lv_obj_t *card_create(void)
 {
-	lv_obj_t *scr = lv_screen_active();
+	auto scr = lv::Screen::active();
 
 	lv_obj_t *panel = lv_obj_create(scr);
 	lv_obj_set_size(panel, 270, 120);
@@ -1186,13 +1184,13 @@ OVE_MAIN()
 
 	scene_act = 0;
 
-	lv_obj_t *scr = lv_screen_active();
+	auto scr = lv::Screen::active();
 	lv_obj_remove_style_all(scr);
 	lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 	lv_obj_set_style_text_color(scr, lv_color_black(), 0);
 	lv_obj_set_style_bg_color(scr,
 				  lv_palette_lighten(LV_PALETTE_GREY, 4), 0);
-	lv_obj_set_style_pad_all(scr, 8, 0);
+	scr.pad_all(8);
 	lv_obj_set_style_pad_top(scr, 40, 0);
 	lv_obj_set_style_pad_gap(scr, 8, 0);
 

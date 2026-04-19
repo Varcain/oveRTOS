@@ -70,6 +70,45 @@ def generate_configs(ws):
     env.globals["get_str"] = lambda k, d="": get_str(config, k, d)
     env.globals["config"] = config
 
+    # NuttX + C++/inference: discover GCC C++ sysroot paths so cmake
+    # doesn't have to introspect the compiler on every invocation.
+    is_nuttx = get_bool(config, "CONFIG_OVE_RTOS_NUTTX")
+    needs_cxx = (get_bool(config, "CONFIG_OVE_APP_LANG_CXX")
+                 or get_bool(config, "CONFIG_OVE_INFER"))
+    if is_nuttx and needs_cxx and ws.toolchain_dir:
+        cross = get_str(config, "CONFIG_OVE_CROSS_COMPILE", "arm-none-eabi-")
+        cc = os.path.join(ws.toolchain_dir, "bin", cross + "gcc")
+        cxx = os.path.join(ws.toolchain_dir, "bin", cross + "g++")
+        if os.path.isfile(cc) and os.path.isfile(cxx):
+            builtin = subprocess.check_output(
+                [cc, "-print-file-name=include"], text=True).strip()
+            sysroot = os.path.realpath(subprocess.check_output(
+                [cxx, "-print-sysroot"], text=True).strip())
+            ver = subprocess.check_output(
+                [cxx, "-dumpversion"], text=True).strip()
+            machine = subprocess.check_output(
+                [cxx, "-dumpmachine"], text=True).strip()
+            cxx_base = os.path.join(sysroot, "include", "c++", ver)
+            cxx_mach = os.path.join(cxx_base, machine)
+            cxx_dirs = [cxx_base, cxx_mach]
+            for d in glob.glob(os.path.join(cxx_mach, "thumb", "*", "*")):
+                if os.path.isdir(d) and os.path.isfile(
+                        os.path.join(d, "bits", "c++config.h")):
+                    cxx_dirs.append(d)
+            config["_GCC_BUILTIN_INC"] = builtin
+            config["_GCC_CXX_DIRS"] = cxx_dirs
+            nuttx_src = os.path.join(ws.ws_dl_dir, "nuttx")
+            config["_NUTTX_INC"] = os.path.join(nuttx_src, "include")
+            libm = glob.glob(os.path.join(
+                nuttx_src, "libs", "libm", "*", "include"))
+            config["_NUTTX_LIBM_INC"] = libm[0] if libm else ""
+
+    # Resolve lv_conf.h directory once so cmake doesn't repeat the search.
+    if get_bool(config, "CONFIG_OVE_LVGL"):
+        lv_conf = _find_board_lv_conf(ws)
+        if lv_conf:
+            config["_LV_CONF_DIR"] = os.path.dirname(lv_conf)
+
     # Always generate core config files
     render_template(env, "ove_config.h.j2",
                     os.path.join(output_dir, "ove_config.h"), config)
@@ -104,12 +143,10 @@ def generate_configs(ws):
         gen_models_dir = os.path.join(output_dir, "generated_models")
         convert_script = os.path.join(model_dir, "convert.py")
         if os.path.isdir(model_dir) and os.path.isfile(convert_script):
-            import glob
             tflite_files = glob.glob(os.path.join(model_dir, "**/*.tflite"),
                                      recursive=True)
             if tflite_files:
                 os.makedirs(gen_models_dir, exist_ok=True)
-                import subprocess
                 result = subprocess.run(
                     [sys.executable, convert_script,
                      "--model-dir", model_dir,

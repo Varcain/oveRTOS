@@ -85,7 +85,7 @@ pub fn activity() void {
 /// Register a GPIO wake source.
 pub fn wakeRegisterGpio(port: u32, pin: u32, edge: u32) Error!void {
     var src: c.ove_pm_wake_src = std.mem.zeroes(c.ove_pm_wake_src);
-    src.type = 0; // OVE_PM_WAKE_GPIO
+    src.type = c.OVE_PM_WAKE_GPIO;
     src.unnamed_0.gpio.port = port;
     src.unnamed_0.gpio.pin = pin;
     src.unnamed_0.gpio.edge = edge;
@@ -95,7 +95,7 @@ pub fn wakeRegisterGpio(port: u32, pin: u32, edge: u32) Error!void {
 /// Register a timer wake source.
 pub fn wakeRegisterTimer(timeout_ms: u32) Error!void {
     var src: c.ove_pm_wake_src = std.mem.zeroes(c.ove_pm_wake_src);
-    src.type = 1; // OVE_PM_WAKE_TIMER
+    src.type = c.OVE_PM_WAKE_TIMER;
     src.unnamed_0.timer.timeout_ms = timeout_ms;
     try err.fromCode(c.ove_pm_wake_register(&src));
 }
@@ -103,7 +103,7 @@ pub fn wakeRegisterTimer(timeout_ms: u32) Error!void {
 /// Register a UART wake source.
 pub fn wakeRegisterUart(instance: u32) Error!void {
     var src: c.ove_pm_wake_src = std.mem.zeroes(c.ove_pm_wake_src);
-    src.type = 2; // OVE_PM_WAKE_UART
+    src.type = c.OVE_PM_WAKE_UART;
     src.unnamed_0.uart.instance = instance;
     try err.fromCode(c.ove_pm_wake_register(&src));
 }
@@ -111,7 +111,7 @@ pub fn wakeRegisterUart(instance: u32) Error!void {
 /// Unregister a GPIO wake source.
 pub fn wakeUnregisterGpio(port: u32, pin: u32) Error!void {
     var src: c.ove_pm_wake_src = std.mem.zeroes(c.ove_pm_wake_src);
-    src.type = 0; // OVE_PM_WAKE_GPIO
+    src.type = c.OVE_PM_WAKE_GPIO;
     src.unnamed_0.gpio.port = port;
     src.unnamed_0.gpio.pin = pin;
     try err.fromCode(c.ove_pm_wake_unregister(&src));

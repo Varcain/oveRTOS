@@ -14,6 +14,8 @@
 
 cmake_minimum_required(VERSION 3.20)
 
+include(${CMAKE_CURRENT_LIST_DIR}/OveHelpers.cmake)
+
 # ─── ove_setup_project(name) ─────────────────────────────────────────
 # Resolves all paths, includes generated config, declares the CMake project,
 # sets common compiler flags, and includes the application source list.
@@ -192,7 +194,6 @@ macro(ove_add_stub_backends)
         string(TOUPPER "${_mod}" _MOD_UPPER)
         string(TOLOWER "${_mod}" _mod_lower)
 
-        # Determine if we should add the stub
         set(_add_stub FALSE)
         if("${_MOD_UPPER}" STREQUAL "BSP" OR "${_MOD_UPPER}" STREQUAL "GPIO")
             set(_add_stub TRUE)
@@ -201,42 +202,15 @@ macro(ove_add_stub_backends)
         endif()
 
         if(_add_stub)
-            # Add stub file only if it exists (some modules like BOARD
-            # just need the backend removed, with no stub replacement)
             if(EXISTS "${_stub_dir}/stub_${_mod_lower}.c")
                 list(APPEND _OVE_STUB_SOURCES "${_stub_dir}/stub_${_mod_lower}.c")
             endif()
-
-            # stub_time.c needs OVE_QEMU_ARM for ARM-specific tick source
             if("${_MOD_UPPER}" STREQUAL "TIME")
                 set_source_files_properties(
                     "${_stub_dir}/stub_time.c" PROPERTIES
                     COMPILE_DEFINITIONS OVE_QEMU_ARM)
             endif()
-
-            # Remove the corresponding real backend from _OVE_BACKEND_SRC.
-            # Only remove files under backends/ (not dispatchers under src/).
-            # Backend files match: backends/*/<rtos>_<module>.c or backends/*/stm32f7_bsp.c
-            set(_new_backend "")
-            foreach(_bsrc ${_OVE_BACKEND_SRC})
-                get_filename_component(_bname "${_bsrc}" NAME)
-                set(_exclude FALSE)
-                # Only filter files in the backends/ directory
-                if("${_bsrc}" MATCHES "/backends/")
-                    # Match <rtos>_<module>.c pattern
-                    if("${_bname}" MATCHES "_(${_mod_lower})\\.c$")
-                        set(_exclude TRUE)
-                    endif()
-                    # Special case: BSP backend may be named stm32f7_bsp.c
-                    if("${_MOD_UPPER}" STREQUAL "BSP" AND "${_bname}" MATCHES "_bsp\\.c$")
-                        set(_exclude TRUE)
-                    endif()
-                endif()
-                if(NOT _exclude)
-                    list(APPEND _new_backend "${_bsrc}")
-                endif()
-            endforeach()
-            set(_OVE_BACKEND_SRC ${_new_backend})
+            _ove_filter_backend_list(_OVE_BACKEND_SRC ${_mod})
         endif()
     endforeach()
 endmacro()
@@ -246,27 +220,7 @@ endmacro()
 # Remove backend sources for listed modules WITHOUT adding stubs.
 # Use this when the board provides its own implementation (e.g. qemu_board.c).
 macro(ove_exclude_backends)
-    foreach(_mod ${ARGN})
-        string(TOUPPER "${_mod}" _MOD_UPPER)
-        string(TOLOWER "${_mod}" _mod_lower)
-        set(_new_backend "")
-        foreach(_bsrc ${_OVE_BACKEND_SRC})
-            get_filename_component(_bname "${_bsrc}" NAME)
-            set(_exclude FALSE)
-            if("${_bsrc}" MATCHES "/backends/")
-                if("${_bname}" MATCHES "_(${_mod_lower})\\.c$")
-                    set(_exclude TRUE)
-                endif()
-                if("${_MOD_UPPER}" STREQUAL "BSP" AND "${_bname}" MATCHES "_bsp\\.c$")
-                    set(_exclude TRUE)
-                endif()
-            endif()
-            if(NOT _exclude)
-                list(APPEND _new_backend "${_bsrc}")
-            endif()
-        endforeach()
-        set(_OVE_BACKEND_SRC ${_new_backend})
-    endforeach()
+    _ove_filter_backend_list(_OVE_BACKEND_SRC ${ARGN})
 endmacro()
 
 

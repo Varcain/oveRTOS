@@ -143,7 +143,7 @@ pub const Client = struct {
     }
 
     /// Process incoming packets and send keep-alive.  Call periodically.
-    pub fn loop_(self: Client, timeout_ms: u32) Error!void {
+    pub fn pollOnce(self: Client, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ms));
     }
 

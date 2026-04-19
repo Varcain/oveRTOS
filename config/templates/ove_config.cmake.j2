@@ -74,6 +74,23 @@ set(OVE_SIM_DASHBOARD_PORT {{ config.get('CONFIG_OVE_SIM_DASHBOARD_PORT', 8080) 
 set(OVE_SIM OFF)
 {% endif %}
 
+{% if config.get("_LV_CONF_DIR") %}
+# Board lv_conf.h directory (discovered once by 'ove configure')
+set(OVE_LV_CONF_DIR "{{ config.get('_LV_CONF_DIR') }}")
+{% endif %}
+
+{% if config.get("_GCC_BUILTIN_INC") %}
+# GCC C++ sysroot paths (discovered once by 'ove configure')
+set(OVE_GCC_BUILTIN_INC "{{ config.get('_GCC_BUILTIN_INC') }}")
+set(OVE_GCC_CXX_DIRS
+{% for d in config.get('_GCC_CXX_DIRS', []) %}
+    "{{ d }}"
+{% endfor %}
+)
+set(OVE_NUTTX_INC "{{ config.get('_NUTTX_INC') }}")
+set(OVE_NUTTX_LIBM_INC "{{ config.get('_NUTTX_LIBM_INC') }}")
+{% endif %}
+
 {% if config.get("CONFIG_OVE_INFER") == True %}
 # ML inference settings
 {% if config.get("CONFIG_OVE_INFER_CMSIS_NN") == True %}

@@ -9,6 +9,7 @@
 #include <ove/ove.hpp>
 #include <ove/bench.hpp>
 
+#include <atomic>
 #include <optional>
 
 using BenchWQ = ove::Workqueue<2048>;
@@ -16,12 +17,12 @@ using BenchWQ = ove::Workqueue<2048>;
 static std::optional<BenchWQ> bench_wq;
 static std::optional<ove::Work> bench_work;
 static std::optional<ove::Semaphore> work_sem;
-static volatile int work_executed;
+static std::atomic<bool> work_executed{false};
 
 static void work_handler(ove_work_t work)
 {
 	(void)work;
-	work_executed = 1;
+	work_executed.store(true, std::memory_order_release);
 	work_sem->give();
 }
 
@@ -43,7 +44,7 @@ static void wq_submit_setup()
 
 static void wq_submit_run()
 {
-	work_executed = 0;
+	work_executed.store(false, std::memory_order_release);
 	(void)bench_work->submit(*bench_wq);
 	(void)work_sem->take(1000);
 }

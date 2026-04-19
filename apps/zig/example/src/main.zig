@@ -32,12 +32,12 @@ else
 // Shared state
 // ---------------------------------------------------------------------------
 
-var queue: Queue(u32, 8) = undefined;
+var queue: ?Queue(u32, 8) = null;
 var last_value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 
-var counter_label: lvgl.Label = undefined;
-var bar: lvgl.Bar = undefined;
-var ui_timer: Timer = undefined;
+var counter_label: ?lvgl.Label = null;
+var bar: ?lvgl.Bar = null;
+var ui_timer: ?Timer = null;
 
 // ---------------------------------------------------------------------------
 // LVGL UI
@@ -108,9 +108,12 @@ fn uiTimerCallback() void {
     defer guard.deinit();
 
     var buf: [24]u8 = undefined;
-    _ = std.fmt.bufPrint(&buf, "Count: {d}\x00", .{val}) catch return;
-    _ = counter_label.text(@ptrCast(&buf));
-    _ = bar.value(@intCast(val % 101));
+    _ = std.fmt.bufPrint(&buf, "Count: {d}\x00", .{val}) catch |e| {
+        ove.log.err("ui timer fmt: {}", .{e});
+        return;
+    };
+    if (counter_label) |*label| _ = label.text(@ptrCast(&buf));
+    if (bar) |*b| _ = b.value(@intCast(val % 101));
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +147,7 @@ fn producerEntry() void {
     while (true) {
         count += 1;
 
-        queue.send(&count, 1000) catch |e| {
+        queue.?.send(&count, 1000) catch |e| {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
@@ -162,7 +165,7 @@ fn consumerEntry() void {
     ove.log.inf("Consumer started", .{});
 
     while (true) {
-        const val = queue.receive(ove.wait_forever) catch {
+        const val = queue.?.receive(ove.wait_forever) catch {
             ove.log.err("Consumer: receive error", .{});
             continue;
         };
@@ -222,7 +225,7 @@ fn appMain() void {
     }
     ove.log.inf("LVGL widgets created", .{});
 
-    ui_timer.start() catch {
+    ui_timer.?.start() catch {
         ove.log.err("Failed to start UI timer", .{});
         return;
     };
@@ -233,9 +236,11 @@ fn appMain() void {
 
     // Cleanup (only reached if scheduler returns, e.g. POSIX)
     ove.log.inf("Zig example: shutdown", .{});
-    ui_timer.stop() catch {};
-    ui_timer.destroy();
-    queue.destroy();
+    if (ui_timer) |*t| {
+        t.stop() catch {};
+        t.destroy();
+    }
+    if (queue) |*q| q.destroy();
 }
 
 comptime {

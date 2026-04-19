@@ -9,6 +9,7 @@
 #include <ove/ove.hpp>
 #include <ove/bench.hpp>
 
+#include <atomic>
 #include <optional>
 
 /* --- Context for thread benchmarks --- */
@@ -16,7 +17,7 @@
 static std::optional<ove::Thread<2048>> bench_th;
 static std::optional<ove::Semaphore> ping_sem;
 static std::optional<ove::Semaphore> pong_sem;
-static volatile int ctx_switch_done;
+static std::atomic<bool> ctx_switch_done{false};
 
 /* --- create/destroy --- */
 
@@ -49,7 +50,7 @@ static void thread_sleep_1ms_run()
 static void pong_thread(void *arg)
 {
 	(void)arg;
-	while (!ctx_switch_done) {
+	while (!ctx_switch_done.load(std::memory_order_acquire)) {
 		(void)ping_sem->take(OVE_WAIT_FOREVER);
 		pong_sem->give();
 	}
@@ -57,7 +58,7 @@ static void pong_thread(void *arg)
 
 static void ctx_switch_setup()
 {
-	ctx_switch_done = 0;
+	ctx_switch_done.store(false, std::memory_order_release);
 	ping_sem.emplace(0, 1);
 	pong_sem.emplace(0, 1);
 	bench_th.emplace(pong_thread, nullptr, OVE_PRIO_NORMAL, "pong");
@@ -72,7 +73,7 @@ static void ctx_switch_run()
 
 static void ctx_switch_teardown()
 {
-	ctx_switch_done = 1;
+	ctx_switch_done.store(true, std::memory_order_release);
 	ping_sem->give();
 	ove::time::delay_ms(10);
 	bench_th.reset();

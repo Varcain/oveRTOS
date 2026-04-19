@@ -333,6 +333,16 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
         if os.path.isfile(west_done_marker):
             logger.info("Zephyr: workspace up to date")
             update_symlink(link, zephyr_dir)
+            # Ensure LVGL symlink exists even after clean-all
+            # (clean-all removes workspace dl/ contents but the global
+            # cache + marker file survive, so we re-enter here).
+            lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+            lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+            lvgl_dest, _, _ = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+            if os.path.isdir(lvgl_dest):
+                if ws_dl_dir:
+                    update_symlink(os.path.join(ws_dl_dir, "lvgl"), lvgl_dest)
+                update_symlink(os.path.join(dl_dir, "lvgl"), lvgl_dest)
             return True
 
         west = _find_west(ove_dir or ".")

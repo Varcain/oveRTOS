@@ -59,16 +59,17 @@ public:
 #endif
 	lv::Bar m_bar{nullptr};
 
+	static constexpr const char *APP_TITLE =
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
-#define APP_TITLE "oveRTOS(FreeRTOS) C++ Demo"
+		"oveRTOS(FreeRTOS) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
-#define APP_TITLE "oveRTOS(NuttX) C++ Demo"
+		"oveRTOS(NuttX) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
-#define APP_TITLE "oveRTOS(Zephyr) C++ Demo"
+		"oveRTOS(Zephyr) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_POSIX)
-#define APP_TITLE "oveRTOS(POSIX) C++ Demo"
+		"oveRTOS(POSIX) C++ Demo";
 #else
-#define APP_TITLE "oveRTOS C++ Demo"
+		"oveRTOS C++ Demo";
 #endif
 
 	lv::ObjectView build(lv::ObjectView parent) {

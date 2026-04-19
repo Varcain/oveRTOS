@@ -118,8 +118,8 @@ pub const board = @import("board.zig");
 /// BSP compatibility shim that re-exports `board`, `gpio`, and `led`.
 pub const bsp = @import("bsp.zig");
 
-/// Time query and delay utilities (trailing underscore avoids `std.time` clash).
-pub const time_ = @import("time_.zig");
+/// Time query and delay utilities.
+pub const time = @import("time.zig");
 
 /// Audio I/O initialization and control.
 pub const audio = @import("audio.zig");

@@ -692,16 +692,16 @@ fn testThreadCreateDestroy() !void {
 }
 
 fn testThreadSleepDuration() !void {
-    const before = try ove.time_.getUs();
+    const before = try ove.time.getUs();
     Thread.sleepMs(50);
-    const after = try ove.time_.getUs();
+    const after = try ove.time.getUs();
     const elapsed_us = after - before;
     try expect(elapsed_us >= 25_000);
     try expect(elapsed_us <= 150_000);
 }
 
 fn testThreadYieldNoCrash() !void {
-    Thread.yield_();
+    Thread.yieldCpu();
 }
 
 fn testThreadGetSelf() !void {
@@ -755,10 +755,10 @@ fn testThreadSuspendResume() !void {
     suspended_flag = false;
     var t = try Thread.spawn("susp", suspendableThread, prio.normal, 4096);
     Thread.sleepMs(50);
-    t.suspend_();
+    t.suspendThread();
     Thread.sleepMs(100);
     try expect(!suspended_flag);
-    t.resume_();
+    t.resumeThread();
     Thread.sleepMs(600);
     try expect(suspended_flag);
     t.destroy();
@@ -881,27 +881,27 @@ fn testEventGroupRaiiDrop() !void {
 // ---------------------------------------------------------------------------
 
 fn testTimeGetUsReturnsOk() !void {
-    const us = try ove.time_.getUs();
+    const us = try ove.time.getUs();
     _ = us;
 }
 
 fn testTimeGetUsMonotonic() !void {
-    const a = try ove.time_.getUs();
-    const b = try ove.time_.getUs();
+    const a = try ove.time.getUs();
+    const b = try ove.time.getUs();
     try expect(b >= a);
 }
 
 fn testTimeDelayMs() !void {
-    const before = try ove.time_.getUs();
-    ove.time_.delayMs(50);
-    const after = try ove.time_.getUs();
+    const before = try ove.time.getUs();
+    ove.time.delayMs(50);
+    const after = try ove.time.getUs();
     try expect(after - before >= 40_000);
 }
 
 fn testTimeDelayUs() !void {
-    const before = try ove.time_.getUs();
-    ove.time_.delayUs(10_000);
-    const after = try ove.time_.getUs();
+    const before = try ove.time.getUs();
+    ove.time.delayUs(10_000);
+    const after = try ove.time.getUs();
     try expect(after - before >= 5_000);
 }
 

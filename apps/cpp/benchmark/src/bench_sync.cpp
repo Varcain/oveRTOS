@@ -9,6 +9,7 @@
 #include <ove/ove.hpp>
 #include <ove/bench.hpp>
 
+#include <atomic>
 #include <optional>
 
 /* --- Shared state (RAII — lives inside std::optional for bench lifecycle) --- */
@@ -20,8 +21,8 @@ static std::optional<ove::CondVar> bench_cv;
 static std::optional<ove::Mutex> bench_cv_mtx;
 static std::optional<ove::RecursiveMutex> bench_rmtx;
 static std::optional<ove::Thread<2048>> contention_th;
-static volatile int contention_done;
-static volatile uint32_t contention_count;
+static std::atomic<bool> contention_done{false};
+static std::atomic<uint32_t> contention_count{0};
 
 /* --- Mutex lock/unlock --- */
 
@@ -53,17 +54,17 @@ static void mutex_create_destroy_run()
 static void contention_thread(void *arg)
 {
 	(void)arg;
-	while (!contention_done) {
+	while (!contention_done.load(std::memory_order_acquire)) {
 		(void)bench_mtx->lock(OVE_WAIT_FOREVER);
-		contention_count++;
+		contention_count.fetch_add(1, std::memory_order_relaxed);
 		bench_mtx->unlock();
 	}
 }
 
 static void mutex_contention_setup()
 {
-	contention_done = 0;
-	contention_count = 0;
+	contention_done.store(false, std::memory_order_release);
+	contention_count.store(0, std::memory_order_relaxed);
 	bench_mtx.emplace();
 	contention_th.emplace(contention_thread, nullptr, OVE_PRIO_NORMAL, "contention");
 }
@@ -71,13 +72,13 @@ static void mutex_contention_setup()
 static void mutex_contention_run()
 {
 	(void)bench_mtx->lock(OVE_WAIT_FOREVER);
-	contention_count++;
+	contention_count.fetch_add(1, std::memory_order_relaxed);
 	bench_mtx->unlock();
 }
 
 static void mutex_contention_teardown()
 {
-	contention_done = 1;
+	contention_done.store(true, std::memory_order_release);
 	ove::time::delay_ms(10);
 	contention_th.reset();
 	bench_mtx.reset();
@@ -139,12 +140,12 @@ static void sem_memory_teardown()
 /* --- Event signal/wait --- */
 
 static std::optional<ove::Thread<1024>> evt_th;
-static volatile int evt_done;
+static std::atomic<bool> evt_done{false};
 
 static void evt_signaler(void *arg)
 {
 	(void)arg;
-	while (!evt_done) {
+	while (!evt_done.load(std::memory_order_acquire)) {
 		bench_evt->signal();
 		ove::Thread<>::yield();
 	}
@@ -152,7 +153,7 @@ static void evt_signaler(void *arg)
 
 static void event_signal_wait_setup()
 {
-	evt_done = 0;
+	evt_done.store(false, std::memory_order_release);
 	bench_evt.emplace();
 	evt_th.emplace(evt_signaler, nullptr, OVE_PRIO_NORMAL, "evt_sig");
 }
@@ -164,7 +165,7 @@ static void event_signal_wait_run()
 
 static void event_signal_wait_teardown()
 {
-	evt_done = 1;
+	evt_done.store(true, std::memory_order_release);
 	ove::time::delay_ms(10);
 	evt_th.reset();
 	bench_evt.reset();
@@ -187,12 +188,12 @@ static void event_memory_teardown()
 /* --- Condvar signal/wait --- */
 
 static std::optional<ove::Thread<1024>> cv_th;
-static volatile int cv_done;
+static std::atomic<bool> cv_done{false};
 
 static void cv_signaler(void *arg)
 {
 	(void)arg;
-	while (!cv_done) {
+	while (!cv_done.load(std::memory_order_acquire)) {
 		bench_cv->signal();
 		ove::Thread<>::yield();
 	}
@@ -200,7 +201,7 @@ static void cv_signaler(void *arg)
 
 static void condvar_signal_wait_setup()
 {
-	cv_done = 0;
+	cv_done.store(false, std::memory_order_release);
 	bench_cv_mtx.emplace();
 	bench_cv.emplace();
 	cv_th.emplace(cv_signaler, nullptr, OVE_PRIO_NORMAL, "cv_sig");
@@ -215,7 +216,7 @@ static void condvar_signal_wait_run()
 
 static void condvar_signal_wait_teardown()
 {
-	cv_done = 1;
+	cv_done.store(true, std::memory_order_release);
 	bench_cv->signal();
 	ove::time::delay_ms(10);
 	cv_th.reset();

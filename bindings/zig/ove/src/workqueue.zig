@@ -113,6 +113,43 @@ pub const Work = struct {
         return .{ .handle = h };
     }
 
+    /// Create a work item with a typed context pointer.
+    ///
+    /// The oveRTOS C work handler has no `user_data` slot, so the context
+    /// pointer is stashed in a per-call-site comptime-unique static. Each
+    /// source location that calls `createWithContext` gets exactly one
+    /// context slot; calling it twice from the same location will overwrite
+    /// the previous context. Use distinct call sites (e.g. separate wrapper
+    /// functions) when you need multiple instances.
+    ///
+    /// `ctx` must outlive the `Work` item.
+    pub fn createWithContext(
+        comptime Context: type,
+        ctx: *Context,
+        comptime handler: fn (*Context) void,
+    ) Error!Work {
+        const Captured = struct {
+            var ctx_ptr: ?*Context = null;
+        };
+        Captured.ctx_ptr = ctx;
+        const Trampoline = struct {
+            fn invoke(_: c.ove_work_t) callconv(.c) void {
+                if (Captured.ctx_ptr) |p| handler(p);
+            }
+        };
+
+        var h: c.ove_work_t = null;
+        if (comptime @hasDecl(c, "ove_work_init")) {
+            try err.fromCode(c.ove_work_init(&h, &Trampoline.invoke));
+        } else {
+            const S = struct {
+                var storage: c.ove_work_storage_t = std.mem.zeroes(c.ove_work_storage_t);
+            };
+            try err.fromCode(c.ove_work_init_static(&h, &S.storage, &Trampoline.invoke));
+        }
+        return .{ .handle = h };
+    }
+
     /// Free resources associated with this work item.
     ///
     /// Sets `handle` to null. Only has an effect on heap-backed backends.

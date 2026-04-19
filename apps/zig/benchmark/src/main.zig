@@ -21,11 +21,11 @@ const volatile_int = std.atomic.Value(i32);
 // =========================================================================
 
 fn timeGetUsOverheadRun() void {
-    _ = ove.time_.getUs() catch return;
+    _ = ove.time.getUs() catch return;
 }
 
 fn delay1msRun() void {
-    ove.time_.delayMs(1);
+    ove.time.delayMs(1);
 }
 
 fn timeIsEnabled() bool {
@@ -76,7 +76,7 @@ fn threadCreateDestroyRun() void {
 }
 
 fn threadYieldRun() void {
-    ove.Thread.yield_();
+    ove.Thread.yieldCpu();
 }
 
 fn threadSleep1msRun() void {
@@ -279,7 +279,7 @@ fn semMemoryTeardown() void {
 fn evtSignaler() void {
     while (sync_evt_done.load(.acquire) == 0) {
         sync_bench_evt.?.signal();
-        ove.Thread.yield_();
+        ove.Thread.yieldCpu();
     }
 }
 fn eventSignalWaitSetup() void {
@@ -314,7 +314,7 @@ fn eventMemoryTeardown() void {
 fn cvSignaler() void {
     while (sync_cv_done.load(.acquire) == 0) {
         sync_bench_cv.?.signal();
-        ove.Thread.yield_();
+        ove.Thread.yieldCpu();
     }
 }
 fn condvarSignalWaitSetup() void {

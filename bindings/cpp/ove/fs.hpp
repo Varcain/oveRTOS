@@ -90,7 +90,7 @@ public:
 	/**
 	 * @brief Destroys the file object, closing the file if it is still open.
 	 */
-	~File() { close(); }
+	~File() noexcept { close(); }
 
 	File(const File &) = delete;
 	File &operator=(const File &) = delete;
@@ -228,7 +228,7 @@ public:
 	/**
 	 * @brief Destroys the Dir object, closing the directory if it is still open.
 	 */
-	~Dir() { close(); }
+	~Dir() noexcept { close(); }
 
 	Dir(const Dir &) = delete;
 	Dir &operator=(const Dir &) = delete;

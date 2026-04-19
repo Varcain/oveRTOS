@@ -79,7 +79,7 @@ public:
 	/**
 	 * @brief Destroys the timer, stopping it if running and releasing the kernel resource.
 	 */
-	~Timer() {
+	~Timer() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_timer_deinit(handle_);

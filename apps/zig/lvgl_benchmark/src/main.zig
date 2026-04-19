@@ -10,6 +10,12 @@
 // through oveRTOS. 15 rendering scenes stress-test widgets, animations,
 // layout, images, and compositing. A summary table shows per-scene
 // FPS / CPU / render / flush metrics.
+//
+// Style note: scene callbacks intentionally mix the safe `lvgl.*` wrapper
+// (for screen/parent lookup + occasional chained setup) with raw `c.lv_*`
+// calls for child widgets. This matches the C reference benchmark's call
+// sequence exactly, preserving apples-to-apples comparison. Prefer raw
+// `c.lv_*` in hot paths; reserve wrappers for top-level screen access.
 
 const std = @import("std");
 const ove = @import("ove");
@@ -68,7 +74,7 @@ fn layerTop() ?*c.lv_obj_t {
 
 /// Equivalent to C's lv_dpx(n) macro: DPI-scaled pixel value.
 fn lvDpx(n: i32) i32 {
-    const dpi: i32 = @intCast(c.lv_display_get_dpi(null));
+    const dpi: i32 = @intCast(lvgl.display.dpi());
     if (dpi <= 0) return n;
     return @divTrunc(n * dpi + 80, 160);
 }
@@ -189,7 +195,7 @@ const perf_ffi = struct {
     }
 
     pub fn scrollAnim(obj: *c.lv_obj_t, y_max: i32) void {
-        const t: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
+        const t: u32 = lvAnimSpeed(@intCast(lvgl.display.dpi()));
         benchmark_anim_scroll(obj, perf_ffi.scrollAnimYCb, y_max, t);
     }
 
@@ -240,19 +246,19 @@ fn emptyScreenCb() void {
 }
 
 fn movingWallpaperCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_style_pad_all(scr, 0, 0);
+    const scr = lvgl.screenActive();
+    _ = scr.padAll(0);
 
-    const img = c.lv_image_create(scr).?;
+    const img = c.lv_image_create(scr.obj).?;
     c.lv_obj_set_size(img, c.lv_pct(150), c.lv_pct(150));
     c.lv_image_set_src(img, &img_benchmark_lvgl_logo_rgb);
     c.lv_image_set_inner_align(img, c.LV_IMAGE_ALIGN_TILE);
-    perf_ffi.shakeAnim(img, -@divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))), 3));
+    perf_ffi.shakeAnim(img, -@divTrunc(@as(i32, @intCast(lvgl.display.height())), 3));
 }
 
 fn singleRectangleCb() void {
-    const scr = c.lv_screen_active().?;
-    const obj = c.lv_obj_create(scr).?;
+    const scr = lvgl.screenActive();
+    const obj = c.lv_obj_create(scr.obj).?;
     c.lv_obj_remove_style_all(obj);
     c.lv_obj_set_style_bg_opa(obj, c.LV_OPA_COVER, 0);
     c.lv_obj_center(obj);
@@ -261,12 +267,12 @@ fn singleRectangleCb() void {
 }
 
 fn multipleRectanglesCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_CENTER, c.LV_FLEX_ALIGN_SPACE_EVENLY);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_CENTER, c.LV_FLEX_ALIGN_SPACE_EVENLY);
 
     for (0..9) |_| {
-        const obj = c.lv_obj_create(scr).?;
+        const obj = c.lv_obj_create(scr.obj).?;
         c.lv_obj_remove_style_all(obj);
         c.lv_obj_set_style_bg_opa(obj, c.LV_OPA_COVER, 0);
         c.lv_obj_set_size(obj, c.lv_pct(25), c.lv_pct(25));
@@ -275,13 +281,13 @@ fn multipleRectanglesCb() void {
 }
 
 fn multipleRgbImagesCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
-    c.lv_obj_set_style_pad_row(scr, 20, 0);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    _ = scr.padRow(20);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 116);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 116, 116);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 116);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 116, 116);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -289,7 +295,7 @@ fn multipleRgbImagesCb() void {
     while (y < ver) : (y += 1) {
         var x: i32 = 0;
         while (x < hor) : (x += 1) {
-            const obj = c.lv_image_create(scr).?;
+            const obj = c.lv_image_create(scr.obj).?;
             c.lv_image_set_src(obj, &img_benchmark_lvgl_logo_rgb);
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
@@ -299,13 +305,13 @@ fn multipleRgbImagesCb() void {
 }
 
 fn multipleArgbImagesCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
-    c.lv_obj_set_style_pad_row(scr, 20, 0);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    _ = scr.padRow(20);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 116);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 116, 116);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 116);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 116, 116);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -313,7 +319,7 @@ fn multipleArgbImagesCb() void {
     while (y < ver) : (y += 1) {
         var x: i32 = 0;
         while (x < hor) : (x += 1) {
-            const obj = c.lv_image_create(scr).?;
+            const obj = c.lv_image_create(scr.obj).?;
             c.lv_image_set_src(obj, &img_benchmark_lvgl_logo_argb);
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
@@ -323,13 +329,13 @@ fn multipleArgbImagesCb() void {
 }
 
 fn rotatedArgbImagesCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
-    c.lv_obj_set_style_pad_row(scr, 20, 0);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    _ = scr.padRow(20);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 116);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 116, 116);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 116);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 116, 116);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -337,7 +343,7 @@ fn rotatedArgbImagesCb() void {
     while (y < ver) : (y += 1) {
         var x: i32 = 0;
         while (x < hor) : (x += 1) {
-            const obj = c.lv_image_create(scr).?;
+            const obj = c.lv_image_create(scr.obj).?;
             c.lv_image_set_src(obj, &img_benchmark_lvgl_logo_argb);
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
@@ -348,21 +354,21 @@ fn rotatedArgbImagesCb() void {
 }
 
 fn multipleLabelsCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
-    c.lv_obj_set_style_pad_row(scr, 80, 0);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    _ = scr.padRow(80);
 
     var s: c.lv_point_t = undefined;
-    c.lv_text_get_size(&s, "Hello LVGL!", c.lv_obj_get_style_text_font(scr, 0), 0, 0, c.LV_COORD_MAX, c.LV_TEXT_FLAG_NONE);
+    c.lv_text_get_size(&s, "Hello LVGL!", c.lv_obj_get_style_text_font(scr.obj, 0), 0, 0, c.LV_COORD_MAX, c.LV_TEXT_FLAG_NONE);
 
-    var cnt: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, s.x + 30);
-    cnt *= @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 200, s.y + 50);
+    var cnt: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, s.x + 30);
+    cnt *= @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 200, s.y + 50);
     if (cnt < 1) cnt = 1;
 
     var i: i32 = 0;
     while (i < cnt) : (i += 1) {
-        const obj = c.lv_label_create(scr).?;
+        const obj = c.lv_label_create(scr.obj).?;
         c.lv_label_set_text(obj, "Hello LVGL!");
         perf_ffi.colorAnim(obj);
     }
@@ -403,21 +409,21 @@ fn screenSizedTextCb() void {
         "neque vel tincidunt interdum, sapien nibh finibus lorem, eu " ++
         "eleifend diam ipsum et eros.";
 
-    const scr = c.lv_screen_active().?;
-    const obj = c.lv_label_create(scr).?;
+    const scr = lvgl.screenActive();
+    const obj = c.lv_label_create(scr.obj).?;
     c.lv_obj_set_width(obj, c.lv_pct(100));
     c.lv_label_set_text(obj, txt);
     c.lv_obj_update_layout(obj);
-    perf_ffi.scrollAnim(scr, c.lv_obj_get_scroll_bottom(scr));
+    perf_ffi.scrollAnim(scr.obj, scr.getScrollBottom());
 }
 
 fn multipleArcsCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, lvDpx(160));
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 16, lvDpx(160));
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, lvDpx(160));
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 16, lvDpx(160));
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -425,7 +431,7 @@ fn multipleArcsCb() void {
     while (y < ver) : (y += 1) {
         var x: i32 = 0;
         while (x < hor) : (x += 1) {
-            const obj = c.lv_arc_create(scr).?;
+            const obj = c.lv_arc_create(scr.obj).?;
             if (x == 0)
                 c.lv_obj_add_flag(obj, c.LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
             c.lv_obj_set_size(obj, lvDpx(100), lvDpx(100));
@@ -443,12 +449,12 @@ fn multipleArcsCb() void {
 }
 
 fn containersCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 300);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 16, 150);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 300);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 16, 150);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -465,12 +471,12 @@ fn containersCb() void {
 }
 
 fn containersWithOverlayCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 300);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 16, 150);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 300);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 16, 150);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -491,12 +497,12 @@ fn containersWithOverlayCb() void {
 }
 
 fn containersWithOpaCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 300);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 16, 150);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 300);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 16, 150);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -514,12 +520,12 @@ fn containersWithOpaCb() void {
 }
 
 fn containersWithOpaLayerCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    var hor: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_horizontal_resolution(null))) - 16, 300);
-    var ver: i32 = @divTrunc(@as(i32, @intCast(c.lv_display_get_vertical_resolution(null))) - 16, 150);
+    var hor: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.width())) - 16, 300);
+    var ver: i32 = @divTrunc(@as(i32, @intCast(lvgl.display.height())) - 16, 150);
     if (hor < 1) hor = 1;
     if (ver < 1) ver = 1;
 
@@ -537,16 +543,16 @@ fn containersWithOpaLayerCb() void {
 }
 
 fn containersWithScrollingCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_flex_flow(scr, c.LV_FLEX_FLOW_ROW_WRAP);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_CENTER, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    _ = scr.flexFlow(c.LV_FLEX_FLOW_ROW_WRAP);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_SPACE_EVENLY, c.LV_FLEX_ALIGN_CENTER, c.LV_FLEX_ALIGN_START);
 
     for (0..50) |_| {
         _ = cardCreate();
     }
 
-    c.lv_obj_update_layout(scr);
-    perf_ffi.scrollAnim(scr, c.lv_obj_get_scroll_bottom(scr));
+    _ = scr.updateLayout();
+    perf_ffi.scrollAnim(scr.obj, scr.getScrollBottom());
 }
 
 // ---------------------------------------------------------------------------
@@ -576,7 +582,7 @@ const scene_ffi = struct {
         c.lv_obj_update_layout(tab);
         var bot = c.lv_obj_get_scroll_bottom(tab);
         if (bot <= 0) bot = 1;
-        const spd: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
+        const spd: u32 = lvAnimSpeed(@intCast(lvgl.display.dpi()));
         benchmark_anim_slideshow(tab, scene_ffi.slideshowScrollCb, bot, spd, scene_ffi.slideshowReadyCb);
     }
 
@@ -630,12 +636,12 @@ const scene_ffi = struct {
 };
 
 fn widgetsDemoCb() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_set_style_pad_all(scr, 0, 0);
-    c.lv_obj_set_style_pad_top(scr, 0, 0);
+    const scr = lvgl.screenActive();
+    _ = scr.padAll(0);
+    _ = scr.padTop(0);
 
     // Tabview
-    const tv = c.lv_tabview_create(scr).?;
+    const tv = c.lv_tabview_create(scr.obj).?;
     g_tabview = tv;
     c.lv_tabview_set_tab_bar_size(tv, 40);
     const tab1 = c.lv_tabview_add_tab(tv, "Form").?;
@@ -793,7 +799,7 @@ fn widgetsDemoCb() void {
     c.lv_obj_update_layout(tab1);
     var bot = c.lv_obj_get_scroll_bottom(tab1);
     if (bot <= 0) bot = 1;
-    const spd: u32 = lvAnimSpeed(@intCast(c.lv_display_get_dpi(null)));
+    const spd: u32 = lvAnimSpeed(@intCast(lvgl.display.dpi()));
     benchmark_anim_slideshow(tab1, scene_ffi.slideshowScrollCb, bot, spd, scene_ffi.slideshowReadyCb);
 }
 
@@ -828,19 +834,19 @@ const N_SCENES: u32 = scenes.len - 1;
 // ---------------------------------------------------------------------------
 
 fn loadScene(scene: u32) void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_clean(scr);
-    c.lv_obj_set_style_bg_color(scr, c.lv_palette_lighten(c.LV_PALETTE_GREY, 4), 0);
-    c.lv_obj_set_style_text_color(scr, c.lv_color_black(), 0);
-    c.lv_obj_set_style_pad_all(scr, 8, 0);
-    c.lv_obj_set_style_pad_top(scr, 40, 0);
-    c.lv_obj_set_style_pad_gap(scr, 8, 0);
-    c.lv_obj_set_layout(scr, c.LV_LAYOUT_NONE);
-    c.lv_obj_set_flex_align(scr, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
+    const scr = lvgl.screenActive();
+    scr.clean();
+    _ = scr.bgColorSel(c.lv_palette_lighten(c.LV_PALETTE_GREY, 4), 0);
+    _ = scr.textColorSel(c.lv_color_black(), 0);
+    _ = scr.padAll(8);
+    _ = scr.padTop(40);
+    _ = scr.padGap(8);
+    _ = scr.layout(c.LV_LAYOUT_NONE);
+    _ = scr.flexAlign(c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START, c.LV_FLEX_ALIGN_START);
 
-    _ = c.lv_anim_delete(scr, perf_ffi.scrollAnimYCb);
-    _ = c.lv_anim_delete(scr, perf_ffi.shakeAnimYCb);
-    _ = c.lv_anim_delete(scr, perf_ffi.colorAnimCb);
+    _ = c.lv_anim_delete(scr.obj, perf_ffi.scrollAnimYCb);
+    _ = c.lv_anim_delete(scr.obj, perf_ffi.shakeAnimYCb);
+    _ = c.lv_anim_delete(scr.obj, perf_ffi.colorAnimCb);
 
     const layer = layerTop();
     _ = c.lv_anim_delete(layer, perf_ffi.colorAnimCb);
@@ -866,11 +872,11 @@ fn loadScene(scene: u32) void {
 // ---------------------------------------------------------------------------
 
 fn summaryCreate() void {
-    const scr = c.lv_screen_active().?;
-    c.lv_obj_clean(scr);
-    c.lv_obj_set_style_pad_hor(scr, 0, 0);
+    const scr = lvgl.screenActive();
+    scr.clean();
+    c.lv_obj_set_style_pad_hor(scr.obj, 0, 0);
 
-    const table = c.lv_table_create(scr).?;
+    const table = c.lv_table_create(scr.obj).?;
     c.lv_obj_set_width(table, c.lv_pct(100));
     c.lv_obj_set_style_max_height(table, c.lv_pct(100), 0);
     c.lv_obj_add_flag(table, c.LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
@@ -1014,14 +1020,14 @@ fn appMain() void {
 
         scene_act = 0;
 
-        const scr = c.lv_screen_active().?;
-        c.lv_obj_remove_style_all(scr);
-        c.lv_obj_set_style_bg_opa(scr, c.LV_OPA_COVER, 0);
-        c.lv_obj_set_style_text_color(scr, c.lv_color_black(), 0);
-        c.lv_obj_set_style_bg_color(scr, c.lv_palette_lighten(c.LV_PALETTE_GREY, 4), 0);
-        c.lv_obj_set_style_pad_all(scr, 8, 0);
-        c.lv_obj_set_style_pad_top(scr, 40, 0);
-        c.lv_obj_set_style_pad_gap(scr, 8, 0);
+        const scr = lvgl.screenActive();
+        _ = scr.removeStyleAll();
+        _ = scr.bgOpaSel(c.LV_OPA_COVER, 0);
+        _ = scr.textColorSel(c.lv_color_black(), 0);
+        _ = scr.bgColorSel(c.lv_palette_lighten(c.LV_PALETTE_GREY, 4), 0);
+        _ = scr.padAll(8);
+        _ = scr.padTop(40);
+        _ = scr.padGap(8);
 
         const title = c.lv_label_create(layerTop()).?;
         c.lv_obj_set_style_bg_opa(title, c.LV_OPA_COVER, 0);

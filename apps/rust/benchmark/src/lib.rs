@@ -26,27 +26,13 @@ use ove::{
 };
 
 // =========================================================================
-//  Work FFI — tiny escape hatch for the Work handler trampoline
+//  Work handler — safe Rust fn, wrapped into a C trampoline by work_handler!
 // =========================================================================
-//
-// `ove_work_t` doesn't expose user_data, so Rust can't provide a safe
-// `fn()` wrapper through runtime dispatch. The one C-ABI trampoline the
-// workqueue suite needs lives here; `allow(unsafe_code)` is scoped to
-// this one module so the rest of the app stays safe.
 
-#[allow(unsafe_code)]
-mod work_ffi {
-    use super::WQ_WORK_SEM;
-    use core::sync::atomic::Ordering;
-    use ove::ffi::ove_work_t;
-
-    use super::WQ_WORK_EXECUTED;
-
-    pub(super) unsafe extern "C" fn work_handler(_w: ove_work_t) {
-        WQ_WORK_EXECUTED.store(true, Ordering::Relaxed);
-        if let Some(sem) = WQ_WORK_SEM.try_get() {
-            sem.give();
-        }
+fn wq_work_handler() {
+    WQ_WORK_EXECUTED.store(true, core::sync::atomic::Ordering::Relaxed);
+    if let Some(sem) = WQ_WORK_SEM.try_get() {
+        sem.give();
     }
 }
 
@@ -729,7 +715,7 @@ fn wq_create_destroy_run() {
 fn wq_submit_setup() {
     WQ_WORK_SEM.init(ove::semaphore!(0, 1));
     WQ_BENCH.init(ove::workqueue!("bench_wq", Priority::Normal, 2048));
-    WQ_WORK.init(ove::work!(Some(work_ffi::work_handler)));
+    WQ_WORK.init(ove::work!(ove::work_handler!(wq_work_handler)));
 }
 
 fn wq_submit_run() {

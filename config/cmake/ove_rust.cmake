@@ -75,23 +75,8 @@ function(ove_build_rust_crate TARGET)
         set(_BOARD_DIR "${BOARD_DIR}")
     endif()
 
-    # Board-specific lv_conf.h directory for bindgen.
-    # Find lv_conf.h by searching known locations relative to _BOARD_DIR.
-    set(LV_CONF_DIR "")
-    if(RUST_IS_WASM)
-        set(LV_CONF_DIR "${OVE_DIR}/boards/wasm/posix")
-    elseif(OVE_RTOS STREQUAL "posix")
-        set(LV_CONF_DIR "${OVE_DIR}/boards/host/posix")
-    else()
-        # Search: _BOARD_DIR itself, then _BOARD_DIR/<rtos>, then _BOARD_DIR/<rtos>/inc
-        foreach(_CANDIDATE "${_BOARD_DIR}" "${_BOARD_DIR}/${OVE_RTOS}" "${_BOARD_DIR}/${OVE_RTOS}/inc"
-                           "${_BOARD_DIR}/inc" "${_BOARD_DIR}/freertos/inc")
-            if(EXISTS "${_CANDIDATE}/lv_conf.h")
-                set(LV_CONF_DIR "${_CANDIDATE}")
-                break()
-            endif()
-        endforeach()
-    endif()
+    # Board lv_conf.h directory — pre-computed by 'ove configure'.
+    set(LV_CONF_DIR "${OVE_LV_CONF_DIR}")
 
     # Build environment variables
     set(CARGO_ENV_VARS
@@ -343,10 +328,14 @@ S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
     add_custom_target(rust_crate ALL DEPENDS ${RUST_LIB})
     add_dependencies(${TARGET} rust_crate)
 
-    # Zephyr uses a special link mechanism; standard target_link_libraries on
-    # the 'app' target does not propagate to the final executable.
+    # Zephyr and NuttX use special link mechanisms; standard
+    # target_link_libraries on the app target doesn't propagate.
     if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
         zephyr_link_libraries(${RUST_LIB})
+    elseif(OVE_RTOS STREQUAL "nuttx")
+        # NuttX link: add to NUTTX_EXTRA_LIBRARIES so it's in the link group.
+        set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ${RUST_LIB})
+        target_link_libraries(${TARGET} PRIVATE ${RUST_LIB})
     else()
         target_link_libraries(${TARGET} PRIVATE ${RUST_LIB})
     endif()

@@ -90,7 +90,7 @@ public:
 					    timeout_ms);
 	}
 
-	ove_spi_t native_handle() const { return handle_; }
+	ove_spi_t handle() const { return handle_; }
 
 private:
 	ove_spi_t handle_ = nullptr;

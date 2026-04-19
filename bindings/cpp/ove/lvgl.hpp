@@ -3218,4 +3218,25 @@ private:
 	}
 };
 
+/* ================================================================== */
+/*  Display info + top layer helpers                                  */
+/* ================================================================== */
+
+inline int32_t display_width() {
+	return lv_display_get_horizontal_resolution(nullptr);
+}
+
+inline int32_t display_height() {
+	return lv_display_get_vertical_resolution(nullptr);
+}
+
+inline int32_t display_dpi() {
+	return lv_display_get_dpi(nullptr);
+}
+
+inline ObjectView layer_top() {
+	return ObjectView(lv_layer_top());
+}
+
 } /* namespace ove::lvgl */
+

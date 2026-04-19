@@ -101,7 +101,7 @@ public:
 		return ove_i2c_probe(handle_, addr, timeout_ms);
 	}
 
-	ove_i2c_t native_handle() const { return handle_; }
+	ove_i2c_t handle() const { return handle_; }
 
 private:
 	ove_i2c_t handle_ = nullptr;

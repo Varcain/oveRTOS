@@ -76,7 +76,7 @@ public:
 	/**
 	 * @brief Destroys the thread wrapper, terminating and releasing the kernel thread.
 	 */
-	~Thread() {
+	~Thread() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_thread_deinit(handle_);

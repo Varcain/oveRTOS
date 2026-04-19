@@ -21,6 +21,8 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+include(${CMAKE_CURRENT_LIST_DIR}/OveHelpers.cmake)
+
 
 # ─── ove_nuttx_setup() ─────────────────────────────────────────────
 # Resolve paths, include generated config, initialise accumulators.
@@ -125,28 +127,7 @@ endmacro()
 # ─── ove_nuttx_exclude_backends(MOD ...) ───────────────────────────
 # Remove backend source files for the listed modules from the accumulator.
 macro(ove_nuttx_exclude_backends)
-    foreach(_mod ${ARGN})
-        string(TOUPPER "${_mod}" _MOD_UPPER)
-        string(TOLOWER "${_mod}" _mod_lower)
-        set(_new_backend "")
-        foreach(_bsrc ${_OVE_NX_BACKEND_SRC})
-            get_filename_component(_bname "${_bsrc}" NAME)
-            set(_exclude FALSE)
-            if("${_bsrc}" MATCHES "/backends/")
-                if("${_bname}" MATCHES "_(${_mod_lower})\\.c$")
-                    set(_exclude TRUE)
-                endif()
-                if("${_MOD_UPPER}" STREQUAL "BSP"
-                   AND "${_bname}" MATCHES "_bsp\\.c$")
-                    set(_exclude TRUE)
-                endif()
-            endif()
-            if(NOT _exclude)
-                list(APPEND _new_backend "${_bsrc}")
-            endif()
-        endforeach()
-        set(_OVE_NX_BACKEND_SRC ${_new_backend})
-    endforeach()
+    _ove_filter_backend_list(_OVE_NX_BACKEND_SRC ${ARGN})
 endmacro()
 
 
@@ -170,7 +151,7 @@ macro(ove_nuttx_add_stub_backends)
                 list(APPEND _OVE_NX_EXTRA_SOURCES
                      "${_stub_dir}/stub_${_mod_lower}.c")
             endif()
-            ove_nuttx_exclude_backends(${_mod})
+            _ove_filter_backend_list(_OVE_NX_BACKEND_SRC ${_mod})
         endif()
     endforeach()
 endmacro()
@@ -242,6 +223,30 @@ macro(ove_nuttx_build_tflm)
         set(OVE_BACKENDS_COMMON_DIR ${OVE_DIR}/backends/common)
         include(${OVE_DIR}/cmake/OveTflm.cmake)
         ove_build_tflm()
+
+        # GCC's C++ headers use #include_next to chain to C headers.
+        # Newlib in the default search conflicts with NuttX's libc
+        # (div_t redefinition).  Strip defaults, re-add in the order
+        # that makes #include_next resolve to NuttX's C headers.
+        # Paths pre-computed by 'ove configure' (in ove_config.cmake).
+        target_compile_options(ove_tflm PRIVATE -nostdinc
+            "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>")
+        set(_TFLM_PREFIX_H "${CMAKE_CURRENT_BINARY_DIR}/tflm_nuttx_prefix.h")
+        file(WRITE "${_TFLM_PREFIX_H}"
+            "#include <nuttx/config.h>\n"
+            "#include <nuttx/compiler.h>\n")
+        target_compile_options(ove_tflm PRIVATE
+            "SHELL:-include ${_TFLM_PREFIX_H}"
+            "-isystem${OVE_GCC_BUILTIN_INC}")
+        foreach(_dir ${OVE_GCC_CXX_DIRS})
+            target_compile_options(ove_tflm PRIVATE
+                "$<$<COMPILE_LANGUAGE:CXX>:-isystem${_dir}>")
+        endforeach()
+        target_compile_options(ove_tflm PRIVATE
+            "-isystem${CMAKE_BINARY_DIR}/include"
+            "-isystem${OVE_NUTTX_INC}"
+            "-isystem${OVE_NUTTX_LIBM_INC}"
+            "-I${OVE_DIR}/backends/nuttx/include")
         set_property(GLOBAL APPEND PROPERTY NUTTX_EXTRA_LIBRARIES ove_tflm)
     endif()
 endmacro()
@@ -307,32 +312,51 @@ macro(ove_nuttx_register_app)
     include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
     ove_apply_app_language(${_OVE_NX_TARGET})
 
-    # NuttX C++ sysroot workaround: NuttX adds -nostdinc++ globally;
-    # add the toolchain's C++ headers as lowest-priority fallback.
+    # Force C++20 for oveRTOS C++ bindings — NuttX defaults to C++17
+    # but the bindings use concepts, requires, and std::integral.
     if(OVE_APP_LANG STREQUAL "cpp")
-        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-sysroot
-            OUTPUT_VARIABLE _NX_CXX_SYSROOT OUTPUT_STRIP_TRAILING_WHITESPACE)
-        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpversion
-            OUTPUT_VARIABLE _NX_CXX_VER OUTPUT_STRIP_TRAILING_WHITESPACE)
-        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -dumpmachine
-            OUTPUT_VARIABLE _NX_CXX_MACHINE OUTPUT_STRIP_TRAILING_WHITESPACE)
         target_compile_options(${_OVE_NX_TARGET} PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:-idirafter>
-            $<$<COMPILE_LANGUAGE:CXX>:${_NX_CXX_SYSROOT}/include/c++/${_NX_CXX_VER}>
-        )
-        target_compile_options(${_OVE_NX_TARGET} PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:-idirafter>
-            $<$<COMPILE_LANGUAGE:CXX>:${_NX_CXX_SYSROOT}/include/c++/${_NX_CXX_VER}/${_NX_CXX_MACHINE}>
-        )
+            $<$<COMPILE_LANGUAGE:CXX>:-std=c++20>)
+    endif()
+
+    # NuttX doesn't link libstdc++, so std::optional/std::array hard-
+    # coded calls to __glibcxx_assert_fail are unresolved.  Generate the
+    # stub once and add it to whichever target needs C++ (app or TFLM).
+    set(_GLIBCXX_COMPAT "${CMAKE_CURRENT_BINARY_DIR}/glibcxx_compat.cpp")
+    if(NOT EXISTS "${_GLIBCXX_COMPAT}")
+        file(WRITE "${_GLIBCXX_COMPAT}"
+            "namespace std {\n"
+            "  void __glibcxx_assert_fail(\n"
+            "      const char*, int, const char*, const char*) noexcept {\n"
+            "    while(1) {}\n"
+            "  }\n"
+            "}\n")
+    endif()
+    if(OVE_APP_LANG STREQUAL "cpp" OR TARGET ove_tflm)
+        target_sources(${_OVE_NX_TARGET} PRIVATE "${_GLIBCXX_COMPAT}")
     endif()
 
     # Link LVGL if built
     if(TARGET ove_lvgl)
         target_link_libraries(${_OVE_NX_TARGET} PRIVATE ove_lvgl)
     endif()
-    # Link TFLM if built
+    # Link TFLM if built.  TFLite is compiled with -fno-exceptions -fno-rtti
+    # so it does not need libstdc++.  NuttX already provides the minimal
+    # C++ runtime helpers (operator new, __cxa_pure_virtual, etc.).
     if(TARGET ove_tflm)
-        target_link_libraries(${_OVE_NX_TARGET} PRIVATE ove_tflm stdc++)
+        target_link_libraries(${_OVE_NX_TARGET} PRIVATE ove_tflm)
+    endif()
+
+    # NuttX link-order fix: Rust/Zig static libraries reference oveRTOS +
+    # LVGL symbols. The NuttX linker processes libs left-to-right; ensure
+    # the Rust/Zig lib can back-reference LVGL/oveRTOS by re-adding ove_lvgl
+    # AFTER the Rust/Zig lib in the link command.
+    if(OVE_APP_LANG STREQUAL "rust" OR OVE_APP_LANG STREQUAL "zig")
+        if(TARGET ove_lvgl)
+            target_link_libraries(${_OVE_NX_TARGET} PRIVATE ove_lvgl)
+        endif()
+        target_link_options(${_OVE_NX_TARGET} PRIVATE
+            "LINKER:--undefined=ove_lvgl_lock")
     endif()
 
     message(STATUS "oveRTOS NuttX app registered: ${CONFIG_EXTERNAL_OVE_APP_PROGNAME}")

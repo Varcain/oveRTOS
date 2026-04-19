@@ -108,6 +108,10 @@ impl Timer {
         _timer: bindings::ove_timer_t,
         user_data: *mut core::ffi::c_void,
     ) {
+        // SAFETY: `user_data` was stored by `Timer::new`/`from_static` from a
+        // `fn()` pointer. Targets supported by oveRTOS have pointer-sized
+        // function pointers with a C-compatible ABI, so round-tripping
+        // through `*mut c_void` is well-defined.
         let cb: fn() = unsafe { core::mem::transmute(user_data) };
         cb();
     }

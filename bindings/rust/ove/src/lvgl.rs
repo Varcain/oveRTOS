@@ -195,6 +195,7 @@ impl Color {
     ///
     /// `p` must be one of the `PALETTE_*` constants (e.g. [`PALETTE_BLUE`]).
     pub fn palette_main(p: u32) -> Self {
+        // SAFETY: `Color` is `#[repr(C)]` with the same layout as `lv_color_t`.
         unsafe {
             let c = bindings::lv_palette_main(p as _);
             core::mem::transmute(c)
@@ -203,6 +204,7 @@ impl Color {
 
     /// Lighten a palette color by `level` (0..=5; 0 = original main).
     pub fn palette_lighten(p: Palette, level: u8) -> Self {
+        // SAFETY: `Color` is `#[repr(C)]` with the same layout as `lv_color_t`.
         unsafe {
             let c = bindings::lv_palette_lighten(p as _, level);
             core::mem::transmute(c)
@@ -211,6 +213,7 @@ impl Color {
 
     /// Darken a palette color by `level` (0..=4; 0 = original main).
     pub fn palette_darken(p: Palette, level: u8) -> Self {
+        // SAFETY: `Color` is `#[repr(C)]` with the same layout as `lv_color_t`.
         unsafe {
             let c = bindings::lv_palette_darken(p as _, level);
             core::mem::transmute(c)
@@ -219,6 +222,7 @@ impl Color {
 
     /// Construct a color from a packed 12-bit RGB hex value (e.g. `0xF80` → `0xFF8800`).
     pub fn hex3(hex: u32) -> Self {
+        // SAFETY: `Color` is `#[repr(C)]` with the same layout as `lv_color_t`.
         unsafe {
             let c = bindings::lv_color_hex3(hex);
             core::mem::transmute(c)
@@ -226,6 +230,7 @@ impl Color {
     }
 
     pub(crate) fn to_raw(self) -> bindings::lv_color_t {
+        // SAFETY: `Color` is `#[repr(C)]` with the same layout as `lv_color_t`.
         unsafe { core::mem::transmute(self) }
     }
 }
@@ -3706,6 +3711,9 @@ unsafe extern "C" fn anim_custom_tick_trampoline(
         if ud.is_null() {
             return;
         }
+        // SAFETY: `ud` was stored from a `fn(Obj, i32)` pointer by the
+        // custom-tick animation setup. Function pointers round-trip through
+        // `*mut c_void` on supported targets.
         let cb: fn(Obj, i32) = core::mem::transmute(ud);
         let var = (*a).var;
         cb(
@@ -3911,7 +3919,7 @@ impl Image {
 
     /// Set the inner alignment of the image content (`LV_IMAGE_ALIGN_*`).
     pub fn inner_align(self, align: u32) -> Self {
-        unsafe { bindings::lv_image_set_inner_align(self.raw, align) };
+        unsafe { bindings::lv_image_set_inner_align(self.raw, align as _) };
         self
     }
 }
