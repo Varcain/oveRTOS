@@ -106,17 +106,21 @@ zephyr-menuconfig: $(VENV_STAMP)
 
 .PHONY: download
 download: $(VENV_STAMP)
-	@$(OVE) download
+	@$(OVE) download $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 .PHONY: configure
 configure: $(VENV_STAMP)
-	@$(OVE) configure
+	@$(OVE) configure $(if $(filter 1,$(DRYRUN)),--dry-run)
+
+.PHONY: build
+build: $(VENV_STAMP)
+	@$(OVE) build $(if $(filter 1,$(JSON)),--json) $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 .PHONY: all
 all: $(VENV_STAMP)
 	@$(OVE) download
 	@$(OVE) configure
-	@$(OVE) build
+	@$(OVE) build $(if $(filter 1,$(JSON)),--json) $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 # Build all app configurations for a given board.rtos pair.
 # Usage: make allconfigs-host.posix
@@ -144,7 +148,7 @@ alldefconfigs: $(VENV_STAMP)
 
 .PHONY: run
 run: $(VENV_STAMP)
-	@$(OVE) run $(if $(filter 1,$(HEADLESS)),--headless)
+	@$(OVE) run $(if $(filter 1,$(HEADLESS)),--headless) $(EXTRA)
 
 .PHONY: flash
 flash: $(VENV_STAMP)
@@ -154,7 +158,7 @@ flash: $(VENV_STAMP)
 
 .PHONY: test
 test: $(VENV_STAMP)
-	@$(OVE) test
+	@$(OVE) test $(if $(filter 1,$(JSON)),--json)
 
 # Single source of truth for `test-<name>` recipes — each delegates to
 # `ove test <name>`. Add new suites here, not as separate targets.
@@ -164,7 +168,39 @@ TEST_NAMES := stub cpp rust zig nuttx zephyr \
               qemu-zephyr qemu-zephyr-zeroheap all
 .PHONY: $(addprefix test-,$(TEST_NAMES))
 $(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
-	@$(OVE) test $*
+	@$(OVE) test $* $(if $(filter 1,$(JSON)),--json)
+
+# ── Quality / CI ──────────────────────────────────────────────────────────
+
+.PHONY: doctor
+doctor: $(VENV_STAMP)
+	@$(OVE) doctor $(if $(filter 1,$(JSON)),--json)
+
+.PHONY: lint
+lint: $(VENV_STAMP)
+	@$(OVE) lint
+
+.PHONY: format
+format: $(VENV_STAMP)
+	@$(OVE) format
+
+.PHONY: ci
+ci: $(VENV_STAMP)
+	@$(OVE) ci $(if $(filter 1,$(KEEPGOING)),--keep-going)
+
+.PHONY: manifest
+manifest: $(VENV_STAMP)
+	@$(OVE) manifest $(if $(filter 1,$(CHECK)),--check)
+
+# Shell completion scripts — `make completion-bash > ~/.bash_completion.d/ove`.
+.PHONY: completion-%
+completion-%: $(VENV_STAMP)
+	@$(OVE) completion $*
+
+# Workspace-independent toolchain fetch — `make ensure-toolchain-zig`.
+.PHONY: ensure-toolchain-%
+ensure-toolchain-%: $(VENV_STAMP)
+	@$(OVE) ensure-toolchain $*
 
 # ── Documentation ────────────────────────────────────────────────────────────
 
@@ -185,7 +221,7 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	@echo "==> Generating Zig API docs (autodoc)..."
 	@mkdir -p output/docs/zig-staging
 	@cp bindings/zig/ove/ove_config_docs.h output/docs/zig-staging/ove_config.h
-	@$(OVE) ensure-toolchain zig
+	@$(MAKE) ensure-toolchain-zig
 	@ZIG=$$(find $(OVE_DIR)/output/toolchains -maxdepth 2 -name zig -type f 2>/dev/null | head -1); \
 	if [ -z "$$ZIG" ]; then ZIG=$$(command -v zig 2>/dev/null); fi; \
 	if [ -z "$$ZIG" ]; then echo "ERROR: zig not found"; exit 1; fi; \
@@ -268,9 +304,11 @@ clean-all:
 
 .PHONY: distclean
 distclean:
-	@echo "Cleaning everything (output, downloads, venv, config)..."
-	@rm -rf output dl .venv
-	@rm -f .config .config.old
+	@$(OVE) clean --dist 2>/dev/null || { \
+		echo "Cleaning everything (output, downloads, venv, config)..."; \
+		rm -rf output dl .venv; \
+		rm -f .config .config.old; \
+	}
 
 # ── Help ───────────────────────────────────────────────────────────────────
 
@@ -315,6 +353,7 @@ help:
 	@echo ""
 	@echo "Build:"
 	@echo "  all (default)           - Full pipeline: download, configure, build"
+	@echo "  build                   - Build firmware only (skip download/configure)"
 	@echo "  download                - Download RTOS sources to dl/"
 	@echo "  configure               - Generate config files from .config"
 	@echo "  allconfigs-<board>.<rtos> - Build all apps for a board/RTOS pair"
@@ -323,6 +362,11 @@ help:
 	@echo "  flash                   - Flash firmware to target board"
 	@echo "  run                     - Run firmware (QEMU or POSIX)"
 	@echo "  run HEADLESS=1          - Run firmware without display viewer"
+	@echo "  run EXTRA=\"<args>\"      - Forward extra args to runner (e.g. QEMU flags)"
+	@echo ""
+	@echo "  Build flags:"
+	@echo "    DRYRUN=1              - Dry-run for download/configure/build"
+	@echo "    JSON=1                - Emit JSON summary for build/test/doctor"
 	@echo ""
 	@echo "Tests:"
 	@echo "  test                    - Run sim tests (stub, cpp, rust, zig, nuttx, zephyr)"
@@ -340,6 +384,18 @@ help:
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
 	@echo "  test-all                - All tests (sim + QEMU)"
+	@echo ""
+	@echo "Quality / CI:"
+	@echo "  doctor                  - Check host environment (toolchains, deps, venv)"
+	@echo "  doctor JSON=1           - Emit JSON diagnostic report"
+	@echo "  lint                    - Check formatting (clang-format/cargo/zig/ruff)"
+	@echo "  format                  - Apply formatters in place"
+	@echo "  ci                      - Run pre-merge gates (doctor + lint + test all)"
+	@echo "  ci KEEPGOING=1          - Keep running CI stages after a failure"
+	@echo "  manifest                - Show manifest versions and integrity status"
+	@echo "  manifest CHECK=1        - Exit non-zero if manifest has uncommitted changes"
+	@echo "  completion-bash|zsh|fish  - Emit shell completion script on stdout"
+	@echo "  ensure-toolchain-zig    - Install the zig toolchain"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  docs                    - Build complete documentation site"
