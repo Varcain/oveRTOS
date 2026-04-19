@@ -72,18 +72,25 @@ static size_t encode_remaining_length(uint8_t *buf, size_t len)
 	return i;
 }
 
+/*
+ * Decode an MQTT Remaining Length varint (MQTT 3.1.1 §2.2.3).
+ * The spec caps the encoding at 4 bytes (max value 268,435,455).
+ * Returns the number of bytes consumed, or 0 on malformed input.
+ */
 static size_t decode_remaining_length(const uint8_t *buf, size_t buflen,
 				      size_t *value)
 {
 	*value = 0;
-	size_t i = 0;
 	size_t multiplier = 1;
-	do {
+	for (size_t i = 0; i < 4; i++) {
 		if (i >= buflen) return 0;
-		*value += (buf[i] & 0x7F) * multiplier;
+		uint8_t b = buf[i];
+		*value += (b & 0x7F) * multiplier;
+		if ((b & 0x80) == 0) return i + 1;
 		multiplier *= 128;
-	} while (buf[i++] & 0x80);
-	return i;
+	}
+	/* 4th byte still had the continuation bit — malformed per spec. */
+	return 0;
 }
 
 static void put_u16(uint8_t *buf, uint16_t val)
@@ -165,18 +172,31 @@ static void dispatch_publish(struct ove_mqtt_client *c,
 			     const uint8_t *pkt, size_t pkt_len)
 {
 	if (!c->on_message) return;
+	if (pkt_len < 2) return;
 
 	size_t rem_len = 0;
-	size_t hdr_bytes = 1 + decode_remaining_length(pkt + 1,
-						       pkt_len - 1, &rem_len);
-	if (hdr_bytes <= 1) return;
+	size_t rl_bytes = decode_remaining_length(pkt + 1, pkt_len - 1,
+						  &rem_len);
+	if (rl_bytes == 0) return;
+	size_t hdr_bytes = 1 + rl_bytes;
+	if (hdr_bytes > pkt_len || rem_len > pkt_len - hdr_bytes) return;
 
+	/* Cursor bounds: the variable header + payload live in
+	 * [pkt + hdr_bytes, pkt + hdr_bytes + rem_len). Every advance
+	 * below must be checked against `end` — the packet is attacker
+	 * controlled and MQTT field lengths come from the wire. */
 	const uint8_t *ptr = pkt + hdr_bytes;
+	const uint8_t *end = ptr + rem_len;
+
+	if ((size_t)(end - ptr) < 2) return;
 	uint16_t tlen = get_u16(ptr); ptr += 2;
+
+	if ((size_t)(end - ptr) < tlen) return;
 	const char *topic = (const char *)ptr; ptr += tlen;
 
 	uint8_t qos = (pkt[0] >> 1) & 0x03;
 	if (qos >= 1) {
+		if ((size_t)(end - ptr) < 2) return;
 		uint16_t pkt_id = get_u16(ptr); ptr += 2;
 		if (qos == 1) {
 			uint8_t ack[4] = { MQTT_PUBACK, 0x02, 0, 0 };
@@ -185,7 +205,7 @@ static void dispatch_publish(struct ove_mqtt_client *c,
 		}
 	}
 
-	size_t payload_len = pkt_len - (size_t)(ptr - pkt);
+	size_t payload_len = (size_t)(end - ptr);
 
 	if (mqtt_any_sub_matches(c, topic, tlen))
 		c->on_message(topic, tlen, ptr, payload_len, c->user_data);
@@ -348,9 +368,10 @@ int ove_mqtt_connect(ove_mqtt_client_t client,
 			return ret;
 		}
 		ove_tls_config_t tls_cfg = {
-			.ca_cert = NULL,
-			.ca_cert_len = 0,
-			.hostname = cfg->host,
+			.ca_cert        = cfg->tls_ca_cert,
+			.ca_cert_len    = cfg->tls_ca_cert_len,
+			.hostname       = cfg->host,
+			.allow_insecure = cfg->tls_allow_insecure,
 		};
 		ret = ove_tls_handshake(tls, c->sock, &tls_cfg);
 		if (ret != OVE_OK) {

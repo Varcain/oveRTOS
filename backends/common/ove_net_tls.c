@@ -15,6 +15,7 @@
  */
 
 #include "ove/ove.h"
+#include "ove/log.h"
 #include "ove/net_tls.h"
 #include "ove_backend_common.h"
 
@@ -228,15 +229,21 @@ int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock,
 
 	mbedtls_ssl_conf_rng(conf, mbedtls_ctr_drbg_random, t->ctr_drbg);
 
-	/* Certificate verification */
+	/* Certificate verification: require a CA cert, or an explicit
+	 * allow_insecure opt-in. Refusing silent verify-none eliminates
+	 * the default MITM exposure. */
 	if (cfg && cfg->ca_cert && cfg->ca_cert_len > 0) {
 		ret = mbedtls_x509_crt_parse(t->cacert, cfg->ca_cert,
 					     cfg->ca_cert_len);
 		if (ret != 0) return OVE_ERR_NOT_SUPPORTED;
 		mbedtls_ssl_conf_ca_chain(conf, t->cacert, NULL);
 		mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-	} else {
+	} else if (cfg && cfg->allow_insecure) {
+		OVE_LOG_WRN("TLS: allow_insecure set, peer certificate not verified");
 		mbedtls_ssl_conf_authmode(conf, MBEDTLS_SSL_VERIFY_NONE);
+	} else {
+		OVE_LOG_ERR("TLS: refusing handshake — no CA cert and allow_insecure not set");
+		return OVE_ERR_INVALID_PARAM;
 	}
 
 	/* Client certificate for mutual TLS (mTLS) */

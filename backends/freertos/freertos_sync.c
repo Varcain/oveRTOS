@@ -35,7 +35,10 @@ int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 
 void ove_mutex_deinit(ove_mutex_t mtx)
 {
-	(void)mtx;
+	if (mtx != NULL && mtx->sem != NULL) {
+		vSemaphoreDelete(mtx->sem);
+		mtx->sem = NULL;
+	}
 }
 
 /* ─── Mutex _create / _destroy ───────────────────────────────────────── */
@@ -96,7 +99,10 @@ int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage,
 
 void ove_sem_deinit(ove_sem_t sem)
 {
-	(void)sem;
+	if (sem != NULL && sem->sem != NULL) {
+		vSemaphoreDelete(sem->sem);
+		sem->sem = NULL;
+	}
 }
 
 /* ─── Semaphore _create / _destroy ───────────────────────────────────── */
@@ -156,7 +162,10 @@ int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 
 void ove_event_deinit(ove_event_t evt)
 {
-	(void)evt;
+	if (evt != NULL && evt->sem != NULL) {
+		vSemaphoreDelete(evt->sem);
+		evt->sem = NULL;
+	}
 }
 
 /* ─── Event _create / _destroy ───────────────────────────────────────── */
@@ -227,6 +236,9 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx,
 #ifdef OVE_HEAP_SYNC
 int ove_recursive_mutex_create(ove_mutex_t *mtx)
 {
+	if (mtx == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	struct ove_mutex *w = OVE_BACKEND_MALLOC(sizeof(*w));
 	if (w == NULL) {
 		return OVE_ERR_NO_MEMORY;
@@ -284,7 +296,10 @@ int ove_condvar_init(ove_condvar_t *cv,
 
 void ove_condvar_deinit(ove_condvar_t cv)
 {
-	(void)cv;
+	if (cv != NULL && cv->guard != NULL) {
+		vSemaphoreDelete(cv->guard);
+		cv->guard = NULL;
+	}
 }
 
 /* ─── Condvar _create / _destroy ─────────────────────────────────────── */

@@ -75,9 +75,17 @@ struct ove_tensor_info {
  * typically embedded as a @c const C array compiled into flash.
  * @c arena_size controls how much memory is reserved for intermediate
  * tensors; the actual requirement depends on the model.
+ *
+ * @warning The interpreter holds @c model_data by pointer for the entire
+ *          lifetime of the model session. The caller MUST ensure the
+ *          buffer remains valid and immutable from the successful
+ *          @c ove_model_init() / @c ove_model_create() call until
+ *          @c ove_model_deinit() / @c ove_model_destroy(). Passing a
+ *          stack-allocated or transient heap buffer will result in
+ *          silent memory corruption during @c ove_model_invoke().
  */
 struct ove_model_config {
-	const void *model_data;  /**< Pointer to .tflite FlatBuffer data. */
+	const void *model_data;  /**< Pointer to .tflite FlatBuffer data (must outlive the session). */
 	size_t      model_size;  /**< Size of model_data in bytes. */
 	size_t      arena_size;  /**< Tensor arena size in bytes. */
 };

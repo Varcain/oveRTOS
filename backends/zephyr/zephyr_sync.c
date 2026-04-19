@@ -93,6 +93,9 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx,
 #ifdef OVE_HEAP_SYNC
 int ove_recursive_mutex_create(ove_mutex_t *mtx)
 {
+	if (mtx == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	struct ove_mutex *m = OVE_BACKEND_MALLOC(sizeof(*m));
 	if (m == NULL) {
 		return OVE_ERR_NO_MEMORY;

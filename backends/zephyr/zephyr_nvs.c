@@ -34,7 +34,7 @@ int ove_nvs_init(void)
 
 	ret = flash_area_open(FIXED_PARTITION_ID(storage_partition), &fa);
 	if (ret != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-ret);
 	}
 
 	nvs.flash_device = flash_area_get_device(fa);
@@ -45,7 +45,7 @@ int ove_nvs_init(void)
 
 	ret = nvs_mount(&nvs);
 	if (ret != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-ret);
 	}
 
 	nvs_initialized = 1;
@@ -66,7 +66,7 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len,
 
 	ssize_t ret = nvs_read(&nvs, key_to_id(key), buf, buf_len);
 	if (ret < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove((int)-ret);
 	}
 
 	if (out_len != NULL) {
@@ -83,7 +83,7 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 
 	ssize_t ret = nvs_write(&nvs, key_to_id(key), data, len);
 	if (ret < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove((int)-ret);
 	}
 	return OVE_OK;
 }
@@ -96,7 +96,7 @@ int ove_nvs_erase(const char *key)
 
 	int ret = nvs_delete(&nvs, key_to_id(key));
 	if (ret != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-ret);
 	}
 	return OVE_OK;
 }

@@ -99,6 +99,10 @@ static int i2s_source_process(void *ctx, const struct ove_audio_buf *in,
 	(void)in;
 	struct i2s_source_ctx *sc = (struct i2s_source_ctx *)ctx;
 	struct i2s_sink_ctx *sink = &g_sink_ctx;  /* forward ref */
+	/* Source relies on the sink's I2S instance for shared DMA. If the
+	 * sink hasn't been started yet, the global i2s handle is NULL. */
+	if (sink->i2s == NULL)
+		return OVE_ERR_NOT_SUPPORTED;
 	int16_t *rx_ptr = (int16_t *)ove_i2s_rx_buf(sink->i2s);
 	if (rx_ptr == NULL)
 		return OVE_ERR_NOT_SUPPORTED;

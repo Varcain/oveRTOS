@@ -19,9 +19,51 @@
 #include "ove/net_httpd.h"
 #include "ove_backend_common.h"
 
+#include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+/* ---------- JSON string escaping ----------
+ *
+ * Escapes minimal JSON required by RFC 8259: '"', '\' and controls <0x20.
+ * Writes at most @out_cap-1 bytes plus NUL, truncating safely on overflow.
+ */
+static size_t json_escape(const char *in, char *out, size_t out_cap)
+{
+	size_t n = 0;
+	if (out_cap == 0)
+		return 0;
+	for (const unsigned char *p = (const unsigned char *)in; *p; p++) {
+		unsigned char c = *p;
+		const char *esc = NULL;
+		char uesc[8];
+
+		if      (c == '"')  esc = "\\\"";
+		else if (c == '\\') esc = "\\\\";
+		else if (c == '\n') esc = "\\n";
+		else if (c == '\r') esc = "\\r";
+		else if (c == '\t') esc = "\\t";
+		else if (c == '\b') esc = "\\b";
+		else if (c == '\f') esc = "\\f";
+		else if (c < 0x20) {
+			snprintf(uesc, sizeof(uesc), "\\u%04x", c);
+			esc = uesc;
+		}
+
+		if (esc) {
+			size_t el = strlen(esc);
+			if (n + el >= out_cap - 1) break;
+			memcpy(out + n, esc, el);
+			n += el;
+		} else {
+			if (n >= out_cap - 1) break;
+			out[n++] = (char)c;
+		}
+	}
+	out[n] = '\0';
+	return n;
+}
 
 /* ---------- Internal data structures ---------- */
 
@@ -171,7 +213,14 @@ static int parse_request(const char *buf, size_t len,
 		cl += 15; /* strlen("Content-Length:") */
 		while (*cl == ' ')
 			cl++;
-		content_length = atoi(cl);
+		errno = 0;
+		char *endp = NULL;
+		unsigned long v = strtoul(cl, &endp, 10);
+		if (cl == endp || errno != 0 || v > (unsigned long)CONFIG_OVE_NET_HTTPD_MAX_BODY) {
+			/* Unparseable, negative, or oversized — reject */
+			return -1;
+		}
+		content_length = (int)v;
 	}
 
 	return content_length;
@@ -312,8 +361,10 @@ int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
 int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status,
 			 const char *message)
 {
+	char esc[192];
 	char buf[256];
-	int n = snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", message);
+	json_escape(message ? message : "", esc, sizeof(esc));
+	int n = snprintf(buf, sizeof(buf), "{\"error\":\"%s\"}", esc);
 	if (n < 0)
 		n = 0;
 
@@ -401,6 +452,12 @@ static void httpd_task(void *arg)
 		/* Parse request */
 		struct ove_httpd_req req;
 		int content_length = parse_request(buf, received, &req);
+		if (content_length < 0) {
+			send_response(client, 400, "application/json",
+				      "{\"error\":\"bad request\"}", 23);
+			ove_socket_close(client);
+			continue;
+		}
 
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 		/* Check for WebSocket upgrade before route dispatch */
@@ -466,7 +523,11 @@ static void httpd_task(void *arg)
 
 		struct ove_httpd_route *route = match_route(&req);
 		if (route) {
-			route->handler(&req, &resp);
+			int hret = route->handler(&req, &resp);
+			if (hret != OVE_OK && !resp.sent) {
+				send_response(client, 500, "application/json",
+					      "{\"error\":\"internal error\"}", 26);
+			}
 		}
 
 		if (!resp.sent) {

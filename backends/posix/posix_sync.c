@@ -158,8 +158,13 @@ int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
 	int ret = sem_timedwait(&s->sem, &ts);
-	return (ret != 0 && errno == ETIMEDOUT) ? OVE_ERR_TIMEOUT
-					       : OVE_OK;
+	if (ret == 0)
+		return OVE_OK;
+	if (errno == ETIMEDOUT)
+		return OVE_ERR_TIMEOUT;
+	if (errno == EINVAL)
+		return OVE_ERR_INVALID_PARAM;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 void ove_sem_give(ove_sem_t sem)
@@ -241,8 +246,13 @@ int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 			int ret = pthread_cond_timedwait(&e->cond, &e->lock,
 							&ts);
 			if (ret == ETIMEDOUT) {
-				pthread_mutex_unlock(&e->lock);
-				return OVE_ERR_TIMEOUT;
+				/* Re-check under lock: signaler may have fired
+				 * between timeout expiry and mutex re-acquire. */
+				if (!e->signaled) {
+					pthread_mutex_unlock(&e->lock);
+					return OVE_ERR_TIMEOUT;
+				}
+				break;
 			}
 		}
 	}

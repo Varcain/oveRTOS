@@ -86,7 +86,9 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx,
 	if (mtx == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	nxrmutex_init(&storage->rmtx);
+	if (nxrmutex_init(&storage->rmtx) < 0) {
+		return OVE_ERR_NO_MEMORY;
+	}
 	*mtx = storage;
 	return OVE_OK;
 }
@@ -105,6 +107,8 @@ int ove_recursive_mutex_create(ove_mutex_t *mtx)
 	}
 	ret = ove_recursive_mutex_init(mtx, m);
 	if (ret != OVE_OK) {
+		/* If nxrmutex_init succeeded before init failed elsewhere, tear it down */
+		nxrmutex_destroy(&m->rmtx);
 		OVE_BACKEND_FREE(m);
 	}
 	return ret;
