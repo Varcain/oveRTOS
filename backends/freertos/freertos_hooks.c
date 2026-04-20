@@ -90,3 +90,28 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 }
 
 #endif /* configCHECK_FOR_STACK_OVERFLOW */
+
+/* ========================================================================= */
+/* RUN-TIME STATS COUNTER (QEMU — DWT not emulated)                         */
+/* ========================================================================= */
+
+#if (configGENERATE_RUN_TIME_STATS == 1)
+/* Millisecond counter incremented from vApplicationTickHook().
+ * Used by portGET_RUN_TIME_COUNTER_VALUE() on boards where the
+ * DWT cycle counter is not available (e.g. QEMU). */
+volatile uint32_t ove_runtime_counter_ms;
+#endif
+
+/* ========================================================================= */
+/* TICK HOOK                                                                 */
+/* ========================================================================= */
+
+#if (configUSE_TICK_HOOK == 1)
+OVE_WEAK
+void vApplicationTickHook(void)
+{
+#if (configGENERATE_RUN_TIME_STATS == 1)
+	ove_runtime_counter_ms++;
+#endif
+}
+#endif

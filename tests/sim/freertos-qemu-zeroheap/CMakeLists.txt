@@ -68,6 +68,7 @@ set(FREERTOS_BACKEND ${OVE_ROOT}/backends/freertos)
 set(TESTS_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(STUB_DIR ${TESTS_ROOT}/backends/stub)
 set(SUITE_DIR ${TESTS_ROOT}/suites)
+include(${TESTS_ROOT}/cmake/OveTest.cmake)
 set(BOARD_DIR ${OVE_ROOT}/boards/qemu-mps2-an500)
 set(FREERTOS_SRC ${freertos_kernel_SOURCE_DIR})
 set(FREERTOS_PORT ${FREERTOS_SRC}/portable/GCC/ARM_CM7/r0p1)
@@ -125,32 +126,8 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_nvs.c
 )
 
-# --- Test suites ---
-set(SUITE_SOURCES
-    ${SUITE_DIR}/test_thread.c
-    ${SUITE_DIR}/test_sync_mutex.c
-    ${SUITE_DIR}/test_sync_sem.c
-    ${SUITE_DIR}/test_sync_event.c
-    ${SUITE_DIR}/test_sync_condvar.c
-    ${SUITE_DIR}/test_sync_recursive.c
-    ${SUITE_DIR}/test_queue.c
-    ${SUITE_DIR}/test_timer.c
-    ${SUITE_DIR}/test_time.c
-    ${SUITE_DIR}/test_eventgroup.c
-    ${SUITE_DIR}/test_workqueue.c
-    ${SUITE_DIR}/test_stream.c
-    ${SUITE_DIR}/test_console.c
-    ${SUITE_DIR}/test_watchdog.c
-    ${SUITE_DIR}/test_nvs.c
-    ${SUITE_DIR}/test_shell.c
-    ${SUITE_DIR}/test_audio.c
-    ${SUITE_DIR}/test_bsp.c
-    ${SUITE_DIR}/test_board.c
-    ${SUITE_DIR}/test_gpio.c
-    ${SUITE_DIR}/test_led.c
-    ${SUITE_DIR}/test_lvgl.c
-    ${SUITE_DIR}/test_app.c
-)
+# --- Test suites (list sourced from cmake/OveTest.cmake) ---
+ove_test_common_suite_sources(SUITE_SOURCES ${SUITE_DIR})
 
 # --- Executable ---
 add_executable(ove_test_freertos_qemu_zeroheap

@@ -11,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <errno.h>
 
 #include "ove/types.h"
 #include "ove_config.h"
@@ -74,6 +75,64 @@ static inline int ove_check_param(const void *ptr)
 static inline void *ove_alloc_or_use(void *storage, size_t size)
 {
 	return storage ? storage : OVE_BACKEND_MALLOC(size);
+}
+
+/**
+ * ove_nvs_key_is_valid - validate a caller-supplied NVS key
+ * @key: NUL-terminated key string
+ *
+ * Backends that store NVS entries as files under a directory must
+ * reject keys that could escape the NVS root (path traversal) or
+ * otherwise form an unsafe filesystem name.
+ *
+ * Accepts [A-Za-z0-9_.-], rejects empty strings, leading '.' (hidden
+ * files / current-directory), and any other byte. Returns true on a
+ * safe key, false otherwise.
+ */
+static inline bool ove_nvs_key_is_valid(const char *key)
+{
+	if (!key || !*key) return false;
+	if (*key == '.') return false;
+	for (const char *p = key; *p; ++p) {
+		char c = *p;
+		bool ok = (c >= 'A' && c <= 'Z') ||
+			  (c >= 'a' && c <= 'z') ||
+			  (c >= '0' && c <= '9') ||
+			  c == '_' || c == '-' || c == '.';
+		if (!ok) return false;
+	}
+	return true;
+}
+
+/**
+ * ove_errno_to_ove - translate a POSIX errno to an ove error code
+ * @e: errno value (typically captured after a failing syscall)
+ *
+ * Preserves information from the underlying call instead of collapsing
+ * every failure into OVE_ERR_NOT_SUPPORTED. Unknown values map to
+ * OVE_ERR_NOT_SUPPORTED as a best-effort fallback.
+ */
+static inline int ove_errno_to_ove(int e)
+{
+	switch (e) {
+	case 0:        return OVE_OK;
+	case EINVAL:   return OVE_ERR_INVALID_PARAM;
+	case EFAULT:   return OVE_ERR_INVALID_PARAM;
+	case ENOENT:   return OVE_ERR_INVALID_PARAM;
+	case ENOTDIR:  return OVE_ERR_INVALID_PARAM;
+	case EISDIR:   return OVE_ERR_INVALID_PARAM;
+	case ERANGE:   return OVE_ERR_INVALID_PARAM;
+	case ENAMETOOLONG: return OVE_ERR_INVALID_PARAM;
+	case ENOMEM:   return OVE_ERR_NO_MEMORY;
+	case ENOSPC:   return OVE_ERR_NO_MEMORY;
+	case EDQUOT:   return OVE_ERR_NO_MEMORY;
+	case ETIMEDOUT: return OVE_ERR_TIMEOUT;
+	case EAGAIN:   return OVE_ERR_TIMEOUT;
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK: return OVE_ERR_TIMEOUT;
+#endif
+	default:       return OVE_ERR_NOT_SUPPORTED;
+	}
 }
 
 /**

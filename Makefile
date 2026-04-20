@@ -81,6 +81,10 @@ menuconfig: $(VENV_STAMP)
 # Exclude allconfigs-* and alldefconfigs (handled by their own pattern rules).
 _DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(if $(filter allconfigs-% alldefconfigs,$(t)),,$(t))))
 ifneq ($(_DOT_TARGETS),)
+# Each goal calls `ove defconfig-fragments`, which rewrites the single shared
+# .config. Running multiple goals in parallel would race on that file, so
+# serialize when we see more than one dot-target on the command line.
+.NOTPARALLEL:
 .PHONY: $(_DOT_TARGETS)
 $(_DOT_TARGETS): $(VENV_STAMP)
 	@$(OVE) defconfig-fragments "$@" $(if $(ZEROHEAP),--zeroheap)
@@ -102,17 +106,21 @@ zephyr-menuconfig: $(VENV_STAMP)
 
 .PHONY: download
 download: $(VENV_STAMP)
-	@$(OVE) download
+	@$(OVE) download $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 .PHONY: configure
 configure: $(VENV_STAMP)
-	@$(OVE) configure
+	@$(OVE) configure $(if $(filter 1,$(DRYRUN)),--dry-run)
+
+.PHONY: build
+build: $(VENV_STAMP)
+	@$(OVE) build $(if $(filter 1,$(JSON)),--json) $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 .PHONY: all
 all: $(VENV_STAMP)
 	@$(OVE) download
 	@$(OVE) configure
-	@$(OVE) build
+	@$(OVE) build $(if $(filter 1,$(JSON)),--json) $(if $(filter 1,$(DRYRUN)),--dry-run)
 
 # Build all app configurations for a given board.rtos pair.
 # Usage: make allconfigs-host.posix
@@ -120,39 +128,7 @@ all: $(VENV_STAMP)
 #        make allconfigs-stm32f746.zephyr
 .PHONY: allconfigs-%
 allconfigs-%: $(VENV_STAMP)
-	@BOARD_RTOS="$*"; \
-	BOARD=$$(echo "$$BOARD_RTOS" | cut -d. -f1); \
-	RTOS=$$(echo "$$BOARD_RTOS" | cut -d. -f2); \
-	if [ -z "$$BOARD" ] || [ -z "$$RTOS" ]; then \
-		echo "ERROR: usage: make allconfigs-<board>.<rtos>"; exit 1; \
-	fi; \
-	APPS=$$(grep -rh 'config_name:' $(OVE_DIR)/apps/*/app.yaml $(OVE_DIR)/apps/*/*/app.yaml 2>/dev/null \
-		| sed 's/.*config_name: *//' | sort -u); \
-	TOTAL=$$(echo "$$APPS" | wc -w); \
-	CURRENT=0; \
-	FAILED=""; \
-	for app in $$APPS; do \
-		CURRENT=$$((CURRENT + 1)); \
-		echo ""; \
-		echo "============================================================"; \
-		echo "[$$CURRENT/$$TOTAL] Building $$BOARD.$$RTOS.$$app"; \
-		echo "============================================================"; \
-		if $(MAKE) "$$BOARD.$$RTOS.$$app" && $(MAKE); then \
-			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: OK"; \
-		else \
-			echo "[$$CURRENT/$$TOTAL] $$BOARD.$$RTOS.$$app: FAILED"; \
-			FAILED="$$FAILED $$app"; \
-		fi; \
-	done; \
-	echo ""; \
-	echo "============================================================"; \
-	echo "allconfigs-$$BOARD.$$RTOS: $$TOTAL configurations processed"; \
-	if [ -n "$$FAILED" ]; then \
-		echo "FAILED:$$FAILED"; \
-		exit 1; \
-	else \
-		echo "All configurations built successfully"; \
-	fi
+	@$(OVE) allconfigs "$*"
 
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
@@ -172,7 +148,7 @@ alldefconfigs: $(VENV_STAMP)
 
 .PHONY: run
 run: $(VENV_STAMP)
-	@$(OVE) run $(if $(filter 1,$(HEADLESS)),--headless)
+	@$(OVE) run $(if $(filter 1,$(HEADLESS)),--headless) $(EXTRA)
 
 .PHONY: flash
 flash: $(VENV_STAMP)
@@ -182,58 +158,166 @@ flash: $(VENV_STAMP)
 
 .PHONY: test
 test: $(VENV_STAMP)
-	@$(OVE) test
+	@$(OVE) test $(if $(filter 1,$(JSON)),--json)
 
-.PHONY: test-stub test-cpp test-rust test-zig test-nuttx test-zephyr
-test-stub: $(VENV_STAMP)
-	@$(OVE) test stub
+# Single source of truth for `test-<name>` recipes — each delegates to
+# `ove test <name>`. Add new suites here, not as separate targets.
+TEST_NAMES := stub cpp rust zig nuttx zephyr \
+              qemu qemu-freertos qemu-freertos-zeroheap \
+              qemu-nuttx qemu-nuttx-zeroheap \
+              qemu-zephyr qemu-zephyr-zeroheap all \
+              rust-coverage zig-coverage nuttx-coverage zephyr-coverage \
+              qemu-freertos-coverage qemu-nuttx-coverage qemu-zephyr-coverage
+.PHONY: $(addprefix test-,$(TEST_NAMES))
+$(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
+	@$(OVE) test $* $(if $(filter 1,$(JSON)),--json)
 
-test-cpp: $(VENV_STAMP)
-	@$(OVE) test cpp
+ASAN_BUILD_DIR := $(OVE_DIR)/output/tests/stub_asan
 
-test-rust: $(VENV_STAMP)
-	@$(OVE) test rust
+.PHONY: asan
+asan: $(VENV_STAMP)
+	@cmake -S $(OVE_DIR)/tests -B $(ASAN_BUILD_DIR)
+	@cmake --build $(ASAN_BUILD_DIR) --target ove_test_stub_asan -j$$(nproc)
+	@$(ASAN_BUILD_DIR)/ove_test_stub_asan
 
-test-zig: $(VENV_STAMP)
-	@$(OVE) test zig
+COVERAGE_OUTPUT_DIR         := $(OVE_DIR)/output/tests/coverage
+COVERAGE_STUB_DIR           := $(OVE_DIR)/output/tests/stub_coverage
+COVERAGE_CPP_DIR            := $(OVE_DIR)/output/tests/cpp_coverage
+COVERAGE_RUST_DIR           := $(OVE_DIR)/output/tests/rust_coverage
+COVERAGE_ZEPHYR_DIR         := $(OVE_DIR)/output/tests/zephyr_coverage
+COVERAGE_NUTTX_DIR          := $(OVE_DIR)/output/tests/nuttx_coverage
+COVERAGE_ZIG_DIR            := $(OVE_DIR)/output/tests/zig_coverage
+COVERAGE_QEMU_FREERTOS_DIR  := $(OVE_DIR)/output/tests/qemu_freertos_coverage
+COVERAGE_QEMU_NUTTX_DIR     := $(OVE_DIR)/output/tests/qemu_nuttx_coverage
+COVERAGE_QEMU_ZEPHYR_DIR    := $(OVE_DIR)/output/tests/qemu_zephyr_coverage
 
-test-nuttx: $(VENV_STAMP)
-	@$(OVE) test nuttx
+# Each backend emits a filtered lcov tracefile; the top-level `coverage`
+# target merges them into one combined HTML report so the headline number
+# reflects every test target, not just the C stub suites.
+#
+#   `make coverage`                                        — everything instrumented (default)
+#   `make coverage WITH_QEMU_FREERTOS=0 WITH_QEMU_NUTTX=0 \
+#     WITH_QEMU_ZEPHYR=0 WITH_ZEPHYR=0 WITH_NUTTX=0 \
+#     WITH_ZIG=0`                                          — host-only (stub + cpp + rust, fastest)
+#
+# Backends already wired:
+#   - stub (C / gcc / gcov)             via tests/CMakeLists.txt
+#   - cpp  (C++ / g++ / gcov)           via tests/cpp/CMakeLists.txt
+#   - rust (LLVM src-based)             via `ove test rust-coverage`
+#   - zephyr native_sim (gcov)          via `ove test zephyr-coverage`        (opt-in)
+#   - nuttx sim (gcov)                  via `ove test nuttx-coverage`         (opt-in)
+#   - zig   (kcov/DWARF)                via `ove test zig-coverage`           (opt-in;
+#             kcov built locally from manifest, see _ensure_kcov in test.py)
+#   - freertos QEMU (arm-none-eabi-gcov) via `ove test qemu-freertos-coverage` (opt-in)
+#   - nuttx    QEMU (arm-none-eabi-gcov) via `ove test qemu-nuttx-coverage`    (opt-in)
+#   - zephyr   QEMU (arm-zephyr-eabi-gcov, from Zephyr SDK) via
+#             `ove test qemu-zephyr-coverage` (opt-in)
+# Every instrumented backend runs by default so the headline coverage
+# number reflects the full test matrix. Opt out per-backend with e.g.
+# `make coverage WITH_QEMU_FREERTOS=0` when you need a faster pass.
+WITH_ZEPHYR         ?= 1
+WITH_NUTTX          ?= 1
+WITH_ZIG            ?= 1
+WITH_QEMU_FREERTOS  ?= 1
+WITH_QEMU_NUTTX     ?= 1
+WITH_QEMU_ZEPHYR    ?= 1
 
-test-zephyr: $(VENV_STAMP)
-	@$(OVE) test zephyr
+.PHONY: coverage
+coverage: $(VENV_STAMP)
+	@command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1 || { \
+		echo ""; \
+		echo "ERROR: lcov/genhtml not found."; \
+		echo ""; \
+		echo "  Ubuntu/Debian:  sudo apt install lcov"; \
+		echo ""; \
+		exit 1; \
+	}
+	@cmake -S $(OVE_DIR)/tests     -B $(COVERAGE_STUB_DIR) -DOVE_TEST_BUILD_COVERAGE=ON
+	@cmake --build $(COVERAGE_STUB_DIR) --target coverage -j$$(nproc)
+	@cmake -S $(OVE_DIR)/tests/cpp -B $(COVERAGE_CPP_DIR)  -DOVE_TEST_BUILD_COVERAGE=ON
+	@cmake --build $(COVERAGE_CPP_DIR)  --target coverage -j$$(nproc)
+	@$(OVE) test rust-coverage
+	@if [ "$(WITH_ZEPHYR)" = "1" ];        then $(OVE) test zephyr-coverage;        fi
+	@if [ "$(WITH_NUTTX)" = "1" ];         then $(OVE) test nuttx-coverage;         fi
+	@if [ "$(WITH_ZIG)" = "1" ];           then $(OVE) test zig-coverage;           fi
+	@if [ "$(WITH_QEMU_FREERTOS)" = "1" ]; then $(OVE) test qemu-freertos-coverage; fi
+	@if [ "$(WITH_QEMU_NUTTX)" = "1" ];    then $(OVE) test qemu-nuttx-coverage;    fi
+	@if [ "$(WITH_QEMU_ZEPHYR)" = "1" ];   then $(OVE) test qemu-zephyr-coverage;   fi
+	@$(MAKE) --no-print-directory coverage-merge
 
-.PHONY: test-qemu test-qemu-freertos test-qemu-freertos-zeroheap test-qemu-nuttx test-qemu-nuttx-zeroheap test-qemu-zephyr test-qemu-zephyr-zeroheap
-test-qemu: $(VENV_STAMP)
-	@$(OVE) test qemu
+# Final lcov-merge + genhtml + summary, factored out so CI can invoke it
+# after downloading per-backend .filtered.info artifacts. Skips any
+# tracefile that isn't present — lets the merge produce a partial report
+# when a backend job fails upstream.
+.PHONY: coverage-merge
+coverage-merge:
+	@command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1 || { \
+		echo "ERROR: lcov/genhtml not found (Ubuntu/Debian: sudo apt install lcov)"; \
+		exit 1; \
+	}
+	@mkdir -p $(COVERAGE_OUTPUT_DIR)
+	@lcov \
+		$(if $(wildcard $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info) \
+		$(if $(wildcard $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info) \
+		$(if $(wildcard $(COVERAGE_RUST_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_RUST_DIR)/coverage.filtered.info) \
+		$(if $(filter 1,$(WITH_ZEPHYR)),$(if $(wildcard $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_NUTTX)),$(if $(wildcard $(COVERAGE_NUTTX_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_NUTTX_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_ZIG)),$(if $(wildcard $(COVERAGE_ZIG_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_ZIG_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_QEMU_FREERTOS)),$(if $(wildcard $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_QEMU_NUTTX)),$(if $(wildcard $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_QEMU_ZEPHYR)),$(if $(wildcard $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info)) \
+		--rc branch_coverage=1 \
+		--output-file   $(COVERAGE_OUTPUT_DIR)/coverage.info \
+		--ignore-errors inconsistent,format,empty
+	@genhtml $(COVERAGE_OUTPUT_DIR)/coverage.info \
+		--branch-coverage \
+		--output-directory $(COVERAGE_OUTPUT_DIR)/html \
+		--ignore-errors source,mismatch
+	@lcov --summary $(COVERAGE_OUTPUT_DIR)/coverage.info \
+		--rc branch_coverage=1 \
+		--ignore-errors inconsistent,format,empty || true
+	@echo ""
+	@echo "Combined coverage report: $(COVERAGE_OUTPUT_DIR)/html/index.html"
 
-test-qemu-freertos: $(VENV_STAMP)
-	@$(OVE) test qemu-freertos
+# ── Quality / CI ──────────────────────────────────────────────────────────
 
-test-qemu-freertos-zeroheap: $(VENV_STAMP)
-	@$(OVE) test qemu-freertos-zeroheap
+.PHONY: doctor
+doctor: $(VENV_STAMP)
+	@$(OVE) doctor $(if $(filter 1,$(JSON)),--json)
 
-test-qemu-nuttx: $(VENV_STAMP)
-	@$(OVE) test qemu-nuttx
+.PHONY: lint
+lint: $(VENV_STAMP)
+	@$(OVE) lint
 
-test-qemu-nuttx-zeroheap: $(VENV_STAMP)
-	@$(OVE) test qemu-nuttx-zeroheap
+.PHONY: format
+format: $(VENV_STAMP)
+	@$(OVE) format
 
-test-qemu-zephyr: $(VENV_STAMP)
-	@$(OVE) test qemu-zephyr
+.PHONY: ci
+ci: $(VENV_STAMP)
+	@$(OVE) ci $(if $(filter 1,$(KEEPGOING)),--keep-going)
 
-test-qemu-zephyr-zeroheap: $(VENV_STAMP)
-	@$(OVE) test qemu-zephyr-zeroheap
+.PHONY: manifest
+manifest: $(VENV_STAMP)
+	@$(OVE) manifest $(if $(filter 1,$(CHECK)),--check)
 
-.PHONY: test-all
-test-all: $(VENV_STAMP)
-	@$(OVE) test all
+# Shell completion scripts — `make completion-bash > ~/.bash_completion.d/ove`.
+.PHONY: completion-%
+completion-%: $(VENV_STAMP)
+	@$(OVE) completion $*
+
+# Workspace-independent toolchain fetch — `make ensure-toolchain-zig`.
+.PHONY: ensure-toolchain-%
+ensure-toolchain-%: $(VENV_STAMP)
+	@$(OVE) ensure-toolchain $*
 
 # ── Documentation ────────────────────────────────────────────────────────────
 
 .PHONY: docs docs-serve docs-clean
 
 docs: $(VENV_STAMP) ## Build complete documentation site
+	@echo "==> Generating Doxyfile.predefined from Kconfig..."
+	python3 scripts/kconfig-doxyfile-gen.py
 	@echo "==> Generating C API docs (Doxygen)..."
 	@mkdir -p output/docs/doxygen
 	doxygen Doxyfile
@@ -246,15 +330,8 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	@echo "==> Generating Zig API docs (autodoc)..."
 	@mkdir -p output/docs/zig-staging
 	@cp bindings/zig/ove/ove_config_docs.h output/docs/zig-staging/ove_config.h
+	@$(MAKE) ensure-toolchain-zig
 	@ZIG=$$(find $(OVE_DIR)/output/toolchains -maxdepth 2 -name zig -type f 2>/dev/null | head -1); \
-	if [ -z "$$ZIG" ]; then \
-		echo "  Zig not found in toolchains, downloading..."; \
-		$(VENV_PYTHON) -c "from ove.download import download_zig_toolchain; \
-			from ove.manifest import load_manifest; \
-			download_zig_toolchain({}, '$(OVE_DIR)/dl', '$(OVE_DIR)/output/toolchains', \
-			manifest=load_manifest('$(OVE_DIR)'))"; \
-		ZIG=$$(find $(OVE_DIR)/output/toolchains -maxdepth 2 -name zig -type f 2>/dev/null | head -1); \
-	fi; \
 	if [ -z "$$ZIG" ]; then ZIG=$$(command -v zig 2>/dev/null); fi; \
 	if [ -z "$$ZIG" ]; then echo "ERROR: zig not found"; exit 1; fi; \
 	echo "  Using: $$ZIG"; \
@@ -336,9 +413,11 @@ clean-all:
 
 .PHONY: distclean
 distclean:
-	@echo "Cleaning everything (output, downloads, venv, config)..."
-	@rm -rf output dl .venv
-	@rm -f .config .config.old
+	@$(OVE) clean --dist 2>/dev/null || { \
+		echo "Cleaning everything (output, downloads, venv, config)..."; \
+		rm -rf output dl .venv; \
+		rm -f .config .config.old; \
+	}
 
 # ── Help ───────────────────────────────────────────────────────────────────
 
@@ -383,6 +462,7 @@ help:
 	@echo ""
 	@echo "Build:"
 	@echo "  all (default)           - Full pipeline: download, configure, build"
+	@echo "  build                   - Build firmware only (skip download/configure)"
 	@echo "  download                - Download RTOS sources to dl/"
 	@echo "  configure               - Generate config files from .config"
 	@echo "  allconfigs-<board>.<rtos> - Build all apps for a board/RTOS pair"
@@ -391,6 +471,11 @@ help:
 	@echo "  flash                   - Flash firmware to target board"
 	@echo "  run                     - Run firmware (QEMU or POSIX)"
 	@echo "  run HEADLESS=1          - Run firmware without display viewer"
+	@echo "  run EXTRA=\"<args>\"      - Forward extra args to runner (e.g. QEMU flags)"
+	@echo ""
+	@echo "  Build flags:"
+	@echo "    DRYRUN=1              - Dry-run for download/configure/build"
+	@echo "    JSON=1                - Emit JSON summary for build/test/doctor"
 	@echo ""
 	@echo "Tests:"
 	@echo "  test                    - Run sim tests (stub, cpp, rust, zig, nuttx, zephyr)"
@@ -408,6 +493,23 @@ help:
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
 	@echo "  test-all                - All tests (sim + QEMU)"
+	@echo "  asan                    - Build and run stub with AddressSanitizer + UBSan"
+	@echo "  coverage                - Combined HTML coverage (stub + cpp + rust; needs lcov)"
+	@echo "  coverage WITH_ZEPHYR=1  - Also include Zephyr native_sim (slow)"
+	@echo "  coverage WITH_NUTTX=1   - Also include NuttX sim (slow)"
+	@echo "  coverage WITH_ZIG=1     - Also include Zig (builds kcov locally)"
+	@echo ""
+	@echo "Quality / CI:"
+	@echo "  doctor                  - Check host environment (toolchains, deps, venv)"
+	@echo "  doctor JSON=1           - Emit JSON diagnostic report"
+	@echo "  lint                    - Check formatting (clang-format/cargo/zig/ruff)"
+	@echo "  format                  - Apply formatters in place"
+	@echo "  ci                      - Run pre-merge gates (doctor + lint + test all)"
+	@echo "  ci KEEPGOING=1          - Keep running CI stages after a failure"
+	@echo "  manifest                - Show manifest versions and integrity status"
+	@echo "  manifest CHECK=1        - Exit non-zero if manifest has uncommitted changes"
+	@echo "  completion-bash|zsh|fish  - Emit shell completion script on stdout"
+	@echo "  ensure-toolchain-zig    - Install the zig toolchain"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  docs                    - Build complete documentation site"

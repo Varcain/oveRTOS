@@ -7,103 +7,83 @@
  */
 
 #include <ove/ove.hpp>
+#include <ove/bench.hpp>
 
-extern "C" {
-#include "benchmark.h"
-}
+#include <optional>
 
-static ove_eventgroup_t bench_eg;
+static std::optional<ove::EventGroup> bench_eg;
 
 /* --- set/get bits --- */
 
-static void eg_set_get_setup(void *ctx)
+static void eg_set_get_setup()
 {
-	(void)ctx;
-	ove_eventgroup_create(&bench_eg);
+	bench_eg.emplace();
 }
 
-static void eg_set_get_run(void *ctx)
+static void eg_set_get_run()
 {
-	(void)ctx;
-	ove_eventgroup_set_bits(bench_eg, 0x01);
-	ove_eventgroup_get_bits(bench_eg);
-	ove_eventgroup_clear_bits(bench_eg, 0x01);
+	(void)bench_eg->set_bits(0x01);
+	(void)bench_eg->get_bits();
+	(void)bench_eg->clear_bits(0x01);
 }
 
-static void eg_set_get_teardown(void *ctx)
+static void eg_set_get_teardown()
 {
-	(void)ctx;
-	ove_eventgroup_destroy(bench_eg);
+	bench_eg.reset();
 }
 
 /* --- create/destroy --- */
 
-static void eg_create_destroy_run(void *ctx)
+static void eg_create_destroy_run()
 {
-	(void)ctx;
-	ove_eventgroup_t eg;
-
-	ove_eventgroup_create(&eg);
-	ove_eventgroup_destroy(eg);
+	ove::EventGroup eg;
 }
 
 /* --- memory --- */
 
-static ove_eventgroup_t mem_eg;
+static std::optional<ove::EventGroup> mem_eg;
 
-static void eg_memory_run(void *ctx)
+static void eg_memory_run()
 {
-	(void)ctx;
-	ove_eventgroup_create(&mem_eg);
+	mem_eg.emplace();
 }
 
-static void eg_memory_teardown(void *ctx)
+static void eg_memory_teardown()
 {
-	(void)ctx;
-	ove_eventgroup_destroy(mem_eg);
+	mem_eg.reset();
 }
 
 /* --- Suite --- */
 
-static int eventgroup_is_enabled(void)
+static bool eventgroup_is_enabled()
 {
-#ifdef CONFIG_OVE_EVENTGROUP
-	return 1;
-#else
-	return 0;
-#endif
+	return true;
 }
 
-static const bench_case_t eventgroup_cases[] = {
-	{
-		"memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		eg_memory_run,
-		eg_memory_teardown,
-		0,
-	},
-	{
-		"set_get_bits",
-		BENCH_TYPE_LATENCY,
-		eg_set_get_setup,
-		eg_set_get_run,
-		eg_set_get_teardown,
-		0,
-	},
-	{
-		"create_destroy",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		eg_create_destroy_run,
-		nullptr,
-		0,
-	},
+static constexpr ove::bench::CaseSpec eg_memory_spec{
+	.name = "memory",
+	.kind = ove::bench::Type::memory,
+	.run = &eg_memory_run,
+	.teardown = &eg_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec eg_set_get_spec{
+	.name = "set_get_bits",
+	.kind = ove::bench::Type::latency,
+	.run = &eg_set_get_run,
+	.setup = &eg_set_get_setup,
+	.teardown = &eg_set_get_teardown,
+};
+static constexpr ove::bench::CaseSpec eg_create_destroy_spec{
+	.name = "create_destroy",
+	.kind = ove::bench::Type::latency,
+	.run = &eg_create_destroy_run,
 };
 
-extern "C" const bench_suite_t bench_suite_eventgroup = {
-	"eventgroup",
-	eventgroup_is_enabled,
-	eventgroup_cases,
-	sizeof(eventgroup_cases) / sizeof(eventgroup_cases[0]),
+static constexpr bench_case_t eventgroup_cases[] = {
+	ove::bench::case_<eg_memory_spec>(),
+	ove::bench::case_<eg_set_get_spec>(),
+	ove::bench::case_<eg_create_destroy_spec>(),
 };
+
+OVE_BENCH_SUITE(bench_suite_eventgroup, "eventgroup",
+		eventgroup_is_enabled, eventgroup_cases)

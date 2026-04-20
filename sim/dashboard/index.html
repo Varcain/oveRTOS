@@ -6,7 +6,15 @@
     <title>oveRTOS Sim Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/css/winbox.min.css"/>
     <link rel="stylesheet" href="style.css">
-    <script src="coi-serviceworker.js"></script>
+    <script>
+    /* Unregister any stale service worker from previous versions.
+       The bridge server sends COOP/COEP headers directly. */
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+        });
+    }
+    </script>
 </head>
 <body>
     <header>
@@ -66,6 +74,74 @@
             </div>
         </section>
 
+        <section class="panel" id="threads-panel">
+            <div class="thread-mem-bar">
+                <span class="thread-mem-label">Heap:</span>
+                <div class="thread-mem-track">
+                    <div id="thread-mem-fill" class="thread-mem-fill"></div>
+                </div>
+                <span id="thread-mem-text" class="thread-mem-text">--</span>
+            </div>
+            <div class="thread-table-wrap">
+                <table id="thread-table" class="thread-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>State</th>
+                            <th>Pri</th>
+                            <th>Stack</th>
+                            <th>CPU %</th>
+                            <th>State Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="thread-tbody"></tbody>
+                </table>
+                <div id="thread-empty" class="thread-empty">No thread data</div>
+            </div>
+        </section>
+
+        <section class="panel" id="debug-panel">
+            <div class="debug-toolbar">
+                <button id="dbg-continue" class="dbg-btn" title="Continue (F5)">&#9654;</button>
+                <button id="dbg-pause"    class="dbg-btn" title="Pause (F6)">&#9646;&#9646;</button>
+                <button id="dbg-step-over" class="dbg-btn" title="Step Over (F10)">&#8631;</button>
+                <button id="dbg-step-into" class="dbg-btn" title="Step Into (F11)">&#8615;</button>
+                <button id="dbg-step-out"  class="dbg-btn" title="Step Out (Shift+F11)">&#8613;</button>
+                <button id="dbg-reset"     class="dbg-btn" title="Reset">&#8634;</button>
+                <span class="dbg-sep"></span>
+                <span id="dbg-status" class="dbg-status">Disconnected</span>
+            </div>
+            <div class="debug-tabs">
+                <button class="dbg-tab active" data-tab="source">Source</button>
+                <button class="dbg-tab" data-tab="disasm">Disassembly</button>
+                <button class="dbg-tab" data-tab="mixed">Mixed</button>
+            </div>
+            <div class="debug-body">
+                <div class="debug-explorer">
+                    <div class="dbg-explorer-title">Explorer</div>
+                    <div id="dbg-files" class="dbg-files"></div>
+                </div>
+                <div class="debug-source-wrap">
+                    <div id="dbg-source-file" class="dbg-file-label">No source loaded</div>
+                    <div id="dbg-source-view" class="dbg-source-view"></div>
+                </div>
+                <div class="debug-side">
+                    <details class="dbg-section" open>
+                        <summary>Call Stack</summary>
+                        <div id="dbg-callstack" class="dbg-callstack"></div>
+                    </details>
+                    <details class="dbg-section">
+                        <summary>Registers</summary>
+                        <div id="dbg-registers" class="dbg-registers"></div>
+                    </details>
+                    <details class="dbg-section">
+                        <summary>Breakpoints</summary>
+                        <div id="dbg-breakpoints" class="dbg-breakpoints">No breakpoints</div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
         <section class="panel" id="events-panel">
             <div class="events-toolbar">
                 <button id="autoscroll-toggle" class="btn btn-small autoscroll-on" title="Toggle auto-scroll">Auto-scroll: ON</button>
@@ -81,6 +157,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/js/winbox.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

@@ -312,13 +312,28 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
 /* ── Thread enumeration ────────────────────────────────────── */
 
 /**
+ * @brief Cumulative time per thread state (microseconds).
+ *
+ * Only populated when CONFIG_OVE_THREAD_STATE_STATS is enabled.
+ */
+struct ove_thread_state_times {
+	uint64_t running_us;    /**< Time in RUNNING state. */
+	uint64_t ready_us;      /**< Time in READY state. */
+	uint64_t blocked_us;    /**< Time in BLOCKED state. */
+	uint64_t suspended_us;  /**< Time in SUSPENDED state. */
+};
+
+/**
  * @brief Snapshot of a single thread's info.
  */
 struct ove_thread_info {
-	const char         *name;       /**< Thread name (static, do not free). */
-	ove_thread_state_t  state;      /**< Execution state. */
-	int                 priority;   /**< Priority level. */
-	size_t              stack_used; /**< Stack high-water mark (bytes). */
+	const char         *name;           /**< Thread name (static, do not free). */
+	ove_thread_state_t  state;          /**< Execution state. */
+	int                 priority;       /**< Priority level. */
+	size_t              stack_used;     /**< Stack high-water mark (bytes). */
+	size_t              stack_size;     /**< Total stack allocation (bytes). */
+	uint32_t            cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
+	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
 };
 
 /**

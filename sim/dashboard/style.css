@@ -367,6 +367,357 @@ header h1 {
 
 /* ── Mobile / small viewport ──────────────────────────────────────── */
 
+/* ── Thread view ─────────────────────────────────────────────────── */
+
+.thread-mem-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+}
+.thread-mem-label { font-size: 11px; color: var(--text); white-space: nowrap; }
+.thread-mem-track {
+    flex: 1;
+    height: 10px;
+    background: var(--bg);
+    border-radius: 5px;
+    overflow: hidden;
+}
+.thread-mem-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--green);
+    border-radius: 5px;
+    transition: width 0.3s;
+}
+.thread-mem-fill.mem-warn  { background: #f0a500; }
+.thread-mem-fill.mem-critical { background: var(--accent); }
+.thread-mem-text { font-size: 10px; color: #aaa; white-space: nowrap; }
+
+.thread-table-wrap {
+    overflow-y: auto;
+    flex: 1;
+}
+.thread-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+}
+.thread-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    text-align: left;
+    padding: 4px 8px;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #888;
+    border-bottom: 1px solid var(--border);
+}
+.thread-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.thread-table tbody tr:hover { background: rgba(255,255,255,0.05); }
+.thread-table td {
+    padding: 3px 8px;
+    white-space: nowrap;
+}
+.td-name { font-weight: 500; }
+.td-num  { text-align: right; font-variant-numeric: tabular-nums; }
+
+.state-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.st-running    { background: #1b5e20; color: #81c784; }
+.st-ready      { background: #0d47a1; color: #64b5f6; }
+.st-blocked    { background: #4a3800; color: #ffd54f; }
+.st-suspended  { background: #333;    color: #999; }
+.st-terminated { background: #4a0000; color: #ef5350; }
+.st-unknown    { background: #333;    color: #666; }
+
+/* State time bar */
+.state-bar {
+    display: flex;
+    height: 8px;
+    min-width: 60px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: var(--bg);
+}
+.state-bar span { display: block; height: 100%; }
+.sb-run { background: #4caf50; }
+.sb-rdy { background: #2196f3; }
+.sb-blk { background: #ffc107; }
+.sb-sus { background: #666; }
+
+.thread-empty {
+    text-align: center;
+    color: #555;
+    padding: 24px;
+    font-size: 12px;
+}
+
+#threads-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* ── Debug panel ──────────────────────────────────────────────────── */
+
+#debug-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.debug-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+}
+.dbg-btn {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    width: 30px;
+    height: 26px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+.dbg-btn:hover { background: var(--border); }
+.dbg-btn:active { background: var(--accent); }
+.dbg-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.dbg-status { font-size: 11px; color: #888; margin-left: auto; }
+.dbg-running { color: var(--green); }
+.dbg-stopped { color: #ffd54f; }
+
+.debug-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 4px 0;
+}
+.dbg-tab {
+    background: transparent;
+    color: #888;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.dbg-tab:hover { color: var(--text); }
+.dbg-tab.active { color: var(--text); border-color: var(--border); background: var(--bg); }
+
+.debug-body {
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    overflow: hidden;
+}
+.debug-source-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.dbg-file-label {
+    font-size: 10px;
+    color: #666;
+    padding: 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dbg-source-view {
+    flex: 1;
+    overflow: auto;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    background: var(--bg);
+    border-radius: 4px;
+    padding: 4px 0;
+}
+.dbg-source-view.dbg-dimmed { opacity: 0.4; }
+
+/* Monaco Editor overrides */
+.dbg-source-view .monaco-editor { height: 100% !important; }
+.monaco-current-line { background: rgba(255, 213, 79, 0.15) !important; }
+.monaco-current-glyph {
+    background: var(--green);
+    width: 3px !important;
+    margin-left: 3px;
+    border-radius: 1px;
+}
+.monaco-bp-glyph {
+    background: var(--accent);
+    border-radius: 50%;
+    width: 10px !important;
+    height: 10px !important;
+    margin-top: 5px;
+    margin-left: 4px;
+}
+
+.dbg-line {
+    display: flex;
+    padding: 0 8px;
+    white-space: pre;
+}
+.dbg-line:hover { background: rgba(255,255,255,0.03); }
+.dbg-current { background: rgba(255, 213, 79, 0.12) !important; }
+.dbg-bp-line { }
+.dbg-gutter {
+    display: inline-block;
+    width: 40px;
+    text-align: right;
+    padding-right: 12px;
+    color: #555;
+    user-select: none;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.dbg-gutter:hover { color: var(--accent); }
+.dbg-gutter-bp { color: var(--accent); }
+.dbg-gutter-bp::before { content: "\25CF "; color: var(--accent); }
+.dbg-code { flex: 1; }
+
+/* Disassembly */
+.dbg-asm-line {
+    display: flex;
+    gap: 12px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+.dbg-asm-addr { color: #666; width: 80px; flex-shrink: 0; }
+.dbg-asm-func { color: #82aaff; width: 120px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
+.dbg-asm-inst { color: var(--text); }
+.dbg-asm-src {
+    padding: 4px 8px 0;
+    font-size: 10px;
+    color: #546e7a;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-top: 4px;
+}
+
+/* Side panels (callstack, registers, breakpoints) */
+.debug-side {
+    width: 240px;
+    flex-shrink: 0;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    padding-left: 8px;
+}
+.dbg-section { margin-bottom: 4px; }
+.dbg-section summary {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #888;
+    cursor: pointer;
+    padding: 4px 0;
+}
+.dbg-section summary:hover { color: var(--text); }
+
+.dbg-callstack { font-size: 11px; }
+.dbg-frame {
+    padding: 2px 4px;
+    cursor: pointer;
+    border-radius: 2px;
+}
+.dbg-frame:hover { background: rgba(255,255,255,0.05); }
+.dbg-frame.active { background: rgba(255, 213, 79, 0.1); }
+.dbg-frame-idx { color: #666; }
+.dbg-frame-func { color: #82aaff; }
+.dbg-frame-loc { color: #888; font-size: 10px; }
+
+.dbg-reg-group-title {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #666;
+    padding: 4px 0 1px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 2px;
+}
+.dbg-reg-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px 8px;
+    font-size: 11px;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+}
+.dbg-reg-name { color: #888; }
+.dbg-reg-val  { color: var(--text); }
+
+.dbg-bp { display: flex; align-items: center; gap: 4px; font-size: 11px; padding: 1px 0; }
+.dbg-bp-num { color: var(--accent); }
+.dbg-bp-loc { flex: 1; color: #888; overflow: hidden; text-overflow: ellipsis; }
+.dbg-bp-del {
+    background: transparent; border: none; color: #666; cursor: pointer;
+    font-size: 12px; padding: 0 4px;
+}
+.dbg-bp-del:hover { color: var(--accent); }
+
+/* File explorer (left panel) */
+.debug-explorer {
+    width: 200px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    padding-right: 6px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.dbg-explorer-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #888;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+    flex-shrink: 0;
+}
+.dbg-files { flex: 1; overflow-y: auto; }
+.dbg-file-cat {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #666;
+    padding: 4px 0 1px;
+    margin-top: 2px;
+}
+.dbg-file-entry {
+    padding: 1px 4px;
+    cursor: pointer;
+    border-radius: 2px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dbg-file-entry:hover { background: rgba(255,255,255,0.05); }
+.dbg-file-active { background: rgba(78, 204, 163, 0.12) !important; }
+.dbg-file-dir { color: #555; }
+.dbg-file-name { color: var(--text); }
+
+.dbg-empty { color: #555; font-size: 11px; padding: 8px; text-align: center; }
+
 @media (max-width: 639px) {
     header h1 { font-size: 13px; }
     .btn-small { padding: 6px 10px; font-size: 12px; }

@@ -4,6 +4,7 @@
 #ifdef CONFIG_OVE_TIME
 #include "ove/time.h"
 #endif
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -211,8 +212,12 @@ int ove_audio_graph_build(struct ove_audio_graph *g)
     for (unsigned int i = 0; i < g->node_count; i++) {
         offsets[i] = total_size;
         if (g->nodes[i].type != OVE_AUDIO_NODE_SINK) {
-            total_size += buf_byte_size(&g->nodes[i].out_fmt,
-                                        g->frames_per_period);
+            size_t bs = buf_byte_size(&g->nodes[i].out_fmt,
+                                       g->frames_per_period);
+            /* Overflow check: reject pathological configs before calloc */
+            if (bs > SIZE_MAX - total_size)
+                return OVE_ERR_NO_MEMORY;
+            total_size += bs;
         }
     }
 

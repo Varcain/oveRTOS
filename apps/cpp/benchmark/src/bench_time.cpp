@@ -7,62 +7,46 @@
  */
 
 #include <ove/ove.hpp>
-
-extern "C" {
-#include "benchmark.h"
-}
+#include <ove/bench.hpp>
 
 /* --- time_get_us overhead --- */
 
-static void time_get_us_overhead_run(void *ctx)
+static void time_get_us_overhead_run()
 {
-	(void)ctx;
 	uint64_t t;
-
-	ove::time::get_us(&t);
+	(void)ove::time::get_us(&t);
 }
 
 /* --- delay 1ms --- */
 
-static void delay_1ms_run(void *ctx)
+static void delay_1ms_run()
 {
-	(void)ctx;
 	ove::time::delay_ms(1);
 }
 
 /* --- Suite --- */
 
-static int time_is_enabled(void)
+static bool time_is_enabled()
 {
-#ifdef CONFIG_OVE_TIME
-	return 1;
-#else
-	return 0;
-#endif
+	return true;
 }
 
-static const bench_case_t time_cases[] = {
-	{
-		"time_get_us_overhead",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		time_get_us_overhead_run,
-		nullptr,
-		0,
-	},
-	{
-		"delay_1ms",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		delay_1ms_run,
-		nullptr,
-		100,
-	},
+static constexpr ove::bench::CaseSpec time_get_us_spec{
+	.name = "time_get_us_overhead",
+	.kind = ove::bench::Type::latency,
+	.run = &time_get_us_overhead_run,
 };
 
-extern "C" const bench_suite_t bench_suite_time = {
-	"time",
-	time_is_enabled,
-	time_cases,
-	sizeof(time_cases) / sizeof(time_cases[0]),
+static constexpr ove::bench::CaseSpec delay_1ms_spec{
+	.name = "delay_1ms",
+	.kind = ove::bench::Type::latency,
+	.run = &delay_1ms_run,
+	.iterations = 100,
 };
+
+static constexpr bench_case_t time_cases[] = {
+	ove::bench::case_<time_get_us_spec>(),
+	ove::bench::case_<delay_1ms_spec>(),
+};
+
+OVE_BENCH_SUITE(bench_suite_time, "time", time_is_enabled, time_cases)

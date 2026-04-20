@@ -148,6 +148,13 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 /* HAL EXTI callback — dispatches to shared IRQ dispatch */
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 
+/* Weak pin→port mapper. Boards with EXTI on multiple ports override this. */
+__attribute__((weak)) unsigned int ove_board_gpio_exti_port(unsigned int pin)
+{
+	(void)pin;
+	return 0;
+}
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	/* Reconstruct pin number from bitmask */
@@ -159,8 +166,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		pin++;
 	}
 
-	/* STM32 EXTI doesn't tell us which port, so dispatch with port 0.
-	 * The shared IRQ table matches on pin; for multi-port IRQ the
-	 * backend would need per-port tracking. */
-	ove_gpio_irq_dispatch(0, pin);
+	/* STM32 EXTI hardware reports only the pin, not the port. The board
+	 * overrides ove_board_gpio_exti_port() to resolve the port from the
+	 * EXTI configuration it owns (typical CubeMX boards use one port per
+	 * EXTI line). Default weak impl returns port 0. */
+	ove_gpio_irq_dispatch(ove_board_gpio_exti_port(pin), pin);
 }

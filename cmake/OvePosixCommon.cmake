@@ -67,6 +67,11 @@ macro(ove_posix_setup_project)
     set(CMAKE_C_STANDARD 11)
     set(CMAKE_C_STANDARD_REQUIRED ON)
     add_compile_options(-Wall -Wextra -Wno-unused-parameter)
+
+    # Debug build: add -g and -O0 when OVE_DEBUG_BUILD is enabled.
+    if(OVE_DEBUG)
+        add_compile_options(-g -O0)
+    endif()
 endmacro()
 
 
@@ -108,7 +113,7 @@ endmacro()
 # Build LVGL as a static library from dl/lvgl/src/*.c.  Include paths are
 # exported PUBLIC so the final executable sees lv_conf.h from BOARD_DIR.
 macro(ove_posix_build_lvgl)
-    file(GLOB_RECURSE _LVGL_SOURCES ${LVGL_PATH}/src/*.c)
+    file(GLOB_RECURSE _LVGL_SOURCES CONFIGURE_DEPENDS ${LVGL_PATH}/src/*.c)
     add_library(lvgl STATIC ${_LVGL_SOURCES})
     target_include_directories(lvgl SYSTEM PUBLIC
         ${LVGL_PATH}

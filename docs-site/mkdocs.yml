@@ -37,6 +37,10 @@ nav:
     - Audio Engine: api/audio.md
     - Filesystem: api/fs.md
     - Hardware I/O: api/io.md
+    - UART: api/uart.md
+    - SPI: api/spi.md
+    - I2C: api/i2c.md
+    - I2S: api/i2s.md
     - Shell & Console: api/shell.md
     - Non-Volatile Storage: api/nvs.md
     - ML Inference: api/infer.md

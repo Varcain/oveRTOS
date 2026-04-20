@@ -38,6 +38,9 @@ int ove_watchdog_create(ove_watchdog_t *wdt,
 
   nw->timeout_ms = timeout_ms;
 
+  /* NuttX's WDIOC_SETTIMEOUT takes milliseconds on all upstream drivers
+   * we've tested (stm32 IWDG/WWDG, simulator); custom drivers that expect
+   * a different unit must be handled at the driver level, not here. */
   int ret = ioctl(nw->fd, WDIOC_SETTIMEOUT,
                   (unsigned long)timeout_ms);
   if (ret < 0)

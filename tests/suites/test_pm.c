@@ -981,74 +981,90 @@ static void test_pm_rapid_init_deinit_cycles(void **state)
 	}
 }
 
+/* ── setup/teardown ──────────────────────────────────────────────────── */
+
+static int pm_setup(void **state)
+{
+	(void)state;
+	notify_pre_count = 0;
+	notify_post_count = 0;
+	notify_last_from = OVE_PM_STATE_ACTIVE;
+	notify_last_to = OVE_PM_STATE_ACTIVE;
+	notify_last_event = OVE_PM_EVENT_PRE_SLEEP;
+	notify2_count = 0;
+	notify_user_data_received = NULL;
+	domain_thread_done = 0;
+	return 0;
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_pm_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		/* 1. Lifecycle */
-		cmocka_unit_test(test_pm_init_deinit),
-		cmocka_unit_test(test_pm_init_null_cfg),
-		cmocka_unit_test(test_pm_double_init),
-		cmocka_unit_test(test_pm_deinit_without_init),
-		cmocka_unit_test(test_pm_reinit_after_deinit),
+		cmocka_unit_test_setup(test_pm_init_deinit, pm_setup),
+		cmocka_unit_test_setup(test_pm_init_null_cfg, pm_setup),
+		cmocka_unit_test_setup(test_pm_double_init, pm_setup),
+		cmocka_unit_test_setup(test_pm_deinit_without_init, pm_setup),
+		cmocka_unit_test_setup(test_pm_reinit_after_deinit, pm_setup),
 
 		/* 2. State machine */
-		cmocka_unit_test(test_pm_default_state),
-		cmocka_unit_test(test_pm_set_all_states),
-		cmocka_unit_test(test_pm_set_state_invalid),
-		cmocka_unit_test(test_pm_set_same_state_noop),
-		cmocka_unit_test(test_pm_activity_resets_to_active),
-		cmocka_unit_test(test_pm_activity_from_deep_sleep),
-		cmocka_unit_test(test_pm_multiple_activities),
-		cmocka_unit_test(test_pm_not_initialized_operations),
+		cmocka_unit_test_setup(test_pm_default_state, pm_setup),
+		cmocka_unit_test_setup(test_pm_set_all_states, pm_setup),
+		cmocka_unit_test_setup(test_pm_set_state_invalid, pm_setup),
+		cmocka_unit_test_setup(test_pm_set_same_state_noop, pm_setup),
+		cmocka_unit_test_setup(test_pm_activity_resets_to_active, pm_setup),
+		cmocka_unit_test_setup(test_pm_activity_from_deep_sleep, pm_setup),
+		cmocka_unit_test_setup(test_pm_multiple_activities, pm_setup),
+		cmocka_unit_test_setup(test_pm_not_initialized_operations, pm_setup),
 
 		/* 3. Wake sources */
-		cmocka_unit_test(test_pm_wake_register_gpio),
-		cmocka_unit_test(test_pm_wake_register_timer),
-		cmocka_unit_test(test_pm_wake_register_uart),
-		cmocka_unit_test(test_pm_wake_register_rtc),
-		cmocka_unit_test(test_pm_wake_register_null),
-		cmocka_unit_test(test_pm_wake_unregister_not_found),
-		cmocka_unit_test(test_pm_wake_table_full),
-		cmocka_unit_test(test_pm_wake_reuse_slot),
-		cmocka_unit_test(test_pm_wake_mixed_types),
+		cmocka_unit_test_setup(test_pm_wake_register_gpio, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_register_timer, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_register_uart, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_register_rtc, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_register_null, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_unregister_not_found, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_table_full, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_reuse_slot, pm_setup),
+		cmocka_unit_test_setup(test_pm_wake_mixed_types, pm_setup),
 
 		/* 4. Peripheral power domains */
-		cmocka_unit_test(test_pm_domain_request_release),
-		cmocka_unit_test(test_pm_domain_underflow),
-		cmocka_unit_test(test_pm_domain_multiple_users),
-		cmocka_unit_test(test_pm_domain_invalid),
-		cmocka_unit_test(test_pm_domain_all_domains),
-		cmocka_unit_test(test_pm_domain_independent),
-		cmocka_unit_test(test_pm_domain_concurrent),
+		cmocka_unit_test_setup(test_pm_domain_request_release, pm_setup),
+		cmocka_unit_test_setup(test_pm_domain_underflow, pm_setup),
+		cmocka_unit_test_setup(test_pm_domain_multiple_users, pm_setup),
+		cmocka_unit_test_setup(test_pm_domain_invalid, pm_setup),
+		cmocka_unit_test_setup(test_pm_domain_all_domains, pm_setup),
+		cmocka_unit_test_setup(test_pm_domain_independent, pm_setup),
+		cmocka_unit_test_setup(test_pm_domain_concurrent, pm_setup),
 
 		/* 5. Policy */
-		cmocka_unit_test(test_pm_custom_policy),
-		cmocka_unit_test(test_pm_restore_default_policy),
-		cmocka_unit_test(test_pm_policy_with_userdata),
+		cmocka_unit_test_setup(test_pm_custom_policy, pm_setup),
+		cmocka_unit_test_setup(test_pm_restore_default_policy, pm_setup),
+		cmocka_unit_test_setup(test_pm_policy_with_userdata, pm_setup),
 
 		/* 6. Notifications */
-		cmocka_unit_test(test_pm_notify_register_unregister),
-		cmocka_unit_test(test_pm_notify_null_callback),
-		cmocka_unit_test(test_pm_notify_table_full),
-		cmocka_unit_test(test_pm_notify_multiple_notifiers),
-		cmocka_unit_test(test_pm_notify_userdata_forwarded),
+		cmocka_unit_test_setup(test_pm_notify_register_unregister, pm_setup),
+		cmocka_unit_test_setup(test_pm_notify_null_callback, pm_setup),
+		cmocka_unit_test_setup(test_pm_notify_table_full, pm_setup),
+		cmocka_unit_test_setup(test_pm_notify_multiple_notifiers, pm_setup),
+		cmocka_unit_test_setup(test_pm_notify_userdata_forwarded, pm_setup),
 
 		/* 7. Statistics */
-		cmocka_unit_test(test_pm_stats_initial),
-		cmocka_unit_test(test_pm_stats_null_param),
-		cmocka_unit_test(test_pm_stats_tracking),
-		cmocka_unit_test(test_pm_stats_reset),
-		cmocka_unit_test(test_pm_stats_active_pct_all_active),
+		cmocka_unit_test_setup(test_pm_stats_initial, pm_setup),
+		cmocka_unit_test_setup(test_pm_stats_null_param, pm_setup),
+		cmocka_unit_test_setup(test_pm_stats_tracking, pm_setup),
+		cmocka_unit_test_setup(test_pm_stats_reset, pm_setup),
+		cmocka_unit_test_setup(test_pm_stats_active_pct_all_active, pm_setup),
 
 		/* 8. Budget */
-		cmocka_unit_test(test_pm_budget_set_get),
-		cmocka_unit_test(test_pm_budget_null_param),
+		cmocka_unit_test_setup(test_pm_budget_set_get, pm_setup),
+		cmocka_unit_test_setup(test_pm_budget_null_param, pm_setup),
 
 		/* 9. Integration */
-		cmocka_unit_test(test_pm_idle_process_no_transition_when_active),
-		cmocka_unit_test(test_pm_rapid_init_deinit_cycles),
+		cmocka_unit_test_setup(test_pm_idle_process_no_transition_when_active, pm_setup),
+		cmocka_unit_test_setup(test_pm_rapid_init_deinit_cycles, pm_setup),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -14,6 +14,8 @@
 
 cmake_minimum_required(VERSION 3.20)
 
+include(${CMAKE_CURRENT_LIST_DIR}/OveHelpers.cmake)
+
 # ─── ove_setup_project(name) ─────────────────────────────────────────
 # Resolves all paths, includes generated config, declares the CMake project,
 # sets common compiler flags, and includes the application source list.
@@ -53,8 +55,10 @@ macro(ove_setup_project _proj_name)
         include(${OVE_GEN_DIR}/ove_config.cmake)
     endif()
 
-    # Default to Release
-    if(NOT CMAKE_BUILD_TYPE)
+    # OVE_DEBUG_BUILD → Debug config; otherwise Release.
+    if(OVE_DEBUG)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+    elseif(NOT CMAKE_BUILD_TYPE)
         set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
     endif()
 
@@ -67,6 +71,20 @@ macro(ove_setup_project _proj_name)
         project(${_OVE_PROJ_NAME} C ASM)
     endif()
     enable_language(ASM)
+
+    # Always export compile_commands.json for clangd / IDE tooling.
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "" FORCE)
+
+    # Speed up rebuilds with ccache when available. OVE_NO_CCACHE=1 opts out.
+    if(NOT OVE_NO_CCACHE)
+        find_program(CCACHE_PROGRAM ccache)
+        if(CCACHE_PROGRAM)
+            set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
+                         "${CCACHE_PROGRAM}")
+            set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK
+                         "${CCACHE_PROGRAM}")
+        endif()
+    endif()
 
     # Include board toolchain file (if not already loaded via CMAKE_TOOLCHAIN_FILE)
     include(${BOARD_DIR}/cmake/arm-none-eabi.cmake OPTIONAL)
@@ -190,7 +208,6 @@ macro(ove_add_stub_backends)
         string(TOUPPER "${_mod}" _MOD_UPPER)
         string(TOLOWER "${_mod}" _mod_lower)
 
-        # Determine if we should add the stub
         set(_add_stub FALSE)
         if("${_MOD_UPPER}" STREQUAL "BSP" OR "${_MOD_UPPER}" STREQUAL "GPIO")
             set(_add_stub TRUE)
@@ -199,42 +216,15 @@ macro(ove_add_stub_backends)
         endif()
 
         if(_add_stub)
-            # Add stub file only if it exists (some modules like BOARD
-            # just need the backend removed, with no stub replacement)
             if(EXISTS "${_stub_dir}/stub_${_mod_lower}.c")
                 list(APPEND _OVE_STUB_SOURCES "${_stub_dir}/stub_${_mod_lower}.c")
             endif()
-
-            # stub_time.c needs OVE_QEMU_ARM for ARM-specific tick source
             if("${_MOD_UPPER}" STREQUAL "TIME")
                 set_source_files_properties(
                     "${_stub_dir}/stub_time.c" PROPERTIES
                     COMPILE_DEFINITIONS OVE_QEMU_ARM)
             endif()
-
-            # Remove the corresponding real backend from _OVE_BACKEND_SRC.
-            # Only remove files under backends/ (not dispatchers under src/).
-            # Backend files match: backends/*/<rtos>_<module>.c or backends/*/stm32f7_bsp.c
-            set(_new_backend "")
-            foreach(_bsrc ${_OVE_BACKEND_SRC})
-                get_filename_component(_bname "${_bsrc}" NAME)
-                set(_exclude FALSE)
-                # Only filter files in the backends/ directory
-                if("${_bsrc}" MATCHES "/backends/")
-                    # Match <rtos>_<module>.c pattern
-                    if("${_bname}" MATCHES "_(${_mod_lower})\\.c$")
-                        set(_exclude TRUE)
-                    endif()
-                    # Special case: BSP backend may be named stm32f7_bsp.c
-                    if("${_MOD_UPPER}" STREQUAL "BSP" AND "${_bname}" MATCHES "_bsp\\.c$")
-                        set(_exclude TRUE)
-                    endif()
-                endif()
-                if(NOT _exclude)
-                    list(APPEND _new_backend "${_bsrc}")
-                endif()
-            endforeach()
-            set(_OVE_BACKEND_SRC ${_new_backend})
+            _ove_filter_backend_list(_OVE_BACKEND_SRC ${_mod})
         endif()
     endforeach()
 endmacro()
@@ -244,27 +234,7 @@ endmacro()
 # Remove backend sources for listed modules WITHOUT adding stubs.
 # Use this when the board provides its own implementation (e.g. qemu_board.c).
 macro(ove_exclude_backends)
-    foreach(_mod ${ARGN})
-        string(TOUPPER "${_mod}" _MOD_UPPER)
-        string(TOLOWER "${_mod}" _mod_lower)
-        set(_new_backend "")
-        foreach(_bsrc ${_OVE_BACKEND_SRC})
-            get_filename_component(_bname "${_bsrc}" NAME)
-            set(_exclude FALSE)
-            if("${_bsrc}" MATCHES "/backends/")
-                if("${_bname}" MATCHES "_(${_mod_lower})\\.c$")
-                    set(_exclude TRUE)
-                endif()
-                if("${_MOD_UPPER}" STREQUAL "BSP" AND "${_bname}" MATCHES "_bsp\\.c$")
-                    set(_exclude TRUE)
-                endif()
-            endif()
-            if(NOT _exclude)
-                list(APPEND _new_backend "${_bsrc}")
-            endif()
-        endforeach()
-        set(_OVE_BACKEND_SRC ${_new_backend})
-    endforeach()
+    _ove_filter_backend_list(_OVE_BACKEND_SRC ${ARGN})
 endmacro()
 
 
@@ -305,7 +275,7 @@ macro(ove_add_stm32cube_hal)
     endif()
 
     # HAL driver sources (exclude *_template.c)
-    file(GLOB _HAL_SOURCES
+    file(GLOB _HAL_SOURCES CONFIGURE_DEPENDS
         "${OVE_STM32CUBE_PATH}/Drivers/STM32${_CUBE_FAM_UPPER}xx_HAL_Driver/Src/*.c")
     list(FILTER _HAL_SOURCES EXCLUDE REGEX ".*_template\\.c$")
     list(APPEND _OVE_EXTRA_SOURCES ${_HAL_SOURCES})
@@ -384,10 +354,10 @@ macro(ove_add_cmsis_dsp)
                  ControllerFunctions FastMathFunctions FilteringFunctions
                  MatrixFunctions StatisticsFunctions SupportFunctions
                  TransformFunctions)
-        file(GLOB _DSP_SRC "${_DSP_DIR}/Source/${_sub}/*.c")
+        file(GLOB _DSP_SRC CONFIGURE_DEPENDS "${_DSP_DIR}/Source/${_sub}/*.c")
         list(APPEND _OVE_EXTRA_SOURCES ${_DSP_SRC})
     endforeach()
-    file(GLOB _DSP_ASM "${_DSP_DIR}/Source/TransformFunctions/*.S")
+    file(GLOB _DSP_ASM CONFIGURE_DEPENDS "${_DSP_DIR}/Source/TransformFunctions/*.S")
     list(APPEND _OVE_EXTRA_SOURCES ${_DSP_ASM})
     include_directories(${_DSP_DIR}/Include)
 endmacro()
@@ -402,7 +372,7 @@ macro(ove_add_fatfs)
         message(FATAL_ERROR "ove_add_fatfs: call ove_add_stm32cube_hal(...) first")
     endif()
     set(_FATFS_DIR "${OVE_STM32CUBE_PATH}/Middlewares/Third_Party/FatFs/src")
-    file(GLOB _FATFS_SOURCES "${_FATFS_DIR}/*.c")
+    file(GLOB _FATFS_SOURCES CONFIGURE_DEPENDS "${_FATFS_DIR}/*.c")
     list(APPEND _FATFS_SOURCES "${_FATFS_DIR}/option/ccsbcs.c")
     list(APPEND _OVE_EXTRA_SOURCES ${_FATFS_SOURCES})
     include_directories(
@@ -436,7 +406,7 @@ endmacro()
 macro(ove_build_lvgl)
     set(_LVGL_PATH "${OVE_DL_DIR}/lvgl")
 
-    file(GLOB_RECURSE _LVGL_SOURCES "${_LVGL_PATH}/src/*.c")
+    file(GLOB_RECURSE _LVGL_SOURCES CONFIGURE_DEPENDS "${_LVGL_PATH}/src/*.c")
     add_library(lvgl ${_LVGL_SOURCES})
     target_include_directories(lvgl PRIVATE
         ${BOARD_DIR}/inc

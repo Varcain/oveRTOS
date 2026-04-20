@@ -14,7 +14,31 @@ use core::fmt;
 
 use crate::bindings;
 use crate::error::{Error, Result};
-use crate::priority::Priority;
+
+/// Thread priority levels, matching `ove_prio_t`.
+///
+/// Variants are ordered from lowest (`Idle`) to highest (`Critical`) so that
+/// standard comparison operators (`<`, `>`) work intuitively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Priority {
+    /// Lowest priority, typically the RTOS idle task level.
+    Idle = 0,
+    /// Low background priority.
+    Low = 1,
+    /// Below-normal priority.
+    BelowNormal = 2,
+    /// Default priority for most application threads.
+    Normal = 3,
+    /// Above-normal priority for time-sensitive work.
+    AboveNormal = 4,
+    /// High priority for latency-critical tasks.
+    High = 5,
+    /// Real-time priority; preempts most other threads.
+    Realtime = 6,
+    /// Highest priority; reserved for system-critical tasks.
+    Critical = 7,
+}
 
 /// Thread state, matching `ove_thread_state_t`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +140,9 @@ impl Thread {
         stack_size: usize,
     ) -> Result<Self> {
         unsafe extern "C" fn trampoline(arg: *mut core::ffi::c_void) {
+            // SAFETY: `arg` was set by the caller from a `fn()` pointer.
+            // On supported targets fn() is pointer-sized and C-ABI-compatible,
+            // so round-tripping through `*mut c_void` is well-defined.
             let entry: fn() = unsafe { core::mem::transmute(arg) };
             entry();
         }
@@ -170,6 +197,9 @@ impl Thread {
         stack_size: usize,
     ) -> Result<Self> {
         unsafe extern "C" fn trampoline(arg: *mut core::ffi::c_void) {
+            // SAFETY: `arg` was set by the caller from a `fn()` pointer.
+            // On supported targets fn() is pointer-sized and C-ABI-compatible,
+            // so round-tripping through `*mut c_void` is well-defined.
             let entry: fn() = unsafe { core::mem::transmute(arg) };
             entry();
         }
@@ -353,3 +383,8 @@ impl Drop for Thread {
         }
     }
 }
+
+// SAFETY: RTOS thread handles are shareable across threads once created.
+// Access to the handle is synchronized by the RTOS itself.
+unsafe impl Send for Thread {}
+unsafe impl Sync for Thread {}

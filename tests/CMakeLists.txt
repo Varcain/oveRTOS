@@ -29,8 +29,9 @@ set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(OVE_INCLUDE ${OVE_ROOT}/include)
 set(OVE_SRC ${OVE_ROOT}/src)
 
-# Include test helper
+# Include test helpers
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveTest.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveCoverage.cmake)
 
 # Stub backend sources (direct-linked, no dispatcher layer)
 set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
@@ -50,6 +51,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_nvs.c
     ${POSIX_CORE_DIR}/posix_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
+    ${POSIX_CORE_DIR}/posix_net.c
     # Shared BSP modules
     ${OVE_SRC}/ove_board.c
     ${OVE_SRC}/ove_gpio.c
@@ -69,68 +71,107 @@ set(STUB_SOURCES
     # Networking helpers (SHA-1, Base64 for WebSocket/HTTPD tests)
     ${OVE_ROOT}/backends/common/ove_sha1.c
     ${OVE_ROOT}/backends/common/ove_base64.c
+    # MQTT topic matcher (shared between production MQTT client and unit tests)
+    ${OVE_ROOT}/backends/common/ove_mqtt_topic.c
 )
 
-# Test suite sources
+# Test suite sources — list defined once in cmake/OveTest.cmake.
 set(SUITE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/suites)
-set(SUITE_SOURCES
-    ${SUITE_DIR}/test_thread.c
-    ${SUITE_DIR}/test_sync_mutex.c
-    ${SUITE_DIR}/test_sync_sem.c
-    ${SUITE_DIR}/test_sync_event.c
-    ${SUITE_DIR}/test_sync_condvar.c
-    ${SUITE_DIR}/test_sync_recursive.c
-    ${SUITE_DIR}/test_queue.c
-    ${SUITE_DIR}/test_timer.c
-    ${SUITE_DIR}/test_time.c
-    ${SUITE_DIR}/test_eventgroup.c
-    ${SUITE_DIR}/test_workqueue.c
-    ${SUITE_DIR}/test_stream.c
-    ${SUITE_DIR}/test_console.c
-    ${SUITE_DIR}/test_watchdog.c
-    ${SUITE_DIR}/test_nvs.c
-    ${SUITE_DIR}/test_shell.c
-    ${SUITE_DIR}/test_audio.c
-    ${SUITE_DIR}/test_bsp.c
-    ${SUITE_DIR}/test_board.c
-    ${SUITE_DIR}/test_gpio.c
-    ${SUITE_DIR}/test_led.c
-    ${SUITE_DIR}/test_fs.c
-    ${SUITE_DIR}/test_lvgl.c
-    ${SUITE_DIR}/test_static_define.c
-    ${SUITE_DIR}/test_app.c
-    ${SUITE_DIR}/test_infer.c
-    ${SUITE_DIR}/test_net_mqtt.c
-    ${SUITE_DIR}/test_net_httpd.c
-    ${SUITE_DIR}/test_net_sntp.c
-    ${SUITE_DIR}/test_i2c.c
-    ${SUITE_DIR}/test_spi.c
-    ${SUITE_DIR}/test_uart.c
-    ${SUITE_DIR}/test_pm.c
-)
+ove_test_all_suite_sources(SUITE_SOURCES ${SUITE_DIR})
+
+# ove_add_stub_variant(<name> [compile_opts...])
+# Declares a stub-test executable that shares STUB_SOURCES + SUITE_SOURCES
+# but applies extra compile/link options (sanitizer, coverage, ...).
+function(ove_add_stub_variant name)
+    add_executable(${name}
+        ${CMAKE_CURRENT_SOURCE_DIR}/stub_main.c
+        ${STUB_SOURCES}
+        ${SUITE_SOURCES}
+    )
+    target_include_directories(${name} PRIVATE
+        ${OVE_INCLUDE}
+        ${OVE_ROOT}/backends/common
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${POSIX_CORE_DIR}/include
+        ${cmocka_SOURCE_DIR}/include
+    )
+    target_link_libraries(${name} PRIVATE cmocka-static pthread rt m)
+    # Enable the socket API for the stub test target only. See tests/ove_config.h
+    # for why this is per-target rather than global.
+    target_compile_definitions(${name} PRIVATE CONFIG_OVE_NET=1)
+    if(ARGN)
+        target_compile_options(${name} PRIVATE ${ARGN})
+        target_link_options(${name} PRIVATE ${ARGN})
+    endif()
+endfunction()
 
 # --- Stub test target ---
-add_executable(ove_test_stub
-    ${CMAKE_CURRENT_SOURCE_DIR}/stub_main.c
-    ${STUB_SOURCES}
-    ${SUITE_SOURCES}
-)
+ove_add_stub_variant(ove_test_stub)
 
-target_include_directories(ove_test_stub PRIVATE
-    ${OVE_INCLUDE}
-    ${OVE_ROOT}/backends/common
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${POSIX_CORE_DIR}/include
-    ${cmocka_SOURCE_DIR}/include
-)
+# --- ASAN/UBSAN variant — catches UAFs, races-that-are-leaks, stack overflow,
+#     UB like integer overflow/signed conversion surprises. Enable via:
+#       cmake --build . --target ove_test_stub_asan && ./ove_test_stub_asan
+option(OVE_TEST_BUILD_ASAN "Build ove_test_stub_asan with -fsanitize=address,undefined" ON)
+if(OVE_TEST_BUILD_ASAN)
+    ove_add_stub_variant(ove_test_stub_asan
+        -fsanitize=address,undefined
+        -fno-omit-frame-pointer
+        -fno-sanitize-recover=all
+        -g
+    )
+endif()
 
-target_link_libraries(ove_test_stub PRIVATE
-    cmocka-static
-    pthread
-    rt
-    m
-)
+# --- Coverage variant — gcov instrumentation for the `coverage` target. ---
+option(OVE_TEST_BUILD_COVERAGE "Build ove_test_stub_coverage with --coverage" OFF)
+if(OVE_TEST_BUILD_COVERAGE)
+    ove_add_stub_variant(ove_test_stub_coverage --coverage -O0 -g)
+endif()
 
-# Register with CTest
+# --- CTest registration ---
 enable_testing()
 add_test(NAME ove_stub_tests COMMAND ove_test_stub)
+if(OVE_TEST_BUILD_ASAN)
+    add_test(NAME ove_stub_tests_asan COMMAND ove_test_stub_asan)
+    # libasan's leak-detector is noisy against CMocka's intentional allocations
+    # in the suite group teardown; default to off and let CI flip it back on.
+    set_tests_properties(ove_stub_tests_asan PROPERTIES
+        ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0:abort_on_error=1:print_stats=0")
+endif()
+
+# --- JUnit XML harness for CI ---
+# Two independent XMLs are produced:
+#   1. CMocka per-test XML: fine-grained pass/fail for every assert group.
+#      CMocka 1.1.7 expands %g in CMOCKA_XML_FILE to the group-array name.
+#      Our suites currently all use the C array name `tests`, so every
+#      group overwrites the same file and only the *last* suite's XML
+#      survives; that is good enough for CI pass/fail signal but not for
+#      coverage-style reporting. Renaming the arrays is Tier 3 work.
+#   2. CTest-level JUnit (requires CMake 3.21+): one case per ctest entry,
+#      always usable, coarse-grained.
+set(OVE_TEST_JUNIT_DIR ${CMAKE_BINARY_DIR}/junit)
+add_custom_target(junit
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${OVE_TEST_JUNIT_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${OVE_TEST_JUNIT_DIR}
+    COMMAND ${CMAKE_COMMAND} -E env
+        CMOCKA_MESSAGE_OUTPUT=xml
+        CMOCKA_XML_FILE=${OVE_TEST_JUNIT_DIR}/cmocka_%g.xml
+        $<TARGET_FILE:ove_test_stub>
+    DEPENDS ove_test_stub
+    COMMENT "Running ove_test_stub with CMocka XML output -> ${OVE_TEST_JUNIT_DIR}"
+    USES_TERMINAL
+)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.21)
+    add_custom_target(junit-ctest
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${OVE_TEST_JUNIT_DIR}
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+                --output-junit ${OVE_TEST_JUNIT_DIR}/ctest.xml
+        DEPENDS ove_test_stub
+        COMMENT "Running CTest with JUnit output -> ${OVE_TEST_JUNIT_DIR}/ctest.xml"
+        USES_TERMINAL
+    )
+endif()
+
+# --- Coverage report ---
+if(OVE_TEST_BUILD_COVERAGE)
+    ove_test_coverage_report(stub ove_test_stub_coverage)
+endif()

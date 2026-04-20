@@ -37,6 +37,7 @@ set(SIM_QEMU_SOURCES
     ${OVE_DIR}/sim/src/ove_sim_transport_shm_guest.c
     ${OVE_DIR}/sim/hal/sim_board.c
     ${OVE_DIR}/sim/hal/sim_display.c
+    ${OVE_DIR}/sim/hal/sim_debug.c
 )
 if(OVE_LVGL)
     list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_lvgl.c)

@@ -52,6 +52,12 @@ macro(ove_zephyr_pre_find)
         include(${OVE_GEN_DIR}/ove_config.cmake)
     endif()
 
+    # Download directory (workspace-isolated).
+    # OVE_GEN_DIR is <workspace>/generated; dl/ lives alongside it.
+    if(NOT DEFINED OVE_DL_DIR)
+        get_filename_component(OVE_DL_DIR "${OVE_GEN_DIR}/../dl" ABSOLUTE)
+    endif()
+
     # Board-local DTS bindings
     list(APPEND DTS_ROOT ${OVE_BOARD_DIR})
 endmacro()

@@ -18,6 +18,9 @@
 
 static int nvs_make_path(char *buf, size_t buf_len, const char *key)
 {
+	if (!ove_nvs_key_is_valid(key)) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	int len = snprintf(buf, buf_len, "%s/%s", NVS_DIR, key);
 	if (len < 0 || (size_t)len >= buf_len) {
 		return OVE_ERR_INVALID_PARAM;

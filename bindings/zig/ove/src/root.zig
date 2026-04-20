@@ -118,8 +118,8 @@ pub const board = @import("board.zig");
 /// BSP compatibility shim that re-exports `board`, `gpio`, and `led`.
 pub const bsp = @import("bsp.zig");
 
-/// Time query and delay utilities (trailing underscore avoids `std.time` clash).
-pub const time_ = @import("time_.zig");
+/// Time query and delay utilities.
+pub const time = @import("time.zig");
 
 /// Audio I/O initialization and control.
 pub const audio = @import("audio.zig");
@@ -181,6 +181,9 @@ pub const pm = @import("pm.zig");
 
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
+
+/// Safe wrappers for the shared C benchmark harness (used by `apps/zig/benchmark`).
+pub const bench = @import("bench.zig");
 
 /// Write a message to the oveRTOS console.
 pub fn print(comptime fmt: []const u8, args: anytype) void {

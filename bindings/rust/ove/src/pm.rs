@@ -240,12 +240,12 @@ pub fn domain_get_refcount(domain: Domain) -> Result<i32> {
 
 // ── Policy ──────────────────────────────────────────────────────────────
 
-/// Register a custom power policy callback. Pass `None` to restore default.
+/// Raw-pointer variant of [`set_policy`].
 ///
 /// # Safety
 /// The callback and `user_data` must remain valid for the lifetime of the
-/// registration.
-pub unsafe fn set_policy(
+/// registration. Prefer the safe [`PolicyHandler`]-based [`set_policy`].
+pub unsafe fn set_policy_raw(
     policy: bindings::ove_pm_policy_fn,
     user_data: *mut core::ffi::c_void,
 ) -> Result<()> {
@@ -253,16 +253,87 @@ pub unsafe fn set_policy(
     Error::from_code(rc)
 }
 
+/// Per-tick context passed to a [`PolicyHandler`].
+#[derive(Debug, Copy, Clone)]
+pub struct PolicyCtx {
+    pub current: State,
+    pub idle_ms: u32,
+    pub next_timeout_ms: u32,
+}
+
+/// A registered power-policy handler bound to a static state cell.
+///
+/// Construct with [`PolicyHandler::new`] and register with [`set_policy`].
+/// The handler must be `'static` (typically declared at module scope with
+/// [`crate::shared!`] + this type).
+pub struct PolicyHandler<T: Send + Sync + 'static> {
+    cell: &'static crate::StaticCell<T>,
+    user: fn(&T, PolicyCtx) -> State,
+}
+
+impl<T: Send + Sync + 'static> PolicyHandler<T> {
+    pub const fn new(
+        cell: &'static crate::StaticCell<T>,
+        user: fn(&T, PolicyCtx) -> State,
+    ) -> Self {
+        Self { cell, user }
+    }
+}
+
+unsafe impl<T: Send + Sync + 'static> Sync for PolicyHandler<T> {}
+
+unsafe extern "C" fn policy_trampoline<T: Send + Sync + 'static>(
+    current: bindings::ove_pm_state_t,
+    idle_ms: u32,
+    next_timeout_ms: u32,
+    user_data: *mut core::ffi::c_void,
+) -> bindings::ove_pm_state_t {
+    if user_data.is_null() {
+        return current;
+    }
+    // SAFETY: `user_data` was set by `set_policy` from a `&'static PolicyHandler<T>`.
+    let h = unsafe { &*(user_data as *const PolicyHandler<T>) };
+    let Some(state) = h.cell.try_get() else { return current; };
+    let ctx = PolicyCtx {
+        current: match current {
+            0 => State::Active,
+            1 => State::Idle,
+            2 => State::Standby,
+            3 => State::DeepSleep,
+            _ => State::Active,
+        },
+        idle_ms,
+        next_timeout_ms,
+    };
+    (h.user)(state, ctx) as bindings::ove_pm_state_t
+}
+
+/// Register a typed-context power policy handler.
+pub fn set_policy<T: Send + Sync + 'static>(
+    handler: &'static PolicyHandler<T>,
+) -> Result<()> {
+    let rc = unsafe {
+        bindings::ove_pm_set_policy(
+            Some(policy_trampoline::<T>),
+            handler as *const _ as *mut core::ffi::c_void,
+        )
+    };
+    Error::from_code(rc)
+}
+
+/// Restore the default threshold-based power policy.
+pub fn clear_policy() -> Result<()> {
+    let rc = unsafe { bindings::ove_pm_set_policy(None, core::ptr::null_mut()) };
+    Error::from_code(rc)
+}
+
 // ── Notifications ───────────────────────────────────────────────────────
 
-/// Register a transition notification callback.
+/// Raw-pointer variant of [`notify_register`].
 ///
 /// # Safety
 /// The callback and `user_data` must remain valid until unregistered.
-///
-/// # Errors
-/// Returns [`Error::NoMemory`] if the notifier table is full.
-pub unsafe fn notify_register(
+pub unsafe fn notify_register_raw(
     cb: bindings::ove_pm_notify_fn,
     user_data: *mut core::ffi::c_void,
 ) -> Result<()> {
@@ -270,18 +341,93 @@ pub unsafe fn notify_register(
     Error::from_code(rc)
 }
 
-/// Unregister a transition notification callback.
+/// Raw-pointer variant of [`notify_unregister`].
 ///
 /// # Safety
 /// Must match a previously registered (cb, user_data) pair.
-///
-/// # Errors
-/// Returns [`Error::NotRegistered`] if the pair was not found.
-pub unsafe fn notify_unregister(
+pub unsafe fn notify_unregister_raw(
     cb: bindings::ove_pm_notify_fn,
     user_data: *mut core::ffi::c_void,
 ) -> Result<()> {
     let rc = unsafe { bindings::ove_pm_notify_unregister(cb, user_data) };
+    Error::from_code(rc)
+}
+
+/// A registered power transition notification handler.
+///
+/// Bound to a static state cell and a safe `fn(&T, Event, State, State)` callback.
+pub struct NotifyHandler<T: Send + Sync + 'static> {
+    cell: &'static crate::StaticCell<T>,
+    user: fn(&T, Event, State, State),
+}
+
+impl<T: Send + Sync + 'static> NotifyHandler<T> {
+    pub const fn new(
+        cell: &'static crate::StaticCell<T>,
+        user: fn(&T, Event, State, State),
+    ) -> Self {
+        Self { cell, user }
+    }
+}
+
+unsafe impl<T: Send + Sync + 'static> Sync for NotifyHandler<T> {}
+
+unsafe extern "C" fn notify_trampoline<T: Send + Sync + 'static>(
+    event: bindings::ove_pm_event_t,
+    from_state: bindings::ove_pm_state_t,
+    to_state: bindings::ove_pm_state_t,
+    user_data: *mut core::ffi::c_void,
+) {
+    if user_data.is_null() {
+        return;
+    }
+    // SAFETY: `user_data` was set by `notify_register` from a `&'static NotifyHandler<T>`.
+    let h = unsafe { &*(user_data as *const NotifyHandler<T>) };
+    let Some(state) = h.cell.try_get() else { return; };
+    let ev = match event {
+        0 => Event::PreSleep,
+        1 => Event::PostWake,
+        _ => return,
+    };
+    let map = |s: bindings::ove_pm_state_t| match s {
+        0 => State::Active,
+        1 => State::Idle,
+        2 => State::Standby,
+        3 => State::DeepSleep,
+        _ => State::Active,
+    };
+    (h.user)(state, ev, map(from_state), map(to_state));
+}
+
+/// Register a typed-context transition notification handler.
+///
+/// # Errors
+/// Returns [`Error::NoMemory`] if the notifier table is full.
+pub fn notify_register<T: Send + Sync + 'static>(
+    handler: &'static NotifyHandler<T>,
+) -> Result<()> {
+    let rc = unsafe {
+        bindings::ove_pm_notify_register(
+            Some(notify_trampoline::<T>),
+            handler as *const _ as *mut core::ffi::c_void,
+        )
+    };
+    Error::from_code(rc)
+}
+
+/// Unregister a previously registered notification handler.
+///
+/// # Errors
+/// Returns [`Error::NotRegistered`] if the handler was not found.
+pub fn notify_unregister<T: Send + Sync + 'static>(
+    handler: &'static NotifyHandler<T>,
+) -> Result<()> {
+    let rc = unsafe {
+        bindings::ove_pm_notify_unregister(
+            Some(notify_trampoline::<T>),
+            handler as *const _ as *mut core::ffi::c_void,
+        )
+    };
     Error::from_code(rc)
 }
 

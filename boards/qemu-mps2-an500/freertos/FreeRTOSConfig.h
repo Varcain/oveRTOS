@@ -19,7 +19,7 @@
 #define configUSE_PREEMPTION                     1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION  0
 #define configUSE_IDLE_HOOK                      0
-#define configUSE_TICK_HOOK                      0
+#define configUSE_TICK_HOOK                      1
 #define configUSE_DAEMON_TASK_STARTUP_HOOK       0
 #define configCPU_CLOCK_HZ                       ((unsigned long)25000000)
 #define configTICK_RATE_HZ                       ((TickType_t)1000)
@@ -68,9 +68,11 @@
 #define configCHECK_FOR_STACK_OVERFLOW           2
 #define configUSE_MALLOC_FAILED_HOOK             0
 
-/* Run-time stats (disabled) */
-#define configGENERATE_RUN_TIME_STATS            0
+/* Run-time stats — uses a SysTick-based ms counter since QEMU
+ * doesn't emulate the DWT cycle counter. */
+#define configGENERATE_RUN_TIME_STATS            1
 #define configUSE_TRACE_FACILITY                 1
+#define configRECORD_STACK_HIGH_ADDRESS           1
 #if configSUPPORT_DYNAMIC_ALLOCATION
 #define configUSE_STATS_FORMATTING_FUNCTIONS     1
 #else
@@ -97,6 +99,11 @@
 #define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5
 #define configKERNEL_INTERRUPT_PRIORITY          (configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY     (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))
+
+/* Run-time stats timer — ms counter incremented from vApplicationTickHook() */
+extern volatile uint32_t ove_runtime_counter_ms;
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() (ove_runtime_counter_ms = 0UL)
+#define portGET_RUN_TIME_COUNTER_VALUE() ove_runtime_counter_ms
 
 /* Map FreeRTOS port handlers to CMSIS names */
 #define vPortSVCHandler     SVC_Handler

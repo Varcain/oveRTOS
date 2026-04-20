@@ -94,12 +94,27 @@ struct ove_spi_xfer {
 
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
+/**
+ * @brief Initialise an SPI bus controller with caller-provided storage.
+ * @param[out] spi     Receives the initialised handle.
+ * @param[in]  storage Statically-allocated SPI storage.
+ * @param[in]  cfg     Bus configuration (pins, mode, clock rate).
+ * @return OVE_OK on success, negative error code on failure.
+ */
 int  ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage,
 		  const struct ove_spi_cfg *cfg);
+/** @brief Release an SPI bus handle previously created with `ove_spi_init`. */
 void ove_spi_deinit(ove_spi_t spi);
 
 #ifdef OVE_HEAP_SPI
+/**
+ * @brief Heap-mode counterpart of `ove_spi_init()` — allocates storage internally.
+ * @param[out] spi Receives the initialised handle.
+ * @param[in]  cfg Bus configuration.
+ * @return OVE_OK on success, negative error code on failure.
+ */
 int  ove_spi_create(ove_spi_t *spi, const struct ove_spi_cfg *cfg);
+/** @brief Destroy an SPI bus handle previously created with `ove_spi_create`. */
 void ove_spi_destroy(ove_spi_t spi);
 #elif !defined(__ZIG_CIMPORT__)
 #define ove_spi_create(pspi, cfg) \

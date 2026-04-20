@@ -28,8 +28,8 @@ int ove_stream_init(ove_stream_t *stream,
 {
 	if (stream == NULL || storage == NULL || buffer == NULL || size == 0)
 		return OVE_ERR_INVALID_PARAM;
-	if (trigger == 0)
-		trigger = 1;
+	if (trigger == 0 || trigger > size)
+		return OVE_ERR_INVALID_PARAM;
 
 	storage->handle = xStreamBufferCreateStatic(
 		size, trigger, (uint8_t *)buffer, &storage->static_stream);

@@ -69,6 +69,11 @@ list(APPEND SIM_SOURCES
     ${SIM_DIR}/hal/sim_console.c
 )
 
+# Debug plugin (thread + memory snapshots for dashboard)
+list(APPEND SIM_SOURCES
+    ${SIM_DIR}/hal/sim_debug.c
+)
+
 # Export to parent scope
 set(SIM_SOURCES ${SIM_SOURCES} PARENT_SCOPE)
 set(SIM_INCLUDE_DIRS ${SIM_INCLUDE_DIRS} PARENT_SCOPE)

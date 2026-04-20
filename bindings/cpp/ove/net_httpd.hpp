@@ -287,6 +287,7 @@ namespace ws {
  */
 class Connection {
 public:
+	/** @brief Wraps an opaque `ove_httpd_ws_conn_t *` from the handler callback. */
 	explicit Connection(ove_httpd_ws_conn_t *raw) : raw_(raw) {}
 
 	/**
@@ -308,6 +309,7 @@ public:
 		return ove_httpd_ws_send(raw_, sv.data(), sv.size());
 	}
 
+	/** @brief Returns the underlying `ove_httpd_ws_conn_t *` (for C-API escape hatches). */
 	ove_httpd_ws_conn_t *raw() const { return raw_; }
 
 private:

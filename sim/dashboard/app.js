@@ -8,19 +8,23 @@
 "use strict";
 
 /* ── Frame type constants (shared with ove-dashboard-bridge.py) ────── */
-var FRAME_FB    = 0x01;
-var FRAME_AUDIO = 0x02;
-var FRAME_EVENT = 0x03;
-var FRAME_CMD   = 0x04;
-var FRAME_STATE = 0x05;
-var FRAME_LOG   = 0x06;
-var FRAME_INPUT = 0x07;
+var FRAME_FB        = 0x01;
+var FRAME_AUDIO     = 0x02;
+var FRAME_EVENT     = 0x03;
+var FRAME_CMD       = 0x04;
+var FRAME_STATE     = 0x05;
+var FRAME_LOG       = 0x06;
+var FRAME_INPUT     = 0x07;
+var FRAME_THREAD    = 0x0A;
+var FRAME_FILE_LIST = 0x0B;
+var FRAME_FILE_REQ  = 0x0C;
+var FRAME_FILE_RESP = 0x0D;
 
 /* ── Shared constants ────────────────────────────────────────────────── */
 var RING_HDR            = 32;     /* OVE_RING_OFF_BUF — ring header size in bytes */
 var MAX_LOG_ENTRIES     = 200;    /* max entries in event log before trimming */
-var RECONNECT_BASE_MS  = 2000;   /* initial WebSocket reconnect delay */
-var RECONNECT_MAX_MS   = 30000;  /* max reconnect delay after backoff */
+var RECONNECT_BASE_MS  = 500;    /* initial WebSocket reconnect delay */
+var RECONNECT_MAX_MS   = 5000;   /* max reconnect delay after backoff */
 var DEFAULT_SAMPLE_RATE = 16000;  /* fallback audio sample rate */
 
 /* ── Shared helpers ──────────────────────────────────────────────────── */
@@ -126,9 +130,11 @@ var MOBILE_BP  = 640;  /* viewport width below which we stack full-width */
 
 /* Proportional defaults: fractions of usable area. */
 var WIN_DEFS = {
-    display: { title: "Display", col: 0, row: 0, cw: 1,   rh: 0.6 },
-    audio:   { title: "Audio",   col: 0, row: 1, cw: 0.5, rh: 0.4 },
-    events:  { title: "Events",  col: 0, row: 1, cw: 0.5, rh: 0.4 },
+    display: { title: "Display",  col: 0, row: 0, cw: 0.6, rh: 0.55 },
+    threads: { title: "Threads",  col: 1, row: 0, cw: 0.4, rh: 0.55 },
+    debug:   { title: "Debug",    col: 0, row: 1, cw: 0.6, rh: 0.45 },
+    audio:   { title: "Audio",    col: 0, row: 1, cw: 0.5, rh: 0.4 },
+    events:  { title: "Events",   col: 0, row: 1, cw: 0.5, rh: 0.4 },
 };
 
 function isMobile() { return window.innerWidth < MOBILE_BP; }
@@ -576,11 +582,15 @@ function connect() {
         var type = new DataView(buf).getUint32(0, true);
 
         switch (type) {
-            case FRAME_FB:    handleFramebuffer(buf, 4); break;
-            case FRAME_AUDIO: handleAudio(buf, 4); break;
-            case FRAME_EVENT: handleEvent(buf, 4); break;
-            case FRAME_STATE: handleState(buf, 4); break;
-            case FRAME_LOG:   handleLog(buf, 4); break;
+            case FRAME_FB:         handleFramebuffer(buf, 4); break;
+            case FRAME_AUDIO:      handleAudio(buf, 4); break;
+            case FRAME_EVENT:      handleEvent(buf, 4); break;
+            case FRAME_STATE:      handleState(buf, 4); break;
+            case FRAME_LOG:        handleLog(buf, 4); break;
+            case FRAME_THREAD:     handleThreadSnapshot(buf, 4); break;
+            case FRAME_DEBUG_RESP: handleDebugResp(buf, 4); break;
+            case FRAME_FILE_LIST:  handleFileList(buf, 4); break;
+            case FRAME_FILE_RESP:  handleFileResp(buf, 4); break;
         }
     };
 }
@@ -1162,6 +1172,836 @@ if (!isWasmMode) {
     if (navigator.mediaDevices)
         navigator.mediaDevices.addEventListener("devicechange", refreshAudioDevices);
 }
+
+/* ── Thread snapshot (FRAME_THREAD) ───────────────────────────────── */
+
+var THREAD_STATE_NAMES = ["running", "ready", "blocked", "suspended", "terminated", "unknown"];
+var THREAD_STATE_CSS   = ["st-running", "st-ready", "st-blocked", "st-suspended", "st-terminated", "st-unknown"];
+
+function handleThreadSnapshot(buf, off) {
+    ensureWindow("threads");
+    var view = new DataView(buf, off);
+    var len = buf.byteLength - off;
+    if (len < 17) return; /* 1 + 4*4 minimum */
+
+    var pos = 0;
+    var threadCount = view.getUint8(pos); pos += 1;
+    var heapTotal = view.getUint32(pos, true); pos += 4;
+    var heapFree  = view.getUint32(pos, true); pos += 4;
+    var heapUsed  = view.getUint32(pos, true); pos += 4;
+    var heapPeak  = view.getUint32(pos, true); pos += 4;
+
+    /* Update heap bar */
+    var memFill = document.getElementById("thread-mem-fill");
+    var memText = document.getElementById("thread-mem-text");
+    if (memFill && heapTotal > 0) {
+        var pct = Math.round(heapUsed * 100 / heapTotal);
+        memFill.style.width = pct + "%";
+        memFill.className = "thread-mem-fill" + (pct > 90 ? " mem-critical" : pct > 70 ? " mem-warn" : "");
+    }
+    if (memText) {
+        if (heapTotal > 0)
+            memText.textContent = _fmtBytes(heapUsed) + " / " + _fmtBytes(heapTotal) + " (peak " + _fmtBytes(heapPeak) + ")";
+        else
+            memText.textContent = "--";
+    }
+
+    /* Parse thread entries */
+    var threads = [];
+    for (var i = 0; i < threadCount; i++) {
+        if (pos >= len) break;
+        var nameLen = view.getUint8(pos); pos += 1;
+        if (pos + nameLen + 10 > len) break;
+        var nameBytes = new Uint8Array(buf, off + pos, nameLen);
+        var name = new TextDecoder().decode(nameBytes);
+        pos += nameLen;
+        var state = view.getUint8(pos); pos += 1;
+        var priority = view.getUint8(pos); pos += 1;
+        var stackUsed = view.getUint32(pos, true); pos += 4;
+        var stackSize = view.getUint32(pos, true); pos += 4;
+        var cpuX100 = view.getUint32(pos, true); pos += 4;
+        var stRunning = view.getUint32(pos, true); pos += 4;
+        var stReady = view.getUint32(pos, true); pos += 4;
+        var stBlocked = view.getUint32(pos, true); pos += 4;
+        var stSuspended = view.getUint32(pos, true); pos += 4;
+        threads.push({ name: name, state: state, priority: priority,
+                        stackUsed: stackUsed, stackSize: stackSize,
+                        cpuX100: cpuX100,
+                        stRunning: stRunning, stReady: stReady,
+                        stBlocked: stBlocked, stSuspended: stSuspended });
+    }
+
+    /* Render table */
+    var tbody = document.getElementById("thread-tbody");
+    var empty = document.getElementById("thread-empty");
+    if (!tbody) return;
+
+    if (threads.length === 0) {
+        tbody.innerHTML = "";
+        if (empty) empty.style.display = "block";
+        return;
+    }
+    if (empty) empty.style.display = "none";
+
+    var html = "";
+    for (var j = 0; j < threads.length; j++) {
+        var t = threads[j];
+        var stIdx = t.state < THREAD_STATE_NAMES.length ? t.state : 5;
+        var stName = THREAD_STATE_NAMES[stIdx];
+        var stCss = THREAD_STATE_CSS[stIdx];
+        var cpuStr = (t.cpuX100 / 100).toFixed(1);
+        html += "<tr>"
+              + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
+              + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
+              + "<td class=\"td-num\">" + t.priority + "</td>"
+              + "<td class=\"td-num\">" + _fmtStack(t.stackUsed, t.stackSize) + "</td>"
+              + "<td class=\"td-num\">" + cpuStr + "%</td>"
+              + "<td>" + _fmtStateBar(t) + "</td>"
+              + "</tr>";
+    }
+    tbody.innerHTML = html;
+}
+
+function _fmtStateBar(t) {
+    var r = (t.stRunning || 0) / 100;
+    var rd = (t.stReady || 0) / 100;
+    var b = (t.stBlocked || 0) / 100;
+    var s = (t.stSuspended || 0) / 100;
+    var total = r + rd + b + s;
+    if (total < 0.1) return "<span class=\"td-num\" style=\"color:#555\">--</span>";
+    /* Normalize to 100% */
+    var rp = (r / total * 100).toFixed(0);
+    var rdp = (rd / total * 100).toFixed(0);
+    var bp = (b / total * 100).toFixed(0);
+    var sp = (s / total * 100).toFixed(0);
+    return "<div class=\"state-bar\" title=\"run:" + rp + "% rdy:" + rdp + "% blk:" + bp + "% sus:" + sp + "%\">"
+         + "<span class=\"sb-run\" style=\"width:" + rp + "%\"></span>"
+         + "<span class=\"sb-rdy\" style=\"width:" + rdp + "%\"></span>"
+         + "<span class=\"sb-blk\" style=\"width:" + bp + "%\"></span>"
+         + "<span class=\"sb-sus\" style=\"width:" + sp + "%\"></span>"
+         + "</div>";
+}
+
+function _fmtStack(used, total) {
+    if (total > 0)
+        return _fmtBytes(used) + " / " + _fmtBytes(total);
+    if (used > 0)
+        return _fmtBytes(used);
+    return "--";
+}
+
+function _fmtBytes(n) {
+    if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
+    if (n >= 1024) return (n / 1024).toFixed(1) + " KB";
+    return n + " B";
+}
+
+function _esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/* ── Debug controller (FRAME_DEBUG_CMD / FRAME_DEBUG_RESP) ───────── */
+
+var FRAME_DEBUG_CMD  = 0x08;
+var FRAME_DEBUG_RESP = 0x09;
+
+var DBG_CMD_CONTINUE    = 0x01;
+var DBG_CMD_PAUSE       = 0x02;
+var DBG_CMD_STEP_OVER   = 0x03;
+var DBG_CMD_STEP_INTO   = 0x04;
+var DBG_CMD_STEP_OUT    = 0x05;
+var DBG_CMD_RESET       = 0x06;
+var DBG_CMD_BACKTRACE   = 0x07;
+var DBG_CMD_REGISTERS   = 0x08;
+var DBG_CMD_DISASSEMBLE = 0x09;
+var DBG_CMD_BP_SET      = 0x0A;
+var DBG_CMD_BP_CLEAR    = 0x0B;
+var DBG_CMD_SOURCE      = 0x0C;
+
+var DBG_RESP_STATE       = 0x00;
+var DBG_RESP_BACKTRACE   = 0x07;
+var DBG_RESP_REGISTERS   = 0x08;
+var DBG_RESP_DISASSEMBLY = 0x09;
+var DBG_RESP_BREAKPOINT  = 0x0A;
+var DBG_RESP_SOURCE      = 0x0C;
+
+var dbgState = "disconnected";  /* disconnected | running | stopped */
+var dbgBreakpoints = [];
+var dbgSourceCache = {};  /* file → {lines, startLine} */
+var dbgCurrentFile = null;
+var dbgCurrentLine = 0;
+var dbgCurrentAddr = null;
+var dbgActiveTab = "source";
+var dbgLastDisasmData = null;  /* cached disassembly response */
+var dbgLastSourceData = null;  /* cached source response */
+
+/* ── Monaco Editor instance for source view ──────────────────────── */
+var monacoEditor = null;
+var monacoReady = false;
+var monacoCurrentDecorations = [];  /* decoration IDs for current line + breakpoints */
+
+(function initMonaco() {
+    if (typeof require === "undefined") return;
+    require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs" }});
+    require(["vs/editor/editor.main"], function () {
+        monacoReady = true;
+        /* Editor will be created lazily when the debug panel exists */
+    });
+})();
+
+function _ensureMonacoEditor() {
+    if (monacoEditor) return monacoEditor;
+    if (!monacoReady) return null;
+    var container = document.getElementById("dbg-source-view");
+    if (!container) return null;
+    monacoEditor = monaco.editor.create(container, {
+        value: "// Waiting for debug session...\n",
+        language: "c",
+        theme: "vs-dark",
+        readOnly: true,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        fontSize: 12,
+        lineNumbersMinChars: 4,
+        glyphMargin: true,
+        folding: false,
+        renderLineHighlight: "none",
+        overviewRulerLanes: 0,
+        hideCursorInOverviewRuler: true,
+        contextmenu: false,
+        automaticLayout: true,
+    });
+    /* Click glyph margin to toggle breakpoint */
+    monacoEditor.onMouseDown(function (e) {
+        if (e.target.type === monaco.editor.MouseTargetType.GUTTER_GLYPH_MARGIN
+            || e.target.type === monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS) {
+            var lineNum = e.target.position.lineNumber;
+            if (dbgCurrentFile && monacoEditor._oveStartLine) {
+                _toggleBreakpoint(dbgCurrentFile, monacoEditor._oveStartLine + lineNum - 1);
+            }
+        }
+    });
+    return monacoEditor;
+}
+
+function _monacoSetDecorations(currentLine, startLine, file) {
+    var editor = monacoEditor;
+    if (!editor) return;
+    var decorations = [];
+    /* Current line highlight */
+    if (currentLine && startLine) {
+        var editorLine = currentLine - startLine + 1;
+        if (editorLine > 0) {
+            decorations.push({
+                range: new monaco.Range(editorLine, 1, editorLine, 1),
+                options: {
+                    isWholeLine: true,
+                    className: "monaco-current-line",
+                    glyphMarginClassName: "monaco-current-glyph",
+                }
+            });
+        }
+    }
+    /* Breakpoint markers */
+    for (var i = 0; i < dbgBreakpoints.length; i++) {
+        var bp = dbgBreakpoints[i];
+        var bpFile = bp.fullname || bp.file || "";
+        if (bpFile === file) {
+            var bpEditorLine = parseInt(bp.line, 10) - startLine + 1;
+            if (bpEditorLine > 0) {
+                decorations.push({
+                    range: new monaco.Range(bpEditorLine, 1, bpEditorLine, 1),
+                    options: {
+                        isWholeLine: true,
+                        glyphMarginClassName: "monaco-bp-glyph",
+                    }
+                });
+            }
+        }
+    }
+    monacoCurrentDecorations = editor.deltaDecorations(monacoCurrentDecorations, decorations);
+}
+
+function sendDebugCmd(cmdType, payload) {
+    if (!ws || ws.readyState !== 1) return;
+    var hdr = new ArrayBuffer(5 + (payload ? payload.byteLength : 0));
+    var view = new DataView(hdr);
+    view.setUint32(0, FRAME_DEBUG_CMD, true);
+    view.setUint8(4, cmdType);
+    if (payload) {
+        new Uint8Array(hdr, 5).set(new Uint8Array(payload));
+    }
+    ws.send(hdr);
+}
+
+function handleDebugResp(buf, off) {
+    if (buf.byteLength - off < 1) return;
+    var respType = new DataView(buf, off).getUint8(0);
+    var jsonBytes = new Uint8Array(buf, off + 1);
+    var json;
+    try {
+        json = JSON.parse(new TextDecoder().decode(jsonBytes));
+    } catch (e) { return; }
+
+    var data = json.data || {};
+
+    switch (respType) {
+        case DBG_RESP_STATE:
+            dbgHandleState(data);
+            break;
+        case DBG_RESP_BACKTRACE:
+            dbgHandleBacktrace(data);
+            break;
+        case DBG_RESP_REGISTERS:
+            dbgHandleRegisters(data);
+            break;
+        case DBG_RESP_DISASSEMBLY:
+            dbgHandleDisassembly(data);
+            break;
+        case DBG_RESP_BREAKPOINT:
+            dbgHandleBreakpoint(data);
+            break;
+        case DBG_RESP_SOURCE:
+            dbgHandleSource(data);
+            break;
+    }
+}
+
+function dbgHandleState(data) {
+    ensureWindow("debug");
+    dbgState = data.state || "disconnected";
+    dbgCurrentFile = data.file || null;
+    dbgCurrentLine = data.line || 0;
+    dbgCurrentAddr = data.addr || null;
+
+    var statusEl = document.getElementById("dbg-status");
+    if (statusEl) {
+        if (dbgState === "running") {
+            statusEl.textContent = "Running";
+            statusEl.className = "dbg-status dbg-running";
+        } else if (dbgState === "stopped") {
+            var reason = data.reason || "";
+            var loc = dbgCurrentFile
+                ? _shortPath(dbgCurrentFile) + ":" + dbgCurrentLine
+                : "";
+            statusEl.textContent = "Stopped" + (reason ? " (" + reason + ")" : "") + (loc ? " at " + loc : "");
+            statusEl.className = "dbg-status dbg-stopped";
+        } else {
+            statusEl.textContent = "Disconnected";
+            statusEl.className = "dbg-status";
+        }
+    }
+
+    /* Dim source view when running */
+    var srcView = document.getElementById("dbg-source-view");
+    if (srcView) srcView.classList.toggle("dbg-dimmed", dbgState === "running");
+}
+
+function dbgHandleBacktrace(data) {
+    var stack = data.stack || [];
+    if (!Array.isArray(stack)) stack = [];
+    var el = document.getElementById("dbg-callstack");
+    if (!el) return;
+    if (stack.length === 0) {
+        el.innerHTML = "<div class=\"dbg-empty\">No frames</div>";
+        return;
+    }
+    var html = "";
+    for (var i = 0; i < stack.length; i++) {
+        var f = stack[i];
+        var func = f.func || f["function"] || "??";
+        var file = f.file || f.fullname || "";
+        var line = f.line || "";
+        var addr = f.addr || "";
+        var loc = file ? _shortPath(file) + ":" + line : addr;
+        var cls = i === 0 ? "dbg-frame active" : "dbg-frame";
+        html += "<div class=\"" + cls + "\" data-file=\"" + _esc(f.fullname || file) + "\" data-line=\"" + line + "\">"
+              + "<span class=\"dbg-frame-idx\">#" + (f.level || i) + "</span> "
+              + "<span class=\"dbg-frame-func\">" + _esc(func) + "</span> "
+              + "<span class=\"dbg-frame-loc\">" + _esc(loc) + "</span>"
+              + "</div>";
+    }
+    el.innerHTML = html;
+
+    /* Click on frame to navigate source */
+    el.querySelectorAll(".dbg-frame").forEach(function(frame) {
+        frame.addEventListener("click", function() {
+            var file = this.getAttribute("data-file");
+            var line = parseInt(this.getAttribute("data-line"), 10);
+            if (file && line) requestSource(file, line, 20);
+        });
+    });
+}
+
+function dbgHandleRegisters(data) {
+    var regs = data["register-values"] || [];
+    if (!Array.isArray(regs)) regs = [];
+    var el = document.getElementById("dbg-registers");
+    if (!el) return;
+
+    /* Filter out registers with empty names (unused GDB slots) */
+    regs = regs.filter(function(r) { return r.name; });
+    if (regs.length === 0) {
+        el.innerHTML = "<div class=\"dbg-empty\">No registers</div>";
+        return;
+    }
+
+    /* Group: core (r0-r12, sp, lr, pc), status (xPSR etc), FPU (s/d regs) */
+    var core = [], status = [], fpu = [], other = [];
+    var coreNames = {"r0":1,"r1":1,"r2":1,"r3":1,"r4":1,"r5":1,"r6":1,
+                     "r7":1,"r8":1,"r9":1,"r10":1,"r11":1,"r12":1,
+                     "sp":1,"lr":1,"pc":1};
+    var statusNames = {"xPSR":1,"xpsr":1,"PRIMASK":1,"primask":1,
+                       "BASEPRI":1,"basepri":1,"FAULTMASK":1,"faultmask":1,
+                       "CONTROL":1,"control":1,"msp":1,"psp":1};
+
+    for (var i = 0; i < regs.length; i++) {
+        var r = regs[i];
+        var name = r.name;
+        if (coreNames[name]) core.push(r);
+        else if (statusNames[name]) status.push(r);
+        else if (name.match(/^[sd]\d+$/) || name === "fpscr" || name === "FPSCR")
+            fpu.push(r);
+        else other.push(r);
+    }
+
+    var html = "";
+    if (core.length) html += _renderRegGroup("Core", core);
+    if (status.length) html += _renderRegGroup("Status", status);
+    if (fpu.length) html += _renderRegGroup("FPU", fpu);
+    if (other.length) html += _renderRegGroup("Other", other);
+    el.innerHTML = html;
+}
+
+function _renderRegGroup(title, regs) {
+    var html = "<div class=\"dbg-reg-group-title\">" + title + "</div>"
+             + "<div class=\"dbg-reg-grid\">";
+    for (var i = 0; i < regs.length; i++) {
+        var r = regs[i];
+        html += "<span class=\"dbg-reg-name\">" + _esc(r.name) + "</span>"
+              + "<span class=\"dbg-reg-val\">" + _esc(r.value || "0x0") + "</span>";
+    }
+    return html + "</div>";
+}
+
+/* ── File explorer and full-file loading ──────────────────────────── */
+
+var projectFiles = [];      /* [{path, short, cat}] from bridge */
+var fileCache = {};          /* path → full file content string */
+var monacoOpenFile = null;   /* path of currently open file in Monaco */
+
+function handleFileList(buf, off) {
+    var json;
+    try {
+        json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, off)));
+    } catch (e) { return; }
+    if (!Array.isArray(json)) return;
+    projectFiles = json;
+    /* Show the debug window for the file explorer even without GDB. */
+    if (projectFiles.length > 0) ensureWindow("debug");
+    _renderFileExplorer();
+}
+
+function handleFileResp(buf, off) {
+    if (buf.byteLength - off < 6) return;
+    var view = new DataView(buf, off);
+    var pathLen = view.getUint16(0, true);
+    if (buf.byteLength - off < 2 + pathLen) return;
+    var pathBytes = new Uint8Array(buf, off + 2, pathLen);
+    var path = new TextDecoder().decode(pathBytes);
+    var content = new TextDecoder().decode(new Uint8Array(buf, off + 2 + pathLen));
+    fileCache[path] = content;
+    _openFileInMonaco(path, content);
+}
+
+function requestFullFile(path) {
+    if (fileCache[path]) {
+        _openFileInMonaco(path, fileCache[path]);
+        return;
+    }
+    if (!ws || ws.readyState !== 1) return;
+    var pathBytes = new TextEncoder().encode(path);
+    var buf = new ArrayBuffer(4 + pathBytes.length);
+    new DataView(buf).setUint32(0, FRAME_FILE_REQ, true);
+    new Uint8Array(buf, 4).set(pathBytes);
+    ws.send(buf);
+}
+
+function _openFileInMonaco(path, content) {
+    var editor = _ensureMonacoEditor();
+    if (!editor) return;
+    /* Switch to source tab */
+    dbgActiveTab = "source";
+    document.querySelectorAll(".dbg-tab").forEach(function(t) {
+        t.classList.toggle("active", t.getAttribute("data-tab") === "source");
+    });
+    var container = document.getElementById("dbg-source-view");
+    if (container) container.innerHTML = "";
+    var dom = editor.getDomNode();
+    if (dom) {
+        dom.style.display = "";
+        if (container) container.appendChild(dom);
+    }
+
+    monacoOpenFile = path;
+    dbgCurrentFile = path;
+    editor.setValue(content);
+    editor._oveStartLine = 1;
+    editor.updateOptions({ lineNumbers: "on" });
+
+    /* Update file label */
+    var fileLabel = document.getElementById("dbg-source-file");
+    if (fileLabel) fileLabel.textContent = _shortPath(path);
+
+    /* Re-apply decorations (breakpoints + current line if in this file) */
+    _monacoSetDecorations(
+        dbgCurrentFile === path ? dbgCurrentLine : 0, 1, path);
+    editor.layout();
+
+    /* Highlight active file in explorer */
+    _highlightActiveFile(path);
+}
+
+function _renderFileExplorer() {
+    var el = document.getElementById("dbg-files");
+    if (!el) return;
+    if (projectFiles.length === 0) {
+        el.innerHTML = "<div class=\"dbg-empty\">No files</div>";
+        return;
+    }
+    var html = "";
+    var lastCat = "";
+    for (var i = 0; i < projectFiles.length; i++) {
+        var f = projectFiles[i];
+        if (f.cat !== lastCat) {
+            lastCat = f.cat;
+            html += "<div class=\"dbg-file-cat\">" + _esc(f.cat) + "</div>";
+        }
+        var basename = f.short.split("/").pop();
+        var dir = f.short.substring(0, f.short.length - basename.length);
+        html += "<div class=\"dbg-file-entry\" data-path=\"" + _esc(f.path) + "\" title=\"" + _esc(f.short) + "\">"
+              + "<span class=\"dbg-file-dir\">" + _esc(dir) + "</span>"
+              + "<span class=\"dbg-file-name\">" + _esc(basename) + "</span>"
+              + "</div>";
+    }
+    el.innerHTML = html;
+    el.querySelectorAll(".dbg-file-entry").forEach(function(entry) {
+        entry.addEventListener("click", function() {
+            requestFullFile(this.getAttribute("data-path"));
+        });
+    });
+}
+
+function _highlightActiveFile(path) {
+    var el = document.getElementById("dbg-files");
+    if (!el) return;
+    el.querySelectorAll(".dbg-file-entry").forEach(function(entry) {
+        entry.classList.toggle("dbg-file-active",
+            entry.getAttribute("data-path") === path);
+    });
+}
+
+function dbgHandleDisassembly(data) {
+    var asmInsns = data["asm_insns"] || [];
+    if (!Array.isArray(asmInsns)) asmInsns = [];
+    /* Cache for tab switching */
+    dbgLastDisasmData = asmInsns;
+    /* Only render if disasm/mixed tab is active */
+    if (dbgActiveTab === "disasm" || dbgActiveTab === "mixed")
+        _renderDisassembly(asmInsns);
+}
+
+function _renderDisassembly(asmInsns) {
+    var el = document.getElementById("dbg-source-view");
+    if (!el || !asmInsns || asmInsns.length === 0) {
+        if (el) el.innerHTML = "<div class=\"dbg-empty\">No disassembly</div>";
+        return;
+    }
+    var mixed = (dbgActiveTab === "mixed");
+    var html = "";
+    for (var i = 0; i < asmInsns.length; i++) {
+        var item = asmInsns[i];
+        if (item.line_asm_insn) {
+            var insns = item.line_asm_insn;
+            if (!Array.isArray(insns)) insns = [];
+            /* Skip entries with no instructions (empty source lines) */
+            if (insns.length === 0) continue;
+            /* Mixed mode: show source line header */
+            if (mixed) {
+                var srcLine = item.line || "";
+                var srcFile = item.file || "";
+                if (srcFile || srcLine)
+                    html += "<div class=\"dbg-asm-src\">"
+                          + _esc(_shortPath(srcFile)) + ":" + srcLine
+                          + "</div>";
+            }
+            for (var j = 0; j < insns.length; j++) {
+                html += _fmtAsmLine(insns[j]);
+            }
+        } else {
+            html += _fmtAsmLine(item);
+        }
+    }
+    el.innerHTML = html || "<div class=\"dbg-empty\">No disassembly</div>";
+}
+
+function _fmtAsmLine(ins) {
+    var addr = ins.address || ins.addr || "";
+    var func = ins["func-name"] || "";
+    var inst = ins.inst || "";
+    var offset = ins.offset || "";
+    var prefix = func ? func + "+" + offset : "";
+    return "<div class=\"dbg-asm-line\">"
+         + "<span class=\"dbg-asm-addr\">" + _esc(addr) + "</span>"
+         + (prefix ? "<span class=\"dbg-asm-func\">" + _esc(prefix) + "</span>" : "")
+         + "<span class=\"dbg-asm-inst\">" + _esc(inst) + "</span>"
+         + "</div>";
+}
+
+function dbgHandleBreakpoint(data) {
+    var bkpt = data.bkpt || data;
+    if (bkpt.number) {
+        /* Add/update breakpoint in our list */
+        var found = false;
+        for (var i = 0; i < dbgBreakpoints.length; i++) {
+            if (dbgBreakpoints[i].number === bkpt.number) {
+                dbgBreakpoints[i] = bkpt;
+                found = true;
+                break;
+            }
+        }
+        if (!found) dbgBreakpoints.push(bkpt);
+    }
+    _renderBreakpoints();
+}
+
+function _renderBreakpoints() {
+    var el = document.getElementById("dbg-breakpoints");
+    if (!el) return;
+    if (dbgBreakpoints.length === 0) {
+        el.innerHTML = "No breakpoints";
+        return;
+    }
+    var html = "";
+    for (var i = 0; i < dbgBreakpoints.length; i++) {
+        var bp = dbgBreakpoints[i];
+        var file = bp.fullname || bp.file || "";
+        var line = bp.line || "";
+        html += "<div class=\"dbg-bp\">"
+              + "<span class=\"dbg-bp-num\">#" + bp.number + "</span> "
+              + "<span class=\"dbg-bp-loc\">" + _esc(_shortPath(file)) + ":" + line + "</span>"
+              + "<button class=\"dbg-bp-del\" data-id=\"" + bp.number + "\">x</button>"
+              + "</div>";
+    }
+    el.innerHTML = html;
+    el.querySelectorAll(".dbg-bp-del").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var id = parseInt(this.getAttribute("data-id"), 10);
+            var buf = new ArrayBuffer(4);
+            new DataView(buf).setUint32(0, id, true);
+            sendDebugCmd(DBG_CMD_BP_CLEAR, buf);
+            dbgBreakpoints = dbgBreakpoints.filter(function(bp) {
+                return parseInt(bp.number, 10) !== id;
+            });
+            _renderBreakpoints();
+        });
+    });
+}
+
+function dbgHandleSource(data) {
+    /* Bridge sends a snippet (±20 lines). If we have the full file
+     * cached, just update the current line and re-render decorations.
+     * Otherwise, request the full file and fall back to the snippet. */
+    var file = data.file || "";
+    var currentLine = data.current_line || 0;
+    dbgCurrentFile = file;
+    dbgCurrentLine = currentLine;
+    dbgLastSourceData = data;
+
+    if (dbgActiveTab !== "source") return;
+
+    if (file && fileCache[file]) {
+        /* Full file already cached — just scroll to the line */
+        _openFileInMonaco(file, fileCache[file]);
+        _scrollMonacoToLine(currentLine);
+        return;
+    }
+
+    if (file) {
+        /* Request full file — meanwhile show snippet */
+        requestFullFile(file);
+    }
+
+    /* Show snippet as fallback */
+    _renderSourceSnippet(data);
+}
+
+function _renderSourceSnippet(data) {
+    var file = data.file || "";
+    var startLine = data.start_line || 1;
+    var currentLine = data.current_line || 0;
+    var lines = data.lines || [];
+
+    var fileLabel = document.getElementById("dbg-source-file");
+    if (fileLabel) fileLabel.textContent = file ? _shortPath(file) : "No source loaded";
+
+    var editor = _ensureMonacoEditor();
+    if (editor) {
+        var container = document.getElementById("dbg-source-view");
+        if (container) container.innerHTML = "";
+        var dom = editor.getDomNode();
+        if (dom && container) {
+            dom.style.display = "";
+            container.appendChild(dom);
+        }
+        editor.setValue(lines.join("\n"));
+        editor._oveStartLine = startLine;
+        editor.updateOptions({
+            lineNumbers: function (n) { return String(startLine + n - 1); }
+        });
+        _monacoSetDecorations(currentLine, startLine, file);
+        if (currentLine) {
+            editor.revealLineInCenter(currentLine - startLine + 1);
+        }
+        editor.layout();
+    }
+}
+
+function _scrollMonacoToLine(line) {
+    if (!monacoEditor || !line) return;
+    _monacoSetDecorations(line, 1, dbgCurrentFile);
+    monacoEditor.revealLineInCenter(line);
+}
+
+function requestSource(file, line, ctx) {
+    var pathBytes = new TextEncoder().encode(file);
+    var buf = new ArrayBuffer(2 + pathBytes.length + 8);
+    var view = new DataView(buf);
+    view.setUint16(0, pathBytes.length, true);
+    new Uint8Array(buf, 2, pathBytes.length).set(pathBytes);
+    view.setUint32(2 + pathBytes.length, line, true);
+    view.setUint32(6 + pathBytes.length, ctx || 20, true);
+    sendDebugCmd(DBG_CMD_SOURCE, buf);
+}
+
+function requestDisassembly(addr, count) {
+    var buf = new ArrayBuffer(8);
+    var view = new DataView(buf);
+    view.setUint32(0, addr, true);
+    view.setUint32(4, count || 32, true);
+    sendDebugCmd(DBG_CMD_DISASSEMBLE, buf);
+}
+
+function _toggleBreakpoint(file, line) {
+    var existing = null;
+    for (var i = 0; i < dbgBreakpoints.length; i++) {
+        var bp = dbgBreakpoints[i];
+        var bpFile = bp.fullname || bp.file || "";
+        if (bpFile === file && parseInt(bp.line, 10) === line) {
+            existing = bp;
+            break;
+        }
+    }
+    if (existing) {
+        var buf = new ArrayBuffer(4);
+        new DataView(buf).setUint32(0, parseInt(existing.number, 10), true);
+        sendDebugCmd(DBG_CMD_BP_CLEAR, buf);
+        dbgBreakpoints = dbgBreakpoints.filter(function(bp) { return bp !== existing; });
+        _renderBreakpoints();
+    } else {
+        var pathBytes = new TextEncoder().encode(file);
+        var buf2 = new ArrayBuffer(2 + pathBytes.length + 4);
+        var view = new DataView(buf2);
+        view.setUint16(0, pathBytes.length, true);
+        new Uint8Array(buf2, 2, pathBytes.length).set(pathBytes);
+        view.setUint32(2 + pathBytes.length, line, true);
+        sendDebugCmd(DBG_CMD_BP_SET, buf2);
+    }
+    /* Re-render source to update gutter marks */
+    if (dbgCurrentFile) requestSource(dbgCurrentFile, dbgCurrentLine, 20);
+}
+
+function _hasBreakpointAt(file, line) {
+    for (var i = 0; i < dbgBreakpoints.length; i++) {
+        var bp = dbgBreakpoints[i];
+        var bpFile = bp.fullname || bp.file || "";
+        if (bpFile === file && parseInt(bp.line, 10) === line) return true;
+    }
+    return false;
+}
+
+function _shortPath(p) {
+    if (!p) return "";
+    var parts = p.replace(/\\/g, "/").split("/");
+    return parts.length > 2 ? parts.slice(-2).join("/") : p;
+}
+
+/* ── Debug toolbar button wiring ─────────────────────────────────── */
+
+(function() {
+    var btnMap = {
+        "dbg-continue":  DBG_CMD_CONTINUE,
+        "dbg-pause":     DBG_CMD_PAUSE,
+        "dbg-step-over": DBG_CMD_STEP_OVER,
+        "dbg-step-into": DBG_CMD_STEP_INTO,
+        "dbg-step-out":  DBG_CMD_STEP_OUT,
+        "dbg-reset":     DBG_CMD_RESET,
+    };
+    Object.keys(btnMap).forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener("click", function() {
+            sendDebugCmd(btnMap[id]);
+        });
+    });
+
+    /* Tab switching — renders from cached data */
+    document.querySelectorAll(".dbg-tab").forEach(function(tab) {
+        tab.addEventListener("click", function() {
+            document.querySelectorAll(".dbg-tab").forEach(function(t) { t.classList.remove("active"); });
+            this.classList.add("active");
+            dbgActiveTab = this.getAttribute("data-tab");
+            var container = document.getElementById("dbg-source-view");
+            if (dbgActiveTab === "disasm" || dbgActiveTab === "mixed") {
+                /* Hide Monaco, show HTML disassembly */
+                if (monacoEditor) {
+                    var dom = monacoEditor.getDomNode();
+                    if (dom) dom.style.display = "none";
+                }
+                if (dbgLastDisasmData) {
+                    _renderDisassembly(dbgLastDisasmData);
+                } else if (dbgCurrentAddr) {
+                    requestDisassembly(parseInt(dbgCurrentAddr, 16), 32);
+                }
+            } else {
+                /* Show Monaco, clear HTML content */
+                if (container) container.innerHTML = "";
+                if (monacoEditor) {
+                    var dom2 = monacoEditor.getDomNode();
+                    if (dom2) {
+                        dom2.style.display = "";
+                        container.appendChild(dom2);
+                        monacoEditor.layout();
+                    }
+                }
+                if (dbgLastSourceData) {
+                    _renderSource(dbgLastSourceData);
+                } else if (dbgCurrentFile) {
+                    requestSource(dbgCurrentFile, dbgCurrentLine, 20);
+                }
+            }
+        });
+    });
+
+    /* Keyboard shortcuts */
+    document.addEventListener("keydown", function(e) {
+        if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+        if (e.key === "F5") { e.preventDefault(); sendDebugCmd(DBG_CMD_CONTINUE); }
+        if (e.key === "F6") { e.preventDefault(); sendDebugCmd(DBG_CMD_PAUSE); }
+        if (e.key === "F10") { e.preventDefault(); sendDebugCmd(DBG_CMD_STEP_OVER); }
+        if (e.key === "F11" && !e.shiftKey) { e.preventDefault(); sendDebugCmd(DBG_CMD_STEP_INTO); }
+        if (e.key === "F11" && e.shiftKey) { e.preventDefault(); sendDebugCmd(DBG_CMD_STEP_OUT); }
+    });
+})();
 
 /* ── Plugin events ─────────────────────────────────────────────────── */
 function handleEvent(buf, off) {

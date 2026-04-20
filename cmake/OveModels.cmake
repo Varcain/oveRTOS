@@ -15,7 +15,7 @@ function(ove_generate_models TARGET)
     endif()
 
     # Find all .tflite files
-    file(GLOB_RECURSE TFLITE_FILES "${MODEL_DIR}/*.tflite")
+    file(GLOB_RECURSE TFLITE_FILES CONFIGURE_DEPENDS "${MODEL_DIR}/*.tflite")
     if(NOT TFLITE_FILES)
         return()
     endif()

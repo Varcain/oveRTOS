@@ -109,6 +109,11 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg)
 	if (ntp_secs == 0)
 		return OVE_ERR_NOT_SUPPORTED; /* kiss-of-death or invalid */
 
+	/* Guard against era-0 wrap and pre-1970 timestamps — the subtraction
+	 * below is on unsigned types and would wrap to a huge value. */
+	if (ntp_secs < NTP_UNIX_DELTA)
+		return OVE_ERR_NOT_SUPPORTED;
+
 	/* Convert NTP timestamp to Unix microseconds */
 	uint64_t unix_secs = (uint64_t)ntp_secs - NTP_UNIX_DELTA;
 	uint64_t frac_us = ((uint64_t)ntp_frac * 1000000ULL) >> 32;

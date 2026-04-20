@@ -39,9 +39,10 @@ static void test_time_delay_ms(void **state)
     ove_time_get_us(&after);
     uint64_t elapsed_us = after - before;
 
-    /* Should be at least 90 ms and no more than 200 ms */
-    assert_true(elapsed_us >= 90000);
-    assert_true(elapsed_us <= 200000);
+    /* Delay must deliver at least the requested duration; tolerance is
+     * OVE_TEST_TIMING_TOLERANCE_MS on the upper bound. */
+    assert_true(elapsed_us >= 100000);
+    assert_true(elapsed_us <= (100 + OVE_TEST_TIMING_TOLERANCE_MS) * 1000);
 }
 
 static void test_time_delay_us(void **state)
@@ -53,9 +54,10 @@ static void test_time_delay_us(void **state)
     ove_time_get_us(&after);
     uint64_t elapsed_us = after - before;
 
-    /* Should be at least 8 ms and no more than 50 ms */
-    assert_true(elapsed_us >= 8000);
-    assert_true(elapsed_us <= 50000);
+    /* Delay must deliver at least the requested duration; tolerance is
+     * OVE_TEST_TIMING_TOLERANCE_MS on the upper bound. */
+    assert_true(elapsed_us >= 10000);
+    assert_true(elapsed_us <= (10 + OVE_TEST_TIMING_TOLERANCE_MS) * 1000);
 }
 
 static void test_time_passage(void **state)

@@ -21,38 +21,29 @@
  */
 
 #include "ove/ove.h"
-#include <stdio.h>
-
-#ifdef CONFIG_OVE_LVGL
 #include "ove/lvgl.h"
-#endif
+#include <stdio.h>
 
 /* --- Shared state --- */
 
 static uint32_t last_value;
 
-#ifdef CONFIG_OVE_LVGL
 static lv_obj_t *title_label;
 static lv_obj_t *count_label;
 static lv_obj_t *bar;
 static void ui_timer_cb(ove_timer_t timer, void *user_data);
-#endif
 
 /* --- Thread entry points (forward declarations) --- */
 
 static void producer_thread(void *arg);
 static void consumer_thread(void *arg);
-#ifdef CONFIG_OVE_LVGL
 static void graphics_thread(void *arg);
-#endif
 
 /* --- Primitive handles --- */
 
 static ove_queue_t counter_queue;
 static ove_mutex_t value_mutex;
-#ifdef CONFIG_OVE_LVGL
 static ove_timer_t ui_timer;
-#endif
 
 /* --- Producer thread: generates incrementing counter values --- */
 
@@ -100,7 +91,6 @@ static void consumer_thread(void *arg)
 
 /* --- LVGL UI --- */
 
-#ifdef CONFIG_OVE_LVGL
 static void ui_timer_cb(ove_timer_t timer, void *user_data)
 {
 	(void)timer;
@@ -182,7 +172,6 @@ static void create_ui(void)
 				  LV_PART_INDICATOR);
 	lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 96);
 }
-#endif /* CONFIG_OVE_LVGL */
 
 /* --- App entry point --- */
 
@@ -208,16 +197,13 @@ void ove_main(void)
 		return;
 	}
 
-#ifdef CONFIG_OVE_LVGL
 	ret = ove_timer_create(&ui_timer, ui_timer_cb, NULL, 200, 0);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to create UI timer: %d", ret);
 		return;
 	}
-#endif
 
 	/* Create threads */
-#ifdef CONFIG_OVE_LVGL
 	{
 		struct ove_thread_desc desc = {
 			.name = "graphics",
@@ -232,7 +218,6 @@ void ove_main(void)
 			return;
 		}
 	}
-#endif
 
 	{
 		struct ove_thread_desc desc = {
@@ -265,7 +250,6 @@ void ove_main(void)
 	}
 
 	/* Initialize LVGL and create UI */
-#ifdef CONFIG_OVE_LVGL
 	ret = ove_lvgl_init();
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
@@ -281,7 +265,6 @@ void ove_main(void)
 		OVE_LOG_ERR("Failed to start UI timer: %d", ret);
 		return;
 	}
-#endif
 
 	OVE_LOG_INF("C example: ready");
 
@@ -290,10 +273,8 @@ void ove_main(void)
 	/* Cleanup (only reached if scheduler returns, e.g. POSIX) */
 	OVE_LOG_INF("C example: shutdown");
 
-#ifdef CONFIG_OVE_LVGL
 	ove_timer_stop(ui_timer);
 	ove_timer_destroy(ui_timer);
-#endif
 
 	ove_mutex_destroy(value_mutex);
 	ove_queue_destroy(counter_queue);

@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -38,25 +40,55 @@ static int fs_closedir(ove_dir_t d)
     return ove_fs_closedir(d);
 }
 
-static char s_tmppath[128];
+/*
+ * Per-test sandbox created via mkdtemp so parallel/aborted runs don't
+ * collide and failed tests don't leave junk in /tmp. Root is overridable
+ * via OVE_TEST_TMPDIR for CI runners that need a private scratch area.
+ */
+static char s_tmpdir[256];
+static char s_tmppath[320];
+
+static void fs_rm_rf(const char *dir)
+{
+    DIR *d = opendir(dir);
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0)
+                continue;
+            char p[512];
+            snprintf(p, sizeof(p), "%s/%s", dir, e->d_name);
+            struct stat st;
+            if (lstat(p, &st) == 0 && S_ISDIR(st.st_mode))
+                fs_rm_rf(p);
+            else
+                unlink(p);
+        }
+        closedir(d);
+    }
+    rmdir(dir);
+}
 
 static int fs_setup(void **state)
 {
     (void)state;
-    /* Create a temporary file path for tests */
-    snprintf(s_tmppath, sizeof(s_tmppath), "/tmp/ove_test_XXXXXX");
-    int fd = mkstemp(s_tmppath);
-    if (fd >= 0) {
+    const char *root = getenv("OVE_TEST_TMPDIR");
+    if (root == NULL || *root == '\0')
+        root = "/tmp";
+    snprintf(s_tmpdir, sizeof(s_tmpdir), "%s/ove_test_XXXXXX", root);
+    if (mkdtemp(s_tmpdir) == NULL)
+        return -1;
+    snprintf(s_tmppath, sizeof(s_tmppath), "%s/file", s_tmpdir);
+    int fd = creat(s_tmppath, 0600);
+    if (fd >= 0)
         close(fd);
-    }
     return 0;
 }
 
 static int fs_teardown(void **state)
 {
     (void)state;
-    /* Clean up temp file */
-    unlink(s_tmppath);
+    fs_rm_rf(s_tmpdir);
     return 0;
 }
 
@@ -167,14 +199,13 @@ static void test_fs_opendir_readdir_closedir(void **state)
     ove_fs_mount(NULL, "/");
 
     ove_dir_t d = NULL;
-    int rc = fs_opendir(&d, "/tmp");
+    int rc = fs_opendir(&d, s_tmpdir);
     assert_int_equal(rc, OVE_OK);
     assert_non_null(d);
 
     struct ove_dirent entry;
-    /* Read at least one entry */
+    /* Sandbox contains exactly one file ("file") created by fs_setup. */
     rc = ove_fs_readdir(d, &entry);
-    /* /tmp should have at least our temp file */
     assert_int_equal(rc, OVE_OK);
 
     rc = fs_closedir(d);

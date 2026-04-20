@@ -41,11 +41,7 @@ pub const Error = error{
 /// Sentinel value for `timeout_ms` parameters meaning "block indefinitely".
 pub const wait_forever: u32 = c.OVE_WAIT_FOREVER;
 
-/// Convert a negative C error code to a Zig error.
-/// For functions that return a non-negative value on success (e.g. node index),
-/// use `fromCodeInt` instead.
-pub fn fromCode(rc: c_int) Error!void {
-    if (rc >= 0) return;
+fn mapErrorCode(rc: c_int) Error {
     return switch (rc) {
         c.OVE_ERR_NOT_REGISTERED => Error.NotRegistered,
         c.OVE_ERR_INVALID_PARAM => Error.InvalidParam,
@@ -63,23 +59,17 @@ pub fn fromCode(rc: c_int) Error!void {
     };
 }
 
+/// Convert a negative C error code to a Zig error.
+/// For functions that return a non-negative value on success (e.g. node index),
+/// use `fromCodeInt` instead.
+pub fn fromCode(rc: c_int) Error!void {
+    if (rc >= 0) return;
+    return mapErrorCode(rc);
+}
+
 /// Convert a C return code that carries a value on success.
 /// Returns the value if rc >= 0, or the mapped error if rc < 0.
 pub fn fromCodeInt(rc: c_int) Error!c_int {
     if (rc >= 0) return rc;
-    return switch (rc) {
-        c.OVE_ERR_NOT_REGISTERED => Error.NotRegistered,
-        c.OVE_ERR_INVALID_PARAM => Error.InvalidParam,
-        c.OVE_ERR_NO_MEMORY => Error.NoMemory,
-        c.OVE_ERR_TIMEOUT => Error.Timeout,
-        c.OVE_ERR_NOT_SUPPORTED => Error.NotSupported,
-        c.OVE_ERR_QUEUE_FULL => Error.QueueFull,
-        c.OVE_ERR_NET_REFUSED => Error.NetRefused,
-        c.OVE_ERR_NET_UNREACHABLE => Error.NetUnreachable,
-        c.OVE_ERR_NET_ADDR_IN_USE => Error.NetAddrInUse,
-        c.OVE_ERR_NET_RESET => Error.NetReset,
-        c.OVE_ERR_NET_DNS_FAIL => Error.NetDnsFail,
-        c.OVE_ERR_NET_CLOSED => Error.NetClosed,
-        else => Error.Unknown,
-    };
+    return mapErrorCode(rc);
 }

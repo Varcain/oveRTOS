@@ -72,7 +72,7 @@ public:
 	/**
 	 * @brief Destroys the workqueue and terminates the worker thread.
 	 */
-	~Workqueue() {
+	~Workqueue() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_workqueue_deinit(handle_);
@@ -165,7 +165,7 @@ public:
 	/**
 	 * @brief Destroys the work item, freeing its kernel resource (heap mode).
 	 */
-	~Work() {
+	~Work() noexcept {
 		if (!handle_) return;
 #ifndef CONFIG_OVE_ZERO_HEAP
 		ove_work_free(handle_);

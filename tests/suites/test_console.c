@@ -25,7 +25,6 @@ static void test_console_put_char(void **state)
 {
     (void)state;
     ove_console_init();
-    /* Should not crash */
     ove_console_putchar('A');
     ove_console_putchar('\n');
 }
@@ -34,12 +33,11 @@ static void test_console_write(void **state)
 {
     (void)state;
     ove_console_init();
-    /* Should not crash */
     const char *msg = "Hello, console!\n";
     ove_console_write(msg, strlen(msg));
 }
 
-static void test_console_getchar_no_crash(void **state)
+static void test_console_getchar_from_empty_stdin(void **state)
 {
     (void)state;
     ove_console_init();
@@ -51,12 +49,14 @@ static void test_console_getchar_no_crash(void **state)
     close(devnull);
 
     int ch = ove_console_getchar();
-    /* Should return EOF (-1) or any value without crashing */
-    (void)ch;
+    /* /dev/null is EOF immediately — getchar must return EOF. */
+    assert_int_equal(ch, EOF);
 
     /* Restore original stdin */
     dup2(saved_stdin, STDIN_FILENO);
     close(saved_stdin);
+#else
+    skip();
 #endif
 }
 
@@ -80,7 +80,7 @@ int test_console_run(void)
         cmocka_unit_test(test_console_init),
         cmocka_unit_test(test_console_put_char),
         cmocka_unit_test(test_console_write),
-        cmocka_unit_test(test_console_getchar_no_crash),
+        cmocka_unit_test(test_console_getchar_from_empty_stdin),
         cmocka_unit_test(test_console_init_multiple),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

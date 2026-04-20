@@ -47,3 +47,22 @@ set(APP_C_COMPANION_INCLUDES
 )
 {% endif %}
 {% endif %}
+
+{% if app.generated_image_sources is defined %}
+# Auto-generated image data (from app.yaml `images:` key, paths absolute)
+set(APP_GENERATED_IMAGE_SOURCES
+{% for src in app.generated_image_sources %}
+    {{ src }}
+{% endfor %}
+)
+# Append to APP_SOURCES for C/C++ apps, APP_C_COMPANION_SOURCES for Rust/Zig.
+{% if app.lang in ['c', 'cpp'] %}
+list(APPEND APP_SOURCES ${APP_GENERATED_IMAGE_SOURCES})
+{% else %}
+if(DEFINED APP_C_COMPANION_SOURCES)
+    list(APPEND APP_C_COMPANION_SOURCES ${APP_GENERATED_IMAGE_SOURCES})
+else()
+    set(APP_C_COMPANION_SOURCES ${APP_GENERATED_IMAGE_SOURCES})
+endif()
+{% endif %}
+{% endif %}

@@ -178,13 +178,13 @@ pub const Thread = struct {
 
     /// Suspend this thread, preventing it from being scheduled.
     ///
-    /// The thread remains suspended until `resume_()` is called.
-    pub fn suspend_(self: Thread) void {
+    /// The thread remains suspended until `resumeThread()` is called.
+    pub fn suspendThread(self: Thread) void {
         c.ove_thread_suspend(self.handle);
     }
 
     /// Resume a previously suspended thread, making it eligible to run again.
-    pub fn resume_(self: Thread) void {
+    pub fn resumeThread(self: Thread) void {
         c.ove_thread_resume(self.handle);
     }
 
@@ -227,7 +227,7 @@ pub const Thread = struct {
     /// Yield the calling thread's remaining time slice to the scheduler.
     ///
     /// A hint to the RTOS to allow other threads of equal priority to run.
-    pub fn yield_() void {
+    pub fn yieldCpu() void {
         c.ove_thread_yield();
     }
 };

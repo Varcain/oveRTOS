@@ -261,7 +261,6 @@ fn test_udp() {
 // 5. HTTP client
 // ---------------------------------------------------------------------------
 
-#[cfg(has_net_http)]
 fn test_http() {
     ove::log_inf!("=== HTTP Client ===");
 
@@ -345,7 +344,6 @@ fn test_http() {
 // 5b. SNTP
 // ---------------------------------------------------------------------------
 
-#[cfg(has_net_sntp)]
 fn test_sntp() {
     ove::log_inf!("=== SNTP ===");
 
@@ -374,17 +372,14 @@ fn test_sntp() {
 // 6. MQTT client
 // ---------------------------------------------------------------------------
 
-#[cfg(has_net_mqtt)]
 static MQTT_RX_COUNT: AtomicU32 = AtomicU32::new(0);
 
-#[cfg(has_net_mqtt)]
 fn on_mqtt_message(topic: &str, payload: &[u8]) {
     ove::log_inf!("  MQTT rx: [{}] {}", topic,
         core::str::from_utf8(payload).unwrap_or("<binary>"));
     MQTT_RX_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
-#[cfg(has_net_mqtt)]
 fn test_mqtt() {
     ove::log_inf!("=== MQTT Client ===");
 
@@ -486,13 +481,10 @@ fn net_thread() {
     test_tcp();
     test_udp();
 
-    #[cfg(has_net_http)]
     test_http();
 
-    #[cfg(has_net_sntp)]
     test_sntp();
 
-    #[cfg(has_net_mqtt)]
     test_mqtt();
 
     let passed = PASS_COUNT.load(Ordering::Relaxed);
@@ -509,7 +501,6 @@ fn net_thread() {
     }
 
     // HTTPD — runs forever after the test harness
-    #[cfg(has_net_httpd)]
     {
         let port: u16 = if cfg!(rtos_posix) { 8080 } else { 80 };
         ove::log_inf!("Starting HTTP server on port {}...", port);
@@ -538,7 +529,6 @@ fn app_main() {
     ove::log_inf!("Rust networking example: ready");
     ove::run();
 
-    #[cfg(has_net_httpd)]
     loop {
         Thread::sleep_ms(1000);
     }

@@ -356,6 +356,107 @@ public:
 		return self();
 	}
 
+	/**
+	 * @brief Configures this object as a grid container.
+	 *
+	 * Both arrays must terminate with `LV_GRID_TEMPLATE_LAST`. Track sizes
+	 * can be fixed pixel values, `LV_GRID_CONTENT`, or `LV_GRID_FR(n)` for
+	 * fractional units. Switches the object's layout to `LV_LAYOUT_GRID`.
+	 *
+	 * @param[in] cols Column track descriptor array.
+	 * @param[in] rows Row track descriptor array.
+	 * @return Reference to the derived object for method chaining.
+	 */
+	Derived &grid_dsc(const int32_t *cols, const int32_t *rows) {
+		lv_obj_set_grid_dsc_array(self().get(), cols, rows);
+		return self();
+	}
+
+	/**
+	 * @brief Configure this object as a flex container with the given flow.
+	 */
+	Derived &flex_flow(lv_flex_flow_t flow) {
+		lv_obj_set_flex_flow(self().get(), flow);
+		return self();
+	}
+
+	/**
+	 * @brief Set flex alignment for main axis, cross axis (items), and cross axis (tracks).
+	 */
+	Derived &flex_align(lv_flex_align_t main, lv_flex_align_t cross,
+			    lv_flex_align_t track) {
+		lv_obj_set_flex_align(self().get(), main, cross, track);
+		return self();
+	}
+
+	/**
+	 * @brief Set this child's flex grow factor (0 disables growing).
+	 */
+	Derived &flex_grow(uint8_t grow) {
+		lv_obj_set_flex_grow(self().get(), grow);
+		return self();
+	}
+
+	/**
+	 * @brief Switch the object's layout engine (None / Flex / Grid).
+	 */
+	Derived &layout(uint32_t kind) {
+		lv_obj_set_layout(self().get(), kind);
+		return self();
+	}
+
+	/**
+	 * @brief Scroll the object so `y` is visible. `anim` enables animated scrolling.
+	 */
+	Derived &scroll_to_y(int32_t y, bool anim) {
+		lv_obj_scroll_to_y(self().get(), y, anim);
+		return self();
+	}
+
+	/**
+	 * @brief Force a layout recomputation (needed before `get_content_width`/`get_scroll_bottom`).
+	 */
+	Derived &update_layout() {
+		lv_obj_update_layout(self().get());
+		return self();
+	}
+
+	/** @return Inner content width (excludes padding/scrollbars). */
+	int32_t get_content_width() const {
+		return lv_obj_get_content_width(const_cast<lv_obj_t *>(
+			static_cast<const Derived &>(*this).get()));
+	}
+
+	/** @return Remaining downward scroll distance. */
+	int32_t get_scroll_bottom() const {
+		return lv_obj_get_scroll_bottom(const_cast<lv_obj_t *>(
+			static_cast<const Derived &>(*this).get()));
+	}
+
+	/** Remove all inline and reused styles from this object. */
+	Derived &remove_style_all() {
+		lv_obj_remove_style_all(self().get());
+		return self();
+	}
+
+	/**
+	 * @brief Places this object into a cell of its parent grid.
+	 * @param[in] col_align  Horizontal cell alignment (`LV_GRID_ALIGN_*`).
+	 * @param[in] col_pos    Zero-based column index.
+	 * @param[in] col_span   Number of columns to span (default 1).
+	 * @param[in] row_align  Vertical cell alignment (`LV_GRID_ALIGN_*`).
+	 * @param[in] row_pos    Zero-based row index.
+	 * @param[in] row_span   Number of rows to span (default 1).
+	 * @return Reference to the derived object for method chaining.
+	 */
+	Derived &grid_cell(lv_grid_align_t col_align, int32_t col_pos,
+			   int32_t col_span, lv_grid_align_t row_align,
+			   int32_t row_pos, int32_t row_span) {
+		lv_obj_set_grid_cell(self().get(), col_align, col_pos, col_span,
+				     row_align, row_pos, row_span);
+		return self();
+	}
+
 private:
 	Derived &self() { return static_cast<Derived &>(*this); }
 };
@@ -523,12 +624,27 @@ public:
 	}
 
 	/**
+	 * @brief Sets the background color of a specific part
+	 *        (e.g. `LV_PART_INDICATOR`, `LV_PART_KNOB`, `LV_PART_SCROLLBAR`).
+	 */
+	Derived &bg_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_bg_color(self().get(), c, part);
+		return self();
+	}
+
+	/**
 	 * @brief Sets the background opacity.
 	 * @param[in] opa Opacity value (0–255, or `LV_OPA_*` constants).
 	 * @return Reference to the derived object for method chaining.
 	 */
 	Derived &bg_opa(lv_opa_t opa) {
 		lv_obj_set_style_bg_opa(self().get(), opa, LV_PART_MAIN);
+		return self();
+	}
+
+	/** @brief Sets the background opacity on a specific part. */
+	Derived &bg_opa(lv_opa_t opa, lv_style_selector_t part) {
+		lv_obj_set_style_bg_opa(self().get(), opa, part);
 		return self();
 	}
 
@@ -552,6 +668,12 @@ public:
 		return self();
 	}
 
+	/** @brief Sets the border width on a specific part. */
+	Derived &border_width(int32_t w, lv_style_selector_t part) {
+		lv_obj_set_style_border_width(self().get(), w, part);
+		return self();
+	}
+
 	/**
 	 * @brief Sets the corner radius.
 	 * @param[in] r Radius in pixels; use `LV_RADIUS_CIRCLE` for a full circle.
@@ -559,6 +681,12 @@ public:
 	 */
 	Derived &radius(int32_t r) {
 		lv_obj_set_style_radius(self().get(), r, LV_PART_MAIN);
+		return self();
+	}
+
+	/** @brief Sets the corner radius on a specific part. */
+	Derived &radius(int32_t r, lv_style_selector_t part) {
+		lv_obj_set_style_radius(self().get(), r, part);
 		return self();
 	}
 
@@ -619,6 +747,120 @@ public:
 	 */
 	Derived &text_font(const lv_font_t *f) {
 		lv_obj_set_style_text_font(self().get(), f, LV_PART_MAIN);
+		return self();
+	}
+
+	// ---- Per-side paddings + row/column gaps ----
+	/** @brief Sets top padding in pixels. */
+	Derived &pad_top(int32_t p) {
+		lv_obj_set_style_pad_top(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	/** @brief Sets bottom padding in pixels. */
+	Derived &pad_bottom(int32_t p) {
+		lv_obj_set_style_pad_bottom(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	/** @brief Sets left padding in pixels. */
+	Derived &pad_left(int32_t p) {
+		lv_obj_set_style_pad_left(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	/** @brief Sets right padding in pixels. */
+	Derived &pad_right(int32_t p) {
+		lv_obj_set_style_pad_right(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	/** @brief Sets the row gap between children in flex/grid layouts. */
+	Derived &pad_row(int32_t p) {
+		lv_obj_set_style_pad_row(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+	/** @brief Sets the column gap between children in flex/grid layouts. */
+	Derived &pad_column(int32_t p) {
+		lv_obj_set_style_pad_column(self().get(), p, LV_PART_MAIN);
+		return self();
+	}
+
+	// ---- Text alignment + overall opacity ----
+	/** @brief Sets the horizontal text alignment on the given part. */
+	Derived &text_align(uint32_t align, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_text_align(self().get(),
+					    static_cast<lv_text_align_t>(align), part);
+		return self();
+	}
+	/** @brief Sets the overall object opacity (0–255, or `LV_OPA_*`). */
+	Derived &set_opa(lv_opa_t opa) {
+		lv_obj_set_style_opa(self().get(), opa, LV_PART_MAIN);
+		return self();
+	}
+
+	// ---- Selector variants ----
+	/** @brief Sets text color on a specific part. */
+	Derived &text_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_text_color(self().get(), c, part);
+		return self();
+	}
+	/** @brief Sets border color on a specific part. */
+	Derived &border_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_border_color(self().get(), c, part);
+		return self();
+	}
+	/** @brief Sets arc color on a specific part. */
+	Derived &arc_color(lv_color_t c, lv_style_selector_t part) {
+		lv_obj_set_style_arc_color(self().get(), c, part);
+		return self();
+	}
+	/** @brief Sets arc stroke width on a specific part. */
+	Derived &arc_width(int32_t w, lv_style_selector_t part) {
+		lv_obj_set_style_arc_width(self().get(), w, part);
+		return self();
+	}
+	/** @brief Sets arc opacity on a specific part. */
+	Derived &arc_opa(lv_opa_t opa, lv_style_selector_t part) {
+		lv_obj_set_style_arc_opa(self().get(), opa, part);
+		return self();
+	}
+	/** @brief Enables/disables rounded arc end caps on a specific part. */
+	Derived &arc_rounded(bool rounded, lv_style_selector_t part) {
+		lv_obj_set_style_arc_rounded(self().get(), rounded, part);
+		return self();
+	}
+
+	// ---- Advanced layout/compositing styles ----
+	/** @brief Sets a vertical translation (post-layout offset) on the given part. */
+	Derived &translate_y(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_translate_y(self().get(), v, part);
+		return self();
+	}
+	/** @brief Sets top margin (outer spacing) on the given part. */
+	Derived &margin_top(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_top(self().get(), v, part);
+		return self();
+	}
+	/** @brief Sets bottom margin (outer spacing) on the given part. */
+	Derived &margin_bottom(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_bottom(self().get(), v, part);
+		return self();
+	}
+	/** @brief Sets left margin (outer spacing) on the given part. */
+	Derived &margin_left(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_left(self().get(), v, part);
+		return self();
+	}
+	/** @brief Sets right margin (outer spacing) on the given part. */
+	Derived &margin_right(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_margin_right(self().get(), v, part);
+		return self();
+	}
+	/** @brief Sets the maximum height (in pixels) on the given part. */
+	Derived &max_height(int32_t v, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_max_height(self().get(), v, part);
+		return self();
+	}
+	/** @brief Sets the layered opacity (applied after compositing) on the given part. */
+	Derived &opa_layered(lv_opa_t opa, lv_style_selector_t part = LV_PART_MAIN) {
+		lv_obj_set_style_opa_layered(self().get(), opa, part);
 		return self();
 	}
 
@@ -1133,6 +1375,1300 @@ public:
 static_assert(sizeof(Box) == sizeof(void *),
 	      "Box must be pointer-sized");
 
+/**
+ * @class Button
+ * @brief C++ wrapper for an LVGL button widget.
+ *
+ * A button is a clickable container. Use `toggle_mode(true)` to turn it
+ * into a checkable toggle whose state is tracked via `LV_STATE_CHECKED`.
+ * Put a `Label` child inside to give it text.
+ */
+class Button : public ObjectView,
+	       public ObjectMixin<Button>,
+	       public EventMixin<Button>,
+	       public StyleMixin<Button> {
+public:
+	/** @brief Wraps an existing LVGL button object (non-owning). */
+	explicit Button(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new button as a child of `parent`. */
+	static Button create(ObjectView parent) {
+		return Button(lv_button_create(parent));
+	}
+
+	/**
+	 * @brief Enables or disables toggle (checkable) behaviour.
+	 * @param[in] on `true` to make the button maintain a checked state.
+	 */
+	Button &toggle_mode(bool on) {
+		if (on)
+			lv_obj_add_flag(obj_, LV_OBJ_FLAG_CHECKABLE);
+		else
+			lv_obj_remove_flag(obj_, LV_OBJ_FLAG_CHECKABLE);
+		return *this;
+	}
+
+	/** @brief Sets the checked state explicitly. */
+	Button &checked(bool v) {
+		if (v) lv_obj_add_state(obj_, LV_STATE_CHECKED);
+		else   lv_obj_remove_state(obj_, LV_STATE_CHECKED);
+		return *this;
+	}
+
+	/** @brief Returns `true` if the button is currently in the checked state. */
+	bool is_checked() const {
+		return lv_obj_has_state(obj_, LV_STATE_CHECKED);
+	}
+};
+
+static_assert(sizeof(Button) == sizeof(void *),
+	      "Button must be pointer-sized");
+
+/**
+ * @class Slider
+ * @brief C++ wrapper for an LVGL slider widget (interactive bar).
+ *
+ * Inherits the bar value/range shape and adds knob styling. Listen for
+ * changes with `on_value_changed(...)`.
+ */
+class Slider : public ObjectView,
+	       public ObjectMixin<Slider>,
+	       public EventMixin<Slider>,
+	       public StyleMixin<Slider> {
+public:
+	/** @brief Wraps an existing LVGL slider object (non-owning). */
+	explicit Slider(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new slider as a child of `parent`. */
+	static Slider create(ObjectView parent) {
+		return Slider(lv_slider_create(parent));
+	}
+
+	/** @brief Sets the current value (animated). */
+	Slider &value(int32_t val) {
+		lv_slider_set_value(obj_, val, LV_ANIM_ON);
+		return *this;
+	}
+
+	/** @brief Sets the current value with explicit animation control. */
+	Slider &value(int32_t val, lv_anim_enable_t anim) {
+		lv_slider_set_value(obj_, val, anim);
+		return *this;
+	}
+
+	/** @brief Sets the min/max range. */
+	Slider &range(int32_t min, int32_t max) {
+		lv_slider_set_range(obj_, min, max);
+		return *this;
+	}
+
+	/** @brief Returns the current value. */
+	int32_t get_value() const { return lv_slider_get_value(obj_); }
+
+	/** @brief Sets the filled indicator colour (`LV_PART_INDICATOR`). */
+	Slider &indicator_color(lv_color_t c) {
+		lv_obj_set_style_bg_color(obj_, c, LV_PART_INDICATOR);
+		return *this;
+	}
+
+	/** @brief Sets the knob colour (`LV_PART_KNOB`). */
+	Slider &knob_color(lv_color_t c) {
+		lv_obj_set_style_bg_color(obj_, c, LV_PART_KNOB);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Slider) == sizeof(void *),
+	      "Slider must be pointer-sized");
+
+/**
+ * @class Switch
+ * @brief C++ wrapper for an LVGL switch widget (binary toggle).
+ *
+ * State is tracked via `LV_STATE_CHECKED`. Listen for changes with
+ * `on_value_changed(...)`.
+ */
+class Switch : public ObjectView,
+	       public ObjectMixin<Switch>,
+	       public EventMixin<Switch>,
+	       public StyleMixin<Switch> {
+public:
+	/** @brief Wraps an existing LVGL switch object (non-owning). */
+	explicit Switch(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new switch as a child of `parent`. */
+	static Switch create(ObjectView parent) {
+		return Switch(lv_switch_create(parent));
+	}
+
+	/** @brief Sets the checked (on) state. */
+	Switch &checked(bool v) {
+		if (v) lv_obj_add_state(obj_, LV_STATE_CHECKED);
+		else   lv_obj_remove_state(obj_, LV_STATE_CHECKED);
+		return *this;
+	}
+
+	/** @brief Returns `true` if the switch is on. */
+	bool is_checked() const {
+		return lv_obj_has_state(obj_, LV_STATE_CHECKED);
+	}
+};
+
+static_assert(sizeof(Switch) == sizeof(void *),
+	      "Switch must be pointer-sized");
+
+/**
+ * @class Checkbox
+ * @brief C++ wrapper for an LVGL checkbox (labelled binary toggle).
+ *
+ * State is tracked via `LV_STATE_CHECKED` exactly like `Switch`; `text()`
+ * sets the label shown alongside the tick box.
+ */
+class Checkbox : public ObjectView,
+		 public ObjectMixin<Checkbox>,
+		 public EventMixin<Checkbox>,
+		 public StyleMixin<Checkbox> {
+public:
+	/** @brief Wraps an existing LVGL checkbox object (non-owning). */
+	explicit Checkbox(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new checkbox as a child of `parent`. */
+	static Checkbox create(ObjectView parent) {
+		return Checkbox(lv_checkbox_create(parent));
+	}
+
+	/** @brief Sets the label text (copies into LVGL-owned memory). */
+	Checkbox &text(const char *txt) {
+		lv_checkbox_set_text(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Sets the label text from a persistent static string (no copy). */
+	Checkbox &text_static(const char *txt) {
+		lv_checkbox_set_text_static(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Sets the checked state. */
+	Checkbox &checked(bool v) {
+		if (v) lv_obj_add_state(obj_, LV_STATE_CHECKED);
+		else   lv_obj_remove_state(obj_, LV_STATE_CHECKED);
+		return *this;
+	}
+
+	/** @brief Returns `true` if the checkbox is ticked. */
+	bool is_checked() const {
+		return lv_obj_has_state(obj_, LV_STATE_CHECKED);
+	}
+};
+
+static_assert(sizeof(Checkbox) == sizeof(void *),
+	      "Checkbox must be pointer-sized");
+
+/**
+ * @class Arc
+ * @brief C++ wrapper for an LVGL arc widget (circular slider / gauge).
+ *
+ * Arcs expose a value/range much like `Bar` and `Slider`, plus rotation
+ * and angle controls. The track uses `arc_color` on `LV_PART_MAIN`, the
+ * filled indicator uses `arc_color` on `LV_PART_INDICATOR`, and the
+ * draggable knob uses `bg_color` on `LV_PART_KNOB`.
+ */
+class Arc : public ObjectView,
+	    public ObjectMixin<Arc>,
+	    public EventMixin<Arc>,
+	    public StyleMixin<Arc> {
+public:
+	/** @brief Wraps an existing LVGL arc object (non-owning). */
+	explicit Arc(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new arc as a child of `parent`. */
+	static Arc create(ObjectView parent) {
+		return Arc(lv_arc_create(parent));
+	}
+
+	/** @brief Sets the current value. */
+	Arc &value(int32_t val) {
+		lv_arc_set_value(obj_, val);
+		return *this;
+	}
+
+	/** @brief Sets the min/max range. */
+	Arc &range(int32_t min, int32_t max) {
+		lv_arc_set_range(obj_, min, max);
+		return *this;
+	}
+
+	/** @brief Sets the background arc start/end angles in degrees. */
+	Arc &bg_angles(uint32_t start, uint32_t end) {
+		lv_arc_set_bg_angles(obj_, start, end);
+		return *this;
+	}
+
+	/** @brief Sets the foreground indicator start/end angles in degrees. */
+	Arc &angles(uint32_t start, uint32_t end) {
+		lv_arc_set_angles(obj_, start, end);
+		return *this;
+	}
+
+	/** @brief Sets the rotation offset of the arc in degrees. */
+	Arc &rotation(uint32_t rot) {
+		lv_arc_set_rotation(obj_, rot);
+		return *this;
+	}
+
+	/** @brief Returns the current value. */
+	int32_t get_value() const { return lv_arc_get_value(obj_); }
+
+	/** @brief Sets the track arc colour (`LV_PART_MAIN`). */
+	Arc &track_color(lv_color_t c) {
+		lv_obj_set_style_arc_color(obj_, c, LV_PART_MAIN);
+		return *this;
+	}
+
+	/** @brief Sets the indicator arc colour (`LV_PART_INDICATOR`). */
+	Arc &indicator_color(lv_color_t c) {
+		lv_obj_set_style_arc_color(obj_, c, LV_PART_INDICATOR);
+		return *this;
+	}
+
+	/** @brief Sets the indicator arc width (`LV_PART_INDICATOR`). */
+	Arc &indicator_width(int32_t w) {
+		lv_obj_set_style_arc_width(obj_, w, LV_PART_INDICATOR);
+		return *this;
+	}
+
+	/** @brief Sets the knob colour (`LV_PART_KNOB`). */
+	Arc &knob_color(lv_color_t c) {
+		lv_obj_set_style_bg_color(obj_, c, LV_PART_KNOB);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Arc) == sizeof(void *),
+	      "Arc must be pointer-sized");
+
+/**
+ * @class Image
+ * @brief C++ wrapper for an LVGL image widget.
+ *
+ * Sources can be built-in descriptors (`const lv_image_dsc_t *`), symbol
+ * strings (`LV_SYMBOL_OK` and friends), or file-system paths if a file
+ * system driver is registered. Transformation is pivot-aware.
+ */
+class Image : public ObjectView,
+	      public ObjectMixin<Image>,
+	      public EventMixin<Image>,
+	      public StyleMixin<Image> {
+public:
+	/** @brief Wraps an existing LVGL image object (non-owning). */
+	explicit Image(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new image as a child of `parent`. */
+	static Image create(ObjectView parent) {
+		return Image(lv_image_create(parent));
+	}
+
+	/** @brief Sets the image source (descriptor, symbol, or path). */
+	Image &src(const void *src) {
+		lv_image_set_src(obj_, src);
+		return *this;
+	}
+
+	/** @brief Sets the rotation angle in 0.1 degree units (0–3600). */
+	Image &rotation(int32_t angle) {
+		lv_image_set_rotation(obj_, angle);
+		return *this;
+	}
+
+	/** @brief Sets the zoom factor (256 = 1.0x, 512 = 2.0x). */
+	Image &scale(uint32_t zoom) {
+		lv_image_set_scale(obj_, zoom);
+		return *this;
+	}
+
+	/** @brief Sets the rotation/scale pivot point. */
+	Image &pivot(int32_t x, int32_t y) {
+		lv_image_set_pivot(obj_, x, y);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Image) == sizeof(void *),
+	      "Image must be pointer-sized");
+
+/**
+ * @class Msgbox
+ * @brief C++ wrapper for an LVGL message-box (modal dialog).
+ *
+ * Build up the content with `add_title`, `add_text`, `add_close_button`,
+ * and `add_footer_button`. Pass `nullptr` as the parent to center the
+ * msgbox on the active screen. Close via `close()` or let the close
+ * button handle it.
+ */
+class Msgbox : public ObjectView,
+	       public ObjectMixin<Msgbox>,
+	       public EventMixin<Msgbox>,
+	       public StyleMixin<Msgbox> {
+public:
+	/** @brief Wraps an existing LVGL msgbox object (non-owning). */
+	explicit Msgbox(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new modal msgbox. Passing a null parent centers
+	 *         it on the active screen. */
+	static Msgbox create(ObjectView parent) {
+		return Msgbox(lv_msgbox_create(parent));
+	}
+
+	/** @brief Adds a title in the header, returning the title label. */
+	Msgbox &add_title(const char *txt) {
+		lv_msgbox_add_title(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Adds body text, returning the content label. */
+	Msgbox &add_text(const char *txt) {
+		lv_msgbox_add_text(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Adds a close (X) button in the header. */
+	Msgbox &add_close_button() {
+		lv_msgbox_add_close_button(obj_);
+		return *this;
+	}
+
+	/** @brief Adds a footer button with the given text. Returns an
+	 *         ObjectView wrapping the created button so callers can
+	 *         attach click handlers. */
+	ObjectView add_footer_button(const char *txt) {
+		return ObjectView(lv_msgbox_add_footer_button(obj_, txt));
+	}
+
+	/** @brief Returns the content container (where body widgets live). */
+	ObjectView get_content() const {
+		return ObjectView(lv_msgbox_get_content(obj_));
+	}
+
+	/** @brief Returns the header container. */
+	ObjectView get_header() const {
+		return ObjectView(lv_msgbox_get_header(obj_));
+	}
+
+	/** @brief Returns the footer container. */
+	ObjectView get_footer() const {
+		return ObjectView(lv_msgbox_get_footer(obj_));
+	}
+
+	/** @brief Closes and deletes the msgbox. */
+	void close() { lv_msgbox_close(obj_); }
+};
+
+static_assert(sizeof(Msgbox) == sizeof(void *),
+	      "Msgbox must be pointer-sized");
+
+/**
+ * @class Spinner
+ * @brief C++ wrapper for LVGL's circular loading indicator.
+ *
+ * A Spinner is an Arc with a continuously rotating indicator. Configure
+ * via `anim_params(time_ms, arc_length_deg)`.
+ */
+class Spinner : public ObjectView,
+		public ObjectMixin<Spinner>,
+		public EventMixin<Spinner>,
+		public StyleMixin<Spinner> {
+public:
+	/** @brief Wraps an existing LVGL spinner object (non-owning). */
+	explicit Spinner(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new spinner as a child of `parent`. */
+	static Spinner create(ObjectView parent) {
+		return Spinner(lv_spinner_create(parent));
+	}
+
+	/**
+	 * @brief Sets the animation parameters.
+	 * @param[in] time_ms   Full rotation period in milliseconds.
+	 * @param[in] angle_deg Arc length of the indicator in degrees.
+	 */
+	Spinner &anim_params(uint32_t time_ms, uint32_t angle_deg) {
+		lv_spinner_set_anim_params(obj_, time_ms, angle_deg);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Spinner) == sizeof(void *),
+	      "Spinner must be pointer-sized");
+
+/**
+ * @class Led
+ * @brief C++ wrapper for LVGL's LED widget — a colored indicator circle.
+ */
+class Led : public ObjectView,
+	    public ObjectMixin<Led>,
+	    public EventMixin<Led>,
+	    public StyleMixin<Led> {
+public:
+	/** @brief Wraps an existing LVGL LED object (non-owning). */
+	explicit Led(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new LED as a child of `parent`. */
+	static Led create(ObjectView parent) {
+		return Led(lv_led_create(parent));
+	}
+
+	/** @brief Sets the LED base colour. */
+	Led &color(lv_color_t c) {
+		lv_led_set_color(obj_, c);
+		return *this;
+	}
+
+	/** @brief Sets the LED brightness (0–255). */
+	Led &brightness(uint8_t bright) {
+		lv_led_set_brightness(obj_, bright);
+		return *this;
+	}
+
+	/** @brief Turns the LED on (full brightness). */
+	Led &on() {
+		lv_led_on(obj_);
+		return *this;
+	}
+
+	/** @brief Turns the LED off. */
+	Led &off() {
+		lv_led_off(obj_);
+		return *this;
+	}
+
+	/** @brief Toggles between on/off. */
+	Led &toggle() {
+		lv_led_toggle(obj_);
+		return *this;
+	}
+
+	/** @brief Returns the current brightness. */
+	uint8_t get_brightness() const {
+		return lv_led_get_brightness(obj_);
+	}
+};
+
+static_assert(sizeof(Led) == sizeof(void *),
+	      "Led must be pointer-sized");
+
+/**
+ * @class Textarea
+ * @brief C++ wrapper for an LVGL text-entry widget.
+ *
+ * Supports single- or multi-line input, placeholder text, password mode,
+ * max length, and an accepted-character filter. Pair with `Keyboard` on
+ * touch targets; attach to a `Group` on non-touch targets.
+ */
+class Textarea : public ObjectView,
+		 public ObjectMixin<Textarea>,
+		 public EventMixin<Textarea>,
+		 public StyleMixin<Textarea> {
+public:
+	/** @brief Wraps an existing LVGL textarea object (non-owning). */
+	explicit Textarea(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new textarea as a child of `parent`. */
+	static Textarea create(ObjectView parent) {
+		return Textarea(lv_textarea_create(parent));
+	}
+
+	/** @brief Replaces the current text (LVGL copies the string). */
+	Textarea &text(const char *txt) {
+		lv_textarea_set_text(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Appends text to the end. */
+	Textarea &add_text(const char *txt) {
+		lv_textarea_add_text(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Sets the placeholder shown while the textarea is empty. */
+	Textarea &placeholder(const char *txt) {
+		lv_textarea_set_placeholder_text(obj_, txt);
+		return *this;
+	}
+
+	/** @brief Toggles single-line mode (enter fires `LV_EVENT_READY`). */
+	Textarea &one_line(bool en) {
+		lv_textarea_set_one_line(obj_, en);
+		return *this;
+	}
+
+	/** @brief Enables password masking. */
+	Textarea &password_mode(bool en) {
+		lv_textarea_set_password_mode(obj_, en);
+		return *this;
+	}
+
+	/** @brief Sets the maximum character count (0 = unlimited). */
+	Textarea &max_length(uint32_t n) {
+		lv_textarea_set_max_length(obj_, n);
+		return *this;
+	}
+
+	/** @brief Restricts input to characters in `list`; `nullptr` = any. */
+	Textarea &accepted_chars(const char *list) {
+		lv_textarea_set_accepted_chars(obj_, list);
+		return *this;
+	}
+
+	/** @brief Moves the cursor to the given character position. */
+	Textarea &cursor_pos(int32_t pos) {
+		lv_textarea_set_cursor_pos(obj_, pos);
+		return *this;
+	}
+
+	/** @brief Enables moving the cursor by clicking. */
+	Textarea &cursor_click_pos(bool en) {
+		lv_textarea_set_cursor_click_pos(obj_, en);
+		return *this;
+	}
+
+	/** @brief Returns the current text (pointer owned by LVGL). */
+	const char *get_text() const { return lv_textarea_get_text(obj_); }
+
+	/** @brief Returns the current cursor position. */
+	uint32_t get_cursor_pos() const {
+		return lv_textarea_get_cursor_pos(obj_);
+	}
+
+	/** @brief Returns `true` if password mode is enabled. */
+	bool is_password_mode() const {
+		return lv_textarea_get_password_mode(obj_);
+	}
+
+	/** @brief Returns `true` if single-line mode is enabled. */
+	bool is_one_line() const {
+		return lv_textarea_get_one_line(obj_);
+	}
+
+	/** @brief Appends a single Unicode codepoint to the text. */
+	Textarea &add_char(uint32_t c) {
+		lv_textarea_add_char(obj_, c);
+		return *this;
+	}
+
+	/** @brief Deletes the character before the cursor. */
+	Textarea &delete_char() {
+		lv_textarea_delete_char(obj_);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Textarea) == sizeof(void *),
+	      "Textarea must be pointer-sized");
+
+/**
+ * @class Dropdown
+ * @brief C++ wrapper for an LVGL click-to-open dropdown list.
+ *
+ * Options are supplied as a single `\n`-separated string. The selected
+ * index changes via `LV_EVENT_VALUE_CHANGED`.
+ */
+class Dropdown : public ObjectView,
+		 public ObjectMixin<Dropdown>,
+		 public EventMixin<Dropdown>,
+		 public StyleMixin<Dropdown> {
+public:
+	/** @brief Wraps an existing LVGL dropdown object (non-owning). */
+	explicit Dropdown(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new dropdown as a child of `parent`. */
+	static Dropdown create(ObjectView parent) {
+		return Dropdown(lv_dropdown_create(parent));
+	}
+
+	/** @brief Sets options from a `\n`-separated string (LVGL copies it). */
+	Dropdown &options(const char *opts) {
+		lv_dropdown_set_options(obj_, opts);
+		return *this;
+	}
+
+	/** @brief Sets options from a persistent `\n`-separated string (no copy). */
+	Dropdown &options_static(const char *opts) {
+		lv_dropdown_set_options_static(obj_, opts);
+		return *this;
+	}
+
+	/** @brief Inserts a single option at `pos`. */
+	Dropdown &add_option(const char *opt, uint32_t pos) {
+		lv_dropdown_add_option(obj_, opt, pos);
+		return *this;
+	}
+
+	/** @brief Clears the entire option list. */
+	Dropdown &clear_options() {
+		lv_dropdown_clear_options(obj_);
+		return *this;
+	}
+
+	/** @brief Sets the currently selected option index. */
+	Dropdown &selected(uint32_t sel) {
+		lv_dropdown_set_selected(obj_, sel);
+		return *this;
+	}
+
+	/** @brief Sets the popup direction. */
+	Dropdown &dir(lv_dir_t d) {
+		lv_dropdown_set_dir(obj_, d);
+		return *this;
+	}
+
+	/** @brief Sets the dropdown-arrow icon (image dsc or symbol string). */
+	Dropdown &symbol(const void *sym) {
+		lv_dropdown_set_symbol(obj_, sym);
+		return *this;
+	}
+
+	/** @brief Returns the currently selected option index. */
+	uint32_t get_selected() const {
+		return lv_dropdown_get_selected(obj_);
+	}
+
+	/** @brief Returns the total option count. */
+	uint32_t get_option_count() const {
+		return lv_dropdown_get_option_count(obj_);
+	}
+
+	/** @brief Fills `buf` with the currently selected option text. */
+	void get_selected_str(char *buf, uint32_t size) const {
+		lv_dropdown_get_selected_str(obj_, buf, size);
+	}
+
+	/** @brief Returns the entire option list as a `\n`-separated string. */
+	const char *get_options() const {
+		return lv_dropdown_get_options(obj_);
+	}
+
+	/** @brief Returns `true` if the popup list is currently expanded. */
+	bool is_open() const {
+		return lv_dropdown_is_open(const_cast<lv_obj_t *>(obj_));
+	}
+
+	/** @brief Expands the popup list. */
+	void open() { lv_dropdown_open(obj_); }
+
+	/** @brief Collapses the popup list. */
+	void close() { lv_dropdown_close(obj_); }
+};
+
+static_assert(sizeof(Dropdown) == sizeof(void *),
+	      "Dropdown must be pointer-sized");
+
+/**
+ * @class Roller
+ * @brief C++ wrapper for LVGL's iOS-picker-style scrollable option wheel.
+ *
+ * Configured similarly to `Dropdown` (newline-separated options). The
+ * `NORMAL` mode wraps at the ends; `INFINITE` allows wrapping through
+ * the list multiple times.
+ */
+class Roller : public ObjectView,
+	       public ObjectMixin<Roller>,
+	       public EventMixin<Roller>,
+	       public StyleMixin<Roller> {
+public:
+	/** @brief Wraps an existing LVGL roller object (non-owning). */
+	explicit Roller(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new roller as a child of `parent`. */
+	static Roller create(ObjectView parent) {
+		return Roller(lv_roller_create(parent));
+	}
+
+	/** @brief Sets options (newline-separated) and scroll mode. */
+	Roller &options(const char *opts,
+			lv_roller_mode_t mode = LV_ROLLER_MODE_NORMAL) {
+		lv_roller_set_options(obj_, opts, mode);
+		return *this;
+	}
+
+	/** @brief Sets the currently selected option index. */
+	Roller &selected(uint32_t sel,
+			 lv_anim_enable_t anim = LV_ANIM_OFF) {
+		lv_roller_set_selected(obj_, sel, anim);
+		return *this;
+	}
+
+	/** @brief Sets how many rows are visible in the wheel at once. */
+	Roller &visible_row_count(uint32_t rows) {
+		lv_roller_set_visible_row_count(obj_, rows);
+		return *this;
+	}
+
+	/** @brief Returns the currently selected option index. */
+	uint32_t get_selected() const {
+		return lv_roller_get_selected(obj_);
+	}
+
+	/** @brief Returns the total option count. */
+	uint32_t get_option_count() const {
+		return lv_roller_get_option_count(obj_);
+	}
+
+	/** @brief Fills `buf` with the currently selected option text. */
+	void get_selected_str(char *buf, uint32_t size) const {
+		lv_roller_get_selected_str(obj_, buf, size);
+	}
+
+	/** @brief Returns the entire option list as a `\n`-separated string. */
+	const char *get_options() const {
+		return lv_roller_get_options(obj_);
+	}
+};
+
+static_assert(sizeof(Roller) == sizeof(void *),
+	      "Roller must be pointer-sized");
+
+/**
+ * @class Spinbox
+ * @brief C++ wrapper for an LVGL numeric stepper (`+` / `−` buttons).
+ *
+ * `digit_format(d, s)` controls the display layout — `d` is the total
+ * digit count, `s` is the (1-based) decimal-point position from the
+ * right. Example: `digit_format(5, 2)` renders `###.##`.
+ */
+class Spinbox : public ObjectView,
+		public ObjectMixin<Spinbox>,
+		public EventMixin<Spinbox>,
+		public StyleMixin<Spinbox> {
+public:
+	/** @brief Wraps an existing LVGL spinbox object (non-owning). */
+	explicit Spinbox(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new spinbox as a child of `parent`. */
+	static Spinbox create(ObjectView parent) {
+		return Spinbox(lv_spinbox_create(parent));
+	}
+
+	/** @brief Sets the current integer value (scaled by digit_format). */
+	Spinbox &value(int32_t v) {
+		lv_spinbox_set_value(obj_, v);
+		return *this;
+	}
+
+	/** @brief Sets min/max bounds. */
+	Spinbox &range(int32_t min, int32_t max) {
+		lv_spinbox_set_range(obj_, min, max);
+		return *this;
+	}
+
+	/** @brief Sets the increment/decrement step size. */
+	Spinbox &step(uint32_t s) {
+		lv_spinbox_set_step(obj_, s);
+		return *this;
+	}
+
+	/**
+	 * @brief Configures how the numeric value is displayed.
+	 * @param[in] digit_count Total digit count including decimals.
+	 * @param[in] sep_pos     Decimal-point position (1 = right-most).
+	 */
+	Spinbox &digit_format(uint32_t digit_count, uint32_t sep_pos) {
+		lv_spinbox_set_digit_format(obj_, digit_count, sep_pos);
+		return *this;
+	}
+
+	/** @brief Enables wrap-around at min/max bounds. */
+	Spinbox &rollover(bool on) {
+		lv_spinbox_set_rollover(obj_, on);
+		return *this;
+	}
+
+	/** @brief Sets the cursor to edit a specific digit. */
+	Spinbox &cursor_pos(uint32_t pos) {
+		lv_spinbox_set_cursor_pos(obj_, pos);
+		return *this;
+	}
+
+	/** @brief Returns the current integer value. */
+	int32_t get_value() const {
+		return lv_spinbox_get_value(const_cast<lv_obj_t *>(obj_));
+	}
+
+	/** @brief Returns the current step size. */
+	int32_t get_step() const {
+		return lv_spinbox_get_step(const_cast<lv_obj_t *>(obj_));
+	}
+
+	/** @brief Increments the value by one step. */
+	Spinbox &increment() {
+		lv_spinbox_increment(obj_);
+		return *this;
+	}
+
+	/** @brief Decrements the value by one step. */
+	Spinbox &decrement() {
+		lv_spinbox_decrement(obj_);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Spinbox) == sizeof(void *),
+	      "Spinbox must be pointer-sized");
+
+/**
+ * @class Keyboard
+ * @brief C++ wrapper for LVGL's on-screen keyboard.
+ *
+ * `attach(textarea)` binds this keyboard so typing inserts characters
+ * into the target `Textarea`. `mode()` switches between lowercase,
+ * uppercase, special characters, and number-pad layouts.
+ */
+class Keyboard : public ObjectView,
+		 public ObjectMixin<Keyboard>,
+		 public EventMixin<Keyboard>,
+		 public StyleMixin<Keyboard> {
+public:
+	/** @brief Wraps an existing LVGL keyboard object (non-owning). */
+	explicit Keyboard(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new keyboard as a child of `parent`. */
+	static Keyboard create(ObjectView parent) {
+		return Keyboard(lv_keyboard_create(parent));
+	}
+
+	/** @brief Attaches to a Textarea so typed keys flow to it. */
+	Keyboard &attach(Textarea ta) {
+		lv_keyboard_set_textarea(obj_, ta.get());
+		return *this;
+	}
+
+	/** @brief Switches keyboard mode (lowercase/upper/special/number). */
+	Keyboard &mode(lv_keyboard_mode_t m) {
+		lv_keyboard_set_mode(obj_, m);
+		return *this;
+	}
+
+	/** @brief Enables or disables on-press popovers for letter keys. */
+	Keyboard &popovers(bool en) {
+		lv_keyboard_set_popovers(obj_, en);
+		return *this;
+	}
+
+	/** @brief Returns the currently attached Textarea, or a null view. */
+	ObjectView get_textarea() const {
+		return ObjectView(lv_keyboard_get_textarea(obj_));
+	}
+};
+
+static_assert(sizeof(Keyboard) == sizeof(void *),
+	      "Keyboard must be pointer-sized");
+
+/**
+ * @class Chart
+ * @brief C++ wrapper for an LVGL chart (line / bar / scatter).
+ *
+ * A chart owns a fixed-capacity buffer of points per series. Use
+ * `add_series(color, axis)` to create a data line, then push values via
+ * `Series::next_value(v)` for shift-and-append updates or
+ * `Series::set_value_by_idx(i, v)` for random access. `update_mode()`
+ * controls whether `next_value` shifts existing points left (SHIFT) or
+ * wraps around (CIRCULAR).
+ */
+class Chart : public ObjectView,
+	      public ObjectMixin<Chart>,
+	      public EventMixin<Chart>,
+	      public StyleMixin<Chart> {
+public:
+	/** @brief Lightweight handle to an `lv_chart_series_t *`. */
+	class Series {
+	public:
+		Series() : chart_(nullptr), ser_(nullptr) {}
+		/** @brief Binds the handle to an existing chart + series pointer pair. */
+		Series(lv_obj_t *chart, lv_chart_series_t *ser)
+			: chart_(chart), ser_(ser) {}
+
+		/** @brief Returns the underlying `lv_chart_series_t *`. */
+		lv_chart_series_t *get() const { return ser_; }
+		/** @brief `true` if this handle references a live series. */
+		explicit operator bool() const { return ser_ != nullptr; }
+
+		/** @brief Pushes a new value using the current update mode. */
+		Series &next_value(int32_t v) {
+			lv_chart_set_next_value(chart_, ser_, v);
+			return *this;
+		}
+
+		/** @brief Sets a specific point index to `v`. */
+		Series &set_value_by_idx(uint32_t idx, int32_t v) {
+			lv_chart_set_value_by_id(chart_, ser_, idx, v);
+			return *this;
+		}
+
+	private:
+		lv_obj_t *chart_;
+		lv_chart_series_t *ser_;
+	};
+
+	/** @brief Wraps an existing LVGL chart object (non-owning). */
+	explicit Chart(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new chart as a child of `parent`. */
+	static Chart create(ObjectView parent) {
+		return Chart(lv_chart_create(parent));
+	}
+
+	/** @brief Sets the chart type (line / bar / scatter / none). */
+	Chart &type(lv_chart_type_t t) {
+		lv_chart_set_type(obj_, t);
+		return *this;
+	}
+
+	/** @brief Sets the number of data points per series. */
+	Chart &point_count(uint32_t count) {
+		lv_chart_set_point_count(obj_, count);
+		return *this;
+	}
+
+	/** @brief Sets the min/max range for the given axis. */
+	Chart &range(lv_chart_axis_t axis, int32_t min, int32_t max) {
+		lv_chart_set_range(obj_, axis, min, max);
+		return *this;
+	}
+
+	/** @brief Sets how `next_value()` updates the point array. */
+	Chart &update_mode(lv_chart_update_mode_t mode) {
+		lv_chart_set_update_mode(obj_, mode);
+		return *this;
+	}
+
+	/** @brief Sets the horizontal/vertical division line count. */
+	Chart &div_line_count(uint8_t hdiv, uint8_t vdiv) {
+		lv_chart_set_div_line_count(obj_, hdiv, vdiv);
+		return *this;
+	}
+
+	/** @brief Adds a new series with the given colour and axis binding. */
+	Series add_series(lv_color_t color, lv_chart_axis_t axis) {
+		lv_chart_series_t *s = lv_chart_add_series(obj_, color, axis);
+		return Series(obj_, s);
+	}
+
+	/** @brief Removes a series from the chart. */
+	Chart &remove_series(Series s) {
+		lv_chart_remove_series(obj_, s.get());
+		return *this;
+	}
+};
+
+static_assert(sizeof(Chart) == sizeof(void *),
+	      "Chart must be pointer-sized");
+
+/**
+ * @class Table
+ * @brief C++ wrapper for LVGL's 2D data table widget.
+ *
+ * Cells are addressed by `(row, col)` and store a text string copied
+ * into LVGL-owned memory. Use `cell_value_fmt` for printf-style updates.
+ */
+class Table : public ObjectView,
+	      public ObjectMixin<Table>,
+	      public EventMixin<Table>,
+	      public StyleMixin<Table> {
+public:
+	/** @brief Wraps an existing LVGL table object (non-owning). */
+	explicit Table(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new table as a child of `parent`. */
+	static Table create(ObjectView parent) {
+		return Table(lv_table_create(parent));
+	}
+
+	/** @brief Sets a cell's text (LVGL copies the string). */
+	Table &cell_value(uint32_t row, uint32_t col, const char *txt) {
+		lv_table_set_cell_value(obj_, row, col, txt);
+		return *this;
+	}
+
+	/** @brief Sets the row count (grows/shrinks the table). */
+	Table &row_count(uint32_t n) {
+		lv_table_set_row_count(obj_, n);
+		return *this;
+	}
+
+	/** @brief Sets the column count. */
+	Table &column_count(uint32_t n) {
+		lv_table_set_column_count(obj_, n);
+		return *this;
+	}
+
+	/** @brief Sets the width of a specific column in pixels. */
+	Table &column_width(uint32_t col, int32_t w) {
+		lv_table_set_column_width(obj_, col, w);
+		return *this;
+	}
+
+	/** @brief Returns the text at `(row, col)`. */
+	const char *get_cell_value(uint32_t row, uint32_t col) const {
+		return lv_table_get_cell_value(obj_, row, col);
+	}
+
+	/** @brief Returns the total row count. */
+	uint32_t get_row_count() const {
+		return lv_table_get_row_count(obj_);
+	}
+
+	/** @brief Returns the total column count. */
+	uint32_t get_column_count() const {
+		return lv_table_get_column_count(obj_);
+	}
+
+	/** @brief Returns the width of a specific column in pixels. */
+	int32_t get_column_width(uint32_t col) const {
+		return lv_table_get_column_width(obj_, col);
+	}
+};
+
+static_assert(sizeof(Table) == sizeof(void *),
+	      "Table must be pointer-sized");
+
+/**
+ * @class Tabview
+ * @brief C++ wrapper for LVGL's tabbed container with swipeable pages.
+ *
+ * Call `add_tab(name)` to create a tab; the returned `ObjectView` is
+ * the tab's content container — add children directly to it.
+ */
+class Tabview : public ObjectView,
+		public ObjectMixin<Tabview>,
+		public EventMixin<Tabview>,
+		public StyleMixin<Tabview> {
+public:
+	/** @brief Wraps an existing LVGL tabview object (non-owning). */
+	explicit Tabview(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/**
+	 * @brief Creates a tabview with default bar position/size. Call
+	 *        `tab_bar_position()` / `tab_bar_size()` to customise.
+	 * @param[in] parent  Parent object (or null for screen).
+	 */
+	static Tabview create(ObjectView parent) {
+		return Tabview(lv_tabview_create(parent));
+	}
+
+	/** @brief Adds a new tab and returns its content container. */
+	ObjectView add_tab(const char *name) {
+		return ObjectView(lv_tabview_add_tab(obj_, name));
+	}
+
+	/** @brief Renames an existing tab. */
+	Tabview &rename_tab(uint32_t idx, const char *name) {
+		lv_tabview_rename_tab(obj_, idx, name);
+		return *this;
+	}
+
+	/** @brief Sets the active tab index with optional animation. */
+	Tabview &set_active_tab(uint32_t idx, lv_anim_enable_t anim) {
+		lv_tabview_set_active(obj_, idx, anim);
+		return *this;
+	}
+
+	/** @brief Sets the tab bar position (TOP/BOTTOM/LEFT/RIGHT). */
+	Tabview &tab_bar_position(lv_dir_t dir) {
+		lv_tabview_set_tab_bar_position(obj_, dir);
+		return *this;
+	}
+
+	/** @brief Sets the tab bar size in pixels. */
+	Tabview &tab_bar_size(int32_t size) {
+		lv_tabview_set_tab_bar_size(obj_, size);
+		return *this;
+	}
+
+	/** @brief Returns the number of tabs. */
+	uint32_t get_tab_count() const {
+		return lv_tabview_get_tab_count(obj_);
+	}
+
+	/** @brief Returns the currently active tab index. */
+	uint32_t get_tab_active() const {
+		return lv_tabview_get_tab_active(obj_);
+	}
+
+	/** @brief Returns the content container (all tabs live here). */
+	ObjectView get_content() const {
+		return ObjectView(lv_tabview_get_content(obj_));
+	}
+};
+
+static_assert(sizeof(Tabview) == sizeof(void *),
+	      "Tabview must be pointer-sized");
+
+/**
+ * @class List
+ * @brief C++ wrapper for LVGL's scrollable list of buttons/text.
+ *
+ * A List is essentially a vertical-flex Box that adds helpers for
+ * inserting text rows and icon-plus-label button rows.
+ */
+class List : public ObjectView,
+	     public ObjectMixin<List>,
+	     public EventMixin<List>,
+	     public StyleMixin<List> {
+public:
+	/** @brief Wraps an existing LVGL list object (non-owning). */
+	explicit List(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new list as a child of `parent`. */
+	static List create(ObjectView parent) {
+		return List(lv_list_create(parent));
+	}
+
+	/** @brief Adds a text heading row. Returns the label object. */
+	ObjectView add_text(const char *text) {
+		return ObjectView(lv_list_add_text(obj_, text));
+	}
+
+	/** @brief Adds a button row with icon and text. Returns the button. */
+	ObjectView add_button(const void *icon, const char *text) {
+		return ObjectView(lv_list_add_button(obj_, icon, text));
+	}
+
+	/** @brief Returns the text of a list button. */
+	const char *get_button_text(ObjectView btn) const {
+		return lv_list_get_button_text(obj_, btn);
+	}
+};
+
+static_assert(sizeof(List) == sizeof(void *),
+	      "List must be pointer-sized");
+
+/**
+ * @class Canvas
+ * @brief C++ wrapper for LVGL's user-buffer drawing surface.
+ *
+ * The canvas owns a pixel buffer the caller supplies. LVGL draws rects,
+ * arcs, text, etc. into that buffer via the `draw_*` helper functions
+ * below. The buffer must outlive the canvas widget; size is
+ * `w * h * bytes_per_pixel(cf)`.
+ *
+ * This initial cut exposes rect, arc, and label draw primitives. Line,
+ * polygon, and image draws can be added in follow-up work as they
+ * require wrapping more draw-descriptor structs.
+ */
+class Canvas : public ObjectView,
+	       public ObjectMixin<Canvas>,
+	       public EventMixin<Canvas>,
+	       public StyleMixin<Canvas> {
+public:
+	/** @brief Wraps an existing LVGL canvas object (non-owning). */
+	explicit Canvas(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new canvas as a child of `parent`. */
+	static Canvas create(ObjectView parent) {
+		return Canvas(lv_canvas_create(parent));
+	}
+
+	/** @brief Attaches a pixel buffer of the given geometry and format. */
+	Canvas &buffer(void *buf, int32_t w, int32_t h, lv_color_format_t cf) {
+		lv_canvas_set_buffer(obj_, buf, w, h, cf);
+		return *this;
+	}
+
+	/** @brief Fills the entire canvas with a solid color + opacity. */
+	Canvas &fill_bg(lv_color_t color, lv_opa_t opa) {
+		lv_canvas_fill_bg(obj_, color, opa);
+		return *this;
+	}
+
+	/** @brief Sets a single pixel to the given colour. */
+	Canvas &set_pixel(int32_t x, int32_t y, lv_color_t color) {
+		lv_canvas_set_px(obj_, x, y, color, LV_OPA_COVER);
+		return *this;
+	}
+
+	/**
+	 * @brief Begins a draw sequence on the canvas layer.
+	 *
+	 * Must be called before any `lv_draw_*` calls; pair with
+	 * `finish_layer()`. LVGL 9 requires this layer dance for every
+	 * draw operation on a canvas.
+	 */
+	Canvas &init_layer(lv_layer_t *layer) {
+		lv_canvas_init_layer(obj_, layer);
+		return *this;
+	}
+
+	/** @brief Finishes a draw sequence started by `init_layer()`. */
+	Canvas &finish_layer(lv_layer_t *layer) {
+		lv_canvas_finish_layer(obj_, layer);
+		return *this;
+	}
+};
+
+static_assert(sizeof(Canvas) == sizeof(void *),
+	      "Canvas must be pointer-sized");
+
+/**
+ * @class Calendar
+ * @brief C++ wrapper for LVGL's month-grid date picker.
+ *
+ * Configure `today(y, m, d)` and `showed(y, m)` to set the highlighted
+ * "today" marker and the currently visible month. `highlighted_dates`
+ * marks additional dates with a visual accent. Use `get_pressed_date()`
+ * from an `on_click` handler to read which cell the user selected.
+ */
+class Calendar : public ObjectView,
+		 public ObjectMixin<Calendar>,
+		 public EventMixin<Calendar>,
+		 public StyleMixin<Calendar> {
+public:
+	/** @brief Wraps an existing LVGL calendar object (non-owning). */
+	explicit Calendar(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new calendar as a child of `parent`. */
+	static Calendar create(ObjectView parent) {
+		return Calendar(lv_calendar_create(parent));
+	}
+
+	/** @brief Sets today's date (highlighted in the grid). */
+	Calendar &today(uint32_t year, uint32_t month, uint32_t day) {
+		lv_calendar_set_today_date(obj_, year, month, day);
+		return *this;
+	}
+
+	/** @brief Sets the currently visible month (year/month). */
+	Calendar &showed(uint32_t year, uint32_t month) {
+		lv_calendar_set_showed_date(obj_, year, month);
+		return *this;
+	}
+
+	/** @brief Highlights a list of dates with a visual accent. LVGL
+	 *         retains the pointer — the array must outlive the calendar. */
+	Calendar &highlighted_dates(lv_calendar_date_t *dates, size_t count) {
+		lv_calendar_set_highlighted_dates(obj_, dates,
+						  static_cast<uint16_t>(count));
+		return *this;
+	}
+
+	/** @brief Returns the last date the user pressed in the grid. */
+	bool get_pressed_date(lv_calendar_date_t *out) const {
+		return lv_calendar_get_pressed_date(obj_, out);
+	}
+
+	/** @brief Adds an arrow-header navigation bar as a child. */
+	ObjectView add_header_arrow() {
+		return ObjectView(lv_calendar_header_arrow_create(obj_));
+	}
+
+	/** @brief Adds a dropdown-header navigation bar as a child. */
+	ObjectView add_header_dropdown() {
+		return ObjectView(lv_calendar_header_dropdown_create(obj_));
+	}
+};
+
+static_assert(sizeof(Calendar) == sizeof(void *),
+	      "Calendar must be pointer-sized");
+
 /* ================================================================== */
 /*  Layout helpers                                                    */
 /* ================================================================== */
@@ -1159,6 +2695,452 @@ inline Box hbox(ObjectView parent) {
 	lv_obj_set_flex_flow(b.get(), LV_FLEX_FLOW_ROW);
 	lv_obj_set_size(b.get(), LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 	return b;
+}
+
+/* ================================================================== */
+/*  Group — keyboard / encoder focus groups                           */
+/* ================================================================== */
+
+/**
+ * @class Group
+ * @brief RAII wrapper for an LVGL input focus group (`lv_group_t`).
+ *
+ * Groups route keyboard / encoder / button events to a focused member
+ * widget. Essential for non-touch targets where pointer input isn't
+ * available. Create a group, add widgets with `add()`, then connect
+ * your input device to the group (outside the scope of this wrapper —
+ * see backend-specific input device registration).
+ *
+ * @note Non-copyable, movable. Owns the underlying `lv_group_t *`.
+ */
+class Group {
+public:
+	Group() : group_(nullptr) {}
+	/** @brief Takes ownership of an existing `lv_group_t *`. */
+	explicit Group(lv_group_t *g) : group_(g) {}
+
+	~Group() { if (group_) lv_group_delete(group_); }
+
+	Group(const Group &) = delete;
+	Group &operator=(const Group &) = delete;
+
+	/** @brief Move constructor — transfers ownership; source becomes empty. */
+	Group(Group &&other) noexcept : group_(other.group_) {
+		other.group_ = nullptr;
+	}
+
+	/** @brief Move-assignment — releases current group, then takes `other`'s. */
+	Group &operator=(Group &&other) noexcept {
+		if (this != &other) {
+			if (group_) lv_group_delete(group_);
+			group_ = other.group_;
+			other.group_ = nullptr;
+		}
+		return *this;
+	}
+
+	/** @brief Creates a fresh focus group. */
+	static Group create() { return Group(lv_group_create()); }
+
+	/** @brief Returns the default group (set via `set_as_default()`). */
+	static lv_group_t *get_default() { return lv_group_get_default(); }
+
+	/** @brief Raw `lv_group_t *` for FFI interop. */
+	lv_group_t *get() const { return group_; }
+
+	/** @brief Marks this group as the default — new focusable widgets
+	 *         will auto-join it at creation time. */
+	Group &set_as_default() {
+		lv_group_set_default(group_);
+		return *this;
+	}
+
+	/** @brief Adds a widget to the group's focusable list. */
+	Group &add(ObjectView obj) {
+		lv_group_add_obj(group_, obj);
+		return *this;
+	}
+
+	/** @brief Removes all widgets from this group. */
+	Group &remove_all() {
+		lv_group_remove_all_objs(group_);
+		return *this;
+	}
+
+	/** @brief Moves focus to the next member. */
+	Group &focus_next() {
+		lv_group_focus_next(group_);
+		return *this;
+	}
+
+	/** @brief Moves focus to the previous member. */
+	Group &focus_prev() {
+		lv_group_focus_prev(group_);
+		return *this;
+	}
+
+	/** @brief Freezes/unfreezes focus movement. */
+	Group &focus_freeze(bool freeze) {
+		lv_group_focus_freeze(group_, freeze);
+		return *this;
+	}
+
+	/** @brief Returns the currently focused widget, or a null view. */
+	ObjectView focused() const {
+		return ObjectView(lv_group_get_focused(group_));
+	}
+
+	/** @brief Enables/disables edit mode (relevant for encoder input). */
+	Group &edit_mode(bool enable) {
+		lv_group_set_editing(group_, enable);
+		return *this;
+	}
+
+	/** @brief Returns the current edit-mode flag. */
+	bool is_editing() const {
+		return lv_group_get_editing(group_);
+	}
+
+	/** @brief Returns the number of widgets in the group. */
+	uint32_t obj_count() const {
+		return lv_group_get_obj_count(group_);
+	}
+
+	/** @brief Static helper: focus a specific widget regardless of its
+	 *         group membership. */
+	static void focus_obj(ObjectView obj) {
+		lv_group_focus_obj(obj);
+	}
+
+	/** @brief Static helper: remove a widget from whatever group it's in. */
+	static void remove_obj(ObjectView obj) {
+		lv_group_remove_obj(obj);
+	}
+
+private:
+	lv_group_t *group_;
+};
+
+/* ================================================================== */
+/*  Screen — top-level display root with load/load_anim               */
+/* ================================================================== */
+
+/**
+ * @class Screen
+ * @brief Top-level LVGL screen — a display root without a parent.
+ *
+ * Screens are plain `lv_obj_t` instances created with `nullptr` parent.
+ * Swap between screens via `load()` or `load_anim()` to drive multi-page
+ * navigation. All layout/style/event APIs inherited from the mixins work
+ * the same as on a Box.
+ *
+ * @note Does not own the underlying LVGL object. Use `del()` to free it
+ *       (or let `load_anim(..., auto_del=true)` handle it during the
+ *       transition).
+ */
+class Screen : public ObjectView,
+	       public ObjectMixin<Screen>,
+	       public EventMixin<Screen>,
+	       public StyleMixin<Screen> {
+public:
+	/** @brief Wraps an existing LVGL screen object (non-owning). */
+	explicit Screen(lv_obj_t *obj) : ObjectView(obj) {}
+
+	/** @brief Creates a new top-level screen with no parent. */
+	static Screen create() {
+		return Screen(lv_obj_create(nullptr));
+	}
+
+	/** @brief Returns the currently active screen. */
+	static Screen active() {
+		return Screen(lv_screen_active());
+	}
+
+	/** @brief Instantly loads this screen as the active one. */
+	void load() { lv_screen_load(obj_); }
+
+	/**
+	 * @brief Loads this screen with an animated transition.
+	 * @param[in] anim     Animation type (`LV_SCR_LOAD_ANIM_*`).
+	 * @param[in] time_ms  Duration in milliseconds.
+	 * @param[in] delay_ms Delay before the transition starts.
+	 * @param[in] auto_del When true, deletes the previously active screen
+	 *                     after the transition completes. Any surviving
+	 *                     references to the old screen become invalid.
+	 */
+	void load_anim(lv_screen_load_anim_t anim, uint32_t time_ms,
+		       uint32_t delay_ms = 0, bool auto_del = false) {
+		lv_screen_load_anim(obj_, anim, time_ms, delay_ms, auto_del);
+	}
+};
+
+static_assert(sizeof(Screen) == sizeof(void *),
+	      "Screen must be pointer-sized");
+
+/* ================================================================== */
+/*  Timer — RAII wrapper around lv_timer_t                            */
+/* ================================================================== */
+
+/**
+ * @class Timer
+ * @brief RAII wrapper for LVGL's built-in timer system.
+ *
+ * LVGL timers fire from inside `lv_timer_handler()` under the existing
+ * LVGL lock — callbacks do NOT need to acquire `LvglGuard` again. This is
+ * the preferred timer for UI updates driven by the LVGL task itself,
+ * versus `ove::Timer` which fires from an OS timer task and requires
+ * manual locking in the callback.
+ *
+ * @warning Do NOT call `lvgl::lock()` / construct `LvglGuard` from inside
+ *          a timer callback — the LVGL mutex is not reentrant.
+ *
+ * @note Non-copyable, movable. Owns the underlying `lv_timer_t *`.
+ */
+class Timer {
+public:
+	/** @brief Constructs a null (inactive) timer. */
+	Timer() : timer_(nullptr) {}
+
+	/**
+	 * @brief Creates and starts an LVGL timer.
+	 * @param[in] cb        Callback invoked every `period_ms` milliseconds.
+	 * @param[in] period_ms Timer period in milliseconds.
+	 * @param[in] user_data Opaque pointer retrievable via `lv_timer_get_user_data()`.
+	 */
+	Timer(lv_timer_cb_t cb, uint32_t period_ms, void *user_data = nullptr)
+		: timer_(lv_timer_create(cb, period_ms, user_data)) {}
+
+	~Timer() { if (timer_) lv_timer_delete(timer_); }
+
+	Timer(const Timer &) = delete;
+	Timer &operator=(const Timer &) = delete;
+
+	/** @brief Move constructor — transfers ownership; source becomes empty. */
+	Timer(Timer &&other) noexcept : timer_(other.timer_) {
+		other.timer_ = nullptr;
+	}
+
+	/** @brief Move-assignment — deletes the current timer, then takes `other`'s. */
+	Timer &operator=(Timer &&other) noexcept {
+		if (this != &other) {
+			if (timer_) lv_timer_delete(timer_);
+			timer_ = other.timer_;
+			other.timer_ = nullptr;
+		}
+		return *this;
+	}
+
+	/** @brief Returns the raw `lv_timer_t *` for FFI interop. */
+	lv_timer_t *get() const { return timer_; }
+
+	/** @brief `true` when this Timer holds a live LVGL timer. */
+	explicit operator bool() const { return timer_ != nullptr; }
+
+	/** @brief Updates the timer period in milliseconds. */
+	Timer &period(uint32_t ms) {
+		if (timer_) lv_timer_set_period(timer_, ms);
+		return *this;
+	}
+
+	/** @brief Pauses the timer (can be resumed). */
+	Timer &pause() {
+		if (timer_) lv_timer_pause(timer_);
+		return *this;
+	}
+
+	/** @brief Resumes a paused timer. */
+	Timer &resume() {
+		if (timer_) lv_timer_resume(timer_);
+		return *this;
+	}
+
+	/**
+	 * @brief Sets the number of times the timer should fire.
+	 * @param[in] count Remaining fires, or `-1` for infinite.
+	 */
+	Timer &repeat_count(int32_t count) {
+		if (timer_) lv_timer_set_repeat_count(timer_, count);
+		return *this;
+	}
+
+	/** @brief Resets the internal elapsed-time counter. */
+	Timer &reset() {
+		if (timer_) lv_timer_reset(timer_);
+		return *this;
+	}
+
+	/** @brief Makes the timer ready to fire on the next `lv_timer_handler()` pass. */
+	Timer &ready() {
+		if (timer_) lv_timer_ready(timer_);
+		return *this;
+	}
+
+private:
+	lv_timer_t *timer_;
+};
+
+/* ================================================================== */
+/*  Animation — builder for lv_anim_t                                 */
+/* ================================================================== */
+
+/**
+ * @class Animation
+ * @brief Fluent builder for LVGL animations (`lv_anim_t`).
+ *
+ * Configure an animation step by step, then call `start()` — LVGL copies
+ * the state into its internal animation list at that moment, so the
+ * `Animation` object can be destructed immediately after.
+ *
+ * Stateless lambdas and plain function pointers work directly as exec
+ * and ready callbacks. For the most common cases see the `animate_x`,
+ * `animate_y`, `animate_width`, `animate_opa` helpers at namespace scope.
+ *
+ * @note Callbacks run from the LVGL task context while the LVGL lock is
+ *       already held; do NOT re-acquire the lock inside them.
+ */
+class Animation {
+public:
+	Animation() { lv_anim_init(&anim_); }
+
+	/** @brief Sets the target variable pointer (typically an `lv_obj_t *`). */
+	Animation &target(void *var) {
+		lv_anim_set_var(&anim_, var);
+		return *this;
+	}
+
+	/** @brief Sets the target as an LVGL object. */
+	Animation &target(ObjectView obj) {
+		return target(obj.get());
+	}
+
+	/** @brief Sets the start and end values. */
+	Animation &values(int32_t from, int32_t to) {
+		lv_anim_set_values(&anim_, from, to);
+		return *this;
+	}
+
+	/** @brief Sets the animation duration in milliseconds. */
+	Animation &duration(uint32_t ms) {
+		lv_anim_set_duration(&anim_, ms);
+		return *this;
+	}
+
+	/** @brief Sets the delay before the animation starts, in milliseconds. */
+	Animation &delay(uint32_t ms) {
+		lv_anim_set_delay(&anim_, ms);
+		return *this;
+	}
+
+	/** @brief Sets the easing curve. Use `lv_anim_path_linear`, `_ease_out`, etc. */
+	Animation &path(lv_anim_path_cb_t cb) {
+		lv_anim_set_path_cb(&anim_, cb);
+		return *this;
+	}
+
+	/** @brief Sets the repeat count; use `LV_ANIM_REPEAT_INFINITE` for endless. */
+	Animation &repeat_count(uint32_t count) {
+		lv_anim_set_repeat_count(&anim_, count);
+		return *this;
+	}
+
+	/** @brief Sets the delay between repeats. */
+	Animation &repeat_delay(uint32_t ms) {
+		lv_anim_set_repeat_delay(&anim_, ms);
+		return *this;
+	}
+
+	/** @brief Sets the duration of the playback (reverse) phase. */
+	Animation &playback_duration(uint32_t ms) {
+		lv_anim_set_playback_duration(&anim_, ms);
+		return *this;
+	}
+
+	/** @brief Sets the delay before the playback phase. */
+	Animation &playback_delay(uint32_t ms) {
+		lv_anim_set_playback_delay(&anim_, ms);
+		return *this;
+	}
+
+	/**
+	 * @brief Sets the exec callback invoked on every frame.
+	 * @param[in] cb Function taking `(void *var, int32_t value)`.
+	 */
+	Animation &exec_cb(lv_anim_exec_xcb_t cb) {
+		lv_anim_set_exec_cb(&anim_, cb);
+		return *this;
+	}
+
+	/** @brief Sets the ready callback invoked when the animation finishes. */
+	Animation &ready_cb(lv_anim_ready_cb_t cb) {
+		lv_anim_set_ready_cb(&anim_, cb);
+		return *this;
+	}
+
+	/**
+	 * @brief Starts the animation. LVGL copies the state into its
+	 *        internal list, so this `Animation` can be destructed after.
+	 */
+	void start() { lv_anim_start(&anim_); }
+
+	/** @brief Stops any animations matching `(var, exec_cb)`. */
+	static bool stop(void *var, lv_anim_exec_xcb_t exec_cb) {
+		return lv_anim_delete(var, exec_cb);
+	}
+
+private:
+	lv_anim_t anim_;
+};
+
+/** @brief Helper: animate an object's X position with ease-out. */
+inline void animate_x(ObjectView obj, int32_t to, uint32_t duration_ms) {
+	Animation()
+		.target(obj)
+		.values(lv_obj_get_x(obj), to)
+		.duration(duration_ms)
+		.path(lv_anim_path_ease_out)
+		.exec_cb(reinterpret_cast<lv_anim_exec_xcb_t>(lv_obj_set_x))
+		.start();
+}
+
+/** @brief Helper: animate an object's Y position with ease-out. */
+inline void animate_y(ObjectView obj, int32_t to, uint32_t duration_ms) {
+	Animation()
+		.target(obj)
+		.values(lv_obj_get_y(obj), to)
+		.duration(duration_ms)
+		.path(lv_anim_path_ease_out)
+		.exec_cb(reinterpret_cast<lv_anim_exec_xcb_t>(lv_obj_set_y))
+		.start();
+}
+
+/** @brief Helper: animate an object's width. */
+inline void animate_width(ObjectView obj, int32_t to, uint32_t duration_ms) {
+	Animation()
+		.target(obj)
+		.values(lv_obj_get_width(obj), to)
+		.duration(duration_ms)
+		.path(lv_anim_path_ease_out)
+		.exec_cb(reinterpret_cast<lv_anim_exec_xcb_t>(lv_obj_set_width))
+		.start();
+}
+
+namespace detail {
+inline void anim_set_opa_shim(void *var, int32_t v) {
+	lv_obj_set_style_opa(static_cast<lv_obj_t *>(var),
+			     static_cast<lv_opa_t>(v), LV_PART_MAIN);
+}
+} // namespace detail
+
+/** @brief Helper: fade an object's main-part opacity from current → `to`. */
+inline void animate_opa(ObjectView obj, lv_opa_t to, uint32_t duration_ms) {
+	lv_opa_t from = lv_obj_get_style_opa(obj, LV_PART_MAIN);
+	Animation()
+		.target(obj)
+		.values(from, to)
+		.duration(duration_ms)
+		.path(lv_anim_path_ease_in_out)
+		.exec_cb(detail::anim_set_opa_shim)
+		.start();
 }
 
 /* ================================================================== */
@@ -1302,4 +3284,29 @@ private:
 	}
 };
 
+/* ================================================================== */
+/*  Display info + top layer helpers                                  */
+/* ================================================================== */
+
+/** @brief Horizontal resolution (pixels) of the default LVGL display. */
+inline int32_t display_width() {
+	return lv_display_get_horizontal_resolution(nullptr);
+}
+
+/** @brief Vertical resolution (pixels) of the default LVGL display. */
+inline int32_t display_height() {
+	return lv_display_get_vertical_resolution(nullptr);
+}
+
+/** @brief DPI of the default LVGL display. */
+inline int32_t display_dpi() {
+	return lv_display_get_dpi(nullptr);
+}
+
+/** @brief Returns the top layer (for overlays that should render above screens). */
+inline ObjectView layer_top() {
+	return ObjectView(lv_layer_top());
+}
+
 } /* namespace ove::lvgl */
+

@@ -12,6 +12,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
+#include <stdint.h>
 #include <string.h>
 #include <errno.h>
 
@@ -53,6 +54,11 @@ int ove_queue_create(ove_queue_t *q, size_t item_size,
                               unsigned int max_items)
 {
 	if (q == NULL || item_size == 0 || max_items == 0) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+
+	/* Overflow check on the allocation size */
+	if (item_size > SIZE_MAX / max_items) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 

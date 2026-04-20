@@ -62,8 +62,9 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 	int mode = flags_to_posix(flags);
 	f->fd = open(path, mode, 0666);
 	if (f->fd < 0) {
+		int err = errno;
 		OVE_BACKEND_FREE(f);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(err);
 	}
 	*file = f;
 	return OVE_OK;
@@ -92,7 +93,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 	}
 	ssize_t n = read(f->fd, buf, count);
 	if (n < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	if (bytes_read) {
 		*bytes_read = (size_t)n;
@@ -109,7 +110,7 @@ int ove_fs_write(ove_file_t file, const void *buf, size_t count,
 	}
 	ssize_t n = write(f->fd, buf, count);
 	if (n < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	if (bytes_written) {
 		*bytes_written = (size_t)n;
@@ -151,7 +152,7 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (lseek(f->fd, offset, w) < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	return OVE_OK;
 }
@@ -177,8 +178,9 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	}
 	d->dp = opendir(path);
 	if (!d->dp) {
+		int err = errno;
 		OVE_BACKEND_FREE(d);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(err);
 	}
 	*dir = d;
 	return OVE_OK;
@@ -191,8 +193,12 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	if (!d || !entry) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	errno = 0;
 	struct dirent *de = readdir(d->dp);
 	if (!de) {
+		/* readdir() returns NULL for both EOF and error — disambiguate via errno */
+		if (errno != 0)
+			return ove_errno_to_ove(errno);
 		/* End of directory — return OK with empty name */
 		memset(entry, 0, sizeof(*entry));
 		return OVE_OK;
@@ -223,7 +229,7 @@ int ove_fs_unlink(const char *path)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (unlink(path) != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	return OVE_OK;
 }
@@ -234,7 +240,7 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (rename(old_path, new_path) != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(errno);
 	}
 	return OVE_OK;
 }

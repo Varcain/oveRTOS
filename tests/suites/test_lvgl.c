@@ -21,7 +21,8 @@ static void test_lvgl_lock_unlock(void **state)
 {
     (void)state;
     ove_lvgl_init();
-    /* Should not crash */
+    /* lock/unlock is a no-op on the stub backend; exercised here to
+     * catch linkage regressions and symbol drift. */
     ove_lvgl_lock();
     ove_lvgl_unlock();
 }
@@ -30,7 +31,6 @@ static void test_lvgl_tick(void **state)
 {
     (void)state;
     ove_lvgl_init();
-    /* Should not crash */
     ove_lvgl_tick(10);
 }
 
@@ -38,7 +38,6 @@ static void test_lvgl_handler(void **state)
 {
     (void)state;
     ove_lvgl_init();
-    /* Should not crash */
     ove_lvgl_handler();
 }
 

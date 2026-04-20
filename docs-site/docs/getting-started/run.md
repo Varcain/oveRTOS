@@ -12,12 +12,14 @@ The behaviour depends on the selected board:
 
 | Board | Behaviour |
 |---|---|
-| `qemu-mps2-an500` | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
-| `host-pc` | Executes the POSIX binary directly on the host; browser dashboard opens for display and audio |
+| `qemu` (`qemu-mps2-an500`) | Launches QEMU emulating an ARM MPS2-AN500 (Cortex-M7); semihosting provides console I/O |
+| `host` | Executes the POSIX binary directly on the host; browser dashboard opens for display and audio |
+| `stm32f746` | `make run` is not used; use `make flash` to program hardware over ST-LINK |
+| `wasm` | Produces an HTML/WASM bundle; serve it over HTTP (COOP/COEP enabled) and open in a browser |
 
 ### QEMU Emulated Targets
 
-When the board is `qemu-mps2-an500`, `make run` invokes QEMU with the generated `.elf` image. Console output is routed via ARM semihosting and appears in the terminal. No physical hardware is required.
+When the board is `qemu` (`qemu-mps2-an500`), `make run` invokes QEMU with the generated `.elf` image. Console output is routed via ARM semihosting and appears in the terminal. No physical hardware is required.
 
 To run without an interactive display (useful in CI):
 
@@ -27,7 +29,7 @@ make run HEADLESS=1
 
 ### POSIX Native Targets
 
-When the board is `host-pc`, the compiled binary runs directly as a Linux or macOS process. The sim framework launches a browser-based dashboard that visualises the board display, LEDs, GPIO, and audio. Audio output plays through the browser's Web Audio API.
+When the board is `host`, the compiled binary runs directly as a Linux or macOS process. The sim framework launches a browser-based dashboard that visualises the board display, LEDs, GPIO, and audio. Audio output plays through the browser's Web Audio API.
 
 ```bash
 make run   # starts the browser dashboard

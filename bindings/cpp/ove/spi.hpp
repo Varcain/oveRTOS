@@ -28,6 +28,10 @@ namespace ove {
  */
 class Spi {
 public:
+	/**
+	 * @brief Construct and initialise the SPI bus from `cfg`.
+	 * @param[in] cfg Bus configuration (pins, mode, clock rate).
+	 */
 	explicit Spi(const struct ove_spi_cfg &cfg) {
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_spi_init(&handle_, &storage_, &cfg);
@@ -53,7 +57,9 @@ public:
 	Spi(Spi &&) = delete;
 	Spi &operator=(Spi &&) = delete;
 #else
+	/** @brief Move constructor — transfers handle; source becomes empty. */
 	Spi(Spi &&o) noexcept : handle_(o.handle_) { o.handle_ = nullptr; }
+	/** @brief Move-assignment — destroys current bus, then takes `o`'s handle. */
 	Spi &operator=(Spi &&o) noexcept {
 		if (this != &o) {
 			if (handle_) ove_spi_destroy(handle_);
@@ -64,24 +70,28 @@ public:
 	}
 #endif
 
+	/** @brief Full-duplex transfer — sends `tx` and receives into `rx`. */
 	[[nodiscard]] int transfer(const struct ove_spi_cs *cs,
 				   const void *tx, void *rx, size_t len,
 				   uint32_t timeout_ms = OVE_WAIT_FOREVER) {
 		return ove_spi_transfer(handle_, cs, tx, rx, len, timeout_ms);
 	}
 
+	/** @brief Write-only transfer — receive data is discarded. */
 	[[nodiscard]] int write(const struct ove_spi_cs *cs,
 				const void *data, size_t len,
 				uint32_t timeout_ms = OVE_WAIT_FOREVER) {
 		return ove_spi_write(handle_, cs, data, len, timeout_ms);
 	}
 
+	/** @brief Read-only transfer — transmit sends zeros. */
 	[[nodiscard]] int read(const struct ove_spi_cs *cs,
 			       void *buf, size_t len,
 			       uint32_t timeout_ms = OVE_WAIT_FOREVER) {
 		return ove_spi_read(handle_, cs, buf, len, timeout_ms);
 	}
 
+	/** @brief Execute a sequence of transfers under a single CS assertion. */
 	[[nodiscard]] int transfer_seq(const struct ove_spi_cs *cs,
 				       const struct ove_spi_xfer *xfers,
 				       unsigned int num_xfers,
@@ -90,7 +100,8 @@ public:
 					    timeout_ms);
 	}
 
-	ove_spi_t native_handle() const { return handle_; }
+	/** @brief Returns the underlying C handle. */
+	ove_spi_t handle() const { return handle_; }
 
 private:
 	ove_spi_t handle_ = nullptr;

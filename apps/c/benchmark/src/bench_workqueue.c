@@ -79,11 +79,7 @@ static void wq_memory_teardown(void *ctx)
 
 static int workqueue_is_enabled(void)
 {
-#ifdef CONFIG_OVE_WORKQUEUE
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t workqueue_cases[] = {

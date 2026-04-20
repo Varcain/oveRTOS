@@ -1,14 +1,17 @@
 # oveRTOS
 
-A portable RTOS abstraction framework that provides a unified C API across **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX**. Write your application once, deploy it on any supported backend with zero runtime overhead.
+[![tests](https://github.com/Varcain/oveRTOS/actions/workflows/ove-tests.yml/badge.svg)](https://github.com/Varcain/oveRTOS/actions/workflows/ove-tests.yml)
+[![coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Varcain/2311c373541b067eeb3db3fa9580340b/raw/overtos-coverage.json)](https://github.com/Varcain/oveRTOS/actions/workflows/coverage.yml)
+
+A portable RTOS abstraction framework that provides a unified C API across **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX** (with a browser-hosted **WASM** target). Write your application once, deploy it on any supported backend with zero runtime overhead.
 
 ## Key Features
 
-- **Write once, run on any RTOS** -- single API across four RTOS backends
+- **Write once, run on any RTOS** -- single API across four RTOS backends plus a WebAssembly target
 - **Zero overhead** -- compile-time backend dispatch, no function pointers or vtables
 - **Multi-language** -- C, C++, Rust, and Zig bindings
 - **Flexible allocation** -- heap mode (`_create`/`_destroy`) or zero-heap mode (`_init`/`_deinit` with static storage)
-- **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT), ML inference, filesystem, LVGL GUI, shell, logging, and more
+- **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, bus drivers (UART/SPI/I2C/I2S), audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT/HTTPD/SNTP), ML inference, filesystem, NVS, LVGL GUI, shell, logging, power management, watchdog, and more
 - **Unified configuration** -- single Kconfig-based `.config` drives all backends
 - **Desktop development** -- develop and test on POSIX, deploy to embedded hardware
 
@@ -177,10 +180,14 @@ make test-stub                   # Stub backend API tests
 make test-cpp                    # C++ binding tests
 make test-rust                   # Rust binding tests
 make test-zig                    # Zig binding tests
+make test-nuttx                  # NuttX simulator tests
+make test-zephyr                 # Zephyr native_sim tests
 make test-qemu-freertos          # FreeRTOS on QEMU
 make test-qemu-nuttx             # NuttX on QEMU
 make test-qemu-zephyr            # Zephyr on QEMU
 make test-qemu-freertos-zeroheap # FreeRTOS zero-heap on QEMU
+make test-qemu-nuttx-zeroheap    # NuttX zero-heap on QEMU
+make test-qemu-zephyr-zeroheap   # Zephyr zero-heap on QEMU
 ```
 
 ## Documentation
@@ -207,11 +214,11 @@ oveRTOS/
 │   ├── cpp/
 │   ├── rust/
 │   └── zig/
-├── apps/               # Example applications (4 per language)
-│   ├── c/              #   C apps
-│   ├── cpp/            #   C++ apps
-│   ├── rust/           #   Rust apps
-│   └── zig/            #   Zig apps (each: example, benchmark, example_keyword_live, example_net)
+├── apps/               # Example applications
+│   ├── c/              #   C apps: example, benchmark, example_net, example_pm, example_keyword_live, lvgl_benchmark
+│   ├── cpp/            #   C++ apps: same set plus lvgl_gallery
+│   ├── rust/           #   Rust apps: same set plus lvgl_gallery
+│   └── zig/            #   Zig apps:  same set plus lvgl_gallery
 ├── models/             # ML model assets (TFLite)
 ├── sim/                # Simulation framework (plugins, dashboard, transports)
 ├── boards/             # Board definitions

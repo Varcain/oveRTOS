@@ -8,12 +8,29 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "ove/thread_state_stats.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <sched.h>
 #include <signal.h>
 #include <semaphore.h>
 #include <string.h>
+#include <time.h>
+
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+uint64_t ove_state_stats_now_us(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
+#endif
+
+/* Set thread state with tracking. */
+#define SET_STATE(t, s) do { \
+	ove_state_track_transition(&(t)->st, (s)); \
+	(t)->state = (s); \
+} while (0)
 #ifdef __GLIBC__
 #include <malloc.h>
 #endif
@@ -22,12 +39,70 @@
 static __thread struct ove_thread *tls_current;
 static struct ove_thread *first_thread;
 
+/* ── Stack coloration ─────────────────────────────────────────────── */
+
+#define STACK_COLOR 0xDEADBEEFu
+#define STACK_MIN_SIZE (64 * 1024)  /* pthread minimum (PTHREAD_STACK_MIN + guard) */
+
+static void *_alloc_painted_stack(size_t requested, size_t *actual)
+{
+	/* Ensure minimum size for pthread (includes guard page). */
+	size_t sz = requested < STACK_MIN_SIZE ? STACK_MIN_SIZE : requested;
+	/* Align to page boundary for pthread_attr_setstack. */
+	sz = (sz + 4095) & ~(size_t)4095;
+	void *base = aligned_alloc(4096, sz);
+	if (!base) { *actual = 0; return NULL; }
+	/* Paint with sentinel pattern. */
+	uint32_t *p = (uint32_t *)base;
+	for (size_t i = 0; i < sz / sizeof(uint32_t); i++)
+		p[i] = STACK_COLOR;
+	*actual = sz;
+	return base;
+}
+
+static size_t _check_stack_hwm(void *base, size_t size)
+{
+	/* Scan from bottom (low address) looking for first clobbered word.
+	 * Stack grows downward: bottom is painted, top is used. */
+	const uint32_t *p = (const uint32_t *)base;
+	size_t words = size / sizeof(uint32_t);
+	size_t clean = 0;
+	for (size_t i = 0; i < words; i++) {
+		if (p[i] != STACK_COLOR) break;
+		clean++;
+	}
+	return size - clean * sizeof(uint32_t);
+}
+
+/* Simple linked list of all live threads for ove_thread_list(). */
+static struct ove_thread *thread_list_head;
+static pthread_mutex_t thread_list_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void _register_thread(struct ove_thread *t)
+{
+	pthread_mutex_lock(&thread_list_lock);
+	t->next = thread_list_head;
+	thread_list_head = t;
+	pthread_mutex_unlock(&thread_list_lock);
+}
+
+static void _unregister_thread(struct ove_thread *t)
+{
+	pthread_mutex_lock(&thread_list_lock);
+	struct ove_thread **pp = &thread_list_head;
+	while (*pp) {
+		if (*pp == t) { *pp = t->next; break; }
+		pp = &(*pp)->next;
+	}
+	pthread_mutex_unlock(&thread_list_lock);
+}
+
 static void sigusr1_handler(int sig)
 {
 	(void)sig;
 	struct ove_thread *t = tls_current;
 	if (t) {
-		t->state = OVE_THREAD_STATE_SUSPENDED;
+		SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
 		/* Block until resumed via sem_post */
 		while (t->state == OVE_THREAD_STATE_SUSPENDED) {
 			sem_wait(&t->suspend_sem);
@@ -48,9 +123,9 @@ static void *thread_wrapper(void *arg)
 	sigemptyset(&sa.sa_mask);
 	sigaction(SIGUSR1, &sa, NULL);
 
-	t->state = OVE_THREAD_STATE_RUNNING;
+	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 	t->entry(t->arg);
-	t->state = OVE_THREAD_STATE_TERMINATED;
+	SET_STATE(t, OVE_THREAD_STATE_TERMINATED);
 	return NULL;
 }
 
@@ -67,15 +142,32 @@ int ove_thread_init(ove_thread_t *handle,
 
 	t->entry = desc->entry;
 	t->arg = desc->arg;
-	t->state = OVE_THREAD_STATE_READY;
+	SET_STATE(t, OVE_THREAD_STATE_READY);
+	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
+	t->name = desc->name;
 	sem_init(&t->suspend_sem, 0, 0);
 
-	if (pthread_create(&t->tid, NULL, thread_wrapper, t) != 0) {
+	/* Allocate and paint stack for coloration-based HWM tracking. */
+	size_t actual_sz = 0;
+	t->stack_base = _alloc_painted_stack(desc->stack_size, &actual_sz);
+	t->stack_size = actual_sz;
+
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	if (t->stack_base)
+		pthread_attr_setstack(&attr, t->stack_base, actual_sz);
+
+	if (pthread_create(&t->tid, &attr, thread_wrapper, t) != 0) {
+		pthread_attr_destroy(&attr);
 		sem_destroy(&t->suspend_sem);
+		free(t->stack_base);
+		t->stack_base = NULL;
 		return OVE_ERR_NO_MEMORY;
 	}
+	pthread_attr_destroy(&attr);
 
 	t->started = 1;
+	_register_thread(t);
 
 	if (first_thread == NULL) {
 		first_thread = t;
@@ -93,15 +185,18 @@ int ove_thread_deinit(ove_thread_t handle)
 	struct ove_thread *t = handle;
 	if (t->started) {
 		if (t->state == OVE_THREAD_STATE_SUSPENDED) {
-			t->state = OVE_THREAD_STATE_READY;
+			SET_STATE(t, OVE_THREAD_STATE_READY);
 			sem_post(&t->suspend_sem);
 		}
 		pthread_join(t->tid, NULL);
 	}
+	_unregister_thread(t);
 	if (first_thread == t) {
 		first_thread = NULL;
 	}
 	sem_destroy(&t->suspend_sem);
+	free(t->stack_base);
+	t->stack_base = NULL;
 	return OVE_OK;
 }
 
@@ -121,16 +216,32 @@ int ove_thread_create_(ove_thread_t *handle,
 
 	t->entry = desc->entry;
 	t->arg = desc->arg;
-	t->state = OVE_THREAD_STATE_READY;
+	SET_STATE(t, OVE_THREAD_STATE_READY);
+	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
+	t->name = desc->name;
 	sem_init(&t->suspend_sem, 0, 0);
 
-	if (pthread_create(&t->tid, NULL, thread_wrapper, t) != 0) {
+	size_t actual_sz = 0;
+	t->stack_base = _alloc_painted_stack(desc->stack_size, &actual_sz);
+	t->stack_size = actual_sz;
+
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	if (t->stack_base)
+		pthread_attr_setstack(&attr, t->stack_base, actual_sz);
+
+	if (pthread_create(&t->tid, &attr, thread_wrapper, t) != 0) {
+		pthread_attr_destroy(&attr);
 		sem_destroy(&t->suspend_sem);
+		free(t->stack_base);
+		t->stack_base = NULL;
 		OVE_BACKEND_FREE(t);
 		return OVE_ERR_NO_MEMORY;
 	}
+	pthread_attr_destroy(&attr);
 
 	t->started = 1;
+	_register_thread(t);
 
 	if (first_thread == NULL) {
 		first_thread = t;
@@ -151,15 +262,18 @@ int ove_thread_destroy(ove_thread_t handle)
 	if (t->started) {
 		/* Resume if suspended so it can finish */
 		if (t->state == OVE_THREAD_STATE_SUSPENDED) {
-			t->state = OVE_THREAD_STATE_READY;
+			SET_STATE(t, OVE_THREAD_STATE_READY);
 			sem_post(&t->suspend_sem);
 		}
 		pthread_join(t->tid, NULL);
 	}
+	_unregister_thread(t);
 	if (first_thread == t) {
 		first_thread = NULL;
 	}
 	sem_destroy(&t->suspend_sem);
+	free(t->stack_base);
+	t->stack_base = NULL;
 	OVE_BACKEND_FREE(t);
 	return OVE_OK;
 }
@@ -180,7 +294,10 @@ void ove_thread_set_priority(ove_thread_t handle,
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
+	struct ove_thread *t = tls_current;
+	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	usleep((useconds_t)ms * 1000);
+	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -223,7 +340,7 @@ void ove_thread_resume(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
 	if (t && t->state == OVE_THREAD_STATE_SUSPENDED) {
-		t->state = OVE_THREAD_STATE_READY;
+		SET_STATE(t, OVE_THREAD_STATE_READY);
 		sem_post(&t->suspend_sem);
 	}
 }
@@ -270,14 +387,64 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 	return OVE_OK;
 }
 
+static uint64_t _thread_cpu_ns(pthread_t tid)
+{
+	clockid_t cid;
+	struct timespec ts;
+	if (pthread_getcpuclockid(tid, &cid) != 0)
+		return 0;
+	if (clock_gettime(cid, &ts) != 0)
+		return 0;
+	return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
 int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		    size_t *actual_count)
 {
-	/* POSIX has no standard thread enumeration.
-	 * Return an empty list — the dashboard will show "no data". */
+	if (!out) {
+		if (actual_count)
+			*actual_count = 0;
+		return OVE_OK;
+	}
+
+	/* Collect per-thread CPU time and compute total. */
+	uint64_t cpu_ns[16];
+	uint64_t total_ns = 0;
+	size_t count = 0;
+
+	pthread_mutex_lock(&thread_list_lock);
+	struct ove_thread *t = thread_list_head;
+	while (t && count < max_count && count < 16) {
+		cpu_ns[count] = _thread_cpu_ns(t->tid);
+		total_ns += cpu_ns[count];
+		out[count].name = t->name ? t->name : "?";
+		out[count].state = (ove_thread_state_t)t->state;
+		out[count].priority = 0;
+		out[count].stack_used = t->stack_base
+			? _check_stack_hwm(t->stack_base, t->stack_size) : 0;
+		out[count].stack_size = t->stack_size;
+		out[count].cpu_percent_x100 = 0;
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+		out[count].state_times.running_us   = t->st.cumul_us[0];
+		out[count].state_times.ready_us     = t->st.cumul_us[1];
+		out[count].state_times.blocked_us   = t->st.cumul_us[2];
+		out[count].state_times.suspended_us = t->st.cumul_us[3];
+#else
+		memset(&out[count].state_times, 0, sizeof(out[count].state_times));
+#endif
+		count++;
+		t = t->next;
+	}
+	pthread_mutex_unlock(&thread_list_lock);
+
+	/* Compute CPU% from per-thread / total ratio. */
+	if (total_ns > 0) {
+		for (size_t i = 0; i < count; i++)
+			out[i].cpu_percent_x100 =
+				(uint32_t)(cpu_ns[i] * 10000ULL / total_ns);
+	}
+
 	if (actual_count)
-		*actual_count = 0;
-	(void)out;
-	(void)max_count;
+		*actual_count = count;
 	return OVE_OK;
 }

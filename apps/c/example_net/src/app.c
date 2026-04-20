@@ -256,7 +256,6 @@ static void test_udp(void)
 
 /* ── 5. HTTP client ─────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET_HTTP
 static void test_http(void)
 {
 	OVE_LOG_INF("=== HTTP Client ===");
@@ -338,11 +337,9 @@ static void test_http(void)
 
 	ove_http_client_deinit(client);
 }
-#endif /* CONFIG_OVE_NET_HTTP */
 
 /* ── 5b. SNTP ──────────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET_SNTP
 static void test_sntp(void)
 {
 	OVE_LOG_INF("=== SNTP ===");
@@ -368,11 +365,9 @@ static void test_sntp(void)
 		FAIL("sntp_sync", ret);
 	}
 }
-#endif /* CONFIG_OVE_NET_SNTP */
 
 /* ── 6. MQTT client ─────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET_MQTT
 static volatile int mqtt_rx_count;
 static char mqtt_rx_payload[128];
 
@@ -495,7 +490,6 @@ static void test_mqtt(void)
 
 	ove_mqtt_client_deinit(client);
 }
-#endif /* CONFIG_OVE_NET_MQTT */
 
 /* ── Networking thread ──────────────────────────────────────────── */
 
@@ -507,18 +501,9 @@ static void net_thread(void *arg)
 	test_dns();
 	test_tcp();
 	test_udp();
-
-#ifdef CONFIG_OVE_NET_HTTP
 	test_http();
-#endif
-
-#ifdef CONFIG_OVE_NET_SNTP
 	test_sntp();
-#endif
-
-#ifdef CONFIG_OVE_NET_MQTT
 	test_mqtt();
-#endif
 
 	OVE_LOG_INF("========================================");
 	OVE_LOG_INF("  Results: %d passed, %d failed", pass_count, fail_count);
@@ -530,7 +515,6 @@ static void net_thread(void *arg)
 		OVE_LOG_ERR("  %d TEST(S) FAILED", fail_count);
 	}
 
-#ifdef CONFIG_OVE_NET_HTTPD
 	/* Start web dashboard — runs forever */
 	uint16_t httpd_port = 80;
 #ifdef CONFIG_OVE_RTOS_POSIX
@@ -550,7 +534,6 @@ static void net_thread(void *arg)
 	} else {
 		OVE_LOG_ERR("HTTP server failed to start: %d", ret);
 	}
-#endif
 }
 
 /* ── App entry point ────────────────────────────────────────────── */
@@ -577,8 +560,6 @@ void ove_main(void)
 	OVE_LOG_INF("Networking example: ready");
 	ove_run();
 
-#ifdef CONFIG_OVE_NET_HTTPD
 	/* On POSIX, ove_run() returns — keep alive for the httpd server */
 	while (1) { ove_thread_sleep_ms(1000); }
-#endif
 }

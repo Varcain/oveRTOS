@@ -105,4 +105,22 @@ CFLAGS += -I$(CMOCKA_DIR)/src
 CFLAGS += -Wno-unused-parameter
 CFLAGS += -Wno-missing-field-initializers
 
+# Coverage — opted in via `OVE_COVERAGE=1 make ...` (set by the test CLI's
+# test_nuttx_coverage path). We only instrument app-side .c files here;
+# libgcov.a is pulled into the final kernel link by NuttX's own
+# CONFIG_COVERAGE_TOOLCHAIN=y (set via nuttx_test_coverage_defconfig).
+# Don't add --coverage to LDFLAGS / -lgcov to LDLIBS — those only affect
+# the app archive stage and would risk pulling the wrong multilib libgcov.
+ifeq ($(OVE_COVERAGE),1)
+CFLAGS  += --coverage -fprofile-abs-path -DOVE_COVERAGE=1
+endif
+
+# KNOWN WART: NuttX's Application.mk emits per-source object files in the
+# directory containing the source (as $SRC.$MANGLED_ABSPATH.o), which means
+# building this app scatters .o/.gcno into $(OVE_DIR)/tests/suites/. They
+# are .gitignored but they clutter the tree. Moving them under $APPDIR's
+# object root requires patching Application.mk's $(OBJS_DIR) handling; not
+# upstream-friendly. A future fix is to copy CSRCS into a build-private dir
+# before the include.
+
 include $(APPDIR)/Application.mk

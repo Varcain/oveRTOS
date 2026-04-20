@@ -301,6 +301,16 @@ static void ws_send_close(struct ove_httpd_ws_conn *conn)
 	ove_socket_send(conn->sock, frame, 2, NULL);
 }
 
+static void ws_send_close_code(struct ove_httpd_ws_conn *conn, uint16_t code)
+{
+	uint8_t frame[4];
+	frame[0] = 0x80 | WS_OP_CLOSE;
+	frame[1] = 2;
+	frame[2] = (uint8_t)(code >> 8);
+	frame[3] = (uint8_t)code;
+	ove_socket_send(conn->sock, frame, 4, NULL);
+}
+
 static void ws_send_pong(struct ove_httpd_ws_conn *conn,
 			 const uint8_t *payload, size_t len)
 {
@@ -334,6 +344,14 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 	int masked = (hdr[1] & 0x80) != 0;
 	size_t payload_len = hdr[1] & 0x7F;
 
+	/* RFC 6455 §5.1: server MUST fail the connection on unmasked client frames */
+	if (!masked) {
+		ws_send_close_code(conn, 1002);
+		return -1;
+	}
+
+	int is_control = (opcode & 0x08) != 0;
+
 	/* Extended payload length */
 	if (payload_len == 126) {
 		uint8_t ext[2];
@@ -346,52 +364,47 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 		ret = ove_socket_recv(conn->sock, ext, 8, &got, 1000);
 		if (ret != OVE_OK || got < 8)
 			return -1;
+		/* Reject frames whose top 32 bits are set — we don't support >4GB */
+		if (ext[0] | ext[1] | ext[2] | ext[3]) {
+			ws_send_close_code(conn, 1009);
+			return -1;
+		}
 		payload_len = ((size_t)ext[4] << 24) | ((size_t)ext[5] << 16) |
 			      ((size_t)ext[6] << 8)  | ext[7];
 	}
 
-	/* Read masking key (4 bytes) if present */
-	uint8_t mask[4] = {0};
-	if (masked) {
-		ret = ove_socket_recv(conn->sock, mask, 4, &got, 1000);
-		if (ret != OVE_OK || got < 4)
-			return -1;
+	/* RFC 6455 §5.5: control frames must not exceed 125 bytes */
+	if (is_control && payload_len > 125) {
+		ws_send_close_code(conn, 1002);
+		return -1;
 	}
 
-	/* Clamp payload to buffer size */
-	size_t to_read = payload_len;
-	if (to_read > CONFIG_OVE_NET_HTTPD_WS_MAX_FRAME)
-		to_read = CONFIG_OVE_NET_HTTPD_WS_MAX_FRAME;
+	/* Reject oversized data frames instead of silently truncating */
+	if (payload_len > CONFIG_OVE_NET_HTTPD_WS_MAX_FRAME) {
+		ws_send_close_code(conn, 1009);
+		return -1;
+	}
+
+	/* Read masking key (4 bytes) — presence already enforced above */
+	uint8_t mask[4] = {0};
+	ret = ove_socket_recv(conn->sock, mask, 4, &got, 1000);
+	if (ret != OVE_OK || got < 4)
+		return -1;
 
 	/* Read payload */
 	size_t total = 0;
-	while (total < to_read) {
+	while (total < payload_len) {
 		got = 0;
 		ret = ove_socket_recv(conn->sock, conn->frame_buf + total,
-				      to_read - total, &got, 1000);
+				      payload_len - total, &got, 1000);
 		if (ret != OVE_OK || got == 0)
 			return -1;
 		total += got;
 	}
 
-	/* Discard excess bytes beyond buffer capacity */
-	if (payload_len > to_read) {
-		uint8_t discard[64];
-		size_t excess = payload_len - to_read;
-		while (excess > 0) {
-			size_t chunk = excess > sizeof(discard) ? sizeof(discard) : excess;
-			ret = ove_socket_recv(conn->sock, discard, chunk, &got, 1000);
-			if (ret != OVE_OK || got == 0)
-				return -1;
-			excess -= got;
-		}
-	}
-
 	/* Unmask payload */
-	if (masked) {
-		for (size_t i = 0; i < to_read; i++)
-			conn->frame_buf[i] ^= mask[i % 4];
-	}
+	for (size_t i = 0; i < payload_len; i++)
+		conn->frame_buf[i] ^= mask[i % 4];
 
 	/* Handle control frames */
 	if (opcode == WS_OP_CLOSE) {
@@ -400,7 +413,7 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 	}
 
 	if (opcode == WS_OP_PING) {
-		ws_send_pong(conn, conn->frame_buf, to_read);
+		ws_send_pong(conn, conn->frame_buf, payload_len);
 		return 0; /* handled internally */
 	}
 
@@ -412,7 +425,7 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 		struct ws_route *route = ws_match_route(conn->path);
 		if (route && route->on_message) {
 			route->on_message((ove_httpd_ws_conn_t *)conn,
-					  conn->frame_buf, to_read);
+					  conn->frame_buf, payload_len);
 		}
 	}
 

@@ -63,6 +63,14 @@ menu "FreeRTOS"
         config FREERTOS_TICK_RATE_HZ
             int "Tick rate (Hz)"
             default 1000
+            help
+              SysTick frequency used by the FreeRTOS scheduler. The
+              1000 Hz default gives 1 ms resolution for vTaskDelay(),
+              queue timeouts and software timers — the sweet spot for
+              GUI / audio / control apps on Cortex-M. Lower values
+              (e.g. 100) reduce ISR load for deep-sleep sensor nodes;
+              higher values (2000+) only pay off on very short
+              sub-ms waits and cost measurable CPU on M0/M3 parts.
 
         config FREERTOS_MAX_PRIORITIES
             int "Max priorities"

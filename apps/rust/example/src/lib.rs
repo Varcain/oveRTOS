@@ -5,11 +5,11 @@
 // This file is part of oveRTOS.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![deny(unsafe_code)]
 
 use core::fmt::Write;
 use core::sync::atomic::{AtomicU32, Ordering};
-#[cfg(has_lvgl)]
-use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
+use ove::lvgl::{self, Arc, Bar, Button, Color, Label, Layout, Slider, Styleable, Switch};
 use ove::{Error, FmtBuf, Priority, Queue, Thread, Timer, WAIT_FOREVER};
 
 // ---------------------------------------------------------------------------
@@ -33,18 +33,14 @@ const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
 
 ove::shared!(QUEUE: Queue<u32, 8>);
 static LAST_VALUE: AtomicU32 = AtomicU32::new(0);
-#[cfg(has_lvgl)]
 ove::shared!(UI_TIMER: Timer);
-#[cfg(has_lvgl)]
 ove::shared!(COUNTER_LABEL: Label);
-#[cfg(has_lvgl)]
 ove::shared!(BAR: Bar);
 
 // ---------------------------------------------------------------------------
 // LVGL UI
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 fn create_ui() {
     let screen = lvgl::screen_active();
 
@@ -73,11 +69,35 @@ fn create_ui() {
         .radius(8)
         .align(lvgl::ALIGN_TOP_MID, 0, 96);
 
+    // Tier S widget smoke test — Slider, Button, Switch, Arc
+    Slider::create(screen)
+        .size(200, 12)
+        .range(0, 100)
+        .value_anim(50, false)
+        .indicator_color(Color::hex(0x4CAF50))
+        .align(lvgl::ALIGN_TOP_MID, 0, 128);
+
+    let btn = Button::create(screen)
+        .size(96, 32)
+        .align(lvgl::ALIGN_TOP_LEFT, 16, 156);
+    Label::create(btn)
+        .text(b"Button\0")
+        .color(Color::white())
+        .center();
+
+    Switch::create(screen).align(lvgl::ALIGN_TOP_RIGHT, -16, 156);
+
+    Arc::create(screen)
+        .size(72, 72)
+        .range(0, 100)
+        .value(75)
+        .indicator_color(Color::hex(0xFF9800))
+        .align(lvgl::ALIGN_TOP_MID, 0, 196);
+
     COUNTER_LABEL.init(counter);
     BAR.init(bar);
 }
 
-#[cfg(has_lvgl)]
 fn ui_timer_cb() {
     let val = LAST_VALUE.load(Ordering::Relaxed);
 
@@ -97,7 +117,6 @@ fn ui_timer_cb() {
 // Thread entry functions (safe fn() — no unsafe extern "C" needed)
 // ---------------------------------------------------------------------------
 
-#[cfg(has_lvgl)]
 fn graphics_entry() {
     let mut last_us = ove::time::get_us().unwrap_or(0);
 
@@ -169,32 +188,28 @@ fn app_main() {
     QUEUE.init(ove::queue!(u32, 8));
 
     // Create threads
-    #[cfg(has_lvgl)]
     let _graphics = ove::thread!("graphics", graphics_entry, Priority::High, 4096);
     let _producer = ove::thread!("producer", producer_entry, Priority::Normal, 4096);
     let _consumer = ove::thread!("consumer", consumer_entry, Priority::Normal, 4096);
 
     // Initialize LVGL and create UI
-    #[cfg(has_lvgl)]
+    // Create UI timer (200ms periodic)
+    UI_TIMER.init(ove::timer!(ui_timer_cb, 200, false));
+
+    if lvgl::init().is_err() {
+        ove::log_err!("Failed to init LVGL");
+        return;
+    }
+
     {
-        // Create UI timer (200ms periodic)
-        UI_TIMER.init(ove::timer!(ui_timer_cb, 200, false));
+        let _g = lvgl::lock();
+        create_ui();
+    }
+    ove::log_inf!("LVGL widgets created");
 
-        if lvgl::init().is_err() {
-            ove::log_err!("Failed to init LVGL");
-            return;
-        }
-
-        {
-            let _g = lvgl::lock();
-            create_ui();
-        }
-        ove::log_inf!("LVGL widgets created");
-
-        if UI_TIMER.start().is_err() {
-            ove::log_err!("Failed to start UI timer");
-            return;
-        }
+    if UI_TIMER.start().is_err() {
+        ove::log_err!("Failed to start UI timer");
+        return;
     }
 
     ove::log_inf!("Rust example: ready");
@@ -203,12 +218,9 @@ fn app_main() {
 
     // Cleanup (only reached if scheduler returns)
     ove::log_inf!("Rust example: shutdown");
-    #[cfg(has_lvgl)]
-    {
-        BAR.shutdown();
-        COUNTER_LABEL.shutdown();
-        UI_TIMER.shutdown();
-    }
+    BAR.shutdown();
+    COUNTER_LABEL.shutdown();
+    UI_TIMER.shutdown();
     QUEUE.shutdown();
 }
 

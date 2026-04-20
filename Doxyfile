@@ -17,6 +17,9 @@ TYPEDEF_HIDES_STRUCT   = YES
 SORT_MEMBER_DOCS       = NO
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = YES
+# Heap-mode toggles and Zig guards are static — not Kconfig-derived.
+# CONFIG_OVE_* symbols are auto-generated into Doxyfile.predefined by
+# scripts/kconfig-doxyfile-gen.py (re-run by `make docs`).
 PREDEFINED             = OVE_HEAP_THREAD=1 \
                          OVE_HEAP_MUTEX=1 \
                          OVE_HEAP_SEM=1 \
@@ -27,27 +30,20 @@ PREDEFINED             = OVE_HEAP_THREAD=1 \
                          OVE_HEAP_STREAM=1 \
                          OVE_HEAP_EVENTGROUP=1 \
                          OVE_HEAP_WORKQUEUE=1 \
-                         CONFIG_OVE_QUEUE=1 \
-                         CONFIG_OVE_TIMER=1 \
-                         CONFIG_OVE_EVENTGROUP=1 \
                          OVE_HEAP_FS=1 \
                          OVE_HEAP_WATCHDOG=1 \
-                         CONFIG_OVE_SYNC=1 \
-                         CONFIG_OVE_AUDIO=1 \
-                         CONFIG_OVE_FS=1 \
-                         CONFIG_OVE_LVGL=1 \
-                         CONFIG_OVE_NVS=1 \
-                         CONFIG_OVE_SHELL=1 \
-                         CONFIG_OVE_WATCHDOG=1 \
-                         CONFIG_OVE_BSP=1 \
-                         CONFIG_OVE_BOARD=1 \
-                         CONFIG_OVE_GPIO=1 \
-                         CONFIG_OVE_LED=1 \
-                         CONFIG_OVE_TIME=1 \
-                         CONFIG_OVE_CONSOLE=1 \
-                         CONFIG_OVE_STREAM=1 \
-                         CONFIG_OVE_WORKQUEUE=1 \
+                         OVE_HEAP_SYNC=1 \
+                         OVE_HEAP_UART=1 \
+                         OVE_HEAP_SPI=1 \
+                         OVE_HEAP_I2C=1 \
+                         OVE_HEAP_I2S=1 \
+                         OVE_HEAP_INFER=1 \
+                         OVE_HEAP_NET=1 \
+                         OVE_HEAP_NET_TLS=1 \
+                         OVE_HEAP_NET_HTTP=1 \
+                         OVE_HEAP_NET_MQTT=1 \
                          __ZIG_CIMPORT__=0
+@INCLUDE               = output/docs/Doxyfile.predefined
 EXPAND_ONLY_PREDEF     = YES
 WARN_IF_UNDOCUMENTED   = YES
 WARN_IF_DOC_ERROR      = YES

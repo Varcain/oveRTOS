@@ -103,7 +103,7 @@ The transport layer abstracts the communication channel between firmware and the
 
 | Transport | Config symbol | Use case | Mechanism |
 |-----------|---------------|----------|-----------|
-| Direct (in-process) | `OVE_SIM_TRANSPORT_DIRECT` | POSIX `host-pc` builds | In-process ring buffers; dashboard served by an embedded WebSocket server |
+| Direct (in-process) | `OVE_SIM_TRANSPORT_DIRECT` | POSIX `host` builds | In-process ring buffers; dashboard served by an embedded WebSocket server |
 | Shared Memory | `OVE_SIM_TRANSPORT_SHM` | QEMU cross-process | `/dev/shm/ove-{sim,fb,audio}` via mmap; external bridge process serves the dashboard |
 | WASM | `OVE_SIM_TRANSPORT_WASM` | Browser (Emscripten) | `SharedArrayBuffer` between main thread and web workers; dashboard is the host page itself |
 

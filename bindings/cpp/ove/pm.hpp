@@ -32,12 +32,19 @@ namespace pm {
 
 /* ── Enums (re-export C types for convenience) ──────────────────────── */
 
+/** @brief System power state (active / sleep / deep-sleep / off). */
 using State    = ove_pm_state_t;
+/** @brief Wake-source kind (GPIO, RTC, timer, …). */
 using WakeType = ove_pm_wake_type_t;
+/** @brief Peripheral power domain identifier. */
 using Domain   = ove_pm_domain_t;
+/** @brief PM event delivered to subscribers (entering/exiting a state, etc.). */
 using Event    = ove_pm_event_t;
+/** @brief Wake-source descriptor passed to `enable_wake_src()`. */
 using WakeSrc  = ove_pm_wake_src;
+/** @brief Runtime configuration consumed by `init()`. */
 using Cfg      = ove_pm_cfg;
+/** @brief Aggregated runtime statistics (time in each state, etc.). */
 using Stats    = ove_pm_stats;
 
 /* ── Lifecycle ──────────────────────────────────────────────────────── */

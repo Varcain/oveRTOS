@@ -21,22 +21,17 @@ static void test_app_run_returns_ok(void **state)
 	assert_int_equal(ret, OVE_OK);
 }
 
-static void test_ove_run_linkable(void **state)
-{
-	(void)state;
-	/*
-	 * ove_run() starts the scheduler which blocks forever on POSIX
-	 * (pthread_join). We can't call it in a test — just verify it links.
-	 */
-	void (*fn)(void) = ove_run;
-	assert_non_null(fn);
-}
+/*
+ * ove_run() starts the scheduler which blocks forever on POSIX
+ * (pthread_join). We can't call it in a test — successful linkage of
+ * this translation unit is checked at build time, so no runtime
+ * tautology test is needed.
+ */
 
 int test_app_run(void)
 {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_app_run_returns_ok),
-		cmocka_unit_test(test_ove_run_linkable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

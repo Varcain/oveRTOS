@@ -7,50 +7,47 @@
  */
 
 #include <ove/ove.hpp>
+#include <ove/bench.hpp>
 
-extern "C" {
-#include "benchmark.h"
-}
+#include <atomic>
+#include <optional>
 
 /* --- Shared state --- */
 
-static ove_queue_t bench_q;
-static ove_thread_t producer_th;
-static volatile int throughput_done;
+using BenchQueue16 = ove::Queue<uint32_t, 16>;
+using BenchQueue64 = ove::Queue<uint32_t, 64>;
+using BenchQueue8 = ove::Queue<uint32_t, 8>;
+
+static std::optional<BenchQueue16> bench_q;
+static std::optional<BenchQueue64> throughput_q;
+static std::optional<ove::Thread<2048>> producer_th;
+static std::atomic<bool> throughput_done{false};
 
 /* --- send/receive latency --- */
 
-static void queue_send_recv_setup(void *ctx)
+static void queue_send_recv_setup()
 {
-	(void)ctx;
-	ove_queue_create(&bench_q, sizeof(uint32_t), 16);
+	bench_q.emplace();
 }
 
-static void queue_send_recv_run(void *ctx)
+static void queue_send_recv_run()
 {
-	(void)ctx;
 	uint32_t val = 42;
 	uint32_t buf;
-
-	ove_queue_send(bench_q, &val, OVE_WAIT_FOREVER);
-	ove_queue_receive(bench_q, &buf, OVE_WAIT_FOREVER);
+	(void)bench_q->send(val, OVE_WAIT_FOREVER);
+	(void)bench_q->receive(&buf, OVE_WAIT_FOREVER);
 }
 
-static void queue_send_recv_teardown(void *ctx)
+static void queue_send_recv_teardown()
 {
-	(void)ctx;
-	ove_queue_destroy(bench_q);
+	bench_q.reset();
 }
 
 /* --- create/destroy --- */
 
-static void queue_create_destroy_run(void *ctx)
+static void queue_create_destroy_run()
 {
-	(void)ctx;
-	ove_queue_t q;
-
-	ove_queue_create(&q, sizeof(uint32_t), 8);
-	ove_queue_destroy(q);
+	BenchQueue8 q;
 }
 
 /* --- 2-thread throughput --- */
@@ -59,114 +56,87 @@ static void producer_thread(void *arg)
 {
 	(void)arg;
 	uint32_t val = 0;
-
-	while (!throughput_done) {
-		ove_queue_send(bench_q, &val, OVE_WAIT_FOREVER);
+	while (!throughput_done.load(std::memory_order_acquire)) {
+		(void)throughput_q->send(val, OVE_WAIT_FOREVER);
 		val++;
 	}
 }
 
-static void queue_throughput_setup(void *ctx)
+static void queue_throughput_setup()
 {
-	(void)ctx;
-	throughput_done = 0;
-	ove_queue_create(&bench_q, sizeof(uint32_t), 64);
-
-	struct ove_thread_desc desc = {};
-	desc.name = "q_prod";
-	desc.entry = producer_thread;
-	desc.arg = nullptr;
-	desc.priority = OVE_PRIO_NORMAL;
-
-	ove_thread_create(&producer_th, 2048, &desc);
+	throughput_done.store(false, std::memory_order_release);
+	throughput_q.emplace();
+	producer_th.emplace(producer_thread, nullptr, OVE_PRIO_NORMAL, "q_prod");
 }
 
-static void queue_throughput_run(void *ctx)
+static void queue_throughput_run()
 {
-	(void)ctx;
 	uint32_t buf;
-
-	ove_queue_receive(bench_q, &buf, OVE_WAIT_FOREVER);
+	(void)throughput_q->receive(&buf, OVE_WAIT_FOREVER);
 }
 
-static void queue_throughput_teardown(void *ctx)
+static void queue_throughput_teardown()
 {
-	(void)ctx;
-	throughput_done = 1;
-	/* Drain queue so producer unblocks */
+	throughput_done.store(true, std::memory_order_release);
 	uint32_t buf;
-
-	ove_queue_receive(bench_q, &buf, 100);
-	ove_thread_sleep_ms(10);
-	ove_thread_destroy(producer_th);
-	ove_queue_destroy(bench_q);
+	(void)throughput_q->receive(&buf, 100);
+	ove::time::delay_ms(10);
+	producer_th.reset();
+	throughput_q.reset();
 }
 
 /* --- memory --- */
 
-static ove_queue_t mem_queue;
+static std::optional<BenchQueue8> mem_queue;
 
-static void queue_memory_run(void *ctx)
+static void queue_memory_run()
 {
-	(void)ctx;
-	ove_queue_create(&mem_queue, sizeof(uint32_t), 8);
+	mem_queue.emplace();
 }
 
-static void queue_memory_teardown(void *ctx)
+static void queue_memory_teardown()
 {
-	(void)ctx;
-	ove_queue_destroy(mem_queue);
+	mem_queue.reset();
 }
 
 /* --- Suite --- */
 
-static int queue_is_enabled(void)
+static bool queue_is_enabled()
 {
-#ifdef CONFIG_OVE_QUEUE
-	return 1;
-#else
-	return 0;
-#endif
+	return true;
 }
 
-static const bench_case_t queue_cases[] = {
-	{
-		"memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		queue_memory_run,
-		queue_memory_teardown,
-		0,
-	},
-	{
-		"send_receive",
-		BENCH_TYPE_LATENCY,
-		queue_send_recv_setup,
-		queue_send_recv_run,
-		queue_send_recv_teardown,
-		0,
-	},
-	{
-		"create_destroy",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		queue_create_destroy_run,
-		nullptr,
-		0,
-	},
-	{
-		"throughput_2t",
-		BENCH_TYPE_THROUGHPUT,
-		queue_throughput_setup,
-		queue_throughput_run,
-		queue_throughput_teardown,
-		0,
-	},
+static constexpr ove::bench::CaseSpec queue_memory_spec{
+	.name = "memory",
+	.kind = ove::bench::Type::memory,
+	.run = &queue_memory_run,
+	.teardown = &queue_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec queue_send_recv_spec{
+	.name = "send_receive",
+	.kind = ove::bench::Type::latency,
+	.run = &queue_send_recv_run,
+	.setup = &queue_send_recv_setup,
+	.teardown = &queue_send_recv_teardown,
+};
+static constexpr ove::bench::CaseSpec queue_create_destroy_spec{
+	.name = "create_destroy",
+	.kind = ove::bench::Type::latency,
+	.run = &queue_create_destroy_run,
+};
+static constexpr ove::bench::CaseSpec queue_throughput_spec{
+	.name = "throughput_2t",
+	.kind = ove::bench::Type::throughput,
+	.run = &queue_throughput_run,
+	.setup = &queue_throughput_setup,
+	.teardown = &queue_throughput_teardown,
 };
 
-extern "C" const bench_suite_t bench_suite_queue = {
-	"queue",
-	queue_is_enabled,
-	queue_cases,
-	sizeof(queue_cases) / sizeof(queue_cases[0]),
+static constexpr bench_case_t queue_cases[] = {
+	ove::bench::case_<queue_memory_spec>(),
+	ove::bench::case_<queue_send_recv_spec>(),
+	ove::bench::case_<queue_create_destroy_spec>(),
+	ove::bench::case_<queue_throughput_spec>(),
 };
+
+OVE_BENCH_SUITE(bench_suite_queue, "queue", queue_is_enabled, queue_cases)

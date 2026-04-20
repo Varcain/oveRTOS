@@ -56,17 +56,24 @@ typedef void (*ove_mqtt_msg_cb)(const char *topic, size_t topic_len,
 
 /**
  * @brief MQTT connection configuration.
+ *
+ * @note When @c use_tls is non-zero the broker certificate is verified
+ *       against @c tls_ca_cert. If no CA cert is supplied the handshake
+ *       refuses to continue unless @c tls_allow_insecure is also set.
  */
 typedef struct {
-	const char     *host;          /**< Broker hostname or IP. */
-	uint16_t        port;          /**< Broker port (1883 or 8883). */
-	const char     *client_id;     /**< Client identifier. */
-	const char     *username;      /**< Username (may be NULL). */
-	const char     *password;      /**< Password (may be NULL). */
-	uint16_t        keep_alive_s;  /**< Keep-alive interval in seconds. */
-	int             use_tls;       /**< Non-zero to use TLS. */
-	ove_mqtt_msg_cb on_message;    /**< Message callback. */
-	void           *user_data;     /**< Opaque pointer for callback. */
+	const char          *host;               /**< Broker hostname or IP. */
+	uint16_t             port;               /**< Broker port (1883 or 8883). */
+	const char          *client_id;          /**< Client identifier. */
+	const char          *username;           /**< Username (may be NULL). */
+	const char          *password;           /**< Password (may be NULL). */
+	uint16_t             keep_alive_s;       /**< Keep-alive interval in seconds. */
+	int                  use_tls;            /**< Non-zero to use TLS. */
+	const unsigned char *tls_ca_cert;        /**< PEM/DER CA cert used when @c use_tls is set (may be NULL). */
+	size_t               tls_ca_cert_len;    /**< Length of @c tls_ca_cert in bytes. */
+	int                  tls_allow_insecure; /**< Non-zero to allow unverified TLS when @c tls_ca_cert is NULL. */
+	ove_mqtt_msg_cb      on_message;         /**< Message callback. */
+	void                *user_data;          /**< Opaque pointer for callback. */
 } ove_mqtt_config_t;
 
 #include "ove/storage.h"

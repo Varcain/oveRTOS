@@ -33,4 +33,13 @@ config OVE_STACK_CANARIES
     bool "Stack canary protection"
     default n
 
+config OVE_THREAD_STATE_STATS
+    bool "Per-thread state time tracking"
+    default y if OVE_SIM
+    help
+      Track cumulative time each thread spends in each state
+      (running, ready, blocked, suspended). Adds a timestamp
+      on every state transition. Enables per-state % display
+      in the sim dashboard thread view.
+
 endmenu

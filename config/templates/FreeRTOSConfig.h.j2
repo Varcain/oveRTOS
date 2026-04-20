@@ -99,6 +99,14 @@ standard names. */
 #define vPortSVCHandler SVC_Handler
 #define xPortPendSVHandler PendSV_Handler
 
+{% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
+/* QEMU doesn't emulate the DWT cycle counter — use a SysTick-based
+ * millisecond counter instead.  Incremented from vApplicationTickHook()
+ * which FreeRTOS calls on every tick (1 kHz). */
+extern volatile uint32_t ove_runtime_counter_ms;
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() (ove_runtime_counter_ms = 0)
+#define portGET_RUN_TIME_COUNTER_VALUE() ove_runtime_counter_ms
+{% else %}
 /* Run-time stats use the ARM DWT cycle counter for microsecond resolution */
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() do { \
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; \
@@ -108,6 +116,7 @@ standard names. */
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk; \
 } while(0)
 #define portGET_RUN_TIME_COUNTER_VALUE() (DWT->CYCCNT / (SystemCoreClock / 1000000U))
+{% endif %}
 
 #define traceTASK_SWITCHED_IN()  extern void StartIdleMonitor(void); \
                                  StartIdleMonitor()

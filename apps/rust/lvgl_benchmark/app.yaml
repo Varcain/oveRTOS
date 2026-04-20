@@ -1,0 +1,16 @@
+lang: rust
+config_name: lvgl_benchmark_rust
+description: "LVGL rendering benchmark (Rust)"
+c_sources:
+  - ../../c/lvgl_benchmark/src/benchmark_perf.c
+  - ../../c/lvgl_benchmark/src/assets/benchmark_cogwheel_rgb.c
+  - ../../c/lvgl_benchmark/src/assets/benchmark_cogwheel_argb.c
+  - ../../c/lvgl_benchmark/src/assets/benchmark_avatar.c
+c_includes:
+  - ../../c/lvgl_benchmark/include
+rust:
+  lib_name: lvgl_benchmark_rust
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_LVGL=y
+  - CONFIG_OVE_TIMER=y

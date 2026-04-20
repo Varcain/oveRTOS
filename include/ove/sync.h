@@ -58,7 +58,11 @@ int  ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage);
 /**
  * @brief Release resources held by a mutex initialised with ove_mutex_init().
  *
- * The static storage supplied at init time is not freed.
+ * Every backend MUST release any kernel-side resources associated with
+ * the mutex (e.g. destroy semaphores, free kernel handles). The static
+ * storage supplied at init time is not freed — the caller owns it.
+ * After @c ove_mutex_deinit() returns, the handle is invalid; calling any
+ * other mutex operation on it is undefined.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *

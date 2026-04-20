@@ -11,6 +11,8 @@
 #   OVE_ZIG_TARGET  — e.g. thumb-freestanding-eabihf (optional)
 #   OVE_ZIG_PATH    — optional custom zig binary path
 
+include(${CMAKE_CURRENT_LIST_DIR}/../../cmake/OveBindingsCommon.cmake)
+
 function(ove_build_zig_lib TARGET)
     if(NOT DEFINED APP_ZIG_SRC_DIR)
         message(FATAL_ERROR "APP_ZIG_SRC_DIR not set by app CMakeLists.txt")
@@ -38,17 +40,9 @@ function(ove_build_zig_lib TARGET)
         set(ZIG_CMD "zig")
     endif()
 
+
     # ── Determine native vs cross vs WASM build ────────────────────────
-    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-        set(ZIG_IS_NATIVE FALSE)
-        set(ZIG_IS_WASM TRUE)
-    elseif(OVE_RTOS STREQUAL "posix")
-        set(ZIG_IS_NATIVE TRUE)
-        set(ZIG_IS_WASM FALSE)
-    else()
-        set(ZIG_IS_NATIVE FALSE)
-        set(ZIG_IS_WASM FALSE)
-    endif()
+    _ove_binding_resolve_target_kind(ZIG_IS_NATIVE ZIG_IS_WASM)
 
     # ── Output directory ─────────────────────────────────────────────────
     set(ZIG_OUTPUT_DIR "${CMAKE_BINARY_DIR}/zig_output")
@@ -58,13 +52,14 @@ function(ove_build_zig_lib TARGET)
     set(ZIG_TARGET_ARGS "")
     set(ZIG_CPU_ARGS "")
     if(ZIG_IS_WASM)
-        # Zig 0.15.2's std library has broken emscripten OS support
-        # (std.posix references emscripten `system` fields that don't
-        # exist, and std.Thread aborts at compile time). Use
-        # wasm32-freestanding instead — our Zig code is a library that
-        # emcc links into the final executable, so we only need the
-        # wasm32 C ABI, not any Zig std OS services. C-header
-        # discovery still goes through the emscripten sysroot below.
+        # The pinned Zig (see manifest.yaml: toolchains.zig) has broken
+        # emscripten OS support in std: std.posix references emscripten
+        # `system` fields that don't exist, and std.Thread aborts at
+        # compile time. Use wasm32-freestanding instead — our Zig code
+        # is a library that emcc links into the final executable, so we
+        # only need the wasm32 C ABI, not any Zig std OS services.
+        # C-header discovery still goes through the emscripten sysroot
+        # below.
         #
         # The emscripten executable uses -sUSE_PTHREADS which makes
         # wasm-ld link with --shared-memory. Static libraries linked
@@ -85,6 +80,14 @@ function(ove_build_zig_lib TARGET)
         if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
             # Check if Zephyr is actually using hard float
             if(NOT CONFIG_FPU OR NOT CONFIG_FP_HARDABI)
+                string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
+            endif()
+        endif()
+        # NuttX: align with CONFIG_ARCH_FPU (soft float unless the kernel
+        # opts in). Mismatched ABIs cause ld "uses VFP register arguments"
+        # errors against the soft-float NuttX libraries.
+        if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
+            if(NOT CONFIG_ARCH_FPU)
                 string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
             endif()
         endif()
@@ -143,50 +146,40 @@ function(ove_build_zig_lib TARGET)
         endif()
     elseif(OVE_RTOS STREQUAL "nuttx")
         list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/backends/nuttx/include")
+        # NuttX provides its own libc (stdio.h, stdlib.h, etc.) via
+        # its generated include dir. Add as -isystem so it takes priority
+        # over the ARM toolchain's newlib headers.
+        list(APPEND ZIG_INCLUDE_ARGS "-isystem" "${CMAKE_BINARY_DIR}/include")
+        # NuttX's cmake generated config directory for nuttx/config.h
+        list(APPEND ZIG_INCLUDE_ARGS "-I${CMAKE_BINARY_DIR}/include")
     endif()
 
     # Board directory
-    if(DEFINED OVE_BOARD_DIR)
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_BOARD_DIR}")
-    elseif(DEFINED BOARD_DIR)
-        list(APPEND ZIG_INCLUDE_ARGS "-I${BOARD_DIR}")
+    _ove_binding_resolve_board_dir(_ZIG_BOARD_DIR)
+    if(_ZIG_BOARD_DIR)
+        list(APPEND ZIG_INCLUDE_ARGS "-I${_ZIG_BOARD_DIR}")
     endif()
 
-    # LVGL includes (if enabled)
-    if(OVE_RTOS STREQUAL "zephyr" AND DEFINED ZEPHYR_BASE)
-        set(_LVGL_INC "${ZEPHYR_BASE}/../modules/lib/gui/lvgl")
-        set(_LVGL_PARENT "${ZEPHYR_BASE}/../modules/lib/gui")
-    else()
-        set(_LVGL_INC "${OVE_DL_DIR}/lvgl")
-        set(_LVGL_PARENT "${OVE_DL_DIR}")
-    endif()
+    # LVGL includes — unified via workspace dl/ symlink for all RTOSes
+    set(_LVGL_INC "${OVE_DL_DIR}/lvgl")
+    set(_LVGL_PARENT "${OVE_DL_DIR}")
     if(EXISTS "${_LVGL_INC}")
         list(APPEND ZIG_INCLUDE_ARGS "-I${_LVGL_INC}")
         list(APPEND ZIG_INCLUDE_ARGS "-I${_LVGL_PARENT}")
     endif()
 
-    # Board-specific lv_conf.h — search known locations
-    if(OVE_RTOS STREQUAL "posix")
-        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_DIR}/boards/host/posix")
-    elseif(DEFINED OVE_BOARD_DIR)
-        foreach(_CANDIDATE "${OVE_BOARD_DIR}" "${OVE_BOARD_DIR}/${OVE_RTOS}"
-                           "${OVE_BOARD_DIR}/${OVE_RTOS}/inc" "${OVE_BOARD_DIR}/inc"
-                           "${OVE_BOARD_DIR}/freertos/inc")
-            if(EXISTS "${_CANDIDATE}/lv_conf.h")
-                list(APPEND ZIG_INCLUDE_ARGS "-I${_CANDIDATE}")
-                break()
-            endif()
-        endforeach()
+    # Board lv_conf.h directory — pre-computed by 'ove configure'.
+    if(OVE_LV_CONF_DIR)
+        list(APPEND ZIG_INCLUDE_ARGS "-I${OVE_LV_CONF_DIR}")
     endif()
 
-    # ARM sysroot include (for cross-compilation: libc headers like stdio.h)
-    if(NOT ZIG_IS_NATIVE AND DEFINED CMAKE_C_COMPILER)
-        get_filename_component(_TOOLCHAIN_BIN "${CMAKE_C_COMPILER}" DIRECTORY)
-        get_filename_component(_TOOLCHAIN_ROOT "${_TOOLCHAIN_BIN}" DIRECTORY)
-        get_filename_component(_COMPILER_NAME "${CMAKE_C_COMPILER}" NAME)
-        string(REGEX REPLACE "-gcc$" "" _ARM_TRIPLE "${_COMPILER_NAME}")
-        set(_ARM_SYSROOT "${_TOOLCHAIN_ROOT}/${_ARM_TRIPLE}/include")
-        if(EXISTS "${_ARM_SYSROOT}")
+    # ARM sysroot include (for cross-compilation: libc headers like stdio.h).
+    # NuttX provides its own libc, so skip the ARM newlib sysroot for NuttX
+    # to avoid header conflicts (newlib's stdio.h requires types NuttX doesn't
+    # define in the same way).
+    if(NOT ZIG_IS_NATIVE AND NOT OVE_RTOS STREQUAL "nuttx")
+        _ove_binding_arm_sysroot_include(_ARM_SYSROOT)
+        if(_ARM_SYSROOT AND EXISTS "${_ARM_SYSROOT}")
             list(APPEND ZIG_INCLUDE_ARGS "-I${_ARM_SYSROOT}")
         endif()
     endif()
@@ -306,7 +299,10 @@ function(ove_build_zig_lib TARGET)
     # then generate a C header that is included via -I before storage.h.
     set(ZIG_SIZES_DEPS "")
 
-    # Read ove_config.h to check for zero-heap mode
+    # Read ove_config.h to check for zero-heap mode. Initialize before the
+    # conditional read so the if() below is always well-defined, including
+    # the first configure pass before ove_config.h has been generated.
+    set(_ZIG_ZERO_HEAP FALSE)
     set(_ZIG_CONFIG_PATH "${OVE_GEN_DIR}/ove_config.h")
     if(EXISTS "${_ZIG_CONFIG_PATH}")
         file(READ "${_ZIG_CONFIG_PATH}" _ZIG_CONFIG_CONTENT)
@@ -322,107 +318,11 @@ function(ove_build_zig_lib TARGET)
         set(ZIG_SIZES_HDR_DIR "${CMAKE_BINARY_DIR}/zig_sizes_include")
         set(ZIG_SIZES_HDR "${ZIG_SIZES_HDR_DIR}/zig_storage_sizes.h")
 
-        if(NOT EXISTS "${OVE_DIR}/config/scripts/extract_storage_sizes.py")
-            message(FATAL_ERROR "[ove-zig] Zero-heap enabled but extract_storage_sizes.py is missing at ${OVE_DIR}/config/scripts/extract_storage_sizes.py")
-        endif()
-
-        file(WRITE ${ZIG_SIZES_C}
-"#include \"ove/ove.h\"\n\
-#include \"ove/storage.h\"\n\
-#include <stddef.h>\n\
-#define S(type) unsigned char _sizeof_##type[sizeof(type)];\n\
-#define A(type) unsigned char _alignof_##type[_Alignof(type)];\n\
-S(ove_thread_storage_t)     A(ove_thread_storage_t)\n\
-S(ove_queue_storage_t)      A(ove_queue_storage_t)\n\
-S(ove_timer_storage_t)      A(ove_timer_storage_t)\n\
-S(ove_mutex_storage_t)      A(ove_mutex_storage_t)\n\
-S(ove_sem_storage_t)        A(ove_sem_storage_t)\n\
-S(ove_event_storage_t)      A(ove_event_storage_t)\n\
-S(ove_condvar_storage_t)    A(ove_condvar_storage_t)\n\
-S(ove_eventgroup_storage_t) A(ove_eventgroup_storage_t)\n\
-S(ove_workqueue_storage_t)  A(ove_workqueue_storage_t)\n\
-S(ove_work_storage_t)       A(ove_work_storage_t)\n\
-S(ove_stream_storage_t)     A(ove_stream_storage_t)\n\
-S(ove_watchdog_storage_t)   A(ove_watchdog_storage_t)\n\
-S(ove_file_storage_t)       A(ove_file_storage_t)\n\
-S(ove_dir_storage_t)        A(ove_dir_storage_t)\n"
-        )
-        # Conditionally add networking storage types
-        if(OVE_NET)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_socket_storage_t)     A(ove_socket_storage_t)\n\
-S(ove_netif_storage_t)      A(ove_netif_storage_t)\n"
-            )
-        endif()
-        if(OVE_NET_HTTP)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_http_client_storage_t) A(ove_http_client_storage_t)\n"
-            )
-        endif()
-        if(OVE_NET_MQTT)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_mqtt_client_storage_t) A(ove_mqtt_client_storage_t)\n"
-            )
-        endif()
-        if(OVE_NET_TLS)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_tls_storage_t)        A(ove_tls_storage_t)\n"
-            )
-        endif()
-        if(OVE_INFER)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_model_storage_t)      A(ove_model_storage_t)\n"
-            )
-        endif()
-        if(OVE_UART)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_uart_storage_t)       A(ove_uart_storage_t)\n"
-            )
-        endif()
-        if(OVE_SPI)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_spi_storage_t)        A(ove_spi_storage_t)\n"
-            )
-        endif()
-        if(OVE_I2C)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_i2c_storage_t)        A(ove_i2c_storage_t)\n"
-            )
-        endif()
-        if(OVE_I2S)
-            file(APPEND ${ZIG_SIZES_C}
-"S(ove_i2s_storage_t)        A(ove_i2s_storage_t)\n"
-            )
-        endif()
-
-        add_library(_zig_ove_sizes OBJECT ${ZIG_SIZES_C})
-
-        if(OVE_RTOS STREQUAL "zephyr" AND TARGET zephyr_interface)
-            target_link_libraries(_zig_ove_sizes PRIVATE zephyr_interface)
-            target_include_directories(_zig_ove_sizes PRIVATE
-                ${OVE_DIR}/include
-                ${OVE_DIR}/backends/zephyr/include
-                ${OVE_GEN_DIR}
-            )
-        else()
-            target_include_directories(_zig_ove_sizes PRIVATE
-                $<TARGET_PROPERTY:${TARGET},INCLUDE_DIRECTORIES>)
-            target_compile_definitions(_zig_ove_sizes PRIVATE
-                $<TARGET_PROPERTY:${TARGET},COMPILE_DEFINITIONS>)
-            target_compile_options(_zig_ove_sizes PRIVATE
-                $<TARGET_PROPERTY:${TARGET},COMPILE_OPTIONS>)
-        endif()
-        target_compile_options(_zig_ove_sizes PRIVATE -w)
-
-        add_custom_command(
-            OUTPUT ${ZIG_SIZES_ENV}
-            COMMAND python3
-                ${OVE_DIR}/config/scripts/extract_storage_sizes.py
-                $<TARGET_OBJECTS:_zig_ove_sizes> ${ZIG_SIZES_ENV}
-            DEPENDS _zig_ove_sizes
-                    ${OVE_DIR}/include/ove/storage.h
-            COMMENT "Extracting storage type sizes for Zig bindings"
-        )
+        _ove_binding_write_sizes_probe(${ZIG_SIZES_C}
+            "#include \"ove/ove.h\"\n#include \"ove/storage.h\"\n")
+        _ove_binding_build_sizes_probe(_zig_ove_sizes ${TARGET} ${ZIG_SIZES_C})
+        _ove_binding_extract_sizes(${ZIG_SIZES_ENV} _zig_ove_sizes
+            "Extracting storage type sizes for Zig bindings")
 
         # Convert KEY=VALUE .env file into a C header with #define lines.
         # This header is included by @cImport before storage.h via -I path.
@@ -458,8 +358,8 @@ file(WRITE \"${ZIG_SIZES_HDR}\" \"\${_HDR}\")\n"
     set(OVE_ZIG_BINDINGS "${OVE_DIR}/bindings/zig/ove")
 
     # ── Collect Zig source files for dependency tracking ─────────────────
-    file(GLOB_RECURSE ZIG_APP_SOURCES "${APP_ZIG_SRC_DIR}/*.zig")
-    file(GLOB_RECURSE ZIG_OVE_SOURCES "${OVE_ZIG_BINDINGS}/src/*.zig")
+    file(GLOB_RECURSE ZIG_APP_SOURCES CONFIGURE_DEPENDS "${APP_ZIG_SRC_DIR}/*.zig")
+    file(GLOB_RECURSE ZIG_OVE_SOURCES CONFIGURE_DEPENDS "${OVE_ZIG_BINDINGS}/src/*.zig")
 
     # ── Build the Zig library ────────────────────────────────────────────
     # We use `zig build-lib` to compile a static library from the app's
@@ -495,10 +395,5 @@ file(WRITE \"${ZIG_SIZES_HDR}\" \"\${_HDR}\")\n"
     add_custom_target(zig_lib ALL DEPENDS ${ZIG_LIB})
     add_dependencies(${TARGET} zig_lib)
 
-    # ── Link ─────────────────────────────────────────────────────────────
-    if(OVE_RTOS STREQUAL "zephyr" AND COMMAND zephyr_link_libraries)
-        zephyr_link_libraries(${ZIG_LIB})
-    else()
-        target_link_libraries(${TARGET} PRIVATE ${ZIG_LIB})
-    endif()
+    _ove_binding_link_lib(${TARGET} ${ZIG_LIB})
 endfunction()

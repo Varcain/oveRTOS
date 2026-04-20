@@ -17,19 +17,19 @@ macro(ove_build_lwip)
     endif()
 
     # lwIP core sources
-    file(GLOB _LWIP_CORE_SRC
+    file(GLOB _LWIP_CORE_SRC CONFIGURE_DEPENDS
         "${_LWIP_PATH}/src/core/*.c"
         "${_LWIP_PATH}/src/core/ipv4/*.c"
         "${_LWIP_PATH}/src/core/ipv6/*.c"
     )
 
     # lwIP API sources (socket API, netconn)
-    file(GLOB _LWIP_API_SRC
+    file(GLOB _LWIP_API_SRC CONFIGURE_DEPENDS
         "${_LWIP_PATH}/src/api/*.c"
     )
 
     # lwIP netif sources (ethernet, SLIP)
-    file(GLOB _LWIP_NETIF_SRC
+    file(GLOB _LWIP_NETIF_SRC CONFIGURE_DEPENDS
         "${_LWIP_PATH}/src/netif/*.c"
     )
 
@@ -52,12 +52,16 @@ macro(ove_build_lwip)
         ${OVE_DIR}/backends/freertos/lwip_port
     )
 
-    # Board-specific lwipopts.h must be on the include path
-    target_include_directories(ove_lwip PUBLIC
-        ${BOARD_DIR}/../src
-        ${BOARD_DIR}/src
-        ${BOARD_DIR}
-    )
+    # Board-specific lwipopts.h must be on the include path. BOARD_DIR is
+    # set by ove_setup_project(); when ove_lwip is consumed outside a board
+    # context (e.g. a future test harness or sanity build), skip these.
+    if(DEFINED BOARD_DIR AND EXISTS "${BOARD_DIR}")
+        target_include_directories(ove_lwip PUBLIC
+            ${BOARD_DIR}/../src
+            ${BOARD_DIR}/src
+            ${BOARD_DIR}
+        )
+    endif()
 
     # FreeRTOS headers needed by sys_arch
     target_include_directories(ove_lwip PRIVATE

@@ -6,6 +6,7 @@
 
 """Workspace resolution, .config parsing, and directory management."""
 
+import contextlib
 import json
 import os
 
@@ -104,20 +105,21 @@ class Workspace:
         self.venv_dir = os.path.join(self.ove_dir, ".venv")
 
         self._config = None
+        self.build_log = None
         self._resolve_workspace()
 
     def _resolve_workspace(self):
         """Resolve workspace directory from .config symlink."""
         if os.path.islink(self.config_path):
             real = os.path.realpath(self.config_path)
-            self.workspace_dir = os.path.dirname(real) + "/"
+            self.workspace_dir = os.path.dirname(real)
         else:
             if os.path.isfile(self.config_path):
                 import logging
                 logging.getLogger("ove").warning(
                     ".config is a regular file, not a symlink — "
                     "workspace may be misconfigured")
-            self.workspace_dir = self.output_dir + "/"
+            self.workspace_dir = self.output_dir
 
         self.build_dir = os.path.join(self.workspace_dir, "build")
         self.gen_dir = os.path.join(self.workspace_dir, "generated")
@@ -226,6 +228,22 @@ class Workspace:
         os.makedirs(self.gen_dir, exist_ok=True)
         os.makedirs(self.images_dir, exist_ok=True)
         os.makedirs(self.ws_dl_dir, exist_ok=True)
+
+    @contextlib.contextmanager
+    def open_build_log(self, path):
+        """Context manager that exposes an open log file as ws.build_log.
+
+        Inner build helpers read ws.build_log to tee subprocess output.
+        Always closes the file on exit, even if the build raises.
+        """
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        f = open(path, "w")
+        self.build_log = f
+        try:
+            yield f
+        finally:
+            self.build_log = None
+            f.close()
 
     def validate(self):
         """Verify all resolved workspace paths exist."""

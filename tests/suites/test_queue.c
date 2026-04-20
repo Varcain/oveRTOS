@@ -34,6 +34,7 @@ static void consumer_thread(void *arg)
     }
 }
 
+static volatile int s_blocking_done;
 static atomic_int s_blocking_received;
 
 static void blocking_receiver(void *arg)
@@ -42,6 +43,7 @@ static void blocking_receiver(void *arg)
     int val;
     if (ove_queue_receive(q, &val, OVE_WAIT_FOREVER) == OVE_OK) {
         atomic_store(&s_blocking_received, val);
+        s_blocking_done = 1;
     }
 }
 
@@ -218,17 +220,18 @@ static void test_queue_send_wait_forever(void **state)
     ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
 
     atomic_store(&s_blocking_received, 0);
+    s_blocking_done = 0;
 
     ove_thread_t th = NULL;
     ove_test_thread_run(&th, &s_th_storage, "blocker", blocking_receiver, q,
         s_th_stack, 4096);
 
-    test_msleep(50); /* let receiver block */
+    test_msleep(50); /* let receiver block — no observable flag before it enters receive() */
 
     int v = 123;
     ove_queue_send(q, &v, 0);
 
-    test_msleep(100);
+    assert_true(wait_for_flag(&s_blocking_done, 1, 500));
     assert_int_equal(atomic_load(&s_blocking_received), 123);
 
     ove_test_thread_destroy(th);
@@ -265,27 +268,38 @@ static void test_queue_create_null_handle(void **state)
 }
 #endif
 
+/* ── setup/teardown ──────────────────────────────────────────────────── */
+
+static int queue_setup(void **state)
+{
+    (void)state;
+    atomic_store(&s_consumer_sum, 0);
+    atomic_store(&s_blocking_received, 0);
+    s_blocking_done = 0;
+    return 0;
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_queue_run(void)
 {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_queue_create_destroy),
-        cmocka_unit_test(test_queue_send_receive_single),
-        cmocka_unit_test(test_queue_fifo_order),
-        cmocka_unit_test(test_queue_send_full_times_out),
-        cmocka_unit_test(test_queue_receive_empty_times_out),
-        cmocka_unit_test(test_queue_send_from_isr),
-        cmocka_unit_test(test_queue_receive_from_isr),
-        cmocka_unit_test(test_queue_producer_consumer),
-        cmocka_unit_test(test_queue_struct_item),
+        cmocka_unit_test_setup(test_queue_create_destroy, queue_setup),
+        cmocka_unit_test_setup(test_queue_send_receive_single, queue_setup),
+        cmocka_unit_test_setup(test_queue_fifo_order, queue_setup),
+        cmocka_unit_test_setup(test_queue_send_full_times_out, queue_setup),
+        cmocka_unit_test_setup(test_queue_receive_empty_times_out, queue_setup),
+        cmocka_unit_test_setup(test_queue_send_from_isr, queue_setup),
+        cmocka_unit_test_setup(test_queue_receive_from_isr, queue_setup),
+        cmocka_unit_test_setup(test_queue_producer_consumer, queue_setup),
+        cmocka_unit_test_setup(test_queue_struct_item, queue_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
-        cmocka_unit_test(test_queue_destroy_null),
+        cmocka_unit_test_setup(test_queue_destroy_null, queue_setup),
 #endif
-        cmocka_unit_test(test_queue_send_wait_forever),
-        cmocka_unit_test(test_queue_pair_item_size),
+        cmocka_unit_test_setup(test_queue_send_wait_forever, queue_setup),
+        cmocka_unit_test_setup(test_queue_pair_item_size, queue_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
-        cmocka_unit_test(test_queue_create_null_handle),
+        cmocka_unit_test_setup(test_queue_create_null_handle, queue_setup),
 #endif
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

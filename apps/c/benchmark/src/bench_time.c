@@ -25,11 +25,7 @@ static void delay_1ms_run(void *ctx)
 
 static int time_is_enabled(void)
 {
-#ifdef CONFIG_OVE_TIME
 	return 1;
-#else
-	return 0;
-#endif
 }
 
 static const bench_case_t time_cases[] = {

@@ -84,11 +84,14 @@ static void test_timer_periodic_fires_multiple(void **state)
     ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 30, 0);
     ove_timer_start(t);
 
-    test_msleep(250); /* 250 ms — should get at least 3 fires at 30 ms period */
+    test_msleep(250); /* 250 ms — should get ~8 fires at 30 ms period */
 
     ove_timer_stop(t);
 
+    /* Expected ~8 fires; allow 3–20 for scheduler jitter but cap to catch
+     * runaway timers. */
     assert_true(s_periodic_count >= 3);
+    assert_true(s_periodic_count <= 20);
 
     ove_test_timer_destroy(t);
 }
@@ -214,26 +217,37 @@ static void test_timer_create_null_callback(void **state)
 }
 #endif
 
+/* ── setup/teardown ──────────────────────────────────────────────────── */
+
+static int timer_setup(void **state)
+{
+    (void)state;
+    s_oneshot_count = 0;
+    s_periodic_count = 0;
+    s_user_data_received = 0;
+    return 0;
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_timer_run(void)
 {
     const struct CMUnitTest tests[] = {
-        cmocka_unit_test(test_timer_create_destroy_oneshot),
-        cmocka_unit_test(test_timer_create_destroy_periodic),
-        cmocka_unit_test(test_timer_oneshot_fires_once),
-        cmocka_unit_test(test_timer_periodic_fires_multiple),
-        cmocka_unit_test(test_timer_stop_prevents_callbacks),
-        cmocka_unit_test(test_timer_reset_restarts),
+        cmocka_unit_test_setup(test_timer_create_destroy_oneshot, timer_setup),
+        cmocka_unit_test_setup(test_timer_create_destroy_periodic, timer_setup),
+        cmocka_unit_test_setup(test_timer_oneshot_fires_once, timer_setup),
+        cmocka_unit_test_setup(test_timer_periodic_fires_multiple, timer_setup),
+        cmocka_unit_test_setup(test_timer_stop_prevents_callbacks, timer_setup),
+        cmocka_unit_test_setup(test_timer_reset_restarts, timer_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
-        cmocka_unit_test(test_timer_destroy_null),
+        cmocka_unit_test_setup(test_timer_destroy_null, timer_setup),
 #endif
-        cmocka_unit_test(test_timer_double_start),
-        cmocka_unit_test(test_timer_destroy_while_running),
-        cmocka_unit_test(test_timer_callback_user_data),
+        cmocka_unit_test_setup(test_timer_double_start, timer_setup),
+        cmocka_unit_test_setup(test_timer_destroy_while_running, timer_setup),
+        cmocka_unit_test_setup(test_timer_callback_user_data, timer_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
-        cmocka_unit_test(test_timer_create_null_handle),
-        cmocka_unit_test(test_timer_create_null_callback),
+        cmocka_unit_test_setup(test_timer_create_null_handle, timer_setup),
+        cmocka_unit_test_setup(test_timer_create_null_callback, timer_setup),
 #endif
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

@@ -72,7 +72,13 @@ unsafe extern "C" fn mqtt_trampoline(
     payload_len: usize,
     user_data: *mut core::ffi::c_void,
 ) {
+    // SAFETY: `user_data` was stored by `Client::subscribe*` from a
+    // `MessageFn` pointer (a `fn(&str, &[u8])`). Supported targets have
+    // pointer-sized function pointers with a C-compatible ABI, so
+    // round-tripping through `*mut c_void` is sound.
     let cb: MessageFn = unsafe { core::mem::transmute(user_data) };
+    // SAFETY: `topic`/`payload` are valid for `topic_len`/`payload_len` bytes
+    // as guaranteed by the MQTT client for the duration of this callback.
     let t = unsafe { core::slice::from_raw_parts(topic as *const u8, topic_len) };
     let p = unsafe { core::slice::from_raw_parts(payload as *const u8, payload_len) };
     // SAFETY: MQTT topic strings are UTF-8 per specification.

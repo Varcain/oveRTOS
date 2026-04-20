@@ -28,6 +28,9 @@ CONFIG_IDLETHREAD_STACKSIZE=2048
 # Stack overflow detection
 CONFIG_STACK_COLORATION=y
 
+# CPU load monitoring (for sim dashboard thread view)
+CONFIG_SCHED_CPULOAD_SYSCLK=y
+
 # Thread-local storage (needed for ove_thread_get_self)
 CONFIG_TLS_NELEM=4
 CONFIG_TLS_TASK_NELEM=4
@@ -39,10 +42,18 @@ CONFIG_SCHED_HPWORK=y
 CONFIG_SIG_EVTHREAD=y
 CONFIG_SIG_EVTHREAD_HPWORK=y
 
-{% if config.get("CONFIG_OVE_APP_LANG_CXX") == True %}
-# C++ support
+{% if config.get("CONFIG_OVE_APP_LANG_CXX") == True or config.get("CONFIG_OVE_INFER") == True %}
+# C++ support (also needed for TFLite inference engine).
+# Use the toolchain's full C++ standard library — the oveRTOS C++
+# bindings require C++20 concepts/requires, and TFLite needs <algorithm>,
+# <new>, <memory>, etc. that NuttX's minimal cxx/ doesn't provide.
 CONFIG_HAVE_CXX=y
 CONFIG_HAVE_CXXINITIALIZE=y
+CONFIG_LIBCXXTOOLCHAIN=y
+# Enable float/double support so NuttX's <cmath> declares std::acos etc.,
+# matching what GCC's C++ math.h wrapper expects.
+CONFIG_HAVE_FLOAT=y
+CONFIG_HAVE_DOUBLE=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
@@ -84,17 +95,6 @@ CONFIG_NETUTILS_NETLIB=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_LVGL") == True %}
-# LVGL display support
-CONFIG_GRAPHICS_LVGL=y
-CONFIG_LV_USE_NUTTX=y
-CONFIG_LV_USE_LOG=n
-CONFIG_LV_MEM_SIZE=65536
-CONFIG_LV_COLOR_DEPTH_16=y
-CONFIG_LV_FONT_MONTSERRAT_14=y
-CONFIG_LV_FONT_MONTSERRAT_32=y
-CONFIG_LV_USE_THEME_DEFAULT=y
-CONFIG_LV_USE_FLEX=y
-CONFIG_LV_USE_OBSERVER=y
-CONFIG_LV_USE_LABEL=y
-CONFIG_LV_USE_BAR=y
+# LVGL — built externally from dl/lvgl; config via board lv_conf.h.
+# NuttX no longer builds LVGL itself (CONFIG_GRAPHICS_LVGL removed).
 {% endif %}

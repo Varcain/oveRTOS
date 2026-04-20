@@ -25,6 +25,9 @@ set(OVE_DEBUG ON)
 {% else %}
 set(OVE_DEBUG OFF)
 {% endif %}
+{% if config.get("CONFIG_OVE_THREAD_STATE_STATS") == True %}
+set(OVE_THREAD_STATE_STATS ON)
+{% endif %}
 
 # Application language
 set(OVE_APP_LANG "{{ config.get('CONFIG_OVE_APP_LANG', 'c') }}")
@@ -71,6 +74,23 @@ set(OVE_SIM_DASHBOARD_PORT {{ config.get('CONFIG_OVE_SIM_DASHBOARD_PORT', 8080) 
 set(OVE_SIM OFF)
 {% endif %}
 
+{% if config.get("_LV_CONF_DIR") %}
+# Board lv_conf.h directory (discovered once by 'ove configure')
+set(OVE_LV_CONF_DIR "{{ config.get('_LV_CONF_DIR') }}")
+{% endif %}
+
+{% if config.get("_GCC_BUILTIN_INC") %}
+# GCC C++ sysroot paths (discovered once by 'ove configure')
+set(OVE_GCC_BUILTIN_INC "{{ config.get('_GCC_BUILTIN_INC') }}")
+set(OVE_GCC_CXX_DIRS
+{% for d in config.get('_GCC_CXX_DIRS', []) %}
+    "{{ d }}"
+{% endfor %}
+)
+set(OVE_NUTTX_INC "{{ config.get('_NUTTX_INC') }}")
+set(OVE_NUTTX_LIBM_INC "{{ config.get('_NUTTX_LIBM_INC') }}")
+{% endif %}
+
 {% if config.get("CONFIG_OVE_INFER") == True %}
 # ML inference settings
 {% if config.get("CONFIG_OVE_INFER_CMSIS_NN") == True %}
@@ -90,6 +110,9 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% if config.get("CONFIG_OVE_LED") == True %}
     ${OVE_DIR}/src/ove_led.c
+{% endif %}
+{% if config.get("CONFIG_OVE_LVGL") == True %}
+    ${OVE_DIR}/src/ove_lvgl_indev.c
 {% endif %}
 {% if config.get("CONFIG_OVE_PM") == True %}
     ${OVE_DIR}/src/ove_pm.c
@@ -198,6 +221,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_http.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_MQTT") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_mqtt.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_mqtt_topic.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_HTTPD") == True %}
 # Bundle dashboard assets (gzip + xxd → C header) before compiling routes

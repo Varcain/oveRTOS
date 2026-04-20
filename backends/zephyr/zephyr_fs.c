@@ -41,7 +41,7 @@ int ove_fs_mount(const char *dev_path, const char *mount_point)
 	int res = fs_mount(&mp);
 	if (res != 0) {
 		OVE_LOG_ERR("fs_mount failed: %d\n", res);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-res);
 	}
 	OVE_LOG_DBG("SD card mounted at /SD:\n");
 	return OVE_OK;
@@ -88,7 +88,7 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 	if (res != 0) {
 		OVE_LOG_ERR("fs_open(%s) failed: %d\n", fullpath, res);
 		OVE_BACKEND_FREE(f);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-res);
 	}
 
 	*file = f;
@@ -107,7 +107,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 {
 	ssize_t br = fs_read(&file->file, buf, count);
 	if (br < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove((int)-br);
 	}
 	if (bytes_read != NULL) {
 		*bytes_read = (size_t)br;
@@ -120,7 +120,7 @@ int ove_fs_write(ove_file_t file, const void *buf,
 {
 	ssize_t bw = fs_write(&file->file, buf, count);
 	if (bw < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove((int)-bw);
 	}
 	if (bytes_written != NULL) {
 		*bytes_written = (size_t)bw;
@@ -132,16 +132,16 @@ int ove_fs_size(ove_file_t file, size_t *out_size)
 {
 	off_t cur = fs_tell(&file->file);
 	if (cur < 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove((int)-cur);
 	}
 	int res = fs_seek(&file->file, 0, FS_SEEK_END);
 	if (res != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-res);
 	}
 	off_t end = fs_tell(&file->file);
 	if (end < 0) {
 		fs_seek(&file->file, cur, FS_SEEK_SET);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove((int)-end);
 	}
 	fs_seek(&file->file, cur, FS_SEEK_SET);
 	*out_size = (size_t)end;
@@ -171,7 +171,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	if (res != 0) {
 		OVE_LOG_ERR("fs_opendir(%s) failed: %d\n", fullpath, res);
 		OVE_BACKEND_FREE(d);
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-res);
 	}
 
 	*dir = d;
@@ -185,7 +185,7 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 	int res = fs_readdir(&dir->dir, &de);
 	if (res != 0 || de.name[0] == '\0') {
 		entry->name[0] = '\0';
-		return (res == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+		return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
 	}
 
 	strncpy(entry->name, de.name, sizeof(entry->name) - 1);
@@ -215,7 +215,7 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 
 	int res = fs_seek(&file->file, (off_t)offset, zwhence);
 	if (res != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return ove_errno_to_ove(-res);
 	}
 	return OVE_OK;
 }
@@ -230,7 +230,7 @@ int ove_fs_unlink(const char *path)
 	char fullpath[128];
 	build_path(fullpath, sizeof(fullpath), path);
 	int res = fs_unlink(fullpath);
-	return (res == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
 }
 
 int ove_fs_rename(const char *old_path, const char *new_path)
@@ -239,5 +239,5 @@ int ove_fs_rename(const char *old_path, const char *new_path)
 	build_path(old_full, sizeof(old_full), old_path);
 	build_path(new_full, sizeof(new_full), new_path);
 	int res = fs_rename(old_full, new_full);
-	return (res == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+	return (res == 0) ? OVE_OK : ove_errno_to_ove(-res);
 }

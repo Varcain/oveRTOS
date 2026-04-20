@@ -7,118 +7,102 @@
  */
 
 #include <ove/ove.hpp>
+#include <ove/bench.hpp>
 
-extern "C" {
-#include "benchmark.h"
-}
+#include <atomic>
+#include <optional>
 
-static ove_workqueue_t bench_wq;
-static ove_work_t bench_work;
-static volatile int work_executed;
-static ove_sem_t work_sem;
+using BenchWQ = ove::Workqueue<2048>;
 
-static ove_work_storage_t bench_work_storage;
+static std::optional<BenchWQ> bench_wq;
+static std::optional<ove::Work> bench_work;
+static std::optional<ove::Semaphore> work_sem;
+static std::atomic<bool> work_executed{false};
 
 static void work_handler(ove_work_t work)
 {
 	(void)work;
-	work_executed = 1;
-	ove_sem_give(work_sem);
+	work_executed.store(true, std::memory_order_release);
+	work_sem->give();
 }
 
 /* --- create/destroy --- */
 
-static void wq_create_destroy_run(void *ctx)
+static void wq_create_destroy_run()
 {
-	(void)ctx;
-	ove_workqueue_t wq;
-
-	ove_workqueue_create(&wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
-	ove_workqueue_destroy(wq);
+	BenchWQ wq("bench_wq", OVE_PRIO_NORMAL);
 }
 
 /* --- submit/execute --- */
 
-static void wq_submit_setup(void *ctx)
+static void wq_submit_setup()
 {
-	(void)ctx;
-	ove_sem_create(&work_sem, 0, 1);
-	ove_workqueue_create(&bench_wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
-	ove_work_init_static(&bench_work, &bench_work_storage, work_handler);
+	work_sem.emplace(0, 1);
+	bench_wq.emplace("bench_wq", OVE_PRIO_NORMAL);
+	bench_work.emplace(work_handler);
 }
 
-static void wq_submit_run(void *ctx)
+static void wq_submit_run()
 {
-	(void)ctx;
-	work_executed = 0;
-	ove_work_submit(bench_wq, bench_work);
-	ove_sem_take(work_sem, 1000);
+	work_executed.store(false, std::memory_order_release);
+	(void)bench_work->submit(*bench_wq);
+	(void)work_sem->take(1000);
 }
 
-static void wq_submit_teardown(void *ctx)
+static void wq_submit_teardown()
 {
-	(void)ctx;
-	ove_workqueue_destroy(bench_wq);
-	ove_sem_destroy(work_sem);
+	bench_work.reset();
+	bench_wq.reset();
+	work_sem.reset();
 }
 
 /* --- memory --- */
 
-static ove_workqueue_t mem_wq;
+static std::optional<BenchWQ> mem_wq;
 
-static void wq_memory_run(void *ctx)
+static void wq_memory_run()
 {
-	(void)ctx;
-	ove_workqueue_create(&mem_wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
+	mem_wq.emplace("bench_wq", OVE_PRIO_NORMAL);
 }
 
-static void wq_memory_teardown(void *ctx)
+static void wq_memory_teardown()
 {
-	(void)ctx;
-	ove_workqueue_destroy(mem_wq);
+	mem_wq.reset();
 }
 
 /* --- Suite --- */
 
-static int workqueue_is_enabled(void)
+static bool workqueue_is_enabled()
 {
-#ifdef CONFIG_OVE_WORKQUEUE
-	return 1;
-#else
-	return 0;
-#endif
+	return true;
 }
 
-static const bench_case_t workqueue_cases[] = {
-	{
-		"memory",
-		BENCH_TYPE_MEMORY,
-		nullptr,
-		wq_memory_run,
-		wq_memory_teardown,
-		0,
-	},
-	{
-		"create_destroy",
-		BENCH_TYPE_LATENCY,
-		nullptr,
-		wq_create_destroy_run,
-		nullptr,
-		200,
-	},
-	{
-		"submit_execute",
-		BENCH_TYPE_LATENCY,
-		wq_submit_setup,
-		wq_submit_run,
-		wq_submit_teardown,
-		500,
-	},
+static constexpr ove::bench::CaseSpec wq_memory_spec{
+	.name = "memory",
+	.kind = ove::bench::Type::memory,
+	.run = &wq_memory_run,
+	.teardown = &wq_memory_teardown,
+};
+static constexpr ove::bench::CaseSpec wq_create_destroy_spec{
+	.name = "create_destroy",
+	.kind = ove::bench::Type::latency,
+	.run = &wq_create_destroy_run,
+	.iterations = 200,
+};
+static constexpr ove::bench::CaseSpec wq_submit_spec{
+	.name = "submit_execute",
+	.kind = ove::bench::Type::latency,
+	.run = &wq_submit_run,
+	.setup = &wq_submit_setup,
+	.teardown = &wq_submit_teardown,
+	.iterations = 500,
 };
 
-extern "C" const bench_suite_t bench_suite_workqueue = {
-	"workqueue",
-	workqueue_is_enabled,
-	workqueue_cases,
-	sizeof(workqueue_cases) / sizeof(workqueue_cases[0]),
+static constexpr bench_case_t workqueue_cases[] = {
+	ove::bench::case_<wq_memory_spec>(),
+	ove::bench::case_<wq_create_destroy_spec>(),
+	ove::bench::case_<wq_submit_spec>(),
 };
+
+OVE_BENCH_SUITE(bench_suite_workqueue, "workqueue",
+		workqueue_is_enabled, workqueue_cases)

@@ -289,17 +289,17 @@ fn app_main() {
     ove::log_inf!("Models: preprocessor {} + classifier {} bytes",
                  preprocessor_model().len(), classifier_model().len());
 
-    let mut graph = ove::audio::Graph::new(512).unwrap();
+    let mut graph = ove::audio::Graph::new(512).expect("audio graph: alloc");
     let dev_cfg = ove::audio::device_cfg_i2s(16000, 1, 1);
 
-    let src  = graph.device_source(&dev_cfg, b"dmic-in\0").unwrap();
-    let proc = graph.add_processor(DMIC_PROC.get_mut(), b"dmic-proc\0").unwrap();
-    let sink = graph.device_sink(&dev_cfg, b"hp-out\0").unwrap();
+    let src  = graph.device_source(&dev_cfg, b"dmic-in\0").expect("audio graph: source");
+    let proc = graph.add_processor(DMIC_PROC.get_mut(), b"dmic-proc\0").expect("audio graph: processor");
+    let sink = graph.device_sink(&dev_cfg, b"hp-out\0").expect("audio graph: sink");
 
-    graph.connect(src, proc).unwrap();
-    graph.connect(proc, sink).unwrap();
-    graph.build().unwrap();
-    graph.start().unwrap();
+    graph.connect(src, proc).expect("audio graph: connect src->proc");
+    graph.connect(proc, sink).expect("audio graph: connect proc->sink");
+    graph.build().expect("audio graph: build");
+    graph.start().expect("audio graph: start");
     ove::log_inf!("Audio streaming: 16kHz mono, DMIC input");
 
     let _infer = ove::thread!("infer", infer_thread, ove::Priority::Normal, 8192);

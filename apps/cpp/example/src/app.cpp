@@ -18,12 +18,10 @@
  */
 
 #include <ove/ove.hpp>
-
-#ifdef CONFIG_OVE_LVGL
 #include <ove/lvgl.hpp>
+#include "generated_images/lvgl_images.h"
 
 namespace lv = ove::lvgl;
-#endif
 
 /* --- Forward declarations for thread entry points --- */
 
@@ -36,21 +34,17 @@ static ove::Queue<uint32_t, 8> counter_queue;
 static ove::Mutex value_mutex;
 static uint32_t last_value = 0;
 
-#ifdef CONFIG_OVE_LVGL
 static void ui_timer_cb(ove_timer_t, void *);
 static void graphics_thread(void *arg);
 
 static ove::Timer ui_timer(ui_timer_cb, nullptr, 200);
 static ove::Thread<4096> gfx_thread(graphics_thread, nullptr,
 					 OVE_PRIO_HIGH, "graphics");
-#endif
 
 static ove::Thread<4096> prod_thread(producer_thread, nullptr,
 					  OVE_PRIO_NORMAL, "producer");
 static ove::Thread<4096> cons_thread(consumer_thread, nullptr,
 					  OVE_PRIO_NORMAL, "consumer");
-
-#ifdef CONFIG_OVE_LVGL
 
 /* ================================================================== */
 /*  CounterComponent — demonstrates Component<T>, State, bind_text    */
@@ -65,16 +59,17 @@ public:
 #endif
 	lv::Bar m_bar{nullptr};
 
+	static constexpr const char *APP_TITLE =
 #if defined(CONFIG_OVE_RTOS_FREERTOS)
-#define APP_TITLE "oveRTOS(FreeRTOS) C++ Demo"
+		"oveRTOS(FreeRTOS) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_NUTTX)
-#define APP_TITLE "oveRTOS(NuttX) C++ Demo"
+		"oveRTOS(NuttX) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
-#define APP_TITLE "oveRTOS(Zephyr) C++ Demo"
+		"oveRTOS(Zephyr) C++ Demo";
 #elif defined(CONFIG_OVE_RTOS_POSIX)
-#define APP_TITLE "oveRTOS(POSIX) C++ Demo"
+		"oveRTOS(POSIX) C++ Demo";
 #else
-#define APP_TITLE "oveRTOS C++ Demo"
+		"oveRTOS C++ Demo";
 #endif
 
 	lv::ObjectView build(lv::ObjectView parent) {
@@ -116,6 +111,37 @@ public:
 			.radius(8)
 			.align(LV_ALIGN_TOP_MID, 0, 96);
 
+		/* Tier S widget smoke test — Slider, Button, Switch, Arc */
+		lv::Slider::create(root)
+			.size(200, 12)
+			.range(0, 100)
+			.value(50)
+			.indicator_color(lv_palette_main(LV_PALETTE_GREEN))
+			.align(LV_ALIGN_TOP_MID, 0, 128);
+
+		auto btn = lv::Button::create(root)
+			.size(96, 32)
+			.align(LV_ALIGN_TOP_LEFT, 16, 156);
+		lv::Label::create(btn)
+			.text("Button")
+			.color(lv_color_white())
+			.center();
+
+		lv::Switch::create(root)
+			.align(LV_ALIGN_TOP_RIGHT, -16, 156);
+
+		lv::Arc::create(root)
+			.size(72, 72)
+			.range(0, 100)
+			.value(75)
+			.indicator_color(lv_palette_main(LV_PALETTE_ORANGE))
+			.align(LV_ALIGN_TOP_MID, 0, 196);
+
+		/* Logo image from the build-time PNG → C array pipeline */
+		lv::Image::create(root)
+			.src(&logo)
+			.align(LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+
 		return root;
 	}
 
@@ -132,8 +158,6 @@ public:
 };
 
 static CounterComponent counter_component;
-
-#endif /* CONFIG_OVE_LVGL */
 
 /* --- Producer thread: generates incrementing counter values --- */
 
@@ -179,7 +203,6 @@ static void consumer_thread(void *arg)
 
 /* --- LVGL UI --- */
 
-#ifdef CONFIG_OVE_LVGL
 static void ui_timer_cb(ove_timer_t, void *)
 {
     uint32_t val;
@@ -213,7 +236,6 @@ static void graphics_thread(void *arg)
         ove::Thread<>::sleep_ms(33);
     }
 }
-#endif /* CONFIG_OVE_LVGL */
 
 /* --- App entry point --- */
 
@@ -222,7 +244,6 @@ OVE_MAIN()
     OVE_LOG_INF("C++ example: init");
 
     /* Initialize LVGL and create UI */
-#ifdef CONFIG_OVE_LVGL
     int ret = ove_lvgl_init();
     if (ret != OVE_OK) {
         OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
@@ -239,7 +260,6 @@ OVE_MAIN()
         OVE_LOG_ERR("Failed to start UI timer: %d", ret);
         return;
     }
-#endif
 
     OVE_LOG_INF("C++ example: ready");
 
@@ -247,10 +267,8 @@ OVE_MAIN()
 
     /* Cleanup (only reached if scheduler returns, e.g. POSIX) */
     OVE_LOG_INF("C++ example: shutdown");
-#ifdef CONFIG_OVE_LVGL
     {
         lv::LvglGuard guard;
         counter_component.unmount();
     }
-#endif
 }

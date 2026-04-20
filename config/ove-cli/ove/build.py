@@ -8,6 +8,7 @@
 
 import logging
 import os
+import shlex
 import shutil
 import sys
 
@@ -16,8 +17,6 @@ from .constants import NUTTX_BOARD_CONFIGS, ZEPHYR_BOARD_MAPPINGS
 from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")
-
-_build_log = None
 
 
 def _preflight_check(ws):
@@ -154,12 +153,12 @@ def build_freertos(ws):
         _apply_patches(freertos_src,
                        os.path.join(board_dir, "patches"),
                        patches_stamp, label="board patch",
-                       log_file=_build_log)
+                       log_file=ws.build_log)
         if ws.app_dir:
             _apply_patches(freertos_src,
                            os.path.join(ws.app_dir, "patches", "freertos"),
                            patches_stamp, label="app patch",
-                           log_file=_build_log)
+                           log_file=ws.build_log)
 
     toolchain_file = os.path.join(board_dir, "cmake", "arm-none-eabi.cmake")
 
@@ -182,9 +181,9 @@ def build_freertos(ws):
     cmake_args.append(board_dir)
 
     logger.info("Building FreeRTOS firmware")
-    run(cmake_args, env=env, cwd=fw_build, log_file=_build_log)
+    run(cmake_args, env=env, cwd=fw_build, log_file=ws.build_log)
     run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-        log_file=_build_log)
+        log_file=ws.build_log)
 
     _copy_images(ws, fw_build)
     _create_run_or_flash_script(ws)
@@ -208,12 +207,12 @@ def build_zephyr(ws):
         _apply_patches(zephyr_ws,
                        os.path.join(ws.board_dir, "zephyr", "patches"),
                        patches_stamp, label="board patch",
-                       log_file=_build_log)
+                       log_file=ws.build_log)
         if ws.app_dir:
             _apply_patches(zephyr_ws,
                            os.path.join(ws.app_dir, "patches", "zephyr"),
                            patches_stamp, label="app patch",
-                           log_file=_build_log)
+                           log_file=ws.build_log)
 
     # Apply layered config (build guard — fresh by construction)
     from .rtos_menuconfig import ensure_rtos_config_applied
@@ -243,7 +242,7 @@ def build_zephyr(ws):
     tc = ws.toolchain_dir
     if tc:
         west_args.append(f"-DOVE_TOOLCHAIN_DIR={tc}")
-    run(west_args, env=env, log_file=_build_log)
+    run(west_args, env=env, log_file=ws.build_log)
 
     # Copy images
     os.makedirs(ws.images_dir, exist_ok=True)
@@ -259,35 +258,57 @@ def build_zephyr(ws):
     _create_run_or_flash_script(ws, rtos="zephyr")
 
 
-def _setup_nuttx_build_tree(ws, env, log_file=None):
-    """Copy NuttX sources, apply patches, set up ext app, and run configure.sh.
+def _stage_nuttx_tree(src, dest, label):
+    """Copy src → dest once, gated by a stamp file.
 
-    Returns (nuttx_build, apps_build) paths.
+    copytree is not atomic: an interrupted copy leaves a partial tree
+    whose presence fools a plain isdir() check on the next run. The
+    stamp file is only written after copytree returns, so any earlier
+    abort forces a full re-copy.
     """
-    nuttx_build = os.path.join(ws.build_dir, "nuttx")
+    stamp = os.path.join(dest, ".ove_stage_complete")
+    if os.path.exists(stamp):
+        return
+    if os.path.isdir(dest):
+        logger.debug("Removing partial %s tree at %s", label, dest)
+        shutil.rmtree(dest)
+    logger.debug("Copying %s to build tree...", label)
+    shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
+    with open(stamp, "w") as f:
+        f.write("staged\n")
+
+
+def _setup_nuttx_build_tree(ws, env, log_file=None):
+    """Copy NuttX sources, apply patches, and set up external CMake app.
+
+    Returns (nuttx_src, apps_build) paths.  The nuttx_src directory is
+    used as the CMake source directory (-S); a separate binary directory
+    is created by the caller.
+    """
+    nuttx_src = os.path.join(ws.build_dir, "nuttx")
     apps_build = os.path.join(ws.build_dir, "nuttx-apps")
 
-    # Copy sources to build tree (keeps dl/ pristine)
-    if not os.path.isdir(nuttx_build):
-        logger.debug("Copying NuttX sources to build tree...")
-        shutil.copytree(os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_build,
-                        symlinks=True, dirs_exist_ok=True)
-    if not os.path.isdir(apps_build):
-        logger.debug("Copying NuttX apps to build tree...")
-        shutil.copytree(os.path.join(ws.ws_dl_dir, "nuttx-apps"), apps_build,
-                        symlinks=True, dirs_exist_ok=True)
+    # Copy sources to build tree (keeps dl/ pristine).
+    # A stamp file gates re-copy: a bare isdir() check can accept a
+    # partial tree left over from an interrupted copytree, causing
+    # later builds to fail with "No config file found" when the
+    # missing subtree (e.g. boards/arm/stm32f7) was never staged.
+    _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_src,
+                      label="NuttX sources")
+    _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx-apps"), apps_build,
+                      label="NuttX apps")
 
     # Apply board patches, then app patches (app patches last)
-    patches_stamp = os.path.join(nuttx_build, ".ove_patches_applied")
-    _apply_patches(nuttx_build,
+    patches_stamp = os.path.join(nuttx_src, ".ove_patches_applied")
+    _apply_patches(nuttx_src,
                    os.path.join(ws.board_dir, "nuttx", "patches"),
                    patches_stamp, label="board patch", log_file=log_file)
     if ws.app_dir:
-        _apply_patches(nuttx_build,
+        _apply_patches(nuttx_src,
                        os.path.join(ws.app_dir, "patches", "nuttx"),
                        patches_stamp, label="app patch", log_file=log_file)
 
-    # Set up external app
+    # Set up external app (CMake)
     ext_dir = os.path.join(apps_build, "external")
     os.makedirs(ext_dir, exist_ok=True)
     app_dest = os.path.join(ext_dir, "ove_app")
@@ -295,405 +316,147 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
         shutil.rmtree(app_dest)
     shutil.copytree(os.path.join(ws.board_dir, "nuttx"), app_dest)
 
+    # Kconfig for the external app (same as before — Kconfig is
+    # build-system agnostic and works with both Make and CMake)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
         f.write(f'source "{os.path.abspath(app_dest)}/Kconfig"\n')
-    with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
-        f.write('ifneq ($(CONFIG_EXTERNAL_OVE_APP),)\n')
-        f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_app\n')
-        f.write('endif\n')
 
-    # Write .ove_env so the app Makefile can resolve paths even when
-    # NuttX's recursive make doesn't propagate command-line variables.
+    # CMakeLists.txt for the external directory — NuttX's CMake build
+    # discovers external apps via add_subdirectory(external)
+    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
+        f.write("add_subdirectory(ove_app)\n")
+
+    # Write .ove_env in key=value format (read by OveNuttX.cmake)
     with open(os.path.join(app_dest, ".ove_env"), "w") as f:
-        f.write(f"OVE_DIR := {ws.ove_dir}\n")
-        f.write(f"OVE_GEN_DIR := {ws.gen_dir}\n")
-        f.write(f"OVE_APP_DIR := {ws.app_dir}\n")
-        for mod in ("AUDIO", "FS", "SHELL", "NVS", "WATCHDOG"):
-            key = f"CONFIG_OVE_{mod}"
-            if get_bool(ws.config, key):
-                f.write(f"{key} := y\n")
+        f.write(f"OVE_DIR={ws.ove_dir}\n")
+        f.write(f"OVE_GEN_DIR={ws.gen_dir}\n")
+        f.write(f"OVE_APP_DIR={ws.app_dir}\n")
+        f.write(f"OVE_DL_DIR={ws.ws_dl_dir}\n")
 
-    # NuttX board config mapping
-    nuttx_board_cfg = NUTTX_BOARD_CONFIGS.get(ws.board_name)
-    if not nuttx_board_cfg:
-        nuttx_board_cfg = _fallback_rtos_mapping(ws, "nuttx") or "mps2-an500:nsh"
+    return nuttx_src, apps_build
 
-    # Initial configure
-    configured_flag = os.path.join(nuttx_build, ".ove_configured")
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    base_snapshot = os.path.join(nuttx_build, ".config.ove_base")
-    if not os.path.isfile(configured_flag):
-        logger.debug(f"Configuring NuttX for {nuttx_board_cfg}...")
-        run(["./tools/configure.sh", "-a", "../nuttx-apps", nuttx_board_cfg],
-             env=env, cwd=nuttx_build, log_file=log_file)
 
-        # Snapshot the pristine board defconfig BEFORE any oveRTOS
-        # overlays are applied. _apply_nuttx_guard restores from this
-        # snapshot on every build so that overlay-key removals (which
-        # apply_defconfig_overlay can't detect by itself) actually take
-        # effect — without it, a key that used to be in the overlay but
-        # has since been removed would persist in .config indefinitely
-        # and break NuttX's olddefconfig dependency check.
-        if os.path.isfile(nuttx_config):
-            shutil.copy2(nuttx_config, base_snapshot)
+def _find_nuttx_defconfig(nuttx_src, board_cfg):
+    """Find the defconfig file for a NuttX board:config pair.
 
-        # Apply oveRTOS overlay immediately so architecture-level settings
-        # (FPU, stack sizes, etc.) take effect before any compilation.
-        overlay = os.path.join(ws.gen_dir, "nuttx_defconfig")
-        if os.path.isfile(overlay):
-            apply_defconfig_overlay(nuttx_config, overlay)
-            apps_abs = os.path.abspath(apps_build)
-            run(["make", "olddefconfig", f"APPDIR={apps_abs}"],
-                env=env, cwd=nuttx_build, log_file=log_file)
+    board_cfg is e.g. "mps2-an500:nsh".  Returns the absolute path to the
+    defconfig file, or None if not found.
+    """
+    import glob as _glob
+    sep = ":" if ":" in board_cfg else "/"
+    board, config = board_cfg.split(sep, 1)
+    matches = _glob.glob(
+        os.path.join(nuttx_src, "boards", "*", "*", board,
+                     "configs", config, "defconfig"))
+    return matches[0] if matches else None
 
-        with open(configured_flag, "w") as f:
-            f.write("configured\n")
 
-    return nuttx_build, apps_build
+def _apply_nuttx_defconfig_overlays(ws, nuttx_src, board_cfg):
+    """Merge oveRTOS config overlays into the NuttX board defconfig.
+
+    This modifies the defconfig in-place within the copied source tree so
+    that NuttX's CMake build picks up the merged config during its
+    olddefconfig expansion.
+    """
+    from .rtos_menuconfig import merge_rtos_config_layers
+
+    defconfig = _find_nuttx_defconfig(nuttx_src, board_cfg)
+    if not defconfig:
+        logger.warning(f"NuttX defconfig not found for {board_cfg}")
+        return
+
+    # Layers 1-3 (oveRTOS template + board overlay + app overlay)
+    merged = merge_rtos_config_layers(ws, "nuttx")
+    if merged:
+        apply_defconfig_overlay(defconfig, merged)
+
+    # Layer 4: user customizations (rtos.config)
+    if os.path.isfile(ws.rtos_config_path):
+        apply_defconfig_overlay(defconfig, ws.rtos_config_path)
 
 
 def build_nuttx(ws):
-    """Build NuttX firmware via Make (pre-CMake migration)."""
+    """Build NuttX firmware via CMake."""
+    cmake = _find_cmake()
     env = ws.toolchain_env()
 
     logger.info("Building NuttX firmware")
 
-    nuttx_build, apps_build = _setup_nuttx_build_tree(ws, env,
-                                                       log_file=_build_log)
+    nuttx_src, apps_build = _setup_nuttx_build_tree(ws, env,
+                                                     log_file=ws.build_log)
+    cmake_build = os.path.join(ws.build_dir, "nuttx-cmake")
+    os.makedirs(cmake_build, exist_ok=True)
 
-    # Copy lv_conf.h for LVGL
-    lv_conf = os.path.join(ws.board_dir, "nuttx", "lv_conf.h")
-    if os.path.isfile(lv_conf):
-        lv_dest = os.path.join(apps_build, "graphics", "lvgl", "lv_conf.h")
-        os.makedirs(os.path.dirname(lv_dest), exist_ok=True)
-        shutil.copy2(lv_conf, lv_dest)
+    # NuttX board config mapping (e.g. "mps2-an500:nsh")
+    nuttx_board_cfg = NUTTX_BOARD_CONFIGS.get(ws.board_name)
+    if not nuttx_board_cfg:
+        nuttx_board_cfg = _fallback_rtos_mapping(ws, "nuttx") or "mps2-an500:nsh"
 
-    # Apply layered config (build guard — fresh by construction)
-    from .rtos_menuconfig import ensure_rtos_config_applied
-    ensure_rtos_config_applied(ws, "nuttx", nuttx_build=nuttx_build,
-                               apps_build=apps_build, env=env,
-                               log_file=_build_log)
+    # Apply oveRTOS defconfig overlays to the board's defconfig in the
+    # copied source tree.  NuttX CMake reads this defconfig directly and
+    # runs olddefconfig to expand it into .config.
+    _apply_nuttx_defconfig_overlays(ws, nuttx_src, nuttx_board_cfg)
 
-    apps_abs = os.path.abspath(apps_build)
-    lvgl_inc = os.path.join(apps_abs, "graphics", "lvgl", "lvgl")
-    lvgl_parent = os.path.join(apps_abs, "graphics", "lvgl")
+    # Check if defconfig changed since last cmake configure — if so,
+    # force re-initialisation by removing the cached .config.
+    defconfig_path = _find_nuttx_defconfig(nuttx_src, nuttx_board_cfg)
+    if defconfig_path:
+        from .utils import hash_file as _hash_file
+        current_hash = _hash_file(defconfig_path)
+        hash_file = os.path.join(cmake_build, ".ove_defconfig_hash")
+        force_reconfig = True
+        if os.path.isfile(hash_file):
+            with open(hash_file) as f:
+                if f.read().strip() == current_hash:
+                    force_reconfig = False
+        if force_reconfig:
+            config_path = os.path.join(cmake_build, ".config")
+            if os.path.isfile(config_path):
+                os.unlink(config_path)
+            with open(hash_file, "w") as f:
+                f.write(current_hash + "\n")
 
-    # Export all build paths as environment variables so they reach NuttX's
-    # recursive sub-makes and Rust's cargo build. NuttX only passes APPDIR
-    # on the make command line to app sub-makes, so command-line vars don't
-    # propagate through $(MAKE) -C <app_dir>.
+    # Export build paths as environment variables for CMake and cargo/zig
     env["OVE_DIR"] = ws.ove_dir
     env["OVE_GEN_DIR"] = ws.gen_dir
     env["OVE_APP_DIR"] = ws.app_dir
-    env["LVGL_INCLUDE_PATH"] = lvgl_inc
-    env["LVGL_PARENT_PATH"] = lvgl_parent
+    env["OVE_DL_DIR"] = ws.ws_dl_dir
 
-    # LV_CONF_PATH for Rust bindgen — board's lv_conf.h directory
+    # LVGL paths for Rust bindgen
+    lvgl_inc = os.path.join(ws.ws_dl_dir, "lvgl")
+    env["LVGL_INCLUDE_PATH"] = lvgl_inc
+    env["LVGL_PARENT_PATH"] = ws.ws_dl_dir
     lv_conf_dir = os.path.join(ws.board_dir, "nuttx")
     if os.path.isfile(os.path.join(lv_conf_dir, "lv_conf.h")):
         env["LV_CONF_PATH"] = lv_conf_dir
 
-    make_vars = [
-        f"APPDIR={apps_abs}",
-        f"OVE_DIR={ws.ove_dir}",
-        f"OVE_GEN_DIR={ws.gen_dir}",
-        f"LVGL_INCLUDE_PATH={lvgl_inc}",
-        f"LVGL_PARENT_PATH={lvgl_parent}",
+    # CMake configure
+    apps_abs = os.path.abspath(apps_build)
+    cmake_args = [
+        cmake,
+        f"-S{os.path.abspath(nuttx_src)}",
+        f"-B{os.path.abspath(cmake_build)}",
+        f"-DBOARD_CONFIG={nuttx_board_cfg}",
+        f"-DNUTTX_APPS_DIR={apps_abs}",
     ]
 
-    # Two-pass context build (LVGL headers, then Rust)
-    run(["make", "-k", "context"] + make_vars,
-         env=env, cwd=nuttx_build, check=False, log_file=_build_log)
-
-    # Remove Helium/NEON blend dirs (cause build issues on Cortex-M)
-    for subdir in ("helium", "neon"):
-        p = os.path.join(apps_abs, "graphics", "lvgl", "lvgl",
-                         "src", "draw", "sw", "blend", subdir)
-        if os.path.isdir(p):
-            shutil.rmtree(p)
-
-    # Clean stale build artifacts between context passes so the second
-    # pass recompiles everything with the final .config (FPU, LVGL, etc.):
-    # - Rust target dir: retry bindgen with LVGL headers now available
-    # - Apps context stamp + staging: recompile with correct compiler flags
-    # Clean Rust build cache in the NuttX apps tree so second pass retries
-    rust_target_dir = os.path.join(apps_build, "external", "ove_app",
-                                   "rust_target")
-    if os.path.isdir(rust_target_dir):
-        shutil.rmtree(rust_target_dir)
-    # Remove stale .gcno coverage files so the second pass doesn't mismatch
-    for root, _dirs, files in os.walk(apps_build):
-        for fname in files:
-            if fname.endswith(".gcno"):
-                os.unlink(os.path.join(root, fname))
-    for stamp in [os.path.join(apps_build, ".context"),
-                  os.path.join(apps_build, ".built"),
-                  os.path.join(nuttx_build, ".context")]:
-        if os.path.isfile(stamp):
-            os.unlink(stamp)
-
-    run(["make", "context"] + make_vars, env=env, cwd=nuttx_build,
-        log_file=_build_log)
-
-    # Remove stale Make.dep
-    dep_file = os.path.join(apps_build, "external", "ove_app", "Make.dep")
-    if os.path.isfile(dep_file):
-        os.unlink(dep_file)
-
-    # Generate TFLM source list for NuttX (compiled as CXXSRCS within
-    # NuttX's own build system, which handles C++ include paths correctly).
-    if ws.config.get("CONFIG_OVE_INFER") in (True, "y"):
-        tflm_dir = os.path.join(ws.ws_dl_dir, "tflite-micro")
-        if os.path.isdir(tflm_dir):
-            import glob
-            tflm_srcs = []
-            for pattern in [
-                "tensorflow/lite/micro/*.cc",
-                "tensorflow/lite/micro/arena_allocator/*.cc",
-                "tensorflow/lite/micro/memory_planner/*.cc",
-                "tensorflow/lite/micro/tflite_bridge/*.cc",
-                "tensorflow/lite/micro/kernels/*.cc",
-                "tensorflow/lite/core/c/*.cc",
-                "tensorflow/lite/core/api/*.cc",
-                "tensorflow/lite/kernels/*.cc",
-                "tensorflow/lite/kernels/internal/*.cc",
-                "tensorflow/compiler/mlir/lite/core/api/*.cc",
-                "tensorflow/compiler/mlir/lite/schema/*.cc",
-                "tensorflow/lite/micro/tflite_bridge/*.cc",
-                "signal/micro/kernels/*.cc",
-                "signal/src/*.cc",
-                "signal/src/kiss_fft_wrappers/*.cc",
-            ]:
-                tflm_srcs.extend(glob.glob(os.path.join(tflm_dir, pattern)))
-            # Exclude test files and files with GCC 15 template issues
-            tflm_srcs = [s for s in tflm_srcs
-                         if not s.endswith("_test.cc")
-                         and "test_helpers" not in s
-                         and "micro_time.cc" not in s]
-            # Add oveRTOS inference wrapper
-            tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
-                                          "ove_infer.cc"))
-            tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
-                                          "tflm", "ove_tflm_debug_log.cc"))
-            tflm_srcs.append(os.path.join(ws.ove_dir, "backends", "common",
-                                          "tflm", "ove_tflm_time.cc"))
-            # Clean any stale TFLM .o files left over from previous builds.
-            # NuttX Application.mk places .o files next to absolute-path
-            # sources (dl/ for C apps, generated/tflm_links/ for C++ apps),
-            # and these survive workspace reconfiguration — masking any
-            # compile-flag changes because make sees them as up-to-date.
-            _tflm_stale_dirs = [
-                tflm_dir,
-                os.path.join(ws.gen_dir, "tflm_links"),
-            ]
-            for _stale_dir in _tflm_stale_dirs:
-                if not os.path.isdir(_stale_dir):
-                    continue
-                for _root, _, _files in os.walk(_stale_dir):
-                    for _f in _files:
-                        if _f.endswith(".o"):
-                            try:
-                                os.unlink(os.path.join(_root, _f))
-                            except OSError:
-                                pass
-
-            # Write TFLM source list as a makefile fragment
-            tflm_mk = os.path.join(ws.gen_dir, "ove_tflm_sources.mk")
-            tflm_downloads = os.path.join(tflm_dir,
-                "tensorflow/lite/micro/tools/make/downloads")
-            with open(tflm_mk, "w") as f:
-                f.write("# Auto-generated TFLM sources for NuttX\n")
-                # Override CXXEXT to .cc (NuttX defaults to .cxx)
-                # unless ove_app_lang.mk already set it to .cpp
-                f.write("ifeq ($(APP_LANG),cpp)\n")
-                f.write("# C++ app: keep CXXEXT=.cpp from ove_app_lang.mk\n")
-                f.write("else\n")
-                f.write("CXXEXT = .cc\n")
-                f.write("endif\n\n")
-                # Create .cpp symlinks for C++ apps (CXXEXT=.cpp)
-                link_dir = os.path.join(ws.gen_dir, "tflm_links")
-                cc_srcs = []
-                cpp_srcs = []
-                for s in tflm_srcs:
-                    cc_srcs.append(s)
-                    if s.endswith(".cc"):
-                        rel = os.path.relpath(s, tflm_dir) if s.startswith(tflm_dir) \
-                              else os.path.relpath(s, ws.ove_dir)
-                        link_path = os.path.join(link_dir,
-                                                 rel.replace(".cc", ".cpp"))
-                        os.makedirs(os.path.dirname(link_path), exist_ok=True)
-                        if os.path.exists(link_path):
-                            os.unlink(link_path)
-                        os.symlink(os.path.abspath(s), link_path)
-                        cpp_srcs.append(link_path)
-                    else:
-                        cpp_srcs.append(s)
-                # Use .cc sources when CXXEXT=.cc, .cpp symlinks otherwise
-                f.write("ifeq ($(CXXEXT),.cc)\n")
-                f.write("CXXSRCS +=")
-                for s in cc_srcs:
-                    f.write(f" \\\n    {s}")
-                f.write("\n")
-                f.write("else\n")
-                f.write("CXXSRCS +=")
-                for s in cpp_srcs:
-                    f.write(f" \\\n    {s}")
-                f.write("\n")
-                f.write("endif\n\n")
-                f.write(f"CXXFLAGS += -I{tflm_dir}\n")
-                f.write(f"CXXFLAGS += -I{tflm_downloads}/flatbuffers/include\n")
-                f.write(f"CXXFLAGS += -I{tflm_downloads}/gemmlowp\n")
-                f.write(f"CXXFLAGS += -I{tflm_downloads}/ruy\n")
-                f.write(f"CXXFLAGS += -I{tflm_dir}/signal/micro/kernels\n")
-                f.write(f"CXXFLAGS += -I{tflm_dir}/signal/src\n")
-                f.write(f"CXXFLAGS += -I{tflm_downloads}/kissfft\n")
-                f.write(f"CXXFLAGS += -I{tflm_dir}/signal/src/kiss_fft_wrappers\n")
-                # kissfft C sources
-                kissfft_dir = os.path.join(tflm_downloads, "kissfft")
-                f.write(f"CSRCS += {kissfft_dir}/kiss_fft.c\n")
-                f.write(f"CSRCS += {kissfft_dir}/tools/kiss_fftr.c\n")
-                f.write(f"CFLAGS += -I{kissfft_dir}\n")
-                f.write("CXXFLAGS += -DTF_LITE_STATIC_MEMORY\n")
-                f.write("CXXFLAGS += -DTF_LITE_USE_GLOBAL_MAX\n")
-                f.write("CXXFLAGS += -DTF_LITE_USE_GLOBAL_MIN\n")
-                f.write("CXXFLAGS += -fno-threadsafe-statics\n")
-                f.write("CXXFLAGS += -fno-exceptions -fno-rtti\n")
-                # GCC 15 auto-enables _GLIBCXX_ASSERTIONS for unoptimized
-                # builds, which makes std::array::operator[] (used in
-                # batch_matmul_common.cc) emit calls to std::__glibcxx_
-                # assert_fail — a symbol only defined in libstdc++.a, which
-                # NuttX does not link.  Disable the assertions so the link
-                # succeeds.
-                f.write("CXXFLAGS += -D_GLIBCXX_NO_ASSERTIONS\n")
-                # Note: don't set -std= here. C apps get NuttX default,
-                # C++ apps get -std=c++20 from ove_app_lang.mk.
-                f.write("CXXFLAGS += -w -fpermissive\n")
-                # GCC 15 rejects the int16 LUTPopulate call in
-                # softmax_common.cc (lambda doesn't decay to function
-                # pointer in template overload resolution).  Patch the
-                # source to use an explicit function pointer cast.
-                softmax_src = os.path.join(tflm_dir, "tensorflow", "lite",
-                    "micro", "kernels", "softmax_common.cc")
-                if os.path.isfile(softmax_src):
-                    with open(softmax_src, "r") as sf:
-                        src = sf.read()
-                    old = ("[](float value) { return std::exp(value); }"
-                           ", op_data->exp_lut")
-                    new = ("static_cast<float(*)(float)>("
-                           "[](float value) -> float { return std::exp(value); })"
-                           ", op_data->exp_lut")
-                    if old in src:
-                        with open(softmax_src, "w") as sf:
-                            sf.write(src.replace(old, new))
-                # NuttX adds -nostdinc++ globally.  Re-add the toolchain's
-                # C++ standard library headers via -idirafter (lower priority
-                # than NuttX's cxx/ wrappers).
-                f.write("_TFLM_CXX_SYSROOT := $(shell $(CXX) -print-sysroot)\n")
-                f.write("_TFLM_CXX_VER := $(shell $(CXX) -dumpversion)\n")
-                f.write("_TFLM_CXX_MACHINE := $(shell $(CXX) -dumpmachine)\n")
-                f.write("CXXFLAGS += -idirafter "
-                        "$(_TFLM_CXX_SYSROOT)/include/c++/$(_TFLM_CXX_VER)\n")
-                f.write("CXXFLAGS += -idirafter "
-                        "$(_TFLM_CXX_SYSROOT)/include/c++/"
-                        "$(_TFLM_CXX_VER)/$(_TFLM_CXX_MACHINE)\n")
-                # Provide ctype macros that the toolchain's ctype_base.h
-                # expects (NuttX's ctype.h defines them, but #include_next
-                # in the C++ headers can't find them through -idirafter).
-                f.write("CXXFLAGS += -D_U=01 -D_L=02 -D_N=04 "
-                        "-D_S=010 -D_P=020 -D_C=040 -D_X=0100 -D_B=0200\n")
-                # CMSIS-NN if available
-                cmsis_nn = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
-                                        "CMSIS", "NN")
-                cmsis_core = os.path.join(ws.ove_dir, "dl", "CMSIS_5",
-                                          "CMSIS", "Core", "Include")
-                # Prefer the standalone CMSIS-DSP repo over the bundled
-                # copy in CMSIS_5/CMSIS/DSP. The bundled headers are
-                # older and don't define ARM_DSP_ATTRIBUTE, which the
-                # newer standalone source files require — mixing the
-                # two leaves boards that pull in CMSIS-DSP sources
-                # (e.g. stm32f746g-discovery) failing with "expected
-                # ';' before 'void'" because the macro is undefined.
-                cmsis_dsp_standalone = os.path.join(
-                    ws.ove_dir, "dl", "CMSIS-DSP", "Include")
-                cmsis_dsp_bundled = os.path.join(
-                    ws.ove_dir, "dl", "CMSIS_5", "CMSIS", "DSP",
-                    "Include")
-                if os.path.isdir(cmsis_dsp_standalone):
-                    cmsis_dsp = cmsis_dsp_standalone
-                else:
-                    cmsis_dsp = cmsis_dsp_bundled
-                if os.path.isdir(cmsis_nn):
-                    nn_srcs = glob.glob(
-                        os.path.join(cmsis_nn, "Source", "**", "*.c"),
-                        recursive=True)
-                    if nn_srcs:
-                        for i, s in enumerate(nn_srcs):
-                            if i == 0:
-                                f.write(f"CSRCS += {s}")
-                            else:
-                                f.write(f" \\\n    {s}")
-                        f.write("\n\n")
-                    f.write(f"CFLAGS += -I{cmsis_nn}/Include\n")
-                    f.write(f"CXXFLAGS += -I{cmsis_nn}/Include\n")
-                    f.write("CXXFLAGS += -DCMSIS_NN\n")
-                if os.path.isdir(cmsis_core):
-                    f.write(f"CFLAGS += -I{cmsis_core}\n")
-                    f.write(f"CXXFLAGS += -I{cmsis_core}\n")
-                if os.path.isdir(cmsis_dsp):
-                    f.write(f"CFLAGS += -I{cmsis_dsp}\n")
-                    f.write(f"CXXFLAGS += -I{cmsis_dsp}\n")
-            logger.info(f"Generated TFLM source list: {tflm_mk}")
+    logger.debug(f"CMake configure: {' '.join(cmake_args)}")
+    run(cmake_args, env=env, cwd=nuttx_src, log_file=ws.build_log)
 
     # Build
-    make_vars.append(f"OVE_APP_DIR={ws.app_dir}")
-    run(["make", f"-j{nproc()}"] + make_vars, env=env, cwd=nuttx_build,
-        log_file=_build_log)
+    run([cmake, "--build", os.path.abspath(cmake_build), f"-j{nproc()}"],
+        env=env, log_file=ws.build_log)
 
     # Copy images
     os.makedirs(ws.images_dir, exist_ok=True)
     for name in ("nuttx", "nuttx.bin"):
-        src = os.path.join(nuttx_build, name)
+        src = os.path.join(cmake_build, name)
         dst_name = "firmware.elf" if name == "nuttx" else "firmware.bin"
         if os.path.isfile(src):
             shutil.copy2(src, os.path.join(ws.images_dir, dst_name))
 
-    _check_rtos_config_drift(ws, os.path.join(nuttx_build, ".config"))
+    _check_rtos_config_drift(ws, os.path.join(cmake_build, ".config"))
     _create_run_or_flash_script(ws, rtos="nuttx")
-
-    # Clean stray .o files NuttX places next to source files when CSRCS
-    # contains absolute paths (NuttX Application.mk quirk). This includes
-    # TFLM sources under dl/tflite-micro-*, whose .o files otherwise persist
-    # across builds and mask flag changes (make sees them as up-to-date
-    # because the source hasn't changed).
-    ove_dl_dir = os.path.join(ws.ove_dir, "dl")
-    search_dirs = [ws.ove_dir, ws.app_dir]
-    for search_dir in search_dirs:
-        for root, dirs, files in os.walk(search_dir):
-            # Skip output/ and .venv/, but walk dl/ so TFLM .o files
-            # placed next to their sources get cleaned.
-            if any(skip in root for skip in ["/output/", "/.venv/"]):
-                continue
-            # Inside dl/, only clean .o files (not any other artifacts).
-            for f in files:
-                if f.endswith(".o"):
-                    os.unlink(os.path.join(root, f))
-
-
-def _apply_nuttx_defconfig_overlay(ws, nuttx_build, apps_build, env):
-    """Apply oveRTOS-generated defconfig overlay to NuttX .config."""
-    overlay = os.path.join(ws.gen_dir, "nuttx_defconfig")
-    nuttx_config = os.path.join(nuttx_build, ".config")
-
-    if not os.path.isfile(overlay):
-        return
-
-    # Apply the overlay using shared utility
-    apply_defconfig_overlay(nuttx_config, overlay)
-
-    # Run olddefconfig
-    apps_abs = os.path.abspath(apps_build)
-    run(["make", "olddefconfig", f"APPDIR={apps_abs}"],
-         env=env, cwd=nuttx_build, log_file=_build_log)
 
 
 def build_posix(ws):
@@ -747,9 +510,9 @@ def build_posix(ws):
             f"-DOVE_GEN_DIR={ws.gen_dir}",
             f"-DOVE_DL_DIR={ws.ws_dl_dir}",
             board_dir,
-        ], env=env, cwd=fw_build, log_file=_build_log)
+        ], env=env, cwd=fw_build, log_file=ws.build_log)
         run([emmake, "make", f"-j{nproc()}"], env=env, cwd=fw_build,
-            log_file=_build_log)
+            log_file=ws.build_log)
     else:
         logger.info("Building POSIX native executable")
         run([
@@ -759,9 +522,9 @@ def build_posix(ws):
             f"-DOVE_GEN_DIR={ws.gen_dir}",
             f"-DOVE_DL_DIR={ws.ws_dl_dir}",
             board_dir,
-        ], env=env, cwd=fw_build, log_file=_build_log)
+        ], env=env, cwd=fw_build, log_file=ws.build_log)
         run([cmake, "--build", fw_build, f"-j{nproc()}"], env=env,
-            log_file=_build_log)
+            log_file=ws.build_log)
 
     os.makedirs(ws.images_dir, exist_ok=True)
     if is_wasm:
@@ -778,13 +541,43 @@ def build_posix(ws):
         if os.path.isfile(src):
             shutil.copy2(src, ws.images_dir)
 
-        # Create run script
+        # Create run script — mirrors 'ove run' for POSIX: launch the
+        # dashboard bridge in the background, then run the binary.
         run_script = os.path.join(ws.workspace_dir, "run")
+        ove_dir_q = shlex.quote(ws.ove_dir)
         with open(run_script, "w") as f:
             f.write('#!/bin/bash\n')
-            f.write('set -e\n')
             f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-            f.write('exec "$DIR/images/ove_posix" "$@"\n')
+            f.write(f'OVE_DIR={ove_dir_q}\n')
+            f.write('export OVE_DIR\n')
+            f.write('\n')
+            f.write('HEADLESS=0\n')
+            f.write('ARGS=()\n')
+            f.write('for arg in "$@"; do\n')
+            f.write('    case "$arg" in\n')
+            f.write('        --headless) HEADLESS=1 ;;\n')
+            f.write('        *) ARGS+=("$arg") ;;\n')
+            f.write('    esac\n')
+            f.write('done\n')
+            f.write('\n')
+            f.write('BRIDGE_PID=""\n')
+            f.write('cleanup() {\n')
+            f.write('    if [ -n "$BRIDGE_PID" ]; then\n')
+            f.write('        kill "$BRIDGE_PID" 2>/dev/null || true\n')
+            f.write('        wait "$BRIDGE_PID" 2>/dev/null || true\n')
+            f.write('    fi\n')
+            f.write('}\n')
+            f.write('trap cleanup EXIT\n')
+            f.write('\n')
+            f.write('if [ "$HEADLESS" != "1" ]; then\n')
+            f.write('    PYTHON="$OVE_DIR/.venv/bin/python3"\n')
+            f.write('    [ -x "$PYTHON" ] || PYTHON=python3\n')
+            f.write('    "$PYTHON" "$OVE_DIR/config/scripts/ove-dashboard-bridge.py" \\\n')
+            f.write('        --port 8080 --dashboard "$OVE_DIR/sim/dashboard" &\n')
+            f.write('    BRIDGE_PID=$!\n')
+            f.write('fi\n')
+            f.write('\n')
+            f.write('"$DIR/images/ove_posix" "${ARGS[@]}"\n')
         os.chmod(run_script, 0o755)
 
 
@@ -910,25 +703,20 @@ def _check_rtos_config_drift(ws, config_path):
     sentinel = os.path.join(ws.workspace_dir, ".rtos_config_applied_sha256")
     if not os.path.isfile(sentinel) or not os.path.isfile(config_path):
         return
-    import hashlib
-    h = hashlib.sha256()
-    with open(config_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    current_hash = h.hexdigest()
+    from .utils import hash_file
+    current_hash = hash_file(config_path)
     with open(sentinel) as f:
         expected_hash = f.read().strip()
     if current_hash != expected_hash:
         logger.warning("RTOS config was modified during build "
               "(possible CMake reconfigure or Kconfig dependency resolution).")
-        logger.debug("Run 'make nuttx-menuconfig' or 'make zephyr-menuconfig' to inspect.")
+        logger.debug("Run 'ove rtos-menuconfig' to inspect.")
 
 
 def build(ws):
     """Auto-detect RTOS and build."""
     from .manifest import warn_if_dirty
 
-    global _build_log
     ws.require_config()
     ws.ensure_dirs()
     warn_if_dirty(ws.ove_dir)
@@ -955,17 +743,76 @@ def build(ws):
         logger.debug("[zero-heap] Fully static build — no dynamic allocation.")
 
     log_path = os.path.join(ws.workspace_dir, "build.log")
-    _build_log = open(log_path, "w")
-    try:
+    with ws.open_build_log(log_path):
         builder(ws)
-    finally:
-        _build_log.close()
-        _build_log = None
+    _link_compile_commands(ws)
     logger.info("Build complete")
     logger.info(f"Firmware: {ws.images_dir}/")
 
 
+def _link_compile_commands(ws):
+    """Symlink output/compile_commands.json -> active workspace's copy.
+
+    Lets clangd find the active build's compile DB without per-workspace
+    configuration. Preferred candidate is the firmware build dir; falls
+    back to the cmake-build dir used by NuttX.
+    """
+    candidates = [
+        os.path.join(ws.build_dir, "firmware", "compile_commands.json"),
+        os.path.join(ws.build_dir, "nuttx-cmake", "compile_commands.json"),
+    ]
+    src = next((c for c in candidates if os.path.isfile(c)), None)
+    if not src:
+        return
+    link = os.path.join(ws.output_dir, "compile_commands.json")
+    rel = os.path.relpath(src, os.path.dirname(link))
+    if os.path.islink(link) or os.path.exists(link):
+        try:
+            os.unlink(link)
+        except OSError:
+            return
+    try:
+        os.symlink(rel, link)
+    except OSError as e:
+        logger.debug(f"compile_commands.json symlink skipped: {e}")
+
+
 def cmd_build(args):
     """CLI entry point for 'ove build'."""
+    import json
+    import time
+
     ws = Workspace()
-    build(ws)
+    if getattr(args, "dry_run", False):
+        ws.require_config()
+        print(f"[dry-run] would build {ws.rtos} firmware for "
+              f"board={ws.board_name} app={os.path.basename(ws.app_dir or '')}")
+        print(f"[dry-run] workspace:     {ws.workspace_dir}")
+        print(f"[dry-run] build dir:     {ws.build_dir}")
+        print(f"[dry-run] images dir:    {ws.images_dir}")
+        if ws.toolchain_dir:
+            print(f"[dry-run] toolchain dir: {ws.toolchain_dir}")
+        return
+    start = time.time()
+    ok = True
+    try:
+        build(ws)
+    except SystemExit as e:
+        ok = (e.code == 0)
+        raise
+    finally:
+        if getattr(args, "json", False):
+            elapsed = round(time.time() - start, 2)
+            firmware = os.path.join(ws.images_dir, "firmware.elf")
+            payload = {
+                "ok": ok,
+                "rtos": ws.rtos,
+                "board": ws.board_name,
+                "workspace": ws.workspace_dir,
+                "elapsed_s": elapsed,
+                "firmware": firmware if os.path.isfile(firmware) else None,
+                "firmware_bytes": (os.path.getsize(firmware)
+                                   if os.path.isfile(firmware) else None),
+            }
+            json.dump(payload, sys.stdout, indent=2)
+            print()

@@ -33,6 +33,11 @@ extern "C" {
 
 /**
  * @brief TLS session configuration.
+ *
+ * @note If @c ca_cert is NULL the peer certificate is not verified, so the
+ *       session is vulnerable to man-in-the-middle. The handshake refuses
+ *       this configuration unless @c allow_insecure is explicitly set to
+ *       a non-zero value.
  */
 typedef struct {
 	const unsigned char *ca_cert;         /**< PEM or DER CA certificate (NULL to skip verify). */
@@ -42,6 +47,7 @@ typedef struct {
 	size_t               client_cert_len; /**< Length of client_cert in bytes. */
 	const unsigned char *client_key;      /**< PEM or DER client private key (NULL to skip). */
 	size_t               client_key_len;  /**< Length of client_key in bytes. */
+	int                  allow_insecure;  /**< Non-zero to allow NULL @c ca_cert (disables peer verify — do not use in production). */
 } ove_tls_config_t;
 
 #include "ove/storage.h"

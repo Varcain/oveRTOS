@@ -48,31 +48,45 @@ void ove_hal_spi_close(ove_spi_t spi)
 int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
 			 size_t len, uint32_t timeout_ms)
 {
-	(void)timeout_ms;
+	(void)timeout_ms; /* NuttX spi_transfer ioctl has no timeout knob */
 
-	struct spi_sequence_s seq;
-	struct spi_trans_s trans;
+	/* nwords is uint16_t in NuttX's spi_trans_s — chunk larger transfers
+	 * so we don't silently truncate. */
+	const size_t MAX_CHUNK = 0xFFFF;
 
-	memset(&seq, 0, sizeof(seq));
-	memset(&trans, 0, sizeof(trans));
+	const uint8_t *txp = (const uint8_t *)tx;
+	uint8_t *rxp = (uint8_t *)rx;
 
-	seq.dev     = SPIDEV_USER(0);
-	seq.mode    = spi->mode;
-	seq.nbits   = spi->word_size;
-	seq.frequency = spi->clock_hz;
-	seq.ntrans  = 1;
-	seq.trans   = &trans;
+	while (len > 0) {
+		size_t chunk = len > MAX_CHUNK ? MAX_CHUNK : len;
 
-	trans.deselect = true;
-	trans.nwords   = len;
-	trans.txbuffer = tx;
-	trans.rxbuffer = rx;
+		struct spi_sequence_s seq;
+		struct spi_trans_s trans;
 
-	int ret = ioctl(spi->fd, SPIIOC_TRANSFER,
-			(unsigned long)&seq);
-	if (ret < 0)
-		return OVE_ERR_BUS_ERROR;
+		memset(&seq, 0, sizeof(seq));
+		memset(&trans, 0, sizeof(trans));
 
+		seq.dev       = SPIDEV_USER(0);
+		seq.mode      = spi->mode;
+		seq.nbits     = spi->word_size;
+		seq.frequency = spi->clock_hz;
+		seq.ntrans    = 1;
+		seq.trans     = &trans;
+
+		trans.deselect = (len == chunk); /* only deselect on last chunk */
+		trans.nwords   = (uint16_t)chunk;
+		trans.txbuffer = txp;
+		trans.rxbuffer = rxp;
+
+		int ret = ioctl(spi->fd, SPIIOC_TRANSFER,
+				(unsigned long)&seq);
+		if (ret < 0)
+			return OVE_ERR_BUS_ERROR;
+
+		if (txp) txp += chunk;
+		if (rxp) rxp += chunk;
+		len -= chunk;
+	}
 	return OVE_OK;
 }
 

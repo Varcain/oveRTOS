@@ -25,10 +25,6 @@ const Thread = ove.Thread;
 const net = ove.net;
 const Address = ove.Address;
 
-const has_http = @hasDecl(ove.ffi, "CONFIG_OVE_NET_HTTP");
-const has_mqtt = @hasDecl(ove.ffi, "CONFIG_OVE_NET_MQTT");
-const has_httpd = @hasDecl(ove.ffi, "CONFIG_OVE_NET_HTTPD");
-const has_sntp = @hasDecl(ove.ffi, "CONFIG_OVE_NET_SNTP");
 const is_posix = @hasDecl(ove.ffi, "CONFIG_OVE_RTOS_POSIX");
 
 // -- Test tracking ----------------------------------------------------------
@@ -262,7 +258,6 @@ fn testUdp() void {
 // -- 5. HTTP client ---------------------------------------------------------
 
 fn testHttp() void {
-    if (!has_http) return;
     ove.log.inf("=== HTTP Client ===", .{});
 
     testCase("http_client_init");
@@ -340,7 +335,6 @@ fn testHttp() void {
 // -- 5b. SNTP ---------------------------------------------------------------
 
 fn testSntp() void {
-    if (!has_sntp) return;
     ove.log.inf("=== SNTP ===", .{});
 
     testCase("sntp_sync pool.ntp.org");
@@ -378,7 +372,6 @@ fn onMqttMessage(topic: []const u8, payload: []const u8) void {
 }
 
 fn testMqtt() void {
-    if (!has_mqtt) return;
     ove.log.inf("=== MQTT Client ===", .{});
 
     testCase("mqtt_client_init");
@@ -430,7 +423,7 @@ fn testMqtt() void {
     mqtt_rx_count = 0;
     var i: u32 = 0;
     while (i < 10) : (i += 1) {
-        _ = mqtt.loop_(500) catch {}; // best-effort poll
+        mqtt.pollOnce(500) catch {}; // best-effort poll
         if (mqtt_rx_count >= 2) break;
     }
     if (mqtt_rx_count >= 1) {
@@ -458,7 +451,7 @@ fn testMqtt() void {
 
     // Keepalive ping
     testCase("mqtt_loop keepalive ping");
-    _ = mqtt.loop_(100) catch {}; // best-effort keepalive
+    mqtt.pollOnce(100) catch {}; // best-effort keepalive
     passCase("mqtt_loop keepalive");
 
     // Disconnect
@@ -475,9 +468,9 @@ fn netThread() void {
     testTcp();
     testUdp();
 
-    if (has_http) testHttp();
-    if (has_sntp) testSntp();
-    if (has_mqtt) testMqtt();
+    testHttp();
+    testSntp();
+    testMqtt();
 
     ove.log.inf("========================================", .{});
     ove.log.inf("  Results: {d} passed, {d} failed", .{ pass_count, fail_count });
@@ -489,19 +482,17 @@ fn netThread() void {
         ove.log.err("  {d} TEST(S) FAILED", .{fail_count});
     }
 
-    if (has_httpd) {
-        // Start web dashboard -- runs forever
-        const httpd_port: u16 = if (is_posix) 8080 else 80;
-        ove.log.inf("Starting HTTP server on port {d}...", .{httpd_port});
-        ove.net_httpd.start(.{ .port = httpd_port, .max_body_size = 1024 }) catch |e| {
-            ove.log.err("HTTP server failed to start: {d}", .{errCode(e)});
-            return;
-        };
-        ove.net_httpd.registerBuiltinRoutes();
-        ove.log.inf("HTTP server running -- open http://<device-ip>:{d}/", .{httpd_port});
-        // Keep thread alive so httpd keeps running
-        while (true) Thread.sleepMs(1000);
-    }
+    // Start web dashboard -- runs forever
+    const httpd_port: u16 = if (is_posix) 8080 else 80;
+    ove.log.inf("Starting HTTP server on port {d}...", .{httpd_port});
+    ove.net_httpd.start(.{ .port = httpd_port, .max_body_size = 1024 }) catch |e| {
+        ove.log.err("HTTP server failed to start: {d}", .{errCode(e)});
+        return;
+    };
+    ove.net_httpd.registerBuiltinRoutes();
+    ove.log.inf("HTTP server running -- open http://<device-ip>:{d}/", .{httpd_port});
+    // Keep thread alive so httpd keeps running
+    while (true) Thread.sleepMs(1000);
 }
 
 // -- App entry point --------------------------------------------------------
@@ -517,10 +508,8 @@ fn appMain() void {
     ove.log.inf("Zig networking example: ready", .{});
     ove.run();
 
-    if (has_httpd) {
-        // On POSIX, ove_run() returns -- keep alive for the httpd server
-        while (true) Thread.sleepMs(1000);
-    }
+    // On POSIX, ove_run() returns -- keep alive for the httpd server
+    while (true) Thread.sleepMs(1000);
 }
 
 comptime {

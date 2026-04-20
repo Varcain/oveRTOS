@@ -33,8 +33,9 @@ set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(OVE_INCLUDE ${OVE_ROOT}/include)
 set(OVE_SRC ${OVE_ROOT}/src)
 
-# Include test helper
+# Include test helpers
 include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/OveTest.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/OveCoverage.cmake)
 
 # Stub backend sources (same as C tests)
 set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
@@ -99,28 +100,40 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_infer.cpp
 )
 
+# ove_add_cpp_variant(<name> [compile_opts...])
+# Mirrors ove_add_stub_variant in tests/CMakeLists.txt: shared sources +
+# per-variant compile/link flags so we can stamp out coverage/asan builds
+# without copy-pasting.
+function(ove_add_cpp_variant name)
+    add_executable(${name}
+        ${CMAKE_CURRENT_SOURCE_DIR}/cpp_main.cpp
+        ${STUB_SOURCES}
+        ${SUITE_SOURCES}
+    )
+    target_include_directories(${name} PRIVATE
+        ${OVE_INCLUDE}
+        ${OVE_ROOT}/bindings/cpp
+        ${OVE_ROOT}/backends/common
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${POSIX_CORE_DIR}/include
+        ${cmocka_SOURCE_DIR}/include
+    )
+    target_link_libraries(${name} PRIVATE cmocka-static pthread rt m)
+    if(ARGN)
+        target_compile_options(${name} PRIVATE ${ARGN})
+        target_link_options(${name} PRIVATE ${ARGN})
+    endif()
+endfunction()
+
 # --- C++ test target ---
-add_executable(ove_test_cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/cpp_main.cpp
-    ${STUB_SOURCES}
-    ${SUITE_SOURCES}
-)
+ove_add_cpp_variant(ove_test_cpp)
 
-target_include_directories(ove_test_cpp PRIVATE
-    ${OVE_INCLUDE}
-    ${OVE_ROOT}/bindings/cpp
-    ${OVE_ROOT}/backends/common
-    ${CMAKE_CURRENT_SOURCE_DIR}/..
-    ${POSIX_CORE_DIR}/include
-    ${cmocka_SOURCE_DIR}/include
-)
-
-target_link_libraries(ove_test_cpp PRIVATE
-    cmocka-static
-    pthread
-    rt
-    m
-)
+# --- Coverage variant — gcov instrumentation for the `coverage` target. ---
+option(OVE_TEST_BUILD_COVERAGE "Build ove_test_cpp_coverage with --coverage" OFF)
+if(OVE_TEST_BUILD_COVERAGE)
+    ove_add_cpp_variant(ove_test_cpp_coverage --coverage -O0 -g)
+    ove_test_coverage_report(cpp ove_test_cpp_coverage)
+endif()
 
 # Register with CTest
 enable_testing()

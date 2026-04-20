@@ -38,7 +38,7 @@ static void test_gpio_get(void **state)
     ove_gpio_set(0, 0, 1);
 
     int val = ove_gpio_get(0, 0);
-    assert_true(val != 0);
+    assert_int_equal(val, 1);
 
     ove_gpio_set(0, 0, 0);
     val = ove_gpio_get(0, 0);

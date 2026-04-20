@@ -1,0 +1,15 @@
+lang: c
+config_name: lvgl_benchmark_c
+description: "LVGL rendering benchmark (C)"
+sources:
+  - src/app.c
+  - src/benchmark_perf.c
+  - src/assets/benchmark_cogwheel_rgb.c
+  - src/assets/benchmark_cogwheel_argb.c
+  - src/assets/benchmark_avatar.c
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_LVGL=y
+  - CONFIG_OVE_TIMER=y

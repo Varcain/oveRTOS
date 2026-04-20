@@ -98,6 +98,7 @@ if(OVE_SIM)
         ${OVE_DIR}/sim/src/ove_sim_wasm_audio.c
         ${OVE_DIR}/sim/src/ove_sim_wasm_config.c
         ${OVE_DIR}/sim/hal/sim_board.c
+        ${OVE_DIR}/sim/hal/sim_debug.c
     )
     if(OVE_LVGL)
         list(APPEND SIM_SOURCES

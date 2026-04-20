@@ -10,6 +10,7 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
+#include <zephyr/sys/sys_heap.h>
 #include <string.h>
 
 static int map_priority(ove_prio_t prio)
@@ -303,17 +304,113 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 {
 	if (!stats) return OVE_ERR_INVALID_PARAM;
-	/* Zephyr heap stats require CONFIG_SYS_HEAP_RUNTIME_STATS */
 	memset(stats, 0, sizeof(*stats));
+#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS)
+	extern struct k_heap _system_heap;
+	struct sys_memory_stats hstats;
+	sys_heap_runtime_stats_get(&_system_heap.heap, &hstats);
+	stats->free = hstats.free_bytes;
+	stats->used = hstats.allocated_bytes;
+	stats->total = hstats.free_bytes + hstats.allocated_bytes;
+	stats->peak_used = hstats.max_allocated_bytes;
+#endif
 	return OVE_OK;
+}
+
+struct _thread_list_ctx {
+	struct ove_thread_info *out;
+	size_t max;
+	size_t count;
+};
+
+static ove_thread_state_t _map_zephyr_state(uint8_t state)
+{
+	if (state & _THREAD_DEAD)
+		return OVE_THREAD_STATE_TERMINATED;
+	if (state & _THREAD_SUSPENDED)
+		return OVE_THREAD_STATE_SUSPENDED;
+	if (state & _THREAD_PENDING)
+		return OVE_THREAD_STATE_BLOCKED;
+	if (state & _THREAD_QUEUED)
+		return OVE_THREAD_STATE_READY;
+	return OVE_THREAD_STATE_RUNNING;
+}
+
+static void _thread_list_cb(const struct k_thread *thread, void *user_data)
+{
+	struct _thread_list_ctx *ctx = (struct _thread_list_ctx *)user_data;
+	if (ctx->count >= ctx->max)
+		return;
+
+	struct ove_thread_info *info = &ctx->out[ctx->count];
+	info->name = k_thread_name_get((k_tid_t)thread);
+	if (!info->name)
+		info->name = "?";
+	info->state = _map_zephyr_state(thread->base.thread_state);
+	info->priority = (int)k_thread_priority_get((k_tid_t)thread);
+
+	info->cpu_percent_x100 = 0;
+
+	/* Stack high-water mark + total */
+	info->stack_used = 0;
+	info->stack_size = 0;
+#if defined(CONFIG_THREAD_STACK_INFO)
+	info->stack_size = thread->stack_info.size;
+	{
+		size_t unused = 0;
+		if (k_thread_stack_space_get((k_tid_t)thread, &unused) == 0)
+			info->stack_used = thread->stack_info.size - unused;
+	}
+#endif
+
+	/* CPU utilisation + state times */
+	memset(&info->state_times, 0, sizeof(info->state_times));
+#if defined(CONFIG_THREAD_RUNTIME_STATS)
+	{
+		k_thread_runtime_stats_t rt;
+		if (k_thread_runtime_stats_get((k_tid_t)thread, &rt) == 0) {
+			k_thread_runtime_stats_t all;
+			k_thread_runtime_stats_all_get(&all);
+			if (all.execution_cycles > 0) {
+				info->cpu_percent_x100 =
+					(uint32_t)((uint64_t)rt.execution_cycles
+						   * 10000U
+						   / all.execution_cycles);
+				/* Derive state times from cycles.
+				 * Convert to us assuming 1 cycle ≈ 1 us
+				 * (approximate for Zephyr timing). */
+				info->state_times.running_us =
+					rt.execution_cycles;
+				info->state_times.blocked_us =
+					(all.execution_cycles > rt.execution_cycles)
+					? all.execution_cycles - rt.execution_cycles
+					: 0;
+			}
+		}
+	}
+#endif
+
+	ctx->count++;
 }
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		    size_t *actual_count)
 {
-	(void)out;
-	(void)max_count;
+	if (!out) {
+		if (actual_count)
+			*actual_count = 0;
+		return OVE_OK;
+	}
+
+	struct _thread_list_ctx ctx = {
+		.out = out,
+		.max = max_count,
+		.count = 0,
+	};
+
+	k_thread_foreach_unlocked(_thread_list_cb, &ctx);
+
 	if (actual_count)
-		*actual_count = 0;
+		*actual_count = ctx.count;
 	return OVE_OK;
 }

@@ -70,6 +70,35 @@ pub fn irqRegister(
     ));
 }
 
+/// Register a GPIO interrupt callback with a typed context pointer.
+///
+/// Like `irqRegister`, but forwards `ctx` to the callback so handlers can
+/// carry state without relying on globals. `ctx` must outlive the
+/// registration (until the IRQ is unregistered or the pin reconfigured).
+/// The callback runs in interrupt context and must not block.
+pub fn irqRegisterWithContext(
+    port: u32,
+    pin: u32,
+    mode: IrqMode,
+    comptime Context: type,
+    ctx: *Context,
+    comptime callback: fn (u32, u32, *Context) void,
+) Error!void {
+    const Trampoline = struct {
+        fn invoke(p: c_uint, pn: c_uint, user_data: ?*anyopaque) callconv(.c) void {
+            const ptr: *Context = @ptrCast(@alignCast(user_data));
+            callback(@intCast(p), @intCast(pn), ptr);
+        }
+    };
+    try err.fromCode(c.ove_gpio_irq_register(
+        port,
+        pin,
+        mode,
+        &Trampoline.invoke,
+        @ptrCast(ctx),
+    ));
+}
+
 /// Enable a previously registered GPIO interrupt on the given pin.
 ///
 /// Returns `Error` if no interrupt was registered or enabling fails.

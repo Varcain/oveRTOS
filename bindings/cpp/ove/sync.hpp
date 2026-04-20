@@ -56,7 +56,7 @@ public:
 	 *
 	 * If the handle is null (e.g., after a move), the destructor is a no-op.
 	 */
-	~Mutex() {
+	~Mutex() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_mutex_deinit(handle_);
@@ -163,7 +163,7 @@ public:
 	/**
 	 * @brief Destroys the recursive mutex, releasing the underlying kernel resource.
 	 */
-	~RecursiveMutex() {
+	~RecursiveMutex() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_mutex_deinit(handle_);
@@ -263,7 +263,7 @@ public:
 	/**
 	 * @brief Destroys the guard, unlocking the associated mutex.
 	 */
-	~LockGuard() {
+	~LockGuard() noexcept {
 		mtx_.unlock();
 	}
 
@@ -396,7 +396,7 @@ public:
 	/**
 	 * @brief Destroys the semaphore, releasing the underlying kernel resource.
 	 */
-	~Semaphore() {
+	~Semaphore() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_sem_deinit(handle_);
@@ -503,7 +503,7 @@ public:
 	/**
 	 * @brief Destroys the event, releasing the underlying kernel resource.
 	 */
-	~Event() {
+	~Event() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_event_deinit(handle_);
@@ -619,7 +619,7 @@ public:
 	/**
 	 * @brief Destroys the condition variable, releasing the underlying kernel resource.
 	 */
-	~CondVar() {
+	~CondVar() noexcept {
 		if (!handle_) return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_condvar_deinit(handle_);

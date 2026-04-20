@@ -52,12 +52,21 @@ static int parse_url(const char *url, int *use_tls,
 
 	if (*host_end == ':') {
 		host_end++;
-		*port = (uint16_t)atoi(host_end);
-		while (*host_end && *host_end != '/')
-			host_end++;
+		char *endp = NULL;
+		unsigned long p = strtoul(host_end, &endp, 10);
+		if (endp == host_end || p == 0 || p > 65535)
+			return OVE_ERR_INVALID_PARAM;
+		*port = (uint16_t)p;
+		host_end = endp;
 	}
 
 	*path = (*host_end == '/') ? host_end : "/";
+
+	/* Bound path length so callers get a fast failure instead of a
+	 * silently-truncated request line. Most real paths fit in 256. */
+	if (strlen(*path) > 256)
+		return OVE_ERR_INVALID_PARAM;
+
 	return OVE_OK;
 }
 
@@ -209,10 +218,15 @@ int ove_http_request_ex(ove_http_client_t client,
 	if (use_tls) {
 		ret = ove_tls_init(&tls, &tls_storage);
 		if (ret != OVE_OK) goto cleanup_sock;
+		/* TODO: expose CA cert / mTLS knobs on the HTTP client so
+		 * callers can configure proper verification. Today the
+		 * client has no config surface, so we explicitly opt into
+		 * unverified TLS and emit a warning (see net_tls.h). */
 		ove_tls_config_t tls_cfg = {
 			.ca_cert = NULL,
 			.ca_cert_len = 0,
 			.hostname = c->host,
+			.allow_insecure = 1,
 		};
 		ret = ove_tls_handshake(tls, c->sock, &tls_cfg);
 		if (ret != OVE_OK) {
