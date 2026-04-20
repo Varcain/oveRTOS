@@ -285,6 +285,37 @@ def _find_west(ove_dir):
     return "west"
 
 
+def _ensure_lvgl(manifest, dl_dir, ws_dl_dir, zephyr_dir):
+    """Clone LVGL and wire up the workspace symlinks.
+
+    Called on both the fast (cache-hit) and slow paths. CI caches
+    dl/zephyr-workspace-<hash>/ but not dl/lvgl-<tag>/, so after a
+    cache restore the workspace contains a symlink at
+    modules/lib/gui/lvgl pointing to a non-existent target. That
+    leaves the LVGL module unregistered and LV_* Kconfig symbols
+    undefined, so we must re-clone and re-link every time.
+    """
+    lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
+    lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
+    lvgl_dest, _, _ = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
+    if not git_clone(lvgl_url, lvgl_tag, lvgl_dest, "LVGL"):
+        return False
+
+    # Replace bundled LVGL (from west update) with a symlink so all
+    # backends compile the same LVGL version. Zephyr's module glue
+    # under zephyr/modules/lvgl stays intact.
+    zephyr_lvgl = os.path.join(zephyr_dir, "modules", "lib", "gui", "lvgl")
+    os.makedirs(os.path.dirname(zephyr_lvgl), exist_ok=True)
+    if os.path.isdir(zephyr_lvgl) and not os.path.islink(zephyr_lvgl):
+        shutil.rmtree(zephyr_lvgl)
+    update_symlink(zephyr_lvgl, lvgl_dest)
+
+    if ws_dl_dir:
+        update_symlink(os.path.join(ws_dl_dir, "lvgl"), lvgl_dest)
+    update_symlink(os.path.join(dl_dir, "lvgl"), lvgl_dest)
+    return True
+
+
 def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
                     ove_dir=None, manifest=None):
     """Download Zephyr sources via west or local path."""
@@ -298,17 +329,7 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
         if os.path.isfile(west_done_marker):
             logger.info("Zephyr: workspace up to date")
             update_symlink(link, zephyr_dir)
-            # Ensure LVGL symlink exists even after clean-all
-            # (clean-all removes workspace dl/ contents but the global
-            # cache + marker file survive, so we re-enter here).
-            lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
-            lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
-            lvgl_dest, _, _ = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
-            if os.path.isdir(lvgl_dest):
-                if ws_dl_dir:
-                    update_symlink(os.path.join(ws_dl_dir, "lvgl"), lvgl_dest)
-                update_symlink(os.path.join(dl_dir, "lvgl"), lvgl_dest)
-            return True
+            return _ensure_lvgl(manifest, dl_dir, ws_dl_dir, zephyr_dir)
 
         west = _find_west(ove_dir or ".")
 
@@ -345,25 +366,8 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
             logger.error(f"west update failed: {ret.stderr}")
             return False
 
-        # Replace bundled LVGL with symlink to external LVGL source.
-        # Zephyr's module glue (zephyr/modules/lvgl/) stays intact; only
-        # the library source (modules/lib/gui/lvgl/) is redirected so all
-        # backends compile the same LVGL version.
-        lvgl_url = get_component(manifest, "libraries", "lvgl", "url")
-        lvgl_tag = get_component(manifest, "libraries", "lvgl", "version")
-        lvgl_dest, _, _ = hashed_dir(dl_dir, "lvgl", lvgl_tag, ws_dl_dir)
-        ok = git_clone(lvgl_url, lvgl_tag, lvgl_dest, "LVGL")
-
-        zephyr_lvgl = os.path.join(zephyr_dir, "modules", "lib", "gui",
-                                   "lvgl")
-        if os.path.isdir(zephyr_lvgl) and not os.path.islink(zephyr_lvgl):
-            shutil.rmtree(zephyr_lvgl)
-        update_symlink(zephyr_lvgl, lvgl_dest)
-
-        # Workspace and global LVGL symlinks
-        if ws_dl_dir:
-            update_symlink(os.path.join(ws_dl_dir, "lvgl"), lvgl_dest)
-        update_symlink(os.path.join(dl_dir, "lvgl"), lvgl_dest)
+        if not _ensure_lvgl(manifest, dl_dir, ws_dl_dir, zephyr_dir):
+            return False
 
         # Mark as complete
         with open(west_done_marker, "w") as f:
@@ -371,7 +375,7 @@ def download_zephyr(config, dl_dir, build_dir, ws_dl_dir=None,
 
         update_symlink(link, zephyr_dir)
         logger.info("Zephyr: workspace ready")
-        return ok
+        return True
 
     elif get_bool(config, "CONFIG_ZEPHYR_SOURCE_LOCAL"):
         path = get_str(config, "CONFIG_ZEPHYR_LOCAL_PATH")
