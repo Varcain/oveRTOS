@@ -165,7 +165,9 @@ test: $(VENV_STAMP)
 TEST_NAMES := stub cpp rust zig nuttx zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
               qemu-nuttx qemu-nuttx-zeroheap \
-              qemu-zephyr qemu-zephyr-zeroheap all
+              qemu-zephyr qemu-zephyr-zeroheap all \
+              rust-coverage zig-coverage nuttx-coverage zephyr-coverage \
+              qemu-freertos-coverage qemu-nuttx-coverage qemu-zephyr-coverage
 .PHONY: $(addprefix test-,$(TEST_NAMES))
 $(addprefix test-,$(TEST_NAMES)): test-%: $(VENV_STAMP)
 	@$(OVE) test $* $(if $(filter 1,$(JSON)),--json)
@@ -241,17 +243,29 @@ coverage: $(VENV_STAMP)
 	@if [ "$(WITH_QEMU_FREERTOS)" = "1" ]; then $(OVE) test qemu-freertos-coverage; fi
 	@if [ "$(WITH_QEMU_NUTTX)" = "1" ];    then $(OVE) test qemu-nuttx-coverage;    fi
 	@if [ "$(WITH_QEMU_ZEPHYR)" = "1" ];   then $(OVE) test qemu-zephyr-coverage;   fi
+	@$(MAKE) --no-print-directory coverage-merge
+
+# Final lcov-merge + genhtml + summary, factored out so CI can invoke it
+# after downloading per-backend .filtered.info artifacts. Skips any
+# tracefile that isn't present — lets the merge produce a partial report
+# when a backend job fails upstream.
+.PHONY: coverage-merge
+coverage-merge:
+	@command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1 || { \
+		echo "ERROR: lcov/genhtml not found (Ubuntu/Debian: sudo apt install lcov)"; \
+		exit 1; \
+	}
 	@mkdir -p $(COVERAGE_OUTPUT_DIR)
 	@lcov \
-		--add-tracefile $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info \
-		--add-tracefile $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info \
-		--add-tracefile $(COVERAGE_RUST_DIR)/coverage.filtered.info \
-		$(if $(filter 1,$(WITH_ZEPHYR)),--add-tracefile $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info) \
-		$(if $(filter 1,$(WITH_NUTTX)),--add-tracefile $(COVERAGE_NUTTX_DIR)/coverage.filtered.info) \
-		$(if $(filter 1,$(WITH_ZIG)),--add-tracefile $(COVERAGE_ZIG_DIR)/coverage.filtered.info) \
-		$(if $(filter 1,$(WITH_QEMU_FREERTOS)),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info) \
-		$(if $(filter 1,$(WITH_QEMU_NUTTX)),--add-tracefile $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info) \
-		$(if $(filter 1,$(WITH_QEMU_ZEPHYR)),--add-tracefile $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info) \
+		$(if $(wildcard $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info) \
+		$(if $(wildcard $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info),--add-tracefile $(COVERAGE_CPP_DIR)/coverage/coverage.filtered.info) \
+		$(if $(wildcard $(COVERAGE_RUST_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_RUST_DIR)/coverage.filtered.info) \
+		$(if $(filter 1,$(WITH_ZEPHYR)),$(if $(wildcard $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_NUTTX)),$(if $(wildcard $(COVERAGE_NUTTX_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_NUTTX_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_ZIG)),$(if $(wildcard $(COVERAGE_ZIG_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_ZIG_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_QEMU_FREERTOS)),$(if $(wildcard $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_QEMU_NUTTX)),$(if $(wildcard $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info)) \
+		$(if $(filter 1,$(WITH_QEMU_ZEPHYR)),$(if $(wildcard $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info),--add-tracefile $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info)) \
 		--rc branch_coverage=1 \
 		--output-file   $(COVERAGE_OUTPUT_DIR)/coverage.info \
 		--ignore-errors inconsistent,format,empty
@@ -264,28 +278,6 @@ coverage: $(VENV_STAMP)
 		--ignore-errors inconsistent,format,empty || true
 	@echo ""
 	@echo "Combined coverage report: $(COVERAGE_OUTPUT_DIR)/html/index.html"
-	@echo "Per-backend reports:"
-	@echo "  stub:   $(COVERAGE_STUB_DIR)/coverage/html/index.html"
-	@echo "  cpp:    $(COVERAGE_CPP_DIR)/coverage/html/index.html"
-	@echo "  rust:   $(COVERAGE_RUST_DIR)/coverage.filtered.info (lcov tracefile)"
-	@if [ "$(WITH_ZEPHYR)" = "1" ]; then \
-		echo "  zephyr: $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info (lcov tracefile)"; \
-	fi
-	@if [ "$(WITH_NUTTX)" = "1" ]; then \
-		echo "  nuttx:  $(COVERAGE_NUTTX_DIR)/coverage.filtered.info (lcov tracefile)"; \
-	fi
-	@if [ "$(WITH_ZIG)" = "1" ]; then \
-		echo "  zig:    $(COVERAGE_ZIG_DIR)/coverage.filtered.info (lcov tracefile)"; \
-	fi
-	@if [ "$(WITH_QEMU_FREERTOS)" = "1" ]; then \
-		echo "  qemu-freertos: $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info (lcov tracefile)"; \
-	fi
-	@if [ "$(WITH_QEMU_NUTTX)" = "1" ]; then \
-		echo "  qemu-nuttx:    $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info (lcov tracefile)"; \
-	fi
-	@if [ "$(WITH_QEMU_ZEPHYR)" = "1" ]; then \
-		echo "  qemu-zephyr:   $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info (lcov tracefile)"; \
-	fi
 
 # ── Quality / CI ──────────────────────────────────────────────────────────
 

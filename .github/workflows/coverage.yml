@@ -1,0 +1,345 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  stub-coverage:
+    name: Stub Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
+
+      - name: Run coverage
+        run: |
+          cmake -S tests -B output/tests/stub_coverage -DOVE_TEST_BUILD_COVERAGE=ON
+          cmake --build output/tests/stub_coverage --target coverage -j$(nproc)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-stub
+          path: output/tests/stub_coverage/coverage/coverage.filtered.info
+          retention-days: 7
+
+  cpp-coverage:
+    name: C++ Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
+
+      - name: Run coverage
+        run: |
+          cmake -S tests/cpp -B output/tests/cpp_coverage -DOVE_TEST_BUILD_COVERAGE=ON
+          cmake --build output/tests/cpp_coverage --target coverage -j$(nproc)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-cpp
+          path: output/tests/cpp_coverage/coverage/coverage.filtered.info
+          retention-days: 7
+
+  rust-coverage:
+    name: Rust Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev lcov
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Run coverage
+        run: make test-rust-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-rust
+          path: output/tests/rust_coverage/coverage.filtered.info
+          retention-days: 7
+
+  zig-coverage:
+    name: Zig Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential xz-utils lcov \
+            libcurl4-openssl-dev libelf-dev libdw-dev libiberty-dev binutils-dev
+
+      - name: Run coverage
+        run: make test-zig-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-zig
+          path: output/tests/zig_coverage/coverage.filtered.info
+          retention-days: 7
+
+  nuttx-sim-coverage:
+    name: NuttX Simulator Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake build-essential \
+            gperf genromfs xxd python3-pip python3-venv lcov
+
+      - name: Run coverage
+        run: timeout 600 make test-nuttx-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-nuttx
+          path: output/tests/nuttx_coverage/coverage.filtered.info
+          retention-days: 7
+
+  zephyr-sim-coverage:
+    name: Zephyr native_sim Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake build-essential ninja-build \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file lcov
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['rtos']['zephyr']['version'])")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Run coverage
+        run: timeout 900 make test-zephyr-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-zephyr
+          path: output/tests/zephyr_coverage/coverage.filtered.info
+          retention-days: 7
+
+  qemu-freertos-coverage:
+    name: QEMU FreeRTOS Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi lcov
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      - name: Run coverage
+        run: timeout 900 make test-qemu-freertos-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-qemu-freertos
+          path: output/tests/qemu_freertos_coverage/coverage.filtered.info
+          retention-days: 7
+
+  qemu-nuttx-coverage:
+    name: QEMU NuttX Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            gperf genromfs xxd python3-pip python3-venv lcov
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      - name: Run coverage
+        run: timeout 1200 make test-qemu-nuttx-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-qemu-nuttx
+          path: output/tests/qemu_nuttx_coverage/coverage.filtered.info
+          retention-days: 7
+
+  qemu-zephyr-coverage:
+    name: QEMU Zephyr Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential ninja-build qemu-system-arm \
+            python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
+            wget xz-utils file lcov
+
+      - name: Install Zephyr SDK
+        run: |
+          SDK_VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['toolchains']['zephyr-sdk']['version'])")
+          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
+          tar xf "zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz" -C $HOME
+          "$HOME/zephyr-sdk-${SDK_VERSION}/setup.sh" -t arm-zephyr-eabi -c
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['rtos']['zephyr']['version'])")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-qemu-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Run coverage
+        run: timeout 900 make test-qemu-zephyr-coverage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cov-qemu-zephyr
+          path: output/tests/qemu_zephyr_coverage/coverage.filtered.info
+          retention-days: 7
+
+  merge:
+    name: Merge & Report
+    runs-on: ubuntu-latest
+    # Produce a partial report even if a backend is red — the merge step
+    # skips missing tracefiles, so a single-job failure doesn't blank the
+    # whole report.
+    if: always()
+    needs:
+      - stub-coverage
+      - cpp-coverage
+      - rust-coverage
+      - zig-coverage
+      - nuttx-sim-coverage
+      - zephyr-sim-coverage
+      - qemu-freertos-coverage
+      - qemu-nuttx-coverage
+      - qemu-zephyr-coverage
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cov-*
+          path: cov-artifacts
+
+      - name: Stage tracefiles where the Makefile expects them
+        run: |
+          set -eux
+          mkdir -p output/tests/stub_coverage/coverage \
+                   output/tests/cpp_coverage/coverage \
+                   output/tests/rust_coverage \
+                   output/tests/zig_coverage \
+                   output/tests/nuttx_coverage \
+                   output/tests/zephyr_coverage \
+                   output/tests/qemu_freertos_coverage \
+                   output/tests/qemu_nuttx_coverage \
+                   output/tests/qemu_zephyr_coverage
+          cp -n cov-artifacts/cov-stub/coverage.filtered.info          output/tests/stub_coverage/coverage/          2>/dev/null || true
+          cp -n cov-artifacts/cov-cpp/coverage.filtered.info           output/tests/cpp_coverage/coverage/           2>/dev/null || true
+          cp -n cov-artifacts/cov-rust/coverage.filtered.info          output/tests/rust_coverage/                   2>/dev/null || true
+          cp -n cov-artifacts/cov-zig/coverage.filtered.info           output/tests/zig_coverage/                    2>/dev/null || true
+          cp -n cov-artifacts/cov-nuttx/coverage.filtered.info         output/tests/nuttx_coverage/                  2>/dev/null || true
+          cp -n cov-artifacts/cov-zephyr/coverage.filtered.info        output/tests/zephyr_coverage/                 2>/dev/null || true
+          cp -n cov-artifacts/cov-qemu-freertos/coverage.filtered.info output/tests/qemu_freertos_coverage/          2>/dev/null || true
+          cp -n cov-artifacts/cov-qemu-nuttx/coverage.filtered.info    output/tests/qemu_nuttx_coverage/             2>/dev/null || true
+          cp -n cov-artifacts/cov-qemu-zephyr/coverage.filtered.info   output/tests/qemu_zephyr_coverage/            2>/dev/null || true
+
+      - name: Merge tracefiles and generate HTML
+        run: make coverage-merge
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: output/tests/coverage/html
+          retention-days: 30
+
+      - name: Extract line coverage percentage
+        id: cov
+        run: |
+          PCT=$(lcov --summary output/tests/coverage/coverage.info --rc branch_coverage=1 2>&1 \
+                | grep -oP 'lines\.+\s*:\s*\K[0-9.]+' | head -1)
+          echo "pct=${PCT}" >> "$GITHUB_OUTPUT"
+          echo "Line coverage: ${PCT}%"
+
+      # Badge updates only on main push — PR runs leave the headline number alone.
+      # Skipped gracefully if any upstream backend failed (so a regressed job
+      # doesn't freeze a wrong, partial number onto the badge).
+      - name: Update coverage badge (main only)
+        if: >
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          !contains(needs.*.result, 'failure') &&
+          !contains(needs.*.result, 'cancelled')
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_PAT }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: overtos-coverage.json
+          label: coverage
+          message: ${{ steps.cov.outputs.pct }}%
+          valColorRange: ${{ steps.cov.outputs.pct }}
+          minColorRange: 50
+          maxColorRange: 90
