@@ -33,6 +33,7 @@ pub mod gpio;
 pub mod led;
 #[cfg(has_console)]
 pub mod console;
+#[cfg(feature = "bench")]
 pub mod bench;
 pub mod cell;
 pub mod error;

@@ -221,6 +221,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_http.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_MQTT") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_mqtt.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_mqtt_topic.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_NET_HTTPD") == True %}
 # Bundle dashboard assets (gzip + xxd → C header) before compiling routes

@@ -8,7 +8,7 @@ rust-version = "1.85"
 crate-type = ["staticlib"]
 
 [dependencies]
-ove = { path = "../../../bindings/rust/ove" }
+ove = { path = "../../../bindings/rust/ove", features = ["bench"] }
 
 [features]
 default = []
