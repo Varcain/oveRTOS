@@ -178,38 +178,47 @@ asan: $(VENV_STAMP)
 	@cmake --build $(ASAN_BUILD_DIR) --target ove_test_stub_asan -j$$(nproc)
 	@$(ASAN_BUILD_DIR)/ove_test_stub_asan
 
-COVERAGE_OUTPUT_DIR  := $(OVE_DIR)/output/tests/coverage
-COVERAGE_STUB_DIR    := $(OVE_DIR)/output/tests/stub_coverage
-COVERAGE_CPP_DIR     := $(OVE_DIR)/output/tests/cpp_coverage
-COVERAGE_RUST_DIR    := $(OVE_DIR)/output/tests/rust_coverage
-COVERAGE_ZEPHYR_DIR  := $(OVE_DIR)/output/tests/zephyr_coverage
-COVERAGE_NUTTX_DIR   := $(OVE_DIR)/output/tests/nuttx_coverage
-COVERAGE_ZIG_DIR     := $(OVE_DIR)/output/tests/zig_coverage
+COVERAGE_OUTPUT_DIR         := $(OVE_DIR)/output/tests/coverage
+COVERAGE_STUB_DIR           := $(OVE_DIR)/output/tests/stub_coverage
+COVERAGE_CPP_DIR            := $(OVE_DIR)/output/tests/cpp_coverage
+COVERAGE_RUST_DIR           := $(OVE_DIR)/output/tests/rust_coverage
+COVERAGE_ZEPHYR_DIR         := $(OVE_DIR)/output/tests/zephyr_coverage
+COVERAGE_NUTTX_DIR          := $(OVE_DIR)/output/tests/nuttx_coverage
+COVERAGE_ZIG_DIR            := $(OVE_DIR)/output/tests/zig_coverage
+COVERAGE_QEMU_FREERTOS_DIR  := $(OVE_DIR)/output/tests/qemu_freertos_coverage
+COVERAGE_QEMU_NUTTX_DIR     := $(OVE_DIR)/output/tests/qemu_nuttx_coverage
+COVERAGE_QEMU_ZEPHYR_DIR    := $(OVE_DIR)/output/tests/qemu_zephyr_coverage
 
 # Each backend emits a filtered lcov tracefile; the top-level `coverage`
 # target merges them into one combined HTML report so the headline number
 # reflects every test target, not just the C stub suites.
 #
-#   `make coverage`                         — fast host-only pass (stub + cpp + rust)
-#   `make coverage WITH_ZEPHYR=1`           — also include Zephyr native_sim
-#   `make coverage WITH_NUTTX=1`            — also include NuttX sim
-#   `make coverage WITH_ZIG=1`              — also include Zig (kcov)
-#   `make coverage WITH_ZEPHYR=1 WITH_NUTTX=1 WITH_ZIG=1` — all instrumented
+#   `make coverage`                                        — everything instrumented (default)
+#   `make coverage WITH_QEMU_FREERTOS=0 WITH_QEMU_NUTTX=0 \
+#     WITH_QEMU_ZEPHYR=0 WITH_ZEPHYR=0 WITH_NUTTX=0 \
+#     WITH_ZIG=0`                                          — host-only (stub + cpp + rust, fastest)
 #
 # Backends already wired:
-#   - stub (C / gcc / gcov)     via tests/CMakeLists.txt
-#   - cpp  (C++ / g++ / gcov)   via tests/cpp/CMakeLists.txt
-#   - rust (LLVM src-based)     via `ove test rust-coverage`
-#   - zephyr native_sim (gcov)  via `ove test zephyr-coverage` (opt-in)
-#   - nuttx sim (gcov)          via `ove test nuttx-coverage`   (opt-in)
-#   - zig   (kcov/DWARF)        via `ove test zig-coverage`     (opt-in;
+#   - stub (C / gcc / gcov)             via tests/CMakeLists.txt
+#   - cpp  (C++ / g++ / gcov)           via tests/cpp/CMakeLists.txt
+#   - rust (LLVM src-based)             via `ove test rust-coverage`
+#   - zephyr native_sim (gcov)          via `ove test zephyr-coverage`        (opt-in)
+#   - nuttx sim (gcov)                  via `ove test nuttx-coverage`         (opt-in)
+#   - zig   (kcov/DWARF)                via `ove test zig-coverage`           (opt-in;
 #             kcov built locally from manifest, see _ensure_kcov in test.py)
-#
-# Known follow-ups (not yet wired):
-#   - QEMU targets (freertos/nuttx/zephyr) need a semihosting .gcda dumper
-WITH_ZEPHYR ?= 0
-WITH_NUTTX  ?= 0
-WITH_ZIG    ?= 0
+#   - freertos QEMU (arm-none-eabi-gcov) via `ove test qemu-freertos-coverage` (opt-in)
+#   - nuttx    QEMU (arm-none-eabi-gcov) via `ove test qemu-nuttx-coverage`    (opt-in)
+#   - zephyr   QEMU (arm-zephyr-eabi-gcov, from Zephyr SDK) via
+#             `ove test qemu-zephyr-coverage` (opt-in)
+# Every instrumented backend runs by default so the headline coverage
+# number reflects the full test matrix. Opt out per-backend with e.g.
+# `make coverage WITH_QEMU_FREERTOS=0` when you need a faster pass.
+WITH_ZEPHYR         ?= 1
+WITH_NUTTX          ?= 1
+WITH_ZIG            ?= 1
+WITH_QEMU_FREERTOS  ?= 1
+WITH_QEMU_NUTTX     ?= 1
+WITH_QEMU_ZEPHYR    ?= 1
 
 .PHONY: coverage
 coverage: $(VENV_STAMP)
@@ -226,9 +235,12 @@ coverage: $(VENV_STAMP)
 	@cmake -S $(OVE_DIR)/tests/cpp -B $(COVERAGE_CPP_DIR)  -DOVE_TEST_BUILD_COVERAGE=ON
 	@cmake --build $(COVERAGE_CPP_DIR)  --target coverage -j$$(nproc)
 	@$(OVE) test rust-coverage
-	@if [ "$(WITH_ZEPHYR)" = "1" ]; then $(OVE) test zephyr-coverage; fi
-	@if [ "$(WITH_NUTTX)" = "1" ];  then $(OVE) test nuttx-coverage;  fi
-	@if [ "$(WITH_ZIG)" = "1" ];    then $(OVE) test zig-coverage;    fi
+	@if [ "$(WITH_ZEPHYR)" = "1" ];        then $(OVE) test zephyr-coverage;        fi
+	@if [ "$(WITH_NUTTX)" = "1" ];         then $(OVE) test nuttx-coverage;         fi
+	@if [ "$(WITH_ZIG)" = "1" ];           then $(OVE) test zig-coverage;           fi
+	@if [ "$(WITH_QEMU_FREERTOS)" = "1" ]; then $(OVE) test qemu-freertos-coverage; fi
+	@if [ "$(WITH_QEMU_NUTTX)" = "1" ];    then $(OVE) test qemu-nuttx-coverage;    fi
+	@if [ "$(WITH_QEMU_ZEPHYR)" = "1" ];   then $(OVE) test qemu-zephyr-coverage;   fi
 	@mkdir -p $(COVERAGE_OUTPUT_DIR)
 	@lcov \
 		--add-tracefile $(COVERAGE_STUB_DIR)/coverage/coverage.filtered.info \
@@ -237,12 +249,18 @@ coverage: $(VENV_STAMP)
 		$(if $(filter 1,$(WITH_ZEPHYR)),--add-tracefile $(COVERAGE_ZEPHYR_DIR)/coverage.filtered.info) \
 		$(if $(filter 1,$(WITH_NUTTX)),--add-tracefile $(COVERAGE_NUTTX_DIR)/coverage.filtered.info) \
 		$(if $(filter 1,$(WITH_ZIG)),--add-tracefile $(COVERAGE_ZIG_DIR)/coverage.filtered.info) \
+		$(if $(filter 1,$(WITH_QEMU_FREERTOS)),--add-tracefile $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info) \
+		$(if $(filter 1,$(WITH_QEMU_NUTTX)),--add-tracefile $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info) \
+		$(if $(filter 1,$(WITH_QEMU_ZEPHYR)),--add-tracefile $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info) \
+		--rc branch_coverage=1 \
 		--output-file   $(COVERAGE_OUTPUT_DIR)/coverage.info \
 		--ignore-errors inconsistent,format,empty
 	@genhtml $(COVERAGE_OUTPUT_DIR)/coverage.info \
+		--branch-coverage \
 		--output-directory $(COVERAGE_OUTPUT_DIR)/html \
 		--ignore-errors source,mismatch
 	@lcov --summary $(COVERAGE_OUTPUT_DIR)/coverage.info \
+		--rc branch_coverage=1 \
 		--ignore-errors inconsistent,format,empty || true
 	@echo ""
 	@echo "Combined coverage report: $(COVERAGE_OUTPUT_DIR)/html/index.html"
@@ -258,6 +276,15 @@ coverage: $(VENV_STAMP)
 	fi
 	@if [ "$(WITH_ZIG)" = "1" ]; then \
 		echo "  zig:    $(COVERAGE_ZIG_DIR)/coverage.filtered.info (lcov tracefile)"; \
+	fi
+	@if [ "$(WITH_QEMU_FREERTOS)" = "1" ]; then \
+		echo "  qemu-freertos: $(COVERAGE_QEMU_FREERTOS_DIR)/coverage.filtered.info (lcov tracefile)"; \
+	fi
+	@if [ "$(WITH_QEMU_NUTTX)" = "1" ]; then \
+		echo "  qemu-nuttx:    $(COVERAGE_QEMU_NUTTX_DIR)/coverage.filtered.info (lcov tracefile)"; \
+	fi
+	@if [ "$(WITH_QEMU_ZEPHYR)" = "1" ]; then \
+		echo "  qemu-zephyr:   $(COVERAGE_QEMU_ZEPHYR_DIR)/coverage.filtered.info (lcov tracefile)"; \
 	fi
 
 # ── Quality / CI ──────────────────────────────────────────────────────────

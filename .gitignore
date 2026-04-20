@@ -9,6 +9,8 @@
 *.lst
 *.gcno
 *.gcda
+*.profraw
+default.profdata
 
 # Build directories
 build/

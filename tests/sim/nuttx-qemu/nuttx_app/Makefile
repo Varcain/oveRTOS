@@ -106,13 +106,13 @@ CFLAGS += -Wno-unused-parameter
 CFLAGS += -Wno-missing-field-initializers
 
 # Coverage — opted in via `OVE_COVERAGE=1 make ...` (set by the test CLI's
-# test_nuttx_coverage path). gcov writes .gcda next to the .o files, which
-# means they scatter through the oveRTOS source tree alongside the existing
-# scattered .o artifacts; the CLI cleans those up around each coverage run.
+# test_nuttx_coverage path). We only instrument app-side .c files here;
+# libgcov.a is pulled into the final kernel link by NuttX's own
+# CONFIG_COVERAGE_TOOLCHAIN=y (set via nuttx_test_coverage_defconfig).
+# Don't add --coverage to LDFLAGS / -lgcov to LDLIBS — those only affect
+# the app archive stage and would risk pulling the wrong multilib libgcov.
 ifeq ($(OVE_COVERAGE),1)
-CFLAGS  += --coverage -DOVE_COVERAGE=1
-LDFLAGS += --coverage
-LDLIBS  += -lgcov
+CFLAGS  += --coverage -fprofile-abs-path -DOVE_COVERAGE=1
 endif
 
 # KNOWN WART: NuttX's Application.mk emits per-source object files in the

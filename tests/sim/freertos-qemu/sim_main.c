@@ -15,6 +15,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef OVE_COVERAGE
+extern void __gcov_dump(void);
+#endif
+
 extern void xPortSysTickHandler(void);
 
 /* Stub — tests exercise ove_app module without a real app entry point */
@@ -38,6 +42,9 @@ static void test_runner_task(void *arg)
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 
+#ifdef OVE_COVERAGE
+	__gcov_dump();
+#endif
 	semihosting_exit(failures ? 1 : 0);
 }
 

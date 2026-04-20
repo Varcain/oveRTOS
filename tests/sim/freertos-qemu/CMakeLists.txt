@@ -142,6 +142,28 @@ add_executable(ove_test_freertos_qemu
 
 target_compile_definitions(ove_test_freertos_qemu PRIVATE OVE_QEMU_ARM)
 
+# Coverage — opted in via -DOVE_TEST_BUILD_COVERAGE=ON (set by the CLI's
+# test_qemu_freertos_coverage path). We only instrument oveRTOS code and
+# the test suites; skip CMocka, FreeRTOS kernel, startup ASM, and syscalls
+# to keep the report focused and avoid instrumenting code that can't run
+# coverage counters before main (startup ASM) or is upstream (kernel).
+# -fprofile-abs-path ensures .gcda filenames embed absolute paths so
+# libgcov's rdimon-semihosting fopen writes them where lcov expects.
+option(OVE_TEST_BUILD_COVERAGE "Enable gcov coverage instrumentation" OFF)
+if(OVE_TEST_BUILD_COVERAGE)
+    target_compile_definitions(ove_test_freertos_qemu PRIVATE OVE_COVERAGE=1)
+    set(COVERAGE_SOURCES
+        ${FREERTOS_BACKEND_SOURCES}
+        ${CORE_SOURCES}
+        ${STUB_SOURCES}
+        ${SUITE_SOURCES}
+        ${CMAKE_CURRENT_SOURCE_DIR}/sim_main.c
+    )
+    set_source_files_properties(${COVERAGE_SOURCES} PROPERTIES
+        COMPILE_OPTIONS "--coverage;-fprofile-abs-path")
+    target_link_options(ove_test_freertos_qemu PRIVATE --coverage)
+endif()
+
 target_include_directories(ove_test_freertos_qemu PRIVATE
     # FreeRTOSConfig.h and ove_config.h live here
     ${CMAKE_CURRENT_SOURCE_DIR}
