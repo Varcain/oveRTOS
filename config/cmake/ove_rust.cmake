@@ -51,6 +51,20 @@ function(ove_build_rust_crate TARGET)
         if(NOT DEFINED OVE_RUST_TARGET)
             set(OVE_RUST_TARGET "thumbv7em-none-eabihf")
         endif()
+        # Align float ABI with the RTOS kernel. Zephyr on QEMU and NuttX
+        # with CONFIG_ARCH_FPU disabled both use soft float; linking a
+        # hard-float Rust staticlib against them raises ld's "uses VFP
+        # register arguments" error.
+        if(OVE_RUST_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
+            if(NOT CONFIG_FPU OR NOT CONFIG_FP_HARDABI)
+                string(REGEX REPLACE "eabihf$" "eabi" OVE_RUST_TARGET "${OVE_RUST_TARGET}")
+            endif()
+        endif()
+        if(OVE_RUST_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
+            if(NOT CONFIG_ARCH_FPU)
+                string(REGEX REPLACE "eabihf$" "eabi" OVE_RUST_TARGET "${OVE_RUST_TARGET}")
+            endif()
+        endif()
         set(RUST_LIB_DIR "${CARGO_TARGET_DIR}/${OVE_RUST_TARGET}/release")
         set(RUST_TARGET_ARGS "--target;${OVE_RUST_TARGET}")
     endif()

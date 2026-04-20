@@ -258,6 +258,26 @@ def build_zephyr(ws):
     _create_run_or_flash_script(ws, rtos="zephyr")
 
 
+def _stage_nuttx_tree(src, dest, label):
+    """Copy src → dest once, gated by a stamp file.
+
+    copytree is not atomic: an interrupted copy leaves a partial tree
+    whose presence fools a plain isdir() check on the next run. The
+    stamp file is only written after copytree returns, so any earlier
+    abort forces a full re-copy.
+    """
+    stamp = os.path.join(dest, ".ove_stage_complete")
+    if os.path.exists(stamp):
+        return
+    if os.path.isdir(dest):
+        logger.debug("Removing partial %s tree at %s", label, dest)
+        shutil.rmtree(dest)
+    logger.debug("Copying %s to build tree...", label)
+    shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
+    with open(stamp, "w") as f:
+        f.write("staged\n")
+
+
 def _setup_nuttx_build_tree(ws, env, log_file=None):
     """Copy NuttX sources, apply patches, and set up external CMake app.
 
@@ -268,15 +288,15 @@ def _setup_nuttx_build_tree(ws, env, log_file=None):
     nuttx_src = os.path.join(ws.build_dir, "nuttx")
     apps_build = os.path.join(ws.build_dir, "nuttx-apps")
 
-    # Copy sources to build tree (keeps dl/ pristine)
-    if not os.path.isdir(nuttx_src):
-        logger.debug("Copying NuttX sources to build tree...")
-        shutil.copytree(os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_src,
-                        symlinks=True, dirs_exist_ok=True)
-    if not os.path.isdir(apps_build):
-        logger.debug("Copying NuttX apps to build tree...")
-        shutil.copytree(os.path.join(ws.ws_dl_dir, "nuttx-apps"), apps_build,
-                        symlinks=True, dirs_exist_ok=True)
+    # Copy sources to build tree (keeps dl/ pristine).
+    # A stamp file gates re-copy: a bare isdir() check can accept a
+    # partial tree left over from an interrupted copytree, causing
+    # later builds to fail with "No config file found" when the
+    # missing subtree (e.g. boards/arm/stm32f7) was never staged.
+    _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx"), nuttx_src,
+                      label="NuttX sources")
+    _stage_nuttx_tree(os.path.join(ws.ws_dl_dir, "nuttx-apps"), apps_build,
+                      label="NuttX apps")
 
     # Apply board patches, then app patches (app patches last)
     patches_stamp = os.path.join(nuttx_src, ".ove_patches_applied")

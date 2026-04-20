@@ -83,6 +83,14 @@ function(ove_build_zig_lib TARGET)
                 string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
             endif()
         endif()
+        # NuttX: align with CONFIG_ARCH_FPU (soft float unless the kernel
+        # opts in). Mismatched ABIs cause ld "uses VFP register arguments"
+        # errors against the soft-float NuttX libraries.
+        if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "nuttx")
+            if(NOT CONFIG_ARCH_FPU)
+                string(REGEX REPLACE "eabihf$" "eabi" OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
+            endif()
+        endif()
         list(APPEND ZIG_TARGET_ARGS "-target" "${OVE_ZIG_TARGET}")
 
         # Map MCU to Zig CPU model
