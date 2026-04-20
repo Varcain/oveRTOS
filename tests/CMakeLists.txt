@@ -29,8 +29,9 @@ set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 set(OVE_INCLUDE ${OVE_ROOT}/include)
 set(OVE_SRC ${OVE_ROOT}/src)
 
-# Include test helper
+# Include test helpers
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveTest.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveCoverage.cmake)
 
 # Stub backend sources (direct-linked, no dispatcher layer)
 set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
@@ -172,29 +173,5 @@ endif()
 
 # --- Coverage report ---
 if(OVE_TEST_BUILD_COVERAGE)
-    find_program(LCOV_BIN lcov)
-    find_program(GENHTML_BIN genhtml)
-    if(LCOV_BIN AND GENHTML_BIN)
-        set(OVE_TEST_COVERAGE_DIR ${CMAKE_BINARY_DIR}/coverage)
-        add_custom_target(coverage
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${OVE_TEST_COVERAGE_DIR}
-            COMMAND ${LCOV_BIN} --directory ${CMAKE_BINARY_DIR} --zerocounters
-            COMMAND $<TARGET_FILE:ove_test_stub_coverage>
-            COMMAND ${LCOV_BIN} --directory ${CMAKE_BINARY_DIR}
-                    --capture --output-file ${OVE_TEST_COVERAGE_DIR}/coverage.info
-                    --ignore-errors mismatch,gcov,source
-            COMMAND ${LCOV_BIN} --remove ${OVE_TEST_COVERAGE_DIR}/coverage.info
-                    "'/usr/*'" "'*/_deps/*'" "'*/tests/*'"
-                    --output-file ${OVE_TEST_COVERAGE_DIR}/coverage.filtered.info
-                    --ignore-errors unused
-            COMMAND ${GENHTML_BIN} ${OVE_TEST_COVERAGE_DIR}/coverage.filtered.info
-                    --output-directory ${OVE_TEST_COVERAGE_DIR}/html
-                    --ignore-errors source,mismatch
-            DEPENDS ove_test_stub_coverage
-            COMMENT "Running tests under gcov and producing HTML report"
-            USES_TERMINAL
-        )
-    else()
-        message(STATUS "lcov/genhtml not found — `coverage` target disabled")
-    endif()
+    ove_test_coverage_report(stub ove_test_stub_coverage)
 endif()

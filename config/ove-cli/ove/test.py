@@ -102,6 +102,109 @@ def _cmake_build(src_dir, build_dir, extra_args=None):
     run([cmake, "--build", build_dir, f"-j{nproc()}"])
 
 
+def _ensure_kcov(ove_dir):
+    """Ensure kcov is built locally, return path to its binary.
+
+    Pinned to `libraries.kcov.version` in manifest.yaml. Source is cloned
+    into `dl/kcov-<tag>` and installed under `output/tools/kcov-<tag>/`.
+    Before invoking cmake we preflight the Ubuntu-side build deps and,
+    if any are missing, print the exact apt-get one-liner and exit.
+    """
+    manifest = load_manifest(ove_dir)
+    kcov_version = get_component(manifest, "libraries", "kcov", "version")
+    kcov_url = get_component(manifest, "libraries", "kcov", "url")
+    if not kcov_version or not kcov_url:
+        logger.error("manifest.yaml missing libraries.kcov entry")
+        sys.exit(1)
+
+    install_dir = os.path.join(ove_dir, "output", "tools",
+                               f"kcov-{kcov_version}")
+    kcov_bin = os.path.join(install_dir, "bin", "kcov")
+    if os.path.isfile(kcov_bin):
+        return kcov_bin
+
+    # Preflight: check required deps + tools. Keyed by Ubuntu package.
+    # We check pkg-config first (authoritative on multi-arch layouts like
+    # /usr/include/x86_64-linux-gnu/) and fall back to direct header paths
+    # for packages that don't ship a .pc file (binutils-dev, libiberty-dev).
+    required_tools = {
+        "cmake":           "cmake",
+        "pkg-config":      "pkg-config",
+        "build-essential": "g++",
+    }
+    missing_pkgs = []
+    for pkg, tool in required_tools.items():
+        if shutil.which(tool) is None:
+            missing_pkgs.append(pkg)
+
+    pc = shutil.which("pkg-config")
+
+    def _has_pc(module):
+        if not pc:
+            return False
+        return subprocess.run([pc, "--exists", module]).returncode == 0
+
+    def _has_header(name):
+        # Try standard /usr/include first, then multi-arch /usr/include/<triplet>/.
+        if os.path.isfile(f"/usr/include/{name}"):
+            return True
+        import glob as _glob
+        return bool(_glob.glob(f"/usr/include/*-linux-*/{name}"))
+
+    required_pkgconfig = {
+        "libssl-dev":           "openssl",
+        "libcurl4-openssl-dev": "libcurl",
+        "libelf-dev":           "libelf",
+        "zlib1g-dev":           "zlib",
+        "libdw-dev":            "libdw",
+    }
+    for pkg, mod in required_pkgconfig.items():
+        if not _has_pc(mod):
+            missing_pkgs.append(pkg)
+
+    required_headers = {
+        "binutils-dev":  "bfd.h",
+        "libiberty-dev": "libiberty/demangle.h",
+    }
+    for pkg, hdr in required_headers.items():
+        if not _has_header(hdr):
+            missing_pkgs.append(pkg)
+
+    if missing_pkgs:
+        apt_line = "sudo apt-get install -y " + " ".join(missing_pkgs)
+        logger.error("kcov build requires packages not present on this host:")
+        for pkg in missing_pkgs:
+            logger.error("  - %s", pkg)
+        logger.error("")
+        logger.error("Install with:")
+        logger.error("  %s", apt_line)
+        sys.exit(1)
+
+    dl_dir = os.path.join(ove_dir, "dl")
+    os.makedirs(dl_dir, exist_ok=True)
+    src_dir = os.path.join(dl_dir, f"kcov-{kcov_version}")
+    if not os.path.isdir(src_dir):
+        logger.info("Cloning kcov %s...", kcov_version)
+        run(["git", "clone", "--depth", "1", "-b", kcov_version,
+              kcov_url, src_dir])
+
+    build_dir = os.path.join(ove_dir, "output", "tools",
+                             f"kcov-{kcov_version}-build")
+    logger.info("Building kcov %s", kcov_version)
+    os.makedirs(build_dir, exist_ok=True)
+    run(["cmake", "-S", src_dir, "-B", build_dir,
+          f"-DCMAKE_INSTALL_PREFIX={install_dir}",
+          "-DCMAKE_BUILD_TYPE=Release"])
+    run(["cmake", "--build", build_dir, "-j", str(nproc())])
+    run(["cmake", "--install", build_dir])
+
+    if not os.path.isfile(kcov_bin):
+        logger.error("kcov build completed but binary not found at %s",
+                     kcov_bin)
+        sys.exit(1)
+    return kcov_bin
+
+
 def _ensure_arm_toolchain(ove_dir):
     """Download ARM toolchain if needed, return path to toolchain dir."""
     from .download import download_toolchain
@@ -146,17 +249,14 @@ def test_cpp(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp")
 
 
-def test_rust(ove_dir, output_dir):
-    """Build and run Rust tests."""
+def _rust_test_env(ove_dir, output_dir, target_dir):
+    """Return (rust_dir, env) set up to build tests/rust/ against the
+    rust_stub CMake library. Both test_rust and test_rust_coverage use this."""
     stub_build = os.path.join(output_dir, "tests", "rust_stub")
-    logger.info("Building Rust stub library")
     _cmake_build(
         os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
         stub_build)
-
-    logger.info("Building Rust tests")
     rust_dir = os.path.join(ove_dir, "tests", "rust")
-    target_dir = os.path.join(output_dir, "tests", "rust")
     env = dict(os.environ)
     env.update({
         "OVE_DIR": ove_dir,
@@ -173,10 +273,105 @@ def test_rust(ove_dir, output_dir):
                                           "stub"),
         "CARGO_TARGET_DIR": target_dir,
     })
+    return rust_dir, env
+
+
+def test_rust(ove_dir, output_dir):
+    """Build and run Rust tests."""
+    target_dir = os.path.join(output_dir, "tests", "rust")
+    logger.info("Building Rust stub library")
+    rust_dir, env = _rust_test_env(ove_dir, output_dir, target_dir)
+    logger.info("Building Rust tests")
     run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
     logger.info("Running Rust tests")
     return _run_test_binary(
         [os.path.join(target_dir, "release", "ove-tests")], "rust")
+
+
+def test_rust_coverage(ove_dir, output_dir):
+    """Build and run Rust tests under LLVM source-based coverage, emit lcov.
+
+    Rust uses a different instrumentation format (.profraw) than GCC gcov.
+    We produce an lcov-format tracefile so the top-level `make coverage`
+    pipeline can merge it with the C/C++ gcov data. Output files:
+      <cov_dir>/profraw/coverage-*.profraw  — raw per-process counters
+      <cov_dir>/coverage.profdata           — merged counters
+      <cov_dir>/coverage.filtered.info      — lcov format, filtered to oveRTOS
+    """
+    cov_dir = os.path.join(output_dir, "tests", "rust_coverage")
+    target_dir = os.path.join(cov_dir, "target")
+    profraw_dir = os.path.join(cov_dir, "profraw")
+    os.makedirs(profraw_dir, exist_ok=True)
+
+    logger.info("Building Rust stub library (coverage)")
+    rust_dir, env = _rust_test_env(ove_dir, output_dir, target_dir)
+    # A fresh build with instrumentation — existing release artifacts in
+    # output/tests/rust don't have the profile sections we need.
+    env["RUSTFLAGS"] = env.get("RUSTFLAGS", "") + " -C instrument-coverage"
+    env["LLVM_PROFILE_FILE"] = os.path.join(
+        profraw_dir, "coverage-%p-%m.profraw")
+
+    logger.info("Building Rust tests (coverage)")
+    run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
+    logger.info("Running Rust tests (coverage)")
+    binary = os.path.join(target_dir, "release", "ove-tests")
+    result = _run_test_binary([binary], "rust", env=env)
+
+    # Rust's raw profile format moves with the compiler's bundled LLVM; the
+    # system llvm-profdata will frequently be older and reject the .profraw.
+    # Prefer the toolchain-bundled tools under $(rustc --print sysroot).
+    try:
+        sysroot = subprocess.check_output(
+            ["rustc", "--print", "sysroot"], text=True).strip()
+    except Exception:
+        sysroot = ""
+    rust_bin = ""
+    if sysroot:
+        import glob
+        matches = glob.glob(os.path.join(
+            sysroot, "lib", "rustlib", "*", "bin", "llvm-profdata"))
+        if matches:
+            rust_bin = os.path.dirname(matches[0])
+    llvm_profdata = (os.path.join(rust_bin, "llvm-profdata") if rust_bin
+                     else shutil.which("llvm-profdata"))
+    llvm_cov = (os.path.join(rust_bin, "llvm-cov") if rust_bin
+                else shutil.which("llvm-cov"))
+    if not llvm_profdata or not os.path.isfile(llvm_profdata) \
+            or not llvm_cov or not os.path.isfile(llvm_cov):
+        logger.error("llvm-profdata/llvm-cov not found — install with "
+                     "`rustup component add llvm-tools-preview`")
+        return result
+
+    profdata = os.path.join(cov_dir, "coverage.profdata")
+    import glob
+    profraws = sorted(glob.glob(os.path.join(profraw_dir, "*.profraw")))
+    if not profraws:
+        logger.error("no .profraw files produced — did the binary run?")
+        return result
+    run([llvm_profdata, "merge", "-sparse", *profraws, "-o", profdata])
+
+    info = os.path.join(cov_dir, "coverage.info")
+    with open(info, "w") as f:
+        subprocess.run(
+            [llvm_cov, "export", "--format=lcov",
+             "--instr-profile=" + profdata, binary],
+            stdout=f, check=True)
+
+    # Filter out /home/*/.cargo/registry, target/, and system headers so the
+    # merged report only shows oveRTOS sources. subprocess passes args
+    # directly to lcov — no shell quoting required.
+    filtered = os.path.join(cov_dir, "coverage.filtered.info")
+    run(["lcov",
+         "--remove", info,
+         "/usr/*",
+         "*/.cargo/registry/*",
+         "*/target/*",
+         "*/rustc/*",
+         "*/tests/*",
+         "--output-file", filtered,
+         "--ignore-errors", "unused,empty,format,inconsistent"])
+    logger.info("Rust coverage: %s", filtered)
+    return result
 
 
 def _find_zig(ove_dir):
@@ -206,8 +401,13 @@ def _find_zig(ove_dir):
     sys.exit(1)
 
 
-def test_zig(ove_dir, output_dir):
-    """Build and run Zig binding tests."""
+def _build_zig_test_binary(ove_dir, output_dir, *, debug=False):
+    """Build tests/zig/main.zig into an executable; return (exe_path, cwd).
+
+    Shared by test_zig and test_zig_coverage. When `debug=True` we pass
+    `-ODebug` so kcov's DWARF-driven source attribution produces useful
+    line-level data instead of aggressive-inlined ReleaseSafe noise.
+    """
     stub_build = os.path.join(output_dir, "tests", "zig_stub")
     logger.info("Building Zig stub library")
     _cmake_build(
@@ -218,11 +418,11 @@ def test_zig(ove_dir, output_dir):
     zig_test_dir = os.path.join(ove_dir, "tests", "zig")
     zig_bindings = os.path.join(ove_dir, "bindings", "zig", "ove",
                                 "src", "root.zig")
-    zig_output = os.path.join(output_dir, "tests", "zig")
+    zig_output = os.path.join(output_dir, "tests",
+                              "zig_coverage" if debug else "zig")
     os.makedirs(zig_output, exist_ok=True)
     zig_exe = os.path.join(zig_output, "ove_test_zig")
 
-    # Include paths for @cImport
     include_args = [
         "-I" + os.path.join(ove_dir, "include"),
         "-I" + os.path.join(ove_dir, "tests"),
@@ -232,11 +432,13 @@ def test_zig(ove_dir, output_dir):
         "-I" + os.path.join(ove_dir, "boards", "host", "posix"),
     ]
 
-    logger.info("Building Zig tests")
+    logger.info("Building Zig tests%s",
+                " (debug/coverage)" if debug else "")
+    opt_flag = "-ODebug" if debug else "-OReleaseSafe"
     cmd = [
         zig, "build-exe",
         "-target", "native-native-gnu",
-        "-OReleaseSafe",
+        opt_flag,
         "--dep", "ove",
         "-Mroot=" + os.path.join(zig_test_dir, "main.zig"),
         "-Move=" + zig_bindings,
@@ -246,17 +448,162 @@ def test_zig(ove_dir, output_dir):
         "-lc",
         "-femit-bin=" + zig_exe,
     ]
+    # Zig 0.14+ defaults to the self-hosted x86_64 backend for Debug builds,
+    # whose DWARF output kcov can't parse (Zig issue #25368). Force LLVM
+    # codegen for coverage builds so kcov gets usable line tables.
+    if debug:
+        cmd.append("-fllvm")
     run(cmd, cwd=zig_test_dir)
+    return zig_exe, zig_test_dir
 
+
+def test_zig(ove_dir, output_dir):
+    """Build and run Zig binding tests."""
+    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir)
     logger.info("Running Zig tests")
     return _run_test_binary([zig_exe], "zig")
 
 
-def test_nuttx(ove_dir, output_dir):
-    """Build and run NuttX sim tests (uses NuttX sim board)."""
+def _cobertura_to_lcov(xml_path, out_path):
+    """Convert a kcov-produced cobertura.xml to an lcov tracefile.
+
+    kcov v43 doesn't emit lcov natively — it writes cobertura.xml, JSON,
+    and HTML. We walk the XML and produce `SF:` / `DA:` / `LF:` / `LH:`
+    records so the result can be merged with the other backends'
+    tracefiles via `lcov --add-tracefile`. Returns the number of source
+    files emitted.
+    """
+    import xml.etree.ElementTree as ET
+    tree = ET.parse(xml_path)
+    root = tree.getroot()
+    # Cobertura stores file paths relative to <sources>/<source>; take the
+    # first entry (kcov emits one) so the resulting SF: records are
+    # absolute and genhtml can locate them.
+    source_prefix = ""
+    src_el = root.find("./sources/source")
+    if src_el is not None and src_el.text:
+        source_prefix = src_el.text.rstrip("/") + "/"
+    files_written = 0
+    with open(out_path, "w") as out:
+        for cls in root.iter("class"):
+            filename = cls.get("filename")
+            lines_el = cls.find("lines")
+            if not filename or lines_el is None:
+                continue
+            entries = [(int(ln.get("number")), int(ln.get("hits", "0")))
+                       for ln in lines_el.iter("line")
+                       if ln.get("number")]
+            if not entries:
+                continue
+            if not os.path.isabs(filename):
+                filename = source_prefix + filename
+            out.write(f"SF:{filename}\n")
+            hits = 0
+            for number, count in entries:
+                out.write(f"DA:{number},{count}\n")
+                if count > 0:
+                    hits += 1
+            out.write(f"LF:{len(entries)}\n")
+            out.write(f"LH:{hits}\n")
+            out.write("end_of_record\n")
+            files_written += 1
+    return files_written
+
+
+def test_zig_coverage(ove_dir, output_dir):
+    """Build and run Zig binding tests under kcov; emit lcov tracefile.
+
+    Zig 0.15 has no native source-based coverage; we wrap the debug-built
+    test binary with kcov (locally built per manifest, see _ensure_kcov).
+    kcov walks DWARF via ptrace and writes cobertura.xml + HTML; we
+    convert to lcov so the result merges with the other backends.
+
+    The debug build is forced through the LLVM backend via `-fllvm` in
+    `_build_zig_test_binary` — Zig 0.14+ defaults to the self-hosted
+    x86_64 codegen for Debug, and its DWARF output is unreadable to kcov
+    (Zig issue #25368).
+    """
+    kcov = _ensure_kcov(ove_dir)
+    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True)
+
+    cov_dir = os.path.join(output_dir, "tests", "zig_coverage", "kcov")
+    shutil.rmtree(cov_dir, ignore_errors=True)
+    os.makedirs(cov_dir, exist_ok=True)
+
+    logger.info("Running Zig tests under kcov")
+    # Ziggit #3421 recipe: --include-pattern (substring match) works where
+    # --include-path (absolute paths) can yield empty reports for Zig binaries.
+    result = _run_test_binary(
+        [kcov, "--include-pattern=bindings/zig/ove/src",
+         cov_dir, zig_exe], "zig-coverage")
+
+    import glob as _glob
+    candidates = _glob.glob(os.path.join(cov_dir, "ove_test_zig*",
+                                          "cobertura.xml"))
+    if not candidates:
+        logger.error("kcov did not emit cobertura.xml under %s", cov_dir)
+        return result
+    cobertura = candidates[0]
+
+    raw_lcov = os.path.join(output_dir, "tests", "zig_coverage",
+                            "coverage.info")
+    n_files = _cobertura_to_lcov(cobertura, raw_lcov)
+
+    filtered = os.path.join(output_dir, "tests", "zig_coverage",
+                            "coverage.filtered.info")
+    lcov = shutil.which("lcov")
+    if n_files > 0 and lcov:
+        run([lcov, "--remove", raw_lcov,
+             "/usr/*", f"{ove_dir}/dl/*", f"{ove_dir}/output/*",
+             f"{ove_dir}/tests/*",
+             "--output-file", filtered,
+             "--ignore-errors", "unused,empty,format,inconsistent"])
+    else:
+        shutil.copy(raw_lcov, filtered)
+
+    if n_files == 0:
+        logger.warning(
+            "kcov attributed 0 Zig source files — check that the zig "
+            "build-exe invocation includes -fllvm so the x86_64 self-hosted "
+            "backend isn't used (its DWARF is unreadable to kcov). "
+            "Emitted empty tracefile: %s", filtered)
+    else:
+        logger.info("Zig coverage: %s (%d files)", filtered, n_files)
+    return result
+
+
+def _clean_gcda(root):
+    """Remove stale .gcda under `root`. Needed before each NuttX sim
+    coverage run because NuttX's Application.mk scatters .gcda next to the
+    .o files (see the KNOWN WART note in tests/sim/nuttx-qemu/nuttx_app/
+    Makefile) — i.e. throughout the oveRTOS source tree. Leftover counters
+    from a previous run would poison the merge."""
+    removed = 0
+    for dirpath, _, files in os.walk(root):
+        for f in files:
+            if f.endswith(".gcda"):
+                try:
+                    os.unlink(os.path.join(dirpath, f))
+                    removed += 1
+                except OSError:
+                    pass
+    if removed:
+        logger.debug("Removed %d stale .gcda file(s) under %s", removed, root)
+
+
+def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
+                    coverage=False):
+    """Shared driver for test_nuttx and test_nuttx_coverage.
+
+    When `coverage=True` the NuttX app is built with `OVE_COVERAGE=1`, stale
+    `.gcda` counters under OVE_DIR are removed before the run, and the
+    `__gcov_dump()` hook in main.c flushes counters on clean exit. The
+    scattered `.gcda` files are collected with `lcov --directory` in the
+    caller.
+    """
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build_base = os.path.join(output_dir, "tests", "nuttx")
+    build_base = os.path.join(output_dir, "tests", build_subdir)
 
     manifest = load_manifest(ove_dir)
     default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
@@ -266,7 +613,7 @@ def test_nuttx(ove_dir, output_dir):
     nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
 
-    logger.info("Building NuttX sim tests")
+    logger.info("Building %s", label)
     os.makedirs(build_base, exist_ok=True)
 
     # Fetch NuttX
@@ -350,9 +697,12 @@ def test_nuttx(ove_dir, output_dir):
 
     # Build
     nuttx_env["OVE_DIR"] = ove_dir
+    if coverage:
+        nuttx_env["OVE_COVERAGE"] = "1"
+        _clean_gcda(ove_dir)
     run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
 
-    logger.info("Running NuttX sim tests")
+    logger.info("Running %s", label)
     # NuttX sim doesn't exit when init task returns; use timeout + output parsing
     try:
         result = subprocess.run(
@@ -364,17 +714,63 @@ def test_nuttx(ove_dir, output_dir):
     print(stdout, end="")
 
     parsed = _parse_cmocka(stdout)
-    parsed.suite = "nuttx-sim"
+    parsed.suite = label
     if parsed.failed > 0 or parsed.passed == 0:
-        logger.error("NuttX sim tests had failures")
+        logger.error("%s had failures", label)
         parsed.failed = max(parsed.failed, 1)
     return parsed
 
 
-def test_zephyr(ove_dir, output_dir):
-    """Build and run Zephyr native_sim tests."""
+def test_nuttx(ove_dir, output_dir):
+    """Build and run NuttX sim tests (uses NuttX sim board)."""
+    return _run_nuttx_sim(ove_dir, output_dir,
+                          build_subdir="nuttx",
+                          label="nuttx-sim")
+
+
+def test_nuttx_coverage(ove_dir, output_dir):
+    """NuttX sim tests with --coverage; emit lcov tracefile.
+
+    `.gcda` files scatter through the oveRTOS source tree (NuttX
+    Application.mk wart), so lcov scans OVE_DIR for counters and writes
+    the filtered tracefile into the coverage build dir.
+    """
+    result = _run_nuttx_sim(ove_dir, output_dir,
+                            build_subdir="nuttx_coverage",
+                            label="nuttx-sim-coverage",
+                            coverage=True)
+
+    lcov = shutil.which("lcov")
+    if not lcov:
+        logger.error("lcov not found — skipping NuttX coverage capture")
+        return result
+
+    build = os.path.join(output_dir, "tests", "nuttx_coverage")
+    info = os.path.join(build, "coverage.info")
+    filtered = os.path.join(build, "coverage.filtered.info")
+    run([lcov, "--directory", ove_dir, "--capture",
+         "--test-name", "nuttx",
+         "--output-file", info,
+         "--ignore-errors", "mismatch,gcov,source,empty,inconsistent"])
+    run([lcov, "--remove", info,
+         "/usr/*", f"{ove_dir}/dl/*", f"{ove_dir}/output/*",
+         f"{ove_dir}/tests/*",
+         "--output-file", filtered,
+         "--ignore-errors", "unused,empty,format,inconsistent"])
+    logger.info("NuttX coverage: %s", filtered)
+    return result
+
+
+def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
+                            extra_conf=None):
+    """Shared driver for test_zephyr and test_zephyr_coverage.
+
+    `extra_conf` is applied as Zephyr's EXTRA_CONF_FILE so Kconfig overlays
+    (e.g. CONFIG_COVERAGE=y) can be layered on top of tests/sim/zephyr/prj.conf
+    without duplicating the baseline build graph.
+    """
     import hashlib
-    build = os.path.join(output_dir, "tests", "zephyr")
+    build = os.path.join(output_dir, "tests", build_subdir)
     dl_dir = os.path.join(ove_dir, "dl")
     west = os.path.join(ove_dir, ".venv", "bin", "west")
 
@@ -383,7 +779,7 @@ def test_zephyr(ove_dir, output_dir):
     zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
     dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
 
-    logger.info("Building Zephyr native_sim tests")
+    logger.info("Building Zephyr native_sim tests (%s)", label)
     os.makedirs(build, exist_ok=True)
 
     hash_dir = os.path.join(dl_dir, f"zephyr-workspace-{dl_hash}")
@@ -404,16 +800,61 @@ def test_zephyr(ove_dir, output_dir):
     env = dict(os.environ)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
     env["ZEPHYR_TOOLCHAIN_VARIANT"] = "host"
-    run([
+    build_cmd = [
         west, "build",
         "-b", "native_sim/native/64",
         "-d", build,
         os.path.join(ove_dir, "tests", "sim", "zephyr"),
-    ], env=env)
+    ]
+    if extra_conf:
+        build_cmd.extend(["--", f"-DEXTRA_CONF_FILE={extra_conf}"])
+    run(build_cmd, env=env)
 
-    logger.info("Running Zephyr native_sim tests")
+    logger.info("Running Zephyr native_sim tests (%s)", label)
     return _run_test_binary(
-        [os.path.join(build, "zephyr", "zephyr.exe")], "zephyr-native-sim")
+        [os.path.join(build, "zephyr", "zephyr.exe")], label)
+
+
+def test_zephyr(ove_dir, output_dir):
+    """Build and run Zephyr native_sim tests."""
+    return _run_zephyr_native_sim(ove_dir, output_dir,
+                                   build_subdir="zephyr",
+                                   label="zephyr-native-sim")
+
+
+def test_zephyr_coverage(ove_dir, output_dir):
+    """Zephyr native_sim tests with CONFIG_COVERAGE=y; emit lcov tracefile.
+
+    Zephyr drops .gcda alongside .gcno in the build tree when main() returns,
+    so we just run the binary and `lcov --capture`. Output:
+      <cov_dir>/coverage.filtered.info
+    """
+    overlay = os.path.join(ove_dir, "tests", "sim", "zephyr",
+                            "overlay-coverage.conf")
+    result = _run_zephyr_native_sim(
+        ove_dir, output_dir,
+        build_subdir="zephyr_coverage",
+        label="zephyr-native-sim-coverage",
+        extra_conf=overlay)
+
+    lcov = shutil.which("lcov")
+    if not lcov:
+        logger.error("lcov not found — skipping Zephyr coverage capture")
+        return result
+
+    build = os.path.join(output_dir, "tests", "zephyr_coverage")
+    info = os.path.join(build, "coverage.info")
+    filtered = os.path.join(build, "coverage.filtered.info")
+    run([lcov, "--directory", build, "--capture",
+         "--test-name", "zephyr",
+         "--output-file", info,
+         "--ignore-errors", "mismatch,gcov,source,empty,inconsistent"])
+    run([lcov, "--remove", info,
+         "/usr/*", "*/zephyr-workspace/*", "*/_deps/*", "*/tests/*",
+         "--output-file", filtered,
+         "--ignore-errors", "unused,empty,format,inconsistent"])
+    logger.info("Zephyr coverage: %s", filtered)
+    return result
 
 
 # ── FreeRTOS QEMU shared driver ────────────────────────────────────────
@@ -642,9 +1083,13 @@ TEST_TARGETS = {
     "stub": test_stub,
     "cpp": test_cpp,
     "rust": test_rust,
+    "rust-coverage": test_rust_coverage,
     "zig": test_zig,
+    "zig-coverage": test_zig_coverage,
     "nuttx": test_nuttx,
+    "nuttx-coverage": test_nuttx_coverage,
     "zephyr": test_zephyr,
+    "zephyr-coverage": test_zephyr_coverage,
     "qemu-freertos": test_qemu_freertos,
     "qemu-freertos-zeroheap": test_qemu_freertos_zeroheap,
     "qemu-nuttx": test_qemu_nuttx,

@@ -60,3 +60,9 @@ libraries:
   lwip:
     version: "STABLE-2_2_0_RELEASE"
     url: "https://github.com/lwip-tcpip/lwip.git"
+  # kcov — coverage collector used by `ove test zig-coverage` (Zig has no
+  # native source-based coverage yet; kcov wraps the test binary and
+  # emits an lcov tracefile via DWARF + ptrace).
+  kcov:
+    version: "v43"
+    url: "https://github.com/SimonKagstrom/kcov.git"

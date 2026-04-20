@@ -12,6 +12,10 @@
 #endif
 #include <stdio.h>
 
+#ifdef OVE_COVERAGE
+extern void __gcov_dump(void);
+#endif
+
 /* Stub — tests exercise ove_app module without a real app entry point */
 void ove_main(void) {}
 
@@ -29,6 +33,9 @@ int main(int argc, char *argv[])
 #include "framework/suites.inc"
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
+#ifdef OVE_COVERAGE
+	__gcov_dump();
+#endif
 #ifdef CONFIG_ARCH_SIM
 	return failures ? 1 : 0;
 #else

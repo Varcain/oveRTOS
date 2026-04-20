@@ -105,6 +105,16 @@ CFLAGS += -I$(CMOCKA_DIR)/src
 CFLAGS += -Wno-unused-parameter
 CFLAGS += -Wno-missing-field-initializers
 
+# Coverage — opted in via `OVE_COVERAGE=1 make ...` (set by the test CLI's
+# test_nuttx_coverage path). gcov writes .gcda next to the .o files, which
+# means they scatter through the oveRTOS source tree alongside the existing
+# scattered .o artifacts; the CLI cleans those up around each coverage run.
+ifeq ($(OVE_COVERAGE),1)
+CFLAGS  += --coverage -DOVE_COVERAGE=1
+LDFLAGS += --coverage
+LDLIBS  += -lgcov
+endif
+
 # KNOWN WART: NuttX's Application.mk emits per-source object files in the
 # directory containing the source (as $SRC.$MANGLED_ABSPATH.o), which means
 # building this app scatters .o/.gcno into $(OVE_DIR)/tests/suites/. They
