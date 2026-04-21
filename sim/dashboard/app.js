@@ -19,6 +19,8 @@ var FRAME_THREAD    = 0x0A;
 var FRAME_FILE_LIST = 0x0B;
 var FRAME_FILE_REQ  = 0x0C;
 var FRAME_FILE_RESP = 0x0D;
+var FRAME_TRACE     = 0x0E;
+var FRAME_PROFILE   = 0x0F;
 
 /* ── Shared constants ────────────────────────────────────────────────── */
 var RING_HDR            = 32;     /* OVE_RING_OFF_BUF — ring header size in bytes */
@@ -135,6 +137,8 @@ var WIN_DEFS = {
     debug:   { title: "Debug",    col: 0, row: 1, cw: 0.6, rh: 0.45 },
     audio:   { title: "Audio",    col: 0, row: 1, cw: 0.5, rh: 0.4 },
     events:  { title: "Events",   col: 0, row: 1, cw: 0.5, rh: 0.4 },
+    trace:   { title: "Trace",    col: 0, row: 1, cw: 1.0, rh: 0.35 },
+    profiler:{ title: "Profiler", col: 0, row: 1, cw: 1.0, rh: 0.4  },
 };
 
 function isMobile() { return window.innerWidth < MOBILE_BP; }
@@ -591,6 +595,8 @@ function connect() {
             case FRAME_DEBUG_RESP: handleDebugResp(buf, 4); break;
             case FRAME_FILE_LIST:  handleFileList(buf, 4); break;
             case FRAME_FILE_RESP:  handleFileResp(buf, 4); break;
+            case FRAME_TRACE:      handleTrace(buf, 4); break;
+            case FRAME_PROFILE:    handleProfile(buf, 4); break;
         }
     };
 }
@@ -609,6 +615,8 @@ function ensureWindow(id) {
         autoLayout();
         /* Attach input handlers when display panel is created. */
         if (id === "display") attachCanvasInput();
+        if (id === "profiler") profilerBindPanel();
+        if (id === "trace") traceBindPanel();
     }
 }
 
@@ -1183,6 +1191,12 @@ if (!isWasmMode) {
 var THREAD_STATE_NAMES = ["running", "ready", "blocked", "suspended", "terminated", "unknown"];
 var THREAD_STATE_CSS   = ["st-running", "st-ready", "st-blocked", "st-suspended", "st-terminated", "st-unknown"];
 
+/* Mirrors the ove_prio_t enum in include/ove/thread.h. */
+var THREAD_PRIO_NAMES = [
+    "idle", "low", "below-normal", "normal",
+    "above-normal", "high", "realtime", "critical"
+];
+
 function handleThreadSnapshot(buf, off) {
     ensureWindow("threads");
     var view = new DataView(buf, off);
@@ -1258,7 +1272,7 @@ function handleThreadSnapshot(buf, off) {
         html += "<tr>"
               + "<td class=\"td-name\">" + _esc(t.name) + "</td>"
               + "<td><span class=\"state-badge " + stCss + "\">" + stName + "</span></td>"
-              + "<td class=\"td-num\">" + t.priority + "</td>"
+              + "<td>" + (THREAD_PRIO_NAMES[t.priority] || t.priority) + "</td>"
               + "<td class=\"td-num\">" + _fmtStack(t.stackUsed, t.stackSize) + "</td>"
               + "<td class=\"td-num\">" + cpuStr + "%</td>"
               + "<td>" + _fmtStateBar(t) + "</td>"
@@ -1425,6 +1439,1005 @@ function _monacoSetDecorations(currentLine, startLine, file) {
         }
     }
     monacoCurrentDecorations = editor.deltaDecorations(monacoCurrentDecorations, decorations);
+}
+
+/* ── Trace swimlane (FRAME_TRACE) ───────────────────────────────── */
+
+var TRACE_KIND_STATE = 1;
+var TRACE_KIND_MARK  = 2;
+
+/* Rolling window in simulation time (microseconds). */
+var TRACE_WINDOW_US  = 30 * 1000 * 1000;
+/* Hard memory cap — evict oldest first once exceeded. Sized for ~200 s of
+ * traffic at typical rates so a long pause still retains its frozen view. */
+var TRACE_MAX_RECORDS = 200000;
+/* Plot geometry: left label column + right padding. Shared by renderTrace
+ * and the pan/zoom pointer handlers so pixel↔time math matches exactly. */
+var TRACE_LABEL_W = 90;
+var TRACE_PLOT_PAD_R = 4;
+
+var TRACE_STATE_COLORS = {
+    0: "#4ecca3", /* RUNNING */
+    1: "#f5d76e", /* READY */
+    2: "#e94560", /* BLOCKED */
+    3: "#666666", /* SUSPENDED */
+    4: "#222222", /* TERMINATED */
+};
+
+/* Per-thread lane state: last state + last timestamp (for closing span). */
+var traceThreads = {};            /* tid -> { name, lastState, lastTs } */
+var traceSpans   = [];            /* [{tid, start, end, state}] */
+var traceMarks   = [];            /* [{tid, ts, prim, act}] */
+var traceDropped = 0;
+var traceMinTs   = 0;             /* earliest observed ts */
+var traceMaxTs   = 0;             /* latest observed ts */
+/* spanUs = visible time window in µs. follow = auto-track latest ts (live).
+ * When follow is turned off, tEndFrozen captures the anchor so new samples
+ * keep filling the ring but the display stays fixed. */
+var TRACE_MIN_SPAN_US = 100;
+var traceView    = { spanUs: TRACE_WINDOW_US, follow: true, tEndFrozen: 0 };
+var traceDirty   = false;
+var traceRafScheduled = false;
+
+function traceEvict() {
+    if (traceSpans.length > TRACE_MAX_RECORDS) {
+        traceSpans.splice(0, traceSpans.length - TRACE_MAX_RECORDS);
+    }
+    if (traceMarks.length > TRACE_MAX_RECORDS) {
+        traceMarks.splice(0, traceMarks.length - TRACE_MAX_RECORDS);
+    }
+    /* Drop spans older than the window from our retention anchor.
+     * When paused we anchor at the frozen view edge (not traceMaxTs), so
+     * new samples keep flowing in but the left side of the paused display
+     * isn't evicted as simulation time advances. The TRACE_MAX_RECORDS cap
+     * above still bounds total memory. */
+    var anchor = traceView.follow ? traceMaxTs : traceView.tEndFrozen;
+    var cutoff = anchor - TRACE_WINDOW_US;
+    while (traceSpans.length && traceSpans[0].end < cutoff) traceSpans.shift();
+    while (traceMarks.length && traceMarks[0].ts  < cutoff) traceMarks.shift();
+    if (traceSpans.length) traceMinTs = traceSpans[0].start;
+}
+
+function handleTrace(buf, off) {
+    if (buf.byteLength - off < 8) return;
+    var dv = new DataView(buf, off);
+    var subType = dv.getUint8(0);
+    /* version at offset 1 — unused for now */
+    var count   = dv.getUint16(2, true);
+    var dropped = dv.getUint32(4, true);
+    traceDropped += dropped;
+
+    var base = 8;
+    if (subType === 0) {
+        /* DESCRIPTORS — tid/name pairs. */
+        var p = base;
+        for (var i = 0; i < count; i++) {
+            if (p + 5 > dv.byteLength) break;
+            var tid = dv.getUint32(p, true); p += 4;
+            var nameLen = dv.getUint8(p); p += 1;
+            if (p + nameLen > dv.byteLength) break;
+            var nameBytes = new Uint8Array(buf, off + p, nameLen);
+            var name = new TextDecoder().decode(nameBytes);
+            p += nameLen;
+            if (!traceThreads[tid]) traceThreads[tid] = { name: name, lastState: -1, lastTs: 0 };
+            else traceThreads[tid].name = name;
+        }
+        traceDirty = true;
+        ensureWindow("trace");
+        scheduleTraceRender();
+        return;
+    }
+    if (subType !== 1) return;
+
+    /* STREAM — 16-byte records. */
+    for (var j = 0; j < count; j++) {
+        var p0 = base + j * 16;
+        if (p0 + 16 > dv.byteLength) break;
+        /* ts_us: read as two uint32 LE and combine. Safe up to 2^53 us. */
+        var tsLo = dv.getUint32(p0, true);
+        var tsHi = dv.getUint32(p0 + 4, true);
+        var ts = tsHi * 0x100000000 + tsLo;
+        var tid = dv.getUint32(p0 + 8, true);
+        var kind = dv.getUint8(p0 + 12);
+        var code = dv.getUint8(p0 + 13);
+        /* arg at p0+14 (2 bytes) — unused for rendering today */
+
+        if (ts > traceMaxTs) traceMaxTs = ts;
+        if (traceMinTs === 0 || ts < traceMinTs) traceMinTs = ts;
+
+        var th = traceThreads[tid];
+        if (!th) {
+            th = traceThreads[tid] = { name: "0x" + tid.toString(16), lastState: -1, lastTs: ts };
+        }
+
+        if (kind === TRACE_KIND_STATE) {
+            /* Close out the previous span for this thread. */
+            if (th.lastState >= 0 && ts > th.lastTs) {
+                traceSpans.push({ tid: tid, start: th.lastTs, end: ts, state: th.lastState });
+            }
+            th.lastState = code;
+            th.lastTs = ts;
+        } else if (kind === TRACE_KIND_MARK) {
+            traceMarks.push({ tid: tid, ts: ts, prim: (code >> 4) & 0x0F, act: code & 0x0F });
+        }
+    }
+
+    traceEvict();
+    traceDirty = true;
+    ensureWindow("trace");
+    scheduleTraceRender();
+}
+
+function scheduleTraceRender() {
+    if (traceRafScheduled) return;
+    traceRafScheduled = true;
+    requestAnimationFrame(function () {
+        traceRafScheduled = false;
+        renderTrace();
+    });
+}
+
+function renderTrace() {
+    var cvs = document.getElementById("trace-canvas");
+    if (!cvs) return;
+    var wrap = cvs.parentElement;
+    if (!wrap) return;
+
+    /* Match the canvas backing store to its CSS size (device pixels). */
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = wrap.clientWidth;
+    var cssH = wrap.clientHeight;
+    if (cssW <= 0 || cssH <= 0) return;
+    if (cvs.width !== cssW * dpr || cvs.height !== cssH * dpr) {
+        cvs.width = cssW * dpr;
+        cvs.height = cssH * dpr;
+    }
+    var ctx = cvs.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    /* Collect live tids in insertion order. */
+    var tids = [];
+    for (var k in traceThreads) tids.push(+k);
+    if (tids.length === 0) {
+        ctx.fillStyle = "#888";
+        ctx.font = "11px 'Consolas', monospace";
+        ctx.fillText("Waiting for trace data…", 10, 20);
+        return;
+    }
+    tids.sort(function (a, b) {
+        var na = traceThreads[a].name, nb = traceThreads[b].name;
+        return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+
+    var laneH = Math.max(14, Math.min(28, Math.floor((cssH - 20) / tids.length)));
+    var plotX = TRACE_LABEL_W;
+    var plotW = cssW - TRACE_LABEL_W - TRACE_PLOT_PAD_R;
+    var axisY = 0;
+    var axisH = 14;
+
+    /* Time range: live follows traceMaxTs; paused anchors to tEndFrozen.
+     * Visible span is traceView.spanUs (zoom controls). */
+    var tEnd = traceView.follow ? traceMaxTs : traceView.tEndFrozen;
+    var tStart = tEnd - traceView.spanUs;
+    var span = tEnd - tStart;
+    if (span <= 0) span = 1;
+
+    /* Axis ticks every 1 s. */
+    ctx.fillStyle = "#2a2f3a";
+    ctx.fillRect(plotX, axisY, plotW, axisH);
+    ctx.strokeStyle = "#40475a";
+    ctx.fillStyle = "#8a94ad";
+    ctx.font = "10px 'Consolas', monospace";
+    var tickStep = 1000000;
+    if (span < 5e6) tickStep = 500000;
+    if (span > 20e6) tickStep = 2000000;
+    var firstTick = Math.ceil(tStart / tickStep) * tickStep;
+    for (var t = firstTick; t <= tEnd; t += tickStep) {
+        var x = plotX + ((t - tStart) / span) * plotW;
+        ctx.beginPath();
+        ctx.moveTo(x, axisY);
+        ctx.lineTo(x, axisY + axisH);
+        ctx.stroke();
+        ctx.fillText((t / 1e6).toFixed(1) + "s", x + 2, axisY + axisH - 2);
+    }
+
+    /* Lanes. */
+    for (var i = 0; i < tids.length; i++) {
+        var tid = tids[i];
+        var th = traceThreads[tid];
+        var ly = axisY + axisH + i * laneH;
+
+        /* Lane label. */
+        ctx.fillStyle = (i % 2 === 0) ? "#181c28" : "#141826";
+        ctx.fillRect(0, ly, cssW, laneH);
+        ctx.fillStyle = "#cfd3dc";
+        ctx.fillText(th.name, 4, ly + laneH / 2 + 3);
+    }
+
+    /* Draw spans. */
+    for (var s = 0; s < traceSpans.length; s++) {
+        var sp = traceSpans[s];
+        if (sp.end < tStart || sp.start > tEnd) continue;
+        var row = tids.indexOf(sp.tid);
+        if (row < 0) continue;
+        var x0 = plotX + ((Math.max(sp.start, tStart) - tStart) / span) * plotW;
+        var x1 = plotX + ((Math.min(sp.end, tEnd) - tStart) / span) * plotW;
+        var w  = Math.max(1, x1 - x0);
+        var y  = axisY + axisH + row * laneH + 2;
+        ctx.fillStyle = TRACE_STATE_COLORS[sp.state] || "#888";
+        ctx.fillRect(x0, y, w, laneH - 4);
+    }
+
+    /* Draw in-flight spans (open: lastTs -> tEnd). */
+    for (var ti = 0; ti < tids.length; ti++) {
+        var tid2 = tids[ti];
+        var th2 = traceThreads[tid2];
+        if (th2.lastState < 0 || th2.lastTs >= tEnd) continue;
+        var xs = plotX + ((Math.max(th2.lastTs, tStart) - tStart) / span) * plotW;
+        var xe = plotX + plotW;
+        var ys = axisY + axisH + ti * laneH + 2;
+        ctx.fillStyle = TRACE_STATE_COLORS[th2.lastState] || "#888";
+        ctx.fillRect(xs, ys, xe - xs, laneH - 4);
+    }
+
+    /* Draw markers as small triangles at the top of the lane. */
+    ctx.fillStyle = "#ffffff";
+    for (var m = 0; m < traceMarks.length; m++) {
+        var mk = traceMarks[m];
+        if (mk.ts < tStart || mk.ts > tEnd) continue;
+        var mrow = tids.indexOf(mk.tid);
+        if (mrow < 0) continue;
+        var mx = plotX + ((mk.ts - tStart) / span) * plotW;
+        var my = axisY + axisH + mrow * laneH + 1;
+        ctx.beginPath();
+        ctx.moveTo(mx, my);
+        ctx.lineTo(mx - 3, my + 4);
+        ctx.lineTo(mx + 3, my + 4);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    /* Info line. */
+    var info = document.getElementById("trace-info");
+    if (info) {
+        info.textContent = tids.length + " threads, "
+            + traceSpans.length + " spans, "
+            + traceMarks.length + " marks"
+            + (traceDropped ? ", " + traceDropped + " dropped" : "");
+    }
+}
+
+/* Re-render on panel resize / visibility changes. */
+window.addEventListener("resize", scheduleTraceRender);
+
+/* Compute the plot area (CSS px) for the current canvas size. Returns
+ * null if the canvas isn't laid out yet. */
+function traceGetPlot() {
+    var cvs = document.getElementById("trace-canvas");
+    if (!cvs) return null;
+    var rect = cvs.getBoundingClientRect();
+    var plotW = rect.width - TRACE_LABEL_W - TRACE_PLOT_PAD_R;
+    if (plotW <= 0) return null;
+    return { cssW: rect.width, plotX: TRACE_LABEL_W, plotW: plotW };
+}
+
+/* Current right-edge timestamp, honouring live vs paused. */
+function traceCurrentTEnd() {
+    return traceView.follow ? traceMaxTs : traceView.tEndFrozen;
+}
+
+/* Clamp tEnd so the view can't scroll past live (latest) and stays
+ * anchored to where we actually have data on the left. */
+function traceClampTEnd(tEnd) {
+    if (tEnd > traceMaxTs) tEnd = traceMaxTs;
+    /* Allow scrolling back to traceMinTs as the right edge — left of the
+     * view will then be empty, which is fine. */
+    if (traceMinTs > 0 && tEnd < traceMinTs) tEnd = traceMinTs;
+    return tEnd;
+}
+
+/* Enter paused mode anchored at the given tEnd. Idempotent. */
+function traceEnterPaused(tEnd, followCheckbox) {
+    traceView.follow = false;
+    traceView.tEndFrozen = traceClampTEnd(tEnd);
+    if (followCheckbox) followCheckbox.checked = false;
+}
+
+/* Button + checkbox + canvas wiring — installed on first trace panel visibility. */
+function traceBindPanel() {
+    if (traceBindPanel._bound) return;
+    traceBindPanel._bound = true;
+
+    var zoomIn  = document.getElementById("trace-zoom-in");
+    var zoomOut = document.getElementById("trace-zoom-out");
+    var zoomFit = document.getElementById("trace-zoom-fit");
+    var follow  = document.getElementById("trace-follow");
+    var cvs     = document.getElementById("trace-canvas");
+
+    function clampSpan(s) {
+        if (s < TRACE_MIN_SPAN_US) s = TRACE_MIN_SPAN_US;
+        if (s > TRACE_WINDOW_US)   s = TRACE_WINDOW_US;
+        return s;
+    }
+
+    /* Zoom keeping the anchor point at the same time. In live mode the
+     * anchor is the right edge (traceMaxTs), so spanUs alone changes.
+     * In paused mode anchor is the supplied CSS x — or the midpoint if
+     * none is given. */
+    function applyZoom(factor, xCssOpt) {
+        var nextSpan = clampSpan(traceView.spanUs * factor);
+        if (traceView.follow) {
+            traceView.spanUs = nextSpan;
+            scheduleTraceRender();
+            return;
+        }
+        var plot = traceGetPlot();
+        if (!plot) { traceView.spanUs = nextSpan; scheduleTraceRender(); return; }
+        var tEnd = traceView.tEndFrozen;
+        var tStart = tEnd - traceView.spanUs;
+        var xCss = (typeof xCssOpt === "number")
+            ? xCssOpt : plot.plotX + plot.plotW / 2;
+        var frac = (xCss - plot.plotX) / plot.plotW;
+        if (frac < 0) frac = 0;
+        if (frac > 1) frac = 1;
+        var tAtCursor = tStart + frac * traceView.spanUs;
+        traceView.spanUs = nextSpan;
+        traceView.tEndFrozen = traceClampTEnd(tAtCursor + (1 - frac) * nextSpan);
+        scheduleTraceRender();
+    }
+
+    if (zoomIn)  zoomIn.addEventListener("click",  function () { applyZoom(1 / 1.5); });
+    if (zoomOut) zoomOut.addEventListener("click", function () { applyZoom(1.5); });
+    if (zoomFit) zoomFit.addEventListener("click", function () {
+        traceView.spanUs = TRACE_WINDOW_US;
+        traceView.follow = true;
+        if (follow) follow.checked = true;
+        scheduleTraceRender();
+    });
+
+    if (follow) {
+        follow.addEventListener("change", function () {
+            traceView.follow = follow.checked;
+            if (!traceView.follow) traceView.tEndFrozen = traceMaxTs;
+            scheduleTraceRender();
+        });
+    }
+
+    if (!cvs) return;
+
+    /* ── Pan (mouse drag) ──────────────────────────────────────────
+     * Dragging auto-pauses; drag right moves the view into older data
+     * (grab-the-timeline metaphor). Releasing at the live edge flips
+     * follow back on so the display resumes tracking. */
+    cvs.style.cursor = "grab";
+    var drag = null;
+
+    cvs.addEventListener("mousedown", function (e) {
+        var plot = traceGetPlot();
+        if (!plot) return;
+        var rect = cvs.getBoundingClientRect();
+        var xCss = e.clientX - rect.left;
+        if (xCss < plot.plotX) return; /* clicks in the label column */
+        var startTEnd = traceCurrentTEnd();
+        traceEnterPaused(startTEnd, follow);
+        drag = { startX: e.clientX, startTEnd: startTEnd,
+                 pxPerUs: plot.plotW / traceView.spanUs };
+        cvs.style.cursor = "grabbing";
+        e.preventDefault();
+    });
+
+    window.addEventListener("mousemove", function (e) {
+        if (!drag) return;
+        var deltaUs = (e.clientX - drag.startX) / drag.pxPerUs;
+        traceView.tEndFrozen = traceClampTEnd(drag.startTEnd - deltaUs);
+        scheduleTraceRender();
+    });
+
+    window.addEventListener("mouseup", function () {
+        if (!drag) return;
+        drag = null;
+        cvs.style.cursor = "grab";
+        /* If the user scrolled all the way back to live, re-enable follow. */
+        if (traceView.tEndFrozen >= traceMaxTs) {
+            traceView.follow = true;
+            if (follow) follow.checked = true;
+            scheduleTraceRender();
+        }
+    });
+
+    /* ── Zoom (mouse wheel) ────────────────────────────────────────
+     * Wheel auto-pauses and zooms centered on the cursor's time. */
+    cvs.addEventListener("wheel", function (e) {
+        var plot = traceGetPlot();
+        if (!plot) return;
+        var rect = cvs.getBoundingClientRect();
+        var xCss = e.clientX - rect.left;
+        if (xCss < plot.plotX) return;
+        /* Freeze the current view before zooming so the cursor's
+         * time is well-defined. */
+        if (traceView.follow) traceEnterPaused(traceMaxTs, follow);
+        var factor = (e.deltaY < 0) ? (1 / 1.2) : 1.2;
+        applyZoom(factor, xCss);
+        e.preventDefault();
+    }, { passive: false });
+}
+
+/* ── Sampling profiler (FRAME_PROFILE) ──────────────────────────────── */
+
+var PROFILE_SUB_SAMPLES = 1;
+var PROFILE_SUB_SYMBOLS = 2;
+var PROFILE_SUB_CAPS    = 3;
+
+/* Profiler plugin's cmd_type for "set sampling rate" (payload = u32 Hz). */
+var PROFILER_CMD_SET_RATE = 100;
+
+/* Capabilities received from the firmware — max_hz (compile-time ceiling)
+ * and current_hz (what the backend is using right now). Arrive on the
+ * first pump tick after transport is up. */
+var profilerMaxHz     = 0;
+var profilerCurrentHz = 0;
+
+/* Memory safeguard, scaled with the active window at evict time. The
+ * raw constant previously capped at 8000 regardless of window, which at
+ * ~1.3 kHz multi-thread sample rates silently clipped the 30 s default
+ * to ~6 s. Budget 3000 samples/s headroom (250 Hz × ~12 threads) so the
+ * window setting actually governs retention. */
+var PROFILER_SAMPLE_BUDGET_HZ = 3000;
+var PROFILER_MIN_CAP = 8000;
+var PROFILER_REFRESH_MS = 500;              /* ~2 Hz UI refresh */
+var PROFILER_FLAT_TOP   = 40;               /* rows in flat table */
+var PROFILER_WINDOW_MIN_S = 1;
+var PROFILER_WINDOW_MAX_S = 360;
+
+/* Skip list for flat-top / flame-graph leaf detection. Two purposes:
+ *   (1) Signal-delivery bookkeeping frames — the target already drops
+ *       them at source but build/glibc skew can leave leftovers.
+ *   (2) Blocking-primitive leaves — when a sample lands on a thread
+ *       parked in pthread_cond_wait / nanosleep / read, the leaf is
+ *       libc syscall internals and the *calling* user-code frame is
+ *       what actually matters for profiling. Skipping these reveals
+ *       the user function doing the blocking (e.g. lv_thread_sync_wait).
+ * Names are compared AFTER the GLIBC version suffix has been stripped. */
+var PROFILER_SKIP_FRAMES = {
+    /* handler / trampoline */
+    "profile_sig_handler": 1,
+    "__restore_rt": 1,
+    "__sigaction": 1,
+    "sigaction": 1,
+    "__libc_sigaction": 1,
+    /* futex / condvar internals — exported and non-exported misattribution targets */
+    "__nptl_death_event": 1,
+    "__futex_abstimed_wait_common": 1,
+    "__futex_abstimed_wait_common64": 1,
+    "__pthread_cond_wait_common": 1,
+    "__pthread_cond_wait": 1,
+    "pthread_cond_wait": 1,
+    "pthread_cond_timedwait": 1,
+    "pthread_cond_signal": 1,
+    "__lll_lock_wait": 1,
+    "__lll_lock_wake_private": 1,
+    "__lll_unlock_wake_private": 1,
+    /* sleep / time */
+    "__nanosleep": 1,
+    "nanosleep": 1,
+    "clock_nanosleep": 1,
+    "__clock_nanosleep": 1,
+    "usleep": 1,
+    /* basic I/O that often blocks */
+    "__read": 1,
+    "__write": 1,
+    "__open": 1,
+    "__close": 1,
+    /* libc internal misattribution targets */
+    "__nss_database_lookup": 1,
+};
+
+var profilerWindowUs    = 30 * 1000 * 1000; /* rolling window, mutable */
+var profilerPaused      = false;
+var profilerOnCpuOnly   = false; /* filter: keep only RUNNING/READY samples */
+var profilerSymbols     = []; /* sorted [pc_start, pc_end, name] */
+var profilerSamples     = []; /* [{ts, tid, state, pcs:[...]}] */
+var profilerDropped     = 0;
+var profilerLastTs      = 0;
+var profilerSymbolCount = 0;  /* for info line */
+var profilerActiveTab   = "flame";
+var profilerRefreshTimer = null;
+var profilerDirty       = false;
+var profilerFlameLayout = null; /* cached for hover lookup */
+var profilerLastFlameData = null;
+
+/**
+ * Given a sample's pcs[] (leaf-first), return the index of the first
+ * frame that is not a known signal-handler trampoline. All profiler
+ * samples are captured inside a SIGRTMIN handler, so every stack starts
+ * with the handler; treating pcs[0] as the leaf pegs flat-top at
+ * profile_sig_handler 100%.
+ */
+function profilerLeafOffset(pcs) {
+    for (var i = 0; i < pcs.length; i++) {
+        var n = resolvePc(pcs[i]);
+        if (!PROFILER_SKIP_FRAMES[n]) return i;
+    }
+    return pcs.length; /* all frames filtered — skip this sample */
+}
+
+/**
+ * Resolve a PC to a symbol name via binary search. Falls back to a
+ * hex string if no symbol contains the PC. Glibc's `@@GLIBC_X.Y` /
+ * `@GLIBC_X.Y` version-tag suffixes are stripped so aggregation lumps
+ * the same function across glibc builds and the skip-frames set can
+ * match without encoding every version.
+ */
+function resolvePc(pc) {
+    var lo = 0, hi = profilerSymbols.length - 1;
+    while (lo <= hi) {
+        var mid = (lo + hi) >>> 1;
+        var e = profilerSymbols[mid];
+        if (pc < e[0]) hi = mid - 1;
+        else if (pc >= e[1]) lo = mid + 1;
+        else {
+            var nm = e[2];
+            var at = nm.indexOf("@");
+            return at > 0 ? nm.slice(0, at) : nm;
+        }
+    }
+    return "0x" + pc.toString(16);
+}
+
+function handleProfile(buf, off) {
+    if (buf.byteLength - off < 1) return;
+    var dv = new DataView(buf, off);
+    var subType = dv.getUint8(0);
+
+    if (subType === PROFILE_SUB_SYMBOLS) {
+        /* JSON array of [pc_start, pc_end, name]. */
+        var bytes = new Uint8Array(buf, off + 1, dv.byteLength - 1);
+        try {
+            var json = new TextDecoder().decode(bytes);
+            var arr = JSON.parse(json);
+            /* Deduplicate by pc_start — nm occasionally emits dupes
+             * (alias symbols). Keep the first. */
+            var seen = Object.create(null);
+            var syms = [];
+            for (var i = 0; i < arr.length; i++) {
+                var e = arr[i];
+                if (seen[e[0]]) continue;
+                seen[e[0]] = 1;
+                syms.push(e);
+            }
+            syms.sort(function (a, b) { return a[0] - b[0]; });
+            profilerSymbols = syms;
+            profilerSymbolCount = syms.length;
+        } catch (err) {
+            console.error("profiler: symbol parse failed", err);
+        }
+        profilerDirty = true;
+        ensureWindow("profiler");
+        return;
+    }
+
+    if (subType === PROFILE_SUB_CAPS) {
+        /* Payload: uint32 max_hz, uint32 current_hz. */
+        if (dv.byteLength < 1 + 8) return;
+        profilerMaxHz     = dv.getUint32(1, true);
+        profilerCurrentHz = dv.getUint32(5, true);
+        profilerUpdateRateOptions();
+        return;
+    }
+
+    if (subType !== PROFILE_SUB_SAMPLES) return;
+    if (profilerPaused) return;
+    /* envelope layout after subType byte:
+     *   version(1), word_size(1), count(2), dropped(4) */
+    if (dv.byteLength < 1 + 8) return;
+    var wordSize = dv.getUint8(2);
+    var count    = dv.getUint16(3, true);
+    var dropped  = dv.getUint32(5, true);
+    profilerDropped += dropped;
+
+    if (wordSize !== 8) {
+        /* 32-bit support would add a branch below; POSIX x86_64 is 8. */
+        console.warn("profiler: unsupported word size", wordSize);
+        return;
+    }
+
+    var p = 9;
+    for (var j = 0; j < count; j++) {
+        if (p + 16 > dv.byteLength) break;
+        var tsLo = dv.getUint32(p, true);
+        var tsHi = dv.getUint32(p + 4, true);
+        var ts   = tsHi * 0x100000000 + tsLo;
+        var tid  = dv.getUint32(p + 8, true);
+        var depth = dv.getUint8(p + 12);
+        var state = dv.getUint8(p + 13);
+        p += 16;
+        if (p + depth * 8 > dv.byteLength) break;
+        var pcs = new Array(depth);
+        for (var k = 0; k < depth; k++) {
+            var lo = dv.getUint32(p, true);
+            var hi = dv.getUint32(p + 4, true);
+            pcs[k] = hi * 0x100000000 + lo;
+            p += 8;
+        }
+        profilerSamples.push({ ts: ts, tid: tid, state: state, pcs: pcs });
+        if (ts > profilerLastTs) profilerLastTs = ts;
+    }
+
+    profilerEvict();
+    profilerDirty = true;
+    ensureWindow("profiler");
+    ensureProfilerRefresh();
+}
+
+/* Populate the rate dropdown using a standard set of rates filtered to
+ * values the firmware can actually deliver (<= compile-time max). Called
+ * on every CAPS event so the ceiling can adapt if it ever moves. */
+function profilerUpdateRateOptions() {
+    var sel = document.getElementById("profiler-rate");
+    if (!sel) return;
+    if (!profilerMaxHz) return;
+
+    var candidates = [50, 100, 250, 500, 1000, 2000];
+    var options = [];
+    for (var i = 0; i < candidates.length; i++) {
+        if (candidates[i] <= profilerMaxHz) options.push(candidates[i]);
+    }
+    /* Always include the max itself so the user has an "uncapped" choice
+     * even if it's not a round number from the list. */
+    if (options[options.length - 1] !== profilerMaxHz)
+        options.push(profilerMaxHz);
+
+    /* Rebuild only if the set changed — avoids wiping the user's
+     * selection every 200 ms once the CAPS event is stable. */
+    var signature = options.join(",");
+    if (sel.dataset.signature === signature) {
+        sel.value = String(profilerCurrentHz || profilerMaxHz);
+        return;
+    }
+    sel.dataset.signature = signature;
+    sel.innerHTML = "";
+    for (var j = 0; j < options.length; j++) {
+        var opt = document.createElement("option");
+        opt.value = String(options[j]);
+        opt.textContent = options[j] + " Hz";
+        sel.appendChild(opt);
+    }
+    sel.value = String(profilerCurrentHz || profilerMaxHz);
+}
+
+function profilerEvict() {
+    var cutoff = profilerLastTs - profilerWindowUs;
+    while (profilerSamples.length && profilerSamples[0].ts < cutoff) {
+        profilerSamples.shift();
+    }
+    var cap = Math.max(PROFILER_MIN_CAP,
+        Math.round((profilerWindowUs / 1e6) * PROFILER_SAMPLE_BUDGET_HZ));
+    if (profilerSamples.length > cap) {
+        profilerSamples.splice(0, profilerSamples.length - cap);
+    }
+}
+
+function ensureProfilerRefresh() {
+    if (profilerRefreshTimer) return;
+    profilerRefreshTimer = setInterval(function () {
+        if (!profilerDirty) return;
+        profilerDirty = false;
+        renderProfiler();
+    }, PROFILER_REFRESH_MS);
+}
+
+function renderProfiler() {
+    var info = document.getElementById("profiler-info");
+    if (info) {
+        var winS = Math.round(profilerWindowUs / 1e6);
+        var kept = profilerSamples.length;
+        if (profilerOnCpuOnly) {
+            kept = 0;
+            for (var si = 0; si < profilerSamples.length; si++) {
+                var ss = profilerSamples[si].state;
+                if (ss === 0 || ss === 1) kept++;
+            }
+        }
+        var mode = profilerOnCpuOnly ? "on-CPU" : "wall-clock";
+        var label = kept + " samples (" + mode + ") / " + winS + " s, "
+            + profilerSymbolCount + " symbols"
+            + (profilerDropped ? ", " + profilerDropped + " dropped" : "");
+        if (profilerPaused) label = "PAUSED — " + label;
+        info.textContent = label;
+        info.classList.toggle("paused", profilerPaused);
+    }
+    if (profilerActiveTab === "flat") renderProfilerFlat();
+    else renderProfilerFlame();
+}
+
+function renderProfilerFlat() {
+    var tbody = document.getElementById("profiler-flat-tbody");
+    if (!tbody) return;
+
+    /* self = leaf PC (after skipping signal-handler frames); total = any
+     * frame. */
+    var selfCount = Object.create(null);
+    var totalCount = Object.create(null);
+    var countedSamples = 0;
+    for (var i = 0; i < profilerSamples.length; i++) {
+        var smp = profilerSamples[i];
+        if (profilerOnCpuOnly && smp.state !== 0 && smp.state !== 1) continue;
+        var pcs = smp.pcs;
+        if (!pcs.length) continue;
+        var leafOff = profilerLeafOffset(pcs);
+        if (leafOff >= pcs.length) continue; /* all frames filtered */
+        countedSamples++;
+        var leafName = resolvePc(pcs[leafOff]);
+        selfCount[leafName] = (selfCount[leafName] || 0) + 1;
+        var seenInSample = Object.create(null);
+        for (var k = leafOff; k < pcs.length; k++) {
+            var n = resolvePc(pcs[k]);
+            if (seenInSample[n]) continue;
+            seenInSample[n] = 1;
+            totalCount[n] = (totalCount[n] || 0) + 1;
+        }
+    }
+    var totalSamples = countedSamples;
+
+    var rows = [];
+    for (var name in selfCount) {
+        rows.push({
+            name: name,
+            self: selfCount[name],
+            total: totalCount[name] || 0,
+        });
+    }
+    rows.sort(function (a, b) { return b.self - a.self; });
+    if (rows.length > PROFILER_FLAT_TOP) rows.length = PROFILER_FLAT_TOP;
+
+    var html = "";
+    var denom = totalSamples || 1;
+    for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        var selfPct = (row.self * 100 / denom);
+        var totalPct = (row.total * 100 / denom);
+        html += "<tr>"
+            + '<td class="pf-num pf-bar" style="--bar:' + selfPct.toFixed(1) + '%">'
+            + row.self + "</td>"
+            + '<td class="pf-num">' + selfPct.toFixed(1) + "%</td>"
+            + '<td class="pf-num">' + totalPct.toFixed(1) + "%</td>"
+            + '<td class="pf-func">' + escapeHtml(row.name) + "</td>"
+            + "</tr>";
+    }
+    if (!rows.length) html = '<tr><td colspan="4" style="padding:12px;'
+        + 'color:#666;text-align:center">Waiting for samples…</td></tr>';
+    tbody.innerHTML = html;
+}
+
+function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+        return { "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c];
+    });
+}
+
+/**
+ * Build a flame-graph trie and render as inverted stacks. Each sample
+ * contributes one path (outermost → leaf) weighted by 1. Root frame is
+ * at the bottom — hotter leaves bubble up. Standard Brendan-Gregg
+ * icicle style.
+ */
+function renderProfilerFlame() {
+    var cvs = document.getElementById("profiler-flame-canvas");
+    if (!cvs) return;
+    var view = cvs.parentElement;
+    if (!view) return;
+
+    /* Build trie. Walk pcs outermost→leaf. A sample's pcs[] is recorded
+     * in call-stack order, which with glibc backtrace() is leaf-first.
+     * Reverse so the root is index 0. Drop the signal-handler frames at
+     * the leaf — they dominate the graph and obscure real call paths. */
+    var root = { name: "[root]", count: 0, kids: Object.create(null) };
+    for (var i = 0; i < profilerSamples.length; i++) {
+        var s = profilerSamples[i];
+        if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) continue;
+        if (!s.pcs.length) continue;
+        var leafOff = profilerLeafOffset(s.pcs);
+        if (leafOff >= s.pcs.length) continue;
+        root.count++;
+        var node = root;
+        for (var k = s.pcs.length - 1; k >= leafOff; k--) {
+            var n = resolvePc(s.pcs[k]);
+            var next = node.kids[n];
+            if (!next) {
+                next = { name: n, count: 0, kids: Object.create(null) };
+                node.kids[n] = next;
+            }
+            next.count++;
+            node = next;
+        }
+    }
+    profilerLastFlameData = root;
+
+    /* Layout: rows top→bottom, each row one frame depth. Row 0 = root. */
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = view.clientWidth, cssH = view.clientHeight;
+    if (cssW <= 0 || cssH <= 0) return;
+    if (cvs.width !== cssW * dpr || cvs.height !== cssH * dpr) {
+        cvs.width = cssW * dpr;
+        cvs.height = cssH * dpr;
+    }
+    var ctx = cvs.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    if (root.count === 0) {
+        ctx.fillStyle = "#666";
+        ctx.font = "12px 'Consolas', monospace";
+        ctx.fillText("Waiting for samples…", 10, 20);
+        profilerFlameLayout = [];
+        return;
+    }
+
+    var rowH = 16;
+    var layout = []; /* [{x, y, w, h, name, count, total}] */
+
+    function drawNode(node, x, w, depth, parentTotal) {
+        if (w < 0.5) return;
+        var y = depth * rowH;
+        if (y > cssH) return;
+        layout.push({
+            x: x, y: y, w: w, h: rowH - 1,
+            name: node.name, count: node.count, total: parentTotal
+        });
+        var children = [];
+        for (var n in node.kids) children.push(node.kids[n]);
+        children.sort(function (a, b) { return b.count - a.count; });
+        var childX = x;
+        for (var c = 0; c < children.length; c++) {
+            var cn = children[c];
+            var cw = (cn.count / node.count) * w;
+            drawNode(cn, childX, cw, depth + 1, node.count);
+            childX += cw;
+        }
+    }
+    drawNode(root, 0, cssW, 0, root.count);
+
+    /* Paint boxes. Hash each name to a stable hue so the same function
+     * keeps the same colour across refreshes. */
+    ctx.font = "11px 'Consolas', monospace";
+    ctx.textBaseline = "middle";
+    for (var i2 = 0; i2 < layout.length; i2++) {
+        var b = layout[i2];
+        var h = strHash(b.name) % 60;
+        ctx.fillStyle = "hsl(" + (10 + h * 4) + ", 60%, 48%)";
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+        if (b.w > 30) {
+            ctx.fillStyle = "#0d1117";
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(b.x + 2, b.y, b.w - 4, b.h);
+            ctx.clip();
+            ctx.fillText(b.name, b.x + 4, b.y + b.h / 2);
+            ctx.restore();
+        }
+    }
+    profilerFlameLayout = layout;
+}
+
+function strHash(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return h < 0 ? -h : h;
+}
+
+/* Tooltip + tab wiring — installed on first profiler panel visibility. */
+function profilerBindPanel() {
+    if (profilerBindPanel._bound) return;
+    profilerBindPanel._bound = true;
+
+    var tabs = document.querySelectorAll(".prof-tab");
+    for (var i = 0; i < tabs.length; i++) {
+        tabs[i].addEventListener("click", function () {
+            var name = this.getAttribute("data-tab");
+            var all = document.querySelectorAll(".prof-tab");
+            for (var j = 0; j < all.length; j++)
+                all[j].classList.toggle("active",
+                    all[j].getAttribute("data-tab") === name);
+            document.getElementById("profiler-flat-view").style.display =
+                (name === "flat") ? "" : "none";
+            document.getElementById("profiler-flame-view").style.display =
+                (name === "flame") ? "" : "none";
+            profilerActiveTab = name;
+            renderProfiler();
+        });
+    }
+
+    var winInput = document.getElementById("profiler-window");
+    if (winInput) {
+        var applyWindow = function () {
+            var v = parseInt(winInput.value, 10);
+            if (!isFinite(v)) v = PROFILER_WINDOW_MIN_S;
+            if (v < PROFILER_WINDOW_MIN_S) v = PROFILER_WINDOW_MIN_S;
+            if (v > PROFILER_WINDOW_MAX_S) v = PROFILER_WINDOW_MAX_S;
+            winInput.value = v;
+            profilerWindowUs = v * 1000 * 1000;
+            profilerEvict();
+            renderProfiler();
+        };
+        winInput.addEventListener("change", applyWindow);
+        winInput.addEventListener("blur", applyWindow);
+    }
+
+    var pauseBtn = document.getElementById("profiler-pause");
+    if (pauseBtn) {
+        pauseBtn.addEventListener("click", function () {
+            profilerPaused = !profilerPaused;
+            pauseBtn.textContent = profilerPaused ? "Resume" : "Pause";
+            pauseBtn.classList.toggle("paused", profilerPaused);
+            renderProfiler();
+        });
+    }
+
+    var onCpuBtn = document.getElementById("profiler-oncpu");
+    if (onCpuBtn) {
+        onCpuBtn.addEventListener("click", function () {
+            profilerOnCpuOnly = !profilerOnCpuOnly;
+            onCpuBtn.classList.toggle("active", profilerOnCpuOnly);
+            renderProfiler();
+        });
+    }
+
+    var rateSel = document.getElementById("profiler-rate");
+    if (rateSel) {
+        rateSel.addEventListener("change", function () {
+            var hz = parseInt(rateSel.value, 10);
+            if (!isFinite(hz) || hz <= 0) return;
+            /* plugin_id is resolved by broadcast on the firmware side
+             * (profiler.handle_cmd filters on cmd_type). Using a non-
+             * audio, non-console sentinel keeps the bridge's audio
+             * short-circuit out of the picture. */
+            var payload = new Uint8Array(4);
+            new DataView(payload.buffer).setUint32(0, hz, true);
+            sendCmd(0xFFFFFFFE, PROFILER_CMD_SET_RATE, payload);
+            /* Optimistic local update; firmware echoes via CAPS event. */
+            profilerCurrentHz = hz;
+        });
+    }
+
+    var cvs = document.getElementById("profiler-flame-canvas");
+    var tip = document.getElementById("profiler-flame-tip");
+    if (cvs && tip) {
+        cvs.addEventListener("mousemove", function (e) {
+            if (!profilerFlameLayout) { tip.style.display = "none"; return; }
+            var r = cvs.getBoundingClientRect();
+            var x = (e.clientX - r.left) * (cvs.width / r.width)
+                  / (window.devicePixelRatio || 1);
+            var y = (e.clientY - r.top) * (cvs.height / r.height)
+                  / (window.devicePixelRatio || 1);
+            var hit = null;
+            for (var k = 0; k < profilerFlameLayout.length; k++) {
+                var b = profilerFlameLayout[k];
+                if (x >= b.x && x < b.x + b.w
+                        && y >= b.y && y < b.y + b.h) {
+                    hit = b; break;
+                }
+            }
+            if (!hit) { tip.style.display = "none"; return; }
+            var pct = profilerLastFlameData && profilerLastFlameData.count
+                ? (hit.count * 100 / profilerLastFlameData.count).toFixed(1)
+                : "0.0";
+            tip.textContent = hit.name + " — " + hit.count
+                + " samples (" + pct + "%)";
+            tip.style.display = "block";
+            tip.style.left = (e.clientX - r.left + 12) + "px";
+            tip.style.top  = (e.clientY - r.top + 12) + "px";
+        });
+        cvs.addEventListener("mouseleave", function () {
+            tip.style.display = "none";
+        });
+    }
+
+    window.addEventListener("resize", function () {
+        if (profilerActiveTab === "flame") renderProfiler();
+    });
 }
 
 function sendDebugCmd(cmdType, payload) {

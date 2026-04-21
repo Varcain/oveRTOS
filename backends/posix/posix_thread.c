@@ -9,6 +9,8 @@
 #include "ove/ove.h"
 #include "ove_backend_common.h"
 #include "ove/thread_state_stats.h"
+#include "ove/trace.h"
+#include "posix_sleep.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <sched.h>
@@ -26,8 +28,9 @@ uint64_t ove_state_stats_now_us(void)
 }
 #endif
 
-/* Set thread state with tracking. */
+/* Set thread state with tracking + trace emit. */
 #define SET_STATE(t, s) do { \
+	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
 	ove_state_track_transition(&(t)->st, (s)); \
 	(t)->state = (s); \
 } while (0)
@@ -145,6 +148,7 @@ int ove_thread_init(ove_thread_t *handle,
 	SET_STATE(t, OVE_THREAD_STATE_READY);
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
 	t->name = desc->name;
+	t->priority = (uint8_t)desc->priority;
 	sem_init(&t->suspend_sem, 0, 0);
 
 	/* Allocate and paint stack for coloration-based HWM tracking. */
@@ -219,6 +223,7 @@ int ove_thread_create_(ove_thread_t *handle,
 	SET_STATE(t, OVE_THREAD_STATE_READY);
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
 	t->name = desc->name;
+	t->priority = (uint8_t)desc->priority;
 	sem_init(&t->suspend_sem, 0, 0);
 
 	size_t actual_sz = 0;
@@ -287,16 +292,19 @@ ove_thread_t ove_thread_get_self(void)
 void ove_thread_set_priority(ove_thread_t handle,
 				 ove_prio_t prio)
 {
-	(void)handle;
-	(void)prio;
-	/* POSIX thread priorities require root; no-op for stub */
+	/* POSIX thread priorities need CAP_SYS_NICE for anything other
+	 * than SCHED_OTHER, so the OS-level priority stays as-is. We
+	 * still record the requested value so ove_thread_list reports
+	 * it and backend-neutral code sees a round-trip. */
+	struct ove_thread *t = handle;
+	if (t) t->priority = (uint8_t)prio;
 }
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
 	struct ove_thread *t = tls_current;
 	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
-	usleep((useconds_t)ms * 1000);
+	posix_sleep_ms(ms);
 	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
@@ -305,6 +313,79 @@ void ove_backend_thread_set_state(int new_state)
 {
 	struct ove_thread *t = tls_current;
 	if (t) SET_STATE(t, new_state);
+}
+#endif
+
+#ifdef CONFIG_OVE_TRACE_STREAM
+#include "ove_trace_ring.h"
+uintptr_t ove_backend_thread_current_handle(void)
+{
+	return (uintptr_t)tls_current;
+}
+
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
+				      size_t max)
+{
+	size_t count = 0;
+	pthread_mutex_lock(&thread_list_lock);
+	for (struct ove_thread *t = thread_list_head; t && count < max; t = t->next) {
+		out[count].tid = (uint32_t)(uintptr_t)t;
+		out[count].name = t->name ? t->name : "?";
+		count++;
+	}
+	pthread_mutex_unlock(&thread_list_lock);
+	return count;
+}
+#endif
+
+#ifdef CONFIG_OVE_PROFILER
+size_t ove_backend_profiler_snapshot_running(pthread_t *out, size_t max)
+{
+	/*
+	 * Sample every live thread, not just RUNNING. On POSIX most
+	 * threads are BLOCKED in condvars/sleep most of the time — if
+	 * we only signalled RUNNING threads the effective sample rate
+	 * drops to <1 Hz in LVGL-style apps. A blocked thread's
+	 * backtrace still gives a meaningful user-code stack (its last
+	 * call into the blocking primitive), which is usually what
+	 * users actually want to see.
+	 *
+	 * The per-thread `profiler_pending` flag is test-and-set here
+	 * to avoid queuing SIGRTMIN on threads that haven't drained
+	 * their previous sample yet (which would happen for long-blocked
+	 * threads at 250 Hz and eventually overflow the kernel's rt-sig
+	 * queue). Handler clears the flag after sampling.
+	 */
+	size_t count = 0;
+	pthread_mutex_lock(&thread_list_lock);
+	for (struct ove_thread *t = thread_list_head; t && count < max; t = t->next) {
+		if (!t->started)
+			continue;
+		int s = t->state;
+		if (s != OVE_THREAD_STATE_RUNNING &&
+		    s != OVE_THREAD_STATE_READY &&
+		    s != OVE_THREAD_STATE_BLOCKED)
+			continue;
+		if (__atomic_exchange_n(&t->profiler_pending, 1,
+					__ATOMIC_ACQ_REL))
+			continue; /* already pending */
+		out[count++] = t->tid;
+	}
+	pthread_mutex_unlock(&thread_list_lock);
+	return count;
+}
+
+void ove_backend_profiler_mark_sampled(void)
+{
+	struct ove_thread *t = tls_current;
+	if (t)
+		__atomic_store_n(&t->profiler_pending, 0, __ATOMIC_RELEASE);
+}
+
+int ove_backend_thread_current_state(void)
+{
+	struct ove_thread *t = tls_current;
+	return t ? t->state : OVE_THREAD_STATE_UNKNOWN;
 }
 #endif
 
@@ -339,8 +420,7 @@ void ove_thread_suspend(ove_thread_t handle)
 	struct ove_thread *t = handle;
 	if (t && t->started) {
 		pthread_kill(t->tid, SIGUSR1);
-		/* Wait briefly for the signal to be delivered */
-		usleep(1000);
+		posix_sleep_ns(1000000ULL); /* 1 ms for signal delivery */
 	}
 }
 
@@ -415,23 +495,46 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		return OVE_OK;
 	}
 
-	/* Collect per-thread CPU time and compute total. */
-	uint64_t cpu_ns[16];
-	uint64_t total_ns = 0;
-	size_t count = 0;
+	/* CPU% = (per-thread CPU-time delta) / (wall-time delta), i.e. the
+	 * fraction of one core the thread consumed since the previous
+	 * sample. We only refresh the cached percentages when enough wall
+	 * time has elapsed (100 ms) — rapid back-to-back callers (e.g. the
+	 * sim_debug pump + an httpd handler firing in the same window)
+	 * would otherwise collapse the delta window to ~0 and the numbers
+	 * would jitter wildly. */
+	static uint64_t prev_wall_ns;
+	struct timespec wts;
+	clock_gettime(CLOCK_MONOTONIC, &wts);
+	uint64_t wall_ns = (uint64_t)wts.tv_sec * 1000000000ULL
+			 + (uint64_t)wts.tv_nsec;
 
 	pthread_mutex_lock(&thread_list_lock);
+	uint64_t delta_wall = (prev_wall_ns && wall_ns > prev_wall_ns)
+			    ? (wall_ns - prev_wall_ns) : 0;
+	int refresh = (delta_wall >= 100000000ULL); /* 100 ms */
+
+	size_t count = 0;
 	struct ove_thread *t = thread_list_head;
 	while (t && count < max_count && count < 16) {
-		cpu_ns[count] = _thread_cpu_ns(t->tid);
-		total_ns += cpu_ns[count];
+		uint64_t cpu_ns = _thread_cpu_ns(t->tid);
+		if (refresh) {
+			uint64_t dcpu = (t->cpu_prev_ns && cpu_ns > t->cpu_prev_ns)
+				      ? (cpu_ns - t->cpu_prev_ns) : 0;
+			t->cpu_pct_x100 = (uint32_t)(dcpu * 10000ULL / delta_wall);
+			t->cpu_prev_ns = cpu_ns;
+		} else if (!t->cpu_prev_ns) {
+			/* First observation ever — seed so the next refresh
+			 * produces a valid delta. */
+			t->cpu_prev_ns = cpu_ns;
+		}
+
 		out[count].name = t->name ? t->name : "?";
 		out[count].state = (ove_thread_state_t)t->state;
-		out[count].priority = 0;
+		out[count].priority = t->priority;
 		out[count].stack_used = t->stack_base
 			? _check_stack_hwm(t->stack_base, t->stack_size) : 0;
 		out[count].stack_size = t->stack_size;
-		out[count].cpu_percent_x100 = 0;
+		out[count].cpu_percent_x100 = t->cpu_pct_x100;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 		out[count].state_times.running_us   = t->st.cumul_us[0];
 		out[count].state_times.ready_us     = t->st.cumul_us[1];
@@ -443,14 +546,12 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		count++;
 		t = t->next;
 	}
-	pthread_mutex_unlock(&thread_list_lock);
 
-	/* Compute CPU% from per-thread / total ratio. */
-	if (total_ns > 0) {
-		for (size_t i = 0; i < count; i++)
-			out[i].cpu_percent_x100 =
-				(uint32_t)(cpu_ns[i] * 10000ULL / total_ns);
-	}
+	if (refresh)
+		prev_wall_ns = wall_ns;
+	else if (!prev_wall_ns)
+		prev_wall_ns = wall_ns;
+	pthread_mutex_unlock(&thread_list_lock);
 
 	if (actual_count)
 		*actual_count = count;

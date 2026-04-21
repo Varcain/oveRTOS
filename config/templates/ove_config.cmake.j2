@@ -211,6 +211,20 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_graph.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_nodes.c")
 {% endif %}
 
+# Trace stream (dashboard swimlane) — backend-agnostic ring + emit
+{% if config.get("CONFIG_OVE_TRACE_STREAM") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace_ring.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace.c")
+{% endif %}
+
+# Sampling profiler (common ring; backend sampler added per RTOS)
+{% if config.get("CONFIG_OVE_PROFILER") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_profiler_ring.c")
+{% if config.get("CONFIG_OVE_RTOS_POSIX") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/posix/posix_profiler.c")
+{% endif %}
+{% endif %}
+
 # Common networking sources (platform-independent)
 {% if config.get("CONFIG_OVE_NET_TLS") == True and config.get("CONFIG_OVE_SIM") != True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_net_tls.c")

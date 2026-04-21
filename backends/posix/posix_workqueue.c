@@ -8,6 +8,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "posix_sleep.h"
 #include <pthread.h>
 #include <string.h>
 #include <unistd.h>
@@ -31,9 +32,8 @@ static void *wq_thread_func(void *arg)
 		wq->count--;
 		pthread_mutex_unlock(&wq->lock);
 
-		if (w->delay_ms > 0) {
-			usleep((useconds_t)w->delay_ms * 1000);
-		}
+		if (w->delay_ms > 0)
+			posix_sleep_ms(w->delay_ms);
 		w->pending = 0;
 		if (w->handler) {
 			w->handler(w);

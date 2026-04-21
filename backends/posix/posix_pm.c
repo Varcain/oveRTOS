@@ -13,6 +13,7 @@
 #include "ove/hal/hal_pm.h"
 #include "ove/log.h"
 #include "ove_backend_common.h"
+#include "posix_sleep.h"
 #include <unistd.h>
 
 static const char *state_name(ove_pm_state_t state)
@@ -41,8 +42,8 @@ int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
 	OVE_LOG_INF("pm: [POSIX] enter %s (expected %u ms)",
 		    state_name(state), expected_idle_ms);
-	/* Brief sleep to simulate state transition for test observability */
-	usleep(1000);
+	/* Brief sleep to simulate state transition for test observability. */
+	posix_sleep_ns(1000000ULL);
 	return OVE_OK;
 }
 

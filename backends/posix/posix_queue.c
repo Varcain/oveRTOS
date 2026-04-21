@@ -7,6 +7,7 @@
  */
 
 #include "ove/ove.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <pthread.h>
 #include <string.h>
@@ -102,18 +103,22 @@ int ove_queue_send(ove_queue_t q, const void *data,
 
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		while (sq->count >= sq->max_items) {
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			pthread_cond_wait(&sq->not_full, &sq->lock);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 		}
 	} else {
 		struct timespec ts;
 		ms_to_abstime(timeout_ms, &ts);
 		while (sq->count >= sq->max_items) {
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			int ret = pthread_cond_timedwait(&sq->not_full,
 							&sq->lock, &ts);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
 				return OVE_ERR_TIMEOUT;
@@ -125,6 +130,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 	       sq->item_size);
 	sq->head = (sq->head + 1) % sq->max_items;
 	sq->count++;
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_POST, sq);
 	pthread_cond_signal(&sq->not_empty);
 	pthread_mutex_unlock(&sq->lock);
 	return OVE_OK;
@@ -141,18 +147,22 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		while (sq->count == 0) {
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			pthread_cond_wait(&sq->not_empty, &sq->lock);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 		}
 	} else {
 		struct timespec ts;
 		ms_to_abstime(timeout_ms, &ts);
 		while (sq->count == 0) {
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			int ret = pthread_cond_timedwait(&sq->not_empty,
 							&sq->lock, &ts);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
 				return OVE_ERR_TIMEOUT;

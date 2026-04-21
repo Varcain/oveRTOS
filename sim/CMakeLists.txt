@@ -74,6 +74,16 @@ list(APPEND SIM_SOURCES
     ${SIM_DIR}/hal/sim_debug.c
 )
 
+# Trace plugin (thread-state swimlane)
+list(APPEND SIM_SOURCES
+    ${SIM_DIR}/hal/sim_trace.c
+)
+
+# Profiler plugin (sampling profiler + flame graph)
+list(APPEND SIM_SOURCES
+    ${SIM_DIR}/hal/sim_profiler.c
+)
+
 # Export to parent scope
 set(SIM_SOURCES ${SIM_SOURCES} PARENT_SCOPE)
 set(SIM_INCLUDE_DIRS ${SIM_INCLUDE_DIRS} PARENT_SCOPE)

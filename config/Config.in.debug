@@ -42,4 +42,74 @@ config OVE_THREAD_STATE_STATS
       on every state transition. Enables per-state % display
       in the sim dashboard thread view.
 
+config OVE_TRACE_STREAM
+    bool "Thread-state trace streaming"
+    depends on OVE_THREAD_STATE_STATS
+    default y if OVE_SIM
+    help
+      Emit every thread state transition as a timestamped record
+      into a lock-free SPSC ring buffer, drained by the sim
+      transport layer and rendered as a swimlane in the dashboard
+      trace panel. Disabling removes all per-transition overhead.
+
+config OVE_TRACE_MARKERS
+    bool "Sync-primitive trace markers"
+    depends on OVE_TRACE_STREAM
+    default y
+    help
+      In addition to state transitions, emit point markers when
+      threads enter/leave sync primitives (mutex, semaphore, event,
+      condvar, queue). Renders as triangles on the trace swimlane,
+      aligned with known sem_take/sem_give sites.
+
+config OVE_TRACE_RING_SIZE
+    int "Trace ring buffer size (records)"
+    depends on OVE_TRACE_STREAM
+    default 4096
+    help
+      Capacity of the trace ring buffer, in records (16 bytes each).
+      On overflow the producer drops records and increments a counter
+      reported by the dashboard. 4096 records = 64 KiB, ~30 s of
+      typical activity at 150 transitions/s.
+
+config OVE_PROFILER
+    bool "Sampling profiler"
+    depends on OVE_SIM
+    default y if OVE_SIM
+    help
+      Periodically interrupts each runnable thread to capture its
+      PC + call stack, forwards samples to the dashboard for flat
+      top-N and flame-graph rendering. POSIX uses SIGRTMIN +
+      glibc backtrace(3); other backends vary.
+
+config OVE_PROFILER_HZ
+    int "Sampling frequency (Hz)"
+    depends on OVE_PROFILER
+    default 250
+    range 10 1000
+    help
+      Per-thread sample rate. Higher values give finer resolution
+      at the cost of overhead (one signal + backtrace per running
+      thread per tick). 250 Hz is a good default for interactive
+      workloads.
+
+config OVE_PROFILER_MAX_DEPTH
+    int "Maximum stack depth per sample"
+    depends on OVE_PROFILER
+    default 16
+    range 4 64
+    help
+      Upper bound on frames captured per sample. Deeper stacks are
+      truncated. Each sample allocates a fixed slot of
+      header + depth * sizeof(void *) bytes in the ring.
+
+config OVE_PROFILER_RING_SIZE
+    int "Profiler sample ring size (samples)"
+    depends on OVE_PROFILER
+    default 1024
+    help
+      Capacity of the profiler sample ring. Each slot is
+      16 B header + MAX_DEPTH * sizeof(void *). On overflow
+      samples are dropped and counted.
+
 endmenu

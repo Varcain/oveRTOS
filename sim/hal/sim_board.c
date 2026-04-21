@@ -104,7 +104,28 @@ int ove_sim_board_init(void)
 		fprintf(stderr, "[sim] Audio plugin failed: %d\n", ret);
 #endif
 
-	/* Debug plugin (thread + memory snapshots) — always registered. */
+	/* Register trace and profiler *before* the debug plugin: the debug
+	 * plugin owns the consolidated pump thread that drives them, and
+	 * the thread starts as soon as registration returns. */
+#ifdef CONFIG_OVE_TRACE_STREAM
+	{
+		extern int ove_sim_trace_register(void);
+		ret = ove_sim_trace_register();
+		if (ret < 0)
+			fprintf(stderr, "[sim] Trace plugin failed: %d\n", ret);
+	}
+#endif
+
+#ifdef CONFIG_OVE_PROFILER
+	{
+		extern int ove_sim_profiler_register(void);
+		ret = ove_sim_profiler_register();
+		if (ret < 0)
+			fprintf(stderr, "[sim] Profiler plugin failed: %d\n", ret);
+	}
+#endif
+
+	/* Debug plugin (thread + memory snapshots + pump) — always registered. */
 	ret = ove_sim_debug_register();
 	if (ret < 0)
 		fprintf(stderr, "[sim] Debug plugin failed: %d\n", ret);
