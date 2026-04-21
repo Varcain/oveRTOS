@@ -568,6 +568,10 @@ function connect() {
         statusEl.textContent = "Connected";
         statusEl.className = "status connected";
         addEvent("system", "Connected to sim server");
+        /* Drop prior-session state — timebase and symbol maps are not
+         * comparable across a sim restart. */
+        traceResetOnReconnect();
+        profilerResetOnReconnect();
     };
 
     ws.onclose = function () {
@@ -1448,9 +1452,13 @@ var TRACE_KIND_MARK  = 2;
 
 /* Rolling window in simulation time (microseconds). */
 var TRACE_WINDOW_US  = 30 * 1000 * 1000;
-/* Hard memory cap — evict oldest first once exceeded. Sized for ~200 s of
- * traffic at typical rates so a long pause still retains its frozen view. */
-var TRACE_MAX_RECORDS = 200000;
+/* Hard memory cap on each of traceSpans / traceMarks — evict oldest first.
+ * Memory is bounded, not workload-sized: one entry ~80 B in V8 so the pair
+ * of arrays peaks at ~10 MB. Measured rate on example_c was ~700 rec/s
+ * (state 617 + marks 90), so a typical 30 s window fits in ~21 k records;
+ * the cap only clamps pathological bursts where the in-kernel ring would
+ * otherwise flood the browser before time-based eviction ran. */
+var TRACE_MAX_RECORDS = 60000;
 /* Plot geometry: left label column + right padding. Shared by renderTrace
  * and the pan/zoom pointer handlers so pixel↔time math matches exactly. */
 var TRACE_LABEL_W = 90;
@@ -1463,6 +1471,24 @@ var TRACE_STATE_COLORS = {
     3: "#666666", /* SUSPENDED */
     4: "#222222", /* TERMINATED */
 };
+
+/* Names for OVE_TRACE_PRIM_* / OVE_TRACE_ACT_* nibble codes in mark.code. */
+function tracePrimName(p) {
+    return p === 1 ? "mutex"
+         : p === 2 ? "sem"
+         : p === 3 ? "event"
+         : p === 4 ? "cv"
+         : p === 5 ? "queue"
+         : p === 15 ? "user"
+         : "prim" + p;
+}
+function traceActName(a) {
+    return a === 1 ? "wait_enter"
+         : a === 2 ? "wait_exit"
+         : a === 3 ? "post"
+         : a === 4 ? "user"
+         : "act" + a;
+}
 
 /* Per-thread lane state: last state + last timestamp (for closing span). */
 var traceThreads = {};            /* tid -> { name, lastState, lastTs } */
@@ -1478,6 +1504,24 @@ var TRACE_MIN_SPAN_US = 100;
 var traceView    = { spanUs: TRACE_WINDOW_US, follow: true, tEndFrozen: 0 };
 var traceDirty   = false;
 var traceRafScheduled = false;
+
+/* Clear timebase-tied trace state so a sim restart can't leave stale
+ * spans/marks plotted against a reused timestamp range. User settings
+ * (zoom span, tab) are preserved; follow is forced back on since the
+ * paused tEndFrozen anchor belongs to the prior session. */
+function traceResetOnReconnect() {
+    traceThreads = {};
+    traceSpans = [];
+    traceMarks = [];
+    traceDropped = 0;
+    traceMinTs = 0;
+    traceMaxTs = 0;
+    traceView.follow = true;
+    traceView.tEndFrozen = 0;
+    var follow = document.getElementById("trace-follow");
+    if (follow) follow.checked = true;
+    scheduleTraceRender();
+}
 
 function traceEvict() {
     if (traceSpans.length > TRACE_MAX_RECORDS) {
@@ -1540,7 +1584,7 @@ function handleTrace(buf, off) {
         var tid = dv.getUint32(p0 + 8, true);
         var kind = dv.getUint8(p0 + 12);
         var code = dv.getUint8(p0 + 13);
-        /* arg at p0+14 (2 bytes) — unused for rendering today */
+        var arg  = dv.getUint16(p0 + 14, true);
 
         if (ts > traceMaxTs) traceMaxTs = ts;
         if (traceMinTs === 0 || ts < traceMinTs) traceMinTs = ts;
@@ -1558,7 +1602,9 @@ function handleTrace(buf, off) {
             th.lastState = code;
             th.lastTs = ts;
         } else if (kind === TRACE_KIND_MARK) {
-            traceMarks.push({ tid: tid, ts: ts, prim: (code >> 4) & 0x0F, act: code & 0x0F });
+            traceMarks.push({ tid: tid, ts: ts,
+                              prim: (code >> 4) & 0x0F, act: code & 0x0F,
+                              arg: arg });
         }
     }
 
@@ -1861,6 +1907,75 @@ function traceBindPanel() {
         applyZoom(factor, xCss);
         e.preventDefault();
     }, { passive: false });
+
+    /* ── Marker tooltip ────────────────────────────────────────────
+     * Triangles are 6 px wide; widen hit tolerance to ±6 px so the
+     * glyph is easy to land on. Pick the nearest mark in time on the
+     * cursor's lane. */
+    var tip = document.getElementById("trace-mark-tip");
+    if (tip) {
+        cvs.addEventListener("mousemove", function (e) {
+            if (drag) { tip.style.display = "none"; return; }
+            if (traceMarks.length === 0) { tip.style.display = "none"; return; }
+            var plot = traceGetPlot();
+            if (!plot) { tip.style.display = "none"; return; }
+            var rect = cvs.getBoundingClientRect();
+            var xCss = e.clientX - rect.left;
+            var yCss = e.clientY - rect.top;
+            if (xCss < plot.plotX) { tip.style.display = "none"; return; }
+
+            /* Rebuild tids list the same way renderTrace does so lane
+             * row math matches. Cheap — only runs on hover. */
+            var tids = [];
+            for (var k in traceThreads) tids.push(+k);
+            if (tids.length === 0) { tip.style.display = "none"; return; }
+            tids.sort(function (a, b) {
+                var na = traceThreads[a].name, nb = traceThreads[b].name;
+                return na < nb ? -1 : (na > nb ? 1 : 0);
+            });
+
+            var cssH = rect.height;
+            var axisH = 14;
+            var laneH = Math.max(14, Math.min(28,
+                Math.floor((cssH - 20) / tids.length)));
+            var row = Math.floor((yCss - axisH) / laneH);
+            if (row < 0 || row >= tids.length) {
+                tip.style.display = "none"; return;
+            }
+            var rowTid = tids[row];
+
+            var tEnd = traceCurrentTEnd();
+            var tStart = tEnd - traceView.spanUs;
+            var span = tEnd - tStart; if (span <= 0) span = 1;
+
+            var best = null, bestDx = Infinity;
+            for (var i = traceMarks.length - 1; i >= 0; i--) {
+                var mk = traceMarks[i];
+                if (mk.ts < tStart || mk.ts > tEnd) continue;
+                if (mk.tid !== rowTid) continue;
+                var mx = plot.plotX + ((mk.ts - tStart) / span) * plot.plotW;
+                var dx = Math.abs(mx - xCss);
+                if (dx < bestDx) { bestDx = dx; best = mk; }
+            }
+            if (!best || bestDx > 6) {
+                tip.style.display = "none"; return;
+            }
+
+            var name = traceThreads[best.tid]
+                ? traceThreads[best.tid].name : ("0x" + best.tid.toString(16));
+            tip.textContent = name + "  "
+                + tracePrimName(best.prim) + " "
+                + traceActName(best.act)
+                + "  obj=0x" + best.arg.toString(16)
+                + "  @ " + (best.ts / 1e6).toFixed(3) + "s";
+            tip.style.display = "block";
+            tip.style.left = (xCss + 12) + "px";
+            tip.style.top  = (yCss + 12) + "px";
+        });
+        cvs.addEventListener("mouseleave", function () {
+            tip.style.display = "none";
+        });
+    }
 }
 
 /* ── Sampling profiler (FRAME_PROFILE) ──────────────────────────────── */
@@ -1946,6 +2061,25 @@ var profilerRefreshTimer = null;
 var profilerDirty       = false;
 var profilerFlameLayout = null; /* cached for hover lookup */
 var profilerLastFlameData = null;
+
+/* Clear timebase- and ELF-tied profiler state so a sim restart (new
+ * timebase, potentially rebuilt binary with shifted symbols) can't mix
+ * its caps/samples with the previous session's. User settings (window,
+ * pause, on-cpu filter, active tab, refresh timer) are preserved;
+ * capabilities + symbols are re-sent by the backend on reconnect. */
+function profilerResetOnReconnect() {
+    profilerMaxHz = 0;
+    profilerCurrentHz = 0;
+    profilerSymbols = [];
+    profilerSamples = [];
+    profilerDropped = 0;
+    profilerLastTs = 0;
+    profilerSymbolCount = 0;
+    profilerFlameLayout = null;
+    profilerLastFlameData = null;
+    profilerDirty = true;
+    if (typeof renderProfiler === "function") renderProfiler();
+}
 
 /**
  * Given a sample's pcs[] (leaf-first), return the index of the first

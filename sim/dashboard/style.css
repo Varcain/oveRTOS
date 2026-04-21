@@ -815,6 +815,22 @@ header h1 {
     display: block;
 }
 
+.trace-mark-tip {
+    position: absolute;
+    background: #1a1f2c;
+    color: #e6eaf2;
+    border: 1px solid #4d5a78;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+    pointer-events: none;
+    z-index: 5;
+    white-space: nowrap;
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* ── Profiler panel ─────────────────────────────────────────────────── */
 
 #profiler-panel {

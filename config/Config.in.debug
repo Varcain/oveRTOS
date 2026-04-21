@@ -62,6 +62,14 @@ config OVE_TRACE_MARKERS
       condvar, queue). Renders as triangles on the trace swimlane,
       aligned with known sem_take/sem_give sites.
 
+      Performance note: each marker is two wrapper calls plus a
+      CAS ring push (~100 ns) around every sync op. On POSIX this
+      roughly doubles-to-triples the cost of cheap uncontended
+      primitives (mutex_lock_unlock 70->175 ns, sem_take_give
+      71->210 ns measured on apps/c/benchmark). Workloads with
+      tight sync-primitive loops should leave this disabled;
+      state transitions are still captured via OVE_TRACE_STREAM.
+
 config OVE_TRACE_RING_SIZE
     int "Trace ring buffer size (records)"
     depends on OVE_TRACE_STREAM
