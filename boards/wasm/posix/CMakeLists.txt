@@ -55,6 +55,24 @@ add_link_options(
     --shell-file=${CMAKE_CURRENT_LIST_DIR}/../shell.html
 )
 
+# Sampling profiler needs USE_OFFSET_CONVERTER so
+# emscripten_get_callstack() can map wasm bytecode offsets back to C
+# function names (via the wasm `name` custom section). Without this the
+# runtime returns anonymous frames and the parser emits depth=0 samples
+# — the profiler panel shows "Waiting for samples…" forever.
+#
+# --profiling-funcs preserves the wasm `name` custom section with
+# minimal size overhead even when DWARF is stripped (OVE_DEBUG=n).
+# `-g1` is NOT sufficient here: in modern emscripten it only preserves
+# JS-side names, not the wasm name section, so the offset converter
+# resolves offsets to empty strings.
+if(OVE_PROFILER)
+    add_link_options(
+        -sUSE_OFFSET_CONVERTER=1
+        --profiling-funcs
+    )
+endif()
+
 #############################################################################
 # WASM debug: embed DWARF + emit sourcemap so Chrome DevTools (with the
 # "C/C++ DevTools Support (DWARF)" extension) can step through C source,
@@ -149,6 +167,8 @@ if(OVE_SIM)
         ${OVE_DIR}/sim/src/ove_sim_wasm_config.c
         ${OVE_DIR}/sim/hal/sim_board.c
         ${OVE_DIR}/sim/hal/sim_debug.c
+        ${OVE_DIR}/sim/hal/sim_trace.c
+        ${OVE_DIR}/sim/hal/sim_profiler.c
     )
     if(OVE_LVGL)
         list(APPEND SIM_SOURCES

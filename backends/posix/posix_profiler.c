@@ -169,6 +169,17 @@ uint32_t ove_backend_profiler_get_max_hz(void)
 	return (uint32_t)CONFIG_OVE_PROFILER_HZ;
 }
 
+/*
+ * POSIX does not symbolicate on target — the bridge reads `nm -n` on the
+ * ELF at sim start and forwards a full PROFILE_SUB_SYMBOLS frame. Return
+ * 0 so the sim_profiler drain loop treats each tick as "no new symbols".
+ */
+size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
+{
+	(void)out; (void)out_max;
+	return 0;
+}
+
 static int install_signal_handler(void)
 {
 	struct sigaction sa;

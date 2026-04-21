@@ -51,6 +51,15 @@ extern "C" {
 /** Event type: profiler capabilities (max Hz, current Hz). */
 #define OVE_SIM_PROFILER_EVT_CAPS      21
 
+/**
+ * Event type: newly-interned symbols as a JSON payload of the form
+ * @c [[pc_start,pc_end,"name"],...] compatible with the dashboard's
+ * PROFILE_SUB_SYMBOLS handler. Emitted incrementally by backends that
+ * symbolicate on target (e.g. WASM via emscripten_get_callstack);
+ * POSIX never emits this (the bridge forwards a single upfront blob).
+ */
+#define OVE_SIM_PROFILER_EVT_SYMBOLS   22
+
 /** Command type: set sampling rate. Payload = uint32_t Hz (LE). */
 #define OVE_SIM_PROFILER_CMD_SET_RATE  100
 

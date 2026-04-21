@@ -928,6 +928,16 @@ header h1 {
     opacity: 1;
 }
 
+.profiler-caveat {
+    font-size: 11px;
+    color: #ffb366;
+    background: rgba(255, 179, 102, 0.08);
+    border-left: 2px solid #ffb366;
+    padding: 4px 8px;
+    margin: 0 0 6px 0;
+    cursor: help;
+}
+
 .profiler-view {
     flex: 1;
     overflow: auto;

@@ -2051,6 +2051,34 @@ var PROFILER_SKIP_FRAMES = {
 var profilerWindowUs    = 30 * 1000 * 1000; /* rolling window, mutable */
 var profilerPaused      = false;
 var profilerOnCpuOnly   = false; /* filter: keep only RUNNING/READY samples */
+var profilerHidePump    = true;  /* hide the sim-debug pump thread (default on) */
+var profilerFlameZoom   = 1;     /* horizontal zoom multiplier (mouse-wheel) */
+var PROFILER_FLAME_MAX_ZOOM = 20;
+
+/* TIDs classified as the sim-debug pump thread. Populated lazily as
+ * samples arrive and at least one frame resolves to debug_thread_fn —
+ * avoids re-walking the stack on every render. */
+var profilerPumpTids    = Object.create(null);
+
+/*
+ * Return true if @sample came from the sim-debug pump thread. The pump
+ * samples itself every tick (since it's the one flagging RUNNING
+ * threads), and its stack is always pinned at debug_thread_fn →
+ * sleep_ms — pure noise in the flame graph. Classification is cached
+ * per tid so the check only walks the stack once per new thread.
+ */
+function profilerSampleIsPump(sample) {
+    if (profilerPumpTids[sample.tid]) return true;
+    var pcs = sample.pcs;
+    for (var i = 0; i < pcs.length; i++) {
+        var n = resolvePc(pcs[i]);
+        if (n && n.indexOf("debug_thread_fn") !== -1) {
+            profilerPumpTids[sample.tid] = 1;
+            return true;
+        }
+    }
+    return false;
+}
 var profilerSymbols     = []; /* sorted [pc_start, pc_end, name] */
 var profilerSamples     = []; /* [{ts, tid, state, pcs:[...]}] */
 var profilerDropped     = 0;
@@ -2125,24 +2153,31 @@ function handleProfile(buf, off) {
     var subType = dv.getUint8(0);
 
     if (subType === PROFILE_SUB_SYMBOLS) {
-        /* JSON array of [pc_start, pc_end, name]. */
+        /* JSON array of [pc_start, pc_end, name].
+         *
+         * Merge into the existing table rather than replacing it: POSIX
+         * bridge delivers one large upfront blob (merge is a no-op on an
+         * empty table), while WASM emits incremental batches as its
+         * on-target interner observes new frame names. Either way the
+         * net effect is an append-only sorted set keyed by pc_start. */
         var bytes = new Uint8Array(buf, off + 1, dv.byteLength - 1);
         try {
             var json = new TextDecoder().decode(bytes);
             var arr = JSON.parse(json);
-            /* Deduplicate by pc_start — nm occasionally emits dupes
-             * (alias symbols). Keep the first. */
             var seen = Object.create(null);
-            var syms = [];
+            for (var k = 0; k < profilerSymbols.length; k++)
+                seen[profilerSymbols[k][0]] = 1;
+            var added = 0;
             for (var i = 0; i < arr.length; i++) {
                 var e = arr[i];
                 if (seen[e[0]]) continue;
                 seen[e[0]] = 1;
-                syms.push(e);
+                profilerSymbols.push(e);
+                added++;
             }
-            syms.sort(function (a, b) { return a[0] - b[0]; });
-            profilerSymbols = syms;
-            profilerSymbolCount = syms.length;
+            if (added > 0)
+                profilerSymbols.sort(function (a, b) { return a[0] - b[0]; });
+            profilerSymbolCount = profilerSymbols.length;
         } catch (err) {
             console.error("profiler: symbol parse failed", err);
         }
@@ -2265,13 +2300,12 @@ function renderProfiler() {
     var info = document.getElementById("profiler-info");
     if (info) {
         var winS = Math.round(profilerWindowUs / 1e6);
-        var kept = profilerSamples.length;
-        if (profilerOnCpuOnly) {
-            kept = 0;
-            for (var si = 0; si < profilerSamples.length; si++) {
-                var ss = profilerSamples[si].state;
-                if (ss === 0 || ss === 1) kept++;
-            }
+        var kept = 0;
+        for (var si = 0; si < profilerSamples.length; si++) {
+            var smp0 = profilerSamples[si];
+            if (profilerOnCpuOnly && smp0.state !== 0 && smp0.state !== 1) continue;
+            if (profilerHidePump && profilerSampleIsPump(smp0)) continue;
+            kept++;
         }
         var mode = profilerOnCpuOnly ? "on-CPU" : "wall-clock";
         var label = kept + " samples (" + mode + ") / " + winS + " s, "
@@ -2297,6 +2331,7 @@ function renderProfilerFlat() {
     for (var i = 0; i < profilerSamples.length; i++) {
         var smp = profilerSamples[i];
         if (profilerOnCpuOnly && smp.state !== 0 && smp.state !== 1) continue;
+        if (profilerHidePump && profilerSampleIsPump(smp)) continue;
         var pcs = smp.pcs;
         if (!pcs.length) continue;
         var leafOff = profilerLeafOffset(pcs);
@@ -2370,6 +2405,7 @@ function renderProfilerFlame() {
     for (var i = 0; i < profilerSamples.length; i++) {
         var s = profilerSamples[i];
         if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) continue;
+        if (profilerHidePump && profilerSampleIsPump(s)) continue;
         if (!s.pcs.length) continue;
         var leafOff = profilerLeafOffset(s.pcs);
         if (leafOff >= s.pcs.length) continue;
@@ -2392,21 +2428,39 @@ function renderProfilerFlame() {
     var dpr = window.devicePixelRatio || 1;
     var cssW = view.clientWidth, cssH = view.clientHeight;
     if (cssW <= 0 || cssH <= 0) return;
-    if (cvs.width !== cssW * dpr || cvs.height !== cssH * dpr) {
-        cvs.width = cssW * dpr;
-        cvs.height = cssH * dpr;
-    }
+
     var ctx = cvs.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.font = "11px 'Consolas', monospace";
 
     if (root.count === 0) {
+        cvs.style.width = "100%";
+        cvs.width  = cssW * dpr;
+        cvs.height = cssH * dpr;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssW, cssH);
         ctx.fillStyle = "#666";
         ctx.font = "12px 'Consolas', monospace";
         ctx.fillText("Waiting for samples…", 10, 20);
         profilerFlameLayout = [];
         return;
     }
+
+    /* Horizontal zoom is user-controlled via wheel events on the canvas
+     * (see profilerBindPanel). At zoom = 1 the root fills cssW; zoom > 1
+     * grows the canvas past the viewport so .profiler-view's
+     * overflow:auto yields a horizontal scrollbar. Anything that can't
+     * fit its label at the current zoom falls back to ellipsis. */
+    var totalW = Math.ceil(cssW * profilerFlameZoom);
+
+    /* Size bitmap to total width; explicit style.width overrides the
+     * stylesheet's width:100% so the parent's overflow:auto can scroll. */
+    cvs.width  = totalW * dpr;
+    cvs.height = cssH  * dpr;
+    cvs.style.width = totalW + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, totalW, cssH);
+    ctx.font = "11px 'Consolas', monospace";
+    ctx.textBaseline = "middle";
 
     var rowH = 16;
     var layout = []; /* [{x, y, w, h, name, count, total}] */
@@ -2430,28 +2484,46 @@ function renderProfilerFlame() {
             childX += cw;
         }
     }
-    drawNode(root, 0, cssW, 0, root.count);
+    drawNode(root, 0, totalW, 0, root.count);
 
     /* Paint boxes. Hash each name to a stable hue so the same function
-     * keeps the same colour across refreshes. */
-    ctx.font = "11px 'Consolas', monospace";
-    ctx.textBaseline = "middle";
+     * keeps the same colour across refreshes. Labels use ellipsis only
+     * as a safety net when the computed scale hit MAX_ZOOM and a block
+     * still can't show its full name. */
+    var ellW = ctx.measureText("…").width;
     for (var i2 = 0; i2 < layout.length; i2++) {
         var b = layout[i2];
         var h = strHash(b.name) % 60;
         ctx.fillStyle = "hsl(" + (10 + h * 4) + ", 60%, 48%)";
         ctx.fillRect(b.x, b.y, b.w, b.h);
-        if (b.w > 30) {
-            ctx.fillStyle = "#0d1117";
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(b.x + 2, b.y, b.w - 4, b.h);
-            ctx.clip();
-            ctx.fillText(b.name, b.x + 4, b.y + b.h / 2);
-            ctx.restore();
-        }
+        var maxTextW = b.w - 8;
+        if (maxTextW <= ellW) continue;
+        var label = fitTextToWidth(ctx, b.name, maxTextW, ellW);
+        if (!label) continue;
+        ctx.fillStyle = "#0d1117";
+        ctx.fillText(label, b.x + 4, b.y + b.h / 2);
     }
     profilerFlameLayout = layout;
+}
+
+/*
+ * Truncate @text to fit @maxW pixels at the current ctx.font; appends a
+ * single "…" when the whole string doesn't fit. @ellW is the pre-measured
+ * width of "…" — passed in so the caller doesn't re-measure per box.
+ * Returns the empty string if even the ellipsis alone won't fit.
+ */
+function fitTextToWidth(ctx, text, maxW, ellW) {
+    if (maxW <= 0) return "";
+    if (ctx.measureText(text).width <= maxW) return text;
+    if (ellW >= maxW) return "";
+    var lo = 0, hi = text.length;
+    while (lo < hi) {
+        var mid = (lo + hi + 1) >> 1;
+        if (ctx.measureText(text.slice(0, mid)).width + ellW <= maxW) lo = mid;
+        else hi = mid - 1;
+    }
+    if (lo === 0) return "";
+    return text.slice(0, lo) + "…";
 }
 
 function strHash(s) {
@@ -2519,6 +2591,16 @@ function profilerBindPanel() {
         });
     }
 
+    var hidePumpBtn = document.getElementById("profiler-hidepump");
+    if (hidePumpBtn) {
+        hidePumpBtn.classList.toggle("active", profilerHidePump);
+        hidePumpBtn.addEventListener("click", function () {
+            profilerHidePump = !profilerHidePump;
+            hidePumpBtn.classList.toggle("active", profilerHidePump);
+            renderProfiler();
+        });
+    }
+
     var rateSel = document.getElementById("profiler-rate");
     if (rateSel) {
         rateSel.addEventListener("change", function () {
@@ -2567,11 +2649,50 @@ function profilerBindPanel() {
         cvs.addEventListener("mouseleave", function () {
             tip.style.display = "none";
         });
+
+        /* Mouse-wheel zoom, anchored at the cursor so the block under
+         * the pointer stays under the pointer across zoom steps. */
+        var flameView = cvs.parentElement;
+        cvs.addEventListener("wheel", function (e) {
+            if (!e.deltaY || profilerActiveTab !== "flame") return;
+            e.preventDefault();
+
+            var rect = flameView.getBoundingClientRect();
+            var mX = e.clientX - rect.left;
+            if (mX < 0 || mX > rect.width) return;
+
+            var oldW = cvs.clientWidth || rect.width;
+            var logicalX = flameView.scrollLeft + mX;
+
+            var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            var next = profilerFlameZoom * factor;
+            if (next < 1) next = 1;
+            if (next > PROFILER_FLAME_MAX_ZOOM) next = PROFILER_FLAME_MAX_ZOOM;
+            if (next === profilerFlameZoom) return;
+            profilerFlameZoom = next;
+
+            renderProfiler();
+
+            var newW = cvs.clientWidth || oldW;
+            flameView.scrollLeft = logicalX * (newW / oldW) - mX;
+        }, { passive: false });
     }
 
     window.addEventListener("resize", function () {
         if (profilerActiveTab === "flame") renderProfiler();
     });
+
+    /* WinBox drag-resize doesn't emit a viewport resize event, so the flame
+     * canvas bitmap stays pinned at its first-render width and the right
+     * edge gets cropped once the panel grows. A ResizeObserver on the
+     * flame view re-renders whenever its content box changes size. */
+    var flameView = document.getElementById("profiler-flame-view");
+    if (flameView && typeof ResizeObserver !== "undefined") {
+        var ro = new ResizeObserver(function () {
+            if (profilerActiveTab === "flame") renderProfiler();
+        });
+        ro.observe(flameView);
+    }
 }
 
 function sendDebugCmd(cmdType, payload) {
@@ -3528,7 +3649,28 @@ window.initWasmMode = function () {
      *   [plugin_id:4][event_type:4][timestamp_ms:4][data_len:4][payload]
      * Map event_type → FRAME_* handlers, mirroring what the Python
      * bridge does on the QEMU/POSIX-host path. */
-    var SIM_DEBUG_EVT_THREADS = 0;  /* OVE_SIM_DEBUG_EVT_THREADS */
+    var SIM_DEBUG_EVT_THREADS      = 0;   /* OVE_SIM_DEBUG_EVT_THREADS */
+    var SIM_TRACE_EVT_STREAM       = 10;  /* OVE_SIM_TRACE_EVT_STREAM */
+    var SIM_TRACE_EVT_DESCRIPTORS  = 11;  /* OVE_SIM_TRACE_EVT_DESCRIPTORS */
+    var SIM_PROFILER_EVT_SAMPLES   = 20;  /* OVE_SIM_PROFILER_EVT_SAMPLES */
+    var SIM_PROFILER_EVT_CAPS      = 21;  /* OVE_SIM_PROFILER_EVT_CAPS */
+    var SIM_PROFILER_EVT_SYMBOLS   = 22;  /* OVE_SIM_PROFILER_EVT_SYMBOLS */
+
+    /*
+     * Synthesise the sub-type byte the POSIX bridge prepends before
+     * FRAME_PROFILE, so handleProfile can be called with the same
+     * layout it sees on the WebSocket path. The WASM transport delivers
+     * the raw plugin payload without a frame envelope.
+     */
+    function dispatchProfileEvent(arrayBuf, subType) {
+        var payloadLen = arrayBuf.byteLength - 16;
+        if (payloadLen < 0) return;
+        var combined = new Uint8Array(1 + payloadLen);
+        combined[0] = subType;
+        if (payloadLen > 0)
+            combined.set(new Uint8Array(arrayBuf, 16, payloadLen), 1);
+        handleProfile(combined.buffer, 0);
+    }
 
     window.__ove_sim_event = function (arrayBuf) {
         if (!arrayBuf || arrayBuf.byteLength < 16) return;
@@ -3539,6 +3681,18 @@ window.initWasmMode = function () {
 
         if (eventType === SIM_DEBUG_EVT_THREADS) {
             handleThreadSnapshot(arrayBuf, 16);
+        } else if (eventType === SIM_TRACE_EVT_STREAM
+                   || eventType === SIM_TRACE_EVT_DESCRIPTORS) {
+            /* Trace plugin payload layout matches what the POSIX bridge
+             * delivers as FRAME_TRACE: [sub, ver, count16, dropped, ...].
+             * handleTrace starts reading from the offset we hand it. */
+            handleTrace(arrayBuf, 16);
+        } else if (eventType === SIM_PROFILER_EVT_SAMPLES) {
+            dispatchProfileEvent(arrayBuf, PROFILE_SUB_SAMPLES);
+        } else if (eventType === SIM_PROFILER_EVT_CAPS) {
+            dispatchProfileEvent(arrayBuf, PROFILE_SUB_CAPS);
+        } else if (eventType === SIM_PROFILER_EVT_SYMBOLS) {
+            dispatchProfileEvent(arrayBuf, PROFILE_SUB_SYMBOLS);
         }
     };
 };

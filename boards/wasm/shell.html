@@ -82,6 +82,31 @@
             </div>
         </section>
 
+        <!-- Trace panel (populated by FRAME_TRACE records from sim_trace.c) -->
+        <section class="panel" id="trace-panel">
+            <div class="trace-toolbar">
+                <span id="trace-info">No trace data</span>
+                <span class="trace-legend">
+                    <span class="trace-swatch trace-sw-running">running</span>
+                    <span class="trace-swatch trace-sw-ready">ready</span>
+                    <span class="trace-swatch trace-sw-blocked">blocked</span>
+                    <span class="trace-swatch trace-sw-suspended">suspended</span>
+                </span>
+                <span class="trace-controls">
+                    <button id="trace-zoom-in"  class="btn btn-small">+</button>
+                    <button id="trace-zoom-out" class="btn btn-small">-</button>
+                    <button id="trace-zoom-fit" class="btn btn-small">fit</button>
+                    <label style="margin-left:8px;">
+                        <input type="checkbox" id="trace-follow" checked> live
+                    </label>
+                </span>
+            </div>
+            <div class="trace-canvas-wrap">
+                <canvas id="trace-canvas"></canvas>
+                <div id="trace-mark-tip" class="trace-mark-tip" style="display:none"></div>
+            </div>
+        </section>
+
         <!-- Threads panel (populated by FRAME_THREAD snapshots from sim_debug.c) -->
         <section class="panel" id="threads-panel">
             <div class="thread-mem-bar">
@@ -106,6 +131,60 @@
                     <tbody id="thread-tbody"></tbody>
                 </table>
                 <div id="thread-empty" class="thread-empty">No thread data</div>
+            </div>
+        </section>
+
+        <!--
+          Profiler panel (populated by FRAME_PROFILE records from
+          sim_profiler.c). Samples come from the WASM profiler backend
+          (supervisor-flag scheme) — threads in tight yield-free loops
+          will be under-sampled; this is documented in the panel header.
+        -->
+        <section class="panel" id="profiler-panel">
+            <div class="profiler-toolbar">
+                <div class="profiler-tabs">
+                    <button class="prof-tab active" data-tab="flame">Flame Graph</button>
+                    <button class="prof-tab" data-tab="flat">Flat Top</button>
+                </div>
+                <div class="profiler-controls">
+                    <label class="profiler-window-label">Window
+                        <input id="profiler-window" type="number"
+                               min="1" max="360" step="1" value="30"> s
+                    </label>
+                    <label class="profiler-rate-label"
+                           title="Firmware sampling rate. Ceiling is the compile-time CONFIG_OVE_PROFILER_HZ — a rebuild is required to raise it.">Rate
+                        <select id="profiler-rate"
+                                data-signature=""></select>
+                    </label>
+                    <button id="profiler-oncpu" class="btn btn-small"
+                            title="Filter to samples where the thread was RUNNING or READY at capture time (CPU-work view). Off = wall-clock view including BLOCKED.">On-CPU</button>
+                    <button id="profiler-hidepump" class="btn btn-small"
+                            title="Hide the sim-debug pump thread — it samples itself every tick and dominates the view. Defaults on.">Hide pump</button>
+                    <button id="profiler-pause" class="btn btn-small"
+                            title="Pause/resume sample intake">Pause</button>
+                </div>
+                <span id="profiler-info" class="profiler-info">No sample data</span>
+            </div>
+            <div class="profiler-caveat"
+                 title="The WASM sampler raises a per-thread 'sample now' flag and each thread self-captures at its next yield point (sleep / yield / sync wait). Tight yield-free loops never sample themselves, so CPU they consume shows up as missing samples rather than inflated self time.">
+                WASM sampler is yield-gated — tight yield-free loops under-sample.
+            </div>
+            <div id="profiler-flat-view" class="profiler-view" style="display:none">
+                <table id="profiler-flat-table" class="profiler-flat-table">
+                    <thead>
+                        <tr>
+                            <th>Samples</th>
+                            <th>Self %</th>
+                            <th>Total %</th>
+                            <th>Function</th>
+                        </tr>
+                    </thead>
+                    <tbody id="profiler-flat-tbody"></tbody>
+                </table>
+            </div>
+            <div id="profiler-flame-view" class="profiler-view">
+                <canvas id="profiler-flame-canvas"></canvas>
+                <div id="profiler-flame-tip" class="profiler-flame-tip" style="display:none"></div>
             </div>
         </section>
 

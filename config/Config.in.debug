@@ -85,21 +85,29 @@ config OVE_PROFILER
     depends on OVE_SIM
     default y if OVE_SIM
     help
-      Periodically interrupts each runnable thread to capture its
-      PC + call stack, forwards samples to the dashboard for flat
-      top-N and flame-graph rendering. POSIX uses SIGRTMIN +
-      glibc backtrace(3); other backends vary.
+      Periodically samples each runnable thread's PC + call stack and
+      forwards the samples to the dashboard for flat top-N and
+      flame-graph rendering. POSIX uses SIGRTMIN + glibc backtrace(3)
+      for cross-thread stack capture. WASM has no pthreads signals, so
+      the pump flags each RUNNING thread and the thread self-captures
+      via emscripten_get_callstack at its next yield point — threads
+      stuck in tight, yield-free loops never self-sample (surfaced in
+      the profiler panel header).
 
 config OVE_PROFILER_HZ
     int "Sampling frequency (Hz)"
     depends on OVE_PROFILER
+    default 100 if OVE_BOARD_WASM
     default 250
     range 10 1000
     help
       Per-thread sample rate. Higher values give finer resolution
       at the cost of overhead (one signal + backtrace per running
-      thread per tick). 250 Hz is a good default for interactive
-      workloads.
+      thread per tick on POSIX; one emscripten_get_callstack per
+      yield-point per tick on WASM). 250 Hz is a good default for
+      interactive workloads on POSIX; WASM defaults to 100 Hz
+      because samples are gated on yield points and higher rates
+      add cost without proportionally better resolution.
 
 config OVE_PROFILER_MAX_DEPTH
     int "Maximum stack depth per sample"
