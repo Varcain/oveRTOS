@@ -19,12 +19,19 @@
 #include "ove/ove.h"
 #include "ove_backend_common.h"
 #include "ove/thread_state_stats.h"
+#include "ove/trace.h"
 #include <pthread.h>
 #include <unistd.h>
 #include <sched.h>
 #include <semaphore.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef CONFIG_OVE_PROFILER
+extern void ove_backend_profiler_check(void);
+#else
+static inline void ove_backend_profiler_check(void) {}
+#endif
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -48,8 +55,9 @@ uint64_t ove_state_stats_now_us(void)
 }
 #endif
 
-/* Set thread state with tracking. */
+/* Set thread state with tracking + trace emit. */
 #define SET_STATE(t, s) do { \
+	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
 	ove_state_track_transition(&(t)->st, (s)); \
 	(t)->state = (s); \
 } while (0)
@@ -296,6 +304,7 @@ void ove_thread_sleep_ms(uint32_t ms)
 {
 	struct ove_thread *t = tls_current;
 	touch_yield(t);
+	ove_backend_profiler_check();
 	check_suspend(t);
 	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	usleep((useconds_t)ms * 1000);
@@ -315,6 +324,7 @@ void ove_backend_thread_set_state(int new_state)
 void ove_thread_yield(void)
 {
 	touch_yield(tls_current);
+	ove_backend_profiler_check();
 	check_suspend(tls_current);
 	sched_yield();
 }
@@ -531,3 +541,64 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		*actual_count = count;
 	return OVE_OK;
 }
+
+#ifdef CONFIG_OVE_TRACE_STREAM
+#include "ove_trace_ring.h"
+
+uintptr_t ove_backend_thread_current_handle(void)
+{
+	return (uintptr_t)tls_current;
+}
+
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
+				      size_t max)
+{
+	size_t count = 0;
+	pthread_mutex_lock(&tracked_lock);
+	for (int i = 0; i < tracked_count && count < max; i++) {
+		struct ove_thread *t = tracked_threads[i];
+		if (!t) continue;
+		out[count].tid = (uint32_t)(uintptr_t)t;
+		out[count].name = t->name ? t->name : "?";
+		count++;
+	}
+	pthread_mutex_unlock(&tracked_lock);
+	return count;
+}
+#endif /* CONFIG_OVE_TRACE_STREAM */
+
+#ifdef CONFIG_OVE_PROFILER
+/*
+ * Exports for the WASM profiler backend (wasm_profiler.c).
+ *
+ * In the WASM model the pump (sim_profiler tick) flags every RUNNING
+ * thread each sample period; each flagged thread self-captures its
+ * callstack at its next yield point. No signals are available under
+ * Emscripten pthreads, so this supervisor-flag scheme replaces the
+ * POSIX SIGRTMIN + backtrace(3) approach.
+ */
+
+struct ove_thread *ove_backend_thread_current_struct(void)
+{
+	return tls_current;
+}
+
+size_t ove_backend_profiler_flag_running(void)
+{
+	size_t flagged = 0;
+	pthread_mutex_lock(&tracked_lock);
+	for (int i = 0; i < tracked_count; i++) {
+		struct ove_thread *t = tracked_threads[i];
+		if (!t || !t->started)
+			continue;
+		if (t->state != OVE_THREAD_STATE_RUNNING &&
+		    t->state != OVE_THREAD_STATE_READY &&
+		    t->state != OVE_THREAD_STATE_BLOCKED)
+			continue;
+		t->profiler_pending = 1;
+		flagged++;
+	}
+	pthread_mutex_unlock(&tracked_lock);
+	return flagged;
+}
+#endif /* CONFIG_OVE_PROFILER */

@@ -82,6 +82,10 @@ struct ove_thread {
 	uintptr_t stack_end;            /* lowest address (stack limit) */
 	volatile int stack_painted;     /* 1 once the thread has filled its
 					 * own stack with the sentinel */
+	/* Profiler supervisor flag. Pump sets this on RUNNING threads each
+	 * tick; each thread self-captures via emscripten_get_callstack()
+	 * at its next yield point (no signals in WASM pthreads). */
+	volatile uint8_t profiler_pending;
 };
 
 typedef struct ove_thread ove_thread_storage_t;
