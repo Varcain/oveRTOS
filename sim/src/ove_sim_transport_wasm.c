@@ -90,18 +90,23 @@ static int wasm_send_event(struct ove_sim_transport *t,
 	size_t total = sizeof(*event) + event->data_len;
 
 	/*
-	 * Post the event to the main thread via postMessage.
-	 * The ArrayBuffer is transferred (zero-copy) to avoid
-	 * duplicating large framebuffer data.
+	 * Deliver to the main-thread dashboard via a synchronous proxy
+	 * call.  Raw worker postMessage is intercepted by Emscripten's
+	 * pthread message router and not surfaced to the page.  The SYNC
+	 * variant runs the JS on the main thread while this pthread
+	 * blocks — necessary because callers (e.g. sim_debug) typically
+	 * pass a pointer to a stack-allocated `struct ove_sim_event`, so
+	 * the copy MUST happen before we return.  Debug events at ~2 Hz
+	 * make the blocking cost negligible.
 	 */
-	EM_ASM({
+	MAIN_THREAD_EM_ASM({
 		var len = $1;
+		if (typeof window === 'undefined' ||
+		    typeof window.__ove_sim_event !== 'function')
+			return;
 		var copy = new Uint8Array(len);
 		copy.set(HEAPU8.subarray($0, $0 + len));
-		if (typeof postMessage === 'function') {
-			postMessage({type: 'sim_event', data: copy.buffer},
-				    [copy.buffer]);
-		}
+		window.__ove_sim_event(copy.buffer);
 	}, (uintptr_t)event, (int)total);
 
 	return OVE_OK;

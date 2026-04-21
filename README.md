@@ -165,6 +165,15 @@ OVE_THREAD_DEFINE_STATIC(my_thread, 4096, worker_fn, NULL, OVE_PRIO_NORMAL, "wor
 
 Enable with `CONFIG_OVE_ZERO_HEAP=y` in your configuration.
 
+## Debugging
+
+Code-level debugging is available on both the QEMU and WASM targets:
+
+- **QEMU**: the browser dashboard includes a Debug window (Monaco source view, breakpoints, step/pause/continue, call stack, registers) driven by `arm-none-eabi-gdb` attached to QEMU's GDB stub.
+- **WASM**: build with `-DOVE_DEBUG=ON` to embed DWARF, install the [C/C++ DevTools Support (DWARF)](https://chromewebstore.google.com/detail/cc-devtools-support-dwarf/pdcpmagijalfljmkmjngeonclgbbannb) Chrome extension, press F12 → Sources panel, set breakpoints in your `.c` files. Optional `-DOVE_WASM_SAFE=ON` adds `SAFE_HEAP`/`ASSERTIONS`/stack-overflow-check for memory-bug hunting.
+
+Full workflow: [Debugging](docs-site/docs/getting-started/run.md#debugging).
+
 ## Testing
 
 ```bash

@@ -102,14 +102,18 @@ int ove_queue_send(ove_queue_t q, const void *data,
 
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		while (sq->count >= sq->max_items) {
+			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			pthread_cond_wait(&sq->not_full, &sq->lock);
+			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		}
 	} else {
 		struct timespec ts;
 		ms_to_abstime(timeout_ms, &ts);
 		while (sq->count >= sq->max_items) {
+			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			int ret = pthread_cond_timedwait(&sq->not_full,
 							&sq->lock, &ts);
+			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
 				return OVE_ERR_TIMEOUT;
@@ -137,14 +141,18 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 
 	if (timeout_ms == OVE_WAIT_FOREVER) {
 		while (sq->count == 0) {
+			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			pthread_cond_wait(&sq->not_empty, &sq->lock);
+			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		}
 	} else {
 		struct timespec ts;
 		ms_to_abstime(timeout_ms, &ts);
 		while (sq->count == 0) {
+			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			int ret = pthread_cond_timedwait(&sq->not_empty,
 							&sq->lock, &ts);
+			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
 				return OVE_ERR_TIMEOUT;

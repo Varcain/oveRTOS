@@ -81,6 +81,73 @@
                 <button id="console-send" class="btn">Send</button>
             </div>
         </section>
+
+        <!-- Threads panel (populated by FRAME_THREAD snapshots from sim_debug.c) -->
+        <section class="panel" id="threads-panel">
+            <div class="thread-mem-bar">
+                <span class="thread-mem-label">Heap:</span>
+                <div class="thread-mem-track">
+                    <div id="thread-mem-fill" class="thread-mem-fill"></div>
+                </div>
+                <span id="thread-mem-text" class="thread-mem-text">--</span>
+            </div>
+            <div class="thread-table-wrap">
+                <table id="thread-table" class="thread-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>State</th>
+                            <th>Pri</th>
+                            <th>Stack</th>
+                            <th>CPU %</th>
+                            <th>State Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="thread-tbody"></tbody>
+                </table>
+                <div id="thread-empty" class="thread-empty">No thread data</div>
+            </div>
+        </section>
+
+        <!--
+          Debug panel on WASM: source/thread browsing only.  Code-level
+          stepping, breakpoints and locals live in Chrome DevTools
+          (Sources panel + "C/C++ DevTools Support (DWARF)" extension).
+          Step/pause/breakpoint buttons are disabled with a tooltip
+          pointing the user there.
+        -->
+        <section class="panel" id="debug-panel">
+            <div class="debug-toolbar">
+                <button id="dbg-continue" class="dbg-btn" disabled
+                        title="WASM debugging uses Chrome DevTools — press F12, open the Sources panel. Install the C/C++ DevTools Support (DWARF) extension for named C locals.">&#9654;</button>
+                <button id="dbg-pause"    class="dbg-btn" disabled
+                        title="WASM debugging uses Chrome DevTools — press F12.">&#9646;&#9646;</button>
+                <button id="dbg-step-over" class="dbg-btn" disabled
+                        title="WASM debugging uses Chrome DevTools — press F12.">&#8631;</button>
+                <button id="dbg-step-into" class="dbg-btn" disabled
+                        title="WASM debugging uses Chrome DevTools — press F12.">&#8615;</button>
+                <button id="dbg-step-out"  class="dbg-btn" disabled
+                        title="WASM debugging uses Chrome DevTools — press F12.">&#8613;</button>
+                <button id="dbg-reset"     class="dbg-btn" disabled
+                        title="WASM debugging uses Chrome DevTools — reload the page to reset.">&#8634;</button>
+                <span class="dbg-sep"></span>
+                <span id="dbg-mode-badge" class="dbg-mode-badge">WASM</span>
+                <span id="dbg-status" class="dbg-status">Use DevTools (F12) to step</span>
+            </div>
+            <div class="debug-tabs">
+                <button class="dbg-tab active" data-tab="source">Source</button>
+            </div>
+            <div class="debug-body">
+                <div class="debug-explorer">
+                    <div class="dbg-explorer-title">Explorer</div>
+                    <div id="dbg-files" class="dbg-files"></div>
+                </div>
+                <div class="debug-source-wrap">
+                    <div id="dbg-source-file" class="dbg-file-label">No source loaded</div>
+                    <div id="dbg-source-view" class="dbg-source-view"></div>
+                </div>
+            </div>
+        </section>
     </div>
 
     <!--

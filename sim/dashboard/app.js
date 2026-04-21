@@ -595,9 +595,14 @@ function connect() {
     };
 }
 
-/* ── Lazy window creation for POSIX mode ───────────────────────────── */
+/* ── Lazy window creation (shared by POSIX + WASM modes) ─────────────
+ * WASM mode used to early-return here because initWasmMode explicitly
+ * created a fixed set of windows up front.  For threads/debug to appear
+ * lazily on the first FRAME_THREAD / FRAME_FILE_LIST, the handler-driven
+ * path needs to work here too.  The !wins[id] guard below already
+ * prevents double-creation. */
 function ensureWindow(id) {
-    if (isWasmMode || !WIN_DEFS[id]) return;
+    if (!WIN_DEFS[id]) return;
     if (document.getElementById(id + "-panel") && !wins[id]) {
         createDashboardWindow(id, WIN_DEFS[id].title);
         /* Re-tile all windows to accommodate the new one. */
@@ -1597,8 +1602,10 @@ function handleFileList(buf, off) {
     } catch (e) { return; }
     if (!Array.isArray(json)) return;
     projectFiles = json;
-    /* Show the debug window for the file explorer even without GDB. */
-    if (projectFiles.length > 0) ensureWindow("debug");
+    /* Show the debug window for the file explorer even without GDB.
+     * WASM has no in-dashboard debugger — users go to DevTools — so
+     * skip the pane there. */
+    if (projectFiles.length > 0 && !isWasmMode) ensureWindow("debug");
     _renderFileExplorer();
 }
 
@@ -2180,6 +2187,11 @@ window.initWasmMode = function () {
         if (Module.ccall('ove_wasm_has_audio', 'number'))
             window.createDashboardWindow('audio', 'Audio');
         window.createDashboardWindow('events', 'Events');
+        /* No debug pane on WASM — code-level debugging is delegated to
+         * Chrome/Edge DevTools (F12), which is strictly more capable
+         * (named C locals, struct-aware memory).  Keeping the pane
+         * would only be a dead-button surface.
+         */
     }
 
     initConsoleInput();
@@ -2362,6 +2374,26 @@ window.initWasmMode = function () {
     refreshAudioDevices();
     if (navigator.mediaDevices)
         navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
+
+    /* ── Plugin event dispatch (threads panel, etc.) ────────────────
+     * Called from the WASM transport via MAIN_THREAD_ASYNC_EM_ASM.
+     * Buffer layout matches `struct ove_sim_event`:
+     *   [plugin_id:4][event_type:4][timestamp_ms:4][data_len:4][payload]
+     * Map event_type → FRAME_* handlers, mirroring what the Python
+     * bridge does on the QEMU/POSIX-host path. */
+    var SIM_DEBUG_EVT_THREADS = 0;  /* OVE_SIM_DEBUG_EVT_THREADS */
+
+    window.__ove_sim_event = function (arrayBuf) {
+        if (!arrayBuf || arrayBuf.byteLength < 16) return;
+        var hdr = new DataView(arrayBuf);
+        var eventType = hdr.getUint32(4, true);
+        var dataLen = hdr.getUint32(12, true);
+        if (16 + dataLen > arrayBuf.byteLength) return;
+
+        if (eventType === SIM_DEBUG_EVT_THREADS) {
+            handleThreadSnapshot(arrayBuf, 16);
+        }
+    };
 };
 
 /* ══════════════════════════════════════════════════════════════════════

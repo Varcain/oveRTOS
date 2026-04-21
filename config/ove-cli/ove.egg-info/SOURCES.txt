@@ -1,13 +1,17 @@
 pyproject.toml
 ove/__init__.py
+ove/allconfigs.py
 ove/appgen.py
 ove/board.py
 ove/build.py
+ove/ci.py
 ove/cli.py
-ove/configure.py
+ove/completion.py
 ove/constants.py
+ove/doctor.py
 ove/download.py
 ove/kconfig.py
+ove/lint.py
 ove/manifest.py
 ove/rtos_menuconfig.py
 ove/run.py
@@ -20,3 +24,8 @@ ove.egg-info/dependency_links.txt
 ove.egg-info/entry_points.txt
 ove.egg-info/requires.txt
 ove.egg-info/top_level.txt
+ove/configure/__init__.py
+ove/configure/assets.py
+ove/configure/board_desc.py
+ove/configure/patches.py
+ove/configure/templates.py

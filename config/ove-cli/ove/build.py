@@ -589,7 +589,8 @@ def _assemble_wasm_serve(ws, fw_build):
     # Copy build artifacts
     shutil.copy2(os.path.join(fw_build, "ove_wasm.html"),
                  os.path.join(serve_dir, "index.html"))
-    for name in ("ove_wasm.js", "ove_wasm.wasm", "ove_wasm.worker.js"):
+    for name in ("ove_wasm.js", "ove_wasm.wasm", "ove_wasm.wasm.map",
+                 "ove_wasm.worker.js"):
         src = os.path.join(fw_build, name)
         if os.path.isfile(src):
             shutil.copy2(src, serve_dir)
@@ -602,7 +603,7 @@ def _assemble_wasm_serve(ws, fw_build):
             shutil.copy2(src, serve_dir)
 
     # Generate run.sh inside serve/
-    _write_wasm_run_sh(os.path.join(serve_dir, "run.sh"))
+    _write_wasm_run_sh(os.path.join(serve_dir, "run.sh"), ws.ove_dir)
 
     # Generate workspace-level run script (matches POSIX convention)
     run_script = os.path.join(ws.workspace_dir, "run")
@@ -614,25 +615,35 @@ def _assemble_wasm_serve(ws, fw_build):
     os.chmod(run_script, 0o755)
 
 
-def _write_wasm_run_sh(path):
-    """Generate a self-contained run.sh that serves the WASM build."""
+def _write_wasm_run_sh(path, ove_dir):
+    """Generate a self-contained run.sh that serves the WASM build.
+
+    Serves the serve/ directory (dashboard + wasm) with a fallback to
+    ove_dir — the repo root — so that DWARF-referenced source files
+    (paths like /apps/c/example/src/app.c) resolve in Chrome DevTools.
+    """
     content = '''#!/usr/bin/env bash
 # Auto-generated — serves this WASM build with COOP/COEP headers.
 # Usage: ./run.sh [PORT]
 
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
-PORT="${1:-8080}"
+REPO="{repo}"
+PORT="${{1:-8080}}"
 
 echo "=== Serving WASM at http://localhost:$PORT ==="
-echo "  Files: $DIR"
+echo "  Files:  $DIR"
+echo "  Repo:   $REPO (source-map fallback)"
 echo "  Press Ctrl+C to stop."
 
 # Open browser (best-effort, non-blocking)
 ( sleep 1 && python3 -c "import webbrowser; webbrowser.open('http://localhost:$PORT')" ) 2>/dev/null &
 
 python3 -c "
-import http.server, functools, sys
+import http.server, functools, sys, os, posixpath, urllib.parse
+
+SERVE_DIR = sys.argv[2]
+REPO_DIR  = sys.argv[3]
 
 class H(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -641,15 +652,27 @@ class H(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
     def log_message(self, *a):
         pass
+    def translate_path(self, path):
+        # Strip query/fragment, normalize.
+        p = urllib.parse.urlparse(path).path
+        p = posixpath.normpath(urllib.parse.unquote(p)).lstrip('/')
+        primary = os.path.join(SERVE_DIR, p)
+        if os.path.exists(primary):
+            return primary
+        # Fallback to the repo root so DWARF-referenced .c/.h files
+        # load in Chrome DevTools.
+        fallback = os.path.join(REPO_DIR, p)
+        if os.path.exists(fallback):
+            return fallback
+        return primary
 
-s = http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])),
-    functools.partial(H, directory=sys.argv[2]))
+s = http.server.HTTPServer(('127.0.0.1', int(sys.argv[1])), H)
 try:
     s.serve_forever()
 except KeyboardInterrupt:
     print('\\\\nStopped.')
-" "$PORT" "$DIR"
-'''
+" "$PORT" "$DIR" "$REPO"
+'''.format(repo=ove_dir)
     with open(path, "w") as f:
         f.write(content)
     os.chmod(path, 0o755)
