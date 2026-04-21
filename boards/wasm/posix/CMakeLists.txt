@@ -55,6 +55,56 @@ add_link_options(
     --shell-file=${CMAKE_CURRENT_LIST_DIR}/../shell.html
 )
 
+#############################################################################
+# WASM debug: embed DWARF + emit sourcemap so Chrome DevTools (with the
+# "C/C++ DevTools Support (DWARF)" extension) can step through C source,
+# set breakpoints in .c files, and inspect named locals.  Compile-side
+# `-g` is already added by OvePosixCommon.cmake; Emscripten needs `-g`
+# on the link line too to retain DWARF in the final .wasm.
+#
+# DevTools URL resolution for DWARF sources (per Chromium's C/C++
+# extension):
+#   1. DW_AT_name starting with a scheme or `/`  → used as-is; a
+#      leading-slash path becomes a file:// URL, which Chromium
+#      refuses to load from an http:// origin.
+#   2. Otherwise DW_AT_name is resolved against DW_AT_comp_dir as a
+#      URL; if that is still relative, it is resolved against the
+#      wasm module's URL (i.e. http://localhost:8080/ove_wasm.wasm).
+#
+# To land paths at http://localhost:8080/apps/c/example/src/app.c:
+#   - strip the absolute OVE_DIR prefix from DW_AT_name via
+#     -ffile-prefix-map so they become repo-relative
+#     (`apps/c/example/src/app.c`);
+#   - force DW_AT_comp_dir to `.` with -fdebug-compilation-dir so the
+#     comp_dir + name join is itself relative (not the CMake build
+#     directory, which would yield `output/.../build/firmware/apps/`).
+#
+# The dev server's translate_path falls back to the repo root, so
+# these repo-relative URLs serve directly from the on-disk tree.
+#############################################################################
+if(OVE_DEBUG)
+    add_compile_options(
+        -ffile-prefix-map=${OVE_DIR}/=
+        -fdebug-compilation-dir=.
+    )
+    add_link_options(
+        -g -gsource-map
+        -ffile-prefix-map=${OVE_DIR}/=
+    )
+endif()
+
+#############################################################################
+# Optional WASM safety-net: runtime traps for heap/stack/alignment errors.
+# Orthogonal to OVE_DEBUG — can be enabled with release builds too.  Pays
+# a significant runtime cost, so default OFF.
+#############################################################################
+option(OVE_WASM_SAFE "Enable Emscripten runtime safety checks (SAFE_HEAP, ASSERTIONS, stack overflow)" OFF)
+if(OVE_WASM_SAFE)
+    add_compile_options(-sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2)
+    add_link_options(-sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2)
+    message(STATUS "  WASM safety: ON (SAFE_HEAP, ASSERTIONS=2, STACK_OVERFLOW_CHECK=2)")
+endif()
+
 ove_posix_build_lvgl()
 
 #############################################################################

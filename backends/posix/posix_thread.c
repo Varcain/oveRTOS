@@ -300,6 +300,14 @@ void ove_thread_sleep_ms(uint32_t ms)
 	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+void ove_backend_thread_set_state(int new_state)
+{
+	struct ove_thread *t = tls_current;
+	if (t) SET_STATE(t, new_state);
+}
+#endif
+
 void ove_thread_yield(void)
 {
 	sched_yield();

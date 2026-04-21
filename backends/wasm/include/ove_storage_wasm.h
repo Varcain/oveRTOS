@@ -26,6 +26,8 @@
 #include <semaphore.h>
 #include <time.h>
 
+#include "ove/thread_state_stats.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -64,8 +66,22 @@ struct ove_thread {
 	int state;
 	sem_t suspend_sem;
 	int started;
+	const char *name;               /* thread name (from desc) */
+	size_t stack_size;              /* real stack size after the thread
+					 * records its Emscripten-allocated
+					 * range; matches `stack_base -
+					 * stack_end` once painted. */
+	int priority;                   /* thread priority (from desc) */
+	struct ove_state_tracker st;    /* per-state time tracking */
 	volatile int suspend_requested; /* cooperative suspend flag */
 	volatile uint64_t last_yield_us; /* timestamp of last yield/sleep/block */
+	/* Stack coloration for high-water measurement. Captured by the
+	 * thread itself (emscripten_stack_get_* work only for the current
+	 * thread); read cross-thread by ove_thread_get_stack_usage. */
+	uintptr_t stack_base;           /* highest address (SP when idle) */
+	uintptr_t stack_end;            /* lowest address (stack limit) */
+	volatile int stack_painted;     /* 1 once the thread has filled its
+					 * own stack with the sentinel */
 };
 
 typedef struct ove_thread ove_thread_storage_t;

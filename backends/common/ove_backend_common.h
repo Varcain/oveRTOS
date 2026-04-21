@@ -135,6 +135,28 @@ static inline int ove_errno_to_ove(int e)
 	}
 }
 
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+/**
+ * ove_backend_thread_set_state - transition the current thread's state
+ * @new_state: one of OVE_THREAD_STATE_* values
+ *
+ * Backend-internal hook used by shared sync/queue code to mark the
+ * caller BLOCKED around a wait (cond_wait, sem_wait) and RUNNING
+ * again on wake-up.  Drives the per-state time tracker so
+ * `ove_thread_list` reports CPU% correctly.
+ *
+ * Implemented in the thread backend (posix_thread.c, wasm_thread.c),
+ * which owns the thread-local pointer to the current ove_thread.
+ * Backends that don't track state compile this away to a no-op.
+ */
+void ove_backend_thread_set_state(int new_state);
+#else
+static inline void ove_backend_thread_set_state(int new_state)
+{
+	(void)new_state;
+}
+#endif
+
 /**
  * OVE_CHECK_PARAMS_2 - validate two pointers are non-NULL
  */

@@ -499,10 +499,20 @@ header h1 {
     justify-content: center;
     padding: 0;
 }
-.dbg-btn:hover { background: var(--border); }
-.dbg-btn:active { background: var(--accent); }
+.dbg-btn:hover:not(:disabled) { background: var(--border); }
+.dbg-btn:active:not(:disabled) { background: var(--accent); }
+.dbg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .dbg-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
 .dbg-status { font-size: 11px; color: #888; margin-left: auto; }
+.dbg-mode-badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--accent);
+    color: #fff;
+}
 .dbg-running { color: var(--green); }
 .dbg-stopped { color: #ffd54f; }
 

@@ -55,6 +55,41 @@ sudo apt install openocd
 sudo dnf install openocd
 ```
 
+## Debugging
+
+### QEMU (in-dashboard)
+
+When running a `qemu` board under `make run`, the browser dashboard exposes a Debug window (Monaco source view, breakpoints, step controls, call stack, registers). It drives `arm-none-eabi-gdb` attached to QEMU's GDB stub via `config/scripts/ove-dashboard-bridge.py`. F5 / F6 / F10 map to continue / pause / step-over.
+
+### WASM (Chrome DevTools)
+
+WASM debugging uses the browser's own debugger, not the dashboard. One-time setup:
+
+1. Build with debug symbols:
+
+   ```bash
+   emcmake cmake -DOVE_DEBUG=ON -B build boards/wasm/posix
+   emmake make -C build
+   ```
+
+   This adds `-g -gsource-map` on the Emscripten link line, embedding DWARF in `ove_wasm.wasm` and emitting `ove_wasm.wasm.map`.
+
+2. (Optional) Enable the runtime safety net — high-ROI for hunting memory bugs:
+
+   ```bash
+   emcmake cmake -DOVE_DEBUG=ON -DOVE_WASM_SAFE=ON -B build boards/wasm/posix
+   ```
+
+   `OVE_WASM_SAFE` turns on Emscripten's `SAFE_HEAP=1`, `ASSERTIONS=2`, and `STACK_OVERFLOW_CHECK=2`. Pays a significant runtime cost, so leave off for performance testing.
+
+3. Install the **[C/C++ DevTools Support (DWARF)](https://chromewebstore.google.com/detail/cc-devtools-support-dwarf/pdcpmagijalfljmkmjngeonclgbbannb)** Chrome extension once. Without it, DevTools still steps through the `.wasm` byte-by-byte, but locals appear as raw wasm indices rather than named C variables.
+
+4. Open the dashboard in Chrome/Chromium/Edge, press **F12**, switch to the **Sources** panel. Your project's `.c` files appear under the wasm module. Click a line to set a breakpoint, reload to hit it. Scope view shows named C locals with the extension installed.
+
+Firefox has a built-in WASM debugger that picks up `-g` automatically; named-local support is more limited than Chrome's.
+
+**In-dashboard controls on WASM**: the Debug window still shows the source browser and thread list, but the step/pause/breakpoint buttons are greyed out with a tooltip pointing to DevTools. The dashboard does not host its own debugger for WASM — the browser's is strictly more capable.
+
 ## Testing
 
 Run the full test suite:

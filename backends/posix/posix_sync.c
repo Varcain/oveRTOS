@@ -78,12 +78,16 @@ int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (ove_timeout_is_forever(timeout_ms)) {
+		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		pthread_mutex_lock(&mtx->mtx);
+		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		return OVE_OK;
 	}
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = pthread_mutex_timedlock(&mtx->mtx, &ts);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	return (ret == ETIMEDOUT) ? OVE_ERR_TIMEOUT : OVE_OK;
 }
 
@@ -152,12 +156,16 @@ int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (ove_timeout_is_forever(timeout_ms)) {
+		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		sem_wait(&s->sem);
+		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		return OVE_OK;
 	}
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = sem_timedwait(&s->sem, &ts);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	if (ret == 0)
 		return OVE_OK;
 	if (errno == ETIMEDOUT)
@@ -237,14 +245,18 @@ int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 	pthread_mutex_lock(&e->lock);
 	if (ove_timeout_is_forever(timeout_ms)) {
 		while (!e->signaled) {
+			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			pthread_cond_wait(&e->cond, &e->lock);
+			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		}
 	} else {
 		struct timespec ts;
 		ms_to_abstime(timeout_ms, &ts);
 		while (!e->signaled) {
+			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			int ret = pthread_cond_timedwait(&e->cond, &e->lock,
 							&ts);
+			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 			if (ret == ETIMEDOUT) {
 				/* Re-check under lock: signaler may have fired
 				 * between timeout expiry and mutex re-acquire. */
@@ -384,12 +396,16 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (ove_timeout_is_forever(timeout_ms)) {
+		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		pthread_cond_wait(&c->cond, &mtx->mtx);
+		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		return OVE_OK;
 	}
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = pthread_cond_timedwait(&c->cond, &mtx->mtx, &ts);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	return (ret == ETIMEDOUT) ? OVE_ERR_TIMEOUT : OVE_OK;
 }
 
