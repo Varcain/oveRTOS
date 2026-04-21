@@ -7,6 +7,7 @@
  */
 
 #include "ove/ove.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <pthread.h>
 #include <semaphore.h>
@@ -78,16 +79,20 @@ int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (ove_timeout_is_forever(timeout_ms)) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		pthread_mutex_lock(&mtx->mtx);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 		return OVE_OK;
 	}
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = pthread_mutex_timedlock(&mtx->mtx, &ts);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (ret == ETIMEDOUT) ? OVE_ERR_TIMEOUT : OVE_OK;
 }
 
@@ -156,16 +161,20 @@ int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (ove_timeout_is_forever(timeout_ms)) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, s);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		sem_wait(&s->sem);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, s);
 		return OVE_OK;
 	}
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, s);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = sem_timedwait(&s->sem, &ts);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, s);
 	if (ret == 0)
 		return OVE_OK;
 	if (errno == ETIMEDOUT)
@@ -179,6 +188,7 @@ void ove_sem_give(ove_sem_t sem)
 {
 	struct ove_sem *s = sem;
 	if (s) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_POST, s);
 		sem_post(&s->sem);
 	}
 }
@@ -245,18 +255,22 @@ int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 	pthread_mutex_lock(&e->lock);
 	if (ove_timeout_is_forever(timeout_ms)) {
 		while (!e->signaled) {
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, e);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			pthread_cond_wait(&e->cond, &e->lock);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, e);
 		}
 	} else {
 		struct timespec ts;
 		ms_to_abstime(timeout_ms, &ts);
 		while (!e->signaled) {
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, e);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 			int ret = pthread_cond_timedwait(&e->cond, &e->lock,
 							&ts);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, e);
 			if (ret == ETIMEDOUT) {
 				/* Re-check under lock: signaler may have fired
 				 * between timeout expiry and mutex re-acquire. */
@@ -277,6 +291,7 @@ void ove_event_signal(ove_event_t evt)
 {
 	struct ove_event *e = evt;
 	if (e) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, e);
 		pthread_mutex_lock(&e->lock);
 		e->signaled = 1;
 		pthread_cond_signal(&e->cond);
@@ -396,16 +411,20 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
 		return OVE_ERR_INVALID_PARAM;
 	}
 	if (ove_timeout_is_forever(timeout_ms)) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, c);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		pthread_cond_wait(&c->cond, &mtx->mtx);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, c);
 		return OVE_OK;
 	}
 	struct timespec ts;
 	ms_to_abstime(timeout_ms, &ts);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, c);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = pthread_cond_timedwait(&c->cond, &mtx->mtx, &ts);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, c);
 	return (ret == ETIMEDOUT) ? OVE_ERR_TIMEOUT : OVE_OK;
 }
 
@@ -413,6 +432,7 @@ void ove_condvar_signal(ove_condvar_t cv)
 {
 	struct ove_condvar *c = cv;
 	if (c) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, c);
 		pthread_cond_signal(&c->cond);
 	}
 }
@@ -421,6 +441,7 @@ void ove_condvar_broadcast(ove_condvar_t cv)
 {
 	struct ove_condvar *c = cv;
 	if (c) {
+		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, c);
 		pthread_cond_broadcast(&c->cond);
 	}
 }

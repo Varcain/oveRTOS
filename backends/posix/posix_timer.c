@@ -8,6 +8,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "posix_sleep.h"
 #include <pthread.h>
 #include <signal.h>
 #include <time.h>
@@ -59,7 +60,7 @@ void ove_timer_deinit(ove_timer_t timer)
 			 * callback drain before deleting the timer. */
 			struct itimerspec its = {{0, 0}, {0, 0}};
 			timer_settime(t->posix_timer, 0, &its, NULL);
-			usleep(5000);
+			posix_sleep_ns(5000000ULL);
 			timer_delete(t->posix_timer);
 		}
 	}
@@ -108,7 +109,7 @@ void ove_timer_destroy(ove_timer_t timer)
 			 * callback drain before deleting the timer. */
 			struct itimerspec its = {{0, 0}, {0, 0}};
 			timer_settime(t->posix_timer, 0, &its, NULL);
-			usleep(5000);
+			posix_sleep_ns(5000000ULL);
 			timer_delete(t->posix_timer);
 		}
 		OVE_BACKEND_FREE(t);

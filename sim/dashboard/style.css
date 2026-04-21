@@ -749,3 +749,246 @@ header h1 {
     .panel { padding: 8px; }
     .display-container { padding: 4px; }
 }
+
+/* ── Trace panel ─────────────────────────────────────────────────── */
+
+#trace-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    height: 100%;
+}
+
+.trace-toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 11px;
+    flex-wrap: wrap;
+}
+
+#trace-info {
+    color: var(--dim);
+    opacity: 0.8;
+}
+
+.trace-legend {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.trace-swatch {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: #000;
+    font-weight: 500;
+}
+
+.trace-sw-running   { background: #4ecca3; }
+.trace-sw-ready     { background: #f5d76e; }
+.trace-sw-blocked   { background: #e94560; color: #fff; }
+.trace-sw-suspended { background: #666; color: #fff; }
+
+.trace-controls {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.trace-canvas-wrap {
+    flex: 1;
+    min-height: 120px;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+}
+
+#trace-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ── Profiler panel ─────────────────────────────────────────────────── */
+
+#profiler-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    height: 100%;
+}
+
+.profiler-toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 11px;
+    flex-wrap: wrap;
+}
+
+.profiler-tabs {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.prof-tab {
+    background: #1e2430;
+    color: var(--dim);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: inherit;
+}
+
+.prof-tab:hover { background: #272e3c; color: var(--fg); }
+.prof-tab.active {
+    background: #2e3647;
+    color: var(--fg);
+    border-color: #4d5a78;
+}
+
+.profiler-controls {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.profiler-window-label,
+.profiler-rate-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--dim);
+}
+
+#profiler-window,
+#profiler-rate {
+    background: #1e2430;
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font: inherit;
+    font-size: 11px;
+}
+
+#profiler-window {
+    width: 48px;
+}
+
+#profiler-rate {
+    min-width: 72px;
+}
+
+#profiler-pause.paused {
+    background: #6a3c14;
+    border-color: #a8672a;
+    color: #ffd59a;
+}
+
+#profiler-oncpu.active {
+    background: rgba(78, 204, 163, 0.2);
+    border-color: var(--green);
+    color: var(--green);
+}
+
+.profiler-info {
+    color: var(--dim);
+    opacity: 0.8;
+    margin-left: auto;
+}
+
+.profiler-info.paused {
+    color: #ffb366;
+    opacity: 1;
+}
+
+.profiler-view {
+    flex: 1;
+    overflow: auto;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    position: relative;
+}
+
+.profiler-flat-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+}
+
+.profiler-flat-table thead th {
+    position: sticky;
+    top: 0;
+    background: #1a1f2c;
+    color: #cfd3dc;
+    text-align: left;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    z-index: 1;
+}
+
+.profiler-flat-table tbody td {
+    padding: 3px 8px;
+    border-bottom: 1px solid #1a1f2c;
+    color: #cfd3dc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.profiler-flat-table tbody tr:hover td { background: #1a2030; }
+
+.profiler-flat-table .pf-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #8a94ad;
+}
+
+.profiler-flat-table .pf-func { color: #4ecca3; }
+.profiler-flat-table .pf-bar  {
+    position: relative;
+    min-width: 60px;
+}
+.profiler-flat-table .pf-bar::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: rgba(78, 204, 163, 0.18);
+    width: var(--bar, 0%);
+    pointer-events: none;
+}
+
+#profiler-flame-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: crosshair;
+}
+
+.profiler-flame-tip {
+    position: absolute;
+    background: #1a1f2c;
+    color: #e6eaf2;
+    border: 1px solid #4d5a78;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+    pointer-events: none;
+    z-index: 5;
+    white-space: nowrap;
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

@@ -61,6 +61,19 @@ struct ove_thread {
 	void *stack_base;               /* caller-allocated stack (painted) */
 	struct ove_thread *next;        /* linked list for enumeration */
 	struct ove_state_tracker st;    /* per-state time tracking */
+	uint8_t priority;               /* ove_prio_t; tracked for reporting */
+	/* CPU usage sampling: last observed CPU ns + last computed %.
+	 * ove_thread_list recomputes at most every 100 ms so rapid
+	 * callers don't collapse the delta window to near-zero. */
+	uint64_t cpu_prev_ns;
+	uint32_t cpu_pct_x100;
+#ifdef CONFIG_OVE_PROFILER
+	/* 1 = a SIGRTMIN is in flight for this thread and the handler
+	 * hasn't consumed it yet. Sampler uses this to avoid queuing
+	 * multiple signals on a long-blocked thread. Single-byte atomic
+	 * access is fine on all supported arches. */
+	volatile int profiler_pending;
+#endif
 };
 
 typedef struct ove_thread ove_thread_storage_t;

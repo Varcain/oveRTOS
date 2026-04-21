@@ -9,19 +9,33 @@
 /*
  * Debug simulation plugin.
  *
- * Spawns an RTOS thread that periodically snapshots thread state and
- * heap usage (~2 Hz) and emits the data as plugin events.  The
- * dashboard bridge forwards these to the browser as FRAME_THREAD
- * WebSocket frames.
+ * Owns the single "sim-debug" pump thread that drives all sim-side
+ * observability work: profiler sample tick (fast), profiler-ring drain,
+ * trace-ring drain, and periodic thread/heap snapshots. Previously each
+ * subsystem spawned its own thread (4 in total); consolidating them
+ * into one pump cuts context-switch pressure on the RTOS scheduler
+ * without changing the per-feature cadence.
  */
 
+#include "ove_config.h"
+
+#include "ove/profiler.h"
 #include "ove/sim/ove_sim_debug.h"
 #include "ove/sim/ove_sim_plugin.h"
+#include "ove/sim/ove_sim_profiler.h"
+#include "ove/sim/ove_sim_trace.h"
+#include "ove/sim/ove_sim_transport.h"
 #include "ove/thread.h"
 #include "ove/types.h"
 
 #include <stdio.h>
 #include <string.h>
+
+struct ove_sim_transport *ove_sim_get_transport(void);
+
+#ifndef CONFIG_OVE_PROFILER_HZ
+#define CONFIG_OVE_PROFILER_HZ 250
+#endif
 
 /* ── Plugin context ────────────────────────────────────────────────── */
 
@@ -132,15 +146,94 @@ static void emit_snapshot(struct sim_debug_ctx *d)
 	ove_sim_plugin_emit_event(d->plugin_id, ev);
 }
 
-/* ── Snapshot thread ──────────────────────────────────────────────── */
+/* ── Consolidated pump thread ─────────────────────────────────────── */
+
+/*
+ * The pump tick is set to the profiler sampling period when profiling
+ * is enabled (4 ms at the default 250 Hz) so sample cadence is
+ * preserved. When profiling is off we fall back to the trace drain
+ * period, or the snapshot period as a last resort.
+ */
+#if defined(CONFIG_OVE_PROFILER)
+#  if (1000 / CONFIG_OVE_PROFILER_HZ) < 1
+#    define PUMP_TICK_MS  1
+#  else
+#    define PUMP_TICK_MS  (1000 / CONFIG_OVE_PROFILER_HZ)
+#  endif
+#elif defined(CONFIG_OVE_TRACE_STREAM)
+#  define PUMP_TICK_MS  OVE_SIM_TRACE_DRAIN_MS
+#else
+#  define PUMP_TICK_MS  OVE_SIM_DEBUG_INTERVAL_MS
+#endif
+
+/*
+ * Small buffer sized for our current in-tree commands (all payloads fit
+ * comfortably in 64 bytes). Oversize messages are silently dropped by
+ * the transport rather than truncating into this buffer.
+ */
+#define CMD_BUF_BYTES  (sizeof(struct ove_sim_cmd) + 64)
+
+static void drain_commands(struct ove_sim_transport *tr)
+{
+	if (!tr)
+		return;
+	uint8_t buf[CMD_BUF_BYTES];
+	struct ove_sim_cmd *cmd = (struct ove_sim_cmd *)buf;
+	while (ove_sim_transport_recv_cmd(tr, cmd, sizeof(buf), 0) == OVE_OK)
+		ove_sim_plugin_dispatch_cmd(cmd);
+}
 
 static void debug_thread_fn(void *arg)
 {
 	struct sim_debug_ctx *d = (struct sim_debug_ctx *)arg;
 
+	uint32_t t_snap  = 0;
+#ifdef CONFIG_OVE_TRACE_STREAM
+	uint32_t t_trace = 0;
+#endif
+#ifdef CONFIG_OVE_PROFILER
+	uint32_t t_prof  = 0;
+	/* Announce profiler caps once so the dashboard can populate its
+	 * rate dropdown with the compile-time max. Done from the pump so it
+	 * happens after the transport is live. */
+	int caps_announced = 0;
+#endif
+
 	for (;;) {
-		ove_thread_sleep_ms(OVE_SIM_DEBUG_INTERVAL_MS);
-		emit_snapshot(d);
+		ove_thread_sleep_ms(PUMP_TICK_MS);
+
+		struct ove_sim_transport *tr = ove_sim_get_transport();
+		drain_commands(tr);
+
+#ifdef CONFIG_OVE_PROFILER
+		if (!caps_announced && tr) {
+			ove_sim_profiler_announce_caps();
+			caps_announced = 1;
+		}
+
+		/* Fast path: fire the sampling signal every tick. */
+		ove_backend_profiler_sample_tick();
+
+		t_prof += PUMP_TICK_MS;
+		if (t_prof >= OVE_SIM_PROFILER_DRAIN_MS) {
+			t_prof = 0;
+			ove_sim_profiler_tick();
+		}
+#endif
+
+#ifdef CONFIG_OVE_TRACE_STREAM
+		t_trace += PUMP_TICK_MS;
+		if (t_trace >= OVE_SIM_TRACE_DRAIN_MS) {
+			ove_sim_trace_tick(t_trace);
+			t_trace = 0;
+		}
+#endif
+
+		t_snap += PUMP_TICK_MS;
+		if (t_snap >= OVE_SIM_DEBUG_INTERVAL_MS) {
+			t_snap = 0;
+			emit_snapshot(d);
+		}
 	}
 }
 

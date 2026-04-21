@@ -85,6 +85,8 @@ FRAME_THREAD     = 0x0A
 FRAME_FILE_LIST  = 0x0B
 FRAME_FILE_REQ   = 0x0C
 FRAME_FILE_RESP  = 0x0D
+FRAME_TRACE      = 0x0E
+FRAME_PROFILE    = 0x0F
 
 # Lazy-opened mmap of /dev/shm/ove-input. None until the firmware has
 # created the region; every FRAME_INPUT retries the attach.
@@ -301,9 +303,37 @@ def serve(port, dashboard_dir):
     clients = []
 
     while True:
-        # Build poll list: server + active client sockets
-        rlist = [srv] + [c.sock for c in clients if c.state != ST_DONE]
-        readable, _, _ = select.select(rlist, [], [], 0.015)
+        # Build poll list: server + active client sockets. Guard against
+        # fd=-1 entries — a client whose handshake threw (e.g. browser
+        # RST mid-upgrade) already had its socket closed; if it wasn't
+        # also marked ST_DONE, select() would blow up on the stale fd
+        # and take down the whole server loop.
+        rlist = [srv]
+        for c in clients:
+            if c.state == ST_DONE:
+                continue
+            try:
+                if c.sock.fileno() < 0:
+                    c.state = ST_DONE
+                    continue
+            except Exception:
+                c.state = ST_DONE
+                continue
+            rlist.append(c.sock)
+        try:
+            readable, _, _ = select.select(rlist, [], [], 0.015)
+        except (ValueError, OSError) as e:
+            # Belt-and-suspenders: if a race still snuck a bad fd into
+            # rlist, drop the offenders and carry on instead of dying.
+            sys.stderr.write(f"[bridge] select() error: {e}; purging\n")
+            sys.stderr.flush()
+            for c in list(clients):
+                try:
+                    if c.sock.fileno() < 0:
+                        c.state = ST_DONE
+                except Exception:
+                    c.state = ST_DONE
+            readable = []
 
         # Accept new connections
         if srv in readable:
@@ -350,11 +380,17 @@ def serve(port, dashboard_dir):
                             plugin_id = struct.unpack_from("<I", fdata, 0)[0]
                             cmd_type = struct.unpack_from("<I", fdata, 4)[0]
                             pcm = fdata[12:]
-                            # Route audio inject (cmd_type 0) for any
-                            # real plugin ID (skip console sentinel).
+                            # Audio-inject short-circuit: cmd_type 0 with
+                            # a real plugin ID (skip console sentinel)
+                            # writes PCM directly into the audio ring.
                             if (plugin_id != 0xFFFFFFFF
                                     and cmd_type == 0 and pcm):
                                 audio_input_write(pcm)
+                            else:
+                                # Forward to the firmware's shm cmd ring.
+                                # The sim-debug pump drains it and
+                                # dispatches to the targeted plugin.
+                                sim_cmd_send(plugin_id, cmd_type, pcm)
                         elif ftype == FRAME_AUDIO and len(fdata) >= 8:
                             # Raw audio frame from dashboard mic
                             pcm = fdata[8:]
@@ -500,11 +536,28 @@ def _handle_http(c, dashboard_dir):
             if _project_file_list_frame:
                 c.sock.sendall(_project_file_list_frame)
 
+            # Profiler symbol map (one-shot; samples that arrive later
+            # reference pc values that map into this table).
+            if _profiler_symbol_frame:
+                c.sock.sendall(_profiler_symbol_frame)
+
+            # Profiler capabilities (max/current Hz) — cached at the
+            # bridge so late-joining clients populate their rate dropdown
+            # without needing the firmware to re-announce.
+            if _profiler_caps_frame:
+                c.sock.sendall(_profiler_caps_frame)
+
         except Exception:
+            # Browser tab close / page reload during the initial-state
+            # dump RSTs the socket, which breaks our sendall chain.
+            # Mark ST_DONE so the main loop removes us next tick; not
+            # doing this left the client in the polling list with a
+            # closed fd and crashed select() on the next iteration.
             try:
                 c.sock.close()
             except Exception:
                 pass
+            c.state = ST_DONE
             return
 
         c.sock.setblocking(False)
@@ -685,6 +738,92 @@ SIM_SHM_TOTAL_SIZE = SIM_SHM_HDR_SIZE + 2 * SIM_SHM_RING_SIZE
 SIM_EVENT_HDR_SIZE = 16
 # Debug plugin event type
 SIM_DEBUG_EVT_THREADS = 0
+# Trace plugin event types (see sim/include/ove/sim/ove_sim_trace.h).
+# Values are picked to not collide with SIM_DEBUG_EVT_THREADS=0.
+SIM_TRACE_EVT_STREAM      = 10
+SIM_TRACE_EVT_DESCRIPTORS = 11
+
+# Profiler plugin event types (see sim/include/ove/sim/ove_sim_profiler.h).
+SIM_PROFILER_EVT_SAMPLES  = 20
+SIM_PROFILER_EVT_CAPS     = 21
+
+# Profiler frame subtypes (bridge-synthesised).
+PROFILE_SUB_SAMPLES = 1
+PROFILE_SUB_SYMBOLS = 2
+PROFILE_SUB_CAPS    = 3
+
+# Sim shm cmd-ring writer (host → guest). Module-level so callers don't
+# reopen the file on every command; the header offsets mirror
+# sim_shm_header in sim/include/ove/sim/ove_sim_shm.h.
+#   offset 24: cmd_write_pos
+#   offset 28: cmd_read_pos
+SIM_CMD_WRITE_POS_OFF = 24
+SIM_CMD_READ_POS_OFF  = 28
+SIM_CMD_RING_OFF      = SIM_SHM_HDR_SIZE + SIM_SHM_RING_SIZE
+
+_sim_cmd_lock = threading.Lock()
+
+
+def sim_cmd_send(plugin_id, cmd_type, data):
+    """Forward a plugin command to the firmware via the shm cmd ring.
+
+    The firmware's sim-debug pump drains this ring each tick and
+    dispatches to plugins. Writing into the ring mirrors the layout
+    used by ove_sim_transport_shm_local's local_recv_cmd:
+      [uint16 length][ove_sim_cmd header + data]
+    """
+    if not os.path.exists(SIM_SHM_PATH):
+        return False
+
+    hdr_bytes = struct.pack("<III", plugin_id, cmd_type, len(data))
+    body = hdr_bytes + data
+    total = len(body)
+    if total > 0xFFFF:
+        return False
+
+    with _sim_cmd_lock:
+        try:
+            fd = os.open(SIM_SHM_PATH, os.O_RDWR)
+        except OSError:
+            return False
+        try:
+            magic_buf = os.pread(fd, 4, 0)
+            if len(magic_buf) < 4 or \
+                    struct.unpack_from("<I", magic_buf, 0)[0] != SIM_SHM_MAGIC:
+                return False
+
+            wpos_buf = os.pread(fd, 4, SIM_CMD_WRITE_POS_OFF)
+            rpos_buf = os.pread(fd, 4, SIM_CMD_READ_POS_OFF)
+            if len(wpos_buf) < 4 or len(rpos_buf) < 4:
+                return False
+            wpos = struct.unpack_from("<I", wpos_buf, 0)[0]
+            rpos = struct.unpack_from("<I", rpos_buf, 0)[0]
+            used = (wpos - rpos) & 0xFFFFFFFF
+            if used + 2 + total > SIM_SHM_RING_SIZE:
+                return False
+
+            mask = SIM_SHM_RING_SIZE - 1
+
+            # Write length prefix (two bytes, handling wrap).
+            lenb = struct.pack("<H", total)
+            off = SIM_CMD_RING_OFF + (wpos & mask)
+            os.pwrite(fd, lenb[0:1], off)
+            off2 = SIM_CMD_RING_OFF + ((wpos + 1) & mask)
+            os.pwrite(fd, lenb[1:2], off2)
+            wpos = (wpos + 2) & 0xFFFFFFFF
+
+            # Write body (handle wrap).
+            ring_off = wpos & mask
+            first = min(SIM_SHM_RING_SIZE - ring_off, total)
+            os.pwrite(fd, body[:first], SIM_CMD_RING_OFF + ring_off)
+            if first < total:
+                os.pwrite(fd, body[first:], SIM_CMD_RING_OFF)
+            wpos = (wpos + total) & 0xFFFFFFFF
+
+            os.pwrite(fd, struct.pack("<I", wpos), SIM_CMD_WRITE_POS_OFF)
+            return True
+        finally:
+            os.close(fd)
 
 
 def event_bridge():
@@ -704,6 +843,7 @@ def event_bridge():
 
 
 def _event_bridge_loop():
+    global _profiler_caps_frame
     sys.stderr.write(f"[event-bridge] waiting for {SIM_SHM_PATH}\n")
     sys.stderr.flush()
     while not os.path.exists(SIM_SHM_PATH):
@@ -793,6 +933,40 @@ def _event_bridge_loop():
                 frame = ws_frame(
                     struct.pack("<I", FRAME_THREAD) + payload)
                 mailbox.post_log(frame)
+            # Forward trace plugin events as FRAME_TRACE. Both subtypes
+            # (stream records, descriptor table) share the same outer
+            # frame; the dashboard dispatches on the embedded sub_type.
+            elif event_type in (SIM_TRACE_EVT_STREAM,
+                                SIM_TRACE_EVT_DESCRIPTORS) and payload:
+                frame = ws_frame(
+                    struct.pack("<I", FRAME_TRACE) + payload)
+                mailbox.post_log(frame)
+            # Forward profiler sample batches as FRAME_PROFILE with
+            # subtype=SAMPLES. The symbol table is synthesised once
+            # per ELF and emitted on WebSocket connect — see mailbox.
+            elif event_type == SIM_PROFILER_EVT_SAMPLES and payload:
+                frame = ws_frame(
+                    struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SAMPLES)
+                    + payload)
+                mailbox.post_log(frame)
+            # Forward profiler capability events (max_hz, current_hz).
+            # The dashboard uses these to populate its rate dropdown.
+            # Also cache for late-joining WS clients — the firmware only
+            # emits this on state changes (start + set-rate), so without
+            # the cache a browser reload after initial announce would
+            # never see the ceiling and the dropdown would stay empty.
+            elif event_type == SIM_PROFILER_EVT_CAPS and payload:
+                frame = ws_frame(
+                    struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_CAPS)
+                    + payload)
+                _profiler_caps_frame = frame
+                mailbox.post_log(frame)
+                if len(payload) >= 8:
+                    max_hz, cur_hz = struct.unpack_from("<II", payload, 0)
+                    sys.stderr.write(
+                        f"[event-bridge] profiler caps: "
+                        f"max={max_hz} Hz, current={cur_hz} Hz\n")
+                    sys.stderr.flush()
     finally:
         os.close(fd)
 
@@ -918,6 +1092,188 @@ def build_project_file_list(build_dir, ove_dir):
     sys.stderr.flush()
 
 
+# ── Profiler symbol map (nm-based) ──────────────────────────────────
+
+_profiler_symbol_frame = None  # cached WS frame for PROFILE_SUB_SYMBOLS
+_profiler_caps_frame   = None  # cached WS frame for PROFILE_SUB_CAPS
+
+
+def _is_pie_elf(elf_path):
+    """Best-effort: ELF Type = DYN means PIE (or shared library)."""
+    try:
+        out = subprocess.check_output(
+            ["readelf", "-h", elf_path],
+            stderr=subprocess.DEVNULL).decode("utf-8", "replace")
+        for line in out.splitlines():
+            if "Type:" in line:
+                return "DYN" in line
+    except Exception:
+        pass
+    return False
+
+
+def _enumerate_text_segments(pid):
+    """Parse /proc/<pid>/maps and return a dict of
+    { realpath: (load_base, pc_start, pc_end) } for every unique
+    executable file-backed mapping. load_base = (start - file_offset)
+    so nm addresses add directly onto it. pc_start/pc_end bound the
+    mapping in runtime address space — used downstream to stop
+    range-extension from leaking across mappings. Returns {} on
+    failure."""
+    if not pid:
+        return {}
+    result = {}
+    try:
+        with open(f"/proc/{pid}/maps") as f:
+            for line in f:
+                parts = line.split(maxsplit=5)
+                if len(parts) < 6:
+                    continue
+                perms = parts[1]
+                if "x" not in perms:
+                    continue
+                path = parts[5].strip()
+                if not path or path.startswith("["):
+                    continue      # anon / [vdso] / [vsyscall] / etc.
+                if not os.path.isfile(path):
+                    continue
+                real = os.path.realpath(path)
+                if real in result:
+                    continue     # first text mapping wins
+                try:
+                    start_s, end_s = parts[0].split("-")
+                    start = int(start_s, 16)
+                    end = int(end_s, 16)
+                    off = int(parts[2], 16)
+                except ValueError:
+                    continue
+                result[real] = (start - off, start, end)
+    except OSError:
+        return {}
+    return result
+
+
+def _nm_symbols(path, base, want_dynamic):
+    """Run nm and return a list of (addr, size, name) tuples already
+    shifted by @base. On shared libraries, static symbols are stripped
+    so pass want_dynamic=True to ask nm for the dynamic symbol table."""
+    cmd = ["nm", "-n", "-S", "--defined-only", "-C"]
+    if want_dynamic:
+        cmd.append("-D")
+    cmd.append(path)
+    try:
+        out = subprocess.check_output(
+            cmd, stderr=subprocess.DEVNULL).decode("utf-8", "replace")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return []
+    syms = []
+    for line in out.splitlines():
+        parts = line.split(maxsplit=3)
+        if len(parts) == 3:
+            addr_s, tcode, name = parts
+            size_s = None
+        elif len(parts) == 4:
+            addr_s, size_s, tcode, name = parts
+        else:
+            continue
+        if tcode not in ("T", "t", "W", "w", "i"):
+            continue
+        try:
+            addr = int(addr_s, 16)
+            size = int(size_s, 16) if size_s else 0
+        except ValueError:
+            continue
+        syms.append((addr + base, size, name))
+    return syms
+
+
+def build_profiler_symbols(elf_path, pid=None):
+    """Build a PROFILE_SUB_SYMBOLS WebSocket frame covering the main ELF
+    *and* every shared library mapped into the process.
+
+    Payload after the 5-byte outer header is a UTF-8 JSON array of
+    [pc_start, pc_end, name] triples sorted by pc_start. Without shared
+    libs included, samples that land in libc/libpthread/ld-linux show
+    up as raw 0x7f… addresses in the dashboard.
+    """
+    global _profiler_symbol_frame
+    if not elf_path or not os.path.isfile(elf_path):
+        return
+
+    segs = _enumerate_text_segments(pid)  # dict path -> (base, pc_start, pc_end)
+    real_main = os.path.realpath(elf_path)
+
+    # Fall back to nm-only on the main ELF if /proc/maps was unreadable.
+    if not segs:
+        segs = {real_main: (0, 0, 0)}
+
+    # Per-mapping extension cap: never inflate a single symbol past this
+    # size, so e.g. the last named symbol in libc before a big stripped
+    # internal region can't swallow everything up to the mapping end.
+    MAX_SYM_EXTEND = 0x10000   # 64 KiB
+
+    entries = []
+    for path, (base, pc_start, pc_end) in segs.items():
+        is_main = (path == real_main)
+        # Shared libs: .symtab (-T) is usually stripped → use -D.
+        # The main ELF often has both; prefer -T for completeness, but
+        # fall back to -D if nothing came out (e.g. stripped builds).
+        syms = _nm_symbols(path, base, want_dynamic=False)
+        if not syms:
+            syms = _nm_symbols(path, base, want_dynamic=True)
+        elif not is_main:
+            # Always augment shared libs with dynamic symbols — static
+            # nm on many distro libs returns nothing even if the file
+            # isn't stripped.
+            syms += _nm_symbols(path, base, want_dynamic=True)
+        if not syms:
+            continue
+
+        # Per-mapping sort + dedup + gap-fill. Extending each symbol's
+        # end to the next within the same mapping covers nm holes
+        # (trampolines, PLT stubs, padding) without leaking across
+        # mappings — which would happen if we sorted globally and
+        # let `data_start` extend into libc's ASLR space.
+        syms.sort(key=lambda s: s[0])
+        mapping_end_cap = pc_end if pc_end else (
+            syms[-1][0] + MAX_SYM_EXTEND)
+        seen = set()
+        n = len(syms)
+        for i, (addr, _size, name) in enumerate(syms):
+            if addr in seen:
+                continue
+            seen.add(addr)
+            # Next distinct-address symbol in this mapping.
+            next_start = None
+            for k in range(i + 1, n):
+                na = syms[k][0]
+                if na > addr:
+                    next_start = na
+                    break
+            hard_cap = min(
+                addr + MAX_SYM_EXTEND,
+                mapping_end_cap,
+            )
+            end = min(next_start, hard_cap) if next_start else hard_cap
+            if end <= addr:
+                end = addr + 1
+            entries.append([addr, end, name])
+
+    if not entries:
+        return
+
+    entries.sort(key=lambda e: e[0])
+
+    payload = json.dumps(entries).encode("utf-8")
+    _profiler_symbol_frame = ws_frame(
+        struct.pack("<IB", FRAME_PROFILE, PROFILE_SUB_SYMBOLS) + payload)
+
+    sys.stderr.write(
+        f"[profiler] {len(entries)} symbols indexed from "
+        f"{len(segs)} segment(s) ({len(payload)} B)\n")
+    sys.stderr.flush()
+
+
 def handle_file_request(fdata):
     """Handle FRAME_FILE_REQ: read and send a full source file."""
     # Payload: UTF-8 file path
@@ -1001,6 +1357,14 @@ class GdbController:
                 f"-target-select remote localhost:{self.gdb_port}")
         elif self.attach_pid:
             self._send_mi_sync(f"-target-attach {self.attach_pid}")
+
+        # Don't stop/report the real-time signals the sampling profiler
+        # uses internally (SIGRTMIN..SIGRTMAX). Without this, every sample
+        # pauses the inferior and floods the event stream. SIGRTMIN is
+        # 34 on glibc/Linux; covering 34..64 is safe for any backend.
+        for sig in range(34, 65):
+            self._send_mi_sync(
+                f'-interpreter-exec console "handle SIG{sig} nostop noprint pass"')
 
         # Fetch register names once (architecture-specific).
         result = self._send_mi_sync("-data-list-register-names")
@@ -1521,6 +1885,14 @@ def main():
     # Build source file list from CMake build objects.
     if args.build_dir:
         build_project_file_list(args.build_dir, ove_dir)
+
+    # Build profiler symbol map from the ELF (POSIX native nm). For PIE
+    # binaries we need the runtime load base; read it from the attached
+    # PID's /proc/<pid>/maps.
+    if args.elf_path:
+        build_profiler_symbols(
+            args.elf_path,
+            pid=args.gdb_attach if args.gdb_attach else None)
 
     threading.Thread(target=display_bridge, daemon=True).start()
     threading.Thread(target=audio_bridge, daemon=True).start()
