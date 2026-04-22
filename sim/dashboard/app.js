@@ -2052,6 +2052,8 @@ var profilerWindowUs    = 30 * 1000 * 1000; /* rolling window, mutable */
 var profilerPaused      = false;
 var profilerOnCpuOnly   = false; /* filter: keep only RUNNING/READY samples */
 var profilerHidePump    = true;  /* hide the sim-debug pump thread (default on) */
+var profilerHideIdle    = true;  /* hide RTOS IDLE / Tmr Svc (default on) */
+var profilerThreadFilter = 0;    /* 0 = all threads, else only this tid */
 var profilerFlameZoom   = 1;     /* horizontal zoom multiplier (mouse-wheel) */
 var PROFILER_FLAME_MAX_ZOOM = 20;
 
@@ -2059,6 +2061,17 @@ var PROFILER_FLAME_MAX_ZOOM = 20;
  * samples arrive and at least one frame resolves to debug_thread_fn —
  * avoids re-walking the stack on every render. */
 var profilerPumpTids    = Object.create(null);
+
+/* Case-insensitive match of a thread name against the RTOS system tasks
+ * whose wall-clock dominance makes the aggregate view uninformative on
+ * mostly-idle runs. Used both to build the thread dropdown (so the user
+ * can still explicitly select e.g. IDLE) and to short-circuit samples
+ * when the Hide-idle toggle is on. */
+function profilerThreadIsIdle(name) {
+    if (!name) return false;
+    var lc = name.toLowerCase();
+    return lc === "idle" || lc === "tmr svc" || lc === "timer svc";
+}
 
 /*
  * Return true if @sample came from the sim-debug pump thread. The pump
@@ -2078,6 +2091,31 @@ function profilerSampleIsPump(sample) {
         }
     }
     return false;
+}
+
+/*
+ * Apply all four profiler toggles — On-CPU, Hide pump, Hide idle, and
+ * the per-thread dropdown — in one place so the three render paths
+ * (info line, flat top, flame graph) can't drift out of sync. Returns
+ * true when @s should contribute to aggregation.
+ *
+ * When the user has picked a specific thread, the pump/idle toggles are
+ * intentionally bypassed: asking to look at e.g. sim_debug shouldn't
+ * then drop every one of its samples because it's the pump.
+ */
+function profilerSampleIncluded(s) {
+    if (profilerThreadFilter) {
+        if (s.tid !== profilerThreadFilter) return false;
+        if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) return false;
+        return true;
+    }
+    if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) return false;
+    if (profilerHidePump && profilerSampleIsPump(s)) return false;
+    if (profilerHideIdle) {
+        var th = traceThreads[s.tid];
+        if (th && profilerThreadIsIdle(th.name)) return false;
+    }
+    return true;
 }
 var profilerSymbols     = []; /* sorted [pc_start, pc_end, name] */
 var profilerSamples     = []; /* [{ts, tid, state, pcs:[...]}] */
@@ -2105,6 +2143,13 @@ function profilerResetOnReconnect() {
     profilerSymbolCount = 0;
     profilerFlameLayout = null;
     profilerLastFlameData = null;
+    profilerPumpTids = Object.create(null);
+    profilerThreadFilter = 0;
+    var threadSel = document.getElementById("profiler-thread");
+    if (threadSel) {
+        threadSel.dataset.signature = "";
+        threadSel.value = "0";
+    }
     profilerDirty = true;
     if (typeof renderProfiler === "function") renderProfiler();
 }
@@ -2297,26 +2342,69 @@ function ensureProfilerRefresh() {
 }
 
 function renderProfiler() {
+    profilerUpdateThreadOptions();
     var info = document.getElementById("profiler-info");
     if (info) {
         var winS = Math.round(profilerWindowUs / 1e6);
         var kept = 0;
         for (var si = 0; si < profilerSamples.length; si++) {
-            var smp0 = profilerSamples[si];
-            if (profilerOnCpuOnly && smp0.state !== 0 && smp0.state !== 1) continue;
-            if (profilerHidePump && profilerSampleIsPump(smp0)) continue;
-            kept++;
+            if (profilerSampleIncluded(profilerSamples[si])) kept++;
         }
         var mode = profilerOnCpuOnly ? "on-CPU" : "wall-clock";
+        var threadTag = "";
+        if (profilerThreadFilter) {
+            var th = traceThreads[profilerThreadFilter];
+            threadTag = " — thread: "
+                + (th ? th.name
+                      : ("0x" + profilerThreadFilter.toString(16)));
+        }
         var label = kept + " samples (" + mode + ") / " + winS + " s, "
             + profilerSymbolCount + " symbols"
-            + (profilerDropped ? ", " + profilerDropped + " dropped" : "");
+            + (profilerDropped ? ", " + profilerDropped + " dropped" : "")
+            + threadTag;
         if (profilerPaused) label = "PAUSED — " + label;
         info.textContent = label;
         info.classList.toggle("paused", profilerPaused);
     }
     if (profilerActiveTab === "flat") renderProfilerFlat();
     else renderProfilerFlame();
+}
+
+/*
+ * Rebuild the Thread dropdown from traceThreads, sorted for stable
+ * ordering. Called on each render so tids picked up from DESCRIPTORS
+ * after profiler samples started arriving still land in the list. Uses
+ * a signature gate so the dropdown isn't wiped (and the user's current
+ * selection isn't lost) on the majority of refreshes where nothing
+ * about the set changed.
+ */
+function profilerUpdateThreadOptions() {
+    var sel = document.getElementById("profiler-thread");
+    if (!sel) return;
+    var tids = Object.keys(traceThreads).map(function (s) { return +s; });
+    tids.sort(function (a, b) {
+        var na = traceThreads[a].name || "";
+        var nb = traceThreads[b].name || "";
+        return na.localeCompare(nb);
+    });
+    var signature = tids.map(function (t) {
+        return t + ":" + (traceThreads[t].name || "");
+    }).join("|");
+    if (sel.dataset.signature === signature) return;
+    sel.dataset.signature = signature;
+    sel.innerHTML = "";
+    var optAll = document.createElement("option");
+    optAll.value = "0";
+    optAll.textContent = "All threads";
+    sel.appendChild(optAll);
+    for (var i = 0; i < tids.length; i++) {
+        var t = tids[i];
+        var opt = document.createElement("option");
+        opt.value = String(t);
+        opt.textContent = traceThreads[t].name || ("0x" + t.toString(16));
+        sel.appendChild(opt);
+    }
+    sel.value = String(profilerThreadFilter || 0);
 }
 
 function renderProfilerFlat() {
@@ -2330,8 +2418,7 @@ function renderProfilerFlat() {
     var countedSamples = 0;
     for (var i = 0; i < profilerSamples.length; i++) {
         var smp = profilerSamples[i];
-        if (profilerOnCpuOnly && smp.state !== 0 && smp.state !== 1) continue;
-        if (profilerHidePump && profilerSampleIsPump(smp)) continue;
+        if (!profilerSampleIncluded(smp)) continue;
         var pcs = smp.pcs;
         if (!pcs.length) continue;
         var leafOff = profilerLeafOffset(pcs);
@@ -2400,17 +2487,35 @@ function renderProfilerFlame() {
     /* Build trie. Walk pcs outermost→leaf. A sample's pcs[] is recorded
      * in call-stack order, which with glibc backtrace() is leaf-first.
      * Reverse so the root is index 0. Drop the signal-handler frames at
-     * the leaf — they dominate the graph and obscure real call paths. */
+     * the leaf — they dominate the graph and obscure real call paths.
+     *
+     * Between [root] and the PC frames we insert a synthetic thread-name
+     * row. Without it the FreeRTOS/Cortex-M backend (depth-1 samples —
+     * the ISR can't unwind r4-r11) collapses to a single row of leaf
+     * PCs with no per-thread breakdown. With it, [root] fans out into
+     * one box per thread, and each thread's leaves stack below — making
+     * attribution visually obvious even when the stack is depth-1. */
     var root = { name: "[root]", count: 0, kids: Object.create(null) };
     for (var i = 0; i < profilerSamples.length; i++) {
         var s = profilerSamples[i];
-        if (profilerOnCpuOnly && s.state !== 0 && s.state !== 1) continue;
-        if (profilerHidePump && profilerSampleIsPump(s)) continue;
+        if (!profilerSampleIncluded(s)) continue;
         if (!s.pcs.length) continue;
         var leafOff = profilerLeafOffset(s.pcs);
         if (leafOff >= s.pcs.length) continue;
         root.count++;
         var node = root;
+        var th = traceThreads[s.tid];
+        var threadLabel = (th && th.name)
+                        ? "[" + th.name + "]"
+                        : "[tid:0x" + s.tid.toString(16) + "]";
+        var tnode = node.kids[threadLabel];
+        if (!tnode) {
+            tnode = { name: threadLabel, count: 0,
+                      kids: Object.create(null), isThread: true };
+            node.kids[threadLabel] = tnode;
+        }
+        tnode.count++;
+        node = tnode;
         for (var k = s.pcs.length - 1; k >= leafOff; k--) {
             var n = resolvePc(s.pcs[k]);
             var next = node.kids[n];
@@ -2597,6 +2702,24 @@ function profilerBindPanel() {
         hidePumpBtn.addEventListener("click", function () {
             profilerHidePump = !profilerHidePump;
             hidePumpBtn.classList.toggle("active", profilerHidePump);
+            renderProfiler();
+        });
+    }
+
+    var hideIdleBtn = document.getElementById("profiler-hideidle");
+    if (hideIdleBtn) {
+        hideIdleBtn.classList.toggle("active", profilerHideIdle);
+        hideIdleBtn.addEventListener("click", function () {
+            profilerHideIdle = !profilerHideIdle;
+            hideIdleBtn.classList.toggle("active", profilerHideIdle);
+            renderProfiler();
+        });
+    }
+
+    var threadSel = document.getElementById("profiler-thread");
+    if (threadSel) {
+        threadSel.addEventListener("change", function () {
+            profilerThreadFilter = parseInt(threadSel.value, 10) || 0;
             renderProfiler();
         });
     }

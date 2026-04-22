@@ -286,14 +286,20 @@ int ove_sim_debug_register(void)
 
 	/* Spawn a low-priority thread that emits snapshots every 500 ms.
 	 * The thread starts immediately but ove_thread_sleep_ms will block
-	 * until the scheduler is running. */
+	 * until the scheduler is running.
+	 *
+	 * Stack sized for the worst-case drain-path frame. sim_profiler_tick
+	 * holds batch[24] (~2 KB) while calling emit_batch, which itself
+	 * stack-allocates payload + ev_buf (~7 KB wire-size × 2). 16 KB
+	 * leaves a generous margin; POSIX's default pthread stack handled
+	 * this silently, FreeRTOS honours the request literally. */
 	struct ove_thread_desc desc = {
 		.name     = "sim_debug",
 		.entry    = debug_thread_fn,
 		.arg      = &debug_ctx,
 		.priority = OVE_PRIO_LOW,
 	};
-	int ret = ove_thread_create(&debug_thread_handle, 4096, &desc);
+	int ret = ove_thread_create(&debug_thread_handle, 16384, &desc);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] debug thread create failed: %d\n", ret);
 

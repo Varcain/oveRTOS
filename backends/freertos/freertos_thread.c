@@ -44,6 +44,8 @@ int ove_thread_init(ove_thread_t *handle,
 	storage->entry = desc->entry;
 	storage->arg = desc->arg;
 
+	ove_state_track_init(&storage->st, OVE_THREAD_STATE_READY);
+
 	uint32_t stack_depth = desc->stack_size / sizeof(StackType_t);
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
@@ -86,6 +88,8 @@ int ove_thread_create_(ove_thread_t *handle,
 	wrapper->done_sem = xSemaphoreCreateBinaryStatic(&wrapper->static_done_sem);
 	wrapper->entry = desc->entry;
 	wrapper->arg = desc->arg;
+
+	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 
 	uint32_t stack_depth = desc->stack_size / sizeof(StackType_t);
 	if (stack_depth < configMINIMAL_STACK_SIZE)

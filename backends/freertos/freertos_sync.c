@@ -8,6 +8,7 @@
 
 #include "ove/sync.h"
 #include "ove/storage.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
@@ -71,16 +72,16 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 
 int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 {
-	if (xSemaphoreTake(mtx->sem,
-			   ms_to_ticks(timeout_ms)) == pdTRUE) {
-		return OVE_OK;
-	}
-	return OVE_ERR_TIMEOUT;
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
+	BaseType_t r = xSemaphoreTake(mtx->sem, ms_to_ticks(timeout_ms));
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
+	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_mutex_unlock(ove_mutex_t mtx)
 {
 	xSemaphoreGive(mtx->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_POST, mtx);
 }
 
 /* ─── Semaphore _init / _deinit ──────────────────────────────────────── */
@@ -136,16 +137,16 @@ void ove_sem_destroy(ove_sem_t sem)
 
 int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
 {
-	if (xSemaphoreTake(sem->sem,
-			   ms_to_ticks(timeout_ms)) == pdTRUE) {
-		return OVE_OK;
-	}
-	return OVE_ERR_TIMEOUT;
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, sem);
+	BaseType_t r = xSemaphoreTake(sem->sem, ms_to_ticks(timeout_ms));
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
+	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_sem_give(ove_sem_t sem)
 {
 	xSemaphoreGive(sem->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_POST, sem);
 }
 
 /* ─── Event _init / _deinit ──────────────────────────────────────────── */
@@ -198,16 +199,16 @@ void ove_event_destroy(ove_event_t evt)
 
 int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 {
-	if (xSemaphoreTake(evt->sem,
-			   ms_to_ticks(timeout_ms)) == pdTRUE) {
-		return OVE_OK;
-	}
-	return OVE_ERR_TIMEOUT;
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
+	BaseType_t r = xSemaphoreTake(evt->sem, ms_to_ticks(timeout_ms));
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
+	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_event_signal(ove_event_t evt)
 {
 	xSemaphoreGive(evt->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
@@ -261,16 +262,16 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 int ove_recursive_mutex_lock(ove_mutex_t mtx,
 					 uint32_t timeout_ms)
 {
-	if (xSemaphoreTakeRecursive(mtx->sem,
-				    ms_to_ticks(timeout_ms)) == pdTRUE) {
-		return OVE_OK;
-	}
-	return OVE_ERR_TIMEOUT;
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
+	BaseType_t r = xSemaphoreTakeRecursive(mtx->sem, ms_to_ticks(timeout_ms));
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
+	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 {
 	xSemaphoreGiveRecursive(mtx->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_POST, mtx);
 }
 
 /* ─── Condition Variable ─────────────────────────────────────────────── */
@@ -347,8 +348,10 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
 	/* Release the caller's mutex */
 	xSemaphoreGive(mtx->sem);
 
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
 	/* Wait for direct notification from signal/broadcast */
 	uint32_t got = ulTaskNotifyTake(pdTRUE, ms_to_ticks(timeout_ms));
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
 
 	if (got == 0) {
 		/* Timeout — remove ourselves from the list if still there */
@@ -391,6 +394,7 @@ void ove_condvar_signal(ove_condvar_t cv)
 		xTaskNotifyGive(task);
 	}
 	xSemaphoreGive(cv->guard);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }
 
 void ove_condvar_broadcast(ove_condvar_t cv)
@@ -403,4 +407,5 @@ void ove_condvar_broadcast(ove_condvar_t cv)
 		p = p->next;
 	}
 	xSemaphoreGive(cv->guard);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }

@@ -107,11 +107,23 @@ volatile uint32_t ove_runtime_counter_ms;
 /* ========================================================================= */
 
 #if (configUSE_TICK_HOOK == 1)
+
+#ifdef CONFIG_OVE_PROFILER
+/* Provided by backends/freertos/freertos_profiler.c. Runs in SysTick ISR
+ * context and samples the interrupted task's stacked PC. Weak so builds
+ * without the profiler backend (plugged via Kconfig gating of that file)
+ * still link. */
+__attribute__((weak)) void ove_backend_profiler_on_tick(void) { }
+#endif
+
 OVE_WEAK
 void vApplicationTickHook(void)
 {
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	ove_runtime_counter_ms++;
+#endif
+#ifdef CONFIG_OVE_PROFILER
+	ove_backend_profiler_on_tick();
 #endif
 }
 #endif

@@ -17,6 +17,8 @@
 #include "event_groups.h"
 #include "stream_buffer.h"
 
+#include "ove/thread_state_stats.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -58,6 +60,12 @@ struct ove_thread {
 	StaticTask_t static_task;
 	void (*entry)(void *);
 	void *arg;
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	/* Embedded per-thread state tracker. Required so the sim trace view
+	 * can emit state transitions with sub-tick resolution. Updated from
+	 * the traceTASK_SWITCHED_IN/OUT hooks in freertos_trace.c. */
+	struct ove_state_tracker st;
+#endif
 };
 
 typedef struct ove_thread ove_thread_storage_t;

@@ -105,6 +105,23 @@ extern volatile uint32_t ove_runtime_counter_ms;
 #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() (ove_runtime_counter_ms = 0UL)
 #define portGET_RUN_TIME_COUNTER_VALUE() ove_runtime_counter_ms
 
+/* Trace hooks wired to oveRTOS trace backend (backends/freertos/freertos_trace.c).
+ * SWITCHED_IN/OUT fire from inside vTaskSwitchContext() (PendSV context); the
+ * blocking macros fire in task context before the yield. See the header comment
+ * in freertos_trace.c for the reasoning behind the split. */
+#ifdef CONFIG_OVE_TRACE_STREAM
+extern void ove_backend_trace_task_switched_in(void);
+extern void ove_backend_trace_task_switched_out(void);
+extern void ove_backend_trace_task_blocking(void);
+#define traceTASK_SWITCHED_IN()                  ove_backend_trace_task_switched_in()
+#define traceTASK_SWITCHED_OUT()                 ove_backend_trace_task_switched_out()
+#define traceBLOCKING_ON_QUEUE_RECEIVE(pxQueue)  ove_backend_trace_task_blocking()
+#define traceBLOCKING_ON_QUEUE_SEND(pxQueue)     ove_backend_trace_task_blocking()
+#define traceBLOCKING_ON_QUEUE_PEEK(pxQueue)     ove_backend_trace_task_blocking()
+#define traceTASK_DELAY()                        ove_backend_trace_task_blocking()
+#define traceTASK_DELAY_UNTIL(xTimeToWake)       ove_backend_trace_task_blocking()
+#endif
+
 /* Map FreeRTOS port handlers to CMSIS names */
 #define vPortSVCHandler     SVC_Handler
 #define xPortPendSVHandler  PendSV_Handler
