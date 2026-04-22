@@ -221,6 +221,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_nodes.c")
 {% if config.get("CONFIG_OVE_TRACE_STREAM") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace_ring.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace.c")
+{% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_trace.c")
+{% endif %}
 {% endif %}
 
 # Sampling profiler (common ring; backend sampler added per RTOS)
@@ -232,6 +235,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/wasm/wasm_profiler.c")
 {% else %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/posix/posix_profiler.c")
 {% endif %}
+{% elif config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_profiler.c")
 {% endif %}
 {% endif %}
 

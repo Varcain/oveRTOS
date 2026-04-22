@@ -106,6 +106,14 @@ macro(ove_setup_project _proj_name)
         $<$<CONFIG:Release>:-O2>
     )
 
+    # Sampling profiler: v1 samples depth=1 (just the stacked PC) and
+    # doesn't need frame pointers. Keep fp emission on anyway on FreeRTOS
+    # so when v2 adds fp-chain unwinding in ove_backend_profiler_on_tick,
+    # every task's stack is walkable without rebuilding the world.
+    if(OVE_PROFILER AND OVE_RTOS STREQUAL "freertos")
+        add_compile_options(-fno-omit-frame-pointer)
+    endif()
+
     set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -g -x assembler-with-cpp")
 
     # Application source list (generated from app.yaml by 'ove configure')

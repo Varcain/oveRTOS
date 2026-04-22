@@ -25,6 +25,11 @@ SECTIONS
     .text :
     {
         KEEP(*(.isr_vector))
+        . = ALIGN(4);
+        __stext = .;        /* start of real code; profiler uses this as
+                               lower bound for PC validity, so small
+                               integers in the vector table don't pass
+                               the is-text-address filter */
         *(.text*)
         *(.rodata*)
 

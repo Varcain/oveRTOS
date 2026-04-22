@@ -42,6 +42,12 @@ static struct sim_trace_ctx trace_ctx;
 #define STREAM_BUF_BYTES       (STREAM_ENVELOPE_BYTES + \
 				OVE_SIM_TRACE_MAX_BATCH * sizeof(struct ove_trace_record))
 
+/* Pump-scoped scratch. The trace plugin emits from the consolidated
+ * sim-debug pump thread only, so these are single-threaded. Keeping them
+ * in BSS avoids a ~4 KiB stack spike that overflows the 4 KiB pump stack
+ * on embedded RTOSes. */
+static uint8_t stream_ev_buf[sizeof(struct ove_sim_event) + STREAM_BUF_BYTES];
+
 static void emit_stream_batch(struct sim_trace_ctx *t,
 			      const struct ove_trace_record *recs, size_t n,
 			      uint32_t dropped)
@@ -49,8 +55,8 @@ static void emit_stream_batch(struct sim_trace_ctx *t,
 	if (n == 0 && dropped == 0)
 		return;
 
-	uint8_t payload[STREAM_BUF_BYTES];
-	uint8_t *p = payload;
+	struct ove_sim_event *ev = (struct ove_sim_event *)stream_ev_buf;
+	uint8_t *p = ev->data;
 
 	*p++ = OVE_SIM_TRACE_SUB_STREAM;
 	*p++ = OVE_SIM_TRACE_VERSION;
@@ -62,13 +68,10 @@ static void emit_stream_batch(struct sim_trace_ctx *t,
 	memcpy(p, recs, rec_bytes);
 	p += rec_bytes;
 
-	uint8_t ev_buf[sizeof(struct ove_sim_event) + STREAM_BUF_BYTES];
-	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
 	ev->plugin_id    = t->plugin_id;
 	ev->event_type   = OVE_SIM_TRACE_EVT_STREAM;
 	ev->timestamp_ms = 0;
-	ev->data_len     = (uint32_t)(p - payload);
-	memcpy(ev->data, payload, ev->data_len);
+	ev->data_len     = (uint32_t)(p - ev->data);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
@@ -80,16 +83,19 @@ static void emit_stream_batch(struct sim_trace_ctx *t,
 #define DESC_BUF_BYTES    (STREAM_ENVELOPE_BYTES + \
 			   OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
 
+static uint8_t desc_ev_buf[sizeof(struct ove_sim_event) + DESC_BUF_BYTES];
+static struct ove_trace_thread_desc desc_scratch[OVE_SIM_TRACE_MAX_DESC];
+
 static void emit_descriptors(struct sim_trace_ctx *t)
 {
-	struct ove_trace_thread_desc descs[OVE_SIM_TRACE_MAX_DESC];
-	size_t count = ove_backend_trace_list_threads(descs, OVE_SIM_TRACE_MAX_DESC);
+	size_t count = ove_backend_trace_list_threads(desc_scratch,
+						       OVE_SIM_TRACE_MAX_DESC);
 	if (count == 0)
 		return;
 
-	uint8_t payload[DESC_BUF_BYTES];
-	uint8_t *p = payload;
-	uint8_t *end = payload + sizeof(payload);
+	struct ove_sim_event *ev = (struct ove_sim_event *)desc_ev_buf;
+	uint8_t *p = ev->data;
+	uint8_t *end = ev->data + DESC_BUF_BYTES;
 
 	*p++ = OVE_SIM_TRACE_SUB_DESCRIPTORS;
 	*p++ = OVE_SIM_TRACE_VERSION;
@@ -99,38 +105,36 @@ static void emit_descriptors(struct sim_trace_ctx *t)
 	memcpy(p, &zero, 4); p += 4;
 
 	for (size_t i = 0; i < count; i++) {
-		const char *name = descs[i].name ? descs[i].name : "?";
+		const char *name = desc_scratch[i].name ? desc_scratch[i].name : "?";
 		size_t nlen = strlen(name);
 		if (nlen > OVE_SIM_TRACE_MAX_NAME)
 			nlen = OVE_SIM_TRACE_MAX_NAME;
 		if (p + 5 + nlen > end)
 			break;
-		memcpy(p, &descs[i].tid, 4); p += 4;
+		memcpy(p, &desc_scratch[i].tid, 4); p += 4;
 		*p++ = (uint8_t)nlen;
 		memcpy(p, name, nlen); p += nlen;
 	}
 
-	uint8_t ev_buf[sizeof(struct ove_sim_event) + DESC_BUF_BYTES];
-	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
 	ev->plugin_id    = t->plugin_id;
 	ev->event_type   = OVE_SIM_TRACE_EVT_DESCRIPTORS;
 	ev->timestamp_ms = 0;
-	ev->data_len     = (uint32_t)(p - payload);
-	memcpy(ev->data, payload, ev->data_len);
+	ev->data_len     = (uint32_t)(p - ev->data);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
 
 /* ── Pump-driven tick ─────────────────────────────────────────────── */
 
+static struct ove_trace_record drain_batch[OVE_SIM_TRACE_MAX_BATCH];
+
 void ove_sim_trace_tick(uint32_t elapsed_ms)
 {
-	struct ove_trace_record batch[OVE_SIM_TRACE_MAX_BATCH];
 	size_t n;
 	do {
-		n = ove_trace_ring_drain(batch, OVE_SIM_TRACE_MAX_BATCH);
+		n = ove_trace_ring_drain(drain_batch, OVE_SIM_TRACE_MAX_BATCH);
 		uint32_t dropped = ove_trace_ring_dropped_get();
-		emit_stream_batch(&trace_ctx, batch, n, dropped);
+		emit_stream_batch(&trace_ctx, drain_batch, n, dropped);
 	} while (n == OVE_SIM_TRACE_MAX_BATCH);
 
 	trace_ctx.ms_since_desc += elapsed_ms;

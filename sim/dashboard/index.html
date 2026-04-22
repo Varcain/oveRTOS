@@ -182,10 +182,17 @@
                         <select id="profiler-rate"
                                 data-signature=""></select>
                     </label>
+                    <label class="profiler-thread-label"
+                           title="Restrict aggregation to a single thread so per-thread hotspots aren't masked by the task that was most on-CPU (usually IDLE).">Thread
+                        <select id="profiler-thread"
+                                data-signature=""></select>
+                    </label>
                     <button id="profiler-oncpu" class="btn btn-small"
                             title="Filter to samples where the thread was RUNNING or READY at capture time (CPU-work view). Off = wall-clock view including BLOCKED.">On-CPU</button>
                     <button id="profiler-hidepump" class="btn btn-small"
                             title="Hide the sim-debug pump thread — it samples itself every tick and dominates the view. Defaults on.">Hide pump</button>
+                    <button id="profiler-hideidle" class="btn btn-small"
+                            title="Hide the RTOS idle / timer-service tasks — on mostly-idle systems they dominate the aggregate view and obscure real app work. Defaults on.">Hide idle</button>
                     <button id="profiler-pause" class="btn btn-small"
                             title="Pause/resume sample intake">Pause</button>
                 </div>

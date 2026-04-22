@@ -51,6 +51,8 @@ set(SIM_QEMU_SOURCES
     ${OVE_DIR}/sim/hal/sim_board.c
     ${OVE_DIR}/sim/hal/sim_display.c
     ${OVE_DIR}/sim/hal/sim_debug.c
+    ${OVE_DIR}/sim/hal/sim_trace.c
+    ${OVE_DIR}/sim/hal/sim_profiler.c
 )
 if(OVE_LVGL)
     list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_lvgl.c)

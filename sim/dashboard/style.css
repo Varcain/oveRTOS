@@ -879,7 +879,8 @@ header h1 {
 }
 
 .profiler-window-label,
-.profiler-rate-label {
+.profiler-rate-label,
+.profiler-thread-label {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -887,7 +888,8 @@ header h1 {
 }
 
 #profiler-window,
-#profiler-rate {
+#profiler-rate,
+#profiler-thread {
     background: #1e2430;
     color: var(--fg);
     border: 1px solid var(--border);
