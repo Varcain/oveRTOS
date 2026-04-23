@@ -125,6 +125,19 @@ macro(ove_zephyr_include_app_sources)
 endmacro()
 
 
+# ─── ove_zephyr_add_profiler_flags() ────────────────────────────────
+# When OVE_PROFILER is set, Zephyr's sampling backend scans the task
+# stack for saved-{r7, lr} pairs pushed by Thumb-2 prologues — same
+# mechanism FreeRTOS uses. That requires -fno-omit-frame-pointer on the
+# app's C/C++ sources so the compiler emits those pushes. Harmless when
+# the profiler is off; harmless on non-ARM Zephyr targets.
+macro(ove_zephyr_add_profiler_flags)
+    if(OVE_PROFILER)
+        zephyr_compile_options(-fno-omit-frame-pointer)
+    endif()
+endmacro()
+
+
 # ─── ove_zephyr_add_common_includes([EXTRA <dirs>...]) ──────────────
 # Add the common include directories to `app`.  Boards can pass EXTRA
 # <dirs>... to add more.

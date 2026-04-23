@@ -223,6 +223,8 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace_ring.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace.c")
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_trace.c")
+{% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_trace.c")
 {% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_trace.c")
 {% endif %}
@@ -238,7 +240,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/wasm/wasm_profiler.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/posix/posix_profiler.c")
 {% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_arm_backtrace.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_profiler.c")
+{% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_arm_backtrace.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_profiler.c")
 {% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_profiler.c")
 {% endif %}

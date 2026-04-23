@@ -13,6 +13,8 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/sys/atomic.h>
 
+#include "ove/thread_state_stats.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -47,6 +49,12 @@ struct ove_thread {
 	k_thread_stack_t *stack;
 	size_t stack_size;
 	int heap_stack;
+	int state;                           /* ove_thread_state_t last observed */
+	const char *name;                    /* caller-owned from desc->name */
+	struct ove_thread *next;             /* intrusive registry list */
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	struct ove_state_tracker st;
+#endif
 };
 
 typedef struct ove_thread ove_thread_storage_t;

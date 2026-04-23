@@ -38,6 +38,8 @@ set(SIM_QEMU_SOURCES
     ${OVE_DIR}/sim/hal/sim_board.c
     ${OVE_DIR}/sim/hal/sim_display.c
     ${OVE_DIR}/sim/hal/sim_debug.c
+    ${OVE_DIR}/sim/hal/sim_trace.c
+    ${OVE_DIR}/sim/hal/sim_profiler.c
 )
 if(OVE_LVGL)
     list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_lvgl.c)
@@ -59,6 +61,7 @@ ove_zephyr_copy_lv_conf_for_bindgen()
 
 ove_zephyr_add_tflm_if_enabled()
 ove_zephyr_include_app_sources()
+ove_zephyr_add_profiler_flags()
 ove_zephyr_add_common_includes(
     EXTRA
         ${OVE_DIR}/sim/include

@@ -8,8 +8,16 @@
 
 #include "ove/sync.h"
 #include "ove/storage.h"
+#include "ove/thread.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
+
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+extern void ove_backend_thread_set_state(int new_state);
+#else
+static inline void ove_backend_thread_set_state(int new_state) { (void)new_state; }
+#endif
 
 static k_timeout_t ms_to_timeout(uint32_t ms)
 {
@@ -66,13 +74,20 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 
 int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 {
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
+
 	int ret = k_mutex_lock(&mtx->mtx, ms_to_timeout(timeout_ms));
+
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_mutex_unlock(ove_mutex_t mtx)
 {
 	k_mutex_unlock(&mtx->mtx);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_POST, mtx);
 }
 
 /* ─── Recursive Mutex _init ──────────────────────────────────────────── */
@@ -117,13 +132,20 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 
 int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 {
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
+
 	int ret = k_mutex_lock(&mtx->mtx, ms_to_timeout(timeout_ms));
+
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 {
 	k_mutex_unlock(&mtx->mtx);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_POST, mtx);
 }
 
 /* ─── Semaphore _init / _deinit ──────────────────────────────────────── */
@@ -175,13 +197,20 @@ void ove_sem_destroy(ove_sem_t sem)
 
 int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
 {
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, sem);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
+
 	int ret = k_sem_take(&sem->sem, ms_to_timeout(timeout_ms));
+
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_sem_give(ove_sem_t sem)
 {
 	k_sem_give(&sem->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_POST, sem);
 }
 
 /* ─── Event _init / _deinit ──────────────────────────────────────────── */
@@ -231,18 +260,26 @@ void ove_event_destroy(ove_event_t evt)
 
 int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 {
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
+
 	int ret = k_sem_take(&evt->sem, ms_to_timeout(timeout_ms));
+
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_event_signal(ove_event_t evt)
 {
 	k_sem_give(&evt->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
 	k_sem_give(&evt->sem);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 /* ─── Condvar _init / _deinit ────────────────────────────────────────── */
@@ -294,17 +331,25 @@ void ove_condvar_destroy(ove_condvar_t cv)
 int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
 			       uint32_t timeout_ms)
 {
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
+	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
+
 	int ret = k_condvar_wait(&cv->cv, &mtx->mtx,
 				 ms_to_timeout(timeout_ms));
+
+	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
 	return (ret == 0) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_condvar_signal(ove_condvar_t cv)
 {
 	k_condvar_signal(&cv->cv);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }
 
 void ove_condvar_broadcast(ove_condvar_t cv)
 {
 	k_condvar_broadcast(&cv->cv);
+	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }

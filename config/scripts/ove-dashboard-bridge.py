@@ -1071,7 +1071,9 @@ def build_project_file_list(build_dir, ove_dir):
                 cat = "Board"
             elif ("FreeRTOS" in abs_path or "freertos" in abs_path.lower()
                   or "/nuttx/" in abs_path.lower()
-                  or "/dl/nuttx" in abs_path.lower()):
+                  or "/dl/nuttx" in abs_path.lower()
+                  or "/zephyr/" in abs_path.lower()
+                  or "/dl/zephyr" in abs_path.lower()):
                 cat = "RTOS"
             elif "/dl/lvgl" in abs_path or "/lvgl/" in abs_path:
                 cat = "LVGL"
@@ -2311,6 +2313,16 @@ gdb_controller = [None]
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
+    # Parent may hand us stdout/stderr in non-blocking mode (observed
+    # under qemu-run.sh where `qemu | tee fifo` shares the terminal
+    # with this process and Zephyr's boot chatter fills the pipe).
+    # Progress lines must not abort startup with BlockingIOError.
+    for _std in (sys.stdout, sys.stderr):
+        try:
+            os.set_blocking(_std.fileno(), True)
+        except (AttributeError, OSError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser(
         description="oveRTOS dashboard bridge (shmem → WebSocket)")
     parser.add_argument("--port", type=int, default=8080)
