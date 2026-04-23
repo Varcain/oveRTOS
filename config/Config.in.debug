@@ -82,8 +82,8 @@ config OVE_TRACE_RING_SIZE
 
 config OVE_PROFILER
     bool "Sampling profiler"
-    depends on OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS)
-    default y if OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS)
+    depends on OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX)
+    default y if OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX)
     help
       Periodically samples each runnable thread's PC + call stack and
       forwards the samples to the dashboard for flat top-N and
@@ -93,8 +93,9 @@ config OVE_PROFILER
       via emscripten_get_callstack at its next yield point — threads
       stuck in tight, yield-free loops never self-sample (surfaced in
       the profiler panel header). FreeRTOS/Cortex-M samples from the
-      SysTick tick hook — depth-1 samples only in v1 (flat top-N
-      works; flame graph degenerates to a leaf-frame bar chart).
+      SysTick tick hook and walks saved-{r7,lr} pairs out of the task
+      stack. NuttX uses up_backtrace(tcb) driven from the sim-debug
+      pump; requires CONFIG_SCHED_BACKTRACE=y in the NuttX defconfig.
 
 config OVE_PROFILER_HZ
     int "Sampling frequency (Hz)"

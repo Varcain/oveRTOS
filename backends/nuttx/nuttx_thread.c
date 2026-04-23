@@ -8,9 +8,12 @@
 
 #include "ove/thread.h"
 #include "ove/storage.h"
+#include "ove/thread_state_stats.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <nuttx/semaphore.h>
 #include <nuttx/tls.h>
+#include <nuttx/mutex.h>
 #include <nuttx/sched.h>
 #include <nuttx/clock.h>
 #include <nuttx/arch.h>
@@ -21,6 +24,13 @@
 #include <signal.h>
 #include <errno.h>
 #include <malloc.h>
+
+/* Set thread state with tracking + trace emit (mirrors posix_thread.c). */
+#define SET_STATE(t, s) do { \
+	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
+	ove_state_track_transition(&(t)->st, (s)); \
+	(t)->state = (s); \
+} while (0)
 
 /* Per-task pointer via NuttX task TLS */
 static int tls_index = -1;
@@ -44,6 +54,47 @@ static void tls_set_current(struct ove_thread *t)
 {
 	tls_ensure_init();
 	task_tls_set_value(tls_index, (uintptr_t)t);
+}
+
+/* ── Thread registry (intrusive list) ─────────────────────────────────
+ * Used by nuttx_trace.c for descriptor enumeration and by the profiler
+ * for target enumeration. Lock is a lightweight nxmutex (kernel) so it
+ * can be taken from any task context. */
+struct ove_thread *ove_nuttx_thread_list_head;
+static mutex_t thread_list_lock = NXMUTEX_INITIALIZER;
+
+void ove_nuttx_thread_list_lock(void)
+{
+	nxmutex_lock(&thread_list_lock);
+}
+
+void ove_nuttx_thread_list_unlock(void)
+{
+	nxmutex_unlock(&thread_list_lock);
+}
+
+struct ove_thread *ove_nuttx_current_thread(void)
+{
+	return tls_get_current();
+}
+
+static void _register_thread(struct ove_thread *t)
+{
+	nxmutex_lock(&thread_list_lock);
+	t->next = ove_nuttx_thread_list_head;
+	ove_nuttx_thread_list_head = t;
+	nxmutex_unlock(&thread_list_lock);
+}
+
+static void _unregister_thread(struct ove_thread *t)
+{
+	nxmutex_lock(&thread_list_lock);
+	struct ove_thread **pp = &ove_nuttx_thread_list_head;
+	while (*pp) {
+		if (*pp == t) { *pp = t->next; break; }
+		pp = &(*pp)->next;
+	}
+	nxmutex_unlock(&thread_list_lock);
 }
 
 /* Store first thread for join in start_scheduler */
@@ -74,7 +125,7 @@ static void sigusr1_handler(int sig)
 	(void)sig;
 	struct ove_thread *t = tls_get_current();
 	if (t && t->suspend_inited) {
-		t->state = OVE_THREAD_STATE_SUSPENDED;
+		SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
 		/* Block until resumed via nxsem_post */
 		while (t->state == OVE_THREAD_STATE_SUSPENDED) {
 			nxsem_wait(&t->suspend_sem);
@@ -103,9 +154,14 @@ static int task_wrapper(int argc, char *argv[])
 	t = (struct ove_thread *)strtoul(argv[1], NULL, 0);
 	tls_set_current(t);
 
-	t->state = OVE_THREAD_STATE_RUNNING;
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	/* Init the tracker in the owning task so last_ts_us is anchored at
+	 * the actual scheduling moment, not at ove_thread_init() time. */
+	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
+#endif
+	SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 	t->entry(t->arg);
-	t->state = OVE_THREAD_STATE_TERMINATED;
+	SET_STATE(t, OVE_THREAD_STATE_TERMINATED);
 	nxsem_post(&t->done_sem);
 	return 0;
 }
@@ -123,6 +179,7 @@ static int thread_start(struct ove_thread *t,
 	t->arg = desc->arg;
 	t->state = OVE_THREAD_STATE_READY;
 	t->suspend_inited = 0;
+	t->name = desc->name;   /* caller-owned string, retained for trace descriptors */
 	nxsem_init(&t->done_sem, 0, 0);
 
 	ensure_sigusr1_handler();
@@ -147,6 +204,7 @@ static int thread_start(struct ove_thread *t,
 
 	t->pid = pid;
 	t->started = 1;
+	_register_thread(t);
 
 	if (first_thread == NULL) {
 		first_thread = t;
@@ -182,7 +240,7 @@ int ove_thread_deinit(ove_thread_t handle)
 	if (handle->started) {
 		/* Resume if suspended so it can finish */
 		if (handle->state == OVE_THREAD_STATE_SUSPENDED) {
-			handle->state = OVE_THREAD_STATE_READY;
+			SET_STATE(handle, OVE_THREAD_STATE_READY);
 			if (handle->suspend_inited) {
 				nxsem_post(&handle->suspend_sem);
 			}
@@ -192,6 +250,8 @@ int ove_thread_deinit(ove_thread_t handle)
 			nxsem_wait_uninterruptible(&handle->done_sem);
 		}
 	}
+
+	_unregister_thread(handle);
 
 	if (first_thread == handle) {
 		first_thread = NULL;
@@ -261,7 +321,10 @@ void ove_thread_set_priority(ove_thread_t handle,
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
+	struct ove_thread *t = tls_get_current();
+	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	usleep(ms * 1000U);
+	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -298,10 +361,18 @@ void ove_thread_suspend(ove_thread_t handle)
 void ove_thread_resume(ove_thread_t handle)
 {
 	if (handle && handle->state == OVE_THREAD_STATE_SUSPENDED) {
-		handle->state = OVE_THREAD_STATE_READY;
+		SET_STATE(handle, OVE_THREAD_STATE_READY);
 		nxsem_post(&handle->suspend_sem);
 	}
 }
+
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+void ove_backend_thread_set_state(int new_state)
+{
+	struct ove_thread *t = tls_get_current();
+	if (t) SET_STATE(t, new_state);
+}
+#endif
 
 size_t ove_thread_get_stack_usage(ove_thread_t handle)
 {

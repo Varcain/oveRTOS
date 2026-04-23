@@ -6,3 +6,8 @@
 # to arm_netinitialize() from up_initialize() — otherwise the link fails
 # with "undefined reference to arm_netinitialize".
 CONFIG_NETDEV_LATEINIT=y
+
+# Enable the portable on-target unwinder used by the oveRTOS sampling
+# profiler (backends/nuttx/nuttx_profiler.c calls up_backtrace(tcb,…)).
+# Gated by the architecture providing ARCH_HAVE_BACKTRACE.
+CONFIG_SCHED_BACKTRACE=y

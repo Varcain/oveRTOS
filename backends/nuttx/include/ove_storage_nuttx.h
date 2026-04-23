@@ -20,6 +20,8 @@
 #include <dirent.h>
 #include <sys/types.h>
 
+#include "ove/thread_state_stats.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -63,6 +65,11 @@ struct ove_thread {
 	sem_t done_sem;
 	int suspend_inited;
 	int started;
+	const char *name;                    /* caller-owned from desc->name */
+	struct ove_thread *next;             /* intrusive enumeration list */
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	struct ove_state_tracker st;
+#endif
 };
 
 typedef struct ove_thread ove_thread_storage_t;
