@@ -1069,7 +1069,9 @@ def build_project_file_list(build_dir, ove_dir):
             elif "/boards/" in abs_path or short.endswith("main.c") \
                     or "system_" in short:
                 cat = "Board"
-            elif "FreeRTOS" in abs_path or "freertos" in abs_path.lower():
+            elif ("FreeRTOS" in abs_path or "freertos" in abs_path.lower()
+                  or "/nuttx/" in abs_path.lower()
+                  or "/dl/nuttx" in abs_path.lower()):
                 cat = "RTOS"
             elif "/dl/lvgl" in abs_path or "/lvgl/" in abs_path:
                 cat = "LVGL"

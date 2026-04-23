@@ -106,11 +106,14 @@ macro(ove_setup_project _proj_name)
         $<$<CONFIG:Release>:-O2>
     )
 
-    # Sampling profiler: v1 samples depth=1 (just the stacked PC) and
-    # doesn't need frame pointers. Keep fp emission on anyway on FreeRTOS
-    # so when v2 adds fp-chain unwinding in ove_backend_profiler_on_tick,
-    # every task's stack is walkable without rebuilding the world.
-    if(OVE_PROFILER AND OVE_RTOS STREQUAL "freertos")
+    # Sampling profiler: FreeRTOS walks saved-{r7, lr} pairs out of the
+    # task stack, which needs the compiler to emit frame pointers. NuttX
+    # uses up_backtrace(tcb), which internally relies on the same ARMv7-M
+    # convention — keeping -fno-omit-frame-pointer here is insurance for
+    # the Cortex-M path and harmless on the POSIX/WASM targets (their
+    # profilers use libc backtrace / emscripten_get_callstack instead).
+    if(OVE_PROFILER AND (OVE_RTOS STREQUAL "freertos"
+                        OR OVE_RTOS STREQUAL "nuttx"))
         add_compile_options(-fno-omit-frame-pointer)
     endif()
 

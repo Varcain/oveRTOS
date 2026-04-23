@@ -53,6 +53,8 @@ set(SIM_QEMU_SOURCES
     ${SIM_DIR}/hal/sim_board.c
     ${SIM_DIR}/hal/sim_display.c
     ${SIM_DIR}/hal/sim_debug.c
+    ${SIM_DIR}/hal/sim_trace.c
+    ${SIM_DIR}/hal/sim_profiler.c
     ${SIM_DIR}/hal/sim_audio.c
     ${SIM_DIR}/src/ove_sim_registry.c
     ${SIM_DIR}/src/ove_sim_input.c
