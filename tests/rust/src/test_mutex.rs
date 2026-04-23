@@ -136,6 +136,23 @@ fn test_shared_counter() {
     assert_eq!(COUNTER.load(Ordering::SeqCst), 2000);
 }
 
+fn test_guard_debug_format() {
+    let mtx = Mutex::new().unwrap();
+    let guard = mtx.guard(WAIT_FOREVER).unwrap();
+    let s = format!("{:?}", guard);
+    assert!(s.contains("MutexGuard"), "unexpected debug: {s}");
+    assert!(s.contains("mutex"), "unexpected debug: {s}");
+}
+
+fn test_mutex_debug_format() {
+    let mtx = Mutex::new().unwrap();
+    // Exercises the `@debug` arm of `ove_handle_impl!` — the macro-generated
+    // `impl Debug for Mutex` is the only way those lines get hit.
+    let s = format!("{:?}", mtx);
+    assert!(s.contains("Mutex"), "unexpected debug: {s}");
+    assert!(s.contains("handle"), "unexpected debug: {s}");
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("Mutex", &[
         test_entry!(test_create),
@@ -147,5 +164,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_guard_timeout),
         test_entry!(test_error_mapping),
         test_entry!(test_shared_counter),
+        test_entry!(test_guard_debug_format),
+        test_entry!(test_mutex_debug_format),
     ])
 }

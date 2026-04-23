@@ -122,9 +122,16 @@ if(OVE_TEST_BUILD_ASAN)
 endif()
 
 # --- Coverage variant — gcov instrumentation for the `coverage` target. ---
+# Two binaries share the same gcov tree: the default (heap-allocated *_create
+# path) and a CONFIG_OVE_ZERO_HEAP twin that routes ove_test_*_create() through
+# the static-storage *_init() APIs in tests/framework/ove_test.h. Without the
+# zero-heap twin, half the sync/queue/timer/workqueue/stream/eventgroup init
+# surface stays untouched in the report.
 option(OVE_TEST_BUILD_COVERAGE "Build ove_test_stub_coverage with --coverage" OFF)
 if(OVE_TEST_BUILD_COVERAGE)
     ove_add_stub_variant(ove_test_stub_coverage --coverage -O0 -g)
+    ove_add_stub_variant(ove_test_stub_coverage_zh --coverage -O0 -g)
+    target_compile_definitions(ove_test_stub_coverage_zh PRIVATE CONFIG_OVE_ZERO_HEAP=1)
 endif()
 
 # --- CTest registration ---
@@ -173,5 +180,7 @@ endif()
 
 # --- Coverage report ---
 if(OVE_TEST_BUILD_COVERAGE)
-    ove_test_coverage_report(stub ove_test_stub_coverage)
+    ove_test_coverage_report(stub
+        ove_test_stub_coverage
+        ove_test_stub_coverage_zh)
 endif()

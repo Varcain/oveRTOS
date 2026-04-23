@@ -101,6 +101,48 @@ fn test_multiple_commands() {
     assert_eq!(B_COUNT.load(Ordering::SeqCst), 1);
 }
 
+fn test_process_line() {
+    ove::shell::init().unwrap();
+    // Null-terminated line should parse through the FFI.
+    ove::shell::process_line(b"\0");
+    ove::shell::process_line(b"help\n\0");
+}
+
+fn test_set_output_hook() {
+    // Clearing a hook must be safe even when none is set.
+    ove::shell::set_output_hook(None);
+}
+
+fn test_register_cmd_table_overflow() {
+    ove::shell::init().unwrap();
+
+    fn noop(_args: &[&[u8]]) {}
+
+    // CMD_TABLE holds at most MAX_CMDS (16) entries. Prior tests have
+    // registered a handful of commands; keep registering until the Rust
+    // table reports NoMemory.  Must be the last shell test — once the
+    // table is full, further register_cmd calls will fail permanently.
+    const NAMES: &[&[u8]] = &[
+        b"f0\0", b"f1\0", b"f2\0", b"f3\0",
+        b"f4\0", b"f5\0", b"f6\0", b"f7\0",
+        b"f8\0", b"f9\0", b"fa\0", b"fb\0",
+        b"fc\0", b"fd\0", b"fe\0", b"ff\0",
+    ];
+    let mut overflow_seen = false;
+    for &name in NAMES {
+        if let Err(e) = ove::shell::register_cmd(name, b"h\0", noop) {
+            assert!(matches!(e, ove::Error::NoMemory), "unexpected: {e:?}");
+            overflow_seen = true;
+            break;
+        }
+    }
+    if !overflow_seen {
+        // Table wasn't full before; one more call must overflow.
+        let rc = ove::shell::register_cmd(b"over\0", b"h\0", noop);
+        assert!(matches!(rc, Err(ove::Error::NoMemory)), "expected NoMemory, got {:?}", rc);
+    }
+}
+
 pub fn run() -> (usize, usize) {
     run_suite(
         "Shell",
@@ -110,6 +152,9 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_args_passed_to_handler),
             test_entry!(test_unknown_command_no_crash),
             test_entry!(test_multiple_commands),
+            test_entry!(test_process_line),
+            test_entry!(test_set_output_hook),
+            test_entry!(test_register_cmd_table_overflow),
         ],
     )
 }

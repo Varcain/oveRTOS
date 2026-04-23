@@ -158,6 +158,10 @@ static void test_cpp_mutex_raii_destroy(void **state)
 	/* If we get here without crash, RAII destroy works */
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* Move semantics are only supported in heap-allocating mode: in zero-heap
+ * builds the wrapper owns inline storage and Move is deleted to prevent
+ * dangling-handle bugs. */
 static void test_cpp_mutex_move_construct(void **state)
 {
 	(void)state;
@@ -178,6 +182,7 @@ static void test_cpp_mutex_move_assign(void **state)
 	assert_true(b.valid());
 	assert_false(a.valid());
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 static void test_cpp_mutex_not_copyable(void **state)
 {
@@ -216,8 +221,10 @@ int test_cpp_mutex_run(void)
 		cmocka_unit_test(test_cpp_mutex_short_timeout),
 		cmocka_unit_test(test_cpp_mutex_multiple_independent),
 		cmocka_unit_test(test_cpp_mutex_raii_destroy),
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_mutex_move_construct),
 		cmocka_unit_test(test_cpp_mutex_move_assign),
+#endif
 		cmocka_unit_test(test_cpp_mutex_not_copyable),
 		cmocka_unit_test(test_cpp_mutex_valid_after_construct),
 		cmocka_unit_test(test_cpp_mutex_handle_access),

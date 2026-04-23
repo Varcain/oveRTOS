@@ -151,6 +151,16 @@ fn test_raii_drop() {
     }
 }
 
+fn test_broadcast_wakes_all() {
+    let cv = CondVar::new().unwrap();
+    let mtx = Mutex::new().unwrap();
+    // broadcast with no waiters must be a no-op, not a crash — exercises the
+    // broadcast() FFI path without needing threads.
+    mtx.lock(WAIT_FOREVER).unwrap();
+    cv.broadcast();
+    mtx.unlock();
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("CondVar", &[
         test_entry!(test_create),
@@ -159,5 +169,6 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_producer_consumer),
         test_entry!(test_wait_forever),
         test_entry!(test_raii_drop),
+        test_entry!(test_broadcast_wakes_all),
     ])
 }

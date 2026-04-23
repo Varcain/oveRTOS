@@ -129,10 +129,16 @@ endfunction()
 ove_add_cpp_variant(ove_test_cpp)
 
 # --- Coverage variant — gcov instrumentation for the `coverage` target. ---
+# See tests/CMakeLists.txt for why we build a second zero-heap twin — the
+# *_init() static-storage paths would otherwise never be exercised.
 option(OVE_TEST_BUILD_COVERAGE "Build ove_test_cpp_coverage with --coverage" OFF)
 if(OVE_TEST_BUILD_COVERAGE)
     ove_add_cpp_variant(ove_test_cpp_coverage --coverage -O0 -g)
-    ove_test_coverage_report(cpp ove_test_cpp_coverage)
+    ove_add_cpp_variant(ove_test_cpp_coverage_zh --coverage -O0 -g)
+    target_compile_definitions(ove_test_cpp_coverage_zh PRIVATE CONFIG_OVE_ZERO_HEAP=1)
+    ove_test_coverage_report(cpp
+        ove_test_cpp_coverage
+        ove_test_cpp_coverage_zh)
 endif()
 
 # Register with CTest

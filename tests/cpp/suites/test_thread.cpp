@@ -185,6 +185,8 @@ static void test_cpp_thread_raii_destroy(void **state)
 	}
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* Move is deleted in zero-heap mode (wrapper owns inline storage). */
 static void test_cpp_thread_move_construct(void **state)
 {
 	(void)state;
@@ -199,6 +201,7 @@ static void test_cpp_thread_move_construct(void **state)
 	g_cpp_keep_running.store(0);
 	test_msleep(20);
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 static void test_cpp_thread_not_copyable(void **state)
 {
@@ -224,7 +227,9 @@ int test_cpp_thread_run(void)
 		cmocka_unit_test(test_cpp_thread_suspend_resume),
 		cmocka_unit_test_teardown(test_cpp_thread_runtime_stats, teardown_stop_cpp_spin),
 		cmocka_unit_test(test_cpp_thread_raii_destroy),
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_teardown(test_cpp_thread_move_construct, teardown_stop_cpp_spin),
+#endif
 		cmocka_unit_test(test_cpp_thread_not_copyable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

@@ -59,6 +59,142 @@ fn test_eventgroup_wait_bits_timeout() {
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
 }
 
+/* ── from_code / to_code round-trip ─────────────────────────────────── */
+
+const VARIANTS: &[(i32, Error)] = &[
+    (-1, Error::NotRegistered),
+    (-2, Error::InvalidParam),
+    (-3, Error::NoMemory),
+    (-4, Error::Timeout),
+    (-5, Error::NotSupported),
+    (-6, Error::QueueFull),
+    (-7, Error::MlFailed),
+    (-8, Error::NetRefused),
+    (-9, Error::NetUnreachable),
+    (-10, Error::NetAddrInUse),
+    (-11, Error::NetReset),
+    (-12, Error::NetDnsFail),
+    (-13, Error::NetClosed),
+    (-14, Error::BusNack),
+    (-15, Error::BusBusy),
+    (-16, Error::BusError),
+];
+
+fn test_from_code_ok() {
+    assert!(matches!(Error::from_code(0), Ok(())));
+}
+
+fn test_from_code_all_variants() {
+    for (code, expected) in VARIANTS {
+        let err = Error::from_code(*code).expect_err("negative code must map to Err");
+        assert_eq!(err, *expected, "code {code} did not map to {expected:?}");
+    }
+}
+
+fn test_from_code_unknown() {
+    // Any negative code outside -1..-16 becomes `Error::Unknown(code)`.
+    let err = Error::from_code(-999).expect_err("unknown negative code must be Err");
+    assert_eq!(err, Error::Unknown(-999));
+    // Unknown preserves positive codes too, but positive codes aren't errors
+    // in the mapping table — the match's catch-all still wraps them.
+    let err = Error::from_code(42).expect_err("any non-zero code must be Err");
+    assert_eq!(err, Error::Unknown(42));
+}
+
+fn test_to_code_all_variants() {
+    for (code, variant) in VARIANTS {
+        assert_eq!(variant.to_code(), *code);
+    }
+    assert_eq!(Error::Unknown(-123).to_code(), -123);
+}
+
+fn test_round_trip_all_variants() {
+    for (code, variant) in VARIANTS {
+        let err = Error::from_code(*code).unwrap_err();
+        assert_eq!(err.to_code(), *code);
+        assert_eq!(err, *variant);
+    }
+}
+
+/* ── Classifier helpers ─────────────────────────────────────────────── */
+
+fn test_is_net_error_positive() {
+    for v in [
+        Error::NetRefused,
+        Error::NetUnreachable,
+        Error::NetAddrInUse,
+        Error::NetReset,
+        Error::NetDnsFail,
+        Error::NetClosed,
+    ] {
+        assert!(v.is_net_error(), "{v:?} should be net error");
+        assert!(!v.is_bus_error(), "{v:?} should not be bus error");
+    }
+}
+
+fn test_is_bus_error_positive() {
+    for v in [Error::BusNack, Error::BusBusy, Error::BusError] {
+        assert!(v.is_bus_error(), "{v:?} should be bus error");
+        assert!(!v.is_net_error(), "{v:?} should not be net error");
+    }
+}
+
+fn test_is_net_is_bus_negative() {
+    for v in [
+        Error::NotRegistered,
+        Error::InvalidParam,
+        Error::NoMemory,
+        Error::Timeout,
+        Error::NotSupported,
+        Error::QueueFull,
+        Error::MlFailed,
+        Error::Unknown(-42),
+    ] {
+        assert!(!v.is_net_error(), "{v:?} should not classify as net");
+        assert!(!v.is_bus_error(), "{v:?} should not classify as bus");
+    }
+}
+
+/* ── Display ────────────────────────────────────────────────────────── */
+
+fn test_display_all_variants() {
+    use std::string::ToString;
+    let expected = [
+        (Error::NotRegistered, "not registered"),
+        (Error::InvalidParam, "invalid parameter"),
+        (Error::NoMemory, "out of memory"),
+        (Error::Timeout, "timeout"),
+        (Error::NotSupported, "not supported"),
+        (Error::QueueFull, "queue full"),
+        (Error::MlFailed, "ML inference failed"),
+        (Error::NetRefused, "connection refused"),
+        (Error::NetUnreachable, "network unreachable"),
+        (Error::NetAddrInUse, "address in use"),
+        (Error::NetReset, "connection reset"),
+        (Error::NetDnsFail, "DNS resolution failed"),
+        (Error::NetClosed, "connection closed"),
+        (Error::BusNack, "bus NACK"),
+        (Error::BusBusy, "bus busy"),
+        (Error::BusError, "bus error"),
+    ];
+    for (v, s) in expected {
+        assert_eq!(v.to_string(), s, "display mismatch for {v:?}");
+    }
+    assert_eq!(Error::Unknown(-42).to_string(), "unknown error (-42)");
+}
+
+/* ── Derive surface ─────────────────────────────────────────────────── */
+
+fn test_derives() {
+    let a = Error::Timeout;
+    let b = a;
+    assert_eq!(a, b);
+    assert_ne!(Error::Timeout, Error::NotRegistered);
+    assert_ne!(Error::Unknown(1), Error::Unknown(2));
+    // Debug is derived — exercise the path.
+    let _ = format!("{:?}", Error::BusNack);
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("Errors", &[
         test_entry!(test_mutex_try_lock_contended_returns_timeout),
@@ -67,5 +203,15 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_queue_receive_empty_returns_timeout),
         test_entry!(test_queue_send_full_returns_timeout),
         test_entry!(test_eventgroup_wait_bits_timeout),
+        test_entry!(test_from_code_ok),
+        test_entry!(test_from_code_all_variants),
+        test_entry!(test_from_code_unknown),
+        test_entry!(test_to_code_all_variants),
+        test_entry!(test_round_trip_all_variants),
+        test_entry!(test_is_net_error_positive),
+        test_entry!(test_is_bus_error_positive),
+        test_entry!(test_is_net_is_bus_negative),
+        test_entry!(test_display_all_variants),
+        test_entry!(test_derives),
     ])
 }

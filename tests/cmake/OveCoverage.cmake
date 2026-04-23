@@ -6,10 +6,15 @@
 #
 # Reusable coverage pipeline for host-side CMocka/gcov test targets.
 #
-# ove_test_coverage_report(<name> <target>)
+# ove_test_coverage_report(<name> <target> [<target> ...])
 #   Adds a custom target `coverage` that:
 #     1. Zeroes gcov counters in ${CMAKE_BINARY_DIR}
-#     2. Runs ${target} (which must be built with --coverage)
+#     2. Runs each ${target} (all must be built with --coverage). Each
+#        executable emits its own .gcda files under its own CMakeFiles/
+#        subdir, so counters naturally merge when lcov captures the tree.
+#        Passing multiple targets lets a single backend-level coverage
+#        pass exercise multiple build configurations (e.g. heap-based and
+#        zero-heap) against the same source tree.
 #     3. Captures gcov data into ${CMAKE_BINARY_DIR}/coverage/coverage.info,
 #        tagged with lcov --test-name <name> so merges across backends are
 #        attributable.
@@ -23,7 +28,11 @@
 #   The unfiltered .info file is also preserved so the top-level Makefile can
 #   merge per-backend tracefiles into one combined report.
 
-function(ove_test_coverage_report name target)
+function(ove_test_coverage_report name)
+    set(targets ${ARGN})
+    if(NOT targets)
+        message(FATAL_ERROR "ove_test_coverage_report: need at least one target")
+    endif()
     find_program(LCOV_BIN lcov)
     find_program(GENHTML_BIN genhtml)
     if(NOT LCOV_BIN OR NOT GENHTML_BIN)
@@ -49,10 +58,23 @@ function(ove_test_coverage_report name target)
         "'${_ove_root_abs}/include/*'")
 
     set(cov_dir ${CMAKE_BINARY_DIR}/coverage)
+
+    # Build a COMMAND-interleaved list that runs each target between the
+    # zero-counters and capture steps. Using list(APPEND ... COMMAND ...)
+    # keeps the single-add_custom_target form — lcov captures after all
+    # binaries have finished so each target's .gcda files are present.
+    set(_run_cmds "")
+    set(_deps "")
+    foreach(t IN LISTS targets)
+        list(APPEND _run_cmds COMMAND $<TARGET_FILE:${t}>)
+        list(APPEND _deps ${t})
+    endforeach()
+    list(JOIN targets ", " _targets_pretty)
+
     add_custom_target(coverage
         COMMAND ${CMAKE_COMMAND} -E make_directory ${cov_dir}
         COMMAND ${LCOV_BIN} --directory ${CMAKE_BINARY_DIR} --zerocounters
-        COMMAND $<TARGET_FILE:${target}>
+        ${_run_cmds}
         COMMAND ${LCOV_BIN} --directory ${CMAKE_BINARY_DIR}
                 --capture --test-name ${name}
                 --rc branch_coverage=1
@@ -67,8 +89,8 @@ function(ove_test_coverage_report name target)
                 --branch-coverage
                 --output-directory ${cov_dir}/html
                 --ignore-errors source,mismatch
-        DEPENDS ${target}
-        COMMENT "Running ${target} under gcov and producing HTML report"
+        DEPENDS ${_deps}
+        COMMENT "Running ${_targets_pretty} under gcov and producing HTML report"
         USES_TERMINAL
     )
 endfunction()
