@@ -8,10 +8,75 @@
 
 #include "ove/thread.h"
 #include "ove/storage.h"
+#include "ove/thread_state_stats.h"
+#include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_heap.h>
+#include <stdbool.h>
 #include <string.h>
+
+/* Set thread state with tracking + trace emit (mirrors posix/nuttx). */
+#define SET_STATE(t, s) do { \
+	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
+	ove_state_track_transition(&(t)->st, (s)); \
+	(t)->state = (s); \
+} while (0)
+
+/* ── Thread registry (intrusive list) ─────────────────────────────────
+ * Used by zephyr_trace.c for descriptor enumeration. The profiler is
+ * ISR-driven (SysTick-style) and identifies targets via k_thread_custom_data
+ * — no enumeration needed from there — so the registry exists mainly for
+ * the trace swimlane. Lock is a k_mutex so it's safe from any task context
+ * but not ISR; trace enumeration runs off the sim_debug pump thread. */
+struct ove_thread *ove_zephyr_thread_list_head;
+static struct k_mutex thread_list_lock;
+static bool thread_list_lock_initialised;
+
+static void ensure_list_lock(void)
+{
+	if (!thread_list_lock_initialised) {
+		k_mutex_init(&thread_list_lock);
+		thread_list_lock_initialised = true;
+	}
+}
+
+void ove_zephyr_thread_list_lock(void)
+{
+	ensure_list_lock();
+	k_mutex_lock(&thread_list_lock, K_FOREVER);
+}
+
+void ove_zephyr_thread_list_unlock(void)
+{
+	k_mutex_unlock(&thread_list_lock);
+}
+
+struct ove_thread *ove_zephyr_current_thread(void)
+{
+	/* k_thread_custom_data_get returns NULL for the idle thread /
+	 * system threads; callers must handle that. */
+	return (struct ove_thread *)k_thread_custom_data_get();
+}
+
+static void _register_thread(struct ove_thread *t)
+{
+	ove_zephyr_thread_list_lock();
+	t->next = ove_zephyr_thread_list_head;
+	ove_zephyr_thread_list_head = t;
+	ove_zephyr_thread_list_unlock();
+}
+
+static void _unregister_thread(struct ove_thread *t)
+{
+	ove_zephyr_thread_list_lock();
+	struct ove_thread **pp = &ove_zephyr_thread_list_head;
+	while (*pp) {
+		if (*pp == t) { *pp = t->next; break; }
+		pp = &(*pp)->next;
+	}
+	ove_zephyr_thread_list_unlock();
+}
 
 static int map_priority(ove_prio_t prio)
 {
@@ -35,7 +100,15 @@ static void thread_wrapper(void *p1, void *p2, void *p3)
 	void *arg = p2;
 	struct ove_thread *info = (struct ove_thread *)p3;
 	k_thread_custom_data_set(info);
+
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+	/* Init the tracker in the owning task so last_ts_us is anchored at
+	 * the actual scheduling moment, not at ove_thread_init() time. */
+	ove_state_track_init(&info->st, OVE_THREAD_STATE_READY);
+#endif
+	SET_STATE(info, OVE_THREAD_STATE_RUNNING);
 	entry(arg);
+	SET_STATE(info, OVE_THREAD_STATE_TERMINATED);
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -71,6 +144,9 @@ int ove_thread_init(ove_thread_t *handle,
 		storage->heap_stack = 1;
 	}
 	storage->stack_size = stack_sz;
+	storage->state = OVE_THREAD_STATE_READY;
+	storage->name = desc->name;  /* caller-owned; retained for trace descriptor */
+	storage->next = NULL;
 
 	tid = k_thread_create(&storage->thread, storage->stack, stack_sz,
 			      thread_wrapper,
@@ -82,6 +158,7 @@ int ove_thread_init(ove_thread_t *handle,
 		k_thread_name_set(tid, desc->name);
 	}
 
+	_register_thread(storage);
 	*handle = storage;
 	return OVE_OK;
 }
@@ -95,6 +172,7 @@ int ove_thread_deinit(ove_thread_t handle)
 	if (k_thread_join(&info->thread, K_FOREVER) != 0) {
 		k_thread_abort(&info->thread);
 	}
+	_unregister_thread(info);
 	if (info->heap_stack && info->stack != NULL) {
 		k_thread_stack_free(info->stack);
 		info->stack = NULL;
@@ -135,6 +213,10 @@ int ove_thread_create_(ove_thread_t *handle,
 
 	info->stack = stack;
 	info->stack_size = stack_sz;
+	info->heap_stack = 1;
+	info->state = OVE_THREAD_STATE_READY;
+	info->name = desc->name;
+	info->next = NULL;
 
 	tid = k_thread_create(&info->thread, stack, stack_sz,
 			      thread_wrapper,
@@ -146,6 +228,7 @@ int ove_thread_create_(ove_thread_t *handle,
 		k_thread_name_set(tid, desc->name);
 	}
 
+	_register_thread(info);
 	*handle = info;
 	return OVE_OK;
 }
@@ -161,6 +244,7 @@ int ove_thread_destroy(ove_thread_t handle)
 	if (k_thread_join(&info->thread, K_FOREVER) != 0) {
 		k_thread_abort(&info->thread);
 	}
+	_unregister_thread(info);
 	k_thread_stack_free(info->stack);
 	OVE_BACKEND_FREE(info);
 	return OVE_OK;
@@ -186,7 +270,10 @@ void ove_thread_set_priority(ove_thread_t handle,
 
 void ove_thread_sleep_ms(uint32_t ms)
 {
+	struct ove_thread *t = ove_zephyr_current_thread();
+	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	k_sleep(K_MSEC(ms));
+	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -208,6 +295,7 @@ void ove_thread_suspend(ove_thread_t handle)
 {
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
+		SET_STATE(info, OVE_THREAD_STATE_SUSPENDED);
 		k_thread_suspend(&info->thread);
 	}
 }
@@ -216,9 +304,18 @@ void ove_thread_resume(ove_thread_t handle)
 {
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
+		SET_STATE(info, OVE_THREAD_STATE_READY);
 		k_thread_resume(&info->thread);
 	}
 }
+
+#ifdef CONFIG_OVE_THREAD_STATE_STATS
+void ove_backend_thread_set_state(int new_state)
+{
+	struct ove_thread *t = ove_zephyr_current_thread();
+	if (t) SET_STATE(t, new_state);
+}
+#endif
 
 size_t ove_thread_get_stack_usage(ove_thread_t handle)
 {

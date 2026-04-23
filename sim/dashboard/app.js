@@ -2053,6 +2053,7 @@ var profilerPaused      = false;
 var profilerOnCpuOnly   = false; /* filter: keep only RUNNING/READY samples */
 var profilerHidePump    = true;  /* hide the sim-debug pump thread (default on) */
 var profilerHideIdle    = true;  /* hide RTOS IDLE / Tmr Svc (default on) */
+var profilerApiOnly     = true;  /* collapse non-ove/non-app frames (default on) */
 var profilerThreadFilter = 0;    /* 0 = all threads, else only this tid */
 var profilerFlameZoom   = 1;     /* horizontal zoom multiplier (mouse-wheel) */
 var PROFILER_FLAME_MAX_ZOOM = 20;
@@ -2071,6 +2072,63 @@ function profilerThreadIsIdle(name) {
     if (!name) return false;
     var lc = name.toLowerCase();
     return lc === "idle" || lc === "tmr svc" || lc === "timer svc";
+}
+
+/*
+ * Symbol prefixes that the API-only toggle collapses. The goal is to
+ * leave oveRTOS API (ove_*) and app code visible while hiding LVGL,
+ * RTOS kernel, and libc internals. App code has no mandatory prefix,
+ * so "app" is defined by elimination — anything that doesn't start
+ * with one of these and isn't already filtered by PROFILER_SKIP_FRAMES
+ * is treated as user code.
+ *
+ * Prefixes are matched with startsWith(). Be deliberately conservative
+ * about adding an item — a prefix like "port" intentionally catches
+ * every FreeRTOS portXXX symbol and will also drop any app function
+ * starting with "port". Users can still turn the toggle off to see
+ * everything.
+ */
+var PROFILER_EXCLUDE_PREFIXES = [
+    /* LVGL */
+    "lv_", "_lv_",
+    /* Zephyr kernel + arch + sys helpers */
+    "k_", "z_", "_k_", "_z_", "arch_", "sys_",
+    "_isr_wrapper", "_interrupt_stack",
+    /* FreeRTOS kernel */
+    "xTask", "vTask", "uxTask",
+    "xQueue", "vQueue",
+    "xList", "vList",
+    "xEvent", "vEvent",
+    "xSemaphore",
+    "xTimer", "vTimer",
+    "prv", "pxCurrent",
+    "xPort", "vPort", "port",
+    /* NuttX kernel */
+    "nxsched_", "nxtask_", "nxmutex_", "nxsem_",
+    "nxcondvar_", "nxrmutex_", "nxsig_", "nxclock_", "nxnotify_",
+    "nx_", "up_", "sched_", "group_",
+    /* Cortex-M handlers + runtime */
+    "HardFault_", "Reset_Handler", "Default_Handler",
+    "SysTick_Handler", "PendSV_Handler", "SVC_Handler", "NMI_Handler",
+    "__aeabi_", "__gnu_", "__cxa_",
+    /* pthreads / libc (most already caught by PROFILER_SKIP_FRAMES) */
+    "__pthread_", "__nptl_", "__futex_", "__lll_",
+    "__libc_", "__restore_", "__errno", "__nss_",
+];
+
+/**
+ * Return true when @name is an LVGL / RTOS kernel / libc internal
+ * frame that the user almost certainly didn't write, and not the
+ * oveRTOS API. Called by the API-only toggle in every render path so
+ * flat-top, flame graph, and info-line denominators stay consistent.
+ */
+function profilerFrameIsExcluded(name) {
+    if (!name) return false;
+    if (name.indexOf("ove_") === 0) return false;
+    for (var i = 0; i < PROFILER_EXCLUDE_PREFIXES.length; i++) {
+        if (name.indexOf(PROFILER_EXCLUDE_PREFIXES[i]) === 0) return true;
+    }
+    return false;
 }
 
 /*
@@ -2164,7 +2222,9 @@ function profilerResetOnReconnect() {
 function profilerLeafOffset(pcs) {
     for (var i = 0; i < pcs.length; i++) {
         var n = resolvePc(pcs[i]);
-        if (!PROFILER_SKIP_FRAMES[n]) return i;
+        if (PROFILER_SKIP_FRAMES[n]) continue;
+        if (profilerApiOnly && profilerFrameIsExcluded(n)) continue;
+        return i;
     }
     return pcs.length; /* all frames filtered — skip this sample */
 }
@@ -2348,7 +2408,12 @@ function renderProfiler() {
         var winS = Math.round(profilerWindowUs / 1e6);
         var kept = 0;
         for (var si = 0; si < profilerSamples.length; si++) {
-            if (profilerSampleIncluded(profilerSamples[si])) kept++;
+            var _smp = profilerSamples[si];
+            if (!profilerSampleIncluded(_smp)) continue;
+            /* Mirror the render-path drop: samples whose every frame is
+             * excluded by API-only shouldn't be counted either. */
+            if (profilerLeafOffset(_smp.pcs) >= _smp.pcs.length) continue;
+            kept++;
         }
         var mode = profilerOnCpuOnly ? "on-CPU" : "wall-clock";
         var threadTag = "";
@@ -2429,6 +2494,7 @@ function renderProfilerFlat() {
         var seenInSample = Object.create(null);
         for (var k = leafOff; k < pcs.length; k++) {
             var n = resolvePc(pcs[k]);
+            if (profilerApiOnly && profilerFrameIsExcluded(n)) continue;
             if (seenInSample[n]) continue;
             seenInSample[n] = 1;
             totalCount[n] = (totalCount[n] || 0) + 1;
@@ -2518,6 +2584,7 @@ function renderProfilerFlame() {
         node = tnode;
         for (var k = s.pcs.length - 1; k >= leafOff; k--) {
             var n = resolvePc(s.pcs[k]);
+            if (profilerApiOnly && profilerFrameIsExcluded(n)) continue;
             var next = node.kids[n];
             if (!next) {
                 next = { name: n, count: 0, kids: Object.create(null) };
@@ -2712,6 +2779,16 @@ function profilerBindPanel() {
         hideIdleBtn.addEventListener("click", function () {
             profilerHideIdle = !profilerHideIdle;
             hideIdleBtn.classList.toggle("active", profilerHideIdle);
+            renderProfiler();
+        });
+    }
+
+    var apiOnlyBtn = document.getElementById("profiler-apionly");
+    if (apiOnlyBtn) {
+        apiOnlyBtn.classList.toggle("active", profilerApiOnly);
+        apiOnlyBtn.addEventListener("click", function () {
+            profilerApiOnly = !profilerApiOnly;
+            apiOnlyBtn.classList.toggle("active", profilerApiOnly);
             renderProfiler();
         });
     }

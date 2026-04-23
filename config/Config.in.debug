@@ -82,8 +82,8 @@ config OVE_TRACE_RING_SIZE
 
 config OVE_PROFILER
     bool "Sampling profiler"
-    depends on OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX)
-    default y if OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX)
+    depends on OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX || OVE_RTOS_ZEPHYR)
+    default y if OVE_SIM && (OVE_RTOS_POSIX || OVE_RTOS_FREERTOS || OVE_RTOS_NUTTX || OVE_RTOS_ZEPHYR)
     help
       Periodically samples each runnable thread's PC + call stack and
       forwards the samples to the dashboard for flat top-N and
@@ -96,6 +96,9 @@ config OVE_PROFILER
       SysTick tick hook and walks saved-{r7,lr} pairs out of the task
       stack. NuttX uses up_backtrace(tcb) driven from the sim-debug
       pump; requires CONFIG_SCHED_BACKTRACE=y in the NuttX defconfig.
+      Zephyr/Cortex-M samples from a high-priority k_timer expiry
+      (runs in SysTick ISR context) and shares the FreeRTOS walker
+      via backends/common/ove_arm_backtrace.c.
 
 config OVE_PROFILER_HZ
     int "Sampling frequency (Hz)"

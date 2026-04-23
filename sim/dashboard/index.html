@@ -193,6 +193,8 @@
                             title="Hide the sim-debug pump thread — it samples itself every tick and dominates the view. Defaults on.">Hide pump</button>
                     <button id="profiler-hideidle" class="btn btn-small"
                             title="Hide the RTOS idle / timer-service tasks — on mostly-idle systems they dominate the aggregate view and obscure real app work. Defaults on.">Hide idle</button>
+                    <button id="profiler-apionly" class="btn btn-small"
+                            title="Show only oveRTOS API (ove_*) and app code — collapse frames in LVGL, RTOS kernel, and libc internals. Defaults on.">API only</button>
                     <button id="profiler-pause" class="btn btn-small"
                             title="Pause/resume sample intake">Pause</button>
                 </div>
