@@ -1832,3 +1832,23 @@ const lv_font_t lv_font_montserrat_20 = {NULL};
 const lv_font_t lv_font_montserrat_24 = {NULL};
 const lv_font_t lv_font_montserrat_32 = {NULL};
 const lv_font_t lv_font_montserrat_48 = {NULL};
+
+/* ── Display info ────────────────────────────────────────────────── */
+
+int32_t lv_display_get_horizontal_resolution(const lv_display_t *disp)
+{
+	(void)disp;
+	return 0;
+}
+
+int32_t lv_display_get_vertical_resolution(const lv_display_t *disp)
+{
+	(void)disp;
+	return 0;
+}
+
+int32_t lv_display_get_dpi(const lv_display_t *disp)
+{
+	(void)disp;
+	return 0;
+}

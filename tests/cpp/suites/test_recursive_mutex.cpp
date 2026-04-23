@@ -78,6 +78,8 @@ static void test_cpp_recursive_raii_destroy(void **state)
 	}
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* Move is deleted in zero-heap mode (wrapper owns inline storage). */
 static void test_cpp_recursive_move_construct(void **state)
 {
 	(void)state;
@@ -98,6 +100,7 @@ static void test_cpp_recursive_move_assign(void **state)
 	assert_true(b.valid());
 	assert_false(a.valid());
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 static void test_cpp_recursive_not_copyable(void **state)
 {
@@ -117,8 +120,10 @@ int test_cpp_recursive_mutex_run(void)
 		cmocka_unit_test(test_cpp_recursive_timeout),
 		cmocka_unit_test(test_cpp_recursive_destroy),
 		cmocka_unit_test(test_cpp_recursive_raii_destroy),
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_recursive_move_construct),
 		cmocka_unit_test(test_cpp_recursive_move_assign),
+#endif
 		cmocka_unit_test(test_cpp_recursive_not_copyable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

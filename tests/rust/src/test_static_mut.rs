@@ -6,7 +6,7 @@
 
 use crate::framework::run_suite;
 use crate::test_entry;
-use ove::StaticMut;
+use ove::{StaticCell, StaticMut};
 
 static TEST_CELL: StaticMut<i32> = StaticMut::new();
 
@@ -71,6 +71,40 @@ fn test_double_init_panics() {
     assert!(result.is_err(), "double init should panic");
 }
 
+fn test_get_uninitialized_panics() {
+    static CELL: StaticMut<i32> = StaticMut::new();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = *CELL.get();
+    }));
+    assert!(result.is_err(), "get on uninitialized cell should panic");
+}
+
+/* ── StaticCell (separate type from StaticMut) ─────────────────────── */
+
+static SC_TEST: StaticCell<i32> = StaticCell::new();
+
+fn test_static_cell_try_get_both_branches() {
+    static SC: StaticCell<u32> = StaticCell::new();
+    // Pre-init: try_get → None
+    assert!(SC.try_get().is_none());
+    SC.init(123);
+    // Post-init: try_get → Some
+    assert_eq!(*SC.try_get().unwrap(), 123);
+    SC.shutdown();
+    // Post-shutdown: None again
+    assert!(SC.try_get().is_none());
+}
+
+fn test_static_cell_double_init_panics() {
+    SC_TEST.shutdown();
+    SC_TEST.init(1);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        SC_TEST.init(2);
+    }));
+    SC_TEST.shutdown();
+    assert!(result.is_err(), "StaticCell double init should panic");
+}
+
 pub fn run() -> (usize, usize) {
     // Reset TEST_CELL for double_init test
     TEST_CELL.shutdown();
@@ -85,6 +119,9 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_shutdown_idempotent),
             test_entry!(test_reinit_after_shutdown),
             test_entry!(test_double_init_panics),
+            test_entry!(test_get_uninitialized_panics),
+            test_entry!(test_static_cell_try_get_both_branches),
+            test_entry!(test_static_cell_double_init_panics),
         ],
     )
 }

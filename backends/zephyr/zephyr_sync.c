@@ -13,12 +13,6 @@
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 
-#ifdef CONFIG_OVE_THREAD_STATE_STATS
-extern void ove_backend_thread_set_state(int new_state);
-#else
-static inline void ove_backend_thread_set_state(int new_state) { (void)new_state; }
-#endif
-
 static k_timeout_t ms_to_timeout(uint32_t ms)
 {
 	if (ove_timeout_is_forever(ms)) {

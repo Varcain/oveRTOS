@@ -16,6 +16,7 @@
 #include <sched.h>
 #include <signal.h>
 #include <semaphore.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 

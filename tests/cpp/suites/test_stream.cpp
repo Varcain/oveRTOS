@@ -94,6 +94,8 @@ static void test_cpp_stream_raii_destroy(void **state)
 	}
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* Move is deleted in zero-heap mode (wrapper owns inline storage). */
 static void test_cpp_stream_move_construct(void **state)
 {
 	(void)state;
@@ -104,6 +106,7 @@ static void test_cpp_stream_move_construct(void **state)
 	assert_true(b.valid());
 	assert_false(a.valid());
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 static void test_cpp_stream_not_copyable(void **state)
 {
@@ -124,7 +127,9 @@ int test_cpp_stream_run(void)
 		cmocka_unit_test(test_cpp_stream_send_from_isr),
 		cmocka_unit_test(test_cpp_stream_receive_from_isr),
 		cmocka_unit_test(test_cpp_stream_raii_destroy),
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_stream_move_construct),
+#endif
 		cmocka_unit_test(test_cpp_stream_not_copyable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

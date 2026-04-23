@@ -15,7 +15,7 @@ use crate::error::{Error, Result};
 use core::ffi::c_void;
 
 /// Audio sample format.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleFmt {
     S16,
     S32,
@@ -23,7 +23,8 @@ pub enum SampleFmt {
 }
 
 impl SampleFmt {
-    fn to_raw(self) -> u32 {
+    /// Convert to the raw C enum value (`ove_audio_sample_fmt`).
+    pub fn to_raw(self) -> u32 {
         match self {
             SampleFmt::S16 => 0,
             SampleFmt::S32 => 1,

@@ -18,6 +18,7 @@
 #include <dirent.h>
 #include <errno.h>
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static int flags_to_posix(int flags)
 {
 	int mode = 0;
@@ -36,6 +37,7 @@ static int flags_to_posix(int flags)
 	}
 	return mode;
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 int ove_fs_mount(const char *dev_path, const char *mount_point)
 {

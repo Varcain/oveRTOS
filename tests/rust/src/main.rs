@@ -30,6 +30,9 @@ mod test_stream;
 mod test_workqueue;
 mod test_static_mut;
 mod test_errors;
+mod test_pm;
+mod test_fmt;
+mod test_lvgl;
 
 fn main() {
     let mut total_passed = 0usize;
@@ -61,6 +64,9 @@ fn main() {
         ("Workqueue", test_workqueue::run),
         ("StaticMut", test_static_mut::run),
         ("Errors", test_errors::run),
+        ("PM", test_pm::run),
+        ("Fmt", test_fmt::run),
+        ("Lvgl", test_lvgl::run),
     ];
 
     for (name, runner) in suites {

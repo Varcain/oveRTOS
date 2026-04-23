@@ -74,6 +74,8 @@ static void test_cpp_workqueue_raii_destroy(void **state)
 	}
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* Move is deleted in zero-heap mode (wrapper owns inline storage). */
 static void test_cpp_workqueue_move_construct(void **state)
 {
 	(void)state;
@@ -84,6 +86,7 @@ static void test_cpp_workqueue_move_construct(void **state)
 	assert_true(b.valid());
 	assert_false(a.valid());
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 static void test_cpp_workqueue_not_copyable(void **state)
 {
@@ -107,7 +110,9 @@ int test_cpp_workqueue_run(void)
 		cmocka_unit_test(test_cpp_work_submit_delayed),
 		cmocka_unit_test(test_cpp_work_cancel),
 		cmocka_unit_test(test_cpp_workqueue_raii_destroy),
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_workqueue_move_construct),
+#endif
 		cmocka_unit_test(test_cpp_workqueue_not_copyable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

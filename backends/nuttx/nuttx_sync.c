@@ -16,12 +16,6 @@
 #include <nuttx/clock.h>
 #include <errno.h>
 
-#ifdef CONFIG_OVE_THREAD_STATE_STATS
-extern void ove_backend_thread_set_state(int new_state);
-#else
-static inline void ove_backend_thread_set_state(int new_state) { (void)new_state; }
-#endif
-
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)

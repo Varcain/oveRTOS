@@ -69,6 +69,14 @@ fn test_guard_nested() {
     mtx.unlock();
 }
 
+fn test_guard_debug_format() {
+    let mtx = RecursiveMutex::new().unwrap();
+    let guard = mtx.guard(WAIT_FOREVER).unwrap();
+    let s = format!("{:?}", guard);
+    assert!(s.contains("RecursiveMutexGuard"), "unexpected debug: {s}");
+    assert!(s.contains("mutex"), "unexpected debug: {s}");
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("RecursiveMutex", &[
         test_entry!(test_create),
@@ -77,5 +85,6 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_raii_drop),
         test_entry!(test_guard_auto_unlock),
         test_entry!(test_guard_nested),
+        test_entry!(test_guard_debug_format),
     ])
 }

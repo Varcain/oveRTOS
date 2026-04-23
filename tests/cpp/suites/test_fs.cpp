@@ -4,6 +4,15 @@
 #include <cstdio>
 #include <unistd.h>
 
+/*
+ * The C++ ove::File / ove::Dir wrappers only wrap the heap-backed
+ * ove_fs_open / ove_fs_opendir APIs; they have no static-storage
+ * equivalent. In zero-heap builds those backend symbols aren't
+ * compiled in, so the whole suite collapses to the not_copyable
+ * static_assert test.
+ */
+#ifndef CONFIG_OVE_ZERO_HEAP
+
 /* Use real temp files — the posix backend's mount is a no-op,
    so paths must be valid on the host filesystem. */
 static char s_tmpdir[] = "/tmp/ove_cppfs_XXXXXX";
@@ -220,6 +229,8 @@ static void test_cpp_fs_file_move_construct(void **state)
 	ove::fs::unmount("/");
 }
 
+#endif /* !CONFIG_OVE_ZERO_HEAP */
+
 static void test_cpp_fs_not_copyable(void **state)
 {
 	(void)state;
@@ -236,6 +247,7 @@ static void test_cpp_fs_not_copyable(void **state)
 int test_cpp_fs_run(void)
 {
 	const struct CMUnitTest tests[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_fs_mount_unmount),
 		cmocka_unit_test(test_cpp_fs_file_open_close),
 		cmocka_unit_test(test_cpp_fs_file_write_read),
@@ -245,6 +257,7 @@ int test_cpp_fs_run(void)
 		cmocka_unit_test(test_cpp_fs_unlink_rename),
 		cmocka_unit_test(test_cpp_fs_file_raii_destroy),
 		cmocka_unit_test(test_cpp_fs_file_move_construct),
+#endif
 		cmocka_unit_test(test_cpp_fs_not_copyable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
