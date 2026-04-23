@@ -88,8 +88,10 @@ header h1 {
     border-radius: 0 0 8px 8px;
 }
 
+/* Hide WinBox's built-in minimized badge — the bottom #taskbar already
+   lists minimized windows and is the sole restore path. */
 .winbox.min {
-    z-index: 2147483647 !important;
+    display: none !important;
 }
 
 .winbox.focus {
