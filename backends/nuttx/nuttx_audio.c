@@ -36,6 +36,10 @@
 #define DEFAULT_AUDIO_PRIORITY 200
 #define DEFAULT_AUDIO_STACK    4096
 #define BYTES_PER_SAMPLE       sizeof(int16_t)
+/* Upper bound on buffer-pointer arrays so they can live on the audio
+ * pthread's stack rather than the heap.  Matches configs seen in practice
+ * and is enforced at audio graph setup. */
+#define MAX_NUM_BUFFERS        16
 
 /* ========================================================================= */
 /* SOURCE CONTEXT                                                            */
@@ -89,8 +93,11 @@ static void *audio_thread_fn(void *arg)
     struct audio_buf_desc_s buf_desc;
     struct ap_buffer_info_s rec_buf_info;
     struct ap_buffer_info_s play_buf_info;
-    struct ap_buffer_s **rec_bufs = NULL;
-    struct ap_buffer_s **play_bufs = NULL;
+    /* Per-buffer pointer arrays live on the audio-thread stack (not the
+     * heap), so the backend works unchanged under CONFIG_OVE_ZERO_HEAP.
+     * The MAX_NUM_BUFFERS cap is enforced when the sink is created. */
+    struct ap_buffer_s *rec_bufs[MAX_NUM_BUFFERS]  = {0};
+    struct ap_buffer_s *play_bufs[MAX_NUM_BUFFERS] = {0};
     struct audio_msg_s msg;
     unsigned int prio;
     int rec_nbuffers;
@@ -119,6 +126,10 @@ static void *audio_thread_fn(void *arg)
       {
         rec_nbuffers = (int)sc->num_buffers;
       }
+    if (rec_nbuffers > MAX_NUM_BUFFERS)
+      {
+        rec_nbuffers = MAX_NUM_BUFFERS;
+      }
 
     /* Query playback buffer info */
 
@@ -136,26 +147,14 @@ static void *audio_thread_fn(void *arg)
       {
         play_nbuffers = (int)sc->num_buffers;
       }
-
-    /* Allocate buffer pointer arrays */
-
-    rec_bufs  = OVE_BACKEND_MALLOC(rec_nbuffers  * sizeof(struct ap_buffer_s *));
-    play_bufs = OVE_BACKEND_MALLOC(play_nbuffers * sizeof(struct ap_buffer_s *));
-
-    if (rec_bufs != NULL)
+    if (play_nbuffers > MAX_NUM_BUFFERS)
       {
-        memset(rec_bufs,  0, rec_nbuffers  * sizeof(struct ap_buffer_s *));
+        play_nbuffers = MAX_NUM_BUFFERS;
       }
 
-    if (play_bufs != NULL)
-      {
-        memset(play_bufs, 0, play_nbuffers * sizeof(struct ap_buffer_s *));
-      }
-
-    if (rec_bufs == NULL || play_bufs == NULL)
-      {
-        goto err_out;
-      }
+    /* rec_bufs / play_bufs are stack arrays sized to MAX_NUM_BUFFERS; no
+     * heap allocation needed.  The num-buffers cap was enforced at sink
+     * creation, so the counts here always fit. */
 
     /* Allocate NuttX audio buffers */
 
@@ -329,32 +328,24 @@ static void *audio_thread_fn(void *arg)
       }
 
 err_out:
-    if (rec_bufs != NULL)
+    for (i = 0; i < rec_nbuffers; i++)
       {
-        for (i = 0; i < rec_nbuffers; i++)
+        if (rec_bufs[i] != NULL)
           {
-            if (rec_bufs[i] != NULL)
-              {
-                buf_desc.u.buffer = rec_bufs[i];
-                ioctl(sc->record_fd, AUDIOIOC_FREEBUFFER,
-                      (unsigned long)&buf_desc);
-              }
+            buf_desc.u.buffer = rec_bufs[i];
+            ioctl(sc->record_fd, AUDIOIOC_FREEBUFFER,
+                  (unsigned long)&buf_desc);
           }
-        OVE_BACKEND_FREE(rec_bufs);
       }
 
-    if (play_bufs != NULL)
+    for (i = 0; i < play_nbuffers; i++)
       {
-        for (i = 0; i < play_nbuffers; i++)
+        if (play_bufs[i] != NULL)
           {
-            if (play_bufs[i] != NULL)
-              {
-                buf_desc.u.buffer = play_bufs[i];
-                ioctl(sc->play_fd, AUDIOIOC_FREEBUFFER,
-                      (unsigned long)&buf_desc);
-              }
+            buf_desc.u.buffer = play_bufs[i];
+            ioctl(sc->play_fd, AUDIOIOC_FREEBUFFER,
+                  (unsigned long)&buf_desc);
           }
-        OVE_BACKEND_FREE(play_bufs);
       }
 
     return NULL;
@@ -646,6 +637,10 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
     ctx->frames_per_period = g->frames_per_period;
     ctx->num_buffers      = cfg->num_buffers ? cfg->num_buffers
                                              : DEFAULT_NUM_BUFFERS;
+    if (ctx->num_buffers > MAX_NUM_BUFFERS)
+      {
+        ctx->num_buffers = MAX_NUM_BUFFERS;
+      }
     ctx->thread_priority  = cfg->thread_priority ? cfg->thread_priority
                                                   : DEFAULT_AUDIO_PRIORITY;
     ctx->thread_stack_size = cfg->thread_stack_size ? cfg->thread_stack_size

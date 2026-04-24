@@ -30,7 +30,7 @@
 #if configSUPPORT_DYNAMIC_ALLOCATION
 /* FreeRTOS heap placement:
  * - SDRAM when inference is enabled (TFLM + models need significant RAM)
- * - .RamData2 (64 KB DTCM) when the heap fits
+ * - .RamData2 (first 64 KB of SRAM1) when the heap fits
  * - Main RAM (.bss) otherwise
  * Not allocated at all in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0). */
 #if defined(CONFIG_OVE_INFER)

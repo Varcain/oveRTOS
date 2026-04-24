@@ -53,41 +53,35 @@ void ove_fs_unmount(const char *mount_point)
 	fs_unmount(&mp);
 }
 
-int ove_fs_open(ove_file_t *file, const char *path, int flags)
+/* ─── _open_init / _close_deinit ─────────────────────────────────────── */
+
+static int zflags_from(int flags)
 {
-	struct ove_file *f;
-	char fullpath[128];
 	int zflags = 0;
+	if (flags & OVE_FS_O_READ)   zflags |= FS_O_READ;
+	if (flags & OVE_FS_O_WRITE)  zflags |= FS_O_WRITE;
+	if (flags & OVE_FS_O_CREATE) zflags |= FS_O_CREATE;
+	if (flags & OVE_FS_O_APPEND) zflags |= FS_O_APPEND;
+	if (zflags == 0) zflags = FS_O_READ;
+	return zflags;
+}
 
-	if (flags & OVE_FS_O_READ) {
-		zflags |= FS_O_READ;
-	}
-	if (flags & OVE_FS_O_WRITE) {
-		zflags |= FS_O_WRITE;
-	}
-	if (flags & OVE_FS_O_CREATE) {
-		zflags |= FS_O_CREATE;
-	}
-	if (flags & OVE_FS_O_APPEND) {
-		zflags |= FS_O_APPEND;
-	}
-	if (zflags == 0) {
-		zflags = FS_O_READ;
-	}
+int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage,
+		     const char *path, int flags)
+{
+	char fullpath[128];
 
-	f = OVE_BACKEND_MALLOC(sizeof(*f));
-	if (f == NULL) {
-		OVE_LOG_ERR("fs_open: k_malloc failed\n");
-		return OVE_ERR_NO_MEMORY;
+	if (file == NULL || storage == NULL || path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
 	}
 
+	struct ove_file *f = (struct ove_file *)storage;
 	fs_file_t_init(&f->file);
 	build_path(fullpath, sizeof(fullpath), path);
 
-	int res = fs_open(&f->file, fullpath, zflags);
+	int res = fs_open(&f->file, fullpath, zflags_from(flags));
 	if (res != 0) {
 		OVE_LOG_ERR("fs_open(%s) failed: %d\n", fullpath, res);
-		OVE_BACKEND_FREE(f);
 		return ove_errno_to_ove(-res);
 	}
 
@@ -95,12 +89,74 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 	return OVE_OK;
 }
 
-int ove_fs_close(ove_file_t file)
+int ove_fs_close_deinit(ove_file_t file)
 {
+	if (file == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	fs_close(&file->file);
-	OVE_BACKEND_FREE(file);
 	return OVE_OK;
 }
+
+/* ─── _open / _close — heap or zero-heap pool ─────────────────────── */
+
+#ifdef OVE_HEAP_FS
+int ove_fs_open(ove_file_t *file, const char *path, int flags)
+{
+	struct ove_file *f = OVE_BACKEND_MALLOC(sizeof(*f));
+	if (f == NULL) {
+		OVE_LOG_ERR("fs_open: k_malloc failed\n");
+		return OVE_ERR_NO_MEMORY;
+	}
+
+	int ret = ove_fs_open_init(file, f, path, flags);
+	if (ret != OVE_OK) {
+		OVE_BACKEND_FREE(f);
+	}
+	return ret;
+}
+
+int ove_fs_close(ove_file_t file)
+{
+	int ret = ove_fs_close_deinit(file);
+	if (ret == OVE_OK) {
+		OVE_BACKEND_FREE(file);
+	}
+	return ret;
+}
+#else /* zero-heap: static pool */
+#define FS_POOL_FILES  4
+static struct ove_file file_pool[FS_POOL_FILES];
+static int             file_pool_used[FS_POOL_FILES];
+
+int ove_fs_open(ove_file_t *file, const char *path, int flags)
+{
+	for (int i = 0; i < FS_POOL_FILES; i++) {
+		if (!file_pool_used[i]) {
+			file_pool_used[i] = 1;
+			int ret = ove_fs_open_init(file, &file_pool[i],
+						   path, flags);
+			if (ret != OVE_OK) {
+				file_pool_used[i] = 0;
+			}
+			return ret;
+		}
+	}
+	return OVE_ERR_NO_MEMORY;
+}
+
+int ove_fs_close(ove_file_t file)
+{
+	int ret = ove_fs_close_deinit(file);
+	for (int i = 0; i < FS_POOL_FILES; i++) {
+		if (&file_pool[i] == file) {
+			file_pool_used[i] = 0;
+			break;
+		}
+	}
+	return ret;
+}
+#endif /* OVE_HEAP_FS */
 
 int ove_fs_read(ove_file_t file, void *buf, size_t count,
 			  size_t *bytes_read)
@@ -148,18 +204,20 @@ int ove_fs_size(ove_file_t file, size_t *out_size)
 	return OVE_OK;
 }
 
-int ove_fs_opendir(ove_dir_t *dir, const char *path)
+/* ─── _opendir_init / _closedir_deinit ──────────────────────────────── */
+
+int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
+			const char *path)
 {
-	struct ove_dir *d;
 	char fullpath[128];
 
-	d = OVE_BACKEND_MALLOC(sizeof(*d));
-	if (d == NULL) {
-		OVE_LOG_ERR("opendir: k_malloc failed\n");
-		return OVE_ERR_NO_MEMORY;
+	if (dir == NULL || storage == NULL || path == NULL) {
+		return OVE_ERR_INVALID_PARAM;
 	}
 
+	struct ove_dir *d = (struct ove_dir *)storage;
 	fs_dir_t_init(&d->dir);
+
 	/* Map "/" to mount point root */
 	if (path[0] == '/' && path[1] == '\0') {
 		snprintf(fullpath, sizeof(fullpath), "/SD:");
@@ -170,13 +228,59 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	int res = fs_opendir(&d->dir, fullpath);
 	if (res != 0) {
 		OVE_LOG_ERR("fs_opendir(%s) failed: %d\n", fullpath, res);
-		OVE_BACKEND_FREE(d);
 		return ove_errno_to_ove(-res);
 	}
 
 	*dir = d;
 	return OVE_OK;
 }
+
+int ove_fs_closedir_deinit(ove_dir_t dir)
+{
+	if (dir == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	fs_closedir(&dir->dir);
+	return OVE_OK;
+}
+
+/* ─── _opendir / _closedir — heap or zero-heap pool ─────────────────── */
+
+#ifdef OVE_HEAP_FS
+int ove_fs_opendir(ove_dir_t *dir, const char *path)
+{
+	struct ove_dir *d = OVE_BACKEND_MALLOC(sizeof(*d));
+	if (d == NULL) {
+		OVE_LOG_ERR("opendir: k_malloc failed\n");
+		return OVE_ERR_NO_MEMORY;
+	}
+
+	int ret = ove_fs_opendir_init(dir, d, path);
+	if (ret != OVE_OK) {
+		OVE_BACKEND_FREE(d);
+	}
+	return ret;
+}
+#else /* zero-heap: static pool */
+#define FS_POOL_DIRS 4
+static struct ove_dir dir_pool[FS_POOL_DIRS];
+static int            dir_pool_used[FS_POOL_DIRS];
+
+int ove_fs_opendir(ove_dir_t *dir, const char *path)
+{
+	for (int i = 0; i < FS_POOL_DIRS; i++) {
+		if (!dir_pool_used[i]) {
+			dir_pool_used[i] = 1;
+			int ret = ove_fs_opendir_init(dir, &dir_pool[i], path);
+			if (ret != OVE_OK) {
+				dir_pool_used[i] = 0;
+			}
+			return ret;
+		}
+	}
+	return OVE_ERR_NO_MEMORY;
+}
+#endif /* OVE_HEAP_FS */
 
 int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 {
@@ -197,9 +301,20 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 
 int ove_fs_closedir(ove_dir_t dir)
 {
-	fs_closedir(&dir->dir);
-	OVE_BACKEND_FREE(dir);
-	return OVE_OK;
+	int ret = ove_fs_closedir_deinit(dir);
+#ifdef OVE_HEAP_FS
+	if (ret == OVE_OK) {
+		OVE_BACKEND_FREE(dir);
+	}
+#else
+	for (int i = 0; i < FS_POOL_DIRS; i++) {
+		if (&dir_pool[i] == dir) {
+			dir_pool_used[i] = 0;
+			break;
+		}
+	}
+#endif
+	return ret;
 }
 
 int ove_fs_seek(ove_file_t file, long offset, int whence)

@@ -52,13 +52,23 @@ MEMORY
 {
 
 FLASH (rx)      : ORIGIN = 0x08000000, LENGTH = 1024K
-Memory1 (xrw)   : ORIGIN = 0x20000000, LENGTH = 0xA0
-Memory2 (xrw)   : ORIGIN = 0x200000A0, LENGTH = 0xA0
-Memory3 (xrw)   : ORIGIN = 0x20000140, LENGTH = 0x1dc4
-Memory4 (xrw)   : ORIGIN = 0x20001F04, LENGTH = 0x1dc4
-RAM1 (xrw)      : ORIGIN = 0x20003CC8, LENGTH = 0x6024
-RAM2 (xrw)      : ORIGIN = 0x20009CEC, LENGTH = 0x10000
-RAM (xrw)       : ORIGIN = 0x20019CEC, LENGTH = 0x36314
+
+/* DTCM (64 KB at 0x20000000) is reserved for audio + DSP.
+ * Memory1..Memory4 are the ETH/audio DMA descriptor+buffer regions that
+ * hardware DMA reads directly; DSP_DTCM is the remainder of DTCM used for
+ * DSP hot working buffers via the .dsp_bss section. */
+Memory1 (xrw)   : ORIGIN = 0x20000000, LENGTH = 0xA0       /* ETH RxDescrip  */
+Memory2 (xrw)   : ORIGIN = 0x200000A0, LENGTH = 0xA0       /* ETH TxDescrip  */
+Memory3 (xrw)   : ORIGIN = 0x20000140, LENGTH = 0x1dc4     /* I2S RX DMA buf */
+Memory4 (xrw)   : ORIGIN = 0x20001F04, LENGTH = 0x1dc4     /* I2S TX DMA buf */
+DSP_DTCM (xrw)  : ORIGIN = 0x20003CC8, LENGTH = 0xC338     /* 49 KB — DSP    */
+
+/* SRAM1 + SRAM2 (256 KB from 0x20010000) — general-purpose RAM.
+ * .RamData2 (used for small-heap ucHeap placement in main.c) is redirected
+ * into this same region; it used to live in a dedicated 64 KB DTCM slice,
+ * but DTCM is now reserved for audio + DSP. */
+RAM (xrw)       : ORIGIN = 0x20010000, LENGTH = 0x40000
+
 SDRAM (xrw)     : ORIGIN = 0xC0000000, LENGTH = 8M
 QSPI (rx)       : ORIGIN = 0x90000000, LENGTH = 16M
 
@@ -188,10 +198,21 @@ SECTIONS
   .RxBUF (NOLOAD) : { *(.RxBUF) } >Memory3
   .TxBUF (NOLOAD) : { *(.TxBUF) } >Memory4
   .ExtQSPIFlashSection : { *(.ExtQSPIFlashSection) } >QSPI
-  .RamData1 (NOLOAD) : { *(.RamData1) } >RAM1
-  .RamData2 (NOLOAD): { *(.RamData2) } >RAM2
-  .lcd_framebuffer (NOLOAD) : { *(.lcd_framebuffer) } >SDRAM
-  .sdram_bss (NOLOAD) : { *(.sdram_bss) } >SDRAM
+  .RamData2 (NOLOAD): { *(.RamData2) } >RAM
+  .dsp_bss (NOLOAD) : ALIGN(32) { *(.dsp_bss) } >DSP_DTCM
+  /*
+   * Reserve SDRAM at 0xC0000000 for the LTDC framebuffer.  The BSP
+   * (stm32746g_discovery_lcd.h) hardcodes LCD_FB_START_ADDRESS = 0xC0000000,
+   * so the linker must keep that region clear — otherwise variables placed
+   * via .sdram_bss overlap pixel memory and corrupt the display.
+   * Size: 480 x 272 RGB565 = 261120 bytes, rounded up + aligned for cache.
+   */
+  .lcd_framebuffer (NOLOAD) : ALIGN(32) {
+    *(.lcd_framebuffer)
+    . = . + (480 * 272 * 2);
+    . = ALIGN(32);
+  } >SDRAM
+  .sdram_bss (NOLOAD) : ALIGN(32) { *(.sdram_bss) } >SDRAM
 }
 
 
