@@ -31,12 +31,18 @@ extern "C" {
  *
  * @note This function must not return before calling ove_run().
  *
- * @note On FreeRTOS, `vTaskStartScheduler()` inside ove_run() repurposes the
- *       main task's stack once it switches to the first user task. Any
- *       object declared as a local in `ove_main()` and later referenced
- *       by a worker thread will be clobbered.  Long-lived resources
- *       (audio graphs, DSP state, queues) must live at file scope as
- *       `static` storage, not on the `ove_main()` stack frame.
+ * @note **Object lifetime**: anything that worker threads access after
+ *       @c ove_main() returns (audio graphs, DSP state, long-lived
+ *       buffers) must have storage that outlives this function.  In C
+ *       terms: give it `static` storage class — either a `static` local
+ *       or a file-scope `static` — or allocate it on the heap.  Plain
+ *       automatic locals are popped when @c ove_main() unwinds; any
+ *       pointer a worker kept into them becomes dangling.  This is the
+ *       same rule that applies whenever a function hands out a pointer
+ *       to a local, it's just more visible here because workers
+ *       outlive the scope.  On FreeRTOS the failure is immediate
+ *       (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr it
+ *       is latent but still UB.
  *
  * @see ove_run, ove_app_run
  */

@@ -196,6 +196,18 @@ macro_rules! model_data {
 ///     ove::run();
 /// }
 /// ```
+///
+/// # Object lifetime
+///
+/// Anything that worker threads access after `app_main` returns must have
+/// `'static` storage — use [`crate::shared!`] / [`crate::shared_mut!`] or
+/// plain `static` cells.  A stack-local value in `app_main` is dropped
+/// when the function unwinds; a thread that kept a reference into it
+/// then points at freed memory.  Same rule the Rust borrow checker
+/// enforces when you try to return `&T` to a local — it's just less
+/// visible here because workers, not callers, hold the dangling
+/// reference.  On FreeRTOS the failure is immediate (scheduler
+/// reclaims the main stack); on POSIX/NuttX/Zephyr the UB is latent.
 #[macro_export]
 macro_rules! main {
     ($entry:expr) => {
