@@ -53,6 +53,10 @@ run: $(VENV_STAMP)
 flash: $(VENV_STAMP)
 	@$(OVE) flash
 
+.PHONY: vscode
+vscode: $(VENV_STAMP)
+	@$(OVE) vscode $(if $(filter 1,$(NO_OPEN)),--no-open)
+
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
 	@CONFIGS=$$(find $(APP_DIR)/defconfigs -name '*_defconfig' -type f | sort); \
@@ -93,7 +97,8 @@ help:
 	@echo "  <name>_defconfig   Load config    menuconfig   TUI config"
 	@echo "  all (default)      Full build     run          Run firmware"
 	@echo "  flash              Flash board    alldefconfigs Build all"
-	@echo "  clean              Remove output  help         This message"
+	@echo "  vscode             Open in VSCode clean        Remove output"
+	@echo "  help               This message"
 	@if [ -d "$(APP_DIR)/defconfigs" ] && \
 	    [ -n "$$(find $(APP_DIR)/defconfigs -maxdepth 2 -name '*_defconfig' -type f 2>/dev/null)" ]; then \
 		echo ""; \

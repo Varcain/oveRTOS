@@ -151,6 +151,13 @@ def main():
     p_sync.add_argument("--name", help="Board name (omit for all)")
     p_sync.add_argument("--rtos", help="RTOS to sync (omit for all)")
 
+    # ── vscode ────────────────────────────────────────────────────────
+    p = sub.add_parser("vscode",
+                       help="Generate a VSCode project for the active "
+                            "workspace and launch 'code'")
+    p.add_argument("--no-open", action="store_true",
+                   help="Generate .vscode/ files only, do not launch code")
+
     # ── Parse and dispatch ─────────────────────────────────────────────
     args = parser.parse_args()
 
@@ -251,6 +258,10 @@ def main():
     elif args.command == "board":
         from .board import cmd_board
         cmd_board(args)
+
+    elif args.command == "vscode":
+        from .vscode import cmd_vscode
+        cmd_vscode(args)
 
     else:
         parser.print_help()

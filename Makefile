@@ -359,6 +359,12 @@ docs-serve: docs ## Build docs and start local preview server
 docs-clean: ## Remove generated documentation
 	rm -rf output/docs docs-site/site docs-site/docs/build-system/kconfig.md
 
+# ── IDE integration ────────────────────────────────────────────────────────
+
+.PHONY: vscode
+vscode: $(VENV_STAMP)
+	@$(OVE) vscode $(if $(filter 1,$(NO_OPEN)),--no-open)
+
 # ── Board tools ────────────────────────────────────────────────────────────
 
 .PHONY: board-import-zephyr
@@ -515,6 +521,10 @@ help:
 	@echo "  docs                    - Build complete documentation site"
 	@echo "  docs-serve              - Build docs and start local preview server"
 	@echo "  docs-clean              - Remove generated documentation"
+	@echo ""
+	@echo "IDE:"
+	@echo "  vscode                  - Generate .vscode/ for the active workspace and launch VSCode"
+	@echo "  vscode NO_OPEN=1        - Generate .vscode/ only; do not launch 'code'"
 	@echo ""
 	@echo "Board tools:"
 	@echo "  board-import-zephyr BOARD=<name>  - Import board from Zephyr"

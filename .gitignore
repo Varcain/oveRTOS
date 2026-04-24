@@ -26,6 +26,7 @@ compile_commands.json
 
 # IDE / tool caches
 .cache/
+.vscode/
 
 # Python
 __pycache__/
