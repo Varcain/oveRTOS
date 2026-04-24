@@ -16,7 +16,6 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <errno.h>
-
 #define SD_MOUNT_POINT "/mnt/sd"
 #define SD_DEVICE "/dev/mmcsd0"
 

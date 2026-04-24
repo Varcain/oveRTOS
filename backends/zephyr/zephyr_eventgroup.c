@@ -10,7 +10,6 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_eventgroup_init(ove_eventgroup_t *eg,

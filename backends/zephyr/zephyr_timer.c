@@ -10,7 +10,6 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
-
 /* k_timer expiry runs in ISR context — defer to system workqueue */
 static void zephyr_timer_expiry(struct k_timer *ztimer)
 {

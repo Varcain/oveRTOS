@@ -12,6 +12,7 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 
 | Suite              | stub | nuttx (native) | nuttx-qemu | freertos-qemu | zephyr | zephyr-qemu | Notes |
 |--------------------|:----:|:--------------:|:----------:|:-------------:|:------:|:-----------:|-------|
+| storage_bounds     | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | Canary red-zones; active only in `CONFIG_OVE_ZERO_HEAP` builds |
 | thread             | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
 | sync_mutex         | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
 | sync_sem           | ✅   | ✅             | ✅         | ✅            | ✅     | ✅          | |
@@ -51,6 +52,27 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 `-zeroheap` variant that runs the same suite set with
 `CONFIG_OVE_ZERO_HEAP=1`. They are not listed as separate columns to keep
 the matrix readable.
+
+## Hardware-specific storage layouts (STM32 IWDG etc.)
+
+Hardware-specific backend structs (e.g. the STM32 `struct ove_watchdog`
+that embeds `IWDG_HandleTypeDef`) are compiled only by the STM32 target
+builds, not by any of the test backends above.  Drift between what the
+backend writes and what consumers see in `ove_storage_<rtos>.h` is
+caught by two gates:
+
+1. **`_Static_assert(sizeof(struct ove_X) == sizeof(ove_X_storage_t))`**
+   in every backend `.c` — see `backends/freertos/freertos_watchdog.c`
+   for the watchdog example.  Any local `struct` redefinition that
+   diverges from the header fails the build.
+2. **STM32 build-only CI jobs** in `.github/workflows/alldefconfigs.yml`
+   (`stm32f746-freertos`, `stm32f746-nuttx`, `stm32f746-zephyr`) —
+   these build every app config against the real HAL. Combined with
+   (1), any future struct-size drift fails CI even without hardware.
+
+The `ove lint` `backend-struct` rule additionally forbids backend-local
+`struct ove_*` definitions (with a narrow FS allowlist); see
+`config/ove-cli/ove/lint_backend_struct.py`.
 
 ## Stub-only toolchain variants
 

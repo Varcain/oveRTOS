@@ -13,7 +13,6 @@
 #include <ff.h>
 #include <string.h>
 #include <stdio.h>
-
 static FATFS fat_fs;
 static struct fs_mount_t mp = {
 	.type = FS_FATFS,

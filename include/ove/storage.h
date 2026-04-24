@@ -325,9 +325,16 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * Use inside a C++ struct or class body where @c static is not applicable.
  *
+ * @note The 8-byte alignment matches `OVE_THREAD_STACK_BLOCK_STATIC_` and
+ *       satisfies the ARM AAPCS requirement that the stack pointer be
+ *       8-byte aligned at public function boundaries; a misaligned stack
+ *       faults immediately on the first thread entry.  The runtime
+ *       backstop in @c ove_thread_init() returns @c OVE_ERR_INVALID_PARAM
+ *       if a caller bypasses this macro with a hand-rolled array.
  * @note Overridden by backends that require special alignment (e.g. Zephyr MPU).
  */
-#define OVE_THREAD_STACK_MEMBER_(name, size) uint8_t name[size]
+#define OVE_THREAD_STACK_MEMBER_(name, size) \
+	uint8_t __attribute__((aligned(8))) name[size]
 #endif
 
 /**

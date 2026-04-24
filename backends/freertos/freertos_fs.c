@@ -28,7 +28,6 @@ struct ove_dir {
 #include "ove/log.h"
 #include "ove_backend_common.h"
 #include <string.h>
-
 /* Static path buffer for FatFS driver linking */
 static char fatfs_path[16];
 static FATFS fatfs;

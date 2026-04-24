@@ -16,7 +16,6 @@
 #include "timers.h"
 
 #include <string.h>
-
 static UBaseType_t map_priority(ove_prio_t prio)
 {
 	return tskIDLE_PRIORITY + (UBaseType_t)prio;

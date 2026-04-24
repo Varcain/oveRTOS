@@ -12,7 +12,6 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <nuttx/timers/watchdog.h>
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_watchdog_init(ove_watchdog_t *wdt,

@@ -85,7 +85,13 @@ struct ove_thread_desc {
 	ove_prio_t     priority;   /**< @brief Scheduling priority. */
 	size_t         stack_size; /**< @brief Stack size in bytes. Must be > 0. */
 	void          *stack;      /**< @brief Pointer to caller-allocated stack buffer (static mode only;
-	                                       set to NULL for heap mode). */
+	                                       set to NULL for heap mode).
+	                                       Must be 8-byte aligned (ARM AAPCS). Use the
+	                                       @c OVE_THREAD_STACK_DEFINE_ / @c OVE_THREAD_STACK_MEMBER_
+	                                       / @c OVE_THREAD_STACK_BLOCK_STATIC_ helpers in
+	                                       @c include/ove/storage.h — they apply the alignment
+	                                       automatically. @c ove_thread_init() returns
+	                                       @c OVE_ERR_INVALID_PARAM on a misaligned pointer. */
 };
 
 #include "ove/storage.h"

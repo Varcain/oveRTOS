@@ -13,7 +13,6 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
 #include <errno.h>
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_eventgroup_init(ove_eventgroup_t *eg,

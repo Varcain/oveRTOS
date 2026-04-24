@@ -11,7 +11,6 @@
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
 #include "timers.h"
-
 static void freertos_timer_callback(TimerHandle_t xTimer)
 {
 	struct ove_timer *ctx = pvTimerGetTimerID(xTimer);

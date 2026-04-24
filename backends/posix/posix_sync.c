@@ -14,7 +14,6 @@
 #include <time.h>
 #include <errno.h>
 #include <string.h>
-
 /* ---------- helpers ---------- */
 
 static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)

@@ -16,7 +16,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-
 static int map_priority(ove_prio_t prio)
 {
 	switch (prio) {

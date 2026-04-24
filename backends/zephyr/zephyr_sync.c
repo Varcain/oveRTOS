@@ -12,7 +12,6 @@
 #include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
-
 static k_timeout_t ms_to_timeout(uint32_t ms)
 {
 	if (ove_timeout_is_forever(ms)) {

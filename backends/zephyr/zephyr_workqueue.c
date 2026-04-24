@@ -10,7 +10,6 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
-
 static int map_priority(ove_prio_t prio)
 {
 	switch (prio) {

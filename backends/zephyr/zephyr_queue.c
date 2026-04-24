@@ -11,7 +11,6 @@
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 #include <string.h>
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage,

@@ -9,7 +9,6 @@
 #include "ove/ove.h"
 #include "ove_backend_common.h"
 #include <string.h>
-
 int ove_watchdog_init(ove_watchdog_t *wdt,
 			  ove_watchdog_storage_t *storage,
 			  uint32_t timeout_ms)

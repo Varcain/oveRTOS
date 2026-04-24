@@ -44,6 +44,32 @@ public:
 		return ret;
 	}
 
+	/// Initialise the graph in a way that works for both heap and zero-heap
+	/// builds.  In zero-heap mode, emits a per-call-site static backing array
+	/// sized by `OVE_AUDIO_GRAPH_STORAGE_BYTES(Nodes, Frames, Channels,
+	/// SampleBytes)` and attaches it via `set_buf_storage()`.  Mirrors the
+	/// C `ove_audio_graph_create` macro — callers can use `.init()` + manual
+	/// `set_buf_storage()` for dynamic sizing, or this helper for the common
+	/// statically-known case.
+	///
+	/// All template arguments must be compile-time constants.
+	template<unsigned Nodes, unsigned Frames,
+		 unsigned Channels = 1, unsigned SampleBytes = 2>
+	[[nodiscard]] int create() {
+		int ret = ove_audio_graph_init(&g_, Frames);
+		if (ret != OVE_OK)
+			return ret;
+		initialized_ = true;
+#ifdef CONFIG_OVE_ZERO_HEAP
+		alignas(4) static unsigned char storage[
+			OVE_AUDIO_GRAPH_STORAGE_BYTES(Nodes, Frames,
+						      Channels, SampleBytes)];
+		ret = ove_audio_graph_set_buf_storage(&g_, storage,
+						      sizeof(storage));
+#endif
+		return ret;
+	}
+
 	/// Add a processing node to the graph.
 	[[nodiscard]] int add_node(const struct ove_audio_node_ops *ops,
 				   void *ctx, const char *name,

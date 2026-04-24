@@ -14,7 +14,6 @@
 #include <time.h>
 #include <string.h>
 #include <unistd.h>
-
 static void timer_thread_handler(union sigval sv)
 {
 	struct ove_timer *t = sv.sival_ptr;

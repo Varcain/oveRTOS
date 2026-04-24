@@ -15,7 +15,6 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
 #include <errno.h>
-
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)

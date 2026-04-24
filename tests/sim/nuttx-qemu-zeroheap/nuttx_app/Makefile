@@ -64,7 +64,8 @@ CSRCS += $(STUB_DIR)/stub_watchdog.c
 CSRCS += $(STUB_DIR)/stub_nvs.c
 CSRCS += $(STUB_DIR)/stub_fs.c
 
-# Test suites (23)
+# Test suites (24)
+CSRCS += $(SUITE_DIR)/test_storage_bounds.c
 CSRCS += $(SUITE_DIR)/test_thread.c
 CSRCS += $(SUITE_DIR)/test_sync_mutex.c
 CSRCS += $(SUITE_DIR)/test_sync_sem.c

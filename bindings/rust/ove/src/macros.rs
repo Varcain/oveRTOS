@@ -312,6 +312,46 @@ macro_rules! eventgroup {
     }};
 }
 
+/// Create a [`crate::audio::Graph`] that works in both heap and zero-heap modes.
+///
+/// Mirrors the C `ove_audio_graph_create(pg, frames, nodes, channels,
+/// sample_bytes)` macro: in zero-heap mode emits a per-call-site `static`
+/// backing array sized by `nodes * frames * channels * sample_bytes` bytes
+/// and attaches it to the graph automatically; in heap mode just calls
+/// [`crate::audio::Graph::new`].  Returns [`crate::Result`].
+///
+/// All arguments must be constant expressions.
+///
+/// # Example
+/// ```ignore
+/// // 2 non-sink nodes (source + processor), 512 frames, mono, S16 (2 bytes).
+/// let mut graph = ove::audio_graph!(512, 2, 1, 2)?;
+/// ```
+#[cfg(has_audio)]
+#[macro_export]
+macro_rules! audio_graph {
+    ($frames:expr, $nodes:expr, $channels:expr, $sample_bytes:expr) => {{
+        #[cfg(not(zero_heap))]
+        { $crate::audio::Graph::new($frames) }
+        #[cfg(zero_heap)]
+        {
+            const _STORAGE_BYTES: usize =
+                ($nodes) * ($frames) as usize * ($channels) * ($sample_bytes);
+            #[repr(C, align(4))]
+            struct _AudioBufStorage([u8; _STORAGE_BYTES]);
+            static mut _AUDIO_BUF: _AudioBufStorage =
+                _AudioBufStorage([0; _STORAGE_BYTES]);
+            let slice: &'static mut [u8] = unsafe {
+                core::slice::from_raw_parts_mut(
+                    core::ptr::addr_of_mut!(_AUDIO_BUF) as *mut u8,
+                    _STORAGE_BYTES,
+                )
+            };
+            $crate::audio::Graph::new_with_storage($frames, slice)
+        }
+    }};
+}
+
 /// Create a [`crate::Queue`] that works in both heap and zero-heap modes.
 ///
 /// # Example

@@ -18,13 +18,13 @@
 #include <nuttx/clock.h>
 #include <nuttx/arch.h>
 #include <sched.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
 #include <signal.h>
 #include <errno.h>
 #include <malloc.h>
-
 /* Set thread state with tracking + trace emit (mirrors posix_thread.c). */
 #define SET_STATE(t, s) do { \
 	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
@@ -219,6 +219,13 @@ int ove_thread_init(ove_thread_t *handle,
 {
 	if (handle == NULL || storage == NULL || desc == NULL ||
 	    desc->entry == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	/* AAPCS requires 8-byte alignment at public function boundaries; a
+	 * misaligned stack faults on first entry.  Sanctioned helpers in
+	 * include/ove/storage.h apply aligned(8); this backstops any hand-
+	 * rolled array that skips them. */
+	if (desc->stack != NULL && ((uintptr_t)desc->stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 

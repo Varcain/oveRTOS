@@ -13,7 +13,6 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-
 static void ms_to_abstime(uint32_t ms, struct timespec *ts)
 {
   clock_gettime(CLOCK_REALTIME, ts);
