@@ -26,7 +26,7 @@ _SUBCOMMANDS = [
     "defconfig", "defconfig-fragments", "menuconfig", "rtos-menuconfig",
     "savedefconfig", "download", "ensure-toolchain", "configure", "build",
     "allconfigs", "run", "flash", "test", "clean", "manifest", "doctor",
-    "board", "completion",
+    "board", "completion", "vscode",
 ]
 
 _TEST_NAMES = [
