@@ -8,6 +8,29 @@
 static struct ove_audio_graph g;
 #include <math.h>
 
+/*
+ * Zero-heap build cannot calloc inter-node buffers; callers must supply
+ * storage via ove_audio_graph_set_buf_storage() before build().  Every
+ * test here shares one conservatively sized static buffer — wrapping
+ * init + set_buf_storage in graph_init() keeps each test body free of
+ * the #ifdef.
+ */
+#ifdef CONFIG_OVE_ZERO_HEAP
+static uint8_t audio_graph_test_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(
+    OVE_AUDIO_GRAPH_MAX_NODES, 256, 2, 4)] __attribute__((aligned(4)));
+#endif
+
+static int graph_init(struct ove_audio_graph *g, unsigned int frames)
+{
+	int r = ove_audio_graph_init(g, frames);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	if (r == OVE_OK)
+		r = ove_audio_graph_set_buf_storage(g, audio_graph_test_buf,
+		                                    sizeof(audio_graph_test_buf));
+#endif
+	return r;
+}
+
 static void test_cpp_audio_graph_init_deinit(void **state)
 {
 	(void)state;
@@ -121,6 +144,12 @@ static const struct ove_audio_node_ops verify_sink_ops = {
 	mock_sink_configure, nullptr, nullptr, verify_sink_process, nullptr,
 };
 
+/* The ove_audio_node_{converter,channel_map,gain,tap} factories internally
+ * malloc their per-node context and are therefore gated behind OVE_HEAP_AUDIO.
+ * Under CONFIG_OVE_ZERO_HEAP the gate is undefined, so the helpers and tests
+ * below compile out entirely. */
+#ifdef OVE_HEAP_AUDIO
+
 /* Source that outputs known S16 values for converter test */
 static int s16_source_process(void *ctx, const struct ove_audio_buf *in,
                               struct ove_audio_buf *out)
@@ -181,13 +210,15 @@ static void cpp_tap_callback(const struct ove_audio_buf *buf, void *user_data)
 	cpp_tap_call_count++;
 }
 
+#endif /* OVE_HEAP_AUDIO */
+
 /* ── Graph API tests ───────────────────────────────────────────── */
 
 static void test_cpp_audio_add_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 256);
+	graph_init(&g, 256);
 
 	int src = ove_audio_graph_add_node(&g, &mock_source_ops, nullptr, "src",
 	                                   OVE_AUDIO_NODE_SOURCE);
@@ -210,7 +241,7 @@ static void test_cpp_audio_connect(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 256);
+	graph_init(&g, 256);
 
 	int src  = ove_audio_graph_add_node(&g, &mock_source_ops, nullptr, "src",
 	                                    OVE_AUDIO_NODE_SOURCE);
@@ -232,7 +263,7 @@ static void test_cpp_audio_build_simple(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 256);
+	graph_init(&g, 256);
 
 	int src  = ove_audio_graph_add_node(&g, &mock_source_ops, nullptr, "src",
 	                                    OVE_AUDIO_NODE_SOURCE);
@@ -260,7 +291,7 @@ static void test_cpp_audio_start_stop(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 256);
+	graph_init(&g, 256);
 
 	ove_audio_graph_add_node(&g, &mock_source_ops, nullptr, "src",
 	                         OVE_AUDIO_NODE_SOURCE);
@@ -287,7 +318,7 @@ static void test_cpp_audio_process(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 8);
+	graph_init(&g, 8);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, nullptr,
 	                                   "count", OVE_AUDIO_NODE_SOURCE);
@@ -314,7 +345,7 @@ static void test_cpp_audio_stats(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 4);
+	graph_init(&g, 4);
 
 	int src  = ove_audio_graph_add_node(&g, &mock_source_ops, nullptr, "src",
 	                                    OVE_AUDIO_NODE_SOURCE);
@@ -337,11 +368,13 @@ static void test_cpp_audio_stats(void **state)
 	ove_audio_graph_deinit(&g);
 }
 
+#ifdef OVE_HEAP_AUDIO
+
 static void test_cpp_audio_converter_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 4);
+	graph_init(&g, 4);
 
 	int src = ove_audio_graph_add_node(&g, &s16_source_ops, nullptr,
 	                                   "s16-src", OVE_AUDIO_NODE_SOURCE);
@@ -372,7 +405,7 @@ static void test_cpp_audio_gain_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 4);
+	graph_init(&g, 4);
 
 	int src = ove_audio_graph_add_node(&g, &counting_source_ops, nullptr,
 	                                   "count", OVE_AUDIO_NODE_SOURCE);
@@ -405,7 +438,7 @@ static void test_cpp_audio_tap_node(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 4);
+	graph_init(&g, 4);
 
 	cpp_tap_call_count  = 0;
 	cpp_tap_last_sample = 0;
@@ -484,7 +517,7 @@ static void test_cpp_audio_channel_map(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 2); /* 2 frames */
+	graph_init(&g, 2); /* 2 frames */
 
 	int src = ove_audio_graph_add_node(&g, &stereo_source_ops, nullptr,
 	                                   "stereo", OVE_AUDIO_NODE_SOURCE);
@@ -518,11 +551,13 @@ static void test_cpp_audio_channel_map(void **state)
 	ove_audio_graph_deinit(&g);
 }
 
+#endif /* OVE_HEAP_AUDIO */
+
 static void test_cpp_audio_connect_invalid(void **state)
 {
 	(void)state;
 	memset(&g, 0, sizeof(g));
-	ove_audio_graph_init(&g, 256);
+	graph_init(&g, 256);
 
 	int src  = ove_audio_graph_add_node(&g, &mock_source_ops, nullptr, "src",
 	                                    OVE_AUDIO_NODE_SOURCE);
@@ -559,10 +594,12 @@ int test_cpp_audio_run(void)
 		cmocka_unit_test(test_cpp_audio_start_stop),
 		cmocka_unit_test(test_cpp_audio_process),
 		cmocka_unit_test(test_cpp_audio_stats),
+#ifdef OVE_HEAP_AUDIO
 		cmocka_unit_test(test_cpp_audio_converter_node),
 		cmocka_unit_test(test_cpp_audio_gain_node),
 		cmocka_unit_test(test_cpp_audio_tap_node),
 		cmocka_unit_test(test_cpp_audio_channel_map),
+#endif
 		cmocka_unit_test(test_cpp_audio_connect_invalid),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

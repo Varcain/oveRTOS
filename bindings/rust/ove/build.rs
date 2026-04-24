@@ -608,9 +608,12 @@ fn main() {
         }
     }
 
-    // Board-specific lv_conf.h directory for bindgen
+    // Board-specific lv_conf.h directory for bindgen.
+    // Skip empty values: an empty `-I` swallows the next clang arg.
     if let Ok(lv_conf_path) = env::var("LV_CONF_PATH") {
-        builder = builder.clang_arg(format!("-I{}", lv_conf_path));
+        if !lv_conf_path.is_empty() {
+            builder = builder.clang_arg(format!("-I{}", lv_conf_path));
+        }
     }
 
     if is_native || is_wasm {
@@ -634,7 +637,9 @@ fn main() {
             .clang_arg("--target=arm-none-eabihf");
 
         if let Ok(sysroot) = env::var("ARM_SYSROOT_INCLUDE") {
-            builder = builder.clang_arg(format!("-isystem{}", sysroot));
+            if !sysroot.is_empty() {
+                builder = builder.clang_arg(format!("-isystem{}", sysroot));
+            }
         }
     }
 
