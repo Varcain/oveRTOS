@@ -84,6 +84,10 @@ struct i2s_source_ctx {
 	unsigned int         slot_count;  /* total slots per DMA frame */
 };
 
+/* Single static source context — matches the single static sink.  Keeping it
+ * static avoids an OVE_BACKEND_MALLOC() call that fails in zero-heap builds. */
+static struct i2s_source_ctx g_source_ctx;
+
 static int i2s_source_configure(void *ctx, const struct ove_audio_fmt *in,
 				struct ove_audio_fmt *out)
 {
@@ -282,10 +286,7 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 
 #ifdef CONFIG_OVE_I2S
 	if (cfg->transport == OVE_AUDIO_TRANSPORT_I2S) {
-		struct i2s_source_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
-		if (!ctx)
-			return OVE_ERR_NO_MEMORY;
-
+		struct i2s_source_ctx *ctx = &g_source_ctx;
 		memset(ctx, 0, sizeof(*ctx));
 		ctx->fmt = cfg->fmt;
 		ctx->input_device = cfg->i2s.input_device;
@@ -296,11 +297,8 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 		ctx->rx_slots[0] = 1;  /* mono/left channel from slot 1 */
 		ctx->rx_slots[1] = 0;  /* right channel from slot 0 */
 
-		int idx = ove_audio_graph_add_node(g, &i2s_source_ops, ctx,
-						   name, OVE_AUDIO_NODE_SOURCE);
-		if (idx < 0)
-			OVE_BACKEND_FREE(ctx);
-		return idx;
+		return ove_audio_graph_add_node(g, &i2s_source_ops, ctx,
+						name, OVE_AUDIO_NODE_SOURCE);
 	}
 #endif
 	return OVE_ERR_NOT_SUPPORTED;

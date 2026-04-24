@@ -5,6 +5,11 @@
 #include <stdlib.h>
 /* No <math.h> — avoid libm to stay compatible with Zephyr native_sim */
 
+/* The built-in utility nodes below allocate their per-node context from
+ * the heap.  Under CONFIG_OVE_ZERO_HEAP the OVE_HEAP_AUDIO gate disables
+ * them: apps link only the custom processor nodes they define themselves. */
+#ifdef OVE_HEAP_AUDIO
+
 /* ═══════════════════════════════════════════════════════════════════
    Format Converter
    ═══════════════════════════════════════════════════════════════════ */
@@ -341,3 +346,5 @@ int ove_audio_node_tap(struct ove_audio_graph *g, ove_audio_tap_fn fn,
         free(ctx);
     return idx;
 }
+
+#endif /* OVE_HEAP_AUDIO */

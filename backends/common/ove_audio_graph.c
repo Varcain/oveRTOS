@@ -51,9 +51,41 @@ void ove_audio_graph_deinit(struct ove_audio_graph *g)
             g->nodes[i].ops->destroy(g->nodes[i].ctx);
     }
 
-    free(g->buf_storage);
+    /* Only free when build() allocated the buffer itself
+     * (caller-provided storage is signalled by a non-zero buf_storage_size). */
+    if (g->buf_storage_size == 0) {
+        free(g->buf_storage);
+    }
     memset(g, 0, sizeof(*g));
 }
+
+int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g,
+                                    void *storage, size_t size)
+{
+    if (!g || !storage || size == 0)
+        return OVE_ERR_INVALID_PARAM;
+    if (g->state != OVE_AUDIO_GRAPH_IDLE)
+        return OVE_ERR_NOT_SUPPORTED;
+
+    g->buf_storage      = storage;
+    g->buf_storage_size = size;
+    return OVE_OK;
+}
+
+#ifdef OVE_HEAP_AUDIO
+int ove_audio_graph_create_(struct ove_audio_graph *g, unsigned int frames)
+{
+    return ove_audio_graph_init(g, frames);
+}
+
+int ove_audio_graph_destroy(struct ove_audio_graph *g)
+{
+    if (!g)
+        return OVE_ERR_INVALID_PARAM;
+    ove_audio_graph_deinit(g);
+    return OVE_OK;
+}
+#endif /* OVE_HEAP_AUDIO */
 
 /* ── Add / Connect ──────────────────────────────────────────────── */
 
@@ -222,9 +254,22 @@ int ove_audio_graph_build(struct ove_audio_graph *g)
     }
 
     if (total_size > 0) {
-        g->buf_storage = calloc(1, total_size);
-        if (!g->buf_storage)
+        if (g->buf_storage_size > 0) {
+            /* Caller-provided storage (required under CONFIG_OVE_ZERO_HEAP). */
+            if (g->buf_storage_size < total_size)
+                return OVE_ERR_NO_MEMORY;
+            memset(g->buf_storage, 0, total_size);
+        } else {
+#ifdef CONFIG_OVE_ZERO_HEAP
+            /* No heap available — caller must pre-provide storage via
+             * ove_audio_graph_set_buf_storage(). */
             return OVE_ERR_NO_MEMORY;
+#else
+            g->buf_storage = calloc(1, total_size);
+            if (!g->buf_storage)
+                return OVE_ERR_NO_MEMORY;
+#endif
+        }
     }
 
     for (unsigned int i = 0; i < g->node_count; i++) {

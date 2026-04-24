@@ -91,6 +91,14 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Kconfig lines for modules this app requires, merged during fragment-based configuration."
+    },
+    "rtos_defconfig": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "description": "Per-RTOS Kconfig overrides applied after app defconfig, keyed by RTOS name (freertos, zephyr, nuttx, posix)."
     }
   },
   "additionalProperties": false,

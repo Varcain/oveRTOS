@@ -232,6 +232,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 #define OVE_HEAP_STREAM     1 /**< Stream buffers support heap allocation. */
 #define OVE_HEAP_WATCHDOG   1 /**< Watchdog timers support heap allocation. */
 #define OVE_HEAP_FS         1 /**< Filesystem handles support heap allocation. */
+#define OVE_HEAP_AUDIO      1 /**< Built-in audio utility node factories and graph buffer storage. */
 #define OVE_HEAP_INFER      1 /**< ML inference sessions support heap allocation. */
 #define OVE_HEAP_NET        1 /**< Sockets and network interfaces support heap allocation. */
 #define OVE_HEAP_NET_TLS    1 /**< TLS sessions support heap allocation. */

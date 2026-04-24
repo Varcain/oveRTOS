@@ -518,7 +518,14 @@ def cmd_defconfig_fragments(args):
         app_lines.extend(app_defconfig)
     _load_lines("app", app_lines)
 
-    # 6. Zeroheap variant
+    # 6. App rtos-specific from app.yaml (mirrors board rtos_defconfig)
+    app_rtos_defconfig = app_yaml.get("rtos_defconfig", {})
+    if isinstance(app_rtos_defconfig, dict):
+        app_rtos_lines = app_rtos_defconfig.get(rtos, [])
+        if app_rtos_lines:
+            _load_lines("app+rtos", app_rtos_lines)
+
+    # 7. Zeroheap variant
     if zeroheap:
         variant_path = os.path.join(frag_dir, "variant", "zeroheap.defconfig")
         _load_fragment("variant", variant_path)

@@ -75,18 +75,20 @@ static int zephyr_source_process(void *ctx, const struct ove_audio_buf *in,
 	(void)in;
 	struct zephyr_i2s_source_ctx *sc = (struct zephyr_i2s_source_ctx *)ctx;
 
-	/* Read from I2S RX */
+	unsigned int bytes = out->frames * out->fmt->channels *
+			     ove_audio_sample_size(out->fmt->sample_fmt);
+
+	/* Read from I2S RX.  On any failure (timeout, stream error) zero-fill
+	 * and continue so the sink keeps feeding TX — otherwise SAI_A drains
+	 * and the synchronous RX clock stops, permanently starving the RX
+	 * path.  The short RX timeout ensures the graph loop stays responsive. */
 	int ret = i2s_read(dev_rx, &sc->current_rx_block,
 			   &sc->current_block_size);
 	if (ret < 0) {
-		memset(out->data, 0,
-		       out->frames * out->fmt->channels *
-		       ove_audio_sample_size(out->fmt->sample_fmt));
-		return (ret == -EIO) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+		memset(out->data, 0, bytes);
+		return OVE_OK;
 	}
 
-	unsigned int bytes = out->frames * out->fmt->channels *
-			     ove_audio_sample_size(out->fmt->sample_fmt);
 	memcpy(out->data, sc->current_rx_block, bytes);
 	k_mem_slab_free(&audio_slab, sc->current_rx_block);
 	sc->current_rx_block = NULL;

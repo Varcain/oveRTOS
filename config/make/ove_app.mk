@@ -94,11 +94,14 @@ help:
 	@echo "  all (default)      Full build     run          Run firmware"
 	@echo "  flash              Flash board    alldefconfigs Build all"
 	@echo "  clean              Remove output  help         This message"
-	@echo ""
-	@echo "Defconfigs:"
-	@for f in $$(find $(APP_DIR)/defconfigs -name "*_defconfig" -type f | sort); do \
-		echo "  $$(basename $$f)"; \
-	done
+	@if [ -d "$(APP_DIR)/defconfigs" ] && \
+	    [ -n "$$(find $(APP_DIR)/defconfigs -maxdepth 2 -name '*_defconfig' -type f 2>/dev/null)" ]; then \
+		echo ""; \
+		echo "Defconfigs:"; \
+		find $(APP_DIR)/defconfigs -name '*_defconfig' -type f | sort | while read f; do \
+			echo "  $$(basename $$f)"; \
+		done; \
+	fi
 	@echo ""
 
 .DEFAULT_GOAL := all

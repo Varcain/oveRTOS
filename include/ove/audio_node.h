@@ -25,6 +25,8 @@ extern "C" {
 
 #include <stdint.h>
 
+#include "ove/storage.h"
+
 /** @brief Maximum number of audio channels supported by the channel-map node. */
 #define OVE_AUDIO_MAX_CHANNELS  8
 
@@ -200,24 +202,6 @@ struct ove_audio_node {
 struct ove_audio_graph; /* forward declaration */
 
 /**
- * @brief Add a sample-format converter processor node to the graph.
- *
- * Inserts a processor that converts any upstream sample format to
- * @p target_fmt while preserving sample rate and channel count.
- *
- * @param[in] g           Graph to add the node to.
- * @param[in] target_fmt  Desired output sample format.
- * @param[in] name        Human-readable name for the node.
- * @return Non-negative node index on success, negative error code on failure.
- *
- * @note Requires @c CONFIG_OVE_AUDIO.
- * @see ove_audio_graph_add_node, ove_audio_graph_connect
- */
-int ove_audio_node_converter(struct ove_audio_graph *g,
-                             enum ove_audio_sample_fmt target_fmt,
-                             const char *name);
-
-/**
  * @brief Channel routing table used by ove_audio_node_channel_map().
  *
  * Describes a remapping from any number of input channels to
@@ -231,6 +215,39 @@ struct ove_audio_channel_map {
 };
 
 /**
+ * @brief Callback invoked by the tap node for every processed buffer.
+ *
+ * @param[in] buf        Buffer containing the observed audio data.
+ * @param[in] user_data  Opaque pointer supplied at node creation.
+ */
+typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf,
+                                 void *user_data);
+
+/* The built-in factory functions below internally allocate a per-node
+ * context with OVE_BACKEND_MALLOC.  Under CONFIG_OVE_ZERO_HEAP the gate
+ * OVE_HEAP_AUDIO hides them: link fails rather than silently trapping,
+ * nudging the application toward its own static-context processor nodes. */
+#ifdef OVE_HEAP_AUDIO
+
+/**
+ * @brief Add a sample-format converter processor node to the graph.
+ *
+ * Inserts a processor that converts any upstream sample format to
+ * @p target_fmt while preserving sample rate and channel count.
+ *
+ * @param[in] g           Graph to add the node to.
+ * @param[in] target_fmt  Desired output sample format.
+ * @param[in] name        Human-readable name for the node.
+ * @return Non-negative node index on success, negative error code on failure.
+ *
+ * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
+ * @see ove_audio_graph_add_node, ove_audio_graph_connect
+ */
+int ove_audio_node_converter(struct ove_audio_graph *g,
+                             enum ove_audio_sample_fmt target_fmt,
+                             const char *name);
+
+/**
  * @brief Add a channel-mapping processor node to the graph.
  *
  * Inserts a processor that reorders, duplicates, or silences channels
@@ -242,7 +259,7 @@ struct ove_audio_channel_map {
  * @param[in] name  Human-readable name for the node.
  * @return Non-negative node index on success, negative error code on failure.
  *
- * @note Requires @c CONFIG_OVE_AUDIO.
+ * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_node_converter
  */
 int ove_audio_node_channel_map(struct ove_audio_graph *g,
@@ -261,19 +278,10 @@ int ove_audio_node_channel_map(struct ove_audio_graph *g,
  * @param[in] name     Human-readable name for the node.
  * @return Non-negative node index on success, negative error code on failure.
  *
- * @note Requires @c CONFIG_OVE_AUDIO.
+ * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  */
 int ove_audio_node_gain(struct ove_audio_graph *g,
                         float gain_db, const char *name);
-
-/**
- * @brief Callback invoked by the tap node for every processed buffer.
- *
- * @param[in] buf        Buffer containing the observed audio data.
- * @param[in] user_data  Opaque pointer supplied at node creation.
- */
-typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf,
-                                 void *user_data);
 
 /**
  * @brief Add a tap (observer) sink node to the graph.
@@ -288,12 +296,14 @@ typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf,
  * @param[in] name       Human-readable name for the node.
  * @return Non-negative node index on success, negative error code on failure.
  *
- * @note Requires @c CONFIG_OVE_AUDIO.
+ * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_node_gain
  */
 int ove_audio_node_tap(struct ove_audio_graph *g,
                        ove_audio_tap_fn fn, void *user_data,
                        const char *name);
+
+#endif /* OVE_HEAP_AUDIO */
 
 #ifdef __cplusplus
 }
