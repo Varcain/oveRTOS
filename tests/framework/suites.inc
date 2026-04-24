@@ -34,6 +34,7 @@
 #define _OVE_SUITES_INC_DEFAULTED_STUB
 #endif
 
+OVE_SUITE(storage_bounds,  "Storage Bounds")
 OVE_SUITE(thread,          "Thread")
 OVE_SUITE(sync_mutex,      "Sync: Mutex")
 OVE_SUITE(sync_sem,        "Sync: Semaphore")

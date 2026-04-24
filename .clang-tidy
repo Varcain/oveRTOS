@@ -1,0 +1,44 @@
+---
+# Check selection tuned for an RTOS/embedded codebase.
+#
+# Priorities:
+#   - correctness (bugprone, cert, clang-analyzer, concurrency)
+#   - portability (endian, alignment, size assumptions)
+#   - misc hygiene (includes, no-recursion, static-assert)
+#
+# Style-only checks are left out — those belong in .clang-format.
+#
+# WarningsAsErrors applies only to the correctness families so the build
+# fails loudly on real bugs but stays green on noisier hygiene checks.
+#
+# HeaderFilterRegex scopes header analysis to source we own; vendored
+# trees under dl/, output/, and .venv/ are excluded automatically by
+# clang-tidy's source selection in lint.py, but we also gate headers here
+# so `#include` chains don't pull warnings back in.
+
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-inconsistent-declaration-parameter-name,
+  readability-misleading-indentation,
+  readability-redundant-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-unused-parameters,
+  -readability-magic-numbers,
+  -readability-identifier-length
+
+WarningsAsErrors: "bugprone-*,cert-*,concurrency-*,clang-analyzer-*"
+
+HeaderFilterRegex: "(include|bindings|apps|overtos_apps)/.*"
+
+FormatStyle: file

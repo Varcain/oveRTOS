@@ -57,6 +57,12 @@ flash: $(VENV_STAMP)
 vscode: $(VENV_STAMP)
 	@$(OVE) vscode $(if $(filter 1,$(NO_OPEN)),--no-open)
 
+.PHONY: lint format
+lint: $(VENV_STAMP)
+	@$(OVE) lint
+format: $(VENV_STAMP)
+	@$(OVE) format
+
 .PHONY: alldefconfigs
 alldefconfigs: $(VENV_STAMP)
 	@CONFIGS=$$(find $(APP_DIR)/defconfigs -name '*_defconfig' -type f | sort); \
@@ -98,6 +104,7 @@ help:
 	@echo "  all (default)      Full build     run          Run firmware"
 	@echo "  flash              Flash board    alldefconfigs Build all"
 	@echo "  vscode             Open in VSCode clean        Remove output"
+	@echo "  lint               Run all linters  format      Auto-format sources"
 	@echo "  help               This message"
 	@if [ -d "$(APP_DIR)/defconfigs" ] && \
 	    [ -n "$$(find $(APP_DIR)/defconfigs -maxdepth 2 -name '*_defconfig' -type f 2>/dev/null)" ]; then \

@@ -23,6 +23,32 @@
 extern "C" {
 #endif
 
+/*
+ * Storage-layout invariant
+ * ------------------------
+ * Every `ove_*_storage_t` below is a plain typedef of the corresponding
+ * `struct ove_X` declared in this header. Consumers — C apps, C++/Rust/Zig
+ * bindings, and the Rust/Zig storage-size probes — size their backing
+ * storage from this single source of truth.
+ *
+ * Backend `.c` files must NOT redefine `struct ove_X` locally. A local
+ * redefinition diverges from what every other translation unit sees, so
+ * `_init()` silently writes past the caller's declared storage slot and
+ * corrupts adjacent memory (see the watchdog fix in commit history —
+ * 20-byte STM32 IWDG struct overflowing an 8-byte stub).
+ *
+ * Enforcement lives in `ove lint`'s backend-struct guard
+ * (`config/ove-cli/ove/lint_backend_struct.py`). The canary test suite
+ * `tests/suites/test_storage_bounds.c` catches the runtime side.
+ *
+ * Exceptions: a new vendor driver whose handle type can't reasonably be
+ * exposed in this header (e.g. a large board-specific HAL descriptor)
+ * may be added to the `ALLOWLIST` in `lint_backend_struct.py` with a
+ * one-line justification. The struct it declares must still match the
+ * size of the `ove_X_storage_t` exposed here so consumers don't
+ * over-allocate or under-allocate.
+ */
+
 /* ── Sync primitives ──────────────────────────────────────────────── */
 
 struct ove_mutex {
@@ -136,15 +162,28 @@ typedef struct ove_stream ove_stream_storage_t;
 
 /* ── Watchdog ─────────────────────────────────────────────────────── */
 /*
- * The FreeRTOS watchdog backend is board-specific (e.g. STM32 IWDG).
- * Board headers may provide the full struct definition before this header.
- * If not defined, provide a generic stub-compatible layout.
+ * The FreeRTOS watchdog backend is board-specific.  Consumers that embed
+ * `ove_watchdog_storage_t` must see the exact same size/layout the backend
+ * writes, so the real struct is defined here — not just in the backend .c.
+ * A defining .c unit can still set OVE_WATCHDOG_DEFINED first to override
+ * with a custom layout.
  */
 #ifndef OVE_WATCHDOG_DEFINED
+#if defined(STM32F746xx) || defined(STM32F745xx) || defined(STM32F756xx) || \
+    defined(STM32F7)
+#include "stm32f7xx_hal.h"
+struct ove_watchdog {
+	IWDG_HandleTypeDef hiwdg;
+	uint32_t timeout_ms;
+};
+#define OVE_WATCHDOG_DEFINED
+#else
 struct ove_watchdog {
 	uint32_t timeout_ms;
 	int started;
 };
+#define OVE_WATCHDOG_DEFINED
+#endif
 #endif
 
 typedef struct ove_watchdog ove_watchdog_storage_t;

@@ -403,5 +403,6 @@ int test_i2c_run(void);
 int test_spi_run(void);
 int test_uart_run(void);
 int test_pm_run(void);
+int test_storage_bounds_run(void);
 
 #endif /* OVE_TEST_H */

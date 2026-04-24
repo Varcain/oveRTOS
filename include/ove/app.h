@@ -30,6 +30,14 @@ extern "C" {
  * calling ove_run() to start the scheduler.
  *
  * @note This function must not return before calling ove_run().
+ *
+ * @note On FreeRTOS, `vTaskStartScheduler()` inside ove_run() repurposes the
+ *       main task's stack once it switches to the first user task. Any
+ *       object declared as a local in `ove_main()` and later referenced
+ *       by a worker thread will be clobbered.  Long-lived resources
+ *       (audio graphs, DSP state, queues) must live at file scope as
+ *       `static` storage, not on the `ove_main()` stack frame.
+ *
  * @see ove_run, ove_app_run
  */
 extern void ove_main(void);

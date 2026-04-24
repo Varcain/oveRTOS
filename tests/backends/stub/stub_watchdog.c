@@ -14,6 +14,24 @@
 #include "ove/ove.h"
 #include <stdlib.h>
 
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage,
+		      uint32_t timeout_ms)
+{
+	if (!wdt || !storage) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	struct ove_watchdog *w = (struct ove_watchdog *)storage;
+	w->timeout_ms = timeout_ms;
+	w->started = 0;
+	*wdt = w;
+	return OVE_OK;
+}
+
+void ove_watchdog_deinit(ove_watchdog_t wdt)
+{
+	(void)wdt;
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms)
 {

@@ -12,7 +12,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/atomic.h>
 #include <string.h>
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_stream_init(ove_stream_t *stream,

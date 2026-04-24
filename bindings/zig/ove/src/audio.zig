@@ -24,6 +24,32 @@ pub const Graph = struct {
         return g;
     }
 
+    /// Initialise the graph in a way that works for both heap and zero-heap
+    /// builds.  Mirrors the C `ove_audio_graph_create` macro: in zero-heap
+    /// mode emits a per-call-site `static` backing array sized by
+    /// `nodes * frames * channels * sample_bytes` bytes and attaches it
+    /// automatically.  All arguments must be `comptime`-known.
+    pub fn create(
+        comptime frames: u32,
+        comptime nodes: usize,
+        comptime channels: usize,
+        comptime sample_bytes: usize,
+    ) Error!Graph {
+        var g = try Graph.init(frames);
+        if (comptime @hasDecl(c, "CONFIG_OVE_ZERO_HEAP")) {
+            const STORAGE_BYTES: usize = nodes * frames * channels * sample_bytes;
+            const Storage = struct {
+                var bytes: [STORAGE_BYTES]u8 align(4) = undefined;
+            };
+            try err.fromCode(c.ove_audio_graph_set_buf_storage(
+                &g.raw,
+                &Storage.bytes,
+                Storage.bytes.len,
+            ));
+        }
+        return g;
+    }
+
     pub fn deinit(self: *Graph) void {
         c.ove_audio_graph_deinit(&self.raw);
     }

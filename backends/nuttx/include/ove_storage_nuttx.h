@@ -26,6 +26,16 @@
 extern "C" {
 #endif
 
+/*
+ * Storage-layout invariant
+ * ------------------------
+ * Every `ove_*_storage_t` below is a plain typedef of the corresponding
+ * `struct ove_X` declared in this header. Backend `.c` files must NOT
+ * redefine these structs locally — see the full rationale and enforcement
+ * details at the top of `backends/freertos/include/ove_storage_freertos.h`.
+ */
+
+
 /* ── Sync primitives ──────────────────────────────────────────────── */
 
 struct ove_mutex {

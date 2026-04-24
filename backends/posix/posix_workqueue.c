@@ -12,7 +12,6 @@
 #include <pthread.h>
 #include <string.h>
 #include <unistd.h>
-
 static void *wq_thread_func(void *arg)
 {
 	struct ove_workqueue *wq = arg;

@@ -268,6 +268,33 @@ static void test_runtime_stats(void **state)
 	ove_test_thread_destroy(h);
 }
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+/* Hand-rolled misaligned stack: aligned(8) on the full array, but we
+ * pass in a +1 offset so the backend sees a misaligned pointer.
+ * ove_thread_init() must reject it with OVE_ERR_INVALID_PARAM — this is
+ * the runtime backstop for the AAPCS 8-byte-alignment requirement
+ * documented on OVE_THREAD_STACK_MEMBER_ in include/ove/storage.h. */
+static void test_create_misaligned_stack(void **state)
+{
+	(void)state;
+	static uint8_t __attribute__((aligned(8))) misaligned_buf[4096];
+	static ove_thread_storage_t misaligned_th_storage;
+
+	struct ove_thread_desc desc = {
+		.name = "misaligned",
+		.entry = entry_set_flag,
+		.arg = NULL,
+		.priority = OVE_PRIO_NORMAL,
+		.stack_size = sizeof(misaligned_buf) - 8,
+		.stack = misaligned_buf + 1,  /* deliberately off by 1 */
+	};
+	ove_thread_t h = NULL;
+	int rc = ove_thread_init(&h, &misaligned_th_storage, &desc);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+	assert_null(h);
+}
+#endif /* CONFIG_OVE_ZERO_HEAP */
+
 int test_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -291,6 +318,9 @@ int test_thread_run(void)
 		cmocka_unit_test(test_destroy_null),
 #endif
 		cmocka_unit_test_teardown(test_runtime_stats, teardown_stop_spin),
+#ifdef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_create_misaligned_stack),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

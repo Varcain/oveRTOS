@@ -12,7 +12,6 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
-
 static void freertos_thread_wrapper(void *param)
 {
 	struct ove_thread *s = (struct ove_thread *)param;
@@ -37,6 +36,15 @@ int ove_thread_init(ove_thread_t *handle,
 {
 	if (handle == NULL || storage == NULL || desc == NULL ||
 	    desc->entry == NULL || desc->stack == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	/* AAPCS requires the stack pointer to be 8-byte aligned at public
+	 * function boundaries; a misaligned stack faults immediately on the
+	 * first thread entry.  The sanctioned helper macros
+	 * (OVE_THREAD_STACK_DEFINE_, OVE_THREAD_STACK_MEMBER_,
+	 * OVE_THREAD_STACK_BLOCK_STATIC_) all apply aligned(8); this runtime
+	 * check backstops hand-rolled stack arrays that bypass those. */
+	if (((uintptr_t)desc->stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 

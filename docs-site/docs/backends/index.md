@@ -80,6 +80,7 @@ The backend is chosen by the board's CMakeLists. It defines `CONFIG_OVE_RTOS_<NA
 - Heap mode uses `pvPortMalloc` / `vPortFree`; zero-heap mode uses static FreeRTOS object APIs.
 - `freertos_heap_stubs.c` provides `malloc`/`free` shims for third-party libraries (e.g. LVGL) that call the C allocator directly.
 - Timer callbacks run in the FreeRTOS timer service task context.
+- **Objects that outlive `ove_main()` must not live on the main task's stack.** `vTaskStartScheduler()` repurposes the main stack once the first task is switched in, so any `ove_main()`-local that a worker thread later touches gets clobbered. Put long-lived objects (audio graph, persistent buffers) at file scope as `static` storage. See `overtos_apps/hiroic_cpp/src/app.cpp::g_graph` for the idiom.
 
 ## POSIX backend notes
 

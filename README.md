@@ -199,6 +199,38 @@ make test-qemu-nuttx-zeroheap    # NuttX zero-heap on QEMU
 make test-qemu-zephyr-zeroheap   # Zephyr zero-heap on QEMU
 ```
 
+## Linting
+
+```bash
+make lint           # check-only: formatters + correctness linters
+make format         # rewrite files in place (formatters only)
+```
+
+`make lint` runs the following tools, skipping any that aren't installed:
+
+| Tool               | Scope                                         |
+|--------------------|-----------------------------------------------|
+| clang-format       | all `.c/.h/.cpp/.hpp` — style                 |
+| clang-tidy         | app + binding C/C++ in the active compile db  |
+| cargo fmt          | `bindings/rust/ove` + `apps/rust/*`           |
+| cargo clippy       | same crates; `-D warnings -W pedantic -W nursery` |
+| zig fmt            | all `.zig` — style                            |
+| zig ast-check      | all `.zig` — parse + semantic check           |
+| ruff               | `config/ove-cli` Python                       |
+| backend-struct     | forbids `struct ove_*` redefinition in backend `.c` |
+
+The `backend-struct` rule enforces a key invariant: every `ove_*_storage_t`
+is an alias for the same `struct ove_X` declared in
+`backends/<rtos>/include/ove_storage_<rtos>.h`. Backend `.c` files must
+**never** declare `struct ove_X` at top level (narrow FS allowlist aside)
+— if they do, consumers in other translation units see a different size
+than the backend writes and `_init()` silently corrupts adjacent memory.
+See `config/ove-cli/ove/lint_backend_struct.py` for the allowlist.
+
+Before pushing, run `make lint && make test`. CI's first job
+(`.github/workflows/ove-tests.yml::lint`) gates every downstream test
+job, so a lint failure blocks the whole pipeline fast.
+
 ## Documentation
 
 ```bash

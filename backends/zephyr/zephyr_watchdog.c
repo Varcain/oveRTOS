@@ -11,7 +11,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/device.h>
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_watchdog_init(ove_watchdog_t *wdt,

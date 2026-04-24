@@ -11,7 +11,6 @@
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
 #include "stream_buffer.h"
-
 static TickType_t ms_to_ticks(uint32_t ms)
 {
 	if (ms == OVE_WAIT_FOREVER) {

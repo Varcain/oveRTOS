@@ -190,6 +190,29 @@ impl Graph {
         Ok(Self { inner })
     }
 
+    /// Create and initialize a graph, attaching caller-owned buffer storage.
+    /// Required for `CONFIG_OVE_ZERO_HEAP` builds where `build()` cannot
+    /// `calloc` inter-node buffers.  In heap-mode builds the storage is
+    /// unused but harmless.  Prefer the [`crate::audio_graph!`] macro,
+    /// which emits the backing array automatically.
+    pub fn new_with_storage(
+        frames_per_period: u32,
+        storage: &'static mut [u8],
+    ) -> Result<Self> {
+        let mut inner: bindings::ove_audio_graph = unsafe { core::mem::zeroed() };
+        let rc = unsafe { bindings::ove_audio_graph_init(&mut inner, frames_per_period) };
+        Error::from_code(rc)?;
+        let rc = unsafe {
+            bindings::ove_audio_graph_set_buf_storage(
+                &mut inner,
+                storage.as_mut_ptr() as *mut _,
+                storage.len(),
+            )
+        };
+        Error::from_code(rc)?;
+        Ok(Self { inner })
+    }
+
     /// Add a hardware audio source node.  Returns the node index.
     pub fn device_source(
         &mut self,
@@ -264,6 +287,7 @@ impl Graph {
     pub fn process(&mut self) -> Result<()> {
         graph_process(&mut self.inner)
     }
+
 }
 
 impl Drop for Graph {
@@ -271,6 +295,14 @@ impl Drop for Graph {
         graph_deinit(&mut self.inner);
     }
 }
+
+// SAFETY: the C-side graph object is safe to hand off between threads once
+// built — audio-thread callbacks only read immutable node state, and control
+// APIs (`connect`, `start`, `stop`) are serialised by the caller.  Required
+// so `Graph` can live inside `StaticCell` / `StaticMut` for FreeRTOS main-stack
+// survival (see the hiroic apps' `GRAPH` static).
+unsafe impl Send for Graph {}
+unsafe impl Sync for Graph {}
 
 // ---------------------------------------------------------------------------
 // Safe audio processor trait

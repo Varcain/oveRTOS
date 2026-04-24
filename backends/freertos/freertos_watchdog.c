@@ -6,21 +6,13 @@
  * This file is part of oveRTOS.
  */
 
-/* Define the real watchdog struct before storage.h provides its stub. */
-#include "stm32f7xx_hal.h"
-
-struct ove_watchdog {
-	IWDG_HandleTypeDef hiwdg;
-	uint32_t timeout_ms;
-};
-
-#define OVE_WATCHDOG_DEFINED
-
+/* struct ove_watchdog is defined in ove_storage_freertos.h (pulled in via
+ * ove/storage.h) so every consumer — C app, C++ binding, Rust/Zig storage
+ * size probes — sees the same 20-byte layout this backend writes. */
 #include "ove/watchdog.h"
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
-
 static void compute_prescaler_reload(uint32_t timeout_ms,
 				     uint32_t *prescaler,
 				     uint32_t *reload)

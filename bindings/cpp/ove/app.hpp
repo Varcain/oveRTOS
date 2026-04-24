@@ -41,6 +41,13 @@ inline void run() { ove_run(); }
  *     ove::run();
  * }
  * @endcode
+ *
+ * @note On FreeRTOS, the main task's stack is repurposed by
+ *       `vTaskStartScheduler()` once the first worker task is switched in.
+ *       Any C++ object instantiated as a local inside the `OVE_MAIN()`
+ *       body and later referenced by a thread will be clobbered.  Put
+ *       long-lived objects (e.g. `ove::audio::Graph`) at file scope as
+ *       `static` storage.
  */
 #define OVE_MAIN()                                \
 	static void ove_main_impl();              \
