@@ -198,6 +198,15 @@ pub fn run() void {
 /// Export ove_main entry point from a Zig function.
 /// Must be called from a `comptime {}` block:
 ///     comptime { ove.exportMain(appMain); }
+///
+/// Object lifetime: anything that worker threads access after `appMain`
+/// returns must have static storage — declare it as a file-scope `var`
+/// (BSS) or `const` (data).  Stack-local vars in `appMain` are popped
+/// when it unwinds; a thread that kept a pointer into them then
+/// references freed memory.  Same rule Zig enforces when you try to
+/// return a pointer to a local.  On FreeRTOS the failure is immediate
+/// (the scheduler reclaims the main stack); on POSIX/NuttX/Zephyr the
+/// UB is latent.
 pub fn exportMain(comptime entry: fn () void) void {
     const S = struct {
         fn ove_main() callconv(.c) void {

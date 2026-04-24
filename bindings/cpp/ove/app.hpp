@@ -37,17 +37,22 @@ inline void run() { ove_run(); }
  *
  * @code
  * OVE_MAIN() {
- *     // application code
+ *     static ove::audio::Graph graph;   // static local — outlives this scope
+ *     setup(&graph);
  *     ove::run();
  * }
  * @endcode
  *
- * @note On FreeRTOS, the main task's stack is repurposed by
- *       `vTaskStartScheduler()` once the first worker task is switched in.
- *       Any C++ object instantiated as a local inside the `OVE_MAIN()`
- *       body and later referenced by a thread will be clobbered.  Put
- *       long-lived objects (e.g. `ove::audio::Graph`) at file scope as
- *       `static` storage.
+ * @note **Object lifetime**: any object inside `OVE_MAIN()` that a
+ *       worker thread keeps a reference to must have storage that
+ *       outlives this scope.  Use a `static` local (as above), a
+ *       file-scope variable, or heap allocation.  Plain stack locals
+ *       get popped when `OVE_MAIN()` unwinds and any captured pointer
+ *       becomes dangling — the standard C++ rule for "don't return a
+ *       pointer to a local", applied to workers instead of callers.
+ *       On FreeRTOS the failure is immediate because the scheduler
+ *       reclaims the main stack when it starts; on POSIX and others
+ *       it is latent but still UB.
  */
 #define OVE_MAIN()                                \
 	static void ove_main_impl();              \
