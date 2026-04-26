@@ -166,6 +166,12 @@ TEST_NAMES := stub cpp rust zig nuttx zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
               qemu-nuttx qemu-nuttx-zeroheap \
               qemu-zephyr qemu-zephyr-zeroheap all \
+              renode renode-stm32f746-freertos \
+              renode-stm32f746-freertos-zeroheap \
+              renode-stm32f746-zephyr \
+              renode-stm32f746-zephyr-zeroheap \
+              renode-stm32f746-nuttx \
+              renode-stm32f746-nuttx-zeroheap \
               rust-coverage zig-coverage nuttx-coverage zephyr-coverage \
               qemu-freertos-coverage qemu-nuttx-coverage qemu-zephyr-coverage
 .PHONY: $(addprefix test-,$(TEST_NAMES))

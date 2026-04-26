@@ -53,26 +53,50 @@ Legend: `✅` runs, `❌` skipped (intentionally), `—` not yet enabled.
 `CONFIG_OVE_ZERO_HEAP=1`. They are not listed as separate columns to keep
 the matrix readable.
 
+## Renode STM32F746 target (board-level fidelity)
+
+A pair of full-system targets run the CMocka suites on Renode's
+`stm32f7_discovery-bb` emulation — one heap variant, one zero-heap
+variant.  Unlike the QEMU targets which use the generic `mps2-an500`
+board (CPU + NVIC + SysTick only), these link the real STM32F7 HAL,
+FreeRTOS ARM_CM7 port, and STM32 startup + linker script — the same
+firmware that would flash on a real Discovery board.
+
+| Target | Suite count | CI trigger |
+|---|---|---|
+| `renode-stm32f746-freertos` | 211 | push to main + PRs + `workflow_dispatch` |
+| `renode-stm32f746-freertos-zeroheap` | 184 | push to main + PRs + `workflow_dispatch` |
+
+Caveats:
+- Renode 1.16.1's ARM Cortex-M semihosting handler implements
+  `SYS_WRITEC` (0x03) but not `SYS_WRITE` (0x05) or `SYS_HEAPINFO`
+  (0x20).  `tests/sim/renode-stm32f746-freertos*/semihosting_io.c`
+  overrides `_write` and `_sbrk` to work around this so printf and
+  `malloc` function correctly.
+- The Renode platform doesn't model IWDG / SAI / FMC.  Firmware code
+  that touches those still builds and the canary-level storage tests
+  pass, but any test that *observes* IWDG behaviour (watchdog actually
+  resetting, SAI DMA callbacks) is not covered here.  Real hardware is
+  still the ground truth for those paths.
+
 ## Hardware-specific storage layouts (STM32 IWDG etc.)
 
 Hardware-specific backend structs (e.g. the STM32 `struct ove_watchdog`
 that embeds `IWDG_HandleTypeDef`) are compiled only by the STM32 target
-builds, not by any of the test backends above.  Drift between what the
-backend writes and what consumers see in `ove_storage_<rtos>.h` is
-caught by two gates:
+builds, not by any of the non-Renode test backends above.  Drift between
+what the backend writes and what consumers see in
+`ove_storage_<rtos>.h` is caught by three gates:
 
-1. **`_Static_assert(sizeof(struct ove_X) == sizeof(ove_X_storage_t))`**
-   in every backend `.c` — see `backends/freertos/freertos_watchdog.c`
-   for the watchdog example.  Any local `struct` redefinition that
-   diverges from the header fails the build.
-2. **STM32 build-only CI jobs** in `.github/workflows/alldefconfigs.yml`
+1. **STM32 build-only CI jobs** in `.github/workflows/alldefconfigs.yml`
    (`stm32f746-freertos`, `stm32f746-nuttx`, `stm32f746-zephyr`) —
-   these build every app config against the real HAL. Combined with
-   (1), any future struct-size drift fails CI even without hardware.
-
-The `ove lint` `backend-struct` rule additionally forbids backend-local
-`struct ove_*` definitions (with a narrow FS allowlist); see
-`config/ove-cli/ove/lint_backend_struct.py`.
+   these build every app config against the real HAL.  Any struct-size
+   drift fails CI at compile time.
+2. **Renode runtime CI jobs** (see section above) — exercise the same
+   firmware at runtime, catching bugs that only manifest when code
+   executes on the HAL-writing backend path.
+3. **`ove lint`'s `backend-struct` rule** — forbids backend-local
+   `struct ove_*` definitions outside a narrow FS allowlist.  See
+   `config/ove-cli/ove/lint_backend_struct.py`.
 
 ## Stub-only toolchain variants
 

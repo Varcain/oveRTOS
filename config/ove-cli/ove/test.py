@@ -912,6 +912,329 @@ def test_qemu_freertos_zeroheap(ove_dir, output_dir):
                               label="qemu-freertos-zeroheap")
 
 
+# ── Renode STM32F746 shared driver ─────────────────────────────────────
+def _ensure_renode(ove_dir):
+    """Locate (and, if needed, download) the Renode binary pinned in
+    manifest.yaml (tools.renode).  Delegates to download.download_renode
+    so `ove download` / `ove ensure-toolchain renode` / the test runner
+    all go through one path.  Returns the launcher path or None; None is
+    treated as SKIP, not FAIL.
+    """
+    from .download import download_renode
+    from .manifest import load_manifest
+
+    dl_dir = os.path.join(ove_dir, "dl")
+    tools_dir = os.path.join(ove_dir, "output", "tools")
+    os.makedirs(dl_dir, exist_ok=True)
+    os.makedirs(tools_dir, exist_ok=True)
+    manifest = load_manifest(ove_dir)
+    return download_renode(dl_dir, tools_dir, manifest=manifest)
+
+
+def _run_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label):
+    """Build an STM32F746 test firmware and run it under Renode.
+
+    Output is captured via a SemihostingUart attached by test.resc and
+    written to <build>/uart.log; the existing `_parse_cmocka` reads that
+    for pass/fail tallies.  Semihosting SYS_EXIT_EXTENDED is unsupported
+    in Renode 1.16.x, so the firmware falls through after the test
+    summary and we rely on `emulation RunFor` inside test.resc to bound
+    simulated time; the harness caps wall-clock at 300 s.
+    """
+    renode = _ensure_renode(ove_dir)
+    if renode is None:
+        logger.warning(f"{label}: Renode unavailable — skipping")
+        return TestResults(suite=label, passed=0, failed=0, failed_names=[])
+
+    tc_dir = _ensure_arm_toolchain(ove_dir)
+    build = os.path.join(output_dir, "tests", label)
+    logger.info(f"Building {label}")
+    cmake_args = [f"-DOVE_TOOLCHAIN_DIR={tc_dir}"]
+    _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
+                 build, extra_args=cmake_args)
+
+    elf = os.path.join(build, f"{binary}.elf")
+    resc = os.path.join(ove_dir, "tests", "sim", src_subdir, "test.resc")
+    uart_out = os.path.join(build, "uart.log")
+    renode_log = os.path.join(build, "renode.log")
+    for f in (uart_out, renode_log):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+    logger.info(f"Running {label}")
+    cmd = [renode, "--console", "--disable-xwt", "--plain",
+           "-e", f"$bin = @{elf}",
+           "-e", f"$uart_out = @{uart_out}",
+           "-e", f"$rlog = @{renode_log}",
+           "-e", f"include @{resc}",
+           "-e", "quit"]
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        logger.error(f"{label}: Renode timed out after 300 s")
+        return TestResults(suite=label, passed=0, failed=1,
+                           failed_names=["<renode timeout>"])
+
+    output = ""
+    if os.path.isfile(uart_out):
+        with open(uart_out, encoding="utf-8", errors="replace") as f:
+            output = f.read()
+    print(output, end="")
+    parsed = _parse_cmocka(output)
+    parsed.suite = label
+    if parsed.passed == 0 and parsed.failed == 0:
+        # No CMocka frames at all — treat as a hard failure.
+        parsed.failed = 1
+        parsed.failed_names.append("<no cmocka output>")
+    if r.returncode != 0 and parsed.failed == 0:
+        parsed.failed = 1
+    return parsed
+
+
+def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
+    """Launch a pre-built ELF under Renode using a sim's test.resc.
+
+    Shared body of `_run_renode_stm32f746` and the Zephyr/NuttX-Renode
+    drivers below — only the build step varies between RTOSes.  See
+    `_run_renode_stm32f746` for the rationale on capture + parsing.
+    """
+    renode = _ensure_renode(ove_dir)
+    if renode is None:
+        logger.warning(f"{label}: Renode unavailable — skipping")
+        return TestResults(suite=label, passed=0, failed=0, failed_names=[])
+
+    build = os.path.join(output_dir, "tests", label)
+    uart_out = os.path.join(build, "uart.log")
+    renode_log = os.path.join(build, "renode.log")
+    for f in (uart_out, renode_log):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
+
+    logger.info(f"Running {label}")
+    cmd = [renode, "--console", "--disable-xwt", "--plain",
+           "-e", f"$bin = @{elf}",
+           "-e", f"$uart_out = @{uart_out}",
+           "-e", f"$rlog = @{renode_log}",
+           "-e", f"include @{resc}",
+           "-e", "quit"]
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        logger.error(f"{label}: Renode timed out after 300 s")
+        return TestResults(suite=label, passed=0, failed=1,
+                           failed_names=["<renode timeout>"])
+
+    output = ""
+    if os.path.isfile(uart_out):
+        with open(uart_out, encoding="utf-8", errors="replace") as f:
+            output = f.read()
+    print(output, end="")
+    parsed = _parse_cmocka(output)
+    parsed.suite = label
+    if parsed.passed == 0 and parsed.failed == 0:
+        parsed.failed = 1
+        parsed.failed_names.append("<no cmocka output>")
+    if r.returncode != 0 and parsed.failed == 0:
+        parsed.failed = 1
+    return parsed
+
+
+def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
+    """Build a NuttX stm32f746g-disco firmware and run it under Renode.
+
+    Mirrors `_run_nuttx_qemu`'s build steps verbatim — only diverges in
+    the `configure.sh` board target and the runner.  Kept separate
+    rather than parameterising `_run_nuttx_qemu` because that helper's
+    QEMU invocation path is QEMU-specific.
+    """
+    tc_dir = _ensure_arm_toolchain(ove_dir)
+    import hashlib
+    dl_dir = os.path.join(ove_dir, "dl")
+    build_base = os.path.join(output_dir, "tests", label)
+
+    manifest = load_manifest(ove_dir)
+    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
+    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
+    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
+    tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
+    nuttx_build = os.path.join(build_base, "nuttx")
+    apps_build = os.path.join(build_base, "nuttx-apps")
+
+    logger.info(f"Building {label}")
+    os.makedirs(build_base, exist_ok=True)
+
+    nuttx_hash = os.path.join(dl_dir, f"nuttx-{tag_hash}")
+    if not os.path.isdir(nuttx_hash):
+        run(["git", "clone", "--depth", "1", "-b", default_tag,
+             nuttx_url, nuttx_hash])
+    link = os.path.join(dl_dir, "nuttx")
+    if os.path.islink(link):
+        os.unlink(link)
+    os.symlink(nuttx_hash, link)
+
+    apps_hash = os.path.join(dl_dir, f"nuttx-apps-{tag_hash}")
+    if not os.path.isdir(apps_hash):
+        run(["git", "clone", "--depth", "1", "-b", default_tag,
+             apps_url, apps_hash])
+    link = os.path.join(dl_dir, "nuttx-apps")
+    if os.path.islink(link):
+        os.unlink(link)
+    os.symlink(apps_hash, link)
+
+    cmocka_dl = os.path.join(dl_dir, "cmocka")
+    if not os.path.isdir(cmocka_dl):
+        run(["git", "clone", "--depth", "1", "-b", "cmocka-1.1.7",
+             "https://gitlab.com/cmocka/cmocka.git", cmocka_dl])
+
+    if not os.path.isdir(nuttx_build):
+        shutil.copytree(os.path.join(dl_dir, "nuttx"), nuttx_build,
+                        symlinks=True)
+    if not os.path.isdir(apps_build):
+        shutil.copytree(os.path.join(dl_dir, "nuttx-apps"), apps_build,
+                        symlinks=True)
+
+    ext_dir = os.path.join(apps_build, "external")
+    os.makedirs(ext_dir, exist_ok=True)
+    test_dest = os.path.join(ext_dir, "ove_test")
+    if os.path.exists(test_dest):
+        shutil.rmtree(test_dest)
+    shutil.copytree(
+        os.path.join(ove_dir, "tests", "sim", app_subdir, "nuttx_app"),
+        test_dest)
+    with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
+        f.write('source "$APPSDIR/external/ove_test/Kconfig"\n')
+    with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
+        f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
+        f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
+        f.write('endif\n')
+    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
+        f.write('add_subdirectory(ove_test)\n')
+
+    nuttx_env = _venv_env(ove_dir)
+    tc_bin = os.path.join(tc_dir, "bin")
+    nuttx_env["PATH"] = tc_bin + os.pathsep + nuttx_env["PATH"]
+    flag = os.path.join(nuttx_build, ".ove_test_configured")
+    if not os.path.isfile(flag):
+        run(["./tools/configure.sh", "-a", "../nuttx-apps",
+              "stm32f746g-disco:nsh"], cwd=nuttx_build, env=nuttx_env)
+        Path(flag).write_text("configured\n")
+
+    overlay = os.path.join(ove_dir, "tests", "sim", app_subdir,
+                           "nuttx_test_defconfig")
+    nuttx_config = os.path.join(nuttx_build, ".config")
+    apply_defconfig_overlay(nuttx_config, overlay)
+
+    apps_abs = os.path.abspath(apps_build)
+    nuttx_env["APPDIR"] = apps_abs
+    run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
+
+    nuttx_env["OVE_DIR"] = ove_dir
+    run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
+
+    elf = os.path.join(nuttx_build, "nuttx")
+    resc = os.path.join(ove_dir, "tests", "sim", app_subdir, "test.resc")
+    return _renode_run_elf(ove_dir, output_dir,
+                           label=label, elf=elf, resc=resc)
+
+
+def test_renode_stm32f746_nuttx(ove_dir, output_dir):
+    """Build + run the STM32F746 NuttX heap test firmware under Renode."""
+    return _run_renode_stm32f746_nuttx(ove_dir, output_dir,
+        app_subdir="renode-stm32f746-nuttx",
+        label="renode-stm32f746-nuttx")
+
+
+def test_renode_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
+    """Build + run the STM32F746 NuttX zero-heap firmware under Renode."""
+    return _run_renode_stm32f746_nuttx(ove_dir, output_dir,
+        app_subdir="renode-stm32f746-nuttx-zeroheap",
+        label="renode-stm32f746-nuttx-zeroheap")
+
+
+def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label):
+    """Build a Zephyr stm32f746g_disco firmware and run it under Renode.
+
+    Reuses `_run_zephyr_qemu`'s workspace setup almost verbatim — only
+    diverges in BOARD (stm32f746g_disco vs mps2/an500) and runner
+    (Renode vs qemu-run.sh).  Kept as a separate helper rather than
+    parameterising `_run_zephyr_qemu` because the latter's QEMU
+    invocation path is QEMU-specific.
+    """
+    import hashlib
+    dl_dir = os.path.join(ove_dir, "dl")
+    build = os.path.join(output_dir, "tests", label)
+    west = os.path.join(ove_dir, ".venv", "bin", "west")
+
+    manifest = load_manifest(ove_dir)
+    default_rev = get_component(manifest, "rtos", "zephyr", "version")
+    zephyr_url = get_component(manifest, "rtos", "zephyr", "url")
+    dl_hash = hashlib.sha256(default_rev.encode()).hexdigest()[:8]
+
+    logger.info(f"Building {label}")
+    os.makedirs(build, exist_ok=True)
+
+    hash_dir = os.path.join(dl_dir, f"zephyr-workspace-{dl_hash}")
+    if not os.path.isdir(os.path.join(hash_dir, "zephyr")):
+        logger.debug("Zephyr workspace not found -- downloading...")
+        run([west, "init", "-m", zephyr_url, "--mr", "main", hash_dir])
+        run(["git", "-C", os.path.join(hash_dir, "zephyr"),
+             "checkout", default_rev])
+        run([west, "update"], cwd=hash_dir)
+
+    link = os.path.join(build, "zephyr-workspace")
+    if os.path.islink(link):
+        os.unlink(link)
+    os.symlink(hash_dir, link)
+
+    env = dict(os.environ)
+    env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
+    run([west, "build",
+         "-b", "stm32f746g_disco",
+         "-d", build,
+         os.path.join(ove_dir, "tests", "sim", src_subdir)], env=env)
+
+    elf = os.path.join(build, "zephyr", "zephyr.elf")
+    resc = os.path.join(ove_dir, "tests", "sim", src_subdir, "test.resc")
+    return _renode_run_elf(ove_dir, output_dir,
+                           label=label, elf=elf, resc=resc)
+
+
+def test_renode_stm32f746_zephyr(ove_dir, output_dir):
+    """Build + run the STM32F746 Zephyr heap test firmware under Renode."""
+    return _run_renode_stm32f746_zephyr(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-zephyr",
+        label="renode-stm32f746-zephyr")
+
+
+def test_renode_stm32f746_zephyr_zeroheap(ove_dir, output_dir):
+    """Build + run the STM32F746 Zephyr zero-heap firmware under Renode."""
+    return _run_renode_stm32f746_zephyr(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-zephyr-zeroheap",
+        label="renode-stm32f746-zephyr-zeroheap")
+
+
+def test_renode_stm32f746_freertos(ove_dir, output_dir):
+    """Build + run the STM32F746 heap-mode test firmware under Renode."""
+    return _run_renode_stm32f746(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-freertos",
+        binary="ove_test_renode_stm32f746_freertos",
+        label="renode-stm32f746-freertos")
+
+
+def test_renode_stm32f746_freertos_zeroheap(ove_dir, output_dir):
+    """Build + run the STM32F746 zero-heap test firmware under Renode."""
+    return _run_renode_stm32f746(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-freertos-zeroheap",
+        binary="ove_test_renode_stm32f746_freertos_zeroheap",
+        label="renode-stm32f746-freertos-zeroheap")
+
+
 def test_qemu_freertos_coverage(ove_dir, output_dir):
     """Build and run FreeRTOS QEMU tests with --coverage; emit lcov tracefile.
 
@@ -1272,12 +1595,24 @@ TEST_TARGETS = {
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
+    "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
+    "renode-stm32f746-freertos-zeroheap": test_renode_stm32f746_freertos_zeroheap,
+    "renode-stm32f746-zephyr": test_renode_stm32f746_zephyr,
+    "renode-stm32f746-zephyr-zeroheap": test_renode_stm32f746_zephyr_zeroheap,
+    "renode-stm32f746-nuttx": test_renode_stm32f746_nuttx,
+    "renode-stm32f746-nuttx-zeroheap": test_renode_stm32f746_nuttx_zeroheap,
 }
 
 # Grouped test sets
 SIM_TESTS = ["stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
                "qemu-nuttx-zeroheap", "qemu-zephyr", "qemu-zephyr-zeroheap"]
+RENODE_TESTS = ["renode-stm32f746-freertos",
+                "renode-stm32f746-freertos-zeroheap",
+                "renode-stm32f746-zephyr",
+                "renode-stm32f746-zephyr-zeroheap",
+                "renode-stm32f746-nuttx",
+                "renode-stm32f746-nuttx-zeroheap"]
 
 
 def _save_terminal():
@@ -1314,11 +1649,13 @@ def cmd_test(args):
     expanded = []
     for n in names:
         if n == "all":
-            expanded.extend(SIM_TESTS + QEMU_TESTS)
+            expanded.extend(SIM_TESTS + QEMU_TESTS + RENODE_TESTS)
         elif n == "qemu":
             expanded.extend(QEMU_TESTS)
         elif n == "sim":
             expanded.extend(SIM_TESTS)
+        elif n == "renode":
+            expanded.extend(RENODE_TESTS)
         else:
             expanded.append(n)
 

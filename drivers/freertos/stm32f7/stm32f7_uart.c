@@ -13,6 +13,7 @@
 #include "ove/hal/hal_uart.h"
 #include "ove_backend_common.h"
 #include "stm32f7xx_hal.h"
+#include <string.h>
 
 /* Forward declaration of the portable ISR push helper */
 extern void ove_uart_rx_isr_push(ove_uart_t uart, const void *data,

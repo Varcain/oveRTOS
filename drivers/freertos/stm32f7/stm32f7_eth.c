@@ -31,12 +31,18 @@
 #ifndef ETH_TX_DESC_CNT
 #define ETH_TX_DESC_CNT  4
 #endif
+#ifndef ETH_RX_BUF_SIZE
 #define ETH_RX_BUF_SIZE  1536
+#endif
 
 /* LAN8742A PHY */
 #define LAN8742A_ADDR    0
+#ifndef PHY_BSR
 #define PHY_BSR          0x01
+#endif
+#ifndef PHY_BSR_LINK
 #define PHY_BSR_LINK     0x0004
+#endif
 
 /* ── DMA descriptors and buffers ─────────────────────────────── */
 
@@ -106,7 +112,7 @@ static int eth_mac_init(void)
 		return -1;
 
 	/* Assign Rx buffer addresses (DESC2 = Buffer1 in legacy format) */
-	for (int i = 0; i < ETH_RX_DESC_CNT; i++) {
+	for (unsigned int i = 0; i < ETH_RX_DESC_CNT; i++) {
 		DMARxDscrTab[i].DESC2 = (uint32_t)RxBuff[i];
 		DMARxDscrTab[i].BackupAddr0 = (uint32_t)RxBuff[i];
 	}

@@ -79,15 +79,19 @@ static void test_shell_complete_command(void **state)
 
     ove_shell_init();
 
+    /* Use a non-`help` name — the real freertos_shell backend
+     * pre-registers `help` itself, and overriding it isn't part of the
+     * API contract.  Stub backends happen to allow re-registration
+     * because they start empty, so this collision was previously
+     * latent. */
     struct ove_shell_cmd cmd = {
-        .name = "help",
-        .help = "show help",
+        .name = "ovetestcmd",
+        .help = "test command",
         .handler = test_cmd_handler,
     };
     ove_shell_register_cmd(&cmd);
 
-    /* Feed "help\n" to trigger the command */
-    const char *input = "help\n";
+    const char *input = "ovetestcmd\n";
     for (size_t i = 0; i < strlen(input); i++) {
         ove_shell_process_char(input[i]);
     }

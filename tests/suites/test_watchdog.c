@@ -53,7 +53,11 @@ static void test_watchdog_stop(void **state)
     ove_watchdog_create(&wd, 5000);
     ove_watchdog_start(wd);
     int rc = ove_watchdog_stop(wd);
-    assert_int_equal(rc, OVE_OK);
+    /* OVE_ERR_NOT_SUPPORTED is a valid return on backends whose watchdog
+     * cannot be disarmed once started (STM32 IWDG is the canonical case
+     * — the register set is one-way).  The public API signature allows
+     * this, the test just needs to tolerate it. */
+    assert_true(rc == OVE_OK || rc == OVE_ERR_NOT_SUPPORTED);
     ove_watchdog_destroy(wd);
 }
 

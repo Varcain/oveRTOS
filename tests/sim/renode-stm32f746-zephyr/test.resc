@@ -1,0 +1,31 @@
+:name: oveRTOS CMocka suite on Zephyr/STM32F746 — heap mode
+:description: Boot the oveRTOS test firmware on Zephyr's stm32f746g_disco target under Renode's stm32f7_discovery-bb platform; capture stdout via USART1 + a semihosting UART.
+
+using sysbus
+
+$bin?=@output/tests/renode-stm32f746-zephyr/zephyr/zephyr.elf
+
+mach create "stm32f746"
+machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl
+
+sysbus LoadELF $bin
+
+# Zephyr's stm32f746g_disco defconfig routes printk through USART1
+# (the Discovery's ST-Link VCP).  Renode models that as STM32F7_USART —
+# tap its TX into a file so the outer harness can grep for the CMocka
+# summary post-run.  Semihosting traps for `semihosting_exit` go
+# through the CPU debug interface (CONFIG_SEMIHOST=y in prj.conf), no
+# UART backend required.
+$uart_out?=@/tmp/renode-stm32f746-zephyr.uart
+sysbus.usart1 CreateFileBackend $uart_out true
+showAnalyzer sysbus.usart1
+
+$rlog?=@/tmp/renode-stm32f746-zephyr.renode.log
+logFile $rlog
+
+# Zephyr's STM32F7 boot sequence takes longer simulated time than the
+# FreeRTOS sibling (PLL bring-up, devicetree-driven init, kernel
+# scheduler).  10 simulated seconds is enough for the full common
+# suite — the test summary lands around 4.5s of sim time — and keeps
+# wall-clock under the harness's 300s ceiling.
+emulation RunFor "00:00:10"

@@ -1,0 +1,23 @@
+#
+# Kconfig for oveRTOS NuttX QEMU test runner (zero-heap).
+#
+
+config EXTERNAL_OVE_TEST
+	tristate "oveRTOS Test Runner"
+	default n
+
+if EXTERNAL_OVE_TEST
+
+config EXTERNAL_OVE_TEST_PROGNAME
+	string "Program name"
+	default "ove_test"
+
+config EXTERNAL_OVE_TEST_PRIORITY
+	int "Task priority"
+	default 100
+
+config EXTERNAL_OVE_TEST_STACKSIZE
+	int "Stack size"
+	default 16384
+
+endif

@@ -114,13 +114,15 @@ def extract_tarball(tarball_path, dest_dir, name):
 
 
 def _download_progress(block_count, block_size, total_size):
-    """Simple progress indicator for urlretrieve."""
+    """Simple progress indicator for urlretrieve.  Callers own the
+    "Downloading X" log line that precedes this; we just print the
+    incrementing counter to the same stderr/stdout line. """
     downloaded = block_count * block_size
     if total_size > 0:
         pct = min(100, downloaded * 100 // total_size)
         mb_done = downloaded // (1024 * 1024)
         mb_total = total_size // (1024 * 1024)
-        print(f"\r  Toolchain: {mb_done}/{mb_total} MB ({pct}%)",
+        print(f"\r  {mb_done}/{mb_total} MB ({pct}%)",
               end="", flush=True)
 
 
@@ -577,6 +579,71 @@ def download_zig_toolchain(config, dl_dir, toolchains_dir, manifest=None):
     return True
 
 
+def download_renode(dl_dir, tools_dir, manifest=None):
+    """Download and extract a portable Renode build from the manifest.
+
+    Layout:
+        <dl_dir>/renode-<version>.linux-portable.tar.gz        — cached tarball
+        <tools_dir>/renode/renode_<version>_portable/           — extracted
+        <tools_dir>/renode/renode_<version>_portable/renode     — launcher
+
+    Returns the absolute path to the `renode` launcher on success, or
+    None if the manifest is missing the tools.renode entry, the URL
+    lookup fails, or the download itself fails.  Callers (currently
+    `test.py::_ensure_renode` and `ove ensure-toolchain renode`) treat
+    None as "skip Renode-dependent work" rather than a hard error —
+    Renode is a nice-to-have for STM32 tests, not a required build dep.
+    """
+    version = get_component(manifest, "tools", "renode", "version")
+    url = get_component(manifest, "tools", "renode", "url")
+    if not version or not url:
+        logger.warning("Renode: not in manifest (tools.renode) — skipping")
+        return None
+
+    renode_root = os.path.join(tools_dir, "renode")
+    extract_dir = os.path.join(renode_root, f"renode_{version}_portable")
+    launcher = os.path.join(extract_dir, "renode")
+    if os.path.isfile(launcher):
+        logger.info(f"Renode {version}: up to date")
+        return launcher
+
+    os.makedirs(dl_dir, exist_ok=True)
+    os.makedirs(renode_root, exist_ok=True)
+
+    filename = url.rsplit("/", 1)[-1]
+    tarball = os.path.join(dl_dir, filename)
+
+    if not os.path.isfile(tarball):
+        logger.info(f"Renode {version}: downloading from {url}")
+        try:
+            _retry(
+                lambda: urllib.request.urlretrieve(url, tarball,
+                                                   _download_progress),
+                "download renode")
+            print()
+        except Exception as e:  # noqa: BLE001
+            print()
+            logger.warning(f"Renode download failed: {e}")
+            if os.path.isfile(tarball):
+                os.unlink(tarball)
+            return None
+
+    logger.info(f"Renode {version}: extracting...")
+    ret = subprocess.run(["tar", "xzf", tarball, "-C", renode_root],
+                         capture_output=True, text=True)
+    if ret.returncode != 0:
+        logger.warning(f"Renode extraction failed: {ret.stderr.strip()}")
+        return None
+
+    if not os.path.isfile(launcher):
+        logger.warning(
+            f"Renode: extraction completed but launcher not found at {launcher}")
+        return None
+
+    logger.info(f"Renode {version}: ready at {launcher}")
+    return launcher
+
+
 def download_tflm(config, dl_dir, ws_dl_dir=None, manifest=None):
     """Download TensorFlow Lite Micro sources for ML inference."""
     tflm_url = get_component(manifest, "libraries", "tflm", "url")
@@ -799,8 +866,9 @@ def cmd_download(args):
 def cmd_ensure_toolchain(args):
     """CLI entry point for 'ove ensure-toolchain <name>'.
 
-    Workspace-independent: used by `make docs` to fetch a host Zig before
-    .config exists. Currently only `zig` is supported.
+    Workspace-independent — used by `make docs` to fetch a host Zig
+    before .config exists, and by `make test-renode-*` to grab the
+    Renode emulator on demand.  Supported names: `zig`, `renode`.
     """
     ws = Workspace()
     manifest = load_manifest(ws.ove_dir)
@@ -810,6 +878,12 @@ def cmd_ensure_toolchain(args):
         if not download_zig_toolchain({}, ws.dl_dir, ws.toolchains_dir,
                                       manifest=manifest):
             sys.exit(1)
+    elif args.name == "renode":
+        tools_dir = os.path.join(ws.ove_dir, "output", "tools")
+        os.makedirs(tools_dir, exist_ok=True)
+        if download_renode(ws.dl_dir, tools_dir, manifest=manifest) is None:
+            sys.exit(1)
     else:
-        logger.error(f"unknown toolchain: {args.name} (supported: zig)")
+        logger.error(f"unknown toolchain: {args.name} "
+                     "(supported: zig, renode)")
         sys.exit(2)

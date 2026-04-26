@@ -1,0 +1,28 @@
+:name: oveRTOS CMocka suite on NuttX/STM32F746 — heap mode
+:description: Boot the oveRTOS test firmware on NuttX's stm32f746g-disco target under Renode's stm32f7_discovery-bb platform; capture stdout via USART1.
+
+using sysbus
+
+$bin?=@output/tests/renode-stm32f746-nuttx/nuttx/nuttx
+
+mach create "stm32f746"
+machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl
+
+sysbus LoadELF $bin
+
+# NuttX's stm32f746g-disco:nsh uses USART1 as the serial console
+# (CONFIG_USART1_SERIAL_CONSOLE).  Renode's STM32F7_USART model accepts
+# the byte writes — tap its TX into a file backend so the harness can
+# parse the CMocka summary post-run.
+$uart_out?=@/tmp/renode-stm32f746-nuttx.uart
+sysbus.usart1 CreateFileBackend $uart_out true
+showAnalyzer sysbus.usart1
+
+$rlog?=@/tmp/renode-stm32f746-nuttx.renode.log
+logFile $rlog
+
+# Same budget rationale as the Zephyr sibling — NuttX's STM32F7 boot
+# is slower under Renode than mps2-an500's.
+# NuttX prints the test summary at ~0.7s of simulated time; 5s gives
+# margin without risking the 300s wall-clock harness ceiling.
+emulation RunFor "00:00:05"

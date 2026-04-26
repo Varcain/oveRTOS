@@ -1,0 +1,32 @@
+# NuttX defconfig overlay for gcov coverage builds.
+# Applied on top of nuttx_test_defconfig when coverage=True.
+#
+# COVERAGE_TOOLCHAIN links GCC's libgcov.a (the upstream libgcov) into
+# the kernel link. That pulls in __gcov_init/__gcov_exit_process/
+# __gcov_dump whose gcda writer uses stdio fopen/fwrite; we route those
+# host paths through the filesystem by mounting FS_HOSTFS at / at
+# runtime. FS_HOSTFS on ARM uses a semihosting trap to call the host's
+# filesystem, which is exactly what we need for QEMU + -semihosting.
+#
+# We avoid COVERAGE_MINI — its in-tree libgcc/gcov.c assumes an older
+# gcov_info layout (merge[GCOV_COUNTERS] + n_functions), but GCC 15
+# emits a much smaller 24-byte struct, so the MINI walker reads
+# n_functions from a bogus offset and emits empty .gcda files.
+#
+# HAVE_CXXINITIALIZE is required for GCC's static ctors (where
+# __gcov_init is invoked).
+
+CONFIG_HAVE_CXXINITIALIZE=y
+CONFIG_COVERAGE_TOOLCHAIN=y
+# CONFIG_COVERAGE_NONE is not set
+
+# Host filesystem access via ARM semihosting (for libgcov fopen/fwrite).
+# FS_HOSTFS selects the VFS side, ARM_SEMIHOSTING_HOSTFS links the
+# arch backend (host_open/read/write/close via semihosting traps).
+CONFIG_FS_HOSTFS=y
+CONFIG_ARM_SEMIHOSTING_HOSTFS=y
+
+# gcov instrumentation fattens every function's prologue; the default
+# 4 KB init-task stack overflows mid-test with Usage Fault "Invalid
+# state". 32 KB leaves comfortable headroom.
+CONFIG_INIT_STACKSIZE=32768

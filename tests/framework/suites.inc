@@ -35,6 +35,9 @@
 #endif
 
 OVE_SUITE(storage_bounds,  "Storage Bounds")
+OVE_SUITE(renode_stm32_obs,"Renode STM32 Observability")
+OVE_SUITE(renode_stm32_periph, "Renode STM32 Peripherals (I2C/UART/SPI)")
+OVE_SUITE(renode_stm32_net, "Renode STM32 Networking")
 OVE_SUITE(thread,          "Thread")
 OVE_SUITE(sync_mutex,      "Sync: Mutex")
 OVE_SUITE(sync_sem,        "Sync: Semaphore")

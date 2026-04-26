@@ -1,0 +1,22 @@
+:name: oveRTOS CMocka suite on Zephyr/STM32F746 — zero-heap mode
+:description: Same as the heap sibling, but boots the zero-heap firmware.
+
+using sysbus
+
+$bin?=@output/tests/renode-stm32f746-zephyr-zeroheap/zephyr/zephyr.elf
+
+mach create "stm32f746"
+machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl
+
+sysbus LoadELF $bin
+
+# Zephyr printk → USART1.  Semihosting traps via CPU debug interface.
+$uart_out?=@/tmp/renode-stm32f746-zephyr-zeroheap.uart
+sysbus.usart1 CreateFileBackend $uart_out true
+showAnalyzer sysbus.usart1
+
+$rlog?=@/tmp/renode-stm32f746-zephyr-zeroheap.renode.log
+logFile $rlog
+
+# Sim budget: see heap variant for rationale.
+emulation RunFor "00:00:10"

@@ -7,10 +7,13 @@
 """`ove doctor` — environment health check.
 
 Verifies that everything an oveRTOS user needs is present and reachable
-on the host. Exit code: 0 on green/yellow, 1 on red. JSON output via
-`--json` for CI consumption.
+on the host — PATH binaries, downloaded toolchains under
+`output/toolchains/` + `output/tools/`, and source tarballs under `dl/`
+that the active workspace's .config points to.  Exit code: 0 on
+green/yellow, 1 on red. JSON output via `--json` for CI consumption.
 """
 
+import glob
 import json
 import logging
 import os
@@ -18,7 +21,8 @@ import shutil
 import subprocess
 import sys
 
-from .workspace import Workspace
+from .manifest import get_component, load_manifest
+from .workspace import Workspace, find_ove_dir
 
 logger = logging.getLogger("ove")
 
@@ -50,6 +54,27 @@ def _check_binary(name, version_cmd=None, required=True):
         if rc == 0 and out:
             version = out.splitlines()[0]
     return {"name": name, "status": _OK, "path": path, "version": version}
+
+
+def _check_downloaded_binary(display_name, path, version_cmd=None,
+                             hint=None, required=False):
+    """Binary that lives at a fixed path (inside output/toolchains/ or
+    output/tools/), not necessarily in PATH.  `path` may be a glob."""
+    matches = sorted(glob.glob(path))
+    real = next((p for p in matches if os.path.isfile(p)), None)
+    if not real:
+        return {
+            "name": display_name,
+            "status": _WARN if not required else _FAIL,
+            "detail": hint or f"not found at {path}",
+        }
+    version = ""
+    if version_cmd:
+        cmd = [real] + list(version_cmd)
+        rc, out = _run(cmd)
+        if rc == 0 and out:
+            version = out.splitlines()[0]
+    return {"name": display_name, "status": _OK, "path": real, "version": version}
 
 
 def _check_python_version():
@@ -95,12 +120,26 @@ def _check_workspace():
     return info
 
 
+def _check_manifest_component(ove_dir, display, path_glob, required=False):
+    """Check that a manifest-sourced source tree is present under dl/.
+    `path_glob` is evaluated relative to `ove_dir/dl`. """
+    dl_dir = os.path.join(ove_dir, "dl")
+    full = os.path.join(dl_dir, path_glob)
+    matches = glob.glob(full)
+    if matches:
+        return {"name": f"dl:{display}", "status": _OK,
+                "path": matches[0]}
+    return {"name": f"dl:{display}",
+            "status": _FAIL if required else _WARN,
+            "detail": f"not found under dl/ — run 'ove download'"}
+
+
 def _checks():
     """Run all checks. Returns a list of result dicts."""
     out = [_check_python_version()]
     out += _check_python_pkgs()
 
-    # Core build tools
+    # ── Core build tools (required) ──────────────────────────────────
     out.append(_check_binary("cmake", ["cmake", "--version"]))
     out.append(_check_binary("ninja", ["ninja", "--version"], required=False))
     out.append(_check_binary("make", ["make", "--version"]))
@@ -108,19 +147,19 @@ def _checks():
     out.append(_check_binary("ccache", ["ccache", "--version"],
                              required=False))
 
-    # Cross / native compilers
+    # ── Cross / native compilers ─────────────────────────────────────
     out.append(_check_binary("gcc", ["gcc", "--version"], required=False))
     out.append(_check_binary("clang", ["clang", "--version"], required=False))
     out.append(_check_binary("arm-none-eabi-gcc",
                              ["arm-none-eabi-gcc", "--version"],
                              required=False))
 
-    # Bindings toolchains
+    # ── Bindings toolchains ──────────────────────────────────────────
     out.append(_check_binary("cargo", ["cargo", "--version"], required=False))
     out.append(_check_binary("rustc", ["rustc", "--version"], required=False))
     out.append(_check_binary("zig", ["zig", "version"], required=False))
 
-    # RTOS / emulation tools
+    # ── RTOS / emulation (PATH binaries) ─────────────────────────────
     out.append(_check_binary("west", ["west", "--version"], required=False))
     out.append(_check_binary("kconfig-mconf",
                              ["kconfig-mconf", "--version"], required=False))
@@ -131,7 +170,59 @@ def _checks():
                              ["qemu-system-xtensa", "--version"],
                              required=False))
 
-    # Workspace state
+    # ── Lint + format tools (optional; see `make lint`) ──────────────
+    out.append(_check_binary("clang-format",
+                             ["clang-format", "--version"], required=False))
+    out.append(_check_binary("clang-tidy",
+                             ["clang-tidy", "--version"], required=False))
+    out.append(_check_binary("ruff",
+                             ["ruff", "--version"], required=False))
+    out.append(_check_binary("lcov",
+                             ["lcov", "--version"], required=False))
+
+    # ── Downloaded tools (output/toolchains, output/tools) ───────────
+    ove_dir = find_ove_dir()
+    out.append(_check_downloaded_binary(
+        "arm-gnu (downloaded)",
+        os.path.join(ove_dir, "output", "toolchains",
+                     "arm-gnu-toolchain-*", "bin", "arm-none-eabi-gcc"),
+        version_cmd=["--version"],
+        hint="run 'ove download' to fetch the pinned toolchain"))
+    out.append(_check_downloaded_binary(
+        "zig (downloaded)",
+        os.path.join(ove_dir, "output", "toolchains", "zig-*", "zig"),
+        version_cmd=["version"],
+        hint="run 'ove ensure-toolchain zig' to fetch"))
+    out.append(_check_downloaded_binary(
+        "renode (downloaded)",
+        os.path.join(ove_dir, "output", "tools", "renode",
+                     "renode_*_portable", "renode"),
+        version_cmd=["--version"],
+        hint="run 'ove ensure-toolchain renode' to fetch"))
+
+    # ── Manifest components (source tarballs / clones under dl/) ─────
+    manifest = load_manifest(ove_dir)
+    if manifest:
+        if get_component(manifest, "rtos", "freertos", "kernel-qemu"):
+            out.append(_check_manifest_component(
+                ove_dir, "FreeRTOS-Kernel", "FreeRTOS-Kernel-*"))
+        if get_component(manifest, "rtos", "freertos", "stm32cubef7"):
+            out.append(_check_manifest_component(
+                ove_dir, "STM32CubeF7", "STM32CubeF7-*"))
+        if get_component(manifest, "libraries", "lvgl"):
+            out.append(_check_manifest_component(
+                ove_dir, "lvgl", "lvgl-*"))
+        if get_component(manifest, "libraries", "cmsis-dsp"):
+            out.append(_check_manifest_component(
+                ove_dir, "CMSIS-DSP", "CMSIS-DSP-*"))
+        if get_component(manifest, "libraries", "mbedtls"):
+            out.append(_check_manifest_component(
+                ove_dir, "mbedtls", "mbedtls-*"))
+        if get_component(manifest, "libraries", "lwip"):
+            out.append(_check_manifest_component(
+                ove_dir, "lwip", "lwip-*"))
+
+    # ── Workspace state ──────────────────────────────────────────────
     out.append(_check_workspace())
     return out
 
