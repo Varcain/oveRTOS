@@ -22,6 +22,17 @@ toolchains:
     version: "3.1.51"
     url: "https://github.com/emscripten-core/emsdk.git"
 
+tools:
+  # Renode — full-system emulator with STM32F7 peripheral fidelity.
+  # Used by `make test-renode-stm32f746-freertos[-zeroheap]` to run the
+  # real STM32 HAL + FreeRTOS ARM_CM7 firmware under CI.  Downloaded on
+  # demand by `ove download` into `output/tools/renode/`.  If the binary
+  # can't be fetched the Renode test handlers self-skip; no other target
+  # depends on it.
+  renode:
+    version: "1.16.1"
+    url: "https://github.com/renode/renode/releases/download/v1.16.1/renode-1.16.1.linux-portable.tar.gz"
+
 rtos:
   freertos:
     stm32cubef7:

@@ -80,6 +80,7 @@ The backend is chosen by the board's CMakeLists. It defines `CONFIG_OVE_RTOS_<NA
 - Heap mode uses `pvPortMalloc` / `vPortFree`; zero-heap mode uses static FreeRTOS object APIs.
 - `freertos_heap_stubs.c` provides `malloc`/`free` shims for third-party libraries (e.g. LVGL) that call the C allocator directly.
 - Timer callbacks run in the FreeRTOS timer service task context.
+- **CI-runnable STM32 fidelity**: the `make test-renode-stm32f746-freertos{,-zeroheap}` targets build the same HAL + FreeRTOS ARM_CM7 port that ship on real Discovery hardware and run the full CMocka suite under Renode's `stm32f7_discovery-bb` emulation on every PR. See `tests/MATRIX.md` for the fidelity trade-offs (IWDG / SAI / FMC aren't modelled).
 - **Main-function locals are UB after `ove_run()`.** This is the same C/C++ rule as "don't return a pointer to a local", applied across worker threads instead of callers — any object in `ove_main()`'s automatic storage that a worker keeps referencing becomes dangling once `ove_main()` returns. It shows up loudest on FreeRTOS because `vTaskStartScheduler()` resets MSP to the initial stack top (see `prvPortStartFirstTask` in the Cortex-M port) and the first interrupt overwrites the region that held those locals; on POSIX and Zephyr the same UB is latent because the hosting thread never unwinds. Store long-lived state with `static` class — either a `static` local inside `ove_main()` or a file-scope variable. In heap mode, heap allocation works too.
 
 ## POSIX backend notes

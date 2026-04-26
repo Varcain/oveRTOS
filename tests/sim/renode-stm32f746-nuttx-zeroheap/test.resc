@@ -1,0 +1,21 @@
+:name: oveRTOS CMocka suite on NuttX/STM32F746 — zero-heap mode
+:description: Same as the heap sibling, but boots the zero-heap firmware.
+
+using sysbus
+
+$bin?=@output/tests/renode-stm32f746-nuttx-zeroheap/nuttx/nuttx
+
+mach create "stm32f746"
+machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl
+
+sysbus LoadELF $bin
+
+$uart_out?=@/tmp/renode-stm32f746-nuttx-zeroheap.uart
+sysbus.usart1 CreateFileBackend $uart_out true
+showAnalyzer sysbus.usart1
+
+$rlog?=@/tmp/renode-stm32f746-nuttx-zeroheap.renode.log
+logFile $rlog
+
+# See heap variant for sim budget rationale.
+emulation RunFor "00:00:05"

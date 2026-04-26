@@ -197,7 +197,16 @@ make test-qemu-zephyr            # Zephyr on QEMU
 make test-qemu-freertos-zeroheap # FreeRTOS zero-heap on QEMU
 make test-qemu-nuttx-zeroheap    # NuttX zero-heap on QEMU
 make test-qemu-zephyr-zeroheap   # Zephyr zero-heap on QEMU
+make test-renode-stm32f746-freertos          # Real STM32F7 HAL under Renode (heap)
+make test-renode-stm32f746-freertos-zeroheap # Real STM32F7 HAL under Renode (zero-heap)
 ```
+
+The Renode targets run the full CMocka suite against the same STM32F7
+HAL + FreeRTOS ARM_CM7 port that ships on real hardware — the same
+`firmware.elf` would boot on a Discovery board.  Renode is downloaded
+automatically on first run into `output/tools/renode/`.  See
+[tests/MATRIX.md](tests/MATRIX.md) for the full matrix and caveats
+(IWDG / SAI / FMC aren't modelled).
 
 ## Linting
 

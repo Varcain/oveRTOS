@@ -404,5 +404,8 @@ int test_spi_run(void);
 int test_uart_run(void);
 int test_pm_run(void);
 int test_storage_bounds_run(void);
+int test_renode_stm32_obs_run(void);
+int test_renode_stm32_periph_run(void);
+int test_renode_stm32_net_run(void);
 
 #endif /* OVE_TEST_H */

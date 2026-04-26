@@ -1,0 +1,36 @@
+:name: oveRTOS CMocka suite on STM32F746 — heap mode
+:description: Same as the zero-heap sibling, but runs the heap-enabled firmware.
+
+using sysbus
+
+$bin?=@output/tests/renode-stm32f746-freertos/ove_test_renode_stm32f746_freertos.elf
+
+mach create "stm32f746"
+machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl
+
+sysbus LoadELF $bin
+
+# Attach a SemihostingUart for stdio capture.  Renode's default stm32f7
+# platform doesn't include one; we add it here.
+machine LoadPlatformDescriptionFromString "uartSemihosting: UART.SemihostingUart @ cpu"
+
+# SPI loopback peripheral — backs test_renode_spi_loopback.  Echoes every
+# transmitted byte as the received byte so the ove_spi_*  →  HAL_SPI_*
+# →  STM32SPI  →  SPILoopback chain produces rx == tx.
+machine LoadPlatformDescriptionFromString "spi1_loopback: SPI.SPILoopback @ spi1"
+
+# Route the SemihostingUart output to a file so the outer harness can
+# grep for the CMocka summary after the run.
+$uart_out?=@/tmp/renode-stm32f746-freertos.uart
+cpu.uartSemihosting CreateFileBackend $uart_out true
+showAnalyzer cpu.uartSemihosting
+
+$rlog?=@/tmp/renode-stm32f746-freertos.renode.log
+logFile $rlog
+
+# Drive PA0 rising-edge for test_external_irq_trigger inside the obs
+# suite.  See the zero-heap sibling test.resc for rationale.
+emulation RunFor "00:00:03"
+sysbus.gpioPortA OnGPIO 0 true
+sysbus.gpioPortA OnGPIO 0 false
+emulation RunFor "00:00:57"

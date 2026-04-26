@@ -58,10 +58,10 @@ def main():
 
     # ── ensure-toolchain ───────────────────────────────────────────────
     p = sub.add_parser("ensure-toolchain",
-                       help="Download a single toolchain "
+                       help="Download a single toolchain / tool "
                             "(workspace-independent)")
-    p.add_argument("name", choices=["zig"],
-                   help="Toolchain to ensure (currently: zig)")
+    p.add_argument("name", choices=["zig", "renode"],
+                   help="Toolchain/tool to ensure (zig, renode)")
 
     # ── configure ──────────────────────────────────────────────────────
     p = sub.add_parser("configure", help="Generate config files from .config")
@@ -94,7 +94,8 @@ def main():
     p.add_argument("names", nargs="*",
                    help="Test names (stub, cpp, rust, freertos, nuttx, "
                         "zephyr, qemu-freertos, qemu-nuttx, qemu-zephyr, "
-                        "qemu, all)")
+                        "renode-stm32f746-freertos[-zeroheap], "
+                        "qemu, renode, all)")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON test summary on stdout")
 

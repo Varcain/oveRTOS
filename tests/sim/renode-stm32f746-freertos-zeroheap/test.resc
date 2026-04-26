@@ -1,0 +1,55 @@
+:name: oveRTOS CMocka suite on STM32F746 — zero-heap
+:description: Boot the oveRTOS test firmware on Renode's stm32f7_discovery-bb platform, capture CMocka output over semihosting, exit on SYS_EXIT_EXTENDED.
+
+using sysbus
+
+# `$bin` is set by the test harness via `-e '$bin = @<path>'` before this
+# file is included.  Fallback path for standalone invocation mirrors the
+# CMake build layout.
+$bin?=@output/tests/renode-stm32f746-freertos-zeroheap/ove_test_renode_stm32f746_freertos_zeroheap.elf
+
+mach create "stm32f746"
+machine LoadPlatformDescription @platforms/boards/stm32f7_discovery-bb.repl
+
+sysbus LoadELF $bin
+
+# Semihosting — the firmware uses `bkpt #0xab` with SYS_EXIT_EXTENDED
+# (see tests/framework/semihosting_exit.h) and printf-to-semihosting via
+# --specs=rdimon.specs in the link line.  The stm32f7_discovery-bb
+# platform doesn't attach a SemihostingUart by default, so wire one up
+# and route its output to the host console.
+machine LoadPlatformDescriptionFromString "uartSemihosting: UART.SemihostingUart @ cpu"
+
+# SPI.SPILoopback echoes every byte transmitted on the SPI bus back as
+# the received byte — perfect for exercising the full ove_spi_*  →
+# HAL_SPI_*  →  STM32SPI  →  loopback chain end-to-end.  The Renode
+# stm32f7_discovery-bb platform doesn't attach a real SPI peripheral, so
+# we layer the loopback on spi1 here.  test_renode_stm32_periph.c's SPI
+# test relies on this peripheral being present.
+machine LoadPlatformDescriptionFromString "spi1_loopback: SPI.SPILoopback @ spi1"
+
+# Route the SemihostingUart output to a file so the outer harness can
+# grep for the CMocka summary after the run.  $uart_out is set by the
+# harness via -e '$uart_out = @/tmp/....log' before this script is
+# included; fallback below supports manual invocation.
+$uart_out?=@/tmp/renode-stm32f746-freertos-zeroheap.uart
+cpu.uartSemihosting CreateFileBackend $uart_out true
+# Mirror the same stream to the Renode console for live visibility.
+showAnalyzer cpu.uartSemihosting
+
+# Renode's own log for diagnostics.  Path is $rlog (harness-supplied).
+$rlog?=@/tmp/renode-stm32f746-freertos-zeroheap.renode.log
+logFile $rlog
+
+# test_renode_stm32_obs::test_external_irq_trigger registers an EXTI
+# rising-edge handler on PA0 early in the test run.  Schedule the
+# stimulus so it fires inside that test's wait window.
+#
+# Renode has no built-in scheduled-event primitive in .resc, so we use a
+# nested `emulation RunFor` sequence instead: run far enough that the
+# common-suite runner reaches the obs suite (~3 sim-seconds), drive the
+# pin, then run to the wall-clock cap.
+emulation RunFor "00:00:03"
+sysbus.gpioPortA OnGPIO 0 true
+sysbus.gpioPortA OnGPIO 0 false
+emulation RunFor "00:00:57"

@@ -13,6 +13,7 @@
 #include "ove/hal/hal_i2c.h"
 #include "ove_backend_common.h"
 #include "stm32f7xx_hal.h"
+#include <string.h>
 
 static I2C_TypeDef *instance_to_periph(unsigned int instance)
 {
