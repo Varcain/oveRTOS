@@ -52,6 +52,10 @@ nav:
     - Boards: build-system/boards.md
     - External Apps: build-system/external-apps.md
     - Simulation: build-system/sim.md
+  - Testing:
+    - Overview: testing/index.md
+    - Renode: testing/renode.md
+    - Hardware-in-the-loop: testing/hw.md
   - Backends: backends/index.md
   - Examples:
     - Overview: examples/index.md
