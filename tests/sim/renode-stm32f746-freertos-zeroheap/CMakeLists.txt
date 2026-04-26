@@ -19,9 +19,22 @@
 
 cmake_minimum_required(VERSION 3.14)
 
-set(CMAKE_TOOLCHAIN_FILE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/qemu-mps2-an500/cmake/arm-none-eabi.cmake
-    CACHE FILEPATH "ARM toolchain file")
+# OVE_HW: when ON (passed on the cmake command line), the firmware is
+# being built for real STM32F746G-Discovery silicon instead of Renode.
+# That switches the toolchain shim from the QEMU/Renode one (rdimon.specs
+# → semihosting libc) to the board's own (nosys.specs → no host libc),
+# and later in the file picks usart1_io.c over semihosting_io.c.
+# The toolchain file is read before project(), which is why we resolve
+# OVE_HW here rather than via option() further down.
+if(OVE_HW)
+    set(CMAKE_TOOLCHAIN_FILE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/stm32f746g-discovery/freertos/cmake/arm-none-eabi.cmake
+        CACHE FILEPATH "ARM toolchain file")
+else()
+    set(CMAKE_TOOLCHAIN_FILE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/qemu-mps2-an500/cmake/arm-none-eabi.cmake
+        CACHE FILEPATH "ARM toolchain file")
+endif()
 
 project(ove_test_renode_stm32f746_freertos_zeroheap C ASM)
 
@@ -266,12 +279,24 @@ set_target_properties(ove_lwip PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 # the ove_lwip library above.  Build it in only one place.
 list(REMOVE_ITEM FREERTOS_BACKEND_SOURCES ${FREERTOS_BACKEND}/lwip_sys_arch.c)
 
+# --- stdio backend selection ---
+# OVE_HW (set above project() because it gates the toolchain choice)
+# also picks which stdio shim gets linked into the firmware:
+#   ON  → usart1_io.c   (HAL_UART_Transmit on PA9/PB7 USART1)
+#   OFF → semihosting_io.c (Renode SemihostingUart via SYS_WRITEC)
+if(OVE_HW)
+    set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/usart1_io.c)
+else()
+    set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/semihosting_io.c)
+endif()
+
 # --- Executable ---
 add_executable(ove_test_renode_stm32f746_freertos_zeroheap
     ${CMAKE_CURRENT_SOURCE_DIR}/sim_main.c
-    # Renode 1.16's SYS_WRITE (0x05) isn't implemented; override _write
-    # to SYS_WRITEC (0x03) per byte so printf/fprintf output surfaces.
-    ${CMAKE_CURRENT_SOURCE_DIR}/semihosting_io.c
+    # OVE_HW gates which stdio backend gets linked.  See the option block
+    # above; semihosting_io.c works around Renode 1.16's missing
+    # SYS_WRITE, usart1_io.c writes to the real PA9/PB7 USART1 pins.
+    ${STDIO_SOURCE}
     ${STARTUP_SOURCES}
     ${HAL_SOURCES}
     ${FREERTOS_KERNEL_SOURCES}
@@ -284,6 +309,10 @@ add_executable(ove_test_renode_stm32f746_freertos_zeroheap
 
 target_compile_definitions(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     OVE_RENODE_STM32F746
+    # OVE_HW propagates the CMake option to C code so sim_main.c can
+    # skip the post-summary semihosting_exit() trap (which on real
+    # silicon would raise a HardFault and panic).
+    $<$<BOOL:${OVE_HW}>:OVE_HW>
     # OVE_QEMU_ARM unlocks the bare-metal ARM branch of stub_time.c
     # (FreeRTOS tick-count-based time) and matches how the QEMU sim
     # composes the same stubs.  The name is legacy; the branch is really

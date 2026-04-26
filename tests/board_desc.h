@@ -19,13 +19,19 @@
 #define OVE_BOARD_MCU        "x86_64"
 
 /* GPIO configuration */
-#define OVE_GPIO_PORT_COUNT    8
+#define OVE_GPIO_PORT_COUNT    9
 #define OVE_GPIO_PINS_PER_PORT 16
 
 /* LED configuration */
 #define OVE_LED_COUNT 8
-#define OVE_LED0_PORT       0
-#define OVE_LED0_PIN        0
+/* LED 0 maps to PI1 — the LD1 LED on STM32F746G-Discovery.  Picked so
+ * test_led / test_gpio's read-after-write checks pass on real silicon
+ * (PA0, the prior choice, is wired to the WAKE button's external
+ * pull-up on the Discovery, which forces IDR=1 regardless of ODR).
+ * Stub + Renode + QEMU don't care which pin we pick — both echo any
+ * write back through ODR — so the same constants work everywhere. */
+#define OVE_LED0_PORT       8
+#define OVE_LED0_PIN        1
 #define OVE_LED0_ACTIVE_LOW 0
 #define OVE_LED1_PORT       0
 #define OVE_LED1_PIN        1
@@ -74,7 +80,8 @@ extern "C" {
 #endif
 
 static const struct ove_led_desc ove_board_leds[8] = {
-    { 0, 0, 0 },
+    /* LED 0 = PI1 (the Discovery's LD1).  See OVE_LED0_PORT/_PIN above. */
+    { OVE_LED0_PORT, OVE_LED0_PIN, OVE_LED0_ACTIVE_LOW },
     { 0, 1, 0 },
     { 0, 2, 0 },
     { 0, 3, 0 },
@@ -88,8 +95,8 @@ static const struct ove_board_desc ove_board_descriptor = {
     .name = OVE_BOARD_NAME,
     .mcu_family = OVE_BOARD_MCU_FAMILY,
     .mcu = OVE_BOARD_MCU,
-    .gpio_port_count = 8,
-    .gpio_pins_per_port = 16,
+    .gpio_port_count = OVE_GPIO_PORT_COUNT,
+    .gpio_pins_per_port = OVE_GPIO_PINS_PER_PORT,
     .led_count = 8,
     .leds = ove_board_leds,
 };

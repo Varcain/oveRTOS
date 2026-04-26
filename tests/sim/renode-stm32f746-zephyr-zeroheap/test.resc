@@ -18,5 +18,9 @@ showAnalyzer sysbus.usart1
 $rlog?=@/tmp/renode-stm32f746-zephyr-zeroheap.renode.log
 logFile $rlog
 
-# Sim budget: see heap variant for rationale.
+# Test summary lands at ~4.5 s sim time on Zephyr/STM32F7 zero-heap.
+# main() halts in a `for(;;)` after summary (see src/main.c) so the
+# CPU stays in a tight loop rather than wandering into a fault path
+# — keeps the wall:sim ratio bounded so RunFor's budget tracks
+# linearly to the harness's 300 s ceiling.
 emulation RunFor "00:00:10"

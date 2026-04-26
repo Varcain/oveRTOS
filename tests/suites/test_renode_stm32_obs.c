@@ -154,7 +154,12 @@ int test_renode_stm32_obs_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_led_set_observable_in_odr),
 		cmocka_unit_test(test_gpio_set_observable_in_odr),
+#ifndef OVE_HW
+		/* test_external_irq_trigger needs a host-side stimulus
+		 * (`sysbus.gpioPortA OnGPIO 0 true` in test.resc) — there's
+		 * no equivalent injection on real silicon, so skip on HW. */
 		cmocka_unit_test(test_external_irq_trigger),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 #endif

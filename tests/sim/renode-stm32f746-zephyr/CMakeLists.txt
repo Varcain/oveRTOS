@@ -101,5 +101,8 @@ target_include_directories(app PRIVATE
     ${cmocka_SOURCE_DIR}/include
 )
 
-target_compile_definitions(app PRIVATE OVE_QEMU_ARM HAVE_UINTPTR_T)
+target_compile_definitions(app PRIVATE OVE_QEMU_ARM HAVE_UINTPTR_T
+    # OVE_HW propagated to main.c so it skips the post-summary
+    # semihosting_exit() trap when running on real silicon.
+    $<$<BOOL:${OVE_HW}>:OVE_HW>)
 zephyr_link_libraries(cmocka_lib m)

@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,9 +39,13 @@ class TestResults:
 def _parse_cmocka(stdout: str) -> TestResults:
     """Parse CMocka test output and return aggregated results.
 
-    Sums all ``[  PASSED  ] N test(s).`` / ``[  FAILED  ] N test(s).``
-    lines and collects individual failed test names from
-    ``[  FAILED  ] test_name`` lines.
+    Sums every ``[  PASSED  ] N test(s).`` line into the passed total.
+    For failures, CMocka emits a per-suite total in the form
+    ``[  FAILED  ] tests: N test(s), listed below:`` followed by one
+    ``[  FAILED  ] <test_name>`` per failing test — we count via the
+    aggregate line so the count matches CMocka's own bookkeeping, then
+    collect the individual names.  We avoid double-counting by
+    skipping the count regex on lines that begin ``[  FAILED  ] tests:``.
     """
     passed = failed = 0
     failed_names = []
@@ -49,11 +54,17 @@ def _parse_cmocka(stdout: str) -> TestResults:
         if m:
             passed += int(m.group(1))
             continue
+        # CMocka format: "[  FAILED  ] tests: N test(s), listed below:"
+        m = re.match(r'\[\s+FAILED\s+\]\s+tests:\s+(\d+)\s+test', line)
+        if m:
+            failed += int(m.group(1))
+            continue
+        # Older / alternative form: "[  FAILED  ] N test(s)" without "tests:"
         m = re.match(r'\[\s+FAILED\s+\]\s+(\d+)\s+test', line)
         if m:
             failed += int(m.group(1))
             continue
-        # Individual failure: "[  FAILED  ] test_name"  (no digit after])
+        # Individual failure name (no digit, no "tests:" prefix).
         m = re.match(r'\[\s+FAILED\s+\]\s+([A-Za-z_]\w*)', line)
         if m:
             failed_names.append(m.group(1))
@@ -931,6 +942,27 @@ def _ensure_renode(ove_dir):
     return download_renode(dl_dir, tools_dir, manifest=manifest)
 
 
+def _build_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label,
+                            extra_cmake=None):
+    """Build an STM32F746 FreeRTOS test firmware via the existing CMake
+    sim tree.  Returns the path to the produced ELF.
+
+    `extra_cmake` is a list of extra `-D…` flags forwarded to CMake.
+    The HW runner uses this to pass `-DOVE_HW=ON`, which the FreeRTOS
+    sim CMakeLists routes through to the toolchain shim selection +
+    stdio backend selection.
+    """
+    tc_dir = _ensure_arm_toolchain(ove_dir)
+    build = os.path.join(output_dir, "tests", label)
+    logger.info(f"Building {label}")
+    cmake_args = [f"-DOVE_TOOLCHAIN_DIR={tc_dir}"]
+    if extra_cmake:
+        cmake_args.extend(extra_cmake)
+    _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
+                 build, extra_args=cmake_args)
+    return os.path.join(build, f"{binary}.elf")
+
+
 def _run_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label):
     """Build an STM32F746 test firmware and run it under Renode.
 
@@ -941,57 +973,12 @@ def _run_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label):
     summary and we rely on `emulation RunFor` inside test.resc to bound
     simulated time; the harness caps wall-clock at 300 s.
     """
-    renode = _ensure_renode(ove_dir)
-    if renode is None:
-        logger.warning(f"{label}: Renode unavailable — skipping")
-        return TestResults(suite=label, passed=0, failed=0, failed_names=[])
-
-    tc_dir = _ensure_arm_toolchain(ove_dir)
-    build = os.path.join(output_dir, "tests", label)
-    logger.info(f"Building {label}")
-    cmake_args = [f"-DOVE_TOOLCHAIN_DIR={tc_dir}"]
-    _cmake_build(os.path.join(ove_dir, "tests", "sim", src_subdir),
-                 build, extra_args=cmake_args)
-
-    elf = os.path.join(build, f"{binary}.elf")
+    elf = _build_renode_stm32f746(ove_dir, output_dir,
+                                  src_subdir=src_subdir,
+                                  binary=binary, label=label)
     resc = os.path.join(ove_dir, "tests", "sim", src_subdir, "test.resc")
-    uart_out = os.path.join(build, "uart.log")
-    renode_log = os.path.join(build, "renode.log")
-    for f in (uart_out, renode_log):
-        try:
-            os.remove(f)
-        except OSError:
-            pass
-
-    logger.info(f"Running {label}")
-    cmd = [renode, "--console", "--disable-xwt", "--plain",
-           "-e", f"$bin = @{elf}",
-           "-e", f"$uart_out = @{uart_out}",
-           "-e", f"$rlog = @{renode_log}",
-           "-e", f"include @{resc}",
-           "-e", "quit"]
-    try:
-        r = subprocess.run(cmd, stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT, text=True, timeout=300)
-    except subprocess.TimeoutExpired:
-        logger.error(f"{label}: Renode timed out after 300 s")
-        return TestResults(suite=label, passed=0, failed=1,
-                           failed_names=["<renode timeout>"])
-
-    output = ""
-    if os.path.isfile(uart_out):
-        with open(uart_out, encoding="utf-8", errors="replace") as f:
-            output = f.read()
-    print(output, end="")
-    parsed = _parse_cmocka(output)
-    parsed.suite = label
-    if parsed.passed == 0 and parsed.failed == 0:
-        # No CMocka frames at all — treat as a hard failure.
-        parsed.failed = 1
-        parsed.failed_names.append("<no cmocka output>")
-    if r.returncode != 0 and parsed.failed == 0:
-        parsed.failed = 1
-    return parsed
+    return _renode_run_elf(ove_dir, output_dir,
+                           label=label, elf=elf, resc=resc)
 
 
 def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
@@ -1052,6 +1039,19 @@ def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
     the `configure.sh` board target and the runner.  Kept separate
     rather than parameterising `_run_nuttx_qemu` because that helper's
     QEMU invocation path is QEMU-specific.
+    """
+    elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
+                                        app_subdir=app_subdir, label=label)
+    resc = os.path.join(ove_dir, "tests", "sim", app_subdir, "test.resc")
+    return _renode_run_elf(ove_dir, output_dir,
+                           label=label, elf=elf, resc=resc)
+
+
+def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
+    """Build a NuttX stm32f746g-disco firmware via configure.sh + make.
+    Returns the path to the produced ELF (NuttX names it `nuttx`, no
+    suffix).  The HW runner reuses this verbatim — NuttX's stm32f7
+    backend already writes via USART1 by default, so no extra knobs.
     """
     tc_dir = _ensure_arm_toolchain(ove_dir)
     import hashlib
@@ -1137,10 +1137,7 @@ def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
     nuttx_env["OVE_DIR"] = ove_dir
     run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
 
-    elf = os.path.join(nuttx_build, "nuttx")
-    resc = os.path.join(ove_dir, "tests", "sim", app_subdir, "test.resc")
-    return _renode_run_elf(ove_dir, output_dir,
-                           label=label, elf=elf, resc=resc)
+    return os.path.join(nuttx_build, "nuttx")
 
 
 def test_renode_stm32f746_nuttx(ove_dir, output_dir):
@@ -1157,14 +1154,13 @@ def test_renode_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
         label="renode-stm32f746-nuttx-zeroheap")
 
 
-def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label):
-    """Build a Zephyr stm32f746g_disco firmware and run it under Renode.
+def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label,
+                                   extra_cmake=None):
+    """Build a Zephyr stm32f746g_disco firmware via west.  Returns the
+    path to the produced zephyr.elf.
 
-    Reuses `_run_zephyr_qemu`'s workspace setup almost verbatim — only
-    diverges in BOARD (stm32f746g_disco vs mps2/an500) and runner
-    (Renode vs qemu-run.sh).  Kept as a separate helper rather than
-    parameterising `_run_zephyr_qemu` because the latter's QEMU
-    invocation path is QEMU-specific.
+    `extra_cmake` is a list of extra `-D…` flags forwarded to the
+    CMake invocation.  The HW runner uses this to pass `-DOVE_HW=ON`.
     """
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
@@ -1194,12 +1190,27 @@ def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label):
 
     env = dict(os.environ)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
-    run([west, "build",
-         "-b", "stm32f746g_disco",
-         "-d", build,
-         os.path.join(ove_dir, "tests", "sim", src_subdir)], env=env)
+    cmd = [west, "build",
+           "-b", "stm32f746g_disco",
+           "-d", build,
+           os.path.join(ove_dir, "tests", "sim", src_subdir)]
+    if extra_cmake:
+        cmd.extend(["--", *extra_cmake])
+    run(cmd, env=env)
+    return os.path.join(build, "zephyr", "zephyr.elf")
 
-    elf = os.path.join(build, "zephyr", "zephyr.elf")
+
+def _run_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label):
+    """Build a Zephyr stm32f746g_disco firmware and run it under Renode.
+
+    Reuses `_run_zephyr_qemu`'s workspace setup almost verbatim — only
+    diverges in BOARD (stm32f746g_disco vs mps2/an500) and runner
+    (Renode vs qemu-run.sh).  Kept as a separate helper rather than
+    parameterising `_run_zephyr_qemu` because the latter's QEMU
+    invocation path is QEMU-specific.
+    """
+    elf = _build_renode_stm32f746_zephyr(ove_dir, output_dir,
+                                         src_subdir=src_subdir, label=label)
     resc = os.path.join(ove_dir, "tests", "sim", src_subdir, "test.resc")
     return _renode_run_elf(ove_dir, output_dir,
                            label=label, elf=elf, resc=resc)
@@ -1233,6 +1244,216 @@ def test_renode_stm32f746_freertos_zeroheap(ove_dir, output_dir):
         src_subdir="renode-stm32f746-freertos-zeroheap",
         binary="ove_test_renode_stm32f746_freertos_zeroheap",
         label="renode-stm32f746-freertos-zeroheap")
+
+
+# ── Hardware-in-the-loop targets (manual-only) ────────────────────────
+#
+# These flash a real STM32F746G-Discovery board with the same firmware
+# the matching Renode target builds, then read CMocka output back over
+# USART1 (the on-board ST-Link VCP).  They are intentionally NOT in any
+# group list (SIM_TESTS / QEMU_TESTS / RENODE_TESTS) so `make test-all`
+# and the GitHub Actions CI never touch them.  Run them manually with
+# the env var pointing at your board:
+#
+#     OVE_HW_SERIAL_PORT=/dev/ttyACM0 make test-hw-stm32f746-freertos
+#
+# The serial-port path is the only required knob.  An optional
+# OVE_HW_TIMEOUT (seconds) bounds the wall-clock read window per run;
+# default 120, plenty for the largest variant.
+
+def _run_hw_stm32f746(ove_dir, output_dir, *, label, elf):
+    """Flash a pre-built ELF onto the STM32F746G-Discovery via OpenOCD,
+    then capture USART1 output via pyserial and parse the CMocka
+    summary.  Returns a `TestResults`.
+
+    Reads `OVE_HW_SERIAL_PORT` (required) and `OVE_HW_TIMEOUT`
+    (optional, seconds, default 120) from the environment.
+
+    Reuses the OpenOCD invocation pattern from
+    boards/stm32f746g-discovery/freertos/flash.sh — `openocd` is taken
+    from PATH (system-installed; matches what flash.sh assumes).
+    """
+    serial_port = os.environ.get("OVE_HW_SERIAL_PORT")
+    if not serial_port:
+        logger.error(
+            f"{label}: OVE_HW_SERIAL_PORT is not set — point it at the "
+            f"board's USART1 VCP, e.g. OVE_HW_SERIAL_PORT=/dev/ttyACM0")
+        return TestResults(suite=label, passed=0, failed=1,
+                           failed_names=["<OVE_HW_SERIAL_PORT unset>"])
+
+    try:
+        import serial as pyserial
+    except ImportError:
+        logger.error(
+            f"{label}: pyserial not installed in the venv.  Run "
+            f"'pip install pyserial>=3.5' (or 'ove doctor' to see other "
+            f"missing HW deps).")
+        return TestResults(suite=label, passed=0, failed=1,
+                           failed_names=["<pyserial missing>"])
+
+    openocd = shutil.which("openocd")
+    if openocd is None:
+        logger.error(
+            f"{label}: openocd not found on PATH.  Install via your "
+            f"package manager (e.g. 'apt install openocd').")
+        return TestResults(suite=label, passed=0, failed=1,
+                           failed_names=["<openocd missing>"])
+
+    # Open the serial port BEFORE flashing.  OpenOCD's `reset exit`
+    # releases the CPU; if pyserial isn't already listening we miss the
+    # first lines (early test summary frames have been observed within
+    # ~20 ms of release on this board).
+    try:
+        ser = pyserial.Serial(serial_port, 115200, timeout=1)
+    except (pyserial.SerialException, OSError) as e:
+        logger.error(f"{label}: failed to open {serial_port}: {e}")
+        return TestResults(suite=label, passed=0, failed=1,
+                           failed_names=[f"<serial open: {e}>"])
+
+    try:
+        # Drain BEFORE flashing.  Two passes: the first clears bytes
+        # already in the kernel's tty buffer, then we sleep ~150 ms so
+        # any in-flight bytes still queued in the ST-LINK USB pipeline
+        # land in the kernel buffer, then we drain again.  Without the
+        # second pass, leftover bytes from the previous firmware's
+        # post-summary tail (especially on Zephyr/NuttX, which boot
+        # fast and start printing again) get mixed into the parsed
+        # output and double-count CMocka frames (we saw +11 phantom
+        # tests on FreeRTOS heap with single-pass drain).
+        #
+        # Drain only happens pre-flash — once OpenOCD halts the CPU
+        # for programming, the prior firmware can't emit anything new,
+        # so the buffer stays clean through the reset.  After OpenOCD
+        # exits we read straight away to catch the new firmware's
+        # boot output from the very first byte.
+        ser.reset_input_buffer()
+        time.sleep(0.15)
+        ser.reset_input_buffer()
+
+        logger.info(f"{label}: flashing {os.path.basename(elf)} via OpenOCD")
+        flash_cmd = [openocd,
+                     "-f", "board/stm32f7discovery.cfg",
+                     "-c", f"program {elf} verify reset exit"]
+        try:
+            subprocess.run(flash_cmd, check=True, timeout=120,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"{label}: OpenOCD failed (exit {e.returncode})")
+            if e.stdout:
+                print(e.stdout, end="")
+            return TestResults(suite=label, passed=0, failed=1,
+                               failed_names=["<openocd flash failed>"])
+        except subprocess.TimeoutExpired:
+            logger.error(f"{label}: OpenOCD timed out")
+            return TestResults(suite=label, passed=0, failed=1,
+                               failed_names=["<openocd timeout>"])
+
+        timeout_s = int(os.environ.get("OVE_HW_TIMEOUT", "120"))
+        logger.info(f"{label}: reading {serial_port} @ 115200 "
+                    f"(up to {timeout_s}s)")
+
+        # Read line-by-line; mirror to stdout for live progress.  Stop
+        # when the firmware emits the CMocka end-of-run sentinel — same
+        # line _parse_cmocka uses to compute pass/fail tallies.
+        deadline = time.monotonic() + timeout_s
+        captured = []
+        summary_re = re.compile(r"^=== Summary: \d+ test group\(s\)")
+        seen_frame = False
+        while time.monotonic() < deadline:
+            line = ser.readline()
+            if not line:
+                continue
+            try:
+                text = line.decode("utf-8", errors="replace")
+            except Exception:
+                text = repr(line)
+            print(text, end="")
+            captured.append(text)
+            if "[==========]" in text:
+                seen_frame = True
+            if seen_frame and summary_re.match(text):
+                break
+        else:
+            logger.error(f"{label}: serial read timed out after {timeout_s}s")
+            output = "".join(captured)
+            parsed = _parse_cmocka(output)
+            parsed.suite = label
+            if parsed.failed == 0:
+                parsed.failed = 1
+                parsed.failed_names.append("<hw serial timeout>")
+            return parsed
+
+        output = "".join(captured)
+    finally:
+        ser.close()
+
+    parsed = _parse_cmocka(output)
+    parsed.suite = label
+    if parsed.passed == 0 and parsed.failed == 0:
+        parsed.failed = 1
+        parsed.failed_names.append("<no cmocka output>")
+    return parsed
+
+
+def test_hw_stm32f746_freertos(ove_dir, output_dir):
+    """Flash + run the STM32F746 FreeRTOS heap firmware on real hardware."""
+    elf = _build_renode_stm32f746(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-freertos",
+        binary="ove_test_renode_stm32f746_freertos",
+        label="hw-stm32f746-freertos",
+        extra_cmake=["-DOVE_HW=ON"])
+    return _run_hw_stm32f746(ove_dir, output_dir,
+                             label="hw-stm32f746-freertos", elf=elf)
+
+
+def test_hw_stm32f746_freertos_zeroheap(ove_dir, output_dir):
+    """Flash + run the STM32F746 FreeRTOS zero-heap firmware on hardware."""
+    elf = _build_renode_stm32f746(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-freertos-zeroheap",
+        binary="ove_test_renode_stm32f746_freertos_zeroheap",
+        label="hw-stm32f746-freertos-zeroheap",
+        extra_cmake=["-DOVE_HW=ON"])
+    return _run_hw_stm32f746(ove_dir, output_dir,
+                             label="hw-stm32f746-freertos-zeroheap", elf=elf)
+
+
+def test_hw_stm32f746_zephyr(ove_dir, output_dir):
+    """Flash + run the STM32F746 Zephyr heap firmware on real hardware."""
+    elf = _build_renode_stm32f746_zephyr(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-zephyr",
+        label="hw-stm32f746-zephyr",
+        extra_cmake=["-DOVE_HW=ON"])
+    return _run_hw_stm32f746(ove_dir, output_dir,
+                             label="hw-stm32f746-zephyr", elf=elf)
+
+
+def test_hw_stm32f746_zephyr_zeroheap(ove_dir, output_dir):
+    """Flash + run the STM32F746 Zephyr zero-heap firmware on hardware."""
+    elf = _build_renode_stm32f746_zephyr(ove_dir, output_dir,
+        src_subdir="renode-stm32f746-zephyr-zeroheap",
+        label="hw-stm32f746-zephyr-zeroheap",
+        extra_cmake=["-DOVE_HW=ON"])
+    return _run_hw_stm32f746(ove_dir, output_dir,
+                             label="hw-stm32f746-zephyr-zeroheap", elf=elf)
+
+
+def test_hw_stm32f746_nuttx(ove_dir, output_dir):
+    """Flash + run the STM32F746 NuttX heap firmware on real hardware."""
+    elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
+        app_subdir="renode-stm32f746-nuttx",
+        label="hw-stm32f746-nuttx")
+    return _run_hw_stm32f746(ove_dir, output_dir,
+                             label="hw-stm32f746-nuttx", elf=elf)
+
+
+def test_hw_stm32f746_nuttx_zeroheap(ove_dir, output_dir):
+    """Flash + run the STM32F746 NuttX zero-heap firmware on hardware."""
+    elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
+        app_subdir="renode-stm32f746-nuttx-zeroheap",
+        label="hw-stm32f746-nuttx-zeroheap")
+    return _run_hw_stm32f746(ove_dir, output_dir,
+                             label="hw-stm32f746-nuttx-zeroheap", elf=elf)
 
 
 def test_qemu_freertos_coverage(ove_dir, output_dir):
@@ -1601,6 +1822,14 @@ TEST_TARGETS = {
     "renode-stm32f746-zephyr-zeroheap": test_renode_stm32f746_zephyr_zeroheap,
     "renode-stm32f746-nuttx": test_renode_stm32f746_nuttx,
     "renode-stm32f746-nuttx-zeroheap": test_renode_stm32f746_nuttx_zeroheap,
+    # Hardware-in-the-loop targets — manual only.  Deliberately absent
+    # from any group list below so `ove test all` and CI never run them.
+    "hw-stm32f746-freertos": test_hw_stm32f746_freertos,
+    "hw-stm32f746-freertos-zeroheap": test_hw_stm32f746_freertos_zeroheap,
+    "hw-stm32f746-zephyr": test_hw_stm32f746_zephyr,
+    "hw-stm32f746-zephyr-zeroheap": test_hw_stm32f746_zephyr_zeroheap,
+    "hw-stm32f746-nuttx": test_hw_stm32f746_nuttx,
+    "hw-stm32f746-nuttx-zeroheap": test_hw_stm32f746_nuttx_zeroheap,
 }
 
 # Grouped test sets
@@ -1613,6 +1842,15 @@ RENODE_TESTS = ["renode-stm32f746-freertos",
                 "renode-stm32f746-zephyr-zeroheap",
                 "renode-stm32f746-nuttx",
                 "renode-stm32f746-nuttx-zeroheap"]
+# HW_TESTS is deliberately a separate group, NOT included in `all`.
+# Invoke via `ove test hw` (or by individual name) — the user must
+# have a board attached and OVE_HW_SERIAL_PORT set.
+HW_TESTS = ["hw-stm32f746-freertos",
+            "hw-stm32f746-freertos-zeroheap",
+            "hw-stm32f746-zephyr",
+            "hw-stm32f746-zephyr-zeroheap",
+            "hw-stm32f746-nuttx",
+            "hw-stm32f746-nuttx-zeroheap"]
 
 
 def _save_terminal():
@@ -1649,6 +1887,7 @@ def cmd_test(args):
     expanded = []
     for n in names:
         if n == "all":
+            # Intentionally excludes HW_TESTS — those need a board.
             expanded.extend(SIM_TESTS + QEMU_TESTS + RENODE_TESTS)
         elif n == "qemu":
             expanded.extend(QEMU_TESTS)
@@ -1656,6 +1895,8 @@ def cmd_test(args):
             expanded.extend(SIM_TESTS)
         elif n == "renode":
             expanded.extend(RENODE_TESTS)
+        elif n == "hw":
+            expanded.extend(HW_TESTS)
         else:
             expanded.append(n)
 

@@ -172,6 +172,12 @@ TEST_NAMES := stub cpp rust zig nuttx zephyr \
               renode-stm32f746-zephyr-zeroheap \
               renode-stm32f746-nuttx \
               renode-stm32f746-nuttx-zeroheap \
+              hw hw-stm32f746-freertos \
+              hw-stm32f746-freertos-zeroheap \
+              hw-stm32f746-zephyr \
+              hw-stm32f746-zephyr-zeroheap \
+              hw-stm32f746-nuttx \
+              hw-stm32f746-nuttx-zeroheap \
               rust-coverage zig-coverage nuttx-coverage zephyr-coverage \
               qemu-freertos-coverage qemu-nuttx-coverage qemu-zephyr-coverage
 .PHONY: $(addprefix test-,$(TEST_NAMES))
@@ -504,7 +510,11 @@ help:
 	@echo "  test-qemu-nuttx-zeroheap  - NuttX QEMU ARM tests (zero-heap)"
 	@echo "  test-qemu-zephyr        - Zephyr QEMU ARM tests"
 	@echo "  test-qemu-zephyr-zeroheap - Zephyr QEMU ARM tests (zero-heap)"
-	@echo "  test-all                - All tests (sim + QEMU)"
+	@echo "  test-renode             - All Renode STM32F746 targets (FreeRTOS / Zephyr / NuttX)"
+	@echo "  test-hw-stm32f746-<rtos>{,-zeroheap} - Manual HIL on real Discovery board."
+	@echo "                            Requires OVE_HW_SERIAL_PORT=/dev/ttyACMx and"
+	@echo "                            an installed openocd; never run by test-all/CI."
+	@echo "  test-all                - All tests (sim + QEMU + Renode; excludes HW)"
 	@echo "  asan                    - Build and run stub with AddressSanitizer + UBSan"
 	@echo "  coverage                - Combined HTML coverage (stub + cpp + rust; needs lcov)"
 	@echo "  coverage WITH_ZEPHYR=1  - Also include Zephyr native_sim (slow)"

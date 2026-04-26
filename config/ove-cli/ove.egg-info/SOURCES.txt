@@ -12,11 +12,13 @@ ove/doctor.py
 ove/download.py
 ove/kconfig.py
 ove/lint.py
+ove/lint_backend_struct.py
 ove/manifest.py
 ove/rtos_menuconfig.py
 ove/run.py
 ove/test.py
 ove/utils.py
+ove/vscode.py
 ove/workspace.py
 ove.egg-info/PKG-INFO
 ove.egg-info/SOURCES.txt

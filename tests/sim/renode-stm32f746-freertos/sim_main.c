@@ -62,7 +62,14 @@ static void test_runner_task(void *arg)
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 
+#ifdef OVE_HW
+	/* See zero-heap sibling for rationale — bkpt #0xab faults on bare
+	 * silicon without a debugger.  HW runner reads the summary line off
+	 * USART1 and terminates the run from the host side. */
+	for (;;) { }
+#else
 	semihosting_exit(failures ? 1 : 0);
+#endif
 }
 
 /* Static allocation callbacks — still required because we enable
@@ -94,7 +101,11 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 	(void)xTask;
 	fprintf(stderr, "\n!!! STACK OVERFLOW: %s !!!\n",
 		pcTaskName ? pcTaskName : "(null)");
+#ifdef OVE_HW
+	for (;;) { }
+#else
 	semihosting_exit(1);
+#endif
 }
 
 /* EXTI trampolines — see the zero-heap sibling sim_main.c for rationale. */

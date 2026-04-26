@@ -207,9 +207,21 @@ int test_renode_stm32_periph_run(void)
 	return 0;
 #else
 	const struct CMUnitTest tests[] = {
+#ifndef OVE_HW
+		/* On Renode the FT5336 model responds without a real GPIO
+		 * MSP setup; on HW the I2C3 pins (PH7/PH8) need configuring
+		 * before any transaction can land — defer enabling this on
+		 * silicon until we link the production board's
+		 * bus_msp_init.c into the HW build. */
 		cmocka_unit_test(test_renode_i2c_ft5336_probe),
+#endif
 		cmocka_unit_test(test_renode_uart_tx_completes),
+#ifndef OVE_HW
+		/* SPILoopback is a Renode-only peripheral.  On the real
+		 * Discovery, SPI1 has no on-board MISO→MOSI loop, so the
+		 * read-back assertion can't pass. */
 		cmocka_unit_test(test_renode_spi_loopback),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 #endif

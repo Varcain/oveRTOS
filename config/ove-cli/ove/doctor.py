@@ -91,7 +91,12 @@ def _check_python_version():
 def _check_python_pkgs():
     results = []
     for mod, required in [("jinja2", True), ("yaml", True),
-                          ("jsonschema", False)]:
+                          ("jsonschema", False),
+                          # pyserial — only needed by the manual HW test
+                          # runner.  Surface a warning so devs know it's
+                          # missing without failing the doctor check on
+                          # machines that don't intend to do HIL work.
+                          ("serial", False)]:
         try:
             __import__(mod)
             results.append({"name": f"py:{mod}", "status": _OK})
@@ -168,6 +173,11 @@ def _checks():
                              required=False))
     out.append(_check_binary("qemu-system-xtensa",
                              ["qemu-system-xtensa", "--version"],
+                             required=False))
+    # OpenOCD — only the manual HW test runner needs it (and the
+    # `make flash` board script).  Optional on machines that don't
+    # touch hardware.
+    out.append(_check_binary("openocd", ["openocd", "--version"],
                              required=False))
 
     # ── Lint + format tools (optional; see `make lint`) ──────────────

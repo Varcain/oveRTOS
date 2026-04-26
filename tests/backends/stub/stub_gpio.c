@@ -13,7 +13,11 @@
 #include "ove/hal/hal_gpio.h"
 #include <string.h>
 
-#define BSP_MAX_PORTS 8
+/* 9 ports = STM32F7's GPIOA..GPIOI.  test_led / test_gpio reference
+ * OVE_LED0 (port 8, pin 1 = PI1, the LD1 on STM32F746G-Discovery) so
+ * the same board_desc works on stub/QEMU AND on real silicon — see
+ * tests/board_desc.h for the rationale. */
+#define BSP_MAX_PORTS 9
 #define BSP_MAX_PINS  16
 
 static int gpio_state[BSP_MAX_PORTS][BSP_MAX_PINS];
