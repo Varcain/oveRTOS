@@ -101,5 +101,7 @@ target_include_directories(app PRIVATE
     ${cmocka_SOURCE_DIR}/include
 )
 
-target_compile_definitions(app PRIVATE OVE_QEMU_ARM CONFIG_OVE_ZERO_HEAP=1 HAVE_UINTPTR_T)
+target_compile_definitions(app PRIVATE OVE_QEMU_ARM CONFIG_OVE_ZERO_HEAP=1 HAVE_UINTPTR_T
+    # OVE_HW propagated to main.c — see heap sibling.
+    $<$<BOOL:${OVE_HW}>:OVE_HW>)
 zephyr_link_libraries(cmocka_lib m)

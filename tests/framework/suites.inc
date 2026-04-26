@@ -34,6 +34,10 @@
 #define _OVE_SUITES_INC_DEFAULTED_STUB
 #endif
 
+/* hw_stm32f746 must be first — its watchdog test resets the MCU on
+ * boot #1.  See tests/suites/test_hw_stm32f746.c for the reset-and-
+ * resume protocol.  No-op skip on non-HW targets. */
+OVE_SUITE(hw_stm32f746,    "HW STM32F746 (real silicon)")
 OVE_SUITE(storage_bounds,  "Storage Bounds")
 OVE_SUITE(renode_stm32_obs,"Renode STM32 Observability")
 OVE_SUITE(renode_stm32_periph, "Renode STM32 Peripherals (I2C/UART/SPI)")

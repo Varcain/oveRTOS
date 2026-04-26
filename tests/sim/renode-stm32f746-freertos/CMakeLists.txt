@@ -12,9 +12,17 @@
 
 cmake_minimum_required(VERSION 3.14)
 
-set(CMAKE_TOOLCHAIN_FILE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/qemu-mps2-an500/cmake/arm-none-eabi.cmake
-    CACHE FILEPATH "ARM toolchain file")
+# OVE_HW: see zero-heap sibling for rationale.  Switches both the
+# toolchain shim (rdimon → nosys) and the linked stdio backend.
+if(OVE_HW)
+    set(CMAKE_TOOLCHAIN_FILE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/stm32f746g-discovery/freertos/cmake/arm-none-eabi.cmake
+        CACHE FILEPATH "ARM toolchain file")
+else()
+    set(CMAKE_TOOLCHAIN_FILE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../boards/qemu-mps2-an500/cmake/arm-none-eabi.cmake
+        CACHE FILEPATH "ARM toolchain file")
+endif()
 
 project(ove_test_renode_stm32f746_freertos C ASM)
 
@@ -192,9 +200,16 @@ target_compile_options(ove_lwip PRIVATE -w)
 set_target_properties(ove_lwip PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 list(REMOVE_ITEM FREERTOS_BACKEND_SOURCES ${FREERTOS_BACKEND}/lwip_sys_arch.c)
 
+# stdio backend selection — see zero-heap sibling.
+if(OVE_HW)
+    set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/usart1_io.c)
+else()
+    set(STDIO_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/semihosting_io.c)
+endif()
+
 add_executable(ove_test_renode_stm32f746_freertos
     ${CMAKE_CURRENT_SOURCE_DIR}/sim_main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/semihosting_io.c
+    ${STDIO_SOURCE}
     ${STARTUP_SOURCES}
     ${HAL_SOURCES}
     ${FREERTOS_KERNEL_SOURCES}
@@ -207,6 +222,9 @@ add_executable(ove_test_renode_stm32f746_freertos
 
 target_compile_definitions(ove_test_renode_stm32f746_freertos PRIVATE
     OVE_RENODE_STM32F746
+    # OVE_HW propagated to C code so sim_main.c skips the post-summary
+    # semihosting_exit() trap on real silicon.
+    $<$<BOOL:${OVE_HW}>:OVE_HW>
     OVE_QEMU_ARM
     STM32F746xx
     USE_HAL_DRIVER

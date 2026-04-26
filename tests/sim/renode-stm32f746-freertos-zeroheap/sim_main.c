@@ -78,7 +78,14 @@ static void test_runner_task(void *arg)
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 
+#ifdef OVE_HW
+	/* Real silicon: the HW runner detects the summary line over USART1
+	 * and ends the run.  semihosting_exit's bkpt #0xab would raise a
+	 * HardFault here without a debugger attached, so just halt. */
+	for (;;) { }
+#else
 	semihosting_exit(failures ? 1 : 0);
+#endif
 }
 
 /* Static allocation callbacks required by configSUPPORT_STATIC_ALLOCATION */
@@ -109,7 +116,11 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 	(void)xTask;
 	fprintf(stderr, "\n!!! STACK OVERFLOW: %s !!!\n",
 		pcTaskName ? pcTaskName : "(null)");
+#ifdef OVE_HW
+	for (;;) { }
+#else
 	semihosting_exit(1);
+#endif
 }
 
 /* EXTI trampolines — the weak `Default_Handler` from the STM32 startup

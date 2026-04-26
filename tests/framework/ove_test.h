@@ -407,5 +407,6 @@ int test_storage_bounds_run(void);
 int test_renode_stm32_obs_run(void);
 int test_renode_stm32_periph_run(void);
 int test_renode_stm32_net_run(void);
+int test_hw_stm32f746_run(void);
 
 #endif /* OVE_TEST_H */

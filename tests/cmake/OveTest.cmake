@@ -21,6 +21,7 @@
 # Suites runnable on every backend (including bare-metal QEMU).
 set(OVE_TEST_COMMON_SUITES
     test_storage_bounds.c
+    test_hw_stm32f746.c
     test_renode_stm32_obs.c
     test_renode_stm32_periph.c
     test_renode_stm32_net.c

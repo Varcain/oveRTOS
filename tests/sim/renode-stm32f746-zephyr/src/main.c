@@ -28,5 +28,12 @@ int main(void)
 	 * explicitly here. */
 	gcov_coverage_semihost();
 #endif
-	semihosting_exit(failures ? 1 : 0);
+	/* See zero-heap sibling for rationale — same halt path on both
+	 * Renode and HW avoids the post-summary fault loop that
+	 * `semihosting_exit` triggers when Renode 1.16 doesn't catch
+	 * SYS_EXIT_EXTENDED.  HW runner exits as soon as it sees the
+	 * summary line; Renode's RunFor timer expires cleanly. */
+	(void)failures;
+	for (;;) {
+	}
 }

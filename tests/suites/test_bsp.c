@@ -30,10 +30,16 @@ static void test_bsp_board_init(void **state)
     assert_int_equal(rc, OVE_OK);
 }
 
+/* See test_gpio.c::test_gpio_get for the OUTPUT_PP configure rationale. */
 static void test_bsp_led_set(void **state)
 {
     (void)state;
     ove_bsp_board_init();
+    /* No `ove_bsp_gpio_configure` shim exists in include/ove/bsp.h —
+     * use ove_gpio_configure directly to put PI1 (LED0) in OUTPUT_PP
+     * so the read-after-write checks below pass on real silicon. */
+    ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN,
+                       OVE_GPIO_MODE_OUTPUT_PP);
 
     ove_bsp_led_set(0, 1);
     assert_int_equal(ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN), 1);
@@ -45,6 +51,11 @@ static void test_bsp_led_toggle(void **state)
 {
     (void)state;
     ove_bsp_board_init();
+    /* No `ove_bsp_gpio_configure` shim exists in include/ove/bsp.h —
+     * use ove_gpio_configure directly to put PI1 (LED0) in OUTPUT_PP
+     * so the read-after-write checks below pass on real silicon. */
+    ove_gpio_configure(OVE_LED0_PORT, OVE_LED0_PIN,
+                       OVE_GPIO_MODE_OUTPUT_PP);
 
     ove_bsp_led_set(0, 0);
     ove_bsp_led_toggle(0);
@@ -57,7 +68,7 @@ static void test_bsp_gpio_set(void **state)
 {
     (void)state;
     ove_bsp_board_init();
-    int rc = ove_bsp_gpio_set(0, 0, 1);
+    int rc = ove_bsp_gpio_set(OVE_LED0_PORT, OVE_LED0_PIN, 1);
     assert_int_equal(rc, OVE_OK);
 }
 
@@ -66,13 +77,13 @@ static void test_bsp_gpio_get(void **state)
     (void)state;
     ove_bsp_board_init();
 
-    ove_bsp_gpio_set(0, 0, 1);
+    ove_bsp_gpio_set(OVE_LED0_PORT, OVE_LED0_PIN, 1);
 
-    int val = ove_bsp_gpio_get(0, 0);
+    int val = ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN);
     assert_int_equal(val, 1);
 
-    ove_bsp_gpio_set(0, 0, 0);
-    val = ove_bsp_gpio_get(0, 0);
+    ove_bsp_gpio_set(OVE_LED0_PORT, OVE_LED0_PIN, 0);
+    val = ove_bsp_gpio_get(OVE_LED0_PORT, OVE_LED0_PIN);
     assert_int_equal(val, 0);
 }
 
@@ -81,8 +92,9 @@ static void test_bsp_gpio_irq_register(void **state)
     (void)state;
     ove_bsp_board_init();
 
-    int rc = ove_bsp_gpio_irq_register(0, 0, OVE_GPIO_IRQ_RISING,
-                                           gpio_irq_handler, NULL);
+    int rc = ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN,
+                                       OVE_GPIO_IRQ_RISING,
+                                       gpio_irq_handler, NULL);
     assert_int_equal(rc, OVE_OK);
 }
 
@@ -90,13 +102,14 @@ static void test_bsp_gpio_irq_enable_disable(void **state)
 {
     (void)state;
     ove_bsp_board_init();
-    ove_bsp_gpio_irq_register(0, 0, OVE_GPIO_IRQ_RISING,
-                                  gpio_irq_handler, NULL);
+    ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN,
+                              OVE_GPIO_IRQ_RISING,
+                              gpio_irq_handler, NULL);
 
-    int rc = ove_bsp_gpio_irq_enable(0, 0);
+    int rc = ove_bsp_gpio_irq_enable(OVE_LED0_PORT, OVE_LED0_PIN);
     assert_int_equal(rc, OVE_OK);
 
-    rc = ove_bsp_gpio_irq_disable(0, 0);
+    rc = ove_bsp_gpio_irq_disable(OVE_LED0_PORT, OVE_LED0_PIN);
     assert_int_equal(rc, OVE_OK);
 }
 

@@ -66,6 +66,7 @@ CSRCS += $(STUB_DIR)/stub_fs.c
 
 # Test suites (25)
 CSRCS += $(SUITE_DIR)/test_storage_bounds.c
+CSRCS += $(SUITE_DIR)/test_hw_stm32f746.c
 CSRCS += $(SUITE_DIR)/test_renode_stm32_obs.c
 CSRCS += $(SUITE_DIR)/test_renode_stm32_periph.c
 CSRCS += $(SUITE_DIR)/test_renode_stm32_net.c
