@@ -69,6 +69,27 @@ CONFIG_HAVE_DOUBLE=y
 CONFIG_AUDIO=y
 {% endif %}
 
+{% if config.get("CONFIG_OVE_PROFILER") == True %}
+# On-target unwinder for the oveRTOS sampling profiler
+# (backends/nuttx/nuttx_profiler.c invokes up_backtrace(tcb,…)).
+#
+# Costs we accept here that the kernel build inflicts on EVERY object:
+#   - SCHED_BACKTRACE → arch/arm/Kconfig:1517-1549 enables an UNWINDER_*
+#     choice with default UNWINDER_ARM, which `select FRAME_POINTER`
+#     and triggers gcc.cmake:178-180 to add
+#         -funwind-tables -fasynchronous-unwind-tables
+#     for the whole kernel + every userspace lib (≈ 46 KB on STM32F746
+#     in .ARM.exidx + .ARM.extab on a hiroic-sized image).
+#   - FRAME_POINTER → gcc.cmake:122-126 then adds
+#         -fno-omit-frame-pointer -fno-optimize-sibling-calls
+#     globally, blocking tail-call optimization and burning one register
+#     across every function (~5 % code-size penalty).
+# These costs are worth it for sim profiling but pure waste on embedded
+# targets where OVE_PROFILER cannot be set (it depends on OVE_SIM —
+# see config/Config.in.debug:83-86), so we only emit it for sim.
+CONFIG_SCHED_BACKTRACE=y
+{% endif %}
+
 {% if config.get("CONFIG_OVE_NET") == True %}
 # Networking (POSIX sockets)
 CONFIG_NET=y

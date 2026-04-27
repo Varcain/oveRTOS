@@ -125,13 +125,18 @@
  *   FONT USAGE
  *===================*/
 
+/* Only the sizes referenced by oveRTOS framework apps (apps/c/example,
+ * apps/c/lvgl_benchmark) and external apps (overtos_apps/hiroic): 14, 24, 32.
+ * The linker dead-strips unreferenced fonts already, but keeping the enable
+ * list honest avoids confusion when reading the config or running stripped-
+ * down builds where -Wl,--gc-sections is disabled. */
 #define LV_FONT_MONTSERRAT_8  0
 #define LV_FONT_MONTSERRAT_10 0
 #define LV_FONT_MONTSERRAT_12 0
 #define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_16 0
 #define LV_FONT_MONTSERRAT_18 0
-#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_20 0
 #define LV_FONT_MONTSERRAT_22 0
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_MONTSERRAT_26 0
@@ -145,7 +150,7 @@
 #define LV_FONT_MONTSERRAT_42 0
 #define LV_FONT_MONTSERRAT_44 0
 #define LV_FONT_MONTSERRAT_46 0
-#define LV_FONT_MONTSERRAT_48 1
+#define LV_FONT_MONTSERRAT_48 0
 
 #define LV_FONT_MONTSERRAT_28_COMPRESSED 0
 #define LV_FONT_DEJAVU_16_PERSIAN_HEBREW 0
