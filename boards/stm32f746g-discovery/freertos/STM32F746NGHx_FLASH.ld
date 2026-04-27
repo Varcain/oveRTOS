@@ -44,11 +44,14 @@ ENTRY(Reset_Handler)
 _heap_start = 0x2004DE00;
 _estack = _heap_start + 0x2000;
 /* Picolibc's picosbrk.c expects __heap_start / __heap_end (double-
- * underscore).  Alias them to the existing _heap_start / _estack so
- * both newlib-style and picolibc sbrk lookups resolve to the same
- * region without changing the layout. */
-__heap_start = _heap_start;
-__heap_end = _estack;
+ * underscore).  PROVIDE'd so they only land in the symbol table when
+ * libc references them — in zero-heap mode picolibc's malloc is
+ * dead-stripped, no consumer, and the audit (OveZeroHeapAudit STRICT)
+ * sees no heap-region symbols. */
+PROVIDE(__heap_start = _heap_start);
+PROVIDE(__heap_end = _estack);
+PROVIDE(__HeapBase = _heap_start);
+PROVIDE(__HeapLimit = _estack);
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x2000;      /* required amount of heap  */
 _Min_Stack_Size = 0x200; /* required amount of stack */

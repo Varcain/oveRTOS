@@ -398,10 +398,13 @@ set_source_files_properties(${STM32_CMSIS_DIR}/Source/Templates/system_stm32f7xx
 
 # Zero-heap link-time wrap + audit.  --wrap routes libc malloc through
 # backends/common/ove_heap_lock.c's __wrap_* trampolines so the trap
-# test exercises the real wrap chain (not just direct calls).  The
-# audit forbids FreeRTOS heap_*.c globals; newlib internals are
-# tolerated since cmocka pulls them in.
+# test exercises the real wrap chain (not just direct calls).  STRICT
+# adds __HeapBase/__HeapLimit (linker script heap region) to the
+# forbidden list.  Picolibc-nano-malloc — unlike newlib — doesn't
+# instantiate a malloc-table data symbol that would survive the audit
+# (was __malloc_av_ in newlib; picolibc's nano-malloc only defines
+# __malloc_free_list which dead-strips when malloc is unreachable).
 include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
 ove_apply_zero_heap_wrap(ove_test_renode_stm32f746_freertos_zeroheap)
 ove_zero_heap_assert_no_kernel_alloc(ove_test_renode_stm32f746_freertos_zeroheap
-    RTOS FREERTOS)
+    RTOS FREERTOS STRICT)

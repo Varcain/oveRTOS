@@ -74,10 +74,12 @@ set(FREERTOS_SRC ${freertos_kernel_SOURCE_DIR})
 set(FREERTOS_PORT ${FREERTOS_SRC}/portable/GCC/ARM_CM7/r0p1)
 
 # --- CMSIS startup and system ---
+# syscalls.c (legacy newlib _sbrk against __HeapLimit) removed with the
+# picolibc migration — picolibc provides its own picosbrk/_sbrk against
+# linker-script __heap_start/__heap_end.
 set(STARTUP_SOURCES
     ${BOARD_DIR}/freertos/startup_CMSDK_CM7.s
     ${BOARD_DIR}/freertos/system_CMSDK_CM7.c
-    ${BOARD_DIR}/freertos/syscalls.c
 )
 
 # --- FreeRTOS kernel sources (heap stubs instead of heap_4.c) ---
@@ -187,4 +189,4 @@ set_source_files_properties(${FREERTOS_KERNEL_SOURCES} PROPERTIES
 include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
 ove_apply_zero_heap_wrap(ove_test_freertos_qemu_zeroheap)
 ove_zero_heap_assert_no_kernel_alloc(ove_test_freertos_qemu_zeroheap
-    RTOS FREERTOS)
+    RTOS FREERTOS STRICT)
