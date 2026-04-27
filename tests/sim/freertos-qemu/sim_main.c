@@ -17,6 +17,18 @@
 
 #ifdef OVE_COVERAGE
 extern void __gcov_dump(void);
+
+/*
+ * arm-gnu-toolchain 15.x ships libgcov.a compiled against newlib, where
+ * <stdio.h>'s `stderr` macro expands to `_impure_ptr->_stderr`.  We link
+ * picolibc instead (see cmake/toolchains/arm-cortex-m7.cmake), which has
+ * no `_impure_ptr`.  libgcov only dereferences this on the coverage-IO
+ * error paths (gcov_error_exit / .gcda fopen failure); the success path
+ * over semihosting never touches it.  A NULL stub is enough to satisfy
+ * the link — a hit on the error branch would simply HardFault, which is
+ * acceptable for a test build.
+ */
+void *_impure_ptr;
 #endif
 
 extern void xPortSysTickHandler(void);
