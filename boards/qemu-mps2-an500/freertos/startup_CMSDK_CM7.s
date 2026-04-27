@@ -29,14 +29,12 @@ __StackLimit:
 __StackTop:
     .size   __StackLimit, . - __StackLimit
 
-    .section .heap
-    .align  3
-    .globl  __HeapBase
-    .globl  __HeapLimit
-__HeapBase:
-    .space  0x40000         /* 256 KB heap */
-__HeapLimit:
-    .size   __HeapBase, . - __HeapBase
+    /* No `.section .heap` here.  Picolibc provides its own sbrk
+     * (libc/picolib/picosbrk.c) that uses the linker script's
+     * __heap_start / __heap_end symbols (PROVIDE'd in mps2_an500.ld).
+     * The CMSIS template shipped a 256 KB .heap reservation here
+     * for newlib-libgloss-style _sbrk in syscalls.c — that path is
+     * gone with the picolibc migration, so the reservation is too. */
 
 /* ======================================================================== */
 /* Vector Table                                                              */

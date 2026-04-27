@@ -82,18 +82,28 @@ SECTIONS
 
     .heap :
     {
-        __HeapBase = .;
-        __end__ = .;
-        end = .;
+        /* Heap region markers.  All PROVIDE'd so they only land in the
+         * symbol table when libc actually references them — in zero-heap
+         * mode picolibc's malloc is dead-stripped, no consumer exists,
+         * and the audit (cmake/OveZeroHeapAudit.cmake STRICT) sees no
+         * heap-region symbols.  Direct assignment instantiated the
+         * symbols unconditionally, which made STRICT trip on otherwise-
+         * unused linker markers.
+         *
+         * __heap_start / __heap_end are picolibc's picosbrk.c API.
+         * __HeapBase / __HeapLimit are kept for backwards-compatibility
+         * with code (and any leftover newlib that might be linked in a
+         * non-default config) that still expects the old names.
+         * end / __end__ are the historic "sbrk grows from here" symbols
+         * and stay PROVIDE-style as before. */
+        PROVIDE(__HeapBase = .);
+        PROVIDE(__end__ = .);
         PROVIDE(end = .);
-        /* Picolibc's picosbrk.c expects __heap_start (and __heap_end at
-         * the section end below).  Aliased to __HeapBase so the same
-         * region serves both newlib-style and picolibc sbrk lookups. */
-        __heap_start = .;
+        PROVIDE(__heap_start = .);
         KEEP(*(.heap*))
         . = . + 0x180000;  /* 1.5 MB heap for semihosting malloc (LVGL needs ~1 MB) */
-        __HeapLimit = .;
-        __heap_end = .;
+        PROVIDE(__HeapLimit = .);
+        PROVIDE(__heap_end = .);
     } > RAM
 
     /* Stack at top of RAM. Size comes from startup .s (.space 0x2000). */

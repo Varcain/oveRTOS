@@ -125,7 +125,19 @@ function(ove_zero_heap_assert_no_kernel_alloc target)
     elseif(_OVE_ZH_RTOS STREQUAL "FREERTOS")
         set(_forbidden "xHeap|ucHeap|pucAlignedHeap")
         if(_OVE_ZH_STRICT)
-            set(_forbidden "${_forbidden}|__malloc_av_|__HeapBase|__HeapLimit")
+            # __HeapBase/__HeapLimit are the linker-script heap region
+            # markers — their presence means a heap was actually
+            # reserved at link time (RAM waste).  Picolibc's small
+            # nano-malloc state symbols (__malloc_free_list /
+            # __malloc_sbrk_start / __malloc_sbrk_top, ~12 B total) are
+            # NOT forbidden: they get link-pulled by the heap-lock
+            # wrap chain (__wrap_free calls __real_free → picolibc
+            # nano-free.c.o → nano-malloc.c.o), and the heap-lock test
+            # in test_public_create_heap_lock_traps relies on the
+            # underlying allocator being functional pre-lock.  Newlib's
+            # __malloc_av_ — the original STRICT target before the
+            # picolibc migration — never appears in picolibc-only builds.
+            set(_forbidden "${_forbidden}|__HeapBase|__HeapLimit")
         endif()
     elseif(_OVE_ZH_RTOS STREQUAL "NUTTX")
         # g_mmheap is the irreducible NuttX kernel-mm region — accepted.
