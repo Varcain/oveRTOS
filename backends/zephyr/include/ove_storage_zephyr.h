@@ -159,6 +159,13 @@ typedef struct ove_dir  ove_dir_storage_t;
 #define OVE_THREAD_STACK_DEFINE_(name, size) \
 	K_THREAD_STACK_DEFINE(name, size)
 
+/* K_THREAD_STACK_DEFINE has external linkage; the comment in
+ * thread_stack.h explicitly sanctions a leading 'static' to make it
+ * file-local.  Used by OVE_TEST_STACK so per-TU stacks with reused names
+ * (s_th_stack, s_wq_stack, …) don't collide at link time. */
+#define OVE_THREAD_STACK_DEFINE_STATIC_(name, size) \
+	static K_THREAD_STACK_DEFINE(name, size)
+
 /* On Zephyr, block-scope stacks can't use K_THREAD_STACK_DEFINE (needs
  * file scope for __stackmem section).  Set to NULL so ove_thread_init()
  * allocates a proper stack via k_thread_stack_alloc(). */

@@ -22,9 +22,15 @@
 /* ── Static storage macros ────────────────────────────────────────────
  * Always declare the storage variables so helpers compile in both modes.
  * In heap mode the helpers simply ignore the storage parameter.
+ *
+ * OVE_TEST_STACK forwards to OVE_THREAD_STACK_DEFINE_ so backends that
+ * need special alignment/sectioning (Zephyr's K_THREAD_STACK_DEFINE for
+ * MPU + guard region) get it. A raw uint8_t[] hid the zero-heap workqueue
+ * stack regression on Zephyr; routing through the public helper keeps the
+ * test framework honest about what production code requires.
  */
 #define OVE_TEST_STORAGE(type, name) static type name __attribute__((unused))
-#define OVE_TEST_STACK(name, size)   static uint8_t name[size] __attribute__((unused, aligned(8)))
+#define OVE_TEST_STACK(name, size)   OVE_THREAD_STACK_DEFINE_STATIC_(name, size)
 
 /*
  * Portable sleep for test code.
@@ -381,6 +387,7 @@ int test_time_run(void);
 int test_eventgroup_run(void);
 int test_workqueue_run(void);
 int test_stream_run(void);
+int test_public_create_run(void);
 int test_console_run(void);
 int test_watchdog_run(void);
 int test_nvs_run(void);
