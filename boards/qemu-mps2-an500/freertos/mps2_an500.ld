@@ -86,9 +86,14 @@ SECTIONS
         __end__ = .;
         end = .;
         PROVIDE(end = .);
+        /* Picolibc's picosbrk.c expects __heap_start (and __heap_end at
+         * the section end below).  Aliased to __HeapBase so the same
+         * region serves both newlib-style and picolibc sbrk lookups. */
+        __heap_start = .;
         KEEP(*(.heap*))
         . = . + 0x180000;  /* 1.5 MB heap for semihosting malloc (LVGL needs ~1 MB) */
         __HeapLimit = .;
+        __heap_end = .;
     } > RAM
 
     /* Stack at top of RAM. Size comes from startup .s (.space 0x2000). */

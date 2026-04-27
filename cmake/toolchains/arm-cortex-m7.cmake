@@ -46,11 +46,56 @@ set(CMAKE_C_FLAGS_INIT "${CPU_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${CPU_FLAGS}")
 set(CMAKE_ASM_FLAGS_INIT "${CPU_FLAGS}")
 
-# Linker spec: semihosting (QEMU) or nosys (real hardware).
+# Picolibc include dir for compile flags so #include <stdio.h> etc. resolve
+# to picolibc's headers (not newlib's, which would drag in _impure_ptr /
+# _ctype_ references at object level).  We add `-isystem` rather than
+# `--specs=picolibc.specs` here because picolibc.specs uses
+# `%rename link picolibc_link` — passing it twice (compile + link) trips
+# "already defined" in gcc spec parsing.  `-isystem` only adjusts header
+# search; libc/crt0 selection happens at link via --specs= below.
+
+# Libc: picolibc, built in-tree against this toolchain.  The arm-gnu-toolchain
+# 15.x distribution ships only newlib (nano.specs, rdimon.specs, nosys.specs);
+# we vendor picolibc (manifest.yaml > libraries.picolibc) and build it once
+# via meson into output/picolibc-install/<tag>-<hash>/, which produces the
+# picolibc.specs we link against here.  The build runs at configure time
+# inside this toolchain file so subsequent CMake commands can reference the
+# generated absolute path.  See cmake/PicolibcBuild.cmake.
+#
+# Why we stop using newlib's specs files:
+#   --specs=rdimon.specs   pulled newlib + libgloss (rdimon semihost stubs);
+#                          replaced by `--oslib=semihost --crt0=hosted` under
+#                          picolibc, which routes _write/_exit through the
+#                          same ARM semihosting calls without libgloss.
+#   --specs=nosys.specs    pulled newlib + libgloss-nosys (errno-returning
+#                          stubs); replaced by plain picolibc.specs — board
+#                          provides its own _write/_sbrk in syscalls.c just
+#                          like before.
+#
+# Compute OVE_DIR from the toolchain file path so this works before
+# project() runs.  Toolchain file lives at:
+#     <OVE_DIR>/cmake/toolchains/arm-cortex-m7.cmake
+get_filename_component(_ove_dir "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(OVE_DIR "${_ove_dir}" CACHE INTERNAL "oveRTOS repo root")
+
+include("${_ove_dir}/cmake/PicolibcBuild.cmake")
+
+set(PICOLIBC_TAG "1.8.10")
+set(PICOLIBC_TOOLCHAIN_PREFIX "${TOOLCHAIN_PREFIX}")
+set(PICOLIBC_CPU_FLAGS "${CPU_FLAGS}")
+ove_build_picolibc()
+
+set(CMAKE_C_FLAGS_INIT
+    "${CMAKE_C_FLAGS_INIT} -isystem ${OVE_PICOLIBC_PREFIX}/include")
+set(CMAKE_CXX_FLAGS_INIT
+    "${CMAKE_CXX_FLAGS_INIT} -isystem ${OVE_PICOLIBC_PREFIX}/include")
+
 if(OVE_ARM_SEMIHOSTING)
-    set(CMAKE_EXE_LINKER_FLAGS_INIT "${CPU_FLAGS} --specs=rdimon.specs")
+    set(CMAKE_EXE_LINKER_FLAGS_INIT
+        "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS} --oslib=semihost --crt0=hosted")
 else()
-    set(CMAKE_EXE_LINKER_FLAGS_INIT "${CPU_FLAGS} -specs=nosys.specs")
+    set(CMAKE_EXE_LINKER_FLAGS_INIT
+        "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS}")
 endif()
 
 # Search paths

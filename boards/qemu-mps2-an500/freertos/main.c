@@ -25,12 +25,15 @@
 #include <stdio.h>
 
 extern void xPortSysTickHandler(void);
-extern void initialise_monitor_handles(void);
 extern int ove_sim_board_init(void);
 
 int main(void)
 {
-	initialise_monitor_handles();
+	/*
+	 * Picolibc + --oslib=semihost initialises stdio (FILE *stdout, stderr)
+	 * implicitly during crt0 — no equivalent of newlib's libgloss
+	 * initialise_monitor_handles() is needed.  See picolibc/semihost.
+	 */
 	ove_sim_board_init();
 	ove_app_run();
 	return 0;

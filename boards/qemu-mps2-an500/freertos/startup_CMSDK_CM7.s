@@ -140,7 +140,9 @@ Reset_Handler:
 
 .Lcall_main:
     bl      SystemInit
-    bl      initialise_monitor_handles  /* rdimon semihosting stdio */
+    /* Picolibc + --oslib=semihost --crt0=hosted handles semihosting stdio
+     * setup implicitly via _start in libpicolibc.a; no equivalent of
+     * newlib/libgloss's initialise_monitor_handles is needed. */
     bl      __libc_init_array   /* C++ static constructors */
     bl      main
     b       .
