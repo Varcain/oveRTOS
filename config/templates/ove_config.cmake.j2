@@ -108,6 +108,18 @@ set(OVE_INFER_ARENA_SIZE {{ config.get('CONFIG_OVE_INFER_ARENA_SIZE', 65536) }})
 # Backend sources (ove_app.c + shared modules + only enabled backend modules)
 set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/src/ove_app.c
+{# Heap-lock common impl: included only on RTOSes where we actually
+   apply --wrap (FreeRTOS, NuttX).  Zephyr+zeroheap has zero kernel
+   heap by design (audited at link time); pulling the wrap chain in
+   triggers a picolibc-vs-Zephyr-libc multiple-malloc-definition
+   error since both archives ship `malloc` and our weak __real_malloc
+   forces the linker to materialise both.  Tests that need the wrap
+   on Zephyr list it explicitly in their CMakeLists. #}
+{% if config.get("CONFIG_OVE_ZERO_HEAP") == True and
+      (config.get("CONFIG_OVE_RTOS_FREERTOS") == True or
+       config.get("CONFIG_OVE_RTOS_NUTTX") == True) %}
+    ${OVE_DIR}/backends/common/ove_heap_lock.c
+{% endif %}
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/src/ove_board.c
 {% endif %}
@@ -130,6 +142,9 @@ set(OVE_BACKEND_SOURCES
 {% endfor %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
     ${OVE_DIR}/backends/freertos/freertos_thread.c
+{% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
+    ${OVE_DIR}/backends/freertos/freertos_heap_lock.c
+{% endif %}
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "SHELL", "NET", "PM"] %}
@@ -161,6 +176,9 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_thread.c
+{% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
+    ${OVE_DIR}/backends/nuttx/nuttx_heap_lock.c
+{% endif %}
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",
                "WATCHDOG", "NVS", "SHELL", "NET", "PM",

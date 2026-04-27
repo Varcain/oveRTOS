@@ -337,6 +337,29 @@ macro(ove_nuttx_register_app)
         target_sources(${_OVE_NX_TARGET} PRIVATE "${_GLIBCXX_COMPAT}")
     endif()
 
+    # Zero-heap heap-lock: wrap the libc/kmm allocator surface so any
+    # post-init mm activity traps via DEBUGASSERT.  See
+    # backends/nuttx/nuttx_heap_lock.c.
+    #
+    # Apply to the kernel `nuttx` target (the final exe) — applying to
+    # the apps_${name} archive doesn't propagate to the final link in
+    # NuttX flat-build.  target_link_options on a target outside this
+    # CMake scope works as long as the target exists by the time the
+    # link command is generated; nuttx_add_application above guarantees
+    # that.
+    if(OVE_ZERO_HEAP AND TARGET nuttx)
+        include(${OVE_DIR}/cmake/OveZeroHeapAudit.cmake)
+        # libc malloc family + NuttX kernel-mm allocator surface.
+        ove_apply_zero_heap_wrap(nuttx
+            EXTRA kmm_malloc kmm_zalloc kmm_calloc
+                  kmm_realloc kmm_memalign kmm_free)
+        # Forbid CONFIG_MM_KERNEL_HEAP split-mode pool (g_kmmheap).
+        # g_mmheap is the irreducible NuttX kernel-mm region — accepted.
+        ove_zero_heap_assert_no_kernel_alloc(nuttx
+            RTOS NUTTX
+            ELF_PATH ${CMAKE_BINARY_DIR}/nuttx)
+    endif()
+
     # Link LVGL if built
     if(TARGET ove_lvgl)
         target_link_libraries(${_OVE_NX_TARGET} PRIVATE ove_lvgl)

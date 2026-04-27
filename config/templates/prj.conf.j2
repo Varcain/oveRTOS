@@ -6,14 +6,17 @@ CONFIG_I2S=y
 {% endif %}
 
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
-# Zero-heap: oveRTOS objects use static storage but Zephyr still needs
-# dynamic thread support for k_thread_stack_alloc (MPU-aligned stacks
-# created at runtime by ove_thread_create()).
-CONFIG_DYNAMIC_THREAD=y
-CONFIG_DYNAMIC_THREAD_ALLOC=y
+# Fully static: no kernel heap, no dynamic thread pool, no libc heap.
+# Block-scope ove_thread_create / ove_workqueue_create now emit
+# K_THREAD_STACK_DEFINE-equivalent statics directly (see
+# backends/zephyr/include/ove_storage_zephyr.h:OVE_THREAD_STACK_BLOCK_STATIC_),
+# so DYNAMIC_THREAD / k_thread_stack_alloc are no longer required.
+# Picolibc's printf is malloc-free, so the libc heap goes to zero too.
+CONFIG_HEAP_MEM_POOL_SIZE=0
+CONFIG_PICOLIBC=y
+CONFIG_PICOLIBC_USE_MODULE=y
 CONFIG_THREAD_STACK_INFO=y
 CONFIG_THREAD_CUSTOM_DATA=y
-CONFIG_HEAP_MEM_POOL_SIZE={{ config.get("CONFIG_ZEPHYR_HEAP_MEM_POOL_SIZE", 65536) }}
 CONFIG_MAIN_STACK_SIZE=4096
 CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=2048
 CONFIG_ISR_STACK_SIZE=2048
@@ -106,7 +109,14 @@ CONFIG_LOG_PRINTK=n
 # C++ support — full libstdc++ for C++20 (span, atomic, type_traits, …)
 CONFIG_CPP=y
 CONFIG_STD_CPP20=y
+{% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
+# Zero-heap: picolibc instead of newlib so libc has no heap; exception-
+# throwing C++ becomes a hard failure (consistent with zero-heap intent).
+CONFIG_PICOLIBC=y
+CONFIG_PICOLIBC_USE_MODULE=y
+{% else %}
 CONFIG_NEWLIB_LIBC=y
+{% endif %}
 CONFIG_GLIBCXX_LIBCPP=y
 {% endif %}
 

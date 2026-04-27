@@ -263,6 +263,78 @@ static void test_public_create_watchdog(void **state)
 }
 #endif
 
+#if defined(CONFIG_OVE_ZERO_HEAP) && defined(CONFIG_OVE_RTOS_ZEPHYR)
+/*
+ * Zephyr zero-heap proof: CONFIG_HEAP_MEM_POOL_SIZE=0 means Zephyr
+ * doesn't instantiate _system_heap at all.  Reference it as a weak
+ * extern — link succeeds either way, but in a properly-configured
+ * zero-heap build the symbol's address is NULL because no heap was
+ * defined.  A nonzero address would mean the kernel heap snuck back
+ * in (e.g. someone enabled CONFIG_HEAP_MEM_POOL_SIZE>0 in a board
+ * overlay).
+ */
+extern struct sys_heap _system_heap __attribute__((weak));
+
+static void test_public_create_no_kernel_heap(void **state)
+{
+	(void)state;
+	assert_null(&_system_heap);
+}
+#endif
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+/*
+ * Zero-heap proof — exercise the actual trap.  ove_heap_lock() flips
+ * an atomic flag that the --wrap=malloc trampoline (in
+ * backends/common/ove_heap_lock.c) checks.  In normal operation a
+ * post-lock malloc DEBUGASSERTs and aborts; for tests the test-mode
+ * hooks swap the abort for "return NULL + increment counter" so we
+ * can verify the trap fires without tearing down the suite.
+ *
+ * The wrap functions are portable across NuttX / FreeRTOS / Zephyr.
+ * Calling __wrap_malloc directly tests the lock-check + trap-counter
+ * logic regardless of whether raw malloc() is intercepted at link
+ * time (which depends on each backend's --wrap LDFLAGS plumbing).
+ */
+#include <stdlib.h>
+
+extern void ove_heap_lock(void);
+extern void ove_heap_lock_test_begin(void);
+extern int  ove_heap_lock_test_end(void);
+extern void *__wrap_malloc(size_t n);
+extern void  __wrap_free(void *p);
+
+static void test_public_create_heap_lock_callable(void **state)
+{
+	(void)state;
+	/* Plain ove_heap_lock() is idempotent — calling twice is OK. */
+	ove_heap_lock();
+	ove_heap_lock();
+	/* Drop the lock so subsequent suites still work. */
+	(void)ove_heap_lock_test_end();
+}
+
+static void test_public_create_heap_lock_traps(void **state)
+{
+	(void)state;
+
+	/* Pre-condition: with no lock engaged, the wrapper forwards to
+	 * the real allocator and returns a usable pointer. */
+	void *pre = __wrap_malloc(16);
+	assert_non_null(pre);
+	__wrap_free(pre);
+
+	/* Engage the lock in test mode (returns NULL + bumps a counter
+	 * instead of DEBUGASSERTing — DEBUGASSERT mid-suite would abort
+	 * the test binary).  Now the same call must be denied. */
+	ove_heap_lock_test_begin();
+	void *post = __wrap_malloc(16);
+	int  trap_count = ove_heap_lock_test_end();
+	assert_null(post);
+	assert_int_equal(trap_count, 1);
+}
+#endif
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_public_create_run(void)
@@ -282,6 +354,13 @@ int test_public_create_run(void)
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_public_create_work),
 		cmocka_unit_test(test_public_create_watchdog),
+#endif
+#if defined(CONFIG_OVE_ZERO_HEAP) && defined(CONFIG_OVE_RTOS_ZEPHYR)
+		cmocka_unit_test(test_public_create_no_kernel_heap),
+#endif
+#ifdef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_public_create_heap_lock_callable),
+		cmocka_unit_test(test_public_create_heap_lock_traps),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

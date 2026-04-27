@@ -37,6 +37,8 @@ MAINSRC = main.c
 
 # NuttX backend modules (10, use POSIX APIs provided by NuttX kernel)
 CSRCS += $(NUTTX_BE)/nuttx_thread.c
+CSRCS += $(OVE_DIR)/backends/common/ove_heap_lock.c
+CSRCS += $(NUTTX_BE)/nuttx_heap_lock.c
 CSRCS += $(NUTTX_BE)/nuttx_sync.c
 CSRCS += $(NUTTX_BE)/nuttx_queue.c
 CSRCS += $(NUTTX_BE)/nuttx_timer.c
@@ -112,4 +114,12 @@ CFLAGS += -Wno-unused-parameter
 CFLAGS += -Wno-missing-field-initializers
 CFLAGS += -DCONFIG_OVE_ZERO_HEAP=1
 
+
+# Zero-heap heap-lock: trap kernel-mm allocations after init.
+# See backends/nuttx/nuttx_heap_lock.c.
+LDFLAGS += -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc \
+           -Wl,--wrap=zalloc -Wl,--wrap=memalign -Wl,--wrap=free \
+           -Wl,--wrap=kmm_malloc -Wl,--wrap=kmm_calloc \
+           -Wl,--wrap=kmm_realloc -Wl,--wrap=kmm_zalloc \
+           -Wl,--wrap=kmm_memalign -Wl,--wrap=kmm_free
 include $(APPDIR)/Application.mk

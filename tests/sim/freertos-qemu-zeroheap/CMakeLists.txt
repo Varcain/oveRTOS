@@ -95,6 +95,10 @@ set(FREERTOS_KERNEL_SOURCES
 # --- Pure FreeRTOS backend modules (7, direct-linked) ---
 set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_thread.c
+    # Heap-lock wrap chain (zero-heap only).  Common impl in
+    # backends/common/ove_heap_lock.c; freertos extras here.
+    ${OVE_ROOT}/backends/common/ove_heap_lock.c
+    ${FREERTOS_BACKEND}/freertos_heap_lock.c
     ${FREERTOS_BACKEND}/freertos_sync.c
     ${FREERTOS_BACKEND}/freertos_queue.c
     ${FREERTOS_BACKEND}/freertos_timer.c
@@ -178,3 +182,9 @@ target_link_options(ove_test_freertos_qemu_zeroheap PRIVATE
 set_source_files_properties(${FREERTOS_KERNEL_SOURCES} PROPERTIES
     COMPILE_FLAGS "-Wno-missing-field-initializers -Wno-cast-function-type -Wno-sign-compare"
 )
+
+# Zero-heap link-time wrap + audit — see renode-stm32f746-freertos-zeroheap.
+include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+ove_apply_zero_heap_wrap(ove_test_freertos_qemu_zeroheap)
+ove_zero_heap_assert_no_kernel_alloc(ove_test_freertos_qemu_zeroheap
+    RTOS FREERTOS)

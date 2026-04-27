@@ -193,13 +193,44 @@ static int thread_start(struct ove_thread *t,
 		 (unsigned long)(uintptr_t)t);
 	{
 		char *argv_args[] = { addr_str, NULL };
+		/*
+		 * NuttX zero-heap reality: each ove_thread_create involves
+		 * a kmm allocation that we cannot eliminate from
+		 * application code:
+		 *
+		 *   - task_create() (current path) kmm-allocates the TCB
+		 *     and stack. Switching to nxtask_init() with a caller-
+		 *     supplied TCB+stack still hits sched/group/group_create.c:
+		 *     group_allocate() which kmm_zallocs sizeof(task_group_s)
+		 *     for every TCB_FLAG_TTYPE_TASK.
+		 *
+		 *   - TCB_FLAG_TTYPE_KERNEL shares g_kthread_group and skips
+		 *     the per-thread group_allocate kmm_zalloc, but the
+		 *     kernel-thread launch path in CONFIG_BUILD_FLAT diverges
+		 *     from the user-task path (different argv stub, no
+		 *     nxtask_startup wrapper) and needs more careful setup
+		 *     than a simple flag flip.  Verified empirically: kernel
+		 *     threads end up in TSTATE_INVALID without running their
+		 *     entry function.
+		 *
+		 * Bottom line: dynamic ove_thread_create on NuttX inherently
+		 * touches the kernel mm region.  Apps that want the heap-
+		 * lock guarantee on NuttX must structure all thread creation
+		 * to happen during ove_main() (before ove_run() locks); the
+		 * benchmark cannot follow that pattern because measuring
+		 * dynamic create/destroy latency IS its purpose, so it
+		 * bypasses ove_run() (calls ove_thread_start_scheduler()
+		 * directly) on every backend.  See task #18 in the project
+		 * tracker for the longer-term fix (nxtask_init with kernel-
+		 * thread launch sequence).
+		 */
 		pid = task_create(desc->name ? desc->name : "ove_thread",
 				  map_priority(desc->priority), (int)stack,
 				  task_wrapper, argv_args);
-	}
-	if (pid < 0) {
-		nxsem_destroy(&t->done_sem);
-		return OVE_ERR_NO_MEMORY;
+		if (pid < 0) {
+			nxsem_destroy(&t->done_sem);
+			return OVE_ERR_NO_MEMORY;
+		}
 	}
 
 	t->pid = pid;

@@ -55,6 +55,11 @@
 #define OVE_H
 
 #include "ove/types.h"
+/* heap_assert.h must come AFTER any system header that declares libc
+ * allocators (stdlib.h pulled in by types.h).  In zero-heap mode it
+ * redeclares malloc / calloc / realloc / zalloc / memalign with
+ * __attribute__((error(...))) so subsequent calls fail compilation. */
+#include "ove/heap_assert.h"
 #include "ove/log.h"
 #include "ove/thread.h"
 #include "ove/sync.h"
