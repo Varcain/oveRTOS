@@ -6,7 +6,19 @@
  * This file is part of oveRTOS.
  */
 
-#include <_ansi.h>
+/*
+ * POSIX syscall stubs for picolibc tinystdio on bare-metal STM32F7.
+ *
+ * Picolibc tinystdio's stdout/stderr backend calls write() (not _write),
+ * but picolibc.specs links libgloss-style aliases via the toolchain so
+ * the underscore-prefixed names also resolve.  We implement the canonical
+ * underscore form; picolibc's libc internally aliases write() → _write().
+ *
+ * Newlib-only headers (_ansi.h, reent.h) and the _isatty/_fstat callbacks
+ * are no longer pulled — picolibc tinystdio doesn't query isatty()/fstat()
+ * the way newlib's full stdio does.
+ */
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/fcntl.h>
@@ -16,7 +28,6 @@
 #include <sys/time.h>
 #include <sys/times.h>
 #include <errno.h>
-#include <reent.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -26,8 +37,6 @@
 #include "serial_wrapper.h"
 
 /* Forward prototypes.  */
-int     _isatty		(int);
-int     _fstat 		(int, struct stat *);
 caddr_t _sbrk		(int);
 int     _close		(int);
 int     _write 		(int, char *, int);
@@ -36,17 +45,6 @@ int     _read		(int, char *, int);
 void    _exit		(int);
 int     _kill		(int, int);
 int     _getpid		(void);
-
-int _isatty (int fd)
-{
-	return (1);
-}
-
-int _fstat (int fd, struct stat *st)
-{
-	st->st_mode = S_IFCHR;
-	return (0);
-}
 
 caddr_t _sbrk (int incr)
 {

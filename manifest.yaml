@@ -77,3 +77,13 @@ libraries:
   kcov:
     version: "v43"
     url: "https://github.com/SimonKagstrom/kcov.git"
+  # picolibc — unified libc for FreeRTOS (Zephyr builds its own copy from
+  # the vendored zephyr-workspace; FreeRTOS pulls picolibc directly here).
+  # The arm-gnu-toolchain 15.x distribution we use ships only newlib —
+  # no picolibc.specs, no libpicolibc.a — so we build picolibc in-tree
+  # against that toolchain via meson and link against the resulting
+  # libpicolibc.a.  Pinned to a tag picked for compatibility with the
+  # picolibc-freertos.h TLS glue at dl/FreeRTOS-Kernel-*/include/.
+  picolibc:
+    version: "1.8.10"
+    url: "https://github.com/picolibc/picolibc.git"

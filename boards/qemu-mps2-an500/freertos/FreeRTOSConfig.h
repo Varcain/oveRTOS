@@ -15,6 +15,16 @@
 #define __FPU_PRESENT  1
 #define __FPU_USED     1
 
+/* Picolibc TLS integration: per-task errno (and any other __thread
+ * storage).  Without this errno is a single global shared across all
+ * tasks, a real bug magnet for any code that checks errno after a
+ * yield-prone call.  Setting configUSE_PICOLIBC_TLS=1 makes
+ * FreeRTOS.h include picolibc-freertos.h (from the FreeRTOS kernel
+ * include dir), which provides configINIT_TLS_BLOCK / configSET_TLS_BLOCK
+ * at task switch and bumps minimum task stack by _tls_size() bytes
+ * (typically ~32 to 64 B for errno-only TLS). */
+#define configUSE_PICOLIBC_TLS                   1
+
 /* Scheduler */
 #define configUSE_PREEMPTION                     1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION  0

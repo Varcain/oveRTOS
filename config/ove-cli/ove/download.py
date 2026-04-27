@@ -207,10 +207,34 @@ def symlink_local(src, dest, name):
     return True
 
 
+def download_picolibc(config, dl_dir, ws_dl_dir=None, manifest=None):
+    """Download picolibc source (FreeRTOS unified-libc dependency).
+
+    The arm-gnu-toolchain 15.x distribution oveRTOS uses ships newlib
+    only (no picolibc.specs, no libpicolibc.a).  To stay on a single
+    toolchain across Zephyr+FreeRTOS, we vendor picolibc separately and
+    build it in-tree via meson against the same arm-none-eabi-gcc.  See
+    backends/freertos/picolibc/CMakeLists.txt for the build wrapper.
+    """
+    url = get_component(manifest, "libraries", "picolibc", "url")
+    tag = get_component(manifest, "libraries", "picolibc", "version")
+    if not url or not tag:
+        logger.error("picolibc version/url missing from manifest.yaml")
+        return False
+
+    dest, link, global_link = hashed_dir(dl_dir, "picolibc", tag, ws_dl_dir)
+    ok = git_clone(url, tag, dest, "picolibc")
+    if os.path.isdir(dest):
+        update_symlink(link, dest)
+        if global_link:
+            update_symlink(global_link, dest)
+    return ok
+
+
 def download_freertos(config, dl_dir, build_dir, ws_dl_dir=None,
                       manifest=None):
-    """Download FreeRTOS (STM32CubeF7 or standalone kernel) and LVGL."""
-    ok = True
+    """Download FreeRTOS (STM32CubeF7 or standalone kernel), picolibc, LVGL."""
+    ok = download_picolibc(config, dl_dir, ws_dl_dir, manifest=manifest)
     is_qemu = get_bool(config, "CONFIG_OVE_BOARD_QEMU_MPS2_AN500")
 
     if get_bool(config, "CONFIG_FREERTOS_SOURCE_GIT"):

@@ -217,13 +217,26 @@ def _ensure_kcov(ove_dir):
 
 
 def _ensure_arm_toolchain(ove_dir):
-    """Download ARM toolchain if needed, return path to toolchain dir."""
-    from .download import download_toolchain
+    """Download ARM toolchain + picolibc source if needed, return tc dir.
+
+    Picolibc is the libc for FreeRTOS builds (the arm-gnu-toolchain ships
+    only newlib).  Source is fetched here; the meson build runs at CMake
+    configure time inside cmake/toolchains/arm-cortex-m7.cmake via
+    cmake/PicolibcBuild.cmake.
+    """
+    from .download import download_toolchain, download_picolibc
 
     dl_dir = os.path.join(ove_dir, "dl")
     toolchains_dir = os.path.join(ove_dir, "output", "toolchains")
     os.makedirs(dl_dir, exist_ok=True)
     os.makedirs(toolchains_dir, exist_ok=True)
+
+    manifest = load_manifest(ove_dir)
+
+    # Picolibc source (small, idempotent — no-op if already cloned).
+    if not download_picolibc({}, dl_dir, manifest=manifest):
+        logger.error("picolibc source download failed")
+        sys.exit(1)
 
     # Check sentinel first
     sentinel = os.path.join(toolchains_dir, "path.txt")
@@ -232,7 +245,6 @@ def _ensure_arm_toolchain(ove_dir):
         if os.path.isfile(os.path.join(tc_dir, "bin", "arm-none-eabi-gcc")):
             return tc_dir
 
-    manifest = load_manifest(ove_dir)
     ok = download_toolchain({}, dl_dir, toolchains_dir, manifest=manifest)
     if not ok:
         logger.error("ARM toolchain download failed")
