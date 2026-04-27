@@ -378,7 +378,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  */
 #define OVE_WORKQUEUE_DEFINE(name, stack_size_bytes) \
 	static ove_workqueue_storage_t name; \
-	static uint8_t name##_stack[stack_size_bytes]
+	OVE_THREAD_STACK_DEFINE_(name##_stack, stack_size_bytes)
 
 /**
  * @brief Declare a static stream buffer storage variable and its backing buffer.
@@ -624,7 +624,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  */
 #define OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio) \
 	static ove_workqueue_storage_t _##name##_storage; \
-	static uint8_t _##name##_stack[(stack_sz)]; \
+	OVE_THREAD_STACK_DEFINE_(_##name##_stack, (stack_sz)); \
 	static ove_workqueue_t name; \
 	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
 		int _err = ove_workqueue_init(&name, \

@@ -42,7 +42,7 @@ int ove_workqueue_init(ove_workqueue_t *wq,
 			   const char *name, ove_prio_t priority,
 			   size_t stack_size, void *stack)
 {
-	if (wq == NULL || storage == NULL || stack == NULL) {
+	if (wq == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -50,7 +50,16 @@ int ove_workqueue_init(ove_workqueue_t *wq,
 		stack_size = 4096;
 	}
 
-	storage->stack = (k_thread_stack_t *)stack;
+	if (stack != NULL) {
+		storage->stack = (k_thread_stack_t *)stack;
+		storage->heap_stack = 0;
+	} else {
+		storage->stack = k_thread_stack_alloc(stack_size, 0);
+		if (storage->stack == NULL) {
+			return OVE_ERR_NO_MEMORY;
+		}
+		storage->heap_stack = 1;
+	}
 	storage->stack_size = stack_size;
 
 	k_work_queue_start(&storage->work_q, storage->stack, stack_size,
@@ -69,6 +78,11 @@ void ove_workqueue_deinit(ove_workqueue_t wq)
 	if (wq != NULL) {
 		k_work_queue_drain(&wq->work_q, false);
 		k_thread_abort(&wq->work_q.thread);
+		if (wq->heap_stack && wq->stack != NULL) {
+			k_thread_stack_free(wq->stack);
+			wq->stack = NULL;
+			wq->heap_stack = 0;
+		}
 	}
 }
 
@@ -94,13 +108,10 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name,
 			    ove_prio_t priority, size_t stack_size)
 {
 	struct ove_workqueue *zwq;
+	int ret;
 
 	if (wq == NULL) {
 		return OVE_ERR_INVALID_PARAM;
-	}
-
-	if (stack_size == 0) {
-		stack_size = 4096;
 	}
 
 	zwq = OVE_BACKEND_MALLOC(sizeof(*zwq));
@@ -108,22 +119,11 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name,
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	zwq->stack = k_thread_stack_alloc(stack_size, 0);
-	if (zwq->stack == NULL) {
+	ret = ove_workqueue_init(wq, zwq, name, priority, stack_size, NULL);
+	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(zwq);
-		return OVE_ERR_NO_MEMORY;
+		return ret;
 	}
-
-	zwq->stack_size = stack_size;
-
-	k_work_queue_start(&zwq->work_q, zwq->stack, stack_size,
-			   map_priority(priority), NULL);
-
-	if (name != NULL) {
-		k_thread_name_set(&zwq->work_q.thread, name);
-	}
-
-	*wq = zwq;
 	return OVE_OK;
 }
 
@@ -131,7 +131,6 @@ void ove_workqueue_destroy(ove_workqueue_t wq)
 {
 	if (wq != NULL) {
 		ove_workqueue_deinit(wq);
-		k_thread_stack_free(wq->stack);
 		OVE_BACKEND_FREE(wq);
 	}
 }

@@ -165,7 +165,7 @@ void ove_workqueue_destroy(ove_workqueue_t wq);
 /* Unified macro — stack_size must be a compile-time constant. */
 #define ove_workqueue_create(pwq, name, priority, stack_size) \
 	({ static ove_workqueue_storage_t _ove_stor_; \
-	   static uint8_t _ove_stk_[(stack_size)]; \
+	   OVE_THREAD_STACK_BLOCK_STATIC_(_ove_stk_, (stack_size)); \
 	   ove_workqueue_init((pwq), &_ove_stor_, (name), (priority), \
 			      (stack_size), _ove_stk_); })
 #define ove_workqueue_destroy(wq) ove_workqueue_deinit(wq)

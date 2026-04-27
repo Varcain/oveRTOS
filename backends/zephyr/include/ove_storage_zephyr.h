@@ -110,6 +110,7 @@ struct ove_workqueue {
 	struct k_work_q work_q;
 	k_thread_stack_t *stack;
 	size_t stack_size;
+	int heap_stack;
 };
 
 typedef struct ove_workqueue ove_workqueue_storage_t;
