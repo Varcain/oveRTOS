@@ -110,11 +110,16 @@ zephyr_link_libraries(cmocka_lib m)
 
 # Zero-heap link-time wrap + audit — see renode-stm32f746-zephyr-zeroheap.
 include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+# --wrap=memalign omitted: picolibc-module's nano-memalign.c defines both
+# memalign AND aligned_alloc, and aligned_alloc collides with Zephyr's
+# common-libc malloc.c.  We don't exercise __wrap_memalign in tests
+# (test_public_create_heap_lock_traps uses __wrap_malloc), so dropping the
+# wrap lets dead-strip discard the unused __real_memalign reference and
+# nano-memalign isn't pulled.
 add_link_options(LINKER:--wrap=malloc
                  LINKER:--wrap=calloc
                  LINKER:--wrap=realloc
                  LINKER:--wrap=free
-                 LINKER:--wrap=zalloc
-                 LINKER:--wrap=memalign)
+                 LINKER:--wrap=zalloc)
 ove_zero_heap_assert_no_kernel_alloc(zephyr_final
     ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
