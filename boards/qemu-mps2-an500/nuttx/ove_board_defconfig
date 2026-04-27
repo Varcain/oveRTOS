@@ -7,7 +7,7 @@
 # with "undefined reference to arm_netinitialize".
 CONFIG_NETDEV_LATEINIT=y
 
-# Enable the portable on-target unwinder used by the oveRTOS sampling
-# profiler (backends/nuttx/nuttx_profiler.c calls up_backtrace(tcb,…)).
-# Gated by the architecture providing ARCH_HAVE_BACKTRACE.
-CONFIG_SCHED_BACKTRACE=y
+# SCHED_BACKTRACE is driven by CONFIG_OVE_PROFILER from the j2 template
+# (config/templates/nuttx_defconfig.j2): off by default so kernel + apps
+# don't pay the -funwind-tables / -fno-omit-frame-pointer flash bloat,
+# re-enabled automatically when the sim profiler is selected.
