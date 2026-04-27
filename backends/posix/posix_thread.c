@@ -48,6 +48,7 @@ static struct ove_thread *first_thread;
 #define STACK_COLOR 0xDEADBEEFu
 #define STACK_MIN_SIZE (64 * 1024)  /* pthread minimum (PTHREAD_STACK_MIN + guard) */
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void *_alloc_painted_stack(size_t requested, size_t *actual)
 {
 	/* Ensure minimum size for pthread (includes guard page). */
@@ -63,6 +64,7 @@ static void *_alloc_painted_stack(size_t requested, size_t *actual)
 	*actual = sz;
 	return base;
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 static size_t _check_stack_hwm(void *base, size_t size)
 {
@@ -140,6 +142,11 @@ int ove_thread_init(ove_thread_t *handle,
 	if (!handle || !storage || !desc || !desc->entry) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	/* Backstop the AAPCS 8-byte stack alignment promised by the
+	 * OVE_THREAD_STACK_* helpers in include/ove/storage.h. */
+	if (desc->stack != NULL && ((uintptr_t)desc->stack & 7u) != 0u) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 
 	struct ove_thread *t = (struct ove_thread *)storage;
 	memset(t, 0, sizeof(*t));
@@ -152,9 +159,15 @@ int ove_thread_init(ove_thread_t *handle,
 	t->priority = (uint8_t)desc->priority;
 	sem_init(&t->suspend_sem, 0, 0);
 
-	/* Allocate and paint stack for coloration-based HWM tracking. */
+	/* Allocate and paint stack for coloration-based HWM tracking.
+	 * In zero-heap mode aligned_alloc is forbidden; pthread allocates
+	 * its own default stack and HWM reporting drops to 0. */
 	size_t actual_sz = 0;
+#ifndef CONFIG_OVE_ZERO_HEAP
 	t->stack_base = _alloc_painted_stack(desc->stack_size, &actual_sz);
+#else
+	t->stack_base = NULL;
+#endif
 	t->stack_size = actual_sz;
 
 	pthread_attr_t attr;

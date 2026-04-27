@@ -78,8 +78,11 @@ menuconfig: $(VENV_STAMP)
 #   make host.posix.example_net_cpp ZEROHEAP=1
 #
 # Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
-# Exclude allconfigs-* and alldefconfigs (handled by their own pattern rules).
-_DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(if $(filter allconfigs-% alldefconfigs,$(t)),,$(t))))
+# Exclude paths (slashes) — `setup`'s recursive make passes the absolute
+# $(VENV_STAMP) path through MAKECMDGOALS, which would otherwise match here
+# and shadow the venv-build rule. Also exclude allconfigs-* / alldefconfigs
+# which have their own pattern rules.
+_DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring /,$(t)),,$(if $(findstring .,$(t)),$(if $(filter allconfigs-% alldefconfigs,$(t)),,$(t)))))
 ifneq ($(_DOT_TARGETS),)
 # Each goal calls `ove defconfig-fragments`, which rewrites the single shared
 # .config. Running multiple goals in parallel would race on that file, so

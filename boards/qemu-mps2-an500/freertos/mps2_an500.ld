@@ -36,9 +36,15 @@ SECTIONS
         KEEP(*(.init))
         KEEP(*(.fini))
 
-        /* C++ static constructors / destructors */
+        /* C++ static constructors / destructors.
+         * picolibc's __libc_init_array iterates a single
+         * __bothinit_array_{start,end} range covering both preinit and
+         * init.  Without these symbols the iteration sees start==end==0
+         * and no constructors run — including gcc's __gcov_init, which
+         * silently breaks coverage dumping. */
         . = ALIGN(4);
         __preinit_array_start = .;
+        __bothinit_array_start = .;
         KEEP(*(.preinit_array*))
         __preinit_array_end = .;
 
@@ -47,6 +53,7 @@ SECTIONS
         KEEP(*(SORT(.init_array.*)))
         KEEP(*(.init_array*))
         __init_array_end = .;
+        __bothinit_array_end = .;
 
         . = ALIGN(4);
         __fini_array_start = .;

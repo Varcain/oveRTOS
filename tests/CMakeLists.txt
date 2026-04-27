@@ -59,6 +59,10 @@ set(STUB_SOURCES
     # Audio graph engine (platform-independent)
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
+    # Heap-lock machinery: portable wrappers + stub-only weak __real_*
+    # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
+    ${OVE_ROOT}/backends/common/ove_heap_lock.c
+    ${STUB_DIR}/stub_heap_lock.c
     # Power management (platform-independent)
     ${OVE_SRC}/ove_pm.c
     # Headless stubs (display, HAL)
@@ -66,6 +70,17 @@ set(STUB_SOURCES
     ${STUB_DIR}/stub_board.c
     ${STUB_DIR}/stub_lvgl.c
     ${STUB_DIR}/stub_pm.c
+    # Bus-driver public API + stub HAL impls.  The .c files are gated
+    # by CONFIG_OVE_{I2C,SPI,UART}, which is enabled per-target below
+    # (kept off the global tests/ove_config.h to avoid disturbing the
+    # Rust-bindings sizeof/alignof probe — same rationale as
+    # CONFIG_OVE_NET).
+    ${OVE_SRC}/ove_i2c.c
+    ${OVE_SRC}/ove_spi.c
+    ${OVE_SRC}/ove_uart.c
+    ${STUB_DIR}/stub_i2c.c
+    ${STUB_DIR}/stub_spi.c
+    ${STUB_DIR}/stub_uart.c
     # App framework
     ${OVE_SRC}/ove_app.c
     # Networking helpers (SHA-1, Base64 for WebSocket/HTTPD tests)
@@ -96,9 +111,14 @@ function(ove_add_stub_variant name)
         ${cmocka_SOURCE_DIR}/include
     )
     target_link_libraries(${name} PRIVATE cmocka-static pthread rt m)
-    # Enable the socket API for the stub test target only. See tests/ove_config.h
-    # for why this is per-target rather than global.
-    target_compile_definitions(${name} PRIVATE CONFIG_OVE_NET=1)
+    # Enable the socket / bus APIs for the stub test target only.  See
+    # tests/ove_config.h for why this is per-target rather than global.
+    target_compile_definitions(${name} PRIVATE
+        CONFIG_OVE_NET=1
+        CONFIG_OVE_I2C=1
+        CONFIG_OVE_SPI=1
+        CONFIG_OVE_UART=1
+    )
     if(ARGN)
         target_compile_options(${name} PRIVATE ${ARGN})
         target_link_options(${name} PRIVATE ${ARGN})

@@ -61,6 +61,10 @@ set(STUB_SOURCES
     # Audio graph engine
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
+    # Heap-lock machinery: portable wrappers + stub-only weak __real_*
+    # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
+    ${OVE_ROOT}/backends/common/ove_heap_lock.c
+    ${STUB_DIR}/stub_heap_lock.c
     # Headless stubs
     ${STUB_DIR}/stub_gpio.c
     ${STUB_DIR}/stub_board.c

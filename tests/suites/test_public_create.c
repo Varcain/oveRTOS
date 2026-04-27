@@ -190,7 +190,13 @@ static void test_public_create_thread(void **state)
 		.arg = NULL,
 		.priority = OVE_PRIO_NORMAL,
 	};
-	int rc = ove_thread_create(&h, 1024, &desc);
+	/* 4096 matches the per-thread stack used by tests/suites/test_thread.c.
+	 * Anything smaller (we previously used 1024) overflows under gcov-
+	 * instrumented builds — every basic block grows by counter-update
+	 * code, and Zephyr reserves a chunk for the MPU stack guard on top
+	 * of that — and the resulting overflow corrupts the k_thread struct,
+	 * faulting later in the cleanup path. */
+	int rc = ove_thread_create(&h, 4096, &desc);
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(h);
 
@@ -215,7 +221,8 @@ static void test_public_create_workqueue(void **state)
 	s_work_ran = 0;
 
 	ove_workqueue_t wq = NULL;
-	int rc = ove_workqueue_create(&wq, "pub_wq", OVE_PRIO_NORMAL, 1024);
+	/* 4096 — see comment in test_public_create_thread for rationale. */
+	int rc = ove_workqueue_create(&wq, "pub_wq", OVE_PRIO_NORMAL, 4096);
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(wq);
 

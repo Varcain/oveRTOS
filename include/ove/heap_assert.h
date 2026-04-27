@@ -47,6 +47,15 @@
 		"storage, or build with CONFIG_OVE_ZERO_HEAP=n if dynamic " \
 		"allocation is required.")))
 
+/* C++ libc declarations carry `noexcept`; redeclaring without it is
+ * a hard error.  C has no exception specifiers, so the macro expands
+ * to nothing there. */
+#ifdef __cplusplus
+#define _OVE_HEAP_NOTHROW noexcept
+#else
+#define _OVE_HEAP_NOTHROW
+#endif
+
 /*
  * Redeclare libc allocators with the `error` attribute.  GCC + Clang
  * accept redeclarations that add attributes; any subsequent call site
@@ -57,17 +66,18 @@
 extern "C" {
 #endif
 
-extern void *malloc(size_t)               _OVE_HEAP_FORBIDDEN("malloc");
-extern void *calloc(size_t, size_t)       _OVE_HEAP_FORBIDDEN("calloc");
-extern void *realloc(void *, size_t)      _OVE_HEAP_FORBIDDEN("realloc");
-extern void *zalloc(size_t)               _OVE_HEAP_FORBIDDEN("zalloc");
-extern void *memalign(size_t, size_t)     _OVE_HEAP_FORBIDDEN("memalign");
-extern void *aligned_alloc(size_t, size_t) _OVE_HEAP_FORBIDDEN("aligned_alloc");
+extern void *malloc(size_t)                _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("malloc");
+extern void *calloc(size_t, size_t)        _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("calloc");
+extern void *realloc(void *, size_t)       _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("realloc");
+extern void *zalloc(size_t)                _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("zalloc");
+extern void *memalign(size_t, size_t)      _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("memalign");
+extern void *aligned_alloc(size_t, size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("aligned_alloc");
 
 #ifdef __cplusplus
 }
 #endif
 
+#undef _OVE_HEAP_NOTHROW
 #undef _OVE_HEAP_FORBIDDEN
 
 #endif /* CONFIG_OVE_ZERO_HEAP */
