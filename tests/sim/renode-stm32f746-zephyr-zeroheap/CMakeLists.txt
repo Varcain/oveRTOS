@@ -114,11 +114,14 @@ zephyr_link_libraries(cmocka_lib m)
 # the wrap chain in backends/common/ove_heap_lock.c.  The audit fails
 # the build if any kernel allocator symbols end up defined in the ELF.
 include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+# --wrap=memalign omitted: weak __real_memalign in zephyr_heap_lock.c was
+# the trigger for nano-memalign.c.obj being pulled (which collided with
+# Zephyr's common-libc aligned_alloc).  See backends/zephyr/zephyr_heap_lock.c
+# rationale.  Tests exercise the trap via __wrap_malloc only.
 add_link_options(LINKER:--wrap=malloc
                  LINKER:--wrap=calloc
                  LINKER:--wrap=realloc
                  LINKER:--wrap=free
-                 LINKER:--wrap=zalloc
-                 LINKER:--wrap=memalign)
+                 LINKER:--wrap=zalloc)
 ove_zero_heap_assert_no_kernel_alloc(zephyr_final
     ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)

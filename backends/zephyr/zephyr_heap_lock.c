@@ -32,12 +32,22 @@
  * strong __real_* alias overrides these when --wrap is in effect.
  * In Zephyr zero-heap, picolibc has no heap so malloc returns NULL,
  * and the audit catches any heap region that sneaks back in.
+ *
+ * memalign is intentionally NOT included.  Referencing memalign() from
+ * a weak fallback pulls picolibc-module's nano-memalign.c.o into the
+ * link, which transitively pulls nano-free.c.o and nano-malloc.c.o —
+ * each then collides with Zephyr's COMMON_LIBC_MALLOC providing the
+ * same symbols (PICOLIBC `imply`s COMMON_LIBC_MALLOC, so common is
+ * always in the link too).  Tests that need to exercise the trap do
+ * it via __wrap_malloc directly (test_public_create_heap_lock_traps),
+ * never via memalign.  Production code paths don't call libc memalign.
+ * If a future caller needs aligned allocation, prefer the explicitly-
+ * sized OVE_*_DEFINE_STATIC macros.
  */
 extern void *malloc(size_t);
 extern void  free(void *);
 extern void *calloc(size_t, size_t);
 extern void *realloc(void *, size_t);
-extern void *memalign(size_t, size_t);
 
 __attribute__((weak)) void *__real_malloc(size_t n)
 	{ return malloc(n); }
@@ -47,8 +57,6 @@ __attribute__((weak)) void *__real_realloc(void *p, size_t n)
 	{ return realloc(p, n); }
 __attribute__((weak)) void *__real_zalloc(size_t n)
 	{ return calloc(1, n); }
-__attribute__((weak)) void *__real_memalign(size_t alignment, size_t size)
-	{ return memalign(alignment, size); }
 __attribute__((weak)) void  __real_free(void *p)
 	{ free(p); }
 
