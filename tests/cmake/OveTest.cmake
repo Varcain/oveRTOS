@@ -37,6 +37,7 @@ set(OVE_TEST_COMMON_SUITES
     test_eventgroup.c
     test_workqueue.c
     test_stream.c
+    test_public_create.c
     test_console.c
     test_watchdog.c
     test_nvs.c

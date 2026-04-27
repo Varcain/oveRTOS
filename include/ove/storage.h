@@ -309,6 +309,18 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	static uint8_t name[(size)]
 #endif
 
+/* File-static variant of the above — for stacks that need internal linkage
+ * (e.g. test framework stacks reused under the same symbol name across
+ * multiple TUs).  Includes aligned(8) explicitly since the generic
+ * OVE_THREAD_STACK_DEFINE_ doesn't, and AAPCS requires 8-byte alignment
+ * for the stack pointer at function-call boundaries.  Zephyr overrides
+ * this to pin 'static' onto K_THREAD_STACK_DEFINE since
+ * K_THREAD_STACK_DEFINE itself has external linkage. */
+#ifndef OVE_THREAD_STACK_DEFINE_STATIC_
+#define OVE_THREAD_STACK_DEFINE_STATIC_(name, size) \
+	static uint8_t __attribute__((aligned(8))) name[(size)]
+#endif
+
 /** @cond INTERNAL */
 /* Block-scope static variant — safe inside ({...}) statement expressions. */
 #ifndef OVE_THREAD_STACK_BLOCK_STATIC_

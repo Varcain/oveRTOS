@@ -82,6 +82,7 @@ CSRCS += $(SUITE_DIR)/test_time.c
 CSRCS += $(SUITE_DIR)/test_eventgroup.c
 CSRCS += $(SUITE_DIR)/test_workqueue.c
 CSRCS += $(SUITE_DIR)/test_stream.c
+CSRCS += $(SUITE_DIR)/test_public_create.c
 CSRCS += $(SUITE_DIR)/test_console.c
 CSRCS += $(SUITE_DIR)/test_watchdog.c
 CSRCS += $(SUITE_DIR)/test_nvs.c
