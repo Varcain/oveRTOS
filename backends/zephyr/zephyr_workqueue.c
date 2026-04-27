@@ -54,11 +54,16 @@ int ove_workqueue_init(ove_workqueue_t *wq,
 		storage->stack = (k_thread_stack_t *)stack;
 		storage->heap_stack = 0;
 	} else {
+#ifdef CONFIG_OVE_ZERO_HEAP
+		/* Zero-heap mode: no kernel stack pool, NULL stack is a misuse. */
+		return OVE_ERR_NO_MEMORY;
+#else
 		storage->stack = k_thread_stack_alloc(stack_size, 0);
 		if (storage->stack == NULL) {
 			return OVE_ERR_NO_MEMORY;
 		}
 		storage->heap_stack = 1;
+#endif
 	}
 	storage->stack_size = stack_size;
 

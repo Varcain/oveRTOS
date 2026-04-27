@@ -2,6 +2,39 @@
 # NuttX defconfig overlay for oveRTOS application.
 # Applied on top of the NuttX board config.
 
+{% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
+# ── Zero-heap: static sizing + boot-only allocation ──
+# All resources are sized at compile time; oveRTOS creates everything
+# during init (ove_main), then ove_run() calls ove_heap_lock() so any
+# subsequent kernel-mm allocation traps via DEBUGASSERT.
+#
+# Irreducible kernel-heap consumers (all bounded, all init-time only):
+#   - task_create / pthread_create (TCB + stack alloc per thread)
+#   - mq_open(O_CREAT) in nuttx_audio.c (POSIX-required)
+#   - task_tls_alloc() one-shot per slot index
+#   - group_setuptaskfiles + env_dup at task spawn
+# Anything beyond these (post-lock) traps in nuttx_heap_lock.c.
+CONFIG_MM_REGIONS=1
+# CONFIG_DEBUG_MM is not set
+# CONFIG_MM_BACKTRACE is not set
+# CONFIG_MM_DUMP_ON_FAILURE is not set
+CONFIG_OVE_NUTTX_HEAP_LOCK=y
+
+# Pre-allocated kernel resource pools — pinned via Kconfig so no run-
+# time growth.  Override per-app by setting CONFIG_OVE_NUTTX_* in
+# defconfig fragments.
+CONFIG_MAX_TASKS={{ config.get("CONFIG_OVE_NUTTX_MAX_TASKS", 16) }}
+CONFIG_NFILE_DESCRIPTORS_PER_BLOCK={{ config.get("CONFIG_OVE_NUTTX_FD_BLOCK", 8) }}
+CONFIG_PREALLOC_TIMERS={{ config.get("CONFIG_OVE_NUTTX_PREALLOC_TIMERS", 8) }}
+CONFIG_PREALLOC_MQ_MSGS={{ config.get("CONFIG_OVE_NUTTX_PREALLOC_MQ_MSGS", 16) }}
+{% if config.get("CONFIG_OVE_NET") == True %}
+CONFIG_NET_TCP_CONNS={{ config.get("CONFIG_OVE_NUTTX_TCP_CONNS", 8) }}
+CONFIG_NET_UDP_CONNS={{ config.get("CONFIG_OVE_NUTTX_UDP_CONNS", 8) }}
+CONFIG_IOB_NBUFFERS={{ config.get("CONFIG_OVE_NUTTX_IOB_NBUFFERS", 24) }}
+CONFIG_IOB_BUFSIZE={{ config.get("CONFIG_OVE_NUTTX_IOB_BUFSIZE", 196) }}
+{% endif %}
+{% endif %}
+
 # oveRTOS external app
 CONFIG_EXTERNAL_OVE_APP=y
 CONFIG_EXTERNAL_OVE_APP_PROGNAME="{{ config.get('CONFIG_NUTTX_PROGNAME', 'ove_app') }}"

@@ -564,6 +564,20 @@ macro(ove_link_firmware)
         )
     endif()
 
+    # Zero-heap link-time audit + wrap: forbid FreeRTOS heap_*.c
+    # globals (xHeap/ucHeap/pucAlignedHeap) and route libc malloc
+    # through ove_heap_lock.c's __wrap_* trampolines so any malloc
+    # after ove_heap_lock() traps via the lock check.
+    # Not STRICT: FreeRTOS still uses newlib for printf, so newlib's
+    # __malloc_av_ etc. show up.  A future libc migration to picolibc
+    # (Zephyr-style) would make STRICT viable here too.
+    if(OVE_ZERO_HEAP)
+        include(${OVE_DIR}/cmake/OveZeroHeapAudit.cmake)
+        ove_apply_zero_heap_wrap(${_OVE_PROJ_NAME}.elf)
+        ove_zero_heap_assert_no_kernel_alloc(${_OVE_PROJ_NAME}.elf
+            RTOS FREERTOS)
+    endif()
+
     # QEMU run target (if qemu-run.sh exists at board level)
     if(EXISTS "${BOARD_DIR}/../qemu-run.sh")
         add_custom_target(run

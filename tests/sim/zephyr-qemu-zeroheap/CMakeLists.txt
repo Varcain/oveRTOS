@@ -47,6 +47,10 @@ include(${TESTS_ROOT}/cmake/OveTest.cmake)
 # --- Pure Zephyr backend modules (10, direct-linked) ---
 set(ZEPHYR_BACKEND_SOURCES
     ${ZEPHYR_BACKEND}/zephyr_thread.c
+    # Heap-lock wrap chain (zero-heap only).  Common impl in
+    # backends/common/ove_heap_lock.c; zephyr extras here.
+    ${OVE_ROOT}/backends/common/ove_heap_lock.c
+    ${ZEPHYR_BACKEND}/zephyr_heap_lock.c
     ${ZEPHYR_BACKEND}/zephyr_sync.c
     ${ZEPHYR_BACKEND}/zephyr_queue.c
     ${ZEPHYR_BACKEND}/zephyr_timer.c
@@ -103,3 +107,14 @@ target_include_directories(app PRIVATE
 
 target_compile_definitions(app PRIVATE OVE_QEMU_ARM CONFIG_OVE_ZERO_HEAP=1 HAVE_UINTPTR_T)
 zephyr_link_libraries(cmocka_lib m)
+
+# Zero-heap link-time wrap + audit — see renode-stm32f746-zephyr-zeroheap.
+include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+add_link_options(LINKER:--wrap=malloc
+                 LINKER:--wrap=calloc
+                 LINKER:--wrap=realloc
+                 LINKER:--wrap=free
+                 LINKER:--wrap=zalloc
+                 LINKER:--wrap=memalign)
+ove_zero_heap_assert_no_kernel_alloc(zephyr_final
+    ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)

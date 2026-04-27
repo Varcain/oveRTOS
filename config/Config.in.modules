@@ -420,9 +420,87 @@ config OVE_ZERO_HEAP
     bool "Zero-heap build (disable all dynamic allocation)"
     default n
     help
-      When enabled, _create()/_destroy() become macros that auto-generate
-      per-call-site static storage instead of using the heap.  No dynamic
-      allocation occurs.  The _init()/_deinit() APIs with caller-supplied
-      storage remain available for explicit control (loops, arrays, structs).
+      All oveRTOS create/destroy paths use static storage; the
+      _init()/_deinit() APIs with caller-supplied storage remain
+      available for loops, arrays, and embedded objects.  Backend
+      kernels are configured for fully-static operation:
+        - FreeRTOS: configSUPPORT_DYNAMIC_ALLOCATION=0; truly static.
+        - Zephyr:   no DYNAMIC_THREAD, no kernel heap, picolibc;
+                    truly static.  Block-scope ove_thread_create /
+                    ove_workqueue_create emit K_THREAD_STACK_DEFINE-
+                    equivalent statics, so k_thread_stack_alloc is
+                    not pulled in.
+        - NuttX:    static sizing of every preallocated pool via
+                    Kconfig; all threads / queues / files / sockets
+                    must be created during init; ove_heap_lock() runs
+                    at the start of ove_run() and traps any subsequent
+                    malloc / kmm_malloc.  Boot-time TCB + stack
+                    allocations from task_create are accepted as the
+                    irreducible carve-out (see backends/nuttx/
+                    nuttx_heap_lock.c for the trap and
+                    config/templates/nuttx_defconfig.j2 for the sizing
+                    knobs).
+        - POSIX:    sim only; pthread implies malloc'd stacks.
+
+if OVE_ZERO_HEAP
+
+comment "NuttX zero-heap sizing"
+    depends on OVE_RTOS_NUTTX
+
+config OVE_NUTTX_MAX_TASKS
+    int "Maximum concurrent tasks"
+    default 16
+    depends on OVE_RTOS_NUTTX
+    help
+      Pinned at compile time as CONFIG_MAX_TASKS — the kernel
+      allocates the task table from the static .bss region rather
+      than growing it dynamically.
+
+config OVE_NUTTX_FD_BLOCK
+    int "File descriptors per task block"
+    default 8
+    depends on OVE_RTOS_NUTTX
+
+config OVE_NUTTX_PREALLOC_TIMERS
+    int "Pre-allocated POSIX timers"
+    default 8
+    depends on OVE_RTOS_NUTTX
+
+config OVE_NUTTX_PREALLOC_MQ_MSGS
+    int "Pre-allocated message-queue messages"
+    default 16
+    depends on OVE_RTOS_NUTTX
+
+config OVE_NUTTX_TCP_CONNS
+    int "TCP connection slots"
+    default 8
+    depends on OVE_RTOS_NUTTX && OVE_NET
+
+config OVE_NUTTX_UDP_CONNS
+    int "UDP connection slots"
+    default 8
+    depends on OVE_RTOS_NUTTX && OVE_NET
+
+config OVE_NUTTX_IOB_NBUFFERS
+    int "Network IOB buffer count"
+    default 24
+    depends on OVE_RTOS_NUTTX && OVE_NET
+
+config OVE_NUTTX_IOB_BUFSIZE
+    int "Network IOB buffer size (bytes)"
+    default 196
+    depends on OVE_RTOS_NUTTX && OVE_NET
+
+config OVE_NUTTX_HEAP_LOCK
+    bool "Wrap malloc/kmm_malloc with post-init trap"
+    default y
+    depends on OVE_RTOS_NUTTX
+    help
+      Enables --wrap=malloc,kmm_malloc,... at link time so that
+      ove_heap_lock() (called from ove_run()) traps any kernel-mm
+      allocation that escapes the static-sizing / boot-time-creation
+      discipline.  Implementation in backends/nuttx/nuttx_heap_lock.c.
+
+endif # OVE_ZERO_HEAP
 
 endmenu

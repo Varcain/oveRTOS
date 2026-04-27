@@ -139,17 +139,25 @@ int ove_thread_init(ove_thread_t *handle,
 	}
 
 	/* Use desc->stack if provided (e.g. from K_THREAD_STACK_DEFINE via
-	 * OVE_THREAD_DEFINE_STATIC).  Otherwise allocate via
-	 * k_thread_stack_alloc for proper MPU/cache placement. */
+	 * OVE_THREAD_DEFINE_STATIC, or the function-scope static stack the
+	 * zero-heap ove_thread_create macro emits).  In zero-heap mode a
+	 * NULL stack is a programmer error — the public macro can't have
+	 * been used to create this thread, and there's no kernel pool to
+	 * fall back to.  In heap mode fall back to k_thread_stack_alloc
+	 * (requires CONFIG_DYNAMIC_THREAD). */
 	if (desc->stack != NULL) {
 		storage->stack = (k_thread_stack_t *)desc->stack;
 		storage->heap_stack = 0;
 	} else {
+#ifdef CONFIG_OVE_ZERO_HEAP
+		return OVE_ERR_NO_MEMORY;
+#else
 		storage->stack = k_thread_stack_alloc(stack_sz, 0);
 		if (storage->stack == NULL) {
 			return OVE_ERR_NO_MEMORY;
 		}
 		storage->heap_stack = 1;
+#endif
 	}
 	storage->stack_size = stack_sz;
 	storage->state = OVE_THREAD_STATE_READY;

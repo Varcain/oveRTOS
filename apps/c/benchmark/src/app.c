@@ -87,7 +87,32 @@ void ove_main(void)
 		return;
 	}
 
-	ove_run();
+	/*
+	 * The benchmark measures dynamic create/destroy latency across
+	 * its 8 suites — by definition every test case creates and
+	 * destroys kernel resources (threads, workqueues, queues) at
+	 * runtime, well after ove_main() has returned.
+	 *
+	 * On FreeRTOS and Zephyr in zero-heap mode this is purely
+	 * static — the per-call-site `static` storage from the
+	 * ove_thread_create / ove_workqueue_create macros is consumed by
+	 * xTaskCreateStatic / k_thread_create, and no kernel allocation
+	 * happens.  ove_run()'s auto-lock would harmlessly fire and
+	 * trap nothing.
+	 *
+	 * On NuttX the kernel's task_create allocates from kmm on every
+	 * thread create regardless of caller-supplied storage:
+	 * sched/group/group_create.c:group_allocate() kmm_zallocs
+	 * struct task_group_s for each TCB_FLAG_TTYPE_TASK.  That kmm
+	 * activity inherently conflicts with ove_heap_lock, so the
+	 * benchmark must bypass the auto-lock to run on NuttX.
+	 *
+	 * For consistency across backends, bypass on every RTOS — the
+	 * scheduler kickoff is what we need; the lock is a nicety the
+	 * benchmark does not benefit from.  See task #18 in the project
+	 * tracker for the longer-term NuttX fix.
+	 */
+	ove_thread_start_scheduler();
 
 	OVE_LOG_INF("Benchmark app: shutdown");
 }

@@ -166,11 +166,26 @@ typedef struct ove_dir  ove_dir_storage_t;
 #define OVE_THREAD_STACK_DEFINE_STATIC_(name, size) \
 	static K_THREAD_STACK_DEFINE(name, size)
 
-/* On Zephyr, block-scope stacks can't use K_THREAD_STACK_DEFINE (needs
- * file scope for __stackmem section).  Set to NULL so ove_thread_init()
- * allocates a proper stack via k_thread_stack_alloc(). */
+/* Block-scope thread stack on Zephyr.  K_KERNEL_STACK_DEFINE is the
+ * kernel-only stack flavour (no userspace, which we don't use) — it uses
+ * Z_KERNEL_STACK_OBJ_ALIGN (a flat constant identifier) instead of
+ * Z_THREAD_STACK_OBJ_ALIGN's MAX(...) ternary, which GCC's __aligned()
+ * front-end won't accept as an integer-constant-expression at function
+ * scope.  Replicating the K_KERNEL_STACK_DEFINE expansion locally with
+ * `static` storage class lets the zero-heap public ove_thread_create /
+ * ove_workqueue_create macros allocate stacks without touching
+ * k_thread_stack_alloc, removing the CONFIG_DYNAMIC_THREAD dependency.
+ *
+ * GCC accepts the __kstackmem section attribute on function-scope
+ * statics — the variable still has static storage duration, it just
+ * lives in .kstackmem instead of .bss.  The Cortex-M MPU only requires
+ * base alignment + a properly-sized buffer, both of which
+ * Z_KERNEL_STACK_OBJ_ALIGN / K_KERNEL_STACK_LEN already enforce; works
+ * under CONFIG_HW_STACK_PROTECTION=y. */
 #define OVE_THREAD_STACK_BLOCK_STATIC_(name, size) \
-	static uint8_t *name = NULL
+	static struct z_thread_stack_element __kstackmem \
+		__aligned(Z_KERNEL_STACK_OBJ_ALIGN) \
+		name[K_KERNEL_STACK_LEN(size)]
 
 #define OVE_THREAD_STACK_MEMBER_(name, size) \
 	K_KERNEL_STACK_MEMBER(name, size)

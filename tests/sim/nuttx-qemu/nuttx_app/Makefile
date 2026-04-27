@@ -37,6 +37,7 @@ MAINSRC = main.c
 
 # NuttX backend modules (10, use POSIX APIs provided by NuttX kernel)
 CSRCS += $(NUTTX_BE)/nuttx_thread.c
+CSRCS += $(NUTTX_BE)/nuttx_heap_lock.c
 CSRCS += $(NUTTX_BE)/nuttx_sync.c
 CSRCS += $(NUTTX_BE)/nuttx_queue.c
 CSRCS += $(NUTTX_BE)/nuttx_timer.c

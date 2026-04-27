@@ -147,6 +147,10 @@ set(FREERTOS_KERNEL_SOURCES
 #     OVE_ERR_NOT_SUPPORTED from ove_watchdog_init already). ---
 set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_thread.c
+    # Heap-lock wrap chain (zero-heap only).  Common impl in
+    # backends/common/ove_heap_lock.c; freertos extras here.
+    ${OVE_ROOT}/backends/common/ove_heap_lock.c
+    ${FREERTOS_BACKEND}/freertos_heap_lock.c
     ${FREERTOS_BACKEND}/freertos_sync.c
     ${FREERTOS_BACKEND}/freertos_queue.c
     ${FREERTOS_BACKEND}/freertos_timer.c
@@ -391,3 +395,13 @@ set_source_files_properties(${HAL_SOURCES} PROPERTIES
 set_source_files_properties(${STM32_CMSIS_DIR}/Source/Templates/system_stm32f7xx.c PROPERTIES
     COMPILE_FLAGS "-Wno-unused-parameter"
 )
+
+# Zero-heap link-time wrap + audit.  --wrap routes libc malloc through
+# backends/common/ove_heap_lock.c's __wrap_* trampolines so the trap
+# test exercises the real wrap chain (not just direct calls).  The
+# audit forbids FreeRTOS heap_*.c globals; newlib internals are
+# tolerated since cmocka pulls them in.
+include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
+ove_apply_zero_heap_wrap(ove_test_renode_stm32f746_freertos_zeroheap)
+ove_zero_heap_assert_no_kernel_alloc(ove_test_renode_stm32f746_freertos_zeroheap
+    RTOS FREERTOS)
