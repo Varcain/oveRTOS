@@ -247,16 +247,6 @@ pub fn font_montserrat_14() -> *const bindings::lv_font_t {
     unsafe { &bindings::lv_font_montserrat_14 }
 }
 
-/// Safe pointer to `lv_font_montserrat_16`.
-pub fn font_montserrat_16() -> *const bindings::lv_font_t {
-    unsafe { &bindings::lv_font_montserrat_16 }
-}
-
-/// Safe pointer to `lv_font_montserrat_20`.
-pub fn font_montserrat_20() -> *const bindings::lv_font_t {
-    unsafe { &bindings::lv_font_montserrat_20 }
-}
-
 /// Safe pointer to `lv_font_montserrat_24`.
 pub fn font_montserrat_24() -> *const bindings::lv_font_t {
     unsafe { &bindings::lv_font_montserrat_24 }
@@ -265,11 +255,6 @@ pub fn font_montserrat_24() -> *const bindings::lv_font_t {
 /// Safe pointer to `lv_font_montserrat_32`.
 pub fn font_montserrat_32() -> *const bindings::lv_font_t {
     unsafe { &bindings::lv_font_montserrat_32 }
-}
-
-/// Safe pointer to `lv_font_montserrat_48`.
-pub fn font_montserrat_48() -> *const bindings::lv_font_t {
-    unsafe { &bindings::lv_font_montserrat_48 }
 }
 
 // =========================================================================

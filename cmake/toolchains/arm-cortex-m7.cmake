@@ -87,15 +87,84 @@ ove_build_picolibc()
 
 set(CMAKE_C_FLAGS_INIT
     "${CMAKE_C_FLAGS_INIT} -isystem ${OVE_PICOLIBC_PREFIX}/include")
-set(CMAKE_CXX_FLAGS_INIT
-    "${CMAKE_CXX_FLAGS_INIT} -isystem ${OVE_PICOLIBC_PREFIX}/include")
 
+# C++ header ordering for picolibc + arm-gnu-toolchain libstdc++.
+#
+# arm-gnu-toolchain ships libstdc++ built against newlib, so libstdc++
+# headers like <cstdlib> use `#include_next <stdlib.h>` to chain into
+# the C library's stdlib.h.  With `-isystem <picolibc>/include` alone,
+# picolibc lands at position #1 of the system search list, *before* the
+# libstdc++ dirs (`include/c++/<ver>`).  `#include_next` from <cstdlib>
+# (in c++/<ver>) skips earlier paths and resolves <stdlib.h> in the
+# default arm-none-eabi/include — newlib's stdlib.h, which then pulls
+# sys/reent.h whose `_READ_WRITE_*` macros aren't defined when picolibc's
+# sys/_types.h has already been used.  Result: cstdlib fails to compile,
+# and a successful link still references _impure_ptr from newlib paths.
+#
+# Fix: explicitly inject the libstdc++ dirs via -isystem *before*
+# picolibc.  GCC processes -isystem in declaration order, so the layout
+# becomes c++/<ver>, c++/<ver>/<multilib>, c++/<ver>/backward, picolibc,
+# then the default arm-none-eabi paths (deduplicated).  `#include_next
+# <stdlib.h>` from cstdlib now lands on picolibc's header before reaching
+# the toolchain's newlib stdlib.h.
+separate_arguments(_ove_cpu_args UNIX_COMMAND "${CPU_FLAGS}")
+execute_process(
+    COMMAND "${CMAKE_CXX_COMPILER}" ${_ove_cpu_args} -E -v -x c++ -
+    INPUT_FILE /dev/null
+    OUTPUT_QUIET
+    ERROR_VARIABLE _ove_cxx_search
+    RESULT_VARIABLE _ove_cxx_search_rc)
+if(NOT _ove_cxx_search_rc EQUAL 0)
+    message(FATAL_ERROR
+        "Failed to query C++ compiler search paths (rc=${_ove_cxx_search_rc}): "
+        "${_ove_cxx_search}")
+endif()
+string(REGEX MATCH "#include <\\.\\.\\.> search starts here:([^#]+)End of search list" _ove_cxx_search_block "${_ove_cxx_search}")
+set(_ove_cxx_isystem "")
+string(REPLACE "\n" ";" _ove_cxx_lines "${CMAKE_MATCH_1}")
+foreach(_line IN LISTS _ove_cxx_lines)
+    string(STRIP "${_line}" _dir)
+    if(_dir MATCHES "/c\\+\\+/")
+        get_filename_component(_dir "${_dir}" ABSOLUTE)
+        set(_ove_cxx_isystem "${_ove_cxx_isystem} -isystem ${_dir}")
+    endif()
+endforeach()
+if(_ove_cxx_isystem STREQUAL "")
+    message(FATAL_ERROR
+        "Could not extract libstdc++ include dirs from compiler search paths")
+endif()
+set(CMAKE_CXX_FLAGS_INIT
+    "${CMAKE_CXX_FLAGS_INIT}${_ove_cxx_isystem} -isystem ${OVE_PICOLIBC_PREFIX}/include")
+
+# Visibility for picolibc/libstdc++ coexistence.
+#
+# `-std=gnu++17` predefines `_GNU_SOURCE`, which forces picolibc's
+# features.h to set `_DEFAULT_SOURCE=1` and therefore `__MISC_VISIBLE=1`.
+# Under `__MISC_VISIBLE`, picolibc's <math.h> declares `extern int isinf
+# (double)` / `extern int isnan (double)` in the global namespace.
+# libstdc++ <cmath> then declares `std::isinf` as `constexpr bool(double)`
+# and brings the picolibc declaration in via `using ::isinf`, which gcc
+# rejects as a redeclaration with conflicting return type.  Undefining
+# `_GNU_SOURCE` and pinning `_POSIX_C_SOURCE` keeps `__MISC_VISIBLE=0`,
+# so picolibc skips those declarations and the C++ build compiles cleanly
+# without losing GNU extensions outside this visibility band.
+set(CMAKE_CXX_FLAGS_INIT
+    "${CMAKE_CXX_FLAGS_INIT} -U_GNU_SOURCE -D_POSIX_C_SOURCE=200809L")
+
+# `--defsym=_impure_ptr=0` resolves a libstdc++ link reference.  The C++
+# runtime shipped with arm-gnu-toolchain (assert_fail.cc / vterminate.cc)
+# was built against newlib and references newlib's per-thread `_impure_ptr`
+# from cold error-handler paths (assertion failures, uncaught exception
+# verbose terminate).  Picolibc has no equivalent symbol; defining it as
+# 0 satisfies the relocations.  These paths are not exercised under normal
+# operation, so a null `_impure_ptr` never gets dereferenced — and if one
+# of them did fire, we'd be aborting anyway.
 if(OVE_ARM_SEMIHOSTING)
     set(CMAKE_EXE_LINKER_FLAGS_INIT
-        "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS} --oslib=semihost --crt0=hosted")
+        "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS} --oslib=semihost --crt0=hosted -Wl,--defsym=_impure_ptr=0")
 else()
     set(CMAKE_EXE_LINKER_FLAGS_INIT
-        "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS}")
+        "${CPU_FLAGS} --specs=${OVE_PICOLIBC_SPECS} -Wl,--defsym=_impure_ptr=0")
 endif()
 
 # Search paths

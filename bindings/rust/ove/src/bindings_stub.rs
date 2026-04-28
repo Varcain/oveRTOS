@@ -1036,6 +1036,7 @@ pub const LV_FLEX_FLOW_COLUMN: u32 = 1;
 
 unsafe extern "C" {
     pub static lv_font_montserrat_14: lv_font_t;
+    pub static lv_font_montserrat_24: lv_font_t;
     pub static lv_font_montserrat_32: lv_font_t;
 }
 
