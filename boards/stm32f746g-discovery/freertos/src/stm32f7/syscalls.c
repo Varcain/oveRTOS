@@ -134,8 +134,7 @@ static int _stdio_getc(FILE *stream)
 	return _FDEV_EOF;
 }
 
-static FILE _stdio_file = FDEV_SETUP_STREAM(_stdio_putc, _stdio_getc, NULL,
-					    _FDEV_SETUP_RW);
+static FILE _stdio_file = FDEV_SETUP_STREAM(_stdio_putc, _stdio_getc, NULL, _FDEV_SETUP_RW);
 
 FILE *const stdin = &_stdio_file;
 FILE *const stdout = &_stdio_file;
