@@ -41,8 +41,7 @@ impl File {
     /// Open a file. `path` must be `\0`-terminated.
     pub fn open(path: &[u8], flags: i32) -> Result<Self> {
         let mut handle: bindings::ove_file_t = core::ptr::null_mut();
-        let rc =
-            unsafe { bindings::ove_fs_open(&mut handle, path.as_ptr() as *const _, flags) };
+        let rc = unsafe { bindings::ove_fs_open(&mut handle, path.as_ptr() as *const _, flags) };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }
@@ -97,7 +96,10 @@ impl DirEntry {
     /// The entry name as a byte slice (without trailing `\0`).
     pub fn name(&self) -> &[u8] {
         let name_bytes = unsafe {
-            core::slice::from_raw_parts(self.inner.name.as_ptr() as *const u8, self.inner.name.len())
+            core::slice::from_raw_parts(
+                self.inner.name.as_ptr() as *const u8,
+                self.inner.name.len(),
+            )
         };
         cstr_to_slice(name_bytes)
     }
@@ -122,8 +124,7 @@ impl Dir {
     /// Open a directory. `path` must be `\0`-terminated.
     pub fn open(path: &[u8]) -> Result<Self> {
         let mut handle: bindings::ove_dir_t = core::ptr::null_mut();
-        let rc =
-            unsafe { bindings::ove_fs_opendir(&mut handle, path.as_ptr() as *const _) };
+        let rc = unsafe { bindings::ove_fs_opendir(&mut handle, path.as_ptr() as *const _) };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }

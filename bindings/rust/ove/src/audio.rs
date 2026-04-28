@@ -44,10 +44,7 @@ pub struct AudioFmt {
 ///
 /// # Errors
 /// Returns an error if `frames_per_period` is zero.
-pub fn graph_init(
-    graph: &mut bindings::ove_audio_graph,
-    frames_per_period: u32,
-) -> Result<()> {
+pub fn graph_init(graph: &mut bindings::ove_audio_graph, frames_per_period: u32) -> Result<()> {
     let rc = unsafe { bindings::ove_audio_graph_init(graph, frames_per_period) };
     Error::from_code(rc)
 }
@@ -68,9 +65,8 @@ pub fn graph_add_node(
     name: &core::ffi::CStr,
     node_type: bindings::ove_audio_node_type,
 ) -> core::result::Result<i32, Error> {
-    let rc = unsafe {
-        bindings::ove_audio_graph_add_node(graph, ops, ctx, name.as_ptr(), node_type)
-    };
+    let rc =
+        unsafe { bindings::ove_audio_graph_add_node(graph, ops, ctx, name.as_ptr(), node_type) };
     if rc < 0 {
         Err(Error::from_code(rc).unwrap_err())
     } else {
@@ -82,11 +78,7 @@ pub fn graph_add_node(
 ///
 /// # Errors
 /// Returns an error on invalid indices or type violations.
-pub fn graph_connect(
-    graph: &mut bindings::ove_audio_graph,
-    from: u32,
-    to: u32,
-) -> Result<()> {
+pub fn graph_connect(graph: &mut bindings::ove_audio_graph, from: u32, to: u32) -> Result<()> {
     let rc = unsafe { bindings::ove_audio_graph_connect(graph, from, to) };
     Error::from_code(rc)
 }
@@ -195,10 +187,7 @@ impl Graph {
     /// `calloc` inter-node buffers.  In heap-mode builds the storage is
     /// unused but harmless.  Prefer the [`crate::audio_graph!`] macro,
     /// which emits the backing array automatically.
-    pub fn new_with_storage(
-        frames_per_period: u32,
-        storage: &'static mut [u8],
-    ) -> Result<Self> {
+    pub fn new_with_storage(frames_per_period: u32, storage: &'static mut [u8]) -> Result<Self> {
         let mut inner: bindings::ove_audio_graph = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_audio_graph_init(&mut inner, frames_per_period) };
         Error::from_code(rc)?;
@@ -220,11 +209,7 @@ impl Graph {
         name: &[u8],
     ) -> core::result::Result<u32, Error> {
         let rc = unsafe {
-            bindings::ove_audio_device_source(
-                &mut self.inner,
-                cfg,
-                name.as_ptr() as *const _,
-            )
+            bindings::ove_audio_device_source(&mut self.inner, cfg, name.as_ptr() as *const _)
         };
         if rc < 0 {
             Err(Error::from_code(rc).unwrap_err())
@@ -240,11 +225,7 @@ impl Graph {
         name: &[u8],
     ) -> core::result::Result<u32, Error> {
         let rc = unsafe {
-            bindings::ove_audio_device_sink(
-                &mut self.inner,
-                cfg,
-                name.as_ptr() as *const _,
-            )
+            bindings::ove_audio_device_sink(&mut self.inner, cfg, name.as_ptr() as *const _)
         };
         if rc < 0 {
             Err(Error::from_code(rc).unwrap_err())
@@ -259,8 +240,7 @@ impl Graph {
         processor: &'static mut T,
         name: &[u8],
     ) -> core::result::Result<u32, Error> {
-        graph_add_processor(&mut self.inner, processor, name)
-            .map(|i| i as u32)
+        graph_add_processor(&mut self.inner, processor, name).map(|i| i as u32)
     }
 
     /// Connect two nodes.  `from` feeds into `to`.
@@ -287,7 +267,6 @@ impl Graph {
     pub fn process(&mut self) -> Result<()> {
         graph_process(&mut self.inner)
     }
-
 }
 
 impl Drop for Graph {
@@ -324,7 +303,7 @@ impl AudioBuf {
     }
 
     /// Get a mutable slice of interleaved S16 samples.
-    pub fn data_s16_mut(&self) -> &mut [i16] {
+    pub fn data_s16_mut(&mut self) -> &mut [i16] {
         unsafe {
             let buf = &*self.raw;
             let count = buf.frames as usize * (*buf.fmt).channels as usize;
@@ -383,7 +362,7 @@ pub fn graph_add_processor<T: AudioProcessor>(
         out_fmt: *mut bindings::ove_audio_fmt,
     ) -> core::ffi::c_int {
         if !in_fmt.is_null() && !out_fmt.is_null() {
-            *out_fmt = *in_fmt;
+            unsafe { *out_fmt = *in_fmt };
         }
         0
     }
@@ -393,7 +372,7 @@ pub fn graph_add_processor<T: AudioProcessor>(
         in_buf: *const bindings::ove_audio_buf,
         out_buf: *mut bindings::ove_audio_buf,
     ) -> core::ffi::c_int {
-        let proc_: &mut T = &mut *(ctx as *mut T);
+        let proc_: &mut T = unsafe { &mut *(ctx as *mut T) };
         let input = AudioBuf { raw: in_buf };
         let output = AudioBuf { raw: out_buf };
         proc_.process(&input, &output);

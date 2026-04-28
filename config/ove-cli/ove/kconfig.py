@@ -10,7 +10,7 @@ import os
 import sys
 
 from .appgen import generate_app_kconfig
-from .workspace import Workspace, find_ove_dir
+from .workspace import find_ove_dir
 
 
 def _find_external_app_for_defconfig(defconfig_path):
@@ -297,7 +297,6 @@ def _load_yaml(path):
 
 def _load_yaml_simple(path):
     """Minimal YAML parser for board.yaml/app.yaml (flat lists only)."""
-    import json
     # Use the workspace module's parser if available
     result = {}
     current_key = None
@@ -488,7 +487,7 @@ def cmd_defconfig_fragments(args):
     # 1. Global
     global_path = os.path.join(frag_dir, "global.defconfig")
     if os.path.isfile(global_path):
-        print(f"  [global] config/fragments/global.defconfig")
+        print("  [global] config/fragments/global.defconfig")
         kconf.load_config(global_path, replace=True)
 
     # 2. Board selection + board.yaml defconfig

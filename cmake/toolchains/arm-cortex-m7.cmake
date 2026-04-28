@@ -28,6 +28,14 @@ else()
     set(TOOLCHAIN_PREFIX "arm-none-eabi-")
 endif()
 
+# Propagate OVE_TOOLCHAIN_DIR into try_compile sub-projects so the toolchain
+# resolves the same arm-none-eabi compiler in CMake's compiler-ABI checks.
+# Without this, the inner project re-runs this toolchain file with
+# OVE_TOOLCHAIN_DIR unset and falls through to a PATH lookup, which can
+# pick up a different (e.g. linuxbrew) arm-none-eabi-g++ that lacks the
+# C++ headers our libstdc++ probe below requires.
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES OVE_TOOLCHAIN_DIR)
+
 set(CMAKE_C_COMPILER "${TOOLCHAIN_PREFIX}gcc")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_PREFIX}g++")
 set(CMAKE_ASM_COMPILER "${TOOLCHAIN_PREFIX}gcc")

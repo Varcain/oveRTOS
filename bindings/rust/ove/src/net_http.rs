@@ -75,7 +75,16 @@ pub struct Header<'a> {
 /// let mut storage = ClientStorage::new();
 /// let client = Client::create(&mut storage)?;
 /// ```
+// FFI handle storage; the field is intentionally only addressed via raw
+// pointers passed to C, so clippy's `field is never read` doesn't apply.
+#[allow(dead_code)]
 pub struct ClientStorage(bindings::ove_http_client_storage_t);
+
+impl Default for ClientStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ClientStorage {
     pub fn new() -> Self {
@@ -114,9 +123,7 @@ impl Response {
         if self.raw.headers.is_null() || self.raw.headers_len == 0 {
             return &[];
         }
-        unsafe {
-            core::slice::from_raw_parts(self.raw.headers as *const u8, self.raw.headers_len)
-        }
+        unsafe { core::slice::from_raw_parts(self.raw.headers as *const u8, self.raw.headers_len) }
     }
 }
 
@@ -163,9 +170,7 @@ impl Client {
     /// Caller must ensure `storage` outlives the `Client` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_http_client_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_http_client_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_http_client_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_http_client_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -197,9 +202,7 @@ impl Client {
     /// Returns an error if the request fails at the transport or protocol level.
     pub fn get(&self, url: &[u8]) -> Result<Response> {
         let mut raw: bindings::ove_http_response_t = unsafe { core::mem::zeroed() };
-        let rc = unsafe {
-            bindings::ove_http_get(self.handle, url.as_ptr() as *const _, &mut raw)
-        };
+        let rc = unsafe { bindings::ove_http_get(self.handle, url.as_ptr() as *const _, &mut raw) };
         Error::from_code(rc)?;
         Ok(Response { raw })
     }
@@ -210,12 +213,7 @@ impl Client {
     ///
     /// # Errors
     /// Returns an error if the request fails at the transport or protocol level.
-    pub fn post(
-        &self,
-        url: &[u8],
-        content_type: &[u8],
-        body: &[u8],
-    ) -> Result<Response> {
+    pub fn post(&self, url: &[u8], content_type: &[u8], body: &[u8]) -> Result<Response> {
         let mut raw: bindings::ove_http_response_t = unsafe { core::mem::zeroed() };
         let rc = unsafe {
             bindings::ove_http_post(

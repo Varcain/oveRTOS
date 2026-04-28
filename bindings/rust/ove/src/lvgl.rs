@@ -44,13 +44,13 @@ pub const ALIGN_RIGHT_MID: u8 = 8;
 pub const ALIGN_CENTER: u8 = 9;
 
 /// LVGL style selector for the main (background) part of a widget.
-pub const PART_MAIN: u32 = 0x000000;
+pub const PART_MAIN: u32 = 0x00_0000;
 /// LVGL style selector for the indicator part (e.g. bar fill, checkbox mark).
-pub const PART_INDICATOR: u32 = 0x010000;
+pub const PART_INDICATOR: u32 = 0x01_0000;
 /// LVGL style selector for the knob of interactive widgets (slider, arc).
-pub const PART_KNOB: u32 = 0x030000;
+pub const PART_KNOB: u32 = 0x03_0000;
 /// LVGL style selector for the items part (e.g. table cells, list items).
-pub const PART_ITEMS: u32 = 0x050000;
+pub const PART_ITEMS: u32 = 0x05_0000;
 
 /// LVGL v9 `LV_SIZE_CONTENT` — sets widget to size-to-content mode.
 /// Computed from: `LV_COORD_SET_SPEC(LV_COORD_MAX)` where
@@ -382,13 +382,7 @@ pub trait Layout: Widget + Sized {
     /// LVGL retains the pointer rather than copying. `'static` slices are
     /// the typical choice.
     fn grid_dsc(self, cols: &'static [i32], rows: &'static [i32]) -> Self {
-        unsafe {
-            bindings::lv_obj_set_grid_dsc_array(
-                self.raw(),
-                cols.as_ptr(),
-                rows.as_ptr(),
-            )
-        };
+        unsafe { bindings::lv_obj_set_grid_dsc_array(self.raw(), cols.as_ptr(), rows.as_ptr()) };
         self
     }
 
@@ -412,8 +406,8 @@ pub trait Layout: Widget + Sized {
                 row_align as _,
                 row_pos,
                 row_span,
-            )
-        };
+            );
+        }
         self
     }
 
@@ -426,14 +420,7 @@ pub trait Layout: Widget + Sized {
     /// Set flex container alignment along the main, cross (per item), and
     /// cross (per track) axes. Equivalent to `lv_obj_set_flex_align`.
     fn flex_align(self, main: FlexAlign, cross: FlexAlign, track: FlexAlign) -> Self {
-        unsafe {
-            bindings::lv_obj_set_flex_align(
-                self.raw(),
-                main as _,
-                cross as _,
-                track as _,
-            )
-        };
+        unsafe { bindings::lv_obj_set_flex_align(self.raw(), main as _, cross as _, track as _) };
         self
     }
 
@@ -723,16 +710,14 @@ pub struct EventCtx<'a> {
 impl<'a> EventCtx<'a> {
     /// Widget that originally fired the event (innermost).
     pub fn target(self) -> Obj {
-        let raw = unsafe { bindings::lv_event_get_target(self.raw) as *mut bindings::lv_obj_t };
+        let raw = unsafe { bindings::lv_event_get_target(self.raw) };
         Obj { raw }
     }
 
     /// Widget the user is interacting with — may differ from `target` for
     /// bubbled events (this is the widget the callback was registered on).
     pub fn current_target(self) -> Obj {
-        let raw = unsafe {
-            bindings::lv_event_get_current_target(self.raw) as *mut bindings::lv_obj_t
-        };
+        let raw = unsafe { bindings::lv_event_get_current_target(self.raw) };
         Obj { raw }
     }
 
@@ -760,10 +745,7 @@ pub struct EventHandler<T: 'static> {
 
 impl<T: 'static> EventHandler<T> {
     /// Construct a handler descriptor — usable in `static` declarations.
-    pub const fn new(
-        cell: &'static crate::StaticCell<T>,
-        user: fn(&T, EventCtx<'_>),
-    ) -> Self {
+    pub const fn new(cell: &'static crate::StaticCell<T>, user: fn(&T, EventCtx<'_>)) -> Self {
         Self { cell, user }
     }
 }
@@ -783,9 +765,7 @@ unsafe extern "C" fn event_trampoline_fn(e: *mut bindings::lv_event_t) {
     });
 }
 
-unsafe extern "C" fn event_trampoline_with<T: Send + Sync + 'static>(
-    e: *mut bindings::lv_event_t,
-) {
+unsafe extern "C" fn event_trampoline_with<T: Send + Sync + 'static>(e: *mut bindings::lv_event_t) {
     let ud = unsafe { bindings::lv_event_get_user_data(e) } as *const EventHandler<T>;
     if ud.is_null() {
         return;
@@ -815,9 +795,7 @@ pub trait EventTarget: Widget + Sized {
     /// Register a stateless safe handler for any LVGL event code.
     fn on_fn(self, code: bindings::lv_event_code_t, handler: fn(EventCtx<'_>)) -> Self {
         let ud = handler as *mut core::ffi::c_void;
-        unsafe {
-            bindings::lv_obj_add_event_cb(self.raw(), Some(event_trampoline_fn), code, ud)
-        };
+        unsafe { bindings::lv_obj_add_event_cb(self.raw(), Some(event_trampoline_fn), code, ud) };
         self
     }
 
@@ -840,21 +818,13 @@ pub trait EventTarget: Widget + Sized {
     ) -> Self {
         let ud = handler as *const EventHandler<T> as *mut core::ffi::c_void;
         unsafe {
-            bindings::lv_obj_add_event_cb(
-                self.raw(),
-                Some(event_trampoline_with::<T>),
-                code,
-                ud,
-            )
-        };
+            bindings::lv_obj_add_event_cb(self.raw(), Some(event_trampoline_with::<T>), code, ud);
+        }
         self
     }
 
     /// Stateful click handler (see [`EventTarget::on_with`]).
-    fn on_clicked_with<T: Send + Sync + 'static>(
-        self,
-        handler: &'static EventHandler<T>,
-    ) -> Self {
+    fn on_clicked_with<T: Send + Sync + 'static>(self, handler: &'static EventHandler<T>) -> Self {
         self.on_with(bindings::LV_EVENT_CLICKED, handler)
     }
 
@@ -1577,9 +1547,8 @@ impl Msgbox {
     /// Add a footer button with the given text. Returns the raw button
     /// handle for event handler attachment.
     pub fn add_footer_button(self, txt: &[u8]) -> Obj {
-        let btn = unsafe {
-            bindings::lv_msgbox_add_footer_button(self.raw, txt.as_ptr() as *const _)
-        };
+        let btn =
+            unsafe { bindings::lv_msgbox_add_footer_button(self.raw, txt.as_ptr() as *const _) };
         unsafe { Obj::from_raw(btn) }
     }
 
@@ -1826,7 +1795,10 @@ impl Chart {
     /// Add a new series with the given color and axis binding.
     pub fn add_series(self, color: Color, axis: u32) -> Series {
         let raw = unsafe { bindings::lv_chart_add_series(self.raw, color.to_raw(), axis as _) };
-        Series { chart: self.raw, raw }
+        Series {
+            chart: self.raw,
+            raw,
+        }
     }
 
     /// Remove a series from the chart.
@@ -1884,7 +1856,7 @@ impl Calendar {
         let ok = unsafe { bindings::lv_calendar_get_pressed_date(self.raw, &mut date) };
         // LVGL's lv_result_t: 1 = OK, 0 = INVALID. Non-zero means we got a date.
         if ok != 0 {
-            Some((date.year as u32, date.month as u32, date.day as u32))
+            Some((date.year, date.month, date.day))
         } else {
             None
         }
@@ -2009,9 +1981,7 @@ impl Table {
 
     /// Fluent: set a cell's text (null-terminated byte slice).
     pub fn cell_value(self, row: u32, col: u32, txt: &[u8]) -> Self {
-        unsafe {
-            bindings::lv_table_set_cell_value(self.raw, row, col, txt.as_ptr() as *const _)
-        };
+        unsafe { bindings::lv_table_set_cell_value(self.raw, row, col, txt.as_ptr() as *const _) };
         self
     }
 
@@ -2086,9 +2056,7 @@ impl Tabview {
 
     /// Fluent: rename an existing tab by index.
     pub fn rename_tab(self, idx: u32, name: &[u8]) -> Self {
-        unsafe {
-            bindings::lv_tabview_rename_tab(self.raw, idx, name.as_ptr() as *const _)
-        };
+        unsafe { bindings::lv_tabview_rename_tab(self.raw, idx, name.as_ptr() as *const _) };
         self
     }
 
@@ -2167,10 +2135,9 @@ impl List {
 
     /// Add a button row with an optional icon. Returns the button as an [`Obj`].
     pub fn add_button(self, icon: Option<ImageSrc>, text: &[u8]) -> Obj {
-        let icon_ptr = icon.map(|s| s.raw_ptr()).unwrap_or(core::ptr::null());
-        let raw = unsafe {
-            bindings::lv_list_add_button(self.raw, icon_ptr, text.as_ptr() as *const _)
-        };
+        let icon_ptr = icon.map_or(core::ptr::null(), ImageSrc::raw_ptr);
+        let raw =
+            unsafe { bindings::lv_list_add_button(self.raw, icon_ptr, text.as_ptr() as *const _) };
         unsafe { Obj::from_raw(raw) }
     }
 }
@@ -2219,9 +2186,7 @@ impl Textarea {
 
     /// Fluent: set placeholder shown while empty.
     pub fn placeholder(self, txt: &[u8]) -> Self {
-        unsafe {
-            bindings::lv_textarea_set_placeholder_text(self.raw, txt.as_ptr() as *const _)
-        };
+        unsafe { bindings::lv_textarea_set_placeholder_text(self.raw, txt.as_ptr() as *const _) };
         self
     }
 
@@ -2245,9 +2210,7 @@ impl Textarea {
 
     /// Fluent: restrict input to characters in `list` (null pointer = any).
     pub fn accepted_chars(self, list: &[u8]) -> Self {
-        unsafe {
-            bindings::lv_textarea_set_accepted_chars(self.raw, list.as_ptr() as *const _)
-        };
+        unsafe { bindings::lv_textarea_set_accepted_chars(self.raw, list.as_ptr() as *const _) };
         self
     }
 
@@ -2334,9 +2297,7 @@ impl Dropdown {
 
     /// Fluent: set options from a persistent newline-separated string (no copy).
     pub fn options_static(self, opts: &'static [u8]) -> Self {
-        unsafe {
-            bindings::lv_dropdown_set_options_static(self.raw, opts.as_ptr() as *const _)
-        };
+        unsafe { bindings::lv_dropdown_set_options_static(self.raw, opts.as_ptr() as *const _) };
         self
     }
 
@@ -2381,8 +2342,8 @@ impl Dropdown {
                 self.raw,
                 buf.as_mut_ptr() as *mut _,
                 buf.len() as u32,
-            )
-        };
+            );
+        }
     }
 
     /// Returns `true` if the popup list is currently expanded.
@@ -2438,9 +2399,7 @@ impl Roller {
     /// Fluent: set options and scroll mode. Use [`ROLLER_MODE_NORMAL`] or
     /// [`ROLLER_MODE_INFINITE`].
     pub fn options(self, opts: &[u8], mode: u32) -> Self {
-        unsafe {
-            bindings::lv_roller_set_options(self.raw, opts.as_ptr() as *const _, mode as _)
-        };
+        unsafe { bindings::lv_roller_set_options(self.raw, opts.as_ptr() as *const _, mode as _) };
         self
     }
 
@@ -2476,8 +2435,8 @@ impl Roller {
                 self.raw,
                 buf.as_mut_ptr() as *mut _,
                 buf.len() as u32,
-            )
-        };
+            );
+        }
     }
 }
 
@@ -2689,9 +2648,7 @@ impl Screen {
         delay_ms: u32,
         auto_del: bool,
     ) {
-        unsafe {
-            bindings::lv_screen_load_anim(self.raw, anim, time_ms, delay_ms, auto_del)
-        };
+        unsafe { bindings::lv_screen_load_anim(self.raw, anim, time_ms, delay_ms, auto_del) };
     }
 }
 
@@ -2867,7 +2824,11 @@ impl Group {
     /// `None` if the group is empty.
     pub fn focused(&self) -> Option<Obj> {
         let raw = unsafe { bindings::lv_group_get_focused(self.raw) };
-        if raw.is_null() { None } else { Some(unsafe { Obj::from_raw(raw) }) }
+        if raw.is_null() {
+            None
+        } else {
+            Some(unsafe { Obj::from_raw(raw) })
+        }
     }
 
     /// Fluent: enable/disable encoder edit mode.
@@ -2906,7 +2867,9 @@ impl Drop for Group {
 }
 
 impl Default for Group {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 unsafe impl Send for Group {}
@@ -3093,11 +3056,7 @@ impl Label {
         fmt: &'static [u8],
     ) -> Self {
         unsafe {
-            bindings::lv_label_bind_text(
-                self.raw(),
-                state.subject_ptr(),
-                fmt.as_ptr() as *const _,
-            );
+            bindings::lv_label_bind_text(self.raw(), state.subject_ptr(), fmt.as_ptr() as *const _);
         }
         self
     }
@@ -3151,11 +3110,9 @@ impl Dropdown {
 /// `e` must be a valid `lv_event_t *` active inside an event callback.
 /// The returned pointer is whatever the widget tree's user_data holds —
 /// the caller is responsible for its type.
-pub unsafe fn component_from_event(
-    e: *mut bindings::lv_event_t,
-) -> *mut core::ffi::c_void {
+pub unsafe fn component_from_event(e: *mut bindings::lv_event_t) -> *mut core::ffi::c_void {
     unsafe {
-        let mut target = bindings::lv_event_get_target(e) as *mut bindings::lv_obj_t;
+        let mut target = bindings::lv_event_get_target(e);
         while !target.is_null() {
             let ud = bindings::lv_obj_get_user_data(target);
             if !ud.is_null() {
@@ -3276,7 +3233,9 @@ impl Animation {
 }
 
 impl Default for Animation {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Linear easing path (`lv_anim_path_linear`).
@@ -3329,13 +3288,7 @@ unsafe extern "C" fn anim_set_width_shim(var: *mut core::ffi::c_void, v: i32) {
 }
 
 unsafe extern "C" fn anim_set_opa_shim(var: *mut core::ffi::c_void, v: i32) {
-    unsafe {
-        bindings::lv_obj_set_style_opa(
-            var as *mut bindings::lv_obj_t,
-            v as u8,
-            PART_MAIN,
-        )
-    };
+    unsafe { bindings::lv_obj_set_style_opa(var as *mut bindings::lv_obj_t, v as u8, PART_MAIN) };
 }
 
 /// Animate an object's X position to `to` over `duration_ms` (ease-out).
@@ -3396,6 +3349,12 @@ pub fn animate_opa(obj: impl Widget, from: u8, to: u8, duration_ms: u32) {
 /// RAII wrapper around `lv_style_t`. Calls `lv_style_reset` on drop.
 pub struct Style {
     inner: bindings::lv_style_t,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Style {
@@ -3641,18 +3600,13 @@ pub fn layer_top() -> Obj {
 ///
 /// `text` must be NUL-terminated (LVGL reads C strings).
 pub fn text_size(text: &[u8], font: *const bindings::lv_font_t) -> (i32, i32) {
-    debug_assert!(text.last() == Some(&0), "text_size: text must be NUL-terminated");
+    debug_assert!(
+        text.last() == Some(&0),
+        "text_size: text must be NUL-terminated"
+    );
     let mut p = bindings::lv_point_t { x: 0, y: 0 };
     unsafe {
-        bindings::lv_text_get_size(
-            &mut p,
-            text.as_ptr() as *const _,
-            font,
-            0,
-            0,
-            i32::MAX,
-            0,
-        );
+        bindings::lv_text_get_size(&mut p, text.as_ptr() as *const _, font, 0, 0, i32::MAX, 0);
     }
     (p.x, p.y)
 }
@@ -3684,13 +3638,9 @@ impl Animation {
         }
         self
     }
-
 }
 
-unsafe extern "C" fn anim_custom_tick_trampoline(
-    a: *mut bindings::lv_anim_t,
-    v: i32,
-) {
+unsafe extern "C" fn anim_custom_tick_trampoline(a: *mut bindings::lv_anim_t, v: i32) {
     unsafe {
         let ud = bindings::lv_anim_get_user_data(a);
         if ud.is_null() {
@@ -3709,7 +3659,6 @@ unsafe extern "C" fn anim_custom_tick_trampoline(
         );
     }
 }
-
 
 // Internal trampolines for additional convenience animators.
 unsafe extern "C" fn anim_translate_y_shim(var: *mut core::ffi::c_void, v: i32) {
@@ -3804,13 +3753,7 @@ pub fn animate_scroll_y_playback(
 }
 
 /// Animate an [`Arc`] value forward then back, looping forever.
-pub fn animate_arc_value_playback(
-    arc: Arc,
-    from: i32,
-    to: i32,
-    forward_ms: u32,
-    playback_ms: u32,
-) {
+pub fn animate_arc_value_playback(arc: Arc, from: i32, to: i32, forward_ms: u32, playback_ms: u32) {
     Animation::new()
         .target(arc.raw() as *mut _)
         .values(from, to)
@@ -4110,9 +4053,8 @@ impl Timer {
     /// an internal trampoline calls it with no arguments.
     pub fn new_fn(callback: fn(), period_ms: u32) -> Self {
         let ud = callback as *mut core::ffi::c_void;
-        let raw = unsafe {
-            bindings::lv_timer_create(Some(lvgl_timer_trampoline_fn), period_ms, ud)
-        };
+        let raw =
+            unsafe { bindings::lv_timer_create(Some(lvgl_timer_trampoline_fn), period_ms, ud) };
         Self { raw }
     }
 }

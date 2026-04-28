@@ -136,7 +136,7 @@ def _check_manifest_component(ove_dir, display, path_glob, required=False):
                 "path": matches[0]}
     return {"name": f"dl:{display}",
             "status": _FAIL if required else _WARN,
-            "detail": f"not found under dl/ — run 'ove download'"}
+            "detail": "not found under dl/ — run 'ove download'"}
 
 
 def _checks():

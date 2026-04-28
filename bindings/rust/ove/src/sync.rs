@@ -40,9 +40,7 @@ impl Mutex {
     /// Caller must ensure `storage` outlives the `Mutex` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_mutex_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_mutex_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_mutex_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -124,9 +122,7 @@ impl RecursiveMutex {
     /// Caller must ensure `storage` outlives the `RecursiveMutex` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_mutex_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_mutex_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_recursive_mutex_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -160,7 +156,11 @@ impl RecursiveMutex {
     }
 }
 
-crate::ove_handle_impl!(RecursiveMutex, ove_recursive_mutex_destroy, ove_mutex_deinit);
+crate::ove_handle_impl!(
+    RecursiveMutex,
+    ove_recursive_mutex_destroy,
+    ove_mutex_deinit
+);
 
 /// RAII guard that unlocks a `RecursiveMutex` when dropped.
 pub struct RecursiveMutexGuard<'a> {
@@ -257,9 +257,7 @@ impl Event {
     /// # Safety
     /// Caller must ensure `storage` outlives the `Event`.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_event_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_event_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_event_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_event_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -312,9 +310,7 @@ impl CondVar {
     /// # Safety
     /// Caller must ensure `storage` outlives the `CondVar`.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_condvar_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_condvar_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_condvar_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_condvar_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -329,8 +325,7 @@ impl CondVar {
     /// Returns [`Error::Timeout`] if neither [`signal`](CondVar::signal) nor
     /// [`broadcast`](CondVar::broadcast) fires within `timeout_ms`.
     pub fn wait(&self, mutex: &Mutex, timeout_ms: u32) -> Result<()> {
-        let rc =
-            unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout_ms) };
+        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout_ms) };
         Error::from_code(rc)
     }
 

@@ -6,1123 +6,5209 @@
 
 //! Stub FFI bindings for docs.rs builds.
 //!
-//! This file is used in place of the bindgen-generated `ove_bindings.rs`
-//! when building documentation on docs.rs (detected via `DOCS_RS` env var
-//! and the `docsrs` cfg flag). It declares all types, constants, and
-//! `extern "C"` function signatures used by the Rust wrappers so that
-//! `cargo doc` succeeds without a real C toolchain or LVGL headers.
+//! Used in place of the bindgen-generated `ove_bindings.rs` when
+//! building documentation on docs.rs (detected via `DOCS_RS` env var
+//! and the `docsrs` cfg flag). Mirrors what bindgen would emit so
+//! `cargo doc` (and `clippy --cfg docsrs`) compile without a real C
+//! toolchain or LVGL headers. Regenerate with
+//! `python3 scripts/gen_bindings_stub.py <bindgen.rs> bindings_stub.rs`
+//! after the C FFI surface changes; lint runs clippy with cfg(docsrs)
+//! to catch drift.
 
-#![allow(non_upper_case_globals, non_camel_case_types, non_snake_case, dead_code)]
+#![allow(
+    non_upper_case_globals,
+    non_camel_case_types,
+    non_snake_case,
+    dead_code
+)]
+#![allow(clippy::unreadable_literal, clippy::pub_underscore_fields)]
 
-use core::ffi::c_void;
-
-// ---------------------------------------------------------------------------
-// Primitive aliases
-// ---------------------------------------------------------------------------
-
-pub type c_int   = i32;
-pub type c_uint  = u32;
-pub type c_ulong = u64;
-
-// ---------------------------------------------------------------------------
-// Error codes
-// ---------------------------------------------------------------------------
-
-pub const OVE_OK:                i32 = 0;
+pub const OVE_ALIGNOF_OVE_CONDVAR_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_DIR_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_EVENTGROUP_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_EVENT_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_FILE_STORAGE: u32 = 4;
+pub const OVE_ALIGNOF_OVE_MUTEX_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_QUEUE_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_SEM_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_STREAM_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_THREAD_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_TIMER_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_WATCHDOG_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_WORKQUEUE_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_WORK_STORAGE: u32 = 8;
+pub const OVE_SIZEOF_OVE_CONDVAR_STORAGE: u32 = 48;
+pub const OVE_SIZEOF_OVE_DIR_STORAGE: u32 = 8;
+pub const OVE_SIZEOF_OVE_EVENTGROUP_STORAGE: u32 = 96;
+pub const OVE_SIZEOF_OVE_EVENT_STORAGE: u32 = 96;
+pub const OVE_SIZEOF_OVE_FILE_STORAGE: u32 = 4;
+pub const OVE_SIZEOF_OVE_MUTEX_STORAGE: u32 = 40;
+pub const OVE_SIZEOF_OVE_QUEUE_STORAGE: u32 = 168;
+pub const OVE_SIZEOF_OVE_SEM_STORAGE: u32 = 32;
+pub const OVE_SIZEOF_OVE_STREAM_STORAGE: u32 = 184;
+pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 128;
+pub const OVE_SIZEOF_OVE_TIMER_STORAGE: u32 = 40;
+pub const OVE_SIZEOF_OVE_WATCHDOG_STORAGE: u32 = 16;
+pub const OVE_SIZEOF_OVE_WORKQUEUE_STORAGE: u32 = 616;
+pub const OVE_SIZEOF_OVE_WORK_STORAGE: u32 = 16;
+pub const OVE_ALIGNOF_OVE_HTTP_CLIENT_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_I2C_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_I2S_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_MODEL_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_MQTT_CLIENT_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_NETIF_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_SOCKET_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_SPI_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_TLS_STORAGE: u32 = 8;
+pub const OVE_ALIGNOF_OVE_UART_STORAGE: u32 = 8;
+pub const OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_I2C_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_I2S_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_MODEL_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE: u32 = 128;
+pub const OVE_SIZEOF_OVE_NETIF_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_SOCKET_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_SPI_STORAGE: u32 = 64;
+pub const OVE_SIZEOF_OVE_TLS_STORAGE: u32 = 128;
+pub const OVE_SIZEOF_OVE_UART_STORAGE: u32 = 64;
+pub const OVE_OK: u32 = 0;
 pub const OVE_ERR_NOT_REGISTERED: i32 = -1;
 pub const OVE_ERR_INVALID_PARAM: i32 = -2;
-pub const OVE_ERR_NO_MEMORY:     i32 = -3;
-pub const OVE_ERR_TIMEOUT:       i32 = -4;
+pub const OVE_ERR_NO_MEMORY: i32 = -3;
+pub const OVE_ERR_TIMEOUT: i32 = -4;
 pub const OVE_ERR_NOT_SUPPORTED: i32 = -5;
-pub const OVE_ERR_QUEUE_FULL:    i32 = -6;
-pub const OVE_ERR_ML_FAILED:    i32 = -7;
-pub const OVE_ERR_NET_REFUSED:  i32 = -8;
+pub const OVE_ERR_QUEUE_FULL: i32 = -6;
+pub const OVE_ERR_ML_FAILED: i32 = -7;
+pub const OVE_ERR_NET_REFUSED: i32 = -8;
 pub const OVE_ERR_NET_UNREACHABLE: i32 = -9;
 pub const OVE_ERR_NET_ADDR_IN_USE: i32 = -10;
-pub const OVE_ERR_NET_RESET:    i32 = -11;
+pub const OVE_ERR_NET_RESET: i32 = -11;
 pub const OVE_ERR_NET_DNS_FAIL: i32 = -12;
-pub const OVE_ERR_NET_CLOSED:   i32 = -13;
-pub const OVE_ERR_BUS_NACK:     i32 = -14;
-pub const OVE_ERR_BUS_BUSY:     i32 = -15;
-pub const OVE_ERR_BUS_ERROR:    i32 = -16;
-
-pub const OVE_WAIT_FOREVER: u32 = u32::MAX;
-
-// ---------------------------------------------------------------------------
-// Thread state constants
-// ---------------------------------------------------------------------------
-
-pub const OVE_THREAD_STATE_RUNNING:    u32 = 0;
-pub const OVE_THREAD_STATE_READY:      u32 = 1;
-pub const OVE_THREAD_STATE_BLOCKED:    u32 = 2;
-pub const OVE_THREAD_STATE_SUSPENDED:  u32 = 3;
-pub const OVE_THREAD_STATE_TERMINATED: u32 = 4;
-pub const OVE_THREAD_STATE_UNKNOWN:    u32 = 5;
-
-// ---------------------------------------------------------------------------
-// Thread priority constants
-// ---------------------------------------------------------------------------
-
-pub const OVE_PRIO_IDLE:         u32 = 0;
-pub const OVE_PRIO_LOW:          u32 = 1;
-pub const OVE_PRIO_BELOW_NORMAL: u32 = 2;
-pub const OVE_PRIO_NORMAL:       u32 = 3;
-pub const OVE_PRIO_ABOVE_NORMAL: u32 = 4;
-pub const OVE_PRIO_HIGH:         u32 = 5;
-pub const OVE_PRIO_REALTIME:     u32 = 6;
-pub const OVE_PRIO_CRITICAL:     u32 = 7;
-
-// ---------------------------------------------------------------------------
-// Filesystem flags
-// ---------------------------------------------------------------------------
-
-pub const OVE_FS_O_READ:   u32 = 0x01;
-pub const OVE_FS_O_WRITE:  u32 = 0x02;
-pub const OVE_FS_O_CREATE: u32 = 0x04;
-pub const OVE_FS_O_APPEND: u32 = 0x08;
-
+pub const OVE_ERR_NET_CLOSED: i32 = -13;
+pub const OVE_ERR_BUS_NACK: i32 = -14;
+pub const OVE_ERR_BUS_BUSY: i32 = -15;
+pub const OVE_ERR_BUS_ERROR: i32 = -16;
+pub const OVE_WAIT_FOREVER: u32 = 4294967295;
+pub const OVE_LOG_LEVEL: u32 = 0;
+pub const OVE_RTOS_NAME: &[u8; 6] = b"POSIX\0";
+pub const OVE_LOG_LEVEL_ERR: u32 = 0;
+pub const OVE_LOG_LEVEL_WRN: u32 = 1;
+pub const OVE_LOG_LEVEL_INF: u32 = 2;
+pub const OVE_LOG_LEVEL_DBG: u32 = 3;
+pub const OVE_HEAP_SYNC: u32 = 1;
+pub const OVE_HEAP_THREAD: u32 = 1;
+pub const OVE_HEAP_QUEUE: u32 = 1;
+pub const OVE_HEAP_TIMER: u32 = 1;
+pub const OVE_HEAP_EVENTGROUP: u32 = 1;
+pub const OVE_HEAP_WORKQUEUE: u32 = 1;
+pub const OVE_HEAP_STREAM: u32 = 1;
+pub const OVE_HEAP_WATCHDOG: u32 = 1;
+pub const OVE_HEAP_FS: u32 = 1;
+pub const OVE_HEAP_AUDIO: u32 = 1;
+pub const OVE_HEAP_INFER: u32 = 1;
+pub const OVE_HEAP_NET: u32 = 1;
+pub const OVE_HEAP_NET_TLS: u32 = 1;
+pub const OVE_HEAP_NET_HTTP: u32 = 1;
+pub const OVE_HEAP_NET_MQTT: u32 = 1;
+pub const OVE_HEAP_UART: u32 = 1;
+pub const OVE_HEAP_SPI: u32 = 1;
+pub const OVE_HEAP_I2C: u32 = 1;
+pub const OVE_HEAP_I2S: u32 = 1;
+pub const OVE_AUDIO_MAX_CHANNELS: u32 = 8;
+pub const OVE_AUDIO_GRAPH_MAX_NODES: u32 = 16;
+pub const OVE_AUDIO_GRAPH_MAX_EDGES: u32 = 16;
+pub const OVE_FS_O_READ: u32 = 1;
+pub const OVE_FS_O_WRITE: u32 = 2;
+pub const OVE_FS_O_CREATE: u32 = 4;
+pub const OVE_FS_O_APPEND: u32 = 8;
 pub const OVE_FS_SEEK_SET: u32 = 0;
 pub const OVE_FS_SEEK_CUR: u32 = 1;
 pub const OVE_FS_SEEK_END: u32 = 2;
-
-// ---------------------------------------------------------------------------
-// Event group flags
-// ---------------------------------------------------------------------------
-
-pub const OVE_EG_WAIT_ALL:      u32 = 0x01;
-pub const OVE_EG_CLEAR_ON_EXIT: u32 = 0x02;
-
-// ---------------------------------------------------------------------------
-// Opaque handle types
-// ---------------------------------------------------------------------------
-
-pub type ove_thread_t     = *mut c_void;
-pub type ove_mutex_t      = *mut c_void;
-pub type ove_sem_t        = *mut c_void;
-pub type ove_event_t      = *mut c_void;
-pub type ove_condvar_t    = *mut c_void;
-pub type ove_eventgroup_t = *mut c_void;
-pub type ove_workqueue_t  = *mut c_void;
-pub type ove_work_t       = *mut c_void;
-pub type ove_stream_t     = *mut c_void;
-pub type ove_watchdog_t   = *mut c_void;
-pub type ove_file_t       = *mut c_void;
-pub type ove_dir_t        = *mut c_void;
-pub type ove_queue_t      = *mut c_void;
-pub type ove_timer_t      = *mut c_void;
-pub type ove_model_t      = *mut c_void;
-pub type ove_netif_t      = *mut c_void;
-pub type ove_socket_t     = *mut c_void;
-pub type ove_http_client_t = *mut c_void;
-pub type ove_mqtt_client_t = *mut c_void;
-pub type ove_tls_t        = *mut c_void;
-pub type ove_uart_t       = *mut c_void;
-pub type ove_spi_t        = *mut c_void;
-pub type ove_i2c_t        = *mut c_void;
-pub type ove_i2s_t        = *mut c_void;
-
+pub const OVE_EG_WAIT_ALL: u32 = 1;
+pub const OVE_EG_CLEAR_ON_EXIT: u32 = 2;
+pub const OVE_SHELL_MAX_ARGS: u32 = 8;
+pub const OVE_HTTPD_MAX_ROUTES: u32 = 16;
+pub const OVE_HTTPD_MAX_SEGMENTS: u32 = 8;
+pub const OVE_I2C_REG_WRITE_MAX: u32 = 32;
+pub const LV_SIZE_CONTENT: u32 = 1073741823;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_thread {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create"]
+pub type ove_thread_t = *mut ove_thread;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_mutex {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a mutex object. @see ove_mutex_init, ove_mutex_create"]
+pub type ove_mutex_t = *mut ove_mutex;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_sem {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a counting semaphore object. @see ove_sem_init, ove_sem_create"]
+pub type ove_sem_t = *mut ove_sem;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_event {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a binary event (signal/wait) object. @see ove_event_init, ove_event_create"]
+pub type ove_event_t = *mut ove_event;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_condvar {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a condition variable object. @see ove_condvar_init, ove_condvar_create"]
+pub type ove_condvar_t = *mut ove_condvar;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_eventgroup {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an event-group (bit-field) object."]
+pub type ove_eventgroup_t = *mut ove_eventgroup;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_workqueue {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a work queue object."]
+pub type ove_workqueue_t = *mut ove_workqueue;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_work {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a deferred work item."]
+pub type ove_work_t = *mut ove_work;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_stream {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a byte-stream (ring-buffer) object."]
+pub type ove_stream_t = *mut ove_stream;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_watchdog {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a software watchdog object."]
+pub type ove_watchdog_t = *mut ove_watchdog;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_file {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an open file."]
+pub type ove_file_t = *mut ove_file;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_dir {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an open directory."]
+pub type ove_dir_t = *mut ove_dir;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_model {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an ML inference model session. @see ove_model_init, ove_model_create"]
+pub type ove_model_t = *mut ove_model;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_socket {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a network socket. @see ove_socket_open, ove_socket_create"]
+pub type ove_socket_t = *mut ove_socket;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_netif {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a network interface. @see ove_netif_init, ove_netif_create"]
+pub type ove_netif_t = *mut ove_netif;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_tls {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a TLS session. @see ove_tls_init, ove_tls_create"]
+pub type ove_tls_t = *mut ove_tls;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_http_client {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an HTTP client. @see ove_http_client_init, ove_http_client_create"]
+pub type ove_http_client_t = *mut ove_http_client;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_mqtt_client {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an MQTT client. @see ove_mqtt_client_init, ove_mqtt_client_create"]
+pub type ove_mqtt_client_t = *mut ove_mqtt_client;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_uart {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a UART peripheral. @see ove_uart_init, ove_uart_create"]
+pub type ove_uart_t = *mut ove_uart;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_spi {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an SPI bus controller. @see ove_spi_init, ove_spi_create"]
+pub type ove_spi_t = *mut ove_spi;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_i2c {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an I2C bus controller. @see ove_i2c_init, ove_i2c_create"]
+pub type ove_i2c_t = *mut ove_i2c;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_i2s {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for an I2S / SAI bus controller. @see ove_i2s_init, ove_i2s_create"]
+pub type ove_i2s_t = *mut ove_i2s;
+#[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag.  Up to 32 independent flags\n can be combined in a single event group."]
 pub type ove_eventbits_t = u32;
-
-// ---------------------------------------------------------------------------
-// Storage types — opaque blobs large enough for any backend
-// ---------------------------------------------------------------------------
-
-#[repr(C)]
-pub struct ove_mutex_storage_t      { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_sem_storage_t        { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_event_storage_t      { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_condvar_storage_t    { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_thread_storage_t     { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_queue_storage_t      { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_timer_storage_t      { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_eventgroup_storage_t { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_workqueue_storage_t  { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_work_storage_t       { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_stream_storage_t     { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_watchdog_storage_t   { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_file_storage_t       { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_dir_storage_t        { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_model_storage_t      { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_netif_storage_t      { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_socket_storage_t     { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_http_client_storage_t { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_mqtt_client_storage_t { _opaque: [u8; 256] }
-#[repr(C)]
-pub struct ove_tls_storage_t        { _opaque: [u8; 256] }
-
-// ---------------------------------------------------------------------------
-// Networking types
-// ---------------------------------------------------------------------------
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ove_sockaddr_t {
-    pub family: u8,
-    pub port: u16,
-    pub addr: [u8; 16],
+unsafe extern "C" {
+    #[doc = " @brief Initialise the system console hardware.\n\n Configures the underlying serial peripheral (baud rate, framing, etc.)\n as determined by the board support package. Must be called once before\n @ref ove_console_getchar, @ref ove_console_putchar, or\n @ref ove_console_write are used.\n\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    pub fn ove_console_init() -> core::ffi::c_int;
 }
-
-#[repr(C)]
-pub struct ove_netif_config_t {
-    pub use_dhcp: core::ffi::c_int,
-    pub static_ip: ove_sockaddr_t,
-    pub gateway: ove_sockaddr_t,
-    pub netmask: ove_sockaddr_t,
-    pub dns: ove_sockaddr_t,
+unsafe extern "C" {
+    #[doc = " @brief Read one character from the console.\n\n Returns the next available character from the console receive buffer.\n The call may block until a character is available depending on the\n backend implementation.\n\n @return Character value in the range [0, 255], or -1 if no character is\n         available or an error occurred.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    pub fn ove_console_getchar() -> core::ffi::c_int;
 }
-
-pub type ove_http_method_t = u32;
-pub const OVE_HTTP_GET: ove_http_method_t = 0;
-pub const OVE_HTTP_POST: ove_http_method_t = 1;
-pub const OVE_HTTP_PUT: ove_http_method_t = 2;
-pub const OVE_HTTP_DELETE: ove_http_method_t = 3;
-pub const OVE_HTTP_PATCH: ove_http_method_t = 4;
-
-#[repr(C)]
-pub struct ove_http_response_t {
-    pub status: i32,
-    pub body: *mut core::ffi::c_char,
-    pub body_len: usize,
-    pub headers: *mut core::ffi::c_char,
-    pub headers_len: usize,
+unsafe extern "C" {
+    #[doc = " @brief Write one character to the console.\n\n Transmits the character @p c via the console output path. The call may\n block until the transmit buffer has space.\n\n @param[in] c  Character to transmit, interpreted as an @c unsigned @c char.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    pub fn ove_console_putchar(c: core::ffi::c_int);
 }
-
-#[repr(C)]
-pub struct ove_http_header_t {
-    pub name: *const core::ffi::c_char,
-    pub value: *const core::ffi::c_char,
+unsafe extern "C" {
+    #[doc = " @brief Write a raw byte buffer to the console.\n\n Transmits exactly @p len bytes from @p buf. No newline translation or\n null termination is applied. The call may block until all bytes have been\n accepted by the transmit buffer.\n\n @param[in] buf  Pointer to the data to transmit.\n @param[in] len  Number of bytes to transmit.\n @note Requires @c CONFIG_OVE_CONSOLE."]
+    pub fn ove_console_write(buf: *const core::ffi::c_char, len: core::ffi::c_uint);
 }
-
-pub type ove_mqtt_qos_t = u32;
-pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
-pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
-
-#[repr(C)]
-pub struct ove_mqtt_config_t {
-    pub host: *const core::ffi::c_char,
-    pub port: u16,
-    pub client_id: *const core::ffi::c_char,
-    pub username: *const core::ffi::c_char,
-    pub password: *const core::ffi::c_char,
-    pub keep_alive_s: u16,
-    pub use_tls: core::ffi::c_int,
-    pub on_message: Option<unsafe extern "C" fn(*const core::ffi::c_char, usize, *const c_void, usize, *mut c_void)>,
-    pub user_data: *mut c_void,
+unsafe extern "C" {
+    #[doc = " @brief Feed a log line into the httpd log ring buffer.\n\n Call from the log output hook to capture lines for GET /api/log."]
+    pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
 }
-
-pub type ove_httpd_handler_t = Option<unsafe extern "C" fn(*mut c_void, *mut c_void) -> core::ffi::c_int>;
-pub type ove_httpd_req_t = c_void;
-pub type ove_httpd_resp_t = c_void;
-pub type ove_httpd_ws_handler_t = Option<unsafe extern "C" fn(*mut c_void, *const c_void, usize) -> core::ffi::c_int>;
-pub type ove_httpd_ws_close_handler_t = Option<unsafe extern "C" fn(*mut c_void)>;
-pub type ove_httpd_ws_conn_t = c_void;
-
+#[doc = " @brief Thread entry-point function prototype.\n\n @param[in] arg  Caller-supplied context pointer passed from\n                 ove_thread_desc::arg."]
+pub type ove_thread_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
+#[doc = "< @brief Currently executing on the CPU."]
+pub const OVE_THREAD_STATE_RUNNING: ove_thread_state_t = 0;
+#[doc = "< @brief Ready to run, waiting for the CPU."]
+pub const OVE_THREAD_STATE_READY: ove_thread_state_t = 1;
+#[doc = "< @brief Blocked on a synchronisation object or delay."]
+pub const OVE_THREAD_STATE_BLOCKED: ove_thread_state_t = 2;
+#[doc = "< @brief Explicitly suspended via ove_thread_suspend()."]
+pub const OVE_THREAD_STATE_SUSPENDED: ove_thread_state_t = 3;
+#[doc = "< @brief Entry function has returned; not yet destroyed."]
+pub const OVE_THREAD_STATE_TERMINATED: ove_thread_state_t = 4;
+#[doc = "< @brief State could not be determined."]
+pub const OVE_THREAD_STATE_UNKNOWN: ove_thread_state_t = 5;
+#[doc = " @brief Thread execution state as reported by the active backend."]
+pub type ove_thread_state_t = core::ffi::c_uint;
+#[doc = " @brief Per-thread runtime statistics snapshot."]
 #[repr(C)]
-pub struct ove_tls_config_t {
-    pub ca_cert: *const u8,
-    pub ca_cert_len: usize,
-    pub hostname: *const core::ffi::c_char,
-}
-
-#[repr(C)]
-pub struct ove_model_config {
-    pub model_data: *const u8,
-    pub model_size: usize,
-    pub arena_size: usize,
-}
-
-// ---------------------------------------------------------------------------
-// GPIO IRQ mode
-// ---------------------------------------------------------------------------
-
-pub type ove_gpio_irq_mode_t = u32;
-
-// ---------------------------------------------------------------------------
-// PM types
-// ---------------------------------------------------------------------------
-
-pub type ove_pm_state_t = u32;
-pub type ove_pm_wake_type_t = u32;
-pub type ove_pm_domain_t = u32;
-pub type ove_pm_event_t = u32;
-
-pub type ove_pm_policy_fn = Option<unsafe extern "C" fn(ove_pm_state_t, u32, *mut c_void) -> ove_pm_state_t>;
-pub type ove_pm_notify_fn = Option<unsafe extern "C" fn(ove_pm_event_t, ove_pm_state_t, ove_pm_state_t, *mut c_void)>;
-
-#[repr(C)]
-pub struct ove_pm_cfg {
-    pub idle_threshold_ms: u32,
-    pub standby_threshold_ms: u32,
-    pub deep_sleep_threshold_ms: u32,
-}
-
-#[repr(C)]
-pub struct ove_pm_wake_src {
-    pub type_: ove_pm_wake_type_t,
-    pub __bindgen_anon_1: ove_pm_wake_src__anon,
-}
-
-#[repr(C)]
-pub union ove_pm_wake_src__anon {
-    pub gpio: ove_pm_wake_src__gpio,
-    pub timer: ove_pm_wake_src__timer,
-    pub uart: ove_pm_wake_src__uart,
-    pub rtc: ove_pm_wake_src__rtc,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ove_pm_wake_src__gpio {
-    pub port: u32,
-    pub pin: u32,
-    pub edge: ove_gpio_irq_mode_t,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ove_pm_wake_src__timer {
-    pub timeout_ms: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ove_pm_wake_src__uart {
-    pub instance: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ove_pm_wake_src__rtc {
-    pub alarm_ms: u32,
-}
-
-#[repr(C)]
-pub struct ove_pm_stats {
-    pub current_state: ove_pm_state_t,
-    pub time_in_state_ms: [u64; 4],
-    pub transition_count: [u32; 4],
-    pub total_runtime_ms: u64,
-}
-
-// ---------------------------------------------------------------------------
-// Bus driver types
-// ---------------------------------------------------------------------------
-
-#[repr(C)]
-pub struct ove_spi_cs {
-    pub port: u32,
-    pub pin: u32,
-    pub active_low: i32,
-}
-
-#[repr(C)]
-pub struct ove_spi_xfer {
-    pub tx:  *const c_void,
-    pub rx:  *mut c_void,
-    pub len: usize,
-}
-
-// ---------------------------------------------------------------------------
-// Struct types
-// ---------------------------------------------------------------------------
-
-#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct ove_thread_stats {
-    pub runtime_us:       u64,
+    #[doc = "< @brief Total CPU time consumed by this thread in microseconds."]
+    pub runtime_us: u64,
+    #[doc = "< @brief CPU utilisation in hundredths of a percent (e.g. 1250 = 12.50 %)."]
     pub cpu_percent_x100: u32,
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_thread_stats"][core::mem::size_of::<ove_thread_stats>() - 16usize];
+    ["Alignment of ove_thread_stats"][core::mem::align_of::<ove_thread_stats>() - 8usize];
+    ["Offset of field: ove_thread_stats::runtime_us"]
+        [core::mem::offset_of!(ove_thread_stats, runtime_us) - 0usize];
+    ["Offset of field: ove_thread_stats::cpu_percent_x100"]
+        [core::mem::offset_of!(ove_thread_stats, cpu_percent_x100) - 8usize];
+};
+#[doc = "< @brief Lowest priority; runs only when no other thread is ready."]
+pub const OVE_PRIO_IDLE: ove_prio_t = 0;
+#[doc = "< @brief Low priority background work."]
+pub const OVE_PRIO_LOW: ove_prio_t = 1;
+#[doc = "< @brief Below-normal priority."]
+pub const OVE_PRIO_BELOW_NORMAL: ove_prio_t = 2;
+#[doc = "< @brief Default application priority."]
+pub const OVE_PRIO_NORMAL: ove_prio_t = 3;
+#[doc = "< @brief Above-normal priority."]
+pub const OVE_PRIO_ABOVE_NORMAL: ove_prio_t = 4;
+#[doc = "< @brief High priority; prefer for time-sensitive tasks."]
+pub const OVE_PRIO_HIGH: ove_prio_t = 5;
+#[doc = "< @brief Real-time priority; use with care."]
+pub const OVE_PRIO_REALTIME: ove_prio_t = 6;
+#[doc = "< @brief Highest priority; reserved for critical system tasks."]
+pub const OVE_PRIO_CRITICAL: ove_prio_t = 7;
+#[doc = " @brief Portable thread-priority levels.\n\n Each value maps to a backend-specific numeric priority at initialisation\n time.  Higher enum values represent higher scheduling priority."]
+pub type ove_prio_t = core::ffi::c_uint;
+#[doc = " @brief Thread creation descriptor passed to ove_thread_init() / ove_thread_create()."]
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct ove_thread_desc {
-    pub name:       *const core::ffi::c_char,
-    pub entry:      Option<unsafe extern "C" fn(*mut c_void)>,
-    pub arg:        *mut c_void,
-    pub priority:   u32,
+    #[doc = "< @brief Human-readable thread name (may be truncated by backend)."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< @brief Thread entry-point function. Must not be NULL."]
+    pub entry: ove_thread_fn,
+    #[doc = "< @brief Opaque argument forwarded to @c entry. May be NULL."]
+    pub arg: *mut core::ffi::c_void,
+    #[doc = "< @brief Scheduling priority."]
+    pub priority: ove_prio_t,
+    #[doc = "< @brief Stack size in bytes. Must be > 0."]
     pub stack_size: usize,
-    pub stack:      *mut c_void,
+    #[doc = "< @brief Pointer to caller-allocated stack buffer (static mode only;\nset to NULL for heap mode).\nMust be 8-byte aligned (ARM AAPCS). Use the\n@c OVE_THREAD_STACK_DEFINE_ / @c OVE_THREAD_STACK_MEMBER_\n/ @c OVE_THREAD_STACK_BLOCK_STATIC_ helpers in\n@c include/ove/storage.h — they apply the alignment\nautomatically. @c ove_thread_init() returns\n@c OVE_ERR_INVALID_PARAM on a misaligned pointer."]
+    pub stack: *mut core::ffi::c_void,
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_thread_desc"][core::mem::size_of::<ove_thread_desc>() - 48usize];
+    ["Alignment of ove_thread_desc"][core::mem::align_of::<ove_thread_desc>() - 8usize];
+    ["Offset of field: ove_thread_desc::name"]
+        [core::mem::offset_of!(ove_thread_desc, name) - 0usize];
+    ["Offset of field: ove_thread_desc::entry"]
+        [core::mem::offset_of!(ove_thread_desc, entry) - 8usize];
+    ["Offset of field: ove_thread_desc::arg"]
+        [core::mem::offset_of!(ove_thread_desc, arg) - 16usize];
+    ["Offset of field: ove_thread_desc::priority"]
+        [core::mem::offset_of!(ove_thread_desc, priority) - 24usize];
+    ["Offset of field: ove_thread_desc::stack_size"]
+        [core::mem::offset_of!(ove_thread_desc, stack_size) - 32usize];
+    ["Offset of field: ove_thread_desc::stack"]
+        [core::mem::offset_of!(ove_thread_desc, stack) - 40usize];
+};
+#[doc = " @cond INTERNAL"]
 #[repr(C)]
-pub struct ove_dirent {
-    pub name:   [core::ffi::c_char; 256],
-    pub size:   u32,
-    pub is_dir: i32,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_mutex_storage_t {
+    pub _opaque: [u8; 40usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_mutex_storage_t"][core::mem::size_of::<ove_mutex_storage_t>() - 40usize];
+    ["Alignment of ove_mutex_storage_t"][core::mem::align_of::<ove_mutex_storage_t>() - 8usize];
+    ["Offset of field: ove_mutex_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_mutex_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_fmt {
-    pub sample_rate: u32,
-    pub channels:    u32,
-    pub sample_fmt:  u32,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_sem_storage_t {
+    pub _opaque: [u8; 32usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_sem_storage_t"][core::mem::size_of::<ove_sem_storage_t>() - 32usize];
+    ["Alignment of ove_sem_storage_t"][core::mem::align_of::<ove_sem_storage_t>() - 8usize];
+    ["Offset of field: ove_sem_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_sem_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_buf {
-    pub data:   *mut c_void,
-    pub frames: u32,
-    pub fmt:    *const ove_audio_fmt,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_event_storage_t {
+    pub _opaque: [u8; 96usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_event_storage_t"][core::mem::size_of::<ove_event_storage_t>() - 96usize];
+    ["Alignment of ove_event_storage_t"][core::mem::align_of::<ove_event_storage_t>() - 8usize];
+    ["Offset of field: ove_event_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_event_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ove_audio_node_type {
-    OVE_AUDIO_NODE_SOURCE    = 0,
-    OVE_AUDIO_NODE_PROCESSOR = 1,
-    OVE_AUDIO_NODE_SINK      = 2,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_condvar_storage_t {
+    pub _opaque: [u8; 48usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_condvar_storage_t"][core::mem::size_of::<ove_condvar_storage_t>() - 48usize];
+    ["Alignment of ove_condvar_storage_t"][core::mem::align_of::<ove_condvar_storage_t>() - 8usize];
+    ["Offset of field: ove_condvar_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_condvar_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_node_ops {
-    pub configure: Option<unsafe extern "C" fn(*mut c_void, *const ove_audio_fmt, *mut ove_audio_fmt) -> i32>,
-    pub start:     Option<unsafe extern "C" fn(*mut c_void) -> i32>,
-    pub stop:      Option<unsafe extern "C" fn(*mut c_void) -> i32>,
-    pub process:   Option<unsafe extern "C" fn(*mut c_void, *const ove_audio_buf, *mut ove_audio_buf) -> i32>,
-    pub destroy:   Option<unsafe extern "C" fn(*mut c_void)>,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_thread_storage_t {
+    pub _opaque: [u8; 128usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_thread_storage_t"][core::mem::size_of::<ove_thread_storage_t>() - 128usize];
+    ["Alignment of ove_thread_storage_t"][core::mem::align_of::<ove_thread_storage_t>() - 8usize];
+    ["Offset of field: ove_thread_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_thread_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_node {
-    pub name:    *const core::ffi::c_char,
-    pub type_:   ove_audio_node_type,
-    pub ops:     *const ove_audio_node_ops,
-    pub ctx:     *mut c_void,
-    pub out_fmt: ove_audio_fmt,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_queue_storage_t {
+    pub _opaque: [u8; 168usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_queue_storage_t"][core::mem::size_of::<ove_queue_storage_t>() - 168usize];
+    ["Alignment of ove_queue_storage_t"][core::mem::align_of::<ove_queue_storage_t>() - 8usize];
+    ["Offset of field: ove_queue_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_queue_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_edge {
-    pub from: u32,
-    pub to:   u32,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_timer_storage_t {
+    pub _opaque: [u8; 40usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_timer_storage_t"][core::mem::size_of::<ove_timer_storage_t>() - 40usize];
+    ["Alignment of ove_timer_storage_t"][core::mem::align_of::<ove_timer_storage_t>() - 8usize];
+    ["Offset of field: ove_timer_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_timer_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_graph_stats {
-    pub cycles:         u32,
-    pub underruns:      u32,
-    pub overruns:       u32,
-    pub node_errors:    u32,
-    pub max_process_us: u32,
-    pub avg_process_us: u32,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_eventgroup_storage_t {
+    pub _opaque: [u8; 96usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_eventgroup_storage_t"]
+        [core::mem::size_of::<ove_eventgroup_storage_t>() - 96usize];
+    ["Alignment of ove_eventgroup_storage_t"]
+        [core::mem::align_of::<ove_eventgroup_storage_t>() - 8usize];
+    ["Offset of field: ove_eventgroup_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_eventgroup_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_graph {
-    pub nodes:            [ove_audio_node; 16],
-    pub node_count:       u32,
-    pub edges:            [ove_audio_edge; 16],
-    pub edge_count:       u32,
-    pub exec_order:       [u32; 16],
-    pub exec_count:       u32,
-    pub buffers:          [ove_audio_buf; 16],
-    pub buf_storage:      *mut c_void,
-    pub frames_per_period: u32,
-    pub state:            u32,
-    pub stats:            ove_audio_graph_stats,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_workqueue_storage_t {
+    pub _opaque: [u8; 616usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_workqueue_storage_t"][core::mem::size_of::<ove_workqueue_storage_t>() - 616usize];
+    ["Alignment of ove_workqueue_storage_t"]
+        [core::mem::align_of::<ove_workqueue_storage_t>() - 8usize];
+    ["Offset of field: ove_workqueue_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_workqueue_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_audio_device_cfg {
-    pub transport:        u32,
-    pub fmt:              ove_audio_fmt,
-    pub num_buffers:      u32,
-    pub thread_priority:  u32,
-    pub thread_stack_size: u32,
-    pub transport_cfg:    [u8; 16], /* union: i2s/pdm */
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_work_storage_t {
+    pub _opaque: [u8; 16usize],
 }
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_work_storage_t"][core::mem::size_of::<ove_work_storage_t>() - 16usize];
+    ["Alignment of ove_work_storage_t"][core::mem::align_of::<ove_work_storage_t>() - 8usize];
+    ["Offset of field: ove_work_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_work_storage_t, _opaque) - 0usize];
+};
 #[repr(C)]
-pub struct ove_shell_cmd {
-    pub name:    *const core::ffi::c_char,
-    pub help:    *const core::ffi::c_char,
-    pub handler: Option<unsafe extern "C" fn(i32, *const *const core::ffi::c_char)>,
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_stream_storage_t {
+    pub _opaque: [u8; 184usize],
 }
-
-// ---------------------------------------------------------------------------
-// Function pointer types
-// ---------------------------------------------------------------------------
-
-pub type ove_thread_fn      = Option<unsafe extern "C" fn(*mut c_void)>;
-pub type ove_timer_fn       = Option<unsafe extern "C" fn(ove_timer_t, *mut c_void)>;
-pub type ove_work_fn        = Option<unsafe extern "C" fn(ove_work_t)>;
-pub type ove_shell_output_hook_t = Option<unsafe extern "C" fn(*const core::ffi::c_char)>;
-pub type ove_thread_state_t = u32;
-/* ove_audio_process_fn removed — replaced by graph node vtable */
-pub type ove_gpio_irq_cb    = Option<unsafe extern "C" fn(u32, u32, *mut c_void)>;
-pub type ove_shell_cmd_fn   = Option<unsafe extern "C" fn(i32, *const *const core::ffi::c_char)>;
-
-// ---------------------------------------------------------------------------
-// extern "C" — oveRTOS API
-// ---------------------------------------------------------------------------
-
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_stream_storage_t"][core::mem::size_of::<ove_stream_storage_t>() - 184usize];
+    ["Alignment of ove_stream_storage_t"][core::mem::align_of::<ove_stream_storage_t>() - 8usize];
+    ["Offset of field: ove_stream_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_stream_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_watchdog_storage_t {
+    pub _opaque: [u8; 16usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_watchdog_storage_t"][core::mem::size_of::<ove_watchdog_storage_t>() - 16usize];
+    ["Alignment of ove_watchdog_storage_t"]
+        [core::mem::align_of::<ove_watchdog_storage_t>() - 8usize];
+    ["Offset of field: ove_watchdog_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_watchdog_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(4))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_file_storage_t {
+    pub _opaque: [u8; 4usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_file_storage_t"][core::mem::size_of::<ove_file_storage_t>() - 4usize];
+    ["Alignment of ove_file_storage_t"][core::mem::align_of::<ove_file_storage_t>() - 4usize];
+    ["Offset of field: ove_file_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_file_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_dir_storage_t {
+    pub _opaque: [u8; 8usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_dir_storage_t"][core::mem::size_of::<ove_dir_storage_t>() - 8usize];
+    ["Alignment of ove_dir_storage_t"][core::mem::align_of::<ove_dir_storage_t>() - 8usize];
+    ["Offset of field: ove_dir_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_dir_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_model_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_model_storage_t"][core::mem::size_of::<ove_model_storage_t>() - 64usize];
+    ["Alignment of ove_model_storage_t"][core::mem::align_of::<ove_model_storage_t>() - 8usize];
+    ["Offset of field: ove_model_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_model_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_socket_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_socket_storage_t"][core::mem::size_of::<ove_socket_storage_t>() - 64usize];
+    ["Alignment of ove_socket_storage_t"][core::mem::align_of::<ove_socket_storage_t>() - 8usize];
+    ["Offset of field: ove_socket_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_socket_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_netif_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_netif_storage_t"][core::mem::size_of::<ove_netif_storage_t>() - 64usize];
+    ["Alignment of ove_netif_storage_t"][core::mem::align_of::<ove_netif_storage_t>() - 8usize];
+    ["Offset of field: ove_netif_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_netif_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_tls_storage_t {
+    pub _opaque: [u8; 128usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_tls_storage_t"][core::mem::size_of::<ove_tls_storage_t>() - 128usize];
+    ["Alignment of ove_tls_storage_t"][core::mem::align_of::<ove_tls_storage_t>() - 8usize];
+    ["Offset of field: ove_tls_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_tls_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_http_client_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_http_client_storage_t"]
+        [core::mem::size_of::<ove_http_client_storage_t>() - 64usize];
+    ["Alignment of ove_http_client_storage_t"]
+        [core::mem::align_of::<ove_http_client_storage_t>() - 8usize];
+    ["Offset of field: ove_http_client_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_http_client_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_mqtt_client_storage_t {
+    pub _opaque: [u8; 128usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_mqtt_client_storage_t"]
+        [core::mem::size_of::<ove_mqtt_client_storage_t>() - 128usize];
+    ["Alignment of ove_mqtt_client_storage_t"]
+        [core::mem::align_of::<ove_mqtt_client_storage_t>() - 8usize];
+    ["Offset of field: ove_mqtt_client_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_mqtt_client_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_uart_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_uart_storage_t"][core::mem::size_of::<ove_uart_storage_t>() - 64usize];
+    ["Alignment of ove_uart_storage_t"][core::mem::align_of::<ove_uart_storage_t>() - 8usize];
+    ["Offset of field: ove_uart_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_uart_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_spi_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_spi_storage_t"][core::mem::size_of::<ove_spi_storage_t>() - 64usize];
+    ["Alignment of ove_spi_storage_t"][core::mem::align_of::<ove_spi_storage_t>() - 8usize];
+    ["Offset of field: ove_spi_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_spi_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_i2c_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_i2c_storage_t"][core::mem::size_of::<ove_i2c_storage_t>() - 64usize];
+    ["Alignment of ove_i2c_storage_t"][core::mem::align_of::<ove_i2c_storage_t>() - 8usize];
+    ["Offset of field: ove_i2c_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_i2c_storage_t, _opaque) - 0usize];
+};
+#[repr(C)]
+#[repr(align(8))]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_i2s_storage_t {
+    pub _opaque: [u8; 64usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_i2s_storage_t"][core::mem::size_of::<ove_i2s_storage_t>() - 64usize];
+    ["Alignment of ove_i2s_storage_t"][core::mem::align_of::<ove_i2s_storage_t>() - 8usize];
+    ["Offset of field: ove_i2s_storage_t::_opaque"]
+        [core::mem::offset_of!(ove_i2s_storage_t, _opaque) - 0usize];
+};
 unsafe extern "C" {
-
-    // --- app / scheduler ---
-    pub fn ove_run();
-    pub fn ove_app_run() -> i32;
-
-    // --- thread ---
+    #[doc = " @brief Initialise a thread using caller-supplied static storage.\n\n Creates a new thread without any heap allocation.  The caller must\n provide both a @c storage object and a stack buffer via\n @c desc->stack / @c desc->stack_size.\n\n @param[out] handle   Receives the opaque thread handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the thread.\n @param[in]  desc     Thread descriptor; all fields must be valid.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_deinit, ove_thread_create"]
     pub fn ove_thread_init(
-        handle:  *mut ove_thread_t,
+        handle: *mut ove_thread_t,
         storage: *mut ove_thread_storage_t,
-        desc:    *const ove_thread_desc,
-    ) -> i32;
-    pub fn ove_thread_deinit(handle: ove_thread_t) -> i32;
+        desc: *const ove_thread_desc,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Terminate and release a thread created with ove_thread_init().\n\n Stops the thread and releases any backend-internal resources.  The\n static storage supplied at init time is not freed.\n\n @param[in] handle  Handle returned by ove_thread_init().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_init"]
+    pub fn ove_thread_deinit(handle: ove_thread_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Internal heap-backed thread creation function.\n\n Prefer the ove_thread_create() macro which works in both heap and\n zero-heap mode.  This function is the underlying implementation used\n in heap mode.\n\n @param[out] handle  Receives the opaque thread handle on success.\n @param[in]  desc    Thread descriptor; @c stack should be NULL.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_create"]
     pub fn ove_thread_create_(
         handle: *mut ove_thread_t,
-        desc:   *const ove_thread_desc,
-    ) -> i32;
-    pub fn ove_thread_destroy(handle: ove_thread_t) -> i32;
+        desc: *const ove_thread_desc,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop and free a thread created with ove_thread_create().\n\n @param[in] handle  Handle returned by ove_thread_create().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_create"]
+    pub fn ove_thread_destroy(handle: ove_thread_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return the handle of the currently executing thread.\n\n @return Handle of the calling thread."]
     pub fn ove_thread_get_self() -> ove_thread_t;
-    pub fn ove_thread_set_priority(handle: ove_thread_t, prio: u32);
+}
+unsafe extern "C" {
+    #[doc = " @brief Change the scheduling priority of a thread.\n\n @param[in] handle  Thread to modify.\n @param[in] prio    New priority level."]
+    pub fn ove_thread_set_priority(handle: ove_thread_t, prio: ove_prio_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Block the calling thread for at least @p ms milliseconds.\n\n @param[in] ms  Minimum sleep duration in milliseconds.  A value of 0\n                yields the CPU for one scheduler tick."]
     pub fn ove_thread_sleep_ms(ms: u32);
+}
+unsafe extern "C" {
+    #[doc = " @brief Voluntarily yield the CPU to another ready thread of equal or higher priority.\n\n Has no effect if no other eligible thread is ready to run."]
     pub fn ove_thread_yield();
+}
+unsafe extern "C" {
+    #[doc = " @brief Start the RTOS scheduler.\n\n Must be called after all threads and resources have been created.\n Typically called indirectly through ove_run().  Does not return on\n most platforms.\n\n @see ove_run"]
+    pub fn ove_thread_start_scheduler();
+}
+unsafe extern "C" {
+    #[doc = " @brief Suspend a thread, preventing it from being scheduled.\n\n The thread remains suspended until ove_thread_resume() is called.\n\n @param[in] handle  Thread to suspend.  May be the calling thread itself.\n\n @see ove_thread_resume"]
     pub fn ove_thread_suspend(handle: ove_thread_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Resume a previously suspended thread.\n\n @param[in] handle  Thread to resume.  Must have been suspended with\n                    ove_thread_suspend().\n\n @see ove_thread_suspend"]
     pub fn ove_thread_resume(handle: ove_thread_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Query how many bytes of stack the thread has used at its high-water mark.\n\n @param[in] handle  Thread to inspect.\n @return Number of bytes consumed at the historical peak, or 0 if the\n         backend does not support stack profiling."]
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
-    pub fn ove_thread_get_state(handle: ove_thread_t) -> u32;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the current execution state of a thread.\n\n @param[in] handle  Thread to inspect.\n @return One of the @c OVE_THREAD_STATE_* values."]
+    pub fn ove_thread_get_state(handle: ove_thread_t) -> ove_thread_state_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Retrieve runtime statistics for a thread.\n\n Populates @p stats with the total CPU time and utilisation percentage\n since the scheduler started.\n\n @param[in]  handle  Thread to inspect.\n @param[out] stats   Pointer to a caller-allocated structure that will\n                     receive the statistics.\n @return OVE_OK on success, @c OVE_ERR_NOT_SUPPORTED if the backend\n         does not provide runtime accounting."]
     pub fn ove_thread_get_runtime_stats(
         handle: ove_thread_t,
-        stats:  *mut ove_thread_stats,
-    ) -> i32;
-
-    // --- mutex ---
-    pub fn ove_mutex_init(mtx: *mut ove_mutex_t, storage: *mut ove_mutex_storage_t) -> i32;
-    pub fn ove_mutex_deinit(mtx: ove_mutex_t);
-    pub fn ove_mutex_create(mtx: *mut ove_mutex_t) -> i32;
-    pub fn ove_mutex_destroy(mtx: ove_mutex_t);
-    pub fn ove_mutex_lock(mtx: ove_mutex_t, timeout_ms: u32) -> i32;
-    pub fn ove_mutex_unlock(mtx: ove_mutex_t);
-
-    // --- recursive mutex ---
-    pub fn ove_recursive_mutex_init(
-        mtx:     *mut ove_mutex_t,
+        stats: *mut ove_thread_stats,
+    ) -> core::ffi::c_int;
+}
+#[doc = " @brief System heap statistics."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_mem_stats {
+    #[doc = "< Total heap size in bytes."]
+    pub total: usize,
+    #[doc = "< Current free heap in bytes."]
+    pub free: usize,
+    #[doc = "< Current used heap in bytes."]
+    pub used: usize,
+    #[doc = "< High-water-mark usage in bytes."]
+    pub peak_used: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_mem_stats"][core::mem::size_of::<ove_mem_stats>() - 32usize];
+    ["Alignment of ove_mem_stats"][core::mem::align_of::<ove_mem_stats>() - 8usize];
+    ["Offset of field: ove_mem_stats::total"][core::mem::offset_of!(ove_mem_stats, total) - 0usize];
+    ["Offset of field: ove_mem_stats::free"][core::mem::offset_of!(ove_mem_stats, free) - 8usize];
+    ["Offset of field: ove_mem_stats::used"][core::mem::offset_of!(ove_mem_stats, used) - 16usize];
+    ["Offset of field: ove_mem_stats::peak_used"]
+        [core::mem::offset_of!(ove_mem_stats, peak_used) - 24usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Query system heap statistics.\n\n @param[out] stats Caller-allocated structure to receive stats.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable."]
+    pub fn ove_sys_get_mem_stats(stats: *mut ove_mem_stats) -> core::ffi::c_int;
+}
+#[doc = " @brief Cumulative time per thread state (microseconds).\n\n Only populated when CONFIG_OVE_THREAD_STATE_STATS is enabled."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_thread_state_times {
+    #[doc = "< Time in RUNNING state."]
+    pub running_us: u64,
+    #[doc = "< Time in READY state."]
+    pub ready_us: u64,
+    #[doc = "< Time in BLOCKED state."]
+    pub blocked_us: u64,
+    #[doc = "< Time in SUSPENDED state."]
+    pub suspended_us: u64,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_thread_state_times"][core::mem::size_of::<ove_thread_state_times>() - 32usize];
+    ["Alignment of ove_thread_state_times"]
+        [core::mem::align_of::<ove_thread_state_times>() - 8usize];
+    ["Offset of field: ove_thread_state_times::running_us"]
+        [core::mem::offset_of!(ove_thread_state_times, running_us) - 0usize];
+    ["Offset of field: ove_thread_state_times::ready_us"]
+        [core::mem::offset_of!(ove_thread_state_times, ready_us) - 8usize];
+    ["Offset of field: ove_thread_state_times::blocked_us"]
+        [core::mem::offset_of!(ove_thread_state_times, blocked_us) - 16usize];
+    ["Offset of field: ove_thread_state_times::suspended_us"]
+        [core::mem::offset_of!(ove_thread_state_times, suspended_us) - 24usize];
+};
+#[doc = " @brief Snapshot of a single thread's info."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_thread_info {
+    #[doc = "< Thread name (static, do not free)."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< Execution state."]
+    pub state: ove_thread_state_t,
+    #[doc = "< Priority level."]
+    pub priority: core::ffi::c_int,
+    #[doc = "< Stack high-water mark (bytes)."]
+    pub stack_used: usize,
+    #[doc = "< Total stack allocation (bytes)."]
+    pub stack_size: usize,
+    #[doc = "< CPU usage in 0.01% units (e.g. 1250 = 12.50%)."]
+    pub cpu_percent_x100: u32,
+    #[doc = "< Per-state cumulative time."]
+    pub state_times: ove_thread_state_times,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_thread_info"][core::mem::size_of::<ove_thread_info>() - 72usize];
+    ["Alignment of ove_thread_info"][core::mem::align_of::<ove_thread_info>() - 8usize];
+    ["Offset of field: ove_thread_info::name"]
+        [core::mem::offset_of!(ove_thread_info, name) - 0usize];
+    ["Offset of field: ove_thread_info::state"]
+        [core::mem::offset_of!(ove_thread_info, state) - 8usize];
+    ["Offset of field: ove_thread_info::priority"]
+        [core::mem::offset_of!(ove_thread_info, priority) - 12usize];
+    ["Offset of field: ove_thread_info::stack_used"]
+        [core::mem::offset_of!(ove_thread_info, stack_used) - 16usize];
+    ["Offset of field: ove_thread_info::stack_size"]
+        [core::mem::offset_of!(ove_thread_info, stack_size) - 24usize];
+    ["Offset of field: ove_thread_info::cpu_percent_x100"]
+        [core::mem::offset_of!(ove_thread_info, cpu_percent_x100) - 32usize];
+    ["Offset of field: ove_thread_info::state_times"]
+        [core::mem::offset_of!(ove_thread_info, state_times) - 40usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief List all threads in the system.\n\n @param[out] out          Array to fill with thread info.\n @param[in]  max_count    Maximum entries in @p out.\n @param[out] actual_count Actual number of threads written (may be NULL).\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable."]
+    pub fn ove_thread_list(
+        out: *mut ove_thread_info,
+        max_count: usize,
+        actual_count: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a non-recursive mutex using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock"]
+    pub fn ove_mutex_init(
+        mtx: *mut ove_mutex_t,
         storage: *mut ove_mutex_storage_t,
-    ) -> i32;
-    pub fn ove_recursive_mutex_create(mtx: *mut ove_mutex_t) -> i32;
-    pub fn ove_recursive_mutex_destroy(mtx: ove_mutex_t);
-    pub fn ove_recursive_mutex_lock(mtx: ove_mutex_t, timeout_ms: u32) -> i32;
-    pub fn ove_recursive_mutex_unlock(mtx: ove_mutex_t);
-
-    // --- semaphore ---
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by a mutex initialised with ove_mutex_init().\n\n Every backend MUST release any kernel-side resources associated with\n the mutex (e.g. destroy semaphores, free kernel handles). The static\n storage supplied at init time is not freed — the caller owns it.\n After @c ove_mutex_deinit() returns, the handle is invalid; calling any\n other mutex operation on it is undefined.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] mtx  Handle returned by ove_mutex_init().\n\n @see ove_mutex_init"]
+    pub fn ove_mutex_deinit(mtx: ove_mutex_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a counting semaphore using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the semaphore.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give"]
     pub fn ove_sem_init(
-        sem:     *mut ove_sem_t,
+        sem: *mut ove_sem_t,
         storage: *mut ove_sem_storage_t,
-        initial: u32,
-        max:     u32,
-    ) -> i32;
+        initial: core::ffi::c_uint,
+        max: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by a semaphore initialised with ove_sem_init().\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] sem  Handle returned by ove_sem_init().\n\n @see ove_sem_init"]
     pub fn ove_sem_deinit(sem: ove_sem_t);
-    pub fn ove_sem_create(sem: *mut ove_sem_t, initial: u32, max: u32) -> i32;
-    pub fn ove_sem_destroy(sem: ove_sem_t);
-    pub fn ove_sem_take(sem: ove_sem_t, timeout_ms: u32) -> i32;
-    pub fn ove_sem_give(sem: ove_sem_t);
-
-    // --- event ---
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  One waiter is unblocked\n per ove_event_signal() call.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
     pub fn ove_event_init(
-        evt:     *mut ove_event_t,
+        evt: *mut ove_event_t,
         storage: *mut ove_event_storage_t,
-    ) -> i32;
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by an event initialised with ove_event_init().\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt  Handle returned by ove_event_init().\n\n @see ove_event_init"]
     pub fn ove_event_deinit(evt: ove_event_t);
-    pub fn ove_event_create(evt: *mut ove_event_t) -> i32;
-    pub fn ove_event_destroy(evt: ove_event_t);
-    pub fn ove_event_wait(evt: ove_event_t, timeout_ms: u32) -> i32;
-    pub fn ove_event_signal(evt: ove_event_t);
-    pub fn ove_event_signal_from_isr(evt: ove_event_t);
-
-    // --- condvar ---
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a recursive mutex using caller-supplied static storage.\n\n A recursive mutex may be locked multiple times by the same thread without\n deadlocking.  Each successful lock must be paired with an unlock.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_deinit, ove_recursive_mutex_create,\n      ove_recursive_mutex_lock, ove_recursive_mutex_unlock"]
+    pub fn ove_recursive_mutex_init(
+        mtx: *mut ove_mutex_t,
+        storage: *mut ove_mutex_storage_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a condition variable using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] cv       Receives the opaque condition variable handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the condvar.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,\n      ove_condvar_signal, ove_condvar_broadcast"]
     pub fn ove_condvar_init(
-        cv:      *mut ove_condvar_t,
+        cv: *mut ove_condvar_t,
         storage: *mut ove_condvar_storage_t,
-    ) -> i32;
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by a condition variable initialised with\n        ove_condvar_init().\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv  Handle returned by ove_condvar_init().\n\n @see ove_condvar_init"]
     pub fn ove_condvar_deinit(cv: ove_condvar_t);
-    pub fn ove_condvar_create(cv: *mut ove_condvar_t) -> i32;
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a non-recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_destroy, ove_mutex_init"]
+    pub fn ove_mutex_create(mtx: *mut ove_mutex_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free a mutex allocated with ove_mutex_create().\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[in] mtx  Handle returned by ove_mutex_create().\n\n @see ove_mutex_create"]
+    pub fn ove_mutex_destroy(mtx: ove_mutex_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a counting semaphore from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] sem      Receives the opaque semaphore handle on success.\n @param[in]  initial  Initial count value.\n @param[in]  max      Maximum count value.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_sem_destroy, ove_sem_init"]
+    pub fn ove_sem_create(
+        sem: *mut ove_sem_t,
+        initial: core::ffi::c_uint,
+        max: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free a semaphore allocated with ove_sem_create().\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[in] sem  Handle returned by ove_sem_create().\n\n @see ove_sem_create"]
+    pub fn ove_sem_destroy(sem: ove_sem_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a binary event from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] evt  Receives the opaque event handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_event_destroy, ove_event_init"]
+    pub fn ove_event_create(evt: *mut ove_event_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free an event allocated with ove_event_create().\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[in] evt  Handle returned by ove_event_create().\n\n @see ove_event_create"]
+    pub fn ove_event_destroy(evt: ove_event_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a recursive mutex from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] mtx  Receives the opaque mutex handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_recursive_mutex_destroy, ove_recursive_mutex_init"]
+    pub fn ove_recursive_mutex_create(mtx: *mut ove_mutex_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free a recursive mutex allocated with\n        ove_recursive_mutex_create().\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[in] mtx  Handle returned by ove_recursive_mutex_create().\n\n @see ove_recursive_mutex_create"]
+    pub fn ove_recursive_mutex_destroy(mtx: ove_mutex_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a condition variable from the heap.\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[out] cv  Receives the opaque condition variable handle on success.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_condvar_destroy, ove_condvar_init"]
+    pub fn ove_condvar_create(cv: *mut ove_condvar_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free a condition variable allocated with\n        ove_condvar_create().\n\n @note Requires @c CONFIG_OVE_SYNC and @c OVE_HEAP_SYNC.\n\n @param[in] cv  Handle returned by ove_condvar_create().\n\n @see ove_condvar_create"]
     pub fn ove_condvar_destroy(cv: ove_condvar_t);
-    pub fn ove_condvar_wait(cv: ove_condvar_t, mtx: ove_mutex_t, timeout_ms: u32) -> i32;
-    pub fn ove_condvar_signal(cv: ove_condvar_t);
-    pub fn ove_condvar_broadcast(cv: ove_condvar_t);
-
-    // --- queue ---
-    pub fn ove_queue_init(
-        q:         *mut ove_queue_t,
-        storage:   *mut ove_queue_storage_t,
-        buffer:    *mut c_void,
-        item_size: usize,
-        max_items: u32,
-    ) -> i32;
-    pub fn ove_queue_deinit(q: ove_queue_t);
-    pub fn ove_queue_create(q: *mut ove_queue_t, item_size: usize, max_items: u32) -> i32;
-    pub fn ove_queue_destroy(q: ove_queue_t);
-    pub fn ove_queue_send(q: ove_queue_t, data: *const c_void, timeout_ms: u32) -> i32;
-    pub fn ove_queue_receive(q: ove_queue_t, buf: *mut c_void, timeout_ms: u32) -> i32;
-    pub fn ove_queue_send_from_isr(q: ove_queue_t, data: *const c_void) -> i32;
-    pub fn ove_queue_receive_from_isr(q: ove_queue_t, buf: *mut c_void) -> i32;
-
-    // --- timer ---
-    pub fn ove_timer_init(
-        timer:     *mut ove_timer_t,
-        storage:   *mut ove_timer_storage_t,
-        callback:  ove_timer_fn,
-        user_data: *mut c_void,
-        period_ms: u32,
-        one_shot:  i32,
-    ) -> i32;
-    pub fn ove_timer_deinit(timer: ove_timer_t);
-    pub fn ove_timer_create(
-        timer:     *mut ove_timer_t,
-        callback:  ove_timer_fn,
-        user_data: *mut c_void,
-        period_ms: u32,
-        one_shot:  i32,
-    ) -> i32;
-    pub fn ove_timer_destroy(timer: ove_timer_t);
-    pub fn ove_timer_start(timer: ove_timer_t) -> i32;
-    pub fn ove_timer_stop(timer: ove_timer_t) -> i32;
-    pub fn ove_timer_reset(timer: ove_timer_t) -> i32;
-
-    // --- event group ---
-    pub fn ove_eventgroup_init(
-        eg:      *mut ove_eventgroup_t,
-        storage: *mut ove_eventgroup_storage_t,
-    ) -> i32;
-    pub fn ove_eventgroup_deinit(eg: ove_eventgroup_t);
-    pub fn ove_eventgroup_create(eg: *mut ove_eventgroup_t) -> i32;
-    pub fn ove_eventgroup_destroy(eg: ove_eventgroup_t);
-    pub fn ove_eventgroup_set_bits(eg: ove_eventgroup_t, bits: ove_eventbits_t) -> ove_eventbits_t;
-    pub fn ove_eventgroup_clear_bits(eg: ove_eventgroup_t, bits: ove_eventbits_t) -> ove_eventbits_t;
-    pub fn ove_eventgroup_wait_bits(
-        eg:         ove_eventgroup_t,
-        bits:       ove_eventbits_t,
-        flags:      u32,
+}
+unsafe extern "C" {
+    #[doc = " @brief Acquire a non-recursive mutex, blocking until it is available or\n        the timeout expires.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] mtx         Mutex handle obtained from ove_mutex_init() or\n                        ove_mutex_create().\n @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_mutex_unlock"]
+    pub fn ove_mutex_lock(mtx: ove_mutex_t, timeout_ms: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release a non-recursive mutex previously acquired by ove_mutex_lock().\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] mtx  Mutex handle to release.\n\n @see ove_mutex_lock"]
+    pub fn ove_mutex_unlock(mtx: ove_mutex_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Decrement (take) a semaphore, blocking until a count is available\n        or the timeout expires.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] sem         Semaphore handle obtained from ove_sem_init() or\n                        ove_sem_create().\n @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_sem_give"]
+    pub fn ove_sem_take(sem: ove_sem_t, timeout_ms: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Increment (give) a semaphore, potentially unblocking a waiting thread.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] sem  Semaphore handle to increment.\n\n @see ove_sem_take"]
+    pub fn ove_sem_give(sem: ove_sem_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Wait for a binary event to be signalled.\n\n Blocks the calling thread until ove_event_signal() or\n ove_event_signal_from_isr() is called on @p evt, or until the timeout\n expires.  The event is automatically reset (consumed) after a successful\n wait.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt         Event handle obtained from ove_event_init() or\n                        ove_event_create().\n @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_event_signal, ove_event_signal_from_isr"]
+    pub fn ove_event_wait(evt: ove_event_t, timeout_ms: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Signal a binary event, unblocking one waiting thread.\n\n Safe to call from any thread context.  Must @b not be called from an\n ISR — use ove_event_signal_from_isr() instead.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt  Event handle to signal.\n\n @see ove_event_wait, ove_event_signal_from_isr"]
+    pub fn ove_event_signal(evt: ove_event_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Signal a binary event from an interrupt service routine.\n\n ISR-safe variant of ove_event_signal().  May trigger a context switch\n to a higher-priority thread after the ISR exits.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt  Event handle to signal.\n\n @see ove_event_signal, ove_event_wait"]
+    pub fn ove_event_signal_from_isr(evt: ove_event_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Acquire a recursive mutex, blocking until it is available or the\n        timeout expires.\n\n The same thread may call this function multiple times without deadlocking.\n Each successful lock must be balanced by a call to\n ove_recursive_mutex_unlock().\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] mtx         Recursive mutex handle obtained from\n                        ove_recursive_mutex_init() or\n                        ove_recursive_mutex_create().\n @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_recursive_mutex_unlock"]
+    pub fn ove_recursive_mutex_lock(mtx: ove_mutex_t, timeout_ms: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release one level of a recursive mutex lock.\n\n Decrements the recursive lock count.  The mutex is fully released and\n made available to other threads only when the count reaches zero.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] mtx  Recursive mutex handle to unlock.\n\n @see ove_recursive_mutex_lock"]
+    pub fn ove_recursive_mutex_unlock(mtx: ove_mutex_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Atomically release a mutex and wait on a condition variable.\n\n The mutex @p mtx must be held by the calling thread before this call.\n It is released atomically as the thread begins waiting.  When the\n function returns (either due to a signal or timeout), @p mtx is\n re-acquired before returning to the caller.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv          Condition variable handle obtained from\n                        ove_condvar_init() or ove_condvar_create().\n @param[in] mtx         Mutex that guards the condition.  Must be locked\n                        by the calling thread.\n @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_condvar_signal, ove_condvar_broadcast"]
+    pub fn ove_condvar_wait(
+        cv: ove_condvar_t,
+        mtx: ove_mutex_t,
         timeout_ms: u32,
-        result:     *mut ove_eventbits_t,
-    ) -> i32;
-    pub fn ove_eventgroup_set_bits_from_isr(
-        eg:   ove_eventgroup_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Wake one thread waiting on a condition variable.\n\n If no threads are waiting, the signal is lost (not stored).\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv  Condition variable handle to signal.\n\n @see ove_condvar_wait, ove_condvar_broadcast"]
+    pub fn ove_condvar_signal(cv: ove_condvar_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Wake all threads waiting on a condition variable.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] cv  Condition variable handle to broadcast on.\n\n @see ove_condvar_wait, ove_condvar_signal"]
+    pub fn ove_condvar_broadcast(cv: ove_condvar_t);
+}
+#[doc = "< @brief Signed 16-bit integer (int16_t)."]
+pub const OVE_AUDIO_FMT_S16: ove_audio_sample_fmt = 0;
+#[doc = "< @brief Signed 32-bit integer (int32_t)."]
+pub const OVE_AUDIO_FMT_S32: ove_audio_sample_fmt = 1;
+#[doc = "< @brief 32-bit IEEE 754 float."]
+pub const OVE_AUDIO_FMT_F32: ove_audio_sample_fmt = 2;
+#[doc = " @brief PCM sample format tag.\n\n Identifies the numeric type and bit-depth of each audio sample."]
+pub type ove_audio_sample_fmt = core::ffi::c_uint;
+#[doc = " @brief Complete audio stream format descriptor.\n\n Describes the sample rate, channel count, and sample encoding of an\n audio stream.  Channels are always interleaved."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_fmt {
+    #[doc = "< @brief Sample rate in Hz."]
+    pub sample_rate: core::ffi::c_uint,
+    #[doc = "< @brief Number of interleaved channels."]
+    pub channels: core::ffi::c_uint,
+    #[doc = "< @brief PCM sample format."]
+    pub sample_fmt: ove_audio_sample_fmt,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_fmt"][core::mem::size_of::<ove_audio_fmt>() - 12usize];
+    ["Alignment of ove_audio_fmt"][core::mem::align_of::<ove_audio_fmt>() - 4usize];
+    ["Offset of field: ove_audio_fmt::sample_rate"]
+        [core::mem::offset_of!(ove_audio_fmt, sample_rate) - 0usize];
+    ["Offset of field: ove_audio_fmt::channels"]
+        [core::mem::offset_of!(ove_audio_fmt, channels) - 4usize];
+    ["Offset of field: ove_audio_fmt::sample_fmt"]
+        [core::mem::offset_of!(ove_audio_fmt, sample_fmt) - 8usize];
+};
+#[doc = " @brief Audio buffer passed between nodes during graph processing.\n\n Holds a pointer to interleaved PCM data, the number of frames\n present, and a reference to the format that describes each sample."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_buf {
+    #[doc = "< @brief Pointer to interleaved sample data."]
+    pub data: *mut core::ffi::c_void,
+    #[doc = "< @brief Number of frames in @c data."]
+    pub frames: core::ffi::c_uint,
+    #[doc = "< @brief Format descriptor for this buffer."]
+    pub fmt: *const ove_audio_fmt,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_buf"][core::mem::size_of::<ove_audio_buf>() - 24usize];
+    ["Alignment of ove_audio_buf"][core::mem::align_of::<ove_audio_buf>() - 8usize];
+    ["Offset of field: ove_audio_buf::data"][core::mem::offset_of!(ove_audio_buf, data) - 0usize];
+    ["Offset of field: ove_audio_buf::frames"]
+        [core::mem::offset_of!(ove_audio_buf, frames) - 8usize];
+    ["Offset of field: ove_audio_buf::fmt"][core::mem::offset_of!(ove_audio_buf, fmt) - 16usize];
+};
+#[doc = " @brief Virtual function table (vtable) for an audio processing node.\n\n Each node kind implements a subset of these callbacks.  NULL pointers\n are treated as no-ops by the graph engine (except @c process, which\n must be provided)."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_node_ops {
+    #[doc = " @brief Negotiate format during graph build (topological order).\n\n Called once per node during ove_audio_graph_build().\n - Sources: @p in_fmt is NULL; the node must fill @p out_fmt from\n   its internal configuration.\n - Processors: receive upstream @p in_fmt; must fill @p out_fmt.\n - Sinks: receive upstream @p in_fmt; @p out_fmt is NULL; validate\n   input and return an error if the format is unsupported.\n\n @param[in]  ctx      Node context pointer supplied at registration.\n @param[in]  in_fmt   Upstream output format, or NULL for sources.\n @param[out] out_fmt  Format this node will produce, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
+    pub configure: Option<
+        unsafe extern "C" fn(
+            ctx: *mut core::ffi::c_void,
+            in_fmt: *const ove_audio_fmt,
+            out_fmt: *mut ove_audio_fmt,
+        ) -> core::ffi::c_int,
+    >,
+    #[doc = " @brief Start the node (called on graph start).  NULL = no-op.\n\n @param[in] ctx  Node context pointer.\n @return 0 on success, negative error code on failure."]
+    pub start: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
+    #[doc = " @brief Stop the node (called on graph stop).  NULL = no-op.\n\n @param[in] ctx  Node context pointer.\n @return 0 on success, negative error code on failure."]
+    pub stop: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
+    #[doc = " @brief Process one buffer period.\n\n Called in topological order each graph cycle:\n - Sources: @p in is NULL; the node must fill @p out.\n - Processors: read from @p in, write to @p out (separate buffers).\n - Sinks: read from @p in; @p out is NULL.\n\n @param[in]  ctx  Node context pointer.\n @param[in]  in   Input buffer, or NULL for sources.\n @param[out] out  Output buffer to fill, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
+    pub process: Option<
+        unsafe extern "C" fn(
+            ctx: *mut core::ffi::c_void,
+            in_: *const ove_audio_buf,
+            out: *mut ove_audio_buf,
+        ) -> core::ffi::c_int,
+    >,
+    #[doc = " @brief Release all resources owned by the node context.\n\n Called when the node is removed from the graph.  May be NULL.\n\n @param[in] ctx  Node context pointer."]
+    pub destroy: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void)>,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_node_ops"][core::mem::size_of::<ove_audio_node_ops>() - 40usize];
+    ["Alignment of ove_audio_node_ops"][core::mem::align_of::<ove_audio_node_ops>() - 8usize];
+    ["Offset of field: ove_audio_node_ops::configure"]
+        [core::mem::offset_of!(ove_audio_node_ops, configure) - 0usize];
+    ["Offset of field: ove_audio_node_ops::start"]
+        [core::mem::offset_of!(ove_audio_node_ops, start) - 8usize];
+    ["Offset of field: ove_audio_node_ops::stop"]
+        [core::mem::offset_of!(ove_audio_node_ops, stop) - 16usize];
+    ["Offset of field: ove_audio_node_ops::process"]
+        [core::mem::offset_of!(ove_audio_node_ops, process) - 24usize];
+    ["Offset of field: ove_audio_node_ops::destroy"]
+        [core::mem::offset_of!(ove_audio_node_ops, destroy) - 32usize];
+};
+#[doc = "< @brief Produces audio; has no upstream connection."]
+pub const OVE_AUDIO_NODE_SOURCE: ove_audio_node_type = 0;
+#[doc = "< @brief Transforms audio; has one upstream connection."]
+pub const OVE_AUDIO_NODE_PROCESSOR: ove_audio_node_type = 1;
+#[doc = "< @brief Consumes audio; has no downstream connection."]
+pub const OVE_AUDIO_NODE_SINK: ove_audio_node_type = 2;
+#[doc = " @brief Role of a node within the audio graph."]
+pub type ove_audio_node_type = core::ffi::c_uint;
+#[doc = " @brief Descriptor for a single node in the audio graph.\n\n Populated by ove_audio_graph_add_node() and stored inside\n @c ove_audio_graph::nodes[]."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_node {
+    #[doc = "< @brief Human-readable node name."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< @brief Source, processor, or sink."]
+    pub type_: ove_audio_node_type,
+    #[doc = "< @brief Vtable for this node."]
+    pub ops: *const ove_audio_node_ops,
+    #[doc = "< @brief Opaque context forwarded to every vtable call."]
+    pub ctx: *mut core::ffi::c_void,
+    #[doc = "< @brief Output format resolved during graph build."]
+    pub out_fmt: ove_audio_fmt,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_node"][core::mem::size_of::<ove_audio_node>() - 48usize];
+    ["Alignment of ove_audio_node"][core::mem::align_of::<ove_audio_node>() - 8usize];
+    ["Offset of field: ove_audio_node::name"][core::mem::offset_of!(ove_audio_node, name) - 0usize];
+    ["Offset of field: ove_audio_node::type_"]
+        [core::mem::offset_of!(ove_audio_node, type_) - 8usize];
+    ["Offset of field: ove_audio_node::ops"][core::mem::offset_of!(ove_audio_node, ops) - 16usize];
+    ["Offset of field: ove_audio_node::ctx"][core::mem::offset_of!(ove_audio_node, ctx) - 24usize];
+    ["Offset of field: ove_audio_node::out_fmt"]
+        [core::mem::offset_of!(ove_audio_node, out_fmt) - 32usize];
+};
+#[doc = " @brief Channel routing table used by ove_audio_node_channel_map().\n\n Describes a remapping from any number of input channels to\n @c out_channels output channels.  Each entry in @c map gives the\n zero-based input channel index for the corresponding output channel;\n a value of -1 produces silence on that output channel."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_channel_map {
+    #[doc = "< @brief Number of output channels produced."]
+    pub out_channels: core::ffi::c_uint,
+    #[doc = "< @brief map[out_ch] = in_ch index, or -1 for silence."]
+    pub map: [core::ffi::c_int; 8usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_channel_map"][core::mem::size_of::<ove_audio_channel_map>() - 36usize];
+    ["Alignment of ove_audio_channel_map"][core::mem::align_of::<ove_audio_channel_map>() - 4usize];
+    ["Offset of field: ove_audio_channel_map::out_channels"]
+        [core::mem::offset_of!(ove_audio_channel_map, out_channels) - 0usize];
+    ["Offset of field: ove_audio_channel_map::map"]
+        [core::mem::offset_of!(ove_audio_channel_map, map) - 4usize];
+};
+#[doc = " @brief Callback invoked by the tap node for every processed buffer.\n\n @param[in] buf        Buffer containing the observed audio data.\n @param[in] user_data  Opaque pointer supplied at node creation."]
+pub type ove_audio_tap_fn =
+    Option<unsafe extern "C" fn(buf: *const ove_audio_buf, user_data: *mut core::ffi::c_void)>;
+unsafe extern "C" {
+    #[doc = " @brief Add a sample-format converter processor node to the graph.\n\n Inserts a processor that converts any upstream sample format to\n @p target_fmt while preserving sample rate and channel count.\n\n @param[in] g           Graph to add the node to.\n @param[in] target_fmt  Desired output sample format.\n @param[in] name        Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_graph_add_node, ove_audio_graph_connect"]
+    pub fn ove_audio_node_converter(
+        g: *mut ove_audio_graph,
+        target_fmt: ove_audio_sample_fmt,
+        name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Add a channel-mapping processor node to the graph.\n\n Inserts a processor that reorders, duplicates, or silences channels\n according to @p map.  The output channel count equals\n @c map->out_channels.\n\n @param[in] g     Graph to add the node to.\n @param[in] map   Channel routing descriptor.\n @param[in] name  Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_converter"]
+    pub fn ove_audio_node_channel_map(
+        g: *mut ove_audio_graph,
+        map: *const ove_audio_channel_map,
+        name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Add a gain processor node to the graph.\n\n Inserts a processor that applies a fixed gain of @p gain_db decibels\n to every sample.  Positive values amplify; negative values attenuate.\n The output format is identical to the input format.\n\n @param[in] g        Graph to add the node to.\n @param[in] gain_db  Gain in decibels (e.g. -6.0f for -6 dB).\n @param[in] name     Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO."]
+    pub fn ove_audio_node_gain(
+        g: *mut ove_audio_graph,
+        gain_db: f32,
+        name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Add a tap (observer) sink node to the graph.\n\n Inserts a sink that calls @p fn for every audio buffer processed.\n The callback receives a pointer to the upstream buffer; data must not\n be stored beyond the duration of the callback.\n\n @param[in] g          Graph to add the node to.\n @param[in] fn         Callback invoked each processing cycle.\n @param[in] user_data  Opaque pointer forwarded to @p fn.\n @param[in] name       Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_node_gain"]
+    pub fn ove_audio_node_tap(
+        g: *mut ove_audio_graph,
+        fn_: ove_audio_tap_fn,
+        user_data: *mut core::ffi::c_void,
+        name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+#[doc = " @brief Directed connection between two nodes in the audio graph.\n\n Both fields are zero-based indices into @c ove_audio_graph::nodes[]."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_edge {
+    #[doc = "< @brief Index of the upstream (producer) node."]
+    pub from: core::ffi::c_uint,
+    #[doc = "< @brief Index of the downstream (consumer) node."]
+    pub to: core::ffi::c_uint,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_edge"][core::mem::size_of::<ove_audio_edge>() - 8usize];
+    ["Alignment of ove_audio_edge"][core::mem::align_of::<ove_audio_edge>() - 4usize];
+    ["Offset of field: ove_audio_edge::from"][core::mem::offset_of!(ove_audio_edge, from) - 0usize];
+    ["Offset of field: ove_audio_edge::to"][core::mem::offset_of!(ove_audio_edge, to) - 4usize];
+};
+#[doc = " @brief Runtime diagnostic counters for an audio graph.\n\n Retrieved with ove_audio_graph_get_stats().  All counters accumulate\n from graph start and are reset on each ove_audio_graph_start() call."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_graph_stats {
+    #[doc = "< @brief Number of completed processing cycles."]
+    pub cycles: core::ffi::c_uint,
+    #[doc = "< @brief Sink starvation events (sink received no data)."]
+    pub underruns: core::ffi::c_uint,
+    #[doc = "< @brief Source overflow events (source dropped frames)."]
+    pub overruns: core::ffi::c_uint,
+    #[doc = "< @brief Cumulative node process() failures."]
+    pub node_errors: core::ffi::c_uint,
+    #[doc = "< @brief Worst-case cycle wall-clock time in microseconds."]
+    pub max_process_us: core::ffi::c_uint,
+    #[doc = "< @brief Rolling average cycle wall-clock time in microseconds."]
+    pub avg_process_us: core::ffi::c_uint,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_graph_stats"][core::mem::size_of::<ove_audio_graph_stats>() - 24usize];
+    ["Alignment of ove_audio_graph_stats"][core::mem::align_of::<ove_audio_graph_stats>() - 4usize];
+    ["Offset of field: ove_audio_graph_stats::cycles"]
+        [core::mem::offset_of!(ove_audio_graph_stats, cycles) - 0usize];
+    ["Offset of field: ove_audio_graph_stats::underruns"]
+        [core::mem::offset_of!(ove_audio_graph_stats, underruns) - 4usize];
+    ["Offset of field: ove_audio_graph_stats::overruns"]
+        [core::mem::offset_of!(ove_audio_graph_stats, overruns) - 8usize];
+    ["Offset of field: ove_audio_graph_stats::node_errors"]
+        [core::mem::offset_of!(ove_audio_graph_stats, node_errors) - 12usize];
+    ["Offset of field: ove_audio_graph_stats::max_process_us"]
+        [core::mem::offset_of!(ove_audio_graph_stats, max_process_us) - 16usize];
+    ["Offset of field: ove_audio_graph_stats::avg_process_us"]
+        [core::mem::offset_of!(ove_audio_graph_stats, avg_process_us) - 20usize];
+};
+#[doc = "< @brief Initial state; nodes may be added and connected."]
+pub const OVE_AUDIO_GRAPH_IDLE: ove_audio_graph_state = 0;
+#[doc = "< @brief Build succeeded; graph may be started."]
+pub const OVE_AUDIO_GRAPH_READY: ove_audio_graph_state = 1;
+#[doc = "< @brief Graph is actively processing audio."]
+pub const OVE_AUDIO_GRAPH_RUNNING: ove_audio_graph_state = 2;
+#[doc = " @brief Lifecycle state of an audio graph.\n\n @see ove_audio_graph_build, ove_audio_graph_start, ove_audio_graph_stop"]
+pub type ove_audio_graph_state = core::ffi::c_uint;
+#[doc = " @brief Audio processing graph instance.\n\n Holds all nodes, edges, execution order, audio buffers, and runtime\n statistics for one complete audio pipeline.  Must be initialised with\n ove_audio_graph_init() before use."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_graph {
+    #[doc = "< @brief Registered node descriptors."]
+    pub nodes: [ove_audio_node; 16usize],
+    #[doc = "< @brief Number of valid entries in @c nodes[]."]
+    pub node_count: core::ffi::c_uint,
+    #[doc = "< @brief Registered directed edges."]
+    pub edges: [ove_audio_edge; 16usize],
+    #[doc = "< @brief Number of valid entries in @c edges[]."]
+    pub edge_count: core::ffi::c_uint,
+    #[doc = "< @brief Node indices in topological execution order."]
+    pub exec_order: [core::ffi::c_uint; 16usize],
+    #[doc = "< @brief Number of valid entries in @c exec_order[]."]
+    pub exec_count: core::ffi::c_uint,
+    #[doc = "< @brief Per-node intermediate audio buffers."]
+    pub buffers: [ove_audio_buf; 16usize],
+    #[doc = "< @brief Heap block backing all buffer data arrays."]
+    pub buf_storage: *mut core::ffi::c_void,
+    #[doc = "< @brief Size of caller-provided storage (0 = heap-allocated)."]
+    pub buf_storage_size: usize,
+    #[doc = "< @brief Frame count processed per graph cycle."]
+    pub frames_per_period: core::ffi::c_uint,
+    #[doc = "< @brief Current lifecycle state."]
+    pub state: ove_audio_graph_state,
+    #[doc = "< @brief Accumulated runtime diagnostics."]
+    pub stats: ove_audio_graph_stats,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_graph"][core::mem::size_of::<ove_audio_graph>() - 1408usize];
+    ["Alignment of ove_audio_graph"][core::mem::align_of::<ove_audio_graph>() - 8usize];
+    ["Offset of field: ove_audio_graph::nodes"]
+        [core::mem::offset_of!(ove_audio_graph, nodes) - 0usize];
+    ["Offset of field: ove_audio_graph::node_count"]
+        [core::mem::offset_of!(ove_audio_graph, node_count) - 768usize];
+    ["Offset of field: ove_audio_graph::edges"]
+        [core::mem::offset_of!(ove_audio_graph, edges) - 772usize];
+    ["Offset of field: ove_audio_graph::edge_count"]
+        [core::mem::offset_of!(ove_audio_graph, edge_count) - 900usize];
+    ["Offset of field: ove_audio_graph::exec_order"]
+        [core::mem::offset_of!(ove_audio_graph, exec_order) - 904usize];
+    ["Offset of field: ove_audio_graph::exec_count"]
+        [core::mem::offset_of!(ove_audio_graph, exec_count) - 968usize];
+    ["Offset of field: ove_audio_graph::buffers"]
+        [core::mem::offset_of!(ove_audio_graph, buffers) - 976usize];
+    ["Offset of field: ove_audio_graph::buf_storage"]
+        [core::mem::offset_of!(ove_audio_graph, buf_storage) - 1360usize];
+    ["Offset of field: ove_audio_graph::buf_storage_size"]
+        [core::mem::offset_of!(ove_audio_graph, buf_storage_size) - 1368usize];
+    ["Offset of field: ove_audio_graph::frames_per_period"]
+        [core::mem::offset_of!(ove_audio_graph, frames_per_period) - 1376usize];
+    ["Offset of field: ove_audio_graph::state"]
+        [core::mem::offset_of!(ove_audio_graph, state) - 1380usize];
+    ["Offset of field: ove_audio_graph::stats"]
+        [core::mem::offset_of!(ove_audio_graph, stats) - 1384usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise an audio graph.\n\n Sets up internal state and records the processing period size.  Must\n be called before any other graph function.\n\n @param[in] g                  Graph instance to initialise.\n @param[in] frames_per_period  Number of audio frames processed per cycle.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_deinit"]
+    pub fn ove_audio_graph_init(
+        g: *mut ove_audio_graph,
+        frames_per_period: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release all resources held by an audio graph.\n\n Frees the heap buffer storage and resets internal state.  The graph\n must be stopped before calling this function.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
+    pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a new node in the graph.\n\n Appends a node entry to the graph's node table.  Nodes may only be\n added while the graph is in the @c OVE_AUDIO_GRAPH_IDLE state.\n\n @param[in] g     Graph instance.\n @param[in] ops   Vtable providing the node implementation.\n @param[in] ctx   Opaque context pointer forwarded to every vtable call.\n @param[in] name  Human-readable node name for diagnostics.\n @param[in] type  Role of the node: source, processor, or sink.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_connect, ove_audio_graph_build"]
+    pub fn ove_audio_graph_add_node(
+        g: *mut ove_audio_graph,
+        ops: *const ove_audio_node_ops,
+        ctx: *mut core::ffi::c_void,
+        name: *const core::ffi::c_char,
+        type_: ove_audio_node_type,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Connect two nodes with a directed edge.\n\n Adds an edge from the node at index @p from to the node at index\n @p to.  Both nodes must already be registered.  Edges may only be\n added while the graph is in the @c OVE_AUDIO_GRAPH_IDLE state.\n\n @param[in] g     Graph instance.\n @param[in] from  Index of the upstream (producer) node.\n @param[in] to    Index of the downstream (consumer) node.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_add_node, ove_audio_graph_build"]
+    pub fn ove_audio_graph_connect(
+        g: *mut ove_audio_graph,
+        from: core::ffi::c_uint,
+        to: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Provide caller-owned storage for inter-node audio buffers.\n\n Must be called after @ref ove_audio_graph_init and before\n @ref ove_audio_graph_build.  When set, @ref ove_audio_graph_build uses\n this buffer instead of calling @c calloc, and @ref ove_audio_graph_deinit\n will not free it.  This is the only way to build a graph under\n @c CONFIG_OVE_ZERO_HEAP.  Use @ref OVE_AUDIO_GRAPH_STORAGE_BYTES to size\n the backing array.\n\n @param[in] g        Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] storage  Pointer to caller-owned memory (≥ @p size bytes).\n @param[in] size     Size of @p storage in bytes; must be large enough to\n                     cover every non-sink node's output buffer.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see OVE_AUDIO_GRAPH_STORAGE_BYTES"]
+    pub fn ove_audio_graph_set_buf_storage(
+        g: *mut ove_audio_graph,
+        storage: *mut core::ffi::c_void,
+        size: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Internal heap-backed graph creation function.\n\n Prefer the @ref ove_audio_graph_create macro which works in both heap\n and zero-heap mode.  This function is the underlying implementation used\n in heap mode — inter-node buffers are allocated from the heap when\n @ref ove_audio_graph_build runs.\n\n @param[out] g      Graph instance to initialise.\n @param[in]  frames Per-period frame count.\n @return 0 on success, negative error code on failure.\n\n @see ove_audio_graph_create"]
+    pub fn ove_audio_graph_create_(
+        g: *mut ove_audio_graph,
+        frames: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop and tear down a graph created with @ref ove_audio_graph_create.\n\n @param[in] g  Graph instance returned from @ref ove_audio_graph_create.\n @return 0 on success, negative error code on failure."]
+    pub fn ove_audio_graph_destroy(g: *mut ove_audio_graph) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Validate and compile the graph.\n\n Performs a topological sort, propagates audio formats from sources\n to sinks by calling each node's @c configure callback, allocates the\n inter-node audio buffers, and transitions the graph to\n @c OVE_AUDIO_GRAPH_READY.\n\n @param[in] g  Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @return 0 on success, negative error code on failure (e.g. cycle\n         detected, format mismatch, or buffer allocation failure).\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    pub fn ove_audio_graph_build(g: *mut ove_audio_graph) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Start the audio graph.\n\n Calls each node's @c start callback in topological order and\n transitions the graph to @c OVE_AUDIO_GRAPH_RUNNING.  The graph must\n be in the @c OVE_AUDIO_GRAPH_READY state.\n\n @param[in] g  Built graph instance.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_build, ove_audio_graph_stop"]
+    pub fn ove_audio_graph_start(g: *mut ove_audio_graph) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop the audio graph.\n\n Calls each node's @c stop callback in reverse topological order and\n transitions the graph back to @c OVE_AUDIO_GRAPH_READY.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Execute one processing cycle (app-driven mode).\n\n Calls each node's @c process callback in topological order, passing\n inter-node buffers along the edges.  Intended for test or offline use;\n in sink-driven mode the hardware callback drives processing instead.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code if any node reports an error.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    pub fn ove_audio_graph_process(g: *mut ove_audio_graph) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Retrieve a snapshot of graph runtime statistics.\n\n Copies the current diagnostic counters from the graph into the\n caller-supplied @p stats structure.\n\n @param[in]  g      Graph instance (running or ready).\n @param[out] stats  Pointer to a caller-allocated structure that will\n                    receive the statistics snapshot.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_stats"]
+    pub fn ove_audio_graph_get_stats(
+        g: *const ove_audio_graph,
+        stats: *mut ove_audio_graph_stats,
+    ) -> core::ffi::c_int;
+}
+#[doc = "< @brief I2S / TDM serial bus (e.g. codec, DAC, ADC)."]
+pub const OVE_AUDIO_TRANSPORT_I2S: ove_audio_transport = 0;
+#[doc = "< @brief PDM microphone interface."]
+pub const OVE_AUDIO_TRANSPORT_PDM: ove_audio_transport = 1;
+#[doc = " @brief Audio hardware transport type.\n\n Selects the low-level audio bus or host API used by a device node."]
+pub type ove_audio_transport = core::ffi::c_uint;
+#[doc = " @brief Configuration descriptor for a hardware audio device node.\n\n Passed to ove_audio_device_source() or ove_audio_device_sink() to\n describe the transport, stream format, and transport-specific\n parameters.  Fields set to zero select the backend default."]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ove_audio_device_cfg {
+    #[doc = "< @brief Hardware transport selection."]
+    pub transport: ove_audio_transport,
+    #[doc = "< @brief Desired audio stream format."]
+    pub fmt: ove_audio_fmt,
+    #[doc = "< @brief DMA buffer count; 0 = backend default."]
+    pub num_buffers: core::ffi::c_uint,
+    #[doc = "< @brief Driver thread priority; 0 = backend default."]
+    pub thread_priority: core::ffi::c_uint,
+    #[doc = "< @brief Driver thread stack size in bytes; 0 = backend default."]
+    pub thread_stack_size: core::ffi::c_uint,
+    pub __bindgen_anon_1: ove_audio_device_cfg__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union ove_audio_device_cfg__bindgen_ty_1 {
+    pub i2s: ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1,
+    pub pdm: ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2,
+}
+#[doc = " @brief Parameters specific to I2S / TDM transport."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1 {
+    #[doc = "< @brief Input device selector (e.g. line-in, DMIC index)."]
+    pub input_device: core::ffi::c_uint,
+    #[doc = "< @brief TDM slot bitmask; 0 = all slots."]
+    pub slot_mask: core::ffi::c_uint,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1"]
+        [core::mem::size_of::<ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1>() - 8usize];
+    ["Alignment of ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1"]
+        [core::mem::align_of::<ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1>() - 4usize];
+    ["Offset of field: ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1::input_device"][core::mem::offset_of!(
+        ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1,
+        input_device
+    ) - 0usize];
+    ["Offset of field: ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1::slot_mask"][core::mem::offset_of!(
+        ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_1,
+        slot_mask
+    ) - 4usize];
+};
+#[doc = " @brief Parameters specific to PDM microphone transport."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2 {
+    #[doc = "< @brief PDM decimation factor."]
+    pub decimation: core::ffi::c_uint,
+    #[doc = "< @brief PDM clock frequency in Hz."]
+    pub clock_freq: core::ffi::c_uint,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2"]
+        [core::mem::size_of::<ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2>() - 8usize];
+    ["Alignment of ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2"]
+        [core::mem::align_of::<ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2>() - 4usize];
+    ["Offset of field: ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2::decimation"][core::mem::offset_of!(
+        ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2,
+        decimation
+    ) - 0usize];
+    ["Offset of field: ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2::clock_freq"][core::mem::offset_of!(
+        ove_audio_device_cfg__bindgen_ty_1__bindgen_ty_2,
+        clock_freq
+    ) - 4usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_device_cfg__bindgen_ty_1"]
+        [core::mem::size_of::<ove_audio_device_cfg__bindgen_ty_1>() - 8usize];
+    ["Alignment of ove_audio_device_cfg__bindgen_ty_1"]
+        [core::mem::align_of::<ove_audio_device_cfg__bindgen_ty_1>() - 4usize];
+    ["Offset of field: ove_audio_device_cfg__bindgen_ty_1::i2s"]
+        [core::mem::offset_of!(ove_audio_device_cfg__bindgen_ty_1, i2s) - 0usize];
+    ["Offset of field: ove_audio_device_cfg__bindgen_ty_1::pdm"]
+        [core::mem::offset_of!(ove_audio_device_cfg__bindgen_ty_1, pdm) - 0usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_audio_device_cfg"][core::mem::size_of::<ove_audio_device_cfg>() - 36usize];
+    ["Alignment of ove_audio_device_cfg"][core::mem::align_of::<ove_audio_device_cfg>() - 4usize];
+    ["Offset of field: ove_audio_device_cfg::transport"]
+        [core::mem::offset_of!(ove_audio_device_cfg, transport) - 0usize];
+    ["Offset of field: ove_audio_device_cfg::fmt"]
+        [core::mem::offset_of!(ove_audio_device_cfg, fmt) - 4usize];
+    ["Offset of field: ove_audio_device_cfg::num_buffers"]
+        [core::mem::offset_of!(ove_audio_device_cfg, num_buffers) - 16usize];
+    ["Offset of field: ove_audio_device_cfg::thread_priority"]
+        [core::mem::offset_of!(ove_audio_device_cfg, thread_priority) - 20usize];
+    ["Offset of field: ove_audio_device_cfg::thread_stack_size"]
+        [core::mem::offset_of!(ove_audio_device_cfg, thread_stack_size) - 24usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Add a hardware audio source node to the graph.\n\n Creates a source node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node captures audio\n from the selected transport and exposes it as graph output each cycle.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_sink, ove_audio_graph_connect"]
+    pub fn ove_audio_device_source(
+        g: *mut ove_audio_graph,
+        cfg: *const ove_audio_device_cfg,
+        name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Add a hardware audio sink node to the graph.\n\n Creates a sink node backed by the hardware device described in\n @p cfg and registers it with the graph.  The node consumes audio\n from its upstream connection and delivers it to the selected transport\n each processing cycle.\n\n @param[in] g     Graph instance in the @c OVE_AUDIO_GRAPH_IDLE state.\n @param[in] cfg   Device configuration describing the transport and format.\n @param[in] name  Human-readable node name for diagnostics.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_device_source, ove_audio_graph_connect"]
+    pub fn ove_audio_device_sink(
+        g: *mut ove_audio_graph,
+        cfg: *const ove_audio_device_cfg,
+        name: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+#[doc = " @brief Directory entry descriptor returned by @ref ove_fs_readdir."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_dirent {
+    #[doc = "< @brief Null-terminated entry name (not full path)."]
+    pub name: [core::ffi::c_char; 256usize],
+    #[doc = "< @brief File size in bytes; 0 for directories."]
+    pub size: core::ffi::c_uint,
+    #[doc = "< @brief Non-zero if the entry is a directory."]
+    pub is_dir: core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_dirent"][core::mem::size_of::<ove_dirent>() - 264usize];
+    ["Alignment of ove_dirent"][core::mem::align_of::<ove_dirent>() - 4usize];
+    ["Offset of field: ove_dirent::name"][core::mem::offset_of!(ove_dirent, name) - 0usize];
+    ["Offset of field: ove_dirent::size"][core::mem::offset_of!(ove_dirent, size) - 256usize];
+    ["Offset of field: ove_dirent::is_dir"][core::mem::offset_of!(ove_dirent, is_dir) - 260usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Open a file using caller-provided static storage.\n\n Opens the file at @p path with the given @p flags and stores the resulting\n handle in @p file. The caller must ensure @p storage remains valid for the\n lifetime of the open file.\n\n @param[out] file     Receives the opened file handle.\n @param[in]  storage  Pointer to statically-allocated file storage.\n @param[in]  path     Absolute path of the file to open.\n @param[in]  flags    Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
+    pub fn ove_fs_open_init(
+        file: *mut ove_file_t,
+        storage: *mut ove_file_storage_t,
+        path: *const core::ffi::c_char,
+        flags: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Close a statically-allocated file handle.\n\n Flushes any pending writes and releases the RTOS file resources. The\n storage memory is not freed.\n\n @param[in] file  File handle returned by @ref ove_fs_open_init.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
+    pub fn ove_fs_close_deinit(file: ove_file_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Open a directory using caller-provided static storage.\n\n Opens the directory at @p path and stores the resulting handle in @p dir.\n Use @ref ove_fs_readdir to iterate entries and @ref ove_fs_closedir_deinit\n to close.\n\n @param[out] dir      Receives the opened directory handle.\n @param[in]  storage  Pointer to statically-allocated directory storage.\n @param[in]  path     Absolute path of the directory to open.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
+    pub fn ove_fs_opendir_init(
+        dir: *mut ove_dir_t,
+        storage: *mut ove_dir_storage_t,
+        path: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Close a statically-allocated directory handle.\n\n Releases the RTOS directory resources. The storage memory is not freed.\n\n @param[in] dir  Directory handle returned by @ref ove_fs_opendir_init.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
+    pub fn ove_fs_closedir_deinit(dir: ove_dir_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Open a file.\n\n Opens the file at @p path with the given @p flags. The returned handle\n must be closed with @ref ove_fs_close when no longer needed.\n In zero-heap mode, the backend uses a static pool instead of malloc.\n\n @param[out] file   Receives the opened file handle.\n @param[in]  path   Absolute path of the file to open.\n @param[in]  flags  Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
+    pub fn ove_fs_open(
+        file: *mut ove_file_t,
+        path: *const core::ffi::c_char,
+        flags: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Close a file handle returned by @ref ove_fs_open."]
+    pub fn ove_fs_close(file: ove_file_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Open a directory (heap or backend-managed allocation)."]
+    pub fn ove_fs_opendir(dir: *mut ove_dir_t, path: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Close a directory handle returned by @ref ove_fs_opendir."]
+    pub fn ove_fs_closedir(dir: ove_dir_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Mount a storage device at a virtual path prefix.\n\n Associates the block device at @p dev_path with the mount point\n @p mount_point. All file and directory paths rooted at @p mount_point\n will be dispatched to this device.\n\n @param[in] dev_path     Path identifying the storage device.\n @param[in] mount_point  Absolute path to use as the mount prefix.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_mount(
+        dev_path: *const core::ffi::c_char,
+        mount_point: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Unmount a previously mounted storage device.\n\n Flushes any pending data and detaches the device associated with\n @p mount_point. All file handles under this mount point must be closed\n before calling this function.\n\n @param[in] mount_point  Mount point string passed to @ref ove_fs_mount."]
+    pub fn ove_fs_unmount(mount_point: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    #[doc = " @brief Read bytes from an open file.\n\n Reads up to @p count bytes starting at the current file position into\n @p buf. The file position advances by the number of bytes actually read.\n\n @param[in]  file        Open file handle.\n @param[out] buf         Buffer to receive the data.\n @param[in]  count       Maximum number of bytes to read.\n @param[out] bytes_read  Receives the number of bytes actually read, or\n                         @c NULL if not needed.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_read(
+        file: ove_file_t,
+        buf: *mut core::ffi::c_void,
+        count: usize,
+        bytes_read: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Write bytes to an open file.\n\n Writes up to @p count bytes from @p buf at the current file position.\n The file position advances by the number of bytes actually written.\n If the file was opened with @c OVE_FS_O_APPEND the write position is\n set to the end of file before each write.\n\n @param[in]  file           Open file handle.\n @param[in]  buf            Data to write.\n @param[in]  count          Number of bytes to write.\n @param[out] bytes_written  Receives the number of bytes actually written,\n                            or @c NULL if not needed.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_write(
+        file: ove_file_t,
+        buf: *const core::ffi::c_void,
+        count: usize,
+        bytes_written: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the total size of an open file.\n\n @param[in]  file      Open file handle.\n @param[out] out_size  Receives the file size in bytes.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_size(file: ove_file_t, out_size: *mut usize) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Reposition the file read/write offset.\n\n Moves the current position of @p file to @p offset bytes relative to\n the position described by @p whence.\n\n @param[in] file    Open file handle.\n @param[in] offset  Byte offset relative to @p whence.\n @param[in] whence  One of @c OVE_FS_SEEK_SET, @c OVE_FS_SEEK_CUR, or\n                    @c OVE_FS_SEEK_END.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_seek(
+        file: ove_file_t,
+        offset: core::ffi::c_long,
+        whence: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return the current file position.\n\n @param[in] file  Open file handle.\n @return Current byte offset from the start of the file, or -1 on error."]
+    pub fn ove_fs_tell(file: ove_file_t) -> core::ffi::c_long;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read the next entry from an open directory.\n\n Fills @p entry with information about the next directory entry and\n advances the internal iterator. Returns a specific error when no more\n entries are available.\n\n @param[in]  dir    Open directory handle.\n @param[out] entry  Pointer to a @ref ove_dirent structure to fill.\n @return OVE_OK if an entry was read, @c OVE_ERR_EOF when the directory\n         is exhausted, or another negative error code on failure."]
+    pub fn ove_fs_readdir(dir: ove_dir_t, entry: *mut ove_dirent) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Delete a file by path.\n\n Removes the file at @p path from the file system. The file must not\n currently be open.\n\n @param[in] path  Absolute path of the file to delete.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_unlink(path: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Rename or move a file.\n\n Renames the file or directory at @p old_path to @p new_path. Both paths\n must reside on the same mounted volume.\n\n @param[in] old_path  Absolute path of the existing file or directory.\n @param[in] new_path  Absolute path for the new name or location.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_fs_rename(
+        old_path: *const core::ffi::c_char,
+        new_path: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_queue {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a message queue object."]
+pub type ove_queue_t = *mut ove_queue;
+unsafe extern "C" {
+    #[doc = " @brief Initialise a queue using caller-supplied static storage and data buffer.\n\n No heap allocation is performed.  The @p buffer must be at least\n @p item_size * @p max_items bytes and remain valid for the lifetime of\n the queue.\n\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[out] q          Receives the opaque queue handle on success.\n @param[in]  storage    Pointer to statically allocated backend storage.\n                        Must remain valid for the lifetime of the queue.\n @param[in]  buffer     Caller-allocated data buffer of at least\n                        @p item_size * @p max_items bytes.\n @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.\n @param[in]  max_items  Maximum number of items the queue can hold.\n                        Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_queue_deinit, ove_queue_create"]
+    pub fn ove_queue_init(
+        q: *mut ove_queue_t,
+        storage: *mut ove_queue_storage_t,
+        buffer: *mut core::ffi::c_void,
+        item_size: usize,
+        max_items: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by a queue initialised with ove_queue_init().\n\n The static storage and data buffer supplied at init time are not freed.\n\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[in] q  Handle returned by ove_queue_init().\n\n @see ove_queue_init"]
+    pub fn ove_queue_deinit(q: ove_queue_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a queue from the heap.\n\n Both the backend storage and the item data buffer are allocated from\n the heap.\n\n @note Requires @c CONFIG_OVE_QUEUE and @c OVE_HEAP_QUEUE\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] q          Receives the opaque queue handle on success.\n @param[in]  item_size  Size in bytes of each queue item.  Must be > 0.\n @param[in]  max_items  Maximum number of items the queue can hold.\n                        Must be > 0.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_queue_destroy, ove_queue_init"]
+    pub fn ove_queue_create(
+        q: *mut ove_queue_t,
+        item_size: usize,
+        max_items: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free a queue allocated with ove_queue_create().\n\n @note Requires @c CONFIG_OVE_QUEUE and @c OVE_HEAP_QUEUE.\n\n @param[in] q  Handle returned by ove_queue_create().\n\n @see ove_queue_create"]
+    pub fn ove_queue_destroy(q: ove_queue_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Send an item to the back of the queue, blocking if it is full.\n\n Copies @p item_size bytes from @p data into the queue.  If the queue\n is full, the caller blocks for up to @p timeout_ms milliseconds.\n\n @note Must not be called from an ISR — use ove_queue_send_from_isr() instead.\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[in] q           Queue handle.\n @param[in] data        Pointer to the item to copy into the queue.\n @param[in] timeout_ms  Maximum time to wait in milliseconds if the queue\n                        is full.  Pass @c OVE_WAIT_FOREVER to block\n                        indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue remained full\n         for the entire wait period, @c OVE_ERR_QUEUE_FULL if the queue is\n         full and the timeout is zero, or another negative error code.\n\n @see ove_queue_receive, ove_queue_send_from_isr"]
+    pub fn ove_queue_send(
+        q: ove_queue_t,
+        data: *const core::ffi::c_void,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive (remove) an item from the front of the queue, blocking if\n        it is empty.\n\n Copies @p item_size bytes out of the queue into @p buf.  If the queue is\n empty, the caller blocks for up to @p timeout_ms milliseconds.\n\n @note Must not be called from an ISR — use ove_queue_receive_from_isr()\n       instead.\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[in]  q           Queue handle.\n @param[out] buf         Buffer to copy the received item into.  Must be at\n                         least @p item_size bytes.\n @param[in]  timeout_ms  Maximum time to wait in milliseconds if the queue\n                         is empty.  Pass @c OVE_WAIT_FOREVER to block\n                         indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue remained empty\n         for the entire wait period, or another negative error code.\n\n @see ove_queue_send, ove_queue_receive_from_isr"]
+    pub fn ove_queue_receive(
+        q: ove_queue_t,
+        buf: *mut core::ffi::c_void,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send an item to the queue from an interrupt service routine.\n\n Non-blocking ISR-safe variant of ove_queue_send().  Returns immediately\n if the queue is full.\n\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[in] q     Queue handle.\n @param[in] data  Pointer to the item to copy into the queue.\n @return OVE_OK on success, @c OVE_ERR_QUEUE_FULL if the queue has no\n         space, or another negative error code.\n\n @see ove_queue_send"]
+    pub fn ove_queue_send_from_isr(
+        q: ove_queue_t,
+        data: *const core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive an item from the queue from an interrupt service routine.\n\n Non-blocking ISR-safe variant of ove_queue_receive().  Returns immediately\n if the queue is empty.\n\n @note Requires @c CONFIG_OVE_QUEUE.\n\n @param[in]  q    Queue handle.\n @param[out] buf  Buffer to copy the received item into.  Must be at\n                  least @p item_size bytes.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue is empty, or\n         another negative error code.\n\n @see ove_queue_receive"]
+    pub fn ove_queue_receive_from_isr(
+        q: ove_queue_t,
+        buf: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_timer {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque handle for a software timer object."]
+pub type ove_timer_t = *mut ove_timer;
+#[doc = " @brief Timer expiry callback function prototype.\n\n Invoked by the RTOS timer service task (or equivalent) when the timer\n period elapses.  Implementations must be non-blocking and short.\n\n @param[in] timer      Handle of the timer that fired.\n @param[in] user_data  Opaque pointer supplied at timer creation time."]
+pub type ove_timer_fn =
+    Option<unsafe extern "C" fn(timer: ove_timer_t, user_data: *mut core::ffi::c_void)>;
+unsafe extern "C" {
+    #[doc = " @brief Initialise a software timer using caller-supplied static storage.\n\n Creates a timer in the stopped state.  Call ove_timer_start() to arm it.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[out] timer      Receives the opaque timer handle on success.\n @param[in]  storage    Pointer to statically allocated backend storage.\n                        Must remain valid for the lifetime of the timer.\n @param[in]  callback   Function invoked when the timer expires.\n                        Must not be NULL.\n @param[in]  user_data  Opaque pointer forwarded to @p callback on each\n                        expiry.  May be NULL.\n @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.\n @param[in]  one_shot   Non-zero to create a one-shot timer (fires once\n                        then stops automatically); zero for a periodic\n                        timer that reloads automatically.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_deinit, ove_timer_create, ove_timer_start"]
+    pub fn ove_timer_init(
+        timer: *mut ove_timer_t,
+        storage: *mut ove_timer_storage_t,
+        callback: ove_timer_fn,
+        user_data: *mut core::ffi::c_void,
+        period_ms: u32,
+        one_shot: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop and release resources held by a timer initialised with\n        ove_timer_init().\n\n Stops the timer if it is running.  The static storage supplied at init\n time is not freed.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Handle returned by ove_timer_init().\n\n @see ove_timer_init"]
+    pub fn ove_timer_deinit(timer: ove_timer_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a software timer from the heap.\n\n Creates a timer in the stopped state.  Call ove_timer_start() to arm it.\n\n @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] timer      Receives the opaque timer handle on success.\n @param[in]  callback   Function invoked when the timer expires.\n                        Must not be NULL.\n @param[in]  user_data  Opaque pointer forwarded to @p callback on each\n                        expiry.  May be NULL.\n @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.\n @param[in]  one_shot   Non-zero to create a one-shot timer; zero for a\n                        periodic auto-reloading timer.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_destroy, ove_timer_init, ove_timer_start"]
+    pub fn ove_timer_create(
+        timer: *mut ove_timer_t,
+        callback: ove_timer_fn,
+        user_data: *mut core::ffi::c_void,
+        period_ms: u32,
+        one_shot: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop and free a timer allocated with ove_timer_create().\n\n @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.\n\n @param[in] timer  Handle returned by ove_timer_create().\n\n @see ove_timer_create"]
+    pub fn ove_timer_destroy(timer: ove_timer_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Start (arm) a timer.\n\n If the timer is already running, it is restarted from the beginning of\n its period.  Has no effect if the timer is in a terminated state.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to start.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_stop, ove_timer_reset"]
+    pub fn ove_timer_start(timer: ove_timer_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop a running timer without invoking its callback.\n\n If the timer is already stopped, this function has no effect.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to stop.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_start, ove_timer_reset"]
+    pub fn ove_timer_stop(timer: ove_timer_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Restart a timer's countdown from the beginning of its period.\n\n Equivalent to stopping and then starting the timer, but performed\n atomically with respect to the RTOS timer service.  Useful for\n implementing watchdog-style \"kick\" patterns.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to reset.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_start, ove_timer_stop"]
+    pub fn ove_timer_reset(timer: ove_timer_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the current monotonic time in microseconds.\n\n Reads the system timer and writes the elapsed microseconds since an\n arbitrary epoch (typically boot) to @p out.\n\n @param[out] out  Receives the current timestamp in microseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_TIME."]
+    pub fn ove_time_get_us(out: *mut u64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the current monotonic time in nanoseconds.\n\n Reads the system timer and writes the elapsed nanoseconds since an\n arbitrary epoch (typically boot) to @p out. Actual nanosecond resolution\n depends on the hardware timer; values may be rounded to the nearest tick.\n\n @param[out] out  Receives the current timestamp in nanoseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_TIME."]
+    pub fn ove_time_get_ns(out: *mut u64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Block the calling task for at least @p ms milliseconds.\n\n Suspends the current task for a minimum of @p ms milliseconds. The actual\n sleep duration may be longer due to scheduling granularity and system load.\n Passing 0 yields the CPU to any equal or higher-priority task.\n\n @param[in] ms  Minimum delay in milliseconds.\n @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR."]
+    pub fn ove_time_delay_ms(ms: u32);
+}
+unsafe extern "C" {
+    #[doc = " @brief Block the calling task for at least @p us microseconds.\n\n Suspends the current task for a minimum of @p us microseconds. For very\n short delays the implementation may busy-wait rather than yield,\n depending on the RTOS tick resolution.\n\n @param[in] us  Minimum delay in microseconds.\n @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR."]
+    pub fn ove_time_delay_us(us: u32);
+}
+#[doc = " @brief Descriptor for a single on-board LED.\n\n Identifies the GPIO pin that drives the LED and its polarity."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_led_desc {
+    #[doc = "< GPIO port index of the LED pin."]
+    pub port: core::ffi::c_uint,
+    #[doc = "< GPIO pin index within the port."]
+    pub pin: core::ffi::c_uint,
+    #[doc = "< Non-zero if the LED is lit when the pin is low."]
+    pub active_low: core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_led_desc"][core::mem::size_of::<ove_led_desc>() - 12usize];
+    ["Alignment of ove_led_desc"][core::mem::align_of::<ove_led_desc>() - 4usize];
+    ["Offset of field: ove_led_desc::port"][core::mem::offset_of!(ove_led_desc, port) - 0usize];
+    ["Offset of field: ove_led_desc::pin"][core::mem::offset_of!(ove_led_desc, pin) - 4usize];
+    ["Offset of field: ove_led_desc::active_low"]
+        [core::mem::offset_of!(ove_led_desc, active_low) - 8usize];
+};
+#[doc = " @brief Full description of a hardware board.\n\n One instance of this struct is defined per supported board and\n returned by ove_board_desc().  Fields may be zero/NULL when the\n corresponding peripheral does not exist on the board."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_board_desc {
+    #[doc = "< Human-readable board name (e.g. @c \"STM32F4-Discovery\")."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< MCU family string (e.g. @c \"STM32F4\")."]
+    pub mcu_family: *const core::ffi::c_char,
+    #[doc = "< Specific MCU part number (e.g. @c \"STM32F407VGT6\")."]
+    pub mcu: *const core::ffi::c_char,
+    #[doc = "< Number of GPIO ports available on this board."]
+    pub gpio_port_count: core::ffi::c_uint,
+    #[doc = "< Number of pins in each GPIO port."]
+    pub gpio_pins_per_port: core::ffi::c_uint,
+    #[doc = "< Number of on-board LEDs described in @c leds."]
+    pub led_count: core::ffi::c_uint,
+    #[doc = "< Array of LED descriptors, length @c led_count."]
+    pub leds: *const ove_led_desc,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_board_desc"][core::mem::size_of::<ove_board_desc>() - 48usize];
+    ["Alignment of ove_board_desc"][core::mem::align_of::<ove_board_desc>() - 8usize];
+    ["Offset of field: ove_board_desc::name"][core::mem::offset_of!(ove_board_desc, name) - 0usize];
+    ["Offset of field: ove_board_desc::mcu_family"]
+        [core::mem::offset_of!(ove_board_desc, mcu_family) - 8usize];
+    ["Offset of field: ove_board_desc::mcu"][core::mem::offset_of!(ove_board_desc, mcu) - 16usize];
+    ["Offset of field: ove_board_desc::gpio_port_count"]
+        [core::mem::offset_of!(ove_board_desc, gpio_port_count) - 24usize];
+    ["Offset of field: ove_board_desc::gpio_pins_per_port"]
+        [core::mem::offset_of!(ove_board_desc, gpio_pins_per_port) - 28usize];
+    ["Offset of field: ove_board_desc::led_count"]
+        [core::mem::offset_of!(ove_board_desc, led_count) - 32usize];
+    ["Offset of field: ove_board_desc::leds"]
+        [core::mem::offset_of!(ove_board_desc, leds) - 40usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise the board hardware.\n\n Configures system clocks, enables necessary peripherals, and performs\n any board-specific low-level setup.  Must be called once before any\n other oveRTOS API.\n\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_board_init() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return a human-readable name for the current board.\n\n The returned pointer is valid for the lifetime of the program.\n\n @return Null-terminated board name string (e.g. @c \"STM32F4-Discovery\")."]
+    pub fn ove_board_name() -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return a pointer to the current board's descriptor structure.\n\n The descriptor contains GPIO port counts, LED definitions, and MCU\n identification fields.\n\n @return Pointer to a read-only @c ove_board_desc, or @c NULL if no\n         descriptor is registered."]
+    pub fn ove_board_desc() -> *const ove_board_desc;
+}
+#[doc = "< High-impedance digital input."]
+pub const OVE_GPIO_MODE_INPUT: ove_gpio_mode_t = 0;
+#[doc = "< Push-pull digital output."]
+pub const OVE_GPIO_MODE_OUTPUT_PP: ove_gpio_mode_t = 1;
+#[doc = "< Open-drain digital output."]
+pub const OVE_GPIO_MODE_OUTPUT_OD: ove_gpio_mode_t = 2;
+#[doc = " @brief GPIO pin direction and drive mode."]
+pub type ove_gpio_mode_t = core::ffi::c_uint;
+#[doc = "< Trigger on rising edge only."]
+pub const OVE_GPIO_IRQ_RISING: ove_gpio_irq_mode_t = 1;
+#[doc = "< Trigger on falling edge only."]
+pub const OVE_GPIO_IRQ_FALLING: ove_gpio_irq_mode_t = 2;
+#[doc = "< Trigger on both edges."]
+pub const OVE_GPIO_IRQ_BOTH: ove_gpio_irq_mode_t = 3;
+#[doc = " @brief GPIO interrupt trigger edge selection."]
+pub type ove_gpio_irq_mode_t = core::ffi::c_uint;
+#[doc = " @brief GPIO interrupt callback type.\n\n Called from interrupt context (or a deferred work item, depending on\n the backend) when the configured edge is detected.\n\n @param[in] port      GPIO port index that generated the interrupt.\n @param[in] pin       GPIO pin index that generated the interrupt.\n @param[in] user_data Opaque pointer supplied at registration time."]
+pub type ove_gpio_irq_cb = Option<
+    unsafe extern "C" fn(
+        port: core::ffi::c_uint,
+        pin: core::ffi::c_uint,
+        user_data: *mut core::ffi::c_void,
+    ),
+>;
+unsafe extern "C" {
+    #[doc = " @brief Configure the direction and drive mode of a GPIO pin.\n\n @param[in] port  GPIO port index (0-based).\n @param[in] pin   GPIO pin index within the port (0-based).\n @param[in] mode  Desired pin mode (@c ove_gpio_mode_t).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_gpio_configure(
+        port: core::ffi::c_uint,
+        pin: core::ffi::c_uint,
+        mode: ove_gpio_mode_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the output level of a GPIO pin.\n\n The pin must have been configured as an output (@c OVE_GPIO_MODE_OUTPUT_PP\n or @c OVE_GPIO_MODE_OUTPUT_OD) before calling this function.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @param[in] value Non-zero to drive the pin high, zero to drive it low.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_gpio_set(
+        port: core::ffi::c_uint,
+        pin: core::ffi::c_uint,
+        value: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read the current logical level of a GPIO pin.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return 1 if the pin is high, 0 if low, negative error code on failure."]
+    pub fn ove_gpio_get(port: core::ffi::c_uint, pin: core::ffi::c_uint) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register an interrupt callback for a GPIO pin.\n\n The interrupt is registered but not enabled; call ove_gpio_irq_enable()\n to arm it.\n\n @param[in] port      GPIO port index.\n @param[in] pin       GPIO pin index within the port.\n @param[in] mode      Edge(s) that should trigger the interrupt.\n @param[in] callback  Function called when the interrupt fires.\n @param[in] user_data Opaque pointer forwarded to @p callback.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_gpio_irq_register(
+        port: core::ffi::c_uint,
+        pin: core::ffi::c_uint,
+        mode: ove_gpio_irq_mode_t,
+        callback: ove_gpio_irq_cb,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Enable a previously registered GPIO interrupt.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_gpio_irq_enable(port: core::ffi::c_uint, pin: core::ffi::c_uint)
+    -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Disable a previously enabled GPIO interrupt without unregistering it.\n\n The callback and trigger edge are retained; call ove_gpio_irq_enable()\n to re-arm.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_gpio_irq_disable(
+        port: core::ffi::c_uint,
+        pin: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Turn a board LED on or off.\n\n Active-low polarity is handled transparently by the backend; callers\n always pass a logical level.\n\n @param[in] led  Zero-based LED index (must be < ove_led_count()).\n @param[in] on   Non-zero to turn the LED on, zero to turn it off."]
+    pub fn ove_led_set(led: core::ffi::c_uint, on: core::ffi::c_int);
+}
+unsafe extern "C" {
+    #[doc = " @brief Toggle the current state of a board LED.\n\n @param[in] led  Zero-based LED index (must be < ove_led_count())."]
+    pub fn ove_led_toggle(led: core::ffi::c_uint);
+}
+unsafe extern "C" {
+    #[doc = " @brief Return the number of LEDs available on the current board.\n\n @return Number of LEDs, or 0 if none are defined."]
+    pub fn ove_led_count() -> core::ffi::c_uint;
+}
+#[doc = " @brief Keypad read callback — the user implements this to deliver\n        key events to LVGL via ove_lvgl_register_keypad().\n\n @param[out] key      Filled with the current LV_KEY_* code if a key\n                      is pressed.\n @param[out] pressed  Filled with @c true if currently pressed,\n                      @c false if released.\n @return @c true if the callback wrote `key` and `pressed` (LVGL\n         should use them), @c false to indicate no new input."]
+pub type ove_lvgl_keypad_read_fn_t =
+    Option<unsafe extern "C" fn(key: *mut u32, pressed: *mut bool) -> bool>;
+#[doc = " @brief Encoder read callback — the user implements this to deliver\n        rotation/click events to LVGL.\n\n @param[out] diff     Filled with the accumulated encoder delta since\n                      the last read (positive = clockwise).\n @param[out] pressed  Filled with @c true if the encoder switch is\n                      currently pressed.\n @return @c true if the callback wrote `diff` and `pressed`."]
+pub type ove_lvgl_encoder_read_fn_t =
+    Option<unsafe extern "C" fn(diff: *mut i16, pressed: *mut bool) -> bool>;
+unsafe extern "C" {
+    #[doc = " @brief Register a keypad input device with LVGL.\n\n On first call the function creates an `lv_indev_t` of type keypad\n and installs an internal read-callback shim that dispatches to @p cb\n every refresh cycle. Subsequent calls replace the user callback\n without creating another indev.\n\n Pass @c NULL to deregister (LVGL will still poll but the shim returns\n \"no input\").\n\n @param[in] cb Callback supplying keypad state, or @c NULL to deregister.\n @return OVE_OK on success."]
+    pub fn ove_lvgl_register_keypad(cb: ove_lvgl_keypad_read_fn_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register an encoder input device with LVGL.\n\n Same semantics as ove_lvgl_register_keypad() but for rotary encoder\n (+ push) input."]
+    pub fn ove_lvgl_register_encoder(cb: ove_lvgl_encoder_read_fn_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Returns the keypad LVGL input device handle (`lv_indev_t *`\n        as @c void*) or @c NULL if none has been registered. Cast to\n        `lv_indev_t *` at the call site and bind to an `lv_group_t`\n        via `lv_indev_set_group()`.\n\n The return type is `void *` so this header does not need to pull in\n `<lvgl.h>` or forward-declare LVGL types that conflict with its\n own typedefs."]
+    pub fn ove_lvgl_get_keypad_indev() -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Returns the encoder LVGL input device handle as @c void*, or\n        @c NULL if none has been registered."]
+    pub fn ove_lvgl_get_encoder_indev() -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise the LVGL library and register the board's display driver.\n\n Calls @c lv_init(), registers the backend display and (if present) the\n touch input driver, and starts any required background tasks.\n\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_lvgl_init() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Acquire the LVGL mutex before calling any LVGL API.\n\n Must be paired with ove_lvgl_unlock().  Nesting is not supported."]
+    pub fn ove_lvgl_lock();
+}
+unsafe extern "C" {
+    #[doc = " @brief Release the LVGL mutex after calling LVGL APIs.\n\n Must be called after every ove_lvgl_lock()."]
+    pub fn ove_lvgl_unlock();
+}
+unsafe extern "C" {
+    #[doc = " @brief Advance the LVGL internal tick counter.\n\n Call this from a periodic timer or task every @p ms milliseconds.\n LVGL uses this counter for animations, transitions, and input debouncing.\n\n @param[in] ms  Number of milliseconds elapsed since the last call."]
+    pub fn ove_lvgl_tick(ms: u32);
+}
+unsafe extern "C" {
+    #[doc = " @brief Process pending LVGL tasks (rendering, input, animations).\n\n Must be called regularly from the UI task — typically every\n @c LV_DISP_DEF_REFR_PERIOD milliseconds.  Call ove_lvgl_lock() and\n ove_lvgl_unlock() around this call when sharing LVGL with other tasks."]
+    pub fn ove_lvgl_handler();
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise an event group using caller-provided static storage.\n\n All bits in the new event group are cleared. The caller must ensure that\n @p storage remains valid for the lifetime of the event group.\n\n @param[out] eg       Receives the initialised event group handle.\n @param[in]  storage  Pointer to statically-allocated event group storage.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_EVENTGROUP."]
+    pub fn ove_eventgroup_init(
+        eg: *mut ove_eventgroup_t,
+        storage: *mut ove_eventgroup_storage_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Deinitialise a statically-allocated event group.\n\n Releases all RTOS resources associated with @p eg. Any tasks still\n blocked in @ref ove_eventgroup_wait_bits will be unblocked with an error.\n\n @param[in] eg  Event group handle returned by @ref ove_eventgroup_init.\n @note Requires @c CONFIG_OVE_EVENTGROUP."]
+    pub fn ove_eventgroup_deinit(eg: ove_eventgroup_t);
+}
+unsafe extern "C" {
+    pub fn ove_eventgroup_create(eg: *mut ove_eventgroup_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated event group.\n\n Frees the event group and all associated resources. Must only be called\n on handles obtained from @ref ove_eventgroup_create.\n\n @param[in] eg  Event group handle returned by @ref ove_eventgroup_create.\n @note Requires @c CONFIG_OVE_EVENTGROUP and @c OVE_HEAP_EVENTGROUP."]
+    pub fn ove_eventgroup_destroy(eg: ove_eventgroup_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Set one or more bits in the event group from task context.\n\n Atomically ORs @p bits into the current event group value. Any tasks\n blocked in @ref ove_eventgroup_wait_bits whose wait conditions are now\n satisfied will be unblocked.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return The value of the event group immediately after the set operation,\n         before any waiting tasks have had the chance to clear bits.\n @note Must not be called from an ISR; use @ref ove_eventgroup_set_bits_from_isr."]
+    pub fn ove_eventgroup_set_bits(eg: ove_eventgroup_t, bits: ove_eventbits_t) -> ove_eventbits_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group immediately after the clear operation."]
+    pub fn ove_eventgroup_clear_bits(
+        eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
     ) -> ove_eventbits_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Block until one or all of the requested bits are set.\n\n Waits for the bit pattern described by @p bits and @p flags. The behavior\n is controlled by @p flags:\n - @c OVE_EG_WAIT_ALL — require all bits in @p bits to be set simultaneously.\n - @c OVE_EG_CLEAR_ON_EXIT — clear the matching bits atomically on return.\n\n On success the event bits at the time of the condition being met are\n written to @p result.\n\n @param[in]  eg          Event group handle.\n @param[in]  bits        Bitmask of bits to wait for.\n @param[in]  flags       Combination of @c OVE_EG_WAIT_ALL and/or\n                         @c OVE_EG_CLEAR_ON_EXIT; pass 0 for defaults.\n @param[in]  timeout_ms  Maximum wait time in milliseconds; 0 for non-blocking.\n @param[out] result      Receives the event bits value that satisfied the wait,\n                         or @c NULL if not needed.\n @return OVE_OK if the wait condition was met, @c OVE_ERR_TIMEOUT on timeout,\n         negative error code on failure."]
+    pub fn ove_eventgroup_wait_bits(
+        eg: ove_eventgroup_t,
+        bits: ove_eventbits_t,
+        flags: u32,
+        timeout_ms: u32,
+        result: *mut ove_eventbits_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Set bits in the event group from an ISR.\n\n ISR-safe variant of @ref ove_eventgroup_set_bits. A context switch to a\n higher-priority task that was unblocked may be requested by the underlying\n RTOS after this call returns.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to set.\n @return The value of the event group at the time of the call (before any\n         pending context switch)."]
+    pub fn ove_eventgroup_set_bits_from_isr(
+        eg: ove_eventgroup_t,
+        bits: ove_eventbits_t,
+    ) -> ove_eventbits_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read the current bit value of the event group without blocking.\n\n Returns a snapshot of the event group's bit pattern at the time of the\n call. The value may change immediately after the call returns.\n\n @param[in] eg  Event group handle.\n @return Current event bits value."]
     pub fn ove_eventgroup_get_bits(eg: ove_eventgroup_t) -> ove_eventbits_t;
-
-    // --- workqueue ---
+}
+#[doc = " @brief Prototype for a work item handler function.\n\n Called by the work queue thread when the work item is executed. The\n @p work handle may be used to reschedule or identify the item inside\n the handler.\n\n @param[in] work  Handle of the work item being executed."]
+pub type ove_work_fn = Option<unsafe extern "C" fn(work: ove_work_t)>;
+unsafe extern "C" {
+    #[doc = " @brief Initialise a work queue using caller-provided static storage.\n\n Creates the underlying RTOS thread with the given @p name, @p priority,\n @p stack_size, and pre-allocated @p stack buffer. The queue begins\n dispatching items as soon as the first work item is submitted.\n\n @param[out] wq          Receives the initialised work queue handle.\n @param[in]  storage     Pointer to statically-allocated work queue storage.\n @param[in]  name        Human-readable name for the underlying thread.\n @param[in]  priority    Thread priority for the work queue thread.\n @param[in]  stack_size  Size of the thread stack in bytes.\n @param[in]  stack       Pointer to the pre-allocated stack buffer.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
     pub fn ove_workqueue_init(
-        wq:        *mut ove_workqueue_t,
-        storage:   *mut ove_workqueue_storage_t,
-        name:      *const core::ffi::c_char,
-        priority:  u32,
+        wq: *mut ove_workqueue_t,
+        storage: *mut ove_workqueue_storage_t,
+        name: *const core::ffi::c_char,
+        priority: ove_prio_t,
         stack_size: usize,
-        stack:     *mut c_void,
-    ) -> i32;
+        stack: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Deinitialise a statically-allocated work queue.\n\n Stops the underlying thread and releases all RTOS resources. Any work\n items still in the queue at deinit time are discarded without execution.\n\n @param[in] wq  Work queue handle returned by @ref ove_workqueue_init.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
     pub fn ove_workqueue_deinit(wq: ove_workqueue_t);
-    pub fn ove_workqueue_create(
-        wq:         *mut ove_workqueue_t,
-        name:       *const core::ffi::c_char,
-        priority:   u32,
-        stack_size: usize,
-    ) -> i32;
-    pub fn ove_workqueue_destroy(wq: ove_workqueue_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a work item using caller-provided static storage.\n\n Associates the @p handler function with the work item. The item must be\n initialised before it can be submitted to a work queue.\n\n @param[out] work     Receives the initialised work handle.\n @param[in]  storage  Pointer to statically-allocated work item storage.\n @param[in]  handler  Function to call when the work item is executed.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE."]
     pub fn ove_work_init_static(
-        work:    *mut ove_work_t,
+        work: *mut ove_work_t,
         storage: *mut ove_work_storage_t,
         handler: ove_work_fn,
-    ) -> i32;
-    pub fn ove_work_init(work: *mut ove_work_t, handler: ove_work_fn) -> i32;
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a heap-backed work item.\n\n Allocates the work item control structure from the heap and associates\n @p handler with it.\n\n @param[out] work     Receives the created work handle.\n @param[in]  handler  Function to call when the work item is executed.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WORKQUEUE and that @c CONFIG_OVE_ZERO_HEAP\n       is not set."]
+    pub fn ove_work_init(work: *mut ove_work_t, handler: ove_work_fn) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Free a heap-allocated work item.\n\n Releases the memory allocated by @ref ove_work_init. The item must not\n be pending in a work queue when this function is called; cancel it first\n with @ref ove_work_cancel if necessary.\n\n @param[in] work  Work handle returned by @ref ove_work_init.\n @note Requires @c CONFIG_OVE_WORKQUEUE and that @c CONFIG_OVE_ZERO_HEAP\n       is not set."]
     pub fn ove_work_free(work: ove_work_t);
-    pub fn ove_work_submit(wq: ove_workqueue_t, work: ove_work_t) -> i32;
-    pub fn ove_work_submit_delayed(wq: ove_workqueue_t, work: ove_work_t, delay_ms: u32) -> i32;
-    pub fn ove_work_cancel(work: ove_work_t) -> i32;
-
-    // --- stream ---
+}
+unsafe extern "C" {
+    pub fn ove_workqueue_create(
+        wq: *mut ove_workqueue_t,
+        name: *const core::ffi::c_char,
+        priority: ove_prio_t,
+        stack_size: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated work queue.\n\n Stops the underlying thread and frees all resources. Pending work items\n are discarded. Must only be called on handles from @ref ove_workqueue_create.\n\n @param[in] wq  Work queue handle returned by @ref ove_workqueue_create.\n @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE."]
+    pub fn ove_workqueue_destroy(wq: ove_workqueue_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Submit a work item for immediate execution on the work queue.\n\n Enqueues @p work for execution on @p wq. If the item is already pending\n the call may fail or reset the pending state depending on the underlying\n implementation.\n\n @param[in] wq    Target work queue handle.\n @param[in] work  Work item handle to submit.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_work_submit(wq: ove_workqueue_t, work: ove_work_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Submit a work item for execution after a delay.\n\n Schedules @p work to run on @p wq after at least @p delay_ms milliseconds\n have elapsed. The item may be cancelled before the delay expires using\n @ref ove_work_cancel.\n\n @param[in] wq        Target work queue handle.\n @param[in] work      Work item handle to schedule.\n @param[in] delay_ms  Minimum delay before execution in milliseconds.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_work_submit_delayed(
+        wq: ove_workqueue_t,
+        work: ove_work_t,
+        delay_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Cancel a pending work item before it executes.\n\n Attempts to remove @p work from the queue before its handler is called.\n Has no effect if the item is not pending or is already executing.\n\n @param[in] work  Work item handle to cancel.\n @return OVE_OK if the item was successfully cancelled, @c OVE_ERR_INVAL\n         if the item was not pending, or another negative error code on failure."]
+    pub fn ove_work_cancel(work: ove_work_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a stream using caller-provided static storage.\n\n Constructs a stream object in @p storage and associates the raw byte\n buffer @p buffer of @p size bytes with it. The stream will not unblock\n a waiting receiver until at least @p trigger bytes are present.\n\n @param[out] stream   Receives the initialised stream handle.\n @param[in]  storage  Pointer to statically-allocated stream storage.\n @param[in]  buffer   Pointer to the backing byte buffer.\n @param[in]  size     Size of @p buffer in bytes.\n @param[in]  trigger  Minimum bytes available before a blocked receiver wakes.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_STREAM."]
     pub fn ove_stream_init(
-        stream:  *mut ove_stream_t,
+        stream: *mut ove_stream_t,
         storage: *mut ove_stream_storage_t,
-        buffer:  *mut c_void,
-        size:    usize,
+        buffer: *mut core::ffi::c_void,
+        size: usize,
         trigger: usize,
-    ) -> i32;
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Deinitialise a statically-allocated stream.\n\n Releases all RTOS resources associated with @p stream. The caller is\n responsible for freeing any backing buffer that was passed to\n @ref ove_stream_init.\n\n @param[in] stream  Stream handle returned by @ref ove_stream_init.\n @note Requires @c CONFIG_OVE_STREAM."]
     pub fn ove_stream_deinit(stream: ove_stream_t);
-    pub fn ove_stream_create(stream: *mut ove_stream_t, size: usize, trigger: usize) -> i32;
+}
+unsafe extern "C" {
+    pub fn ove_stream_create(
+        stream: *mut ove_stream_t,
+        size: usize,
+        trigger: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated stream.\n\n Frees the stream control structure and its internal buffer. Must only be\n called on handles obtained from @ref ove_stream_create.\n\n @param[in] stream  Stream handle returned by @ref ove_stream_create.\n @note Requires @c CONFIG_OVE_STREAM and @c OVE_HEAP_STREAM."]
     pub fn ove_stream_destroy(stream: ove_stream_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Send bytes into the stream from task context.\n\n Copies up to @p len bytes from @p data into the stream. Blocks for at most\n @p timeout_ms milliseconds if the stream has insufficient space. The actual\n number of bytes accepted is written to @p bytes_sent when not @c NULL.\n\n @param[in]  stream      Stream handle.\n @param[in]  data        Pointer to the data to send.\n @param[in]  len         Number of bytes to send.\n @param[in]  timeout_ms  Maximum wait time in milliseconds; 0 for non-blocking.\n @param[out] bytes_sent  Receives the number of bytes actually written, or\n                         @c NULL if the caller does not need this value.\n @return OVE_OK on success, negative error code on failure or timeout.\n @note Must not be called from an ISR; use @ref ove_stream_send_from_isr instead."]
     pub fn ove_stream_send(
-        stream:     ove_stream_t,
-        data:       *const c_void,
-        len:        usize,
+        stream: ove_stream_t,
+        data: *const core::ffi::c_void,
+        len: usize,
         timeout_ms: u32,
         bytes_sent: *mut usize,
-    ) -> i32;
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive bytes from the stream in task context.\n\n Copies up to @p len bytes from the stream into @p buf. Blocks for at most\n @p timeout_ms milliseconds until the stream's trigger threshold is satisfied.\n The actual number of bytes read is written to @p bytes_received when not\n @c NULL.\n\n @param[in]  stream          Stream handle.\n @param[out] buf             Buffer to receive data.\n @param[in]  len             Maximum number of bytes to read.\n @param[in]  timeout_ms      Maximum wait time in milliseconds; 0 for non-blocking.\n @param[out] bytes_received  Receives the number of bytes actually read, or\n                             @c NULL if the caller does not need this value.\n @return OVE_OK on success, negative error code on failure or timeout.\n @note Must not be called from an ISR; use @ref ove_stream_receive_from_isr instead."]
     pub fn ove_stream_receive(
-        stream:         ove_stream_t,
-        buf:            *mut c_void,
-        len:            usize,
-        timeout_ms:     u32,
-        bytes_received: *mut usize,
-    ) -> i32;
-    pub fn ove_stream_send_from_isr(
-        stream:     ove_stream_t,
-        data:       *const c_void,
-        len:        usize,
-        bytes_sent: *mut usize,
-    ) -> i32;
-    pub fn ove_stream_receive_from_isr(
-        stream:         ove_stream_t,
-        buf:            *mut c_void,
-        len:            usize,
-        bytes_received: *mut usize,
-    ) -> i32;
-    pub fn ove_stream_reset(stream: ove_stream_t) -> i32;
-    pub fn ove_stream_bytes_available(stream: ove_stream_t) -> usize;
-
-    // --- watchdog ---
-    pub fn ove_watchdog_init(
-        wdt:        *mut ove_watchdog_t,
-        storage:    *mut ove_watchdog_storage_t,
+        stream: ove_stream_t,
+        buf: *mut core::ffi::c_void,
+        len: usize,
         timeout_ms: u32,
-    ) -> i32;
+        bytes_received: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send bytes into the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_send. Never blocks; if the stream has\n insufficient space the call returns immediately with a partial or zero count.\n\n @param[in]  stream      Stream handle.\n @param[in]  data        Pointer to the data to send.\n @param[in]  len         Number of bytes to send.\n @param[out] bytes_sent  Receives the number of bytes actually written, or\n                         @c NULL if the caller does not need this value.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_stream_send_from_isr(
+        stream: ove_stream_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+        bytes_sent: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive bytes from the stream from an ISR.\n\n ISR-safe variant of @ref ove_stream_receive. Never blocks; returns only\n the bytes that are immediately available.\n\n @param[in]  stream          Stream handle.\n @param[out] buf             Buffer to receive data.\n @param[in]  len             Maximum number of bytes to read.\n @param[out] bytes_received  Receives the number of bytes actually read, or\n                             @c NULL if the caller does not need this value.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_stream_receive_from_isr(
+        stream: ove_stream_t,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        bytes_received: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Discard all bytes currently held in the stream.\n\n Resets the stream to the empty state without deallocating resources.\n Any task blocked in @ref ove_stream_receive may remain blocked after this\n call until new data is written.\n\n @param[in] stream  Stream handle.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_stream_reset(stream: ove_stream_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the number of bytes currently available in the stream.\n\n Returns the count of bytes that can be read without blocking.\n\n @param[in] stream  Stream handle.\n @return Number of bytes available; 0 if the stream is empty or invalid."]
+    pub fn ove_stream_bytes_available(stream: ove_stream_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise a watchdog timer using caller-provided static storage.\n\n Configures the watchdog with a timeout of @p timeout_ms milliseconds.\n The watchdog does not start counting until @ref ove_watchdog_start is\n called. The caller must ensure @p storage remains valid for the watchdog's\n lifetime.\n\n @param[out] wdt         Receives the initialised watchdog handle.\n @param[in]  storage     Pointer to statically-allocated watchdog storage.\n @param[in]  timeout_ms  Watchdog timeout period in milliseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WATCHDOG."]
+    pub fn ove_watchdog_init(
+        wdt: *mut ove_watchdog_t,
+        storage: *mut ove_watchdog_storage_t,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Deinitialise a statically-allocated watchdog timer.\n\n Stops the watchdog if running and releases all associated RTOS resources.\n The backing storage memory is not freed.\n\n @param[in] wdt  Watchdog handle returned by @ref ove_watchdog_init.\n @note Requires @c CONFIG_OVE_WATCHDOG."]
     pub fn ove_watchdog_deinit(wdt: ove_watchdog_t);
-    pub fn ove_watchdog_create(wdt: *mut ove_watchdog_t, timeout_ms: u32) -> i32;
+}
+unsafe extern "C" {
+    pub fn ove_watchdog_create(wdt: *mut ove_watchdog_t, timeout_ms: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated watchdog timer.\n\n Stops the watchdog if running and frees all resources. Must only be called\n on handles obtained from @ref ove_watchdog_create.\n\n @param[in] wdt  Watchdog handle returned by @ref ove_watchdog_create.\n @note Requires @c CONFIG_OVE_WATCHDOG and @c OVE_HEAP_WATCHDOG."]
     pub fn ove_watchdog_destroy(wdt: ove_watchdog_t);
-    pub fn ove_watchdog_start(wdt: ove_watchdog_t) -> i32;
-    pub fn ove_watchdog_feed(wdt: ove_watchdog_t) -> i32;
-
-    // --- filesystem ---
-    pub fn ove_fs_mount(dev_path: *const core::ffi::c_char, mount_point: *const core::ffi::c_char) -> i32;
-    pub fn ove_fs_open(file: *mut ove_file_t, path: *const core::ffi::c_char, flags: i32) -> i32;
-    pub fn ove_fs_close(file: ove_file_t) -> i32;
-    pub fn ove_fs_read(
-        file:       ove_file_t,
-        buf:        *mut c_void,
-        count:      usize,
-        bytes_read: *mut usize,
-    ) -> i32;
-    pub fn ove_fs_write(
-        file:          ove_file_t,
-        buf:           *const c_void,
-        count:         usize,
-        bytes_written: *mut usize,
-    ) -> i32;
-    pub fn ove_fs_opendir(dir: *mut ove_dir_t, path: *const core::ffi::c_char) -> i32;
-    pub fn ove_fs_closedir(dir: ove_dir_t) -> i32;
-    pub fn ove_fs_readdir(dir: ove_dir_t, entry: *mut ove_dirent) -> i32;
-
-    // --- audio graph ---
-    pub fn ove_audio_graph_init(g: *mut ove_audio_graph, frames_per_period: u32) -> i32;
-    pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
-    pub fn ove_audio_graph_add_node(g: *mut ove_audio_graph, ops: *const ove_audio_node_ops, ctx: *mut c_void, name: *const core::ffi::c_char, node_type: ove_audio_node_type) -> i32;
-    pub fn ove_audio_graph_connect(g: *mut ove_audio_graph, from: u32, to: u32) -> i32;
-    pub fn ove_audio_graph_build(g: *mut ove_audio_graph) -> i32;
-    pub fn ove_audio_graph_start(g: *mut ove_audio_graph) -> i32;
-    pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> i32;
-    pub fn ove_audio_graph_process(g: *mut ove_audio_graph) -> i32;
-    pub fn ove_audio_graph_get_stats(g: *const ove_audio_graph, stats: *mut ove_audio_graph_stats) -> i32;
-    pub fn ove_audio_device_source(g: *mut ove_audio_graph, cfg: *const ove_audio_device_cfg, name: *const core::ffi::c_char) -> i32;
-    pub fn ove_audio_device_sink(g: *mut ove_audio_graph, cfg: *const ove_audio_device_cfg, name: *const core::ffi::c_char) -> i32;
-
-    // --- NVS ---
-    pub fn ove_nvs_init() -> i32;
+}
+unsafe extern "C" {
+    #[doc = " @brief Start (arm) the watchdog timer.\n\n Begins the countdown. The watchdog must be fed with @ref ove_watchdog_feed\n at intervals shorter than the configured timeout, or the system will reset.\n\n @param[in] wdt  Watchdog handle.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WATCHDOG."]
+    pub fn ove_watchdog_start(wdt: ove_watchdog_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop (disarm) the watchdog timer.\n\n Halts the countdown. The watchdog will not reset the system while stopped.\n Call @ref ove_watchdog_start to re-arm.\n\n @param[in] wdt  Watchdog handle.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WATCHDOG."]
+    pub fn ove_watchdog_stop(wdt: ove_watchdog_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Feed (pet) the watchdog to prevent a system reset.\n\n Resets the watchdog countdown to the configured timeout. Must be called\n periodically while the watchdog is running, with an interval shorter than\n the @p timeout_ms value passed to @ref ove_watchdog_init or\n @ref ove_watchdog_create.\n\n @param[in] wdt  Watchdog handle.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WATCHDOG."]
+    pub fn ove_watchdog_feed(wdt: ove_watchdog_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Initialise the non-volatile storage subsystem.\n\n Must be called once before any other @c ove_nvs_* function. Performs\n backend-specific mount and integrity checks.\n\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_NVS."]
+    pub fn ove_nvs_init() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Deinitialise the non-volatile storage subsystem.\n\n Flushes any pending writes and unmounts the NVS backend. After this call\n all other @c ove_nvs_* functions will fail until @ref ove_nvs_init is\n called again.\n\n @note Requires @c CONFIG_OVE_NVS."]
+    pub fn ove_nvs_deinit();
+}
+unsafe extern "C" {
+    #[doc = " @brief Read a value from non-volatile storage by key.\n\n Copies the value associated with @p key into @p buf. At most @p buf_len\n bytes are written. The actual size of the stored value is written to\n @p out_len when not @c NULL, which allows the caller to detect truncation\n or to perform a size query (pass @c NULL for @p buf and 0 for @p buf_len).\n\n @param[in]  key      Null-terminated key string.\n @param[out] buf      Buffer to receive the value, or @c NULL for size query.\n @param[in]  buf_len  Size of @p buf in bytes.\n @param[out] out_len  Receives the actual stored value length in bytes, or\n                      @c NULL if not needed.\n @return OVE_OK on success, @c OVE_ERR_NOT_FOUND if the key does not exist,\n         or another negative error code on failure.\n @note Requires @c CONFIG_OVE_NVS."]
     pub fn ove_nvs_read(
-        key:     *const core::ffi::c_char,
-        buf:     *mut c_void,
+        key: *const core::ffi::c_char,
+        buf: *mut core::ffi::c_void,
         buf_len: usize,
         out_len: *mut usize,
-    ) -> i32;
-    pub fn ove_nvs_write(key: *const core::ffi::c_char, data: *const c_void, len: usize) -> i32;
-    pub fn ove_nvs_erase(key: *const core::ffi::c_char) -> i32;
-
-    // --- shell ---
-    pub fn ove_shell_init() -> i32;
-    pub fn ove_shell_register_cmd(cmd: *const ove_shell_cmd) -> i32;
-    pub fn ove_shell_process_char(c: i32);
-
-    // --- console ---
-    pub fn ove_console_getchar() -> i32;
-    pub fn ove_console_putchar(c: i32);
-    pub fn ove_console_write(buf: *const core::ffi::c_char, len: u32);
-
-    // --- GPIO ---
-    pub fn ove_gpio_configure(port: u32, pin: u32, mode: u32) -> i32;
-    pub fn ove_gpio_set(port: u32, pin: u32, value: i32) -> i32;
-    pub fn ove_gpio_get(port: u32, pin: u32) -> i32;
-    pub fn ove_gpio_irq_register(
-        port:      u32,
-        pin:       u32,
-        mode:      u32,
-        callback:  ove_gpio_irq_cb,
-        user_data: *mut c_void,
-    ) -> i32;
-    pub fn ove_gpio_irq_enable(port: u32, pin: u32) -> i32;
-    pub fn ove_gpio_irq_disable(port: u32, pin: u32) -> i32;
-
-    // --- LED ---
-    pub fn ove_led_set(led: u32, on: i32);
-    pub fn ove_led_toggle(led: u32);
-    pub fn ove_led_count() -> u32;
-
-    // --- board ---
-    pub fn ove_board_init() -> i32;
-    pub fn ove_board_name() -> *const core::ffi::c_char;
-
-    // --- time ---
-    pub fn ove_time_get_us(out: *mut u64) -> i32;
-    pub fn ove_time_delay_ms(ms: u32);
-    pub fn ove_time_delay_us(us: u32);
-
-    // --- LVGL integration ---
-    pub fn ove_lvgl_init() -> i32;
-    pub fn ove_lvgl_lock();
-    pub fn ove_lvgl_unlock();
-    pub fn ove_lvgl_tick(ms: u32);
-    pub fn ove_lvgl_handler();
-
-    // --- infer (ML model) ---
-    pub fn ove_model_create(m: *mut ove_model_t, cfg: *const ove_model_config) -> i32;
-    pub fn ove_model_destroy(m: ove_model_t);
-    pub fn ove_model_init(m: *mut ove_model_t, storage: *mut ove_model_storage_t, arena: *mut u8, cfg: *const ove_model_config) -> i32;
-    pub fn ove_model_deinit(m: ove_model_t);
-    pub fn ove_model_invoke(m: ove_model_t) -> i32;
-    pub fn ove_model_last_inference_us(m: ove_model_t) -> u64;
-
-    // --- networking ---
-    pub fn ove_sockaddr_ipv4(addr: *mut ove_sockaddr_t, a: u8, b: u8, c: u8, d: u8, port: u16);
-    pub fn ove_dns_resolve(hostname: *const core::ffi::c_char, addr: *mut ove_sockaddr_t, timeout_ms: u32) -> i32;
-    pub fn ove_netif_init(netif: *mut ove_netif_t, storage: *mut ove_netif_storage_t) -> i32;
-    pub fn ove_netif_deinit(netif: ove_netif_t);
-    pub fn ove_netif_create(netif: *mut ove_netif_t) -> i32;
-    pub fn ove_netif_destroy(netif: ove_netif_t);
-    pub fn ove_netif_up(netif: ove_netif_t, cfg: *const ove_netif_config_t) -> i32;
-    pub fn ove_netif_down(netif: ove_netif_t);
-    pub fn ove_netif_get_addr(netif: ove_netif_t, ip: *mut ove_sockaddr_t, gw: *mut ove_sockaddr_t, nm: *mut ove_sockaddr_t) -> i32;
-    pub fn ove_socket_open(sock: *mut ove_socket_t, storage: *mut ove_socket_storage_t, af: u8, sock_type: u8) -> i32;
-    pub fn ove_socket_close(sock: ove_socket_t);
-    pub fn ove_socket_create(sock: *mut ove_socket_t, af: u8, sock_type: u8) -> i32;
-    pub fn ove_socket_destroy(sock: ove_socket_t);
-    pub fn ove_socket_connect(sock: ove_socket_t, addr: *const ove_sockaddr_t, timeout_ms: u32) -> i32;
-    pub fn ove_socket_bind(sock: ove_socket_t, addr: *const ove_sockaddr_t) -> i32;
-    pub fn ove_socket_listen(sock: ove_socket_t, backlog: i32) -> i32;
-    pub fn ove_socket_accept(sock: ove_socket_t, client: *mut ove_socket_t, client_storage: *mut ove_socket_storage_t, timeout_ms: u32) -> i32;
-    pub fn ove_socket_send(sock: ove_socket_t, data: *const c_void, len: usize, sent: *mut usize) -> i32;
-    pub fn ove_socket_recv(sock: ove_socket_t, buf: *mut c_void, len: usize, received: *mut usize, timeout_ms: u32) -> i32;
-    pub fn ove_socket_sendto(sock: ove_socket_t, data: *const c_void, len: usize, sent: *mut usize, dest: *const ove_sockaddr_t) -> i32;
-    pub fn ove_socket_recvfrom(sock: ove_socket_t, buf: *mut c_void, len: usize, received: *mut usize, src: *mut ove_sockaddr_t, timeout_ms: u32) -> i32;
-    pub fn ove_http_client_init(client: *mut ove_http_client_t, storage: *mut ove_http_client_storage_t) -> i32;
-    pub fn ove_http_client_deinit(client: ove_http_client_t);
-    pub fn ove_http_client_create(client: *mut ove_http_client_t) -> i32;
-    pub fn ove_http_client_destroy(client: ove_http_client_t);
-    pub fn ove_http_get(client: ove_http_client_t, url: *const core::ffi::c_char, resp: *mut ove_http_response_t) -> i32;
-    pub fn ove_http_post(client: ove_http_client_t, url: *const core::ffi::c_char, ct: *const core::ffi::c_char, body: *const c_void, body_len: usize, resp: *mut ove_http_response_t) -> i32;
-    pub fn ove_http_request_ex(client: ove_http_client_t, method: ove_http_method_t, url: *const core::ffi::c_char, ct: *const core::ffi::c_char, body: *const c_void, body_len: usize, headers: *const ove_http_header_t, header_count: usize, resp: *mut ove_http_response_t) -> i32;
-    pub fn ove_http_response_free(resp: *mut ove_http_response_t);
-    pub fn ove_mqtt_client_init(client: *mut ove_mqtt_client_t, storage: *mut ove_mqtt_client_storage_t) -> i32;
-    pub fn ove_mqtt_client_deinit(client: ove_mqtt_client_t);
-    pub fn ove_mqtt_client_create(client: *mut ove_mqtt_client_t) -> i32;
-    pub fn ove_mqtt_client_destroy(client: ove_mqtt_client_t);
-    pub fn ove_mqtt_connect(client: ove_mqtt_client_t, cfg: *const ove_mqtt_config_t) -> i32;
-    pub fn ove_mqtt_disconnect(client: ove_mqtt_client_t);
-    pub fn ove_mqtt_publish(client: ove_mqtt_client_t, topic: *const core::ffi::c_char, payload: *const c_void, payload_len: usize, qos: ove_mqtt_qos_t) -> i32;
-    pub fn ove_mqtt_subscribe(client: ove_mqtt_client_t, topic: *const core::ffi::c_char, qos: ove_mqtt_qos_t) -> i32;
-    pub fn ove_mqtt_unsubscribe(client: ove_mqtt_client_t, topic: *const core::ffi::c_char) -> i32;
-    pub fn ove_mqtt_loop(client: ove_mqtt_client_t, timeout_ms: u32) -> i32;
-    pub fn ove_httpd_start(cfg: *const c_void) -> i32;
-    pub fn ove_httpd_stop();
-    pub fn ove_httpd_route(method: *const core::ffi::c_char, path: *const core::ffi::c_char, handler: ove_httpd_handler_t) -> i32;
-    pub fn ove_httpd_register_builtin_routes();
-    pub fn ove_httpd_req_method(req: *mut c_void) -> *const core::ffi::c_char;
-    pub fn ove_httpd_req_path(req: *mut c_void) -> *const core::ffi::c_char;
-    pub fn ove_httpd_req_query(req: *mut c_void) -> *const core::ffi::c_char;
-    pub fn ove_httpd_req_body(req: *mut c_void) -> *const core::ffi::c_char;
-    pub fn ove_httpd_req_body_len(req: *mut c_void) -> usize;
-    pub fn ove_httpd_req_segment(req: *mut c_void, idx: i32) -> *const core::ffi::c_char;
-    pub fn ove_httpd_resp_json(resp: *mut c_void, status: i32, json: *const core::ffi::c_char) -> i32;
-    pub fn ove_httpd_resp_html(resp: *mut c_void, status: i32, html: *const core::ffi::c_char, len: usize) -> i32;
-    pub fn ove_httpd_resp_send(resp: *mut c_void, status: i32, ct: *const core::ffi::c_char, body: *const c_void, len: usize) -> i32;
-    pub fn ove_httpd_resp_send_gz(resp: *mut c_void, status: i32, ct: *const core::ffi::c_char, body: *const c_void, len: usize) -> i32;
-    pub fn ove_httpd_resp_error(resp: *mut c_void, status: i32, msg: *const core::ffi::c_char) -> i32;
-    pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
-    pub fn ove_httpd_set_netif(netif: ove_netif_t);
-    pub fn ove_httpd_ws_route(path: *const core::ffi::c_char, on_msg: ove_httpd_ws_handler_t, on_close: ove_httpd_ws_close_handler_t) -> i32;
-    pub fn ove_httpd_ws_send(conn: *mut ove_httpd_ws_conn_t, data: *const c_void, len: usize) -> i32;
-    pub fn ove_httpd_ws_broadcast(path: *const core::ffi::c_char, data: *const c_void, len: usize) -> i32;
-    pub fn ove_httpd_ws_active_count() -> i32;
-    pub fn ove_tls_init(tls: *mut ove_tls_t, storage: *mut ove_tls_storage_t) -> i32;
-    pub fn ove_tls_deinit(tls: ove_tls_t);
-    pub fn ove_tls_create(tls: *mut ove_tls_t) -> i32;
-    pub fn ove_tls_destroy(tls: ove_tls_t);
-    pub fn ove_tls_handshake(tls: ove_tls_t, sock: ove_socket_t, cfg: *const ove_tls_config_t) -> i32;
-    pub fn ove_tls_send(tls: ove_tls_t, data: *const c_void, len: usize, sent: *mut usize) -> i32;
-    pub fn ove_tls_recv(tls: ove_tls_t, buf: *mut c_void, len: usize, received: *mut usize) -> i32;
-    pub fn ove_tls_close(tls: ove_tls_t);
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Write or update a value in non-volatile storage.\n\n Associates @p key with the @p len bytes pointed to by @p data. If the key\n already exists its value is replaced. The write is committed to\n non-volatile storage before the function returns.\n\n @param[in] key   Null-terminated key string.\n @param[in] data  Pointer to the value data to store.\n @param[in] len   Number of bytes to store.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_NVS."]
+    pub fn ove_nvs_write(
+        key: *const core::ffi::c_char,
+        data: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Delete a key-value pair from non-volatile storage.\n\n Permanently removes the entry identified by @p key. Has no effect if the\n key does not exist.\n\n @param[in] key  Null-terminated key string to erase.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_NVS."]
+    pub fn ove_nvs_erase(key: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+#[doc = " @brief Prototype for a shell command handler function.\n\n Called by the shell when the user enters a matching command. @p argc is the\n total number of tokens (including the command name in @p argv[0]) and is\n always at least 1. @p argv is a @c NULL-terminated array of pointers to\n the individual tokens within the line buffer; the strings are valid only\n for the duration of the call.\n\n @param[in] argc  Number of arguments (including the command name).\n @param[in] argv  Array of @p argc argument strings, terminated by @c NULL."]
+pub type ove_shell_cmd_fn =
+    Option<unsafe extern "C" fn(argc: core::ffi::c_int, argv: *mut *const core::ffi::c_char)>;
+#[doc = " @brief Descriptor for a single shell command.\n\n Passed by pointer to @ref ove_shell_register_cmd. The structure must\n remain valid (e.g. declared @c static) for the entire system lifetime\n after registration."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_shell_cmd {
+    #[doc = "< @brief Command name used to match input tokens."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< @brief One-line help string shown by the built-in help command."]
+    pub help: *const core::ffi::c_char,
+    #[doc = "< @brief Function invoked when the command is matched."]
+    pub handler: ove_shell_cmd_fn,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_shell_cmd"][core::mem::size_of::<ove_shell_cmd>() - 24usize];
+    ["Alignment of ove_shell_cmd"][core::mem::align_of::<ove_shell_cmd>() - 8usize];
+    ["Offset of field: ove_shell_cmd::name"][core::mem::offset_of!(ove_shell_cmd, name) - 0usize];
+    ["Offset of field: ove_shell_cmd::help"][core::mem::offset_of!(ove_shell_cmd, help) - 8usize];
+    ["Offset of field: ove_shell_cmd::handler"]
+        [core::mem::offset_of!(ove_shell_cmd, handler) - 16usize];
+};
+#[doc = " @brief Shell output hook for capturing command output.\n @param[in] data Output text.\n @param[in] len  Length in bytes."]
+pub type ove_shell_output_hook_t =
+    Option<unsafe extern "C" fn(data: *const core::ffi::c_char, len: usize)>;
+unsafe extern "C" {
+    #[doc = " @brief Initialise the shell subsystem.\n\n Sets up internal state and registers built-in commands (e.g. @c help).\n Must be called before @ref ove_shell_register_cmd or\n @ref ove_shell_process_char.\n\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_SHELL."]
+    pub fn ove_shell_init() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a command with the shell.\n\n Adds the command described by @p cmd to the shell's dispatch table. The\n @c name field is used for matching; duplicate names produce\n implementation-defined behavior.\n\n @param[in] cmd  Pointer to a persistent @ref ove_shell_cmd descriptor.\n @return OVE_OK on success, negative error code on failure (e.g. table full).\n @note Requires @c CONFIG_OVE_SHELL."]
+    pub fn ove_shell_register_cmd(cmd: *const ove_shell_cmd) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Feed one character into the shell input processor.\n\n Appends @p c to the internal line buffer. On receipt of a newline the\n accumulated line is tokenised and dispatched to the matching registered\n command handler, or an error message is printed if no match is found.\n Backspace and other editing characters are handled transparently.\n\n This function is typically called from a console receive ISR, a DMA\n callback, or a dedicated input task.\n\n @param[in] c  Character to process (raw byte from the console).\n @note Requires @c CONFIG_OVE_SHELL."]
+    pub fn ove_shell_process_char(c: core::ffi::c_int);
+}
+unsafe extern "C" {
+    #[doc = " @brief Process a complete input line through the shell.\n\n Tokenises @p line and dispatches to the matching command handler.\n Equivalent to feeding each character of the line via process_char,\n but more convenient for programmatic use (e.g. WebSocket terminal).\n\n @param[in] line NUL-terminated input line (without trailing newline)."]
+    pub fn ove_shell_process_line(line: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    #[doc = " @brief Set a hook to capture shell output.\n\n When set, shell command output (normally printed to console) is\n also forwarded to this hook.  Pass NULL to remove.\n\n @param[in] hook Output hook function (or NULL)."]
     pub fn ove_shell_set_output_hook(hook: ove_shell_output_hook_t);
-    pub fn ove_sntp_sync(cfg: *const c_void) -> i32;
-    pub fn ove_sntp_get_offset_us(offset_us: *mut i64) -> i32;
-    pub fn ove_sntp_get_utc(utc_s: *mut u32) -> i32;
-
-    // --- PM ---
-    pub fn ove_pm_init(cfg: *const ove_pm_cfg) -> i32;
-    pub fn ove_pm_deinit();
-    pub fn ove_pm_set_state(state: ove_pm_state_t) -> i32;
-    pub fn ove_pm_get_state() -> ove_pm_state_t;
-    pub fn ove_pm_activity();
-    pub fn ove_pm_wake_register(src: *const ove_pm_wake_src) -> i32;
-    pub fn ove_pm_wake_unregister(src: *const ove_pm_wake_src) -> i32;
-    pub fn ove_pm_domain_request(domain: ove_pm_domain_t) -> i32;
-    pub fn ove_pm_domain_release(domain: ove_pm_domain_t) -> i32;
-    pub fn ove_pm_domain_get_refcount(domain: ove_pm_domain_t) -> i32;
-    pub fn ove_pm_set_policy(policy: ove_pm_policy_fn, user_data: *mut c_void) -> i32;
-    pub fn ove_pm_notify_register(cb: ove_pm_notify_fn, user_data: *mut c_void) -> i32;
-    pub fn ove_pm_notify_unregister(cb: ove_pm_notify_fn, user_data: *mut c_void) -> i32;
-    pub fn ove_pm_get_stats(stats: *mut ove_pm_stats) -> i32;
-    pub fn ove_pm_reset_stats() -> i32;
-    pub fn ove_pm_set_budget(target: u32) -> i32;
-    pub fn ove_pm_get_budget_status(actual: *mut u32) -> i32;
-
-    // --- UART ---
-    pub fn ove_uart_write(uart: ove_uart_t, data: *const c_void, len: usize, sent: *mut usize) -> i32;
-    pub fn ove_uart_read(uart: ove_uart_t, buf: *mut c_void, len: usize, received: *mut usize, timeout_ms: u32) -> i32;
-    pub fn ove_uart_flush(uart: ove_uart_t) -> i32;
+}
+unsafe extern "C" {
+    #[doc = " @brief Application-defined entry point called after board and console init.\n\n The application must implement this function.  It is responsible for\n creating all RTOS resources (threads, queues, timers, …) and then\n calling ove_run() to start the scheduler.\n\n @note This function must not return before calling ove_run().\n\n @note **Object lifetime**: anything that worker threads access after\n       @c ove_main() returns (audio graphs, DSP state, long-lived\n       buffers) must have storage that outlives this function.  In C\n       terms: give it `static` storage class — either a `static` local\n       or a file-scope `static` — or allocate it on the heap.  Plain\n       automatic locals are popped when @c ove_main() unwinds; any\n       pointer a worker kept into them becomes dangling.  This is the\n       same rule that applies whenever a function hands out a pointer\n       to a local, it's just more visible here because workers\n       outlive the scope.  On FreeRTOS the failure is immediate\n       (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr it\n       is latent but still UB.\n\n @see ove_run, ove_app_run"]
+    pub fn ove_main();
+}
+unsafe extern "C" {
+    #[doc = " @brief End the init phase: lock the heap (zero-heap mode) and launch\n        the RTOS scheduler.\n\n Call this from ove_main() after every static resource has been\n declared and every boot-time helper task spawned.  In zero-heap\n mode `ove_run` calls @ref ove_heap_lock immediately before kicking\n off the scheduler, so any subsequent malloc / kmm_malloc /\n pvPortMalloc traps via DEBUGASSERT (or returns NULL in test mode).\n Apps whose runtime structurally requires post-init dynamic\n allocation (the benchmark suite, dynamic worker pools, etc.) skip\n `ove_run` and call @ref ove_thread_start_scheduler directly to\n opt out of the lock.\n\n On most platforms the scheduler never returns and this function\n blocks forever.\n\n @see ove_main, ove_heap_lock, ove_thread_start_scheduler"]
+    pub fn ove_run();
+}
+unsafe extern "C" {
+    #[doc = " @brief Platform entry point: initialise the board and then run the application.\n\n Called by the platform-specific @c main() after registering any necessary\n backends.  Internally it performs board and console initialisation and then\n calls ove_main().\n\n @return 0 on success.  On most platforms the scheduler never returns so\n         this function never actually reaches its @c return statement.\n\n @see ove_main"]
+    pub fn ove_app_run() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Lock the kernel heap after init (zero-heap mode safety net).\n\n On RTOSes whose kernel-side static configuration cannot fully\n eliminate boot-time mm allocations (notably NuttX, where\n @c task_create / @c pthread_create allocate TCBs and stacks from\n kernel mm), call this after every static resource has been declared.\n Subsequent kernel allocations trip a @c DEBUGASSERT and abort the\n binary, so a stray malloc / @c kmm_malloc surfaces immediately\n during testing instead of hiding behind a sized heap.\n\n The function is a no-op on RTOSes whose zero-heap configuration is\n already provably static (FreeRTOS with\n @c configSUPPORT_DYNAMIC_ALLOCATION=0, Zephyr with no kernel heap\n pool).  NuttX implements the lock by setting a flag tested by a\n @c --wrap=malloc trampoline in @c backends/nuttx/nuttx_heap_lock.c.\n\n @c ove_run automatically invokes this when @c CONFIG_OVE_ZERO_HEAP\n is enabled; applications usually don't need to call it directly."]
+    pub fn ove_heap_lock();
+}
+pub const OVE_TENSOR_FLOAT32: ove_tensor_type = 0;
+pub const OVE_TENSOR_INT8: ove_tensor_type = 1;
+pub const OVE_TENSOR_UINT8: ove_tensor_type = 2;
+pub const OVE_TENSOR_INT16: ove_tensor_type = 3;
+pub const OVE_TENSOR_INT32: ove_tensor_type = 4;
+#[doc = " @brief Tensor element types.\n\n Subset of TFLite tensor types that are relevant for microcontroller\n inference (quantised int8/int16 and float32)."]
+pub type ove_tensor_type = core::ffi::c_uint;
+#[doc = " @brief Tensor descriptor returned by ove_model_input() / ove_model_output().\n\n Provides direct access to tensor data inside the arena, along with\n shape and type metadata.  The @c data pointer is valid for the\n lifetime of the model session."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_tensor_info {
+    #[doc = "< Pointer into the tensor arena buffer."]
+    pub data: *mut core::ffi::c_void,
+    #[doc = "< Total size of tensor data in bytes."]
+    pub size: usize,
+    #[doc = "< Element type."]
+    pub type_: ove_tensor_type,
+    #[doc = "< Number of dimensions."]
+    pub ndims: core::ffi::c_uint,
+    #[doc = "< Shape, e.g. {1, 96, 96, 1}."]
+    pub dims: [core::ffi::c_int; 5usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_tensor_info"][core::mem::size_of::<ove_tensor_info>() - 48usize];
+    ["Alignment of ove_tensor_info"][core::mem::align_of::<ove_tensor_info>() - 8usize];
+    ["Offset of field: ove_tensor_info::data"]
+        [core::mem::offset_of!(ove_tensor_info, data) - 0usize];
+    ["Offset of field: ove_tensor_info::size"]
+        [core::mem::offset_of!(ove_tensor_info, size) - 8usize];
+    ["Offset of field: ove_tensor_info::type_"]
+        [core::mem::offset_of!(ove_tensor_info, type_) - 16usize];
+    ["Offset of field: ove_tensor_info::ndims"]
+        [core::mem::offset_of!(ove_tensor_info, ndims) - 20usize];
+    ["Offset of field: ove_tensor_info::dims"]
+        [core::mem::offset_of!(ove_tensor_info, dims) - 24usize];
+};
+#[doc = " @brief Configuration for an ML inference session.\n\n @c model_data must point to a valid @c .tflite FlatBuffer.  It is\n typically embedded as a @c const C array compiled into flash.\n @c arena_size controls how much memory is reserved for intermediate\n tensors; the actual requirement depends on the model.\n\n @warning The interpreter holds @c model_data by pointer for the entire\n          lifetime of the model session. The caller MUST ensure the\n          buffer remains valid and immutable from the successful\n          @c ove_model_init() / @c ove_model_create() call until\n          @c ove_model_deinit() / @c ove_model_destroy(). Passing a\n          stack-allocated or transient heap buffer will result in\n          silent memory corruption during @c ove_model_invoke()."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_model_config {
+    #[doc = "< Pointer to .tflite FlatBuffer data (must outlive the session)."]
+    pub model_data: *const core::ffi::c_void,
+    #[doc = "< Size of model_data in bytes."]
+    pub model_size: usize,
+    #[doc = "< Tensor arena size in bytes."]
+    pub arena_size: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_model_config"][core::mem::size_of::<ove_model_config>() - 24usize];
+    ["Alignment of ove_model_config"][core::mem::align_of::<ove_model_config>() - 8usize];
+    ["Offset of field: ove_model_config::model_data"]
+        [core::mem::offset_of!(ove_model_config, model_data) - 0usize];
+    ["Offset of field: ove_model_config::model_size"]
+        [core::mem::offset_of!(ove_model_config, model_size) - 8usize];
+    ["Offset of field: ove_model_config::arena_size"]
+        [core::mem::offset_of!(ove_model_config, arena_size) - 16usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise a model using caller-supplied storage and arena.\n\n No heap allocation is performed.  The @p arena must be at least\n @p cfg->arena_size bytes and remain valid for the lifetime of the model.\n It should be 16-byte aligned for optimal CMSIS-NN performance.\n\n @param[out] model    Receives the opaque model handle on success.\n @param[in]  storage  Pointer to caller-allocated backend storage.\n @param[in]  arena    Caller-allocated tensor arena buffer.\n @param[in]  cfg      Model configuration.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM for bad arguments,\n         OVE_ERR_ML_FAILED if model parsing or tensor allocation fails.\n\n @see ove_model_deinit, ove_model_create"]
+    pub fn ove_model_init(
+        model: *mut ove_model_t,
+        storage: *mut ove_model_storage_t,
+        arena: *mut core::ffi::c_void,
+        cfg: *const ove_model_config,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release resources held by a model initialised with ove_model_init().\n\n The static storage and arena buffer supplied at init time are not freed.\n\n @param[in] model  Handle returned by ove_model_init().\n\n @see ove_model_init"]
+    pub fn ove_model_deinit(model: ove_model_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a model from the heap.\n\n Both the backend storage and the tensor arena are allocated from\n the heap.  The arena size is taken from @p cfg->arena_size.\n\n @param[out] model  Receives the opaque model handle on success.\n @param[in]  cfg    Model configuration.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if allocation fails,\n         OVE_ERR_ML_FAILED if model parsing or tensor allocation fails.\n\n @see ove_model_destroy, ove_model_init"]
+    pub fn ove_model_create(
+        model: *mut ove_model_t,
+        cfg: *const ove_model_config,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy and free a model allocated with ove_model_create().\n\n @param[in] model  Handle returned by ove_model_create().\n\n @see ove_model_create"]
+    pub fn ove_model_destroy(model: ove_model_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Run inference on the currently populated input tensor(s).\n\n Before calling this function, populate the input tensor data via\n the pointer returned by ove_model_input().\n\n @param[in] model  Model handle.\n @return OVE_OK on success, OVE_ERR_ML_FAILED on inference error.\n\n @see ove_model_input, ove_model_output"]
+    pub fn ove_model_invoke(model: ove_model_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get a descriptor for an input tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the input tensor at @p index.  Write input data to @p info->data\n before calling ove_model_invoke().\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based input tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.\n\n @see ove_model_output, ove_model_invoke"]
+    pub fn ove_model_input(
+        model: ove_model_t,
+        index: core::ffi::c_uint,
+        info: *mut ove_tensor_info,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get a descriptor for an output tensor.\n\n Populates @p info with the data pointer, shape, type, and size\n of the output tensor at @p index.  Call after ove_model_invoke()\n to read results.\n\n @param[in]  model  Model handle.\n @param[in]  index  Zero-based output tensor index.\n @param[out] info   Receives the tensor descriptor.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM if index is out of range.\n\n @see ove_model_input, ove_model_invoke"]
+    pub fn ove_model_output(
+        model: ove_model_t,
+        index: core::ffi::c_uint,
+        info: *mut ove_tensor_info,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return inference time of the last ove_model_invoke() in microseconds.\n\n The timing is measured using ove_time_get_us() around the interpreter\n invocation.  Returns 0 if no inference has been run yet.\n\n @param[in] model  Model handle.\n @return Inference duration in microseconds."]
+    pub fn ove_model_last_inference_us(model: ove_model_t) -> u64;
+}
+#[doc = "< Reliable byte-stream (TCP)."]
+pub const OVE_SOCK_STREAM: ove_sock_type_t = 1;
+#[doc = "< Connectionless datagrams (UDP)."]
+pub const OVE_SOCK_DGRAM: ove_sock_type_t = 2;
+pub type ove_sock_type_t = core::ffi::c_uint;
+#[doc = "< IPv4."]
+pub const OVE_AF_INET: ove_af_t = 2;
+#[doc = "< IPv6."]
+pub const OVE_AF_INET6: ove_af_t = 10;
+#[doc = " @brief Address family."]
+pub type ove_af_t = core::ffi::c_uint;
+#[doc = " @brief Generic socket address (large enough for IPv4 or IPv6)."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_sockaddr_t {
+    #[doc = "< Address family (OVE_AF_INET or OVE_AF_INET6)."]
+    pub family: ove_af_t,
+    #[doc = "< Port number in host byte order."]
+    pub port: u16,
+    #[doc = "< Address bytes (4 for IPv4, 16 for IPv6)."]
+    pub addr: [u8; 16usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_sockaddr_t"][core::mem::size_of::<ove_sockaddr_t>() - 24usize];
+    ["Alignment of ove_sockaddr_t"][core::mem::align_of::<ove_sockaddr_t>() - 4usize];
+    ["Offset of field: ove_sockaddr_t::family"]
+        [core::mem::offset_of!(ove_sockaddr_t, family) - 0usize];
+    ["Offset of field: ove_sockaddr_t::port"][core::mem::offset_of!(ove_sockaddr_t, port) - 4usize];
+    ["Offset of field: ove_sockaddr_t::addr"][core::mem::offset_of!(ove_sockaddr_t, addr) - 6usize];
+};
+#[doc = " @brief Network interface configuration."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_netif_config_t {
+    #[doc = "< Non-zero to use DHCP; zero for static."]
+    pub use_dhcp: core::ffi::c_int,
+    #[doc = "< Static IP (ignored if use_dhcp)."]
+    pub static_ip: ove_sockaddr_t,
+    #[doc = "< Default gateway (ignored if use_dhcp)."]
+    pub gateway: ove_sockaddr_t,
+    #[doc = "< Subnet mask (ignored if use_dhcp)."]
+    pub netmask: ove_sockaddr_t,
+    #[doc = "< DNS server (0.0.0.0 to skip)."]
+    pub dns: ove_sockaddr_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_netif_config_t"][core::mem::size_of::<ove_netif_config_t>() - 100usize];
+    ["Alignment of ove_netif_config_t"][core::mem::align_of::<ove_netif_config_t>() - 4usize];
+    ["Offset of field: ove_netif_config_t::use_dhcp"]
+        [core::mem::offset_of!(ove_netif_config_t, use_dhcp) - 0usize];
+    ["Offset of field: ove_netif_config_t::static_ip"]
+        [core::mem::offset_of!(ove_netif_config_t, static_ip) - 4usize];
+    ["Offset of field: ove_netif_config_t::gateway"]
+        [core::mem::offset_of!(ove_netif_config_t, gateway) - 28usize];
+    ["Offset of field: ove_netif_config_t::netmask"]
+        [core::mem::offset_of!(ove_netif_config_t, netmask) - 52usize];
+    ["Offset of field: ove_netif_config_t::dns"]
+        [core::mem::offset_of!(ove_netif_config_t, dns) - 76usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise a network interface from caller-supplied storage.\n\n @param[out] netif   Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_netif_init(
+        netif: *mut ove_netif_t,
+        storage: *mut ove_netif_storage_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief De-initialise a network interface.\n\n @param[in] netif Handle returned by ove_netif_init()."]
+    pub fn ove_netif_deinit(netif: ove_netif_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Bring the network interface up.\n\n @param[in] netif Handle returned by ove_netif_init().\n @param[in] cfg   Interface configuration (DHCP or static).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_netif_up(netif: ove_netif_t, cfg: *const ove_netif_config_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Tear down the network interface.\n\n @param[in] netif Handle returned by ove_netif_init()."]
+    pub fn ove_netif_down(netif: ove_netif_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the current addresses of a network interface.\n\n @param[in]  netif   Handle returned by ove_netif_init().\n @param[out] ip      Current IPv4 address (may be NULL).\n @param[out] gateway Current gateway address (may be NULL).\n @param[out] netmask Current subnet mask (may be NULL).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_netif_get_addr(
+        netif: ove_netif_t,
+        ip: *mut ove_sockaddr_t,
+        gateway: *mut ove_sockaddr_t,
+        netmask: *mut ove_sockaddr_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-allocate and initialise a network interface.\n\n @param[out] netif Handle written on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_netif_create(netif: *mut ove_netif_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated network interface.\n\n @param[in] netif Handle returned by ove_netif_create()."]
+    pub fn ove_netif_destroy(netif: ove_netif_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Open a socket from caller-supplied storage.\n\n @param[out] sock    Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @param[in]  af      Address family.\n @param[in]  type    Socket type (TCP or UDP).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_open(
+        sock: *mut ove_socket_t,
+        storage: *mut ove_socket_storage_t,
+        af: ove_af_t,
+        type_: ove_sock_type_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Close a socket.\n\n @param[in] sock Handle returned by ove_socket_open()."]
+    pub fn ove_socket_close(sock: ove_socket_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Connect a socket to a remote address.\n\n @param[in] sock       Socket handle.\n @param[in] addr       Remote address.\n @param[in] timeout_ms Timeout in milliseconds (OVE_WAIT_FOREVER to block).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_connect(
+        sock: ove_socket_t,
+        addr: *const ove_sockaddr_t,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Bind a socket to a local address.\n\n @param[in] sock Socket handle.\n @param[in] addr Local address to bind.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_bind(sock: ove_socket_t, addr: *const ove_sockaddr_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Mark a bound socket as listening for incoming connections.\n\n @param[in] sock    Socket handle.\n @param[in] backlog Maximum pending connection queue length.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_listen(sock: ove_socket_t, backlog: core::ffi::c_int) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Accept an incoming connection on a listening socket.\n\n @param[in]  sock           Listening socket handle.\n @param[out] client         Handle for the accepted connection.\n @param[in]  client_storage Caller-allocated storage for the new socket.\n @param[in]  timeout_ms     Timeout in milliseconds.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_accept(
+        sock: ove_socket_t,
+        client: *mut ove_socket_t,
+        client_storage: *mut ove_socket_storage_t,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send data on a connected socket.\n\n @param[in]  sock Socket handle.\n @param[in]  data Pointer to data to send.\n @param[in]  len  Number of bytes to send.\n @param[out] sent Number of bytes actually sent (may be NULL).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_send(
+        sock: ove_socket_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+        sent: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive data from a connected socket.\n\n @param[in]  sock       Socket handle.\n @param[out] buf        Buffer to receive into.\n @param[in]  len        Buffer size in bytes.\n @param[out] received   Number of bytes received (may be NULL).\n @param[in]  timeout_ms Timeout in milliseconds.\n @return OVE_OK on success, OVE_ERR_NET_CLOSED if peer closed."]
+    pub fn ove_socket_recv(
+        sock: ove_socket_t,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        received: *mut usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send a datagram to a specific destination.\n\n @param[in]  sock Socket handle (UDP).\n @param[in]  data Pointer to data to send.\n @param[in]  len  Number of bytes to send.\n @param[out] sent Number of bytes actually sent (may be NULL).\n @param[in]  dest Destination address.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_sendto(
+        sock: ove_socket_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+        sent: *mut usize,
+        dest: *const ove_sockaddr_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive a datagram and the sender's address.\n\n @param[in]  sock       Socket handle (UDP).\n @param[out] buf        Buffer to receive into.\n @param[in]  len        Buffer size in bytes.\n @param[out] received   Number of bytes received (may be NULL).\n @param[out] src        Filled with sender's address (may be NULL).\n @param[in]  timeout_ms Timeout in milliseconds.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_recvfrom(
+        sock: ove_socket_t,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        received: *mut usize,
+        src: *mut ove_sockaddr_t,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-allocate and open a socket.\n\n @param[out] sock Handle written on success.\n @param[in]  af   Address family.\n @param[in]  type Socket type.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_socket_create(
+        sock: *mut ove_socket_t,
+        af: ove_af_t,
+        type_: ove_sock_type_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated socket.\n\n @param[in] sock Handle returned by ove_socket_create()."]
+    pub fn ove_socket_destroy(sock: ove_socket_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Resolve a hostname to an address.\n\n @param[in]  hostname   Null-terminated hostname string.\n @param[out] addr       Resolved address written here.\n @param[in]  timeout_ms Timeout in milliseconds.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_dns_resolve(
+        hostname: *const core::ffi::c_char,
+        addr: *mut ove_sockaddr_t,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Fill a sockaddr from IPv4 address components.\n\n @param[out] addr Destination sockaddr.\n @param[in]  a    First octet.\n @param[in]  b    Second octet.\n @param[in]  c    Third octet.\n @param[in]  d    Fourth octet.\n @param[in]  port Port number in host byte order."]
+    pub fn ove_sockaddr_ipv4(addr: *mut ove_sockaddr_t, a: u8, b: u8, c: u8, d: u8, port: u16);
+}
+#[doc = " @brief TLS session configuration.\n\n @note If @c ca_cert is NULL the peer certificate is not verified, so the\n       session is vulnerable to man-in-the-middle. The handshake refuses\n       this configuration unless @c allow_insecure is explicitly set to\n       a non-zero value."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_tls_config_t {
+    #[doc = "< PEM or DER CA certificate (NULL to skip verify)."]
+    pub ca_cert: *const core::ffi::c_uchar,
+    #[doc = "< Length of ca_cert in bytes (incl. NUL for PEM)."]
+    pub ca_cert_len: usize,
+    #[doc = "< Expected server hostname for SNI/verify (may be NULL)."]
+    pub hostname: *const core::ffi::c_char,
+    #[doc = "< PEM or DER client certificate for mTLS (NULL to skip)."]
+    pub client_cert: *const core::ffi::c_uchar,
+    #[doc = "< Length of client_cert in bytes."]
+    pub client_cert_len: usize,
+    #[doc = "< PEM or DER client private key (NULL to skip)."]
+    pub client_key: *const core::ffi::c_uchar,
+    #[doc = "< Length of client_key in bytes."]
+    pub client_key_len: usize,
+    #[doc = "< Non-zero to allow NULL @c ca_cert (disables peer verify — do not use in production)."]
+    pub allow_insecure: core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_tls_config_t"][core::mem::size_of::<ove_tls_config_t>() - 64usize];
+    ["Alignment of ove_tls_config_t"][core::mem::align_of::<ove_tls_config_t>() - 8usize];
+    ["Offset of field: ove_tls_config_t::ca_cert"]
+        [core::mem::offset_of!(ove_tls_config_t, ca_cert) - 0usize];
+    ["Offset of field: ove_tls_config_t::ca_cert_len"]
+        [core::mem::offset_of!(ove_tls_config_t, ca_cert_len) - 8usize];
+    ["Offset of field: ove_tls_config_t::hostname"]
+        [core::mem::offset_of!(ove_tls_config_t, hostname) - 16usize];
+    ["Offset of field: ove_tls_config_t::client_cert"]
+        [core::mem::offset_of!(ove_tls_config_t, client_cert) - 24usize];
+    ["Offset of field: ove_tls_config_t::client_cert_len"]
+        [core::mem::offset_of!(ove_tls_config_t, client_cert_len) - 32usize];
+    ["Offset of field: ove_tls_config_t::client_key"]
+        [core::mem::offset_of!(ove_tls_config_t, client_key) - 40usize];
+    ["Offset of field: ove_tls_config_t::client_key_len"]
+        [core::mem::offset_of!(ove_tls_config_t, client_key_len) - 48usize];
+    ["Offset of field: ove_tls_config_t::allow_insecure"]
+        [core::mem::offset_of!(ove_tls_config_t, allow_insecure) - 56usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise a TLS session from caller-supplied storage.\n\n @param[out] tls     Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_tls_init(tls: *mut ove_tls_t, storage: *mut ove_tls_storage_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief De-initialise a TLS session (frees internal resources, not storage).\n\n @param[in] tls Handle returned by ove_tls_init()."]
+    pub fn ove_tls_deinit(tls: ove_tls_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Perform the TLS handshake over an established socket.\n\n @param[in] tls  TLS handle.\n @param[in] sock Connected socket to wrap.\n @param[in] cfg  TLS configuration (certs, hostname).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_tls_handshake(
+        tls: ove_tls_t,
+        sock: ove_socket_t,
+        cfg: *const ove_tls_config_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send data over an encrypted TLS session.\n\n @param[in]  tls  TLS handle (after successful handshake).\n @param[in]  data Pointer to data to send.\n @param[in]  len  Number of bytes to send.\n @param[out] sent Number of bytes actually sent (may be NULL).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_tls_send(
+        tls: ove_tls_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+        sent: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Receive data from an encrypted TLS session.\n\n @param[in]  tls      TLS handle (after successful handshake).\n @param[out] buf      Buffer to receive into.\n @param[in]  len      Buffer size in bytes.\n @param[out] received Number of bytes received (may be NULL).\n @return OVE_OK on success, OVE_ERR_NET_CLOSED if peer closed."]
+    pub fn ove_tls_recv(
+        tls: ove_tls_t,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        received: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Shut down the TLS session (sends close_notify).\n\n The underlying socket is NOT closed — caller must close it separately.\n\n @param[in] tls TLS handle."]
+    pub fn ove_tls_close(tls: ove_tls_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-allocate and initialise a TLS session.\n\n @param[out] tls Handle written on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_tls_create(tls: *mut ove_tls_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated TLS session.\n\n @param[in] tls Handle returned by ove_tls_create()."]
+    pub fn ove_tls_destroy(tls: ove_tls_t);
+}
+#[doc = "< HTTP GET."]
+pub const OVE_HTTP_GET: ove_http_method_t = 0;
+#[doc = "< HTTP POST."]
+pub const OVE_HTTP_POST: ove_http_method_t = 1;
+#[doc = "< HTTP PUT."]
+pub const OVE_HTTP_PUT: ove_http_method_t = 2;
+#[doc = "< HTTP DELETE."]
+pub const OVE_HTTP_DELETE: ove_http_method_t = 3;
+#[doc = "< HTTP PATCH."]
+pub const OVE_HTTP_PATCH: ove_http_method_t = 4;
+#[doc = " @brief HTTP method."]
+pub type ove_http_method_t = core::ffi::c_uint;
+#[doc = " @brief HTTP request header (name-value pair)."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_http_header_t {
+    #[doc = "< Header name (e.g. \"Authorization\")."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< Header value (e.g. \"Bearer token\")."]
+    pub value: *const core::ffi::c_char,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_http_header_t"][core::mem::size_of::<ove_http_header_t>() - 16usize];
+    ["Alignment of ove_http_header_t"][core::mem::align_of::<ove_http_header_t>() - 8usize];
+    ["Offset of field: ove_http_header_t::name"]
+        [core::mem::offset_of!(ove_http_header_t, name) - 0usize];
+    ["Offset of field: ove_http_header_t::value"]
+        [core::mem::offset_of!(ove_http_header_t, value) - 8usize];
+};
+#[doc = " @brief HTTP response (returned by request functions)."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_http_response_t {
+    #[doc = "< HTTP status code (e.g. 200, 404)."]
+    pub status: core::ffi::c_int,
+    #[doc = "< Response body (heap-allocated, NUL-terminated)."]
+    pub body: *mut core::ffi::c_char,
+    #[doc = "< Body length in bytes (excluding NUL)."]
+    pub body_len: usize,
+    #[doc = "< Raw response headers (heap-allocated)."]
+    pub headers: *mut core::ffi::c_char,
+    #[doc = "< Headers length in bytes."]
+    pub headers_len: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_http_response_t"][core::mem::size_of::<ove_http_response_t>() - 40usize];
+    ["Alignment of ove_http_response_t"][core::mem::align_of::<ove_http_response_t>() - 8usize];
+    ["Offset of field: ove_http_response_t::status"]
+        [core::mem::offset_of!(ove_http_response_t, status) - 0usize];
+    ["Offset of field: ove_http_response_t::body"]
+        [core::mem::offset_of!(ove_http_response_t, body) - 8usize];
+    ["Offset of field: ove_http_response_t::body_len"]
+        [core::mem::offset_of!(ove_http_response_t, body_len) - 16usize];
+    ["Offset of field: ove_http_response_t::headers"]
+        [core::mem::offset_of!(ove_http_response_t, headers) - 24usize];
+    ["Offset of field: ove_http_response_t::headers_len"]
+        [core::mem::offset_of!(ove_http_response_t, headers_len) - 32usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise an HTTP client from caller-supplied storage.\n\n @param[out] client  Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_http_client_init(
+        client: *mut ove_http_client_t,
+        storage: *mut ove_http_client_storage_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief De-initialise an HTTP client.\n\n @param[in] client Handle returned by ove_http_client_init()."]
+    pub fn ove_http_client_deinit(client: ove_http_client_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Perform an HTTP GET request.\n\n @param[in]  client HTTP client handle.\n @param[in]  url    Full URL (e.g. \"http://example.com/path\").\n @param[out] resp   Response filled on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_http_get(
+        client: ove_http_client_t,
+        url: *const core::ffi::c_char,
+        resp: *mut ove_http_response_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Perform an HTTP POST request.\n\n @param[in]  client       HTTP client handle.\n @param[in]  url          Full URL.\n @param[in]  content_type Content-Type header value (e.g. \"application/json\").\n @param[in]  body         Request body data.\n @param[in]  body_len     Request body length in bytes.\n @param[out] resp         Response filled on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_http_post(
+        client: ove_http_client_t,
+        url: *const core::ffi::c_char,
+        content_type: *const core::ffi::c_char,
+        body: *const core::ffi::c_void,
+        body_len: usize,
+        resp: *mut ove_http_response_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Perform a generic HTTP request.\n\n @param[in]  client       HTTP client handle.\n @param[in]  method       HTTP method.\n @param[in]  url          Full URL.\n @param[in]  content_type Content-Type (may be NULL for GET).\n @param[in]  body         Request body (may be NULL).\n @param[in]  body_len     Request body length.\n @param[out] resp         Response filled on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_http_request(
+        client: ove_http_client_t,
+        method: ove_http_method_t,
+        url: *const core::ffi::c_char,
+        content_type: *const core::ffi::c_char,
+        body: *const core::ffi::c_void,
+        body_len: usize,
+        resp: *mut ove_http_response_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Perform an HTTP request with custom headers.\n\n @param[in]  client       HTTP client handle.\n @param[in]  method       HTTP method (GET, POST, PUT, DELETE, PATCH).\n @param[in]  url          Full URL.\n @param[in]  content_type Content-Type (may be NULL).\n @param[in]  body         Request body (may be NULL).\n @param[in]  body_len     Request body length.\n @param[in]  headers      Array of extra request headers (may be NULL).\n @param[in]  header_count Number of headers in the array.\n @param[out] resp         Response filled on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_http_request_ex(
+        client: ove_http_client_t,
+        method: ove_http_method_t,
+        url: *const core::ffi::c_char,
+        content_type: *const core::ffi::c_char,
+        body: *const core::ffi::c_void,
+        body_len: usize,
+        headers: *const ove_http_header_t,
+        header_count: usize,
+        resp: *mut ove_http_response_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Free resources in an HTTP response.\n\n @param[in] resp Response to free (body and headers are freed)."]
+    pub fn ove_http_response_free(resp: *mut ove_http_response_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-allocate and initialise an HTTP client.\n\n @param[out] client Handle written on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_http_client_create(client: *mut ove_http_client_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated HTTP client.\n\n @param[in] client Handle returned by ove_http_client_create()."]
+    pub fn ove_http_client_destroy(client: ove_http_client_t);
+}
+#[doc = "< At most once."]
+pub const OVE_MQTT_QOS0: ove_mqtt_qos_t = 0;
+#[doc = "< At least once."]
+pub const OVE_MQTT_QOS1: ove_mqtt_qos_t = 1;
+pub type ove_mqtt_qos_t = core::ffi::c_uint;
+#[doc = " @brief MQTT message callback.\n\n @param[in] topic       Topic string (not NUL-terminated).\n @param[in] topic_len   Topic length in bytes.\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] user_data   Opaque pointer supplied at connect time."]
+pub type ove_mqtt_msg_cb = Option<
+    unsafe extern "C" fn(
+        topic: *const core::ffi::c_char,
+        topic_len: usize,
+        payload: *const core::ffi::c_void,
+        payload_len: usize,
+        user_data: *mut core::ffi::c_void,
+    ),
+>;
+#[doc = " @brief MQTT connection configuration.\n\n @note When @c use_tls is non-zero the broker certificate is verified\n       against @c tls_ca_cert. If no CA cert is supplied the handshake\n       refuses to continue unless @c tls_allow_insecure is also set."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_mqtt_config_t {
+    #[doc = "< Broker hostname or IP."]
+    pub host: *const core::ffi::c_char,
+    #[doc = "< Broker port (1883 or 8883)."]
+    pub port: u16,
+    #[doc = "< Client identifier."]
+    pub client_id: *const core::ffi::c_char,
+    #[doc = "< Username (may be NULL)."]
+    pub username: *const core::ffi::c_char,
+    #[doc = "< Password (may be NULL)."]
+    pub password: *const core::ffi::c_char,
+    #[doc = "< Keep-alive interval in seconds."]
+    pub keep_alive_s: u16,
+    #[doc = "< Non-zero to use TLS."]
+    pub use_tls: core::ffi::c_int,
+    #[doc = "< PEM/DER CA cert used when @c use_tls is set (may be NULL)."]
+    pub tls_ca_cert: *const core::ffi::c_uchar,
+    #[doc = "< Length of @c tls_ca_cert in bytes."]
+    pub tls_ca_cert_len: usize,
+    #[doc = "< Non-zero to allow unverified TLS when @c tls_ca_cert is NULL."]
+    pub tls_allow_insecure: core::ffi::c_int,
+    #[doc = "< Message callback."]
+    pub on_message: ove_mqtt_msg_cb,
+    #[doc = "< Opaque pointer for callback."]
+    pub user_data: *mut core::ffi::c_void,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_mqtt_config_t"][core::mem::size_of::<ove_mqtt_config_t>() - 88usize];
+    ["Alignment of ove_mqtt_config_t"][core::mem::align_of::<ove_mqtt_config_t>() - 8usize];
+    ["Offset of field: ove_mqtt_config_t::host"]
+        [core::mem::offset_of!(ove_mqtt_config_t, host) - 0usize];
+    ["Offset of field: ove_mqtt_config_t::port"]
+        [core::mem::offset_of!(ove_mqtt_config_t, port) - 8usize];
+    ["Offset of field: ove_mqtt_config_t::client_id"]
+        [core::mem::offset_of!(ove_mqtt_config_t, client_id) - 16usize];
+    ["Offset of field: ove_mqtt_config_t::username"]
+        [core::mem::offset_of!(ove_mqtt_config_t, username) - 24usize];
+    ["Offset of field: ove_mqtt_config_t::password"]
+        [core::mem::offset_of!(ove_mqtt_config_t, password) - 32usize];
+    ["Offset of field: ove_mqtt_config_t::keep_alive_s"]
+        [core::mem::offset_of!(ove_mqtt_config_t, keep_alive_s) - 40usize];
+    ["Offset of field: ove_mqtt_config_t::use_tls"]
+        [core::mem::offset_of!(ove_mqtt_config_t, use_tls) - 44usize];
+    ["Offset of field: ove_mqtt_config_t::tls_ca_cert"]
+        [core::mem::offset_of!(ove_mqtt_config_t, tls_ca_cert) - 48usize];
+    ["Offset of field: ove_mqtt_config_t::tls_ca_cert_len"]
+        [core::mem::offset_of!(ove_mqtt_config_t, tls_ca_cert_len) - 56usize];
+    ["Offset of field: ove_mqtt_config_t::tls_allow_insecure"]
+        [core::mem::offset_of!(ove_mqtt_config_t, tls_allow_insecure) - 64usize];
+    ["Offset of field: ove_mqtt_config_t::on_message"]
+        [core::mem::offset_of!(ove_mqtt_config_t, on_message) - 72usize];
+    ["Offset of field: ove_mqtt_config_t::user_data"]
+        [core::mem::offset_of!(ove_mqtt_config_t, user_data) - 80usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise an MQTT client from caller-supplied storage.\n\n @param[out] client  Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_client_init(
+        client: *mut ove_mqtt_client_t,
+        storage: *mut ove_mqtt_client_storage_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief De-initialise an MQTT client.\n\n @param[in] client Handle returned by ove_mqtt_client_init()."]
+    pub fn ove_mqtt_client_deinit(client: ove_mqtt_client_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Connect to an MQTT broker.\n\n @param[in] client MQTT client handle.\n @param[in] cfg    Connection configuration.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_connect(
+        client: ove_mqtt_client_t,
+        cfg: *const ove_mqtt_config_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Disconnect from the MQTT broker.\n\n @param[in] client MQTT client handle."]
+    pub fn ove_mqtt_disconnect(client: ove_mqtt_client_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Publish a message.\n\n @param[in] client      MQTT client handle.\n @param[in] topic       Topic string (NUL-terminated).\n @param[in] payload     Message payload.\n @param[in] payload_len Payload length in bytes.\n @param[in] qos         QoS level.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_publish(
+        client: ove_mqtt_client_t,
+        topic: *const core::ffi::c_char,
+        payload: *const core::ffi::c_void,
+        payload_len: usize,
+        qos: ove_mqtt_qos_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Subscribe to a topic.\n\n @param[in] client MQTT client handle.\n @param[in] topic  Topic filter (NUL-terminated).\n @param[in] qos    Maximum QoS level.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_subscribe(
+        client: ove_mqtt_client_t,
+        topic: *const core::ffi::c_char,
+        qos: ove_mqtt_qos_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Unsubscribe from a topic.\n\n @param[in] client MQTT client handle.\n @param[in] topic  Topic filter (NUL-terminated).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_unsubscribe(
+        client: ove_mqtt_client_t,
+        topic: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Process incoming packets and send keep-alive pings.\n\n Must be called periodically (typically in a loop or timer).\n\n @param[in] client     MQTT client handle.\n @param[in] timeout_ms Maximum time to wait for incoming data.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_loop(client: ove_mqtt_client_t, timeout_ms: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-allocate and initialise an MQTT client.\n\n @param[out] client Handle written on success.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_mqtt_client_create(client: *mut ove_mqtt_client_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated MQTT client.\n\n @param[in] client Handle returned by ove_mqtt_client_create()."]
+    pub fn ove_mqtt_client_destroy(client: ove_mqtt_client_t);
+}
+#[doc = " @brief SNTP client configuration."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_sntp_config_t {
+    #[doc = "< NTP server hostname (e.g. \"pool.ntp.org\")."]
+    pub server: *const core::ffi::c_char,
+    #[doc = "< Query timeout in milliseconds (0 = 5000)."]
+    pub timeout_ms: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_sntp_config_t"][core::mem::size_of::<ove_sntp_config_t>() - 16usize];
+    ["Alignment of ove_sntp_config_t"][core::mem::align_of::<ove_sntp_config_t>() - 8usize];
+    ["Offset of field: ove_sntp_config_t::server"]
+        [core::mem::offset_of!(ove_sntp_config_t, server) - 0usize];
+    ["Offset of field: ove_sntp_config_t::timeout_ms"]
+        [core::mem::offset_of!(ove_sntp_config_t, timeout_ms) - 8usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Synchronize with an NTP server.\n\n Sends a single NTP request and stores the computed UTC offset.\n Subsequent calls update the stored offset.\n\n @param[in] cfg Configuration (NULL for defaults: pool.ntp.org, 5s timeout).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_sntp_sync(cfg: *const ove_sntp_config_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the UTC offset computed by the last successful sync.\n\n The offset can be added to `ove_time_get_us()` to approximate\n wall-clock time (microseconds since Unix epoch).\n\n @param[out] offset_us UTC offset in microseconds.\n @return OVE_OK if a sync has been performed, OVE_ERR_NOT_SUPPORTED otherwise."]
+    pub fn ove_sntp_get_offset_us(offset_us: *mut i64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the current UTC time in seconds since Unix epoch.\n\n Convenience function: returns monotonic time + NTP offset.\n\n @param[out] utc_s UTC seconds since 1970-01-01 00:00:00.\n @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if no sync done."]
+    pub fn ove_sntp_get_utc(utc_s: *mut u32) -> core::ffi::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_httpd_req {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque HTTP request."]
+pub type ove_httpd_req_t = ove_httpd_req;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_httpd_resp {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque HTTP response."]
+pub type ove_httpd_resp_t = ove_httpd_resp;
+#[doc = " @brief Route handler callback.\n @return OVE_OK on success (response sent), negative error code on failure."]
+pub type ove_httpd_handler_t = Option<
+    unsafe extern "C" fn(
+        req: *mut ove_httpd_req_t,
+        resp: *mut ove_httpd_resp_t,
+    ) -> core::ffi::c_int,
+>;
+#[doc = " @brief HTTP server configuration."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_httpd_config_t {
+    #[doc = "< Listen port (default 80)."]
+    pub port: u16,
+    #[doc = "< Max POST body bytes (default 1024)."]
+    pub max_body_size: core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_httpd_config_t"][core::mem::size_of::<ove_httpd_config_t>() - 8usize];
+    ["Alignment of ove_httpd_config_t"][core::mem::align_of::<ove_httpd_config_t>() - 4usize];
+    ["Offset of field: ove_httpd_config_t::port"]
+        [core::mem::offset_of!(ove_httpd_config_t, port) - 0usize];
+    ["Offset of field: ove_httpd_config_t::max_body_size"]
+        [core::mem::offset_of!(ove_httpd_config_t, max_body_size) - 4usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Start the HTTP server.\n\n Spawns a background task that accepts connections on the configured port.\n Register routes with ove_httpd_route() before or after starting.\n\n @param[in] cfg Server configuration (NULL for defaults).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_httpd_start(cfg: *const ove_httpd_config_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop the HTTP server and close the listening socket."]
+    pub fn ove_httpd_stop();
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a route handler.\n\n @param[in] method  HTTP method (\"GET\" or \"POST\").\n @param[in] path    URL path prefix (e.g. \"/api/leds\").\n @param[in] handler Callback function.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
+    pub fn ove_httpd_route(
+        method: *const core::ffi::c_char,
+        path: *const core::ffi::c_char,
+        handler: ove_httpd_handler_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).\n\n Call after ove_httpd_start() to add the standard device management API."]
+    pub fn ove_httpd_register_builtin_routes();
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the network interface used by built-in dashboard routes.\n\n When set, /api/info and /api/network return the real interface\n addresses instead of placeholder values.\n\n @param[in] netif Network interface handle."]
+    pub fn ove_httpd_set_netif(netif: ove_netif_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the audio graph for /api/audio/stats."]
+    pub fn ove_httpd_set_audio_graph(g: *mut ove_audio_graph);
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the ML model for /api/infer/stats."]
+    pub fn ove_httpd_set_model(model: ove_model_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the HTTP method string (\"GET\" or \"POST\")."]
+    pub fn ove_httpd_req_method(req: *mut ove_httpd_req_t) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the full request path (e.g. \"/api/leds/0\")."]
+    pub fn ove_httpd_req_path(req: *mut ove_httpd_req_t) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the query string after '?' (or NULL)."]
+    pub fn ove_httpd_req_query(req: *mut ove_httpd_req_t) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the request body (or NULL)."]
+    pub fn ove_httpd_req_body(req: *mut ove_httpd_req_t) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the request body length."]
+    pub fn ove_httpd_req_body_len(req: *mut ove_httpd_req_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get a path segment by index.\n\n For path \"/api/leds/0\": segment 0=\"api\", 1=\"leds\", 2=\"0\".\n\n @param[in] req Request.\n @param[in] idx Segment index (0-based).\n @return Segment string or NULL if out of range."]
+    pub fn ove_httpd_req_segment(
+        req: *mut ove_httpd_req_t,
+        idx: core::ffi::c_int,
+    ) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send a JSON response."]
+    pub fn ove_httpd_resp_json(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        json: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send an HTML response."]
+    pub fn ove_httpd_resp_html(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        html: *const core::ffi::c_char,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send a response with arbitrary content type."]
+    pub fn ove_httpd_resp_send(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        content_type: *const core::ffi::c_char,
+        body: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send a pre-gzipped response (adds Content-Encoding: gzip)."]
+    pub fn ove_httpd_resp_send_gz(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        content_type: *const core::ffi::c_char,
+        body: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send a JSON error response."]
+    pub fn ove_httpd_resp_error(
+        resp: *mut ove_httpd_resp_t,
+        status: core::ffi::c_int,
+        message: *const core::ffi::c_char,
+    ) -> core::ffi::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_httpd_ws_conn {
+    _unused: [u8; 0],
+}
+#[doc = " @brief Opaque WebSocket connection handle."]
+pub type ove_httpd_ws_conn_t = ove_httpd_ws_conn;
+#[doc = " @brief WebSocket message callback.\n @param[in] conn Connection that sent the message.\n @param[in] data Message payload (text or binary).\n @param[in] len  Payload length in bytes."]
+pub type ove_httpd_ws_handler_t = Option<
+    unsafe extern "C" fn(
+        conn: *mut ove_httpd_ws_conn_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+    ),
+>;
+#[doc = " @brief WebSocket close callback.\n @param[in] conn Connection that was closed."]
+pub type ove_httpd_ws_close_handler_t =
+    Option<unsafe extern "C" fn(conn: *mut ove_httpd_ws_conn_t)>;
+unsafe extern "C" {
+    #[doc = " @brief Register a WebSocket route.\n\n When a client sends an HTTP upgrade request matching @p path, the\n connection is upgraded to WebSocket.  Incoming messages are\n dispatched to @p on_message.\n\n @param[in] path       URL path prefix (e.g. \"/ws/log\").\n @param[in] on_message Callback for incoming messages (may be NULL).\n @param[in] on_close   Callback when connection closes (may be NULL).\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full."]
+    pub fn ove_httpd_ws_route(
+        path: *const core::ffi::c_char,
+        on_message: ove_httpd_ws_handler_t,
+        on_close: ove_httpd_ws_close_handler_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Send a text message to a WebSocket connection.\n\n @param[in] conn Target connection.\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_httpd_ws_send(
+        conn: *mut ove_httpd_ws_conn_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Broadcast a text message to all WebSocket connections on a path.\n\n @param[in] path Path filter (NULL for all connections).\n @param[in] data Message payload.\n @param[in] len  Payload length in bytes.\n @return Number of connections the message was sent to."]
+    pub fn ove_httpd_ws_broadcast(
+        path: *const core::ffi::c_char,
+        data: *const core::ffi::c_void,
+        len: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return the number of active WebSocket connections."]
+    pub fn ove_httpd_ws_active_count() -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Return non-zero if the HTTP headers request a WebSocket upgrade."]
+    pub fn ove_httpd_ws_is_upgrade(headers: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Complete the WebSocket upgrade handshake on `sock`.\n\n Invoked by the httpd accept loop after `ove_httpd_ws_is_upgrade()` returns\n true.  On success the connection is handed off to the WS subsystem."]
+    pub fn ove_httpd_ws_handshake(
+        headers: *const core::ffi::c_char,
+        headers_len: usize,
+        path: *const core::ffi::c_char,
+        sock: ove_socket_t,
+        storage: *mut ove_socket_storage_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Drive the WS subsystem from the httpd task's poll loop."]
+    pub fn ove_httpd_ws_poll();
+}
+pub const OVE_UART_PARITY_NONE: ove_uart_parity_t = 0;
+pub const OVE_UART_PARITY_ODD: ove_uart_parity_t = 1;
+pub const OVE_UART_PARITY_EVEN: ove_uart_parity_t = 2;
+#[doc = " @brief UART parity mode."]
+pub type ove_uart_parity_t = core::ffi::c_uint;
+pub const OVE_UART_STOP_1: ove_uart_stop_t = 0;
+pub const OVE_UART_STOP_1_5: ove_uart_stop_t = 1;
+pub const OVE_UART_STOP_2: ove_uart_stop_t = 2;
+#[doc = " @brief UART stop-bit count."]
+pub type ove_uart_stop_t = core::ffi::c_uint;
+pub const OVE_UART_FLOW_NONE: ove_uart_flow_t = 0;
+pub const OVE_UART_FLOW_RTS_CTS: ove_uart_flow_t = 1;
+#[doc = " @brief UART hardware flow control."]
+pub type ove_uart_flow_t = core::ffi::c_uint;
+#[doc = " @brief UART configuration descriptor."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_uart_cfg {
+    #[doc = "< Peripheral index (0, 1, 2 ...)."]
+    pub instance: core::ffi::c_uint,
+    #[doc = "< Baud rate in bps (e.g. 115200)."]
+    pub baudrate: u32,
+    #[doc = "< Data bits: 7, 8, or 9."]
+    pub data_bits: u8,
+    #[doc = "< Parity mode."]
+    pub parity: ove_uart_parity_t,
+    #[doc = "< Stop bit count."]
+    pub stop_bits: ove_uart_stop_t,
+    #[doc = "< Hardware flow control."]
+    pub flow_control: ove_uart_flow_t,
+    #[doc = "< RX ring buffer size in bytes."]
+    pub rx_buf_size: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_uart_cfg"][core::mem::size_of::<ove_uart_cfg>() - 32usize];
+    ["Alignment of ove_uart_cfg"][core::mem::align_of::<ove_uart_cfg>() - 8usize];
+    ["Offset of field: ove_uart_cfg::instance"]
+        [core::mem::offset_of!(ove_uart_cfg, instance) - 0usize];
+    ["Offset of field: ove_uart_cfg::baudrate"]
+        [core::mem::offset_of!(ove_uart_cfg, baudrate) - 4usize];
+    ["Offset of field: ove_uart_cfg::data_bits"]
+        [core::mem::offset_of!(ove_uart_cfg, data_bits) - 8usize];
+    ["Offset of field: ove_uart_cfg::parity"]
+        [core::mem::offset_of!(ove_uart_cfg, parity) - 12usize];
+    ["Offset of field: ove_uart_cfg::stop_bits"]
+        [core::mem::offset_of!(ove_uart_cfg, stop_bits) - 16usize];
+    ["Offset of field: ove_uart_cfg::flow_control"]
+        [core::mem::offset_of!(ove_uart_cfg, flow_control) - 20usize];
+    ["Offset of field: ove_uart_cfg::rx_buf_size"]
+        [core::mem::offset_of!(ove_uart_cfg, rx_buf_size) - 24usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise a UART using caller-provided static storage.\n\n @param[out] uart    Receives the initialised UART handle.\n @param[in]  storage Pointer to statically-allocated UART storage.\n @param[in]  rx_buf  Caller-supplied RX ring buffer.\n @param[in]  cfg     UART configuration descriptor.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_uart_init(
+        uart: *mut ove_uart_t,
+        storage: *mut ove_uart_storage_t,
+        rx_buf: *mut core::ffi::c_void,
+        cfg: *const ove_uart_cfg,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release a UART handle previously created with `ove_uart_init`."]
+    pub fn ove_uart_deinit(uart: ove_uart_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-mode counterpart of `ove_uart_init()` — allocates storage and RX buffer.\n @param[out] uart Receives the initialised handle.\n @param[in]  cfg  UART configuration descriptor.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_uart_create(uart: *mut ove_uart_t, cfg: *const ove_uart_cfg) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a UART handle previously created with `ove_uart_create`."]
+    pub fn ove_uart_destroy(uart: ove_uart_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Write data to the UART.\n\n Blocks for up to @p timeout_ms until all bytes are accepted.\n Thread-safe (internal TX mutex).\n\n @param[in]  uart          UART handle.\n @param[in]  data          Data to transmit.\n @param[in]  len           Number of bytes to write.\n @param[in]  timeout_ms    Maximum wait time.\n @param[out] bytes_written Actual bytes written, or NULL.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_uart_write(
+        uart: ove_uart_t,
+        data: *const core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+        bytes_written: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read data from the UART RX buffer.\n\n Blocks for up to @p timeout_ms until at least 1 byte is available.\n\n @param[in]  uart         UART handle.\n @param[out] buf          Buffer to receive data.\n @param[in]  len          Maximum bytes to read.\n @param[in]  timeout_ms   Maximum wait time.\n @param[out] bytes_read   Actual bytes read, or NULL.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_uart_read(
+        uart: ove_uart_t,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+        bytes_read: *mut usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the number of bytes available in the RX buffer.\n\n @param[in] uart  UART handle.\n @return Number of bytes available, or 0 if empty or invalid."]
     pub fn ove_uart_bytes_available(uart: ove_uart_t) -> usize;
-
-    // --- SPI ---
-    pub fn ove_spi_transfer(spi: ove_spi_t, cs: *const ove_spi_cs, tx: *const c_void, rx: *mut c_void, len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_spi_write(spi: ove_spi_t, cs: *const ove_spi_cs, data: *const c_void, len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_spi_read(spi: ove_spi_t, cs: *const ove_spi_cs, buf: *mut c_void, len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_spi_transfer_seq(spi: ove_spi_t, cs: *const ove_spi_cs, xfers: *const ove_spi_xfer, num_xfers: u32, timeout_ms: u32) -> i32;
-
-    // --- I2C ---
-    pub fn ove_i2c_write(i2c: ove_i2c_t, addr: u16, data: *const c_void, len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_i2c_read(i2c: ove_i2c_t, addr: u16, buf: *mut c_void, len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_i2c_write_read(i2c: ove_i2c_t, addr: u16, tx: *const c_void, tx_len: usize, rx: *mut c_void, rx_len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_i2c_probe(i2c: ove_i2c_t, addr: u16, timeout_ms: u32) -> i32;
-    pub fn ove_i2c_reg_write(i2c: ove_i2c_t, addr: u16, reg: u8, data: *const c_void, len: usize, timeout_ms: u32) -> i32;
-    pub fn ove_i2c_reg_read(i2c: ove_i2c_t, addr: u16, reg: u8, buf: *mut c_void, len: usize, timeout_ms: u32) -> i32;
-
-} // extern "C" oveRTOS
-
-// ---------------------------------------------------------------------------
-// LVGL types — opaque stubs
-// ---------------------------------------------------------------------------
-
-/// Opaque LVGL object. All access goes through `lv_obj_*` functions.
+}
+unsafe extern "C" {
+    #[doc = " @brief Flush the TX hardware buffer.\n\n Blocks until all pending TX bytes have been physically transmitted.\n\n @param[in] uart  UART handle.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_uart_flush(uart: ove_uart_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Push received bytes from ISR into the portable RX buffer.\n\n Backend UART ISR handlers call this function to deliver received\n bytes to the portable layer's internal @ref ove_stream.\n\n @param[in] uart  UART handle.\n @param[in] data  Pointer to received byte(s).\n @param[in] len   Number of bytes received."]
+    pub fn ove_uart_rx_isr_push(uart: ove_uart_t, data: *const core::ffi::c_void, len: usize);
+}
+#[doc = "< CPOL=0, CPHA=0."]
+pub const OVE_SPI_MODE_0: ove_spi_mode_t = 0;
+#[doc = "< CPOL=0, CPHA=1."]
+pub const OVE_SPI_MODE_1: ove_spi_mode_t = 1;
+#[doc = "< CPOL=1, CPHA=0."]
+pub const OVE_SPI_MODE_2: ove_spi_mode_t = 2;
+#[doc = "< CPOL=1, CPHA=1."]
+pub const OVE_SPI_MODE_3: ove_spi_mode_t = 3;
+#[doc = " @brief SPI clock polarity / phase mode."]
+pub type ove_spi_mode_t = core::ffi::c_uint;
+#[doc = "< Most significant bit first (common)."]
+pub const OVE_SPI_MSB_FIRST: ove_spi_bit_order_t = 0;
+#[doc = "< Least significant bit first."]
+pub const OVE_SPI_LSB_FIRST: ove_spi_bit_order_t = 1;
+#[doc = " @brief SPI bit order."]
+pub type ove_spi_bit_order_t = core::ffi::c_uint;
+#[doc = " @brief SPI bus configuration descriptor."]
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_spi_cfg {
+    #[doc = "< SPI peripheral index (0, 1, 2 ...)."]
+    pub instance: core::ffi::c_uint,
+    #[doc = "< SCK frequency in Hz."]
+    pub clock_hz: u32,
+    #[doc = "< Clock polarity / phase."]
+    pub mode: ove_spi_mode_t,
+    #[doc = "< Bit order on the wire."]
+    pub bit_order: ove_spi_bit_order_t,
+    #[doc = "< Bits per word: 8 or 16."]
+    pub word_size: u8,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_spi_cfg"][core::mem::size_of::<ove_spi_cfg>() - 20usize];
+    ["Alignment of ove_spi_cfg"][core::mem::align_of::<ove_spi_cfg>() - 4usize];
+    ["Offset of field: ove_spi_cfg::instance"]
+        [core::mem::offset_of!(ove_spi_cfg, instance) - 0usize];
+    ["Offset of field: ove_spi_cfg::clock_hz"]
+        [core::mem::offset_of!(ove_spi_cfg, clock_hz) - 4usize];
+    ["Offset of field: ove_spi_cfg::mode"][core::mem::offset_of!(ove_spi_cfg, mode) - 8usize];
+    ["Offset of field: ove_spi_cfg::bit_order"]
+        [core::mem::offset_of!(ove_spi_cfg, bit_order) - 12usize];
+    ["Offset of field: ove_spi_cfg::word_size"]
+        [core::mem::offset_of!(ove_spi_cfg, word_size) - 16usize];
+};
+#[doc = " @brief SPI chip-select descriptor.\n\n Identifies the GPIO pin used for software CS management.\n Pass @c NULL to SPI transfer functions to skip CS handling\n (hardware CS or external management)."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_spi_cs {
+    #[doc = "< GPIO port index for CS pin."]
+    pub gpio_port: core::ffi::c_uint,
+    #[doc = "< GPIO pin index for CS pin."]
+    pub gpio_pin: core::ffi::c_uint,
+    #[doc = "< Non-zero if CS is active low (common)."]
+    pub active_low: core::ffi::c_int,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_spi_cs"][core::mem::size_of::<ove_spi_cs>() - 12usize];
+    ["Alignment of ove_spi_cs"][core::mem::align_of::<ove_spi_cs>() - 4usize];
+    ["Offset of field: ove_spi_cs::gpio_port"]
+        [core::mem::offset_of!(ove_spi_cs, gpio_port) - 0usize];
+    ["Offset of field: ove_spi_cs::gpio_pin"][core::mem::offset_of!(ove_spi_cs, gpio_pin) - 4usize];
+    ["Offset of field: ove_spi_cs::active_low"]
+        [core::mem::offset_of!(ove_spi_cs, active_low) - 8usize];
+};
+#[doc = " @brief SPI transfer segment for multi-segment transactions.\n\n Used with ove_spi_transfer_seq() to perform multiple transfer\n segments under a single CS assertion."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_spi_xfer {
+    #[doc = "< TX buffer, or NULL for RX-only."]
+    pub tx: *const core::ffi::c_void,
+    #[doc = "< RX buffer, or NULL for TX-only."]
+    pub rx: *mut core::ffi::c_void,
+    #[doc = "< Number of bytes in this segment."]
+    pub len: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_spi_xfer"][core::mem::size_of::<ove_spi_xfer>() - 24usize];
+    ["Alignment of ove_spi_xfer"][core::mem::align_of::<ove_spi_xfer>() - 8usize];
+    ["Offset of field: ove_spi_xfer::tx"][core::mem::offset_of!(ove_spi_xfer, tx) - 0usize];
+    ["Offset of field: ove_spi_xfer::rx"][core::mem::offset_of!(ove_spi_xfer, rx) - 8usize];
+    ["Offset of field: ove_spi_xfer::len"][core::mem::offset_of!(ove_spi_xfer, len) - 16usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise an SPI bus controller with caller-provided storage.\n @param[out] spi     Receives the initialised handle.\n @param[in]  storage Statically-allocated SPI storage.\n @param[in]  cfg     Bus configuration (pins, mode, clock rate).\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_spi_init(
+        spi: *mut ove_spi_t,
+        storage: *mut ove_spi_storage_t,
+        cfg: *const ove_spi_cfg,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release an SPI bus handle previously created with `ove_spi_init`."]
+    pub fn ove_spi_deinit(spi: ove_spi_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-mode counterpart of `ove_spi_init()` — allocates storage internally.\n @param[out] spi Receives the initialised handle.\n @param[in]  cfg Bus configuration.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_spi_create(spi: *mut ove_spi_t, cfg: *const ove_spi_cfg) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy an SPI bus handle previously created with `ove_spi_create`."]
+    pub fn ove_spi_destroy(spi: ove_spi_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Full-duplex SPI transfer.\n\n Simultaneously transmits from @p tx and receives into @p rx.\n Either @p tx or @p rx may be NULL for half-duplex operation.\n CS is asserted before and deasserted after the transfer.\n\n @param[in]  spi        SPI handle.\n @param[in]  cs         Chip-select descriptor, or NULL to skip CS.\n @param[in]  tx         Transmit buffer, or NULL.\n @param[out] rx         Receive buffer, or NULL.\n @param[in]  len        Number of bytes to transfer.\n @param[in]  timeout_ms Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_spi_transfer(
+        spi: ove_spi_t,
+        cs: *const ove_spi_cs,
+        tx: *const core::ffi::c_void,
+        rx: *mut core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Write-only SPI transfer (TX only, ignore RX).\n\n @param[in] spi        SPI handle.\n @param[in] cs         Chip-select descriptor, or NULL.\n @param[in] data       Data to transmit.\n @param[in] len        Number of bytes.\n @param[in] timeout_ms Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_spi_write(
+        spi: ove_spi_t,
+        cs: *const ove_spi_cs,
+        data: *const core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read-only SPI transfer (clock out zeros, capture RX).\n\n @param[in]  spi        SPI handle.\n @param[in]  cs         Chip-select descriptor, or NULL.\n @param[out] buf        Buffer to receive data.\n @param[in]  len        Number of bytes.\n @param[in]  timeout_ms Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_spi_read(
+        spi: ove_spi_t,
+        cs: *const ove_spi_cs,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Multi-segment SPI transfer under a single CS assertion.\n\n Executes @p num_xfers transfer segments sequentially without\n releasing CS between them.  Useful for protocols that require\n command + address + data in one transaction.\n\n @param[in] spi        SPI handle.\n @param[in] cs         Chip-select descriptor, or NULL.\n @param[in] xfers      Array of transfer segments.\n @param[in] num_xfers  Number of segments.\n @param[in] timeout_ms Maximum wait time for the entire sequence.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_spi_transfer_seq(
+        spi: ove_spi_t,
+        cs: *const ove_spi_cs,
+        xfers: *const ove_spi_xfer,
+        num_xfers: core::ffi::c_uint,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+#[doc = "< 100 kHz."]
+pub const OVE_I2C_SPEED_STANDARD: ove_i2c_speed_t = 0;
+#[doc = "< 400 kHz."]
+pub const OVE_I2C_SPEED_FAST: ove_i2c_speed_t = 1;
+#[doc = "< 1 MHz."]
+pub const OVE_I2C_SPEED_FAST_PLUS: ove_i2c_speed_t = 2;
+#[doc = " @brief I2C bus speed grade."]
+pub type ove_i2c_speed_t = core::ffi::c_uint;
+#[doc = " @brief I2C bus configuration descriptor."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_i2c_cfg {
+    #[doc = "< Peripheral index (0, 1, 2 ...)."]
+    pub instance: core::ffi::c_uint,
+    #[doc = "< Bus speed grade."]
+    pub speed: ove_i2c_speed_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_i2c_cfg"][core::mem::size_of::<ove_i2c_cfg>() - 8usize];
+    ["Alignment of ove_i2c_cfg"][core::mem::align_of::<ove_i2c_cfg>() - 4usize];
+    ["Offset of field: ove_i2c_cfg::instance"]
+        [core::mem::offset_of!(ove_i2c_cfg, instance) - 0usize];
+    ["Offset of field: ove_i2c_cfg::speed"][core::mem::offset_of!(ove_i2c_cfg, speed) - 4usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise an I2C bus using caller-provided static storage.\n\n @param[out] i2c     Receives the initialised I2C handle.\n @param[in]  storage Pointer to statically-allocated I2C storage.\n @param[in]  cfg     Bus configuration descriptor.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2c_init(
+        i2c: *mut ove_i2c_t,
+        storage: *mut ove_i2c_storage_t,
+        cfg: *const ove_i2c_cfg,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Deinitialise a statically-allocated I2C bus.\n\n @param[in] i2c  I2C handle returned by @ref ove_i2c_init."]
+    pub fn ove_i2c_deinit(i2c: ove_i2c_t);
+}
+unsafe extern "C" {
+    pub fn ove_i2c_create(i2c: *mut ove_i2c_t, cfg: *const ove_i2c_cfg) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy a heap-allocated I2C bus controller.\n\n @param[in] i2c  I2C handle returned by @ref ove_i2c_create."]
+    pub fn ove_i2c_destroy(i2c: ove_i2c_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Write data to an I2C device.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] data       Data to write.\n @param[in] len        Number of bytes to write.\n @param[in] timeout_ms Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2c_write(
+        i2c: ove_i2c_t,
+        addr: u16,
+        data: *const core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read data from an I2C device.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[out] buf        Buffer to receive data.\n @param[in]  len        Number of bytes to read.\n @param[in]  timeout_ms Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2c_read(
+        i2c: ove_i2c_t,
+        addr: u16,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Combined write-then-read with I2C repeated start.\n\n Writes @p tx_len bytes from @p tx, then reads @p rx_len bytes into\n @p rx without releasing the bus (repeated start condition).  This is\n the standard pattern for register reads on I2C sensors and codecs.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  tx         Transmit buffer (e.g. register address).\n @param[in]  tx_len     Number of bytes to write.\n @param[out] rx         Receive buffer.\n @param[in]  rx_len     Number of bytes to read.\n @param[in]  timeout_ms Maximum wait time; @c OVE_WAIT_FOREVER to block.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2c_write_read(
+        i2c: ove_i2c_t,
+        addr: u16,
+        tx: *const core::ffi::c_void,
+        tx_len: usize,
+        rx: *mut core::ffi::c_void,
+        rx_len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Write to a single-byte-addressed register.\n\n Prepends @p reg to @p data and performs a single I2C write.\n Implemented in the portable layer — not a HAL function.\n\n @note @p len must not exceed @c OVE_I2C_REG_WRITE_MAX (32 bytes).\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address.\n @param[in] reg        Register address byte.\n @param[in] data       Data to write after the register byte.\n @param[in] len        Number of data bytes (max OVE_I2C_REG_WRITE_MAX).\n @param[in] timeout_ms Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2c_reg_write(
+        i2c: ove_i2c_t,
+        addr: u16,
+        reg: u8,
+        data: *const core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Read from a single-byte-addressed register.\n\n Writes @p reg, then reads @p len bytes via repeated start.\n Implemented in the portable layer — not a HAL function.\n\n @param[in]  i2c        I2C handle.\n @param[in]  addr       7-bit device address.\n @param[in]  reg        Register address byte.\n @param[out] buf        Buffer to receive register data.\n @param[in]  len        Number of bytes to read.\n @param[in]  timeout_ms Maximum wait time.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2c_reg_read(
+        i2c: ove_i2c_t,
+        addr: u16,
+        reg: u8,
+        buf: *mut core::ffi::c_void,
+        len: usize,
+        timeout_ms: u32,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Probe for a device at the given address.\n\n Sends a zero-length write and checks for ACK.  Useful for device\n enumeration and presence detection.\n\n @param[in] i2c        I2C handle.\n @param[in] addr       7-bit device address to probe.\n @param[in] timeout_ms Maximum wait time.\n @return OVE_OK if the device ACKs, OVE_ERR_BUS_NACK if not,\n         other negative error code on bus failure."]
+    pub fn ove_i2c_probe(i2c: ove_i2c_t, addr: u16, timeout_ms: u32) -> core::ffi::c_int;
+}
+#[doc = "< Transmit only (playback)."]
+pub const OVE_I2S_DIR_TX: ove_i2s_dir_t = 1;
+#[doc = "< Receive only (capture)."]
+pub const OVE_I2S_DIR_RX: ove_i2s_dir_t = 2;
+#[doc = "< Full-duplex (simultaneous TX + RX)."]
+pub const OVE_I2S_DIR_TXRX: ove_i2s_dir_t = 3;
+#[doc = " @brief I2S stream direction."]
+pub type ove_i2s_dir_t = core::ffi::c_uint;
+#[doc = " @brief I2S half-buffer completion callback.\n\n Called from ISR context when a DMA half-transfer or full-transfer\n completes.  The callback should be short — typically it unblocks a\n processing task.\n\n @param[in] i2s       I2S handle.\n @param[in] user_data Opaque pointer supplied at registration time."]
+pub type ove_i2s_cb_t =
+    Option<unsafe extern "C" fn(i2s: ove_i2s_t, user_data: *mut core::ffi::c_void)>;
+#[doc = " @brief I2S bus configuration descriptor."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_i2s_cfg {
+    #[doc = "< I2S / SAI peripheral index (0, 1 ...)."]
+    pub instance: core::ffi::c_uint,
+    #[doc = "< Sample rate in Hz (e.g. 44100, 48000)."]
+    pub sample_rate: u32,
+    #[doc = "< Bits per sample: 16, 24, or 32."]
+    pub bit_depth: u8,
+    #[doc = "< Channel count: 1 (mono) or 2 (stereo)."]
+    pub channels: u8,
+    #[doc = "< Stream direction."]
+    pub direction: ove_i2s_dir_t,
+    #[doc = "< Total samples in DMA buffer (both halves)."]
+    pub dma_buf_samples: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_i2s_cfg"][core::mem::size_of::<ove_i2s_cfg>() - 24usize];
+    ["Alignment of ove_i2s_cfg"][core::mem::align_of::<ove_i2s_cfg>() - 8usize];
+    ["Offset of field: ove_i2s_cfg::instance"]
+        [core::mem::offset_of!(ove_i2s_cfg, instance) - 0usize];
+    ["Offset of field: ove_i2s_cfg::sample_rate"]
+        [core::mem::offset_of!(ove_i2s_cfg, sample_rate) - 4usize];
+    ["Offset of field: ove_i2s_cfg::bit_depth"]
+        [core::mem::offset_of!(ove_i2s_cfg, bit_depth) - 8usize];
+    ["Offset of field: ove_i2s_cfg::channels"]
+        [core::mem::offset_of!(ove_i2s_cfg, channels) - 9usize];
+    ["Offset of field: ove_i2s_cfg::direction"]
+        [core::mem::offset_of!(ove_i2s_cfg, direction) - 12usize];
+    ["Offset of field: ove_i2s_cfg::dma_buf_samples"]
+        [core::mem::offset_of!(ove_i2s_cfg, dma_buf_samples) - 16usize];
+};
+unsafe extern "C" {
+    #[doc = " @brief Initialise I2S with caller-provided static storage and DMA buffers.\n\n @param[out] i2s        Receives the initialised handle.\n @param[in]  storage    Statically-allocated I2S storage.\n @param[in]  tx_dma_buf TX DMA buffer (may be NULL if direction is RX-only).\n                        Must be in DMA-accessible, cache-coherent memory.\n @param[in]  rx_dma_buf RX DMA buffer (may be NULL if direction is TX-only).\n @param[in]  cfg        I2S configuration descriptor.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2s_init(
+        i2s: *mut ove_i2s_t,
+        storage: *mut ove_i2s_storage_t,
+        tx_dma_buf: *mut core::ffi::c_void,
+        rx_dma_buf: *mut core::ffi::c_void,
+        cfg: *const ove_i2s_cfg,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release an I2S handle previously created with `ove_i2s_init`."]
+    pub fn ove_i2s_deinit(i2s: ove_i2s_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Heap-mode counterpart of `ove_i2s_init()` — allocates storage and\n        DMA buffers internally.\n @param[out] i2s Receives the initialised handle.\n @param[in]  cfg I2S configuration descriptor.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_i2s_create(i2s: *mut ove_i2s_t, cfg: *const ove_i2s_cfg) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Destroy an I2S handle previously created with `ove_i2s_create`."]
+    pub fn ove_i2s_destroy(i2s: ove_i2s_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the RX half-buffer completion callback.\n\n Called from ISR when a DMA RX half-buffer is ready for processing."]
+    pub fn ove_i2s_set_rx_callback(
+        i2s: ove_i2s_t,
+        cb: ove_i2s_cb_t,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Set the TX half-buffer completion callback.\n\n Called from ISR when a DMA TX half-buffer has been transmitted and\n is safe to refill."]
+    pub fn ove_i2s_set_tx_callback(
+        i2s: ove_i2s_t,
+        cb: ove_i2s_cb_t,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Start I2S DMA streaming.\n\n Begins circular DMA transfers.  TX starts first to generate clocks\n for a synchronous RX slave."]
+    pub fn ove_i2s_start(i2s: ove_i2s_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Stop I2S DMA streaming."]
+    pub fn ove_i2s_stop(i2s: ove_i2s_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Pause I2S DMA streaming (can be resumed)."]
+    pub fn ove_i2s_pause(i2s: ove_i2s_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Resume I2S DMA streaming after pause."]
+    pub fn ove_i2s_resume(i2s: ove_i2s_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get pointer to the most recently completed RX half-buffer.\n\n Returns the half of the DMA RX buffer that was just filled and is\n safe to read.  Call this from within the RX callback.\n\n @param[in] i2s  I2S handle.\n @return Pointer to the completed RX half-buffer, or NULL on error."]
+    pub fn ove_i2s_rx_buf(i2s: ove_i2s_t) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get pointer to the TX half-buffer safe to write.\n\n Returns the half of the DMA TX buffer that DMA is NOT currently\n transmitting from.  Fill this buffer before the next TX callback.\n\n @param[in] i2s  I2S handle.\n @return Pointer to the writable TX half-buffer, or NULL on error."]
+    pub fn ove_i2s_tx_buf(i2s: ove_i2s_t) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the size of one half-buffer in bytes.\n\n @param[in] i2s  I2S handle.\n @return Half-buffer size in bytes."]
+    pub fn ove_i2s_half_buf_size(i2s: ove_i2s_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief ISR helper — invoke from backend RX half-complete interrupt."]
+    pub fn ove_i2s_rx_half_cplt_isr(i2s: ove_i2s_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief ISR helper — invoke from backend RX full-complete interrupt."]
+    pub fn ove_i2s_rx_cplt_isr(i2s: ove_i2s_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief ISR helper — invoke from backend TX half-complete interrupt."]
+    pub fn ove_i2s_tx_half_cplt_isr(i2s: ove_i2s_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief ISR helper — invoke from backend TX full-complete interrupt."]
+    pub fn ove_i2s_tx_cplt_isr(i2s: ove_i2s_t);
+}
+#[doc = "< Full speed."]
+pub const OVE_PM_STATE_ACTIVE: ove_pm_state_t = 0;
+#[doc = "< Light sleep, fast wakeup."]
+pub const OVE_PM_STATE_IDLE: ove_pm_state_t = 1;
+#[doc = "< Deep idle, some peripherals off."]
+pub const OVE_PM_STATE_STANDBY: ove_pm_state_t = 2;
+#[doc = "< Lowest power, RAM retained."]
+pub const OVE_PM_STATE_DEEP_SLEEP: ove_pm_state_t = 3;
+pub const OVE_PM_STATE_COUNT: ove_pm_state_t = 4;
+#[doc = " @brief System power states, ordered by increasing sleep depth."]
+pub type ove_pm_state_t = core::ffi::c_uint;
+#[doc = "< GPIO pin edge."]
+pub const OVE_PM_WAKE_GPIO: ove_pm_wake_type_t = 0;
+#[doc = "< Timer expiry."]
+pub const OVE_PM_WAKE_TIMER: ove_pm_wake_type_t = 1;
+#[doc = "< UART RX activity."]
+pub const OVE_PM_WAKE_UART: ove_pm_wake_type_t = 2;
+#[doc = "< RTC alarm."]
+pub const OVE_PM_WAKE_RTC: ove_pm_wake_type_t = 3;
+#[doc = " @brief Wake source types."]
+pub type ove_pm_wake_type_t = core::ffi::c_uint;
+pub const OVE_PM_DOMAIN_RADIO: ove_pm_domain_t = 0;
+pub const OVE_PM_DOMAIN_SENSOR: ove_pm_domain_t = 1;
+pub const OVE_PM_DOMAIN_DISPLAY: ove_pm_domain_t = 2;
+pub const OVE_PM_DOMAIN_AUDIO: ove_pm_domain_t = 3;
+pub const OVE_PM_DOMAIN_STORAGE: ove_pm_domain_t = 4;
+pub const OVE_PM_DOMAIN_COMMS: ove_pm_domain_t = 5;
+pub const OVE_PM_DOMAIN_USER0: ove_pm_domain_t = 6;
+pub const OVE_PM_DOMAIN_USER1: ove_pm_domain_t = 7;
+pub const OVE_PM_DOMAIN_COUNT: ove_pm_domain_t = 8;
+#[doc = " @brief Peripheral power domain identifiers."]
+pub type ove_pm_domain_t = core::ffi::c_uint;
+#[doc = "< About to enter low-power state."]
+pub const OVE_PM_EVENT_PRE_SLEEP: ove_pm_event_t = 0;
+#[doc = "< Just woke from low-power state."]
+pub const OVE_PM_EVENT_POST_WAKE: ove_pm_event_t = 1;
+#[doc = " @brief Transition event type for notification callbacks."]
+pub type ove_pm_event_t = core::ffi::c_uint;
+#[doc = " @brief PM subsystem configuration."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_pm_cfg {
+    #[doc = "< Idle ms before ACTIVE→IDLE."]
+    pub idle_threshold_ms: u32,
+    #[doc = "< Idle ms before IDLE→STANDBY."]
+    pub standby_threshold_ms: u32,
+    #[doc = "< Idle ms before →DEEP_SLEEP."]
+    pub deep_sleep_threshold_ms: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_cfg"][core::mem::size_of::<ove_pm_cfg>() - 12usize];
+    ["Alignment of ove_pm_cfg"][core::mem::align_of::<ove_pm_cfg>() - 4usize];
+    ["Offset of field: ove_pm_cfg::idle_threshold_ms"]
+        [core::mem::offset_of!(ove_pm_cfg, idle_threshold_ms) - 0usize];
+    ["Offset of field: ove_pm_cfg::standby_threshold_ms"]
+        [core::mem::offset_of!(ove_pm_cfg, standby_threshold_ms) - 4usize];
+    ["Offset of field: ove_pm_cfg::deep_sleep_threshold_ms"]
+        [core::mem::offset_of!(ove_pm_cfg, deep_sleep_threshold_ms) - 8usize];
+};
+#[doc = " @brief Wake source descriptor."]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ove_pm_wake_src {
+    #[doc = "< Type of wake source."]
+    pub type_: ove_pm_wake_type_t,
+    pub __bindgen_anon_1: ove_pm_wake_src__bindgen_ty_1,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union ove_pm_wake_src__bindgen_ty_1 {
+    #[doc = "< GPIO wake config."]
+    pub gpio: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1,
+    #[doc = "< Timer wake config."]
+    pub timer: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2,
+    #[doc = "< UART wake config."]
+    pub uart: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3,
+    #[doc = "< RTC wake config."]
+    pub rtc: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1 {
+    pub port: core::ffi::c_uint,
+    pub pin: core::ffi::c_uint,
+    pub edge: ove_gpio_irq_mode_t,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1"]
+        [core::mem::size_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1>() - 12usize];
+    ["Alignment of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1"]
+        [core::mem::align_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1>() - 4usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1::port"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1, port) - 0usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1::pin"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1, pin) - 4usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1::edge"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1__bindgen_ty_1, edge) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2 {
+    pub timeout_ms: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2"]
+        [core::mem::size_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2>() - 4usize];
+    ["Alignment of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2"]
+        [core::mem::align_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2>() - 4usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2::timeout_ms"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1__bindgen_ty_2, timeout_ms) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3 {
+    pub instance: core::ffi::c_uint,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3"]
+        [core::mem::size_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3>() - 4usize];
+    ["Alignment of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3"]
+        [core::mem::align_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3>() - 4usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3::instance"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1__bindgen_ty_3, instance) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4 {
+    pub alarm_ms: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4"]
+        [core::mem::size_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4>() - 4usize];
+    ["Alignment of ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4"]
+        [core::mem::align_of::<ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4>() - 4usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4::alarm_ms"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1__bindgen_ty_4, alarm_ms) - 0usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_wake_src__bindgen_ty_1"]
+        [core::mem::size_of::<ove_pm_wake_src__bindgen_ty_1>() - 12usize];
+    ["Alignment of ove_pm_wake_src__bindgen_ty_1"]
+        [core::mem::align_of::<ove_pm_wake_src__bindgen_ty_1>() - 4usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1::gpio"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1, gpio) - 0usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1::timer"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1, timer) - 0usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1::uart"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1, uart) - 0usize];
+    ["Offset of field: ove_pm_wake_src__bindgen_ty_1::rtc"]
+        [core::mem::offset_of!(ove_pm_wake_src__bindgen_ty_1, rtc) - 0usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_wake_src"][core::mem::size_of::<ove_pm_wake_src>() - 16usize];
+    ["Alignment of ove_pm_wake_src"][core::mem::align_of::<ove_pm_wake_src>() - 4usize];
+    ["Offset of field: ove_pm_wake_src::type_"]
+        [core::mem::offset_of!(ove_pm_wake_src, type_) - 0usize];
+};
+#[doc = " @brief Runtime power statistics."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_pm_stats {
+    #[doc = "< Cumulative time per state."]
+    pub time_in_state_us: [u64; 4usize],
+    #[doc = "< Entries per state."]
+    pub transition_count: [u32; 4usize],
+    #[doc = "< Total tracked time."]
+    pub total_runtime_us: u64,
+    #[doc = "< Active % in hundredths."]
+    pub active_pct_x100: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_pm_stats"][core::mem::size_of::<ove_pm_stats>() - 64usize];
+    ["Alignment of ove_pm_stats"][core::mem::align_of::<ove_pm_stats>() - 8usize];
+    ["Offset of field: ove_pm_stats::time_in_state_us"]
+        [core::mem::offset_of!(ove_pm_stats, time_in_state_us) - 0usize];
+    ["Offset of field: ove_pm_stats::transition_count"]
+        [core::mem::offset_of!(ove_pm_stats, transition_count) - 32usize];
+    ["Offset of field: ove_pm_stats::total_runtime_us"]
+        [core::mem::offset_of!(ove_pm_stats, total_runtime_us) - 48usize];
+    ["Offset of field: ove_pm_stats::active_pct_x100"]
+        [core::mem::offset_of!(ove_pm_stats, active_pct_x100) - 56usize];
+};
+#[doc = " @brief Power policy callback — returns recommended next state.\n\n @param[in] current         Current power state.\n @param[in] idle_ms         Milliseconds since last activity.\n @param[in] next_timeout_ms Milliseconds until next scheduled event.\n @param[in] user_data       Opaque pointer from ove_pm_set_policy().\n @return Recommended next power state."]
+pub type ove_pm_policy_fn = Option<
+    unsafe extern "C" fn(
+        current: ove_pm_state_t,
+        idle_ms: u32,
+        next_timeout_ms: u32,
+        user_data: *mut core::ffi::c_void,
+    ) -> ove_pm_state_t,
+>;
+#[doc = " @brief Transition notification callback.\n\n @param[in] event      PRE_SLEEP or POST_WAKE.\n @param[in] from_state State being left.\n @param[in] to_state   State being entered.\n @param[in] user_data  Opaque pointer from ove_pm_notify_register()."]
+pub type ove_pm_notify_fn = Option<
+    unsafe extern "C" fn(
+        event: ove_pm_event_t,
+        from_state: ove_pm_state_t,
+        to_state: ove_pm_state_t,
+        user_data: *mut core::ffi::c_void,
+    ),
+>;
+unsafe extern "C" {
+    #[doc = " @brief Initialise the PM subsystem.\n\n @param[in] cfg  Configuration parameters.  Must not be NULL.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_pm_init(cfg: *const ove_pm_cfg) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Tear down the PM subsystem and release resources."]
+    pub fn ove_pm_deinit();
+}
+unsafe extern "C" {
+    #[doc = " @brief Request an explicit transition to @p state.\n\n @param[in] state  Target power state.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_pm_set_state(state: ove_pm_state_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the current power state.\n\n @return Current power state."]
+    pub fn ove_pm_get_state() -> ove_pm_state_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Report system activity (resets idle timer).\n\n This function is ISR-safe — it performs only a volatile write."]
+    pub fn ove_pm_activity();
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a wake source.\n\n @param[in] src  Wake source descriptor.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if table full."]
+    pub fn ove_pm_wake_register(src: *const ove_pm_wake_src) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Unregister a previously registered wake source.\n\n @param[in] src  Wake source descriptor (must match a registered entry).\n @return OVE_OK on success, OVE_ERR_NOT_REGISTERED if not found."]
+    pub fn ove_pm_wake_unregister(src: *const ove_pm_wake_src) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Increment the reference count for a peripheral power domain.\n\n On the first request (0→1), the domain hardware is powered on.\n\n @param[in] domain  Domain identifier.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_pm_domain_request(domain: ove_pm_domain_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Decrement the reference count for a peripheral power domain.\n\n When the count reaches zero, the domain hardware is powered off.\n\n @param[in] domain  Domain identifier.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM on underflow."]
+    pub fn ove_pm_domain_release(domain: ove_pm_domain_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query the current reference count for a domain.\n\n @param[in] domain  Domain identifier.\n @return Reference count (>= 0), or negative error code."]
+    pub fn ove_pm_domain_get_refcount(domain: ove_pm_domain_t) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a custom power policy callback.\n\n Replaces the default threshold-based policy.  Pass NULL to restore\n the default policy.\n\n @param[in] policy    Policy function, or NULL for default.\n @param[in] user_data Opaque pointer forwarded to @p policy.\n @return OVE_OK."]
+    pub fn ove_pm_set_policy(
+        policy: ove_pm_policy_fn,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a transition notification callback.\n\n @param[in] cb        Callback invoked on PRE_SLEEP and POST_WAKE.\n @param[in] user_data Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, OVE_ERR_NO_MEMORY if table full."]
+    pub fn ove_pm_notify_register(
+        cb: ove_pm_notify_fn,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Unregister a transition notification callback.\n\n @param[in] cb        Previously registered callback.\n @param[in] user_data Pointer that was passed at registration time.\n @return OVE_OK on success, OVE_ERR_NOT_REGISTERED if not found."]
+    pub fn ove_pm_notify_unregister(
+        cb: ove_pm_notify_fn,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query accumulated power statistics.\n\n @param[out] stats  Receives current statistics snapshot.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_pm_get_stats(stats: *mut ove_pm_stats) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Reset all accumulated power statistics to zero."]
+    pub fn ove_pm_reset_stats();
+}
+unsafe extern "C" {
+    #[doc = " @brief Set a target percentage of time in low-power states.\n\n @param[in] target_low_power_pct_x100  Target in hundredths of percent.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_pm_set_budget(target_low_power_pct_x100: u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Query actual low-power percentage vs. budget target.\n\n @param[out] actual_pct_x100  Actual low-power % in hundredths.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_pm_get_budget_status(actual_pct_x100: *mut u32) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Process idle — called from RTOS idle context by the HAL.\n\n This drives the state machine: checks activity, invokes policy,\n arms wake sources, transitions state, fires notifications.\n Not intended to be called by application code."]
+    pub fn ove_pm_idle_process();
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct lv_obj_t {
-    _opaque: [u8; 256],
+    _unused: [u8; 0],
 }
-
-/// LVGL color (BGR888 layout to match LVGL v9 `lv_color_t`).
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct lv_color_t {
-    pub blue:  u8,
+    pub blue: u8,
     pub green: u8,
-    pub red:   u8,
+    pub red: u8,
 }
-
-/// Opaque LVGL font descriptor.
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_color_t"][core::mem::size_of::<lv_color_t>() - 3usize];
+    ["Alignment of lv_color_t"][core::mem::align_of::<lv_color_t>() - 1usize];
+    ["Offset of field: lv_color_t::blue"][core::mem::offset_of!(lv_color_t, blue) - 0usize];
+    ["Offset of field: lv_color_t::green"][core::mem::offset_of!(lv_color_t, green) - 1usize];
+    ["Offset of field: lv_color_t::red"][core::mem::offset_of!(lv_color_t, red) - 2usize];
+};
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct lv_font_t {
-    _opaque: [u8; 64],
+    pub dsc: *const core::ffi::c_void,
 }
-
-/// Opaque LVGL style.
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_font_t"][core::mem::size_of::<lv_font_t>() - 8usize];
+    ["Alignment of lv_font_t"][core::mem::align_of::<lv_font_t>() - 8usize];
+    ["Offset of field: lv_font_t::dsc"][core::mem::offset_of!(lv_font_t, dsc) - 0usize];
+};
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct lv_style_t {
-    _opaque: [u8; 128],
+    pub dummy: u32,
 }
-
-/// LVGL event callback function pointer type.
-pub type lv_event_cb_t = Option<unsafe extern "C" fn(*mut c_void)>;
-/// LVGL event code type.
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_style_t"][core::mem::size_of::<lv_style_t>() - 4usize];
+    ["Alignment of lv_style_t"][core::mem::align_of::<lv_style_t>() - 4usize];
+    ["Offset of field: lv_style_t::dummy"][core::mem::offset_of!(lv_style_t, dummy) - 0usize];
+};
+pub type lv_opa_t = u8;
+pub type lv_obj_flag_t = u32;
+pub type lv_state_t = u32;
+pub type lv_anim_enable_t = bool;
+pub type lv_event_t = core::ffi::c_void;
+pub type lv_event_cb_t = Option<unsafe extern "C" fn(e: *mut lv_event_t)>;
 pub type lv_event_code_t = u32;
-
-/// Opaque LVGL event descriptor (passed to event callbacks).
-#[repr(C)]
-pub struct lv_event_t {
-    _opaque: [u8; 64],
-}
-
-/// Opaque LVGL chart series.
-#[repr(C)]
-pub struct lv_chart_series_t {
-    _opaque: [u8; 32],
-}
-
-/// LVGL color format enum (e.g. RGB565, RGB888, ARGB8888).
-pub type lv_color_format_t = u8;
-
-/// LVGL direction bitmask (top/bottom/left/right flags).
-pub type lv_dir_t = u8;
-
-/// Opaque LVGL input group (for keyboard/encoder focus tracking).
-#[repr(C)]
-pub struct lv_group_t {
-    _opaque: [u8; 64],
-}
-
-/// Opaque LVGL image descriptor (header + data).
-#[repr(C)]
-pub struct lv_image_dsc_t {
-    _opaque: [u8; 64],
-}
-
-/// Opaque LVGL scale section (major-tick styling span).
-#[repr(C)]
-pub struct lv_scale_section_t {
-    _opaque: [u8; 64],
-}
-
-/// LVGL screen-load transition animation type.
+pub type lv_dir_t = u32;
+pub type lv_color_format_t = u32;
 pub type lv_screen_load_anim_t = u32;
-
-/// Opaque LVGL reactive subject (observer pattern state holder).
+pub type lv_flex_flow_t = u32;
+pub type lv_grid_align_t = u32;
+pub type lv_roller_mode_t = u32;
+pub type lv_keyboard_mode_t = u32;
+pub type lv_chart_type_t = u32;
+pub type lv_chart_axis_t = u32;
+pub type lv_chart_update_mode_t = u32;
+pub const LV_ALIGN_DEFAULT: _bindgen_ty_1 = 0;
+pub const LV_ALIGN_TOP_LEFT: _bindgen_ty_1 = 1;
+pub const LV_ALIGN_TOP_MID: _bindgen_ty_1 = 2;
+pub const LV_ALIGN_TOP_RIGHT: _bindgen_ty_1 = 3;
+pub const LV_ALIGN_BOTTOM_LEFT: _bindgen_ty_1 = 4;
+pub const LV_ALIGN_BOTTOM_MID: _bindgen_ty_1 = 5;
+pub const LV_ALIGN_BOTTOM_RIGHT: _bindgen_ty_1 = 6;
+pub const LV_ALIGN_LEFT_MID: _bindgen_ty_1 = 7;
+pub const LV_ALIGN_RIGHT_MID: _bindgen_ty_1 = 8;
+pub const LV_ALIGN_CENTER: _bindgen_ty_1 = 9;
+pub type _bindgen_ty_1 = core::ffi::c_uint;
+pub const LV_EVENT_CLICKED: _bindgen_ty_2 = 7;
+pub const LV_EVENT_VALUE_CHANGED: _bindgen_ty_2 = 28;
+pub const LV_EVENT_DELETE: _bindgen_ty_2 = 36;
+pub type _bindgen_ty_2 = core::ffi::c_uint;
+pub const LV_OBJ_FLAG_HIDDEN: _bindgen_ty_3 = 1;
+pub const LV_OBJ_FLAG_CLICKABLE: _bindgen_ty_3 = 2;
+pub const LV_OBJ_FLAG_CHECKABLE: _bindgen_ty_3 = 8;
+pub const LV_OBJ_FLAG_SCROLLABLE: _bindgen_ty_3 = 16;
+pub type _bindgen_ty_3 = core::ffi::c_uint;
+pub const LV_FLEX_FLOW_ROW: _bindgen_ty_4 = 0;
+pub const LV_FLEX_FLOW_COLUMN: _bindgen_ty_4 = 1;
+pub type _bindgen_ty_4 = core::ffi::c_uint;
+pub const LV_PART_MAIN: _bindgen_ty_5 = 0;
+pub const LV_PART_INDICATOR: _bindgen_ty_5 = 65536;
+pub type _bindgen_ty_5 = core::ffi::c_uint;
+pub const LV_PALETTE_BLUE: _bindgen_ty_6 = 6;
+pub type _bindgen_ty_6 = core::ffi::c_uint;
+pub const LV_SCR_LOAD_ANIM_NONE: _bindgen_ty_8 = 0;
+pub const LV_SCR_LOAD_ANIM_OVER_LEFT: _bindgen_ty_8 = 1;
+pub const LV_SCR_LOAD_ANIM_OVER_RIGHT: _bindgen_ty_8 = 2;
+pub const LV_SCR_LOAD_ANIM_OVER_TOP: _bindgen_ty_8 = 3;
+pub const LV_SCR_LOAD_ANIM_OVER_BOTTOM: _bindgen_ty_8 = 4;
+pub const LV_SCR_LOAD_ANIM_MOVE_LEFT: _bindgen_ty_8 = 5;
+pub const LV_SCR_LOAD_ANIM_MOVE_RIGHT: _bindgen_ty_8 = 6;
+pub const LV_SCR_LOAD_ANIM_MOVE_TOP: _bindgen_ty_8 = 7;
+pub const LV_SCR_LOAD_ANIM_MOVE_BOTTOM: _bindgen_ty_8 = 8;
+pub const LV_SCR_LOAD_ANIM_FADE_IN: _bindgen_ty_8 = 9;
+pub const LV_SCR_LOAD_ANIM_FADE_OUT: _bindgen_ty_8 = 10;
+pub const LV_SCR_LOAD_ANIM_OUT_LEFT: _bindgen_ty_8 = 11;
+pub const LV_SCR_LOAD_ANIM_OUT_RIGHT: _bindgen_ty_8 = 12;
+pub const LV_SCR_LOAD_ANIM_OUT_TOP: _bindgen_ty_8 = 13;
+pub const LV_SCR_LOAD_ANIM_OUT_BOTTOM: _bindgen_ty_8 = 14;
+pub type _bindgen_ty_8 = core::ffi::c_uint;
 #[repr(C)]
-pub struct lv_subject_t {
-    _opaque: [u8; 64],
+#[derive(Debug, Copy, Clone)]
+pub struct lv_group_t {
+    _unused: [u8; 0],
 }
-
-/// Opaque LVGL timer.
 #[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_chart_series_t {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct lv_timer_t {
-    _opaque: [u8; 64],
+    _unused: [u8; 0],
 }
-
-/// Opaque LVGL animation descriptor.
 #[repr(C)]
-pub struct lv_anim_t {
-    _opaque: [u8; 128],
+#[derive(Debug, Copy, Clone)]
+pub struct lv_layer_t {
+    _unused: [u8; 0],
 }
-
-/// LVGL timer callback: `fn(timer)`.
-pub type lv_timer_cb_t = Option<unsafe extern "C" fn(*mut lv_timer_t)>;
-
-/// LVGL animation completion callback: `fn(anim)`.
-pub type lv_anim_completed_cb_t = Option<unsafe extern "C" fn(*mut lv_anim_t)>;
-
-/// LVGL animation exec callback: `fn(var, value)`.
-pub type lv_anim_exec_xcb_t = Option<unsafe extern "C" fn(*mut c_void, i32)>;
-
-/// LVGL animation path (easing) callback: `fn(anim) -> value`.
-pub type lv_anim_path_cb_t = Option<unsafe extern "C" fn(*const lv_anim_t) -> i32>;
-
-// ---------------------------------------------------------------------------
-// LVGL constants
-// ---------------------------------------------------------------------------
-
-pub const LV_OBJ_FLAG_HIDDEN:     u32 = 1 << 0;
-pub const LV_OBJ_FLAG_CLICKABLE:  u32 = 1 << 1;
-pub const LV_OBJ_FLAG_SCROLLABLE: u32 = 1 << 2;
-
-pub const LV_EVENT_CLICKED:       u32 = 7;
-pub const LV_EVENT_VALUE_CHANGED: u32 = 28;
-
-pub const LV_FLEX_FLOW_ROW:    u32 = 0;
-pub const LV_FLEX_FLOW_COLUMN: u32 = 1;
-
-// ---------------------------------------------------------------------------
-// LVGL font statics
-// ---------------------------------------------------------------------------
-
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_observer_t {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_calendar_date_t {
+    pub year: u32,
+    pub month: u32,
+    pub day: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_calendar_date_t"][core::mem::size_of::<lv_calendar_date_t>() - 12usize];
+    ["Alignment of lv_calendar_date_t"][core::mem::align_of::<lv_calendar_date_t>() - 4usize];
+    ["Offset of field: lv_calendar_date_t::year"]
+        [core::mem::offset_of!(lv_calendar_date_t, year) - 0usize];
+    ["Offset of field: lv_calendar_date_t::month"]
+        [core::mem::offset_of!(lv_calendar_date_t, month) - 4usize];
+    ["Offset of field: lv_calendar_date_t::day"]
+        [core::mem::offset_of!(lv_calendar_date_t, day) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_subject_t {
+    pub dummy: [u32; 16usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_subject_t"][core::mem::size_of::<lv_subject_t>() - 64usize];
+    ["Alignment of lv_subject_t"][core::mem::align_of::<lv_subject_t>() - 4usize];
+    ["Offset of field: lv_subject_t::dummy"][core::mem::offset_of!(lv_subject_t, dummy) - 0usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_anim_t {
+    pub var: *mut core::ffi::c_void,
+    pub dummy: [u32; 32usize],
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_anim_t"][core::mem::size_of::<lv_anim_t>() - 136usize];
+    ["Alignment of lv_anim_t"][core::mem::align_of::<lv_anim_t>() - 8usize];
+    ["Offset of field: lv_anim_t::var"][core::mem::offset_of!(lv_anim_t, var) - 0usize];
+    ["Offset of field: lv_anim_t::dummy"][core::mem::offset_of!(lv_anim_t, dummy) - 8usize];
+};
+pub type lv_timer_cb_t = Option<unsafe extern "C" fn(arg1: *mut lv_timer_t)>;
+pub type lv_anim_exec_xcb_t = Option<unsafe extern "C" fn(arg1: *mut core::ffi::c_void, arg2: i32)>;
+pub type lv_anim_path_cb_t = Option<unsafe extern "C" fn(arg1: *const lv_anim_t) -> i32>;
+pub type lv_anim_completed_cb_t = Option<unsafe extern "C" fn(arg1: *mut lv_anim_t)>;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_image_header_t {
+    pub cf: u32,
+    pub w: u32,
+    pub h: u32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_image_header_t"][core::mem::size_of::<lv_image_header_t>() - 12usize];
+    ["Alignment of lv_image_header_t"][core::mem::align_of::<lv_image_header_t>() - 4usize];
+    ["Offset of field: lv_image_header_t::cf"]
+        [core::mem::offset_of!(lv_image_header_t, cf) - 0usize];
+    ["Offset of field: lv_image_header_t::w"][core::mem::offset_of!(lv_image_header_t, w) - 4usize];
+    ["Offset of field: lv_image_header_t::h"][core::mem::offset_of!(lv_image_header_t, h) - 8usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_image_dsc_t {
+    pub header: lv_image_header_t,
+    pub data_size: u32,
+    pub data: *const u8,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_image_dsc_t"][core::mem::size_of::<lv_image_dsc_t>() - 24usize];
+    ["Alignment of lv_image_dsc_t"][core::mem::align_of::<lv_image_dsc_t>() - 8usize];
+    ["Offset of field: lv_image_dsc_t::header"]
+        [core::mem::offset_of!(lv_image_dsc_t, header) - 0usize];
+    ["Offset of field: lv_image_dsc_t::data_size"]
+        [core::mem::offset_of!(lv_image_dsc_t, data_size) - 12usize];
+    ["Offset of field: lv_image_dsc_t::data"]
+        [core::mem::offset_of!(lv_image_dsc_t, data) - 16usize];
+};
+unsafe extern "C" {
+    pub fn lv_obj_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_obj_delete(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_clean(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_parent(obj: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_child_count(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_width(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_height(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_size(obj: *mut lv_obj_t, w: i32, h: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_width(obj: *mut lv_obj_t, w: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_height(obj: *mut lv_obj_t, h: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_pos(obj: *mut lv_obj_t, x: i32, y: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_x(obj: *mut lv_obj_t, x: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_y(obj: *mut lv_obj_t, y: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_x(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_y(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_center(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_align(obj: *mut lv_obj_t, align: i32, x_ofs: i32, y_ofs: i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_add_flag(obj: *mut lv_obj_t, flag: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_remove_flag(obj: *mut lv_obj_t, flag: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_add_state(obj: *mut lv_obj_t, state: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_remove_state(obj: *mut lv_obj_t, state: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_has_state(obj: *mut lv_obj_t, state: u32) -> bool;
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_user_data(obj: *mut lv_obj_t, data: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_user_data(obj: *mut lv_obj_t) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_flex_flow(obj: *mut lv_obj_t, flow: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_flex_align(obj: *mut lv_obj_t, main: u32, cross: u32, track: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_flex_grow(obj: *mut lv_obj_t, grow: u8);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_grid_dsc_array(obj: *mut lv_obj_t, col_dsc: *const i32, row_dsc: *const i32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_grid_cell(
+        obj: *mut lv_obj_t,
+        col_align: u32,
+        col_pos: i32,
+        col_span: i32,
+        row_align: u32,
+        row_pos: i32,
+        row_span: i32,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_obj_add_event_cb(
+        obj: *mut lv_obj_t,
+        cb: lv_event_cb_t,
+        code: lv_event_code_t,
+        user_data: *mut core::ffi::c_void,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_event_get_user_data(e: *mut lv_event_t) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn lv_event_get_target(e: *mut lv_event_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_bg_color(obj: *mut lv_obj_t, color: lv_color_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_bg_opa(obj: *mut lv_obj_t, opa: lv_opa_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_border_color(obj: *mut lv_obj_t, color: lv_color_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_border_width(obj: *mut lv_obj_t, w: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_radius(obj: *mut lv_obj_t, radius: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_top(obj: *mut lv_obj_t, p: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_bottom(obj: *mut lv_obj_t, p: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_left(obj: *mut lv_obj_t, p: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_right(obj: *mut lv_obj_t, p: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_row(obj: *mut lv_obj_t, g: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_pad_column(obj: *mut lv_obj_t, g: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_text_color(obj: *mut lv_obj_t, color: lv_color_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_text_font(obj: *mut lv_obj_t, font: *const lv_font_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_text_align(obj: *mut lv_obj_t, align: u32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_opa(obj: *mut lv_obj_t, opa: u8, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_arc_color(obj: *mut lv_obj_t, color: lv_color_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_arc_width(obj: *mut lv_obj_t, w: i32, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_style_init(style: *mut lv_style_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_reset(style: *mut lv_style_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_bg_color(style: *mut lv_style_t, color: lv_color_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_bg_opa(style: *mut lv_style_t, opa: lv_opa_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_radius(style: *mut lv_style_t, r: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_border_color(style: *mut lv_style_t, color: lv_color_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_border_width(style: *mut lv_style_t, w: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_pad_top(style: *mut lv_style_t, p: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_pad_bottom(style: *mut lv_style_t, p: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_pad_left(style: *mut lv_style_t, p: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_pad_right(style: *mut lv_style_t, p: i32);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_text_color(style: *mut lv_style_t, color: lv_color_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_text_font(style: *mut lv_style_t, f: *const lv_font_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_add_style(obj: *mut lv_obj_t, style: *mut lv_style_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_remove_style_all(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_palette_main(p: u32) -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_palette_lighten(p: u32, lvl: u8) -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_palette_darken(p: u32, lvl: u8) -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_color_make(r: u8, g: u8, b: u8) -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_color_white() -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_color_black() -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_color_hex(hex: u32) -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_color_hex3(c: u32) -> lv_color_t;
+}
+unsafe extern "C" {
+    pub fn lv_label_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_label_set_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_label_set_text_static(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_label_bind_text(
+        obj: *mut lv_obj_t,
+        subject: *mut lv_subject_t,
+        fmt: *const core::ffi::c_char,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_bar_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_bar_set_value(obj: *mut lv_obj_t, value: i32, anim: i32);
+}
+unsafe extern "C" {
+    pub fn lv_bar_set_range(obj: *mut lv_obj_t, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_button_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_slider_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_slider_set_value(obj: *mut lv_obj_t, value: i32, anim: i32);
+}
+unsafe extern "C" {
+    pub fn lv_slider_set_range(obj: *mut lv_obj_t, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_slider_get_value(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_slider_bind_value(obj: *mut lv_obj_t, subject: *mut lv_subject_t);
+}
+unsafe extern "C" {
+    pub fn lv_switch_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_checkbox_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_checkbox_set_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_checkbox_set_text_static(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_arc_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_arc_set_value(obj: *mut lv_obj_t, value: i32);
+}
+unsafe extern "C" {
+    pub fn lv_arc_set_range(obj: *mut lv_obj_t, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_arc_set_bg_angles(obj: *mut lv_obj_t, start: u32, end: u32);
+}
+unsafe extern "C" {
+    pub fn lv_arc_set_angles(obj: *mut lv_obj_t, start: u32, end: u32);
+}
+unsafe extern "C" {
+    pub fn lv_arc_set_rotation(obj: *mut lv_obj_t, rotation: u32);
+}
+unsafe extern "C" {
+    pub fn lv_arc_get_value(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_arc_bind_value(obj: *mut lv_obj_t, subject: *mut lv_subject_t);
+}
+unsafe extern "C" {
+    pub fn lv_image_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_image_set_src(obj: *mut lv_obj_t, src: *const core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn lv_image_set_rotation(obj: *mut lv_obj_t, angle: i32);
+}
+unsafe extern "C" {
+    pub fn lv_image_set_scale(obj: *mut lv_obj_t, zoom: u32);
+}
+unsafe extern "C" {
+    pub fn lv_image_set_pivot(obj: *mut lv_obj_t, x: i32, y: i32);
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_add_title(obj: *mut lv_obj_t, title: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_add_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_add_close_button(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_add_footer_button(
+        obj: *mut lv_obj_t,
+        text: *const core::ffi::c_char,
+    ) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_get_content(obj: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_get_header(obj: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_get_footer(obj: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_msgbox_close(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_spinner_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_spinner_set_anim_params(obj: *mut lv_obj_t, time_ms: u32, angle_deg: u32);
+}
+unsafe extern "C" {
+    pub fn lv_led_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_led_set_color(obj: *mut lv_obj_t, color: lv_color_t);
+}
+unsafe extern "C" {
+    pub fn lv_led_set_brightness(obj: *mut lv_obj_t, bright: u8);
+}
+unsafe extern "C" {
+    pub fn lv_led_on(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_led_off(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_led_toggle(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_led_get_brightness(obj: *mut lv_obj_t) -> u8;
+}
+unsafe extern "C" {
+    pub fn lv_textarea_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_add_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_placeholder_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_one_line(obj: *mut lv_obj_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_password_mode(obj: *mut lv_obj_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_max_length(obj: *mut lv_obj_t, max_len: u32);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_accepted_chars(obj: *mut lv_obj_t, list: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_cursor_pos(obj: *mut lv_obj_t, pos: i32);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_set_cursor_click_pos(obj: *mut lv_obj_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_get_text(obj: *mut lv_obj_t) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    pub fn lv_textarea_get_cursor_pos(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_textarea_get_password_mode(obj: *mut lv_obj_t) -> bool;
+}
+unsafe extern "C" {
+    pub fn lv_textarea_get_one_line(obj: *mut lv_obj_t) -> bool;
+}
+unsafe extern "C" {
+    pub fn lv_textarea_add_char(obj: *mut lv_obj_t, c: u32);
+}
+unsafe extern "C" {
+    pub fn lv_textarea_delete_char(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_set_options(obj: *mut lv_obj_t, opts: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_set_options_static(obj: *mut lv_obj_t, opts: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_add_option(obj: *mut lv_obj_t, opt: *const core::ffi::c_char, pos: u32);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_clear_options(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_set_selected(obj: *mut lv_obj_t, sel: u32);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_get_selected(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_get_option_count(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_get_selected_str(
+        obj: *mut lv_obj_t,
+        buf: *mut core::ffi::c_char,
+        buf_size: u32,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_set_dir(obj: *mut lv_obj_t, dir: lv_dir_t);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_set_symbol(obj: *mut lv_obj_t, symbol: *const core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_is_open(obj: *mut lv_obj_t) -> bool;
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_open(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_close(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_dropdown_bind_value(obj: *mut lv_obj_t, subject: *mut lv_subject_t);
+}
+unsafe extern "C" {
+    pub fn lv_roller_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_roller_set_options(obj: *mut lv_obj_t, opts: *const core::ffi::c_char, mode: u32);
+}
+unsafe extern "C" {
+    pub fn lv_roller_set_selected(obj: *mut lv_obj_t, sel: u32, anim: i32);
+}
+unsafe extern "C" {
+    pub fn lv_roller_set_visible_row_count(obj: *mut lv_obj_t, rows: u32);
+}
+unsafe extern "C" {
+    pub fn lv_roller_get_selected(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_roller_get_option_count(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_roller_get_selected_str(
+        obj: *mut lv_obj_t,
+        buf: *mut core::ffi::c_char,
+        buf_size: u32,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_roller_bind_value(obj: *mut lv_obj_t, subject: *mut lv_subject_t);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_set_value(obj: *mut lv_obj_t, val: i32);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_set_range(obj: *mut lv_obj_t, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_set_step(obj: *mut lv_obj_t, step: u32);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_set_digit_format(obj: *mut lv_obj_t, digit_count: u32, sep_pos: u32);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_set_rollover(obj: *mut lv_obj_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_set_cursor_pos(obj: *mut lv_obj_t, pos: u32);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_get_value(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_get_step(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_increment(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_spinbox_decrement(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_keyboard_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_keyboard_set_textarea(kb: *mut lv_obj_t, ta: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_keyboard_set_mode(kb: *mut lv_obj_t, mode: u32);
+}
+unsafe extern "C" {
+    pub fn lv_keyboard_set_popovers(kb: *mut lv_obj_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_keyboard_get_textarea(kb: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_chart_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_type(obj: *mut lv_obj_t, type_: u32);
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_point_count(obj: *mut lv_obj_t, count: u32);
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_axis_range(obj: *mut lv_obj_t, axis: u32, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_update_mode(obj: *mut lv_obj_t, mode: u32);
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_div_line_count(obj: *mut lv_obj_t, hdiv: u32, vdiv: u32);
+}
+unsafe extern "C" {
+    pub fn lv_chart_add_series(
+        obj: *mut lv_obj_t,
+        color: lv_color_t,
+        axis: u32,
+    ) -> *mut lv_chart_series_t;
+}
+unsafe extern "C" {
+    pub fn lv_chart_remove_series(obj: *mut lv_obj_t, series: *mut lv_chart_series_t);
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_next_value(obj: *mut lv_obj_t, series: *mut lv_chart_series_t, value: i32);
+}
+unsafe extern "C" {
+    pub fn lv_chart_set_series_value_by_id(
+        obj: *mut lv_obj_t,
+        series: *mut lv_chart_series_t,
+        id: u32,
+        value: i32,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_table_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_table_set_cell_value(
+        obj: *mut lv_obj_t,
+        row: u32,
+        col: u32,
+        txt: *const core::ffi::c_char,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_table_set_row_count(obj: *mut lv_obj_t, cnt: u32);
+}
+unsafe extern "C" {
+    pub fn lv_table_set_column_count(obj: *mut lv_obj_t, cnt: u32);
+}
+unsafe extern "C" {
+    pub fn lv_table_set_column_width(obj: *mut lv_obj_t, col: u32, w: i32);
+}
+unsafe extern "C" {
+    pub fn lv_table_get_cell_value(
+        obj: *mut lv_obj_t,
+        row: u32,
+        col: u32,
+    ) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    pub fn lv_table_get_row_count(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_table_get_column_count(obj: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_table_get_column_width(obj: *mut lv_obj_t, col: u32) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_tabview_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_tabview_add_tab(tv: *mut lv_obj_t, name: *const core::ffi::c_char) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_tabview_rename_tab(tv: *mut lv_obj_t, idx: u32, name: *const core::ffi::c_char);
+}
+unsafe extern "C" {
+    pub fn lv_tabview_set_active(tv: *mut lv_obj_t, idx: u32, anim: i32);
+}
+unsafe extern "C" {
+    pub fn lv_tabview_set_tab_bar_position(tv: *mut lv_obj_t, dir: lv_dir_t);
+}
+unsafe extern "C" {
+    pub fn lv_tabview_set_tab_bar_size(tv: *mut lv_obj_t, size: i32);
+}
+unsafe extern "C" {
+    pub fn lv_tabview_get_tab_count(tv: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_tabview_get_tab_active(tv: *mut lv_obj_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_tabview_get_content(tv: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_list_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_list_add_text(list: *mut lv_obj_t, text: *const core::ffi::c_char) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_list_add_button(
+        list: *mut lv_obj_t,
+        icon: *const core::ffi::c_void,
+        text: *const core::ffi::c_char,
+    ) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_list_get_button_text(
+        list: *mut lv_obj_t,
+        btn: *mut lv_obj_t,
+    ) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
+    pub fn lv_canvas_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_canvas_set_buffer(
+        obj: *mut lv_obj_t,
+        buf: *mut core::ffi::c_void,
+        w: i32,
+        h: i32,
+        cf: lv_color_format_t,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_canvas_fill_bg(obj: *mut lv_obj_t, color: lv_color_t, opa: u8);
+}
+unsafe extern "C" {
+    pub fn lv_canvas_set_px(obj: *mut lv_obj_t, x: i32, y: i32, color: lv_color_t, opa: u8);
+}
+unsafe extern "C" {
+    pub fn lv_canvas_init_layer(obj: *mut lv_obj_t, layer: *mut lv_layer_t);
+}
+unsafe extern "C" {
+    pub fn lv_canvas_finish_layer(obj: *mut lv_obj_t, layer: *mut lv_layer_t);
+}
+unsafe extern "C" {
+    pub fn lv_calendar_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_calendar_set_today_date(obj: *mut lv_obj_t, year: u32, month: u32, day: u32);
+}
+unsafe extern "C" {
+    pub fn lv_calendar_set_month_shown(obj: *mut lv_obj_t, year: u32, month: u32);
+}
+unsafe extern "C" {
+    pub fn lv_calendar_set_highlighted_dates(
+        obj: *mut lv_obj_t,
+        dates: *mut lv_calendar_date_t,
+        cnt: u32,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_calendar_get_pressed_date(obj: *mut lv_obj_t, date: *mut lv_calendar_date_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_calendar_add_header_arrow(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_calendar_add_header_dropdown(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_screen_active() -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_screen_load(scr: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_screen_load_anim(
+        scr: *mut lv_obj_t,
+        anim: lv_screen_load_anim_t,
+        time_ms: u32,
+        delay_ms: u32,
+        auto_del: bool,
+    );
+}
+unsafe extern "C" {
+    pub fn lv_group_create() -> *mut lv_group_t;
+}
+unsafe extern "C" {
+    pub fn lv_group_delete(group: *mut lv_group_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_set_default(group: *mut lv_group_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_get_default() -> *mut lv_group_t;
+}
+unsafe extern "C" {
+    pub fn lv_group_add_obj(group: *mut lv_group_t, obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_remove_obj(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_remove_all_objs(group: *mut lv_group_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_focus_obj(obj: *mut lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_focus_next(group: *mut lv_group_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_focus_prev(group: *mut lv_group_t);
+}
+unsafe extern "C" {
+    pub fn lv_group_focus_freeze(group: *mut lv_group_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_group_get_focused(group: *mut lv_group_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_group_set_editing(group: *mut lv_group_t, en: bool);
+}
+unsafe extern "C" {
+    pub fn lv_group_get_editing(group: *mut lv_group_t) -> bool;
+}
+unsafe extern "C" {
+    pub fn lv_group_get_obj_count(group: *mut lv_group_t) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_subject_init_int(subject: *mut lv_subject_t, value: i32);
+}
+unsafe extern "C" {
+    pub fn lv_subject_set_int(subject: *mut lv_subject_t, value: i32);
+}
+unsafe extern "C" {
+    pub fn lv_subject_get_int(subject: *mut lv_subject_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_subject_deinit(subject: *mut lv_subject_t);
+}
+pub type lv_observer_cb_t =
+    Option<unsafe extern "C" fn(observer: *mut lv_observer_t, subject: *mut lv_subject_t)>;
+unsafe extern "C" {
+    pub fn lv_subject_add_observer_obj(
+        subject: *mut lv_subject_t,
+        cb: lv_observer_cb_t,
+        obj: *mut lv_obj_t,
+        user_data: *mut core::ffi::c_void,
+    ) -> *mut lv_observer_t;
+}
+unsafe extern "C" {
+    pub fn lv_subject_notify(subject: *mut lv_subject_t);
+}
+unsafe extern "C" {
+    pub fn lv_observer_remove(observer: *mut lv_observer_t);
+}
+unsafe extern "C" {
+    pub fn lv_anim_init(a: *mut lv_anim_t);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_var(a: *mut lv_anim_t, var: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_values(a: *mut lv_anim_t, start: i32, end: i32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_duration(a: *mut lv_anim_t, duration: u32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_delay(a: *mut lv_anim_t, delay: u32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_exec_cb(a: *mut lv_anim_t, exec_cb: lv_anim_exec_xcb_t);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_path_cb(a: *mut lv_anim_t, path_cb: lv_anim_path_cb_t);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_repeat_count(a: *mut lv_anim_t, cnt: u32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_repeat_delay(a: *mut lv_anim_t, delay: u32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_reverse_duration(a: *mut lv_anim_t, duration: u32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_reverse_delay(a: *mut lv_anim_t, delay: u32);
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_completed_cb(a: *mut lv_anim_t, cb: lv_anim_completed_cb_t);
+}
+unsafe extern "C" {
+    pub fn lv_anim_start(a: *const lv_anim_t);
+}
+unsafe extern "C" {
+    pub fn lv_anim_delete(var: *mut core::ffi::c_void, exec_cb: lv_anim_exec_xcb_t) -> bool;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_linear(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_ease_in(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_ease_out(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_ease_in_out(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_overshoot(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_bounce(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_path_step(a: *const lv_anim_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_timer_create(
+        cb: lv_timer_cb_t,
+        period: u32,
+        user_data: *mut core::ffi::c_void,
+    ) -> *mut lv_timer_t;
+}
+unsafe extern "C" {
+    pub fn lv_timer_delete(timer: *mut lv_timer_t);
+}
+unsafe extern "C" {
+    pub fn lv_timer_pause(timer: *mut lv_timer_t);
+}
+unsafe extern "C" {
+    pub fn lv_timer_resume(timer: *mut lv_timer_t);
+}
+unsafe extern "C" {
+    pub fn lv_timer_set_period(timer: *mut lv_timer_t, period: u32);
+}
+unsafe extern "C" {
+    pub fn lv_timer_set_repeat_count(timer: *mut lv_timer_t, cnt: i32);
+}
+unsafe extern "C" {
+    pub fn lv_timer_reset(timer: *mut lv_timer_t);
+}
+unsafe extern "C" {
+    pub fn lv_timer_ready(timer: *mut lv_timer_t);
+}
+unsafe extern "C" {
+    pub fn lv_timer_get_user_data(timer: *mut lv_timer_t) -> *mut core::ffi::c_void;
+}
 unsafe extern "C" {
     pub static lv_font_montserrat_14: lv_font_t;
+}
+unsafe extern "C" {
+    pub static lv_font_montserrat_16: lv_font_t;
+}
+unsafe extern "C" {
+    pub static lv_font_montserrat_20: lv_font_t;
+}
+unsafe extern "C" {
     pub static lv_font_montserrat_24: lv_font_t;
+}
+unsafe extern "C" {
     pub static lv_font_montserrat_32: lv_font_t;
 }
-
-// ---------------------------------------------------------------------------
-// extern "C" — LVGL functions
-// ---------------------------------------------------------------------------
-
 unsafe extern "C" {
-
-    // core object
-    pub fn lv_obj_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
-    pub fn lv_obj_delete(obj: *mut lv_obj_t);
-    pub fn lv_obj_clean(obj: *mut lv_obj_t);
-    pub fn lv_obj_get_parent(obj: *mut lv_obj_t) -> *mut lv_obj_t;
-    pub fn lv_obj_get_child_count(obj: *mut lv_obj_t) -> u32;
-    pub fn lv_obj_get_width(obj: *mut lv_obj_t) -> i32;
-    pub fn lv_obj_get_height(obj: *mut lv_obj_t) -> i32;
-    pub fn lv_obj_set_size(obj: *mut lv_obj_t, w: i32, h: i32);
-    pub fn lv_obj_set_width(obj: *mut lv_obj_t, w: i32);
-    pub fn lv_obj_set_height(obj: *mut lv_obj_t, h: i32);
-    pub fn lv_obj_set_pos(obj: *mut lv_obj_t, x: i32, y: i32);
-    pub fn lv_obj_center(obj: *mut lv_obj_t);
-    pub fn lv_obj_align(obj: *mut lv_obj_t, align: u8, x_ofs: i32, y_ofs: i32);
-    pub fn lv_obj_set_user_data(obj: *mut lv_obj_t, data: *mut c_void);
-    pub fn lv_obj_get_user_data(obj: *mut lv_obj_t) -> *mut c_void;
-    pub fn lv_obj_add_flag(obj: *mut lv_obj_t, f: u32);
-    pub fn lv_obj_remove_flag(obj: *mut lv_obj_t, f: u32);
-    pub fn lv_obj_add_state(obj: *mut lv_obj_t, state: u16);
-    pub fn lv_obj_remove_state(obj: *mut lv_obj_t, state: u16);
-    pub fn lv_obj_add_event_cb(
-        obj:       *mut lv_obj_t,
-        event_cb:  lv_event_cb_t,
-        filter:    u32,
-        user_data: *mut c_void,
+    pub static lv_font_montserrat_48: lv_font_t;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_point_t {
+    pub x: i32,
+    pub y: i32,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of lv_point_t"][core::mem::size_of::<lv_point_t>() - 8usize];
+    ["Alignment of lv_point_t"][core::mem::align_of::<lv_point_t>() - 4usize];
+    ["Offset of field: lv_point_t::x"][core::mem::offset_of!(lv_point_t, x) - 0usize];
+    ["Offset of field: lv_point_t::y"][core::mem::offset_of!(lv_point_t, y) - 4usize];
+};
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_display_t {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct lv_scale_section_t {
+    _unused: [u8; 0],
+}
+pub type lv_scale_mode_t = u32;
+pub type lv_image_align_t = u32;
+unsafe extern "C" {
+    pub fn lv_obj_set_layout(obj: *mut lv_obj_t, layout: u32);
+}
+unsafe extern "C" {
+    pub fn lv_obj_update_layout(obj: *const lv_obj_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_content_width(obj: *const lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_scroll_bottom(obj: *mut lv_obj_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_obj_scroll_to_y(obj: *mut lv_obj_t, y: i32, anim_en: lv_anim_enable_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_get_child(obj: *const lv_obj_t, id: i32) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_translate_y(obj: *mut lv_obj_t, value: i32, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_margin_top(obj: *mut lv_obj_t, value: i32, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_margin_bottom(obj: *mut lv_obj_t, value: i32, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_margin_left(obj: *mut lv_obj_t, value: i32, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_margin_right(obj: *mut lv_obj_t, value: i32, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_max_height(obj: *mut lv_obj_t, value: i32, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_arc_opa(obj: *mut lv_obj_t, value: lv_opa_t, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_arc_rounded(obj: *mut lv_obj_t, value: bool, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_obj_set_style_opa_layered(obj: *mut lv_obj_t, value: lv_opa_t, state: lv_state_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_arc_color(style: *mut lv_style_t, value: lv_color_t);
+}
+unsafe extern "C" {
+    pub fn lv_style_set_arc_width(style: *mut lv_style_t, value: i32);
+}
+unsafe extern "C" {
+    pub fn lv_event_get_current_target(e: *mut lv_event_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_event_get_code(e: *mut lv_event_t) -> lv_event_code_t;
+}
+unsafe extern "C" {
+    pub fn lv_event_get_param(e: *mut lv_event_t) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn lv_display_get_horizontal_resolution(disp: *const lv_display_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_display_get_vertical_resolution(disp: *const lv_display_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_display_get_dpi(disp: *const lv_display_t) -> i32;
+}
+unsafe extern "C" {
+    pub fn lv_layer_top() -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_text_get_size(
+        size_res: *mut lv_point_t,
+        text: *const core::ffi::c_char,
+        font: *const lv_font_t,
+        letter_space: i32,
+        line_space: i32,
+        max_width: i32,
+        flag: u32,
     );
-    pub fn lv_obj_add_style(obj: *mut lv_obj_t, style: *mut lv_style_t, selector: u32);
-    pub fn lv_obj_set_flex_flow(obj: *mut lv_obj_t, flow: u32);
-
-    // inline styles
-    pub fn lv_obj_set_style_bg_color(obj: *mut lv_obj_t, color: lv_color_t, selector: u32);
-    pub fn lv_obj_set_style_bg_opa(obj: *mut lv_obj_t, opa: u8, selector: u32);
-    pub fn lv_obj_set_style_border_color(obj: *mut lv_obj_t, color: lv_color_t, selector: u32);
-    pub fn lv_obj_set_style_border_width(obj: *mut lv_obj_t, w: i32, selector: u32);
-    pub fn lv_obj_set_style_radius(obj: *mut lv_obj_t, r: i32, selector: u32);
-    pub fn lv_obj_set_style_pad_top(obj: *mut lv_obj_t, p: i32, selector: u32);
-    pub fn lv_obj_set_style_pad_bottom(obj: *mut lv_obj_t, p: i32, selector: u32);
-    pub fn lv_obj_set_style_pad_left(obj: *mut lv_obj_t, p: i32, selector: u32);
-    pub fn lv_obj_set_style_pad_right(obj: *mut lv_obj_t, p: i32, selector: u32);
-    pub fn lv_obj_set_style_pad_row(obj: *mut lv_obj_t, g: i32, selector: u32);
-    pub fn lv_obj_set_style_pad_column(obj: *mut lv_obj_t, g: i32, selector: u32);
-    pub fn lv_obj_set_style_text_color(obj: *mut lv_obj_t, color: lv_color_t, selector: u32);
-    pub fn lv_obj_set_style_text_font(
-        obj:      *mut lv_obj_t,
-        font:     *const lv_font_t,
-        selector: u32,
+}
+unsafe extern "C" {
+    pub fn lv_anim_speed(speed: u32) -> u32;
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_user_data(a: *mut lv_anim_t, user_data: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    pub fn lv_anim_get_user_data(a: *const lv_anim_t) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    pub fn lv_anim_set_custom_exec_cb(
+        a: *mut lv_anim_t,
+        exec_cb: Option<unsafe extern "C" fn(arg1: *mut lv_anim_t, arg2: i32)>,
     );
-
-    // style objects
-    pub fn lv_style_init(style: *mut lv_style_t);
-    pub fn lv_style_reset(style: *mut lv_style_t);
-    pub fn lv_style_set_bg_color(style: *mut lv_style_t, color: lv_color_t);
-    pub fn lv_style_set_bg_opa(style: *mut lv_style_t, opa: u8);
-    pub fn lv_style_set_radius(style: *mut lv_style_t, r: i32);
-    pub fn lv_style_set_border_color(style: *mut lv_style_t, color: lv_color_t);
-    pub fn lv_style_set_border_width(style: *mut lv_style_t, w: i32);
-    pub fn lv_style_set_pad_top(style: *mut lv_style_t, p: i32);
-    pub fn lv_style_set_pad_bottom(style: *mut lv_style_t, p: i32);
-    pub fn lv_style_set_pad_left(style: *mut lv_style_t, p: i32);
-    pub fn lv_style_set_pad_right(style: *mut lv_style_t, p: i32);
-    pub fn lv_style_set_text_color(style: *mut lv_style_t, color: lv_color_t);
-    pub fn lv_style_set_text_font(style: *mut lv_style_t, font: *const lv_font_t);
-
-    // color helpers
-    pub fn lv_palette_main(palette: u32) -> lv_color_t;
-
-    // screen
-    pub fn lv_screen_active() -> *mut lv_obj_t;
-
-    // label widget
-    pub fn lv_label_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
-    pub fn lv_label_set_text(label: *mut lv_obj_t, text: *const core::ffi::c_char);
-    pub fn lv_label_set_text_static(label: *mut lv_obj_t, text: *const core::ffi::c_char);
-
-    // bar widget
-    pub fn lv_bar_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
-    pub fn lv_bar_set_value(bar: *mut lv_obj_t, value: i32, anim: i32);
-    pub fn lv_bar_set_range(bar: *mut lv_obj_t, min: i32, max: i32);
-
-} // extern "C" LVGL
+}
+unsafe extern "C" {
+    pub fn lv_image_set_inner_align(img: *mut lv_obj_t, align: lv_image_align_t);
+}
+unsafe extern "C" {
+    pub fn lv_scale_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
+}
+unsafe extern "C" {
+    pub fn lv_scale_set_mode(obj: *mut lv_obj_t, mode: lv_scale_mode_t);
+}
+unsafe extern "C" {
+    pub fn lv_scale_set_range(obj: *mut lv_obj_t, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_scale_set_total_tick_count(obj: *mut lv_obj_t, total: u32);
+}
+unsafe extern "C" {
+    pub fn lv_scale_set_major_tick_every(obj: *mut lv_obj_t, every: u32);
+}
+unsafe extern "C" {
+    pub fn lv_scale_set_angle_range(obj: *mut lv_obj_t, angle: u32);
+}
+unsafe extern "C" {
+    pub fn lv_scale_set_rotation(obj: *mut lv_obj_t, rot: i32);
+}
+unsafe extern "C" {
+    pub fn lv_scale_add_section(obj: *mut lv_obj_t) -> *mut lv_scale_section_t;
+}
+unsafe extern "C" {
+    pub fn lv_scale_section_set_range(s: *mut lv_scale_section_t, min: i32, max: i32);
+}
+unsafe extern "C" {
+    pub fn lv_scale_section_set_style(
+        s: *mut lv_scale_section_t,
+        part: u32,
+        style: *mut lv_style_t,
+    );
+}

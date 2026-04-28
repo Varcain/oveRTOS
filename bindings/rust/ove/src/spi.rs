@@ -40,8 +40,16 @@ pub fn transfer(
 ) -> Result<()> {
     let len = tx.len().max(rx.len());
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
-    let tx_ptr = if tx.is_empty() { core::ptr::null() } else { tx.as_ptr().cast() };
-    let rx_ptr = if rx.is_empty() { core::ptr::null_mut() } else { rx.as_mut_ptr().cast() };
+    let tx_ptr = if tx.is_empty() {
+        core::ptr::null()
+    } else {
+        tx.as_ptr().cast()
+    };
+    let rx_ptr = if rx.is_empty() {
+        core::ptr::null_mut()
+    } else {
+        rx.as_mut_ptr().cast()
+    };
     let rc = unsafe { bindings::ove_spi_transfer(spi, cs_ptr, tx_ptr, rx_ptr, len, timeout_ms) };
     Error::from_code(rc)
 }
@@ -83,13 +91,7 @@ pub fn transfer_seq(
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_transfer_seq(
-            spi,
-            cs_ptr,
-            xfers.as_ptr(),
-            xfers.len() as u32,
-            timeout_ms,
-        )
+        bindings::ove_spi_transfer_seq(spi, cs_ptr, xfers.as_ptr(), xfers.len() as u32, timeout_ms)
     };
     Error::from_code(rc)
 }

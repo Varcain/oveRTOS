@@ -92,7 +92,10 @@ impl Thread {
     /// since the caller does not own it.
     pub fn current() -> Self {
         let handle = unsafe { bindings::ove_thread_get_self() };
-        Self { handle, owned: false }
+        Self {
+            handle,
+            owned: false,
+        }
     }
 
     /// Create a new thread via heap allocation (only in heap mode).
@@ -121,7 +124,10 @@ impl Thread {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_thread_create_(&mut handle, &desc) };
         Error::from_code(rc)?;
-        Ok(Self { handle, owned: true })
+        Ok(Self {
+            handle,
+            owned: true,
+        })
     }
 
     /// Spawn a thread with a safe Rust entry function.
@@ -133,12 +139,7 @@ impl Thread {
     /// Returns [`Error::NoMemory`] if heap allocation fails, or another error
     /// if the RTOS rejects the thread descriptor.
     #[cfg(not(zero_heap))]
-    pub fn spawn(
-        name: &[u8],
-        entry: fn(),
-        priority: Priority,
-        stack_size: usize,
-    ) -> Result<Self> {
+    pub fn spawn(name: &[u8], entry: fn(), priority: Priority, stack_size: usize) -> Result<Self> {
         unsafe extern "C" fn trampoline(arg: *mut core::ffi::c_void) {
             // SAFETY: `arg` was set by the caller from a `fn()` pointer.
             // On supported targets fn() is pointer-sized and C-ABI-compatible,
@@ -158,7 +159,10 @@ impl Thread {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_thread_create_(&mut handle, &desc) };
         Error::from_code(rc)?;
-        Ok(Self { handle, owned: true })
+        Ok(Self {
+            handle,
+            owned: true,
+        })
     }
 
     /// Create from caller-provided static storage.
@@ -176,7 +180,10 @@ impl Thread {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_thread_init(&mut handle, storage, desc) };
         Error::from_code(rc)?;
-        Ok(Self { handle, owned: true })
+        Ok(Self {
+            handle,
+            owned: true,
+        })
     }
 
     /// Spawn a thread with a safe Rust entry using static storage.
@@ -215,7 +222,10 @@ impl Thread {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_thread_init(&mut handle, storage, &desc) };
         Error::from_code(rc)?;
-        Ok(Self { handle, owned: true })
+        Ok(Self {
+            handle,
+            owned: true,
+        })
     }
 
     /// Suspend this thread.
@@ -245,12 +255,8 @@ impl Thread {
             bindings::OVE_THREAD_STATE_RUNNING => ThreadState::Running,
             bindings::OVE_THREAD_STATE_READY => ThreadState::Ready,
             bindings::OVE_THREAD_STATE_BLOCKED => ThreadState::Blocked,
-            bindings::OVE_THREAD_STATE_SUSPENDED => {
-                ThreadState::Suspended
-            }
-            bindings::OVE_THREAD_STATE_TERMINATED => {
-                ThreadState::Terminated
-            }
+            bindings::OVE_THREAD_STATE_SUSPENDED => ThreadState::Suspended,
+            bindings::OVE_THREAD_STATE_TERMINATED => ThreadState::Terminated,
             _ => ThreadState::Unknown,
         }
     }
@@ -265,8 +271,7 @@ impl Thread {
             runtime_us: 0,
             cpu_percent_x100: 0,
         };
-        let rc =
-            unsafe { bindings::ove_thread_get_runtime_stats(self.handle, &mut stats) };
+        let rc = unsafe { bindings::ove_thread_get_runtime_stats(self.handle, &mut stats) };
         Error::from_code(rc)?;
         Ok(ThreadStats {
             runtime_us: stats.runtime_us,
@@ -377,9 +382,13 @@ impl Drop for Thread {
     fn drop(&mut self) {
         if self.owned && !self.handle.is_null() {
             #[cfg(not(zero_heap))]
-            unsafe { bindings::ove_thread_destroy(self.handle) };
+            unsafe {
+                bindings::ove_thread_destroy(self.handle)
+            };
             #[cfg(zero_heap)]
-            unsafe { bindings::ove_thread_deinit(self.handle) };
+            unsafe {
+                bindings::ove_thread_deinit(self.handle)
+            };
         }
     }
 }

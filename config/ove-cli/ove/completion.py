@@ -18,7 +18,6 @@ Install (one of):
   ove completion fish > ~/.config/fish/completions/ove.fish
 """
 
-import os
 import sys
 
 

@@ -52,13 +52,22 @@ ove::shared!(BATTERY: Battery);
 fn battery_policy(batt: &Battery, ctx: PolicyCtx) -> State {
     // Aggressive sleep when battery is critically low
     if batt.get() < 15 {
-        return if ctx.idle_ms > 5 { State::DeepSleep } else { State::Standby };
+        return if ctx.idle_ms > 5 {
+            State::DeepSleep
+        } else {
+            State::Standby
+        };
     }
     // Normal thresholds
-    if ctx.idle_ms < 10 { State::Active }
-    else if ctx.idle_ms < 1000 { State::Idle }
-    else if ctx.idle_ms < 10000 { State::Standby }
-    else { State::DeepSleep }
+    if ctx.idle_ms < 10 {
+        State::Active
+    } else if ctx.idle_ms < 1000 {
+        State::Idle
+    } else if ctx.idle_ms < 10000 {
+        State::Standby
+    } else {
+        State::DeepSleep
+    }
 }
 
 static POLICY: PolicyHandler<Battery> = PolicyHandler::new(&BATTERY, battery_policy);

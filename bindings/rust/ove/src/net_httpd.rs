@@ -49,27 +49,36 @@ impl<'a> Request<'a> {
     /// `raw` must be a valid pointer obtained from an active httpd handler
     /// callback and must remain valid for the lifetime `'a`.
     pub unsafe fn from_raw(raw: *mut bindings::ove_httpd_req_t) -> Self {
-        Self { raw, _marker: PhantomData }
+        Self {
+            raw,
+            _marker: PhantomData,
+        }
     }
 
     /// The HTTP method string (e.g. "GET", "POST").
     pub fn method(&self) -> &[u8] {
         let p = unsafe { bindings::ove_httpd_req_method(self.raw) };
-        if p.is_null() { return &[]; }
+        if p.is_null() {
+            return &[];
+        }
         unsafe { core::ffi::CStr::from_ptr(p).to_bytes() }
     }
 
     /// The full request path (e.g. "/api/leds/0").
     pub fn path(&self) -> &[u8] {
         let p = unsafe { bindings::ove_httpd_req_path(self.raw) };
-        if p.is_null() { return &[]; }
+        if p.is_null() {
+            return &[];
+        }
         unsafe { core::ffi::CStr::from_ptr(p).to_bytes() }
     }
 
     /// The query string after '?' (empty slice if none).
     pub fn query(&self) -> &[u8] {
         let p = unsafe { bindings::ove_httpd_req_query(self.raw) };
-        if p.is_null() { return &[]; }
+        if p.is_null() {
+            return &[];
+        }
         unsafe { core::ffi::CStr::from_ptr(p).to_bytes() }
     }
 
@@ -77,7 +86,9 @@ impl<'a> Request<'a> {
     pub fn body(&self) -> &[u8] {
         let p = unsafe { bindings::ove_httpd_req_body(self.raw) };
         let len = unsafe { bindings::ove_httpd_req_body_len(self.raw) };
-        if p.is_null() || len == 0 { return &[]; }
+        if p.is_null() || len == 0 {
+            return &[];
+        }
         unsafe { core::slice::from_raw_parts(p as *const u8, len) }
     }
 
@@ -87,7 +98,9 @@ impl<'a> Request<'a> {
     /// Returns `None` if the index is out of range.
     pub fn segment(&self, idx: i32) -> Option<&[u8]> {
         let p = unsafe { bindings::ove_httpd_req_segment(self.raw, idx) };
-        if p.is_null() { return None; }
+        if p.is_null() {
+            return None;
+        }
         Some(unsafe { core::ffi::CStr::from_ptr(p).to_bytes() })
     }
 }
@@ -95,7 +108,10 @@ impl<'a> Request<'a> {
 impl fmt::Debug for Request<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Request")
-            .field("path", &core::str::from_utf8(self.path()).unwrap_or("<non-utf8>"))
+            .field(
+                "path",
+                &core::str::from_utf8(self.path()).unwrap_or("<non-utf8>"),
+            )
             .finish()
     }
 }
@@ -120,7 +136,10 @@ impl<'a> Response<'a> {
     /// `raw` must be a valid pointer obtained from an active httpd handler
     /// callback and must remain valid for the lifetime `'a`.
     pub unsafe fn from_raw(raw: *mut bindings::ove_httpd_resp_t) -> Self {
-        Self { raw, _marker: PhantomData }
+        Self {
+            raw,
+            _marker: PhantomData,
+        }
     }
 
     /// Send a JSON response.
@@ -130,9 +149,8 @@ impl<'a> Response<'a> {
     /// # Errors
     /// Returns an error if the response cannot be sent.
     pub fn json(&self, status: i32, json: &[u8]) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_httpd_resp_json(self.raw, status, json.as_ptr() as *const _)
-        };
+        let rc =
+            unsafe { bindings::ove_httpd_resp_json(self.raw, status, json.as_ptr() as *const _) };
         Error::from_code(rc)
     }
 
@@ -142,12 +160,7 @@ impl<'a> Response<'a> {
     /// Returns an error if the response cannot be sent.
     pub fn html(&self, status: i32, html: &[u8]) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_httpd_resp_html(
-                self.raw,
-                status,
-                html.as_ptr() as *const _,
-                html.len(),
-            )
+            bindings::ove_httpd_resp_html(self.raw, status, html.as_ptr() as *const _, html.len())
         };
         Error::from_code(rc)
     }
@@ -158,12 +171,7 @@ impl<'a> Response<'a> {
     ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn send(
-        &self,
-        status: i32,
-        content_type: &[u8],
-        body: &[u8],
-    ) -> Result<()> {
+    pub fn send(&self, status: i32, content_type: &[u8], body: &[u8]) -> Result<()> {
         let rc = unsafe {
             bindings::ove_httpd_resp_send(
                 self.raw,
@@ -183,9 +191,8 @@ impl<'a> Response<'a> {
     /// # Errors
     /// Returns an error if the response cannot be sent.
     pub fn error(&self, status: i32, msg: &[u8]) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_httpd_resp_error(self.raw, status, msg.as_ptr() as *const _)
-        };
+        let rc =
+            unsafe { bindings::ove_httpd_resp_error(self.raw, status, msg.as_ptr() as *const _) };
         Error::from_code(rc)
     }
 
@@ -195,12 +202,7 @@ impl<'a> Response<'a> {
     ///
     /// # Errors
     /// Returns an error if the response cannot be sent.
-    pub fn send_gz(
-        &self,
-        status: i32,
-        content_type: &[u8],
-        body: &[u8],
-    ) -> Result<()> {
+    pub fn send_gz(&self, status: i32, content_type: &[u8], body: &[u8]) -> Result<()> {
         let rc = unsafe {
             bindings::ove_httpd_resp_send_gz(
                 self.raw,
@@ -305,11 +307,7 @@ pub mod ws {
         on_close: bindings::ove_httpd_ws_close_handler_t,
     ) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_httpd_ws_route(
-                path.as_ptr() as *const _,
-                on_message,
-                on_close,
-            )
+            bindings::ove_httpd_ws_route(path.as_ptr() as *const _, on_message, on_close)
         };
         Error::from_code(rc)
     }
@@ -319,9 +317,8 @@ pub mod ws {
     /// # Errors
     /// Returns an error if the send fails.
     pub fn send(conn: *mut bindings::ove_httpd_ws_conn_t, data: &[u8]) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_httpd_ws_send(conn, data.as_ptr() as *const _, data.len())
-        };
+        let rc =
+            unsafe { bindings::ove_httpd_ws_send(conn, data.as_ptr() as *const _, data.len()) };
         Error::from_code(rc)
     }
 

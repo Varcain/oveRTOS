@@ -132,7 +132,6 @@ pub fn set_state(state: State) -> Result<()> {
 pub fn get_state() -> State {
     let raw = unsafe { bindings::ove_pm_get_state() };
     match raw {
-        0 => State::Active,
         1 => State::Idle,
         2 => State::Standby,
         3 => State::DeepSleep,
@@ -154,11 +153,9 @@ pub fn activity() {
 pub fn wake_register_gpio(port: u32, pin: u32, edge: u32) -> Result<()> {
     let mut src: bindings::ove_pm_wake_src = unsafe { core::mem::zeroed() };
     src.type_ = WakeType::Gpio as bindings::ove_pm_wake_type_t;
-    unsafe {
-        src.__bindgen_anon_1.gpio.port = port;
-        src.__bindgen_anon_1.gpio.pin = pin;
-        src.__bindgen_anon_1.gpio.edge = edge as bindings::ove_gpio_irq_mode_t;
-    }
+    src.__bindgen_anon_1.gpio.port = port;
+    src.__bindgen_anon_1.gpio.pin = pin;
+    src.__bindgen_anon_1.gpio.edge = edge as bindings::ove_gpio_irq_mode_t;
     let rc = unsafe { bindings::ove_pm_wake_register(&src) };
     Error::from_code(rc)
 }
@@ -170,7 +167,7 @@ pub fn wake_register_gpio(port: u32, pin: u32, edge: u32) -> Result<()> {
 pub fn wake_register_timer(timeout_ms: u32) -> Result<()> {
     let mut src: bindings::ove_pm_wake_src = unsafe { core::mem::zeroed() };
     src.type_ = WakeType::Timer as bindings::ove_pm_wake_type_t;
-    unsafe { src.__bindgen_anon_1.timer.timeout_ms = timeout_ms };
+    src.__bindgen_anon_1.timer.timeout_ms = timeout_ms;
     let rc = unsafe { bindings::ove_pm_wake_register(&src) };
     Error::from_code(rc)
 }
@@ -182,7 +179,7 @@ pub fn wake_register_timer(timeout_ms: u32) -> Result<()> {
 pub fn wake_register_uart(instance: u32) -> Result<()> {
     let mut src: bindings::ove_pm_wake_src = unsafe { core::mem::zeroed() };
     src.type_ = WakeType::Uart as bindings::ove_pm_wake_type_t;
-    unsafe { src.__bindgen_anon_1.uart.instance = instance };
+    src.__bindgen_anon_1.uart.instance = instance;
     let rc = unsafe { bindings::ove_pm_wake_register(&src) };
     Error::from_code(rc)
 }
@@ -194,10 +191,8 @@ pub fn wake_register_uart(instance: u32) -> Result<()> {
 pub fn wake_unregister_gpio(port: u32, pin: u32) -> Result<()> {
     let mut src: bindings::ove_pm_wake_src = unsafe { core::mem::zeroed() };
     src.type_ = WakeType::Gpio as bindings::ove_pm_wake_type_t;
-    unsafe {
-        src.__bindgen_anon_1.gpio.port = port;
-        src.__bindgen_anon_1.gpio.pin = pin;
-    }
+    src.__bindgen_anon_1.gpio.port = port;
+    src.__bindgen_anon_1.gpio.pin = pin;
     let rc = unsafe { bindings::ove_pm_wake_unregister(&src) };
     Error::from_code(rc)
 }
@@ -293,10 +288,11 @@ unsafe extern "C" fn policy_trampoline<T: Send + Sync + 'static>(
     }
     // SAFETY: `user_data` was set by `set_policy` from a `&'static PolicyHandler<T>`.
     let h = unsafe { &*(user_data as *const PolicyHandler<T>) };
-    let Some(state) = h.cell.try_get() else { return current; };
+    let Some(state) = h.cell.try_get() else {
+        return current;
+    };
     let ctx = PolicyCtx {
         current: match current {
-            0 => State::Active,
             1 => State::Idle,
             2 => State::Standby,
             3 => State::DeepSleep,
@@ -309,9 +305,7 @@ unsafe extern "C" fn policy_trampoline<T: Send + Sync + 'static>(
 }
 
 /// Register a typed-context power policy handler.
-pub fn set_policy<T: Send + Sync + 'static>(
-    handler: &'static PolicyHandler<T>,
-) -> Result<()> {
+pub fn set_policy<T: Send + Sync + 'static>(handler: &'static PolicyHandler<T>) -> Result<()> {
     let rc = unsafe {
         bindings::ove_pm_set_policy(
             Some(policy_trampoline::<T>),
@@ -383,14 +377,15 @@ unsafe extern "C" fn notify_trampoline<T: Send + Sync + 'static>(
     }
     // SAFETY: `user_data` was set by `notify_register` from a `&'static NotifyHandler<T>`.
     let h = unsafe { &*(user_data as *const NotifyHandler<T>) };
-    let Some(state) = h.cell.try_get() else { return; };
+    let Some(state) = h.cell.try_get() else {
+        return;
+    };
     let ev = match event {
         0 => Event::PreSleep,
         1 => Event::PostWake,
         _ => return,
     };
     let map = |s: bindings::ove_pm_state_t| match s {
-        0 => State::Active,
         1 => State::Idle,
         2 => State::Standby,
         3 => State::DeepSleep,
@@ -403,9 +398,7 @@ unsafe extern "C" fn notify_trampoline<T: Send + Sync + 'static>(
 ///
 /// # Errors
 /// Returns [`Error::NoMemory`] if the notifier table is full.
-pub fn notify_register<T: Send + Sync + 'static>(
-    handler: &'static NotifyHandler<T>,
-) -> Result<()> {
+pub fn notify_register<T: Send + Sync + 'static>(handler: &'static NotifyHandler<T>) -> Result<()> {
     let rc = unsafe {
         bindings::ove_pm_notify_register(
             Some(notify_trampoline::<T>),

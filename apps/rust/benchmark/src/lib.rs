@@ -22,7 +22,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use ove::bench::{BenchType, CBenchSuite};
 use ove::{
     CondVar, Event, EventGroup, LvCell, Mutex, Priority, Queue, RecursiveMutex, Semaphore, Stream,
-    Thread, Timer, Work, Workqueue, WAIT_FOREVER,
+    Thread, Timer, WAIT_FOREVER, Work, Workqueue,
 };
 
 // =========================================================================
@@ -40,7 +40,9 @@ fn wq_work_handler() {
 //  Suite: time
 // =========================================================================
 
-fn time_is_enabled() -> bool { true }
+fn time_is_enabled() -> bool {
+    true
+}
 
 fn time_get_us_overhead_run() {
     let _ = ove::time::get_us();
@@ -78,7 +80,9 @@ ove::shared!(THREAD_PING_SEM: Semaphore);
 ove::shared!(THREAD_PONG_SEM: Semaphore);
 static THREAD_CTX_SWITCH_DONE: AtomicBool = AtomicBool::new(false);
 
-fn thread_is_enabled() -> bool { true }
+fn thread_is_enabled() -> bool {
+    true
+}
 
 fn dummy_thread() {}
 
@@ -163,7 +167,12 @@ ove::bench_suite!(
     symbol = bench_suite_thread,
     name = b"thread\0",
     enabled = thread_is_enabled,
-    cases = [THREAD_CREATE_DESTROY, THREAD_YIELD, THREAD_SLEEP_1MS, THREAD_CTX_SWITCH],
+    cases = [
+        THREAD_CREATE_DESTROY,
+        THREAD_YIELD,
+        THREAD_SLEEP_1MS,
+        THREAD_CTX_SWITCH
+    ],
 );
 
 // =========================================================================
@@ -189,7 +198,9 @@ static SYNC_CONTENTION_COUNT: AtomicU32 = AtomicU32::new(0);
 static SYNC_EVT_DONE: AtomicBool = AtomicBool::new(false);
 static SYNC_CV_DONE: AtomicBool = AtomicBool::new(false);
 
-fn sync_is_enabled() -> bool { true }
+fn sync_is_enabled() -> bool {
+    true
+}
 
 // --- Mutex lock/unlock ---
 fn mutex_lock_unlock_setup() {
@@ -227,7 +238,12 @@ fn mutex_contention_setup() {
     SYNC_CONTENTION_DONE.store(false, Ordering::Relaxed);
     SYNC_CONTENTION_COUNT.store(0, Ordering::Relaxed);
     SYNC_MTX.init(ove::mutex!());
-    SYNC_CONTENTION_TH.init(ove::thread!("contention", contention_thread, Priority::Normal, 2048));
+    SYNC_CONTENTION_TH.init(ove::thread!(
+        "contention",
+        contention_thread,
+        Priority::Normal,
+        2048
+    ));
 }
 
 fn mutex_contention_run() {
@@ -295,7 +311,12 @@ fn evt_signaler() {
 fn event_signal_wait_setup() {
     SYNC_EVT_DONE.store(false, Ordering::Relaxed);
     SYNC_EVT.init(ove::event!());
-    SYNC_EVT_TH.init(ove::thread!("evt_sig", evt_signaler, Priority::Normal, 1024));
+    SYNC_EVT_TH.init(ove::thread!(
+        "evt_sig",
+        evt_signaler,
+        Priority::Normal,
+        1024
+    ));
 }
 
 fn event_signal_wait_run() {
@@ -463,10 +484,17 @@ ove::bench_suite!(
     name = b"sync\0",
     enabled = sync_is_enabled,
     cases = [
-        MUTEX_MEMORY, SEM_MEMORY, EVENT_MEMORY, CONDVAR_MEMORY,
-        MUTEX_LOCK_UNLOCK, MUTEX_CREATE_DESTROY, MUTEX_CONTENTION_2T,
-        SEM_TAKE_GIVE, SEM_CREATE_DESTROY,
-        EVENT_SIGNAL_WAIT, CONDVAR_SIGNAL_WAIT,
+        MUTEX_MEMORY,
+        SEM_MEMORY,
+        EVENT_MEMORY,
+        CONDVAR_MEMORY,
+        MUTEX_LOCK_UNLOCK,
+        MUTEX_CREATE_DESTROY,
+        MUTEX_CONTENTION_2T,
+        SEM_TAKE_GIVE,
+        SEM_CREATE_DESTROY,
+        EVENT_SIGNAL_WAIT,
+        CONDVAR_SIGNAL_WAIT,
         RMTX_LOCK_UNLOCK,
     ],
 );
@@ -481,7 +509,9 @@ ove::shared!(QUEUE_PRODUCER_TH: Thread);
 ove::shared!(QUEUE_MEM_Q: Queue<u32, 8>);
 static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
 
-fn queue_is_enabled() -> bool { true }
+fn queue_is_enabled() -> bool {
+    true
+}
 
 fn queue_send_recv_setup() {
     QUEUE_SEND_RECV_Q.init(ove::queue!(u32, 16));
@@ -516,7 +546,12 @@ fn producer_thread() {
 fn queue_throughput_setup() {
     QUEUE_THROUGHPUT_DONE.store(false, Ordering::Relaxed);
     QUEUE_THROUGHPUT_Q.init(ove::queue!(u32, 64));
-    QUEUE_PRODUCER_TH.init(ove::thread!("q_prod", producer_thread, Priority::Normal, 2048));
+    QUEUE_PRODUCER_TH.init(ove::thread!(
+        "q_prod",
+        producer_thread,
+        Priority::Normal,
+        2048
+    ));
 }
 
 fn queue_throughput_run() {
@@ -572,7 +607,12 @@ ove::bench_suite!(
     symbol = bench_suite_queue,
     name = b"queue\0",
     enabled = queue_is_enabled,
-    cases = [QUEUE_MEMORY, QUEUE_SEND_RECEIVE, QUEUE_CREATE_DESTROY, QUEUE_THROUGHPUT_2T],
+    cases = [
+        QUEUE_MEMORY,
+        QUEUE_SEND_RECEIVE,
+        QUEUE_CREATE_DESTROY,
+        QUEUE_THROUGHPUT_2T
+    ],
 );
 
 // =========================================================================
@@ -582,7 +622,9 @@ ove::bench_suite!(
 ove::shared!(TIMER_TMR: Timer);
 ove::shared!(TIMER_MEM_TMR: Timer);
 
-fn timer_is_enabled() -> bool { true }
+fn timer_is_enabled() -> bool {
+    true
+}
 
 fn timer_dummy_cb() {}
 
@@ -604,7 +646,9 @@ fn timer_start_stop_teardown() {
 }
 
 fn timer_memory_run() {
-    TIMER_MEM_TMR.try_init(ove::timer!(timer_dummy_cb, 1000, false)).ok();
+    TIMER_MEM_TMR
+        .try_init(ove::timer!(timer_dummy_cb, 1000, false))
+        .ok();
 }
 fn timer_memory_teardown() {
     TIMER_MEM_TMR.shutdown();
@@ -643,7 +687,9 @@ ove::bench_suite!(
 ove::shared!(EG_BENCH: EventGroup);
 ove::shared!(EG_MEM: EventGroup);
 
-fn eventgroup_is_enabled() -> bool { true }
+fn eventgroup_is_enabled() -> bool {
+    true
+}
 
 fn eg_set_get_setup() {
     EG_BENCH.init(ove::eventgroup!());
@@ -706,7 +752,9 @@ ove::shared!(WQ_WORK_SEM: Semaphore);
 ove::shared!(WQ_MEM: Workqueue);
 static WQ_WORK_EXECUTED: AtomicBool = AtomicBool::new(false);
 
-fn workqueue_is_enabled() -> bool { true }
+fn workqueue_is_enabled() -> bool {
+    true
+}
 
 fn wq_create_destroy_run() {
     let _wq = ove::workqueue!("bench_wq", Priority::Normal, 2048);
@@ -735,7 +783,9 @@ fn wq_submit_teardown() {
 }
 
 fn wq_memory_run() {
-    WQ_MEM.try_init(ove::workqueue!("bench_wq", Priority::Normal, 2048)).ok();
+    WQ_MEM
+        .try_init(ove::workqueue!("bench_wq", Priority::Normal, 2048))
+        .ok();
 }
 fn wq_memory_teardown() {
     WQ_MEM.shutdown();
@@ -782,11 +832,15 @@ ove::shared!(STREAM_MEM: Stream<STREAM_BUF_SIZE>);
 ove::shared!(STREAM_BUFS: LvCell<([u8; STREAM_MSG_SIZE], [u8; STREAM_MSG_SIZE])>);
 static STREAM_DONE: AtomicBool = AtomicBool::new(false);
 
-fn stream_is_enabled() -> bool { true }
+fn stream_is_enabled() -> bool {
+    true
+}
 
 fn stream_send_recv_setup() {
     STREAM_BENCH.init(ove::stream!(STREAM_BUF_SIZE, 1));
-    STREAM_BUFS.get().set(([0xAA; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE]));
+    STREAM_BUFS
+        .get()
+        .set(([0xAA; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE]));
 }
 
 fn stream_send_recv_run() {
@@ -820,9 +874,16 @@ fn stream_producer() {
 
 fn stream_throughput_setup() {
     STREAM_DONE.store(false, Ordering::Relaxed);
-    STREAM_BUFS.get().set(([0xBB; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE]));
+    STREAM_BUFS
+        .get()
+        .set(([0xBB; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE]));
     STREAM_BENCH.init(ove::stream!(STREAM_BUF_SIZE, 1));
-    STREAM_PRODUCER_TH.init(ove::thread!("strm_prod", stream_producer, Priority::Normal, 2048));
+    STREAM_PRODUCER_TH.init(ove::thread!(
+        "strm_prod",
+        stream_producer,
+        Priority::Normal,
+        2048
+    ));
 }
 
 fn stream_throughput_run() {
@@ -884,7 +945,12 @@ ove::bench_suite!(
     symbol = bench_suite_stream,
     name = b"stream\0",
     enabled = stream_is_enabled,
-    cases = [STREAM_MEMORY, STREAM_SEND_RECV_64B, STREAM_CREATE_DESTROY, STREAM_THROUGHPUT],
+    cases = [
+        STREAM_MEMORY,
+        STREAM_SEND_RECV_64B,
+        STREAM_CREATE_DESTROY,
+        STREAM_THROUGHPUT
+    ],
 );
 
 // =========================================================================
@@ -929,7 +995,10 @@ fn app_main() {
     ove::log_inf!("Benchmark app: init");
 
     // Stream I/O scratch buffers shared between test helpers.
-    STREAM_BUFS.init(LvCell::new(([0u8; STREAM_MSG_SIZE], [0u8; STREAM_MSG_SIZE])));
+    STREAM_BUFS.init(LvCell::new((
+        [0u8; STREAM_MSG_SIZE],
+        [0u8; STREAM_MSG_SIZE],
+    )));
 
     let _runner = ove::thread!("bench_run", benchmark_runner, Priority::Normal, 8192);
 

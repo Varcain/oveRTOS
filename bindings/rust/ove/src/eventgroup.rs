@@ -30,7 +30,9 @@ impl WaitFlags {
 
 impl core::ops::BitOr for WaitFlags {
     type Output = Self;
-    fn bitor(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
+    fn bitor(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
 }
 
 /// Deprecated alias for [`WaitFlags::WAIT_ALL`].
@@ -60,9 +62,7 @@ impl EventGroup {
     /// # Safety
     /// Caller must ensure `storage` outlives the `EventGroup`.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_eventgroup_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_eventgroup_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_eventgroup_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_eventgroup_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -89,13 +89,7 @@ impl EventGroup {
     pub fn wait_bits(&self, bits: u32, flags: WaitFlags, timeout_ms: u32) -> Result<u32> {
         let mut result: u32 = 0;
         let rc = unsafe {
-            bindings::ove_eventgroup_wait_bits(
-                self.handle,
-                bits,
-                flags.0,
-                timeout_ms,
-                &mut result,
-            )
+            bindings::ove_eventgroup_wait_bits(self.handle, bits, flags.0, timeout_ms, &mut result)
         };
         Error::from_code(rc)?;
         Ok(result)

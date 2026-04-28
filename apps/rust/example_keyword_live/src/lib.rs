@@ -38,13 +38,17 @@ static LABELS: [&str; CATEGORY_COUNT] = ["silence", "unknown", "yes", "no"];
 
 // ── Model data (linked from C objects) ─────────────────────────────────
 
-ove::model_data!(preprocessor_model,
+ove::model_data!(
+    preprocessor_model,
     g_audio_preprocessor_int8_model_data,
-    g_audio_preprocessor_int8_model_data_len);
+    g_audio_preprocessor_int8_model_data_len
+);
 
-ove::model_data!(classifier_model,
+ove::model_data!(
+    classifier_model,
     g_micro_speech_quantized_model_data,
-    g_micro_speech_quantized_model_data_len);
+    g_micro_speech_quantized_model_data_len
+);
 
 // ── Lock-free SPSC ring buffer ────────────────────────────────────────
 //
@@ -154,7 +158,11 @@ fn generate_features(
 
         for i in 0..AUDIO_DURATION_SAMPLES {
             let src_idx = offset + (i * dsp.actual_rate as usize / AUDIO_SAMPLE_FREQ as usize);
-            let raw = if src_idx < audio.len() { audio[src_idx] as i32 } else { 0 };
+            let raw = if src_idx < audio.len() {
+                audio[src_idx] as i32
+            } else {
+                0
+            };
             let s = ((raw - dsp.dc_offset) * dsp.gain).clamp(-32768, 32767);
             input[i] = s as i16;
         }
@@ -193,9 +201,8 @@ fn classify_keyword(
     model.invoke()?;
 
     let scores = model.output_slice::<i8>(0)?;
-    let best = (1..CATEGORY_COUNT).fold(0, |best, i| {
-        if scores[i] > scores[best] { i } else { best }
-    });
+    let best =
+        (1..CATEGORY_COUNT).fold(0, |best, i| if scores[i] > scores[best] { i } else { best });
 
     Ok(Prediction {
         label: best,
@@ -233,17 +240,29 @@ fn infer_thread() {
             AUDIO_SAMPLE_FREQ as usize
         };
 
-        if (AUDIO_RING.available() as usize) < read_count { continue; }
+        if (AUDIO_RING.available() as usize) < read_count {
+            continue;
+        }
         AUDIO_RING.read_last(&mut audio_window[..read_count]);
 
         // Peak detection
-        let peak = audio_window[..read_count].iter()
+        let peak = audio_window[..read_count]
+            .iter()
             .map(|s| s.abs())
             .max()
             .unwrap_or(0);
-        ove::log_inf!("Audio: peak={}, rate={}, read={}", peak, actual_rate, read_count);
+        ove::log_inf!(
+            "Audio: peak={}, rate={}, read={}",
+            peak,
+            actual_rate,
+            read_count
+        );
 
-        dsp.actual_rate = if actual_rate > 0 { actual_rate } else { AUDIO_SAMPLE_FREQ };
+        dsp.actual_rate = if actual_rate > 0 {
+            actual_rate
+        } else {
+            AUDIO_SAMPLE_FREQ
+        };
         if peak < 10 {
             ove::log_wrn!("Audio silent — check DMIC");
             continue;
@@ -254,25 +273,38 @@ fn infer_thread() {
         dsp.dc_offset = (sum / read_count as i64) as i32;
 
         // Noise gate + adaptive gain
-        let dc_peak = audio_window[..read_count].iter()
+        let dc_peak = audio_window[..read_count]
+            .iter()
             .map(|&s| (s as i32 - dsp.dc_offset).abs())
             .max()
             .unwrap_or(0);
-        if dc_peak < NOISE_GATE_THRESHOLD { continue; }
+        if dc_peak < NOISE_GATE_THRESHOLD {
+            continue;
+        }
 
         dsp.gain = (TARGET_PEAK / dc_peak).clamp(1, 200);
         ove::log_inf!("  dc_peak={}, gain={}", dc_peak, dsp.gain);
 
         // Inference pipeline
-        if generate_features(&audio_window[..read_count], &mut features, &mut storage, &dsp).is_err() {
+        if generate_features(
+            &audio_window[..read_count],
+            &mut features,
+            &mut storage,
+            &dsp,
+        )
+        .is_err()
+        {
             ove::log_err!("Features failed");
             continue;
         }
 
         match classify_keyword(&features, &mut storage) {
             Ok(pred) if pred.label > 1 && pred.confidence > CONFIDENCE_THRESHOLD => {
-                ove::log_inf!(">>> Keyword: \"{}\" ({:.0}%)",
-                             LABELS[pred.label], pred.confidence * 100.0);
+                ove::log_inf!(
+                    ">>> Keyword: \"{}\" ({:.0}%)",
+                    LABELS[pred.label],
+                    pred.confidence * 100.0
+                );
             }
             _ => {}
         }
@@ -286,18 +318,31 @@ static DMIC_PROC: ove::audio::StaticProcessor<DmicProcessor> =
 
 fn app_main() {
     ove::log_inf!("=== Live DMIC Keyword Detection (Rust) ===");
-    ove::log_inf!("Models: preprocessor {} + classifier {} bytes",
-                 preprocessor_model().len(), classifier_model().len());
+    ove::log_inf!(
+        "Models: preprocessor {} + classifier {} bytes",
+        preprocessor_model().len(),
+        classifier_model().len()
+    );
 
     let mut graph = ove::audio::Graph::new(512).expect("audio graph: alloc");
     let dev_cfg = ove::audio::device_cfg_i2s(16000, 1, 1);
 
-    let src  = graph.device_source(&dev_cfg, b"dmic-in\0").expect("audio graph: source");
-    let proc = graph.add_processor(DMIC_PROC.get_mut(), b"dmic-proc\0").expect("audio graph: processor");
-    let sink = graph.device_sink(&dev_cfg, b"hp-out\0").expect("audio graph: sink");
+    let src = graph
+        .device_source(&dev_cfg, b"dmic-in\0")
+        .expect("audio graph: source");
+    let proc = graph
+        .add_processor(DMIC_PROC.get_mut(), b"dmic-proc\0")
+        .expect("audio graph: processor");
+    let sink = graph
+        .device_sink(&dev_cfg, b"hp-out\0")
+        .expect("audio graph: sink");
 
-    graph.connect(src, proc).expect("audio graph: connect src->proc");
-    graph.connect(proc, sink).expect("audio graph: connect proc->sink");
+    graph
+        .connect(src, proc)
+        .expect("audio graph: connect src->proc");
+    graph
+        .connect(proc, sink)
+        .expect("audio graph: connect proc->sink");
     graph.build().expect("audio graph: build");
     graph.start().expect("audio graph: start");
     ove::log_inf!("Audio streaming: 16kHz mono, DMIC input");

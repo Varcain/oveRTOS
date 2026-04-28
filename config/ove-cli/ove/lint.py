@@ -55,6 +55,11 @@ def _clang_format(ove_dir, check):
     if not shutil.which("clang-format"):
         return ("clang-format", "SKIP", "not installed")
     files = list(_glob(ove_dir, ".c", ".h", ".cpp", ".hpp"))
+    # Doxyfile.cpp is a doxygen config (key=value), not C++ source — skip
+    # it despite the .cpp suffix so clang-format doesn't try to reformat
+    # it as code.
+    files = [f for f in files
+             if os.path.basename(f) not in ("Doxyfile.cpp",)]
     if not files:
         return ("clang-format", "OK", "no sources")
     cmd = ["clang-format", "--Werror"] + (
@@ -230,24 +235,20 @@ def _clang_tidy(ove_dir, check):
 
 
 def _cargo_clippy(ove_dir, check):
-    """Run cargo clippy against Rust crates that don't require a fully
-    configured workspace.
+    """Run cargo clippy against the `bindings/rust/ove` crate.
 
-    Only the `bindings/rust/ove` crate is linted by default: the
-    crate's `build.rs` needs `OVE_DIR` + `OVE_GEN_DIR` pointing at a
-    minimal ove_config.h, which the `tests/` subtree already ships.
+    The crate's build.rs needs LVGL/CMSIS headers and a generated
+    storage-sizes env file, none of which exist on a bare checkout.
+    Rather than skip the lib (and lint only build.rs), we reuse the
+    same workspace prep that `ove test rust` does — building the
+    `tests/rust/stub_cmake` project produces ove_storage_sizes.env,
+    and `tests/backends/stub/lvgl/` ships a stub LVGL header tree.
+    With both present, clippy compiles the crate the same way the
+    Rust test harness does and lints every target end-to-end.
 
-    Rust *apps* (apps/rust/*, overtos_apps/*_rust) additionally need
-    `LVGL_INCLUDE_PATH`, `LVGL_PARENT_PATH`, `CMSIS_DSP_INCLUDE` etc.
-    set by an active CMake workspace.  Linting those requires a prior
-    `make <board>.<rtos>.<app>` and equivalent env; rather than
-    duplicate the build wiring here, we skip them with a pointer.
-
-    To lint an app crate manually after an active build:
-
-        OVE_DIR=$(pwd) OVE_GEN_DIR=output/<ws>/generated \\
-        LVGL_INCLUDE_PATH=... LVGL_PARENT_PATH=... \\
-            cargo clippy --manifest-path overtos_apps/hiroic_rust/Cargo.toml
+    Rust *apps* (apps/rust/*, overtos_apps/*_rust) need a fully
+    configured CMake workspace and per-board paths; lint them
+    manually after `make <board>.<rtos>.<app>`.
     """
     del check
     if not shutil.which("cargo"):
@@ -256,12 +257,33 @@ def _cargo_clippy(ove_dir, check):
     if not os.path.isfile(os.path.join(binding_crate, "Cargo.toml")):
         return ("cargo clippy", "SKIP", "no binding crate")
 
-    env = os.environ.copy()
-    env.setdefault("OVE_DIR", ove_dir)
-    env.setdefault("OVE_GEN_DIR", os.path.join(ove_dir, "tests"))
+    # Build the rust-stub CMake project to materialise the storage-sizes
+    # probe + bring up a real workspace for bindgen to chew through.
+    # Imported lazily so `ove lint` doesn't pull in test.py at module load.
+    from .test import _rust_test_env  # noqa: PLC0415
+    output_dir = os.path.join(ove_dir, "output")
+    target_dir = os.path.join(output_dir, "tests", "rust_lint", "target")
+    try:
+        _, rust_env = _rust_test_env(ove_dir, output_dir, target_dir)
+    except subprocess.CalledProcessError as e:
+        return ("cargo clippy", "FAIL",
+                f"workspace setup failed: {e}"[:200])
 
+    env = os.environ.copy()
+    env.update(rust_env)
+    # Override CARGO_TARGET_DIR so lint artefacts don't collide with the
+    # test harness target dir — clippy and `cargo build` use different
+    # rustc flags and a shared dir would invalidate both caches.
+    env["CARGO_TARGET_DIR"] = os.path.join(
+        output_dir, "tests", "rust_lint", "clippy_target")
+
+    # `--features std,bench` matches the test/docs.rs build shape — without
+    # them the crate's `extern crate alloc` paths are no_std-only and the
+    # bench harness wrappers are gated out, leading to E0433 "no std" /
+    # missing-symbol noise rather than real lint findings.
     cmd = [
-        "cargo", "clippy", "--all-targets", "--locked", "--",
+        "cargo", "clippy", "--all-targets", "--locked",
+        "--features", "std,bench", "--",
         "-D", "warnings",
         "-W", "clippy::pedantic",
         "-W", "clippy::nursery",

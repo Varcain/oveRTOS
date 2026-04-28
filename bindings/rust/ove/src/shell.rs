@@ -76,10 +76,10 @@ unsafe extern "C" fn trampoline(argc: core::ffi::c_int, argv: *mut *const core::
     // Build safe arg slices on the stack
     let argc = (argc as usize).min(MAX_ARGS);
     let mut args: [&[u8]; MAX_ARGS] = [&[]; MAX_ARGS];
-    for i in 0..argc {
+    for (i, arg) in args.iter_mut().take(argc).enumerate() {
         let ptr = unsafe { *argv.add(i) } as *const u8;
         if !ptr.is_null() {
-            args[i] = unsafe { cstr_ptr_to_slice(ptr) };
+            *arg = unsafe { cstr_ptr_to_slice(ptr) };
         }
     }
     let args = &args[..argc];
@@ -91,14 +91,12 @@ unsafe extern "C" fn trampoline(argc: core::ffi::c_int, argv: *mut *const core::
     let cmd_name = args[0];
 
     let count = unsafe { CMD_COUNT };
-    for i in 0..count {
-        if let Some(entry) = unsafe { &CMD_TABLE[i] } {
-            // Compare without trailing \0
-            let entry_name = strip_nul(entry.name);
-            if cmd_name == entry_name {
-                (entry.handler)(args);
-                return;
-            }
+    for entry in unsafe { &CMD_TABLE[..count] }.iter().flatten() {
+        // Compare without trailing \0
+        let entry_name = strip_nul(entry.name);
+        if cmd_name == entry_name {
+            (entry.handler)(args);
+            return;
         }
     }
 }

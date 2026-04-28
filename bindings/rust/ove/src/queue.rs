@@ -31,9 +31,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     #[cfg(not(zero_heap))]
     pub fn new() -> Result<Self> {
         let mut handle: bindings::ove_queue_t = core::ptr::null_mut();
-        let rc = unsafe {
-            bindings::ove_queue_create(&mut handle, mem::size_of::<T>(), N as u32)
-        };
+        let rc = unsafe { bindings::ove_queue_create(&mut handle, mem::size_of::<T>(), N as u32) };
         Error::from_code(rc)?;
         Ok(Self {
             handle,
@@ -54,13 +52,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     ) -> Result<Self> {
         let mut handle: bindings::ove_queue_t = core::ptr::null_mut();
         let rc = unsafe {
-            bindings::ove_queue_init(
-                &mut handle,
-                storage,
-                buffer,
-                mem::size_of::<T>(),
-                N as u32,
-            )
+            bindings::ove_queue_init(&mut handle, storage, buffer, mem::size_of::<T>(), N as u32)
         };
         Error::from_code(rc)?;
         Ok(Self {
@@ -76,11 +68,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     /// enqueued within `timeout_ms`.
     pub fn send(&self, item: &T, timeout_ms: u32) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_queue_send(
-                self.handle,
-                item as *const T as *const _,
-                timeout_ms,
-            )
+            bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout_ms)
         };
         Error::from_code(rc)
     }
@@ -92,11 +80,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     pub fn receive(&self, timeout_ms: u32) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {
-            bindings::ove_queue_receive(
-                self.handle,
-                item.as_mut_ptr() as *mut _,
-                timeout_ms,
-            )
+            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, timeout_ms)
         };
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })
@@ -107,9 +91,8 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     /// # Errors
     /// Returns [`Error::QueueFull`] if the queue has no space.
     pub fn send_from_isr(&self, item: &T) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_queue_send_from_isr(self.handle, item as *const T as *const _)
-        };
+        let rc =
+            unsafe { bindings::ove_queue_send_from_isr(self.handle, item as *const T as *const _) };
         Error::from_code(rc)
     }
 
@@ -137,11 +120,17 @@ impl<T: Copy, const N: usize> fmt::Debug for Queue<T, N> {
 
 impl<T: Copy, const N: usize> Drop for Queue<T, N> {
     fn drop(&mut self) {
-        if self.handle.is_null() { return; }
+        if self.handle.is_null() {
+            return;
+        }
         #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_queue_destroy(self.handle) }
+        unsafe {
+            bindings::ove_queue_destroy(self.handle);
+        }
         #[cfg(zero_heap)]
-        unsafe { bindings::ove_queue_deinit(self.handle) }
+        unsafe {
+            bindings::ove_queue_deinit(self.handle);
+        }
     }
 }
 

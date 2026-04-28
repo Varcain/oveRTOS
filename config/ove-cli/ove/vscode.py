@@ -447,11 +447,11 @@ def _print_summary(ws, overwritten, opened, target, workspace_file):
     print(f"  app:   {ws.app_name} ({ws.app_lang})")
     print(f"  dir:   {os.path.join(ws.ove_dir, '.vscode')}")
     if workspace_file:
-        print(f"  mode:  multi-root (external app)")
+        print("  mode:  multi-root (external app)")
         print(f"  app dir: {ws.app_dir}")
         print(f"  workspace: {workspace_file}")
     else:
-        print(f"  mode:  single-folder")
+        print("  mode:  single-folder")
     if overwritten:
         print(f"  note:  overwrote {len(overwritten)} existing file(s)")
     if opened:
