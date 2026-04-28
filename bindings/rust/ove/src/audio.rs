@@ -303,7 +303,13 @@ impl AudioBuf {
     }
 
     /// Get a mutable slice of interleaved S16 samples.
-    pub fn data_s16_mut(&mut self) -> &mut [i16] {
+    ///
+    /// `&self` is intentional: the underlying buffer is C-owned and the
+    /// AudioProcessor trait passes the output buf as `&AudioBuf` (so a
+    /// processor can read in / write out through one reference each).
+    /// Aliasing safety is the C side's responsibility.
+    #[allow(clippy::mut_from_ref)]
+    pub fn data_s16_mut(&self) -> &mut [i16] {
         unsafe {
             let buf = &*self.raw;
             let count = buf.frames as usize * (*buf.fmt).channels as usize;
