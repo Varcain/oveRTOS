@@ -710,14 +710,19 @@ pub struct EventCtx<'a> {
 impl<'a> EventCtx<'a> {
     /// Widget that originally fired the event (innermost).
     pub fn target(self) -> Obj {
-        let raw = unsafe { bindings::lv_event_get_target(self.raw) };
+        // lv_event_get_target() returns `*mut c_void` in real LVGL
+        // (lv_event_t typedef'd through a macro) but `*mut lv_obj_t` in
+        // the test stub; the explicit cast keeps both bindgen variants
+        // compiling.
+        let raw = unsafe { bindings::lv_event_get_target(self.raw) as *mut bindings::lv_obj_t };
         Obj { raw }
     }
 
     /// Widget the user is interacting with — may differ from `target` for
     /// bubbled events (this is the widget the callback was registered on).
     pub fn current_target(self) -> Obj {
-        let raw = unsafe { bindings::lv_event_get_current_target(self.raw) };
+        let raw =
+            unsafe { bindings::lv_event_get_current_target(self.raw) as *mut bindings::lv_obj_t };
         Obj { raw }
     }
 
@@ -1856,7 +1861,12 @@ impl Calendar {
         let ok = unsafe { bindings::lv_calendar_get_pressed_date(self.raw, &mut date) };
         // LVGL's lv_result_t: 1 = OK, 0 = INVALID. Non-zero means we got a date.
         if ok != 0 {
-            Some((date.year, date.month, date.day))
+            // lv_calendar_date_t fields are uint16_t/uint8_t in real
+            // LVGL but bindgen lifts them to u32 in the test stub; the
+            // `as u32` keeps both variants compiling (the no-op cast in
+            // the stub is silenced by clippy::unnecessary_cast at the
+            // crate root).
+            Some((date.year as u32, date.month as u32, date.day as u32))
         } else {
             None
         }
@@ -3112,7 +3122,10 @@ impl Dropdown {
 /// the caller is responsible for its type.
 pub unsafe fn component_from_event(e: *mut bindings::lv_event_t) -> *mut core::ffi::c_void {
     unsafe {
-        let mut target = bindings::lv_event_get_target(e);
+        // lv_event_get_target may return *mut c_void or *mut lv_obj_t
+        // depending on bindgen config; cast normalises to *mut lv_obj_t
+        // for the lv_obj_get_user_data / lv_obj_get_parent calls below.
+        let mut target = bindings::lv_event_get_target(e) as *mut bindings::lv_obj_t;
         while !target.is_null() {
             let ud = bindings::lv_obj_get_user_data(target);
             if !ud.is_null() {

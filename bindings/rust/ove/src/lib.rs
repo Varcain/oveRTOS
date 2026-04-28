@@ -40,7 +40,13 @@
     clippy::missing_panics_doc,
     clippy::too_long_first_doc_paragraph,
     clippy::elidable_lifetime_names,
-    clippy::needless_pass_by_value
+    clippy::needless_pass_by_value,
+    // bindgen emits different pointer types for the same C symbol
+    // depending on how LVGL's lv_obj_t is reached at parse time
+    // (typedef chain vs. forward decl). Casts that look unnecessary in
+    // one config are mandatory in another, so we tolerate the no-op
+    // form rather than gate every callsite on cfg(docsrs).
+    clippy::unnecessary_cast
 )]
 
 // Panic handler (only when no_std + feature enabled)
