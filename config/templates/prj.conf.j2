@@ -119,12 +119,15 @@ CONFIG_LOG_PROCESS_THREAD_STACK_SIZE=2048
 # Keep printk output synchronous — prevents message drops in benchmarks
 CONFIG_LOG_PRINTK=n
 
-{% if config.get("CONFIG_OVE_APP_LANG_CXX") == True %}
+{% if config.get("CONFIG_OVE_APP_LANG_CXX") == True or config.get("CONFIG_OVE_INFER") == True %}
 # C++ support — full libstdc++ for C++20 (span, atomic, type_traits, …).
 # Libc selection is at top of file — GLIBCXX_LIBCPP `select`s
 # REQUIRES_FULL_LIBCPP, requiring PICOLIBC_USE_TOOLCHAIN (already set).
 # Exception-throwing C++ becomes a hard failure under zero-heap (consistent
 # with intent: libstdc++ exception machinery allocates).
+# Enabled also when CONFIG_OVE_INFER is set: TFLM is upstream C++ that
+# transitively pulls in <cstddef> / <cstdarg> / <utility> etc., so the
+# inference backend builds even when the application language is C/Rust/Zig.
 CONFIG_CPP=y
 CONFIG_STD_CPP20=y
 CONFIG_GLIBCXX_LIBCPP=y
