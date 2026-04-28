@@ -18,7 +18,7 @@ from pathlib import Path
 
 from .utils import run, nproc, apply_defconfig_overlay
 from .manifest import load_manifest, get_component
-from .workspace import Workspace, find_ove_dir
+from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
 
@@ -705,7 +705,7 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
         os.path.join(ove_dir, "tests", "sim", "nuttx-qemu", "nuttx_app"),
         test_dest)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
-        f.write(f'source "$APPSDIR/external/ove_test/Kconfig"\n')
+        f.write('source "$APPSDIR/external/ove_test/Kconfig"\n')
     # NuttX sim tests still use Make (configure.sh + make) because
     # the NuttX sim architecture has limited CMake support upstream.
     with open(os.path.join(ext_dir, "Make.defs"), "w") as f:

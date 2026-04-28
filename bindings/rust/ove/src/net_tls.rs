@@ -59,9 +59,7 @@ impl Session {
     /// Caller must ensure `storage` outlives the `Session` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_tls_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_tls_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_tls_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_tls_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -87,9 +85,7 @@ impl Session {
             c.hostname = host.as_ptr() as *const _;
         }
 
-        let rc = unsafe {
-            bindings::ove_tls_handshake(self.handle, sock.handle(), &c)
-        };
+        let rc = unsafe { bindings::ove_tls_handshake(self.handle, sock.handle(), &c) };
         Error::from_code(rc)
     }
 

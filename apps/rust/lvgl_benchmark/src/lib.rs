@@ -17,10 +17,10 @@
 use core::fmt::Write;
 
 use ove::lvgl::{
-    self, Animation, Arc, Button, Calendar, Chart, Checkbox, Color, Dropdown, FlexAlign,
-    FlexFlow, Image, ImageSrc, Label, Layout, LayoutKind, LvCell, Obj, Palette, Roller, Scale,
-    Slider, Spinbox, Style, Styleable, Switch, Table, Tabview, Textarea,
-    ANIM_REPEAT_INFINITE, PART_INDICATOR, PART_ITEMS, PART_KNOB, PART_MAIN, SCALE_MODE_ROUND_OUTER,
+    self, ANIM_REPEAT_INFINITE, Animation, Arc, Button, Calendar, Chart, Checkbox, Color, Dropdown,
+    FlexAlign, FlexFlow, Image, ImageSrc, Label, Layout, LayoutKind, LvCell, Obj, PART_INDICATOR,
+    PART_ITEMS, PART_KNOB, PART_MAIN, Palette, Roller, SCALE_MODE_ROUND_OUTER, Scale, Slider,
+    Spinbox, Style, Styleable, Switch, Table, Tabview, Textarea,
 };
 use ove::{FmtBuf, Priority, Thread};
 
@@ -40,8 +40,8 @@ mod perf_ffi {
     use core::fmt::Write;
     use core::ptr::addr_of;
     use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
-    use ove::lvgl::{self, Animation, ImageDsc, ImageSrc, Label, Layout, Obj, Tabview};
     use ove::FmtBuf;
+    use ove::lvgl::{self, Animation, ImageDsc, ImageSrc, Label, Layout, Obj, Tabview};
 
     // Generated C image descriptors (shipped by the LVGL C demo).
     unsafe extern "C" {
@@ -65,8 +65,7 @@ mod perf_ffi {
 
     // ---- Performance overlay ---------------------------------------------
 
-    static OVERLAY_LABEL: AtomicPtr<ove::ffi::lv_obj_t> =
-        AtomicPtr::new(core::ptr::null_mut());
+    static OVERLAY_LABEL: AtomicPtr<ove::ffi::lv_obj_t> = AtomicPtr::new(core::ptr::null_mut());
     static OVERLAY_FN: AtomicPtr<u8> = AtomicPtr::new(core::ptr::null_mut());
 
     /// Register `label` to display perf metrics published by LVGL's sysmon.
@@ -116,17 +115,22 @@ mod perf_ffi {
                 let _ = write!(
                     w,
                     "{}: {} FPS, {}% CPU\nrefr. {} ms = {} ms render + {} ms flush",
-                    name, m.fps, m.cpu,
+                    name,
+                    m.fps,
+                    m.cpu,
                     m.render_avg_time + m.flush_avg_time,
-                    m.render_avg_time, m.flush_avg_time
+                    m.render_avg_time,
+                    m.flush_avg_time
                 );
             } else {
                 let _ = write!(
                     w,
                     "{} FPS, {}% CPU\nrefr. {} ms = {} ms render + {} ms flush",
-                    m.fps, m.cpu,
+                    m.fps,
+                    m.cpu,
                     m.render_avg_time + m.flush_avg_time,
-                    m.render_avg_time, m.flush_avg_time
+                    m.render_avg_time,
+                    m.flush_avg_time
                 );
             }
             label.set_text(w.as_cstr());
@@ -141,8 +145,7 @@ mod perf_ffi {
 
     // ---- Slideshow state machine -----------------------------------------
 
-    static SLIDESHOW_TV: AtomicPtr<ove::ffi::lv_obj_t> =
-        AtomicPtr::new(core::ptr::null_mut());
+    static SLIDESHOW_TV: AtomicPtr<ove::ffi::lv_obj_t> = AtomicPtr::new(core::ptr::null_mut());
     static SLIDESHOW_IDX: AtomicU32 = AtomicU32::new(0);
 
     /// Start the infinite slideshow on `tv`, beginning on `tab`.
@@ -227,22 +230,14 @@ const LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS: u32 = 1 << 22;
 // =========================================================================
 
 const RND_MAP: [u32; 64] = [
-    0xbd13204f, 0x67d8167f, 0x20211c99, 0xb0a7cc05,
-    0x06d5c703, 0xeafb01a7, 0xd0473b5c, 0xc999aaa2,
-    0x86f9d5d9, 0x294bdb29, 0x12a3c207, 0x78914d14,
-    0x10a30006, 0x6134c7db, 0x194443af, 0x142d1099,
-    0x376292d5, 0x20f433c5, 0x074d2a59, 0x4e74c293,
-    0x072a0810, 0xdd0f136d, 0x5cca6dbc, 0x623bfdd8,
-    0xb645eb2f, 0xbe50894a, 0xc9b56717, 0xe0f912c8,
-    0x4f6b5e24, 0xfe44b128, 0xe12d57a8, 0x9b15c9cc,
-    0xab2ae1d3, 0xb4dc5074, 0x67d457c8, 0x8e46b00c,
-    0xa29a1871, 0xcee40332, 0x80f93aa1, 0x85286096,
-    0x09bd6b49, 0x95072088, 0x2093924b, 0x6a27328f,
-    0xa796079b, 0xc3b488bc, 0xe29bcce0, 0x07048a4c,
-    0x7d81bd99, 0x27aacb30, 0x44fc7a0e, 0xa2382241,
-    0x8357a17d, 0x97e9c9cc, 0xad10ff52, 0x9923fc5c,
-    0x8f2c840a, 0x20356ba2, 0x7997a677, 0x9a7f1800,
-    0x35c7562b, 0xd901fe51, 0x8f4e053d, 0xa5b94923,
+    0xbd13204f, 0x67d8167f, 0x20211c99, 0xb0a7cc05, 0x06d5c703, 0xeafb01a7, 0xd0473b5c, 0xc999aaa2,
+    0x86f9d5d9, 0x294bdb29, 0x12a3c207, 0x78914d14, 0x10a30006, 0x6134c7db, 0x194443af, 0x142d1099,
+    0x376292d5, 0x20f433c5, 0x074d2a59, 0x4e74c293, 0x072a0810, 0xdd0f136d, 0x5cca6dbc, 0x623bfdd8,
+    0xb645eb2f, 0xbe50894a, 0xc9b56717, 0xe0f912c8, 0x4f6b5e24, 0xfe44b128, 0xe12d57a8, 0x9b15c9cc,
+    0xab2ae1d3, 0xb4dc5074, 0x67d457c8, 0x8e46b00c, 0xa29a1871, 0xcee40332, 0x80f93aa1, 0x85286096,
+    0x09bd6b49, 0x95072088, 0x2093924b, 0x6a27328f, 0xa796079b, 0xc3b488bc, 0xe29bcce0, 0x07048a4c,
+    0x7d81bd99, 0x27aacb30, 0x44fc7a0e, 0xa2382241, 0x8357a17d, 0x97e9c9cc, 0xad10ff52, 0x9923fc5c,
+    0x8f2c840a, 0x20356ba2, 0x7997a677, 0x9a7f1800, 0x35c7562b, 0xd901fe51, 0x8f4e053d, 0xa5b94923,
 ];
 
 ove::shared!(RNG: LvCell<usize>);
@@ -299,7 +294,11 @@ struct SceneDsc {
 
 impl SceneDsc {
     const fn new(name: &'static [u8], create_cb: fn(), scene_time: u32) -> Self {
-        Self { name, create_cb, scene_time }
+        Self {
+            name,
+            create_cb,
+            scene_time,
+        }
     }
 }
 
@@ -313,23 +312,35 @@ struct SceneStats {
 }
 
 static SCENES: [SceneDsc; 17] = [
-    SceneDsc::new(b"Empty screen\0",              empty_screen_cb,              3000),
-    SceneDsc::new(b"Moving wallpaper\0",           moving_wallpaper_cb,          3000),
-    SceneDsc::new(b"Single rectangle\0",           single_rectangle_cb,          3000),
-    SceneDsc::new(b"Multiple rectangles\0",        multiple_rectangles_cb,       3000),
-    SceneDsc::new(b"Multiple RGB images\0",        multiple_rgb_images_cb,       3000),
-    SceneDsc::new(b"Multiple ARGB images\0",       multiple_argb_images_cb,      3000),
-    SceneDsc::new(b"Rotated ARGB images\0",        rotated_argb_images_cb,       3000),
-    SceneDsc::new(b"Multiple labels\0",            multiple_labels_cb,           3000),
-    SceneDsc::new(b"Screen sized text\0",          screen_sized_text_cb,         5000),
-    SceneDsc::new(b"Multiple arcs\0",              multiple_arcs_cb,             3000),
-    SceneDsc::new(b"Containers\0",                 containers_cb,                3000),
-    SceneDsc::new(b"Containers with overlay\0",    containers_with_overlay_cb,   3000),
-    SceneDsc::new(b"Containers with opa\0",        containers_with_opa_cb,       3000),
-    SceneDsc::new(b"Containers with opa_layer\0",  containers_with_opa_layer_cb, 3000),
-    SceneDsc::new(b"Containers with scrolling\0",  containers_with_scrolling_cb, 5000),
-    SceneDsc::new(b"Widgets demo\0",              widgets_demo_cb,             20000),
-    SceneDsc::new(b"\0",                           empty_screen_cb,              0),
+    SceneDsc::new(b"Empty screen\0", empty_screen_cb, 3000),
+    SceneDsc::new(b"Moving wallpaper\0", moving_wallpaper_cb, 3000),
+    SceneDsc::new(b"Single rectangle\0", single_rectangle_cb, 3000),
+    SceneDsc::new(b"Multiple rectangles\0", multiple_rectangles_cb, 3000),
+    SceneDsc::new(b"Multiple RGB images\0", multiple_rgb_images_cb, 3000),
+    SceneDsc::new(b"Multiple ARGB images\0", multiple_argb_images_cb, 3000),
+    SceneDsc::new(b"Rotated ARGB images\0", rotated_argb_images_cb, 3000),
+    SceneDsc::new(b"Multiple labels\0", multiple_labels_cb, 3000),
+    SceneDsc::new(b"Screen sized text\0", screen_sized_text_cb, 5000),
+    SceneDsc::new(b"Multiple arcs\0", multiple_arcs_cb, 3000),
+    SceneDsc::new(b"Containers\0", containers_cb, 3000),
+    SceneDsc::new(
+        b"Containers with overlay\0",
+        containers_with_overlay_cb,
+        3000,
+    ),
+    SceneDsc::new(b"Containers with opa\0", containers_with_opa_cb, 3000),
+    SceneDsc::new(
+        b"Containers with opa_layer\0",
+        containers_with_opa_layer_cb,
+        3000,
+    ),
+    SceneDsc::new(
+        b"Containers with scrolling\0",
+        containers_with_scrolling_cb,
+        5000,
+    ),
+    SceneDsc::new(b"Widgets demo\0", widgets_demo_cb, 20000),
+    SceneDsc::new(b"\0", empty_screen_cb, 0),
 ];
 
 // =========================================================================
@@ -357,7 +368,8 @@ ove::shared!(SCENE_TIMER: lvgl::Timer);
 fn color_tick(obj: Obj, _v: i32) {
     let c1 = Color::hex3(rnd_next(0x00f, 0xff0) as u32);
     let c2 = Color::hex3(rnd_next(0x00f, 0xff0) as u32);
-    obj.bg_color_sel(c1, PART_MAIN).text_color_sel(c2, PART_MAIN);
+    obj.bg_color_sel(c1, PART_MAIN)
+        .text_color_sel(c2, PART_MAIN);
 }
 
 fn color_anim(obj: Obj) {
@@ -421,7 +433,8 @@ fn card_create() -> Obj {
 // =========================================================================
 
 fn set_row_wrap(scr: Obj, main: FlexAlign, cross: FlexAlign, track: FlexAlign) {
-    scr.flex_flow(FlexFlow::RowWrap).flex_align(main, cross, track);
+    scr.flex_flow(FlexFlow::RowWrap)
+        .flex_align(main, cross, track);
 }
 
 // =========================================================================
@@ -447,13 +460,20 @@ fn single_rectangle_cb() {
     let scr = lvgl::screen_active();
     let obj = Obj::create(scr);
     obj.remove_style_all();
-    obj.bg_opa(LV_OPA_COVER).center().size(lv_pct(30), lv_pct(30));
+    obj.bg_opa(LV_OPA_COVER)
+        .center()
+        .size(lv_pct(30), lv_pct(30));
     color_anim(obj);
 }
 
 fn multiple_rectangles_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Center, FlexAlign::SpaceEvenly);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Center,
+        FlexAlign::SpaceEvenly,
+    );
     for _ in 0..9 {
         let obj = Obj::create(scr);
         obj.remove_style_all();
@@ -463,7 +483,12 @@ fn multiple_rectangles_cb() {
 }
 
 fn images_grid(scr: Obj, src: ImageSrc, rotate: bool) {
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Start, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Start,
+        FlexAlign::Start,
+    );
     scr.pad_row(20);
     let hres = lvgl::display::width();
     let vres = lvgl::display::height();
@@ -497,7 +522,12 @@ fn rotated_argb_images_cb() {
 
 fn multiple_labels_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Start, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Start,
+        FlexAlign::Start,
+    );
     scr.pad_row(80);
 
     let font = lvgl::font_montserrat_14();
@@ -557,7 +587,12 @@ eleifend diam ipsum et eros.\0",
 
 fn multiple_arcs_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Start, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Start,
+        FlexAlign::Start,
+    );
 
     let hres = lvgl::display::width();
     let vres = lvgl::display::height();
@@ -592,7 +627,12 @@ fn multiple_arcs_cb() {
 
 fn containers_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Start, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Start,
+        FlexAlign::Start,
+    );
     let hres = lvgl::display::width();
     let vres = lvgl::display::height();
     let hor = core::cmp::max((hres - 16) / 300, 1);
@@ -617,7 +657,12 @@ fn containers_with_overlay_cb() {
 
 fn containers_with_opa_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Start, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Start,
+        FlexAlign::Start,
+    );
     let hres = lvgl::display::width();
     let vres = lvgl::display::height();
     let hor = core::cmp::max((hres - 16) / 300, 1);
@@ -636,7 +681,12 @@ fn containers_with_opa_cb() {
 
 fn containers_with_opa_layer_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Start, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Start,
+        FlexAlign::Start,
+    );
     let hres = lvgl::display::width();
     let vres = lvgl::display::height();
     let hor = core::cmp::max((hres - 16) / 300, 1);
@@ -655,7 +705,12 @@ fn containers_with_opa_layer_cb() {
 
 fn containers_with_scrolling_cb() {
     let scr = lvgl::screen_active();
-    set_row_wrap(scr, FlexAlign::SpaceEvenly, FlexAlign::Center, FlexAlign::Start);
+    set_row_wrap(
+        scr,
+        FlexAlign::SpaceEvenly,
+        FlexAlign::Center,
+        FlexAlign::Start,
+    );
     for _ in 0..50 {
         card_create();
     }
@@ -676,8 +731,13 @@ fn widgets_demo_cb() {
 
     // Tab 1: Form
     tab1.flex_flow(FlexFlow::Column).pad_row(10).pad_column(10);
-    Textarea::create(tab1).one_line(true).placeholder(b"Username\0").width(lv_pct(90));
-    Dropdown::create(tab1).options_static(b"Option A\nOption B\nOption C\0").width(lv_pct(90));
+    Textarea::create(tab1)
+        .one_line(true)
+        .placeholder(b"Username\0")
+        .width(lv_pct(90));
+    Dropdown::create(tab1)
+        .options_static(b"Option A\nOption B\nOption C\0")
+        .width(lv_pct(90));
     Slider::create(tab1).value(40).width(lv_pct(90));
     Switch::create(tab1).checked(true);
     Checkbox::create(tab1).text(b"I agree\0");
@@ -736,9 +796,18 @@ fn widgets_demo_cb() {
             .angle_range(270)
             .rotation(135);
 
-        scale.add_section().range(10, 25).style(PART_INDICATOR, STYLE_RED.get());
-        scale.add_section().range(25, 45).style(PART_INDICATOR, STYLE_BLUE.get());
-        scale.add_section().range(45, 60).style(PART_INDICATOR, STYLE_GREEN.get());
+        scale
+            .add_section()
+            .range(10, 25)
+            .style(PART_INDICATOR, STYLE_RED.get());
+        scale
+            .add_section()
+            .range(25, 45)
+            .style(PART_INDICATOR, STYLE_BLUE.get());
+        scale
+            .add_section()
+            .range(45, 60)
+            .style(PART_INDICATOR, STYLE_GREEN.get());
 
         let arc = Arc::create(gbox);
         arc.size(160, 160)
@@ -774,9 +843,15 @@ fn widgets_demo_cb() {
         .pad_row(10)
         .pad_column(10);
 
-    Calendar::create(tab3).size(200, 200).today(2026, 4, 13).showed(2026, 4);
+    Calendar::create(tab3)
+        .size(200, 200)
+        .today(2026, 4, 13)
+        .showed(2026, 4);
     Roller::create(tab3)
-        .options(b"Mon\nTue\nWed\nThu\nFri\nSat\nSun\0", lvgl::ROLLER_MODE_NORMAL)
+        .options(
+            b"Mon\nTue\nWed\nThu\nFri\nSat\nSun\0",
+            lvgl::ROLLER_MODE_NORMAL,
+        )
         .visible_row_count(3);
     Spinbox::create(tab3).range(0, 100).value(42).step(1);
 
@@ -939,7 +1014,12 @@ fn summary_create() {
             let name_str = core::str::from_utf8(&name[..name_len]).unwrap_or("?");
             ove::log_inf!(
                 "{}, {}%, {}, {}, {}, {}",
-                name_str, cpu, fps, render + flush, render, flush
+                name_str,
+                cpu,
+                fps,
+                render + flush,
+                render,
+                flush
             );
 
             valid += 1;
@@ -975,13 +1055,21 @@ fn summary_create() {
         let mut buf3 = [0u8; 48];
         let mut w3 = FmtBuf::new(&mut buf3);
         let _ = write!(
-            w3, "{} ms ({} + {})", avg_render + avg_flush, avg_render, avg_flush
+            w3,
+            "{} ms ({} + {})",
+            avg_render + avg_flush,
+            avg_render,
+            avg_flush
         );
         table.cell_value(1, 3, w3.as_cstr());
 
         ove::log_inf!(
             "All avg, {}%, {}, {}, {}, {}",
-            avg_cpu, avg_fps, avg_render + avg_flush, avg_render, avg_flush
+            avg_cpu,
+            avg_fps,
+            avg_render + avg_flush,
+            avg_render,
+            avg_flush
         );
     }
 }

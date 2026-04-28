@@ -14,7 +14,7 @@ import sys
 
 from .utils import run, nproc, apply_defconfig_overlay
 from .constants import NUTTX_BOARD_CONFIGS, ZEPHYR_BOARD_MAPPINGS
-from .workspace import Workspace, get_bool, get_str
+from .workspace import Workspace, get_bool
 
 logger = logging.getLogger("ove")
 

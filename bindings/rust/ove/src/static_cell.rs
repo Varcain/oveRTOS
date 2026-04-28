@@ -30,6 +30,12 @@ pub struct StaticCell<T> {
     inner: UnsafeCell<Option<T>>,
 }
 
+impl<T> Default for StaticCell<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> StaticCell<T> {
     /// Create an empty cell. Usable in `static` declarations.
     pub const fn new() -> Self {
@@ -47,9 +53,10 @@ impl<T> StaticCell<T> {
     /// # Safety contract
     /// Must be called single-threaded (e.g. in `on_init`).
     pub fn init(&self, val: T) {
-        if self.initialized.load(Ordering::Relaxed) {
-            panic!("StaticCell::init called on already-initialized cell");
-        }
+        assert!(
+            !self.initialized.load(Ordering::Relaxed),
+            "StaticCell::init called on already-initialized cell"
+        );
         // SAFETY: Single-threaded during init (lifecycle guarantee).
         unsafe {
             *self.inner.get() = Some(val);
@@ -62,9 +69,10 @@ impl<T> StaticCell<T> {
     /// # Panics
     /// Panics if the cell has not been initialized.
     pub fn get(&self) -> &T {
-        if !self.initialized.load(Ordering::Acquire) {
-            panic!("StaticCell::get called on uninitialized cell");
-        }
+        assert!(
+            self.initialized.load(Ordering::Acquire),
+            "StaticCell::get called on uninitialized cell"
+        );
         // SAFETY: After init (Release) + this Acquire, the value is immutable
         // until shutdown (which is single-threaded). No data race.
         unsafe { (*self.inner.get()).as_ref().unwrap() }
@@ -116,7 +124,9 @@ impl<T> StaticCell<T> {
 
 impl<T> core::ops::Deref for StaticCell<T> {
     type Target = T;
-    fn deref(&self) -> &T { self.get() }
+    fn deref(&self) -> &T {
+        self.get()
+    }
 }
 
 // SAFETY: The init/shutdown lifecycle is single-threaded. Between those points
@@ -139,6 +149,12 @@ pub struct StaticMut<T> {
     inner: UnsafeCell<Option<T>>,
 }
 
+impl<T> Default for StaticMut<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> StaticMut<T> {
     /// Create an empty cell. Usable in `static` declarations.
     pub const fn new() -> Self {
@@ -153,9 +169,10 @@ impl<T> StaticMut<T> {
     /// # Panics
     /// Panics if the cell is already initialized.
     pub fn init(&self, val: T) {
-        if self.initialized.load(Ordering::Relaxed) {
-            panic!("StaticMut::init called on already-initialized cell");
-        }
+        assert!(
+            !self.initialized.load(Ordering::Relaxed),
+            "StaticMut::init called on already-initialized cell"
+        );
         unsafe { *self.inner.get() = Some(val) };
         self.initialized.store(true, Ordering::Release);
     }
@@ -178,6 +195,7 @@ impl<T> StaticMut<T> {
     ///
     /// # Safety
     /// Caller must ensure exclusive access (single-threaded or external synchronization).
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn get_mut(&self) -> &mut T {
         debug_assert!(self.initialized.load(Ordering::Acquire));
         unsafe { (*self.inner.get()).as_mut().unwrap() }
@@ -196,9 +214,10 @@ impl<T> StaticMut<T> {
     /// # Panics
     /// Panics if the cell has not been initialized.
     pub fn get(&self) -> &T {
-        if !self.initialized.load(Ordering::Acquire) {
-            panic!("StaticMut::get called on uninitialized cell");
-        }
+        assert!(
+            self.initialized.load(Ordering::Acquire),
+            "StaticMut::get called on uninitialized cell"
+        );
         unsafe { (*self.inner.get()).as_ref().unwrap() }
     }
 
@@ -215,7 +234,9 @@ impl<T> StaticMut<T> {
 
 impl<T> core::ops::Deref for StaticMut<T> {
     type Target = T;
-    fn deref(&self) -> &T { self.get() }
+    fn deref(&self) -> &T {
+        self.get()
+    }
 }
 
 // SAFETY: StaticMut provides `&mut T` access only through an unsafe method

@@ -47,7 +47,12 @@ impl Address {
 
     /// Get the first four bytes of the address (the IPv4 octets).
     pub fn octets(&self) -> [u8; 4] {
-        [self.0.addr[0], self.0.addr[1], self.0.addr[2], self.0.addr[3]]
+        [
+            self.0.addr[0],
+            self.0.addr[1],
+            self.0.addr[2],
+            self.0.addr[3],
+        ]
     }
 
     /// Get a const pointer to the inner sockaddr for passing to C APIs.
@@ -158,9 +163,7 @@ impl NetIf {
             init: false,
         };
         let mut handle: bindings::ove_netif_t = core::ptr::null_mut();
-        let rc = unsafe {
-            bindings::ove_netif_init(&mut handle, &mut netif.storage)
-        };
+        let rc = unsafe { bindings::ove_netif_init(&mut handle, &mut netif.storage) };
         Error::from_code(rc)?;
         netif.init = true;
         Ok(netif)
@@ -248,7 +251,7 @@ pub struct TcpStream {
 
 impl TcpStream {
     /// Derive the C handle from inline storage.
-    fn handle(&self) -> bindings::ove_socket_t {
+    pub(crate) fn handle(&self) -> bindings::ove_socket_t {
         &self.storage as *const _ as bindings::ove_socket_t
     }
 
@@ -280,9 +283,7 @@ impl TcpStream {
     /// # Errors
     /// Returns an error if the connection fails or times out.
     pub fn connect(&self, addr: &Address, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_socket_connect(self.handle(), addr.as_ptr(), timeout_ms)
-        };
+        let rc = unsafe { bindings::ove_socket_connect(self.handle(), addr.as_ptr(), timeout_ms) };
         Error::from_code(rc)
     }
 
@@ -333,7 +334,7 @@ impl fmt::Debug for TcpStream {
         f.debug_struct("TcpStream")
             .field("handle", &format_args!("{:p}", self.handle()))
             .field("open", &self.open)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -429,11 +430,7 @@ impl UdpSocket {
     ///
     /// # Errors
     /// Returns an error if the receive fails or times out.
-    pub fn recv_from(
-        &self,
-        buf: &mut [u8],
-        timeout_ms: u32,
-    ) -> Result<(usize, Address)> {
+    pub fn recv_from(&self, buf: &mut [u8], timeout_ms: u32) -> Result<(usize, Address)> {
         let mut received: usize = 0;
         let mut src = Address::default();
         let rc = unsafe {
@@ -456,7 +453,7 @@ impl fmt::Debug for UdpSocket {
         f.debug_struct("UdpSocket")
             .field("handle", &format_args!("{:p}", self.handle()))
             .field("open", &self.open)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -486,11 +483,7 @@ unsafe impl Sync for UdpSocket {}
 pub fn dns_resolve(hostname: &[u8], timeout_ms: u32) -> Result<Address> {
     let mut addr = Address::default();
     let rc = unsafe {
-        bindings::ove_dns_resolve(
-            hostname.as_ptr() as *const _,
-            addr.as_mut_ptr(),
-            timeout_ms,
-        )
+        bindings::ove_dns_resolve(hostname.as_ptr() as *const _, addr.as_mut_ptr(), timeout_ms)
     };
     Error::from_code(rc)?;
     Ok(addr)

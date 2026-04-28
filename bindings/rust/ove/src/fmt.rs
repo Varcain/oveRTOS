@@ -40,7 +40,7 @@ impl<'a> FmtBuf<'a> {
     /// suitable for passing to C APIs like LVGL.
     pub fn as_cstr(&self) -> &[u8] {
         // Null terminator is maintained by write_str after every write.
-        &self.buf[..self.pos + 1]
+        &self.buf[..=self.pos]
     }
 }
 

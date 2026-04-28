@@ -88,12 +88,14 @@ impl Model {
             model_size: config.model_data.len(),
             arena_size: config.arena_size,
         };
-        let rc = bindings::ove_model_init(
-            &mut handle,
-            storage,
-            arena as *mut core::ffi::c_void,
-            &c_cfg,
-        );
+        let rc = unsafe {
+            bindings::ove_model_init(
+                &mut handle,
+                storage,
+                arena as *mut core::ffi::c_void,
+                &c_cfg,
+            )
+        };
         Error::from_code(rc)?;
         Ok(Self { handle })
     }
@@ -107,9 +109,7 @@ impl Model {
     /// Get tensor info for an input tensor.
     pub fn input(&self, index: u32) -> Result<TensorInfo> {
         let mut info: bindings::ove_tensor_info = unsafe { core::mem::zeroed() };
-        let rc = unsafe {
-            bindings::ove_model_input(self.handle, index, &mut info)
-        };
+        let rc = unsafe { bindings::ove_model_input(self.handle, index, &mut info) };
         Error::from_code(rc)?;
         Ok(TensorInfo {
             data: info.data as *mut u8,
@@ -129,9 +129,7 @@ impl Model {
     /// Get tensor info for an output tensor.
     pub fn output(&self, index: u32) -> Result<TensorInfo> {
         let mut info: bindings::ove_tensor_info = unsafe { core::mem::zeroed() };
-        let rc = unsafe {
-            bindings::ove_model_output(self.handle, index, &mut info)
-        };
+        let rc = unsafe { bindings::ove_model_output(self.handle, index, &mut info) };
         Error::from_code(rc)?;
         Ok(TensorInfo {
             data: info.data as *mut u8,
@@ -182,13 +180,17 @@ pub struct ModelStorage<const ARENA_SIZE: usize> {
     arena: [u8; ARENA_SIZE],
 }
 
+impl<const ARENA_SIZE: usize> Default for ModelStorage<ARENA_SIZE> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const ARENA_SIZE: usize> ModelStorage<ARENA_SIZE> {
     /// Create a zeroed storage + arena pair.
     pub fn new() -> Self {
         // SAFETY: ove_model_storage_t is a C struct that is valid when zeroed.
-        unsafe {
-            core::mem::zeroed()
-        }
+        unsafe { core::mem::zeroed() }
     }
 
     /// Load a model into this storage, returning a session handle.
@@ -202,13 +204,7 @@ impl<const ARENA_SIZE: usize> ModelStorage<ARENA_SIZE> {
             model_data,
             arena_size: ARENA_SIZE,
         };
-        unsafe {
-            Model::from_static(
-                &mut self.storage,
-                self.arena.as_mut_ptr(),
-                &config,
-            )
-        }
+        unsafe { Model::from_static(&mut self.storage, self.arena.as_mut_ptr(), &config) }
     }
 }
 
@@ -223,6 +219,7 @@ impl Model {
     ///
     /// # Errors
     /// Returns an error if the tensor index is invalid.
+    #[allow(clippy::mut_from_ref)] // tensor arena is owned by the C session, not by &self
     pub fn input_slice_mut<T>(&self, index: u32) -> Result<&mut [T]> {
         let info = self.input(index)?;
         let count = info.size / core::mem::size_of::<T>();
@@ -230,9 +227,7 @@ impl Model {
         // valid for the lifetime of this Model.  We have &self so the
         // model is alive.  The caller must not alias this slice with
         // another call to input_slice_mut for the same tensor index.
-        Ok(unsafe {
-            core::slice::from_raw_parts_mut(info.data as *mut T, count)
-        })
+        Ok(unsafe { core::slice::from_raw_parts_mut(info.data as *mut T, count) })
     }
 
     /// Get output tensor data as a typed slice.
@@ -245,8 +240,6 @@ impl Model {
         let info = self.output(index)?;
         let count = info.size / core::mem::size_of::<T>();
         // SAFETY: Same as input_slice_mut, but immutable.
-        Ok(unsafe {
-            core::slice::from_raw_parts(info.data as *const T, count)
-        })
+        Ok(unsafe { core::slice::from_raw_parts(info.data as *const T, count) })
     }
 }

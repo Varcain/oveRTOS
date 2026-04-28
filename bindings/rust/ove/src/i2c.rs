@@ -10,7 +10,7 @@
 //! locking, register-level convenience functions, and device probing.
 
 use crate::bindings;
-use crate::error::{Error, Result, WAIT_FOREVER};
+use crate::error::{Error, Result};
 
 /// I2C bus speed grade.
 #[repr(u32)]
@@ -26,9 +26,8 @@ pub enum Speed {
 
 /// Write data to an I2C device.
 pub fn write(i2c: bindings::ove_i2c_t, addr: u16, data: &[u8], timeout_ms: u32) -> Result<()> {
-    let rc = unsafe {
-        bindings::ove_i2c_write(i2c, addr, data.as_ptr().cast(), data.len(), timeout_ms)
-    };
+    let rc =
+        unsafe { bindings::ove_i2c_write(i2c, addr, data.as_ptr().cast(), data.len(), timeout_ms) };
     Error::from_code(rc)
 }
 
@@ -50,9 +49,12 @@ pub fn write_read(
 ) -> Result<()> {
     let rc = unsafe {
         bindings::ove_i2c_write_read(
-            i2c, addr,
-            tx.as_ptr().cast(), tx.len(),
-            rx.as_mut_ptr().cast(), rx.len(),
+            i2c,
+            addr,
+            tx.as_ptr().cast(),
+            tx.len(),
+            rx.as_mut_ptr().cast(),
+            rx.len(),
             timeout_ms,
         )
     };
@@ -68,11 +70,7 @@ pub fn reg_write(
     timeout_ms: u32,
 ) -> Result<()> {
     let rc = unsafe {
-        bindings::ove_i2c_reg_write(
-            i2c, addr, reg,
-            data.as_ptr().cast(), data.len(),
-            timeout_ms,
-        )
+        bindings::ove_i2c_reg_write(i2c, addr, reg, data.as_ptr().cast(), data.len(), timeout_ms)
     };
     Error::from_code(rc)
 }
@@ -87,8 +85,11 @@ pub fn reg_read(
 ) -> Result<()> {
     let rc = unsafe {
         bindings::ove_i2c_reg_read(
-            i2c, addr, reg,
-            buf.as_mut_ptr().cast(), buf.len(),
+            i2c,
+            addr,
+            reg,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
             timeout_ms,
         )
     };

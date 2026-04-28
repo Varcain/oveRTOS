@@ -70,8 +70,14 @@ fn test_netif_init() {
 
     test("netif_init");
     let netif = match ove::net::NetIf::new() {
-        Ok(n) => { pass("netif_init"); n }
-        Err(e) => { fail("netif_init", err_code(e)); return; }
+        Ok(n) => {
+            pass("netif_init");
+            n
+        }
+        Err(e) => {
+            fail("netif_init", err_code(e));
+            return;
+        }
     };
 
     test("netif_up (static IP)");
@@ -90,7 +96,10 @@ fn test_netif_init() {
 
     match netif.up(&cfg) {
         Ok(()) => pass("netif_up (static IP)"),
-        Err(e) => { fail("netif_up", err_code(e)); return; }
+        Err(e) => {
+            fail("netif_up", err_code(e));
+            return;
+        }
     }
 
     // Give the link time to come up on hardware
@@ -145,8 +154,14 @@ fn test_tcp() {
 
     test("socket_open TCP");
     let sock = match ove::net::TcpStream::new() {
-        Ok(s) => { pass("socket_open TCP"); s }
-        Err(e) => { fail("socket_open TCP", err_code(e)); return; }
+        Ok(s) => {
+            pass("socket_open TCP");
+            s
+        }
+        Err(e) => {
+            fail("socket_open TCP", err_code(e));
+            return;
+        }
     };
 
     // Resolve + connect to example.com:80
@@ -162,7 +177,10 @@ fn test_tcp() {
     test("socket_connect");
     match sock.connect(&dest, 5000) {
         Ok(()) => pass("socket_connect"),
-        Err(e) => { fail("socket_connect", err_code(e)); return; }
+        Err(e) => {
+            fail("socket_connect", err_code(e));
+            return;
+        }
     }
 
     // Send HTTP request
@@ -170,8 +188,14 @@ fn test_tcp() {
     test("socket_send");
     match sock.send(req) {
         Ok(n) if n == req.len() => pass("socket_send"),
-        Ok(_) => { fail("socket_send", 0); return; }
-        Err(e) => { fail("socket_send", err_code(e)); return; }
+        Ok(_) => {
+            fail("socket_send", 0);
+            return;
+        }
+        Err(e) => {
+            fail("socket_send", err_code(e));
+            return;
+        }
     }
 
     // Receive response
@@ -207,7 +231,9 @@ fn test_tcp() {
 
 /// Substring search in a byte buffer.
 fn find_in_buf(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() { return true; }
+    if needle.is_empty() {
+        return true;
+    }
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
@@ -220,8 +246,14 @@ fn test_udp() {
 
     test("socket_open UDP");
     let sock = match ove::net::UdpSocket::new() {
-        Ok(s) => { pass("socket_open UDP"); s }
-        Err(e) => { fail("socket_open UDP", err_code(e)); return; }
+        Ok(s) => {
+            pass("socket_open UDP");
+            s
+        }
+        Err(e) => {
+            fail("socket_open UDP", err_code(e));
+            return;
+        }
     };
 
     // Bind to a local port
@@ -229,7 +261,10 @@ fn test_udp() {
     test("socket_bind");
     match sock.bind(&bind_addr) {
         Ok(()) => pass("socket_bind"),
-        Err(e) => { fail("socket_bind", err_code(e)); return; }
+        Err(e) => {
+            fail("socket_bind", err_code(e));
+            return;
+        }
     }
 
     // Send to self
@@ -237,7 +272,10 @@ fn test_udp() {
     test("socket_sendto");
     match sock.send_to(UDP_MSG, &dest) {
         Ok(_) => pass("socket_sendto"),
-        Err(e) => { fail("socket_sendto", err_code(e)); return; }
+        Err(e) => {
+            fail("socket_sendto", err_code(e));
+            return;
+        }
     }
 
     // Receive
@@ -267,8 +305,14 @@ fn test_http() {
     test("http_client_init");
     let mut http_storage = ove::net_http::ClientStorage::new();
     let client = match ove::net_http::Client::create(&mut http_storage) {
-        Ok(c) => { pass("http_client_init"); c }
-        Err(e) => { fail("http_client_init", err_code(e)); return; }
+        Ok(c) => {
+            pass("http_client_init");
+            c
+        }
+        Err(e) => {
+            fail("http_client_init", err_code(e));
+            return;
+        }
     };
 
     // GET request
@@ -316,8 +360,14 @@ fn test_http() {
     // PUT request with custom headers
     test("http_put http://httpbin.org/put");
     let headers = [
-        ove::net_http::Header { name: b"X-Custom\0", value: b"oveRTOS\0" },
-        ove::net_http::Header { name: b"Accept\0", value: b"application/json\0" },
+        ove::net_http::Header {
+            name: b"X-Custom\0",
+            value: b"oveRTOS\0",
+        },
+        ove::net_http::Header {
+            name: b"Accept\0",
+            value: b"application/json\0",
+        },
     ];
     match client.request_ex(
         ove::net_http::Method::Put,
@@ -375,8 +425,11 @@ fn test_sntp() {
 static MQTT_RX_COUNT: AtomicU32 = AtomicU32::new(0);
 
 fn on_mqtt_message(topic: &str, payload: &[u8]) {
-    ove::log_inf!("  MQTT rx: [{}] {}", topic,
-        core::str::from_utf8(payload).unwrap_or("<binary>"));
+    ove::log_inf!(
+        "  MQTT rx: [{}] {}",
+        topic,
+        core::str::from_utf8(payload).unwrap_or("<binary>")
+    );
     MQTT_RX_COUNT.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -386,8 +439,14 @@ fn test_mqtt() {
     test("mqtt_client_init");
     let mut mqtt_storage = ove::net_mqtt::ClientStorage::new();
     let mut mqtt = match ove::net_mqtt::Client::create(&mut mqtt_storage) {
-        Ok(c) => { pass("mqtt_client_init"); c }
-        Err(e) => { fail("mqtt_client_init", err_code(e)); return; }
+        Ok(c) => {
+            pass("mqtt_client_init");
+            c
+        }
+        Err(e) => {
+            fail("mqtt_client_init", err_code(e));
+            return;
+        }
     };
 
     test("mqtt_connect test.mosquitto.org:1883");

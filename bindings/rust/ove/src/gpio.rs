@@ -61,7 +61,9 @@ pub enum GpioIrqMode {
 /// # Errors
 /// Returns [`Error::InvalidParam`] if the pin is out of range.
 pub fn configure(pin: GpioPin, mode: GpioMode) -> Result<()> {
-    let rc = unsafe { bindings::ove_gpio_configure(pin.port, pin.pin, mode as bindings::ove_gpio_mode_t) };
+    let rc = unsafe {
+        bindings::ove_gpio_configure(pin.port, pin.pin, mode as bindings::ove_gpio_mode_t)
+    };
     Error::from_code(rc)
 }
 
@@ -95,7 +97,13 @@ pub unsafe fn irq_register(
     user_data: *mut core::ffi::c_void,
 ) -> Result<()> {
     let rc = unsafe {
-        bindings::ove_gpio_irq_register(pin.port, pin.pin, mode as bindings::ove_gpio_irq_mode_t, callback, user_data)
+        bindings::ove_gpio_irq_register(
+            pin.port,
+            pin.pin,
+            mode as bindings::ove_gpio_irq_mode_t,
+            callback,
+            user_data,
+        )
     };
     Error::from_code(rc)
 }

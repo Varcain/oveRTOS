@@ -11,46 +11,99 @@
 //! can be written in pure safe Rust.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+// Pedantic/nursery lints intentionally relaxed for this crate:
+// - FFI surface (`bindings::*`) drives most pointer/cast patterns; the
+//   .cast()/.cast_mut() rewrites add no safety, only churn.
+// - `must_use` discipline is applied selectively on outward APIs; blanket
+//   #[must_use] on every getter would be noise.
+// - Documentation style follows ours, not clippy::doc_markdown's expected
+//   backtick density.
+#![allow(
+    clippy::doc_markdown,
+    clippy::must_use_candidate,
+    clippy::return_self_not_must_use,
+    clippy::ptr_as_ptr,
+    clippy::use_self,
+    clippy::borrow_as_ptr,
+    clippy::ref_as_ptr,
+    clippy::missing_const_for_fn,
+    clippy::pub_underscore_fields,
+    clippy::assertions_on_constants,
+    clippy::cast_lossless,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::ptr_cast_constness,
+    clippy::not_unsafe_ptr_arg_deref,
+    clippy::similar_names,
+    clippy::missing_panics_doc,
+    clippy::too_long_first_doc_paragraph,
+    clippy::elidable_lifetime_names,
+    clippy::needless_pass_by_value
+)]
 
 // Panic handler (only when no_std + feature enabled)
 #[cfg(all(not(feature = "std"), feature = "panic-handler"))]
 mod panic;
 
+#[cfg(has_audio)]
+pub mod audio;
+#[cfg(feature = "bench")]
+pub mod bench;
 #[cfg(not(docsrs))]
 pub(crate) mod bindings;
 #[cfg(docsrs)]
 #[path = "bindings_stub.rs"]
 pub(crate) mod bindings;
-#[cfg(has_audio)]
-pub mod audio;
 #[cfg(has_board)]
 pub mod board;
 #[cfg(has_bsp)]
 pub mod bsp;
-#[cfg(has_gpio)]
-pub mod gpio;
-#[cfg(has_led)]
-pub mod led;
+pub mod cell;
 #[cfg(has_console)]
 pub mod console;
-#[cfg(feature = "bench")]
-pub mod bench;
-pub mod cell;
 pub mod error;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
 pub mod fmt;
 #[cfg(has_fs)]
 pub mod fs;
+#[cfg(has_gpio)]
+pub mod gpio;
+#[cfg(has_i2c)]
+pub mod i2c;
+#[cfg(has_infer)]
+pub mod infer;
+#[cfg(has_led)]
+pub mod led;
 #[cfg(has_lvgl)]
 pub mod lvgl;
+#[cfg(has_net)]
+pub mod net;
+#[cfg(has_net_http)]
+pub mod net_http;
+#[cfg(has_net_httpd)]
+pub mod net_httpd;
+#[cfg(has_net_mqtt)]
+pub mod net_mqtt;
+#[cfg(has_net_sntp)]
+pub mod net_sntp;
+#[cfg(has_net_tls)]
+pub mod net_tls;
 #[cfg(has_nvs)]
 pub mod nvs;
+#[cfg(has_pm)]
+pub mod pm;
 #[cfg(has_queue)]
 pub mod queue;
 #[cfg(has_shell)]
 pub mod shell;
+#[cfg(has_spi)]
+pub mod spi;
 pub mod static_cell;
+#[cfg(has_stream)]
+pub mod stream;
 #[cfg(has_sync)]
 pub mod sync;
 pub mod thread;
@@ -58,34 +111,12 @@ pub mod thread;
 pub mod time;
 #[cfg(has_timer)]
 pub mod timer;
-#[cfg(has_stream)]
-pub mod stream;
+#[cfg(has_uart)]
+pub mod uart;
 #[cfg(has_watchdog)]
 pub mod watchdog;
 #[cfg(has_workqueue)]
 pub mod workqueue;
-#[cfg(has_infer)]
-pub mod infer;
-#[cfg(has_net)]
-pub mod net;
-#[cfg(has_net_http)]
-pub mod net_http;
-#[cfg(has_net_mqtt)]
-pub mod net_mqtt;
-#[cfg(has_net_httpd)]
-pub mod net_httpd;
-#[cfg(has_net_tls)]
-pub mod net_tls;
-#[cfg(has_net_sntp)]
-pub mod net_sntp;
-#[cfg(has_uart)]
-pub mod uart;
-#[cfg(has_spi)]
-pub mod spi;
-#[cfg(has_i2c)]
-pub mod i2c;
-#[cfg(has_pm)]
-pub mod pm;
 
 // All user-facing macros (`ove::mutex!`, `ove::thread!`, `ove::log_inf!`, etc.)
 // and the internal `ove_handle_impl!` boilerplate live in `macros.rs`.
@@ -107,22 +138,23 @@ pub mod ffi {
 }
 
 // Public re-exports for convenience
+pub use cell::{LvCell, LvRefCell};
 pub use error::{Error, Result, WAIT_FOREVER};
 #[cfg(has_eventgroup)]
-pub use eventgroup::{EventGroup, WaitFlags, EG_CLEAR_ON_EXIT, EG_WAIT_ALL};
-pub use thread::Priority;
+#[allow(deprecated)] // EG_* shims kept for compatibility; new code uses WaitFlags
+pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, WaitFlags};
+pub use fmt::FmtBuf;
 #[cfg(has_queue)]
 pub use queue::Queue;
-#[cfg(has_sync)]
-pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
-pub use thread::{Thread, ThreadState, ThreadStats, MemStats, ThreadInfo};
-pub use cell::{LvCell, LvRefCell};
 pub use static_cell::{StaticCell, StaticMut};
-#[cfg(has_timer)]
-pub use timer::Timer;
-pub use fmt::FmtBuf;
 #[cfg(has_stream)]
 pub use stream::Stream;
+#[cfg(has_sync)]
+pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
+pub use thread::Priority;
+pub use thread::{MemStats, Thread, ThreadInfo, ThreadState, ThreadStats};
+#[cfg(has_timer)]
+pub use timer::Timer;
 #[cfg(has_watchdog)]
 pub use watchdog::Watchdog;
 #[cfg(has_workqueue)]
@@ -144,5 +176,7 @@ pub fn log(msg: &[u8]) {
 /// never returns.
 pub fn run() {
     // SAFETY: `ove_run` is the RTOS scheduler entry; it never returns.
-    unsafe { bindings::ove_run(); }
+    unsafe {
+        bindings::ove_run();
+    }
 }

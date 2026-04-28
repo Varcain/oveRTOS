@@ -174,12 +174,7 @@ macro_rules! model_data {
             safe static $len_sym: u32;
         }
         fn $fn_name() -> &'static [u8] {
-            unsafe {
-                core::slice::from_raw_parts(
-                    &$data_sym,
-                    $len_sym as usize,
-                )
-            }
+            unsafe { core::slice::from_raw_parts(&$data_sym, $len_sym as usize) }
         }
     };
 }
@@ -232,11 +227,12 @@ macro_rules! main {
 macro_rules! mutex {
     () => {{
         #[cfg(not(zero_heap))]
-        { $crate::Mutex::new().unwrap() }
+        {
+            $crate::Mutex::new().unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_mutex_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_mutex_storage_t = unsafe { core::mem::zeroed() };
             unsafe { $crate::Mutex::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
@@ -248,11 +244,12 @@ macro_rules! mutex {
 macro_rules! recursive_mutex {
     () => {{
         #[cfg(not(zero_heap))]
-        { $crate::RecursiveMutex::new().unwrap() }
+        {
+            $crate::RecursiveMutex::new().unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_mutex_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_mutex_storage_t = unsafe { core::mem::zeroed() };
             unsafe { $crate::RecursiveMutex::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
@@ -264,14 +261,14 @@ macro_rules! recursive_mutex {
 macro_rules! semaphore {
     ($initial:expr, $max:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::Semaphore::new($initial, $max).unwrap() }
+        {
+            $crate::Semaphore::new($initial, $max).unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_sem_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::Semaphore::from_static(
-                core::ptr::addr_of_mut!(_S), $initial, $max
-            ) }.unwrap()
+            static mut _S: $crate::ffi::ove_sem_storage_t = unsafe { core::mem::zeroed() };
+            unsafe { $crate::Semaphore::from_static(core::ptr::addr_of_mut!(_S), $initial, $max) }
+                .unwrap()
         }
     }};
 }
@@ -282,11 +279,12 @@ macro_rules! semaphore {
 macro_rules! event {
     () => {{
         #[cfg(not(zero_heap))]
-        { $crate::Event::new().unwrap() }
+        {
+            $crate::Event::new().unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_event_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_event_storage_t = unsafe { core::mem::zeroed() };
             unsafe { $crate::Event::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
@@ -298,11 +296,12 @@ macro_rules! event {
 macro_rules! condvar {
     () => {{
         #[cfg(not(zero_heap))]
-        { $crate::CondVar::new().unwrap() }
+        {
+            $crate::CondVar::new().unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_condvar_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_condvar_storage_t = unsafe { core::mem::zeroed() };
             unsafe { $crate::CondVar::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
@@ -314,11 +313,12 @@ macro_rules! condvar {
 macro_rules! eventgroup {
     () => {{
         #[cfg(not(zero_heap))]
-        { $crate::EventGroup::new().unwrap() }
+        {
+            $crate::EventGroup::new().unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_eventgroup_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_eventgroup_storage_t = unsafe { core::mem::zeroed() };
             unsafe { $crate::EventGroup::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
@@ -344,15 +344,16 @@ macro_rules! eventgroup {
 macro_rules! audio_graph {
     ($frames:expr, $nodes:expr, $channels:expr, $sample_bytes:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::audio::Graph::new($frames) }
+        {
+            $crate::audio::Graph::new($frames)
+        }
         #[cfg(zero_heap)]
         {
             const _STORAGE_BYTES: usize =
                 ($nodes) * ($frames) as usize * ($channels) * ($sample_bytes);
             #[repr(C, align(4))]
             struct _AudioBufStorage([u8; _STORAGE_BYTES]);
-            static mut _AUDIO_BUF: _AudioBufStorage =
-                _AudioBufStorage([0; _STORAGE_BYTES]);
+            static mut _AUDIO_BUF: _AudioBufStorage = _AudioBufStorage([0; _STORAGE_BYTES]);
             let slice: &'static mut [u8] = unsafe {
                 core::slice::from_raw_parts_mut(
                     core::ptr::addr_of_mut!(_AUDIO_BUF) as *mut u8,
@@ -375,11 +376,12 @@ macro_rules! audio_graph {
 macro_rules! queue {
     ($T:ty, $N:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::Queue::<$T, $N>::new().unwrap() }
+        {
+            $crate::Queue::<$T, $N>::new().unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_queue_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_queue_storage_t = unsafe { core::mem::zeroed() };
             static mut _B: [core::mem::MaybeUninit<$T>; $N] =
                 unsafe { core::mem::MaybeUninit::uninit().assume_init() };
             unsafe {
@@ -387,7 +389,8 @@ macro_rules! queue {
                     core::ptr::addr_of_mut!(_S),
                     core::ptr::addr_of_mut!(_B) as *mut _,
                 )
-            }.unwrap()
+            }
+            .unwrap()
         }
     }};
 }
@@ -403,14 +406,21 @@ macro_rules! queue {
 macro_rules! timer {
     ($callback:expr, $period_ms:expr, $one_shot:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::Timer::new($callback, $period_ms, $one_shot).unwrap() }
+        {
+            $crate::Timer::new($callback, $period_ms, $one_shot).unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_timer_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::Timer::from_static(
-                core::ptr::addr_of_mut!(_S), $callback, $period_ms, $one_shot
-            ) }.unwrap()
+            static mut _S: $crate::ffi::ove_timer_storage_t = unsafe { core::mem::zeroed() };
+            unsafe {
+                $crate::Timer::from_static(
+                    core::ptr::addr_of_mut!(_S),
+                    $callback,
+                    $period_ms,
+                    $one_shot,
+                )
+            }
+            .unwrap()
         }
     }};
 }
@@ -429,15 +439,11 @@ macro_rules! thread {
     ($name:expr, $entry:expr, $prio:expr, $stack:expr) => {{
         #[cfg(not(zero_heap))]
         {
-            $crate::Thread::spawn(
-                concat!($name, "\0").as_bytes(),
-                $entry, $prio, $stack
-            ).unwrap()
+            $crate::Thread::spawn(concat!($name, "\0").as_bytes(), $entry, $prio, $stack).unwrap()
         }
         #[cfg(all(zero_heap, not(rtos_zephyr)))]
         {
-            static mut _S: $crate::ffi::ove_thread_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_thread_storage_t = unsafe { core::mem::zeroed() };
             // Align to 8 bytes (ARM AAPCS stack alignment requirement).
             #[repr(C, align(8))]
             struct AlignedStack([u8; $stack]);
@@ -447,14 +453,16 @@ macro_rules! thread {
                     core::ptr::addr_of_mut!(_S),
                     core::ptr::addr_of_mut!(_STACK) as *mut _,
                     concat!($name, "\0").as_bytes(),
-                    $entry, $prio, $stack
+                    $entry,
+                    $prio,
+                    $stack,
                 )
-            }.unwrap()
+            }
+            .unwrap()
         }
         #[cfg(all(zero_heap, rtos_zephyr))]
         {
-            static mut _S: $crate::ffi::ove_thread_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_thread_storage_t = unsafe { core::mem::zeroed() };
             // Zephyr with MPU needs power-of-2 aligned stacks.
             // Add MPU guard region (128 bytes for FPU), round total
             // to next power of 2. align(8192) covers stacks up to
@@ -468,9 +476,12 @@ macro_rules! thread {
                     core::ptr::addr_of_mut!(_S),
                     core::ptr::addr_of_mut!(_STACK) as *mut _,
                     concat!($name, "\0").as_bytes(),
-                    $entry, $prio, $stack
+                    $entry,
+                    $prio,
+                    $stack,
                 )
-            }.unwrap()
+            }
+            .unwrap()
         }
     }};
 }
@@ -486,11 +497,12 @@ macro_rules! thread {
 macro_rules! stream {
     ($N:expr, $trigger:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::Stream::<$N>::new($trigger).unwrap() }
+        {
+            $crate::Stream::<$N>::new($trigger).unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_stream_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_stream_storage_t = unsafe { core::mem::zeroed() };
             static mut _B: [u8; $N] = [0u8; $N];
             unsafe {
                 $crate::Stream::<$N>::from_static(
@@ -498,7 +510,8 @@ macro_rules! stream {
                     core::ptr::addr_of_mut!(_B) as *mut _,
                     $trigger,
                 )
-            }.unwrap()
+            }
+            .unwrap()
         }
     }};
 }
@@ -515,23 +528,22 @@ macro_rules! workqueue {
     ($name:expr, $prio:expr, $stack:expr) => {{
         #[cfg(not(zero_heap))]
         {
-            $crate::Workqueue::new(
-                concat!($name, "\0").as_bytes(), $prio, $stack
-            ).unwrap()
+            $crate::Workqueue::new(concat!($name, "\0").as_bytes(), $prio, $stack).unwrap()
         }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_workqueue_storage_t =
-                unsafe { core::mem::zeroed() };
+            static mut _S: $crate::ffi::ove_workqueue_storage_t = unsafe { core::mem::zeroed() };
             static mut _STACK: [u8; $stack] = [0u8; $stack];
             unsafe {
                 $crate::Workqueue::from_static(
                     core::ptr::addr_of_mut!(_S),
                     concat!($name, "\0").as_bytes(),
-                    $prio, $stack,
+                    $prio,
+                    $stack,
                     core::ptr::addr_of_mut!(_STACK) as *mut _,
                 )
-            }.unwrap()
+            }
+            .unwrap()
         }
     }};
 }
@@ -568,18 +580,16 @@ macro_rules! work_handler {
 macro_rules! work {
     ($handler:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::Work::new($handler).unwrap() }
+        {
+            $crate::Work::new($handler).unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_work_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::Work::from_static(
-                core::ptr::addr_of_mut!(_S), $handler
-            ) }.unwrap()
+            static mut _S: $crate::ffi::ove_work_storage_t = unsafe { core::mem::zeroed() };
+            unsafe { $crate::Work::from_static(core::ptr::addr_of_mut!(_S), $handler) }.unwrap()
         }
     }};
 }
-
 
 /// Create a [`crate::Watchdog`] that works in both heap and zero-heap modes.
 #[cfg(has_watchdog)]
@@ -587,14 +597,14 @@ macro_rules! work {
 macro_rules! watchdog {
     ($timeout_ms:expr) => {{
         #[cfg(not(zero_heap))]
-        { $crate::Watchdog::new($timeout_ms).unwrap() }
+        {
+            $crate::Watchdog::new($timeout_ms).unwrap()
+        }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_watchdog_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::Watchdog::from_static(
-                core::ptr::addr_of_mut!(_S), $timeout_ms
-            ) }.unwrap()
+            static mut _S: $crate::ffi::ove_watchdog_storage_t = unsafe { core::mem::zeroed() };
+            unsafe { $crate::Watchdog::from_static(core::ptr::addr_of_mut!(_S), $timeout_ms) }
+                .unwrap()
         }
     }};
 }

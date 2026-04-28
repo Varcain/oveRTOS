@@ -150,6 +150,7 @@ const fn _assert_codes_match() {
 }
 
 #[cfg(not(docsrs))]
+#[allow(clippy::used_underscore_items)] // intentional compile-time assertion
 const _: () = _assert_codes_match();
 
 impl core::fmt::Display for Error {
@@ -171,7 +172,7 @@ impl core::fmt::Display for Error {
             Error::BusNack => write!(f, "bus NACK"),
             Error::BusBusy => write!(f, "bus busy"),
             Error::BusError => write!(f, "bus error"),
-            Error::Unknown(c) => write!(f, "unknown error ({})", c),
+            Error::Unknown(c) => write!(f, "unknown error ({c})"),
         }
     }
 }

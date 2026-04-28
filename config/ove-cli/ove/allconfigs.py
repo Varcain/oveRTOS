@@ -11,7 +11,6 @@ rule. Discovers app names from `config_name:` entries in app.yaml files,
 then runs the standard configure → download → build pipeline for each.
 """
 
-import argparse
 import json
 import logging
 import os

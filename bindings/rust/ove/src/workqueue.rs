@@ -122,8 +122,7 @@ impl Work {
     /// # Errors
     /// Returns an error if the workqueue is shutting down or the item is already pending.
     pub fn submit_delayed(&self, wq: &Workqueue, delay_ms: u32) -> Result<()> {
-        let rc =
-            unsafe { bindings::ove_work_submit_delayed(wq.handle(), self.handle, delay_ms) };
+        let rc = unsafe { bindings::ove_work_submit_delayed(wq.handle(), self.handle, delay_ms) };
         Error::from_code(rc)
     }
 
@@ -141,11 +140,17 @@ impl Work {
 
 impl Drop for Work {
     fn drop(&mut self) {
-        if self.handle.is_null() { return; }
+        if self.handle.is_null() {
+            return;
+        }
         #[cfg(not(zero_heap))]
-        unsafe { bindings::ove_work_free(self.handle) }
+        unsafe {
+            bindings::ove_work_free(self.handle);
+        }
         #[cfg(zero_heap)]
-        { self.handle = core::ptr::null_mut(); }
+        {
+            self.handle = core::ptr::null_mut();
+        }
     }
 }
 

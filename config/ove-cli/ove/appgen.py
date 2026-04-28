@@ -8,7 +8,6 @@
 
 import json
 import os
-import sys
 
 try:
     import yaml
@@ -16,7 +15,7 @@ except ImportError:
     yaml = None
 
 try:
-    from jinja2 import Environment, FileSystemLoader
+    from jinja2 import Environment
 except ImportError:
     Environment = None
 

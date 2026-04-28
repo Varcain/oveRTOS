@@ -96,7 +96,16 @@ unsafe extern "C" fn mqtt_trampoline(
 /// let mut storage = ClientStorage::new();
 /// let mut mqtt = Client::create(&mut storage)?;
 /// ```
+// FFI handle storage; the field is only addressed via raw pointers
+// passed to C, so clippy's `field is never read` doesn't apply.
+#[allow(dead_code)]
 pub struct ClientStorage(bindings::ove_mqtt_client_storage_t);
+
+impl Default for ClientStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ClientStorage {
     pub fn new() -> Self {
@@ -127,9 +136,7 @@ impl Client {
     /// Caller must ensure `storage` outlives the `Client` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_mqtt_client_storage_t,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_mqtt_client_storage_t) -> Result<Self> {
         let mut handle: bindings::ove_mqtt_client_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_mqtt_client_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -226,9 +233,7 @@ impl Client {
     /// # Errors
     /// Returns an error if the unsubscribe fails.
     pub fn unsubscribe(&self, topic: &[u8]) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_mqtt_unsubscribe(self.handle, topic.as_ptr() as *const _)
-        };
+        let rc = unsafe { bindings::ove_mqtt_unsubscribe(self.handle, topic.as_ptr() as *const _) };
         Error::from_code(rc)
     }
 
@@ -244,4 +249,9 @@ impl Client {
     }
 }
 
-crate::ove_handle_impl!(Client, ove_mqtt_client_destroy, ove_mqtt_client_deinit, send_only);
+crate::ove_handle_impl!(
+    Client,
+    ove_mqtt_client_destroy,
+    ove_mqtt_client_deinit,
+    send_only
+);

@@ -19,7 +19,7 @@ import time
 import urllib.request
 
 from .manifest import get_component, load_manifest, warn_if_dirty
-from .utils import hashed_dir, rev_hash, update_symlink
+from .utils import hashed_dir, update_symlink
 from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")

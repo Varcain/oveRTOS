@@ -177,7 +177,7 @@ def _process_app_images(ws, app, app_dir):
         f.write("use ove::lvgl::ImageDsc;\n\n")
         f.write("unsafe extern \"C\" {\n")
         for sym in h_symbols:
-            f.write(f"    #[allow(non_upper_case_globals)]\n")
+            f.write("    #[allow(non_upper_case_globals)]\n")
             f.write(f"    pub static {sym}: ImageDsc;\n")
         f.write("}\n")
 
