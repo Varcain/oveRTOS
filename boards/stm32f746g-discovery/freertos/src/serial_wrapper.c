@@ -13,8 +13,8 @@
 #include "semphr.h"
 #include <stdint.h>
 
-#define CIRC_BUFF_SIZE      OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE
-#define CIRC_BUFF_MASK      (CIRC_BUFF_SIZE - 1U)
+#define CIRC_BUFF_SIZE OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE
+#define CIRC_BUFF_MASK (CIRC_BUFF_SIZE - 1U)
 
 static UART_HandleTypeDef uartHandle;
 static StaticSemaphore_t mutex_storage;
@@ -80,7 +80,8 @@ void serial_write(const unsigned char *data, unsigned int length)
 	for (i = 0; i < length; i++) {
 		if (data[i] == '\n') {
 			if (i > start) {
-				HAL_UART_Transmit(&uartHandle, (uint8_t *)&data[start], i - start, 1000);
+				HAL_UART_Transmit(&uartHandle, (uint8_t *)&data[start], i - start,
+						  1000);
 			}
 			HAL_UART_Transmit(&uartHandle, (uint8_t *)&cr, 1, 1000);
 			HAL_UART_Transmit(&uartHandle, (uint8_t *)&data[i], 1, 1000);
@@ -128,7 +129,8 @@ void USART1_IRQHandler(void)
 			circBuff[head] = (unsigned char)(uartHandle.Instance->RDR & 0xFFU);
 			head = nextHead;
 		} else {
-			volatile unsigned char dummy = (unsigned char)(uartHandle.Instance->RDR & 0xFFU);
+			volatile unsigned char dummy =
+				(unsigned char)(uartHandle.Instance->RDR & 0xFFU);
 			(void)dummy;
 		}
 

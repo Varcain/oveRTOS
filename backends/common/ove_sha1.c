@@ -24,10 +24,8 @@ static void sha1_transform(uint32_t state[5], const uint8_t block[64])
 	int i;
 
 	for (i = 0; i < 16; i++) {
-		w[i] = ((uint32_t)block[i * 4 + 0] << 24) |
-		       ((uint32_t)block[i * 4 + 1] << 16) |
-		       ((uint32_t)block[i * 4 + 2] << 8)  |
-		       ((uint32_t)block[i * 4 + 3]);
+		w[i] = ((uint32_t)block[i * 4 + 0] << 24) | ((uint32_t)block[i * 4 + 1] << 16) |
+		       ((uint32_t)block[i * 4 + 2] << 8) | ((uint32_t)block[i * 4 + 3]);
 	}
 	for (i = 16; i < 80; i++)
 		w[i] = rotl32(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
@@ -67,10 +65,7 @@ static void sha1_transform(uint32_t state[5], const uint8_t block[64])
 
 void ove_sha1(const void *data, size_t len, uint8_t out[20])
 {
-	uint32_t state[5] = {
-		0x67452301, 0xEFCDAB89, 0x98BADCFE,
-		0x10325476, 0xC3D2E1F0
-	};
+	uint32_t state[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
 
 	const uint8_t *p = (const uint8_t *)data;
 	size_t remaining = len;

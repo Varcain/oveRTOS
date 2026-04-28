@@ -302,6 +302,7 @@ doctor: $(VENV_STAMP)
 
 .PHONY: lint
 lint: $(VENV_STAMP)
+	@$(OVE) ensure-toolchain zig
 	@$(OVE) lint
 
 .PHONY: format

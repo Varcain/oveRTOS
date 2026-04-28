@@ -31,23 +31,21 @@
 
 /* Audio defaults for boards that don't define I2S parameters. */
 #ifndef OVE_AUDIO_I2S_SAMPLE_RATE
-#define OVE_AUDIO_I2S_SAMPLE_RATE    16000
+#define OVE_AUDIO_I2S_SAMPLE_RATE 16000
 #endif
 #ifndef OVE_AUDIO_I2S_CHANNELS
-#define OVE_AUDIO_I2S_CHANNELS       1
+#define OVE_AUDIO_I2S_CHANNELS 1
 #endif
 #ifndef OVE_AUDIO_I2S_BIT_DEPTH
-#define OVE_AUDIO_I2S_BIT_DEPTH      16
+#define OVE_AUDIO_I2S_BIT_DEPTH 16
 #endif
 #ifndef OVE_AUDIO_I2S_BUFFER_SAMPLES
 #define OVE_AUDIO_I2S_BUFFER_SAMPLES 512
 #endif
 
 /* Forward declarations for registration helpers. */
-extern int ove_sim_display_register(uint16_t width, uint16_t height,
-				    enum ove_sim_color_fmt fmt);
-extern int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels,
-				  uint16_t bit_depth,
+extern int ove_sim_display_register(uint16_t width, uint16_t height, enum ove_sim_color_fmt fmt);
+extern int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels, uint16_t bit_depth,
 				  uint32_t buffer_frames);
 
 /* ── Transport instance ────────────────────────────────────────────── */
@@ -62,13 +60,12 @@ int ove_sim_board_init(void)
 
 	/* 1. Create transport. */
 #if defined(__EMSCRIPTEN__)
-	extern int ove_sim_transport_wasm_create(struct ove_sim_transport *t);
+	extern int ove_sim_transport_wasm_create(struct ove_sim_transport * t);
 	ret = ove_sim_transport_wasm_create(&transport);
 #elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	ret = ove_sim_transport_shm_guest_create(&transport);
 #else
-	extern int ove_sim_transport_shm_local_create(
-		struct ove_sim_transport *t);
+	extern int ove_sim_transport_shm_local_create(struct ove_sim_transport * t);
 	ret = ove_sim_transport_shm_local_create(&transport);
 #endif
 	if (ret != OVE_OK) {
@@ -87,24 +84,20 @@ int ove_sim_board_init(void)
 
 	/* 2. Register built-in plugins. */
 #ifdef CONFIG_OVE_LVGL
-	ret = ove_sim_display_register(OVE_DISPLAY_WIDTH,
-				       OVE_DISPLAY_HEIGHT,
+	ret = ove_sim_display_register(OVE_DISPLAY_WIDTH, OVE_DISPLAY_HEIGHT,
 				       OVE_SIM_COLOR_XRGB8888);
 	if (ret < 0)
 		fprintf(stderr, "[sim] Display plugin failed: %d\n", ret);
 #endif
 
 #ifdef CONFIG_OVE_AUDIO
-	ret = ove_sim_audio_register(
-		OVE_AUDIO_I2S_SAMPLE_RATE,
-		OVE_AUDIO_I2S_CHANNELS,
-		OVE_AUDIO_I2S_BIT_DEPTH,
-		OVE_AUDIO_I2S_BUFFER_SAMPLES);
+	ret = ove_sim_audio_register(OVE_AUDIO_I2S_SAMPLE_RATE, OVE_AUDIO_I2S_CHANNELS,
+				     OVE_AUDIO_I2S_BIT_DEPTH, OVE_AUDIO_I2S_BUFFER_SAMPLES);
 	if (ret < 0)
 		fprintf(stderr, "[sim] Audio plugin failed: %d\n", ret);
 #endif
 
-	/* Register trace and profiler *before* the debug plugin: the debug
+		/* Register trace and profiler *before* the debug plugin: the debug
 	 * plugin owns the consolidated pump thread that drives them, and
 	 * the thread starts as soon as registration returns. */
 #ifdef CONFIG_OVE_TRACE_STREAM
@@ -134,14 +127,12 @@ int ove_sim_board_init(void)
 	/* WASM: start a command pump thread that drains the JS→C command
 	 * queue and dispatches to plugins (audio inject, etc.). */
 	{
-		extern int ove_sim_wasm_cmd_pump_start(
-			struct ove_sim_transport *t);
+		extern int ove_sim_wasm_cmd_pump_start(struct ove_sim_transport * t);
 		ove_sim_wasm_cmd_pump_start(&transport);
 	}
 #endif
 
-	printf("[sim] Simulation framework initialised (%d plugins)\n",
-	       ove_sim_plugin_count());
+	printf("[sim] Simulation framework initialised (%d plugins)\n", ove_sim_plugin_count());
 	fflush(stdout);
 
 	return OVE_OK;

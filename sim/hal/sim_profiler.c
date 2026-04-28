@@ -46,10 +46,10 @@ static void emit_caps(struct sim_profiler_ctx *t)
 
 	uint8_t ev_buf[sizeof(struct ove_sim_event) + sizeof(payload)];
 	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
-	ev->plugin_id    = t->plugin_id;
-	ev->event_type   = OVE_SIM_PROFILER_EVT_CAPS;
+	ev->plugin_id = t->plugin_id;
+	ev->event_type = OVE_SIM_PROFILER_EVT_CAPS;
 	ev->timestamp_ms = 0;
-	ev->data_len     = sizeof(payload);
+	ev->data_len = sizeof(payload);
 	memcpy(ev->data, payload, sizeof(payload));
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
@@ -66,32 +66,32 @@ static void emit_caps(struct sim_profiler_ctx *t)
  * We serialise each sample compactly (only @depth PCs, not the full
  * fixed slot) to avoid wasting bridge bandwidth on zero-padded tails.
  */
-#define PROFILE_ENVELOPE_BYTES  8
-#define SAMPLE_HDR_BYTES        16
-#define MAX_SAMPLE_BYTES        (SAMPLE_HDR_BYTES + \
-				 CONFIG_OVE_PROFILER_MAX_DEPTH * 8)
-#define PROFILE_BUF_BYTES       (PROFILE_ENVELOPE_BYTES + \
-				 OVE_SIM_PROFILER_MAX_BATCH * MAX_SAMPLE_BYTES)
+#define PROFILE_ENVELOPE_BYTES 8
+#define SAMPLE_HDR_BYTES 16
+#define MAX_SAMPLE_BYTES (SAMPLE_HDR_BYTES + CONFIG_OVE_PROFILER_MAX_DEPTH * 8)
+#define PROFILE_BUF_BYTES (PROFILE_ENVELOPE_BYTES + OVE_SIM_PROFILER_MAX_BATCH * MAX_SAMPLE_BYTES)
 
 static size_t serialise_sample(uint8_t *p, const struct ove_profiler_sample *s)
 {
 	uint8_t *q = p;
-	memcpy(q, &s->ts_us, 8);  q += 8;
-	memcpy(q, &s->tid,   4);  q += 4;
+	memcpy(q, &s->ts_us, 8);
+	q += 8;
+	memcpy(q, &s->tid, 4);
+	q += 4;
 	*q++ = s->depth;
 	*q++ = s->state;
 	*q++ = 0;
 	*q++ = 0;
 	for (uint8_t i = 0; i < s->depth; i++) {
 		uint64_t pc = (uint64_t)s->pcs[i];
-		memcpy(q, &pc, 8);  q += 8;
+		memcpy(q, &pc, 8);
+		q += 8;
 	}
 	return (size_t)(q - p);
 }
 
-static void emit_batch(struct sim_profiler_ctx *t,
-		       const struct ove_profiler_sample *samples, size_t n,
-		       uint32_t dropped)
+static void emit_batch(struct sim_profiler_ctx *t, const struct ove_profiler_sample *samples,
+		       size_t n, uint32_t dropped)
 {
 	if (n == 0 && dropped == 0)
 		return;
@@ -106,8 +106,10 @@ static void emit_batch(struct sim_profiler_ctx *t,
 	 * would report 4 and the batch gets dropped as "unsupported word size". */
 	*p++ = 8;
 	uint16_t count16 = (uint16_t)n;
-	memcpy(p, &count16, 2); p += 2;
-	memcpy(p, &dropped, 4); p += 4;
+	memcpy(p, &count16, 2);
+	p += 2;
+	memcpy(p, &dropped, 4);
+	p += 4;
 
 	for (size_t i = 0; i < n; i++)
 		p += serialise_sample(p, &samples[i]);
@@ -116,10 +118,10 @@ static void emit_batch(struct sim_profiler_ctx *t,
 
 	uint8_t ev_buf[sizeof(struct ove_sim_event) + PROFILE_BUF_BYTES];
 	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
-	ev->plugin_id    = t->plugin_id;
-	ev->event_type   = OVE_SIM_PROFILER_EVT_SAMPLES;
+	ev->plugin_id = t->plugin_id;
+	ev->event_type = OVE_SIM_PROFILER_EVT_SAMPLES;
 	ev->timestamp_ms = 0;
-	ev->data_len     = (uint32_t)payload_len;
+	ev->data_len = (uint32_t)payload_len;
 	memcpy(ev->data, payload, payload_len);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
@@ -147,10 +149,10 @@ static void drain_symbols(struct sim_profiler_ctx *t)
 
 	uint8_t ev_buf[sizeof(struct ove_sim_event) + SYMBOLS_DRAIN_BUF_BYTES];
 	struct ove_sim_event *ev = (struct ove_sim_event *)ev_buf;
-	ev->plugin_id    = t->plugin_id;
-	ev->event_type   = OVE_SIM_PROFILER_EVT_SYMBOLS;
+	ev->plugin_id = t->plugin_id;
+	ev->event_type = OVE_SIM_PROFILER_EVT_SYMBOLS;
 	ev->timestamp_ms = 0;
-	ev->data_len     = (uint32_t)n;
+	ev->data_len = (uint32_t)n;
 	memcpy(ev->data, json, n);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
@@ -173,7 +175,8 @@ void ove_sim_profiler_tick(void)
 
 static int profiler_init(void *ctx, const void *config, size_t config_len)
 {
-	(void)config; (void)config_len;
+	(void)config;
+	(void)config_len;
 	struct sim_profiler_ctx *t = (struct sim_profiler_ctx *)ctx;
 	int ret = ove_backend_profiler_start();
 	if (ret != OVE_OK) {
@@ -195,8 +198,7 @@ static void profiler_deinit(void *ctx)
 static int profiler_handle_cmd(void *ctx, const struct ove_sim_cmd *cmd)
 {
 	struct sim_profiler_ctx *t = (struct sim_profiler_ctx *)ctx;
-	if (cmd->cmd_type == OVE_SIM_PROFILER_CMD_SET_RATE
-	    && cmd->data_len >= 4) {
+	if (cmd->cmd_type == OVE_SIM_PROFILER_CMD_SET_RATE && cmd->data_len >= 4) {
 		uint32_t hz;
 		memcpy(&hz, cmd->data, 4);
 		uint32_t max_hz = ove_backend_profiler_get_max_hz();
@@ -215,10 +217,10 @@ void ove_sim_profiler_announce_caps(void)
 }
 
 static const struct ove_sim_plugin_ops profiler_ops = {
-	.name       = "profiler",
-	.type       = OVE_SIM_PLUGIN_SENSOR,
-	.init       = profiler_init,
-	.deinit     = profiler_deinit,
+	.name = "profiler",
+	.type = OVE_SIM_PLUGIN_SENSOR,
+	.init = profiler_init,
+	.deinit = profiler_deinit,
 	.handle_cmd = profiler_handle_cmd,
 };
 
@@ -236,8 +238,15 @@ int ove_sim_profiler_register(void)
 
 #include "ove/sim/ove_sim_profiler.h"
 
-int  ove_sim_profiler_register(void) { return 0; }
-void ove_sim_profiler_tick(void) { }
-void ove_sim_profiler_announce_caps(void) { }
+int ove_sim_profiler_register(void)
+{
+	return 0;
+}
+void ove_sim_profiler_tick(void)
+{
+}
+void ove_sim_profiler_announce_caps(void)
+{
+}
 
 #endif /* CONFIG_OVE_PROFILER */

@@ -32,8 +32,10 @@ static void test_spi_null_params(void **state)
 {
 	(void)state;
 	struct ove_spi_cfg cfg = {
-		.instance = 0, .clock_hz = 1000000,
-		.mode = OVE_SPI_MODE_0, .bit_order = OVE_SPI_MSB_FIRST,
+		.instance = 0,
+		.clock_hz = 1000000,
+		.mode = OVE_SPI_MODE_0,
+		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 8,
 	};
 	int rc = ove_spi_create(NULL, &cfg);
@@ -45,8 +47,10 @@ static void test_spi_invalid_word_size(void **state)
 	(void)state;
 	ove_spi_t spi;
 	struct ove_spi_cfg cfg = {
-		.instance = 0, .clock_hz = 1000000,
-		.mode = OVE_SPI_MODE_0, .bit_order = OVE_SPI_MSB_FIRST,
+		.instance = 0,
+		.clock_hz = 1000000,
+		.mode = OVE_SPI_MODE_0,
+		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 32, /* invalid */
 	};
 	int rc = ove_spi_create(&spi, &cfg);
@@ -56,7 +60,7 @@ static void test_spi_invalid_word_size(void **state)
 static void test_spi_transfer_null_handle(void **state)
 {
 	(void)state;
-	uint8_t tx[] = { 0xAA, 0xBB };
+	uint8_t tx[] = {0xAA, 0xBB};
 	uint8_t rx[2];
 	int rc = ove_spi_transfer(NULL, NULL, tx, rx, sizeof(tx), 100);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -67,13 +71,15 @@ static void test_spi_write_read_wrappers(void **state)
 	(void)state;
 	ove_spi_t spi;
 	struct ove_spi_cfg cfg = {
-		.instance = 0, .clock_hz = 1000000,
-		.mode = OVE_SPI_MODE_0, .bit_order = OVE_SPI_MSB_FIRST,
+		.instance = 0,
+		.clock_hz = 1000000,
+		.mode = OVE_SPI_MODE_0,
+		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 8,
 	};
 	ove_spi_create(&spi, &cfg);
 
-	uint8_t data[] = { 0x01, 0x02 };
+	uint8_t data[] = {0x01, 0x02};
 	int rc = ove_spi_write(spi, NULL, data, sizeof(data), 100);
 	assert_int_equal(rc, OVE_OK);
 

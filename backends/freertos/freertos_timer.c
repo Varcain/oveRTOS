@@ -21,9 +21,8 @@ static void freertos_timer_callback(TimerHandle_t xTimer)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage,
-		       ove_timer_fn callback, void *user_data,
-		       uint32_t period_ms, int one_shot)
+int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		   void *user_data, uint32_t period_ms, int one_shot)
 {
 	if (timer == NULL || storage == NULL || callback == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -32,12 +31,9 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage,
 	storage->callback = callback;
 	storage->user_data = user_data;
 
-	storage->handle = xTimerCreateStatic("ove",
-				   pdMS_TO_TICKS(period_ms),
-				   one_shot ? pdFALSE : pdTRUE,
-				   (void *)storage,
-				   freertos_timer_callback,
-				   &storage->static_timer);
+	storage->handle = xTimerCreateStatic("ove", pdMS_TO_TICKS(period_ms),
+					     one_shot ? pdFALSE : pdTRUE, (void *)storage,
+					     freertos_timer_callback, &storage->static_timer);
 
 	*timer = storage;
 	return OVE_OK;
@@ -53,10 +49,8 @@ void ove_timer_deinit(ove_timer_t timer)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_TIMER
-int ove_timer_create(ove_timer_t *timer,
-				 ove_timer_fn callback,
-				 void *user_data, uint32_t period_ms,
-				 int one_shot)
+int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
+		     int one_shot)
 {
 	struct ove_timer *ctx;
 
@@ -69,8 +63,7 @@ int ove_timer_create(ove_timer_t *timer,
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	int ret = ove_timer_init(timer, ctx, callback, user_data,
-				     period_ms, one_shot);
+	int ret = ove_timer_init(timer, ctx, callback, user_data, period_ms, one_shot);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(ctx);
 	}

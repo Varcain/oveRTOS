@@ -24,18 +24,18 @@
 
 #include "../framework/ove_test.h"
 
-#define CANARY       0xDEADBEEFu
+#define CANARY 0xDEADBEEFu
 #define CANARY_WORDS 4u
 
-#define CANARY_SLOT(T, name)                                            \
-	struct name##_slot {                                            \
-		uint32_t pre[CANARY_WORDS];                             \
-		T storage;                                              \
-		uint32_t post[CANARY_WORDS];                            \
-	};                                                              \
-	static struct name##_slot s_##name = {                          \
-		.pre  = {CANARY, CANARY, CANARY, CANARY},               \
-		.post = {CANARY, CANARY, CANARY, CANARY},               \
+#define CANARY_SLOT(T, name)                              \
+	struct name##_slot {                              \
+		uint32_t pre[CANARY_WORDS];               \
+		T storage;                                \
+		uint32_t post[CANARY_WORDS];              \
+	};                                                \
+	static struct name##_slot s_##name = {            \
+		.pre = {CANARY, CANARY, CANARY, CANARY},  \
+		.post = {CANARY, CANARY, CANARY, CANARY}, \
 	}
 
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -43,23 +43,22 @@
 static void reset_canaries(uint32_t *pre, uint32_t *post)
 {
 	for (unsigned i = 0; i < CANARY_WORDS; ++i) {
-		pre[i]  = CANARY;
+		pre[i] = CANARY;
 		post[i] = CANARY;
 	}
 }
 
-static void assert_canaries(const char *label,
-			    const uint32_t *pre, const uint32_t *post)
+static void assert_canaries(const char *label, const uint32_t *pre, const uint32_t *post)
 {
 	for (unsigned i = 0; i < CANARY_WORDS; ++i) {
 		if (pre[i] != CANARY) {
-			print_error("%s: pre-canary word %u clobbered: 0x%08x\n",
-				    label, i, (unsigned)pre[i]);
+			print_error("%s: pre-canary word %u clobbered: 0x%08x\n", label, i,
+				    (unsigned)pre[i]);
 			assert_int_equal(pre[i], CANARY);
 		}
 		if (post[i] != CANARY) {
-			print_error("%s: post-canary word %u clobbered: 0x%08x\n",
-				    label, i, (unsigned)post[i]);
+			print_error("%s: post-canary word %u clobbered: 0x%08x\n", label, i,
+				    (unsigned)post[i]);
 			assert_int_equal(post[i], CANARY);
 		}
 	}
@@ -67,21 +66,21 @@ static void assert_canaries(const char *label,
 
 /* ── Per-primitive canary slots ────────────────────────────────────── */
 
-CANARY_SLOT(ove_mutex_storage_t,      mtx);
-CANARY_SLOT(ove_sem_storage_t,        sem);
-CANARY_SLOT(ove_event_storage_t,      evt);
-CANARY_SLOT(ove_condvar_storage_t,    cv);
-CANARY_SLOT(ove_queue_storage_t,      q);
-CANARY_SLOT(ove_timer_storage_t,      tm);
+CANARY_SLOT(ove_mutex_storage_t, mtx);
+CANARY_SLOT(ove_sem_storage_t, sem);
+CANARY_SLOT(ove_event_storage_t, evt);
+CANARY_SLOT(ove_condvar_storage_t, cv);
+CANARY_SLOT(ove_queue_storage_t, q);
+CANARY_SLOT(ove_timer_storage_t, tm);
 CANARY_SLOT(ove_eventgroup_storage_t, eg);
-CANARY_SLOT(ove_stream_storage_t,     strm);
-CANARY_SLOT(ove_watchdog_storage_t,   wd);
+CANARY_SLOT(ove_stream_storage_t, strm);
+CANARY_SLOT(ove_watchdog_storage_t, wd);
 
 /* Queue/stream backing buffers live outside the canary wrapper — they are
  * caller-provided memory that the backend is expected to write into. The
  * canary guards only the control-block storage slot. */
-static uint8_t  q_buffer[sizeof(uint32_t) * 4];
-static uint8_t  strm_buffer[32];
+static uint8_t q_buffer[sizeof(uint32_t) * 4];
+static uint8_t strm_buffer[32];
 
 /* ── Tests ──────────────────────────────────────────────────────────── */
 
@@ -140,9 +139,7 @@ static void test_storage_queue(void **state)
 	(void)state;
 	reset_canaries(s_q.pre, s_q.post);
 	ove_queue_t qh = NULL;
-	assert_int_equal(ove_queue_init(&qh, &s_q.storage,
-					q_buffer, sizeof(uint32_t), 4),
-			 OVE_OK);
+	assert_int_equal(ove_queue_init(&qh, &s_q.storage, q_buffer, sizeof(uint32_t), 4), OVE_OK);
 	assert_canaries("queue_init", s_q.pre, s_q.post);
 	uint32_t v = 42;
 	assert_int_equal(ove_queue_send(qh, &v, 0), OVE_OK);
@@ -154,16 +151,18 @@ static void test_storage_queue(void **state)
 	assert_canaries("queue_deinit", s_q.pre, s_q.post);
 }
 
-static void timer_cb_noop(ove_timer_t t, void *ud) { (void)t; (void)ud; }
+static void timer_cb_noop(ove_timer_t t, void *ud)
+{
+	(void)t;
+	(void)ud;
+}
 
 static void test_storage_timer(void **state)
 {
 	(void)state;
 	reset_canaries(s_tm.pre, s_tm.post);
 	ove_timer_t t = NULL;
-	assert_int_equal(ove_timer_init(&t, &s_tm.storage,
-					timer_cb_noop, NULL, 1000, 1),
-			 OVE_OK);
+	assert_int_equal(ove_timer_init(&t, &s_tm.storage, timer_cb_noop, NULL, 1000, 1), OVE_OK);
 	assert_canaries("timer_init", s_tm.pre, s_tm.post);
 	ove_timer_deinit(t);
 	assert_canaries("timer_deinit", s_tm.pre, s_tm.post);
@@ -187,8 +186,7 @@ static void test_storage_stream(void **state)
 	(void)state;
 	reset_canaries(s_strm.pre, s_strm.post);
 	ove_stream_t st = NULL;
-	assert_int_equal(ove_stream_init(&st, &s_strm.storage,
-					 strm_buffer, sizeof(strm_buffer), 1),
+	assert_int_equal(ove_stream_init(&st, &s_strm.storage, strm_buffer, sizeof(strm_buffer), 1),
 			 OVE_OK);
 	assert_canaries("stream_init", s_strm.pre, s_strm.post);
 	ove_stream_deinit(st);
@@ -225,14 +223,10 @@ int test_storage_bounds_run(void)
 	return 0;
 #else
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_storage_mutex),
-		cmocka_unit_test(test_storage_sem),
-		cmocka_unit_test(test_storage_event),
-		cmocka_unit_test(test_storage_condvar),
-		cmocka_unit_test(test_storage_queue),
-		cmocka_unit_test(test_storage_timer),
-		cmocka_unit_test(test_storage_eventgroup),
-		cmocka_unit_test(test_storage_stream),
+		cmocka_unit_test(test_storage_mutex),	   cmocka_unit_test(test_storage_sem),
+		cmocka_unit_test(test_storage_event),	   cmocka_unit_test(test_storage_condvar),
+		cmocka_unit_test(test_storage_queue),	   cmocka_unit_test(test_storage_timer),
+		cmocka_unit_test(test_storage_eventgroup), cmocka_unit_test(test_storage_stream),
 		cmocka_unit_test(test_storage_watchdog),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

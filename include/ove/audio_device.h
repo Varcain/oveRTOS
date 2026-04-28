@@ -31,8 +31,8 @@ extern "C" {
  * Selects the low-level audio bus or host API used by a device node.
  */
 enum ove_audio_transport {
-    OVE_AUDIO_TRANSPORT_I2S,  /**< @brief I2S / TDM serial bus (e.g. codec, DAC, ADC). */
-    OVE_AUDIO_TRANSPORT_PDM,  /**< @brief PDM microphone interface. */
+	OVE_AUDIO_TRANSPORT_I2S, /**< @brief I2S / TDM serial bus (e.g. codec, DAC, ADC). */
+	OVE_AUDIO_TRANSPORT_PDM, /**< @brief PDM microphone interface. */
 };
 
 /* ── Device configuration ───────────────────────────────────────── */
@@ -45,24 +45,26 @@ enum ove_audio_transport {
  * parameters.  Fields set to zero select the backend default.
  */
 struct ove_audio_device_cfg {
-    enum ove_audio_transport    transport;        /**< @brief Hardware transport selection. */
-    struct ove_audio_fmt        fmt;              /**< @brief Desired audio stream format. */
-    unsigned int                num_buffers;      /**< @brief DMA buffer count; 0 = backend default. */
-    unsigned int                thread_priority;  /**< @brief Driver thread priority; 0 = backend default. */
-    unsigned int                thread_stack_size; /**< @brief Driver thread stack size in bytes; 0 = backend default. */
+	enum ove_audio_transport transport; /**< @brief Hardware transport selection. */
+	struct ove_audio_fmt fmt;	    /**< @brief Desired audio stream format. */
+	unsigned int num_buffers;	    /**< @brief DMA buffer count; 0 = backend default. */
+	unsigned int thread_priority; /**< @brief Driver thread priority; 0 = backend default. */
+	unsigned int
+		thread_stack_size; /**< @brief Driver thread stack size in bytes; 0 = backend default. */
 
-    union {
-        /** @brief Parameters specific to I2S / TDM transport. */
-        struct {
-            unsigned int        input_device; /**< @brief Input device selector (e.g. line-in, DMIC index). */
-            unsigned int        slot_mask;    /**< @brief TDM slot bitmask; 0 = all slots. */
-        } i2s;
-        /** @brief Parameters specific to PDM microphone transport. */
-        struct {
-            unsigned int        decimation;  /**< @brief PDM decimation factor. */
-            unsigned int        clock_freq;  /**< @brief PDM clock frequency in Hz. */
-        } pdm;
-    };
+	union {
+		/** @brief Parameters specific to I2S / TDM transport. */
+		struct {
+			unsigned int
+				input_device; /**< @brief Input device selector (e.g. line-in, DMIC index). */
+			unsigned int slot_mask; /**< @brief TDM slot bitmask; 0 = all slots. */
+		} i2s;
+		/** @brief Parameters specific to PDM microphone transport. */
+		struct {
+			unsigned int decimation; /**< @brief PDM decimation factor. */
+			unsigned int clock_freq; /**< @brief PDM clock frequency in Hz. */
+		} pdm;
+	};
 };
 
 /* ── Device node factories ──────────────────────────────────────── */
@@ -84,9 +86,8 @@ struct ove_audio_device_cfg {
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_device_sink, ove_audio_graph_connect
  */
-int ove_audio_device_source(struct ove_audio_graph *g,
-                            const struct ove_audio_device_cfg *cfg,
-                            const char *name);
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name);
 
 /**
  * @brief Add a hardware audio sink node to the graph.
@@ -104,9 +105,8 @@ int ove_audio_device_source(struct ove_audio_graph *g,
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_device_source, ove_audio_graph_connect
  */
-int ove_audio_device_sink(struct ove_audio_graph *g,
-                          const struct ove_audio_device_cfg *cfg,
-                          const char *name);
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			  const char *name);
 
 #endif /* CONFIG_OVE_AUDIO */
 

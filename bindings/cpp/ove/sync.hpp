@@ -19,7 +19,8 @@
 
 #ifdef CONFIG_OVE_SYNC
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @class Mutex
@@ -34,15 +35,17 @@ namespace ove {
  * @note `lock()` is marked `[[nodiscard]]`; ignoring its return value risks
  *       deadlock.
  */
-class Mutex {
-public:
+class Mutex
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the mutex.
 	 *
 	 * Calls `ove_mutex_init` (zero-heap) or `ove_mutex_create` (heap).
 	 * Asserts at startup if initialisation fails.
 	 */
-	Mutex() {
+	Mutex()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_mutex_init(&handle_, &storage_);
 #else
@@ -56,8 +59,10 @@ public:
 	 *
 	 * If the handle is null (e.g., after a move), the destructor is a no-op.
 	 */
-	~Mutex() noexcept {
-		if (!handle_) return;
+	~Mutex() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_mutex_deinit(handle_);
 #else
@@ -76,7 +81,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source mutex; its handle is set to null after the move.
 	 */
-	Mutex(Mutex &&other) noexcept : handle_(other.handle_) {
+	Mutex(Mutex &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -85,9 +91,11 @@ public:
 	 * @param other The source mutex; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Mutex &operator=(Mutex &&other) noexcept {
+	Mutex &operator=(Mutex &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_mutex_destroy(handle_);
+			if (handle_)
+				ove_mutex_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -101,7 +109,8 @@ public:
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int lock(uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int lock(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_mutex_lock(handle_, timeout_ms);
 	}
 
@@ -110,7 +119,8 @@ public:
 	 *
 	 * Must be called from the same thread context that acquired the lock.
 	 */
-	void unlock() {
+	void unlock()
+	{
 		ove_mutex_unlock(handle_);
 	}
 
@@ -118,15 +128,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the mutex was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS mutex handle.
 	 * @return The opaque `ove_mutex_t` handle.
 	 */
-	ove_mutex_t handle() const { return handle_; }
+	ove_mutex_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_mutex_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_mutex_storage_t storage_ = {};
@@ -143,15 +159,17 @@ private:
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-class RecursiveMutex {
-public:
+class RecursiveMutex
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the recursive mutex.
 	 *
 	 * Calls `ove_recursive_mutex_init` (zero-heap) or
 	 * `ove_recursive_mutex_create` (heap).  Asserts at startup on failure.
 	 */
-	RecursiveMutex() {
+	RecursiveMutex()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_recursive_mutex_init(&handle_, &storage_);
 #else
@@ -163,8 +181,10 @@ public:
 	/**
 	 * @brief Destroys the recursive mutex, releasing the underlying kernel resource.
 	 */
-	~RecursiveMutex() noexcept {
-		if (!handle_) return;
+	~RecursiveMutex() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_mutex_deinit(handle_);
 #else
@@ -183,8 +203,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	RecursiveMutex(RecursiveMutex &&other) noexcept
-		: handle_(other.handle_) {
+	RecursiveMutex(RecursiveMutex &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -193,9 +213,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	RecursiveMutex &operator=(RecursiveMutex &&other) noexcept {
+	RecursiveMutex &operator=(RecursiveMutex &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_recursive_mutex_destroy(handle_);
+			if (handle_)
+				ove_recursive_mutex_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -209,14 +231,16 @@ public:
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int lock(uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int lock(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_recursive_mutex_lock(handle_, timeout_ms);
 	}
 
 	/**
 	 * @brief Releases one level of the recursive lock.
 	 */
-	void unlock() {
+	void unlock()
+	{
 		ove_recursive_mutex_unlock(handle_);
 	}
 
@@ -224,15 +248,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the mutex was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS mutex handle.
 	 * @return The opaque `ove_mutex_t` handle.
 	 */
-	ove_mutex_t handle() const { return handle_; }
+	ove_mutex_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_mutex_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_mutex_storage_t storage_ = {};
@@ -249,21 +279,23 @@ private:
  *
  * @note Non-copyable and non-movable.
  */
-class LockGuard {
-public:
+class LockGuard
+{
+      public:
 	/**
 	 * @brief Constructs the guard, immediately locking the given mutex.
 	 * @param[in] mtx The mutex to lock.  Must outlive this guard.
 	 */
-	explicit LockGuard(Mutex &mtx)
-		: mtx_(mtx) {
+	explicit LockGuard(Mutex &mtx) : mtx_(mtx)
+	{
 		(void)mtx_.lock(); /* wait forever — failure is fatal */
 	}
 
 	/**
 	 * @brief Destroys the guard, unlocking the associated mutex.
 	 */
-	~LockGuard() noexcept {
+	~LockGuard() noexcept
+	{
 		mtx_.unlock();
 	}
 
@@ -272,7 +304,7 @@ public:
 	LockGuard(LockGuard &&) = delete;
 	LockGuard &operator=(LockGuard &&) = delete;
 
-private:
+      private:
 	Mutex &mtx_;
 };
 
@@ -297,9 +329,9 @@ private:
  *       due to the atomic flag, but the cell does not protect the contained
  *       object itself.
  */
-template<typename T>
-class StaticCell {
-public:
+template <typename T> class StaticCell
+{
+      public:
 	/**
 	 * @brief Constructs the contained object in-place.
 	 *
@@ -310,8 +342,8 @@ public:
 	 * @param[in] args Arguments forwarded to `T`'s constructor.
 	 * @return Reference to the newly constructed object.
 	 */
-	template<typename... Args>
-	T& init(Args&&... args) {
+	template <typename... Args> T &init(Args &&...args)
+	{
 		bool expected = false;
 		if (!initialized_.compare_exchange_strong(expected, true))
 			OVE_STATIC_INIT_ASSERT(false && "StaticCell already initialized");
@@ -325,9 +357,10 @@ public:
 	 *
 	 * @return Reference to the contained object.
 	 */
-	T& get() {
+	T &get()
+	{
 		OVE_STATIC_INIT_ASSERT(initialized_.load());
-		return *reinterpret_cast<T*>(storage_);
+		return *reinterpret_cast<T *>(storage_);
 	}
 
 	/**
@@ -337,25 +370,29 @@ public:
 	 *
 	 * @return Const reference to the contained object.
 	 */
-	const T& get() const {
+	const T &get() const
+	{
 		OVE_STATIC_INIT_ASSERT(initialized_.load());
-		return *reinterpret_cast<const T*>(storage_);
+		return *reinterpret_cast<const T *>(storage_);
 	}
 
 	/**
 	 * @brief Returns `true` if `init()` has been called successfully.
 	 * @return `true` when the cell contains a live object.
 	 */
-	bool is_initialized() const { return initialized_.load(); }
+	bool is_initialized() const
+	{
+		return initialized_.load();
+	}
 
 	StaticCell() = default;
 	~StaticCell() = default;
-	StaticCell(const StaticCell&) = delete;
-	StaticCell& operator=(const StaticCell&) = delete;
-	StaticCell(StaticCell&&) = delete;
-	StaticCell& operator=(StaticCell&&) = delete;
+	StaticCell(const StaticCell &) = delete;
+	StaticCell &operator=(const StaticCell &) = delete;
+	StaticCell(StaticCell &&) = delete;
+	StaticCell &operator=(StaticCell &&) = delete;
 
-private:
+      private:
 	alignas(T) uint8_t storage_[sizeof(T)]{};
 	std::atomic<bool> initialized_{false};
 };
@@ -375,8 +412,9 @@ private:
  * @note `take()` is marked `[[nodiscard]]`; the return value indicates
  *       whether the semaphore was actually decremented.
  */
-class Semaphore {
-public:
+class Semaphore
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the semaphore.
 	 * @param[in] initial Initial count value (default: 0).
@@ -384,7 +422,8 @@ public:
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	explicit Semaphore(unsigned int initial = 0, unsigned int max = 1) {
+	explicit Semaphore(unsigned int initial = 0, unsigned int max = 1)
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_sem_init(&handle_, &storage_, initial, max);
 #else
@@ -396,8 +435,10 @@ public:
 	/**
 	 * @brief Destroys the semaphore, releasing the underlying kernel resource.
 	 */
-	~Semaphore() noexcept {
-		if (!handle_) return;
+	~Semaphore() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_sem_deinit(handle_);
 #else
@@ -416,7 +457,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Semaphore(Semaphore &&other) noexcept : handle_(other.handle_) {
+	Semaphore(Semaphore &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -425,9 +467,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Semaphore &operator=(Semaphore &&other) noexcept {
+	Semaphore &operator=(Semaphore &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_sem_destroy(handle_);
+			if (handle_)
+				ove_sem_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -441,7 +485,8 @@ public:
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int take(uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int take(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_sem_take(handle_, timeout_ms);
 	}
 
@@ -450,7 +495,8 @@ public:
 	 *
 	 * Safe to call from both task and ISR context.
 	 */
-	void give() {
+	void give()
+	{
 		ove_sem_give(handle_);
 	}
 
@@ -458,15 +504,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the semaphore was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS semaphore handle.
 	 * @return The opaque `ove_sem_t` handle.
 	 */
-	ove_sem_t handle() const { return handle_; }
+	ove_sem_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_sem_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_sem_storage_t storage_ = {};
@@ -484,14 +536,16 @@ private:
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-class Event {
-public:
+class Event
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the event in the unsignalled state.
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	Event() {
+	Event()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_event_init(&handle_, &storage_);
 #else
@@ -503,8 +557,10 @@ public:
 	/**
 	 * @brief Destroys the event, releasing the underlying kernel resource.
 	 */
-	~Event() noexcept {
-		if (!handle_) return;
+	~Event() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_event_deinit(handle_);
 #else
@@ -523,7 +579,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Event(Event &&other) noexcept : handle_(other.handle_) {
+	Event(Event &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -532,9 +589,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Event &operator=(Event &&other) noexcept {
+	Event &operator=(Event &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_event_destroy(handle_);
+			if (handle_)
+				ove_event_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -548,14 +607,16 @@ public:
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int wait(uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int wait(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_event_wait(handle_, timeout_ms);
 	}
 
 	/**
 	 * @brief Signals the event from task context, waking any blocked waiter.
 	 */
-	void signal() {
+	void signal()
+	{
 		ove_event_signal(handle_);
 	}
 
@@ -564,7 +625,8 @@ public:
 	 *
 	 * Must only be called from an interrupt service routine.
 	 */
-	void signal_from_isr() {
+	void signal_from_isr()
+	{
 		ove_event_signal_from_isr(handle_);
 	}
 
@@ -572,15 +634,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the event was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS event handle.
 	 * @return The opaque `ove_event_t` handle.
 	 */
-	ove_event_t handle() const { return handle_; }
+	ove_event_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_event_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_event_storage_t storage_ = {};
@@ -600,14 +668,16 @@ private:
  * @note Always check the predicate in a loop after `wait()` to guard against
  *       spurious wake-ups.
  */
-class CondVar {
-public:
+class CondVar
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the condition variable.
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	CondVar() {
+	CondVar()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_condvar_init(&handle_, &storage_);
 #else
@@ -619,8 +689,10 @@ public:
 	/**
 	 * @brief Destroys the condition variable, releasing the underlying kernel resource.
 	 */
-	~CondVar() noexcept {
-		if (!handle_) return;
+	~CondVar() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_condvar_deinit(handle_);
 #else
@@ -639,7 +711,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	CondVar(CondVar &&other) noexcept : handle_(other.handle_) {
+	CondVar(CondVar &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -648,9 +721,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	CondVar &operator=(CondVar &&other) noexcept {
+	CondVar &operator=(CondVar &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_condvar_destroy(handle_);
+			if (handle_)
+				ove_condvar_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -670,22 +745,24 @@ public:
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int wait(Mutex &mtx,
-			       uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int wait(Mutex &mtx, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_condvar_wait(handle_, mtx.handle(), timeout_ms);
 	}
 
 	/**
 	 * @brief Wakes one task waiting on this condition variable.
 	 */
-	void signal() {
+	void signal()
+	{
 		ove_condvar_signal(handle_);
 	}
 
 	/**
 	 * @brief Wakes all tasks waiting on this condition variable.
 	 */
-	void broadcast() {
+	void broadcast()
+	{
 		ove_condvar_broadcast(handle_);
 	}
 
@@ -693,15 +770,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the condition variable was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS condition variable handle.
 	 * @return The opaque `ove_condvar_t` handle.
 	 */
-	ove_condvar_t handle() const { return handle_; }
+	ove_condvar_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_condvar_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_condvar_storage_t storage_ = {};

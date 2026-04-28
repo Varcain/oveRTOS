@@ -18,7 +18,8 @@
 #include <ove/watchdog.h>
 #include <ove/types.hpp>
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @class Watchdog
@@ -30,18 +31,19 @@ namespace ove {
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-class Watchdog {
-public:
+class Watchdog
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the watchdog with the given timeout.
 	 * @param[in] timeout_ms Watchdog timeout in milliseconds.
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	explicit Watchdog(uint32_t timeout_ms) {
+	explicit Watchdog(uint32_t timeout_ms)
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		int err = ove_watchdog_init(&handle_, &storage_,
-						 timeout_ms);
+		int err = ove_watchdog_init(&handle_, &storage_, timeout_ms);
 #else
 		int err = ove_watchdog_create(&handle_, timeout_ms);
 #endif
@@ -51,8 +53,10 @@ public:
 	/**
 	 * @brief Destroys the watchdog, stopping it and releasing the kernel resource.
 	 */
-	~Watchdog() {
-		if (!handle_) return;
+	~Watchdog()
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_watchdog_deinit(handle_);
 #else
@@ -71,7 +75,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Watchdog(Watchdog &&other) noexcept : handle_(other.handle_) {
+	Watchdog(Watchdog &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -80,9 +85,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Watchdog &operator=(Watchdog &&other) noexcept {
+	Watchdog &operator=(Watchdog &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_watchdog_destroy(handle_);
+			if (handle_)
+				ove_watchdog_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -94,7 +101,8 @@ public:
 	 * @brief Arms the watchdog and starts the countdown.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int start() {
+	[[nodiscard]] int start()
+	{
 		return ove_watchdog_start(handle_);
 	}
 
@@ -102,7 +110,8 @@ public:
 	 * @brief Disarms the watchdog, stopping the countdown.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int stop() {
+	[[nodiscard]] int stop()
+	{
 		return ove_watchdog_stop(handle_);
 	}
 
@@ -113,7 +122,8 @@ public:
 	 *
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int feed() {
+	[[nodiscard]] int feed()
+	{
 		return ove_watchdog_feed(handle_);
 	}
 
@@ -121,15 +131,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the watchdog was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS watchdog handle.
 	 * @return The opaque `ove_watchdog_t` handle.
 	 */
-	ove_watchdog_t handle() const { return handle_; }
+	ove_watchdog_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_watchdog_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_watchdog_storage_t storage_ = {};

@@ -240,8 +240,7 @@ static void test_cpp_fs_not_copyable(void **state)
 		      "File must not be copy assignable");
 	static_assert(!std::is_copy_constructible<ove::Dir>::value,
 		      "Dir must not be copy constructible");
-	static_assert(!std::is_copy_assignable<ove::Dir>::value,
-		      "Dir must not be copy assignable");
+	static_assert(!std::is_copy_assignable<ove::Dir>::value, "Dir must not be copy assignable");
 }
 
 int test_cpp_fs_run(void)

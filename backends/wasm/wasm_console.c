@@ -29,7 +29,7 @@
 
 #define CONSOLE_BUF_SIZE 256
 
-static uint8_t  con_buf[CONSOLE_BUF_SIZE];
+static uint8_t con_buf[CONSOLE_BUF_SIZE];
 static unsigned con_head;
 static unsigned con_tail;
 static unsigned con_count;

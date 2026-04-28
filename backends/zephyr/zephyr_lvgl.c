@@ -16,8 +16,7 @@
 
 int ove_lvgl_init(void)
 {
-	const struct device *display_dev =
-		DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+	const struct device *display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 
 	if (!device_is_ready(display_dev)) {
 		return OVE_ERR_NOT_SUPPORTED;
@@ -49,10 +48,22 @@ void ove_lvgl_handler(void)
 }
 #else /* !CONFIG_LVGL */
 
-int ove_lvgl_init(void) { return OVE_OK; }
-void ove_lvgl_lock(void) {}
-void ove_lvgl_unlock(void) {}
-void ove_lvgl_tick(uint32_t ms) { (void)ms; }
-void ove_lvgl_handler(void) {}
+int ove_lvgl_init(void)
+{
+	return OVE_OK;
+}
+void ove_lvgl_lock(void)
+{
+}
+void ove_lvgl_unlock(void)
+{
+}
+void ove_lvgl_tick(uint32_t ms)
+{
+	(void)ms;
+}
+void ove_lvgl_handler(void)
+{
+}
 
 #endif /* CONFIG_LVGL */

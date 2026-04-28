@@ -13,16 +13,14 @@
 /* k_timer expiry runs in ISR context — defer to system workqueue */
 static void zephyr_timer_expiry(struct k_timer *ztimer)
 {
-	struct ove_timer *ctx =
-		CONTAINER_OF(ztimer, struct ove_timer, timer);
+	struct ove_timer *ctx = CONTAINER_OF(ztimer, struct ove_timer, timer);
 	k_work_submit(&ctx->work);
 }
 
 /* Runs in thread context (system workqueue) — safe to lock mutexes */
 static void zephyr_timer_work(struct k_work *work)
 {
-	struct ove_timer *ctx =
-		CONTAINER_OF(work, struct ove_timer, work);
+	struct ove_timer *ctx = CONTAINER_OF(work, struct ove_timer, work);
 	if (ctx->callback != NULL) {
 		ctx->callback(ctx, ctx->user_data);
 	}
@@ -30,9 +28,8 @@ static void zephyr_timer_work(struct k_work *work)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage,
-		       ove_timer_fn callback, void *user_data,
-		       uint32_t period_ms, int one_shot)
+int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		   void *user_data, uint32_t period_ms, int one_shot)
 {
 	if (timer == NULL || storage == NULL || callback == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -60,10 +57,8 @@ void ove_timer_deinit(ove_timer_t timer)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_TIMER
-int ove_timer_create(ove_timer_t *timer,
-			       ove_timer_fn callback,
-			       void *user_data, uint32_t period_ms,
-			       int one_shot)
+int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
+		     int one_shot)
 {
 	struct ove_timer *ctx;
 
@@ -76,8 +71,7 @@ int ove_timer_create(ove_timer_t *timer,
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	int ret = ove_timer_init(timer, ctx, callback, user_data,
-				     period_ms, one_shot);
+	int ret = ove_timer_init(timer, ctx, callback, user_data, period_ms, one_shot);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(ctx);
 	}

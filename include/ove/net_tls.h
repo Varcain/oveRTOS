@@ -40,14 +40,15 @@ extern "C" {
  *       a non-zero value.
  */
 typedef struct {
-	const unsigned char *ca_cert;         /**< PEM or DER CA certificate (NULL to skip verify). */
-	size_t               ca_cert_len;     /**< Length of ca_cert in bytes (incl. NUL for PEM). */
-	const char          *hostname;        /**< Expected server hostname for SNI/verify (may be NULL). */
-	const unsigned char *client_cert;     /**< PEM or DER client certificate for mTLS (NULL to skip). */
-	size_t               client_cert_len; /**< Length of client_cert in bytes. */
-	const unsigned char *client_key;      /**< PEM or DER client private key (NULL to skip). */
-	size_t               client_key_len;  /**< Length of client_key in bytes. */
-	int                  allow_insecure;  /**< Non-zero to allow NULL @c ca_cert (disables peer verify — do not use in production). */
+	const unsigned char *ca_cert; /**< PEM or DER CA certificate (NULL to skip verify). */
+	size_t ca_cert_len;	      /**< Length of ca_cert in bytes (incl. NUL for PEM). */
+	const char *hostname;	      /**< Expected server hostname for SNI/verify (may be NULL). */
+	const unsigned char
+		*client_cert;	/**< PEM or DER client certificate for mTLS (NULL to skip). */
+	size_t client_cert_len; /**< Length of client_cert in bytes. */
+	const unsigned char *client_key; /**< PEM or DER client private key (NULL to skip). */
+	size_t client_key_len;		 /**< Length of client_key in bytes. */
+	int allow_insecure; /**< Non-zero to allow NULL @c ca_cert (disables peer verify — do not use in production). */
 } ove_tls_config_t;
 
 #include "ove/storage.h"
@@ -61,7 +62,7 @@ typedef struct {
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage);
+int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage);
 
 /**
  * @brief De-initialise a TLS session (frees internal resources, not storage).
@@ -78,8 +79,7 @@ void ove_tls_deinit(ove_tls_t tls);
  * @param[in] cfg  TLS configuration (certs, hostname).
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_tls_handshake(ove_tls_t tls, ove_socket_t sock,
-			   const ove_tls_config_t *cfg);
+int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg);
 
 /**
  * @brief Send data over an encrypted TLS session.
@@ -90,8 +90,7 @@ int  ove_tls_handshake(ove_tls_t tls, ove_socket_t sock,
  * @param[out] sent Number of bytes actually sent (may be NULL).
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_tls_send(ove_tls_t tls, const void *data, size_t len,
-		      size_t *sent);
+int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent);
 
 /**
  * @brief Receive data from an encrypted TLS session.
@@ -102,8 +101,7 @@ int  ove_tls_send(ove_tls_t tls, const void *data, size_t len,
  * @param[out] received Number of bytes received (may be NULL).
  * @return OVE_OK on success, OVE_ERR_NET_CLOSED if peer closed.
  */
-int  ove_tls_recv(ove_tls_t tls, void *buf, size_t len,
-		      size_t *received);
+int ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received);
 
 /**
  * @brief Shut down the TLS session (sends close_notify).
@@ -121,7 +119,7 @@ void ove_tls_close(ove_tls_t tls);
  * @param[out] tls Handle written on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_tls_create(ove_tls_t *tls);
+int ove_tls_create(ove_tls_t *tls);
 
 /**
  * @brief Destroy a heap-allocated TLS session.
@@ -135,15 +133,48 @@ void ove_tls_destroy(ove_tls_t tls);
 
 /** @cond INTERNAL */
 #ifndef CONFIG_OVE_NET_TLS
-typedef struct { uint8_t _unused; } ove_tls_storage_t;
+typedef struct {
+	uint8_t _unused;
+} ove_tls_storage_t;
 #endif
 
-static inline int  ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage) { (void)tls; (void)storage; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_tls_deinit(ove_tls_t tls) { (void)tls; }
-static inline int  ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg) { (void)tls; (void)sock; (void)cfg; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent) { (void)tls; (void)data; (void)len; (void)sent; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received) { (void)tls; (void)buf; (void)len; (void)received; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_tls_close(ove_tls_t tls) { (void)tls; }
+static inline int ove_tls_init(ove_tls_t *tls, ove_tls_storage_t *storage)
+{
+	(void)tls;
+	(void)storage;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_tls_deinit(ove_tls_t tls)
+{
+	(void)tls;
+}
+static inline int ove_tls_handshake(ove_tls_t tls, ove_socket_t sock, const ove_tls_config_t *cfg)
+{
+	(void)tls;
+	(void)sock;
+	(void)cfg;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_tls_send(ove_tls_t tls, const void *data, size_t len, size_t *sent)
+{
+	(void)tls;
+	(void)data;
+	(void)len;
+	(void)sent;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_tls_recv(ove_tls_t tls, void *buf, size_t len, size_t *received)
+{
+	(void)tls;
+	(void)buf;
+	(void)len;
+	(void)received;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_tls_close(ove_tls_t tls)
+{
+	(void)tls;
+}
 /** @endcond */
 
 #endif /* CONFIG_OVE_NET_TLS */

@@ -228,8 +228,7 @@ static void test_public_create_workqueue(void **state)
 
 	static ove_work_storage_t work_storage;
 	ove_work_t w = NULL;
-	assert_int_equal(ove_work_init_static(&w, &work_storage,
-					      work_handler_signal), OVE_OK);
+	assert_int_equal(ove_work_init_static(&w, &work_storage, work_handler_signal), OVE_OK);
 	assert_non_null(w);
 
 	assert_int_equal(ove_work_submit(wq, w), OVE_OK);
@@ -307,9 +306,9 @@ static void test_public_create_no_kernel_heap(void **state)
 
 extern void ove_heap_lock(void);
 extern void ove_heap_lock_test_begin(void);
-extern int  ove_heap_lock_test_end(void);
+extern int ove_heap_lock_test_end(void);
 extern void *__wrap_malloc(size_t n);
-extern void  __wrap_free(void *p);
+extern void __wrap_free(void *p);
 
 static void test_public_create_heap_lock_callable(void **state)
 {
@@ -336,7 +335,7 @@ static void test_public_create_heap_lock_traps(void **state)
 	 * the test binary).  Now the same call must be denied. */
 	ove_heap_lock_test_begin();
 	void *post = __wrap_malloc(16);
-	int  trap_count = ove_heap_lock_test_end();
+	int trap_count = ove_heap_lock_test_end();
 	assert_null(post);
 	assert_int_equal(trap_count, 1);
 }

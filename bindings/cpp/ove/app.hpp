@@ -16,7 +16,8 @@
 #include <ove/app.h>
 #include <ove/types.hpp>
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @brief Starts the oveRTOS scheduler and enters the main event loop.
@@ -24,7 +25,10 @@ namespace ove {
  * This function does not return under normal circumstances.  Call it at the
  * end of the C `ove_main()` entry point (or from `OVE_MAIN()`).
  */
-inline void run() { ove_run(); }
+inline void run()
+{
+	ove_run();
+}
 
 } /* namespace ove */
 
@@ -54,9 +58,10 @@ inline void run() { ove_run(); }
  *       reclaims the main stack when it starts; on POSIX and others
  *       it is latent but still UB.
  */
-#define OVE_MAIN()                                \
-	static void ove_main_impl();              \
-	extern "C" void ove_main(void) {          \
-		ove_main_impl();                  \
-	}                                             \
+#define OVE_MAIN()                     \
+	static void ove_main_impl();   \
+	extern "C" void ove_main(void) \
+	{                              \
+		ove_main_impl();       \
+	}                              \
 	static void ove_main_impl()

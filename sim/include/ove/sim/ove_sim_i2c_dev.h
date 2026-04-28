@@ -37,8 +37,8 @@ extern "C" {
 struct ove_sim_i2c_dev_ops {
 	struct ove_sim_plugin_ops base;
 
-	uint16_t     addr; /**< 7-bit I2C address this device responds to. */
-	unsigned int bus;  /**< I2C bus instance index. */
+	uint16_t addr;	  /**< 7-bit I2C address this device responds to. */
+	unsigned int bus; /**< I2C bus instance index. */
 
 	/**
 	 * @brief Handle an I2C write (master -> slave).
@@ -70,8 +70,7 @@ struct ove_sim_i2c_dev_ops {
 	 * @param[in]  rx_len  RX byte count.
 	 * @return 0 on success, negative on error.
 	 */
-	int (*write_read)(void *ctx, const void *tx, size_t tx_len,
-			  void *rx, size_t rx_len);
+	int (*write_read)(void *ctx, const void *tx, size_t tx_len, void *rx, size_t rx_len);
 };
 
 /**
@@ -81,8 +80,7 @@ struct ove_sim_i2c_dev_ops {
  * @param[in] ctx  Plugin-private context.
  * @return 0 on success, negative error code on failure.
  */
-int ove_sim_i2c_dev_register(const struct ove_sim_i2c_dev_ops *ops,
-			     void *ctx);
+int ove_sim_i2c_dev_register(const struct ove_sim_i2c_dev_ops *ops, void *ctx);
 
 /**
  * @brief Find a registered virtual I2C device by bus and address.
@@ -91,8 +89,7 @@ int ove_sim_i2c_dev_register(const struct ove_sim_i2c_dev_ops *ops,
  * @param[in] addr  7-bit device address.
  * @return Pointer to the device entry, or NULL if none registered.
  */
-const struct ove_sim_i2c_dev_ops *ove_sim_i2c_dev_find(unsigned int bus,
-						       uint16_t addr);
+const struct ove_sim_i2c_dev_ops *ove_sim_i2c_dev_find(unsigned int bus, uint16_t addr);
 
 /**
  * @brief Get the context for a registered I2C device.

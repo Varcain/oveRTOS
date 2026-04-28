@@ -19,10 +19,8 @@ int ove_app_run(void)
 	ove_console_init();
 #endif
 
-	OVE_LOG("ove: starting %s %s on %s\n",
-		    CONFIG_OVE_APP_NAME,
-		    CONFIG_OVE_APP_VERSION,
-		    OVE_RTOS_NAME);
+	OVE_LOG("ove: starting %s %s on %s\n", CONFIG_OVE_APP_NAME, CONFIG_OVE_APP_VERSION,
+		OVE_RTOS_NAME);
 
 	ove_main();
 

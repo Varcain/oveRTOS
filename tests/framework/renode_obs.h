@@ -32,7 +32,7 @@
 
 /* GPIO output-data register read for any port.
  *   `port` is the GPIOx pointer from CMSIS (e.g. GPIOA, GPIOI). */
-#define OVE_OBS_GPIO_ODR(port)        ((port)->ODR)
+#define OVE_OBS_GPIO_ODR(port) ((port)->ODR)
 #define OVE_OBS_GPIO_PIN_HIGH(port, n) (((port)->ODR & (1U << (n))) != 0U)
 
 /* Generic peripheral register read at an absolute address. */
@@ -43,13 +43,13 @@ static inline uint32_t ove_obs_read32(uintptr_t addr)
 
 #define OVE_OBS_AVAILABLE 1
 
-#else  /* !OVE_RENODE_STM32F746 */
+#else /* !OVE_RENODE_STM32F746 */
 
 /* On non-Renode targets these expand to constants that always make the
  * dependent assertion fall into a skip branch — see the
  * OVE_OBS_AVAILABLE gate inside each test. */
 #define OVE_OBS_AVAILABLE 0
-#define OVE_OBS_GPIO_ODR(port)         (0U)
+#define OVE_OBS_GPIO_ODR(port) (0U)
 #define OVE_OBS_GPIO_PIN_HIGH(port, n) (0)
 
 static inline uint32_t ove_obs_read32(uintptr_t addr)

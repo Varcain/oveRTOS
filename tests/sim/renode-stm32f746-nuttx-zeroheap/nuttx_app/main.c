@@ -14,7 +14,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void ove_main(void) {}
+void ove_main(void)
+{
+}
 
 int main(int argc, char *argv[])
 {
@@ -23,7 +25,7 @@ int main(int argc, char *argv[])
 	(void)argc;
 	(void)argv;
 
-#define OVE_SUITE(name, label) \
+#define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();
 #include "framework/suites.inc"

@@ -30,7 +30,9 @@
 #ifdef CONFIG_OVE_PROFILER
 extern void ove_backend_profiler_check(void);
 #else
-static inline void ove_backend_profiler_check(void) {}
+static inline void ove_backend_profiler_check(void)
+{
+}
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -56,11 +58,12 @@ uint64_t ove_state_stats_now_us(void)
 #endif
 
 /* Set thread state with tracking + trace emit. */
-#define SET_STATE(t, s) do { \
-	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
-	ove_state_track_transition(&(t)->st, (s)); \
-	(t)->state = (s); \
-} while (0)
+#define SET_STATE(t, s)                                                \
+	do {                                                           \
+		ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
+		ove_state_track_transition(&(t)->st, (s));             \
+		(t)->state = (s);                                      \
+	} while (0)
 
 static __thread struct ove_thread *tls_current;
 static struct ove_thread *first_thread;
@@ -96,13 +99,13 @@ static uint64_t now_us(void)
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000ULL +
-	       (uint64_t)ts.tv_nsec / 1000ULL;
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 }
 
 static void touch_yield(struct ove_thread *t)
 {
-	if (t) t->last_yield_us = now_us();
+	if (t)
+		t->last_yield_us = now_us();
 }
 
 /**
@@ -132,24 +135,27 @@ static void paint_stack(struct ove_thread *t)
 {
 #ifdef __EMSCRIPTEN__
 	uintptr_t base = emscripten_stack_get_base();
-	uintptr_t end  = emscripten_stack_get_end();
-	if (base <= end) return; /* unexpected — bail */
+	uintptr_t end = emscripten_stack_get_end();
+	if (base <= end)
+		return; /* unexpected — bail */
 
 	t->stack_base = base;
-	t->stack_end  = end;
+	t->stack_end = end;
 	t->stack_size = (size_t)(base - end);
 
 	uintptr_t cur_sp = emscripten_stack_get_current();
 	/* Keep a generous margin under SP so paint loop temporaries and
 	 * any not-yet-stored registers stay untouched. */
 	const uintptr_t margin = 512;
-	if (cur_sp <= end + margin) return;
+	if (cur_sp <= end + margin)
+		return;
 	uintptr_t top = cur_sp - margin;
 	top &= ~(uintptr_t)(sizeof(uint32_t) - 1);
 
-	uint32_t *p   = (uint32_t *)end;
+	uint32_t *p = (uint32_t *)end;
 	uint32_t *stop = (uint32_t *)top;
-	while (p < stop) *p++ = OVE_WASM_STACK_COLOR;
+	while (p < stop)
+		*p++ = OVE_WASM_STACK_COLOR;
 	t->stack_painted = 1;
 #else
 	(void)t;
@@ -171,9 +177,8 @@ static void *thread_wrapper(void *arg)
 	return NULL;
 }
 
-int ove_thread_init(ove_thread_t *handle,
-			ove_thread_storage_t *storage,
-			const struct ove_thread_desc *desc)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
+		    const struct ove_thread_desc *desc)
 {
 	if (!handle || !storage || !desc || !desc->entry)
 		return OVE_ERR_INVALID_PARAM;
@@ -210,7 +215,8 @@ int ove_thread_init(ove_thread_t *handle,
 int ove_thread_deinit(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_thread *t = handle;
 	if (t->started) {
@@ -228,8 +234,7 @@ int ove_thread_deinit(ove_thread_t handle)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_thread_create_(ove_thread_t *handle,
-			   const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 {
 	if (!handle || !desc || !desc->entry)
 		return OVE_ERR_INVALID_PARAM;
@@ -271,7 +276,8 @@ int ove_thread_create_(ove_thread_t *handle,
 int ove_thread_destroy(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_thread *t = handle;
 	if (t->started) {
@@ -306,9 +312,11 @@ void ove_thread_sleep_ms(uint32_t ms)
 	touch_yield(t);
 	ove_backend_profiler_check();
 	check_suspend(t);
-	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
+	if (t)
+		SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	usleep((useconds_t)ms * 1000);
-	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+	if (t)
+		SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 	touch_yield(t);
 	check_suspend(t);
 }
@@ -317,7 +325,8 @@ void ove_thread_sleep_ms(uint32_t ms)
 void ove_backend_thread_set_state(int new_state)
 {
 	struct ove_thread *t = tls_current;
-	if (t) SET_STATE(t, new_state);
+	if (t)
+		SET_STATE(t, new_state);
 }
 #endif
 
@@ -331,7 +340,7 @@ void ove_thread_yield(void)
 
 /* ── Supervisor thread ─────────────────────────────────────────────── */
 
-#define SUPERVISOR_INTERVAL_MS 500   /* check every 500ms */
+#define SUPERVISOR_INTERVAL_MS 500     /* check every 500ms */
 #define UNRESPONSIVE_THRESHOLD_MS 2000 /* warn after 2s without yield */
 
 static volatile int supervisor_running;
@@ -354,7 +363,8 @@ static void *supervisor_loop(void *arg)
 				continue;
 
 			uint64_t last = t->last_yield_us;
-			if (last == 0) continue;
+			if (last == 0)
+				continue;
 			uint64_t elapsed_ms = (now - last) / 1000;
 
 			if (elapsed_ms > UNRESPONSIVE_THRESHOLD_MS) {
@@ -368,8 +378,7 @@ static void *supervisor_loop(void *arg)
 						"[supervisor] thread %p "
 						"unresponsive for %llu ms "
 						"(CPU-bound loop?)\n",
-						(void *)t,
-						(unsigned long long)elapsed_ms);
+						(void *)t, (unsigned long long)elapsed_ms);
 				}
 			}
 		}
@@ -421,7 +430,8 @@ void ove_thread_resume(ove_thread_t handle)
 size_t ove_thread_get_stack_usage(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
-	if (!t || !t->stack_painted) return 0;
+	if (!t || !t->stack_painted)
+		return 0;
 
 	/* Scan from the stack limit upward for the first word the thread
 	 * has touched.  Stack grows down, so the deepest usage sits at
@@ -432,9 +442,10 @@ size_t ove_thread_get_stack_usage(ove_thread_t handle)
 	 * transitioning to written (which monotonically increases the
 	 * computed high-water mark — never reports a false-low).
 	 */
-	const uint32_t *p   = (const uint32_t *)t->stack_end;
+	const uint32_t *p = (const uint32_t *)t->stack_end;
 	const uint32_t *top = (const uint32_t *)t->stack_base;
-	while (p < top && *p == OVE_WASM_STACK_COLOR) p++;
+	while (p < top && *p == OVE_WASM_STACK_COLOR)
+		p++;
 	return (size_t)(t->stack_base - (uintptr_t)p);
 }
 
@@ -444,8 +455,7 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 	return t ? t->state : OVE_THREAD_STATE_UNKNOWN;
 }
 
-int ove_thread_get_runtime_stats(ove_thread_t handle,
-				     struct ove_thread_stats *stats)
+int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
 	(void)handle;
 	if (stats) {
@@ -457,7 +467,8 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 
 int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 {
-	if (!stats) return OVE_ERR_INVALID_PARAM;
+	if (!stats)
+		return OVE_ERR_INVALID_PARAM;
 	memset(stats, 0, sizeof(*stats));
 #ifdef __EMSCRIPTEN__
 	/* Emscripten/emmalloc mallinfo returns int fields (not size_t) and
@@ -466,16 +477,16 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 	static size_t peak_used;
 	struct mallinfo mi = mallinfo();
 	stats->total = (size_t)emscripten_get_heap_size();
-	stats->used  = (size_t)(unsigned)mi.uordblks;
-	stats->free  = (size_t)(unsigned)mi.fordblks;
-	if (stats->used > peak_used) peak_used = stats->used;
+	stats->used = (size_t)(unsigned)mi.uordblks;
+	stats->free = (size_t)(unsigned)mi.fordblks;
+	if (stats->used > peak_used)
+		peak_used = stats->used;
 	stats->peak_used = peak_used;
 #endif
 	return OVE_OK;
 }
 
-int ove_thread_list(struct ove_thread_info *out, size_t max_count,
-		    size_t *actual_count)
+int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 	if (!out) {
 		if (actual_count)
@@ -491,15 +502,16 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 
 	pthread_mutex_lock(&tracked_lock);
 	int n = tracked_count;
-	if ((size_t)n > max_count) n = (int)max_count;
+	if ((size_t)n > max_count)
+		n = (int)max_count;
 	for (int i = 0; i < n; i++) {
 		struct ove_thread *t = tracked_threads[i];
-		if (!t) continue;
+		if (!t)
+			continue;
 		out[count].name = t->name ? t->name : "?";
 		out[count].state = (ove_thread_state_t)t->state;
 		out[count].priority = t->priority;
-		out[count].stack_used = t->stack_painted
-			? ove_thread_get_stack_usage(t) : 0;
+		out[count].stack_used = t->stack_painted ? ove_thread_get_stack_usage(t) : 0;
 		out[count].stack_size = t->stack_size;
 		out[count].cpu_percent_x100 = 0;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
@@ -510,19 +522,17 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 			cumul[k] = t->st.cumul_us[k];
 		uint64_t now = ove_state_stats_now_us();
 		int cur = t->st.cur_state;
-		if (cur >= 0 && cur < OVE_STATE_COUNT &&
-		    now > t->st.last_ts_us)
+		if (cur >= 0 && cur < OVE_STATE_COUNT && now > t->st.last_ts_us)
 			cumul[cur] += now - t->st.last_ts_us;
 
-		out[count].state_times.running_us   = cumul[0];
-		out[count].state_times.ready_us     = cumul[1];
-		out[count].state_times.blocked_us   = cumul[2];
+		out[count].state_times.running_us = cumul[0];
+		out[count].state_times.ready_us = cumul[1];
+		out[count].state_times.blocked_us = cumul[2];
 		out[count].state_times.suspended_us = cumul[3];
 		running_us[count] = cumul[0];
 		total_running_us += cumul[0];
 #else
-		memset(&out[count].state_times, 0,
-		       sizeof(out[count].state_times));
+		memset(&out[count].state_times, 0, sizeof(out[count].state_times));
 #endif
 		count++;
 	}
@@ -532,8 +542,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 	if (total_running_us > 0) {
 		for (size_t i = 0; i < count; i++)
 			out[i].cpu_percent_x100 =
-				(uint32_t)(running_us[i] * 10000ULL /
-					   total_running_us);
+				(uint32_t)(running_us[i] * 10000ULL / total_running_us);
 	}
 #endif
 
@@ -550,14 +559,14 @@ uintptr_t ove_backend_thread_current_handle(void)
 	return (uintptr_t)tls_current;
 }
 
-size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
-				      size_t max)
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max)
 {
 	size_t count = 0;
 	pthread_mutex_lock(&tracked_lock);
 	for (int i = 0; i < tracked_count && count < max; i++) {
 		struct ove_thread *t = tracked_threads[i];
-		if (!t) continue;
+		if (!t)
+			continue;
 		out[count].tid = (uint32_t)(uintptr_t)t;
 		out[count].name = t->name ? t->name : "?";
 		count++;
@@ -591,8 +600,7 @@ size_t ove_backend_profiler_flag_running(void)
 		struct ove_thread *t = tracked_threads[i];
 		if (!t || !t->started)
 			continue;
-		if (t->state != OVE_THREAD_STATE_RUNNING &&
-		    t->state != OVE_THREAD_STATE_READY &&
+		if (t->state != OVE_THREAD_STATE_RUNNING && t->state != OVE_THREAD_STATE_READY &&
 		    t->state != OVE_THREAD_STATE_BLOCKED)
 			continue;
 		t->profiler_pending = 1;

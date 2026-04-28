@@ -26,8 +26,10 @@ static void *wq_thread_func(void *arg)
 			break;
 		}
 		struct ove_work *w = wq->queue[0];
-		memmove(&wq->queue[0], &wq->queue[1],
-			(size_t)(wq->count - 1) * sizeof(wq->queue[0]));
+		// queue is an array of struct ove_work *; the slot size IS the
+		// pointer, so sizeof(queue[0]) is correct here.
+		const size_t slot = sizeof(wq->queue[0]); // NOLINT(bugprone-sizeof-expression)
+		memmove(&wq->queue[0], &wq->queue[1], (size_t)(wq->count - 1) * slot);
 		wq->count--;
 		pthread_mutex_unlock(&wq->lock);
 
@@ -41,17 +43,16 @@ static void *wq_thread_func(void *arg)
 	return NULL;
 }
 
-int ove_workqueue_init(ove_workqueue_t *wqh,
-			   ove_workqueue_storage_t *storage,
-			   const char *name, ove_prio_t priority,
-			   size_t stack_size, void *stack)
+int ove_workqueue_init(ove_workqueue_t *wqh, ove_workqueue_storage_t *storage, const char *name,
+		       ove_prio_t priority, size_t stack_size, void *stack)
 {
 	(void)name;
 	(void)priority;
 	(void)stack_size;
 	(void)stack;
 
-	if (!wqh || !storage) return OVE_ERR_INVALID_PARAM;
+	if (!wqh || !storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_workqueue *wq = (struct ove_workqueue *)storage;
 	memset(wq, 0, sizeof(*wq));
 	pthread_mutex_init(&wq->lock, NULL);
@@ -83,11 +84,10 @@ void ove_workqueue_deinit(ove_workqueue_t wqh)
 	pthread_cond_destroy(&wq->cond);
 }
 
-int ove_work_init_static(ove_work_t *work,
-			     ove_work_storage_t *storage,
-			     ove_work_fn handler)
+int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler)
 {
-	if (!work || !storage || !handler) return OVE_ERR_INVALID_PARAM;
+	if (!work || !storage || !handler)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_work *w = (struct ove_work *)storage;
 	memset(w, 0, sizeof(*w));
 	w->handler = handler;
@@ -96,14 +96,15 @@ int ove_work_init_static(ove_work_t *work,
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_workqueue_create(ove_workqueue_t *wqh, const char *name,
-			     ove_prio_t priority, size_t stack_size)
+int ove_workqueue_create(ove_workqueue_t *wqh, const char *name, ove_prio_t priority,
+			 size_t stack_size)
 {
 	(void)name;
 	(void)priority;
 	(void)stack_size;
 
-	if (!wqh) return OVE_ERR_INVALID_PARAM;
+	if (!wqh)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_workqueue *wq = OVE_BACKEND_MALLOC(sizeof(*wq));
 	if (!wq) {
 		return OVE_ERR_NO_MEMORY;
@@ -145,7 +146,8 @@ void ove_workqueue_destroy(ove_workqueue_t wqh)
 
 int ove_work_init(ove_work_t *work, ove_work_fn handler)
 {
-	if (!work || !handler) return OVE_ERR_INVALID_PARAM;
+	if (!work || !handler)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_work *w = OVE_BACKEND_MALLOC(sizeof(*w));
 	if (!w) {
 		return OVE_ERR_NO_MEMORY;
@@ -181,8 +183,7 @@ int ove_work_submit(ove_workqueue_t wqh, ove_work_t work)
 	return OVE_OK;
 }
 
-int ove_work_submit_delayed(ove_workqueue_t wqh,
-				ove_work_t work, uint32_t delay_ms)
+int ove_work_submit_delayed(ove_workqueue_t wqh, ove_work_t work, uint32_t delay_ms)
 {
 	struct ove_workqueue *wq = wqh;
 	struct ove_work *w = work;

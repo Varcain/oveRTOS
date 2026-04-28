@@ -26,34 +26,31 @@
 /* ── Configuration ───────────────────────────────────────────── */
 
 #ifndef ETH_RX_DESC_CNT
-#define ETH_RX_DESC_CNT  4
+#define ETH_RX_DESC_CNT 4
 #endif
 #ifndef ETH_TX_DESC_CNT
-#define ETH_TX_DESC_CNT  4
+#define ETH_TX_DESC_CNT 4
 #endif
 #ifndef ETH_RX_BUF_SIZE
-#define ETH_RX_BUF_SIZE  1536
+#define ETH_RX_BUF_SIZE 1536
 #endif
 
 /* LAN8742A PHY */
-#define LAN8742A_ADDR    0
+#define LAN8742A_ADDR 0
 #ifndef PHY_BSR
-#define PHY_BSR          0x01
+#define PHY_BSR 0x01
 #endif
 #ifndef PHY_BSR_LINK
-#define PHY_BSR_LINK     0x0004
+#define PHY_BSR_LINK 0x0004
 #endif
 
 /* ── DMA descriptors and buffers ─────────────────────────────── */
 
 ETH_HandleTypeDef heth;
-ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT]
-    __attribute__((aligned(4)));
-ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT]
-    __attribute__((aligned(4)));
+ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT] __attribute__((aligned(4)));
+ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT] __attribute__((aligned(4)));
 
-static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE]
-    __attribute__((aligned(4)));
+static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE] __attribute__((aligned(4)));
 
 static uint8_t MACAddr[6] = {0x02, 0x00, 0x00, 0xDE, 0xAD, 0x01};
 
@@ -66,8 +63,7 @@ void HAL_ETH_RxAllocateCallback(uint8_t **buff)
 	alloc_idx = (alloc_idx + 1) % ETH_RX_DESC_CNT;
 }
 
-void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd,
-			    uint8_t *buff, uint16_t Length)
+void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t Length)
 {
 	struct pbuf **ppStart = (struct pbuf **)pStart;
 	struct pbuf *p;
@@ -82,7 +78,8 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd,
 		*ppStart = p;
 	} else if (p) {
 		struct pbuf *tail = (struct pbuf *)*pEnd;
-		if (tail) tail->next = p;
+		if (tail)
+			tail->next = p;
 	}
 	*pEnd = p;
 
@@ -120,9 +117,9 @@ static int eth_mac_init(void)
 	/* Wait for PHY link */
 	for (int i = 0; i < 50; i++) {
 		uint32_t bsr = 0;
-		if (HAL_ETH_ReadPHYRegister(&heth, LAN8742A_ADDR,
-					    PHY_BSR, &bsr) == HAL_OK) {
-			if (bsr & PHY_BSR_LINK) return 0;
+		if (HAL_ETH_ReadPHYRegister(&heth, LAN8742A_ADDR, PHY_BSR, &bsr) == HAL_OK) {
+			if (bsr & PHY_BSR_LINK)
+				return 0;
 		}
 		HAL_Delay(100);
 	}
@@ -168,8 +165,7 @@ err_t ethernetif_init(struct netif *netif)
 	netif->hwaddr_len = ETH_HWADDR_LEN;
 	memcpy(netif->hwaddr, MACAddr, ETH_HWADDR_LEN);
 	netif->mtu = 1500;
-	netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP |
-		       NETIF_FLAG_LINK_UP;
+	netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
 
 	if (eth_mac_init() != 0)
 		return ERR_IF;

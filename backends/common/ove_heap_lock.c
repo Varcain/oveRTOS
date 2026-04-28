@@ -34,12 +34,16 @@
 #include <assert.h>
 
 #ifdef CONFIG_OVE_RTOS_NUTTX
-#  include <nuttx/sched.h>
-#  define OVE_HEAP_LOCK_TRAP_ABORT() DEBUGASSERT(0)
+#include <nuttx/sched.h>
+#define OVE_HEAP_LOCK_TRAP_ABORT() DEBUGASSERT(0)
 #else
-   /* Generic abort for FreeRTOS / Zephyr / POSIX.  Drops into the
+/* Generic abort for FreeRTOS / Zephyr / POSIX.  Drops into the
     * platform's assert / abort path. */
-#  define OVE_HEAP_LOCK_TRAP_ABORT() do { volatile int _x = 0; (void)*&_x; } while (0)
+#define OVE_HEAP_LOCK_TRAP_ABORT()   \
+	do {                         \
+		volatile int _x = 0; \
+		(void)*&_x;          \
+	} while (0)
 #endif
 
 /*
@@ -64,7 +68,7 @@ void ove_heap_lock(void)
  * don't accidentally depend on them.  Tests pull them in via plain
  * extern declarations. */
 void ove_heap_lock_test_begin(void);
-int  ove_heap_lock_test_end(void);
+int ove_heap_lock_test_end(void);
 
 void ove_heap_lock_test_begin(void)
 {
@@ -90,10 +94,10 @@ int ove_heap_lock_trapped_(void)
 	if (atomic_load(&g_ove_mm_locked)) {
 		if (atomic_load(&g_ove_mm_test_mode)) {
 			atomic_fetch_add(&g_ove_mm_trap_count, 1);
-			return 1;  /* signal "denied, return NULL" */
+			return 1; /* signal "denied, return NULL" */
 		}
 		OVE_HEAP_LOCK_TRAP_ABORT();
-		return 1;  /* unreachable in practice; caller returns NULL */
+		return 1; /* unreachable in practice; caller returns NULL */
 	}
 	return 0;
 }
@@ -115,35 +119,40 @@ extern void *__real_calloc(size_t nmemb, size_t n);
 extern void *__real_realloc(void *p, size_t n);
 extern void *__real_zalloc(size_t n);
 extern void *__real_memalign(size_t alignment, size_t size);
-extern void  __real_free(void *p);
+extern void __real_free(void *p);
 
 void *__wrap_malloc(size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_malloc(n);
 }
 
 void *__wrap_calloc(size_t nmemb, size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_calloc(nmemb, n);
 }
 
 void *__wrap_realloc(void *p, size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_realloc(p, n);
 }
 
 void *__wrap_zalloc(size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_zalloc(n);
 }
 
 void *__wrap_memalign(size_t alignment, size_t size)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_memalign(alignment, size);
 }
 
@@ -154,11 +163,13 @@ void __wrap_free(void *p)
 	__real_free(p);
 }
 
-#else  /* !CONFIG_OVE_ZERO_HEAP */
+#else /* !CONFIG_OVE_ZERO_HEAP */
 
 /* In heap mode the lock has no work to do — provide an empty body so
  * apps can call it unconditionally.  Tests are zero-heap-only so the
  * test-mode hooks live behind the ifdef. */
-void ove_heap_lock(void) { }
+void ove_heap_lock(void)
+{
+}
 
 #endif /* CONFIG_OVE_ZERO_HEAP */

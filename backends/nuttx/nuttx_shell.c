@@ -11,8 +11,8 @@
 #include "ove_backend_common.h"
 #include <string.h>
 
-#define SHELL_LINE_MAX  128
-#define SHELL_CMD_MAX   16
+#define SHELL_LINE_MAX 128
+#define SHELL_CMD_MAX 16
 
 static struct ove_shell_cmd cmd_table[SHELL_CMD_MAX];
 static unsigned int cmd_count;
@@ -28,7 +28,7 @@ static void shell_help(int argc, const char *argv[])
 	OVE_LOG_INF("Commands:\n");
 	for (i = 0; i < cmd_count; i++) {
 		OVE_LOG_INF("  %-12s %s\n", cmd_table[i].name,
-			     cmd_table[i].help ? cmd_table[i].help : "");
+			    cmd_table[i].help ? cmd_table[i].help : "");
 	}
 }
 
@@ -137,7 +137,8 @@ void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
 
 void ove_shell_process_line(const char *line)
 {
-	if (!line) return;
+	if (!line)
+		return;
 
 	/* Copy into the line buffer and execute */
 	size_t len = strlen(line);

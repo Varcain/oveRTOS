@@ -58,11 +58,11 @@ typedef enum {
  * @brief SPI bus configuration descriptor.
  */
 struct ove_spi_cfg {
-	unsigned int        instance;  /**< SPI peripheral index (0, 1, 2 ...). */
-	uint32_t            clock_hz;  /**< SCK frequency in Hz. */
-	ove_spi_mode_t      mode;      /**< Clock polarity / phase. */
+	unsigned int instance;	       /**< SPI peripheral index (0, 1, 2 ...). */
+	uint32_t clock_hz;	       /**< SCK frequency in Hz. */
+	ove_spi_mode_t mode;	       /**< Clock polarity / phase. */
 	ove_spi_bit_order_t bit_order; /**< Bit order on the wire. */
-	uint8_t             word_size; /**< Bits per word: 8 or 16. */
+	uint8_t word_size;	       /**< Bits per word: 8 or 16. */
 };
 
 /**
@@ -74,8 +74,8 @@ struct ove_spi_cfg {
  */
 struct ove_spi_cs {
 	unsigned int gpio_port; /**< GPIO port index for CS pin. */
-	unsigned int gpio_pin;  /**< GPIO pin index for CS pin. */
-	int          active_low;/**< Non-zero if CS is active low (common). */
+	unsigned int gpio_pin;	/**< GPIO pin index for CS pin. */
+	int active_low;		/**< Non-zero if CS is active low (common). */
 };
 
 /**
@@ -85,9 +85,9 @@ struct ove_spi_cs {
  * segments under a single CS assertion.
  */
 struct ove_spi_xfer {
-	const void *tx;  /**< TX buffer, or NULL for RX-only. */
-	void       *rx;  /**< RX buffer, or NULL for TX-only. */
-	size_t      len; /**< Number of bytes in this segment. */
+	const void *tx; /**< TX buffer, or NULL for RX-only. */
+	void *rx;	/**< RX buffer, or NULL for TX-only. */
+	size_t len;	/**< Number of bytes in this segment. */
 };
 
 #ifdef CONFIG_OVE_SPI
@@ -101,8 +101,7 @@ struct ove_spi_xfer {
  * @param[in]  cfg     Bus configuration (pins, mode, clock rate).
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage,
-		  const struct ove_spi_cfg *cfg);
+int ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage, const struct ove_spi_cfg *cfg);
 /** @brief Release an SPI bus handle previously created with `ove_spi_init`. */
 void ove_spi_deinit(ove_spi_t spi);
 
@@ -113,13 +112,15 @@ void ove_spi_deinit(ove_spi_t spi);
  * @param[in]  cfg Bus configuration.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_spi_create(ove_spi_t *spi, const struct ove_spi_cfg *cfg);
+int ove_spi_create(ove_spi_t *spi, const struct ove_spi_cfg *cfg);
 /** @brief Destroy an SPI bus handle previously created with `ove_spi_create`. */
 void ove_spi_destroy(ove_spi_t spi);
 #elif !defined(__ZIG_CIMPORT__)
-#define ove_spi_create(pspi, cfg) \
-	({ static ove_spi_storage_t _ove_stor_; \
-	   ove_spi_init((pspi), &_ove_stor_, (cfg)); })
+#define ove_spi_create(pspi, cfg)                         \
+	({                                                \
+		static ove_spi_storage_t _ove_stor_;      \
+		ove_spi_init((pspi), &_ove_stor_, (cfg)); \
+	})
 #define ove_spi_destroy(spi) ove_spi_deinit(spi)
 #endif
 
@@ -140,9 +141,8 @@ void ove_spi_destroy(ove_spi_t spi);
  * @param[in]  timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs,
-		      const void *tx, void *rx, size_t len,
-		      uint32_t timeout_ms);
+int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
+		     size_t len, uint32_t timeout_ms);
 
 /**
  * @brief Write-only SPI transfer (TX only, ignore RX).
@@ -154,8 +154,8 @@ int  ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs,
  * @param[in] timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs,
-		   const void *data, size_t len, uint32_t timeout_ms);
+int ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs, const void *data, size_t len,
+		  uint32_t timeout_ms);
 
 /**
  * @brief Read-only SPI transfer (clock out zeros, capture RX).
@@ -167,8 +167,8 @@ int  ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs,
  * @param[in]  timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs,
-		  void *buf, size_t len, uint32_t timeout_ms);
+int ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs, void *buf, size_t len,
+		 uint32_t timeout_ms);
 
 /**
  * @brief Multi-segment SPI transfer under a single CS assertion.
@@ -184,19 +184,63 @@ int  ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs,
  * @param[in] timeout_ms Maximum wait time for the entire sequence.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
-			  const struct ove_spi_xfer *xfers,
-			  unsigned int num_xfers,
-			  uint32_t timeout_ms);
+int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
+			 const struct ove_spi_xfer *xfers, unsigned int num_xfers,
+			 uint32_t timeout_ms);
 
 #else /* !CONFIG_OVE_SPI */
 
-static inline int  ove_spi_create(ove_spi_t *s, const struct ove_spi_cfg *c) { (void)s; (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_spi_destroy(ove_spi_t s) { (void)s; }
-static inline int  ove_spi_transfer(ove_spi_t s, const struct ove_spi_cs *cs, const void *tx, void *rx, size_t l, uint32_t t) { (void)s; (void)cs; (void)tx; (void)rx; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_spi_write(ove_spi_t s, const struct ove_spi_cs *cs, const void *d, size_t l, uint32_t t) { (void)s; (void)cs; (void)d; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_spi_read(ove_spi_t s, const struct ove_spi_cs *cs, void *b, size_t l, uint32_t t) { (void)s; (void)cs; (void)b; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_spi_transfer_seq(ove_spi_t s, const struct ove_spi_cs *cs, const struct ove_spi_xfer *x, unsigned int n, uint32_t t) { (void)s; (void)cs; (void)x; (void)n; (void)t; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_spi_create(ove_spi_t *s, const struct ove_spi_cfg *c)
+{
+	(void)s;
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_spi_destroy(ove_spi_t s)
+{
+	(void)s;
+}
+static inline int ove_spi_transfer(ove_spi_t s, const struct ove_spi_cs *cs, const void *tx,
+				   void *rx, size_t l, uint32_t t)
+{
+	(void)s;
+	(void)cs;
+	(void)tx;
+	(void)rx;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_spi_write(ove_spi_t s, const struct ove_spi_cs *cs, const void *d, size_t l,
+				uint32_t t)
+{
+	(void)s;
+	(void)cs;
+	(void)d;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_spi_read(ove_spi_t s, const struct ove_spi_cs *cs, void *b, size_t l,
+			       uint32_t t)
+{
+	(void)s;
+	(void)cs;
+	(void)b;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_spi_transfer_seq(ove_spi_t s, const struct ove_spi_cs *cs,
+				       const struct ove_spi_xfer *x, unsigned int n, uint32_t t)
+{
+	(void)s;
+	(void)cs;
+	(void)x;
+	(void)n;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 #endif /* CONFIG_OVE_SPI */
 

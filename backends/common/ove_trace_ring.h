@@ -31,8 +31,8 @@
 struct ove_trace_record {
 	uint64_t ts_us;
 	uint32_t tid;
-	uint8_t  kind;
-	uint8_t  code;
+	uint8_t kind;
+	uint8_t code;
 	uint16_t arg;
 };
 
@@ -72,8 +72,7 @@ struct ove_trace_thread_desc {
  * Implemented by the thread backend (posix_thread.c, wasm_thread.c).
  * Returns the number of entries written to @out (bounded by @max).
  */
-size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
-				      size_t max);
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max);
 
 #endif /* CONFIG_OVE_TRACE_STREAM */
 

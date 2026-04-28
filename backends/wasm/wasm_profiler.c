@@ -57,7 +57,7 @@
 
 /* Hooks supplied by wasm_thread.c */
 extern struct ove_thread *ove_backend_thread_current_struct(void);
-extern size_t             ove_backend_profiler_flag_running(void);
+extern size_t ove_backend_profiler_flag_running(void);
 
 /* ── Symbol table: function-name → pseudo-PC ─────────────────────── */
 
@@ -66,27 +66,27 @@ extern size_t             ove_backend_profiler_flag_running(void);
  * new frames hash to pseudo_pc == 0 and the dashboard renders them as
  * "0x0" — preferred over a malloc storm in the sample hot path.
  */
-#define WASM_SYM_TABLE_CAP   512
-#define WASM_SYM_NAME_MAX     96
+#define WASM_SYM_TABLE_CAP 512
+#define WASM_SYM_NAME_MAX 96
 #define WASM_SYM_ARENA_BYTES (WASM_SYM_TABLE_CAP * WASM_SYM_NAME_MAX)
 
 struct wasm_sym_entry {
-	uint32_t pseudo_pc;    /* 0 == empty slot */
-	uint32_t name_off;     /* offset into sym_arena */
+	uint32_t pseudo_pc; /* 0 == empty slot */
+	uint32_t name_off;  /* offset into sym_arena */
 	uint16_t name_len;
 	uint16_t _pad;
 };
 
 static struct wasm_sym_entry sym_table[WASM_SYM_TABLE_CAP];
-static char                  sym_arena[WASM_SYM_ARENA_BYTES];
-static size_t                sym_arena_used;
-static uint32_t              sym_next_pseudo_pc = 1;
-static pthread_mutex_t       sym_lock = PTHREAD_MUTEX_INITIALIZER;
+static char sym_arena[WASM_SYM_ARENA_BYTES];
+static size_t sym_arena_used;
+static uint32_t sym_next_pseudo_pc = 1;
+static pthread_mutex_t sym_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Pending new symbols waiting to be drained by sim_profiler_tick. */
 #define NEW_SYM_QUEUE_CAP 64
-static uint32_t              new_sym_queue[NEW_SYM_QUEUE_CAP];
-static size_t                new_sym_queue_count;
+static uint32_t new_sym_queue[NEW_SYM_QUEUE_CAP];
+static size_t new_sym_queue_count;
 
 static uint32_t djb2(const char *s, size_t len)
 {
@@ -184,7 +184,7 @@ static uint8_t parse_callstack(char *buf, uintptr_t *pcs, uint8_t max_pcs)
 
 /* ── Rate control (shared with POSIX shape) ──────────────────────── */
 
-static atomic_int  profiler_running;
+static atomic_int profiler_running;
 static atomic_uint sample_divisor = 1;
 static atomic_uint sample_counter;
 
@@ -193,9 +193,8 @@ static atomic_uint sample_counter;
 int ove_backend_profiler_start(void)
 {
 	int expected = 0;
-	if (!atomic_compare_exchange_strong_explicit(
-		    &profiler_running, &expected, 1,
-		    memory_order_acq_rel, memory_order_relaxed))
+	if (!atomic_compare_exchange_strong_explicit(&profiler_running, &expected, 1,
+						     memory_order_acq_rel, memory_order_relaxed))
 		return OVE_OK;
 	return OVE_OK;
 }
@@ -212,8 +211,8 @@ void ove_backend_profiler_sample_tick(void)
 
 	unsigned div = atomic_load_explicit(&sample_divisor, memory_order_acquire);
 	if (div > 1) {
-		unsigned c = atomic_fetch_add_explicit(&sample_counter, 1,
-						       memory_order_acq_rel) + 1;
+		unsigned c =
+			atomic_fetch_add_explicit(&sample_counter, 1, memory_order_acq_rel) + 1;
 		if ((c % div) != 0)
 			return;
 	}
@@ -254,8 +253,7 @@ void ove_backend_profiler_check(void)
 	t->profiler_pending = 0;
 
 	char buf[4096];
-	int n = emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_NO_PATHS,
-					 buf, sizeof(buf));
+	int n = emscripten_get_callstack(EM_LOG_C_STACK | EM_LOG_NO_PATHS, buf, sizeof(buf));
 	if (n <= 0)
 		return;
 	/* emscripten_get_callstack NUL-terminates within maxbytes, but keep
@@ -267,10 +265,9 @@ void ove_backend_profiler_check(void)
 	struct ove_profiler_sample s;
 	memset(&s, 0, sizeof(s));
 	s.ts_us = ove_state_stats_now_us();
-	s.tid   = (uint32_t)(uintptr_t)t;
+	s.tid = (uint32_t)(uintptr_t)t;
 	s.state = (uint8_t)t->state;
-	s.depth = parse_callstack(buf, s.pcs,
-				  (uint8_t)CONFIG_OVE_PROFILER_MAX_DEPTH);
+	s.depth = parse_callstack(buf, s.pcs, (uint8_t)CONFIG_OVE_PROFILER_MAX_DEPTH);
 
 	if (s.depth > 0)
 		(void)ove_profiler_ring_push(&s);
@@ -308,12 +305,9 @@ size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
 		if (w + need >= out_max)
 			break;
 
-		int wrote = snprintf(out + w, out_max - w,
-				     "%s[%u,%u,\"%.*s\"]",
-				     emitted == 0 ? "" : ",",
-				     (unsigned)e->pseudo_pc,
-				     (unsigned)(e->pseudo_pc + 1),
-				     (int)e->name_len, name);
+		int wrote = snprintf(out + w, out_max - w, "%s[%u,%u,\"%.*s\"]",
+				     emitted == 0 ? "" : ",", (unsigned)e->pseudo_pc,
+				     (unsigned)(e->pseudo_pc + 1), (int)e->name_len, name);
 		if (wrote < 0 || (size_t)wrote >= out_max - w)
 			break;
 		w += (size_t)wrote;

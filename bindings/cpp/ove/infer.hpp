@@ -13,7 +13,8 @@
 
 #ifdef CONFIG_OVE_INFER
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @brief RAII wrapper for an ML inference model session.
@@ -26,16 +27,17 @@ namespace ove {
  *                    for the embedded arena array; in heap mode this is
  *                    supplied via the config).
  */
-template <size_t ArenaSize = 0>
-class Model {
-public:
+template <size_t ArenaSize = 0> class Model
+{
+      public:
 	/**
 	 * @brief Construct a model from the given configuration.
 	 *
 	 * Loads the FlatBuffer model and allocates tensors.  Asserts on failure
 	 * (embedded systems typically cannot recover from model load failure).
 	 */
-	explicit Model(const struct ove_model_config &cfg) {
+	explicit Model(const struct ove_model_config &cfg)
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_model_init(&handle_, &storage_, arena_, &cfg);
 #else
@@ -44,7 +46,8 @@ public:
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
-	~Model() {
+	~Model()
+	{
 		if (!handle_)
 			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -62,11 +65,13 @@ public:
 	Model &operator=(Model &&) = delete;
 #else
 	/** @brief Move constructor — transfers handle ownership; source becomes empty. */
-	Model(Model &&other) noexcept : handle_(other.handle_) {
+	Model(Model &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 	/** @brief Move-assignment — destroys current model, then takes `other`'s handle. */
-	Model &operator=(Model &&other) noexcept {
+	Model &operator=(Model &&other) noexcept
+	{
 		if (this != &other) {
 			if (handle_)
 				ove_model_destroy(handle_);
@@ -78,11 +83,14 @@ public:
 #endif
 
 	/** @brief Run the model forward pass. */
-	[[nodiscard]] int invoke() { return ove_model_invoke(handle_); }
+	[[nodiscard]] int invoke()
+	{
+		return ove_model_invoke(handle_);
+	}
 
 	/** @brief Get a typed pointer to input tensor data. */
-	template <typename T>
-	T *input_data(unsigned int index = 0) {
+	template <typename T> T *input_data(unsigned int index = 0)
+	{
 		struct ove_tensor_info info;
 		if (ove_model_input(handle_, index, &info) != OVE_OK)
 			return nullptr;
@@ -90,8 +98,8 @@ public:
 	}
 
 	/** @brief Get a typed pointer to output tensor data (const). */
-	template <typename T>
-	const T *output_data(unsigned int index = 0) const {
+	template <typename T> const T *output_data(unsigned int index = 0) const
+	{
 		struct ove_tensor_info info;
 		if (ove_model_output(handle_, index, &info) != OVE_OK)
 			return nullptr;
@@ -99,24 +107,30 @@ public:
 	}
 
 	/** @brief Get full tensor descriptor for an input. */
-	int input(unsigned int index, struct ove_tensor_info &info) const {
+	int input(unsigned int index, struct ove_tensor_info &info) const
+	{
 		return ove_model_input(handle_, index, &info);
 	}
 
 	/** @brief Get full tensor descriptor for an output. */
-	int output(unsigned int index, struct ove_tensor_info &info) const {
+	int output(unsigned int index, struct ove_tensor_info &info) const
+	{
 		return ove_model_output(handle_, index, &info);
 	}
 
 	/** @brief Return last inference duration in microseconds. */
-	uint64_t last_inference_us() const {
+	uint64_t last_inference_us() const
+	{
 		return ove_model_last_inference_us(handle_);
 	}
 
 	/** @brief Access the underlying C handle. */
-	ove_model_t handle() const { return handle_; }
+	ove_model_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_model_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_model_storage_t storage_ = {};

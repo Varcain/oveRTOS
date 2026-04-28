@@ -26,7 +26,8 @@ extern "C" {
 #include "benchmark.h"
 }
 
-namespace ove::bench {
+namespace ove::bench
+{
 
 /** Mirrors C `bench_type_t`. */
 enum class Type : int {
@@ -37,32 +38,35 @@ enum class Type : int {
 
 /** @brief Spec describing a bench case — pass to `case_` at compile time. */
 struct CaseSpec {
-	const char *name;          /**< Case name (for harness output). */
-	Type kind;                 /**< Measurement kind (latency/throughput/memory). */
-	void (*run)();             /**< Per-iteration body — required. */
-	void (*setup)() = nullptr; /**< Optional one-time setup. */
+	const char *name;	      /**< Case name (for harness output). */
+	Type kind;		      /**< Measurement kind (latency/throughput/memory). */
+	void (*run)();		      /**< Per-iteration body — required. */
+	void (*setup)() = nullptr;    /**< Optional one-time setup. */
 	void (*teardown)() = nullptr; /**< Optional one-time teardown. */
-	uint32_t iterations = 0;   /**< Iteration count (0 = harness default). */
+	uint32_t iterations = 0;      /**< Iteration count (0 = harness default). */
 };
 
-namespace detail {
+namespace detail
+{
 
 /** @brief C-ABI trampoline forwarding to the spec's `run` callback. */
-template <const CaseSpec &Spec>
-inline void run_trampoline(void *) {
+template <const CaseSpec &Spec> inline void run_trampoline(void *)
+{
 	Spec.run();
 }
 
 /** @brief C-ABI trampoline forwarding to the spec's `setup` callback (no-op when null). */
-template <const CaseSpec &Spec>
-inline void setup_trampoline(void *) {
-	if (Spec.setup) Spec.setup();
+template <const CaseSpec &Spec> inline void setup_trampoline(void *)
+{
+	if (Spec.setup)
+		Spec.setup();
 }
 
 /** @brief C-ABI trampoline forwarding to the spec's `teardown` callback (no-op when null). */
-template <const CaseSpec &Spec>
-inline void teardown_trampoline(void *) {
-	if (Spec.teardown) Spec.teardown();
+template <const CaseSpec &Spec> inline void teardown_trampoline(void *)
+{
+	if (Spec.teardown)
+		Spec.teardown();
 }
 
 } /* namespace detail */
@@ -74,8 +78,8 @@ inline void teardown_trampoline(void *) {
  * safe C++ `void()` callbacks. Intended for use in a `constexpr`/`static`
  * context where the spec itself is a `constexpr`.
  */
-template <const CaseSpec &Spec>
-constexpr ::bench_case_t case_() {
+template <const CaseSpec &Spec> constexpr ::bench_case_t case_()
+{
 	// Always wire the setup/teardown trampoline — the trampoline itself is a
 	// no-op when the spec didn't provide a fn. Avoids a compile-time warning
 	// that "address of non-nullptr fn is never null".
@@ -91,25 +95,26 @@ constexpr ::bench_case_t case_() {
 
 /** @brief Spec describing a bench suite. */
 struct SuiteSpec {
-	const char *name;                /**< Suite name (for harness output). */
-	bool (*enabled)();               /**< Gate predicate — suite runs when it returns true. */
-	const ::bench_case_t *cases;     /**< Array of cases, length `case_count`. */
-	unsigned int case_count;         /**< Number of entries in `cases`. */
+	const char *name;	     /**< Suite name (for harness output). */
+	bool (*enabled)();	     /**< Gate predicate — suite runs when it returns true. */
+	const ::bench_case_t *cases; /**< Array of cases, length `case_count`. */
+	unsigned int case_count;     /**< Number of entries in `cases`. */
 };
 
-namespace detail {
+namespace detail
+{
 
 /** @brief C-ABI trampoline forwarding the suite's `bool` gate to the harness' `int`. */
-template <const SuiteSpec &Spec>
-inline int enabled_trampoline() {
+template <const SuiteSpec &Spec> inline int enabled_trampoline()
+{
 	return Spec.enabled() ? 1 : 0;
 }
 
 } /* namespace detail */
 
 /** @brief Build a `bench_suite_t` from a compile-time `SuiteSpec`. */
-template <const SuiteSpec &Spec>
-constexpr ::bench_suite_t suite_def() {
+template <const SuiteSpec &Spec> constexpr ::bench_suite_t suite_def()
+{
 	return ::bench_suite_t{
 		.name = Spec.name,
 		.is_enabled = &detail::enabled_trampoline<Spec>,
@@ -119,8 +124,10 @@ constexpr ::bench_suite_t suite_def() {
 }
 
 /** @brief Run every case in `suite` through the C harness. */
-inline void run_suite(const ::bench_suite_t &suite) {
-	if (suite.is_enabled && suite.is_enabled() == 0) return;
+inline void run_suite(const ::bench_suite_t &suite)
+{
+	if (suite.is_enabled && suite.is_enabled() == 0)
+		return;
 	::bench_print_header(suite.name);
 	for (unsigned i = 0; i < suite.case_count; ++i) {
 		::bench_result_t result{};
@@ -154,12 +161,11 @@ inline void run_suite(const ::bench_suite_t &suite) {
  * OVE_BENCH_SUITE(bench_suite_time, "time", time_is_enabled, time_cases)
  * @endcode
  */
-#define OVE_BENCH_SUITE(symbol, name_lit, enabled_fn, cases_array)           \
+#define OVE_BENCH_SUITE(symbol, name_lit, enabled_fn, cases_array)            \
 	static constexpr ::ove::bench::SuiteSpec _##symbol##_spec{            \
 		.name = (name_lit),                                           \
 		.enabled = (enabled_fn),                                      \
 		.cases = (cases_array),                                       \
 		.case_count = sizeof(cases_array) / sizeof((cases_array)[0]), \
 	};                                                                    \
-	extern "C" const ::bench_suite_t symbol =                             \
-		::ove::bench::suite_def<_##symbol##_spec>();
+	extern "C" const ::bench_suite_t symbol = ::ove::bench::suite_def<_##symbol##_spec>();

@@ -40,12 +40,11 @@
 
 #include <stddef.h>
 
-#define _OVE_HEAP_FORBIDDEN(name) \
-	__attribute__((error( \
-		"oveRTOS zero-heap mode forbids libc " name "(); use " \
-		"OVE_*_DEFINE_STATIC / ove_*_init() with caller-supplied " \
-		"storage, or build with CONFIG_OVE_ZERO_HEAP=n if dynamic " \
-		"allocation is required.")))
+#define _OVE_HEAP_FORBIDDEN(name)                                                        \
+	__attribute__((error("oveRTOS zero-heap mode forbids libc " name "(); use "      \
+			     "OVE_*_DEFINE_STATIC / ove_*_init() with caller-supplied "  \
+			     "storage, or build with CONFIG_OVE_ZERO_HEAP=n if dynamic " \
+			     "allocation is required.")))
 
 /* C++ libc declarations carry `noexcept`; redeclaring without it is
  * a hard error.  C has no exception specifiers, so the macro expands
@@ -66,11 +65,11 @@
 extern "C" {
 #endif
 
-extern void *malloc(size_t)                _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("malloc");
-extern void *calloc(size_t, size_t)        _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("calloc");
-extern void *realloc(void *, size_t)       _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("realloc");
-extern void *zalloc(size_t)                _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("zalloc");
-extern void *memalign(size_t, size_t)      _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("memalign");
+extern void *malloc(size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("malloc");
+extern void *calloc(size_t, size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("calloc");
+extern void *realloc(void *, size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("realloc");
+extern void *zalloc(size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("zalloc");
+extern void *memalign(size_t, size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("memalign");
 extern void *aligned_alloc(size_t, size_t) _OVE_HEAP_NOTHROW _OVE_HEAP_FORBIDDEN("aligned_alloc");
 
 #ifdef __cplusplus

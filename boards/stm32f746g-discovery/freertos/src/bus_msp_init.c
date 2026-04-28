@@ -27,14 +27,14 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 		__HAL_RCC_GPIOA_CLK_ENABLE();
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 
-		gpio.Pin       = GPIO_PIN_9;
-		gpio.Mode      = GPIO_MODE_AF_PP;
-		gpio.Pull      = GPIO_PULLUP;
-		gpio.Speed     = GPIO_SPEED_FREQ_HIGH;
+		gpio.Pin = GPIO_PIN_9;
+		gpio.Mode = GPIO_MODE_AF_PP;
+		gpio.Pull = GPIO_PULLUP;
+		gpio.Speed = GPIO_SPEED_FREQ_HIGH;
 		gpio.Alternate = GPIO_AF7_USART1;
 		HAL_GPIO_Init(GPIOA, &gpio);
 
-		gpio.Pin       = GPIO_PIN_7;
+		gpio.Pin = GPIO_PIN_7;
 		gpio.Alternate = GPIO_AF7_USART1;
 		HAL_GPIO_Init(GPIOB, &gpio);
 	} else if (huart->Instance == USART6) {
@@ -42,10 +42,10 @@ void HAL_UART_MspInit(UART_HandleTypeDef *huart)
 		__HAL_RCC_USART6_CLK_ENABLE();
 		__HAL_RCC_GPIOC_CLK_ENABLE();
 
-		gpio.Pin       = GPIO_PIN_6 | GPIO_PIN_7;
-		gpio.Mode      = GPIO_MODE_AF_PP;
-		gpio.Pull      = GPIO_PULLUP;
-		gpio.Speed     = GPIO_SPEED_FREQ_HIGH;
+		gpio.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+		gpio.Mode = GPIO_MODE_AF_PP;
+		gpio.Pull = GPIO_PULLUP;
+		gpio.Speed = GPIO_SPEED_FREQ_HIGH;
 		gpio.Alternate = GPIO_AF8_USART6;
 		HAL_GPIO_Init(GPIOC, &gpio);
 	}
@@ -79,14 +79,14 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi)
 		__HAL_RCC_GPIOI_CLK_ENABLE();
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 
-		gpio.Pin       = GPIO_PIN_1;
-		gpio.Mode      = GPIO_MODE_AF_PP;
-		gpio.Pull      = GPIO_NOPULL;
-		gpio.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+		gpio.Pin = GPIO_PIN_1;
+		gpio.Mode = GPIO_MODE_AF_PP;
+		gpio.Pull = GPIO_NOPULL;
+		gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 		gpio.Alternate = GPIO_AF5_SPI2;
 		HAL_GPIO_Init(GPIOI, &gpio);
 
-		gpio.Pin       = GPIO_PIN_14 | GPIO_PIN_15;
+		gpio.Pin = GPIO_PIN_14 | GPIO_PIN_15;
 		gpio.Alternate = GPIO_AF5_SPI2;
 		HAL_GPIO_Init(GPIOB, &gpio);
 	}
@@ -116,10 +116,10 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 		__HAL_RCC_I2C1_CLK_ENABLE();
 		__HAL_RCC_GPIOB_CLK_ENABLE();
 
-		gpio.Pin       = GPIO_PIN_8 | GPIO_PIN_9;
-		gpio.Mode      = GPIO_MODE_AF_OD;
-		gpio.Pull      = GPIO_PULLUP;
-		gpio.Speed     = GPIO_SPEED_FREQ_HIGH;
+		gpio.Pin = GPIO_PIN_8 | GPIO_PIN_9;
+		gpio.Mode = GPIO_MODE_AF_OD;
+		gpio.Pull = GPIO_PULLUP;
+		gpio.Speed = GPIO_SPEED_FREQ_HIGH;
 		gpio.Alternate = GPIO_AF4_I2C1;
 		HAL_GPIO_Init(GPIOB, &gpio);
 	} else if (hi2c->Instance == I2C3) {
@@ -127,10 +127,10 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 		__HAL_RCC_I2C3_CLK_ENABLE();
 		__HAL_RCC_GPIOH_CLK_ENABLE();
 
-		gpio.Pin       = GPIO_PIN_7 | GPIO_PIN_8;
-		gpio.Mode      = GPIO_MODE_AF_OD;
-		gpio.Pull      = GPIO_PULLUP;
-		gpio.Speed     = GPIO_SPEED_FREQ_HIGH;
+		gpio.Pin = GPIO_PIN_7 | GPIO_PIN_8;
+		gpio.Mode = GPIO_MODE_AF_OD;
+		gpio.Pull = GPIO_PULLUP;
+		gpio.Speed = GPIO_SPEED_FREQ_HIGH;
 		gpio.Alternate = GPIO_AF4_I2C3;
 		HAL_GPIO_Init(GPIOH, &gpio);
 	}
@@ -257,27 +257,27 @@ void HAL_SAI_MspInit(SAI_HandleTypeDef *hsai)
 	RCC_PeriphCLKInitTypeDef rcc = {0};
 	HAL_RCCEx_GetPeriphCLKConfig(&rcc);
 	rcc.PeriphClockSelection = RCC_PERIPHCLK_SAI2;
-	rcc.Sai2ClockSelection   = RCC_SAI2CLKSOURCE_PLLI2S;
-	rcc.PLLI2S.PLLI2SN      = 429;
-	rcc.PLLI2S.PLLI2SQ      = 2;
-	rcc.PLLI2SDivQ           = 19;
+	rcc.Sai2ClockSelection = RCC_SAI2CLKSOURCE_PLLI2S;
+	rcc.PLLI2S.PLLI2SN = 429;
+	rcc.PLLI2S.PLLI2SQ = 2;
+	rcc.PLLI2SDivQ = 19;
 	HAL_RCCEx_PeriphCLKConfig(&rcc);
 
 	/* DMA for TX (SAI2 Block A) */
 	if (hsai->Instance == AUDIO_OUT_SAIx && g_i2s_instance) {
 		DMA_HandleTypeDef *dma_tx = &g_i2s_instance->dma_tx;
-		dma_tx->Instance                 = AUDIO_OUT_SAIx_DMAx_STREAM;
-		dma_tx->Init.Channel             = AUDIO_OUT_SAIx_DMAx_CHANNEL;
-		dma_tx->Init.Direction           = DMA_MEMORY_TO_PERIPH;
-		dma_tx->Init.PeriphInc           = DMA_PINC_DISABLE;
-		dma_tx->Init.MemInc              = DMA_MINC_ENABLE;
+		dma_tx->Instance = AUDIO_OUT_SAIx_DMAx_STREAM;
+		dma_tx->Init.Channel = AUDIO_OUT_SAIx_DMAx_CHANNEL;
+		dma_tx->Init.Direction = DMA_MEMORY_TO_PERIPH;
+		dma_tx->Init.PeriphInc = DMA_PINC_DISABLE;
+		dma_tx->Init.MemInc = DMA_MINC_ENABLE;
 		dma_tx->Init.PeriphDataAlignment = AUDIO_OUT_SAIx_DMAx_PERIPH_DATA_SIZE;
-		dma_tx->Init.MemDataAlignment    = AUDIO_OUT_SAIx_DMAx_MEM_DATA_SIZE;
-		dma_tx->Init.Mode                = DMA_CIRCULAR;
-		dma_tx->Init.Priority            = DMA_PRIORITY_HIGH;
-		dma_tx->Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
-		dma_tx->Init.MemBurst            = DMA_MBURST_SINGLE;
-		dma_tx->Init.PeriphBurst         = DMA_PBURST_SINGLE;
+		dma_tx->Init.MemDataAlignment = AUDIO_OUT_SAIx_DMAx_MEM_DATA_SIZE;
+		dma_tx->Init.Mode = DMA_CIRCULAR;
+		dma_tx->Init.Priority = DMA_PRIORITY_HIGH;
+		dma_tx->Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+		dma_tx->Init.MemBurst = DMA_MBURST_SINGLE;
+		dma_tx->Init.PeriphBurst = DMA_PBURST_SINGLE;
 		__HAL_LINKDMA(hsai, hdmatx, *dma_tx);
 		HAL_DMA_DeInit(dma_tx);
 		HAL_DMA_Init(dma_tx);
@@ -288,18 +288,18 @@ void HAL_SAI_MspInit(SAI_HandleTypeDef *hsai)
 	/* DMA for RX (SAI2 Block B) */
 	if (hsai->Instance == AUDIO_IN_SAIx && g_i2s_instance) {
 		DMA_HandleTypeDef *dma_rx = &g_i2s_instance->dma_rx;
-		dma_rx->Instance                 = AUDIO_IN_SAIx_DMAx_STREAM;
-		dma_rx->Init.Channel             = AUDIO_IN_SAIx_DMAx_CHANNEL;
-		dma_rx->Init.Direction           = DMA_PERIPH_TO_MEMORY;
-		dma_rx->Init.PeriphInc           = DMA_PINC_DISABLE;
-		dma_rx->Init.MemInc              = DMA_MINC_ENABLE;
+		dma_rx->Instance = AUDIO_IN_SAIx_DMAx_STREAM;
+		dma_rx->Init.Channel = AUDIO_IN_SAIx_DMAx_CHANNEL;
+		dma_rx->Init.Direction = DMA_PERIPH_TO_MEMORY;
+		dma_rx->Init.PeriphInc = DMA_PINC_DISABLE;
+		dma_rx->Init.MemInc = DMA_MINC_ENABLE;
 		dma_rx->Init.PeriphDataAlignment = AUDIO_IN_SAIx_DMAx_PERIPH_DATA_SIZE;
-		dma_rx->Init.MemDataAlignment    = AUDIO_IN_SAIx_DMAx_MEM_DATA_SIZE;
-		dma_rx->Init.Mode                = DMA_CIRCULAR;
-		dma_rx->Init.Priority            = DMA_PRIORITY_HIGH;
-		dma_rx->Init.FIFOMode            = DMA_FIFOMODE_DISABLE;
-		dma_rx->Init.MemBurst            = DMA_MBURST_SINGLE;
-		dma_rx->Init.PeriphBurst         = DMA_MBURST_SINGLE;
+		dma_rx->Init.MemDataAlignment = AUDIO_IN_SAIx_DMAx_MEM_DATA_SIZE;
+		dma_rx->Init.Mode = DMA_CIRCULAR;
+		dma_rx->Init.Priority = DMA_PRIORITY_HIGH;
+		dma_rx->Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+		dma_rx->Init.MemBurst = DMA_MBURST_SINGLE;
+		dma_rx->Init.PeriphBurst = DMA_MBURST_SINGLE;
 		__HAL_LINKDMA(hsai, hdmarx, *dma_rx);
 		HAL_DMA_DeInit(dma_rx);
 		HAL_DMA_Init(dma_rx);
@@ -336,13 +336,10 @@ void ove_board_audio_codec_init(uint32_t sample_rate, int input_device)
 
 	wm8994_drv.Reset(AUDIO_I2C_ADDRESS);
 
-	uint16_t input_dev = input_device
-		? INPUT_DEVICE_DIGITAL_MICROPHONE_2
-		: INPUT_DEVICE_INPUT_LINE_1;
+	uint16_t input_dev = input_device ? INPUT_DEVICE_DIGITAL_MICROPHONE_2
+					  : INPUT_DEVICE_INPUT_LINE_1;
 
-	wm8994_drv.Init(AUDIO_I2C_ADDRESS,
-			 input_dev | OUTPUT_DEVICE_HEADPHONE,
-			 70, sample_rate);
+	wm8994_drv.Init(AUDIO_I2C_ADDRESS, input_dev | OUTPUT_DEVICE_HEADPHONE, 70, sample_rate);
 
 	/* Override BSP defaults — must match reference order exactly */
 

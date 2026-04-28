@@ -38,20 +38,18 @@ static void ui_timer_cb(ove_timer_t, void *);
 static void graphics_thread(void *arg);
 
 static ove::Timer ui_timer(ui_timer_cb, nullptr, 200);
-static ove::Thread<4096> gfx_thread(graphics_thread, nullptr,
-					 OVE_PRIO_HIGH, "graphics");
+static ove::Thread<4096> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
 
-static ove::Thread<4096> prod_thread(producer_thread, nullptr,
-					  OVE_PRIO_NORMAL, "producer");
-static ove::Thread<4096> cons_thread(consumer_thread, nullptr,
-					  OVE_PRIO_NORMAL, "consumer");
+static ove::Thread<4096> prod_thread(producer_thread, nullptr, OVE_PRIO_NORMAL, "producer");
+static ove::Thread<4096> cons_thread(consumer_thread, nullptr, OVE_PRIO_NORMAL, "consumer");
 
 /* ================================================================== */
 /*  CounterComponent — demonstrates Component<T>, State, bind_text    */
 /* ================================================================== */
 
-class CounterComponent : public lv::Component<CounterComponent> {
-public:
+class CounterComponent : public lv::Component<CounterComponent>
+{
+      public:
 #if LV_USE_OBSERVER
 	lv::State<int> m_count{0};
 #else
@@ -72,13 +70,14 @@ public:
 		"oveRTOS C++ Demo";
 #endif
 
-	lv::ObjectView build(lv::ObjectView parent) {
+	lv::ObjectView build(lv::ObjectView parent)
+	{
 		auto root = lv::Box::create(parent)
-			.size(LV_PCT(100), LV_PCT(100))
-			.bg_color(lv_color_black())
-			.bg_opa(LV_OPA_COVER)
-			.border_width(0)
-			.pad_all(0);
+				    .size(LV_PCT(100), LV_PCT(100))
+				    .bg_color(lv_color_black())
+				    .bg_opa(LV_OPA_COVER)
+				    .border_width(0)
+				    .pad_all(0);
 
 		/* Title */
 		lv::Label::create(root)
@@ -96,20 +95,20 @@ public:
 			.align(LV_ALIGN_TOP_MID, 0, 64);
 #else
 		m_count_label = lv::Label::create(root)
-			.text("Count: 0")
-			.font(&lv_font_montserrat_14)
-			.color(lv_color_white())
-			.align(LV_ALIGN_TOP_MID, 0, 64);
+					.text("Count: 0")
+					.font(&lv_font_montserrat_14)
+					.color(lv_color_white())
+					.align(LV_ALIGN_TOP_MID, 0, 64);
 #endif
 
 		/* Progress bar */
 		m_bar = lv::Bar::create(root)
-			.size(200, 16)
-			.range(0, 100)
-			.value(0)
-			.indicator_color(lv_palette_main(LV_PALETTE_BLUE))
-			.radius(8)
-			.align(LV_ALIGN_TOP_MID, 0, 96);
+				.size(200, 16)
+				.range(0, 100)
+				.value(0)
+				.indicator_color(lv_palette_main(LV_PALETTE_BLUE))
+				.radius(8)
+				.align(LV_ALIGN_TOP_MID, 0, 96);
 
 		/* Tier S widget smoke test — Slider, Button, Switch, Arc */
 		lv::Slider::create(root)
@@ -119,16 +118,10 @@ public:
 			.indicator_color(lv_palette_main(LV_PALETTE_GREEN))
 			.align(LV_ALIGN_TOP_MID, 0, 128);
 
-		auto btn = lv::Button::create(root)
-			.size(96, 32)
-			.align(LV_ALIGN_TOP_LEFT, 16, 156);
-		lv::Label::create(btn)
-			.text("Button")
-			.color(lv_color_white())
-			.center();
+		auto btn = lv::Button::create(root).size(96, 32).align(LV_ALIGN_TOP_LEFT, 16, 156);
+		lv::Label::create(btn).text("Button").color(lv_color_white()).center();
 
-		lv::Switch::create(root)
-			.align(LV_ALIGN_TOP_RIGHT, -16, 156);
+		lv::Switch::create(root).align(LV_ALIGN_TOP_RIGHT, -16, 156);
 
 		lv::Arc::create(root)
 			.size(72, 72)
@@ -138,14 +131,13 @@ public:
 			.align(LV_ALIGN_TOP_MID, 0, 196);
 
 		/* Logo image from the build-time PNG → C array pipeline */
-		lv::Image::create(root)
-			.src(&logo)
-			.align(LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+		lv::Image::create(root).src(&logo).align(LV_ALIGN_BOTTOM_RIGHT, -8, -8);
 
 		return root;
 	}
 
-	void update(uint32_t val) {
+	void update(uint32_t val)
+	{
 #if LV_USE_OBSERVER
 		m_count.set(static_cast<int32_t>(val));
 #else
@@ -163,112 +155,112 @@ static CounterComponent counter_component;
 
 static void producer_thread(void *arg)
 {
-    (void)arg;
-    uint32_t count = 0;
+	(void)arg;
+	uint32_t count = 0;
 
-    OVE_LOG_INF("Producer started");
+	OVE_LOG_INF("Producer started");
 
-    while (true) {
-        ++count;
-        int ret = counter_queue.send(count, 1000);
-        if (ret != OVE_OK) {
-            OVE_LOG_WRN("Producer: queue full, dropped %u", count);
-        }
-        ove::Thread<>::sleep_ms(500);
-    }
+	while (true) {
+		++count;
+		int ret = counter_queue.send(count, 1000);
+		if (ret != OVE_OK) {
+			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
+		}
+		ove::Thread<>::sleep_ms(500);
+	}
 }
 
 /* --- Consumer thread: reads values, updates shared state --- */
 
 static void consumer_thread(void *arg)
 {
-    (void)arg;
-    uint32_t val = 0;
+	(void)arg;
+	uint32_t val = 0;
 
-    OVE_LOG_INF("Consumer started");
+	OVE_LOG_INF("Consumer started");
 
-    while (true) {
-        int ret = counter_queue.receive(&val, OVE_WAIT_FOREVER);
-        if (ret == OVE_OK) {
-            {
-                ove::LockGuard lock(value_mutex);
-                last_value = val;
-            }
-            if (val % 5 == 0) {
-                OVE_LOG_INF("Consumer: count = %u", val);
-            }
-        }
-    }
+	while (true) {
+		int ret = counter_queue.receive(&val, OVE_WAIT_FOREVER);
+		if (ret == OVE_OK) {
+			{
+				ove::LockGuard lock(value_mutex);
+				last_value = val;
+			}
+			if (val % 5 == 0) {
+				OVE_LOG_INF("Consumer: count = %u", val);
+			}
+		}
+	}
 }
 
 /* --- LVGL UI --- */
 
 static void ui_timer_cb(ove_timer_t, void *)
 {
-    uint32_t val;
-    {
-        ove::LockGuard lock(value_mutex);
-        val = last_value;
-    }
+	uint32_t val;
+	{
+		ove::LockGuard lock(value_mutex);
+		val = last_value;
+	}
 
-    lv::LvglGuard guard;
-    counter_component.update(val);
+	lv::LvglGuard guard;
+	counter_component.update(val);
 }
 
 static void graphics_thread(void *arg)
 {
-    (void)arg;
+	(void)arg;
 
-    uint64_t last_us = 0;
-    ove_time_get_us(&last_us);
+	uint64_t last_us = 0;
+	ove_time_get_us(&last_us);
 
-    while (true) {
-        uint64_t now_us = 0;
-        ove_time_get_us(&now_us);
-        uint32_t elapsed_ms = static_cast<uint32_t>((now_us - last_us) / 1000);
-        last_us = now_us;
+	while (true) {
+		uint64_t now_us = 0;
+		ove_time_get_us(&now_us);
+		uint32_t elapsed_ms = static_cast<uint32_t>((now_us - last_us) / 1000);
+		last_us = now_us;
 
-        ove_lvgl_lock();
-        ove_lvgl_tick(elapsed_ms);
-        ove_lvgl_handler();
-        ove_lvgl_unlock();
+		ove_lvgl_lock();
+		ove_lvgl_tick(elapsed_ms);
+		ove_lvgl_handler();
+		ove_lvgl_unlock();
 
-        ove::Thread<>::sleep_ms(33);
-    }
+		ove::Thread<>::sleep_ms(33);
+	}
 }
 
 /* --- App entry point --- */
 
 OVE_MAIN()
 {
-    OVE_LOG_INF("C++ example: init");
+	OVE_LOG_INF("C++ example: init");
 
-    /* Initialize LVGL and create UI */
-    int ret = ove_lvgl_init();
-    if (ret != OVE_OK) {
-        OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
-        return;
-    }
+	/* Initialize LVGL and create UI */
+	int ret = ove_lvgl_init();
+	if (ret != OVE_OK) {
+		OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
+		return;
+	}
 
-    {
-        lv::LvglGuard guard;
-        counter_component.mount(lv::ObjectView::screen_active());
-    }
+	{
+		lv::LvglGuard guard;
+		counter_component.mount(lv::ObjectView::screen_active());
+	}
 
-    ret = ui_timer.start();
-    if (ret != OVE_OK) {
-        OVE_LOG_ERR("Failed to start UI timer: %d", ret);
-        return;
-    }
+	ret = ui_timer.start();
+	if (ret != OVE_OK) {
+		OVE_LOG_ERR("Failed to start UI timer: %d", ret);
+		return;
+	}
 
-    OVE_LOG_INF("C++ example: ready");
+	OVE_LOG_INF("C++ example: ready");
 
-    ove::run();
+	ove::run();
 
-    /* Cleanup (only reached if scheduler returns, e.g. POSIX) */
-    OVE_LOG_INF("C++ example: shutdown");
-    {
-        lv::LvglGuard guard;
-        counter_component.unmount();
-    }
+	/* Cleanup (only reached if scheduler returns, e.g. POSIX) */
+	OVE_LOG_INF("C++ example: shutdown");
+	{
+		lv::LvglGuard guard;
+		counter_component.unmount();
+	}
 }

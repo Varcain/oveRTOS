@@ -23,9 +23,8 @@
 
 /* ---------- URL parsing ---------- */
 
-static int parse_url(const char *url, int *use_tls,
-		     char *host, size_t host_sz,
-		     uint16_t *port, const char **path)
+static int parse_url(const char *url, int *use_tls, char *host, size_t host_sz, uint16_t *port,
+		     const char **path)
 {
 	*use_tls = 0;
 	*port = 80;
@@ -46,7 +45,8 @@ static int parse_url(const char *url, int *use_tls,
 		host_end++;
 
 	size_t hlen = (size_t)(host_end - url);
-	if (hlen == 0 || hlen >= host_sz) return OVE_ERR_INVALID_PARAM;
+	if (hlen == 0 || hlen >= host_sz)
+		return OVE_ERR_INVALID_PARAM;
 	memcpy(host, url, hlen);
 	host[hlen] = '\0';
 
@@ -72,8 +72,7 @@ static int parse_url(const char *url, int *use_tls,
 
 /* ---------- I/O helpers ---------- */
 
-static int http_send_all(struct ove_http_client *c,
-			 const void *data, size_t len)
+static int http_send_all(struct ove_http_client *c, const void *data, size_t len)
 {
 	const uint8_t *p = data;
 	while (len > 0) {
@@ -87,15 +86,15 @@ static int http_send_all(struct ove_http_client *c,
 		{
 			ret = ove_socket_send(c->sock, p, len, &sent);
 		}
-		if (ret != OVE_OK) return ret;
+		if (ret != OVE_OK)
+			return ret;
 		p += sent;
 		len -= sent;
 	}
 	return OVE_OK;
 }
 
-static int http_recv_some(struct ove_http_client *c,
-			  void *buf, size_t len, size_t *received)
+static int http_recv_some(struct ove_http_client *c, void *buf, size_t len, size_t *received)
 {
 #ifdef CONFIG_OVE_NET_TLS
 	if (c->use_tls && c->tls) {
@@ -107,10 +106,10 @@ static int http_recv_some(struct ove_http_client *c,
 
 /* ---------- HTTP client ---------- */
 
-int ove_http_client_init(ove_http_client_t *client,
-			 ove_http_client_storage_t *storage)
+int ove_http_client_init(ove_http_client_t *client, ove_http_client_storage_t *storage)
 {
-	if (!client || !storage) return OVE_ERR_INVALID_PARAM;
+	if (!client || !storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_http_client *c = (struct ove_http_client *)storage;
 	memset(c, 0, sizeof(*c));
 	*client = c;
@@ -127,9 +126,11 @@ void ove_http_client_deinit(ove_http_client_t client)
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_http_client_create(ove_http_client_t *client)
 {
-	if (!client) return OVE_ERR_INVALID_PARAM;
+	if (!client)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_http_client *c = OVE_BACKEND_MALLOC(sizeof(*c));
-	if (!c) return OVE_ERR_NO_MEMORY;
+	if (!c)
+		return OVE_ERR_NO_MEMORY;
 	memset(c, 0, sizeof(*c));
 	*client = c;
 	return OVE_OK;
@@ -146,41 +147,32 @@ void ove_http_client_destroy(ove_http_client_t client)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_http_get(ove_http_client_t client, const char *url,
-		 ove_http_response_t *resp)
+int ove_http_get(ove_http_client_t client, const char *url, ove_http_response_t *resp)
 {
-	return ove_http_request(client, OVE_HTTP_GET, url,
-				NULL, NULL, 0, resp);
+	return ove_http_request(client, OVE_HTTP_GET, url, NULL, NULL, 0, resp);
 }
 
-int ove_http_post(ove_http_client_t client, const char *url,
-		  const char *content_type,
-		  const void *body, size_t body_len,
-		  ove_http_response_t *resp)
+int ove_http_post(ove_http_client_t client, const char *url, const char *content_type,
+		  const void *body, size_t body_len, ove_http_response_t *resp)
 {
-	return ove_http_request(client, OVE_HTTP_POST, url,
-				content_type, body, body_len, resp);
+	return ove_http_request(client, OVE_HTTP_POST, url, content_type, body, body_len, resp);
 }
 
-int ove_http_request(ove_http_client_t client,
-		     ove_http_method_t method, const char *url,
-		     const char *content_type,
-		     const void *body, size_t body_len,
+int ove_http_request(ove_http_client_t client, ove_http_method_t method, const char *url,
+		     const char *content_type, const void *body, size_t body_len,
 		     ove_http_response_t *resp)
 {
-	return ove_http_request_ex(client, method, url, content_type,
-				  body, body_len, NULL, 0, resp);
+	return ove_http_request_ex(client, method, url, content_type, body, body_len, NULL, 0,
+				   resp);
 }
 
-int ove_http_request_ex(ove_http_client_t client,
-			ove_http_method_t method, const char *url,
-			const char *content_type,
-			const void *body, size_t body_len,
-			const ove_http_header_t *headers,
-			size_t header_count,
+int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, const char *url,
+			const char *content_type, const void *body, size_t body_len,
+			const ove_http_header_t *headers, size_t header_count,
 			ove_http_response_t *resp)
 {
-	if (!client || !url || !resp) return OVE_ERR_INVALID_PARAM;
+	if (!client || !url || !resp)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_http_client *c = client;
 
 	memset(resp, 0, sizeof(*resp));
@@ -189,35 +181,38 @@ int ove_http_request_ex(ove_http_client_t client,
 	int use_tls = 0;
 	uint16_t port = 80;
 	const char *path = "/";
-	int ret = parse_url(url, &use_tls, c->host, sizeof(c->host),
-			    &port, &path);
-	if (ret != OVE_OK) return ret;
+	int ret = parse_url(url, &use_tls, c->host, sizeof(c->host), &port, &path);
+	if (ret != OVE_OK)
+		return ret;
 	c->port = port;
 	c->use_tls = use_tls;
 
 	/* DNS resolve */
 	ove_sockaddr_t addr;
 	ret = ove_dns_resolve(c->host, &addr, 10000);
-	if (ret != OVE_OK) return ret;
+	if (ret != OVE_OK)
+		return ret;
 	addr.port = port;
 
 	/* Open socket */
 	ove_socket_storage_t sock_storage;
-	ret = ove_socket_open(&c->sock, &sock_storage,
-			      OVE_AF_INET, OVE_SOCK_STREAM);
-	if (ret != OVE_OK) return ret;
+	ret = ove_socket_open(&c->sock, &sock_storage, OVE_AF_INET, OVE_SOCK_STREAM);
+	if (ret != OVE_OK)
+		return ret;
 
 	/* Connect */
 	ret = ove_socket_connect(c->sock, &addr, 10000);
-	if (ret != OVE_OK) goto cleanup_sock;
+	if (ret != OVE_OK)
+		goto cleanup_sock;
 
-	/* TLS handshake if HTTPS */
+		/* TLS handshake if HTTPS */
 #ifdef CONFIG_OVE_NET_TLS
 	ove_tls_storage_t tls_storage;
 	ove_tls_t tls = NULL;
 	if (use_tls) {
 		ret = ove_tls_init(&tls, &tls_storage);
-		if (ret != OVE_OK) goto cleanup_sock;
+		if (ret != OVE_OK)
+			goto cleanup_sock;
 		/* TODO: expose CA cert / mTLS knobs on the HTTP client so
 		 * callers can configure proper verification. Today the
 		 * client has no config surface, so we explicitly opt into
@@ -245,55 +240,70 @@ int ove_http_request_ex(ove_http_client_t client,
 	/* Build request */
 	const char *method_str;
 	switch (method) {
-	case OVE_HTTP_POST:   method_str = "POST";   break;
-	case OVE_HTTP_PUT:    method_str = "PUT";     break;
-	case OVE_HTTP_DELETE: method_str = "DELETE";  break;
-	case OVE_HTTP_PATCH:  method_str = "PATCH";   break;
-	default:              method_str = "GET";     break;
+	case OVE_HTTP_POST:
+		method_str = "POST";
+		break;
+	case OVE_HTTP_PUT:
+		method_str = "PUT";
+		break;
+	case OVE_HTTP_DELETE:
+		method_str = "DELETE";
+		break;
+	case OVE_HTTP_PATCH:
+		method_str = "PATCH";
+		break;
+	default:
+		method_str = "GET";
+		break;
 	}
 	char req_line[512];
 	int hlen = snprintf(req_line, sizeof(req_line),
-		"%s %s HTTP/1.1\r\n"
-		"Host: %s\r\n"
-		"Connection: close\r\n",
-		method_str, path, c->host);
+			    "%s %s HTTP/1.1\r\n"
+			    "Host: %s\r\n"
+			    "Connection: close\r\n",
+			    method_str, path, c->host);
 	if (hlen < 0 || (size_t)hlen >= sizeof(req_line)) {
 		ret = OVE_ERR_INVALID_PARAM;
 		goto cleanup_tls;
 	}
 
 	ret = http_send_all(c, req_line, (size_t)hlen);
-	if (ret != OVE_OK) goto cleanup_tls;
+	if (ret != OVE_OK)
+		goto cleanup_tls;
 
 	/* Send custom headers */
 	for (size_t hi = 0; hi < header_count; hi++) {
 		if (!headers[hi].name || !headers[hi].value)
 			continue;
 		char hdr_line[256];
-		int hn = snprintf(hdr_line, sizeof(hdr_line), "%s: %s\r\n",
-				  headers[hi].name, headers[hi].value);
+		int hn = snprintf(hdr_line, sizeof(hdr_line), "%s: %s\r\n", headers[hi].name,
+				  headers[hi].value);
 		if (hn > 0 && (size_t)hn < sizeof(hdr_line)) {
 			ret = http_send_all(c, hdr_line, (size_t)hn);
-			if (ret != OVE_OK) goto cleanup_tls;
+			if (ret != OVE_OK)
+				goto cleanup_tls;
 		}
 	}
 
 	if (content_type && body) {
 		char ct_hdr[256];
 		int n = snprintf(ct_hdr, sizeof(ct_hdr),
-			"Content-Type: %s\r\n"
-			"Content-Length: %zu\r\n",
-			content_type, body_len);
+				 "Content-Type: %s\r\n"
+				 "Content-Length: %zu\r\n",
+				 content_type, body_len);
 		ret = http_send_all(c, ct_hdr, (size_t)n);
-		if (ret != OVE_OK) goto cleanup_tls;
+		if (ret != OVE_OK)
+			goto cleanup_tls;
 	}
 
 	ret = http_send_all(c, "\r\n", 2);
-	if (ret != OVE_OK) goto cleanup_tls;
+	if (ret != OVE_OK)
+		goto cleanup_tls;
 
 	if (body && body_len > 0) {
 		ret = http_send_all(c, body, body_len);
-		if (ret != OVE_OK) goto cleanup_tls;
+		if (ret != OVE_OK)
+			goto cleanup_tls;
 	}
 
 	/* Read response */
@@ -303,7 +313,10 @@ int ove_http_request_ex(ove_http_client_t client,
 #else
 	size_t cap = 4096;
 	char *buf = OVE_BACKEND_MALLOC(cap);
-	if (!buf) { ret = OVE_ERR_NO_MEMORY; goto cleanup_tls; }
+	if (!buf) {
+		ret = OVE_ERR_NO_MEMORY;
+		goto cleanup_tls;
+	}
 #endif
 	size_t total = 0;
 
@@ -329,7 +342,8 @@ int ove_http_request_ex(ove_http_client_t client,
 #endif
 		size_t got = 0;
 		ret = http_recv_some(c, buf + total, cap - total - 1, &got);
-		if (ret == OVE_ERR_NET_CLOSED) break;
+		if (ret == OVE_ERR_NET_CLOSED)
+			break;
 		if (ret != OVE_OK) {
 #ifndef CONFIG_OVE_ZERO_HEAP
 			OVE_BACKEND_FREE(buf);
@@ -344,7 +358,8 @@ int ove_http_request_ex(ove_http_client_t client,
 	char *status_end = strstr(buf, "\r\n");
 	if (status_end) {
 		char *sp = strchr(buf, ' ');
-		if (sp) resp->status = atoi(sp + 1);
+		if (sp)
+			resp->status = atoi(sp + 1);
 	}
 
 	/* Split headers and body */
@@ -400,7 +415,8 @@ cleanup_sock:
 
 void ove_http_response_free(ove_http_response_t *resp)
 {
-	if (!resp) return;
+	if (!resp)
+		return;
 #ifndef CONFIG_OVE_ZERO_HEAP
 	if (resp->body) {
 		OVE_BACKEND_FREE(resp->body);

@@ -49,8 +49,7 @@ static void test_cpp_thread_create_destroy(void **state)
 {
 	(void)state;
 	g_cpp_flag.store(0);
-	ove::Thread<4096> t(cpp_entry_set_flag, nullptr,
-				 OVE_PRIO_NORMAL, "t1");
+	ove::Thread<4096> t(cpp_entry_set_flag, nullptr, OVE_PRIO_NORMAL, "t1");
 	assert_true(t.valid());
 	test_msleep(50);
 	assert_int_equal(g_cpp_flag.load(), 1);
@@ -61,8 +60,7 @@ static void test_cpp_thread_entry_arg(void **state)
 	(void)state;
 	g_cpp_arg_val.store(0);
 	int sentinel = 0xBEEF;
-	ove::Thread<4096> t(cpp_entry_capture_arg, &sentinel,
-				 OVE_PRIO_NORMAL, "t2");
+	ove::Thread<4096> t(cpp_entry_capture_arg, &sentinel, OVE_PRIO_NORMAL, "t2");
 	test_msleep(50);
 	assert_true(g_cpp_arg_val.load() == reinterpret_cast<intptr_t>(&sentinel));
 }
@@ -93,8 +91,7 @@ static void test_cpp_thread_set_priority(void **state)
 {
 	(void)state;
 	g_cpp_keep_running.store(1);
-	ove::Thread<4096> t(cpp_entry_spin, nullptr,
-				 OVE_PRIO_NORMAL, "t7");
+	ove::Thread<4096> t(cpp_entry_spin, nullptr, OVE_PRIO_NORMAL, "t7");
 	test_msleep(10);
 	t.set_priority(OVE_PRIO_HIGH);
 	g_cpp_keep_running.store(0);
@@ -105,12 +102,10 @@ static void test_cpp_thread_get_state_running(void **state)
 {
 	(void)state;
 	g_cpp_keep_running.store(1);
-	ove::Thread<4096> t(cpp_entry_spin, nullptr,
-				 OVE_PRIO_NORMAL, "t8");
+	ove::Thread<4096> t(cpp_entry_spin, nullptr, OVE_PRIO_NORMAL, "t8");
 	test_msleep(20);
 	auto st = t.get_state();
-	assert_true(st == OVE_THREAD_STATE_RUNNING ||
-		    st == OVE_THREAD_STATE_READY ||
+	assert_true(st == OVE_THREAD_STATE_RUNNING || st == OVE_THREAD_STATE_READY ||
 		    st == OVE_THREAD_STATE_BLOCKED);
 	g_cpp_keep_running.store(0);
 	test_msleep(20);
@@ -120,20 +115,17 @@ static void test_cpp_thread_get_state_terminated(void **state)
 {
 	(void)state;
 	g_cpp_flag.store(0);
-	ove::Thread<4096> t(cpp_entry_set_flag, nullptr,
-				 OVE_PRIO_NORMAL, "t9");
+	ove::Thread<4096> t(cpp_entry_set_flag, nullptr, OVE_PRIO_NORMAL, "t9");
 	test_msleep(100);
 	auto st = t.get_state();
-	assert_true(st == OVE_THREAD_STATE_TERMINATED ||
-		    st == OVE_THREAD_STATE_SUSPENDED);
+	assert_true(st == OVE_THREAD_STATE_TERMINATED || st == OVE_THREAD_STATE_SUSPENDED);
 }
 
 static void test_cpp_thread_stack_usage(void **state)
 {
 	(void)state;
 	g_cpp_keep_running.store(1);
-	ove::Thread<4096> t(cpp_entry_spin, nullptr,
-				 OVE_PRIO_NORMAL, "t10");
+	ove::Thread<4096> t(cpp_entry_spin, nullptr, OVE_PRIO_NORMAL, "t10");
 	test_msleep(10);
 	(void)t.get_stack_usage();
 	g_cpp_keep_running.store(0);
@@ -144,8 +136,7 @@ static void test_cpp_thread_suspend_resume(void **state)
 {
 	(void)state;
 	g_cpp_flag.store(0);
-	ove::Thread<4096> t(cpp_entry_sleep_briefly, nullptr,
-				 OVE_PRIO_NORMAL, "t14");
+	ove::Thread<4096> t(cpp_entry_sleep_briefly, nullptr, OVE_PRIO_NORMAL, "t14");
 	for (int i = 0; i < 100 && g_cpp_flag.load() == 0; i++)
 		test_msleep(5);
 	assert_int_equal(g_cpp_flag.load(), 1);
@@ -160,8 +151,7 @@ static void test_cpp_thread_runtime_stats(void **state)
 {
 	(void)state;
 	g_cpp_keep_running.store(1);
-	ove::Thread<4096> t(cpp_entry_spin, nullptr,
-				 OVE_PRIO_NORMAL, "t16");
+	ove::Thread<4096> t(cpp_entry_spin, nullptr, OVE_PRIO_NORMAL, "t16");
 	test_msleep(20);
 
 	struct ove_thread_stats stats;
@@ -179,8 +169,7 @@ static void test_cpp_thread_raii_destroy(void **state)
 	(void)state;
 	{
 		g_cpp_flag.store(0);
-		ove::Thread<4096> t(cpp_entry_set_flag, nullptr,
-					 OVE_PRIO_NORMAL, "raii");
+		ove::Thread<4096> t(cpp_entry_set_flag, nullptr, OVE_PRIO_NORMAL, "raii");
 		test_msleep(50);
 	}
 }
@@ -221,7 +210,8 @@ int test_cpp_thread_run(void)
 		cmocka_unit_test(test_cpp_thread_yield),
 		cmocka_unit_test(test_cpp_thread_get_self),
 		cmocka_unit_test_teardown(test_cpp_thread_set_priority, teardown_stop_cpp_spin),
-		cmocka_unit_test_teardown(test_cpp_thread_get_state_running, teardown_stop_cpp_spin),
+		cmocka_unit_test_teardown(test_cpp_thread_get_state_running,
+					  teardown_stop_cpp_spin),
 		cmocka_unit_test(test_cpp_thread_get_state_terminated),
 		cmocka_unit_test_teardown(test_cpp_thread_stack_usage, teardown_stop_cpp_spin),
 		cmocka_unit_test(test_cpp_thread_suspend_resume),

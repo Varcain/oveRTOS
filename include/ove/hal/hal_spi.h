@@ -32,7 +32,7 @@ extern "C" {
  * @param[in] cfg  Bus configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg);
+int ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg);
 
 /**
  * @brief Disable and release the SPI peripheral.
@@ -54,8 +54,7 @@ void ove_hal_spi_close(ove_spi_t spi);
  * @param[in]  timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
-			  size_t len, uint32_t timeout_ms);
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

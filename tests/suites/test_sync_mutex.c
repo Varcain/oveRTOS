@@ -94,10 +94,9 @@ static void test_mutex_contention_timeout(void **state)
 	ove_mutex_t mtx = NULL;
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct hold_ctx ctx = { .mutex = mtx, .hold_ms = 200 };
+	struct hold_ctx ctx = {.mutex = mtx, .hold_ms = 200};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "hold", hold_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "hold", hold_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.locked, 1, 500));
 
 	assert_int_equal(ove_mutex_lock(mtx, 50), OVE_ERR_TIMEOUT);
@@ -112,10 +111,9 @@ static void test_mutex_contention_success(void **state)
 	ove_mutex_t mtx = NULL;
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct hold_ctx ctx = { .mutex = mtx, .hold_ms = 50 };
+	struct hold_ctx ctx = {.mutex = mtx, .hold_ms = 50};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "rel", hold_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "rel", hold_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.locked, 1, 500));
 
 	assert_int_equal(ove_mutex_lock(mtx, 500), OVE_OK);
@@ -161,10 +159,8 @@ static void test_mutex_shared_counter(void **state)
 	ove_test_mutex_create(&ctx.mutex, &s_mtx_counter_storage);
 
 	ove_thread_t t1 = NULL, t2 = NULL;
-	ove_test_thread_run(&t1, &s_th_storage_a, "c1", counter_entry, &ctx,
-	    s_th_stack_a, 4096);
-	ove_test_thread_run(&t2, &s_th_storage_b, "c2", counter_entry, &ctx,
-	    s_th_stack_b, 4096);
+	ove_test_thread_run(&t1, &s_th_storage_a, "c1", counter_entry, &ctx, s_th_stack_a, 4096);
+	ove_test_thread_run(&t2, &s_th_storage_b, "c2", counter_entry, &ctx, s_th_stack_b, 4096);
 	ove_test_thread_destroy(t1);
 	ove_test_thread_destroy(t2);
 
@@ -178,10 +174,9 @@ static void test_mutex_short_timeout(void **state)
 	ove_mutex_t mtx = NULL;
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct hold_ctx ctx = { .mutex = mtx, .hold_ms = 200 };
+	struct hold_ctx ctx = {.mutex = mtx, .hold_ms = 200};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "h2", hold_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "h2", hold_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.locked, 1, 500));
 
 	uint64_t start = 0, end = 0;

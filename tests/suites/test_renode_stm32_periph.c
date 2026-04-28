@@ -37,9 +37,9 @@
 /* The FT5336 chip-id register (offset 0xA8) returns 0x51 for the variant
  * Renode models.  We don't depend on the exact value — any successful
  * read demonstrates the bus transaction completed end-to-end. */
-#define FT5336_I2C_INSTANCE 2          /* Renode's i2c3 → driver index 2 */
-#define FT5336_ADDR         0x38
-#define FT5336_REG_CHIPID   0xA8
+#define FT5336_I2C_INSTANCE 2 /* Renode's i2c3 → driver index 2 */
+#define FT5336_ADDR 0x38
+#define FT5336_REG_CHIPID 0xA8
 
 static void test_renode_i2c_ft5336_probe(void **state)
 {
@@ -47,7 +47,7 @@ static void test_renode_i2c_ft5336_probe(void **state)
 
 	struct ove_i2c_cfg cfg = {
 		.instance = FT5336_I2C_INSTANCE,
-		.speed    = OVE_I2C_SPEED_STANDARD,
+		.speed = OVE_I2C_SPEED_STANDARD,
 	};
 	ove_i2c_t i2c;
 	int rc = ove_i2c_create(&i2c, &cfg);
@@ -59,8 +59,7 @@ static void test_renode_i2c_ft5336_probe(void **state)
 	 * arbitration error. */
 	uint8_t reg = FT5336_REG_CHIPID;
 	uint8_t out = 0;
-	rc = ove_i2c_write_read(i2c, FT5336_ADDR,
-				&reg, 1, &out, 1, 100);
+	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, 100);
 	assert_int_equal(rc, OVE_OK);
 
 	/* Probe a non-existent address — expect a NACK / timeout, not OK. */
@@ -77,7 +76,7 @@ static void test_renode_i2c_ft5336_probe(void **state)
  * accepts the byte and transmits it (the analyzer captures it).  We
  * confirm the API path doesn't error and that the configured baudrate
  * is what we requested — exercising the HAL config flow. */
-#define USART2_INSTANCE 1   /* driver indexes from 0; USART2 is index 1 */
+#define USART2_INSTANCE 1 /* driver indexes from 0; USART2 is index 1 */
 
 static void test_renode_uart_tx_completes(void **state)
 {
@@ -90,13 +89,13 @@ static void test_renode_uart_tx_completes(void **state)
 	static ove_uart_storage_t storage;
 	static uint8_t rx_buf[64];
 	struct ove_uart_cfg cfg = {
-		.instance     = USART2_INSTANCE,
-		.baudrate     = 115200,
-		.data_bits    = 8,
-		.parity       = OVE_UART_PARITY_NONE,
-		.stop_bits    = OVE_UART_STOP_1,
+		.instance = USART2_INSTANCE,
+		.baudrate = 115200,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
 		.flow_control = OVE_UART_FLOW_NONE,
-		.rx_buf_size  = sizeof(rx_buf),
+		.rx_buf_size = sizeof(rx_buf),
 	};
 	ove_uart_t uart = NULL;
 	int rc = ove_uart_init(&uart, &storage, rx_buf, &cfg);
@@ -135,9 +134,9 @@ static void test_renode_spi_loopback(void **state)
 	(void)state;
 
 	struct ove_spi_cfg cfg = {
-		.instance  = SPI1_INSTANCE,
-		.clock_hz  = 1000000,
-		.mode      = OVE_SPI_MODE_0,
+		.instance = SPI1_INSTANCE,
+		.clock_hz = 1000000,
+		.mode = OVE_SPI_MODE_0,
 		.bit_order = OVE_SPI_MSB_FIRST,
 		.word_size = 8,
 	};
@@ -147,9 +146,8 @@ static void test_renode_spi_loopback(void **state)
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(spi);
 
-	const uint8_t tx[8] = { 0xA5, 0x5A, 0xDE, 0xAD,
-				0xBE, 0xEF, 0xCA, 0xFE };
-	uint8_t rx[8] = { 0 };
+	const uint8_t tx[8] = {0xA5, 0x5A, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE};
+	uint8_t rx[8] = {0};
 	rc = ove_spi_transfer(spi, NULL, tx, rx, sizeof(tx), 200);
 	assert_int_equal(rc, OVE_OK);
 

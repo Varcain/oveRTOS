@@ -25,40 +25,46 @@ static struct zephyr_irq_entry zephyr_irq_table[GPIO_IRQ_MAX];
 static const struct device *port_to_dev(unsigned int port)
 {
 	switch (port) {
-	case 0: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioa));
-	case 1: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiob));
-	case 2: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioc));
-	case 3: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiod));
-	case 4: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioe));
-	case 5: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiof));
-	case 6: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiog));
-	case 7: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioh));
-	case 8: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioi));
-	default: return NULL;
+	case 0:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioa));
+	case 1:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiob));
+	case 2:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioc));
+	case 3:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiod));
+	case 4:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioe));
+	case 5:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiof));
+	case 6:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpiog));
+	case 7:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioh));
+	case 8:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(gpioi));
+	default:
+		return NULL;
 	}
 }
 
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 
-static void zephyr_gpio_irq_handler(const struct device *dev,
-				    struct gpio_callback *cb,
+static void zephyr_gpio_irq_handler(const struct device *dev, struct gpio_callback *cb,
 				    uint32_t pins)
 {
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (zephyr_irq_table[i].registered &&
-		    zephyr_irq_table[i].dev == dev &&
+		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].dev == dev &&
 		    (pins & BIT(zephyr_irq_table[i].pin))) {
-			ove_gpio_irq_dispatch(
-				zephyr_irq_table[i].port,
-				(unsigned int)zephyr_irq_table[i].pin);
+			ove_gpio_irq_dispatch(zephyr_irq_table[i].port,
+					      (unsigned int)zephyr_irq_table[i].pin);
 		}
 	}
 }
 
-int ove_hal_gpio_configure(unsigned int port, unsigned int pin,
-			       ove_gpio_mode_t mode)
+int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
 {
 	const struct device *dev = port_to_dev(port);
 	gpio_flags_t flags;
@@ -105,10 +111,8 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return (val < 0) ? OVE_ERR_NOT_SUPPORTED : val;
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin,
-				   ove_gpio_irq_mode_t mode,
-				   ove_gpio_irq_cb callback,
-				   void *user_data)
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
+			       ove_gpio_irq_cb callback, void *user_data)
 {
 	const struct device *dev;
 	gpio_flags_t flags;
@@ -160,8 +164,7 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin,
 	zephyr_irq_table[i].port = port;
 	zephyr_irq_table[i].registered = 1;
 
-	gpio_init_callback(&zephyr_irq_table[i].cb_data,
-			   zephyr_gpio_irq_handler, BIT(pin));
+	gpio_init_callback(&zephyr_irq_table[i].cb_data, zephyr_gpio_irq_handler, BIT(pin));
 	gpio_add_callback(dev, &zephyr_irq_table[i].cb_data);
 
 	return OVE_OK;
@@ -172,12 +175,10 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (zephyr_irq_table[i].registered &&
-		    zephyr_irq_table[i].port == port &&
+		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
 		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
-			gpio_pin_interrupt_configure(
-				zephyr_irq_table[i].dev, pin,
-				GPIO_INT_DISABLE);
+			gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
+						     GPIO_INT_DISABLE);
 			return OVE_OK;
 		}
 	}

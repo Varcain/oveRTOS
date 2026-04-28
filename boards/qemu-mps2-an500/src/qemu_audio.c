@@ -104,8 +104,8 @@ static void flush_positions(void)
 /* ── QEMU Source Node ───────────────────────────────────────────── */
 
 struct qemu_source_ctx {
-	struct ove_audio_fmt    fmt;
-	struct ove_audio_graph *graph;  /* for stats.overruns */
+	struct ove_audio_fmt fmt;
+	struct ove_audio_graph *graph; /* for stats.overruns */
 };
 
 static struct qemu_source_ctx g_qemu_source;
@@ -119,13 +119,12 @@ static int qemu_source_configure(void *ctx, const struct ove_audio_fmt *in,
 	return OVE_OK;
 }
 
-static int qemu_source_process(void *ctx, const struct ove_audio_buf *in,
-			       struct ove_audio_buf *out)
+static int qemu_source_process(void *ctx, const struct ove_audio_buf *in, struct ove_audio_buf *out)
 {
 	struct qemu_source_ctx *sc = (struct qemu_source_ctx *)ctx;
 	(void)in;
-	unsigned int bytes = out->frames * out->fmt->channels *
-			     ove_audio_sample_size(out->fmt->sample_fmt);
+	unsigned int bytes =
+		out->frames * out->fmt->channels * ove_audio_sample_size(out->fmt->sample_fmt);
 
 	if (g_sh_fd >= 0) {
 		uint32_t got = ring_read_in(out->data, bytes);
@@ -142,23 +141,22 @@ static int qemu_source_process(void *ctx, const struct ove_audio_buf *in,
 
 static const struct ove_audio_node_ops qemu_source_ops = {
 	.configure = qemu_source_configure,
-	.process   = qemu_source_process,
+	.process = qemu_source_process,
 };
 
 /* ── QEMU Sink Node ─────────────────────────────────────────────── */
 
 struct qemu_sink_ctx {
-	struct ove_audio_fmt    fmt;
+	struct ove_audio_fmt fmt;
 	struct ove_audio_graph *graph;
-	unsigned int            frames_per_period;
-	ove_thread_t            thread;
-	volatile int            running;
+	unsigned int frames_per_period;
+	ove_thread_t thread;
+	volatile int running;
 };
 
 static struct qemu_sink_ctx g_qemu_sink;
 
-static int qemu_sink_configure(void *ctx, const struct ove_audio_fmt *in,
-			       struct ove_audio_fmt *out)
+static int qemu_sink_configure(void *ctx, const struct ove_audio_fmt *in, struct ove_audio_fmt *out)
 {
 	(void)out;
 	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)ctx;
@@ -167,15 +165,14 @@ static int qemu_sink_configure(void *ctx, const struct ove_audio_fmt *in,
 	return OVE_OK;
 }
 
-static int qemu_sink_process(void *ctx, const struct ove_audio_buf *in,
-			     struct ove_audio_buf *out)
+static int qemu_sink_process(void *ctx, const struct ove_audio_buf *in, struct ove_audio_buf *out)
 {
 	(void)ctx;
 	(void)out;
 
 	if (g_sh_fd >= 0 && in && in->data) {
-		unsigned int bytes = in->frames * in->fmt->channels *
-				     ove_audio_sample_size(in->fmt->sample_fmt);
+		unsigned int bytes =
+			in->frames * in->fmt->channels * ove_audio_sample_size(in->fmt->sample_fmt);
 		ring_write_out(in->data, bytes);
 		flush_positions();
 	}
@@ -186,8 +183,7 @@ static void audio_engine_loop(void *arg)
 {
 	struct qemu_sink_ctx *sc = (struct qemu_sink_ctx *)arg;
 
-	unsigned int period_ms = (sc->frames_per_period * 1000) /
-			sc->fmt.sample_rate;
+	unsigned int period_ms = (sc->frames_per_period * 1000) / sc->fmt.sample_rate;
 	if (period_ms < 1)
 		period_ms = 1;
 
@@ -261,16 +257,15 @@ static void qemu_sink_destroy(void *ctx)
 
 static const struct ove_audio_node_ops qemu_sink_ops = {
 	.configure = qemu_sink_configure,
-	.start     = qemu_sink_start,
-	.stop      = qemu_sink_stop,
-	.process   = qemu_sink_process,
-	.destroy   = qemu_sink_destroy,
+	.start = qemu_sink_start,
+	.stop = qemu_sink_stop,
+	.process = qemu_sink_process,
+	.destroy = qemu_sink_destroy,
 };
 
 /* ── Device Node Factories ──────────────────────────────────────── */
 
-static int qemu_shm_init_once(const struct ove_audio_fmt *fmt,
-			       unsigned int frames_per_buffer)
+static int qemu_shm_init_once(const struct ove_audio_fmt *fmt, unsigned int frames_per_buffer)
 {
 	if (g_sh_fd >= 0)
 		return OVE_OK; /* already open */
@@ -286,15 +281,15 @@ static int qemu_shm_init_once(const struct ove_audio_fmt *fmt,
 		uint32_t sz = AUDIO_SHM_RING_SIZE;
 
 		sh_seek(g_sh_fd, AUDIO_SHM_OUT_RING_OFF);
-		sh_write(g_sh_fd, &zero, 4);  /* write_pos */
-		sh_write(g_sh_fd, &zero, 4);  /* read_pos */
-		sh_write(g_sh_fd, &sr, 4);    /* sample_rate */
-		sh_write(g_sh_fd, &ch, 2);    /* channels */
-		sh_write(g_sh_fd, &bd, 2);    /* bit_depth */
-		sh_write(g_sh_fd, &sz, 4);    /* size */
-		sh_write(g_sh_fd, &zero, 4);  /* underruns */
-		sh_write(g_sh_fd, &zero, 4);  /* overruns */
-		sh_write(g_sh_fd, &zero, 4);  /* _reserved */
+		sh_write(g_sh_fd, &zero, 4); /* write_pos */
+		sh_write(g_sh_fd, &zero, 4); /* read_pos */
+		sh_write(g_sh_fd, &sr, 4);   /* sample_rate */
+		sh_write(g_sh_fd, &ch, 2);   /* channels */
+		sh_write(g_sh_fd, &bd, 2);   /* bit_depth */
+		sh_write(g_sh_fd, &sz, 4);   /* size */
+		sh_write(g_sh_fd, &zero, 4); /* underruns */
+		sh_write(g_sh_fd, &zero, 4); /* overruns */
+		sh_write(g_sh_fd, &zero, 4); /* _reserved */
 
 		/* Write input ring header (same format). */
 		sh_seek(g_sh_fd, AUDIO_SHM_IN_RING_OFF);
@@ -315,8 +310,7 @@ static int qemu_shm_init_once(const struct ove_audio_fmt *fmt,
 	return OVE_OK;
 }
 
-int ove_audio_device_source(struct ove_audio_graph *g,
-			    const struct ove_audio_device_cfg *cfg,
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
 			    const char *name)
 {
 	if (!g || !cfg || !name)
@@ -331,12 +325,10 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 	ctx->fmt = cfg->fmt;
 	ctx->graph = g;
 
-	return ove_audio_graph_add_node(g, &qemu_source_ops, ctx, name,
-					OVE_AUDIO_NODE_SOURCE);
+	return ove_audio_graph_add_node(g, &qemu_source_ops, ctx, name, OVE_AUDIO_NODE_SOURCE);
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g,
-			  const struct ove_audio_device_cfg *cfg,
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
 			  const char *name)
 {
 	if (!g || !cfg || !name)
@@ -352,16 +344,18 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 	ctx->graph = g;
 	ctx->frames_per_period = g->frames_per_period;
 
-	return ove_audio_graph_add_node(g, &qemu_sink_ops, ctx, name,
-					OVE_AUDIO_NODE_SINK);
+	return ove_audio_graph_add_node(g, &qemu_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
 }
 
 /* Stub for sim_board.c which calls this during init.  On QEMU the audio
  * plugin is not used — audio goes directly through semihosting SHM. */
-int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels,
-			   uint16_t bit_depth, uint32_t buffer_frames)
+int ove_sim_audio_register(uint32_t sample_rate, uint16_t channels, uint16_t bit_depth,
+			   uint32_t buffer_frames)
 {
-	(void)sample_rate; (void)channels; (void)bit_depth; (void)buffer_frames;
+	(void)sample_rate;
+	(void)channels;
+	(void)bit_depth;
+	(void)buffer_frames;
 	return 0;
 }
 

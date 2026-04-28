@@ -27,8 +27,7 @@ static void wq_thread(void *arg)
 	struct ove_work *work;
 
 	while (wq->running) {
-		if (xQueueReceive(wq->queue, &work,
-				  portMAX_DELAY) == pdPASS) {
+		if (xQueueReceive(wq->queue, &work, portMAX_DELAY) == pdPASS) {
 			if (work == NULL) {
 				break; /* poison pill — shutdown */
 			}
@@ -44,18 +43,14 @@ static void wq_thread(void *arg)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_workqueue_init(ove_workqueue_t *wq,
-			   ove_workqueue_storage_t *storage,
-			   const char *name, ove_prio_t priority,
-			   size_t stack_size, void *stack)
+int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
+		       ove_prio_t priority, size_t stack_size, void *stack)
 {
 	if (wq == NULL || storage == NULL || stack == NULL)
 		return OVE_ERR_INVALID_PARAM;
 
-	storage->queue = xQueueCreateStatic(OVE_WQ_QUEUE_DEPTH,
-					    sizeof(struct ove_work *),
-					    storage->queue_storage,
-					    &storage->static_queue);
+	storage->queue = xQueueCreateStatic(OVE_WQ_QUEUE_DEPTH, sizeof(struct ove_work *),
+					    storage->queue_storage, &storage->static_queue);
 	storage->done_sem = xSemaphoreCreateBinaryStatic(&storage->static_done_sem);
 	storage->running = 1;
 
@@ -63,12 +58,9 @@ int ove_workqueue_init(ove_workqueue_t *wq,
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	storage->task = xTaskCreateStatic(
-		wq_thread, name ? name : "ove_wq",
-		stack_depth, storage,
-		map_priority(priority),
-		(StackType_t *)stack,
-		&storage->static_task);
+	storage->task = xTaskCreateStatic(wq_thread, name ? name : "ove_wq", stack_depth, storage,
+					  map_priority(priority), (StackType_t *)stack,
+					  &storage->static_task);
 
 	*wq = storage;
 	return OVE_OK;
@@ -85,9 +77,7 @@ void ove_workqueue_deinit(ove_workqueue_t wq)
 	}
 }
 
-int ove_work_init_static(ove_work_t *work,
-			     ove_work_storage_t *storage,
-			     ove_work_fn handler)
+int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler)
 {
 	if (work == NULL || storage == NULL || handler == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -104,8 +94,8 @@ int ove_work_init_static(ove_work_t *work,
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_WORKQUEUE
-int ove_workqueue_create(ove_workqueue_t *wq, const char *name,
-			      ove_prio_t priority, size_t stack_size)
+int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t priority,
+			 size_t stack_size)
 {
 	struct ove_workqueue *fwq;
 	BaseType_t ret;
@@ -118,10 +108,8 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name,
 	if (fwq == NULL)
 		return OVE_ERR_NO_MEMORY;
 
-	fwq->queue = xQueueCreateStatic(OVE_WQ_QUEUE_DEPTH,
-					sizeof(struct ove_work *),
-					fwq->queue_storage,
-					&fwq->static_queue);
+	fwq->queue = xQueueCreateStatic(OVE_WQ_QUEUE_DEPTH, sizeof(struct ove_work *),
+					fwq->queue_storage, &fwq->static_queue);
 	fwq->done_sem = xSemaphoreCreateBinaryStatic(&fwq->static_done_sem);
 	fwq->running = 1;
 
@@ -129,9 +117,7 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name,
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	ret = xTaskCreate(wq_thread,
-			  name ? name : "ove_wq",
-			  stack_depth, fwq,
+	ret = xTaskCreate(wq_thread, name ? name : "ove_wq", stack_depth, fwq,
 			  map_priority(priority), &fwq->task);
 	if (ret != pdPASS) {
 		OVE_BACKEND_FREE(fwq);
@@ -203,24 +189,19 @@ static void delay_timer_cb(TimerHandle_t xTimer)
 	xQueueSend(fwq->queue, &fw, 0);
 }
 
-int ove_work_submit_delayed(ove_workqueue_t wq,
-					ove_work_t work,
-					uint32_t delay_ms)
+int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)
 {
 	work->target_wq = wq;
 
 	if (work->delay_timer == NULL) {
-		work->delay_timer = xTimerCreateStatic(
-			"wq_delay", pdMS_TO_TICKS(delay_ms),
-			pdFALSE, (void *)work, delay_timer_cb,
-			&work->static_timer);
+		work->delay_timer = xTimerCreateStatic("wq_delay", pdMS_TO_TICKS(delay_ms), pdFALSE,
+						       (void *)work, delay_timer_cb,
+						       &work->static_timer);
 		if (work->delay_timer == NULL) {
 			return OVE_ERR_NO_MEMORY;
 		}
 	} else {
-		xTimerChangePeriod(work->delay_timer,
-				   pdMS_TO_TICKS(delay_ms),
-				   portMAX_DELAY);
+		xTimerChangePeriod(work->delay_timer, pdMS_TO_TICKS(delay_ms), portMAX_DELAY);
 	}
 
 	if (xTimerStart(work->delay_timer, portMAX_DELAY) != pdPASS) {

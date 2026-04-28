@@ -39,9 +39,9 @@
 struct ove_profiler_sample {
 	uint64_t ts_us;
 	uint32_t tid;
-	uint8_t  depth;
-	uint8_t  state;
-	uint8_t  _pad[2];
+	uint8_t depth;
+	uint8_t state;
+	uint8_t _pad[2];
 	uintptr_t pcs[CONFIG_OVE_PROFILER_MAX_DEPTH];
 };
 

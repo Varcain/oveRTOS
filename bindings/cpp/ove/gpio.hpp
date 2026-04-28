@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_GPIO
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::gpio
@@ -27,7 +28,8 @@ namespace ove {
  * Available when `CONFIG_OVE_GPIO` is enabled.  Pins are addressed by a
  * (port, pin) tuple following the same convention as the underlying C API.
  */
-namespace gpio {
+namespace gpio
+{
 
 /**
  * @brief Configures a GPIO pin with the specified mode.
@@ -36,8 +38,8 @@ namespace gpio {
  * @param[in] mode Desired pin mode (input, output, alternate function, etc.).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int configure(unsigned int port, unsigned int pin,
-				    ove_gpio_mode_t mode) {
+[[nodiscard]] inline int configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
+{
 	return ove_gpio_configure(port, pin, mode);
 }
 
@@ -48,8 +50,8 @@ namespace gpio {
  * @param[in] value Logic level to drive (0 = low, non-zero = high).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int set(unsigned int port, unsigned int pin,
-			      int value) {
+[[nodiscard]] inline int set(unsigned int port, unsigned int pin, int value)
+{
 	return ove_gpio_set(port, pin, value);
 }
 
@@ -59,7 +61,8 @@ namespace gpio {
  * @param[in] pin  Pin number within the port.
  * @return 0 or 1 for the pin level, or a negative error code.
  */
-[[nodiscard]] inline int get(unsigned int port, unsigned int pin) {
+[[nodiscard]] inline int get(unsigned int port, unsigned int pin)
+{
 	return ove_gpio_get(port, pin);
 }
 
@@ -72,13 +75,10 @@ namespace gpio {
  * @param[in] user_data Opaque pointer forwarded to the callback.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int irq_register(unsigned int port,
-				       unsigned int pin,
-				       ove_gpio_irq_mode_t mode,
-				       ove_gpio_irq_cb callback,
-				       void *user_data) {
-	return ove_gpio_irq_register(port, pin, mode, callback,
-					  user_data);
+[[nodiscard]] inline int irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
+				      ove_gpio_irq_cb callback, void *user_data)
+{
+	return ove_gpio_irq_register(port, pin, mode, callback, user_data);
 }
 
 // Undef RTOS macros that collide with our function names
@@ -95,8 +95,8 @@ namespace gpio {
  * @param[in] pin  Pin number within the port.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int irq_enable(unsigned int port,
-				     unsigned int pin) {
+[[nodiscard]] inline int irq_enable(unsigned int port, unsigned int pin)
+{
 	return ove_gpio_irq_enable(port, pin);
 }
 
@@ -106,8 +106,8 @@ namespace gpio {
  * @param[in] pin  Pin number within the port.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int irq_disable(unsigned int port,
-				      unsigned int pin) {
+[[nodiscard]] inline int irq_disable(unsigned int port, unsigned int pin)
+{
 	return ove_gpio_irq_disable(port, pin);
 }
 

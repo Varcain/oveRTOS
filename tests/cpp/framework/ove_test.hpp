@@ -30,11 +30,11 @@ static inline void test_msleep(uint32_t ms)
 }
 
 template <size_t StackSize = 4096>
-inline ove::Thread<StackSize> make_test_thread(
-    const char *name, ove_thread_fn entry, void *arg = nullptr,
-    ove_prio_t prio = OVE_PRIO_NORMAL)
+inline ove::Thread<StackSize> make_test_thread(const char *name, ove_thread_fn entry,
+					       void *arg = nullptr,
+					       ove_prio_t prio = OVE_PRIO_NORMAL)
 {
-    return ove::Thread<StackSize>(entry, arg, prio, name);
+	return ove::Thread<StackSize>(entry, arg, prio, name);
 }
 
 /* C++ test suite runner declarations */

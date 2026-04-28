@@ -22,9 +22,9 @@
 #define DT_DRV_COMPAT ove_shmem_display
 
 /* ARM semihosting operations */
-#define SH_SYS_OPEN  0x01
+#define SH_SYS_OPEN 0x01
 #define SH_SYS_WRITE 0x05
-#define SH_SYS_SEEK  0x0A
+#define SH_SYS_SEEK 0x0A
 
 static inline uint32_t sh_call(uint32_t op, void *arg)
 {
@@ -61,8 +61,8 @@ static inline int sh_seek(int fd, uint32_t pos)
 }
 
 /* Framebuffer header — matches ove-dashboard-bridge.py protocol */
-#define FB_MAGIC  0x42465854  /* "TXFB" */
-#define FB_FORMAT 0           /* RGB565 */
+#define FB_MAGIC 0x42465854 /* "TXFB" */
+#define FB_FORMAT 0	    /* RGB565 */
 
 struct fb_header {
 	uint32_t magic;
@@ -76,7 +76,7 @@ struct shmem_display_data {
 	int sh_fd;
 	uint16_t width;
 	uint16_t height;
-	uint16_t framebuffer[];  /* flexible array — sized at init */
+	uint16_t framebuffer[]; /* flexible array — sized at init */
 };
 
 /* Static framebuffer (480*272*2 = 261120 bytes) */
@@ -98,10 +98,8 @@ static int shmem_display_init(const struct device *dev)
 	return 0;
 }
 
-static int shmem_display_write(const struct device *dev, const uint16_t x,
-			       const uint16_t y,
-			       const struct display_buffer_descriptor *desc,
-			       const void *buf)
+static int shmem_display_write(const struct device *dev, const uint16_t x, const uint16_t y,
+			       const struct display_buffer_descriptor *desc, const void *buf)
 {
 	struct shmem_display_data *data = dev->data;
 	const uint8_t *src = buf;
@@ -118,16 +116,15 @@ static int shmem_display_write(const struct device *dev, const uint16_t x,
 	/* Flush to shmem after each write */
 	if (data->sh_fd >= 0) {
 		struct fb_header hdr = {
-			.magic  = FB_MAGIC,
-			.width  = data->width,
+			.magic = FB_MAGIC,
+			.width = data->width,
 			.height = data->height,
 			.format = FB_FORMAT,
-			.dirty  = 1,
+			.dirty = 1,
 		};
 		sh_seek(data->sh_fd, 0);
 		sh_write(data->sh_fd, &hdr, sizeof(hdr));
-		sh_write(data->sh_fd, fb_pixels,
-			 data->width * data->height * 2);
+		sh_write(data->sh_fd, fb_pixels, data->width * data->height * 2);
 	}
 
 	return 0;
@@ -162,7 +159,5 @@ static const struct display_driver_api shmem_display_api = {
 	.get_capabilities = shmem_display_get_capabilities,
 };
 
-DEVICE_DT_INST_DEFINE(0, shmem_display_init, NULL,
-		      &display_data, NULL,
-		      POST_KERNEL, CONFIG_DISPLAY_INIT_PRIORITY,
-		      &shmem_display_api);
+DEVICE_DT_INST_DEFINE(0, shmem_display_init, NULL, &display_data, NULL, POST_KERNEL,
+		      CONFIG_DISPLAY_INIT_PRIORITY, &shmem_display_api);

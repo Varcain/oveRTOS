@@ -29,30 +29,30 @@
 
 #include <stdint.h>
 
-#define NET_SHM_MAGIC      0x4F564E54  /* "OVNT" little-endian */
-#define NET_SHM_RING_SIZE  (1u << 16)  /* 64 KB per direction */
-#define NET_SHM_HDR_SIZE   64
-#define NET_SHM_MTU        1518        /* Max Ethernet frame size */
+#define NET_SHM_MAGIC 0x4F564E54     /* "OVNT" little-endian */
+#define NET_SHM_RING_SIZE (1u << 16) /* 64 KB per direction */
+#define NET_SHM_HDR_SIZE 64
+#define NET_SHM_MTU 1518 /* Max Ethernet frame size */
 
-#define NET_SHM_TX_RING_OFF  NET_SHM_HDR_SIZE
-#define NET_SHM_RX_RING_OFF  (NET_SHM_HDR_SIZE + NET_SHM_RING_SIZE)
-#define NET_SHM_TOTAL_SIZE   (NET_SHM_HDR_SIZE + 2u * NET_SHM_RING_SIZE)
+#define NET_SHM_TX_RING_OFF NET_SHM_HDR_SIZE
+#define NET_SHM_RX_RING_OFF (NET_SHM_HDR_SIZE + NET_SHM_RING_SIZE)
+#define NET_SHM_TOTAL_SIZE (NET_SHM_HDR_SIZE + 2u * NET_SHM_RING_SIZE)
 
-#define NET_SHM_PATH  "/dev/shm/ove-net"
+#define NET_SHM_PATH "/dev/shm/ove-net"
 
 struct net_shm_header {
-	uint32_t magic;              /* NET_SHM_MAGIC */
-	uint8_t  mac_addr[6];       /* Guest MAC address */
-	uint16_t mtu;               /* Max frame size (1518) */
-	uint32_t ring_size;         /* Bytes per direction */
+	uint32_t magic;	     /* NET_SHM_MAGIC */
+	uint8_t mac_addr[6]; /* Guest MAC address */
+	uint16_t mtu;	     /* Max frame size (1518) */
+	uint32_t ring_size;  /* Bytes per direction */
 	/* TX: guest writes, host reads */
 	uint32_t tx_write_pos;
 	uint32_t tx_read_pos;
 	/* RX: host writes, guest reads */
 	uint32_t rx_write_pos;
 	uint32_t rx_read_pos;
-	uint8_t  link_up;           /* Host sets to 1 when bridge ready */
-	uint8_t  _pad[23];          /* Pad to 64 bytes */
+	uint8_t link_up;  /* Host sets to 1 when bridge ready */
+	uint8_t _pad[23]; /* Pad to 64 bytes */
 };
 
 #endif /* QEMU_NET_SHM_H */

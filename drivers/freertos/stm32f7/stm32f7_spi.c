@@ -18,16 +18,22 @@
 static SPI_TypeDef *instance_to_periph(unsigned int instance)
 {
 	switch (instance) {
-	case 0: return SPI1;
-	case 1: return SPI2;
-	case 2: return SPI3;
+	case 0:
+		return SPI1;
+	case 1:
+		return SPI2;
+	case 2:
+		return SPI3;
 #ifdef SPI4
-	case 3: return SPI4;
+	case 3:
+		return SPI4;
 #endif
 #ifdef SPI5
-	case 4: return SPI5;
+	case 4:
+		return SPI5;
 #endif
-	default: return NULL;
+	default:
+		return NULL;
 	}
 }
 
@@ -40,34 +46,34 @@ int ove_hal_spi_open(ove_spi_t spi, const struct ove_spi_cfg *cfg)
 		return OVE_ERR_INVALID_PARAM;
 
 	memset(&spi->hal_handle, 0, sizeof(spi->hal_handle));
-	spi->hal_handle.Instance               = periph;
-	spi->hal_handle.Init.Mode              = SPI_MODE_MASTER;
-	spi->hal_handle.Init.Direction         = SPI_DIRECTION_2LINES;
-	spi->hal_handle.Init.DataSize          = (cfg->word_size == 16)
-		? SPI_DATASIZE_16BIT : SPI_DATASIZE_8BIT;
-	spi->hal_handle.Init.NSS               = SPI_NSS_SOFT;
-	spi->hal_handle.Init.NSSPMode          = SPI_NSS_PULSE_DISABLE;
-	spi->hal_handle.Init.FirstBit          = (cfg->bit_order == OVE_SPI_LSB_FIRST)
-		? SPI_FIRSTBIT_LSB : SPI_FIRSTBIT_MSB;
-	spi->hal_handle.Init.TIMode            = SPI_TIMODE_DISABLE;
-	spi->hal_handle.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
+	spi->hal_handle.Instance = periph;
+	spi->hal_handle.Init.Mode = SPI_MODE_MASTER;
+	spi->hal_handle.Init.Direction = SPI_DIRECTION_2LINES;
+	spi->hal_handle.Init.DataSize = (cfg->word_size == 16) ? SPI_DATASIZE_16BIT
+							       : SPI_DATASIZE_8BIT;
+	spi->hal_handle.Init.NSS = SPI_NSS_SOFT;
+	spi->hal_handle.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+	spi->hal_handle.Init.FirstBit = (cfg->bit_order == OVE_SPI_LSB_FIRST) ? SPI_FIRSTBIT_LSB
+									      : SPI_FIRSTBIT_MSB;
+	spi->hal_handle.Init.TIMode = SPI_TIMODE_DISABLE;
+	spi->hal_handle.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
 
 	switch (cfg->mode) {
 	case OVE_SPI_MODE_0:
 		spi->hal_handle.Init.CLKPolarity = SPI_POLARITY_LOW;
-		spi->hal_handle.Init.CLKPhase    = SPI_PHASE_1EDGE;
+		spi->hal_handle.Init.CLKPhase = SPI_PHASE_1EDGE;
 		break;
 	case OVE_SPI_MODE_1:
 		spi->hal_handle.Init.CLKPolarity = SPI_POLARITY_LOW;
-		spi->hal_handle.Init.CLKPhase    = SPI_PHASE_2EDGE;
+		spi->hal_handle.Init.CLKPhase = SPI_PHASE_2EDGE;
 		break;
 	case OVE_SPI_MODE_2:
 		spi->hal_handle.Init.CLKPolarity = SPI_POLARITY_HIGH;
-		spi->hal_handle.Init.CLKPhase    = SPI_PHASE_1EDGE;
+		spi->hal_handle.Init.CLKPhase = SPI_PHASE_1EDGE;
 		break;
 	case OVE_SPI_MODE_3:
 		spi->hal_handle.Init.CLKPolarity = SPI_POLARITY_HIGH;
-		spi->hal_handle.Init.CLKPhase    = SPI_PHASE_2EDGE;
+		spi->hal_handle.Init.CLKPhase = SPI_PHASE_2EDGE;
 		break;
 	}
 
@@ -88,28 +94,26 @@ void ove_hal_spi_close(ove_spi_t spi)
 	HAL_SPI_DeInit(&spi->hal_handle);
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
-			 size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
 {
 	HAL_StatusTypeDef ret;
 
 	if (tx != NULL && rx != NULL) {
-		ret = HAL_SPI_TransmitReceive(&spi->hal_handle,
-					      (uint8_t *)tx, rx,
-					      (uint16_t)len, timeout_ms);
+		ret = HAL_SPI_TransmitReceive(&spi->hal_handle, (uint8_t *)tx, rx, (uint16_t)len,
+					      timeout_ms);
 	} else if (tx != NULL) {
-		ret = HAL_SPI_Transmit(&spi->hal_handle,
-				       (uint8_t *)tx,
-				       (uint16_t)len, timeout_ms);
+		ret = HAL_SPI_Transmit(&spi->hal_handle, (uint8_t *)tx, (uint16_t)len, timeout_ms);
 	} else {
-		ret = HAL_SPI_Receive(&spi->hal_handle,
-				      rx, (uint16_t)len, timeout_ms);
+		ret = HAL_SPI_Receive(&spi->hal_handle, rx, (uint16_t)len, timeout_ms);
 	}
 
 	switch (ret) {
-	case HAL_OK:      return OVE_OK;
-	case HAL_TIMEOUT: return OVE_ERR_TIMEOUT;
-	default:          return OVE_ERR_BUS_ERROR;
+	case HAL_OK:
+		return OVE_OK;
+	case HAL_TIMEOUT:
+		return OVE_ERR_TIMEOUT;
+	default:
+		return OVE_ERR_BUS_ERROR;
 	}
 }
 

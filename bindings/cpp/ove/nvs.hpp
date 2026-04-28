@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_NVS
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::nvs
@@ -27,20 +28,23 @@ namespace ove {
  * Available when `CONFIG_OVE_NVS` is enabled.  Keys are null-terminated
  * strings; values are arbitrary byte buffers.
  */
-namespace nvs {
+namespace nvs
+{
 
 /**
  * @brief Initialises the NVS subsystem.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int init() {
+[[nodiscard]] inline int init()
+{
 	return ove_nvs_init();
 }
 
 /**
  * @brief Deinitialises the NVS subsystem and frees associated resources.
  */
-inline void deinit() {
+inline void deinit()
+{
 	ove_nvs_deinit();
 }
 
@@ -52,8 +56,8 @@ inline void deinit() {
  * @param[out] out Receives the number of bytes actually read.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int read(const char *key, void *buf, size_t len,
-			       size_t *out) {
+[[nodiscard]] inline int read(const char *key, void *buf, size_t len, size_t *out)
+{
 	return ove_nvs_read(key, buf, len, out);
 }
 
@@ -64,8 +68,8 @@ inline void deinit() {
  * @param[in] len  Number of bytes to write.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int write(const char *key, const void *data,
-				size_t len) {
+[[nodiscard]] inline int write(const char *key, const void *data, size_t len)
+{
 	return ove_nvs_write(key, data, len);
 }
 
@@ -74,7 +78,8 @@ inline void deinit() {
  * @param[in] key The null-terminated key string.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int erase(const char *key) {
+[[nodiscard]] inline int erase(const char *key)
+{
 	return ove_nvs_erase(key);
 }
 

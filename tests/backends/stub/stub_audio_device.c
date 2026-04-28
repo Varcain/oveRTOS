@@ -17,18 +17,16 @@
 #include "ove/ove.h"
 #include "ove/audio_device.h"
 
-int ove_audio_device_source(struct ove_audio_graph *g,
-                            const struct ove_audio_device_cfg *cfg,
-                            const char *name)
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			    const char *name)
 {
 	if (!g || !cfg || !name || name[0] == '\0')
 		return OVE_ERR_INVALID_PARAM;
 	return 0;
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g,
-                          const struct ove_audio_device_cfg *cfg,
-                          const char *name)
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
+			  const char *name)
 {
 	if (!g || !cfg || !name || name[0] == '\0')
 		return OVE_ERR_INVALID_PARAM;

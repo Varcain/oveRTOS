@@ -22,17 +22,17 @@ extern "C" {
 typedef struct lv_obj_t lv_obj_t;
 
 typedef struct {
-    uint8_t blue;
-    uint8_t green;
-    uint8_t red;
+	uint8_t blue;
+	uint8_t green;
+	uint8_t red;
 } lv_color_t;
 
 typedef struct {
-    const void *dsc;
+	const void *dsc;
 } lv_font_t;
 
 typedef struct {
-    uint32_t dummy;
+	uint32_t dummy;
 } lv_style_t;
 
 typedef uint8_t lv_opa_t;
@@ -57,73 +57,73 @@ typedef uint32_t lv_chart_update_mode_t;
 
 /* Align enum */
 enum {
-    LV_ALIGN_DEFAULT = 0,
-    LV_ALIGN_TOP_LEFT,
-    LV_ALIGN_TOP_MID,
-    LV_ALIGN_TOP_RIGHT,
-    LV_ALIGN_BOTTOM_LEFT,
-    LV_ALIGN_BOTTOM_MID,
-    LV_ALIGN_BOTTOM_RIGHT,
-    LV_ALIGN_LEFT_MID,
-    LV_ALIGN_RIGHT_MID,
-    LV_ALIGN_CENTER,
+	LV_ALIGN_DEFAULT = 0,
+	LV_ALIGN_TOP_LEFT,
+	LV_ALIGN_TOP_MID,
+	LV_ALIGN_TOP_RIGHT,
+	LV_ALIGN_BOTTOM_LEFT,
+	LV_ALIGN_BOTTOM_MID,
+	LV_ALIGN_BOTTOM_RIGHT,
+	LV_ALIGN_LEFT_MID,
+	LV_ALIGN_RIGHT_MID,
+	LV_ALIGN_CENTER,
 };
 
 /* Event codes */
 enum {
-    LV_EVENT_CLICKED = 7,
-    LV_EVENT_VALUE_CHANGED = 28,
-    LV_EVENT_DELETE = 36,
+	LV_EVENT_CLICKED = 7,
+	LV_EVENT_VALUE_CHANGED = 28,
+	LV_EVENT_DELETE = 36,
 };
 
 /* Object flags */
 enum {
-    LV_OBJ_FLAG_HIDDEN     = (1 << 0),
-    LV_OBJ_FLAG_CLICKABLE  = (1 << 1),
-    LV_OBJ_FLAG_CHECKABLE  = (1 << 3),
-    LV_OBJ_FLAG_SCROLLABLE = (1 << 4),
+	LV_OBJ_FLAG_HIDDEN = (1 << 0),
+	LV_OBJ_FLAG_CLICKABLE = (1 << 1),
+	LV_OBJ_FLAG_CHECKABLE = (1 << 3),
+	LV_OBJ_FLAG_SCROLLABLE = (1 << 4),
 };
 
 /* Flex flow */
 enum {
-    LV_FLEX_FLOW_ROW    = 0,
-    LV_FLEX_FLOW_COLUMN = 1,
+	LV_FLEX_FLOW_ROW = 0,
+	LV_FLEX_FLOW_COLUMN = 1,
 };
 
 /* Part selectors */
 enum {
-    LV_PART_MAIN      = 0x000000,
-    LV_PART_INDICATOR = 0x010000,
+	LV_PART_MAIN = 0x000000,
+	LV_PART_INDICATOR = 0x010000,
 };
 
 /* Palette */
 enum {
-    LV_PALETTE_BLUE = 6,
+	LV_PALETTE_BLUE = 6,
 };
 
 /* Animation enable */
 enum {
-    LV_ANIM_OFF = 0,
-    LV_ANIM_ON  = 1,
+	LV_ANIM_OFF = 0,
+	LV_ANIM_ON = 1,
 };
 
 /* Screen-load animation types */
 enum {
-    LV_SCR_LOAD_ANIM_NONE = 0,
-    LV_SCR_LOAD_ANIM_OVER_LEFT,
-    LV_SCR_LOAD_ANIM_OVER_RIGHT,
-    LV_SCR_LOAD_ANIM_OVER_TOP,
-    LV_SCR_LOAD_ANIM_OVER_BOTTOM,
-    LV_SCR_LOAD_ANIM_MOVE_LEFT,
-    LV_SCR_LOAD_ANIM_MOVE_RIGHT,
-    LV_SCR_LOAD_ANIM_MOVE_TOP,
-    LV_SCR_LOAD_ANIM_MOVE_BOTTOM,
-    LV_SCR_LOAD_ANIM_FADE_IN,
-    LV_SCR_LOAD_ANIM_FADE_OUT,
-    LV_SCR_LOAD_ANIM_OUT_LEFT,
-    LV_SCR_LOAD_ANIM_OUT_RIGHT,
-    LV_SCR_LOAD_ANIM_OUT_TOP,
-    LV_SCR_LOAD_ANIM_OUT_BOTTOM,
+	LV_SCR_LOAD_ANIM_NONE = 0,
+	LV_SCR_LOAD_ANIM_OVER_LEFT,
+	LV_SCR_LOAD_ANIM_OVER_RIGHT,
+	LV_SCR_LOAD_ANIM_OVER_TOP,
+	LV_SCR_LOAD_ANIM_OVER_BOTTOM,
+	LV_SCR_LOAD_ANIM_MOVE_LEFT,
+	LV_SCR_LOAD_ANIM_MOVE_RIGHT,
+	LV_SCR_LOAD_ANIM_MOVE_TOP,
+	LV_SCR_LOAD_ANIM_MOVE_BOTTOM,
+	LV_SCR_LOAD_ANIM_FADE_IN,
+	LV_SCR_LOAD_ANIM_FADE_OUT,
+	LV_SCR_LOAD_ANIM_OUT_LEFT,
+	LV_SCR_LOAD_ANIM_OUT_RIGHT,
+	LV_SCR_LOAD_ANIM_OUT_TOP,
+	LV_SCR_LOAD_ANIM_OUT_BOTTOM,
 };
 
 /* Size content sentinel — matches LVGL v9: LV_COORD_SET_SPEC(LV_COORD_MAX) */
@@ -140,18 +140,18 @@ typedef struct lv_layer_t lv_layer_t;
 typedef struct lv_observer_t lv_observer_t;
 
 typedef struct {
-    uint32_t year;
-    uint32_t month;
-    uint32_t day;
+	uint32_t year;
+	uint32_t month;
+	uint32_t day;
 } lv_calendar_date_t;
 
 typedef struct {
-    uint32_t dummy[16];
+	uint32_t dummy[16];
 } lv_subject_t;
 
 typedef struct {
-    void *var;
-    uint32_t dummy[32];
+	void *var;
+	uint32_t dummy[32];
 } lv_anim_t;
 
 typedef void (*lv_timer_cb_t)(lv_timer_t *);
@@ -160,15 +160,15 @@ typedef int32_t (*lv_anim_path_cb_t)(const lv_anim_t *);
 typedef void (*lv_anim_completed_cb_t)(lv_anim_t *);
 
 typedef struct {
-    uint32_t cf;
-    uint32_t w;
-    uint32_t h;
+	uint32_t cf;
+	uint32_t w;
+	uint32_t h;
 } lv_image_header_t;
 
 typedef struct {
-    lv_image_header_t header;
-    uint32_t data_size;
-    const uint8_t *data;
+	lv_image_header_t header;
+	uint32_t data_size;
+	const uint8_t *data;
 } lv_image_dsc_t;
 
 /* ── Object core ─────────────────────────────────────────────────── */
@@ -208,14 +208,12 @@ void lv_obj_set_flex_grow(lv_obj_t *obj, uint8_t grow);
 /* ── Grid ───────────────────────────────────────────────────────── */
 
 void lv_obj_set_grid_dsc_array(lv_obj_t *obj, const int32_t *col_dsc, const int32_t *row_dsc);
-void lv_obj_set_grid_cell(lv_obj_t *obj, uint32_t col_align, int32_t col_pos,
-                          int32_t col_span, uint32_t row_align, int32_t row_pos,
-                          int32_t row_span);
+void lv_obj_set_grid_cell(lv_obj_t *obj, uint32_t col_align, int32_t col_pos, int32_t col_span,
+			  uint32_t row_align, int32_t row_pos, int32_t row_span);
 
 /* ── Events ──────────────────────────────────────────────────────── */
 
-void lv_obj_add_event_cb(lv_obj_t *obj, lv_event_cb_t cb,
-                         lv_event_code_t code, void *user_data);
+void lv_obj_add_event_cb(lv_obj_t *obj, lv_event_cb_t cb, lv_event_code_t code, void *user_data);
 void *lv_event_get_user_data(lv_event_t *e);
 lv_obj_t *lv_event_get_target(lv_event_t *e);
 
@@ -434,8 +432,8 @@ void lv_chart_set_div_line_count(lv_obj_t *obj, uint32_t hdiv, uint32_t vdiv);
 lv_chart_series_t *lv_chart_add_series(lv_obj_t *obj, lv_color_t color, uint32_t axis);
 void lv_chart_remove_series(lv_obj_t *obj, lv_chart_series_t *series);
 void lv_chart_set_next_value(lv_obj_t *obj, lv_chart_series_t *series, int32_t value);
-void lv_chart_set_series_value_by_id(lv_obj_t *obj, lv_chart_series_t *series,
-                                     uint32_t id, int32_t value);
+void lv_chart_set_series_value_by_id(lv_obj_t *obj, lv_chart_series_t *series, uint32_t id,
+				     int32_t value);
 
 /* ── Table ───────────────────────────────────────────────────────── */
 
@@ -471,8 +469,7 @@ const char *lv_list_get_button_text(lv_obj_t *list, lv_obj_t *btn);
 /* ── Canvas ──────────────────────────────────────────────────────── */
 
 lv_obj_t *lv_canvas_create(lv_obj_t *parent);
-void lv_canvas_set_buffer(lv_obj_t *obj, void *buf, int32_t w, int32_t h,
-                          lv_color_format_t cf);
+void lv_canvas_set_buffer(lv_obj_t *obj, void *buf, int32_t w, int32_t h, lv_color_format_t cf);
 void lv_canvas_fill_bg(lv_obj_t *obj, lv_color_t color, uint8_t opa);
 void lv_canvas_set_px(lv_obj_t *obj, int32_t x, int32_t y, lv_color_t color, uint8_t opa);
 void lv_canvas_init_layer(lv_obj_t *obj, lv_layer_t *layer);
@@ -492,8 +489,8 @@ lv_obj_t *lv_calendar_add_header_dropdown(lv_obj_t *parent);
 
 lv_obj_t *lv_screen_active(void);
 void lv_screen_load(lv_obj_t *scr);
-void lv_screen_load_anim(lv_obj_t *scr, lv_screen_load_anim_t anim,
-                         uint32_t time_ms, uint32_t delay_ms, bool auto_del);
+void lv_screen_load_anim(lv_obj_t *scr, lv_screen_load_anim_t anim, uint32_t time_ms,
+			 uint32_t delay_ms, bool auto_del);
 
 /* ── Group (focus navigation) ────────────────────────────────────── */
 
@@ -520,9 +517,8 @@ void lv_subject_set_int(lv_subject_t *subject, int32_t value);
 int32_t lv_subject_get_int(lv_subject_t *subject);
 void lv_subject_deinit(lv_subject_t *subject);
 typedef void (*lv_observer_cb_t)(lv_observer_t *observer, lv_subject_t *subject);
-lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject,
-                                           lv_observer_cb_t cb,
-                                           lv_obj_t *obj, void *user_data);
+lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject, lv_observer_cb_t cb,
+					   lv_obj_t *obj, void *user_data);
 void lv_subject_notify(lv_subject_t *subject);
 void lv_observer_remove(lv_observer_t *observer);
 
@@ -578,8 +574,8 @@ extern const lv_font_t lv_font_montserrat_48;
 /* ── Additional stubs required by the Rust lvgl binding ─────────────────── */
 
 typedef struct {
-    int32_t x;
-    int32_t y;
+	int32_t x;
+	int32_t y;
 } lv_point_t;
 
 typedef struct lv_display_t lv_display_t;
@@ -620,17 +616,14 @@ int32_t lv_display_get_dpi(const lv_display_t *disp);
 lv_obj_t *lv_layer_top(void);
 
 /* Text metrics */
-void lv_text_get_size(lv_point_t *size_res, const char *text,
-                      const lv_font_t *font, int32_t letter_space,
-                      int32_t line_space, int32_t max_width,
-                      uint32_t flag);
+void lv_text_get_size(lv_point_t *size_res, const char *text, const lv_font_t *font,
+		      int32_t letter_space, int32_t line_space, int32_t max_width, uint32_t flag);
 
 /* Animation extras */
 uint32_t lv_anim_speed(uint32_t speed);
 void lv_anim_set_user_data(lv_anim_t *a, void *user_data);
 void *lv_anim_get_user_data(const lv_anim_t *a);
-void lv_anim_set_custom_exec_cb(lv_anim_t *a,
-    void (*exec_cb)(lv_anim_t *, int32_t));
+void lv_anim_set_custom_exec_cb(lv_anim_t *a, void (*exec_cb)(lv_anim_t *, int32_t));
 
 /* Image / scale widgets */
 void lv_image_set_inner_align(lv_obj_t *img, lv_image_align_t align);
@@ -644,8 +637,7 @@ void lv_scale_set_angle_range(lv_obj_t *obj, uint32_t angle);
 void lv_scale_set_rotation(lv_obj_t *obj, int32_t rot);
 lv_scale_section_t *lv_scale_add_section(lv_obj_t *obj);
 void lv_scale_section_set_range(lv_scale_section_t *s, int32_t min, int32_t max);
-void lv_scale_section_set_style(lv_scale_section_t *s, uint32_t part,
-                                lv_style_t *style);
+void lv_scale_section_set_style(lv_scale_section_t *s, uint32_t part, lv_style_t *style);
 
 #ifdef __cplusplus
 }

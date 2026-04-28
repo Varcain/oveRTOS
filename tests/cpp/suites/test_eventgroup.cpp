@@ -108,9 +108,7 @@ static void test_cpp_eg_clear_on_exit(void **state)
 	eg.set_bits(BIT_0 | BIT_1);
 
 	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1,
-			      OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT,
-			      100, &actual);
+	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT, 100, &actual);
 	assert_int_equal(rc, OVE_OK);
 
 	ove_eventbits_t remaining = eg.get_bits();

@@ -65,11 +65,10 @@ static void test_recursive_timeout(void **state)
 	(void)state;
 	ove_mutex_t mtx = NULL;
 	ove_test_recursive_mutex_create(&mtx, &s_rmtx_storage);
-	struct rmtx_ctx ctx = { .mtx = mtx };
+	struct rmtx_ctx ctx = {.mtx = mtx};
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "rh", rmtx_hold_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "rh", rmtx_hold_entry, &ctx, s_th_stack, 4096);
 	for (int i = 0; i < 2500 && !ctx.locked; i++)
 		test_msleep(1);
 	assert_int_equal(ctx.locked, 1);

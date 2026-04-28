@@ -30,19 +30,19 @@
 /* ── Command queue (dashboard -> firmware) ─────────────────────────── */
 
 #define CMD_QUEUE_SIZE 32
-#define CMD_MAX_LEN    256
+#define CMD_MAX_LEN 256
 
 struct cmd_entry {
-	uint8_t  data[CMD_MAX_LEN];
+	uint8_t data[CMD_MAX_LEN];
 	uint16_t len;
 };
 
 static struct cmd_entry cmd_queue[CMD_QUEUE_SIZE];
-static int              cmd_head;
-static int              cmd_tail;
-static int              cmd_count;
-static pthread_mutex_t  cmd_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t   cmd_cond = PTHREAD_COND_INITIALIZER;
+static int cmd_head;
+static int cmd_tail;
+static int cmd_count;
+static pthread_mutex_t cmd_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cmd_cond = PTHREAD_COND_INITIALIZER;
 
 /**
  * Push a command into the queue.  Called from the main browser thread
@@ -80,8 +80,7 @@ static void wasm_close(struct ove_sim_transport *t)
 	(void)t;
 }
 
-static int wasm_send_event(struct ove_sim_transport *t,
-			   const struct ove_sim_event *event)
+static int wasm_send_event(struct ove_sim_transport *t, const struct ove_sim_event *event)
 {
 	(void)t;
 	if (!event)
@@ -99,21 +98,22 @@ static int wasm_send_event(struct ove_sim_transport *t,
 	 * the copy MUST happen before we return.  Debug events at ~2 Hz
 	 * make the blocking cost negligible.
 	 */
-	MAIN_THREAD_EM_ASM({
-		var len = $1;
-		if (typeof window === 'undefined' ||
-		    typeof window.__ove_sim_event !== 'function')
-			return;
-		var copy = new Uint8Array(len);
-		copy.set(HEAPU8.subarray($0, $0 + len));
-		window.__ove_sim_event(copy.buffer);
-	}, (uintptr_t)event, (int)total);
+	MAIN_THREAD_EM_ASM(
+		{
+			var len = $1;
+			if (typeof window == = 'undefined' ||
+					       typeof window.__ove_sim_event != = 'function')
+				return;
+			var copy = new Uint8Array(len);
+			copy.set(HEAPU8.subarray($0, $0 + len));
+			window.__ove_sim_event(copy.buffer);
+		},
+		(uintptr_t)event, (int)total);
 
 	return OVE_OK;
 }
 
-static int wasm_recv_cmd(struct ove_sim_transport *t,
-			 struct ove_sim_cmd *cmd, size_t cmd_size,
+static int wasm_recv_cmd(struct ove_sim_transport *t, struct ove_sim_cmd *cmd, size_t cmd_size,
 			 uint32_t timeout_ms)
 {
 	(void)t;
@@ -137,8 +137,7 @@ static int wasm_recv_cmd(struct ove_sim_transport *t,
 				ts.tv_sec++;
 				ts.tv_nsec -= 1000000000L;
 			}
-			if (pthread_cond_timedwait(&cmd_cond, &cmd_lock,
-						   &ts) != 0) {
+			if (pthread_cond_timedwait(&cmd_cond, &cmd_lock, &ts) != 0) {
 				pthread_mutex_unlock(&cmd_lock);
 				return OVE_ERR_TIMEOUT;
 			}
@@ -160,12 +159,14 @@ static int wasm_recv_cmd(struct ove_sim_transport *t,
 #include "ove_sim_wasm_fb.h"
 #include "ove_sim_wasm_audio.h"
 
-static int wasm_flush_display(struct ove_sim_transport *t,
-			      const void *fb, size_t fb_len,
-			      uint16_t x1, uint16_t y1,
-			      uint16_t x2, uint16_t y2)
+static int wasm_flush_display(struct ove_sim_transport *t, const void *fb, size_t fb_len,
+			      uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
-	(void)t; (void)x1; (void)y1; (void)x2; (void)y2;
+	(void)t;
+	(void)x1;
+	(void)y1;
+	(void)x2;
+	(void)y2;
 	uint16_t w = x2 - x1 + 1;
 	uint16_t h = y2 - y1 + 1;
 	ove_sim_wasm_fb_write(fb, (uint32_t)fb_len, w, h);
@@ -174,38 +175,34 @@ static int wasm_flush_display(struct ove_sim_transport *t,
 
 static int fmt_set;
 
-static int wasm_push_audio(struct ove_sim_transport *t,
-			   const void *samples, size_t len,
-			   uint32_t sample_rate, uint16_t channels,
-			   uint16_t bit_depth)
+static int wasm_push_audio(struct ove_sim_transport *t, const void *samples, size_t len,
+			   uint32_t sample_rate, uint16_t channels, uint16_t bit_depth)
 {
 	(void)t;
 	if (!fmt_set) {
-		extern void ove_wasm_audio_set_playback_fmt(
-			uint32_t rate, uint16_t ch, uint16_t bits);
-		ove_wasm_audio_set_playback_fmt(sample_rate, channels,
-						bit_depth);
+		extern void ove_wasm_audio_set_playback_fmt(uint32_t rate, uint16_t ch,
+							    uint16_t bits);
+		ove_wasm_audio_set_playback_fmt(sample_rate, channels, bit_depth);
 		fmt_set = 1;
 	}
 	ove_wasm_audio_playback_write(samples, (uint32_t)len);
 	return OVE_OK;
 }
 
-static size_t wasm_pull_audio(struct ove_sim_transport *t,
-			      void *samples, size_t len)
+static size_t wasm_pull_audio(struct ove_sim_transport *t, void *samples, size_t len)
 {
 	(void)t;
 	return ove_wasm_audio_capture_read(samples, (uint32_t)len);
 }
 
 static const struct ove_sim_transport_ops wasm_ops = {
-	.open          = wasm_open,
-	.close         = wasm_close,
-	.send_event    = wasm_send_event,
-	.recv_cmd      = wasm_recv_cmd,
+	.open = wasm_open,
+	.close = wasm_close,
+	.send_event = wasm_send_event,
+	.recv_cmd = wasm_recv_cmd,
 	.flush_display = wasm_flush_display,
-	.push_audio    = wasm_push_audio,
-	.pull_audio    = wasm_pull_audio,
+	.push_audio = wasm_push_audio,
+	.pull_audio = wasm_pull_audio,
 };
 
 /* ── Command pump thread ──────────────────────────────────────────── */
@@ -220,8 +217,7 @@ static void *cmd_pump_thread(void *arg)
 	struct ove_sim_cmd cmd;
 
 	while (1) {
-		int ret = ove_sim_transport_recv_cmd(pump_transport,
-						     &cmd, sizeof(cmd), 1000);
+		int ret = ove_sim_transport_recv_cmd(pump_transport, &cmd, sizeof(cmd), 1000);
 		if (ret == OVE_OK)
 			ove_sim_plugin_dispatch_cmd(&cmd);
 	}

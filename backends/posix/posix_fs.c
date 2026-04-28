@@ -86,8 +86,7 @@ int ove_fs_close(ove_file_t file)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_fs_read(ove_file_t file, void *buf, size_t count,
-		    size_t *bytes_read)
+int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	struct ove_file *f = file;
 	if (!f || !buf) {
@@ -103,8 +102,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 	return OVE_OK;
 }
 
-int ove_fs_write(ove_file_t file, const void *buf, size_t count,
-		     size_t *bytes_written)
+int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
 	struct ove_file *f = file;
 	if (!f || !buf) {
@@ -196,7 +194,9 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	errno = 0;
-	struct dirent *de = readdir(d->dp);
+	/* POSIX readdir() is per-stream thread-safe in practice on glibc/musl
+	 * (each ove_dir owns its own DIR*); readdir_r is deprecated. */
+	struct dirent *de = readdir(d->dp); // NOLINT(concurrency-mt-unsafe)
 	if (!de) {
 		/* readdir() returns NULL for both EOF and error — disambiguate via errno */
 		if (errno != 0)

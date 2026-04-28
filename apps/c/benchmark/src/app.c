@@ -19,14 +19,8 @@
 /* --- Suite registry --- */
 
 static const bench_suite_t *const suites[] = {
-	&bench_suite_time,
-	&bench_suite_thread,
-	&bench_suite_sync,
-	&bench_suite_queue,
-	&bench_suite_timer,
-	&bench_suite_eventgroup,
-	&bench_suite_workqueue,
-	&bench_suite_stream,
+	&bench_suite_time,  &bench_suite_thread,     &bench_suite_sync,	     &bench_suite_queue,
+	&bench_suite_timer, &bench_suite_eventgroup, &bench_suite_workqueue, &bench_suite_stream,
 };
 
 #define SUITE_COUNT (sizeof(suites) / sizeof(suites[0]))
@@ -38,16 +32,14 @@ static void benchmark_runner(void *arg)
 	(void)arg;
 
 	OVE_LOG_INF("=== oveRTOS Benchmark Suite ===");
-	OVE_LOG_INF("Iterations: %d  Warmup: %d",
-			CONFIG_OVE_BENCHMARK_ITERATIONS,
-			CONFIG_OVE_BENCHMARK_WARMUP);
+	OVE_LOG_INF("Iterations: %d  Warmup: %d", CONFIG_OVE_BENCHMARK_ITERATIONS,
+		    CONFIG_OVE_BENCHMARK_WARMUP);
 
 	for (unsigned int s = 0; s < SUITE_COUNT; s++) {
 		const bench_suite_t *suite = suites[s];
 
 		if (!suite->is_enabled()) {
-			OVE_LOG_INF("Suite '%s': SKIPPED (module disabled)",
-					suite->name);
+			OVE_LOG_INF("Suite '%s': SKIPPED (module disabled)", suite->name);
 			continue;
 		}
 

@@ -37,16 +37,26 @@
 static GPIO_TypeDef *port_index_to_gpio(unsigned int port)
 {
 	switch (port) {
-	case 0: return GPIOA;
-	case 1: return GPIOB;
-	case 2: return GPIOC;
-	case 3: return GPIOD;
-	case 4: return GPIOE;
-	case 5: return GPIOF;
-	case 6: return GPIOG;
-	case 7: return GPIOH;
-	case 8: return GPIOI;
-	default: return NULL;
+	case 0:
+		return GPIOA;
+	case 1:
+		return GPIOB;
+	case 2:
+		return GPIOC;
+	case 3:
+		return GPIOD;
+	case 4:
+		return GPIOE;
+	case 5:
+		return GPIOF;
+	case 6:
+		return GPIOG;
+	case 7:
+		return GPIOH;
+	case 8:
+		return GPIOI;
+	default:
+		return NULL;
 	}
 }
 
@@ -61,8 +71,8 @@ static void test_led_set_observable_in_odr(void **state)
 		return;
 	}
 	const unsigned int port = ove_board_leds[0].port;
-	const unsigned int pin  = ove_board_leds[0].pin;
-	const int active_low    = ove_board_leds[0].active_low;
+	const unsigned int pin = ove_board_leds[0].pin;
+	const int active_low = ove_board_leds[0].active_low;
 	GPIO_TypeDef *gpio = port_index_to_gpio(port);
 	assert_non_null(gpio);
 
@@ -88,18 +98,16 @@ static void test_led_set_observable_in_odr(void **state)
 static void test_gpio_set_observable_in_odr(void **state)
 {
 	(void)state;
-	const unsigned int pin = 5;  /* PA5 — no shared use on Discovery */
+	const unsigned int pin = 5; /* PA5 — no shared use on Discovery */
 
 	int rc = ove_gpio_configure(PORT_A, pin, OVE_GPIO_MODE_OUTPUT_PP);
 	assert_int_equal(rc, OVE_OK);
 
 	ove_gpio_set(PORT_A, pin, 0);
-	assert_int_equal(ove_obs_read32((uintptr_t)&GPIOA->ODR) & (1U << pin),
-			 0U);
+	assert_int_equal(ove_obs_read32((uintptr_t)&GPIOA->ODR) & (1U << pin), 0U);
 
 	ove_gpio_set(PORT_A, pin, 1);
-	assert_int_equal(ove_obs_read32((uintptr_t)&GPIOA->ODR) & (1U << pin),
-			 (1U << pin));
+	assert_int_equal(ove_obs_read32((uintptr_t)&GPIOA->ODR) & (1U << pin), (1U << pin));
 
 	ove_gpio_set(PORT_A, pin, 0);
 }
@@ -108,8 +116,7 @@ static void test_gpio_set_observable_in_odr(void **state)
 
 static volatile int g_irq_fired;
 
-static void external_irq_handler(unsigned int port, unsigned int pin,
-				  void *user_data)
+static void external_irq_handler(unsigned int port, unsigned int pin, void *user_data)
 {
 	(void)user_data;
 	if (port == PORT_A && pin == 0) {
@@ -125,8 +132,7 @@ static void test_external_irq_trigger(void **state)
 	 * API.  The ove_board_gpio_exti_port weak default returns port 0
 	 * (PORT_A), which matches what we want. */
 	g_irq_fired = 0;
-	int rc = ove_gpio_irq_register(PORT_A, 0, OVE_GPIO_IRQ_RISING,
-				       external_irq_handler, NULL);
+	int rc = ove_gpio_irq_register(PORT_A, 0, OVE_GPIO_IRQ_RISING, external_irq_handler, NULL);
 	assert_int_equal(rc, OVE_OK);
 	rc = ove_gpio_irq_enable(PORT_A, 0);
 	assert_int_equal(rc, OVE_OK);

@@ -72,8 +72,7 @@
  * on any Cortex-M board without touching this file. CONFIG_SRAM_SIZE is
  * in KB, CONFIG_SRAM_BASE_ADDRESS is a byte address. */
 #define OVE_SRAM_BASE ((uintptr_t)CONFIG_SRAM_BASE_ADDRESS)
-#define OVE_SRAM_END  ((uintptr_t)CONFIG_SRAM_BASE_ADDRESS + \
-		       (uintptr_t)CONFIG_SRAM_SIZE * 1024U)
+#define OVE_SRAM_END ((uintptr_t)CONFIG_SRAM_BASE_ADDRESS + (uintptr_t)CONFIG_SRAM_SIZE * 1024U)
 
 /* Text section bounds from Zephyr's linker script (include/zephyr/linker/
  * linker-defs.h). __text_region_start sits after the ISR vector table so
@@ -82,7 +81,7 @@
 extern char __text_region_start[];
 extern char __text_region_end[];
 #define OVE_TEXT_BASE ((uintptr_t)__text_region_start)
-#define OVE_TEXT_END  ((uintptr_t)__text_region_end)
+#define OVE_TEXT_END ((uintptr_t)__text_region_end)
 
 /* Stack fill pattern. Zephyr fills every new thread stack with 0xaa
  * when CONFIG_INIT_STACKS=y — hitting 0xAAAAAAAA during the scan means
@@ -143,16 +142,13 @@ void ove_backend_profiler_on_tick(void)
 	struct ove_profiler_sample s;
 	memset(&s, 0, sizeof(s));
 	s.ts_us = ove_state_stats_now_us();
-	s.tid   = (uint32_t)tid;
+	s.tid = (uint32_t)tid;
 	s.state = OVE_THREAD_STATE_RUNNING;
 	s.pcs[0] = (uintptr_t)pc;
-	s.depth  = 1;
+	s.depth = 1;
 
-	int extra = ove_arm_backtrace_walk((uintptr_t)psp,
-					   OVE_TEXT_BASE, OVE_TEXT_END,
-					   OVE_SRAM_BASE, OVE_SRAM_END,
-					   OVE_STACK_FILL,
-					   &s.pcs[1],
+	int extra = ove_arm_backtrace_walk((uintptr_t)psp, OVE_TEXT_BASE, OVE_TEXT_END,
+					   OVE_SRAM_BASE, OVE_SRAM_END, OVE_STACK_FILL, &s.pcs[1],
 					   CONFIG_OVE_PROFILER_MAX_DEPTH - 1);
 	s.depth = (uint8_t)(1 + extra);
 
@@ -169,12 +165,12 @@ void ove_backend_profiler_on_tick(void)
 	 */
 	if (s.depth == 1) {
 		uint32_t stacked_lr = frame[OVE_ARM_EXC_LR] & ~1u;
-		if (stacked_lr != 0 && stacked_lr != pc &&
-		    stacked_lr >= OVE_TEXT_BASE && stacked_lr < OVE_TEXT_END &&
-		    ove_arm_backtrace_lr_is_post_bl((uintptr_t)stacked_lr,
-						    OVE_TEXT_BASE, OVE_TEXT_END)) {
+		if (stacked_lr != 0 && stacked_lr != pc && stacked_lr >= OVE_TEXT_BASE &&
+		    stacked_lr < OVE_TEXT_END &&
+		    ove_arm_backtrace_lr_is_post_bl((uintptr_t)stacked_lr, OVE_TEXT_BASE,
+						    OVE_TEXT_END)) {
 			s.pcs[1] = (uintptr_t)stacked_lr;
-			s.depth  = 2;
+			s.depth = 2;
 		}
 	}
 
@@ -236,7 +232,7 @@ uint32_t ove_backend_profiler_get_max_hz(void)
 {
 	/* Capped by the system clock granularity. At 1 kHz tick rate
 	 * anything above 1 kHz collapses onto the tick anyway. */
-	uint32_t cfg_hz  = (uint32_t)CONFIG_OVE_PROFILER_HZ;
+	uint32_t cfg_hz = (uint32_t)CONFIG_OVE_PROFILER_HZ;
 	uint32_t tick_hz = (uint32_t)CONFIG_SYS_CLOCK_TICKS_PER_SEC;
 	return (cfg_hz < tick_hz) ? cfg_hz : tick_hz;
 }

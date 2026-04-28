@@ -13,38 +13,54 @@
 static GPIO_TypeDef *port_to_gpio(unsigned int port)
 {
 	switch (port) {
-	case 0: return GPIOA;
-	case 1: return GPIOB;
-	case 2: return GPIOC;
-	case 3: return GPIOD;
-	case 4: return GPIOE;
-	case 5: return GPIOF;
-	case 6: return GPIOG;
-	case 7: return GPIOH;
-	case 8: return GPIOI;
-	default: return NULL;
+	case 0:
+		return GPIOA;
+	case 1:
+		return GPIOB;
+	case 2:
+		return GPIOC;
+	case 3:
+		return GPIOD;
+	case 4:
+		return GPIOE;
+	case 5:
+		return GPIOF;
+	case 6:
+		return GPIOG;
+	case 7:
+		return GPIOH;
+	case 8:
+		return GPIOI;
+	default:
+		return NULL;
 	}
 }
 
 static IRQn_Type pin_to_irqn(uint16_t pin)
 {
 	switch (pin) {
-	case 0:  return EXTI0_IRQn;
-	case 1:  return EXTI1_IRQn;
-	case 2:  return EXTI2_IRQn;
-	case 3:  return EXTI3_IRQn;
-	case 4:  return EXTI4_IRQn;
+	case 0:
+		return EXTI0_IRQn;
+	case 1:
+		return EXTI1_IRQn;
+	case 2:
+		return EXTI2_IRQn;
+	case 3:
+		return EXTI3_IRQn;
+	case 4:
+		return EXTI4_IRQn;
 	case 5:
 	case 6:
 	case 7:
 	case 8:
-	case 9:  return EXTI9_5_IRQn;
-	default: return EXTI15_10_IRQn;
+	case 9:
+		return EXTI9_5_IRQn;
+	default:
+		return EXTI15_10_IRQn;
 	}
 }
 
-int ove_hal_gpio_configure(unsigned int port, unsigned int pin,
-			       ove_gpio_mode_t mode)
+int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
 {
 	GPIO_TypeDef *gpio = port_to_gpio(port);
 	GPIO_InitTypeDef gpio_init;
@@ -81,8 +97,7 @@ int ove_hal_gpio_set(unsigned int port, unsigned int pin, int value)
 	if (gpio == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	HAL_GPIO_WritePin(gpio, (uint16_t)(1U << pin),
-			  value ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(gpio, (uint16_t)(1U << pin), value ? GPIO_PIN_SET : GPIO_PIN_RESET);
 	return OVE_OK;
 }
 
@@ -92,14 +107,11 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	if (gpio == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	return HAL_GPIO_ReadPin(gpio, (uint16_t)(1U << pin)) == GPIO_PIN_SET
-		? 1 : 0;
+	return HAL_GPIO_ReadPin(gpio, (uint16_t)(1U << pin)) == GPIO_PIN_SET ? 1 : 0;
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin,
-				   ove_gpio_irq_mode_t mode,
-				   ove_gpio_irq_cb callback,
-				   void *user_data)
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
+			       ove_gpio_irq_cb callback, void *user_data)
 {
 	GPIO_TypeDef *gpio;
 	GPIO_InitTypeDef gpio_init;

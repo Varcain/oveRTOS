@@ -24,8 +24,7 @@ int ove_time_get_us(uint64_t *out)
 	if (!out)
 		return OVE_ERR_INVALID_PARAM;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	*out = (uint64_t)ts.tv_sec * 1000000ULL +
-	       (uint64_t)ts.tv_nsec / 1000ULL;
+	*out = (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 	return OVE_OK;
 }
 
@@ -35,8 +34,7 @@ int ove_time_get_ns(uint64_t *out)
 	if (!out)
 		return OVE_ERR_INVALID_PARAM;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	*out = (uint64_t)ts.tv_sec * 1000000000ULL +
-	       (uint64_t)ts.tv_nsec;
+	*out = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 	return OVE_OK;
 }
 

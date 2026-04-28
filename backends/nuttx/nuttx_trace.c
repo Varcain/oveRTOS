@@ -36,8 +36,7 @@ uint64_t ove_state_stats_now_us(void)
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000ULL
-	     + (uint64_t)ts.tv_nsec / 1000ULL;
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 }
 #endif
 
@@ -65,17 +64,15 @@ uintptr_t ove_backend_thread_current_handle(void)
 	return (uintptr_t)ove_nuttx_current_thread();
 }
 
-size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
-				      size_t max)
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max)
 {
 	if (!out || max == 0)
 		return 0;
 
 	size_t count = 0;
 	ove_nuttx_thread_list_lock();
-	for (struct ove_thread *t = ove_nuttx_thread_list_head;
-	     t && count < max; t = t->next) {
-		out[count].tid  = (uint32_t)(uintptr_t)t;
+	for (struct ove_thread *t = ove_nuttx_thread_list_head; t && count < max; t = t->next) {
+		out[count].tid = (uint32_t)(uintptr_t)t;
 		out[count].name = t->name ? t->name : "?";
 		count++;
 	}

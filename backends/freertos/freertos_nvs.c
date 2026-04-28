@@ -38,8 +38,7 @@ void ove_nvs_deinit(void)
 {
 }
 
-int ove_nvs_read(const char *key, void *buf, size_t buf_len,
-			     size_t *out_len)
+int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 {
 	char path[NVS_PATH_MAX];
 	ove_file_t f;
@@ -88,8 +87,7 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 		return ret;
 	}
 
-	ret = ove_fs_open(&f, path,
-			      OVE_FS_O_WRITE | OVE_FS_O_CREATE);
+	ret = ove_fs_open(&f, path, OVE_FS_O_WRITE | OVE_FS_O_CREATE);
 	if (ret != OVE_OK) {
 		return ret;
 	}

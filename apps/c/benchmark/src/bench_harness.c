@@ -79,11 +79,9 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 
 	if (bc->type == BENCH_TYPE_THROUGHPUT && result->total_ns > 0) {
 		result->ops_per_sec =
-			(uint32_t)((uint64_t)result->count * 1000000000ULL /
-				   result->total_ns);
+			(uint32_t)((uint64_t)result->count * 1000000000ULL / result->total_ns);
 	} else if (bc->type == BENCH_TYPE_LATENCY && result->total_ns > 0) {
 		result->ops_per_sec =
-			(uint32_t)((uint64_t)result->count * 1000000000ULL /
-				   result->total_ns);
+			(uint32_t)((uint64_t)result->count * 1000000000ULL / result->total_ns);
 	}
 }

@@ -14,8 +14,8 @@
 
 /* Global audio state in WASM heap (SharedArrayBuffer). */
 struct ove_sim_wasm_audio ove_wasm_audio = {
-	.playback = { .size = OVE_SIM_AUDIO_RING_SIZE },
-	.capture  = { .size = OVE_SIM_AUDIO_RING_SIZE },
+	.playback = {.size = OVE_SIM_AUDIO_RING_SIZE},
+	.capture = {.size = OVE_SIM_AUDIO_RING_SIZE},
 };
 
 /* ── Exported accessors for JS ─────────────────────────────────────── */
@@ -66,14 +66,12 @@ void ove_wasm_audio_set_playback_fmt(uint32_t rate, uint16_t ch, uint16_t bits)
 
 void ove_wasm_audio_playback_write(const void *samples, uint32_t len)
 {
-	ove_sim_ring_write_atomic(&ove_wasm_audio.playback,
-				  samples, len);
+	ove_sim_ring_write_atomic(&ove_wasm_audio.playback, samples, len);
 }
 
 size_t ove_wasm_audio_capture_read(void *samples, uint32_t len)
 {
-	uint32_t got = ove_sim_ring_read_atomic(&ove_wasm_audio.capture,
-						samples, len);
+	uint32_t got = ove_sim_ring_read_atomic(&ove_wasm_audio.capture, samples, len);
 	/* Zero-fill remainder if mic hasn't provided enough. */
 	if (got < len)
 		memset((uint8_t *)samples + got, 0, len - got);

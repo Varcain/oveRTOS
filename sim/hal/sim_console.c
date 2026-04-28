@@ -71,8 +71,7 @@ int ove_console_init(void)
 	if (pipe(fds) == 0) {
 		ws_pipe_rd = fds[0];
 		ws_pipe_wr = fds[1];
-		fcntl(ws_pipe_rd, F_SETFL,
-		      fcntl(ws_pipe_rd, F_GETFL) | O_NONBLOCK);
+		fcntl(ws_pipe_rd, F_SETFL, fcntl(ws_pipe_rd, F_GETFL) | O_NONBLOCK);
 	}
 	return OVE_OK;
 }

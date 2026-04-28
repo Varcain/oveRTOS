@@ -9,8 +9,7 @@
 #include "ove/hal/hal_gpio.h"
 #include "ove_backend_common.h"
 
-int ove_hal_gpio_configure(unsigned int port, unsigned int pin,
-			       ove_gpio_mode_t mode)
+int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
 {
 	(void)port;
 	(void)pin;
@@ -33,10 +32,8 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin,
-				   ove_gpio_irq_mode_t mode,
-				   ove_gpio_irq_cb callback,
-				   void *user_data)
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
+			       ove_gpio_irq_cb callback, void *user_data)
 {
 	(void)port;
 	(void)pin;

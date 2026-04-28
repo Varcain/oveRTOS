@@ -32,8 +32,7 @@ static int battery_pct = 85;
 
 /* --- PM transition notifier --- */
 
-static void pm_notify(ove_pm_event_t event, ove_pm_state_t from,
-		       ove_pm_state_t to, void *user_data)
+static void pm_notify(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to, void *user_data)
 {
 	(void)user_data;
 
@@ -48,10 +47,8 @@ static void pm_notify(ove_pm_event_t event, ove_pm_state_t from,
 
 /* --- Battery-aware power policy --- */
 
-static ove_pm_state_t battery_policy(ove_pm_state_t current,
-				     uint32_t idle_ms,
-				     uint32_t next_timeout_ms,
-				     void *user_data)
+static ove_pm_state_t battery_policy(ove_pm_state_t current, uint32_t idle_ms,
+				     uint32_t next_timeout_ms, void *user_data)
 {
 	int *batt = (int *)user_data;
 
@@ -129,8 +126,7 @@ static void monitor_thread(void *arg)
 			OVE_LOG_INF("  deep:    %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_DEEP_SLEEP],
 				    stats.transition_count[OVE_PM_STATE_DEEP_SLEEP]);
-			OVE_LOG_INF("  active%%: %u.%02u%%",
-				    stats.active_pct_x100 / 100,
+			OVE_LOG_INF("  active%%: %u.%02u%%", stats.active_pct_x100 / 100,
 				    stats.active_pct_x100 % 100);
 		}
 
@@ -152,8 +148,8 @@ void ove_main(void)
 
 	/* Initialize PM subsystem */
 	struct ove_pm_cfg pm_cfg = {
-		.idle_threshold_ms       = 50,
-		.standby_threshold_ms    = 5000,
+		.idle_threshold_ms = 50,
+		.standby_threshold_ms = 5000,
 		.deep_sleep_threshold_ms = 30000,
 	};
 	ret = ove_pm_init(&pm_cfg);
@@ -165,13 +161,13 @@ void ove_main(void)
 	/* Register wake sources */
 	struct ove_pm_wake_src btn_wake = {
 		.type = OVE_PM_WAKE_GPIO,
-		.gpio = { .port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING },
+		.gpio = {.port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING},
 	};
 	ove_pm_wake_register(&btn_wake);
 
 	struct ove_pm_wake_src uart_wake = {
 		.type = OVE_PM_WAKE_UART,
-		.uart = { .instance = 0 },
+		.uart = {.instance = 0},
 	};
 	ove_pm_wake_register(&uart_wake);
 
@@ -187,9 +183,9 @@ void ove_main(void)
 	/* Create sensor thread */
 	{
 		struct ove_thread_desc desc = {
-			.name     = "sensor",
-			.entry    = sensor_thread,
-			.arg      = NULL,
+			.name = "sensor",
+			.entry = sensor_thread,
+			.arg = NULL,
 			.priority = OVE_PRIO_NORMAL,
 		};
 		ret = ove_thread_create(&th, 4096, &desc);
@@ -202,9 +198,9 @@ void ove_main(void)
 	/* Create monitor thread */
 	{
 		struct ove_thread_desc desc = {
-			.name     = "monitor",
-			.entry    = monitor_thread,
-			.arg      = NULL,
+			.name = "monitor",
+			.entry = monitor_thread,
+			.arg = NULL,
 			.priority = OVE_PRIO_LOW,
 		};
 		ret = ove_thread_create(&th, 4096, &desc);

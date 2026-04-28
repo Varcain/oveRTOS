@@ -95,13 +95,32 @@ def _cargo_fmt(ove_dir, check):
     return ("cargo fmt", "OK", f"{len(crates)} crates")
 
 
+def _find_zig(ove_dir):
+    """Resolve the zig binary path.
+
+    Prefers the in-tree toolchain at output/toolchains/zig-*-linux-*/zig
+    (downloaded by `ove download` per manifest.yaml), so lint matches the
+    same compiler the build uses. Falls back to PATH so contributors with
+    a system zig don't have to bootstrap the workspace just to lint.
+    """
+    toolchains = os.path.join(ove_dir, "output", "toolchains")
+    if os.path.isdir(toolchains):
+        for name in sorted(os.listdir(toolchains)):
+            if name.startswith("zig-"):
+                p = os.path.join(toolchains, name, "zig")
+                if os.path.isfile(p) and os.access(p, os.X_OK):
+                    return p
+    return shutil.which("zig")
+
+
 def _zig_fmt(ove_dir, check):
-    if not shutil.which("zig"):
-        return ("zig fmt", "SKIP", "not installed")
+    zig = _find_zig(ove_dir)
+    if not zig:
+        return ("zig fmt", "SKIP", "not installed (run `ove download` first)")
     files = list(_glob(ove_dir, ".zig"))
     if not files:
         return ("zig fmt", "OK", "no sources")
-    cmd = ["zig", "fmt"] + (["--check"] if check else []) + files
+    cmd = [zig, "fmt"] + (["--check"] if check else []) + files
     rc, out = _run(cmd, cwd=ove_dir)
     return ("zig fmt", "OK" if rc == 0 else "FAIL",
             f"{len(files)} files" if rc == 0 else out.strip()[:200])
@@ -185,6 +204,25 @@ def _clang_tidy(ove_dir, check):
     del check  # clang-tidy has --fix but we deliberately don't wire it
     if not shutil.which("clang-tidy"):
         return ("clang-tidy", "SKIP", "not installed")
+    # Auto-bootstrap test-stub so lint runs end-to-end on a bare checkout
+    # (CI calls `make lint` without a prior workspace build). Always
+    # prefer this over older firmware-build compile dbs that may be
+    # symlinked into output/ — those reference cross-compiled flags
+    # clang-tidy can't always parse and exclude the kernel/backend
+    # sources that test-stub covers.
+    stub_build = os.path.join(ove_dir, "output", "tests", "stub")
+    stub_db = os.path.join(stub_build, "compile_commands.json")
+    if not os.path.isfile(stub_db):
+        cmake = shutil.which("cmake")
+        if cmake:
+            os.makedirs(stub_build, exist_ok=True)
+            try:
+                subprocess.run(
+                    [cmake, "-S", os.path.join(ove_dir, "tests"),
+                     "-B", stub_build, "-DCMAKE_BUILD_TYPE=Debug"],
+                    cwd=ove_dir, capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError:
+                pass
     build_dir = _find_compile_db(ove_dir)
     if build_dir is None:
         return ("clang-tidy", "SKIP",
@@ -199,7 +237,14 @@ def _clang_tidy(ove_dir, check):
     except (OSError, json.JSONDecodeError) as e:
         return ("clang-tidy", "SKIP", f"compile db read failed: {e}")
 
+    # Lint the project's own C/C++ surface — kernel core, backends, the
+    # C++ wrapper, plus any apps the active build pulled in. Excludes
+    # vendored/external trees (cmocka, lwip, FreeRTOS, etc.) via the
+    # path filter below so noise from upstream code stays out.
     scope_prefixes = [
+        os.path.abspath(os.path.join(ove_dir, "src")),
+        os.path.abspath(os.path.join(ove_dir, "include")),
+        os.path.abspath(os.path.join(ove_dir, "backends")),
         os.path.abspath(os.path.join(ove_dir, "bindings", "cpp")),
         os.path.abspath(os.path.join(ove_dir, "apps")),
         os.path.abspath(os.path.join(ove_dir, "overtos_apps")),
@@ -312,14 +357,15 @@ def _zig_ast_check(ove_dir, check):
     built-in equivalent.
     """
     del check
-    if not shutil.which("zig"):
-        return ("zig ast-check", "SKIP", "not installed")
+    zig = _find_zig(ove_dir)
+    if not zig:
+        return ("zig ast-check", "SKIP", "not installed (run `ove download` first)")
     files = list(_glob(ove_dir, ".zig"))
     if not files:
         return ("zig ast-check", "OK", "no sources")
     failures = []
     for f in files:
-        rc, out = _run(["zig", "ast-check", f], cwd=ove_dir)
+        rc, out = _run([zig, "ast-check", f], cwd=ove_dir)
         if rc != 0:
             failures.append((os.path.relpath(f, ove_dir), out.strip()[:120]))
     if failures:
@@ -332,10 +378,11 @@ def _ruff(ove_dir, check):
     if not shutil.which("ruff"):
         return ("ruff", "SKIP", "not installed (pip install ruff)")
     py_root = os.path.join(ove_dir, "config", "ove-cli")
+    py_files = list(_glob(py_root, ".py"))
     cmd = ["ruff", "check", py_root]
     rc, out = _run(cmd, cwd=ove_dir)
     return ("ruff", "OK" if rc == 0 else "FAIL",
-            "" if rc == 0 else out.strip()[:200])
+            f"{len(py_files)} files" if rc == 0 else out.strip()[:200])
 
 
 def _backend_struct_guard(ove_dir, check):

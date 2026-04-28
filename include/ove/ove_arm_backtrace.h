@@ -21,13 +21,13 @@ extern "C" {
  * stacked PC/LR directly without redefining the enum.
  */
 enum {
-	OVE_ARM_EXC_R0   = 0,
-	OVE_ARM_EXC_R1   = 1,
-	OVE_ARM_EXC_R2   = 2,
-	OVE_ARM_EXC_R3   = 3,
-	OVE_ARM_EXC_R12  = 4,
-	OVE_ARM_EXC_LR   = 5,
-	OVE_ARM_EXC_PC   = 6,
+	OVE_ARM_EXC_R0 = 0,
+	OVE_ARM_EXC_R1 = 1,
+	OVE_ARM_EXC_R2 = 2,
+	OVE_ARM_EXC_R3 = 3,
+	OVE_ARM_EXC_R12 = 4,
+	OVE_ARM_EXC_LR = 5,
+	OVE_ARM_EXC_PC = 6,
 	OVE_ARM_EXC_XPSR = 7,
 };
 
@@ -48,8 +48,7 @@ enum {
  * `bl imm` or `blx reg`. Safe to call from ISR context — reads hit
  * .text (flash), no SRAM access.
  */
-int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean,
-				    uintptr_t text_lo, uintptr_t text_hi);
+int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintptr_t text_hi);
 
 /**
  * ove_arm_backtrace_walk — multi-frame stack-scan unwinder for
@@ -99,11 +98,8 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean,
  *
  * Returns the number of slots written to @out (0..max).
  */
-int ove_arm_backtrace_walk(uintptr_t psp,
-			   uintptr_t text_lo, uintptr_t text_hi,
-			   uintptr_t sram_lo, uintptr_t sram_hi,
-			   uint32_t fill,
-			   uintptr_t *out, int max);
+int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t sram_lo,
+			   uintptr_t sram_hi, uint32_t fill, uintptr_t *out, int max);
 
 #ifdef __cplusplus
 }

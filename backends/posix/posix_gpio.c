@@ -12,12 +12,11 @@
 #include <string.h>
 
 #define BSP_MAX_PORTS 8
-#define BSP_MAX_PINS  16
+#define BSP_MAX_PINS 16
 
 static int gpio_state[BSP_MAX_PORTS][BSP_MAX_PINS];
 
-int ove_hal_gpio_configure(unsigned int port, unsigned int pin,
-			       ove_gpio_mode_t mode)
+int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
 {
 	(void)mode;
 	if (port >= BSP_MAX_PORTS || pin >= BSP_MAX_PINS) {
@@ -43,10 +42,8 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin)
 	return gpio_state[port][pin];
 }
 
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin,
-				   ove_gpio_irq_mode_t mode,
-				   ove_gpio_irq_cb callback,
-				   void *user_data)
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
+			       ove_gpio_irq_cb callback, void *user_data)
 {
 	(void)mode;
 	(void)callback;

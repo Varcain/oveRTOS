@@ -58,9 +58,19 @@ unsigned int ove_led_count(void);
 
 #else /* !CONFIG_OVE_LED */
 
-static inline void ove_led_set(unsigned int led, int on) { (void)led; (void)on; }
-static inline void ove_led_toggle(unsigned int led) { (void)led; }
-static inline unsigned int ove_led_count(void) { return 0; }
+static inline void ove_led_set(unsigned int led, int on)
+{
+	(void)led;
+	(void)on;
+}
+static inline void ove_led_toggle(unsigned int led)
+{
+	(void)led;
+}
+static inline unsigned int ove_led_count(void)
+{
+	return 0;
+}
 
 #endif /* CONFIG_OVE_LED */
 

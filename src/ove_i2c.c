@@ -21,17 +21,20 @@
 static uint32_t speed_to_hz(ove_i2c_speed_t speed)
 {
 	switch (speed) {
-	case OVE_I2C_SPEED_STANDARD:  return 100000;
-	case OVE_I2C_SPEED_FAST:      return 400000;
-	case OVE_I2C_SPEED_FAST_PLUS: return 1000000;
-	default:                      return 100000;
+	case OVE_I2C_SPEED_STANDARD:
+		return 100000;
+	case OVE_I2C_SPEED_FAST:
+		return 400000;
+	case OVE_I2C_SPEED_FAST_PLUS:
+		return 1000000;
+	default:
+		return 100000;
 	}
 }
 
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
-int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage,
-		 const struct ove_i2c_cfg *cfg)
+int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2c_cfg *cfg)
 {
 	int ret;
 
@@ -96,8 +99,7 @@ void ove_i2c_destroy(ove_i2c_t i2c)
 
 /* ── Operations ──────────────────────────────────────────────────── */
 
-int ove_i2c_write(ove_i2c_t i2c, uint16_t addr,
-		  const void *data, size_t len, uint32_t timeout_ms)
+int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, uint32_t timeout_ms)
 {
 	int ret;
 
@@ -111,8 +113,7 @@ int ove_i2c_write(ove_i2c_t i2c, uint16_t addr,
 	return ret;
 }
 
-int ove_i2c_read(ove_i2c_t i2c, uint16_t addr,
-		 void *buf, size_t len, uint32_t timeout_ms)
+int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms)
 {
 	int ret;
 
@@ -126,20 +127,16 @@ int ove_i2c_read(ove_i2c_t i2c, uint16_t addr,
 	return ret;
 }
 
-int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
-		       const void *tx, size_t tx_len,
-		       void *rx, size_t rx_len,
-		       uint32_t timeout_ms)
+int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+		       size_t rx_len, uint32_t timeout_ms)
 {
 	int ret;
 
-	if (i2c == NULL || (tx == NULL && tx_len > 0) ||
-	    rx == NULL || rx_len == 0)
+	if (i2c == NULL || (tx == NULL && tx_len > 0) || rx == NULL || rx_len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
 	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
-	ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len,
-				     rx, rx_len, timeout_ms);
+	ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len, rx, rx_len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;
@@ -147,8 +144,7 @@ int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
 
 /* ── Register convenience ────────────────────────────────────────── */
 
-int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
-		      const void *data, size_t len,
+int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, const void *data, size_t len,
 		      uint32_t timeout_ms)
 {
 	uint8_t buf[1 + OVE_I2C_REG_WRITE_MAX];
@@ -170,8 +166,8 @@ int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
 	return ret;
 }
 
-int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
-		     void *buf, size_t len, uint32_t timeout_ms)
+int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_t len,
+		     uint32_t timeout_ms)
 {
 	int ret;
 
@@ -179,8 +175,7 @@ int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
 		return OVE_ERR_INVALID_PARAM;
 
 	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
-	ret = ove_hal_i2c_write_read(i2c, addr, &reg, 1,
-				     buf, len, timeout_ms);
+	ret = ove_hal_i2c_write_read(i2c, addr, &reg, 1, buf, len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;

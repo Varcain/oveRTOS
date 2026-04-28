@@ -41,16 +41,16 @@ extern "C" {
 #endif
 
 /** Event type for thread/memory snapshots. */
-#define OVE_SIM_DEBUG_EVT_THREADS  0
+#define OVE_SIM_DEBUG_EVT_THREADS 0
 
 /** Maximum threads reported per snapshot. */
-#define OVE_SIM_DEBUG_MAX_THREADS  16
+#define OVE_SIM_DEBUG_MAX_THREADS 16
 
 /** Maximum thread name length in snapshot. */
 #define OVE_SIM_DEBUG_MAX_NAME_LEN 16
 
 /** Snapshot interval in milliseconds (~2 Hz). */
-#define OVE_SIM_DEBUG_INTERVAL_MS  500
+#define OVE_SIM_DEBUG_INTERVAL_MS 500
 
 /**
  * @brief Register the debug simulation plugin.

@@ -15,8 +15,7 @@
 #include <errno.h>
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_eventgroup_init(ove_eventgroup_t *eg,
-			    ove_eventgroup_storage_t *storage)
+int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
 	if (eg == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -70,8 +69,7 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
-                                             ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	struct ove_eventgroup *g = eg;
 	ove_eventbits_t result;
@@ -89,8 +87,7 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
 	return result;
 }
 
-ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
-                                               ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	struct ove_eventgroup *g = eg;
 	ove_eventbits_t prev;
@@ -104,10 +101,8 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
 	return prev;
 }
 
-int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
-                              ove_eventbits_t bits,
-                              uint32_t flags, uint32_t timeout_ms,
-                              ove_eventbits_t *result)
+int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
+			     uint32_t timeout_ms, ove_eventbits_t *result)
 {
 	struct ove_eventgroup *g = eg;
 	int wait_all = (flags & OVE_EG_WAIT_ALL) ? 1 : 0;
@@ -146,9 +141,8 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
 			if (clock_compare(deadline, now)) {
 				ret = -ETIMEDOUT;
 			} else {
-				ret = nxsem_tickwait_uninterruptible(
-					&g->waiter,
-					(uint32_t)(deadline - now));
+				ret = nxsem_tickwait_uninterruptible(&g->waiter,
+								     (uint32_t)(deadline - now));
 			}
 		}
 
@@ -173,8 +167,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
 	return matched ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
-ove_eventbits_t ove_eventgroup_set_bits_from_isr(
-    ove_eventgroup_t eg, ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	return ove_eventgroup_set_bits(eg, bits);
 }

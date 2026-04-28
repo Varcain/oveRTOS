@@ -25,8 +25,7 @@ extern "C" {
  *   '#' matches zero or more remaining levels (must be last).
  * Returns 1 on match, 0 otherwise.
  */
-int ove_mqtt_topic_matches(const char *filter, size_t flen,
-                           const char *topic, size_t tlen);
+int ove_mqtt_topic_matches(const char *filter, size_t flen, const char *topic, size_t tlen);
 
 #ifdef __cplusplus
 }

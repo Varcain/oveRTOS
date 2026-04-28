@@ -23,9 +23,8 @@ static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
 	}
 }
 
-int ove_stream_init(ove_stream_t *stream,
-		        ove_stream_storage_t *storage,
-		        void *buffer, size_t size, size_t trigger)
+int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *buffer, size_t size,
+		    size_t trigger)
 {
 	if (!stream || !storage || !buffer || size == 0)
 		return OVE_ERR_INVALID_PARAM;
@@ -52,10 +51,10 @@ void ove_stream_deinit(ove_stream_t stream)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_stream_create(ove_stream_t *stream, size_t size,
-			  size_t trigger)
+int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 {
-	if (!stream || size == 0) return OVE_ERR_INVALID_PARAM;
+	if (!stream || size == 0)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_stream *s = OVE_BACKEND_MALLOC(sizeof(*s));
 	if (!s) {
 		return OVE_ERR_NO_MEMORY;
@@ -90,9 +89,8 @@ void ove_stream_destroy(ove_stream_t stream)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_stream_send(ove_stream_t stream, const void *data,
-		       size_t len, uint32_t timeout_ms,
-		       size_t *bytes_sent)
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+		    size_t *bytes_sent)
 {
 	struct ove_stream *s = stream;
 	if (!s || !data || len == 0) {
@@ -115,11 +113,9 @@ int ove_stream_send(ove_stream_t stream, const void *data,
 			}
 			int ret;
 			if (timeout_ms == OVE_WAIT_FOREVER) {
-				ret = pthread_cond_wait(&s->space_avail,
-						       &s->lock);
+				ret = pthread_cond_wait(&s->space_avail, &s->lock);
 			} else {
-				ret = pthread_cond_timedwait(&s->space_avail,
-							    &s->lock, &ts);
+				ret = pthread_cond_timedwait(&s->space_avail, &s->lock, &ts);
 			}
 			if (ret == ETIMEDOUT) {
 				goto done;
@@ -140,9 +136,8 @@ done:
 	return OVE_OK;
 }
 
-int ove_stream_receive(ove_stream_t stream, void *buf,
-			   size_t len, uint32_t timeout_ms,
-			   size_t *bytes_received)
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+		       size_t *bytes_received)
 {
 	struct ove_stream *s = stream;
 	if (!s || !buf || len == 0) {
@@ -167,8 +162,7 @@ int ove_stream_receive(ove_stream_t stream, void *buf,
 		if (timeout_ms == OVE_WAIT_FOREVER) {
 			ret = pthread_cond_wait(&s->data_avail, &s->lock);
 		} else {
-			ret = pthread_cond_timedwait(&s->data_avail, &s->lock,
-						     &ts);
+			ret = pthread_cond_timedwait(&s->data_avail, &s->lock, &ts);
 		}
 		if (ret == ETIMEDOUT) {
 			goto done;
@@ -189,16 +183,12 @@ done:
 	return OVE_OK;
 }
 
-int ove_stream_send_from_isr(ove_stream_t stream,
-				 const void *data, size_t len,
-				 size_t *bytes_sent)
+int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)
 {
 	return ove_stream_send(stream, data, len, 0, bytes_sent);
 }
 
-int ove_stream_receive_from_isr(ove_stream_t stream,
-				    void *buf, size_t len,
-				    size_t *bytes_received)
+int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)
 {
 	return ove_stream_receive(stream, buf, len, 0, bytes_received);
 }

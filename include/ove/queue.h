@@ -63,8 +63,8 @@ typedef struct ove_queue *ove_queue_t;
  *
  * @see ove_queue_deinit, ove_queue_create
  */
-int  ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage,
-		    void *buffer, size_t item_size, unsigned int max_items);
+int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
+		   unsigned int max_items);
 
 /**
  * @brief Release resources held by a queue initialised with ove_queue_init().
@@ -99,8 +99,7 @@ void ove_queue_deinit(ove_queue_t q);
  *
  * @see ove_queue_destroy, ove_queue_init
  */
-int  ove_queue_create(ove_queue_t *q, size_t item_size,
-		      unsigned int max_items);
+int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items);
 
 /**
  * @brief Destroy and free a queue allocated with ove_queue_create().
@@ -116,11 +115,12 @@ void ove_queue_destroy(ove_queue_t q);
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_QUEUE — zero-heap mode */
 
 /* Unified macro — item_size and max_items must be compile-time constants. */
-#define ove_queue_create(pq, item_size, max_items) \
-	({ static ove_queue_storage_t _ove_stor_; \
-	   static uint8_t _ove_buf_[(item_size) * (max_items)]; \
-	   ove_queue_init((pq), &_ove_stor_, _ove_buf_, \
-			  (item_size), (max_items)); })
+#define ove_queue_create(pq, item_size, max_items)                                      \
+	({                                                                              \
+		static ove_queue_storage_t _ove_stor_;                                  \
+		static uint8_t _ove_buf_[(item_size) * (max_items)];                    \
+		ove_queue_init((pq), &_ove_stor_, _ove_buf_, (item_size), (max_items)); \
+	})
 #define ove_queue_destroy(q) ove_queue_deinit(q)
 
 #endif /* OVE_HEAP_QUEUE */
@@ -145,8 +145,7 @@ void ove_queue_destroy(ove_queue_t q);
  *
  * @see ove_queue_receive, ove_queue_send_from_isr
  */
-int  ove_queue_send(ove_queue_t q, const void *data,
-		    uint32_t timeout_ms);
+int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms);
 
 /**
  * @brief Receive (remove) an item from the front of the queue, blocking if
@@ -170,8 +169,7 @@ int  ove_queue_send(ove_queue_t q, const void *data,
  *
  * @see ove_queue_send, ove_queue_receive_from_isr
  */
-int  ove_queue_receive(ove_queue_t q, void *buf,
-		       uint32_t timeout_ms);
+int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms);
 
 /**
  * @brief Send an item to the queue from an interrupt service routine.
@@ -188,7 +186,7 @@ int  ove_queue_receive(ove_queue_t q, void *buf,
  *
  * @see ove_queue_send
  */
-int  ove_queue_send_from_isr(ove_queue_t q, const void *data);
+int ove_queue_send_from_isr(ove_queue_t q, const void *data);
 
 /**
  * @brief Receive an item from the queue from an interrupt service routine.
@@ -206,16 +204,47 @@ int  ove_queue_send_from_isr(ove_queue_t q, const void *data);
  *
  * @see ove_queue_receive
  */
-int  ove_queue_receive_from_isr(ove_queue_t q, void *buf);
+int ove_queue_receive_from_isr(ove_queue_t q, void *buf);
 
 #else /* !CONFIG_OVE_QUEUE */
 
-static inline int  ove_queue_create(ove_queue_t *q, size_t is, unsigned int mi) { (void)q; (void)is; (void)mi; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_queue_destroy(ove_queue_t q) { (void)q; }
-static inline int  ove_queue_send(ove_queue_t q, const void *d, uint32_t t) { (void)q; (void)d; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_queue_receive(ove_queue_t q, void *b, uint32_t t) { (void)q; (void)b; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_queue_send_from_isr(ove_queue_t q, const void *d) { (void)q; (void)d; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_queue_receive_from_isr(ove_queue_t q, void *b) { (void)q; (void)b; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_queue_create(ove_queue_t *q, size_t is, unsigned int mi)
+{
+	(void)q;
+	(void)is;
+	(void)mi;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_queue_destroy(ove_queue_t q)
+{
+	(void)q;
+}
+static inline int ove_queue_send(ove_queue_t q, const void *d, uint32_t t)
+{
+	(void)q;
+	(void)d;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_queue_receive(ove_queue_t q, void *b, uint32_t t)
+{
+	(void)q;
+	(void)b;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_queue_send_from_isr(ove_queue_t q, const void *d)
+{
+	(void)q;
+	(void)d;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_queue_receive_from_isr(ove_queue_t q, void *b)
+{
+	(void)q;
+	(void)b;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 #endif /* CONFIG_OVE_QUEUE */
 

@@ -66,11 +66,13 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 	uint8_t *end = buf + buf_size;
 
 	/* thread_count (uint8_t) */
-	if (p + 1 > end) return 0;
+	if (p + 1 > end)
+		return 0;
 	*p++ = (uint8_t)count;
 
 	/* heap stats (4x uint32_t LE) */
-	if (p + 16 > end) return 0;
+	if (p + 16 > end)
+		return 0;
 	uint32_t vals[4] = {
 		(uint32_t)mem.total,
 		(uint32_t)mem.free,
@@ -112,13 +114,13 @@ static size_t build_snapshot(uint8_t *buf, size_t buf_size)
 
 		/* Per-state time percentages (x100). */
 		struct ove_thread_state_times *st = &threads[i].state_times;
-		uint64_t total_us = st->running_us + st->ready_us
-				  + st->blocked_us + st->suspended_us;
+		uint64_t total_us =
+			st->running_us + st->ready_us + st->blocked_us + st->suspended_us;
 		uint32_t st_pct[4] = {0, 0, 0, 0};
 		if (total_us > 0) {
-			st_pct[0] = (uint32_t)(st->running_us   * 10000U / total_us);
-			st_pct[1] = (uint32_t)(st->ready_us     * 10000U / total_us);
-			st_pct[2] = (uint32_t)(st->blocked_us   * 10000U / total_us);
+			st_pct[0] = (uint32_t)(st->running_us * 10000U / total_us);
+			st_pct[1] = (uint32_t)(st->ready_us * 10000U / total_us);
+			st_pct[2] = (uint32_t)(st->blocked_us * 10000U / total_us);
 			st_pct[3] = (uint32_t)(st->suspended_us * 10000U / total_us);
 		}
 		memcpy(p, st_pct, 16);
@@ -155,15 +157,15 @@ static void emit_snapshot(struct sim_debug_ctx *d)
  * period, or the snapshot period as a last resort.
  */
 #if defined(CONFIG_OVE_PROFILER)
-#  if (1000 / CONFIG_OVE_PROFILER_HZ) < 1
-#    define PUMP_TICK_MS  1
-#  else
-#    define PUMP_TICK_MS  (1000 / CONFIG_OVE_PROFILER_HZ)
-#  endif
-#elif defined(CONFIG_OVE_TRACE_STREAM)
-#  define PUMP_TICK_MS  OVE_SIM_TRACE_DRAIN_MS
+#if (1000 / CONFIG_OVE_PROFILER_HZ) < 1
+#define PUMP_TICK_MS 1
 #else
-#  define PUMP_TICK_MS  OVE_SIM_DEBUG_INTERVAL_MS
+#define PUMP_TICK_MS (1000 / CONFIG_OVE_PROFILER_HZ)
+#endif
+#elif defined(CONFIG_OVE_TRACE_STREAM)
+#define PUMP_TICK_MS OVE_SIM_TRACE_DRAIN_MS
+#else
+#define PUMP_TICK_MS OVE_SIM_DEBUG_INTERVAL_MS
 #endif
 
 /*
@@ -171,7 +173,7 @@ static void emit_snapshot(struct sim_debug_ctx *d)
  * comfortably in 64 bytes). Oversize messages are silently dropped by
  * the transport rather than truncating into this buffer.
  */
-#define CMD_BUF_BYTES  (sizeof(struct ove_sim_cmd) + 64)
+#define CMD_BUF_BYTES (sizeof(struct ove_sim_cmd) + 64)
 
 static void drain_commands(struct ove_sim_transport *tr)
 {
@@ -187,12 +189,12 @@ static void debug_thread_fn(void *arg)
 {
 	struct sim_debug_ctx *d = (struct sim_debug_ctx *)arg;
 
-	uint32_t t_snap  = 0;
+	uint32_t t_snap = 0;
 #ifdef CONFIG_OVE_TRACE_STREAM
 	uint32_t t_trace = 0;
 #endif
 #ifdef CONFIG_OVE_PROFILER
-	uint32_t t_prof  = 0;
+	uint32_t t_prof = 0;
 	/* Announce profiler caps once so the dashboard can populate its
 	 * rate dropdown with the compile-time max. Done from the pump so it
 	 * happens after the transport is live. */
@@ -254,12 +256,10 @@ static void debug_deinit(void *ctx)
 	(void)ctx;
 }
 
-static int debug_get_state(void *ctx, void *buf, size_t buf_len,
-			   size_t *out_len)
+static int debug_get_state(void *ctx, void *buf, size_t buf_len, size_t *out_len)
 {
 	(void)ctx;
-	int n = snprintf((char *)buf, buf_len,
-			 "{\"type\":\"debug\",\"interval_ms\":%d}",
+	int n = snprintf((char *)buf, buf_len, "{\"type\":\"debug\",\"interval_ms\":%d}",
 			 OVE_SIM_DEBUG_INTERVAL_MS);
 	if (out_len)
 		*out_len = (size_t)n;
@@ -267,10 +267,10 @@ static int debug_get_state(void *ctx, void *buf, size_t buf_len,
 }
 
 static const struct ove_sim_plugin_ops debug_ops = {
-	.name      = "debug",
-	.type      = OVE_SIM_PLUGIN_SENSOR,
-	.init      = debug_init,
-	.deinit    = debug_deinit,
+	.name = "debug",
+	.type = OVE_SIM_PLUGIN_SENSOR,
+	.init = debug_init,
+	.deinit = debug_deinit,
 	.get_state = debug_get_state,
 };
 
@@ -294,9 +294,9 @@ int ove_sim_debug_register(void)
 	 * leaves a generous margin; POSIX's default pthread stack handled
 	 * this silently, FreeRTOS honours the request literally. */
 	struct ove_thread_desc desc = {
-		.name     = "sim_debug",
-		.entry    = debug_thread_fn,
-		.arg      = &debug_ctx,
+		.name = "sim_debug",
+		.entry = debug_thread_fn,
+		.arg = &debug_ctx,
 		.priority = OVE_PRIO_LOW,
 	};
 	int ret = ove_thread_create(&debug_thread_handle, 16384, &desc);

@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_NET_HTTP
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::http
@@ -28,7 +29,8 @@ namespace ove {
  * that manages the lifecycle of the underlying C client handle, and a
  * move-only `Response` that owns the response body and headers.
  */
-namespace http {
+namespace http
+{
 
 /**
  * @class Response
@@ -40,8 +42,9 @@ namespace http {
  * @note Non-copyable; movable.  The moved-from object is left in a
  *       zeroed (empty) state.
  */
-class Response {
-public:
+class Response
+{
+      public:
 	/**
 	 * @brief Constructs an empty response.
 	 */
@@ -50,7 +53,10 @@ public:
 	/**
 	 * @brief Destroys the response, freeing body and header buffers.
 	 */
-	~Response() { ove_http_response_free(&raw_); }
+	~Response()
+	{
+		ove_http_response_free(&raw_);
+	}
 
 	Response(const Response &) = delete;
 	Response &operator=(const Response &) = delete;
@@ -59,7 +65,8 @@ public:
 	 * @brief Move constructor -- transfers ownership of response buffers.
 	 * @param other The source; its raw response is zeroed after the move.
 	 */
-	Response(Response &&other) noexcept : raw_(other.raw_) {
+	Response(Response &&other) noexcept : raw_(other.raw_)
+	{
 		other.raw_ = {};
 	}
 
@@ -68,7 +75,8 @@ public:
 	 * @param other The source; its raw response is zeroed after the move.
 	 * @return Reference to this object.
 	 */
-	Response &operator=(Response &&other) noexcept {
+	Response &operator=(Response &&other) noexcept
+	{
 		if (this != &other) {
 			ove_http_response_free(&raw_);
 			raw_ = other.raw_;
@@ -78,25 +86,43 @@ public:
 	}
 
 	/** @brief Returns the HTTP status code (e.g. 200, 404). */
-	int status() const { return raw_.status; }
+	int status() const
+	{
+		return raw_.status;
+	}
 
 	/** @brief Returns the response body (NUL-terminated). */
-	const char *body() const { return raw_.body; }
+	const char *body() const
+	{
+		return raw_.body;
+	}
 
 	/** @brief Returns the response body length in bytes. */
-	size_t body_len() const { return raw_.body_len; }
+	size_t body_len() const
+	{
+		return raw_.body_len;
+	}
 
 	/** @brief Returns the raw response headers. */
-	const char *headers() const { return raw_.headers; }
+	const char *headers() const
+	{
+		return raw_.headers;
+	}
 
 	/** @brief Returns the response headers length in bytes. */
-	size_t headers_len() const { return raw_.headers_len; }
+	size_t headers_len() const
+	{
+		return raw_.headers_len;
+	}
 
 	/**
 	 * @brief Returns a pointer to the underlying C response struct.
 	 * @return Pointer to the raw `ove_http_response_t`.
 	 */
-	ove_http_response_t *raw() { return &raw_; }
+	ove_http_response_t *raw()
+	{
+		return &raw_;
+	}
 
 	ove_http_response_t raw_{}; /**< Underlying C response struct (populated by the client). */
 };
@@ -112,15 +138,17 @@ public:
  *
  * @note Non-copyable.  Move-only when heap allocation is enabled.
  */
-class Client {
-public:
+class Client
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the HTTP client.
 	 *
 	 * Calls `ove_http_client_init` (zero-heap) or `ove_http_client_create`
 	 * (heap).  Asserts at startup if initialisation fails.
 	 */
-	Client() {
+	Client()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_http_client_init(&handle_, &storage_);
 #else
@@ -134,8 +162,10 @@ public:
 	 *
 	 * If the handle is null (e.g., after a move), the destructor is a no-op.
 	 */
-	~Client() {
-		if (!handle_) return;
+	~Client()
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_http_client_deinit(handle_);
 #else
@@ -154,7 +184,8 @@ public:
 	 * @brief Move constructor -- transfers ownership of the client handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Client(Client &&other) noexcept : handle_(other.handle_) {
+	Client(Client &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -163,9 +194,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Client &operator=(Client &&other) noexcept {
+	Client &operator=(Client &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_http_client_destroy(handle_);
+			if (handle_)
+				ove_http_client_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -179,7 +212,8 @@ public:
 	 * @param[out] resp Response filled on success.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int get(const char *url, Response &resp) {
+	[[nodiscard]] int get(const char *url, Response &resp)
+	{
 		return ove_http_get(handle_, url, &resp.raw_);
 	}
 
@@ -192,11 +226,10 @@ public:
 	 * @param[out] resp         Response filled on success.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int post(const char *url, const char *content_type,
-			       const void *body, size_t body_len,
-			       Response &resp) {
-		return ove_http_post(handle_, url, content_type,
-				     body, body_len, &resp.raw_);
+	[[nodiscard]] int post(const char *url, const char *content_type, const void *body,
+			       size_t body_len, Response &resp)
+	{
+		return ove_http_post(handle_, url, content_type, body, body_len, &resp.raw_);
 	}
 
 	/**
@@ -210,11 +243,11 @@ public:
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
 	[[nodiscard]] int request(ove_http_method_t method, const char *url,
-				  const char *content_type,
-				  const void *body, size_t body_len,
-				  Response &resp) {
-		return ove_http_request(handle_, method, url, content_type,
-				       body, body_len, &resp.raw_);
+				  const char *content_type, const void *body, size_t body_len,
+				  Response &resp)
+	{
+		return ove_http_request(handle_, method, url, content_type, body, body_len,
+					&resp.raw_);
 	}
 
 	/**
@@ -230,29 +263,33 @@ public:
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
 	[[nodiscard]] int request(ove_http_method_t method, const char *url,
-				  const char *content_type,
-				  const void *body, size_t body_len,
-				  const ove_http_header_t *headers,
-				  size_t header_count,
-				  Response &resp) {
-		return ove_http_request_ex(handle_, method, url, content_type,
-					  body, body_len, headers,
-					  header_count, &resp.raw_);
+				  const char *content_type, const void *body, size_t body_len,
+				  const ove_http_header_t *headers, size_t header_count,
+				  Response &resp)
+	{
+		return ove_http_request_ex(handle_, method, url, content_type, body, body_len,
+					   headers, header_count, &resp.raw_);
 	}
 
 	/**
 	 * @brief Returns `true` if the underlying client handle is non-null.
 	 * @return `true` when the client was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS HTTP client handle.
 	 * @return The opaque `ove_http_client_t` handle.
 	 */
-	ove_http_client_t handle() const { return handle_; }
+	ove_http_client_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_http_client_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_http_client_storage_t storage_ = {};

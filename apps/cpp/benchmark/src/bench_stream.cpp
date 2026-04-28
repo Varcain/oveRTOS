@@ -69,8 +69,7 @@ static void stream_throughput_setup()
 	stream_done.store(false, std::memory_order_release);
 	std::memset(tx_buf, 0xBB, STREAM_MSG_SIZE);
 	bench_strm.emplace(1);
-	stream_producer_th.emplace(stream_producer, nullptr, OVE_PRIO_NORMAL,
-				   "strm_prod");
+	stream_producer_th.emplace(stream_producer, nullptr, OVE_PRIO_NORMAL, "strm_prod");
 }
 
 static void stream_throughput_run()

@@ -29,9 +29,9 @@ extern "C" {
  * Identifies the GPIO pin that drives the LED and its polarity.
  */
 struct ove_led_desc {
-	unsigned int port;       /**< GPIO port index of the LED pin. */
-	unsigned int pin;        /**< GPIO pin index within the port. */
-	int          active_low; /**< Non-zero if the LED is lit when the pin is low. */
+	unsigned int port; /**< GPIO port index of the LED pin. */
+	unsigned int pin;  /**< GPIO pin index within the port. */
+	int active_low;	   /**< Non-zero if the LED is lit when the pin is low. */
 };
 
 /**
@@ -42,13 +42,13 @@ struct ove_led_desc {
  * corresponding peripheral does not exist on the board.
  */
 struct ove_board_desc {
-	const char             *name;              /**< Human-readable board name (e.g. @c "STM32F4-Discovery"). */
-	const char             *mcu_family;        /**< MCU family string (e.g. @c "STM32F4"). */
-	const char             *mcu;               /**< Specific MCU part number (e.g. @c "STM32F407VGT6"). */
-	unsigned int            gpio_port_count;   /**< Number of GPIO ports available on this board. */
-	unsigned int            gpio_pins_per_port;/**< Number of pins in each GPIO port. */
-	unsigned int            led_count;         /**< Number of on-board LEDs described in @c leds. */
-	const struct ove_led_desc *leds;           /**< Array of LED descriptors, length @c led_count. */
+	const char *name;	/**< Human-readable board name (e.g. @c "STM32F4-Discovery"). */
+	const char *mcu_family; /**< MCU family string (e.g. @c "STM32F4"). */
+	const char *mcu;	/**< Specific MCU part number (e.g. @c "STM32F407VGT6"). */
+	unsigned int gpio_port_count;	 /**< Number of GPIO ports available on this board. */
+	unsigned int gpio_pins_per_port; /**< Number of pins in each GPIO port. */
+	unsigned int led_count;		 /**< Number of on-board LEDs described in @c leds. */
+	const struct ove_led_desc *leds; /**< Array of LED descriptors, length @c led_count. */
 };
 
 #ifdef __cplusplus

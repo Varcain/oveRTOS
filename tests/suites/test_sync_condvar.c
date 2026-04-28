@@ -90,17 +90,17 @@ static void test_condvar_signal_wakes_one(void **state)
 	ove_test_condvar_create(&cv, &s_cv_storage);
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct cv_waiter_ctx ctx = { .cv = cv, .mtx = mtx };
+	struct cv_waiter_ctx ctx = {.cv = cv, .mtx = mtx};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "cvw", cv_wait_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "cvw", cv_wait_entry, &ctx, s_th_stack, 4096);
 
 	/* Wait until the waiter has entered condvar_wait (holds mutex, sets ready) */
 	for (int i = 0; i < 500; i++) {
 		ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
 		int rdy = ctx.ready;
 		ove_mutex_unlock(mtx);
-		if (rdy) break;
+		if (rdy)
+			break;
 		test_msleep(5);
 	}
 	assert_int_equal(ctx.ready, 1);
@@ -123,21 +123,20 @@ static void test_condvar_broadcast(void **state)
 	ove_test_condvar_create(&cv, &s_cv_storage);
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct cv_waiter_ctx c1 = { .cv = cv, .mtx = mtx };
-	struct cv_waiter_ctx c2 = { .cv = cv, .mtx = mtx };
+	struct cv_waiter_ctx c1 = {.cv = cv, .mtx = mtx};
+	struct cv_waiter_ctx c2 = {.cv = cv, .mtx = mtx};
 
 	ove_thread_t t1 = NULL, t2 = NULL;
-	ove_test_thread_run(&t1, &s_th_storage_a, "w1", cv_wait_entry, &c1,
-	    s_th_stack_a, 4096);
-	ove_test_thread_run(&t2, &s_th_storage_b, "w2", cv_wait_entry, &c2,
-	    s_th_stack_b, 4096);
+	ove_test_thread_run(&t1, &s_th_storage_a, "w1", cv_wait_entry, &c1, s_th_stack_a, 4096);
+	ove_test_thread_run(&t2, &s_th_storage_b, "w2", cv_wait_entry, &c2, s_th_stack_b, 4096);
 
 	/* Wait until both waiters are ready (inside condvar_wait) */
 	for (int i = 0; i < 500; i++) {
 		ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
 		int both_ready = c1.ready && c2.ready;
 		ove_mutex_unlock(mtx);
-		if (both_ready) break;
+		if (both_ready)
+			break;
 		test_msleep(5);
 	}
 	assert_int_equal(c1.ready, 1);
@@ -177,10 +176,9 @@ static void test_condvar_producer_consumer(void **state)
 	ove_test_condvar_create(&cv, &s_cv_storage);
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct cv_prod_ctx ctx = { .cv = cv, .mtx = mtx };
+	struct cv_prod_ctx ctx = {.cv = cv, .mtx = mtx};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "prod", cv_producer_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "prod", cv_producer_entry, &ctx, s_th_stack, 4096);
 
 	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
 	while (!ctx.ready)
@@ -201,10 +199,9 @@ static void test_condvar_wait_forever(void **state)
 	ove_test_condvar_create(&cv, &s_cv_storage);
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 
-	struct cv_signal_ctx ctx = { .cv = cv, .mtx = mtx };
+	struct cv_signal_ctx ctx = {.cv = cv, .mtx = mtx};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "sig", cv_signal_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "sig", cv_signal_entry, &ctx, s_th_stack, 4096);
 
 	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
 	assert_int_equal(ove_condvar_wait(cv, mtx, OVE_WAIT_FOREVER), OVE_OK);

@@ -61,8 +61,7 @@ int ove_hal_gpio_get(unsigned int port, unsigned int pin);
  * @param[in] mode  Desired pin mode (@c ove_gpio_mode_t).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_hal_gpio_configure(unsigned int port, unsigned int pin,
-			       ove_gpio_mode_t mode);
+int ove_hal_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode);
 
 /**
  * @brief Program and enable a GPIO interrupt in hardware.
@@ -78,10 +77,8 @@ int ove_hal_gpio_configure(unsigned int port, unsigned int pin,
  * @param[in] user_data Opaque pointer forwarded to @p callback.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin,
-				   ove_gpio_irq_mode_t mode,
-				   ove_gpio_irq_cb callback,
-				   void *user_data);
+int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
+			       ove_gpio_irq_cb callback, void *user_data);
 
 /**
  * @brief Disable a GPIO interrupt in hardware without unregistering the callback.

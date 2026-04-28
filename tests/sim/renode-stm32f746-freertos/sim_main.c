@@ -23,7 +23,9 @@
 
 extern void xPortSysTickHandler(void);
 
-void ove_main(void) {}
+void ove_main(void)
+{
+}
 
 /* HAL_ETH_MspInit — see zero-heap sim_main.c for rationale. */
 void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
@@ -35,9 +37,9 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
 	__HAL_RCC_GPIOG_CLK_ENABLE();
 
 	GPIO_InitTypeDef gpio = {0};
-	gpio.Mode      = GPIO_MODE_AF_PP;
-	gpio.Pull      = GPIO_NOPULL;
-	gpio.Speed     = GPIO_SPEED_FREQ_VERY_HIGH;
+	gpio.Mode = GPIO_MODE_AF_PP;
+	gpio.Pull = GPIO_NOPULL;
+	gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 	gpio.Alternate = GPIO_AF11_ETH;
 
 	gpio.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
@@ -55,7 +57,7 @@ static void test_runner_task(void *arg)
 	int failures = 0;
 	(void)arg;
 
-#define OVE_SUITE(name, label) \
+#define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();
 #include "framework/suites.inc"
@@ -66,7 +68,8 @@ static void test_runner_task(void *arg)
 	/* See zero-heap sibling for rationale — bkpt #0xab faults on bare
 	 * silicon without a debugger.  HW runner reads the summary line off
 	 * USART1 and terminates the run from the host side. */
-	for (;;) { }
+	for (;;) {
+	}
 #else
 	semihosting_exit(failures ? 1 : 0);
 #endif
@@ -99,21 +102,36 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
 	(void)xTask;
-	fprintf(stderr, "\n!!! STACK OVERFLOW: %s !!!\n",
-		pcTaskName ? pcTaskName : "(null)");
+	fprintf(stderr, "\n!!! STACK OVERFLOW: %s !!!\n", pcTaskName ? pcTaskName : "(null)");
 #ifdef OVE_HW
-	for (;;) { }
+	for (;;) {
+	}
 #else
 	semihosting_exit(1);
 #endif
 }
 
 /* EXTI trampolines — see the zero-heap sibling sim_main.c for rationale. */
-void EXTI0_IRQHandler(void)     { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); }
-void EXTI1_IRQHandler(void)     { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1); }
-void EXTI2_IRQHandler(void)     { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_2); }
-void EXTI3_IRQHandler(void)     { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3); }
-void EXTI4_IRQHandler(void)     { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_4); }
+void EXTI0_IRQHandler(void)
+{
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+}
+void EXTI1_IRQHandler(void)
+{
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
+}
+void EXTI2_IRQHandler(void)
+{
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_2);
+}
+void EXTI3_IRQHandler(void)
+{
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3);
+}
+void EXTI4_IRQHandler(void)
+{
+	HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_4);
+}
 void EXTI9_5_IRQHandler(void)
 {
 	for (unsigned int p = 5; p <= 9; ++p) {
@@ -171,10 +189,8 @@ int main(void)
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
-	xTaskCreateStatic(test_runner_task, "tests",
-			  configMINIMAL_STACK_SIZE * 8, NULL,
-			  tskIDLE_PRIORITY + 1,
-			  runner_stack, &runner_tcb);
+	xTaskCreateStatic(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
+			  tskIDLE_PRIORITY + 1, runner_stack, &runner_tcb);
 	vTaskStartScheduler();
 	return 0;
 }

@@ -34,10 +34,10 @@
 #ifdef CONFIG_OVE_NET
 
 struct echo_server {
-	int        listen_fd;
-	uint16_t   port;
-	pthread_t  thr;
-	int        started;
+	int listen_fd;
+	uint16_t port;
+	pthread_t thr;
+	int started;
 };
 
 static void *echo_server_thread(void *arg)
@@ -118,13 +118,13 @@ static void test_tcp_loopback_echo(void **state)
 
 	ove_socket_storage_t sock_storage;
 	ove_socket_t sock;
-	assert_int_equal(ove_socket_open(&sock, &sock_storage,
-					 OVE_AF_INET, OVE_SOCK_STREAM), OVE_OK);
+	assert_int_equal(ove_socket_open(&sock, &sock_storage, OVE_AF_INET, OVE_SOCK_STREAM),
+			 OVE_OK);
 
 	ove_sockaddr_t dst = {
 		.family = OVE_AF_INET,
-		.port   = srv.port,
-		.addr   = {127, 0, 0, 1},
+		.port = srv.port,
+		.addr = {127, 0, 0, 1},
 	};
 	assert_int_equal(ove_socket_connect(sock, &dst, 2000), OVE_OK);
 
@@ -136,8 +136,7 @@ static void test_tcp_loopback_echo(void **state)
 
 	char rxbuf[64] = {0};
 	size_t received = 0;
-	assert_int_equal(ove_socket_recv(sock, rxbuf, sizeof(rxbuf),
-					 &received, 2000), OVE_OK);
+	assert_int_equal(ove_socket_recv(sock, rxbuf, sizeof(rxbuf), &received, 2000), OVE_OK);
 	assert_int_equal(received, plen);
 	assert_memory_equal(rxbuf, payload, plen);
 

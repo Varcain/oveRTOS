@@ -19,7 +19,8 @@
 
 #ifdef CONFIG_OVE_PM
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::pm
@@ -28,24 +29,25 @@ namespace ove {
  * The PM subsystem is a singleton — there is one system-wide power state.
  * Available when `CONFIG_OVE_PM` is enabled.
  */
-namespace pm {
+namespace pm
+{
 
 /* ── Enums (re-export C types for convenience) ──────────────────────── */
 
 /** @brief System power state (active / sleep / deep-sleep / off). */
-using State    = ove_pm_state_t;
+using State = ove_pm_state_t;
 /** @brief Wake-source kind (GPIO, RTC, timer, …). */
 using WakeType = ove_pm_wake_type_t;
 /** @brief Peripheral power domain identifier. */
-using Domain   = ove_pm_domain_t;
+using Domain = ove_pm_domain_t;
 /** @brief PM event delivered to subscribers (entering/exiting a state, etc.). */
-using Event    = ove_pm_event_t;
+using Event = ove_pm_event_t;
 /** @brief Wake-source descriptor passed to `enable_wake_src()`. */
-using WakeSrc  = ove_pm_wake_src;
+using WakeSrc = ove_pm_wake_src;
 /** @brief Runtime configuration consumed by `init()`. */
-using Cfg      = ove_pm_cfg;
+using Cfg = ove_pm_cfg;
 /** @brief Aggregated runtime statistics (time in each state, etc.). */
-using Stats    = ove_pm_stats;
+using Stats = ove_pm_stats;
 
 /* ── Lifecycle ──────────────────────────────────────────────────────── */
 
@@ -54,14 +56,16 @@ using Stats    = ove_pm_stats;
  * @param[in] cfg Configuration parameters.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int init(const Cfg &cfg) {
+[[nodiscard]] inline int init(const Cfg &cfg)
+{
 	return ove_pm_init(&cfg);
 }
 
 /**
  * @brief Tear down the PM subsystem and release resources.
  */
-inline void deinit() {
+inline void deinit()
+{
 	ove_pm_deinit();
 }
 
@@ -72,7 +76,8 @@ inline void deinit() {
  * @param[in] state Target power state.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int set_state(State state) {
+[[nodiscard]] inline int set_state(State state)
+{
 	return ove_pm_set_state(state);
 }
 
@@ -80,7 +85,8 @@ inline void deinit() {
  * @brief Query the current power state.
  * @return Current power state.
  */
-inline State get_state() {
+inline State get_state()
+{
 	return ove_pm_get_state();
 }
 
@@ -90,7 +96,8 @@ inline State get_state() {
  * Resets the idle timer, causing the PM subsystem to return to the
  * ACTIVE state on the next idle check.
  */
-inline void activity() {
+inline void activity()
+{
 	ove_pm_activity();
 }
 
@@ -101,7 +108,8 @@ inline void activity() {
  * @param[in] src Wake source descriptor.
  * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if table full.
  */
-[[nodiscard]] inline int wake_register(const WakeSrc &src) {
+[[nodiscard]] inline int wake_register(const WakeSrc &src)
+{
 	return ove_pm_wake_register(&src);
 }
 
@@ -110,7 +118,8 @@ inline void activity() {
  * @param[in] src Wake source descriptor (must match a registered entry).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int wake_unregister(const WakeSrc &src) {
+[[nodiscard]] inline int wake_unregister(const WakeSrc &src)
+{
 	return ove_pm_wake_unregister(&src);
 }
 
@@ -121,7 +130,8 @@ inline void activity() {
  * @param[in] domain Domain identifier.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int domain_request(Domain domain) {
+[[nodiscard]] inline int domain_request(Domain domain)
+{
 	return ove_pm_domain_request(domain);
 }
 
@@ -130,7 +140,8 @@ inline void activity() {
  * @param[in] domain Domain identifier.
  * @return `OVE_OK` on success, `OVE_ERR_INVALID_PARAM` on underflow.
  */
-[[nodiscard]] inline int domain_release(Domain domain) {
+[[nodiscard]] inline int domain_release(Domain domain)
+{
 	return ove_pm_domain_release(domain);
 }
 
@@ -139,7 +150,8 @@ inline void activity() {
  * @param[in] domain Domain identifier.
  * @return Reference count (>= 0), or a negative error code.
  */
-[[nodiscard]] inline int domain_get_refcount(Domain domain) {
+[[nodiscard]] inline int domain_get_refcount(Domain domain)
+{
 	return ove_pm_domain_get_refcount(domain);
 }
 
@@ -151,8 +163,8 @@ inline void activity() {
  * @param[in] user_data Opaque pointer forwarded to the policy.
  * @return `OVE_OK`.
  */
-[[nodiscard]] inline int set_policy(ove_pm_policy_fn policy,
-				    void *user_data = nullptr) {
+[[nodiscard]] inline int set_policy(ove_pm_policy_fn policy, void *user_data = nullptr)
+{
 	return ove_pm_set_policy(policy, user_data);
 }
 
@@ -164,8 +176,8 @@ inline void activity() {
  * @param[in] user_data Opaque pointer forwarded to the callback.
  * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if table full.
  */
-[[nodiscard]] inline int notify_register(ove_pm_notify_fn cb,
-					 void *user_data = nullptr) {
+[[nodiscard]] inline int notify_register(ove_pm_notify_fn cb, void *user_data = nullptr)
+{
 	return ove_pm_notify_register(cb, user_data);
 }
 
@@ -175,8 +187,8 @@ inline void activity() {
  * @param[in] user_data Pointer that was passed at registration time.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int notify_unregister(ove_pm_notify_fn cb,
-					   void *user_data = nullptr) {
+[[nodiscard]] inline int notify_unregister(ove_pm_notify_fn cb, void *user_data = nullptr)
+{
 	return ove_pm_notify_unregister(cb, user_data);
 }
 
@@ -187,14 +199,16 @@ inline void activity() {
  * @param[out] stats Receives current statistics snapshot.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int get_stats(Stats &stats) {
+[[nodiscard]] inline int get_stats(Stats &stats)
+{
 	return ove_pm_get_stats(&stats);
 }
 
 /**
  * @brief Reset all accumulated power statistics to zero.
  */
-inline void reset_stats() {
+inline void reset_stats()
+{
 	ove_pm_reset_stats();
 }
 
@@ -205,7 +219,8 @@ inline void reset_stats() {
  * @param[in] target_pct_x100 Target in hundredths of percent.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int set_budget(uint32_t target_pct_x100) {
+[[nodiscard]] inline int set_budget(uint32_t target_pct_x100)
+{
 	return ove_pm_set_budget(target_pct_x100);
 }
 
@@ -214,7 +229,8 @@ inline void reset_stats() {
  * @param[out] actual_pct_x100 Actual low-power % in hundredths.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int get_budget_status(uint32_t &actual_pct_x100) {
+[[nodiscard]] inline int get_budget_status(uint32_t &actual_pct_x100)
+{
 	return ove_pm_get_budget_status(&actual_pct_x100);
 }
 
@@ -226,7 +242,8 @@ inline void reset_stats() {
  * Called internally from the RTOS idle hook.  Not normally called by
  * application code.
  */
-inline void idle_process() {
+inline void idle_process()
+{
 	ove_pm_idle_process();
 }
 

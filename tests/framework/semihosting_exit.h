@@ -20,8 +20,8 @@
 
 static inline void semihosting_exit(int code)
 {
-	const uint32_t args[2] = { 0x20026, (uint32_t)code };
-	register uint32_t r0 __asm__("r0") = 0x20;       /* SYS_EXIT_EXTENDED */
+	const uint32_t args[2] = {0x20026, (uint32_t)code};
+	register uint32_t r0 __asm__("r0") = 0x20; /* SYS_EXIT_EXTENDED */
 	register const uint32_t *r1 __asm__("r1") = args;
 	__asm__ volatile("bkpt #0xab" : : "r"(r0), "r"(r1) : "memory");
 	__builtin_unreachable();

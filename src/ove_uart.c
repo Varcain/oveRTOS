@@ -20,8 +20,8 @@
 
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
-int ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage,
-		  void *rx_buf, const struct ove_uart_cfg *cfg)
+int ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage, void *rx_buf,
+		  const struct ove_uart_cfg *cfg)
 {
 	int ret;
 
@@ -32,16 +32,15 @@ int ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage,
 	if (cfg->baudrate == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	storage->instance    = cfg->instance;
-	storage->baudrate    = cfg->baudrate;
-	storage->rx_buf      = rx_buf;
+	storage->instance = cfg->instance;
+	storage->baudrate = cfg->baudrate;
+	storage->rx_buf = rx_buf;
 	storage->rx_buf_size = cfg->rx_buf_size;
 	*uart = storage;
 
 	/* Initialise the RX stream (trigger = 1 byte) */
-	ret = ove_stream_init(&storage->rx_stream,
-			      &storage->rx_stream_storage,
-			      rx_buf, cfg->rx_buf_size, 1);
+	ret = ove_stream_init(&storage->rx_stream, &storage->rx_stream_storage, rx_buf,
+			      cfg->rx_buf_size, 1);
 	if (ret != OVE_OK)
 		return ret;
 
@@ -128,8 +127,8 @@ void ove_uart_destroy(ove_uart_t uart)
 
 /* ── Operations ──────────────────────────────────────────────────── */
 
-int ove_uart_write(ove_uart_t uart, const void *data, size_t len,
-		   uint32_t timeout_ms, size_t *bytes_written)
+int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+		   size_t *bytes_written)
 {
 	int ret;
 
@@ -143,14 +142,12 @@ int ove_uart_write(ove_uart_t uart, const void *data, size_t len,
 	return ret;
 }
 
-int ove_uart_read(ove_uart_t uart, void *buf, size_t len,
-		  uint32_t timeout_ms, size_t *bytes_read)
+int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint32_t timeout_ms, size_t *bytes_read)
 {
 	if (uart == NULL || buf == NULL || len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	return ove_stream_receive(uart->rx_stream, buf, len,
-				  timeout_ms, bytes_read);
+	return ove_stream_receive(uart->rx_stream, buf, len, timeout_ms, bytes_read);
 }
 
 size_t ove_uart_bytes_available(ove_uart_t uart)

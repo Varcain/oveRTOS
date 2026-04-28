@@ -27,10 +27,14 @@
 static enum pm_state to_zephyr_state(ove_pm_state_t state)
 {
 	switch (state) {
-	case OVE_PM_STATE_IDLE:       return PM_STATE_RUNTIME_IDLE;
-	case OVE_PM_STATE_STANDBY:    return PM_STATE_SUSPEND_TO_IDLE;
-	case OVE_PM_STATE_DEEP_SLEEP: return PM_STATE_STANDBY;
-	default:                      return PM_STATE_ACTIVE;
+	case OVE_PM_STATE_IDLE:
+		return PM_STATE_RUNTIME_IDLE;
+	case OVE_PM_STATE_STANDBY:
+		return PM_STATE_SUSPEND_TO_IDLE;
+	case OVE_PM_STATE_DEEP_SLEEP:
+		return PM_STATE_STANDBY;
+	default:
+		return PM_STATE_ACTIVE;
 	}
 }
 #endif

@@ -36,8 +36,8 @@ extern "C" {
  * @param[in] new_value  New pin level (0 or 1).
  * @param[in] user_data  Opaque pointer from registration.
  */
-typedef void (*ove_sim_gpio_cb)(unsigned int port, unsigned int pin,
-				int new_value, void *user_data);
+typedef void (*ove_sim_gpio_cb)(unsigned int port, unsigned int pin, int new_value,
+				void *user_data);
 
 /**
  * @brief Register an observer for a specific GPIO pin.
@@ -51,8 +51,7 @@ typedef void (*ove_sim_gpio_cb)(unsigned int port, unsigned int pin,
  * @param[in] user_data  Opaque pointer forwarded to @p cb.
  * @return 0 on success, negative error code if table full.
  */
-int ove_sim_gpio_observe(unsigned int port, unsigned int pin,
-			 ove_sim_gpio_cb cb, void *user_data);
+int ove_sim_gpio_observe(unsigned int port, unsigned int pin, ove_sim_gpio_cb cb, void *user_data);
 
 /**
  * @brief Remove an observer.
@@ -63,8 +62,8 @@ int ove_sim_gpio_observe(unsigned int port, unsigned int pin,
  * @param[in] user_data  Matching user_data pointer.
  * @return 0 on success, negative error code if not found.
  */
-int ove_sim_gpio_unobserve(unsigned int port, unsigned int pin,
-			   ove_sim_gpio_cb cb, void *user_data);
+int ove_sim_gpio_unobserve(unsigned int port, unsigned int pin, ove_sim_gpio_cb cb,
+			   void *user_data);
 
 /**
  * @brief Inject an external input value into a GPIO pin.

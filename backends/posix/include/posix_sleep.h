@@ -35,8 +35,7 @@ static inline void posix_sleep_ns(uint64_t ns)
 		target.tv_sec++;
 		target.tv_nsec -= 1000000000L;
 	}
-	while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
-			       &target, NULL) == EINTR) {
+	while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &target, NULL) == EINTR) {
 	}
 }
 

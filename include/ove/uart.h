@@ -44,20 +44,20 @@ extern "C" {
 /** @brief UART parity mode. */
 typedef enum {
 	OVE_UART_PARITY_NONE = 0,
-	OVE_UART_PARITY_ODD  = 1,
+	OVE_UART_PARITY_ODD = 1,
 	OVE_UART_PARITY_EVEN = 2,
 } ove_uart_parity_t;
 
 /** @brief UART stop-bit count. */
 typedef enum {
-	OVE_UART_STOP_1   = 0,
+	OVE_UART_STOP_1 = 0,
 	OVE_UART_STOP_1_5 = 1,
-	OVE_UART_STOP_2   = 2,
+	OVE_UART_STOP_2 = 2,
 } ove_uart_stop_t;
 
 /** @brief UART hardware flow control. */
 typedef enum {
-	OVE_UART_FLOW_NONE    = 0,
+	OVE_UART_FLOW_NONE = 0,
 	OVE_UART_FLOW_RTS_CTS = 1,
 } ove_uart_flow_t;
 
@@ -67,13 +67,13 @@ typedef enum {
  * @brief UART configuration descriptor.
  */
 struct ove_uart_cfg {
-	unsigned int      instance;     /**< Peripheral index (0, 1, 2 ...). */
-	uint32_t          baudrate;     /**< Baud rate in bps (e.g. 115200). */
-	uint8_t           data_bits;    /**< Data bits: 7, 8, or 9. */
-	ove_uart_parity_t parity;       /**< Parity mode. */
-	ove_uart_stop_t   stop_bits;    /**< Stop bit count. */
-	ove_uart_flow_t   flow_control; /**< Hardware flow control. */
-	size_t            rx_buf_size;  /**< RX ring buffer size in bytes. */
+	unsigned int instance;	      /**< Peripheral index (0, 1, 2 ...). */
+	uint32_t baudrate;	      /**< Baud rate in bps (e.g. 115200). */
+	uint8_t data_bits;	      /**< Data bits: 7, 8, or 9. */
+	ove_uart_parity_t parity;     /**< Parity mode. */
+	ove_uart_stop_t stop_bits;    /**< Stop bit count. */
+	ove_uart_flow_t flow_control; /**< Hardware flow control. */
+	size_t rx_buf_size;	      /**< RX ring buffer size in bytes. */
 };
 
 #ifdef CONFIG_OVE_UART
@@ -89,8 +89,8 @@ struct ove_uart_cfg {
  * @param[in]  cfg     UART configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage,
-		   void *rx_buf, const struct ove_uart_cfg *cfg);
+int ove_uart_init(ove_uart_t *uart, ove_uart_storage_t *storage, void *rx_buf,
+		  const struct ove_uart_cfg *cfg);
 
 /** @brief Release a UART handle previously created with `ove_uart_init`. */
 void ove_uart_deinit(ove_uart_t uart);
@@ -102,14 +102,16 @@ void ove_uart_deinit(ove_uart_t uart);
  * @param[in]  cfg  UART configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_uart_create(ove_uart_t *uart, const struct ove_uart_cfg *cfg);
+int ove_uart_create(ove_uart_t *uart, const struct ove_uart_cfg *cfg);
 /** @brief Destroy a UART handle previously created with `ove_uart_create`. */
 void ove_uart_destroy(ove_uart_t uart);
 #elif !defined(__ZIG_CIMPORT__)
-#define ove_uart_create(puart, cfg) \
-	({ static ove_uart_storage_t _ove_stor_; \
-	   static uint8_t _ove_buf_[(cfg)->rx_buf_size]; \
-	   ove_uart_init((puart), &_ove_stor_, _ove_buf_, (cfg)); })
+#define ove_uart_create(puart, cfg)                                    \
+	({                                                             \
+		static ove_uart_storage_t _ove_stor_;                  \
+		static uint8_t _ove_buf_[(cfg)->rx_buf_size];          \
+		ove_uart_init((puart), &_ove_stor_, _ove_buf_, (cfg)); \
+	})
 #define ove_uart_destroy(uart) ove_uart_deinit(uart)
 #endif
 
@@ -128,8 +130,8 @@ void ove_uart_destroy(ove_uart_t uart);
  * @param[out] bytes_written Actual bytes written, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_uart_write(ove_uart_t uart, const void *data, size_t len,
-		    uint32_t timeout_ms, size_t *bytes_written);
+int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+		   size_t *bytes_written);
 
 /**
  * @brief Read data from the UART RX buffer.
@@ -143,8 +145,7 @@ int  ove_uart_write(ove_uart_t uart, const void *data, size_t len,
  * @param[out] bytes_read   Actual bytes read, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_uart_read(ove_uart_t uart, void *buf, size_t len,
-		   uint32_t timeout_ms, size_t *bytes_read);
+int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint32_t timeout_ms, size_t *bytes_read);
 
 /**
  * @brief Query the number of bytes available in the RX buffer.
@@ -162,7 +163,7 @@ size_t ove_uart_bytes_available(ove_uart_t uart);
  * @param[in] uart  UART handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_uart_flush(ove_uart_t uart);
+int ove_uart_flush(ove_uart_t uart);
 
 /* ── ISR helper (called by backend, not by application code) ─────── */
 
@@ -180,13 +181,50 @@ void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len);
 
 #else /* !CONFIG_OVE_UART */
 
-static inline int  ove_uart_create(ove_uart_t *u, const struct ove_uart_cfg *c) { (void)u; (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_uart_destroy(ove_uart_t u) { (void)u; }
-static inline int  ove_uart_write(ove_uart_t u, const void *d, size_t l, uint32_t t, size_t *bw) { (void)u; (void)d; (void)l; (void)t; (void)bw; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_uart_read(ove_uart_t u, void *b, size_t l, uint32_t t, size_t *br) { (void)u; (void)b; (void)l; (void)t; (void)br; return OVE_ERR_NOT_SUPPORTED; }
-static inline size_t ove_uart_bytes_available(ove_uart_t u) { (void)u; return 0; }
-static inline int  ove_uart_flush(ove_uart_t u) { (void)u; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_uart_rx_isr_push(ove_uart_t u, const void *d, size_t l) { (void)u; (void)d; (void)l; }
+static inline int ove_uart_create(ove_uart_t *u, const struct ove_uart_cfg *c)
+{
+	(void)u;
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_uart_destroy(ove_uart_t u)
+{
+	(void)u;
+}
+static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint32_t t, size_t *bw)
+{
+	(void)u;
+	(void)d;
+	(void)l;
+	(void)t;
+	(void)bw;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_uart_read(ove_uart_t u, void *b, size_t l, uint32_t t, size_t *br)
+{
+	(void)u;
+	(void)b;
+	(void)l;
+	(void)t;
+	(void)br;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline size_t ove_uart_bytes_available(ove_uart_t u)
+{
+	(void)u;
+	return 0;
+}
+static inline int ove_uart_flush(ove_uart_t u)
+{
+	(void)u;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_uart_rx_isr_push(ove_uart_t u, const void *d, size_t l)
+{
+	(void)u;
+	(void)d;
+	(void)l;
+}
 
 #endif /* CONFIG_OVE_UART */
 

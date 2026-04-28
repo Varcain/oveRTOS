@@ -44,9 +44,13 @@ static void test_uart_null_params(void **state)
 {
 	(void)state;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 115200, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 115200,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	int rc = ove_uart_create(NULL, &cfg);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -57,9 +61,13 @@ static void test_uart_zero_baudrate(void **state)
 	(void)state;
 	ove_uart_t uart;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 0, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 0,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	int rc = ove_uart_create(&uart, &cfg);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -70,9 +78,13 @@ static void test_uart_read_null_buf(void **state)
 	(void)state;
 	ove_uart_t uart;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 115200, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 115200,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	ove_uart_create(&uart, &cfg);
 
@@ -81,7 +93,7 @@ static void test_uart_read_null_buf(void **state)
 
 	ove_uart_destroy(uart);
 }
-#else /* CONFIG_OVE_ZERO_HEAP — use _init with caller-supplied storage */
+#else  /* CONFIG_OVE_ZERO_HEAP — use _init with caller-supplied storage */
 OVE_UART_DEFINE(s_uart_cd, 64);
 OVE_UART_DEFINE(s_uart_rd, 64);
 
@@ -90,9 +102,13 @@ static void test_uart_create_destroy(void **state)
 	(void)state;
 	ove_uart_t uart;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 115200, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 115200,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	int rc = ove_uart_init(&uart, &s_uart_cd, s_uart_cd_rx_buf, &cfg);
 	assert_int_equal(rc, OVE_OK);
@@ -103,9 +119,13 @@ static void test_uart_null_params(void **state)
 {
 	(void)state;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 115200, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 115200,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	int rc = ove_uart_init(NULL, &s_uart_cd, s_uart_cd_rx_buf, &cfg);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -116,9 +136,13 @@ static void test_uart_zero_baudrate(void **state)
 	(void)state;
 	ove_uart_t uart;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 0, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 0,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	int rc = ove_uart_init(&uart, &s_uart_cd, s_uart_cd_rx_buf, &cfg);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
@@ -129,9 +153,13 @@ static void test_uart_read_null_buf(void **state)
 	(void)state;
 	ove_uart_t uart;
 	struct ove_uart_cfg cfg = {
-		.instance = 0, .baudrate = 115200, .data_bits = 8,
-		.parity = OVE_UART_PARITY_NONE, .stop_bits = OVE_UART_STOP_1,
-		.flow_control = OVE_UART_FLOW_NONE, .rx_buf_size = 64,
+		.instance = 0,
+		.baudrate = 115200,
+		.data_bits = 8,
+		.parity = OVE_UART_PARITY_NONE,
+		.stop_bits = OVE_UART_STOP_1,
+		.flow_control = OVE_UART_FLOW_NONE,
+		.rx_buf_size = 64,
 	};
 	ove_uart_init(&uart, &s_uart_rd, s_uart_rd_rx_buf, &cfg);
 

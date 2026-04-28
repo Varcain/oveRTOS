@@ -17,16 +17,16 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define SH_SYS_OPEN   0x01
-#define SH_SYS_CLOSE  0x02
-#define SH_SYS_WRITE  0x05
-#define SH_SYS_READ   0x06
-#define SH_SYS_SEEK   0x0A
+#define SH_SYS_OPEN 0x01
+#define SH_SYS_CLOSE 0x02
+#define SH_SYS_WRITE 0x05
+#define SH_SYS_READ 0x06
+#define SH_SYS_SEEK 0x0A
 
 static inline uint32_t sh_call(uint32_t op, void *arg)
 {
 	register uint32_t r0 __asm__("r0") = op;
-	register void    *r1 __asm__("r1") = arg;
+	register void *r1 __asm__("r1") = arg;
 	__asm__ volatile("bkpt 0xAB" : "+r"(r0) : "r"(r1) : "memory");
 	return r0;
 }

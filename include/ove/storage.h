@@ -75,47 +75,95 @@
  * the C backend mallocs real storage. */
 #include <stdint.h>
 /** @cond INTERNAL */
-typedef struct { uint8_t _opaque; } ove_mutex_storage_t;
-typedef struct { uint8_t _opaque; } ove_sem_storage_t;
-typedef struct { uint8_t _opaque; } ove_event_storage_t;
-typedef struct { uint8_t _opaque; } ove_condvar_storage_t;
-typedef struct { uint8_t _opaque; } ove_thread_storage_t;
-typedef struct { uint8_t _opaque; } ove_queue_storage_t;
-typedef struct { uint8_t _opaque; } ove_timer_storage_t;
-typedef struct { uint8_t _opaque; } ove_eventgroup_storage_t;
-typedef struct { uint8_t _opaque; } ove_workqueue_storage_t;
-typedef struct { uint8_t _opaque; } ove_work_storage_t;
-typedef struct { uint8_t _opaque; } ove_stream_storage_t;
-typedef struct { uint8_t _opaque; } ove_watchdog_storage_t;
-typedef struct { uint8_t _opaque; } ove_file_storage_t;
-typedef struct { uint8_t _opaque; } ove_dir_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_mutex_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_sem_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_event_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_condvar_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_thread_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_queue_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_timer_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_eventgroup_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_workqueue_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_work_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_stream_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_watchdog_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_file_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_dir_storage_t;
 #ifdef CONFIG_OVE_INFER
-typedef struct { uint8_t _opaque; } ove_model_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_model_storage_t;
 #endif
 #ifdef CONFIG_OVE_NET
-typedef struct { uint8_t _opaque; } ove_socket_storage_t;
-typedef struct { uint8_t _opaque; } ove_netif_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_socket_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_netif_storage_t;
 #endif
 #ifdef CONFIG_OVE_NET_TLS
-typedef struct { uint8_t _opaque; } ove_tls_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_tls_storage_t;
 #endif
 #ifdef CONFIG_OVE_NET_HTTP
-typedef struct { uint8_t _opaque; } ove_http_client_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_http_client_storage_t;
 #endif
 #ifdef CONFIG_OVE_NET_MQTT
-typedef struct { uint8_t _opaque; } ove_mqtt_client_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_mqtt_client_storage_t;
 #endif
 #ifdef CONFIG_OVE_UART
-typedef struct { uint8_t _opaque; } ove_uart_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_uart_storage_t;
 #endif
 #ifdef CONFIG_OVE_SPI
-typedef struct { uint8_t _opaque; } ove_spi_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_spi_storage_t;
 #endif
 #ifdef CONFIG_OVE_I2C
-typedef struct { uint8_t _opaque; } ove_i2c_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_i2c_storage_t;
 #endif
 #ifdef CONFIG_OVE_I2S
-typedef struct { uint8_t _opaque; } ove_i2s_storage_t;
+typedef struct {
+	uint8_t _opaque;
+} ove_i2s_storage_t;
 #endif
 /** @endcond */
 #elif defined(__ZIG_CIMPORT__) || defined(__BINDGEN__)
@@ -134,8 +182,10 @@ typedef struct { uint8_t _opaque; } ove_i2s_storage_t;
  *
  * @note This macro is an implementation detail; do not use directly.
  */
-#define OVE_OPAQUE_(name, size, align) \
-	typedef struct { _Alignas(align) uint8_t _opaque[size]; } name
+#define OVE_OPAQUE_(name, size, align)                 \
+	typedef struct {                               \
+		_Alignas(align) uint8_t _opaque[size]; \
+	} name
 
 /*
  * Sizes are generated at build time by ove_rust.cmake and injected
@@ -147,35 +197,40 @@ typedef struct { uint8_t _opaque; } ove_i2s_storage_t;
 #endif
 
 /** @cond INTERNAL */
-OVE_OPAQUE_(ove_mutex_storage_t,      OVE_SIZEOF_OVE_MUTEX_STORAGE,      OVE_ALIGNOF_OVE_MUTEX_STORAGE);
-OVE_OPAQUE_(ove_sem_storage_t,        OVE_SIZEOF_OVE_SEM_STORAGE,        OVE_ALIGNOF_OVE_SEM_STORAGE);
-OVE_OPAQUE_(ove_event_storage_t,      OVE_SIZEOF_OVE_EVENT_STORAGE,      OVE_ALIGNOF_OVE_EVENT_STORAGE);
-OVE_OPAQUE_(ove_condvar_storage_t,    OVE_SIZEOF_OVE_CONDVAR_STORAGE,    OVE_ALIGNOF_OVE_CONDVAR_STORAGE);
-OVE_OPAQUE_(ove_thread_storage_t,     OVE_SIZEOF_OVE_THREAD_STORAGE,     OVE_ALIGNOF_OVE_THREAD_STORAGE);
-OVE_OPAQUE_(ove_queue_storage_t,      OVE_SIZEOF_OVE_QUEUE_STORAGE,      OVE_ALIGNOF_OVE_QUEUE_STORAGE);
-OVE_OPAQUE_(ove_timer_storage_t,      OVE_SIZEOF_OVE_TIMER_STORAGE,      OVE_ALIGNOF_OVE_TIMER_STORAGE);
-OVE_OPAQUE_(ove_eventgroup_storage_t, OVE_SIZEOF_OVE_EVENTGROUP_STORAGE, OVE_ALIGNOF_OVE_EVENTGROUP_STORAGE);
-OVE_OPAQUE_(ove_workqueue_storage_t,  OVE_SIZEOF_OVE_WORKQUEUE_STORAGE,  OVE_ALIGNOF_OVE_WORKQUEUE_STORAGE);
-OVE_OPAQUE_(ove_work_storage_t,       OVE_SIZEOF_OVE_WORK_STORAGE,       OVE_ALIGNOF_OVE_WORK_STORAGE);
-OVE_OPAQUE_(ove_stream_storage_t,     OVE_SIZEOF_OVE_STREAM_STORAGE,     OVE_ALIGNOF_OVE_STREAM_STORAGE);
-OVE_OPAQUE_(ove_watchdog_storage_t,   OVE_SIZEOF_OVE_WATCHDOG_STORAGE,   OVE_ALIGNOF_OVE_WATCHDOG_STORAGE);
-OVE_OPAQUE_(ove_file_storage_t,       OVE_SIZEOF_OVE_FILE_STORAGE,       OVE_ALIGNOF_OVE_FILE_STORAGE);
-OVE_OPAQUE_(ove_dir_storage_t,        OVE_SIZEOF_OVE_DIR_STORAGE,        OVE_ALIGNOF_OVE_DIR_STORAGE);
+OVE_OPAQUE_(ove_mutex_storage_t, OVE_SIZEOF_OVE_MUTEX_STORAGE, OVE_ALIGNOF_OVE_MUTEX_STORAGE);
+OVE_OPAQUE_(ove_sem_storage_t, OVE_SIZEOF_OVE_SEM_STORAGE, OVE_ALIGNOF_OVE_SEM_STORAGE);
+OVE_OPAQUE_(ove_event_storage_t, OVE_SIZEOF_OVE_EVENT_STORAGE, OVE_ALIGNOF_OVE_EVENT_STORAGE);
+OVE_OPAQUE_(ove_condvar_storage_t, OVE_SIZEOF_OVE_CONDVAR_STORAGE, OVE_ALIGNOF_OVE_CONDVAR_STORAGE);
+OVE_OPAQUE_(ove_thread_storage_t, OVE_SIZEOF_OVE_THREAD_STORAGE, OVE_ALIGNOF_OVE_THREAD_STORAGE);
+OVE_OPAQUE_(ove_queue_storage_t, OVE_SIZEOF_OVE_QUEUE_STORAGE, OVE_ALIGNOF_OVE_QUEUE_STORAGE);
+OVE_OPAQUE_(ove_timer_storage_t, OVE_SIZEOF_OVE_TIMER_STORAGE, OVE_ALIGNOF_OVE_TIMER_STORAGE);
+OVE_OPAQUE_(ove_eventgroup_storage_t, OVE_SIZEOF_OVE_EVENTGROUP_STORAGE,
+	    OVE_ALIGNOF_OVE_EVENTGROUP_STORAGE);
+OVE_OPAQUE_(ove_workqueue_storage_t, OVE_SIZEOF_OVE_WORKQUEUE_STORAGE,
+	    OVE_ALIGNOF_OVE_WORKQUEUE_STORAGE);
+OVE_OPAQUE_(ove_work_storage_t, OVE_SIZEOF_OVE_WORK_STORAGE, OVE_ALIGNOF_OVE_WORK_STORAGE);
+OVE_OPAQUE_(ove_stream_storage_t, OVE_SIZEOF_OVE_STREAM_STORAGE, OVE_ALIGNOF_OVE_STREAM_STORAGE);
+OVE_OPAQUE_(ove_watchdog_storage_t, OVE_SIZEOF_OVE_WATCHDOG_STORAGE,
+	    OVE_ALIGNOF_OVE_WATCHDOG_STORAGE);
+OVE_OPAQUE_(ove_file_storage_t, OVE_SIZEOF_OVE_FILE_STORAGE, OVE_ALIGNOF_OVE_FILE_STORAGE);
+OVE_OPAQUE_(ove_dir_storage_t, OVE_SIZEOF_OVE_DIR_STORAGE, OVE_ALIGNOF_OVE_DIR_STORAGE);
 #if defined(CONFIG_OVE_INFER) && defined(OVE_SIZEOF_OVE_MODEL_STORAGE)
-OVE_OPAQUE_(ove_model_storage_t,     OVE_SIZEOF_OVE_MODEL_STORAGE,      OVE_ALIGNOF_OVE_MODEL_STORAGE);
+OVE_OPAQUE_(ove_model_storage_t, OVE_SIZEOF_OVE_MODEL_STORAGE, OVE_ALIGNOF_OVE_MODEL_STORAGE);
 #endif
 #if defined(CONFIG_OVE_NET) && defined(OVE_SIZEOF_OVE_SOCKET_STORAGE)
-OVE_OPAQUE_(ove_socket_storage_t,    OVE_SIZEOF_OVE_SOCKET_STORAGE,     OVE_ALIGNOF_OVE_SOCKET_STORAGE);
-OVE_OPAQUE_(ove_netif_storage_t,     OVE_SIZEOF_OVE_NETIF_STORAGE,      OVE_ALIGNOF_OVE_NETIF_STORAGE);
+OVE_OPAQUE_(ove_socket_storage_t, OVE_SIZEOF_OVE_SOCKET_STORAGE, OVE_ALIGNOF_OVE_SOCKET_STORAGE);
+OVE_OPAQUE_(ove_netif_storage_t, OVE_SIZEOF_OVE_NETIF_STORAGE, OVE_ALIGNOF_OVE_NETIF_STORAGE);
 #endif
 #if defined(CONFIG_OVE_NET_TLS) && defined(OVE_SIZEOF_OVE_TLS_STORAGE)
-OVE_OPAQUE_(ove_tls_storage_t,       OVE_SIZEOF_OVE_TLS_STORAGE,        OVE_ALIGNOF_OVE_TLS_STORAGE);
+OVE_OPAQUE_(ove_tls_storage_t, OVE_SIZEOF_OVE_TLS_STORAGE, OVE_ALIGNOF_OVE_TLS_STORAGE);
 #endif
 #if defined(CONFIG_OVE_NET_HTTP) && defined(OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE)
-OVE_OPAQUE_(ove_http_client_storage_t, OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE, OVE_ALIGNOF_OVE_HTTP_CLIENT_STORAGE);
+OVE_OPAQUE_(ove_http_client_storage_t, OVE_SIZEOF_OVE_HTTP_CLIENT_STORAGE,
+	    OVE_ALIGNOF_OVE_HTTP_CLIENT_STORAGE);
 #endif
 #if defined(CONFIG_OVE_NET_MQTT) && defined(OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE)
-OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE, OVE_ALIGNOF_OVE_MQTT_CLIENT_STORAGE);
+OVE_OPAQUE_(ove_mqtt_client_storage_t, OVE_SIZEOF_OVE_MQTT_CLIENT_STORAGE,
+	    OVE_ALIGNOF_OVE_MQTT_CLIENT_STORAGE);
 #endif
 #if defined(CONFIG_OVE_UART) && defined(OVE_SIZEOF_OVE_UART_STORAGE)
 OVE_OPAQUE_(ove_uart_storage_t, OVE_SIZEOF_OVE_UART_STORAGE, OVE_ALIGNOF_OVE_UART_STORAGE);
@@ -223,26 +278,26 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @{
  */
 #if !defined(CONFIG_OVE_ZERO_HEAP)
-#define OVE_HEAP_SYNC       1 /**< Synchronisation primitives support heap allocation. */
-#define OVE_HEAP_THREAD     1 /**< Threads support heap allocation. */
-#define OVE_HEAP_QUEUE      1 /**< Queues support heap allocation. */
-#define OVE_HEAP_TIMER      1 /**< Timers support heap allocation. */
+#define OVE_HEAP_SYNC 1	      /**< Synchronisation primitives support heap allocation. */
+#define OVE_HEAP_THREAD 1     /**< Threads support heap allocation. */
+#define OVE_HEAP_QUEUE 1      /**< Queues support heap allocation. */
+#define OVE_HEAP_TIMER 1      /**< Timers support heap allocation. */
 #define OVE_HEAP_EVENTGROUP 1 /**< Event groups support heap allocation. */
-#define OVE_HEAP_WORKQUEUE  1 /**< Work queues support heap allocation. */
-#define OVE_HEAP_STREAM     1 /**< Stream buffers support heap allocation. */
-#define OVE_HEAP_WATCHDOG   1 /**< Watchdog timers support heap allocation. */
-#define OVE_HEAP_FS         1 /**< Filesystem handles support heap allocation. */
-#define OVE_HEAP_AUDIO      1 /**< Built-in audio utility node factories and graph buffer storage. */
-#define OVE_HEAP_INFER      1 /**< ML inference sessions support heap allocation. */
-#define OVE_HEAP_NET        1 /**< Sockets and network interfaces support heap allocation. */
-#define OVE_HEAP_NET_TLS    1 /**< TLS sessions support heap allocation. */
-#define OVE_HEAP_NET_HTTP   1 /**< HTTP clients support heap allocation. */
-#define OVE_HEAP_NET_MQTT   1 /**< MQTT clients support heap allocation. */
-#define OVE_HEAP_UART       1 /**< UART peripherals support heap allocation. */
-#define OVE_HEAP_SPI        1 /**< SPI bus controllers support heap allocation. */
-#define OVE_HEAP_I2C        1 /**< I2C bus controllers support heap allocation. */
-#define OVE_HEAP_I2S        1 /**< I2S audio bus controllers support heap allocation. */
-#endif /* !CONFIG_OVE_ZERO_HEAP */
+#define OVE_HEAP_WORKQUEUE 1  /**< Work queues support heap allocation. */
+#define OVE_HEAP_STREAM 1     /**< Stream buffers support heap allocation. */
+#define OVE_HEAP_WATCHDOG 1   /**< Watchdog timers support heap allocation. */
+#define OVE_HEAP_FS 1	      /**< Filesystem handles support heap allocation. */
+#define OVE_HEAP_AUDIO 1    /**< Built-in audio utility node factories and graph buffer storage. */
+#define OVE_HEAP_INFER 1    /**< ML inference sessions support heap allocation. */
+#define OVE_HEAP_NET 1	    /**< Sockets and network interfaces support heap allocation. */
+#define OVE_HEAP_NET_TLS 1  /**< TLS sessions support heap allocation. */
+#define OVE_HEAP_NET_HTTP 1 /**< HTTP clients support heap allocation. */
+#define OVE_HEAP_NET_MQTT 1 /**< MQTT clients support heap allocation. */
+#define OVE_HEAP_UART 1	    /**< UART peripherals support heap allocation. */
+#define OVE_HEAP_SPI 1	    /**< SPI bus controllers support heap allocation. */
+#define OVE_HEAP_I2C 1	    /**< I2C bus controllers support heap allocation. */
+#define OVE_HEAP_I2S 1	    /**< I2S audio bus controllers support heap allocation. */
+#endif			    /* !CONFIG_OVE_ZERO_HEAP */
 /** @} */
 
 /**
@@ -277,26 +332,22 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 /**
  * @brief Declare a static mutex storage variable named @p name.
  */
-#define OVE_MUTEX_DEFINE(name) \
-	static ove_mutex_storage_t name
+#define OVE_MUTEX_DEFINE(name) static ove_mutex_storage_t name
 
 /**
  * @brief Declare a static semaphore storage variable named @p name.
  */
-#define OVE_SEM_DEFINE(name) \
-	static ove_sem_storage_t name
+#define OVE_SEM_DEFINE(name) static ove_sem_storage_t name
 
 /**
  * @brief Declare a static event storage variable named @p name.
  */
-#define OVE_EVENT_DEFINE(name) \
-	static ove_event_storage_t name
+#define OVE_EVENT_DEFINE(name) static ove_event_storage_t name
 
 /**
  * @brief Declare a static condition variable storage variable named @p name.
  */
-#define OVE_CONDVAR_DEFINE(name) \
-	static ove_condvar_storage_t name
+#define OVE_CONDVAR_DEFINE(name) static ove_condvar_storage_t name
 
 /* Backend-specific thread stack definition (Zephyr needs K_THREAD_STACK_DEFINE) */
 #ifndef OVE_THREAD_STACK_DEFINE_
@@ -305,8 +356,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @note Overridden by backends that require special alignment (e.g. Zephyr MPU).
  */
-#define OVE_THREAD_STACK_DEFINE_(name, size) \
-	static uint8_t name[(size)]
+#define OVE_THREAD_STACK_DEFINE_(name, size) static uint8_t name[(size)]
 #endif
 
 /* File-static variant of the above — for stacks that need internal linkage
@@ -345,8 +395,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *       if a caller bypasses this macro with a hand-rolled array.
  * @note Overridden by backends that require special alignment (e.g. Zephyr MPU).
  */
-#define OVE_THREAD_STACK_MEMBER_(name, size) \
-	uint8_t __attribute__((aligned(8))) name[size]
+#define OVE_THREAD_STACK_MEMBER_(name, size) uint8_t __attribute__((aligned(8))) name[size]
 #endif
 
 /**
@@ -356,7 +405,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param stack_size_bytes Stack size in bytes.
  */
 #define OVE_THREAD_DEFINE(name, stack_size_bytes) \
-	static ove_thread_storage_t name; \
+	static ove_thread_storage_t name;         \
 	OVE_THREAD_STACK_DEFINE_(name##_stack, stack_size_bytes)
 
 /**
@@ -367,20 +416,18 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param max     Maximum number of items in the queue.
  */
 #define OVE_QUEUE_DEFINE(name, item_sz, max) \
-	static ove_queue_storage_t name; \
+	static ove_queue_storage_t name;     \
 	static uint8_t name##_buffer[(item_sz) * (max)]
 
 /**
  * @brief Declare a static timer storage variable named @p name.
  */
-#define OVE_TIMER_DEFINE(name) \
-	static ove_timer_storage_t name
+#define OVE_TIMER_DEFINE(name) static ove_timer_storage_t name
 
 /**
  * @brief Declare a static event group storage variable named @p name.
  */
-#define OVE_EVENTGROUP_DEFINE(name) \
-	static ove_eventgroup_storage_t name
+#define OVE_EVENTGROUP_DEFINE(name) static ove_eventgroup_storage_t name
 
 /**
  * @brief Declare a static work queue storage variable and its stack.
@@ -389,7 +436,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param stack_size_bytes Stack size in bytes for the work queue thread.
  */
 #define OVE_WORKQUEUE_DEFINE(name, stack_size_bytes) \
-	static ove_workqueue_storage_t name; \
+	static ove_workqueue_storage_t name;         \
 	OVE_THREAD_STACK_DEFINE_(name##_stack, stack_size_bytes)
 
 /**
@@ -405,21 +452,18 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 /**
  * @brief Declare a static watchdog storage variable named @p name.
  */
-#define OVE_WATCHDOG_DEFINE(name) \
-	static ove_watchdog_storage_t name
+#define OVE_WATCHDOG_DEFINE(name) static ove_watchdog_storage_t name
 
 #ifdef CONFIG_OVE_INFER
 /**
  * @brief Declare a static model storage variable named @p name.
  */
-#define OVE_MODEL_DEFINE(name) \
-	static ove_model_storage_t name
+#define OVE_MODEL_DEFINE(name) static ove_model_storage_t name
 
 /**
  * @brief Declare a 16-byte-aligned static tensor arena of @p size bytes.
  */
-#define OVE_MODEL_ARENA_DEFINE(name, size) \
-	static uint8_t __attribute__((aligned(16))) name[(size)]
+#define OVE_MODEL_ARENA_DEFINE(name, size) static uint8_t __attribute__((aligned(16))) name[(size)]
 #endif /* CONFIG_OVE_INFER */
 
 #ifdef CONFIG_OVE_UART
@@ -430,7 +474,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param rx_buf_size RX ring buffer capacity in bytes.
  */
 #define OVE_UART_DEFINE(name, rx_buf_size) \
-	static ove_uart_storage_t name; \
+	static ove_uart_storage_t name;    \
 	static uint8_t name##_rx_buf[(rx_buf_size)]
 #endif /* CONFIG_OVE_UART */
 
@@ -438,16 +482,14 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 /**
  * @brief Declare a static SPI storage variable named @p name.
  */
-#define OVE_SPI_DEFINE(name) \
-	static ove_spi_storage_t name
+#define OVE_SPI_DEFINE(name) static ove_spi_storage_t name
 #endif /* CONFIG_OVE_SPI */
 
 #ifdef CONFIG_OVE_I2C
 /**
  * @brief Declare a static I2C storage variable named @p name.
  */
-#define OVE_I2C_DEFINE(name) \
-	static ove_i2c_storage_t name
+#define OVE_I2C_DEFINE(name) static ove_i2c_storage_t name
 #endif /* CONFIG_OVE_I2C */
 
 /** @} */ /* ove_storage_define */
@@ -476,13 +518,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 
 /** @cond INTERNAL */
 /* Helper: constructor preamble */
-#define OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-	__attribute__((used)) \
-	static void __attribute__((constructor)) \
-	_##name##_ctor(void) {
-
-#define OVE_DEFINE_STATIC_CTOR_END_(name) \
-		OVE_STATIC_INIT_ASSERT(_err == OVE_OK); \
+#define OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                                 \
+	__attribute__((used)) static void __attribute__((constructor)) _##name##_ctor(void) \
+	{
+#define OVE_DEFINE_STATIC_CTOR_END_(name)       \
+	OVE_STATIC_INIT_ASSERT(_err == OVE_OK); \
 	}
 /** @endcond */
 
@@ -494,11 +534,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_mutex_t handle.
  */
-#define OVE_MUTEX_DEFINE_STATIC(name) \
-	static ove_mutex_storage_t _##name##_storage; \
-	static ove_mutex_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_mutex_init(&name, &_##name##_storage); \
+#define OVE_MUTEX_DEFINE_STATIC(name)                         \
+	static ove_mutex_storage_t _##name##_storage;         \
+	static ove_mutex_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                   \
+	int _err = ove_mutex_init(&name, &_##name##_storage); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -506,12 +546,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_mutex_t handle.
  */
-#define OVE_RECURSIVE_MUTEX_DEFINE_STATIC(name) \
-	static ove_mutex_storage_t _##name##_storage; \
-	static ove_mutex_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_recursive_mutex_init(&name, \
-			&_##name##_storage); \
+#define OVE_RECURSIVE_MUTEX_DEFINE_STATIC(name)                         \
+	static ove_mutex_storage_t _##name##_storage;                   \
+	static ove_mutex_t name;                                        \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                             \
+	int _err = ove_recursive_mutex_init(&name, &_##name##_storage); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -521,12 +560,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param initial  Initial semaphore count.
  * @param max      Maximum semaphore count.
  */
-#define OVE_SEM_DEFINE_STATIC(name, initial, max) \
-	static ove_sem_storage_t _##name##_storage; \
-	static ove_sem_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_sem_init(&name, &_##name##_storage, \
-			(initial), (max)); \
+#define OVE_SEM_DEFINE_STATIC(name, initial, max)                             \
+	static ove_sem_storage_t _##name##_storage;                           \
+	static ove_sem_t name;                                                \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                   \
+	int _err = ove_sem_init(&name, &_##name##_storage, (initial), (max)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -534,11 +572,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_event_t handle.
  */
-#define OVE_EVENT_DEFINE_STATIC(name) \
-	static ove_event_storage_t _##name##_storage; \
-	static ove_event_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_event_init(&name, &_##name##_storage); \
+#define OVE_EVENT_DEFINE_STATIC(name)                         \
+	static ove_event_storage_t _##name##_storage;         \
+	static ove_event_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                   \
+	int _err = ove_event_init(&name, &_##name##_storage); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -546,11 +584,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_condvar_t handle.
  */
-#define OVE_CONDVAR_DEFINE_STATIC(name) \
-	static ove_condvar_storage_t _##name##_storage; \
-	static ove_condvar_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_condvar_init(&name, &_##name##_storage); \
+#define OVE_CONDVAR_DEFINE_STATIC(name)                         \
+	static ove_condvar_storage_t _##name##_storage;         \
+	static ove_condvar_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                     \
+	int _err = ove_condvar_init(&name, &_##name##_storage); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -563,21 +601,20 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param prio      Thread priority.
  * @param tname     Human-readable thread name string.
  */
-#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname) \
-	static ove_thread_storage_t _##hname##_storage; \
-	OVE_THREAD_STACK_DEFINE_(_##hname##_stack, stack_sz); \
-	static ove_thread_t hname; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname) \
-		struct ove_thread_desc _desc = { \
-			.name = (tname), \
-			.entry = (fn), \
-			.arg = (ctx), \
-			.priority = (prio), \
-			.stack_size = (stack_sz), \
-			.stack = _##hname##_stack, \
-		}; \
-		int _err = ove_thread_init(&hname, \
-			&_##hname##_storage, &_desc); \
+#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname)  \
+	static ove_thread_storage_t _##hname##_storage;                  \
+	OVE_THREAD_STACK_DEFINE_(_##hname##_stack, stack_sz);            \
+	static ove_thread_t hname;                                       \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                             \
+	struct ove_thread_desc _desc = {                                 \
+		.name = (tname),                                         \
+		.entry = (fn),                                           \
+		.arg = (ctx),                                            \
+		.priority = (prio),                                      \
+		.stack_size = (stack_sz),                                \
+		.stack = _##hname##_stack,                               \
+	};                                                               \
+	int _err = ove_thread_init(&hname, &_##hname##_storage, &_desc); \
 	OVE_DEFINE_STATIC_CTOR_END_(hname)
 
 /**
@@ -587,13 +624,12 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param item_sz  Size of each queue item in bytes.
  * @param max      Maximum number of items in the queue.
  */
-#define OVE_QUEUE_DEFINE_STATIC(name, item_sz, max) \
-	static ove_queue_storage_t _##name##_storage; \
-	static uint8_t _##name##_buf[(item_sz) * (max)]; \
-	static ove_queue_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_queue_init(&name, &_##name##_storage, \
-			_##name##_buf, (item_sz), (max)); \
+#define OVE_QUEUE_DEFINE_STATIC(name, item_sz, max)                                            \
+	static ove_queue_storage_t _##name##_storage;                                          \
+	static uint8_t _##name##_buf[(item_sz) * (max)];                                       \
+	static ove_queue_t name;                                                               \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                                    \
+	int _err = ove_queue_init(&name, &_##name##_storage, _##name##_buf, (item_sz), (max)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -605,12 +641,12 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param period_ms  Timer period in milliseconds.
  * @param one_shot   Non-zero for a one-shot timer, zero for periodic.
  */
-#define OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot) \
-	static ove_timer_storage_t _##name##_storage; \
-	static ove_timer_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_timer_init(&name, &_##name##_storage, \
-			(cb), (user_data), (period_ms), (one_shot)); \
+#define OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot)                    \
+	static ove_timer_storage_t _##name##_storage;                                        \
+	static ove_timer_t name;                                                             \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                                  \
+	int _err = ove_timer_init(&name, &_##name##_storage, (cb), (user_data), (period_ms), \
+				  (one_shot));                                               \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -618,12 +654,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_eventgroup_t handle.
  */
-#define OVE_EVENTGROUP_DEFINE_STATIC(name) \
-	static ove_eventgroup_storage_t _##name##_storage; \
-	static ove_eventgroup_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_eventgroup_init(&name, \
-			&_##name##_storage); \
+#define OVE_EVENTGROUP_DEFINE_STATIC(name)                         \
+	static ove_eventgroup_storage_t _##name##_storage;         \
+	static ove_eventgroup_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                        \
+	int _err = ove_eventgroup_init(&name, &_##name##_storage); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -634,14 +669,13 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param wq_name   Human-readable work queue name string.
  * @param prio      Thread priority for the work queue thread.
  */
-#define OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio) \
-	static ove_workqueue_storage_t _##name##_storage; \
-	OVE_THREAD_STACK_DEFINE_(_##name##_stack, (stack_sz)); \
-	static ove_workqueue_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_workqueue_init(&name, \
-			&_##name##_storage, (wq_name), (prio), \
-			(stack_sz), _##name##_stack); \
+#define OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio)                              \
+	static ove_workqueue_storage_t _##name##_storage;                                       \
+	OVE_THREAD_STACK_DEFINE_(_##name##_stack, (stack_sz));                                  \
+	static ove_workqueue_t name;                                                            \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                                     \
+	int _err = ove_workqueue_init(&name, &_##name##_storage, (wq_name), (prio), (stack_sz), \
+				      _##name##_stack);                                         \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -650,12 +684,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param name     Variable name for the resulting @c ove_work_t handle.
  * @param handler  Work handler function invoked when the item is executed.
  */
-#define OVE_WORK_DEFINE_STATIC(name, handler) \
-	static ove_work_storage_t _##name##_storage; \
-	static ove_work_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_work_init_static(&name, \
-			&_##name##_storage, (handler)); \
+#define OVE_WORK_DEFINE_STATIC(name, handler)                                  \
+	static ove_work_storage_t _##name##_storage;                           \
+	static ove_work_t name;                                                \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                    \
+	int _err = ove_work_init_static(&name, &_##name##_storage, (handler)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -665,13 +698,12 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param buf_sz   Stream buffer capacity in bytes.
  * @param trigger  Minimum bytes required before a blocked reader is unblocked.
  */
-#define OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger) \
-	static ove_stream_storage_t _##name##_storage; \
-	static uint8_t _##name##_buf[(buf_sz) + 1]; \
-	static ove_stream_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_stream_init(&name, &_##name##_storage, \
-			_##name##_buf, (buf_sz), (trigger)); \
+#define OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger)                                            \
+	static ove_stream_storage_t _##name##_storage;                                             \
+	static uint8_t _##name##_buf[(buf_sz) + 1];                                                \
+	static ove_stream_t name;                                                                  \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                                        \
+	int _err = ove_stream_init(&name, &_##name##_storage, _##name##_buf, (buf_sz), (trigger)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -680,12 +712,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param name        Variable name for the resulting @c ove_watchdog_t handle.
  * @param timeout_ms  Watchdog timeout in milliseconds.
  */
-#define OVE_WATCHDOG_DEFINE_STATIC(name, timeout_ms) \
-	static ove_watchdog_storage_t _##name##_storage; \
-	static ove_watchdog_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_watchdog_init(&name, \
-			&_##name##_storage, (timeout_ms)); \
+#define OVE_WATCHDOG_DEFINE_STATIC(name, timeout_ms)                           \
+	static ove_watchdog_storage_t _##name##_storage;                       \
+	static ove_watchdog_t name;                                            \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                    \
+	int _err = ove_watchdog_init(&name, &_##name##_storage, (timeout_ms)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 #ifdef CONFIG_OVE_INFER
@@ -697,18 +728,17 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param model_sz    Size of the FlatBuffer in bytes.
  * @param arena_sz    Tensor arena size in bytes (must be compile-time constant).
  */
-#define OVE_MODEL_DEFINE_STATIC(name, model_ptr, model_sz, arena_sz) \
-	static ove_model_storage_t _##name##_storage; \
-	static uint8_t __attribute__((aligned(16))) _##name##_arena[(arena_sz)]; \
-	static ove_model_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		struct ove_model_config _cfg = { \
-			.model_data = (model_ptr), \
-			.model_size = (model_sz), \
-			.arena_size = (arena_sz), \
-		}; \
-		int _err = ove_model_init(&name, \
-			&_##name##_storage, _##name##_arena, &_cfg); \
+#define OVE_MODEL_DEFINE_STATIC(name, model_ptr, model_sz, arena_sz)                  \
+	static ove_model_storage_t _##name##_storage;                                 \
+	static uint8_t __attribute__((aligned(16))) _##name##_arena[(arena_sz)];      \
+	static ove_model_t name;                                                      \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                           \
+	struct ove_model_config _cfg = {                                              \
+		.model_data = (model_ptr),                                            \
+		.model_size = (model_sz),                                             \
+		.arena_size = (arena_sz),                                             \
+	};                                                                            \
+	int _err = ove_model_init(&name, &_##name##_storage, _##name##_arena, &_cfg); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_INFER */
 
@@ -720,15 +750,15 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param inst      Peripheral instance index.
  * @param spd       Bus speed (@c ove_i2c_speed_t).
  */
-#define OVE_I2C_DEFINE_STATIC(name, inst, spd) \
-	static ove_i2c_storage_t _##name##_storage; \
-	static ove_i2c_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		struct ove_i2c_cfg _cfg = { \
-			.instance = (inst), .speed = (spd), \
-		}; \
-		int _err = ove_i2c_init(&name, \
-			&_##name##_storage, &_cfg); \
+#define OVE_I2C_DEFINE_STATIC(name, inst, spd)                     \
+	static ove_i2c_storage_t _##name##_storage;                \
+	static ove_i2c_t name;                                     \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                        \
+	struct ove_i2c_cfg _cfg = {                                \
+		.instance = (inst),                                \
+		.speed = (spd),                                    \
+	};                                                         \
+	int _err = ove_i2c_init(&name, &_##name##_storage, &_cfg); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_I2C */
 
@@ -739,12 +769,11 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param name      Variable name for the resulting @c ove_spi_t handle.
  * @param cfg_ptr   Pointer to a @c struct ove_spi_cfg.
  */
-#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr) \
-	static ove_spi_storage_t _##name##_storage; \
-	static ove_spi_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_spi_init(&name, \
-			&_##name##_storage, (cfg_ptr)); \
+#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr)                           \
+	static ove_spi_storage_t _##name##_storage;                    \
+	static ove_spi_t name;                                         \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                            \
+	int _err = ove_spi_init(&name, &_##name##_storage, (cfg_ptr)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_SPI */
 
@@ -756,13 +785,12 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param rx_buf_sz  RX buffer size in bytes (must be compile-time constant).
  * @param cfg_ptr    Pointer to a @c struct ove_uart_cfg.
  */
-#define OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr) \
-	static ove_uart_storage_t _##name##_storage; \
-	static uint8_t _##name##_rx_buf[(rx_buf_sz)]; \
-	static ove_uart_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_uart_init(&name, \
-			&_##name##_storage, _##name##_rx_buf, (cfg_ptr)); \
+#define OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr)                                  \
+	static ove_uart_storage_t _##name##_storage;                                      \
+	static uint8_t _##name##_rx_buf[(rx_buf_sz)];                                     \
+	static ove_uart_t name;                                                           \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                               \
+	int _err = ove_uart_init(&name, &_##name##_storage, _##name##_rx_buf, (cfg_ptr)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_UART */
 
@@ -774,10 +802,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_mutex_t handle.
  */
-#define OVE_MUTEX_DEFINE_STATIC(name) \
-	static ove_mutex_t name; \
+#define OVE_MUTEX_DEFINE_STATIC(name)       \
+	static ove_mutex_t name;            \
 	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_mutex_create(&name); \
+	int _err = ove_mutex_create(&name); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -785,10 +813,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_mutex_t handle.
  */
-#define OVE_RECURSIVE_MUTEX_DEFINE_STATIC(name) \
-	static ove_mutex_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_recursive_mutex_create(&name); \
+#define OVE_RECURSIVE_MUTEX_DEFINE_STATIC(name)       \
+	static ove_mutex_t name;                      \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)           \
+	int _err = ove_recursive_mutex_create(&name); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -798,10 +826,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param initial  Initial semaphore count.
  * @param max      Maximum semaphore count.
  */
-#define OVE_SEM_DEFINE_STATIC(name, initial, max) \
-	static ove_sem_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_sem_create(&name, (initial), (max)); \
+#define OVE_SEM_DEFINE_STATIC(name, initial, max)           \
+	static ove_sem_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                 \
+	int _err = ove_sem_create(&name, (initial), (max)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -809,10 +837,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_event_t handle.
  */
-#define OVE_EVENT_DEFINE_STATIC(name) \
-	static ove_event_t name; \
+#define OVE_EVENT_DEFINE_STATIC(name)       \
+	static ove_event_t name;            \
 	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_event_create(&name); \
+	int _err = ove_event_create(&name); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -820,10 +848,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_condvar_t handle.
  */
-#define OVE_CONDVAR_DEFINE_STATIC(name) \
-	static ove_condvar_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_condvar_create(&name); \
+#define OVE_CONDVAR_DEFINE_STATIC(name)       \
+	static ove_condvar_t name;            \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)   \
+	int _err = ove_condvar_create(&name); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -837,16 +865,16 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param tname     Human-readable thread name string.
  */
 #define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname) \
-	static ove_thread_t hname; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname) \
-		struct ove_thread_desc _desc = { \
-			.name = (tname), \
-			.entry = (fn), \
-			.arg = (ctx), \
-			.priority = (prio), \
-			.stack_size = (stack_sz), \
-		}; \
-		int _err = ove_thread_create_(&hname, &_desc); \
+	static ove_thread_t hname;                                      \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                            \
+	struct ove_thread_desc _desc = {                                \
+		.name = (tname),                                        \
+		.entry = (fn),                                          \
+		.arg = (ctx),                                           \
+		.priority = (prio),                                     \
+		.stack_size = (stack_sz),                               \
+	};                                                              \
+	int _err = ove_thread_create_(&hname, &_desc);                  \
 	OVE_DEFINE_STATIC_CTOR_END_(hname)
 
 /**
@@ -856,10 +884,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param item_sz  Size of each queue item in bytes.
  * @param max      Maximum number of items in the queue.
  */
-#define OVE_QUEUE_DEFINE_STATIC(name, item_sz, max) \
-	static ove_queue_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_queue_create(&name, (item_sz), (max)); \
+#define OVE_QUEUE_DEFINE_STATIC(name, item_sz, max)           \
+	static ove_queue_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                   \
+	int _err = ove_queue_create(&name, (item_sz), (max)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -871,11 +899,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param period_ms  Timer period in milliseconds.
  * @param one_shot   Non-zero for a one-shot timer, zero for periodic.
  */
-#define OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot) \
-	static ove_timer_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_timer_create(&name, \
-			(cb), (user_data), (period_ms), (one_shot)); \
+#define OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot)               \
+	static ove_timer_t name;                                                        \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                             \
+	int _err = ove_timer_create(&name, (cb), (user_data), (period_ms), (one_shot)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -883,10 +910,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * @param name  Variable name for the resulting @c ove_eventgroup_t handle.
  */
-#define OVE_EVENTGROUP_DEFINE_STATIC(name) \
-	static ove_eventgroup_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_eventgroup_create(&name); \
+#define OVE_EVENTGROUP_DEFINE_STATIC(name)       \
+	static ove_eventgroup_t name;            \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)      \
+	int _err = ove_eventgroup_create(&name); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -897,11 +924,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param wq_name   Human-readable work queue name string.
  * @param prio      Thread priority for the work queue thread.
  */
-#define OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio) \
-	static ove_workqueue_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_workqueue_create(&name, \
-			(wq_name), (prio), (stack_sz)); \
+#define OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio)             \
+	static ove_workqueue_t name;                                           \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                    \
+	int _err = ove_workqueue_create(&name, (wq_name), (prio), (stack_sz)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -910,10 +936,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param name     Variable name for the resulting @c ove_work_t handle.
  * @param handler  Work handler function invoked when the item is executed.
  */
-#define OVE_WORK_DEFINE_STATIC(name, handler) \
-	static ove_work_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_work_init(&name, (handler)); \
+#define OVE_WORK_DEFINE_STATIC(name, handler)       \
+	static ove_work_t name;                     \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)         \
+	int _err = ove_work_init(&name, (handler)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -923,11 +949,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param buf_sz   Stream buffer capacity in bytes.
  * @param trigger  Minimum bytes required before a blocked reader is unblocked.
  */
-#define OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger) \
-	static ove_stream_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_stream_create(&name, \
-			(buf_sz), (trigger)); \
+#define OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger)           \
+	static ove_stream_t name;                                 \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                       \
+	int _err = ove_stream_create(&name, (buf_sz), (trigger)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 /**
@@ -936,10 +961,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param name        Variable name for the resulting @c ove_watchdog_t handle.
  * @param timeout_ms  Watchdog timeout in milliseconds.
  */
-#define OVE_WATCHDOG_DEFINE_STATIC(name, timeout_ms) \
-	static ove_watchdog_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_watchdog_create(&name, (timeout_ms)); \
+#define OVE_WATCHDOG_DEFINE_STATIC(name, timeout_ms)         \
+	static ove_watchdog_t name;                          \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                  \
+	int _err = ove_watchdog_create(&name, (timeout_ms)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 
 #ifdef CONFIG_OVE_INFER
@@ -952,14 +977,14 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param arena_sz    Tensor arena size in bytes.
  */
 #define OVE_MODEL_DEFINE_STATIC(name, model_ptr, model_sz, arena_sz) \
-	static ove_model_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		struct ove_model_config _cfg = { \
-			.model_data = (model_ptr), \
-			.model_size = (model_sz), \
-			.arena_size = (arena_sz), \
-		}; \
-		int _err = ove_model_create(&name, &_cfg); \
+	static ove_model_t name;                                     \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                          \
+	struct ove_model_config _cfg = {                             \
+		.model_data = (model_ptr),                           \
+		.model_size = (model_sz),                            \
+		.arena_size = (arena_sz),                            \
+	};                                                           \
+	int _err = ove_model_create(&name, &_cfg);                   \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_INFER */
 
@@ -971,13 +996,14 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param inst  Peripheral instance index.
  * @param spd   Bus speed (@c ove_i2c_speed_t).
  */
-#define OVE_I2C_DEFINE_STATIC(name, inst, spd) \
-	static ove_i2c_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		struct ove_i2c_cfg _cfg = { \
-			.instance = (inst), .speed = (spd), \
-		}; \
-		int _err = ove_i2c_create(&name, &_cfg); \
+#define OVE_I2C_DEFINE_STATIC(name, inst, spd)   \
+	static ove_i2c_t name;                   \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)      \
+	struct ove_i2c_cfg _cfg = {              \
+		.instance = (inst),              \
+		.speed = (spd),                  \
+	};                                       \
+	int _err = ove_i2c_create(&name, &_cfg); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_I2C */
 
@@ -988,10 +1014,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param name     Variable name for the resulting @c ove_spi_t handle.
  * @param cfg_ptr  Pointer to a @c struct ove_spi_cfg.
  */
-#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr) \
-	static ove_spi_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		int _err = ove_spi_create(&name, (cfg_ptr)); \
+#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr)         \
+	static ove_spi_t name;                       \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)          \
+	int _err = ove_spi_create(&name, (cfg_ptr)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_SPI */
 
@@ -1004,10 +1030,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param cfg_ptr   Pointer to a @c struct ove_uart_cfg.
  */
 #define OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr) \
-	static ove_uart_t name; \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-		(void)(rx_buf_sz); \
-		int _err = ove_uart_create(&name, (cfg_ptr)); \
+	static ove_uart_t name;                          \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)              \
+	(void)(rx_buf_sz);                               \
+	int _err = ove_uart_create(&name, (cfg_ptr));    \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_UART */
 

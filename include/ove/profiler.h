@@ -86,13 +86,29 @@ size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max);
 
 #else
 
-static inline int  ove_backend_profiler_start(void) { return 0; }
-static inline void ove_backend_profiler_sample_tick(void) { }
-static inline void ove_backend_profiler_stop(void)  { }
-static inline void ove_backend_profiler_set_rate(uint32_t hz) { (void)hz; }
-static inline uint32_t ove_backend_profiler_get_max_hz(void) { return 0; }
-static inline size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max) {
-	(void)out; (void)out_max; return 0;
+static inline int ove_backend_profiler_start(void)
+{
+	return 0;
+}
+static inline void ove_backend_profiler_sample_tick(void)
+{
+}
+static inline void ove_backend_profiler_stop(void)
+{
+}
+static inline void ove_backend_profiler_set_rate(uint32_t hz)
+{
+	(void)hz;
+}
+static inline uint32_t ove_backend_profiler_get_max_hz(void)
+{
+	return 0;
+}
+static inline size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
+{
+	(void)out;
+	(void)out_max;
+	return 0;
 }
 
 #endif /* CONFIG_OVE_PROFILER */

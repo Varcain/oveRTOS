@@ -8,8 +8,7 @@
 
 #include "ove_mqtt_topic.h"
 
-int ove_mqtt_topic_matches(const char *filter, size_t flen,
-                           const char *topic, size_t tlen)
+int ove_mqtt_topic_matches(const char *filter, size_t flen, const char *topic, size_t tlen)
 {
 	size_t fi = 0, ti = 0;
 

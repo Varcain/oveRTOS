@@ -113,7 +113,9 @@ volatile uint32_t ove_runtime_counter_ms;
  * context and samples the interrupted task's stacked PC. Weak so builds
  * without the profiler backend (plugged via Kconfig gating of that file)
  * still link. */
-__attribute__((weak)) void ove_backend_profiler_on_tick(void) { }
+__attribute__((weak)) void ove_backend_profiler_on_tick(void)
+{
+}
 #endif
 
 OVE_WEAK

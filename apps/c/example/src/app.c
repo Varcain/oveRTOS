@@ -58,8 +58,7 @@ static void producer_thread(void *arg)
 		++count;
 		int ret = ove_queue_send(counter_queue, &count, 1000);
 		if (ret != OVE_OK) {
-			OVE_LOG_WRN("Producer: queue full, dropped %u",
-					count);
+			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
 		}
 		ove_thread_sleep_ms(500);
 	}
@@ -75,8 +74,7 @@ static void consumer_thread(void *arg)
 	OVE_LOG_INF("Consumer started");
 
 	while (1) {
-		int ret = ove_queue_receive(counter_queue, &val,
-						OVE_WAIT_FOREVER);
+		int ret = ove_queue_receive(counter_queue, &val, OVE_WAIT_FOREVER);
 		if (ret == OVE_OK) {
 			ove_mutex_lock(value_mutex, OVE_WAIT_FOREVER);
 			last_value = val;
@@ -168,8 +166,7 @@ static void create_ui(void)
 	lv_bar_set_range(bar, 0, 100);
 	lv_bar_set_value(bar, 0, LV_ANIM_OFF);
 	lv_obj_set_style_radius(bar, 8, 0);
-	lv_obj_set_style_bg_color(bar, lv_palette_main(LV_PALETTE_BLUE),
-				  LV_PART_INDICATOR);
+	lv_obj_set_style_bg_color(bar, lv_palette_main(LV_PALETTE_BLUE), LV_PART_INDICATOR);
 	lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 96);
 }
 
@@ -213,8 +210,7 @@ void ove_main(void)
 		};
 		ret = ove_thread_create(&thread_handle, 4096, &desc);
 		if (ret != OVE_OK) {
-			OVE_LOG_ERR("Failed to create thread '%s': %d",
-					desc.name, ret);
+			OVE_LOG_ERR("Failed to create thread '%s': %d", desc.name, ret);
 			return;
 		}
 	}
@@ -228,8 +224,7 @@ void ove_main(void)
 		};
 		ret = ove_thread_create(&thread_handle, 4096, &desc);
 		if (ret != OVE_OK) {
-			OVE_LOG_ERR("Failed to create thread '%s': %d",
-					desc.name, ret);
+			OVE_LOG_ERR("Failed to create thread '%s': %d", desc.name, ret);
 			return;
 		}
 	}
@@ -243,8 +238,7 @@ void ove_main(void)
 		};
 		ret = ove_thread_create(&thread_handle, 4096, &desc);
 		if (ret != OVE_OK) {
-			OVE_LOG_ERR("Failed to create thread '%s': %d",
-					desc.name, ret);
+			OVE_LOG_ERR("Failed to create thread '%s': %d", desc.name, ret);
 			return;
 		}
 	}

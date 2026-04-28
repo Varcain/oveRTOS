@@ -26,11 +26,12 @@
 #include <errno.h>
 #include <malloc.h>
 /* Set thread state with tracking + trace emit (mirrors posix_thread.c). */
-#define SET_STATE(t, s) do { \
-	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
-	ove_state_track_transition(&(t)->st, (s)); \
-	(t)->state = (s); \
-} while (0)
+#define SET_STATE(t, s)                                                \
+	do {                                                           \
+		ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
+		ove_state_track_transition(&(t)->st, (s));             \
+		(t)->state = (s);                                      \
+	} while (0)
 
 /* Per-task pointer via NuttX task TLS */
 static int tls_index = -1;
@@ -91,7 +92,10 @@ static void _unregister_thread(struct ove_thread *t)
 	nxmutex_lock(&thread_list_lock);
 	struct ove_thread **pp = &ove_nuttx_thread_list_head;
 	while (*pp) {
-		if (*pp == t) { *pp = t->next; break; }
+		if (*pp == t) {
+			*pp = t->next;
+			break;
+		}
 		pp = &(*pp)->next;
 	}
 	nxmutex_unlock(&thread_list_lock);
@@ -100,7 +104,6 @@ static void _unregister_thread(struct ove_thread *t)
 /* Store first thread for join in start_scheduler */
 static struct ove_thread *first_thread;
 
-
 /* SIGUSR1 handler installed once */
 static volatile int sig_handler_installed;
 
@@ -108,15 +111,24 @@ static int map_priority(ove_prio_t prio)
 {
 	/* NuttX SCHED_FIFO: higher number = higher priority */
 	switch (prio) {
-	case OVE_PRIO_IDLE:         return 50;
-	case OVE_PRIO_LOW:          return 60;
-	case OVE_PRIO_BELOW_NORMAL: return 80;
-	case OVE_PRIO_NORMAL:       return 100;
-	case OVE_PRIO_ABOVE_NORMAL: return 120;
-	case OVE_PRIO_HIGH:         return 150;
-	case OVE_PRIO_REALTIME:     return 200;
-	case OVE_PRIO_CRITICAL:     return 220;
-	default:                        return 100;
+	case OVE_PRIO_IDLE:
+		return 50;
+	case OVE_PRIO_LOW:
+		return 60;
+	case OVE_PRIO_BELOW_NORMAL:
+		return 80;
+	case OVE_PRIO_NORMAL:
+		return 100;
+	case OVE_PRIO_ABOVE_NORMAL:
+		return 120;
+	case OVE_PRIO_HIGH:
+		return 150;
+	case OVE_PRIO_REALTIME:
+		return 200;
+	case OVE_PRIO_CRITICAL:
+		return 220;
+	default:
+		return 100;
 	}
 }
 
@@ -168,8 +180,7 @@ static int task_wrapper(int argc, char *argv[])
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-static int thread_start(struct ove_thread *t,
-			const struct ove_thread_desc *desc)
+static int thread_start(struct ove_thread *t, const struct ove_thread_desc *desc)
 {
 	char addr_str[20];
 	int pid;
@@ -179,7 +190,7 @@ static int thread_start(struct ove_thread *t,
 	t->arg = desc->arg;
 	t->state = OVE_THREAD_STATE_READY;
 	t->suspend_inited = 0;
-	t->name = desc->name;   /* caller-owned string, retained for trace descriptors */
+	t->name = desc->name; /* caller-owned string, retained for trace descriptors */
 	nxsem_init(&t->done_sem, 0, 0);
 
 	ensure_sigusr1_handler();
@@ -189,10 +200,9 @@ static int thread_start(struct ove_thread *t,
 		stack = 2048;
 	}
 
-	snprintf(addr_str, sizeof(addr_str), "0x%lx",
-		 (unsigned long)(uintptr_t)t);
+	snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)t);
 	{
-		char *argv_args[] = { addr_str, NULL };
+		char *argv_args[] = {addr_str, NULL};
 		/*
 		 * NuttX zero-heap reality: each ove_thread_create involves
 		 * a kmm allocation that we cannot eliminate from
@@ -225,8 +235,8 @@ static int thread_start(struct ove_thread *t,
 		 * thread launch sequence).
 		 */
 		pid = task_create(desc->name ? desc->name : "ove_thread",
-				  map_priority(desc->priority), (int)stack,
-				  task_wrapper, argv_args);
+				  map_priority(desc->priority), (int)stack, task_wrapper,
+				  argv_args);
 		if (pid < 0) {
 			nxsem_destroy(&t->done_sem);
 			return OVE_ERR_NO_MEMORY;
@@ -244,12 +254,10 @@ static int thread_start(struct ove_thread *t,
 	return OVE_OK;
 }
 
-int ove_thread_init(ove_thread_t *handle,
-			ove_thread_storage_t *storage,
-			const struct ove_thread_desc *desc)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
+		    const struct ove_thread_desc *desc)
 {
-	if (handle == NULL || storage == NULL || desc == NULL ||
-	    desc->entry == NULL) {
+	if (handle == NULL || storage == NULL || desc == NULL || desc->entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
@@ -273,7 +281,8 @@ int ove_thread_init(ove_thread_t *handle,
 int ove_thread_deinit(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	if (handle->started) {
 		/* Resume if suspended so it can finish */
@@ -305,8 +314,7 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create_(ove_thread_t *handle,
-				const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 {
 	struct ove_thread *t;
 	int ret;
@@ -334,7 +342,8 @@ int ove_thread_create_(ove_thread_t *handle,
 int ove_thread_destroy(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	ret = ove_thread_deinit(handle);
 	OVE_BACKEND_FREE(handle);
@@ -347,8 +356,7 @@ ove_thread_t ove_thread_get_self(void)
 	return tls_get_current();
 }
 
-void ove_thread_set_priority(ove_thread_t handle,
-				      ove_prio_t prio)
+void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	struct sched_param param;
 	param.sched_priority = map_priority(prio);
@@ -360,9 +368,11 @@ void ove_thread_set_priority(ove_thread_t handle,
 void ove_thread_sleep_ms(uint32_t ms)
 {
 	struct ove_thread *t = tls_get_current();
-	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
+	if (t)
+		SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	usleep(ms * 1000U);
-	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+	if (t)
+		SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -408,7 +418,8 @@ void ove_thread_resume(ove_thread_t handle)
 void ove_backend_thread_set_state(int new_state)
 {
 	struct ove_thread *t = tls_get_current();
-	if (t) SET_STATE(t, new_state);
+	if (t)
+		SET_STATE(t, new_state);
 }
 #endif
 
@@ -438,8 +449,7 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 	return handle->state;
 }
 
-int ove_thread_get_runtime_stats(ove_thread_t handle,
-					  struct ove_thread_stats *stats)
+int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
 	(void)handle;
 	stats->runtime_us = 0;
@@ -449,11 +459,12 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 
 int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 {
-	if (!stats) return OVE_ERR_INVALID_PARAM;
+	if (!stats)
+		return OVE_ERR_INVALID_PARAM;
 	struct mallinfo mi = mallinfo();
-	stats->total     = (size_t)mi.arena;
-	stats->used      = (size_t)mi.uordblks;
-	stats->free      = (size_t)mi.fordblks;
+	stats->total = (size_t)mi.arena;
+	stats->used = (size_t)mi.uordblks;
+	stats->free = (size_t)mi.fordblks;
 	stats->peak_used = (size_t)mi.usmblks;
 	return OVE_OK;
 }
@@ -480,14 +491,18 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 
 	switch (tcb->task_state) {
 	case TSTATE_TASK_RUNNING:
-		info->state = OVE_THREAD_STATE_RUNNING;   break;
+		info->state = OVE_THREAD_STATE_RUNNING;
+		break;
 	case TSTATE_TASK_READYTORUN:
-		info->state = OVE_THREAD_STATE_READY;      break;
+		info->state = OVE_THREAD_STATE_READY;
+		break;
 	case TSTATE_TASK_INACTIVE:
-		info->state = OVE_THREAD_STATE_TERMINATED; break;
+		info->state = OVE_THREAD_STATE_TERMINATED;
+		break;
 	default:
 		/* All TSTATE_WAIT_* states are blocked */
-		info->state = OVE_THREAD_STATE_BLOCKED;    break;
+		info->state = OVE_THREAD_STATE_BLOCKED;
+		break;
 	}
 
 	info->priority = (int)tcb->sched_priority;
@@ -505,14 +520,12 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 		struct cpuload_s cl;
 		if (clock_cpuload(tcb->pid, &cl) == OK && cl.total > 0) {
 			info->cpu_percent_x100 =
-				(uint32_t)((uint64_t)cl.active * 10000U
-					   / cl.total);
+				(uint32_t)((uint64_t)cl.active * 10000U / cl.total);
 			/* Derive state times from tick counts (ms). */
 			uint64_t run_us = (uint64_t)cl.active * 10000U;
 			uint64_t tot_us = (uint64_t)cl.total * 10000U;
 			info->state_times.running_us = run_us;
-			info->state_times.blocked_us =
-				(tot_us > run_us) ? tot_us - run_us : 0;
+			info->state_times.blocked_us = (tot_us > run_us) ? tot_us - run_us : 0;
 		}
 	}
 #endif
@@ -520,8 +533,7 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	ctx->count++;
 }
 
-int ove_thread_list(struct ove_thread_info *out, size_t max_count,
-		    size_t *actual_count)
+int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 	if (!out) {
 		if (actual_count)

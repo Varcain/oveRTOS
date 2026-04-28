@@ -18,7 +18,8 @@
 #include <ove/workqueue.h>
 #include <ove/types.hpp>
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @brief Concept satisfied by any callable convertible to `ove_work_fn`.
@@ -41,9 +42,9 @@ concept WorkHandler = std::convertible_to<F, ove_work_fn>;
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-template <size_t StackSize = 0>
-class Workqueue {
-public:
+template <size_t StackSize = 0> class Workqueue
+{
+      public:
 	/**
 	 * @brief Constructs and starts the workqueue.
 	 *
@@ -55,16 +56,13 @@ public:
 	 * Asserts at startup if initialisation fails.
 	 */
 	Workqueue(const char *name, ove_prio_t prio)
-		requires (StackSize > 0)
+		requires(StackSize > 0)
 	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		static_assert(StackSize > 0,
-			      "StackSize must be > 0 in zero-heap mode");
-		int err = ove_workqueue_init(&handle_, &storage_, name,
-						  prio, StackSize, stack_);
+		static_assert(StackSize > 0, "StackSize must be > 0 in zero-heap mode");
+		int err = ove_workqueue_init(&handle_, &storage_, name, prio, StackSize, stack_);
 #else
-		int err = ove_workqueue_create(&handle_, name, prio,
-						    StackSize);
+		int err = ove_workqueue_create(&handle_, name, prio, StackSize);
 #endif
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
@@ -72,8 +70,10 @@ public:
 	/**
 	 * @brief Destroys the workqueue and terminates the worker thread.
 	 */
-	~Workqueue() noexcept {
-		if (!handle_) return;
+	~Workqueue() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_workqueue_deinit(handle_);
 #else
@@ -92,7 +92,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Workqueue(Workqueue &&other) noexcept : handle_(other.handle_) {
+	Workqueue(Workqueue &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -101,9 +102,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Workqueue &operator=(Workqueue &&other) noexcept {
+	Workqueue &operator=(Workqueue &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_workqueue_destroy(handle_);
+			if (handle_)
+				ove_workqueue_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -115,20 +118,25 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the workqueue was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS workqueue handle.
 	 * @return The opaque `ove_workqueue_t` handle.
 	 */
-	ove_workqueue_t handle() const { return handle_; }
+	ove_workqueue_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_workqueue_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_workqueue_storage_t storage_ = {};
-	OVE_THREAD_STACK_MEMBER_(stack_,
-				     StackSize > 0 ? StackSize : 1);
+	OVE_THREAD_STACK_MEMBER_(stack_, StackSize > 0 ? StackSize : 1);
 #endif
 };
 
@@ -142,8 +150,9 @@ private:
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-class Work {
-public:
+class Work
+{
+      public:
 	/**
 	 * @brief Constructs a work item with the given handler function.
 	 * @tparam F Handler type satisfying `WorkHandler`.
@@ -152,10 +161,11 @@ public:
 	 * Asserts at startup if initialisation fails.
 	 */
 	template <typename F>
-	explicit Work(F handler) requires WorkHandler<F> {
+	explicit Work(F handler)
+		requires WorkHandler<F>
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		int err = ove_work_init_static(&handle_, &storage_,
-						    handler);
+		int err = ove_work_init_static(&handle_, &storage_, handler);
 #else
 		int err = ove_work_init(&handle_, handler);
 #endif
@@ -165,8 +175,10 @@ public:
 	/**
 	 * @brief Destroys the work item, freeing its kernel resource (heap mode).
 	 */
-	~Work() noexcept {
-		if (!handle_) return;
+	~Work() noexcept
+	{
+		if (!handle_)
+			return;
 #ifndef CONFIG_OVE_ZERO_HEAP
 		ove_work_free(handle_);
 #endif
@@ -183,7 +195,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Work(Work &&other) noexcept : handle_(other.handle_) {
+	Work(Work &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -192,9 +205,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Work &operator=(Work &&other) noexcept {
+	Work &operator=(Work &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_work_free(handle_);
+			if (handle_)
+				ove_work_free(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -208,8 +223,8 @@ public:
 	 * @param[in] wq The workqueue to submit this work item to.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	template <size_t S>
-	[[nodiscard]] int submit(Workqueue<S> &wq) {
+	template <size_t S> [[nodiscard]] int submit(Workqueue<S> &wq)
+	{
 		return ove_work_submit(wq.handle(), handle_);
 	}
 
@@ -220,11 +235,9 @@ public:
 	 * @param[in] delay_ms Delay in milliseconds before the item is executed.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	template <size_t S>
-	[[nodiscard]] int submit_delayed(Workqueue<S> &wq,
-					  uint32_t delay_ms) {
-		return ove_work_submit_delayed(wq.handle(), handle_,
-						    delay_ms);
+	template <size_t S> [[nodiscard]] int submit_delayed(Workqueue<S> &wq, uint32_t delay_ms)
+	{
+		return ove_work_submit_delayed(wq.handle(), handle_, delay_ms);
 	}
 
 	/**
@@ -234,7 +247,8 @@ public:
 	 *
 	 * @return `OVE_OK` if cancelled, or a negative error code.
 	 */
-	[[nodiscard]] int cancel() {
+	[[nodiscard]] int cancel()
+	{
 		return ove_work_cancel(handle_);
 	}
 
@@ -242,15 +256,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the work item was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS work handle.
 	 * @return The opaque `ove_work_t` handle.
 	 */
-	ove_work_t handle() const { return handle_; }
+	ove_work_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_work_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_work_storage_t storage_ = {};

@@ -95,11 +95,10 @@ static void test_sem_producer_consumer(void **state)
 	(void)state;
 	ove_sem_t sem = NULL;
 	ove_test_sem_create(&sem, &s_sem_storage, 0, 1);
-	struct sem_ctx ctx = { .sem = sem };
+	struct sem_ctx ctx = {.sem = sem};
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "prod", sem_give_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "prod", sem_give_entry, &ctx, s_th_stack, 4096);
 	assert_int_equal(ove_sem_take(sem, 500), OVE_OK);
 	ove_test_thread_destroy(th);
 	assert_int_equal(ctx.done, 1);
@@ -119,11 +118,11 @@ static void test_sem_wait_forever(void **state)
 	(void)state;
 	ove_sem_t sem = NULL;
 	ove_test_sem_create(&sem, &s_sem_storage, 0, 1);
-	struct sem_ctx ctx = { .sem = sem };
+	struct sem_ctx ctx = {.sem = sem};
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "wf", sem_give_delayed_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "wf", sem_give_delayed_entry, &ctx, s_th_stack,
+			    4096);
 	assert_int_equal(ove_sem_take(sem, OVE_WAIT_FOREVER), OVE_OK);
 	ove_test_thread_destroy(th);
 	ove_test_sem_destroy(sem);

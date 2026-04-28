@@ -28,7 +28,7 @@ extern "C" {
 /* ── Display event types ───────────────────────────────────────────── */
 
 /** @brief Event: a new frame is ready to be sent to the dashboard. */
-#define OVE_SIM_DISPLAY_EVT_FRAME   0
+#define OVE_SIM_DISPLAY_EVT_FRAME 0
 
 /* ── Display command types ─────────────────────────────────────────── */
 
@@ -54,16 +54,16 @@ struct ove_sim_display_ops {
 	 * @param[in] x2      Right edge of the dirty rectangle (inclusive).
 	 * @param[in] y2      Bottom edge of the dirty rectangle (inclusive).
 	 */
-	void (*flush_cb)(void *ctx, const void *fb, size_t fb_len,
-			 uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
+	void (*flush_cb)(void *ctx, const void *fb, size_t fb_len, uint16_t x1, uint16_t y1,
+			 uint16_t x2, uint16_t y2);
 };
 
 /* ── Display plugin context ────────────────────────────────────────── */
 
 /** @brief Pixel colour format. */
 enum ove_sim_color_fmt {
-	OVE_SIM_COLOR_RGB565,  /**< 16-bit RGB565. */
-	OVE_SIM_COLOR_RGB888,  /**< 24-bit RGB888. */
+	OVE_SIM_COLOR_RGB565,	/**< 16-bit RGB565. */
+	OVE_SIM_COLOR_RGB888,	/**< 24-bit RGB888. */
 	OVE_SIM_COLOR_XRGB8888, /**< 32-bit XRGB8888. */
 };
 
@@ -71,9 +71,9 @@ enum ove_sim_color_fmt {
  * @brief Display plugin configuration (from board.yaml).
  */
 struct ove_sim_display_cfg {
-	uint16_t                width;     /**< Display width in pixels. */
-	uint16_t                height;    /**< Display height in pixels. */
-	enum ove_sim_color_fmt  color_fmt; /**< Pixel format. */
+	uint16_t width;			  /**< Display width in pixels. */
+	uint16_t height;		  /**< Display height in pixels. */
+	enum ove_sim_color_fmt color_fmt; /**< Pixel format. */
 };
 
 /* ── Built-in display plugin ───────────────────────────────────────── */
@@ -100,9 +100,8 @@ const struct ove_sim_display_ops *ove_sim_display_builtin_ops(void);
  * @param[in] x2      Right edge (inclusive).
  * @param[in] y2      Bottom edge (inclusive).
  */
-void ove_sim_display_flush(const void *fb, size_t fb_len,
-			   uint16_t x1, uint16_t y1,
-			   uint16_t x2, uint16_t y2);
+void ove_sim_display_flush(const void *fb, size_t fb_len, uint16_t x1, uint16_t y1, uint16_t x2,
+			   uint16_t y2);
 
 #ifdef __cplusplus
 }

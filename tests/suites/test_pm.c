@@ -12,8 +12,8 @@
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
 static struct ove_pm_cfg default_cfg = {
-	.idle_threshold_ms       = 10,
-	.standby_threshold_ms    = 1000,
+	.idle_threshold_ms = 10,
+	.standby_threshold_ms = 1000,
 	.deep_sleep_threshold_ms = 10000,
 };
 
@@ -24,8 +24,8 @@ static volatile ove_pm_state_t notify_last_from;
 static volatile ove_pm_state_t notify_last_to;
 static volatile ove_pm_event_t notify_last_event;
 
-static void test_notify_cb(ove_pm_event_t event, ove_pm_state_t from,
-			    ove_pm_state_t to, void *user_data)
+static void test_notify_cb(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to,
+			   void *user_data)
 {
 	(void)user_data;
 	notify_last_event = event;
@@ -40,8 +40,8 @@ static void test_notify_cb(ove_pm_event_t event, ove_pm_state_t from,
 /* Second notifier for multi-notifier tests */
 static volatile int notify2_count;
 
-static void test_notify_cb2(ove_pm_event_t event, ove_pm_state_t from,
-			     ove_pm_state_t to, void *user_data)
+static void test_notify_cb2(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to,
+			    void *user_data)
 {
 	(void)event;
 	(void)from;
@@ -53,9 +53,8 @@ static void test_notify_cb2(ove_pm_event_t event, ove_pm_state_t from,
 /* Notifier that tracks user_data */
 static volatile void *notify_user_data_received;
 
-static void test_notify_cb_userdata(ove_pm_event_t event,
-				    ove_pm_state_t from,
-				    ove_pm_state_t to, void *user_data)
+static void test_notify_cb_userdata(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to,
+				    void *user_data)
 {
 	(void)event;
 	(void)from;
@@ -66,10 +65,8 @@ static void test_notify_cb_userdata(ove_pm_event_t event,
 /* Custom policy helpers */
 static ove_pm_state_t fixed_state_for_policy;
 
-static ove_pm_state_t fixed_policy(ove_pm_state_t current,
-				   uint32_t idle_ms,
-				   uint32_t next_timeout_ms,
-				   void *user_data)
+static ove_pm_state_t fixed_policy(ove_pm_state_t current, uint32_t idle_ms,
+				   uint32_t next_timeout_ms, void *user_data)
 {
 	(void)current;
 	(void)idle_ms;
@@ -79,10 +76,8 @@ static ove_pm_state_t fixed_policy(ove_pm_state_t current,
 }
 
 /* Policy that uses user_data */
-static ove_pm_state_t userdata_policy(ove_pm_state_t current,
-				      uint32_t idle_ms,
-				      uint32_t next_timeout_ms,
-				      void *user_data)
+static ove_pm_state_t userdata_policy(ove_pm_state_t current, uint32_t idle_ms,
+				      uint32_t next_timeout_ms, void *user_data)
 {
 	(void)current;
 	(void)idle_ms;
@@ -269,31 +264,25 @@ static void test_pm_not_initialized_operations(void **state)
 {
 	(void)state;
 	/* All operations should fail gracefully when not initialized */
-	assert_int_equal(ove_pm_set_state(OVE_PM_STATE_IDLE),
-			 OVE_ERR_INVALID_PARAM);
-	assert_int_equal(ove_pm_domain_request(OVE_PM_DOMAIN_RADIO),
-			 OVE_ERR_INVALID_PARAM);
-	assert_int_equal(ove_pm_domain_release(OVE_PM_DOMAIN_RADIO),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_set_state(OVE_PM_STATE_IDLE), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_domain_request(OVE_PM_DOMAIN_RADIO), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_domain_release(OVE_PM_DOMAIN_RADIO), OVE_ERR_INVALID_PARAM);
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_GPIO,
-		.gpio = { .port = 0, .pin = 0, .edge = OVE_GPIO_IRQ_RISING },
+		.gpio = {.port = 0, .pin = 0, .edge = OVE_GPIO_IRQ_RISING},
 	};
 	assert_int_equal(ove_pm_wake_register(&src), OVE_ERR_INVALID_PARAM);
 
 	struct ove_pm_stats stats;
 	assert_int_equal(ove_pm_get_stats(&stats), OVE_ERR_INVALID_PARAM);
 
-	assert_int_equal(ove_pm_set_policy(fixed_policy, NULL),
-			 OVE_ERR_INVALID_PARAM);
-	assert_int_equal(ove_pm_notify_register(test_notify_cb, NULL),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_set_policy(fixed_policy, NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_notify_register(test_notify_cb, NULL), OVE_ERR_INVALID_PARAM);
 	assert_int_equal(ove_pm_set_budget(5000), OVE_ERR_INVALID_PARAM);
 
 	uint32_t actual;
-	assert_int_equal(ove_pm_get_budget_status(&actual),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_get_budget_status(&actual), OVE_ERR_INVALID_PARAM);
 
 	/* Should not crash */
 	ove_pm_activity();
@@ -312,7 +301,7 @@ static void test_pm_wake_register_gpio(void **state)
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_GPIO,
-		.gpio = { .port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING },
+		.gpio = {.port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING},
 	};
 	int rc = ove_pm_wake_register(&src);
 	assert_int_equal(rc, OVE_OK);
@@ -330,7 +319,7 @@ static void test_pm_wake_register_timer(void **state)
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_TIMER,
-		.timer = { .timeout_ms = 5000 },
+		.timer = {.timeout_ms = 5000},
 	};
 	int rc = ove_pm_wake_register(&src);
 	assert_int_equal(rc, OVE_OK);
@@ -348,7 +337,7 @@ static void test_pm_wake_register_uart(void **state)
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_UART,
-		.uart = { .instance = 0 },
+		.uart = {.instance = 0},
 	};
 	int rc = ove_pm_wake_register(&src);
 	assert_int_equal(rc, OVE_OK);
@@ -366,7 +355,7 @@ static void test_pm_wake_register_rtc(void **state)
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_RTC,
-		.rtc = { .alarm_ms = 60000 },
+		.rtc = {.alarm_ms = 60000},
 	};
 	int rc = ove_pm_wake_register(&src);
 	assert_int_equal(rc, OVE_OK);
@@ -398,7 +387,7 @@ static void test_pm_wake_unregister_not_found(void **state)
 
 	struct ove_pm_wake_src src = {
 		.type = OVE_PM_WAKE_UART,
-		.uart = { .instance = 99 },
+		.uart = {.instance = 99},
 	};
 	int rc = ove_pm_wake_unregister(&src);
 	assert_int_equal(rc, OVE_ERR_NOT_REGISTERED);
@@ -417,8 +406,7 @@ static void test_pm_wake_table_full(void **state)
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {
 		struct ove_pm_wake_src src = {
 			.type = OVE_PM_WAKE_GPIO,
-			.gpio = { .port = 0, .pin = (unsigned int)i,
-				  .edge = OVE_GPIO_IRQ_RISING },
+			.gpio = {.port = 0, .pin = (unsigned int)i, .edge = OVE_GPIO_IRQ_RISING},
 		};
 		rc = ove_pm_wake_register(&src);
 		assert_int_equal(rc, OVE_OK);
@@ -427,7 +415,7 @@ static void test_pm_wake_table_full(void **state)
 	/* Table full — next should fail */
 	struct ove_pm_wake_src extra = {
 		.type = OVE_PM_WAKE_TIMER,
-		.timer = { .timeout_ms = 1000 },
+		.timer = {.timeout_ms = 1000},
 	};
 	rc = ove_pm_wake_register(&extra);
 	assert_int_equal(rc, OVE_ERR_NO_MEMORY);
@@ -446,8 +434,7 @@ static void test_pm_wake_reuse_slot(void **state)
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {
 		struct ove_pm_wake_src src = {
 			.type = OVE_PM_WAKE_GPIO,
-			.gpio = { .port = 0, .pin = (unsigned int)i,
-				  .edge = OVE_GPIO_IRQ_RISING },
+			.gpio = {.port = 0, .pin = (unsigned int)i, .edge = OVE_GPIO_IRQ_RISING},
 		};
 		ove_pm_wake_register(&src);
 	}
@@ -455,7 +442,7 @@ static void test_pm_wake_reuse_slot(void **state)
 	/* Remove one */
 	struct ove_pm_wake_src remove = {
 		.type = OVE_PM_WAKE_GPIO,
-		.gpio = { .port = 0, .pin = 3, .edge = OVE_GPIO_IRQ_RISING },
+		.gpio = {.port = 0, .pin = 3, .edge = OVE_GPIO_IRQ_RISING},
 	};
 	int rc = ove_pm_wake_unregister(&remove);
 	assert_int_equal(rc, OVE_OK);
@@ -463,7 +450,7 @@ static void test_pm_wake_reuse_slot(void **state)
 	/* Should be able to register one more now */
 	struct ove_pm_wake_src replacement = {
 		.type = OVE_PM_WAKE_TIMER,
-		.timer = { .timeout_ms = 2000 },
+		.timer = {.timeout_ms = 2000},
 	};
 	rc = ove_pm_wake_register(&replacement);
 	assert_int_equal(rc, OVE_OK);
@@ -478,15 +465,15 @@ static void test_pm_wake_mixed_types(void **state)
 
 	struct ove_pm_wake_src gpio_src = {
 		.type = OVE_PM_WAKE_GPIO,
-		.gpio = { .port = 1, .pin = 5, .edge = OVE_GPIO_IRQ_BOTH },
+		.gpio = {.port = 1, .pin = 5, .edge = OVE_GPIO_IRQ_BOTH},
 	};
 	struct ove_pm_wake_src timer_src = {
 		.type = OVE_PM_WAKE_TIMER,
-		.timer = { .timeout_ms = 3000 },
+		.timer = {.timeout_ms = 3000},
 	};
 	struct ove_pm_wake_src uart_src = {
 		.type = OVE_PM_WAKE_UART,
-		.uart = { .instance = 1 },
+		.uart = {.instance = 1},
 	};
 
 	assert_int_equal(ove_pm_wake_register(&gpio_src), OVE_OK);
@@ -555,12 +542,9 @@ static void test_pm_domain_invalid(void **state)
 	(void)state;
 	ove_pm_init(&default_cfg);
 
-	assert_int_equal(ove_pm_domain_request(OVE_PM_DOMAIN_COUNT),
-			 OVE_ERR_INVALID_PARAM);
-	assert_int_equal(ove_pm_domain_release(OVE_PM_DOMAIN_COUNT),
-			 OVE_ERR_INVALID_PARAM);
-	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_COUNT),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_domain_request(OVE_PM_DOMAIN_COUNT), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_domain_release(OVE_PM_DOMAIN_COUNT), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_COUNT), OVE_ERR_INVALID_PARAM);
 
 	ove_pm_deinit();
 }
@@ -745,8 +729,7 @@ static void test_pm_notify_table_full(void **state)
 
 	/* Fill notifier table (use different user_data to distinguish) */
 	for (i = 0; i < CONFIG_OVE_PM_MAX_NOTIFIERS; i++) {
-		int rc = ove_pm_notify_register(test_notify_cb,
-						(void *)(uintptr_t)(i + 1));
+		int rc = ove_pm_notify_register(test_notify_cb, (void *)(uintptr_t)(i + 1));
 		assert_int_equal(rc, OVE_OK);
 	}
 
@@ -756,8 +739,7 @@ static void test_pm_notify_table_full(void **state)
 
 	/* Cleanup */
 	for (i = 0; i < CONFIG_OVE_PM_MAX_NOTIFIERS; i++) {
-		ove_pm_notify_unregister(test_notify_cb,
-					 (void *)(uintptr_t)(i + 1));
+		ove_pm_notify_unregister(test_notify_cb, (void *)(uintptr_t)(i + 1));
 	}
 
 	ove_pm_deinit();

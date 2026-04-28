@@ -42,7 +42,7 @@
 
 /* SysTick registers — CMSIS layout, always mapped on Cortex-M. */
 #define TRACE_SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014)
-#define TRACE_SYSTICK_VAL  (*(volatile uint32_t *)0xE000E018)
+#define TRACE_SYSTICK_VAL (*(volatile uint32_t *)0xE000E018)
 
 extern uint32_t SystemCoreClock;
 
@@ -57,20 +57,19 @@ uint64_t ove_state_stats_now_us(void)
 		 * between two tick reads so we can retry on mismatch. The
 		 * ISR variant reads xTickCount directly and is safe from
 		 * PendSV / SysTick handlers. */
-		t1  = xTaskGetTickCountFromISR();
+		t1 = xTaskGetTickCountFromISR();
 		val = TRACE_SYSTICK_VAL;
-		t2  = xTaskGetTickCountFromISR();
+		t2 = xTaskGetTickCountFromISR();
 	} else {
 		do {
-			t1  = xTaskGetTickCount();
+			t1 = xTaskGetTickCount();
 			val = TRACE_SYSTICK_VAL;
-			t2  = xTaskGetTickCount();
+			t2 = xTaskGetTickCount();
 		} while (t1 != t2);
 	}
 
 	uint32_t elapsed_cycles = (load + 1) - val;
-	uint64_t us_frac = (uint64_t)elapsed_cycles * 1000000ULL
-	                 / (uint64_t)SystemCoreClock;
+	uint64_t us_frac = (uint64_t)elapsed_cycles * 1000000ULL / (uint64_t)SystemCoreClock;
 	return (uint64_t)t1 * (1000000ULL / configTICK_RATE_HZ) + us_frac;
 }
 
@@ -101,13 +100,12 @@ void ove_backend_trace_task_switched_out(void)
 		return;
 	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTag(h);
 	if (!t)
-		return;  /* idle / timer / tasks not created via ove_thread_init */
+		return; /* idle / timer / tasks not created via ove_thread_init */
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	int prev = t->st.cur_state;
 	int next;
-	if (prev == OVE_THREAD_STATE_BLOCKED ||
-	    prev == OVE_THREAD_STATE_SUSPENDED)
+	if (prev == OVE_THREAD_STATE_BLOCKED || prev == OVE_THREAD_STATE_SUSPENDED)
 		next = prev;
 	else
 		next = OVE_THREAD_STATE_READY;
@@ -156,8 +154,7 @@ void ove_backend_trace_task_blocking(void)
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	int prev = t->st.cur_state;
 	if (prev != OVE_THREAD_STATE_BLOCKED)
-		ove_trace_emit_state((uintptr_t)t, prev,
-				     OVE_THREAD_STATE_BLOCKED);
+		ove_trace_emit_state((uintptr_t)t, prev, OVE_THREAD_STATE_BLOCKED);
 	ove_state_track_transition(&t->st, OVE_THREAD_STATE_BLOCKED);
 #endif
 }
@@ -167,8 +164,7 @@ void ove_backend_trace_task_blocking(void)
 #include "ove/sim/ove_sim_trace.h"
 #include "ove_trace_ring.h"
 
-size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
-				      size_t max)
+size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out, size_t max)
 {
 #if configUSE_TRACE_FACILITY
 	if (!out || max == 0)
@@ -188,14 +184,13 @@ size_t ove_backend_trace_list_threads(struct ove_trace_thread_desc *out,
 
 	size_t n = 0;
 	for (UBaseType_t i = 0; i < filled && n < max; i++) {
-		struct ove_thread *t = (struct ove_thread *)
-			xTaskGetApplicationTaskTag(tasks[i].xHandle);
+		struct ove_thread *t =
+			(struct ove_thread *)xTaskGetApplicationTaskTag(tasks[i].xHandle);
 		/* Tasks without an ove_thread wrapper (idle, timer) are
 		 * still emitted so the swimlane shows their rows; the tid
 		 * falls back to the raw FreeRTOS TCB address. */
-		uintptr_t handle = t ? (uintptr_t)t
-				     : (uintptr_t)tasks[i].xHandle;
-		out[n].tid  = (uint32_t)handle;
+		uintptr_t handle = t ? (uintptr_t)t : (uintptr_t)tasks[i].xHandle;
+		out[n].tid = (uint32_t)handle;
 		out[n].name = tasks[i].pcTaskName;
 		n++;
 	}

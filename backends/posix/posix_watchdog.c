@@ -9,11 +9,10 @@
 #include "ove/ove.h"
 #include "ove_backend_common.h"
 #include <string.h>
-int ove_watchdog_init(ove_watchdog_t *wdt,
-			  ove_watchdog_storage_t *storage,
-			  uint32_t timeout_ms)
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)
 {
-	if (!wdt || !storage) return OVE_ERR_INVALID_PARAM;
+	if (!wdt || !storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_watchdog *w = (struct ove_watchdog *)storage;
 	memset(w, 0, sizeof(*w));
 	w->timeout_ms = timeout_ms;

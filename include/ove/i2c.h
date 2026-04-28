@@ -47,8 +47,8 @@ extern "C" {
  * @brief I2C bus speed grade.
  */
 typedef enum {
-	OVE_I2C_SPEED_STANDARD  = 0, /**< 100 kHz. */
-	OVE_I2C_SPEED_FAST      = 1, /**< 400 kHz. */
+	OVE_I2C_SPEED_STANDARD = 0,  /**< 100 kHz. */
+	OVE_I2C_SPEED_FAST = 1,	     /**< 400 kHz. */
 	OVE_I2C_SPEED_FAST_PLUS = 2, /**< 1 MHz. */
 } ove_i2c_speed_t;
 
@@ -58,8 +58,8 @@ typedef enum {
  * @brief I2C bus configuration descriptor.
  */
 struct ove_i2c_cfg {
-	unsigned int    instance; /**< Peripheral index (0, 1, 2 ...). */
-	ove_i2c_speed_t speed;    /**< Bus speed grade. */
+	unsigned int instance; /**< Peripheral index (0, 1, 2 ...). */
+	ove_i2c_speed_t speed; /**< Bus speed grade. */
 };
 
 #ifdef CONFIG_OVE_I2C
@@ -74,8 +74,7 @@ struct ove_i2c_cfg {
  * @param[in]  cfg     Bus configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage,
-		  const struct ove_i2c_cfg *cfg);
+int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2c_cfg *cfg);
 
 /**
  * @brief Deinitialise a statically-allocated I2C bus.
@@ -92,7 +91,7 @@ void ove_i2c_deinit(ove_i2c_t i2c);
  * @return OVE_OK on success, negative error code on failure.
  */
 #ifdef OVE_HEAP_I2C
-int  ove_i2c_create(ove_i2c_t *i2c, const struct ove_i2c_cfg *cfg);
+int ove_i2c_create(ove_i2c_t *i2c, const struct ove_i2c_cfg *cfg);
 
 /**
  * @brief Destroy a heap-allocated I2C bus controller.
@@ -101,9 +100,11 @@ int  ove_i2c_create(ove_i2c_t *i2c, const struct ove_i2c_cfg *cfg);
  */
 void ove_i2c_destroy(ove_i2c_t i2c);
 #elif !defined(__ZIG_CIMPORT__)
-#define ove_i2c_create(pi2c, cfg) \
-	({ static ove_i2c_storage_t _ove_stor_; \
-	   ove_i2c_init((pi2c), &_ove_stor_, (cfg)); })
+#define ove_i2c_create(pi2c, cfg)                         \
+	({                                                \
+		static ove_i2c_storage_t _ove_stor_;      \
+		ove_i2c_init((pi2c), &_ove_stor_, (cfg)); \
+	})
 #define ove_i2c_destroy(i2c) ove_i2c_deinit(i2c)
 #endif
 
@@ -119,8 +120,7 @@ void ove_i2c_destroy(ove_i2c_t i2c);
  * @param[in] timeout_ms Maximum wait time; @c OVE_WAIT_FOREVER to block.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2c_write(ove_i2c_t i2c, uint16_t addr,
-		   const void *data, size_t len, uint32_t timeout_ms);
+int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, uint32_t timeout_ms);
 
 /**
  * @brief Read data from an I2C device.
@@ -132,8 +132,7 @@ int  ove_i2c_write(ove_i2c_t i2c, uint16_t addr,
  * @param[in]  timeout_ms Maximum wait time; @c OVE_WAIT_FOREVER to block.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2c_read(ove_i2c_t i2c, uint16_t addr,
-		  void *buf, size_t len, uint32_t timeout_ms);
+int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms);
 
 /**
  * @brief Combined write-then-read with I2C repeated start.
@@ -151,15 +150,13 @@ int  ove_i2c_read(ove_i2c_t i2c, uint16_t addr,
  * @param[in]  timeout_ms Maximum wait time; @c OVE_WAIT_FOREVER to block.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
-			const void *tx, size_t tx_len,
-			void *rx, size_t rx_len,
-			uint32_t timeout_ms);
+int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+		       size_t rx_len, uint32_t timeout_ms);
 
 /* ── Register convenience ────────────────────────────────────────── */
 
 /** Maximum data bytes per ove_i2c_reg_write() call. */
-#define OVE_I2C_REG_WRITE_MAX  32
+#define OVE_I2C_REG_WRITE_MAX 32
 
 /**
  * @brief Write to a single-byte-addressed register.
@@ -177,9 +174,8 @@ int  ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
  * @param[in] timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
-		       const void *data, size_t len,
-		       uint32_t timeout_ms);
+int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, const void *data, size_t len,
+		      uint32_t timeout_ms);
 
 /**
  * @brief Read from a single-byte-addressed register.
@@ -195,8 +191,8 @@ int  ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
  * @param[in]  timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
-		      void *buf, size_t len, uint32_t timeout_ms);
+int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_t len,
+		     uint32_t timeout_ms);
 
 /* ── Bus probe ───────────────────────────────────────────────────── */
 
@@ -212,18 +208,79 @@ int  ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg,
  * @return OVE_OK if the device ACKs, OVE_ERR_BUS_NACK if not,
  *         other negative error code on bus failure.
  */
-int  ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint32_t timeout_ms);
+int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint32_t timeout_ms);
 
 #else /* !CONFIG_OVE_I2C */
 
-static inline int  ove_i2c_create(ove_i2c_t *i, const struct ove_i2c_cfg *c) { (void)i; (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_i2c_destroy(ove_i2c_t i) { (void)i; }
-static inline int  ove_i2c_write(ove_i2c_t i, uint16_t a, const void *d, size_t l, uint32_t t) { (void)i; (void)a; (void)d; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2c_read(ove_i2c_t i, uint16_t a, void *b, size_t l, uint32_t t) { (void)i; (void)a; (void)b; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2c_write_read(ove_i2c_t i, uint16_t a, const void *tx, size_t tl, void *rx, size_t rl, uint32_t t) { (void)i; (void)a; (void)tx; (void)tl; (void)rx; (void)rl; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2c_reg_write(ove_i2c_t i, uint16_t a, uint8_t r, const void *d, size_t l, uint32_t t) { (void)i; (void)a; (void)r; (void)d; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2c_reg_read(ove_i2c_t i, uint16_t a, uint8_t r, void *b, size_t l, uint32_t t) { (void)i; (void)a; (void)r; (void)b; (void)l; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2c_probe(ove_i2c_t i, uint16_t a, uint32_t t) { (void)i; (void)a; (void)t; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_i2c_create(ove_i2c_t *i, const struct ove_i2c_cfg *c)
+{
+	(void)i;
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_i2c_destroy(ove_i2c_t i)
+{
+	(void)i;
+}
+static inline int ove_i2c_write(ove_i2c_t i, uint16_t a, const void *d, size_t l, uint32_t t)
+{
+	(void)i;
+	(void)a;
+	(void)d;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2c_read(ove_i2c_t i, uint16_t a, void *b, size_t l, uint32_t t)
+{
+	(void)i;
+	(void)a;
+	(void)b;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2c_write_read(ove_i2c_t i, uint16_t a, const void *tx, size_t tl, void *rx,
+				     size_t rl, uint32_t t)
+{
+	(void)i;
+	(void)a;
+	(void)tx;
+	(void)tl;
+	(void)rx;
+	(void)rl;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2c_reg_write(ove_i2c_t i, uint16_t a, uint8_t r, const void *d, size_t l,
+				    uint32_t t)
+{
+	(void)i;
+	(void)a;
+	(void)r;
+	(void)d;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2c_reg_read(ove_i2c_t i, uint16_t a, uint8_t r, void *b, size_t l,
+				   uint32_t t)
+{
+	(void)i;
+	(void)a;
+	(void)r;
+	(void)b;
+	(void)l;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2c_probe(ove_i2c_t i, uint16_t a, uint32_t t)
+{
+	(void)i;
+	(void)a;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 #endif /* CONFIG_OVE_I2C */
 

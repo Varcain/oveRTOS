@@ -55,21 +55,20 @@ void ove_hal_i2c_close(ove_i2c_t i2c)
 	}
 }
 
-int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr,
-		      const void *data, size_t len,
+int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
 		      uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
 #ifdef __linux__
 	struct i2c_msg msg = {
-		.addr  = addr,
+		.addr = addr,
 		.flags = 0,
-		.len   = (uint16_t)len,
-		.buf   = (uint8_t *)data,
+		.len = (uint16_t)len,
+		.buf = (uint8_t *)data,
 	};
 	struct i2c_rdwr_ioctl_data rdwr = {
-		.msgs  = &msg,
+		.msgs = &msg,
 		.nmsgs = 1,
 	};
 
@@ -80,25 +79,27 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr,
 	}
 	return OVE_OK;
 #else
-	(void)i2c; (void)addr; (void)data; (void)len;
+	(void)i2c;
+	(void)addr;
+	(void)data;
+	(void)len;
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }
 
-int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr,
-		     void *buf, size_t len, uint32_t timeout_ms)
+int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
 #ifdef __linux__
 	struct i2c_msg msg = {
-		.addr  = addr,
+		.addr = addr,
 		.flags = I2C_M_RD,
-		.len   = (uint16_t)len,
-		.buf   = buf,
+		.len = (uint16_t)len,
+		.buf = buf,
 	};
 	struct i2c_rdwr_ioctl_data rdwr = {
-		.msgs  = &msg,
+		.msgs = &msg,
 		.nmsgs = 1,
 	};
 
@@ -109,35 +110,36 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr,
 	}
 	return OVE_OK;
 #else
-	(void)i2c; (void)addr; (void)buf; (void)len;
+	(void)i2c;
+	(void)addr;
+	(void)buf;
+	(void)len;
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }
 
-int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
-			   const void *tx, size_t tx_len,
-			   void *rx, size_t rx_len,
-			   uint32_t timeout_ms)
+int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+			   size_t rx_len, uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
 #ifdef __linux__
 	struct i2c_msg msgs[2] = {
 		{
-			.addr  = addr,
+			.addr = addr,
 			.flags = 0,
-			.len   = (uint16_t)tx_len,
-			.buf   = (uint8_t *)tx,
+			.len = (uint16_t)tx_len,
+			.buf = (uint8_t *)tx,
 		},
 		{
-			.addr  = addr,
+			.addr = addr,
 			.flags = I2C_M_RD,
-			.len   = (uint16_t)rx_len,
-			.buf   = rx,
+			.len = (uint16_t)rx_len,
+			.buf = rx,
 		},
 	};
 	struct i2c_rdwr_ioctl_data rdwr = {
-		.msgs  = msgs,
+		.msgs = msgs,
 		.nmsgs = 2,
 	};
 
@@ -148,8 +150,12 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
 	}
 	return OVE_OK;
 #else
-	(void)i2c; (void)addr; (void)tx; (void)tx_len;
-	(void)rx; (void)rx_len;
+	(void)i2c;
+	(void)addr;
+	(void)tx;
+	(void)tx_len;
+	(void)rx;
+	(void)rx_len;
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }

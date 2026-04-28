@@ -14,9 +14,8 @@
 #include <string.h>
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_stream_init(ove_stream_t *stream,
-			ove_stream_storage_t *storage,
-			void *buffer, size_t size, size_t trigger)
+int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *buffer, size_t size,
+		    size_t trigger)
 {
 	(void)trigger;
 
@@ -43,8 +42,7 @@ void ove_stream_deinit(ove_stream_t stream)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_STREAM
-int ove_stream_create(ove_stream_t *stream, size_t size,
-				size_t trigger)
+int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 {
 	struct ove_stream *zs;
 
@@ -79,9 +77,8 @@ void ove_stream_destroy(ove_stream_t stream)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_stream_send(ove_stream_t stream,
-			      const void *data, size_t len,
-			      uint32_t timeout_ms, size_t *bytes_sent)
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+		    size_t *bytes_sent)
 {
 	k_timeout_t timeout;
 	int ret;
@@ -107,9 +104,8 @@ int ove_stream_send(ove_stream_t stream,
 	return OVE_OK;
 }
 
-int ove_stream_receive(ove_stream_t stream,
-				 void *buf, size_t len,
-				 uint32_t timeout_ms, size_t *bytes_received)
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+		       size_t *bytes_received)
 {
 	k_timeout_t timeout;
 	int ret;
@@ -135,9 +131,7 @@ int ove_stream_receive(ove_stream_t stream,
 	return OVE_OK;
 }
 
-int ove_stream_send_from_isr(ove_stream_t stream,
-				       const void *data, size_t len,
-				       size_t *bytes_sent)
+int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)
 {
 	int ret;
 
@@ -156,9 +150,7 @@ int ove_stream_send_from_isr(ove_stream_t stream,
 	return OVE_OK;
 }
 
-int ove_stream_receive_from_isr(ove_stream_t stream,
-					  void *buf, size_t len,
-					  size_t *bytes_received)
+int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)
 {
 	int ret;
 

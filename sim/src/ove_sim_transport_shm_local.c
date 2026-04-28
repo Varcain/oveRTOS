@@ -36,10 +36,10 @@
 
 /* ── Framebuffer protocol (shared with QEMU guest transport) ─────── */
 
-#define FB_PATH         "/dev/shm/ove-fb"
-#define FB_MAGIC        0x42465854  /* "TXFB" */
+#define FB_PATH "/dev/shm/ove-fb"
+#define FB_MAGIC 0x42465854 /* "TXFB" */
 #define FB_FMT_XRGB8888 1
-#define FB_MAX_SIZE     (16 + 1920 * 1080 * 4)
+#define FB_MAX_SIZE (16 + 1920 * 1080 * 4)
 
 struct fb_header {
 	uint32_t magic;
@@ -59,9 +59,9 @@ struct fb_header {
 
 #include "ove_sim_audio_ring.h"
 
-#define AUDIO_PATH      "/dev/shm/ove-audio"
+#define AUDIO_PATH "/dev/shm/ove-audio"
 #define AUDIO_RING_TOTAL (sizeof(struct ove_sim_audio_ring))
-#define AUDIO_SHM_TOTAL  (2u * AUDIO_RING_TOTAL)
+#define AUDIO_SHM_TOTAL (2u * AUDIO_RING_TOTAL)
 
 /* ── Pointer input (bridge → firmware) ───────────────────────────── */
 /*
@@ -77,39 +77,38 @@ struct fb_header {
  *   offset  8: uint8_t  pressed
  *   offset  9: uint8_t  reserved[7]
  */
-#define INPUT_PATH      "/dev/shm/ove-input"
-#define INPUT_MAGIC     0x54504E49u  /* "INPT" */
-#define INPUT_SHM_SIZE  16
+#define INPUT_PATH "/dev/shm/ove-input"
+#define INPUT_MAGIC 0x54504E49u /* "INPT" */
+#define INPUT_SHM_SIZE 16
 
 /* ── Private state ───────────────────────────────────────────────── */
 
 struct shm_local_priv {
 	/* Plugin events/commands (/dev/shm/ove-sim) */
-	int      sim_fd;
+	int sim_fd;
 	uint8_t *sim_base;
 	uint32_t event_wpos;
 	uint32_t cmd_rpos;
 
 	/* Display (/dev/shm/ove-fb) */
-	int      fb_fd;
+	int fb_fd;
 	uint8_t *fb_base;
-	size_t   fb_map_size;
+	size_t fb_map_size;
 
 	/* Audio (/dev/shm/ove-audio) — two ove_sim_audio_ring structs */
-	int                        audio_fd;
-	struct ove_sim_audio_ring *audio_out;  /* playback: firmware → bridge */
-	struct ove_sim_audio_ring *audio_in;   /* capture:  bridge → firmware */
-	uint8_t                    audio_init_done;
+	int audio_fd;
+	struct ove_sim_audio_ring *audio_out; /* playback: firmware → bridge */
+	struct ove_sim_audio_ring *audio_in;  /* capture:  bridge → firmware */
+	uint8_t audio_init_done;
 
 	/* Pointer input (/dev/shm/ove-input) */
-	int      input_fd;
+	int input_fd;
 	uint8_t *input_base;
 };
 
 /* ── mmap helpers ────────────────────────────────────────────────── */
 
-static int shm_create(const char *path, size_t size, int *fd_out,
-		       uint8_t **base_out)
+static int shm_create(const char *path, size_t size, int *fd_out, uint8_t **base_out)
 {
 	int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0)
@@ -119,8 +118,7 @@ static int shm_create(const char *path, size_t size, int *fd_out,
 		unlink(path);
 		return -1;
 	}
-	uint8_t *base = mmap(NULL, size, PROT_READ | PROT_WRITE,
-			     MAP_SHARED, fd, 0);
+	uint8_t *base = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (base == MAP_FAILED) {
 		close(fd);
 		unlink(path);
@@ -144,8 +142,8 @@ static void shm_destroy(const char *path, int fd, uint8_t *base, size_t size)
 
 /* ── Ring helpers (direct memory, no semihosting) ────────────────── */
 
-static inline void ring_write(uint8_t *ring, uint32_t ring_size,
-			       uint32_t wpos, const void *data, uint32_t len)
+static inline void ring_write(uint8_t *ring, uint32_t ring_size, uint32_t wpos, const void *data,
+			      uint32_t len)
 {
 	uint32_t mask = ring_size - 1;
 	uint32_t pos = wpos & mask;
@@ -160,8 +158,8 @@ static inline void ring_write(uint8_t *ring, uint32_t ring_size,
 	}
 }
 
-static inline uint32_t ring_read(uint8_t *ring, uint32_t ring_size,
-				  uint32_t rpos, void *data, uint32_t len)
+static inline uint32_t ring_read(uint8_t *ring, uint32_t ring_size, uint32_t rpos, void *data,
+				 uint32_t len)
 {
 	uint32_t mask = ring_size - 1;
 	uint32_t pos = rpos & mask;
@@ -185,10 +183,8 @@ static int local_open(struct ove_sim_transport *t, const char *endpoint)
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 
 	/* Create /dev/shm/ove-sim for events & commands. */
-	if (shm_create(SIM_SHM_PATH, SIM_SHM_TOTAL_SIZE,
-		       &p->sim_fd, &p->sim_base) == 0) {
-		struct sim_shm_header *hdr =
-			(struct sim_shm_header *)p->sim_base;
+	if (shm_create(SIM_SHM_PATH, SIM_SHM_TOTAL_SIZE, &p->sim_fd, &p->sim_base) == 0) {
+		struct sim_shm_header *hdr = (struct sim_shm_header *)p->sim_base;
 		hdr->magic = SIM_SHM_MAGIC;
 		hdr->version = SIM_SHM_VERSION;
 		hdr->ring_size = SIM_SHM_RING_SIZE;
@@ -210,8 +206,7 @@ static int local_open(struct ove_sim_transport *t, const char *endpoint)
 	 * bridge. Stamp the magic so the bridge (and the firmware's
 	 * ove_sim_input_get() mmap path) can distinguish an initialised
 	 * region from a stale leftover. */
-	if (shm_create(INPUT_PATH, INPUT_SHM_SIZE,
-		       &p->input_fd, &p->input_base) == 0) {
+	if (shm_create(INPUT_PATH, INPUT_SHM_SIZE, &p->input_fd, &p->input_base) == 0) {
 		uint32_t magic = INPUT_MAGIC;
 		memcpy(p->input_base, &magic, sizeof(magic));
 	} else {
@@ -226,28 +221,29 @@ static void local_close(struct ove_sim_transport *t)
 {
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 
-	shm_destroy(SIM_SHM_PATH, p->sim_fd, p->sim_base,
-		    SIM_SHM_TOTAL_SIZE);
-	p->sim_fd = -1; p->sim_base = NULL;
+	shm_destroy(SIM_SHM_PATH, p->sim_fd, p->sim_base, SIM_SHM_TOTAL_SIZE);
+	p->sim_fd = -1;
+	p->sim_base = NULL;
 
 	shm_destroy(FB_PATH, p->fb_fd, p->fb_base, p->fb_map_size);
-	p->fb_fd = -1; p->fb_base = NULL;
+	p->fb_fd = -1;
+	p->fb_base = NULL;
 
 	if (p->audio_out)
-		shm_destroy(AUDIO_PATH, p->audio_fd,
-			    (uint8_t *)p->audio_out, AUDIO_SHM_TOTAL);
-	p->audio_fd = -1; p->audio_out = NULL; p->audio_in = NULL;
+		shm_destroy(AUDIO_PATH, p->audio_fd, (uint8_t *)p->audio_out, AUDIO_SHM_TOTAL);
+	p->audio_fd = -1;
+	p->audio_out = NULL;
+	p->audio_in = NULL;
 
 	if (p->input_base)
-		shm_destroy(INPUT_PATH, p->input_fd, p->input_base,
-			    INPUT_SHM_SIZE);
-	p->input_fd = -1; p->input_base = NULL;
+		shm_destroy(INPUT_PATH, p->input_fd, p->input_base, INPUT_SHM_SIZE);
+	p->input_fd = -1;
+	p->input_base = NULL;
 }
 
 /* ── Events / commands (plugin IPC) ──────────────────────────────── */
 
-static int local_send_event(struct ove_sim_transport *t,
-			     const struct ove_sim_event *event)
+static int local_send_event(struct ove_sim_transport *t, const struct ove_sim_event *event)
 {
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 	if (!p->sim_base)
@@ -259,31 +255,27 @@ static int local_send_event(struct ove_sim_transport *t,
 
 	uint8_t *ering = p->sim_base + SIM_SHM_EVENT_RING_OFF;
 	uint16_t len = (uint16_t)total;
-	uint8_t lenbuf[2] = { (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
+	uint8_t lenbuf[2] = {(uint8_t)(len & 0xFF), (uint8_t)(len >> 8)};
 
 	ring_write(ering, SIM_SHM_RING_SIZE, p->event_wpos, lenbuf, 2);
 	p->event_wpos += 2;
-	ring_write(ering, SIM_SHM_RING_SIZE, p->event_wpos,
-		   event, (uint32_t)total);
+	ring_write(ering, SIM_SHM_RING_SIZE, p->event_wpos, event, (uint32_t)total);
 	p->event_wpos += (uint32_t)total;
 
 	struct sim_shm_header *hdr = (struct sim_shm_header *)p->sim_base;
-	__atomic_store_n(&hdr->event_write_pos, p->event_wpos,
-			 __ATOMIC_RELEASE);
+	__atomic_store_n(&hdr->event_write_pos, p->event_wpos, __ATOMIC_RELEASE);
 	return OVE_OK;
 }
 
-static int local_recv_cmd(struct ove_sim_transport *t,
-			   struct ove_sim_cmd *cmd, size_t cmd_size,
-			   uint32_t timeout_ms)
+static int local_recv_cmd(struct ove_sim_transport *t, struct ove_sim_cmd *cmd, size_t cmd_size,
+			  uint32_t timeout_ms)
 {
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 	if (!p->sim_base)
 		return OVE_ERR_TIMEOUT;
 
 	struct sim_shm_header *hdr = (struct sim_shm_header *)p->sim_base;
-	uint32_t wpos = __atomic_load_n(&hdr->cmd_write_pos,
-					__ATOMIC_ACQUIRE);
+	uint32_t wpos = __atomic_load_n(&hdr->cmd_write_pos, __ATOMIC_ACQUIRE);
 	uint32_t avail = wpos - p->cmd_rpos;
 	if (avail < 2) {
 		if (timeout_ms == 0)
@@ -291,8 +283,7 @@ static int local_recv_cmd(struct ove_sim_transport *t,
 		/* Simple poll for non-zero timeout. */
 		for (uint32_t elapsed = 0; elapsed < timeout_ms; elapsed++) {
 			usleep(1000);
-			wpos = __atomic_load_n(&hdr->cmd_write_pos,
-					       __ATOMIC_ACQUIRE);
+			wpos = __atomic_load_n(&hdr->cmd_write_pos, __ATOMIC_ACQUIRE);
 			avail = wpos - p->cmd_rpos;
 			if (avail >= 2)
 				break;
@@ -309,8 +300,7 @@ static int local_recv_cmd(struct ove_sim_transport *t,
 
 	if (len > cmd_size) {
 		p->cmd_rpos += len;
-		__atomic_store_n(&hdr->cmd_read_pos, p->cmd_rpos,
-				 __ATOMIC_RELEASE);
+		__atomic_store_n(&hdr->cmd_read_pos, p->cmd_rpos, __ATOMIC_RELEASE);
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -323,10 +313,8 @@ static int local_recv_cmd(struct ove_sim_transport *t,
 
 /* ── Display flush ───────────────────────────────────────────────── */
 
-static int local_flush_display(struct ove_sim_transport *t,
-				const void *fb, size_t fb_len,
-				uint16_t x1, uint16_t y1,
-				uint16_t x2, uint16_t y2)
+static int local_flush_display(struct ove_sim_transport *t, const void *fb, size_t fb_len,
+			       uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 	if (!p->fb_base)
@@ -336,8 +324,8 @@ static int local_flush_display(struct ove_sim_transport *t,
 	uint16_t h = y2 - y1 + 1;
 
 	struct fb_header *hdr = (struct fb_header *)p->fb_base;
-	hdr->magic  = FB_MAGIC;
-	hdr->width  = w;
+	hdr->magic = FB_MAGIC;
+	hdr->width = w;
 	hdr->height = h;
 	hdr->format = FB_FMT_XRGB8888;
 	memcpy(p->fb_base + sizeof(struct fb_header), fb, fb_len);
@@ -348,19 +336,17 @@ static int local_flush_display(struct ove_sim_transport *t,
 
 /* ── Audio push / pull ───────────────────────────────────────────── */
 
-static void local_audio_init(struct shm_local_priv *p,
-			      uint32_t sr, uint16_t ch, uint16_t bd)
+static void local_audio_init(struct shm_local_priv *p, uint32_t sr, uint16_t ch, uint16_t bd)
 {
 	if (p->audio_init_done)
 		return;
 
 	uint8_t *base;
-	if (shm_create(AUDIO_PATH, AUDIO_SHM_TOTAL,
-		       &p->audio_fd, &base) < 0)
+	if (shm_create(AUDIO_PATH, AUDIO_SHM_TOTAL, &p->audio_fd, &base) < 0)
 		return;
 
 	p->audio_out = (struct ove_sim_audio_ring *)base;
-	p->audio_in  = (struct ove_sim_audio_ring *)(base + AUDIO_RING_TOTAL);
+	p->audio_in = (struct ove_sim_audio_ring *)(base + AUDIO_RING_TOTAL);
 
 	ove_sim_audio_ring_init(p->audio_out, sr, ch, bd);
 	ove_sim_audio_ring_init(p->audio_in, sr, ch, bd);
@@ -368,10 +354,8 @@ static void local_audio_init(struct shm_local_priv *p,
 	p->audio_init_done = 1;
 }
 
-static int local_push_audio(struct ove_sim_transport *t,
-			     const void *samples, size_t len,
-			     uint32_t sample_rate, uint16_t channels,
-			     uint16_t bit_depth)
+static int local_push_audio(struct ove_sim_transport *t, const void *samples, size_t len,
+			    uint32_t sample_rate, uint16_t channels, uint16_t bit_depth)
 {
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 	local_audio_init(p, sample_rate, channels, bit_depth);
@@ -396,8 +380,7 @@ static int local_push_audio(struct ove_sim_transport *t,
 	return OVE_OK;
 }
 
-static size_t local_pull_audio(struct ove_sim_transport *t,
-				void *samples, size_t len)
+static size_t local_pull_audio(struct ove_sim_transport *t, void *samples, size_t len)
 {
 	struct shm_local_priv *p = (struct shm_local_priv *)t->priv;
 	if (!p->audio_in && !p->audio_init_done)
@@ -434,13 +417,13 @@ static size_t local_pull_audio(struct ove_sim_transport *t,
 /* ── Vtable ──────────────────────────────────────────────────────── */
 
 static const struct ove_sim_transport_ops shm_local_ops = {
-	.open          = local_open,
-	.close         = local_close,
-	.send_event    = local_send_event,
-	.recv_cmd      = local_recv_cmd,
+	.open = local_open,
+	.close = local_close,
+	.send_event = local_send_event,
+	.recv_cmd = local_recv_cmd,
 	.flush_display = local_flush_display,
-	.push_audio    = local_push_audio,
-	.pull_audio    = local_pull_audio,
+	.push_audio = local_push_audio,
+	.pull_audio = local_pull_audio,
 };
 
 /* ── Public factory ──────────────────────────────────────────────── */

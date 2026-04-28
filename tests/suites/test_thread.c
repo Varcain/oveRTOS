@@ -59,8 +59,7 @@ static void test_create_destroy(void **state)
 	(void)state;
 	atomic_store(&g_flag, 0);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t1", entry_set_flag, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t1", entry_set_flag, NULL, s_th_stack, 4096);
 	assert_non_null(h);
 	test_msleep(50);
 	assert_int_equal(atomic_load(&g_flag), 1);
@@ -74,8 +73,8 @@ static void test_entry_arg(void **state)
 	atomic_store(&g_arg_val, 0);
 	int sentinel = 0xBEEF;
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t2", entry_capture_arg, &sentinel,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t2", entry_capture_arg, &sentinel, s_th_stack,
+			    4096);
 	test_msleep(50);
 	assert_int_equal((intptr_t)atomic_load(&g_arg_val), (intptr_t)&sentinel);
 	ove_test_thread_destroy(h);
@@ -122,8 +121,7 @@ static void test_set_priority(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t7", entry_spin, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t7", entry_spin, NULL, s_th_stack, 4096);
 	test_msleep(10);
 	ove_thread_set_priority(h, OVE_PRIO_HIGH);
 	atomic_store(&g_keep_running, 0);
@@ -137,13 +135,11 @@ static void test_get_state_running(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t8", entry_spin, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t8", entry_spin, NULL, s_th_stack, 4096);
 	test_msleep(20);
 	ove_thread_state_t st = ove_thread_get_state(h);
 	/* RUNNING, READY, or BLOCKED (FreeRTOS: vTaskDelay in spin loop) */
-	assert_true(st == OVE_THREAD_STATE_RUNNING ||
-		    st == OVE_THREAD_STATE_READY ||
+	assert_true(st == OVE_THREAD_STATE_RUNNING || st == OVE_THREAD_STATE_READY ||
 		    st == OVE_THREAD_STATE_BLOCKED);
 	atomic_store(&g_keep_running, 0);
 	test_msleep(20);
@@ -156,13 +152,11 @@ static void test_get_state_terminated(void **state)
 	(void)state;
 	ove_thread_t h = NULL;
 	atomic_store(&g_flag, 0);
-	ove_test_thread_run(&h, &s_th_storage, "t9", entry_set_flag, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t9", entry_set_flag, NULL, s_th_stack, 4096);
 	test_msleep(100);
 	ove_thread_state_t st = ove_thread_get_state(h);
 	/* FreeRTOS threads suspend after entry returns; stub marks terminated */
-	assert_true(st == OVE_THREAD_STATE_TERMINATED ||
-		    st == OVE_THREAD_STATE_SUSPENDED);
+	assert_true(st == OVE_THREAD_STATE_TERMINATED || st == OVE_THREAD_STATE_SUSPENDED);
 	ove_test_thread_destroy(h);
 }
 
@@ -172,8 +166,7 @@ static void test_stack_usage(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t10", entry_spin, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t10", entry_spin, NULL, s_th_stack, 4096);
 	test_msleep(10);
 	/* Stub returns 0; FreeRTOS returns actual HWM bytes — just verify no crash */
 	(void)ove_thread_get_stack_usage(h);
@@ -188,11 +181,12 @@ static void test_create_null_handle(void **state)
 {
 	(void)state;
 	struct ove_thread_desc desc = {
-		.name = "t11", .entry = entry_set_flag,
-		.stack_size = 4096, .priority = OVE_PRIO_NORMAL,
+		.name = "t11",
+		.entry = entry_set_flag,
+		.stack_size = 4096,
+		.priority = OVE_PRIO_NORMAL,
 	};
-	assert_int_equal(ove_thread_create_(NULL, &desc),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_thread_create_(NULL, &desc), OVE_ERR_INVALID_PARAM);
 }
 
 /* 12. create with NULL desc */
@@ -200,8 +194,7 @@ static void test_create_null_desc(void **state)
 {
 	(void)state;
 	ove_thread_t h = NULL;
-	assert_int_equal(ove_thread_create_(&h, NULL),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_thread_create_(&h, NULL), OVE_ERR_INVALID_PARAM);
 }
 
 /* 13. create with NULL entry */
@@ -210,11 +203,12 @@ static void test_create_null_entry(void **state)
 	(void)state;
 	ove_thread_t h = NULL;
 	struct ove_thread_desc desc = {
-		.name = "t13", .entry = NULL,
-		.stack_size = 4096, .priority = OVE_PRIO_NORMAL,
+		.name = "t13",
+		.entry = NULL,
+		.stack_size = 4096,
+		.priority = OVE_PRIO_NORMAL,
 	};
-	assert_int_equal(ove_thread_create_(&h, &desc),
-			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_thread_create_(&h, &desc), OVE_ERR_INVALID_PARAM);
 }
 #endif
 
@@ -224,8 +218,7 @@ static void test_suspend_resume(void **state)
 	(void)state;
 	atomic_store(&g_flag, 0);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t14", entry_sleep_briefly, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t14", entry_sleep_briefly, NULL, s_th_stack, 4096);
 	/* Wait for thread to start */
 	for (int i = 0; i < 100 && atomic_load(&g_flag) == 0; i++)
 		test_msleep(5);
@@ -254,8 +247,7 @@ static void test_runtime_stats(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t16", entry_spin, NULL,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&h, &s_th_storage, "t16", entry_spin, NULL, s_th_stack, 4096);
 	test_msleep(20);
 
 	struct ove_thread_stats stats;
@@ -286,7 +278,7 @@ static void test_create_misaligned_stack(void **state)
 		.arg = NULL,
 		.priority = OVE_PRIO_NORMAL,
 		.stack_size = sizeof(misaligned_buf) - 8,
-		.stack = misaligned_buf + 1,  /* deliberately off by 1 */
+		.stack = misaligned_buf + 1, /* deliberately off by 1 */
 	};
 	ove_thread_t h = NULL;
 	int rc = ove_thread_init(&h, &misaligned_th_storage, &desc);

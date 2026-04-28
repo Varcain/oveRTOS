@@ -23,22 +23,25 @@
 #ifdef CONFIG_OVE_ZERO_HEAP
 /* In zero-heap mode, any use of the allocator is a compile error.
  * All allocations must use caller-provided or embedded storage. */
-static inline void *ove_zero_heap_trap(void) { return (void *)0; }
+static inline void *ove_zero_heap_trap(void)
+{
+	return (void *)0;
+}
 #define OVE_BACKEND_MALLOC(sz) ove_zero_heap_trap()
-#define OVE_BACKEND_FREE(ptr)  ((void)(ptr))
+#define OVE_BACKEND_FREE(ptr) ((void)(ptr))
 #elif defined(CONFIG_OVE_RTOS_FREERTOS)
 #include "FreeRTOS.h"
 #define OVE_BACKEND_MALLOC(sz) pvPortMalloc(sz)
-#define OVE_BACKEND_FREE(ptr)  vPortFree(ptr)
+#define OVE_BACKEND_FREE(ptr) vPortFree(ptr)
 #elif defined(CONFIG_OVE_RTOS_ZEPHYR)
 #include <zephyr/kernel.h>
 #define OVE_BACKEND_MALLOC(sz) k_malloc(sz)
-#define OVE_BACKEND_FREE(ptr)  k_free(ptr)
+#define OVE_BACKEND_FREE(ptr) k_free(ptr)
 #else
 /* POSIX and NuttX both use standard libc allocation */
 #include <stdlib.h>
 #define OVE_BACKEND_MALLOC(sz) malloc(sz)
-#define OVE_BACKEND_FREE(ptr)  free(ptr)
+#define OVE_BACKEND_FREE(ptr) free(ptr)
 #endif
 
 /**
@@ -91,15 +94,16 @@ static inline void *ove_alloc_or_use(void *storage, size_t size)
  */
 static inline bool ove_nvs_key_is_valid(const char *key)
 {
-	if (!key || !*key) return false;
-	if (*key == '.') return false;
+	if (!key || !*key)
+		return false;
+	if (*key == '.')
+		return false;
 	for (const char *p = key; *p; ++p) {
 		char c = *p;
-		bool ok = (c >= 'A' && c <= 'Z') ||
-			  (c >= 'a' && c <= 'z') ||
-			  (c >= '0' && c <= '9') ||
-			  c == '_' || c == '-' || c == '.';
-		if (!ok) return false;
+		bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+			  (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+		if (!ok)
+			return false;
 	}
 	return true;
 }
@@ -115,23 +119,38 @@ static inline bool ove_nvs_key_is_valid(const char *key)
 static inline int ove_errno_to_ove(int e)
 {
 	switch (e) {
-	case 0:        return OVE_OK;
-	case EINVAL:   return OVE_ERR_INVALID_PARAM;
-	case EFAULT:   return OVE_ERR_INVALID_PARAM;
-	case ENOENT:   return OVE_ERR_INVALID_PARAM;
-	case ENOTDIR:  return OVE_ERR_INVALID_PARAM;
-	case EISDIR:   return OVE_ERR_INVALID_PARAM;
-	case ERANGE:   return OVE_ERR_INVALID_PARAM;
-	case ENAMETOOLONG: return OVE_ERR_INVALID_PARAM;
-	case ENOMEM:   return OVE_ERR_NO_MEMORY;
-	case ENOSPC:   return OVE_ERR_NO_MEMORY;
-	case EDQUOT:   return OVE_ERR_NO_MEMORY;
-	case ETIMEDOUT: return OVE_ERR_TIMEOUT;
-	case EAGAIN:   return OVE_ERR_TIMEOUT;
+	case 0:
+		return OVE_OK;
+	case EINVAL:
+		return OVE_ERR_INVALID_PARAM;
+	case EFAULT:
+		return OVE_ERR_INVALID_PARAM;
+	case ENOENT:
+		return OVE_ERR_INVALID_PARAM;
+	case ENOTDIR:
+		return OVE_ERR_INVALID_PARAM;
+	case EISDIR:
+		return OVE_ERR_INVALID_PARAM;
+	case ERANGE:
+		return OVE_ERR_INVALID_PARAM;
+	case ENAMETOOLONG:
+		return OVE_ERR_INVALID_PARAM;
+	case ENOMEM:
+		return OVE_ERR_NO_MEMORY;
+	case ENOSPC:
+		return OVE_ERR_NO_MEMORY;
+	case EDQUOT:
+		return OVE_ERR_NO_MEMORY;
+	case ETIMEDOUT:
+		return OVE_ERR_TIMEOUT;
+	case EAGAIN:
+		return OVE_ERR_TIMEOUT;
 #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
-	case EWOULDBLOCK: return OVE_ERR_TIMEOUT;
+	case EWOULDBLOCK:
+		return OVE_ERR_TIMEOUT;
 #endif
-	default:       return OVE_ERR_NOT_SUPPORTED;
+	default:
+		return OVE_ERR_NOT_SUPPORTED;
 	}
 }
 
@@ -160,14 +179,20 @@ static inline void ove_backend_thread_set_state(int new_state)
 /**
  * OVE_CHECK_PARAMS_2 - validate two pointers are non-NULL
  */
-#define OVE_CHECK_PARAMS_2(a, b) \
-	do { if (!(a) || !(b)) return OVE_ERR_INVALID_PARAM; } while(0)
+#define OVE_CHECK_PARAMS_2(a, b)                      \
+	do {                                          \
+		if (!(a) || !(b))                     \
+			return OVE_ERR_INVALID_PARAM; \
+	} while (0)
 
 /**
  * OVE_CHECK_PARAMS_3 - validate three pointers are non-NULL
  */
-#define OVE_CHECK_PARAMS_3(a, b, c) \
-	do { if (!(a) || !(b) || !(c)) return OVE_ERR_INVALID_PARAM; } while(0)
+#define OVE_CHECK_PARAMS_3(a, b, c)                   \
+	do {                                          \
+		if (!(a) || !(b) || !(c))             \
+			return OVE_ERR_INVALID_PARAM; \
+	} while (0)
 
 /**
  * OVE_CREATE_IMPL - common create pattern: malloc, check, assign, init
@@ -175,12 +200,13 @@ static inline void ove_backend_thread_set_state(int new_state)
  * @handle_out: pointer to handle variable to assign
  * @init_call:  init function call expression using 'w' as the allocated ptr
  */
-#define OVE_CREATE_IMPL(type, handle_out, init_call) \
-	do { \
+#define OVE_CREATE_IMPL(type, handle_out, init_call)             \
+	do {                                                     \
 		struct type *w = OVE_BACKEND_MALLOC(sizeof(*w)); \
-		if (!w) return OVE_ERR_NO_MEMORY; \
-		*(handle_out) = w; \
-		return (init_call); \
-	} while(0)
+		if (!w)                                          \
+			return OVE_ERR_NO_MEMORY;                \
+		*(handle_out) = w;                               \
+		return (init_call);                              \
+	} while (0)
 
 #endif /* OVE_BACKEND_COMMON_H */

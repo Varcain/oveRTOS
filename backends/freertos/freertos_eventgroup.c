@@ -13,8 +13,7 @@
 #include "event_groups.h"
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_eventgroup_init(ove_eventgroup_t *eg,
-			    ove_eventgroup_storage_t *storage)
+int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
 	if (eg == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -62,24 +61,18 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
-						ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
-	return (ove_eventbits_t)xEventGroupSetBits(
-		eg->handle, (EventBits_t)bits);
+	return (ove_eventbits_t)xEventGroupSetBits(eg->handle, (EventBits_t)bits);
 }
 
-ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
-						  ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
-	return (ove_eventbits_t)xEventGroupClearBits(
-		eg->handle, (EventBits_t)bits);
+	return (ove_eventbits_t)xEventGroupClearBits(eg->handle, (EventBits_t)bits);
 }
 
-int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
-				 ove_eventbits_t bits,
-				 uint32_t flags, uint32_t timeout_ms,
-				 ove_eventbits_t *result)
+int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
+			     uint32_t timeout_ms, ove_eventbits_t *result)
 {
 	BaseType_t wait_all = (flags & OVE_EG_WAIT_ALL) ? pdTRUE : pdFALSE;
 	BaseType_t clear = (flags & OVE_EG_CLEAR_ON_EXIT) ? pdTRUE : pdFALSE;
@@ -92,9 +85,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
 		ticks = pdMS_TO_TICKS(timeout_ms);
 	}
 
-	val = xEventGroupWaitBits(eg->handle,
-				  (EventBits_t)bits,
-				  clear, wait_all, ticks);
+	val = xEventGroupWaitBits(eg->handle, (EventBits_t)bits, clear, wait_all, ticks);
 
 	if (result != NULL) {
 		*result = (ove_eventbits_t)val;
@@ -112,14 +103,12 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
 	return OVE_ERR_TIMEOUT;
 }
 
-ove_eventbits_t ove_eventgroup_set_bits_from_isr(
-	ove_eventgroup_t eg, ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	BaseType_t yield = pdFALSE;
 	BaseType_t ret;
 
-	ret = xEventGroupSetBitsFromISR(eg->handle,
-					(EventBits_t)bits, &yield);
+	ret = xEventGroupSetBitsFromISR(eg->handle, (EventBits_t)bits, &yield);
 	portYIELD_FROM_ISR(yield);
 
 	if (ret == pdPASS) {

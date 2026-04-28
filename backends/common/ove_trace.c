@@ -18,23 +18,22 @@ void ove_trace_emit_state(uintptr_t thread_handle, int old_state, int new_state)
 {
 	struct ove_trace_record rec = {
 		.ts_us = ove_state_stats_now_us(),
-		.tid   = (uint32_t)thread_handle,
-		.kind  = OVE_TRACE_KIND_STATE,
-		.code  = (uint8_t)new_state,
-		.arg   = (uint16_t)old_state,
+		.tid = (uint32_t)thread_handle,
+		.kind = OVE_TRACE_KIND_STATE,
+		.code = (uint8_t)new_state,
+		.arg = (uint16_t)old_state,
 	};
 	(void)ove_trace_ring_push(&rec);
 }
 
-void ove_trace_emit_mark(uintptr_t thread_handle,
-			 uint8_t prim, uint8_t act, uintptr_t object)
+void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object)
 {
 	struct ove_trace_record rec = {
 		.ts_us = ove_state_stats_now_us(),
-		.tid   = (uint32_t)thread_handle,
-		.kind  = OVE_TRACE_KIND_MARK,
-		.code  = (uint8_t)((prim << 4) | (act & 0x0F)),
-		.arg   = (uint16_t)(object & 0xFFFFu),
+		.tid = (uint32_t)thread_handle,
+		.kind = OVE_TRACE_KIND_MARK,
+		.code = (uint8_t)((prim << 4) | (act & 0x0F)),
+		.arg = (uint16_t)(object & 0xFFFFu),
 	};
 	(void)ove_trace_ring_push(&rec);
 }

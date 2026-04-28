@@ -33,17 +33,16 @@
 /* ── Private state ────────────────────────────────────────────────── */
 
 struct shm_priv {
-	int      fd;
-	uint8_t *base;          /* mmap'd region */
-	size_t   map_size;
-	uint32_t event_rpos;    /* host-side read position for events */
-	uint32_t cmd_wpos;      /* host-side write position for commands */
+	int fd;
+	uint8_t *base; /* mmap'd region */
+	size_t map_size;
+	uint32_t event_rpos; /* host-side read position for events */
+	uint32_t cmd_wpos;   /* host-side write position for commands */
 };
 
 /* ── Ring helpers (no locks — SPSC with ordered stores) ───────────── */
 
-static uint32_t shm_ring_available(const uint8_t *base, uint32_t wpos_off,
-				   uint32_t rpos)
+static uint32_t shm_ring_available(const uint8_t *base, uint32_t wpos_off, uint32_t rpos)
 {
 	uint32_t wpos;
 	memcpy(&wpos, base + wpos_off, sizeof(wpos));
@@ -80,8 +79,7 @@ static int shm_transport_open(struct ove_sim_transport *t, const char *endpoint)
 		}
 	}
 
-	uint8_t *base = mmap(NULL, SIM_SHM_TOTAL_SIZE,
-			     PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	uint8_t *base = mmap(NULL, SIM_SHM_TOTAL_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	if (base == MAP_FAILED) {
 		close(fd);
 		return OVE_ERR_NO_MEMORY;
@@ -105,10 +103,8 @@ ready:
 	p->map_size = SIM_SHM_TOTAL_SIZE;
 
 	/* Start reading from the current guest write positions. */
-	memcpy(&p->event_rpos, base + offsetof(struct sim_shm_header,
-					       event_write_pos), 4);
-	memcpy(&p->cmd_wpos, base + offsetof(struct sim_shm_header,
-					      cmd_write_pos), 4);
+	memcpy(&p->event_rpos, base + offsetof(struct sim_shm_header, event_write_pos), 4);
+	memcpy(&p->cmd_wpos, base + offsetof(struct sim_shm_header, cmd_write_pos), 4);
 
 	return OVE_OK;
 }
@@ -131,18 +127,20 @@ static void shm_transport_close(struct ove_sim_transport *t)
  * They exist for completeness but return errors — the host uses
  * read_event / write_cmd instead.
  */
-static int shm_send_event(struct ove_sim_transport *t,
-			   const struct ove_sim_event *event)
+static int shm_send_event(struct ove_sim_transport *t, const struct ove_sim_event *event)
 {
-	(void)t; (void)event;
+	(void)t;
+	(void)event;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-static int shm_recv_cmd(struct ove_sim_transport *t,
-			struct ove_sim_cmd *cmd, size_t cmd_size,
+static int shm_recv_cmd(struct ove_sim_transport *t, struct ove_sim_cmd *cmd, size_t cmd_size,
 			uint32_t timeout_ms)
 {
-	(void)t; (void)cmd; (void)cmd_size; (void)timeout_ms;
+	(void)t;
+	(void)cmd;
+	(void)cmd_size;
+	(void)timeout_ms;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
@@ -152,9 +150,8 @@ static int shm_recv_cmd(struct ove_sim_transport *t,
  * Read the next event from the event ring (guest → host).
  * Messages are stored as [uint16_t len][data[len]].
  */
-static int shm_read_event(struct ove_sim_transport *t,
-			   void *buf, size_t buf_size,
-			   uint16_t *out_len, uint32_t timeout_ms)
+static int shm_read_event(struct ove_sim_transport *t, void *buf, size_t buf_size,
+			  uint16_t *out_len, uint32_t timeout_ms)
 {
 	struct shm_priv *p = (struct shm_priv *)t->priv;
 	uint8_t *ring = p->base + SIM_SHM_EVENT_RING_OFF;
@@ -164,8 +161,7 @@ static int shm_read_event(struct ove_sim_transport *t,
 	uint32_t avail;
 	for (;;) {
 		uint32_t wpos;
-		memcpy(&wpos, p->base + offsetof(struct sim_shm_header,
-						  event_write_pos), 4);
+		memcpy(&wpos, p->base + offsetof(struct sim_shm_header, event_write_pos), 4);
 		avail = wpos - p->event_rpos;
 		if (avail >= sizeof(uint16_t))
 			break;
@@ -189,9 +185,8 @@ static int shm_read_event(struct ove_sim_transport *t,
 	if (len > buf_size) {
 		/* Skip oversized message. */
 		p->event_rpos = rp + len;
-		memcpy(p->base + offsetof(struct sim_shm_header,
-					  event_read_pos),
-		       &p->event_rpos, 4);
+		memcpy(p->base + offsetof(struct sim_shm_header, event_read_pos), &p->event_rpos,
+		       4);
 		*out_len = 0;
 		return OVE_ERR_INVALID_PARAM;
 	}
@@ -205,8 +200,7 @@ static int shm_read_event(struct ove_sim_transport *t,
 
 	p->event_rpos = rp;
 	/* Update read position so the guest can see consumption. */
-	memcpy(p->base + offsetof(struct sim_shm_header, event_read_pos),
-	       &p->event_rpos, 4);
+	memcpy(p->base + offsetof(struct sim_shm_header, event_read_pos), &p->event_rpos, 4);
 
 	*out_len = len;
 	return OVE_OK;
@@ -215,8 +209,7 @@ static int shm_read_event(struct ove_sim_transport *t,
 /**
  * Write a command into the command ring (host → guest).
  */
-static int shm_write_cmd(struct ove_sim_transport *t,
-			  const void *data, uint16_t len)
+static int shm_write_cmd(struct ove_sim_transport *t, const void *data, uint16_t len)
 {
 	struct shm_priv *p = (struct shm_priv *)t->priv;
 	uint8_t *ring = p->base + SIM_SHM_CMD_RING_OFF;
@@ -225,8 +218,7 @@ static int shm_write_cmd(struct ove_sim_transport *t,
 
 	/* Check free space. */
 	uint32_t rpos;
-	memcpy(&rpos, p->base + offsetof(struct sim_shm_header,
-					  cmd_read_pos), 4);
+	memcpy(&rpos, p->base + offsetof(struct sim_shm_header, cmd_read_pos), 4);
 	uint32_t free = SIM_SHM_RING_SIZE - (p->cmd_wpos - rpos);
 	if (free < total)
 		return OVE_ERR_QUEUE_FULL;
@@ -247,19 +239,18 @@ static int shm_write_cmd(struct ove_sim_transport *t,
 
 	p->cmd_wpos = wp;
 	/* Update write position so the guest can see the new command. */
-	memcpy(p->base + offsetof(struct sim_shm_header, cmd_write_pos),
-	       &p->cmd_wpos, 4);
+	memcpy(p->base + offsetof(struct sim_shm_header, cmd_write_pos), &p->cmd_wpos, 4);
 
 	return OVE_OK;
 }
 
 static const struct ove_sim_transport_ops shm_ops = {
-	.open       = shm_transport_open,
-	.close      = shm_transport_close,
+	.open = shm_transport_open,
+	.close = shm_transport_close,
 	.send_event = shm_send_event,
-	.recv_cmd   = shm_recv_cmd,
+	.recv_cmd = shm_recv_cmd,
 	.read_event = shm_read_event,
-	.write_cmd  = shm_write_cmd,
+	.write_cmd = shm_write_cmd,
 };
 
 /* ── Public factory ───────────────────────────────────────────────── */

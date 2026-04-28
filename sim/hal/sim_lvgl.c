@@ -58,8 +58,7 @@ static uint32_t hires_tick_cb(void)
 
 /* ── LVGL flush callback ──────────────────────────────────────────── */
 
-static void sim_flush_cb(lv_display_t *disp, const lv_area_t *area,
-			 uint8_t *px_map)
+static void sim_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
 	uint16_t x1 = (uint16_t)area->x1;
 	uint16_t y1 = (uint16_t)area->y1;
@@ -92,8 +91,7 @@ static void sim_indev_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 	ove_sim_input_get(&x, &y, &pressed);
 	data->point.x = x;
 	data->point.y = y;
-	data->state = pressed
-		? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+	data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 }
 
 /* ── Public LVGL API implementation ────────────────────────────────── */
@@ -121,8 +119,7 @@ int ove_lvgl_init(void)
 	lv_tick_set_cb(hires_tick_cb);
 
 	/* Create a memory-only display. */
-	lv_display_t *disp = lv_display_create(OVE_DISPLAY_WIDTH,
-					       OVE_DISPLAY_HEIGHT);
+	lv_display_t *disp = lv_display_create(OVE_DISPLAY_WIDTH, OVE_DISPLAY_HEIGHT);
 	if (!disp)
 		return OVE_ERR_NO_MEMORY;
 
@@ -137,16 +134,13 @@ int ove_lvgl_init(void)
 		return OVE_ERR_NO_MEMORY;
 
 	lv_display_set_color_format(disp, LV_COLOR_FORMAT_XRGB8888);
-	lv_display_set_buffers(disp, fb_buf1, NULL, buf_size,
-			       LV_DISPLAY_RENDER_MODE_FULL);
+	lv_display_set_buffers(disp, fb_buf1, NULL, buf_size, LV_DISPLAY_RENDER_MODE_FULL);
 	lv_display_set_flush_cb(disp, sim_flush_cb);
 
 	/* Set a theme. */
-	lv_theme_t *th = lv_theme_default_init(
-		disp,
-		lv_palette_main(LV_PALETTE_BLUE),
-		lv_palette_main(LV_PALETTE_RED),
-		true, &lv_font_montserrat_32);
+	lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE),
+					       lv_palette_main(LV_PALETTE_RED), true,
+					       &lv_font_montserrat_32);
 	lv_display_set_theme(disp, th);
 
 	/* Register mouse/touch input device.

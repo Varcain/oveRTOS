@@ -50,9 +50,8 @@ typedef enum {
  * @param[in] payload_len Payload length in bytes.
  * @param[in] user_data   Opaque pointer supplied at connect time.
  */
-typedef void (*ove_mqtt_msg_cb)(const char *topic, size_t topic_len,
-				const void *payload, size_t payload_len,
-				void *user_data);
+typedef void (*ove_mqtt_msg_cb)(const char *topic, size_t topic_len, const void *payload,
+				size_t payload_len, void *user_data);
 
 /**
  * @brief MQTT connection configuration.
@@ -62,18 +61,19 @@ typedef void (*ove_mqtt_msg_cb)(const char *topic, size_t topic_len,
  *       refuses to continue unless @c tls_allow_insecure is also set.
  */
 typedef struct {
-	const char          *host;               /**< Broker hostname or IP. */
-	uint16_t             port;               /**< Broker port (1883 or 8883). */
-	const char          *client_id;          /**< Client identifier. */
-	const char          *username;           /**< Username (may be NULL). */
-	const char          *password;           /**< Password (may be NULL). */
-	uint16_t             keep_alive_s;       /**< Keep-alive interval in seconds. */
-	int                  use_tls;            /**< Non-zero to use TLS. */
-	const unsigned char *tls_ca_cert;        /**< PEM/DER CA cert used when @c use_tls is set (may be NULL). */
-	size_t               tls_ca_cert_len;    /**< Length of @c tls_ca_cert in bytes. */
-	int                  tls_allow_insecure; /**< Non-zero to allow unverified TLS when @c tls_ca_cert is NULL. */
-	ove_mqtt_msg_cb      on_message;         /**< Message callback. */
-	void                *user_data;          /**< Opaque pointer for callback. */
+	const char *host;      /**< Broker hostname or IP. */
+	uint16_t port;	       /**< Broker port (1883 or 8883). */
+	const char *client_id; /**< Client identifier. */
+	const char *username;  /**< Username (may be NULL). */
+	const char *password;  /**< Password (may be NULL). */
+	uint16_t keep_alive_s; /**< Keep-alive interval in seconds. */
+	int use_tls;	       /**< Non-zero to use TLS. */
+	const unsigned char
+		*tls_ca_cert;	/**< PEM/DER CA cert used when @c use_tls is set (may be NULL). */
+	size_t tls_ca_cert_len; /**< Length of @c tls_ca_cert in bytes. */
+	int tls_allow_insecure; /**< Non-zero to allow unverified TLS when @c tls_ca_cert is NULL. */
+	ove_mqtt_msg_cb on_message; /**< Message callback. */
+	void *user_data;	    /**< Opaque pointer for callback. */
 } ove_mqtt_config_t;
 
 #include "ove/storage.h"
@@ -87,8 +87,7 @@ typedef struct {
  * @param[in]  storage Caller-allocated storage.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_client_init(ove_mqtt_client_t *client,
-			      ove_mqtt_client_storage_t *storage);
+int ove_mqtt_client_init(ove_mqtt_client_t *client, ove_mqtt_client_storage_t *storage);
 
 /**
  * @brief De-initialise an MQTT client.
@@ -104,8 +103,7 @@ void ove_mqtt_client_deinit(ove_mqtt_client_t client);
  * @param[in] cfg    Connection configuration.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_connect(ove_mqtt_client_t client,
-			  const ove_mqtt_config_t *cfg);
+int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg);
 
 /**
  * @brief Disconnect from the MQTT broker.
@@ -124,10 +122,8 @@ void ove_mqtt_disconnect(ove_mqtt_client_t client);
  * @param[in] qos         QoS level.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_publish(ove_mqtt_client_t client,
-			  const char *topic,
-			  const void *payload, size_t payload_len,
-			  ove_mqtt_qos_t qos);
+int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload,
+		     size_t payload_len, ove_mqtt_qos_t qos);
 
 /**
  * @brief Subscribe to a topic.
@@ -137,8 +133,7 @@ int  ove_mqtt_publish(ove_mqtt_client_t client,
  * @param[in] qos    Maximum QoS level.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_subscribe(ove_mqtt_client_t client,
-			    const char *topic, ove_mqtt_qos_t qos);
+int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos_t qos);
 
 /**
  * @brief Unsubscribe from a topic.
@@ -147,7 +142,7 @@ int  ove_mqtt_subscribe(ove_mqtt_client_t client,
  * @param[in] topic  Topic filter (NUL-terminated).
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
+int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
 
 /**
  * @brief Process incoming packets and send keep-alive pings.
@@ -158,7 +153,7 @@ int  ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
  * @param[in] timeout_ms Maximum time to wait for incoming data.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms);
+int ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms);
 
 #ifdef OVE_HEAP_NET_MQTT
 /**
@@ -167,7 +162,7 @@ int  ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms);
  * @param[out] client Handle written on success.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_mqtt_client_create(ove_mqtt_client_t *client);
+int ove_mqtt_client_create(ove_mqtt_client_t *client);
 
 /**
  * @brief Destroy a heap-allocated MQTT client.
@@ -181,17 +176,62 @@ void ove_mqtt_client_destroy(ove_mqtt_client_t client);
 
 /** @cond INTERNAL */
 #ifndef CONFIG_OVE_NET_MQTT
-typedef struct { uint8_t _unused; } ove_mqtt_client_storage_t;
+typedef struct {
+	uint8_t _unused;
+} ove_mqtt_client_storage_t;
 #endif
 
-static inline int  ove_mqtt_client_init(ove_mqtt_client_t *client, ove_mqtt_client_storage_t *storage) { (void)client; (void)storage; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_mqtt_client_deinit(ove_mqtt_client_t client) { (void)client; }
-static inline int  ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg) { (void)client; (void)cfg; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_mqtt_disconnect(ove_mqtt_client_t client) { (void)client; }
-static inline int  ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload, size_t payload_len, ove_mqtt_qos_t qos) { (void)client; (void)topic; (void)payload; (void)payload_len; (void)qos; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos_t qos) { (void)client; (void)topic; (void)qos; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic) { (void)client; (void)topic; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms) { (void)client; (void)timeout_ms; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_mqtt_client_init(ove_mqtt_client_t *client,
+				       ove_mqtt_client_storage_t *storage)
+{
+	(void)client;
+	(void)storage;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_mqtt_client_deinit(ove_mqtt_client_t client)
+{
+	(void)client;
+}
+static inline int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
+{
+	(void)client;
+	(void)cfg;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_mqtt_disconnect(ove_mqtt_client_t client)
+{
+	(void)client;
+}
+static inline int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *payload,
+				   size_t payload_len, ove_mqtt_qos_t qos)
+{
+	(void)client;
+	(void)topic;
+	(void)payload;
+	(void)payload_len;
+	(void)qos;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic,
+				     ove_mqtt_qos_t qos)
+{
+	(void)client;
+	(void)topic;
+	(void)qos;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
+{
+	(void)client;
+	(void)topic;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms)
+{
+	(void)client;
+	(void)timeout_ms;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 /** @endcond */
 
 #endif /* CONFIG_OVE_NET_MQTT */

@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_NET
 
-namespace ove {
+namespace ove
+{
 
 /* ── Address (value type, copyable) ─────────────────────────────── */
 
@@ -30,12 +31,15 @@ namespace ove {
  * `ipv4()` factory to construct from individual octets, or access the
  * `raw` member directly for advanced use.
  */
-class Address {
-public:
+class Address
+{
+      public:
 	/**
 	 * @brief Default-constructs a zeroed address.
 	 */
-	Address() : raw{} {}
+	Address() : raw{}
+	{
+	}
 
 	/**
 	 * @brief Creates an IPv4 address from individual octets and a port.
@@ -46,8 +50,8 @@ public:
 	 * @param[in] port Port number in host byte order.
 	 * @return A fully initialised `Address`.
 	 */
-	static Address ipv4(uint8_t a, uint8_t b, uint8_t c, uint8_t d,
-			    uint16_t port) {
+	static Address ipv4(uint8_t a, uint8_t b, uint8_t c, uint8_t d, uint16_t port)
+	{
 		Address addr;
 		ove_sockaddr_ipv4(&addr.raw, a, b, c, d, port);
 		return addr;
@@ -57,13 +61,19 @@ public:
 	 * @brief Returns the port in host byte order.
 	 * @return Port number.
 	 */
-	uint16_t port() const { return raw.port; }
+	uint16_t port() const
+	{
+		return raw.port;
+	}
 
 	/**
 	 * @brief Sets the port.
 	 * @param[in] p Port number in host byte order.
 	 */
-	void set_port(uint16_t p) { raw.port = p; }
+	void set_port(uint16_t p)
+	{
+		raw.port = p;
+	}
 
 	/** @brief The underlying C sockaddr. */
 	ove_sockaddr_t raw;
@@ -78,12 +88,15 @@ public:
  * Wraps the C configuration struct and provides a fluent builder API.
  * The `raw` member can be passed directly to the C API if needed.
  */
-class NetIfConfig {
-public:
+class NetIfConfig
+{
+      public:
 	/**
 	 * @brief Default-constructs a zeroed configuration.
 	 */
-	NetIfConfig() : raw{} {}
+	NetIfConfig() : raw{}
+	{
+	}
 
 	/**
 	 * @brief Configures a static IP address.
@@ -92,12 +105,12 @@ public:
 	 * @param[in] gw   Default gateway.
 	 * @return Reference to this object for chaining.
 	 */
-	NetIfConfig &static_ip(const Address &ip, const Address &mask,
-			       const Address &gw) {
-		raw.use_dhcp  = 0;
+	NetIfConfig &static_ip(const Address &ip, const Address &mask, const Address &gw)
+	{
+		raw.use_dhcp = 0;
 		raw.static_ip = ip.raw;
-		raw.netmask   = mask.raw;
-		raw.gateway   = gw.raw;
+		raw.netmask = mask.raw;
+		raw.gateway = gw.raw;
 		return *this;
 	}
 
@@ -105,7 +118,8 @@ public:
 	 * @brief Enables DHCP.
 	 * @return Reference to this object for chaining.
 	 */
-	NetIfConfig &dhcp() {
+	NetIfConfig &dhcp()
+	{
 		raw.use_dhcp = 1;
 		return *this;
 	}
@@ -115,7 +129,8 @@ public:
 	 * @param[in] d DNS server address.
 	 * @return Reference to this object for chaining.
 	 */
-	NetIfConfig &dns(const Address &d) {
+	NetIfConfig &dns(const Address &d)
+	{
 		raw.dns = d.raw;
 		return *this;
 	}
@@ -136,14 +151,16 @@ public:
  *
  * @note Non-copyable.  Move-only when heap allocation is enabled.
  */
-class NetIf {
-public:
+class NetIf
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the network interface.
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	NetIf() {
+	NetIf()
+	{
 		int err = ove_netif_init(&handle_, &storage_);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
@@ -151,8 +168,10 @@ public:
 	/**
 	 * @brief De-initialises the network interface.
 	 */
-	~NetIf() {
-		if (!handle_) return;
+	~NetIf()
+	{
+		if (!handle_)
+			return;
 		ove_netif_deinit(handle_);
 	}
 
@@ -167,7 +186,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	NetIf(NetIf &&other) noexcept : handle_(other.handle_) {
+	NetIf(NetIf &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -176,9 +196,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	NetIf &operator=(NetIf &&other) noexcept {
+	NetIf &operator=(NetIf &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_netif_deinit(handle_);
+			if (handle_)
+				ove_netif_deinit(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -191,14 +213,16 @@ public:
 	 * @param[in] cfg Interface configuration (DHCP or static).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int up(const NetIfConfig &cfg) {
+	[[nodiscard]] int up(const NetIfConfig &cfg)
+	{
 		return ove_netif_up(handle_, &cfg.raw);
 	}
 
 	/**
 	 * @brief Tears down the network interface.
 	 */
-	void down() {
+	void down()
+	{
 		ove_netif_down(handle_);
 	}
 
@@ -209,28 +233,33 @@ public:
 	 * @param[out] netmask Current subnet mask (may be nullptr).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int get_addr(Address *ip = nullptr,
-				   Address *gateway = nullptr,
-				   Address *netmask = nullptr) {
-		return ove_netif_get_addr(handle_,
-			ip ? &ip->raw : nullptr,
-			gateway ? &gateway->raw : nullptr,
-			netmask ? &netmask->raw : nullptr);
+	[[nodiscard]] int get_addr(Address *ip = nullptr, Address *gateway = nullptr,
+				   Address *netmask = nullptr)
+	{
+		return ove_netif_get_addr(handle_, ip ? &ip->raw : nullptr,
+					  gateway ? &gateway->raw : nullptr,
+					  netmask ? &netmask->raw : nullptr);
 	}
 
 	/**
 	 * @brief Returns `true` if the underlying handle is non-null.
 	 * @return `true` when the interface was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS network interface handle.
 	 * @return The opaque `ove_netif_t` handle.
 	 */
-	ove_netif_t handle() const { return handle_; }
+	ove_netif_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_netif_t handle_{};
 	ove_netif_storage_t storage_{};
 };
@@ -251,16 +280,17 @@ class TcpListener;
  *
  * @note Non-copyable.  Move-only when heap allocation is enabled.
  */
-class TcpSocket {
-public:
+class TcpSocket
+{
+      public:
 	/**
 	 * @brief Opens a new TCP socket.
 	 *
 	 * Asserts at startup if socket creation fails.
 	 */
-	TcpSocket() {
-		int err = ove_socket_open(&handle_, &storage_,
-					  OVE_AF_INET, OVE_SOCK_STREAM);
+	TcpSocket()
+	{
+		int err = ove_socket_open(&handle_, &storage_, OVE_AF_INET, OVE_SOCK_STREAM);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 		open_ = true;
 	}
@@ -268,8 +298,10 @@ public:
 	/**
 	 * @brief Closes the socket if it is still open.
 	 */
-	~TcpSocket() {
-		if (open_) ove_socket_close(handle_);
+	~TcpSocket()
+	{
+		if (open_)
+			ove_socket_close(handle_);
 	}
 
 	TcpSocket(const TcpSocket &) = delete;
@@ -284,9 +316,8 @@ public:
 	 * @param other The source; left in a closed, null state after the move.
 	 */
 	TcpSocket(TcpSocket &&other) noexcept
-		: handle_(other.handle_)
-		, storage_(other.storage_)
-		, open_(other.open_) {
+		: handle_(other.handle_), storage_(other.storage_), open_(other.open_)
+	{
 		other.handle_ = nullptr;
 		other.open_ = false;
 	}
@@ -296,9 +327,11 @@ public:
 	 * @param other The source; left in a closed, null state after the move.
 	 * @return Reference to this object.
 	 */
-	TcpSocket &operator=(TcpSocket &&other) noexcept {
+	TcpSocket &operator=(TcpSocket &&other) noexcept
+	{
 		if (this != &other) {
-			if (open_) ove_socket_close(handle_);
+			if (open_)
+				ove_socket_close(handle_);
 			handle_ = other.handle_;
 			storage_ = other.storage_;
 			open_ = other.open_;
@@ -315,8 +348,8 @@ public:
 	 * @param[in] timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int connect(const Address &addr,
-				  uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int connect(const Address &addr, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_socket_connect(handle_, &addr.raw, timeout_ms);
 	}
 
@@ -327,8 +360,8 @@ public:
 	 * @param[out] sent Number of bytes actually sent (may be nullptr).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int send(const void *data, size_t len,
-			       size_t *sent = nullptr) {
+	[[nodiscard]] int send(const void *data, size_t len, size_t *sent = nullptr)
+	{
 		return ove_socket_send(handle_, data, len, sent);
 	}
 
@@ -340,9 +373,9 @@ public:
 	 * @param[in]  timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, `OVE_ERR_NET_CLOSED` if peer closed.
 	 */
-	[[nodiscard]] int recv(void *buf, size_t len,
-			       size_t *received = nullptr,
-			       uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int recv(void *buf, size_t len, size_t *received = nullptr,
+			       uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_socket_recv(handle_, buf, len, received, timeout_ms);
 	}
 
@@ -351,7 +384,8 @@ public:
 	 *
 	 * Safe to call on an already-closed socket.
 	 */
-	void close() {
+	void close()
+	{
 		if (open_) {
 			ove_socket_close(handle_);
 			open_ = false;
@@ -362,15 +396,21 @@ public:
 	 * @brief Returns `true` if the socket is open.
 	 * @return Socket open state.
 	 */
-	bool is_open() const { return open_; }
+	bool is_open() const
+	{
+		return open_;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS socket handle.
 	 * @return The opaque `ove_socket_t` handle.
 	 */
-	ove_socket_t handle() const { return handle_; }
+	ove_socket_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	friend class TcpListener;
 
 	/**
@@ -378,8 +418,9 @@ private:
 	 * @param[in] h Socket handle from ove_socket_accept().
 	 * @param[in] s Storage backing the accepted socket.
 	 */
-	TcpSocket(ove_socket_t h, ove_socket_storage_t s)
-		: handle_(h), storage_(s), open_(true) {}
+	TcpSocket(ove_socket_t h, ove_socket_storage_t s) : handle_(h), storage_(s), open_(true)
+	{
+	}
 
 	ove_socket_t handle_{};
 	ove_socket_storage_t storage_{};
@@ -396,16 +437,17 @@ private:
  *
  * @note Non-copyable.  Move-only when heap allocation is enabled.
  */
-class UdpSocket {
-public:
+class UdpSocket
+{
+      public:
 	/**
 	 * @brief Opens a new UDP socket.
 	 *
 	 * Asserts at startup if socket creation fails.
 	 */
-	UdpSocket() {
-		int err = ove_socket_open(&handle_, &storage_,
-					  OVE_AF_INET, OVE_SOCK_DGRAM);
+	UdpSocket()
+	{
+		int err = ove_socket_open(&handle_, &storage_, OVE_AF_INET, OVE_SOCK_DGRAM);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 		open_ = true;
 	}
@@ -413,8 +455,10 @@ public:
 	/**
 	 * @brief Closes the socket if it is still open.
 	 */
-	~UdpSocket() {
-		if (open_) ove_socket_close(handle_);
+	~UdpSocket()
+	{
+		if (open_)
+			ove_socket_close(handle_);
 	}
 
 	UdpSocket(const UdpSocket &) = delete;
@@ -429,9 +473,8 @@ public:
 	 * @param other The source; left in a closed, null state after the move.
 	 */
 	UdpSocket(UdpSocket &&other) noexcept
-		: handle_(other.handle_)
-		, storage_(other.storage_)
-		, open_(other.open_) {
+		: handle_(other.handle_), storage_(other.storage_), open_(other.open_)
+	{
 		other.handle_ = nullptr;
 		other.open_ = false;
 	}
@@ -441,9 +484,11 @@ public:
 	 * @param other The source; left in a closed, null state after the move.
 	 * @return Reference to this object.
 	 */
-	UdpSocket &operator=(UdpSocket &&other) noexcept {
+	UdpSocket &operator=(UdpSocket &&other) noexcept
+	{
 		if (this != &other) {
-			if (open_) ove_socket_close(handle_);
+			if (open_)
+				ove_socket_close(handle_);
 			handle_ = other.handle_;
 			storage_ = other.storage_;
 			open_ = other.open_;
@@ -459,7 +504,8 @@ public:
 	 * @param[in] addr Local address to bind.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int bind(const Address &addr) {
+	[[nodiscard]] int bind(const Address &addr)
+	{
 		return ove_socket_bind(handle_, &addr.raw);
 	}
 
@@ -471,9 +517,9 @@ public:
 	 * @param[out] sent Number of bytes actually sent (may be nullptr).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int send_to(const void *data, size_t len,
-				  const Address &dest,
-				  size_t *sent = nullptr) {
+	[[nodiscard]] int send_to(const void *data, size_t len, const Address &dest,
+				  size_t *sent = nullptr)
+	{
 		return ove_socket_sendto(handle_, data, len, sent, &dest.raw);
 	}
 
@@ -486,12 +532,11 @@ public:
 	 * @param[in]  timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int recv_from(void *buf, size_t len,
-				    Address *src = nullptr,
+	[[nodiscard]] int recv_from(void *buf, size_t len, Address *src = nullptr,
 				    size_t *received = nullptr,
-				    uint32_t timeout_ms = OVE_WAIT_FOREVER) {
-		return ove_socket_recvfrom(handle_, buf, len, received,
-					   src ? &src->raw : nullptr,
+				    uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
+		return ove_socket_recvfrom(handle_, buf, len, received, src ? &src->raw : nullptr,
 					   timeout_ms);
 	}
 
@@ -500,7 +545,8 @@ public:
 	 *
 	 * Safe to call on an already-closed socket.
 	 */
-	void close() {
+	void close()
+	{
 		if (open_) {
 			ove_socket_close(handle_);
 			open_ = false;
@@ -511,15 +557,21 @@ public:
 	 * @brief Returns `true` if the socket is open.
 	 * @return Socket open state.
 	 */
-	bool is_open() const { return open_; }
+	bool is_open() const
+	{
+		return open_;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS socket handle.
 	 * @return The opaque `ove_socket_t` handle.
 	 */
-	ove_socket_t handle() const { return handle_; }
+	ove_socket_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_socket_t handle_{};
 	ove_socket_storage_t storage_{};
 	bool open_{false};
@@ -537,16 +589,17 @@ private:
  *
  * @note Non-copyable.  Move-only when heap allocation is enabled.
  */
-class TcpListener {
-public:
+class TcpListener
+{
+      public:
 	/**
 	 * @brief Opens a new TCP socket for listening.
 	 *
 	 * Asserts at startup if socket creation fails.
 	 */
-	TcpListener() {
-		int err = ove_socket_open(&handle_, &storage_,
-					  OVE_AF_INET, OVE_SOCK_STREAM);
+	TcpListener()
+	{
+		int err = ove_socket_open(&handle_, &storage_, OVE_AF_INET, OVE_SOCK_STREAM);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 		open_ = true;
 	}
@@ -554,8 +607,10 @@ public:
 	/**
 	 * @brief Closes the listening socket if it is still open.
 	 */
-	~TcpListener() {
-		if (open_) ove_socket_close(handle_);
+	~TcpListener()
+	{
+		if (open_)
+			ove_socket_close(handle_);
 	}
 
 	TcpListener(const TcpListener &) = delete;
@@ -570,9 +625,8 @@ public:
 	 * @param other The source; left in a closed, null state after the move.
 	 */
 	TcpListener(TcpListener &&other) noexcept
-		: handle_(other.handle_)
-		, storage_(other.storage_)
-		, open_(other.open_) {
+		: handle_(other.handle_), storage_(other.storage_), open_(other.open_)
+	{
 		other.handle_ = nullptr;
 		other.open_ = false;
 	}
@@ -582,9 +636,11 @@ public:
 	 * @param other The source; left in a closed, null state after the move.
 	 * @return Reference to this object.
 	 */
-	TcpListener &operator=(TcpListener &&other) noexcept {
+	TcpListener &operator=(TcpListener &&other) noexcept
+	{
 		if (this != &other) {
-			if (open_) ove_socket_close(handle_);
+			if (open_)
+				ove_socket_close(handle_);
 			handle_ = other.handle_;
 			storage_ = other.storage_;
 			open_ = other.open_;
@@ -600,7 +656,8 @@ public:
 	 * @param[in] addr Local address to bind.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int bind(const Address &addr) {
+	[[nodiscard]] int bind(const Address &addr)
+	{
 		return ove_socket_bind(handle_, &addr.raw);
 	}
 
@@ -609,7 +666,8 @@ public:
 	 * @param[in] backlog Maximum pending connection queue length.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int listen(int backlog = 4) {
+	[[nodiscard]] int listen(int backlog = 4)
+	{
 		return ove_socket_listen(handle_, backlog);
 	}
 
@@ -624,12 +682,11 @@ public:
 	 * @param[in]  timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int accept(TcpSocket &client,
-				 uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int accept(TcpSocket &client, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		ove_socket_t cli_handle{};
 		ove_socket_storage_t cli_storage{};
-		int err = ove_socket_accept(handle_, &cli_handle,
-					    &cli_storage, timeout_ms);
+		int err = ove_socket_accept(handle_, &cli_handle, &cli_storage, timeout_ms);
 		if (err == OVE_OK) {
 			client.close();
 			client.handle_ = cli_handle;
@@ -644,7 +701,8 @@ public:
 	 *
 	 * Safe to call on an already-closed socket.
 	 */
-	void close() {
+	void close()
+	{
 		if (open_) {
 			ove_socket_close(handle_);
 			open_ = false;
@@ -655,15 +713,21 @@ public:
 	 * @brief Returns `true` if the listening socket is open.
 	 * @return Socket open state.
 	 */
-	bool is_open() const { return open_; }
+	bool is_open() const
+	{
+		return open_;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS socket handle.
 	 * @return The opaque `ove_socket_t` handle.
 	 */
-	ove_socket_t handle() const { return handle_; }
+	ove_socket_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_socket_t handle_{};
 	ove_socket_storage_t storage_{};
 	bool open_{false};
@@ -677,7 +741,8 @@ private:
  *
  * Available when `CONFIG_OVE_NET` is enabled.
  */
-namespace dns {
+namespace dns
+{
 
 /**
  * @brief Resolves a hostname to an address.
@@ -686,8 +751,8 @@ namespace dns {
  * @param[in]  timeout_ms Timeout in milliseconds.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int resolve(const char *hostname, Address &addr,
-				 uint32_t timeout_ms = 5000) {
+[[nodiscard]] inline int resolve(const char *hostname, Address &addr, uint32_t timeout_ms = 5000)
+{
 	return ove_dns_resolve(hostname, &addr.raw, timeout_ms);
 }
 

@@ -54,9 +54,7 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  */
-int  ove_watchdog_init(ove_watchdog_t *wdt,
-		       ove_watchdog_storage_t *storage,
-		       uint32_t timeout_ms);
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms);
 
 /**
  * @brief Deinitialise a statically-allocated watchdog timer.
@@ -82,7 +80,7 @@ void ove_watchdog_deinit(ove_watchdog_t wdt);
  * @note Requires @c CONFIG_OVE_WATCHDOG and @c OVE_HEAP_WATCHDOG.
  */
 #ifdef OVE_HEAP_WATCHDOG
-int  ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms);
+int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms);
 
 /**
  * @brief Destroy a heap-allocated watchdog timer.
@@ -96,9 +94,11 @@ int  ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms);
 void ove_watchdog_destroy(ove_watchdog_t wdt);
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_WATCHDOG — zero-heap mode */
 
-#define ove_watchdog_create(pwdt, timeout_ms) \
-	({ static ove_watchdog_storage_t _ove_stor_; \
-	   ove_watchdog_init((pwdt), &_ove_stor_, (timeout_ms)); })
+#define ove_watchdog_create(pwdt, timeout_ms)                         \
+	({                                                            \
+		static ove_watchdog_storage_t _ove_stor_;             \
+		ove_watchdog_init((pwdt), &_ove_stor_, (timeout_ms)); \
+	})
 #define ove_watchdog_destroy(wdt) ove_watchdog_deinit(wdt)
 
 #endif /* OVE_HEAP_WATCHDOG */
@@ -113,7 +113,7 @@ void ove_watchdog_destroy(ove_watchdog_t wdt);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  */
-int  ove_watchdog_start(ove_watchdog_t wdt);
+int ove_watchdog_start(ove_watchdog_t wdt);
 
 /**
  * @brief Stop (disarm) the watchdog timer.
@@ -125,7 +125,7 @@ int  ove_watchdog_start(ove_watchdog_t wdt);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  */
-int  ove_watchdog_stop(ove_watchdog_t wdt);
+int ove_watchdog_stop(ove_watchdog_t wdt);
 
 /**
  * @brief Feed (pet) the watchdog to prevent a system reset.
@@ -139,15 +139,35 @@ int  ove_watchdog_stop(ove_watchdog_t wdt);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  */
-int  ove_watchdog_feed(ove_watchdog_t wdt);
+int ove_watchdog_feed(ove_watchdog_t wdt);
 
 #else /* !CONFIG_OVE_WATCHDOG */
 
-static inline int  ove_watchdog_create(ove_watchdog_t *w, uint32_t t) { (void)w; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_watchdog_destroy(ove_watchdog_t w) { (void)w; }
-static inline int  ove_watchdog_start(ove_watchdog_t w) { (void)w; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_watchdog_stop(ove_watchdog_t w) { (void)w; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_watchdog_feed(ove_watchdog_t w) { (void)w; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_watchdog_create(ove_watchdog_t *w, uint32_t t)
+{
+	(void)w;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_watchdog_destroy(ove_watchdog_t w)
+{
+	(void)w;
+}
+static inline int ove_watchdog_start(ove_watchdog_t w)
+{
+	(void)w;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_watchdog_stop(ove_watchdog_t w)
+{
+	(void)w;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_watchdog_feed(ove_watchdog_t w)
+{
+	(void)w;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 #endif /* CONFIG_OVE_WATCHDOG */
 

@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_BOARD
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::board
@@ -26,13 +27,15 @@ namespace ove {
  *
  * Available when `CONFIG_OVE_BOARD` is enabled.
  */
-namespace board {
+namespace board
+{
 
 /**
  * @brief Initialises the board hardware (clocks, pin-mux, etc.).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int init() {
+[[nodiscard]] inline int init()
+{
 	return ove_board_init();
 }
 
@@ -40,7 +43,8 @@ namespace board {
  * @brief Returns the human-readable board name.
  * @return Null-terminated string with the board identifier.
  */
-inline const char *name() {
+inline const char *name()
+{
 	return ove_board_name();
 }
 
@@ -48,7 +52,8 @@ inline const char *name() {
  * @brief Returns a pointer to the board descriptor structure.
  * @return Pointer to a read-only `ove_board_desc` describing board capabilities.
  */
-inline const struct ove_board_desc *desc() {
+inline const struct ove_board_desc *desc()
+{
 	return ove_board_desc();
 }
 

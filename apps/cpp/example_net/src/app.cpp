@@ -31,9 +31,20 @@
 static int pass_count;
 static int fail_count;
 
-static inline void TEST(const char *name) { OVE_LOG_INF("  [TEST] %s", name); }
-static inline void PASS(const char *name) { OVE_LOG_INF("  [PASS] %s", name); pass_count++; }
-static inline void FAIL(const char *name, int err) { OVE_LOG_ERR("  [FAIL] %s (%d)", name, err); fail_count++; }
+static inline void TEST(const char *name)
+{
+	OVE_LOG_INF("  [TEST] %s", name);
+}
+static inline void PASS(const char *name)
+{
+	OVE_LOG_INF("  [PASS] %s", name);
+	pass_count++;
+}
+static inline void FAIL(const char *name, int err)
+{
+	OVE_LOG_ERR("  [FAIL] %s (%d)", name, err);
+	fail_count++;
+}
 
 /* ── 1. Network interface ───────────────────────────────────────── */
 
@@ -44,21 +55,27 @@ static void test_netif_init()
 	OVE_LOG_INF("=== Network Interface ===");
 
 	TEST("netif_init");
-	if (!netif.valid()) { FAIL("netif_init", -1); return; }
+	if (!netif.valid()) {
+		FAIL("netif_init", -1);
+		return;
+	}
 	PASS("netif_init");
 
 	TEST("netif_up (static IP)");
 	auto cfg = ove::NetIfConfig{}
 #ifndef CONFIG_OVE_RTOS_POSIX
-		.static_ip(ove::Address::ipv4(172, 1, 1, 2, 0),
-			   ove::Address::ipv4(255, 255, 255, 0, 0),
-			   ove::Address::ipv4(172, 1, 1, 1, 0))
-		.dns(ove::Address::ipv4(8, 8, 8, 8, 0))
+			   .static_ip(ove::Address::ipv4(172, 1, 1, 2, 0),
+				      ove::Address::ipv4(255, 255, 255, 0, 0),
+				      ove::Address::ipv4(172, 1, 1, 1, 0))
+			   .dns(ove::Address::ipv4(8, 8, 8, 8, 0))
 #endif
 		;
 
 	int ret = netif.up(cfg);
-	if (ret != OVE_OK) { FAIL("netif_up", ret); return; }
+	if (ret != OVE_OK) {
+		FAIL("netif_up", ret);
+		return;
+	}
 	PASS("netif_up (static IP)");
 
 	/* Give the link time to come up on hardware */
@@ -72,9 +89,8 @@ static void test_netif_init()
 	ove::Address ip, gw, nm;
 	ret = netif.get_addr(&ip, &gw, &nm);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  IP: %u.%u.%u.%u",
-			    ip.raw.addr[0], ip.raw.addr[1],
-			    ip.raw.addr[2], ip.raw.addr[3]);
+		OVE_LOG_INF("  IP: %u.%u.%u.%u", ip.raw.addr[0], ip.raw.addr[1], ip.raw.addr[2],
+			    ip.raw.addr[3]);
 		PASS("netif_get_addr");
 	} else {
 		FAIL("netif_get_addr", ret);
@@ -91,8 +107,7 @@ static void test_dns()
 	ove::Address addr;
 	int ret = ove::dns::resolve("example.com", addr, 5000);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> %u.%u.%u.%u",
-			    addr.raw.addr[0], addr.raw.addr[1],
+		OVE_LOG_INF("  -> %u.%u.%u.%u", addr.raw.addr[0], addr.raw.addr[1],
 			    addr.raw.addr[2], addr.raw.addr[3]);
 		PASS("resolve example.com");
 	} else {
@@ -116,7 +131,10 @@ static void test_tcp()
 
 	TEST("socket_open TCP");
 	ove::TcpSocket sock;
-	if (!sock.is_open()) { FAIL("socket_open TCP", -1); return; }
+	if (!sock.is_open()) {
+		FAIL("socket_open TCP", -1);
+		return;
+	}
 	PASS("socket_open TCP");
 
 	/* Resolve + connect to example.com:80 */
@@ -130,7 +148,10 @@ static void test_tcp()
 
 	TEST("socket_connect");
 	ret = sock.connect(addr, 5000);
-	if (ret != OVE_OK) { FAIL("socket_connect", ret); return; }
+	if (ret != OVE_OK) {
+		FAIL("socket_connect", ret);
+		return;
+	}
 	PASS("socket_connect");
 
 	/* Send HTTP request */
@@ -154,10 +175,11 @@ static void test_tcp()
 
 	/* Read until connection closes */
 	while (total < sizeof(buf) - 1) {
-		ret = sock.recv(buf + total, sizeof(buf) - 1 - total,
-				&received, 5000);
-		if (ret == OVE_ERR_NET_CLOSED) break;
-		if (ret != OVE_OK) break;
+		ret = sock.recv(buf + total, sizeof(buf) - 1 - total, &received, 5000);
+		if (ret == OVE_ERR_NET_CLOSED)
+			break;
+		if (ret != OVE_OK)
+			break;
 		total += received;
 	}
 
@@ -165,12 +187,12 @@ static void test_tcp()
 		buf[total] = '\0';
 		/* Check for HTTP 200 */
 		if (std::strstr(buf, "200 OK")) {
-			OVE_LOG_INF("  -> received %u bytes, status 200 OK",
-				    (unsigned)total);
+			OVE_LOG_INF("  -> received %u bytes, status 200 OK", (unsigned)total);
 			PASS("socket_recv (HTTP 200)");
 		} else {
 			char *eol = std::strstr(buf, "\r\n");
-			if (eol) *eol = '\0';
+			if (eol)
+				*eol = '\0';
 			OVE_LOG_WRN("  -> %s", buf);
 			FAIL("socket_recv (unexpected status)", 0);
 		}
@@ -191,13 +213,19 @@ static void test_udp()
 
 	TEST("socket_open UDP");
 	ove::UdpSocket sock;
-	if (!sock.is_open()) { FAIL("socket_open UDP", -1); return; }
+	if (!sock.is_open()) {
+		FAIL("socket_open UDP", -1);
+		return;
+	}
 	PASS("socket_open UDP");
 
 	/* Bind to a local port */
 	TEST("socket_bind");
 	int ret = sock.bind(ove::Address::ipv4(0, 0, 0, 0, 9999));
-	if (ret != OVE_OK) { FAIL("socket_bind", ret); return; }
+	if (ret != OVE_OK) {
+		FAIL("socket_bind", ret);
+		return;
+	}
 	PASS("socket_bind");
 
 	/* Send to self */
@@ -242,7 +270,10 @@ static void test_http()
 
 	TEST("http_client_init");
 	static ove::http::Client client;
-	if (!client.valid()) { FAIL("http_client_init", -1); return; }
+	if (!client.valid()) {
+		FAIL("http_client_init", -1);
+		return;
+	}
 	PASS("http_client_init");
 
 	/* GET request */
@@ -250,8 +281,8 @@ static void test_http()
 	ove::http::Response resp;
 	int ret = client.get("http://example.com/", resp);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> status %d, body %u bytes",
-			    resp.status(), (unsigned)resp.body_len());
+		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status(),
+			    (unsigned)resp.body_len());
 		if (resp.status() == 200 && resp.body_len() > 0) {
 			PASS("http_get (200 OK)");
 		} else {
@@ -265,12 +296,11 @@ static void test_http()
 	TEST("http_post http://httpbin.org/post");
 	const char *json = R"({"test":"overtos"})";
 	ove::http::Response post_resp;
-	ret = client.post("http://httpbin.org/post",
-			  "application/json",
-			  json, std::strlen(json), post_resp);
+	ret = client.post("http://httpbin.org/post", "application/json", json, std::strlen(json),
+			  post_resp);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> status %d, body %u bytes",
-			    post_resp.status(), (unsigned)post_resp.body_len());
+		OVE_LOG_INF("  -> status %d, body %u bytes", post_resp.status(),
+			    (unsigned)post_resp.body_len());
 		if (post_resp.status() == 200) {
 			PASS("http_post (200 OK)");
 			/* Check echo body contains our payload */
@@ -294,14 +324,11 @@ static void test_http()
 		{"Accept", "application/json"},
 	};
 	ove::http::Response put_resp;
-	ret = client.request(OVE_HTTP_PUT,
-			     "http://httpbin.org/put",
-			     "application/json",
-			     put_json, std::strlen(put_json),
-			     headers, 2, put_resp);
+	ret = client.request(OVE_HTTP_PUT, "http://httpbin.org/put", "application/json", put_json,
+			     std::strlen(put_json), headers, 2, put_resp);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> status %d, body %u bytes",
-			    put_resp.status(), (unsigned)put_resp.body_len());
+		OVE_LOG_INF("  -> status %d, body %u bytes", put_resp.status(),
+			    (unsigned)put_resp.body_len());
 		if (put_resp.status() == 200) {
 			PASS("http_put (200 OK)");
 		} else {
@@ -348,7 +375,10 @@ static void test_mqtt()
 
 	TEST("mqtt_client_init");
 	static ove::mqtt::Client mqtt;
-	if (!mqtt.valid()) { FAIL("mqtt_client_init", -1); return; }
+	if (!mqtt.valid()) {
+		FAIL("mqtt_client_init", -1);
+		return;
+	}
 	PASS("mqtt_client_init");
 
 	TEST("mqtt_connect test.mosquitto.org:1883");
@@ -359,14 +389,12 @@ static void test_mqtt()
 		.keep_alive_s = 30,
 	};
 
-	int ret = mqtt.connect(mqtt_cfg,
-		+[](std::string_view topic, std::string_view payload) {
-			OVE_LOG_INF("  MQTT rx: [%.*s] %.*s",
-				    (int)topic.size(), topic.data(),
+	int ret = mqtt.connect(
+		mqtt_cfg, +[](std::string_view topic, std::string_view payload) {
+			OVE_LOG_INF("  MQTT rx: [%.*s] %.*s", (int)topic.size(), topic.data(),
 				    (int)payload.size(), payload.data());
 			if (payload.size() < sizeof(mqtt_rx_payload)) {
-				std::memcpy(mqtt_rx_payload, payload.data(),
-					    payload.size());
+				std::memcpy(mqtt_rx_payload, payload.data(), payload.size());
 				mqtt_rx_payload[payload.size()] = '\0';
 			}
 			mqtt_rx_count++;
@@ -400,8 +428,7 @@ static void test_mqtt()
 	/* Publish QoS1 */
 	TEST("mqtt_publish QoS1");
 	const char *msg1 = "hello-qos1";
-	ret = mqtt.publish("overtos/test",
-			   std::string_view{msg1}, ove::mqtt::Qos::AtLeastOnce);
+	ret = mqtt.publish("overtos/test", std::string_view{msg1}, ove::mqtt::Qos::AtLeastOnce);
 	if (ret == OVE_OK) {
 		PASS("mqtt_publish QoS1 (PUBACK received)");
 	} else {
@@ -413,14 +440,14 @@ static void test_mqtt()
 	mqtt_rx_count = 0;
 	for (int i = 0; i < 10; i++) {
 		mqtt.loop(500);
-		if (mqtt_rx_count >= 2) break;
+		if (mqtt_rx_count >= 2)
+			break;
 	}
 	if (mqtt_rx_count >= 1) {
 		OVE_LOG_INF("  -> received %d message(s)", mqtt_rx_count);
 		PASS("mqtt_loop (received messages)");
 	} else {
-		OVE_LOG_WRN("  -> received %d messages (broker may not echo)",
-			    mqtt_rx_count);
+		OVE_LOG_WRN("  -> received %d messages (broker may not echo)", mqtt_rx_count);
 		PASS("mqtt_loop (ran without error)");
 	}
 
@@ -499,12 +526,13 @@ OVE_MAIN()
 {
 	OVE_LOG_INF("C++ networking example: init");
 
-	static ove::Thread<8192> net(net_thread, nullptr,
-				     OVE_PRIO_NORMAL, "net-test");
+	static ove::Thread<8192> net(net_thread, nullptr, OVE_PRIO_NORMAL, "net-test");
 
 	OVE_LOG_INF("C++ networking example: ready");
 	ove::run();
 
 	/* On POSIX, ove::run() returns — keep alive for the httpd server */
-	while (true) { ove::Thread<0>::sleep_ms(1000); }
+	while (true) {
+		ove::Thread<0>::sleep_ms(1000);
+	}
 }

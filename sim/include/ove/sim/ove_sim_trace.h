@@ -48,33 +48,33 @@ extern "C" {
  */
 
 /** Event type: a batch of stream records. */
-#define OVE_SIM_TRACE_EVT_STREAM       10
+#define OVE_SIM_TRACE_EVT_STREAM 10
 
 /** Event type: the tid->name descriptor table. */
-#define OVE_SIM_TRACE_EVT_DESCRIPTORS  11
+#define OVE_SIM_TRACE_EVT_DESCRIPTORS 11
 
 /** Envelope sub_type byte values. */
-#define OVE_SIM_TRACE_SUB_DESCRIPTORS  0
-#define OVE_SIM_TRACE_SUB_STREAM       1
+#define OVE_SIM_TRACE_SUB_DESCRIPTORS 0
+#define OVE_SIM_TRACE_SUB_STREAM 1
 
 /** Envelope version (bumped on incompatible format change). */
-#define OVE_SIM_TRACE_VERSION          1
+#define OVE_SIM_TRACE_VERSION 1
 
 /** Drain period for stream records (ms). */
-#define OVE_SIM_TRACE_DRAIN_MS         100
+#define OVE_SIM_TRACE_DRAIN_MS 100
 
 /** Interval between descriptor emissions (ms). */
-#define OVE_SIM_TRACE_DESC_MS          500
+#define OVE_SIM_TRACE_DESC_MS 500
 
 /** Maximum records per stream emission. Keeps the per-event payload
  *  (envelope 8 + records * 16) below the bridge's 4 KiB message cap. */
-#define OVE_SIM_TRACE_MAX_BATCH        128
+#define OVE_SIM_TRACE_MAX_BATCH 128
 
 /** Maximum threads per descriptor emission. */
-#define OVE_SIM_TRACE_MAX_DESC         32
+#define OVE_SIM_TRACE_MAX_DESC 32
 
 /** Maximum descriptor name length included in the emission. */
-#define OVE_SIM_TRACE_MAX_NAME         31
+#define OVE_SIM_TRACE_MAX_NAME 31
 
 /**
  * @brief Register the trace plugin (no-op if CONFIG_OVE_TRACE_STREAM is off).

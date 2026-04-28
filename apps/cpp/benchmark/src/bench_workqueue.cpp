@@ -104,5 +104,4 @@ static constexpr bench_case_t workqueue_cases[] = {
 	ove::bench::case_<wq_submit_spec>(),
 };
 
-OVE_BENCH_SUITE(bench_suite_workqueue, "workqueue",
-		workqueue_is_enabled, workqueue_cases)
+OVE_BENCH_SUITE(bench_suite_workqueue, "workqueue", workqueue_is_enabled, workqueue_cases)

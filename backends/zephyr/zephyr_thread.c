@@ -16,11 +16,12 @@
 #include <stdbool.h>
 #include <string.h>
 /* Set thread state with tracking + trace emit (mirrors posix/nuttx). */
-#define SET_STATE(t, s) do { \
-	ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
-	ove_state_track_transition(&(t)->st, (s)); \
-	(t)->state = (s); \
-} while (0)
+#define SET_STATE(t, s)                                                \
+	do {                                                           \
+		ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
+		ove_state_track_transition(&(t)->st, (s));             \
+		(t)->state = (s);                                      \
+	} while (0)
 
 /* ── Thread registry (intrusive list) ─────────────────────────────────
  * Used by zephyr_trace.c for descriptor enumeration. The profiler is
@@ -71,7 +72,10 @@ static void _unregister_thread(struct ove_thread *t)
 	ove_zephyr_thread_list_lock();
 	struct ove_thread **pp = &ove_zephyr_thread_list_head;
 	while (*pp) {
-		if (*pp == t) { *pp = t->next; break; }
+		if (*pp == t) {
+			*pp = t->next;
+			break;
+		}
 		pp = &(*pp)->next;
 	}
 	ove_zephyr_thread_list_unlock();
@@ -81,15 +85,24 @@ static int map_priority(ove_prio_t prio)
 {
 	/* Zephyr: lower number = higher priority (cooperative: negative) */
 	switch (prio) {
-	case OVE_PRIO_IDLE:         return 14;
-	case OVE_PRIO_LOW:          return 12;
-	case OVE_PRIO_BELOW_NORMAL: return 10;
-	case OVE_PRIO_NORMAL:       return 8;
-	case OVE_PRIO_ABOVE_NORMAL: return 6;
-	case OVE_PRIO_HIGH:         return 4;
-	case OVE_PRIO_REALTIME:     return 2;
-	case OVE_PRIO_CRITICAL:     return 1;
-	default:                        return 8;
+	case OVE_PRIO_IDLE:
+		return 14;
+	case OVE_PRIO_LOW:
+		return 12;
+	case OVE_PRIO_BELOW_NORMAL:
+		return 10;
+	case OVE_PRIO_NORMAL:
+		return 8;
+	case OVE_PRIO_ABOVE_NORMAL:
+		return 6;
+	case OVE_PRIO_HIGH:
+		return 4;
+	case OVE_PRIO_REALTIME:
+		return 2;
+	case OVE_PRIO_CRITICAL:
+		return 1;
+	default:
+		return 8;
 	}
 }
 
@@ -112,15 +125,13 @@ static void thread_wrapper(void *p1, void *p2, void *p3)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_thread_init(ove_thread_t *handle,
-			ove_thread_storage_t *storage,
-			const struct ove_thread_desc *desc)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
+		    const struct ove_thread_desc *desc)
 {
 	k_tid_t tid;
 	size_t stack_sz;
 
-	if (handle == NULL || storage == NULL || desc == NULL ||
-	    desc->entry == NULL) {
+	if (handle == NULL || storage == NULL || desc == NULL || desc->entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
@@ -161,14 +172,12 @@ int ove_thread_init(ove_thread_t *handle,
 	}
 	storage->stack_size = stack_sz;
 	storage->state = OVE_THREAD_STATE_READY;
-	storage->name = desc->name;  /* caller-owned; retained for trace descriptor */
+	storage->name = desc->name; /* caller-owned; retained for trace descriptor */
 	storage->next = NULL;
 
-	tid = k_thread_create(&storage->thread, storage->stack, stack_sz,
-			      thread_wrapper,
+	tid = k_thread_create(&storage->thread, storage->stack, stack_sz, thread_wrapper,
 			      (void *)desc->entry, desc->arg, (void *)storage,
-			      map_priority(desc->priority),
-			      0, K_NO_WAIT);
+			      map_priority(desc->priority), 0, K_NO_WAIT);
 
 	if (desc->name != NULL) {
 		k_thread_name_set(tid, desc->name);
@@ -182,7 +191,8 @@ int ove_thread_init(ove_thread_t *handle,
 int ove_thread_deinit(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_thread *info = handle;
 	if (k_thread_join(&info->thread, K_FOREVER) != 0) {
@@ -199,8 +209,7 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create_(ove_thread_t *handle,
-			   const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 {
 	struct ove_thread *info;
 	k_thread_stack_t *stack;
@@ -234,11 +243,8 @@ int ove_thread_create_(ove_thread_t *handle,
 	info->name = desc->name;
 	info->next = NULL;
 
-	tid = k_thread_create(&info->thread, stack, stack_sz,
-			      thread_wrapper,
-			      (void *)desc->entry, desc->arg, (void *)info,
-			      map_priority(desc->priority),
-			      0, K_NO_WAIT);
+	tid = k_thread_create(&info->thread, stack, stack_sz, thread_wrapper, (void *)desc->entry,
+			      desc->arg, (void *)info, map_priority(desc->priority), 0, K_NO_WAIT);
 
 	if (desc->name != NULL) {
 		k_thread_name_set(tid, desc->name);
@@ -252,7 +258,8 @@ int ove_thread_create_(ove_thread_t *handle,
 int ove_thread_destroy(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_thread *info = handle;
 	/* Try to join first (wait for thread to finish naturally),
@@ -273,8 +280,7 @@ ove_thread_t ove_thread_get_self(void)
 	return k_thread_custom_data_get();
 }
 
-void ove_thread_set_priority(ove_thread_t handle,
-				       ove_prio_t prio)
+void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	if (handle != NULL) {
 		struct ove_thread *info = handle;
@@ -287,9 +293,11 @@ void ove_thread_set_priority(ove_thread_t handle,
 void ove_thread_sleep_ms(uint32_t ms)
 {
 	struct ove_thread *t = ove_zephyr_current_thread();
-	if (t) SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
+	if (t)
+		SET_STATE(t, OVE_THREAD_STATE_BLOCKED);
 	k_sleep(K_MSEC(ms));
-	if (t) SET_STATE(t, OVE_THREAD_STATE_RUNNING);
+	if (t)
+		SET_STATE(t, OVE_THREAD_STATE_RUNNING);
 }
 
 void ove_thread_yield(void)
@@ -329,7 +337,8 @@ void ove_thread_resume(ove_thread_t handle)
 void ove_backend_thread_set_state(int new_state)
 {
 	struct ove_thread *t = ove_zephyr_current_thread();
-	if (t) SET_STATE(t, new_state);
+	if (t)
+		SET_STATE(t, new_state);
 }
 #endif
 
@@ -378,8 +387,7 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 	return OVE_THREAD_STATE_RUNNING;
 }
 
-int ove_thread_get_runtime_stats(ove_thread_t handle,
-					   struct ove_thread_stats *stats)
+int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
 #if defined(CONFIG_THREAD_RUNTIME_STATS)
 	if (handle == NULL) {
@@ -394,15 +402,14 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
-	stats->runtime_us = (uint64_t)(rt.execution_cycles /
-				       (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000U));
+	stats->runtime_us =
+		(uint64_t)(rt.execution_cycles / (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000U));
 
 	k_thread_runtime_stats_t all;
 	k_thread_runtime_stats_all_get(&all);
 	if (all.execution_cycles > 0) {
 		stats->cpu_percent_x100 =
-			(uint32_t)(rt.execution_cycles * 10000ULL /
-				   all.execution_cycles);
+			(uint32_t)(rt.execution_cycles * 10000ULL / all.execution_cycles);
 	} else {
 		stats->cpu_percent_x100 = 0;
 	}
@@ -416,7 +423,8 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 
 int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 {
-	if (!stats) return OVE_ERR_INVALID_PARAM;
+	if (!stats)
+		return OVE_ERR_INVALID_PARAM;
 	memset(stats, 0, sizeof(*stats));
 #if defined(CONFIG_SYS_HEAP_RUNTIME_STATS)
 	extern struct k_heap _system_heap;
@@ -485,19 +493,16 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 			k_thread_runtime_stats_t all;
 			k_thread_runtime_stats_all_get(&all);
 			if (all.execution_cycles > 0) {
-				info->cpu_percent_x100 =
-					(uint32_t)((uint64_t)rt.execution_cycles
-						   * 10000U
-						   / all.execution_cycles);
+				info->cpu_percent_x100 = (uint32_t)((uint64_t)rt.execution_cycles *
+								    10000U / all.execution_cycles);
 				/* Derive state times from cycles.
 				 * Convert to us assuming 1 cycle ≈ 1 us
 				 * (approximate for Zephyr timing). */
-				info->state_times.running_us =
-					rt.execution_cycles;
+				info->state_times.running_us = rt.execution_cycles;
 				info->state_times.blocked_us =
 					(all.execution_cycles > rt.execution_cycles)
-					? all.execution_cycles - rt.execution_cycles
-					: 0;
+						? all.execution_cycles - rt.execution_cycles
+						: 0;
 			}
 		}
 	}
@@ -506,8 +511,7 @@ static void _thread_list_cb(const struct k_thread *thread, void *user_data)
 	ctx->count++;
 }
 
-int ove_thread_list(struct ove_thread_info *out, size_t max_count,
-		    size_t *actual_count)
+int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 	if (!out) {
 		if (actual_count)

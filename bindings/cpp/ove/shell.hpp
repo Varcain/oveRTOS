@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_SHELL
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::shell
@@ -26,13 +27,15 @@ namespace ove {
  *
  * Available when `CONFIG_OVE_SHELL` is enabled.
  */
-namespace shell {
+namespace shell
+{
 
 /**
  * @brief Initialises the shell subsystem.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int init() {
+[[nodiscard]] inline int init()
+{
 	return ove_shell_init();
 }
 
@@ -41,7 +44,8 @@ namespace shell {
  * @param[in] cmd Pointer to the command descriptor structure.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int register_cmd(const struct ove_shell_cmd *cmd) {
+[[nodiscard]] inline int register_cmd(const struct ove_shell_cmd *cmd)
+{
 	return ove_shell_register_cmd(cmd);
 }
 
@@ -52,7 +56,8 @@ namespace shell {
  *
  * @param[in] c The character received from the console.
  */
-inline void process_char(int c) {
+inline void process_char(int c)
+{
 	ove_shell_process_char(c);
 }
 
@@ -60,7 +65,8 @@ inline void process_char(int c) {
  * @brief Process a complete input line through the shell.
  * @param[in] line NUL-terminated command line.
  */
-inline void process_line(const char *line) {
+inline void process_line(const char *line)
+{
 	ove_shell_process_line(line);
 }
 
@@ -68,7 +74,8 @@ inline void process_line(const char *line) {
  * @brief Set a hook to capture shell output.
  * @param[in] hook Output hook function (nullptr to remove).
  */
-inline void set_output_hook(ove_shell_output_hook_t hook) {
+inline void set_output_hook(ove_shell_output_hook_t hook)
+{
 	ove_shell_set_output_hook(hook);
 }
 

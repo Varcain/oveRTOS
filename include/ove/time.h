@@ -45,7 +45,7 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_TIME.
  */
-int  ove_time_get_us(uint64_t *out);
+int ove_time_get_us(uint64_t *out);
 
 /**
  * @brief Get the current monotonic time in nanoseconds.
@@ -58,7 +58,7 @@ int  ove_time_get_us(uint64_t *out);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_TIME.
  */
-int  ove_time_get_ns(uint64_t *out);
+int ove_time_get_ns(uint64_t *out);
 
 /**
  * @brief Block the calling task for at least @p ms milliseconds.
@@ -86,10 +86,28 @@ void ove_time_delay_us(uint32_t us);
 
 #else /* !CONFIG_OVE_TIME */
 
-static inline int  ove_time_get_us(uint64_t *o) { if (o) { *o = 0; } return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_time_get_ns(uint64_t *o) { if (o) { *o = 0; } return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_time_delay_ms(uint32_t ms) { (void)ms; }
-static inline void ove_time_delay_us(uint32_t us) { (void)us; }
+static inline int ove_time_get_us(uint64_t *o)
+{
+	if (o) {
+		*o = 0;
+	}
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_time_get_ns(uint64_t *o)
+{
+	if (o) {
+		*o = 0;
+	}
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_time_delay_ms(uint32_t ms)
+{
+	(void)ms;
+}
+static inline void ove_time_delay_us(uint32_t us)
+{
+	(void)us;
+}
 
 #endif /* CONFIG_OVE_TIME */
 
