@@ -10,7 +10,9 @@
 #include <stdio.h>
 
 /* Stub — tests exercise ove_app module without a real app entry point */
-void ove_main(void) {}
+void ove_main(void)
+{
+}
 
 int main(void)
 {
@@ -21,10 +23,10 @@ int main(void)
 	 * Runner list is generated from framework/suites.inc so new suites
 	 * get picked up without editing this file.
 	 */
-#define OVE_SUITE(name, label) \
+#define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();
-#define OVE_SUITE_FS(name, label)   OVE_SUITE(name, label)
+#define OVE_SUITE_FS(name, label) OVE_SUITE(name, label)
 #define OVE_SUITE_STUB(name, label) OVE_SUITE(name, label)
 #include "framework/suites.inc"
 

@@ -34,10 +34,8 @@ static void stream_send_recv_run(void *ctx)
 	(void)ctx;
 	size_t sent = 0, received = 0;
 
-	ove_stream_send(bench_strm, tx_buf, STREAM_MSG_SIZE,
-			    OVE_WAIT_FOREVER, &sent);
-	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE,
-			       OVE_WAIT_FOREVER, &received);
+	ove_stream_send(bench_strm, tx_buf, STREAM_MSG_SIZE, OVE_WAIT_FOREVER, &sent);
+	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE, OVE_WAIT_FOREVER, &received);
 }
 
 static void stream_send_recv_teardown(void *ctx)
@@ -66,8 +64,7 @@ static void stream_producer(void *arg)
 	while (!stream_done) {
 		size_t sent = 0;
 
-		ove_stream_send(bench_strm, tx_buf, STREAM_MSG_SIZE,
-				    OVE_WAIT_FOREVER, &sent);
+		ove_stream_send(bench_strm, tx_buf, STREAM_MSG_SIZE, OVE_WAIT_FOREVER, &sent);
 	}
 }
 
@@ -92,8 +89,7 @@ static void stream_throughput_run(void *ctx)
 	(void)ctx;
 	size_t received = 0;
 
-	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE,
-			       OVE_WAIT_FOREVER, &received);
+	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE, OVE_WAIT_FOREVER, &received);
 }
 
 static void stream_throughput_teardown(void *ctx)
@@ -103,8 +99,7 @@ static void stream_throughput_teardown(void *ctx)
 	/* Drain so producer can unblock */
 	size_t received = 0;
 
-	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE,
-			       100, &received);
+	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE, 100, &received);
 	ove_thread_sleep_ms(10);
 	ove_thread_destroy(stream_producer_th);
 	ove_stream_destroy(bench_strm);

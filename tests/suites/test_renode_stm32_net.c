@@ -38,14 +38,20 @@ static void test_renode_netif_static_up(void **state)
 	ove_netif_config_t cfg = {0};
 	cfg.use_dhcp = 0;
 	cfg.static_ip.family = OVE_AF_INET;
-	cfg.static_ip.addr[0] = 192; cfg.static_ip.addr[1] = 0;
-	cfg.static_ip.addr[2] = 2;   cfg.static_ip.addr[3] = 15;
+	cfg.static_ip.addr[0] = 192;
+	cfg.static_ip.addr[1] = 0;
+	cfg.static_ip.addr[2] = 2;
+	cfg.static_ip.addr[3] = 15;
 	cfg.netmask.family = OVE_AF_INET;
-	cfg.netmask.addr[0] = 255; cfg.netmask.addr[1] = 255;
-	cfg.netmask.addr[2] = 255; cfg.netmask.addr[3] = 0;
+	cfg.netmask.addr[0] = 255;
+	cfg.netmask.addr[1] = 255;
+	cfg.netmask.addr[2] = 255;
+	cfg.netmask.addr[3] = 0;
 	cfg.gateway.family = OVE_AF_INET;
-	cfg.gateway.addr[0] = 192; cfg.gateway.addr[1] = 0;
-	cfg.gateway.addr[2] = 2;   cfg.gateway.addr[3] = 1;
+	cfg.gateway.addr[0] = 192;
+	cfg.gateway.addr[1] = 0;
+	cfg.gateway.addr[2] = 2;
+	cfg.gateway.addr[3] = 1;
 	rc = ove_netif_up(netif, &cfg);
 	assert_int_equal(rc, OVE_OK);
 
@@ -71,15 +77,13 @@ static void test_renode_udp_loopback(void **state)
 	static ove_socket_storage_t tx_storage, rx_storage;
 	ove_socket_t tx = NULL, rx = NULL;
 
-	int rc = ove_socket_open(&rx, &rx_storage,
-				 OVE_AF_INET, OVE_SOCK_DGRAM);
+	int rc = ove_socket_open(&rx, &rx_storage, OVE_AF_INET, OVE_SOCK_DGRAM);
 	assert_int_equal(rc, OVE_OK);
-	rc = ove_socket_open(&tx, &tx_storage,
-			     OVE_AF_INET, OVE_SOCK_DGRAM);
+	rc = ove_socket_open(&tx, &tx_storage, OVE_AF_INET, OVE_SOCK_DGRAM);
 	assert_int_equal(rc, OVE_OK);
 
-	ove_sockaddr_t bind_addr = { .family = OVE_AF_INET, .port = 4242 };
-	bind_addr.addr[0] = 127;        /* 127.0.0.1 */
+	ove_sockaddr_t bind_addr = {.family = OVE_AF_INET, .port = 4242};
+	bind_addr.addr[0] = 127; /* 127.0.0.1 */
 	bind_addr.addr[3] = 1;
 	rc = ove_socket_bind(rx, &bind_addr);
 	assert_int_equal(rc, OVE_OK);
@@ -87,16 +91,14 @@ static void test_renode_udp_loopback(void **state)
 	const char payload[] = "renode-net";
 	ove_sockaddr_t dst = bind_addr;
 	size_t sent = 0;
-	rc = ove_socket_sendto(tx, payload, sizeof(payload) - 1,
-			       &sent, &dst);
+	rc = ove_socket_sendto(tx, payload, sizeof(payload) - 1, &sent, &dst);
 	assert_int_equal(rc, OVE_OK);
 	assert_int_equal(sent, sizeof(payload) - 1);
 
 	uint8_t buf[32] = {0};
 	ove_sockaddr_t from = {0};
 	size_t received = 0;
-	rc = ove_socket_recvfrom(rx, buf, sizeof(buf),
-				 &received, &from, 500);
+	rc = ove_socket_recvfrom(rx, buf, sizeof(buf), &received, &from, 500);
 	assert_int_equal(rc, OVE_OK);
 	assert_int_equal(received, sizeof(payload) - 1);
 	assert_memory_equal(buf, payload, sizeof(payload) - 1);

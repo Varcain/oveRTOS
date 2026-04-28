@@ -24,8 +24,7 @@
 #define I2S_RX_NODE DT_NODELABEL(i2s_rxtx)
 #define I2S_TX_NODE I2S_RX_NODE
 #define HAVE_I2S_NODES 1
-#elif DT_NODE_EXISTS(DT_NODELABEL(i2s_rx)) && \
-      DT_NODE_EXISTS(DT_NODELABEL(i2s_tx))
+#elif DT_NODE_EXISTS(DT_NODELABEL(i2s_rx)) && DT_NODE_EXISTS(DT_NODELABEL(i2s_tx))
 #define I2S_RX_NODE DT_NODELABEL(i2s_rx)
 #define I2S_TX_NODE DT_NODELABEL(i2s_tx)
 #define HAVE_I2S_NODES 1
@@ -35,17 +34,17 @@
 
 #if HAVE_I2S_NODES
 
-#define BYTES_PER_SAMPLE   sizeof(int16_t)
-#define BLOCK_SIZE         (BYTES_PER_SAMPLE * OVE_AUDIO_I2S_BUFFER_SAMPLES)
-#define SLAB_BLOCK_SIZE    ((BLOCK_SIZE + 31) & ~31)
-#define DEFAULT_INITIAL_BLOCKS  4
-#define DEFAULT_BLOCK_COUNT     (DEFAULT_INITIAL_BLOCKS + 4)
-#define DEFAULT_AUDIO_PRIORITY  2
-#define DEFAULT_AUDIO_STACK     4096
-#define I2S_TIMEOUT             1000
+#define BYTES_PER_SAMPLE sizeof(int16_t)
+#define BLOCK_SIZE (BYTES_PER_SAMPLE * OVE_AUDIO_I2S_BUFFER_SAMPLES)
+#define SLAB_BLOCK_SIZE ((BLOCK_SIZE + 31) & ~31)
+#define DEFAULT_INITIAL_BLOCKS 4
+#define DEFAULT_BLOCK_COUNT (DEFAULT_INITIAL_BLOCKS + 4)
+#define DEFAULT_AUDIO_PRIORITY 2
+#define DEFAULT_AUDIO_STACK 4096
+#define I2S_TIMEOUT 1000
 
-K_MEM_SLAB_DEFINE_IN_SECT_STATIC(audio_slab, __dtcm_noinit_section,
-				 SLAB_BLOCK_SIZE, DEFAULT_BLOCK_COUNT, 32);
+K_MEM_SLAB_DEFINE_IN_SECT_STATIC(audio_slab, __dtcm_noinit_section, SLAB_BLOCK_SIZE,
+				 DEFAULT_BLOCK_COUNT, 32);
 
 static const struct device *dev_rx;
 static const struct device *dev_tx;
@@ -56,8 +55,8 @@ static K_SEM_DEFINE(i2s_ready_sem, 0, 1);
 
 struct zephyr_i2s_source_ctx {
 	struct ove_audio_fmt fmt;
-	void                *current_rx_block;
-	uint32_t             current_block_size;
+	void *current_rx_block;
+	uint32_t current_block_size;
 };
 
 static int zephyr_source_configure(void *ctx, const struct ove_audio_fmt *in,
@@ -75,15 +74,14 @@ static int zephyr_source_process(void *ctx, const struct ove_audio_buf *in,
 	(void)in;
 	struct zephyr_i2s_source_ctx *sc = (struct zephyr_i2s_source_ctx *)ctx;
 
-	unsigned int bytes = out->frames * out->fmt->channels *
-			     ove_audio_sample_size(out->fmt->sample_fmt);
+	unsigned int bytes =
+		out->frames * out->fmt->channels * ove_audio_sample_size(out->fmt->sample_fmt);
 
 	/* Read from I2S RX.  On any failure (timeout, stream error) zero-fill
 	 * and continue so the sink keeps feeding TX — otherwise SAI_A drains
 	 * and the synchronous RX clock stops, permanently starving the RX
 	 * path.  The short RX timeout ensures the graph loop stays responsive. */
-	int ret = i2s_read(dev_rx, &sc->current_rx_block,
-			   &sc->current_block_size);
+	int ret = i2s_read(dev_rx, &sc->current_rx_block, &sc->current_block_size);
 	if (ret < 0) {
 		memset(out->data, 0, bytes);
 		return OVE_OK;
@@ -98,24 +96,23 @@ static int zephyr_source_process(void *ctx, const struct ove_audio_buf *in,
 
 static const struct ove_audio_node_ops zephyr_source_ops = {
 	.configure = zephyr_source_configure,
-	.process   = zephyr_source_process,
+	.process = zephyr_source_process,
 };
 
 /* ── I2S Sink Node ──────────────────────────────────────────────── */
 
 struct zephyr_i2s_sink_ctx {
-	struct ove_audio_fmt    fmt;
+	struct ove_audio_fmt fmt;
 	struct ove_audio_graph *graph;
-	unsigned int            frames_per_period;
-	unsigned int            initial_blocks;
-	unsigned int            thread_priority;
+	unsigned int frames_per_period;
+	unsigned int initial_blocks;
+	unsigned int thread_priority;
 };
 
 /* Forward declaration for thread function */
 static void zephyr_audio_thread_fn(void *p1, void *p2, void *p3);
 
-K_THREAD_DEFINE(zephyr_audio_thread, DEFAULT_AUDIO_STACK,
-		zephyr_audio_thread_fn, NULL, NULL, NULL,
+K_THREAD_DEFINE(zephyr_audio_thread, DEFAULT_AUDIO_STACK, zephyr_audio_thread_fn, NULL, NULL, NULL,
 		DEFAULT_AUDIO_PRIORITY, 0, 0);
 
 static struct zephyr_i2s_sink_ctx g_zephyr_sink_ctx;
@@ -148,8 +145,7 @@ static int zephyr_sink_configure(void *ctx, const struct ove_audio_fmt *in,
 	return OVE_OK;
 }
 
-static int zephyr_sink_process(void *ctx, const struct ove_audio_buf *in,
-			       struct ove_audio_buf *out)
+static int zephyr_sink_process(void *ctx, const struct ove_audio_buf *in, struct ove_audio_buf *out)
 {
 	(void)ctx;
 	(void)out;
@@ -160,8 +156,8 @@ static int zephyr_sink_process(void *ctx, const struct ove_audio_buf *in,
 	if (ret < 0)
 		return OVE_ERR_NO_MEMORY;
 
-	unsigned int bytes = in->frames * in->fmt->channels *
-			     ove_audio_sample_size(in->fmt->sample_fmt);
+	unsigned int bytes =
+		in->frames * in->fmt->channels * ove_audio_sample_size(in->fmt->sample_fmt);
 	memcpy(tx_block, in->data, bytes);
 
 	ret = i2s_write(dev_tx, tx_block, bytes);
@@ -269,9 +265,9 @@ static int zephyr_sink_stop(void *ctx)
 
 static const struct ove_audio_node_ops zephyr_sink_ops = {
 	.configure = zephyr_sink_configure,
-	.start     = zephyr_sink_start,
-	.stop      = zephyr_sink_stop,
-	.process   = zephyr_sink_process,
+	.start = zephyr_sink_start,
+	.stop = zephyr_sink_stop,
+	.process = zephyr_sink_process,
 };
 
 /* ========================================================================= */
@@ -303,8 +299,7 @@ static int zephyr_i2s_init_once(void)
 
 	/* Configure codec */
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(audio_codec), okay)
-	const struct device *const codec_dev =
-		DEVICE_DT_GET(DT_NODELABEL(audio_codec));
+	const struct device *const codec_dev = DEVICE_DT_GET(DT_NODELABEL(audio_codec));
 	struct audio_codec_cfg audio_cfg;
 
 	audio_cfg.dai_route = AUDIO_ROUTE_PLAYBACK_CAPTURE;
@@ -327,8 +322,7 @@ static int zephyr_i2s_init_once(void)
 	return OVE_OK;
 }
 
-int ove_audio_device_source(struct ove_audio_graph *g,
-			    const struct ove_audio_device_cfg *cfg,
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
 			    const char *name)
 {
 	if (!g || !cfg || !name)
@@ -345,15 +339,13 @@ int ove_audio_device_source(struct ove_audio_graph *g,
 	source_ctx.fmt = cfg->fmt;
 
 	k_thread_priority_set(zephyr_audio_thread,
-			      cfg->thread_priority ? cfg->thread_priority
-						   : DEFAULT_AUDIO_PRIORITY);
+			      cfg->thread_priority ? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY);
 
-	return ove_audio_graph_add_node(g, &zephyr_source_ops, &source_ctx,
-					name, OVE_AUDIO_NODE_SOURCE);
+	return ove_audio_graph_add_node(g, &zephyr_source_ops, &source_ctx, name,
+					OVE_AUDIO_NODE_SOURCE);
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g,
-			  const struct ove_audio_device_cfg *cfg,
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
 			  const char *name)
 {
 	if (!g || !cfg || !name)
@@ -370,30 +362,29 @@ int ove_audio_device_sink(struct ove_audio_graph *g,
 	ctx->fmt = cfg->fmt;
 	ctx->graph = g;
 	ctx->frames_per_period = g->frames_per_period;
-	ctx->initial_blocks = cfg->num_buffers ? cfg->num_buffers
-					       : DEFAULT_INITIAL_BLOCKS;
-	ctx->thread_priority = cfg->thread_priority ? cfg->thread_priority
-						    : DEFAULT_AUDIO_PRIORITY;
+	ctx->initial_blocks = cfg->num_buffers ? cfg->num_buffers : DEFAULT_INITIAL_BLOCKS;
+	ctx->thread_priority = cfg->thread_priority ? cfg->thread_priority : DEFAULT_AUDIO_PRIORITY;
 
-	return ove_audio_graph_add_node(g, &zephyr_sink_ops, ctx, name,
-					OVE_AUDIO_NODE_SINK);
+	return ove_audio_graph_add_node(g, &zephyr_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
 }
 
 #else /* !HAVE_I2S_NODES */
 
-int ove_audio_device_source(struct ove_audio_graph *g,
-			    const struct ove_audio_device_cfg *cfg,
+int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
 			    const char *name)
 {
-	(void)g; (void)cfg; (void)name;
+	(void)g;
+	(void)cfg;
+	(void)name;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-int ove_audio_device_sink(struct ove_audio_graph *g,
-			  const struct ove_audio_device_cfg *cfg,
+int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_device_cfg *cfg,
 			  const char *name)
 {
-	(void)g; (void)cfg; (void)name;
+	(void)g;
+	(void)cfg;
+	(void)name;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

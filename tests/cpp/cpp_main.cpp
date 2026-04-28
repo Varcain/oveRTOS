@@ -2,7 +2,9 @@
 #include <cstdio>
 
 /* Stub ove_main for linking (ove_app.c references it) */
-extern "C" void ove_main(void) {}
+extern "C" void ove_main(void)
+{
+}
 
 int main(void)
 {

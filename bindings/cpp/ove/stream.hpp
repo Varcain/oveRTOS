@@ -18,7 +18,8 @@
 #include <ove/stream.h>
 #include <ove/types.hpp>
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @class Stream
@@ -34,9 +35,9 @@ namespace ove {
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-template <size_t BufSize = 0>
-class Stream {
-public:
+template <size_t BufSize = 0> class Stream
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the stream with the given receive trigger.
 	 *
@@ -47,12 +48,12 @@ public:
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	explicit Stream(size_t trigger) requires (BufSize > 0) {
+	explicit Stream(size_t trigger)
+		requires(BufSize > 0)
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		static_assert(BufSize > 0,
-			      "BufSize must be > 0 in zero-heap mode");
-		int err = ove_stream_init(&handle_, &storage_,
-					       buffer_, BufSize, trigger);
+		static_assert(BufSize > 0, "BufSize must be > 0 in zero-heap mode");
+		int err = ove_stream_init(&handle_, &storage_, buffer_, BufSize, trigger);
 #else
 		int err = ove_stream_create(&handle_, BufSize, trigger);
 #endif
@@ -62,8 +63,10 @@ public:
 	/**
 	 * @brief Destroys the stream, releasing the underlying kernel resource.
 	 */
-	~Stream() {
-		if (!handle_) return;
+	~Stream()
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_stream_deinit(handle_);
 #else
@@ -82,7 +85,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Stream(Stream &&other) noexcept : handle_(other.handle_) {
+	Stream(Stream &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -91,9 +95,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Stream &operator=(Stream &&other) noexcept {
+	Stream &operator=(Stream &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_stream_destroy(handle_);
+			if (handle_)
+				ove_stream_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -109,10 +115,10 @@ public:
 	 * @param[out] bytes_sent Receives the number of bytes actually written.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int send(const void *data, size_t len,
-				uint32_t timeout_ms, size_t *bytes_sent) {
-		return ove_stream_send(handle_, data, len, timeout_ms,
-					    bytes_sent);
+	[[nodiscard]] int send(const void *data, size_t len, uint32_t timeout_ms,
+			       size_t *bytes_sent)
+	{
+		return ove_stream_send(handle_, data, len, timeout_ms, bytes_sent);
 	}
 
 	/**
@@ -123,11 +129,10 @@ public:
 	 * @param[out] bytes_received Receives the number of bytes actually read.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int receive(void *buf, size_t len,
-				   uint32_t timeout_ms,
-				   size_t *bytes_received) {
-		return ove_stream_receive(handle_, buf, len, timeout_ms,
-					       bytes_received);
+	[[nodiscard]] int receive(void *buf, size_t len, uint32_t timeout_ms,
+				  size_t *bytes_received)
+	{
+		return ove_stream_receive(handle_, buf, len, timeout_ms, bytes_received);
 	}
 
 	/**
@@ -137,10 +142,9 @@ public:
 	 * @param[out] bytes_sent Receives the number of bytes actually written.
 	 * @return `OVE_OK` on success, or a negative error code if the buffer is full.
 	 */
-	[[nodiscard]] int send_from_isr(const void *data, size_t len,
-					 size_t *bytes_sent) {
-		return ove_stream_send_from_isr(handle_, data, len,
-						     bytes_sent);
+	[[nodiscard]] int send_from_isr(const void *data, size_t len, size_t *bytes_sent)
+	{
+		return ove_stream_send_from_isr(handle_, data, len, bytes_sent);
 	}
 
 	/**
@@ -150,17 +154,17 @@ public:
 	 * @param[out] bytes_received Receives the number of bytes actually read.
 	 * @return `OVE_OK` on success, or a negative error code if insufficient data.
 	 */
-	[[nodiscard]] int receive_from_isr(void *buf, size_t len,
-					    size_t *bytes_received) {
-		return ove_stream_receive_from_isr(handle_, buf, len,
-						       bytes_received);
+	[[nodiscard]] int receive_from_isr(void *buf, size_t len, size_t *bytes_received)
+	{
+		return ove_stream_receive_from_isr(handle_, buf, len, bytes_received);
 	}
 
 	/**
 	 * @brief Resets the stream, discarding any buffered data.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int reset() {
+	[[nodiscard]] int reset()
+	{
 		return ove_stream_reset(handle_);
 	}
 
@@ -168,7 +172,8 @@ public:
 	 * @brief Returns the number of bytes currently available to read.
 	 * @return Number of readable bytes in the stream buffer.
 	 */
-	size_t bytes_available() const {
+	size_t bytes_available() const
+	{
 		return ove_stream_bytes_available(handle_);
 	}
 
@@ -176,15 +181,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the stream was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS stream handle.
 	 * @return The opaque `ove_stream_t` handle.
 	 */
-	ove_stream_t handle() const { return handle_; }
+	ove_stream_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_stream_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_stream_storage_t storage_ = {};

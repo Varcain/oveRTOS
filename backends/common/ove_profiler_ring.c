@@ -43,10 +43,10 @@
  */
 static struct {
 	struct ove_profiler_sample buf[PROFILER_RING_SIZE];
-	atomic_uchar               committed[PROFILER_RING_SIZE];
-	atomic_uint                write;
-	atomic_uint                read;
-	atomic_uint                dropped;
+	atomic_uchar committed[PROFILER_RING_SIZE];
+	atomic_uint write;
+	atomic_uint read;
+	atomic_uint dropped;
 } ring;
 
 bool ove_profiler_ring_push(const struct ove_profiler_sample *s)
@@ -54,19 +54,16 @@ bool ove_profiler_ring_push(const struct ove_profiler_sample *s)
 	unsigned w;
 	for (;;) {
 		w = atomic_load_explicit(&ring.write, memory_order_relaxed);
-		unsigned r = atomic_load_explicit(&ring.read,
-						  memory_order_acquire);
+		unsigned r = atomic_load_explicit(&ring.read, memory_order_acquire);
 		if ((unsigned)(w - r) >= PROFILER_RING_SIZE) {
-			atomic_fetch_add_explicit(&ring.dropped, 1u,
-						  memory_order_relaxed);
+			atomic_fetch_add_explicit(&ring.dropped, 1u, memory_order_relaxed);
 			return false;
 		}
 		/* Reserve slot w. On success we own buf[w % SIZE] until
 		 * we publish via committed[]. On failure another producer
 		 * got this slot — reload w and retry. */
 		if (atomic_compare_exchange_weak_explicit(
-			    &ring.write, &w, w + 1u,
-			    memory_order_acq_rel, memory_order_relaxed))
+			    &ring.write, &w, w + 1u, memory_order_acq_rel, memory_order_relaxed))
 			break;
 	}
 
@@ -74,8 +71,7 @@ bool ove_profiler_ring_push(const struct ove_profiler_sample *s)
 	ring.buf[idx] = *s;
 	/* Release pairs with drain's acquire-load on committed[idx].
 	 * Guarantees the consumer sees a fully-initialised sample. */
-	atomic_store_explicit(&ring.committed[idx], 1u,
-			      memory_order_release);
+	atomic_store_explicit(&ring.committed[idx], 1u, memory_order_release);
 	return true;
 }
 
@@ -89,14 +85,12 @@ size_t ove_profiler_ring_drain(struct ove_profiler_sample *out, size_t max)
 		/* Stop at the first uncommitted slot to keep deliveries
 		 * in reservation order. A later slot may already be
 		 * committed — it just has to wait one more drain tick. */
-		if (!atomic_load_explicit(&ring.committed[idx],
-					  memory_order_acquire))
+		if (!atomic_load_explicit(&ring.committed[idx], memory_order_acquire))
 			break;
 		out[copied++] = ring.buf[idx];
 		/* Reset so the next producer wrap to this physical slot
 		 * starts from a clean commit state. */
-		atomic_store_explicit(&ring.committed[idx], 0u,
-				      memory_order_release);
+		atomic_store_explicit(&ring.committed[idx], 0u, memory_order_release);
 		r++;
 	}
 	atomic_store_explicit(&ring.read, r, memory_order_release);

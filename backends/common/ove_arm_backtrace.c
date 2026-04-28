@@ -69,13 +69,12 @@
  * the cost if the SRAM/fill/filter checks all miss. */
 #define OVE_ARM_STACK_SCAN_WORDS 256u
 
-int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean,
-				    uintptr_t text_lo, uintptr_t text_hi)
+int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean, uintptr_t text_lo, uintptr_t text_hi)
 {
 	if (lr_clean < text_lo + 4 || lr_clean >= text_hi)
 		return 0;
 	if (lr_clean & 1u)
-		return 0;  /* caller is expected to clear the Thumb bit */
+		return 0; /* caller is expected to clear the Thumb bit */
 
 	/*
 	 * Thumb-2 encodings (ARMv7-M):
@@ -90,18 +89,15 @@ int ove_arm_backtrace_lr_is_post_bl(uintptr_t lr_clean,
 	 */
 	uint16_t hw2 = *(const uint16_t *)(lr_clean - 2);
 	if ((hw2 & 0xFF87u) == 0x4780u)
-		return 1;  /* blx reg */
+		return 1; /* blx reg */
 	uint16_t hw1 = *(const uint16_t *)(lr_clean - 4);
 	if ((hw1 & 0xF800u) == 0xF000u && (hw2 & 0xD000u) == 0xD000u)
-		return 1;  /* bl imm */
+		return 1; /* bl imm */
 	return 0;
 }
 
-int ove_arm_backtrace_walk(uintptr_t psp,
-			   uintptr_t text_lo, uintptr_t text_hi,
-			   uintptr_t sram_lo, uintptr_t sram_hi,
-			   uint32_t fill,
-			   uintptr_t *out, int max)
+int ove_arm_backtrace_walk(uintptr_t psp, uintptr_t text_lo, uintptr_t text_hi, uintptr_t sram_lo,
+			   uintptr_t sram_hi, uint32_t fill, uintptr_t *out, int max)
 {
 	if (!out || max <= 0)
 		return 0;
@@ -111,7 +107,7 @@ int ove_arm_backtrace_walk(uintptr_t psp,
 	const uint32_t *scan_end = scan + OVE_ARM_STACK_SCAN_WORDS;
 
 	uint32_t prev_word = 0;
-	uintptr_t last_r7 = 0;  /* most recently accepted saved_r7 value */
+	uintptr_t last_r7 = 0; /* most recently accepted saved_r7 value */
 	int depth = 0;
 
 	while (depth < max && scan < scan_end) {
@@ -158,8 +154,7 @@ int ove_arm_backtrace_walk(uintptr_t psp,
 		 * accepted saved-r7 — those are residual pairs from previously-
 		 * returned callees still sitting in the outer frame's locals.
 		 */
-		if (last_r7 != 0 &&
-		    (prev_word <= last_r7 || (sp_addr - 4) <= last_r7)) {
+		if (last_r7 != 0 && (prev_word <= last_r7 || (sp_addr - 4) <= last_r7)) {
 			prev_word = val;
 			continue;
 		}

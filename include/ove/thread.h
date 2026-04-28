@@ -43,7 +43,7 @@ typedef void (*ove_thread_fn)(void *arg);
  */
 typedef enum {
 	OVE_THREAD_STATE_RUNNING = 0, /**< @brief Currently executing on the CPU. */
-	OVE_THREAD_STATE_READY,       /**< @brief Ready to run, waiting for the CPU. */
+	OVE_THREAD_STATE_READY,	      /**< @brief Ready to run, waiting for the CPU. */
 	OVE_THREAD_STATE_BLOCKED,     /**< @brief Blocked on a synchronisation object or delay. */
 	OVE_THREAD_STATE_SUSPENDED,   /**< @brief Explicitly suspended via ove_thread_suspend(). */
 	OVE_THREAD_STATE_TERMINATED,  /**< @brief Entry function has returned; not yet destroyed. */
@@ -54,8 +54,8 @@ typedef enum {
  * @brief Per-thread runtime statistics snapshot.
  */
 struct ove_thread_stats {
-	uint64_t runtime_us;        /**< @brief Total CPU time consumed by this thread in microseconds. */
-	uint32_t cpu_percent_x100;  /**< @brief CPU utilisation in hundredths of a percent (e.g. 1250 = 12.50 %). */
+	uint64_t runtime_us; /**< @brief Total CPU time consumed by this thread in microseconds. */
+	uint32_t cpu_percent_x100; /**< @brief CPU utilisation in hundredths of a percent (e.g. 1250 = 12.50 %). */
 };
 
 /**
@@ -65,26 +65,26 @@ struct ove_thread_stats {
  * time.  Higher enum values represent higher scheduling priority.
  */
 typedef enum {
-	OVE_PRIO_IDLE         = 0, /**< @brief Lowest priority; runs only when no other thread is ready. */
-	OVE_PRIO_LOW          = 1, /**< @brief Low priority background work. */
+	OVE_PRIO_IDLE = 0, /**< @brief Lowest priority; runs only when no other thread is ready. */
+	OVE_PRIO_LOW = 1,  /**< @brief Low priority background work. */
 	OVE_PRIO_BELOW_NORMAL = 2, /**< @brief Below-normal priority. */
-	OVE_PRIO_NORMAL       = 3, /**< @brief Default application priority. */
+	OVE_PRIO_NORMAL = 3,	   /**< @brief Default application priority. */
 	OVE_PRIO_ABOVE_NORMAL = 4, /**< @brief Above-normal priority. */
-	OVE_PRIO_HIGH         = 5, /**< @brief High priority; prefer for time-sensitive tasks. */
-	OVE_PRIO_REALTIME     = 6, /**< @brief Real-time priority; use with care. */
-	OVE_PRIO_CRITICAL     = 7, /**< @brief Highest priority; reserved for critical system tasks. */
+	OVE_PRIO_HIGH = 5,	   /**< @brief High priority; prefer for time-sensitive tasks. */
+	OVE_PRIO_REALTIME = 6,	   /**< @brief Real-time priority; use with care. */
+	OVE_PRIO_CRITICAL = 7, /**< @brief Highest priority; reserved for critical system tasks. */
 } ove_prio_t;
 
 /**
  * @brief Thread creation descriptor passed to ove_thread_init() / ove_thread_create().
  */
 struct ove_thread_desc {
-	const char    *name;       /**< @brief Human-readable thread name (may be truncated by backend). */
-	ove_thread_fn  entry;      /**< @brief Thread entry-point function. Must not be NULL. */
-	void          *arg;        /**< @brief Opaque argument forwarded to @c entry. May be NULL. */
-	ove_prio_t     priority;   /**< @brief Scheduling priority. */
-	size_t         stack_size; /**< @brief Stack size in bytes. Must be > 0. */
-	void          *stack;      /**< @brief Pointer to caller-allocated stack buffer (static mode only;
+	const char *name; /**< @brief Human-readable thread name (may be truncated by backend). */
+	ove_thread_fn entry; /**< @brief Thread entry-point function. Must not be NULL. */
+	void *arg;	     /**< @brief Opaque argument forwarded to @c entry. May be NULL. */
+	ove_prio_t priority; /**< @brief Scheduling priority. */
+	size_t stack_size;   /**< @brief Stack size in bytes. Must be > 0. */
+	void *stack;	     /**< @brief Pointer to caller-allocated stack buffer (static mode only;
 	                                       set to NULL for heap mode).
 	                                       Must be 8-byte aligned (ARM AAPCS). Use the
 	                                       @c OVE_THREAD_STACK_DEFINE_ / @c OVE_THREAD_STACK_MEMBER_
@@ -111,9 +111,8 @@ struct ove_thread_desc {
  *
  * @see ove_thread_deinit, ove_thread_create
  */
-int  ove_thread_init(ove_thread_t *handle,
-		     ove_thread_storage_t *storage,
-		     const struct ove_thread_desc *desc);
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
+		    const struct ove_thread_desc *desc);
 
 /**
  * @brief Terminate and release a thread created with ove_thread_init().
@@ -126,7 +125,7 @@ int  ove_thread_init(ove_thread_t *handle,
  *
  * @see ove_thread_init
  */
-int  ove_thread_deinit(ove_thread_t handle);
+int ove_thread_deinit(ove_thread_t handle);
 
 /* _create / _destroy — unified across heap and zero-heap modes */
 #ifdef OVE_HEAP_THREAD
@@ -144,8 +143,7 @@ int  ove_thread_deinit(ove_thread_t handle);
  *
  * @see ove_thread_create
  */
-int  ove_thread_create_(ove_thread_t *handle,
-			const struct ove_thread_desc *desc);
+int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc);
 
 /**
  * @brief Stop and free a thread created with ove_thread_create().
@@ -155,7 +153,7 @@ int  ove_thread_create_(ove_thread_t *handle,
  *
  * @see ove_thread_create
  */
-int  ove_thread_destroy(ove_thread_t handle);
+int ove_thread_destroy(ove_thread_t handle);
 
 /**
  * @brief Create a thread (works in both heap and zero-heap mode).
@@ -170,10 +168,12 @@ int  ove_thread_destroy(ove_thread_t handle);
  * @param stack_sz  Stack size in bytes.
  * @param pdesc     Pointer to a thread descriptor.
  */
-#define ove_thread_create(phandle, stack_sz, pdesc) \
-	({ struct ove_thread_desc _ove_d_ = *(pdesc); \
-	   _ove_d_.stack_size = (stack_sz); \
-	   ove_thread_create_((phandle), &_ove_d_); })
+#define ove_thread_create(phandle, stack_sz, pdesc)        \
+	({                                                 \
+		struct ove_thread_desc _ove_d_ = *(pdesc); \
+		_ove_d_.stack_size = (stack_sz);           \
+		ove_thread_create_((phandle), &_ove_d_);   \
+	})
 
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_THREAD — zero-heap mode */
 
@@ -189,13 +189,15 @@ int  ove_thread_destroy(ove_thread_t handle);
  * @param stack_sz  Stack size in bytes (compile-time constant).
  * @param pdesc     Pointer to a thread descriptor.
  */
-#define ove_thread_create(phandle, stack_sz, pdesc) \
-	({ static ove_thread_storage_t _ove_stor_; \
-	   OVE_THREAD_STACK_BLOCK_STATIC_(_ove_stk_, stack_sz); \
-	   struct ove_thread_desc _ove_d_ = *(pdesc); \
-	   _ove_d_.stack_size = (stack_sz); \
-	   _ove_d_.stack = _ove_stk_; \
-	   ove_thread_init((phandle), &_ove_stor_, &_ove_d_); })
+#define ove_thread_create(phandle, stack_sz, pdesc)                  \
+	({                                                           \
+		static ove_thread_storage_t _ove_stor_;              \
+		OVE_THREAD_STACK_BLOCK_STATIC_(_ove_stk_, stack_sz); \
+		struct ove_thread_desc _ove_d_ = *(pdesc);           \
+		_ove_d_.stack_size = (stack_sz);                     \
+		_ove_d_.stack = _ove_stk_;                           \
+		ove_thread_init((phandle), &_ove_stor_, &_ove_d_);   \
+	})
 
 #define ove_thread_destroy(handle) ove_thread_deinit(handle)
 
@@ -292,8 +294,7 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle);
  * @return OVE_OK on success, @c OVE_ERR_NOT_SUPPORTED if the backend
  *         does not provide runtime accounting.
  */
-int ove_thread_get_runtime_stats(ove_thread_t handle,
-				 struct ove_thread_stats *stats);
+int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats);
 
 /* ── System memory statistics ──────────────────────────────── */
 
@@ -301,10 +302,10 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
  * @brief System heap statistics.
  */
 struct ove_mem_stats {
-	size_t total;      /**< Total heap size in bytes. */
-	size_t free;       /**< Current free heap in bytes. */
-	size_t used;       /**< Current used heap in bytes. */
-	size_t peak_used;  /**< High-water-mark usage in bytes. */
+	size_t total;	  /**< Total heap size in bytes. */
+	size_t free;	  /**< Current free heap in bytes. */
+	size_t used;	  /**< Current used heap in bytes. */
+	size_t peak_used; /**< High-water-mark usage in bytes. */
 };
 
 /**
@@ -323,22 +324,22 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats);
  * Only populated when CONFIG_OVE_THREAD_STATE_STATS is enabled.
  */
 struct ove_thread_state_times {
-	uint64_t running_us;    /**< Time in RUNNING state. */
-	uint64_t ready_us;      /**< Time in READY state. */
-	uint64_t blocked_us;    /**< Time in BLOCKED state. */
-	uint64_t suspended_us;  /**< Time in SUSPENDED state. */
+	uint64_t running_us;   /**< Time in RUNNING state. */
+	uint64_t ready_us;     /**< Time in READY state. */
+	uint64_t blocked_us;   /**< Time in BLOCKED state. */
+	uint64_t suspended_us; /**< Time in SUSPENDED state. */
 };
 
 /**
  * @brief Snapshot of a single thread's info.
  */
 struct ove_thread_info {
-	const char         *name;           /**< Thread name (static, do not free). */
-	ove_thread_state_t  state;          /**< Execution state. */
-	int                 priority;       /**< Priority level. */
-	size_t              stack_used;     /**< Stack high-water mark (bytes). */
-	size_t              stack_size;     /**< Total stack allocation (bytes). */
-	uint32_t            cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
+	const char *name;	   /**< Thread name (static, do not free). */
+	ove_thread_state_t state;  /**< Execution state. */
+	int priority;		   /**< Priority level. */
+	size_t stack_used;	   /**< Stack high-water mark (bytes). */
+	size_t stack_size;	   /**< Total stack allocation (bytes). */
+	uint32_t cpu_percent_x100; /**< CPU usage in 0.01% units (e.g. 1250 = 12.50%). */
 	struct ove_thread_state_times state_times; /**< Per-state cumulative time. */
 };
 
@@ -350,8 +351,7 @@ struct ove_thread_info {
  * @param[out] actual_count Actual number of threads written (may be NULL).
  * @return OVE_OK on success, OVE_ERR_NOT_SUPPORTED if unavailable.
  */
-int ove_thread_list(struct ove_thread_info *out, size_t max_count,
-		    size_t *actual_count);
+int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
 
 #ifdef __cplusplus
 }

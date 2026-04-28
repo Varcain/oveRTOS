@@ -43,13 +43,13 @@ extern "C" {
  * @{
  */
 /** @brief Error level — non-recoverable failures. */
-#define OVE_LOG_LEVEL_ERR  0
+#define OVE_LOG_LEVEL_ERR 0
 /** @brief Warning level — unexpected but recoverable conditions. */
-#define OVE_LOG_LEVEL_WRN  1
+#define OVE_LOG_LEVEL_WRN 1
 /** @brief Info level — normal operational milestones (default). */
-#define OVE_LOG_LEVEL_INF  2
+#define OVE_LOG_LEVEL_INF 2
 /** @brief Debug level — verbose diagnostic output. */
-#define OVE_LOG_LEVEL_DBG  3
+#define OVE_LOG_LEVEL_DBG 3
 /** @} */
 
 /**
@@ -74,21 +74,19 @@ void ove_httpd_log_append(const char *line);
  * so no separate hook is needed in the log macro. */
 #define _OVE_LOG_SIM_HOOK(buf, len) ((void)0)
 
-#define _OVE_LOG_OUTPUT(prefix, fmt, ...) \
-	do { \
-		char _ove_log_buf[256]; \
-		int _ove_log_len = snprintf(_ove_log_buf, \
-			sizeof(_ove_log_buf), prefix fmt, ##__VA_ARGS__); \
-		if (_ove_log_len > 0) { \
-			_ove_log_buf[_ove_log_len] = '\n'; \
-			_ove_log_buf[_ove_log_len + 1] = '\0'; \
-			ove_console_write(_ove_log_buf, \
-				(unsigned int)(_ove_log_len + 1)); \
-			_ove_log_buf[_ove_log_len] = '\0'; \
-			_OVE_LOG_HTTPD_HOOK(_ove_log_buf); \
-			_OVE_LOG_SIM_HOOK(_ove_log_buf, \
-				(unsigned int)_ove_log_len); \
-		} \
+#define _OVE_LOG_OUTPUT(prefix, fmt, ...)                                                        \
+	do {                                                                                     \
+		char _ove_log_buf[256];                                                          \
+		int _ove_log_len =                                                               \
+			snprintf(_ove_log_buf, sizeof(_ove_log_buf), prefix fmt, ##__VA_ARGS__); \
+		if (_ove_log_len > 0) {                                                          \
+			_ove_log_buf[_ove_log_len] = '\n';                                       \
+			_ove_log_buf[_ove_log_len + 1] = '\0';                                   \
+			ove_console_write(_ove_log_buf, (unsigned int)(_ove_log_len + 1));       \
+			_ove_log_buf[_ove_log_len] = '\0';                                       \
+			_OVE_LOG_HTTPD_HOOK(_ove_log_buf);                                       \
+			_OVE_LOG_SIM_HOOK(_ove_log_buf, (unsigned int)_ove_log_len);             \
+		}                                                                                \
 	} while (0)
 /** @endcond */
 
@@ -104,7 +102,9 @@ void ove_httpd_log_append(const char *line);
 #if OVE_LOG_LEVEL >= OVE_LOG_LEVEL_ERR
 #define OVE_LOG_ERR(fmt, ...) _OVE_LOG_OUTPUT("[E] ", fmt, ##__VA_ARGS__)
 #else
-#define OVE_LOG_ERR(fmt, ...) do {} while (0)
+#define OVE_LOG_ERR(fmt, ...) \
+	do {                  \
+	} while (0)
 #endif
 
 /**
@@ -119,7 +119,9 @@ void ove_httpd_log_append(const char *line);
 #if OVE_LOG_LEVEL >= OVE_LOG_LEVEL_WRN
 #define OVE_LOG_WRN(fmt, ...) _OVE_LOG_OUTPUT("[W] ", fmt, ##__VA_ARGS__)
 #else
-#define OVE_LOG_WRN(fmt, ...) do {} while (0)
+#define OVE_LOG_WRN(fmt, ...) \
+	do {                  \
+	} while (0)
 #endif
 
 /**
@@ -134,7 +136,9 @@ void ove_httpd_log_append(const char *line);
 #if OVE_LOG_LEVEL >= OVE_LOG_LEVEL_INF
 #define OVE_LOG_INF(fmt, ...) _OVE_LOG_OUTPUT("[I] ", fmt, ##__VA_ARGS__)
 #else
-#define OVE_LOG_INF(fmt, ...) do {} while (0)
+#define OVE_LOG_INF(fmt, ...) \
+	do {                  \
+	} while (0)
 #endif
 
 /**
@@ -149,7 +153,9 @@ void ove_httpd_log_append(const char *line);
 #if OVE_LOG_LEVEL >= OVE_LOG_LEVEL_DBG
 #define OVE_LOG_DBG(fmt, ...) _OVE_LOG_OUTPUT("[D] ", fmt, ##__VA_ARGS__)
 #else
-#define OVE_LOG_DBG(fmt, ...) do {} while (0)
+#define OVE_LOG_DBG(fmt, ...) \
+	do {                  \
+	} while (0)
 #endif
 
 /**
@@ -161,15 +167,14 @@ void ove_httpd_log_append(const char *line);
  * @param[in] fmt  printf-style format string.
  * @param[in] ...  Format arguments.
  */
-#define _OVE_LOG_RAW(fmt, ...) \
-	do { \
-		char _ove_log_buf[256]; \
-		int _ove_log_len = snprintf(_ove_log_buf, \
-			sizeof(_ove_log_buf), fmt, ##__VA_ARGS__); \
-		if (_ove_log_len > 0) { \
-			ove_console_write(_ove_log_buf, \
-				(unsigned int)_ove_log_len); \
-		} \
+#define _OVE_LOG_RAW(fmt, ...)                                                            \
+	do {                                                                              \
+		char _ove_log_buf[256];                                                   \
+		int _ove_log_len =                                                        \
+			snprintf(_ove_log_buf, sizeof(_ove_log_buf), fmt, ##__VA_ARGS__); \
+		if (_ove_log_len > 0) {                                                   \
+			ove_console_write(_ove_log_buf, (unsigned int)_ove_log_len);      \
+		}                                                                         \
 	} while (0)
 
 /**

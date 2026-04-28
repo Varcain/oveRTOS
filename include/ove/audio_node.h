@@ -28,7 +28,7 @@ extern "C" {
 #include "ove/storage.h"
 
 /** @brief Maximum number of audio channels supported by the channel-map node. */
-#define OVE_AUDIO_MAX_CHANNELS  8
+#define OVE_AUDIO_MAX_CHANNELS 8
 
 /* ── Sample format ──────────────────────────────────────────────── */
 
@@ -38,9 +38,9 @@ extern "C" {
  * Identifies the numeric type and bit-depth of each audio sample.
  */
 enum ove_audio_sample_fmt {
-    OVE_AUDIO_FMT_S16,     /**< @brief Signed 16-bit integer (int16_t). */
-    OVE_AUDIO_FMT_S32,     /**< @brief Signed 32-bit integer (int32_t). */
-    OVE_AUDIO_FMT_F32,     /**< @brief 32-bit IEEE 754 float. */
+	OVE_AUDIO_FMT_S16, /**< @brief Signed 16-bit integer (int16_t). */
+	OVE_AUDIO_FMT_S32, /**< @brief Signed 32-bit integer (int32_t). */
+	OVE_AUDIO_FMT_F32, /**< @brief 32-bit IEEE 754 float. */
 };
 
 /**
@@ -51,12 +51,16 @@ enum ove_audio_sample_fmt {
  */
 static inline unsigned int ove_audio_sample_size(enum ove_audio_sample_fmt fmt)
 {
-    switch (fmt) {
-    case OVE_AUDIO_FMT_S16: return sizeof(int16_t);
-    case OVE_AUDIO_FMT_S32: return sizeof(int32_t);
-    case OVE_AUDIO_FMT_F32: return sizeof(float);
-    default:                 return 0;
-    }
+	switch (fmt) {
+	case OVE_AUDIO_FMT_S16:
+		return sizeof(int16_t);
+	case OVE_AUDIO_FMT_S32:
+		return sizeof(int32_t);
+	case OVE_AUDIO_FMT_F32:
+		return sizeof(float);
+	default:
+		return 0;
+	}
 }
 
 /* ── Audio format descriptor ────────────────────────────────────── */
@@ -68,9 +72,9 @@ static inline unsigned int ove_audio_sample_size(enum ove_audio_sample_fmt fmt)
  * audio stream.  Channels are always interleaved.
  */
 struct ove_audio_fmt {
-    unsigned int              sample_rate; /**< @brief Sample rate in Hz. */
-    unsigned int              channels;    /**< @brief Number of interleaved channels. */
-    enum ove_audio_sample_fmt sample_fmt;  /**< @brief PCM sample format. */
+	unsigned int sample_rate;	      /**< @brief Sample rate in Hz. */
+	unsigned int channels;		      /**< @brief Number of interleaved channels. */
+	enum ove_audio_sample_fmt sample_fmt; /**< @brief PCM sample format. */
 };
 
 /**
@@ -80,12 +84,10 @@ struct ove_audio_fmt {
  * @param[in] b  Second format descriptor.
  * @return Non-zero if all fields match, zero otherwise.
  */
-static inline int ove_audio_fmt_equal(const struct ove_audio_fmt *a,
-                                      const struct ove_audio_fmt *b)
+static inline int ove_audio_fmt_equal(const struct ove_audio_fmt *a, const struct ove_audio_fmt *b)
 {
-    return a->sample_rate == b->sample_rate &&
-           a->channels   == b->channels &&
-           a->sample_fmt == b->sample_fmt;
+	return a->sample_rate == b->sample_rate && a->channels == b->channels &&
+	       a->sample_fmt == b->sample_fmt;
 }
 
 /* ── Audio buffer ───────────────────────────────────────────────── */
@@ -97,9 +99,9 @@ static inline int ove_audio_fmt_equal(const struct ove_audio_fmt *a,
  * present, and a reference to the format that describes each sample.
  */
 struct ove_audio_buf {
-    void                       *data;   /**< @brief Pointer to interleaved sample data. */
-    unsigned int                frames; /**< @brief Number of frames in @c data. */
-    const struct ove_audio_fmt *fmt;    /**< @brief Format descriptor for this buffer. */
+	void *data;			 /**< @brief Pointer to interleaved sample data. */
+	unsigned int frames;		 /**< @brief Number of frames in @c data. */
+	const struct ove_audio_fmt *fmt; /**< @brief Format descriptor for this buffer. */
 };
 
 /* ── Node vtable ────────────────────────────────────────────────── */
@@ -112,7 +114,7 @@ struct ove_audio_buf {
  * must be provided).
  */
 struct ove_audio_node_ops {
-    /**
+	/**
      * @brief Negotiate format during graph build (topological order).
      *
      * Called once per node during ove_audio_graph_build().
@@ -127,26 +129,26 @@ struct ove_audio_node_ops {
      * @param[out] out_fmt  Format this node will produce, or NULL for sinks.
      * @return 0 on success, negative error code on failure.
      */
-    int  (*configure)(void *ctx, const struct ove_audio_fmt *in_fmt,
-                      struct ove_audio_fmt *out_fmt);
+	int (*configure)(void *ctx, const struct ove_audio_fmt *in_fmt,
+			 struct ove_audio_fmt *out_fmt);
 
-    /**
+	/**
      * @brief Start the node (called on graph start).  NULL = no-op.
      *
      * @param[in] ctx  Node context pointer.
      * @return 0 on success, negative error code on failure.
      */
-    int  (*start)(void *ctx);
+	int (*start)(void *ctx);
 
-    /**
+	/**
      * @brief Stop the node (called on graph stop).  NULL = no-op.
      *
      * @param[in] ctx  Node context pointer.
      * @return 0 on success, negative error code on failure.
      */
-    int  (*stop)(void *ctx);
+	int (*stop)(void *ctx);
 
-    /**
+	/**
      * @brief Process one buffer period.
      *
      * Called in topological order each graph cycle:
@@ -159,17 +161,16 @@ struct ove_audio_node_ops {
      * @param[out] out  Output buffer to fill, or NULL for sinks.
      * @return 0 on success, negative error code on failure.
      */
-    int  (*process)(void *ctx, const struct ove_audio_buf *in,
-                    struct ove_audio_buf *out);
+	int (*process)(void *ctx, const struct ove_audio_buf *in, struct ove_audio_buf *out);
 
-    /**
+	/**
      * @brief Release all resources owned by the node context.
      *
      * Called when the node is removed from the graph.  May be NULL.
      *
      * @param[in] ctx  Node context pointer.
      */
-    void (*destroy)(void *ctx);
+	void (*destroy)(void *ctx);
 };
 
 /* ── Node types ─────────────────────────────────────────────────── */
@@ -178,9 +179,9 @@ struct ove_audio_node_ops {
  * @brief Role of a node within the audio graph.
  */
 enum ove_audio_node_type {
-    OVE_AUDIO_NODE_SOURCE,    /**< @brief Produces audio; has no upstream connection. */
-    OVE_AUDIO_NODE_PROCESSOR, /**< @brief Transforms audio; has one upstream connection. */
-    OVE_AUDIO_NODE_SINK,      /**< @brief Consumes audio; has no downstream connection. */
+	OVE_AUDIO_NODE_SOURCE,	  /**< @brief Produces audio; has no upstream connection. */
+	OVE_AUDIO_NODE_PROCESSOR, /**< @brief Transforms audio; has one upstream connection. */
+	OVE_AUDIO_NODE_SINK,	  /**< @brief Consumes audio; has no downstream connection. */
 };
 
 /**
@@ -190,11 +191,11 @@ enum ove_audio_node_type {
  * @c ove_audio_graph::nodes[].
  */
 struct ove_audio_node {
-    const char                      *name;    /**< @brief Human-readable node name. */
-    enum ove_audio_node_type         type;    /**< @brief Source, processor, or sink. */
-    const struct ove_audio_node_ops *ops;     /**< @brief Vtable for this node. */
-    void                            *ctx;     /**< @brief Opaque context forwarded to every vtable call. */
-    struct ove_audio_fmt             out_fmt; /**< @brief Output format resolved during graph build. */
+	const char *name;		      /**< @brief Human-readable node name. */
+	enum ove_audio_node_type type;	      /**< @brief Source, processor, or sink. */
+	const struct ove_audio_node_ops *ops; /**< @brief Vtable for this node. */
+	void *ctx;		      /**< @brief Opaque context forwarded to every vtable call. */
+	struct ove_audio_fmt out_fmt; /**< @brief Output format resolved during graph build. */
 };
 
 /* ── Built-in node factories ────────────────────────────────────── */
@@ -210,8 +211,8 @@ struct ove_audio_graph; /* forward declaration */
  * a value of -1 produces silence on that output channel.
  */
 struct ove_audio_channel_map {
-    unsigned int out_channels;                   /**< @brief Number of output channels produced. */
-    int          map[OVE_AUDIO_MAX_CHANNELS];    /**< @brief map[out_ch] = in_ch index, or -1 for silence. */
+	unsigned int out_channels;	 /**< @brief Number of output channels produced. */
+	int map[OVE_AUDIO_MAX_CHANNELS]; /**< @brief map[out_ch] = in_ch index, or -1 for silence. */
 };
 
 /**
@@ -220,8 +221,7 @@ struct ove_audio_channel_map {
  * @param[in] buf        Buffer containing the observed audio data.
  * @param[in] user_data  Opaque pointer supplied at node creation.
  */
-typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf,
-                                 void *user_data);
+typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf, void *user_data);
 
 /* The built-in factory functions below internally allocate a per-node
  * context with OVE_BACKEND_MALLOC.  Under CONFIG_OVE_ZERO_HEAP the gate
@@ -243,9 +243,8 @@ typedef void (*ove_audio_tap_fn)(const struct ove_audio_buf *buf,
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_graph_add_node, ove_audio_graph_connect
  */
-int ove_audio_node_converter(struct ove_audio_graph *g,
-                             enum ove_audio_sample_fmt target_fmt,
-                             const char *name);
+int ove_audio_node_converter(struct ove_audio_graph *g, enum ove_audio_sample_fmt target_fmt,
+			     const char *name);
 
 /**
  * @brief Add a channel-mapping processor node to the graph.
@@ -262,9 +261,8 @@ int ove_audio_node_converter(struct ove_audio_graph *g,
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_node_converter
  */
-int ove_audio_node_channel_map(struct ove_audio_graph *g,
-                               const struct ove_audio_channel_map *map,
-                               const char *name);
+int ove_audio_node_channel_map(struct ove_audio_graph *g, const struct ove_audio_channel_map *map,
+			       const char *name);
 
 /**
  * @brief Add a gain processor node to the graph.
@@ -280,8 +278,7 @@ int ove_audio_node_channel_map(struct ove_audio_graph *g,
  *
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  */
-int ove_audio_node_gain(struct ove_audio_graph *g,
-                        float gain_db, const char *name);
+int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *name);
 
 /**
  * @brief Add a tap (observer) sink node to the graph.
@@ -299,9 +296,8 @@ int ove_audio_node_gain(struct ove_audio_graph *g,
  * @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.
  * @see ove_audio_node_gain
  */
-int ove_audio_node_tap(struct ove_audio_graph *g,
-                       ove_audio_tap_fn fn, void *user_data,
-                       const char *name);
+int ove_audio_node_tap(struct ove_audio_graph *g, ove_audio_tap_fn fn, void *user_data,
+		       const char *name);
 
 #endif /* OVE_HEAP_AUDIO */
 

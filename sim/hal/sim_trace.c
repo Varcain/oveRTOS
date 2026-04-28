@@ -38,9 +38,9 @@ static struct sim_trace_ctx trace_ctx;
 /* ── STREAM emission ──────────────────────────────────────────────── */
 
 /* Envelope is 1+1+2+4 = 8 bytes followed by @count * 16 byte records. */
-#define STREAM_ENVELOPE_BYTES  8
-#define STREAM_BUF_BYTES       (STREAM_ENVELOPE_BYTES + \
-				OVE_SIM_TRACE_MAX_BATCH * sizeof(struct ove_trace_record))
+#define STREAM_ENVELOPE_BYTES 8
+#define STREAM_BUF_BYTES \
+	(STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_BATCH * sizeof(struct ove_trace_record))
 
 /* Pump-scoped scratch. The trace plugin emits from the consolidated
  * sim-debug pump thread only, so these are single-threaded. Keeping them
@@ -48,9 +48,8 @@ static struct sim_trace_ctx trace_ctx;
  * on embedded RTOSes. */
 static uint8_t stream_ev_buf[sizeof(struct ove_sim_event) + STREAM_BUF_BYTES];
 
-static void emit_stream_batch(struct sim_trace_ctx *t,
-			      const struct ove_trace_record *recs, size_t n,
-			      uint32_t dropped)
+static void emit_stream_batch(struct sim_trace_ctx *t, const struct ove_trace_record *recs,
+			      size_t n, uint32_t dropped)
 {
 	if (n == 0 && dropped == 0)
 		return;
@@ -61,17 +60,19 @@ static void emit_stream_batch(struct sim_trace_ctx *t,
 	*p++ = OVE_SIM_TRACE_SUB_STREAM;
 	*p++ = OVE_SIM_TRACE_VERSION;
 	uint16_t count16 = (uint16_t)n;
-	memcpy(p, &count16, 2); p += 2;
-	memcpy(p, &dropped, 4); p += 4;
+	memcpy(p, &count16, 2);
+	p += 2;
+	memcpy(p, &dropped, 4);
+	p += 4;
 
 	size_t rec_bytes = n * sizeof(struct ove_trace_record);
 	memcpy(p, recs, rec_bytes);
 	p += rec_bytes;
 
-	ev->plugin_id    = t->plugin_id;
-	ev->event_type   = OVE_SIM_TRACE_EVT_STREAM;
+	ev->plugin_id = t->plugin_id;
+	ev->event_type = OVE_SIM_TRACE_EVT_STREAM;
 	ev->timestamp_ms = 0;
-	ev->data_len     = (uint32_t)(p - ev->data);
+	ev->data_len = (uint32_t)(p - ev->data);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
@@ -79,17 +80,15 @@ static void emit_stream_batch(struct sim_trace_ctx *t,
 /* ── DESCRIPTORS emission ────────────────────────────────────────── */
 
 /* Envelope (8 B) + per thread (4 tid + 1 len + up to 31 name). */
-#define DESC_PER_MAX      (4 + 1 + OVE_SIM_TRACE_MAX_NAME)
-#define DESC_BUF_BYTES    (STREAM_ENVELOPE_BYTES + \
-			   OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
+#define DESC_PER_MAX (4 + 1 + OVE_SIM_TRACE_MAX_NAME)
+#define DESC_BUF_BYTES (STREAM_ENVELOPE_BYTES + OVE_SIM_TRACE_MAX_DESC * DESC_PER_MAX)
 
 static uint8_t desc_ev_buf[sizeof(struct ove_sim_event) + DESC_BUF_BYTES];
 static struct ove_trace_thread_desc desc_scratch[OVE_SIM_TRACE_MAX_DESC];
 
 static void emit_descriptors(struct sim_trace_ctx *t)
 {
-	size_t count = ove_backend_trace_list_threads(desc_scratch,
-						       OVE_SIM_TRACE_MAX_DESC);
+	size_t count = ove_backend_trace_list_threads(desc_scratch, OVE_SIM_TRACE_MAX_DESC);
 	if (count == 0)
 		return;
 
@@ -100,9 +99,11 @@ static void emit_descriptors(struct sim_trace_ctx *t)
 	*p++ = OVE_SIM_TRACE_SUB_DESCRIPTORS;
 	*p++ = OVE_SIM_TRACE_VERSION;
 	uint16_t count16 = (uint16_t)count;
-	memcpy(p, &count16, 2); p += 2;
+	memcpy(p, &count16, 2);
+	p += 2;
 	uint32_t zero = 0;
-	memcpy(p, &zero, 4); p += 4;
+	memcpy(p, &zero, 4);
+	p += 4;
 
 	for (size_t i = 0; i < count; i++) {
 		const char *name = desc_scratch[i].name ? desc_scratch[i].name : "?";
@@ -111,15 +112,17 @@ static void emit_descriptors(struct sim_trace_ctx *t)
 			nlen = OVE_SIM_TRACE_MAX_NAME;
 		if (p + 5 + nlen > end)
 			break;
-		memcpy(p, &desc_scratch[i].tid, 4); p += 4;
+		memcpy(p, &desc_scratch[i].tid, 4);
+		p += 4;
 		*p++ = (uint8_t)nlen;
-		memcpy(p, name, nlen); p += nlen;
+		memcpy(p, name, nlen);
+		p += nlen;
 	}
 
-	ev->plugin_id    = t->plugin_id;
-	ev->event_type   = OVE_SIM_TRACE_EVT_DESCRIPTORS;
+	ev->plugin_id = t->plugin_id;
+	ev->event_type = OVE_SIM_TRACE_EVT_DESCRIPTORS;
 	ev->timestamp_ms = 0;
-	ev->data_len     = (uint32_t)(p - ev->data);
+	ev->data_len = (uint32_t)(p - ev->data);
 
 	ove_sim_plugin_emit_event(t->plugin_id, ev);
 }
@@ -148,7 +151,9 @@ void ove_sim_trace_tick(uint32_t elapsed_ms)
 
 static int trace_init(void *ctx, const void *config, size_t config_len)
 {
-	(void)config; (void)config_len; (void)ctx;
+	(void)config;
+	(void)config_len;
+	(void)ctx;
 	return OVE_OK;
 }
 
@@ -173,7 +178,13 @@ int ove_sim_trace_register(void)
 
 #include "ove/sim/ove_sim_trace.h"
 
-int  ove_sim_trace_register(void) { return 0; }
-void ove_sim_trace_tick(uint32_t elapsed_ms) { (void)elapsed_ms; }
+int ove_sim_trace_register(void)
+{
+	return 0;
+}
+void ove_sim_trace_tick(uint32_t elapsed_ms)
+{
+	(void)elapsed_ms;
+}
 
 #endif /* CONFIG_OVE_TRACE_STREAM */

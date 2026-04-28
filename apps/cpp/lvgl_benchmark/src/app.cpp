@@ -39,7 +39,8 @@ namespace lv = ove::lvgl;
  * is visible at a glance. The scene callbacks themselves remain in
  * the file's top-level scope and reference `perf_ffi::*` as needed.
  */
-namespace perf_ffi {
+namespace perf_ffi
+{
 // Forward-declared here; definitions live further down so the scene
 // callbacks that invoke them see declarations.
 void color_anim(lv_obj_t *obj);
@@ -56,8 +57,7 @@ extern "C" void slideshow_ready_cb(lv_anim_t *a);
 extern "C" void gauge_arc_exec_cb(void *var, int32_t v);
 extern "C" void table_draw_task_event_cb(lv_event_t *e);
 #if LV_USE_PERF_MONITOR
-extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer,
-					lv_subject_t *subject);
+extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer, lv_subject_t *subject);
 #endif
 } /* namespace perf_ffi */
 
@@ -78,8 +78,7 @@ static void widgets_demo_cb(void);
 
 /* ── Thread ───────────────────────────────────────────────────────── */
 
-static ove::Thread<4096> gfx_thread(graphics_thread, nullptr,
-				    OVE_PRIO_HIGH, "graphics");
+static ove::Thread<4096> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
 
 /* ── Scene types ──────────────────────────────────────────────────── */
 
@@ -109,8 +108,7 @@ static void moving_wallpaper_cb(void)
 	img.size(lv_pct(150), lv_pct(150));
 	lv_image_set_src(img.get(), &img_benchmark_lvgl_logo_rgb);
 	lv_image_set_inner_align(img.get(), LV_IMAGE_ALIGN_TILE);
-	perf_ffi::shake_anim(img.get(),
-		   -lv::display_height() / 3);
+	perf_ffi::shake_anim(img.get(), -lv::display_height() / 3);
 }
 
 static void single_rectangle_cb(void)
@@ -127,9 +125,8 @@ static void multiple_rectangles_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_CENTER,
-			      LV_FLEX_ALIGN_SPACE_EVENLY);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+		       LV_FLEX_ALIGN_SPACE_EVENLY);
 
 	for (uint32_t i = 0; i < 9; i++) {
 		auto obj = lv::Box::create(scr);
@@ -144,25 +141,22 @@ static void multiple_rgb_images_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 	scr.pad_row(20);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 116;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 116) / 116;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 116;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 116) / 116;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
-			auto img = lv::Image::create(
-				lv::ObjectView(scr));
+			auto img = lv::Image::create(lv::ObjectView(scr));
 			img.src(&img_benchmark_lvgl_logo_rgb);
 			if (x == 0)
-				img.add_flag(
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				img.add_flag(LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(img.get(), 80);
 		}
 	}
@@ -172,25 +166,22 @@ static void multiple_argb_images_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 	scr.pad_row(20);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 116;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 116) / 116;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 116;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 116) / 116;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
-			auto img = lv::Image::create(
-				lv::ObjectView(scr));
+			auto img = lv::Image::create(lv::ObjectView(scr));
 			img.src(&img_benchmark_lvgl_logo_argb);
 			if (x == 0)
-				img.add_flag(
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				img.add_flag(LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(img.get(), 80);
 		}
 	}
@@ -200,25 +191,22 @@ static void rotated_argb_images_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 	scr.pad_row(20);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 116;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 116) / 116;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 116;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 116) / 116;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
-			auto img = lv::Image::create(
-				lv::ObjectView(scr));
+			auto img = lv::Image::create(lv::ObjectView(scr));
 			img.src(&img_benchmark_lvgl_logo_argb);
 			if (x == 0)
-				img.add_flag(
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				img.add_flag(LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			img.rotation(rnd_next(100, 3500));
 			perf_ffi::shake_anim(img.get(), 80);
 		}
@@ -229,20 +217,17 @@ static void multiple_labels_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 	scr.pad_row(80);
 
 	lv_point_t s;
-	lv_text_get_size(&s, "Hello LVGL!",
-			 lv_obj_get_style_text_font(scr, LV_PART_MAIN),
-			 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+	lv_text_get_size(&s, "Hello LVGL!", lv_obj_get_style_text_font(scr, LV_PART_MAIN), 0, 0,
+			 LV_COORD_MAX, LV_TEXT_FLAG_NONE);
 
-	int32_t cnt = (lv::display_width() - 16)
-		      / (s.x + 30);
-	cnt *= ((lv::display_height() - 200)
-		/ (s.y + 50));
-	if (cnt < 1) cnt = 1;
+	int32_t cnt = (lv::display_width() - 16) / (s.x + 30);
+	cnt *= ((lv::display_height() - 200) / (s.y + 50));
+	if (cnt < 1)
+		cnt = 1;
 
 	for (int32_t i = 0; i < cnt; i++) {
 		auto lbl = lv::Label::create(lv::ObjectView(scr));
@@ -253,39 +238,38 @@ static void multiple_labels_cb(void)
 
 static void screen_sized_text_cb(void)
 {
-	static const char *txt =
-		"Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
-		"Nulla nec rhoncus arcu, in consectetur orci. Sed vitae dolor "
-		"sed nisi ultrices vehicula quis ac dolor. Vivamus hendrerit "
-		"hendrerit lectus, sed tempus velit suscipit in. Fusce eu "
-		"tristique arcu. Sed et molestie leo, in lacinia nunc. Quisque "
-		"semper lorem sed ante feugiat, at molestie risus blandit. "
-		"Maecenas lobortis urna in diam feugiat porta. Ut facilisis "
-		"mauris eget nibh posuere aliquet. Proin facilisis egestas "
-		"magna, id vulputate massa bibendum a.\n\n"
-		"Phasellus iaculis malesuada molestie. Cras ullamcorper justo "
-		"a dolor dignissim tincidunt. Mauris euismod risus quis "
-		"lobortis mollis. Ut vitae placerat massa, aliquet various "
-		"lectus. Nulla ac ornare purus, quis auctor velit. Donec "
-		"posuere dolor rhoncus efficitur dictum. Integer venenatis "
-		"aliquet nunc eu convallis. Nunc quis various velit. "
-		"Suspendisse enim metus, molestie eget mauris sit amet, "
-		"euismod volutpat turpis.\n\n"
-		"Aliquam id tellus in enim hendrerit mattis. Sed ipsum arcu, "
-		"feugiat sed eros quis, vulputate facilisis turpis. Quisque "
-		"venenatis risus massa. Proin lacinia, nunc non ultrices "
-		"commodo, ligula dolor lobortis lectus, iaculis pulvinar metus "
-		"orci eu elit. Donec tincidunt lacinia semper. Class aptent "
-		"taciti sociosqu ad litora torquent per conubia nostra, per "
-		"inceptos himenaeos.\n\n"
-		"Integer vehicula vestibulum eros. Donec facilisis magna a est "
-		"cursus, sed posuere velit faucibus. In et ultrices lorem. Sed "
-		"et lacus finibus, vulputate odio et, finibus tellus. Aenean "
-		"finibus nibh vehicula elementum maximus.\n\n"
-		"Fusce dignissim turpis massa, eget semper purus semper at. "
-		"Ut et augue vitae metus laoreet auctor. Morbi tincidunt, "
-		"neque vel tincidunt interdum, sapien nibh finibus lorem, eu "
-		"eleifend diam ipsum et eros.";
+	static const char *txt = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
+				 "Nulla nec rhoncus arcu, in consectetur orci. Sed vitae dolor "
+				 "sed nisi ultrices vehicula quis ac dolor. Vivamus hendrerit "
+				 "hendrerit lectus, sed tempus velit suscipit in. Fusce eu "
+				 "tristique arcu. Sed et molestie leo, in lacinia nunc. Quisque "
+				 "semper lorem sed ante feugiat, at molestie risus blandit. "
+				 "Maecenas lobortis urna in diam feugiat porta. Ut facilisis "
+				 "mauris eget nibh posuere aliquet. Proin facilisis egestas "
+				 "magna, id vulputate massa bibendum a.\n\n"
+				 "Phasellus iaculis malesuada molestie. Cras ullamcorper justo "
+				 "a dolor dignissim tincidunt. Mauris euismod risus quis "
+				 "lobortis mollis. Ut vitae placerat massa, aliquet various "
+				 "lectus. Nulla ac ornare purus, quis auctor velit. Donec "
+				 "posuere dolor rhoncus efficitur dictum. Integer venenatis "
+				 "aliquet nunc eu convallis. Nunc quis various velit. "
+				 "Suspendisse enim metus, molestie eget mauris sit amet, "
+				 "euismod volutpat turpis.\n\n"
+				 "Aliquam id tellus in enim hendrerit mattis. Sed ipsum arcu, "
+				 "feugiat sed eros quis, vulputate facilisis turpis. Quisque "
+				 "venenatis risus massa. Proin lacinia, nunc non ultrices "
+				 "commodo, ligula dolor lobortis lectus, iaculis pulvinar metus "
+				 "orci eu elit. Donec tincidunt lacinia semper. Class aptent "
+				 "taciti sociosqu ad litora torquent per conubia nostra, per "
+				 "inceptos himenaeos.\n\n"
+				 "Integer vehicula vestibulum eros. Donec facilisis magna a est "
+				 "cursus, sed posuere velit faucibus. In et ultrices lorem. Sed "
+				 "et lacus finibus, vulputate odio et, finibus tellus. Aenean "
+				 "finibus nibh vehicula elementum maximus.\n\n"
+				 "Fusce dignissim turpis massa, eget semper purus semper at. "
+				 "Ut et augue vitae metus laoreet auctor. Morbi tincidunt, "
+				 "neque vel tincidunt interdum, sapien nibh finibus lorem, eu "
+				 "eleifend diam ipsum et eros.";
 
 	auto scr = lv::Screen::active();
 	auto lbl = lv::Label::create(lv::ObjectView(scr));
@@ -299,34 +283,32 @@ static void multiple_arcs_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	int32_t hor = (lv::display_width() - 16)
-		      / lv_dpx(160);
-	int32_t ver = (lv::display_height() - 16)
-		      / lv_dpx(160);
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (lv::display_width() - 16) / lv_dpx(160);
+	int32_t ver = (lv::display_height() - 16) / lv_dpx(160);
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
 			auto a = lv::Arc::create(lv::ObjectView(scr));
 			if (x == 0)
-				a.add_flag(
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				a.add_flag(LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			a.size(lv_dpx(100), lv_dpx(100));
 			a.center();
 			a.bg_angles(0, 360);
-			a.margin_top(lv_dpx(20)).margin_bottom(lv_dpx(20)).margin_left(lv_dpx(20)).margin_right(lv_dpx(20));
+			a.margin_top(lv_dpx(20))
+				.margin_bottom(lv_dpx(20))
+				.margin_left(lv_dpx(20))
+				.margin_right(lv_dpx(20));
 			a.arc_opa(0, LV_PART_MAIN);
 			a.bg_opa(0, LV_PART_KNOB);
-			a.arc_width(10,
-						   LV_PART_INDICATOR);
-			a.arc_rounded(false,
-						     LV_PART_INDICATOR);
-			a.arc_color(lv_color_hex3(rnd_next(0x00f, 0xff0)),
-				    LV_PART_INDICATOR);
+			a.arc_width(10, LV_PART_INDICATOR);
+			a.arc_rounded(false, LV_PART_INDICATOR);
+			a.arc_color(lv_color_hex3(rnd_next(0x00f, 0xff0)), LV_PART_INDICATOR);
 			perf_ffi::arc_anim(a.get());
 		}
 	}
@@ -336,22 +318,20 @@ static void containers_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 300;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 16) / 150;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 300;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 16) / 150;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
 			lv_obj_t *card = card_create();
 			if (x == 0)
-				lv_obj_add_flag(card,
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				lv_obj_add_flag(card, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(card, 30);
 		}
 	}
@@ -361,22 +341,20 @@ static void containers_with_overlay_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 300;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 16) / 150;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 300;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 16) / 150;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
 			lv_obj_t *card = card_create();
 			if (x == 0)
-				lv_obj_add_flag(card,
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				lv_obj_add_flag(card, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(card, 30);
 		}
 	}
@@ -389,22 +367,20 @@ static void containers_with_opa_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 300;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 16) / 150;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 300;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 16) / 150;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
 			lv_obj_t *card = card_create();
 			if (x == 0)
-				lv_obj_add_flag(card,
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				lv_obj_add_flag(card, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			lv_obj_set_style_opa(card, LV_OPA_50, 0);
 			perf_ffi::shake_anim(card, 30);
 		}
@@ -415,23 +391,21 @@ static void containers_with_opa_layer_cb(void)
 {
 	auto scr = lv::Screen::active();
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
-	int32_t hor = (static_cast<int32_t>(
-		lv::display_width()) - 16) / 300;
-	int32_t ver = (static_cast<int32_t>(
-		lv::display_height()) - 16) / 150;
-	if (hor < 1) hor = 1;
-	if (ver < 1) ver = 1;
+	int32_t hor = (static_cast<int32_t>(lv::display_width()) - 16) / 300;
+	int32_t ver = (static_cast<int32_t>(lv::display_height()) - 16) / 150;
+	if (hor < 1)
+		hor = 1;
+	if (ver < 1)
+		ver = 1;
 
 	for (int32_t y = 0; y < ver; y++) {
 		for (int32_t x = 0; x < hor; x++) {
 			lv_obj_t *card = card_create();
 			lv_obj_set_style_opa_layered(card, LV_OPA_50, 0);
 			if (x == 0)
-				lv_obj_add_flag(card,
-						LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
+				lv_obj_add_flag(card, LV_OBJ_FLAG_FLEX_IN_NEW_TRACK);
 			perf_ffi::shake_anim(card, 30);
 		}
 	}
@@ -442,8 +416,7 @@ static void containers_with_scrolling_cb(void)
 	auto scr = lv::Screen::active();
 
 	scr.flex_flow(LV_FLEX_FLOW_ROW_WRAP);
-	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
 
 	for (uint32_t i = 0; i < 50; i++)
 		card_create();
@@ -457,7 +430,8 @@ static void containers_with_scrolling_cb(void)
 static lv_obj_t *g_tabview;
 static uint32_t g_slideshow_tab;
 
-namespace perf_ffi {
+namespace perf_ffi
+{
 
 extern "C" void slideshow_scroll_cb(void *var, int32_t v)
 {
@@ -467,24 +441,27 @@ extern "C" void slideshow_scroll_cb(void *var, int32_t v)
 extern "C" void slideshow_ready_cb(lv_anim_t *a)
 {
 	(void)a;
-	if (!g_tabview) return;
+	if (!g_tabview)
+		return;
 
 	g_slideshow_tab = (g_slideshow_tab + 1) % 3;
 	lv_tabview_set_active(g_tabview, g_slideshow_tab, LV_ANIM_ON);
 
 	lv_obj_t *tab = lv_tabview_get_content(g_tabview);
-	if (!tab) return;
+	if (!tab)
+		return;
 	/* Get the active tab page (child at index = active tab) */
 	tab = lv_obj_get_child(tab, static_cast<int32_t>(g_slideshow_tab));
-	if (!tab) return;
+	if (!tab)
+		return;
 
 	lv_obj_update_layout(tab);
 	int32_t bot = lv_obj_get_scroll_bottom(tab);
-	if (bot <= 0) bot = 1;
+	if (bot <= 0)
+		bot = 1;
 
 	uint32_t spd = lv_anim_speed(lv::display_dpi());
-	benchmark_anim_slideshow(tab, slideshow_scroll_cb, bot, spd,
-				 slideshow_ready_cb);
+	benchmark_anim_slideshow(tab, slideshow_scroll_cb, bot, spd, slideshow_ready_cb);
 }
 
 extern "C" void gauge_arc_exec_cb(void *var, int32_t v)
@@ -538,8 +515,8 @@ static void widgets_demo_cb(void)
 	/* ── Tab 2: Gauges (Scale + Arc animations) ──── */
 
 	lv_obj_set_flex_flow(tab2, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(tab2, LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+	lv_obj_set_flex_align(tab2, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_START);
 	lv_obj_set_style_pad_gap(tab2, 10, 0);
 
 	/* Gauge 1: circular 360 deg with 3 concentric arcs */
@@ -561,8 +538,10 @@ static void widgets_demo_cb(void)
 
 		/* 3 animated arcs at different rates */
 		static const struct {
-			uint32_t t1; uint32_t t2;
-			lv_palette_t pal; int32_t margin;
+			uint32_t t1;
+			uint32_t t2;
+			lv_palette_t pal;
+			int32_t margin;
 		} arcs[] = {
 			{4100, 2700, LV_PALETTE_BLUE, 0},
 			{2600, 3200, LV_PALETTE_RED, 20},
@@ -570,8 +549,7 @@ static void widgets_demo_cb(void)
 		};
 		for (int i = 0; i < 3; i++) {
 			auto arc = lv::Arc::create(lv::ObjectView(gauge_box));
-			arc.size(180 - arcs[i].margin * 2,
-				 180 - arcs[i].margin * 2);
+			arc.size(180 - arcs[i].margin * 2, 180 - arcs[i].margin * 2);
 			arc.center();
 			arc.range(0, 100);
 			arc.bg_angles(0, 360);
@@ -613,14 +591,11 @@ static void widgets_demo_cb(void)
 		/* Colored sections */
 		static lv_style_t style_red, style_blue, style_green;
 		lv_style_init(&style_red);
-		lv_style_set_arc_color(&style_red,
-				       lv_palette_main(LV_PALETTE_RED));
+		lv_style_set_arc_color(&style_red, lv_palette_main(LV_PALETTE_RED));
 		lv_style_init(&style_blue);
-		lv_style_set_arc_color(&style_blue,
-				       lv_palette_main(LV_PALETTE_BLUE));
+		lv_style_set_arc_color(&style_blue, lv_palette_main(LV_PALETTE_BLUE));
 		lv_style_init(&style_green);
-		lv_style_set_arc_color(&style_green,
-				       lv_palette_main(LV_PALETTE_GREEN));
+		lv_style_set_arc_color(&style_green, lv_palette_main(LV_PALETTE_GREEN));
 
 		lv_scale_section_t *sec;
 		sec = lv_scale_add_section(scale);
@@ -631,8 +606,7 @@ static void widgets_demo_cb(void)
 		lv_scale_section_set_style(sec, LV_PART_INDICATOR, &style_blue);
 		sec = lv_scale_add_section(scale);
 		lv_scale_section_set_range(sec, 45, 60);
-		lv_scale_section_set_style(sec, LV_PART_INDICATOR,
-					   &style_green);
+		lv_scale_section_set_style(sec, LV_PART_INDICATOR, &style_green);
 
 		/* Animated indicator arc */
 		auto arc = lv::Arc::create(lv::ObjectView(gauge_box));
@@ -662,12 +636,9 @@ static void widgets_demo_cb(void)
 		chart.size(200, 140);
 		chart.type(LV_CHART_TYPE_LINE);
 		chart.point_count(12);
-		auto ser = chart.add_series(
-			lv_palette_main(LV_PALETTE_BLUE),
-			LV_CHART_AXIS_PRIMARY_Y);
-		static const int32_t data[] = {
-			10, 20, 30, 25, 40, 35, 50, 60, 55, 70, 65, 80
-		};
+		auto ser =
+			chart.add_series(lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_PRIMARY_Y);
+		static const int32_t data[] = {10, 20, 30, 25, 40, 35, 50, 60, 55, 70, 65, 80};
 		for (int i = 0; i < 12; i++)
 			ser.set_value_by_idx(i, data[i]);
 	}
@@ -675,8 +646,8 @@ static void widgets_demo_cb(void)
 	/* ── Tab 3: Pickers ──────────────────────────── */
 
 	lv_obj_set_flex_flow(tab3, LV_FLEX_FLOW_ROW_WRAP);
-	lv_obj_set_flex_align(tab3, LV_FLEX_ALIGN_SPACE_EVENLY,
-			      LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+	lv_obj_set_flex_align(tab3, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+			      LV_FLEX_ALIGN_START);
 	lv_obj_set_style_pad_gap(tab3, 10, 0);
 
 	auto cal = lv::Calendar::create(tab3);
@@ -685,8 +656,7 @@ static void widgets_demo_cb(void)
 	cal.showed(2026, 4);
 
 	auto roller = lv::Roller::create(tab3);
-	roller.options("Mon\nTue\nWed\nThu\nFri\nSat\nSun",
-		       LV_ROLLER_MODE_NORMAL);
+	roller.options("Mon\nTue\nWed\nThu\nFri\nSat\nSun", LV_ROLLER_MODE_NORMAL);
 	roller.visible_row_count(3);
 
 	auto spinbox = lv::Spinbox::create(tab3);
@@ -700,9 +670,8 @@ static void widgets_demo_cb(void)
 		chart.size(200, 140);
 		chart.type(LV_CHART_TYPE_BAR);
 		chart.point_count(7);
-		auto ser = chart.add_series(
-			lv_palette_main(LV_PALETTE_GREEN),
-			LV_CHART_AXIS_PRIMARY_Y);
+		auto ser = chart.add_series(lv_palette_main(LV_PALETTE_GREEN),
+					    LV_CHART_AXIS_PRIMARY_Y);
 		static const int32_t data[] = {40, 55, 30, 70, 50, 65, 45};
 		for (int i = 0; i < 7; i++)
 			ser.set_value_by_idx(i, data[i]);
@@ -714,7 +683,8 @@ static void widgets_demo_cb(void)
 
 	lv_obj_update_layout(tab1);
 	int32_t bot = lv_obj_get_scroll_bottom(tab1);
-	if (bot <= 0) bot = 1;
+	if (bot <= 0)
+		bot = 1;
 
 	uint32_t spd = lv_anim_speed(lv::display_dpi());
 	benchmark_anim_slideshow(tab1, perf_ffi::slideshow_scroll_cb, bot, spd,
@@ -724,23 +694,23 @@ static void widgets_demo_cb(void)
 /* ── Scene array ──────────────────────────────────────────────────── */
 
 static scene_dsc_t scenes[] = {
-	{"Empty screen",              empty_screen_cb,              3000, 0, 0, 0, 0, 0},
-	{"Moving wallpaper",          moving_wallpaper_cb,          3000, 0, 0, 0, 0, 0},
-	{"Single rectangle",          single_rectangle_cb,          3000, 0, 0, 0, 0, 0},
-	{"Multiple rectangles",       multiple_rectangles_cb,       3000, 0, 0, 0, 0, 0},
-	{"Multiple RGB images",       multiple_rgb_images_cb,       3000, 0, 0, 0, 0, 0},
-	{"Multiple ARGB images",      multiple_argb_images_cb,      3000, 0, 0, 0, 0, 0},
-	{"Rotated ARGB images",       rotated_argb_images_cb,       3000, 0, 0, 0, 0, 0},
-	{"Multiple labels",           multiple_labels_cb,           3000, 0, 0, 0, 0, 0},
-	{"Screen sized text",         screen_sized_text_cb,         5000, 0, 0, 0, 0, 0},
-	{"Multiple arcs",             multiple_arcs_cb,             3000, 0, 0, 0, 0, 0},
-	{"Containers",                containers_cb,                3000, 0, 0, 0, 0, 0},
-	{"Containers with overlay",   containers_with_overlay_cb,   3000, 0, 0, 0, 0, 0},
-	{"Containers with opa",       containers_with_opa_cb,       3000, 0, 0, 0, 0, 0},
+	{"Empty screen", empty_screen_cb, 3000, 0, 0, 0, 0, 0},
+	{"Moving wallpaper", moving_wallpaper_cb, 3000, 0, 0, 0, 0, 0},
+	{"Single rectangle", single_rectangle_cb, 3000, 0, 0, 0, 0, 0},
+	{"Multiple rectangles", multiple_rectangles_cb, 3000, 0, 0, 0, 0, 0},
+	{"Multiple RGB images", multiple_rgb_images_cb, 3000, 0, 0, 0, 0, 0},
+	{"Multiple ARGB images", multiple_argb_images_cb, 3000, 0, 0, 0, 0, 0},
+	{"Rotated ARGB images", rotated_argb_images_cb, 3000, 0, 0, 0, 0, 0},
+	{"Multiple labels", multiple_labels_cb, 3000, 0, 0, 0, 0, 0},
+	{"Screen sized text", screen_sized_text_cb, 5000, 0, 0, 0, 0, 0},
+	{"Multiple arcs", multiple_arcs_cb, 3000, 0, 0, 0, 0, 0},
+	{"Containers", containers_cb, 3000, 0, 0, 0, 0, 0},
+	{"Containers with overlay", containers_with_overlay_cb, 3000, 0, 0, 0, 0, 0},
+	{"Containers with opa", containers_with_opa_cb, 3000, 0, 0, 0, 0, 0},
 	{"Containers with opa_layer", containers_with_opa_layer_cb, 3000, 0, 0, 0, 0, 0},
 	{"Containers with scrolling", containers_with_scrolling_cb, 5000, 0, 0, 0, 0, 0},
-	{"Widgets demo",             widgets_demo_cb,             20000, 0, 0, 0, 0, 0},
-	{"",                          nullptr,                      0,    0, 0, 0, 0, 0},
+	{"Widgets demo", widgets_demo_cb, 20000, 0, 0, 0, 0, 0},
+	{"", nullptr, 0, 0, 0, 0, 0, 0},
 };
 
 static uint32_t scene_act;
@@ -752,15 +722,13 @@ static void load_scene(uint32_t scene)
 {
 	auto scr = lv::Screen::active();
 	scr.clean();
-	lv_obj_set_style_bg_color(scr,
-				  lv_palette_lighten(LV_PALETTE_GREY, 4), 0);
+	lv_obj_set_style_bg_color(scr, lv_palette_lighten(LV_PALETTE_GREY, 4), 0);
 	lv_obj_set_style_text_color(scr, lv_color_black(), 0);
 	scr.pad_all(8);
 	lv_obj_set_style_pad_top(scr, 40, 0);
 	lv_obj_set_style_pad_gap(scr, 8, 0);
 	scr.layout(LV_LAYOUT_NONE);
-	scr.flex_align(LV_FLEX_ALIGN_START,
-			      LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+	scr.flex_align(LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
 
 	lv_anim_delete(scr, perf_ffi::scroll_anim_y_cb);
 	lv_anim_delete(scr, perf_ffi::shake_anim_y_cb);
@@ -790,9 +758,9 @@ static void next_scene_timer_cb(lv_timer_t *timer)
 /* ── Performance observer ─────────────────────────────────────────── */
 
 #if LV_USE_PERF_MONITOR
-namespace perf_ffi {
-extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer,
-					lv_subject_t *subject)
+namespace perf_ffi
+{
+extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
 	benchmark_perf_metrics_t m;
 	benchmark_extract_perf_metrics(lv_subject_get_pointer(subject), &m);
@@ -800,19 +768,16 @@ extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer,
 
 	char scene_name[64];
 	if (scenes[scene_act].name[0] != '\0')
-		snprintf(scene_name, sizeof(scene_name), "%s: ",
-			 scenes[scene_act].name);
+		snprintf(scene_name, sizeof(scene_name), "%s: ", scenes[scene_act].name);
 	else
 		scene_name[0] = '\0';
 
 	lv_label_set_text_fmt(label,
 			      "%s%u FPS, %u%% CPU\n"
 			      "refr. %u ms = %u ms render + %u ms flush",
-			      scene_name,
-			      static_cast<unsigned>(m.fps),
+			      scene_name, static_cast<unsigned>(m.fps),
 			      static_cast<unsigned>(m.cpu),
-			      static_cast<unsigned>(m.render_avg_time
-						    + m.flush_avg_time),
+			      static_cast<unsigned>(m.render_avg_time + m.flush_avg_time),
 			      static_cast<unsigned>(m.render_avg_time),
 			      static_cast<unsigned>(m.flush_avg_time));
 
@@ -830,35 +795,33 @@ extern "C" void sysmon_perf_observer_cb(lv_observer_t *observer,
 
 /* ── Summary table ────────────────────────────────────────────────── */
 
-namespace perf_ffi {
+namespace perf_ffi
+{
 extern "C" void table_draw_task_event_cb(lv_event_t *e)
 {
 	lv_draw_task_t *t = lv_event_get_draw_task(e);
 	lv_draw_dsc_base_t *base = static_cast<lv_draw_dsc_base_t *>(lv_draw_task_get_draw_dsc(t));
-	if (base->part != LV_PART_ITEMS) return;
+	if (base->part != LV_PART_ITEMS)
+		return;
 
 	int32_t row = base->id1;
 	if (row == 0) {
 		lv_draw_fill_dsc_t *fill = lv_draw_task_get_fill_dsc(t);
 		if (fill)
-			fill->color = lv_palette_darken(
-				LV_PALETTE_BLUE_GREY, 4);
+			fill->color = lv_palette_darken(LV_PALETTE_BLUE_GREY, 4);
 		lv_draw_label_dsc_t *lbl = lv_draw_task_get_label_dsc(t);
 		if (lbl)
 			lbl->color = lv_color_white();
 	} else if (row == 1) {
-		lv_draw_border_dsc_t *border =
-			lv_draw_task_get_border_dsc(t);
+		lv_draw_border_dsc_t *border = lv_draw_task_get_border_dsc(t);
 		if (border) {
-			border->color = lv_palette_darken(
-				LV_PALETTE_BLUE_GREY, 4);
+			border->color = lv_palette_darken(LV_PALETTE_BLUE_GREY, 4);
 			border->width = 2;
 			border->side = LV_BORDER_SIDE_BOTTOM;
 		}
 		lv_draw_label_dsc_t *lbl = lv_draw_task_get_label_dsc(t);
 		if (lbl)
-			lbl->color = lv_palette_darken(
-				LV_PALETTE_BLUE_GREY, 4);
+			lbl->color = lv_palette_darken(LV_PALETTE_BLUE_GREY, 4);
 	}
 }
 } /* namespace perf_ffi */
@@ -878,11 +841,9 @@ static void summary_create(void)
 	lv_obj_set_style_pad_bottom(table.get(), 2, LV_PART_ITEMS);
 	lv_obj_set_style_pad_left(table.get(), 4, LV_PART_ITEMS);
 	lv_obj_set_style_pad_right(table.get(), 4, LV_PART_ITEMS);
-	lv_obj_set_style_text_color(table.get(),
-				    lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
+	lv_obj_set_style_text_color(table.get(), lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
 				    LV_PART_ITEMS);
-	lv_obj_set_style_border_color(table.get(),
-				      lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
+	lv_obj_set_style_border_color(table.get(), lv_palette_darken(LV_PALETTE_BLUE_GREY, 2),
 				      LV_PART_ITEMS);
 	lv_obj_add_event_cb(table.get(), perf_ffi::table_draw_task_event_cb,
 			    LV_EVENT_DRAW_TASK_ADDED, NULL);
@@ -918,25 +879,19 @@ static void summary_create(void)
 			uint32_t render = scenes[i].render_avg_time / cnt;
 			uint32_t flush = scenes[i].flush_avg_time / cnt;
 
-			lv_table_set_cell_value_fmt(table.get(), i + 2, 1,
-						    "%u %%",
+			lv_table_set_cell_value_fmt(table.get(), i + 2, 1, "%u %%",
 						    static_cast<unsigned>(cpu));
-			lv_table_set_cell_value_fmt(table.get(), i + 2, 2,
-						    "%u FPS",
+			lv_table_set_cell_value_fmt(table.get(), i + 2, 2, "%u FPS",
 						    static_cast<unsigned>(fps));
-			lv_table_set_cell_value_fmt(table.get(), i + 2, 3,
-						    "%u ms (%u + %u)",
+			lv_table_set_cell_value_fmt(table.get(), i + 2, 3, "%u ms (%u + %u)",
 						    static_cast<unsigned>(render + flush),
 						    static_cast<unsigned>(render),
 						    static_cast<unsigned>(flush));
 
-			OVE_LOG_INF("%s, %u%%, %u, %u, %u, %u",
-				    scenes[i].name,
-				    static_cast<unsigned>(cpu),
-				    static_cast<unsigned>(fps),
+			OVE_LOG_INF("%s, %u%%, %u, %u, %u, %u", scenes[i].name,
+				    static_cast<unsigned>(cpu), static_cast<unsigned>(fps),
 				    static_cast<unsigned>(render + flush),
-				    static_cast<unsigned>(render),
-				    static_cast<unsigned>(flush));
+				    static_cast<unsigned>(render), static_cast<unsigned>(flush));
 
 			valid++;
 			total_cpu += cpu;
@@ -961,24 +916,22 @@ static void summary_create(void)
 					    static_cast<unsigned>(avg_cpu));
 		lv_table_set_cell_value_fmt(table.get(), 1, 2, "%u FPS",
 					    static_cast<unsigned>(avg_fps));
-		lv_table_set_cell_value_fmt(table.get(), 1, 3,
-					    "%u ms (%u + %u)",
+		lv_table_set_cell_value_fmt(table.get(), 1, 3, "%u ms (%u + %u)",
 					    static_cast<unsigned>(avg_render + avg_flush),
 					    static_cast<unsigned>(avg_render),
 					    static_cast<unsigned>(avg_flush));
 
-		OVE_LOG_INF("All avg, %u%%, %u, %u, %u, %u",
-			    static_cast<unsigned>(avg_cpu),
+		OVE_LOG_INF("All avg, %u%%, %u, %u, %u, %u", static_cast<unsigned>(avg_cpu),
 			    static_cast<unsigned>(avg_fps),
 			    static_cast<unsigned>(avg_render + avg_flush),
-			    static_cast<unsigned>(avg_render),
-			    static_cast<unsigned>(avg_flush));
+			    static_cast<unsigned>(avg_render), static_cast<unsigned>(avg_flush));
 	}
 }
 
 /* ── Animation helpers — live in perf_ffi for C-ABI boundary ─────── */
 
-namespace perf_ffi {
+namespace perf_ffi
+{
 
 extern "C" void color_anim_cb(void *var, int32_t v)
 {
@@ -1107,25 +1060,20 @@ static void rnd_reset(void)
 static int32_t rnd_next(int32_t min, int32_t max)
 {
 	static const uint32_t rnd_map[] = {
-		0xbd13204f, 0x67d8167f, 0x20211c99, 0xb0a7cc05,
-		0x06d5c703, 0xeafb01a7, 0xd0473b5c, 0xc999aaa2,
-		0x86f9d5d9, 0x294bdb29, 0x12a3c207, 0x78914d14,
-		0x10a30006, 0x6134c7db, 0x194443af, 0x142d1099,
-		0x376292d5, 0x20f433c5, 0x074d2a59, 0x4e74c293,
-		0x072a0810, 0xdd0f136d, 0x5cca6dbc, 0x623bfdd8,
-		0xb645eb2f, 0xbe50894a, 0xc9b56717, 0xe0f912c8,
-		0x4f6b5e24, 0xfe44b128, 0xe12d57a8, 0x9b15c9cc,
-		0xab2ae1d3, 0xb4dc5074, 0x67d457c8, 0x8e46b00c,
-		0xa29a1871, 0xcee40332, 0x80f93aa1, 0x85286096,
-		0x09bd6b49, 0x95072088, 0x2093924b, 0x6a27328f,
-		0xa796079b, 0xc3b488bc, 0xe29bcce0, 0x07048a4c,
-		0x7d81bd99, 0x27aacb30, 0x44fc7a0e, 0xa2382241,
-		0x8357a17d, 0x97e9c9cc, 0xad10ff52, 0x9923fc5c,
-		0x8f2c840a, 0x20356ba2, 0x7997a677, 0x9a7f1800,
-		0x35c7562b, 0xd901fe51, 0x8f4e053d, 0xa5b94923,
+		0xbd13204f, 0x67d8167f, 0x20211c99, 0xb0a7cc05, 0x06d5c703, 0xeafb01a7, 0xd0473b5c,
+		0xc999aaa2, 0x86f9d5d9, 0x294bdb29, 0x12a3c207, 0x78914d14, 0x10a30006, 0x6134c7db,
+		0x194443af, 0x142d1099, 0x376292d5, 0x20f433c5, 0x074d2a59, 0x4e74c293, 0x072a0810,
+		0xdd0f136d, 0x5cca6dbc, 0x623bfdd8, 0xb645eb2f, 0xbe50894a, 0xc9b56717, 0xe0f912c8,
+		0x4f6b5e24, 0xfe44b128, 0xe12d57a8, 0x9b15c9cc, 0xab2ae1d3, 0xb4dc5074, 0x67d457c8,
+		0x8e46b00c, 0xa29a1871, 0xcee40332, 0x80f93aa1, 0x85286096, 0x09bd6b49, 0x95072088,
+		0x2093924b, 0x6a27328f, 0xa796079b, 0xc3b488bc, 0xe29bcce0, 0x07048a4c, 0x7d81bd99,
+		0x27aacb30, 0x44fc7a0e, 0xa2382241, 0x8357a17d, 0x97e9c9cc, 0xad10ff52, 0x9923fc5c,
+		0x8f2c840a, 0x20356ba2, 0x7997a677, 0x9a7f1800, 0x35c7562b, 0xd901fe51, 0x8f4e053d,
+		0xa5b94923,
 	};
 
-	if (min == max) return min;
+	if (min == max)
+		return min;
 
 	if (min > max) {
 		int32_t t = min;
@@ -1155,8 +1103,7 @@ static void graphics_thread(void *arg)
 	while (true) {
 		uint64_t now_us = 0;
 		ove_time_get_us(&now_us);
-		uint32_t elapsed_ms =
-			static_cast<uint32_t>((now_us - last_us) / 1000);
+		uint32_t elapsed_ms = static_cast<uint32_t>((now_us - last_us) / 1000);
 		last_us = now_us;
 
 		ove_lvgl_lock();
@@ -1188,8 +1135,7 @@ OVE_MAIN()
 	lv_obj_remove_style_all(scr);
 	lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 	lv_obj_set_style_text_color(scr, lv_color_black(), 0);
-	lv_obj_set_style_bg_color(scr,
-				  lv_palette_lighten(LV_PALETTE_GREY, 4), 0);
+	lv_obj_set_style_bg_color(scr, lv_palette_lighten(LV_PALETTE_GREY, 4), 0);
 	scr.pad_all(8);
 	lv_obj_set_style_pad_top(scr, 40, 0);
 	lv_obj_set_style_pad_gap(scr, 8, 0);
@@ -1208,8 +1154,7 @@ OVE_MAIN()
 #if LV_USE_PERF_MONITOR
 	lv_subject_t *perf_subj = benchmark_get_perf_subject();
 	if (perf_subj)
-		lv_subject_add_observer_obj(perf_subj,
-					    perf_ffi::sysmon_perf_observer_cb,
+		lv_subject_add_observer_obj(perf_subj, perf_ffi::sysmon_perf_observer_cb,
 					    title.get(), NULL);
 	else
 		title.text("Perf monitor unavailable");

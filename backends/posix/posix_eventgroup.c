@@ -23,10 +23,10 @@ static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
 	}
 }
 
-int ove_eventgroup_init(ove_eventgroup_t *eg,
-			    ove_eventgroup_storage_t *storage)
+int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
-	if (!eg || !storage) return OVE_ERR_INVALID_PARAM;
+	if (!eg || !storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_eventgroup *g = (struct ove_eventgroup *)storage;
 	memset(g, 0, sizeof(*g));
 	pthread_mutex_init(&g->lock, NULL);
@@ -47,7 +47,8 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg)
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_eventgroup_create(ove_eventgroup_t *eg)
 {
-	if (!eg) return OVE_ERR_INVALID_PARAM;
+	if (!eg)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_eventgroup *g = OVE_BACKEND_MALLOC(sizeof(*g));
 	if (!g) {
 		return OVE_ERR_NO_MEMORY;
@@ -72,8 +73,7 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
-						ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	struct ove_eventgroup *g = eg;
 	if (!g) {
@@ -87,8 +87,7 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
 	return result;
 }
 
-ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
-						  ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	struct ove_eventgroup *g = eg;
 	if (!g) {
@@ -101,10 +100,8 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
 	return prev;
 }
 
-int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
-				 ove_eventbits_t bits,
-				 uint32_t flags, uint32_t timeout_ms,
-				 ove_eventbits_t *result)
+int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
+			     uint32_t timeout_ms, ove_eventbits_t *result)
 {
 	struct ove_eventgroup *g = eg;
 	if (!g) {
@@ -155,8 +152,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
 	}
 }
 
-ove_eventbits_t ove_eventgroup_set_bits_from_isr(
-	ove_eventgroup_t eg, ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	return ove_eventgroup_set_bits(eg, bits);
 }

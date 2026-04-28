@@ -17,13 +17,15 @@
 
 #ifdef CONFIG_OVE_NET_SNTP
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::sntp
  * @brief C++ wrappers around the oveRTOS SNTP client API.
  */
-namespace sntp {
+namespace sntp
+{
 
 /**
  * @struct Config
@@ -31,7 +33,7 @@ namespace sntp {
  */
 struct Config {
 	const char *server{"pool.ntp.org"}; /**< NTP server hostname. */
-	uint32_t    timeout_ms{5000};       /**< Sync timeout in milliseconds. */
+	uint32_t timeout_ms{5000};	    /**< Sync timeout in milliseconds. */
 };
 
 /**
@@ -39,7 +41,8 @@ struct Config {
  * @param[in] cfg Configuration (defaults: pool.ntp.org, 5s timeout).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int sync(const Config &cfg = {}) {
+[[nodiscard]] inline int sync(const Config &cfg = {})
+{
 	ove_sntp_config_t c{cfg.server, cfg.timeout_ms};
 	return ove_sntp_sync(&c);
 }
@@ -49,7 +52,8 @@ struct Config {
  * @param[out] offset_us UTC offset in microseconds.
  * @return `OVE_OK` on success, `OVE_ERR_NOT_SUPPORTED` if no sync done.
  */
-[[nodiscard]] inline int get_offset_us(int64_t &offset_us) {
+[[nodiscard]] inline int get_offset_us(int64_t &offset_us)
+{
 	return ove_sntp_get_offset_us(&offset_us);
 }
 
@@ -58,7 +62,8 @@ struct Config {
  * @param[out] utc_s UTC seconds.
  * @return `OVE_OK` on success.
  */
-[[nodiscard]] inline int get_utc(uint32_t &utc_s) {
+[[nodiscard]] inline int get_utc(uint32_t &utc_s)
+{
 	return ove_sntp_get_utc(&utc_s);
 }
 

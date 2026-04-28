@@ -39,7 +39,7 @@ extern "C" {
  * @param[in] cfg   UART configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_uart_open(ove_uart_t uart, const struct ove_uart_cfg *cfg);
+int ove_hal_uart_open(ove_uart_t uart, const struct ove_uart_cfg *cfg);
 
 /**
  * @brief Disable and release the UART peripheral.
@@ -60,8 +60,8 @@ void ove_hal_uart_close(ove_uart_t uart);
  * @param[out] bytes_written Actual bytes written, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len,
-		     uint32_t timeout_ms, size_t *bytes_written);
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+		    size_t *bytes_written);
 
 /**
  * @brief Enable the RX interrupt / start RX reception.
@@ -72,7 +72,7 @@ int  ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len,
  * @param[in] uart  UART handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_uart_rx_enable(ove_uart_t uart);
+int ove_hal_uart_rx_enable(ove_uart_t uart);
 
 /**
  * @brief Flush the TX hardware FIFO.
@@ -82,7 +82,7 @@ int  ove_hal_uart_rx_enable(ove_uart_t uart);
  * @param[in] uart  UART handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_uart_tx_flush(ove_uart_t uart);
+int ove_hal_uart_tx_flush(ove_uart_t uart);
 
 #ifdef __cplusplus
 }

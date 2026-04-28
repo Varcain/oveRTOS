@@ -39,13 +39,20 @@ static size_t json_escape(const char *in, char *out, size_t out_cap)
 		const char *esc = NULL;
 		char uesc[8];
 
-		if      (c == '"')  esc = "\\\"";
-		else if (c == '\\') esc = "\\\\";
-		else if (c == '\n') esc = "\\n";
-		else if (c == '\r') esc = "\\r";
-		else if (c == '\t') esc = "\\t";
-		else if (c == '\b') esc = "\\b";
-		else if (c == '\f') esc = "\\f";
+		if (c == '"')
+			esc = "\\\"";
+		else if (c == '\\')
+			esc = "\\\\";
+		else if (c == '\n')
+			esc = "\\n";
+		else if (c == '\r')
+			esc = "\\r";
+		else if (c == '\t')
+			esc = "\\t";
+		else if (c == '\b')
+			esc = "\\b";
+		else if (c == '\f')
+			esc = "\\f";
 		else if (c < 0x20) {
 			snprintf(uesc, sizeof(uesc), "\\u%04x", c);
 			esc = uesc;
@@ -53,11 +60,13 @@ static size_t json_escape(const char *in, char *out, size_t out_cap)
 
 		if (esc) {
 			size_t el = strlen(esc);
-			if (n + el >= out_cap - 1) break;
+			if (n + el >= out_cap - 1)
+				break;
 			memcpy(out + n, esc, el);
 			n += el;
 		} else {
-			if (n >= out_cap - 1) break;
+			if (n >= out_cap - 1)
+				break;
 			out[n++] = (char)c;
 		}
 	}
@@ -68,25 +77,25 @@ static size_t json_escape(const char *in, char *out, size_t out_cap)
 /* ---------- Internal data structures ---------- */
 
 struct ove_httpd_route {
-	char method[8];                 /* "GET" or "POST" */
-	char path[64];                  /* URL path prefix */
+	char method[8]; /* "GET" or "POST" */
+	char path[64];	/* URL path prefix */
 	ove_httpd_handler_t handler;
 };
 
 struct ove_httpd_req {
-	char   method[8];
-	char   path[256];               /* preserved for route matching */
-	char   seg_buf[256];            /* mutable copy for segment splitting */
-	char  *query;
-	char  *body;
+	char method[8];
+	char path[256];	   /* preserved for route matching */
+	char seg_buf[256]; /* mutable copy for segment splitting */
+	char *query;
+	char *body;
 	size_t body_len;
-	char  *segments[OVE_HTTPD_MAX_SEGMENTS];
-	int    segment_count;
+	char *segments[OVE_HTTPD_MAX_SEGMENTS];
+	int segment_count;
 };
 
 struct ove_httpd_resp {
 	ove_socket_t sock;
-	int sent;                       /* flag: response already sent */
+	int sent; /* flag: response already sent */
 };
 
 /* ---------- Route table ---------- */
@@ -109,18 +118,22 @@ static ove_thread_t s_thread;
 static const char *status_str(int code)
 {
 	switch (code) {
-	case 200: return "200 OK";
-	case 400: return "400 Bad Request";
-	case 404: return "404 Not Found";
-	case 500: return "500 Internal Server Error";
-	default:  return "200 OK";
+	case 200:
+		return "200 OK";
+	case 400:
+		return "400 Bad Request";
+	case 404:
+		return "404 Not Found";
+	case 500:
+		return "500 Internal Server Error";
+	default:
+		return "200 OK";
 	}
 }
 
 /* ---------- Route registration ---------- */
 
-int ove_httpd_route(const char *method, const char *path,
-		    ove_httpd_handler_t handler)
+int ove_httpd_route(const char *method, const char *path, ove_httpd_handler_t handler)
 {
 	if (s_route_count >= OVE_HTTPD_MAX_ROUTES)
 		return OVE_ERR_NO_MEMORY;
@@ -166,8 +179,7 @@ static void parse_path_segments(struct ove_httpd_req *req)
 
 /* ---------- Request parsing ---------- */
 
-static int parse_request(const char *buf, size_t len,
-			 struct ove_httpd_req *req)
+static int parse_request(const char *buf, size_t len, struct ove_httpd_req *req)
 {
 	memset(req, 0, sizeof(*req));
 
@@ -254,19 +266,18 @@ static struct ove_httpd_route *match_route(struct ove_httpd_req *req)
 
 /* ---------- Response sending ---------- */
 
-static int send_response(ove_socket_t sock, int status,
-			 const char *content_type,
-			 const void *body, size_t body_len)
+static int send_response(ove_socket_t sock, int status, const char *content_type, const void *body,
+			 size_t body_len)
 {
 	char header[256];
 	int hlen = snprintf(header, sizeof(header),
-		"HTTP/1.1 %s\r\n"
-		"Content-Type: %s\r\n"
-		"Content-Length: %zu\r\n"
-		"Connection: close\r\n"
-		"Access-Control-Allow-Origin: *\r\n"
-		"\r\n",
-		status_str(status), content_type, body_len);
+			    "HTTP/1.1 %s\r\n"
+			    "Content-Type: %s\r\n"
+			    "Content-Length: %zu\r\n"
+			    "Connection: close\r\n"
+			    "Access-Control-Allow-Origin: *\r\n"
+			    "\r\n",
+			    status_str(status), content_type, body_len);
 
 	if (hlen < 0 || (size_t)hlen >= sizeof(header))
 		return OVE_ERR_NO_MEMORY;
@@ -281,8 +292,10 @@ static int send_response(ove_socket_t sock, int status,
 		while (remaining > 0) {
 			size_t sent = 0;
 			ret = ove_socket_send(sock, p, remaining, &sent);
-			if (ret != OVE_OK) return ret;
-			if (sent == 0) return OVE_ERR_NOT_SUPPORTED;
+			if (ret != OVE_OK)
+				return ret;
+			if (sent == 0)
+				return OVE_ERR_NOT_SUPPORTED;
 			p += sent;
 			remaining -= sent;
 		}
@@ -293,47 +306,40 @@ static int send_response(ove_socket_t sock, int status,
 
 /* ---------- Response helpers ---------- */
 
-int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status,
-			const char *json)
+int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status, const char *json)
 {
 	resp->sent = 1;
-	return send_response(resp->sock, status,
-			     "application/json", json, strlen(json));
+	return send_response(resp->sock, status, "application/json", json, strlen(json));
 }
 
-int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status,
-			const char *html, size_t len)
+int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status, const char *html, size_t len)
 {
 	resp->sent = 1;
-	return send_response(resp->sock, status,
-			     "text/html", html, len);
+	return send_response(resp->sock, status, "text/html", html, len);
 }
 
-int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status,
-			const char *content_type,
+int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *content_type,
 			const void *body, size_t len)
 {
 	resp->sent = 1;
-	return send_response(resp->sock, status,
-			     content_type, body, len);
+	return send_response(resp->sock, status, content_type, body, len);
 }
 
-int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
-			   const char *content_type,
+int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status, const char *content_type,
 			   const void *body, size_t body_len)
 {
 	resp->sent = 1;
 
 	char header[256];
 	int hlen = snprintf(header, sizeof(header),
-		"HTTP/1.1 %s\r\n"
-		"Content-Type: %s\r\n"
-		"Content-Encoding: gzip\r\n"
-		"Content-Length: %zu\r\n"
-		"Connection: close\r\n"
-		"Access-Control-Allow-Origin: *\r\n"
-		"\r\n",
-		status_str(status), content_type, body_len);
+			    "HTTP/1.1 %s\r\n"
+			    "Content-Type: %s\r\n"
+			    "Content-Encoding: gzip\r\n"
+			    "Content-Length: %zu\r\n"
+			    "Connection: close\r\n"
+			    "Access-Control-Allow-Origin: *\r\n"
+			    "\r\n",
+			    status_str(status), content_type, body_len);
 
 	if (hlen < 0 || (size_t)hlen >= sizeof(header))
 		return OVE_ERR_NO_MEMORY;
@@ -348,8 +354,10 @@ int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
 		while (remaining > 0) {
 			size_t sent = 0;
 			ret = ove_socket_send(resp->sock, p, remaining, &sent);
-			if (ret != OVE_OK) return ret;
-			if (sent == 0) return OVE_ERR_NOT_SUPPORTED;
+			if (ret != OVE_OK)
+				return ret;
+			if (sent == 0)
+				return OVE_ERR_NOT_SUPPORTED;
 			p += sent;
 			remaining -= sent;
 		}
@@ -358,8 +366,7 @@ int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
 	return ret;
 }
 
-int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status,
-			 const char *message)
+int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status, const char *message)
 {
 	char esc[192];
 	char buf[256];
@@ -369,8 +376,7 @@ int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status,
 		n = 0;
 
 	resp->sent = 1;
-	return send_response(resp->sock, status,
-			     "application/json", buf, (size_t)n);
+	return send_response(resp->sock, status, "application/json", buf, (size_t)n);
 }
 
 /* ---------- Request accessors ---------- */
@@ -426,9 +432,8 @@ static void httpd_task(void *arg)
 
 		ove_socket_t client;
 		ove_socket_storage_t client_storage;
-		int ret = ove_socket_accept(s_server_sock, &client,
-					    &client_storage,
-					    accept_timeout);
+		int ret =
+			ove_socket_accept(s_server_sock, &client, &client_storage, accept_timeout);
 
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 		/* Poll active WebSocket connections */
@@ -441,8 +446,7 @@ static void httpd_task(void *arg)
 		/* Receive request header */
 		char buf[1024];
 		size_t received = 0;
-		ret = ove_socket_recv(client, buf, sizeof(buf) - 1,
-				      &received, 5000);
+		ret = ove_socket_recv(client, buf, sizeof(buf) - 1, &received, 5000);
 		if (ret != OVE_OK || received == 0) {
 			ove_socket_close(client);
 			continue;
@@ -461,10 +465,8 @@ static void httpd_task(void *arg)
 
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 		/* Check for WebSocket upgrade before route dispatch */
-		if (strcmp(req.method, "GET") == 0 &&
-		    ove_httpd_ws_is_upgrade(buf)) {
-			if (ove_httpd_ws_handshake(buf, received,
-						   req.path, client,
+		if (strcmp(req.method, "GET") == 0 && ove_httpd_ws_is_upgrade(buf)) {
+			if (ove_httpd_ws_handshake(buf, received, req.path, client,
 						   &client_storage) == 0) {
 				/* Handshake succeeded — socket transferred
 				 * to WS pool, do NOT close it */
@@ -503,10 +505,9 @@ static void httpd_task(void *arg)
 				/* Read remaining body bytes */
 				while (already < (size_t)content_length) {
 					size_t got = 0;
-					ret = ove_socket_recv(client,
-						req.body + already,
-						(size_t)content_length - already,
-						&got, 5000);
+					ret = ove_socket_recv(client, req.body + already,
+							      (size_t)content_length - already,
+							      &got, 5000);
 					if (ret != OVE_OK || got == 0)
 						break;
 					already += got;
@@ -531,8 +532,8 @@ static void httpd_task(void *arg)
 		}
 
 		if (!resp.sent) {
-			send_response(client, 404, "application/json",
-				      "{\"error\":\"not found\"}", 20);
+			send_response(client, 404, "application/json", "{\"error\":\"not found\"}",
+				      20);
 		}
 
 		/* Clean up */
@@ -554,8 +555,7 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 	s_port = (cfg && cfg->port) ? cfg->port : 80;
 
 	/* Open server socket */
-	int ret = ove_socket_open(&s_server_sock, &s_server_storage,
-				  OVE_AF_INET, OVE_SOCK_STREAM);
+	int ret = ove_socket_open(&s_server_sock, &s_server_storage, OVE_AF_INET, OVE_SOCK_STREAM);
 	if (ret != OVE_OK)
 		return ret;
 
@@ -578,9 +578,9 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 	/* Spawn server thread */
 	s_running = 1;
 	struct ove_thread_desc desc = {
-		.name     = "httpd",
-		.entry    = httpd_task,
-		.arg      = NULL,
+		.name = "httpd",
+		.entry = httpd_task,
+		.arg = NULL,
 		.priority = OVE_PRIO_NORMAL,
 	};
 	ret = ove_thread_create(&s_thread, 8192, &desc);

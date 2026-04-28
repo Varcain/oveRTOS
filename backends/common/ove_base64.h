@@ -29,8 +29,7 @@ extern "C" {
  * @param[in]  dst_len Output buffer size.
  * @return Number of characters written (excluding NUL), or -1 on overflow.
  */
-int ove_base64_encode(const uint8_t *src, size_t src_len,
-		      char *dst, size_t dst_len);
+int ove_base64_encode(const uint8_t *src, size_t src_len, char *dst, size_t dst_len);
 
 #ifdef __cplusplus
 }

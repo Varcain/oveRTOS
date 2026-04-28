@@ -10,9 +10,9 @@
 
 int main(int argc, char *argv[])
 {
-  (void)argc;
-  (void)argv;
+	(void)argc;
+	(void)argv;
 
-  ove_app_run();
-  return 0;
+	ove_app_run();
+	return 0;
 }

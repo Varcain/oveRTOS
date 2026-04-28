@@ -13,9 +13,9 @@
 
 #include <stdint.h>
 
-#define __CM3_REV              0x0201
-#define __NVIC_PRIO_BITS       3
-#define __Vendor_SysTickConfig  0
+#define __CM3_REV 0x0201
+#define __NVIC_PRIO_BITS 3
+#define __Vendor_SysTickConfig 0
 
 uint32_t SystemCoreClock = 25000000u;
 

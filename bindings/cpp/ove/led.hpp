@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_LED
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::led
@@ -27,14 +28,16 @@ namespace ove {
  * Available when `CONFIG_OVE_LED` is enabled.  LEDs are identified by a
  * zero-based index.
  */
-namespace led {
+namespace led
+{
 
 /**
  * @brief Turns a LED on or off.
  * @param[in] led LED index (0-based).
  * @param[in] on  Non-zero to turn on, zero to turn off.
  */
-inline void set(unsigned int led, int on) {
+inline void set(unsigned int led, int on)
+{
 	ove_led_set(led, on);
 }
 
@@ -42,7 +45,8 @@ inline void set(unsigned int led, int on) {
  * @brief Toggles the state of a LED.
  * @param[in] led LED index (0-based).
  */
-inline void toggle(unsigned int led) {
+inline void toggle(unsigned int led)
+{
 	ove_led_toggle(led);
 }
 
@@ -50,7 +54,8 @@ inline void toggle(unsigned int led) {
  * @brief Returns the total number of LEDs available on this board.
  * @return Number of LEDs.
  */
-inline unsigned int count() {
+inline unsigned int count()
+{
 	return ove_led_count();
 }
 

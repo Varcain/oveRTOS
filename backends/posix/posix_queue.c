@@ -24,9 +24,8 @@ static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
 	}
 }
 
-int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage,
-		       void *buffer, size_t item_size,
-		       unsigned int max_items)
+int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
+		   unsigned int max_items)
 {
 	if (!q || !storage || !buffer || item_size == 0 || max_items == 0)
 		return OVE_ERR_INVALID_PARAM;
@@ -53,10 +52,10 @@ void ove_queue_deinit(ove_queue_t q)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_queue_create(ove_queue_t *q, size_t item_size,
-			 unsigned int max_items)
+int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 {
-	if (!q || item_size == 0 || max_items == 0) return OVE_ERR_INVALID_PARAM;
+	if (!q || item_size == 0 || max_items == 0)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_queue *sq = OVE_BACKEND_MALLOC(sizeof(*sq));
 	if (!sq) {
 		return OVE_ERR_NO_MEMORY;
@@ -91,8 +90,7 @@ void ove_queue_destroy(ove_queue_t q)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_queue_send(ove_queue_t q, const void *data,
-		       uint32_t timeout_ms)
+int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 {
 	struct ove_queue *sq = q;
 	if (!sq || !data) {
@@ -114,8 +112,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 		while (sq->count >= sq->max_items) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
-			int ret = pthread_cond_timedwait(&sq->not_full,
-							&sq->lock, &ts);
+			int ret = pthread_cond_timedwait(&sq->not_full, &sq->lock, &ts);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
@@ -125,8 +122,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 		}
 	}
 
-	memcpy((char *)sq->buffer + sq->head * sq->item_size, data,
-	       sq->item_size);
+	memcpy((char *)sq->buffer + sq->head * sq->item_size, data, sq->item_size);
 	sq->head = (sq->head + 1) % sq->max_items;
 	sq->count++;
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_POST, sq);
@@ -135,8 +131,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 	return OVE_OK;
 }
 
-int ove_queue_receive(ove_queue_t q, void *buf,
-			  uint32_t timeout_ms)
+int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 {
 	struct ove_queue *sq = q;
 	if (!sq || !buf) {
@@ -158,8 +153,7 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 		while (sq->count == 0) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
-			int ret = pthread_cond_timedwait(&sq->not_empty,
-							&sq->lock, &ts);
+			int ret = pthread_cond_timedwait(&sq->not_empty, &sq->lock, &ts);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
@@ -169,8 +163,7 @@ int ove_queue_receive(ove_queue_t q, void *buf,
 		}
 	}
 
-	memcpy(buf, (char *)sq->buffer + sq->tail * sq->item_size,
-	       sq->item_size);
+	memcpy(buf, (char *)sq->buffer + sq->tail * sq->item_size, sq->item_size);
 	sq->tail = (sq->tail + 1) % sq->max_items;
 	sq->count--;
 	pthread_cond_signal(&sq->not_full);
@@ -194,8 +187,7 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 		pthread_mutex_unlock(&sq->lock);
 		return OVE_ERR_TIMEOUT;
 	}
-	memcpy(buf, (char *)sq->buffer + sq->tail * sq->item_size,
-	       sq->item_size);
+	memcpy(buf, (char *)sq->buffer + sq->tail * sq->item_size, sq->item_size);
 	sq->tail = (sq->tail + 1) % sq->max_items;
 	sq->count--;
 	pthread_cond_signal(&sq->not_full);

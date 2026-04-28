@@ -45,7 +45,7 @@ extern "C" {
  * bit in the @p bits mask is set at the same time. Without this flag the
  * call unblocks when ANY one of the requested bits becomes set.
  */
-#define OVE_EG_WAIT_ALL      0x01
+#define OVE_EG_WAIT_ALL 0x01
 
 /**
  * @brief Wait flag: atomically clear the matched bits on return.
@@ -70,8 +70,7 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_EVENTGROUP.
  */
-int  ove_eventgroup_init(ove_eventgroup_t *eg,
-			 ove_eventgroup_storage_t *storage);
+int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage);
 
 /**
  * @brief Deinitialise a statically-allocated event group.
@@ -94,7 +93,7 @@ void ove_eventgroup_deinit(ove_eventgroup_t eg);
  * @note Requires @c CONFIG_OVE_EVENTGROUP and @c OVE_HEAP_EVENTGROUP.
  */
 #ifdef OVE_HEAP_EVENTGROUP
-int  ove_eventgroup_create(ove_eventgroup_t *eg);
+int ove_eventgroup_create(ove_eventgroup_t *eg);
 
 /**
  * @brief Destroy a heap-allocated event group.
@@ -108,9 +107,11 @@ int  ove_eventgroup_create(ove_eventgroup_t *eg);
 void ove_eventgroup_destroy(ove_eventgroup_t eg);
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_EVENTGROUP — zero-heap mode */
 
-#define ove_eventgroup_create(peg) \
-	({ static ove_eventgroup_storage_t _ove_stor_; \
-	   ove_eventgroup_init((peg), &_ove_stor_); })
+#define ove_eventgroup_create(peg)                          \
+	({                                                  \
+		static ove_eventgroup_storage_t _ove_stor_; \
+		ove_eventgroup_init((peg), &_ove_stor_);    \
+	})
 #define ove_eventgroup_destroy(eg) ove_eventgroup_deinit(eg)
 
 #endif /* OVE_HEAP_EVENTGROUP */
@@ -128,8 +129,7 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg);
  *         before any waiting tasks have had the chance to clear bits.
  * @note Must not be called from an ISR; use @ref ove_eventgroup_set_bits_from_isr.
  */
-ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
-					ove_eventbits_t bits);
+ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits);
 
 /**
  * @brief Clear one or more bits in the event group.
@@ -141,8 +141,7 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
  * @param[in] bits  Bitmask of bits to clear.
  * @return The value of the event group immediately after the clear operation.
  */
-ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
-					  ove_eventbits_t bits);
+ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits);
 
 /**
  * @brief Block until one or all of the requested bits are set.
@@ -165,10 +164,8 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
  * @return OVE_OK if the wait condition was met, @c OVE_ERR_TIMEOUT on timeout,
  *         negative error code on failure.
  */
-int  ove_eventgroup_wait_bits(ove_eventgroup_t eg,
-			      ove_eventbits_t bits,
-			      uint32_t flags, uint32_t timeout_ms,
-			      ove_eventbits_t *result);
+int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
+			     uint32_t timeout_ms, ove_eventbits_t *result);
 
 /**
  * @brief Set bits in the event group from an ISR.
@@ -182,8 +179,7 @@ int  ove_eventgroup_wait_bits(ove_eventgroup_t eg,
  * @return The value of the event group at the time of the call (before any
  *         pending context switch).
  */
-ove_eventbits_t ove_eventgroup_set_bits_from_isr(
-	ove_eventgroup_t eg, ove_eventbits_t bits);
+ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits);
 
 /**
  * @brief Read the current bit value of the event group without blocking.
@@ -198,13 +194,50 @@ ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg);
 
 #else /* !CONFIG_OVE_EVENTGROUP */
 
-static inline int ove_eventgroup_create(ove_eventgroup_t *eg) { (void)eg; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_eventgroup_destroy(ove_eventgroup_t eg) { (void)eg; }
-static inline ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits) { (void)eg; (void)bits; return 0; }
-static inline ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits) { (void)eg; (void)bits; return 0; }
-static inline int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags, uint32_t timeout_ms, ove_eventbits_t *result) { (void)eg; (void)bits; (void)flags; (void)timeout_ms; (void)result; return OVE_ERR_NOT_SUPPORTED; }
-static inline ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits) { (void)eg; (void)bits; return 0; }
-static inline ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg) { (void)eg; return 0; }
+static inline int ove_eventgroup_create(ove_eventgroup_t *eg)
+{
+	(void)eg;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_eventgroup_destroy(ove_eventgroup_t eg)
+{
+	(void)eg;
+}
+static inline ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	(void)eg;
+	(void)bits;
+	return 0;
+}
+static inline ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
+{
+	(void)eg;
+	(void)bits;
+	return 0;
+}
+static inline int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits,
+					   uint32_t flags, uint32_t timeout_ms,
+					   ove_eventbits_t *result)
+{
+	(void)eg;
+	(void)bits;
+	(void)flags;
+	(void)timeout_ms;
+	(void)result;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg,
+							       ove_eventbits_t bits)
+{
+	(void)eg;
+	(void)bits;
+	return 0;
+}
+static inline ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
+{
+	(void)eg;
+	return 0;
+}
 
 #endif /* CONFIG_OVE_EVENTGROUP */
 

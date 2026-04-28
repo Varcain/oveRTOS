@@ -40,11 +40,10 @@ int ove_lvgl_init(void)
 	lv_port_disp_init();
 	lvgl_initialized = 1;
 
-	lv_theme_t *th = lv_theme_default_init(
-		lv_display_get_default(),
-		lv_palette_main(LV_PALETTE_BLUE),
-		lv_palette_main(LV_PALETTE_RED),
-		true, &lv_font_montserrat_32);
+	lv_theme_t *th = lv_theme_default_init(lv_display_get_default(),
+					       lv_palette_main(LV_PALETTE_BLUE),
+					       lv_palette_main(LV_PALETTE_RED), true,
+					       &lv_font_montserrat_32);
 	lv_display_set_theme(lv_display_get_default(), th);
 
 	return OVE_OK;
@@ -69,4 +68,3 @@ void ove_lvgl_handler(void)
 {
 	lv_timer_handler();
 }
-

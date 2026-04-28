@@ -16,7 +16,8 @@
 #include <ove/thread.h>
 #include <ove/types.hpp>
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @class Thread
@@ -34,9 +35,9 @@ namespace ove {
  *
  * @note Not copyable.  Move-only when heap allocation is enabled.
  */
-template <size_t StackSize = 0>
-class Thread {
-public:
+template <size_t StackSize = 0> class Thread
+{
+      public:
 	/**
 	 * @brief Constructs and starts the thread.
 	 *
@@ -54,7 +55,7 @@ public:
 	 */
 	template <typename F>
 	Thread(F entry, void *ctx, ove_prio_t prio, const char *name)
-		requires (StackSize > 0) && ThreadEntry<F>
+		requires(StackSize > 0) && ThreadEntry<F>
 	{
 		struct ove_thread_desc desc = {};
 		desc.name = name;
@@ -63,8 +64,7 @@ public:
 		desc.priority = prio;
 		desc.stack_size = StackSize;
 #ifdef CONFIG_OVE_ZERO_HEAP
-		static_assert(StackSize > 0,
-			      "StackSize must be > 0 in zero-heap mode");
+		static_assert(StackSize > 0, "StackSize must be > 0 in zero-heap mode");
 		desc.stack = stack_;
 		int err = ove_thread_init(&handle_, &storage_, &desc);
 #else
@@ -76,8 +76,10 @@ public:
 	/**
 	 * @brief Destroys the thread wrapper, terminating and releasing the kernel thread.
 	 */
-	~Thread() noexcept {
-		if (!handle_) return;
+	~Thread() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_thread_deinit(handle_);
 #else
@@ -96,7 +98,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Thread(Thread &&other) noexcept : handle_(other.handle_) {
+	Thread(Thread &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -105,9 +108,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Thread &operator=(Thread &&other) noexcept {
+	Thread &operator=(Thread &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_thread_destroy(handle_);
+			if (handle_)
+				ove_thread_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -119,7 +124,8 @@ public:
 	 * @brief Changes the priority of the thread at runtime.
 	 * @param[in] prio New priority value.
 	 */
-	void set_priority(ove_prio_t prio) {
+	void set_priority(ove_prio_t prio)
+	{
 		ove_thread_set_priority(handle_, prio);
 	}
 
@@ -128,14 +134,16 @@ public:
 	 *
 	 * The thread will not be scheduled until `resume()` is called.
 	 */
-	void suspend() {
+	void suspend()
+	{
 		ove_thread_suspend(handle_);
 	}
 
 	/**
 	 * @brief Resumes a previously suspended thread.
 	 */
-	void resume() {
+	void resume()
+	{
 		ove_thread_resume(handle_);
 	}
 
@@ -143,7 +151,8 @@ public:
 	 * @brief Returns the current execution state of the thread.
 	 * @return An `ove_thread_state_t` value representing the thread state.
 	 */
-	ove_thread_state_t get_state() const {
+	ove_thread_state_t get_state() const
+	{
 		return ove_thread_get_state(handle_);
 	}
 
@@ -151,7 +160,8 @@ public:
 	 * @brief Returns the number of bytes used by the thread's stack so far.
 	 * @return Peak stack usage in bytes.
 	 */
-	size_t get_stack_usage() const {
+	size_t get_stack_usage() const
+	{
 		return ove_thread_get_stack_usage(handle_);
 	}
 
@@ -160,7 +170,8 @@ public:
 	 * @param[out] stats Pointer to a struct that receives the statistics.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int get_runtime_stats(struct ove_thread_stats *stats) const {
+	int get_runtime_stats(struct ove_thread_stats *stats) const
+	{
 		return ove_thread_get_runtime_stats(handle_, stats);
 	}
 
@@ -168,26 +179,34 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the thread was successfully created.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS thread handle.
 	 * @return The opaque `ove_thread_t` handle.
 	 */
-	ove_thread_t handle() const { return handle_; }
+	ove_thread_t handle() const
+	{
+		return handle_;
+	}
 
 	/**
 	 * @brief Suspends the calling thread for the specified duration.
 	 * @param[in] ms Sleep duration in milliseconds.
 	 */
-	static void sleep_ms(uint32_t ms) {
+	static void sleep_ms(uint32_t ms)
+	{
 		ove_thread_sleep_ms(ms);
 	}
 
 	/**
 	 * @brief Yields the calling thread's remaining time slice to the scheduler.
 	 */
-	static void yield() {
+	static void yield()
+	{
 		ove_thread_yield();
 	}
 
@@ -195,16 +214,16 @@ public:
 	 * @brief Returns the oveRTOS handle of the currently executing thread.
 	 * @return The opaque `ove_thread_t` handle of the calling thread.
 	 */
-	static ove_thread_t self() {
+	static ove_thread_t self()
+	{
 		return ove_thread_get_self();
 	}
 
-private:
+      private:
 	ove_thread_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_storage_t storage_ = {};
-	OVE_THREAD_STACK_MEMBER_(stack_,
-				     StackSize > 0 ? StackSize : 1);
+	OVE_THREAD_STACK_MEMBER_(stack_, StackSize > 0 ? StackSize : 1);
 #endif
 };
 
@@ -215,10 +234,10 @@ private:
  * @brief System heap statistics snapshot.
  */
 struct MemStats {
-	size_t total{};      /**< Total heap size in bytes. */
-	size_t free{};       /**< Current free heap in bytes. */
-	size_t used{};       /**< Current used heap in bytes. */
-	size_t peak_used{};  /**< High-water-mark usage in bytes. */
+	size_t total{};	    /**< Total heap size in bytes. */
+	size_t free{};	    /**< Current free heap in bytes. */
+	size_t used{};	    /**< Current used heap in bytes. */
+	size_t peak_used{}; /**< High-water-mark usage in bytes. */
 };
 
 /**
@@ -226,13 +245,15 @@ struct MemStats {
  * @param[out] stats Structure to fill.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int get_mem_stats(MemStats &stats) {
-	struct ove_mem_stats ms{};
+[[nodiscard]] inline int get_mem_stats(MemStats &stats)
+{
+	struct ove_mem_stats ms {
+	};
 	int ret = ove_sys_get_mem_stats(&ms);
 	if (ret == OVE_OK) {
-		stats.total     = ms.total;
-		stats.free      = ms.free;
-		stats.used      = ms.used;
+		stats.total = ms.total;
+		stats.free = ms.free;
+		stats.used = ms.used;
 		stats.peak_used = ms.peak_used;
 	}
 	return ret;
@@ -245,10 +266,10 @@ struct MemStats {
  * @brief Snapshot of a single thread.
  */
 struct ThreadInfo {
-	const char *name{};           ///< Thread name.
+	const char *name{};				    ///< Thread name.
 	ove_thread_state_t state{OVE_THREAD_STATE_UNKNOWN}; ///< Current state.
-	int priority{};               ///< Scheduling priority.
-	size_t stack_used{};          ///< Peak stack usage in bytes.
+	int priority{};					    ///< Scheduling priority.
+	size_t stack_used{};				    ///< Peak stack usage in bytes.
 };
 
 /**
@@ -258,19 +279,20 @@ struct ThreadInfo {
  * @param[out] count Actual count written (may be nullptr).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int thread_list(ThreadInfo *out, size_t max,
-				     size_t *count = nullptr) {
+[[nodiscard]] inline int thread_list(ThreadInfo *out, size_t max, size_t *count = nullptr)
+{
 	struct ove_thread_info buf[16];
 	size_t n = 0;
 	int ret = ove_thread_list(buf, max < 16 ? max : 16, &n);
 	if (ret == OVE_OK) {
 		for (size_t i = 0; i < n && i < max; i++) {
-			out[i].name       = buf[i].name;
-			out[i].state      = buf[i].state;
-			out[i].priority   = buf[i].priority;
+			out[i].name = buf[i].name;
+			out[i].state = buf[i].state;
+			out[i].priority = buf[i].priority;
 			out[i].stack_used = buf[i].stack_used;
 		}
-		if (count) *count = n;
+		if (count)
+			*count = n;
 	}
 	return ret;
 }

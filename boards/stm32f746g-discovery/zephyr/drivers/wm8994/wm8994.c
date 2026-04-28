@@ -30,7 +30,7 @@ struct wm8994_driver_data {
 	bool output_enabled;
 };
 
-#define DEV_CFG(dev)  ((const struct wm8994_driver_config *const)dev->config)
+#define DEV_CFG(dev) ((const struct wm8994_driver_config *const)dev->config)
 #define DEV_DATA(dev) ((struct wm8994_driver_data *)dev->data)
 
 static int wm8994_write_reg(const struct device *dev, uint16_t reg, uint16_t val);
@@ -836,12 +836,12 @@ static int wm8994_init(const struct device *dev)
 	return 0;
 }
 
-#define WM8994_INIT(n)                                                                             \
-	static struct wm8994_driver_data wm8994_data_##n;                                          \
-	static const struct wm8994_driver_config wm8994_config_##n = {                             \
-		.i2c = I2C_DT_SPEC_INST_GET(n),                                                    \
-	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(n, wm8994_init, NULL, &wm8994_data_##n, &wm8994_config_##n,          \
+#define WM8994_INIT(n)                                                                    \
+	static struct wm8994_driver_data wm8994_data_##n;                                 \
+	static const struct wm8994_driver_config wm8994_config_##n = {                    \
+		.i2c = I2C_DT_SPEC_INST_GET(n),                                           \
+	};                                                                                \
+	DEVICE_DT_INST_DEFINE(n, wm8994_init, NULL, &wm8994_data_##n, &wm8994_config_##n, \
 			      POST_KERNEL, CONFIG_AUDIO_CODEC_INIT_PRIORITY, &wm8994_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(WM8994_INIT)

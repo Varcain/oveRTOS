@@ -42,7 +42,7 @@ extern "C" {
  * @param[in] cfg  Configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg);
+int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg);
 
 /**
  * @brief Disable the I2S peripheral and release DMA resources.
@@ -54,22 +54,22 @@ void ove_hal_i2s_close(ove_i2s_t i2s);
  *
  * TX starts first (generates clocks for synchronous RX slave).
  */
-int  ove_hal_i2s_start(ove_i2s_t i2s);
+int ove_hal_i2s_start(ove_i2s_t i2s);
 
 /**
  * @brief Stop DMA streaming.
  */
-int  ove_hal_i2s_stop(ove_i2s_t i2s);
+int ove_hal_i2s_stop(ove_i2s_t i2s);
 
 /**
  * @brief Pause DMA (can be resumed without reconfiguration).
  */
-int  ove_hal_i2s_pause(ove_i2s_t i2s);
+int ove_hal_i2s_pause(ove_i2s_t i2s);
 
 /**
  * @brief Resume DMA after pause.
  */
-int  ove_hal_i2s_resume(ove_i2s_t i2s);
+int ove_hal_i2s_resume(ove_i2s_t i2s);
 
 #ifdef __cplusplus
 }

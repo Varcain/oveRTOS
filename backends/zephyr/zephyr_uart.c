@@ -15,17 +15,21 @@
 #include <zephyr/drivers/uart.h>
 
 /* Forward declaration of the portable ISR push helper */
-extern void ove_uart_rx_isr_push(ove_uart_t uart, const void *data,
-				 size_t len);
+extern void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len);
 
 static const struct device *instance_to_dev(unsigned int instance)
 {
 	switch (instance) {
-	case 0: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usart1));
-	case 1: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usart2));
-	case 2: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usart3));
-	case 3: return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(uart4));
-	default: return NULL;
+	case 0:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usart1));
+	case 1:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usart2));
+	case 2:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(usart3));
+	case 3:
+		return DEVICE_DT_GET_OR_NULL(DT_NODELABEL(uart4));
+	default:
+		return NULL;
 	}
 }
 
@@ -53,23 +57,33 @@ int ove_hal_uart_open(ove_uart_t uart, const struct ove_uart_cfg *cfg)
 	uart->dev = dev;
 
 	struct uart_config ucfg = {
-		.baudrate  = cfg->baudrate,
+		.baudrate = cfg->baudrate,
 		.data_bits = UART_CFG_DATA_BITS_8,
-		.parity    = UART_CFG_PARITY_NONE,
+		.parity = UART_CFG_PARITY_NONE,
 		.stop_bits = UART_CFG_STOP_BITS_1,
 		.flow_ctrl = UART_CFG_FLOW_CTRL_NONE,
 	};
 
 	switch (cfg->data_bits) {
-	case 7:  ucfg.data_bits = UART_CFG_DATA_BITS_7; break;
-	case 9:  ucfg.data_bits = UART_CFG_DATA_BITS_9; break;
-	default: break;
+	case 7:
+		ucfg.data_bits = UART_CFG_DATA_BITS_7;
+		break;
+	case 9:
+		ucfg.data_bits = UART_CFG_DATA_BITS_9;
+		break;
+	default:
+		break;
 	}
 
 	switch (cfg->parity) {
-	case OVE_UART_PARITY_ODD:  ucfg.parity = UART_CFG_PARITY_ODD;  break;
-	case OVE_UART_PARITY_EVEN: ucfg.parity = UART_CFG_PARITY_EVEN; break;
-	default: break;
+	case OVE_UART_PARITY_ODD:
+		ucfg.parity = UART_CFG_PARITY_ODD;
+		break;
+	case OVE_UART_PARITY_EVEN:
+		ucfg.parity = UART_CFG_PARITY_EVEN;
+		break;
+	default:
+		break;
 	}
 
 	if (cfg->stop_bits == OVE_UART_STOP_2)
@@ -93,8 +107,8 @@ void ove_hal_uart_close(ove_uart_t uart)
 	}
 }
 
-int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len,
-		    uint32_t timeout_ms, size_t *bytes_written)
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+		    size_t *bytes_written)
 {
 	const uint8_t *p = data;
 	size_t i;
@@ -110,8 +124,7 @@ int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len,
 
 int ove_hal_uart_rx_enable(ove_uart_t uart)
 {
-	uart_irq_callback_user_data_set(uart->dev,
-					zephyr_uart_irq_cb, uart);
+	uart_irq_callback_user_data_set(uart->dev, zephyr_uart_irq_cb, uart);
 	uart_irq_rx_enable(uart->dev);
 	return OVE_OK;
 }

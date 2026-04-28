@@ -39,41 +39,39 @@ extern "C" {
  * 64 KB per direction.  At 16 kHz / 16-bit / mono = 32 kB/s ≈ 2 s.
  * At 48 kHz / 16-bit / stereo = 192 kB/s ≈ 340 ms.
  */
-#define OVE_SIM_AUDIO_RING_SIZE  (1u << 16)  /* 65536 bytes */
+#define OVE_SIM_AUDIO_RING_SIZE (1u << 16) /* 65536 bytes */
 
 /* ── Byte offsets (for JS AudioWorklet and QEMU semihosting) ──────── */
 
-#define OVE_RING_OFF_WRITE_POS    0
-#define OVE_RING_OFF_READ_POS     4
-#define OVE_RING_OFF_SAMPLE_RATE  8
-#define OVE_RING_OFF_CHANNELS    12
-#define OVE_RING_OFF_BIT_DEPTH   14
-#define OVE_RING_OFF_SIZE        16
-#define OVE_RING_OFF_UNDERRUNS   20
-#define OVE_RING_OFF_OVERRUNS    24
-#define OVE_RING_OFF_BUF         32
+#define OVE_RING_OFF_WRITE_POS 0
+#define OVE_RING_OFF_READ_POS 4
+#define OVE_RING_OFF_SAMPLE_RATE 8
+#define OVE_RING_OFF_CHANNELS 12
+#define OVE_RING_OFF_BIT_DEPTH 14
+#define OVE_RING_OFF_SIZE 16
+#define OVE_RING_OFF_UNDERRUNS 20
+#define OVE_RING_OFF_OVERRUNS 24
+#define OVE_RING_OFF_BUF 32
 
 /* ── Ring struct ──────────────────────────────────────────────────── */
 
 struct ove_sim_audio_ring {
-	uint32_t write_pos;     /*  0 — producer byte offset (wraps) */
-	uint32_t read_pos;      /*  4 — consumer byte offset (wraps) */
-	uint32_t sample_rate;   /*  8 — Hz */
-	uint16_t channels;      /* 12 */
-	uint16_t bit_depth;     /* 14 — bits per sample */
-	uint32_t size;          /* 16 — ring capacity in bytes (power-of-2) */
-	uint32_t underruns;     /* 20 — consumer found ring empty */
-	uint32_t overruns;      /* 24 — producer found ring full */
-	uint32_t _reserved;     /* 28 — pad header to 32 bytes */
-	uint8_t  buf[OVE_SIM_AUDIO_RING_SIZE];  /* 32 — PCM data */
+	uint32_t write_pos;		      /*  0 — producer byte offset (wraps) */
+	uint32_t read_pos;		      /*  4 — consumer byte offset (wraps) */
+	uint32_t sample_rate;		      /*  8 — Hz */
+	uint16_t channels;		      /* 12 */
+	uint16_t bit_depth;		      /* 14 — bits per sample */
+	uint32_t size;			      /* 16 — ring capacity in bytes (power-of-2) */
+	uint32_t underruns;		      /* 20 — consumer found ring empty */
+	uint32_t overruns;		      /* 24 — producer found ring full */
+	uint32_t _reserved;		      /* 28 — pad header to 32 bytes */
+	uint8_t buf[OVE_SIM_AUDIO_RING_SIZE]; /* 32 — PCM data */
 };
 
 /* ── Inline helpers (direct memory access) ────────────────────────── */
 
-static inline void ove_sim_audio_ring_init(struct ove_sim_audio_ring *r,
-					   uint32_t sample_rate,
-					   uint16_t channels,
-					   uint16_t bit_depth)
+static inline void ove_sim_audio_ring_init(struct ove_sim_audio_ring *r, uint32_t sample_rate,
+					   uint16_t channels, uint16_t bit_depth)
 {
 	memset(r, 0, sizeof(*r));
 	r->sample_rate = sample_rate;
@@ -98,8 +96,7 @@ static inline uint32_t ove_sim_ring_free(const struct ove_sim_audio_ring *r)
 }
 
 /** @return Fill level 0–100. */
-static inline unsigned int
-ove_sim_ring_fill_pct(const struct ove_sim_audio_ring *r)
+static inline unsigned int ove_sim_ring_fill_pct(const struct ove_sim_audio_ring *r)
 {
 	if (r->size == 0)
 		return 0;
@@ -110,8 +107,8 @@ ove_sim_ring_fill_pct(const struct ove_sim_audio_ring *r)
  * Write @p len bytes into the ring.
  * @return Number of bytes actually written (may be less if ring full).
  */
-static inline uint32_t ove_sim_ring_write(struct ove_sim_audio_ring *r,
-					  const void *data, uint32_t len)
+static inline uint32_t ove_sim_ring_write(struct ove_sim_audio_ring *r, const void *data,
+					  uint32_t len)
 {
 	uint32_t free = ove_sim_ring_free(r);
 	if (len > free) {
@@ -141,8 +138,7 @@ static inline uint32_t ove_sim_ring_write(struct ove_sim_audio_ring *r,
  * Read up to @p len bytes from the ring.
  * @return Number of bytes actually read.
  */
-static inline uint32_t ove_sim_ring_read(struct ove_sim_audio_ring *r,
-					 void *data, uint32_t len)
+static inline uint32_t ove_sim_ring_read(struct ove_sim_audio_ring *r, void *data, uint32_t len)
 {
 	uint32_t avail = ove_sim_ring_avail(r);
 	if (len > avail) {
@@ -173,23 +169,20 @@ static inline uint32_t ove_sim_ring_read(struct ove_sim_audio_ring *r,
 
 #ifdef __EMSCRIPTEN__
 
-static inline uint32_t
-ove_sim_ring_avail_atomic(const struct ove_sim_audio_ring *r)
+static inline uint32_t ove_sim_ring_avail_atomic(const struct ove_sim_audio_ring *r)
 {
 	uint32_t wp = __atomic_load_n(&r->write_pos, __ATOMIC_ACQUIRE);
 	uint32_t rp = __atomic_load_n(&r->read_pos, __ATOMIC_ACQUIRE);
 	return wp - rp;
 }
 
-static inline uint32_t
-ove_sim_ring_free_atomic(const struct ove_sim_audio_ring *r)
+static inline uint32_t ove_sim_ring_free_atomic(const struct ove_sim_audio_ring *r)
 {
 	return r->size - ove_sim_ring_avail_atomic(r);
 }
 
-static inline uint32_t
-ove_sim_ring_write_atomic(struct ove_sim_audio_ring *r,
-			  const void *data, uint32_t len)
+static inline uint32_t ove_sim_ring_write_atomic(struct ove_sim_audio_ring *r, const void *data,
+						 uint32_t len)
 {
 	uint32_t free = ove_sim_ring_free_atomic(r);
 	if (len > free) {
@@ -210,9 +203,8 @@ ove_sim_ring_write_atomic(struct ove_sim_audio_ring *r,
 	return len;
 }
 
-static inline uint32_t
-ove_sim_ring_read_atomic(struct ove_sim_audio_ring *r,
-			 void *data, uint32_t len)
+static inline uint32_t ove_sim_ring_read_atomic(struct ove_sim_audio_ring *r, void *data,
+						uint32_t len)
 {
 	uint32_t wp = __atomic_load_n(&r->write_pos, __ATOMIC_ACQUIRE);
 	uint32_t rp = __atomic_load_n(&r->read_pos, __ATOMIC_ACQUIRE);

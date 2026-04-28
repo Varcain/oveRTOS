@@ -40,8 +40,8 @@ extern "C" {
  * @brief I2S stream direction.
  */
 typedef enum {
-	OVE_I2S_DIR_TX   = 0x01, /**< Transmit only (playback). */
-	OVE_I2S_DIR_RX   = 0x02, /**< Receive only (capture). */
+	OVE_I2S_DIR_TX = 0x01,	 /**< Transmit only (playback). */
+	OVE_I2S_DIR_RX = 0x02,	 /**< Receive only (capture). */
 	OVE_I2S_DIR_TXRX = 0x03, /**< Full-duplex (simultaneous TX + RX). */
 } ove_i2s_dir_t;
 
@@ -65,12 +65,12 @@ typedef void (*ove_i2s_cb_t)(ove_i2s_t i2s, void *user_data);
  * @brief I2S bus configuration descriptor.
  */
 struct ove_i2s_cfg {
-	unsigned int  instance;         /**< I2S / SAI peripheral index (0, 1 ...). */
-	uint32_t      sample_rate;      /**< Sample rate in Hz (e.g. 44100, 48000). */
-	uint8_t       bit_depth;        /**< Bits per sample: 16, 24, or 32. */
-	uint8_t       channels;         /**< Channel count: 1 (mono) or 2 (stereo). */
-	ove_i2s_dir_t direction;        /**< Stream direction. */
-	size_t        dma_buf_samples;  /**< Total samples in DMA buffer (both halves). */
+	unsigned int instance;	 /**< I2S / SAI peripheral index (0, 1 ...). */
+	uint32_t sample_rate;	 /**< Sample rate in Hz (e.g. 44100, 48000). */
+	uint8_t bit_depth;	 /**< Bits per sample: 16, 24, or 32. */
+	uint8_t channels;	 /**< Channel count: 1 (mono) or 2 (stereo). */
+	ove_i2s_dir_t direction; /**< Stream direction. */
+	size_t dma_buf_samples;	 /**< Total samples in DMA buffer (both halves). */
 };
 
 #ifdef CONFIG_OVE_I2S
@@ -88,9 +88,8 @@ struct ove_i2s_cfg {
  * @param[in]  cfg        I2S configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage,
-		  void *tx_dma_buf, void *rx_dma_buf,
-		  const struct ove_i2s_cfg *cfg);
+int ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage, void *tx_dma_buf, void *rx_dma_buf,
+		 const struct ove_i2s_cfg *cfg);
 /** @brief Release an I2S handle previously created with `ove_i2s_init`. */
 void ove_i2s_deinit(ove_i2s_t i2s);
 
@@ -102,20 +101,22 @@ void ove_i2s_deinit(ove_i2s_t i2s);
  * @param[in]  cfg I2S configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_i2s_create(ove_i2s_t *i2s, const struct ove_i2s_cfg *cfg);
+int ove_i2s_create(ove_i2s_t *i2s, const struct ove_i2s_cfg *cfg);
 /** @brief Destroy an I2S handle previously created with `ove_i2s_create`. */
 void ove_i2s_destroy(ove_i2s_t i2s);
 #elif !defined(__ZIG_CIMPORT__)
-#define ove_i2s_create(pi2s, cfg) \
-	({ static ove_i2s_storage_t _ove_stor_; \
-	   static uint8_t _ove_txbuf_[((cfg)->dma_buf_samples) * ((cfg)->bit_depth / 8)] \
-	       __attribute__((aligned(32))); \
-	   static uint8_t _ove_rxbuf_[((cfg)->dma_buf_samples) * ((cfg)->bit_depth / 8)] \
-	       __attribute__((aligned(32))); \
-	   ove_i2s_init((pi2s), &_ove_stor_, \
-			((cfg)->direction & OVE_I2S_DIR_TX) ? _ove_txbuf_ : (void *)0, \
-			((cfg)->direction & OVE_I2S_DIR_RX) ? _ove_rxbuf_ : (void *)0, \
-			(cfg)); })
+#define ove_i2s_create(pi2s, cfg)                                                             \
+	({                                                                                    \
+		static ove_i2s_storage_t _ove_stor_;                                          \
+		static uint8_t _ove_txbuf_[((cfg)->dma_buf_samples) * ((cfg)->bit_depth / 8)] \
+			__attribute__((aligned(32)));                                         \
+		static uint8_t _ove_rxbuf_[((cfg)->dma_buf_samples) * ((cfg)->bit_depth / 8)] \
+			__attribute__((aligned(32)));                                         \
+		ove_i2s_init((pi2s), &_ove_stor_,                                             \
+			     ((cfg)->direction & OVE_I2S_DIR_TX) ? _ove_txbuf_ : (void *)0,   \
+			     ((cfg)->direction & OVE_I2S_DIR_RX) ? _ove_rxbuf_ : (void *)0,   \
+			     (cfg));                                                          \
+	})
 #define ove_i2s_destroy(i2s) ove_i2s_deinit(i2s)
 #endif
 
@@ -126,8 +127,7 @@ void ove_i2s_destroy(ove_i2s_t i2s);
  *
  * Called from ISR when a DMA RX half-buffer is ready for processing.
  */
-int  ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
-			     void *user_data);
+int ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
 
 /**
  * @brief Set the TX half-buffer completion callback.
@@ -135,8 +135,7 @@ int  ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
  * Called from ISR when a DMA TX half-buffer has been transmitted and
  * is safe to refill.
  */
-int  ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
-			     void *user_data);
+int ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
 
 /* ── Stream control ──────────────────────────────────────────────── */
 
@@ -146,22 +145,22 @@ int  ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
  * Begins circular DMA transfers.  TX starts first to generate clocks
  * for a synchronous RX slave.
  */
-int  ove_i2s_start(ove_i2s_t i2s);
+int ove_i2s_start(ove_i2s_t i2s);
 
 /**
  * @brief Stop I2S DMA streaming.
  */
-int  ove_i2s_stop(ove_i2s_t i2s);
+int ove_i2s_stop(ove_i2s_t i2s);
 
 /**
  * @brief Pause I2S DMA streaming (can be resumed).
  */
-int  ove_i2s_pause(ove_i2s_t i2s);
+int ove_i2s_pause(ove_i2s_t i2s);
 
 /**
  * @brief Resume I2S DMA streaming after pause.
  */
-int  ove_i2s_resume(ove_i2s_t i2s);
+int ove_i2s_resume(ove_i2s_t i2s);
 
 /* ── Buffer access ───────────────────────────────────────────────── */
 
@@ -208,17 +207,65 @@ void ove_i2s_tx_cplt_isr(ove_i2s_t i2s);
 
 #else /* !CONFIG_OVE_I2S */
 
-static inline int  ove_i2s_create(ove_i2s_t *i, const struct ove_i2s_cfg *c) { (void)i; (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_i2s_destroy(ove_i2s_t i) { (void)i; }
-static inline int  ove_i2s_set_rx_callback(ove_i2s_t i, ove_i2s_cb_t cb, void *ud) { (void)i; (void)cb; (void)ud; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2s_set_tx_callback(ove_i2s_t i, ove_i2s_cb_t cb, void *ud) { (void)i; (void)cb; (void)ud; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2s_start(ove_i2s_t i) { (void)i; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2s_stop(ove_i2s_t i) { (void)i; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2s_pause(ove_i2s_t i) { (void)i; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_i2s_resume(ove_i2s_t i) { (void)i; return OVE_ERR_NOT_SUPPORTED; }
-static inline void *ove_i2s_rx_buf(ove_i2s_t i) { (void)i; return (void *)0; }
-static inline void *ove_i2s_tx_buf(ove_i2s_t i) { (void)i; return (void *)0; }
-static inline size_t ove_i2s_half_buf_size(ove_i2s_t i) { (void)i; return 0; }
+static inline int ove_i2s_create(ove_i2s_t *i, const struct ove_i2s_cfg *c)
+{
+	(void)i;
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_i2s_destroy(ove_i2s_t i)
+{
+	(void)i;
+}
+static inline int ove_i2s_set_rx_callback(ove_i2s_t i, ove_i2s_cb_t cb, void *ud)
+{
+	(void)i;
+	(void)cb;
+	(void)ud;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2s_set_tx_callback(ove_i2s_t i, ove_i2s_cb_t cb, void *ud)
+{
+	(void)i;
+	(void)cb;
+	(void)ud;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2s_start(ove_i2s_t i)
+{
+	(void)i;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2s_stop(ove_i2s_t i)
+{
+	(void)i;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2s_pause(ove_i2s_t i)
+{
+	(void)i;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2s_resume(ove_i2s_t i)
+{
+	(void)i;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void *ove_i2s_rx_buf(ove_i2s_t i)
+{
+	(void)i;
+	return (void *)0;
+}
+static inline void *ove_i2s_tx_buf(ove_i2s_t i)
+{
+	(void)i;
+	return (void *)0;
+}
+static inline size_t ove_i2s_half_buf_size(ove_i2s_t i)
+{
+	(void)i;
+	return 0;
+}
 
 #endif /* CONFIG_OVE_I2S */
 

@@ -35,9 +35,9 @@ extern "C" {
 struct ove_sim_spi_dev_ops {
 	struct ove_sim_plugin_ops base;
 
-	unsigned int bus;      /**< SPI bus instance index. */
-	unsigned int cs_port;  /**< CS GPIO port. */
-	unsigned int cs_pin;   /**< CS GPIO pin. */
+	unsigned int bus;     /**< SPI bus instance index. */
+	unsigned int cs_port; /**< CS GPIO port. */
+	unsigned int cs_pin;  /**< CS GPIO pin. */
 
 	/**
 	 * @brief Handle a full-duplex SPI transfer.
@@ -58,8 +58,7 @@ struct ove_sim_spi_dev_ops {
  * @param[in] ctx  Plugin-private context.
  * @return 0 on success, negative error code on failure.
  */
-int ove_sim_spi_dev_register(const struct ove_sim_spi_dev_ops *ops,
-			     void *ctx);
+int ove_sim_spi_dev_register(const struct ove_sim_spi_dev_ops *ops, void *ctx);
 
 #ifdef __cplusplus
 }

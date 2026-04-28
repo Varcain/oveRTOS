@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_EVENTGROUP
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @class EventGroup
@@ -32,14 +33,16 @@ namespace ove {
  * @note Not copyable.  Move-only when heap allocation is enabled.
  * @note `set_bits_from_isr()` is safe to call from interrupt context.
  */
-class EventGroup {
-public:
+class EventGroup
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the event group with all bits cleared.
 	 *
 	 * Asserts at startup if initialisation fails.
 	 */
-	EventGroup() {
+	EventGroup()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_eventgroup_init(&handle_, &storage_);
 #else
@@ -51,8 +54,10 @@ public:
 	/**
 	 * @brief Destroys the event group, releasing the underlying kernel resource.
 	 */
-	~EventGroup() {
-		if (!handle_) return;
+	~EventGroup()
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_eventgroup_deinit(handle_);
 #else
@@ -71,7 +76,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	EventGroup(EventGroup &&other) noexcept : handle_(other.handle_) {
+	EventGroup(EventGroup &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -80,9 +86,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	EventGroup &operator=(EventGroup &&other) noexcept {
+	EventGroup &operator=(EventGroup &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_eventgroup_destroy(handle_);
+			if (handle_)
+				ove_eventgroup_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -95,7 +103,8 @@ public:
 	 * @param[in] bits Bitmask of bits to set.
 	 * @return The value of the event group after the bits were set.
 	 */
-	ove_eventbits_t set_bits(ove_eventbits_t bits) {
+	ove_eventbits_t set_bits(ove_eventbits_t bits)
+	{
 		return ove_eventgroup_set_bits(handle_, bits);
 	}
 
@@ -104,7 +113,8 @@ public:
 	 * @param[in] bits Bitmask of bits to clear.
 	 * @return The value of the event group before the bits were cleared.
 	 */
-	ove_eventbits_t clear_bits(ove_eventbits_t bits) {
+	ove_eventbits_t clear_bits(ove_eventbits_t bits)
+	{
 		return ove_eventgroup_clear_bits(handle_, bits);
 	}
 
@@ -117,12 +127,10 @@ public:
 	 *                        wait condition was satisfied (or on timeout).
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int wait_bits(ove_eventbits_t bits,
-				    uint32_t flags,
-				    uint32_t timeout_ms,
-				    ove_eventbits_t *result) {
-		return ove_eventgroup_wait_bits(handle_, bits, flags,
-						    timeout_ms, result);
+	[[nodiscard]] int wait_bits(ove_eventbits_t bits, uint32_t flags, uint32_t timeout_ms,
+				    ove_eventbits_t *result)
+	{
+		return ove_eventgroup_wait_bits(handle_, bits, flags, timeout_ms, result);
 	}
 
 	/**
@@ -130,7 +138,8 @@ public:
 	 * @param[in] bits Bitmask of bits to set.
 	 * @return The value of the event group after the bits were set.
 	 */
-	ove_eventbits_t set_bits_from_isr(ove_eventbits_t bits) {
+	ove_eventbits_t set_bits_from_isr(ove_eventbits_t bits)
+	{
 		return ove_eventgroup_set_bits_from_isr(handle_, bits);
 	}
 
@@ -138,7 +147,8 @@ public:
 	 * @brief Returns the current value of all event bits without blocking.
 	 * @return The current event-group bitmask.
 	 */
-	ove_eventbits_t get_bits() const {
+	ove_eventbits_t get_bits() const
+	{
 		return ove_eventgroup_get_bits(handle_);
 	}
 
@@ -146,15 +156,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the event group was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS event-group handle.
 	 * @return The opaque `ove_eventgroup_t` handle.
 	 */
-	ove_eventgroup_t handle() const { return handle_; }
+	ove_eventgroup_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_eventgroup_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_eventgroup_storage_t storage_ = {};

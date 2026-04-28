@@ -40,8 +40,7 @@ void ove_nvs_deinit(void)
 {
 }
 
-int ove_nvs_read(const char *key, void *buf, size_t buf_len,
-			  size_t *out_len)
+int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 {
 	char path[NVS_PATH_MAX];
 	int ret;

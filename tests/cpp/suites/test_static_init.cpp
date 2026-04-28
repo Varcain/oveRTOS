@@ -127,8 +127,7 @@ static void test_cpp_static_thread_init(void **state)
 	(void)state;
 	g_static_thread_ran.store(0);
 
-	ove::Thread<4096> t(static_thread_entry, nullptr,
-				 OVE_PRIO_NORMAL, "static_t");
+	ove::Thread<4096> t(static_thread_entry, nullptr, OVE_PRIO_NORMAL, "static_t");
 	assert_true(t.valid());
 	test_msleep(100);
 	assert_true(g_static_thread_ran.load());

@@ -47,7 +47,7 @@
 #include "ove/storage.h"
 #include "ove/thread.h"
 #include "ove/thread_state_stats.h"
-#include "ove/trace.h"          /* ove_backend_thread_current_handle */
+#include "ove/trace.h" /* ove_backend_thread_current_handle */
 #include "ove/types.h"
 #include "ove_profiler_ring.h"
 
@@ -76,28 +76,25 @@ static atomic_uint sample_counter;
 struct snap_entry {
 	struct ove_thread *t;
 	pid_t pid;
-	int   state;
+	int state;
 };
 
-static size_t snapshot_runnable(struct snap_entry *out, size_t max,
-				struct ove_thread *skip)
+static size_t snapshot_runnable(struct snap_entry *out, size_t max, struct ove_thread *skip)
 {
 	size_t n = 0;
 	ove_nuttx_thread_list_lock();
-	for (struct ove_thread *t = ove_nuttx_thread_list_head;
-	     t && n < max; t = t->next) {
+	for (struct ove_thread *t = ove_nuttx_thread_list_head; t && n < max; t = t->next) {
 		if (t == skip || !t->started)
 			continue;
 		int s = t->state;
 		/* Same policy as POSIX: sample RUNNING/READY/BLOCKED. A
 		 * blocked task's saved stack is the waiter call site, which
 		 * is usually what the user wants to see. */
-		if (s != OVE_THREAD_STATE_RUNNING &&
-		    s != OVE_THREAD_STATE_READY &&
+		if (s != OVE_THREAD_STATE_RUNNING && s != OVE_THREAD_STATE_READY &&
 		    s != OVE_THREAD_STATE_BLOCKED)
 			continue;
-		out[n].t     = t;
-		out[n].pid   = t->pid;
+		out[n].t = t;
+		out[n].pid = t->pid;
 		out[n].state = s;
 		n++;
 	}
@@ -110,11 +107,10 @@ void ove_backend_profiler_sample_tick(void)
 	if (!atomic_load_explicit(&profiler_running, memory_order_acquire))
 		return;
 
-	unsigned div = atomic_load_explicit(&sample_divisor,
-					    memory_order_acquire);
+	unsigned div = atomic_load_explicit(&sample_divisor, memory_order_acquire);
 	if (div > 1) {
-		unsigned c = atomic_fetch_add_explicit(&sample_counter, 1,
-						       memory_order_acq_rel) + 1;
+		unsigned c =
+			atomic_fetch_add_explicit(&sample_counter, 1, memory_order_acq_rel) + 1;
 		if ((c % div) != 0)
 			return;
 	}
@@ -130,11 +126,10 @@ void ove_backend_profiler_sample_tick(void)
 	for (size_t i = 0; i < n; i++) {
 		struct tcb_s *tcb = nxsched_get_tcb(snap[i].pid);
 		if (!tcb)
-			continue;  /* pid reaped between snapshot and walk */
+			continue; /* pid reaped between snapshot and walk */
 
 		void *pcs[CONFIG_OVE_PROFILER_MAX_DEPTH];
-		int depth = up_backtrace(tcb, pcs,
-					 CONFIG_OVE_PROFILER_MAX_DEPTH, 0);
+		int depth = up_backtrace(tcb, pcs, CONFIG_OVE_PROFILER_MAX_DEPTH, 0);
 		if (depth <= 0)
 			continue;
 		if (depth > CONFIG_OVE_PROFILER_MAX_DEPTH)
@@ -143,7 +138,7 @@ void ove_backend_profiler_sample_tick(void)
 		struct ove_profiler_sample s;
 		memset(&s, 0, sizeof(s));
 		s.ts_us = now;
-		s.tid   = (uint32_t)(uintptr_t)snap[i].t;
+		s.tid = (uint32_t)(uintptr_t)snap[i].t;
 		s.state = (uint8_t)snap[i].state;
 		s.depth = (uint8_t)depth;
 		for (int k = 0; k < depth; k++)
@@ -182,7 +177,8 @@ void ove_backend_profiler_stop(void)
 
 size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
 {
-	(void)out; (void)out_max;
+	(void)out;
+	(void)out_max;
 	return 0;
 }
 

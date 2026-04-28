@@ -22,13 +22,11 @@ static void timer_thread_handler(union sigval sv)
 	}
 }
 
-int ove_timer_init(ove_timer_t *timer,
-		       ove_timer_storage_t *storage,
-		       ove_timer_fn callback,
-		       void *user_data, uint32_t period_ms,
-		       int one_shot)
+int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		   void *user_data, uint32_t period_ms, int one_shot)
 {
-	if (!timer || !storage || !callback) return OVE_ERR_INVALID_PARAM;
+	if (!timer || !storage || !callback)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_timer *t = (struct ove_timer *)storage;
 	memset(t, 0, sizeof(*t));
 	t->callback = callback;
@@ -66,12 +64,11 @@ void ove_timer_deinit(ove_timer_t timer)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_timer_create(ove_timer_t *timer,
-			 ove_timer_fn callback,
-			 void *user_data, uint32_t period_ms,
-			 int one_shot)
+int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
+		     int one_shot)
 {
-	if (!timer || !callback) return OVE_ERR_INVALID_PARAM;
+	if (!timer || !callback)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
 	if (!t) {
 		return OVE_ERR_NO_MEMORY;

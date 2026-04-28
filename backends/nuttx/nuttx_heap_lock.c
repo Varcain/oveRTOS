@@ -41,17 +41,29 @@ int ove_heap_lock_trapped_(void);
  * effect the linker rewrites references to __real_<sym> to point at
  * the original (renamed) libc symbol, overriding these weak defs. */
 __attribute__((weak)) void *__real_malloc(size_t n)
-	{ return mm_malloc(USR_HEAP, n); }
+{
+	return mm_malloc(USR_HEAP, n);
+}
 __attribute__((weak)) void *__real_calloc(size_t nmemb, size_t n)
-	{ return mm_calloc(USR_HEAP, nmemb, n); }
+{
+	return mm_calloc(USR_HEAP, nmemb, n);
+}
 __attribute__((weak)) void *__real_realloc(void *p, size_t n)
-	{ return mm_realloc(USR_HEAP, p, n); }
+{
+	return mm_realloc(USR_HEAP, p, n);
+}
 __attribute__((weak)) void *__real_zalloc(size_t n)
-	{ return mm_zalloc(USR_HEAP, n); }
+{
+	return mm_zalloc(USR_HEAP, n);
+}
 __attribute__((weak)) void *__real_memalign(size_t alignment, size_t size)
-	{ return mm_memalign(USR_HEAP, alignment, size); }
-__attribute__((weak)) void  __real_free(void *p)
-	{ mm_free(USR_HEAP, p); }
+{
+	return mm_memalign(USR_HEAP, alignment, size);
+}
+__attribute__((weak)) void __real_free(void *p)
+{
+	mm_free(USR_HEAP, p);
+}
 
 /* ── NuttX kmm_* wrappers ───────────────────────────────────────────── */
 
@@ -60,48 +72,65 @@ extern void *__real_kmm_zalloc(size_t n);
 extern void *__real_kmm_calloc(size_t nmemb, size_t n);
 extern void *__real_kmm_realloc(void *p, size_t n);
 extern void *__real_kmm_memalign(size_t alignment, size_t size);
-extern void  __real_kmm_free(void *p);
+extern void __real_kmm_free(void *p);
 
 __attribute__((weak)) void *__real_kmm_malloc(size_t n)
-	{ return mm_malloc(USR_HEAP, n); }
+{
+	return mm_malloc(USR_HEAP, n);
+}
 __attribute__((weak)) void *__real_kmm_zalloc(size_t n)
-	{ return mm_zalloc(USR_HEAP, n); }
+{
+	return mm_zalloc(USR_HEAP, n);
+}
 __attribute__((weak)) void *__real_kmm_calloc(size_t nmemb, size_t n)
-	{ return mm_calloc(USR_HEAP, nmemb, n); }
+{
+	return mm_calloc(USR_HEAP, nmemb, n);
+}
 __attribute__((weak)) void *__real_kmm_realloc(void *p, size_t n)
-	{ return mm_realloc(USR_HEAP, p, n); }
+{
+	return mm_realloc(USR_HEAP, p, n);
+}
 __attribute__((weak)) void *__real_kmm_memalign(size_t alignment, size_t size)
-	{ return mm_memalign(USR_HEAP, alignment, size); }
-__attribute__((weak)) void  __real_kmm_free(void *p)
-	{ mm_free(USR_HEAP, p); }
+{
+	return mm_memalign(USR_HEAP, alignment, size);
+}
+__attribute__((weak)) void __real_kmm_free(void *p)
+{
+	mm_free(USR_HEAP, p);
+}
 
 void *__wrap_kmm_malloc(size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_kmm_malloc(n);
 }
 
 void *__wrap_kmm_zalloc(size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_kmm_zalloc(n);
 }
 
 void *__wrap_kmm_calloc(size_t nmemb, size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_kmm_calloc(nmemb, n);
 }
 
 void *__wrap_kmm_realloc(void *p, size_t n)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_kmm_realloc(p, n);
 }
 
 void *__wrap_kmm_memalign(size_t alignment, size_t size)
 {
-	if (ove_heap_lock_trapped_()) return NULL;
+	if (ove_heap_lock_trapped_())
+		return NULL;
 	return __real_kmm_memalign(alignment, size);
 }
 

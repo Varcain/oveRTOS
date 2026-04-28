@@ -21,12 +21,12 @@
 
 /* Must be power of 2 for masking. 32768 samples = 2 seconds at 16kHz. */
 #define RING_BUF_CAPACITY 32768
-#define RING_BUF_MASK     (RING_BUF_CAPACITY - 1)
+#define RING_BUF_MASK (RING_BUF_CAPACITY - 1)
 
 typedef struct {
 	int16_t data[RING_BUF_CAPACITY];
-	volatile unsigned int head;  /* Next write position (audio callback) */
-	volatile unsigned int tail;  /* Next read position (inference thread) */
+	volatile unsigned int head; /* Next write position (audio callback) */
+	volatile unsigned int tail; /* Next read position (inference thread) */
 } ring_buffer_t;
 
 static inline void ring_buffer_init(ring_buffer_t *rb)
@@ -37,9 +37,7 @@ static inline void ring_buffer_init(ring_buffer_t *rb)
 }
 
 /* Write samples from audio callback (single producer). */
-static inline void ring_buffer_write(ring_buffer_t *rb,
-				     const int16_t *samples,
-				     unsigned int count)
+static inline void ring_buffer_write(ring_buffer_t *rb, const int16_t *samples, unsigned int count)
 {
 	for (unsigned int i = 0; i < count; i++) {
 		rb->data[rb->head & RING_BUF_MASK] = samples[i];
@@ -57,9 +55,7 @@ static inline unsigned int ring_buffer_available(const ring_buffer_t *rb)
  * Read the most recent N samples (for inference window).
  * Does NOT advance the tail — inference re-reads overlapping windows.
  */
-static inline void ring_buffer_read_last(ring_buffer_t *rb,
-					 int16_t *out,
-					 unsigned int count)
+static inline void ring_buffer_read_last(ring_buffer_t *rb, int16_t *out, unsigned int count)
 {
 	unsigned int h = rb->head;
 	unsigned int start;

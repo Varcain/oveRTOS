@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_QUEUE
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @class Queue
@@ -39,21 +40,21 @@ namespace ove {
  * @note `send()`, `receive()`, and their ISR variants are marked
  *       `[[nodiscard]]`.
  */
-template <typename T, size_t MaxItems = 0>
-class Queue {
-public:
+template <typename T, size_t MaxItems = 0> class Queue
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the queue.
 	 *
 	 * Only participates in overload resolution when `MaxItems > 0`.
 	 * Asserts at startup if initialisation fails.
 	 */
-	Queue() requires (MaxItems > 0) {
+	Queue()
+		requires(MaxItems > 0)
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		static_assert(MaxItems > 0,
-			      "MaxItems must be > 0 in zero-heap mode");
-		int err = ove_queue_init(&handle_, &storage_,
-					      buffer_, sizeof(T), MaxItems);
+		static_assert(MaxItems > 0, "MaxItems must be > 0 in zero-heap mode");
+		int err = ove_queue_init(&handle_, &storage_, buffer_, sizeof(T), MaxItems);
 #else
 		int err = ove_queue_create(&handle_, sizeof(T), MaxItems);
 #endif
@@ -63,8 +64,10 @@ public:
 	/**
 	 * @brief Destroys the queue, releasing the underlying kernel resource.
 	 */
-	~Queue() noexcept {
-		if (!handle_) return;
+	~Queue() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_queue_deinit(handle_);
 #else
@@ -83,7 +86,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Queue(Queue &&other) noexcept : handle_(other.handle_) {
+	Queue(Queue &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -92,9 +96,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Queue &operator=(Queue &&other) noexcept {
+	Queue &operator=(Queue &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_queue_destroy(handle_);
+			if (handle_)
+				ove_queue_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -109,8 +115,8 @@ public:
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int send(const T &item,
-			       uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int send(const T &item, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_queue_send(handle_, &item, timeout_ms);
 	}
 
@@ -121,8 +127,8 @@ public:
 	 *             `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int receive(T *item,
-				  uint32_t timeout_ms = OVE_WAIT_FOREVER) {
+	[[nodiscard]] int receive(T *item, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	{
 		return ove_queue_receive(handle_, item, timeout_ms);
 	}
 
@@ -131,7 +137,8 @@ public:
 	 * @param[in] item The item to enqueue.
 	 * @return `OVE_OK` on success, or a negative error code if the queue is full.
 	 */
-	[[nodiscard]] int send_from_isr(const T &item) {
+	[[nodiscard]] int send_from_isr(const T &item)
+	{
 		return ove_queue_send_from_isr(handle_, &item);
 	}
 
@@ -140,7 +147,8 @@ public:
 	 * @param[out] item Pointer to storage for the received item.
 	 * @return `OVE_OK` on success, or a negative error code if the queue is empty.
 	 */
-	[[nodiscard]] int receive_from_isr(T *item) {
+	[[nodiscard]] int receive_from_isr(T *item)
+	{
 		return ove_queue_receive_from_isr(handle_, item);
 	}
 
@@ -148,15 +156,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the queue was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS queue handle.
 	 * @return The opaque `ove_queue_t` handle.
 	 */
-	ove_queue_t handle() const { return handle_; }
+	ove_queue_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_queue_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_queue_storage_t storage_ = {};

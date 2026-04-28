@@ -53,7 +53,7 @@ extern "C" {
  *
  * @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock
  */
-int  ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage);
+int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage);
 
 /**
  * @brief Release resources held by a mutex initialised with ove_mutex_init().
@@ -90,8 +90,8 @@ void ove_mutex_deinit(ove_mutex_t mtx);
  *
  * @see ove_sem_deinit, ove_sem_create, ove_sem_take, ove_sem_give
  */
-int  ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage,
-		  unsigned int initial, unsigned int max);
+int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial,
+		 unsigned int max);
 
 /**
  * @brief Release resources held by a semaphore initialised with ove_sem_init().
@@ -123,7 +123,7 @@ void ove_sem_deinit(ove_sem_t sem);
  *
  * @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal
  */
-int  ove_event_init(ove_event_t *evt, ove_event_storage_t *storage);
+int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage);
 
 /**
  * @brief Release resources held by an event initialised with ove_event_init().
@@ -156,8 +156,7 @@ void ove_event_deinit(ove_event_t evt);
  * @see ove_mutex_deinit, ove_recursive_mutex_create,
  *      ove_recursive_mutex_lock, ove_recursive_mutex_unlock
  */
-int  ove_recursive_mutex_init(ove_mutex_t *mtx,
-			      ove_mutex_storage_t *storage);
+int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage);
 
 /* =========================================================================
  * Condition variable — _init / _deinit (static storage)
@@ -176,8 +175,7 @@ int  ove_recursive_mutex_init(ove_mutex_t *mtx,
  * @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,
  *      ove_condvar_signal, ove_condvar_broadcast
  */
-int  ove_condvar_init(ove_condvar_t *cv,
-		      ove_condvar_storage_t *storage);
+int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage);
 
 /**
  * @brief Release resources held by a condition variable initialised with
@@ -208,7 +206,7 @@ void ove_condvar_deinit(ove_condvar_t cv);
  *
  * @see ove_mutex_destroy, ove_mutex_init
  */
-int  ove_mutex_create(ove_mutex_t *mtx);
+int ove_mutex_create(ove_mutex_t *mtx);
 
 /**
  * @brief Destroy and free a mutex allocated with ove_mutex_create().
@@ -233,8 +231,7 @@ void ove_mutex_destroy(ove_mutex_t mtx);
  *
  * @see ove_sem_destroy, ove_sem_init
  */
-int  ove_sem_create(ove_sem_t *sem, unsigned int initial,
-		    unsigned int max);
+int ove_sem_create(ove_sem_t *sem, unsigned int initial, unsigned int max);
 
 /**
  * @brief Destroy and free a semaphore allocated with ove_sem_create().
@@ -257,7 +254,7 @@ void ove_sem_destroy(ove_sem_t sem);
  *
  * @see ove_event_destroy, ove_event_init
  */
-int  ove_event_create(ove_event_t *evt);
+int ove_event_create(ove_event_t *evt);
 
 /**
  * @brief Destroy and free an event allocated with ove_event_create().
@@ -280,7 +277,7 @@ void ove_event_destroy(ove_event_t evt);
  *
  * @see ove_recursive_mutex_destroy, ove_recursive_mutex_init
  */
-int  ove_recursive_mutex_create(ove_mutex_t *mtx);
+int ove_recursive_mutex_create(ove_mutex_t *mtx);
 
 /**
  * @brief Destroy and free a recursive mutex allocated with
@@ -304,7 +301,7 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx);
  *
  * @see ove_condvar_destroy, ove_condvar_init
  */
-int  ove_condvar_create(ove_condvar_t *cv);
+int ove_condvar_create(ove_condvar_t *cv);
 
 /**
  * @brief Destroy and free a condition variable allocated with
@@ -323,29 +320,39 @@ void ove_condvar_destroy(ove_condvar_t cv);
 /* Unified _create/_destroy macros — auto-generate static storage per call site.
  * Each call site produces exactly one kernel object.  Do not call in a loop
  * to create multiple independent objects; use _init() with separate storage. */
-#define ove_mutex_create(phandle) \
-	({ static ove_mutex_storage_t _ove_stor_; \
-	   ove_mutex_init((phandle), &_ove_stor_); })
+#define ove_mutex_create(phandle)                       \
+	({                                              \
+		static ove_mutex_storage_t _ove_stor_;  \
+		ove_mutex_init((phandle), &_ove_stor_); \
+	})
 #define ove_mutex_destroy(mtx) ove_mutex_deinit(mtx)
 
-#define ove_sem_create(psem, initial, max) \
-	({ static ove_sem_storage_t _ove_stor_; \
-	   ove_sem_init((psem), &_ove_stor_, (initial), (max)); })
+#define ove_sem_create(psem, initial, max)                           \
+	({                                                           \
+		static ove_sem_storage_t _ove_stor_;                 \
+		ove_sem_init((psem), &_ove_stor_, (initial), (max)); \
+	})
 #define ove_sem_destroy(sem) ove_sem_deinit(sem)
 
-#define ove_event_create(pevt) \
-	({ static ove_event_storage_t _ove_stor_; \
-	   ove_event_init((pevt), &_ove_stor_); })
+#define ove_event_create(pevt)                         \
+	({                                             \
+		static ove_event_storage_t _ove_stor_; \
+		ove_event_init((pevt), &_ove_stor_);   \
+	})
 #define ove_event_destroy(evt) ove_event_deinit(evt)
 
-#define ove_recursive_mutex_create(phandle) \
-	({ static ove_mutex_storage_t _ove_stor_; \
-	   ove_recursive_mutex_init((phandle), &_ove_stor_); })
+#define ove_recursive_mutex_create(phandle)                       \
+	({                                                        \
+		static ove_mutex_storage_t _ove_stor_;            \
+		ove_recursive_mutex_init((phandle), &_ove_stor_); \
+	})
 #define ove_recursive_mutex_destroy(mtx) ove_mutex_deinit(mtx)
 
-#define ove_condvar_create(pcv) \
-	({ static ove_condvar_storage_t _ove_stor_; \
-	   ove_condvar_init((pcv), &_ove_stor_); })
+#define ove_condvar_create(pcv)                          \
+	({                                               \
+		static ove_condvar_storage_t _ove_stor_; \
+		ove_condvar_init((pcv), &_ove_stor_);    \
+	})
 #define ove_condvar_destroy(cv) ove_condvar_deinit(cv)
 
 #endif /* OVE_HEAP_SYNC */
@@ -369,7 +376,7 @@ void ove_condvar_destroy(ove_condvar_t cv);
  *
  * @see ove_mutex_unlock
  */
-int  ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms);
+int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms);
 
 /**
  * @brief Release a non-recursive mutex previously acquired by ove_mutex_lock().
@@ -397,7 +404,7 @@ void ove_mutex_unlock(ove_mutex_t mtx);
  *
  * @see ove_sem_give
  */
-int  ove_sem_take(ove_sem_t sem, uint32_t timeout_ms);
+int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms);
 
 /**
  * @brief Increment (give) a semaphore, potentially unblocking a waiting thread.
@@ -429,7 +436,7 @@ void ove_sem_give(ove_sem_t sem);
  *
  * @see ove_event_signal, ove_event_signal_from_isr
  */
-int  ove_event_wait(ove_event_t evt, uint32_t timeout_ms);
+int ove_event_wait(ove_event_t evt, uint32_t timeout_ms);
 
 /**
  * @brief Signal a binary event, unblocking one waiting thread.
@@ -479,7 +486,7 @@ void ove_event_signal_from_isr(ove_event_t evt);
  *
  * @see ove_recursive_mutex_unlock
  */
-int  ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms);
+int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms);
 
 /**
  * @brief Release one level of a recursive mutex lock.
@@ -516,8 +523,7 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  *
  * @see ove_condvar_signal, ove_condvar_broadcast
  */
-int  ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
-		      uint32_t timeout_ms);
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms);
 
 /**
  * @brief Wake one thread waiting on a condition variable.
@@ -545,28 +551,112 @@ void ove_condvar_broadcast(ove_condvar_t cv);
 
 #else /* !CONFIG_OVE_SYNC */
 
-static inline int  ove_mutex_create(ove_mutex_t *m) { (void)m; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_mutex_destroy(ove_mutex_t m) { (void)m; }
-static inline int  ove_mutex_lock(ove_mutex_t m, uint32_t t) { (void)m; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_mutex_unlock(ove_mutex_t m) { (void)m; }
-static inline int  ove_sem_create(ove_sem_t *s, unsigned int i, unsigned int x) { (void)s; (void)i; (void)x; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_sem_destroy(ove_sem_t s) { (void)s; }
-static inline int  ove_sem_take(ove_sem_t s, uint32_t t) { (void)s; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_sem_give(ove_sem_t s) { (void)s; }
-static inline int  ove_event_create(ove_event_t *e) { (void)e; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_event_destroy(ove_event_t e) { (void)e; }
-static inline int  ove_event_wait(ove_event_t e, uint32_t t) { (void)e; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_event_signal(ove_event_t e) { (void)e; }
-static inline void ove_event_signal_from_isr(ove_event_t e) { (void)e; }
-static inline int  ove_recursive_mutex_create(ove_mutex_t *m) { (void)m; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_recursive_mutex_lock(ove_mutex_t m, uint32_t t) { (void)m; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_recursive_mutex_unlock(ove_mutex_t m) { (void)m; }
-static inline void ove_recursive_mutex_destroy(ove_mutex_t m) { (void)m; }
-static inline int  ove_condvar_create(ove_condvar_t *c) { (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_condvar_destroy(ove_condvar_t c) { (void)c; }
-static inline int  ove_condvar_wait(ove_condvar_t c, ove_mutex_t m, uint32_t t) { (void)c; (void)m; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_condvar_signal(ove_condvar_t c) { (void)c; }
-static inline void ove_condvar_broadcast(ove_condvar_t c) { (void)c; }
+static inline int ove_mutex_create(ove_mutex_t *m)
+{
+	(void)m;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_mutex_destroy(ove_mutex_t m)
+{
+	(void)m;
+}
+static inline int ove_mutex_lock(ove_mutex_t m, uint32_t t)
+{
+	(void)m;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_mutex_unlock(ove_mutex_t m)
+{
+	(void)m;
+}
+static inline int ove_sem_create(ove_sem_t *s, unsigned int i, unsigned int x)
+{
+	(void)s;
+	(void)i;
+	(void)x;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_sem_destroy(ove_sem_t s)
+{
+	(void)s;
+}
+static inline int ove_sem_take(ove_sem_t s, uint32_t t)
+{
+	(void)s;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_sem_give(ove_sem_t s)
+{
+	(void)s;
+}
+static inline int ove_event_create(ove_event_t *e)
+{
+	(void)e;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_event_destroy(ove_event_t e)
+{
+	(void)e;
+}
+static inline int ove_event_wait(ove_event_t e, uint32_t t)
+{
+	(void)e;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_event_signal(ove_event_t e)
+{
+	(void)e;
+}
+static inline void ove_event_signal_from_isr(ove_event_t e)
+{
+	(void)e;
+}
+static inline int ove_recursive_mutex_create(ove_mutex_t *m)
+{
+	(void)m;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_recursive_mutex_lock(ove_mutex_t m, uint32_t t)
+{
+	(void)m;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_recursive_mutex_unlock(ove_mutex_t m)
+{
+	(void)m;
+}
+static inline void ove_recursive_mutex_destroy(ove_mutex_t m)
+{
+	(void)m;
+}
+static inline int ove_condvar_create(ove_condvar_t *c)
+{
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_condvar_destroy(ove_condvar_t c)
+{
+	(void)c;
+}
+static inline int ove_condvar_wait(ove_condvar_t c, ove_mutex_t m, uint32_t t)
+{
+	(void)c;
+	(void)m;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_condvar_signal(ove_condvar_t c)
+{
+	(void)c;
+}
+static inline void ove_condvar_broadcast(ove_condvar_t c)
+{
+	(void)c;
+}
 
 #endif /* CONFIG_OVE_SYNC */
 

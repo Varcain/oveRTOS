@@ -14,7 +14,7 @@
 
 struct ove_file {
 	FIL fil;
-	FILINFO fno;  /* cached info from open */
+	FILINFO fno; /* cached info from open */
 };
 
 struct ove_dir {
@@ -54,8 +54,7 @@ void ove_fs_unmount(const char *mount_point)
 
 /* ─── _init / _deinit (static storage) ───────────────────────────────── */
 
-int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage,
-			 const char *path, int flags)
+int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags)
 {
 	struct ove_file *f = (struct ove_file *)storage;
 	BYTE mode = 0;
@@ -83,8 +82,7 @@ int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage,
 
 	fres = f_open(&f->fil, path, mode);
 	if (fres != FR_OK) {
-		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path,
-			    (int)fres);
+		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path, (int)fres);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
@@ -98,8 +96,7 @@ int ove_fs_close_deinit(ove_file_t file)
 	return OVE_OK;
 }
 
-int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
-			    const char *path)
+int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *path)
 {
 	struct ove_dir *d = (struct ove_dir *)storage;
 	FRESULT fres;
@@ -110,8 +107,7 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
 
 	fres = f_opendir(&d->dir, path);
 	if (fres != FR_OK) {
-		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path,
-			    (int)fres);
+		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
@@ -152,15 +148,13 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 
 	f = OVE_BACKEND_MALLOC(sizeof(*f));
 	if (f == NULL) {
-		OVE_LOG("fs: alloc failed (%u bytes)\n",
-			    (unsigned int)sizeof(*f));
+		OVE_LOG("fs: alloc failed (%u bytes)\n", (unsigned int)sizeof(*f));
 		return OVE_ERR_NO_MEMORY;
 	}
 
 	fres = f_open(&f->fil, path, mode);
 	if (fres != FR_OK) {
-		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path,
-			    (int)fres);
+		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path, (int)fres);
 		OVE_BACKEND_FREE(f);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -188,8 +182,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 
 	fres = f_opendir(&d->dir, path);
 	if (fres != FR_OK) {
-		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path,
-			    (int)fres);
+		OVE_LOG("fs: f_opendir(%s) failed: FRESULT=%d\n", path, (int)fres);
 		OVE_BACKEND_FREE(d);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -205,23 +198,28 @@ int ove_fs_closedir(ove_dir_t dir)
 	return OVE_OK;
 }
 #else /* zero-heap: use static pool */
-#define FS_POOL_FILES  4
-#define FS_POOL_DIRS   4
-static struct ove_file  file_pool[FS_POOL_FILES];
-static int              file_pool_used[FS_POOL_FILES];
-static struct ove_dir   dir_pool[FS_POOL_DIRS];
-static int              dir_pool_used[FS_POOL_DIRS];
+#define FS_POOL_FILES 4
+#define FS_POOL_DIRS 4
+static struct ove_file file_pool[FS_POOL_FILES];
+static int file_pool_used[FS_POOL_FILES];
+static struct ove_dir dir_pool[FS_POOL_DIRS];
+static int dir_pool_used[FS_POOL_DIRS];
 
 int ove_fs_open(ove_file_t *file, const char *path, int flags)
 {
 	BYTE mode = 0;
 	FRESULT fres;
 
-	if (flags & OVE_FS_O_READ)   mode |= FA_READ;
-	if (flags & OVE_FS_O_WRITE)  mode |= FA_WRITE;
-	if (flags & OVE_FS_O_CREATE) mode |= FA_CREATE_ALWAYS;
-	if (flags & OVE_FS_O_APPEND) mode |= FA_OPEN_APPEND;
-	if (mode == 0) mode = FA_READ;
+	if (flags & OVE_FS_O_READ)
+		mode |= FA_READ;
+	if (flags & OVE_FS_O_WRITE)
+		mode |= FA_WRITE;
+	if (flags & OVE_FS_O_CREATE)
+		mode |= FA_CREATE_ALWAYS;
+	if (flags & OVE_FS_O_APPEND)
+		mode |= FA_OPEN_APPEND;
+	if (mode == 0)
+		mode = FA_READ;
 
 	for (int i = 0; i < FS_POOL_FILES; i++) {
 		if (!file_pool_used[i]) {
@@ -284,16 +282,15 @@ int ove_fs_closedir(ove_dir_t dir)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_fs_read(ove_file_t file, void *buf, size_t count,
-			    size_t *bytes_read)
+int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	unsigned int br;
 	FRESULT fres;
 
 	fres = f_read(&file->fil, buf, count, &br);
 	if (fres != FR_OK) {
-		OVE_LOG("fs: f_read failed: FRESULT=%d (count=%u)\n",
-			    (int)fres, (unsigned int)count);
+		OVE_LOG("fs: f_read failed: FRESULT=%d (count=%u)\n", (int)fres,
+			(unsigned int)count);
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 	if (bytes_read != NULL) {
@@ -302,8 +299,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 	return OVE_OK;
 }
 
-int ove_fs_write(ove_file_t file, const void *buf,
-			     size_t count, size_t *bytes_written)
+int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
 	unsigned int bw;
 	FRESULT fres;

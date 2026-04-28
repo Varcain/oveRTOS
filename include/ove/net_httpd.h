@@ -34,13 +34,13 @@ extern "C" {
 #ifdef CONFIG_OVE_NET_HTTPD
 
 /** @brief Maximum number of registered routes. */
-#define OVE_HTTPD_MAX_ROUTES  16
+#define OVE_HTTPD_MAX_ROUTES 16
 
 /** @brief Maximum path segments for parsing (e.g. /api/leds/0 = 3). */
 #define OVE_HTTPD_MAX_SEGMENTS 8
 
 /** @brief Opaque HTTP request. */
-typedef struct ove_httpd_req  ove_httpd_req_t;
+typedef struct ove_httpd_req ove_httpd_req_t;
 
 /** @brief Opaque HTTP response. */
 typedef struct ove_httpd_resp ove_httpd_resp_t;
@@ -49,15 +49,14 @@ typedef struct ove_httpd_resp ove_httpd_resp_t;
  * @brief Route handler callback.
  * @return OVE_OK on success (response sent), negative error code on failure.
  */
-typedef int (*ove_httpd_handler_t)(ove_httpd_req_t *req,
-				   ove_httpd_resp_t *resp);
+typedef int (*ove_httpd_handler_t)(ove_httpd_req_t *req, ove_httpd_resp_t *resp);
 
 /**
  * @brief HTTP server configuration.
  */
 typedef struct {
-	uint16_t port;           /**< Listen port (default 80). */
-	int      max_body_size;  /**< Max POST body bytes (default 1024). */
+	uint16_t port;	   /**< Listen port (default 80). */
+	int max_body_size; /**< Max POST body bytes (default 1024). */
 } ove_httpd_config_t;
 
 /**
@@ -84,8 +83,7 @@ void ove_httpd_stop(void);
  * @param[in] handler Callback function.
  * @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full.
  */
-int ove_httpd_route(const char *method, const char *path,
-		    ove_httpd_handler_t handler);
+int ove_httpd_route(const char *method, const char *path, ove_httpd_handler_t handler);
 
 /**
  * @brief Register built-in dashboard routes (/api/info, /api/leds, etc.).
@@ -148,26 +146,21 @@ const char *ove_httpd_req_segment(ove_httpd_req_t *req, int idx);
 /* ── Response helpers ────────────────────────────────────────── */
 
 /** @brief Send a JSON response. */
-int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status,
-			const char *json);
+int ove_httpd_resp_json(ove_httpd_resp_t *resp, int status, const char *json);
 
 /** @brief Send an HTML response. */
-int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status,
-			const char *html, size_t len);
+int ove_httpd_resp_html(ove_httpd_resp_t *resp, int status, const char *html, size_t len);
 
 /** @brief Send a response with arbitrary content type. */
-int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status,
-			const char *content_type,
+int ove_httpd_resp_send(ove_httpd_resp_t *resp, int status, const char *content_type,
 			const void *body, size_t len);
 
 /** @brief Send a pre-gzipped response (adds Content-Encoding: gzip). */
-int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status,
-			   const char *content_type,
+int ove_httpd_resp_send_gz(ove_httpd_resp_t *resp, int status, const char *content_type,
 			   const void *body, size_t len);
 
 /** @brief Send a JSON error response. */
-int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status,
-			 const char *message);
+int ove_httpd_resp_error(ove_httpd_resp_t *resp, int status, const char *message);
 
 /* ── WebSocket support ──────────────────────────────────────── */
 
@@ -182,8 +175,7 @@ typedef struct ove_httpd_ws_conn ove_httpd_ws_conn_t;
  * @param[in] data Message payload (text or binary).
  * @param[in] len  Payload length in bytes.
  */
-typedef void (*ove_httpd_ws_handler_t)(ove_httpd_ws_conn_t *conn,
-				       const void *data, size_t len);
+typedef void (*ove_httpd_ws_handler_t)(ove_httpd_ws_conn_t *conn, const void *data, size_t len);
 
 /**
  * @brief WebSocket close callback.
@@ -203,8 +195,7 @@ typedef void (*ove_httpd_ws_close_handler_t)(ove_httpd_ws_conn_t *conn);
  * @param[in] on_close   Callback when connection closes (may be NULL).
  * @return OVE_OK on success, OVE_ERR_NO_MEMORY if route table full.
  */
-int ove_httpd_ws_route(const char *path,
-		       ove_httpd_ws_handler_t on_message,
+int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
 		       ove_httpd_ws_close_handler_t on_close);
 
 /**
@@ -215,8 +206,7 @@ int ove_httpd_ws_route(const char *path,
  * @param[in] len  Payload length in bytes.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn,
-		      const void *data, size_t len);
+int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn, const void *data, size_t len);
 
 /**
  * @brief Broadcast a text message to all WebSocket connections on a path.
@@ -226,8 +216,7 @@ int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn,
  * @param[in] len  Payload length in bytes.
  * @return Number of connections the message was sent to.
  */
-int ove_httpd_ws_broadcast(const char *path,
-			   const void *data, size_t len);
+int ove_httpd_ws_broadcast(const char *path, const void *data, size_t len);
 
 /** @brief Return the number of active WebSocket connections. */
 int ove_httpd_ws_active_count(void);
@@ -243,10 +232,8 @@ int ove_httpd_ws_is_upgrade(const char *headers);
  * Invoked by the httpd accept loop after `ove_httpd_ws_is_upgrade()` returns
  * true.  On success the connection is handed off to the WS subsystem.
  */
-int ove_httpd_ws_handshake(const char *headers, size_t headers_len,
-			   const char *path,
-			   ove_socket_t sock,
-			   ove_socket_storage_t *storage);
+int ove_httpd_ws_handshake(const char *headers, size_t headers_len, const char *path,
+			   ove_socket_t sock, ove_socket_storage_t *storage);
 
 /** @brief Drive the WS subsystem from the httpd task's poll loop. */
 void ove_httpd_ws_poll(void);
@@ -265,10 +252,21 @@ void ove_httpd_log_append(const char *line);
 #else /* !CONFIG_OVE_NET_HTTPD */
 
 /** @cond INTERNAL */
-static inline int  ove_httpd_start(const void *cfg) { (void)cfg; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_httpd_stop(void) {}
-static inline void ove_httpd_register_builtin_routes(void) {}
-static inline void ove_httpd_log_append(const char *line) { (void)line; }
+static inline int ove_httpd_start(const void *cfg)
+{
+	(void)cfg;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_httpd_stop(void)
+{
+}
+static inline void ove_httpd_register_builtin_routes(void)
+{
+}
+static inline void ove_httpd_log_append(const char *line)
+{
+	(void)line;
+}
 /** @endcond */
 
 #endif /* CONFIG_OVE_NET_HTTPD */

@@ -30,26 +30,26 @@ extern "C" {
 /* ── Audio event types ─────────────────────────────────────────────── */
 
 /** @brief Event: PCM samples are ready (firmware -> dashboard). */
-#define OVE_SIM_AUDIO_EVT_SAMPLES   0
+#define OVE_SIM_AUDIO_EVT_SAMPLES 0
 
 /** @brief Event: audio format changed. */
-#define OVE_SIM_AUDIO_EVT_FMT       1
+#define OVE_SIM_AUDIO_EVT_FMT 1
 
 /* ── Audio command types ───────────────────────────────────────────── */
 
 /** @brief Command: inject PCM samples (dashboard -> firmware). */
-#define OVE_SIM_AUDIO_CMD_INJECT    0
+#define OVE_SIM_AUDIO_CMD_INJECT 0
 
 /** @brief Command: set capture enable/disable. */
-#define OVE_SIM_AUDIO_CMD_CAPTURE   1
+#define OVE_SIM_AUDIO_CMD_CAPTURE 1
 
 /* ── Audio sample format ───────────────────────────────────────────── */
 
 /** @brief Audio sample format descriptor for the sim transport. */
 struct ove_sim_audio_fmt {
-	uint32_t sample_rate;  /**< Sample rate in Hz. */
-	uint16_t channels;     /**< Number of channels. */
-	uint16_t bit_depth;    /**< Bits per sample (16, 24, 32). */
+	uint32_t sample_rate; /**< Sample rate in Hz. */
+	uint16_t channels;    /**< Number of channels. */
+	uint16_t bit_depth;   /**< Bits per sample (16, 24, 32). */
 };
 
 /* ── Audio plugin configuration ────────────────────────────────────── */
@@ -58,8 +58,8 @@ struct ove_sim_audio_fmt {
  * @brief Audio plugin configuration (from board.yaml).
  */
 struct ove_sim_audio_cfg {
-	struct ove_sim_audio_fmt fmt;         /**< Default audio format. */
-	uint32_t                 buffer_frames; /**< Frames per buffer period. */
+	struct ove_sim_audio_fmt fmt; /**< Default audio format. */
+	uint32_t buffer_frames;	      /**< Frames per buffer period. */
 };
 
 /* ── Built-in audio plugin ─────────────────────────────────────────── */
@@ -97,8 +97,7 @@ void ove_sim_audio_push_output(const void *samples, size_t len,
  * @param[in]  fmt      Expected format.
  * @return Number of bytes actually filled (0 if no data available).
  */
-size_t ove_sim_audio_pull_input(void *samples, size_t len,
-				const struct ove_sim_audio_fmt *fmt);
+size_t ove_sim_audio_pull_input(void *samples, size_t len, const struct ove_sim_audio_fmt *fmt);
 
 #ifdef __cplusplus
 }

@@ -19,7 +19,8 @@
 
 #ifdef CONFIG_OVE_NET_MQTT
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::mqtt
@@ -29,14 +30,15 @@ namespace ove {
  * that manages the MQTT connection lifecycle, QoS-typed publish/subscribe,
  * and a stateless callback trampoline for incoming messages.
  */
-namespace mqtt {
+namespace mqtt
+{
 
 /**
  * @enum Qos
  * @brief MQTT Quality of Service level.
  */
 enum class Qos : uint8_t {
-	AtMostOnce  = 0, /**< Fire and forget (QoS 0). */
+	AtMostOnce = 0,	 /**< Fire and forget (QoS 0). */
 	AtLeastOnce = 1, /**< Acknowledged delivery (QoS 1). */
 };
 
@@ -47,13 +49,13 @@ enum class Qos : uint8_t {
  * Mirrors `ove_mqtt_config_t` with C++ default member initialisers.
  */
 struct Config {
-	const char *host{};            /**< Broker hostname or IP. */
-	uint16_t    port{1883};        /**< Broker port (1883 or 8883). */
-	const char *client_id{};       /**< Client identifier. */
-	const char *username{};        /**< Username (may be nullptr). */
-	const char *password{};        /**< Password (may be nullptr). */
-	uint16_t    keep_alive_s{30};  /**< Keep-alive interval in seconds. */
-	bool        use_tls{false};    /**< Set true to enable TLS. */
+	const char *host{};	   /**< Broker hostname or IP. */
+	uint16_t port{1883};	   /**< Broker port (1883 or 8883). */
+	const char *client_id{};   /**< Client identifier. */
+	const char *username{};	   /**< Username (may be nullptr). */
+	const char *password{};	   /**< Password (may be nullptr). */
+	uint16_t keep_alive_s{30}; /**< Keep-alive interval in seconds. */
+	bool use_tls{false};	   /**< Set true to enable TLS. */
 };
 
 /**
@@ -67,16 +69,16 @@ struct Config {
  *
  * @note Non-copyable and non-movable (static callback is per-instance).
  */
-class Client {
-public:
+class Client
+{
+      public:
 	/**
 	 * @brief Stateless message callback type.
 	 *
 	 * Must be a plain function pointer (or a stateless lambda convertible
 	 * to one).  Receives the topic and payload as `std::string_view`.
 	 */
-	using MsgFn = void (*)(std::string_view topic,
-			       std::string_view payload);
+	using MsgFn = void (*)(std::string_view topic, std::string_view payload);
 
 	/**
 	 * @brief Constructs and initialises the MQTT client.
@@ -84,7 +86,8 @@ public:
 	 * Calls `ove_mqtt_client_init` (zero-heap) or `ove_mqtt_client_create`
 	 * (heap).  Asserts at startup if initialisation fails.
 	 */
-	Client() {
+	Client()
+	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		int err = ove_mqtt_client_init(&handle_, &storage_);
 #else
@@ -98,8 +101,10 @@ public:
 	 *
 	 * If the handle is null the destructor is a no-op.
 	 */
-	~Client() {
-		if (!handle_) return;
+	~Client()
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_mqtt_client_deinit(handle_);
 #else
@@ -123,26 +128,29 @@ public:
 	 * @param[in] on_message Message callback (nullptr to disable).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int connect(const Config &cfg,
-				  MsgFn on_message = nullptr) {
+	[[nodiscard]] int connect(const Config &cfg, MsgFn on_message = nullptr)
+	{
 		s_msg_fn_ = on_message;
 		ove_mqtt_config_t c{};
-		c.host         = cfg.host;
-		c.port         = cfg.port;
-		c.client_id    = cfg.client_id;
-		c.username     = cfg.username;
-		c.password     = cfg.password;
+		c.host = cfg.host;
+		c.port = cfg.port;
+		c.client_id = cfg.client_id;
+		c.username = cfg.username;
+		c.password = cfg.password;
 		c.keep_alive_s = cfg.keep_alive_s;
-		c.use_tls      = cfg.use_tls ? 1 : 0;
-		c.on_message   = on_message ? trampoline_ : nullptr;
-		c.user_data    = nullptr;
+		c.use_tls = cfg.use_tls ? 1 : 0;
+		c.on_message = on_message ? trampoline_ : nullptr;
+		c.user_data = nullptr;
 		return ove_mqtt_connect(handle_, &c);
 	}
 
 	/**
 	 * @brief Disconnects from the MQTT broker.
 	 */
-	void disconnect() { ove_mqtt_disconnect(handle_); }
+	void disconnect()
+	{
+		ove_mqtt_disconnect(handle_);
+	}
 
 	/**
 	 * @brief Publishes a message (raw pointer + length).
@@ -152,10 +160,11 @@ public:
 	 * @param[in] qos     QoS level (default: AtMostOnce).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int publish(const char *topic, const void *payload,
-				  size_t len, Qos qos = Qos::AtMostOnce) {
+	[[nodiscard]] int publish(const char *topic, const void *payload, size_t len,
+				  Qos qos = Qos::AtMostOnce)
+	{
 		return ove_mqtt_publish(handle_, topic, payload, len,
-				       static_cast<ove_mqtt_qos_t>(qos));
+					static_cast<ove_mqtt_qos_t>(qos));
 	}
 
 	/**
@@ -165,9 +174,9 @@ public:
 	 * @param[in] qos     QoS level (default: AtMostOnce).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int publish(const char *topic,
-				  std::string_view payload,
-				  Qos qos = Qos::AtMostOnce) {
+	[[nodiscard]] int publish(const char *topic, std::string_view payload,
+				  Qos qos = Qos::AtMostOnce)
+	{
 		return publish(topic, payload.data(), payload.size(), qos);
 	}
 
@@ -177,10 +186,9 @@ public:
 	 * @param[in] qos   Maximum QoS level (default: AtMostOnce).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int subscribe(const char *topic,
-				    Qos qos = Qos::AtMostOnce) {
-		return ove_mqtt_subscribe(handle_, topic,
-					 static_cast<ove_mqtt_qos_t>(qos));
+	[[nodiscard]] int subscribe(const char *topic, Qos qos = Qos::AtMostOnce)
+	{
+		return ove_mqtt_subscribe(handle_, topic, static_cast<ove_mqtt_qos_t>(qos));
 	}
 
 	/**
@@ -188,7 +196,8 @@ public:
 	 * @param[in] topic Topic filter (NUL-terminated).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int unsubscribe(const char *topic) {
+	[[nodiscard]] int unsubscribe(const char *topic)
+	{
 		return ove_mqtt_unsubscribe(handle_, topic);
 	}
 
@@ -200,7 +209,8 @@ public:
 	 * @param[in] timeout_ms Maximum time to wait for incoming data.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int loop(uint32_t timeout_ms = 500) {
+	[[nodiscard]] int loop(uint32_t timeout_ms = 500)
+	{
 		return ove_mqtt_loop(handle_, timeout_ms);
 	}
 
@@ -208,28 +218,32 @@ public:
 	 * @brief Returns `true` if the underlying client handle is non-null.
 	 * @return `true` when the client was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS MQTT client handle.
 	 * @return The opaque `ove_mqtt_client_t` handle.
 	 */
-	ove_mqtt_client_t handle() const { return handle_; }
+	ove_mqtt_client_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	/**
 	 * @brief Internal C-callable trampoline that adapts the C callback
 	 *        signature to the C++ `MsgFn` type.
 	 */
-	static void trampoline_(const char *topic, size_t topic_len,
-				const void *payload, size_t payload_len,
-				void * /*user_data*/) {
+	static void trampoline_(const char *topic, size_t topic_len, const void *payload,
+				size_t payload_len, void * /*user_data*/)
+	{
 		if (s_msg_fn_) {
-			s_msg_fn_(
-				std::string_view(topic, topic_len),
-				std::string_view(
-					static_cast<const char *>(payload),
-					payload_len));
+			s_msg_fn_(std::string_view(topic, topic_len),
+				  std::string_view(static_cast<const char *>(payload),
+						   payload_len));
 		}
 	}
 

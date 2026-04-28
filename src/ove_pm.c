@@ -48,47 +48,45 @@ struct pm_notifier_entry {
 static struct {
 	/* State machine */
 	volatile ove_pm_state_t current_state;
-	volatile int            activity_flag;
-	uint64_t                last_activity_us;
-	uint64_t                state_entry_us;
+	volatile int activity_flag;
+	uint64_t last_activity_us;
+	uint64_t state_entry_us;
 
 	/* Configuration */
-	struct ove_pm_cfg       cfg;
+	struct ove_pm_cfg cfg;
 
 	/* Wake sources */
-	struct pm_wake_entry    wake_table[CONFIG_OVE_PM_MAX_WAKE_SOURCES];
+	struct pm_wake_entry wake_table[CONFIG_OVE_PM_MAX_WAKE_SOURCES];
 
 	/* Power domains */
-	int                     domain_refcount[OVE_PM_DOMAIN_COUNT];
+	int domain_refcount[OVE_PM_DOMAIN_COUNT];
 
 	/* Policy */
-	ove_pm_policy_fn        policy_fn;
-	void                   *policy_user_data;
+	ove_pm_policy_fn policy_fn;
+	void *policy_user_data;
 
 	/* Notifications */
 	struct pm_notifier_entry notifiers[CONFIG_OVE_PM_MAX_NOTIFIERS];
-	int                     notifier_count;
+	int notifier_count;
 
 	/* Statistics */
-	uint64_t                time_in_state_us[OVE_PM_STATE_COUNT];
-	uint32_t                transition_count[OVE_PM_STATE_COUNT];
+	uint64_t time_in_state_us[OVE_PM_STATE_COUNT];
+	uint32_t transition_count[OVE_PM_STATE_COUNT];
 
 	/* Budget */
-	uint32_t                budget_target_x100;
+	uint32_t budget_target_x100;
 
 	/* Thread safety */
-	ove_mutex_storage_t     mtx_storage;
-	ove_mutex_t             mtx;
+	ove_mutex_storage_t mtx_storage;
+	ove_mutex_t mtx;
 
-	int                     initialized;
+	int initialized;
 } pm_ctx;
 
 /* ── Default policy ─────────────────────────────────────────────────── */
 
-static ove_pm_state_t default_policy(ove_pm_state_t current,
-				     uint32_t idle_ms,
-				     uint32_t next_timeout_ms,
-				     void *user_data)
+static ove_pm_state_t default_policy(ove_pm_state_t current, uint32_t idle_ms,
+				     uint32_t next_timeout_ms, void *user_data)
 {
 	(void)current;
 	(void)user_data;
@@ -104,15 +102,13 @@ static ove_pm_state_t default_policy(ove_pm_state_t current,
 
 /* ── Wake source helpers ────────────────────────────────────────────── */
 
-static int wake_src_match(const struct ove_pm_wake_src *a,
-			  const struct ove_pm_wake_src *b)
+static int wake_src_match(const struct ove_pm_wake_src *a, const struct ove_pm_wake_src *b)
 {
 	if (a->type != b->type)
 		return 0;
 	switch (a->type) {
 	case OVE_PM_WAKE_GPIO:
-		return a->gpio.port == b->gpio.port &&
-		       a->gpio.pin == b->gpio.pin;
+		return a->gpio.port == b->gpio.port && a->gpio.pin == b->gpio.pin;
 	case OVE_PM_WAKE_TIMER:
 		return a->timer.timeout_ms == b->timer.timeout_ms;
 	case OVE_PM_WAKE_UART:
@@ -125,16 +121,13 @@ static int wake_src_match(const struct ove_pm_wake_src *a,
 
 /* ── Notification helpers ───────────────────────────────────────────── */
 
-static void fire_notifications(ove_pm_event_t event,
-			       ove_pm_state_t from,
-			       ove_pm_state_t to)
+static void fire_notifications(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to)
 {
 	int i;
 
 	for (i = 0; i < pm_ctx.notifier_count; i++) {
 		if (pm_ctx.notifiers[i].fn) {
-			pm_ctx.notifiers[i].fn(event, from, to,
-					       pm_ctx.notifiers[i].user_data);
+			pm_ctx.notifiers[i].fn(event, from, to, pm_ctx.notifiers[i].user_data);
 		}
 	}
 }
@@ -380,8 +373,7 @@ int ove_pm_notify_unregister(ove_pm_notify_fn cb, void *user_data)
 	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
 
 	for (i = 0; i < pm_ctx.notifier_count; i++) {
-		if (pm_ctx.notifiers[i].fn == cb &&
-		    pm_ctx.notifiers[i].user_data == user_data) {
+		if (pm_ctx.notifiers[i].fn == cb && pm_ctx.notifiers[i].user_data == user_data) {
 			/* Shift remaining entries down */
 			int j;
 			for (j = i; j < pm_ctx.notifier_count - 1; j++)
@@ -414,22 +406,20 @@ int ove_pm_get_stats(struct ove_pm_stats *stats)
 	now = pm_now_us();
 
 	/* Copy accumulated stats and add current state's ongoing time */
-	memcpy(stats->time_in_state_us, pm_ctx.time_in_state_us,
-	       sizeof(stats->time_in_state_us));
-	stats->time_in_state_us[pm_ctx.current_state] +=
-		now - pm_ctx.state_entry_us;
+	memcpy(stats->time_in_state_us, pm_ctx.time_in_state_us, sizeof(stats->time_in_state_us));
+	stats->time_in_state_us[pm_ctx.current_state] += now - pm_ctx.state_entry_us;
 
-	memcpy(stats->transition_count, pm_ctx.transition_count,
-	       sizeof(stats->transition_count));
+	memcpy(stats->transition_count, pm_ctx.transition_count, sizeof(stats->transition_count));
 
 	total = 0;
 	for (i = 0; i < OVE_PM_STATE_COUNT; i++)
 		total += stats->time_in_state_us[i];
 
 	stats->total_runtime_us = total;
-	stats->active_pct_x100 = total > 0 ?
-		(uint32_t)((stats->time_in_state_us[OVE_PM_STATE_ACTIVE]
-			    * 10000ULL) / total) : 10000;
+	stats->active_pct_x100 =
+		total > 0 ? (uint32_t)((stats->time_in_state_us[OVE_PM_STATE_ACTIVE] * 10000ULL) /
+				       total)
+			  : 10000;
 
 	ove_mutex_unlock(pm_ctx.mtx);
 	return OVE_OK;
@@ -515,8 +505,7 @@ void ove_pm_idle_process(void)
 	next_timeout_ms = ove_hal_pm_get_next_timeout_ms();
 
 	/* Consult policy */
-	recommended = pm_ctx.policy_fn(pm_ctx.current_state, idle_ms,
-				       next_timeout_ms,
+	recommended = pm_ctx.policy_fn(pm_ctx.current_state, idle_ms, next_timeout_ms,
 				       pm_ctx.policy_user_data);
 
 	if (recommended >= OVE_PM_STATE_COUNT)
@@ -562,8 +551,7 @@ void ove_pm_idle_process(void)
 	}
 
 	/* Fire post-wake notifications */
-	fire_notifications(OVE_PM_EVENT_POST_WAKE, recommended,
-			   OVE_PM_STATE_ACTIVE);
+	fire_notifications(OVE_PM_EVENT_POST_WAKE, recommended, OVE_PM_STATE_ACTIVE);
 
 	ove_mutex_unlock(pm_ctx.mtx);
 }

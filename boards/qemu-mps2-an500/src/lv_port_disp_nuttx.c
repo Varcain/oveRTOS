@@ -25,8 +25,8 @@
 #define DISP_VER_RES 272
 #define BYTES_PER_PIXEL 2
 
-#define FB_MAGIC   0x42465854  /* "TXFB" */
-#define FB_FORMAT  0           /* RGB565 */
+#define FB_MAGIC 0x42465854 /* "TXFB" */
+#define FB_FORMAT 0	    /* RGB565 */
 
 struct fb_header {
 	uint32_t magic;
@@ -38,15 +38,14 @@ struct fb_header {
 
 #define DRAW_BUF_LINES 20
 static uint8_t draw_buf[DISP_HOR_RES * DRAW_BUF_LINES * BYTES_PER_PIXEL]
-    __attribute__((aligned(4)));
+	__attribute__((aligned(4)));
 
 static uint16_t framebuffer[DISP_HOR_RES * DISP_VER_RES];
 
 static int sh_fd = -1;
 static int fb_dirty;
 
-static void disp_flush_cb(lv_display_t *display, const lv_area_t *area,
-			   uint8_t *px_map)
+static void disp_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 {
 	uint32_t w = area->x2 - area->x1 + 1;
 	uint32_t h = area->y2 - area->y1 + 1;
@@ -54,8 +53,7 @@ static void disp_flush_cb(lv_display_t *display, const lv_area_t *area,
 	for (uint32_t y = 0; y < h; y++) {
 		uint32_t fb_idx = (area->y1 + y) * DISP_HOR_RES + area->x1;
 		uint32_t src_off = y * w * BYTES_PER_PIXEL;
-		memcpy(&framebuffer[fb_idx], px_map + src_off,
-		       w * BYTES_PER_PIXEL);
+		memcpy(&framebuffer[fb_idx], px_map + src_off, w * BYTES_PER_PIXEL);
 	}
 
 	fb_dirty = 1;
@@ -63,11 +61,11 @@ static void disp_flush_cb(lv_display_t *display, const lv_area_t *area,
 	if (lv_display_flush_is_last(display)) {
 		if (sh_fd >= 0 && fb_dirty) {
 			struct fb_header hdr = {
-				.magic  = FB_MAGIC,
-				.width  = DISP_HOR_RES,
+				.magic = FB_MAGIC,
+				.width = DISP_HOR_RES,
 				.height = DISP_VER_RES,
 				.format = FB_FORMAT,
-				.dirty  = 1,
+				.dirty = 1,
 			};
 			sh_seek(sh_fd, 0);
 			sh_write(sh_fd, &hdr, sizeof(hdr));

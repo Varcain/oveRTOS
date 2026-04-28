@@ -1,0 +1,68 @@
+---
+# clang-format config matching the existing oveRTOS C/C++ style.
+# Linux kernel base (tabs, K&R braces, 8-wide indent) with the project's
+# overrides — function-definition braces on the next line, no Allman for
+# control-flow.
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 8
+TabWidth: 8
+UseTab: Always
+ContinuationIndentWidth: 8
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Left
+AlignTrailingComments: true
+AlwaysBreakAfterReturnType: None
+BinPackArguments: true
+BinPackParameters: true
+BreakStringLiterals: false
+ConstructorInitializerIndentWidth: 8
+DerivePointerAlignment: false
+PointerAlignment: Right
+ReferenceAlignment: Right
+SortIncludes: false
+IncludeBlocks: Preserve
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCpp11BracedList: false
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyBlock: false
+SpacesInAngles: Never
+SpacesInCStyleCastParentheses: false
+SpacesInContainerLiterals: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+Cpp11BracedListStyle: true
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+ReflowComments: false
+SortUsingDeclarations: false
+IndentCaseLabels: false
+NamespaceIndentation: None
+PenaltyBreakAssignment: 10
+PenaltyBreakBeforeFirstCallParameter: 30
+PenaltyBreakComment: 10
+PenaltyBreakFirstLessLess: 0
+PenaltyBreakString: 10
+PenaltyExcessCharacter: 100
+PenaltyReturnTypeOnItsOwnLine: 60
+ForEachMacros:
+  - 'list_for_each_entry'
+  - 'list_for_each_entry_safe'
+StatementMacros:
+  - 'OVE_DEFINE_THREAD'
+  - 'OVE_DEFINE_MUTEX'
+  - 'OVE_DEFINE_SEM'
+  - 'OVE_DEFINE_QUEUE'
+  - 'OVE_DEFINE_TIMER'

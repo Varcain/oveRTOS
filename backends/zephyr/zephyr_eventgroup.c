@@ -12,8 +12,7 @@
 #include <zephyr/kernel.h>
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_eventgroup_init(ove_eventgroup_t *eg,
-			    ove_eventgroup_storage_t *storage)
+int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 {
 	if (eg == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -59,25 +58,21 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg,
-					      ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	k_event_post(&eg->event, bits);
 	return k_event_test(&eg->event, 0xFFFFFFFFU);
 }
 
-ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg,
-						ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	ove_eventbits_t prev = k_event_test(&eg->event, 0xFFFFFFFFU);
 	k_event_clear(&eg->event, bits);
 	return prev;
 }
 
-int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
-			       ove_eventbits_t bits,
-			       uint32_t flags, uint32_t timeout_ms,
-			       ove_eventbits_t *result)
+int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
+			     uint32_t timeout_ms, ove_eventbits_t *result)
 {
 	k_timeout_t timeout;
 	uint32_t val;
@@ -115,8 +110,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg,
 	return OVE_OK;
 }
 
-ove_eventbits_t ove_eventgroup_set_bits_from_isr(
-	ove_eventgroup_t eg, ove_eventbits_t bits)
+ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	k_event_post(&eg->event, bits);
 	return k_event_test(&eg->event, 0xFFFFFFFFU);

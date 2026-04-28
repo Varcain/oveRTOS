@@ -18,7 +18,9 @@ extern void __gcov_dump(void);
 #endif
 
 /* Stub — tests exercise ove_app module without a real app entry point */
-void ove_main(void) {}
+void ove_main(void)
+{
+}
 
 int main(int argc, char *argv[])
 {
@@ -38,7 +40,7 @@ int main(int argc, char *argv[])
 #endif
 
 	/* FS tests skipped — no filesystem mount on MPS2-AN500 QEMU */
-#define OVE_SUITE(name, label) \
+#define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();
 #include "framework/suites.inc"

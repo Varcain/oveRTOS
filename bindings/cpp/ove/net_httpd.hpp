@@ -19,7 +19,8 @@
 
 #ifdef CONFIG_OVE_NET_HTTPD
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::httpd
@@ -31,7 +32,8 @@ namespace ove {
  *
  * The server itself is a singleton managed by `start()` / `stop()`.
  */
-namespace httpd {
+namespace httpd
+{
 
 /**
  * @class Request
@@ -43,13 +45,16 @@ namespace httpd {
  *
  * @note Non-copyable and non-movable (lifetime is bound to the handler call).
  */
-class Request {
-public:
+class Request
+{
+      public:
 	/**
 	 * @brief Constructs a Request view from a raw C request pointer.
 	 * @param[in] raw Opaque request handle from the server callback.
 	 */
-	explicit Request(ove_httpd_req_t *raw) : raw_(raw) {}
+	explicit Request(ove_httpd_req_t *raw) : raw_(raw)
+	{
+	}
 
 	Request(const Request &) = delete;
 	Request &operator=(const Request &) = delete;
@@ -57,19 +62,34 @@ public:
 	Request &operator=(Request &&) = delete;
 
 	/** @brief Returns the HTTP method string ("GET", "POST", etc.). */
-	const char *method() const { return ove_httpd_req_method(raw_); }
+	const char *method() const
+	{
+		return ove_httpd_req_method(raw_);
+	}
 
 	/** @brief Returns the full request path (e.g. "/api/leds/0"). */
-	const char *path() const { return ove_httpd_req_path(raw_); }
+	const char *path() const
+	{
+		return ove_httpd_req_path(raw_);
+	}
 
 	/** @brief Returns the query string after '?' (or NULL). */
-	const char *query() const { return ove_httpd_req_query(raw_); }
+	const char *query() const
+	{
+		return ove_httpd_req_query(raw_);
+	}
 
 	/** @brief Returns the request body (or NULL). */
-	const char *body() const { return ove_httpd_req_body(raw_); }
+	const char *body() const
+	{
+		return ove_httpd_req_body(raw_);
+	}
 
 	/** @brief Returns the request body length in bytes. */
-	size_t body_len() const { return ove_httpd_req_body_len(raw_); }
+	size_t body_len() const
+	{
+		return ove_httpd_req_body_len(raw_);
+	}
 
 	/**
 	 * @brief Returns a path segment by index.
@@ -80,7 +100,8 @@ public:
 	 * @param[in] idx Zero-based segment index.
 	 * @return Segment string, or NULL if out of range.
 	 */
-	const char *segment(int idx) const {
+	const char *segment(int idx) const
+	{
 		return ove_httpd_req_segment(raw_, idx);
 	}
 
@@ -88,9 +109,12 @@ public:
 	 * @brief Returns the raw oveRTOS request pointer.
 	 * @return The opaque `ove_httpd_req_t` pointer.
 	 */
-	ove_httpd_req_t *raw() const { return raw_; }
+	ove_httpd_req_t *raw() const
+	{
+		return raw_;
+	}
 
-private:
+      private:
 	ove_httpd_req_t *raw_;
 };
 
@@ -104,13 +128,16 @@ private:
  *
  * @note Non-copyable and non-movable (lifetime is bound to the handler call).
  */
-class Response {
-public:
+class Response
+{
+      public:
 	/**
 	 * @brief Constructs a Response helper from a raw C response pointer.
 	 * @param[in] raw Opaque response handle from the server callback.
 	 */
-	explicit Response(ove_httpd_resp_t *raw) : raw_(raw) {}
+	explicit Response(ove_httpd_resp_t *raw) : raw_(raw)
+	{
+	}
 
 	Response(const Response &) = delete;
 	Response &operator=(const Response &) = delete;
@@ -123,7 +150,8 @@ public:
 	 * @param[in] json   NUL-terminated JSON string.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int json(int status, const char *json) {
+	int json(int status, const char *json)
+	{
 		return ove_httpd_resp_json(raw_, status, json);
 	}
 
@@ -134,7 +162,8 @@ public:
 	 * @param[in] len    HTML data length in bytes.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int html(int status, const char *html, size_t len) {
+	int html(int status, const char *html, size_t len)
+	{
 		return ove_httpd_resp_html(raw_, status, html, len);
 	}
 
@@ -146,10 +175,9 @@ public:
 	 * @param[in] len          Body length in bytes.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int send(int status, const char *content_type,
-		 const void *body, size_t len) {
-		return ove_httpd_resp_send(raw_, status, content_type,
-					  body, len);
+	int send(int status, const char *content_type, const void *body, size_t len)
+	{
+		return ove_httpd_resp_send(raw_, status, content_type, body, len);
 	}
 
 	/**
@@ -160,10 +188,9 @@ public:
 	 * @param[in] len          Compressed body length in bytes.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int send_gz(int status, const char *content_type,
-		    const void *body, size_t len) {
-		return ove_httpd_resp_send_gz(raw_, status, content_type,
-					     body, len);
+	int send_gz(int status, const char *content_type, const void *body, size_t len)
+	{
+		return ove_httpd_resp_send_gz(raw_, status, content_type, body, len);
 	}
 
 	/**
@@ -172,7 +199,8 @@ public:
 	 * @param[in] msg    Error message string.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int error(int status, const char *msg) {
+	int error(int status, const char *msg)
+	{
 		return ove_httpd_resp_error(raw_, status, msg);
 	}
 
@@ -180,9 +208,12 @@ public:
 	 * @brief Returns the raw oveRTOS response pointer.
 	 * @return The opaque `ove_httpd_resp_t` pointer.
 	 */
-	ove_httpd_resp_t *raw() const { return raw_; }
+	ove_httpd_resp_t *raw() const
+	{
+		return raw_;
+	}
 
-private:
+      private:
 	ove_httpd_resp_t *raw_;
 };
 
@@ -196,8 +227,8 @@ using Handler = ove_httpd_handler_t;
  * Mirrors `ove_httpd_config_t` with C++ default member initialisers.
  */
 struct Config {
-	uint16_t port{80};            /**< Listen port. */
-	int      max_body_size{1024}; /**< Maximum POST body size in bytes. */
+	uint16_t port{80};	 /**< Listen port. */
+	int max_body_size{1024}; /**< Maximum POST body size in bytes. */
 };
 
 /**
@@ -209,7 +240,8 @@ struct Config {
  * @param[in] cfg Server configuration (defaults: port 80, 1024-byte body).
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int start(const Config &cfg = {}) {
+[[nodiscard]] inline int start(const Config &cfg = {})
+{
 	ove_httpd_config_t c{cfg.port, cfg.max_body_size};
 	return ove_httpd_start(&c);
 }
@@ -217,7 +249,8 @@ struct Config {
 /**
  * @brief Stops the HTTP server and closes the listening socket.
  */
-inline void stop() {
+inline void stop()
+{
 	ove_httpd_stop();
 }
 
@@ -228,8 +261,8 @@ inline void stop() {
  * @param[in] handler Callback function invoked when the route matches.
  * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if the route table is full.
  */
-[[nodiscard]] inline int route(const char *method, const char *path,
-			       Handler handler) {
+[[nodiscard]] inline int route(const char *method, const char *path, Handler handler)
+{
 	return ove_httpd_route(method, path, handler);
 }
 
@@ -238,7 +271,8 @@ inline void stop() {
  *
  * Call after `start()` to add the standard device management API.
  */
-inline void register_builtin_routes() {
+inline void register_builtin_routes()
+{
 	ove_httpd_register_builtin_routes();
 }
 
@@ -248,20 +282,23 @@ inline void register_builtin_routes() {
  * When set, /api/info and /api/network report the real interface
  * addresses instead of placeholders.
  */
-inline void set_netif(ove_netif_t netif) {
+inline void set_netif(ove_netif_t netif)
+{
 	ove_httpd_set_netif(netif);
 }
 
 #ifdef CONFIG_OVE_AUDIO
 /** @brief Set the audio graph for /api/audio/stats. */
-inline void set_audio_graph(struct ove_audio_graph *g) {
+inline void set_audio_graph(struct ove_audio_graph *g)
+{
 	ove_httpd_set_audio_graph(g);
 }
 #endif
 
 #ifdef CONFIG_OVE_INFER
 /** @brief Set the ML model for /api/infer/stats. */
-inline void set_model(ove_model_t model) {
+inline void set_model(ove_model_t model)
+{
 	ove_httpd_set_model(model);
 }
 #endif
@@ -276,7 +313,8 @@ inline void set_model(ove_model_t model) {
  *
  * Available when `CONFIG_OVE_NET_HTTPD_WS` is enabled.
  */
-namespace ws {
+namespace ws
+{
 
 /**
  * @class Connection
@@ -285,10 +323,13 @@ namespace ws {
  * Valid only while the connection is active. Wraps the opaque
  * `ove_httpd_ws_conn_t` pointer.
  */
-class Connection {
-public:
+class Connection
+{
+      public:
 	/** @brief Wraps an opaque `ove_httpd_ws_conn_t *` from the handler callback. */
-	explicit Connection(ove_httpd_ws_conn_t *raw) : raw_(raw) {}
+	explicit Connection(ove_httpd_ws_conn_t *raw) : raw_(raw)
+	{
+	}
 
 	/**
 	 * @brief Send a text message to this connection.
@@ -296,7 +337,8 @@ public:
 	 * @param[in] len  Payload length in bytes.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int send(const void *data, size_t len) {
+	int send(const void *data, size_t len)
+	{
 		return ove_httpd_ws_send(raw_, data, len);
 	}
 
@@ -305,14 +347,18 @@ public:
 	 * @param[in] sv String view to send.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int send(std::string_view sv) {
+	int send(std::string_view sv)
+	{
 		return ove_httpd_ws_send(raw_, sv.data(), sv.size());
 	}
 
 	/** @brief Returns the underlying `ove_httpd_ws_conn_t *` (for C-API escape hatches). */
-	ove_httpd_ws_conn_t *raw() const { return raw_; }
+	ove_httpd_ws_conn_t *raw() const
+	{
+		return raw_;
+	}
 
-private:
+      private:
 	ove_httpd_ws_conn_t *raw_;
 };
 
@@ -329,9 +375,9 @@ using CloseHandler = ove_httpd_ws_close_handler_t;
  * @param[in] on_close   Callback when connection closes (may be nullptr).
  * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if route table full.
  */
-[[nodiscard]] inline int route(const char *path,
-			       Handler on_message,
-			       CloseHandler on_close = nullptr) {
+[[nodiscard]] inline int route(const char *path, Handler on_message,
+			       CloseHandler on_close = nullptr)
+{
 	return ove_httpd_ws_route(path, on_message, on_close);
 }
 
@@ -342,7 +388,8 @@ using CloseHandler = ove_httpd_ws_close_handler_t;
  * @param[in] len  Payload length in bytes.
  * @return Number of connections the message was sent to.
  */
-inline int broadcast(const char *path, const void *data, size_t len) {
+inline int broadcast(const char *path, const void *data, size_t len)
+{
 	return ove_httpd_ws_broadcast(path, data, len);
 }
 
@@ -352,12 +399,14 @@ inline int broadcast(const char *path, const void *data, size_t len) {
  * @param[in] sv   String view to send.
  * @return Number of connections the message was sent to.
  */
-inline int broadcast(const char *path, std::string_view sv) {
+inline int broadcast(const char *path, std::string_view sv)
+{
 	return ove_httpd_ws_broadcast(path, sv.data(), sv.size());
 }
 
 /** @brief Return the number of active WebSocket connections. */
-inline int active_count() {
+inline int active_count()
+{
 	return ove_httpd_ws_active_count();
 }
 

@@ -35,8 +35,8 @@ extern "C" {
  * @brief SNTP client configuration.
  */
 typedef struct {
-	const char *server;      /**< NTP server hostname (e.g. "pool.ntp.org"). */
-	uint32_t    timeout_ms;  /**< Query timeout in milliseconds (0 = 5000). */
+	const char *server;  /**< NTP server hostname (e.g. "pool.ntp.org"). */
+	uint32_t timeout_ms; /**< Query timeout in milliseconds (0 = 5000). */
 } ove_sntp_config_t;
 
 #ifdef CONFIG_OVE_NET_SNTP
@@ -76,9 +76,21 @@ int ove_sntp_get_utc(uint32_t *utc_s);
 #else /* !CONFIG_OVE_NET_SNTP */
 
 /** @cond INTERNAL */
-static inline int ove_sntp_sync(const ove_sntp_config_t *cfg) { (void)cfg; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_sntp_get_offset_us(int64_t *o) { (void)o; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_sntp_get_utc(uint32_t *u) { (void)u; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_sntp_sync(const ove_sntp_config_t *cfg)
+{
+	(void)cfg;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_sntp_get_offset_us(int64_t *o)
+{
+	(void)o;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_sntp_get_utc(uint32_t *u)
+{
+	(void)u;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 /** @endcond */
 
 #endif /* CONFIG_OVE_NET_SNTP */

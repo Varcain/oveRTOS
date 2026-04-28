@@ -28,18 +28,17 @@
 
 /* ── Timer manager state ───────────────────────────────────────────── */
 
-static struct ove_timer   *active_head;  /* sorted by next_fire_us */
-static pthread_mutex_t     mgr_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t      mgr_cond = PTHREAD_COND_INITIALIZER;
-static pthread_t           mgr_thread;
-static int                 mgr_running;
+static struct ove_timer *active_head; /* sorted by next_fire_us */
+static pthread_mutex_t mgr_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t mgr_cond = PTHREAD_COND_INITIALIZER;
+static pthread_t mgr_thread;
+static int mgr_running;
 
 static uint64_t now_us(void)
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000ULL +
-	       (uint64_t)ts.tv_nsec / 1000ULL;
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 }
 
 /* Insert timer into the sorted active list (caller holds mgr_lock). */
@@ -135,13 +134,11 @@ static void ensure_manager_started(void)
 
 /* ── Public API ────────────────────────────────────────────────────── */
 
-int ove_timer_init(ove_timer_t *timer,
-		       ove_timer_storage_t *storage,
-		       ove_timer_fn callback,
-		       void *user_data, uint32_t period_ms,
-		       int one_shot)
+int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		   void *user_data, uint32_t period_ms, int one_shot)
 {
-	if (!timer || !storage || !callback) return OVE_ERR_INVALID_PARAM;
+	if (!timer || !storage || !callback)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_timer *t = (struct ove_timer *)storage;
 	memset(t, 0, sizeof(*t));
 	t->callback = callback;
@@ -167,14 +164,14 @@ void ove_timer_deinit(ove_timer_t timer)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_timer_create(ove_timer_t *timer,
-			 ove_timer_fn callback,
-			 void *user_data, uint32_t period_ms,
-			 int one_shot)
+int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
+		     int one_shot)
 {
-	if (!timer || !callback) return OVE_ERR_INVALID_PARAM;
+	if (!timer || !callback)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
-	if (!t) return OVE_ERR_NO_MEMORY;
+	if (!t)
+		return OVE_ERR_NO_MEMORY;
 	memset(t, 0, sizeof(*t));
 	t->callback = callback;
 	t->user_data = user_data;
@@ -207,7 +204,8 @@ void ove_timer_destroy(ove_timer_t timer)
 int ove_timer_start(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
-	if (!t) return OVE_ERR_INVALID_PARAM;
+	if (!t)
+		return OVE_ERR_INVALID_PARAM;
 
 	pthread_mutex_lock(&mgr_lock);
 	if (t->armed)
@@ -222,7 +220,8 @@ int ove_timer_start(ove_timer_t timer)
 int ove_timer_stop(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
-	if (!t) return OVE_ERR_INVALID_PARAM;
+	if (!t)
+		return OVE_ERR_INVALID_PARAM;
 
 	pthread_mutex_lock(&mgr_lock);
 	if (t->armed)

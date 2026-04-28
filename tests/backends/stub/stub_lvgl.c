@@ -203,17 +203,15 @@ void lv_obj_set_flex_grow(lv_obj_t *obj, uint8_t grow)
 
 /* ── Grid ───────────────────────────────────────────────────────── */
 
-void lv_obj_set_grid_dsc_array(lv_obj_t *obj, const int32_t *col_dsc,
-                               const int32_t *row_dsc)
+void lv_obj_set_grid_dsc_array(lv_obj_t *obj, const int32_t *col_dsc, const int32_t *row_dsc)
 {
 	(void)obj;
 	(void)col_dsc;
 	(void)row_dsc;
 }
 
-void lv_obj_set_grid_cell(lv_obj_t *obj, uint32_t col_align, int32_t col_pos,
-                          int32_t col_span, uint32_t row_align, int32_t row_pos,
-                          int32_t row_span)
+void lv_obj_set_grid_cell(lv_obj_t *obj, uint32_t col_align, int32_t col_pos, int32_t col_span,
+			  uint32_t row_align, int32_t row_pos, int32_t row_span)
 {
 	(void)obj;
 	(void)col_align;
@@ -226,8 +224,7 @@ void lv_obj_set_grid_cell(lv_obj_t *obj, uint32_t col_align, int32_t col_pos,
 
 /* ── Events ──────────────────────────────────────────────────────── */
 
-void lv_obj_add_event_cb(lv_obj_t *obj, lv_event_cb_t cb,
-                         lv_event_code_t code, void *user_data)
+void lv_obj_add_event_cb(lv_obj_t *obj, lv_event_cb_t cb, lv_event_code_t code, void *user_data)
 {
 	(void)obj;
 	(void)cb;
@@ -500,11 +497,8 @@ lv_color_t lv_color_black(void)
 
 lv_color_t lv_color_hex(uint32_t hex)
 {
-	lv_color_t c = {
-		(uint8_t)(hex & 0xFF),
-		(uint8_t)((hex >> 8) & 0xFF),
-		(uint8_t)((hex >> 16) & 0xFF)
-	};
+	lv_color_t c = {(uint8_t)(hex & 0xFF), (uint8_t)((hex >> 8) & 0xFF),
+			(uint8_t)((hex >> 16) & 0xFF)};
 	return c;
 }
 
@@ -1233,8 +1227,8 @@ void lv_chart_set_next_value(lv_obj_t *obj, lv_chart_series_t *series, int32_t v
 	(void)value;
 }
 
-void lv_chart_set_series_value_by_id(lv_obj_t *obj, lv_chart_series_t *series,
-                                     uint32_t id, int32_t value)
+void lv_chart_set_series_value_by_id(lv_obj_t *obj, lv_chart_series_t *series, uint32_t id,
+				     int32_t value)
 {
 	(void)obj;
 	(void)series;
@@ -1401,8 +1395,7 @@ lv_obj_t *lv_canvas_create(lv_obj_t *parent)
 	return NULL;
 }
 
-void lv_canvas_set_buffer(lv_obj_t *obj, void *buf, int32_t w, int32_t h,
-                          lv_color_format_t cf)
+void lv_canvas_set_buffer(lv_obj_t *obj, void *buf, int32_t w, int32_t h, lv_color_format_t cf)
 {
 	(void)obj;
 	(void)buf;
@@ -1447,8 +1440,7 @@ lv_obj_t *lv_calendar_create(lv_obj_t *parent)
 	return NULL;
 }
 
-void lv_calendar_set_today_date(lv_obj_t *obj, uint32_t year, uint32_t month,
-                                uint32_t day)
+void lv_calendar_set_today_date(lv_obj_t *obj, uint32_t year, uint32_t month, uint32_t day)
 {
 	(void)obj;
 	(void)year;
@@ -1463,8 +1455,7 @@ void lv_calendar_set_month_shown(lv_obj_t *obj, uint32_t year, uint32_t month)
 	(void)month;
 }
 
-void lv_calendar_set_highlighted_dates(lv_obj_t *obj, lv_calendar_date_t dates[],
-                                       uint32_t cnt)
+void lv_calendar_set_highlighted_dates(lv_obj_t *obj, lv_calendar_date_t dates[], uint32_t cnt)
 {
 	(void)obj;
 	(void)dates;
@@ -1502,8 +1493,8 @@ void lv_screen_load(lv_obj_t *scr)
 	(void)scr;
 }
 
-void lv_screen_load_anim(lv_obj_t *scr, lv_screen_load_anim_t anim,
-                         uint32_t time_ms, uint32_t delay_ms, bool auto_del)
+void lv_screen_load_anim(lv_obj_t *scr, lv_screen_load_anim_t anim, uint32_t time_ms,
+			 uint32_t delay_ms, bool auto_del)
 {
 	(void)scr;
 	(void)anim;
@@ -1620,9 +1611,8 @@ void lv_subject_deinit(lv_subject_t *subject)
 	(void)subject;
 }
 
-lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject,
-                                           lv_observer_cb_t cb,
-                                           lv_obj_t *obj, void *user_data)
+lv_observer_t *lv_subject_add_observer_obj(lv_subject_t *subject, lv_observer_cb_t cb,
+					   lv_obj_t *obj, void *user_data)
 {
 	(void)subject;
 	(void)cb;

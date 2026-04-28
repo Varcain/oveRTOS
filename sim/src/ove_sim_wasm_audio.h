@@ -34,13 +34,13 @@ struct ove_sim_wasm_audio {
 extern struct ove_sim_wasm_audio ove_wasm_audio;
 
 /* Exported accessors for JS */
-void    *ove_wasm_audio_get_playback_ptr(void);
-void    *ove_wasm_audio_get_capture_ptr(void);
+void *ove_wasm_audio_get_playback_ptr(void);
+void *ove_wasm_audio_get_capture_ptr(void);
 uint32_t ove_wasm_audio_playback_available(void);
 uint32_t ove_wasm_audio_capture_available(void);
 
 /* C-side write/read used by sim_audio.c */
-void   ove_wasm_audio_playback_write(const void *samples, uint32_t len);
+void ove_wasm_audio_playback_write(const void *samples, uint32_t len);
 size_t ove_wasm_audio_capture_read(void *samples, uint32_t len);
 
 /* Called from JS to configure format after getUserMedia */

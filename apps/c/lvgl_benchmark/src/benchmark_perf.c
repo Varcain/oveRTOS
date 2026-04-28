@@ -16,12 +16,12 @@
 lv_subject_t *benchmark_get_perf_subject(void)
 {
 	lv_display_t *disp = lv_display_get_default();
-	if (!disp) return NULL;
+	if (!disp)
+		return NULL;
 	return &disp->perf_sysmon_backend.subject;
 }
 
-void benchmark_extract_perf_metrics(const void *info,
-				    benchmark_perf_metrics_t *out)
+void benchmark_extract_perf_metrics(const void *info, benchmark_perf_metrics_t *out)
 {
 	const lv_sysmon_perf_info_t *p = info;
 	out->fps = p->calculated.fps;
@@ -37,8 +37,7 @@ lv_subject_t *benchmark_get_perf_subject(void)
 	return NULL;
 }
 
-void benchmark_extract_perf_metrics(const void *info,
-				    benchmark_perf_metrics_t *out)
+void benchmark_extract_perf_metrics(const void *info, benchmark_perf_metrics_t *out)
 {
 	(void)info;
 	out->fps = 0;
@@ -63,8 +62,8 @@ void benchmark_anim_color(lv_obj_t *obj, lv_anim_exec_xcb_t cb)
 	lv_anim_start(&a);
 }
 
-void benchmark_anim_shake(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
-			  int32_t y_max, uint32_t t1, uint32_t t2)
+void benchmark_anim_shake(lv_obj_t *obj, lv_anim_exec_xcb_t cb, int32_t y_max, uint32_t t1,
+			  uint32_t t2)
 {
 	lv_anim_t a;
 	lv_anim_init(&a);
@@ -77,8 +76,7 @@ void benchmark_anim_shake(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
 	lv_anim_start(&a);
 }
 
-void benchmark_anim_scroll(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
-			   int32_t y_max, uint32_t t)
+void benchmark_anim_scroll(lv_obj_t *obj, lv_anim_exec_xcb_t cb, int32_t y_max, uint32_t t)
 {
 	lv_anim_t a;
 	lv_anim_init(&a);
@@ -91,8 +89,7 @@ void benchmark_anim_scroll(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
 	lv_anim_start(&a);
 }
 
-void benchmark_anim_arc(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
-			uint32_t t1, uint32_t t2)
+void benchmark_anim_arc(lv_obj_t *obj, lv_anim_exec_xcb_t cb, uint32_t t1, uint32_t t2)
 {
 	lv_anim_t a;
 	lv_anim_init(&a);
@@ -105,8 +102,7 @@ void benchmark_anim_arc(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
 	lv_anim_start(&a);
 }
 
-void benchmark_anim_generic(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
-			    int32_t start, int32_t end,
+void benchmark_anim_generic(lv_obj_t *obj, lv_anim_exec_xcb_t cb, int32_t start, int32_t end,
 			    uint32_t t1, uint32_t t2)
 {
 	lv_anim_t a;
@@ -120,9 +116,8 @@ void benchmark_anim_generic(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
 	lv_anim_start(&a);
 }
 
-void benchmark_anim_slideshow(lv_obj_t *obj, lv_anim_exec_xcb_t scroll_cb,
-			      int32_t y_max, uint32_t speed,
-			      lv_anim_completed_cb_t ready_cb)
+void benchmark_anim_slideshow(lv_obj_t *obj, lv_anim_exec_xcb_t scroll_cb, int32_t y_max,
+			      uint32_t speed, lv_anim_completed_cb_t ready_cb)
 {
 	lv_anim_t a;
 	lv_anim_init(&a);
@@ -142,7 +137,8 @@ void benchmark_table_draw_task_cb(lv_event_t *e)
 {
 	lv_draw_task_t *t = lv_event_get_draw_task(e);
 	lv_draw_dsc_base_t *base = lv_draw_task_get_draw_dsc(t);
-	if (base->part != LV_PART_ITEMS) return;
+	if (base->part != LV_PART_ITEMS)
+		return;
 
 	int32_t row = base->id1;
 	if (row == 0) {

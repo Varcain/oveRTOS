@@ -20,55 +20,55 @@
 #include <stdint.h>
 
 /** @brief Operation completed successfully. */
-#define OVE_OK                    0
+#define OVE_OK 0
 
 /** @brief The requested backend or feature has not been registered. */
-#define OVE_ERR_NOT_REGISTERED   (-1)
+#define OVE_ERR_NOT_REGISTERED (-1)
 
 /** @brief One or more parameters are invalid (e.g. NULL pointer, zero size). */
-#define OVE_ERR_INVALID_PARAM    (-2)
+#define OVE_ERR_INVALID_PARAM (-2)
 
 /** @brief Dynamic allocation failed — heap is full or not available. */
-#define OVE_ERR_NO_MEMORY        (-3)
+#define OVE_ERR_NO_MEMORY (-3)
 
 /** @brief Operation timed out before it could complete. */
-#define OVE_ERR_TIMEOUT          (-4)
+#define OVE_ERR_TIMEOUT (-4)
 
 /** @brief The requested feature is not supported by the active backend. */
-#define OVE_ERR_NOT_SUPPORTED    (-5)
+#define OVE_ERR_NOT_SUPPORTED (-5)
 
 /** @brief Queue send failed because the queue is at maximum capacity. */
-#define OVE_ERR_QUEUE_FULL       (-6)
+#define OVE_ERR_QUEUE_FULL (-6)
 
 /** @brief ML inference or model loading failed. */
-#define OVE_ERR_ML_FAILED        (-7)
+#define OVE_ERR_ML_FAILED (-7)
 
 /** @brief Remote peer refused the connection. */
-#define OVE_ERR_NET_REFUSED      (-8)
+#define OVE_ERR_NET_REFUSED (-8)
 
 /** @brief Network or host is unreachable. */
-#define OVE_ERR_NET_UNREACHABLE  (-9)
+#define OVE_ERR_NET_UNREACHABLE (-9)
 
 /** @brief Local address already in use. */
-#define OVE_ERR_NET_ADDR_IN_USE  (-10)
+#define OVE_ERR_NET_ADDR_IN_USE (-10)
 
 /** @brief Connection was reset by the remote peer. */
-#define OVE_ERR_NET_RESET        (-11)
+#define OVE_ERR_NET_RESET (-11)
 
 /** @brief DNS name resolution failed. */
-#define OVE_ERR_NET_DNS_FAIL     (-12)
+#define OVE_ERR_NET_DNS_FAIL (-12)
 
 /** @brief Connection closed by the remote peer. */
-#define OVE_ERR_NET_CLOSED       (-13)
+#define OVE_ERR_NET_CLOSED (-13)
 
 /** @brief Bus device did not acknowledge (I2C NACK). */
-#define OVE_ERR_BUS_NACK         (-14)
+#define OVE_ERR_BUS_NACK (-14)
 
 /** @brief Bus arbitration lost (multi-master). */
-#define OVE_ERR_BUS_BUSY         (-15)
+#define OVE_ERR_BUS_BUSY (-15)
 
 /** @brief Framing, parity, or hardware error on a serial bus. */
-#define OVE_ERR_BUS_ERROR        (-16)
+#define OVE_ERR_BUS_ERROR (-16)
 
 /**
  * @brief Timeout value that means "block indefinitely".
@@ -76,7 +76,7 @@
  * Pass this as the @c timeout_ms argument to any blocking API to wait
  * without a deadline.
  */
-#define OVE_WAIT_FOREVER          UINT32_MAX
+#define OVE_WAIT_FOREVER UINT32_MAX
 
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */
 typedef struct ove_thread *ove_thread_t;

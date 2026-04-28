@@ -18,7 +18,9 @@
 extern void xPortSysTickHandler(void);
 
 /* Stub — tests exercise ove_app module without a real app entry point */
-void ove_main(void) {}
+void ove_main(void)
+{
+}
 
 static void test_runner_task(void *arg)
 {
@@ -32,7 +34,7 @@ static void test_runner_task(void *arg)
 	 * Semihosting provides printf/exit.
 	 * FS tests skipped — no filesystem on bare-metal QEMU.
 	 */
-#define OVE_SUITE(name, label) \
+#define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();
 #include "framework/suites.inc"
@@ -69,17 +71,40 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
 	(void)xTask;
-	fprintf(stderr, "\n!!! STACK OVERFLOW: %s !!!\n",
-		pcTaskName ? pcTaskName : "(null)");
+	fprintf(stderr, "\n!!! STACK OVERFLOW: %s !!!\n", pcTaskName ? pcTaskName : "(null)");
 	semihosting_exit(1);
 }
 
-void NMI_Handler(void)        { while (1) {} }
-void HardFault_Handler(void)  { while (1) {} }
-void MemManage_Handler(void)  { while (1) {} }
-void BusFault_Handler(void)   { while (1) {} }
-void UsageFault_Handler(void) { while (1) {} }
-void DebugMon_Handler(void)   { while (1) {} }
+void NMI_Handler(void)
+{
+	while (1) {
+	}
+}
+void HardFault_Handler(void)
+{
+	while (1) {
+	}
+}
+void MemManage_Handler(void)
+{
+	while (1) {
+	}
+}
+void BusFault_Handler(void)
+{
+	while (1) {
+	}
+}
+void UsageFault_Handler(void)
+{
+	while (1) {
+	}
+}
+void DebugMon_Handler(void)
+{
+	while (1) {
+	}
+}
 
 void SysTick_Handler(void)
 {
@@ -98,10 +123,8 @@ static StackType_t runner_stack[configMINIMAL_STACK_SIZE * 8];
 
 int main(void)
 {
-	xTaskCreateStatic(test_runner_task, "tests",
-			  configMINIMAL_STACK_SIZE * 8, NULL,
-			  tskIDLE_PRIORITY + 1,
-			  runner_stack, &runner_tcb);
+	xTaskCreateStatic(test_runner_task, "tests", configMINIMAL_STACK_SIZE * 8, NULL,
+			  tskIDLE_PRIORITY + 1, runner_stack, &runner_tcb);
 	vTaskStartScheduler();
 	return 0;
 }

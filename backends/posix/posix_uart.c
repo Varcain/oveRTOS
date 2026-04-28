@@ -23,8 +23,7 @@
 #include <poll.h>
 
 /* Forward declaration of the portable ISR push helper */
-extern void ove_uart_rx_isr_push(ove_uart_t uart, const void *data,
-				 size_t len);
+extern void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len);
 
 /* RX polling thread — reads from fd and pushes into the portable stream */
 static void *posix_uart_rx_thread(void *arg)
@@ -34,7 +33,7 @@ static void *posix_uart_rx_thread(void *arg)
 
 	while (uart->running) {
 		struct pollfd pfd = {
-			.fd     = uart->fd,
+			.fd = uart->fd,
 			.events = POLLIN,
 		};
 
@@ -51,19 +50,28 @@ static void *posix_uart_rx_thread(void *arg)
 static speed_t baud_to_speed(uint32_t baudrate)
 {
 	switch (baudrate) {
-	case 9600:   return B9600;
-	case 19200:  return B19200;
-	case 38400:  return B38400;
-	case 57600:  return B57600;
-	case 115200: return B115200;
-	case 230400: return B230400;
+	case 9600:
+		return B9600;
+	case 19200:
+		return B19200;
+	case 38400:
+		return B38400;
+	case 57600:
+		return B57600;
+	case 115200:
+		return B115200;
+	case 230400:
+		return B230400;
 #ifdef B460800
-	case 460800: return B460800;
+	case 460800:
+		return B460800;
 #endif
 #ifdef B921600
-	case 921600: return B921600;
+	case 921600:
+		return B921600;
 #endif
-	default:     return B115200;
+	default:
+		return B115200;
 	}
 }
 
@@ -97,8 +105,12 @@ int ove_hal_uart_open(ove_uart_t uart, const struct ove_uart_cfg *cfg)
 	/* Data bits */
 	tty.c_cflag &= ~CSIZE;
 	switch (cfg->data_bits) {
-	case 7:  tty.c_cflag |= CS7; break;
-	default: tty.c_cflag |= CS8; break;
+	case 7:
+		tty.c_cflag |= CS7;
+		break;
+	default:
+		tty.c_cflag |= CS8;
+		break;
 	}
 
 	/* Parity */
@@ -140,8 +152,8 @@ void ove_hal_uart_close(ove_uart_t uart)
 	}
 }
 
-int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len,
-		    uint32_t timeout_ms, size_t *bytes_written)
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+		    size_t *bytes_written)
 {
 	(void)timeout_ms;
 
@@ -160,8 +172,7 @@ int ove_hal_uart_rx_enable(ove_uart_t uart)
 		return OVE_ERR_NOT_SUPPORTED;
 
 	uart->running = 1;
-	if (pthread_create(&uart->rx_thread, NULL,
-			   posix_uart_rx_thread, uart) != 0) {
+	if (pthread_create(&uart->rx_thread, NULL, posix_uart_rx_thread, uart) != 0) {
 		uart->running = 0;
 		return OVE_ERR_NO_MEMORY;
 	}

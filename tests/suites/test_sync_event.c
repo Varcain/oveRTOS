@@ -65,11 +65,10 @@ static void test_event_cross_thread(void **state)
 	(void)state;
 	ove_event_t evt = NULL;
 	ove_test_event_create(&evt, &s_evt_storage);
-	struct evt_ctx ctx = { .evt = evt };
+	struct evt_ctx ctx = {.evt = evt};
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "esig", evt_signal_entry, &ctx,
-	    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "esig", evt_signal_entry, &ctx, s_th_stack, 4096);
 	assert_int_equal(ove_event_wait(evt, 500), OVE_OK);
 	ove_test_thread_destroy(th);
 	assert_int_equal(ctx.done, 1);

@@ -19,15 +19,24 @@
 static int map_priority(ove_prio_t prio)
 {
 	switch (prio) {
-	case OVE_PRIO_IDLE:         return 50;
-	case OVE_PRIO_LOW:          return 60;
-	case OVE_PRIO_BELOW_NORMAL: return 80;
-	case OVE_PRIO_NORMAL:       return 100;
-	case OVE_PRIO_ABOVE_NORMAL: return 120;
-	case OVE_PRIO_HIGH:         return 150;
-	case OVE_PRIO_REALTIME:     return 200;
-	case OVE_PRIO_CRITICAL:     return 220;
-	default:                        return 100;
+	case OVE_PRIO_IDLE:
+		return 50;
+	case OVE_PRIO_LOW:
+		return 60;
+	case OVE_PRIO_BELOW_NORMAL:
+		return 80;
+	case OVE_PRIO_NORMAL:
+		return 100;
+	case OVE_PRIO_ABOVE_NORMAL:
+		return 120;
+	case OVE_PRIO_HIGH:
+		return 150;
+	case OVE_PRIO_REALTIME:
+		return 200;
+	case OVE_PRIO_CRITICAL:
+		return 220;
+	default:
+		return 100;
 	}
 }
 
@@ -48,21 +57,21 @@ static int wq_task_fn(int argc, char *argv[])
 			break;
 		}
 
-		while (nxmutex_lock(&nwq->lock) == -EINTR);
+		while (nxmutex_lock(&nwq->lock) == -EINTR)
+			;
 		work = nwq->ring[nwq->tail];
 		nwq->tail = (nwq->tail + 1) % OVE_WQ_QUEUE_DEPTH;
 		nxmutex_unlock(&nwq->lock);
 		nxsem_post(&nwq->not_full);
 
 		if (work == NULL) {
-			break;  /* poison pill */
+			break; /* poison pill */
 		}
 
 		if (work->delay_ms > 0) {
 			/* Sleep via tick wait on never-posted semaphore;
 			 * interruptible by destroy posting delay_sem */
-			nxsem_tickwait(&nwq->delay_sem,
-				       MSEC2TICK(work->delay_ms));
+			nxsem_tickwait(&nwq->delay_sem, MSEC2TICK(work->delay_ms));
 			work->delay_ms = 0;
 			if (!nwq->running) {
 				break;
@@ -79,8 +88,8 @@ static int wq_task_fn(int argc, char *argv[])
 	return 0;
 }
 
-static int wq_start(struct ove_workqueue *nwq, const char *name,
-		    ove_prio_t priority, size_t stack_size)
+static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t priority,
+		    size_t stack_size)
 {
 	char addr_str[20];
 	int pid;
@@ -97,12 +106,10 @@ static int wq_start(struct ove_workqueue *nwq, const char *name,
 		stack_size = 2048;
 	}
 
-	snprintf(addr_str, sizeof(addr_str), "0x%lx",
-		 (unsigned long)(uintptr_t)nwq);
+	snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)nwq);
 	{
-		char *argv_args[] = { addr_str, NULL };
-		pid = task_create(name ? name : "ove_wq",
-				  map_priority(priority), (int)stack_size,
+		char *argv_args[] = {addr_str, NULL};
+		pid = task_create(name ? name : "ove_wq", map_priority(priority), (int)stack_size,
 				  wq_task_fn, argv_args);
 	}
 	if (pid < 0) {
@@ -133,10 +140,8 @@ static void wq_stop(struct ove_workqueue *nwq)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_workqueue_init(ove_workqueue_t *wq,
-			   ove_workqueue_storage_t *storage,
-			   const char *name, ove_prio_t priority,
-			   size_t stack_size, void *stack)
+int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name,
+		       ove_prio_t priority, size_t stack_size, void *stack)
 {
 	(void)stack; /* NuttX allocates stack internally via task_create */
 
@@ -161,9 +166,7 @@ void ove_workqueue_deinit(ove_workqueue_t wq)
 	}
 }
 
-int ove_work_init_static(ove_work_t *work,
-			     ove_work_storage_t *storage,
-			     ove_work_fn handler)
+int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler)
 {
 	if (work == NULL || storage == NULL || handler == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -181,8 +184,8 @@ int ove_work_init_static(ove_work_t *work,
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_WORKQUEUE
-int ove_workqueue_create(ove_workqueue_t *wq, const char *name,
-                            ove_prio_t priority, size_t stack_size)
+int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t priority,
+			 size_t stack_size)
 {
 	struct ove_workqueue *nwq;
 
@@ -257,7 +260,8 @@ int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 		return OVE_ERR_TIMEOUT;
 	}
 
-	while (nxmutex_lock(&nwq->lock) == -EINTR);
+	while (nxmutex_lock(&nwq->lock) == -EINTR)
+		;
 	nwq->ring[nwq->head] = nw;
 	nwq->head = (nwq->head + 1) % OVE_WQ_QUEUE_DEPTH;
 	nxmutex_unlock(&nwq->lock);
@@ -266,9 +270,7 @@ int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 	return OVE_OK;
 }
 
-int ove_work_submit_delayed(ove_workqueue_t wq,
-                                     ove_work_t work,
-                                     uint32_t delay_ms)
+int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)
 {
 	struct ove_workqueue *nwq = wq;
 	struct ove_work *nw = work;
@@ -281,7 +283,8 @@ int ove_work_submit_delayed(ove_workqueue_t wq,
 		return OVE_ERR_TIMEOUT;
 	}
 
-	while (nxmutex_lock(&nwq->lock) == -EINTR);
+	while (nxmutex_lock(&nwq->lock) == -EINTR)
+		;
 	nwq->ring[nwq->head] = nw;
 	nwq->head = (nwq->head + 1) % OVE_WQ_QUEUE_DEPTH;
 	nxmutex_unlock(&nwq->lock);

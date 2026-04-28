@@ -29,8 +29,7 @@ static int battery_pct = 85;
 
 /* --- PM transition notifier --- */
 
-static void pm_notify(ove_pm_event_t event, ove_pm_state_t from,
-		       ove_pm_state_t to, void *user_data)
+static void pm_notify(ove_pm_event_t event, ove_pm_state_t from, ove_pm_state_t to, void *user_data)
 {
 	(void)user_data;
 
@@ -43,10 +42,8 @@ static void pm_notify(ove_pm_event_t event, ove_pm_state_t from,
 
 /* --- Battery-aware power policy --- */
 
-static ove_pm_state_t battery_policy(ove_pm_state_t current,
-				     uint32_t idle_ms,
-				     uint32_t next_timeout_ms,
-				     void *user_data)
+static ove_pm_state_t battery_policy(ove_pm_state_t current, uint32_t idle_ms,
+				     uint32_t next_timeout_ms, void *user_data)
 {
 	int *batt = static_cast<int *>(user_data);
 
@@ -59,9 +56,12 @@ static ove_pm_state_t battery_policy(ove_pm_state_t current,
 		return OVE_PM_STATE_STANDBY;
 	}
 
-	if (idle_ms < 10) return OVE_PM_STATE_ACTIVE;
-	if (idle_ms < 1000) return OVE_PM_STATE_IDLE;
-	if (idle_ms < 10000) return OVE_PM_STATE_STANDBY;
+	if (idle_ms < 10)
+		return OVE_PM_STATE_ACTIVE;
+	if (idle_ms < 1000)
+		return OVE_PM_STATE_IDLE;
+	if (idle_ms < 10000)
+		return OVE_PM_STATE_STANDBY;
 	return OVE_PM_STATE_DEEP_SLEEP;
 }
 
@@ -70,10 +70,8 @@ static ove_pm_state_t battery_policy(ove_pm_state_t current,
 static void sensor_thread(void *arg);
 static void monitor_thread(void *arg);
 
-static ove::Thread<4096> sensor_th(sensor_thread, nullptr,
-				    OVE_PRIO_NORMAL, "sensor");
-static ove::Thread<4096> monitor_th(monitor_thread, nullptr,
-				     OVE_PRIO_LOW, "monitor");
+static ove::Thread<4096> sensor_th(sensor_thread, nullptr, OVE_PRIO_NORMAL, "sensor");
+static ove::Thread<4096> monitor_th(monitor_thread, nullptr, OVE_PRIO_LOW, "monitor");
 
 /* --- Sensor thread: periodic read with domain management --- */
 
@@ -118,8 +116,7 @@ static void monitor_thread(void *)
 			OVE_LOG_INF("  standby: %u us (%u trans)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_STANDBY],
 				    stats.transition_count[OVE_PM_STATE_STANDBY]);
-			OVE_LOG_INF("  active%%: %u.%02u%%",
-				    stats.active_pct_x100 / 100,
+			OVE_LOG_INF("  active%%: %u.%02u%%", stats.active_pct_x100 / 100,
 				    stats.active_pct_x100 % 100);
 		}
 
@@ -137,8 +134,8 @@ OVE_MAIN()
 
 	/* Initialize PM */
 	pm::Cfg cfg{
-		.idle_threshold_ms       = 50,
-		.standby_threshold_ms    = 5000,
+		.idle_threshold_ms = 50,
+		.standby_threshold_ms = 5000,
 		.deep_sleep_threshold_ms = 30000,
 	};
 	int rc = pm::init(cfg);
@@ -150,12 +147,12 @@ OVE_MAIN()
 	/* Register wake sources */
 	pm::WakeSrc btn{};
 	btn.type = OVE_PM_WAKE_GPIO;
-	btn.gpio = { .port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING };
+	btn.gpio = {.port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING};
 	pm::wake_register(btn);
 
 	pm::WakeSrc uart{};
 	uart.type = OVE_PM_WAKE_UART;
-	uart.uart = { .instance = 0 };
+	uart.uart = {.instance = 0};
 	pm::wake_register(uart);
 
 	/* Register notifier and policy */

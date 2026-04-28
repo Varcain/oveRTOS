@@ -20,8 +20,7 @@
 
 /* ── Helper macro ──────────────────────────────────────────────── */
 
-#define MATCH(filter, topic) \
-	ove_mqtt_topic_matches(filter, strlen(filter), topic, strlen(topic))
+#define MATCH(filter, topic) ove_mqtt_topic_matches(filter, strlen(filter), topic, strlen(topic))
 
 /* ── Exact match tests ─────────────────────────────────────────── */
 
@@ -130,16 +129,11 @@ static void test_trailing_slash(void **state)
 int test_net_mqtt_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_exact_match),
-		cmocka_unit_test(test_exact_mismatch),
-		cmocka_unit_test(test_plus_single_level),
-		cmocka_unit_test(test_plus_no_match),
-		cmocka_unit_test(test_plus_multiple),
-		cmocka_unit_test(test_hash_all),
-		cmocka_unit_test(test_hash_suffix),
-		cmocka_unit_test(test_hash_no_match),
-		cmocka_unit_test(test_combined),
-		cmocka_unit_test(test_empty_filter),
+		cmocka_unit_test(test_exact_match),	  cmocka_unit_test(test_exact_mismatch),
+		cmocka_unit_test(test_plus_single_level), cmocka_unit_test(test_plus_no_match),
+		cmocka_unit_test(test_plus_multiple),	  cmocka_unit_test(test_hash_all),
+		cmocka_unit_test(test_hash_suffix),	  cmocka_unit_test(test_hash_no_match),
+		cmocka_unit_test(test_combined),	  cmocka_unit_test(test_empty_filter),
 		cmocka_unit_test(test_trailing_slash),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

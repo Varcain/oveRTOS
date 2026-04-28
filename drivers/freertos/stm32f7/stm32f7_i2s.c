@@ -39,18 +39,24 @@ ove_i2s_t g_i2s_instance;
 static SAI_Block_TypeDef *instance_to_sai_tx(unsigned int instance)
 {
 	switch (instance) {
-	case 0: return SAI1_Block_A;
-	case 1: return SAI2_Block_A;
-	default: return NULL;
+	case 0:
+		return SAI1_Block_A;
+	case 1:
+		return SAI2_Block_A;
+	default:
+		return NULL;
 	}
 }
 
 static SAI_Block_TypeDef *instance_to_sai_rx(unsigned int instance)
 {
 	switch (instance) {
-	case 0: return SAI1_Block_B;
-	case 1: return SAI2_Block_B;
-	default: return NULL;
+	case 0:
+		return SAI1_Block_B;
+	case 1:
+		return SAI2_Block_B;
+	default:
+		return NULL;
 	}
 }
 
@@ -83,7 +89,7 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 		break;
 	default: /* 16 */
 		data_size = SAI_DATASIZE_16;
-		frame_length = 32;           /* 2 slots * 16 bits */
+		frame_length = 32; /* 2 slots * 16 bits */
 		active_frame_length = 16;
 		break;
 	}
@@ -98,29 +104,29 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 	if (cfg->direction & OVE_I2S_DIR_TX) {
 		memset(&i2s->sai_tx, 0, sizeof(i2s->sai_tx));
 		i2s->sai_tx.Instance = sai_tx_block;
-		i2s->sai_tx.Init.AudioFrequency   = cfg->sample_rate;
-		i2s->sai_tx.Init.AudioMode        = SAI_MODEMASTER_TX;
-		i2s->sai_tx.Init.NoDivider        = SAI_MASTERDIVIDER_ENABLED;
-		i2s->sai_tx.Init.Protocol         = SAI_FREE_PROTOCOL;
-		i2s->sai_tx.Init.DataSize         = data_size;
-		i2s->sai_tx.Init.FirstBit         = SAI_FIRSTBIT_MSB;
-		i2s->sai_tx.Init.ClockStrobing    = SAI_CLOCKSTROBING_FALLINGEDGE;
-		i2s->sai_tx.Init.Synchro          = SAI_ASYNCHRONOUS;
-		i2s->sai_tx.Init.OutputDrive      = SAI_OUTPUTDRIVE_ENABLED;
-		i2s->sai_tx.Init.FIFOThreshold    = SAI_FIFOTHRESHOLD_FULL;
+		i2s->sai_tx.Init.AudioFrequency = cfg->sample_rate;
+		i2s->sai_tx.Init.AudioMode = SAI_MODEMASTER_TX;
+		i2s->sai_tx.Init.NoDivider = SAI_MASTERDIVIDER_ENABLED;
+		i2s->sai_tx.Init.Protocol = SAI_FREE_PROTOCOL;
+		i2s->sai_tx.Init.DataSize = data_size;
+		i2s->sai_tx.Init.FirstBit = SAI_FIRSTBIT_MSB;
+		i2s->sai_tx.Init.ClockStrobing = SAI_CLOCKSTROBING_FALLINGEDGE;
+		i2s->sai_tx.Init.Synchro = SAI_ASYNCHRONOUS;
+		i2s->sai_tx.Init.OutputDrive = SAI_OUTPUTDRIVE_ENABLED;
+		i2s->sai_tx.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
 		if (is_mono)
 			i2s->sai_tx.Init.MonoStereoMode = SAI_MONOMODE;
 
-		i2s->sai_tx.FrameInit.FrameLength       = frame_length;
-		i2s->sai_tx.FrameInit.ActiveFrameLength  = active_frame_length;
-		i2s->sai_tx.FrameInit.FSDefinition       = SAI_FS_CHANNEL_IDENTIFICATION;
-		i2s->sai_tx.FrameInit.FSPolarity         = SAI_FS_ACTIVE_LOW;
-		i2s->sai_tx.FrameInit.FSOffset           = SAI_FS_BEFOREFIRSTBIT;
+		i2s->sai_tx.FrameInit.FrameLength = frame_length;
+		i2s->sai_tx.FrameInit.ActiveFrameLength = active_frame_length;
+		i2s->sai_tx.FrameInit.FSDefinition = SAI_FS_CHANNEL_IDENTIFICATION;
+		i2s->sai_tx.FrameInit.FSPolarity = SAI_FS_ACTIVE_LOW;
+		i2s->sai_tx.FrameInit.FSOffset = SAI_FS_BEFOREFIRSTBIT;
 
 		i2s->sai_tx.SlotInit.FirstBitOffset = 0;
-		i2s->sai_tx.SlotInit.SlotSize       = SAI_SLOTSIZE_DATASIZE;
-		i2s->sai_tx.SlotInit.SlotNumber     = slot_count;
-		i2s->sai_tx.SlotInit.SlotActive     = slot_active;
+		i2s->sai_tx.SlotInit.SlotSize = SAI_SLOTSIZE_DATASIZE;
+		i2s->sai_tx.SlotInit.SlotNumber = slot_count;
+		i2s->sai_tx.SlotInit.SlotActive = slot_active;
 
 		if (HAL_SAI_Init(&i2s->sai_tx) != HAL_OK)
 			return OVE_ERR_NOT_SUPPORTED;
@@ -130,29 +136,29 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 	if (cfg->direction & OVE_I2S_DIR_RX) {
 		memset(&i2s->sai_rx, 0, sizeof(i2s->sai_rx));
 		i2s->sai_rx.Instance = sai_rx_block;
-		i2s->sai_rx.Init.AudioFrequency   = cfg->sample_rate;
-		i2s->sai_rx.Init.AudioMode        = SAI_MODESLAVE_RX;
-		i2s->sai_rx.Init.NoDivider        = SAI_MASTERDIVIDER_ENABLED;
-		i2s->sai_rx.Init.Protocol         = SAI_FREE_PROTOCOL;
-		i2s->sai_rx.Init.DataSize         = data_size;
-		i2s->sai_rx.Init.FirstBit         = SAI_FIRSTBIT_MSB;
-		i2s->sai_rx.Init.ClockStrobing    = SAI_CLOCKSTROBING_RISINGEDGE;
-		i2s->sai_rx.Init.Synchro          = SAI_SYNCHRONOUS;
-		i2s->sai_rx.Init.OutputDrive      = SAI_OUTPUTDRIVE_DISABLED;
-		i2s->sai_rx.Init.FIFOThreshold    = SAI_FIFOTHRESHOLD_FULL;
+		i2s->sai_rx.Init.AudioFrequency = cfg->sample_rate;
+		i2s->sai_rx.Init.AudioMode = SAI_MODESLAVE_RX;
+		i2s->sai_rx.Init.NoDivider = SAI_MASTERDIVIDER_ENABLED;
+		i2s->sai_rx.Init.Protocol = SAI_FREE_PROTOCOL;
+		i2s->sai_rx.Init.DataSize = data_size;
+		i2s->sai_rx.Init.FirstBit = SAI_FIRSTBIT_MSB;
+		i2s->sai_rx.Init.ClockStrobing = SAI_CLOCKSTROBING_RISINGEDGE;
+		i2s->sai_rx.Init.Synchro = SAI_SYNCHRONOUS;
+		i2s->sai_rx.Init.OutputDrive = SAI_OUTPUTDRIVE_DISABLED;
+		i2s->sai_rx.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
 		if (is_mono)
 			i2s->sai_rx.Init.MonoStereoMode = SAI_MONOMODE;
 
-		i2s->sai_rx.FrameInit.FrameLength       = frame_length;
-		i2s->sai_rx.FrameInit.ActiveFrameLength  = active_frame_length;
-		i2s->sai_rx.FrameInit.FSDefinition       = SAI_FS_CHANNEL_IDENTIFICATION;
-		i2s->sai_rx.FrameInit.FSPolarity         = SAI_FS_ACTIVE_LOW;
-		i2s->sai_rx.FrameInit.FSOffset           = SAI_FS_BEFOREFIRSTBIT;
+		i2s->sai_rx.FrameInit.FrameLength = frame_length;
+		i2s->sai_rx.FrameInit.ActiveFrameLength = active_frame_length;
+		i2s->sai_rx.FrameInit.FSDefinition = SAI_FS_CHANNEL_IDENTIFICATION;
+		i2s->sai_rx.FrameInit.FSPolarity = SAI_FS_ACTIVE_LOW;
+		i2s->sai_rx.FrameInit.FSOffset = SAI_FS_BEFOREFIRSTBIT;
 
 		i2s->sai_rx.SlotInit.FirstBitOffset = 0;
-		i2s->sai_rx.SlotInit.SlotSize       = SAI_SLOTSIZE_DATASIZE;
-		i2s->sai_rx.SlotInit.SlotNumber     = slot_count;
-		i2s->sai_rx.SlotInit.SlotActive     = slot_active;
+		i2s->sai_rx.SlotInit.SlotSize = SAI_SLOTSIZE_DATASIZE;
+		i2s->sai_rx.SlotInit.SlotNumber = slot_count;
+		i2s->sai_rx.SlotInit.SlotActive = slot_active;
 
 		if (HAL_SAI_Init(&i2s->sai_rx) != HAL_OK)
 			return OVE_ERR_NOT_SUPPORTED;
@@ -184,24 +190,20 @@ int ove_hal_i2s_start(ove_i2s_t i2s)
 
 	/* Pre-fill buffers with silence */
 	if (i2s->tx_dma_buf)
-		memset(i2s->tx_dma_buf, 0,
-		       total_samples * (i2s->bit_depth / 8));
+		memset(i2s->tx_dma_buf, 0, total_samples * (i2s->bit_depth / 8));
 	if (i2s->rx_dma_buf)
-		memset(i2s->rx_dma_buf, 0,
-		       total_samples * (i2s->bit_depth / 8));
+		memset(i2s->rx_dma_buf, 0, total_samples * (i2s->bit_depth / 8));
 
 	/* TX starts first — master generates clocks for slave RX */
 	if (i2s->direction & OVE_I2S_DIR_TX) {
-		if (HAL_SAI_Transmit_DMA(&i2s->sai_tx,
-					 i2s->tx_dma_buf,
-					 (uint16_t)total_samples) != HAL_OK)
+		if (HAL_SAI_Transmit_DMA(&i2s->sai_tx, i2s->tx_dma_buf, (uint16_t)total_samples) !=
+		    HAL_OK)
 			return OVE_ERR_NOT_SUPPORTED;
 	}
 
 	if (i2s->direction & OVE_I2S_DIR_RX) {
-		if (HAL_SAI_Receive_DMA(&i2s->sai_rx,
-					i2s->rx_dma_buf,
-					(uint16_t)total_samples) != HAL_OK)
+		if (HAL_SAI_Receive_DMA(&i2s->sai_rx, i2s->rx_dma_buf, (uint16_t)total_samples) !=
+		    HAL_OK)
 			return OVE_ERR_NOT_SUPPORTED;
 	}
 

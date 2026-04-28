@@ -53,7 +53,7 @@ static void test_hw_watchdog_real_reset(void **state)
 	(void)state;
 
 	if (RCC->CSR & RCC_CSR_IWDGRSTF) {
-		RCC->CSR |= RCC_CSR_RMVF;  /* clear all reset flags */
+		RCC->CSR |= RCC_CSR_RMVF; /* clear all reset flags */
 		return;
 	}
 

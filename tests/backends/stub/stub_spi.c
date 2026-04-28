@@ -31,10 +31,11 @@ void ove_hal_spi_close(ove_spi_t spi)
 	spi->fd = -1;
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
-			 size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
 {
-	(void)spi; (void)tx; (void)timeout_ms;
+	(void)spi;
+	(void)tx;
+	(void)timeout_ms;
 	if (rx != NULL && len > 0)
 		memset(rx, 0, len);
 	return OVE_OK;

@@ -26,21 +26,28 @@
 static int errno_to_ove(int err)
 {
 	switch (err) {
-	case ECONNREFUSED:  return OVE_ERR_NET_REFUSED;
-	case ENETUNREACH:   /* fall through */
-	case EHOSTUNREACH:  return OVE_ERR_NET_UNREACHABLE;
-	case ETIMEDOUT:     return OVE_ERR_TIMEOUT;
-	case EADDRINUSE:    return OVE_ERR_NET_ADDR_IN_USE;
-	case ECONNRESET:    return OVE_ERR_NET_RESET;
-	case ECONNABORTED:  return OVE_ERR_NET_RESET;
-	case ENOTCONN:      return OVE_ERR_NET_CLOSED;
-	case EPIPE:         return OVE_ERR_NET_CLOSED;
-	default:            return OVE_ERR_NOT_SUPPORTED;
+	case ECONNREFUSED:
+		return OVE_ERR_NET_REFUSED;
+	case ENETUNREACH: /* fall through */
+	case EHOSTUNREACH:
+		return OVE_ERR_NET_UNREACHABLE;
+	case ETIMEDOUT:
+		return OVE_ERR_TIMEOUT;
+	case EADDRINUSE:
+		return OVE_ERR_NET_ADDR_IN_USE;
+	case ECONNRESET:
+	case ECONNABORTED:
+		return OVE_ERR_NET_RESET;
+	case ENOTCONN:
+	case EPIPE:
+		return OVE_ERR_NET_CLOSED;
+	default:
+		return OVE_ERR_NOT_SUPPORTED;
 	}
 }
 
-static void sockaddr_to_posix(const ove_sockaddr_t *ove,
-			      struct sockaddr_storage *ss, socklen_t *len)
+static void sockaddr_to_posix(const ove_sockaddr_t *ove, struct sockaddr_storage *ss,
+			      socklen_t *len)
 {
 	memset(ss, 0, sizeof(*ss));
 	if (ove->family == OVE_AF_INET) {
@@ -58,8 +65,7 @@ static void sockaddr_to_posix(const ove_sockaddr_t *ove,
 	}
 }
 
-static void posix_to_sockaddr(const struct sockaddr_storage *ss,
-			      ove_sockaddr_t *ove)
+static void posix_to_sockaddr(const struct sockaddr_storage *ss, ove_sockaddr_t *ove)
 {
 	memset(ove, 0, sizeof(*ove));
 	if (ss->ss_family == AF_INET) {
@@ -90,8 +96,10 @@ static int type_to_posix(ove_sock_type_t type)
 int ove_netif_init(ove_netif_t *netif, ove_netif_storage_t *storage)
 {
 	int ret = ove_check_param(netif);
-	if (ret) return ret;
-	if (!storage) return OVE_ERR_INVALID_PARAM;
+	if (ret)
+		return ret;
+	if (!storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_netif *n = (struct ove_netif *)storage;
 	n->initialized = 1;
 	*netif = n;
@@ -108,7 +116,8 @@ void ove_netif_deinit(ove_netif_t netif)
 int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
 {
 	(void)cfg;
-	if (!netif) return OVE_ERR_INVALID_PARAM;
+	if (!netif)
+		return OVE_ERR_INVALID_PARAM;
 	/* POSIX: host OS manages networking — nothing to do. */
 	return OVE_OK;
 }
@@ -119,10 +128,11 @@ void ove_netif_down(ove_netif_t netif)
 	/* POSIX: no-op. */
 }
 
-int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip,
-		       ove_sockaddr_t *gateway, ove_sockaddr_t *netmask)
+int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *gateway,
+		       ove_sockaddr_t *netmask)
 {
-	if (!netif) return OVE_ERR_INVALID_PARAM;
+	if (!netif)
+		return OVE_ERR_INVALID_PARAM;
 
 	/* Use getifaddrs to find the first non-loopback IPv4 address. */
 	struct ifaddrs *ifa_list, *ifa;
@@ -164,9 +174,11 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip,
 int ove_netif_create(ove_netif_t *netif)
 {
 	int ret = ove_check_param(netif);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 	struct ove_netif *n = OVE_BACKEND_MALLOC(sizeof(*n));
-	if (!n) return OVE_ERR_NO_MEMORY;
+	if (!n)
+		return OVE_ERR_NO_MEMORY;
 	n->initialized = 1;
 	*netif = n;
 	return OVE_OK;
@@ -185,15 +197,18 @@ void ove_netif_destroy(ove_netif_t netif)
 
 /* ---------- Socket ---------- */
 
-int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage,
-		    ove_af_t af, ove_sock_type_t type)
+int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+		    ove_sock_type_t type)
 {
 	int ret = ove_check_param(sock);
-	if (ret) return ret;
-	if (!storage) return OVE_ERR_INVALID_PARAM;
+	if (ret)
+		return ret;
+	if (!storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_socket *s = (struct ove_socket *)storage;
 	int fd = socket(af_to_posix(af), type_to_posix(type), 0);
-	if (fd < 0) return errno_to_ove(errno);
+	if (fd < 0)
+		return errno_to_ove(errno);
 	/* Enable SO_REUSEADDR for server sockets to avoid EADDRINUSE */
 	int optval = 1;
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
@@ -214,9 +229,11 @@ void ove_socket_close(ove_socket_t sock)
 int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type)
 {
 	int ret = ove_check_param(sock);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 	struct ove_socket *s = OVE_BACKEND_MALLOC(sizeof(*s));
-	if (!s) return OVE_ERR_NO_MEMORY;
+	if (!s)
+		return OVE_ERR_NO_MEMORY;
 	int fd = socket(af_to_posix(af), type_to_posix(type), 0);
 	if (fd < 0) {
 		OVE_BACKEND_FREE(s);
@@ -232,16 +249,17 @@ int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type)
 void ove_socket_destroy(ove_socket_t sock)
 {
 	if (sock) {
-		if (sock->fd >= 0) close(sock->fd);
+		if (sock->fd >= 0)
+			close(sock->fd);
 		OVE_BACKEND_FREE(sock);
 	}
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
-		       uint32_t timeout_ms)
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms)
 {
-	if (!sock || !addr) return OVE_ERR_INVALID_PARAM;
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
 
 	struct sockaddr_storage ss;
 	socklen_t slen;
@@ -268,24 +286,28 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
 		return OVE_OK;
 	}
 
-	struct pollfd pfd = { .fd = sock->fd, .events = POLLOUT };
+	struct pollfd pfd = {.fd = sock->fd, .events = POLLOUT};
 	int pr = poll(&pfd, 1, (int)timeout_ms);
 	fcntl(sock->fd, F_SETFL, flags);
 
-	if (pr == 0) return OVE_ERR_TIMEOUT;
-	if (pr < 0) return errno_to_ove(errno);
+	if (pr == 0)
+		return OVE_ERR_TIMEOUT;
+	if (pr < 0)
+		return errno_to_ove(errno);
 
 	int so_err = 0;
 	socklen_t elen = sizeof(so_err);
 	getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &so_err, &elen);
-	if (so_err) return errno_to_ove(so_err);
+	if (so_err)
+		return errno_to_ove(so_err);
 
 	return OVE_OK;
 }
 
 int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
 {
-	if (!sock || !addr) return OVE_ERR_INVALID_PARAM;
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_storage ss;
 	socklen_t slen;
 	sockaddr_to_posix(addr, &ss, &slen);
@@ -296,28 +318,31 @@ int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
 
 int ove_socket_listen(ove_socket_t sock, int backlog)
 {
-	if (!sock) return OVE_ERR_INVALID_PARAM;
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
 	if (listen(sock->fd, backlog) < 0)
 		return errno_to_ove(errno);
 	return OVE_OK;
 }
 
-int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
-		      ove_socket_storage_t *client_storage,
+int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
 		      uint32_t timeout_ms)
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
 
 	if (!ove_timeout_is_forever(timeout_ms)) {
-		struct pollfd pfd = { .fd = sock->fd, .events = POLLIN };
+		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
 		int pr = poll(&pfd, 1, (int)timeout_ms);
-		if (pr == 0) return OVE_ERR_TIMEOUT;
-		if (pr < 0) return errno_to_ove(errno);
+		if (pr == 0)
+			return OVE_ERR_TIMEOUT;
+		if (pr < 0)
+			return errno_to_ove(errno);
 	}
 
 	int fd = accept(sock->fd, NULL, NULL);
-	if (fd < 0) return errno_to_ove(errno);
+	if (fd < 0)
+		return errno_to_ove(errno);
 
 	struct ove_socket *cs = (struct ove_socket *)client_storage;
 	cs->fd = fd;
@@ -325,80 +350,94 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
 	return OVE_OK;
 }
 
-int ove_socket_send(ove_socket_t sock, const void *data, size_t len,
-		    size_t *sent)
+int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent)
 {
-	if (!sock || !data) return OVE_ERR_INVALID_PARAM;
+	if (!sock || !data)
+		return OVE_ERR_INVALID_PARAM;
 	ssize_t n = send(sock->fd, data, len, MSG_NOSIGNAL);
-	if (n < 0) return errno_to_ove(errno);
-	if (sent) *sent = (size_t)n;
+	if (n < 0)
+		return errno_to_ove(errno);
+	if (sent)
+		*sent = (size_t)n;
 	return OVE_OK;
 }
 
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len,
-		    size_t *received, uint32_t timeout_ms)
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint32_t timeout_ms)
 {
-	if (!sock || !buf) return OVE_ERR_INVALID_PARAM;
+	if (!sock || !buf)
+		return OVE_ERR_INVALID_PARAM;
 
 	if (!ove_timeout_is_forever(timeout_ms)) {
-		struct pollfd pfd = { .fd = sock->fd, .events = POLLIN };
+		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
 		int pr = poll(&pfd, 1, (int)timeout_ms);
-		if (pr == 0) return OVE_ERR_TIMEOUT;
-		if (pr < 0) return errno_to_ove(errno);
+		if (pr == 0)
+			return OVE_ERR_TIMEOUT;
+		if (pr < 0)
+			return errno_to_ove(errno);
 	}
 
 	ssize_t n = recv(sock->fd, buf, len, 0);
-	if (n < 0) return errno_to_ove(errno);
-	if (n == 0) return OVE_ERR_NET_CLOSED;
-	if (received) *received = (size_t)n;
+	if (n < 0)
+		return errno_to_ove(errno);
+	if (n == 0)
+		return OVE_ERR_NET_CLOSED;
+	if (received)
+		*received = (size_t)n;
 	return OVE_OK;
 }
 
-int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len,
-		      size_t *sent, const ove_sockaddr_t *dest)
+int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *sent,
+		      const ove_sockaddr_t *dest)
 {
-	if (!sock || !data || !dest) return OVE_ERR_INVALID_PARAM;
+	if (!sock || !data || !dest)
+		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_storage ss;
 	socklen_t slen;
 	sockaddr_to_posix(dest, &ss, &slen);
-	ssize_t n = sendto(sock->fd, data, len, MSG_NOSIGNAL,
-			   (struct sockaddr *)&ss, slen);
-	if (n < 0) return errno_to_ove(errno);
-	if (sent) *sent = (size_t)n;
+	ssize_t n = sendto(sock->fd, data, len, MSG_NOSIGNAL, (struct sockaddr *)&ss, slen);
+	if (n < 0)
+		return errno_to_ove(errno);
+	if (sent)
+		*sent = (size_t)n;
 	return OVE_OK;
 }
 
-int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len,
-			size_t *received, ove_sockaddr_t *src,
-			uint32_t timeout_ms)
+int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
+			ove_sockaddr_t *src, uint32_t timeout_ms)
 {
-	if (!sock || !buf) return OVE_ERR_INVALID_PARAM;
+	if (!sock || !buf)
+		return OVE_ERR_INVALID_PARAM;
 
 	if (!ove_timeout_is_forever(timeout_ms)) {
-		struct pollfd pfd = { .fd = sock->fd, .events = POLLIN };
+		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
 		int pr = poll(&pfd, 1, (int)timeout_ms);
-		if (pr == 0) return OVE_ERR_TIMEOUT;
-		if (pr < 0) return errno_to_ove(errno);
+		if (pr == 0)
+			return OVE_ERR_TIMEOUT;
+		if (pr < 0)
+			return errno_to_ove(errno);
 	}
 
 	struct sockaddr_storage ss;
 	socklen_t slen = sizeof(ss);
-	ssize_t n = recvfrom(sock->fd, buf, len, 0,
-			     (struct sockaddr *)&ss, &slen);
-	if (n < 0) return errno_to_ove(errno);
-	if (n == 0) return OVE_ERR_NET_CLOSED;
-	if (received) *received = (size_t)n;
-	if (src) posix_to_sockaddr(&ss, src);
+	ssize_t n = recvfrom(sock->fd, buf, len, 0, (struct sockaddr *)&ss, &slen);
+	if (n < 0)
+		return errno_to_ove(errno);
+	if (n == 0)
+		return OVE_ERR_NET_CLOSED;
+	if (received)
+		*received = (size_t)n;
+	if (src)
+		posix_to_sockaddr(&ss, src);
 	return OVE_OK;
 }
 
 /* ---------- DNS ---------- */
 
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr,
-		    uint32_t timeout_ms)
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
 {
 	(void)timeout_ms; /* POSIX getaddrinfo has no timeout knob */
-	if (!hostname || !addr) return OVE_ERR_INVALID_PARAM;
+	if (!hostname || !addr)
+		return OVE_ERR_INVALID_PARAM;
 
 	struct addrinfo hints, *res;
 	memset(&hints, 0, sizeof(hints));
@@ -406,7 +445,8 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr,
 	hints.ai_socktype = SOCK_STREAM;
 
 	int rc = getaddrinfo(hostname, NULL, &hints, &res);
-	if (rc != 0) return OVE_ERR_NET_DNS_FAIL;
+	if (rc != 0)
+		return OVE_ERR_NET_DNS_FAIL;
 
 	memset(addr, 0, sizeof(*addr));
 	addr->family = OVE_AF_INET;
@@ -418,10 +458,11 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr,
 
 /* ---------- Address helpers ---------- */
 
-void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b,
-		       uint8_t c, uint8_t d, uint16_t port)
+void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b, uint8_t c, uint8_t d,
+		       uint16_t port)
 {
-	if (!addr) return;
+	if (!addr)
+		return;
 	memset(addr, 0, sizeof(*addr));
 	addr->family = OVE_AF_INET;
 	addr->port = port;

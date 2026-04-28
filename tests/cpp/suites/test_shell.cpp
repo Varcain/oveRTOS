@@ -20,7 +20,7 @@ static void test_cpp_shell_register_cmd(void **state)
 	(void)state;
 	(void)ove::shell::init();
 
-	struct ove_shell_cmd cmd = { "test", "a test command", test_shell_handler };
+	struct ove_shell_cmd cmd = {"test", "a test command", test_shell_handler};
 	int ret = ove::shell::register_cmd(&cmd);
 	assert_int_equal(ret, OVE_OK);
 }

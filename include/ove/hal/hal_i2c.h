@@ -36,7 +36,7 @@ extern "C" {
  * @param[in] cfg  Bus configuration descriptor.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg);
+int ove_hal_i2c_open(ove_i2c_t i2c, const struct ove_i2c_cfg *cfg);
 
 /**
  * @brief Disable and release the I2C peripheral.
@@ -59,9 +59,8 @@ void ove_hal_i2c_close(ove_i2c_t i2c);
  * @param[in] timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr,
-		       const void *data, size_t len,
-		       uint32_t timeout_ms);
+int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
+		      uint32_t timeout_ms);
 
 /**
  * @brief Read data from an I2C device.
@@ -75,8 +74,7 @@ int  ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr,
  * @param[in]  timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr,
-		      void *buf, size_t len, uint32_t timeout_ms);
+int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms);
 
 /**
  * @brief Combined write-then-read with repeated start.
@@ -94,10 +92,8 @@ int  ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr,
  * @param[in]  timeout_ms Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
-			    const void *tx, size_t tx_len,
-			    void *rx, size_t rx_len,
-			    uint32_t timeout_ms);
+int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+			   size_t rx_len, uint32_t timeout_ms);
 
 #ifdef __cplusplus
 }

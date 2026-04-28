@@ -55,7 +55,8 @@ static void test_cpp_recursive_timeout(void **state)
 	ove::RecursiveMutex mtx;
 	cpp_rmtx_ctx ctx = {&mtx, 0};
 	auto th = make_test_thread("rh", cpp_rmtx_hold_entry, &ctx);
-	while (!ctx.locked) test_msleep(1);
+	while (!ctx.locked)
+		test_msleep(1);
 	assert_int_equal(mtx.lock(50), OVE_ERR_TIMEOUT);
 }
 

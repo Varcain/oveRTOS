@@ -13,9 +13,7 @@
 #include <zephyr/device.h>
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_watchdog_init(ove_watchdog_t *wdt,
-		      ove_watchdog_storage_t *storage,
-		      uint32_t timeout_ms)
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)
 {
 	struct wdt_timeout_cfg cfg;
 	const struct device *dev;

@@ -19,7 +19,7 @@
 
 /* SysTick registers (always available on Cortex-M, emulated by QEMU) */
 #define STUB_SYSTICK_LOAD (*(volatile uint32_t *)0xE000E014)
-#define STUB_SYSTICK_VAL  (*(volatile uint32_t *)0xE000E018)
+#define STUB_SYSTICK_VAL (*(volatile uint32_t *)0xE000E018)
 
 extern uint32_t SystemCoreClock;
 
@@ -88,8 +88,7 @@ int ove_time_get_us(uint64_t *out)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	*out = (uint64_t)ts.tv_sec * 1000000ULL +
-	       (uint64_t)ts.tv_nsec / 1000ULL;
+	*out = (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 	return OVE_OK;
 }
 
@@ -100,8 +99,7 @@ int ove_time_get_ns(uint64_t *out)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	*out = (uint64_t)ts.tv_sec * 1000000000ULL +
-	       (uint64_t)ts.tv_nsec;
+	*out = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 	return OVE_OK;
 }
 
@@ -118,8 +116,7 @@ static void delay_ns(uint64_t ns)
 		target.tv_nsec -= 1000000000L;
 	}
 
-	while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
-			       &target, NULL) == EINTR) {
+	while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &target, NULL) == EINTR) {
 	}
 }
 

@@ -43,7 +43,8 @@ void ove_mutex_deinit(ove_mutex_t mtx)
 int ove_mutex_create(ove_mutex_t *mtx)
 {
 	int ret = ove_check_param(mtx);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_mutex *m = OVE_BACKEND_MALLOC(sizeof(*m));
 	if (m == NULL) {
@@ -85,8 +86,7 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 /* ─── Recursive Mutex _init ──────────────────────────────────────────── */
 
-int ove_recursive_mutex_init(ove_mutex_t *mtx,
-				 ove_mutex_storage_t *storage)
+int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
 	if (mtx == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -143,8 +143,7 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx)
 
 /* ─── Semaphore _init / _deinit ──────────────────────────────────────── */
 
-int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage,
-		     unsigned int initial, unsigned int max)
+int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
 	if (sem == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -162,11 +161,11 @@ void ove_sem_deinit(ove_sem_t sem)
 /* ─── Semaphore _create / _destroy ───────────────────────────────────── */
 
 #ifdef OVE_HEAP_SYNC
-int ove_sem_create(ove_sem_t *sem, unsigned int initial,
-			     unsigned int max)
+int ove_sem_create(ove_sem_t *sem, unsigned int initial, unsigned int max)
 {
 	int ret = ove_check_param(sem);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_sem *s = OVE_BACKEND_MALLOC(sizeof(*s));
 	if (s == NULL) {
@@ -229,7 +228,8 @@ void ove_event_deinit(ove_event_t evt)
 int ove_event_create(ove_event_t *evt)
 {
 	int ret = ove_check_param(evt);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_event *e = OVE_BACKEND_MALLOC(sizeof(*e));
 	if (e == NULL) {
@@ -277,8 +277,7 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 /* ─── Condvar _init / _deinit ────────────────────────────────────────── */
 
-int ove_condvar_init(ove_condvar_t *cv,
-			 ove_condvar_storage_t *storage)
+int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
 	if (cv == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -299,7 +298,8 @@ void ove_condvar_deinit(ove_condvar_t cv)
 int ove_condvar_create(ove_condvar_t *cv)
 {
 	int ret = ove_check_param(cv);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_condvar *c = OVE_BACKEND_MALLOC(sizeof(*c));
 	if (c == NULL) {
@@ -321,14 +321,12 @@ void ove_condvar_destroy(ove_condvar_t cv)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
-			       uint32_t timeout_ms)
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	int ret = k_condvar_wait(&cv->cv, &mtx->mtx,
-				 ms_to_timeout(timeout_ms));
+	int ret = k_condvar_wait(&cv->cv, &mtx->mtx, ms_to_timeout(timeout_ms));
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);

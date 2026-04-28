@@ -39,13 +39,13 @@
 
 /* ── Semihosting file descriptors (separate to avoid seek conflicts) ── */
 
-static int g_sh_fd_tx = -1;   /* TX ring operations */
-static int g_sh_fd_rx = -1;   /* RX ring operations */
+static int g_sh_fd_tx = -1; /* TX ring operations */
+static int g_sh_fd_rx = -1; /* RX ring operations */
 
 /* ── Local ring position tracking ────────────────────────────────────── */
 
-static uint32_t g_tx_wpos;    /* Mirrors header.tx_write_pos */
-static uint32_t g_rx_rpos;    /* Mirrors header.rx_read_pos */
+static uint32_t g_tx_wpos; /* Mirrors header.tx_write_pos */
+static uint32_t g_rx_rpos; /* Mirrors header.rx_read_pos */
 
 /* ── Scratch buffers (separate for TX/RX to avoid preemption races) ── */
 

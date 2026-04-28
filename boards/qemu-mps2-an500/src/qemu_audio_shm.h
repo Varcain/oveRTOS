@@ -31,16 +31,16 @@
 #include <stdint.h>
 
 /* Use the common ring offset constants. */
-#define AUDIO_SHM_MAGIC         0x4F564155  /* "OVAU" little-endian */
-#define AUDIO_SHM_RING_SIZE     (1u << 16)  /* 64 KB per direction */
-#define AUDIO_SHM_RING_HDR      32          /* matches OVE_RING_OFF_BUF */
+#define AUDIO_SHM_MAGIC 0x4F564155     /* "OVAU" little-endian */
+#define AUDIO_SHM_RING_SIZE (1u << 16) /* 64 KB per direction */
+#define AUDIO_SHM_RING_HDR 32	       /* matches OVE_RING_OFF_BUF */
 
-#define AUDIO_SHM_RING_TOTAL    (AUDIO_SHM_RING_HDR + AUDIO_SHM_RING_SIZE)
-#define AUDIO_SHM_OUT_RING_OFF  0
-#define AUDIO_SHM_IN_RING_OFF   AUDIO_SHM_RING_TOTAL
-#define AUDIO_SHM_TOTAL_SIZE    (2u * AUDIO_SHM_RING_TOTAL)
+#define AUDIO_SHM_RING_TOTAL (AUDIO_SHM_RING_HDR + AUDIO_SHM_RING_SIZE)
+#define AUDIO_SHM_OUT_RING_OFF 0
+#define AUDIO_SHM_IN_RING_OFF AUDIO_SHM_RING_TOTAL
+#define AUDIO_SHM_TOTAL_SIZE (2u * AUDIO_SHM_RING_TOTAL)
 
-#define AUDIO_SHM_PATH          "/dev/shm/ove-audio"
+#define AUDIO_SHM_PATH "/dev/shm/ove-audio"
 
 /*
  * Each ring in the SHM file has the same layout as struct ove_sim_audio_ring:
@@ -62,12 +62,12 @@
  */
 
 /* Field offsets within each ring (mirrors OVE_RING_OFF_*) */
-#define QEMU_RING_OFF_WRITE_POS    0
-#define QEMU_RING_OFF_READ_POS     4
-#define QEMU_RING_OFF_SAMPLE_RATE  8
-#define QEMU_RING_OFF_CHANNELS    12
-#define QEMU_RING_OFF_BIT_DEPTH   14
-#define QEMU_RING_OFF_SIZE        16
-#define QEMU_RING_OFF_BUF         32
+#define QEMU_RING_OFF_WRITE_POS 0
+#define QEMU_RING_OFF_READ_POS 4
+#define QEMU_RING_OFF_SAMPLE_RATE 8
+#define QEMU_RING_OFF_CHANNELS 12
+#define QEMU_RING_OFF_BIT_DEPTH 14
+#define QEMU_RING_OFF_SIZE 16
+#define QEMU_RING_OFF_BUF 32
 
 #endif /* QEMU_AUDIO_SHM_H */

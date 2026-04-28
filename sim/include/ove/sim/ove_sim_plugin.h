@@ -33,16 +33,16 @@ extern "C" {
 
 /** @brief Plugin type identifiers. */
 enum ove_sim_plugin_type {
-	OVE_SIM_PLUGIN_DISPLAY,   /**< Display output (framebuffer capture). */
-	OVE_SIM_PLUGIN_AUDIO,     /**< Audio I/O (PCM capture / injection). */
-	OVE_SIM_PLUGIN_GPIO,      /**< GPIO port simulator. */
-	OVE_SIM_PLUGIN_LED,       /**< LED state visualizer. */
-	OVE_SIM_PLUGIN_I2C_DEV,   /**< Virtual I2C device (sensor, EEPROM, ...). */
-	OVE_SIM_PLUGIN_SPI_DEV,   /**< Virtual SPI device (flash, display, ...). */
-	OVE_SIM_PLUGIN_UART,      /**< Virtual UART / serial terminal. */
-	OVE_SIM_PLUGIN_SENSOR,    /**< High-level sensor (accel, gyro, temp). */
-	OVE_SIM_PLUGIN_BUTTON,    /**< Virtual button / touch input. */
-	OVE_SIM_PLUGIN_NVS,       /**< Non-volatile storage simulator. */
+	OVE_SIM_PLUGIN_DISPLAY, /**< Display output (framebuffer capture). */
+	OVE_SIM_PLUGIN_AUDIO,	/**< Audio I/O (PCM capture / injection). */
+	OVE_SIM_PLUGIN_GPIO,	/**< GPIO port simulator. */
+	OVE_SIM_PLUGIN_LED,	/**< LED state visualizer. */
+	OVE_SIM_PLUGIN_I2C_DEV, /**< Virtual I2C device (sensor, EEPROM, ...). */
+	OVE_SIM_PLUGIN_SPI_DEV, /**< Virtual SPI device (flash, display, ...). */
+	OVE_SIM_PLUGIN_UART,	/**< Virtual UART / serial terminal. */
+	OVE_SIM_PLUGIN_SENSOR,	/**< High-level sensor (accel, gyro, temp). */
+	OVE_SIM_PLUGIN_BUTTON,	/**< Virtual button / touch input. */
+	OVE_SIM_PLUGIN_NVS,	/**< Non-volatile storage simulator. */
 };
 
 /* ── Events and commands ───────────────────────────────────────────── */
@@ -58,7 +58,7 @@ struct ove_sim_event {
 	uint32_t event_type;   /**< Plugin-specific event code. */
 	uint32_t timestamp_ms; /**< Simulation time in milliseconds. */
 	uint32_t data_len;     /**< Length of trailing payload in bytes. */
-	uint8_t  data[];       /**< Plugin-specific payload. */
+	uint8_t data[];	       /**< Plugin-specific payload. */
 };
 
 /**
@@ -68,10 +68,10 @@ struct ove_sim_event {
  * bytes of plugin-specific payload.
  */
 struct ove_sim_cmd {
-	uint32_t plugin_id;  /**< Target plugin instance. */
-	uint32_t cmd_type;   /**< Plugin-specific command code. */
-	uint32_t data_len;   /**< Length of trailing payload in bytes. */
-	uint8_t  data[];     /**< Plugin-specific payload. */
+	uint32_t plugin_id; /**< Target plugin instance. */
+	uint32_t cmd_type;  /**< Plugin-specific command code. */
+	uint32_t data_len;  /**< Length of trailing payload in bytes. */
+	uint8_t data[];	    /**< Plugin-specific payload. */
 };
 
 /* ── Plugin operations vtable ──────────────────────────────────────── */
@@ -147,10 +147,10 @@ struct ove_sim_transport;
  * @brief A registered plugin instance in the simulation registry.
  */
 struct ove_sim_plugin {
-	uint32_t                         id;        /**< Unique plugin ID. */
-	const struct ove_sim_plugin_ops *ops;       /**< Vtable. */
-	void                            *ctx;       /**< Plugin-private context. */
-	struct ove_sim_transport        *transport;  /**< Transport for events. */
+	uint32_t id;			      /**< Unique plugin ID. */
+	const struct ove_sim_plugin_ops *ops; /**< Vtable. */
+	void *ctx;			      /**< Plugin-private context. */
+	struct ove_sim_transport *transport;  /**< Transport for events. */
 };
 
 /* ── Registry API ──────────────────────────────────────────────────── */
@@ -167,8 +167,7 @@ struct ove_sim_plugin {
  * @param[in] config_len  Config length in bytes.
  * @return Non-negative plugin ID on success, negative error code on failure.
  */
-int ove_sim_plugin_register(const struct ove_sim_plugin_ops *ops,
-			    void *ctx, const void *config,
+int ove_sim_plugin_register(const struct ove_sim_plugin_ops *ops, void *ctx, const void *config,
 			    size_t config_len);
 
 /**
@@ -191,8 +190,7 @@ int ove_sim_plugin_dispatch_cmd(const struct ove_sim_cmd *cmd);
  * @param[in] event      Event to emit (header + payload).
  * @return 0 on success, negative error code on failure.
  */
-int ove_sim_plugin_emit_event(uint32_t plugin_id,
-			      const struct ove_sim_event *event);
+int ove_sim_plugin_emit_event(uint32_t plugin_id, const struct ove_sim_event *event);
 
 /**
  * @brief Set the transport used by all plugins for event emission.

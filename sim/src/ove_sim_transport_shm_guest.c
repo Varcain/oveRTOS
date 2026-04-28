@@ -33,9 +33,9 @@
 
 /* ── Framebuffer protocol (matches ove-dashboard-bridge.py) ──────── */
 
-#define FB_PATH       "/dev/shm/ove-fb"
-#define FB_MAGIC      0x42465854  /* "TXFB" */
-#define FB_FMT_RGB565   0
+#define FB_PATH "/dev/shm/ove-fb"
+#define FB_MAGIC 0x42465854 /* "TXFB" */
+#define FB_FMT_RGB565 0
 #define FB_FMT_XRGB8888 1
 
 struct fb_header {
@@ -48,42 +48,42 @@ struct fb_header {
 
 /* ── Audio protocol (matches qemu_audio_shm.h) ───────────────────── */
 
-#define AUDIO_PATH       "/dev/shm/ove-audio"
-#define AUDIO_MAGIC      0x4F564155  /* "OVAU" */
-#define AUDIO_HDR_SIZE   64
-#define AUDIO_RING_SIZE  (1u << 17)  /* 128 KB per direction */
-#define AUDIO_OUT_RING   AUDIO_HDR_SIZE
-#define AUDIO_IN_RING    (AUDIO_HDR_SIZE + AUDIO_RING_SIZE)
+#define AUDIO_PATH "/dev/shm/ove-audio"
+#define AUDIO_MAGIC 0x4F564155 /* "OVAU" */
+#define AUDIO_HDR_SIZE 64
+#define AUDIO_RING_SIZE (1u << 17) /* 128 KB per direction */
+#define AUDIO_OUT_RING AUDIO_HDR_SIZE
+#define AUDIO_IN_RING (AUDIO_HDR_SIZE + AUDIO_RING_SIZE)
 
 /* Offsets into audio header. */
-#define AUDIO_OFF_MAGIC       0
+#define AUDIO_OFF_MAGIC 0
 #define AUDIO_OFF_SAMPLE_RATE 4
-#define AUDIO_OFF_CHANNELS    8
-#define AUDIO_OFF_BIT_DEPTH   10
-#define AUDIO_OFF_RING_SIZE   16
-#define AUDIO_OFF_OUT_WPOS    20
-#define AUDIO_OFF_OUT_RPOS    24
-#define AUDIO_OFF_IN_WPOS     28
-#define AUDIO_OFF_IN_RPOS     32
+#define AUDIO_OFF_CHANNELS 8
+#define AUDIO_OFF_BIT_DEPTH 10
+#define AUDIO_OFF_RING_SIZE 16
+#define AUDIO_OFF_OUT_WPOS 20
+#define AUDIO_OFF_OUT_RPOS 24
+#define AUDIO_OFF_IN_WPOS 28
+#define AUDIO_OFF_IN_RPOS 32
 
 /* ── Private state ────────────────────────────────────────────────── */
 
 struct shm_guest_priv {
 	/* Plugin events/commands (/dev/shm/ove-sim) */
-	int      sim_fd;
+	int sim_fd;
 	uint32_t event_wpos;
 	uint32_t cmd_rpos;
 
 	/* Display (/dev/shm/ove-fb) */
-	int      fb_fd;
+	int fb_fd;
 	uint16_t fb_width;
 	uint16_t fb_height;
 
 	/* Audio (/dev/shm/ove-audio) */
-	int      audio_fd;
+	int audio_fd;
 	uint32_t audio_out_wpos;
 	uint32_t audio_in_rpos;
-	uint8_t  audio_init_done;
+	uint8_t audio_init_done;
 };
 
 /* ── Semihosting ring helpers ─────────────────────────────────────── */
@@ -102,8 +102,8 @@ static uint32_t sh_read_u32(int fd, uint32_t offset)
 	return val;
 }
 
-static void sh_ring_write(int fd, uint32_t ring_off, uint32_t ring_size,
-			   uint32_t wpos, const void *data, uint32_t len)
+static void sh_ring_write(int fd, uint32_t ring_off, uint32_t ring_size, uint32_t wpos,
+			  const void *data, uint32_t len)
 {
 	uint32_t mask = ring_size - 1;
 	uint32_t pos = wpos & mask;
@@ -121,8 +121,8 @@ static void sh_ring_write(int fd, uint32_t ring_off, uint32_t ring_size,
 	}
 }
 
-static uint32_t sh_ring_read(int fd, uint32_t ring_off, uint32_t ring_size,
-			      uint32_t rpos, void *data, uint32_t len)
+static uint32_t sh_ring_read(int fd, uint32_t ring_off, uint32_t ring_size, uint32_t rpos,
+			     void *data, uint32_t len)
 {
 	uint32_t mask = ring_size - 1;
 	uint32_t pos = rpos & mask;
@@ -176,13 +176,21 @@ static int guest_open(struct ove_sim_transport *t, const char *endpoint)
 static void guest_close(struct ove_sim_transport *t)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
-	if (p->sim_fd >= 0)   { sh_close(p->sim_fd);   p->sim_fd = -1; }
-	if (p->fb_fd >= 0)    { sh_close(p->fb_fd);    p->fb_fd = -1; }
-	if (p->audio_fd >= 0) { sh_close(p->audio_fd); p->audio_fd = -1; }
+	if (p->sim_fd >= 0) {
+		sh_close(p->sim_fd);
+		p->sim_fd = -1;
+	}
+	if (p->fb_fd >= 0) {
+		sh_close(p->fb_fd);
+		p->fb_fd = -1;
+	}
+	if (p->audio_fd >= 0) {
+		sh_close(p->audio_fd);
+		p->audio_fd = -1;
+	}
 }
 
-static int guest_send_event(struct ove_sim_transport *t,
-			     const struct ove_sim_event *event)
+static int guest_send_event(struct ove_sim_transport *t, const struct ove_sim_event *event)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 	if (p->sim_fd < 0)
@@ -195,32 +203,27 @@ static int guest_send_event(struct ove_sim_transport *t,
 	uint16_t len = (uint16_t)total;
 
 	/* Write length prefix + event into event ring. */
-	uint8_t lenbuf[2] = { (uint8_t)(len & 0xFF), (uint8_t)(len >> 8) };
-	sh_ring_write(p->sim_fd, SIM_SHM_EVENT_RING_OFF, SIM_SHM_RING_SIZE,
-		      p->event_wpos, lenbuf, 2);
+	uint8_t lenbuf[2] = {(uint8_t)(len & 0xFF), (uint8_t)(len >> 8)};
+	sh_ring_write(p->sim_fd, SIM_SHM_EVENT_RING_OFF, SIM_SHM_RING_SIZE, p->event_wpos, lenbuf,
+		      2);
 	p->event_wpos += 2;
-	sh_ring_write(p->sim_fd, SIM_SHM_EVENT_RING_OFF, SIM_SHM_RING_SIZE,
-		      p->event_wpos, event, (uint32_t)total);
+	sh_ring_write(p->sim_fd, SIM_SHM_EVENT_RING_OFF, SIM_SHM_RING_SIZE, p->event_wpos, event,
+		      (uint32_t)total);
 	p->event_wpos += (uint32_t)total;
 
 	/* Update write position in header. */
-	sh_write_u32(p->sim_fd,
-		     offsetof(struct sim_shm_header, event_write_pos),
-		     p->event_wpos);
+	sh_write_u32(p->sim_fd, offsetof(struct sim_shm_header, event_write_pos), p->event_wpos);
 	return OVE_OK;
 }
 
-static int guest_recv_cmd(struct ove_sim_transport *t,
-			   struct ove_sim_cmd *cmd, size_t cmd_size,
-			   uint32_t timeout_ms)
+static int guest_recv_cmd(struct ove_sim_transport *t, struct ove_sim_cmd *cmd, size_t cmd_size,
+			  uint32_t timeout_ms)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 	if (p->sim_fd < 0)
 		return OVE_ERR_TIMEOUT;
 
-	uint32_t wpos = sh_read_u32(p->sim_fd,
-				    offsetof(struct sim_shm_header,
-					     cmd_write_pos));
+	uint32_t wpos = sh_read_u32(p->sim_fd, offsetof(struct sim_shm_header, cmd_write_pos));
 	uint32_t avail = wpos - p->cmd_rpos;
 	if (avail < 2) {
 		(void)timeout_ms; /* no blocking in semihosting mode */
@@ -229,35 +232,27 @@ static int guest_recv_cmd(struct ove_sim_transport *t,
 
 	/* Read length prefix. */
 	uint8_t lenbuf[2];
-	sh_ring_read(p->sim_fd, SIM_SHM_CMD_RING_OFF, SIM_SHM_RING_SIZE,
-		     p->cmd_rpos, lenbuf, 2);
+	sh_ring_read(p->sim_fd, SIM_SHM_CMD_RING_OFF, SIM_SHM_RING_SIZE, p->cmd_rpos, lenbuf, 2);
 	uint16_t len = (uint16_t)lenbuf[0] | ((uint16_t)lenbuf[1] << 8);
 	p->cmd_rpos += 2;
 
 	if (len > cmd_size) {
 		p->cmd_rpos += len; /* skip */
-		sh_write_u32(p->sim_fd,
-			     offsetof(struct sim_shm_header, cmd_read_pos),
-			     p->cmd_rpos);
+		sh_write_u32(p->sim_fd, offsetof(struct sim_shm_header, cmd_read_pos), p->cmd_rpos);
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	sh_ring_read(p->sim_fd, SIM_SHM_CMD_RING_OFF, SIM_SHM_RING_SIZE,
-		     p->cmd_rpos, cmd, len);
+	sh_ring_read(p->sim_fd, SIM_SHM_CMD_RING_OFF, SIM_SHM_RING_SIZE, p->cmd_rpos, cmd, len);
 	p->cmd_rpos += len;
 
-	sh_write_u32(p->sim_fd,
-		     offsetof(struct sim_shm_header, cmd_read_pos),
-		     p->cmd_rpos);
+	sh_write_u32(p->sim_fd, offsetof(struct sim_shm_header, cmd_read_pos), p->cmd_rpos);
 	return OVE_OK;
 }
 
 /* ── Display flush (semihosting write to /dev/shm/ove-fb) ─────────── */
 
-static int guest_flush_display(struct ove_sim_transport *t,
-			       const void *fb, size_t fb_len,
-			       uint16_t x1, uint16_t y1,
-			       uint16_t x2, uint16_t y2)
+static int guest_flush_display(struct ove_sim_transport *t, const void *fb, size_t fb_len,
+			       uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 	if (p->fb_fd < 0)
@@ -269,11 +264,11 @@ static int guest_flush_display(struct ove_sim_transport *t,
 	/* Write header + pixels atomically.
 	 * For simplicity, always write full frame from (0,0). */
 	struct fb_header hdr = {
-		.magic  = FB_MAGIC,
-		.width  = w,
+		.magic = FB_MAGIC,
+		.width = w,
 		.height = h,
 		.format = FB_FMT_XRGB8888,
-		.dirty  = 1,
+		.dirty = 1,
 	};
 	sh_seek(p->fb_fd, 0);
 	sh_write(p->fb_fd, &hdr, sizeof(hdr));
@@ -286,8 +281,7 @@ static int guest_flush_display(struct ove_sim_transport *t,
 
 /* ── Audio push/pull (semihosting to /dev/shm/ove-audio) ──────────── */
 
-static void guest_audio_init(struct shm_guest_priv *p,
-			     uint32_t sr, uint16_t ch, uint16_t bd)
+static void guest_audio_init(struct shm_guest_priv *p, uint32_t sr, uint16_t ch, uint16_t bd)
 {
 	if (p->audio_init_done)
 		return;
@@ -314,10 +308,8 @@ static void guest_audio_init(struct shm_guest_priv *p,
 	p->audio_init_done = 1;
 }
 
-static int guest_push_audio(struct ove_sim_transport *t,
-			    const void *samples, size_t len,
-			    uint32_t sample_rate, uint16_t channels,
-			    uint16_t bit_depth)
+static int guest_push_audio(struct ove_sim_transport *t, const void *samples, size_t len,
+			    uint32_t sample_rate, uint16_t channels, uint16_t bit_depth)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 	guest_audio_init(p, sample_rate, channels, bit_depth);
@@ -339,8 +331,7 @@ static int guest_push_audio(struct ove_sim_transport *t,
 		sh_seek(p->audio_fd, AUDIO_OUT_RING + pos);
 		int err1 = sh_write(p->audio_fd, src, first);
 		sh_seek(p->audio_fd, AUDIO_OUT_RING);
-		int err2 = sh_write(p->audio_fd, src + first,
-				     (uint32_t)len - first);
+		int err2 = sh_write(p->audio_fd, src + first, (uint32_t)len - first);
 		if (err1 || err2)
 			return OVE_OK;
 	}
@@ -350,8 +341,7 @@ static int guest_push_audio(struct ove_sim_transport *t,
 	return OVE_OK;
 }
 
-static size_t guest_pull_audio(struct ove_sim_transport *t,
-			       void *samples, size_t len)
+static size_t guest_pull_audio(struct ove_sim_transport *t, void *samples, size_t len)
 {
 	struct shm_guest_priv *p = (struct shm_guest_priv *)t->priv;
 	/* Open audio fd if not yet done (source may run before sink). */
@@ -368,8 +358,8 @@ static size_t guest_pull_audio(struct ove_sim_transport *t,
 		return 0;
 
 	uint32_t to_read = avail < (uint32_t)len ? avail : (uint32_t)len;
-	sh_ring_read(p->audio_fd, AUDIO_IN_RING, AUDIO_RING_SIZE,
-		     p->audio_in_rpos, samples, to_read);
+	sh_ring_read(p->audio_fd, AUDIO_IN_RING, AUDIO_RING_SIZE, p->audio_in_rpos, samples,
+		     to_read);
 	p->audio_in_rpos += to_read;
 
 	sh_write_u32(p->audio_fd, AUDIO_OFF_IN_RPOS, p->audio_in_rpos);
@@ -379,13 +369,13 @@ static size_t guest_pull_audio(struct ove_sim_transport *t,
 /* ── Vtable ───────────────────────────────────────────────────────── */
 
 static const struct ove_sim_transport_ops shm_guest_ops = {
-	.open          = guest_open,
-	.close         = guest_close,
-	.send_event    = guest_send_event,
-	.recv_cmd      = guest_recv_cmd,
+	.open = guest_open,
+	.close = guest_close,
+	.send_event = guest_send_event,
+	.recv_cmd = guest_recv_cmd,
 	.flush_display = guest_flush_display,
-	.push_audio    = guest_push_audio,
-	.pull_audio    = guest_pull_audio,
+	.push_audio = guest_push_audio,
+	.pull_audio = guest_pull_audio,
 	/* read_event/write_cmd are host-side only — NULL here. */
 };
 

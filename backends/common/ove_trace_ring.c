@@ -27,7 +27,7 @@ static struct {
 	atomic_uint read;
 	atomic_uint dropped;
 	atomic_flag lock;
-} ring = { .lock = ATOMIC_FLAG_INIT };
+} ring = {.lock = ATOMIC_FLAG_INIT};
 
 bool ove_trace_ring_push(const struct ove_trace_record *rec)
 {
@@ -56,7 +56,8 @@ size_t ove_trace_ring_drain(struct ove_trace_record *out, size_t max)
 	unsigned w = atomic_load_explicit(&ring.write, memory_order_acquire);
 	unsigned r = atomic_load_explicit(&ring.read, memory_order_relaxed);
 	unsigned avail = w - r;
-	if (avail > max) avail = (unsigned)max;
+	if (avail > max)
+		avail = (unsigned)max;
 
 	for (unsigned i = 0; i < avail; ++i)
 		out[i] = ring.buf[(r + i) % TRACE_RING_SIZE];

@@ -52,9 +52,9 @@ struct ove_condvar {
 	pthread_cond_t cond;
 };
 
-typedef struct ove_mutex   ove_mutex_storage_t;
-typedef struct ove_sem     ove_sem_storage_t;
-typedef struct ove_event   ove_event_storage_t;
+typedef struct ove_mutex ove_mutex_storage_t;
+typedef struct ove_sem ove_sem_storage_t;
+typedef struct ove_event ove_event_storage_t;
 typedef struct ove_condvar ove_condvar_storage_t;
 
 /* ── Thread (cooperative suspend — no signals) ───────────────────── */
@@ -66,21 +66,21 @@ struct ove_thread {
 	int state;
 	sem_t suspend_sem;
 	int started;
-	const char *name;               /* thread name (from desc) */
-	size_t stack_size;              /* real stack size after the thread
+	const char *name;		 /* thread name (from desc) */
+	size_t stack_size;		 /* real stack size after the thread
 					 * records its Emscripten-allocated
 					 * range; matches `stack_base -
 					 * stack_end` once painted. */
-	int priority;                   /* thread priority (from desc) */
-	struct ove_state_tracker st;    /* per-state time tracking */
-	volatile int suspend_requested; /* cooperative suspend flag */
+	int priority;			 /* thread priority (from desc) */
+	struct ove_state_tracker st;	 /* per-state time tracking */
+	volatile int suspend_requested;	 /* cooperative suspend flag */
 	volatile uint64_t last_yield_us; /* timestamp of last yield/sleep/block */
 	/* Stack coloration for high-water measurement. Captured by the
 	 * thread itself (emscripten_stack_get_* work only for the current
 	 * thread); read cross-thread by ove_thread_get_stack_usage. */
-	uintptr_t stack_base;           /* highest address (SP when idle) */
-	uintptr_t stack_end;            /* lowest address (stack limit) */
-	volatile int stack_painted;     /* 1 once the thread has filled its
+	uintptr_t stack_base;	    /* highest address (SP when idle) */
+	uintptr_t stack_end;	    /* lowest address (stack limit) */
+	volatile int stack_painted; /* 1 once the thread has filled its
 					 * own stack with the sentinel */
 	/* Profiler supervisor flag. Pump sets this on RUNNING threads each
 	 * tick; each thread self-captures via emscripten_get_callstack()
@@ -115,8 +115,8 @@ struct ove_timer {
 	int one_shot;
 	int created;
 	int armed;
-	uint64_t next_fire_us;          /* absolute monotonic time */
-	struct ove_timer *next_active;  /* intrusive linked list */
+	uint64_t next_fire_us;	       /* absolute monotonic time */
+	struct ove_timer *next_active; /* intrusive linked list */
 };
 
 typedef struct ove_timer ove_timer_storage_t;
@@ -151,7 +151,7 @@ struct ove_workqueue {
 };
 
 typedef struct ove_workqueue ove_workqueue_storage_t;
-typedef struct ove_work     ove_work_storage_t;
+typedef struct ove_work ove_work_storage_t;
 
 /* ── Stream (identical to POSIX) ─────────────────────────────────── */
 
@@ -190,20 +190,20 @@ struct ove_dir {
 };
 
 typedef struct ove_file ove_file_storage_t;
-typedef struct ove_dir  ove_dir_storage_t;
+typedef struct ove_dir ove_dir_storage_t;
 
 /* ── ML inference ────────────────────────────────────────────────── */
 
 #ifdef CONFIG_OVE_INFER
 struct ove_model {
 	const void *model_data;
-	size_t      model_size;
-	uint8_t    *arena;
-	size_t      arena_size;
-	void       *interpreter;
-	void       *resolver;
-	uint64_t    last_invoke_us;
-	int         heap_allocated;
+	size_t model_size;
+	uint8_t *arena;
+	size_t arena_size;
+	void *interpreter;
+	void *resolver;
+	uint64_t last_invoke_us;
+	int heap_allocated;
 };
 
 typedef struct ove_model ove_model_storage_t;
@@ -212,10 +212,14 @@ typedef struct ove_model ove_model_storage_t;
 /* ── Networking (stub — browser has no BSD sockets) ──────────────── */
 
 #ifdef CONFIG_OVE_NET
-struct ove_socket { int fd; };
-struct ove_netif  { int initialized; };
+struct ove_socket {
+	int fd;
+};
+struct ove_netif {
+	int initialized;
+};
 typedef struct ove_socket ove_socket_storage_t;
-typedef struct ove_netif  ove_netif_storage_t;
+typedef struct ove_netif ove_netif_storage_t;
 #endif
 
 #ifdef CONFIG_OVE_NET_TLS
@@ -248,18 +252,18 @@ typedef struct ove_http_client ove_http_client_storage_t;
 struct ove_mqtt_client {
 	ove_socket_t sock;
 	ove_socket_storage_t sock_storage;
-	void        *tls;
-	uint8_t     *rx_buf;
-	size_t       rx_size;
-	uint8_t     *tx_buf;
-	size_t       tx_size;
-	uint16_t     keep_alive_s;
-	uint16_t     pkt_id;
-	int          connected;
-	char         sub_filters[8][64];
+	void *tls;
+	uint8_t *rx_buf;
+	size_t rx_size;
+	uint8_t *tx_buf;
+	size_t tx_size;
+	uint16_t keep_alive_s;
+	uint16_t pkt_id;
+	int connected;
+	char sub_filters[8][64];
 	unsigned int sub_count;
-	void       (*on_message)(const char *, size_t, const void *, size_t, void *);
-	void        *user_data;
+	void (*on_message)(const char *, size_t, const void *, size_t, void *);
+	void *user_data;
 };
 typedef struct ove_mqtt_client ove_mqtt_client_storage_t;
 #endif
@@ -268,63 +272,63 @@ typedef struct ove_mqtt_client ove_mqtt_client_storage_t;
 
 #ifdef CONFIG_OVE_UART
 struct ove_uart {
-	unsigned int         instance;
-	uint32_t             baudrate;
+	unsigned int instance;
+	uint32_t baudrate;
 	ove_stream_storage_t rx_stream_storage;
-	ove_stream_t         rx_stream;
-	uint8_t             *rx_buf;
-	size_t               rx_buf_size;
-	ove_mutex_storage_t  tx_mtx_storage;
-	ove_mutex_t          tx_mtx;
-	int                  fd;
-	volatile int         running;
+	ove_stream_t rx_stream;
+	uint8_t *rx_buf;
+	size_t rx_buf_size;
+	ove_mutex_storage_t tx_mtx_storage;
+	ove_mutex_t tx_mtx;
+	int fd;
+	volatile int running;
 };
 typedef struct ove_uart ove_uart_storage_t;
 #endif
 
 #ifdef CONFIG_OVE_SPI
 struct ove_spi {
-	unsigned int        instance;
-	uint32_t            clock_hz;
-	uint8_t             mode;
-	uint8_t             bit_order;
-	uint8_t             word_size;
+	unsigned int instance;
+	uint32_t clock_hz;
+	uint8_t mode;
+	uint8_t bit_order;
+	uint8_t word_size;
 	ove_mutex_storage_t bus_mtx_storage;
-	ove_mutex_t         bus_mtx;
-	int                 fd;
+	ove_mutex_t bus_mtx;
+	int fd;
 };
 typedef struct ove_spi ove_spi_storage_t;
 #endif
 
 #ifdef CONFIG_OVE_I2S
 struct ove_i2s {
-	unsigned int     instance;
-	uint32_t         sample_rate;
-	uint8_t          bit_depth;
-	uint8_t          channels;
-	uint8_t          direction;
-	size_t           dma_buf_samples;
-	size_t           half_buf_bytes;
-	void            *tx_dma_buf;
-	void            *rx_dma_buf;
+	unsigned int instance;
+	uint32_t sample_rate;
+	uint8_t bit_depth;
+	uint8_t channels;
+	uint8_t direction;
+	size_t dma_buf_samples;
+	size_t half_buf_bytes;
+	void *tx_dma_buf;
+	void *rx_dma_buf;
 	volatile uint8_t rx_completed_half;
 	volatile uint8_t tx_completed_half;
-	void           (*rx_cb)(struct ove_i2s *, void *);
-	void            *rx_cb_user_data;
-	void           (*tx_cb)(struct ove_i2s *, void *);
-	void            *tx_cb_user_data;
-	int              fd;
+	void (*rx_cb)(struct ove_i2s *, void *);
+	void *rx_cb_user_data;
+	void (*tx_cb)(struct ove_i2s *, void *);
+	void *tx_cb_user_data;
+	int fd;
 };
 typedef struct ove_i2s ove_i2s_storage_t;
 #endif
 
 #ifdef CONFIG_OVE_I2C
 struct ove_i2c {
-	unsigned int        instance;
-	uint32_t            speed_hz;
+	unsigned int instance;
+	uint32_t speed_hz;
 	ove_mutex_storage_t bus_mtx_storage;
-	ove_mutex_t         bus_mtx;
-	int                 fd;
+	ove_mutex_t bus_mtx;
+	int fd;
 };
 typedef struct ove_i2c ove_i2c_storage_t;
 #endif

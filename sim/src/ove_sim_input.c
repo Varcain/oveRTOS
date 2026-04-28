@@ -41,9 +41,9 @@
 #define OVE_SIM_INPUT_HAVE_MMAP 0
 #endif
 
-#define INPUT_PATH      "/dev/shm/ove-input"
-#define INPUT_MAGIC     0x54504E49u  /* "INPT" */
-#define INPUT_SHM_SIZE  16
+#define INPUT_PATH "/dev/shm/ove-input"
+#define INPUT_MAGIC 0x54504E49u /* "INPT" */
+#define INPUT_SHM_SIZE 16
 
 /* Layout at mmap base:
  *   offset 0: uint32_t magic
@@ -72,8 +72,7 @@ static void try_attach_shm(void)
 	int fd = open(INPUT_PATH, O_RDWR);
 	if (fd < 0)
 		return;
-	void *base = mmap(NULL, INPUT_SHM_SIZE, PROT_READ | PROT_WRITE,
-			  MAP_SHARED, fd, 0);
+	void *base = mmap(NULL, INPUT_SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	close(fd);
 	if (base == MAP_FAILED)
 		return;

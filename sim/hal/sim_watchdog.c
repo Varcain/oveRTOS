@@ -38,8 +38,7 @@ static uint64_t wdt_now_us(void)
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000ULL +
-	       (uint64_t)ts.tv_nsec / 1000ULL;
+	return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 }
 
 static void *watchdog_monitor(void *arg)
@@ -54,14 +53,12 @@ static void *watchdog_monitor(void *arg)
 			struct ove_watchdog *w = wdt_list[i];
 			if (!w || !w->started)
 				continue;
-			uint64_t elapsed_ms =
-				(now - w->last_feed_us) / 1000;
+			uint64_t elapsed_ms = (now - w->last_feed_us) / 1000;
 			if (elapsed_ms > w->timeout_ms) {
 				fprintf(stderr,
 					"[watchdog] TIMEOUT! Not fed for "
 					"%llu ms (limit %u ms)\n",
-					(unsigned long long)elapsed_ms,
-					w->timeout_ms);
+					(unsigned long long)elapsed_ms, w->timeout_ms);
 				/* Reset the timer so we don't spam. */
 				w->last_feed_us = now;
 			}
@@ -73,18 +70,18 @@ static void *watchdog_monitor(void *arg)
 
 static void ensure_monitor(void)
 {
-	if (wdt_running) return;
+	if (wdt_running)
+		return;
 	wdt_running = 1;
 	pthread_create(&wdt_thread, NULL, watchdog_monitor, NULL);
 }
 
 /* ── Public API ────────────────────────────────────────────────────── */
 
-int ove_watchdog_init(ove_watchdog_t *wdt,
-		      ove_watchdog_storage_t *storage,
-		      uint32_t timeout_ms)
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)
 {
-	if (!wdt || !storage) return OVE_ERR_INVALID_PARAM;
+	if (!wdt || !storage)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_watchdog *w = (struct ove_watchdog *)storage;
 	memset(w, 0, sizeof(*w));
 	w->timeout_ms = timeout_ms;
@@ -95,7 +92,8 @@ int ove_watchdog_init(ove_watchdog_t *wdt,
 
 void ove_watchdog_deinit(ove_watchdog_t wdt)
 {
-	if (!wdt) return;
+	if (!wdt)
+		return;
 	pthread_mutex_lock(&wdt_lock);
 	for (int i = 0; i < wdt_count; i++) {
 		if (wdt_list[i] == wdt) {
@@ -110,7 +108,8 @@ void ove_watchdog_deinit(ove_watchdog_t wdt)
 int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms)
 {
 	struct ove_watchdog *w = OVE_BACKEND_MALLOC(sizeof(*w));
-	if (!w) return OVE_ERR_NO_MEMORY;
+	if (!w)
+		return OVE_ERR_NO_MEMORY;
 	memset(w, 0, sizeof(*w));
 	w->timeout_ms = timeout_ms;
 	w->last_feed_us = wdt_now_us();
@@ -123,14 +122,16 @@ int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms)
 void ove_watchdog_destroy(ove_watchdog_t wdt)
 {
 	ove_watchdog_deinit(wdt);
-	if (wdt) OVE_BACKEND_FREE(wdt);
+	if (wdt)
+		OVE_BACKEND_FREE(wdt);
 }
 #endif
 
 int ove_watchdog_start(ove_watchdog_t wdt)
 {
 	struct ove_watchdog *w = wdt;
-	if (!w) return OVE_ERR_INVALID_PARAM;
+	if (!w)
+		return OVE_ERR_INVALID_PARAM;
 
 	w->last_feed_us = wdt_now_us();
 	w->started = 1;
@@ -148,7 +149,8 @@ int ove_watchdog_start(ove_watchdog_t wdt)
 int ove_watchdog_stop(ove_watchdog_t wdt)
 {
 	struct ove_watchdog *w = wdt;
-	if (!w) return OVE_ERR_INVALID_PARAM;
+	if (!w)
+		return OVE_ERR_INVALID_PARAM;
 	w->started = 0;
 	return OVE_OK;
 }
@@ -156,7 +158,8 @@ int ove_watchdog_stop(ove_watchdog_t wdt)
 int ove_watchdog_feed(ove_watchdog_t wdt)
 {
 	struct ove_watchdog *w = wdt;
-	if (!w) return OVE_ERR_INVALID_PARAM;
+	if (!w)
+		return OVE_ERR_INVALID_PARAM;
 	w->last_feed_us = wdt_now_us();
 	return OVE_OK;
 }

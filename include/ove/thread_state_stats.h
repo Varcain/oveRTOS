@@ -38,23 +38,22 @@ extern "C" {
  */
 struct ove_state_tracker {
 	uint64_t cumul_us[OVE_STATE_COUNT]; /**< Cumulative microseconds spent in each state. */
-	uint64_t last_ts_us;                /**< Timestamp of the last transition. */
-	int      cur_state;                 /**< Current state index (0..OVE_STATE_COUNT-1). */
+	uint64_t last_ts_us;		    /**< Timestamp of the last transition. */
+	int cur_state;			    /**< Current state index (0..OVE_STATE_COUNT-1). */
 };
 
 /** Platform-specific: return monotonic time in microseconds. */
 uint64_t ove_state_stats_now_us(void);
 
-static inline void ove_state_track_init(struct ove_state_tracker *st,
-					int initial_state)
+static inline void ove_state_track_init(struct ove_state_tracker *st, int initial_state)
 {
-	for (int i = 0; i < OVE_STATE_COUNT; i++) st->cumul_us[i] = 0;
+	for (int i = 0; i < OVE_STATE_COUNT; i++)
+		st->cumul_us[i] = 0;
 	st->last_ts_us = ove_state_stats_now_us();
 	st->cur_state = initial_state;
 }
 
-static inline void ove_state_track_transition(struct ove_state_tracker *st,
-					      int new_state)
+static inline void ove_state_track_transition(struct ove_state_tracker *st, int new_state)
 {
 	uint64_t now = ove_state_stats_now_us();
 	int idx = st->cur_state;
@@ -66,9 +65,11 @@ static inline void ove_state_track_transition(struct ove_state_tracker *st,
 
 #else /* !CONFIG_OVE_THREAD_STATE_STATS */
 
-struct ove_state_tracker { char _dummy; };
-#define ove_state_track_init(st, s)          ((void)0)
-#define ove_state_track_transition(st, s)    ((void)0)
+struct ove_state_tracker {
+	char _dummy;
+};
+#define ove_state_track_init(st, s) ((void)0)
+#define ove_state_track_transition(st, s) ((void)0)
 
 #endif /* CONFIG_OVE_THREAD_STATE_STATS */
 

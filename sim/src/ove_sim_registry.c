@@ -18,8 +18,7 @@ static struct ove_sim_plugin plugins[OVE_SIM_MAX_PLUGINS];
 static int plugin_count;
 static struct ove_sim_transport *global_transport;
 
-int ove_sim_plugin_register(const struct ove_sim_plugin_ops *ops,
-			    void *ctx, const void *config,
+int ove_sim_plugin_register(const struct ove_sim_plugin_ops *ops, void *ctx, const void *config,
 			    size_t config_len)
 {
 	if (!ops || !ops->init)
@@ -75,8 +74,7 @@ int ove_sim_plugin_dispatch_cmd(const struct ove_sim_cmd *cmd)
 	return OVE_OK;
 }
 
-int ove_sim_plugin_emit_event(uint32_t plugin_id,
-			      const struct ove_sim_event *event)
+int ove_sim_plugin_emit_event(uint32_t plugin_id, const struct ove_sim_event *event)
 {
 	if (!event)
 		return OVE_ERR_INVALID_PARAM;
@@ -120,8 +118,7 @@ int ove_sim_plugin_count(void)
 }
 
 /* Weak default — dashboard bridge reads logs from shmem/pipe. */
-__attribute__((weak))
-void ove_sim_log_broadcast(const char *msg, unsigned int len)
+__attribute__((weak)) void ove_sim_log_broadcast(const char *msg, unsigned int len)
 {
 	(void)msg;
 	(void)len;

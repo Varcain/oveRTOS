@@ -31,21 +31,19 @@
 #include "ring_buffer.h"
 
 /* ── Model parameters ──────────────────────────────────────────────── */
-#define FEATURE_SIZE         40
-#define FEATURE_COUNT        49
+#define FEATURE_SIZE 40
+#define FEATURE_COUNT 49
 #define FEATURE_ELEMENT_COUNT (FEATURE_SIZE * FEATURE_COUNT)
-#define FEATURE_STRIDE_MS    20
-#define FEATURE_DURATION_MS  30
-#define AUDIO_SAMPLE_FREQ    16000
+#define FEATURE_STRIDE_MS 20
+#define FEATURE_DURATION_MS 30
+#define AUDIO_SAMPLE_FREQ 16000
 #define AUDIO_STRIDE_SAMPLES (FEATURE_STRIDE_MS * AUDIO_SAMPLE_FREQ / 1000)
 #define AUDIO_DURATION_SAMPLES (FEATURE_DURATION_MS * AUDIO_SAMPLE_FREQ / 1000)
-#define CATEGORY_COUNT       4
-#define ARENA_SIZE           32768
+#define CATEGORY_COUNT 4
+#define ARENA_SIZE 32768
 #define CONFIDENCE_THRESHOLD 0.6f
 
-static const char *labels[CATEGORY_COUNT] = {
-	"silence", "unknown", "yes", "no"
-};
+static const char *labels[CATEGORY_COUNT] = {"silence", "unknown", "yes", "no"};
 
 /* ── Shared static memory ──────────────────────────────────────────── */
 static ring_buffer_t audio_ring;
@@ -73,8 +71,7 @@ static int dmic_proc_configure(void *ctx, const struct ove_audio_fmt *in_fmt,
 	return OVE_OK;
 }
 
-static int dmic_proc_process(void *ctx, const struct ove_audio_buf *in,
-			     struct ove_audio_buf *out)
+static int dmic_proc_process(void *ctx, const struct ove_audio_buf *in, struct ove_audio_buf *out)
 {
 	(void)ctx;
 	const int16_t *src = (const int16_t *)in->data;
@@ -101,7 +98,7 @@ static int dmic_proc_process(void *ctx, const struct ove_audio_buf *in,
 
 static const struct ove_audio_node_ops dmic_proc_ops = {
 	.configure = dmic_proc_configure,
-	.process   = dmic_proc_process,
+	.process = dmic_proc_process,
 };
 
 /* ── Feature extraction ────────────────────────────────────────────── */
@@ -113,12 +110,12 @@ static const struct ove_audio_node_ops dmic_proc_ops = {
  */
 static unsigned int g_actual_rate = AUDIO_SAMPLE_FREQ;
 static int32_t g_dc_offset;
-static int32_t g_gain = 1;  /* adaptive gain, computed per window */
+static int32_t g_gain = 1; /* adaptive gain, computed per window */
 
 /* Noise gate: peak must exceed this (after DC removal) to be considered speech.
  * Below this, feed silence to the model. */
 #define NOISE_GATE_THRESHOLD 500
-#define TARGET_PEAK          15000
+#define TARGET_PEAK 15000
 
 static int generate_features(const int16_t *audio_data, unsigned int audio_len)
 {
@@ -147,8 +144,7 @@ static int generate_features(const int16_t *audio_data, unsigned int audio_len)
 
 	unsigned int frame = 0;
 	unsigned int offset = 0;
-	while (offset + actual_window <= audio_len &&
-	       frame < FEATURE_COUNT) {
+	while (offset + actual_window <= audio_len && frame < FEATURE_COUNT) {
 		int16_t *input = (int16_t *)input_info.data;
 
 		/* Resample from actual_rate to 16kHz, remove DC offset,
@@ -169,8 +165,10 @@ static int generate_features(const int16_t *audio_data, unsigned int audio_len)
 			sample = (int32_t)(sample * g_gain);
 
 			/* Clamp to int16 range */
-			if (sample > 32767) sample = 32767;
-			if (sample < -32768) sample = -32768;
+			if (sample > 32767)
+				sample = 32767;
+			if (sample < -32768)
+				sample = -32768;
 
 			input[i] = (int16_t)sample;
 		}
@@ -263,12 +261,11 @@ static void infer_thread(void *arg)
 		 */
 		unsigned int read_count = (actual_rate > 0) ? actual_rate : AUDIO_SAMPLE_FREQ;
 		if (read_count > AUDIO_SAMPLE_FREQ)
-			read_count = AUDIO_SAMPLE_FREQ;  /* clamp to buffer size */
+			read_count = AUDIO_SAMPLE_FREQ; /* clamp to buffer size */
 
 		unsigned int avail = ring_buffer_available(&audio_ring);
 		if (avail < read_count) {
-			OVE_LOG_WRN("Ring buffer: only %u samples (need %u)",
-				     avail, read_count);
+			OVE_LOG_WRN("Ring buffer: only %u samples (need %u)", avail, read_count);
 			continue;
 		}
 
@@ -279,11 +276,11 @@ static void infer_thread(void *arg)
 		int16_t peak = 0;
 		for (unsigned int i = 0; i < read_count; i++) {
 			int16_t s = audio_window[i] < 0 ? -audio_window[i] : audio_window[i];
-			if (s > peak) peak = s;
+			if (s > peak)
+				peak = s;
 		}
 
-		OVE_LOG_INF("Audio: peak=%d, rate=%u, read=%u",
-			    peak, actual_rate, read_count);
+		OVE_LOG_INF("Audio: peak=%d, rate=%u, read=%u", peak, actual_rate, read_count);
 
 		/* Update actual sample rate for feature extraction resampling */
 		g_actual_rate = actual_rate > 0 ? actual_rate : AUDIO_SAMPLE_FREQ;
@@ -305,8 +302,10 @@ static void infer_thread(void *arg)
 		int32_t dc_peak = 0;
 		for (unsigned int i = 0; i < read_count; i++) {
 			int32_t s = (int32_t)audio_window[i] - g_dc_offset;
-			if (s < 0) s = -s;
-			if (s > dc_peak) dc_peak = s;
+			if (s < 0)
+				s = -s;
+			if (s > dc_peak)
+				dc_peak = s;
 		}
 
 		if (dc_peak < NOISE_GATE_THRESHOLD) {
@@ -316,8 +315,10 @@ static void infer_thread(void *arg)
 
 		/* Adaptive gain: scale peak to ~TARGET_PEAK */
 		g_gain = TARGET_PEAK / dc_peak;
-		if (g_gain < 1) g_gain = 1;
-		if (g_gain > 200) g_gain = 200;
+		if (g_gain < 1)
+			g_gain = 1;
+		if (g_gain > 200)
+			g_gain = 200;
 
 		OVE_LOG_INF("  dc_peak=%d, gain=%d", (int)dc_peak, (int)g_gain);
 
@@ -339,8 +340,7 @@ static void infer_thread(void *arg)
 
 		/* Log detections (skip silence/unknown at low confidence) */
 		if (prediction > 1 && confidence > CONFIDENCE_THRESHOLD) {
-			OVE_LOG_INF(">>> Keyword: \"%s\" (%.0f%%)",
-				    labels[prediction],
+			OVE_LOG_INF(">>> Keyword: \"%s\" (%.0f%%)", labels[prediction],
 				    (double)(confidence * 100.0f));
 		}
 	}
@@ -364,11 +364,12 @@ void ove_main(void)
 	static struct ove_audio_graph audio_graph;
 	struct ove_audio_device_cfg dev_cfg = {
 		.transport = OVE_AUDIO_TRANSPORT_I2S,
-		.fmt = {
-			.sample_rate = 16000,
-			.channels    = 1,
-			.sample_fmt  = OVE_AUDIO_FMT_S16,
-		},
+		.fmt =
+			{
+				.sample_rate = 16000,
+				.channels = 1,
+				.sample_fmt = OVE_AUDIO_FMT_S16,
+			},
 		.i2s.input_device = 1, /* DMIC */
 	};
 
@@ -379,15 +380,13 @@ void ove_main(void)
 		return;
 	}
 
-	int src  = ove_audio_device_source(&audio_graph, &dev_cfg, "dmic-in");
-	int proc = ove_audio_graph_add_node(&audio_graph, &dmic_proc_ops,
-					    NULL, "dmic-proc",
+	int src = ove_audio_device_source(&audio_graph, &dev_cfg, "dmic-in");
+	int proc = ove_audio_graph_add_node(&audio_graph, &dmic_proc_ops, NULL, "dmic-proc",
 					    OVE_AUDIO_NODE_PROCESSOR);
 	int sink = ove_audio_device_sink(&audio_graph, &dev_cfg, "hp-out");
 
 	if (src < 0 || proc < 0 || sink < 0) {
-		OVE_LOG_ERR("Audio node creation failed: %d %d %d",
-			    src, proc, sink);
+		OVE_LOG_ERR("Audio node creation failed: %d %d %d", src, proc, sink);
 		ove_run();
 		return;
 	}
@@ -412,8 +411,8 @@ void ove_main(void)
 
 	/* Start inference thread */
 	struct ove_thread_desc desc = {
-		.name     = "infer",
-		.entry    = infer_thread,
+		.name = "infer",
+		.entry = infer_thread,
 		.priority = OVE_PRIO_NORMAL,
 	};
 	ove_thread_create(&infer_thread_handle, 8192, &desc);

@@ -74,8 +74,7 @@ void ove_hal_spi_close(ove_spi_t spi)
 	}
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
-			 size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
@@ -83,10 +82,10 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
 	struct spi_ioc_transfer xfer;
 
 	memset(&xfer, 0, sizeof(xfer));
-	xfer.tx_buf        = (unsigned long)tx;
-	xfer.rx_buf        = (unsigned long)rx;
-	xfer.len           = (uint32_t)len;
-	xfer.speed_hz      = spi->clock_hz;
+	xfer.tx_buf = (unsigned long)tx;
+	xfer.rx_buf = (unsigned long)rx;
+	xfer.len = (uint32_t)len;
+	xfer.speed_hz = spi->clock_hz;
 	xfer.bits_per_word = spi->word_size;
 
 	if (ioctl(spi->fd, SPI_IOC_MESSAGE(1), &xfer) < 0)
@@ -94,7 +93,10 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
 
 	return OVE_OK;
 #else
-	(void)spi; (void)tx; (void)rx; (void)len;
+	(void)spi;
+	(void)tx;
+	(void)rx;
+	(void)len;
 	return OVE_ERR_NOT_SUPPORTED;
 #endif
 }

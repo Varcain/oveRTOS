@@ -45,9 +45,9 @@ static void usart1_console_init(void)
 	__HAL_RCC_GPIOB_CLK_ENABLE();
 
 	GPIO_InitTypeDef gpio = {0};
-	gpio.Mode      = GPIO_MODE_AF_PP;
-	gpio.Pull      = GPIO_NOPULL;
-	gpio.Speed     = GPIO_SPEED_HIGH;
+	gpio.Mode = GPIO_MODE_AF_PP;
+	gpio.Pull = GPIO_NOPULL;
+	gpio.Speed = GPIO_SPEED_HIGH;
 	gpio.Alternate = GPIO_AF7_USART1;
 
 	gpio.Pin = GPIO_PIN_9;
@@ -55,17 +55,18 @@ static void usart1_console_init(void)
 	gpio.Pin = GPIO_PIN_7;
 	HAL_GPIO_Init(GPIOB, &gpio);
 
-	s_console_uart.Instance        = USART1;
-	s_console_uart.Init.BaudRate   = 115200;
+	s_console_uart.Instance = USART1;
+	s_console_uart.Init.BaudRate = 115200;
 	s_console_uart.Init.WordLength = UART_WORDLENGTH_8B;
-	s_console_uart.Init.StopBits   = UART_STOPBITS_1;
-	s_console_uart.Init.Parity     = UART_PARITY_NONE;
-	s_console_uart.Init.Mode       = UART_MODE_TX_RX;
-	s_console_uart.Init.HwFlowCtl  = UART_HWCONTROL_NONE;
+	s_console_uart.Init.StopBits = UART_STOPBITS_1;
+	s_console_uart.Init.Parity = UART_PARITY_NONE;
+	s_console_uart.Init.Mode = UART_MODE_TX_RX;
+	s_console_uart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
 	s_console_uart.Init.OverSampling = UART_OVERSAMPLING_16;
 
 	if (HAL_UART_Init(&s_console_uart) != HAL_OK) {
-		for (;;) { }
+		for (;;) {
+		}
 	}
 	s_console_ready = 1;
 }
@@ -97,7 +98,7 @@ extern char _end;
 extern char _estack;
 
 #ifndef OVE_HW_HEAP_STACK_RESERVE
-#define OVE_HW_HEAP_STACK_RESERVE  (8 * 1024)
+#define OVE_HW_HEAP_STACK_RESERVE (8 * 1024)
 #endif
 
 void *_sbrk(int incr)
@@ -120,4 +121,6 @@ void *_sbrk(int incr)
  * which previously lived in `stub_gpio.c` (now removed).  Provide a
  * no-op shim — same as semihosting_io.c does. */
 void stub_gpio_reset(void);
-void stub_gpio_reset(void) { }
+void stub_gpio_reset(void)
+{
+}

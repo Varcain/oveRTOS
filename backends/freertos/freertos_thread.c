@@ -30,12 +30,11 @@ static UBaseType_t map_priority(ove_prio_t prio)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_thread_init(ove_thread_t *handle,
-			ove_thread_storage_t *storage,
-			const struct ove_thread_desc *desc)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
+		    const struct ove_thread_desc *desc)
 {
-	if (handle == NULL || storage == NULL || desc == NULL ||
-	    desc->entry == NULL || desc->stack == NULL) {
+	if (handle == NULL || storage == NULL || desc == NULL || desc->entry == NULL ||
+	    desc->stack == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires the stack pointer to be 8-byte aligned at public
@@ -58,12 +57,9 @@ int ove_thread_init(ove_thread_t *handle,
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	storage->task = xTaskCreateStatic(
-		freertos_thread_wrapper, desc->name,
-		stack_depth, storage,
-		map_priority(desc->priority),
-		(StackType_t *)desc->stack,
-		&storage->static_task);
+	storage->task = xTaskCreateStatic(freertos_thread_wrapper, desc->name, stack_depth, storage,
+					  map_priority(desc->priority), (StackType_t *)desc->stack,
+					  &storage->static_task);
 
 	vTaskSetApplicationTaskTag(storage->task, (TaskHookFunction_t)storage);
 	*handle = storage;
@@ -73,7 +69,8 @@ int ove_thread_init(ove_thread_t *handle,
 int ove_thread_deinit(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	xSemaphoreTake(handle->done_sem, portMAX_DELAY);
 	vTaskDelete(handle->task);
@@ -83,8 +80,7 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create_(ove_thread_t *handle,
-			   const struct ove_thread_desc *desc)
+int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 {
 	if (handle == NULL || desc == NULL || desc->entry == NULL)
 		return OVE_ERR_INVALID_PARAM;
@@ -103,10 +99,8 @@ int ove_thread_create_(ove_thread_t *handle,
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	BaseType_t ret = xTaskCreate(
-		freertos_thread_wrapper, desc->name,
-		stack_depth, wrapper,
-		map_priority(desc->priority), &wrapper->task);
+	BaseType_t ret = xTaskCreate(freertos_thread_wrapper, desc->name, stack_depth, wrapper,
+				     map_priority(desc->priority), &wrapper->task);
 	if (ret != pdPASS) {
 		OVE_BACKEND_FREE(wrapper);
 		return OVE_ERR_NO_MEMORY;
@@ -120,7 +114,8 @@ int ove_thread_create_(ove_thread_t *handle,
 int ove_thread_destroy(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	xSemaphoreTake(handle->done_sem, portMAX_DELAY);
 	vTaskDelete(handle->task);
@@ -131,12 +126,10 @@ int ove_thread_destroy(ove_thread_t handle)
 
 ove_thread_t ove_thread_get_self(void)
 {
-	return (ove_thread_t)xTaskGetApplicationTaskTag(
-		xTaskGetCurrentTaskHandle());
+	return (ove_thread_t)xTaskGetApplicationTaskTag(xTaskGetCurrentTaskHandle());
 }
 
-void ove_thread_set_priority(ove_thread_t handle,
-					 ove_prio_t prio)
+void ove_thread_set_priority(ove_thread_t handle, ove_prio_t prio)
 {
 	TaskHandle_t task = (handle != NULL) ? handle->task : NULL;
 	vTaskPrioritySet(task, map_priority(prio));
@@ -181,17 +174,22 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 	eTaskState state = eTaskGetState(handle->task);
 
 	switch (state) {
-	case eRunning:   return OVE_THREAD_STATE_RUNNING;
-	case eReady:     return OVE_THREAD_STATE_READY;
-	case eBlocked:   return OVE_THREAD_STATE_BLOCKED;
-	case eSuspended: return OVE_THREAD_STATE_SUSPENDED;
-	case eDeleted:   return OVE_THREAD_STATE_TERMINATED;
-	default:         return OVE_THREAD_STATE_UNKNOWN;
+	case eRunning:
+		return OVE_THREAD_STATE_RUNNING;
+	case eReady:
+		return OVE_THREAD_STATE_READY;
+	case eBlocked:
+		return OVE_THREAD_STATE_BLOCKED;
+	case eSuspended:
+		return OVE_THREAD_STATE_SUSPENDED;
+	case eDeleted:
+		return OVE_THREAD_STATE_TERMINATED;
+	default:
+		return OVE_THREAD_STATE_UNKNOWN;
 	}
 }
 
-int ove_thread_get_runtime_stats(ove_thread_t handle,
-					     struct ove_thread_stats *stats)
+int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)
 {
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	TaskStatus_t task_status;
@@ -202,8 +200,7 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 	uint32_t total = portGET_RUN_TIME_COUNTER_VALUE();
 	if (total > 0) {
 		stats->cpu_percent_x100 =
-			(uint32_t)((uint64_t)task_status.ulRunTimeCounter *
-				   10000ULL / total);
+			(uint32_t)((uint64_t)task_status.ulRunTimeCounter * 10000ULL / total);
 	} else {
 		stats->cpu_percent_x100 = 0;
 	}
@@ -217,23 +214,23 @@ int ove_thread_get_runtime_stats(ove_thread_t handle,
 
 int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 {
-	if (!stats) return OVE_ERR_INVALID_PARAM;
+	if (!stats)
+		return OVE_ERR_INVALID_PARAM;
 #if configSUPPORT_DYNAMIC_ALLOCATION
-	stats->total     = configTOTAL_HEAP_SIZE;
-	stats->free      = xPortGetFreeHeapSize();
-	stats->used      = stats->total - stats->free;
+	stats->total = configTOTAL_HEAP_SIZE;
+	stats->free = xPortGetFreeHeapSize();
+	stats->used = stats->total - stats->free;
 	stats->peak_used = stats->total - xPortGetMinimumEverFreeHeapSize();
 #else
-	stats->total     = 0;
-	stats->free      = 0;
-	stats->used      = 0;
+	stats->total = 0;
+	stats->free = 0;
+	stats->used = 0;
 	stats->peak_used = 0;
 #endif
 	return OVE_OK;
 }
 
-int ove_thread_list(struct ove_thread_info *out, size_t max_count,
-		    size_t *actual_count)
+int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 #if configUSE_TRACE_FACILITY
 	if (!out) {
@@ -247,22 +244,21 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		count = (UBaseType_t)max_count;
 
 	TaskStatus_t *tasks = pvPortMalloc(count * sizeof(TaskStatus_t));
-	if (!tasks) return OVE_ERR_NO_MEMORY;
+	if (!tasks)
+		return OVE_ERR_NO_MEMORY;
 
 	uint32_t total_runtime = 0;
-	UBaseType_t filled = uxTaskGetSystemState(tasks, count,
-						  &total_runtime);
+	UBaseType_t filled = uxTaskGetSystemState(tasks, count, &total_runtime);
 	for (UBaseType_t i = 0; i < filled; i++) {
-		out[i].name       = tasks[i].pcTaskName;
-		out[i].priority   = (int)tasks[i].uxCurrentPriority;
+		out[i].name = tasks[i].pcTaskName;
+		out[i].priority = (int)tasks[i].uxCurrentPriority;
 		{
-			size_t min_free = (size_t)tasks[i].usStackHighWaterMark
-					  * sizeof(StackType_t);
+			size_t min_free =
+				(size_t)tasks[i].usStackHighWaterMark * sizeof(StackType_t);
 #if (configRECORD_STACK_HIGH_ADDRESS == 1)
-			size_t total = (size_t)(
-				(uintptr_t)tasks[i].pxEndOfStack
-				- (uintptr_t)tasks[i].pxStackBase)
-				+ sizeof(StackType_t);
+			size_t total = (size_t)((uintptr_t)tasks[i].pxEndOfStack -
+						(uintptr_t)tasks[i].pxStackBase) +
+				       sizeof(StackType_t);
 			out[i].stack_size = total;
 			out[i].stack_used = total - min_free;
 #else
@@ -271,17 +267,26 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 #endif
 		}
 		switch (tasks[i].eCurrentState) {
-		case eRunning:   out[i].state = OVE_THREAD_STATE_RUNNING;   break;
-		case eReady:     out[i].state = OVE_THREAD_STATE_READY;     break;
-		case eBlocked:   out[i].state = OVE_THREAD_STATE_BLOCKED;   break;
-		case eSuspended: out[i].state = OVE_THREAD_STATE_SUSPENDED; break;
-		default:         out[i].state = OVE_THREAD_STATE_UNKNOWN;   break;
+		case eRunning:
+			out[i].state = OVE_THREAD_STATE_RUNNING;
+			break;
+		case eReady:
+			out[i].state = OVE_THREAD_STATE_READY;
+			break;
+		case eBlocked:
+			out[i].state = OVE_THREAD_STATE_BLOCKED;
+			break;
+		case eSuspended:
+			out[i].state = OVE_THREAD_STATE_SUSPENDED;
+			break;
+		default:
+			out[i].state = OVE_THREAD_STATE_UNKNOWN;
+			break;
 		}
 		/* CPU utilisation: task_runtime / total_runtime * 10000 */
 		if (total_runtime > 0)
-			out[i].cpu_percent_x100 =
-				(uint32_t)((uint64_t)tasks[i].ulRunTimeCounter
-					   * 10000U / total_runtime);
+			out[i].cpu_percent_x100 = (uint32_t)((uint64_t)tasks[i].ulRunTimeCounter *
+							     10000U / total_runtime);
 		else
 			out[i].cpu_percent_x100 = 0;
 
@@ -289,9 +294,9 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count,
 		 * running = ulRunTimeCounter, blocked ≈ total - running. */
 		uint64_t run_us = (uint64_t)tasks[i].ulRunTimeCounter * 1000U;
 		uint64_t tot_us = (uint64_t)total_runtime * 1000U;
-		out[i].state_times.running_us   = run_us;
-		out[i].state_times.ready_us     = 0;
-		out[i].state_times.blocked_us   = (tot_us > run_us) ? tot_us - run_us : 0;
+		out[i].state_times.running_us = run_us;
+		out[i].state_times.ready_us = 0;
+		out[i].state_times.blocked_us = (tot_us > run_us) ? tot_us - run_us : 0;
 		out[i].state_times.suspended_us = 0;
 	}
 	if (actual_count)

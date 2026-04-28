@@ -51,13 +51,11 @@ void ove_httpd_set_netif(ove_netif_t netif)
 
 static void fmt_ip(char *buf, size_t len, const ove_sockaddr_t *addr)
 {
-	snprintf(buf, len, "%u.%u.%u.%u",
-		 addr->addr[0], addr->addr[1],
-		 addr->addr[2], addr->addr[3]);
+	snprintf(buf, len, "%u.%u.%u.%u", addr->addr[0], addr->addr[1], addr->addr[2],
+		 addr->addr[3]);
 }
 
-static int query_netif_addr(ove_sockaddr_t *ip, ove_sockaddr_t *gw,
-			    ove_sockaddr_t *nm)
+static int query_netif_addr(ove_sockaddr_t *ip, ove_sockaddr_t *gw, ove_sockaddr_t *nm)
 {
 	if (s_httpd_netif)
 		return ove_netif_get_addr(s_httpd_netif, ip, gw, nm);
@@ -73,16 +71,16 @@ static int query_netif_addr(ove_sockaddr_t *ip, ove_sockaddr_t *gw,
 
 /* ── Log ring buffer (mutex-protected) ────────────────────────── */
 
-#define LOG_RING_LINES  32
-#define LOG_LINE_MAX    128
+#define LOG_RING_LINES 32
+#define LOG_LINE_MAX 128
 
 static char log_ring[LOG_RING_LINES][LOG_LINE_MAX];
-static int  log_ring_head;
+static int log_ring_head;
 
 #ifdef CONFIG_OVE_SYNC
-static ove_mutex_t       s_log_mutex;
+static ove_mutex_t s_log_mutex;
 static ove_mutex_storage_t s_log_mutex_storage;
-static int               s_log_mutex_inited;
+static int s_log_mutex_inited;
 
 static void log_lock(void)
 {
@@ -96,8 +94,12 @@ static void log_unlock(void)
 		ove_mutex_unlock(s_log_mutex);
 }
 #else
-static void log_lock(void) {}
-static void log_unlock(void) {}
+static void log_lock(void)
+{
+}
+static void log_unlock(void)
+{
+}
 #endif
 
 void ove_httpd_log_append(const char *line)
@@ -127,8 +129,7 @@ static int led_state[LED_MAX];
 static int handle_index(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 {
 	(void)req;
-	return ove_httpd_resp_send_gz(resp, 200, "text/html",
-				      httpd_dashboard_gz,
+	return ove_httpd_resp_send_gz(resp, 200, "text/html", httpd_dashboard_gz,
 				      httpd_dashboard_gz_len);
 }
 
@@ -172,9 +173,8 @@ static int handle_leds_get(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	for (unsigned int i = 0; i < count && i < LED_MAX; i++) {
 		if (i > 0)
 			off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",");
-		off += snprintf(buf + off, sizeof(buf) - (size_t)off,
-				"{\"id\":%u,\"on\":%s}",
-				i, led_state[i] ? "true" : "false");
+		off += snprintf(buf + off, sizeof(buf) - (size_t)off, "{\"id\":%u,\"on\":%s}", i,
+				led_state[i] ? "true" : "false");
 	}
 	off += snprintf(buf + off, sizeof(buf) - (size_t)off, "]}");
 	(void)off;
@@ -210,19 +210,16 @@ static int handle_leds_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 		else if (strstr(on_key, "false"))
 			val = 0;
 		else
-			return ove_httpd_resp_error(resp, 400,
-						    "expected true or false");
+			return ove_httpd_resp_error(resp, 400, "expected true or false");
 	} else {
-		return ove_httpd_resp_error(resp, 400,
-					    "missing \"on\" field");
+		return ove_httpd_resp_error(resp, 400, "missing \"on\" field");
 	}
 
 	ove_led_set((unsigned int)id, val);
 	led_state[id] = val;
 
 	char buf[64];
-	snprintf(buf, sizeof(buf),
-		 "{\"id\":%d,\"on\":%s}", id, val ? "true" : "false");
+	snprintf(buf, sizeof(buf), "{\"id\":%d,\"on\":%s}", id, val ? "true" : "false");
 	return ove_httpd_resp_json(resp, 200, buf);
 #else
 	(void)req;
@@ -236,22 +233,19 @@ static int handle_gpio_get(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 {
 #ifdef CONFIG_OVE_GPIO
 	const char *seg_port = ove_httpd_req_segment(req, 2);
-	const char *seg_pin  = ove_httpd_req_segment(req, 3);
+	const char *seg_pin = ove_httpd_req_segment(req, 3);
 	if (!seg_port || !seg_pin)
-		return ove_httpd_resp_error(resp, 400,
-					    "missing port or pin");
+		return ove_httpd_resp_error(resp, 400, "missing port or pin");
 
 	unsigned int port = (unsigned int)atoi(seg_port);
-	unsigned int pin  = (unsigned int)atoi(seg_pin);
+	unsigned int pin = (unsigned int)atoi(seg_pin);
 
 	int value = ove_gpio_get(port, pin);
 	if (value < 0)
 		return ove_httpd_resp_error(resp, 500, "gpio read failed");
 
 	char buf[128];
-	snprintf(buf, sizeof(buf),
-		 "{\"port\":%u,\"pin\":%u,\"value\":%d}",
-		 port, pin, value);
+	snprintf(buf, sizeof(buf), "{\"port\":%u,\"pin\":%u,\"value\":%d}", port, pin, value);
 	return ove_httpd_resp_json(resp, 200, buf);
 #else
 	(void)req;
@@ -265,13 +259,12 @@ static int handle_gpio_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 {
 #ifdef CONFIG_OVE_GPIO
 	const char *seg_port = ove_httpd_req_segment(req, 2);
-	const char *seg_pin  = ove_httpd_req_segment(req, 3);
+	const char *seg_pin = ove_httpd_req_segment(req, 3);
 	if (!seg_port || !seg_pin)
-		return ove_httpd_resp_error(resp, 400,
-					    "missing port or pin");
+		return ove_httpd_resp_error(resp, 400, "missing port or pin");
 
 	unsigned int port = (unsigned int)atoi(seg_port);
-	unsigned int pin  = (unsigned int)atoi(seg_pin);
+	unsigned int pin = (unsigned int)atoi(seg_pin);
 
 	const char *body = ove_httpd_req_body(req);
 	if (!body)
@@ -279,8 +272,7 @@ static int handle_gpio_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 
 	const char *val_key = strstr(body, "\"value\":");
 	if (!val_key)
-		return ove_httpd_resp_error(resp, 400,
-					    "missing \"value\" field");
+		return ove_httpd_resp_error(resp, 400, "missing \"value\" field");
 
 	int value = atoi(val_key + 8); /* skip "value": */
 
@@ -289,9 +281,7 @@ static int handle_gpio_post(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 		return ove_httpd_resp_error(resp, 500, "gpio write failed");
 
 	char buf[128];
-	snprintf(buf, sizeof(buf),
-		 "{\"port\":%u,\"pin\":%u,\"value\":%d}",
-		 port, pin, value);
+	snprintf(buf, sizeof(buf), "{\"port\":%u,\"pin\":%u,\"value\":%d}", port, pin, value);
 	return ove_httpd_resp_json(resp, 200, buf);
 #else
 	(void)req;
@@ -336,8 +326,7 @@ static int handle_system_memory(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 		return ove_httpd_resp_error(resp, 501, "not supported");
 
 	char buf[128];
-	snprintf(buf, sizeof(buf),
-		 "{\"total\":%zu,\"free\":%zu,\"used\":%zu,\"peak\":%zu}",
+	snprintf(buf, sizeof(buf), "{\"total\":%zu,\"free\":%zu,\"used\":%zu,\"peak\":%zu}",
 		 ms.total, ms.free, ms.used, ms.peak_used);
 
 	return ove_httpd_resp_json(resp, 200, buf);
@@ -348,12 +337,18 @@ static int handle_system_memory(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 static const char *state_str(ove_thread_state_t s)
 {
 	switch (s) {
-	case OVE_THREAD_STATE_RUNNING:    return "running";
-	case OVE_THREAD_STATE_READY:      return "ready";
-	case OVE_THREAD_STATE_BLOCKED:    return "blocked";
-	case OVE_THREAD_STATE_SUSPENDED:  return "suspended";
-	case OVE_THREAD_STATE_TERMINATED: return "terminated";
-	default:                          return "unknown";
+	case OVE_THREAD_STATE_RUNNING:
+		return "running";
+	case OVE_THREAD_STATE_READY:
+		return "ready";
+	case OVE_THREAD_STATE_BLOCKED:
+		return "blocked";
+	case OVE_THREAD_STATE_SUSPENDED:
+		return "suspended";
+	case OVE_THREAD_STATE_TERMINATED:
+		return "terminated";
+	default:
+		return "unknown";
 	}
 }
 
@@ -369,19 +364,16 @@ static int handle_system_threads(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	char buf[2048];
 	int off = 0;
 
-	off += snprintf(buf + off, sizeof(buf) - (size_t)off,
-			"{\"threads\":[");
+	off += snprintf(buf + off, sizeof(buf) - (size_t)off, "{\"threads\":[");
 
 	for (size_t i = 0; i < count; i++) {
 		if (i > 0)
-			off += snprintf(buf + off,
-					sizeof(buf) - (size_t)off, ",");
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",");
 		off += snprintf(buf + off, sizeof(buf) - (size_t)off,
 				"{\"name\":\"%s\",\"state\":\"%s\","
 				"\"priority\":%d,\"stack_used\":%zu}",
 				threads[i].name ? threads[i].name : "?",
-				state_str(threads[i].state),
-				threads[i].priority,
+				state_str(threads[i].state), threads[i].priority,
 				threads[i].stack_used);
 		if ((size_t)off >= sizeof(buf) - 2)
 			break;
@@ -402,8 +394,7 @@ static int handle_log(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	char buf[2048];
 	int off = 0;
 
-	off += snprintf(buf + off, sizeof(buf) - (size_t)off,
-			"{\"lines\":[");
+	off += snprintf(buf + off, sizeof(buf) - (size_t)off, "{\"lines\":[");
 
 	log_lock();
 	int first = 1;
@@ -417,12 +408,10 @@ static int handle_log(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 			continue;
 
 		if (!first)
-			off += snprintf(buf + off,
-					sizeof(buf) - (size_t)off, ",");
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off, ",");
 		first = 0;
 
-		off += snprintf(buf + off, sizeof(buf) - (size_t)off,
-				"\"%s\"", log_ring[idx]);
+		off += snprintf(buf + off, sizeof(buf) - (size_t)off, "\"%s\"", log_ring[idx]);
 
 		if ((size_t)off >= sizeof(buf) - 2)
 			break;
@@ -461,8 +450,8 @@ static int handle_audio_stats(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	snprintf(buf, sizeof(buf),
 		 "{\"cycles\":%u,\"underruns\":%u,\"overruns\":%u,"
 		 "\"node_errors\":%u,\"max_us\":%u,\"avg_us\":%u}",
-		 st.cycles, st.underruns, st.overruns,
-		 st.node_errors, st.max_process_us, st.avg_process_us);
+		 st.cycles, st.underruns, st.overruns, st.node_errors, st.max_process_us,
+		 st.avg_process_us);
 
 	return ove_httpd_resp_json(resp, 200, buf);
 }
@@ -485,9 +474,7 @@ static int handle_infer_stats(ove_httpd_req_t *req, ove_httpd_resp_t *resp)
 	uint64_t latency = ove_model_last_inference_us(s_infer_model);
 
 	char buf[64];
-	snprintf(buf, sizeof(buf),
-		 "{\"last_inference_us\":%lu}",
-		 (unsigned long)latency);
+	snprintf(buf, sizeof(buf), "{\"last_inference_us\":%lu}", (unsigned long)latency);
 
 	return ove_httpd_resp_json(resp, 200, buf);
 }
@@ -506,8 +493,7 @@ static void ws_shell_output(const char *data, size_t len)
 		ove_httpd_ws_send(s_shell_ws_conn, data, len);
 }
 
-static void ws_shell_on_message(ove_httpd_ws_conn_t *conn,
-				const void *data, size_t len)
+static void ws_shell_on_message(ove_httpd_ws_conn_t *conn, const void *data, size_t len)
 {
 	s_shell_ws_conn = conn;
 	ove_shell_set_output_hook(ws_shell_output);
@@ -540,29 +526,28 @@ void ove_httpd_register_builtin_routes(void)
 	}
 #endif
 
-	ove_httpd_route("GET",  "/",            handle_index);
-	ove_httpd_route("GET",  "/api/info",    handle_info);
-	ove_httpd_route("GET",  "/api/leds",    handle_leds_get);
-	ove_httpd_route("POST", "/api/leds",    handle_leds_post);
-	ove_httpd_route("GET",  "/api/gpio",    handle_gpio_get);
-	ove_httpd_route("POST", "/api/gpio",    handle_gpio_post);
-	ove_httpd_route("GET",  "/api/network",        handle_network);
-	ove_httpd_route("GET",  "/api/log",            handle_log);
-	ove_httpd_route("GET",  "/api/system/memory",  handle_system_memory);
-	ove_httpd_route("GET",  "/api/system/threads", handle_system_threads);
+	ove_httpd_route("GET", "/", handle_index);
+	ove_httpd_route("GET", "/api/info", handle_info);
+	ove_httpd_route("GET", "/api/leds", handle_leds_get);
+	ove_httpd_route("POST", "/api/leds", handle_leds_post);
+	ove_httpd_route("GET", "/api/gpio", handle_gpio_get);
+	ove_httpd_route("POST", "/api/gpio", handle_gpio_post);
+	ove_httpd_route("GET", "/api/network", handle_network);
+	ove_httpd_route("GET", "/api/log", handle_log);
+	ove_httpd_route("GET", "/api/system/memory", handle_system_memory);
+	ove_httpd_route("GET", "/api/system/threads", handle_system_threads);
 
 #ifdef CONFIG_OVE_AUDIO
-	ove_httpd_route("GET",  "/api/audio/stats",    handle_audio_stats);
+	ove_httpd_route("GET", "/api/audio/stats", handle_audio_stats);
 #endif
 #ifdef CONFIG_OVE_INFER
-	ove_httpd_route("GET",  "/api/infer/stats",    handle_infer_stats);
+	ove_httpd_route("GET", "/api/infer/stats", handle_infer_stats);
 #endif
 
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 	ove_httpd_ws_route("/ws/log", NULL, NULL);
 #ifdef CONFIG_OVE_SHELL
-	ove_httpd_ws_route("/ws/shell", ws_shell_on_message,
-			   ws_shell_on_close);
+	ove_httpd_ws_route("/ws/shell", ws_shell_on_message, ws_shell_on_close);
 #endif
 #endif
 }

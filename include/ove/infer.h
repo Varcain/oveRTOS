@@ -47,10 +47,10 @@ extern "C" {
  */
 enum ove_tensor_type {
 	OVE_TENSOR_FLOAT32 = 0,
-	OVE_TENSOR_INT8    = 1,
-	OVE_TENSOR_UINT8   = 2,
-	OVE_TENSOR_INT16   = 3,
-	OVE_TENSOR_INT32   = 4,
+	OVE_TENSOR_INT8 = 1,
+	OVE_TENSOR_UINT8 = 2,
+	OVE_TENSOR_INT16 = 3,
+	OVE_TENSOR_INT32 = 4,
 };
 
 /**
@@ -61,11 +61,11 @@ enum ove_tensor_type {
  * lifetime of the model session.
  */
 struct ove_tensor_info {
-	void               *data;   /**< Pointer into the tensor arena buffer. */
-	size_t              size;   /**< Total size of tensor data in bytes. */
-	enum ove_tensor_type type;  /**< Element type. */
-	unsigned int        ndims;  /**< Number of dimensions. */
-	int                 dims[5]; /**< Shape, e.g. {1, 96, 96, 1}. */
+	void *data;		   /**< Pointer into the tensor arena buffer. */
+	size_t size;		   /**< Total size of tensor data in bytes. */
+	enum ove_tensor_type type; /**< Element type. */
+	unsigned int ndims;	   /**< Number of dimensions. */
+	int dims[5];		   /**< Shape, e.g. {1, 96, 96, 1}. */
 };
 
 /**
@@ -85,9 +85,9 @@ struct ove_tensor_info {
  *          silent memory corruption during @c ove_model_invoke().
  */
 struct ove_model_config {
-	const void *model_data;  /**< Pointer to .tflite FlatBuffer data (must outlive the session). */
-	size_t      model_size;  /**< Size of model_data in bytes. */
-	size_t      arena_size;  /**< Tensor arena size in bytes. */
+	const void *model_data; /**< Pointer to .tflite FlatBuffer data (must outlive the session). */
+	size_t model_size;	/**< Size of model_data in bytes. */
+	size_t arena_size;	/**< Tensor arena size in bytes. */
 };
 
 #ifdef CONFIG_OVE_INFER
@@ -108,8 +108,8 @@ struct ove_model_config {
  *
  * @see ove_model_deinit, ove_model_create
  */
-int  ove_model_init(ove_model_t *model, ove_model_storage_t *storage,
-		    void *arena, const struct ove_model_config *cfg);
+int ove_model_init(ove_model_t *model, ove_model_storage_t *storage, void *arena,
+		   const struct ove_model_config *cfg);
 
 /**
  * @brief Release resources held by a model initialised with ove_model_init().
@@ -138,8 +138,7 @@ void ove_model_deinit(ove_model_t model);
  *
  * @see ove_model_destroy, ove_model_init
  */
-int  ove_model_create(ove_model_t *model,
-		      const struct ove_model_config *cfg);
+int ove_model_create(ove_model_t *model, const struct ove_model_config *cfg);
 
 /**
  * @brief Destroy and free a model allocated with ove_model_create().
@@ -153,11 +152,12 @@ void ove_model_destroy(ove_model_t model);
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_INFER — zero-heap mode */
 
 /* Unified macro — arena_size must be a compile-time constant. */
-#define ove_model_create(pm, cfg) \
-	({ static ove_model_storage_t _ove_stor_; \
-	   static uint8_t __attribute__((aligned(16))) \
-	       _ove_arena_[(cfg)->arena_size]; \
-	   ove_model_init((pm), &_ove_stor_, _ove_arena_, (cfg)); })
+#define ove_model_create(pm, cfg)                                                           \
+	({                                                                                  \
+		static ove_model_storage_t _ove_stor_;                                      \
+		static uint8_t __attribute__((aligned(16))) _ove_arena_[(cfg)->arena_size]; \
+		ove_model_init((pm), &_ove_stor_, _ove_arena_, (cfg));                      \
+	})
 #define ove_model_destroy(m) ove_model_deinit(m)
 
 #endif /* OVE_HEAP_INFER */
@@ -173,7 +173,7 @@ void ove_model_destroy(ove_model_t model);
  *
  * @see ove_model_input, ove_model_output
  */
-int  ove_model_invoke(ove_model_t model);
+int ove_model_invoke(ove_model_t model);
 
 /**
  * @brief Get a descriptor for an input tensor.
@@ -189,8 +189,7 @@ int  ove_model_invoke(ove_model_t model);
  *
  * @see ove_model_output, ove_model_invoke
  */
-int  ove_model_input(ove_model_t model, unsigned int index,
-		     struct ove_tensor_info *info);
+int ove_model_input(ove_model_t model, unsigned int index, struct ove_tensor_info *info);
 
 /**
  * @brief Get a descriptor for an output tensor.
@@ -206,8 +205,7 @@ int  ove_model_input(ove_model_t model, unsigned int index,
  *
  * @see ove_model_input, ove_model_invoke
  */
-int  ove_model_output(ove_model_t model, unsigned int index,
-		      struct ove_tensor_info *info);
+int ove_model_output(ove_model_t model, unsigned int index, struct ove_tensor_info *info);
 
 /**
  * @brief Return inference time of the last ove_model_invoke() in microseconds.
@@ -223,12 +221,40 @@ uint64_t ove_model_last_inference_us(ove_model_t model);
 #else /* !CONFIG_OVE_INFER */
 
 /** @cond INTERNAL */
-static inline int  ove_model_create(ove_model_t *m, const struct ove_model_config *c) { (void)m; (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_model_destroy(ove_model_t m) { (void)m; }
-static inline int  ove_model_invoke(ove_model_t m) { (void)m; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_model_input(ove_model_t m, unsigned int i, struct ove_tensor_info *t) { (void)m; (void)i; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_model_output(ove_model_t m, unsigned int i, struct ove_tensor_info *t) { (void)m; (void)i; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline uint64_t ove_model_last_inference_us(ove_model_t m) { (void)m; return 0; }
+static inline int ove_model_create(ove_model_t *m, const struct ove_model_config *c)
+{
+	(void)m;
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_model_destroy(ove_model_t m)
+{
+	(void)m;
+}
+static inline int ove_model_invoke(ove_model_t m)
+{
+	(void)m;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_model_input(ove_model_t m, unsigned int i, struct ove_tensor_info *t)
+{
+	(void)m;
+	(void)i;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_model_output(ove_model_t m, unsigned int i, struct ove_tensor_info *t)
+{
+	(void)m;
+	(void)i;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline uint64_t ove_model_last_inference_us(ove_model_t m)
+{
+	(void)m;
+	return 0;
+}
 /** @endcond */
 
 #endif /* CONFIG_OVE_INFER */

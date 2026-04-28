@@ -26,8 +26,8 @@
 
 struct sim_display_ctx {
 	struct ove_sim_display_cfg cfg;
-	uint32_t                   plugin_id;
-	uint32_t                   frame_count;
+	uint32_t plugin_id;
+	uint32_t frame_count;
 };
 
 static struct sim_display_ctx display_ctx;
@@ -48,8 +48,7 @@ static void display_deinit(void *ctx)
 	(void)ctx;
 }
 
-static int display_get_state(void *ctx, void *buf, size_t buf_len,
-			     size_t *out_len)
+static int display_get_state(void *ctx, void *buf, size_t buf_len, size_t *out_len)
 {
 	struct sim_display_ctx *d = (struct sim_display_ctx *)ctx;
 	int n = snprintf((char *)buf, buf_len,
@@ -62,13 +61,14 @@ static int display_get_state(void *ctx, void *buf, size_t buf_len,
 }
 
 static const struct ove_sim_display_ops builtin_display_ops = {
-	.base = {
-		.name      = "display",
-		.type      = OVE_SIM_PLUGIN_DISPLAY,
-		.init      = display_init,
-		.deinit    = display_deinit,
-		.get_state = display_get_state,
-	},
+	.base =
+		{
+			.name = "display",
+			.type = OVE_SIM_PLUGIN_DISPLAY,
+			.init = display_init,
+			.deinit = display_deinit,
+			.get_state = display_get_state,
+		},
 };
 
 const struct ove_sim_display_ops *ove_sim_display_builtin_ops(void)
@@ -78,9 +78,8 @@ const struct ove_sim_display_ops *ove_sim_display_builtin_ops(void)
 
 /* ── Flush notification (called from sim_lvgl.c) ──────────────────── */
 
-void ove_sim_display_flush(const void *fb, size_t fb_len,
-			   uint16_t x1, uint16_t y1,
-			   uint16_t x2, uint16_t y2)
+void ove_sim_display_flush(const void *fb, size_t fb_len, uint16_t x1, uint16_t y1, uint16_t x2,
+			   uint16_t y2)
 {
 	display_ctx.frame_count++;
 
@@ -107,16 +106,13 @@ void ove_sim_display_flush(const void *fb, size_t fb_len,
 
 /* ── Registration helper ───────────────────────────────────────────── */
 
-int ove_sim_display_register(uint16_t width, uint16_t height,
-			     enum ove_sim_color_fmt fmt)
+int ove_sim_display_register(uint16_t width, uint16_t height, enum ove_sim_color_fmt fmt)
 {
 	display_ctx.cfg.width = width;
 	display_ctx.cfg.height = height;
 	display_ctx.cfg.color_fmt = fmt;
 
-	int id = ove_sim_plugin_register(&builtin_display_ops.base,
-					 &display_ctx,
-					 &display_ctx.cfg,
+	int id = ove_sim_plugin_register(&builtin_display_ops.base, &display_ctx, &display_ctx.cfg,
 					 sizeof(display_ctx.cfg));
 	if (id >= 0)
 		display_ctx.plugin_id = (uint32_t)id;

@@ -48,7 +48,8 @@ void ove_mutex_deinit(ove_mutex_t mtx)
 int ove_mutex_create(ove_mutex_t *mtx)
 {
 	int ret = ove_check_param(mtx);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_mutex *w = OVE_BACKEND_MALLOC(sizeof(*w));
 	if (w == NULL) {
@@ -86,14 +87,12 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 /* ─── Semaphore _init / _deinit ──────────────────────────────────────── */
 
-int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage,
-		     unsigned int initial, unsigned int max)
+int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
 	if (sem == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	storage->sem = xSemaphoreCreateCountingStatic(max, initial,
-						      &storage->static_sem);
+	storage->sem = xSemaphoreCreateCountingStatic(max, initial, &storage->static_sem);
 	*sem = storage;
 	return OVE_OK;
 }
@@ -109,11 +108,11 @@ void ove_sem_deinit(ove_sem_t sem)
 /* ─── Semaphore _create / _destroy ───────────────────────────────────── */
 
 #ifdef OVE_HEAP_SYNC
-int ove_sem_create(ove_sem_t *sem, unsigned int initial,
-			       unsigned int max)
+int ove_sem_create(ove_sem_t *sem, unsigned int initial, unsigned int max)
 {
 	int ret = ove_check_param(sem);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_sem *w = OVE_BACKEND_MALLOC(sizeof(*w));
 	if (w == NULL) {
@@ -175,7 +174,8 @@ void ove_event_deinit(ove_event_t evt)
 int ove_event_create(ove_event_t *evt)
 {
 	int ret = ove_check_param(evt);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_event *w = OVE_BACKEND_MALLOC(sizeof(*w));
 	if (w == NULL) {
@@ -220,14 +220,12 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 /* ─── Recursive Mutex _init ──────────────────────────────────────────── */
 
-int ove_recursive_mutex_init(ove_mutex_t *mtx,
-				 ove_mutex_storage_t *storage)
+int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
 	if (mtx == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	storage->sem = xSemaphoreCreateRecursiveMutexStatic(
-		&storage->static_sem);
+	storage->sem = xSemaphoreCreateRecursiveMutexStatic(&storage->static_sem);
 	*mtx = storage;
 	return OVE_OK;
 }
@@ -259,8 +257,7 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_recursive_mutex_lock(ove_mutex_t mtx,
-					 uint32_t timeout_ms)
+int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	BaseType_t r = xSemaphoreTakeRecursive(mtx->sem, ms_to_ticks(timeout_ms));
@@ -283,8 +280,7 @@ struct condvar_waiter {
 
 /* ─── Condvar _init / _deinit ────────────────────────────────────────── */
 
-int ove_condvar_init(ove_condvar_t *cv,
-			 ove_condvar_storage_t *storage)
+int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
 	if (cv == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -309,7 +305,8 @@ void ove_condvar_deinit(ove_condvar_t cv)
 int ove_condvar_create(ove_condvar_t *cv)
 {
 	int ret = ove_check_param(cv);
-	if (ret) return ret;
+	if (ret)
+		return ret;
 
 	struct ove_condvar *c = OVE_BACKEND_MALLOC(sizeof(*c));
 	if (c == NULL) {
@@ -332,8 +329,7 @@ void ove_condvar_destroy(ove_condvar_t cv)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
-				 uint32_t timeout_ms)
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 {
 	struct condvar_waiter self;
 

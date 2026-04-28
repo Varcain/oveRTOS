@@ -36,7 +36,8 @@
  *       address of that buffer must remain stable for the lifetime of the
  *       wrapper.
  */
-namespace ove {
+namespace ove
+{
 
 /* ------------------------------------------------------------------ */
 /*  C++20 Concepts                                                    */
@@ -51,6 +52,6 @@ namespace ove {
  * @tparam F The callable type to check.
  */
 template <typename F>
-concept ThreadEntry = std::convertible_to<F, void(*)(void*)>;
+concept ThreadEntry = std::convertible_to<F, void (*)(void *)>;
 
 } // namespace ove

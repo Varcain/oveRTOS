@@ -28,12 +28,12 @@
 #define NTP_PKT_LEN 48
 
 /* Default server and timeout */
-#define SNTP_DEFAULT_SERVER  "pool.ntp.org"
+#define SNTP_DEFAULT_SERVER "pool.ntp.org"
 #define SNTP_DEFAULT_TIMEOUT 5000
 
 /* Stored offset from last sync */
 static int64_t s_offset_us;
-static int     s_synced;
+static int s_synced;
 
 int ove_sntp_sync(const ove_sntp_config_t *cfg)
 {
@@ -80,8 +80,7 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg)
 
 	/* Receive response */
 	size_t received = 0;
-	ret = ove_socket_recvfrom(sock, pkt, NTP_PKT_LEN, &received,
-				  NULL, timeout);
+	ret = ove_socket_recvfrom(sock, pkt, NTP_PKT_LEN, &received, NULL, timeout);
 	ove_socket_close(sock);
 
 	if (ret != OVE_OK)
@@ -97,14 +96,10 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg)
 	 * Extract transmit timestamp (bytes 40-47).
 	 * NTP timestamp: 32-bit seconds + 32-bit fraction (since 1900-01-01).
 	 */
-	uint32_t ntp_secs = ((uint32_t)pkt[40] << 24) |
-			    ((uint32_t)pkt[41] << 16) |
-			    ((uint32_t)pkt[42] << 8)  |
-			    ((uint32_t)pkt[43]);
-	uint32_t ntp_frac = ((uint32_t)pkt[44] << 24) |
-			    ((uint32_t)pkt[45] << 16) |
-			    ((uint32_t)pkt[46] << 8)  |
-			    ((uint32_t)pkt[47]);
+	uint32_t ntp_secs = ((uint32_t)pkt[40] << 24) | ((uint32_t)pkt[41] << 16) |
+			    ((uint32_t)pkt[42] << 8) | ((uint32_t)pkt[43]);
+	uint32_t ntp_frac = ((uint32_t)pkt[44] << 24) | ((uint32_t)pkt[45] << 16) |
+			    ((uint32_t)pkt[46] << 8) | ((uint32_t)pkt[47]);
 
 	if (ntp_secs == 0)
 		return OVE_ERR_NOT_SUPPORTED; /* kiss-of-death or invalid */

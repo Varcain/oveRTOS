@@ -105,7 +105,6 @@ void *ove_lvgl_get_keypad_indev(void);
  */
 void *ove_lvgl_get_encoder_indev(void);
 
-
 /**
  * @brief Initialise the LVGL library and register the board's display driver.
  *
@@ -114,7 +113,7 @@ void *ove_lvgl_get_encoder_indev(void);
  *
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_lvgl_init(void);
+int ove_lvgl_init(void);
 
 /**
  * @brief Acquire the LVGL mutex before calling any LVGL API.
@@ -154,17 +153,41 @@ void ove_lvgl_handler(void);
 typedef bool (*ove_lvgl_keypad_read_fn_t)(uint32_t *key, bool *pressed);
 typedef bool (*ove_lvgl_encoder_read_fn_t)(int16_t *diff, bool *pressed);
 
-static inline int ove_lvgl_init(void) { return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_lvgl_lock(void) { }
-static inline void ove_lvgl_unlock(void) { }
-static inline void ove_lvgl_tick(uint32_t ms) { (void)ms; }
-static inline void ove_lvgl_handler(void) { }
+static inline int ove_lvgl_init(void)
+{
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_lvgl_lock(void)
+{
+}
+static inline void ove_lvgl_unlock(void)
+{
+}
+static inline void ove_lvgl_tick(uint32_t ms)
+{
+	(void)ms;
+}
+static inline void ove_lvgl_handler(void)
+{
+}
 static inline int ove_lvgl_register_keypad(ove_lvgl_keypad_read_fn_t cb)
-    { (void)cb; return OVE_ERR_NOT_SUPPORTED; }
+{
+	(void)cb;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 static inline int ove_lvgl_register_encoder(ove_lvgl_encoder_read_fn_t cb)
-    { (void)cb; return OVE_ERR_NOT_SUPPORTED; }
-static inline void *ove_lvgl_get_keypad_indev(void) { return (void *)0; }
-static inline void *ove_lvgl_get_encoder_indev(void) { return (void *)0; }
+{
+	(void)cb;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void *ove_lvgl_get_keypad_indev(void)
+{
+	return (void *)0;
+}
+static inline void *ove_lvgl_get_encoder_indev(void)
+{
+	return (void *)0;
+}
 
 #endif /* CONFIG_OVE_LVGL */
 

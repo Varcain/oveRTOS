@@ -14,8 +14,7 @@ static void test_cpp_gpio_set_get(void **state)
 static void test_cpp_gpio_irq(void **state)
 {
 	(void)state;
-	int ret = ove::gpio::irq_register(0, 0, OVE_GPIO_IRQ_RISING,
-					       nullptr, nullptr);
+	int ret = ove::gpio::irq_register(0, 0, OVE_GPIO_IRQ_RISING, nullptr, nullptr);
 	assert_int_equal(ret, OVE_OK);
 
 	ret = ove::gpio::irq_enable(0, 0);

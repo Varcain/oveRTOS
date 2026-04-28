@@ -45,19 +45,29 @@
  * sized OVE_*_DEFINE_STATIC macros.
  */
 extern void *malloc(size_t);
-extern void  free(void *);
+extern void free(void *);
 extern void *calloc(size_t, size_t);
 extern void *realloc(void *, size_t);
 
 __attribute__((weak)) void *__real_malloc(size_t n)
-	{ return malloc(n); }
+{
+	return malloc(n);
+}
 __attribute__((weak)) void *__real_calloc(size_t nmemb, size_t n)
-	{ return calloc(nmemb, n); }
+{
+	return calloc(nmemb, n);
+}
 __attribute__((weak)) void *__real_realloc(void *p, size_t n)
-	{ return realloc(p, n); }
+{
+	return realloc(p, n);
+}
 __attribute__((weak)) void *__real_zalloc(size_t n)
-	{ return calloc(1, n); }
-__attribute__((weak)) void  __real_free(void *p)
-	{ free(p); }
+{
+	return calloc(1, n);
+}
+__attribute__((weak)) void __real_free(void *p)
+{
+	free(p);
+}
 
 #endif /* CONFIG_OVE_RTOS_ZEPHYR && CONFIG_OVE_ZERO_HEAP */

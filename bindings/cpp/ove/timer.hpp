@@ -18,7 +18,8 @@
 
 #ifdef CONFIG_OVE_TIMER
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @brief Concept satisfied by any callable convertible to `ove_timer_fn`.
@@ -43,8 +44,9 @@ concept TimerCallback = std::convertible_to<F, ove_timer_fn>;
  * @note `start()`, `stop()`, and `reset()` are marked `[[nodiscard]]` because
  *       their return value indicates whether the RTOS accepted the request.
  */
-class Timer {
-public:
+class Timer
+{
+      public:
 	/**
 	 * @brief Constructs and initialises the timer.
 	 *
@@ -60,18 +62,15 @@ public:
 	 * Asserts at startup if initialisation fails.
 	 */
 	template <typename F>
-	Timer(F callback, void *user_data, uint32_t period_ms,
-	      bool one_shot = false)
+	Timer(F callback, void *user_data, uint32_t period_ms, bool one_shot = false)
 		requires TimerCallback<F>
 	{
 #ifdef CONFIG_OVE_ZERO_HEAP
-		int err = ove_timer_init(&handle_, &storage_, callback,
-					      user_data, period_ms,
-					      one_shot ? 1 : 0);
+		int err = ove_timer_init(&handle_, &storage_, callback, user_data, period_ms,
+					 one_shot ? 1 : 0);
 #else
-		int err = ove_timer_create(&handle_, callback, user_data,
-						period_ms,
-						one_shot ? 1 : 0);
+		int err = ove_timer_create(&handle_, callback, user_data, period_ms,
+					   one_shot ? 1 : 0);
 #endif
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
@@ -79,8 +78,10 @@ public:
 	/**
 	 * @brief Destroys the timer, stopping it if running and releasing the kernel resource.
 	 */
-	~Timer() noexcept {
-		if (!handle_) return;
+	~Timer() noexcept
+	{
+		if (!handle_)
+			return;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		ove_timer_deinit(handle_);
 #else
@@ -99,7 +100,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the kernel handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Timer(Timer &&other) noexcept : handle_(other.handle_) {
+	Timer(Timer &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -108,9 +110,11 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Timer &operator=(Timer &&other) noexcept {
+	Timer &operator=(Timer &&other) noexcept
+	{
 		if (this != &other) {
-			if (handle_) ove_timer_destroy(handle_);
+			if (handle_)
+				ove_timer_destroy(handle_);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -122,7 +126,8 @@ public:
 	 * @brief Starts the timer.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int start() {
+	[[nodiscard]] int start()
+	{
 		return ove_timer_start(handle_);
 	}
 
@@ -130,7 +135,8 @@ public:
 	 * @brief Stops the timer without resetting its period.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int stop() {
+	[[nodiscard]] int stop()
+	{
 		return ove_timer_stop(handle_);
 	}
 
@@ -138,7 +144,8 @@ public:
 	 * @brief Restarts the timer, resetting the period countdown.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int reset() {
+	[[nodiscard]] int reset()
+	{
 		return ove_timer_reset(handle_);
 	}
 
@@ -146,15 +153,21 @@ public:
 	 * @brief Returns `true` if the underlying kernel handle is non-null.
 	 * @return `true` when the timer was successfully initialised.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS timer handle.
 	 * @return The opaque `ove_timer_t` handle.
 	 */
-	ove_timer_t handle() const { return handle_; }
+	ove_timer_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_timer_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_timer_storage_t storage_ = {};

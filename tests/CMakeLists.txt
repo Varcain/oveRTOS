@@ -7,6 +7,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(ove_tests C)
 
+# Emit compile_commands.json so `ove lint` can feed clang-tidy real -I/-D
+# flags for the suite + backend sources.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 

@@ -85,5 +85,4 @@ static constexpr bench_case_t eventgroup_cases[] = {
 	ove::bench::case_<eg_create_destroy_spec>(),
 };
 
-OVE_BENCH_SUITE(bench_suite_eventgroup, "eventgroup",
-		eventgroup_is_enabled, eventgroup_cases)
+OVE_BENCH_SUITE(bench_suite_eventgroup, "eventgroup", eventgroup_is_enabled, eventgroup_cases)

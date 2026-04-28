@@ -48,8 +48,7 @@ struct ove_sim_transport_ops {
 	 * @param[in] event  Event to send (header + payload).
 	 * @return 0 on success, negative error code on failure.
 	 */
-	int (*send_event)(struct ove_sim_transport *t,
-			  const struct ove_sim_event *event);
+	int (*send_event)(struct ove_sim_transport *t, const struct ove_sim_event *event);
 
 	/**
 	 * @brief Receive a command from the dashboard.
@@ -63,8 +62,7 @@ struct ove_sim_transport_ops {
 	 * @param[in]  timeout_ms Maximum wait time (0 = poll, UINT32_MAX = forever).
 	 * @return 0 on success, OVE_ERR_TIMEOUT if no command arrived.
 	 */
-	int (*recv_cmd)(struct ove_sim_transport *t,
-			struct ove_sim_cmd *cmd, size_t cmd_size,
+	int (*recv_cmd)(struct ove_sim_transport *t, struct ove_sim_cmd *cmd, size_t cmd_size,
 			uint32_t timeout_ms);
 
 	/* ── Host-side ops (used by the WS server / bridge) ────────── */
@@ -75,8 +73,7 @@ struct ove_sim_transport_ops {
 	 * Counterpart to @c send_event -- reads what firmware wrote.
 	 * May be NULL if the transport has no in-process host side.
 	 */
-	int (*read_event)(struct ove_sim_transport *t,
-			  void *buf, size_t buf_size,
+	int (*read_event)(struct ove_sim_transport *t, void *buf, size_t buf_size,
 			  uint16_t *out_len, uint32_t timeout_ms);
 
 	/**
@@ -85,8 +82,7 @@ struct ove_sim_transport_ops {
 	 * Counterpart to @c recv_cmd -- writes what firmware will read.
 	 * May be NULL if the transport has no in-process host side.
 	 */
-	int (*write_cmd)(struct ove_sim_transport *t,
-			 const void *data, uint16_t len);
+	int (*write_cmd)(struct ove_sim_transport *t, const void *data, uint16_t len);
 
 	/* ── High-bandwidth display/audio channels ─────────────────── */
 
@@ -96,39 +92,33 @@ struct ove_sim_transport_ops {
 	 * Carries XRGB8888 pixel data.  Transport decides delivery
 	 * (WS mailbox, shared FB, semihosting file, etc.).
 	 */
-	int (*flush_display)(struct ove_sim_transport *t,
-			     const void *fb, size_t fb_len,
-			     uint16_t x1, uint16_t y1,
-			     uint16_t x2, uint16_t y2);
+	int (*flush_display)(struct ove_sim_transport *t, const void *fb, size_t fb_len,
+			     uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
 
 	/**
 	 * @brief Push PCM audio output to the dashboard.
 	 */
-	int (*push_audio)(struct ove_sim_transport *t,
-			  const void *samples, size_t len,
-			  uint32_t sample_rate, uint16_t channels,
-			  uint16_t bit_depth);
+	int (*push_audio)(struct ove_sim_transport *t, const void *samples, size_t len,
+			  uint32_t sample_rate, uint16_t channels, uint16_t bit_depth);
 
 	/**
 	 * @brief Pull PCM audio input from the dashboard.
 	 * @return Number of bytes read (0 if no data available).
 	 */
-	size_t (*pull_audio)(struct ove_sim_transport *t,
-			     void *samples, size_t len);
+	size_t (*pull_audio)(struct ove_sim_transport *t, void *samples, size_t len);
 };
 
 /**
  * @brief Transport instance.
  */
 struct ove_sim_transport {
-	const struct ove_sim_transport_ops *ops;  /**< Vtable. */
-	void                               *priv; /**< Backend-private state. */
+	const struct ove_sim_transport_ops *ops; /**< Vtable. */
+	void *priv;				 /**< Backend-private state. */
 };
 
 /* ── Convenience inline wrappers ───────────────────────────────────── */
 
-static inline int ove_sim_transport_open(struct ove_sim_transport *t,
-					 const char *endpoint)
+static inline int ove_sim_transport_open(struct ove_sim_transport *t, const char *endpoint)
 {
 	return t->ops->open(t, endpoint);
 }
@@ -144,17 +134,14 @@ static inline int ove_sim_transport_send_event(struct ove_sim_transport *t,
 	return t->ops->send_event(t, ev);
 }
 
-static inline int ove_sim_transport_recv_cmd(struct ove_sim_transport *t,
-					     struct ove_sim_cmd *cmd,
-					     size_t cmd_size,
-					     uint32_t timeout_ms)
+static inline int ove_sim_transport_recv_cmd(struct ove_sim_transport *t, struct ove_sim_cmd *cmd,
+					     size_t cmd_size, uint32_t timeout_ms)
 {
 	return t->ops->recv_cmd(t, cmd, cmd_size, timeout_ms);
 }
 
-static inline int ove_sim_transport_read_event(struct ove_sim_transport *t,
-					       void *buf, size_t buf_size,
-					       uint16_t *out_len,
+static inline int ove_sim_transport_read_event(struct ove_sim_transport *t, void *buf,
+					       size_t buf_size, uint16_t *out_len,
 					       uint32_t timeout_ms)
 {
 	if (!t->ops->read_event)
@@ -162,17 +149,16 @@ static inline int ove_sim_transport_read_event(struct ove_sim_transport *t,
 	return t->ops->read_event(t, buf, buf_size, out_len, timeout_ms);
 }
 
-static inline int ove_sim_transport_write_cmd(struct ove_sim_transport *t,
-					      const void *data, uint16_t len)
+static inline int ove_sim_transport_write_cmd(struct ove_sim_transport *t, const void *data,
+					      uint16_t len)
 {
 	if (!t->ops->write_cmd)
 		return -1;
 	return t->ops->write_cmd(t, data, len);
 }
 
-static inline int ove_sim_transport_flush_display(struct ove_sim_transport *t,
-						  const void *fb, size_t fb_len,
-						  uint16_t x1, uint16_t y1,
+static inline int ove_sim_transport_flush_display(struct ove_sim_transport *t, const void *fb,
+						  size_t fb_len, uint16_t x1, uint16_t y1,
 						  uint16_t x2, uint16_t y2)
 {
 	if (!t || !t->ops->flush_display)
@@ -180,18 +166,16 @@ static inline int ove_sim_transport_flush_display(struct ove_sim_transport *t,
 	return t->ops->flush_display(t, fb, fb_len, x1, y1, x2, y2);
 }
 
-static inline int ove_sim_transport_push_audio(struct ove_sim_transport *t,
-					       const void *samples, size_t len,
-					       uint32_t sr, uint16_t ch,
-					       uint16_t bd)
+static inline int ove_sim_transport_push_audio(struct ove_sim_transport *t, const void *samples,
+					       size_t len, uint32_t sr, uint16_t ch, uint16_t bd)
 {
 	if (!t || !t->ops->push_audio)
 		return -1;
 	return t->ops->push_audio(t, samples, len, sr, ch, bd);
 }
 
-static inline size_t ove_sim_transport_pull_audio(struct ove_sim_transport *t,
-						  void *samples, size_t len)
+static inline size_t ove_sim_transport_pull_audio(struct ove_sim_transport *t, void *samples,
+						  size_t len)
 {
 	if (!t || !t->ops->pull_audio)
 		return 0;

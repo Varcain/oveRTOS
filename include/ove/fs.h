@@ -46,9 +46,9 @@ extern "C" {
  * @{
  */
 /** @brief Open for reading. */
-#define OVE_FS_O_READ   0x01
+#define OVE_FS_O_READ 0x01
 /** @brief Open for writing. */
-#define OVE_FS_O_WRITE  0x02
+#define OVE_FS_O_WRITE 0x02
 /** @brief Create the file if it does not exist. */
 #define OVE_FS_O_CREATE 0x04
 /** @brief Seek to the end of the file before each write. */
@@ -61,20 +61,20 @@ extern "C" {
  * @{
  */
 /** @brief Seek relative to the beginning of the file. */
-#define OVE_FS_SEEK_SET  0
+#define OVE_FS_SEEK_SET 0
 /** @brief Seek relative to the current file position. */
-#define OVE_FS_SEEK_CUR  1
+#define OVE_FS_SEEK_CUR 1
 /** @brief Seek relative to the end of the file. */
-#define OVE_FS_SEEK_END  2
+#define OVE_FS_SEEK_END 2
 /** @} */
 
 /**
  * @brief Directory entry descriptor returned by @ref ove_fs_readdir.
  */
 struct ove_dirent {
-	char name[256];   /**< @brief Null-terminated entry name (not full path). */
+	char name[256];	   /**< @brief Null-terminated entry name (not full path). */
 	unsigned int size; /**< @brief File size in bytes; 0 for directories. */
-	int is_dir;       /**< @brief Non-zero if the entry is a directory. */
+	int is_dir;	   /**< @brief Non-zero if the entry is a directory. */
 };
 
 #ifdef CONFIG_OVE_FS
@@ -93,8 +93,7 @@ struct ove_dirent {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int  ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage,
-		      const char *path, int flags);
+int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags);
 
 /**
  * @brief Close a statically-allocated file handle.
@@ -106,7 +105,7 @@ int  ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage,
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int  ove_fs_close_deinit(ove_file_t file);
+int ove_fs_close_deinit(ove_file_t file);
 
 /**
  * @brief Open a directory using caller-provided static storage.
@@ -121,8 +120,7 @@ int  ove_fs_close_deinit(ove_file_t file);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int  ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
-			 const char *path);
+int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *path);
 
 /**
  * @brief Close a statically-allocated directory handle.
@@ -133,7 +131,7 @@ int  ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int  ove_fs_closedir_deinit(ove_dir_t dir);
+int ove_fs_closedir_deinit(ove_dir_t dir);
 
 /**
  * @brief Open a file.
@@ -148,22 +146,22 @@ int  ove_fs_closedir_deinit(ove_dir_t dir);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_FS.
  */
-int  ove_fs_open(ove_file_t *file, const char *path, int flags);
+int ove_fs_open(ove_file_t *file, const char *path, int flags);
 
 /**
  * @brief Close a file handle returned by @ref ove_fs_open.
  */
-int  ove_fs_close(ove_file_t file);
+int ove_fs_close(ove_file_t file);
 
 /**
  * @brief Open a directory (heap or backend-managed allocation).
  */
-int  ove_fs_opendir(ove_dir_t *dir, const char *path);
+int ove_fs_opendir(ove_dir_t *dir, const char *path);
 
 /**
  * @brief Close a directory handle returned by @ref ove_fs_opendir.
  */
-int  ove_fs_closedir(ove_dir_t dir);
+int ove_fs_closedir(ove_dir_t dir);
 
 /**
  * @brief Mount a storage device at a virtual path prefix.
@@ -176,7 +174,7 @@ int  ove_fs_closedir(ove_dir_t dir);
  * @param[in] mount_point  Absolute path to use as the mount prefix.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_mount(const char *dev_path, const char *mount_point);
+int ove_fs_mount(const char *dev_path, const char *mount_point);
 
 /**
  * @brief Unmount a previously mounted storage device.
@@ -202,8 +200,7 @@ void ove_fs_unmount(const char *mount_point);
  *                         @c NULL if not needed.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_read(ove_file_t file, void *buf, size_t count,
-		 size_t *bytes_read);
+int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read);
 
 /**
  * @brief Write bytes to an open file.
@@ -220,8 +217,7 @@ int  ove_fs_read(ove_file_t file, void *buf, size_t count,
  *                            or @c NULL if not needed.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_write(ove_file_t file, const void *buf, size_t count,
-		  size_t *bytes_written);
+int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written);
 
 /**
  * @brief Query the total size of an open file.
@@ -230,7 +226,7 @@ int  ove_fs_write(ove_file_t file, const void *buf, size_t count,
  * @param[out] out_size  Receives the file size in bytes.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_size(ove_file_t file, size_t *out_size);
+int ove_fs_size(ove_file_t file, size_t *out_size);
 
 /**
  * @brief Reposition the file read/write offset.
@@ -244,7 +240,7 @@ int  ove_fs_size(ove_file_t file, size_t *out_size);
  *                    @c OVE_FS_SEEK_END.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_seek(ove_file_t file, long offset, int whence);
+int ove_fs_seek(ove_file_t file, long offset, int whence);
 
 /**
  * @brief Return the current file position.
@@ -266,7 +262,7 @@ long ove_fs_tell(ove_file_t file);
  * @return OVE_OK if an entry was read, @c OVE_ERR_EOF when the directory
  *         is exhausted, or another negative error code on failure.
  */
-int  ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry);
+int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry);
 
 /**
  * @brief Delete a file by path.
@@ -277,7 +273,7 @@ int  ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry);
  * @param[in] path  Absolute path of the file to delete.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_unlink(const char *path);
+int ove_fs_unlink(const char *path);
 
 /**
  * @brief Rename or move a file.
@@ -289,24 +285,95 @@ int  ove_fs_unlink(const char *path);
  * @param[in] new_path  Absolute path for the new name or location.
  * @return OVE_OK on success, negative error code on failure.
  */
-int  ove_fs_rename(const char *old_path, const char *new_path);
+int ove_fs_rename(const char *old_path, const char *new_path);
 
 #else /* !CONFIG_OVE_FS */
 
-static inline int ove_fs_mount(const char *dev_path, const char *mount_point) { (void)dev_path; (void)mount_point; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_fs_unmount(const char *mount_point) { (void)mount_point; }
-static inline int ove_fs_open(ove_file_t *file, const char *path, int flags) { (void)file; (void)path; (void)flags; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_close(ove_file_t file) { (void)file; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read) { (void)file; (void)buf; (void)count; (void)bytes_read; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written) { (void)file; (void)buf; (void)count; (void)bytes_written; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_size(ove_file_t file, size_t *out_size) { (void)file; (void)out_size; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_seek(ove_file_t file, long offset, int whence) { (void)file; (void)offset; (void)whence; return OVE_ERR_NOT_SUPPORTED; }
-static inline long ove_fs_tell(ove_file_t file) { (void)file; return -1; }
-static inline int ove_fs_opendir(ove_dir_t *dir, const char *path) { (void)dir; (void)path; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry) { (void)dir; (void)entry; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_closedir(ove_dir_t dir) { (void)dir; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_unlink(const char *path) { (void)path; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_fs_rename(const char *old_path, const char *new_path) { (void)old_path; (void)new_path; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_fs_mount(const char *dev_path, const char *mount_point)
+{
+	(void)dev_path;
+	(void)mount_point;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_fs_unmount(const char *mount_point)
+{
+	(void)mount_point;
+}
+static inline int ove_fs_open(ove_file_t *file, const char *path, int flags)
+{
+	(void)file;
+	(void)path;
+	(void)flags;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_close(ove_file_t file)
+{
+	(void)file;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
+{
+	(void)file;
+	(void)buf;
+	(void)count;
+	(void)bytes_read;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_write(ove_file_t file, const void *buf, size_t count,
+			       size_t *bytes_written)
+{
+	(void)file;
+	(void)buf;
+	(void)count;
+	(void)bytes_written;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_size(ove_file_t file, size_t *out_size)
+{
+	(void)file;
+	(void)out_size;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_seek(ove_file_t file, long offset, int whence)
+{
+	(void)file;
+	(void)offset;
+	(void)whence;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline long ove_fs_tell(ove_file_t file)
+{
+	(void)file;
+	return -1;
+}
+static inline int ove_fs_opendir(ove_dir_t *dir, const char *path)
+{
+	(void)dir;
+	(void)path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
+{
+	(void)dir;
+	(void)entry;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_closedir(ove_dir_t dir)
+{
+	(void)dir;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_unlink(const char *path)
+{
+	(void)path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_fs_rename(const char *old_path, const char *new_path)
+{
+	(void)old_path;
+	(void)new_path;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 #endif /* CONFIG_OVE_FS */
 

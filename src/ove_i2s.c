@@ -18,8 +18,7 @@
 
 /* ── Lifecycle ───────────────────────────────────────────────────── */
 
-int ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage,
-		 void *tx_dma_buf, void *rx_dma_buf,
+int ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage, void *tx_dma_buf, void *rx_dma_buf,
 		 const struct ove_i2s_cfg *cfg)
 {
 	if (i2s == NULL || storage == NULL || cfg == NULL)
@@ -33,16 +32,15 @@ int ove_i2s_init(ove_i2s_t *i2s, ove_i2s_storage_t *storage,
 
 	memset(storage, 0, sizeof(*storage));
 
-	storage->instance       = cfg->instance;
-	storage->sample_rate    = cfg->sample_rate;
-	storage->bit_depth      = cfg->bit_depth;
-	storage->channels       = cfg->channels;
-	storage->direction      = (uint8_t)cfg->direction;
+	storage->instance = cfg->instance;
+	storage->sample_rate = cfg->sample_rate;
+	storage->bit_depth = cfg->bit_depth;
+	storage->channels = cfg->channels;
+	storage->direction = (uint8_t)cfg->direction;
 	storage->dma_buf_samples = cfg->dma_buf_samples;
-	storage->tx_dma_buf     = tx_dma_buf;
-	storage->rx_dma_buf     = rx_dma_buf;
-	storage->half_buf_bytes = (cfg->dma_buf_samples / 2) *
-				  (cfg->bit_depth / 8);
+	storage->tx_dma_buf = tx_dma_buf;
+	storage->rx_dma_buf = rx_dma_buf;
+	storage->half_buf_bytes = (cfg->dma_buf_samples / 2) * (cfg->bit_depth / 8);
 
 	*i2s = storage;
 
@@ -118,8 +116,7 @@ void ove_i2s_destroy(ove_i2s_t i2s)
 
 /* ── Callbacks ───────────────────────────────────────────────────── */
 
-int ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
-			    void *user_data)
+int ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data)
 {
 	if (i2s == NULL)
 		return OVE_ERR_INVALID_PARAM;
@@ -128,8 +125,7 @@ int ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
 	return OVE_OK;
 }
 
-int ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb,
-			    void *user_data)
+int ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data)
 {
 	if (i2s == NULL)
 		return OVE_ERR_INVALID_PARAM;

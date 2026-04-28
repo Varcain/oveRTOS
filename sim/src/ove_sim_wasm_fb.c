@@ -56,8 +56,7 @@ uint32_t ove_wasm_fb_get_size(void)
 
 /* ── Write a new frame (called from firmware thread) ───────────────── */
 
-void ove_sim_wasm_fb_write(const uint8_t *pixels, uint32_t size,
-			   uint16_t width, uint16_t height)
+void ove_sim_wasm_fb_write(const uint8_t *pixels, uint32_t size, uint16_t width, uint16_t height)
 {
 	if (size > OVE_SIM_WASM_FB_MAX)
 		return;

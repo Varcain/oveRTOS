@@ -19,8 +19,7 @@
 
 #include "ove/ove.h"
 
-#if defined(OVE_QEMU_ARM) || \
-    !(defined(CONFIG_OVE_RTOS_POSIX) || defined(CONFIG_OVE_RTOS_NUTTX))
+#if defined(OVE_QEMU_ARM) || !(defined(CONFIG_OVE_RTOS_POSIX) || defined(CONFIG_OVE_RTOS_NUTTX))
 /* Bare-metal or backends without POSIX-compatible FS structs: all ops return NOT_SUPPORTED */
 
 int ove_fs_mount(const char *dev_path, const char *mount_point)
@@ -51,8 +50,7 @@ int ove_fs_close(ove_file_t file)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_fs_read(ove_file_t file, void *buf, size_t count,
-		    size_t *bytes_read)
+int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	(void)file;
 	(void)buf;
@@ -61,8 +59,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-int ove_fs_write(ove_file_t file, const void *buf, size_t count,
-		     size_t *bytes_written)
+int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
 	(void)file;
 	(void)buf;
@@ -203,8 +200,7 @@ int ove_fs_close(ove_file_t file)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_fs_read(ove_file_t file, void *buf, size_t count,
-		    size_t *bytes_read)
+int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	struct ove_file *f = file;
 	if (!f || !buf) {
@@ -220,8 +216,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 	return OVE_OK;
 }
 
-int ove_fs_write(ove_file_t file, const void *buf, size_t count,
-		     size_t *bytes_written)
+int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
 	struct ove_file *f = file;
 	if (!f || !buf) {

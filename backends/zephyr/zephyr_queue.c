@@ -13,11 +13,10 @@
 #include <string.h>
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage,
-		       void *buffer, size_t item_size, unsigned int max_items)
+int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
+		   unsigned int max_items)
 {
-	if (q == NULL || storage == NULL || buffer == NULL ||
-	    item_size == 0 || max_items == 0) {
+	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -38,8 +37,7 @@ void ove_queue_deinit(ove_queue_t q)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_QUEUE
-int ove_queue_create(ove_queue_t *q, size_t item_size,
-			       unsigned int max_items)
+int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 {
 	struct ove_queue *zq;
 
@@ -76,8 +74,7 @@ void ove_queue_destroy(ove_queue_t q)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_queue_send(ove_queue_t q, const void *data,
-			     uint32_t timeout_ms)
+int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 {
 	k_timeout_t timeout;
 	int ret;
@@ -96,8 +93,7 @@ int ove_queue_send(ove_queue_t q, const void *data,
 	return OVE_OK;
 }
 
-int ove_queue_receive(ove_queue_t q, void *buf,
-				uint32_t timeout_ms)
+int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 {
 	k_timeout_t timeout;
 	int ret;

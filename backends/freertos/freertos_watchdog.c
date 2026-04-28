@@ -13,9 +13,7 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
-static void compute_prescaler_reload(uint32_t timeout_ms,
-				     uint32_t *prescaler,
-				     uint32_t *reload)
+static void compute_prescaler_reload(uint32_t timeout_ms, uint32_t *prescaler, uint32_t *reload)
 {
 	/* LSI ~32 kHz.
 	 * PR=4 (IWDG_PRESCALER_64): reload = timeout_ms / 2
@@ -37,9 +35,7 @@ static void compute_prescaler_reload(uint32_t timeout_ms,
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_watchdog_init(ove_watchdog_t *wdt,
-			  ove_watchdog_storage_t *storage,
-			  uint32_t timeout_ms)
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)
 {
 	uint32_t prescaler, reload;
 
@@ -68,8 +64,7 @@ void ove_watchdog_deinit(ove_watchdog_t wdt)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_WATCHDOG
-int ove_watchdog_create(ove_watchdog_t *wdt,
-				    uint32_t timeout_ms)
+int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms)
 {
 	struct ove_watchdog *fw;
 
@@ -82,8 +77,7 @@ int ove_watchdog_create(ove_watchdog_t *wdt,
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	int ret = ove_watchdog_init(wdt, (ove_watchdog_storage_t *)fw,
-					timeout_ms);
+	int ret = ove_watchdog_init(wdt, (ove_watchdog_storage_t *)fw, timeout_ms);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(fw);
 	}

@@ -18,7 +18,8 @@
 #include <ove/fs.h>
 #include <ove/types.hpp>
 
-namespace ove {
+namespace ove
+{
 
 /**
  * @namespace ove::fs
@@ -27,7 +28,8 @@ namespace ove {
  * Available when `CONFIG_OVE_FS` is enabled.  File and directory I/O is
  * handled by the `File` and `Dir` RAII classes below.
  */
-namespace fs {
+namespace fs
+{
 
 /**
  * @brief Mounts a filesystem at the given mount point.
@@ -35,8 +37,8 @@ namespace fs {
  * @param[in] mount_point Directory path at which to mount the filesystem.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int mount(const char *dev_path,
-				const char *mount_point) {
+[[nodiscard]] inline int mount(const char *dev_path, const char *mount_point)
+{
 	return ove_fs_mount(dev_path, mount_point);
 }
 
@@ -44,7 +46,8 @@ namespace fs {
  * @brief Unmounts a previously mounted filesystem.
  * @param[in] mount_point The mount point path passed to `mount()`.
  */
-inline void unmount(const char *mount_point) {
+inline void unmount(const char *mount_point)
+{
 	ove_fs_unmount(mount_point);
 }
 
@@ -53,7 +56,8 @@ inline void unmount(const char *mount_point) {
  * @param[in] path Absolute path to the file.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int unlink(const char *path) {
+[[nodiscard]] inline int unlink(const char *path)
+{
 	return ove_fs_unlink(path);
 }
 
@@ -63,8 +67,8 @@ inline void unmount(const char *mount_point) {
  * @param[in] new_path Desired new path.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int rename(const char *old_path,
-				 const char *new_path) {
+[[nodiscard]] inline int rename(const char *old_path, const char *new_path)
+{
 	return ove_fs_rename(old_path, new_path);
 }
 
@@ -80,17 +84,23 @@ inline void unmount(const char *mount_point) {
  *
  * @note Non-copyable; movable.
  */
-class File {
-public:
+class File
+{
+      public:
 	/**
 	 * @brief Constructs a File object with no open file (invalid state).
 	 */
-	File() : handle_(nullptr) {}
+	File() : handle_(nullptr)
+	{
+	}
 
 	/**
 	 * @brief Destroys the file object, closing the file if it is still open.
 	 */
-	~File() noexcept { close(); }
+	~File() noexcept
+	{
+		close();
+	}
 
 	File(const File &) = delete;
 	File &operator=(const File &) = delete;
@@ -99,7 +109,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the file handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	File(File &&other) noexcept : handle_(other.handle_) {
+	File(File &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -108,7 +119,8 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	File &operator=(File &&other) noexcept {
+	File &operator=(File &&other) noexcept
+	{
 		if (this != &other) {
 			close();
 			handle_ = other.handle_;
@@ -123,7 +135,8 @@ public:
 	 * @param[in] flags Open flags (e.g., read-only, write, create).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int open(const char *path, int flags) {
+	[[nodiscard]] int open(const char *path, int flags)
+	{
 		return ove_fs_open(&handle_, path, flags);
 	}
 
@@ -134,7 +147,8 @@ public:
 	 *
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int close() {
+	int close()
+	{
 		int ret = OVE_OK;
 		if (handle_) {
 			ret = ove_fs_close(handle_);
@@ -150,7 +164,8 @@ public:
 	 * @param[out] bytes_read Receives the actual number of bytes read.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int read(void *buf, size_t count, size_t *bytes_read) {
+	[[nodiscard]] int read(void *buf, size_t count, size_t *bytes_read)
+	{
 		return ove_fs_read(handle_, buf, count, bytes_read);
 	}
 
@@ -161,8 +176,8 @@ public:
 	 * @param[out] bytes_written Receives the actual number of bytes written.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int write(const void *buf, size_t count,
-				 size_t *bytes_written) {
+	[[nodiscard]] int write(const void *buf, size_t count, size_t *bytes_written)
+	{
 		return ove_fs_write(handle_, buf, count, bytes_written);
 	}
 
@@ -172,7 +187,8 @@ public:
 	 * @param[in] whence Seek origin (`SEEK_SET`, `SEEK_CUR`, or `SEEK_END`).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int seek(long offset, int whence) {
+	[[nodiscard]] int seek(long offset, int whence)
+	{
 		return ove_fs_seek(handle_, offset, whence);
 	}
 
@@ -180,7 +196,8 @@ public:
 	 * @brief Returns the current file offset.
 	 * @return The current byte offset from the start of the file, or -1 on error.
 	 */
-	long tell() {
+	long tell()
+	{
 		return ove_fs_tell(handle_);
 	}
 
@@ -189,7 +206,8 @@ public:
 	 * @param[out] out_size Receives the file size in bytes.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int size(size_t *out_size) {
+	[[nodiscard]] int size(size_t *out_size)
+	{
 		return ove_fs_size(handle_, out_size);
 	}
 
@@ -197,15 +215,21 @@ public:
 	 * @brief Returns `true` if the file handle is valid (file is open).
 	 * @return `true` when a file has been successfully opened.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS file handle.
 	 * @return The opaque `ove_file_t` handle.
 	 */
-	ove_file_t handle() const { return handle_; }
+	ove_file_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_file_t handle_;
 };
 
@@ -218,17 +242,23 @@ private:
  *
  * @note Non-copyable; movable.
  */
-class Dir {
-public:
+class Dir
+{
+      public:
 	/**
 	 * @brief Constructs a Dir object with no open directory (invalid state).
 	 */
-	Dir() : handle_(nullptr) {}
+	Dir() : handle_(nullptr)
+	{
+	}
 
 	/**
 	 * @brief Destroys the Dir object, closing the directory if it is still open.
 	 */
-	~Dir() noexcept { close(); }
+	~Dir() noexcept
+	{
+		close();
+	}
 
 	Dir(const Dir &) = delete;
 	Dir &operator=(const Dir &) = delete;
@@ -237,7 +267,8 @@ public:
 	 * @brief Move constructor — transfers ownership of the directory handle.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	Dir(Dir &&other) noexcept : handle_(other.handle_) {
+	Dir(Dir &&other) noexcept : handle_(other.handle_)
+	{
 		other.handle_ = nullptr;
 	}
 
@@ -246,7 +277,8 @@ public:
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
-	Dir &operator=(Dir &&other) noexcept {
+	Dir &operator=(Dir &&other) noexcept
+	{
 		if (this != &other) {
 			close();
 			handle_ = other.handle_;
@@ -260,7 +292,8 @@ public:
 	 * @param[in] path Absolute path to the directory.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int open(const char *path) {
+	[[nodiscard]] int open(const char *path)
+	{
 		return ove_fs_opendir(&handle_, path);
 	}
 
@@ -271,7 +304,8 @@ public:
 	 *
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	int close() {
+	int close()
+	{
 		int ret = OVE_OK;
 		if (handle_) {
 			ret = ove_fs_closedir(handle_);
@@ -286,7 +320,8 @@ public:
 	 * @return `OVE_OK` on success, a positive value at end-of-directory, or
 	 *         a negative error code on failure.
 	 */
-	[[nodiscard]] int readdir(struct ove_dirent *entry) {
+	[[nodiscard]] int readdir(struct ove_dirent *entry)
+	{
 		return ove_fs_readdir(handle_, entry);
 	}
 
@@ -294,15 +329,21 @@ public:
 	 * @brief Returns `true` if the directory handle is valid.
 	 * @return `true` when a directory has been successfully opened.
 	 */
-	bool valid() const { return handle_ != nullptr; }
+	bool valid() const
+	{
+		return handle_ != nullptr;
+	}
 
 	/**
 	 * @brief Returns the raw oveRTOS directory handle.
 	 * @return The opaque `ove_dir_t` handle.
 	 */
-	ove_dir_t handle() const { return handle_; }
+	ove_dir_t handle() const
+	{
+		return handle_;
+	}
 
-private:
+      private:
 	ove_dir_t handle_;
 };
 

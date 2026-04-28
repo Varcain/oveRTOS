@@ -74,8 +74,7 @@ static int open_common(struct ove_file *f, const char *path, int flags)
 
 /* ─── _init / _deinit (static storage) ───────────────────────────────── */
 
-int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage,
-		     const char *path, int flags)
+int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *path, int flags)
 {
 	struct ove_file *f = (struct ove_file *)storage;
 	int ret = open_common(f, path, flags);
@@ -92,8 +91,7 @@ int ove_fs_close_deinit(ove_file_t file)
 	return OVE_OK;
 }
 
-int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage,
-			const char *path)
+int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *path)
 {
 	struct ove_dir *d = (struct ove_dir *)storage;
 	char fullpath[128];
@@ -149,12 +147,12 @@ int ove_fs_close(ove_file_t file)
 	return OVE_OK;
 }
 #else /* zero-heap: static pool */
-#define FS_POOL_FILES  4
-#define FS_POOL_DIRS   4
-static struct ove_file  file_pool[FS_POOL_FILES];
-static int              file_pool_used[FS_POOL_FILES];
-static struct ove_dir   dir_pool[FS_POOL_DIRS];
-static int              dir_pool_used[FS_POOL_DIRS];
+#define FS_POOL_FILES 4
+#define FS_POOL_DIRS 4
+static struct ove_file file_pool[FS_POOL_FILES];
+static int file_pool_used[FS_POOL_FILES];
+static struct ove_dir dir_pool[FS_POOL_DIRS];
+static int dir_pool_used[FS_POOL_DIRS];
 
 int ove_fs_open(ove_file_t *file, const char *path, int flags)
 {
@@ -186,8 +184,7 @@ int ove_fs_close(ove_file_t file)
 }
 #endif /* OVE_HEAP_FS */
 
-int ove_fs_read(ove_file_t file, void *buf, size_t count,
-			 size_t *bytes_read)
+int ove_fs_read(ove_file_t file, void *buf, size_t count, size_t *bytes_read)
 {
 	struct ove_file *f = file;
 	ssize_t br = read(f->fd, buf, count);
@@ -200,8 +197,7 @@ int ove_fs_read(ove_file_t file, void *buf, size_t count,
 	return OVE_OK;
 }
 
-int ove_fs_write(ove_file_t file, const void *buf,
-			  size_t count, size_t *bytes_written)
+int ove_fs_write(ove_file_t file, const void *buf, size_t count, size_t *bytes_written)
 {
 	struct ove_file *f = file;
 	ssize_t bw = write(f->fd, buf, count);
@@ -252,7 +248,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 	*dir = d;
 	return OVE_OK;
 }
-#else /* zero-heap: static pool */
+#else  /* zero-heap: static pool */
 int ove_fs_opendir(ove_dir_t *dir, const char *path)
 {
 	char fullpath[128];
@@ -261,8 +257,7 @@ int ove_fs_opendir(ove_dir_t *dir, const char *path)
 		if (!dir_pool_used[i]) {
 			dir_pool_used[i] = 1;
 			if (path[0] == '/' && path[1] == '\0') {
-				strncpy(fullpath, SD_MOUNT_POINT,
-					sizeof(fullpath));
+				strncpy(fullpath, SD_MOUNT_POINT, sizeof(fullpath));
 			} else {
 				build_path(fullpath, sizeof(fullpath), path);
 			}
@@ -295,8 +290,7 @@ int ove_fs_readdir(ove_dir_t dir, struct ove_dirent *entry)
 
 	/* Get file size via stat */
 	char fullpath[128];
-	snprintf(fullpath, sizeof(fullpath), "%s/%s",
-		 SD_MOUNT_POINT, ent->d_name);
+	snprintf(fullpath, sizeof(fullpath), "%s/%s", SD_MOUNT_POINT, ent->d_name);
 	struct stat st;
 	if (stat(fullpath, &st) == 0) {
 		entry->size = (unsigned int)st.st_size;
@@ -317,7 +311,7 @@ int ove_fs_closedir(ove_dir_t dir)
 	OVE_BACKEND_FREE(d);
 	return OVE_OK;
 }
-#else /* zero-heap: static pool */
+#else  /* zero-heap: static pool */
 int ove_fs_closedir(ove_dir_t dir)
 {
 	closedir(dir->dp);
@@ -337,10 +331,17 @@ int ove_fs_seek(ove_file_t file, long offset, int whence)
 	int posix_whence;
 
 	switch (whence) {
-	case OVE_FS_SEEK_SET: posix_whence = SEEK_SET; break;
-	case OVE_FS_SEEK_CUR: posix_whence = SEEK_CUR; break;
-	case OVE_FS_SEEK_END: posix_whence = SEEK_END; break;
-	default: return OVE_ERR_INVALID_PARAM;
+	case OVE_FS_SEEK_SET:
+		posix_whence = SEEK_SET;
+		break;
+	case OVE_FS_SEEK_CUR:
+		posix_whence = SEEK_CUR;
+		break;
+	case OVE_FS_SEEK_END:
+		posix_whence = SEEK_END;
+		break;
+	default:
+		return OVE_ERR_INVALID_PARAM;
 	}
 
 	off_t res = lseek(f->fd, (off_t)offset, posix_whence);

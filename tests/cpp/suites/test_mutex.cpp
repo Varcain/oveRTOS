@@ -67,7 +67,8 @@ static void test_cpp_mutex_contention_timeout(void **state)
 
 	cpp_hold_ctx ctx = {&mtx, 0, 0, 200};
 	auto th = make_test_thread("hold", cpp_hold_entry, &ctx);
-	for (int i = 0; i < 500 && !ctx.locked; i++) test_msleep(1);
+	for (int i = 0; i < 500 && !ctx.locked; i++)
+		test_msleep(1);
 
 	assert_int_equal(mtx.lock(50), OVE_ERR_TIMEOUT);
 }
@@ -79,7 +80,8 @@ static void test_cpp_mutex_contention_success(void **state)
 
 	cpp_hold_ctx ctx = {&mtx, 0, 0, 50};
 	auto th = make_test_thread("rel", cpp_hold_entry, &ctx);
-	for (int i = 0; i < 500 && !ctx.locked; i++) test_msleep(1);
+	for (int i = 0; i < 500 && !ctx.locked; i++)
+		test_msleep(1);
 
 	assert_int_equal(mtx.lock(500), OVE_OK);
 	mtx.unlock();
@@ -123,7 +125,8 @@ static void test_cpp_mutex_short_timeout(void **state)
 
 	cpp_hold_ctx ctx = {&mtx, 0, 0, 200};
 	auto th = make_test_thread("h2", cpp_hold_entry, &ctx);
-	for (int i = 0; i < 500 && !ctx.locked; i++) test_msleep(1);
+	for (int i = 0; i < 500 && !ctx.locked; i++)
+		test_msleep(1);
 
 	uint64_t start = 0, end = 0;
 	ove_time_get_us(&start);

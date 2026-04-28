@@ -56,9 +56,8 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_STREAM.
  */
-int    ove_stream_init(ove_stream_t *stream,
-		       ove_stream_storage_t *storage,
-		       void *buffer, size_t size, size_t trigger);
+int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *buffer, size_t size,
+		    size_t trigger);
 
 /**
  * @brief Deinitialise a statically-allocated stream.
@@ -70,7 +69,7 @@ int    ove_stream_init(ove_stream_t *stream,
  * @param[in] stream  Stream handle returned by @ref ove_stream_init.
  * @note Requires @c CONFIG_OVE_STREAM.
  */
-void   ove_stream_deinit(ove_stream_t stream);
+void ove_stream_deinit(ove_stream_t stream);
 
 /**
  * @brief Allocate and initialise a heap-backed stream.
@@ -86,8 +85,7 @@ void   ove_stream_deinit(ove_stream_t stream);
  * @note Requires @c CONFIG_OVE_STREAM and @c OVE_HEAP_STREAM.
  */
 #ifdef OVE_HEAP_STREAM
-int    ove_stream_create(ove_stream_t *stream, size_t size,
-			 size_t trigger);
+int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger);
 
 /**
  * @brief Destroy a heap-allocated stream.
@@ -98,15 +96,16 @@ int    ove_stream_create(ove_stream_t *stream, size_t size,
  * @param[in] stream  Stream handle returned by @ref ove_stream_create.
  * @note Requires @c CONFIG_OVE_STREAM and @c OVE_HEAP_STREAM.
  */
-void   ove_stream_destroy(ove_stream_t stream);
+void ove_stream_destroy(ove_stream_t stream);
 #elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_STREAM — zero-heap mode */
 
 /* Unified macro — size must be a compile-time constant. */
-#define ove_stream_create(pstream, size, trigger) \
-	({ static ove_stream_storage_t _ove_stor_; \
-	   static uint8_t _ove_buf_[(size) + 1]; \
-	   ove_stream_init((pstream), &_ove_stor_, _ove_buf_, \
-			   (size), (trigger)); })
+#define ove_stream_create(pstream, size, trigger)                                      \
+	({                                                                             \
+		static ove_stream_storage_t _ove_stor_;                                \
+		static uint8_t _ove_buf_[(size) + 1];                                  \
+		ove_stream_init((pstream), &_ove_stor_, _ove_buf_, (size), (trigger)); \
+	})
 #define ove_stream_destroy(stream) ove_stream_deinit(stream)
 
 #endif /* OVE_HEAP_STREAM */
@@ -127,9 +126,8 @@ void   ove_stream_destroy(ove_stream_t stream);
  * @return OVE_OK on success, negative error code on failure or timeout.
  * @note Must not be called from an ISR; use @ref ove_stream_send_from_isr instead.
  */
-int    ove_stream_send(ove_stream_t stream, const void *data,
-		       size_t len, uint32_t timeout_ms,
-		       size_t *bytes_sent);
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+		    size_t *bytes_sent);
 
 /**
  * @brief Receive bytes from the stream in task context.
@@ -148,9 +146,8 @@ int    ove_stream_send(ove_stream_t stream, const void *data,
  * @return OVE_OK on success, negative error code on failure or timeout.
  * @note Must not be called from an ISR; use @ref ove_stream_receive_from_isr instead.
  */
-int    ove_stream_receive(ove_stream_t stream, void *buf,
-			  size_t len, uint32_t timeout_ms,
-			  size_t *bytes_received);
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+		       size_t *bytes_received);
 
 /**
  * @brief Send bytes into the stream from an ISR.
@@ -165,9 +162,7 @@ int    ove_stream_receive(ove_stream_t stream, void *buf,
  *                         @c NULL if the caller does not need this value.
  * @return OVE_OK on success, negative error code on failure.
  */
-int    ove_stream_send_from_isr(ove_stream_t stream,
-				const void *data, size_t len,
-				size_t *bytes_sent);
+int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent);
 
 /**
  * @brief Receive bytes from the stream from an ISR.
@@ -182,9 +177,7 @@ int    ove_stream_send_from_isr(ove_stream_t stream,
  *                             @c NULL if the caller does not need this value.
  * @return OVE_OK on success, negative error code on failure.
  */
-int    ove_stream_receive_from_isr(ove_stream_t stream,
-				   void *buf, size_t len,
-				   size_t *bytes_received);
+int ove_stream_receive_from_isr(ove_stream_t stream, void *buf, size_t len, size_t *bytes_received);
 
 /**
  * @brief Discard all bytes currently held in the stream.
@@ -196,7 +189,7 @@ int    ove_stream_receive_from_isr(ove_stream_t stream,
  * @param[in] stream  Stream handle.
  * @return OVE_OK on success, negative error code on failure.
  */
-int    ove_stream_reset(ove_stream_t stream);
+int ove_stream_reset(ove_stream_t stream);
 
 /**
  * @brief Query the number of bytes currently available in the stream.
@@ -210,14 +203,61 @@ size_t ove_stream_bytes_available(ove_stream_t stream);
 
 #else /* !CONFIG_OVE_STREAM */
 
-static inline int    ove_stream_create(ove_stream_t *s, size_t sz, size_t t) { (void)s; (void)sz; (void)t; return OVE_ERR_NOT_SUPPORTED; }
-static inline void   ove_stream_destroy(ove_stream_t s) { (void)s; }
-static inline int    ove_stream_send(ove_stream_t s, const void *d, size_t l, uint32_t t, size_t *bs) { (void)s; (void)d; (void)l; (void)t; (void)bs; return OVE_ERR_NOT_SUPPORTED; }
-static inline int    ove_stream_receive(ove_stream_t s, void *b, size_t l, uint32_t t, size_t *br) { (void)s; (void)b; (void)l; (void)t; (void)br; return OVE_ERR_NOT_SUPPORTED; }
-static inline int    ove_stream_send_from_isr(ove_stream_t s, const void *d, size_t l, size_t *bs) { (void)s; (void)d; (void)l; (void)bs; return OVE_ERR_NOT_SUPPORTED; }
-static inline int    ove_stream_receive_from_isr(ove_stream_t s, void *b, size_t l, size_t *br) { (void)s; (void)b; (void)l; (void)br; return OVE_ERR_NOT_SUPPORTED; }
-static inline int    ove_stream_reset(ove_stream_t s) { (void)s; return OVE_ERR_NOT_SUPPORTED; }
-static inline size_t ove_stream_bytes_available(ove_stream_t s) { (void)s; return 0; }
+static inline int ove_stream_create(ove_stream_t *s, size_t sz, size_t t)
+{
+	(void)s;
+	(void)sz;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_stream_destroy(ove_stream_t s)
+{
+	(void)s;
+}
+static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint32_t t, size_t *bs)
+{
+	(void)s;
+	(void)d;
+	(void)l;
+	(void)t;
+	(void)bs;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_stream_receive(ove_stream_t s, void *b, size_t l, uint32_t t, size_t *br)
+{
+	(void)s;
+	(void)b;
+	(void)l;
+	(void)t;
+	(void)br;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_stream_send_from_isr(ove_stream_t s, const void *d, size_t l, size_t *bs)
+{
+	(void)s;
+	(void)d;
+	(void)l;
+	(void)bs;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_stream_receive_from_isr(ove_stream_t s, void *b, size_t l, size_t *br)
+{
+	(void)s;
+	(void)b;
+	(void)l;
+	(void)br;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_stream_reset(ove_stream_t s)
+{
+	(void)s;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline size_t ove_stream_bytes_available(ove_stream_t s)
+{
+	(void)s;
+	return 0;
+}
 
 #endif /* CONFIG_OVE_STREAM */
 

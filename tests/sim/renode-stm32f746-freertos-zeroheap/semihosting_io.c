@@ -34,14 +34,14 @@ static inline void sh_writec(char c)
 {
 	register uintptr_t r0 __asm__("r0") = SYS_WRITEC;
 	register uintptr_t r1 __asm__("r1") = (uintptr_t)&c;
-	__asm__ volatile ("bkpt #0xAB" : : "r"(r0), "r"(r1) : "memory");
+	__asm__ volatile("bkpt #0xAB" : : "r"(r0), "r"(r1) : "memory");
 }
 
 /* Override newlib's _write.  Returns bytes written (or -1 on error,
  * which we never signal — Renode's SemihostingUart can't fail here). */
 int _write(int fd, const char *buf, int len)
 {
-	(void)fd;  /* stdout + stderr both go to the semihosting UART */
+	(void)fd; /* stdout + stderr both go to the semihosting UART */
 	for (int i = 0; i < len; ++i) {
 		sh_writec(buf[i]);
 	}
@@ -68,7 +68,7 @@ extern char _end;
 extern char _estack;
 
 #ifndef RENODE_HEAP_STACK_RESERVE
-#define RENODE_HEAP_STACK_RESERVE  (8 * 1024)
+#define RENODE_HEAP_STACK_RESERVE (8 * 1024)
 #endif
 
 void *_sbrk(int incr)
@@ -80,7 +80,7 @@ void *_sbrk(int incr)
 	char *heap_limit = &_estack - RENODE_HEAP_STACK_RESERVE;
 
 	if (heap_ptr + incr > heap_limit) {
-		errno = 12;  /* ENOMEM */
+		errno = 12; /* ENOMEM */
 		return (void *)-1;
 	}
 	char *prev = heap_ptr;
@@ -93,4 +93,6 @@ void *_sbrk(int incr)
  * real `freertos_gpio.c` can drive Renode's STM32_GPIOPort models —
  * provide a no-op shim here so the board init still links. */
 void stub_gpio_reset(void);
-void stub_gpio_reset(void) {}
+void stub_gpio_reset(void)
+{
+}

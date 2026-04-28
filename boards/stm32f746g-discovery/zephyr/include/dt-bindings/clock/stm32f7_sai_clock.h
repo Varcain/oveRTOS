@@ -12,7 +12,7 @@
 
 /* SAI clock source selection (DCKCFGR1 register)
  * These are not yet in upstream Zephyr's stm32f7_clock.h */
-#define SAI1_SEL(val)	STM32_DT_CLOCK_SELECT((val), 21, 20, DCKCFGR1_REG)
-#define SAI2_SEL(val)	STM32_DT_CLOCK_SELECT((val), 23, 22, DCKCFGR1_REG)
+#define SAI1_SEL(val) STM32_DT_CLOCK_SELECT((val), 21, 20, DCKCFGR1_REG)
+#define SAI2_SEL(val) STM32_DT_CLOCK_SELECT((val), 23, 22, DCKCFGR1_REG)
 
 #endif /* STM32F7_SAI_CLOCK_H_ */

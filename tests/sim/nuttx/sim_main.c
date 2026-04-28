@@ -10,7 +10,9 @@
 #include <stdio.h>
 
 /* Stub — tests exercise ove_app module without a real app entry point */
-void ove_main(void) {}
+void ove_main(void)
+{
+}
 
 int main(void)
 {
@@ -19,7 +21,7 @@ int main(void)
 	/*
 	 * NuttX sim runs on host POSIX — filesystem suite is supported here.
 	 */
-#define OVE_SUITE(name, label) \
+#define OVE_SUITE(name, label)               \
 	printf("=== " label " Tests ===\n"); \
 	failures += test_##name##_run();
 #define OVE_SUITE_FS(name, label) OVE_SUITE(name, label)

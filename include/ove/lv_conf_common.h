@@ -28,22 +28,22 @@
  * STDLIB WRAPPER SETTINGS
  *=========================*/
 
-#define LV_USE_STDLIB_MALLOC    LV_STDLIB_BUILTIN
-#define LV_USE_STDLIB_STRING    LV_STDLIB_BUILTIN
-#define LV_USE_STDLIB_SPRINTF   LV_STDLIB_BUILTIN
+#define LV_USE_STDLIB_MALLOC LV_STDLIB_BUILTIN
+#define LV_USE_STDLIB_STRING LV_STDLIB_BUILTIN
+#define LV_USE_STDLIB_SPRINTF LV_STDLIB_BUILTIN
 
-#define LV_STDINT_INCLUDE       <stdint.h>
-#define LV_STDDEF_INCLUDE       <stddef.h>
-#define LV_STDBOOL_INCLUDE      <stdbool.h>
-#define LV_INTTYPES_INCLUDE     <inttypes.h>
-#define LV_LIMITS_INCLUDE       <limits.h>
-#define LV_STDARG_INCLUDE       <stdarg.h>
+#define LV_STDINT_INCLUDE <stdint.h>
+#define LV_STDDEF_INCLUDE <stddef.h>
+#define LV_STDBOOL_INCLUDE <stdbool.h>
+#define LV_INTTYPES_INCLUDE <inttypes.h>
+#define LV_LIMITS_INCLUDE <limits.h>
+#define LV_STDARG_INCLUDE <stdarg.h>
 
 /*====================
  * HAL SETTINGS
  *====================*/
 
-#define LV_DEF_REFR_PERIOD  33      /* 30 FPS */
+#define LV_DEF_REFR_PERIOD 33 /* 30 FPS */
 #define LV_DPI_DEF 130
 
 /*=======================
@@ -51,14 +51,16 @@
  *=======================*/
 
 #define LV_USE_LOG 0
-#define LV_USE_ASSERT_NULL          1
-#define LV_USE_ASSERT_MALLOC        1
-#define LV_USE_ASSERT_STYLE         0
+#define LV_USE_ASSERT_NULL 1
+#define LV_USE_ASSERT_MALLOC 1
+#define LV_USE_ASSERT_STYLE 0
 #define LV_USE_ASSERT_MEM_INTEGRITY 0
-#define LV_USE_ASSERT_OBJ           0
+#define LV_USE_ASSERT_OBJ 0
 
 #define LV_ASSERT_HANDLER_INCLUDE <stdint.h>
-#define LV_ASSERT_HANDLER while(1);
+#define LV_ASSERT_HANDLER \
+	while (1)         \
+		;
 
 #define LV_USE_REFR_DEBUG 0
 #define LV_USE_LAYER_DEBUG 0
@@ -66,17 +68,17 @@
 
 #define LV_ENABLE_GLOBAL_CUSTOM 0
 
-#define LV_CACHE_DEF_SIZE       0
+#define LV_CACHE_DEF_SIZE 0
 #define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
 
-#define LV_GRADIENT_MAX_STOPS   2
+#define LV_GRADIENT_MAX_STOPS 2
 
-#define LV_COLOR_MIX_ROUND_OFS  0
-#define LV_OBJ_STYLE_CACHE      0
-#define LV_USE_OBJ_ID           0
-#define LV_OBJ_ID_AUTO_ASSIGN   0
-#define LV_USE_OBJ_ID_BUILTIN   1
-#define LV_USE_OBJ_NAME         0
+#define LV_COLOR_MIX_ROUND_OFS 0
+#define LV_OBJ_STYLE_CACHE 0
+#define LV_USE_OBJ_ID 0
+#define LV_OBJ_ID_AUTO_ASSIGN 0
+#define LV_USE_OBJ_ID_BUILTIN 1
+#define LV_USE_OBJ_NAME 0
 #define LV_USE_OBJ_PROPERTY 0
 #define LV_USE_OBJ_PROPERTY_NAME 0
 #define LV_USE_GESTURE_RECOGNITION 0
@@ -87,7 +89,7 @@
 
 /* SW renderer and its support flags live in the board file; these two are
  * identical across every target. */
-#define LV_DRAW_BUF_STRIDE_ALIGN    1
+#define LV_DRAW_BUF_STRIDE_ALIGN 1
 #define LV_DRAW_TRANSFORM_USE_MATRIX 0
 
 /* GPU drivers — all disabled; boards that want one can override after
@@ -118,8 +120,8 @@
 #define LV_ATTRIBUTE_FAST_MEM
 #define LV_EXPORT_CONST_INT(int_value) struct _silence_gcc_warning
 #define LV_ATTRIBUTE_EXTERN_DATA
-#define LV_USE_FLOAT            0
-#define LV_USE_MATRIX           0
+#define LV_USE_FLOAT 0
+#define LV_USE_MATRIX 0
 
 /*==================
  *   FONT USAGE
@@ -130,7 +132,7 @@
  * The linker dead-strips unreferenced fonts already, but keeping the enable
  * list honest avoids confusion when reading the config or running stripped-
  * down builds where -Wl,--gc-sections is disabled. */
-#define LV_FONT_MONTSERRAT_8  0
+#define LV_FONT_MONTSERRAT_8 0
 #define LV_FONT_MONTSERRAT_10 0
 #define LV_FONT_MONTSERRAT_12 0
 #define LV_FONT_MONTSERRAT_14 1
@@ -156,7 +158,7 @@
 #define LV_FONT_DEJAVU_16_PERSIAN_HEBREW 0
 #define LV_FONT_SOURCE_HAN_SANS_SC_14_CJK 0
 #define LV_FONT_SOURCE_HAN_SANS_SC_16_CJK 0
-#define LV_FONT_UNSCII_8  0
+#define LV_FONT_UNSCII_8 0
 #define LV_FONT_UNSCII_16 0
 
 #define LV_FONT_CUSTOM_DECLARE
@@ -185,45 +187,45 @@
  * WIDGETS
  *==================*/
 
-#define LV_WIDGETS_HAS_DEFAULT_VALUE  1
+#define LV_WIDGETS_HAS_DEFAULT_VALUE 1
 
-#define LV_USE_ANIMIMG    0
-#define LV_USE_ARC        1
-#define LV_USE_BAR        1
-#define LV_USE_BUTTON     1
-#define LV_USE_BUTTONMATRIX  1
-#define LV_USE_CALENDAR   1
-#define LV_USE_CANVAS     1
-#define LV_USE_CHART      1
-#define LV_USE_CHECKBOX   1
-#define LV_USE_DROPDOWN   1
-#define LV_USE_IMAGE      1
+#define LV_USE_ANIMIMG 0
+#define LV_USE_ARC 1
+#define LV_USE_BAR 1
+#define LV_USE_BUTTON 1
+#define LV_USE_BUTTONMATRIX 1
+#define LV_USE_CALENDAR 1
+#define LV_USE_CANVAS 1
+#define LV_USE_CHART 1
+#define LV_USE_CHECKBOX 1
+#define LV_USE_DROPDOWN 1
+#define LV_USE_IMAGE 1
 #define LV_USE_IMAGEBUTTON 0
-#define LV_USE_KEYBOARD   1
-#define LV_USE_LED        1
-#define LV_USE_LINE       1
-#define LV_USE_LIST       1
-#define LV_USE_LOTTIE     0
-#define LV_USE_MENU       0
-#define LV_USE_MSGBOX     1
-#define LV_USE_ROLLER     1
-#define LV_USE_SCALE      1
-#define LV_USE_SLIDER     1
-#define LV_USE_SPAN       0
-#define LV_USE_SPINBOX    1
-#define LV_USE_SPINNER    1
-#define LV_USE_SWITCH     1
-#define LV_USE_TEXTAREA   1
-#define LV_USE_TABLE      1
-#define LV_USE_TABVIEW    1
-#define LV_USE_TILEVIEW   0
-#define LV_USE_WIN        0
+#define LV_USE_KEYBOARD 1
+#define LV_USE_LED 1
+#define LV_USE_LINE 1
+#define LV_USE_LIST 1
+#define LV_USE_LOTTIE 0
+#define LV_USE_MENU 0
+#define LV_USE_MSGBOX 1
+#define LV_USE_ROLLER 1
+#define LV_USE_SCALE 1
+#define LV_USE_SLIDER 1
+#define LV_USE_SPAN 0
+#define LV_USE_SPINBOX 1
+#define LV_USE_SPINNER 1
+#define LV_USE_SWITCH 1
+#define LV_USE_TEXTAREA 1
+#define LV_USE_TABLE 1
+#define LV_USE_TABVIEW 1
+#define LV_USE_TILEVIEW 0
+#define LV_USE_WIN 0
 
-#define LV_USE_LABEL      1
+#define LV_USE_LABEL 1
 #if LV_USE_LABEL
-    #define LV_LABEL_TEXT_SELECTION 0
-    #define LV_LABEL_LONG_TXT_HINT 0
-    #define LV_LABEL_WAIT_CHAR_COUNT 3
+#define LV_LABEL_TEXT_SELECTION 0
+#define LV_LABEL_LONG_TXT_HINT 0
+#define LV_LABEL_WAIT_CHAR_COUNT 3
 #endif
 
 /*==================
@@ -269,39 +271,39 @@
 #define LV_USE_FREETYPE 0
 #define LV_USE_TINY_TTF 0
 #define LV_USE_RLOTTIE 0
-#define LV_USE_VECTOR_GRAPHIC  0
+#define LV_USE_VECTOR_GRAPHIC 0
 #define LV_USE_THORVG_INTERNAL 0
 #define LV_USE_THORVG_EXTERNAL 0
-#define LV_USE_LZ4_INTERNAL  0
-#define LV_USE_LZ4_EXTERNAL  0
+#define LV_USE_LZ4_INTERNAL 0
+#define LV_USE_LZ4_EXTERNAL 0
 #define LV_USE_FFMPEG 0
 
 /*==================
  * DEVICES (common — NuttX flag is board-specific)
  *==================*/
 
-#define LV_USE_SDL              0
-#define LV_USE_X11              0
-#define LV_USE_WAYLAND          0
-#define LV_USE_LINUX_FBDEV      0
-#define LV_USE_LINUX_DRM        0
-#define LV_USE_TFT_ESPI         0
-#define LV_USE_EVDEV            0
-#define LV_USE_LIBINPUT         0
-#define LV_USE_ST7735           0
-#define LV_USE_ST7789           0
-#define LV_USE_ST7796           0
-#define LV_USE_ILI9341          0
-#define LV_USE_GENERIC_MIPI     0
-#define LV_USE_RENESAS_GLCDC    0
-#define LV_USE_WINDOWS          0
-#define LV_USE_OPENGLES         0
-#define LV_USE_QNX              0
+#define LV_USE_SDL 0
+#define LV_USE_X11 0
+#define LV_USE_WAYLAND 0
+#define LV_USE_LINUX_FBDEV 0
+#define LV_USE_LINUX_DRM 0
+#define LV_USE_TFT_ESPI 0
+#define LV_USE_EVDEV 0
+#define LV_USE_LIBINPUT 0
+#define LV_USE_ST7735 0
+#define LV_USE_ST7789 0
+#define LV_USE_ST7796 0
+#define LV_USE_ILI9341 0
+#define LV_USE_GENERIC_MIPI 0
+#define LV_USE_RENESAS_GLCDC 0
+#define LV_USE_WINDOWS 0
+#define LV_USE_OPENGLES 0
+#define LV_USE_QNX 0
 
 /* Boards that embed LVGL via the NuttX driver set LV_USE_NUTTX 1 before
  * including this fragment; guard the default so the override sticks. */
 #ifndef LV_USE_NUTTX
-#define LV_USE_NUTTX            0
+#define LV_USE_NUTTX 0
 #endif
 
 /*==================
@@ -309,13 +311,13 @@
  *==================*/
 
 #define LV_USE_SNAPSHOT 0
-#define LV_USE_SYSMON   1
+#define LV_USE_SYSMON 1
 #if LV_USE_SYSMON
-    #define LV_USE_PERF_MONITOR 1
-    #if LV_USE_PERF_MONITOR
-        #define LV_USE_PERF_MONITOR_POS LV_ALIGN_BOTTOM_RIGHT
-        #define LV_USE_PERF_MONITOR_LOG_MODE 1
-    #endif
+#define LV_USE_PERF_MONITOR 1
+#if LV_USE_PERF_MONITOR
+#define LV_USE_PERF_MONITOR_POS LV_ALIGN_BOTTOM_RIGHT
+#define LV_USE_PERF_MONITOR_LOG_MODE 1
+#endif
 #endif
 #define LV_USE_PROFILER 0
 #define LV_USE_MONKEY 0

@@ -35,20 +35,17 @@ extern void lv_port_disp_qemu_init(void);
  * This driver uses a small draw buffer in SRAM and copies rendered
  * strips into the framebuffer, identical to the FreeRTOS approach.
  */
-#if defined(OVE_DISPLAY_WIDTH) && defined(OVE_MEMORY_SDRAM_START) \
-    && defined(CONFIG_STM32F7_LTDC)
+#if defined(OVE_DISPLAY_WIDTH) && defined(OVE_MEMORY_SDRAM_START) && defined(CONFIG_STM32F7_LTDC)
 
-#define FB_HOR_RES      OVE_DISPLAY_WIDTH
-#define FB_VER_RES      OVE_DISPLAY_HEIGHT
-#define FB_BPP          2
-#define FB_DRAW_LINES   10
-#define FB_START_ADDR   ((uint8_t *)OVE_MEMORY_SDRAM_START)
+#define FB_HOR_RES OVE_DISPLAY_WIDTH
+#define FB_VER_RES OVE_DISPLAY_HEIGHT
+#define FB_BPP 2
+#define FB_DRAW_LINES 10
+#define FB_START_ADDR ((uint8_t *)OVE_MEMORY_SDRAM_START)
 
-static uint8_t nuttx_draw_buf[FB_HOR_RES * FB_DRAW_LINES * FB_BPP]
-	__attribute__((aligned(32)));
+static uint8_t nuttx_draw_buf[FB_HOR_RES * FB_DRAW_LINES * FB_BPP] __attribute__((aligned(32)));
 
-static void nuttx_disp_flush_cb(lv_display_t *display,
-				const lv_area_t *area, uint8_t *px_map)
+static void nuttx_disp_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map)
 {
 	uint32_t w = area->x2 - area->x1 + 1;
 	uint32_t h = area->y2 - area->y1 + 1;
@@ -76,8 +73,7 @@ static lv_display_t *nuttx_fb_display_init(void)
 
 	lv_display_t *disp = lv_display_create(FB_HOR_RES, FB_VER_RES);
 	lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-	lv_display_set_buffers(disp, nuttx_draw_buf, NULL,
-			       sizeof(nuttx_draw_buf),
+	lv_display_set_buffers(disp, nuttx_draw_buf, NULL, sizeof(nuttx_draw_buf),
 			       LV_DISPLAY_RENDER_MODE_PARTIAL);
 	lv_display_set_flush_cb(disp, nuttx_disp_flush_cb);
 	return disp;
@@ -123,11 +119,9 @@ int ove_lvgl_init(void)
 
 	lvgl_initialized = 1;
 
-	lv_theme_t *th = lv_theme_default_init(
-		disp,
-		lv_palette_main(LV_PALETTE_BLUE),
-		lv_palette_main(LV_PALETTE_RED),
-		true, &lv_font_montserrat_32);
+	lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE),
+					       lv_palette_main(LV_PALETTE_RED), true,
+					       &lv_font_montserrat_32);
 	lv_display_set_theme(disp, th);
 
 	return OVE_OK;
@@ -155,10 +149,22 @@ void ove_lvgl_handler(void)
 
 #else /* !CONFIG_OVE_LVGL */
 
-int ove_lvgl_init(void) { return OVE_OK; }
-void ove_lvgl_lock(void) {}
-void ove_lvgl_unlock(void) {}
-void ove_lvgl_tick(uint32_t ms) { (void)ms; }
-void ove_lvgl_handler(void) {}
+int ove_lvgl_init(void)
+{
+	return OVE_OK;
+}
+void ove_lvgl_lock(void)
+{
+}
+void ove_lvgl_unlock(void)
+{
+}
+void ove_lvgl_tick(uint32_t ms)
+{
+	(void)ms;
+}
+void ove_lvgl_handler(void)
+{
+}
 
 #endif /* CONFIG_OVE_LVGL */

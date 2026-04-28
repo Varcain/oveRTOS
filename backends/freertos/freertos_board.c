@@ -23,10 +23,8 @@ int ove_hal_board_init(void)
 	{
 		unsigned int i;
 		for (i = 0; i < OVE_LED_COUNT; i++) {
-			ove_hal_gpio_configure(
-				ove_board_leds[i].port,
-				ove_board_leds[i].pin,
-				OVE_GPIO_MODE_OUTPUT_PP);
+			ove_hal_gpio_configure(ove_board_leds[i].port, ove_board_leds[i].pin,
+					       OVE_GPIO_MODE_OUTPUT_PP);
 		}
 	}
 #endif

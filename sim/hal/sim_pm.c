@@ -27,29 +27,38 @@
 static const char *state_name(ove_pm_state_t state)
 {
 	switch (state) {
-	case OVE_PM_STATE_ACTIVE:     return "ACTIVE";
-	case OVE_PM_STATE_IDLE:       return "IDLE";
-	case OVE_PM_STATE_STANDBY:    return "STANDBY";
-	case OVE_PM_STATE_DEEP_SLEEP: return "DEEP_SLEEP";
-	default:                      return "UNKNOWN";
+	case OVE_PM_STATE_ACTIVE:
+		return "ACTIVE";
+	case OVE_PM_STATE_IDLE:
+		return "IDLE";
+	case OVE_PM_STATE_STANDBY:
+		return "STANDBY";
+	case OVE_PM_STATE_DEEP_SLEEP:
+		return "DEEP_SLEEP";
+	default:
+		return "UNKNOWN";
 	}
 }
 
 static const char *wake_type_name(ove_pm_wake_type_t type)
 {
 	switch (type) {
-	case OVE_PM_WAKE_GPIO:  return "GPIO";
-	case OVE_PM_WAKE_TIMER: return "TIMER";
-	case OVE_PM_WAKE_UART:  return "UART";
-	case OVE_PM_WAKE_RTC:   return "RTC";
-	default:                return "UNKNOWN";
+	case OVE_PM_WAKE_GPIO:
+		return "GPIO";
+	case OVE_PM_WAKE_TIMER:
+		return "TIMER";
+	case OVE_PM_WAKE_UART:
+		return "UART";
+	case OVE_PM_WAKE_RTC:
+		return "RTC";
+	default:
+		return "UNKNOWN";
 	}
 }
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
-	OVE_LOG_INF("pm: [sim] enter %s (expected %u ms)",
-		    state_name(state), expected_idle_ms);
+	OVE_LOG_INF("pm: [sim] enter %s (expected %u ms)", state_name(state), expected_idle_ms);
 
 	/* Simulate state-dependent wake latency. */
 	switch (state) {

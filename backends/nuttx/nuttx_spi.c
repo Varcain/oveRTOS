@@ -45,8 +45,7 @@ void ove_hal_spi_close(ove_spi_t spi)
 	}
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
-			 size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
 {
 	(void)timeout_ms; /* NuttX spi_transfer ioctl has no timeout knob */
 
@@ -66,25 +65,26 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx,
 		memset(&seq, 0, sizeof(seq));
 		memset(&trans, 0, sizeof(trans));
 
-		seq.dev       = SPIDEV_USER(0);
-		seq.mode      = spi->mode;
-		seq.nbits     = spi->word_size;
+		seq.dev = SPIDEV_USER(0);
+		seq.mode = spi->mode;
+		seq.nbits = spi->word_size;
 		seq.frequency = spi->clock_hz;
-		seq.ntrans    = 1;
-		seq.trans     = &trans;
+		seq.ntrans = 1;
+		seq.trans = &trans;
 
 		trans.deselect = (len == chunk); /* only deselect on last chunk */
-		trans.nwords   = (uint16_t)chunk;
+		trans.nwords = (uint16_t)chunk;
 		trans.txbuffer = txp;
 		trans.rxbuffer = rxp;
 
-		int ret = ioctl(spi->fd, SPIIOC_TRANSFER,
-				(unsigned long)&seq);
+		int ret = ioctl(spi->fd, SPIIOC_TRANSFER, (unsigned long)&seq);
 		if (ret < 0)
 			return OVE_ERR_BUS_ERROR;
 
-		if (txp) txp += chunk;
-		if (rxp) rxp += chunk;
+		if (txp)
+			txp += chunk;
+		if (rxp)
+			rxp += chunk;
 		len -= chunk;
 	}
 	return OVE_OK;

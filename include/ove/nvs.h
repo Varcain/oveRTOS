@@ -44,7 +44,7 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_NVS.
  */
-int  ove_nvs_init(void);
+int ove_nvs_init(void);
 
 /**
  * @brief Deinitialise the non-volatile storage subsystem.
@@ -74,8 +74,7 @@ void ove_nvs_deinit(void);
  *         or another negative error code on failure.
  * @note Requires @c CONFIG_OVE_NVS.
  */
-int  ove_nvs_read(const char *key, void *buf, size_t buf_len,
-		  size_t *out_len);
+int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len);
 
 /**
  * @brief Write or update a value in non-volatile storage.
@@ -90,7 +89,7 @@ int  ove_nvs_read(const char *key, void *buf, size_t buf_len,
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_NVS.
  */
-int  ove_nvs_write(const char *key, const void *data, size_t len);
+int ove_nvs_write(const char *key, const void *data, size_t len);
 
 /**
  * @brief Delete a key-value pair from non-volatile storage.
@@ -102,15 +101,37 @@ int  ove_nvs_write(const char *key, const void *data, size_t len);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_NVS.
  */
-int  ove_nvs_erase(const char *key);
+int ove_nvs_erase(const char *key);
 
 #else /* !CONFIG_OVE_NVS */
 
-static inline int ove_nvs_init(void) { return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_nvs_deinit(void) { }
-static inline int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len) { (void)key; (void)buf; (void)buf_len; (void)out_len; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_nvs_write(const char *key, const void *data, size_t len) { (void)key; (void)data; (void)len; return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_nvs_erase(const char *key) { (void)key; return OVE_ERR_NOT_SUPPORTED; }
+static inline int ove_nvs_init(void)
+{
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_nvs_deinit(void)
+{
+}
+static inline int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
+{
+	(void)key;
+	(void)buf;
+	(void)buf_len;
+	(void)out_len;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_nvs_write(const char *key, const void *data, size_t len)
+{
+	(void)key;
+	(void)data;
+	(void)len;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_nvs_erase(const char *key)
+{
+	(void)key;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 #endif /* CONFIG_OVE_NVS */
 

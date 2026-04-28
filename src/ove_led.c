@@ -18,8 +18,8 @@ void ove_led_set(unsigned int led, int on)
 	}
 
 	unsigned int port = ove_board_leds[led].port;
-	unsigned int pin  = ove_board_leds[led].pin;
-	int active_low    = ove_board_leds[led].active_low;
+	unsigned int pin = ove_board_leds[led].pin;
+	int active_low = ove_board_leds[led].active_low;
 
 	ove_hal_gpio_set(port, pin, active_low ? !on : on);
 }
@@ -31,7 +31,7 @@ void ove_led_toggle(unsigned int led)
 	}
 
 	unsigned int port = ove_board_leds[led].port;
-	unsigned int pin  = ove_board_leds[led].pin;
+	unsigned int pin = ove_board_leds[led].pin;
 
 	/* Read current value and invert */
 	int current = ove_hal_gpio_get(port, pin);

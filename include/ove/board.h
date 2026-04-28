@@ -65,9 +65,18 @@ const struct ove_board_desc *ove_board_desc(void);
 
 #else /* !CONFIG_OVE_BOARD */
 
-static inline int ove_board_init(void) { return OVE_OK; }
-static inline const char *ove_board_name(void) { return "unknown"; }
-static inline const struct ove_board_desc *ove_board_desc(void) { return (const struct ove_board_desc *)0; }
+static inline int ove_board_init(void)
+{
+	return OVE_OK;
+}
+static inline const char *ove_board_name(void)
+{
+	return "unknown";
+}
+static inline const struct ove_board_desc *ove_board_desc(void)
+{
+	return (const struct ove_board_desc *)0;
+}
 
 #endif /* CONFIG_OVE_BOARD */
 

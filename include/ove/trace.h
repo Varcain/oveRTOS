@@ -33,25 +33,25 @@ extern "C" {
 /* Record kind (top-level classification). */
 enum {
 	OVE_TRACE_KIND_STATE = 1,
-	OVE_TRACE_KIND_MARK  = 2,
+	OVE_TRACE_KIND_MARK = 2,
 };
 
 /* MARK primitive types — high nibble of record.code. */
 enum {
 	OVE_TRACE_PRIM_MUTEX = 1,
-	OVE_TRACE_PRIM_SEM   = 2,
+	OVE_TRACE_PRIM_SEM = 2,
 	OVE_TRACE_PRIM_EVENT = 3,
-	OVE_TRACE_PRIM_CV    = 4,
+	OVE_TRACE_PRIM_CV = 4,
 	OVE_TRACE_PRIM_QUEUE = 5,
-	OVE_TRACE_PRIM_USER  = 15,
+	OVE_TRACE_PRIM_USER = 15,
 };
 
 /* MARK actions — low nibble of record.code. */
 enum {
 	OVE_TRACE_ACT_WAIT_ENTER = 1,
-	OVE_TRACE_ACT_WAIT_EXIT  = 2,
-	OVE_TRACE_ACT_POST       = 3,
-	OVE_TRACE_ACT_USER       = 4,
+	OVE_TRACE_ACT_WAIT_EXIT = 2,
+	OVE_TRACE_ACT_POST = 3,
+	OVE_TRACE_ACT_USER = 4,
 };
 
 #ifdef CONFIG_OVE_TRACE_STREAM
@@ -71,8 +71,7 @@ void ove_trace_emit_state(uintptr_t thread_handle, int old_state, int new_state)
  * @act:    one of OVE_TRACE_ACT_*
  * @object: address of the primitive (low 16 bits survive into the record)
  */
-void ove_trace_emit_mark(uintptr_t thread_handle,
-			 uint8_t prim, uint8_t act, uintptr_t object);
+void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
 
 /**
  * Return the current thread's stable handle, or 0 if none.
@@ -86,12 +85,24 @@ uintptr_t ove_backend_thread_current_handle(void);
 #else
 
 static inline void ove_trace_emit_state(uintptr_t t, int o, int n)
-{ (void)t; (void)o; (void)n; }
+{
+	(void)t;
+	(void)o;
+	(void)n;
+}
 
 static inline void ove_trace_emit_mark(uintptr_t t, uint8_t p, uint8_t a, uintptr_t o)
-{ (void)t; (void)p; (void)a; (void)o; }
+{
+	(void)t;
+	(void)p;
+	(void)a;
+	(void)o;
+}
 
-static inline uintptr_t ove_backend_thread_current_handle(void) { return 0; }
+static inline uintptr_t ove_backend_thread_current_handle(void)
+{
+	return 0;
+}
 
 #endif /* CONFIG_OVE_TRACE_STREAM */
 
@@ -99,8 +110,7 @@ static inline uintptr_t ove_backend_thread_current_handle(void) { return 0; }
 #define OVE_TRACE_MARK(thread, prim, act, obj) \
 	ove_trace_emit_mark((uintptr_t)(thread), (prim), (act), (uintptr_t)(obj))
 #define OVE_TRACE_MARK_CURRENT(prim, act, obj) \
-	ove_trace_emit_mark(ove_backend_thread_current_handle(), \
-			    (prim), (act), (uintptr_t)(obj))
+	ove_trace_emit_mark(ove_backend_thread_current_handle(), (prim), (act), (uintptr_t)(obj))
 #else
 #define OVE_TRACE_MARK(thread, prim, act, obj) ((void)0)
 #define OVE_TRACE_MARK_CURRENT(prim, act, obj) ((void)0)

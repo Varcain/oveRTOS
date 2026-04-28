@@ -14,8 +14,7 @@
 #include "ove/ove.h"
 #include <stdlib.h>
 
-int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage,
-		      uint32_t timeout_ms)
+int ove_watchdog_init(ove_watchdog_t *wdt, ove_watchdog_storage_t *storage, uint32_t timeout_ms)
 {
 	if (!wdt || !storage) {
 		return OVE_ERR_INVALID_PARAM;

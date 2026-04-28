@@ -64,9 +64,9 @@ typedef void (*ove_shell_cmd_fn)(int argc, const char *argv[]);
  * after registration.
  */
 struct ove_shell_cmd {
-	const char *name;          /**< @brief Command name used to match input tokens. */
-	const char *help;          /**< @brief One-line help string shown by the built-in help command. */
-	ove_shell_cmd_fn handler;  /**< @brief Function invoked when the command is matched. */
+	const char *name; /**< @brief Command name used to match input tokens. */
+	const char *help; /**< @brief One-line help string shown by the built-in help command. */
+	ove_shell_cmd_fn handler; /**< @brief Function invoked when the command is matched. */
 };
 
 /**
@@ -88,7 +88,7 @@ typedef void (*ove_shell_output_hook_t)(const char *data, size_t len);
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_SHELL.
  */
-int  ove_shell_init(void);
+int ove_shell_init(void);
 
 /**
  * @brief Register a command with the shell.
@@ -101,7 +101,7 @@ int  ove_shell_init(void);
  * @return OVE_OK on success, negative error code on failure (e.g. table full).
  * @note Requires @c CONFIG_OVE_SHELL.
  */
-int  ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
+int ove_shell_register_cmd(const struct ove_shell_cmd *cmd);
 
 /**
  * @brief Feed one character into the shell input processor.
@@ -142,11 +142,27 @@ void ove_shell_set_output_hook(ove_shell_output_hook_t hook);
 
 #else /* !CONFIG_OVE_SHELL */
 
-static inline int  ove_shell_init(void) { return OVE_ERR_NOT_SUPPORTED; }
-static inline int  ove_shell_register_cmd(const struct ove_shell_cmd *c) { (void)c; return OVE_ERR_NOT_SUPPORTED; }
-static inline void ove_shell_process_char(int c) { (void)c; }
-static inline void ove_shell_process_line(const char *l) { (void)l; }
-static inline void ove_shell_set_output_hook(ove_shell_output_hook_t h) { (void)h; }
+static inline int ove_shell_init(void)
+{
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_shell_register_cmd(const struct ove_shell_cmd *c)
+{
+	(void)c;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_shell_process_char(int c)
+{
+	(void)c;
+}
+static inline void ove_shell_process_line(const char *l)
+{
+	(void)l;
+}
+static inline void ove_shell_set_output_hook(ove_shell_output_hook_t h)
+{
+	(void)h;
+}
 
 #endif /* CONFIG_OVE_SHELL */
 

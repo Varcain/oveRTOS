@@ -66,7 +66,7 @@
  * (boards/qemu-mps2-an500/freertos/mps2_an500.ld). Any candidate outside
  * this range can't point at a live stack frame — stop walking. */
 #define OVE_SRAM_BASE 0x20000000u
-#define OVE_SRAM_END  0x20400000u
+#define OVE_SRAM_END 0x20400000u
 
 /* Text section bounds. __stext is placed right after the ISR vector
  * table in mps2_an500.ld so integer stack values with bit 0 set
@@ -74,14 +74,14 @@
  * offsets into __isr_vector. __etext is the linker-defined end of .text. */
 extern uint32_t __stext;
 extern uint32_t __etext;
-#define OVE_TEXT_BASE ((uintptr_t)&__stext)
-#define OVE_TEXT_END  ((uintptr_t)&__etext)
+#define OVE_TEXT_BASE ((uintptr_t) & __stext)
+#define OVE_TEXT_END ((uintptr_t) & __etext)
 
 /* FreeRTOS task stack fill pattern (tskSTACK_FILL_BYTE = 0xA5 repeated).
  * Hitting this during the scan means we've reached unused stack. */
 #define OVE_STACK_FILL 0xA5A5A5A5u
 
-static atomic_int  profiler_running;
+static atomic_int profiler_running;
 
 /* Runtime rate control. The tick hook fires at configTICK_RATE_HZ
  * (1 kHz on QEMU MPS2); sample_divisor picks an integer divisor so the
@@ -110,10 +110,8 @@ void ove_backend_profiler_on_tick(void)
 	if (!atomic_load_explicit(&profiler_running, memory_order_acquire))
 		return;
 
-	unsigned div = atomic_load_explicit(&sample_divisor,
-					    memory_order_relaxed);
-	unsigned c = atomic_fetch_add_explicit(&sample_counter, 1u,
-					       memory_order_relaxed) + 1u;
+	unsigned div = atomic_load_explicit(&sample_divisor, memory_order_relaxed);
+	unsigned c = atomic_fetch_add_explicit(&sample_counter, 1u, memory_order_relaxed) + 1u;
 	if (c < div)
 		return;
 	atomic_store_explicit(&sample_counter, 0u, memory_order_relaxed);
@@ -132,8 +130,7 @@ void ove_backend_profiler_on_tick(void)
 	TaskHandle_t h = xTaskGetCurrentTaskHandle();
 	if (!h)
 		return;
-	struct ove_thread *t = (struct ove_thread *)
-		xTaskGetApplicationTaskTagFromISR(h);
+	struct ove_thread *t = (struct ove_thread *)xTaskGetApplicationTaskTagFromISR(h);
 	uintptr_t tid = t ? (uintptr_t)t : (uintptr_t)h;
 
 	const uint32_t *frame = (const uint32_t *)psp;
@@ -147,16 +144,13 @@ void ove_backend_profiler_on_tick(void)
 	struct ove_profiler_sample s;
 	memset(&s, 0, sizeof(s));
 	s.ts_us = ove_state_stats_now_us();
-	s.tid   = (uint32_t)tid;
+	s.tid = (uint32_t)tid;
 	s.state = OVE_THREAD_STATE_RUNNING;
 	s.pcs[0] = (uintptr_t)pc;
-	s.depth  = 1;
+	s.depth = 1;
 
-	int extra = ove_arm_backtrace_walk((uintptr_t)psp,
-					   OVE_TEXT_BASE, OVE_TEXT_END,
-					   OVE_SRAM_BASE, OVE_SRAM_END,
-					   OVE_STACK_FILL,
-					   &s.pcs[1],
+	int extra = ove_arm_backtrace_walk((uintptr_t)psp, OVE_TEXT_BASE, OVE_TEXT_END,
+					   OVE_SRAM_BASE, OVE_SRAM_END, OVE_STACK_FILL, &s.pcs[1],
 					   CONFIG_OVE_PROFILER_MAX_DEPTH - 1);
 	s.depth = (uint8_t)(1 + extra);
 
@@ -178,12 +172,12 @@ void ove_backend_profiler_on_tick(void)
 	 */
 	if (s.depth == 1) {
 		uint32_t stacked_lr = frame[OVE_ARM_EXC_LR] & ~1u;
-		if (stacked_lr != 0 && stacked_lr != pc &&
-		    stacked_lr >= OVE_TEXT_BASE && stacked_lr < OVE_TEXT_END &&
-		    ove_arm_backtrace_lr_is_post_bl((uintptr_t)stacked_lr,
-						    OVE_TEXT_BASE, OVE_TEXT_END)) {
+		if (stacked_lr != 0 && stacked_lr != pc && stacked_lr >= OVE_TEXT_BASE &&
+		    stacked_lr < OVE_TEXT_END &&
+		    ove_arm_backtrace_lr_is_post_bl((uintptr_t)stacked_lr, OVE_TEXT_BASE,
+						    OVE_TEXT_END)) {
 			s.pcs[1] = (uintptr_t)stacked_lr;
-			s.depth  = 2;
+			s.depth = 2;
 		}
 	}
 
@@ -228,7 +222,7 @@ void ove_backend_profiler_set_rate(uint32_t hz)
 
 uint32_t ove_backend_profiler_get_max_hz(void)
 {
-	uint32_t cfg_hz  = (uint32_t)CONFIG_OVE_PROFILER_HZ;
+	uint32_t cfg_hz = (uint32_t)CONFIG_OVE_PROFILER_HZ;
 	uint32_t tick_hz = (uint32_t)configTICK_RATE_HZ;
 	/* Can't sample faster than the tick fires. */
 	return (cfg_hz < tick_hz) ? cfg_hz : tick_hz;

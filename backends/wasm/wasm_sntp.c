@@ -27,7 +27,7 @@
 #include <time.h>
 
 static int64_t utc_offset_us;
-static int     synced;
+static int synced;
 
 int ove_sntp_sync(const ove_sntp_config_t *cfg)
 {
@@ -46,8 +46,7 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg)
 #else
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
-	wall_us = (uint64_t)ts.tv_sec * 1000000ULL +
-		  (uint64_t)ts.tv_nsec / 1000ULL;
+	wall_us = (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 #endif
 
 	utc_offset_us = (int64_t)wall_us - (int64_t)mono_us;
@@ -57,18 +56,22 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg)
 
 int ove_sntp_get_offset_us(int64_t *offset_us)
 {
-	if (!synced) return OVE_ERR_NOT_SUPPORTED;
-	if (offset_us) *offset_us = utc_offset_us;
+	if (!synced)
+		return OVE_ERR_NOT_SUPPORTED;
+	if (offset_us)
+		*offset_us = utc_offset_us;
 	return OVE_OK;
 }
 
 int ove_sntp_get_utc(uint32_t *utc_s)
 {
-	if (!synced) return OVE_ERR_NOT_SUPPORTED;
+	if (!synced)
+		return OVE_ERR_NOT_SUPPORTED;
 	uint64_t mono_us;
 	ove_time_get_us(&mono_us);
 	int64_t utc_us = (int64_t)mono_us + utc_offset_us;
-	if (utc_s) *utc_s = (uint32_t)(utc_us / 1000000);
+	if (utc_s)
+		*utc_s = (uint32_t)(utc_us / 1000000);
 	return OVE_OK;
 }
 

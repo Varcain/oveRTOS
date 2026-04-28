@@ -39,14 +39,14 @@
 #include "ove/thread.h"
 #include "ove/thread_state_stats.h"
 #include "ove/types.h"
-#include "ove/trace.h"          /* for ove_backend_thread_current_handle() */
+#include "ove/trace.h" /* for ove_backend_thread_current_handle() */
 #include "ove_profiler_ring.h"
 
 #ifndef CONFIG_OVE_PROFILER_HZ
 #define CONFIG_OVE_PROFILER_HZ 250
 #endif
 
-#define PROFILER_SIG         SIGRTMIN
+#define PROFILER_SIG SIGRTMIN
 #define PROFILER_MAX_THREADS 32
 
 /*
@@ -55,8 +55,8 @@
  * Keeps thread_list_lock private to the thread module.
  */
 extern size_t ove_backend_profiler_snapshot_running(pthread_t *out, size_t max);
-extern void   ove_backend_profiler_mark_sampled(void);
-extern int    ove_backend_thread_current_state(void);
+extern void ove_backend_profiler_mark_sampled(void);
+extern int ove_backend_thread_current_state(void);
 
 static atomic_int profiler_running;
 
@@ -66,12 +66,14 @@ static atomic_int profiler_running;
  * sampling rate = compile-time max / divisor. divisor == 1 means every
  * tick fires. Bounded below by 1 Hz via a cap on the divisor.
  */
-static atomic_uint  sample_divisor = 1;
-static atomic_uint  sample_counter;
+static atomic_uint sample_divisor = 1;
+static atomic_uint sample_counter;
 
 static void profile_sig_handler(int sig, siginfo_t *info, void *uctx)
 {
-	(void)sig; (void)info; (void)uctx;
+	(void)sig;
+	(void)info;
+	(void)uctx;
 
 	uintptr_t handle = ove_backend_thread_current_handle();
 	if (handle == 0)
@@ -111,7 +113,7 @@ static void profile_sig_handler(int sig, siginfo_t *info, void *uctx)
 	struct ove_profiler_sample s;
 	memset(&s, 0, sizeof(s));
 	s.ts_us = ove_state_stats_now_us();
-	s.tid   = (uint32_t)handle;
+	s.tid = (uint32_t)handle;
 	s.depth = (uint8_t)depth;
 	/* Capture thread state at sample time so the dashboard can
 	 * filter on-CPU (RUNNING/READY) vs wall-clock (+BLOCKED) views. */
@@ -134,8 +136,8 @@ void ove_backend_profiler_sample_tick(void)
 	 * compile-time max. Counter wraps harmlessly. */
 	unsigned div = atomic_load_explicit(&sample_divisor, memory_order_acquire);
 	if (div > 1) {
-		unsigned c = atomic_fetch_add_explicit(&sample_counter, 1,
-						       memory_order_acq_rel) + 1;
+		unsigned c =
+			atomic_fetch_add_explicit(&sample_counter, 1, memory_order_acq_rel) + 1;
 		if ((c % div) != 0)
 			return;
 	}
@@ -176,7 +178,8 @@ uint32_t ove_backend_profiler_get_max_hz(void)
  */
 size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max)
 {
-	(void)out; (void)out_max;
+	(void)out;
+	(void)out_max;
 	return 0;
 }
 
@@ -188,8 +191,7 @@ static int install_signal_handler(void)
 	sa.sa_flags = SA_SIGINFO | SA_RESTART;
 	sigemptyset(&sa.sa_mask);
 	if (sigaction(PROFILER_SIG, &sa, NULL) != 0) {
-		fprintf(stderr, "[profiler] sigaction failed: %s\n",
-			strerror(errno));
+		fprintf(stderr, "[profiler] sigaction failed: %s\n", strerror(errno));
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 	return OVE_OK;
@@ -205,9 +207,8 @@ static void warmup_backtrace(void)
 int ove_backend_profiler_start(void)
 {
 	int expected = 0;
-	if (!atomic_compare_exchange_strong_explicit(
-		    &profiler_running, &expected, 1,
-		    memory_order_acq_rel, memory_order_relaxed))
+	if (!atomic_compare_exchange_strong_explicit(&profiler_running, &expected, 1,
+						     memory_order_acq_rel, memory_order_relaxed))
 		return OVE_OK; /* already armed */
 
 	warmup_backtrace();

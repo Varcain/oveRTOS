@@ -44,26 +44,24 @@ void ove_hal_i2c_close(ove_i2c_t i2c)
 	}
 }
 
-int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr,
-		      const void *data, size_t len,
+int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
 		      uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
 	struct i2c_msg_s msg = {
 		.frequency = i2c->speed_hz,
-		.addr      = addr,
-		.flags     = 0,
-		.buffer    = (uint8_t *)data,
-		.length    = len,
+		.addr = addr,
+		.flags = 0,
+		.buffer = (uint8_t *)data,
+		.length = len,
 	};
 	struct i2c_transfer_s xfer = {
-		.msgv  = &msg,
-		.msgc  = 1,
+		.msgv = &msg,
+		.msgc = 1,
 	};
 
-	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER,
-			(unsigned long)&xfer);
+	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER, (unsigned long)&xfer);
 	if (ret < 0) {
 		if (errno == ENXIO)
 			return OVE_ERR_BUS_NACK;
@@ -72,25 +70,23 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr,
 	return OVE_OK;
 }
 
-int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr,
-		     void *buf, size_t len, uint32_t timeout_ms)
+int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
 	struct i2c_msg_s msg = {
 		.frequency = i2c->speed_hz,
-		.addr      = addr,
-		.flags     = I2C_M_READ,
-		.buffer    = buf,
-		.length    = len,
+		.addr = addr,
+		.flags = I2C_M_READ,
+		.buffer = buf,
+		.length = len,
 	};
 	struct i2c_transfer_s xfer = {
-		.msgv  = &msg,
-		.msgc  = 1,
+		.msgv = &msg,
+		.msgc = 1,
 	};
 
-	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER,
-			(unsigned long)&xfer);
+	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER, (unsigned long)&xfer);
 	if (ret < 0) {
 		if (errno == ENXIO)
 			return OVE_ERR_BUS_NACK;
@@ -99,36 +95,33 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr,
 	return OVE_OK;
 }
 
-int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr,
-			   const void *tx, size_t tx_len,
-			   void *rx, size_t rx_len,
-			   uint32_t timeout_ms)
+int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+			   size_t rx_len, uint32_t timeout_ms)
 {
 	(void)timeout_ms;
 
 	struct i2c_msg_s msgs[2] = {
 		{
 			.frequency = i2c->speed_hz,
-			.addr      = addr,
-			.flags     = 0,
-			.buffer    = (uint8_t *)tx,
-			.length    = tx_len,
+			.addr = addr,
+			.flags = 0,
+			.buffer = (uint8_t *)tx,
+			.length = tx_len,
 		},
 		{
 			.frequency = i2c->speed_hz,
-			.addr      = addr,
-			.flags     = I2C_M_READ,
-			.buffer    = rx,
-			.length    = rx_len,
+			.addr = addr,
+			.flags = I2C_M_READ,
+			.buffer = rx,
+			.length = rx_len,
 		},
 	};
 	struct i2c_transfer_s xfer = {
-		.msgv  = msgs,
-		.msgc  = 2,
+		.msgv = msgs,
+		.msgc = 2,
 	};
 
-	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER,
-			(unsigned long)&xfer);
+	int ret = ioctl(i2c->fd, I2CIOC_TRANSFER, (unsigned long)&xfer);
 	if (ret < 0) {
 		if (errno == ENXIO)
 			return OVE_ERR_BUS_NACK;

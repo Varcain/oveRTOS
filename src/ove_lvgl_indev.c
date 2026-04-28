@@ -52,8 +52,7 @@ static void ove_keypad_shim(lv_indev_t *indev, lv_indev_data_t *data)
 		bool pressed = false;
 		if (g_keypad_read(&key, &pressed)) {
 			data->key = key;
-			data->state = pressed ? LV_INDEV_STATE_PRESSED
-					      : LV_INDEV_STATE_RELEASED;
+			data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 		}
 	}
 }
@@ -69,8 +68,7 @@ static void ove_encoder_shim(lv_indev_t *indev, lv_indev_data_t *data)
 		bool pressed = false;
 		if (g_encoder_read(&diff, &pressed)) {
 			data->enc_diff = diff;
-			data->state = pressed ? LV_INDEV_STATE_PRESSED
-					      : LV_INDEV_STATE_RELEASED;
+			data->state = pressed ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 		}
 	}
 }

@@ -29,9 +29,8 @@ static void test_sha1_empty(void **state)
 	ove_sha1("", 0, hash);
 
 	const uint8_t expected[20] = {
-		0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d,
-		0x32, 0x55, 0xbf, 0xef, 0x95, 0x60, 0x18, 0x90,
-		0xaf, 0xd8, 0x07, 0x09,
+		0xda, 0x39, 0xa3, 0xee, 0x5e, 0x6b, 0x4b, 0x0d, 0x32, 0x55,
+		0xbf, 0xef, 0x95, 0x60, 0x18, 0x90, 0xaf, 0xd8, 0x07, 0x09,
 	};
 	assert_memory_equal(hash, expected, sizeof(expected));
 }
@@ -43,9 +42,8 @@ static void test_sha1_abc(void **state)
 	ove_sha1("abc", 3, hash);
 
 	const uint8_t expected[20] = {
-		0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a,
-		0xba, 0x3e, 0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c,
-		0x9c, 0xd0, 0xd8, 0x9d,
+		0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e,
+		0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d,
 	};
 	assert_memory_equal(hash, expected, sizeof(expected));
 }
@@ -54,8 +52,7 @@ static void test_sha1_rfc6455(void **state)
 {
 	(void)state;
 	/* RFC 6455 Section 4.2.2 example */
-	const char *input =
-		"dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+	const char *input = "dGhlIHNhbXBsZSBub25jZQ==258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 	uint8_t hash[20];
 	ove_sha1(input, strlen(input), hash);
 
@@ -118,14 +115,10 @@ static void test_base64_overflow(void **state)
 int test_net_httpd_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_sha1_empty),
-		cmocka_unit_test(test_sha1_abc),
-		cmocka_unit_test(test_sha1_rfc6455),
-		cmocka_unit_test(test_base64_empty),
-		cmocka_unit_test(test_base64_single_byte),
-		cmocka_unit_test(test_base64_two_bytes),
-		cmocka_unit_test(test_base64_three_bytes),
-		cmocka_unit_test(test_base64_overflow),
+		cmocka_unit_test(test_sha1_empty),	   cmocka_unit_test(test_sha1_abc),
+		cmocka_unit_test(test_sha1_rfc6455),	   cmocka_unit_test(test_base64_empty),
+		cmocka_unit_test(test_base64_single_byte), cmocka_unit_test(test_base64_two_bytes),
+		cmocka_unit_test(test_base64_three_bytes), cmocka_unit_test(test_base64_overflow),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -45,7 +45,7 @@ extern "C" {
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_CONSOLE.
  */
-int  ove_console_init(void);
+int ove_console_init(void);
 
 /**
  * @brief Read one character from the console.
@@ -58,7 +58,7 @@ int  ove_console_init(void);
  *         available or an error occurred.
  * @note Requires @c CONFIG_OVE_CONSOLE.
  */
-int  ove_console_getchar(void);
+int ove_console_getchar(void);
 
 /**
  * @brief Write one character to the console.
@@ -86,10 +86,23 @@ void ove_console_write(const char *buf, unsigned int len);
 
 #else /* !CONFIG_OVE_CONSOLE */
 
-static inline int ove_console_init(void) { return OVE_ERR_NOT_SUPPORTED; }
-static inline int ove_console_getchar(void) { return -1; }
-static inline void ove_console_putchar(int c) { (void)c; }
-static inline void ove_console_write(const char *buf, unsigned int len) { (void)buf; (void)len; }
+static inline int ove_console_init(void)
+{
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_console_getchar(void)
+{
+	return -1;
+}
+static inline void ove_console_putchar(int c)
+{
+	(void)c;
+}
+static inline void ove_console_write(const char *buf, unsigned int len)
+{
+	(void)buf;
+	(void)len;
+}
 
 #endif /* CONFIG_OVE_CONSOLE */
 

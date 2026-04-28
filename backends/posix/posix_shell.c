@@ -97,13 +97,15 @@ void ove_shell_set_output_hook(ove_shell_output_hook_t hook)
 
 void ove_shell_process_line(const char *line)
 {
-	if (!line) return;
+	if (!line)
+		return;
 
 	/* Copy into the line buffer and execute */
 	size_t len = strlen(line);
 	if (len >= SHELL_LINE_BUF)
 		len = SHELL_LINE_BUF - 1;
 	memcpy(line_buf, line, len);
+	line_buf[len] = '\0';
 	line_pos = (int)len;
 	execute_line();
 	line_pos = 0;

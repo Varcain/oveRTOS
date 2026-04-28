@@ -31,8 +31,7 @@ static struct nvs_entry nvs_store[NVS_MAX_ENTRIES];
 static struct nvs_entry *nvs_find(const char *key)
 {
 	for (int i = 0; i < NVS_MAX_ENTRIES; i++) {
-		if (nvs_store[i].used &&
-		    strcmp(nvs_store[i].key, key) == 0) {
+		if (nvs_store[i].used && strcmp(nvs_store[i].key, key) == 0) {
 			return &nvs_store[i];
 		}
 	}
@@ -50,8 +49,7 @@ void ove_nvs_deinit(void)
 	memset(nvs_store, 0, sizeof(nvs_store));
 }
 
-int ove_nvs_read(const char *key, void *buf, size_t buf_len,
-		     size_t *out_len)
+int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 {
 	if (!key || !buf) {
 		return OVE_ERR_INVALID_PARAM;

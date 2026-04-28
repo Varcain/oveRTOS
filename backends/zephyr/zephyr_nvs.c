@@ -57,8 +57,7 @@ void ove_nvs_deinit(void)
 	nvs_initialized = 0;
 }
 
-int ove_nvs_read(const char *key, void *buf, size_t buf_len,
-			   size_t *out_len)
+int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 {
 	if (!nvs_initialized) {
 		return OVE_ERR_NOT_REGISTERED;
@@ -103,17 +102,26 @@ int ove_nvs_erase(const char *key)
 
 #else /* !CONFIG_NVS */
 
-int ove_nvs_init(void) { return OVE_ERR_NOT_SUPPORTED; }
-void ove_nvs_deinit(void) { }
-int ove_nvs_read(const char *key, void *buf, size_t buf_len,
-			   size_t *out_len)
+int ove_nvs_init(void)
 {
-	(void)key; (void)buf; (void)buf_len; (void)out_len;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+void ove_nvs_deinit(void)
+{
+}
+int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
+{
+	(void)key;
+	(void)buf;
+	(void)buf_len;
+	(void)out_len;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 int ove_nvs_write(const char *key, const void *data, size_t len)
 {
-	(void)key; (void)data; (void)len;
+	(void)key;
+	(void)data;
+	(void)len;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 int ove_nvs_erase(const char *key)

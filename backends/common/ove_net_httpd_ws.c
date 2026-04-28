@@ -28,12 +28,12 @@
 
 /* ---------- WebSocket opcodes (RFC 6455 Section 5.2) ---------- */
 
-#define WS_OP_CONT   0x0
-#define WS_OP_TEXT   0x1
-#define WS_OP_BIN    0x2
-#define WS_OP_CLOSE  0x8
-#define WS_OP_PING   0x9
-#define WS_OP_PONG   0xA
+#define WS_OP_CONT 0x0
+#define WS_OP_TEXT 0x1
+#define WS_OP_BIN 0x2
+#define WS_OP_CLOSE 0x8
+#define WS_OP_PING 0x9
+#define WS_OP_PONG 0xA
 
 /* ---------- Connection pool ---------- */
 
@@ -46,11 +46,11 @@
 #endif
 
 struct ove_httpd_ws_conn {
-	ove_socket_t         sock;
+	ove_socket_t sock;
 	ove_socket_storage_t storage;
-	char                 path[64];
-	uint8_t              frame_buf[CONFIG_OVE_NET_HTTPD_WS_MAX_FRAME];
-	int                  active;
+	char path[64];
+	uint8_t frame_buf[CONFIG_OVE_NET_HTTPD_WS_MAX_FRAME];
+	int active;
 };
 
 static struct ove_httpd_ws_conn s_ws_pool[CONFIG_OVE_NET_HTTPD_WS_MAX_CONNS];
@@ -60,8 +60,8 @@ static struct ove_httpd_ws_conn s_ws_pool[CONFIG_OVE_NET_HTTPD_WS_MAX_CONNS];
 #define WS_MAX_ROUTES 4
 
 struct ws_route {
-	char                        path[64];
-	ove_httpd_ws_handler_t      on_message;
+	char path[64];
+	ove_httpd_ws_handler_t on_message;
 	ove_httpd_ws_close_handler_t on_close;
 };
 
@@ -99,8 +99,7 @@ int ove_httpd_ws_active_count(void)
 
 /* ---------- Route registration ---------- */
 
-int ove_httpd_ws_route(const char *path,
-		       ove_httpd_ws_handler_t on_message,
+int ove_httpd_ws_route(const char *path, ove_httpd_ws_handler_t on_message,
 		       ove_httpd_ws_close_handler_t on_close)
 {
 	if (s_ws_route_count >= WS_MAX_ROUTES)
@@ -123,8 +122,7 @@ static struct ws_route *ws_match_route(const char *path)
 
 	for (int i = 0; i < s_ws_route_count; i++) {
 		size_t rlen = strlen(s_ws_routes[i].path);
-		if (strncmp(path, s_ws_routes[i].path, rlen) == 0 &&
-		    rlen > best_len) {
+		if (strncmp(path, s_ws_routes[i].path, rlen) == 0 && rlen > best_len) {
 			best = &s_ws_routes[i];
 			best_len = rlen;
 		}
@@ -136,10 +134,8 @@ static struct ws_route *ws_match_route(const char *path)
 
 static const char ws_magic[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-int ove_httpd_ws_handshake(const char *headers, size_t headers_len,
-			   const char *path,
-			   ove_socket_t sock,
-			   ove_socket_storage_t *storage)
+int ove_httpd_ws_handshake(const char *headers, size_t headers_len, const char *path,
+			   ove_socket_t sock, ove_socket_storage_t *storage)
 {
 	/* Check for a matching WS route */
 	struct ws_route *route = ws_match_route(path);
@@ -160,8 +156,7 @@ int ove_httpd_ws_handshake(const char *headers, size_t headers_len,
 	/* Copy key value (up to CRLF) */
 	char key[64];
 	int ki = 0;
-	while (key_hdr[ki] && key_hdr[ki] != '\r' &&
-	       key_hdr[ki] != '\n' && ki < 63) {
+	while (key_hdr[ki] && key_hdr[ki] != '\r' && key_hdr[ki] != '\n' && ki < 63) {
 		key[ki] = key_hdr[ki];
 		ki++;
 	}
@@ -192,11 +187,12 @@ int ove_httpd_ws_handshake(const char *headers, size_t headers_len,
 	/* Send 101 Switching Protocols */
 	char resp[256];
 	int rlen = snprintf(resp, sizeof(resp),
-		"HTTP/1.1 101 Switching Protocols\r\n"
-		"Upgrade: websocket\r\n"
-		"Connection: Upgrade\r\n"
-		"Sec-WebSocket-Accept: %s\r\n"
-		"\r\n", accept);
+			    "HTTP/1.1 101 Switching Protocols\r\n"
+			    "Upgrade: websocket\r\n"
+			    "Connection: Upgrade\r\n"
+			    "Sec-WebSocket-Accept: %s\r\n"
+			    "\r\n",
+			    accept);
 
 	int ret = ove_socket_send(sock, resp, (size_t)rlen, NULL);
 	if (ret != OVE_OK) {
@@ -217,11 +213,9 @@ int ove_httpd_ws_handshake(const char *headers, size_t headers_len,
 
 /* ---------- Frame sending (server → client, no mask) ---------- */
 
-int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn_opaque,
-		      const void *data, size_t len)
+int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn_opaque, const void *data, size_t len)
 {
-	struct ove_httpd_ws_conn *conn =
-		(struct ove_httpd_ws_conn *)conn_opaque;
+	struct ove_httpd_ws_conn *conn = (struct ove_httpd_ws_conn *)conn_opaque;
 
 	if (!conn || !conn->active)
 		return OVE_ERR_INVALID_PARAM;
@@ -247,7 +241,10 @@ int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn_opaque,
 	} else {
 		/* 64-bit length — unlikely for embedded, but handle it */
 		hdr[1] = 127;
-		hdr[2] = 0; hdr[3] = 0; hdr[4] = 0; hdr[5] = 0;
+		hdr[2] = 0;
+		hdr[3] = 0;
+		hdr[4] = 0;
+		hdr[5] = 0;
 		hdr[6] = (uint8_t)(len >> 24);
 		hdr[7] = (uint8_t)(len >> 16);
 		hdr[8] = (uint8_t)(len >> 8);
@@ -274,8 +271,7 @@ int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn_opaque,
 
 /* ---------- Broadcast to all connections on a path ---------- */
 
-int ove_httpd_ws_broadcast(const char *path,
-			   const void *data, size_t len)
+int ove_httpd_ws_broadcast(const char *path, const void *data, size_t len)
 {
 	int sent = 0;
 
@@ -285,8 +281,7 @@ int ove_httpd_ws_broadcast(const char *path,
 			continue;
 		if (path && strcmp(c->path, path) != 0)
 			continue;
-		if (ove_httpd_ws_send((ove_httpd_ws_conn_t *)c,
-				      data, len) == OVE_OK)
+		if (ove_httpd_ws_send((ove_httpd_ws_conn_t *)c, data, len) == OVE_OK)
 			sent++;
 	}
 
@@ -297,7 +292,7 @@ int ove_httpd_ws_broadcast(const char *path,
 
 static void ws_send_close(struct ove_httpd_ws_conn *conn)
 {
-	uint8_t frame[2] = { 0x80 | WS_OP_CLOSE, 0 };
+	uint8_t frame[2] = {0x80 | WS_OP_CLOSE, 0};
 	ove_socket_send(conn->sock, frame, 2, NULL);
 }
 
@@ -311,8 +306,7 @@ static void ws_send_close_code(struct ove_httpd_ws_conn *conn, uint16_t code)
 	ove_socket_send(conn->sock, frame, 4, NULL);
 }
 
-static void ws_send_pong(struct ove_httpd_ws_conn *conn,
-			 const uint8_t *payload, size_t len)
+static void ws_send_pong(struct ove_httpd_ws_conn *conn, const uint8_t *payload, size_t len)
 {
 	uint8_t hdr[2];
 	hdr[0] = 0x80 | WS_OP_PONG;
@@ -370,7 +364,7 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 			return -1;
 		}
 		payload_len = ((size_t)ext[4] << 24) | ((size_t)ext[5] << 16) |
-			      ((size_t)ext[6] << 8)  | ext[7];
+			      ((size_t)ext[6] << 8) | ext[7];
 	}
 
 	/* RFC 6455 §5.5: control frames must not exceed 125 bytes */
@@ -395,8 +389,8 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 	size_t total = 0;
 	while (total < payload_len) {
 		got = 0;
-		ret = ove_socket_recv(conn->sock, conn->frame_buf + total,
-				      payload_len - total, &got, 1000);
+		ret = ove_socket_recv(conn->sock, conn->frame_buf + total, payload_len - total,
+				      &got, 1000);
 		if (ret != OVE_OK || got == 0)
 			return -1;
 		total += got;
@@ -424,8 +418,8 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 	if (opcode == WS_OP_TEXT || opcode == WS_OP_BIN) {
 		struct ws_route *route = ws_match_route(conn->path);
 		if (route && route->on_message) {
-			route->on_message((ove_httpd_ws_conn_t *)conn,
-					  conn->frame_buf, payload_len);
+			route->on_message((ove_httpd_ws_conn_t *)conn, conn->frame_buf,
+					  payload_len);
 		}
 	}
 
@@ -462,8 +456,7 @@ int ove_httpd_ws_is_upgrade(const char *headers)
 	if (!upgrade)
 		return 0;
 
-	return (strstr(upgrade, "websocket") != NULL ||
-		strstr(upgrade, "WebSocket") != NULL);
+	return (strstr(upgrade, "websocket") != NULL || strstr(upgrade, "WebSocket") != NULL);
 }
 
 #endif /* CONFIG_OVE_NET_HTTPD_WS */

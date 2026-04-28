@@ -16,10 +16,10 @@ extern int ove_sim_board_init(void);
 
 int main(int argc, char *argv[])
 {
-  (void)argc;
-  (void)argv;
+	(void)argc;
+	(void)argv;
 
-  ove_sim_board_init();
-  ove_app_run();
-  return 0;
+	ove_sim_board_init();
+	ove_app_run();
+	return 0;
 }
