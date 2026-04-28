@@ -104,3 +104,39 @@ int _getpid(void)
 {
 	return (1);
 }
+
+/*
+ * Picolibc tinystdio FILE streams.
+ *
+ * Picolibc's <stdio.h> declares stdin/stdout/stderr as `FILE *const`,
+ * leaving the application to provide the storage. printf/scanf bodies
+ * inside libc.a take the *address* of these pointers, so when the
+ * application's code path actually pulls libc printf in (e.g. lwip /
+ * mbedtls debug paths in example_net), missing stream definitions
+ * trigger an `undefined reference to 'stdout'` link error.
+ *
+ * Define a single shared FILE that calls _write() for output and a no-op
+ * read; tinystdio's vfprintf reaches the serial UART through that. The
+ * three pointers all alias the same FILE — boards without a real input
+ * device don't distinguish stdin, and stderr unbuffered semantics are
+ * irrelevant on bare metal where each _write goes straight to the wire.
+ */
+static int _stdio_putc(char c, FILE *stream)
+{
+	(void)stream;
+	serial_write((unsigned char *)&c, 1);
+	return (unsigned char)c;
+}
+
+static int _stdio_getc(FILE *stream)
+{
+	(void)stream;
+	return _FDEV_EOF;
+}
+
+static FILE _stdio_file = FDEV_SETUP_STREAM(_stdio_putc, _stdio_getc, NULL,
+					    _FDEV_SETUP_RW);
+
+FILE *const stdin = &_stdio_file;
+FILE *const stdout = &_stdio_file;
+FILE *const stderr = &_stdio_file;
