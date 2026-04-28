@@ -254,41 +254,50 @@ def _ensure_arm_toolchain(ove_dir):
     return tc_dir
 
 
-def _ensure_stm32cube_f7(ove_dir):
-    """Clone STM32CubeF7 (HAL + CMSIS device + BSP) into dl/ if missing.
+def _ensure_stm32f746_renode_deps(ove_dir):
+    """Clone STM32CubeF7 + lwIP into dl/ if missing.
 
-    The renode-stm32f746-* and HW STM32 test paths build firmware that
-    pulls HAL drivers and the cmsis device headers out of dl/STM32CubeF7-*.
-    A configured workspace gets this via `download_freertos`; the test
-    harness runs without a `.config` (CI hits these jobs on a bare
-    checkout) so we mirror just the STM32Cube fetch here, keyed off the
-    same manifest entry.
+    The renode-stm32f746-{freertos,freertos-zeroheap} test trees pull
+    these directly from dl/ via `file(GLOB)` and `FATAL_ERROR` if
+    absent. A configured workspace gets them via `download_freertos`;
+    the test harness runs without a `.config` (CI hits these jobs on a
+    bare checkout) so we mirror those fetches here, keyed off the same
+    manifest entries.
     """
     from .download import git_clone
     from .manifest import get_component, load_manifest
     from .utils import hashed_dir
     dl_dir = os.path.join(ove_dir, "dl")
     os.makedirs(dl_dir, exist_ok=True)
-    if any(name.startswith("STM32CubeF7-")
-           for name in os.listdir(dl_dir)):
-        return
     manifest = load_manifest(ove_dir)
-    url = get_component(manifest, "rtos", "freertos", "stm32cubef7", "url")
-    tag = get_component(manifest, "rtos", "freertos", "stm32cubef7", "version")
-    submodules = [
-        "Drivers/STM32F7xx_HAL_Driver",
-        "Drivers/CMSIS/Device/ST/STM32F7xx",
-        "Drivers/BSP/STM32746G-Discovery",
-        "Drivers/BSP/Components/Common",
-        "Drivers/BSP/Components/wm8994",
-        "Drivers/BSP/Components/ft5336",
-        "Drivers/BSP/Components/stmpe811",
-        "Drivers/BSP/Components/rk043fn48h",
-    ]
-    dest, _, _ = hashed_dir(dl_dir, "STM32CubeF7", tag, None)
-    if not git_clone(url, tag, dest, "STM32CubeF7", submodules=submodules):
-        logger.error("STM32CubeF7 download failed")
-        sys.exit(1)
+    existing = os.listdir(dl_dir)
+
+    if not any(n.startswith("STM32CubeF7-") for n in existing):
+        url = get_component(manifest, "rtos", "freertos", "stm32cubef7", "url")
+        tag = get_component(manifest, "rtos", "freertos", "stm32cubef7", "version")
+        submodules = [
+            "Drivers/STM32F7xx_HAL_Driver",
+            "Drivers/CMSIS/Device/ST/STM32F7xx",
+            "Drivers/BSP/STM32746G-Discovery",
+            "Drivers/BSP/Components/Common",
+            "Drivers/BSP/Components/wm8994",
+            "Drivers/BSP/Components/ft5336",
+            "Drivers/BSP/Components/stmpe811",
+            "Drivers/BSP/Components/rk043fn48h",
+        ]
+        dest, _, _ = hashed_dir(dl_dir, "STM32CubeF7", tag, None)
+        if not git_clone(url, tag, dest, "STM32CubeF7", submodules=submodules):
+            logger.error("STM32CubeF7 download failed")
+            sys.exit(1)
+
+    if not any(n.startswith("lwip-") for n in existing):
+        url = get_component(manifest, "libraries", "lwip", "url")
+        tag = get_component(manifest, "libraries", "lwip", "version")
+        if url and tag:
+            dest, _, _ = hashed_dir(dl_dir, "lwip", tag, None)
+            if not git_clone(url, tag, dest, "lwIP"):
+                logger.error("lwIP download failed")
+                sys.exit(1)
 
 
 def test_stub(ove_dir, output_dir):
@@ -1002,7 +1011,7 @@ def _build_renode_stm32f746(ove_dir, output_dir, *, src_subdir, binary, label,
     stdio backend selection.
     """
     tc_dir = _ensure_arm_toolchain(ove_dir)
-    _ensure_stm32cube_f7(ove_dir)
+    _ensure_stm32f746_renode_deps(ove_dir)
     build = os.path.join(output_dir, "tests", label)
     logger.info(f"Building {label}")
     cmake_args = [f"-DOVE_TOOLCHAIN_DIR={tc_dir}"]
