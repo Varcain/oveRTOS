@@ -344,16 +344,6 @@ pub fn fontMontserrat14() *const c.lv_font_t {
     return &c.lv_font_montserrat_14;
 }
 
-/// Return a pointer to the Montserrat 16-pt font.
-pub fn fontMontserrat16() *const c.lv_font_t {
-    return &c.lv_font_montserrat_16;
-}
-
-/// Return a pointer to the Montserrat 20-pt font.
-pub fn fontMontserrat20() *const c.lv_font_t {
-    return &c.lv_font_montserrat_20;
-}
-
 /// Return a pointer to the Montserrat 24-pt font.
 pub fn fontMontserrat24() *const c.lv_font_t {
     return &c.lv_font_montserrat_24;
@@ -362,11 +352,6 @@ pub fn fontMontserrat24() *const c.lv_font_t {
 /// Return a pointer to the Montserrat 32-pt font.
 pub fn fontMontserrat32() *const c.lv_font_t {
     return &c.lv_font_montserrat_32;
-}
-
-/// Return a pointer to the Montserrat 48-pt font.
-pub fn fontMontserrat48() *const c.lv_font_t {
-    return &c.lv_font_montserrat_48;
 }
 
 // =========================================================================

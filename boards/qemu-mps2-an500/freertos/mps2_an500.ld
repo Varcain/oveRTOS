@@ -70,12 +70,53 @@ SECTIONS
         __etext = .;
     } > FLASH
 
-    .data : AT(__etext)
+    .data :
     {
         __data_start__ = .;
         *(.data*)
         . = ALIGN(4);
         __data_end__ = .;
+    } > RAM AT > FLASH
+
+    /* Picolibc TLS sections.  configUSE_PICOLIBC_TLS=1 in FreeRTOSConfig.h
+     * pulls in picolibc-freertos.h, whose _tls_size()/_tls_align() and
+     * libc's inittls.c reference __tdata_size / __tdata_source /
+     * __tbss_offset / __tbss_size / __tls_size / __tls_align /
+     * __arm32_tls_tcb_offset.  picolibc.specs only defines these via
+     * `-Tpicolibc.ld` when no `-T` is given, but the FreeRTOS firmware
+     * build passes its own `-T mps2_an500.ld`, so we mirror the bits
+     * picolibc.ld would have provided.  Layout matches picolibc.ld:
+     * .tdata is initialized template (loaded from flash), .tbss is the
+     * uninitialized template; .tbss_space reserves real RAM since
+     * ld.bfd does not advance the location counter for NOLOAD sections. */
+    .tdata : ALIGN(4)
+    {
+        *(.tdata .tdata.* .gnu.linkonce.td.*)
+        PROVIDE(__tdata_end = .);
+    } > RAM AT > FLASH
+    PROVIDE(__tdata_start = ADDR(.tdata));
+    PROVIDE(__tdata_source = LOADADDR(.tdata));
+    PROVIDE(__tdata_size = SIZEOF(.tdata));
+
+    .tbss (NOLOAD) : ALIGN(4)
+    {
+        *(.tbss .tbss.* .gnu.linkonce.tb.*)
+        *(.tcommon)
+        PROVIDE(__tls_end = .);
+        PROVIDE(__tbss_end = .);
+    } > RAM
+    PROVIDE(__tbss_start = ADDR(.tbss));
+    PROVIDE(__tbss_size = SIZEOF(.tbss));
+    PROVIDE(__tls_first = SIZEOF(.tdata) > 0 ? ADDR(.tdata) : ADDR(.tbss));
+    PROVIDE(__tls_base = __tls_first);
+    PROVIDE(__tbss_offset = ADDR(.tbss) - __tls_first);
+    PROVIDE(__tls_align = MAX(ALIGNOF(.tdata), ALIGNOF(.tbss)));
+    PROVIDE(__tls_size = __tls_end - __tls_base);
+    PROVIDE(__arm32_tls_tcb_offset = MAX(8, __tls_align));
+
+    .tbss_space (NOLOAD) :
+    {
+        . = . + SIZEOF(.tbss);
     } > RAM
 
     .bss :
