@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
             libclang-dev xz-utils
 
       - name: Install Rust
@@ -67,7 +67,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
             gperf genromfs xxd libclang-dev xz-utils
 
       - name: Install Rust
@@ -92,7 +92,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential ninja-build \
+            cmake build-essential meson ninja-build \
             python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
             wget xz-utils file libclang-dev
 
@@ -139,7 +139,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
             libclang-dev xz-utils
 
       - name: Install Rust
@@ -164,7 +164,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
             gperf genromfs xxd libclang-dev xz-utils
 
       - name: Install Rust
@@ -189,7 +189,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential ninja-build \
+            cmake build-essential meson ninja-build \
             python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
             wget xz-utils file libclang-dev
 

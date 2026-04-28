@@ -148,7 +148,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake build-essential ninja-build \
+          sudo apt-get update && sudo apt-get install -y cmake build-essential meson ninja-build \
             python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
             wget xz-utils file
 
@@ -192,7 +192,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build
 
       - name: Cache ARM toolchain
         uses: actions/cache@v4
@@ -262,7 +262,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            cmake build-essential qemu-system-arm gcc-arm-none-eabi libnewlib-arm-none-eabi meson ninja-build \
             gperf genromfs xxd python3-pip python3-venv
 
       - name: Cache ARM toolchain
@@ -294,7 +294,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
-            cmake build-essential ninja-build qemu-system-arm \
+            cmake build-essential meson ninja-build qemu-system-arm \
             python3-pip python3-venv device-tree-compiler gperf ccache dfu-util \
             wget xz-utils file
 
