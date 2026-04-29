@@ -11,6 +11,7 @@ c_sources:
   - ../c/src/bench_native_posix.c
   - ../c/src/bench_native_freertos.c
   - ../c/src/bench_native_nuttx.c
+  - ../c/src/bench_native_zephyr.c
 c_includes:
   - ../c/include
 defconfig:

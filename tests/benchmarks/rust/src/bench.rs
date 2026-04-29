@@ -111,6 +111,11 @@ unsafe extern "C" {
     /// `tests/benchmarks/c/src/bench_native_nuttx.c`.  Same accessor
     /// pattern; only `is_enabled` returns 1 on NuttX builds.
     static bench_suite_native_nuttx: CBenchSuite;
+
+    /// Native Zephyr baseline suite — defined in
+    /// `tests/benchmarks/c/src/bench_native_zephyr.c`.  Same accessor
+    /// pattern; only `is_enabled` returns 1 on Zephyr builds.
+    static bench_suite_native_zephyr: CBenchSuite;
     /// Emit machine-readable JSON for an entire suite — parsed by
     /// scripts/bench_compare.py for cross-binding deltas.  Only linked
     /// when CONFIG_OVE_BENCHMARK_OUTPUT_JSON=y in the app's defconfig
@@ -146,6 +151,12 @@ pub fn native_freertos_suite() -> &'static CBenchSuite {
 pub fn native_nuttx_suite() -> &'static CBenchSuite {
     // SAFETY: same as `native_posix_suite` — link-time-fixed const.
     unsafe { &bench_suite_native_nuttx }
+}
+
+/// Safe accessor for the native Zephyr baseline suite.
+pub fn native_zephyr_suite() -> &'static CBenchSuite {
+    // SAFETY: same as `native_posix_suite` — link-time-fixed const.
+    unsafe { &bench_suite_native_zephyr }
 }
 
 /// Run every case in `suite` through the C harness, printing header,

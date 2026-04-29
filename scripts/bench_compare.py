@@ -296,6 +296,7 @@ def build_report(by_rtos, threshold_pct):
                 "native_posix":    "pthread",
                 "native_freertos": "FreeRTOS API",
                 "native_nuttx":    "NuttX API",
+                "native_zephyr":   "Zephyr API",
             }.get(native_suite, "native API")
             ipc_caveat = {
                 "native_posix": (
@@ -317,6 +318,19 @@ def build_report(by_rtos, threshold_pct):
                     "Event groups (FreeRTOS xEventGroup* mirrors oveRTOS "
                     "1:1, uninformative) and workqueues (no FreeRTOS "
                     "primitive) are intentionally absent.\n"
+                ),
+                "native_zephyr": (
+                    "**IPC caveat.** Zephyr's `k_msgq` is the kernel "
+                    "message queue (semantically narrower than the "
+                    "wrapper's user-space ring), and `k_pipe` is the "
+                    "kernel byte-stream primitive (the closest "
+                    "analogue to oveRTOS stream).  Both run in-kernel "
+                    "on Cortex-M, so wrapper-vs-native Δ on `Queue *` / "
+                    "`Stream *` rows reflects the binding overhead "
+                    "rather than user-space-vs-kernel asymmetry.  "
+                    "Event groups have no native peer (Zephyr's "
+                    "k_event mirrors oveRTOS event 1:1, uninformative "
+                    "as a comparison row); workqueues likewise.\n"
                 ),
                 "native_nuttx": (
                     "**IPC caveat.** NuttX's `Queue *` native baseline "

@@ -17,6 +17,7 @@ sources:
   - src/bench_native_posix.c
   - src/bench_native_freertos.c
   - src/bench_native_nuttx.c
+  - src/bench_native_zephyr.c
 includes:
   - include
 defconfig:

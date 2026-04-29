@@ -58,6 +58,12 @@ _PLATFORMS = {
         "rtos": "nuttx",
         "runner": "stm32_flash_serial",
     },
+    "stm32f746g-discovery-zephyr": {
+        "make_prefix": "stm32f746.zephyr",
+        "board": "stm32f746",
+        "rtos": "zephyr",
+        "runner": "stm32_flash_serial",
+    },
 }
 
 # config_name (== make app target) -> binding tag (== JSON `binding` field)
@@ -159,7 +165,7 @@ def _wait_until_bench_complete(serial_log, binding, start_offset, deadline):
     # the caller to thread the RTOS name through.
     end_re = re.compile(
         rb'"binding":"' + binding.encode() +
-        rb'","suite":"native_(?:freertos|nuttx)"'
+        rb'","suite":"native_(?:freertos|nuttx|zephyr)"'
     )
     while time.time() < deadline:
         try:

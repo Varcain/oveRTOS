@@ -1003,7 +1003,7 @@ fn benchmark_runner() {
     ove::log(b"[I] === oveRTOS Benchmark Suite ===\n");
     ove::log(b"[I] Iterations: 1000  Warmup: 100\n");
 
-    let suites: [&CBenchSuite; 11] = [
+    let suites: [&CBenchSuite; 12] = [
         &bench_suite_time,
         &bench_suite_thread,
         &bench_suite_sync,
@@ -1015,6 +1015,7 @@ fn benchmark_runner() {
         crate::bench::native_posix_suite(),
         crate::bench::native_freertos_suite(),
         crate::bench::native_nuttx_suite(),
+        crate::bench::native_zephyr_suite(),
     ];
 
     for suite in &suites {

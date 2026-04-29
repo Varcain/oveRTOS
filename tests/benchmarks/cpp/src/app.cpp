@@ -25,6 +25,7 @@ static const bench_suite_t *const suites[] = {
 	&bench_suite_workqueue,	   &bench_suite_stream,	    &bench_suite_native_posix,
 	&bench_suite_native_freertos,
 	&bench_suite_native_nuttx,
+	&bench_suite_native_zephyr,
 };
 
 static constexpr unsigned int SUITE_COUNT = sizeof(suites) / sizeof(suites[0]);

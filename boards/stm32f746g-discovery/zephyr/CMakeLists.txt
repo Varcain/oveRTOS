@@ -44,3 +44,24 @@ if(OVE_ZERO_HEAP)
         STRICT
         ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
 endif()
+
+#############################################################################
+# Benchmark apps (live under tests/benchmarks/<lang>/): force -O2 +
+# -fno-omit-frame-pointer.  Same audit/hotpath pipeline as FreeRTOS /
+# NuttX, attached to Zephyr's `zephyr_final` target with cross-scope
+# ELF_PATH (Zephyr's final-link is in a Zephyr-internal subscope).
+#############################################################################
+if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
+    target_compile_options(app PRIVATE -O2 -fno-omit-frame-pointer)
+    target_compile_definitions(app PRIVATE
+        OVE_APP_LANG_NAME=\"${OVE_APP_LANG}\")
+    include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveZeroOverheadAudit.cmake)
+    set(_audit_target_key "stm32f746_zephyr_benchmark_${OVE_APP_LANG}")
+    ove_assert_no_dispatch_overhead(app
+        BINDING ${OVE_APP_LANG}
+        ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
+    ove_dump_hotpaths(app
+        BINDING ${OVE_APP_LANG}
+        TARGET_KEY ${_audit_target_key}
+        ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
+endif()

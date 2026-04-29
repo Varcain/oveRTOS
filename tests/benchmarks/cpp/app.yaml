@@ -8,6 +8,7 @@ sources:
   - ../c/src/bench_native_posix.c
   - ../c/src/bench_native_freertos.c
   - ../c/src/bench_native_nuttx.c
+  - ../c/src/bench_native_zephyr.c
   - src/app.cpp
   - src/bench_time.cpp
   - src/bench_thread.cpp

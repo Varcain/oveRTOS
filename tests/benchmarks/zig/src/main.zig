@@ -791,6 +791,7 @@ comptime {
 extern const bench_suite_native_posix: bench.CBenchSuite;
 extern const bench_suite_native_freertos: bench.CBenchSuite;
 extern const bench_suite_native_nuttx: bench.CBenchSuite;
+extern const bench_suite_native_zephyr: bench.CBenchSuite;
 
 const suites = [_]*const bench.CBenchSuite{
     &time_suite,
@@ -804,6 +805,7 @@ const suites = [_]*const bench.CBenchSuite{
     &bench_suite_native_posix,
     &bench_suite_native_freertos,
     &bench_suite_native_nuttx,
+    &bench_suite_native_zephyr,
 };
 
 fn benchmarkRunner() void {
