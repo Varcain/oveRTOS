@@ -472,10 +472,19 @@ def build_posix(ws):
     if is_wasm:
         logger.info("Building WASM/Emscripten target")
 
-        # Find emcmake: first try downloaded emsdk, then PATH
-        emsdk_dir = os.path.join(ws.ws_dl_dir, "emsdk")
-        if not os.path.isdir(emsdk_dir):
-            emsdk_dir = os.path.join(ws.dl_dir, "emsdk")
+        # Find emcmake: first try downloaded emsdk, then PATH.
+        # Resolve through the per-workspace symlink to the canonical
+        # `dl/emsdk-<hash>/` realpath. Emscripten's sanity check stamps
+        # the absolute emsdk path into the cache; passing the symlinked
+        # `<workspace>/dl/emsdk` makes every app look like a different
+        # SDK install ("(Emscripten: config changed, clearing cache)"),
+        # and the in-flight zig @cImport then races the cache wipe and
+        # fails with FileNotFound on the sysroot headers.
+        emsdk_link = os.path.join(ws.ws_dl_dir, "emsdk")
+        if os.path.exists(emsdk_link):
+            emsdk_dir = os.path.realpath(emsdk_link)
+        else:
+            emsdk_dir = os.path.realpath(os.path.join(ws.dl_dir, "emsdk"))
         em_bin = os.path.join(emsdk_dir, "upstream", "emscripten")
         emcmake = os.path.join(em_bin, "emcmake")
         emmake = os.path.join(em_bin, "emmake")
@@ -499,6 +508,10 @@ def build_posix(ws):
         env["PATH"] = extra_path + os.pathsep + env.get("PATH", "")
         env["EMSDK"] = emsdk_dir
         env["EM_CONFIG"] = os.path.join(emsdk_dir, ".emscripten")
+        # Pin the emcc cache to the canonical SDK install rather than
+        # the workspace-local symlink, so concurrent allconfigs builds
+        # share one cache and don't race on per-app cache rebuilds.
+        env["EM_CACHE"] = os.path.join(emsdk_dir, "upstream", "emscripten", "cache")
 
         if not emmake or not os.path.isfile(emmake):
             emmake = os.path.join(em_bin, "emmake")
