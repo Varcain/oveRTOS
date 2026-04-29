@@ -46,8 +46,19 @@ set(CMAKE_SIZE "${TOOLCHAIN_PREFIX}size")
 
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-# CPU flags — Cortex-M7 with hardware FPv5-SP FPU.
+# CPU flags — Cortex-M7 with hardware FPv5-SP FPU (single-precision only).
 # -mcpu=cortex-m7 is canonical (GCC prefers it over -march for tuning).
+#
+# Note: STM32F746 has full DP FPU on hardware (fpv5-d16 capable), but the
+# bundled FreeRTOS Cortex-M7 port (`portable/GCC/ARM_CM7/r0p1/port.c`) is
+# only validated for SP — its context save/restore is `vstmdbeq r0!,
+# {s16-s31}` which covers callee-saved DP D8-D15 in register coverage but
+# the port has never been audited for DP-clean lazy stacking on STM32F7
+# silicon.  Empirically, switching to `-mfpu=fpv5-d16` causes the bench
+# to hang at the very first FPU-using case (HardFault under DP load).
+# Sticking with SP keeps soft-double routines (~3-5 KiB of `__aeabi_d*` /
+# `compiler_builtins::float`) in the binary but avoids the FreeRTOS port
+# bug.  Closing this would require validating + patching the kernel port.
 set(CPU_FLAGS "-mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-sp-d16")
 
 set(CMAKE_C_FLAGS_INIT "${CPU_FLAGS}")

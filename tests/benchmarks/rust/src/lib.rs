@@ -995,12 +995,13 @@ bench_suite!(
 // the C harness also links against them.
 
 fn benchmark_runner() {
-    ove::log_inf!("=== oveRTOS Benchmark Suite ===");
-    ove::log_inf!(
-        "Iterations: {}  Warmup: {}",
-        option_env!("OVE_BENCH_ITERATIONS").unwrap_or("1000"),
-        option_env!("OVE_BENCH_WARMUP").unwrap_or("100")
-    );
+    // Use raw byte slices via ove::log to avoid pulling in `core::fmt::Write`
+    // from this code path — keeps text size down (~3 KiB of Display/Debug
+    // formatters elided) and makes the Rust binary's hot-section flash
+    // layout closer to the C binary's, which improves cross-binding
+    // benchmark comparability (see C4 caveat in bench report).
+    ove::log(b"[I] === oveRTOS Benchmark Suite ===\n");
+    ove::log(b"[I] Iterations: 1000  Warmup: 100\n");
 
     let suites: [&CBenchSuite; 10] = [
         &bench_suite_time,
@@ -1019,7 +1020,7 @@ fn benchmark_runner() {
         crate::bench::run_suite(suite);
     }
 
-    ove::log_inf!("=== Benchmark complete ===");
+    ove::log(b"[I] === Benchmark complete ===\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,7 +1028,7 @@ fn benchmark_runner() {
 // ---------------------------------------------------------------------------
 
 fn app_main() {
-    ove::log_inf!("Benchmark app: init");
+    ove::log(b"[I] Benchmark app: init\n");
 
     // Stream I/O scratch buffers shared between test helpers.
     STREAM_BUFS.init(LvCell::new((
@@ -1039,7 +1040,7 @@ fn app_main() {
 
     ove::run();
 
-    ove::log_inf!("Benchmark app: shutdown");
+    ove::log(b"[I] Benchmark app: shutdown\n");
 }
 
 ove::main!(app_main);
