@@ -120,7 +120,10 @@ fn pong_thread() {
             let _ = ping.take(WAIT_FOREVER);
             pong.give();
         } else {
-            break;
+            // Don't `break` — see comment on contention_thread.  Helper
+            // must outlive the bench loop; transient try_get failures
+            // are non-fatal.
+            Thread::yield_now();
         }
     }
 }
@@ -239,6 +242,17 @@ fn mutex_create_destroy_run() {
 }
 
 // --- Mutex contention (2-thread throughput) ---
+//
+// The helper MUST stay alive for the duration of the bench — bailing
+// out via `break` on a transient `try_get == None` (e.g. cross-thread
+// visibility of SYNC_MTX under Relaxed ordering at thread spawn) makes
+// the contention test silently degenerate to single-threaded
+// (uncontested) measurement.  Observed empirically on Zephyr where
+// timeslicing exposed the race, while FreeRTOS happened not to (the
+// runner held the CPU until block).  Setup guarantees SYNC_MTX is
+// init'd before this thread is spawned, so the only None-cases are
+// "race not yet observed" (busy-wait on yield) or "teardown already
+// shutdown the mutex" (DONE flag also set, while-loop exits naturally).
 fn contention_thread() {
     while !SYNC_CONTENTION_DONE.load(Ordering::Relaxed) {
         if let Some(m) = SYNC_MTX.try_get() {
@@ -246,7 +260,7 @@ fn contention_thread() {
             SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
             m.unlock();
         } else {
-            break;
+            Thread::yield_now();
         }
     }
 }
@@ -320,7 +334,8 @@ fn evt_signaler() {
             e.signal();
             let _ = ack.wait(WAIT_FOREVER);
         } else {
-            break;
+            // See comment on contention_thread.
+            Thread::yield_now();
         }
     }
 }
@@ -372,7 +387,9 @@ fn cv_signaler() {
         if let Some(cv) = SYNC_CV.try_get() {
             cv.signal();
         } else {
-            break;
+            // See comment on contention_thread.
+            // (yield is already in the loop body below — this branch
+            // just falls through to the same yield via the next iter.)
         }
         Thread::yield_now();
     }
@@ -564,7 +581,8 @@ fn producer_thread() {
             let _ = q.send(&val, WAIT_FOREVER);
             val = val.wrapping_add(1);
         } else {
-            break;
+            // See comment on contention_thread.
+            Thread::yield_now();
         }
     }
 }
@@ -900,7 +918,8 @@ fn stream_producer() {
             let bufs = STREAM_BUFS.get().get();
             let _ = s.send(&bufs.0, WAIT_FOREVER);
         } else {
-            break;
+            // See comment on contention_thread.
+            Thread::yield_now();
         }
     }
 }
