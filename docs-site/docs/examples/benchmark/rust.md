@@ -1,6 +1,6 @@
 # Benchmark — Rust
 
-Source: `apps/rust/benchmark/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark_rust/){:target="_blank"}**
+Source: `tests/benchmarks/rust/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark_rust/){:target="_blank"}**
 
 Measures latency, throughput, and memory usage of all RTOS abstractions.
 

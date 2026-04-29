@@ -21,10 +21,10 @@ Each suite runs configurable iterations (default 1000) and reports min/max/avg/m
 
 | Language | Source | WASM Demo |
 |----------|--------|-----------|
-| [C](c.md) | `apps/c/benchmark/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/benchmark/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark_cpp/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/benchmark/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark_rust/){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/benchmark/` | *Not yet available* |
+| [C](c.md) | `tests/benchmarks/c/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark/){:target="_blank"}** |
+| [C++](cpp.md) | `tests/benchmarks/cpp/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark_cpp/){:target="_blank"}** |
+| [Rust](rust.md) | `tests/benchmarks/rust/` | **[Run in browser](https://varcain.github.io/oveRTOS/benchmark_rust/){:target="_blank"}** |
+| [Zig](zig.md) | `tests/benchmarks/zig/` | *Not yet available* |
 
 ## How to build
 

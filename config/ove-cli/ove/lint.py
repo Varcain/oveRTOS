@@ -72,12 +72,18 @@ def _clang_format(ove_dir, check):
 def _cargo_fmt(ove_dir, check):
     if not shutil.which("cargo"):
         return ("cargo fmt", "SKIP", "not installed")
-    # Format the binding crate plus every rust app crate found under apps/.
+    # Format the binding crate plus every rust app crate found under
+    # apps/rust/ and the rust benchmark crate under tests/benchmarks/.
     crates = [os.path.join(ove_dir, "bindings", "rust", "ove")]
-    apps_rust = os.path.join(ove_dir, "apps", "rust")
-    if os.path.isdir(apps_rust):
-        for entry in sorted(os.listdir(apps_rust)):
-            cargo = os.path.join(apps_rust, entry, "Cargo.toml")
+    rust_crate_roots = [
+        os.path.join(ove_dir, "apps", "rust"),
+        os.path.join(ove_dir, "tests", "benchmarks"),
+    ]
+    for root in rust_crate_roots:
+        if not os.path.isdir(root):
+            continue
+        for entry in sorted(os.listdir(root)):
+            cargo = os.path.join(root, entry, "Cargo.toml")
             if os.path.isfile(cargo):
                 crates.append(os.path.dirname(cargo))
     crates = [c for c in crates if os.path.isfile(

@@ -38,54 +38,72 @@ def _scan_app_dirs(dirs):
     return results
 
 
+def _scan_apps_dir(apps_dir, apps, app_paths):
+    """Scan a directory tree for app.yaml files in two layouts:
+       - flat:      <root>/<app>/app.yaml
+       - two-level: <root>/<lang>/<app>/app.yaml
+    Mutates `apps` and `app_paths` in place; later scans don't shadow
+    earlier ones (first wins on config_name collision)."""
+    if not os.path.isdir(apps_dir):
+        return
+    for subdir in sorted(os.listdir(apps_dir)):
+        subdir_path = os.path.join(apps_dir, subdir)
+        if not os.path.isdir(subdir_path):
+            continue
+        # flat: <root>/<app>/app.yaml
+        flat_yaml = os.path.join(subdir_path, "app.yaml")
+        if os.path.isfile(flat_yaml):
+            with open(flat_yaml) as f:
+                data = yaml.safe_load(f)
+            cname = data.get("config_name", subdir)
+            data["name"] = cname
+            data["config_name"] = cname.upper()
+            if cname not in app_paths:
+                apps.append(data)
+                app_paths[cname] = subdir_path
+            continue
+        # two-level: <root>/<lang>/<app>/app.yaml
+        for entry in sorted(os.listdir(subdir_path)):
+            app_yaml_path = os.path.join(subdir_path, entry, "app.yaml")
+            if os.path.isfile(app_yaml_path):
+                with open(app_yaml_path) as f:
+                    data = yaml.safe_load(f)
+                cname = data.get("config_name", entry)
+                data["name"] = cname
+                data["config_name"] = cname.upper()
+                if cname not in app_paths:
+                    apps.append(data)
+                    app_paths[cname] = os.path.join(subdir_path, entry)
+
+
 def generate_app_kconfig(ove_dir):
-    """Scan apps/*/app.yaml and external apps, generate Kconfig files.
+    """Scan in-tree app.yaml files and external apps, generate Kconfig.
 
     Must be called before kconfiglib parses Config.in, since the root
     Config.in sources output/kconfig/apps/Config.in.
 
-    External apps are discovered via the OVE_EXTERNAL_APPS environment
-    variable (colon-separated list of directories containing app.yaml).
+    Scans (in order, first-wins on name collisions):
+      - apps/<lang>/<app>/app.yaml or apps/<app>/app.yaml
+      - tests/benchmarks/<lang>/app.yaml (the cross-binding benchmark
+        suite — historically lived under apps/<lang>/benchmark, moved
+        out to make tests/benchmarks the canonical home for measurement
+        apps)
+      - $OVE_EXTERNAL_APPS — colon-separated dirs containing app.yaml
     """
     if yaml is None:
         print("Warning: pyyaml not installed, skipping app Kconfig generation")
         return
 
-    apps_dir = os.path.join(ove_dir, "apps")
-
-    # Scan in-tree apps (supports both flat and two-level layout).
-    # Two-level: apps/<lang>/<app>/app.yaml  (preferred)
-    # Flat:      apps/<app>/app.yaml          (backward compat)
     apps = []
     app_paths = {}  # config_name -> absolute path mapping
-    if os.path.isdir(apps_dir):
-        for subdir in sorted(os.listdir(apps_dir)):
-            subdir_path = os.path.join(apps_dir, subdir)
-            if not os.path.isdir(subdir_path):
-                continue
-            # Check flat layout: apps/<app>/app.yaml
-            flat_yaml = os.path.join(subdir_path, "app.yaml")
-            if os.path.isfile(flat_yaml):
-                with open(flat_yaml) as f:
-                    data = yaml.safe_load(f)
-                cname = data.get("config_name", subdir)
-                data["name"] = cname
-                data["config_name"] = cname.upper()
-                apps.append(data)
-                app_paths[cname] = subdir_path
-                continue
-            # Two-level layout: apps/<lang>/<app>/app.yaml
-            for entry in sorted(os.listdir(subdir_path)):
-                app_yaml_path = os.path.join(subdir_path, entry, "app.yaml")
-                if os.path.isfile(app_yaml_path):
-                    with open(app_yaml_path) as f:
-                        data = yaml.safe_load(f)
-                    cname = data.get("config_name", entry)
-                    data["name"] = cname
-                    data["config_name"] = cname.upper()
-                    if cname not in app_paths:
-                        apps.append(data)
-                        app_paths[cname] = os.path.join(subdir_path, entry)
+
+    # In-tree apps (apps/<lang>/<app> or apps/<app>).
+    _scan_apps_dir(os.path.join(ove_dir, "apps"), apps, app_paths)
+
+    # Benchmark test suite under tests/benchmarks/<lang>/ — same flat
+    # vs. two-level discovery rules; <lang> = c/cpp/rust/zig.
+    _scan_apps_dir(os.path.join(ove_dir, "tests", "benchmarks"),
+                   apps, app_paths)
 
     # Scan external apps from OVE_EXTERNAL_APPS env var
     ext_apps_env = os.environ.get("OVE_EXTERNAL_APPS", "")

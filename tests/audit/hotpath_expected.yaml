@@ -1,0 +1,848 @@
+# Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This file is part of oveRTOS.
+#
+# Hotpath golden file for scripts/dump_hotpaths.py.  Companion to
+# scripts/zero_overhead_audit.py.
+#
+# Covers every wrapper case that has a peer entry in
+# scripts/bench_compare.py's wrapper-vs-native table — threading,
+# mutex, semaphore, condvar/event, IPC.  Soft assertions:
+#   - max_instructions: generous cap, set roughly 1.5–2× the current
+#     measured count.  Compiler upgrades that shrink wrappers are
+#     fine (tighten manually if desired); blowups are caught.
+#
+# Hard assertions:
+#   - allowed_calls: list of permitted call/jmp targets.  Anything
+#     outside this set fails the build.  GOT-slot indirect calls in
+#     PIE binaries (Rust) are resolved to the underlying function name
+#     by dump_hotpaths.py, so allowed_calls reads naturally.
+#   - forbid_demangled: substrings that must NEVER appear in the
+#     demangled symbol name (vtables, typeinfo, dyn-trait dispatch).
+#
+# Stack-canary `__stack_chk_fail@plt` and Rust panic-path
+# `core::result::unwrap_failed` are linker-level safety nets that are
+# never reached on the happy path; they must be allow-listed because
+# the linker keeps them reachable from the bench setup/run code paths.
+#
+# Zig coverage uses stable suite-scoped exports (`zig_bench_run_<suite>_
+# <case>`) emitted by `bench.caseAudited(suite, spec)` in
+# `bindings/zig/ove/src/bench.zig`.  Without the explicit @export, Zig
+# emits anonymous numbered trampolines (`bench.case.Tramps.runTramp.<N>`)
+# whose ordering is rebuild-volatile — useless as audit targets.  The
+# `caseAudited` helper aliases each trampoline to a deterministic
+# symbol; main.zig opts cases in by calling `bench.caseAudited` instead
+# of `bench.case`.
+#
+# `debug.FullPanic((function 'defaultPanic')).unwrapNull` is the Zig
+# safety-check panic path emitted by `?T` unwrapping in setup paths
+# (e.g. `&native_mtx`-style optional dereference).  Linker keeps it
+# reachable; never reached on the happy path.
+
+# ============================================================================
+# C bench — symbol naming: <case>_run
+# ============================================================================
+host_posix_benchmark_c:
+  symbols:
+    # ─── Threading ─────────────────────────────────────────────
+    - name: "thread_yield_run (C)"
+      pattern: '^thread_yield_run$'
+      max_instructions: 8
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_sleep_1ms_run (C)"
+      pattern: '^thread_sleep_1ms_run$'
+      max_instructions: 8
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_create_destroy_run (C)"
+      pattern: '^thread_create_destroy_run$'
+      max_instructions: 40
+      allowed_calls: [ove_thread_create_, ove_thread_destroy, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "ctx_switch_run (C)"
+      pattern: '^ctx_switch_run$'
+      max_instructions: 16
+      allowed_calls: [ove_sem_give, ove_sem_take]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Mutex ─────────────────────────────────────────────────
+    - name: "mutex_lock_unlock_run (C)"
+      pattern: '^mutex_lock_unlock_run$'
+      max_instructions: 16
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "mutex_create_destroy_run (C)"
+      pattern: '^mutex_create_destroy_run$'
+      max_instructions: 28
+      allowed_calls: [ove_mutex_create, ove_mutex_destroy, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "mutex_contention_run (C)"
+      pattern: '^mutex_contention_run$'
+      max_instructions: 20
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "rmtx_lock_unlock_run (C)"
+      pattern: '^rmtx_lock_unlock_run$'
+      max_instructions: 16
+      allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Semaphore ────────────────────────────────────────────
+    - name: "sem_take_give_run (C)"
+      pattern: '^sem_take_give_run$'
+      max_instructions: 16
+      allowed_calls: [ove_sem_take, ove_sem_give]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "sem_create_destroy_run (C)"
+      pattern: '^sem_create_destroy_run$'
+      max_instructions: 28
+      allowed_calls: [ove_sem_create, ove_sem_destroy, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── Condvar / event ──────────────────────────────────────
+    - name: "condvar_signal_wait_run (C)"
+      pattern: '^condvar_signal_wait_run$'
+      max_instructions: 20
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "event_signal_wait_run (C)"
+      pattern: '^event_signal_wait_run$'
+      max_instructions: 12
+      allowed_calls: [ove_event_wait, ove_event_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── IPC (queue / stream) ─────────────────────────────────
+    - name: "queue_send_recv_run (C)"
+      pattern: '^queue_send_recv_run$'
+      max_instructions: 32
+      allowed_calls: [ove_queue_send, ove_queue_receive, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "queue_create_destroy_run (C)"
+      pattern: '^queue_create_destroy_run$'
+      max_instructions: 28
+      allowed_calls: [ove_queue_create, ove_queue_destroy, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "stream_send_recv_run (C)"
+      pattern: '^stream_send_recv_run$'
+      max_instructions: 40
+      allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+
+# ============================================================================
+# C++ bench — symbol naming:
+#   _ZN3ove5bench6detail14run_trampolineIL_ZL<NN><spec_name>EEEvPv
+#   (where <NN> is the strlen of <spec_name> + 5 = "_spec" suffix)
+# Some create_destroy paths additionally pull in __assert_fail@plt from
+# RAII null-checks in the wrappers.
+# ============================================================================
+host_posix_benchmark_cpp:
+  symbols:
+    # ─── Threading ─────────────────────────────────────────────
+    - name: "thread_yield trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL17thread_yield_specEEEvPv'
+      max_instructions: 8
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_sleep_1ms trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21thread_sleep_1ms_specEEEvPv'
+      max_instructions: 8
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_create_destroy trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL26thread_create_destroy_specEEEvPv'
+      max_instructions: 60
+      allowed_calls: [ove_thread_create_, ove_thread_destroy, __assert_fail@plt, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "ctx_switch trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL15ctx_switch_specEEEvPv'
+      max_instructions: 16
+      allowed_calls: [ove_sem_give, ove_sem_take]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Mutex ─────────────────────────────────────────────────
+    - name: "mutex_lock_unlock trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL22mutex_lock_unlock_specEEEvPv'
+      max_instructions: 16
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "operator new", "operator delete"]
+    - name: "mutex_create_destroy trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL25mutex_create_destroy_specEEEvPv'
+      max_instructions: 50
+      allowed_calls: [ove_mutex_create, ove_mutex_destroy, __assert_fail@plt, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "operator new", "operator delete"]
+    - name: "mutex_contention trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21mutex_contention_specEEEvPv'
+      max_instructions: 20
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "operator new"]
+    - name: "rmtx_lock_unlock trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21rmtx_lock_unlock_specEEEvPv'
+      max_instructions: 16
+      allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── Semaphore ────────────────────────────────────────────
+    - name: "sem_take_give trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL18sem_take_give_specEEEvPv'
+      max_instructions: 16
+      allowed_calls: [ove_sem_take, ove_sem_give]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "sem_create_destroy trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL23sem_create_destroy_specEEEvPv'
+      max_instructions: 48
+      allowed_calls: [ove_sem_create, ove_sem_destroy, __assert_fail@plt, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── Condvar / event ──────────────────────────────────────
+    - name: "condvar_signal_wait trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL24condvar_signal_wait_specEEEvPv'
+      max_instructions: 20
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "event_signal_wait trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL22event_signal_wait_specEEEvPv'
+      max_instructions: 12
+      allowed_calls: [ove_event_wait, ove_event_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── IPC (queue / stream) ─────────────────────────────────
+    - name: "queue_send_recv trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL20queue_send_recv_specEEEvPv'
+      max_instructions: 32
+      allowed_calls: [ove_queue_send, ove_queue_receive, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "queue_create_destroy trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL25queue_create_destroy_specEEEvPv'
+      max_instructions: 48
+      allowed_calls: [ove_queue_create, ove_queue_destroy, __assert_fail@plt, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "stream_send_recv trampoline (C++)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21stream_send_recv_specEEEvPv'
+      max_instructions: 40
+      allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail@plt]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+
+# ============================================================================
+# Rust bench — symbol naming: _ZN<crate><CASE>11__run_tramp17h<hash>E
+# OnceCell init guards add ~5 instructions over the equivalent C path;
+# `core::result::unwrap_failed` is the panic path and is allow-listed
+# but never reached on the happy path.  GOT-slot indirect calls are
+# resolved by dump_hotpaths.py, so allowed_calls reads naturally.
+# ============================================================================
+host_posix_benchmark_rust:
+  symbols:
+    # ─── Threading ─────────────────────────────────────────────
+    - name: "Rust THREAD_YIELD::__run_tramp"
+      pattern: '_ZN.+THREAD_YIELD11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 8
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::"]
+    - name: "Rust THREAD_SLEEP_1MS::__run_tramp"
+      pattern: '_ZN.+THREAD_SLEEP_1MS11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 8
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::"]
+    - name: "Rust THREAD_CREATE_DESTROY::__run_tramp"
+      pattern: '_ZN.+THREAD_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 60
+      # spawn() is the safe wrapper that ultimately calls ove_thread_create_;
+      # destroy reaches ove_thread_destroy via Drop on the Thread handle.
+      # `*` suffix matches any monomorphisation hash (rebuild-volatile).
+      allowed_calls:
+        - "_ZN3ove6thread6Thread5spawn17h*"
+        - ove_thread_destroy
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust THREAD_CTX_SWITCH::__run_tramp"
+      pattern: '_ZN.+THREAD_CTX_SWITCH11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 24
+      allowed_calls:
+        - ove_sem_give
+        - ove_sem_take
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Mutex ─────────────────────────────────────────────────
+    - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp"
+      pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 22
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::", "alloc::alloc::"]
+    - name: "Rust MUTEX_CREATE_DESTROY::__run_tramp"
+      pattern: '_ZN.+MUTEX_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 36
+      allowed_calls:
+        - "_ZN3ove4sync5Mutex3new17h*"
+        - ove_mutex_destroy
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust MUTEX_CONTENTION_2T::__run_tramp"
+      pattern: '_ZN.+MUTEX_CONTENTION_2T11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 24
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp"
+      pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 22
+      allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Semaphore ────────────────────────────────────────────
+    - name: "Rust SEM_TAKE_GIVE::__run_tramp"
+      pattern: '_ZN.+SEM_TAKE_GIVE11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 22
+      allowed_calls: [ove_sem_take, ove_sem_give]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::", "alloc::alloc::"]
+    - name: "Rust SEM_CREATE_DESTROY::__run_tramp"
+      pattern: '_ZN.+SEM_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 36
+      allowed_calls:
+        - "_ZN3ove4sync9Semaphore3new17h*"
+        - ove_sem_destroy
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Condvar / event ──────────────────────────────────────
+    - name: "Rust CONDVAR_SIGNAL_WAIT::__run_tramp"
+      pattern: '_ZN.+CONDVAR_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - ove_condvar_wait
+        - ove_condvar_signal
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust EVENT_SIGNAL_WAIT::__run_tramp"
+      pattern: '_ZN.+EVENT_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 16
+      allowed_calls: [ove_event_wait, ove_event_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── IPC (queue / stream) ─────────────────────────────────
+    - name: "Rust QUEUE_SEND_RECEIVE::__run_tramp"
+      pattern: '_ZN.+QUEUE_SEND_RECEIVE11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 28
+      allowed_calls: [ove_queue_send, ove_queue_receive]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust QUEUE_CREATE_DESTROY::__run_tramp"
+      pattern: '_ZN.+QUEUE_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 36
+      allowed_calls:
+        - "_ZN3ove5queue18Queue$LT$T$C$_$GT$3new17h*"
+        - ove_queue_destroy
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust STREAM_SEND_RECV_64B::__run_tramp"
+      pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 56
+      allowed_calls:
+        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
+        - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+
+# ============================================================================
+# Zig bench — symbol naming: zig_bench_run_<suite>_<case>
+# Stable export emitted by `bench.caseAudited(suite_tag, spec)` in
+# `bindings/zig/ove/src/bench.zig`.  The Zig safety-check panic path
+# (`debug.FullPanic((function 'defaultPanic')).unwrapNull`) is allow-
+# listed where the run fn dereferences an optional (`?T`) — never
+# reached on the happy path.
+# ============================================================================
+host_posix_benchmark_zig:
+  symbols:
+    # ─── Threading ─────────────────────────────────────────────
+    - name: "Zig zig_bench_run_thread_yield"
+      pattern: '^zig_bench_run_thread_yield$'
+      max_instructions: 8
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_thread_sleep_1ms"
+      pattern: '^zig_bench_run_thread_sleep_1ms$'
+      max_instructions: 10
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_thread_create_destroy"
+      pattern: '^zig_bench_run_thread_create_destroy$'
+      max_instructions: 40
+      allowed_calls: [ove_thread_create_, ove_thread_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_thread_context_switch"
+      pattern: '^zig_bench_run_thread_context_switch$'
+      max_instructions: 24
+      allowed_calls:
+        - ove_sem_give
+        - ove_sem_take
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Mutex ─────────────────────────────────────────────────
+    - name: "Zig zig_bench_run_sync_mutex_lock_unlock"
+      pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
+      max_instructions: 22
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_mutex_create_destroy"
+      pattern: '^zig_bench_run_sync_mutex_create_destroy$'
+      max_instructions: 28
+      allowed_calls: [ove_mutex_create, ove_mutex_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_mutex_contention_2t"
+      pattern: '^zig_bench_run_sync_mutex_contention_2t$'
+      max_instructions: 24
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock"
+      pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
+      max_instructions: 22
+      allowed_calls:
+        - ove_recursive_mutex_lock
+        - ove_recursive_mutex_unlock
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Semaphore ────────────────────────────────────────────
+    - name: "Zig zig_bench_run_sync_sem_take_give"
+      pattern: '^zig_bench_run_sync_sem_take_give$'
+      max_instructions: 22
+      allowed_calls:
+        - ove_sem_take
+        - ove_sem_give
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_sem_create_destroy"
+      pattern: '^zig_bench_run_sync_sem_create_destroy$'
+      max_instructions: 28
+      allowed_calls: [ove_sem_create, ove_sem_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Condvar / event ──────────────────────────────────────
+    - name: "Zig zig_bench_run_sync_condvar_signal_wait"
+      pattern: '^zig_bench_run_sync_condvar_signal_wait$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - ove_condvar_wait
+        - ove_condvar_signal
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_event_signal_wait"
+      pattern: '^zig_bench_run_sync_event_signal_wait$'
+      max_instructions: 16
+      allowed_calls:
+        - ove_event_wait
+        - ove_event_signal
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── IPC (queue / stream) ─────────────────────────────────
+    - name: "Zig zig_bench_run_queue_send_receive"
+      pattern: '^zig_bench_run_queue_send_receive$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_queue_send
+        - ove_queue_receive
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_queue_create_destroy"
+      pattern: '^zig_bench_run_queue_create_destroy$'
+      max_instructions: 28
+      allowed_calls: [ove_queue_create, ove_queue_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_stream_send_recv_64B"
+      pattern: '^zig_bench_run_stream_send_recv_64B$'
+      max_instructions: 40
+      allowed_calls:
+        - ove_stream_send
+        - ove_stream_receive
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+
+# ============================================================================
+# ARM Cortex-M (STM32F746-Discovery + FreeRTOS) bench targets
+# ============================================================================
+# Same case naming conventions as the host_posix targets, just with
+# FreeRTOS native primitives (xSemaphore*, xQueue*, xTaskNotify*) in
+# the allowed_calls.  ARM disasm uses `bl` for calls and `b.w` for
+# tail jumps; both are recognised by dump_hotpaths.py.
+# ============================================================================
+stm32f746_freertos_benchmark_c:
+  symbols:
+    # ─── Threading ─────────────────────────────────────────────
+    - name: "thread_yield_run (C, ARM)"
+      pattern: '^thread_yield_run$'
+      max_instructions: 10
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_sleep_1ms_run (C, ARM)"
+      pattern: '^thread_sleep_1ms_run$'
+      max_instructions: 12
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_create_destroy_run (C, ARM)"
+      pattern: '^thread_create_destroy_run$'
+      max_instructions: 48
+      allowed_calls: [ove_thread_create_, ove_thread_destroy, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "ctx_switch_run (C, ARM)"
+      pattern: '^ctx_switch_run$'
+      max_instructions: 24
+      allowed_calls: [ove_sem_give, ove_sem_take]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Mutex ─────────────────────────────────────────────────
+    - name: "mutex_lock_unlock_run (C, ARM)"
+      pattern: '^mutex_lock_unlock_run$'
+      max_instructions: 18
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "mutex_create_destroy_run (C, ARM)"
+      pattern: '^mutex_create_destroy_run$'
+      max_instructions: 20
+      allowed_calls: [ove_mutex_create, ove_mutex_destroy, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "mutex_contention_run (C, ARM)"
+      pattern: '^mutex_contention_run$'
+      max_instructions: 24
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "rmtx_lock_unlock_run (C, ARM)"
+      pattern: '^rmtx_lock_unlock_run$'
+      max_instructions: 18
+      allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # ─── Semaphore ────────────────────────────────────────────
+    - name: "sem_take_give_run (C, ARM)"
+      pattern: '^sem_take_give_run$'
+      max_instructions: 18
+      allowed_calls: [ove_sem_take, ove_sem_give]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "sem_create_destroy_run (C, ARM)"
+      pattern: '^sem_create_destroy_run$'
+      max_instructions: 20
+      allowed_calls: [ove_sem_create, ove_sem_destroy, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── Condvar / event ──────────────────────────────────────
+    - name: "condvar_signal_wait_run (C, ARM)"
+      pattern: '^condvar_signal_wait_run$'
+      max_instructions: 28
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "event_signal_wait_run (C, ARM)"
+      pattern: '^event_signal_wait_run$'
+      max_instructions: 16
+      allowed_calls: [ove_event_wait, ove_event_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    # ─── IPC (queue / stream) ─────────────────────────────────
+    - name: "queue_send_recv_run (C, ARM)"
+      pattern: '^queue_send_recv_run$'
+      max_instructions: 32
+      allowed_calls: [ove_queue_send, ove_queue_receive, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "queue_create_destroy_run (C, ARM)"
+      pattern: '^queue_create_destroy_run$'
+      max_instructions: 20
+      allowed_calls: [ove_queue_create, ove_queue_destroy, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "stream_send_recv_run (C, ARM)"
+      pattern: '^stream_send_recv_run$'
+      max_instructions: 40
+      allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+
+stm32f746_freertos_benchmark_cpp:
+  symbols:
+    - name: "thread_yield trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL17thread_yield_specEEEvPv'
+      max_instructions: 10
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_sleep_1ms trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21thread_sleep_1ms_specEEEvPv'
+      max_instructions: 12
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "thread_create_destroy trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL26thread_create_destroy_specEEEvPv'
+      max_instructions: 80
+      allowed_calls: [ove_thread_create_, ove_thread_destroy, __assert_func, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "ctx_switch trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL15ctx_switch_specEEEvPv'
+      max_instructions: 24
+      allowed_calls: [ove_sem_give, ove_sem_take]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "mutex_lock_unlock trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL22mutex_lock_unlock_specEEEvPv'
+      max_instructions: 18
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "operator new", "operator delete"]
+    - name: "mutex_create_destroy trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL25mutex_create_destroy_specEEEvPv'
+      max_instructions: 60
+      allowed_calls: [ove_mutex_create, ove_mutex_destroy, __assert_func, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "operator new"]
+    - name: "mutex_contention trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21mutex_contention_specEEEvPv'
+      max_instructions: 24
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "rmtx_lock_unlock trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21rmtx_lock_unlock_specEEEvPv'
+      max_instructions: 18
+      allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "sem_take_give trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL18sem_take_give_specEEEvPv'
+      max_instructions: 18
+      allowed_calls: [ove_sem_take, ove_sem_give]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "sem_create_destroy trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL23sem_create_destroy_specEEEvPv'
+      max_instructions: 56
+      allowed_calls: [ove_sem_create, ove_sem_destroy, __assert_func, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "condvar_signal_wait trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL24condvar_signal_wait_specEEEvPv'
+      max_instructions: 28
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock, ove_condvar_wait, ove_condvar_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "event_signal_wait trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL22event_signal_wait_specEEEvPv'
+      max_instructions: 16
+      allowed_calls: [ove_event_wait, ove_event_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "queue_send_recv trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL20queue_send_recv_specEEEvPv'
+      max_instructions: 32
+      allowed_calls: [ove_queue_send, ove_queue_receive, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "queue_create_destroy trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL25queue_create_destroy_specEEEvPv'
+      max_instructions: 56
+      allowed_calls: [ove_queue_create, ove_queue_destroy, __assert_func, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+    - name: "stream_send_recv trampoline (C++, ARM)"
+      pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL21stream_send_recv_specEEEvPv'
+      max_instructions: 40
+      allowed_calls: [ove_stream_send, ove_stream_receive, __stack_chk_fail]
+      forbid_demangled: ["vtable for ", "typeinfo for "]
+
+stm32f746_freertos_benchmark_rust:
+  symbols:
+    - name: "Rust THREAD_YIELD::__run_tramp (ARM)"
+      pattern: '_ZN.+THREAD_YIELD11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 12
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::"]
+    - name: "Rust THREAD_SLEEP_1MS::__run_tramp (ARM)"
+      pattern: '_ZN.+THREAD_SLEEP_1MS11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 12
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::"]
+    - name: "Rust THREAD_CREATE_DESTROY::__run_tramp (ARM)"
+      pattern: '_ZN.+THREAD_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 80
+      allowed_calls:
+        - "_ZN3ove6thread6Thread5spawn17h*"
+        - ove_thread_destroy
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust THREAD_CTX_SWITCH::__run_tramp (ARM)"
+      pattern: '_ZN.+THREAD_CTX_SWITCH11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_sem_give
+        - ove_sem_take
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp (ARM)"
+      pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 28
+      allowed_calls: [ove_mutex_lock, ove_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::", "alloc::alloc::"]
+    - name: "Rust MUTEX_CREATE_DESTROY::__run_tramp (ARM)"
+      pattern: '_ZN.+MUTEX_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 48
+      allowed_calls:
+        # ARM optimiser inlines `ove::sync::Mutex::new` further than
+        # x86 does — direct ove_mutex_create + Error::from_code branch.
+        - ove_mutex_create
+        - ove_mutex_destroy
+        - "_ZN3ove4sync5Mutex3new17h*"
+        - "_ZN3ove5error5Error9from_code17h*"
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust MUTEX_CONTENTION_2T::__run_tramp (ARM)"
+      pattern: '_ZN.+MUTEX_CONTENTION_2T11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp (ARM)"
+      pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 28
+      allowed_calls: [ove_recursive_mutex_lock, ove_recursive_mutex_unlock]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust SEM_TAKE_GIVE::__run_tramp (ARM)"
+      pattern: '_ZN.+SEM_TAKE_GIVE11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 28
+      allowed_calls: [ove_sem_take, ove_sem_give]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "core::panicking::", "alloc::alloc::"]
+    - name: "Rust SEM_CREATE_DESTROY::__run_tramp (ARM)"
+      pattern: '_ZN.+SEM_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 48
+      allowed_calls:
+        - ove_sem_create
+        - ove_sem_destroy
+        - "_ZN3ove4sync9Semaphore3new17h*"
+        - "_ZN3ove5error5Error9from_code17h*"
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust CONDVAR_SIGNAL_WAIT::__run_tramp (ARM)"
+      pattern: '_ZN.+CONDVAR_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 40
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - ove_condvar_wait
+        - ove_condvar_signal
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust EVENT_SIGNAL_WAIT::__run_tramp (ARM)"
+      pattern: '_ZN.+EVENT_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 20
+      allowed_calls: [ove_event_wait, ove_event_signal]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust QUEUE_SEND_RECEIVE::__run_tramp (ARM)"
+      pattern: '_ZN.+QUEUE_SEND_RECEIVE11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 36
+      allowed_calls:
+        - ove_queue_send
+        - ove_queue_receive
+        # Queue::receive wrapper kept as a real call on ARM (not inlined).
+        - "_ZN3ove5queue18Queue$LT$T$C$_$GT$7receive17h*"
+        - "_ZN3ove5queue18Queue$LT$T$C$_$GT$4send17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
+    - name: "Rust QUEUE_CREATE_DESTROY::__run_tramp (ARM)"
+      pattern: '_ZN.+QUEUE_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 48
+      allowed_calls:
+        - "_ZN3ove5queue18Queue$LT$T$C$_$GT$3new17h*"
+        - ove_queue_destroy
+        - "_ZN4core6result13unwrap_failed17h*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Rust STREAM_SEND_RECV_64B::__run_tramp (ARM)"
+      pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
+      max_instructions: 70
+      allowed_calls:
+        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
+        - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
+        # ARM EABI memcpy intrinsic emitted for the 64-byte buffer init.
+        - __aeabi_memcpy
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+
+stm32f746_freertos_benchmark_zig:
+  symbols:
+    - name: "Zig zig_bench_run_thread_yield (ARM)"
+      pattern: '^zig_bench_run_thread_yield$'
+      max_instructions: 12
+      allowed_calls: [ove_thread_yield]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_thread_sleep_1ms (ARM)"
+      pattern: '^zig_bench_run_thread_sleep_1ms$'
+      max_instructions: 12
+      allowed_calls: [ove_thread_sleep_ms]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_thread_create_destroy (ARM)"
+      pattern: '^zig_bench_run_thread_create_destroy$'
+      max_instructions: 56
+      allowed_calls: [ove_thread_create_, ove_thread_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_thread_context_switch (ARM)"
+      pattern: '^zig_bench_run_thread_context_switch$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_sem_give
+        - ove_sem_take
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_mutex_lock_unlock (ARM)"
+      pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
+      max_instructions: 28
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_mutex_create_destroy (ARM)"
+      pattern: '^zig_bench_run_sync_mutex_create_destroy$'
+      max_instructions: 36
+      allowed_calls: [ove_mutex_create, ove_mutex_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_mutex_contention_2t (ARM)"
+      pattern: '^zig_bench_run_sync_mutex_contention_2t$'
+      max_instructions: 32
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock (ARM)"
+      pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
+      max_instructions: 28
+      allowed_calls:
+        - ove_recursive_mutex_lock
+        - ove_recursive_mutex_unlock
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_sem_take_give (ARM)"
+      pattern: '^zig_bench_run_sync_sem_take_give$'
+      max_instructions: 28
+      allowed_calls:
+        - ove_sem_take
+        - ove_sem_give
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_sem_create_destroy (ARM)"
+      pattern: '^zig_bench_run_sync_sem_create_destroy$'
+      max_instructions: 36
+      allowed_calls: [ove_sem_create, ove_sem_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_condvar_signal_wait (ARM)"
+      pattern: '^zig_bench_run_sync_condvar_signal_wait$'
+      max_instructions: 40
+      allowed_calls:
+        - ove_mutex_lock
+        - ove_mutex_unlock
+        - ove_condvar_wait
+        - ove_condvar_signal
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_sync_event_signal_wait (ARM)"
+      pattern: '^zig_bench_run_sync_event_signal_wait$'
+      max_instructions: 20
+      allowed_calls:
+        - ove_event_wait
+        - ove_event_signal
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_queue_send_receive (ARM)"
+      pattern: '^zig_bench_run_queue_send_receive$'
+      max_instructions: 40
+      allowed_calls:
+        - ove_queue_send
+        - ove_queue_receive
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_queue_create_destroy (ARM)"
+      pattern: '^zig_bench_run_queue_create_destroy$'
+      max_instructions: 36
+      allowed_calls: [ove_queue_create, ove_queue_destroy]
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    - name: "Zig zig_bench_run_stream_send_recv_64B (ARM)"
+      pattern: '^zig_bench_run_stream_send_recv_64B$'
+      max_instructions: 50
+      allowed_calls:
+        - ove_stream_send
+        - ove_stream_receive
+        - "debug.FullPanic*"
+      forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]

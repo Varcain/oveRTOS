@@ -55,8 +55,6 @@ mod panic;
 
 #[cfg(has_audio)]
 pub mod audio;
-#[cfg(feature = "bench")]
-pub mod bench;
 #[cfg(not(docsrs))]
 pub(crate) mod bindings;
 #[cfg(docsrs)]

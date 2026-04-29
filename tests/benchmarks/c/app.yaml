@@ -1,0 +1,65 @@
+lang: c
+config_name: benchmark
+description: "RTOS Abstraction Benchmark"
+sources:
+  - src/app.c
+  - src/bench_harness.c
+  - src/bench_output.c
+  - src/bench_memory.c
+  - src/bench_time.c
+  - src/bench_thread.c
+  - src/bench_sync.c
+  - src/bench_queue.c
+  - src/bench_timer.c
+  - src/bench_eventgroup.c
+  - src/bench_workqueue.c
+  - src/bench_stream.c
+  - src/bench_native_posix.c
+  - src/bench_native_freertos.c
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_QUEUE=y
+  - CONFIG_OVE_TIMER=y
+  - CONFIG_OVE_EVENTGROUP=y
+  - CONFIG_OVE_WORKQUEUE=y
+  - CONFIG_OVE_STREAM=y
+  - CONFIG_OVE_SIM_DASHBOARD=n
+  # Disable observability hooks that add per-call overhead. Documented
+  # in Config.in.debug as adding ~100ns per sync op for trace markers.
+  # The zero-overhead claim only holds with these off; bench numbers
+  # would otherwise reflect tracing cost rather than the wrapper layer.
+  - CONFIG_OVE_TRACE_MARKERS=n
+  - CONFIG_OVE_TRACE_STREAM=n
+  - CONFIG_OVE_THREAD_STATE_STATS=n
+kconfig: |
+  config OVE_BENCHMARK_ITERATIONS
+  	int "Number of measurement iterations per benchmark case"
+  	default 1000
+
+  config OVE_BENCHMARK_WARMUP
+  	int "Number of warmup iterations before measurement"
+  	default 100
+
+  config OVE_BENCHMARK_INCLUDE_MEMORY
+  	bool "Include memory usage benchmarks"
+  	default y
+
+  config OVE_BENCHMARK_PERCENTILES
+  	bool "Compute p50/p95/p99 + trimmed mean + stddev per case"
+  	default y
+  	help
+  	  Stash per-iteration timings in an 8 KiB buffer and post-process
+  	  to derive percentile statistics and a trimmed mean (top 1%
+  	  dropped — robust against scheduler jitter).  Disable on the
+  	  smallest targets to save the buffer; min/max/avg still work.
+
+  config OVE_BENCHMARK_OUTPUT_JSON
+  	bool "Also emit machine-readable JSON output"
+  	default y
+  	help
+  	  In addition to the human ASCII table, emit per-suite JSON
+  	  bracketed by ###BENCH_JSON_BEGIN / ###BENCH_JSON_END sentinels.
+  	  Consumed by scripts/bench_compare.py for cross-binding diff
+  	  reports.

@@ -1,6 +1,6 @@
 # Benchmark — C
 
-Source: `apps/c/benchmark/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark/){:target="_blank"}**
+Source: `tests/benchmarks/c/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark/){:target="_blank"}**
 
 Measures latency, throughput, and memory usage of all RTOS abstractions.
 

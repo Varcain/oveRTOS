@@ -100,3 +100,26 @@ ove_link_firmware(
     STM32F746NGHx_FLASH.ld
     PRINT_SIZE_CMAKE cmake/print_size.cmake
 )
+
+#############################################################################
+# Benchmark apps (live under tests/benchmarks/<lang>/): force -O2 +
+# -fno-omit-frame-pointer.  STM32F746/FreeRTOS inherits OVE_DEBUG_BUILD=y
+# from the board defconfig (-> -g -O0); under -O0 the binding wrappers
+# don't inline, so neither the static audit nor the runtime measurements
+# would reflect the README's "zero overhead" claim.  Frame pointers stay
+# on for the sim profiler's backtrace walker and the FreeRTOS-openocd
+# integration.
+# Audit + hotpath disassembly run as POST_BUILD on firmware.elf.
+#############################################################################
+if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
+    target_compile_options(firmware.elf PRIVATE -O2 -fno-omit-frame-pointer)
+    target_compile_definitions(firmware.elf PRIVATE
+        OVE_APP_LANG_NAME=\"${OVE_APP_LANG}\")
+    include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
+    set(_audit_target_key "stm32f746_freertos_benchmark_${OVE_APP_LANG}")
+    ove_assert_no_dispatch_overhead(firmware.elf
+        BINDING ${OVE_APP_LANG})
+    ove_dump_hotpaths(firmware.elf
+        BINDING ${OVE_APP_LANG}
+        TARGET_KEY ${_audit_target_key})
+endif()

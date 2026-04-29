@@ -79,6 +79,29 @@ ove_posix_link(
 )
 
 #############################################################################
+# Benchmark apps (live under tests/benchmarks/<lang>/): force -O2 +
+# -fno-omit-frame-pointer.  Host POSIX selects OVE_DEBUG_BUILD by default
+# (-> -g -O0), but the README's "zero overhead" claim only holds at
+# production optimization — under -O0 the binding wrappers don't inline.
+# Override the directory-level -O0 with a target-level -O2 so both the
+# static audit and the runtime measurements reflect a real release build.
+# Frame pointers stay on for the sim profiler's backtrace walker.
+#
+# Static + hotpath audits also run as POST_BUILD steps on the benchmark
+# binaries — proves no vtables/typeinfo/dispatch-tables leaked into any
+# binding, and that wrapper layers compile to the expected inlined call
+# sequence.
+#############################################################################
+if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
+    target_compile_options(ove_posix PRIVATE -O2 -fno-omit-frame-pointer)
+    target_compile_definitions(ove_posix PRIVATE
+        OVE_APP_LANG_NAME=\"${OVE_APP_LANG}\")
+    include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
+    ove_assert_no_dispatch_overhead(ove_posix BINDING ${OVE_APP_LANG})
+    ove_dump_hotpaths(ove_posix BINDING ${OVE_APP_LANG})
+endif()
+
+#############################################################################
 # Print configuration
 #############################################################################
 message(STATUS "oveRTOS POSIX build (browser dashboard)")

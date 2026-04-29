@@ -1,6 +1,6 @@
 # Benchmark — C++
 
-Source: `apps/cpp/benchmark/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark_cpp/){:target="_blank"}**
+Source: `tests/benchmarks/cpp/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/benchmark_cpp/){:target="_blank"}**
 
 Measures latency, throughput, and memory usage of all RTOS abstractions.
 

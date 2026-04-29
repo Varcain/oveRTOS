@@ -9,15 +9,10 @@ license = "GPL-3.0-or-later"
 default = ["panic-handler"]
 std = []
 panic-handler = []
-# Enables the `ove::bench` harness wrappers. Requires the app to link the
-# C harness (apps/c/benchmark/src/bench_harness.c + bench_output.c);
-# omitting the feature keeps those extern symbols out of the rlib so other
-# apps that don't need the harness can link cleanly.
-bench = []
 
 [build-dependencies]
 bindgen = "0.72"
 
 [package.metadata.docs.rs]
-features = ["std", "bench"]
+features = ["std"]
 rustdoc-args = ["--cfg", "docsrs"]
