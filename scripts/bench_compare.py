@@ -319,15 +319,21 @@ def build_report(by_rtos, threshold_pct):
                     "primitive) are intentionally absent.\n"
                 ),
                 "native_nuttx": (
-                    "**IPC caveat.** NuttX's queue baseline is `mq_*` "
-                    "(POSIX message queue, kernel-side), while oveRTOS "
-                    "queue on NuttX is a user-space ring buffer over "
-                    "pthread_mutex+cond — same shape as on POSIX.  The "
-                    "`Stream *` rows have no native peer (NuttX has no "
-                    "byte-stream kernel primitive — `CONFIG_PIPES` is "
-                    "off in the bench defconfig); event groups and "
-                    "workqueues likewise have no NuttX equivalent and "
-                    "are intentionally absent.\n"
+                    "**IPC caveat.** NuttX's `Queue *` native baseline "
+                    "uses `mq_*` (POSIX message queue, kernel-side via "
+                    "VFS path registration under `/var/mqueue/`), while "
+                    "oveRTOS queue on NuttX is a user-space ring buffer "
+                    "over `pthread_mutex+cond` — semantically narrower "
+                    "than mq.  Large negative Δ on `Queue *` rows "
+                    "reflects that semantic asymmetry, not wrapper "
+                    "magic.  `Stream *` rows have no native peer at "
+                    "all: oveRTOS stream on NuttX is itself a user-"
+                    "space ring buffer over pthread_mutex+cond, and "
+                    "NuttX has no kernel byte-stream primitive that "
+                    "would be apples-to-apples (its closest, pipes, is "
+                    "a different abstraction with VFS overhead).  "
+                    "Event groups and workqueues likewise have no "
+                    "NuttX equivalent and are absent.\n"
                 ),
             }.get(native_suite, "")
             lines.append(

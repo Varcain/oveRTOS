@@ -37,9 +37,23 @@
 #include <semaphore.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+
+/* NuttX kernel task API — used by `native_thread_create_destroy` to
+ * match the wrapper's semantics (the wrapper's `ove_thread_create_`
+ * uses `task_create` for independent task lifetime, mirroring
+ * FreeRTOS `xTaskCreateStatic` semantics).  Comparing against
+ * pthread_create here would understate wrapper overhead since pthread
+ * shares the parent's task_group_s and skips ~140 µs of group_alloc
+ * that task_create pays per call.  See `backends/nuttx/nuttx_thread.c`
+ * comment around `task_create()` for why the wrapper picked that
+ * primitive. */
+#include <nuttx/sched.h>
 
 /* ─── Shared state ─────────────────────────────────────────────── */
 
@@ -323,18 +337,37 @@ static void native_thread_sleep_1ms_run(void *ctx)
 
 /* ─── Thread: create/destroy ──────────────────────────────────── */
 
-static void *native_thread_noop(void *arg)
+/* The wrapper's `ove_thread_create_` uses NuttX `task_create()` (full
+ * independent-task semantics matching FreeRTOS xTaskCreateStatic), not
+ * `pthread_create()`.  `task_create` runs `group_allocate()` per call
+ * (~140 µs on STM32F7) which pthread skips by sharing the parent's
+ * task_group_s.  Match the wrapper's primitive here so the wrapper-vs-
+ * native delta reflects pure binding overhead rather than the
+ * task-vs-pthread cost asymmetry.
+ *
+ * `task_create` takes argv-style entry; we encode the noop entry as
+ * argv[0] (the task name) — `argv[1] == NULL` so the entry function
+ * sees "no args" and returns immediately. */
+
+static int native_task_noop(int argc, char *argv[])
 {
-	(void)arg;
-	return NULL;
+	(void)argc;
+	(void)argv;
+	return 0;
 }
 
 static void native_thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
-	pthread_t th;
-	pthread_create(&th, NULL, native_thread_noop, NULL);
-	pthread_join(th, NULL);
+	pid_t pid = task_create("ove_bench_noop", SCHED_PRIORITY_DEFAULT,
+				1024, native_task_noop, NULL);
+	if (pid > 0) {
+		/* Wait for the noop task to finish — `waitpid` is the
+		 * canonical NuttX-side join for `task_create`.  pthread_join
+		 * doesn't apply since this is a task, not a pthread. */
+		int status;
+		(void)waitpid(pid, &status, 0);
+	}
 }
 
 /* ─── Thread: context_switch (2-thread ping-pong via 2 sems) ────── */

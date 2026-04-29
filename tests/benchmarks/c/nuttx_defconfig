@@ -1,0 +1,12 @@
+# oveRTOS benchmark app — NuttX kernel-config overlay.
+#
+# Bumps NuttX system tick from the default 10 ms (100 Hz) to 1 ms
+# (1 kHz).  Without this, `nanosleep({.tv_nsec=1_000_000})` rounds up
+# to the next tick boundary and waits ~20 ms instead of 1 ms; the
+# `delay_1ms` and `sleep_1ms` benchmark rows then measure tick
+# granularity rather than sleep latency.  1 kHz matches FreeRTOS's
+# default tick rate so cross-RTOS comparisons are like-for-like.
+#
+# 1 kHz tick costs ~0.1% CPU on Cortex-M7 @ 216 MHz (one SysTick ISR
+# every 216 000 cycles); negligible for benchmarking purposes.
+CONFIG_USEC_PER_TICK=1000
