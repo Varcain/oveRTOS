@@ -43,3 +43,7 @@ kconfig: |
   config OVE_BENCHMARK_OUTPUT_JSON
   	bool "Also emit machine-readable JSON output"
   	default y
+
+  config OVE_BENCHMARK_DISABLE_ICACHE
+  	bool "Disable Cortex-M I-cache for the bench run (diagnostic)"
+  	default n

@@ -139,6 +139,7 @@ static void sem_memory_teardown()
 
 /* --- Event signal/wait --- */
 
+static std::optional<ove::Event> bench_evt_ack;
 static std::optional<ove::Thread<1024>> evt_th;
 static std::atomic<bool> evt_done{false};
 
@@ -147,7 +148,7 @@ static void evt_signaler(void *arg)
 	(void)arg;
 	while (!evt_done.load(std::memory_order_acquire)) {
 		bench_evt->signal();
-		ove::Thread<>::yield();
+		(void)bench_evt_ack->wait(OVE_WAIT_FOREVER);
 	}
 }
 
@@ -155,20 +156,24 @@ static void event_signal_wait_setup()
 {
 	evt_done.store(false, std::memory_order_release);
 	bench_evt.emplace();
+	bench_evt_ack.emplace();
 	evt_th.emplace(evt_signaler, nullptr, OVE_PRIO_NORMAL, "evt_sig");
 }
 
 static void event_signal_wait_run()
 {
-	(void)bench_evt->wait(10);
+	(void)bench_evt->wait(OVE_WAIT_FOREVER);
+	bench_evt_ack->signal();
 }
 
 static void event_signal_wait_teardown()
 {
 	evt_done.store(true, std::memory_order_release);
+	bench_evt_ack->signal();
 	ove::time::delay_ms(10);
 	evt_th.reset();
 	bench_evt.reset();
+	bench_evt_ack.reset();
 }
 
 /* --- Event memory --- */
@@ -185,7 +190,10 @@ static void event_memory_teardown()
 	mem_event.reset();
 }
 
-/* --- Condvar signal/wait --- */
+/* --- Condvar signal/wait ---
+ *
+ * Condvar uses yield-based signaler + bounded cv_wait timeout — see
+ * bench_sync.c for why an ack-pattern signaler deadlocks here. */
 
 static std::optional<ove::Thread<1024>> cv_th;
 static std::atomic<bool> cv_done{false};

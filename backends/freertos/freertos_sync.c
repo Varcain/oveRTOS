@@ -155,16 +155,15 @@ int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 	if (evt == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	storage->sem = xSemaphoreCreateBinaryStatic(&storage->static_sem);
+	storage->waiter = NULL;
 	*evt = storage;
 	return OVE_OK;
 }
 
 void ove_event_deinit(ove_event_t evt)
 {
-	if (evt != NULL && evt->sem != NULL) {
-		vSemaphoreDelete(evt->sem);
-		evt->sem = NULL;
+	if (evt != NULL) {
+		evt->waiter = NULL;
 	}
 }
 
@@ -199,23 +198,35 @@ void ove_event_destroy(ove_event_t evt)
 
 int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 {
+	/* Register ourself as the (sole) waiter; ove_event is documented
+	 * single-waiter so concurrent waits would already be undefined.
+	 * Drop any stale notify before blocking — guards against a signal
+	 * delivered between the previous wait's wake and the next wait's
+	 * register. */
+	evt->waiter = xTaskGetCurrentTaskHandle();
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
-	BaseType_t r = xSemaphoreTake(evt->sem, ms_to_ticks(timeout_ms));
+	uint32_t got = ulTaskNotifyTake(pdTRUE, ms_to_ticks(timeout_ms));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
-	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return got ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_event_signal(ove_event_t evt)
 {
-	xSemaphoreGive(evt->sem);
+	TaskHandle_t w = evt->waiter;
+	if (w != NULL) {
+		xTaskNotifyGive(w);
+	}
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
-	BaseType_t yield = pdFALSE;
-	xSemaphoreGiveFromISR(evt->sem, &yield);
-	portYIELD_FROM_ISR(yield);
+	TaskHandle_t w = evt->waiter;
+	if (w != NULL) {
+		BaseType_t yield = pdFALSE;
+		vTaskNotifyGiveFromISR(w, &yield);
+		portYIELD_FROM_ISR(yield);
+	}
 }
 
 /* ─── Recursive Mutex _init ──────────────────────────────────────────── */
@@ -285,7 +296,6 @@ int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 	if (cv == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	storage->guard = xSemaphoreCreateMutexStatic(&storage->static_guard);
 	storage->head = NULL;
 	*cv = storage;
 	return OVE_OK;
@@ -293,9 +303,8 @@ int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 
 void ove_condvar_deinit(ove_condvar_t cv)
 {
-	if (cv != NULL && cv->guard != NULL) {
-		vSemaphoreDelete(cv->guard);
-		cv->guard = NULL;
+	if (cv != NULL) {
+		cv->head = NULL;
 	}
 }
 
@@ -335,11 +344,14 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 
 	self.task = xTaskGetCurrentTaskHandle();
 
-	/* Register in wait list before releasing mutex */
-	xSemaphoreTake(cv->guard, portMAX_DELAY);
+	/* Register in wait list before releasing mutex.  The waiter list is
+	 * a 2-pointer linked-list; updates fit comfortably in a critical
+	 * section (canonical FreeRTOS idiom for short list operations) and
+	 * avoid a mutex round-trip on the hot path. */
+	taskENTER_CRITICAL();
 	self.next = cv->head;
 	cv->head = &self;
-	xSemaphoreGive(cv->guard);
+	taskEXIT_CRITICAL();
 
 	/* Release the caller's mutex */
 	xSemaphoreGive(mtx->sem);
@@ -351,7 +363,7 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 
 	if (got == 0) {
 		/* Timeout — remove ourselves from the list if still there */
-		xSemaphoreTake(cv->guard, portMAX_DELAY);
+		taskENTER_CRITICAL();
 		struct condvar_waiter **pp = &cv->head;
 		int found = 0;
 		while (*pp) {
@@ -362,7 +374,7 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 			}
 			pp = &(*pp)->next;
 		}
-		xSemaphoreGive(cv->guard);
+		taskEXIT_CRITICAL();
 
 		if (!found) {
 			/*
@@ -383,25 +395,33 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 
 void ove_condvar_signal(ove_condvar_t cv)
 {
-	xSemaphoreTake(cv->guard, portMAX_DELAY);
+	TaskHandle_t task = NULL;
+	taskENTER_CRITICAL();
 	if (cv->head != NULL) {
-		TaskHandle_t task = cv->head->task;
+		task = cv->head->task;
 		cv->head = cv->head->next;
+	}
+	taskEXIT_CRITICAL();
+	if (task != NULL) {
 		xTaskNotifyGive(task);
 	}
-	xSemaphoreGive(cv->guard);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }
 
 void ove_condvar_broadcast(ove_condvar_t cv)
 {
-	xSemaphoreTake(cv->guard, portMAX_DELAY);
+	/* Detach the entire waiter list under the critical section, then
+	 * notify each task with interrupts re-enabled.  The notify itself
+	 * is a single FreeRTOS call that takes the scheduler lock for a
+	 * short window; doing it inside the critical section would
+	 * unnecessarily extend the interrupt-masked region. */
+	taskENTER_CRITICAL();
 	struct condvar_waiter *p = cv->head;
 	cv->head = NULL;
+	taskEXIT_CRITICAL();
 	while (p) {
 		xTaskNotifyGive(p->task);
 		p = p->next;
 	}
-	xSemaphoreGive(cv->guard);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_POST, cv);
 }

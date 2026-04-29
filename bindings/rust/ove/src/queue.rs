@@ -66,6 +66,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     /// # Errors
     /// Returns [`Error::QueueFull`] or [`Error::Timeout`] if the item cannot be
     /// enqueued within `timeout_ms`.
+    #[inline]
     pub fn send(&self, item: &T, timeout_ms: u32) -> Result<()> {
         let rc = unsafe {
             bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout_ms)
@@ -77,6 +78,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if no item is available within `timeout_ms`.
+    #[inline]
     pub fn receive(&self, timeout_ms: u32) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {

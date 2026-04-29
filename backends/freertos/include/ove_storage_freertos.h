@@ -62,13 +62,21 @@ struct ove_sem {
 };
 
 struct ove_event {
-	StaticSemaphore_t static_sem;
-	SemaphoreHandle_t sem;
+	/* Single-waiter event implemented on top of the FreeRTOS task
+	 * notification slot.  Each task has a built-in 32-bit notification
+	 * value; ove_event_signal does xTaskNotifyGive(waiter), wait does
+	 * ulTaskNotifyTake.  Replaces the earlier (StaticSemaphore_t +
+	 * SemaphoreHandle_t) binary semaphore — task notifications are
+	 * lighter than queue-layer semaphores on Cortex-M and the existing
+	 * event API is already documented as single-waiter / edge-triggered. */
+	TaskHandle_t waiter;
 };
 
 struct ove_condvar {
-	StaticSemaphore_t static_guard;
-	SemaphoreHandle_t guard;
+	/* Waiter list head; updates are guarded by taskENTER_CRITICAL/EXIT,
+	 * not a mutex.  Replaces the earlier (StaticSemaphore_t static_guard,
+	 * SemaphoreHandle_t guard) pair which added 6× xSemaphoreTake/Give
+	 * round trips per signal+wait (~5 µs on Cortex-M7). */
 	struct condvar_waiter *head;
 };
 
@@ -80,18 +88,33 @@ typedef struct ove_condvar ove_condvar_storage_t;
 /* ── Thread ───────────────────────────────────────────────────────── */
 
 struct ove_thread {
-	StaticSemaphore_t static_done_sem;
-	SemaphoreHandle_t done_sem;
 	TaskHandle_t task;
 	StaticTask_t static_task;
 	void (*entry)(void *);
 	void *arg;
+	/* Cooperative join: worker sets `exited=1` + DMB + reads `destroyer`
+	 * after `entry()` returns; destroyer publishes `destroyer` + DMB +
+	 * reads `exited`.  Whichever side wins the race notifies the other
+	 * via the destroyer task's built-in 32-bit notification slot —
+	 * replaces the earlier (StaticSemaphore_t + SemaphoreHandle_t) pair
+	 * with no kernel object and a fast drain on the typical case
+	 * (worker already done by destroy time). */
+	volatile uint32_t exited;
+	TaskHandle_t destroyer;
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	/* Embedded per-thread state tracker. Required so the sim trace view
 	 * can emit state transitions with sub-tick resolution. Updated from
 	 * the traceTASK_SWITCHED_IN/OUT hooks in freertos_trace.c. */
 	struct ove_state_tracker st;
 #endif
+	/* Flexible-array stack tail.  Used by the heap-create path
+	 * (ove_thread_create_) which allocates `sizeof(struct ove_thread)
+	 * + stack_bytes` in one OVE_BACKEND_MALLOC and passes &stack[0] to
+	 * xTaskCreateStatic — collapsing the wrapper alloc, the FreeRTOS
+	 * TCB alloc, and the FreeRTOS stack alloc into a single block.
+	 * The init/zero-heap path uses caller-supplied `desc->stack` and
+	 * leaves this FAM at zero size (legal C99 / C2x). */
+	StackType_t stack[];
 };
 
 typedef struct ove_thread ove_thread_storage_t;
@@ -101,7 +124,13 @@ typedef struct ove_thread ove_thread_storage_t;
 struct ove_queue {
 	StaticQueue_t static_queue;
 	QueueHandle_t queue;
+	/* Pointer to the queue's data buffer.  Init/zero-heap path: caller
+	 * supplies `buffer` and we record it here.  Heap-create path: points
+	 * at the inline_storage[] FAM tail so the wrapper struct + queue
+	 * data live in one OVE_BACKEND_MALLOC block (was two — see the
+	 * +3.5 µs delta tracked under the wrapper-overhead audit). */
 	uint8_t *storage;
+	uint8_t inline_storage[];
 };
 
 typedef struct ove_queue ove_queue_storage_t;

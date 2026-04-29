@@ -33,6 +33,9 @@ static const bench_case_t time_cases[] = {
 		.name = "time_get_us_overhead",
 		.type = BENCH_TYPE_LATENCY,
 		.run = time_get_us_overhead_run,
+		/* Sub-µs op — amortise the harness's per-iter ove_time_get_ns
+		 * call overhead by running ×10 inner per timestamp pair. */
+		.inner_iters = 10,
 	},
 	{
 		.name = "delay_1ms",

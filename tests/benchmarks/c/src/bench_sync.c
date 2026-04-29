@@ -165,6 +165,7 @@ static void sem_memory_teardown(void *ctx)
 
 /* --- Event signal/wait --- */
 
+static ove_event_t bench_evt_ack;
 static ove_thread_t evt_th;
 static volatile int evt_done;
 
@@ -174,7 +175,7 @@ static void evt_signaler(void *arg)
 
 	while (!evt_done) {
 		ove_event_signal(bench_evt);
-		ove_thread_yield();
+		ove_event_wait(bench_evt_ack, OVE_WAIT_FOREVER);
 	}
 }
 
@@ -183,6 +184,7 @@ static void event_signal_wait_setup(void *ctx)
 	(void)ctx;
 	evt_done = 0;
 	ove_event_create(&bench_evt);
+	ove_event_create(&bench_evt_ack);
 
 	struct ove_thread_desc desc = {
 		.name = "evt_sig",
@@ -196,16 +198,19 @@ static void event_signal_wait_setup(void *ctx)
 static void event_signal_wait_run(void *ctx)
 {
 	(void)ctx;
-	ove_event_wait(bench_evt, 10);
+	ove_event_wait(bench_evt, OVE_WAIT_FOREVER);
+	ove_event_signal(bench_evt_ack);
 }
 
 static void event_signal_wait_teardown(void *ctx)
 {
 	(void)ctx;
 	evt_done = 1;
+	ove_event_signal(bench_evt_ack);
 	ove_thread_sleep_ms(10);
 	ove_thread_destroy(evt_th);
 	ove_event_destroy(bench_evt);
+	ove_event_destroy(bench_evt_ack);
 }
 
 /* --- Event memory --- */
@@ -224,7 +229,17 @@ static void event_memory_teardown(void *ctx)
 	ove_event_destroy(mem_event);
 }
 
-/* --- Condvar signal/wait --- */
+/* --- Condvar signal/wait ---
+ *
+ * Condvar uses the original yield-based signaler + bounded cv_wait
+ * timeout (10 ms).  An ack-pattern signaler (like event's) deadlocks:
+ * condvar's cv->head is *edge-triggered* — a signal fired while no
+ * task is registered in the wait list is silently dropped, unlike a
+ * task notification which accumulates in a per-task counter.  An
+ * iter-aligned signaler can therefore lose its signal in the gap
+ * between two run() calls, then block forever waiting for the ack.
+ * The 10 ms cv_wait timeout breaks any rare lost-signal cases without
+ * adding measurable overhead in the hot path. */
 
 static ove_thread_t cv_th;
 static volatile int cv_done;

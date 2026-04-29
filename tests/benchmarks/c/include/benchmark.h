@@ -51,6 +51,12 @@ typedef struct {
 	void (*run)(void *ctx);
 	void (*teardown)(void *ctx);
 	unsigned int iterations; /* 0 = use default from Kconfig */
+	/* For sub-µs ops, the timer-call overhead around bc->run dominates
+	 * the per-iteration measurement.  Setting inner_iters > 1 has the
+	 * harness call run() that many times between timestamp pairs and
+	 * divide elapsed by inner_iters before recording, amortising the
+	 * timer cost across multiple operations.  Default 0 = treat as 1. */
+	unsigned int inner_iters;
 } bench_case_t;
 
 typedef struct {

@@ -56,6 +56,7 @@ impl<const N: usize> Stream<N> {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if no bytes could be sent within `timeout_ms`.
+    #[inline]
     pub fn send(&self, data: &[u8], timeout_ms: u32) -> Result<usize> {
         let mut bytes_sent: usize = 0;
         let rc = unsafe {
@@ -78,6 +79,7 @@ impl<const N: usize> Stream<N> {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if no bytes could be received within `timeout_ms`.
+    #[inline]
     pub fn receive(&self, buf: &mut [u8], timeout_ms: u32) -> Result<usize> {
         let mut bytes_received: usize = 0;
         let rc = unsafe {

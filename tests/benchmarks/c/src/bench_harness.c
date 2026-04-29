@@ -11,6 +11,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(CONFIG_OVE_BENCHMARK_DISABLE_ICACHE) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#include "stm32f7xx.h"   /* SCB_DisableICache */
+#endif
+
+/* Diagnostic toggle: turn off the Cortex-M7 I-cache exactly once at the
+ * start of the first bench case.  Lets us compare Rust and C same-process
+ * native_* numbers with cache pressure removed — if they converge,
+ * Rust's larger text footprint is the cause of the within-process
+ * baseline elevation.  Off in published numbers.  See app.yaml for the
+ * Kconfig.  Applies to all 4 bindings since this file is shared C. */
+static void bench_apply_diagnostics_once(void)
+{
+#if defined(CONFIG_OVE_BENCHMARK_DISABLE_ICACHE) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	static int icache_disabled = 0;
+	if (!icache_disabled) {
+		SCB_DisableICache();
+		icache_disabled = 1;
+		OVE_LOG_INF("[diag] Cortex-M7 I-cache DISABLED for this run");
+	}
+#endif
+}
+
 #if CONFIG_OVE_BENCHMARK_PERCENTILES
 /*
  * Static sample buffer (BSS) — sized at CONFIG_OVE_BENCHMARK_ITERATIONS.
@@ -100,6 +122,8 @@ static void compute_percentiles(uint64_t *samples, unsigned int n,
 
 void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 {
+	bench_apply_diagnostics_once();
+
 	unsigned int iters = bc->iterations;
 	unsigned int warmup = CONFIG_OVE_BENCHMARK_WARMUP;
 
@@ -140,24 +164,32 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 	if (bc->setup)
 		bc->setup(NULL);
 
+	unsigned int inner = bc->inner_iters ? bc->inner_iters : 1;
+
 	/* Warmup */
-	for (unsigned int i = 0; i < warmup; i++)
-		bc->run(NULL);
+	for (unsigned int i = 0; i < warmup; i++) {
+		for (unsigned int j = 0; j < inner; j++)
+			bc->run(NULL);
+	}
 
 #if CONFIG_OVE_BENCHMARK_PERCENTILES
 	struct welford w = { 0 };
 	unsigned int sample_count = 0;
 #endif
 
-	/* Measurement */
+	/* Measurement.  For inner > 1, run() is called inner times per
+	 * timestamp pair and elapsed is divided by inner — amortises the
+	 * fixed ove_time_get_ns overhead across multiple operations on
+	 * sub-µs benchmarks (e.g. time_get_us_overhead). */
 	for (unsigned int i = 0; i < iters; i++) {
 		uint64_t start = 0, end = 0;
 
 		ove_time_get_ns(&start);
-		bc->run(NULL);
+		for (unsigned int j = 0; j < inner; j++)
+			bc->run(NULL);
 		ove_time_get_ns(&end);
 
-		uint64_t elapsed = end - start;
+		uint64_t elapsed = (end - start) / inner;
 
 		if (elapsed < result->min_ns)
 			result->min_ns = elapsed;

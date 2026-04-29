@@ -37,6 +37,7 @@ macro_rules! bench_case {
         $(, setup: $setup:ident)?
         $(, teardown: $teardown:ident)?
         $(, iterations: $iter:expr)?
+        $(, inner_iters: $inner:expr)?
         $(,)?
     }) => {
         $vis static $name: $crate::bench::CBenchCase = {
@@ -68,6 +69,11 @@ macro_rules! bench_case {
                 $( let i: u32 = $iter; )?
                 i
             };
+            let inner_iters: u32 = {
+                let n: u32 = 0;
+                $( let n: u32 = $inner; )?
+                n
+            };
 
             $crate::bench::CBenchCase {
                 name: $byte_name.as_ptr() as *const core::ffi::c_char,
@@ -76,6 +82,7 @@ macro_rules! bench_case {
                 run: Some(__run_tramp),
                 teardown,
                 iterations,
+                inner_iters,
             }
         };
     };

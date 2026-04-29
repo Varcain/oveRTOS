@@ -44,6 +44,7 @@ struct CaseSpec {
 	void (*setup)() = nullptr;    /**< Optional one-time setup. */
 	void (*teardown)() = nullptr; /**< Optional one-time teardown. */
 	uint32_t iterations = 0;      /**< Iteration count (0 = harness default). */
+	uint32_t inner_iters = 0;     /**< For sub-µs cases: ×N inner reps per timestamp pair (0 = 1). */
 };
 
 namespace detail
@@ -90,6 +91,7 @@ template <const CaseSpec &Spec> constexpr ::bench_case_t case_()
 		.run = &detail::run_trampoline<Spec>,
 		.teardown = &detail::teardown_trampoline<Spec>,
 		.iterations = Spec.iterations,
+		.inner_iters = Spec.inner_iters,
 	};
 }
 

@@ -77,11 +77,13 @@ pub struct Thread {
 
 impl Thread {
     /// Sleep the current thread for `ms` milliseconds.
+    #[inline]
     pub fn sleep_ms(ms: u32) {
         unsafe { bindings::ove_thread_sleep_ms(ms) }
     }
 
     /// Yield the current thread's time slice.
+    #[inline]
     pub fn yield_now() {
         unsafe { bindings::ove_thread_yield() }
     }

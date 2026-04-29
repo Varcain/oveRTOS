@@ -51,6 +51,8 @@ pub const CBenchCase = extern struct {
     run: ?*const fn (?*anyopaque) callconv(.c) void,
     teardown: ?*const fn (?*anyopaque) callconv(.c) void,
     iterations: u32,
+    /// For sub-µs cases: ×N inner reps per timestamp pair (0 = 1).
+    inner_iters: u32,
 };
 
 /// Mirrors C `bench_suite_t`. Construct via [`makeSuite`].
@@ -83,6 +85,7 @@ pub const CaseSpec = struct {
     setup: ?*const fn () void = null,
     teardown: ?*const fn () void = null,
     iterations: u32 = 0,
+    inner_iters: u32 = 0,
 };
 
 /// Build a `CBenchCase` from a spec. Comptime — each invocation synthesises
@@ -106,6 +109,7 @@ pub fn case(comptime spec: CaseSpec) CBenchCase {
         .run = &Tramps.runTramp,
         .teardown = if (spec.teardown != null) &Tramps.teardownTramp else null,
         .iterations = spec.iterations,
+        .inner_iters = spec.inner_iters,
     };
 }
 
@@ -143,6 +147,7 @@ pub fn caseAudited(comptime suite_tag: [:0]const u8, comptime spec: CaseSpec) CB
         .run = &Tramps.runTramp,
         .teardown = if (spec.teardown != null) &Tramps.teardownTramp else null,
         .iterations = spec.iterations,
+        .inner_iters = spec.inner_iters,
     };
 }
 

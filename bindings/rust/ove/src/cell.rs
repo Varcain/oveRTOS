@@ -43,6 +43,35 @@ impl<T> LvCell<T> {
     pub fn set(&self, v: T) {
         self.0.set(v);
     }
+
+    /// Borrow the contents without copying.
+    ///
+    /// # Safety contract
+    ///
+    /// Same single-threaded-access invariant as the rest of `LvCell`:
+    /// the caller must ensure no concurrent mutation while the
+    /// returned reference is live.  Useful for hot loops over large
+    /// `Copy` payloads (e.g. multi-byte buffers in benchmark inner
+    /// loops) where `get()`'s implicit copy would dominate.
+    #[inline]
+    pub fn get_ref(&self) -> &T {
+        // SAFETY: `LvCell` already promises single-threaded access at
+        // a time; readers and writers do not overlap.  Cell::as_ptr
+        // returns the same address for the entire life of the cell,
+        // so the returned reference is valid for the cell's lifetime
+        // up to the next mutation.
+        unsafe { &*self.0.as_ptr() }
+    }
+
+    /// Raw pointer to the contents — same caveat as
+    /// [`core::cell::Cell::as_ptr`].  Combined with the LvCell
+    /// single-threaded-access invariant this lets a hot path build
+    /// a temporary `&mut T` for in-place updates without going
+    /// through `get()`'s Copy + `set()`'s Copy round-trip.
+    #[inline]
+    pub fn as_ptr(&self) -> *mut T {
+        self.0.as_ptr()
+    }
 }
 
 impl<T: Copy> LvCell<T> {

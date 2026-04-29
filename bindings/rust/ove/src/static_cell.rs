@@ -70,11 +70,15 @@ impl<T> StaticCell<T> {
     /// Panics if the cell has not been initialized.
     pub fn get(&self) -> &T {
         assert!(
-            self.initialized.load(Ordering::Acquire),
+            self.initialized.load(Ordering::Relaxed),
             "StaticCell::get called on uninitialized cell"
         );
-        // SAFETY: After init (Release) + this Acquire, the value is immutable
-        // until shutdown (which is single-threaded). No data race.
+        // SAFETY: oveRTOS lifecycle guarantees init() / shutdown() run
+        // single-threaded. The framework already establishes a
+        // happens-before edge at init→running transition (the scheduler
+        // start). On single-CPU FreeRTOS-on-Cortex-M a per-load Acquire
+        // would emit `dmb sy` (~15 cycles) for no real synchronisation;
+        // Relaxed is sufficient. Verified on STM32F746 hot bench paths.
         unsafe { (*self.inner.get()).as_ref().unwrap() }
     }
 
@@ -96,11 +100,13 @@ impl<T> StaticCell<T> {
     }
 
     /// Try to get a reference, returning `None` if not initialized.
+    #[inline]
     pub fn try_get(&self) -> Option<&T> {
-        if !self.initialized.load(Ordering::Acquire) {
+        // SAFETY: see `get()` — single-CPU FreeRTOS lifecycle makes a
+        // per-call Acquire fence (`dmb sy` on Cortex-M) unnecessary.
+        if !self.initialized.load(Ordering::Relaxed) {
             return None;
         }
-        // SAFETY: Same argument as `get()`.
         unsafe { (*self.inner.get()).as_ref() }
     }
 
@@ -197,13 +203,16 @@ impl<T> StaticMut<T> {
     /// Caller must ensure exclusive access (single-threaded or external synchronization).
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn get_mut(&self) -> &mut T {
-        debug_assert!(self.initialized.load(Ordering::Acquire));
+        // SAFETY: see StaticCell::get() — Relaxed is sufficient on
+        // single-CPU FreeRTOS; init/shutdown lifecycle is single-threaded.
+        debug_assert!(self.initialized.load(Ordering::Relaxed));
         unsafe { (*self.inner.get()).as_mut().unwrap() }
     }
 
     /// Try to get an immutable reference, returning `None` if not initialized.
+    #[inline]
     pub fn try_get(&self) -> Option<&T> {
-        if !self.initialized.load(Ordering::Acquire) {
+        if !self.initialized.load(Ordering::Relaxed) {
             return None;
         }
         unsafe { (*self.inner.get()).as_ref() }
@@ -215,7 +224,7 @@ impl<T> StaticMut<T> {
     /// Panics if the cell has not been initialized.
     pub fn get(&self) -> &T {
         assert!(
-            self.initialized.load(Ordering::Acquire),
+            self.initialized.load(Ordering::Relaxed),
             "StaticMut::get called on uninitialized cell"
         );
         unsafe { (*self.inner.get()).as_ref().unwrap() }

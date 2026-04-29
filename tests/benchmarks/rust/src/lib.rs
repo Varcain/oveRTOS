@@ -57,7 +57,10 @@ fn time_is_enabled() -> bool {
 }
 
 fn time_get_us_overhead_run() {
-    let _ = ove::time::get_us();
+    // Use the unchecked variant so the bench reflects ove_time_get_us
+    // call cost rather than the Result<u64> plumbing of the safe form
+    // (the C bench calls the same FFI directly with no error wrap).
+    let _ = ove::time::get_us_unchecked();
 }
 fn delay_1ms_run() {
     ove::time::delay_ms(1);
@@ -67,6 +70,7 @@ bench_case!(static TIME_GET_US_OVERHEAD: BenchCase = {
     name: b"time_get_us_overhead\0",
     kind: BenchType::Latency,
     run: time_get_us_overhead_run,
+    inner_iters: 10,
 });
 
 bench_case!(static DELAY_1MS: BenchCase = {
@@ -194,6 +198,7 @@ bench_suite!(
 ove::shared!(SYNC_MTX: Mutex);
 ove::shared!(SYNC_SEM: Semaphore);
 ove::shared!(SYNC_EVT: Event);
+ove::shared!(SYNC_EVT_ACK: Event);
 ove::shared!(SYNC_CV: CondVar);
 ove::shared!(SYNC_CV_MTX: Mutex);
 ove::shared!(SYNC_RMTX: RecursiveMutex);
@@ -311,18 +316,19 @@ fn sem_memory_teardown() {
 // --- Event signal/wait ---
 fn evt_signaler() {
     while !SYNC_EVT_DONE.load(Ordering::Relaxed) {
-        if let Some(e) = SYNC_EVT.try_get() {
+        if let (Some(e), Some(ack)) = (SYNC_EVT.try_get(), SYNC_EVT_ACK.try_get()) {
             e.signal();
+            let _ = ack.wait(WAIT_FOREVER);
         } else {
             break;
         }
-        Thread::yield_now();
     }
 }
 
 fn event_signal_wait_setup() {
     SYNC_EVT_DONE.store(false, Ordering::Relaxed);
     SYNC_EVT.init(ove::event!());
+    SYNC_EVT_ACK.init(ove::event!());
     SYNC_EVT_TH.init(ove::thread!(
         "evt_sig",
         evt_signaler,
@@ -332,16 +338,21 @@ fn event_signal_wait_setup() {
 }
 
 fn event_signal_wait_run() {
-    if let Some(e) = SYNC_EVT.try_get() {
-        let _ = e.wait(10);
+    if let (Some(e), Some(ack)) = (SYNC_EVT.try_get(), SYNC_EVT_ACK.try_get()) {
+        let _ = e.wait(WAIT_FOREVER);
+        ack.signal();
     }
 }
 
 fn event_signal_wait_teardown() {
     SYNC_EVT_DONE.store(true, Ordering::Relaxed);
+    if let Some(ack) = SYNC_EVT_ACK.try_get() {
+        ack.signal();
+    }
     Thread::sleep_ms(10);
     SYNC_EVT_TH.shutdown();
     SYNC_EVT.shutdown();
+    SYNC_EVT_ACK.shutdown();
 }
 
 // --- Event memory ---
@@ -353,6 +364,9 @@ fn event_memory_teardown() {
 }
 
 // --- Condvar signal/wait ---
+//
+// Condvar uses yield-based signaler + bounded cv_wait timeout — see
+// bench_sync.c for why an ack-pattern signaler deadlocks here.
 fn cv_signaler() {
     while !SYNC_CV_DONE.load(Ordering::Relaxed) {
         if let Some(cv) = SYNC_CV.try_get() {
@@ -857,11 +871,18 @@ fn stream_send_recv_setup() {
 
 fn stream_send_recv_run() {
     if let Some(s) = STREAM_BENCH.try_get() {
-        let cell = STREAM_BUFS.get();
-        let mut bufs = cell.get();
+        // Borrow the buffers in-place via LvCell::as_ptr(); avoids the
+        // 2× __aeabi_memcpy(128) per iteration that the prior
+        // `get()` (Copy) + `set()` (Copy) round-trip emitted on
+        // Cortex-M (was +4.8 µs / iteration in the bench report).
+        // SAFETY: the bench runner is single-threaded between setup
+        // and teardown, satisfying the LvCell single-access invariant;
+        // no other thread holds a reference to this cell while we
+        // build a temporary &mut T from the raw pointer.
+        let bufs_ptr = STREAM_BUFS.get().as_ptr();
+        let bufs = unsafe { &mut *bufs_ptr };
         let _ = s.send(&bufs.0, WAIT_FOREVER);
         let _ = s.receive(&mut bufs.1, WAIT_FOREVER);
-        cell.set(bufs);
     }
 }
 

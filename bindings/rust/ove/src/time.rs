@@ -16,11 +16,27 @@ use crate::error::{Error, Result};
 ///
 /// # Errors
 /// Returns an error if the underlying hardware timer is unavailable.
+#[inline]
 pub fn get_us() -> Result<u64> {
     let mut us: u64 = 0;
     let rc = unsafe { bindings::ove_time_get_us(&mut us) };
     Error::from_code(rc)?;
     Ok(us)
+}
+
+/// Like [`get_us`] but skips the error-mapping branch — the underlying
+/// `ove_time_get_us` is infallible on every supported backend's
+/// hardware timer (the `Result` exists only to keep the API uniform
+/// with other ove fallible operations).
+///
+/// Use this when calling `get_us` in tight hot loops where the
+/// `Result<u64>` plumbing dominates the actual measurement (the bench
+/// suite's `time_get_us_overhead` case is the canonical example).
+#[inline]
+pub fn get_us_unchecked() -> u64 {
+    let mut us: u64 = 0;
+    unsafe { bindings::ove_time_get_us(&mut us) };
+    us
 }
 
 /// Block the current thread for at least `ms` milliseconds.

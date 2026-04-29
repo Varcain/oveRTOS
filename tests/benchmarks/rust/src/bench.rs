@@ -67,6 +67,8 @@ pub struct CBenchCase {
     pub run: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
     pub teardown: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
     pub iterations: u32,
+    /// For sub-µs ops: ×N inner reps per timestamp pair (0 = treat as 1).
+    pub inner_iters: u32,
 }
 
 // SAFETY: CBenchCase contains only function pointers and a `'static` name

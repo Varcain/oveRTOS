@@ -18,7 +18,24 @@ static void freertos_thread_wrapper(void *param)
 	void (*entry)(void *) = s->entry;
 	void *arg = s->arg;
 	entry(arg);
-	xSemaphoreGive(s->done_sem);
+	/* Dekker-style join handshake (paired with wait_for_worker_exit()):
+	 *   1. publish exited = 1
+	 *   2. memory barrier so the destroyer's read of `destroyer` (below)
+	 *      can't be reordered before the publish
+	 *   3. read destroyer; if non-null, the destroyer is or will be
+	 *      blocked on its own notification slot — wake it
+	 *
+	 * The barrier on this side, paired with the destroyer's
+	 * publish-then-DMB-then-read of `exited`, guarantees that at least
+	 * one of {worker sees destroyer, destroyer sees exited} is true.
+	 * That is enough to ensure no deadlock: if worker doesn't notify
+	 * (because destroyer hadn't published yet), destroyer's read of
+	 * exited will see 1 and skip the blocking ulTaskNotifyTake. */
+	s->exited = 1u;
+	__DMB();
+	if (s->destroyer != NULL) {
+		xTaskNotifyGive(s->destroyer);
+	}
 	vTaskSuspend(NULL);
 }
 
@@ -47,9 +64,10 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	storage->done_sem = xSemaphoreCreateBinaryStatic(&storage->static_done_sem);
 	storage->entry = desc->entry;
 	storage->arg = desc->arg;
+	storage->destroyer = NULL;
+	storage->exited = 0u;
 
 	ove_state_track_init(&storage->st, OVE_THREAD_STATE_READY);
 
@@ -66,13 +84,40 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 	return OVE_OK;
 }
 
+/* Wait for the worker thread to finish its entry().  Dekker-style
+ * handshake (worker side in freertos_thread_wrapper):
+ *
+ *   1. publish destroyer = ourself
+ *   2. memory barrier
+ *   3. read worker's `exited` flag
+ *      - 1 → worker is past its entry().  It MAY have notified us (if
+ *            it observed our destroyer publish) — drain any stale
+ *            notification and return.
+ *      - 0 → worker is still running entry().  By the barrier rule it
+ *            will observe our destroyer write and notify us when it
+ *            transitions out of entry().  Block on the notification.
+ *
+ * Replaces the earlier xSemaphoreCreateBinaryStatic / Take-Give pair
+ * (~3 µs round trip + a kernel object) with a barrier + a one-word
+ * read on the typical (worker-already-done) path. */
+static void wait_for_worker_exit(ove_thread_t handle)
+{
+	handle->destroyer = xTaskGetCurrentTaskHandle();
+	__DMB();
+	if (handle->exited) {
+		(void)ulTaskNotifyTake(pdTRUE, 0);
+	} else {
+		(void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+	}
+}
+
 int ove_thread_deinit(ove_thread_t handle)
 {
 	int ret = ove_check_param(handle);
 	if (ret)
 		return ret;
 
-	xSemaphoreTake(handle->done_sem, portMAX_DELAY);
+	wait_for_worker_exit(handle);
 	vTaskDelete(handle->task);
 	return OVE_OK;
 }
@@ -85,23 +130,34 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 	if (handle == NULL || desc == NULL || desc->entry == NULL)
 		return OVE_ERR_INVALID_PARAM;
 
-	struct ove_thread *wrapper = OVE_BACKEND_MALLOC(sizeof(*wrapper));
-	if (wrapper == NULL)
-		return OVE_ERR_NO_MEMORY;
-
-	wrapper->done_sem = xSemaphoreCreateBinaryStatic(&wrapper->static_done_sem);
-	wrapper->entry = desc->entry;
-	wrapper->arg = desc->arg;
-
-	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
-
 	uint32_t stack_depth = desc->stack_size / sizeof(StackType_t);
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	BaseType_t ret = xTaskCreate(freertos_thread_wrapper, desc->name, stack_depth, wrapper,
-				     map_priority(desc->priority), &wrapper->task);
-	if (ret != pdPASS) {
+	/* Single allocation for the wrapper struct (TCB + done-sem static
+	 * storage + bookkeeping) and the task stack.  Replaces the earlier
+	 * 3-allocation path (wrapper malloc + xTaskCreate's internal TCB
+	 * malloc + stack malloc) measured at +20 µs vs raw xTaskCreate on
+	 * STM32F746/heap_4.  The wrapper struct's flexible-array `stack[]`
+	 * tail (defined in ove_storage_freertos.h) holds the stack space. */
+	size_t total = sizeof(struct ove_thread)
+		     + (size_t)stack_depth * sizeof(StackType_t);
+	struct ove_thread *wrapper = OVE_BACKEND_MALLOC(total);
+	if (wrapper == NULL)
+		return OVE_ERR_NO_MEMORY;
+
+	wrapper->entry = desc->entry;
+	wrapper->arg = desc->arg;
+	wrapper->destroyer = NULL;
+	wrapper->exited = 0u;
+
+	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
+
+	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, desc->name,
+					  stack_depth, wrapper,
+					  map_priority(desc->priority),
+					  wrapper->stack, &wrapper->static_task);
+	if (wrapper->task == NULL) {
 		OVE_BACKEND_FREE(wrapper);
 		return OVE_ERR_NO_MEMORY;
 	}
@@ -117,7 +173,7 @@ int ove_thread_destroy(ove_thread_t handle)
 	if (ret)
 		return ret;
 
-	xSemaphoreTake(handle->done_sem, portMAX_DELAY);
+	wait_for_worker_exit(handle);
 	vTaskDelete(handle->task);
 	OVE_BACKEND_FREE(handle);
 	return OVE_OK;

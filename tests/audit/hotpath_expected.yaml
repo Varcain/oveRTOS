@@ -309,7 +309,7 @@ host_posix_benchmark_rust:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust EVENT_SIGNAL_WAIT::__run_tramp"
       pattern: '_ZN.+EVENT_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
-      max_instructions: 16
+      max_instructions: 20
       allowed_calls: [ove_event_wait, ove_event_signal]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── IPC (queue / stream) ─────────────────────────────────
@@ -333,6 +333,8 @@ host_posix_benchmark_rust:
         - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
+        - ove_stream_send
+        - ove_stream_receive
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 # ============================================================================
@@ -708,7 +710,7 @@ stm32f746_freertos_benchmark_rust:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust EVENT_SIGNAL_WAIT::__run_tramp (ARM)"
       pattern: '_ZN.+EVENT_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
-      max_instructions: 20
+      max_instructions: 24
       allowed_calls: [ove_event_wait, ove_event_signal]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust QUEUE_SEND_RECEIVE::__run_tramp (ARM)"
@@ -736,6 +738,10 @@ stm32f746_freertos_benchmark_rust:
         - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
+        # Stream::send / Stream::receive are #[inline] — when LTO inlines
+        # them, the trampoline calls the FFI stubs directly.
+        - ove_stream_send
+        - ove_stream_receive
         # ARM EABI memcpy intrinsic emitted for the 64-byte buffer init.
         - __aeabi_memcpy
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]

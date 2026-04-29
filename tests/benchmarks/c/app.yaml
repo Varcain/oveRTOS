@@ -63,3 +63,16 @@ kconfig: |
   	  bracketed by ###BENCH_JSON_BEGIN / ###BENCH_JSON_END sentinels.
   	  Consumed by scripts/bench_compare.py for cross-binding diff
   	  reports.
+
+  config OVE_BENCHMARK_DISABLE_ICACHE
+  	bool "Disable Cortex-M I-cache for the bench run"
+  	default n
+  	help
+  	  When set, calls SCB_DisableICache() at bench startup (Cortex-M
+  	  with caches only — STM32F7).  Used to investigate whether the
+  	  Rust binary's larger text footprint (+13 KiB vs C on F746)
+  	  causes I-cache pressure on FreeRTOS hot paths.  If disabling
+  	  the I-cache makes the C and Rust same-process native_* numbers
+  	  converge, cache pressure is the cause and the long-term path is
+  	  Rust binary-size cleanup.  Diagnostic only — leave off for
+  	  published benchmark numbers.

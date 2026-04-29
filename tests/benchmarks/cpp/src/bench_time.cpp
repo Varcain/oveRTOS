@@ -35,6 +35,7 @@ static constexpr bench::CaseSpec time_get_us_spec{
 	.name = "time_get_us_overhead",
 	.kind = bench::Type::latency,
 	.run = &time_get_us_overhead_run,
+	.inner_iters = 10,
 };
 
 static constexpr bench::CaseSpec delay_1ms_spec{

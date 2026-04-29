@@ -338,6 +338,71 @@ def build_report(by_rtos, threshold_pct):
             for row in wn_rows:
                 lines.append("| " + " | ".join(row) + " |")
 
+            if native_suite == "native_freertos":
+                lines.append(
+                    "\n#### Lifecycle and intrinsic-cost caveats\n"
+                )
+                lines.append(
+                    "Per-call wrapper overhead is sub-µs for every primitive: "
+                    "lock/unlock, take/give, send/receive, yield are all within "
+                    "±200 ns of raw FreeRTOS.  The remaining gaps are FreeRTOS-"
+                    "intrinsic costs of the underlying kernel work, **not** "
+                    "wrapper-layer overhead:\n"
+                )
+                lines.append(
+                    "- **Thread create+destroy ≈ +7 µs:** FreeRTOS task "
+                    "lifecycle (`prvInitialiseNewTask` + `prvAddNewTaskToReadyList` "
+                    "+ `vTaskDelete` + list cleanup) runs regardless of how thin "
+                    "the wrapper is.  oveRTOS uses single-allocation static-task "
+                    "creation (no extra heap blocks) and task-notification join "
+                    "via a Dekker-style handshake (no separate semaphore "
+                    "object).  Closing this further requires a thread-pool API "
+                    "(different ownership semantics) and is out of scope for "
+                    "the zero-overhead claim, which is about per-call cost.\n"
+                )
+                lines.append(
+                    "- **Condvar signal+wait ≈ +5 µs:** POSIX-style condvar "
+                    "contract requires the caller's mutex to be released "
+                    "atomically with the wait and re-acquired on wake.  That "
+                    "extra `xSemaphoreGive(mtx) + xSemaphoreTake(mtx)` round "
+                    "trip is what the raw `ulTaskNotifyTake` baseline doesn't "
+                    "pay.  Anyone wanting condvar semantics pays this; the "
+                    "binding doesn't add to it.\n"
+                )
+                lines.append(
+                    "- **Event signal+wait ≈ +2 µs:** `ove_event_*` is "
+                    "implemented directly on top of FreeRTOS task "
+                    "notifications (no semaphore in the middle).  The residual "
+                    "gap vs raw `ulTaskNotifyTake` is the cost of going through "
+                    "the wrapper function (`xTaskGetCurrentTaskHandle` lookup + "
+                    "`evt->waiter` store + frame setup) on each call.  The "
+                    "wrapper buys uniform single-waiter semantics across "
+                    "RTOSes; the per-call cost is what it is.\n"
+                )
+                lines.append(
+                    "- **Context switch (2t) ≈ +6 µs:** the bench runs a "
+                    "full ping-pong cycle (sem give/take across two tasks).  "
+                    "Both directions go through the wrapper, so the wrapper "
+                    "cost adds twice; the native baseline pays the same "
+                    "context-switch cost without that doubling.\n"
+                )
+                lines.append(
+                    "- **Rust same-process native baseline elevation "
+                    "(+40-65% on `native_*` rows):** `bench_native_freertos.c` "
+                    "is *the same C code* compiled into every binary, so the "
+                    "Rust column for those rows does not reflect any binding "
+                    "behaviour.  Investigated via `CONFIG_OVE_BENCHMARK_"
+                    "DISABLE_ICACHE` (toggles `SCB_DisableICache` for the "
+                    "run): with I-cache off, all rows scale up ~2.5× as "
+                    "expected, but the Rust↔C ratio does not converge — "
+                    "the absolute gap actually widens slightly.  I-cache "
+                    "pressure from Rust's larger text footprint is *not* "
+                    "the dominant cause.  The remaining elevation is "
+                    "binary-layout / call-frame / linker-placement noise "
+                    "that varies between Rust and C process images on this "
+                    "Cortex-M7; not closeable from the binding side.\n"
+                )
+
     return "\n".join(lines) + "\n"
 
 

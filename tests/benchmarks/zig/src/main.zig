@@ -37,6 +37,7 @@ const time_case_get_us = bench.CaseSpec{
     .name = "time_get_us_overhead",
     .kind = .latency,
     .run = &timeGetUsOverheadRun,
+    .inner_iters = 10,
 };
 const time_case_delay_1ms = bench.CaseSpec{
     .name = "delay_1ms",
@@ -177,6 +178,7 @@ var sync_contention_done: volatile_int = volatile_int.init(0);
 var sync_contention_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 var sync_evt_th: ?ove.Thread = null;
 var sync_evt_done: volatile_int = volatile_int.init(0);
+var sync_bench_evt_ack: ?ove.Event = null;
 var sync_cv_th: ?ove.Thread = null;
 var sync_cv_done: volatile_int = volatile_int.init(0);
 var sync_mem_mutex: ?ove.Mutex = null;
@@ -280,24 +282,29 @@ fn semMemoryTeardown() void {
 fn evtSignaler() void {
     while (sync_evt_done.load(.acquire) == 0) {
         sync_bench_evt.?.signal();
-        ove.Thread.yieldCpu();
+        sync_bench_evt_ack.?.wait(ove.wait_forever) catch {};
     }
 }
 fn eventSignalWaitSetup() void {
     sync_evt_done.store(0, .release);
     sync_bench_evt = ove.Event.create() catch return;
+    sync_bench_evt_ack = ove.Event.create() catch return;
     sync_evt_th = ove.Thread.spawn("evt_sig", evtSignaler, ove.thread.prio.normal, 1024) catch return;
 }
 fn eventSignalWaitRun() void {
-    sync_bench_evt.?.wait(10) catch {};
+    sync_bench_evt.?.wait(ove.wait_forever) catch {};
+    sync_bench_evt_ack.?.signal();
 }
 fn eventSignalWaitTeardown() void {
     sync_evt_done.store(1, .release);
+    if (sync_bench_evt_ack) |*e| e.signal();
     ove.Thread.sleepMs(10);
     if (sync_evt_th) |*t| t.destroy();
     sync_evt_th = null;
     if (sync_bench_evt) |*e| e.destroy();
     sync_bench_evt = null;
+    if (sync_bench_evt_ack) |*e| e.destroy();
+    sync_bench_evt_ack = null;
 }
 
 // --- Event memory ---
@@ -311,6 +318,9 @@ fn eventMemoryTeardown() void {
 }
 
 // --- Condvar signal/wait ---
+//
+// Condvar uses yield-based signaler + bounded cv_wait timeout — see
+// bench_sync.c for why an ack-pattern signaler deadlocks here.
 
 fn cvSignaler() void {
     while (sync_cv_done.load(.acquire) == 0) {
