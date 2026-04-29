@@ -140,9 +140,9 @@ static void native_recursive_mutex_lock_unlock_setup(void *ctx)
 static void native_recursive_mutex_lock_unlock_run(void *ctx)
 {
 	(void)ctx;
+	/* 1-deep lock/unlock to match wrapper bench geometry — see
+	 * comment in bench_native_freertos.c::native_recursive_mutex_lock_unlock_run. */
 	pthread_mutex_lock(&native_rmtx);
-	pthread_mutex_lock(&native_rmtx);
-	pthread_mutex_unlock(&native_rmtx);
 	pthread_mutex_unlock(&native_rmtx);
 }
 

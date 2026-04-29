@@ -130,9 +130,13 @@ static void native_recursive_mutex_lock_unlock_setup(void *ctx)
 static void native_recursive_mutex_lock_unlock_run(void *ctx)
 {
 	(void)ctx;
+	/* 1-deep take/give to match wrapper bench geometry — wrapper's
+	 * `rmtx_lock_unlock_run` measures `ove_recursive_mutex_lock` +
+	 * `ove_recursive_mutex_unlock`, a single full lock/unlock pair on
+	 * a recursive-mutex type.  Earlier 2-deep variant pulled in two
+	 * cheap counter-increment recursive ops (~+200 ns) that made the
+	 * native column appear slower than the wrapper. */
 	xSemaphoreTakeRecursive(native_rmtx, portMAX_DELAY);
-	xSemaphoreTakeRecursive(native_rmtx, portMAX_DELAY);
-	xSemaphoreGiveRecursive(native_rmtx);
 	xSemaphoreGiveRecursive(native_rmtx);
 }
 
