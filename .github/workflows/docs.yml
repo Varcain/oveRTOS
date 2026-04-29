@@ -31,7 +31,7 @@ jobs:
       - name: Install MkDocs
         run: pip install mkdocs-material
 
-      - name: Setup Rust
+      - name: Setup Rust (stable, for `make docs`)
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build documentation
@@ -43,8 +43,18 @@ jobs:
         with:
           version: '3.1.51'
 
-      - name: Add Rust WASM target
-        run: rustup target add wasm32-unknown-emscripten
+      # Rust+WASM uses `-Zbuild-std=std,panic_abort` (see ove_rust.cmake)
+      # to rebuild std with +atomics for emscripten pthreads. That needs
+      # nightly Rust *with rust-src* — without rust-src, cargo bails on
+      # "Cargo.lock does not exist, unable to build with the standard
+      # library" and every Rust example silently 404s on the deployed
+      # site. wasm32-unknown-emscripten ships as an unstable target so
+      # the install must come from the nightly channel.
+      - name: Setup Rust (nightly + rust-src, for WASM)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+          targets: wasm32-unknown-emscripten
 
       - name: Setup Zig
         uses: goto-bus-stop/setup-zig@v2
