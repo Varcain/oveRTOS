@@ -33,6 +33,37 @@ jobs:
         run: make allconfigs-host.posix
 
 
+  wasm:
+    name: WASM POSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        # emsdk is downloaded into dl/ by `ove configure/download`; we
+        # only need the host tools here. xz-utils unpacks the toolchain
+        # tarballs the manifest pins.
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Cache emsdk
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl/emsdk
+            dl/emsdk-*
+          key: emsdk-${{ hashFiles('manifest.yaml') }}
+
+      - name: Build allconfigs-wasm.posix
+        run: make allconfigs-wasm.posix
+
+
   qemu-freertos:
     name: QEMU FreeRTOS
     runs-on: ubuntu-latest

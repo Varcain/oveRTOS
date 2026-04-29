@@ -98,17 +98,17 @@ static int wasm_send_event(struct ove_sim_transport *t, const struct ove_sim_eve
 	 * the copy MUST happen before we return.  Debug events at ~2 Hz
 	 * make the blocking cost negligible.
 	 */
-	MAIN_THREAD_EM_ASM(
-		{
-			var len = $1;
-			if (typeof window == = 'undefined' ||
-					       typeof window.__ove_sim_event != = 'function')
-				return;
-			var copy = new Uint8Array(len);
-			copy.set(HEAPU8.subarray($0, $0 + len));
-			window.__ove_sim_event(copy.buffer);
-		},
-		(uintptr_t)event, (int)total);
+	/* clang-format off */
+	MAIN_THREAD_EM_ASM({
+		var len = $1;
+		if (typeof window === 'undefined' ||
+		    typeof window.__ove_sim_event !== 'function')
+			return;
+		var copy = new Uint8Array(len);
+		copy.set(HEAPU8.subarray($0, $0 + len));
+		window.__ove_sim_event(copy.buffer);
+	}, (uintptr_t)event, (int)total);
+	/* clang-format on */
 
 	return OVE_OK;
 }
