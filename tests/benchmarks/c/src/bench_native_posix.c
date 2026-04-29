@@ -428,13 +428,17 @@ static void native_queue_create_destroy_run(void *ctx)
 
 /* ─── IPC pipe: stream send/recv 64B ───────────────────────────── */
 
+/* Static buffers in BSS — see comment in
+ * bench_native_freertos.c::native_stream_send_recv_64B_run for why. */
+static uint8_t native_pipe_tx[64];
+static uint8_t native_pipe_rx[64];
+
 static void native_stream_send_recv_64B_run(void *ctx)
 {
 	(void)ctx;
-	uint8_t buf[64] = { 0 };
-	ssize_t w = write(native_pipe_fd[1], buf, sizeof(buf));
+	ssize_t w = write(native_pipe_fd[1], native_pipe_tx, 64);
 	(void)w;
-	ssize_t r = read(native_pipe_fd[0], buf, sizeof(buf));
+	ssize_t r = read(native_pipe_fd[0], native_pipe_rx, 64);
 	(void)r;
 }
 

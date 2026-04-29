@@ -378,19 +378,28 @@ static void native_queue_create_destroy_run(void *ctx)
 
 /* ─── IPC stream: send/recv 64B via stream buffer ──────────────── */
 
+/* Static tx/rx buffers in BSS — matches wrapper bench geometry
+ * (`bench_stream.c::tx_buf` / `rx_buf`).  An on-stack `uint8_t buf[64]
+ * = {0};` here would compile to a per-iteration `memclr` of the
+ * 64-byte frame (~50 cycles) that the wrapper bench doesn't pay,
+ * making the native column appear ~400-600 ns slower than the wrapper
+ * — a bench-geometry artifact, not a real cost. */
+static uint8_t native_stream_tx[64];
+static uint8_t native_stream_rx[64];
+
 static void native_stream_send_recv_64B_setup(void *ctx)
 {
 	(void)ctx;
 	/* 256-byte buffer, trigger level 1 — same shape as oveRTOS bench. */
 	native_stream = xStreamBufferCreate(256, 1);
+	memset(native_stream_tx, 0xAA, sizeof(native_stream_tx));
 }
 
 static void native_stream_send_recv_64B_run(void *ctx)
 {
 	(void)ctx;
-	uint8_t buf[64] = { 0 };
-	xStreamBufferSend(native_stream, buf, sizeof(buf), portMAX_DELAY);
-	xStreamBufferReceive(native_stream, buf, sizeof(buf), portMAX_DELAY);
+	xStreamBufferSend(native_stream, native_stream_tx, 64, portMAX_DELAY);
+	xStreamBufferReceive(native_stream, native_stream_rx, 64, portMAX_DELAY);
 }
 
 static void native_stream_send_recv_64B_teardown(void *ctx)
