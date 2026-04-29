@@ -16,6 +16,7 @@ sources:
   - src/bench_stream.c
   - src/bench_native_posix.c
   - src/bench_native_freertos.c
+  - src/bench_native_nuttx.c
 includes:
   - include
 defconfig:

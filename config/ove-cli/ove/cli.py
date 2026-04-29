@@ -105,10 +105,14 @@ def main():
         help="Build + run the benchmark suite across all bindings on a "
              "platform, then write a comparison report")
     p.add_argument("platform",
-                   choices=["posix", "stm32f746g-discovery"],
+                   choices=["posix",
+                            "stm32f746g-discovery",
+                            "stm32f746g-discovery-nuttx"],
                    help="Target platform — 'posix' runs locally; "
-                        "'stm32f746g-discovery' flashes via openocd "
-                        "and tails $OVE_SERIAL_LOG (default "
+                        "'stm32f746g-discovery' flashes the FreeRTOS "
+                        "build, 'stm32f746g-discovery-nuttx' the NuttX "
+                        "build.  Both STM32 paths flash via openocd "
+                        "and tail $OVE_SERIAL_LOG (default "
                         "/tmp/serial.log) for a picocom-recorded run.")
     p.add_argument("--skip-build", action="store_true",
                    help="Skip building (assume firmware already built)")

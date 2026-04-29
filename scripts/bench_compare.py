@@ -295,6 +295,7 @@ def build_report(by_rtos, threshold_pct):
             native_label = {
                 "native_posix":    "pthread",
                 "native_freertos": "FreeRTOS API",
+                "native_nuttx":    "NuttX API",
             }.get(native_suite, "native API")
             ipc_caveat = {
                 "native_posix": (
@@ -316,6 +317,17 @@ def build_report(by_rtos, threshold_pct):
                     "Event groups (FreeRTOS xEventGroup* mirrors oveRTOS "
                     "1:1, uninformative) and workqueues (no FreeRTOS "
                     "primitive) are intentionally absent.\n"
+                ),
+                "native_nuttx": (
+                    "**IPC caveat.** NuttX's queue baseline is `mq_*` "
+                    "(POSIX message queue, kernel-side), while oveRTOS "
+                    "queue on NuttX is a user-space ring buffer over "
+                    "pthread_mutex+cond — same shape as on POSIX.  The "
+                    "`Stream *` rows have no native peer (NuttX has no "
+                    "byte-stream kernel primitive — `CONFIG_PIPES` is "
+                    "off in the bench defconfig); event groups and "
+                    "workqueues likewise have no NuttX equivalent and "
+                    "are intentionally absent.\n"
                 ),
             }.get(native_suite, "")
             lines.append(

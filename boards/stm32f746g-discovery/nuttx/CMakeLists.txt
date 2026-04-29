@@ -49,3 +49,34 @@ ove_nuttx_build_lvgl()
 
 # Build firmware app
 ove_nuttx_register_app()
+
+#############################################################################
+# Benchmark apps (live under tests/benchmarks/<lang>/): force -O2 +
+# -fno-omit-frame-pointer.  Same audit/hotpath pipeline as FreeRTOS,
+# but attached to the `nuttx` final-link target (NuttX's flat-build
+# names its ELF `nuttx`, which the CLI later copies to `firmware.elf`
+# in images/).  Pass the actual ELF filename as TARGET_FILE so the
+# audit scripts read the right artifact.
+#############################################################################
+if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
+    # Compile flags are applied to the apps_<name> archive target;
+    # nuttx_add_application created it earlier in this file.
+    target_compile_options(${_OVE_NX_TARGET} PRIVATE
+        -O2 -fno-omit-frame-pointer)
+    target_compile_definitions(${_OVE_NX_TARGET} PRIVATE
+        OVE_APP_LANG_NAME=\"${OVE_APP_LANG}\")
+    include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
+    set(_audit_target_key "stm32f746_nuttx_benchmark_${OVE_APP_LANG}")
+    # Pass ELF_PATH explicitly — the `nuttx` ELF is built by a sibling
+    # cmake project (nuttx-cmake) that this directory cannot attach
+    # POST_BUILD steps to.  Use a custom target that depends on the
+    # final-link artefact so the audit runs after kernel link.
+    set(_nuttx_elf "${CMAKE_BINARY_DIR}/../nuttx-cmake/nuttx")
+    ove_assert_no_dispatch_overhead(${_OVE_NX_TARGET}
+        BINDING ${OVE_APP_LANG}
+        ELF_PATH ${_nuttx_elf})
+    ove_dump_hotpaths(${_OVE_NX_TARGET}
+        BINDING ${OVE_APP_LANG}
+        TARGET_KEY ${_audit_target_key}
+        ELF_PATH ${_nuttx_elf})
+endif()

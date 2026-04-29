@@ -162,28 +162,54 @@ function(ove_dump_hotpaths target)
     endif()
 
     if(_OVE_HP_ELF_PATH)
+        # File-level dependency for cross-subscope use (e.g. NuttX,
+        # Zephyr — final ELF is built by a sibling cmake project that
+        # this directory cannot attach POST_BUILD steps to).  Same
+        # pattern as ove_assert_no_dispatch_overhead's ELF_PATH branch.
         set(_elf "${_OVE_HP_ELF_PATH}")
+        set(_stamp_dir "${CMAKE_CURRENT_BINARY_DIR}/hotpath_dump")
+        set(_stamp "${_stamp_dir}/${target}.stamp")
+        file(MAKE_DIRECTORY "${_stamp_dir}")
+        add_custom_command(OUTPUT "${_stamp}"
+            DEPENDS "${_elf}" "${_hp_script}"
+            COMMAND ${CMAKE_COMMAND} -E echo
+                    "[hotpath dump] checking ${_elf} (binding=${_OVE_HP_BINDING})"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_OVE_HP_OUTPUT_DIR}"
+            COMMAND ${_py} "${_hp_script}"
+                    --elf "${_elf}"
+                    --binding "${_OVE_HP_BINDING}"
+                    --config "${_OVE_HP_CONFIG}"
+                    --output-dir "${_OVE_HP_OUTPUT_DIR}"
+                    --nm "${_nm}"
+                    --objdump "${_objdump}"
+                    --cppfilt "${_cppfilt}"
+                    ${_target_key_arg}
+                    ${_strict_flag}
+            COMMAND ${CMAKE_COMMAND} -E touch "${_stamp}"
+            VERBATIM
+            COMMENT "Dumping ${target} hotpath disassembly"
+        )
+        add_custom_target(${target}_hotpath_dump ALL DEPENDS "${_stamp}")
     else()
         set(_elf "$<TARGET_FILE:${target}>")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo
+                    "[hotpath dump] checking ${_elf} (binding=${_OVE_HP_BINDING})"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_OVE_HP_OUTPUT_DIR}"
+            COMMAND ${_py} "${_hp_script}"
+                    --elf "${_elf}"
+                    --binding "${_OVE_HP_BINDING}"
+                    --config "${_OVE_HP_CONFIG}"
+                    --output-dir "${_OVE_HP_OUTPUT_DIR}"
+                    --nm "${_nm}"
+                    --objdump "${_objdump}"
+                    --cppfilt "${_cppfilt}"
+                    ${_target_key_arg}
+                    ${_strict_flag}
+            VERBATIM
+            COMMENT "Dumping ${target} hotpath disassembly"
+        )
     endif()
-
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo
-                "[hotpath dump] checking ${_elf} (binding=${_OVE_HP_BINDING})"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${_OVE_HP_OUTPUT_DIR}"
-        COMMAND ${_py} "${_hp_script}"
-                --elf "${_elf}"
-                --binding "${_OVE_HP_BINDING}"
-                --config "${_OVE_HP_CONFIG}"
-                --output-dir "${_OVE_HP_OUTPUT_DIR}"
-                --nm "${_nm}"
-                --objdump "${_objdump}"
-                --cppfilt "${_cppfilt}"
-                ${_target_key_arg}
-                ${_strict_flag}
-        VERBATIM
-        COMMENT "Dumping ${target} hotpath disassembly"
-    )
 endfunction()
 
 

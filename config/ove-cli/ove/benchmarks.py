@@ -52,6 +52,12 @@ _PLATFORMS = {
         "rtos": "freertos",
         "runner": "stm32_flash_serial",
     },
+    "stm32f746g-discovery-nuttx": {
+        "make_prefix": "stm32f746.nuttx",
+        "board": "stm32f746",
+        "rtos": "nuttx",
+        "runner": "stm32_flash_serial",
+    },
 }
 
 # config_name (== make app target) -> binding tag (== JSON `binding` field)
@@ -143,12 +149,17 @@ def _wait_until_bench_complete(serial_log, binding, start_offset, deadline):
     """Block until the bench emits its final-suite JSON envelope
     *after* `start_offset` (so a stale completion marker from a
     previous boot of the same binding doesn't satisfy the wait)."""
-    # Last suite emitted on FreeRTOS is `native_freertos`.  We pin the
-    # match to bytes written after `start_offset` (the file size right
-    # before we flashed), so the previous run's marker is invisible.
+    # Last suite emitted is the active RTOS's native baseline:
+    #   - FreeRTOS: `native_freertos`
+    #   - NuttX:    `native_nuttx`
+    # All native_* suites are present in every binary but only one is
+    # enabled per RTOS (others have case_count=0); the active one's
+    # JSON envelope is what we wait for.  The regex matches whichever
+    # one fires first, so this works on both backends without needing
+    # the caller to thread the RTOS name through.
     end_re = re.compile(
         rb'"binding":"' + binding.encode() +
-        rb'","suite":"native_freertos"'
+        rb'","suite":"native_(?:freertos|nuttx)"'
     )
     while time.time() < deadline:
         try:
@@ -180,7 +191,7 @@ def _slice_latest_boot(serial_log, app, start_offset):
     return fresh[idx:].decode(errors="replace")
 
 
-def _run_stm32(image, app, log_path, timeout, binding):
+def _run_stm32(image, app, log_path, timeout, binding, rtos="freertos"):
     """Flash to STM32 via openocd, wait for the bench to complete,
     snapshot the latest boot from the picocom serial log."""
     serial_log = os.environ.get("OVE_SERIAL_LOG", "/tmp/serial.log")
@@ -188,7 +199,7 @@ def _run_stm32(image, app, log_path, timeout, binding):
         raise RuntimeError("openocd not in PATH")
 
     flash_sh = os.path.join(OVE_DIR, "boards", "stm32f746g-discovery",
-                            "freertos", "flash.sh")
+                            rtos, "flash.sh")
     # Snapshot serial-log size before flash so the wait loop ignores
     # stale completion markers from previous boots of the same binding.
     start_offset = _serial_log_size(serial_log)
@@ -251,7 +262,8 @@ def cmd_benchmarks(args):
         if p["runner"] == "posix":
             _run_posix(image, log_path, timeout)
         elif p["runner"] == "stm32_flash_serial":
-            _run_stm32(image, app, log_path, timeout, binding)
+            _run_stm32(image, app, log_path, timeout, binding,
+                       rtos=p["rtos"])
         else:
             raise RuntimeError(f"unknown runner '{p['runner']}'")
         log_paths.append(log_path)

@@ -103,6 +103,7 @@ extern const bench_suite_t bench_suite_workqueue;
 extern const bench_suite_t bench_suite_stream;
 extern const bench_suite_t bench_suite_native_posix;
 extern const bench_suite_t bench_suite_native_freertos;
+extern const bench_suite_t bench_suite_native_nuttx;
 
 #if CONFIG_OVE_BENCHMARK_OUTPUT_JSON
 void bench_emit_suite_json(const bench_suite_t *suite,
