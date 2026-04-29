@@ -163,6 +163,24 @@ flash: $(VENV_STAMP)
 test: $(VENV_STAMP)
 	@$(OVE) test $(if $(filter 1,$(JSON)),--json)
 
+# ── Benchmarks ─────────────────────────────────────────────────────────────
+# `make benchmarks-<platform>` — build all 4 bindings (c, cpp, rust, zig)
+# of the benchmark app for the given platform, run each, and emit a
+# cross-binding comparison report.  See `ove benchmarks --help`.
+#
+#   posix                  — runs locally, writes report to
+#                            output/host/posix/_benchmarks/report.md
+#   stm32f746g-discovery   — flashes via openocd and tails the
+#                            picocom-written serial log
+#                            ($OVE_SERIAL_LOG, default /tmp/serial.log).
+#                            Report at
+#                            output/stm32f746/freertos/_benchmarks/report.md
+#
+# Use SKIPBUILD=1 to skip the per-binding builds (re-flash + re-run only).
+.PHONY: benchmarks-%
+benchmarks-%: $(VENV_STAMP)
+	@$(OVE) benchmarks $(if $(filter 1,$(SKIPBUILD)),--skip-build) "$*"
+
 # Single source of truth for `test-<name>` recipes — each delegates to
 # `ove test <name>`. Add new suites here, not as separate targets.
 TEST_NAMES := stub cpp rust zig nuttx zephyr \

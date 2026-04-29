@@ -99,6 +99,20 @@ def main():
     p.add_argument("--json", action="store_true",
                    help="Emit JSON test summary on stdout")
 
+    # ── benchmarks ─────────────────────────────────────────────────────
+    p = sub.add_parser(
+        "benchmarks",
+        help="Build + run the benchmark suite across all bindings on a "
+             "platform, then write a comparison report")
+    p.add_argument("platform",
+                   choices=["posix", "stm32f746g-discovery"],
+                   help="Target platform — 'posix' runs locally; "
+                        "'stm32f746g-discovery' flashes via openocd "
+                        "and tails $OVE_SERIAL_LOG (default "
+                        "/tmp/serial.log) for a picocom-recorded run.")
+    p.add_argument("--skip-build", action="store_true",
+                   help="Skip building (assume firmware already built)")
+
     # ── clean ──────────────────────────────────────────────────────────
     p = sub.add_parser("clean", help="Clean build artifacts")
     p.add_argument("--all", action="store_true",
@@ -228,6 +242,10 @@ def main():
     elif args.command == "test":
         from .test import cmd_test
         cmd_test(args)
+
+    elif args.command == "benchmarks":
+        from .benchmarks import cmd_benchmarks
+        cmd_benchmarks(args)
 
     elif args.command == "clean":
         _cmd_clean(args)
