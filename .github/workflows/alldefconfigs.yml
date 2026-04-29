@@ -177,6 +177,12 @@ jobs:
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
       - name: Build allconfigs-stm32f746.nuttx
+        # OVE_BUILD_JOBS=2: ubuntu-latest's 7 GB RAM can't sustain four
+        # parallel TFLM C++ template compiles (`_keyword_live_*` apps),
+        # so the runner OOM-kills mid-build. Halving parallelism keeps
+        # the peak working set under the limit.
+        env:
+          OVE_BUILD_JOBS: "2"
         run: make allconfigs-stm32f746.nuttx
 
 
