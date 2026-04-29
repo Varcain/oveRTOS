@@ -60,7 +60,22 @@ def update_symlink(link_path, target_path):
 
 
 def nproc() -> int:
-    """Return number of CPUs for parallel operations."""
+    """Number of parallel jobs for build / download steps.
+
+    Honours the `OVE_BUILD_JOBS` env var so CI runners with limited
+    memory can cap parallelism on memory-heavy targets — TFLM C++
+    template compilation on `_keyword_live_*` apps blows past 7 GB
+    RAM at -j4 on ubuntu-latest, which the runner kills as an OOM
+    mid-build. Default falls back to `os.cpu_count()`.
+    """
+    override = os.environ.get("OVE_BUILD_JOBS")
+    if override:
+        try:
+            n = int(override)
+            if n > 0:
+                return n
+        except ValueError:
+            pass
     try:
         return os.cpu_count() or 1
     except Exception:
