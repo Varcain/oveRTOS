@@ -214,6 +214,18 @@ pub fn run() void {
     ffi.ove_run();
 }
 
+/// Start the RTOS scheduler **without** engaging the zero-heap lock.
+///
+/// Used by apps whose runtime structurally requires post-init dynamic
+/// allocation — notably the benchmark suite, which spawns helper threads
+/// inside test setup paths after `ove_main` has returned.  On NuttX
+/// zero-heap builds, the heap lock would cause `pthread_create`'s
+/// `kmm_zalloc(task_group_s)` to fail with `ENOMEM`.  Calling this in
+/// place of `run` opts out of the lock.  Never returns.
+pub fn startScheduler() void {
+    ffi.ove_thread_start_scheduler();
+}
+
 /// Export ove_main entry point from a Zig function.
 /// Must be called from a `comptime {}` block:
 ///     comptime { ove.exportMain(appMain); }

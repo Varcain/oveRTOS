@@ -1577,7 +1577,7 @@ fn testWorkSubmit() !void {
     var work: ove.Work = undefined;
     try work.init(workHandler);
     defer work.deinit();
-    try wq.submit(work);
+    try wq.submit(&work);
     ove.thread.sleepMs(100);
     try expectEqual(u32, 1, wq_count);
 }
@@ -1590,7 +1590,7 @@ fn testWorkSubmitDelayed() !void {
     var work: ove.Work = undefined;
     try work.init(workHandler);
     defer work.deinit();
-    try wq.submitDelayed(work, 50);
+    try wq.submitDelayed(&work, 50);
     ove.thread.sleepMs(10);
     try expectEqual(u32, 0, wq_count);
     ove.thread.sleepMs(150);

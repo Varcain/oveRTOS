@@ -12,6 +12,13 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
+#include <stdatomic.h>
+
+/* Portable Cortex-M memory barrier.  CMSIS exposes `__DMB()` via
+ * `cmsis_compiler.h`, but the QEMU MPS2-AN500 FreeRTOS test build
+ * doesn't pull CMSIS in, so use the standard C11 atomic_thread_fence
+ * (GCC emits `dmb sy` on ARMv7-M) for portability. */
+#define OVE_DMB() atomic_thread_fence(memory_order_seq_cst)
 static void freertos_thread_wrapper(void *param)
 {
 	struct ove_thread *s = (struct ove_thread *)param;
@@ -32,7 +39,7 @@ static void freertos_thread_wrapper(void *param)
 	 * (because destroyer hadn't published yet), destroyer's read of
 	 * exited will see 1 and skip the blocking ulTaskNotifyTake. */
 	s->exited = 1u;
-	__DMB();
+	OVE_DMB();
 	if (s->destroyer != NULL) {
 		xTaskNotifyGive(s->destroyer);
 	}
@@ -103,7 +110,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 static void wait_for_worker_exit(ove_thread_t handle)
 {
 	handle->destroyer = xTaskGetCurrentTaskHandle();
-	__DMB();
+	OVE_DMB();
 	if (handle->exited) {
 		(void)ulTaskNotifyTake(pdTRUE, 0);
 	} else {

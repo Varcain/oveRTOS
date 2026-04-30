@@ -14,22 +14,18 @@ so cross-run scheduler noise is factored out.
 | Binding | FreeRTOS heap | FreeRTOS ZH | NuttX heap | NuttX ZH | Zephyr heap | Zephyr ZH |
 |---------|:-------------:|:-----------:|:----------:|:--------:|:-----------:|:---------:|
 | **C**   | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **C++** | ✓ | ✓ | — *(¹)* | ✓ | ✓ | ✓ |
-| **Rust**| ✓ | ✓ | ✓ | partial *(²)* | ✓ | ✓ |
-| **Zig** | ✓ | ✓ | ✓ | partial *(²)* | ✓ | ✓ |
+| **C++** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Rust**| ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Zig** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-¹ NuttX heap-mode bench doesn't build CPP — the NuttX defconfig enabled
-on this bench does not include libstdc++. ZH adds it back.
-
-² NuttX zero-heap captures only the `time/*` suite for Rust and Zig.
-NuttX's `pthread_create` returns `ENOMEM` for any thread spawn after
-`ove_run()` has locked the heap (the kernel-side `task_group_s`
-allocation goes through a pool that's no longer expandable). Rust
-helper-thread spawns in `ctx_switch_setup` panic with
-`Result::unwrap on Err(NoMemory)`; Zig hangs at the same call site.
-C and CPP work because their helper-thread storage is statically
-declared at file scope. This is a NuttX architectural limit, not a
-binding bug.
+All bench bindings call `ove_thread_start_scheduler()` directly
+instead of `ove_run()` — the bench's create/destroy cases require
+post-init kernel allocation, which `ove_run()`'s zero-heap auto-lock
+would block on NuttX. The C/CPP bench has always done this; Rust
+exposes `ove::start_scheduler()` and Zig `ove.startScheduler()` for
+the same purpose. Without that bypass, NuttX zero-heap traps
+`pthread_create`'s `kmm_zalloc(task_group_s)` with ENOMEM in
+helper-thread setup and Rust+Zig benches stall in `ctx_switch_setup`.
 
 ## C — the baseline
 
@@ -56,8 +52,8 @@ Methods are header-only and inline cleanly under `-O2`.
 |------|------|------------|---------------|-------|
 | FreeRTOS | heap     | 2.7% | `time/time_get_us_overhead` +27%, `thread/yield` −17%, `native/event_signal_wait` −11% | sub-µs op jitter floor; otherwise within ±5% on hot paths |
 | FreeRTOS | zero-heap | 2.1% | `queue/send_receive` +17% | embedded-storage `Queue<T,N>` grows `std::optional<Queue<...>>`; engaged-bit check fights the buffer for a cache line |
-| NuttX    | heap     | — | (CPP not built — NuttX defconfig has no STL) | — |
-| NuttX    | zero-heap | 2.8% | `eventgroup/set_get_bits` −21%, `sync/recursive_mutex_lock_unlock` −17%, `sync/mutex_lock_unlock` −15%, `sync/mutex_contention_2t` −10% | C++ is consistently *faster* than C on NuttX zero-heap by ~10-21% on short sync ops — likely register-allocation / load-hoisting differences in g++ vs gcc on this codebase |
+| NuttX    | heap     | 2.5% | `eventgroup/set_get_bits` −30%, `native/sem_create_destroy` −15%, `queue/send_receive` −14%, `native/thread_yield` −14%, `sync/recursive_mutex_lock_unlock` −13%, `sync/mutex_lock_unlock` −12% | g++ register-allocation / load-hoisting wins over gcc on short sync ops — same pattern as NuttX zero-heap |
+| NuttX    | zero-heap | 2.8% | `eventgroup/set_get_bits` −21%, `sync/recursive_mutex_lock_unlock` −17%, `sync/mutex_lock_unlock` −15%, `time/time_get_us_overhead` −11%, `sync/mutex_contention_2t` −11% | same g++-faster-than-gcc effect as NuttX heap; both modes consistent |
 | Zephyr   | heap     | 2.5% | `sync/mutex_contention_2t` +870% (¹), `native/queue_create_destroy` −23%, `native/sem_create_destroy` −16%, `queue/send_receive` −13% | mostly slightly faster than C; one bench-design flake |
 | Zephyr   | zero-heap | 4.1% | `native/sem_take_give` −13%, `sync/sem_take_give` −13%, `native/queue_create_destroy` −13%, `native/thread_create_destroy` +11% | clean — small absolute deltas |
 
@@ -77,12 +73,19 @@ accesses into a different cache line than the present-flag load).
 Probably fixable by hoisting the present-bit check out of the hot
 loop in the bench.
 
-The negative deltas ("C++ faster than C") on NuttX zero-heap and
-Zephyr (-13% to -23% on several ops) are real and reproducible. They
-reflect the C++ compiler being slightly better than C at register
-allocation for the specific codepath these wrappers compile to. Not a
-binding win in the philosophical sense — same FFI body — just a
-downstream optimizer difference.
+The negative deltas ("C++ faster than C") on NuttX (both heap and
+zero-heap) and Zephyr (−13% to −30% on several ops) are real and
+reproducible. They reflect the C++ compiler being slightly better
+than C at register allocation for the specific codepath these
+wrappers compile to. Not a binding win in the philosophical sense —
+same FFI body — just a downstream optimizer difference.
+
+The fact that NuttX heap and NuttX zero-heap show *the same* negative
+deltas on the same suites (`eventgroup/set_get_bits` −30% vs −21%,
+`mutex_lock_unlock` −12% vs −15%, `recursive_mutex_lock_unlock` −13%
+vs −17%) is the strongest evidence that this is a g++-vs-gcc codegen
+difference — heap-vs-zeroheap doesn't change the wrapper at all on
+this side.
 
 ## Rust — large but consistent overhead
 
@@ -101,8 +104,8 @@ depends on the underlying op's absolute latency.
 |------|------|---------:|------------------|-------|
 | FreeRTOS | heap     | +26.1% | `stream/throughput` +90%, `queue/throughput_2t` +70%, `time_get_us` +57% | producer/consumer doubles the per-op fixed cost |
 | FreeRTOS | zero-heap | +47.3% | `queue/throughput_2t` +81%, `sync/sem_take_give` +77%, `stream/throughput` +66% | wrapper layer identical; deltas track up because C path got marginally slower under ZH |
-| NuttX    | heap     |  −0.4% | `eventgroup/set_get_bits` −26%, `stream/throughput` +23%, `native/sem_create_destroy` −20% | NuttX baseline ops are slower (3-7 µs typical) so the Rust adder is below the noise floor; sometimes Rust register allocation wins outright |
-| NuttX    | zero-heap | (only `time/*` captured — see coverage matrix) | `time_get_us` −15% | bench panics in `ctx_switch_setup` before reaching other suites |
+| NuttX    | heap     |  −0.4% | `eventgroup/set_get_bits` −26%, `stream/throughput` +21%, `native/sem_create_destroy` −20%, `time_get_us` +16%, `native/sem_take_give` −11% | NuttX baseline ops are slower (3-7 µs typical) so the Rust adder is below the noise floor; sometimes Rust register allocation wins outright |
+| NuttX    | zero-heap | −2.6% | `stream/throughput` +39%, `eventgroup/set_get_bits` −22%, `native/thread_yield` −20%, `native/sem_take_give` −19%, `mutex_contention_2t` −14%, `thread/yield` −13% | NuttX baseline so slow that Rust adder is sub-noise; same negative-Δ pattern as NuttX heap |
 | Zephyr   | heap     | +31.7% | `stream/throughput` +74%, `native/sem_create_destroy` +64%, `native/sem_take_give` +63% | Zephyr ops are short, Rust adder visible |
 | Zephyr   | zero-heap | +46.0% | `native/mutex_create_destroy` +86%, `queue/throughput_2t` +86%, `stream/throughput` +86% | identical pattern; Zephyr ZH has slightly faster C baseline so % is higher |
 
@@ -124,12 +127,13 @@ Three mitigations exist for tight loops:
    overhead is invisible. Rust's safety win compounds across a project;
    the per-op cost doesn't.
 
-The "Rust faster than C" pattern on NuttX heap (median Δ −0.4%) is
-explained by the binding's fixed adder being a smaller fraction of
-the larger NuttX baseline, plus monomorphized Rust producing
-slightly tighter register usage on a few specific ops. Don't read it
-as "Rust is genuinely faster" — read it as "the Rust adder is below
-the measurement floor for these ops on this RTOS."
+The "Rust faster than C" pattern on NuttX (heap median Δ −0.4%,
+zero-heap median Δ −2.6%) is explained by the binding's fixed adder
+being a smaller fraction of the larger NuttX baseline, plus
+monomorphized Rust producing slightly tighter register usage on a
+few specific ops. Don't read it as "Rust is genuinely faster" — read
+it as "the Rust adder is below the measurement floor for these ops
+on this RTOS."
 
 ## Zig — clean, with one persistent heap-mode outlier
 
@@ -141,8 +145,8 @@ out, and method dispatch is monomorphized.
 |------|------|------------|---------------|-------|
 | FreeRTOS | heap     | 3.7% | `time_get_us` +25%, `mutex_lock_unlock` +22%, `mutex_contention_2t` +15%, `recursive_mutex_lock_unlock` +11% | persistent mutex outliers in heap mode (see notes) |
 | FreeRTOS | zero-heap | 2.3% | `time_get_us` +18%, `sync/sem_take_give` +14%, `queue/send_receive` +11% | mutex outliers from heap mode disappear; embedded-storage layout removes the optimizer-defeating null-check |
-| NuttX    | heap     | 2.9% | `eventgroup/set_get_bits` −22%, `thread/yield` −16%, `native/thread_yield` −15% | mostly negative — same NuttX-baseline-is-slow effect as Rust |
-| NuttX    | zero-heap | (only `time/*` captured) | `time_get_us` −22% | hangs at same point as Rust |
+| NuttX    | heap     | 3.0% | `eventgroup/set_get_bits` −22%, `thread/yield` −17%, `native/thread_yield` −15%, `stream/throughput` −14%, `native/sem_create_destroy` −14%, `time_get_us` +12% | mostly negative — same NuttX-baseline-is-slow effect as Rust |
+| NuttX    | zero-heap | 2.9% | `eventgroup/set_get_bits` −21%, `native/sem_take_give` −19%, `mutex_lock_unlock` −18%, `native/thread_yield` −18%, `mutex_contention_2t` −17%, `thread/yield` −13%, `time_get_us` −12% | mostly negative — same NuttX-baseline-is-slow effect as the heap mode row above |
 | Zephyr   | heap     | 2.4% | `workqueue/create_destroy` +46%, `native/thread_create_destroy` +22%, `native/queue_create_destroy` −21%, `time_get_us` +17%, `sync/mutex_create_destroy` −17% | one large workqueue create outlier (heap mode only — gated under ZH) |
 | Zephyr   | zero-heap | 2.4% | `native/thread_create_destroy` +25%, `queue/throughput_2t` +17%, `sync/sem_take_give` −11% | clean across the per-call hot paths |
 
@@ -203,7 +207,7 @@ are below the scheduler noise floor.
 ### When to choose which binding
 
 - **C**: lowest overhead, no language-level safety. Use when 1.5 µs per op matters and you're confident in your code.
-- **C++**: clean RAII, near-C performance. Available everywhere except NuttX-heap on this bench (no STL on default NuttX defconfig).
+- **C++**: clean RAII, near-C performance. Available on every RTOS+mode combo on this bench; on NuttX (heap and zero-heap) g++ codegen is reproducibly faster than gcc on short sync ops.
 - **Rust**: best safety guarantees, +1.5-2 µs fixed cost per FFI call. Use when correctness matters more than nanoseconds — most workloads.
 - **Zig**: comptime safety + close-to-C performance, embedded-storage wrappers benefit from zero-heap mode specifically (FreeRTOS mutex outliers disappear). Best fit for embedded with strict zero-heap discipline.
 

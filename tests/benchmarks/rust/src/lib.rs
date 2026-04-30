@@ -1141,7 +1141,13 @@ fn app_main() {
 
     let _runner = ove::thread!("bench_run", benchmark_runner, Priority::Normal, 8192);
 
-    ove::run();
+    // The bench creates+destroys kernel resources during measurement
+    // (helper threads in setup, queues/timers in *_create_destroy cases),
+    // so we bypass `ove::run()`'s zero-heap auto-lock and start the
+    // scheduler directly — matching the C/CPP benches.  Without this,
+    // NuttX zero-heap traps `pthread_create`'s kmm_zalloc with ENOMEM
+    // and stalls Rust+Zig benches in `ctx_switch_setup`.
+    ove::start_scheduler();
 
     ove::log(b"[I] Benchmark app: shutdown\n");
 }

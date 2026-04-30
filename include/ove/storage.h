@@ -354,9 +354,15 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 /**
  * @brief Declare a static thread stack array named @p name with size @p size.
  *
+ * @note Always 8-byte aligned (ARM AAPCS); the runtime backstop in
+ *       @c ove_thread_init() rejects misaligned stacks with
+ *       @c OVE_ERR_INVALID_PARAM, which would silently take down a
+ *       caller that hand-rolled a stack at file scope without the
+ *       attribute (the C++ NuttX bench used to fail at runtime here:
+ *       BSS placement put `<...>_stack` at a 1-byte-aligned offset).
  * @note Overridden by backends that require special alignment (e.g. Zephyr MPU).
  */
-#define OVE_THREAD_STACK_DEFINE_(name, size) static uint8_t name[(size)]
+#define OVE_THREAD_STACK_DEFINE_(name, size) static uint8_t __attribute__((aligned(8))) name[(size)]
 #endif
 
 /* File-static variant of the above — for stacks that need internal linkage

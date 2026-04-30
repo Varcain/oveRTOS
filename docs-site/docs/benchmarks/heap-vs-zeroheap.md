@@ -76,22 +76,22 @@ depending on where the static-vs-heap-allocated object lives.
 | `thread/sleep_1ms` | 1.99 ms | 1.99 ms | 0% | noise — RTOS tick |
 | `thread/context_switch` | 23.3 µs | 23.7 µs | +1.7% | noise |
 | `sync/mutex_lock_unlock` | 3.0 µs | 3.6 µs | **+20.0%** | real, see notes |
-| `sync/mutex_contention_2t` | 3.1 µs | 3.6 µs | **+16.1%** | real, see notes |
+| `sync/mutex_contention_2t` | 3.0 µs | 3.6 µs | **+20.0%** | real, see notes |
 | `sync/sem_take_give` | 3.0 µs | 3.3 µs | +10.0% | marginal |
 | `sync/event_signal_wait` | 23.3 µs | 23.5 µs | +0.9% | noise |
-| `sync/condvar_signal_wait` | 31.5 µs | 32.2 µs | +2.2% | noise |
-| `sync/recursive_mutex_lock_unlock` | 4.5 µs | 4.7 µs | +4.4% | noise |
-| `queue/send_receive` | 6.5 µs | 6.0 µs | −7.7% | marginal |
+| `sync/condvar_signal_wait` | 31.6 µs | 32.2 µs | +1.9% | noise |
+| `sync/recursive_mutex_lock_unlock` | 4.4 µs | 4.7 µs | +6.8% | marginal |
+| `queue/send_receive` | 6.4 µs | 6.0 µs | −6.2% | marginal |
 | `queue/throughput_2t` | 4.8 µs | 4.9 µs | +2.1% | noise |
-| `timer/start_stop` | 11.4 µs | 13.3 µs | **+16.7%** | real, see notes |
+| `timer/start_stop` | 11.3 µs | 13.3 µs | **+17.7%** | real, see notes |
 | `eventgroup/set_get_bits` | 2.1 µs | 2.2 µs | +4.8% | noise |
 | `workqueue/submit_execute` | 32.5 µs | 36.0 µs | **+10.8%** | real, see notes |
 | `stream/send_recv_64B` | 21.0 µs | 21.1 µs | +0.5% | noise |
-| `stream/throughput` | 42.4 µs | 28.1 µs | **−33.7%** | real, see notes |
+| `stream/throughput` | 43.1 µs | 28.1 µs | **−34.8%** | real, see notes |
 
 **`native_nuttx/*` rows show the same shift even more clearly** — the
 raw NuttX API baseline (no oveRTOS wrapper at all) under zero-heap is
-+12% on `native_mutex_lock_unlock`, +12.3% on `native_mutex_contention_2t`,
++13.4% on `native_mutex_lock_unlock`, +12.3% on `native_mutex_contention_2t`,
 +12.5% on `native_sem_take_give`, +16.7% on `native_thread_yield`, +22.9%
 on `native_mutex_create_destroy`. This proves the slowdown is not an
 oveRTOS cost — it's NuttX itself behaving differently between modes.
@@ -100,7 +100,7 @@ oveRTOS cost — it's NuttX itself behaving differently between modes.
 
 NuttX shows a *consistent* slowdown pattern on short synchronous-syscall
 ops under zero-heap: `mutex_lock_unlock` +20%, `mutex_contention_2t`
-+16%, `sem_take_give` +10%, `timer/start_stop` +17%, `thread/yield` +12%,
++20%, `sem_take_give` +10%, `timer/start_stop` +18%, `thread/yield` +12%,
 `workqueue/submit_execute` +11%. These are not binding-level costs —
 the C wrapper is the same FFI symbol — but a real NuttX-specific
 architectural cost.
@@ -127,8 +127,8 @@ work dominates show no such effect.
 within the run-to-run jitter floor for very short reads. Treat as
 measurement noise, not a real regression.
 
-`stream/throughput` flipped sign vs the rest: heap was 42.4 µs,
-zero-heap dropped to 28.1 µs (−33.7%). Stream's two-thread producer
+`stream/throughput` flipped sign vs the rest: heap was 43.1 µs,
+zero-heap dropped to 28.1 µs (−34.8%). Stream's two-thread producer
 / consumer loop is dominated by user-space `pthread_mutex+cond` —
 not the kernel-side adder. The producer's run-to-run scheduling is
 heavily affected by NuttX's adaptive priority logic; we've reproduced

@@ -155,15 +155,19 @@ int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 	if (evt == NULL || storage == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	storage->waiter = NULL;
+	storage->sem = xSemaphoreCreateBinaryStatic(&storage->static_sem);
+	if (storage->sem == NULL) {
+		return OVE_ERR_NO_MEMORY;
+	}
 	*evt = storage;
 	return OVE_OK;
 }
 
 void ove_event_deinit(ove_event_t evt)
 {
-	if (evt != NULL) {
-		evt->waiter = NULL;
+	if (evt != NULL && evt->sem != NULL) {
+		vSemaphoreDelete(evt->sem);
+		evt->sem = NULL;
 	}
 }
 
@@ -198,35 +202,23 @@ void ove_event_destroy(ove_event_t evt)
 
 int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 {
-	/* Register ourself as the (sole) waiter; ove_event is documented
-	 * single-waiter so concurrent waits would already be undefined.
-	 * Drop any stale notify before blocking — guards against a signal
-	 * delivered between the previous wait's wake and the next wait's
-	 * register. */
-	evt->waiter = xTaskGetCurrentTaskHandle();
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
-	uint32_t got = ulTaskNotifyTake(pdTRUE, ms_to_ticks(timeout_ms));
+	BaseType_t got = xSemaphoreTake(evt->sem, ms_to_ticks(timeout_ms));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
-	return got ? OVE_OK : OVE_ERR_TIMEOUT;
+	return (got == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
 
 void ove_event_signal(ove_event_t evt)
 {
-	TaskHandle_t w = evt->waiter;
-	if (w != NULL) {
-		xTaskNotifyGive(w);
-	}
+	(void)xSemaphoreGive(evt->sem);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
-	TaskHandle_t w = evt->waiter;
-	if (w != NULL) {
-		BaseType_t yield = pdFALSE;
-		vTaskNotifyGiveFromISR(w, &yield);
-		portYIELD_FROM_ISR(yield);
-	}
+	BaseType_t yield = pdFALSE;
+	(void)xSemaphoreGiveFromISR(evt->sem, &yield);
+	portYIELD_FROM_ISR(yield);
 }
 
 /* ─── Recursive Mutex _init ──────────────────────────────────────────── */

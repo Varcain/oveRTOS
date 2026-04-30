@@ -62,14 +62,14 @@ struct ove_sem {
 };
 
 struct ove_event {
-	/* Single-waiter event implemented on top of the FreeRTOS task
-	 * notification slot.  Each task has a built-in 32-bit notification
-	 * value; ove_event_signal does xTaskNotifyGive(waiter), wait does
-	 * ulTaskNotifyTake.  Replaces the earlier (StaticSemaphore_t +
-	 * SemaphoreHandle_t) binary semaphore — task notifications are
-	 * lighter than queue-layer semaphores on Cortex-M and the existing
-	 * event API is already documented as single-waiter / edge-triggered. */
-	TaskHandle_t waiter;
+	/* Binary-semaphore-backed event: matches NuttX/Zephyr/POSIX
+	 * level-triggered semantics — a signal delivered before a wait is
+	 * latched and consumed by the next wait.  An earlier task-
+	 * notification implementation was edge-triggered (signal dropped if
+	 * no waiter was registered yet) and broke `signal-then-wait` and
+	 * `signal_from_isr` tests; reverted to the binary-sem design. */
+	StaticSemaphore_t static_sem;
+	SemaphoreHandle_t sem;
 };
 
 struct ove_condvar {

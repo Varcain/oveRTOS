@@ -184,3 +184,20 @@ pub fn run() {
         bindings::ove_run();
     }
 }
+
+/// Start the RTOS scheduler **without** engaging the zero-heap lock.
+///
+/// Used by apps whose runtime structurally requires post-init dynamic
+/// allocation — notably the benchmark suite, which spawns helper threads
+/// inside test setup paths after `ove_main` has returned. On NuttX zero-heap
+/// builds, the heap lock would cause `pthread_create`'s
+/// `kmm_zalloc(task_group_s)` to fail with `ENOMEM`. Calling this in place
+/// of [`run`] opts out of the lock.
+///
+/// Like [`run`], this never returns.
+pub fn start_scheduler() {
+    // SAFETY: kicks the scheduler entry; never returns on most platforms.
+    unsafe {
+        bindings::ove_thread_start_scheduler();
+    }
+}
