@@ -9,15 +9,11 @@
 
 use core::fmt::Write;
 use core::sync::atomic::{AtomicU32, Ordering};
-use ove::lvgl::{self, Arc, Bar, Button, Color, Label, Layout, Slider, Styleable, Switch};
+use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
 use ove::{Error, FmtBuf, Priority, Queue, Thread, Timer, WAIT_FOREVER};
 
 // ---------------------------------------------------------------------------
-// Shared state (file-scope statics)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Constants
+// Constants and shared state (file-scope statics)
 // ---------------------------------------------------------------------------
 
 #[cfg(rtos_freertos)]
@@ -68,31 +64,6 @@ fn create_ui() {
         .indicator_color(Color::palette_main(lvgl::PALETTE_BLUE))
         .radius(8)
         .align(lvgl::ALIGN_TOP_MID, 0, 96);
-
-    // Tier S widget smoke test — Slider, Button, Switch, Arc
-    Slider::create(screen)
-        .size(200, 12)
-        .range(0, 100)
-        .value_anim(50, false)
-        .indicator_color(Color::hex(0x4CAF50))
-        .align(lvgl::ALIGN_TOP_MID, 0, 128);
-
-    let btn = Button::create(screen)
-        .size(96, 32)
-        .align(lvgl::ALIGN_TOP_LEFT, 16, 156);
-    Label::create(btn)
-        .text(b"Button\0")
-        .color(Color::white())
-        .center();
-
-    Switch::create(screen).align(lvgl::ALIGN_TOP_RIGHT, -16, 156);
-
-    Arc::create(screen)
-        .size(72, 72)
-        .range(0, 100)
-        .value(75)
-        .indicator_color(Color::hex(0xFF9800))
-        .align(lvgl::ALIGN_TOP_MID, 0, 196);
 
     COUNTER_LABEL.init(counter);
     BAR.init(bar);
@@ -192,10 +163,10 @@ fn app_main() {
     let _producer = ove::thread!("producer", producer_entry, Priority::Normal, 4096);
     let _consumer = ove::thread!("consumer", consumer_entry, Priority::Normal, 4096);
 
-    // Initialize LVGL and create UI
-    // Create UI timer (200ms periodic)
+    // Create UI timer (200 ms periodic)
     UI_TIMER.init(ove::timer!(ui_timer_cb, 200, false));
 
+    // Initialize LVGL and create UI
     if lvgl::init().is_err() {
         ove::log_err!("Failed to init LVGL");
         return;
@@ -216,12 +187,7 @@ fn app_main() {
 
     ove::run();
 
-    // Cleanup (only reached if scheduler returns)
     ove::log_inf!("Rust example: shutdown");
-    BAR.shutdown();
-    COUNTER_LABEL.shutdown();
-    UI_TIMER.shutdown();
-    QUEUE.shutdown();
 }
 
 ove::main!(app_main);

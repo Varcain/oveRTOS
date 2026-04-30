@@ -5,8 +5,6 @@ sources:
   - src/app.cpp
 includes:
   - include
-images:
-  - assets/logo.png
 defconfig:
   - CONFIG_OVE_BSP=y
   - CONFIG_OVE_LVGL=y
