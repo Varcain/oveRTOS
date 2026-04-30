@@ -190,10 +190,10 @@ ergonomic shape of the API (`_create` vs `_init` + storage decl).
 
 ## Cross-RTOS summary
 
-| RTOS | C-binding hot-path median |Δ| | Worst real outlier | Verdict |
-|------|------------------------|--------------------|---------|
+| RTOS | C-binding hot-path median \|Δ\| | Worst real outlier | Verdict |
+|------|------|--------------------|---------|
 | **FreeRTOS** | ~5% | `stream/throughput` +14.5%, `mutex_contention_2t` +14.3% | minor cache-locality effects from BSS vs heap object placement; some opposite-sign improvements |
-| **NuttX**    | ~12% | `mutex_lock_unlock` +20%, `time_get_us +27% (jitter)` | consistent ~10-20% adder on short sync ops; real, NuttX-architectural — the same shift appears in `native_nuttx/*` baseline rows |
+| **NuttX**    | ~12% | `mutex_lock_unlock` +20%, `time_get_us` +27% (jitter) | consistent ~10-20% adder on short sync ops; real, NuttX-architectural — the same shift appears in `native_nuttx/*` baseline rows |
 | **Zephyr**   | ~3% | `queue/throughput_2t` −10% (bench-design variance) | object pool means zero-heap is essentially free |
 
 The take-aways:

@@ -48,7 +48,7 @@ what's measured below.
 C++ uses RAII wrappers + `std::optional` for setup/teardown lifecycle.
 Methods are header-only and inline cleanly under `-O2`.
 
-| RTOS | Mode | Median |Δ| | Notable cases | Notes |
+| RTOS | Mode | Median \|Δ\| | Notable cases | Notes |
 |------|------|------------|---------------|-------|
 | FreeRTOS | heap     | 2.7% | `time/time_get_us_overhead` +27%, `thread/yield` −17%, `native/event_signal_wait` −11% | sub-µs op jitter floor; otherwise within ±5% on hot paths |
 | FreeRTOS | zero-heap | 2.1% | `queue/send_receive` +17% | embedded-storage `Queue<T,N>` grows `std::optional<Queue<...>>`; engaged-bit check fights the buffer for a cache line |
@@ -141,7 +141,7 @@ Zig wrappers go through comptime trampolines that resolve to direct
 FFI calls under `-OReleaseSafe`. The pin tracker (debug-only) compiles
 out, and method dispatch is monomorphized.
 
-| RTOS | Mode | Median |Δ| | Notable cases | Notes |
+| RTOS | Mode | Median \|Δ\| | Notable cases | Notes |
 |------|------|------------|---------------|-------|
 | FreeRTOS | heap     | 3.7% | `time_get_us` +25%, `mutex_lock_unlock` +22%, `mutex_contention_2t` +15%, `recursive_mutex_lock_unlock` +11% | persistent mutex outliers in heap mode (see notes) |
 | FreeRTOS | zero-heap | 2.3% | `time_get_us` +18%, `sync/sem_take_give` +14%, `queue/send_receive` +11% | mutex outliers from heap mode disappear; embedded-storage layout removes the optimizer-defeating null-check |
