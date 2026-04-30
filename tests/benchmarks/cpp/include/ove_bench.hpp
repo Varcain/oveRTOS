@@ -76,7 +76,7 @@ template <const CaseSpec &Spec> inline void teardown_trampoline(void *)
 /**
  * @brief Build a `bench_case_t` from a compile-time `CaseSpec`.
  *
- * Generates zero-overhead C-ABI trampolines forwarding to the spec's
+ * Generates direct C-ABI trampolines forwarding to the spec's
  * safe C++ `void()` callbacks. Intended for use in a `constexpr`/`static`
  * context where the spec itself is a `constexpr`.
  */

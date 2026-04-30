@@ -8,7 +8,8 @@
 //!
 //! Provides idiomatic Rust bindings matching the C++ `ove::lvgl` wrapper:
 //!
-//! - **Zero-cost abstractions** — every widget is `Copy` + pointer-sized
+//! - **Minimal overhead** — every widget is `Copy` + pointer-sized;
+//!   per-op cost is benchmarked at <https://varcain.github.io/oveRTOS/benchmarks/>
 //! - **Fluent API** — method chaining via `self -> Self` on `Copy` types
 //! - **Trait composition** — `Layout`, `Styleable`, `EventTarget` blanket-impl
 //!   on anything implementing `Widget`, replacing C++ CRTP mixins

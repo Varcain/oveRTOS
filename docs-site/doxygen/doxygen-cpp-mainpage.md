@@ -97,7 +97,7 @@ When `CONFIG_OVE_LVGL` is enabled, `ove/lvgl.hpp` provides:
 - **RAII**: All kernel objects are released in destructors. No manual `_destroy()` calls needed.
 - **Move-only**: Handles are non-copyable, preventing double-free.
 - **Compile-time configuration**: Template parameters encode stack sizes and queue depths.
-- **Zero overhead**: Wrappers inline to the underlying C API with no additional indirection.
+- **[Minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/)**: Wrappers inline to the underlying C API; per-op cost is benchmarked across all bindings on every commit.
 
 ## Further Documentation
 

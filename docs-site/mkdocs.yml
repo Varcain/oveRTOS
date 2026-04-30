@@ -57,6 +57,14 @@ nav:
     - Renode: testing/renode.md
     - Hardware-in-the-loop: testing/hw.md
   - Backends: backends/index.md
+  - Benchmarks:
+    - Overview: benchmarks/index.md
+    - FreeRTOS (heap): benchmarks/freertos-heap.md
+    - FreeRTOS (zero-heap): benchmarks/freertos-zeroheap.md
+    - NuttX (heap): benchmarks/nuttx-heap.md
+    - NuttX (zero-heap): benchmarks/nuttx-zeroheap.md
+    - Zephyr (heap): benchmarks/zephyr-heap.md
+    - Zephyr (zero-heap): benchmarks/zephyr-zeroheap.md
   - Examples:
     - Overview: examples/index.md
     - Basic Example:

@@ -59,7 +59,7 @@ static void benchmark_runner(void *arg)
  * in BSS (file-scope static) rather than triggering libstdc++
  * thread-safe-static-init machinery (which pulls in
  * __gnu_cxx::recursive_init_error vtable + typeinfo and would fail
- * the zero-overhead audit).  The C bench uses the same approach.
+ * the minimal-overhead audit).  The C bench uses the same approach.
  */
 
 /* Static thread storage + stack — using `ove_thread_init` (mode-

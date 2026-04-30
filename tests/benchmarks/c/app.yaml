@@ -30,7 +30,7 @@ defconfig:
   - CONFIG_OVE_SIM_DASHBOARD=n
   # Disable observability hooks that add per-call overhead. Documented
   # in Config.in.debug as adding ~100ns per sync op for trace markers.
-  # The zero-overhead claim only holds with these off; bench numbers
+  # The minimal-overhead claim only holds with these off; bench numbers
   # would otherwise reflect tracing cost rather than the wrapper layer.
   - CONFIG_OVE_TRACE_MARKERS=n
   - CONFIG_OVE_TRACE_STREAM=n

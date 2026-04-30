@@ -49,7 +49,7 @@ static void mutex_lock_unlock_teardown(void *ctx)
  * loop is technically valid but measures something different (init+
  * deinit cycle on the same static buffer) than the heap-mode case.
  * Skip the case entirely; the per-call lock/unlock op is what matters
- * for the zero-overhead claim. */
+ * for the minimal-overhead claim. */
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void mutex_create_destroy_run(void *ctx)
 {

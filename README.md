@@ -3,12 +3,12 @@
 [![tests](https://github.com/Varcain/oveRTOS/actions/workflows/ove-tests.yml/badge.svg)](https://github.com/Varcain/oveRTOS/actions/workflows/ove-tests.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Varcain/2311c373541b067eeb3db3fa9580340b/raw/overtos-coverage.json)](https://github.com/Varcain/oveRTOS/actions/workflows/coverage.yml)
 
-A portable RTOS abstraction framework that provides a unified C API across **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX** (with a browser-hosted **WASM** target). Write your application once, deploy it on any supported backend with zero runtime overhead.
+A portable RTOS abstraction framework that provides a unified C API across **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX** (with a browser-hosted **WASM** target). Write your application once, deploy it on any supported backend with [minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/) over the native API.
 
 ## Key Features
 
 - **Write once, run on any RTOS** -- single API across four RTOS backends plus a WebAssembly target
-- **Zero overhead** -- compile-time backend dispatch, no function pointers or vtables
+- **[Minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/)** -- compile-time backend dispatch, no function pointers or vtables; per-op wrapper cost is benchmarked across all bindings on every commit
 - **Multi-language** -- C, C++, Rust, and Zig bindings
 - **Flexible allocation** -- heap mode (`_create`/`_destroy`) or zero-heap mode (`_init`/`_deinit` with static storage)
 - **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, bus drivers (UART/SPI/I2C/I2S), audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT/HTTPD/SNTP), ML inference, filesystem, NVS, LVGL GUI, shell, logging, power management, watchdog, and more

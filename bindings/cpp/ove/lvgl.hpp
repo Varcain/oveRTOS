@@ -556,7 +556,7 @@ concept StatelessCallable = std::is_convertible_v<F, void (*)(lv_event_t *)>;
  * - Stateless (non-capturing) lambdas and function pointers, registered
  *   directly as LVGL callbacks without any indirection.
  * - Member function pointers as non-type template parameters, using a
- *   zero-cost trampoline that reads the instance from the LVGL user-data slot.
+ *   minimal-overhead trampoline that reads the instance from the LVGL user-data slot.
  *
  * Convenience wrappers `on_click()` and `on_value_changed()` cover the most
  * common event codes.
@@ -585,7 +585,7 @@ template <typename Derived> class EventMixin
 	}
 
 	/**
-	 * @brief Registers a member function pointer as an event callback — zero-cost trampoline.
+	 * @brief Registers a member function pointer as an event callback — minimal-overhead trampoline.
 	 *
 	 * The instance pointer is stored in the LVGL user-data slot and recovered
 	 * inside the inline trampoline lambda.  No heap allocation is needed.

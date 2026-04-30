@@ -1,6 +1,6 @@
 # Synchronization Primitives
 
-`ove/sync.h` provides five portable synchronization primitives: a non-recursive mutex, a recursive mutex, a counting semaphore, a binary event, and a condition variable. Each maps to the equivalent native object on every supported backend (FreeRTOS, Zephyr, NuttX, POSIX) with no virtual dispatch and no runtime overhead.
+`ove/sync.h` provides five portable synchronization primitives: a non-recursive mutex, a recursive mutex, a counting semaphore, a binary event, and a condition variable. Each maps to the equivalent native object on every supported backend (FreeRTOS, Zephyr, NuttX, POSIX) with no virtual dispatch and [minimal runtime overhead](../benchmarks/index.md) over the native API.
 
 All primitives require `CONFIG_OVE_SYNC`. When it is not set, every function is replaced by a static inline stub that returns `OVE_ERR_NOT_SUPPORTED`.
 
