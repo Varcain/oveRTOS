@@ -134,17 +134,18 @@ void ove_main()
 ### Rust (no_std crate, error-as-values)
 
 ```rust
-use ove::{mutex, queue, thread, Priority, run};
+use ove::{mutex, queue, thread, Priority};
 
 fn worker() { /* ... */ }
 
-#[no_mangle]
-pub extern "C" fn ove_main() {
+fn app_main() {
     let _q = queue!(u32, 8);                    // generic + comptime depth
     let _m = mutex!();                          // RAII — Drop cleans up
     let _t = thread!("worker", worker, Priority::Normal, 4096);
-    run();
+    ove::run();
 }
+
+ove::main!(app_main);                           // exports `ove_main` symbol
 ```
 
 ### Zig (comptime-safe wrappers, embedded storage)
