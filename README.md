@@ -85,6 +85,13 @@ The backend is selected at configure time via Kconfig. All API calls resolve dir
 
 ## API Overview
 
+The same operations expressed in each of the four supported languages.
+All four bindings compile down to the same FFI symbols — wrapper
+overhead is benchmarked at
+[varcain.github.io/oveRTOS/benchmarks](https://varcain.github.io/oveRTOS/benchmarks/).
+
+### C
+
 ```c
 #include "ove/ove.h"
 
@@ -92,7 +99,6 @@ void ove_main(void)
 {
     ove_queue_t queue;
     ove_mutex_t mutex;
-
     ove_queue_create(&queue, sizeof(uint32_t), 8);
     ove_mutex_create(&mutex);
 
@@ -108,6 +114,72 @@ void ove_main(void)
     ove_run();
 }
 ```
+
+### C++ (RAII, type-safe queues)
+
+```cpp
+#include <ove/ove.hpp>
+
+void ove_main()
+{
+    ove::Queue<uint32_t, 8> queue;             // typed + bounded
+    ove::Mutex mutex;                          // RAII — destructor cleans up
+    ove::Thread<4096> worker(worker_fn, nullptr,
+                             OVE_PRIO_NORMAL, "worker");
+
+    ove::run();
+}
+```
+
+### Rust (no_std crate, error-as-values)
+
+```rust
+use ove::{mutex, queue, thread, Priority, run};
+
+fn worker() { /* ... */ }
+
+#[no_mangle]
+pub extern "C" fn ove_main() {
+    let _q = queue!(u32, 8);                    // generic + comptime depth
+    let _m = mutex!();                          // RAII — Drop cleans up
+    let _t = thread!("worker", worker, Priority::Normal, 4096);
+    run();
+}
+```
+
+### Zig (comptime-safe wrappers, embedded storage)
+
+```zig
+const ove = @import("ove");
+
+fn worker() void { /* ... */ }
+
+fn appMain() void {
+    var queue: ove.Queue(u32, 8) = undefined;
+    queue.init() catch return;
+    defer queue.deinit();
+
+    var mutex: ove.Mutex = undefined;
+    mutex.init() catch return;
+    defer mutex.deinit();
+
+    var worker_th: ove.Thread(4096) = undefined;
+    worker_th.init("worker", worker, ove.thread.prio.normal) catch return;
+    defer worker_th.deinit();
+
+    ove.run();
+}
+
+comptime { ove.exportMain(appMain); }
+```
+
+The C example uses heap-allocated kernel objects (`_create()` /
+`_destroy()`); flip the build to `CONFIG_OVE_ZERO_HEAP=y` and the same
+source compiles unchanged with each kernel object backed by static
+storage. C++/Rust/Zig wrappers are mode-agnostic by construction. See
+[Zero-Heap Mode](#zero-heap-mode) below for the static-allocation
+discipline and [docs-site/docs/examples](docs-site/docs/examples) for
+full applications in every binding.
 
 ### Modules
 
