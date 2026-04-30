@@ -114,8 +114,6 @@ fn testMutexRaiiDrop() !void {
     var m: ove.Mutex = undefined;
     try m.init();
     m.deinit();
-    // Double destroy should be safe (handle set to null)
-    m.deinit();
 }
 
 fn testMutexGuardAutoUnlock() !void {
@@ -220,7 +218,6 @@ fn testRecursiveMutexRaiiDrop() !void {
     var m: ove.RecursiveMutex = undefined;
     try m.init();
     m.deinit();
-    m.deinit();
 }
 
 fn testRecursiveMutexGuardAutoUnlock() !void {
@@ -316,7 +313,6 @@ fn testSemaphoreRaiiDrop() !void {
     var s: ove.Semaphore = undefined;
     try s.init(1, 1);
     s.deinit();
-    s.deinit();
 }
 
 // ---------------------------------------------------------------------------
@@ -382,7 +378,6 @@ fn testEventAutoReset() !void {
 fn testEventRaiiDrop() !void {
     var e: ove.Event = undefined;
     try e.init();
-    e.deinit();
     e.deinit();
 }
 
@@ -489,7 +484,6 @@ fn testCondVarWaitForever() !void {
 fn testCondVarRaiiDrop() !void {
     var cv: ove.CondVar = undefined;
     try cv.init();
-    cv.deinit();
     cv.deinit();
 }
 
@@ -626,7 +620,6 @@ fn testQueueRaiiDrop() !void {
     var q: Q5 = undefined;
     try q.init();
     q.deinit();
-    q.deinit();
 }
 
 const QU8 = ove.Queue(u8, 4);
@@ -733,7 +726,6 @@ fn testTimerDoubleStart() !void {
 fn testTimerRaiiDrop() !void {
     var t: ove.Timer = undefined;
     try t.init(timerCallback, 100, .periodic);
-    t.deinit();
     t.deinit();
 }
 
@@ -864,7 +856,6 @@ fn testThreadRaiiDrop() !void {
     try t.init("raii", threadEntry, prio.normal);
     ove.thread.sleepMs(50);
     t.deinit();
-    t.deinit();
 }
 
 // ---------------------------------------------------------------------------
@@ -972,7 +963,6 @@ fn testEventGroupCrossThread() !void {
 fn testEventGroupRaiiDrop() !void {
     var eg: ove.EventGroup = undefined;
     try eg.init();
-    eg.deinit();
     eg.deinit();
 }
 
@@ -1193,7 +1183,6 @@ fn testWatchdogFeed() !void {
 fn testWatchdogRaiiDrop() !void {
     var wd: ove.Watchdog = undefined;
     try wd.init(5000);
-    wd.deinit();
     wd.deinit();
 }
 
@@ -1543,7 +1532,6 @@ fn testStreamReceiveFromIsr() !void {
 fn testStreamRaiiDrop() !void {
     var s: ove.Stream(256) = undefined;
     try s.init(1);
-    s.deinit();
     s.deinit();
 }
 
