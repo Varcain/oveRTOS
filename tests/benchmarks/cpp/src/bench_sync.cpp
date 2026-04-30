@@ -362,22 +362,18 @@ static constexpr bench::CaseSpec rmtx_lock_unlock_spec{
 
 static constexpr bench_case_t sync_cases[] = {
 #ifndef CONFIG_OVE_ZERO_HEAP
-	bench::case_<mutex_memory_spec>(),
-	bench::case_<sem_memory_spec>(),
-	bench::case_<event_memory_spec>(),
-	bench::case_<condvar_memory_spec>(),
+	bench::case_<mutex_memory_spec>(),	   bench::case_<sem_memory_spec>(),
+	bench::case_<event_memory_spec>(),	   bench::case_<condvar_memory_spec>(),
 #endif
 	bench::case_<mutex_lock_unlock_spec>(),
 #ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<mutex_create_destroy_spec>(),
 #endif
-	bench::case_<mutex_contention_spec>(),
-	bench::case_<sem_take_give_spec>(),
+	bench::case_<mutex_contention_spec>(),	   bench::case_<sem_take_give_spec>(),
 #ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<sem_create_destroy_spec>(),
 #endif
-	bench::case_<event_signal_wait_spec>(),
-	bench::case_<condvar_signal_wait_spec>(),
+	bench::case_<event_signal_wait_spec>(),	   bench::case_<condvar_signal_wait_spec>(),
 	bench::case_<rmtx_lock_unlock_spec>(),
 };
 

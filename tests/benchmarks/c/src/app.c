@@ -19,12 +19,12 @@
 /* --- Suite registry --- */
 
 static const bench_suite_t *const suites[] = {
-	&bench_suite_time,	   &bench_suite_thread,	    &bench_suite_sync,
-	&bench_suite_queue,	   &bench_suite_timer,	    &bench_suite_eventgroup,
-	&bench_suite_workqueue,	   &bench_suite_stream,	    &bench_suite_native_posix,
-	&bench_suite_native_freertos,
-	&bench_suite_native_nuttx,
-	&bench_suite_native_zephyr,
+	&bench_suite_time,	   &bench_suite_thread,
+	&bench_suite_sync,	   &bench_suite_queue,
+	&bench_suite_timer,	   &bench_suite_eventgroup,
+	&bench_suite_workqueue,	   &bench_suite_stream,
+	&bench_suite_native_posix, &bench_suite_native_freertos,
+	&bench_suite_native_nuttx, &bench_suite_native_zephyr,
 };
 
 #define SUITE_COUNT (sizeof(suites) / sizeof(suites[0]))

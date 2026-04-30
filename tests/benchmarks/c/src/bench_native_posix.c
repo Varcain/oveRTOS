@@ -50,7 +50,7 @@ static bool native_event_flag;
  * user-space ring buffers so the comparison is "wrapper user-space
  * ring vs kernel pipe syscall round-trip" — apples-to-orangutans on
  * absolute timing, but it's the closest standard-POSIX IPC primitive. */
-static int native_pipe_fd[2] = { -1, -1 };
+static int native_pipe_fd[2] = {-1, -1};
 
 /* ─── Mutex: lock/unlock ───────────────────────────────────────── */
 
@@ -310,7 +310,7 @@ static void native_thread_yield_run(void *ctx)
 static void native_thread_sleep_1ms_run(void *ctx)
 {
 	(void)ctx;
-	struct timespec req = { .tv_sec = 0, .tv_nsec = 1000000L };
+	struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};
 	nanosleep(&req, NULL);
 }
 

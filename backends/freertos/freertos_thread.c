@@ -140,8 +140,7 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 	 * malloc + stack malloc) measured at +20 µs vs raw xTaskCreate on
 	 * STM32F746/heap_4.  The wrapper struct's flexible-array `stack[]`
 	 * tail (defined in ove_storage_freertos.h) holds the stack space. */
-	size_t total = sizeof(struct ove_thread)
-		     + (size_t)stack_depth * sizeof(StackType_t);
+	size_t total = sizeof(struct ove_thread) + (size_t)stack_depth * sizeof(StackType_t);
 	struct ove_thread *wrapper = OVE_BACKEND_MALLOC(total);
 	if (wrapper == NULL)
 		return OVE_ERR_NO_MEMORY;
@@ -153,10 +152,9 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 
 	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 
-	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, desc->name,
-					  stack_depth, wrapper,
-					  map_priority(desc->priority),
-					  wrapper->stack, &wrapper->static_task);
+	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, desc->name, stack_depth, wrapper,
+					  map_priority(desc->priority), wrapper->stack,
+					  &wrapper->static_task);
 	if (wrapper->task == NULL) {
 		OVE_BACKEND_FREE(wrapper);
 		return OVE_ERR_NO_MEMORY;

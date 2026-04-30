@@ -71,7 +71,7 @@ typedef struct {
 	uint64_t p95_ns;
 	uint64_t p99_ns;
 	uint64_t trimmed_mean_ns; /* top 1% samples dropped */
-	uint64_t stddev_ns_q;     /* fixed-point: stddev_ns × 1000 */
+	uint64_t stddev_ns_q;	  /* fixed-point: stddev_ns × 1000 */
 } bench_result_t;
 
 typedef struct {
@@ -107,10 +107,8 @@ extern const bench_suite_t bench_suite_native_nuttx;
 extern const bench_suite_t bench_suite_native_zephyr;
 
 #if CONFIG_OVE_BENCHMARK_OUTPUT_JSON
-void bench_emit_suite_json(const bench_suite_t *suite,
-			   const bench_case_t *cases,
-			   const bench_result_t *results,
-			   unsigned int n);
+void bench_emit_suite_json(const bench_suite_t *suite, const bench_case_t *cases,
+			   const bench_result_t *results, unsigned int n);
 #endif
 
 #ifdef __cplusplus

@@ -328,13 +328,14 @@ def _cargo_clippy(ove_dir, check):
     env["CARGO_TARGET_DIR"] = os.path.join(
         output_dir, "tests", "rust_lint", "clippy_target")
 
-    # `--features std,bench` matches the test/docs.rs build shape — without
-    # them the crate's `extern crate alloc` paths are no_std-only and the
-    # bench harness wrappers are gated out, leading to E0433 "no std" /
-    # missing-symbol noise rather than real lint findings.
+    # `--features std` matches the test/docs.rs build shape — without
+    # it the crate's `extern crate alloc` paths are no_std-only, leading
+    # to E0433 "no std" / missing-symbol noise rather than real lint
+    # findings.  (The old `bench` feature was retired when bench code
+    # moved out of the binding crate into tests/benchmarks/rust/.)
     cmd = [
         "cargo", "clippy", "--all-targets", "--locked",
-        "--features", "std,bench", "--",
+        "--features", "std", "--",
         "-D", "warnings",
         "-W", "clippy::pedantic",
         "-W", "clippy::nursery",

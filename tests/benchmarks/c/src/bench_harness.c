@@ -12,7 +12,7 @@
 #include <string.h>
 
 #if defined(CONFIG_OVE_BENCHMARK_DISABLE_ICACHE) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#include "stm32f7xx.h"   /* SCB_DisableICache */
+#include "stm32f7xx.h" /* SCB_DisableICache */
 #endif
 
 /* Diagnostic toggle: turn off the Cortex-M7 I-cache exactly once at the
@@ -92,8 +92,7 @@ static uint64_t welford_stddev_q1000(const struct welford *w)
 	return (uint64_t)(sd * 1000.0 + 0.5);
 }
 
-static void compute_percentiles(uint64_t *samples, unsigned int n,
-				bench_result_t *r)
+static void compute_percentiles(uint64_t *samples, unsigned int n, bench_result_t *r)
 {
 	qsort(samples, n, sizeof(uint64_t), u64_cmp);
 
@@ -173,7 +172,7 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 	}
 
 #if CONFIG_OVE_BENCHMARK_PERCENTILES
-	struct welford w = { 0 };
+	struct welford w = {0};
 	unsigned int sample_count = 0;
 #endif
 

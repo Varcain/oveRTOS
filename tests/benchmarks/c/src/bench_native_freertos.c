@@ -54,26 +54,26 @@ static StaticSemaphore_t native_rmtx_storage;
 static StaticSemaphore_t native_sem_storage;
 static StaticSemaphore_t native_cs_a_storage;
 static StaticSemaphore_t native_cs_b_storage;
-static StaticQueue_t     native_queue_storage;
-static uint8_t           native_queue_buf[8 * sizeof(uint32_t)];
+static StaticQueue_t native_queue_storage;
+static uint8_t native_queue_buf[8 * sizeof(uint32_t)];
 static StaticStreamBuffer_t native_stream_storage;
-static uint8_t           native_stream_buf[256];
+static uint8_t native_stream_buf[256];
 
-static StaticTask_t      native_contention_tcb;
-static StackType_t       native_contention_stack[NATIVE_TASK_STACK];
-static StaticTask_t      native_cv_tcb;
-static StackType_t       native_cv_stack[NATIVE_TASK_STACK];
-static StaticTask_t      native_evt_tcb;
-static StackType_t       native_evt_stack[NATIVE_TASK_STACK];
-static StaticTask_t      native_cs_tcb;
-static StackType_t       native_cs_stack[NATIVE_TASK_STACK];
+static StaticTask_t native_contention_tcb;
+static StackType_t native_contention_stack[NATIVE_TASK_STACK];
+static StaticTask_t native_cv_tcb;
+static StackType_t native_cv_stack[NATIVE_TASK_STACK];
+static StaticTask_t native_evt_tcb;
+static StackType_t native_evt_stack[NATIVE_TASK_STACK];
+static StaticTask_t native_cs_tcb;
+static StackType_t native_cs_stack[NATIVE_TASK_STACK];
 
 static SemaphoreHandle_t native_mtx;
 static SemaphoreHandle_t native_rmtx;
 static SemaphoreHandle_t native_sem;
 static SemaphoreHandle_t native_cs_a;
 static SemaphoreHandle_t native_cs_b;
-static QueueHandle_t     native_queue;
+static QueueHandle_t native_queue;
 static StreamBufferHandle_t native_stream;
 
 /* ─── Mutex: lock/unlock ───────────────────────────────────────── */
@@ -130,10 +130,8 @@ static void native_mutex_contention_setup(void *ctx)
 	contention_done = 0;
 	contention_count = 0;
 	native_mtx = xSemaphoreCreateMutexStatic(&native_mtx_storage);
-	(void)xTaskCreateStatic(native_contention_task, "nat_cont",
-				NATIVE_TASK_STACK, NULL,
-				tskIDLE_PRIORITY + 1,
-				native_contention_stack,
+	(void)xTaskCreateStatic(native_contention_task, "nat_cont", NATIVE_TASK_STACK, NULL,
+				tskIDLE_PRIORITY + 1, native_contention_stack,
 				&native_contention_tcb);
 }
 
@@ -239,9 +237,9 @@ static void native_condvar_signal_wait_setup(void *ctx)
 	(void)ctx;
 	native_cv_done = 0;
 	native_cv_waiter = xTaskGetCurrentTaskHandle();
-	native_cv_signaller = xTaskCreateStatic(native_cv_signal_task,
-		"nat_cv", NATIVE_TASK_STACK, NULL,
-		tskIDLE_PRIORITY + 1, native_cv_stack, &native_cv_tcb);
+	native_cv_signaller = xTaskCreateStatic(native_cv_signal_task, "nat_cv", NATIVE_TASK_STACK,
+						NULL, tskIDLE_PRIORITY + 1, native_cv_stack,
+						&native_cv_tcb);
 }
 
 static void native_condvar_signal_wait_run(void *ctx)
@@ -280,9 +278,9 @@ static void native_event_signal_wait_setup(void *ctx)
 	(void)ctx;
 	native_evt_done = 0;
 	native_evt_waiter = xTaskGetCurrentTaskHandle();
-	native_evt_signaller = xTaskCreateStatic(native_evt_signal_task,
-		"nat_evt", NATIVE_TASK_STACK, NULL,
-		tskIDLE_PRIORITY + 1, native_evt_stack, &native_evt_tcb);
+	native_evt_signaller = xTaskCreateStatic(native_evt_signal_task, "nat_evt",
+						 NATIVE_TASK_STACK, NULL, tskIDLE_PRIORITY + 1,
+						 native_evt_stack, &native_evt_tcb);
 }
 
 static void native_event_signal_wait_run(void *ctx)
@@ -330,8 +328,7 @@ static void native_thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
 	TaskHandle_t h;
-	xTaskCreate(native_dummy_task, "nat_tmp", 256, NULL,
-		    tskIDLE_PRIORITY, &h);
+	xTaskCreate(native_dummy_task, "nat_tmp", 256, NULL, tskIDLE_PRIORITY, &h);
 	vTaskDelete(h);
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
@@ -358,10 +355,8 @@ static void native_thread_context_switch_setup(void *ctx)
 	native_cs_a = xSemaphoreCreateBinaryStatic(&native_cs_a_storage);
 	native_cs_b = xSemaphoreCreateBinaryStatic(&native_cs_b_storage);
 	native_cs_done = 0;
-	(void)xTaskCreateStatic(native_cs_pong_task, "nat_cs",
-				NATIVE_TASK_STACK, NULL,
-				tskIDLE_PRIORITY + 1, native_cs_stack,
-				&native_cs_tcb);
+	(void)xTaskCreateStatic(native_cs_pong_task, "nat_cs", NATIVE_TASK_STACK, NULL,
+				tskIDLE_PRIORITY + 1, native_cs_stack, &native_cs_tcb);
 }
 
 static void native_thread_context_switch_run(void *ctx)
@@ -384,9 +379,8 @@ static void native_thread_context_switch_teardown(void *ctx)
 static void native_queue_send_receive_setup(void *ctx)
 {
 	(void)ctx;
-	native_queue = xQueueCreateStatic(8, sizeof(uint32_t),
-					  native_queue_buf,
-					  &native_queue_storage);
+	native_queue =
+		xQueueCreateStatic(8, sizeof(uint32_t), native_queue_buf, &native_queue_storage);
 }
 
 static void native_queue_send_receive_run(void *ctx)
@@ -427,9 +421,8 @@ static void native_stream_send_recv_64B_setup(void *ctx)
 {
 	(void)ctx;
 	/* 256-byte buffer, trigger level 1 — same shape as oveRTOS bench. */
-	native_stream = xStreamBufferCreateStatic(
-		sizeof(native_stream_buf), 1,
-		native_stream_buf, &native_stream_storage);
+	native_stream = xStreamBufferCreateStatic(sizeof(native_stream_buf), 1, native_stream_buf,
+						  &native_stream_storage);
 	memset(native_stream_tx, 0xAA, sizeof(native_stream_tx));
 }
 

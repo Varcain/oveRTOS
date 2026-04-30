@@ -331,7 +331,7 @@ static void native_thread_yield_run(void *ctx)
 static void native_thread_sleep_1ms_run(void *ctx)
 {
 	(void)ctx;
-	struct timespec req = { .tv_sec = 0, .tv_nsec = 1000000L };
+	struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000L};
 	nanosleep(&req, NULL);
 }
 
@@ -359,8 +359,8 @@ static int native_task_noop(int argc, char *argv[])
 static void native_thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
-	pid_t pid = task_create("ove_bench_noop", SCHED_PRIORITY_DEFAULT,
-				1024, native_task_noop, NULL);
+	pid_t pid =
+		task_create("ove_bench_noop", SCHED_PRIORITY_DEFAULT, 1024, native_task_noop, NULL);
 	if (pid > 0) {
 		/* Wait for the noop task to finish — `waitpid` is the
 		 * canonical NuttX-side join for `task_create`.  pthread_join
@@ -430,7 +430,7 @@ static void native_queue_send_receive_setup(void *ctx)
 static void native_queue_send_receive_run(void *ctx)
 {
 	(void)ctx;
-	uint8_t buf[NATIVE_MQ_MSGSIZE] = { 0 };
+	uint8_t buf[NATIVE_MQ_MSGSIZE] = {0};
 	mq_send(native_mq, (const char *)buf, NATIVE_MQ_MSGSIZE, 0);
 	mq_receive(native_mq, (char *)buf, NATIVE_MQ_MSGSIZE, NULL);
 }

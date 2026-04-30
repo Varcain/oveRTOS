@@ -107,7 +107,7 @@ LVGL_INCLUDE_PATH="$OVE_DIR/tests/backends/stub/lvgl" \
 LVGL_PARENT_PATH="$OVE_DIR/tests/backends/stub" \
 CARGO_TARGET_DIR="$TMP/target" \
 cargo build --manifest-path "$OVE_DIR/bindings/rust/ove/Cargo.toml" \
-    --features std,bench --locked >/dev/null 2>&1 || true
+    --features std --locked >/dev/null 2>&1 || true
 
 BINDINGS=$(find "$TMP/target" -name ove_bindings.rs | head -1)
 if [ -z "$BINDINGS" ]; then

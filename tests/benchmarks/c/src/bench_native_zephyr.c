@@ -40,23 +40,23 @@
 
 /* ─── Shared state ─────────────────────────────────────────────── */
 
-static struct k_mutex   native_mtx;
-static struct k_mutex   native_rmtx;
-static struct k_sem     native_sem;
+static struct k_mutex native_mtx;
+static struct k_mutex native_rmtx;
+static struct k_sem native_sem;
 static struct k_condvar native_cv;
-static struct k_mutex   native_cv_mtx;
-static struct k_event   native_evt;
-static struct k_msgq    native_msgq;
-static struct k_pipe    native_pipe;
+static struct k_mutex native_cv_mtx;
+static struct k_event native_evt;
+static struct k_msgq native_msgq;
+static struct k_pipe native_pipe;
 
 /* Static stacks/storage — kept off-heap to avoid kernel allocations
  * affecting bench timing.  Sizes large enough for the bench thread
  * helpers (contention pong, ctx-switch pong, condvar/event signaller). */
 #define NATIVE_THREAD_STACK 1024
 K_THREAD_STACK_DEFINE(native_contention_stack, NATIVE_THREAD_STACK);
-K_THREAD_STACK_DEFINE(native_cv_signal_stack,  NATIVE_THREAD_STACK);
+K_THREAD_STACK_DEFINE(native_cv_signal_stack, NATIVE_THREAD_STACK);
 K_THREAD_STACK_DEFINE(native_evt_signal_stack, NATIVE_THREAD_STACK);
-K_THREAD_STACK_DEFINE(native_cs_pong_stack,    NATIVE_THREAD_STACK);
+K_THREAD_STACK_DEFINE(native_cs_pong_stack, NATIVE_THREAD_STACK);
 K_THREAD_STACK_DEFINE(native_create_destroy_stack, NATIVE_THREAD_STACK);
 
 static struct k_thread native_contention_th;
@@ -69,8 +69,7 @@ static struct k_thread native_create_destroy_th;
  * `int`-sized message in bench_queue.c). */
 #define NATIVE_MSGQ_MAXMSGS 4
 #define NATIVE_MSGQ_MSGSIZE 8
-static char native_msgq_buf[NATIVE_MSGQ_MAXMSGS * NATIVE_MSGQ_MSGSIZE]
-	__attribute__((aligned(4)));
+static char native_msgq_buf[NATIVE_MSGQ_MAXMSGS * NATIVE_MSGQ_MSGSIZE] __attribute__((aligned(4)));
 
 /* k_pipe backing buffer + tx/rx buffers (static — see comment in
  * bench_native_freertos.c about avoiding per-iter stack memclr). */
@@ -117,7 +116,9 @@ static void native_mutex_create_destroy_run(void *ctx)
 
 static void native_contention_thread(void *p1, void *p2, void *p3)
 {
-	(void)p1; (void)p2; (void)p3;
+	(void)p1;
+	(void)p2;
+	(void)p3;
 	while (!contention_done) {
 		k_mutex_lock(&native_mtx, K_FOREVER);
 		contention_count++;
@@ -131,10 +132,9 @@ static void native_mutex_contention_setup(void *ctx)
 	contention_done = 0;
 	contention_count = 0;
 	k_mutex_init(&native_mtx);
-	k_thread_create(&native_contention_th, native_contention_stack,
-			NATIVE_THREAD_STACK, native_contention_thread,
-			NULL, NULL, NULL,
-			K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+	k_thread_create(&native_contention_th, native_contention_stack, NATIVE_THREAD_STACK,
+			native_contention_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0,
+			K_NO_WAIT);
 }
 
 static void native_mutex_contention_run(void *ctx)
@@ -210,7 +210,9 @@ static volatile int native_cv_done;
 
 static void native_cv_signal_thread(void *p1, void *p2, void *p3)
 {
-	(void)p1; (void)p2; (void)p3;
+	(void)p1;
+	(void)p2;
+	(void)p3;
 	while (!native_cv_done) {
 		k_mutex_lock(&native_cv_mtx, K_FOREVER);
 		k_condvar_signal(&native_cv);
@@ -225,10 +227,8 @@ static void native_condvar_signal_wait_setup(void *ctx)
 	k_mutex_init(&native_cv_mtx);
 	k_condvar_init(&native_cv);
 	native_cv_done = 0;
-	k_thread_create(&native_cv_signal_th, native_cv_signal_stack,
-			NATIVE_THREAD_STACK, native_cv_signal_thread,
-			NULL, NULL, NULL,
-			K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+	k_thread_create(&native_cv_signal_th, native_cv_signal_stack, NATIVE_THREAD_STACK,
+			native_cv_signal_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
 }
 
 static void native_condvar_signal_wait_run(void *ctx)
@@ -256,7 +256,9 @@ static volatile int native_evt_done;
 
 static void native_event_signal_thread(void *p1, void *p2, void *p3)
 {
-	(void)p1; (void)p2; (void)p3;
+	(void)p1;
+	(void)p2;
+	(void)p3;
 	while (!native_evt_done) {
 		k_event_post(&native_evt, NATIVE_EVT_BIT);
 		k_yield();
@@ -268,17 +270,15 @@ static void native_event_signal_wait_setup(void *ctx)
 	(void)ctx;
 	k_event_init(&native_evt);
 	native_evt_done = 0;
-	k_thread_create(&native_evt_signal_th, native_evt_signal_stack,
-			NATIVE_THREAD_STACK, native_event_signal_thread,
-			NULL, NULL, NULL,
-			K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+	k_thread_create(&native_evt_signal_th, native_evt_signal_stack, NATIVE_THREAD_STACK,
+			native_event_signal_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0,
+			K_NO_WAIT);
 }
 
 static void native_event_signal_wait_run(void *ctx)
 {
 	(void)ctx;
-	(void)k_event_wait(&native_evt, NATIVE_EVT_BIT,
-			   true /* reset */, K_MSEC(10));
+	(void)k_event_wait(&native_evt, NATIVE_EVT_BIT, true /* reset */, K_MSEC(10));
 }
 
 static void native_event_signal_wait_teardown(void *ctx)
@@ -308,16 +308,16 @@ static void native_thread_sleep_1ms_run(void *ctx)
 
 static void native_thread_noop(void *p1, void *p2, void *p3)
 {
-	(void)p1; (void)p2; (void)p3;
+	(void)p1;
+	(void)p2;
+	(void)p3;
 }
 
 static void native_thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
-	k_thread_create(&native_create_destroy_th, native_create_destroy_stack,
-			NATIVE_THREAD_STACK, native_thread_noop,
-			NULL, NULL, NULL,
-			K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+	k_thread_create(&native_create_destroy_th, native_create_destroy_stack, NATIVE_THREAD_STACK,
+			native_thread_noop, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
 	k_thread_join(&native_create_destroy_th, K_FOREVER);
 }
 
@@ -328,7 +328,9 @@ static volatile int native_cs_done;
 
 static void native_cs_pong_thread(void *p1, void *p2, void *p3)
 {
-	(void)p1; (void)p2; (void)p3;
+	(void)p1;
+	(void)p2;
+	(void)p3;
 	while (!native_cs_done) {
 		k_sem_take(&native_cs_a, K_FOREVER);
 		if (native_cs_done)
@@ -343,10 +345,8 @@ static void native_thread_context_switch_setup(void *ctx)
 	k_sem_init(&native_cs_a, 0, 1);
 	k_sem_init(&native_cs_b, 0, 1);
 	native_cs_done = 0;
-	k_thread_create(&native_cs_pong_th, native_cs_pong_stack,
-			NATIVE_THREAD_STACK, native_cs_pong_thread,
-			NULL, NULL, NULL,
-			K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
+	k_thread_create(&native_cs_pong_th, native_cs_pong_stack, NATIVE_THREAD_STACK,
+			native_cs_pong_thread, NULL, NULL, NULL, K_PRIO_PREEMPT(8), 0, K_NO_WAIT);
 }
 
 static void native_thread_context_switch_run(void *ctx)
@@ -369,14 +369,13 @@ static void native_thread_context_switch_teardown(void *ctx)
 static void native_queue_send_receive_setup(void *ctx)
 {
 	(void)ctx;
-	k_msgq_init(&native_msgq, native_msgq_buf,
-		    NATIVE_MSGQ_MSGSIZE, NATIVE_MSGQ_MAXMSGS);
+	k_msgq_init(&native_msgq, native_msgq_buf, NATIVE_MSGQ_MSGSIZE, NATIVE_MSGQ_MAXMSGS);
 }
 
 static void native_queue_send_receive_run(void *ctx)
 {
 	(void)ctx;
-	uint8_t buf[NATIVE_MSGQ_MSGSIZE] = { 0 };
+	uint8_t buf[NATIVE_MSGQ_MSGSIZE] = {0};
 	(void)k_msgq_put(&native_msgq, buf, K_FOREVER);
 	(void)k_msgq_get(&native_msgq, buf, K_FOREVER);
 }
@@ -393,8 +392,7 @@ static void native_queue_create_destroy_run(void *ctx)
 {
 	(void)ctx;
 	struct k_msgq q;
-	static char qbuf[NATIVE_MSGQ_MAXMSGS * NATIVE_MSGQ_MSGSIZE]
-		__attribute__((aligned(4)));
+	static char qbuf[NATIVE_MSGQ_MAXMSGS * NATIVE_MSGQ_MSGSIZE] __attribute__((aligned(4)));
 	k_msgq_init(&q, qbuf, NATIVE_MSGQ_MSGSIZE, NATIVE_MSGQ_MAXMSGS);
 	k_msgq_cleanup(&q);
 }

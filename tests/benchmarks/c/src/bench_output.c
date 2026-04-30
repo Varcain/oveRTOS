@@ -82,22 +82,19 @@ void bench_print_footer(void)
  */
 #if CONFIG_OVE_BENCHMARK_OUTPUT_JSON
 
-void bench_emit_suite_json(const bench_suite_t *suite,
-			   const bench_case_t *cases,
-			   const bench_result_t *results,
-			   unsigned int n)
+void bench_emit_suite_json(const bench_suite_t *suite, const bench_case_t *cases,
+			   const bench_result_t *results, unsigned int n)
 {
 	OVE_LOG("###BENCH_JSON_BEGIN\n");
-	OVE_LOG("{\"rtos\":\"%s\",\"binding\":\"%s\",\"suite\":\"%s\",\"cases\":[",
-		OVE_RTOS_NAME, OVE_APP_LANG_NAME, suite->name);
+	OVE_LOG("{\"rtos\":\"%s\",\"binding\":\"%s\",\"suite\":\"%s\",\"cases\":[", OVE_RTOS_NAME,
+		OVE_APP_LANG_NAME, suite->name);
 
 	for (unsigned int i = 0; i < n; i++) {
 		const bench_case_t *bc = &cases[i];
 		const bench_result_t *r = &results[i];
-		const char *type_str =
-			bc->type == BENCH_TYPE_LATENCY    ? "latency"
-			: bc->type == BENCH_TYPE_THROUGHPUT ? "throughput"
-							    : "memory";
+		const char *type_str = bc->type == BENCH_TYPE_LATENCY	   ? "latency"
+				       : bc->type == BENCH_TYPE_THROUGHPUT ? "throughput"
+									   : "memory";
 
 		uint64_t avg_ns = (r->count > 0) ? r->total_ns / r->count : 0;
 
@@ -108,20 +105,16 @@ void bench_emit_suite_json(const bench_suite_t *suite,
 			OVE_LOG("\"heap_delta\":%d", (int)r->heap_delta);
 		} else {
 			OVE_LOG("\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,",
-				(unsigned int)r->min_ns,
-				(unsigned int)r->max_ns,
+				(unsigned int)r->min_ns, (unsigned int)r->max_ns,
 				(unsigned int)avg_ns);
-			OVE_LOG("\"count\":%u,\"ops_per_sec\":%u",
-				(unsigned int)r->count,
+			OVE_LOG("\"count\":%u,\"ops_per_sec\":%u", (unsigned int)r->count,
 				(unsigned int)r->ops_per_sec);
 #if CONFIG_OVE_BENCHMARK_PERCENTILES
 			OVE_LOG(",\"p50_ns\":%u,\"p95_ns\":%u,\"p99_ns\":%u,",
-				(unsigned int)r->p50_ns,
-				(unsigned int)r->p95_ns,
+				(unsigned int)r->p50_ns, (unsigned int)r->p95_ns,
 				(unsigned int)r->p99_ns);
 			OVE_LOG("\"trimmed_mean_ns\":%u,\"stddev_ns_q1000\":%u",
-				(unsigned int)r->trimmed_mean_ns,
-				(unsigned int)r->stddev_ns_q);
+				(unsigned int)r->trimmed_mean_ns, (unsigned int)r->stddev_ns_q);
 #endif
 		}
 		OVE_LOG("}");

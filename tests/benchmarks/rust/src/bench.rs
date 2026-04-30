@@ -185,8 +185,7 @@ pub fn run_suite(suite: &'static CBenchSuite) {
     }
 
     let n = (suite.case_count as usize).min(MAX_CASES_PER_SUITE);
-    let results: &mut [BenchResult; MAX_CASES_PER_SUITE] =
-        unsafe { &mut *RESULTS.0.get() };
+    let results: &mut [BenchResult; MAX_CASES_PER_SUITE] = unsafe { &mut *RESULTS.0.get() };
     for i in 0..MAX_CASES_PER_SUITE {
         results[i] = unsafe { core::mem::zeroed() };
     }
@@ -200,12 +199,7 @@ pub fn run_suite(suite: &'static CBenchSuite) {
         }
         bench_print_footer();
 
-        bench_emit_suite_json(
-            suite as *const _,
-            suite.cases,
-            results.as_ptr(),
-            n as u32,
-        );
+        bench_emit_suite_json(suite as *const _, suite.cases, results.as_ptr(), n as u32);
     }
     let _ = results;
 }

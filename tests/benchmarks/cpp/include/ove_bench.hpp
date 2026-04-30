@@ -44,7 +44,8 @@ struct CaseSpec {
 	void (*setup)() = nullptr;    /**< Optional one-time setup. */
 	void (*teardown)() = nullptr; /**< Optional one-time teardown. */
 	uint32_t iterations = 0;      /**< Iteration count (0 = harness default). */
-	uint32_t inner_iters = 0;     /**< For sub-µs cases: ×N inner reps per timestamp pair (0 = 1). */
+	uint32_t inner_iters =
+		0; /**< For sub-µs cases: ×N inner reps per timestamp pair (0 = 1). */
 };
 
 namespace detail
@@ -186,7 +187,7 @@ inline void run_suite(const ::bench_suite_t &suite)
  * @endcode
  */
 #define OVE_BENCH_SUITE(symbol, name_lit, enabled_fn, cases_array)            \
-	static constexpr ::bench::SuiteSpec _##symbol##_spec{            \
+	static constexpr ::bench::SuiteSpec _##symbol##_spec{                 \
 		.name = (name_lit),                                           \
 		.enabled = (enabled_fn),                                      \
 		.cases = (cases_array),                                       \
