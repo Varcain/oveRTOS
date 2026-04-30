@@ -74,11 +74,13 @@ _BINDINGS = [
     ("benchmark_zig",  "zig"),
 ]
 
-# Per-binding wall-clock cap on a single bench run (large enough for
-# every suite at default iterations; STM32 traces ~90 s, POSIX ~5 s).
+# Per-binding wall-clock cap on a single bench run.  STM32 was 180 s
+# but the long-running suites (8 suites × 1000 iterations each + the
+# native_<rtos> tail with another 14 cases) need ~9-10 min on Zig and
+# Rust.  Bumped to 720 s with margin.  POSIX runs are short.
 _RUN_TIMEOUT_S = {
     "posix": 90,
-    "stm32_flash_serial": 180,
+    "stm32_flash_serial": 720,
 }
 
 
@@ -243,13 +245,21 @@ def _run_stm32(image, app, log_path, timeout, binding, rtos="freertos"):
     logger.info(f"captured {n} JSON suites from this run")
 
 
-def _generate_report(out_dir, log_paths):
-    """Run scripts/bench_compare.py against the per-binding logs."""
+def _generate_report(out_dir, log_paths, zeroheap=False, runner=None):
+    """Run scripts/bench_compare.py against the per-binding logs.
+
+    `--page-mode {heap,zeroheap}` is passed for STM32 runs so the
+    generated report.md drops directly into
+    docs-site/docs/benchmarks/<rtos>-<mode>.md without manual header
+    fixups.  POSIX runs keep the legacy generic header (cross-RTOS,
+    not currently surfaced in the docs site)."""
     script = os.path.join(OVE_DIR, "scripts", "bench_compare.py")
     report = os.path.join(out_dir, "report.md")
     cmd = [sys.executable, script,
            "--input", *log_paths,
            "--output", report]
+    if runner == "stm32_flash_serial":
+        cmd += ["--page-mode", "zeroheap" if zeroheap else "heap"]
     logger.info("=== generating report ===")
     rc = subprocess.call(cmd, cwd=OVE_DIR)
     if rc != 0:
@@ -267,11 +277,20 @@ def cmd_benchmarks(args):
 
     p = _PLATFORMS[platform]
     zeroheap = getattr(args, "zeroheap", False)
+    binding_filter = getattr(args, "binding", None)
     out_dir = _output_dir(p["board"], p["rtos"], zeroheap)
     os.makedirs(out_dir, exist_ok=True)
 
+    # When --binding selects a subset, run only those but include every
+    # previously-captured log in the report so the comparison still
+    # spans all 4 bindings.
     log_paths = []
     for app, binding in _BINDINGS:
+        log_path = os.path.join(out_dir, f"{binding}.log")
+        if binding_filter and binding not in binding_filter:
+            if os.path.isfile(log_path):
+                log_paths.append(log_path)
+            continue
         if not args.skip_build:
             _build_one(p["make_prefix"], app, zeroheap)
         _, image = _firmware_paths(p["board"], p["rtos"], app, zeroheap)
@@ -279,7 +298,6 @@ def cmd_benchmarks(args):
             raise RuntimeError(f"firmware not found at {image} "
                                f"(build={p['make_prefix']}.{app}"
                                f"{' ZEROHEAP=1' if zeroheap else ''})")
-        log_path = os.path.join(out_dir, f"{binding}.log")
         timeout = _RUN_TIMEOUT_S[p["runner"]]
         if p["runner"] == "posix":
             _run_posix(image, log_path, timeout)
@@ -290,6 +308,7 @@ def cmd_benchmarks(args):
             raise RuntimeError(f"unknown runner '{p['runner']}'")
         log_paths.append(log_path)
 
-    report = _generate_report(out_dir, log_paths)
+    report = _generate_report(out_dir, log_paths,
+                              zeroheap=zeroheap, runner=p["runner"])
     print(f"\nReport: {report}")
     print(f"Logs:   {out_dir}/<binding>.log  (one per c/cpp/rust/zig)")

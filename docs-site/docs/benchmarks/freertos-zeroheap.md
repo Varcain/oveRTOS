@@ -14,91 +14,44 @@ For methodology, statistical conventions, and how to reproduce, see the [benchma
 
 | Suite | Case | C | CPP | Δ CPP | RUST | Δ RUST | ZIG | Δ ZIG |
 |---|---|---|---|---|---|---|---|---|
-| time | time_get_us_overhead | 337 ns | 351 ns | +4.2% | 511 ns | +51.6% | 400 ns | +18.7% |
-| time | delay_1ms | 993.5 µs | 993.3 µs | -0.0% | 991.6 µs | -0.2% | 993.9 µs | +0.0% |
-| thread | yield | 2.7 µs | 2.8 µs | +2.8% | 4.0 µs | +48.4% | 2.8 µs | +3.1% |
+| time | time_get_us_overhead | 338 ns | 354 ns | +4.7% | 510 ns | +50.9% | 400 ns | +18.3% |
+| time | delay_1ms | 993.6 µs | 993.3 µs | -0.0% | 991.6 µs | -0.2% | 993.9 µs | +0.0% |
+| thread | yield | 2.7 µs | 2.8 µs | +2.5% | 4.1 µs | +49.8% | 2.8 µs | +2.7% |
 | thread | sleep_1ms | 993.3 µs | 993.2 µs | -0.0% | 991.5 µs | -0.2% | 993.9 µs | +0.1% |
-| thread | context_switch | 23.6 µs | 23.4 µs | -0.7% | — | — | 23.7 µs | +0.3% |
-| sync | mutex_lock_unlock | 3.8 µs | 3.7 µs | -3.6% | 5.8 µs | +51.5% | 3.9 µs | +0.3% |
-| sync | mutex_contention_2t | 3.9 µs | 3.9 µs | -0.2% | 5.9 µs | +48.9% | 4.0 µs | +1.5% |
-| sync | sem_take_give | 2.9 µs | 3.2 µs | +9.3% | 5.2 µs | +78.0% | 3.3 µs | +14.1% |
-| sync | event_signal_wait | 11.1 µs | 11.3 µs | +1.6% | 13.4 µs | +20.2% | 11.5 µs | +3.4% |
-| sync | condvar_signal_wait | 15.4 µs | 15.9 µs | +2.8% | 18.5 µs | +19.7% | 15.0 µs | -2.9% |
-| sync | recursive_mutex_lock_unlock | 4.4 µs | 4.3 µs | -0.6% | 6.3 µs | +44.4% | 4.2 µs | -3.3% |
-| queue | send_receive | 3.7 µs | 4.4 µs | +17.1% | 5.8 µs | +56.7% | 4.2 µs | +11.3% |
-| queue | throughput_2t | 2.3 µs | 2.7 µs | +15.5% | 4.4 µs | +90.6% | 2.7 µs | +16.4% |
-| timer | start_stop | 28.9 µs | 30.6 µs | +5.8% | 31.8 µs | +10.2% | 29.8 µs | +3.1% |
-| eventgroup | set_get_bits | 3.3 µs | 3.3 µs | -1.8% | 4.9 µs | +46.4% | 3.3 µs | -0.6% |
-| workqueue | submit_execute | 25.2 µs | 25.3 µs | +0.6% | 28.6 µs | +13.5% | 25.2 µs | -0.0% |
-| stream | send_recv_64B | 8.3 µs | 8.0 µs | -4.0% | 12.0 µs | +45.2% | 7.6 µs | -8.0% |
-| stream | throughput | 12.6 µs | 12.7 µs | +1.2% | 21.0 µs | +67.3% | 12.6 µs | +0.6% |
+| thread | context_switch | 23.6 µs | 23.5 µs | -0.4% | — | — | 23.7 µs | +0.7% |
+| sync | mutex_lock_unlock | 3.8 µs | 3.7 µs | -3.8% | 5.8 µs | +51.4% | 3.9 µs | +0.2% |
+| sync | mutex_contention_2t | 4.0 µs | 3.9 µs | -0.5% | 5.9 µs | +48.3% | 4.0 µs | +1.1% |
+| sync | sem_take_give | 2.9 µs | 3.2 µs | +9.3% | 5.2 µs | +77.2% | 3.3 µs | +13.9% |
+| sync | event_signal_wait | 11.1 µs | 11.3 µs | +1.8% | 13.4 µs | +20.4% | 11.5 µs | +3.4% |
+| sync | condvar_signal_wait | 15.4 µs | 15.8 µs | +2.4% | 18.5 µs | +20.0% | 15.0 µs | -3.1% |
+| sync | recursive_mutex_lock_unlock | 4.4 µs | 4.3 µs | -0.5% | 6.3 µs | +44.5% | 4.2 µs | -3.4% |
+| queue | send_receive | 3.7 µs | 4.4 µs | +16.7% | 5.9 µs | +56.6% | 4.1 µs | +11.0% |
+| queue | throughput_2t | 2.4 µs | 2.6 µs | +7.1% | 4.4 µs | +81.1% | 2.5 µs | +1.9% |
+| timer | start_stop | 28.9 µs | 30.5 µs | +5.6% | 31.9 µs | +10.2% | 29.8 µs | +3.2% |
+| eventgroup | set_get_bits | 3.3 µs | 3.2 µs | -1.9% | 4.9 µs | +47.3% | 3.3 µs | -0.5% |
+| workqueue | submit_execute | 25.2 µs | 25.3 µs | +0.4% | 28.4 µs | +12.3% | 25.2 µs | -0.3% |
+| stream | send_recv_64B | 8.3 µs | 8.0 µs | -4.1% | 12.1 µs | +45.1% | 7.6 µs | -8.1% |
+| stream | throughput | 12.6 µs | 12.7 µs | +0.5% | 20.9 µs | +66.0% | 12.7 µs | +0.8% |
 | thread | ctx_switch | — | — | — | 25.2 µs | — | — | — |
-| native_freertos | native_mutex_lock_unlock | — | — | — | 5.5 µs | — | — | — |
-| native_freertos | native_mutex_contention_2t | — | — | — | 5.5 µs | — | — | — |
-| native_freertos | native_recursive_mutex_lock_unlock | — | — | — | 6.1 µs | — | — | — |
-| native_freertos | native_sem_take_give | — | — | — | 4.8 µs | — | — | — |
-| native_freertos | native_condvar_signal_wait | — | — | — | 11.1 µs | — | — | — |
-| native_freertos | native_event_signal_wait | — | — | — | 11.2 µs | — | — | — |
-| native_freertos | native_thread_yield | — | — | — | 4.1 µs | — | — | — |
-| native_freertos | native_thread_sleep_1ms | — | — | — | 991.5 µs | — | — | — |
-| native_freertos | native_thread_context_switch | — | — | — | 18.5 µs | — | — | — |
-| native_freertos | native_queue_send_receive | — | — | — | 5.5 µs | — | — | — |
-| native_freertos | native_stream_send_recv_64B | — | — | — | 8.6 µs | — | — | — |
 
 **Cases with |Δ| > 10.0% vs C:**
 
-- **RUST** `queue/throughput_2t` 4414 vs 2316 (+90.6%)
-- **RUST** `sync/sem_take_give` 5172 vs 2905 (+78.0%)
-- **RUST** `stream/throughput` 21030 vs 12571 (+67.3%)
-- **RUST** `queue/send_receive` 5845 vs 3729 (+56.7%)
-- **RUST** `time/time_get_us_overhead` 511 vs 337 (+51.6%)
-- **RUST** `sync/mutex_lock_unlock` 5830 vs 3847 (+51.5%)
-- **RUST** `sync/mutex_contention_2t` 5868 vs 3942 (+48.9%)
-- **RUST** `thread/yield` 4029 vs 2715 (+48.4%)
-- **RUST** `eventgroup/set_get_bits` 4853 vs 3315 (+46.4%)
-- **RUST** `stream/send_recv_64B` 12045 vs 8298 (+45.2%)
-- **RUST** `sync/recursive_mutex_lock_unlock` 6295 vs 4359 (+44.4%)
-- **RUST** `sync/event_signal_wait` 13385 vs 11131 (+20.2%)
-- **RUST** `sync/condvar_signal_wait` 18483 vs 15446 (+19.7%)
-- **ZIG** `time/time_get_us_overhead` 400 vs 337 (+18.7%)
-- **CPP** `queue/send_receive` 4367 vs 3729 (+17.1%)
-- **ZIG** `queue/throughput_2t` 2695 vs 2316 (+16.4%)
-- **CPP** `queue/throughput_2t` 2676 vs 2316 (+15.5%)
-- **ZIG** `sync/sem_take_give` 3314 vs 2905 (+14.1%)
-- **RUST** `workqueue/submit_execute` 28590 vs 25181 (+13.5%)
-- **ZIG** `queue/send_receive` 4152 vs 3729 (+11.3%)
-- **RUST** `timer/start_stop` 31843 vs 28900 (+10.2%)
-
-### Wrapper vs native FreeRTOS API (within-run delta)
-
-Each row is one binding's measurement of its own wrapper paired against the **raw FreeRTOS API baseline from the same process**.  Same scheduler state, same noise, so the Δ column is a clean per-binding estimate of wrapper overhead.  Δ near 0 ns ⇒ binding wrapper matches raw native API within measurement noise.
-
-**IPC caveat.** Both oveRTOS queue and the FreeRTOS `xQueue*` / `xStreamBuffer*` baselines run in-kernel on Cortex-M, so wrapper-vs-native Δ on `Queue *` / `Stream *` rows reflects pure binding overhead (no user-space-vs-kernel asymmetry like on POSIX).  Event groups (FreeRTOS xEventGroup* mirrors oveRTOS 1:1, uninformative) and workqueues (no FreeRTOS primitive) are intentionally absent.
-
-| Operation | Binding | Wrapper called | Wrapper ns | Native ns | Δ |
-|---|---|---|---|---|---|
-| Thread yield | RUST | ove::Thread::yield | 4029 ns | 4115 ns | -86 ns |
-| Thread sleep 1ms | RUST | ove::Thread::sleep_ms(1) | 991546 ns | 991464 ns | +82 ns |
-| Mutex lock+unlock | RUST | ove::Mutex::lock+unlock | 5830 ns | 5473 ns | +357 ns |
-| Mutex contention (2t) | RUST | ove::Mutex::lock+unlock (×2t) | 5868 ns | 5533 ns | +335 ns |
-| Recursive mutex lock+unlock | RUST | ove::RMutex::lock+unlock | 6295 ns | 6142 ns | +153 ns |
-| Sem take+give | RUST | ove::Sem::take+give | 5172 ns | 4793 ns | +379 ns |
-| Condvar signal+wait | RUST | ove::Condvar::signal+wait | 18483 ns | 11053 ns | +7430 ns |
-| Event signal+wait | RUST | ove::Event::signal+wait | 13385 ns | 11155 ns | +2230 ns |
-| Queue send+receive | RUST | ove::Queue::send+recv | 5845 ns | 5465 ns | +380 ns |
-| Stream send+recv 64B | RUST | ove::Stream::send+recv 64B | 12045 ns | 8645 ns | +3400 ns |
-
-#### Lifecycle and intrinsic-cost caveats
-
-Per-call wrapper overhead is sub-µs for every primitive: lock/unlock, take/give, send/receive, yield are all within ±200 ns of raw FreeRTOS.  The remaining gaps are FreeRTOS-intrinsic costs of the underlying kernel work, **not** wrapper-layer overhead:
-
-- **Thread create+destroy ≈ +7 µs:** FreeRTOS task lifecycle (`prvInitialiseNewTask` + `prvAddNewTaskToReadyList` + `vTaskDelete` + list cleanup) runs regardless of how thin the wrapper is.  oveRTOS uses single-allocation static-task creation (no extra heap blocks) and task-notification join via a Dekker-style handshake (no separate semaphore object).  Closing this further requires a thread-pool API (different ownership semantics) and is out of scope for the zero-overhead claim, which is about per-call cost.
-
-- **Condvar signal+wait ≈ +5 µs:** POSIX-style condvar contract requires the caller's mutex to be released atomically with the wait and re-acquired on wake.  That extra `xSemaphoreGive(mtx) + xSemaphoreTake(mtx)` round trip is what the raw `ulTaskNotifyTake` baseline doesn't pay.  Anyone wanting condvar semantics pays this; the binding doesn't add to it.
-
-- **Event signal+wait ≈ +2 µs:** `ove_event_*` is implemented directly on top of FreeRTOS task notifications (no semaphore in the middle).  The residual gap vs raw `ulTaskNotifyTake` is the cost of going through the wrapper function (`xTaskGetCurrentTaskHandle` lookup + `evt->waiter` store + frame setup) on each call.  The wrapper buys uniform single-waiter semantics across RTOSes; the per-call cost is what it is.
-
-- **Context switch (2t) ≈ +6 µs:** the bench runs a full ping-pong cycle (sem give/take across two tasks).  Both directions go through the wrapper, so the wrapper cost adds twice; the native baseline pays the same context-switch cost without that doubling.
-
-- **Rust same-process native baseline elevation (+40-65% on `native_*` rows):** `bench_native_freertos.c` is *the same C code* compiled into every binary, so the Rust column for those rows does not reflect any binding behaviour.  Investigated via `CONFIG_OVE_BENCHMARK_DISABLE_ICACHE` (toggles `SCB_DisableICache` for the run): with I-cache off, all rows scale up ~2.5× as expected, but the Rust↔C ratio does not converge — the absolute gap actually widens slightly.  I-cache pressure from Rust's larger text footprint is *not* the dominant cause.  The remaining elevation is binary-layout / call-frame / linker-placement noise that varies between Rust and C process images on this Cortex-M7; not closeable from the binding side.
-
+- **RUST** `queue/throughput_2t` 4423 vs 2442 (+81.1%)
+- **RUST** `sync/sem_take_give` 5161 vs 2912 (+77.2%)
+- **RUST** `stream/throughput` 20940 vs 12614 (+66.0%)
+- **RUST** `queue/send_receive` 5853 vs 3738 (+56.6%)
+- **RUST** `sync/mutex_lock_unlock` 5822 vs 3845 (+51.4%)
+- **RUST** `time/time_get_us_overhead` 510 vs 338 (+50.9%)
+- **RUST** `thread/yield` 4066 vs 2715 (+49.8%)
+- **RUST** `sync/mutex_contention_2t` 5861 vs 3951 (+48.3%)
+- **RUST** `eventgroup/set_get_bits` 4882 vs 3314 (+47.3%)
+- **RUST** `stream/send_recv_64B` 12061 vs 8312 (+45.1%)
+- **RUST** `sync/recursive_mutex_lock_unlock` 6296 vs 4356 (+44.5%)
+- **RUST** `sync/event_signal_wait` 13407 vs 11136 (+20.4%)
+- **RUST** `sync/condvar_signal_wait` 18525 vs 15437 (+20.0%)
+- **ZIG** `time/time_get_us_overhead` 400 vs 338 (+18.3%)
+- **CPP** `queue/send_receive` 4363 vs 3738 (+16.7%)
+- **ZIG** `sync/sem_take_give` 3318 vs 2912 (+13.9%)
+- **RUST** `workqueue/submit_execute` 28353 vs 25238 (+12.3%)
+- **ZIG** `queue/send_receive` 4148 vs 3738 (+11.0%)
+- **RUST** `timer/start_stop` 31876 vs 28919 (+10.2%)

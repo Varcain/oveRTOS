@@ -21,15 +21,16 @@ const is_zephyr = @hasDecl(c, "CONFIG_OVE_RTOS_ZEPHYR");
 
 /// Compute thread stack alignment.  Zephyr MPU requires power-of-2
 /// alignment matching the total stack size; other backends need 8-byte
-/// alignment (ARM AAPCS).
-fn stackAlign(comptime stack_size: usize) comptime_int {
+/// alignment (ARM AAPCS).  Public so workqueue.zig can reuse the
+/// platform-aware sizing for its embedded worker stack.
+pub fn stackAlign(comptime stack_size: usize) comptime_int {
     if (is_zephyr) {
         return std.math.ceilPowerOfTwo(usize, stack_size + 128) catch 8192;
     }
     return 8;
 }
 
-fn stackTotal(comptime stack_size: usize) usize {
+pub fn stackTotal(comptime stack_size: usize) usize {
     if (is_zephyr) {
         return std.math.ceilPowerOfTwo(usize, stack_size + 128) catch 8192;
     }

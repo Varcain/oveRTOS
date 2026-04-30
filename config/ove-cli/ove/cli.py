@@ -125,6 +125,14 @@ def main():
                         "should match heap mode within ±10%; "
                         "*_create_destroy and *_memory cases are "
                         "compile-time elided.")
+    p.add_argument("--binding", choices=["c", "cpp", "rust", "zig"],
+                   action="append",
+                   help="Restrict the run to one binding (repeatable).  "
+                        "Other bindings' previously-captured logs are "
+                        "left in place and the report is regenerated "
+                        "from the union.  Useful for re-running a single "
+                        "truncated binding without redoing the whole "
+                        "suite.")
 
     # ── clean ──────────────────────────────────────────────────────────
     p = sub.add_parser("clean", help="Clean build artifacts")

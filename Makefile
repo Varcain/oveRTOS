@@ -184,6 +184,7 @@ benchmarks-%: $(VENV_STAMP)
 	@$(OVE) benchmarks \
 		$(if $(filter 1,$(SKIPBUILD)),--skip-build) \
 		$(if $(filter 1,$(ZEROHEAP)),--zeroheap) \
+		$(foreach b,$(BINDING),--binding $(b)) \
 		"$*"
 
 # Single source of truth for `test-<name>` recipes — each delegates to

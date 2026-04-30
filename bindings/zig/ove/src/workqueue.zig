@@ -22,19 +22,30 @@ const pin = @import("pin.zig");
 /// defer wq.deinit();
 /// ```
 pub fn Workqueue(comptime stack_size: usize) type {
-    const Stack = if (pin.zero_heap) [stack_size]u8 else void;
+    // Zephyr MPU requires power-of-2 alignment + 128-byte guard pad on
+    // every kernel thread stack — the workqueue's worker thread is no
+    // exception.  Reuse `thread_mod.stackTotal/stackAlign` so we don't
+    // re-derive the platform rules and the embedded stack matches what
+    // `ove_workqueue_init` will pass to the underlying `k_work_queue_*`
+    // API.  Without this, Zephyr ZH crashes inside `z_reset_time_slice`
+    // on the first work-handler dispatch (PC inside `work_queue_main`),
+    // observed on Rust+Zig benches.
+    const Stack = if (pin.zero_heap)
+        [thread_mod.stackTotal(stack_size)]u8
+    else
+        void;
 
     return struct {
         const Self = @This();
 
-        stack: Stack align(if (pin.zero_heap) 8 else 1),
+        stack: Stack align(if (pin.zero_heap) thread_mod.stackAlign(stack_size) else 1),
         storage: pin.Storage(c.ove_workqueue_storage_t),
         handle: c.ove_workqueue_t,
         tracker: pin.Tracker,
 
         pub fn init(self: *Self, name: [*:0]const u8, priority: thread_mod.Priority) Error!void {
             if (comptime pin.zero_heap) {
-                self.stack = [_]u8{0} ** stack_size;
+                self.stack = [_]u8{0} ** thread_mod.stackTotal(stack_size);
             } else {
                 self.stack = {};
             }

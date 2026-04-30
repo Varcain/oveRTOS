@@ -530,10 +530,36 @@ macro_rules! workqueue {
         {
             $crate::Workqueue::new(concat!($name, "\0").as_bytes(), $prio, $stack).unwrap()
         }
-        #[cfg(zero_heap)]
+        #[cfg(all(zero_heap, not(rtos_zephyr)))]
         {
             static mut _S: $crate::ffi::ove_workqueue_storage_t = unsafe { core::mem::zeroed() };
-            static mut _STACK: [u8; $stack] = [0u8; $stack];
+            // 8-byte align (ARM AAPCS) is sufficient on FreeRTOS/NuttX/POSIX.
+            #[repr(C, align(8))]
+            struct AlignedStack([u8; $stack]);
+            static mut _STACK: AlignedStack = AlignedStack([0u8; $stack]);
+            unsafe {
+                $crate::Workqueue::from_static(
+                    core::ptr::addr_of_mut!(_S),
+                    concat!($name, "\0").as_bytes(),
+                    $prio,
+                    $stack,
+                    core::ptr::addr_of_mut!(_STACK) as *mut _,
+                )
+            }
+            .unwrap()
+        }
+        #[cfg(all(zero_heap, rtos_zephyr))]
+        {
+            // Zephyr workqueues run on a kernel thread; the stack needs
+            // the same MPU treatment as `thread!` — power-of-2 aligned
+            // and rounded up by a 128-byte FPU guard pad.  Without
+            // this, the workqueue crashes inside `z_reset_time_slice`
+            // on the first work-handler dispatch.
+            static mut _S: $crate::ffi::ove_workqueue_storage_t = unsafe { core::mem::zeroed() };
+            const _STACK_TOTAL: usize = ($stack + 128usize).next_power_of_two();
+            #[repr(C, align(8192))]
+            struct ZStack([u8; _STACK_TOTAL]);
+            static mut _STACK: ZStack = ZStack([0u8; _STACK_TOTAL]);
             unsafe {
                 $crate::Workqueue::from_static(
                     core::ptr::addr_of_mut!(_S),

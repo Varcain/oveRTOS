@@ -59,6 +59,8 @@ nav:
   - Backends: backends/index.md
   - Benchmarks:
     - Overview: benchmarks/index.md
+    - Heap vs zero-heap: benchmarks/heap-vs-zeroheap.md
+    - Per-binding analysis: benchmarks/per-binding.md
     - FreeRTOS (heap): benchmarks/freertos-heap.md
     - FreeRTOS (zero-heap): benchmarks/freertos-zeroheap.md
     - NuttX (heap): benchmarks/nuttx-heap.md
