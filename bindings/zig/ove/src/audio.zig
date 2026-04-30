@@ -13,45 +13,44 @@ const c = @import("c.zig").raw;
 const std = @import("std");
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
-/// Audio graph wrapper.
+/// Audio graph wrapper.  Embeds the C `ove_audio_graph` directly.
+///
+/// ```zig
+/// var graph: ove.audio.Graph = undefined;
+/// try graph.init(frames_per_period);
+/// defer graph.deinit();
+///
+/// // Zero-heap: caller supplies the inter-node sample buffer pool.
+/// var sample_pool: [N_NODES * FRAMES * CHANNELS * @sizeOf(i16)]u8 align(4) = undefined;
+/// try graph.setBufStorage(&sample_pool);
+/// ```
+///
+/// In heap mode `setBufStorage` is unnecessary — the engine allocates
+/// per-edge buffers internally.
 pub const Graph = struct {
     raw: c.struct_ove_audio_graph,
+    tracker: pin.Tracker,
 
-    pub fn init(frames_per_period: u32) Error!Graph {
-        var g: Graph = undefined;
-        try err.fromCode(c.ove_audio_graph_init(&g.raw, frames_per_period));
-        return g;
+    pub fn init(self: *Graph, frames_per_period: u32) Error!void {
+        self.raw = std.mem.zeroes(c.struct_ove_audio_graph);
+        self.tracker = .{};
+        try err.fromCode(c.ove_audio_graph_init(&self.raw, frames_per_period));
+        self.tracker.record(self);
     }
 
-    /// Initialise the graph in a way that works for both heap and zero-heap
-    /// builds.  Mirrors the C `ove_audio_graph_create` macro: in zero-heap
-    /// mode emits a per-call-site `static` backing array sized by
-    /// `nodes * frames * channels * sample_bytes` bytes and attaches it
-    /// automatically.  All arguments must be `comptime`-known.
-    pub fn create(
-        comptime frames: u32,
-        comptime nodes: usize,
-        comptime channels: usize,
-        comptime sample_bytes: usize,
-    ) Error!Graph {
-        var g = try Graph.init(frames);
-        if (comptime @hasDecl(c, "CONFIG_OVE_ZERO_HEAP")) {
-            const STORAGE_BYTES: usize = nodes * frames * channels * sample_bytes;
-            const Storage = struct {
-                var bytes: [STORAGE_BYTES]u8 align(4) = undefined;
-            };
-            try err.fromCode(c.ove_audio_graph_set_buf_storage(
-                &g.raw,
-                &Storage.bytes,
-                Storage.bytes.len,
-            ));
-        }
-        return g;
+    /// Attach caller-supplied scratch storage for inter-node sample buffers.
+    /// Required under `CONFIG_OVE_ZERO_HEAP=y`; ignored in heap mode.
+    pub fn setBufStorage(self: *Graph, bytes: []u8) Error!void {
+        self.tracker.assertSame(self, "ove.audio.Graph");
+        try err.fromCode(c.ove_audio_graph_set_buf_storage(&self.raw, bytes.ptr, bytes.len));
     }
 
     pub fn deinit(self: *Graph) void {
+        self.tracker.assertSame(self, "ove.audio.Graph");
         c.ove_audio_graph_deinit(&self.raw);
+        self.tracker.clear();
     }
 
     pub fn addNode(

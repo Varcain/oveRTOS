@@ -8,118 +8,101 @@ const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
 /// Variable-length byte stream buffer for inter-task data transfer.
 ///
-/// Unlike a message queue, a stream buffer transfers arbitrary-length byte
-/// sequences without fixed message boundaries. A `trigger` level controls
-/// the minimum number of bytes that must be available before a blocked
-/// receiver is unbloken. Supports both heap and zero-heap backends.
-pub const Stream = struct {
-    handle: c.ove_stream_t,
+/// Generic on the buffer capacity in bytes — the ring buffer storage lives
+/// inside the wrapper struct.  In zero-heap mode the buffer is allocated as
+/// a struct field; in heap mode the field is zero-sized.
+///
+/// ```zig
+/// var s: ove.Stream(256) = undefined;
+/// try s.init(1);    // trigger=1: wake on any byte
+/// defer s.deinit();
+/// _ = try s.send(payload, ove.wait_forever);
+/// _ = try s.receive(buf[0..], ove.wait_forever);
+/// ```
+pub fn Stream(comptime size: usize) type {
+    return struct {
+        const Self = @This();
 
-    /// Create a stream buffer with a capacity of `size` bytes and a trigger level.
-    ///
-    /// `trigger` is the minimum number of bytes a receiver waits for before being
-    /// unblocked (0 or 1 means "wake on any byte"). In zero-heap mode, the internal
-    /// storage and ring buffer are comptime-unique static variables.
-    /// Returns `Error` if the RTOS fails to create the stream buffer.
-    pub fn create(comptime size: usize, trigger: usize) Error!Stream {
-        var h: c.ove_stream_t = null;
-        if (comptime @hasDecl(c, "ove_stream_create")) {
-            try err.fromCode(c.ove_stream_create(&h, size, trigger));
-        } else {
-            const S = struct {
-                var storage: c.ove_stream_storage_t = std.mem.zeroes(c.ove_stream_storage_t);
-                var buffer: [size + 1]u8 = [_]u8{0} ** (size + 1);
-            };
-            try err.fromCode(c.ove_stream_init(&h, &S.storage, &S.buffer, size, trigger));
+        /// Backing ring buffer.  Zero-sized in heap mode.
+        buffer: if (pin.zero_heap) [size + 1]u8 else void,
+        storage: pin.Storage(c.ove_stream_storage_t),
+        handle: c.ove_stream_t,
+        tracker: pin.Tracker,
+
+        /// Initialise.  `trigger` is the minimum bytes a receiver waits for
+        /// before unblocking (0 or 1 = "wake on any byte").
+        pub fn init(self: *Self, trigger: usize) Error!void {
+            if (comptime pin.zero_heap) {
+                self.buffer = [_]u8{0} ** (size + 1);
+            } else {
+                self.buffer = {};
+            }
+            self.storage = pin.zeroStorage(c.ove_stream_storage_t);
+            self.handle = null;
+            self.tracker = .{};
+            if (comptime !pin.zero_heap) {
+                try err.fromCode(c.ove_stream_create(&self.handle, size, trigger));
+            } else {
+                try err.fromCode(c.ove_stream_init(
+                    &self.handle,
+                    &self.storage,
+                    &self.buffer,
+                    size,
+                    trigger,
+                ));
+            }
+            self.tracker.record(self);
         }
-        return .{ .handle = h };
-    }
 
-    /// Destroy the stream buffer and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null. Safe to call on an already-destroyed stream.
-    pub fn destroy(self: *Stream) void {
-        if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_stream_destroy"))
-            c.ove_stream_destroy(self.handle)
-        else
-            c.ove_stream_deinit(self.handle);
-        self.handle = null;
-    }
+        pub fn deinit(self: *Self) void {
+            self.tracker.assertSame(self, "ove.Stream");
+            if (self.handle == null) return;
+            if (comptime !pin.zero_heap)
+                c.ove_stream_destroy(self.handle)
+            else
+                c.ove_stream_deinit(self.handle);
+            self.handle = null;
+            self.tracker.clear();
+        }
 
-    /// Write `data` into the stream, blocking up to `timeout_ms` milliseconds.
-    ///
-    /// Returns the number of bytes actually written on success. If the stream
-    /// has insufficient space and `timeout_ms` expires, returns `Error.Timeout`.
-    pub fn send(self: Stream, data: []const u8, timeout_ms: u32) Error!usize {
-        var sent: usize = 0;
-        try err.fromCode(c.ove_stream_send(
-            self.handle,
-            data.ptr,
-            data.len,
-            timeout_ms,
-            &sent,
-        ));
-        return sent;
-    }
+        pub inline fn send(self: *Self, data: []const u8, timeout_ms: u32) Error!usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            var sent: usize = 0;
+            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ms, &sent));
+            return sent;
+        }
 
-    /// Read up to `buf.len` bytes from the stream, blocking up to `timeout_ms`.
-    ///
-    /// Returns the number of bytes actually read. Returns `Error.Timeout` if
-    /// fewer than `trigger` bytes are available before the timeout expires.
-    pub fn receive(self: Stream, buf: []u8, timeout_ms: u32) Error!usize {
-        var received: usize = 0;
-        try err.fromCode(c.ove_stream_receive(
-            self.handle,
-            buf.ptr,
-            buf.len,
-            timeout_ms,
-            &received,
-        ));
-        return received;
-    }
+        pub inline fn receive(self: *Self, buf: []u8, timeout_ms: u32) Error!usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            var received: usize = 0;
+            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ms, &received));
+            return received;
+        }
 
-    /// Write `data` into the stream from an interrupt service routine (non-blocking).
-    ///
-    /// Returns the number of bytes written, which may be less than `data.len`
-    /// if the stream is full. Must only be called from ISR context.
-    pub fn sendFromIsr(self: Stream, data: []const u8) Error!usize {
-        var sent: usize = 0;
-        try err.fromCode(c.ove_stream_send_from_isr(
-            self.handle,
-            data.ptr,
-            data.len,
-            &sent,
-        ));
-        return sent;
-    }
+        pub fn sendFromIsr(self: *Self, data: []const u8) Error!usize {
+            var sent: usize = 0;
+            try err.fromCode(c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent));
+            return sent;
+        }
 
-    /// Read bytes from the stream in an interrupt service routine (non-blocking).
-    ///
-    /// Returns the number of bytes read into `buf`. Must only be called from ISR context.
-    pub fn receiveFromIsr(self: Stream, buf: []u8) Error!usize {
-        var received: usize = 0;
-        try err.fromCode(c.ove_stream_receive_from_isr(
-            self.handle,
-            buf.ptr,
-            buf.len,
-            &received,
-        ));
-        return received;
-    }
+        pub fn receiveFromIsr(self: *Self, buf: []u8) Error!usize {
+            var received: usize = 0;
+            try err.fromCode(c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received));
+            return received;
+        }
 
-    /// Discard all data in the stream buffer, resetting it to empty.
-    ///
-    /// Returns `Error` if the reset fails (e.g. a task is currently blocked on it).
-    pub fn reset(self: Stream) Error!void {
-        try err.fromCode(c.ove_stream_reset(self.handle));
-    }
+        pub fn reset(self: *Self) Error!void {
+            self.tracker.assertSame(self, "ove.Stream");
+            try err.fromCode(c.ove_stream_reset(self.handle));
+        }
 
-    /// Return the number of bytes currently available to read from the stream.
-    pub fn bytesAvailable(self: Stream) usize {
-        return c.ove_stream_bytes_available(self.handle);
-    }
-};
+        pub fn bytesAvailable(self: *Self) usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            return c.ove_stream_bytes_available(self.handle);
+        }
+    };
+}

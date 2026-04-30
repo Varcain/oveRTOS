@@ -46,12 +46,13 @@ static void stream_send_recv_teardown()
 	bench_strm.reset();
 }
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void stream_create_destroy_run()
 {
 	BenchStream s(1);
 }
+#endif
 
 /* --- throughput --- */
 
@@ -89,8 +90,8 @@ static void stream_throughput_teardown()
 	bench_strm.reset();
 }
 
-/* --- memory --- */
-
+/* --- memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::optional<BenchStream> mem_stream;
 
 static void stream_memory_run()
@@ -102,6 +103,7 @@ static void stream_memory_teardown()
 {
 	mem_stream.reset();
 }
+#endif
 
 /* --- Suite --- */
 
@@ -110,12 +112,14 @@ static bool stream_is_enabled()
 	return true;
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec stream_memory_spec{
 	.name = "memory",
 	.kind = bench::Type::memory,
 	.run = &stream_memory_run,
 	.teardown = &stream_memory_teardown,
 };
+#endif
 static constexpr bench::CaseSpec stream_send_recv_spec{
 	.name = "send_recv_64B",
 	.kind = bench::Type::latency,
@@ -123,11 +127,13 @@ static constexpr bench::CaseSpec stream_send_recv_spec{
 	.setup = &stream_send_recv_setup,
 	.teardown = &stream_send_recv_teardown,
 };
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec stream_create_destroy_spec{
 	.name = "create_destroy",
 	.kind = bench::Type::latency,
 	.run = &stream_create_destroy_run,
 };
+#endif
 static constexpr bench::CaseSpec stream_throughput_spec{
 	.name = "throughput",
 	.kind = bench::Type::throughput,
@@ -137,9 +143,13 @@ static constexpr bench::CaseSpec stream_throughput_spec{
 };
 
 static constexpr bench_case_t stream_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<stream_memory_spec>(),
+#endif
 	bench::case_<stream_send_recv_spec>(),
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<stream_create_destroy_spec>(),
+#endif
 	bench::case_<stream_throughput_spec>(),
 };
 

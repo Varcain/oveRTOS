@@ -43,12 +43,13 @@ static void queue_send_recv_teardown()
 	bench_q.reset();
 }
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void queue_create_destroy_run()
 {
 	BenchQueue8 q;
 }
+#endif
 
 /* --- 2-thread throughput --- */
 
@@ -85,8 +86,8 @@ static void queue_throughput_teardown()
 	throughput_q.reset();
 }
 
-/* --- memory --- */
-
+/* --- memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::optional<BenchQueue8> mem_queue;
 
 static void queue_memory_run()
@@ -98,6 +99,7 @@ static void queue_memory_teardown()
 {
 	mem_queue.reset();
 }
+#endif
 
 /* --- Suite --- */
 
@@ -106,12 +108,14 @@ static bool queue_is_enabled()
 	return true;
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec queue_memory_spec{
 	.name = "memory",
 	.kind = bench::Type::memory,
 	.run = &queue_memory_run,
 	.teardown = &queue_memory_teardown,
 };
+#endif
 static constexpr bench::CaseSpec queue_send_recv_spec{
 	.name = "send_receive",
 	.kind = bench::Type::latency,
@@ -119,11 +123,13 @@ static constexpr bench::CaseSpec queue_send_recv_spec{
 	.setup = &queue_send_recv_setup,
 	.teardown = &queue_send_recv_teardown,
 };
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec queue_create_destroy_spec{
 	.name = "create_destroy",
 	.kind = bench::Type::latency,
 	.run = &queue_create_destroy_run,
 };
+#endif
 static constexpr bench::CaseSpec queue_throughput_spec{
 	.name = "throughput_2t",
 	.kind = bench::Type::throughput,
@@ -133,9 +139,13 @@ static constexpr bench::CaseSpec queue_throughput_spec{
 };
 
 static constexpr bench_case_t queue_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<queue_memory_spec>(),
+#endif
 	bench::case_<queue_send_recv_spec>(),
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<queue_create_destroy_spec>(),
+#endif
 	bench::case_<queue_throughput_spec>(),
 };
 

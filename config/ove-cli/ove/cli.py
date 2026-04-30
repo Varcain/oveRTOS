@@ -117,6 +117,14 @@ def main():
                         "/tmp/serial.log) for a picocom-recorded run.")
     p.add_argument("--skip-build", action="store_true",
                    help="Skip building (assume firmware already built)")
+    p.add_argument("--zeroheap", action="store_true",
+                   help="Build with CONFIG_OVE_ZERO_HEAP=y (heap locked "
+                        "after init).  Output goes to "
+                        "output/<board>/<rtos>/_benchmarks_zeroheap/ "
+                        "instead of _benchmarks/.  Per-call op numbers "
+                        "should match heap mode within ±10%; "
+                        "*_create_destroy and *_memory cases are "
+                        "compile-time elided.")
 
     # ── clean ──────────────────────────────────────────────────────────
     p = sub.add_parser("clean", help="Clean build artifacts")

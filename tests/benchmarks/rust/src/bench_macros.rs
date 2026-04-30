@@ -107,28 +107,28 @@ macro_rules! bench_case {
 ///     cases = [TIME_GET_US_OVERHEAD, DELAY_1MS],
 /// );
 /// ```
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __count_bench_cases {
-    () => { 0usize };
-    ($head:ident $(, $tail:ident)*) => {
-        1usize + $crate::__count_bench_cases!($($tail),*)
-    };
-}
-
 #[macro_export]
 macro_rules! bench_suite {
     (
         symbol = $symbol:ident,
         name = $name_bytes:expr,
         enabled = $enabled_fn:ident,
-        cases = [ $( $case:ident ),* $(,)? ] $(,)?
+        cases = [ $( $(#[$case_meta:meta])* $case:ident ),* $(,)? ] $(,)?
     ) => {
         #[unsafe(no_mangle)]
         #[allow(non_upper_case_globals)]
         pub static $symbol: $crate::bench::CBenchSuite = {
-            const CASE_COUNT: usize = $crate::__count_bench_cases!($($case),*);
-            static CASES: [$crate::bench::CBenchCase; CASE_COUNT] = [ $( $case ),* ];
+            // Count cases at compile time, threading per-case `#[cfg]`
+            // attrs through so conditionally-included cases (e.g.
+            // zero-heap-elided ones) shrink the array correctly.
+            const CASE_COUNT: usize = {
+                let mut n: usize = 0;
+                $( $(#[$case_meta])* { n += 1; } )*
+                n
+            };
+            static CASES: [$crate::bench::CBenchCase; CASE_COUNT] = [
+                $( $(#[$case_meta])* $case ),*
+            ];
             unsafe extern "C" fn __enabled_tramp() -> i32 {
                 if $enabled_fn() { 1 } else { 0 }
             }

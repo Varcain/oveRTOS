@@ -177,9 +177,14 @@ test: $(VENV_STAMP)
 #                            output/stm32f746/freertos/_benchmarks/report.md
 #
 # Use SKIPBUILD=1 to skip the per-binding builds (re-flash + re-run only).
+# Use ZEROHEAP=1 to build with CONFIG_OVE_ZERO_HEAP=y; report goes to
+# output/<board>/<rtos>/_benchmarks_zeroheap/ (sibling of _benchmarks/).
 .PHONY: benchmarks-%
 benchmarks-%: $(VENV_STAMP)
-	@$(OVE) benchmarks $(if $(filter 1,$(SKIPBUILD)),--skip-build) "$*"
+	@$(OVE) benchmarks \
+		$(if $(filter 1,$(SKIPBUILD)),--skip-build) \
+		$(if $(filter 1,$(ZEROHEAP)),--zeroheap) \
+		"$*"
 
 # Single source of truth for `test-<name>` recipes — each delegates to
 # `ove test <name>`. Add new suites here, not as separate targets.

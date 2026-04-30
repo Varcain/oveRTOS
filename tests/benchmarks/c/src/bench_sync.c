@@ -42,8 +42,15 @@ static void mutex_lock_unlock_teardown(void *ctx)
 	ove_mutex_destroy(bench_mtx);
 }
 
-/* --- Mutex create/destroy --- */
-
+/* --- Mutex create/destroy ---
+ *
+ * Heap-mode only: under ZEROHEAP, `ove_mutex_create` macro-expands to
+ * `ove_mutex_init` against per-call-site static storage; re-init in a
+ * loop is technically valid but measures something different (init+
+ * deinit cycle on the same static buffer) than the heap-mode case.
+ * Skip the case entirely; the per-call lock/unlock op is what matters
+ * for the zero-overhead claim. */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void mutex_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -52,6 +59,7 @@ static void mutex_create_destroy_run(void *ctx)
 	ove_mutex_create(&m);
 	ove_mutex_destroy(m);
 }
+#endif
 
 /* --- Mutex contention (2-thread throughput) --- */
 
@@ -99,8 +107,13 @@ static void mutex_contention_teardown(void *ctx)
 	ove_mutex_destroy(bench_mtx);
 }
 
-/* --- Mutex memory --- */
-
+/* --- Mutex memory ---
+ *
+ * Heap-delta measurement is meaningless under ZEROHEAP (zero by
+ * construction).  Gate out; the wrapper's static-storage size is
+ * available at compile time via `sizeof(ove_mutex_storage_t)` for
+ * users who want it. */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_mutex_t mem_mutex;
 
 static void mutex_memory_run(void *ctx)
@@ -114,6 +127,7 @@ static void mutex_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_mutex_destroy(mem_mutex);
 }
+#endif
 
 /* --- Semaphore take/give --- */
 
@@ -136,8 +150,9 @@ static void sem_take_give_teardown(void *ctx)
 	ove_sem_destroy(bench_sem);
 }
 
-/* --- Semaphore create/destroy --- */
-
+/* --- Semaphore create/destroy + memory (heap-mode only — see comments
+ * above the mutex variants). */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void sem_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -146,8 +161,6 @@ static void sem_create_destroy_run(void *ctx)
 	ove_sem_create(&s, 0, 1);
 	ove_sem_destroy(s);
 }
-
-/* --- Semaphore memory --- */
 
 static ove_sem_t mem_sem;
 
@@ -162,6 +175,7 @@ static void sem_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_sem_destroy(mem_sem);
 }
+#endif
 
 /* --- Event signal/wait --- */
 
@@ -213,8 +227,8 @@ static void event_signal_wait_teardown(void *ctx)
 	ove_event_destroy(bench_evt_ack);
 }
 
-/* --- Event memory --- */
-
+/* --- Event memory (heap-mode only). */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_event_t mem_event;
 
 static void event_memory_run(void *ctx)
@@ -228,6 +242,7 @@ static void event_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_event_destroy(mem_event);
 }
+#endif
 
 /* --- Condvar signal/wait ---
  *
@@ -289,8 +304,8 @@ static void condvar_signal_wait_teardown(void *ctx)
 	ove_mutex_destroy(bench_cv_mtx);
 }
 
-/* --- Condvar memory --- */
-
+/* --- Condvar memory (heap-mode only). */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_condvar_t mem_condvar;
 
 static void condvar_memory_run(void *ctx)
@@ -304,6 +319,7 @@ static void condvar_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_condvar_destroy(mem_condvar);
 }
+#endif
 
 /* --- Recursive mutex lock/unlock --- */
 
@@ -334,7 +350,9 @@ static int sync_is_enabled(void)
 }
 
 static const bench_case_t sync_cases[] = {
-	/* Memory tests first — before thread-heavy tests affect heap state */
+#ifndef CONFIG_OVE_ZERO_HEAP
+	/* Memory tests first — before thread-heavy tests affect heap state.
+	 * Heap-mode only — meaningless under ZEROHEAP. */
 	{
 		.name = "mutex_memory",
 		.type = BENCH_TYPE_MEMORY,
@@ -359,6 +377,7 @@ static const bench_case_t sync_cases[] = {
 		.run = condvar_memory_run,
 		.teardown = condvar_memory_teardown,
 	},
+#endif
 	{
 		.name = "mutex_lock_unlock",
 		.type = BENCH_TYPE_LATENCY,
@@ -366,11 +385,13 @@ static const bench_case_t sync_cases[] = {
 		.run = mutex_lock_unlock_run,
 		.teardown = mutex_lock_unlock_teardown,
 	},
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "mutex_create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = mutex_create_destroy_run,
 	},
+#endif
 	{
 		.name = "mutex_contention_2t",
 		.type = BENCH_TYPE_THROUGHPUT,
@@ -385,11 +406,13 @@ static const bench_case_t sync_cases[] = {
 		.run = sem_take_give_run,
 		.teardown = sem_take_give_teardown,
 	},
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "sem_create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = sem_create_destroy_run,
 	},
+#endif
 	{
 		.name = "event_signal_wait",
 		.type = BENCH_TYPE_LATENCY,

@@ -42,12 +42,13 @@ static void mutex_lock_unlock_teardown()
 	bench_mtx.reset();
 }
 
-/* --- Mutex create/destroy --- */
-
+/* --- Mutex create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void mutex_create_destroy_run()
 {
 	ove::Mutex m;
 }
+#endif
 
 /* --- Mutex contention (2-thread throughput) --- */
 
@@ -84,8 +85,8 @@ static void mutex_contention_teardown()
 	bench_mtx.reset();
 }
 
-/* --- Mutex memory --- */
-
+/* --- Mutex memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::optional<ove::Mutex> mem_mutex;
 
 static void mutex_memory_run()
@@ -97,6 +98,7 @@ static void mutex_memory_teardown()
 {
 	mem_mutex.reset();
 }
+#endif
 
 /* --- Semaphore take/give --- */
 
@@ -116,14 +118,12 @@ static void sem_take_give_teardown()
 	bench_sem.reset();
 }
 
-/* --- Semaphore create/destroy --- */
-
+/* --- Semaphore create/destroy + memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void sem_create_destroy_run()
 {
 	ove::Semaphore s(0, 1);
 }
-
-/* --- Semaphore memory --- */
 
 static std::optional<ove::Semaphore> mem_sem;
 
@@ -136,6 +136,7 @@ static void sem_memory_teardown()
 {
 	mem_sem.reset();
 }
+#endif
 
 /* --- Event signal/wait --- */
 
@@ -176,8 +177,8 @@ static void event_signal_wait_teardown()
 	bench_evt_ack.reset();
 }
 
-/* --- Event memory --- */
-
+/* --- Event memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::optional<ove::Event> mem_event;
 
 static void event_memory_run()
@@ -189,6 +190,7 @@ static void event_memory_teardown()
 {
 	mem_event.reset();
 }
+#endif
 
 /* --- Condvar signal/wait ---
  *
@@ -232,8 +234,8 @@ static void condvar_signal_wait_teardown()
 	bench_cv_mtx.reset();
 }
 
-/* --- Condvar memory --- */
-
+/* --- Condvar memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::optional<ove::CondVar> mem_condvar;
 
 static void condvar_memory_run()
@@ -245,6 +247,7 @@ static void condvar_memory_teardown()
 {
 	mem_condvar.reset();
 }
+#endif
 
 /* --- Recursive mutex lock/unlock --- */
 
@@ -272,6 +275,7 @@ static bool sync_is_enabled()
 }
 
 // Memory tests first — before thread-heavy tests affect heap state.
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec mutex_memory_spec{
 	.name = "mutex_memory",
 	.kind = bench::Type::memory,
@@ -296,6 +300,7 @@ static constexpr bench::CaseSpec condvar_memory_spec{
 	.run = &condvar_memory_run,
 	.teardown = &condvar_memory_teardown,
 };
+#endif
 static constexpr bench::CaseSpec mutex_lock_unlock_spec{
 	.name = "mutex_lock_unlock",
 	.kind = bench::Type::latency,
@@ -303,11 +308,13 @@ static constexpr bench::CaseSpec mutex_lock_unlock_spec{
 	.setup = &mutex_lock_unlock_setup,
 	.teardown = &mutex_lock_unlock_teardown,
 };
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec mutex_create_destroy_spec{
 	.name = "mutex_create_destroy",
 	.kind = bench::Type::latency,
 	.run = &mutex_create_destroy_run,
 };
+#endif
 static constexpr bench::CaseSpec mutex_contention_spec{
 	.name = "mutex_contention_2t",
 	.kind = bench::Type::throughput,
@@ -322,11 +329,13 @@ static constexpr bench::CaseSpec sem_take_give_spec{
 	.setup = &sem_take_give_setup,
 	.teardown = &sem_take_give_teardown,
 };
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec sem_create_destroy_spec{
 	.name = "sem_create_destroy",
 	.kind = bench::Type::latency,
 	.run = &sem_create_destroy_run,
 };
+#endif
 static constexpr bench::CaseSpec event_signal_wait_spec{
 	.name = "event_signal_wait",
 	.kind = bench::Type::latency,
@@ -352,15 +361,21 @@ static constexpr bench::CaseSpec rmtx_lock_unlock_spec{
 };
 
 static constexpr bench_case_t sync_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<mutex_memory_spec>(),
 	bench::case_<sem_memory_spec>(),
 	bench::case_<event_memory_spec>(),
 	bench::case_<condvar_memory_spec>(),
+#endif
 	bench::case_<mutex_lock_unlock_spec>(),
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<mutex_create_destroy_spec>(),
+#endif
 	bench::case_<mutex_contention_spec>(),
 	bench::case_<sem_take_give_spec>(),
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<sem_create_destroy_spec>(),
+#endif
 	bench::case_<event_signal_wait_spec>(),
 	bench::case_<condvar_signal_wait_spec>(),
 	bench::case_<rmtx_lock_unlock_spec>(),

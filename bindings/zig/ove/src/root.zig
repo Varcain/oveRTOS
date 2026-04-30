@@ -33,8 +33,27 @@
 //! ## Heap and zero-heap modes
 //!
 //! Both allocation modes are supported transparently — the same API works
-//! in either configuration.  When `CONFIG_OVE_ZERO_HEAP` is set, `create()`
-//! functions use comptime-unique static storage instead of heap allocation.
+//! in either configuration.  Wrappers follow a uniform two-phase pattern:
+//!
+//! ```zig
+//! var mtx: ove.Mutex = undefined;
+//! try mtx.init();
+//! defer mtx.deinit();         // register only after init() succeeds
+//! try mtx.lock(ove.wait_forever);
+//! ```
+//!
+//! Under `CONFIG_OVE_ZERO_HEAP=y` each wrapper embeds the kernel-object
+//! storage as a struct field; in heap mode that field is zero-sized.
+//!
+//! ### Pinning contract
+//!
+//! After `init()` the wrapper must remain at a stable address until
+//! `deinit()`.  The kernel handle stored in the wrapper references
+//! `&self.storage` directly, so moving, copying, or storing the wrapper
+//! by value in a relocating container (e.g. `std.ArrayList`) will silently
+//! corrupt RTOS state.  Debug builds (`std.debug.runtime_safety == true`)
+//! record `&self` at `init()` and panic if any subsequent method sees a
+//! different address.  Release builds compile the check out at zero cost.
 //!
 //! ## Entry point
 //!
@@ -69,9 +88,10 @@ pub const CondVar = sync.CondVar;
 
 /// Thread creation and lifecycle management.
 pub const thread = @import("thread.zig");
-/// RTOS thread handle. Create with `Thread.spawn()` or `Thread.spawnWithContext()`.
+/// Templated RTOS thread wrapper.  `Thread(stack_size)` returns the type;
+/// declare `var th: ove.Thread(2048) = undefined;` then `try th.init(...)`.
 pub const Thread = thread.Thread;
-/// Thread priority level (maps to `ove_prio_t`). Use the `prio.*` constants.
+/// Thread priority level (maps to `ove_prio_t`). Use the `thread.prio.*` constants.
 pub const Priority = thread.Priority;
 
 /// Type-safe, capacity-bounded message queue. Parameterized by element type and depth.
@@ -79,7 +99,8 @@ pub const Queue = @import("queue.zig").Queue;
 
 /// Software timer management.
 pub const timer = @import("timer.zig");
-/// Software timer handle. Create with `Timer.create()` or `Timer.createWithContext()`.
+/// Software timer.  Declare `var t: ove.Timer = undefined;` then
+/// `try t.init(callback, period_ms, .periodic);`.
 pub const Timer = timer.Timer;
 
 /// Low-level console I/O (raw byte write / read).
@@ -94,14 +115,14 @@ pub const EventGroup = eventgroup.EventGroup;
 
 /// Deferred work queue management.
 pub const workqueue = @import("workqueue.zig");
-/// Work queue handle. Submit `Work` items to run callbacks on a dedicated thread.
+/// Templated work queue. `Workqueue(stack_size)` returns the type.
 pub const Workqueue = workqueue.Workqueue;
-/// A single deferred work item. Create with `Work.create()` and submit to a `Workqueue`.
+/// A single deferred work item.  Declare with `undefined`, init with handler.
 pub const Work = workqueue.Work;
 
 /// Variable-length byte stream buffer for inter-task data transfer.
 pub const stream = @import("stream.zig");
-/// Stream buffer handle. Supports blocking send/receive and ISR variants.
+/// Templated stream buffer.  `Stream(byte_capacity)` returns the type.
 pub const Stream = stream.Stream;
 
 /// Hardware watchdog timer management.
@@ -134,7 +155,8 @@ pub const lvgl = @import("lvgl.zig");
 
 /// ML inference engine (LiteRT / TF Lite Micro).
 pub const infer = @import("infer.zig");
-/// ML model session handle. Create with `Model.create()`.
+/// ML model session.  Declare with `undefined`; `init` takes a caller-
+/// supplied arena slice.
 pub const Model = infer.Model;
 
 /// BSD-like sockets, DNS resolution, and network interface management.

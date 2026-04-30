@@ -44,8 +44,8 @@ static void stream_send_recv_teardown(void *ctx)
 	ove_stream_destroy(bench_strm);
 }
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void stream_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -54,6 +54,7 @@ static void stream_create_destroy_run(void *ctx)
 	ove_stream_create(&s, STREAM_BUF_SIZE, 1);
 	ove_stream_destroy(s);
 }
+#endif
 
 /* --- throughput --- */
 
@@ -105,8 +106,8 @@ static void stream_throughput_teardown(void *ctx)
 	ove_stream_destroy(bench_strm);
 }
 
-/* --- memory --- */
-
+/* --- memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_stream_t mem_stream;
 
 static void stream_memory_run(void *ctx)
@@ -120,6 +121,7 @@ static void stream_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_stream_destroy(mem_stream);
 }
+#endif
 
 /* --- Suite --- */
 
@@ -129,12 +131,14 @@ static int stream_is_enabled(void)
 }
 
 static const bench_case_t stream_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "memory",
 		.type = BENCH_TYPE_MEMORY,
 		.run = stream_memory_run,
 		.teardown = stream_memory_teardown,
 	},
+#endif
 	{
 		.name = "send_recv_64B",
 		.type = BENCH_TYPE_LATENCY,
@@ -142,11 +146,13 @@ static const bench_case_t stream_cases[] = {
 		.run = stream_send_recv_run,
 		.teardown = stream_send_recv_teardown,
 	},
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = stream_create_destroy_run,
 	},
+#endif
 	{
 		.name = "throughput",
 		.type = BENCH_TYPE_THROUGHPUT,

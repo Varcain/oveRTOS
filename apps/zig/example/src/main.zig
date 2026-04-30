@@ -32,12 +32,14 @@ else
 // Shared state
 // ---------------------------------------------------------------------------
 
-var queue: ?Queue(u32, 8) = null;
+var queue: Queue(u32, 8) = undefined;
+var queue_in: bool = false;
 var last_value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
 
 var counter_label: ?lvgl.Label = null;
 var bar: ?lvgl.Bar = null;
-var ui_timer: ?Timer = null;
+var ui_timer: Timer = undefined;
+var ui_timer_in: bool = false;
 
 // ---------------------------------------------------------------------------
 // LVGL UI
@@ -136,7 +138,7 @@ fn graphicsEntry() void {
             lvgl.tick(elapsed_ms);
             lvgl.handler();
         }
-        Thread.sleepMs(33);
+        ove.thread.sleepMs(33);
     }
 }
 
@@ -147,17 +149,17 @@ fn producerEntry() void {
     while (true) {
         count += 1;
 
-        queue.?.send(&count, 1000) catch |e| {
+        queue.send(&count, 1000) catch |e| {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
                 else => ove.log.err("Producer: unexpected send error", .{}),
             }
-            Thread.sleepMs(500);
+            ove.thread.sleepMs(500);
             continue;
         };
 
-        Thread.sleepMs(500);
+        ove.thread.sleepMs(500);
     }
 }
 
@@ -165,7 +167,7 @@ fn consumerEntry() void {
     ove.log.inf("Consumer started", .{});
 
     while (true) {
-        const val = queue.?.receive(ove.wait_forever) catch {
+        const val = queue.receive(ove.wait_forever) catch {
             ove.log.err("Consumer: receive error", .{});
             continue;
         };
@@ -186,32 +188,39 @@ fn appMain() void {
     ove.log.inf("Zig example: init", .{});
 
     // Create queue
-    queue = Queue(u32, 8).create() catch {
+    queue = undefined;
+    queue.init() catch {
         ove.log.err("Failed to create queue", .{});
         return;
     };
+    queue_in = true;
 
     // Create threads
-    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
+    var graphics_thread: Thread(4096) = undefined;
+    graphics_thread.init("graphics", graphicsEntry, prio.high) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
 
-    _ = Thread.spawn("producer", producerEntry, prio.normal, 4096) catch {
+    var producer_thread: Thread(4096) = undefined;
+    producer_thread.init("producer", producerEntry, prio.normal) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
 
-    _ = Thread.spawn("consumer", consumerEntry, prio.normal, 4096) catch {
+    var consumer_thread: Thread(4096) = undefined;
+    consumer_thread.init("consumer", consumerEntry, prio.normal) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };
 
     // Initialize LVGL and create UI
-    ui_timer = Timer.create(uiTimerCallback, 200, false) catch {
+    ui_timer = undefined;
+    ui_timer.init(uiTimerCallback, 200, .periodic) catch {
         ove.log.err("Failed to create UI timer", .{});
         return;
     };
+    ui_timer_in = true;
 
     lvgl.init() catch {
         ove.log.err("Failed to init LVGL", .{});
@@ -225,7 +234,7 @@ fn appMain() void {
     }
     ove.log.inf("LVGL widgets created", .{});
 
-    ui_timer.?.start() catch {
+    ui_timer.start() catch {
         ove.log.err("Failed to start UI timer", .{});
         return;
     };
@@ -236,11 +245,15 @@ fn appMain() void {
 
     // Cleanup (only reached if scheduler returns, e.g. POSIX)
     ove.log.inf("Zig example: shutdown", .{});
-    if (ui_timer) |*t| {
-        t.stop() catch {};
-        t.destroy();
+    if (ui_timer_in) {
+        ui_timer.stop() catch {};
+        ui_timer.deinit();
+        ui_timer_in = false;
     }
-    if (queue) |*q| q.destroy();
+    if (queue_in) {
+        queue.deinit();
+        queue_in = false;
+    }
 }
 
 comptime {

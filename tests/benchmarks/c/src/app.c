@@ -81,6 +81,12 @@ static void benchmark_runner(void *arg)
 
 /* --- App entry point --- */
 
+/* Static thread storage + stack for the bench runner.  Using
+ * `ove_thread_init` (mode-agnostic) instead of `ove_thread_create`
+ * (heap-only) so the bench app builds in both heap and zero-heap
+ * modes from one source. */
+OVE_THREAD_DEFINE(bench_runner_storage, 8192);
+
 void ove_main(void)
 {
 	OVE_LOG_INF("Benchmark app: init");
@@ -91,11 +97,13 @@ void ove_main(void)
 		.entry = benchmark_runner,
 		.arg = NULL,
 		.priority = OVE_PRIO_NORMAL,
+		.stack_size = 8192,
+		.stack = bench_runner_storage_stack,
 	};
 
-	int ret = ove_thread_create(&handle, 8192, &bench_desc);
+	int ret = ove_thread_init(&handle, &bench_runner_storage, &bench_desc);
 	if (ret != OVE_OK) {
-		OVE_LOG_ERR("Failed to create benchmark thread: %d", ret);
+		OVE_LOG_ERR("Failed to init benchmark thread: %d", ret);
 		return;
 	}
 

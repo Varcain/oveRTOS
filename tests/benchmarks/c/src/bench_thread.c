@@ -16,8 +16,8 @@ static ove_sem_t ping_sem;
 static ove_sem_t pong_sem;
 static volatile int ctx_switch_done;
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void dummy_thread(void *arg)
 {
 	(void)arg;
@@ -37,6 +37,7 @@ static void thread_create_destroy_run(void *ctx)
 	ove_thread_create(&th, 1024, &desc);
 	ove_thread_destroy(th);
 }
+#endif
 
 /* --- yield --- */
 
@@ -107,12 +108,14 @@ static int thread_is_enabled(void)
 }
 
 static const bench_case_t thread_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = thread_create_destroy_run,
 		.iterations = 200,
 	},
+#endif
 	{
 		.name = "yield",
 		.type = BENCH_TYPE_LATENCY,

@@ -62,22 +62,30 @@ static void benchmark_runner(void *arg)
  * the zero-overhead audit).  The C bench uses the same approach.
  */
 
+/* Static thread storage + stack — using `ove_thread_init` (mode-
+ * agnostic, works in both heap and zero-heap modes) instead of
+ * `ove_thread_create` (heap-only) so the bench app builds in both
+ * modes from one source. */
+OVE_THREAD_DEFINE(bench_runner_storage, 8192);
 static ove_thread_t bench_runner_handle;
 static const struct ove_thread_desc bench_runner_desc = {
 	.name = "bench_run",
 	.entry = benchmark_runner,
 	.arg = nullptr,
 	.priority = OVE_PRIO_NORMAL,
+	.stack_size = 8192,
+	.stack = bench_runner_storage_stack,
 };
 
 OVE_MAIN()
 {
 	OVE_LOG_INF("Benchmark app: init");
 
-	int ret = ove_thread_create(&bench_runner_handle, 8192,
-				    &bench_runner_desc);
+	int ret = ove_thread_init(&bench_runner_handle,
+				  &bench_runner_storage,
+				  &bench_runner_desc);
 	if (ret != OVE_OK) {
-		OVE_LOG_ERR("Failed to create benchmark thread: %d", ret);
+		OVE_LOG_ERR("Failed to init benchmark thread: %d", ret);
 		return;
 	}
 

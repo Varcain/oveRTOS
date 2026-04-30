@@ -173,8 +173,13 @@ template <typename T, size_t MaxItems = 0> class Queue
       private:
 	ove_queue_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_queue_storage_t storage_ = {};
+	/* `buffer_` precedes `storage_` so the latter (whose underlying C
+	 * struct ends in a flexible-array `inline_storage[]`) sits at the
+	 * end of the C++ class.  C99 allows FAMs anywhere in a struct, but
+	 * C++ rejects another member after one — see
+	 * backends/freertos/include/ove_storage_freertos.h FAM commentary. */
 	T buffer_[MaxItems > 0 ? MaxItems : 1];
+	ove_queue_storage_t storage_ = {};
 #endif
 };
 

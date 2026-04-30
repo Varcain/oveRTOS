@@ -82,22 +82,36 @@ _RUN_TIMEOUT_S = {
 }
 
 
-def _output_dir(board, rtos):
-    return os.path.join(OVE_DIR, "output", board, rtos, "_benchmarks")
+def _output_dir(board, rtos, zeroheap=False):
+    """Per-RTOS bench output dir.  Zero-heap variant gets a sibling
+    `_benchmarks_zeroheap/` so heap-mode reports stay intact when both
+    modes are run."""
+    suffix = "_benchmarks_zeroheap" if zeroheap else "_benchmarks"
+    return os.path.join(OVE_DIR, "output", board, rtos, suffix)
 
 
-def _build_one(make_prefix, app):
-    """Configure + build one (platform, binding) pair via make."""
+def _build_one(make_prefix, app, zeroheap=False):
+    """Configure + build one (platform, binding) pair via make.
+    `ZEROHEAP=1` propagates through the dot-target rule
+    (Makefile:74-94) → `ove defconfig-fragments --zeroheap` →
+    `config/fragments/variant/zeroheap.defconfig` →
+    `CONFIG_OVE_ZERO_HEAP=y`."""
     target = f"{make_prefix}.{app}"
-    logger.info(f"=== building {target} ===")
-    rc = subprocess.call(["make", target, "all"], cwd=OVE_DIR)
+    logger.info(f"=== building {target}{' (zeroheap)' if zeroheap else ''} ===")
+    cmd = ["make", target, "all"]
+    if zeroheap:
+        cmd.append("ZEROHEAP=1")
+    rc = subprocess.call(cmd, cwd=OVE_DIR)
     if rc != 0:
         raise RuntimeError(f"build failed for {target} (rc={rc})")
 
 
-def _firmware_paths(board, rtos, app):
-    """Return (workspace_dir, image_path) for an already-built bench."""
-    ws = os.path.join(OVE_DIR, "output", board, rtos, app)
+def _firmware_paths(board, rtos, app, zeroheap=False):
+    """Return (workspace_dir, image_path) for an already-built bench.
+    Zero-heap builds use a `<app>_zeroheap` workspace dir suffix added
+    by `kconfig.py` when the variant fragment fires."""
+    ws_app = f"{app}_zeroheap" if zeroheap else app
+    ws = os.path.join(OVE_DIR, "output", board, rtos, ws_app)
     if rtos == "posix":
         image = os.path.join(ws, "images", "ove_posix")
     else:
@@ -252,17 +266,19 @@ def cmd_benchmarks(args):
         sys.exit(2)
 
     p = _PLATFORMS[platform]
-    out_dir = _output_dir(p["board"], p["rtos"])
+    zeroheap = getattr(args, "zeroheap", False)
+    out_dir = _output_dir(p["board"], p["rtos"], zeroheap)
     os.makedirs(out_dir, exist_ok=True)
 
     log_paths = []
     for app, binding in _BINDINGS:
         if not args.skip_build:
-            _build_one(p["make_prefix"], app)
-        _, image = _firmware_paths(p["board"], p["rtos"], app)
+            _build_one(p["make_prefix"], app, zeroheap)
+        _, image = _firmware_paths(p["board"], p["rtos"], app, zeroheap)
         if not os.path.isfile(image):
             raise RuntimeError(f"firmware not found at {image} "
-                               f"(build={p['make_prefix']}.{app})")
+                               f"(build={p['make_prefix']}.{app}"
+                               f"{' ZEROHEAP=1' if zeroheap else ''})")
         log_path = os.path.join(out_dir, f"{binding}.log")
         timeout = _RUN_TIMEOUT_S[p["runner"]]
         if p["runner"] == "posix":

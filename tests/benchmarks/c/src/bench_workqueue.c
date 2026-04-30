@@ -23,8 +23,8 @@ static void work_handler(ove_work_t work)
 	ove_sem_give(work_sem);
 }
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void wq_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -33,6 +33,7 @@ static void wq_create_destroy_run(void *ctx)
 	ove_workqueue_create(&wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
 	ove_workqueue_destroy(wq);
 }
+#endif
 
 /* --- submit/execute --- */
 
@@ -59,8 +60,8 @@ static void wq_submit_teardown(void *ctx)
 	ove_sem_destroy(work_sem);
 }
 
-/* --- memory --- */
-
+/* --- memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_workqueue_t mem_wq;
 
 static void wq_memory_run(void *ctx)
@@ -74,6 +75,7 @@ static void wq_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_workqueue_destroy(mem_wq);
 }
+#endif
 
 /* --- Suite --- */
 
@@ -83,6 +85,7 @@ static int workqueue_is_enabled(void)
 }
 
 static const bench_case_t workqueue_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "memory",
 		.type = BENCH_TYPE_MEMORY,
@@ -95,6 +98,7 @@ static const bench_case_t workqueue_cases[] = {
 		.run = wq_create_destroy_run,
 		.iterations = 200,
 	},
+#endif
 	{
 		.name = "submit_execute",
 		.type = BENCH_TYPE_LATENCY,

@@ -14,6 +14,7 @@ const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
 // ---------------------------------------------------------------------------
 // Method
@@ -79,42 +80,53 @@ pub const Response = struct {
 // ---------------------------------------------------------------------------
 
 /// HTTP/1.1 client.
+///
+/// ```zig
+/// var http: ove.HttpClient = undefined;
+/// try http.init();
+/// defer http.deinit();
+/// var resp = try http.get("http://example.com/");
+/// defer resp.destroy();
+/// ```
 pub const Client = struct {
+    storage: pin.Storage(c.ove_http_client_storage_t),
     handle: c.ove_http_client_t,
+    tracker: pin.Tracker,
 
-    /// Create an HTTP client.
-    pub fn create() Error!Client {
-        var h: c.ove_http_client_t = null;
-        if (comptime @hasDecl(c, "ove_http_client_create")) {
-            try err.fromCode(c.ove_http_client_create(&h));
+    pub fn init(self: *Client) Error!void {
+        self.storage = pin.zeroStorage(c.ove_http_client_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_http_client_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_http_client_storage_t = std.mem.zeroes(c.ove_http_client_storage_t);
-            };
-            try err.fromCode(c.ove_http_client_init(&h, &S.storage));
+            try err.fromCode(c.ove_http_client_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the HTTP client.
-    pub fn destroy(self: *Client) void {
+    pub fn deinit(self: *Client) void {
+        self.tracker.assertSame(self, "ove.HttpClient");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_http_client_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_http_client_destroy(self.handle)
         else
             c.ove_http_client_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
     /// Perform an HTTP GET request.
-    pub fn get(self: Client, url: [:0]const u8) Error!Response {
+    pub fn get(self: *Client, url: [:0]const u8) Error!Response {
+        self.tracker.assertSame(self, "ove.HttpClient");
         var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
         try err.fromCode(c.ove_http_get(self.handle, url.ptr, &raw));
         return .{ .raw = raw };
     }
 
     /// Perform an HTTP POST request.
-    pub fn post(self: Client, url: [:0]const u8, content_type: [:0]const u8, body_data: []const u8) Error!Response {
+    pub fn post(self: *Client, url: [:0]const u8, content_type: [:0]const u8, body_data: []const u8) Error!Response {
+        self.tracker.assertSame(self, "ove.HttpClient");
         var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
         try err.fromCode(c.ove_http_post(self.handle, url.ptr, content_type.ptr, body_data.ptr, body_data.len, &raw));
         return .{ .raw = raw };
@@ -123,13 +135,14 @@ pub const Client = struct {
     /// Perform an HTTP request with explicit method, optional body, and
     /// optional extra headers.
     pub fn requestEx(
-        self: Client,
+        self: *Client,
         method: Method,
         url: [:0]const u8,
         content_type: ?[:0]const u8,
         body_data: ?[]const u8,
         hdrs: ?[]const Header,
     ) Error!Response {
+        self.tracker.assertSame(self, "ove.HttpClient");
         const ct_ptr: ?[*]const u8 = if (content_type) |ct| ct.ptr else null;
         const body_ptr: ?[*]const u8 = if (body_data) |b| b.ptr else null;
         const body_len: usize = if (body_data) |b| b.len else 0;

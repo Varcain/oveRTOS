@@ -334,7 +334,7 @@ fn graphicsEntry() void {
             lvgl.tick(elapsed_ms);
             lvgl.handler();
         }
-        Thread.sleepMs(30);
+        ove.thread.sleepMs(30);
     }
 }
 
@@ -345,11 +345,12 @@ fn graphicsEntry() void {
 fn appMain() void {
     ove.log.inf("LVGL gallery (Zig): init", .{});
 
-    _ = Thread.spawn("graphics", graphicsEntry, prio.high, 4096) catch {
+    var graphics_thread: ove.Thread(4096) = undefined;
+    graphics_thread.init("graphics", graphicsEntry, prio.high) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    ui_timer = Timer.create(uiTimerCallback, 100, false) catch {
+    ui_timer.init(uiTimerCallback, 100, .periodic) catch {
         ove.log.err("Timer create fail", .{});
         return;
     };

@@ -8,68 +8,57 @@ const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
-/// Hardware watchdog timer handle.
+/// Hardware watchdog timer.
 ///
-/// The watchdog resets the system if `feed()` is not called within
-/// `timeout_ms` milliseconds of the last feed (or `start()`).
-/// Supports both heap and zero-heap backends.
+/// ```zig
+/// var wd: ove.Watchdog = undefined;
+/// try wd.init(5000);
+/// defer wd.deinit();
+/// try wd.start();
+/// // periodically: try wd.feed();
+/// ```
 pub const Watchdog = struct {
+    storage: pin.Storage(c.ove_watchdog_storage_t),
     handle: c.ove_watchdog_t,
+    tracker: pin.Tracker,
 
-    /// Create a watchdog with the given timeout in milliseconds.
-    ///
-    /// The watchdog does not begin counting until `start()` is called.
-    /// In zero-heap mode, the storage is a comptime-unique static variable.
-    /// Returns `Error` if the RTOS or hardware fails to create the watchdog.
-    pub fn create(timeout_ms: u32) Error!Watchdog {
-        var h: c.ove_watchdog_t = null;
-        if (comptime @hasDecl(c, "ove_watchdog_create")) {
-            try err.fromCode(c.ove_watchdog_create(&h, timeout_ms));
+    pub fn init(self: *Watchdog, timeout_ms: u32) Error!void {
+        self.storage = pin.zeroStorage(c.ove_watchdog_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_watchdog_create(&self.handle, timeout_ms));
         } else {
-            const S = struct {
-                var storage: c.ove_watchdog_storage_t = std.mem.zeroes(c.ove_watchdog_storage_t);
-            };
-            try err.fromCode(c.ove_watchdog_init(&h, &S.storage, timeout_ms));
+            try err.fromCode(c.ove_watchdog_init(&self.handle, &self.storage, timeout_ms));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the watchdog and release underlying resources.
-    ///
-    /// Sets `handle` to null. The watchdog is implicitly stopped.
-    /// Safe to call on an already-destroyed watchdog.
-    pub fn destroy(self: *Watchdog) void {
+    pub fn deinit(self: *Watchdog) void {
+        self.tracker.assertSame(self, "ove.Watchdog");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_watchdog_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_watchdog_destroy(self.handle)
         else
             c.ove_watchdog_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Arm the watchdog and begin the timeout countdown.
-    ///
-    /// After calling `start()`, `feed()` must be called within `timeout_ms`
-    /// milliseconds to prevent a system reset.
-    /// Returns `Error` if the start operation fails.
-    pub fn start(self: Watchdog) Error!void {
+    pub fn start(self: *Watchdog) Error!void {
+        self.tracker.assertSame(self, "ove.Watchdog");
         try err.fromCode(c.ove_watchdog_start(self.handle));
     }
 
-    /// Disarm the watchdog, stopping the timeout countdown.
-    ///
-    /// The system will not be reset until `start()` is called again.
-    /// Returns `Error` if the stop operation fails.
-    pub fn stop(self: Watchdog) Error!void {
+    pub fn stop(self: *Watchdog) Error!void {
+        self.tracker.assertSame(self, "ove.Watchdog");
         try err.fromCode(c.ove_watchdog_stop(self.handle));
     }
 
-    /// Feed (pet/kick) the watchdog, resetting the timeout countdown.
-    ///
-    /// Must be called periodically before `timeout_ms` elapses to prevent
-    /// a system reset. Returns `Error` if the feed operation fails.
-    pub fn feed(self: Watchdog) Error!void {
+    pub fn feed(self: *Watchdog) Error!void {
+        self.tracker.assertSame(self, "ove.Watchdog");
         try err.fromCode(c.ove_watchdog_feed(self.handle));
     }
 };

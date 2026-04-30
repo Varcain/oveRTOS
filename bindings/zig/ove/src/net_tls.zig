@@ -4,81 +4,44 @@
 //
 // This file is part of oveRTOS.
 
-//! TLS/SSL session wrapper (mbedTLS).
-//!
-//! Provides encrypted communication over an established TCP socket.
-
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
-const TcpStream = @import("net.zig").TcpStream;
+const pin = @import("pin.zig");
 
-/// TLS session configuration.
-pub const TlsConfig = struct {
-    /// PEM or DER CA certificate (null to skip verification).
-    ca_cert: ?[]const u8 = null,
-    /// Expected server hostname for SNI (null to skip).
-    hostname: ?[:0]const u8 = null,
-};
-
-/// TLS session with RAII cleanup.
+/// TLS session.
+///
+/// ```zig
+/// var tls: ove.TlsSession = undefined;
+/// try tls.init();
+/// defer tls.deinit();
+/// ```
 pub const Session = struct {
+    storage: pin.Storage(c.ove_tls_storage_t),
     handle: c.ove_tls_t,
+    tracker: pin.Tracker,
 
-    /// Create a TLS session.
-    pub fn create() Error!Session {
-        var h: c.ove_tls_t = null;
-        if (comptime @hasDecl(c, "ove_tls_create")) {
-            try err.fromCode(c.ove_tls_create(&h));
+    pub fn init(self: *Session) Error!void {
+        self.storage = pin.zeroStorage(c.ove_tls_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_tls_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_tls_storage_t = std.mem.zeroes(c.ove_tls_storage_t);
-            };
-            try err.fromCode(c.ove_tls_init(&h, &S.storage));
+            try err.fromCode(c.ove_tls_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the TLS session.
-    pub fn destroy(self: *Session) void {
+    pub fn deinit(self: *Session) void {
+        self.tracker.assertSame(self, "ove.TlsSession");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_tls_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_tls_destroy(self.handle)
         else
             c.ove_tls_deinit(self.handle);
         self.handle = null;
-    }
-
-    /// Perform TLS handshake over an established TCP connection.
-    pub fn handshake(self: Session, sock: TcpStream, cfg: TlsConfig) Error!void {
-        var cc: c.ove_tls_config_t = std.mem.zeroes(c.ove_tls_config_t);
-        if (cfg.ca_cert) |cert| {
-            cc.ca_cert = cert.ptr;
-            cc.ca_cert_len = cert.len;
-        }
-        if (cfg.hostname) |host| {
-            cc.hostname = host.ptr;
-        }
-        try err.fromCode(c.ove_tls_handshake(self.handle, sock.handle, &cc));
-    }
-
-    /// Send data over the encrypted session. Returns bytes sent.
-    pub fn send(self: Session, data: []const u8) Error!usize {
-        var sent: usize = 0;
-        try err.fromCode(c.ove_tls_send(self.handle, data.ptr, data.len, &sent));
-        return sent;
-    }
-
-    /// Receive data from the encrypted session. Returns bytes received.
-    pub fn recv(self: Session, buf: []u8) Error!usize {
-        var received: usize = 0;
-        try err.fromCode(c.ove_tls_recv(self.handle, buf.ptr, buf.len, &received));
-        return received;
-    }
-
-    /// Shut down the TLS session (sends close_notify). Socket is NOT closed.
-    pub fn close(self: Session) void {
-        c.ove_tls_close(self.handle);
+        self.tracker.clear();
     }
 };

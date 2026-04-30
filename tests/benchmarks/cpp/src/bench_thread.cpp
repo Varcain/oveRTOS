@@ -19,8 +19,8 @@ static std::optional<ove::Semaphore> ping_sem;
 static std::optional<ove::Semaphore> pong_sem;
 static std::atomic<bool> ctx_switch_done{false};
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void dummy_thread(void *arg)
 {
 	(void)arg;
@@ -30,6 +30,7 @@ static void thread_create_destroy_run()
 {
 	ove::Thread<1024> th(dummy_thread, nullptr, OVE_PRIO_LOW, "bench_tmp");
 }
+#endif
 
 /* --- yield --- */
 
@@ -88,12 +89,14 @@ static bool thread_is_enabled()
 	return true;
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec thread_create_destroy_spec{
 	.name = "create_destroy",
 	.kind = bench::Type::latency,
 	.run = &thread_create_destroy_run,
 	.iterations = 200,
 };
+#endif
 static constexpr bench::CaseSpec thread_yield_spec{
 	.name = "yield",
 	.kind = bench::Type::latency,
@@ -115,7 +118,9 @@ static constexpr bench::CaseSpec ctx_switch_spec{
 };
 
 static constexpr bench_case_t thread_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<thread_create_destroy_spec>(),
+#endif
 	bench::case_<thread_yield_spec>(),
 	bench::case_<thread_sleep_1ms_spec>(),
 	bench::case_<ctx_switch_spec>(),

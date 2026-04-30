@@ -5,17 +5,13 @@
 // This file is part of oveRTOS.
 
 //! MQTT 3.1.1 client with comptime trampoline callbacks.
-//!
-//! Supports both a simple callback (`fn([]const u8, []const u8) void`)
-//! and a typed-context variant following the `Timer.createWithContext`
-//! pattern.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
-/// MQTT QoS level.
 pub const Qos = enum {
     at_most_once,
     at_least_once,
@@ -40,41 +36,48 @@ pub const Config = struct {
 };
 
 /// MQTT client.
+///
+/// ```zig
+/// var mq: ove.MqttClient = undefined;
+/// try mq.init();
+/// defer mq.deinit();
+/// try mq.connect(cfg, onMessage);
+/// ```
 pub const Client = struct {
+    storage: pin.Storage(c.ove_mqtt_client_storage_t),
     handle: c.ove_mqtt_client_t,
+    tracker: pin.Tracker,
 
-    /// Create an MQTT client.
-    pub fn create() Error!Client {
-        var h: c.ove_mqtt_client_t = null;
-        if (comptime @hasDecl(c, "ove_mqtt_client_create")) {
-            try err.fromCode(c.ove_mqtt_client_create(&h));
+    pub fn init(self: *Client) Error!void {
+        self.storage = pin.zeroStorage(c.ove_mqtt_client_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_mqtt_client_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_mqtt_client_storage_t = std.mem.zeroes(c.ove_mqtt_client_storage_t);
-            };
-            try err.fromCode(c.ove_mqtt_client_init(&h, &S.storage));
+            try err.fromCode(c.ove_mqtt_client_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the MQTT client.
-    pub fn destroy(self: *Client) void {
+    pub fn deinit(self: *Client) void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_mqtt_client_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_mqtt_client_destroy(self.handle)
         else
             c.ove_mqtt_client_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
     /// Connect with a simple callback (no context).
-    ///
-    /// `callback` receives topic and payload as slices.
     pub fn connect(
-        self: Client,
+        self: *Client,
         cfg: Config,
         comptime callback: fn ([]const u8, []const u8) void,
     ) Error!void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         const Trampoline = struct {
             fn invoke(
                 topic: [*c]const u8,
@@ -94,14 +97,15 @@ pub const Client = struct {
         try err.fromCode(c.ove_mqtt_connect(self.handle, &cc));
     }
 
-    /// Connect with a typed context pointer (comptime trampoline pattern).
+    /// Connect with a typed context pointer.
     pub fn connectWithContext(
         comptime Context: type,
-        self: Client,
+        self: *Client,
         ctx: *Context,
         cfg: Config,
         comptime callback: fn (*Context, []const u8, []const u8) void,
     ) Error!void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         const Trampoline = struct {
             fn invoke(
                 topic: [*c]const u8,
@@ -122,32 +126,30 @@ pub const Client = struct {
         try err.fromCode(c.ove_mqtt_connect(self.handle, &cc));
     }
 
-    /// Disconnect from the broker.
-    pub fn disconnect(self: Client) void {
+    pub fn disconnect(self: *Client) void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         c.ove_mqtt_disconnect(self.handle);
     }
 
-    /// Publish a message.
-    pub fn publish(self: Client, topic: [:0]const u8, payload: []const u8, qos: Qos) Error!void {
+    pub fn publish(self: *Client, topic: [:0]const u8, payload: []const u8, qos: Qos) Error!void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         try err.fromCode(c.ove_mqtt_publish(self.handle, topic.ptr, payload.ptr, payload.len, qos.toC()));
     }
 
-    /// Subscribe to a topic filter.
-    pub fn subscribe(self: Client, topic: [:0]const u8, qos: Qos) Error!void {
+    pub fn subscribe(self: *Client, topic: [:0]const u8, qos: Qos) Error!void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         try err.fromCode(c.ove_mqtt_subscribe(self.handle, topic.ptr, qos.toC()));
     }
 
-    /// Unsubscribe from a topic filter.
-    pub fn unsubscribe(self: Client, topic: [:0]const u8) Error!void {
+    pub fn unsubscribe(self: *Client, topic: [:0]const u8) Error!void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         try err.fromCode(c.ove_mqtt_unsubscribe(self.handle, topic.ptr));
     }
 
-    /// Process incoming packets and send keep-alive.  Call periodically.
-    pub fn pollOnce(self: Client, timeout_ms: u32) Error!void {
+    pub fn pollOnce(self: *Client, timeout_ms: u32) Error!void {
+        self.tracker.assertSame(self, "ove.MqttClient");
         try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ms));
     }
-
-    // -- internal helpers --
 
     fn fillConfig(cfg: Config) c.ove_mqtt_config_t {
         var cc: c.ove_mqtt_config_t = std.mem.zeroes(c.ove_mqtt_config_t);

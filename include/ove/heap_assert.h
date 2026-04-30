@@ -36,7 +36,12 @@
 
 #include "ove_config.h"
 
-#ifdef CONFIG_OVE_ZERO_HEAP
+/* bindgen (libclang) rejects the `__attribute__((error(...)))`
+ * redeclarations below as "attribute does not appear on the first
+ * declaration" against the libc decls.  GCC accepts that pattern; the
+ * Rust crate's build.rs passes -D__BINDGEN__, so skip the redecls there
+ * — bindgen never emits libc allocator symbols anyway. */
+#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__)
 
 #include <stddef.h>
 

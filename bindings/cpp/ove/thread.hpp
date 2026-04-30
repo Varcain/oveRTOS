@@ -222,8 +222,13 @@ template <size_t StackSize = 0> class Thread
       private:
 	ove_thread_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	ove_thread_storage_t storage_ = {};
+	/* `stack_` precedes `storage_` so the latter (whose underlying C
+	 * struct ends in a flexible-array `stack[]`) sits at the end of the
+	 * C++ class.  C99 allows FAMs anywhere in a struct, but C++ rejects
+	 * another member after one — see
+	 * backends/freertos/include/ove_storage_freertos.h FAM commentary. */
 	OVE_THREAD_STACK_MEMBER_(stack_, StackSize > 0 ? StackSize : 1);
+	ove_thread_storage_t storage_ = {};
 #endif
 };
 

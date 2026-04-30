@@ -4,86 +4,102 @@
 //
 // This file is part of oveRTOS.
 
+//! Synchronisation primitives.
+//!
+//! All wrappers follow the same idiomatic pattern:
+//!
+//! ```zig
+//! var mtx: ove.Mutex = undefined;
+//! try mtx.init();
+//! defer mtx.deinit();
+//! try mtx.lock(ove.wait_forever);
+//! mtx.unlock();
+//! ```
+//!
+//! ## Pinning contract
+//!
+//! Under `CONFIG_OVE_ZERO_HEAP=y` each wrapper embeds the kernel-object
+//! storage as a struct field, and the kernel handle stored in `self.handle`
+//! references `&self.storage`.  After `init()` the wrapper **must not be
+//! moved, copied, passed by value, or relocated** — doing so invalidates
+//! the kernel pointer and silently corrupts RTOS state.  Debug builds
+//! (`std.debug.runtime_safety == true`) record `&self` at `init()` and
+//! panic if any method later sees a different address.  Release builds
+//! compile the check out at zero cost.
+//!
+//! `init()` failure leaves `self` in its original `undefined` state — do
+//! not register `defer self.deinit()` until after `try self.init()`
+//! succeeds.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
 // ---------------------------------------------------------------------------
 // Mutex
 // ---------------------------------------------------------------------------
 
 /// Non-recursive mutual exclusion lock.
-///
-/// Supports both heap-allocated (`ove_mutex_create`) and zero-heap
-/// (`ove_mutex_init`) backends, selected at compile time.
-/// Use `acquire()` for RAII-style locking.
 pub const Mutex = struct {
+    storage: pin.Storage(c.ove_mutex_storage_t),
     handle: c.ove_mutex_t,
+    tracker: pin.Tracker,
 
-    /// Create and return a new mutex.
-    ///
-    /// In zero-heap mode, the storage is allocated inside a comptime-unique
-    /// static variable — only one instance per call site is supported.
-    /// Returns `Error` if the RTOS fails to create the mutex.
-    pub fn create() Error!Mutex {
-        var h: c.ove_mutex_t = null;
-        if (comptime @hasDecl(c, "ove_mutex_create")) {
-            try err.fromCode(c.ove_mutex_create(&h));
+    /// Attach a kernel mutex to this wrapper.  Must be called exactly once
+    /// before any locking operation, and `self` must outlive every
+    /// subsequent call (the kernel handle points into `self.storage`).
+    pub fn init(self: *Mutex) Error!void {
+        self.storage = pin.zeroStorage(c.ove_mutex_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_mutex_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_mutex_storage_t = std.mem.zeroes(c.ove_mutex_storage_t);
-            };
-            try err.fromCode(c.ove_mutex_init(&h, &S.storage));
+            try err.fromCode(c.ove_mutex_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the mutex and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null to prevent double-free. Safe to call on an
-    /// already-destroyed mutex.
-    pub fn destroy(self: *Mutex) void {
+    /// Release kernel resources.  Idempotent.  Must be called from the
+    /// same address as `init()`.
+    pub fn deinit(self: *Mutex) void {
+        self.tracker.assertSame(self, "ove.Mutex");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_mutex_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_mutex_destroy(self.handle)
         else
             c.ove_mutex_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Lock the mutex, blocking up to `timeout_ms` milliseconds.
-    ///
-    /// Use `wait_forever` for an indefinite block. Returns `Error.Timeout`
-    /// if the lock is not acquired within the timeout.
-    pub fn lock(self: Mutex, timeout_ms: u32) Error!void {
+    pub fn lock(self: *Mutex, timeout_ms: u32) Error!void {
+        self.tracker.assertSame(self, "ove.Mutex");
         try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ms));
     }
 
-    /// Release the mutex. Must be called from the task that locked it.
-    pub fn unlock(self: Mutex) void {
+    pub fn unlock(self: *Mutex) void {
+        self.tracker.assertSame(self, "ove.Mutex");
         c.ove_mutex_unlock(self.handle);
     }
 
-    /// RAII guard returned by `acquire()`.
-    ///
-    /// Holds the mutex until `release()` is called (typically via `defer`).
-    pub const MutexGuard = struct {
-        mutex: Mutex,
-
-        /// Release the mutex held by this guard.
-        pub fn release(self: MutexGuard) void {
+    /// RAII guard returned by `acquire()`.  Holds the mutex until
+    /// `release()` is called (typically via `defer`).
+    pub const Guard = struct {
+        mutex: *Mutex,
+        pub fn release(self: Guard) void {
             self.mutex.unlock();
         }
     };
 
-    /// Alias for `MutexGuard` for convenience.
-    pub const Guard = MutexGuard;
-
-    /// Lock the mutex and return a Guard. Use with defer:
-    ///     const guard = try mutex.acquire(timeout);
-    ///     defer guard.release();
-    pub fn acquire(self: Mutex, timeout_ms: u32) Error!MutexGuard {
+    /// Lock and return a `Guard`:
+    /// ```zig
+    /// const g = try mtx.acquire(ove.wait_forever);
+    /// defer g.release();
+    /// ```
+    pub fn acquire(self: *Mutex, timeout_ms: u32) Error!Guard {
         try self.lock(timeout_ms);
         return .{ .mutex = self };
     }
@@ -93,77 +109,54 @@ pub const Mutex = struct {
 // RecursiveMutex
 // ---------------------------------------------------------------------------
 
-/// Recursive mutual exclusion lock.
-///
-/// The same task may lock this mutex multiple times without deadlocking.
-/// Each `lock()` must be paired with a corresponding `unlock()`.
-/// Supports both heap and zero-heap backends.
+/// Recursive mutual exclusion lock.  The same task may lock multiple times;
+/// each `lock()` must be paired with `unlock()`.
 pub const RecursiveMutex = struct {
+    storage: pin.Storage(c.ove_mutex_storage_t),
     handle: c.ove_mutex_t,
+    tracker: pin.Tracker,
 
-    /// Create and return a new recursive mutex.
-    ///
-    /// In zero-heap mode, the storage is a comptime-unique static variable.
-    /// Returns `Error` if the RTOS fails to create the mutex.
-    pub fn create() Error!RecursiveMutex {
-        var h: c.ove_mutex_t = null;
-        if (comptime @hasDecl(c, "ove_recursive_mutex_create")) {
-            try err.fromCode(c.ove_recursive_mutex_create(&h));
+    pub fn init(self: *RecursiveMutex) Error!void {
+        self.storage = pin.zeroStorage(c.ove_mutex_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_recursive_mutex_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_mutex_storage_t = std.mem.zeroes(c.ove_mutex_storage_t);
-            };
-            try err.fromCode(c.ove_recursive_mutex_init(&h, &S.storage));
+            try err.fromCode(c.ove_recursive_mutex_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the recursive mutex and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null. Safe to call on an already-destroyed mutex.
-    pub fn destroy(self: *RecursiveMutex) void {
+    pub fn deinit(self: *RecursiveMutex) void {
+        self.tracker.assertSame(self, "ove.RecursiveMutex");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_mutex_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_mutex_destroy(self.handle)
         else
             c.ove_mutex_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Lock the recursive mutex, blocking up to `timeout_ms` milliseconds.
-    ///
-    /// May be called multiple times from the same task. Returns `Error.Timeout`
-    /// if the lock is not acquired within the timeout.
-    pub fn lock(self: RecursiveMutex, timeout_ms: u32) Error!void {
+    pub fn lock(self: *RecursiveMutex, timeout_ms: u32) Error!void {
+        self.tracker.assertSame(self, "ove.RecursiveMutex");
         try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ms));
     }
 
-    /// Release one level of the recursive lock.
-    ///
-    /// Must be called once for each successful `lock()`.
-    pub fn unlock(self: RecursiveMutex) void {
+    pub fn unlock(self: *RecursiveMutex) void {
+        self.tracker.assertSame(self, "ove.RecursiveMutex");
         c.ove_recursive_mutex_unlock(self.handle);
     }
 
-    /// RAII guard returned by `acquire()`.
-    ///
-    /// Holds one lock level until `release()` is called (typically via `defer`).
-    pub const MutexGuard = struct {
-        mutex: RecursiveMutex,
-
-        /// Release one level of the recursive mutex held by this guard.
-        pub fn release(self: MutexGuard) void {
+    pub const Guard = struct {
+        mutex: *RecursiveMutex,
+        pub fn release(self: Guard) void {
             self.mutex.unlock();
         }
     };
 
-    /// Alias for `MutexGuard` for convenience.
-    pub const Guard = MutexGuard;
-
-    /// Lock the mutex and return a Guard. Use with defer:
-    ///     const guard = try rmutex.acquire(timeout);
-    ///     defer guard.release();
-    pub fn acquire(self: RecursiveMutex, timeout_ms: u32) Error!MutexGuard {
+    pub fn acquire(self: *RecursiveMutex, timeout_ms: u32) Error!Guard {
         try self.lock(timeout_ms);
         return .{ .mutex = self };
     }
@@ -174,53 +167,43 @@ pub const RecursiveMutex = struct {
 // ---------------------------------------------------------------------------
 
 /// Counting semaphore for signalling between tasks or from ISRs.
-///
-/// Supports both heap and zero-heap backends.
 pub const Semaphore = struct {
+    storage: pin.Storage(c.ove_sem_storage_t),
     handle: c.ove_sem_t,
+    tracker: pin.Tracker,
 
-    /// Create a counting semaphore with an initial count and a maximum count.
-    ///
-    /// `initial` sets the starting count. `max` caps the count ceiling.
-    /// In zero-heap mode, storage is a comptime-unique static variable.
-    /// Returns `Error` if the RTOS fails to create the semaphore.
-    pub fn create(initial: u32, max: u32) Error!Semaphore {
-        var h: c.ove_sem_t = null;
-        if (comptime @hasDecl(c, "ove_sem_create")) {
-            try err.fromCode(c.ove_sem_create(&h, initial, max));
+    pub fn init(self: *Semaphore, initial: u32, max: u32) Error!void {
+        self.storage = pin.zeroStorage(c.ove_sem_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_sem_create(&self.handle, initial, max));
         } else {
-            const S = struct {
-                var storage: c.ove_sem_storage_t = std.mem.zeroes(c.ove_sem_storage_t);
-            };
-            try err.fromCode(c.ove_sem_init(&h, &S.storage, initial, max));
+            try err.fromCode(c.ove_sem_init(&self.handle, &self.storage, initial, max));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the semaphore and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null. Safe to call on an already-destroyed semaphore.
-    pub fn destroy(self: *Semaphore) void {
+    pub fn deinit(self: *Semaphore) void {
+        self.tracker.assertSame(self, "ove.Semaphore");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_sem_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_sem_destroy(self.handle)
         else
             c.ove_sem_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Decrement the semaphore count, blocking up to `timeout_ms` milliseconds.
-    ///
-    /// Use `wait_forever` for an indefinite block. Returns `Error.Timeout`
-    /// if the count does not become positive within the timeout.
-    pub fn take(self: Semaphore, timeout_ms: u32) Error!void {
+    /// Decrement the semaphore count, blocking up to `timeout_ms`.
+    pub fn take(self: *Semaphore, timeout_ms: u32) Error!void {
+        self.tracker.assertSame(self, "ove.Semaphore");
         try err.fromCode(c.ove_sem_take(self.handle, timeout_ms));
     }
 
-    /// Increment the semaphore count, potentially unblocking a waiting task.
-    ///
-    /// Safe to call from ISR context.
-    pub fn give(self: Semaphore) void {
+    /// Increment the semaphore count.  Safe to call from ISR context.
+    pub fn give(self: *Semaphore) void {
+        self.tracker.assertSame(self, "ove.Semaphore");
         c.ove_sem_give(self.handle);
     }
 };
@@ -229,62 +212,49 @@ pub const Semaphore = struct {
 // Event
 // ---------------------------------------------------------------------------
 
-/// Binary event flag for one-shot signalling between tasks or from ISRs.
-///
-/// A waiting task blocks until the event is signalled. The event is
-/// automatically reset after a successful `wait()`.
-/// Supports both heap and zero-heap backends.
+/// Binary event flag — auto-resets after a successful `wait()`.
 pub const Event = struct {
+    storage: pin.Storage(c.ove_event_storage_t),
     handle: c.ove_event_t,
+    tracker: pin.Tracker,
 
-    /// Create and return a new binary event (initially unsignalled).
-    ///
-    /// In zero-heap mode, storage is a comptime-unique static variable.
-    /// Returns `Error` if the RTOS fails to create the event.
-    pub fn create() Error!Event {
-        var h: c.ove_event_t = null;
-        if (comptime @hasDecl(c, "ove_event_create")) {
-            try err.fromCode(c.ove_event_create(&h));
+    pub fn init(self: *Event) Error!void {
+        self.storage = pin.zeroStorage(c.ove_event_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_event_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_event_storage_t = std.mem.zeroes(c.ove_event_storage_t);
-            };
-            try err.fromCode(c.ove_event_init(&h, &S.storage));
+            try err.fromCode(c.ove_event_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the event and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null. Safe to call on an already-destroyed event.
-    pub fn destroy(self: *Event) void {
+    pub fn deinit(self: *Event) void {
+        self.tracker.assertSame(self, "ove.Event");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_event_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_event_destroy(self.handle)
         else
             c.ove_event_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Block until the event is signalled or `timeout_ms` elapses.
-    ///
-    /// Returns `Error.Timeout` if the event is not signalled in time.
-    pub fn wait(self: Event, timeout_ms: u32) Error!void {
+    pub fn wait(self: *Event, timeout_ms: u32) Error!void {
+        self.tracker.assertSame(self, "ove.Event");
         try err.fromCode(c.ove_event_wait(self.handle, timeout_ms));
     }
 
-    /// Signal the event, unblocking one waiting task.
-    ///
-    /// Safe to call from task context. For ISR context use `signalFromIsr()`.
-    pub fn signal(self: Event) void {
+    pub fn signal(self: *Event) void {
+        self.tracker.assertSame(self, "ove.Event");
         c.ove_event_signal(self.handle);
     }
 
-    /// Signal the event from an interrupt service routine.
-    ///
-    /// Must be called only from ISR context. Does not perform a context switch
-    /// immediately; the scheduler will yield when the ISR returns.
-    pub fn signalFromIsr(self: Event) void {
+    pub fn signalFromIsr(self: *Event) void {
+        // ISR path — skip pin check (panics from ISR context are unsafe);
+        // the assumption is that init() ran from task context and the
+        // wrapper is at a stable address by the time an ISR fires.
         c.ove_event_signal_from_isr(self.handle);
     }
 };
@@ -293,60 +263,49 @@ pub const Event = struct {
 // CondVar
 // ---------------------------------------------------------------------------
 
-/// Condition variable for producer/consumer synchronization.
-///
-/// Must always be used together with a `Mutex`. A waiting task atomically
-/// releases the mutex and sleeps until `signal()` or `broadcast()` is called,
-/// then re-acquires the mutex before returning.
-/// Supports both heap and zero-heap backends.
+/// Condition variable paired with a `Mutex` for producer/consumer patterns.
 pub const CondVar = struct {
+    storage: pin.Storage(c.ove_condvar_storage_t),
     handle: c.ove_condvar_t,
+    tracker: pin.Tracker,
 
-    /// Create and return a new condition variable.
-    ///
-    /// In zero-heap mode, storage is a comptime-unique static variable.
-    /// Returns `Error` if the RTOS fails to create the condition variable.
-    pub fn create() Error!CondVar {
-        var h: c.ove_condvar_t = null;
-        if (comptime @hasDecl(c, "ove_condvar_create")) {
-            try err.fromCode(c.ove_condvar_create(&h));
+    pub fn init(self: *CondVar) Error!void {
+        self.storage = pin.zeroStorage(c.ove_condvar_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_condvar_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_condvar_storage_t = std.mem.zeroes(c.ove_condvar_storage_t);
-            };
-            try err.fromCode(c.ove_condvar_init(&h, &S.storage));
+            try err.fromCode(c.ove_condvar_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the condition variable and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null. Safe to call on an already-destroyed condvar.
-    pub fn destroy(self: *CondVar) void {
+    pub fn deinit(self: *CondVar) void {
+        self.tracker.assertSame(self, "ove.CondVar");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_condvar_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_condvar_destroy(self.handle)
         else
             c.ove_condvar_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Atomically release `mutex` and wait for a `signal()` or `broadcast()`.
-    ///
-    /// Blocks up to `timeout_ms` milliseconds. Re-acquires `mutex` before
-    /// returning regardless of the outcome. Returns `Error.Timeout` if the
-    /// condition is not signalled in time.
-    pub fn wait(self: CondVar, mutex: Mutex, timeout_ms: u32) Error!void {
+    /// Atomically release `mutex` and wait for a signal/broadcast.
+    /// Re-acquires `mutex` before returning.
+    pub fn wait(self: *CondVar, mutex: *Mutex, timeout_ms: u32) Error!void {
+        self.tracker.assertSame(self, "ove.CondVar");
         try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ms));
     }
 
-    /// Wake one task waiting on this condition variable.
-    pub fn signal(self: CondVar) void {
+    pub fn signal(self: *CondVar) void {
+        self.tracker.assertSame(self, "ove.CondVar");
         c.ove_condvar_signal(self.handle);
     }
 
-    /// Wake all tasks waiting on this condition variable.
-    pub fn broadcast(self: CondVar) void {
+    pub fn broadcast(self: *CondVar) void {
+        self.tracker.assertSame(self, "ove.CondVar");
         c.ove_condvar_broadcast(self.handle);
     }
 };

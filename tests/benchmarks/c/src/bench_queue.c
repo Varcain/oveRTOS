@@ -39,8 +39,8 @@ static void queue_send_recv_teardown(void *ctx)
 	ove_queue_destroy(bench_q);
 }
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void queue_create_destroy_run(void *ctx)
 {
 	(void)ctx;
@@ -49,6 +49,7 @@ static void queue_create_destroy_run(void *ctx)
 	ove_queue_create(&q, sizeof(uint32_t), 8);
 	ove_queue_destroy(q);
 }
+#endif
 
 /* --- 2-thread throughput --- */
 
@@ -99,8 +100,8 @@ static void queue_throughput_teardown(void *ctx)
 	ove_queue_destroy(bench_q);
 }
 
-/* --- memory --- */
-
+/* --- memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static ove_queue_t mem_queue;
 
 static void queue_memory_run(void *ctx)
@@ -114,6 +115,7 @@ static void queue_memory_teardown(void *ctx)
 	(void)ctx;
 	ove_queue_destroy(mem_queue);
 }
+#endif
 
 /* --- Suite --- */
 
@@ -123,12 +125,14 @@ static int queue_is_enabled(void)
 }
 
 static const bench_case_t queue_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "memory",
 		.type = BENCH_TYPE_MEMORY,
 		.run = queue_memory_run,
 		.teardown = queue_memory_teardown,
 	},
+#endif
 	{
 		.name = "send_receive",
 		.type = BENCH_TYPE_LATENCY,
@@ -136,11 +140,13 @@ static const bench_case_t queue_cases[] = {
 		.run = queue_send_recv_run,
 		.teardown = queue_send_recv_teardown,
 	},
+#ifndef CONFIG_OVE_ZERO_HEAP
 	{
 		.name = "create_destroy",
 		.type = BENCH_TYPE_LATENCY,
 		.run = queue_create_destroy_run,
 	},
+#endif
 	{
 		.name = "throughput_2t",
 		.type = BENCH_TYPE_THROUGHPUT,

@@ -9,13 +9,26 @@
 //! Measures latency, throughput, and memory usage of all RTOS abstractions
 //! through the safe Zig binding layer. Output is formatted ASCII tables
 //! via the C harness (bench_output.c).
+//!
+//! Wrappers follow the embedded-storage two-phase pattern:
+//!     var x: ove.Foo = undefined;
+//!     try x.init(...);
+//!     defer x.deinit();
+//!
+//! For bench setup/teardown cycles where re-init must repopulate the same
+//! file-scope storage, every setup writes `x = undefined;` before
+//! `x.init()` so the pin-tracker resets cleanly.
 
 const std = @import("std");
 const ove = @import("ove");
-// Bench harness wrappers used to live at `ove.bench`; they're now bench-app-local.
 const bench = @import("bench.zig");
 
 const volatile_int = std.atomic.Value(i32);
+
+/// Comptime-resolved zero-heap mode flag.  `*_create_destroy` and
+/// `*_memory` cases are gated out under zero-heap because the heap is
+/// locked at boot and the create/destroy API isn't generated.
+const is_zero_heap = @hasDecl(ove.ffi, "CONFIG_OVE_ZERO_HEAP");
 
 // =========================================================================
 // Suite: time
@@ -65,55 +78,65 @@ comptime {
 // Suite: thread
 // =========================================================================
 
-var thread_bench_th: ?ove.Thread = null;
-var thread_ping_sem: ?ove.Semaphore = null;
-var thread_pong_sem: ?ove.Semaphore = null;
+var thread_bench_th: ove.Thread(2048) = undefined;
+var thread_bench_th_in: bool = false;
+var thread_ping_sem: ove.Semaphore = undefined;
+var thread_ping_sem_in: bool = false;
+var thread_pong_sem: ove.Semaphore = undefined;
+var thread_pong_sem_in: bool = false;
 var thread_ctx_switch_done: volatile_int = volatile_int.init(0);
 
 fn dummyThread() void {}
 
 fn threadCreateDestroyRun() void {
-    var th = ove.Thread.spawn("bench_tmp", dummyThread, ove.thread.prio.low, 1024) catch return;
-    th.destroy();
+    var th: ove.Thread(1024) = undefined;
+    th.init("bench_tmp", dummyThread, ove.thread.prio.low) catch return;
+    th.deinit();
 }
 
 fn threadYieldRun() void {
-    ove.Thread.yieldCpu();
+    ove.thread.yieldCpu();
 }
 
 fn threadSleep1msRun() void {
-    ove.Thread.sleepMs(1);
+    ove.thread.sleepMs(1);
 }
 
 fn pongThread() void {
     while (thread_ctx_switch_done.load(.acquire) == 0) {
-        thread_pong_sem.?.take(ove.wait_forever) catch {};
-        thread_ping_sem.?.give();
+        thread_pong_sem.take(ove.wait_forever) catch {};
+        thread_ping_sem.give();
     }
 }
 
 fn ctxSwitchSetup() void {
     thread_ctx_switch_done.store(0, .release);
-    thread_ping_sem = ove.Semaphore.create(0, 1) catch return;
-    thread_pong_sem = ove.Semaphore.create(0, 1) catch return;
-    thread_bench_th = ove.Thread.spawn("pong", pongThread, ove.thread.prio.normal, 2048) catch return;
+    thread_ping_sem = undefined;
+    thread_ping_sem.init(0, 1) catch return;
+    thread_ping_sem_in = true;
+    thread_pong_sem = undefined;
+    thread_pong_sem.init(0, 1) catch return;
+    thread_pong_sem_in = true;
+    thread_bench_th = undefined;
+    thread_bench_th.init("pong", pongThread, ove.thread.prio.normal) catch return;
+    thread_bench_th_in = true;
 }
 
 fn ctxSwitchRun() void {
-    thread_pong_sem.?.give();
-    thread_ping_sem.?.take(ove.wait_forever) catch {};
+    thread_pong_sem.give();
+    thread_ping_sem.take(ove.wait_forever) catch {};
 }
 
 fn ctxSwitchTeardown() void {
     thread_ctx_switch_done.store(1, .release);
-    thread_pong_sem.?.give();
-    ove.Thread.sleepMs(10);
-    if (thread_bench_th) |*t| t.destroy();
-    thread_bench_th = null;
-    if (thread_ping_sem) |*s| s.destroy();
-    thread_ping_sem = null;
-    if (thread_pong_sem) |*s| s.destroy();
-    thread_pong_sem = null;
+    thread_pong_sem.give();
+    ove.thread.sleepMs(10);
+    if (thread_bench_th_in) thread_bench_th.deinit();
+    thread_bench_th_in = false;
+    if (thread_ping_sem_in) thread_ping_sem.deinit();
+    thread_ping_sem_in = false;
+    if (thread_pong_sem_in) thread_pong_sem.deinit();
+    thread_pong_sem_in = false;
 }
 
 fn threadIsEnabled() bool {
@@ -146,17 +169,24 @@ const thread_case_ctx_switch = bench.CaseSpec{
     .iterations = 500,
 };
 
-const thread_cases = [_]bench.CBenchCase{
+const thread_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("thread", thread_case_create_destroy),
     bench.caseAudited("thread", thread_case_yield),
     bench.caseAudited("thread", thread_case_sleep_1ms),
     bench.caseAudited("thread", thread_case_ctx_switch),
 };
+const thread_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("thread", thread_case_yield),
+    bench.caseAudited("thread", thread_case_sleep_1ms),
+    bench.caseAudited("thread", thread_case_ctx_switch),
+};
+const thread_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &thread_cases_zh else &thread_cases_full;
 
 const thread_suite = bench.makeSuite(.{
     .name = "thread",
     .enabled = &threadIsEnabled,
-    .cases = &thread_cases,
+    .cases = thread_cases,
 });
 
 comptime {
@@ -167,212 +197,255 @@ comptime {
 // Suite: sync
 // =========================================================================
 
-var sync_bench_mtx: ?ove.Mutex = null;
-var sync_bench_sem: ?ove.Semaphore = null;
-var sync_bench_evt: ?ove.Event = null;
-var sync_bench_cv: ?ove.CondVar = null;
-var sync_bench_cv_mtx: ?ove.Mutex = null;
-var sync_bench_rmtx: ?ove.RecursiveMutex = null;
-var sync_contention_th: ?ove.Thread = null;
+var sync_bench_mtx: ove.Mutex = undefined;
+var sync_bench_mtx_in: bool = false;
+var sync_bench_sem: ove.Semaphore = undefined;
+var sync_bench_sem_in: bool = false;
+var sync_bench_evt: ove.Event = undefined;
+var sync_bench_evt_in: bool = false;
+var sync_bench_evt_ack: ove.Event = undefined;
+var sync_bench_evt_ack_in: bool = false;
+var sync_bench_cv: ove.CondVar = undefined;
+var sync_bench_cv_in: bool = false;
+var sync_bench_cv_mtx: ove.Mutex = undefined;
+var sync_bench_cv_mtx_in: bool = false;
+var sync_bench_rmtx: ove.RecursiveMutex = undefined;
+var sync_bench_rmtx_in: bool = false;
+var sync_contention_th: ove.Thread(2048) = undefined;
+var sync_contention_th_in: bool = false;
 var sync_contention_done: volatile_int = volatile_int.init(0);
 var sync_contention_count: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
-var sync_evt_th: ?ove.Thread = null;
+var sync_evt_th: ove.Thread(1024) = undefined;
+var sync_evt_th_in: bool = false;
 var sync_evt_done: volatile_int = volatile_int.init(0);
-var sync_bench_evt_ack: ?ove.Event = null;
-var sync_cv_th: ?ove.Thread = null;
+var sync_cv_th: ove.Thread(1024) = undefined;
+var sync_cv_th_in: bool = false;
 var sync_cv_done: volatile_int = volatile_int.init(0);
-var sync_mem_mutex: ?ove.Mutex = null;
-var sync_mem_sem: ?ove.Semaphore = null;
-var sync_mem_event: ?ove.Event = null;
-var sync_mem_condvar: ?ove.CondVar = null;
+var sync_mem_mutex: ove.Mutex = undefined;
+var sync_mem_mutex_in: bool = false;
+var sync_mem_sem: ove.Semaphore = undefined;
+var sync_mem_sem_in: bool = false;
+var sync_mem_event: ove.Event = undefined;
+var sync_mem_event_in: bool = false;
+var sync_mem_condvar: ove.CondVar = undefined;
+var sync_mem_condvar_in: bool = false;
 
 // --- Mutex lock/unlock ---
 
 fn mutexLockUnlockSetup() void {
-    sync_bench_mtx = ove.Mutex.create() catch return;
+    sync_bench_mtx = undefined;
+    sync_bench_mtx.init() catch return;
+    sync_bench_mtx_in = true;
 }
 fn mutexLockUnlockRun() void {
-    sync_bench_mtx.?.lock(ove.wait_forever) catch {};
-    sync_bench_mtx.?.unlock();
+    sync_bench_mtx.lock(ove.wait_forever) catch {};
+    sync_bench_mtx.unlock();
 }
 fn mutexLockUnlockTeardown() void {
-    if (sync_bench_mtx) |*m| m.destroy();
-    sync_bench_mtx = null;
+    if (sync_bench_mtx_in) sync_bench_mtx.deinit();
+    sync_bench_mtx_in = false;
 }
 
 // --- Mutex create/destroy ---
 
 fn mutexCreateDestroyRun() void {
-    var m = ove.Mutex.create() catch return;
-    m.destroy();
+    var m: ove.Mutex = undefined;
+    m.init() catch return;
+    m.deinit();
 }
 
 // --- Mutex contention (2-thread throughput) ---
 
 fn contentionThread() void {
     while (sync_contention_done.load(.acquire) == 0) {
-        sync_bench_mtx.?.lock(ove.wait_forever) catch {};
+        sync_bench_mtx.lock(ove.wait_forever) catch {};
         _ = sync_contention_count.fetchAdd(1, .monotonic);
-        sync_bench_mtx.?.unlock();
+        sync_bench_mtx.unlock();
     }
 }
 fn mutexContentionSetup() void {
     sync_contention_done.store(0, .release);
     sync_contention_count.store(0, .release);
-    sync_bench_mtx = ove.Mutex.create() catch return;
-    sync_contention_th = ove.Thread.spawn("contention", contentionThread, ove.thread.prio.normal, 2048) catch return;
+    sync_bench_mtx = undefined;
+    sync_bench_mtx.init() catch return;
+    sync_bench_mtx_in = true;
+    sync_contention_th = undefined;
+    sync_contention_th.init("contention", contentionThread, ove.thread.prio.normal) catch return;
+    sync_contention_th_in = true;
 }
 fn mutexContentionRun() void {
-    sync_bench_mtx.?.lock(ove.wait_forever) catch {};
+    sync_bench_mtx.lock(ove.wait_forever) catch {};
     _ = sync_contention_count.fetchAdd(1, .monotonic);
-    sync_bench_mtx.?.unlock();
+    sync_bench_mtx.unlock();
 }
 fn mutexContentionTeardown() void {
     sync_contention_done.store(1, .release);
-    ove.Thread.sleepMs(10);
-    if (sync_contention_th) |*t| t.destroy();
-    sync_contention_th = null;
-    if (sync_bench_mtx) |*m| m.destroy();
-    sync_bench_mtx = null;
+    ove.thread.sleepMs(10);
+    if (sync_contention_th_in) sync_contention_th.deinit();
+    sync_contention_th_in = false;
+    if (sync_bench_mtx_in) sync_bench_mtx.deinit();
+    sync_bench_mtx_in = false;
 }
 
 // --- Mutex memory ---
 
 fn mutexMemoryRun() void {
-    sync_mem_mutex = ove.Mutex.create() catch return;
+    sync_mem_mutex = undefined;
+    sync_mem_mutex.init() catch return;
+    sync_mem_mutex_in = true;
 }
 fn mutexMemoryTeardown() void {
-    if (sync_mem_mutex) |*m| m.destroy();
-    sync_mem_mutex = null;
+    if (sync_mem_mutex_in) sync_mem_mutex.deinit();
+    sync_mem_mutex_in = false;
 }
 
 // --- Semaphore take/give ---
 
 fn semTakeGiveSetup() void {
-    sync_bench_sem = ove.Semaphore.create(1, 1) catch return;
+    sync_bench_sem = undefined;
+    sync_bench_sem.init(1, 1) catch return;
+    sync_bench_sem_in = true;
 }
 fn semTakeGiveRun() void {
-    sync_bench_sem.?.take(ove.wait_forever) catch {};
-    sync_bench_sem.?.give();
+    sync_bench_sem.take(ove.wait_forever) catch {};
+    sync_bench_sem.give();
 }
 fn semTakeGiveTeardown() void {
-    if (sync_bench_sem) |*s| s.destroy();
-    sync_bench_sem = null;
+    if (sync_bench_sem_in) sync_bench_sem.deinit();
+    sync_bench_sem_in = false;
 }
 
 // --- Semaphore create/destroy ---
 
 fn semCreateDestroyRun() void {
-    var s = ove.Semaphore.create(0, 1) catch return;
-    s.destroy();
+    var s: ove.Semaphore = undefined;
+    s.init(0, 1) catch return;
+    s.deinit();
 }
 
 // --- Semaphore memory ---
 
 fn semMemoryRun() void {
-    sync_mem_sem = ove.Semaphore.create(0, 1) catch return;
+    sync_mem_sem = undefined;
+    sync_mem_sem.init(0, 1) catch return;
+    sync_mem_sem_in = true;
 }
 fn semMemoryTeardown() void {
-    if (sync_mem_sem) |*s| s.destroy();
-    sync_mem_sem = null;
+    if (sync_mem_sem_in) sync_mem_sem.deinit();
+    sync_mem_sem_in = false;
 }
 
 // --- Event signal/wait ---
 
 fn evtSignaler() void {
     while (sync_evt_done.load(.acquire) == 0) {
-        sync_bench_evt.?.signal();
-        sync_bench_evt_ack.?.wait(ove.wait_forever) catch {};
+        sync_bench_evt.signal();
+        sync_bench_evt_ack.wait(ove.wait_forever) catch {};
     }
 }
 fn eventSignalWaitSetup() void {
     sync_evt_done.store(0, .release);
-    sync_bench_evt = ove.Event.create() catch return;
-    sync_bench_evt_ack = ove.Event.create() catch return;
-    sync_evt_th = ove.Thread.spawn("evt_sig", evtSignaler, ove.thread.prio.normal, 1024) catch return;
+    sync_bench_evt = undefined;
+    sync_bench_evt.init() catch return;
+    sync_bench_evt_in = true;
+    sync_bench_evt_ack = undefined;
+    sync_bench_evt_ack.init() catch return;
+    sync_bench_evt_ack_in = true;
+    sync_evt_th = undefined;
+    sync_evt_th.init("evt_sig", evtSignaler, ove.thread.prio.normal) catch return;
+    sync_evt_th_in = true;
 }
 fn eventSignalWaitRun() void {
-    sync_bench_evt.?.wait(ove.wait_forever) catch {};
-    sync_bench_evt_ack.?.signal();
+    sync_bench_evt.wait(ove.wait_forever) catch {};
+    sync_bench_evt_ack.signal();
 }
 fn eventSignalWaitTeardown() void {
     sync_evt_done.store(1, .release);
-    if (sync_bench_evt_ack) |*e| e.signal();
-    ove.Thread.sleepMs(10);
-    if (sync_evt_th) |*t| t.destroy();
-    sync_evt_th = null;
-    if (sync_bench_evt) |*e| e.destroy();
-    sync_bench_evt = null;
-    if (sync_bench_evt_ack) |*e| e.destroy();
-    sync_bench_evt_ack = null;
+    if (sync_bench_evt_ack_in) sync_bench_evt_ack.signal();
+    ove.thread.sleepMs(10);
+    if (sync_evt_th_in) sync_evt_th.deinit();
+    sync_evt_th_in = false;
+    if (sync_bench_evt_in) sync_bench_evt.deinit();
+    sync_bench_evt_in = false;
+    if (sync_bench_evt_ack_in) sync_bench_evt_ack.deinit();
+    sync_bench_evt_ack_in = false;
 }
 
 // --- Event memory ---
 
 fn eventMemoryRun() void {
-    sync_mem_event = ove.Event.create() catch return;
+    sync_mem_event = undefined;
+    sync_mem_event.init() catch return;
+    sync_mem_event_in = true;
 }
 fn eventMemoryTeardown() void {
-    if (sync_mem_event) |*e| e.destroy();
-    sync_mem_event = null;
+    if (sync_mem_event_in) sync_mem_event.deinit();
+    sync_mem_event_in = false;
 }
 
 // --- Condvar signal/wait ---
-//
-// Condvar uses yield-based signaler + bounded cv_wait timeout — see
-// bench_sync.c for why an ack-pattern signaler deadlocks here.
 
 fn cvSignaler() void {
     while (sync_cv_done.load(.acquire) == 0) {
-        sync_bench_cv.?.signal();
-        ove.Thread.yieldCpu();
+        sync_bench_cv.signal();
+        ove.thread.yieldCpu();
     }
 }
 fn condvarSignalWaitSetup() void {
     sync_cv_done.store(0, .release);
-    sync_bench_cv_mtx = ove.Mutex.create() catch return;
-    sync_bench_cv = ove.CondVar.create() catch return;
-    sync_cv_th = ove.Thread.spawn("cv_sig", cvSignaler, ove.thread.prio.normal, 1024) catch return;
+    sync_bench_cv_mtx = undefined;
+    sync_bench_cv_mtx.init() catch return;
+    sync_bench_cv_mtx_in = true;
+    sync_bench_cv = undefined;
+    sync_bench_cv.init() catch return;
+    sync_bench_cv_in = true;
+    sync_cv_th = undefined;
+    sync_cv_th.init("cv_sig", cvSignaler, ove.thread.prio.normal) catch return;
+    sync_cv_th_in = true;
 }
 fn condvarSignalWaitRun() void {
-    sync_bench_cv_mtx.?.lock(ove.wait_forever) catch {};
-    sync_bench_cv.?.wait(sync_bench_cv_mtx.?, 10) catch {};
-    sync_bench_cv_mtx.?.unlock();
+    sync_bench_cv_mtx.lock(ove.wait_forever) catch {};
+    sync_bench_cv.wait(&sync_bench_cv_mtx, 10) catch {};
+    sync_bench_cv_mtx.unlock();
 }
 fn condvarSignalWaitTeardown() void {
     sync_cv_done.store(1, .release);
-    sync_bench_cv.?.signal();
-    ove.Thread.sleepMs(10);
-    if (sync_cv_th) |*t| t.destroy();
-    sync_cv_th = null;
-    if (sync_bench_cv) |*cv| cv.destroy();
-    sync_bench_cv = null;
-    if (sync_bench_cv_mtx) |*m| m.destroy();
-    sync_bench_cv_mtx = null;
+    sync_bench_cv.signal();
+    ove.thread.sleepMs(10);
+    if (sync_cv_th_in) sync_cv_th.deinit();
+    sync_cv_th_in = false;
+    if (sync_bench_cv_in) sync_bench_cv.deinit();
+    sync_bench_cv_in = false;
+    if (sync_bench_cv_mtx_in) sync_bench_cv_mtx.deinit();
+    sync_bench_cv_mtx_in = false;
 }
 
 // --- Condvar memory ---
 
 fn condvarMemoryRun() void {
-    sync_mem_condvar = ove.CondVar.create() catch return;
+    sync_mem_condvar = undefined;
+    sync_mem_condvar.init() catch return;
+    sync_mem_condvar_in = true;
 }
 fn condvarMemoryTeardown() void {
-    if (sync_mem_condvar) |*cv| cv.destroy();
-    sync_mem_condvar = null;
+    if (sync_mem_condvar_in) sync_mem_condvar.deinit();
+    sync_mem_condvar_in = false;
 }
 
 // --- Recursive mutex ---
 
 fn rmtxLockUnlockSetup() void {
-    sync_bench_rmtx = ove.RecursiveMutex.create() catch return;
+    sync_bench_rmtx = undefined;
+    sync_bench_rmtx.init() catch return;
+    sync_bench_rmtx_in = true;
 }
 fn rmtxLockUnlockRun() void {
-    sync_bench_rmtx.?.lock(ove.wait_forever) catch {};
-    sync_bench_rmtx.?.unlock();
+    sync_bench_rmtx.lock(ove.wait_forever) catch {};
+    sync_bench_rmtx.unlock();
 }
 fn rmtxLockUnlockTeardown() void {
-    if (sync_bench_rmtx) |*m| m.destroy();
-    sync_bench_rmtx = null;
+    if (sync_bench_rmtx_in) sync_bench_rmtx.deinit();
+    sync_bench_rmtx_in = false;
 }
 
 fn syncIsEnabled() bool {
@@ -392,7 +465,7 @@ const sync_case_event_signal_wait = bench.CaseSpec{ .name = "event_signal_wait",
 const sync_case_condvar_signal_wait = bench.CaseSpec{ .name = "condvar_signal_wait", .kind = .latency, .run = &condvarSignalWaitRun, .setup = &condvarSignalWaitSetup, .teardown = &condvarSignalWaitTeardown, .iterations = 500 };
 const sync_case_rmtx_lock_unlock = bench.CaseSpec{ .name = "recursive_mutex_lock_unlock", .kind = .latency, .run = &rmtxLockUnlockRun, .setup = &rmtxLockUnlockSetup, .teardown = &rmtxLockUnlockTeardown };
 
-const sync_cases = [_]bench.CBenchCase{
+const sync_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("sync", sync_case_mutex_memory),
     bench.caseAudited("sync", sync_case_sem_memory),
     bench.caseAudited("sync", sync_case_event_memory),
@@ -406,11 +479,21 @@ const sync_cases = [_]bench.CBenchCase{
     bench.caseAudited("sync", sync_case_condvar_signal_wait),
     bench.caseAudited("sync", sync_case_rmtx_lock_unlock),
 };
+const sync_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("sync", sync_case_mutex_lock_unlock),
+    bench.caseAudited("sync", sync_case_mutex_contention),
+    bench.caseAudited("sync", sync_case_sem_take_give),
+    bench.caseAudited("sync", sync_case_event_signal_wait),
+    bench.caseAudited("sync", sync_case_condvar_signal_wait),
+    bench.caseAudited("sync", sync_case_rmtx_lock_unlock),
+};
+const sync_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &sync_cases_zh else &sync_cases_full;
 
 const sync_suite = bench.makeSuite(.{
     .name = "sync",
     .enabled = &syncIsEnabled,
-    .cases = &sync_cases,
+    .cases = sync_cases,
 });
 
 comptime {
@@ -421,61 +504,74 @@ comptime {
 // Suite: queue
 // =========================================================================
 
-var queue_send_recv_q: ?ove.Queue(u32, 16) = null;
-var queue_throughput_q: ?ove.Queue(u32, 64) = null;
-var queue_producer_th: ?ove.Thread = null;
+var queue_send_recv_q: ove.Queue(u32, 16) = undefined;
+var queue_send_recv_q_in: bool = false;
+var queue_throughput_q: ove.Queue(u32, 64) = undefined;
+var queue_throughput_q_in: bool = false;
+var queue_producer_th: ove.Thread(2048) = undefined;
+var queue_producer_th_in: bool = false;
 var queue_throughput_done: volatile_int = volatile_int.init(0);
-var queue_mem_q: ?ove.Queue(u32, 8) = null;
+var queue_mem_q: ove.Queue(u32, 8) = undefined;
+var queue_mem_q_in: bool = false;
 
 fn queueSendRecvSetup() void {
-    queue_send_recv_q = ove.Queue(u32, 16).create() catch return;
+    queue_send_recv_q = undefined;
+    queue_send_recv_q.init() catch return;
+    queue_send_recv_q_in = true;
 }
 fn queueSendRecvRun() void {
     var val: u32 = 42;
-    queue_send_recv_q.?.send(&val, ove.wait_forever) catch return;
-    _ = queue_send_recv_q.?.receive(ove.wait_forever) catch return;
+    queue_send_recv_q.send(&val, ove.wait_forever) catch return;
+    _ = queue_send_recv_q.receive(ove.wait_forever) catch return;
 }
 fn queueSendRecvTeardown() void {
-    if (queue_send_recv_q) |*q| q.destroy();
-    queue_send_recv_q = null;
+    if (queue_send_recv_q_in) queue_send_recv_q.deinit();
+    queue_send_recv_q_in = false;
 }
 
 fn queueCreateDestroyRun() void {
-    var q = ove.Queue(u32, 8).create() catch return;
-    q.destroy();
+    var q: ove.Queue(u32, 8) = undefined;
+    q.init() catch return;
+    q.deinit();
 }
 
 fn queueProducerThread() void {
     var val: u32 = 0;
     while (queue_throughput_done.load(.acquire) == 0) {
-        queue_throughput_q.?.send(&val, ove.wait_forever) catch {};
+        queue_throughput_q.send(&val, ove.wait_forever) catch {};
         val +%= 1;
     }
 }
 fn queueThroughputSetup() void {
     queue_throughput_done.store(0, .release);
-    queue_throughput_q = ove.Queue(u32, 64).create() catch return;
-    queue_producer_th = ove.Thread.spawn("q_prod", queueProducerThread, ove.thread.prio.normal, 2048) catch return;
+    queue_throughput_q = undefined;
+    queue_throughput_q.init() catch return;
+    queue_throughput_q_in = true;
+    queue_producer_th = undefined;
+    queue_producer_th.init("q_prod", queueProducerThread, ove.thread.prio.normal) catch return;
+    queue_producer_th_in = true;
 }
 fn queueThroughputRun() void {
-    _ = queue_throughput_q.?.receive(ove.wait_forever) catch return;
+    _ = queue_throughput_q.receive(ove.wait_forever) catch return;
 }
 fn queueThroughputTeardown() void {
     queue_throughput_done.store(1, .release);
-    _ = queue_throughput_q.?.receive(100) catch 0;
-    ove.Thread.sleepMs(10);
-    if (queue_producer_th) |*t| t.destroy();
-    queue_producer_th = null;
-    if (queue_throughput_q) |*q| q.destroy();
-    queue_throughput_q = null;
+    _ = queue_throughput_q.receive(100) catch 0;
+    ove.thread.sleepMs(10);
+    if (queue_producer_th_in) queue_producer_th.deinit();
+    queue_producer_th_in = false;
+    if (queue_throughput_q_in) queue_throughput_q.deinit();
+    queue_throughput_q_in = false;
 }
 
 fn queueMemoryRun() void {
-    queue_mem_q = ove.Queue(u32, 8).create() catch return;
+    queue_mem_q = undefined;
+    queue_mem_q.init() catch return;
+    queue_mem_q_in = true;
 }
 fn queueMemoryTeardown() void {
-    if (queue_mem_q) |*q| q.destroy();
-    queue_mem_q = null;
+    if (queue_mem_q_in) queue_mem_q.deinit();
+    queue_mem_q_in = false;
 }
 
 fn queueIsEnabled() bool {
@@ -487,17 +583,23 @@ const queue_case_send_receive = bench.CaseSpec{ .name = "send_receive", .kind = 
 const queue_case_create_destroy = bench.CaseSpec{ .name = "create_destroy", .kind = .latency, .run = &queueCreateDestroyRun };
 const queue_case_throughput = bench.CaseSpec{ .name = "throughput_2t", .kind = .throughput, .run = &queueThroughputRun, .setup = &queueThroughputSetup, .teardown = &queueThroughputTeardown };
 
-const queue_cases = [_]bench.CBenchCase{
+const queue_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("queue", queue_case_memory),
     bench.caseAudited("queue", queue_case_send_receive),
     bench.caseAudited("queue", queue_case_create_destroy),
     bench.caseAudited("queue", queue_case_throughput),
 };
+const queue_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("queue", queue_case_send_receive),
+    bench.caseAudited("queue", queue_case_throughput),
+};
+const queue_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &queue_cases_zh else &queue_cases_full;
 
 const queue_suite = bench.makeSuite(.{
     .name = "queue",
     .enabled = &queueIsEnabled,
-    .cases = &queue_cases,
+    .cases = queue_cases,
 });
 
 comptime {
@@ -508,34 +610,41 @@ comptime {
 // Suite: timer
 // =========================================================================
 
-var timer_bench_tmr: ?ove.Timer = null;
-var timer_mem_tmr: ?ove.Timer = null;
+var timer_bench_tmr: ove.Timer = undefined;
+var timer_bench_tmr_in: bool = false;
+var timer_mem_tmr: ove.Timer = undefined;
+var timer_mem_tmr_in: bool = false;
 
 fn timerDummyCb() void {}
 
 fn timerCreateDestroyRun() void {
-    var t = ove.Timer.create(timerDummyCb, 1000, false) catch return;
-    t.destroy();
+    var t: ove.Timer = undefined;
+    t.init(timerDummyCb, 1000, .periodic) catch return;
+    t.deinit();
 }
 
 fn timerStartStopSetup() void {
-    timer_bench_tmr = ove.Timer.create(timerDummyCb, 1000, false) catch return;
+    timer_bench_tmr = undefined;
+    timer_bench_tmr.init(timerDummyCb, 1000, .periodic) catch return;
+    timer_bench_tmr_in = true;
 }
 fn timerStartStopRun() void {
-    timer_bench_tmr.?.start() catch {};
-    timer_bench_tmr.?.stop() catch {};
+    timer_bench_tmr.start() catch {};
+    timer_bench_tmr.stop() catch {};
 }
 fn timerStartStopTeardown() void {
-    if (timer_bench_tmr) |*t| t.destroy();
-    timer_bench_tmr = null;
+    if (timer_bench_tmr_in) timer_bench_tmr.deinit();
+    timer_bench_tmr_in = false;
 }
 
 fn timerMemoryRun() void {
-    timer_mem_tmr = ove.Timer.create(timerDummyCb, 1000, false) catch return;
+    timer_mem_tmr = undefined;
+    timer_mem_tmr.init(timerDummyCb, 1000, .periodic) catch return;
+    timer_mem_tmr_in = true;
 }
 fn timerMemoryTeardown() void {
-    if (timer_mem_tmr) |*t| t.destroy();
-    timer_mem_tmr = null;
+    if (timer_mem_tmr_in) timer_mem_tmr.deinit();
+    timer_mem_tmr_in = false;
 }
 
 fn timerIsEnabled() bool {
@@ -546,16 +655,21 @@ const timer_case_memory = bench.CaseSpec{ .name = "memory", .kind = .memory, .ru
 const timer_case_create_destroy = bench.CaseSpec{ .name = "create_destroy", .kind = .latency, .run = &timerCreateDestroyRun };
 const timer_case_start_stop = bench.CaseSpec{ .name = "start_stop", .kind = .latency, .run = &timerStartStopRun, .setup = &timerStartStopSetup, .teardown = &timerStartStopTeardown };
 
-const timer_cases = [_]bench.CBenchCase{
+const timer_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("timer", timer_case_memory),
     bench.caseAudited("timer", timer_case_create_destroy),
     bench.caseAudited("timer", timer_case_start_stop),
 };
+const timer_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("timer", timer_case_start_stop),
+};
+const timer_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &timer_cases_zh else &timer_cases_full;
 
 const timer_suite = bench.makeSuite(.{
     .name = "timer",
     .enabled = &timerIsEnabled,
-    .cases = &timer_cases,
+    .cases = timer_cases,
 });
 
 comptime {
@@ -566,33 +680,40 @@ comptime {
 // Suite: eventgroup
 // =========================================================================
 
-var eg_bench_eg: ?ove.EventGroup = null;
-var eg_mem_eg: ?ove.EventGroup = null;
+var eg_bench_eg: ove.EventGroup = undefined;
+var eg_bench_eg_in: bool = false;
+var eg_mem_eg: ove.EventGroup = undefined;
+var eg_mem_eg_in: bool = false;
 
 fn egSetGetSetup() void {
-    eg_bench_eg = ove.EventGroup.create() catch return;
+    eg_bench_eg = undefined;
+    eg_bench_eg.init() catch return;
+    eg_bench_eg_in = true;
 }
 fn egSetGetRun() void {
-    _ = eg_bench_eg.?.setBits(0x01);
-    _ = eg_bench_eg.?.getBits();
-    _ = eg_bench_eg.?.clearBits(0x01);
+    _ = eg_bench_eg.setBits(0x01);
+    _ = eg_bench_eg.getBits();
+    _ = eg_bench_eg.clearBits(0x01);
 }
 fn egSetGetTeardown() void {
-    if (eg_bench_eg) |*eg| eg.destroy();
-    eg_bench_eg = null;
+    if (eg_bench_eg_in) eg_bench_eg.deinit();
+    eg_bench_eg_in = false;
 }
 
 fn egCreateDestroyRun() void {
-    var eg = ove.EventGroup.create() catch return;
-    eg.destroy();
+    var eg: ove.EventGroup = undefined;
+    eg.init() catch return;
+    eg.deinit();
 }
 
 fn egMemoryRun() void {
-    eg_mem_eg = ove.EventGroup.create() catch return;
+    eg_mem_eg = undefined;
+    eg_mem_eg.init() catch return;
+    eg_mem_eg_in = true;
 }
 fn egMemoryTeardown() void {
-    if (eg_mem_eg) |*eg| eg.destroy();
-    eg_mem_eg = null;
+    if (eg_mem_eg_in) eg_mem_eg.deinit();
+    eg_mem_eg_in = false;
 }
 
 fn eventgroupIsEnabled() bool {
@@ -603,16 +724,21 @@ const eg_case_memory = bench.CaseSpec{ .name = "memory", .kind = .memory, .run =
 const eg_case_set_get = bench.CaseSpec{ .name = "set_get_bits", .kind = .latency, .run = &egSetGetRun, .setup = &egSetGetSetup, .teardown = &egSetGetTeardown };
 const eg_case_create_destroy = bench.CaseSpec{ .name = "create_destroy", .kind = .latency, .run = &egCreateDestroyRun };
 
-const eg_cases = [_]bench.CBenchCase{
+const eg_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("eventgroup", eg_case_memory),
     bench.caseAudited("eventgroup", eg_case_set_get),
     bench.caseAudited("eventgroup", eg_case_create_destroy),
 };
+const eg_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("eventgroup", eg_case_set_get),
+};
+const eg_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &eg_cases_zh else &eg_cases_full;
 
 const eg_suite = bench.makeSuite(.{
     .name = "eventgroup",
     .enabled = &eventgroupIsEnabled,
-    .cases = &eg_cases,
+    .cases = eg_cases,
 });
 
 comptime {
@@ -623,47 +749,60 @@ comptime {
 // Suite: workqueue
 // =========================================================================
 
-var wq_bench_wq: ?ove.Workqueue = null;
-var wq_bench_work: ?ove.Work = null;
+var wq_bench_wq: ove.Workqueue(2048) = undefined;
+var wq_bench_wq_in: bool = false;
+var wq_bench_work: ove.Work = undefined;
+var wq_bench_work_in: bool = false;
 var wq_work_executed: volatile_int = volatile_int.init(0);
-var wq_work_sem: ?ove.Semaphore = null;
-var wq_mem_wq: ?ove.Workqueue = null;
+var wq_work_sem: ove.Semaphore = undefined;
+var wq_work_sem_in: bool = false;
+var wq_mem_wq: ove.Workqueue(2048) = undefined;
+var wq_mem_wq_in: bool = false;
 
 fn workHandler() void {
     wq_work_executed.store(1, .release);
-    wq_work_sem.?.give();
+    wq_work_sem.give();
 }
 
 fn wqCreateDestroyRun() void {
-    var wq = ove.Workqueue.create("bench_wq", ove.thread.prio.normal, 2048) catch return;
-    wq.destroy();
+    var wq: ove.Workqueue(2048) = undefined;
+    wq.init("bench_wq", ove.thread.prio.normal) catch return;
+    wq.deinit();
 }
 
 fn wqSubmitSetup() void {
-    wq_work_sem = ove.Semaphore.create(0, 1) catch return;
-    wq_bench_wq = ove.Workqueue.create("bench_wq", ove.thread.prio.normal, 2048) catch return;
-    wq_bench_work = ove.Work.create(workHandler) catch return;
+    wq_work_sem = undefined;
+    wq_work_sem.init(0, 1) catch return;
+    wq_work_sem_in = true;
+    wq_bench_wq = undefined;
+    wq_bench_wq.init("bench_wq", ove.thread.prio.normal) catch return;
+    wq_bench_wq_in = true;
+    wq_bench_work = undefined;
+    wq_bench_work.init(workHandler) catch return;
+    wq_bench_work_in = true;
 }
 fn wqSubmitRun() void {
     wq_work_executed.store(0, .release);
-    wq_bench_wq.?.submit(wq_bench_work.?) catch {};
-    wq_work_sem.?.take(1000) catch {};
+    wq_bench_wq.submit(&wq_bench_work) catch {};
+    wq_work_sem.take(1000) catch {};
 }
 fn wqSubmitTeardown() void {
-    if (wq_bench_work) |*w| w.free();
-    wq_bench_work = null;
-    if (wq_bench_wq) |*w| w.destroy();
-    wq_bench_wq = null;
-    if (wq_work_sem) |*s| s.destroy();
-    wq_work_sem = null;
+    if (wq_bench_work_in) wq_bench_work.deinit();
+    wq_bench_work_in = false;
+    if (wq_bench_wq_in) wq_bench_wq.deinit();
+    wq_bench_wq_in = false;
+    if (wq_work_sem_in) wq_work_sem.deinit();
+    wq_work_sem_in = false;
 }
 
 fn wqMemoryRun() void {
-    wq_mem_wq = ove.Workqueue.create("bench_wq", ove.thread.prio.normal, 2048) catch return;
+    wq_mem_wq = undefined;
+    wq_mem_wq.init("bench_wq", ove.thread.prio.normal) catch return;
+    wq_mem_wq_in = true;
 }
 fn wqMemoryTeardown() void {
-    if (wq_mem_wq) |*w| w.destroy();
-    wq_mem_wq = null;
+    if (wq_mem_wq_in) wq_mem_wq.deinit();
+    wq_mem_wq_in = false;
 }
 
 fn workqueueIsEnabled() bool {
@@ -674,16 +813,21 @@ const wq_case_memory = bench.CaseSpec{ .name = "memory", .kind = .memory, .run =
 const wq_case_create_destroy = bench.CaseSpec{ .name = "create_destroy", .kind = .latency, .run = &wqCreateDestroyRun, .iterations = 200 };
 const wq_case_submit_execute = bench.CaseSpec{ .name = "submit_execute", .kind = .latency, .run = &wqSubmitRun, .setup = &wqSubmitSetup, .teardown = &wqSubmitTeardown, .iterations = 500 };
 
-const wq_cases = [_]bench.CBenchCase{
+const wq_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("workqueue", wq_case_memory),
     bench.caseAudited("workqueue", wq_case_create_destroy),
     bench.caseAudited("workqueue", wq_case_submit_execute),
 };
+const wq_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("workqueue", wq_case_submit_execute),
+};
+const wq_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &wq_cases_zh else &wq_cases_full;
 
 const wq_suite = bench.makeSuite(.{
     .name = "workqueue",
     .enabled = &workqueueIsEnabled,
-    .cases = &wq_cases,
+    .cases = wq_cases,
 });
 
 comptime {
@@ -697,61 +841,73 @@ comptime {
 const STREAM_BUF_SIZE: usize = 256;
 const STREAM_MSG_SIZE: usize = 64;
 
-var stream_bench_strm: ?ove.Stream = null;
-var stream_producer_th: ?ove.Thread = null;
+var stream_bench_strm: ove.Stream(STREAM_BUF_SIZE) = undefined;
+var stream_bench_strm_in: bool = false;
+var stream_producer_th: ove.Thread(2048) = undefined;
+var stream_producer_th_in: bool = false;
 var stream_done: volatile_int = volatile_int.init(0);
 var stream_tx_buf: [STREAM_MSG_SIZE]u8 = [_]u8{0} ** STREAM_MSG_SIZE;
 var stream_rx_buf: [STREAM_MSG_SIZE]u8 = [_]u8{0} ** STREAM_MSG_SIZE;
-var stream_mem_strm: ?ove.Stream = null;
+var stream_mem_strm: ove.Stream(STREAM_BUF_SIZE) = undefined;
+var stream_mem_strm_in: bool = false;
 
 fn streamSendRecvSetup() void {
-    stream_bench_strm = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
+    stream_bench_strm = undefined;
+    stream_bench_strm.init(1) catch return;
+    stream_bench_strm_in = true;
     @memset(&stream_tx_buf, 0xAA);
 }
 fn streamSendRecvRun() void {
-    _ = stream_bench_strm.?.send(&stream_tx_buf, ove.wait_forever) catch return;
-    _ = stream_bench_strm.?.receive(&stream_rx_buf, ove.wait_forever) catch return;
+    _ = stream_bench_strm.send(&stream_tx_buf, ove.wait_forever) catch return;
+    _ = stream_bench_strm.receive(&stream_rx_buf, ove.wait_forever) catch return;
 }
 fn streamSendRecvTeardown() void {
-    if (stream_bench_strm) |*s| s.destroy();
-    stream_bench_strm = null;
+    if (stream_bench_strm_in) stream_bench_strm.deinit();
+    stream_bench_strm_in = false;
 }
 
 fn streamCreateDestroyRun() void {
-    var s = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
-    s.destroy();
+    var s: ove.Stream(STREAM_BUF_SIZE) = undefined;
+    s.init(1) catch return;
+    s.deinit();
 }
 
 fn streamProducer() void {
     while (stream_done.load(.acquire) == 0) {
-        _ = stream_bench_strm.?.send(&stream_tx_buf, ove.wait_forever) catch {};
+        _ = stream_bench_strm.send(&stream_tx_buf, ove.wait_forever) catch {};
     }
 }
 fn streamThroughputSetup() void {
     stream_done.store(0, .release);
     @memset(&stream_tx_buf, 0xBB);
-    stream_bench_strm = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
-    stream_producer_th = ove.Thread.spawn("strm_prod", streamProducer, ove.thread.prio.normal, 2048) catch return;
+    stream_bench_strm = undefined;
+    stream_bench_strm.init(1) catch return;
+    stream_bench_strm_in = true;
+    stream_producer_th = undefined;
+    stream_producer_th.init("strm_prod", streamProducer, ove.thread.prio.normal) catch return;
+    stream_producer_th_in = true;
 }
 fn streamThroughputRun() void {
-    _ = stream_bench_strm.?.receive(&stream_rx_buf, ove.wait_forever) catch return;
+    _ = stream_bench_strm.receive(&stream_rx_buf, ove.wait_forever) catch return;
 }
 fn streamThroughputTeardown() void {
     stream_done.store(1, .release);
-    _ = stream_bench_strm.?.receive(&stream_rx_buf, 100) catch 0;
-    ove.Thread.sleepMs(10);
-    if (stream_producer_th) |*t| t.destroy();
-    stream_producer_th = null;
-    if (stream_bench_strm) |*s| s.destroy();
-    stream_bench_strm = null;
+    _ = stream_bench_strm.receive(&stream_rx_buf, 100) catch 0;
+    ove.thread.sleepMs(10);
+    if (stream_producer_th_in) stream_producer_th.deinit();
+    stream_producer_th_in = false;
+    if (stream_bench_strm_in) stream_bench_strm.deinit();
+    stream_bench_strm_in = false;
 }
 
 fn streamMemoryRun() void {
-    stream_mem_strm = ove.Stream.create(STREAM_BUF_SIZE, 1) catch return;
+    stream_mem_strm = undefined;
+    stream_mem_strm.init(1) catch return;
+    stream_mem_strm_in = true;
 }
 fn streamMemoryTeardown() void {
-    if (stream_mem_strm) |*s| s.destroy();
-    stream_mem_strm = null;
+    if (stream_mem_strm_in) stream_mem_strm.deinit();
+    stream_mem_strm_in = false;
 }
 
 fn streamIsEnabled() bool {
@@ -763,17 +919,23 @@ const stream_case_send_recv = bench.CaseSpec{ .name = "send_recv_64B", .kind = .
 const stream_case_create_destroy = bench.CaseSpec{ .name = "create_destroy", .kind = .latency, .run = &streamCreateDestroyRun };
 const stream_case_throughput = bench.CaseSpec{ .name = "throughput", .kind = .throughput, .run = &streamThroughputRun, .setup = &streamThroughputSetup, .teardown = &streamThroughputTeardown };
 
-const stream_cases = [_]bench.CBenchCase{
+const stream_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("stream", stream_case_memory),
     bench.caseAudited("stream", stream_case_send_recv),
     bench.caseAudited("stream", stream_case_create_destroy),
     bench.caseAudited("stream", stream_case_throughput),
 };
+const stream_cases_zh = [_]bench.CBenchCase{
+    bench.caseAudited("stream", stream_case_send_recv),
+    bench.caseAudited("stream", stream_case_throughput),
+};
+const stream_cases: []const bench.CBenchCase =
+    if (is_zero_heap) &stream_cases_zh else &stream_cases_full;
 
 const stream_suite = bench.makeSuite(.{
     .name = "stream",
     .enabled = &streamIsEnabled,
-    .cases = &stream_cases,
+    .cases = stream_cases,
 });
 
 comptime {
@@ -784,10 +946,6 @@ comptime {
 // Suite registry & runner
 // =========================================================================
 
-// bench_suite_native_posix / bench_suite_native_freertos live C-side
-// (tests/benchmarks/c/src/bench_native_{posix,freertos}.c).  Each suite's
-// is_enabled returns 0 on the wrong backend so only the active baseline
-// runs at runtime.
 extern const bench_suite_native_posix: bench.CBenchSuite;
 extern const bench_suite_native_freertos: bench.CBenchSuite;
 extern const bench_suite_native_nuttx: bench.CBenchSuite;
@@ -828,10 +986,13 @@ fn benchmarkRunner() void {
     ove.log.inf("=== Benchmark complete ===", .{});
 }
 
+var bench_runner_th: ove.Thread(8192) = undefined;
+
 fn appMain() void {
     ove.log.inf("Benchmark app: init", .{});
 
-    _ = ove.Thread.spawn("bench_run", benchmarkRunner, ove.thread.prio.normal, 8192) catch {
+    bench_runner_th = undefined;
+    bench_runner_th.init("bench_run", benchmarkRunner, ove.thread.prio.normal) catch {
         ove.log.err("Failed to create benchmark thread", .{});
         return;
     };

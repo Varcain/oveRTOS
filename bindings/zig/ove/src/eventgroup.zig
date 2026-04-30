@@ -8,103 +8,78 @@ const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+const pin = @import("pin.zig");
 
 /// Bitmask type for event group bits (32 bits wide).
 pub const EventBits = u32;
 
-/// Flag for `waitBits()`: all requested bits must be set before returning.
-///
-/// When not set, `waitBits()` returns as soon as any one of the requested bits is set.
+/// `waitBits` flag: all requested bits must be set before returning.
 pub const WAIT_ALL: u32 = 0x01;
-
-/// Flag for `waitBits()`: clear the matched bits atomically on exit.
-///
-/// When set, all bits that satisfied the wait condition are cleared before
-/// `waitBits()` returns.
+/// `waitBits` flag: clear matched bits atomically on exit.
 pub const CLEAR_ON_EXIT: u32 = 0x02;
 
-/// Multi-bit event group for task synchronization.
+/// Multi-bit event group for task synchronisation.
 ///
-/// An event group holds a 32-bit bitmask. Tasks can set, clear, and wait
-/// on arbitrary combinations of bits. Supports both heap and zero-heap
-/// backends.
+/// ```zig
+/// var eg: ove.EventGroup = undefined;
+/// try eg.init();
+/// defer eg.deinit();
+/// _ = eg.setBits(0x03);
+/// _ = try eg.waitBits(0x03, ove.eventgroup.WAIT_ALL, ove.wait_forever);
+/// ```
 pub const EventGroup = struct {
+    storage: pin.Storage(c.ove_eventgroup_storage_t),
     handle: c.ove_eventgroup_t,
+    tracker: pin.Tracker,
 
-    /// Create and return a new event group with all bits cleared.
-    ///
-    /// In zero-heap mode, the storage is a comptime-unique static variable.
-    /// Returns `Error` if the RTOS fails to create the event group.
-    pub fn create() Error!EventGroup {
-        var h: c.ove_eventgroup_t = null;
-        if (comptime @hasDecl(c, "ove_eventgroup_create")) {
-            try err.fromCode(c.ove_eventgroup_create(&h));
+    pub fn init(self: *EventGroup) Error!void {
+        self.storage = pin.zeroStorage(c.ove_eventgroup_storage_t);
+        self.handle = null;
+        self.tracker = .{};
+        if (comptime !pin.zero_heap) {
+            try err.fromCode(c.ove_eventgroup_create(&self.handle));
         } else {
-            const S = struct {
-                var storage: c.ove_eventgroup_storage_t = std.mem.zeroes(c.ove_eventgroup_storage_t);
-            };
-            try err.fromCode(c.ove_eventgroup_init(&h, &S.storage));
+            try err.fromCode(c.ove_eventgroup_init(&self.handle, &self.storage));
         }
-        return .{ .handle = h };
+        self.tracker.record(self);
     }
 
-    /// Destroy the event group and release underlying RTOS resources.
-    ///
-    /// Sets `handle` to null. Safe to call on an already-destroyed event group.
-    pub fn destroy(self: *EventGroup) void {
+    pub fn deinit(self: *EventGroup) void {
+        self.tracker.assertSame(self, "ove.EventGroup");
         if (self.handle == null) return;
-        if (comptime @hasDecl(c, "ove_eventgroup_destroy"))
+        if (comptime !pin.zero_heap)
             c.ove_eventgroup_destroy(self.handle)
         else
             c.ove_eventgroup_deinit(self.handle);
         self.handle = null;
+        self.tracker.clear();
     }
 
-    /// Set one or more bits in the event group.
-    ///
-    /// Returns the value of the event bits immediately after setting.
-    /// Any task waiting on those bits may be unblocked.
-    pub fn setBits(self: EventGroup, bits: EventBits) EventBits {
+    pub fn setBits(self: *EventGroup, bits: EventBits) EventBits {
+        self.tracker.assertSame(self, "ove.EventGroup");
         return c.ove_eventgroup_set_bits(self.handle, bits);
     }
 
-    /// Clear one or more bits in the event group.
-    ///
-    /// Returns the value of the event bits immediately after clearing.
-    pub fn clearBits(self: EventGroup, bits: EventBits) EventBits {
+    pub fn clearBits(self: *EventGroup, bits: EventBits) EventBits {
+        self.tracker.assertSame(self, "ove.EventGroup");
         return c.ove_eventgroup_clear_bits(self.handle, bits);
     }
 
-    /// Read the current value of all event bits without blocking.
-    pub fn getBits(self: EventGroup) EventBits {
+    pub fn getBits(self: *EventGroup) EventBits {
+        self.tracker.assertSame(self, "ove.EventGroup");
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    /// Block until the specified bits are set (according to `flags`), or timeout.
-    ///
-    /// `bits` is the bitmask of bits to wait for.
-    /// `flags` is a combination of `WAIT_ALL` and/or `CLEAR_ON_EXIT`.
-    /// `timeout_ms` is the maximum wait time; use `wait_forever` to block indefinitely.
-    ///
-    /// Returns the value of the event bits at the moment the wait condition was satisfied.
-    /// Returns `Error.Timeout` if the condition is not met within the timeout.
-    pub fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
+    pub fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
+        self.tracker.assertSame(self, "ove.EventGroup");
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(
-            self.handle,
-            bits,
-            flags,
-            timeout_ms,
-            &result,
-        ));
+        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ms, &result));
         return result;
     }
 
-    /// Set one or more bits from an interrupt service routine.
-    ///
-    /// Returns the value of the event bits immediately after setting.
-    /// Must only be called from ISR context.
-    pub fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
+    /// ISR-safe — skips pin check (panics from ISR are unsafe; init must
+    /// have completed in task context before any ISR fires).
+    pub fn setBitsFromIsr(self: *EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
 };

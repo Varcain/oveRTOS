@@ -26,12 +26,13 @@ static void work_handler(ove_work_t work)
 	work_sem->give();
 }
 
-/* --- create/destroy --- */
-
+/* --- create/destroy (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void wq_create_destroy_run()
 {
 	BenchWQ wq("bench_wq", OVE_PRIO_NORMAL);
 }
+#endif
 
 /* --- submit/execute --- */
 
@@ -56,8 +57,8 @@ static void wq_submit_teardown()
 	work_sem.reset();
 }
 
-/* --- memory --- */
-
+/* --- memory (heap-mode only) --- */
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::optional<BenchWQ> mem_wq;
 
 static void wq_memory_run()
@@ -69,6 +70,7 @@ static void wq_memory_teardown()
 {
 	mem_wq.reset();
 }
+#endif
 
 /* --- Suite --- */
 
@@ -77,6 +79,7 @@ static bool workqueue_is_enabled()
 	return true;
 }
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static constexpr bench::CaseSpec wq_memory_spec{
 	.name = "memory",
 	.kind = bench::Type::memory,
@@ -89,6 +92,7 @@ static constexpr bench::CaseSpec wq_create_destroy_spec{
 	.run = &wq_create_destroy_run,
 	.iterations = 200,
 };
+#endif
 static constexpr bench::CaseSpec wq_submit_spec{
 	.name = "submit_execute",
 	.kind = bench::Type::latency,
@@ -99,8 +103,10 @@ static constexpr bench::CaseSpec wq_submit_spec{
 };
 
 static constexpr bench_case_t workqueue_cases[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<wq_memory_spec>(),
 	bench::case_<wq_create_destroy_spec>(),
+#endif
 	bench::case_<wq_submit_spec>(),
 };
 

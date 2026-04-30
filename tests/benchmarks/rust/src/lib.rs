@@ -100,8 +100,10 @@ fn thread_is_enabled() -> bool {
     true
 }
 
+#[cfg(not(zero_heap))]
 fn dummy_thread() {}
 
+#[cfg(not(zero_heap))]
 fn thread_create_destroy_run() {
     let _th = ove::thread!("bench_tmp", dummy_thread, Priority::Low, 1024);
 }
@@ -153,6 +155,7 @@ fn ctx_switch_teardown() {
     THREAD_PONG_SEM.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static THREAD_CREATE_DESTROY: BenchCase = {
     name: b"create_destroy\0",
     kind: BenchType::Latency,
@@ -187,6 +190,7 @@ bench_suite!(
     name = b"thread\0",
     enabled = thread_is_enabled,
     cases = [
+        #[cfg(not(zero_heap))]
         THREAD_CREATE_DESTROY,
         THREAD_YIELD,
         THREAD_SLEEP_1MS,
@@ -208,9 +212,13 @@ ove::shared!(SYNC_RMTX: RecursiveMutex);
 ove::shared!(SYNC_CONTENTION_TH: Thread);
 ove::shared!(SYNC_EVT_TH: Thread);
 ove::shared!(SYNC_CV_TH: Thread);
+#[cfg(not(zero_heap))]
 ove::shared!(SYNC_MEM_MUTEX: Mutex);
+#[cfg(not(zero_heap))]
 ove::shared!(SYNC_MEM_SEM: Semaphore);
+#[cfg(not(zero_heap))]
 ove::shared!(SYNC_MEM_EVENT: Event);
+#[cfg(not(zero_heap))]
 ove::shared!(SYNC_MEM_CONDVAR: CondVar);
 
 static SYNC_CONTENTION_DONE: AtomicBool = AtomicBool::new(false);
@@ -236,7 +244,8 @@ fn mutex_lock_unlock_teardown() {
     SYNC_MTX.shutdown();
 }
 
-// --- Mutex create/destroy ---
+// --- Mutex create/destroy (heap-mode only) ---
+#[cfg(not(zero_heap))]
 fn mutex_create_destroy_run() {
     let _m = ove::mutex!();
 }
@@ -292,10 +301,12 @@ fn mutex_contention_teardown() {
     SYNC_MTX.shutdown();
 }
 
-// --- Mutex memory ---
+// --- Mutex memory (heap-mode only) ---
+#[cfg(not(zero_heap))]
 fn mutex_memory_run() {
     SYNC_MEM_MUTEX.try_init(ove::mutex!()).ok();
 }
+#[cfg(not(zero_heap))]
 fn mutex_memory_teardown() {
     SYNC_MEM_MUTEX.shutdown();
 }
@@ -314,15 +325,18 @@ fn sem_take_give_teardown() {
     SYNC_SEM.shutdown();
 }
 
-// --- Semaphore create/destroy ---
+// --- Semaphore create/destroy (heap-mode only) ---
+#[cfg(not(zero_heap))]
 fn sem_create_destroy_run() {
     let _s = ove::semaphore!(0, 1);
 }
 
-// --- Semaphore memory ---
+// --- Semaphore memory (heap-mode only) ---
+#[cfg(not(zero_heap))]
 fn sem_memory_run() {
     SYNC_MEM_SEM.try_init(ove::semaphore!(0, 1)).ok();
 }
+#[cfg(not(zero_heap))]
 fn sem_memory_teardown() {
     SYNC_MEM_SEM.shutdown();
 }
@@ -370,10 +384,12 @@ fn event_signal_wait_teardown() {
     SYNC_EVT_ACK.shutdown();
 }
 
-// --- Event memory ---
+// --- Event memory (heap-mode only) ---
+#[cfg(not(zero_heap))]
 fn event_memory_run() {
     SYNC_MEM_EVENT.try_init(ove::event!()).ok();
 }
+#[cfg(not(zero_heap))]
 fn event_memory_teardown() {
     SYNC_MEM_EVENT.shutdown();
 }
@@ -421,10 +437,12 @@ fn condvar_signal_wait_teardown() {
     SYNC_CV_MTX.shutdown();
 }
 
-// --- Condvar memory ---
+// --- Condvar memory (heap-mode only) ---
+#[cfg(not(zero_heap))]
 fn condvar_memory_run() {
     SYNC_MEM_CONDVAR.try_init(ove::condvar!()).ok();
 }
+#[cfg(not(zero_heap))]
 fn condvar_memory_teardown() {
     SYNC_MEM_CONDVAR.shutdown();
 }
@@ -443,24 +461,28 @@ fn rmtx_lock_unlock_teardown() {
     SYNC_RMTX.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static MUTEX_MEMORY: BenchCase = {
     name: b"mutex_memory\0",
     kind: BenchType::Memory,
     run: mutex_memory_run,
     teardown: mutex_memory_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static SEM_MEMORY: BenchCase = {
     name: b"sem_memory\0",
     kind: BenchType::Memory,
     run: sem_memory_run,
     teardown: sem_memory_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static EVENT_MEMORY: BenchCase = {
     name: b"event_memory\0",
     kind: BenchType::Memory,
     run: event_memory_run,
     teardown: event_memory_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static CONDVAR_MEMORY: BenchCase = {
     name: b"condvar_memory\0",
     kind: BenchType::Memory,
@@ -474,6 +496,7 @@ bench_case!(static MUTEX_LOCK_UNLOCK: BenchCase = {
     setup: mutex_lock_unlock_setup,
     teardown: mutex_lock_unlock_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static MUTEX_CREATE_DESTROY: BenchCase = {
     name: b"mutex_create_destroy\0",
     kind: BenchType::Latency,
@@ -493,6 +516,7 @@ bench_case!(static SEM_TAKE_GIVE: BenchCase = {
     setup: sem_take_give_setup,
     teardown: sem_take_give_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static SEM_CREATE_DESTROY: BenchCase = {
     name: b"sem_create_destroy\0",
     kind: BenchType::Latency,
@@ -527,14 +551,20 @@ bench_suite!(
     name = b"sync\0",
     enabled = sync_is_enabled,
     cases = [
+        #[cfg(not(zero_heap))]
         MUTEX_MEMORY,
+        #[cfg(not(zero_heap))]
         SEM_MEMORY,
+        #[cfg(not(zero_heap))]
         EVENT_MEMORY,
+        #[cfg(not(zero_heap))]
         CONDVAR_MEMORY,
         MUTEX_LOCK_UNLOCK,
+        #[cfg(not(zero_heap))]
         MUTEX_CREATE_DESTROY,
         MUTEX_CONTENTION_2T,
         SEM_TAKE_GIVE,
+        #[cfg(not(zero_heap))]
         SEM_CREATE_DESTROY,
         EVENT_SIGNAL_WAIT,
         CONDVAR_SIGNAL_WAIT,
@@ -549,6 +579,7 @@ bench_suite!(
 ove::shared!(QUEUE_SEND_RECV_Q: Queue<u32, 16>);
 ove::shared!(QUEUE_THROUGHPUT_Q: Queue<u32, 64>);
 ove::shared!(QUEUE_PRODUCER_TH: Thread);
+#[cfg(not(zero_heap))]
 ove::shared!(QUEUE_MEM_Q: Queue<u32, 8>);
 static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
 
@@ -570,6 +601,7 @@ fn queue_send_recv_teardown() {
     QUEUE_SEND_RECV_Q.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn queue_create_destroy_run() {
     let _q = ove::queue!(u32, 8);
 }
@@ -614,13 +646,16 @@ fn queue_throughput_teardown() {
     QUEUE_THROUGHPUT_Q.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn queue_memory_run() {
     QUEUE_MEM_Q.try_init(ove::queue!(u32, 8)).ok();
 }
+#[cfg(not(zero_heap))]
 fn queue_memory_teardown() {
     QUEUE_MEM_Q.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static QUEUE_MEMORY: BenchCase = {
     name: b"memory\0",
     kind: BenchType::Memory,
@@ -634,6 +669,7 @@ bench_case!(static QUEUE_SEND_RECEIVE: BenchCase = {
     setup: queue_send_recv_setup,
     teardown: queue_send_recv_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static QUEUE_CREATE_DESTROY: BenchCase = {
     name: b"create_destroy\0",
     kind: BenchType::Latency,
@@ -652,8 +688,10 @@ bench_suite!(
     name = b"queue\0",
     enabled = queue_is_enabled,
     cases = [
+        #[cfg(not(zero_heap))]
         QUEUE_MEMORY,
         QUEUE_SEND_RECEIVE,
+        #[cfg(not(zero_heap))]
         QUEUE_CREATE_DESTROY,
         QUEUE_THROUGHPUT_2T
     ],
@@ -664,6 +702,7 @@ bench_suite!(
 // =========================================================================
 
 ove::shared!(TIMER_TMR: Timer);
+#[cfg(not(zero_heap))]
 ove::shared!(TIMER_MEM_TMR: Timer);
 
 fn timer_is_enabled() -> bool {
@@ -672,6 +711,7 @@ fn timer_is_enabled() -> bool {
 
 fn timer_dummy_cb() {}
 
+#[cfg(not(zero_heap))]
 fn timer_create_destroy_run() {
     let _t = ove::timer!(timer_dummy_cb, 1000, false);
 }
@@ -689,21 +729,25 @@ fn timer_start_stop_teardown() {
     TIMER_TMR.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn timer_memory_run() {
     TIMER_MEM_TMR
         .try_init(ove::timer!(timer_dummy_cb, 1000, false))
         .ok();
 }
+#[cfg(not(zero_heap))]
 fn timer_memory_teardown() {
     TIMER_MEM_TMR.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static TIMER_MEMORY: BenchCase = {
     name: b"memory\0",
     kind: BenchType::Memory,
     run: timer_memory_run,
     teardown: timer_memory_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static TIMER_CREATE_DESTROY: BenchCase = {
     name: b"create_destroy\0",
     kind: BenchType::Latency,
@@ -721,7 +765,13 @@ bench_suite!(
     symbol = bench_suite_timer,
     name = b"timer\0",
     enabled = timer_is_enabled,
-    cases = [TIMER_MEMORY, TIMER_CREATE_DESTROY, TIMER_START_STOP],
+    cases = [
+        #[cfg(not(zero_heap))]
+        TIMER_MEMORY,
+        #[cfg(not(zero_heap))]
+        TIMER_CREATE_DESTROY,
+        TIMER_START_STOP
+    ],
 );
 
 // =========================================================================
@@ -729,6 +779,7 @@ bench_suite!(
 // =========================================================================
 
 ove::shared!(EG_BENCH: EventGroup);
+#[cfg(not(zero_heap))]
 ove::shared!(EG_MEM: EventGroup);
 
 fn eventgroup_is_enabled() -> bool {
@@ -749,17 +800,21 @@ fn eg_set_get_teardown() {
     EG_BENCH.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn eg_create_destroy_run() {
     let _eg = ove::eventgroup!();
 }
 
+#[cfg(not(zero_heap))]
 fn eg_memory_run() {
     EG_MEM.try_init(ove::eventgroup!()).ok();
 }
+#[cfg(not(zero_heap))]
 fn eg_memory_teardown() {
     EG_MEM.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static EG_MEMORY: BenchCase = {
     name: b"memory\0",
     kind: BenchType::Memory,
@@ -773,6 +828,7 @@ bench_case!(static EG_SET_GET: BenchCase = {
     setup: eg_set_get_setup,
     teardown: eg_set_get_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static EG_CREATE_DESTROY: BenchCase = {
     name: b"create_destroy\0",
     kind: BenchType::Latency,
@@ -783,7 +839,13 @@ bench_suite!(
     symbol = bench_suite_eventgroup,
     name = b"eventgroup\0",
     enabled = eventgroup_is_enabled,
-    cases = [EG_MEMORY, EG_SET_GET, EG_CREATE_DESTROY],
+    cases = [
+        #[cfg(not(zero_heap))]
+        EG_MEMORY,
+        EG_SET_GET,
+        #[cfg(not(zero_heap))]
+        EG_CREATE_DESTROY
+    ],
 );
 
 // =========================================================================
@@ -793,6 +855,7 @@ bench_suite!(
 ove::shared!(WQ_BENCH: Workqueue);
 ove::shared!(WQ_WORK: Work);
 ove::shared!(WQ_WORK_SEM: Semaphore);
+#[cfg(not(zero_heap))]
 ove::shared!(WQ_MEM: Workqueue);
 static WQ_WORK_EXECUTED: AtomicBool = AtomicBool::new(false);
 
@@ -800,6 +863,7 @@ fn workqueue_is_enabled() -> bool {
     true
 }
 
+#[cfg(not(zero_heap))]
 fn wq_create_destroy_run() {
     let _wq = ove::workqueue!("bench_wq", Priority::Normal, 2048);
 }
@@ -826,21 +890,25 @@ fn wq_submit_teardown() {
     WQ_WORK_SEM.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn wq_memory_run() {
     WQ_MEM
         .try_init(ove::workqueue!("bench_wq", Priority::Normal, 2048))
         .ok();
 }
+#[cfg(not(zero_heap))]
 fn wq_memory_teardown() {
     WQ_MEM.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static WQ_MEMORY_C: BenchCase = {
     name: b"memory\0",
     kind: BenchType::Memory,
     run: wq_memory_run,
     teardown: wq_memory_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static WQ_CREATE_DESTROY: BenchCase = {
     name: b"create_destroy\0",
     kind: BenchType::Latency,
@@ -860,7 +928,13 @@ bench_suite!(
     symbol = bench_suite_workqueue,
     name = b"workqueue\0",
     enabled = workqueue_is_enabled,
-    cases = [WQ_MEMORY_C, WQ_CREATE_DESTROY, WQ_SUBMIT_EXECUTE],
+    cases = [
+        #[cfg(not(zero_heap))]
+        WQ_MEMORY_C,
+        #[cfg(not(zero_heap))]
+        WQ_CREATE_DESTROY,
+        WQ_SUBMIT_EXECUTE
+    ],
 );
 
 // =========================================================================
@@ -872,6 +946,7 @@ const STREAM_MSG_SIZE: usize = 64;
 
 ove::shared!(STREAM_BENCH: Stream<STREAM_BUF_SIZE>);
 ove::shared!(STREAM_PRODUCER_TH: Thread);
+#[cfg(not(zero_heap))]
 ove::shared!(STREAM_MEM: Stream<STREAM_BUF_SIZE>);
 ove::shared!(STREAM_BUFS: LvCell<([u8; STREAM_MSG_SIZE], [u8; STREAM_MSG_SIZE])>);
 static STREAM_DONE: AtomicBool = AtomicBool::new(false);
@@ -908,6 +983,7 @@ fn stream_send_recv_teardown() {
     STREAM_BENCH.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn stream_create_destroy_run() {
     let _s = ove::stream!(STREAM_BUF_SIZE, 1);
 }
@@ -960,13 +1036,16 @@ fn stream_throughput_teardown() {
     STREAM_BENCH.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 fn stream_memory_run() {
     STREAM_MEM.try_init(ove::stream!(STREAM_BUF_SIZE, 1)).ok();
 }
+#[cfg(not(zero_heap))]
 fn stream_memory_teardown() {
     STREAM_MEM.shutdown();
 }
 
+#[cfg(not(zero_heap))]
 bench_case!(static STREAM_MEMORY: BenchCase = {
     name: b"memory\0",
     kind: BenchType::Memory,
@@ -980,6 +1059,7 @@ bench_case!(static STREAM_SEND_RECV_64B: BenchCase = {
     setup: stream_send_recv_setup,
     teardown: stream_send_recv_teardown,
 });
+#[cfg(not(zero_heap))]
 bench_case!(static STREAM_CREATE_DESTROY: BenchCase = {
     name: b"create_destroy\0",
     kind: BenchType::Latency,
@@ -998,8 +1078,10 @@ bench_suite!(
     name = b"stream\0",
     enabled = stream_is_enabled,
     cases = [
+        #[cfg(not(zero_heap))]
         STREAM_MEMORY,
         STREAM_SEND_RECV_64B,
+        #[cfg(not(zero_heap))]
         STREAM_CREATE_DESTROY,
         STREAM_THROUGHPUT
     ],

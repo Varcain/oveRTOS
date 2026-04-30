@@ -38,13 +38,13 @@ fn sensorEntry() void {
         pm.domainRequest(1) catch {}; // SENSOR = 1
         pm.activity();
 
-        Thread.sleepMs(50);
+        ove.thread.sleepMs(50);
         reading +%= 17;
         ove.log.inf("sensor: reading = {d}", .{reading % 1000});
 
         pm.domainRelease(1) catch {}; // SENSOR = 1
 
-        Thread.sleepMs(5000);
+        ove.thread.sleepMs(5000);
     }
 }
 
@@ -56,7 +56,7 @@ fn monitorEntry() void {
     ove.log.inf("monitor: started", .{});
 
     while (true) {
-        Thread.sleepMs(10000);
+        ove.thread.sleepMs(10000);
 
         if (pm.getStats()) |stats| {
             ove.log.inf("=== Power Stats ===", .{});
@@ -110,11 +110,13 @@ fn appMain() void {
     pm.setBudget(6000) catch {};
 
     // Create threads
-    _ = Thread.spawn("sensor", sensorEntry, prio.normal, 4096) catch {
+    var sensor_thread: ove.Thread(4096) = undefined;
+    sensor_thread.init("sensor", sensorEntry, prio.normal) catch {
         ove.log.err("Failed to create sensor thread", .{});
         return;
     };
-    _ = Thread.spawn("monitor", monitorEntry, prio.low, 4096) catch {
+    var monitor_thread: ove.Thread(4096) = undefined;
+    monitor_thread.init("monitor", monitorEntry, prio.low) catch {
         ove.log.err("Failed to create monitor thread", .{});
         return;
     };

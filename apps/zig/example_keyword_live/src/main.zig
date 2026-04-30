@@ -13,7 +13,6 @@
 
 const std = @import("std");
 const ove = @import("ove");
-const Thread = ove.Thread;
 const infer = ove.infer;
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -133,11 +132,18 @@ const DspState = struct {
 fn generateFeatures(
     audio: []const i16,
     features: *[feature_count][feature_size]i8,
-    storage: *infer.ModelArena(arena_size),
+    storage: *[arena_size]u8,
     dsp: DspState,
 ) !void {
-    var preproc = try storage.load(preprocessorModel());
-    defer preproc.destroy();
+    const slice = preprocessorModel();
+    const cfg = ove.ffi.ove_model_config{
+        .model_data = slice.ptr,
+        .model_size = slice.len,
+        .arena_size = arena_size,
+    };
+    var preproc: ove.Model = undefined;
+    try preproc.init(storage, &cfg);
+    defer preproc.deinit();
 
     const actual_window = feature_duration_ms * dsp.actual_rate / 1000;
     const actual_stride = feature_stride_ms * dsp.actual_rate / 1000;
@@ -174,10 +180,17 @@ const Prediction = struct {
 
 fn classifyKeyword(
     features: *const [feature_count][feature_size]i8,
-    storage: *infer.ModelArena(arena_size),
+    storage: *[arena_size]u8,
 ) !Prediction {
-    var classifier = try storage.load(classifierModel());
-    defer classifier.destroy();
+    const slice = classifierModel();
+    const cfg = ove.ffi.ove_model_config{
+        .model_data = slice.ptr,
+        .model_size = slice.len,
+        .arena_size = arena_size,
+    };
+    var classifier: ove.Model = undefined;
+    try classifier.init(storage, &cfg);
+    defer classifier.deinit();
 
     const input = try classifier.inputData(u8, 0);
     for (0..feature_count) |row| {
@@ -203,17 +216,17 @@ fn classifyKeyword(
 
 fn inferThread() void {
     ove.log.inf("Inference thread started — listening...", .{});
-    Thread.sleepMs(2000);
+    ove.thread.sleepMs(2000);
     var prev_samples = samples_written.load(.monotonic);
 
     // Thread-local state
     var audio_window = [_]i16{0} ** audio_sample_freq;
     var features = std.mem.zeroes([feature_count][feature_size]i8);
-    var storage = infer.ModelArena(arena_size).init();
+    var storage: [arena_size]u8 align(16) = undefined;
     var dsp = DspState{};
 
     while (true) {
-        Thread.sleepMs(1000);
+        ove.thread.sleepMs(1000);
 
         const cur = samples_written.load(.monotonic);
         const actual_rate = cur -| prev_samples;
@@ -283,7 +296,8 @@ fn appMain() void {
         classifierModel().len,
     });
 
-    var graph = ove.audio.Graph.init(512) catch {
+    var graph: ove.audio.Graph = undefined;
+    graph.init(512) catch {
         ove.log.err("Audio graph init failed", .{});
         ove.run();
         return;
@@ -329,7 +343,8 @@ fn appMain() void {
     };
     ove.log.inf("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    _ = Thread.spawn("infer", inferThread, ove.thread.prio.normal, 8192) catch {
+    var infer_thread: ove.Thread(8192) = undefined;
+    infer_thread.init("infer", inferThread, ove.thread.prio.normal) catch {
         ove.log.err("Failed to spawn infer thread", .{});
         return;
     };

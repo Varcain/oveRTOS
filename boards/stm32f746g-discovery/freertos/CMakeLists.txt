@@ -116,7 +116,11 @@ if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
     target_compile_definitions(firmware.elf PRIVATE
         OVE_APP_LANG_NAME=\"${OVE_APP_LANG}\")
     include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
-    set(_audit_target_key "stm32f746_freertos_benchmark_${OVE_APP_LANG}")
+    if(OVE_ZERO_HEAP)
+        set(_audit_target_key "stm32f746_freertos_benchmark_zeroheap_${OVE_APP_LANG}")
+    else()
+        set(_audit_target_key "stm32f746_freertos_benchmark_${OVE_APP_LANG}")
+    endif()
     ove_assert_no_dispatch_overhead(firmware.elf
         BINDING ${OVE_APP_LANG})
     ove_dump_hotpaths(firmware.elf

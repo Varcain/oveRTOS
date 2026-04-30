@@ -21,7 +21,6 @@
 
 const std = @import("std");
 const ove = @import("ove");
-const Thread = ove.Thread;
 const net = ove.net;
 const Address = ove.Address;
 
@@ -68,7 +67,8 @@ fn testNetifInit() void {
     ove.log.inf("=== Network Interface ===", .{});
 
     testCase("netif_init");
-    var netif = net.NetIf.create() catch |e| {
+    var netif: net.NetIf = undefined;
+    netif.init() catch |e| {
         failCase("netif_init", errCode(e));
         return;
     };
@@ -94,7 +94,7 @@ fn testNetifInit() void {
     // Give the link time to come up on hardware
     if (!is_posix) {
         ove.log.inf("  Waiting for link...", .{});
-        Thread.sleepMs(3000);
+        ove.thread.sleepMs(3000);
     }
 
     // Query actual interface addresses
@@ -136,11 +136,12 @@ fn testTcp() void {
     ove.log.inf("=== TCP Socket ===", .{});
 
     testCase("socket_open TCP");
-    var sock = net.TcpStream.create() catch |e| {
+    var sock: net.TcpStream = undefined;
+    sock.init() catch |e| {
         failCase("socket_open TCP", errCode(e));
         return;
     };
-    defer sock.destroy();
+    defer sock.deinit();
     passCase("socket_open TCP");
 
     // Resolve + connect to example.com:80
@@ -203,7 +204,7 @@ fn testTcp() void {
     }
 
     testCase("socket_close");
-    sock.destroy();
+    sock.deinit();
     passCase("socket_close");
 }
 
@@ -213,11 +214,12 @@ fn testUdp() void {
     ove.log.inf("=== UDP Socket ===", .{});
 
     testCase("socket_open UDP");
-    var sock = net.UdpSocket.create() catch |e| {
+    var sock: net.UdpSocket = undefined;
+    sock.init() catch |e| {
         failCase("socket_open UDP", errCode(e));
         return;
     };
-    defer sock.destroy();
+    defer sock.deinit();
     passCase("socket_open UDP");
 
     // Bind to a local port
@@ -261,11 +263,12 @@ fn testHttp() void {
     ove.log.inf("=== HTTP Client ===", .{});
 
     testCase("http_client_init");
-    var client = ove.net_http.Client.create() catch |e| {
+    var client: ove.net_http.Client = undefined;
+    client.init() catch |e| {
         failCase("http_client_init", errCode(e));
         return;
     };
-    defer client.destroy();
+    defer client.deinit();
     passCase("http_client_init");
 
     // GET request
@@ -375,11 +378,12 @@ fn testMqtt() void {
     ove.log.inf("=== MQTT Client ===", .{});
 
     testCase("mqtt_client_init");
-    var mqtt = ove.net_mqtt.Client.create() catch |e| {
+    var mqtt: ove.net_mqtt.Client = undefined;
+    mqtt.init() catch |e| {
         failCase("mqtt_client_init", errCode(e));
         return;
     };
-    defer mqtt.destroy();
+    defer mqtt.deinit();
     passCase("mqtt_client_init");
 
     testCase("mqtt_connect test.mosquitto.org:1883");
@@ -492,7 +496,7 @@ fn netThread() void {
     ove.net_httpd.registerBuiltinRoutes();
     ove.log.inf("HTTP server running -- open http://<device-ip>:{d}/", .{httpd_port});
     // Keep thread alive so httpd keeps running
-    while (true) Thread.sleepMs(1000);
+    while (true) ove.thread.sleepMs(1000);
 }
 
 // -- App entry point --------------------------------------------------------
@@ -500,7 +504,8 @@ fn netThread() void {
 fn appMain() void {
     ove.log.inf("Zig networking example: init", .{});
 
-    _ = Thread.spawn("net-test", netThread, ove.thread.prio.normal, 8192) catch |e| {
+    var net_thread: ove.Thread(8192) = undefined;
+    net_thread.init("net-test", netThread, ove.thread.prio.normal) catch |e| {
         ove.log.err("Failed to create net thread: {d}", .{errCode(e)});
         return;
     };
@@ -509,7 +514,7 @@ fn appMain() void {
     ove.run();
 
     // On POSIX, ove_run() returns -- keep alive for the httpd server
-    while (true) Thread.sleepMs(1000);
+    while (true) ove.thread.sleepMs(1000);
 }
 
 comptime {
