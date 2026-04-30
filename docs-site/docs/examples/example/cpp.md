@@ -2,7 +2,7 @@
 
 Source: `apps/cpp/example/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_cpp/){:target="_blank"}**
 
-The C++ example demonstrates the `ove::` namespace wrappers with RAII semantics, template-based objects, and the LVGL C++20 component system.
+The C++ example demonstrates the `ove::` namespace wrappers with RAII semantics, template-based objects, and the LVGL C++20 fluent builders.
 
 ## C++ RAII patterns
 
@@ -29,7 +29,7 @@ static void producer_thread(void *)
 
     while (true) {
         ++count;
-        if (counter_queue.send(count, 1000) != ove::Error::Ok) {
+        if (counter_queue.send(count, 1000) != OVE_OK) {
             OVE_LOG_WRN("Producer: queue full, dropped %u", count);
         }
         ove::Thread<>::sleep_ms(500);
@@ -37,9 +37,9 @@ static void producer_thread(void *)
 }
 ```
 
-`counter_queue.send()` returns `ove::Error` instead of a raw int. `ove::Thread<>::sleep_ms()` is a static method on the thread class.
+`counter_queue.send()` returns the same int code as the C API (`OVE_OK` on success). `ove::Thread<>::sleep_ms()` is a static method on the thread class.
 
-## LVGL component composition
+## LVGL UI
 
 The C++ example uses the LVGL C++20 wrapper with fluent builders:
 
@@ -47,16 +47,17 @@ The C++ example uses the LVGL C++20 wrapper with fluent builders:
 namespace lv = ove::lvgl;
 
 lv::LvglGuard guard;
-auto *screen = lv::screen_active();
-screen->set_style_bg_color(lv::Color::black(), 0);
+auto scr = lv::ObjectView::screen_active();
+lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
 
-title_label = lv::Label::create(screen)
-    .set_text(APP_TITLE)
-    .set_style_text_font(&lv_font_montserrat_32, 0)
+lv::Label::create(scr)
+    .text(APP_TITLE)
+    .font(&lv_font_montserrat_32)
+    .color(lv_color_white())
     .align(LV_ALIGN_TOP_MID, 0, 16);
 ```
 
-`lv::LvglGuard` is an RAII lock — it calls `ove_lvgl_lock()` on construction and `ove_lvgl_unlock()` on destruction.
+`lv::LvglGuard` is an RAII lock — it calls `ove_lvgl_lock()` on construction and `ove_lvgl_unlock()` on destruction. The fluent setters drop the LVGL `set_` prefix (`text`, `font`, `color`, `radius`, …) for terser chains.
 
 ## Entry point
 
