@@ -12,6 +12,13 @@ Interactive WASM demos run directly in your browser — no toolchain needed.
 | [Power Management](example_pm/index.md) | Sleep states, domains, wake sources | PM state machine, domains, policy, stats |
 | [Keyword Detection](example_keyword_live/index.md) | Real-time "yes/no" speech recognition | Audio graph, ML inference, I2S |
 
+### Additional LVGL demos
+
+Two LVGL-focused apps live under `apps/<lang>/` and are not documented per-page — they reimplement standard LVGL demos through the oveRTOS bindings:
+
+- **`lvgl_benchmark`** (C / C++ / Rust / Zig) — port of the upstream LVGL benchmark scenes. 15 rendering scenes stress-test widgets, animations, layout, images, and compositing; reports per-scene FPS / CPU / render / flush time. Build with `make host.posix.lvgl_benchmark[_cpp|_rust|_zig]`.
+- **`lvgl_gallery`** (C++ / Rust / Zig — no C variant) — one widget per page with a top nav bar, exercising all 22 widget types in the LVGL bindings. Build with `make host.posix.lvgl_gallery_cpp[_rust|_zig]`.
+
 ## Language support
 
 Each example is implemented in all four languages using the same oveRTOS API:

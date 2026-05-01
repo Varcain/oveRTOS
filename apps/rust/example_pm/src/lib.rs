@@ -187,14 +187,10 @@ fn app_main() {
     let _sensor = ove::thread!("sensor", sensor_entry, Priority::Normal, 4096);
     let _monitor = ove::thread!("monitor", monitor_entry, Priority::Low, 4096);
 
-    ove::log_inf!(
-        "pm example (Rust): ready (battery={}%)",
-        BATTERY.try_get().map(|b| b.get()).unwrap_or(0)
-    );
+    let pct = BATTERY.get().get();
+    ove::log_inf!("pm example (Rust): ready (battery={}%)", pct);
 
     ove::run();
-
-    pm::deinit();
 
     ove::log_inf!("pm example (Rust): shutdown");
 }

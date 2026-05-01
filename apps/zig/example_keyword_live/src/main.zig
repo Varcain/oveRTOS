@@ -119,6 +119,10 @@ const DmicProcessor = struct {
 
 var dmic_proc: DmicProcessor = .{};
 
+// Audio graph + inference thread — file-scope so embedded storage outlives appMain.
+var graph: ove.audio.Graph = undefined;
+var infer_thread: ove.Thread(8192) = undefined;
+
 // ── DSP parameters ────────────────────────────────────────────────────
 
 const DspState = struct {
@@ -296,7 +300,6 @@ fn appMain() void {
         classifierModel().len,
     });
 
-    var graph: ove.audio.Graph = undefined;
     graph.init(512) catch {
         ove.log.err("Audio graph init failed", .{});
         ove.run();
@@ -343,7 +346,6 @@ fn appMain() void {
     };
     ove.log.inf("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    var infer_thread: ove.Thread(8192) = undefined;
     infer_thread.init("infer", inferThread, ove.thread.prio.normal) catch {
         ove.log.err("Failed to spawn infer thread", .{});
         return;

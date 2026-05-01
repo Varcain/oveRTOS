@@ -9,7 +9,6 @@
 
 const std = @import("std");
 const ove = @import("ove");
-const Thread = ove.Thread;
 const Timer = ove.Timer;
 const prio = ove.thread.prio;
 
@@ -342,10 +341,11 @@ fn graphicsEntry() void {
 // App entry
 // ---------------------------------------------------------------------------
 
+var graphics_thread: ove.Thread(4096) = undefined;
+
 fn appMain() void {
     ove.log.inf("LVGL gallery (Zig): init", .{});
 
-    var graphics_thread: ove.Thread(4096) = undefined;
     graphics_thread.init("graphics", graphicsEntry, prio.high) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;

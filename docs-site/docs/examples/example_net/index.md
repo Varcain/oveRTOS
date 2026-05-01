@@ -17,7 +17,7 @@ ove_netif_*, ove_socket_*, ove_dns_resolve, ove_http_*, ove_sntp_*, ove_mqtt_*, 
 
 ## Required Kconfig
 
-`CONFIG_OVE_NET=y, CONFIG_OVE_NET_HTTP=y, CONFIG_OVE_NET_MQTT=y, CONFIG_OVE_NET_SNTP=y, CONFIG_OVE_NET_HTTPD=y`
+`CONFIG_OVE_BSP=y, CONFIG_OVE_NET=y, CONFIG_OVE_NET_HTTP=y, CONFIG_OVE_NET_MQTT=y, CONFIG_OVE_NET_SNTP=y, CONFIG_OVE_NET_HTTPD=y`
 
 ## How to build
 

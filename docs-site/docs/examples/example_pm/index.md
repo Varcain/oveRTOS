@@ -17,7 +17,7 @@ ove_pm_init, ove_pm_set_state, ove_pm_activity, ove_pm_wake_register, ove_pm_dom
 
 ## Required Kconfig
 
-`CONFIG_OVE_PM=y`
+`CONFIG_OVE_PM=y, CONFIG_OVE_TIMER=y`
 
 ## How to build
 
