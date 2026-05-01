@@ -1152,4 +1152,6 @@ fn app_main() {
     ove::log(b"[I] Benchmark app: shutdown\n");
 }
 
+mod bench_cyccnt;
+
 ove::main!(app_main);
