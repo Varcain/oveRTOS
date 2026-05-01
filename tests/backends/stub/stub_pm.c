@@ -52,3 +52,12 @@ uint32_t ove_hal_pm_get_next_timeout_ms(void)
 void ove_hal_pm_idle_hook(void)
 {
 }
+
+int ove_hal_pm_setup(void)
+{
+	return OVE_OK;
+}
+
+void ove_hal_pm_teardown(void)
+{
+}

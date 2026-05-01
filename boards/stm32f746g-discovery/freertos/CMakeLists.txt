@@ -75,9 +75,6 @@ ove_add_fatfs(
     BOARD_DISKIO src/stm32f7/fatfs/sd_diskio.c
 )
 ove_add_cmsis_dsp()
-# cpu_utils.c provides StartIdleMonitor/EndIdleMonitor referenced by
-# the generated FreeRTOSConfig.h via traceTASK_SWITCHED_* macros.
-ove_add_cpu_utils()
 
 # ── FreeRTOS kernel (Cortex-M7 port from STM32CubeF7 bundle) ────────
 ove_add_freertos_kernel(ARM_CM7/r0p1)

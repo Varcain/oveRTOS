@@ -18,8 +18,17 @@ int ove_time_get_us(uint64_t *out)
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	/* HAL_GetTick() returns milliseconds */
-	*out = (uint64_t)HAL_GetTick() * 1000ULL;
+	/* HAL_GetTick() is driven by SysTick and gets frozen when
+	 * configUSE_TICKLESS_IDLE suppresses ticks across sleep, so any
+	 * caller computing now-then deltas across an idle (e.g. ove_pm
+	 * time-in-state stats) loses the suspended interval.
+	 * xTaskGetTickCount() is the kernel's authoritative tick count and
+	 * gets bumped by vTaskStepTick() on wake from tickless sleep, so
+	 * deltas remain correct.  xTaskGetTickCountFromISR() is the
+	 * ISR-safe variant — same value, callable either way. */
+	TickType_t ticks = xPortIsInsideInterrupt() ? xTaskGetTickCountFromISR()
+						    : xTaskGetTickCount();
+	*out = (uint64_t)ticks * (1000000ULL / configTICK_RATE_HZ);
 	return OVE_OK;
 }
 

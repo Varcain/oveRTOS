@@ -73,13 +73,13 @@ fn battery_policy(batt: &Battery, ctx: PolicyCtx) -> State {
 static POLICY: PolicyHandler<Battery> = PolicyHandler::new(&BATTERY, battery_policy);
 
 // ---------------------------------------------------------------------------
-// PM transition notifier (mirrors C example)
+// PM transitionsition notifier (mirrors C example)
 // ---------------------------------------------------------------------------
 
 fn pm_notify(_batt: &Battery, event: Event, from: State, to: State) {
     match event {
-        Event::PreSleep => ove::log_inf!("pm: preparing sleep {:?} -> {:?}", from, to),
-        Event::PostWake => ove::log_inf!("pm: woke {:?} -> {:?}", from, to),
+        Event::PreSleep => ove::log_inf!("pm: preparing sleep {} -> {}", from as i32, to as i32),
+        Event::PostWake => ove::log_inf!("pm: woke {} -> {}", from as i32, to as i32),
     }
 }
 
@@ -121,22 +121,22 @@ fn monitor_entry() {
         if let Ok(stats) = pm::get_stats() {
             ove::log_inf!("=== Power Stats ===");
             ove::log_inf!(
-                "  active:  {} us ({} trans)",
+                "  active:  {} us ({} transitions)",
                 stats.time_in_state_us[0],
                 stats.transition_count[0]
             );
             ove::log_inf!(
-                "  idle:    {} us ({} trans)",
+                "  idle:    {} us ({} transitions)",
                 stats.time_in_state_us[1],
                 stats.transition_count[1]
             );
             ove::log_inf!(
-                "  standby: {} us ({} trans)",
+                "  standby: {} us ({} transitions)",
                 stats.time_in_state_us[2],
                 stats.transition_count[2]
             );
             ove::log_inf!(
-                "  deep:    {} us ({} trans)",
+                "  deep:    {} us ({} transitions)",
                 stats.time_in_state_us[3],
                 stats.transition_count[3]
             );
@@ -159,7 +159,7 @@ fn monitor_entry() {
 // ---------------------------------------------------------------------------
 
 fn app_main() {
-    ove::log_inf!("pm example (Rust): init");
+    ove::log_inf!("pm example: init");
 
     BATTERY.init(Battery::new(85));
 
@@ -177,7 +177,7 @@ fn app_main() {
     pm::wake_register_gpio(0, 13, 0x02).ok();
     pm::wake_register_uart(0).ok();
 
-    // Register transition notifier + battery-aware policy
+    // Register transitionsition notifier + battery-aware policy
     pm::notify_register(&NOTIFY).ok();
     pm::set_policy(&POLICY).ok();
 
@@ -188,11 +188,11 @@ fn app_main() {
     let _monitor = ove::thread!("monitor", monitor_entry, Priority::Low, 4096);
 
     let pct = BATTERY.get().get();
-    ove::log_inf!("pm example (Rust): ready (battery={}%)", pct);
+    ove::log_inf!("pm example: ready (battery={}%)", pct);
 
     ove::run();
 
-    ove::log_inf!("pm example (Rust): shutdown");
+    ove::log_inf!("pm example: shutdown");
 }
 
 ove::main!(app_main);

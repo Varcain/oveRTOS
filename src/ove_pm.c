@@ -168,6 +168,13 @@ int ove_pm_init(const struct ove_pm_cfg *cfg)
 	pm_ctx.initialized = 1;
 	pm_ctx.transition_count[OVE_PM_STATE_ACTIVE] = 1;
 
+	rc = ove_hal_pm_setup();
+	if (rc != OVE_OK) {
+		ove_mutex_deinit(pm_ctx.mtx);
+		pm_ctx.initialized = 0;
+		return rc;
+	}
+
 	OVE_LOG_INF("pm: initialized (idle=%u ms, standby=%u ms, deep=%u ms)",
 		    cfg->idle_threshold_ms, cfg->standby_threshold_ms,
 		    cfg->deep_sleep_threshold_ms);
@@ -179,6 +186,7 @@ void ove_pm_deinit(void)
 	if (!pm_ctx.initialized)
 		return;
 
+	ove_hal_pm_teardown();
 	ove_mutex_deinit(pm_ctx.mtx);
 	pm_ctx.initialized = 0;
 
@@ -533,7 +541,15 @@ void ove_pm_idle_process(void)
 	pm_ctx.current_state = recommended;
 	pm_ctx.transition_count[recommended]++;
 
-	/* Enter sleep — blocks until wake */
+	/* Enter sleep — blocks until wake.
+	 *
+	 * On Cortex-M with plain WFI, this returns on the very next interrupt
+	 * (typically the 1 kHz SysTick).  Keep update_stats authoritative for
+	 * state_entry_us — DON'T touch last_activity_us here.  Treating wake
+	 * as activity would reset the idle counter every tick and trap the
+	 * system in a tight ACTIVE↔IDLE bounce, never escalating to STANDBY
+	 * or DEEP_SLEEP.  Real activity comes from ove_pm_activity() (set by
+	 * ISRs, application threads, registered wake sources). */
 	ove_hal_pm_enter_state(recommended, next_timeout_ms);
 
 	/* Woke up */
@@ -541,8 +557,6 @@ void ove_pm_idle_process(void)
 	update_stats(recommended, now);
 	pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
 	pm_ctx.transition_count[OVE_PM_STATE_ACTIVE]++;
-	pm_ctx.last_activity_us = now;
-	pm_ctx.state_entry_us = now;
 
 	/* Disarm wake sources */
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {

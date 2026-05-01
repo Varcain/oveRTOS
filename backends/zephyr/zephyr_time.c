@@ -10,12 +10,22 @@
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
 
+/*
+ * k_cycle_get_32() is a 32-bit cycle counter.  At 216 MHz it wraps every
+ * ~19.9 s — feeding it into k_cyc_to_us_floor64() does NOT extend the
+ * range, so subtracting two samples taken across a wrap underflows
+ * uint64 and corrupts long-running deltas (e.g. PM time-in-state stats).
+ *
+ * Use the kernel's 64-bit tick counter instead — it's the same source
+ * Zephyr's own k_uptime_get() is built on, and it cannot wrap within any
+ * realistic device lifetime.
+ */
 int ove_time_get_us(uint64_t *out)
 {
 	if (out == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	*out = (uint64_t)k_cyc_to_us_floor64(k_cycle_get_32());
+	*out = (uint64_t)k_ticks_to_us_floor64(sys_clock_tick_get());
 	return OVE_OK;
 }
 
@@ -24,7 +34,7 @@ int ove_time_get_ns(uint64_t *out)
 	if (out == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	*out = (uint64_t)k_cyc_to_ns_floor64(k_cycle_get_32());
+	*out = (uint64_t)k_ticks_to_ns_floor64(sys_clock_tick_get());
 	return OVE_OK;
 }
 

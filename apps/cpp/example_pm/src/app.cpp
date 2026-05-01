@@ -65,13 +65,10 @@ static ove_pm_state_t battery_policy(ove_pm_state_t current, uint32_t idle_ms,
 	return OVE_PM_STATE_DEEP_SLEEP;
 }
 
-/* --- Thread entry points --- */
+/* --- Thread entry points (created inside OVE_MAIN, after pm::init) --- */
 
 static void sensor_thread(void *arg);
 static void monitor_thread(void *arg);
-
-static ove::Thread<4096> sensor_th(sensor_thread, nullptr, OVE_PRIO_NORMAL, "sensor");
-static ove::Thread<4096> monitor_th(monitor_thread, nullptr, OVE_PRIO_LOW, "monitor");
 
 /* --- Sensor thread: periodic read with domain management --- */
 
@@ -107,15 +104,18 @@ static void monitor_thread(void *)
 		pm::Stats stats{};
 		if (pm::get_stats(stats) == OVE_OK) {
 			OVE_LOG_INF("=== Power Stats ===");
-			OVE_LOG_INF("  active:  %u us (%u trans)",
+			OVE_LOG_INF("  active:  %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_ACTIVE],
 				    stats.transition_count[OVE_PM_STATE_ACTIVE]);
-			OVE_LOG_INF("  idle:    %u us (%u trans)",
+			OVE_LOG_INF("  idle:    %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_IDLE],
 				    stats.transition_count[OVE_PM_STATE_IDLE]);
-			OVE_LOG_INF("  standby: %u us (%u trans)",
+			OVE_LOG_INF("  standby: %u us (%u transitions)",
 				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_STANDBY],
 				    stats.transition_count[OVE_PM_STATE_STANDBY]);
+			OVE_LOG_INF("  deep:    %u us (%u transitions)",
+				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_DEEP_SLEEP],
+				    stats.transition_count[OVE_PM_STATE_DEEP_SLEEP]);
 			OVE_LOG_INF("  active%%: %u.%02u%%", stats.active_pct_x100 / 100,
 				    stats.active_pct_x100 % 100);
 		}
@@ -130,7 +130,7 @@ static void monitor_thread(void *)
 
 OVE_MAIN()
 {
-	OVE_LOG_INF("pm example (C++): init");
+	OVE_LOG_INF("pm example: init");
 
 	/* Initialize PM */
 	pm::Cfg cfg{
@@ -160,9 +160,18 @@ OVE_MAIN()
 	pm::set_policy(battery_policy, &battery_pct);
 	pm::set_budget(6000);
 
-	OVE_LOG_INF("pm example (C++): ready (battery=%d%%)", battery_pct);
+	OVE_LOG_INF("pm example: ready (battery=%d%%)", battery_pct);
+
+	/* Create threads after PM init so the kernel mutex exists before
+	 * sensor_thread/monitor_thread call into pm::*.  Static thread
+	 * objects at file scope would fire ove_thread_create_ before main()
+	 * — heap state is fine but pm::init hasn't run, so the first
+	 * pm::domain_request from sensor_thread would early-return
+	 * OVE_ERR_INVALID_PARAM and the demo would silently stall. */
+	static ove::Thread<4096> sensor_th(sensor_thread, nullptr, OVE_PRIO_NORMAL, "sensor");
+	static ove::Thread<4096> monitor_th(monitor_thread, nullptr, OVE_PRIO_LOW, "monitor");
 
 	ove::run();
 
-	OVE_LOG_INF("pm example (C++): shutdown");
+	OVE_LOG_INF("pm example: shutdown");
 }
