@@ -96,6 +96,27 @@ uint32_t ove_hal_pm_get_next_timeout_ms(void);
  */
 void ove_hal_pm_idle_hook(void);
 
+/**
+ * @brief Initialise backend-side PM machinery.
+ *
+ * Called by ove_pm_init() once the portable state has been set up.
+ * Backends that drive ove_pm_idle_process() from a kernel idle hook
+ * (e.g. FreeRTOS vApplicationIdleHook) can leave this as a no-op;
+ * backends without an auto-fired idle hook (NuttX, Zephyr, POSIX) use
+ * it to spawn a low-priority polling thread.
+ *
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_hal_pm_setup(void);
+
+/**
+ * @brief Tear down backend-side PM machinery.
+ *
+ * Called by ove_pm_deinit().  Backends that spawned a polling thread
+ * should signal it to exit and join here.
+ */
+void ove_hal_pm_teardown(void);
+
 #ifdef __cplusplus
 }
 #endif

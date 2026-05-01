@@ -24,9 +24,25 @@
  * boards call xPortSysTickHandler() directly).
  */
 
+#include "ove_config.h"
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "timers.h"
+
+/*
+ * Idle stack sizing.  CONFIG_OVE_PM hooks vApplicationIdleHook to drive
+ * the PM state machine, which can fire user PRE_SLEEP / POST_WAKE
+ * notifications from idle context.  Real-world notify callbacks log via
+ * snprintf, which alone burns ~600 bytes of stack — well past the 128
+ * words (512 bytes) FreeRTOS reserves by default.  Bump the idle stack
+ * when PM is on; otherwise stay at configMINIMAL_STACK_SIZE.
+ */
+#ifdef CONFIG_OVE_PM
+#define OVE_IDLE_STACK_DEPTH ((configMINIMAL_STACK_SIZE) > 512 ? (configMINIMAL_STACK_SIZE) : 512)
+#else
+#define OVE_IDLE_STACK_DEPTH (configMINIMAL_STACK_SIZE)
+#endif
 
 #if defined(__GNUC__)
 #define OVE_WEAK __attribute__((weak))
@@ -46,10 +62,10 @@ void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
 				   configSTACK_DEPTH_TYPE *pulIdleTaskStackSize)
 {
 	static StaticTask_t xIdleTaskTCB;
-	static StackType_t uxIdleTaskStack[configMINIMAL_STACK_SIZE];
+	static StackType_t uxIdleTaskStack[OVE_IDLE_STACK_DEPTH];
 	*ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
 	*ppxIdleTaskStackBuffer = uxIdleTaskStack;
-	*pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+	*pulIdleTaskStackSize = OVE_IDLE_STACK_DEPTH;
 }
 
 #if (configUSE_TIMERS == 1)

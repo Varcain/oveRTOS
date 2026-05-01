@@ -111,4 +111,14 @@ void ove_hal_pm_idle_hook(void)
 	ove_pm_idle_process();
 }
 
+/* Sim runs ove_pm_idle_process() from its own driver loop, no thread needed. */
+int ove_hal_pm_setup(void)
+{
+	return OVE_OK;
+}
+
+void ove_hal_pm_teardown(void)
+{
+}
+
 #endif /* CONFIG_OVE_PM */

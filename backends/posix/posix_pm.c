@@ -14,6 +14,9 @@
 #include "ove/log.h"
 #include "ove_backend_common.h"
 #include "posix_sleep.h"
+
+#include <pthread.h>
+#include <stdatomic.h>
 #include <unistd.h>
 
 static const char *state_name(ove_pm_state_t state)
@@ -88,6 +91,43 @@ uint32_t ove_hal_pm_get_next_timeout_ms(void)
 void ove_hal_pm_idle_hook(void)
 {
 	ove_pm_idle_process();
+}
+
+/* POSIX has no kernel idle hook, so drive ove_pm_idle_process() from a
+ * dedicated polling thread.  Sleep 1 ms between polls to keep host CPU
+ * usage minimal while still giving the state machine a chance to react. */
+static pthread_t pm_thread;
+static atomic_int pm_thread_running;
+
+static void *pm_idle_thread(void *arg)
+{
+	(void)arg;
+	while (atomic_load_explicit(&pm_thread_running, memory_order_acquire)) {
+		ove_pm_idle_process();
+		usleep(1000);
+	}
+	return NULL;
+}
+
+int ove_hal_pm_setup(void)
+{
+	if (atomic_load_explicit(&pm_thread_running, memory_order_acquire))
+		return OVE_OK;
+	atomic_store_explicit(&pm_thread_running, 1, memory_order_release);
+	if (pthread_create(&pm_thread, NULL, pm_idle_thread, NULL) != 0) {
+		atomic_store_explicit(&pm_thread_running, 0, memory_order_release);
+		OVE_LOG_ERR("pm: failed to spawn POSIX idle thread");
+		return OVE_ERR_NO_MEMORY;
+	}
+	return OVE_OK;
+}
+
+void ove_hal_pm_teardown(void)
+{
+	if (!atomic_load_explicit(&pm_thread_running, memory_order_acquire))
+		return;
+	atomic_store_explicit(&pm_thread_running, 0, memory_order_release);
+	pthread_join(pm_thread, NULL);
 }
 
 #endif /* CONFIG_OVE_PM */

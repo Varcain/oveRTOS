@@ -10,6 +10,8 @@
 //!   - Sleep state machine with auto-idle
 //!   - Peripheral power domain reference counting
 //!   - Wake source registration (GPIO + UART)
+//!   - Custom battery-aware power policy
+//!   - Transition notification callbacks
 //!   - Runtime power statistics reporting
 
 const std = @import("std");
@@ -27,6 +29,47 @@ var battery_pct: std.atomic.Value(i32) = std.atomic.Value(i32).init(85);
 
 var sensor_thread: Thread(4096) = undefined;
 var monitor_thread: Thread(4096) = undefined;
+
+// ---------------------------------------------------------------------------
+// Battery-aware power policy (mirrors C/C++/Rust examples)
+// ---------------------------------------------------------------------------
+
+fn batteryPolicy(
+    current: pm.State,
+    idle_ms: u32,
+    next_timeout_ms: u32,
+    user_data: ?*anyopaque,
+) callconv(.c) pm.State {
+    _ = current;
+    _ = next_timeout_ms;
+    _ = user_data;
+
+    const batt = battery_pct.load(.monotonic);
+
+    // Aggressive sleep when battery is critically low
+    if (batt < 15) {
+        if (idle_ms > 5) return ove.ffi.OVE_PM_STATE_DEEP_SLEEP;
+        return ove.ffi.OVE_PM_STATE_STANDBY;
+    }
+
+    // Normal thresholds
+    if (idle_ms < 10) return ove.ffi.OVE_PM_STATE_ACTIVE;
+    if (idle_ms < 1000) return ove.ffi.OVE_PM_STATE_IDLE;
+    if (idle_ms < 10000) return ove.ffi.OVE_PM_STATE_STANDBY;
+    return ove.ffi.OVE_PM_STATE_DEEP_SLEEP;
+}
+
+// ---------------------------------------------------------------------------
+// PM transition notifier (mirrors C/C++/Rust examples)
+// ---------------------------------------------------------------------------
+
+fn pmNotify(event: pm.Event, from: pm.State, to: pm.State) void {
+    if (event == ove.ffi.OVE_PM_EVENT_PRE_SLEEP) {
+        ove.log.inf("pm: preparing sleep {d} -> {d}", .{ from, to });
+    } else {
+        ove.log.inf("pm: woke {d} -> {d}", .{ from, to });
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Sensor thread: periodic read with domain management
@@ -63,17 +106,21 @@ fn monitorEntry() void {
 
         if (pm.getStats()) |stats| {
             ove.log.inf("=== Power Stats ===", .{});
-            ove.log.inf("  active:  {d} us ({d} trans)", .{
+            ove.log.inf("  active:  {d} us ({d} transitions)", .{
                 stats.time_in_state_us[0],
                 stats.transition_count[0],
             });
-            ove.log.inf("  idle:    {d} us ({d} trans)", .{
+            ove.log.inf("  idle:    {d} us ({d} transitions)", .{
                 stats.time_in_state_us[1],
                 stats.transition_count[1],
             });
-            ove.log.inf("  standby: {d} us ({d} trans)", .{
+            ove.log.inf("  standby: {d} us ({d} transitions)", .{
                 stats.time_in_state_us[2],
                 stats.transition_count[2],
+            });
+            ove.log.inf("  deep:    {d} us ({d} transitions)", .{
+                stats.time_in_state_us[3],
+                stats.transition_count[3],
             });
             ove.log.inf("  active%: {d}.{d:0>2}%", .{
                 stats.active_pct_x100 / 100,
@@ -81,11 +128,10 @@ fn monitorEntry() void {
             });
         } else |_| {}
 
-        const batt = battery_pct.load(.monotonic);
-        if (batt > 5) {
-            battery_pct.store(batt - 5, .monotonic);
-        }
-        ove.log.inf("battery: {d}%", .{batt});
+        const cur = battery_pct.load(.monotonic);
+        const next = if (cur > 5) cur - 5 else cur;
+        battery_pct.store(next, .monotonic);
+        ove.log.inf("battery: {d}%", .{next});
     }
 }
 
@@ -94,7 +140,7 @@ fn monitorEntry() void {
 // ---------------------------------------------------------------------------
 
 fn appMain() void {
-    ove.log.inf("pm example (Zig): init", .{});
+    ove.log.inf("pm example: init", .{});
 
     pm.init(.{
         .idle_threshold_ms = 50,
@@ -109,6 +155,10 @@ fn appMain() void {
     pm.wakeRegisterGpio(0, 13, ove.ffi.OVE_GPIO_IRQ_FALLING) catch {};
     pm.wakeRegisterUart(0) catch {};
 
+    // Register transitionsition notifier and battery-aware policy
+    pm.notifyRegister(pmNotify) catch {};
+    pm.setPolicy(batteryPolicy, null) catch {};
+
     // Set power budget target: 60% low-power
     pm.setBudget(6000) catch {};
 
@@ -122,13 +172,13 @@ fn appMain() void {
         return;
     };
 
-    ove.log.inf("pm example (Zig): ready (battery={d}%)", .{
+    ove.log.inf("pm example: ready (battery={d}%)", .{
         battery_pct.load(.monotonic),
     });
 
     ove.run();
 
-    ove.log.inf("pm example (Zig): shutdown", .{});
+    ove.log.inf("pm example: shutdown", .{});
 }
 
 comptime {

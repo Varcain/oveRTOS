@@ -17,63 +17,32 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-#ifndef __WFI
-#define __WFI() __asm volatile("wfi" ::: "memory")
-#endif
+#include <stdatomic.h>
+
+/* Residency time per low-power state.  ove_hal_pm_enter_state() blocks
+ * the pm idle poller in the chosen state for this long.  vTaskDelay
+ * lets configUSE_TICKLESS_IDLE suspend SysTick for the delay duration,
+ * so the actual sleep cost is paid in the chosen pm state, not in
+ * ACTIVE — without that, the FreeRTOS idle task's tickless path would
+ * fire AFTER our hook returned (with PM already back in ACTIVE) and the
+ * stats would mis-attribute all the real sleep time to ACTIVE.
+ *
+ * 1 s matches the NuttX / Zephyr backends and gives ~2 transitions/sec
+ * during a 5 s sensor cycle, while still re-checking the policy
+ * frequently enough to honour the 5 s standby and 30 s deep-sleep
+ * thresholds. */
+#define PM_STATE_RESIDENCY_MS 1000
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
-	TickType_t expected_ticks;
+	TickType_t ticks = (expected_idle_ms == OVE_WAIT_FOREVER)
+				   ? pdMS_TO_TICKS(PM_STATE_RESIDENCY_MS)
+				   : pdMS_TO_TICKS(expected_idle_ms);
 
 	(void)state;
-
-	if (expected_idle_ms == OVE_WAIT_FOREVER)
-		expected_ticks = portMAX_DELAY;
-	else
-		expected_ticks = pdMS_TO_TICKS(expected_idle_ms);
-
-	switch (state) {
-	case OVE_PM_STATE_IDLE:
-		/* Light sleep — WFI in the idle task context.
-		 * FreeRTOS tickless idle suppresses tick interrupts.
-		 */
-#if configUSE_TICKLESS_IDLE
-		vPortSuppressTicksAndSleep(expected_ticks);
-#else
-		__WFI();
-		(void)expected_ticks;
-#endif
-		break;
-
-	case OVE_PM_STATE_STANDBY:
-		/* Platform-specific stop mode.  Board-level code should
-		 * override this with actual stop-mode entry (e.g.
-		 * HAL_PWR_EnterSTOPMode on STM32).  Default: WFI.
-		 */
-#if configUSE_TICKLESS_IDLE
-		vPortSuppressTicksAndSleep(expected_ticks);
-#else
-		__WFI();
-		(void)expected_ticks;
-#endif
-		break;
-
-	case OVE_PM_STATE_DEEP_SLEEP:
-		/* Platform-specific standby/shutdown.  Default: WFI
-		 * until board support provides deeper sleep entry.
-		 */
-#if configUSE_TICKLESS_IDLE
-		vPortSuppressTicksAndSleep(expected_ticks);
-#else
-		__WFI();
-		(void)expected_ticks;
-#endif
-		break;
-
-	default:
-		break;
-	}
-
+	if (ticks == 0)
+		ticks = 1;
+	vTaskDelay(ticks);
 	return OVE_OK;
 }
 
@@ -111,34 +80,82 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain)
 
 uint32_t ove_hal_pm_get_next_timeout_ms(void)
 {
-	TickType_t next = xTaskGetTickCount();
-
-	/* FreeRTOS does not expose a direct "next wakeup" API.
-	 * eTaskConfirmSleepModeStatus() can confirm sleep is safe.
-	 * For now, return WAIT_FOREVER and let the policy decide.
-	 */
-	(void)next;
+	/* FreeRTOS does not expose the next-task-wake time to application
+	 * threads.  Return OVE_WAIT_FOREVER so enter_state falls back to
+	 * PM_STATE_RESIDENCY_MS pacing. */
 	return OVE_WAIT_FOREVER;
 }
-
-/*
- * vApplicationIdleHook — called from the FreeRTOS idle task on every
- * iteration.  Drives the PM state machine.
- *
- * Note: if the application already defines vApplicationIdleHook, this
- * will conflict.  In that case the application's hook should call
- * ove_pm_idle_process() explicitly.
- */
-#if configUSE_IDLE_HOOK
-__attribute__((weak)) void vApplicationIdleHook(void)
-{
-	ove_pm_idle_process();
-}
-#endif
 
 void ove_hal_pm_idle_hook(void)
 {
 	ove_pm_idle_process();
+}
+
+/* configUSE_IDLE_HOOK is hardcoded on in FreeRTOSConfig.h.j2.  We no
+ * longer drive PM from the idle hook (polling thread below does it),
+ * so provide a weak empty implementation just to satisfy the linker. */
+#if configUSE_IDLE_HOOK
+__attribute__((weak)) void vApplicationIdleHook(void)
+{
+}
+#endif
+
+/*
+ * Drive the PM state machine from a dedicated low-priority polling
+ * thread, mirroring the NuttX / Zephyr backends.  Using
+ * vApplicationIdleHook would also work, but only with tickless idle —
+ * and tickless puts the actual sleep AFTER our hook returns (with PM
+ * already flipped back to ACTIVE), so all the real low-power time gets
+ * mis-attributed to ACTIVE in the stats.  A dedicated thread blocking
+ * in vTaskDelay(PM_STATE_RESIDENCY_MS) inside enter_state lets the
+ * tickless idle suppress ticks during the delay AND keeps PM in the
+ * chosen state for the whole interval, so update_stats() on wake sees
+ * the right delta.
+ *
+ * tskIDLE_PRIORITY + 1 sits one step above the kernel idle task so the
+ * poller only runs when no real work is ready, but is still pre-empted
+ * by every application thread.
+ */
+#define PM_IDLE_STACK_DEPTH (configMINIMAL_STACK_SIZE * 4)
+static StackType_t pm_idle_stack[PM_IDLE_STACK_DEPTH];
+static StaticTask_t pm_idle_tcb;
+static TaskHandle_t pm_idle_handle;
+static atomic_int pm_idle_running;
+
+static void pm_idle_entry(void *arg)
+{
+	(void)arg;
+	while (atomic_load_explicit(&pm_idle_running, memory_order_acquire)) {
+		ove_pm_idle_process();
+		taskYIELD();
+	}
+	vTaskDelete(NULL);
+}
+
+int ove_hal_pm_setup(void)
+{
+	if (atomic_load_explicit(&pm_idle_running, memory_order_acquire))
+		return OVE_OK;
+
+	atomic_store_explicit(&pm_idle_running, 1, memory_order_release);
+	pm_idle_handle = xTaskCreateStatic(pm_idle_entry, "ove_pm_idle",
+					   PM_IDLE_STACK_DEPTH, NULL,
+					   tskIDLE_PRIORITY + 1, pm_idle_stack,
+					   &pm_idle_tcb);
+	if (!pm_idle_handle) {
+		atomic_store_explicit(&pm_idle_running, 0, memory_order_release);
+		OVE_LOG_ERR("pm: failed to spawn idle thread");
+		return OVE_ERR_NO_MEMORY;
+	}
+	return OVE_OK;
+}
+
+void ove_hal_pm_teardown(void)
+{
+	if (!atomic_load_explicit(&pm_idle_running, memory_order_acquire))
+		return;
+	atomic_store_explicit(&pm_idle_running, 0, memory_order_release);
+	/* Thread self-deletes on exit; no join API. */
 }
 
 #endif /* CONFIG_OVE_PM */
