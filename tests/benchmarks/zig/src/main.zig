@@ -22,6 +22,7 @@
 const std = @import("std");
 const ove = @import("ove");
 const bench = @import("bench.zig");
+pub const cyccnt = @import("bench_cyccnt.zig");
 
 const volatile_int = std.atomic.Value(i32);
 

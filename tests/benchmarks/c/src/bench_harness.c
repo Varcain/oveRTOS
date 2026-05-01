@@ -7,12 +7,42 @@
  */
 
 #include "benchmark.h"
+#include "bench_cyccnt.h"
 #include "ove/ove.h"
 #include <stdlib.h>
 #include <string.h>
 
 #if defined(CONFIG_OVE_BENCHMARK_DISABLE_ICACHE) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "stm32f7xx.h" /* SCB_DisableICache */
+#endif
+
+/*
+ * Bench timer: on ARMv7-M targets read the DWT cycle counter directly
+ * so the per-bench-case measurement floor is identical across FreeRTOS,
+ * NuttX, and Zephyr.  On non-ARM (POSIX, sim) fall back to
+ * ove_time_get_ns since DWT does not exist.  The branch is selected at
+ * compile time; the hot path is one inline volatile load.
+ */
+#if BENCH_CYCCNT_AVAILABLE
+static inline uint64_t bench_timestamp(void)
+{
+	return (uint64_t)bench_cyccnt_read();
+}
+static inline uint64_t bench_elapsed_ns(uint64_t start, uint64_t end)
+{
+	return bench_cyccnt_diff_ns((uint32_t)start, (uint32_t)end);
+}
+#else
+static inline uint64_t bench_timestamp(void)
+{
+	uint64_t t = 0;
+	ove_time_get_ns(&t);
+	return t;
+}
+static inline uint64_t bench_elapsed_ns(uint64_t start, uint64_t end)
+{
+	return end - start;
+}
 #endif
 
 /* Diagnostic toggle: turn off the Cortex-M7 I-cache exactly once at the
@@ -29,6 +59,13 @@ static void bench_apply_diagnostics_once(void)
 		SCB_DisableICache();
 		icache_disabled = 1;
 		OVE_LOG_INF("[diag] Cortex-M7 I-cache DISABLED for this run");
+	}
+#endif
+#if BENCH_CYCCNT_AVAILABLE
+	static int cyccnt_inited = 0;
+	if (!cyccnt_inited) {
+		bench_cyccnt_init();
+		cyccnt_inited = 1;
 	}
 #endif
 }
@@ -178,17 +215,17 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 
 	/* Measurement.  For inner > 1, run() is called inner times per
 	 * timestamp pair and elapsed is divided by inner — amortises the
-	 * fixed ove_time_get_ns overhead across multiple operations on
-	 * sub-µs benchmarks (e.g. time_get_us_overhead). */
+	 * fixed timestamp overhead across multiple operations on sub-µs
+	 * benchmarks (e.g. time_get_us_overhead).  The DWT cycle-counter
+	 * read used on ARMv7-M is a single LDR (~5 ns at 216 MHz), much
+	 * cheaper than the per-RTOS ove_time_get_ns paths. */
 	for (unsigned int i = 0; i < iters; i++) {
-		uint64_t start = 0, end = 0;
-
-		ove_time_get_ns(&start);
+		uint64_t start = bench_timestamp();
 		for (unsigned int j = 0; j < inner; j++)
 			bc->run(NULL);
-		ove_time_get_ns(&end);
+		uint64_t end = bench_timestamp();
 
-		uint64_t elapsed = (end - start) / inner;
+		uint64_t elapsed = bench_elapsed_ns(start, end) / inner;
 
 		if (elapsed < result->min_ns)
 			result->min_ns = elapsed;

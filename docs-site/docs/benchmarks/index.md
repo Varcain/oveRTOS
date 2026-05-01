@@ -53,6 +53,13 @@ memory-constrained deployments. Heap mode is more ergonomic for prototyping.
 - **Iterations**: 1000 per latency case, 100 per long-running case
   (e.g. `delay_1ms`), 500 per context-switch / event-signal case
 - **Warmup**: 100 iterations dropped before measurement starts
+- **Timing**: on ARMv7-M targets the bench harness reads the DWT cycle
+  counter (`DWT->CYCCNT` at `0xE0001004`) directly via a single volatile
+  load — uniform across FreeRTOS / NuttX / Zephyr, so no per-RTOS
+  counter-read overhead leaks into the per-call deltas. Per-measurement
+  floor ≈ 50 ns (two LDRs at 216 MHz). On non-ARM targets (POSIX, sim)
+  the harness falls back to `ove_time_get_ns`. Source:
+  `tests/benchmarks/c/include/bench_cyccnt.h`.
 - **Statistics**: min, p50, p95, p99, max, trimmed mean (top 1% dropped),
   per-op nanoseconds; ops/sec computed from the trimmed mean
 - **Hot-path audit**: every reported binding has its hot-path disassembly
@@ -101,9 +108,12 @@ Looking across the reports below, you'll see the wrapper-vs-native deltas
 for the per-op hot paths typically sit in the single-digit-percent range.
 Some operations approach zero (mutex lock/unlock, semaphore take/give —
 wrappers are direct FFI passthroughs and inline cleanly under `-O2`).
-Others carry a binding-specific cost: Rust's `Result<T, E>` wrapping costs
-~150 ns per call, C++'s `std::optional` for storage adds a constructor
-guard, Zig's debug-build pinning check is compiled out in release.
+Others carry a binding-specific cost: Rust's `Result<T, E>` wrapping
+costs ~80–150 ns per call (visible cleanly now that the harness's own
+counter-read overhead is uniform across RTOSes), C++'s `std::optional`
+for storage adds an engaged-bit check that occasionally collides with
+the wrapped buffer's cache line, Zig's debug-build pinning check is
+compiled out in release.
 
 Where you see a delta exceeding ~10%, the report flags it explicitly in a
 "Cases with |Δ| > 10.0% vs C" section so the cost is visible rather than
