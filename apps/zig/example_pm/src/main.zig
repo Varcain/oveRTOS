@@ -20,10 +20,13 @@ const prio = ove.thread.prio;
 const pm = ove.pm;
 
 // ---------------------------------------------------------------------------
-// Simulated battery level
+// Simulated battery level + threads (file-scope so embedded storage outlives appMain)
 // ---------------------------------------------------------------------------
 
 var battery_pct: std.atomic.Value(i32) = std.atomic.Value(i32).init(85);
+
+var sensor_thread: Thread(4096) = undefined;
+var monitor_thread: Thread(4096) = undefined;
 
 // ---------------------------------------------------------------------------
 // Sensor thread: periodic read with domain management
@@ -35,14 +38,14 @@ fn sensorEntry() void {
     ove.log.inf("sensor: started", .{});
 
     while (true) {
-        pm.domainRequest(1) catch {}; // SENSOR = 1
+        pm.domainRequest(ove.ffi.OVE_PM_DOMAIN_SENSOR) catch {};
         pm.activity();
 
         ove.thread.sleepMs(50);
         reading +%= 17;
         ove.log.inf("sensor: reading = {d}", .{reading % 1000});
 
-        pm.domainRelease(1) catch {}; // SENSOR = 1
+        pm.domainRelease(ove.ffi.OVE_PM_DOMAIN_SENSOR) catch {};
 
         ove.thread.sleepMs(5000);
     }
@@ -103,19 +106,17 @@ fn appMain() void {
     };
 
     // Register wake sources
-    pm.wakeRegisterGpio(0, 13, 0x02) catch {}; // falling edge
+    pm.wakeRegisterGpio(0, 13, ove.ffi.OVE_GPIO_IRQ_FALLING) catch {};
     pm.wakeRegisterUart(0) catch {};
 
     // Set power budget target: 60% low-power
     pm.setBudget(6000) catch {};
 
     // Create threads
-    var sensor_thread: ove.Thread(4096) = undefined;
     sensor_thread.init("sensor", sensorEntry, prio.normal) catch {
         ove.log.err("Failed to create sensor thread", .{});
         return;
     };
-    var monitor_thread: ove.Thread(4096) = undefined;
     monitor_thread.init("monitor", monitorEntry, prio.low) catch {
         ove.log.err("Failed to create monitor thread", .{});
         return;
@@ -126,8 +127,6 @@ fn appMain() void {
     });
 
     ove.run();
-
-    pm.deinit();
 
     ove.log.inf("pm example (Zig): shutdown", .{});
 }

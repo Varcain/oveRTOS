@@ -13,11 +13,11 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 
 ## Key APIs demonstrated
 
-ove_audio_graph_*, ove_audio_device_source/sink, ove_model_create, ove_model_invoke, ove_model_input/output
+ove_audio_graph_*, ove_audio_device_source/sink, ove_model_init, ove_model_invoke, ove_model_input/output, ove_model_deinit
 
 ## Required Kconfig
 
-`CONFIG_OVE_AUDIO=y, CONFIG_OVE_INFER=y`
+`CONFIG_OVE_BSP=y, CONFIG_OVE_AUDIO=y, CONFIG_OVE_AUDIO_NODE_CONVERTER=y, CONFIG_OVE_INFER=y`
 
 ## How to build
 

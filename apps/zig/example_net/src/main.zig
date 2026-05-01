@@ -31,6 +31,9 @@ const is_posix = @hasDecl(ove.ffi, "CONFIG_OVE_RTOS_POSIX");
 var pass_count: u32 = 0;
 var fail_count: u32 = 0;
 
+// Net test thread — file-scope so embedded storage outlives appMain.
+var net_thread: ove.Thread(8192) = undefined;
+
 fn testCase(name: []const u8) void {
     ove.log.inf("  [TEST] {s}", .{name});
 }
@@ -504,7 +507,6 @@ fn netThread() void {
 fn appMain() void {
     ove.log.inf("Zig networking example: init", .{});
 
-    var net_thread: ove.Thread(8192) = undefined;
     net_thread.init("net-test", netThread, ove.thread.prio.normal) catch |e| {
         ove.log.err("Failed to create net thread: {d}", .{errCode(e)});
         return;

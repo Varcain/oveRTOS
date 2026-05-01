@@ -12,8 +12,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use ove::{Error, Thread};
+use core::sync::atomic::{AtomicU32, Ordering};
+use ove::Thread;
 
 ove::main!(app_main);
 

@@ -164,6 +164,5 @@ OVE_MAIN()
 
 	ove::run();
 
-	pm::deinit();
 	OVE_LOG_INF("pm example (C++): shutdown");
 }
