@@ -59,8 +59,8 @@ template <size_t StackSize = 0> class Thread
 	{
 #ifdef CONFIG_OVE_ZERO_HEAP
 		static_assert(StackSize > 0, "StackSize must be > 0 in zero-heap mode");
-		int err = ove_thread_init(&handle_, &storage_, name, entry, ctx,
-					  prio, StackSize, stack_);
+		int err = ove_thread_init(&handle_, &storage_, name, entry, ctx, prio, StackSize,
+					  stack_);
 #else
 		int err = ove_thread_create(&handle_, name, entry, ctx, prio, StackSize);
 #endif

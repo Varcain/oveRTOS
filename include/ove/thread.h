@@ -98,9 +98,9 @@ typedef enum {
  *
  * @see ove_thread_deinit, ove_thread_create
  */
-int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const char *name, ove_thread_fn entry, void *arg,
-		    ove_prio_t priority, size_t stack_size, void *stack);
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
+		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
+		    void *stack);
 
 /**
  * @brief Terminate and release a thread created with ove_thread_init().
@@ -137,8 +137,8 @@ int ove_thread_deinit(ove_thread_t handle);
  *
  * @see ove_thread_destroy
  */
-int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
-		      void *arg, ove_prio_t priority, size_t stack_size);
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
+		      ove_prio_t priority, size_t stack_size);
 
 /**
  * @brief Stop and free a thread created with ove_thread_create().

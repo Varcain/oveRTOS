@@ -138,10 +138,8 @@ int ove_hal_pm_setup(void)
 		return OVE_OK;
 
 	atomic_store_explicit(&pm_idle_running, 1, memory_order_release);
-	pm_idle_handle = xTaskCreateStatic(pm_idle_entry, "ove_pm_idle",
-					   PM_IDLE_STACK_DEPTH, NULL,
-					   tskIDLE_PRIORITY + 1, pm_idle_stack,
-					   &pm_idle_tcb);
+	pm_idle_handle = xTaskCreateStatic(pm_idle_entry, "ove_pm_idle", PM_IDLE_STACK_DEPTH, NULL,
+					   tskIDLE_PRIORITY + 1, pm_idle_stack, &pm_idle_tcb);
 	if (!pm_idle_handle) {
 		atomic_store_explicit(&pm_idle_running, 0, memory_order_release);
 		OVE_LOG_ERR("pm: failed to spawn idle thread");

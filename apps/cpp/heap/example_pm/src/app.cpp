@@ -134,10 +134,10 @@ OVE_MAIN()
 	pm::set_policy(battery_policy, &battery_pct);
 	pm::set_budget(6000);
 
-	auto sensor_th = std::make_unique<ove::Thread<4096>>(
-		sensor_thread, nullptr, OVE_PRIO_NORMAL, "sensor");
-	auto monitor_th = std::make_unique<ove::Thread<4096>>(
-		monitor_thread, nullptr, OVE_PRIO_LOW, "monitor");
+	auto sensor_th = std::make_unique<ove::Thread<4096>>(sensor_thread, nullptr,
+							     OVE_PRIO_NORMAL, "sensor");
+	auto monitor_th = std::make_unique<ove::Thread<4096>>(monitor_thread, nullptr, OVE_PRIO_LOW,
+							      "monitor");
 
 	OVE_LOG_INF("pm example (heap mode): ready (battery=%d%%)", battery_pct);
 

@@ -180,8 +180,8 @@ static int task_wrapper(int argc, char *argv[])
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn entry,
-			void *arg, ove_prio_t priority, size_t stack_size)
+static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn entry, void *arg,
+			ove_prio_t priority, size_t stack_size)
 {
 	char addr_str[20];
 	int pid;
@@ -233,9 +233,8 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 		 * tracker for the longer-term fix (nxtask_init with kernel-
 		 * thread launch sequence).
 		 */
-		pid = task_create(name ? name : "ove_thread",
-				  map_priority(priority), (int)stack_size, task_wrapper,
-				  argv_args);
+		pid = task_create(name ? name : "ove_thread", map_priority(priority),
+				  (int)stack_size, task_wrapper, argv_args);
 		if (pid < 0) {
 			nxsem_destroy(&t->done_sem);
 			return OVE_ERR_NO_MEMORY;
@@ -253,9 +252,9 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	return OVE_OK;
 }
 
-int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const char *name, ove_thread_fn entry, void *arg,
-		    ove_prio_t priority, size_t stack_size, void *stack)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
+		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
+		    void *stack)
 {
 	if (handle == NULL || storage == NULL || entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -315,8 +314,8 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
-		      void *arg, ove_prio_t priority, size_t stack_size)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
+		      ove_prio_t priority, size_t stack_size)
 {
 	struct ove_thread *t;
 	int ret;

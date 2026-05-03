@@ -139,14 +139,14 @@ void ove_main(void)
 
 	ove_thread_t sensor;
 	ove_thread_t monitor;
-	if (ove_thread_create(&sensor, "sensor", sensor_thread, NULL,
-			      OVE_PRIO_NORMAL, 4096) != OVE_OK) {
+	if (ove_thread_create(&sensor, "sensor", sensor_thread, NULL, OVE_PRIO_NORMAL, 4096) !=
+	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn sensor thread");
 		ove_pm_deinit();
 		return;
 	}
-	if (ove_thread_create(&monitor, "monitor", monitor_thread, NULL,
-			      OVE_PRIO_LOW, 4096) != OVE_OK) {
+	if (ove_thread_create(&monitor, "monitor", monitor_thread, NULL, OVE_PRIO_LOW, 4096) !=
+	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn monitor thread");
 		ove_thread_destroy(sensor);
 		ove_pm_deinit();

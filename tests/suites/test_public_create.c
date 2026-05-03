@@ -192,8 +192,7 @@ static void test_public_create_thread(void **state)
 	 * code, and Zephyr reserves a chunk for the MPU stack guard on top
 	 * of that — and the resulting overflow corrupts the k_thread struct,
 	 * faulting later in the cleanup path. */
-	int rc = ove_thread_create(&h, "pub_th", thread_entry_signal, NULL,
-				   OVE_PRIO_NORMAL, 4096);
+	int rc = ove_thread_create(&h, "pub_th", thread_entry_signal, NULL, OVE_PRIO_NORMAL, 4096);
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(h);
 

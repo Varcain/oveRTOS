@@ -143,9 +143,9 @@ static void *thread_wrapper(void *arg)
 	return NULL;
 }
 
-int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const char *name, ove_thread_fn entry, void *arg,
-		    ove_prio_t priority, size_t stack_size, void *stack)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
+		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
+		    void *stack)
 {
 	if (!handle || !storage || !entry) {
 		return OVE_ERR_INVALID_PARAM;
@@ -230,8 +230,8 @@ int ove_thread_deinit(ove_thread_t handle)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
-		      void *arg, ove_prio_t priority, size_t stack_size)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
+		      ove_prio_t priority, size_t stack_size)
 {
 	if (!handle || !entry) {
 		return OVE_ERR_INVALID_PARAM;

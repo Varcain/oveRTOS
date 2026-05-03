@@ -439,8 +439,8 @@ OVE_MAIN()
 {
 	OVE_LOG_INF("LVGL gallery (C++ heap mode): init");
 
-	auto gfx_thread = std::make_unique<ove::Thread<4096>>(
-		graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
+	auto gfx_thread = std::make_unique<ove::Thread<4096>>(graphics_thread, nullptr,
+							      OVE_PRIO_HIGH, "graphics");
 	(void)gfx_thread;
 
 	int ret = ove_lvgl_init();

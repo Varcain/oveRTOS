@@ -604,14 +604,12 @@ static void test_pm_domain_concurrent(void **state)
 
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_thread_init(&th, &t_stor, "dom_stress", domain_stress_entry,
-			(void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO,
-			OVE_PRIO_NORMAL, 2048, t_stack);
+			(void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO, OVE_PRIO_NORMAL, 2048, t_stack);
 #else
 	(void)t_stor;
 	(void)t_stack;
 	ove_thread_create(&th, "dom_stress", domain_stress_entry,
-			  (void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO,
-			  OVE_PRIO_NORMAL, 2048);
+			  (void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO, OVE_PRIO_NORMAL, 2048);
 #endif
 
 	/* Main thread also hammers same domain */

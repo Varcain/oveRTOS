@@ -180,8 +180,8 @@ static void test_stack_usage(void **state)
 static void test_create_null_handle(void **state)
 {
 	(void)state;
-	assert_int_equal(ove_thread_create(NULL, "t11", entry_set_flag, NULL,
-					   OVE_PRIO_NORMAL, 4096),
+	assert_int_equal(ove_thread_create(NULL, "t11", entry_set_flag, NULL, OVE_PRIO_NORMAL,
+					   4096),
 			 OVE_ERR_INVALID_PARAM);
 }
 
@@ -256,9 +256,8 @@ static void test_create_misaligned_stack(void **state)
 	static ove_thread_storage_t misaligned_th_storage;
 
 	ove_thread_t h = NULL;
-	int rc = ove_thread_init(&h, &misaligned_th_storage, "misaligned",
-				 entry_set_flag, NULL, OVE_PRIO_NORMAL,
-				 sizeof(misaligned_buf) - 8,
+	int rc = ove_thread_init(&h, &misaligned_th_storage, "misaligned", entry_set_flag, NULL,
+				 OVE_PRIO_NORMAL, sizeof(misaligned_buf) - 8,
 				 misaligned_buf + 1 /* deliberately off by 1 */);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 	assert_null(h);

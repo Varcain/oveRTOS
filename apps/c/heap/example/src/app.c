@@ -204,20 +204,20 @@ void ove_main(void)
 		goto cleanup_mutex;
 	}
 
-	ret = ove_thread_create(&graphics_thread_handle, "graphics", graphics_thread,
-				NULL, OVE_PRIO_HIGH, 4096);
+	ret = ove_thread_create(&graphics_thread_handle, "graphics", graphics_thread, NULL,
+				OVE_PRIO_HIGH, 4096);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn graphics: %d", ret);
 		goto cleanup_timer;
 	}
-	ret = ove_thread_create(&producer_thread_handle, "producer", producer_thread,
-				NULL, OVE_PRIO_NORMAL, 4096);
+	ret = ove_thread_create(&producer_thread_handle, "producer", producer_thread, NULL,
+				OVE_PRIO_NORMAL, 4096);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn producer: %d", ret);
 		goto cleanup_graphics;
 	}
-	ret = ove_thread_create(&consumer_thread_handle, "consumer", consumer_thread,
-				NULL, OVE_PRIO_NORMAL, 4096);
+	ret = ove_thread_create(&consumer_thread_handle, "consumer", consumer_thread, NULL,
+				OVE_PRIO_NORMAL, 4096);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn consumer: %d", ret);
 		goto cleanup_producer;

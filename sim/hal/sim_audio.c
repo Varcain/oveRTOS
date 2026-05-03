@@ -219,14 +219,13 @@ static int sim_sink_start(void *ctx)
 	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
 	sc->running = 1;
 #ifdef OVE_HEAP_THREAD
-	return ove_thread_create(&sc->pump_thread, "audio-pump", sim_sink_pump,
-				 sc, OVE_PRIO_HIGH, 4096);
+	return ove_thread_create(&sc->pump_thread, "audio-pump", sim_sink_pump, sc, OVE_PRIO_HIGH,
+				 4096);
 #else
 	static ove_thread_storage_t pump_th_storage;
 	static uint8_t __attribute__((aligned(8))) pump_th_stack[4096];
-	return ove_thread_init(&sc->pump_thread, &pump_th_storage, "audio-pump",
-			       sim_sink_pump, sc, OVE_PRIO_HIGH,
-			       sizeof(pump_th_stack), pump_th_stack);
+	return ove_thread_init(&sc->pump_thread, &pump_th_storage, "audio-pump", sim_sink_pump, sc,
+			       OVE_PRIO_HIGH, sizeof(pump_th_stack), pump_th_stack);
 #endif
 }
 

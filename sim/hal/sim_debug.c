@@ -294,16 +294,16 @@ int ove_sim_debug_register(void)
 	 * leaves a generous margin; POSIX's default pthread stack handled
 	 * this silently, FreeRTOS honours the request literally. */
 #ifdef OVE_HEAP_THREAD
-	int ret = ove_thread_create(&debug_thread_handle, "sim_debug",
-				    debug_thread_fn, &debug_ctx, OVE_PRIO_LOW, 16384);
+	int ret = ove_thread_create(&debug_thread_handle, "sim_debug", debug_thread_fn, &debug_ctx,
+				    OVE_PRIO_LOW, 16384);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] debug thread create failed: %d\n", ret);
 #else
 	static ove_thread_storage_t debug_th_storage;
 	static uint8_t __attribute__((aligned(8))) debug_th_stack[16384];
-	int ret = ove_thread_init(&debug_thread_handle, &debug_th_storage,
-				  "sim_debug", debug_thread_fn, &debug_ctx,
-				  OVE_PRIO_LOW, sizeof(debug_th_stack), debug_th_stack);
+	int ret = ove_thread_init(&debug_thread_handle, &debug_th_storage, "sim_debug",
+				  debug_thread_fn, &debug_ctx, OVE_PRIO_LOW, sizeof(debug_th_stack),
+				  debug_th_stack);
 	if (ret != OVE_OK)
 		fprintf(stderr, "[sim] debug thread init failed: %d\n", ret);
 #endif

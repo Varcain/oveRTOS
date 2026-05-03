@@ -125,9 +125,9 @@ static void thread_wrapper(void *p1, void *p2, void *p3)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const char *name, ove_thread_fn entry, void *arg,
-		    ove_prio_t priority, size_t stack_size, void *stack)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
+		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
+		    void *stack)
 {
 	k_tid_t tid;
 
@@ -173,8 +173,8 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 	storage->next = NULL;
 
 	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
-			      (void *)entry, arg, (void *)storage,
-			      map_priority(priority), 0, K_NO_WAIT);
+			      (void *)entry, arg, (void *)storage, map_priority(priority), 0,
+			      K_NO_WAIT);
 
 	if (name != NULL) {
 		k_thread_name_set(tid, name);
@@ -206,8 +206,8 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
-		      void *arg, ove_prio_t priority, size_t stack_size)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
+		      ove_prio_t priority, size_t stack_size)
 {
 	struct ove_thread *info;
 	k_thread_stack_t *stack;
@@ -239,8 +239,8 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	info->name = name;
 	info->next = NULL;
 
-	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry,
-			      arg, (void *)info, map_priority(priority), 0, K_NO_WAIT);
+	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry, arg,
+			      (void *)info, map_priority(priority), 0, K_NO_WAIT);
 
 	if (name != NULL) {
 		k_thread_name_set(tid, name);

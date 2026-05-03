@@ -409,8 +409,8 @@ void ove_main(void)
 
 	/* Heap-allocate the inference thread via ove_thread_create. */
 	ove_thread_t infer_th;
-	if (ove_thread_create(&infer_th, "infer", infer_thread, NULL,
-			      OVE_PRIO_NORMAL, 8192) != OVE_OK) {
+	if (ove_thread_create(&infer_th, "infer", infer_thread, NULL, OVE_PRIO_NORMAL, 8192) !=
+	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn infer thread");
 		return;
 	}

@@ -193,12 +193,12 @@ OVE_MAIN()
 	value_mutex = std::make_unique<ove::Mutex>();
 	ui_timer = std::make_unique<ove::Timer>(ui_timer_cb, nullptr, 200);
 
-	gfx_thread = std::make_unique<ove::Thread<4096>>(graphics_thread, nullptr,
-							 OVE_PRIO_HIGH, "graphics");
-	prod_thread = std::make_unique<ove::Thread<4096>>(producer_thread, nullptr,
-							  OVE_PRIO_NORMAL, "producer");
-	cons_thread = std::make_unique<ove::Thread<4096>>(consumer_thread, nullptr,
-							  OVE_PRIO_NORMAL, "consumer");
+	gfx_thread = std::make_unique<ove::Thread<4096>>(graphics_thread, nullptr, OVE_PRIO_HIGH,
+							 "graphics");
+	prod_thread = std::make_unique<ove::Thread<4096>>(producer_thread, nullptr, OVE_PRIO_NORMAL,
+							  "producer");
+	cons_thread = std::make_unique<ove::Thread<4096>>(consumer_thread, nullptr, OVE_PRIO_NORMAL,
+							  "consumer");
 
 	int ret = ove_lvgl_init();
 	if (ret != OVE_OK) {

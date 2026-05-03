@@ -57,9 +57,8 @@ static enum pm_state to_zephyr_state(ove_pm_state_t state)
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
-	int32_t sleep_ms = (expected_idle_ms == OVE_WAIT_FOREVER)
-				   ? PM_STATE_RESIDENCY_MS
-				   : (int32_t)expected_idle_ms;
+	int32_t sleep_ms = (expected_idle_ms == OVE_WAIT_FOREVER) ? PM_STATE_RESIDENCY_MS
+								  : (int32_t)expected_idle_ms;
 
 #ifdef CONFIG_PM
 	struct pm_state_info info = {
@@ -163,10 +162,8 @@ int ove_hal_pm_setup(void)
 
 	atomic_set(&pm_idle_running, 1);
 	pm_idle_tid = k_thread_create(&pm_idle_thread_data, pm_idle_stack,
-				      K_THREAD_STACK_SIZEOF(pm_idle_stack),
-				      pm_idle_entry, NULL, NULL, NULL,
-				      K_LOWEST_APPLICATION_THREAD_PRIO,
-				      0, K_NO_WAIT);
+				      K_THREAD_STACK_SIZEOF(pm_idle_stack), pm_idle_entry, NULL,
+				      NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
 	if (!pm_idle_tid) {
 		atomic_set(&pm_idle_running, 0);
 		OVE_LOG_ERR("pm: failed to spawn idle thread");
