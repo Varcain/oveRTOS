@@ -261,9 +261,122 @@ config OVE_NET_TLS_HEAP_SIZE
     default 32768
     depends on OVE_NET_TLS
     help
-      Size of the static buffer used by mbedTLS for internal
-      allocations in zero-heap mode. 32KB is sufficient for
-      TLS 1.2 with RSA-2048. Increase for larger certificates.
+      Size of the BSS-resident buffer mbedTLS allocates from in
+      zero-heap mode (mbedtls_memory_buffer_alloc_init).  32 KB is
+      sufficient for TLS 1.2 with RSA-2048; budget ~24 KB peak per
+      concurrent session.  Pool exhaustion returns OVE_ERR_NO_MEMORY,
+      never spills to libc malloc.
+
+comment "lwIP bounded-pool sizing (FreeRTOS only)"
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+
+config OVE_NET_LWIP_MEM_SIZE
+    int "lwIP heap size (bytes)"
+    default 16384
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      MEM_SIZE.  BSS-resident heap lwIP uses for pbufs, segment
+      lists, and other dynamic buffers.  MEM_LIBC_MALLOC is pinned
+      to 0 in lwipopts_common.h so this is a hard ceiling — lwIP
+      never falls back to libc malloc.
+
+config OVE_NET_LWIP_PBUF_POOL_SIZE
+    int "lwIP PBUF pool count"
+    default 16
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      PBUF_POOL_SIZE.  Number of fixed-size pbufs in the receive
+      pool.  Drives RX bandwidth ceiling.
+
+config OVE_NET_LWIP_PBUF_BUFSIZE
+    int "lwIP PBUF buffer size (bytes)"
+    default 1536
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      PBUF_POOL_BUFSIZE.  Bytes per pbuf — sized to fit one MTU.
+
+config OVE_NET_LWIP_NUM_TCP_PCB
+    int "lwIP active TCP PCB count"
+    default 16
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      MEMP_NUM_TCP_PCB.  Maximum simultaneous active TCP
+      connections.  Caller hits OVE_ERR_NO_MEMORY when exhausted.
+
+config OVE_NET_LWIP_NUM_TCP_PCB_LISTEN
+    int "lwIP listening TCP PCB count"
+    default 4
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      MEMP_NUM_TCP_PCB_LISTEN.  Maximum listening sockets (e.g.
+      one per HTTPD/MQTT broker port).
+
+config OVE_NET_LWIP_NUM_UDP_PCB
+    int "lwIP UDP PCB count"
+    default 8
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      MEMP_NUM_UDP_PCB.  Maximum simultaneous UDP sockets.
+
+config OVE_NET_LWIP_NUM_NETCONN
+    int "lwIP netconn count"
+    default 16
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      MEMP_NUM_NETCONN.  Upper bound on concurrent socket-API
+      handles (one netconn per BSD socket).
+
+config OVE_NET_LWIP_DNS_TABLE_SIZE
+    int "lwIP DNS cache size"
+    default 4
+    depends on OVE_NET && OVE_RTOS_FREERTOS
+    help
+      DNS_TABLE_SIZE.  Number of resolved hostnames cached.
+
+comment "Zephyr net stack bounded-pool sizing"
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+
+config OVE_ZEPHYR_NET_MAX_CONN
+    int "Active connection slots"
+    default 16
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_MAX_CONN.  Concurrent TCP/UDP connections.
+
+config OVE_ZEPHYR_NET_MAX_CONTEXTS
+    int "Net context (socket) slots"
+    default 16
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_MAX_CONTEXTS.  Maximum BSD-socket-like contexts.
+
+config OVE_ZEPHYR_NET_PKT_RX_COUNT
+    int "RX net_pkt slab count"
+    default 14
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_PKT_RX_COUNT.  Receive packet descriptor pool.
+
+config OVE_ZEPHYR_NET_PKT_TX_COUNT
+    int "TX net_pkt slab count"
+    default 14
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_PKT_TX_COUNT.  Transmit packet descriptor pool.
+
+config OVE_ZEPHYR_NET_BUF_RX_COUNT
+    int "RX net_buf fragment count"
+    default 36
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_BUF_RX_COUNT.  Receive payload buffer pool.
+
+config OVE_ZEPHYR_NET_BUF_TX_COUNT
+    int "TX net_buf fragment count"
+    default 36
+    depends on OVE_NET && OVE_RTOS_ZEPHYR
+    help
+      CONFIG_NET_BUF_TX_COUNT.  Transmit payload buffer pool.
 
 config OVE_NET_HTTP_MAX_RESPONSE
     int "HTTP client max response buffer size (bytes)"

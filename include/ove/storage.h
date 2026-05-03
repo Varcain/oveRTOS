@@ -792,6 +792,87 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_UART */
 
+#ifdef CONFIG_OVE_NET
+/**
+ * @brief Declare and auto-initialise a static network interface.
+ *
+ * The constructor only allocates the @c ove_netif_t handle and its
+ * storage; @c ove_netif_up() with a config must still be called by
+ * the application to bring the link up (DHCP vs static IP is a
+ * runtime decision).
+ *
+ * @param name  Variable name for the resulting @c ove_netif_t handle.
+ */
+#define OVE_NETIF_DEFINE_STATIC(name)                         \
+	static ove_netif_storage_t _##name##_storage;         \
+	static ove_netif_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                   \
+	int _err = ove_netif_init(&name, &_##name##_storage); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+
+/**
+ * @brief Declare a static socket storage variable named @p name.
+ *
+ * The socket family / type are decided at @c ove_socket_open() time, so
+ * this macro only produces the storage; the application supplies the
+ * handle and calls @c ove_socket_open(&handle, &storage, af, type).
+ */
+#define OVE_SOCKET_DEFINE(name) static ove_socket_storage_t name
+#endif /* CONFIG_OVE_NET */
+
+#ifdef CONFIG_OVE_NET_TLS
+/**
+ * @brief Declare and auto-initialise a static TLS session.
+ *
+ * The mbedTLS context structures are embedded in the storage; their
+ * internal allocations come from the @c CONFIG_OVE_NET_TLS_HEAP_SIZE
+ * static buffer (zero-heap mode) or the system allocator (heap mode).
+ *
+ * @param name  Variable name for the resulting @c ove_tls_t handle.
+ */
+#define OVE_TLS_DEFINE_STATIC(name)                         \
+	static ove_tls_storage_t _##name##_storage;         \
+	static ove_tls_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                 \
+	int _err = ove_tls_init(&name, &_##name##_storage); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_NET_TLS */
+
+#ifdef CONFIG_OVE_NET_HTTP
+/**
+ * @brief Declare and auto-initialise a static HTTP client.
+ *
+ * Response body and headers borrow into a buffer of
+ * @c CONFIG_OVE_NET_HTTP_MAX_RESPONSE bytes embedded in the storage
+ * (zero-heap mode); the borrow is valid until the next request.
+ *
+ * @param name  Variable name for the resulting @c ove_http_client_t handle.
+ */
+#define OVE_HTTP_CLIENT_DEFINE_STATIC(name)                         \
+	static ove_http_client_storage_t _##name##_storage;         \
+	static ove_http_client_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                         \
+	int _err = ove_http_client_init(&name, &_##name##_storage); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_NET_HTTP */
+
+#ifdef CONFIG_OVE_NET_MQTT
+/**
+ * @brief Declare and auto-initialise a static MQTT client.
+ *
+ * Per-connection RX/TX buffers (@c CONFIG_OVE_NET_MQTT_RX_BUF /
+ * @c CONFIG_OVE_NET_MQTT_TX_BUF) are embedded in the storage.
+ *
+ * @param name  Variable name for the resulting @c ove_mqtt_client_t handle.
+ */
+#define OVE_MQTT_CLIENT_DEFINE_STATIC(name)                         \
+	static ove_mqtt_client_storage_t _##name##_storage;         \
+	static ove_mqtt_client_t name;                              \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                         \
+	int _err = ove_mqtt_client_init(&name, &_##name##_storage); \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_NET_MQTT */
+
 /** @} */ /* ove_storage_define_static */
 
 /** @} */ /* ove_storage */

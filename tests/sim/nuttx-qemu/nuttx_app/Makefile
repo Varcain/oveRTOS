@@ -129,5 +129,12 @@ endif
 # object root requires patching Application.mk's $(OBJS_DIR) handling; not
 # upstream-friendly. A future fix is to copy CSRCS into a build-private dir
 # before the include.
+#
+# Worse: Application.mk's $(PREFIX).depend rule resolves SRCS via VPATH,
+# so absolute-path CSRCS (everything except MAINSRC=main.c) get NO header
+# dependency tracking — the scattered .o silently goes stale when an OVE
+# header changes. The CLI's _clean_scattered_nuttx_objs() in
+# config/ove-cli/ove/test.py wipes the per-build-variant scattered objects
+# before each `make`, so a stale .o can't shadow updated headers.
 
 include $(APPDIR)/Application.mk

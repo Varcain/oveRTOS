@@ -686,3 +686,69 @@ macro_rules! event_handler {
             $crate::lvgl::EventHandler::new($cell, $fn);
     };
 }
+
+/// Create a [`crate::net_tls::Session`] that works in both heap and zero-heap
+/// modes.  In zero-heap mode the session draws its mbedTLS state from a
+/// file-scope static and the per-protocol static buffer
+/// (`CONFIG_OVE_NET_TLS_HEAP_SIZE`).
+#[cfg(has_net_tls)]
+#[macro_export]
+macro_rules! tls_session {
+    () => {{
+        #[cfg(not(zero_heap))]
+        {
+            $crate::net_tls::Session::new().unwrap()
+        }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_tls_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::net_tls::Session::from_static(core::ptr::addr_of_mut!(_S)) }
+                .unwrap()
+        }
+    }};
+}
+
+/// Create a [`crate::net_http::Client`] that works in both heap and zero-heap
+/// modes.  In zero-heap mode the response body and headers borrow into the
+/// client's embedded `_resp_buf[CONFIG_OVE_NET_HTTP_MAX_RESPONSE]` and are
+/// valid until the next request.
+#[cfg(has_net_http)]
+#[macro_export]
+macro_rules! http_client {
+    () => {{
+        #[cfg(not(zero_heap))]
+        {
+            $crate::net_http::Client::new().unwrap()
+        }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_http_client_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::net_http::Client::from_static(core::ptr::addr_of_mut!(_S)) }
+                .unwrap()
+        }
+    }};
+}
+
+/// Create a [`crate::net_mqtt::Client`] that works in both heap and zero-heap
+/// modes.  In zero-heap mode the per-connection RX/TX buffers
+/// (`CONFIG_OVE_NET_MQTT_RX_BUF` / `CONFIG_OVE_NET_MQTT_TX_BUF`) live in the
+/// client storage.
+#[cfg(has_net_mqtt)]
+#[macro_export]
+macro_rules! mqtt_client {
+    () => {{
+        #[cfg(not(zero_heap))]
+        {
+            $crate::net_mqtt::Client::new().unwrap()
+        }
+        #[cfg(zero_heap)]
+        {
+            static mut _S: $crate::ffi::ove_mqtt_client_storage_t =
+                unsafe { core::mem::zeroed() };
+            unsafe { $crate::net_mqtt::Client::from_static(core::ptr::addr_of_mut!(_S)) }
+                .unwrap()
+        }
+    }};
+}

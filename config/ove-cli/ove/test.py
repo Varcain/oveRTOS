@@ -677,6 +677,53 @@ def _clean_gcda(root):
         logger.debug("Removed %d stale .gcda file(s) under %s", removed, root)
 
 
+def _clean_scattered_nuttx_objs(ove_dir, build_base):
+    """Scrub scattered .o/.gcno files written next to OVE_DIR sources by
+    NuttX's Application.mk for the build at `build_base`.
+
+    Application.mk's $(PREFIX).depend rule only emits header dependencies
+    for sources reachable via VPATH (effectively only main.c here); the
+    other CSRCS entries — tests/suites/*.c, backends/nuttx/*.c,
+    backends/common/*.c, tests/backends/stub/*.c, dl/cmocka/src/cmocka.c —
+    have no header tracking. When their headers change (e.g. an API
+    rename in include/ove/*.h), the scattered .o silently goes stale and
+    the link references symbols that no longer exist.
+
+    Pre-build cleanup is the cheapest defense: rebuilding ~30 OVE-side .c
+    files from scratch costs a few seconds; chasing a phantom undefined
+    symbol costs an hour. The kernel build under build_base is untouched
+    (we skip output/), so NuttX's own incremental build still works."""
+    # Application.mk mangles the absolute build path into the .o filename
+    # by replacing '/' with '.'. Reproduce the same mangling so we match
+    # only objects belonging to *this* build_base — leaves objects from
+    # parallel build variants (qemu-nuttx vs nuttx_coverage) intact.
+    mangled = build_base.lstrip("/").replace("/", ".")
+    needle = f".{mangled}.nuttx-apps.external.ove_test"
+    suffixes = (".o", ".gcno", ".gcda")
+    output_root = os.path.join(ove_dir, "output")
+    removed = 0
+    for dirpath, dirnames, files in os.walk(ove_dir):
+        # Don't descend into output/ — those .o files are the legitimate
+        # build outputs (main.c's object, kernel sources, etc.) and have
+        # working dep tracking.
+        if dirpath == ove_dir:
+            dirnames[:] = [d for d in dirnames if d != "output"]
+        for f in files:
+            if f.endswith(suffixes) and needle in f:
+                try:
+                    os.unlink(os.path.join(dirpath, f))
+                    removed += 1
+                except OSError:
+                    pass
+        # Stop walking once we've left ove_dir (paranoia; os.walk doesn't
+        # follow symlinks by default).
+        if not dirpath.startswith(ove_dir):
+            dirnames[:] = []
+    if removed:
+        logger.debug("Removed %d stale scattered NuttX object(s) for %s",
+                     removed, build_base)
+
+
 def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
                     coverage=False):
     """Shared driver for test_nuttx and test_nuttx_coverage.
@@ -783,6 +830,7 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
 
     # Build
     nuttx_env["OVE_DIR"] = ove_dir
+    _clean_scattered_nuttx_objs(ove_dir, build_base)
     if coverage:
         nuttx_env["OVE_COVERAGE"] = "1"
         _clean_gcda(ove_dir)
@@ -1659,6 +1707,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False):
     run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
 
     nuttx_env["OVE_DIR"] = ove_dir
+    _clean_scattered_nuttx_objs(ove_dir, build_base)
     if coverage:
         nuttx_env["OVE_COVERAGE"] = "1"
     run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)

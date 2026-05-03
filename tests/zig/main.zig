@@ -77,22 +77,19 @@ fn expectErrorIs(result: anytype, comptime expected: anyerror) !void {
 // ---------------------------------------------------------------------------
 
 fn testMutexCreate() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     m.deinit();
 }
 
 fn testMutexLockUnlock() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
     try m.lock(1000);
     m.unlock();
 }
 
 fn testMutexContentionTimeout() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
     try m.lock(1000);
     // Same thread, non-recursive: should timeout
@@ -102,8 +99,7 @@ fn testMutexContentionTimeout() !void {
 }
 
 fn testMutexLockZeroTimeout() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
     // First lock should succeed even with 0 timeout
     try m.lock(0);
@@ -111,14 +107,12 @@ fn testMutexLockZeroTimeout() !void {
 }
 
 fn testMutexRaiiDrop() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     m.deinit();
 }
 
 fn testMutexGuardAutoUnlock() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
     const guard = try m.acquire(1000);
     guard.release();
@@ -128,8 +122,7 @@ fn testMutexGuardAutoUnlock() !void {
 }
 
 fn testMutexGuardTimeout() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
     try m.lock(1000);
     // Lock held, try-lock should fail
@@ -139,8 +132,7 @@ fn testMutexGuardTimeout() !void {
 }
 
 fn testMutexErrorMapping() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
     try m.lock(1000);
     const result = m.lock(0);
@@ -162,11 +154,9 @@ fn counterThread() void {
 
 fn testMutexSharedCounter() !void {
     shared_counter = 0;
-    counter_mutex = undefined;
-    try counter_mutex.init();
+    counter_mutex = try ove.Mutex.create();
     defer counter_mutex.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("cnt", counterThread, prio.normal);
+    var t = try ove.Thread(4096).create("cnt", counterThread, prio.normal);
     // Main thread also increments
     var i: u32 = 0;
     while (i < 1000) : (i += 1) {
@@ -184,14 +174,12 @@ fn testMutexSharedCounter() !void {
 // ---------------------------------------------------------------------------
 
 fn testRecursiveMutexCreate() !void {
-    var m: ove.RecursiveMutex = undefined;
-    try m.init();
+    var m = try ove.RecursiveMutex.create();
     m.deinit();
 }
 
 fn testRecursiveMutexLockTwice() !void {
-    var m: ove.RecursiveMutex = undefined;
-    try m.init();
+    var m = try ove.RecursiveMutex.create();
     defer m.deinit();
     try m.lock(1000);
     try m.lock(1000);
@@ -200,8 +188,7 @@ fn testRecursiveMutexLockTwice() !void {
 }
 
 fn testRecursiveMutexMatchingUnlocks() !void {
-    var m: ove.RecursiveMutex = undefined;
-    try m.init();
+    var m = try ove.RecursiveMutex.create();
     defer m.deinit();
     try m.lock(1000);
     try m.lock(1000);
@@ -215,14 +202,12 @@ fn testRecursiveMutexMatchingUnlocks() !void {
 }
 
 fn testRecursiveMutexRaiiDrop() !void {
-    var m: ove.RecursiveMutex = undefined;
-    try m.init();
+    var m = try ove.RecursiveMutex.create();
     m.deinit();
 }
 
 fn testRecursiveMutexGuardAutoUnlock() !void {
-    var m: ove.RecursiveMutex = undefined;
-    try m.init();
+    var m = try ove.RecursiveMutex.create();
     defer m.deinit();
     const guard = try m.acquire(1000);
     guard.release();
@@ -232,8 +217,7 @@ fn testRecursiveMutexGuardAutoUnlock() !void {
 }
 
 fn testRecursiveMutexGuardNested() !void {
-    var m: ove.RecursiveMutex = undefined;
-    try m.init();
+    var m = try ove.RecursiveMutex.create();
     defer m.deinit();
     const g1 = try m.acquire(1000);
     const g2 = try m.acquire(1000);
@@ -246,42 +230,36 @@ fn testRecursiveMutexGuardNested() !void {
 // ---------------------------------------------------------------------------
 
 fn testSemaphoreCreateBinary() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(1, 1);
+    var s = try ove.Semaphore.create(1, 1);
     s.deinit();
 }
 
 fn testSemaphoreCreateCounting() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(0, 10);
+    var s = try ove.Semaphore.create(0, 10);
     s.deinit();
 }
 
 fn testSemaphoreTakeInitialOne() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(1, 10);
+    var s = try ove.Semaphore.create(1, 10);
     defer s.deinit();
     try s.take(0);
 }
 
 fn testSemaphoreTakeTimeout() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(0, 10);
+    var s = try ove.Semaphore.create(0, 10);
     defer s.deinit();
     try expectErrorIs(s.take(10), ove.Error.Timeout);
 }
 
 fn testSemaphoreGiveThenTake() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(0, 10);
+    var s = try ove.Semaphore.create(0, 10);
     defer s.deinit();
     s.give();
     try s.take(0);
 }
 
 fn testSemaphoreCounting() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(0, 10);
+    var s = try ove.Semaphore.create(0, 10);
     defer s.deinit();
     s.give();
     s.give();
@@ -300,18 +278,15 @@ fn semProducerThread() void {
 }
 
 fn testSemaphoreProducerConsumer() !void {
-    sem_for_thread = undefined;
-    try sem_for_thread.init(0, 1);
+    sem_for_thread = try ove.Semaphore.create(0, 1);
     defer sem_for_thread.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("semp", semProducerThread, prio.normal);
+    var t = try ove.Thread(4096).create("semp", semProducerThread, prio.normal);
     try sem_for_thread.take(500);
     t.deinit();
 }
 
 fn testSemaphoreRaiiDrop() !void {
-    var s: ove.Semaphore = undefined;
-    try s.init(1, 1);
+    var s = try ove.Semaphore.create(1, 1);
     s.deinit();
 }
 
@@ -320,22 +295,19 @@ fn testSemaphoreRaiiDrop() !void {
 // ---------------------------------------------------------------------------
 
 fn testEventCreate() !void {
-    var e: ove.Event = undefined;
-    try e.init();
+    var e = try ove.Event.create();
     e.deinit();
 }
 
 fn testEventSignalThenWait() !void {
-    var e: ove.Event = undefined;
-    try e.init();
+    var e = try ove.Event.create();
     defer e.deinit();
     e.signal();
     try e.wait(1000);
 }
 
 fn testEventWaitTimeout() !void {
-    var e: ove.Event = undefined;
-    try e.init();
+    var e = try ove.Event.create();
     defer e.deinit();
     try expectErrorIs(e.wait(10), ove.Error.Timeout);
 }
@@ -348,26 +320,22 @@ fn eventSignalThread() void {
 }
 
 fn testEventCrossThread() !void {
-    event_for_thread = undefined;
-    try event_for_thread.init();
+    event_for_thread = try ove.Event.create();
     defer event_for_thread.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("esig", eventSignalThread, prio.normal);
+    var t = try ove.Thread(4096).create("esig", eventSignalThread, prio.normal);
     try event_for_thread.wait(500);
     t.deinit();
 }
 
 fn testEventSignalFromIsr() !void {
-    var e: ove.Event = undefined;
-    try e.init();
+    var e = try ove.Event.create();
     defer e.deinit();
     e.signalFromIsr();
     try e.wait(1000);
 }
 
 fn testEventAutoReset() !void {
-    var e: ove.Event = undefined;
-    try e.init();
+    var e = try ove.Event.create();
     defer e.deinit();
     e.signal();
     try e.wait(100);
@@ -376,8 +344,7 @@ fn testEventAutoReset() !void {
 }
 
 fn testEventRaiiDrop() !void {
-    var e: ove.Event = undefined;
-    try e.init();
+    var e = try ove.Event.create();
     e.deinit();
 }
 
@@ -386,8 +353,7 @@ fn testEventRaiiDrop() !void {
 // ---------------------------------------------------------------------------
 
 fn testCondVarCreate() !void {
-    var cv: ove.CondVar = undefined;
-    try cv.init();
+    var cv = try ove.CondVar.create();
     cv.deinit();
 }
 
@@ -397,21 +363,18 @@ var cv_flag: bool = false;
 
 fn cvWaiterThread() void {
     cv_mutex_for_thread.lock(ove.wait_forever) catch return;
-    cv_for_thread.wait(&cv_mutex_for_thread, ove.wait_forever) catch {};
+    cv_for_thread.wait(cv_mutex_for_thread, ove.wait_forever) catch {};
     cv_flag = true;
     cv_mutex_for_thread.unlock();
 }
 
 fn testCondVarSignalWakesOne() !void {
     cv_flag = false;
-    cv_mutex_for_thread = undefined;
-    try cv_mutex_for_thread.init();
+    cv_mutex_for_thread = try ove.Mutex.create();
     defer cv_mutex_for_thread.deinit();
-    cv_for_thread = undefined;
-    try cv_for_thread.init();
+    cv_for_thread = try ove.CondVar.create();
     defer cv_for_thread.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("cvw", cvWaiterThread, prio.normal);
+    var t = try ove.Thread(4096).create("cvw", cvWaiterThread, prio.normal);
     ove.thread.sleepMs(50);
     cv_for_thread.signal();
     ove.thread.sleepMs(50);
@@ -420,14 +383,12 @@ fn testCondVarSignalWakesOne() !void {
 }
 
 fn testCondVarWaitTimeout() !void {
-    var m: ove.Mutex = undefined;
-    try m.init();
+    var m = try ove.Mutex.create();
     defer m.deinit();
-    var cv: ove.CondVar = undefined;
-    try cv.init();
+    var cv = try ove.CondVar.create();
     defer cv.deinit();
     try m.lock(1000);
-    try expectErrorIs(cv.wait(&m, 10), ove.Error.Timeout);
+    try expectErrorIs(cv.wait(m, 10), ove.Error.Timeout);
     m.unlock();
 }
 
@@ -445,17 +406,14 @@ fn cvProducerThread() void {
 
 fn testCondVarProducerConsumer() !void {
     cv_prod_flag = false;
-    cv_prod_mutex = undefined;
-    try cv_prod_mutex.init();
+    cv_prod_mutex = try ove.Mutex.create();
     defer cv_prod_mutex.deinit();
-    cv_prod_cv = undefined;
-    try cv_prod_cv.init();
+    cv_prod_cv = try ove.CondVar.create();
     defer cv_prod_cv.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("cvp", cvProducerThread, prio.normal);
+    var t = try ove.Thread(4096).create("cvp", cvProducerThread, prio.normal);
     try cv_prod_mutex.lock(ove.wait_forever);
     while (!cv_prod_flag) {
-        try cv_prod_cv.wait(&cv_prod_mutex, 500);
+        try cv_prod_cv.wait(cv_prod_mutex, 500);
     }
     cv_prod_mutex.unlock();
     try expect(cv_prod_flag);
@@ -464,17 +422,14 @@ fn testCondVarProducerConsumer() !void {
 
 fn testCondVarWaitForever() !void {
     cv_prod_flag = false;
-    cv_prod_mutex = undefined;
-    try cv_prod_mutex.init();
+    cv_prod_mutex = try ove.Mutex.create();
     defer cv_prod_mutex.deinit();
-    cv_prod_cv = undefined;
-    try cv_prod_cv.init();
+    cv_prod_cv = try ove.CondVar.create();
     defer cv_prod_cv.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("cvf", cvProducerThread, prio.normal);
+    var t = try ove.Thread(4096).create("cvf", cvProducerThread, prio.normal);
     try cv_prod_mutex.lock(ove.wait_forever);
     while (!cv_prod_flag) {
-        try cv_prod_cv.wait(&cv_prod_mutex, ove.wait_forever);
+        try cv_prod_cv.wait(cv_prod_mutex, ove.wait_forever);
     }
     cv_prod_mutex.unlock();
     try expect(cv_prod_flag);
@@ -482,8 +437,7 @@ fn testCondVarWaitForever() !void {
 }
 
 fn testCondVarRaiiDrop() !void {
-    var cv: ove.CondVar = undefined;
-    try cv.init();
+    var cv = try ove.CondVar.create();
     cv.deinit();
 }
 
@@ -496,14 +450,12 @@ const Q2 = ove.Queue(i32, 2);
 const Q8 = ove.Queue(u32, 8);
 
 fn testQueueCreateDestroy() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     q.deinit();
 }
 
 fn testQueueSendReceiveSingle() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 42;
     try q.send(&val, 1000);
@@ -512,8 +464,7 @@ fn testQueueSendReceiveSingle() !void {
 }
 
 fn testQueueFifoOrder() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     defer q.deinit();
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
@@ -527,8 +478,7 @@ fn testQueueFifoOrder() !void {
 }
 
 fn testQueueSendFullTimesOut() !void {
-    var q: Q2 = undefined;
-    try q.init();
+    var q = try Q2.create();
     defer q.deinit();
     const a: i32 = 1;
     const b: i32 = 2;
@@ -539,15 +489,13 @@ fn testQueueSendFullTimesOut() !void {
 }
 
 fn testQueueReceiveEmptyTimesOut() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     defer q.deinit();
     try expectErrorIs(q.receive(10), ove.Error.Timeout);
 }
 
 fn testQueueSendFromIsr() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 99;
     try q.sendFromIsr(&val);
@@ -556,8 +504,7 @@ fn testQueueSendFromIsr() !void {
 }
 
 fn testQueueReceiveFromIsr() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 77;
     try q.send(&val, 100);
@@ -578,11 +525,9 @@ fn queueConsumerThread() void {
 
 fn testQueueProducerConsumer() !void {
     queue_sum = 0;
-    consumer_queue = undefined;
-    try consumer_queue.init();
+    consumer_queue = try Q8.create();
     defer consumer_queue.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("qcon", queueConsumerThread, prio.normal);
+    var t = try ove.Thread(4096).create("qcon", queueConsumerThread, prio.normal);
     var i: u32 = 1;
     while (i <= 5) : (i += 1) {
         try consumer_queue.send(&i, 1000);
@@ -596,8 +541,7 @@ const Pair = extern struct { a: i32, b: i32 };
 const QPair = ove.Queue(Pair, 4);
 
 fn testQueueStructItem() !void {
-    var q: QPair = undefined;
-    try q.init();
+    var q = try QPair.create();
     defer q.deinit();
     const item: Pair = .{ .a = 10, .b = 20 };
     try q.send(&item, 100);
@@ -607,8 +551,7 @@ fn testQueueStructItem() !void {
 }
 
 fn testQueueSendWaitForever() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 123;
     try q.send(&val, ove.wait_forever);
@@ -617,8 +560,7 @@ fn testQueueSendWaitForever() !void {
 }
 
 fn testQueueRaiiDrop() !void {
-    var q: Q5 = undefined;
-    try q.init();
+    var q = try Q5.create();
     q.deinit();
 }
 
@@ -626,11 +568,9 @@ const QU8 = ove.Queue(u8, 4);
 const QU32 = ove.Queue(u32, 4);
 
 fn testQueueTypeSafety() !void {
-    var q8: QU8 = undefined;
-    try q8.init();
+    var q8 = try QU8.create();
     defer q8.deinit();
-    var q32: QU32 = undefined;
-    try q32.init();
+    var q32 = try QU32.create();
     defer q32.deinit();
     const v8: u8 = 0xFF;
     const v32: u32 = 0xDEADBEEF;
@@ -651,21 +591,18 @@ fn timerCallback() void {
 }
 
 fn testTimerCreateDestroyOneshot() !void {
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 100, .one_shot);
+    var t = try ove.Timer.create(timerCallback, 100, .one_shot);
     t.deinit();
 }
 
 fn testTimerCreateDestroyPeriodic() !void {
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(timerCallback, 50, .periodic);
     t.deinit();
 }
 
 fn testTimerOneshotFiresOnce() !void {
     timer_count = 0;
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 50, .one_shot);
+    var t = try ove.Timer.create(timerCallback, 50, .one_shot);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(200);
@@ -674,8 +611,7 @@ fn testTimerOneshotFiresOnce() !void {
 
 fn testTimerPeriodicFiresMultiple() !void {
     timer_count = 0;
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(timerCallback, 50, .periodic);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(250);
@@ -685,8 +621,7 @@ fn testTimerPeriodicFiresMultiple() !void {
 
 fn testTimerStopPreventsCallbacks() !void {
     timer_count = 0;
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(timerCallback, 50, .periodic);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(150);
@@ -699,8 +634,7 @@ fn testTimerStopPreventsCallbacks() !void {
 
 fn testTimerResetRestarts() !void {
     timer_count = 0;
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 200, .one_shot);
+    var t = try ove.Timer.create(timerCallback, 200, .one_shot);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(100);
@@ -714,8 +648,7 @@ fn testTimerResetRestarts() !void {
 
 fn testTimerDoubleStart() !void {
     timer_count = 0;
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 100, .periodic);
+    var t = try ove.Timer.create(timerCallback, 100, .periodic);
     defer t.deinit();
     try t.start();
     try t.start();
@@ -724,8 +657,7 @@ fn testTimerDoubleStart() !void {
 }
 
 fn testTimerRaiiDrop() !void {
-    var t: ove.Timer = undefined;
-    try t.init(timerCallback, 100, .periodic);
+    var t = try ove.Timer.create(timerCallback, 100, .periodic);
     t.deinit();
 }
 
@@ -737,8 +669,7 @@ fn ctxTimerCallback(ctx: *u32) void {
 
 fn testTimerContextCallback() !void {
     ctx_count = 0;
-    var t: ove.Timer = undefined;
-    try t.initWithContext(u32, &ctx_count, ctxTimerCallback, 50, .one_shot);
+    var t = try ove.Timer.createWithContext(u32, &ctx_count, ctxTimerCallback, 50, .one_shot);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(150);
@@ -757,8 +688,7 @@ fn threadEntry() void {
 
 fn testThreadCreateDestroy() !void {
     thread_ran = false;
-    var t: ove.Thread(4096) = undefined;
-    try t.init("test", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).create("test", threadEntry, prio.normal);
     ove.thread.sleepMs(50);
     try expect(thread_ran);
     t.deinit();
@@ -782,16 +712,14 @@ fn testThreadGetSelf() !void {
 }
 
 fn testThreadSetPriority() !void {
-    var t: ove.Thread(4096) = undefined;
-    try t.init("prio", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).create("prio", threadEntry, prio.normal);
     defer t.deinit();
     t.setPriority(prio.high);
     ove.thread.sleepMs(50);
 }
 
 fn testThreadGetStateRunning() !void {
-    var t: ove.Thread(4096) = undefined;
-    try t.init("stat", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).create("stat", threadEntry, prio.normal);
     defer t.deinit();
     const state = t.getState();
     // Should be one of Running, Ready, Blocked, or Terminated
@@ -806,16 +734,14 @@ fn terminatingThread() void {
 
 fn testThreadGetStateTerminated() !void {
     terminated_flag = false;
-    var t: ove.Thread(4096) = undefined;
-    try t.init("term", terminatingThread, prio.normal);
+    var t = try ove.Thread(4096).create("term", terminatingThread, prio.normal);
     ove.thread.sleepMs(100);
     try expect(terminated_flag);
     t.deinit();
 }
 
 fn testThreadStackUsage() !void {
-    var t: ove.Thread(4096) = undefined;
-    try t.init("stk", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).create("stk", threadEntry, prio.normal);
     ove.thread.sleepMs(50);
     _ = t.getStackUsage();
     t.deinit();
@@ -830,8 +756,7 @@ fn suspendableThread() void {
 
 fn testThreadSuspendResume() !void {
     suspended_flag = false;
-    var t: ove.Thread(4096) = undefined;
-    try t.init("susp", suspendableThread, prio.normal);
+    var t = try ove.Thread(4096).create("susp", suspendableThread, prio.normal);
     ove.thread.sleepMs(50);
     t.suspendThread();
     ove.thread.sleepMs(100);
@@ -843,8 +768,7 @@ fn testThreadSuspendResume() !void {
 }
 
 fn testThreadRuntimeStats() !void {
-    var t: ove.Thread(4096) = undefined;
-    try t.init("rts", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).create("rts", threadEntry, prio.normal);
     ove.thread.sleepMs(50);
     // May return error.NotSupported on some backends
     _ = t.getRuntimeStats() catch {};
@@ -852,8 +776,7 @@ fn testThreadRuntimeStats() !void {
 }
 
 fn testThreadRaiiDrop() !void {
-    var t: ove.Thread(4096) = undefined;
-    try t.init("raii", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).create("raii", threadEntry, prio.normal);
     ove.thread.sleepMs(50);
     t.deinit();
 }
@@ -866,14 +789,12 @@ const BIT_0: u32 = 0x01;
 const BIT_1: u32 = 0x02;
 
 fn testEventGroupCreateDestroy() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     eg.deinit();
 }
 
 fn testEventGroupSetBits() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     const bits = eg.getBits();
@@ -881,8 +802,7 @@ fn testEventGroupSetBits() !void {
 }
 
 fn testEventGroupClearBits() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     _ = eg.clearBits(BIT_1);
@@ -892,15 +812,13 @@ fn testEventGroupClearBits() !void {
 }
 
 fn testEventGroupGetBits() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     try expectEqual(u32, 0, eg.getBits());
 }
 
 fn testEventGroupWaitAll() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     const result = try eg.waitBits(BIT_0 | BIT_1, ove.eventgroup.WAIT_ALL, 100);
@@ -908,8 +826,7 @@ fn testEventGroupWaitAll() !void {
 }
 
 fn testEventGroupWaitAny() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0);
     const result = try eg.waitBits(BIT_0 | BIT_1, 0, 100);
@@ -917,15 +834,13 @@ fn testEventGroupWaitAny() !void {
 }
 
 fn testEventGroupWaitTimeout() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     try expectErrorIs(eg.waitBits(BIT_0, 0, 10), ove.Error.Timeout);
 }
 
 fn testEventGroupClearOnExit() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     _ = try eg.waitBits(BIT_0, ove.eventgroup.CLEAR_ON_EXIT, 100);
@@ -934,8 +849,7 @@ fn testEventGroupClearOnExit() !void {
 }
 
 fn testEventGroupSetBitsFromIsr() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBitsFromIsr(BIT_0);
     const bits = eg.getBits();
@@ -950,19 +864,16 @@ fn egSetterThread() void {
 }
 
 fn testEventGroupCrossThread() !void {
-    eg_for_thread = undefined;
-    try eg_for_thread.init();
+    eg_for_thread = try ove.EventGroup.create();
     defer eg_for_thread.deinit();
-    var t: ove.Thread(4096) = undefined;
-    try t.init("egst", egSetterThread, prio.normal);
+    var t = try ove.Thread(4096).create("egst", egSetterThread, prio.normal);
     const result = try eg_for_thread.waitBits(BIT_0, 0, 500);
     try expect(result & BIT_0 != 0);
     t.deinit();
 }
 
 fn testEventGroupRaiiDrop() !void {
-    var eg: ove.EventGroup = undefined;
-    try eg.init();
+    var eg = try ove.EventGroup.create();
     eg.deinit();
 }
 
@@ -1159,21 +1070,18 @@ fn testNvsBinaryData() !void {
 // ---------------------------------------------------------------------------
 
 fn testWatchdogCreateDestroy() !void {
-    var wd: ove.Watchdog = undefined;
-    try wd.init(5000);
+    var wd = try ove.Watchdog.create(5000);
     wd.deinit();
 }
 
 fn testWatchdogStart() !void {
-    var wd: ove.Watchdog = undefined;
-    try wd.init(5000);
+    var wd = try ove.Watchdog.create(5000);
     defer wd.deinit();
     try wd.start();
 }
 
 fn testWatchdogFeed() !void {
-    var wd: ove.Watchdog = undefined;
-    try wd.init(5000);
+    var wd = try ove.Watchdog.create(5000);
     defer wd.deinit();
     try wd.start();
     try wd.feed();
@@ -1181,14 +1089,12 @@ fn testWatchdogFeed() !void {
 }
 
 fn testWatchdogRaiiDrop() !void {
-    var wd: ove.Watchdog = undefined;
-    try wd.init(5000);
+    var wd = try ove.Watchdog.create(5000);
     wd.deinit();
 }
 
 fn testWatchdogFeedMultiple() !void {
-    var wd: ove.Watchdog = undefined;
-    try wd.init(5000);
+    var wd = try ove.Watchdog.create(5000);
     defer wd.deinit();
     try wd.start();
     var i: u32 = 0;
@@ -1474,14 +1380,12 @@ fn testFsDirOpenNonexistentFails() !void {
 // ---------------------------------------------------------------------------
 
 fn testStreamCreateDestroy() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     s.deinit();
 }
 
 fn testStreamSendReceive() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     defer s.deinit();
     const data = [_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
     const sent = try s.send(&data, 1000);
@@ -1493,8 +1397,7 @@ fn testStreamSendReceive() !void {
 }
 
 fn testStreamBytesAvailable() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     defer s.deinit();
     try expect(s.bytesAvailable() == 0);
     _ = try s.send("abc", 1000);
@@ -1502,8 +1405,7 @@ fn testStreamBytesAvailable() !void {
 }
 
 fn testStreamReset() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     defer s.deinit();
     _ = try s.send("data", 1000);
     try expect(s.bytesAvailable() > 0);
@@ -1512,16 +1414,14 @@ fn testStreamReset() !void {
 }
 
 fn testStreamSendFromIsr() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     defer s.deinit();
     const sent = try s.sendFromIsr("isr");
     try expectEqual(usize, 3, sent);
 }
 
 fn testStreamReceiveFromIsr() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     defer s.deinit();
     _ = try s.send("isr", 1000);
     var buf: [16]u8 = undefined;
@@ -1530,8 +1430,7 @@ fn testStreamReceiveFromIsr() !void {
 }
 
 fn testStreamRaiiDrop() !void {
-    var s: ove.Stream(256) = undefined;
-    try s.init(1);
+    var s = try ove.Stream(256).create(1);
     s.deinit();
 }
 
@@ -1546,24 +1445,20 @@ fn workHandler() void {
 }
 
 fn testWorkqueueCreateDestroy() !void {
-    var wq: ove.Workqueue(4096) = undefined;
-    try wq.init("test\x00", prio.normal);
+    var wq = try ove.Workqueue(4096).create("test\x00", prio.normal);
     wq.deinit();
 }
 
 fn testWorkCreateDestroy() !void {
-    var work: ove.Work = undefined;
-    try work.init(workHandler);
+    var work = try ove.Work.create(workHandler);
     work.deinit();
 }
 
 fn testWorkSubmit() !void {
     wq_count = 0;
-    var wq: ove.Workqueue(4096) = undefined;
-    try wq.init("sub\x00", prio.normal);
+    var wq = try ove.Workqueue(4096).create("sub\x00", prio.normal);
     defer wq.deinit();
-    var work: ove.Work = undefined;
-    try work.init(workHandler);
+    var work = try ove.Work.create(workHandler);
     defer work.deinit();
     try wq.submit(&work);
     ove.thread.sleepMs(100);
@@ -1572,11 +1467,9 @@ fn testWorkSubmit() !void {
 
 fn testWorkSubmitDelayed() !void {
     wq_count = 0;
-    var wq: ove.Workqueue(4096) = undefined;
-    try wq.init("del\x00", prio.normal);
+    var wq = try ove.Workqueue(4096).create("del\x00", prio.normal);
     defer wq.deinit();
-    var work: ove.Work = undefined;
-    try work.init(workHandler);
+    var work = try ove.Work.create(workHandler);
     defer work.deinit();
     try wq.submitDelayed(&work, 50);
     ove.thread.sleepMs(10);
@@ -1586,24 +1479,20 @@ fn testWorkSubmitDelayed() !void {
 }
 
 fn testWorkCancel() !void {
-    var wq: ove.Workqueue(4096) = undefined;
-    try wq.init("can\x00", prio.normal);
+    var wq = try ove.Workqueue(4096).create("can\x00", prio.normal);
     defer wq.deinit();
-    var work: ove.Work = undefined;
-    try work.init(workHandler);
+    var work = try ove.Work.create(workHandler);
     defer work.deinit();
     _ = work.cancel() catch {};
 }
 
 fn testWorkqueueRaiiDrop() !void {
     {
-        var wq: ove.Workqueue(4096) = undefined;
-        try wq.init("raii\x00", prio.normal);
+        var wq = try ove.Workqueue(4096).create("raii\x00", prio.normal);
         wq.deinit();
     }
     {
-        var work: ove.Work = undefined;
-        try work.init(workHandler);
+        var work = try ove.Work.create(workHandler);
         work.deinit();
     }
 }
