@@ -99,19 +99,19 @@ Each board's CMakeLists selects a backend by including the appropriate subdirect
 
 ## Zero-heap mode
 
-Defining `CONFIG_OVE_ZERO_HEAP` switches the `_create()` / `_destroy()` functions from heap-backed implementations to GCC statement-expression macros that auto-generate per-call-site static storage. Application code using `_create()` / `_destroy()` works without modification in either mode:
+Defining `CONFIG_OVE_ZERO_HEAP` removes the `_create()` / `_destroy()` declarations entirely — they are gated behind `OVE_HEAP_*` macros which are only defined in heap mode. Apps target either the heap surface or the static surface; calling `_create()` in a zero-heap build is a link error.
 
 ```c
-// Works in both heap and zero-heap mode — primary API
+// Heap mode only — link error if CONFIG_OVE_ZERO_HEAP is set
 ove_queue_t q;
 ove_queue_create(&q, sizeof(uint32_t), 8);
 ```
 
-`_init()` / `_deinit()` remain available for explicit storage control (arrays, loops, structs), and `OVE_*_DEFINE_STATIC()` macros provide file-scope auto-initialized declarations:
+For zero-heap apps, or for code that must compile in both modes, use `OVE_*_DEFINE_STATIC()` for file-scope objects or `_init()` / `_deinit()` with caller-supplied storage:
 
 ```c
-// Explicit storage control — works in both modes
+// Works in both modes — declares storage in BSS and auto-initialises before main()
 OVE_QUEUE_DEFINE_STATIC(q, sizeof(uint32_t), 8);
 ```
 
-In zero-heap mode, size parameters (e.g. queue `item_size`/`max_items`) must be compile-time constants, and each `_create()` call site produces exactly one static object.
+`OVE_*_DEFINE_STATIC()` always expands to `static ove_*_storage_t s; ove_*_init(&handle, &s, …)` regardless of mode, so size parameters must be compile-time constants.

@@ -273,14 +273,16 @@ void consumer_entry(void *arg)
 
 ## API Reference
 
+> `_create()` / `_destroy()` are gated behind `OVE_HEAP_SYNC` and unavailable in zero-heap mode. For zero-heap apps (or code that compiles in both modes), use `_init()` with caller-supplied storage or the `OVE_*_DEFINE_STATIC()` macros.
+
 ### Mutex
 
 | Function | Description |
 |----------|-------------|
 | `ove_mutex_init(mtx, storage)` | Initialise a non-recursive mutex from caller-supplied static storage. |
 | `ove_mutex_deinit(mtx)` | Release resources; does not free static storage. |
-| `ove_mutex_create(mtx)` | Allocate and initialise a mutex (heap or zero-heap macro). |
-| `ove_mutex_destroy(mtx)` | Destroy and free a mutex created with `ove_mutex_create()`. |
+| `ove_mutex_create(mtx)` | Allocate and initialise a mutex (heap mode only; gated by `OVE_HEAP_SYNC`). |
+| `ove_mutex_destroy(mtx)` | Destroy and free a mutex created with `ove_mutex_create()` (heap mode only). |
 | `ove_mutex_lock(mtx, timeout_ms)` | Acquire the mutex. Blocks up to `timeout_ms` ms; pass `OVE_WAIT_FOREVER` to block indefinitely. Returns `OVE_ERR_TIMEOUT` if the deadline expires. |
 | `ove_mutex_unlock(mtx)` | Release the mutex. Must be called by the thread that acquired it. |
 
@@ -289,8 +291,8 @@ void consumer_entry(void *arg)
 | Function | Description |
 |----------|-------------|
 | `ove_recursive_mutex_init(mtx, storage)` | Initialise a recursive mutex from static storage. |
-| `ove_recursive_mutex_create(mtx)` | Allocate and initialise a recursive mutex (heap or zero-heap macro). |
-| `ove_recursive_mutex_destroy(mtx)` | Destroy and free a recursive mutex. |
+| `ove_recursive_mutex_create(mtx)` | Allocate and initialise a recursive mutex (heap mode only; gated by `OVE_HEAP_SYNC`). |
+| `ove_recursive_mutex_destroy(mtx)` | Destroy and free a recursive mutex (heap mode only). |
 | `ove_recursive_mutex_lock(mtx, timeout_ms)` | Acquire one level of the recursive mutex. May be called multiple times by the same thread. |
 | `ove_recursive_mutex_unlock(mtx)` | Release one level. The mutex is fully released when the count reaches zero. |
 
@@ -300,8 +302,8 @@ void consumer_entry(void *arg)
 |----------|-------------|
 | `ove_sem_init(sem, storage, initial, max)` | Initialise a counting semaphore from static storage with the given initial and maximum count. |
 | `ove_sem_deinit(sem)` | Release resources; does not free static storage. |
-| `ove_sem_create(sem, initial, max)` | Allocate and initialise a semaphore (heap or zero-heap macro). |
-| `ove_sem_destroy(sem)` | Destroy and free a semaphore created with `ove_sem_create()`. |
+| `ove_sem_create(sem, initial, max)` | Allocate and initialise a semaphore (heap mode only; gated by `OVE_HEAP_SYNC`). |
+| `ove_sem_destroy(sem)` | Destroy and free a semaphore created with `ove_sem_create()` (heap mode only). |
 | `ove_sem_take(sem, timeout_ms)` | Decrement the count. Blocks up to `timeout_ms` ms if count is zero. Returns `OVE_ERR_TIMEOUT` on expiry. |
 | `ove_sem_give(sem)` | Increment the count, potentially unblocking a waiting thread. Safe to call from normal thread context. |
 
@@ -311,8 +313,8 @@ void consumer_entry(void *arg)
 |----------|-------------|
 | `ove_event_init(evt, storage)` | Initialise a binary event from static storage. Starts in the unsignalled state. |
 | `ove_event_deinit(evt)` | Release resources; does not free static storage. |
-| `ove_event_create(evt)` | Allocate and initialise an event (heap or zero-heap macro). |
-| `ove_event_destroy(evt)` | Destroy and free an event created with `ove_event_create()`. |
+| `ove_event_create(evt)` | Allocate and initialise an event (heap mode only; gated by `OVE_HEAP_SYNC`). |
+| `ove_event_destroy(evt)` | Destroy and free an event created with `ove_event_create()` (heap mode only). |
 | `ove_event_wait(evt, timeout_ms)` | Block until the event is signalled or timeout expires. The event is auto-reset (consumed) on success. |
 | `ove_event_signal(evt)` | Signal the event from thread context, unblocking one waiter. |
 | `ove_event_signal_from_isr(evt)` | ISR-safe signal; may trigger a context switch after the interrupt exits. |
@@ -323,8 +325,8 @@ void consumer_entry(void *arg)
 |----------|-------------|
 | `ove_condvar_init(cv, storage)` | Initialise a condition variable from static storage. |
 | `ove_condvar_deinit(cv)` | Release resources; does not free static storage. |
-| `ove_condvar_create(cv)` | Allocate and initialise a condition variable (heap or zero-heap macro). |
-| `ove_condvar_destroy(cv)` | Destroy and free a condition variable created with `ove_condvar_create()`. |
+| `ove_condvar_create(cv)` | Allocate and initialise a condition variable (heap mode only; gated by `OVE_HEAP_SYNC`). |
+| `ove_condvar_destroy(cv)` | Destroy and free a condition variable created with `ove_condvar_create()` (heap mode only). |
 | `ove_condvar_wait(cv, mtx, timeout_ms)` | Atomically release `mtx` and sleep. Re-acquires `mtx` before returning. |
 | `ove_condvar_signal(cv)` | Wake one waiting thread. Signal is lost if no thread is waiting. |
 | `ove_condvar_broadcast(cv)` | Wake all threads waiting on the condition variable. |

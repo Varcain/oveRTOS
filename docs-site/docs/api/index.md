@@ -54,14 +54,14 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 
 ## Allocation strategies
 
-`_create()` / `_destroy()` are the **primary API** and work regardless of the `CONFIG_OVE_ZERO_HEAP` setting:
+oveRTOS exposes two distinct allocation APIs, sharing the same `_init()` foundation:
 
-- **Heap mode** (default) — `_create()` allocates from the RTOS heap.
-- **Zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`) — `_create()` becomes a GCC statement-expression macro that auto-generates per-call-site static storage and calls `_init()`. Size parameters (queue `item_size`/`max_items`, stream size, thread `stack_sz`) must be compile-time constants, and each call site produces exactly one static object.
+- **Heap mode** (default) — `_create()` / `_destroy()` allocate and free from the RTOS heap. These declarations are gated behind `OVE_HEAP_*` macros and are unavailable when `CONFIG_OVE_ZERO_HEAP=y`.
+- **Zero-heap mode** (`CONFIG_OVE_ZERO_HEAP=y`) — `_create()` / `_destroy()` are not declared. Apps use `_init()` / `_deinit()` with caller-supplied storage, or `OVE_*_DEFINE_STATIC()` for file-scope objects. Calling a `_create()` symbol in a zero-heap build is a link error.
 
-`_init()` / `_deinit()` remain available for **explicit storage control** — use them when objects live in arrays, loops, or structs where per-call-site macro expansion is not appropriate.
+`_init()` / `_deinit()` work in both modes and are the right choice for objects living in arrays, loops, or structs where the caller decides storage placement.
 
-The `OVE_*_DEFINE_STATIC()` macros (e.g. `OVE_QUEUE_DEFINE_STATIC`, `OVE_THREAD_DEFINE_STATIC`) combine storage declaration and init into a single declaration at file scope, and work in both modes.
+The `OVE_*_DEFINE_STATIC()` macros (e.g. `OVE_QUEUE_DEFINE_STATIC`, `OVE_THREAD_DEFINE_STATIC`) declare a static storage object plus a handle, and register a constructor that calls `_init()` before `main()`. They expand to the same code in both modes, so file-scope objects compile portably across the heap/zero-heap split. Size parameters (`item_size`, `max_items`, stream size, stack size) must be compile-time constants.
 
 ## Error codes
 

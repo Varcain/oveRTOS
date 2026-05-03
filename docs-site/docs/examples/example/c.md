@@ -1,41 +1,40 @@
 # Basic Example — C
 
-Source: `apps/c/example/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_c/){:target="_blank"}**
+Source: `apps/c/heap/example/src/app.c` (heap mode) and `apps/c/zeroheap/example/src/app.c` (zero-heap mode) | **[WASM Demo](https://varcain.github.io/oveRTOS/example_c/){:target="_blank"}**
 
-The C example demonstrates the oveRTOS C API using a producer-consumer pattern with optional LVGL display output. It uses `OVE_*_DEFINE_STATIC()` macros for file-scope object declarations, which expand to a true static allocation in both heap and zero-heap modes — the same source compiles unchanged across all supported backends and modes.
+The C example demonstrates a producer-consumer pattern with optional LVGL display output. Two sibling apps share the same logic but pick different allocation strategies. Heap mode uses `_create()` calls inside `ove_main()`; zero-heap mode uses `OVE_*_DEFINE_STATIC()` macros at file scope.
 
-## File-scope static declarations
+## Heap mode — `_create()`
 
-The `OVE_*_DEFINE_STATIC()` macros declare a handle, allocate static storage, and register a constructor that initialises it before `main()`:
+`apps/c/heap/example/src/app.c` allocates handles inside `ove_main()` from the RTOS heap. Sizes can be runtime values:
+
+```c
+ove_queue_t counter_queue;
+ove_mutex_t value_mutex;
+ove_thread_t producer_thread_handle;
+
+ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
+ove_mutex_create(&value_mutex);
+ove_thread_create(&producer_thread_handle, "producer", producer_thread, NULL,
+                  OVE_PRIO_NORMAL, 4096);
+```
+
+`_create()` / `_destroy()` are gated behind `OVE_HEAP_*` macros and unavailable in zero-heap builds — calling them produces a link error.
+
+## Zero-heap mode — `OVE_*_DEFINE_STATIC()`
+
+`apps/c/zeroheap/example/src/app.c` declares the same objects at file scope. Each macro emits a `static ove_*_storage_t` plus a handle, and registers a constructor that calls `_init()` before `main()`:
 
 ```c
 OVE_QUEUE_DEFINE_STATIC(counter_queue, sizeof(uint32_t), 8);
 OVE_MUTEX_DEFINE_STATIC(value_mutex);
-OVE_TIMER_DEFINE_STATIC(ui_timer, ui_timer_cb, NULL, 200, 0);
-
-struct ove_thread_desc desc = {
-    .name = "producer",
-    .entry = producer_thread,
-    .arg = NULL,
-    .priority = OVE_PRIO_NORMAL,
-};
-ove_thread_create(&thread_handle, 4096, &desc);
+OVE_THREAD_DEFINE_STATIC(producer_thread_handle, 4096, producer_thread, NULL,
+                         OVE_PRIO_NORMAL, "producer");
 ```
 
-In heap mode, `_create()` allocates from the RTOS heap. In zero-heap mode, each `_create()` call site becomes a GCC statement-expression macro that auto-generates static storage.
+`OVE_*_DEFINE_STATIC()` always expands to the static-storage form regardless of build mode, so the same source also compiles cleanly in heap mode. Size parameters must be compile-time constants.
 
-### Alternative allocation strategies
-
-For **file-scope auto-initialized declarations**, the `OVE_*_DEFINE_STATIC()` macros declare a handle and initialize it before `main()`:
-
-```c
-OVE_QUEUE_DEFINE_STATIC(counter_queue, sizeof(uint32_t), 8);
-OVE_MUTEX_DEFINE_STATIC(value_mutex);
-OVE_THREAD_DEFINE_STATIC(prod_thread, 4096, producer_thread, NULL,
-                          OVE_PRIO_NORMAL, "producer");
-```
-
-For **explicit storage control**, use `_init()` / `_deinit()` with caller-supplied storage buffers.
+For **arrays, loops, or struct-embedded objects**, use `_init()` / `_deinit()` with caller-supplied storage. Both modes support that path.
 
 ## Producer thread
 
