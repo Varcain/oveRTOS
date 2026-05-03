@@ -22,10 +22,11 @@
  * the portable layer provides.
  *
  * Two allocation strategies are supported:
- * - @c _create() / @c _destroy() — unified API (heap or zero-heap macro).
- *   In zero-heap mode @c rx_buf_size in the config must be a compile-time
- *   constant.
- * - @c _init() / @c _deinit() — explicit storage with caller-supplied RX buffer.
+ * - @c _create() / @c _destroy() — heap-allocated.  Available only when
+ *   @c OVE_HEAP_UART is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ * - @c _init() / @c _deinit() — caller-supplied storage and RX buffer.
+ *   Available in both modes.  See @c OVE_UART_DEFINE_STATIC for a one-step
+ *   static helper.
  *
  * @note Requires @c CONFIG_OVE_UART.
  * @{
@@ -105,15 +106,7 @@ void ove_uart_deinit(ove_uart_t uart);
 int ove_uart_create(ove_uart_t *uart, const struct ove_uart_cfg *cfg);
 /** @brief Destroy a UART handle previously created with `ove_uart_create`. */
 void ove_uart_destroy(ove_uart_t uart);
-#elif !defined(__ZIG_CIMPORT__)
-#define ove_uart_create(puart, cfg)                                    \
-	({                                                             \
-		static ove_uart_storage_t _ove_stor_;                  \
-		static uint8_t _ove_buf_[(cfg)->rx_buf_size];          \
-		ove_uart_init((puart), &_ove_stor_, _ove_buf_, (cfg)); \
-	})
-#define ove_uart_destroy(uart) ove_uart_deinit(uart)
-#endif
+#endif /* OVE_HEAP_UART */
 
 /* ── Operations ──────────────────────────────────────────────────── */
 

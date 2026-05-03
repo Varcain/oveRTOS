@@ -81,37 +81,83 @@ pub const Response = struct {
 
 /// HTTP/1.1 client.
 ///
+/// Heap mode (value-returning):
+///
 /// ```zig
-/// var http: ove.HttpClient = undefined;
-/// try http.init();
+/// var http = try ove.net_http.Client.create();
 /// defer http.deinit();
 /// var resp = try http.get("http://example.com/");
 /// defer resp.destroy();
 /// ```
-pub const Client = struct {
-    storage: pin.Storage(c.ove_http_client_storage_t),
+///
+/// Zero-heap mode (two-phase init):
+///
+/// ```zig
+/// var http: ove.net_http.Client = undefined;
+/// try http.init();
+/// defer http.deinit();
+/// ```
+pub const Client = if (pin.zero_heap) ZeroHeapClient else HeapClient;
+
+const HeapClient = struct {
+    handle: c.ove_http_client_t,
+
+    pub fn create() Error!Client {
+        var h: c.ove_http_client_t = null;
+        try err.fromCode(c.ove_http_client_create(&h));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: Client) void {
+        if (self.handle == null) return;
+        c.ove_http_client_destroy(self.handle);
+    }
+
+    /// Perform an HTTP GET request.
+    pub fn get(self: Client, url: [:0]const u8) Error!Response {
+        var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
+        try err.fromCode(c.ove_http_get(self.handle, url.ptr, &raw));
+        return .{ .raw = raw };
+    }
+
+    /// Perform an HTTP POST request.
+    pub fn post(self: Client, url: [:0]const u8, content_type: [:0]const u8, body_data: []const u8) Error!Response {
+        var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
+        try err.fromCode(c.ove_http_post(self.handle, url.ptr, content_type.ptr, body_data.ptr, body_data.len, &raw));
+        return .{ .raw = raw };
+    }
+
+    /// Perform an HTTP request with explicit method, optional body, and
+    /// optional extra headers.
+    pub fn requestEx(
+        self: Client,
+        method: Method,
+        url: [:0]const u8,
+        content_type: ?[:0]const u8,
+        body_data: ?[]const u8,
+        hdrs: ?[]const Header,
+    ) Error!Response {
+        return requestExImpl(self.handle, method, url, content_type, body_data, hdrs);
+    }
+};
+
+const ZeroHeapClient = struct {
+    storage: c.ove_http_client_storage_t,
     handle: c.ove_http_client_t,
     tracker: pin.Tracker,
 
     pub fn init(self: *Client) Error!void {
-        self.storage = pin.zeroStorage(c.ove_http_client_storage_t);
+        self.storage = std.mem.zeroes(c.ove_http_client_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_http_client_create(&self.handle));
-        } else {
-            try err.fromCode(c.ove_http_client_init(&self.handle, &self.storage));
-        }
+        try err.fromCode(c.ove_http_client_init(&self.handle, &self.storage));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *Client) void {
         self.tracker.assertSame(self, "ove.HttpClient");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_http_client_destroy(self.handle)
-        else
-            c.ove_http_client_deinit(self.handle);
+        c.ove_http_client_deinit(self.handle);
         self.handle = null;
         self.tracker.clear();
     }
@@ -132,8 +178,6 @@ pub const Client = struct {
         return .{ .raw = raw };
     }
 
-    /// Perform an HTTP request with explicit method, optional body, and
-    /// optional extra headers.
     pub fn requestEx(
         self: *Client,
         method: Method,
@@ -143,34 +187,44 @@ pub const Client = struct {
         hdrs: ?[]const Header,
     ) Error!Response {
         self.tracker.assertSame(self, "ove.HttpClient");
-        const ct_ptr: ?[*]const u8 = if (content_type) |ct| ct.ptr else null;
-        const body_ptr: ?[*]const u8 = if (body_data) |b| b.ptr else null;
-        const body_len: usize = if (body_data) |b| b.len else 0;
-
-        // Convert Header slice to C struct array on the stack.
-        const max_headers = 16;
-        var c_headers: [max_headers]c.ove_http_header_t = std.mem.zeroes([max_headers]c.ove_http_header_t);
-        var header_count: usize = 0;
-        if (hdrs) |h| {
-            header_count = @min(h.len, max_headers);
-            for (0..header_count) |i| {
-                c_headers[i].name = h[i].name;
-                c_headers[i].value = h[i].value;
-            }
-        }
-
-        var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
-        try err.fromCode(c.ove_http_request_ex(
-            self.handle,
-            @intCast(@intFromEnum(method)),
-            url.ptr,
-            ct_ptr,
-            body_ptr,
-            body_len,
-            &c_headers,
-            header_count,
-            &raw,
-        ));
-        return .{ .raw = raw };
+        return requestExImpl(self.handle, method, url, content_type, body_data, hdrs);
     }
 };
+
+fn requestExImpl(
+    handle: c.ove_http_client_t,
+    method: Method,
+    url: [:0]const u8,
+    content_type: ?[:0]const u8,
+    body_data: ?[]const u8,
+    hdrs: ?[]const Header,
+) Error!Response {
+    const ct_ptr: ?[*]const u8 = if (content_type) |ct| ct.ptr else null;
+    const body_ptr: ?[*]const u8 = if (body_data) |b| b.ptr else null;
+    const body_len: usize = if (body_data) |b| b.len else 0;
+
+    const max_headers = 16;
+    var c_headers: [max_headers]c.ove_http_header_t = std.mem.zeroes([max_headers]c.ove_http_header_t);
+    var header_count: usize = 0;
+    if (hdrs) |h| {
+        header_count = @min(h.len, max_headers);
+        for (0..header_count) |i| {
+            c_headers[i].name = h[i].name;
+            c_headers[i].value = h[i].value;
+        }
+    }
+
+    var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
+    try err.fromCode(c.ove_http_request_ex(
+        handle,
+        @intCast(@intFromEnum(method)),
+        url.ptr,
+        ct_ptr,
+        body_ptr,
+        body_len,
+        &c_headers,
+        header_count,
+        &raw,
+    ));
+    return .{ .raw = raw };
+}

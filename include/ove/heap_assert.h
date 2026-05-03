@@ -41,7 +41,7 @@
  * declaration" against the libc decls.  GCC accepts that pattern; the
  * Rust crate's build.rs passes -D__BINDGEN__, so skip the redecls there
  * — bindgen never emits libc allocator symbols anyway. */
-#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__)
+#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__)
 
 #include <stddef.h>
 

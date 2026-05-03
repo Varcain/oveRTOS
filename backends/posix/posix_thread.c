@@ -144,26 +144,28 @@ static void *thread_wrapper(void *arg)
 }
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const struct ove_thread_desc *desc)
+		    const char *name, ove_thread_fn entry, void *arg,
+		    ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (!handle || !storage || !desc || !desc->entry) {
+	if (!handle || !storage || !entry) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* Backstop the AAPCS 8-byte stack alignment promised by the
 	 * OVE_THREAD_STACK_* helpers in include/ove/storage.h. */
-	if (desc->stack != NULL && ((uintptr_t)desc->stack & 7u) != 0u) {
+	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	(void)stack;
 
 	struct ove_thread *t = (struct ove_thread *)storage;
 	memset(t, 0, sizeof(*t));
 
-	t->entry = desc->entry;
-	t->arg = desc->arg;
+	t->entry = entry;
+	t->arg = arg;
 	SET_STATE(t, OVE_THREAD_STATE_READY);
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
-	t->name = desc->name;
-	t->priority = (uint8_t)desc->priority;
+	t->name = name;
+	t->priority = (uint8_t)priority;
 	sem_init(&t->suspend_sem, 0, 0);
 
 	/* Allocate and paint stack for coloration-based HWM tracking.
@@ -171,9 +173,10 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 	 * its own default stack and HWM reporting drops to 0. */
 	size_t actual_sz = 0;
 #ifndef CONFIG_OVE_ZERO_HEAP
-	t->stack_base = _alloc_painted_stack(desc->stack_size, &actual_sz);
+	t->stack_base = _alloc_painted_stack(stack_size, &actual_sz);
 #else
 	t->stack_base = NULL;
+	(void)stack_size;
 #endif
 	t->stack_size = actual_sz;
 
@@ -227,9 +230,10 @@ int ove_thread_deinit(ove_thread_t handle)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
+		      void *arg, ove_prio_t priority, size_t stack_size)
 {
-	if (!handle || !desc || !desc->entry) {
+	if (!handle || !entry) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -239,16 +243,16 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 	}
 	memset(t, 0, sizeof(*t));
 
-	t->entry = desc->entry;
-	t->arg = desc->arg;
+	t->entry = entry;
+	t->arg = arg;
 	SET_STATE(t, OVE_THREAD_STATE_READY);
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
-	t->name = desc->name;
-	t->priority = (uint8_t)desc->priority;
+	t->name = name;
+	t->priority = (uint8_t)priority;
 	sem_init(&t->suspend_sem, 0, 0);
 
 	size_t actual_sz = 0;
-	t->stack_base = _alloc_painted_stack(desc->stack_size, &actual_sz);
+	t->stack_base = _alloc_painted_stack(stack_size, &actual_sz);
 	t->stack_size = actual_sz;
 
 	pthread_attr_t attr;

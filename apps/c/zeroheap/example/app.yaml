@@ -1,0 +1,18 @@
+lang: c
+config_name: example_c_zh
+description: "C Demo"
+sources:
+  - src/app.c
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_LVGL=y
+  - CONFIG_OVE_QUEUE=y
+  - CONFIG_OVE_TIMER=y
+  # Lock the LVGL TLSF pool to a fixed BSS-resident size; no spillover
+  # to the system malloc.  Widgets and label text live entirely inside
+  # this pool (separate from the RTOS heap that ove_heap_lock() guards).
+  - CONFIG_LV_MEM_SIZE_KILOBYTES=64
+  - CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=0

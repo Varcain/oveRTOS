@@ -1017,6 +1017,13 @@ impl Label {
         unsafe { bindings::lv_label_set_text(self.raw, text.as_ptr() as *const _) };
     }
 
+    /// Set text by pointer — caller-owned buffer must outlive the label.
+    /// LVGL stores the pointer instead of duplicating, so re-rendering
+    /// with the same buffer triggers a redraw without reallocation.
+    pub fn set_text_static(self, text: &'static [u8]) {
+        unsafe { bindings::lv_label_set_text_static(self.raw, text.as_ptr() as *const _) };
+    }
+
     /// Fluent: set text (copies string).
     pub fn text(self, txt: &[u8]) -> Self {
         unsafe { bindings::lv_label_set_text(self.raw, txt.as_ptr() as *const _) };

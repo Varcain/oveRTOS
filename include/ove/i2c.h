@@ -18,11 +18,10 @@
  * and device probing.
  *
  * Two allocation strategies are supported:
- * - @c _create() / @c _destroy() — unified API that works in both heap and
- *   zero-heap mode.  In zero-heap mode these are macros that generate
- *   per-call-site static storage.
- * - @c _init() / @c _deinit() — explicit storage control with caller-supplied
- *   buffers.  Use when creating objects in loops, arrays, or structs.
+ * - @c _create() / @c _destroy() — heap-allocated.  Available only when
+ *   @c OVE_HEAP_I2C is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ * - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
+ *   modes.  See @c OVE_I2C_DEFINE_STATIC for a one-step static helper.
  *
  * All addresses are 7-bit (e.g. 0x50 for a typical EEPROM).  The HAL
  * shifts left and adds the R/W bit internally.
@@ -99,14 +98,7 @@ int ove_i2c_create(ove_i2c_t *i2c, const struct ove_i2c_cfg *cfg);
  * @param[in] i2c  I2C handle returned by @ref ove_i2c_create.
  */
 void ove_i2c_destroy(ove_i2c_t i2c);
-#elif !defined(__ZIG_CIMPORT__)
-#define ove_i2c_create(pi2c, cfg)                         \
-	({                                                \
-		static ove_i2c_storage_t _ove_stor_;      \
-		ove_i2c_init((pi2c), &_ove_stor_, (cfg)); \
-	})
-#define ove_i2c_destroy(i2c) ove_i2c_deinit(i2c)
-#endif
+#endif /* OVE_HEAP_I2C */
 
 /* ── Operations ──────────────────────────────────────────────────── */
 

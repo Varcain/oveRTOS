@@ -126,12 +126,12 @@ static void thread_wrapper(void *p1, void *p2, void *p3)
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const struct ove_thread_desc *desc)
+		    const char *name, ove_thread_fn entry, void *arg,
+		    ove_prio_t priority, size_t stack_size, void *stack)
 {
 	k_tid_t tid;
-	size_t stack_sz;
 
-	if (handle == NULL || storage == NULL || desc == NULL || desc->entry == NULL) {
+	if (handle == NULL || storage == NULL || entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
@@ -140,47 +140,44 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 	 * rolled array that skips them.  Zephyr's K_THREAD_STACK_DEFINE
 	 * already over-aligns, so caller-supplied stacks from that path
 	 * pass trivially. */
-	if (desc->stack != NULL && ((uintptr_t)desc->stack & 7u) != 0u) {
+	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	stack_sz = desc->stack_size;
-	if (stack_sz == 0) {
-		stack_sz = 8192;
+	if (stack_size == 0) {
+		stack_size = 8192;
 	}
 
-	/* Use desc->stack if provided (e.g. from K_THREAD_STACK_DEFINE via
-	 * OVE_THREAD_DEFINE_STATIC, or the function-scope static stack the
-	 * zero-heap ove_thread_create macro emits).  In zero-heap mode a
-	 * NULL stack is a programmer error — the public macro can't have
-	 * been used to create this thread, and there's no kernel pool to
-	 * fall back to.  In heap mode fall back to k_thread_stack_alloc
+	/* Use the caller-supplied stack if provided (e.g. from
+	 * K_THREAD_STACK_DEFINE via OVE_THREAD_DEFINE_STATIC).  In zero-heap
+	 * mode a NULL stack is a programmer error — there's no kernel pool
+	 * to fall back to.  In heap mode fall back to k_thread_stack_alloc
 	 * (requires CONFIG_DYNAMIC_THREAD). */
-	if (desc->stack != NULL) {
-		storage->stack = (k_thread_stack_t *)desc->stack;
+	if (stack != NULL) {
+		storage->stack = (k_thread_stack_t *)stack;
 		storage->heap_stack = 0;
 	} else {
 #ifdef CONFIG_OVE_ZERO_HEAP
 		return OVE_ERR_NO_MEMORY;
 #else
-		storage->stack = k_thread_stack_alloc(stack_sz, 0);
+		storage->stack = k_thread_stack_alloc(stack_size, 0);
 		if (storage->stack == NULL) {
 			return OVE_ERR_NO_MEMORY;
 		}
 		storage->heap_stack = 1;
 #endif
 	}
-	storage->stack_size = stack_sz;
+	storage->stack_size = stack_size;
 	storage->state = OVE_THREAD_STATE_READY;
-	storage->name = desc->name; /* caller-owned; retained for trace descriptor */
+	storage->name = name; /* caller-owned; retained for trace descriptor */
 	storage->next = NULL;
 
-	tid = k_thread_create(&storage->thread, storage->stack, stack_sz, thread_wrapper,
-			      (void *)desc->entry, desc->arg, (void *)storage,
-			      map_priority(desc->priority), 0, K_NO_WAIT);
+	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
+			      (void *)entry, arg, (void *)storage,
+			      map_priority(priority), 0, K_NO_WAIT);
 
-	if (desc->name != NULL) {
-		k_thread_name_set(tid, desc->name);
+	if (name != NULL) {
+		k_thread_name_set(tid, name);
 	}
 
 	_register_thread(storage);
@@ -209,20 +206,19 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
+		      void *arg, ove_prio_t priority, size_t stack_size)
 {
 	struct ove_thread *info;
 	k_thread_stack_t *stack;
-	size_t stack_sz;
 	k_tid_t tid;
 
-	if (handle == NULL || desc == NULL || desc->entry == NULL) {
+	if (handle == NULL || entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	stack_sz = desc->stack_size;
-	if (stack_sz == 0) {
-		stack_sz = 8192;
+	if (stack_size == 0) {
+		stack_size = 8192;
 	}
 
 	info = OVE_BACKEND_MALLOC(sizeof(*info));
@@ -230,24 +226,24 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	stack = k_thread_stack_alloc(stack_sz, 0);
+	stack = k_thread_stack_alloc(stack_size, 0);
 	if (stack == NULL) {
 		OVE_BACKEND_FREE(info);
 		return OVE_ERR_NO_MEMORY;
 	}
 
 	info->stack = stack;
-	info->stack_size = stack_sz;
+	info->stack_size = stack_size;
 	info->heap_stack = 1;
 	info->state = OVE_THREAD_STATE_READY;
-	info->name = desc->name;
+	info->name = name;
 	info->next = NULL;
 
-	tid = k_thread_create(&info->thread, stack, stack_sz, thread_wrapper, (void *)desc->entry,
-			      desc->arg, (void *)info, map_priority(desc->priority), 0, K_NO_WAIT);
+	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry,
+			      arg, (void *)info, map_priority(priority), 0, K_NO_WAIT);
 
-	if (desc->name != NULL) {
-		k_thread_name_set(tid, desc->name);
+	if (name != NULL) {
+		k_thread_name_set(tid, name);
 	}
 
 	_register_thread(info);

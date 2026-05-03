@@ -242,57 +242,26 @@ int ove_audio_graph_create_(struct ove_audio_graph *g, unsigned int frames);
 int ove_audio_graph_destroy(struct ove_audio_graph *g);
 
 /**
- * @brief Create an audio graph (works in both heap and zero-heap mode).
+ * @brief Create a heap-allocated audio graph.
  *
- * In heap mode, delegates to @ref ove_audio_graph_create_ — the per-node
- * intermediate buffers are calloc'd during @ref ove_audio_graph_build and
- * the @p nodes / @p channels / @p sample_bytes arguments are unused.
+ * Delegates to @ref ove_audio_graph_create_ — the per-node intermediate
+ * buffers are calloc'd during @ref ove_audio_graph_build and the @p nodes /
+ * @p channels / @p sample_bytes arguments are unused (kept for source
+ * compatibility with the zero-heap @c OVE_AUDIO_GRAPH_DEFINE_STATIC helper).
  *
- * In zero-heap mode, emits a per-call-site @c static backing array sized
- * by @ref OVE_AUDIO_GRAPH_STORAGE_BYTES and attaches it automatically.
- * @p nodes, @p frames, @p channels, @p sample_bytes must be compile-time
- * integer constants.
+ * @note Requires @c OVE_HEAP_AUDIO.  In zero-heap mode this macro is not
+ *       defined; use @c ove_audio_graph_init() with explicit buffer storage,
+ *       or the @c OVE_AUDIO_GRAPH_DEFINE_STATIC helper.
  *
  * @param pg            Pointer to the @c ove_audio_graph instance to initialise.
  * @param frames        Per-period frame count.
- * @param nodes         Maximum number of non-sink nodes in the graph.
- * @param channels      Maximum output channel count across all nodes.
- * @param sample_bytes  Widest sample size in bytes (e.g. 2 for S16, 4 for S32).
+ * @param nodes         Unused in heap mode (compile-time constant).
+ * @param channels      Unused in heap mode (compile-time constant).
+ * @param sample_bytes  Unused in heap mode (compile-time constant).
  */
 #define ove_audio_graph_create(pg, frames, nodes, channels, sample_bytes) \
 	((void)(nodes), (void)(channels), (void)(sample_bytes),           \
 	 ove_audio_graph_create_((pg), (frames)))
-
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_AUDIO — zero-heap mode */
-
-/**
- * @brief Create an audio graph (zero-heap variant).
- *
- * Emits a per-call-site @c static backing array sized by
- * @ref OVE_AUDIO_GRAPH_STORAGE_BYTES and attaches it automatically.
- * @p nodes, @p frames, @p channels, @p sample_bytes must be compile-time
- * integer constants.
- *
- * @param pg            Pointer to the @c ove_audio_graph instance to initialise.
- * @param frames        Per-period frame count.
- * @param nodes         Maximum number of non-sink nodes in the graph.
- * @param channels      Maximum output channel count across all nodes.
- * @param sample_bytes  Widest sample size in bytes (e.g. 2 for S16, 4 for S32).
- */
-#define ove_audio_graph_create(pg, frames, nodes, channels, sample_bytes)            \
-	({                                                                           \
-		static uint8_t _ove_ag_stor_[OVE_AUDIO_GRAPH_STORAGE_BYTES(          \
-			(nodes), (frames), (channels), (sample_bytes))]              \
-			__attribute__((aligned(4)));                                 \
-		int _r = ove_audio_graph_init((pg), (frames));                       \
-		if (_r == OVE_OK) {                                                  \
-			_r = ove_audio_graph_set_buf_storage((pg), _ove_ag_stor_,    \
-							     sizeof(_ove_ag_stor_)); \
-		}                                                                    \
-		_r;                                                                  \
-	})
-
-#define ove_audio_graph_destroy(pg) (ove_audio_graph_deinit(pg), OVE_OK)
 
 #endif /* OVE_HEAP_AUDIO */
 

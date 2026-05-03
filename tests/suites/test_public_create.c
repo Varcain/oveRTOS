@@ -7,27 +7,29 @@
  */
 
 /*
- * Smoke test for the public ove_*_create() API.
+ * Smoke test for the public heap-mode ove_*_create() API.
  *
- * Each case invokes the documented public create macro / function
- * directly — NOT the test-framework's ove_test_*_create wrapper.  In
- * zero-heap mode the macros expand to "({ static <storage>; static <buf>;
- * <init>; })" GNU statement-expressions; in heap mode they are real
- * functions.  The test-framework wrappers paper over both, which means
- * a backend-specific bug in the public macro (the kind that broke the
- * Zephyr zero-heap workqueue stack — see backends/zephyr/zephyr_workqueue.c)
- * will not be caught by tests that only call the wrapper.
+ * Each case invokes the documented public create function directly —
+ * NOT the test-framework's ove_test_*_create wrapper.  The framework
+ * wrappers paper over the heap / zero-heap split, which means a
+ * backend-specific bug in the heap path (the kind that broke the
+ * Zephyr zero-heap workqueue stack — see
+ * backends/zephyr/zephyr_workqueue.c) will not be caught by tests
+ * that only call the wrapper.
  *
- * Each create call lives in its own function so the per-call-site
- * statics generated in zero-heap mode produce exactly one kernel
- * object per case.  Where the object hosts a thread (workqueue,
- * thread), the test also exercises a single submit / entry so the
- * stack and dispatch path are walked at least once — that is the
- * shape of the failure that would otherwise hide here.
+ * Where the object hosts a thread (workqueue, thread), the test also
+ * exercises a single submit / entry so the stack and dispatch path
+ * are walked at least once — that is the shape of the failure that
+ * would otherwise hide here.
+ *
+ * The zero-heap static-allocation counterpart is exercised by
+ * test_static_define.c via the OVE_*_DEFINE_STATIC macros.
  */
 
 #include "../framework/ove_test.h"
 #include <stdatomic.h>
+
+#ifndef CONFIG_OVE_ZERO_HEAP
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
@@ -184,19 +186,14 @@ static void test_public_create_thread(void **state)
 	s_thread_ran = 0;
 
 	ove_thread_t h = NULL;
-	const struct ove_thread_desc desc = {
-		.name = "pub_th",
-		.entry = thread_entry_signal,
-		.arg = NULL,
-		.priority = OVE_PRIO_NORMAL,
-	};
 	/* 4096 matches the per-thread stack used by tests/suites/test_thread.c.
 	 * Anything smaller (we previously used 1024) overflows under gcov-
 	 * instrumented builds — every basic block grows by counter-update
 	 * code, and Zephyr reserves a chunk for the MPU stack guard on top
 	 * of that — and the resulting overflow corrupts the k_thread struct,
 	 * faulting later in the cleanup path. */
-	int rc = ove_thread_create(&h, 4096, &desc);
+	int rc = ove_thread_create(&h, "pub_th", thread_entry_signal, NULL,
+				   OVE_PRIO_NORMAL, 4096);
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(h);
 
@@ -239,11 +236,7 @@ static void test_public_create_workqueue(void **state)
 	ove_sem_destroy(s_work_done_sem);
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-/* Heap-only: ove_work_init self-allocates the work item.  In zero-heap
- * mode work items always come from caller-supplied storage via
- * ove_work_init_static (already exercised by test_public_create_workqueue).
- */
+/* ove_work_init self-allocates the work item from the heap. */
 static void test_public_create_work(void **state)
 {
 	(void)state;
@@ -253,11 +246,8 @@ static void test_public_create_work(void **state)
 	assert_non_null(w);
 	ove_work_free(w);
 }
-#endif
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-/* Heap-only: sim watchdog backend (POSIX) has no static-storage path.
- * Mirrors the gating in test_watchdog.c. */
+/* Sim watchdog backend (POSIX) has no static-storage path. */
 static void test_public_create_watchdog(void **state)
 {
 	(void)state;
@@ -267,7 +257,8 @@ static void test_public_create_watchdog(void **state)
 	assert_non_null(wd);
 	ove_watchdog_destroy(wd);
 }
-#endif
+
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 #if defined(CONFIG_OVE_ZERO_HEAP) && defined(CONFIG_OVE_RTOS_ZEPHYR)
 /*
@@ -346,6 +337,7 @@ static void test_public_create_heap_lock_traps(void **state)
 int test_public_create_run(void)
 {
 	const struct CMUnitTest tests[] = {
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_public_create_mutex),
 		cmocka_unit_test(test_public_create_recursive_mutex),
 		cmocka_unit_test(test_public_create_sem),
@@ -357,7 +349,6 @@ int test_public_create_run(void)
 		cmocka_unit_test(test_public_create_stream),
 		cmocka_unit_test(test_public_create_thread),
 		cmocka_unit_test(test_public_create_workqueue),
-#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_public_create_work),
 		cmocka_unit_test(test_public_create_watchdog),
 #endif

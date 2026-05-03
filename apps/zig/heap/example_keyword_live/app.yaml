@@ -1,0 +1,16 @@
+config_name: example_keyword_live_zig_heap
+lang: zig
+description: "Live DMIC Keyword Detection (Zig)"
+zig:
+  src_dir: src
+  lib_name: example_keyword_live_zig
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_INFER=y
+  - CONFIG_OVE_AUDIO=y
+  - CONFIG_OVE_AUDIO_NODE_CONVERTER=y
+kconfig: |
+  config OVE_INFER
+      default y
+  config OVE_AUDIO
+      default y

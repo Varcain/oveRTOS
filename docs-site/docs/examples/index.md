@@ -23,7 +23,7 @@ Two LVGL-focused apps live under `apps/<lang>/` and are not documented per-page 
 
 Each example is implemented in all four languages using the same oveRTOS API:
 
-- **C** — unified `_create()` / `_destroy()` API, works in heap and zero-heap modes
+- **C** — `_create()` / `_destroy()` (heap mode) or `OVE_*_DEFINE_STATIC()` / `_init()` (works in both modes)
 - **C++** — RAII wrappers (`ove::Thread<4096>`, `ove::Queue<T, N>`), template patterns
 - **Rust** — `no_std` crate with `Result` error handling, safe abstractions over FFI
 - **Zig** — `@cImport` bindings, comptime feature detection, `defer` cleanup

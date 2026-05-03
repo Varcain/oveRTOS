@@ -17,11 +17,10 @@
  * semantics via the @c OVE_EG_WAIT_ALL and @c OVE_EG_CLEAR_ON_EXIT flags.
  *
  * Two allocation strategies are supported:
- * - @c _create() / @c _destroy() — unified API that works in both heap and
- *   zero-heap mode.  In zero-heap mode these are macros that generate
- *   per-call-site static storage.
- * - @c _init() / @c _deinit() — explicit storage control with caller-supplied
- *   buffers.  Use when creating objects in loops, arrays, or structs.
+ * - @c _create() / @c _destroy() — heap-allocated.  Available only when
+ *   @c OVE_HEAP_EVENTGROUP is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ * - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
+ *   modes.  See @c OVE_EVENTGROUP_DEFINE_STATIC for a one-step static helper.
  *
  * @note Requires @c CONFIG_OVE_EVENTGROUP.
  * @{
@@ -105,15 +104,6 @@ int ove_eventgroup_create(ove_eventgroup_t *eg);
  * @note Requires @c CONFIG_OVE_EVENTGROUP and @c OVE_HEAP_EVENTGROUP.
  */
 void ove_eventgroup_destroy(ove_eventgroup_t eg);
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_EVENTGROUP — zero-heap mode */
-
-#define ove_eventgroup_create(peg)                          \
-	({                                                  \
-		static ove_eventgroup_storage_t _ove_stor_; \
-		ove_eventgroup_init((peg), &_ove_stor_);    \
-	})
-#define ove_eventgroup_destroy(eg) ove_eventgroup_deinit(eg)
-
 #endif /* OVE_HEAP_EVENTGROUP */
 
 /**

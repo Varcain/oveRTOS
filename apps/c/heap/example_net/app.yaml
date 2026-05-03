@@ -1,0 +1,14 @@
+lang: c
+config_name: example_net_heap
+description: "Networking Demo"
+sources:
+  - src/app.c
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_NET=y
+  - CONFIG_OVE_NET_HTTP=y
+  - CONFIG_OVE_NET_MQTT=y
+  - CONFIG_OVE_NET_HTTPD=y
+  - CONFIG_OVE_NET_SNTP=y

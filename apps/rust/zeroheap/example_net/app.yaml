@@ -1,0 +1,13 @@
+lang: rust
+config_name: example_net_rust_zh
+description: "Rust Networking Demo"
+rust:
+  lib_name: example_net_rust
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_NET=y
+  - CONFIG_OVE_NET_HTTP=y
+  - CONFIG_OVE_NET_MQTT=y
+  - CONFIG_OVE_NET_HTTPD=y
+  - CONFIG_OVE_NET_SNTP=y

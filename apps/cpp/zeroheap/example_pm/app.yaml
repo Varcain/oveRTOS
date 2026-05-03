@@ -1,0 +1,11 @@
+lang: cpp
+config_name: example_pm_cpp_zh
+description: "C++ Power Management Demo"
+sources:
+  - src/app.cpp
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_PM=y
+  - CONFIG_OVE_TIMER=y

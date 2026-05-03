@@ -178,19 +178,21 @@ static void *thread_wrapper(void *arg)
 }
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const struct ove_thread_desc *desc)
+		    const char *name, ove_thread_fn entry, void *arg,
+		    ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (!handle || !storage || !desc || !desc->entry)
+	if (!handle || !storage || !entry)
 		return OVE_ERR_INVALID_PARAM;
+	(void)stack;
 
 	struct ove_thread *t = (struct ove_thread *)storage;
 	memset(t, 0, sizeof(*t));
 
-	t->entry = desc->entry;
-	t->arg = desc->arg;
-	t->name = desc->name;
-	t->stack_size = desc->stack_size;
-	t->priority = desc->priority;
+	t->entry = entry;
+	t->arg = arg;
+	t->name = name;
+	t->stack_size = stack_size;
+	t->priority = priority;
 	t->state = OVE_THREAD_STATE_READY;
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
 	t->suspend_requested = 0;
@@ -234,9 +236,10 @@ int ove_thread_deinit(ove_thread_t handle)
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
-int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
+		      void *arg, ove_prio_t priority, size_t stack_size)
 {
-	if (!handle || !desc || !desc->entry)
+	if (!handle || !entry)
 		return OVE_ERR_INVALID_PARAM;
 
 	struct ove_thread *t = OVE_BACKEND_MALLOC(sizeof(*t));
@@ -244,11 +247,11 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 		return OVE_ERR_NO_MEMORY;
 	memset(t, 0, sizeof(*t));
 
-	t->entry = desc->entry;
-	t->arg = desc->arg;
-	t->name = desc->name;
-	t->stack_size = desc->stack_size;
-	t->priority = desc->priority;
+	t->entry = entry;
+	t->arg = arg;
+	t->name = name;
+	t->stack_size = stack_size;
+	t->priority = priority;
 	t->state = OVE_THREAD_STATE_READY;
 	ove_state_track_init(&t->st, OVE_THREAD_STATE_READY);
 	t->suspend_requested = 0;

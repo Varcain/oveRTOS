@@ -76,13 +76,8 @@ static void stream_throughput_setup(void *ctx)
 	memset(tx_buf, 0xBB, STREAM_MSG_SIZE);
 	ove_stream_create(&bench_strm, STREAM_BUF_SIZE, 1);
 
-	struct ove_thread_desc desc = {
-		.name = "strm_prod",
-		.entry = stream_producer,
-		.arg = NULL,
-		.priority = OVE_PRIO_NORMAL,
-	};
-	ove_thread_create(&stream_producer_th, 2048, &desc);
+	ove_thread_create(&stream_producer_th, "strm_prod", stream_producer, NULL,
+			  OVE_PRIO_NORMAL, 2048);
 }
 
 static void stream_throughput_run(void *ctx)

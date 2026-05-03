@@ -39,9 +39,11 @@ def _scan_app_dirs(dirs):
 
 
 def _scan_apps_dir(apps_dir, apps, app_paths):
-    """Scan a directory tree for app.yaml files in two layouts:
-       - flat:      <root>/<app>/app.yaml
-       - two-level: <root>/<lang>/<app>/app.yaml
+    """Scan a directory tree for app.yaml files in three layouts:
+       - flat:        <root>/<app>/app.yaml
+       - two-level:   <root>/<lang>/<app>/app.yaml
+       - three-level: <root>/<lang>/<heapmode>/<app>/app.yaml
+                      where <heapmode> is `heap` or `zeroheap`
     Mutates `apps` and `app_paths` in place; later scans don't shadow
     earlier ones (first wins on config_name collision)."""
     if not os.path.isdir(apps_dir):
@@ -62,9 +64,13 @@ def _scan_apps_dir(apps_dir, apps, app_paths):
                 apps.append(data)
                 app_paths[cname] = subdir_path
             continue
-        # two-level: <root>/<lang>/<app>/app.yaml
+        # two-level / three-level: <root>/<lang>/<...>
         for entry in sorted(os.listdir(subdir_path)):
-            app_yaml_path = os.path.join(subdir_path, entry, "app.yaml")
+            entry_path = os.path.join(subdir_path, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            # two-level: <root>/<lang>/<app>/app.yaml
+            app_yaml_path = os.path.join(entry_path, "app.yaml")
             if os.path.isfile(app_yaml_path):
                 with open(app_yaml_path) as f:
                     data = yaml.safe_load(f)
@@ -73,7 +79,22 @@ def _scan_apps_dir(apps_dir, apps, app_paths):
                 data["config_name"] = cname.upper()
                 if cname not in app_paths:
                     apps.append(data)
-                    app_paths[cname] = os.path.join(subdir_path, entry)
+                    app_paths[cname] = entry_path
+                continue
+            # three-level: <root>/<lang>/<heapmode>/<app>/app.yaml
+            for app_entry in sorted(os.listdir(entry_path)):
+                app_path = os.path.join(entry_path, app_entry)
+                inner_yaml = os.path.join(app_path, "app.yaml")
+                if not os.path.isfile(inner_yaml):
+                    continue
+                with open(inner_yaml) as f:
+                    data = yaml.safe_load(f)
+                cname = data.get("config_name", app_entry)
+                data["name"] = cname
+                data["config_name"] = cname.upper()
+                if cname not in app_paths:
+                    apps.append(data)
+                    app_paths[cname] = app_path
 
 
 def generate_app_kconfig(ove_dir):

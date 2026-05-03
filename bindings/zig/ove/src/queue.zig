@@ -12,50 +12,91 @@ const pin = @import("pin.zig");
 
 /// Type-safe message queue.
 ///
-/// Generic on element type `T` and capacity `N`.  In zero-heap mode the
-/// backing buffer + queue storage live as struct fields; in heap mode
-/// they are zero-sized.
+/// Generic on element type `T` and capacity `N`.
+///
+/// In heap mode the wrapper is a single handle; the kernel allocates the
+/// backing buffer:
+///
+/// ```zig
+/// var q = try ove.Queue(u32, 8).create();
+/// defer q.deinit();
+/// try q.send(&42, ove.wait_forever);
+/// const v = try q.receive(ove.wait_forever);
+/// ```
+///
+/// In zero-heap mode the backing buffer + queue storage live as struct
+/// fields; two-phase init is required:
 ///
 /// ```zig
 /// var q: ove.Queue(u32, 8) = undefined;
 /// try q.init();
 /// defer q.deinit();
-/// try q.send(&42, ove.wait_forever);
-/// const v = try q.receive(ove.wait_forever);
 /// ```
 pub fn Queue(comptime T: type, comptime N: comptime_int) type {
+    return if (pin.zero_heap) ZeroHeapQueue(T, N) else HeapQueue(T, N);
+}
+
+fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
     return struct {
         const Self = @This();
 
-        buffer: if (pin.zero_heap) [N * @sizeOf(T)]u8 else void,
-        storage: pin.Storage(c.ove_queue_storage_t),
+        handle: c.ove_queue_t,
+
+        pub fn create() Error!Self {
+            var h: c.ove_queue_t = null;
+            try err.fromCode(c.ove_queue_create(&h, @sizeOf(T), N));
+            return .{ .handle = h };
+        }
+
+        pub fn deinit(self: Self) void {
+            if (self.handle == null) return;
+            c.ove_queue_destroy(self.handle);
+        }
+
+        pub fn send(self: Self, item: *const T, timeout_ms: u32) Error!void {
+            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ms));
+        }
+
+        pub fn receive(self: Self, timeout_ms: u32) Error!T {
+            var val: T = undefined;
+            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ms));
+            return val;
+        }
+
+        pub fn sendFromIsr(self: Self, item: *const T) Error!void {
+            try err.fromCode(c.ove_queue_send_from_isr(self.handle, @ptrCast(item)));
+        }
+
+        pub fn receiveFromIsr(self: Self) Error!T {
+            var val: T = undefined;
+            try err.fromCode(c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val)));
+            return val;
+        }
+    };
+}
+
+fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
+    return struct {
+        const Self = @This();
+
+        buffer: [N * @sizeOf(T)]u8,
+        storage: c.ove_queue_storage_t,
         handle: c.ove_queue_t,
         tracker: pin.Tracker,
 
         pub fn init(self: *Self) Error!void {
-            if (comptime pin.zero_heap) {
-                self.buffer = [_]u8{0} ** (N * @sizeOf(T));
-            } else {
-                self.buffer = {};
-            }
-            self.storage = pin.zeroStorage(c.ove_queue_storage_t);
+            self.buffer = [_]u8{0} ** (N * @sizeOf(T));
+            self.storage = std.mem.zeroes(c.ove_queue_storage_t);
             self.handle = null;
             self.tracker = .{};
-            if (comptime !pin.zero_heap) {
-                try err.fromCode(c.ove_queue_create(&self.handle, @sizeOf(T), N));
-            } else {
-                try err.fromCode(c.ove_queue_init(&self.handle, &self.storage, &self.buffer, @sizeOf(T), N));
-            }
+            try err.fromCode(c.ove_queue_init(&self.handle, &self.storage, &self.buffer, @sizeOf(T), N));
             self.tracker.record(self);
         }
 
         pub fn deinit(self: *Self) void {
             self.tracker.assertSame(self, "ove.Queue");
             if (self.handle == null) return;
-            if (comptime !pin.zero_heap)
-                c.ove_queue_destroy(self.handle)
-            else
-                c.ove_queue_deinit(self.handle);
+            c.ove_queue_deinit(self.handle);
             self.handle = null;
             self.tracker.clear();
         }

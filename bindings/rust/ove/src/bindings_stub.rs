@@ -307,7 +307,7 @@ unsafe extern "C" {
     #[doc = " @brief Feed a log line into the httpd log ring buffer.\n\n Call from the log output hook to capture lines for GET /api/log."]
     pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
 }
-#[doc = " @brief Thread entry-point function prototype.\n\n @param[in] arg  Caller-supplied context pointer passed from\n                 ove_thread_desc::arg."]
+#[doc = " @brief Thread entry-point function prototype.\n\n @param[in] arg  Caller-supplied context pointer passed at creation time."]
 pub type ove_thread_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
 #[doc = "< @brief Currently executing on the CPU."]
 pub const OVE_THREAD_STATE_RUNNING: ove_thread_state_t = 0;
@@ -359,40 +359,6 @@ pub const OVE_PRIO_REALTIME: ove_prio_t = 6;
 pub const OVE_PRIO_CRITICAL: ove_prio_t = 7;
 #[doc = " @brief Portable thread-priority levels.\n\n Each value maps to a backend-specific numeric priority at initialisation\n time.  Higher enum values represent higher scheduling priority."]
 pub type ove_prio_t = core::ffi::c_uint;
-#[doc = " @brief Thread creation descriptor passed to ove_thread_init() / ove_thread_create()."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct ove_thread_desc {
-    #[doc = "< @brief Human-readable thread name (may be truncated by backend)."]
-    pub name: *const core::ffi::c_char,
-    #[doc = "< @brief Thread entry-point function. Must not be NULL."]
-    pub entry: ove_thread_fn,
-    #[doc = "< @brief Opaque argument forwarded to @c entry. May be NULL."]
-    pub arg: *mut core::ffi::c_void,
-    #[doc = "< @brief Scheduling priority."]
-    pub priority: ove_prio_t,
-    #[doc = "< @brief Stack size in bytes. Must be > 0."]
-    pub stack_size: usize,
-    #[doc = "< @brief Pointer to caller-allocated stack buffer (static mode only;\nset to NULL for heap mode).\nMust be 8-byte aligned (ARM AAPCS). Use the\n@c OVE_THREAD_STACK_DEFINE_ / @c OVE_THREAD_STACK_MEMBER_\n/ @c OVE_THREAD_STACK_BLOCK_STATIC_ helpers in\n@c include/ove/storage.h — they apply the alignment\nautomatically. @c ove_thread_init() returns\n@c OVE_ERR_INVALID_PARAM on a misaligned pointer."]
-    pub stack: *mut core::ffi::c_void,
-}
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of ove_thread_desc"][core::mem::size_of::<ove_thread_desc>() - 48usize];
-    ["Alignment of ove_thread_desc"][core::mem::align_of::<ove_thread_desc>() - 8usize];
-    ["Offset of field: ove_thread_desc::name"]
-        [core::mem::offset_of!(ove_thread_desc, name) - 0usize];
-    ["Offset of field: ove_thread_desc::entry"]
-        [core::mem::offset_of!(ove_thread_desc, entry) - 8usize];
-    ["Offset of field: ove_thread_desc::arg"]
-        [core::mem::offset_of!(ove_thread_desc, arg) - 16usize];
-    ["Offset of field: ove_thread_desc::priority"]
-        [core::mem::offset_of!(ove_thread_desc, priority) - 24usize];
-    ["Offset of field: ove_thread_desc::stack_size"]
-        [core::mem::offset_of!(ove_thread_desc, stack_size) - 32usize];
-    ["Offset of field: ove_thread_desc::stack"]
-        [core::mem::offset_of!(ove_thread_desc, stack) - 40usize];
-};
 #[doc = " @cond INTERNAL"]
 #[repr(C)]
 #[repr(align(8))]
@@ -715,22 +681,31 @@ const _: () = {
         [core::mem::offset_of!(ove_i2s_storage_t, _opaque) - 0usize];
 };
 unsafe extern "C" {
-    #[doc = " @brief Initialise a thread using caller-supplied static storage.\n\n Creates a new thread without any heap allocation.  The caller must\n provide both a @c storage object and a stack buffer via\n @c desc->stack / @c desc->stack_size.\n\n @param[out] handle   Receives the opaque thread handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the thread.\n @param[in]  desc     Thread descriptor; all fields must be valid.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_deinit, ove_thread_create"]
+    #[doc = " @brief Initialise a thread using caller-supplied static storage and stack."]
     pub fn ove_thread_init(
         handle: *mut ove_thread_t,
         storage: *mut ove_thread_storage_t,
-        desc: *const ove_thread_desc,
+        name: *const core::ffi::c_char,
+        entry: ove_thread_fn,
+        arg: *mut core::ffi::c_void,
+        priority: ove_prio_t,
+        stack_size: usize,
+        stack: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Terminate and release a thread created with ove_thread_init().\n\n Stops the thread and releases any backend-internal resources.  The\n static storage supplied at init time is not freed.\n\n @param[in] handle  Handle returned by ove_thread_init().\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_init"]
+    #[doc = " @brief Terminate and release a thread created with ove_thread_init()."]
     pub fn ove_thread_deinit(handle: ove_thread_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Internal heap-backed thread creation function.\n\n Prefer the ove_thread_create() macro which works in both heap and\n zero-heap mode.  This function is the underlying implementation used\n in heap mode.\n\n @param[out] handle  Receives the opaque thread handle on success.\n @param[in]  desc    Thread descriptor; @c stack should be NULL.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_thread_create"]
-    pub fn ove_thread_create_(
+    #[doc = " @brief Allocate and start a heap-backed thread."]
+    pub fn ove_thread_create(
         handle: *mut ove_thread_t,
-        desc: *const ove_thread_desc,
+        name: *const core::ffi::c_char,
+        entry: ove_thread_fn,
+        arg: *mut core::ffi::c_void,
+        priority: ove_prio_t,
+        stack_size: usize,
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {

@@ -1,0 +1,15 @@
+lang: rust
+config_name: lvgl_gallery_rust_zh
+description: "LVGL widget gallery (Rust) — showcases every wrapped LVGL API"
+rust:
+  lib_name: lvgl_gallery_rust
+images:
+  - assets/badge.png
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  # Pin LVGL TLSF pool to fixed BSS size; no spillover to system malloc.
+  - CONFIG_LV_MEM_SIZE_KILOBYTES=64
+  - CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=0
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_LVGL=y
+  - CONFIG_OVE_TIMER=y

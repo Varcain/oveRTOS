@@ -17,8 +17,10 @@
  * thread-safe bus locking, and software chip-select management via GPIO.
  *
  * Two allocation strategies are supported:
- * - @c _create() / @c _destroy() — unified API (heap or zero-heap macro).
- * - @c _init() / @c _deinit() — explicit static storage.
+ * - @c _create() / @c _destroy() — heap-allocated.  Available only when
+ *   @c OVE_HEAP_SPI is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ * - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
+ *   modes.  See @c OVE_SPI_DEFINE_STATIC for a one-step static helper.
  *
  * @note Requires @c CONFIG_OVE_SPI.
  * @{
@@ -115,14 +117,7 @@ void ove_spi_deinit(ove_spi_t spi);
 int ove_spi_create(ove_spi_t *spi, const struct ove_spi_cfg *cfg);
 /** @brief Destroy an SPI bus handle previously created with `ove_spi_create`. */
 void ove_spi_destroy(ove_spi_t spi);
-#elif !defined(__ZIG_CIMPORT__)
-#define ove_spi_create(pspi, cfg)                         \
-	({                                                \
-		static ove_spi_storage_t _ove_stor_;      \
-		ove_spi_init((pspi), &_ove_stor_, (cfg)); \
-	})
-#define ove_spi_destroy(spi) ove_spi_deinit(spi)
-#endif
+#endif /* OVE_HEAP_SPI */
 
 /* ── Operations ──────────────────────────────────────────────────── */
 

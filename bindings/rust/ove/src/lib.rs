@@ -53,6 +53,22 @@
 #[cfg(all(not(feature = "std"), feature = "panic-handler"))]
 mod panic;
 
+// Bring in `alloc` so we can re-export Arc / Box / Vec / String for
+// users.  On `std` builds this is already linked transitively; on
+// `no_std` the user must supply a `#[global_allocator]` (the
+// `ove-allocator` sub-crate provides one that wraps libc malloc/free).
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+/// Heap-allocating types re-exported from `alloc::*`.  Available with
+/// the `alloc` (or `std`) feature.  On `no_std` targets the consumer
+/// must register a `#[global_allocator]`; the `ove-allocator` crate
+/// provides a default that wraps libc malloc/free.
+#[cfg(feature = "alloc")]
+pub mod heap {
+    pub use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+}
+
 #[cfg(has_audio)]
 pub mod audio;
 #[cfg(not(docsrs))]

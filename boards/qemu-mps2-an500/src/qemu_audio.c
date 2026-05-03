@@ -201,23 +201,12 @@ static int qemu_sink_start(void *ctx)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	static ove_thread_storage_t audio_th_storage;
 	static uint8_t audio_th_stack[4096];
-#endif
-
-	struct ove_thread_desc desc = {
-		.name = "qemu_audio",
-		.entry = audio_engine_loop,
-		.arg = sc,
-		.priority = OVE_PRIO_NORMAL,
-		.stack_size = 4096,
-#ifdef CONFIG_OVE_ZERO_HEAP
-		.stack = audio_th_stack,
-#endif
-	};
-
-#ifdef CONFIG_OVE_ZERO_HEAP
-	if (ove_thread_init(&sc->thread, &audio_th_storage, &desc) != OVE_OK) {
+	if (ove_thread_init(&sc->thread, &audio_th_storage, "qemu_audio",
+			    audio_engine_loop, sc, OVE_PRIO_NORMAL, 4096,
+			    audio_th_stack) != OVE_OK) {
 #else
-	if (ove_thread_create_(&sc->thread, &desc) != OVE_OK) {
+	if (ove_thread_create(&sc->thread, "qemu_audio", audio_engine_loop, sc,
+			      OVE_PRIO_NORMAL, 4096) != OVE_OK) {
 #endif
 		sc->running = 0;
 		return OVE_ERR_NO_MEMORY;

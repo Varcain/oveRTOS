@@ -180,21 +180,9 @@ static void test_stack_usage(void **state)
 static void test_create_null_handle(void **state)
 {
 	(void)state;
-	struct ove_thread_desc desc = {
-		.name = "t11",
-		.entry = entry_set_flag,
-		.stack_size = 4096,
-		.priority = OVE_PRIO_NORMAL,
-	};
-	assert_int_equal(ove_thread_create_(NULL, &desc), OVE_ERR_INVALID_PARAM);
-}
-
-/* 12. create with NULL desc */
-static void test_create_null_desc(void **state)
-{
-	(void)state;
-	ove_thread_t h = NULL;
-	assert_int_equal(ove_thread_create_(&h, NULL), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_thread_create(NULL, "t11", entry_set_flag, NULL,
+					   OVE_PRIO_NORMAL, 4096),
+			 OVE_ERR_INVALID_PARAM);
 }
 
 /* 13. create with NULL entry */
@@ -202,13 +190,8 @@ static void test_create_null_entry(void **state)
 {
 	(void)state;
 	ove_thread_t h = NULL;
-	struct ove_thread_desc desc = {
-		.name = "t13",
-		.entry = NULL,
-		.stack_size = 4096,
-		.priority = OVE_PRIO_NORMAL,
-	};
-	assert_int_equal(ove_thread_create_(&h, &desc), OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_thread_create(&h, "t13", NULL, NULL, OVE_PRIO_NORMAL, 4096),
+			 OVE_ERR_INVALID_PARAM);
 }
 #endif
 
@@ -272,16 +255,11 @@ static void test_create_misaligned_stack(void **state)
 	static uint8_t __attribute__((aligned(8))) misaligned_buf[4096];
 	static ove_thread_storage_t misaligned_th_storage;
 
-	struct ove_thread_desc desc = {
-		.name = "misaligned",
-		.entry = entry_set_flag,
-		.arg = NULL,
-		.priority = OVE_PRIO_NORMAL,
-		.stack_size = sizeof(misaligned_buf) - 8,
-		.stack = misaligned_buf + 1, /* deliberately off by 1 */
-	};
 	ove_thread_t h = NULL;
-	int rc = ove_thread_init(&h, &misaligned_th_storage, &desc);
+	int rc = ove_thread_init(&h, &misaligned_th_storage, "misaligned",
+				 entry_set_flag, NULL, OVE_PRIO_NORMAL,
+				 sizeof(misaligned_buf) - 8,
+				 misaligned_buf + 1 /* deliberately off by 1 */);
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 	assert_null(h);
 }
@@ -302,7 +280,6 @@ int test_thread_run(void)
 		cmocka_unit_test_teardown(test_stack_usage, teardown_stop_spin),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_create_null_handle),
-		cmocka_unit_test(test_create_null_desc),
 		cmocka_unit_test(test_create_null_entry),
 #endif
 		cmocka_unit_test(test_suspend_resume),

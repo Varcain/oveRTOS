@@ -27,14 +27,7 @@ static void thread_create_destroy_run(void *ctx)
 {
 	(void)ctx;
 	ove_thread_t th;
-	struct ove_thread_desc desc = {
-		.name = "bench_tmp",
-		.entry = dummy_thread,
-		.arg = NULL,
-		.priority = OVE_PRIO_LOW,
-	};
-
-	ove_thread_create(&th, 1024, &desc);
+	ove_thread_create(&th, "bench_tmp", dummy_thread, NULL, OVE_PRIO_LOW, 1024);
 	ove_thread_destroy(th);
 }
 #endif
@@ -74,13 +67,7 @@ static void ctx_switch_setup(void *ctx)
 	ove_sem_create(&ping_sem, 0, 1);
 	ove_sem_create(&pong_sem, 0, 1);
 
-	struct ove_thread_desc desc = {
-		.name = "pong",
-		.entry = pong_thread,
-		.arg = NULL,
-		.priority = OVE_PRIO_NORMAL,
-	};
-	ove_thread_create(&bench_th, 2048, &desc);
+	ove_thread_create(&bench_th, "pong", pong_thread, NULL, OVE_PRIO_NORMAL, 2048);
 }
 
 static void ctx_switch_run(void *ctx)

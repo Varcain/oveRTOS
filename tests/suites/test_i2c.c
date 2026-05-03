@@ -12,6 +12,7 @@
 
 /* ── tests ───────────────────────────────────────────────────────────── */
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static void test_i2c_create_destroy(void **state)
 {
 	(void)state;
@@ -35,14 +36,6 @@ static void test_i2c_null_params(void **state)
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 }
 
-static void test_i2c_write_null_handle(void **state)
-{
-	(void)state;
-	uint8_t data[] = {0x00, 0x01};
-	int rc = ove_i2c_write(NULL, 0x50, data, sizeof(data), 100);
-	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
-}
-
 static void test_i2c_read_null_buf(void **state)
 {
 	(void)state;
@@ -54,6 +47,54 @@ static void test_i2c_read_null_buf(void **state)
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 
 	ove_i2c_destroy(i2c);
+}
+#else  /* CONFIG_OVE_ZERO_HEAP — use _init with caller-supplied storage */
+static ove_i2c_storage_t s_i2c_cd;
+static ove_i2c_storage_t s_i2c_rd;
+
+static void test_i2c_create_destroy(void **state)
+{
+	(void)state;
+	ove_i2c_t i2c;
+	struct ove_i2c_cfg cfg = {
+		.instance = 0,
+		.speed = OVE_I2C_SPEED_STANDARD,
+	};
+	int rc = ove_i2c_init(&i2c, &s_i2c_cd, &cfg);
+	assert_int_equal(rc, OVE_OK);
+	ove_i2c_deinit(i2c);
+}
+
+static void test_i2c_null_params(void **state)
+{
+	(void)state;
+	struct ove_i2c_cfg cfg = {.instance = 0, .speed = OVE_I2C_SPEED_FAST};
+	int rc = ove_i2c_init(NULL, &s_i2c_cd, &cfg);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+	rc = ove_i2c_init(NULL, NULL, NULL);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+}
+
+static void test_i2c_read_null_buf(void **state)
+{
+	(void)state;
+	ove_i2c_t i2c;
+	struct ove_i2c_cfg cfg = {.instance = 0, .speed = OVE_I2C_SPEED_STANDARD};
+	ove_i2c_init(&i2c, &s_i2c_rd, &cfg);
+
+	int rc = ove_i2c_read(i2c, 0x50, NULL, 4, 100);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+
+	ove_i2c_deinit(i2c);
+}
+#endif /* CONFIG_OVE_ZERO_HEAP */
+
+static void test_i2c_write_null_handle(void **state)
+{
+	(void)state;
+	uint8_t data[] = {0x00, 0x01};
+	int rc = ove_i2c_write(NULL, 0x50, data, sizeof(data), 100);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 }
 
 static void test_i2c_probe_null_handle(void **state)

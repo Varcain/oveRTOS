@@ -327,23 +327,13 @@ static inline int ove_test_thread_run(ove_thread_t *th, ove_thread_storage_t *st
 				      const char *name, ove_thread_fn entry, void *arg,
 				      uint8_t *stack, size_t stack_size)
 {
-	struct ove_thread_desc desc = {
-		.name = name,
-		.entry = entry,
-		.arg = arg,
-		.priority = OVE_PRIO_NORMAL,
-		.stack_size = stack_size,
 #ifdef CONFIG_OVE_ZERO_HEAP
-		.stack = stack,
-#endif
-	};
-#ifdef CONFIG_OVE_ZERO_HEAP
-	(void)stack_size; /* used in desc */
-	return ove_thread_init(th, storage, &desc);
+	return ove_thread_init(th, storage, name, entry, arg, OVE_PRIO_NORMAL,
+			       stack_size, stack);
 #else
 	(void)storage;
 	(void)stack;
-	return ove_thread_create_(th, &desc);
+	return ove_thread_create(th, name, entry, arg, OVE_PRIO_NORMAL, stack_size);
 #endif
 }
 

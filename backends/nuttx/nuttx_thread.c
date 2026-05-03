@@ -180,24 +180,23 @@ static int task_wrapper(int argc, char *argv[])
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-static int thread_start(struct ove_thread *t, const struct ove_thread_desc *desc)
+static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn entry,
+			void *arg, ove_prio_t priority, size_t stack_size)
 {
 	char addr_str[20];
 	int pid;
-	size_t stack;
 
-	t->entry = desc->entry;
-	t->arg = desc->arg;
+	t->entry = entry;
+	t->arg = arg;
 	t->state = OVE_THREAD_STATE_READY;
 	t->suspend_inited = 0;
-	t->name = desc->name; /* caller-owned string, retained for trace descriptors */
+	t->name = name; /* caller-owned string, retained for trace descriptors */
 	nxsem_init(&t->done_sem, 0, 0);
 
 	ensure_sigusr1_handler();
 
-	stack = desc->stack_size;
-	if (stack == 0) {
-		stack = 2048;
+	if (stack_size == 0) {
+		stack_size = 2048;
 	}
 
 	snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)t);
@@ -234,8 +233,8 @@ static int thread_start(struct ove_thread *t, const struct ove_thread_desc *desc
 		 * tracker for the longer-term fix (nxtask_init with kernel-
 		 * thread launch sequence).
 		 */
-		pid = task_create(desc->name ? desc->name : "ove_thread",
-				  map_priority(desc->priority), (int)stack, task_wrapper,
+		pid = task_create(name ? name : "ove_thread",
+				  map_priority(priority), (int)stack_size, task_wrapper,
 				  argv_args);
 		if (pid < 0) {
 			nxsem_destroy(&t->done_sem);
@@ -255,21 +254,23 @@ static int thread_start(struct ove_thread *t, const struct ove_thread_desc *desc
 }
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const struct ove_thread_desc *desc)
+		    const char *name, ove_thread_fn entry, void *arg,
+		    ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (handle == NULL || storage == NULL || desc == NULL || desc->entry == NULL) {
+	if (handle == NULL || storage == NULL || entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires 8-byte alignment at public function boundaries; a
 	 * misaligned stack faults on first entry.  Sanctioned helpers in
 	 * include/ove/storage.h apply aligned(8); this backstops any hand-
 	 * rolled array that skips them. */
-	if (desc->stack != NULL && ((uintptr_t)desc->stack & 7u) != 0u) {
+	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	(void)stack;
 
 	memset(storage, 0, sizeof(*storage));
-	int ret = thread_start(storage, desc);
+	int ret = thread_start(storage, name, entry, arg, priority, stack_size);
 	if (ret != OVE_OK) {
 		return ret;
 	}
@@ -314,12 +315,13 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
+		      void *arg, ove_prio_t priority, size_t stack_size)
 {
 	struct ove_thread *t;
 	int ret;
 
-	if (handle == NULL || desc == NULL || desc->entry == NULL) {
+	if (handle == NULL || entry == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -329,7 +331,7 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 	}
 	memset(t, 0, sizeof(*t));
 
-	ret = thread_start(t, desc);
+	ret = thread_start(t, name, entry, arg, priority, stack_size);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(t);
 		return ret;

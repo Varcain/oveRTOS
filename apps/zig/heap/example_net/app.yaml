@@ -1,0 +1,13 @@
+lang: zig
+config_name: example_net_zig_heap
+description: "Zig Networking Demo"
+zig:
+  src_dir: src
+  lib_name: example_net_zig
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_NET=y
+  - CONFIG_OVE_NET_HTTP=y
+  - CONFIG_OVE_NET_MQTT=y
+  - CONFIG_OVE_NET_HTTPD=y
+  - CONFIG_OVE_NET_SNTP=y
