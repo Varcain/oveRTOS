@@ -659,11 +659,11 @@ def _lcov_filter_ove_sources(lcov, raw, filtered, ove_dir, *,
 
 
 def _clean_gcda(root):
-    """Remove stale .gcda under `root`. Needed before each NuttX sim
-    coverage run because NuttX's Application.mk scatters .gcda next to the
-    .o files (see the KNOWN WART note in tests/sim/nuttx-qemu/nuttx_app/
-    Makefile) — i.e. throughout the oveRTOS source tree. Leftover counters
-    from a previous run would poison the merge."""
+    """Remove stale .gcda under `root` before a coverage run. Leftover
+    counters from a previous run (or a previous coverage variant) would
+    accumulate into the next merge and inflate the line-hit numbers.
+    `lcov --capture --directory <root>` walks the whole tree, so we
+    sweep the whole tree to match."""
     removed = 0
     for dirpath, _, files in os.walk(root):
         for f in files:
@@ -677,171 +677,203 @@ def _clean_gcda(root):
         logger.debug("Removed %d stale .gcda file(s) under %s", removed, root)
 
 
-def _clean_scattered_nuttx_objs(ove_dir, build_base):
-    """Scrub scattered .o/.gcno files written next to OVE_DIR sources by
-    NuttX's Application.mk for the build at `build_base`.
+def _nuttx_fetch_sources(ove_dir):
+    """Fetch the manifest-pinned NuttX kernel + apps + CMocka into dl/.
 
-    Application.mk's $(PREFIX).depend rule only emits header dependencies
-    for sources reachable via VPATH (effectively only main.c here); the
-    other CSRCS entries — tests/suites/*.c, backends/nuttx/*.c,
-    backends/common/*.c, tests/backends/stub/*.c, dl/cmocka/src/cmocka.c —
-    have no header tracking. When their headers change (e.g. an API
-    rename in include/ove/*.h), the scattered .o silently goes stale and
-    the link references symbols that no longer exist.
-
-    Pre-build cleanup is the cheapest defense: rebuilding ~30 OVE-side .c
-    files from scratch costs a few seconds; chasing a phantom undefined
-    symbol costs an hour. The kernel build under build_base is untouched
-    (we skip output/), so NuttX's own incremental build still works."""
-    # Application.mk mangles the absolute build path into the .o filename
-    # by replacing '/' with '.'. Reproduce the same mangling so we match
-    # only objects belonging to *this* build_base — leaves objects from
-    # parallel build variants (qemu-nuttx vs nuttx_coverage) intact.
-    mangled = build_base.lstrip("/").replace("/", ".")
-    needle = f".{mangled}.nuttx-apps.external.ove_test"
-    suffixes = (".o", ".gcno", ".gcda")
-    output_root = os.path.join(ove_dir, "output")
-    removed = 0
-    for dirpath, dirnames, files in os.walk(ove_dir):
-        # Don't descend into output/ — those .o files are the legitimate
-        # build outputs (main.c's object, kernel sources, etc.) and have
-        # working dep tracking.
-        if dirpath == ove_dir:
-            dirnames[:] = [d for d in dirnames if d != "output"]
-        for f in files:
-            if f.endswith(suffixes) and needle in f:
-                try:
-                    os.unlink(os.path.join(dirpath, f))
-                    removed += 1
-                except OSError:
-                    pass
-        # Stop walking once we've left ove_dir (paranoia; os.walk doesn't
-        # follow symlinks by default).
-        if not dirpath.startswith(ove_dir):
-            dirnames[:] = []
-    if removed:
-        logger.debug("Removed %d stale scattered NuttX object(s) for %s",
-                     removed, build_base)
-
-
-def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
-                    coverage=False):
-    """Shared driver for test_nuttx and test_nuttx_coverage.
-
-    When `coverage=True` the NuttX app is built with `OVE_COVERAGE=1`, stale
-    `.gcda` counters under OVE_DIR are removed before the run, and the
-    `__gcov_dump()` hook in main.c flushes counters on clean exit. The
-    scattered `.gcda` files are collected with `lcov --directory` in the
-    caller.
-    """
+    Returns (nuttx_src, apps_dl, cmocka_dl) — absolute paths to the cached
+    upstream trees. The kernel tree is used directly as a CMake source dir
+    (CMake builds out-of-tree, so it stays clean); the apps tree is the
+    pristine cache that callers copy into a per-variant build dir to
+    register external/ove_test/ without cross-variant interference."""
     import hashlib
     dl_dir = os.path.join(ove_dir, "dl")
-    build_base = os.path.join(output_dir, "tests", build_subdir)
-
     manifest = load_manifest(ove_dir)
-    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
+    tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
     nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
     apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
-    tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
-    nuttx_build = os.path.join(build_base, "nuttx")
-    apps_build = os.path.join(build_base, "nuttx-apps")
+    tag_hash = hashlib.sha256(tag.encode()).hexdigest()[:8]
 
-    logger.info("Building %s", label)
-    os.makedirs(build_base, exist_ok=True)
-
-    # Fetch NuttX
     nuttx_hash = os.path.join(dl_dir, f"nuttx-{tag_hash}")
     if not os.path.isdir(nuttx_hash):
-        logger.debug(f"Cloning NuttX {default_tag}...")
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-              nuttx_url, nuttx_hash])
-    link = os.path.join(dl_dir, "nuttx")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(nuttx_hash, link)
+        logger.debug(f"Cloning NuttX {tag}...")
+        run(["git", "clone", "--depth", "1", "-b", tag, nuttx_url,
+             nuttx_hash])
+    nuttx_link = os.path.join(dl_dir, "nuttx")
+    if os.path.islink(nuttx_link):
+        os.unlink(nuttx_link)
+    os.symlink(nuttx_hash, nuttx_link)
 
-    # Fetch apps
     apps_hash = os.path.join(dl_dir, f"nuttx-apps-{tag_hash}")
     if not os.path.isdir(apps_hash):
-        logger.debug(f"Cloning NuttX apps {default_tag}...")
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-              apps_url, apps_hash])
-    link = os.path.join(dl_dir, "nuttx-apps")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(apps_hash, link)
+        logger.debug(f"Cloning NuttX apps {tag}...")
+        run(["git", "clone", "--depth", "1", "-b", tag, apps_url,
+             apps_hash])
+    apps_link = os.path.join(dl_dir, "nuttx-apps")
+    if os.path.islink(apps_link):
+        os.unlink(apps_link)
+    os.symlink(apps_hash, apps_link)
 
-    # Fetch CMocka
     cmocka_dl = os.path.join(dl_dir, "cmocka")
     if not os.path.isdir(cmocka_dl):
         logger.debug("Cloning CMocka...")
         run(["git", "clone", "--depth", "1", "-b", "cmocka-1.1.7",
-              "https://gitlab.com/cmocka/cmocka.git", cmocka_dl])
+             "https://gitlab.com/cmocka/cmocka.git", cmocka_dl])
 
-    # Copy to build tree
-    if not os.path.isdir(nuttx_build):
-        logger.debug("Copying NuttX to build tree...")
-        shutil.copytree(os.path.join(dl_dir, "nuttx"), nuttx_build,
-                        symlinks=True)
-    if not os.path.isdir(apps_build):
-        logger.debug("Copying NuttX apps to build tree...")
-        shutil.copytree(os.path.join(dl_dir, "nuttx-apps"), apps_build,
-                        symlinks=True)
+    return nuttx_hash, apps_hash, cmocka_dl
 
-    # Register test app (reuse nuttx-qemu app)
+
+def _nuttx_variant_config_dir(ove_dir, app_subdir):
+    """Resolve the per-variant tests/sim/<dir>/ that holds ove_config.h.
+
+    Heap variants share tests/sim/nuttx/ove_config.h (it's RTOS-keyed:
+    CONFIG_OVE_RTOS_NUTTX=1, no zero-heap define). Zero-heap variants
+    have their own ove_config.h next to the variant's nuttx_app
+    fixture. Falling back to tests/sim/nuttx/ when the variant dir has
+    no ove_config.h matches what the legacy Makefiles did via
+    `CFLAGS += -I$(OVE_DIR)/tests/sim/nuttx`."""
+    candidate = os.path.join(ove_dir, "tests", "sim", app_subdir)
+    if os.path.isfile(os.path.join(candidate, "ove_config.h")):
+        return candidate
+    return os.path.join(ove_dir, "tests", "sim", "nuttx")
+
+
+def _nuttx_register_test_app(ove_dir, apps_build, app_subdir):
+    """Stage tests/sim/<app_subdir>/nuttx_app as nuttx-apps/external/ove_test
+    in `apps_build`. Drops both an `add_subdirectory(ove_test)` CMakeLists
+    and an `external/Kconfig` source line so the kernel's CMake-driven
+    Kconfig sees CONFIG_EXTERNAL_OVE_TEST."""
     ext_dir = os.path.join(apps_build, "external")
     os.makedirs(ext_dir, exist_ok=True)
     test_dest = os.path.join(ext_dir, "ove_test")
     if os.path.exists(test_dest):
         shutil.rmtree(test_dest)
     shutil.copytree(
-        os.path.join(ove_dir, "tests", "sim", "nuttx-qemu", "nuttx_app"),
+        os.path.join(ove_dir, "tests", "sim", app_subdir, "nuttx_app"),
         test_dest)
     with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
         f.write('source "$APPSDIR/external/ove_test/Kconfig"\n')
-    # NuttX sim tests still use Make (configure.sh + make) because
-    # the NuttX sim architecture has limited CMake support upstream.
-    with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
-        f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
-        f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
-        f.write('endif\n')
     with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
         f.write('add_subdirectory(ove_test)\n')
 
-    # Configure for sim board
-    # NuttX's configure.sh -> sethost.sh calls kconfig-tweak from PATH
-    nuttx_env = _venv_env(ove_dir)
-    flag = os.path.join(nuttx_build, ".ove_test_configured")
-    if not os.path.isfile(flag):
-        logger.debug("Configuring NuttX for sim:nsh...")
-        run(["./tools/configure.sh", "-a", "../nuttx-apps",
-              "sim:nsh"], cwd=nuttx_build, env=nuttx_env)
-        Path(flag).write_text("configured\n")
 
-    # Apply test defconfig overlay
-    overlay = os.path.join(ove_dir, "tests", "sim", "nuttx",
-                           "nuttx_sim_defconfig")
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    apply_defconfig_overlay(nuttx_config, overlay)
+def _nuttx_cmake_build(ove_dir, *, nuttx_src, apps_build, build_dir,
+                       board_config, defconfig_overlays, coverage,
+                       variant_dir, extra_env=None):
+    """Configure + build a NuttX target via CMake. Two-phase to thread our
+    test defconfig overlays through Kconfig:
 
-    apps_abs = os.path.abspath(apps_build)
-    nuttx_env["APPDIR"] = apps_abs
-    run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
+      1. cmake configure → generates build_dir/.config from the board
+         defconfig + olddefconfig.
+      2. apply_defconfig_overlay() + olddefconfig (kconfiglib) merges our
+         overlays into .config.
+      3. cmake re-configure → nuttx_mkconfig sees .config != .config.prev
+         and regenerates include/nuttx/config.h, then cmake --build runs
+         the kernel + libapps build.
 
-    # Build
-    nuttx_env["OVE_DIR"] = ove_dir
-    _clean_scattered_nuttx_objs(ove_dir, build_base)
+    All build artifacts (objects, dep files, .gcno/.gcda for coverage) live
+    under build_dir/CMakeFiles/.../*.o — no scatter into the OVE source
+    tree, no manual dep tracking required."""
+    env = _venv_env(ove_dir)
+    if extra_env:
+        env.update(extra_env)
+
+    cmake_defs = [
+        f"-DBOARD_CONFIG={board_config}",
+        f"-DOVE_DIR={ove_dir}",
+        f"-DNUTTX_APPS_DIR={apps_build}",
+        # _OVE_VARIANT_DIR holds the variant's own ove_config.h (with
+        # CONFIG_OVE_RTOS_NUTTX=1 etc.). The sim variant borrows the
+        # nuttx-qemu app fixture but supplies tests/sim/nuttx/ for its
+        # ove_config.h, so the variant dir is decoupled from app_subdir.
+        f"-D_OVE_VARIANT_DIR={variant_dir}",
+    ]
     if coverage:
-        nuttx_env["OVE_COVERAGE"] = "1"
+        cmake_defs.append("-DOVE_COVERAGE=ON")
+
+    logger.debug(f"cmake configure: {board_config} -> {build_dir}")
+    # --no-warn-unused-cli silences "Manually-specified variables were not
+    # used" for OVE_DIR / OVE_COVERAGE — they're consumed in the
+    # nuttx-apps subtree (external/ove_test/CMakeLists.txt) which CMake
+    # processes after the top-level pass that emits the warning.
+    run(["cmake", "-G", "Ninja", "--no-warn-unused-cli",
+         "-S", nuttx_src, "-B", build_dir, *cmake_defs], env=env)
+
+    nuttx_config = os.path.join(build_dir, ".config")
+    for overlay in defconfig_overlays:
+        if os.path.isfile(overlay):
+            apply_defconfig_overlay(nuttx_config, overlay)
+
+    # olddefconfig with the env vars NuttX's CMake-driven Kconfig expects;
+    # mirrors KCONFIG_ENV from cmake/menuconfig.cmake. APPSBINDIR points
+    # at the *generated* apps Kconfig under build_dir, not the source
+    # tree — CMake's nuttx_generate_kconfig() emits a top-level
+    # nuttx-apps/Kconfig there that aggregates all enabled subdir
+    # Kconfigs (the source tree has no such file).
+    kconfig_env = dict(env)
+    kconfig_env.update({
+        "KCONFIG_CONFIG": nuttx_config,
+        "EXTERNALDIR": "dummy",
+        "APPSDIR": apps_build,
+        "DRIVERS_PLATFORM_DIR": "dummy",
+        "APPSBINDIR": os.path.join(build_dir, "nuttx-apps"),
+        "BINDIR": build_dir,
+    })
+    olddefconfig = os.path.join(ove_dir, ".venv", "bin", "olddefconfig")
+    run([olddefconfig], cwd=nuttx_src, env=kconfig_env)
+
+    # Re-run configure: nuttx_mkconfig.cmake compares .config vs .config.prev
+    # and regenerates derived headers when they differ. -S must match the
+    # original source dir or CMake errors out on the cache mismatch.
+    run(["cmake", "-S", nuttx_src, "-B", build_dir,
+         "--no-warn-unused-cli"], env=env)
+    run(["cmake", "--build", build_dir, "-j", str(nproc())], env=env)
+
+
+def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
+                    coverage=False):
+    """Shared driver for test_nuttx and test_nuttx_coverage.
+
+    When `coverage=True` the app is built with -DOVE_COVERAGE=ON, stale
+    `.gcda` counters under OVE_DIR are removed before the run, and the
+    `__gcov_dump()` hook in main.c flushes counters on clean exit. .gcda
+    files land under <build>/CMakeFiles/.../*.gcda — lcov --directory
+    walks ove_dir to collect them."""
+    build_base = os.path.join(output_dir, "tests", build_subdir)
+    apps_build = os.path.join(build_base, "nuttx-apps")
+    build_dir = os.path.join(build_base, "build")
+    nuttx_exe = os.path.join(build_dir, "nuttx")
+
+    logger.info("Building %s", label)
+    os.makedirs(build_base, exist_ok=True)
+
+    nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
+    if not os.path.isdir(apps_build):
+        logger.debug("Copying NuttX apps to build tree...")
+        shutil.copytree(apps_dl, apps_build, symlinks=True)
+    _nuttx_register_test_app(ove_dir, apps_build, "nuttx-qemu")
+
+    if coverage:
         _clean_gcda(ove_dir)
-    run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
+
+    _nuttx_cmake_build(
+        ove_dir,
+        nuttx_src=nuttx_src,
+        apps_build=apps_build,
+        build_dir=build_dir,
+        board_config="sim:nsh",
+        defconfig_overlays=[
+            os.path.join(ove_dir, "tests", "sim", "nuttx",
+                         "nuttx_sim_defconfig"),
+        ],
+        coverage=coverage,
+        variant_dir=_nuttx_variant_config_dir(ove_dir, "nuttx"),
+    )
 
     logger.info("Running %s", label)
     # NuttX sim doesn't exit when init task returns; use timeout + output parsing
     try:
         result = subprocess.run(
-            [os.path.join(nuttx_build, "nuttx")],
-            timeout=60, capture_output=True, text=True)
+            [nuttx_exe], timeout=60, capture_output=True, text=True)
         stdout = result.stdout
     except subprocess.TimeoutExpired as e:
         stdout = e.stdout.decode() if e.stdout else ""
@@ -865,9 +897,10 @@ def test_nuttx(ove_dir, output_dir):
 def test_nuttx_coverage(ove_dir, output_dir):
     """NuttX sim tests with --coverage; emit lcov tracefile.
 
-    `.gcda` files scatter through the oveRTOS source tree (NuttX
-    Application.mk wart), so lcov scans OVE_DIR for counters and writes
-    the filtered tracefile into the coverage build dir.
+    `.gcda` files land under <build>/CMakeFiles/.../*.gcda; lcov
+    --directory walks ove_dir to collect them (the build dir is under
+    ove_dir/output) and writes the filtered tracefile into the coverage
+    build dir.
     """
     result = _run_nuttx_sim(ove_dir, output_dir,
                             build_subdir="nuttx_coverage",
@@ -1143,9 +1176,9 @@ def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
     """Build a NuttX stm32f746g-disco firmware and run it under Renode.
 
     Mirrors `_run_nuttx_qemu`'s build steps verbatim — only diverges in
-    the `configure.sh` board target and the runner.  Kept separate
-    rather than parameterising `_run_nuttx_qemu` because that helper's
-    QEMU invocation path is QEMU-specific.
+    the CMake board target and the runner. Kept separate rather than
+    parameterising `_run_nuttx_qemu` because that helper's QEMU
+    invocation path is QEMU-specific.
     """
     elf = _build_renode_stm32f746_nuttx(ove_dir, output_dir,
                                         app_subdir=app_subdir, label=label)
@@ -1155,96 +1188,44 @@ def _run_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
 
 
 def _build_renode_stm32f746_nuttx(ove_dir, output_dir, *, app_subdir, label):
-    """Build a NuttX stm32f746g-disco firmware via configure.sh + make.
-    Returns the path to the produced ELF (NuttX names it `nuttx`, no
-    suffix).  The HW runner reuses this verbatim — NuttX's stm32f7
-    backend already writes via USART1 by default, so no extra knobs.
-    """
+    """Build a NuttX stm32f746g-disco firmware via CMake. Returns the path
+    to the produced ELF (NuttX names it `nuttx`, no suffix). The HW
+    runner reuses this verbatim — NuttX's stm32f7 backend already writes
+    via USART1 by default, so no extra knobs."""
     tc_dir = _ensure_arm_toolchain(ove_dir)
-    import hashlib
-    dl_dir = os.path.join(ove_dir, "dl")
     build_base = os.path.join(output_dir, "tests", label)
-
-    manifest = load_manifest(ove_dir)
-    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
-    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
-    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
-    tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
-    nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
+    build_dir = os.path.join(build_base, "build")
 
     logger.info(f"Building {label}")
     os.makedirs(build_base, exist_ok=True)
 
-    nuttx_hash = os.path.join(dl_dir, f"nuttx-{tag_hash}")
-    if not os.path.isdir(nuttx_hash):
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-             nuttx_url, nuttx_hash])
-    link = os.path.join(dl_dir, "nuttx")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(nuttx_hash, link)
-
-    apps_hash = os.path.join(dl_dir, f"nuttx-apps-{tag_hash}")
-    if not os.path.isdir(apps_hash):
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-             apps_url, apps_hash])
-    link = os.path.join(dl_dir, "nuttx-apps")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(apps_hash, link)
-
-    cmocka_dl = os.path.join(dl_dir, "cmocka")
-    if not os.path.isdir(cmocka_dl):
-        run(["git", "clone", "--depth", "1", "-b", "cmocka-1.1.7",
-             "https://gitlab.com/cmocka/cmocka.git", cmocka_dl])
-
-    if not os.path.isdir(nuttx_build):
-        shutil.copytree(os.path.join(dl_dir, "nuttx"), nuttx_build,
-                        symlinks=True)
+    nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
     if not os.path.isdir(apps_build):
-        shutil.copytree(os.path.join(dl_dir, "nuttx-apps"), apps_build,
-                        symlinks=True)
+        shutil.copytree(apps_dl, apps_build, symlinks=True)
+    _nuttx_register_test_app(ove_dir, apps_build, app_subdir)
 
-    ext_dir = os.path.join(apps_build, "external")
-    os.makedirs(ext_dir, exist_ok=True)
-    test_dest = os.path.join(ext_dir, "ove_test")
-    if os.path.exists(test_dest):
-        shutil.rmtree(test_dest)
-    shutil.copytree(
-        os.path.join(ove_dir, "tests", "sim", app_subdir, "nuttx_app"),
-        test_dest)
-    with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
-        f.write('source "$APPSDIR/external/ove_test/Kconfig"\n')
-    with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
-        f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
-        f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
-        f.write('endif\n')
-    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
-        f.write('add_subdirectory(ove_test)\n')
+    extra_env = {
+        "PATH": os.path.join(tc_dir, "bin") + os.pathsep + os.environ["PATH"],
+    }
+    overlays = [
+        os.path.join(ove_dir, "tests", "sim", app_subdir,
+                     "nuttx_test_defconfig"),
+    ]
 
-    nuttx_env = _venv_env(ove_dir)
-    tc_bin = os.path.join(tc_dir, "bin")
-    nuttx_env["PATH"] = tc_bin + os.pathsep + nuttx_env["PATH"]
-    flag = os.path.join(nuttx_build, ".ove_test_configured")
-    if not os.path.isfile(flag):
-        run(["./tools/configure.sh", "-a", "../nuttx-apps",
-              "stm32f746g-disco:nsh"], cwd=nuttx_build, env=nuttx_env)
-        Path(flag).write_text("configured\n")
+    _nuttx_cmake_build(
+        ove_dir,
+        nuttx_src=nuttx_src,
+        apps_build=apps_build,
+        build_dir=build_dir,
+        board_config="stm32f746g-disco:nsh",
+        defconfig_overlays=overlays,
+        coverage=False,
+        variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
+        extra_env=extra_env,
+    )
 
-    overlay = os.path.join(ove_dir, "tests", "sim", app_subdir,
-                           "nuttx_test_defconfig")
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    apply_defconfig_overlay(nuttx_config, overlay)
-
-    apps_abs = os.path.abspath(apps_build)
-    nuttx_env["APPDIR"] = apps_abs
-    run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
-
-    nuttx_env["OVE_DIR"] = ove_dir
-    run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
-
-    return os.path.join(nuttx_build, "nuttx")
+    return os.path.join(build_dir, "nuttx")
 
 
 def test_renode_stm32f746_nuttx(ove_dir, output_dir):
@@ -1599,125 +1580,56 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
 def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False):
-    """Build and run a NuttX QEMU ARM test variant.
+    """Build and run a NuttX QEMU ARM test variant via CMake.
 
     `app_subdir` is the tests/sim/<dir>/ holding nuttx_app/ and
     nuttx_test_defconfig (e.g. "nuttx-qemu" or "nuttx-qemu-zeroheap").
     """
     tc_dir = _ensure_arm_toolchain(ove_dir)
-    import hashlib
-    dl_dir = os.path.join(ove_dir, "dl")
     build_base = os.path.join(output_dir, "tests", label)
-
-    manifest = load_manifest(ove_dir)
-    default_tag = get_component(manifest, "rtos", "nuttx", "kernel", "version")
-    nuttx_url = get_component(manifest, "rtos", "nuttx", "kernel", "url")
-    apps_url = get_component(manifest, "rtos", "nuttx", "apps", "url")
-    tag_hash = hashlib.sha256(default_tag.encode()).hexdigest()[:8]
-    nuttx_build = os.path.join(build_base, "nuttx")
     apps_build = os.path.join(build_base, "nuttx-apps")
+    build_dir = os.path.join(build_base, "build")
+    nuttx_exe = os.path.join(build_dir, "nuttx")
 
     logger.info(f"Building {label}")
     os.makedirs(build_base, exist_ok=True)
 
-    # Fetch NuttX
-    nuttx_hash = os.path.join(dl_dir, f"nuttx-{tag_hash}")
-    if not os.path.isdir(nuttx_hash):
-        logger.debug(f"Cloning NuttX {default_tag}...")
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-              nuttx_url, nuttx_hash])
-    link = os.path.join(dl_dir, "nuttx")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(nuttx_hash, link)
-
-    # Fetch apps
-    apps_hash = os.path.join(dl_dir, f"nuttx-apps-{tag_hash}")
-    if not os.path.isdir(apps_hash):
-        logger.debug(f"Cloning NuttX apps {default_tag}...")
-        run(["git", "clone", "--depth", "1", "-b", default_tag,
-              apps_url, apps_hash])
-    link = os.path.join(dl_dir, "nuttx-apps")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(apps_hash, link)
-
-    # Fetch CMocka
-    cmocka_dl = os.path.join(dl_dir, "cmocka")
-    if not os.path.isdir(cmocka_dl):
-        logger.debug("Cloning CMocka...")
-        run(["git", "clone", "--depth", "1", "-b", "cmocka-1.1.7",
-              "https://gitlab.com/cmocka/cmocka.git", cmocka_dl])
-
-    # Copy to build tree
-    if not os.path.isdir(nuttx_build):
-        logger.debug("Copying NuttX to build tree...")
-        shutil.copytree(os.path.join(dl_dir, "nuttx"), nuttx_build,
-                        symlinks=True)
+    nuttx_src, apps_dl, _ = _nuttx_fetch_sources(ove_dir)
     if not os.path.isdir(apps_build):
         logger.debug("Copying NuttX apps to build tree...")
-        shutil.copytree(os.path.join(dl_dir, "nuttx-apps"), apps_build,
-                        symlinks=True)
+        shutil.copytree(apps_dl, apps_build, symlinks=True)
+    _nuttx_register_test_app(ove_dir, apps_build, app_subdir)
 
-    # Register test app
-    ext_dir = os.path.join(apps_build, "external")
-    os.makedirs(ext_dir, exist_ok=True)
-    test_dest = os.path.join(ext_dir, "ove_test")
-    if os.path.exists(test_dest):
-        shutil.rmtree(test_dest)
-    shutil.copytree(
-        os.path.join(ove_dir, "tests", "sim", app_subdir, "nuttx_app"),
-        test_dest)
-    with open(os.path.join(ext_dir, "Kconfig"), "w") as f:
-        f.write('source "$APPSDIR/external/ove_test/Kconfig"\n')
-    # NuttX sim tests still use Make (configure.sh + make) because
-    # the NuttX sim architecture has limited CMake support upstream.
-    with open(os.path.join(ext_dir, "Make.defs"), "w") as f:
-        f.write('ifneq ($(CONFIG_EXTERNAL_OVE_TEST),)\n')
-        f.write('CONFIGURED_APPS += $(APPDIR)/external/ove_test\n')
-        f.write('endif\n')
-    with open(os.path.join(ext_dir, "CMakeLists.txt"), "w") as f:
-        f.write('add_subdirectory(ove_test)\n')
+    # arm-none-eabi-gcc must be discoverable for CMake's compiler probe.
+    extra_env = {
+        "PATH": os.path.join(tc_dir, "bin") + os.pathsep + os.environ["PATH"],
+    }
 
-    # Configure: configure.sh -> sethost.sh calls kconfig-tweak from PATH
-    nuttx_env = _venv_env(ove_dir)
-    tc_bin = os.path.join(tc_dir, "bin")
-    nuttx_env["PATH"] = tc_bin + os.pathsep + nuttx_env["PATH"]
-    flag = os.path.join(nuttx_build, ".ove_test_configured")
-    if not os.path.isfile(flag):
-        logger.debug("Configuring NuttX for mps2-an500:nsh...")
-        run(["./tools/configure.sh", "-a", "../nuttx-apps",
-              "mps2-an500:nsh"], cwd=nuttx_build, env=nuttx_env)
-        Path(flag).write_text("configured\n")
-
-    # Apply test defconfig overlay
-    overlay = os.path.join(ove_dir, "tests", "sim", app_subdir,
-                           "nuttx_test_defconfig")
-    nuttx_config = os.path.join(nuttx_build, ".config")
-    apply_defconfig_overlay(nuttx_config, overlay)
-
+    overlays = [
+        os.path.join(ove_dir, "tests", "sim", app_subdir,
+                     "nuttx_test_defconfig"),
+    ]
     if coverage:
-        cov_overlay = os.path.join(ove_dir, "tests", "sim", app_subdir,
-                                   "nuttx_test_coverage_defconfig")
-        if os.path.isfile(cov_overlay):
-            apply_defconfig_overlay(nuttx_config, cov_overlay)
+        overlays.append(os.path.join(ove_dir, "tests", "sim", app_subdir,
+                                     "nuttx_test_coverage_defconfig"))
 
-    apps_abs = os.path.abspath(apps_build)
-    nuttx_env["APPDIR"] = apps_abs
-    run(["make", "olddefconfig"], cwd=nuttx_build, env=nuttx_env)
-
-    nuttx_env["OVE_DIR"] = ove_dir
-    _clean_scattered_nuttx_objs(ove_dir, build_base)
-    if coverage:
-        nuttx_env["OVE_COVERAGE"] = "1"
-    run(["make", f"-j{nproc()}"], cwd=nuttx_build, env=nuttx_env)
+    _nuttx_cmake_build(
+        ove_dir,
+        nuttx_src=nuttx_src,
+        apps_build=apps_build,
+        build_dir=build_dir,
+        board_config="mps2-an500:nsh",
+        defconfig_overlays=overlays,
+        coverage=coverage,
+        variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
+        extra_env=extra_env,
+    )
 
     logger.info(f"Running {label}")
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
-        [qemu_run, os.path.join(nuttx_build, "nuttx"), "--headless",
-         "--timeout", "45"], label)
+        [qemu_run, nuttx_exe, "--headless", "--timeout", "45"], label)
 
 
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
@@ -1797,15 +1709,12 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
 def test_qemu_nuttx_coverage(ove_dir, output_dir):
     """Build and run NuttX QEMU tests with --coverage; emit lcov tracefile.
 
-    The NuttX Application.mk already gates `--coverage` + `-lgcov` on the
-    `OVE_COVERAGE=1` env var (shared with the native-sim path), and
-    main.c calls `__gcov_dump()` before `semihosting_exit`. As with
-    FreeRTOS, libgcov's fopen/fwrite writes .gcda via semihosting to the
-    host absolute paths (-fprofile-abs-path).
-
-    NuttX's Application.mk scatters .o/.gcno/.gcda alongside sources in
-    the oveRTOS tree. We pre-clean stale .gcda before the run and let
-    lcov --capture walk the NuttX build dir + the oveRTOS tree.
+    The app CMakeLists gates `--coverage` + `-fprofile-abs-path` on
+    `-DOVE_COVERAGE=ON`, and main.c calls `__gcov_dump()` before
+    `semihosting_exit`. libgcov's fopen/fwrite writes .gcda via
+    semihosting to absolute host paths (-fprofile-abs-path).
+    .gcno/.gcda land under <build>/CMakeFiles/.../*; lcov --capture
+    walks ove_dir to collect them.
     """
     label = "qemu-nuttx-coverage"
     _clean_gcda(ove_dir)
