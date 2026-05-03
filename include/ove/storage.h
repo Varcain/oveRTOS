@@ -498,6 +498,16 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 #define OVE_I2C_DEFINE(name) static ove_i2c_storage_t name
 #endif /* CONFIG_OVE_I2C */
 
+#ifdef CONFIG_OVE_I2S
+/**
+ * @brief Declare a static I2S storage variable named @p name.
+ *
+ * @note DMA buffers are not declared by this macro — pass them as
+ *       separate caller-supplied arrays to @ref ove_i2s_init.
+ */
+#define OVE_I2S_DEFINE(name) static ove_i2s_storage_t name
+#endif /* CONFIG_OVE_I2S */
+
 /** @} */ /* ove_storage_define */
 
 /**
@@ -791,6 +801,36 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	int _err = ove_uart_init(&name, &_##name##_storage, _##name##_rx_buf, (cfg_ptr)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_UART */
+
+#ifdef CONFIG_OVE_I2S
+/**
+ * @brief Declare and auto-initialise a static I2S bus with caller-supplied
+ *        DMA buffers.
+ *
+ * Emits a storage object, two 4-byte-aligned DMA byte arrays
+ * (@p tx_dma_bytes and @p rx_dma_bytes), and a handle.  The constructor
+ * calls @ref ove_i2s_init with all of them.
+ *
+ * For a unidirectional configuration, pass @c 1 for the unused buffer's
+ * size — @ref ove_i2s_init does not touch a buffer whose direction is
+ * disabled in @p cfg_ptr.  The 1-byte placeholder keeps the array
+ * declaration valid (C does not allow zero-length arrays).
+ *
+ * @param name          Variable name for the resulting @c ove_i2s_t handle.
+ * @param tx_dma_bytes  TX DMA buffer size in bytes (compile-time constant).
+ * @param rx_dma_bytes  RX DMA buffer size in bytes (compile-time constant).
+ * @param cfg_ptr       Pointer to a @c struct ove_i2s_cfg.
+ */
+#define OVE_I2S_DEFINE_STATIC(name, tx_dma_bytes, rx_dma_bytes, cfg_ptr)                       \
+	static ove_i2s_storage_t _##name##_storage;                                            \
+	static uint8_t __attribute__((aligned(4))) _##name##_tx_buf[(tx_dma_bytes)];           \
+	static uint8_t __attribute__((aligned(4))) _##name##_rx_buf[(rx_dma_bytes)];           \
+	static ove_i2s_t name;                                                                 \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                                    \
+	int _err = ove_i2s_init(&name, &_##name##_storage, _##name##_tx_buf, _##name##_rx_buf, \
+				(cfg_ptr));                                                    \
+	OVE_DEFINE_STATIC_CTOR_END_(name)
+#endif /* CONFIG_OVE_I2S */
 
 #ifdef CONFIG_OVE_NET
 /**

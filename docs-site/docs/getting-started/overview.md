@@ -60,17 +60,17 @@ Because the choice is entirely preprocessor-driven, the compiler sees exactly on
 
 ## Heap Mode vs Zero-Heap Mode
 
-The `_create()` / `_destroy()` functions are the **primary API** and work in both heap and zero-heap modes. In heap mode they allocate from the RTOS heap as normal. In zero-heap mode they become GCC statement-expression macros that auto-generate per-call-site static storage and delegate to `_init()`, so application code does not need to change.
+Heap mode and zero-heap mode are surfaced by **two distinct APIs sharing the same `_init()` foundation**. Heap-mode apps use `_create()` / `_destroy()`; zero-heap apps use `_init()` / `_deinit()` with caller-supplied storage, or `OVE_*_DEFINE_STATIC()` for file-scope objects. Apps that target both modes pick `OVE_*_DEFINE_STATIC()` because that macro alone is portable across the split.
 
 | Function | Heap mode (default) | Zero-heap mode (`CONFIG_OVE_ZERO_HEAP=y`) |
 |---|---|---|
-| `_create()` / `_destroy()` | Allocate/free from RTOS heap | Macro-generated static storage per call site |
-| `_init()` / `_deinit()` | Caller-supplied buffer | Caller-supplied buffer |
-| `OVE_*_DEFINE_STATIC()` | File-scope static declaration + auto-init | File-scope static declaration + auto-init |
+| `_create()` / `_destroy()` | Allocate/free from RTOS heap | **Symbol not declared** — calling is a link error |
+| `_init()` / `_deinit()` | Caller-supplied storage | Caller-supplied storage |
+| `OVE_*_DEFINE_STATIC()` | File-scope static + auto-init via `_init()` | File-scope static + auto-init via `_init()` |
 
-`_init()` / `_deinit()` remain available for **explicit storage control** — use them when you need objects in arrays, loops, or structs. `OVE_*_DEFINE_STATIC()` macros remain the convenient way to declare auto-initialized objects at file scope.
+`_create()` / `_destroy()` are gated behind `OVE_HEAP_*` macros (defined only when `CONFIG_OVE_ZERO_HEAP` is unset). Calling them in a zero-heap build produces an "undefined reference" link error, which is the intended failure mode — no silent fallback, no per-call-site storage magic.
 
-In zero-heap mode, size parameters (queue `item_size`/`max_items`, stream buffer size, thread `stack_sz`) must be compile-time constants, and each `_create()` call site produces exactly one static object — do not call `_create()` in a loop when you need multiple distinct objects.
+`OVE_*_DEFINE_STATIC()` always expands to `static ove_*_storage_t s; ove_*_init(&handle, &s, ...)` regardless of mode, so file-scope objects compile identically in both modes. Use it whenever the object's lifetime is the whole program.
 
 ## Backend Model
 

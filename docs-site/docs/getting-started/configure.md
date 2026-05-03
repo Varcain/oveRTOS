@@ -60,7 +60,7 @@ Defconfig files enable commonly used modules for each board/RTOS combination. Wh
 
 ### Zero-Heap Mode
 
-At the bottom of `oveRTOS Modules`, enable `Zero-heap build` (`OVE_ZERO_HEAP`) to switch `_create()`/`_destroy()` from heap-backed functions to GCC statement-expression macros that auto-generate per-call-site static storage. Application code using `_create()`/`_destroy()` continues to work unchanged. Use `_init()`/`_deinit()` when you need explicit storage control (arrays, loops, structs). In zero-heap mode, size parameters must be compile-time constants and each `_create()` call site produces one static object.
+At the bottom of `oveRTOS Modules`, enable `Zero-heap build` (`OVE_ZERO_HEAP`) to remove the `_create()`/`_destroy()` function declarations entirely (they are gated behind `OVE_HEAP_*`, which is undefined in zero-heap mode). Apps must use `_init()`/`_deinit()` with caller-supplied storage, or `OVE_*_DEFINE_STATIC()` at file scope. Calling a `_create()` symbol in a zero-heap build is a link error.
 
 ### Backend-Specific Submenus
 

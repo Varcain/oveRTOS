@@ -214,7 +214,7 @@ int ove_audio_graph_set_buf_storage(struct ove_audio_graph *g, void *storage, si
 #define OVE_AUDIO_GRAPH_STORAGE_BYTES(nodes, frames, channels, sample_bytes) \
 	((size_t)(nodes) * (size_t)(frames) * (size_t)(channels) * (size_t)(sample_bytes))
 
-/* ── _create / _destroy — unified across heap and zero-heap modes ──── */
+/* ── _create / _destroy — heap-mode only (gated by OVE_HEAP_AUDIO) ───── */
 #ifdef OVE_HEAP_AUDIO
 
 /**
@@ -247,11 +247,13 @@ int ove_audio_graph_destroy(struct ove_audio_graph *g);
  * Delegates to @ref ove_audio_graph_create_ — the per-node intermediate
  * buffers are calloc'd during @ref ove_audio_graph_build and the @p nodes /
  * @p channels / @p sample_bytes arguments are unused (kept for source
- * compatibility with the zero-heap @c OVE_AUDIO_GRAPH_DEFINE_STATIC helper).
+ * compatibility with @ref OVE_AUDIO_GRAPH_DEFINE, whose buffer-sizing
+ * formula needs them).
  *
  * @note Requires @c OVE_HEAP_AUDIO.  In zero-heap mode this macro is not
- *       defined; use @c ove_audio_graph_init() with explicit buffer storage,
- *       or the @c OVE_AUDIO_GRAPH_DEFINE_STATIC helper.
+ *       defined; use @ref OVE_AUDIO_GRAPH_DEFINE followed by
+ *       @ref ove_audio_graph_init and @ref ove_audio_graph_set_buf_storage
+ *       (the latter pair works in both heap and zero-heap modes).
  *
  * @param pg            Pointer to the @c ove_audio_graph instance to initialise.
  * @param frames        Per-period frame count.
