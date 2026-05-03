@@ -16,12 +16,12 @@
  * across all four oveRTOS backends (FreeRTOS, Zephyr, NuttX, POSIX).
  *
  * Two allocation strategies are available:
- *  - @c _create() / @c _destroy() — unified API that works in both heap and
- *    zero-heap mode.  In heap mode the tensor arena is allocated internally.
- *    In zero-heap mode these are macros that generate per-call-site static
- *    storage and arena; @c arena_size must be a compile-time constant.
- *  - @c _init() / @c _deinit() — explicit storage control with caller-supplied
- *    arena buffer.
+ *  - @c _create() / @c _destroy() — heap-allocated, including the tensor arena.
+ *    Available only when @c OVE_HEAP_INFER is defined (i.e.
+ *    @c CONFIG_OVE_ZERO_HEAP is not set).
+ *  - @c _init() / @c _deinit() — caller-supplied storage and arena buffer.
+ *    Available in both modes.  See @c OVE_MODEL_DEFINE_STATIC for a
+ *    one-step static helper.
  *
  * @note Requires @c CONFIG_OVE_INFER.
  * @{
@@ -148,17 +148,6 @@ int ove_model_create(ove_model_t *model, const struct ove_model_config *cfg);
  * @see ove_model_create
  */
 void ove_model_destroy(ove_model_t model);
-
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_INFER — zero-heap mode */
-
-/* Unified macro — arena_size must be a compile-time constant. */
-#define ove_model_create(pm, cfg)                                                           \
-	({                                                                                  \
-		static ove_model_storage_t _ove_stor_;                                      \
-		static uint8_t __attribute__((aligned(16))) _ove_arena_[(cfg)->arena_size]; \
-		ove_model_init((pm), &_ove_stor_, _ove_arena_, (cfg));                      \
-	})
-#define ove_model_destroy(m) ove_model_deinit(m)
 
 #endif /* OVE_HEAP_INFER */
 

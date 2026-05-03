@@ -92,16 +92,9 @@ void ove_main(void)
 	OVE_LOG_INF("Benchmark app: init");
 
 	ove_thread_t handle;
-	static const struct ove_thread_desc bench_desc = {
-		.name = "bench_run",
-		.entry = benchmark_runner,
-		.arg = NULL,
-		.priority = OVE_PRIO_NORMAL,
-		.stack_size = 8192,
-		.stack = bench_runner_storage_stack,
-	};
-
-	int ret = ove_thread_init(&handle, &bench_runner_storage, &bench_desc);
+	int ret = ove_thread_init(&handle, &bench_runner_storage, "bench_run",
+				  benchmark_runner, NULL, OVE_PRIO_NORMAL, 8192,
+				  bench_runner_storage_stack);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to init benchmark thread: %d", ret);
 		return;

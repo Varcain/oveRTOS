@@ -360,24 +360,55 @@ def _load_yaml_simple(path):
 
 
 def _find_app_yaml(ove_dir, app_name):
-    """Find the app.yaml for a given app config_name."""
+    """Find the app.yaml for a given app config_name.
+
+    For the apps/<lang>/<heapmode>/<app>/ layout, apps register as
+    `<base>_heap` and `<base>_zh`.  Bare names map to `_heap` by default
+    (heap mode is the desktop-development default); use the explicit
+    `_zh` suffix or `--zeroheap` to select the static-allocation variant.
+    """
     import json
     app_paths_file = os.path.join(ove_dir, "output", "kconfig", "app_paths.json")
+    paths = {}
     if os.path.isfile(app_paths_file):
         with open(app_paths_file) as f:
             paths = json.load(f)
         if app_name in paths:
             return os.path.join(paths[app_name], "app.yaml")
+        # Fallback: bare names default to the heap variant.
+        if f"{app_name}_heap" in paths:
+            return os.path.join(paths[f"{app_name}_heap"], "app.yaml")
 
-    # Fallback: scan apps/ directories
+    # Fallback: scan apps/ directories (handles two- and three-level layouts).
     apps_dir = os.path.join(ove_dir, "apps")
+    candidates = []
     for lang in ("c", "cpp", "rust", "zig"):
-        for entry in os.listdir(os.path.join(apps_dir, lang)):
-            yaml_path = os.path.join(apps_dir, lang, entry, "app.yaml")
+        lang_dir = os.path.join(apps_dir, lang)
+        if not os.path.isdir(lang_dir):
+            continue
+        for entry in os.listdir(lang_dir):
+            entry_path = os.path.join(lang_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            # two-level
+            yaml_path = os.path.join(entry_path, "app.yaml")
             if os.path.isfile(yaml_path):
-                data = _load_yaml(yaml_path)
-                if data.get("config_name") == app_name:
-                    return yaml_path
+                candidates.append(yaml_path)
+                continue
+            # three-level: <lang>/<heapmode>/<app>/app.yaml
+            for app_entry in os.listdir(entry_path):
+                inner = os.path.join(entry_path, app_entry, "app.yaml")
+                if os.path.isfile(inner):
+                    candidates.append(inner)
+    for yaml_path in candidates:
+        data = _load_yaml(yaml_path)
+        if data.get("config_name") == app_name:
+            return yaml_path
+    # Bare-name → heap fallback when scanning manually too.
+    for yaml_path in candidates:
+        data = _load_yaml(yaml_path)
+        if data.get("config_name") == f"{app_name}_heap":
+            return yaml_path
     return None
 
 
@@ -408,6 +439,14 @@ def cmd_defconfig_fragments(args):
 
     zeroheap = getattr(args, 'zeroheap', False)
     frag_dir = os.path.join(ove_dir, "config", "fragments")
+
+    # If a bare app name was given (e.g. `example_c`), select the heap
+    # or zeroheap variant based on the --zeroheap flag.
+    if zeroheap and not app.endswith("_zh"):
+        if not app.endswith("_heap"):
+            app = f"{app}_zh"
+        else:
+            app = app[: -len("_heap")] + "_zh"
 
     # ── Resolve board ──────────────────────────────────────────────
     board_dir = _find_board_dir(ove_dir, board)

@@ -1,0 +1,10 @@
+lang: zig
+config_name: example_pm_zig_zh
+description: "Zig Power Management Demo"
+zig:
+  src_dir: src
+  lib_name: example_pm_zig
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_PM=y
+  - CONFIG_OVE_TIMER=y

@@ -108,9 +108,9 @@ struct ove_model_config cfg = {
 ove_model_init(&model, &model_storage, arena, &cfg);
 ```
 
-**Heap / unified — `create` / `destroy`:**
+**Heap-mode — `create` / `destroy`:**
 
-`ove_model_create()` works in both heap and zero-heap modes. In heap mode it allocates storage and arena from the RTOS heap. In zero-heap mode it expands to a macro that generates per-call-site static storage; `arena_size` must be a compile-time constant.
+`ove_model_create()` is heap-mode only — it allocates storage and arena from the RTOS heap. In zero-heap builds the symbol is unavailable; use `ove_model_init()` with a caller-supplied arena, or `OVE_MODEL_DEFINE_STATIC()` at file scope (which works in both modes).
 
 ```c
 ove_model_t model;

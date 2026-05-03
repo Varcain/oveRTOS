@@ -577,13 +577,14 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 
 	/* Spawn server thread */
 	s_running = 1;
-	struct ove_thread_desc desc = {
-		.name = "httpd",
-		.entry = httpd_task,
-		.arg = NULL,
-		.priority = OVE_PRIO_NORMAL,
-	};
-	ret = ove_thread_create(&s_thread, 8192, &desc);
+#ifdef OVE_HEAP_THREAD
+	ret = ove_thread_create(&s_thread, "httpd", httpd_task, NULL, OVE_PRIO_NORMAL, 8192);
+#else
+	static ove_thread_storage_t httpd_th_storage;
+	static uint8_t __attribute__((aligned(8))) httpd_th_stack[8192];
+	ret = ove_thread_init(&s_thread, &httpd_th_storage, "httpd", httpd_task, NULL,
+			      OVE_PRIO_NORMAL, sizeof(httpd_th_stack), httpd_th_stack);
+#endif
 	if (ret != OVE_OK) {
 		s_running = 0;
 		ove_socket_close(s_server_sock);

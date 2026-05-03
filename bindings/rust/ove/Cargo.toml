@@ -7,7 +7,12 @@ license = "GPL-3.0-or-later"
 
 [features]
 default = ["panic-handler"]
-std = []
+std = ["alloc"]
+# `alloc` enables `ove::alloc` re-exports (Arc, Box, Vec, String) and the
+# closure-capable `Thread::spawn_with`.  Apps that want these on no_std
+# bare-metal targets must also pull in `ove-allocator` (or supply their
+# own `#[global_allocator]`).
+alloc = []
 panic-handler = []
 
 [build-dependencies]

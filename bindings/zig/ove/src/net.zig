@@ -8,8 +8,8 @@
 //!
 //! Provides typed wrappers for BSD-like sockets (TCP and UDP), network
 //! interface management, DNS resolution, and socket addresses.  Resource
-//! types follow the embedded-storage pattern — declare with `undefined`,
-//! call `init()`, register `defer deinit()`.
+//! types use a per-mode shape: heap mode is value-returning and movable;
+//! zero-heap mode embeds storage and uses two-phase init.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
@@ -90,36 +90,73 @@ pub const NetIfConfig = struct {
 
 /// Network interface handle.
 ///
+/// Heap mode (value-returning):
+///
+/// ```zig
+/// var nif = try ove.NetIf.create();
+/// defer nif.deinit();
+/// try nif.up(ove.NetIfConfig.init().dhcp());
+/// ```
+///
+/// Zero-heap mode (two-phase init):
+///
 /// ```zig
 /// var nif: ove.NetIf = undefined;
 /// try nif.init();
 /// defer nif.deinit();
-/// try nif.up(ove.NetIfConfig.init().dhcp());
 /// ```
-pub const NetIf = struct {
-    storage: pin.Storage(c.ove_netif_storage_t),
+pub const NetIf = if (pin.zero_heap) ZeroHeapNetIf else HeapNetIf;
+
+const HeapNetIf = struct {
+    handle: c.ove_netif_t,
+
+    pub fn create() Error!NetIf {
+        var h: c.ove_netif_t = null;
+        try err.fromCode(c.ove_netif_create(&h));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: NetIf) void {
+        if (self.handle == null) return;
+        c.ove_netif_destroy(self.handle);
+    }
+
+    pub fn up(self: NetIf, cfg: NetIfConfig) Error!void {
+        try err.fromCode(c.ove_netif_up(self.handle, &cfg.inner));
+    }
+
+    pub fn down(self: NetIf) void {
+        c.ove_netif_down(self.handle);
+    }
+
+    pub const AddrInfo = struct { ip: Address, gateway: Address, netmask: Address };
+
+    pub fn getAddr(self: NetIf) Error!AddrInfo {
+        var ip = std.mem.zeroes(c.ove_sockaddr_t);
+        var gw = std.mem.zeroes(c.ove_sockaddr_t);
+        var nm = std.mem.zeroes(c.ove_sockaddr_t);
+        try err.fromCode(c.ove_netif_get_addr(self.handle, &ip, &gw, &nm));
+        return .{ .ip = .{ .inner = ip }, .gateway = .{ .inner = gw }, .netmask = .{ .inner = nm } };
+    }
+};
+
+const ZeroHeapNetIf = struct {
+    storage: c.ove_netif_storage_t,
     handle: c.ove_netif_t,
     tracker: pin.Tracker,
 
     pub fn init(self: *NetIf) Error!void {
-        self.storage = pin.zeroStorage(c.ove_netif_storage_t);
+        self.storage = std.mem.zeroes(c.ove_netif_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_netif_create(&self.handle));
-        } else {
-            try err.fromCode(c.ove_netif_init(&self.handle, &self.storage));
-        }
+        try err.fromCode(c.ove_netif_init(&self.handle, &self.storage));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *NetIf) void {
         self.tracker.assertSame(self, "ove.NetIf");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_netif_destroy(self.handle)
-        else
-            c.ove_netif_deinit(self.handle);
+        c.ove_netif_deinit(self.handle);
         self.handle = null;
         self.tracker.clear();
     }
@@ -151,37 +188,70 @@ pub const NetIf = struct {
 // ---------------------------------------------------------------------------
 
 /// TCP stream socket.
-///
-/// ```zig
-/// var sock: ove.TcpStream = undefined;
-/// try sock.init();
-/// defer sock.deinit();
-/// try sock.connect(addr, timeout);
-/// ```
-pub const TcpStream = struct {
-    storage: pin.Storage(c.ove_socket_storage_t),
+pub const TcpStream = if (pin.zero_heap) ZeroHeapTcpStream else HeapTcpStream;
+
+const HeapTcpStream = struct {
+    handle: c.ove_socket_t,
+
+    pub fn create() Error!TcpStream {
+        var h: c.ove_socket_t = null;
+        try err.fromCode(c.ove_socket_create(&h, c.OVE_AF_INET, c.OVE_SOCK_STREAM));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: TcpStream) void {
+        if (self.handle == null) return;
+        c.ove_socket_destroy(self.handle);
+    }
+
+    pub fn connect(self: TcpStream, addr: Address, timeout_ms: u32) Error!void {
+        try err.fromCode(c.ove_socket_connect(self.handle, &addr.inner, timeout_ms));
+    }
+
+    pub fn send(self: TcpStream, data: []const u8) Error!usize {
+        var sent: usize = 0;
+        try err.fromCode(c.ove_socket_send(self.handle, data.ptr, data.len, &sent));
+        return sent;
+    }
+
+    pub fn recv(self: TcpStream, buf: []u8, timeout_ms: u32) Error!usize {
+        var received: usize = 0;
+        try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ms));
+        return received;
+    }
+
+    pub fn bind(self: TcpStream, addr: Address) Error!void {
+        try err.fromCode(c.ove_socket_bind(self.handle, &addr.inner));
+    }
+
+    pub fn listen(self: TcpStream, backlog: i32) Error!void {
+        try err.fromCode(c.ove_socket_listen(self.handle, backlog));
+    }
+
+    pub fn accept(self: TcpStream, timeout_ms: u32) Error!TcpStream {
+        var h: c.ove_socket_t = null;
+        try err.fromCode(c.ove_socket_accept(self.handle, &h, null, timeout_ms));
+        return .{ .handle = h };
+    }
+};
+
+const ZeroHeapTcpStream = struct {
+    storage: c.ove_socket_storage_t,
     handle: c.ove_socket_t,
     tracker: pin.Tracker,
 
     pub fn init(self: *TcpStream) Error!void {
-        self.storage = pin.zeroStorage(c.ove_socket_storage_t);
+        self.storage = std.mem.zeroes(c.ove_socket_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_socket_create(&self.handle, c.OVE_AF_INET, c.OVE_SOCK_STREAM));
-        } else {
-            try err.fromCode(c.ove_socket_open(&self.handle, &self.storage, c.OVE_AF_INET, c.OVE_SOCK_STREAM));
-        }
+        try err.fromCode(c.ove_socket_open(&self.handle, &self.storage, c.OVE_AF_INET, c.OVE_SOCK_STREAM));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *TcpStream) void {
         self.tracker.assertSame(self, "ove.TcpStream");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_socket_destroy(self.handle)
-        else
-            c.ove_socket_close(self.handle);
+        c.ove_socket_close(self.handle);
         self.handle = null;
         self.tracker.clear();
     }
@@ -220,15 +290,10 @@ pub const TcpStream = struct {
     /// and the caller becomes responsible for `client.deinit()`.
     pub fn accept(self: *TcpStream, client: *TcpStream, timeout_ms: u32) Error!void {
         self.tracker.assertSame(self, "ove.TcpStream");
-        client.storage = pin.zeroStorage(c.ove_socket_storage_t);
+        client.storage = std.mem.zeroes(c.ove_socket_storage_t);
         client.handle = null;
         client.tracker = .{};
-        try err.fromCode(c.ove_socket_accept(
-            self.handle,
-            &client.handle,
-            if (comptime pin.zero_heap) &client.storage else null,
-            timeout_ms,
-        ));
+        try err.fromCode(c.ove_socket_accept(self.handle, &client.handle, &client.storage, timeout_ms));
         client.tracker.record(client);
     }
 };
@@ -238,37 +303,57 @@ pub const TcpStream = struct {
 // ---------------------------------------------------------------------------
 
 /// UDP datagram socket.
-///
-/// ```zig
-/// var sock: ove.UdpSocket = undefined;
-/// try sock.init();
-/// defer sock.deinit();
-/// try sock.bind(ove.Address.any(1234));
-/// ```
-pub const UdpSocket = struct {
-    storage: pin.Storage(c.ove_socket_storage_t),
+pub const UdpSocket = if (pin.zero_heap) ZeroHeapUdpSocket else HeapUdpSocket;
+
+const HeapUdpSocket = struct {
+    handle: c.ove_socket_t,
+
+    pub fn create() Error!UdpSocket {
+        var h: c.ove_socket_t = null;
+        try err.fromCode(c.ove_socket_create(&h, c.OVE_AF_INET, c.OVE_SOCK_DGRAM));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: UdpSocket) void {
+        if (self.handle == null) return;
+        c.ove_socket_destroy(self.handle);
+    }
+
+    pub fn bind(self: UdpSocket, addr: Address) Error!void {
+        try err.fromCode(c.ove_socket_bind(self.handle, &addr.inner));
+    }
+
+    pub fn sendTo(self: UdpSocket, data: []const u8, dest: Address) Error!usize {
+        var sent: usize = 0;
+        try err.fromCode(c.ove_socket_sendto(self.handle, data.ptr, data.len, &sent, &dest.inner));
+        return sent;
+    }
+
+    pub fn recvFrom(self: UdpSocket, buf: []u8, timeout_ms: u32) Error!struct { len: usize, src: Address } {
+        var received: usize = 0;
+        var src: c.ove_sockaddr_t = std.mem.zeroes(c.ove_sockaddr_t);
+        try err.fromCode(c.ove_socket_recvfrom(self.handle, buf.ptr, buf.len, &received, &src, timeout_ms));
+        return .{ .len = received, .src = .{ .inner = src } };
+    }
+};
+
+const ZeroHeapUdpSocket = struct {
+    storage: c.ove_socket_storage_t,
     handle: c.ove_socket_t,
     tracker: pin.Tracker,
 
     pub fn init(self: *UdpSocket) Error!void {
-        self.storage = pin.zeroStorage(c.ove_socket_storage_t);
+        self.storage = std.mem.zeroes(c.ove_socket_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_socket_create(&self.handle, c.OVE_AF_INET, c.OVE_SOCK_DGRAM));
-        } else {
-            try err.fromCode(c.ove_socket_open(&self.handle, &self.storage, c.OVE_AF_INET, c.OVE_SOCK_DGRAM));
-        }
+        try err.fromCode(c.ove_socket_open(&self.handle, &self.storage, c.OVE_AF_INET, c.OVE_SOCK_DGRAM));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *UdpSocket) void {
         self.tracker.assertSame(self, "ove.UdpSocket");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_socket_destroy(self.handle)
-        else
-            c.ove_socket_close(self.handle);
+        c.ove_socket_close(self.handle);
         self.handle = null;
         self.tracker.clear();
     }

@@ -57,18 +57,12 @@ template <size_t StackSize = 0> class Thread
 	Thread(F entry, void *ctx, ove_prio_t prio, const char *name)
 		requires(StackSize > 0) && ThreadEntry<F>
 	{
-		struct ove_thread_desc desc = {};
-		desc.name = name;
-		desc.entry = entry;
-		desc.arg = ctx;
-		desc.priority = prio;
-		desc.stack_size = StackSize;
 #ifdef CONFIG_OVE_ZERO_HEAP
 		static_assert(StackSize > 0, "StackSize must be > 0 in zero-heap mode");
-		desc.stack = stack_;
-		int err = ove_thread_init(&handle_, &storage_, &desc);
+		int err = ove_thread_init(&handle_, &storage_, name, entry, ctx,
+					  prio, StackSize, stack_);
 #else
-		int err = ove_thread_create_(&handle_, &desc);
+		int err = ove_thread_create(&handle_, name, entry, ctx, prio, StackSize);
 #endif
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}

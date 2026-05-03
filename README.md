@@ -10,7 +10,7 @@ A portable RTOS abstraction framework that provides a unified C API across **Fre
 - **Write once, run on any RTOS** -- single API across four RTOS backends plus a WebAssembly target
 - **[Minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/)** -- compile-time backend dispatch, no function pointers or vtables; per-op wrapper cost is benchmarked across all bindings on every commit
 - **Multi-language** -- C, C++, Rust, and Zig bindings
-- **Flexible allocation** -- heap mode (`_create`/`_destroy`) or zero-heap mode (`_init`/`_deinit` with static storage)
+- **Flexible allocation** -- heap mode (`_create`/`_destroy`, gated by `OVE_HEAP_*`) or zero-heap mode (`_init`/`_deinit` with caller-supplied storage); static-allocation helpers (`OVE_*_DEFINE_STATIC`) work in both modes
 - **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, bus drivers (UART/SPI/I2C/I2S), audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT/HTTPD/SNTP), ML inference, filesystem, NVS, LVGL GUI, shell, logging, power management, watchdog, and more
 - **Unified configuration** -- single Kconfig-based `.config` drives all backends
 - **Desktop development** -- develop and test on POSIX, deploy to embedded hardware
@@ -212,23 +212,30 @@ full applications in every binding.
 | `ove_i2c` | I2C bus master driver |
 | `ove_i2s` | I2S / SAI audio bus driver |
 
-## Zero-Heap Mode
+## Heap and Zero-Heap Modes
 
-For memory-constrained or safety-critical systems, oveRTOS supports fully static allocation.
-The `_create()`/`_destroy()` API works in both heap and zero-heap mode — no `#ifdef` guards needed:
+For memory-constrained or safety-critical systems, oveRTOS supports fully static allocation. The C API is split between heap-allocating and static-allocating entry points:
+
+| API | Heap mode | Zero-heap mode |
+|-----|-----------|----------------|
+| `ove_*_init(handle, storage, ...)` / `ove_*_deinit(handle)` | available | available |
+| `ove_*_create(handle, ...)` / `ove_*_destroy(handle)` | available (heap-allocated) | **link error** (gated by `OVE_HEAP_*`) |
+| `OVE_*_DEFINE_STATIC(...)` | available (true static) | available (true static) |
+
+Heap mode (`CONFIG_OVE_ZERO_HEAP` not set):
 
 ```c
 ove_queue_t q;
 ove_mutex_t m;
 
-ove_queue_create(&q, sizeof(uint32_t), 8);   /* heap: malloc, zero-heap: static storage */
+ove_queue_create(&q, sizeof(uint32_t), 8);
 ove_mutex_create(&m);
 /* ... */
 ove_mutex_destroy(m);
 ove_queue_destroy(q);
 ```
 
-File-scope declarations with auto-init are also available via `OVE_*_DEFINE_STATIC()`:
+Zero-heap mode (`CONFIG_OVE_ZERO_HEAP=y`) -- use `OVE_*_DEFINE_STATIC` for file-scope objects, or `_init` with caller-supplied storage:
 
 ```c
 OVE_QUEUE_DEFINE_STATIC(my_queue, sizeof(uint32_t), 8);
@@ -236,7 +243,7 @@ OVE_MUTEX_DEFINE_STATIC(my_mutex);
 OVE_THREAD_DEFINE_STATIC(my_thread, 4096, worker_fn, NULL, OVE_PRIO_NORMAL, "worker");
 ```
 
-Enable with `CONFIG_OVE_ZERO_HEAP=y` in your configuration.
+The `OVE_*_DEFINE_STATIC` helpers also work in heap mode -- the macros expand to a true static allocation in either configuration, so they coexist with `ove_*_create()` for code that mixes both styles.
 
 ## Debugging
 

@@ -1,0 +1,16 @@
+[package]
+name = "ove-allocator"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "libc-malloc-backed `#[global_allocator]` for oveRTOS no_std heap-mode apps"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+# Suppress installation of the `#[global_allocator]` static — useful when
+# the binary already provides one (e.g. via `std`).
+no_install = []

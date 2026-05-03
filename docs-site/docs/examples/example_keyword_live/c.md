@@ -6,7 +6,7 @@ Real-time 'yes'/'no' keyword detection using on-board microphones and the Tensor
 
 ## Language-specific patterns
 
-This example uses the unified C API with `_create()` / `_destroy()` calls that work in both heap and zero-heap modes.
+This example uses the heap-mode C API with `_create()` / `_destroy()` calls. For zero-heap builds, switch to `_init()` / `_deinit()` with caller-supplied storage or use `OVE_*_DEFINE_STATIC()` at file scope (the latter also works in heap mode).
 
 See the [overview](index.md) for architecture details and the full API list.
 

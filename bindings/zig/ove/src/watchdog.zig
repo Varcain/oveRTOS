@@ -12,37 +12,68 @@ const pin = @import("pin.zig");
 
 /// Hardware watchdog timer.
 ///
+/// Heap mode (value-returning create):
+///
 /// ```zig
-/// var wd: ove.Watchdog = undefined;
-/// try wd.init(5000);
+/// var wd = try ove.Watchdog.create(5000);
 /// defer wd.deinit();
 /// try wd.start();
 /// // periodically: try wd.feed();
 /// ```
-pub const Watchdog = struct {
-    storage: pin.Storage(c.ove_watchdog_storage_t),
+///
+/// Zero-heap mode (two-phase init):
+///
+/// ```zig
+/// var wd: ove.Watchdog = undefined;
+/// try wd.init(5000);
+/// defer wd.deinit();
+/// ```
+pub const Watchdog = if (pin.zero_heap) ZeroHeapWatchdog else HeapWatchdog;
+
+const HeapWatchdog = struct {
+    handle: c.ove_watchdog_t,
+
+    pub fn create(timeout_ms: u32) Error!Watchdog {
+        var h: c.ove_watchdog_t = null;
+        try err.fromCode(c.ove_watchdog_create(&h, timeout_ms));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: Watchdog) void {
+        if (self.handle == null) return;
+        c.ove_watchdog_destroy(self.handle);
+    }
+
+    pub fn start(self: Watchdog) Error!void {
+        try err.fromCode(c.ove_watchdog_start(self.handle));
+    }
+
+    pub fn stop(self: Watchdog) Error!void {
+        try err.fromCode(c.ove_watchdog_stop(self.handle));
+    }
+
+    pub fn feed(self: Watchdog) Error!void {
+        try err.fromCode(c.ove_watchdog_feed(self.handle));
+    }
+};
+
+const ZeroHeapWatchdog = struct {
+    storage: c.ove_watchdog_storage_t,
     handle: c.ove_watchdog_t,
     tracker: pin.Tracker,
 
     pub fn init(self: *Watchdog, timeout_ms: u32) Error!void {
-        self.storage = pin.zeroStorage(c.ove_watchdog_storage_t);
+        self.storage = std.mem.zeroes(c.ove_watchdog_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_watchdog_create(&self.handle, timeout_ms));
-        } else {
-            try err.fromCode(c.ove_watchdog_init(&self.handle, &self.storage, timeout_ms));
-        }
+        try err.fromCode(c.ove_watchdog_init(&self.handle, &self.storage, timeout_ms));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *Watchdog) void {
         self.tracker.assertSame(self, "ove.Watchdog");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_watchdog_destroy(self.handle)
-        else
-            c.ove_watchdog_deinit(self.handle);
+        c.ove_watchdog_deinit(self.handle);
         self.handle = null;
         self.tracker.clear();
     }

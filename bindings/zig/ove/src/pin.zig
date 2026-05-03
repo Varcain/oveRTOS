@@ -37,18 +37,6 @@ const c = @import("c.zig").raw;
 /// True when the build was configured with `CONFIG_OVE_ZERO_HEAP=y`.
 pub const zero_heap = @hasDecl(c, "CONFIG_OVE_ZERO_HEAP");
 
-/// Storage type alias — the C storage struct in zero-heap mode, zero-sized
-/// `void` in heap mode (so the wrapper carries no extra bytes).
-pub fn Storage(comptime T: type) type {
-    return if (zero_heap) T else void;
-}
-
-/// Default-zeroed value of `Storage(T)`.  Used to initialise the field in
-/// `init()` when `self` arrives `undefined`.
-pub fn zeroStorage(comptime T: type) Storage(T) {
-    return if (zero_heap) std.mem.zeroes(T) else {};
-}
-
 /// Pin-tracking is enabled only in `Debug` builds (not `ReleaseSafe`).
 /// `ReleaseSafe` is used by benchmarks and any other "release-quality
 /// measurement" target — keeping the panic-dispatch symbol out of the

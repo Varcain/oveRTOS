@@ -6,10 +6,20 @@
 
 //! Thread management.
 //!
-//! `Thread(stack_size)` is the templated wrapper.  Module-level helpers
-//! (`sleepMs`, `yieldCpu`, `getSelf`, `getMemStats`, `threadList`,
-//! `Priority`, `prio`, `State`) are static — they don't bind to an
-//! instance.
+//! `Thread(stack_size)` is the templated wrapper.  Its shape differs by
+//! build mode:
+//!
+//! - **Heap mode**: value-returning `create()`; the wrapper is just a
+//!   handle, no embedded stack.  `stack_size` is forwarded to the kernel
+//!   as a runtime hint.
+//! - **Zero-heap mode**: two-phase `init()`; the stack is embedded as a
+//!   struct field sized at comptime by `stack_size`.  The wrapper must
+//!   not be moved after `init()` — debug builds panic on any method call
+//!   from a different address; release builds compile the check out.
+//!
+//! Module-level helpers (`sleepMs`, `yieldCpu`, `getSelf`, `getMemStats`,
+//! `threadList`, `Priority`, `prio`, `State`) are static — they don't bind
+//! to an instance.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
@@ -85,27 +95,110 @@ pub fn getSelf() c.ove_thread_t {
 /// RTOS thread.  `stack_size` is the user-requested stack in bytes; the
 /// actual allocation may be larger to satisfy Zephyr MPU alignment.
 ///
+/// In heap mode the wrapper is a single handle; the kernel allocates the
+/// stack from the heap based on `stack_size`:
+///
+/// ```zig
+/// var th = try ove.Thread(2048).create("worker", workerEntry, .normal);
+/// defer th.deinit();
+/// ```
+///
+/// In zero-heap mode the stack is embedded; two-phase init is required:
+///
 /// ```zig
 /// var th: ove.Thread(2048) = undefined;
 /// try th.init("worker", workerEntry, .normal);
 /// defer th.deinit();
 /// ```
-///
-/// Pinning contract: after `init()`, the wrapper must not be moved,
-/// copied, or passed by value (the kernel's TCB references `&self.stack`
-/// directly).  Debug builds panic on any method call from a different
-/// address.
 pub fn Thread(comptime stack_size: usize) type {
-    const Stack = if (pin.zero_heap)
-        [stackTotal(stack_size)]u8
-    else
-        void;
+    return if (pin.zero_heap) ZeroHeapThread(stack_size) else HeapThread(stack_size);
+}
 
+fn HeapThread(comptime stack_size: usize) type {
     return struct {
         const Self = @This();
 
-        stack: Stack align(if (pin.zero_heap) stackAlign(stack_size) else 1),
-        storage: pin.Storage(c.ove_thread_storage_t),
+        handle: c.ove_thread_t,
+
+        /// Create with a Zig callback (no context).
+        pub fn create(
+            name: [*:0]const u8,
+            comptime entry: fn () void,
+            priority: Priority,
+        ) Error!Self {
+            const Tramp = struct {
+                fn invoke(_: ?*anyopaque) callconv(.c) void {
+                    entry();
+                }
+            };
+            var h: c.ove_thread_t = null;
+            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke, null,
+                priority, stack_size));
+            return .{ .handle = h };
+        }
+
+        /// Create with a typed context pointer.  `ctx` must outlive the thread.
+        pub fn createWithContext(
+            name: [*:0]const u8,
+            comptime Context: type,
+            ctx: *Context,
+            comptime entry: fn (*Context) void,
+            priority: Priority,
+        ) Error!Self {
+            const Tramp = struct {
+                fn invoke(arg: ?*anyopaque) callconv(.c) void {
+                    const ptr: *Context = @ptrCast(@alignCast(arg));
+                    entry(ptr);
+                }
+            };
+            var h: c.ove_thread_t = null;
+            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke,
+                @ptrCast(ctx), priority, stack_size));
+            return .{ .handle = h };
+        }
+
+        pub fn deinit(self: Self) void {
+            if (self.handle == null) return;
+            _ = c.ove_thread_destroy(self.handle);
+        }
+
+        pub fn setPriority(self: Self, priority: Priority) void {
+            c.ove_thread_set_priority(self.handle, priority);
+        }
+
+        pub fn suspendThread(self: Self) void {
+            c.ove_thread_suspend(self.handle);
+        }
+
+        pub fn resumeThread(self: Self) void {
+            c.ove_thread_resume(self.handle);
+        }
+
+        pub fn getStackUsage(self: Self) usize {
+            return c.ove_thread_get_stack_usage(self.handle);
+        }
+
+        pub fn getState(self: Self) State {
+            return c.ove_thread_get_state(self.handle);
+        }
+
+        pub fn getRuntimeStats(self: Self) Error!Stats {
+            var raw_stats: c.struct_ove_thread_stats = undefined;
+            try err.fromCode(c.ove_thread_get_runtime_stats(self.handle, &raw_stats));
+            return .{
+                .runtime_us = raw_stats.runtime_us,
+                .cpu_percent_x100 = raw_stats.cpu_percent_x100,
+            };
+        }
+    };
+}
+
+fn ZeroHeapThread(comptime stack_size: usize) type {
+    return struct {
+        const Self = @This();
+
+        stack: [stackTotal(stack_size)]u8 align(stackAlign(stack_size)),
+        storage: c.ove_thread_storage_t,
         handle: c.ove_thread_t,
         tracker: pin.Tracker,
 
@@ -121,35 +214,12 @@ pub fn Thread(comptime stack_size: usize) type {
                     entry();
                 }
             };
-            if (comptime pin.zero_heap) {
-                self.stack = [_]u8{0} ** stackTotal(stack_size);
-            } else {
-                self.stack = {};
-            }
-            self.storage = pin.zeroStorage(c.ove_thread_storage_t);
+            self.stack = [_]u8{0} ** stackTotal(stack_size);
+            self.storage = std.mem.zeroes(c.ove_thread_storage_t);
             self.handle = null;
             self.tracker = .{};
-            if (comptime !pin.zero_heap) {
-                const desc: c.struct_ove_thread_desc = .{
-                    .name = name,
-                    .entry = &Tramp.invoke,
-                    .arg = null,
-                    .priority = priority,
-                    .stack_size = stack_size,
-                    .stack = null,
-                };
-                try err.fromCode(c.ove_thread_create_(&self.handle, &desc));
-            } else {
-                const desc: c.struct_ove_thread_desc = .{
-                    .name = name,
-                    .entry = &Tramp.invoke,
-                    .arg = null,
-                    .priority = priority,
-                    .stack_size = stack_size,
-                    .stack = &self.stack,
-                };
-                try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, &desc));
-            }
+            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name,
+                &Tramp.invoke, null, priority, stack_size, &self.stack));
             self.tracker.record(self);
         }
 
@@ -168,45 +238,19 @@ pub fn Thread(comptime stack_size: usize) type {
                     entry(ptr);
                 }
             };
-            if (comptime pin.zero_heap) {
-                self.stack = [_]u8{0} ** stackTotal(stack_size);
-            } else {
-                self.stack = {};
-            }
-            self.storage = pin.zeroStorage(c.ove_thread_storage_t);
+            self.stack = [_]u8{0} ** stackTotal(stack_size);
+            self.storage = std.mem.zeroes(c.ove_thread_storage_t);
             self.handle = null;
             self.tracker = .{};
-            if (comptime !pin.zero_heap) {
-                const desc: c.struct_ove_thread_desc = .{
-                    .name = name,
-                    .entry = &Tramp.invoke,
-                    .arg = @ptrCast(ctx),
-                    .priority = priority,
-                    .stack_size = stack_size,
-                    .stack = null,
-                };
-                try err.fromCode(c.ove_thread_create_(&self.handle, &desc));
-            } else {
-                const desc: c.struct_ove_thread_desc = .{
-                    .name = name,
-                    .entry = &Tramp.invoke,
-                    .arg = @ptrCast(ctx),
-                    .priority = priority,
-                    .stack_size = stack_size,
-                    .stack = &self.stack,
-                };
-                try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, &desc));
-            }
+            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name,
+                &Tramp.invoke, @ptrCast(ctx), priority, stack_size, &self.stack));
             self.tracker.record(self);
         }
 
         pub fn deinit(self: *Self) void {
             self.tracker.assertSame(self, "ove.Thread");
             if (self.handle == null) return;
-            if (comptime !pin.zero_heap)
-                _ = c.ove_thread_destroy(self.handle)
-            else
-                _ = c.ove_thread_deinit(self.handle);
+            _ = c.ove_thread_deinit(self.handle);
             self.handle = null;
             self.tracker.clear();
         }

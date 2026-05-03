@@ -109,7 +109,7 @@ struct ove_thread {
 #endif
 #ifndef CONFIG_OVE_ZERO_HEAP
 	/* Flexible-array stack tail.  Used by the heap-create path
-	 * (ove_thread_create_) which allocates `sizeof(struct ove_thread)
+	 * (ove_thread_create) which allocates `sizeof(struct ove_thread)
 	 * + stack_bytes` in one OVE_BACKEND_MALLOC and passes &stack[0] to
 	 * xTaskCreateStatic — collapsing the wrapper alloc, the FreeRTOS
 	 * TCB alloc, and the FreeRTOS stack alloc into a single block.

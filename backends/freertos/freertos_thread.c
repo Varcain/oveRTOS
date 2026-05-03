@@ -55,10 +55,10 @@ static UBaseType_t map_priority(ove_prio_t prio)
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const struct ove_thread_desc *desc)
+		    const char *name, ove_thread_fn entry, void *arg,
+		    ove_prio_t priority, size_t stack_size, void *stack)
 {
-	if (handle == NULL || storage == NULL || desc == NULL || desc->entry == NULL ||
-	    desc->stack == NULL) {
+	if (handle == NULL || storage == NULL || entry == NULL || stack == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	/* AAPCS requires the stack pointer to be 8-byte aligned at public
@@ -67,23 +67,23 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
 	 * (OVE_THREAD_STACK_DEFINE_, OVE_THREAD_STACK_MEMBER_,
 	 * OVE_THREAD_STACK_BLOCK_STATIC_) all apply aligned(8); this runtime
 	 * check backstops hand-rolled stack arrays that bypass those. */
-	if (((uintptr_t)desc->stack & 7u) != 0u) {
+	if (((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	storage->entry = desc->entry;
-	storage->arg = desc->arg;
+	storage->entry = entry;
+	storage->arg = arg;
 	storage->destroyer = NULL;
 	storage->exited = 0u;
 
 	ove_state_track_init(&storage->st, OVE_THREAD_STATE_READY);
 
-	uint32_t stack_depth = desc->stack_size / sizeof(StackType_t);
+	uint32_t stack_depth = stack_size / sizeof(StackType_t);
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	storage->task = xTaskCreateStatic(freertos_thread_wrapper, desc->name, stack_depth, storage,
-					  map_priority(desc->priority), (StackType_t *)desc->stack,
+	storage->task = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth, storage,
+					  map_priority(priority), (StackType_t *)stack,
 					  &storage->static_task);
 
 	vTaskSetApplicationTaskTag(storage->task, (TaskHookFunction_t)storage);
@@ -132,12 +132,13 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
+		      void *arg, ove_prio_t priority, size_t stack_size)
 {
-	if (handle == NULL || desc == NULL || desc->entry == NULL)
+	if (handle == NULL || entry == NULL)
 		return OVE_ERR_INVALID_PARAM;
 
-	uint32_t stack_depth = desc->stack_size / sizeof(StackType_t);
+	uint32_t stack_depth = stack_size / sizeof(StackType_t);
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
@@ -152,15 +153,15 @@ int ove_thread_create_(ove_thread_t *handle, const struct ove_thread_desc *desc)
 	if (wrapper == NULL)
 		return OVE_ERR_NO_MEMORY;
 
-	wrapper->entry = desc->entry;
-	wrapper->arg = desc->arg;
+	wrapper->entry = entry;
+	wrapper->arg = arg;
 	wrapper->destroyer = NULL;
 	wrapper->exited = 0u;
 
 	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 
-	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, desc->name, stack_depth, wrapper,
-					  map_priority(desc->priority), wrapper->stack,
+	wrapper->task = xTaskCreateStatic(freertos_thread_wrapper, name, stack_depth, wrapper,
+					  map_priority(priority), wrapper->stack,
 					  &wrapper->static_task);
 	if (wrapper->task == NULL) {
 		OVE_BACKEND_FREE(wrapper);

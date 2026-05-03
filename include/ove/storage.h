@@ -24,8 +24,8 @@
  *
  * - **@c OVE_*_DEFINE_STATIC() macros** — one-step primitives that declare
  *   a handle, allocate static storage, and register a C constructor that
- *   initialises the handle before @c main().  In heap mode they call the
- *   corresponding @c _create() function instead.
+ *   initialises the handle before @c main().  Available in both heap and
+ *   zero-heap modes — the handle is statically allocated either way.
  *
  * @par Backend selection
  * The correct backend header is chosen at build time via the
@@ -39,9 +39,9 @@
  *
  * @note In zero-heap mode (@c CONFIG_OVE_ZERO_HEAP) the @c OVE_HEAP_*
  *       gates are not defined, so no heap-backed @c _create()/@c _destroy()
- *       functions are compiled.  However, each module provides macros with
- *       the same @c _create()/@c _destroy() names that generate per-call-site
- *       static storage, giving a unified API in both modes.
+ *       functions are compiled.  Application code must use @c _init() with
+ *       caller-supplied storage, or the @c OVE_*_DEFINE_STATIC() macros.
+ *       Calling a @c _create() symbol in zero-heap mode is a link error.
  * @{
  */
 
@@ -271,10 +271,10 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  *
  * When @c CONFIG_OVE_ZERO_HEAP is not defined these macros are set to 1,
  * enabling the corresponding heap-backed @c _create()/@c _destroy() function
- * definitions.  When zero-heap is active none of these macros are defined;
- * instead, each module header provides macros with the same
- * @c _create()/@c _destroy() names that auto-generate per-call-site static
- * storage, so application code can use the unified API in either mode.
+ * definitions.  When zero-heap is active none of these macros are defined,
+ * and the @c _create()/@c _destroy() symbols are not declared — application
+ * code must use @c _init()/@c _deinit() with caller-supplied storage, or the
+ * @c OVE_*_DEFINE_STATIC() macros, both of which work in either mode.
  * @{
  */
 #if !defined(CONFIG_OVE_ZERO_HEAP)
@@ -505,14 +505,14 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @ingroup ove_storage
  * @brief One-step static primitive declaration with automatic initialisation.
  *
- * Each macro declares a handle and a C constructor (@c __attribute__((constructor)))
- * that initialises the handle before @c main().  No runtime init boilerplate or
- * @c \#ifdef guards are needed.
+ * Each macro declares a handle, allocates the corresponding static storage,
+ * and registers a C constructor (@c __attribute__((constructor))) that
+ * initialises the handle before @c main().  No runtime init boilerplate is
+ * needed.
  *
- * - In **zero-heap mode** (@c CONFIG_OVE_ZERO_HEAP) the constructor calls the
- *   corresponding @c _init() function with static storage.
- * - In **heap mode** the constructor calls @c _create() so the macros work on
- *   every backend without modification.
+ * The constructor calls the corresponding @c _init() function with static
+ * storage in both heap and zero-heap modes — the macros perform a true
+ * static allocation regardless of build configuration.
  *
  * Usage:
  * @code
@@ -532,8 +532,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	}
 /** @endcond */
 
-#ifdef CONFIG_OVE_ZERO_HEAP
-/* ── Zero-heap: use static storage + _init() ─────────────────────────── */
+/* ── Static storage + _init() — works in both heap and zero-heap modes ─ */
 
 /**
  * @brief Declare and auto-initialise a static mutex.
@@ -607,20 +606,13 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param prio      Thread priority.
  * @param tname     Human-readable thread name string.
  */
-#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname)  \
-	static ove_thread_storage_t _##hname##_storage;                  \
-	OVE_THREAD_STACK_DEFINE_(_##hname##_stack, stack_sz);            \
-	static ove_thread_t hname;                                       \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                             \
-	struct ove_thread_desc _desc = {                                 \
-		.name = (tname),                                         \
-		.entry = (fn),                                           \
-		.arg = (ctx),                                            \
-		.priority = (prio),                                      \
-		.stack_size = (stack_sz),                                \
-		.stack = _##hname##_stack,                               \
-	};                                                               \
-	int _err = ove_thread_init(&hname, &_##hname##_storage, &_desc); \
+#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname)             \
+	static ove_thread_storage_t _##hname##_storage;                             \
+	OVE_THREAD_STACK_DEFINE_(_##hname##_stack, stack_sz);                       \
+	static ove_thread_t hname;                                                  \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                                        \
+	int _err = ove_thread_init(&hname, &_##hname##_storage, (tname), (fn),      \
+				   (ctx), (prio), (stack_sz), _##hname##_stack);    \
 	OVE_DEFINE_STATIC_CTOR_END_(hname)
 
 /**
@@ -727,7 +719,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 
 #ifdef CONFIG_OVE_INFER
 /**
- * @brief Declare and auto-initialise a static ML model (zero-heap).
+ * @brief Declare and auto-initialise a static ML model.
  *
  * @param name        Variable name for the resulting @c ove_model_t handle.
  * @param model_ptr   Pointer to the .tflite FlatBuffer data.
@@ -750,7 +742,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 
 #ifdef CONFIG_OVE_I2C
 /**
- * @brief Declare and auto-initialise a static I2C bus (zero-heap).
+ * @brief Declare and auto-initialise a static I2C bus.
  *
  * @param name      Variable name for the resulting @c ove_i2c_t handle.
  * @param inst      Peripheral instance index.
@@ -770,7 +762,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 
 #ifdef CONFIG_OVE_SPI
 /**
- * @brief Declare and auto-initialise a static SPI bus (zero-heap).
+ * @brief Declare and auto-initialise a static SPI bus.
  *
  * @param name      Variable name for the resulting @c ove_spi_t handle.
  * @param cfg_ptr   Pointer to a @c struct ove_spi_cfg.
@@ -785,7 +777,7 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 
 #ifdef CONFIG_OVE_UART
 /**
- * @brief Declare and auto-initialise a static UART (zero-heap).
+ * @brief Declare and auto-initialise a static UART.
  *
  * @param name       Variable name for the resulting @c ove_uart_t handle.
  * @param rx_buf_sz  RX buffer size in bytes (must be compile-time constant).
@@ -799,251 +791,6 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
 	int _err = ove_uart_init(&name, &_##name##_storage, _##name##_rx_buf, (cfg_ptr)); \
 	OVE_DEFINE_STATIC_CTOR_END_(name)
 #endif /* CONFIG_OVE_UART */
-
-#else /* !CONFIG_OVE_ZERO_HEAP */
-/* ── Heap mode: use _create() — works on all backends ────────────────── */
-
-/**
- * @brief Declare and auto-initialise a static mutex (heap mode).
- *
- * @param name  Variable name for the resulting @c ove_mutex_t handle.
- */
-#define OVE_MUTEX_DEFINE_STATIC(name)       \
-	static ove_mutex_t name;            \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-	int _err = ove_mutex_create(&name); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static recursive mutex (heap mode).
- *
- * @param name  Variable name for the resulting @c ove_mutex_t handle.
- */
-#define OVE_RECURSIVE_MUTEX_DEFINE_STATIC(name)       \
-	static ove_mutex_t name;                      \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)           \
-	int _err = ove_recursive_mutex_create(&name); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static semaphore (heap mode).
- *
- * @param name     Variable name for the resulting @c ove_sem_t handle.
- * @param initial  Initial semaphore count.
- * @param max      Maximum semaphore count.
- */
-#define OVE_SEM_DEFINE_STATIC(name, initial, max)           \
-	static ove_sem_t name;                              \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                 \
-	int _err = ove_sem_create(&name, (initial), (max)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static event object (heap mode).
- *
- * @param name  Variable name for the resulting @c ove_event_t handle.
- */
-#define OVE_EVENT_DEFINE_STATIC(name)       \
-	static ove_event_t name;            \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name) \
-	int _err = ove_event_create(&name); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static condition variable (heap mode).
- *
- * @param name  Variable name for the resulting @c ove_condvar_t handle.
- */
-#define OVE_CONDVAR_DEFINE_STATIC(name)       \
-	static ove_condvar_t name;            \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)   \
-	int _err = ove_condvar_create(&name); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static thread (heap mode).
- *
- * @param hname     Variable name for the resulting @c ove_thread_t handle.
- * @param stack_sz  Thread stack size in bytes.
- * @param fn        Thread entry function.
- * @param ctx       Argument passed to @p fn.
- * @param prio      Thread priority.
- * @param tname     Human-readable thread name string.
- */
-#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname) \
-	static ove_thread_t hname;                                      \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                            \
-	struct ove_thread_desc _desc = {                                \
-		.name = (tname),                                        \
-		.entry = (fn),                                          \
-		.arg = (ctx),                                           \
-		.priority = (prio),                                     \
-		.stack_size = (stack_sz),                               \
-	};                                                              \
-	int _err = ove_thread_create_(&hname, &_desc);                  \
-	OVE_DEFINE_STATIC_CTOR_END_(hname)
-
-/**
- * @brief Declare and auto-initialise a static message queue (heap mode).
- *
- * @param name     Variable name for the resulting @c ove_queue_t handle.
- * @param item_sz  Size of each queue item in bytes.
- * @param max      Maximum number of items in the queue.
- */
-#define OVE_QUEUE_DEFINE_STATIC(name, item_sz, max)           \
-	static ove_queue_t name;                              \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                   \
-	int _err = ove_queue_create(&name, (item_sz), (max)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static timer (heap mode).
- *
- * @param name       Variable name for the resulting @c ove_timer_t handle.
- * @param cb         Timer expiry callback.
- * @param user_data  Opaque pointer forwarded to @p cb.
- * @param period_ms  Timer period in milliseconds.
- * @param one_shot   Non-zero for a one-shot timer, zero for periodic.
- */
-#define OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot)               \
-	static ove_timer_t name;                                                        \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                             \
-	int _err = ove_timer_create(&name, (cb), (user_data), (period_ms), (one_shot)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static event group (heap mode).
- *
- * @param name  Variable name for the resulting @c ove_eventgroup_t handle.
- */
-#define OVE_EVENTGROUP_DEFINE_STATIC(name)       \
-	static ove_eventgroup_t name;            \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)      \
-	int _err = ove_eventgroup_create(&name); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static work queue (heap mode).
- *
- * @param name      Variable name for the resulting @c ove_workqueue_t handle.
- * @param stack_sz  Stack size in bytes for the work queue thread.
- * @param wq_name   Human-readable work queue name string.
- * @param prio      Thread priority for the work queue thread.
- */
-#define OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio)             \
-	static ove_workqueue_t name;                                           \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                                    \
-	int _err = ove_workqueue_create(&name, (wq_name), (prio), (stack_sz)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static work item (heap mode).
- *
- * @param name     Variable name for the resulting @c ove_work_t handle.
- * @param handler  Work handler function invoked when the item is executed.
- */
-#define OVE_WORK_DEFINE_STATIC(name, handler)       \
-	static ove_work_t name;                     \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)         \
-	int _err = ove_work_init(&name, (handler)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static stream buffer (heap mode).
- *
- * @param name     Variable name for the resulting @c ove_stream_t handle.
- * @param buf_sz   Stream buffer capacity in bytes.
- * @param trigger  Minimum bytes required before a blocked reader is unblocked.
- */
-#define OVE_STREAM_DEFINE_STATIC(name, buf_sz, trigger)           \
-	static ove_stream_t name;                                 \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                       \
-	int _err = ove_stream_create(&name, (buf_sz), (trigger)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-/**
- * @brief Declare and auto-initialise a static watchdog timer (heap mode).
- *
- * @param name        Variable name for the resulting @c ove_watchdog_t handle.
- * @param timeout_ms  Watchdog timeout in milliseconds.
- */
-#define OVE_WATCHDOG_DEFINE_STATIC(name, timeout_ms)         \
-	static ove_watchdog_t name;                          \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                  \
-	int _err = ove_watchdog_create(&name, (timeout_ms)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-
-#ifdef CONFIG_OVE_INFER
-/**
- * @brief Declare and auto-initialise a static ML model (heap mode).
- *
- * @param name        Variable name for the resulting @c ove_model_t handle.
- * @param model_ptr   Pointer to the .tflite FlatBuffer data.
- * @param model_sz    Size of the FlatBuffer in bytes.
- * @param arena_sz    Tensor arena size in bytes.
- */
-#define OVE_MODEL_DEFINE_STATIC(name, model_ptr, model_sz, arena_sz) \
-	static ove_model_t name;                                     \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)                          \
-	struct ove_model_config _cfg = {                             \
-		.model_data = (model_ptr),                           \
-		.model_size = (model_sz),                            \
-		.arena_size = (arena_sz),                            \
-	};                                                           \
-	int _err = ove_model_create(&name, &_cfg);                   \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-#endif /* CONFIG_OVE_INFER */
-
-#ifdef CONFIG_OVE_I2C
-/**
- * @brief Declare and auto-initialise a static I2C bus (heap mode).
- *
- * @param name  Variable name for the resulting @c ove_i2c_t handle.
- * @param inst  Peripheral instance index.
- * @param spd   Bus speed (@c ove_i2c_speed_t).
- */
-#define OVE_I2C_DEFINE_STATIC(name, inst, spd)   \
-	static ove_i2c_t name;                   \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)      \
-	struct ove_i2c_cfg _cfg = {              \
-		.instance = (inst),              \
-		.speed = (spd),                  \
-	};                                       \
-	int _err = ove_i2c_create(&name, &_cfg); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-#endif /* CONFIG_OVE_I2C */
-
-#ifdef CONFIG_OVE_SPI
-/**
- * @brief Declare and auto-initialise a static SPI bus (heap mode).
- *
- * @param name     Variable name for the resulting @c ove_spi_t handle.
- * @param cfg_ptr  Pointer to a @c struct ove_spi_cfg.
- */
-#define OVE_SPI_DEFINE_STATIC(name, cfg_ptr)         \
-	static ove_spi_t name;                       \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)          \
-	int _err = ove_spi_create(&name, (cfg_ptr)); \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-#endif /* CONFIG_OVE_SPI */
-
-#ifdef CONFIG_OVE_UART
-/**
- * @brief Declare and auto-initialise a static UART (heap mode).
- *
- * @param name      Variable name for the resulting @c ove_uart_t handle.
- * @param rx_buf_sz RX buffer size (ignored in heap mode — uses cfg->rx_buf_size).
- * @param cfg_ptr   Pointer to a @c struct ove_uart_cfg.
- */
-#define OVE_UART_DEFINE_STATIC(name, rx_buf_sz, cfg_ptr) \
-	static ove_uart_t name;                          \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(name)              \
-	(void)(rx_buf_sz);                               \
-	int _err = ove_uart_create(&name, (cfg_ptr));    \
-	OVE_DEFINE_STATIC_CTOR_END_(name)
-#endif /* CONFIG_OVE_UART */
-
-#endif /* CONFIG_OVE_ZERO_HEAP */
 
 /** @} */ /* ove_storage_define_static */
 

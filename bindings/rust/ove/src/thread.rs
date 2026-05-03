@@ -115,16 +115,17 @@ impl Thread {
         priority: Priority,
         stack_size: usize,
     ) -> Result<Self> {
-        let desc = bindings::ove_thread_desc {
-            name: name.as_ptr() as *const _,
-            entry: Some(entry),
-            arg: core::ptr::null_mut(),
-            priority: priority as bindings::ove_prio_t,
-            stack_size,
-            stack: core::ptr::null_mut(),
-        };
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_thread_create_(&mut handle, &desc) };
+        let rc = unsafe {
+            bindings::ove_thread_create(
+                &mut handle,
+                name.as_ptr() as *const _,
+                Some(entry),
+                core::ptr::null_mut(),
+                priority as bindings::ove_prio_t,
+                stack_size,
+            )
+        };
         Error::from_code(rc)?;
         Ok(Self {
             handle,
@@ -150,16 +151,17 @@ impl Thread {
             entry();
         }
 
-        let desc = bindings::ove_thread_desc {
-            name: name.as_ptr() as *const _,
-            entry: Some(trampoline),
-            arg: entry as *mut core::ffi::c_void,
-            priority: priority as bindings::ove_prio_t,
-            stack_size,
-            stack: core::ptr::null_mut(),
-        };
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_thread_create_(&mut handle, &desc) };
+        let rc = unsafe {
+            bindings::ove_thread_create(
+                &mut handle,
+                name.as_ptr() as *const _,
+                Some(trampoline),
+                entry as *mut core::ffi::c_void,
+                priority as bindings::ove_prio_t,
+                stack_size,
+            )
+        };
         Error::from_code(rc)?;
         Ok(Self {
             handle,
@@ -167,20 +169,105 @@ impl Thread {
         })
     }
 
-    /// Create from caller-provided static storage.
+    /// Spawn a thread with a `FnOnce` closure that may capture state
+    /// (such as `Arc<T>` clones).
     ///
-    /// The `desc` must include a valid `stack` pointer and `stack_size`.
+    /// The closure is boxed onto the heap and dropped on the new
+    /// thread once it has executed.  Requires the `alloc` feature and
+    /// a registered `#[global_allocator]`; for bare-metal targets pull
+    /// in `ove-allocator` (or supply your own).
+    ///
+    /// ```ignore
+    /// let queue = Arc::new(Queue::<u32, 8>::new()?);
+    /// let q = Arc::clone(&queue);
+    /// let _t = Thread::spawn_with(b"prod\0", Priority::Normal, 4096, move || {
+    ///     q.send(&42u32, 1000).ok();
+    /// })?;
+    /// ```
+    ///
+    /// # Errors
+    /// Returns [`Error::NoMemory`] if heap allocation fails, or another error
+    /// if the RTOS rejects the thread descriptor.
+    #[cfg(all(not(zero_heap), feature = "alloc"))]
+    pub fn spawn_with<F>(
+        name: &[u8],
+        priority: Priority,
+        stack_size: usize,
+        f: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        // The captured closure cannot cross the C ABI directly, so we
+        // double-box it: the inner `Box<dyn FnOnce>` is the type-erased
+        // closure; the outer raw pointer is what we pass through the
+        // `*mut c_void` arg slot.
+        type ClosureBox = alloc::boxed::Box<dyn FnOnce() + Send + 'static>;
+
+        unsafe extern "C" fn trampoline(arg: *mut core::ffi::c_void) {
+            // SAFETY: `arg` is the raw pointer minted by `Box::into_raw`
+            // in `spawn_with`.  We re-take ownership here and execute
+            // the closure exactly once before the Box drops.
+            let boxed: alloc::boxed::Box<ClosureBox> =
+                unsafe { alloc::boxed::Box::from_raw(arg as *mut ClosureBox) };
+            (*boxed)();
+        }
+
+        let boxed: ClosureBox = alloc::boxed::Box::new(f);
+        let outer = alloc::boxed::Box::new(boxed);
+        let raw = alloc::boxed::Box::into_raw(outer);
+
+        let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
+        let rc = unsafe {
+            bindings::ove_thread_create(
+                &mut handle,
+                name.as_ptr() as *const _,
+                Some(trampoline),
+                raw as *mut core::ffi::c_void,
+                priority as bindings::ove_prio_t,
+                stack_size,
+            )
+        };
+        if let Err(e) = Error::from_code(rc) {
+            // Reclaim the closure so it doesn't leak on spawn failure.
+            // SAFETY: trampoline never ran, so we still own `raw`.
+            let _ = unsafe { alloc::boxed::Box::from_raw(raw) };
+            return Err(e);
+        }
+        Ok(Self {
+            handle,
+            owned: true,
+        })
+    }
+
+    /// Create from caller-provided static storage and stack.
     ///
     /// # Safety
     /// - `storage` must outlive the `Thread` and not be shared.
-    /// - The stack buffer referenced by `desc` must outlive the `Thread`.
+    /// - `stack` must point to at least `stack_size` bytes and outlive the `Thread`.
     #[cfg(zero_heap)]
     pub unsafe fn from_static(
         storage: *mut bindings::ove_thread_storage_t,
-        desc: &bindings::ove_thread_desc,
+        name: &[u8],
+        entry: unsafe extern "C" fn(*mut core::ffi::c_void),
+        arg: *mut core::ffi::c_void,
+        priority: Priority,
+        stack_size: usize,
+        stack: *mut core::ffi::c_void,
     ) -> Result<Self> {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_thread_init(&mut handle, storage, desc) };
+        let rc = unsafe {
+            bindings::ove_thread_init(
+                &mut handle,
+                storage,
+                name.as_ptr() as *const _,
+                Some(entry),
+                arg,
+                priority as bindings::ove_prio_t,
+                stack_size,
+                stack,
+            )
+        };
         Error::from_code(rc)?;
         Ok(Self {
             handle,
@@ -213,16 +300,19 @@ impl Thread {
             entry();
         }
 
-        let desc = bindings::ove_thread_desc {
-            name: name.as_ptr() as *const _,
-            entry: Some(trampoline),
-            arg: entry as *mut core::ffi::c_void,
-            priority: priority as bindings::ove_prio_t,
-            stack_size,
-            stack,
-        };
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
-        let rc = unsafe { bindings::ove_thread_init(&mut handle, storage, &desc) };
+        let rc = unsafe {
+            bindings::ove_thread_init(
+                &mut handle,
+                storage,
+                name.as_ptr() as *const _,
+                Some(trampoline),
+                entry as *mut core::ffi::c_void,
+                priority as bindings::ove_prio_t,
+                stack_size,
+                stack,
+            )
+        };
         Error::from_code(rc)?;
         Ok(Self {
             handle,

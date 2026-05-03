@@ -1,0 +1,27 @@
+[package]
+name = "example_rust"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ove = { path = "../../../../bindings/rust/ove", features = ["alloc"] }
+# `ove-allocator` registers a libc-malloc-backed `#[global_allocator]`.
+# On `std` builds the std allocator is already present, so the `std`
+# feature below activates `ove-allocator/no_install` to suppress the
+# registration (avoiding duplicate-`#[global_allocator]` linker errors).
+ove-allocator = { path = "../../../../bindings/rust/ove-allocator", default-features = false }
+
+[features]
+default = []
+# Enabling `std` propagates to `ove`'s `std` (which implies `alloc`)
+# and disables the libc-malloc allocator install (std provides one).
+std = ["ove/std", "ove-allocator/no_install"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

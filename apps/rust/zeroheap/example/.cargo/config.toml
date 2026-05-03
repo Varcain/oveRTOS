@@ -1,0 +1,4 @@
+# Target is set by the build system:
+#   - Embedded: cargo --target thumbv7em-none-eabihf (via CMake/Make)
+#   - POSIX: host default (no --target flag)
+# Do NOT hardcode [build] target here.

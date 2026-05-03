@@ -2,16 +2,16 @@
 
 Source: `apps/c/example/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_c/){:target="_blank"}**
 
-The C example demonstrates the oveRTOS unified C API, using a producer-consumer pattern with optional LVGL display output. The same source code compiles unchanged in both heap and zero-heap modes across all supported backends — no `#ifdef CONFIG_OVE_ZERO_HEAP` is needed.
+The C example demonstrates the oveRTOS C API using a producer-consumer pattern with optional LVGL display output. It uses `OVE_*_DEFINE_STATIC()` macros for file-scope object declarations, which expand to a true static allocation in both heap and zero-heap modes — the same source compiles unchanged across all supported backends and modes.
 
-## Unified C API
+## File-scope static declarations
 
-The `_create()` / `_destroy()` API works identically in both heap and zero-heap modes:
+The `OVE_*_DEFINE_STATIC()` macros declare a handle, allocate static storage, and register a constructor that initialises it before `main()`:
 
 ```c
-ove_queue_create(&counter_queue, sizeof(uint32_t), 8);
-ove_mutex_create(&value_mutex);
-ove_timer_create(&ui_timer, ui_timer_cb, NULL, 200, 0);
+OVE_QUEUE_DEFINE_STATIC(counter_queue, sizeof(uint32_t), 8);
+OVE_MUTEX_DEFINE_STATIC(value_mutex);
+OVE_TIMER_DEFINE_STATIC(ui_timer, ui_timer_cb, NULL, 200, 0);
 
 struct ove_thread_desc desc = {
     .name = "producer",

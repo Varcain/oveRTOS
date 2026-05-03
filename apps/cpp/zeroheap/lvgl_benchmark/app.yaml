@@ -1,0 +1,19 @@
+lang: cpp
+config_name: lvgl_benchmark_cpp_zh
+description: "LVGL rendering benchmark (C++)"
+sources:
+  - ../../../c/zeroheap/lvgl_benchmark/src/benchmark_perf.c
+  - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_cogwheel_rgb.c
+  - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_cogwheel_argb.c
+  - ../../../c/zeroheap/lvgl_benchmark/src/assets/benchmark_avatar.c
+  - src/app.cpp
+includes:
+  - ../../../c/zeroheap/lvgl_benchmark/include
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  # Pin LVGL TLSF pool to fixed BSS size; no spillover to system malloc.
+  - CONFIG_LV_MEM_SIZE_KILOBYTES=64
+  - CONFIG_LV_MEM_POOL_EXPAND_SIZE_KILOBYTES=0
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_LVGL=y
+  - CONFIG_OVE_TIMER=y

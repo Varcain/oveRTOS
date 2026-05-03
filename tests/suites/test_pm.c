@@ -602,23 +602,16 @@ static void test_pm_domain_concurrent(void **state)
 	OVE_TEST_STACK(t_stack, 2048);
 	ove_thread_t th;
 
-	struct ove_thread_desc desc = {
-		.name = "dom_stress",
-		.entry = domain_stress_entry,
-		.arg = (void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO,
-		.priority = OVE_PRIO_NORMAL,
-		.stack_size = 2048,
 #ifdef CONFIG_OVE_ZERO_HEAP
-		.stack = t_stack,
-#endif
-	};
-
-#ifdef CONFIG_OVE_ZERO_HEAP
-	ove_thread_init(&th, &t_stor, &desc);
+	ove_thread_init(&th, &t_stor, "dom_stress", domain_stress_entry,
+			(void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO,
+			OVE_PRIO_NORMAL, 2048, t_stack);
 #else
 	(void)t_stor;
 	(void)t_stack;
-	ove_thread_create_(&th, &desc);
+	ove_thread_create(&th, "dom_stress", domain_stress_entry,
+			  (void *)(uintptr_t)OVE_PM_DOMAIN_AUDIO,
+			  OVE_PRIO_NORMAL, 2048);
 #endif
 
 	/* Main thread also hammers same domain */

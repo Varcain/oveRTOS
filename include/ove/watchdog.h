@@ -17,11 +17,10 @@
  * expiry action).
  *
  * Two allocation strategies are supported:
- * - @c _create() / @c _destroy() — unified API that works in both heap and
- *   zero-heap mode.  In zero-heap mode these are macros that generate
- *   per-call-site static storage.
- * - @c _init() / @c _deinit() — explicit storage control with caller-supplied
- *   buffers.  Use when creating objects in loops, arrays, or structs.
+ * - @c _create() / @c _destroy() — heap-allocated.  Available only when
+ *   @c OVE_HEAP_WATCHDOG is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ * - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
+ *   modes.  See @c OVE_WATCHDOG_DEFINE_STATIC for a one-step static helper.
  *
  * @note Requires @c CONFIG_OVE_WATCHDOG.
  * @{
@@ -92,15 +91,6 @@ int ove_watchdog_create(ove_watchdog_t *wdt, uint32_t timeout_ms);
  * @note Requires @c CONFIG_OVE_WATCHDOG and @c OVE_HEAP_WATCHDOG.
  */
 void ove_watchdog_destroy(ove_watchdog_t wdt);
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_WATCHDOG — zero-heap mode */
-
-#define ove_watchdog_create(pwdt, timeout_ms)                         \
-	({                                                            \
-		static ove_watchdog_storage_t _ove_stor_;             \
-		ove_watchdog_init((pwdt), &_ove_stor_, (timeout_ms)); \
-	})
-#define ove_watchdog_destroy(wdt) ove_watchdog_deinit(wdt)
-
 #endif /* OVE_HEAP_WATCHDOG */
 
 /**

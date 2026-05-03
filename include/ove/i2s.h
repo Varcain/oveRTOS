@@ -104,21 +104,7 @@ void ove_i2s_deinit(ove_i2s_t i2s);
 int ove_i2s_create(ove_i2s_t *i2s, const struct ove_i2s_cfg *cfg);
 /** @brief Destroy an I2S handle previously created with `ove_i2s_create`. */
 void ove_i2s_destroy(ove_i2s_t i2s);
-#elif !defined(__ZIG_CIMPORT__)
-#define ove_i2s_create(pi2s, cfg)                                                             \
-	({                                                                                    \
-		static ove_i2s_storage_t _ove_stor_;                                          \
-		static uint8_t _ove_txbuf_[((cfg)->dma_buf_samples) * ((cfg)->bit_depth / 8)] \
-			__attribute__((aligned(32)));                                         \
-		static uint8_t _ove_rxbuf_[((cfg)->dma_buf_samples) * ((cfg)->bit_depth / 8)] \
-			__attribute__((aligned(32)));                                         \
-		ove_i2s_init((pi2s), &_ove_stor_,                                             \
-			     ((cfg)->direction & OVE_I2S_DIR_TX) ? _ove_txbuf_ : (void *)0,   \
-			     ((cfg)->direction & OVE_I2S_DIR_RX) ? _ove_rxbuf_ : (void *)0,   \
-			     (cfg));                                                          \
-	})
-#define ove_i2s_destroy(i2s) ove_i2s_deinit(i2s)
-#endif
+#endif /* OVE_HEAP_I2S */
 
 /* ── Callbacks ───────────────────────────────────────────────────── */
 

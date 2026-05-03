@@ -16,11 +16,11 @@
  *       static inline stub that returns @c OVE_ERR_NOT_SUPPORTED.
  *
  * Two allocation strategies are available for each primitive:
- *  - @c _create() / @c _destroy() — unified API that works in both heap and
- *    zero-heap mode.  In zero-heap mode these are macros that generate
- *    per-call-site static storage.
- *  - @c _init() / @c _deinit() — explicit storage control with caller-supplied
- *    buffers.  Use when creating objects in loops, arrays, or structs.
+ *  - @c _create() / @c _destroy() — heap-allocated.  Available only when
+ *    @c OVE_HEAP_SYNC is defined (i.e. @c CONFIG_OVE_ZERO_HEAP is not set).
+ *  - @c _init() / @c _deinit() — caller-supplied storage.  Available in both
+ *    modes.  See @c OVE_MUTEX_DEFINE_STATIC and friends for one-step static
+ *    helpers.
  * @{
  */
 
@@ -314,46 +314,6 @@ int ove_condvar_create(ove_condvar_t *cv);
  * @see ove_condvar_create
  */
 void ove_condvar_destroy(ove_condvar_t cv);
-
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_SYNC — zero-heap mode */
-
-/* Unified _create/_destroy macros — auto-generate static storage per call site.
- * Each call site produces exactly one kernel object.  Do not call in a loop
- * to create multiple independent objects; use _init() with separate storage. */
-#define ove_mutex_create(phandle)                       \
-	({                                              \
-		static ove_mutex_storage_t _ove_stor_;  \
-		ove_mutex_init((phandle), &_ove_stor_); \
-	})
-#define ove_mutex_destroy(mtx) ove_mutex_deinit(mtx)
-
-#define ove_sem_create(psem, initial, max)                           \
-	({                                                           \
-		static ove_sem_storage_t _ove_stor_;                 \
-		ove_sem_init((psem), &_ove_stor_, (initial), (max)); \
-	})
-#define ove_sem_destroy(sem) ove_sem_deinit(sem)
-
-#define ove_event_create(pevt)                         \
-	({                                             \
-		static ove_event_storage_t _ove_stor_; \
-		ove_event_init((pevt), &_ove_stor_);   \
-	})
-#define ove_event_destroy(evt) ove_event_deinit(evt)
-
-#define ove_recursive_mutex_create(phandle)                       \
-	({                                                        \
-		static ove_mutex_storage_t _ove_stor_;            \
-		ove_recursive_mutex_init((phandle), &_ove_stor_); \
-	})
-#define ove_recursive_mutex_destroy(mtx) ove_mutex_deinit(mtx)
-
-#define ove_condvar_create(pcv)                          \
-	({                                               \
-		static ove_condvar_storage_t _ove_stor_; \
-		ove_condvar_init((pcv), &_ove_stor_);    \
-	})
-#define ove_condvar_destroy(cv) ove_condvar_deinit(cv)
 
 #endif /* OVE_HEAP_SYNC */
 

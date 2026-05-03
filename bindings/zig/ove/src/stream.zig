@@ -12,59 +12,111 @@ const pin = @import("pin.zig");
 
 /// Variable-length byte stream buffer for inter-task data transfer.
 ///
-/// Generic on the buffer capacity in bytes — the ring buffer storage lives
-/// inside the wrapper struct.  In zero-heap mode the buffer is allocated as
-/// a struct field; in heap mode the field is zero-sized.
+/// Generic on the buffer capacity in bytes.
+///
+/// In heap mode the wrapper is a single handle; the kernel allocates the
+/// backing buffer:
+///
+/// ```zig
+/// var s = try ove.Stream(256).create(1);  // trigger=1
+/// defer s.deinit();
+/// ```
+///
+/// In zero-heap mode the buffer is embedded as a struct field; two-phase
+/// init is required:
 ///
 /// ```zig
 /// var s: ove.Stream(256) = undefined;
-/// try s.init(1);    // trigger=1: wake on any byte
+/// try s.init(1);
 /// defer s.deinit();
-/// _ = try s.send(payload, ove.wait_forever);
-/// _ = try s.receive(buf[0..], ove.wait_forever);
 /// ```
 pub fn Stream(comptime size: usize) type {
+    return if (pin.zero_heap) ZeroHeapStream(size) else HeapStream(size);
+}
+
+fn HeapStream(comptime size: usize) type {
     return struct {
         const Self = @This();
 
-        /// Backing ring buffer.  Zero-sized in heap mode.
-        buffer: if (pin.zero_heap) [size + 1]u8 else void,
-        storage: pin.Storage(c.ove_stream_storage_t),
+        handle: c.ove_stream_t,
+
+        /// `trigger` is the minimum bytes a receiver waits for before
+        /// unblocking (0 or 1 = "wake on any byte").
+        pub fn create(trigger: usize) Error!Self {
+            var h: c.ove_stream_t = null;
+            try err.fromCode(c.ove_stream_create(&h, size, trigger));
+            return .{ .handle = h };
+        }
+
+        pub fn deinit(self: Self) void {
+            if (self.handle == null) return;
+            c.ove_stream_destroy(self.handle);
+        }
+
+        pub inline fn send(self: Self, data: []const u8, timeout_ms: u32) Error!usize {
+            var sent: usize = 0;
+            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ms, &sent));
+            return sent;
+        }
+
+        pub inline fn receive(self: Self, buf: []u8, timeout_ms: u32) Error!usize {
+            var received: usize = 0;
+            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ms, &received));
+            return received;
+        }
+
+        pub fn sendFromIsr(self: Self, data: []const u8) Error!usize {
+            var sent: usize = 0;
+            try err.fromCode(c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent));
+            return sent;
+        }
+
+        pub fn receiveFromIsr(self: Self, buf: []u8) Error!usize {
+            var received: usize = 0;
+            try err.fromCode(c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received));
+            return received;
+        }
+
+        pub fn reset(self: Self) Error!void {
+            try err.fromCode(c.ove_stream_reset(self.handle));
+        }
+
+        pub fn bytesAvailable(self: Self) usize {
+            return c.ove_stream_bytes_available(self.handle);
+        }
+    };
+}
+
+fn ZeroHeapStream(comptime size: usize) type {
+    return struct {
+        const Self = @This();
+
+        buffer: [size + 1]u8,
+        storage: c.ove_stream_storage_t,
         handle: c.ove_stream_t,
         tracker: pin.Tracker,
 
-        /// Initialise.  `trigger` is the minimum bytes a receiver waits for
-        /// before unblocking (0 or 1 = "wake on any byte").
+        /// `trigger` is the minimum bytes a receiver waits for before
+        /// unblocking (0 or 1 = "wake on any byte").
         pub fn init(self: *Self, trigger: usize) Error!void {
-            if (comptime pin.zero_heap) {
-                self.buffer = [_]u8{0} ** (size + 1);
-            } else {
-                self.buffer = {};
-            }
-            self.storage = pin.zeroStorage(c.ove_stream_storage_t);
+            self.buffer = [_]u8{0} ** (size + 1);
+            self.storage = std.mem.zeroes(c.ove_stream_storage_t);
             self.handle = null;
             self.tracker = .{};
-            if (comptime !pin.zero_heap) {
-                try err.fromCode(c.ove_stream_create(&self.handle, size, trigger));
-            } else {
-                try err.fromCode(c.ove_stream_init(
-                    &self.handle,
-                    &self.storage,
-                    &self.buffer,
-                    size,
-                    trigger,
-                ));
-            }
+            try err.fromCode(c.ove_stream_init(
+                &self.handle,
+                &self.storage,
+                &self.buffer,
+                size,
+                trigger,
+            ));
             self.tracker.record(self);
         }
 
         pub fn deinit(self: *Self) void {
             self.tracker.assertSame(self, "ove.Stream");
             if (self.handle == null) return;
-            if (comptime !pin.zero_heap)
-                c.ove_stream_destroy(self.handle)
-            else
-                c.ove_stream_deinit(self.handle);
+            c.ove_stream_deinit(self.handle);
             self.handle = null;
             self.tracker.clear();
         }

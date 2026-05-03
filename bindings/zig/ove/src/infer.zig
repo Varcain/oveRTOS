@@ -34,10 +34,19 @@ pub const TensorInfo = struct {
 
 /// ML inference model session.
 ///
-/// In zero-heap mode the storage struct lives in the wrapper.  The model
-/// arena (working memory for the interpreter) is **not** embedded — its
-/// size depends on the model and would explode the wrapper's footprint;
-/// callers supply an aligned arena buffer via `init()`'s `arena` slice.
+/// In heap mode the wrapper is a single handle; the kernel allocates the
+/// storage and arena from the heap:
+///
+/// ```zig
+/// var model = try ove.Model.create(&model_cfg);
+/// defer model.deinit();
+/// try model.invoke();
+/// ```
+///
+/// In zero-heap mode the storage struct lives in the wrapper; the arena
+/// (working memory for the interpreter) is **not** embedded — its size
+/// depends on the model and would explode the wrapper's footprint; callers
+/// supply an aligned arena buffer via `init()`'s `arena` slice:
 ///
 /// ```zig
 /// var arena: [32 * 1024]u8 align(16) = undefined;
@@ -46,32 +55,86 @@ pub const TensorInfo = struct {
 /// defer model.deinit();
 /// try model.invoke();
 /// ```
-pub const Model = struct {
-    storage: pin.Storage(c.ove_model_storage_t),
+pub const Model = if (pin.zero_heap) ZeroHeapModel else HeapModel;
+
+const HeapModel = struct {
+    handle: c.ove_model_t,
+
+    /// Create.  Storage and arena are allocated from the RTOS heap.
+    pub fn create(config: *const c.ove_model_config) Error!Model {
+        var h: c.ove_model_t = null;
+        try err.fromCode(c.ove_model_create(&h, config));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: Model) void {
+        if (self.handle == null) return;
+        c.ove_model_destroy(self.handle);
+    }
+
+    /// Run the model forward pass.
+    pub fn invoke(self: Model) Error!void {
+        try err.fromCode(c.ove_model_invoke(self.handle));
+    }
+
+    pub fn input(self: Model, index: u32) Error!TensorInfo {
+        var info: c.ove_tensor_info = std.mem.zeroes(c.ove_tensor_info);
+        try err.fromCode(c.ove_model_input(self.handle, index, &info));
+        return TensorInfo{
+            .data = info.data,
+            .size = info.size,
+            .tensor_type = @enumFromInt(info.type),
+            .ndims = info.ndims,
+            .dims = info.dims,
+        };
+    }
+
+    pub fn output(self: Model, index: u32) Error!TensorInfo {
+        var info: c.ove_tensor_info = std.mem.zeroes(c.ove_tensor_info);
+        try err.fromCode(c.ove_model_output(self.handle, index, &info));
+        return TensorInfo{
+            .data = info.data,
+            .size = info.size,
+            .tensor_type = @enumFromInt(info.type),
+            .ndims = info.ndims,
+            .dims = info.dims,
+        };
+    }
+
+    pub fn lastInferenceUs(self: Model) u64 {
+        return c.ove_model_last_inference_us(self.handle);
+    }
+
+    pub fn inputData(self: Model, comptime T: type, index: u32) Error![*]T {
+        const info = try self.input(index);
+        return @ptrCast(@alignCast(info.data));
+    }
+
+    pub fn outputData(self: Model, comptime T: type, index: u32) Error![*]const T {
+        const info = try self.output(index);
+        return @ptrCast(@alignCast(info.data));
+    }
+};
+
+const ZeroHeapModel = struct {
+    storage: c.ove_model_storage_t,
     handle: c.ove_model_t,
     tracker: pin.Tracker,
 
     /// Initialise.  `arena` is caller-supplied scratch memory used by the
     /// interpreter (sized per-model).
     pub fn init(self: *Model, arena: []u8, config: *const c.ove_model_config) Error!void {
-        self.storage = pin.zeroStorage(c.ove_model_storage_t);
+        self.storage = std.mem.zeroes(c.ove_model_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_model_create(&self.handle, config));
-        } else {
-            try err.fromCode(c.ove_model_init(&self.handle, &self.storage, arena.ptr, config));
-        }
+        try err.fromCode(c.ove_model_init(&self.handle, &self.storage, arena.ptr, config));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *Model) void {
         self.tracker.assertSame(self, "ove.Model");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_model_destroy(self.handle)
-        else
-            c.ove_model_deinit(self.handle);
+        c.ove_model_deinit(self.handle);
         self.handle = null;
         self.tracker.clear();
     }

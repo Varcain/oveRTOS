@@ -12,35 +12,54 @@ const pin = @import("pin.zig");
 
 /// TLS session.
 ///
+/// Heap mode (value-returning):
+///
 /// ```zig
-/// var tls: ove.TlsSession = undefined;
+/// var tls = try ove.net_tls.Session.create();
+/// defer tls.deinit();
+/// ```
+///
+/// Zero-heap mode (two-phase init):
+///
+/// ```zig
+/// var tls: ove.net_tls.Session = undefined;
 /// try tls.init();
 /// defer tls.deinit();
 /// ```
-pub const Session = struct {
-    storage: pin.Storage(c.ove_tls_storage_t),
+pub const Session = if (pin.zero_heap) ZeroHeapSession else HeapSession;
+
+const HeapSession = struct {
+    handle: c.ove_tls_t,
+
+    pub fn create() Error!Session {
+        var h: c.ove_tls_t = null;
+        try err.fromCode(c.ove_tls_create(&h));
+        return .{ .handle = h };
+    }
+
+    pub fn deinit(self: Session) void {
+        if (self.handle == null) return;
+        c.ove_tls_destroy(self.handle);
+    }
+};
+
+const ZeroHeapSession = struct {
+    storage: c.ove_tls_storage_t,
     handle: c.ove_tls_t,
     tracker: pin.Tracker,
 
     pub fn init(self: *Session) Error!void {
-        self.storage = pin.zeroStorage(c.ove_tls_storage_t);
+        self.storage = std.mem.zeroes(c.ove_tls_storage_t);
         self.handle = null;
         self.tracker = .{};
-        if (comptime !pin.zero_heap) {
-            try err.fromCode(c.ove_tls_create(&self.handle));
-        } else {
-            try err.fromCode(c.ove_tls_init(&self.handle, &self.storage));
-        }
+        try err.fromCode(c.ove_tls_init(&self.handle, &self.storage));
         self.tracker.record(self);
     }
 
     pub fn deinit(self: *Session) void {
         self.tracker.assertSame(self, "ove.TlsSession");
         if (self.handle == null) return;
-        if (comptime !pin.zero_heap)
-            c.ove_tls_destroy(self.handle)
-        else
-            c.ove_tls_deinit(self.handle);
+        c.ove_tls_deinit(self.handle);
         self.handle = null;
         self.tracker.clear();
     }

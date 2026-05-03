@@ -335,10 +335,10 @@ The same two strategies available for threads apply here:
 
 ```mermaid
 graph TD
-    subgraph heap["Heap / Zero-Heap (unified API)"]
+    subgraph heap["Heap mode (`OVE_HEAP_SYNC` set)"]
         direction LR
-        C["ove_mutex_create"] --> CH["heap mode:<br/>allocates from RTOS heap"]
-        C --> CZ["zero-heap mode:<br/>generates per-call-site<br/>static storage"]
+        C["ove_mutex_create"] --> CH["allocates from RTOS heap"]
+        D["ove_mutex_destroy"] --> CH
     end
 
     subgraph static["Explicit Static Storage"]

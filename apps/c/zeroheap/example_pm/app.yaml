@@ -1,0 +1,11 @@
+lang: c
+config_name: example_pm_c_zh
+description: "C Power Management Demo"
+sources:
+  - src/app.c
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_PM=y
+  - CONFIG_OVE_TIMER=y

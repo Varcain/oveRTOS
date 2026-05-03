@@ -16,15 +16,15 @@
  * and pending items may be cancelled before execution begins.
  *
  * Two allocation strategies are supported for the queue itself:
- * - @c _create() / @c _destroy() — unified API that works in both heap and
- *   zero-heap mode.  In zero-heap mode these are macros that generate
- *   per-call-site static storage; the stack size must be a compile-time
- *   constant.
- * - @c _init() / @c _deinit() — explicit storage control with caller-supplied
- *   buffers.  Use when creating objects in loops, arrays, or structs.
+ * - @c _create() / @c _destroy() — heap-allocated, including thread stack.
+ *   Available only when @c OVE_HEAP_WORKQUEUE is defined (i.e.
+ *   @c CONFIG_OVE_ZERO_HEAP is not set).
+ * - @c _init() / @c _deinit() — caller-supplied storage and stack buffer.
+ *   Available in both modes.  See @c OVE_WORKQUEUE_DEFINE_STATIC for a
+ *   one-step static helper.
  *
- * Work items similarly have static (@ref ove_work_init_static) and heap
- * (@ref ove_work_init / @ref ove_work_free) variants.
+ * Work items have a static helper @ref ove_work_init_static (both modes) and
+ * a heap-only pair @ref ove_work_init / @ref ove_work_free (heap mode only).
  *
  * @note Requires @c CONFIG_OVE_WORKQUEUE.
  * @{
@@ -100,7 +100,7 @@ void ove_workqueue_deinit(ove_workqueue_t wq);
  */
 int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler);
 
-#ifndef CONFIG_OVE_ZERO_HEAP
+#ifdef OVE_HEAP_WORKQUEUE
 /**
  * @brief Allocate and initialise a heap-backed work item.
  *
@@ -110,8 +110,7 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
  * @param[out] work     Receives the created work handle.
  * @param[in]  handler  Function to call when the work item is executed.
  * @return OVE_OK on success, negative error code on failure.
- * @note Requires @c CONFIG_OVE_WORKQUEUE and that @c CONFIG_OVE_ZERO_HEAP
- *       is not set.
+ * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
  */
 int ove_work_init(ove_work_t *work, ove_work_fn handler);
 
@@ -123,11 +122,10 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler);
  * with @ref ove_work_cancel if necessary.
  *
  * @param[in] work  Work handle returned by @ref ove_work_init.
- * @note Requires @c CONFIG_OVE_WORKQUEUE and that @c CONFIG_OVE_ZERO_HEAP
- *       is not set.
+ * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
  */
 void ove_work_free(ove_work_t work);
-#endif
+#endif /* OVE_HEAP_WORKQUEUE */
 
 /**
  * @brief Allocate a heap-backed work queue.
@@ -156,18 +154,6 @@ int ove_workqueue_create(ove_workqueue_t *wq, const char *name, ove_prio_t prior
  * @note Requires @c CONFIG_OVE_WORKQUEUE and @c OVE_HEAP_WORKQUEUE.
  */
 void ove_workqueue_destroy(ove_workqueue_t wq);
-#elif !defined(__ZIG_CIMPORT__) /* !OVE_HEAP_WORKQUEUE — zero-heap mode */
-
-/* Unified macro — stack_size must be a compile-time constant. */
-#define ove_workqueue_create(pwq, name, priority, stack_size)                            \
-	({                                                                               \
-		static ove_workqueue_storage_t _ove_stor_;                               \
-		OVE_THREAD_STACK_BLOCK_STATIC_(_ove_stk_, (stack_size));                 \
-		ove_workqueue_init((pwq), &_ove_stor_, (name), (priority), (stack_size), \
-				   _ove_stk_);                                           \
-	})
-#define ove_workqueue_destroy(wq) ove_workqueue_deinit(wq)
-
 #endif /* OVE_HEAP_WORKQUEUE */
 
 /**
