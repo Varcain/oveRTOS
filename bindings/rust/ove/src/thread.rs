@@ -189,12 +189,7 @@ impl Thread {
     /// Returns [`Error::NoMemory`] if heap allocation fails, or another error
     /// if the RTOS rejects the thread descriptor.
     #[cfg(all(not(zero_heap), feature = "alloc"))]
-    pub fn spawn_with<F>(
-        name: &[u8],
-        priority: Priority,
-        stack_size: usize,
-        f: F,
-    ) -> Result<Self>
+    pub fn spawn_with<F>(name: &[u8], priority: Priority, stack_size: usize, f: F) -> Result<Self>
     where
         F: FnOnce() + Send + 'static,
     {

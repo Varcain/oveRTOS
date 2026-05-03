@@ -132,8 +132,7 @@ fn HeapThread(comptime stack_size: usize) type {
                 }
             };
             var h: c.ove_thread_t = null;
-            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke, null,
-                priority, stack_size));
+            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke, null, priority, stack_size));
             return .{ .handle = h };
         }
 
@@ -152,8 +151,7 @@ fn HeapThread(comptime stack_size: usize) type {
                 }
             };
             var h: c.ove_thread_t = null;
-            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke,
-                @ptrCast(ctx), priority, stack_size));
+            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke, @ptrCast(ctx), priority, stack_size));
             return .{ .handle = h };
         }
 
@@ -218,8 +216,7 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
             self.storage = std.mem.zeroes(c.ove_thread_storage_t);
             self.handle = null;
             self.tracker = .{};
-            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name,
-                &Tramp.invoke, null, priority, stack_size, &self.stack));
+            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name, &Tramp.invoke, null, priority, stack_size, &self.stack));
             self.tracker.record(self);
         }
 
@@ -242,8 +239,7 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
             self.storage = std.mem.zeroes(c.ove_thread_storage_t);
             self.handle = null;
             self.tracker = .{};
-            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name,
-                &Tramp.invoke, @ptrCast(ctx), priority, stack_size, &self.stack));
+            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name, &Tramp.invoke, @ptrCast(ctx), priority, stack_size, &self.stack));
             self.tracker.record(self);
         }
 

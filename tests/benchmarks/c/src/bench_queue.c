@@ -70,8 +70,7 @@ static void queue_throughput_setup(void *ctx)
 	throughput_done = 0;
 	ove_queue_create(&bench_q, sizeof(uint32_t), 64);
 
-	ove_thread_create(&producer_th, "q_prod", producer_thread, NULL,
-			  OVE_PRIO_NORMAL, 2048);
+	ove_thread_create(&producer_th, "q_prod", producer_thread, NULL, OVE_PRIO_NORMAL, 2048);
 }
 
 static void queue_throughput_run(void *ctx)

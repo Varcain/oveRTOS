@@ -58,9 +58,8 @@ static enum pm_state_e to_nuttx_state(ove_pm_state_t state)
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
-	uint32_t sleep_us = (expected_idle_ms == OVE_WAIT_FOREVER)
-				    ? PM_STATE_RESIDENCY_US
-				    : expected_idle_ms * 1000U;
+	uint32_t sleep_us = (expected_idle_ms == OVE_WAIT_FOREVER) ? PM_STATE_RESIDENCY_US
+								   : expected_idle_ms * 1000U;
 
 #ifdef CONFIG_PM
 	pm_changestate(PM_IDLE_DOMAIN, to_nuttx_state(state));

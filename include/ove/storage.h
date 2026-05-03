@@ -606,13 +606,13 @@ OVE_OPAQUE_(ove_i2s_storage_t, OVE_SIZEOF_OVE_I2S_STORAGE, OVE_ALIGNOF_OVE_I2S_S
  * @param prio      Thread priority.
  * @param tname     Human-readable thread name string.
  */
-#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname)             \
-	static ove_thread_storage_t _##hname##_storage;                             \
-	OVE_THREAD_STACK_DEFINE_(_##hname##_stack, stack_sz);                       \
-	static ove_thread_t hname;                                                  \
-	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                                        \
-	int _err = ove_thread_init(&hname, &_##hname##_storage, (tname), (fn),      \
-				   (ctx), (prio), (stack_sz), _##hname##_stack);    \
+#define OVE_THREAD_DEFINE_STATIC(hname, stack_sz, fn, ctx, prio, tname)                       \
+	static ove_thread_storage_t _##hname##_storage;                                       \
+	OVE_THREAD_STACK_DEFINE_(_##hname##_stack, stack_sz);                                 \
+	static ove_thread_t hname;                                                            \
+	OVE_DEFINE_STATIC_CTOR_BEGIN_(hname)                                                  \
+	int _err = ove_thread_init(&hname, &_##hname##_storage, (tname), (fn), (ctx), (prio), \
+				   (stack_sz), _##hname##_stack);                             \
 	OVE_DEFINE_STATIC_CTOR_END_(hname)
 
 /**

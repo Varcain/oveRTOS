@@ -297,8 +297,8 @@ OVE_MAIN()
 	// Inference thread — heap-allocated via std::make_unique so the
 	// kernel object lives on the heap rather than in a function-static
 	// wrapper.
-	auto infer_t = std::make_unique<ove::Thread<8192>>(
-		infer_thread, nullptr, OVE_PRIO_NORMAL, "infer");
+	auto infer_t = std::make_unique<ove::Thread<8192>>(infer_thread, nullptr, OVE_PRIO_NORMAL,
+							   "infer");
 
 	OVE_LOG_INF("Say \"yes\" or \"no\" near the microphone...");
 	ove::run();

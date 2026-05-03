@@ -527,8 +527,8 @@ OVE_MAIN()
 {
 	OVE_LOG_INF("C++ networking example (heap mode): init");
 
-	auto net = std::make_unique<ove::Thread<8192>>(
-		net_thread, nullptr, OVE_PRIO_NORMAL, "net-test");
+	auto net = std::make_unique<ove::Thread<8192>>(net_thread, nullptr, OVE_PRIO_NORMAL,
+						       "net-test");
 
 	OVE_LOG_INF("C++ networking example (heap mode): ready");
 	ove::run();

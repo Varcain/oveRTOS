@@ -49,8 +49,9 @@ static void test_renode_i2c_ft5336_probe(void **state)
 		.instance = FT5336_I2C_INSTANCE,
 		.speed = OVE_I2C_SPEED_STANDARD,
 	};
-	ove_i2c_t i2c;
-	int rc = ove_i2c_create(&i2c, &cfg);
+	static ove_i2c_storage_t storage;
+	ove_i2c_t i2c = NULL;
+	int rc = ove_i2c_init(&i2c, &storage, &cfg);
 	assert_int_equal(rc, OVE_OK);
 
 	/* Read 1 byte from the chip-id register.  Renode's FT5336 model
@@ -66,7 +67,7 @@ static void test_renode_i2c_ft5336_probe(void **state)
 	rc = ove_i2c_read(i2c, 0x77, &out, 1, 100);
 	assert_int_not_equal(rc, OVE_OK);
 
-	ove_i2c_destroy(i2c);
+	ove_i2c_deinit(i2c);
 }
 
 /* ── 2. UART tx observable in USART2 register state ───────────────── */

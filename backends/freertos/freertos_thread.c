@@ -54,9 +54,9 @@ static UBaseType_t map_priority(ove_prio_t prio)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage,
-		    const char *name, ove_thread_fn entry, void *arg,
-		    ove_prio_t priority, size_t stack_size, void *stack)
+int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const char *name,
+		    ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size,
+		    void *stack)
 {
 	if (handle == NULL || storage == NULL || entry == NULL || stack == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -132,8 +132,8 @@ int ove_thread_deinit(ove_thread_t handle)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_THREAD
-int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry,
-		      void *arg, ove_prio_t priority, size_t stack_size)
+int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg,
+		      ove_prio_t priority, size_t stack_size)
 {
 	if (handle == NULL || entry == NULL)
 		return OVE_ERR_INVALID_PARAM;

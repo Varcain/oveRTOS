@@ -92,9 +92,8 @@ void ove_main(void)
 	OVE_LOG_INF("Benchmark app: init");
 
 	ove_thread_t handle;
-	int ret = ove_thread_init(&handle, &bench_runner_storage, "bench_run",
-				  benchmark_runner, NULL, OVE_PRIO_NORMAL, 8192,
-				  bench_runner_storage_stack);
+	int ret = ove_thread_init(&handle, &bench_runner_storage, "bench_run", benchmark_runner,
+				  NULL, OVE_PRIO_NORMAL, 8192, bench_runner_storage_stack);
 	if (ret != OVE_OK) {
 		OVE_LOG_ERR("Failed to init benchmark thread: %d", ret);
 		return;

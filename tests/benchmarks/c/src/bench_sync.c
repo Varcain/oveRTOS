@@ -81,8 +81,8 @@ static void mutex_contention_setup(void *ctx)
 	contention_count = 0;
 	ove_mutex_create(&bench_mtx);
 
-	ove_thread_create(&contention_th, "contention", contention_thread, NULL,
-			  OVE_PRIO_NORMAL, 2048);
+	ove_thread_create(&contention_th, "contention", contention_thread, NULL, OVE_PRIO_NORMAL,
+			  2048);
 }
 
 static void mutex_contention_run(void *ctx)
@@ -195,8 +195,7 @@ static void event_signal_wait_setup(void *ctx)
 	ove_event_create(&bench_evt);
 	ove_event_create(&bench_evt_ack);
 
-	ove_thread_create(&evt_th, "evt_sig", evt_signaler, NULL,
-			  OVE_PRIO_NORMAL, 1024);
+	ove_thread_create(&evt_th, "evt_sig", evt_signaler, NULL, OVE_PRIO_NORMAL, 1024);
 }
 
 static void event_signal_wait_run(void *ctx)
@@ -266,8 +265,7 @@ static void condvar_signal_wait_setup(void *ctx)
 	ove_mutex_create(&bench_cv_mtx);
 	ove_condvar_create(&bench_cv);
 
-	ove_thread_create(&cv_th, "cv_sig", cv_signaler, NULL,
-			  OVE_PRIO_NORMAL, 1024);
+	ove_thread_create(&cv_th, "cv_sig", cv_signaler, NULL, OVE_PRIO_NORMAL, 1024);
 }
 
 static void condvar_signal_wait_run(void *ctx)

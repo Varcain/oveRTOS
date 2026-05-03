@@ -1074,8 +1074,8 @@ void ove_main(void)
 	OVE_LOG_INF("LVGL benchmark (heap mode): init");
 
 	ove_thread_t graphics;
-	if (ove_thread_create(&graphics, "graphics", graphics_thread, NULL,
-			      OVE_PRIO_HIGH, 4096) != OVE_OK) {
+	if (ove_thread_create(&graphics, "graphics", graphics_thread, NULL, OVE_PRIO_HIGH, 4096) !=
+	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn graphics thread");
 		return;
 	}

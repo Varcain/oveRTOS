@@ -563,8 +563,8 @@ void ove_main(void)
 	OVE_LOG_INF("Networking example (heap mode): init");
 
 	ove_thread_t net;
-	if (ove_thread_create(&net, "net-test", net_thread, NULL,
-			      OVE_PRIO_NORMAL, 8192) != OVE_OK) {
+	if (ove_thread_create(&net, "net-test", net_thread, NULL, OVE_PRIO_NORMAL, 8192) !=
+	    OVE_OK) {
 		OVE_LOG_ERR("Failed to spawn net-test thread");
 		return;
 	}

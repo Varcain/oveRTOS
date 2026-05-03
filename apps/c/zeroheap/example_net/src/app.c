@@ -270,8 +270,7 @@ static void test_http(void)
 	ove_http_response_t resp;
 	int ret = ove_http_get(g_http, "http://example.com/", &resp);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status,
-			    (unsigned)resp.body_len);
+		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status, (unsigned)resp.body_len);
 		if (resp.status == 200 && resp.body_len > 0) {
 			PASS("http_get (200 OK)");
 		} else {
@@ -287,8 +286,7 @@ static void test_http(void)
 	ret = ove_http_post(g_http, "http://httpbin.org/post", "application/json", json,
 			    strlen(json), &resp);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status,
-			    (unsigned)resp.body_len);
+		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status, (unsigned)resp.body_len);
 		int echoed = (resp.body && strstr(resp.body, "overtos")) ? 1 : 0;
 		if (resp.status == 200) {
 			PASS("http_post (200 OK)");
@@ -315,8 +313,7 @@ static void test_http(void)
 				  "application/json", put_json, strlen(put_json), headers, 2,
 				  &resp);
 	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status,
-			    (unsigned)resp.body_len);
+		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status, (unsigned)resp.body_len);
 		if (resp.status == 200) {
 			PASS("http_put (200 OK)");
 		} else {

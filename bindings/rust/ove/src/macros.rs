@@ -701,10 +701,8 @@ macro_rules! tls_session {
         }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_tls_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::net_tls::Session::from_static(core::ptr::addr_of_mut!(_S)) }
-                .unwrap()
+            static mut _S: $crate::ffi::ove_tls_storage_t = unsafe { core::mem::zeroed() };
+            unsafe { $crate::net_tls::Session::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
 }
@@ -723,10 +721,8 @@ macro_rules! http_client {
         }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_http_client_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::net_http::Client::from_static(core::ptr::addr_of_mut!(_S)) }
-                .unwrap()
+            static mut _S: $crate::ffi::ove_http_client_storage_t = unsafe { core::mem::zeroed() };
+            unsafe { $crate::net_http::Client::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
 }
@@ -745,10 +741,8 @@ macro_rules! mqtt_client {
         }
         #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_mqtt_client_storage_t =
-                unsafe { core::mem::zeroed() };
-            unsafe { $crate::net_mqtt::Client::from_static(core::ptr::addr_of_mut!(_S)) }
-                .unwrap()
+            static mut _S: $crate::ffi::ove_mqtt_client_storage_t = unsafe { core::mem::zeroed() };
+            unsafe { $crate::net_mqtt::Client::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
         }
     }};
 }
