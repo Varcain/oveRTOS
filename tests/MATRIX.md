@@ -126,13 +126,14 @@ Built from `tests/CMakeLists.txt`:
   results survive. The `junit-ctest` target (CMake 3.21+) is the
   reliable CI-facing option today; renaming each suite's group array is
   a Tier 3 follow-up.
-- **NuttX build artifacts.** NuttX's `Application.mk` deposits
-  `.o`/`.gcno` next to the source files when the app's `CSRCS` list
-  points outside the app directory. Those files land in
-  `tests/suites/` and `backends/**/`; they are `.gitignore`d but clutter
-  the tree. Fix requires either copying sources into the app build dir
-  or patching `Application.mk`; neither is upstream-friendly. Tracked in
-  `tests/sim/nuttx-qemu/nuttx_app/Makefile` as a comment.
+- **NuttX build artifacts** *(historical, fixed).* The legacy
+  `Application.mk`-based fixture deposited `.o`/`.gcno` next to source
+  files (CSRCS pointing outside the app dir scattered them into
+  `tests/suites/` and `backends/**/`) and Make.dep tracked headers only
+  for `main.c`, so non-MAIN sources went silently stale on header
+  changes. Migrated to NuttX-CMake (`tests/sim/_nuttx_app.cmake` +
+  per-variant `nuttx_app/CMakeLists.txt`); objects now live under
+  `<build>/CMakeFiles/.../*.o` with full `-MMD` header tracking.
 - **Sim variants skip stub-only suites.** Networking helpers, I2C/SPI/
   UART, PM, inference, and `static_define` run under `ove_test_stub`
   only. Moving them into the sim runners is the Tier 3 "coverage
