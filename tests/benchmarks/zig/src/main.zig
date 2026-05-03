@@ -31,6 +31,22 @@ const volatile_int = std.atomic.Value(i32);
 /// locked at boot and the create/destroy API isn't generated.
 const is_zero_heap = @hasDecl(ove.ffi, "CONFIG_OVE_ZERO_HEAP");
 
+/// Mode-agnostic in-place initialisation.  In zero-heap mode dispatches
+/// to `obj.init(args...)` (two-phase, pinned).  In heap mode calls the
+/// value-returning `T.create(args...)` and assigns into `*obj`.  The
+/// pointer `obj` is the canonical address in both modes — the
+/// pin-tracker records it under zero-heap, and heap-mode handles are
+/// pointer-sized so the assignment is trivial.
+fn initInPlace(obj: anytype, args: anytype) !void {
+    const T = @TypeOf(obj.*);
+    if (is_zero_heap) {
+        obj.* = undefined;
+        try @call(.auto, T.init, .{obj} ++ args);
+    } else {
+        obj.* = try @call(.auto, T.create, args);
+    }
+}
+
 // =========================================================================
 // Suite: time
 // =========================================================================
@@ -91,7 +107,7 @@ fn dummyThread() void {}
 
 fn threadCreateDestroyRun() void {
     var th: ove.Thread(1024) = undefined;
-    th.init("bench_tmp", dummyThread, ove.thread.prio.low) catch return;
+    initInPlace(&th, .{ "bench_tmp", dummyThread, ove.thread.prio.low }) catch return;
     th.deinit();
 }
 
@@ -113,13 +129,13 @@ fn pongThread() void {
 fn ctxSwitchSetup() void {
     thread_ctx_switch_done.store(0, .release);
     thread_ping_sem = undefined;
-    thread_ping_sem.init(0, 1) catch return;
+    initInPlace(&thread_ping_sem, .{ 0, 1 }) catch return;
     thread_ping_sem_in = true;
     thread_pong_sem = undefined;
-    thread_pong_sem.init(0, 1) catch return;
+    initInPlace(&thread_pong_sem, .{ 0, 1 }) catch return;
     thread_pong_sem_in = true;
     thread_bench_th = undefined;
-    thread_bench_th.init("pong", pongThread, ove.thread.prio.normal) catch return;
+    initInPlace(&thread_bench_th, .{ "pong", pongThread, ove.thread.prio.normal }) catch return;
     thread_bench_th_in = true;
 }
 
@@ -235,7 +251,7 @@ var sync_mem_condvar_in: bool = false;
 
 fn mutexLockUnlockSetup() void {
     sync_bench_mtx = undefined;
-    sync_bench_mtx.init() catch return;
+    initInPlace(&sync_bench_mtx, .{}) catch return;
     sync_bench_mtx_in = true;
 }
 fn mutexLockUnlockRun() void {
@@ -251,7 +267,7 @@ fn mutexLockUnlockTeardown() void {
 
 fn mutexCreateDestroyRun() void {
     var m: ove.Mutex = undefined;
-    m.init() catch return;
+    initInPlace(&m, .{}) catch return;
     m.deinit();
 }
 
@@ -268,10 +284,10 @@ fn mutexContentionSetup() void {
     sync_contention_done.store(0, .release);
     sync_contention_count.store(0, .release);
     sync_bench_mtx = undefined;
-    sync_bench_mtx.init() catch return;
+    initInPlace(&sync_bench_mtx, .{}) catch return;
     sync_bench_mtx_in = true;
     sync_contention_th = undefined;
-    sync_contention_th.init("contention", contentionThread, ove.thread.prio.normal) catch return;
+    initInPlace(&sync_contention_th, .{ "contention", contentionThread, ove.thread.prio.normal }) catch return;
     sync_contention_th_in = true;
 }
 fn mutexContentionRun() void {
@@ -292,7 +308,7 @@ fn mutexContentionTeardown() void {
 
 fn mutexMemoryRun() void {
     sync_mem_mutex = undefined;
-    sync_mem_mutex.init() catch return;
+    initInPlace(&sync_mem_mutex, .{}) catch return;
     sync_mem_mutex_in = true;
 }
 fn mutexMemoryTeardown() void {
@@ -304,7 +320,7 @@ fn mutexMemoryTeardown() void {
 
 fn semTakeGiveSetup() void {
     sync_bench_sem = undefined;
-    sync_bench_sem.init(1, 1) catch return;
+    initInPlace(&sync_bench_sem, .{ 1, 1 }) catch return;
     sync_bench_sem_in = true;
 }
 fn semTakeGiveRun() void {
@@ -320,7 +336,7 @@ fn semTakeGiveTeardown() void {
 
 fn semCreateDestroyRun() void {
     var s: ove.Semaphore = undefined;
-    s.init(0, 1) catch return;
+    initInPlace(&s, .{ 0, 1 }) catch return;
     s.deinit();
 }
 
@@ -328,7 +344,7 @@ fn semCreateDestroyRun() void {
 
 fn semMemoryRun() void {
     sync_mem_sem = undefined;
-    sync_mem_sem.init(0, 1) catch return;
+    initInPlace(&sync_mem_sem, .{ 0, 1 }) catch return;
     sync_mem_sem_in = true;
 }
 fn semMemoryTeardown() void {
@@ -347,13 +363,13 @@ fn evtSignaler() void {
 fn eventSignalWaitSetup() void {
     sync_evt_done.store(0, .release);
     sync_bench_evt = undefined;
-    sync_bench_evt.init() catch return;
+    initInPlace(&sync_bench_evt, .{}) catch return;
     sync_bench_evt_in = true;
     sync_bench_evt_ack = undefined;
-    sync_bench_evt_ack.init() catch return;
+    initInPlace(&sync_bench_evt_ack, .{}) catch return;
     sync_bench_evt_ack_in = true;
     sync_evt_th = undefined;
-    sync_evt_th.init("evt_sig", evtSignaler, ove.thread.prio.normal) catch return;
+    initInPlace(&sync_evt_th, .{ "evt_sig", evtSignaler, ove.thread.prio.normal }) catch return;
     sync_evt_th_in = true;
 }
 fn eventSignalWaitRun() void {
@@ -376,7 +392,7 @@ fn eventSignalWaitTeardown() void {
 
 fn eventMemoryRun() void {
     sync_mem_event = undefined;
-    sync_mem_event.init() catch return;
+    initInPlace(&sync_mem_event, .{}) catch return;
     sync_mem_event_in = true;
 }
 fn eventMemoryTeardown() void {
@@ -395,18 +411,22 @@ fn cvSignaler() void {
 fn condvarSignalWaitSetup() void {
     sync_cv_done.store(0, .release);
     sync_bench_cv_mtx = undefined;
-    sync_bench_cv_mtx.init() catch return;
+    initInPlace(&sync_bench_cv_mtx, .{}) catch return;
     sync_bench_cv_mtx_in = true;
     sync_bench_cv = undefined;
-    sync_bench_cv.init() catch return;
+    initInPlace(&sync_bench_cv, .{}) catch return;
     sync_bench_cv_in = true;
     sync_cv_th = undefined;
-    sync_cv_th.init("cv_sig", cvSignaler, ove.thread.prio.normal) catch return;
+    initInPlace(&sync_cv_th, .{ "cv_sig", cvSignaler, ove.thread.prio.normal }) catch return;
     sync_cv_th_in = true;
 }
 fn condvarSignalWaitRun() void {
     sync_bench_cv_mtx.lock(ove.wait_forever) catch {};
-    sync_bench_cv.wait(&sync_bench_cv_mtx, 10) catch {};
+    if (is_zero_heap) {
+        sync_bench_cv.wait(&sync_bench_cv_mtx, 10) catch {};
+    } else {
+        sync_bench_cv.wait(sync_bench_cv_mtx, 10) catch {};
+    }
     sync_bench_cv_mtx.unlock();
 }
 fn condvarSignalWaitTeardown() void {
@@ -425,7 +445,7 @@ fn condvarSignalWaitTeardown() void {
 
 fn condvarMemoryRun() void {
     sync_mem_condvar = undefined;
-    sync_mem_condvar.init() catch return;
+    initInPlace(&sync_mem_condvar, .{}) catch return;
     sync_mem_condvar_in = true;
 }
 fn condvarMemoryTeardown() void {
@@ -437,7 +457,7 @@ fn condvarMemoryTeardown() void {
 
 fn rmtxLockUnlockSetup() void {
     sync_bench_rmtx = undefined;
-    sync_bench_rmtx.init() catch return;
+    initInPlace(&sync_bench_rmtx, .{}) catch return;
     sync_bench_rmtx_in = true;
 }
 fn rmtxLockUnlockRun() void {
@@ -517,7 +537,7 @@ var queue_mem_q_in: bool = false;
 
 fn queueSendRecvSetup() void {
     queue_send_recv_q = undefined;
-    queue_send_recv_q.init() catch return;
+    initInPlace(&queue_send_recv_q, .{}) catch return;
     queue_send_recv_q_in = true;
 }
 fn queueSendRecvRun() void {
@@ -532,7 +552,7 @@ fn queueSendRecvTeardown() void {
 
 fn queueCreateDestroyRun() void {
     var q: ove.Queue(u32, 8) = undefined;
-    q.init() catch return;
+    initInPlace(&q, .{}) catch return;
     q.deinit();
 }
 
@@ -546,10 +566,10 @@ fn queueProducerThread() void {
 fn queueThroughputSetup() void {
     queue_throughput_done.store(0, .release);
     queue_throughput_q = undefined;
-    queue_throughput_q.init() catch return;
+    initInPlace(&queue_throughput_q, .{}) catch return;
     queue_throughput_q_in = true;
     queue_producer_th = undefined;
-    queue_producer_th.init("q_prod", queueProducerThread, ove.thread.prio.normal) catch return;
+    initInPlace(&queue_producer_th, .{ "q_prod", queueProducerThread, ove.thread.prio.normal }) catch return;
     queue_producer_th_in = true;
 }
 fn queueThroughputRun() void {
@@ -567,7 +587,7 @@ fn queueThroughputTeardown() void {
 
 fn queueMemoryRun() void {
     queue_mem_q = undefined;
-    queue_mem_q.init() catch return;
+    initInPlace(&queue_mem_q, .{}) catch return;
     queue_mem_q_in = true;
 }
 fn queueMemoryTeardown() void {
@@ -620,13 +640,13 @@ fn timerDummyCb() void {}
 
 fn timerCreateDestroyRun() void {
     var t: ove.Timer = undefined;
-    t.init(timerDummyCb, 1000, .periodic) catch return;
+    initInPlace(&t, .{ timerDummyCb, 1000, .periodic }) catch return;
     t.deinit();
 }
 
 fn timerStartStopSetup() void {
     timer_bench_tmr = undefined;
-    timer_bench_tmr.init(timerDummyCb, 1000, .periodic) catch return;
+    initInPlace(&timer_bench_tmr, .{ timerDummyCb, 1000, .periodic }) catch return;
     timer_bench_tmr_in = true;
 }
 fn timerStartStopRun() void {
@@ -640,7 +660,7 @@ fn timerStartStopTeardown() void {
 
 fn timerMemoryRun() void {
     timer_mem_tmr = undefined;
-    timer_mem_tmr.init(timerDummyCb, 1000, .periodic) catch return;
+    initInPlace(&timer_mem_tmr, .{ timerDummyCb, 1000, .periodic }) catch return;
     timer_mem_tmr_in = true;
 }
 fn timerMemoryTeardown() void {
@@ -688,7 +708,7 @@ var eg_mem_eg_in: bool = false;
 
 fn egSetGetSetup() void {
     eg_bench_eg = undefined;
-    eg_bench_eg.init() catch return;
+    initInPlace(&eg_bench_eg, .{}) catch return;
     eg_bench_eg_in = true;
 }
 fn egSetGetRun() void {
@@ -703,13 +723,13 @@ fn egSetGetTeardown() void {
 
 fn egCreateDestroyRun() void {
     var eg: ove.EventGroup = undefined;
-    eg.init() catch return;
+    initInPlace(&eg, .{}) catch return;
     eg.deinit();
 }
 
 fn egMemoryRun() void {
     eg_mem_eg = undefined;
-    eg_mem_eg.init() catch return;
+    initInPlace(&eg_mem_eg, .{}) catch return;
     eg_mem_eg_in = true;
 }
 fn egMemoryTeardown() void {
@@ -767,19 +787,19 @@ fn workHandler() void {
 
 fn wqCreateDestroyRun() void {
     var wq: ove.Workqueue(2048) = undefined;
-    wq.init("bench_wq", ove.thread.prio.normal) catch return;
+    initInPlace(&wq, .{ "bench_wq", ove.thread.prio.normal }) catch return;
     wq.deinit();
 }
 
 fn wqSubmitSetup() void {
     wq_work_sem = undefined;
-    wq_work_sem.init(0, 1) catch return;
+    initInPlace(&wq_work_sem, .{ 0, 1 }) catch return;
     wq_work_sem_in = true;
     wq_bench_wq = undefined;
-    wq_bench_wq.init("bench_wq", ove.thread.prio.normal) catch return;
+    initInPlace(&wq_bench_wq, .{ "bench_wq", ove.thread.prio.normal }) catch return;
     wq_bench_wq_in = true;
     wq_bench_work = undefined;
-    wq_bench_work.init(workHandler) catch return;
+    initInPlace(&wq_bench_work, .{workHandler}) catch return;
     wq_bench_work_in = true;
 }
 fn wqSubmitRun() void {
@@ -798,7 +818,7 @@ fn wqSubmitTeardown() void {
 
 fn wqMemoryRun() void {
     wq_mem_wq = undefined;
-    wq_mem_wq.init("bench_wq", ove.thread.prio.normal) catch return;
+    initInPlace(&wq_mem_wq, .{ "bench_wq", ove.thread.prio.normal }) catch return;
     wq_mem_wq_in = true;
 }
 fn wqMemoryTeardown() void {
@@ -854,7 +874,7 @@ var stream_mem_strm_in: bool = false;
 
 fn streamSendRecvSetup() void {
     stream_bench_strm = undefined;
-    stream_bench_strm.init(1) catch return;
+    initInPlace(&stream_bench_strm, .{1}) catch return;
     stream_bench_strm_in = true;
     @memset(&stream_tx_buf, 0xAA);
 }
@@ -869,7 +889,7 @@ fn streamSendRecvTeardown() void {
 
 fn streamCreateDestroyRun() void {
     var s: ove.Stream(STREAM_BUF_SIZE) = undefined;
-    s.init(1) catch return;
+    initInPlace(&s, .{1}) catch return;
     s.deinit();
 }
 
@@ -882,10 +902,10 @@ fn streamThroughputSetup() void {
     stream_done.store(0, .release);
     @memset(&stream_tx_buf, 0xBB);
     stream_bench_strm = undefined;
-    stream_bench_strm.init(1) catch return;
+    initInPlace(&stream_bench_strm, .{1}) catch return;
     stream_bench_strm_in = true;
     stream_producer_th = undefined;
-    stream_producer_th.init("strm_prod", streamProducer, ove.thread.prio.normal) catch return;
+    initInPlace(&stream_producer_th, .{ "strm_prod", streamProducer, ove.thread.prio.normal }) catch return;
     stream_producer_th_in = true;
 }
 fn streamThroughputRun() void {
@@ -903,7 +923,7 @@ fn streamThroughputTeardown() void {
 
 fn streamMemoryRun() void {
     stream_mem_strm = undefined;
-    stream_mem_strm.init(1) catch return;
+    initInPlace(&stream_mem_strm, .{1}) catch return;
     stream_mem_strm_in = true;
 }
 fn streamMemoryTeardown() void {
@@ -992,8 +1012,7 @@ var bench_runner_th: ove.Thread(8192) = undefined;
 fn appMain() void {
     ove.log.inf("Benchmark app: init", .{});
 
-    bench_runner_th = undefined;
-    bench_runner_th.init("bench_run", benchmarkRunner, ove.thread.prio.normal) catch {
+    initInPlace(&bench_runner_th, .{ "bench_run", benchmarkRunner, ove.thread.prio.normal }) catch {
         ove.log.err("Failed to create benchmark thread", .{});
         return;
     };

@@ -1,17 +1,18 @@
 lang: rust
-config_name: benchmark_rust
-description: "Rust RTOS Abstraction Benchmark"
+config_name: benchmark_rust_heap
+description: "Rust RTOS Abstraction Benchmark (heap mode)"
 c_sources:
-  - ../c/src/bench_harness.c
-  - ../c/src/bench_output.c
-  - ../c/src/bench_memory.c
-  - ../c/src/bench_native_posix.c
-  - ../c/src/bench_native_freertos.c
-  - ../c/src/bench_native_nuttx.c
-  - ../c/src/bench_native_zephyr.c
+  - ../../c/src/bench_harness.c
+  - ../../c/src/bench_output.c
+  - ../../c/src/bench_memory.c
+  - ../../c/src/bench_native_posix.c
+  - ../../c/src/bench_native_freertos.c
+  - ../../c/src/bench_native_nuttx.c
+  - ../../c/src/bench_native_zephyr.c
 c_includes:
-  - ../c/include
+  - ../../c/include
 rust:
+  crate_dir: ..
   lib_name: benchmark_rust
 defconfig:
   - CONFIG_OVE_BSP=y

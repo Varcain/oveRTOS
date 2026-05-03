@@ -1,25 +1,25 @@
 lang: c
-config_name: benchmark
-description: "RTOS Abstraction Benchmark"
+config_name: benchmark_heap
+description: "RTOS Abstraction Benchmark (heap mode)"
 sources:
-  - src/app.c
-  - src/bench_harness.c
-  - src/bench_output.c
-  - src/bench_memory.c
-  - src/bench_time.c
-  - src/bench_thread.c
-  - src/bench_sync.c
-  - src/bench_queue.c
-  - src/bench_timer.c
-  - src/bench_eventgroup.c
-  - src/bench_workqueue.c
-  - src/bench_stream.c
-  - src/bench_native_posix.c
-  - src/bench_native_freertos.c
-  - src/bench_native_nuttx.c
-  - src/bench_native_zephyr.c
+  - ../src/app.c
+  - ../src/bench_harness.c
+  - ../src/bench_output.c
+  - ../src/bench_memory.c
+  - ../src/bench_time.c
+  - ../src/bench_thread.c
+  - ../src/bench_sync.c
+  - ../src/bench_queue.c
+  - ../src/bench_timer.c
+  - ../src/bench_eventgroup.c
+  - ../src/bench_workqueue.c
+  - ../src/bench_stream.c
+  - ../src/bench_native_posix.c
+  - ../src/bench_native_freertos.c
+  - ../src/bench_native_nuttx.c
+  - ../src/bench_native_zephyr.c
 includes:
-  - include
+  - ../include
 defconfig:
   - CONFIG_OVE_BSP=y
   - CONFIG_OVE_QUEUE=y

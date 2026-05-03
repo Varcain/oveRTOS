@@ -10,6 +10,7 @@
 #include "ove/ove.h"
 
 static ove_timer_t bench_tmr;
+static ove_timer_storage_t bench_tmr_storage;
 
 static void timer_dummy_cb(ove_timer_t timer, void *user_data)
 {
@@ -34,7 +35,7 @@ static void timer_create_destroy_run(void *ctx)
 static void timer_start_stop_setup(void *ctx)
 {
 	(void)ctx;
-	ove_timer_create(&bench_tmr, timer_dummy_cb, NULL, 1000, 0);
+	ove_timer_init(&bench_tmr, &bench_tmr_storage, timer_dummy_cb, NULL, 1000, 0);
 }
 
 static void timer_start_stop_run(void *ctx)
@@ -47,7 +48,7 @@ static void timer_start_stop_run(void *ctx)
 static void timer_start_stop_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_timer_destroy(bench_tmr);
+	ove_timer_deinit(bench_tmr);
 }
 
 /* --- memory (heap-mode only) --- */

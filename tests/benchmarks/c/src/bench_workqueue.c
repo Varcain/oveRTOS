@@ -10,9 +10,12 @@
 #include "ove/ove.h"
 
 static ove_workqueue_t bench_wq;
+static ove_workqueue_storage_t bench_wq_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(bench_wq_stack, 2048);
 static ove_work_t bench_work;
 static volatile int work_executed;
 static ove_sem_t work_sem;
+static ove_sem_storage_t work_sem_storage;
 
 static ove_work_storage_t bench_work_storage;
 
@@ -40,8 +43,9 @@ static void wq_create_destroy_run(void *ctx)
 static void wq_submit_setup(void *ctx)
 {
 	(void)ctx;
-	ove_sem_create(&work_sem, 0, 1);
-	ove_workqueue_create(&bench_wq, "bench_wq", OVE_PRIO_NORMAL, 2048);
+	ove_sem_init(&work_sem, &work_sem_storage, 0, 1);
+	ove_workqueue_init(&bench_wq, &bench_wq_storage, "bench_wq", OVE_PRIO_NORMAL,
+			   sizeof(bench_wq_stack), bench_wq_stack);
 	ove_work_init_static(&bench_work, &bench_work_storage, work_handler);
 }
 
@@ -56,8 +60,8 @@ static void wq_submit_run(void *ctx)
 static void wq_submit_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_workqueue_destroy(bench_wq);
-	ove_sem_destroy(work_sem);
+	ove_workqueue_deinit(bench_wq);
+	ove_sem_deinit(work_sem);
 }
 
 /* --- memory (heap-mode only) --- */

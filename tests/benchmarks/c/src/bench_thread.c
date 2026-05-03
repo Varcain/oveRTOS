@@ -9,11 +9,20 @@
 #include "benchmark.h"
 #include "ove/ove.h"
 
-/* --- Context for thread benchmarks --- */
+/* --- Context for thread benchmarks ---
+ *
+ * Setup paths use _init() with file-scope storage so the bench compiles
+ * in both heap and zero-heap modes.  The create/destroy throughput
+ * case is heap-only — it measures allocation cost, which has no
+ * zero-heap analog. */
 
 static ove_thread_t bench_th;
+static ove_thread_storage_t bench_th_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(bench_th_stack, 2048);
 static ove_sem_t ping_sem;
+static ove_sem_storage_t ping_sem_storage;
 static ove_sem_t pong_sem;
+static ove_sem_storage_t pong_sem_storage;
 static volatile int ctx_switch_done;
 
 /* --- create/destroy (heap-mode only) --- */
@@ -64,10 +73,10 @@ static void ctx_switch_setup(void *ctx)
 {
 	(void)ctx;
 	ctx_switch_done = 0;
-	ove_sem_create(&ping_sem, 0, 1);
-	ove_sem_create(&pong_sem, 0, 1);
-
-	ove_thread_create(&bench_th, "pong", pong_thread, NULL, OVE_PRIO_NORMAL, 2048);
+	ove_sem_init(&ping_sem, &ping_sem_storage, 0, 1);
+	ove_sem_init(&pong_sem, &pong_sem_storage, 0, 1);
+	ove_thread_init(&bench_th, &bench_th_storage, "pong", pong_thread, NULL, OVE_PRIO_NORMAL,
+			sizeof(bench_th_stack), bench_th_stack);
 }
 
 static void ctx_switch_run(void *ctx)
@@ -84,9 +93,9 @@ static void ctx_switch_teardown(void *ctx)
 	ctx_switch_done = 1;
 	ove_sem_give(ping_sem);
 	ove_thread_sleep_ms(10);
-	ove_thread_destroy(bench_th);
-	ove_sem_destroy(ping_sem);
-	ove_sem_destroy(pong_sem);
+	ove_thread_deinit(bench_th);
+	ove_sem_deinit(ping_sem);
+	ove_sem_deinit(pong_sem);
 }
 
 static int thread_is_enabled(void)

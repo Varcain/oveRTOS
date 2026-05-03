@@ -1,0 +1,59 @@
+lang: cpp
+config_name: benchmark_cpp_zh
+description: "C++ RTOS Abstraction Benchmark (zero-heap mode)"
+sources:
+  - ../../c/src/bench_harness.c
+  - ../../c/src/bench_output.c
+  - ../../c/src/bench_memory.c
+  - ../../c/src/bench_native_posix.c
+  - ../../c/src/bench_native_freertos.c
+  - ../../c/src/bench_native_nuttx.c
+  - ../../c/src/bench_native_zephyr.c
+  - ../src/app.cpp
+  - ../src/bench_time.cpp
+  - ../src/bench_thread.cpp
+  - ../src/bench_sync.cpp
+  - ../src/bench_queue.cpp
+  - ../src/bench_timer.cpp
+  - ../src/bench_eventgroup.cpp
+  - ../src/bench_workqueue.cpp
+  - ../src/bench_stream.cpp
+includes:
+  - ../../c/include
+  - ../include
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_QUEUE=y
+  - CONFIG_OVE_TIMER=y
+  - CONFIG_OVE_EVENTGROUP=y
+  - CONFIG_OVE_WORKQUEUE=y
+  - CONFIG_OVE_STREAM=y
+  - CONFIG_OVE_SIM_DASHBOARD=n
+  - CONFIG_OVE_TRACE_MARKERS=n
+  - CONFIG_OVE_TRACE_STREAM=n
+  - CONFIG_OVE_THREAD_STATE_STATS=n
+kconfig: |
+  config OVE_BENCHMARK_ITERATIONS
+  	int "Number of measurement iterations per benchmark case"
+  	default 1000
+
+  config OVE_BENCHMARK_WARMUP
+  	int "Number of warmup iterations before measurement"
+  	default 100
+
+  config OVE_BENCHMARK_INCLUDE_MEMORY
+  	bool "Include memory usage benchmarks"
+  	default y
+
+  config OVE_BENCHMARK_PERCENTILES
+  	bool "Compute p50/p95/p99 + trimmed mean + stddev per case"
+  	default y
+
+  config OVE_BENCHMARK_OUTPUT_JSON
+  	bool "Also emit machine-readable JSON output"
+  	default y
+
+  config OVE_BENCHMARK_DISABLE_ICACHE
+  	bool "Disable Cortex-M I-cache for the bench run (diagnostic)"
+  	default n
