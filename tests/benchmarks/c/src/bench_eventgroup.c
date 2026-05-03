@@ -10,13 +10,14 @@
 #include "ove/ove.h"
 
 static ove_eventgroup_t bench_eg;
+static ove_eventgroup_storage_t bench_eg_storage;
 
 /* --- set/get bits --- */
 
 static void eg_set_get_setup(void *ctx)
 {
 	(void)ctx;
-	ove_eventgroup_create(&bench_eg);
+	ove_eventgroup_init(&bench_eg, &bench_eg_storage);
 }
 
 static void eg_set_get_run(void *ctx)
@@ -30,7 +31,7 @@ static void eg_set_get_run(void *ctx)
 static void eg_set_get_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_eventgroup_destroy(bench_eg);
+	ove_eventgroup_deinit(bench_eg);
 }
 
 /* --- create/destroy + memory (heap-mode only) --- */

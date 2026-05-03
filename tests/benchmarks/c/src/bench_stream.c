@@ -11,11 +11,14 @@
 #include <string.h>
 
 static ove_stream_t bench_strm;
-static ove_thread_t stream_producer_th;
-static volatile int stream_done;
-
+static ove_stream_storage_t bench_strm_storage;
 #define STREAM_BUF_SIZE 256
 #define STREAM_MSG_SIZE 64
+static uint8_t bench_strm_buf[STREAM_BUF_SIZE + 1];
+static ove_thread_t stream_producer_th;
+static ove_thread_storage_t stream_producer_th_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(stream_producer_th_stack, 2048);
+static volatile int stream_done;
 
 static uint8_t tx_buf[STREAM_MSG_SIZE];
 static uint8_t rx_buf[STREAM_MSG_SIZE];
@@ -25,7 +28,7 @@ static uint8_t rx_buf[STREAM_MSG_SIZE];
 static void stream_send_recv_setup(void *ctx)
 {
 	(void)ctx;
-	ove_stream_create(&bench_strm, STREAM_BUF_SIZE, 1);
+	ove_stream_init(&bench_strm, &bench_strm_storage, bench_strm_buf, STREAM_BUF_SIZE, 1);
 	memset(tx_buf, 0xAA, STREAM_MSG_SIZE);
 }
 
@@ -41,7 +44,7 @@ static void stream_send_recv_run(void *ctx)
 static void stream_send_recv_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_stream_destroy(bench_strm);
+	ove_stream_deinit(bench_strm);
 }
 
 /* --- create/destroy (heap-mode only) --- */
@@ -74,10 +77,10 @@ static void stream_throughput_setup(void *ctx)
 	(void)ctx;
 	stream_done = 0;
 	memset(tx_buf, 0xBB, STREAM_MSG_SIZE);
-	ove_stream_create(&bench_strm, STREAM_BUF_SIZE, 1);
-
-	ove_thread_create(&stream_producer_th, "strm_prod", stream_producer, NULL, OVE_PRIO_NORMAL,
-			  2048);
+	ove_stream_init(&bench_strm, &bench_strm_storage, bench_strm_buf, STREAM_BUF_SIZE, 1);
+	ove_thread_init(&stream_producer_th, &stream_producer_th_storage, "strm_prod",
+			stream_producer, NULL, OVE_PRIO_NORMAL, sizeof(stream_producer_th_stack),
+			stream_producer_th_stack);
 }
 
 static void stream_throughput_run(void *ctx)
@@ -97,8 +100,8 @@ static void stream_throughput_teardown(void *ctx)
 
 	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE, 100, &received);
 	ove_thread_sleep_ms(10);
-	ove_thread_destroy(stream_producer_th);
-	ove_stream_destroy(bench_strm);
+	ove_thread_deinit(stream_producer_th);
+	ove_stream_deinit(bench_strm);
 }
 
 /* --- memory (heap-mode only) --- */

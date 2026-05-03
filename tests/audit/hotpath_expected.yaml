@@ -60,7 +60,7 @@ host_posix_benchmark_c:
     - name: "thread_create_destroy_run (C)"
       pattern: '^thread_create_destroy_run$'
       max_instructions: 40
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __stack_chk_fail@plt]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __stack_chk_fail@plt]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch_run (C)"
       pattern: '^ctx_switch_run$'
@@ -150,7 +150,7 @@ host_posix_benchmark_cpp:
     - name: "thread_create_destroy trampoline (C++)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL26thread_create_destroy_specEEEvPv'
       max_instructions: 60
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __assert_fail@plt, __stack_chk_fail@plt]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __assert_fail@plt, __stack_chk_fail@plt]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch trampoline (C++)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL15ctx_switch_specEEEvPv'
@@ -361,7 +361,7 @@ host_posix_benchmark_zig:
     - name: "Zig zig_bench_run_thread_create_destroy"
       pattern: '^zig_bench_run_thread_create_destroy$'
       max_instructions: 40
-      allowed_calls: [ove_thread_create_, ove_thread_destroy]
+      allowed_calls: [ove_thread_create, ove_thread_destroy]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -481,7 +481,7 @@ stm32f746_freertos_benchmark_c:
     - name: "thread_create_destroy_run (C, ARM)"
       pattern: '^thread_create_destroy_run$'
       max_instructions: 48
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __stack_chk_fail]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch_run (C, ARM)"
       pattern: '^ctx_switch_run$'
@@ -563,7 +563,7 @@ stm32f746_freertos_benchmark_cpp:
     - name: "thread_create_destroy trampoline (C++, ARM)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL26thread_create_destroy_specEEEvPv'
       max_instructions: 80
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __assert_func, __stack_chk_fail]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __assert_func, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch trampoline (C++, ARM)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL15ctx_switch_specEEEvPv'
@@ -761,7 +761,7 @@ stm32f746_freertos_benchmark_zig:
     - name: "Zig zig_bench_run_thread_create_destroy (ARM)"
       pattern: '^zig_bench_run_thread_create_destroy$'
       max_instructions: 56
-      allowed_calls: [ove_thread_create_, ove_thread_destroy]
+      allowed_calls: [ove_thread_create, ove_thread_destroy]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch (ARM)"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -1175,7 +1175,7 @@ stm32f746_nuttx_benchmark_c:
     - name: "thread_create_destroy_run (C, NuttX, ARM)"
       pattern: '^thread_create_destroy_run$'
       max_instructions: 48
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __stack_chk_fail]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch_run (C, NuttX, ARM)"
       pattern: '^ctx_switch_run$'
@@ -1257,7 +1257,7 @@ stm32f746_nuttx_benchmark_cpp:
     - name: "thread_create_destroy trampoline (C++, NuttX, ARM)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL26thread_create_destroy_specEEEvPv'
       max_instructions: 80
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __assert_func, __stack_chk_fail]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __assert_func, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch trampoline (C++, NuttX, ARM)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL15ctx_switch_specEEEvPv'
@@ -1449,7 +1449,7 @@ stm32f746_nuttx_benchmark_zig:
     - name: "Zig zig_bench_run_thread_create_destroy (NuttX, ARM)"
       pattern: '^zig_bench_run_thread_create_destroy$'
       max_instructions: 56
-      allowed_calls: [ove_thread_create_, ove_thread_destroy]
+      allowed_calls: [ove_thread_create, ove_thread_destroy]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch (NuttX, ARM)"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -1567,7 +1567,7 @@ stm32f746_zephyr_benchmark_c:
       # Zephyr toolchain emits a `memset` call to zero the on-stack
       # `struct ove_thread_desc` (compiler choice — FreeRTOS/NuttX
       # builds inline it).  Cold stack-zero helper, not wrapper code.
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __stack_chk_fail, memset]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __stack_chk_fail, memset]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch_run (C, Zephyr, ARM)"
       pattern: '^ctx_switch_run$'
@@ -1649,7 +1649,7 @@ stm32f746_zephyr_benchmark_cpp:
     - name: "thread_create_destroy trampoline (C++, Zephyr, ARM)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL26thread_create_destroy_specEEEvPv'
       max_instructions: 80
-      allowed_calls: [ove_thread_create_, ove_thread_destroy, __assert_func, __stack_chk_fail]
+      allowed_calls: [ove_thread_create, ove_thread_destroy, __assert_func, __stack_chk_fail]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "ctx_switch trampoline (C++, Zephyr, ARM)"
       pattern: '_ZN3ove5bench6detail14run_trampolineIL_ZL15ctx_switch_specEEEvPv'
@@ -1841,7 +1841,7 @@ stm32f746_zephyr_benchmark_zig:
     - name: "Zig zig_bench_run_thread_create_destroy (Zephyr, ARM)"
       pattern: '^zig_bench_run_thread_create_destroy$'
       max_instructions: 56
-      allowed_calls: [ove_thread_create_, ove_thread_destroy]
+      allowed_calls: [ove_thread_create, ove_thread_destroy]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch (Zephyr, ARM)"
       pattern: '^zig_bench_run_thread_context_switch$'

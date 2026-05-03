@@ -110,9 +110,13 @@ def _build_one(make_prefix, app, zeroheap=False):
 
 def _firmware_paths(board, rtos, app, zeroheap=False):
     """Return (workspace_dir, image_path) for an already-built bench.
-    Zero-heap builds use a `<app>_zeroheap` workspace dir suffix added
-    by `kconfig.py` when the variant fragment fires."""
-    ws_app = f"{app}_zeroheap" if zeroheap else app
+
+    Post heap/zero-heap split, kconfig.py rewrites bare app names:
+      bare `benchmark` + --zeroheap → `benchmark_zh` (the registered
+      tests/benchmarks/c/zeroheap/ app).  The workspace dir then gets
+      a `_zeroheap` suffix appended, yielding `benchmark_zh_zeroheap`.
+    Heap-mode keeps the bare workspace dir name (`benchmark`)."""
+    ws_app = f"{app}_zh_zeroheap" if zeroheap else app
     ws = os.path.join(OVE_DIR, "output", board, rtos, ws_app)
     if rtos == "posix":
         image = os.path.join(ws, "images", "ove_posix")

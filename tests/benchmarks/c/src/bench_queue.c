@@ -12,7 +12,12 @@
 /* --- Shared state --- */
 
 static ove_queue_t bench_q;
+static ove_queue_storage_t bench_q_storage;
+static uint8_t bench_q_buf[16 * sizeof(uint32_t)];
+static uint8_t throughput_q_buf[64 * sizeof(uint32_t)];
 static ove_thread_t producer_th;
+static ove_thread_storage_t producer_th_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(producer_th_stack, 2048);
 static volatile int throughput_done;
 
 /* --- send/receive latency --- */
@@ -20,7 +25,7 @@ static volatile int throughput_done;
 static void queue_send_recv_setup(void *ctx)
 {
 	(void)ctx;
-	ove_queue_create(&bench_q, sizeof(uint32_t), 16);
+	ove_queue_init(&bench_q, &bench_q_storage, bench_q_buf, sizeof(uint32_t), 16);
 }
 
 static void queue_send_recv_run(void *ctx)
@@ -36,7 +41,7 @@ static void queue_send_recv_run(void *ctx)
 static void queue_send_recv_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_queue_destroy(bench_q);
+	ove_queue_deinit(bench_q);
 }
 
 /* --- create/destroy (heap-mode only) --- */
@@ -68,9 +73,9 @@ static void queue_throughput_setup(void *ctx)
 {
 	(void)ctx;
 	throughput_done = 0;
-	ove_queue_create(&bench_q, sizeof(uint32_t), 64);
-
-	ove_thread_create(&producer_th, "q_prod", producer_thread, NULL, OVE_PRIO_NORMAL, 2048);
+	ove_queue_init(&bench_q, &bench_q_storage, throughput_q_buf, sizeof(uint32_t), 64);
+	ove_thread_init(&producer_th, &producer_th_storage, "q_prod", producer_thread, NULL,
+			OVE_PRIO_NORMAL, sizeof(producer_th_stack), producer_th_stack);
 }
 
 static void queue_throughput_run(void *ctx)
@@ -90,8 +95,8 @@ static void queue_throughput_teardown(void *ctx)
 
 	ove_queue_receive(bench_q, &buf, 100);
 	ove_thread_sleep_ms(10);
-	ove_thread_destroy(producer_th);
-	ove_queue_destroy(bench_q);
+	ove_thread_deinit(producer_th);
+	ove_queue_deinit(bench_q);
 }
 
 /* --- memory (heap-mode only) --- */

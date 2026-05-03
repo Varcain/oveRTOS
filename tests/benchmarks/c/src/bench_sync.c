@@ -9,15 +9,29 @@
 #include "benchmark.h"
 #include "ove/ove.h"
 
-/* --- Shared state --- */
+/* --- Shared state ---
+ *
+ * Setup paths use _init() with file-scope storage so the bench source
+ * compiles in both heap and zero-heap modes.  Heap-mode-only cases
+ * (create/destroy throughput, memory delta) keep their existing
+ * `#ifndef CONFIG_OVE_ZERO_HEAP` guards — those measurements only make
+ * sense when there is an allocation to measure. */
 
 static ove_mutex_t bench_mtx;
+static ove_mutex_storage_t bench_mtx_storage;
 static ove_sem_t bench_sem;
+static ove_sem_storage_t bench_sem_storage;
 static ove_event_t bench_evt;
+static ove_event_storage_t bench_evt_storage;
 static ove_condvar_t bench_cv;
+static ove_condvar_storage_t bench_cv_storage;
 static ove_mutex_t bench_cv_mtx;
+static ove_mutex_storage_t bench_cv_mtx_storage;
 static ove_mutex_t bench_rmtx;
+static ove_mutex_storage_t bench_rmtx_storage;
 static ove_thread_t contention_th;
+static ove_thread_storage_t contention_th_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(contention_th_stack, 2048);
 static volatile int contention_done;
 static volatile uint32_t contention_count;
 
@@ -26,7 +40,7 @@ static volatile uint32_t contention_count;
 static void mutex_lock_unlock_setup(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_create(&bench_mtx);
+	ove_mutex_init(&bench_mtx, &bench_mtx_storage);
 }
 
 static void mutex_lock_unlock_run(void *ctx)
@@ -39,17 +53,15 @@ static void mutex_lock_unlock_run(void *ctx)
 static void mutex_lock_unlock_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_mutex_destroy(bench_mtx);
+	ove_mutex_deinit(bench_mtx);
 }
 
 /* --- Mutex create/destroy ---
  *
- * Heap-mode only: under ZEROHEAP, `ove_mutex_create` macro-expands to
- * `ove_mutex_init` against per-call-site static storage; re-init in a
- * loop is technically valid but measures something different (init+
- * deinit cycle on the same static buffer) than the heap-mode case.
- * Skip the case entirely; the per-call lock/unlock op is what matters
- * for the minimal-overhead claim. */
+ * Heap-mode only: in zero-heap the `_create()` symbol is not declared
+ * (link error), and re-init in a loop measures init+deinit cycle on
+ * the same static buffer rather than allocation cost.  The
+ * lock/unlock op is what carries the minimal-overhead claim. */
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void mutex_create_destroy_run(void *ctx)
 {
@@ -79,10 +91,9 @@ static void mutex_contention_setup(void *ctx)
 	(void)ctx;
 	contention_done = 0;
 	contention_count = 0;
-	ove_mutex_create(&bench_mtx);
-
-	ove_thread_create(&contention_th, "contention", contention_thread, NULL, OVE_PRIO_NORMAL,
-			  2048);
+	ove_mutex_init(&bench_mtx, &bench_mtx_storage);
+	ove_thread_init(&contention_th, &contention_th_storage, "contention", contention_thread,
+			NULL, OVE_PRIO_NORMAL, sizeof(contention_th_stack), contention_th_stack);
 }
 
 static void mutex_contention_run(void *ctx)
@@ -98,8 +109,8 @@ static void mutex_contention_teardown(void *ctx)
 	(void)ctx;
 	contention_done = 1;
 	ove_thread_sleep_ms(10);
-	ove_thread_destroy(contention_th);
-	ove_mutex_destroy(bench_mtx);
+	ove_thread_deinit(contention_th);
+	ove_mutex_deinit(bench_mtx);
 }
 
 /* --- Mutex memory ---
@@ -129,7 +140,7 @@ static void mutex_memory_teardown(void *ctx)
 static void sem_take_give_setup(void *ctx)
 {
 	(void)ctx;
-	ove_sem_create(&bench_sem, 1, 1);
+	ove_sem_init(&bench_sem, &bench_sem_storage, 1, 1);
 }
 
 static void sem_take_give_run(void *ctx)
@@ -142,7 +153,7 @@ static void sem_take_give_run(void *ctx)
 static void sem_take_give_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_sem_destroy(bench_sem);
+	ove_sem_deinit(bench_sem);
 }
 
 /* --- Semaphore create/destroy + memory (heap-mode only — see comments
@@ -175,7 +186,10 @@ static void sem_memory_teardown(void *ctx)
 /* --- Event signal/wait --- */
 
 static ove_event_t bench_evt_ack;
+static ove_event_storage_t bench_evt_ack_storage;
 static ove_thread_t evt_th;
+static ove_thread_storage_t evt_th_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(evt_th_stack, 1024);
 static volatile int evt_done;
 
 static void evt_signaler(void *arg)
@@ -192,10 +206,10 @@ static void event_signal_wait_setup(void *ctx)
 {
 	(void)ctx;
 	evt_done = 0;
-	ove_event_create(&bench_evt);
-	ove_event_create(&bench_evt_ack);
-
-	ove_thread_create(&evt_th, "evt_sig", evt_signaler, NULL, OVE_PRIO_NORMAL, 1024);
+	ove_event_init(&bench_evt, &bench_evt_storage);
+	ove_event_init(&bench_evt_ack, &bench_evt_ack_storage);
+	ove_thread_init(&evt_th, &evt_th_storage, "evt_sig", evt_signaler, NULL, OVE_PRIO_NORMAL,
+			sizeof(evt_th_stack), evt_th_stack);
 }
 
 static void event_signal_wait_run(void *ctx)
@@ -211,9 +225,9 @@ static void event_signal_wait_teardown(void *ctx)
 	evt_done = 1;
 	ove_event_signal(bench_evt_ack);
 	ove_thread_sleep_ms(10);
-	ove_thread_destroy(evt_th);
-	ove_event_destroy(bench_evt);
-	ove_event_destroy(bench_evt_ack);
+	ove_thread_deinit(evt_th);
+	ove_event_deinit(bench_evt);
+	ove_event_deinit(bench_evt_ack);
 }
 
 /* --- Event memory (heap-mode only). */
@@ -246,6 +260,8 @@ static void event_memory_teardown(void *ctx)
  * adding measurable overhead in the hot path. */
 
 static ove_thread_t cv_th;
+static ove_thread_storage_t cv_th_storage;
+OVE_THREAD_STACK_DEFINE_STATIC_(cv_th_stack, 1024);
 static volatile int cv_done;
 
 static void cv_signaler(void *arg)
@@ -262,10 +278,10 @@ static void condvar_signal_wait_setup(void *ctx)
 {
 	(void)ctx;
 	cv_done = 0;
-	ove_mutex_create(&bench_cv_mtx);
-	ove_condvar_create(&bench_cv);
-
-	ove_thread_create(&cv_th, "cv_sig", cv_signaler, NULL, OVE_PRIO_NORMAL, 1024);
+	ove_mutex_init(&bench_cv_mtx, &bench_cv_mtx_storage);
+	ove_condvar_init(&bench_cv, &bench_cv_storage);
+	ove_thread_init(&cv_th, &cv_th_storage, "cv_sig", cv_signaler, NULL, OVE_PRIO_NORMAL,
+			sizeof(cv_th_stack), cv_th_stack);
 }
 
 static void condvar_signal_wait_run(void *ctx)
@@ -282,9 +298,9 @@ static void condvar_signal_wait_teardown(void *ctx)
 	cv_done = 1;
 	ove_condvar_signal(bench_cv);
 	ove_thread_sleep_ms(10);
-	ove_thread_destroy(cv_th);
-	ove_condvar_destroy(bench_cv);
-	ove_mutex_destroy(bench_cv_mtx);
+	ove_thread_deinit(cv_th);
+	ove_condvar_deinit(bench_cv);
+	ove_mutex_deinit(bench_cv_mtx);
 }
 
 /* --- Condvar memory (heap-mode only). */
@@ -309,7 +325,7 @@ static void condvar_memory_teardown(void *ctx)
 static void rmtx_lock_unlock_setup(void *ctx)
 {
 	(void)ctx;
-	ove_recursive_mutex_create(&bench_rmtx);
+	ove_recursive_mutex_init(&bench_rmtx, &bench_rmtx_storage);
 }
 
 static void rmtx_lock_unlock_run(void *ctx)
@@ -322,7 +338,7 @@ static void rmtx_lock_unlock_run(void *ctx)
 static void rmtx_lock_unlock_teardown(void *ctx)
 {
 	(void)ctx;
-	ove_recursive_mutex_destroy(bench_rmtx);
+	ove_mutex_deinit(bench_rmtx);
 }
 
 /* --- Suite --- */
