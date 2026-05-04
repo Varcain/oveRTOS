@@ -106,7 +106,7 @@ static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t prio
 		stack_size = 2048;
 	}
 
-	snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)nwq);
+	(void)snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)nwq);
 	{
 		char *argv_args[] = {addr_str, NULL};
 		pid = task_create(name ? name : "ove_wq", map_priority(priority), (int)stack_size,

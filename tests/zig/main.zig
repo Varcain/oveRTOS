@@ -1556,7 +1556,9 @@ fn testErrorsUnknownNegativeMapsToUnknown() !void {
         const rc: c_int = @intCast(@as(i32, @bitCast(raw_bits | 0x8000_0000)));
         // Skip if accidentally landed on a known code.
         var skip = false;
-        for (known_set) |k| if (rc == k) { skip = true; };
+        for (known_set) |k| if (rc == k) {
+            skip = true;
+        };
         if (skip) continue;
         try expectErrorIs(ove.err.fromCode(rc), error.Unknown);
     }

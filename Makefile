@@ -330,6 +330,15 @@ lint: $(VENV_STAMP)
 	@$(OVE) ensure-toolchain zig
 	@$(OVE) lint
 
+# Run clang-tidy specifically against cross-compile backend code.  Reuses
+# any existing output/<board>/<rtos>/<app>/build/firmware/compile_commands.json
+# (or output/tests/{qemu,renode}-<rtos>*/build/compile_commands.json) and
+# scopes to backends/<rtos>/*.c.  SKIPs cleanly if no firmware build is
+# present — bootstrap one first via e.g. `make stm32f746.freertos.benchmark_c`.
+.PHONY: lint-backends
+lint-backends: $(VENV_STAMP)
+	@$(OVE) lint --only clang-tidy-backends
+
 .PHONY: format
 format: $(VENV_STAMP)
 	@$(OVE) format

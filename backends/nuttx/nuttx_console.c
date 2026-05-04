@@ -28,5 +28,5 @@ void ove_console_putchar(int c)
 void ove_console_write(const char *buf, unsigned int len)
 {
 	printf("%.*s", (int)len, buf);
-	fflush(stdout);
+	(void)fflush(stdout);
 }
