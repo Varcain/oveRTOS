@@ -80,12 +80,33 @@ static int wq_task_fn(int argc, char *argv[])
 
 		work->pending = 0;
 
+		__atomic_store_n(&work->in_progress, 1, __ATOMIC_RELEASE);
 		if (!work->cancelled) {
 			work->handler(work);
+		}
+		__atomic_store_n(&work->in_progress, 0, __ATOMIC_RELEASE);
+		/* Unconditional post — cancel/free's wait loop drains stale
+		 * tokens before re-checking in_progress. */
+		if (work->completion_sem_inited) {
+			nxsem_post(&work->completion_sem);
 		}
 	}
 
 	return 0;
+}
+
+/* Wait until the worker has fully released this work item.  See
+ * backends/posix/posix_workqueue.c — same convergence rules: an
+ * extra post from a prior iteration is harmless because the loop
+ * re-checks in_progress before exiting. */
+static void wait_for_completion(struct ove_work *w)
+{
+	if (!w->completion_sem_inited) {
+		return;
+	}
+	while (__atomic_load_n(&w->in_progress, __ATOMIC_ACQUIRE)) {
+		nxsem_wait_uninterruptible(&w->completion_sem);
+	}
 }
 
 static int wq_start(struct ove_workqueue *nwq, const char *name, ove_prio_t priority,
@@ -176,6 +197,12 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	storage->cancelled = 0;
 	storage->delay_ms = 0;
 	storage->pending = 0;
+	storage->in_progress = 0;
+	if (nxsem_init(&storage->completion_sem, 0, 0) == 0) {
+		storage->completion_sem_inited = 1;
+	} else {
+		storage->completion_sem_inited = 0;
+	}
 
 	*work = storage;
 	return OVE_OK;
@@ -235,12 +262,28 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler)
 	memset(nw, 0, sizeof(*nw));
 	nw->handler = handler;
 	nw->cancelled = 0;
+	nw->in_progress = 0;
+	if (nxsem_init(&nw->completion_sem, 0, 0) == 0) {
+		nw->completion_sem_inited = 1;
+	} else {
+		nw->completion_sem_inited = 0;
+	}
 	*work = nw;
 	return OVE_OK;
 }
 
 void ove_work_free(ove_work_t work)
 {
+	if (work == NULL) {
+		return;
+	}
+	/* Wait for any in-flight handler to finish before reclaiming the
+	 * struct — closes the UAF window. */
+	wait_for_completion(work);
+	if (work->completion_sem_inited) {
+		nxsem_destroy(&work->completion_sem);
+		work->completion_sem_inited = 0;
+	}
 	OVE_BACKEND_FREE(work);
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
@@ -301,5 +344,8 @@ int ove_work_cancel(ove_work_t work)
 	}
 	nw->cancelled = 1;
 	nw->pending = 0;
+	/* Wait for any in-flight handler to finish so the caller may
+	 * safely free the struct after cancel returns. */
+	wait_for_completion(nw);
 	return OVE_OK;
 }

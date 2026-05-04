@@ -15,12 +15,20 @@
 #include <zephyr/sys/sys_heap.h>
 #include <stdbool.h>
 #include <string.h>
-/* Set thread state with tracking + trace emit (mirrors posix/nuttx). */
-#define SET_STATE(t, s)                                                \
-	do {                                                           \
-		ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
-		ove_state_track_transition(&(t)->st, (s));             \
-		(t)->state = (s);                                      \
+/* Set thread state with tracking + trace emit (mirrors posix/nuttx).
+ *
+ * Atomic store-release for cross-thread visibility (list_threads /
+ * SET_STATE may run from different threads); relaxed load for the
+ * trace-emit `from` snapshot which always runs on the writing thread
+ * itself.  Race surface is narrower in Zephyr than POSIX (destroy /
+ * resume paths read Zephyr's k_thread state, not our `state` field),
+ * but the macro stays consistent with the other backends. */
+#define SET_STATE(t, s)                                                                    \
+	do {                                                                               \
+		ove_trace_emit_state((uintptr_t)(t),                                       \
+				     __atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s)); \
+		ove_state_track_transition(&(t)->st, (s));                                 \
+		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
 	} while (0)
 
 /* ── Thread registry (intrusive list) ─────────────────────────────────
