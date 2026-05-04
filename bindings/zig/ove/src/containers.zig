@@ -198,6 +198,16 @@ pub fn String(comptime N: usize) type {
             return self.bytes[0..self.len];
         }
 
+        /// Append a null terminator and return a `[*:0]const u8` pointer
+        /// suitable for handing to a C API.  Returns `Error.NoMemory` if
+        /// the string is at capacity.  Subsequent mutations invalidate
+        /// the returned pointer.
+        pub fn cStr(self: *Self) Error![*:0]const u8 {
+            if (self.len >= N) return Error.NoMemory;
+            self.bytes[self.len] = 0;
+            return @ptrCast(&self.bytes);
+        }
+
         /// Reset the length to zero.
         pub fn clear(self: *Self) void {
             self.len = 0;
@@ -290,6 +300,21 @@ test "String overflow leaves buffer unchanged" {
     try testing.expectEqualStrings("hello", s.slice());
     try testing.expectError(Error.NoMemory, s.format(", {s}", .{"world"}));
     try testing.expectEqualStrings("hello", s.slice());
+}
+
+test "String cStr appends null and returns pointer" {
+    var s = String(16).init();
+    try s.appendSlice("hi");
+    const c = try s.cStr();
+    try testing.expectEqual(@as(u8, 'h'), c[0]);
+    try testing.expectEqual(@as(u8, 'i'), c[1]);
+    try testing.expectEqual(@as(u8, 0), c[2]);
+}
+
+test "String cStr fails when at capacity" {
+    var s = String(4).init();
+    try s.appendSlice("abcd");
+    try testing.expectError(Error.NoMemory, s.cStr());
 }
 
 test "fixedBufferAlloc backs std.ArrayListUnmanaged" {
