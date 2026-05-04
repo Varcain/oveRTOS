@@ -54,4 +54,31 @@ namespace ove
 template <typename F>
 concept ThreadEntry = std::convertible_to<F, void (*)(void *)>;
 
+/* ------------------------------------------------------------------ */
+/*  Compile-time C-ABI shape check                                    */
+/* ------------------------------------------------------------------ */
+/*
+ * Pin the OVE_ERR_* numeric values at compile time.  Mirrors Rust's
+ * `_assert_codes_match()` (bindings/rust/ove/src/error.rs:127-150)
+ * and Zig's `comptime { std.debug.assert(...) }` block
+ * (bindings/zig/ove/src/error.zig:88-102).  If a future C-header
+ * rename or renumber drifts an OVE_ERR_* value, every C++ TU that
+ * includes <ove/types.hpp> (i.e. every TU in apps/cpp and the C++
+ * binding) fails to build with a clear message — the silent-drift
+ * surface that bit Rust's mangled-name audit is closed at the C++
+ * boundary too.
+ */
+static_assert(OVE_ERR_NOT_REGISTERED  == -1,  "OVE_ERR_NOT_REGISTERED drifted");
+static_assert(OVE_ERR_INVALID_PARAM   == -2,  "OVE_ERR_INVALID_PARAM drifted");
+static_assert(OVE_ERR_NO_MEMORY       == -3,  "OVE_ERR_NO_MEMORY drifted");
+static_assert(OVE_ERR_TIMEOUT         == -4,  "OVE_ERR_TIMEOUT drifted");
+static_assert(OVE_ERR_NOT_SUPPORTED   == -5,  "OVE_ERR_NOT_SUPPORTED drifted");
+static_assert(OVE_ERR_QUEUE_FULL      == -6,  "OVE_ERR_QUEUE_FULL drifted");
+static_assert(OVE_ERR_NET_REFUSED     == -8,  "OVE_ERR_NET_REFUSED drifted");
+static_assert(OVE_ERR_NET_UNREACHABLE == -9,  "OVE_ERR_NET_UNREACHABLE drifted");
+static_assert(OVE_ERR_NET_ADDR_IN_USE == -10, "OVE_ERR_NET_ADDR_IN_USE drifted");
+static_assert(OVE_ERR_NET_RESET       == -11, "OVE_ERR_NET_RESET drifted");
+static_assert(OVE_ERR_NET_DNS_FAIL    == -12, "OVE_ERR_NET_DNS_FAIL drifted");
+static_assert(OVE_ERR_NET_CLOSED      == -13, "OVE_ERR_NET_CLOSED drifted");
+
 } // namespace ove

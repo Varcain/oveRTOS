@@ -106,6 +106,24 @@ macro(ove_setup_project _proj_name)
         $<$<CONFIG:Release>:-O2>
     )
 
+    # The C++ binding is exception-free and RTTI-free by design: every
+    # dtor/move is `noexcept`, error codes flow through as raw `int`
+    # with `[[nodiscard]]` discipline, and there are no `dynamic_cast`s
+    # anywhere in the public surface.  Disabling both pulls .eh_frame
+    # / .gcc_except_table / typeinfo vtables out of the firmware ELF
+    # for a 5-30 KB shrink on Cortex-M.  TFLite already does this via
+    # OveTflm.cmake; extending it to the whole CXX surface matches the
+    # same posture.  Opt out via `-DOVE_CXX_NOEXCEPT_NORTTI=OFF` if a
+    # downstream project legitimately needs exceptions or RTTI in C++.
+    option(OVE_CXX_NOEXCEPT_NORTTI
+        "Compile C++ with -fno-exceptions -fno-rtti (smaller firmware)" ON)
+    if(OVE_CXX_NOEXCEPT_NORTTI)
+        add_compile_options(
+            $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+            $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+        )
+    endif()
+
     # Cross-language LTO opt-in.  Default OFF — enabling wires
     # `-flto=thin` into the C/C++ side and `-Clinker-plugin-lto` into
     # the Rust side (handled in config/cmake/ove_rust.cmake).  Requires

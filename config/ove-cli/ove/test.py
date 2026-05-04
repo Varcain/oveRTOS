@@ -318,6 +318,43 @@ def test_cpp(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp")
 
 
+def test_cpp_sanitize(ove_dir, output_dir):
+    """Build C++ tests with UBSan + ASan, then run them.
+
+    Direct analog of the Rust `make miri` job — catches binding-side UB
+    (uninitialized reads, use-after-free, alignment violations, integer
+    overflow under signed-overflow rules) on the host POSIX target,
+    without needing an embedded toolchain.
+
+    The firmware-side `OVE_CXX_NOEXCEPT_NORTTI` build profile does not
+    apply here — host tests build with full C++ runtime so sanitizer
+    libs link cleanly.
+    """
+    build = os.path.join(output_dir, "tests", "cpp_sanitize")
+    sanitize_flags = (
+        "-fsanitize=undefined,address "
+        "-fno-omit-frame-pointer "
+        "-fno-sanitize-recover=all"
+    )
+    extra_args = [
+        f"-DCMAKE_C_FLAGS={sanitize_flags}",
+        f"-DCMAKE_CXX_FLAGS={sanitize_flags}",
+        f"-DCMAKE_EXE_LINKER_FLAGS={sanitize_flags}",
+        "-DCMAKE_BUILD_TYPE=Debug",
+    ]
+    logger.info("Building C++ tests with -fsanitize=undefined,address")
+    _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build,
+                 extra_args=extra_args)
+    logger.info("Running C++ tests under sanitizers")
+    env = dict(os.environ)
+    # halt_on_error: any sanitizer hit aborts immediately so the test
+    # runner sees a non-zero exit.  detect_leaks: catch leaks at exit.
+    env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
+    env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_cpp")], "cpp-sanitize", env=env)
+
+
 def _rust_test_env(ove_dir, output_dir, target_dir):
     """Return (rust_dir, env) set up to build tests/rust/ against the
     rust_stub CMake library. Both test_rust and test_rust_coverage use this."""
@@ -1816,6 +1853,7 @@ def test_qemu_zephyr_coverage(ove_dir, output_dir):
 TEST_TARGETS = {
     "stub": test_stub,
     "cpp": test_cpp,
+    "cpp-sanitize": test_cpp_sanitize,
     "rust": test_rust,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
