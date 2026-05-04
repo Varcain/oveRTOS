@@ -22,6 +22,8 @@
 #include <ove/lvgl.hpp>
 #include "generated_images/lvgl_images.h"
 #include <cstdio>
+#include <etl/string.h>
+#include <etl/string_stream.h>
 
 namespace lv = ove::lvgl;
 
@@ -310,9 +312,10 @@ static void rebuild_page()
 
 	pages[g_page].build(g_content);
 
-	char buf[48];
-	snprintf(buf, sizeof(buf), "%s (%d/%d)", pages[g_page].name, g_page + 1, N_PAGES);
-	g_title_label.text(buf);
+	etl::string<48> title;
+	etl::string_stream ss(title);
+	ss << pages[g_page].name << " (" << (g_page + 1) << "/" << N_PAGES << ")";
+	g_title_label.text(title.c_str());
 }
 
 static void on_prev(lv_event_t *)

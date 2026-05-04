@@ -192,19 +192,26 @@ fn test_tcp() {
     }
 
     test("socket_recv");
-    let mut buf = [0u8; 512];
+    let mut buf: ove::containers::Vec<u8, 512> = ove::containers::Vec::new();
+    // Pre-fill so we can lend slices to recv; we'll truncate to actual
+    // length once the loop exits.  resize_default never fails here — N
+    // matches buf.capacity() exactly.
+    let _ = buf.resize_default(buf.capacity());
     let mut total = 0usize;
     while total < buf.len() - 1 {
-        match sock.recv(&mut buf[total..], 5000) {
+        let end = buf.len() - 1;
+        match sock.recv(&mut buf[total..end], 5000) {
             Ok(n) => total += n,
             Err(ove::Error::NetClosed) => break,
             Err(_) => break,
         }
     }
+    // SAFETY: only `total` bytes were written by recv; truncate to that prefix.
+    unsafe { buf.set_len(total) };
 
-    if total > 0 {
-        if find_in_buf(&buf[..total], b"200 OK") {
-            ove::log_inf!("  -> received {} bytes, status 200 OK", total);
+    if !buf.is_empty() {
+        if find_in_buf(&buf, b"200 OK") {
+            ove::log_inf!("  -> received {} bytes, status 200 OK", buf.len());
             pass("socket_recv (HTTP 200)");
         } else {
             ove::log_wrn!("  -> unexpected status in response");

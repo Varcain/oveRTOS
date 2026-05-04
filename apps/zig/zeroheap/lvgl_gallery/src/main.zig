@@ -261,11 +261,12 @@ fn rebuildPage() void {
     if (g_content) |c| pages[page].build(c);
 
     if (g_title) |t| {
-        var buf: [48]u8 = undefined;
-        const slice = std.fmt.bufPrintZ(&buf, "{s} ({d}/{d})", .{
+        var title = ove.String(48).init();
+        title.format("{s} ({d}/{d})", .{
             pages[page].name, g_page + 1, N_PAGES,
         }) catch return;
-        _ = t.text(slice.ptr);
+        const c = title.cStr() catch return;
+        _ = t.text(c);
     }
 }
 
