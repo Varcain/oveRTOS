@@ -56,16 +56,24 @@ static inline void test_msleep(uint32_t ms)
  * loops: the budget is in wall-clock time, the exit path is explicit,
  * and the final flag value is returned so the caller can assert on it.
  */
+/* Set a flag the test main thread is polling via wait_for_flag.  Use
+ * this in worker threads / callbacks so the C11-atomic store pairs
+ * with wait_for_flag's atomic-acquire load — keeps TSan green. */
+#define TEST_FLAG_SET(flag_lvalue, value) \
+	__atomic_store_n(&(flag_lvalue), (value), __ATOMIC_RELEASE)
+
+/* Read flag with C11 acquire ordering so TSan / language-rules see this
+ * as an atomic load.  Writers must pair via TEST_FLAG_SET (above). */
 static inline int wait_for_flag(volatile int *flag, int expected, uint32_t timeout_ms)
 {
 	uint64_t start_us = 0, now_us = 0;
 	(void)ove_time_get_us(&start_us);
 	uint64_t deadline_us = start_us + (uint64_t)timeout_ms * 1000u;
 
-	while (*flag != expected) {
+	while (__atomic_load_n(flag, __ATOMIC_ACQUIRE) != expected) {
 		(void)ove_time_get_us(&now_us);
 		if (now_us >= deadline_us) {
-			return (*flag == expected);
+			return (__atomic_load_n(flag, __ATOMIC_ACQUIRE) == expected);
 		}
 		test_msleep(1);
 	}

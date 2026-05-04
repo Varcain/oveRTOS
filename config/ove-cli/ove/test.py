@@ -362,7 +362,12 @@ def test_stub_tsan(ove_dir, output_dir):
     _cmake_build(os.path.join(ove_dir, "tests"), build, extra_args=extra)
     logger.info("Running C stub tests under TSan")
     env = dict(os.environ)
-    env["TSAN_OPTIONS"] = "halt_on_error=1:second_deadlock_stack=1"
+    # report_thread_leaks=0: tests that intentionally let threads finish
+    # without explicit join trip TSan's leak bookkeeping; that's a test-
+    # harness artefact, not a real issue.  All race-detection categories
+    # remain on.
+    env["TSAN_OPTIONS"] = ("halt_on_error=1:second_deadlock_stack=1:"
+                           "report_thread_leaks=0")
     return _run_test_binary(
         [os.path.join(build, "ove_test_stub")], "stub-tsan", env=env)
 
@@ -464,7 +469,8 @@ def test_cpp_tsan(ove_dir, output_dir):
                  extra_args=_sanitize_extra_args(flags))
     logger.info("Running C++ tests under TSan")
     env = dict(os.environ)
-    env["TSAN_OPTIONS"] = "halt_on_error=1:second_deadlock_stack=1"
+    env["TSAN_OPTIONS"] = ("halt_on_error=1:second_deadlock_stack=1:"
+                           "report_thread_leaks=0")
     return _run_test_binary(
         [os.path.join(build, "ove_test_cpp")], "cpp-tsan", env=env)
 

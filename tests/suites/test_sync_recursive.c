@@ -21,7 +21,7 @@ static void rmtx_hold_entry(void *arg)
 {
 	struct rmtx_ctx *ctx = arg;
 	ove_recursive_mutex_lock(ctx->mtx, OVE_WAIT_FOREVER);
-	ctx->locked = 1;
+	TEST_FLAG_SET(ctx->locked, 1);
 	test_msleep(200);
 	ove_recursive_mutex_unlock(ctx->mtx);
 }
@@ -69,9 +69,7 @@ static void test_recursive_timeout(void **state)
 
 	ove_thread_t th = NULL;
 	ove_test_thread_run(&th, &s_th_storage, "rh", rmtx_hold_entry, &ctx, s_th_stack, 4096);
-	for (int i = 0; i < 2500 && !ctx.locked; i++)
-		test_msleep(1);
-	assert_int_equal(ctx.locked, 1);
+	assert_true(wait_for_flag(&ctx.locked, 1, 2500));
 	assert_int_equal(ove_recursive_mutex_lock(mtx, 50), OVE_ERR_TIMEOUT);
 	ove_test_thread_destroy(th);
 	ove_test_recursive_mutex_destroy(mtx);

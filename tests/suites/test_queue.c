@@ -43,7 +43,7 @@ static void blocking_receiver(void *arg)
 	int val;
 	if (ove_queue_receive(q, &val, OVE_WAIT_FOREVER) == OVE_OK) {
 		atomic_store(&s_blocking_received, val);
-		s_blocking_done = 1;
+		TEST_FLAG_SET(s_blocking_done, 1);
 	}
 }
 

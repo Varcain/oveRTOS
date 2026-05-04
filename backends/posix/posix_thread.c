@@ -29,12 +29,27 @@ uint64_t ove_state_stats_now_us(void)
 }
 #endif
 
-/* Set thread state with tracking + trace emit. */
-#define SET_STATE(t, s)                                                \
-	do {                                                           \
-		ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
-		ove_state_track_transition(&(t)->st, (s));             \
-		(t)->state = (s);                                      \
+/* Set thread state with tracking + trace emit.
+ *
+ * The store is a release: t->state is read by the destroying / enumerating
+ * thread on a different CPU than the worker that writes it (TSan caught
+ * exactly this — backends/posix/posix_thread.c:295 destroy-path read of
+ * t->state racing with worker's SET_STATE writes at TASK_RUNNING /
+ * TASK_TERMINATED).  The companion reads use __atomic_load_n with acquire
+ * ordering so the post-state visibility on the reader side is well-defined
+ * across all C11/C++11 compilers without dragging in <stdatomic.h>.
+ *
+ * The trace-emit `from` value uses a relaxed load: it is read by the
+ * writing thread itself (this macro runs on the worker for state
+ * transitions and on the controller for SUSPENDED/READY toggles), so no
+ * cross-thread happens-before is needed for the snapshot.
+ */
+#define SET_STATE(t, s)                                                                    \
+	do {                                                                               \
+		ove_trace_emit_state((uintptr_t)(t),                                       \
+				     __atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s)); \
+		ove_state_track_transition(&(t)->st, (s));                                 \
+		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
 	} while (0)
 #ifdef __GLIBC__
 #include <malloc.h>
@@ -117,8 +132,10 @@ static void sigusr1_handler(int sig)
 	struct ove_thread *t = tls_current;
 	if (t) {
 		SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
-		/* Block until resumed via sem_post */
-		while (t->state == OVE_THREAD_STATE_SUSPENDED) {
+		/* Block until resumed via sem_post — acquire-load pairs with
+		 * SET_STATE's release-store so the resumer's READY transition
+		 * is visible to the suspended thread on wake. */
+		while (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 			sem_wait(&t->suspend_sem);
 		}
 	}
@@ -194,7 +211,10 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	}
 	pthread_attr_destroy(&attr);
 
-	t->started = 1;
+	/* Release-store: the worker thread that's already running this
+	 * struct via thread_wrapper() can observe started=1 with the
+	 * register-thread side effects intact. */
+	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
 	if (first_thread == NULL) {
@@ -212,8 +232,8 @@ int ove_thread_deinit(ove_thread_t handle)
 		return ret;
 
 	struct ove_thread *t = handle;
-	if (t->started) {
-		if (t->state == OVE_THREAD_STATE_SUSPENDED) {
+	if (__atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
+		if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 			SET_STATE(t, OVE_THREAD_STATE_READY);
 			sem_post(&t->suspend_sem);
 		}
@@ -270,7 +290,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	}
 	pthread_attr_destroy(&attr);
 
-	t->started = 1;
+	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
 	if (first_thread == NULL) {
@@ -290,9 +310,9 @@ int ove_thread_destroy(ove_thread_t handle)
 		return ret;
 
 	struct ove_thread *t = handle;
-	if (t->started) {
+	if (__atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
 		/* Resume if suspended so it can finish */
-		if (t->state == OVE_THREAD_STATE_SUSPENDED) {
+		if (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 			SET_STATE(t, OVE_THREAD_STATE_READY);
 			sem_post(&t->suspend_sem);
 		}
@@ -387,9 +407,9 @@ size_t ove_backend_profiler_snapshot_running(pthread_t *out, size_t max)
 	size_t count = 0;
 	pthread_mutex_lock(&thread_list_lock);
 	for (struct ove_thread *t = thread_list_head; t && count < max; t = t->next) {
-		if (!t->started)
+		if (!__atomic_load_n(&t->started, __ATOMIC_ACQUIRE))
 			continue;
-		int s = t->state;
+		int s = __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		if (s != OVE_THREAD_STATE_RUNNING && s != OVE_THREAD_STATE_READY &&
 		    s != OVE_THREAD_STATE_BLOCKED)
 			continue;
@@ -411,7 +431,7 @@ void ove_backend_profiler_mark_sampled(void)
 int ove_backend_thread_current_state(void)
 {
 	struct ove_thread *t = tls_current;
-	return t ? t->state : OVE_THREAD_STATE_UNKNOWN;
+	return t ? __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) : OVE_THREAD_STATE_UNKNOWN;
 }
 #endif
 
@@ -447,7 +467,7 @@ void ove_thread_start_scheduler(void)
 void ove_thread_suspend(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
-	if (t && t->started) {
+	if (t && __atomic_load_n(&t->started, __ATOMIC_ACQUIRE)) {
 		pthread_kill(t->tid, SIGUSR1);
 		posix_sleep_ns(1000000ULL); /* 1 ms for signal delivery */
 	}
@@ -456,7 +476,7 @@ void ove_thread_suspend(ove_thread_t handle)
 void ove_thread_resume(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
-	if (t && t->state == OVE_THREAD_STATE_SUSPENDED) {
+	if (t && __atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 		SET_STATE(t, OVE_THREAD_STATE_READY);
 		sem_post(&t->suspend_sem);
 	}
@@ -472,7 +492,7 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 {
 	struct ove_thread *t = handle;
 	if (t) {
-		return t->state;
+		return __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 	}
 	return OVE_THREAD_STATE_UNKNOWN;
 }
@@ -557,7 +577,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		}
 
 		out[count].name = t->name ? t->name : "?";
-		out[count].state = (ove_thread_state_t)t->state;
+		out[count].state = (ove_thread_state_t)__atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
 		out[count].priority = t->priority;
 		out[count].stack_used =
 			t->stack_base ? _check_stack_hwm(t->stack_base, t->stack_size) : 0;

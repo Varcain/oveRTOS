@@ -23,7 +23,7 @@ static _Atomic intptr_t s_received_handle_raw;
 static void work_handler(ove_work_t work)
 {
 	atomic_store(&s_received_handle_raw, (intptr_t)work);
-	s_work_called = 1;
+	TEST_FLAG_SET(s_work_called, 1);
 }
 
 static void counting_handler(ove_work_t work)
@@ -35,7 +35,7 @@ static void counting_handler(ove_work_t work)
 static void delayed_handler(ove_work_t work)
 {
 	(void)work;
-	s_work_called = 1;
+	TEST_FLAG_SET(s_work_called, 1);
 }
 
 /* ── tests ───────────────────────────────────────────────────────────── */
@@ -157,7 +157,7 @@ static void test_wq_submit_delayed(void **state)
 
 	/* Should not have fired yet — check well before the 50 ms delay */
 	test_msleep(10);
-	assert_int_equal(s_work_called, 0);
+	assert_int_equal(__atomic_load_n(&s_work_called, __ATOMIC_ACQUIRE), 0);
 
 	assert_true(wait_for_flag(&s_work_called, 1, 500));
 

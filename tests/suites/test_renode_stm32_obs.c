@@ -120,7 +120,7 @@ static void external_irq_handler(unsigned int port, unsigned int pin, void *user
 {
 	(void)user_data;
 	if (port == PORT_A && pin == 0) {
-		g_irq_fired += 1;
+		(void)__atomic_fetch_add(&g_irq_fired, 1, __ATOMIC_RELEASE);
 	}
 }
 

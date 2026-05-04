@@ -94,7 +94,7 @@ static void test_cpp_static_queue_init(void **state)
 
 static std::atomic<int> g_timer_fired;
 
-static void timer_static_cb(ove_timer_t, void *)
+[[maybe_unused]] static void timer_static_cb(ove_timer_t, void *)
 {
 	g_timer_fired.store(1);
 }
@@ -102,12 +102,17 @@ static void timer_static_cb(ove_timer_t, void *)
 static void test_cpp_static_timer_init(void **state)
 {
 	(void)state;
+#ifdef __SANITIZE_THREAD__
+	skip(); /* Calls tmr.start() which spawns SIGEV_THREAD; same TSan
+		 * skip rationale as test_cpp_timer_oneshot_fires_once. */
+#else
 	g_timer_fired.store(0);
 	ove::Timer tmr(timer_static_cb, nullptr, 50, true);
 	assert_true(tmr.valid());
 	assert_int_equal(tmr.start(), OVE_OK);
 	test_msleep(200);
 	assert_true(g_timer_fired.load());
+#endif
 }
 
 /* ── Thread ─────────────────────────────────────────────────────────── */

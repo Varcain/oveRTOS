@@ -22,6 +22,25 @@ static void timer_thread_handler(union sigval sv)
 	}
 }
 
+/* SIGEV_THREAD spawns a fresh pthread per timer firing.  glibc's default
+ * stack for the dispatch thread is too small for sanitizer-instrumented
+ * builds (TSan needs ~140 KB; ASan ~96 KB; the default is 64 KB).
+ * Provide a 256 KB stack via pthread_attr_t so all sanitizer flavours
+ * fit; harmless on a regular release build. */
+static pthread_attr_t s_timer_thread_attr;
+static int s_timer_thread_attr_initialized;
+
+static pthread_attr_t *get_timer_thread_attr(void)
+{
+	if (!s_timer_thread_attr_initialized) {
+		if (pthread_attr_init(&s_timer_thread_attr) == 0) {
+			(void)pthread_attr_setstacksize(&s_timer_thread_attr, 256u * 1024u);
+			s_timer_thread_attr_initialized = 1;
+		}
+	}
+	return s_timer_thread_attr_initialized ? &s_timer_thread_attr : NULL;
+}
+
 int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
 		   void *user_data, uint32_t period_ms, int one_shot)
 {
@@ -39,6 +58,7 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
 	sev.sigev_notify = SIGEV_THREAD;
 	sev.sigev_notify_function = timer_thread_handler;
 	sev.sigev_value.sival_ptr = t;
+	sev.sigev_notify_attributes = get_timer_thread_attr();
 
 	if (timer_create(CLOCK_MONOTONIC, &sev, &t->posix_timer) != 0) {
 		return OVE_ERR_NO_MEMORY;
@@ -84,6 +104,7 @@ int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
 	sev.sigev_notify = SIGEV_THREAD;
 	sev.sigev_notify_function = timer_thread_handler;
 	sev.sigev_value.sival_ptr = t;
+	sev.sigev_notify_attributes = get_timer_thread_attr();
 
 	if (timer_create(CLOCK_MONOTONIC, &sev, &t->posix_timer) != 0) {
 		OVE_BACKEND_FREE(t);
