@@ -1498,6 +1498,84 @@ fn testWorkqueueRaiiDrop() !void {
 }
 
 // ---------------------------------------------------------------------------
+// Errors — property-randomized tests of error.zig mapping logic
+// ---------------------------------------------------------------------------
+//
+// We don't have a Miri-equivalent for Zig, and integrated --fuzz isn't in
+// 0.15.2 yet (per Zig PR #20725 only the -ffuzz instrumentation flag has
+// landed; the test-runner orchestration is in master).  So we lean on the
+// "build mental models, encode them as assertions, validate with random
+// inputs" rule from TIGER_STYLE.md: deterministic-seeded property tests
+// over the full code surface that error.fromCode/fromCodeInt/mapErrorCode
+// can ever see at runtime.
+//
+// These run in the regular test pass and require no fuzz infra.
+
+fn testErrorsKnownCodesRoundTrip() !void {
+    // Each known C error code must map to a typed Error and the typed
+    // error must be reachable in ReleaseSafe (compile-time guarded by the
+    // comptime block in bindings/zig/ove/src/error.zig).
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_REGISTERED), error.NotRegistered);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_INVALID_PARAM), error.InvalidParam);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NO_MEMORY), error.NoMemory);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_TIMEOUT), error.Timeout);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_SUPPORTED), error.NotSupported);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_QUEUE_FULL), error.QueueFull);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_REFUSED), error.NetRefused);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_UNREACHABLE), error.NetUnreachable);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_ADDR_IN_USE), error.NetAddrInUse);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_RESET), error.NetReset);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_DNS_FAIL), error.NetDnsFail);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_CLOSED), error.NetClosed);
+}
+
+fn testErrorsZeroIsOk() !void {
+    try ove.err.fromCode(0);
+    try expect(try ove.err.fromCodeInt(0) == 0);
+    try expect(try ove.err.fromCodeInt(42) == 42);
+}
+
+fn testErrorsUnknownNegativeMapsToUnknown() !void {
+    // Any negative code outside the known set must map to Error.Unknown
+    // and never to one of the typed errors.  Property-tested by sweeping
+    // a deterministic-seeded random sample of the negative i32 range.
+    var prng = std.Random.DefaultPrng.init(0xC0FFEE);
+    const rand = prng.random();
+    const known_set = [_]c_int{
+        ove.ffi.OVE_ERR_NOT_REGISTERED,  ove.ffi.OVE_ERR_INVALID_PARAM,
+        ove.ffi.OVE_ERR_NO_MEMORY,       ove.ffi.OVE_ERR_TIMEOUT,
+        ove.ffi.OVE_ERR_NOT_SUPPORTED,   ove.ffi.OVE_ERR_QUEUE_FULL,
+        ove.ffi.OVE_ERR_NET_REFUSED,     ove.ffi.OVE_ERR_NET_UNREACHABLE,
+        ove.ffi.OVE_ERR_NET_ADDR_IN_USE, ove.ffi.OVE_ERR_NET_RESET,
+        ove.ffi.OVE_ERR_NET_DNS_FAIL,    ove.ffi.OVE_ERR_NET_CLOSED,
+    };
+    var i: usize = 0;
+    while (i < 1024) : (i += 1) {
+        // Sample a negative code uniformly across i32's negative range.
+        const raw_bits: u32 = rand.int(u32);
+        const rc: c_int = @intCast(@as(i32, @bitCast(raw_bits | 0x8000_0000)));
+        // Skip if accidentally landed on a known code.
+        var skip = false;
+        for (known_set) |k| if (rc == k) { skip = true; };
+        if (skip) continue;
+        try expectErrorIs(ove.err.fromCode(rc), error.Unknown);
+    }
+}
+
+fn testErrorsFromCodeIntPositiveIsValue() !void {
+    // fromCodeInt must pass non-negative codes through unchanged.  Random
+    // sample over the non-negative i32 range to catch any future logic
+    // bug that assumes a particular cap (e.g. u16/u8 truncation).
+    var prng = std.Random.DefaultPrng.init(0xBADCAFE);
+    const rand = prng.random();
+    var i: usize = 0;
+    while (i < 1024) : (i += 1) {
+        const v: c_int = @intCast(rand.uintLessThan(u32, 0x7FFF_FFFF));
+        try expect(try ove.err.fromCodeInt(v) == v);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1716,6 +1794,13 @@ pub fn main() void {
         .{ .name = "submit_delayed", .func = testWorkSubmitDelayed },
         .{ .name = "cancel", .func = testWorkCancel },
         .{ .name = "raii_drop", .func = testWorkqueueRaiiDrop },
+    });
+
+    runSuite("Errors", &.{
+        .{ .name = "known_codes_round_trip", .func = testErrorsKnownCodesRoundTrip },
+        .{ .name = "zero_is_ok", .func = testErrorsZeroIsOk },
+        .{ .name = "unknown_negative_maps_to_unknown", .func = testErrorsUnknownNegativeMapsToUnknown },
+        .{ .name = "from_code_int_positive_passthrough", .func = testErrorsFromCodeIntPositiveIsValue },
     });
 
     w.print("\n=== Summary: {d} passed, {d} failed ===\n", .{ total_passed, total_failed }) catch {};

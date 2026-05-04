@@ -73,3 +73,25 @@ pub inline fn fromCodeInt(rc: c_int) Error!c_int {
     if (rc >= 0) return rc;
     return mapErrorCode(rc);
 }
+
+// Compile-time assertion: the C `OVE_ERR_*` defines this binding maps in
+// `mapErrorCode` must keep the negative numeric codes that Zig callers
+// rely on.  If the C header renumbers a code, bindgen-via-@cImport
+// regenerates a different constant and this block fails to compile.
+// Analog of Rust's `_assert_codes_match` (per TIGER_STYLE.md "verify
+// type sizes and constant relationships before execution").
+comptime {
+    const std = @import("std");
+    std.debug.assert(c.OVE_ERR_NOT_REGISTERED == -1);
+    std.debug.assert(c.OVE_ERR_INVALID_PARAM == -2);
+    std.debug.assert(c.OVE_ERR_NO_MEMORY == -3);
+    std.debug.assert(c.OVE_ERR_TIMEOUT == -4);
+    std.debug.assert(c.OVE_ERR_NOT_SUPPORTED == -5);
+    std.debug.assert(c.OVE_ERR_QUEUE_FULL == -6);
+    std.debug.assert(c.OVE_ERR_NET_REFUSED == -8);
+    std.debug.assert(c.OVE_ERR_NET_UNREACHABLE == -9);
+    std.debug.assert(c.OVE_ERR_NET_ADDR_IN_USE == -10);
+    std.debug.assert(c.OVE_ERR_NET_RESET == -11);
+    std.debug.assert(c.OVE_ERR_NET_DNS_FAIL == -12);
+    std.debug.assert(c.OVE_ERR_NET_CLOSED == -13);
+}
