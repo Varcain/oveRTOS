@@ -104,6 +104,26 @@ function(ove_build_zig_lib TARGET)
                 list(APPEND ZIG_CPU_ARGS "-mcpu=cortex_m7")
             endif()
         endif()
+
+        # ARM cross-build profile tightening (mirrors the Rust binding's
+        # [profile.release] lto=fat / panic=abort posture).  -fno-stack-check
+        # removes per-frame `bl __zig_probe_stack` probes that have no
+        # meaning on bare-metal Cortex-M; -fsingle-threaded folds out
+        # thread-local-state branches in Zig's stdlib (Cortex-M targets
+        # are single-core); -fstrip removes symbols from the staticlib
+        # output (debuginfo flows via the link map / .elf separately).
+        list(APPEND ZIG_CPU_ARGS
+            "-fno-stack-check"
+            "-fsingle-threaded"
+            "-fstrip")
+
+        # Cross-language LTO opt-in (paired with cmake/OveCommon.cmake's
+        # -flto=thin on the C side).  Default OFF — declared as a CMake
+        # option in OveCommon.cmake; enabling requires a bitcode-aware
+        # linker that matches Zig's bundled lld output.
+        if(OVE_CROSS_LTO)
+            list(APPEND ZIG_CPU_ARGS "-flto")
+        endif()
     endif()
 
     # ── Collect include paths ────────────────────────────────────────────

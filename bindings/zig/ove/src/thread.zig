@@ -72,12 +72,12 @@ pub const Stats = struct {
 // ---------------------------------------------------------------------------
 
 /// Sleep the calling thread for `ms` milliseconds.
-pub fn sleepMs(ms: u32) void {
+pub inline fn sleepMs(ms: u32) void {
     c.ove_thread_sleep_ms(ms);
 }
 
 /// Yield the remaining time slice to the scheduler.
-pub fn yieldCpu() void {
+pub inline fn yieldCpu() void {
     c.ove_thread_yield();
 }
 

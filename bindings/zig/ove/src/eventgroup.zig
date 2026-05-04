@@ -52,25 +52,25 @@ const HeapEventGroup = struct {
         c.ove_eventgroup_destroy(self.handle);
     }
 
-    pub fn setBits(self: EventGroup, bits: EventBits) EventBits {
+    pub inline fn setBits(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits(self.handle, bits);
     }
 
-    pub fn clearBits(self: EventGroup, bits: EventBits) EventBits {
+    pub inline fn clearBits(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_clear_bits(self.handle, bits);
     }
 
-    pub fn getBits(self: EventGroup) EventBits {
+    pub inline fn getBits(self: EventGroup) EventBits {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
+    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
         var result: EventBits = 0;
         try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ms, &result));
         return result;
     }
 
-    pub fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
+    pub inline fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
 };
@@ -96,22 +96,22 @@ const ZeroHeapEventGroup = struct {
         self.tracker.clear();
     }
 
-    pub fn setBits(self: *EventGroup, bits: EventBits) EventBits {
+    pub inline fn setBits(self: *EventGroup, bits: EventBits) EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         return c.ove_eventgroup_set_bits(self.handle, bits);
     }
 
-    pub fn clearBits(self: *EventGroup, bits: EventBits) EventBits {
+    pub inline fn clearBits(self: *EventGroup, bits: EventBits) EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         return c.ove_eventgroup_clear_bits(self.handle, bits);
     }
 
-    pub fn getBits(self: *EventGroup) EventBits {
+    pub inline fn getBits(self: *EventGroup) EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
+    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         var result: EventBits = 0;
         try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ms, &result));
@@ -120,7 +120,7 @@ const ZeroHeapEventGroup = struct {
 
     /// ISR-safe — skips pin check (panics from ISR are unsafe; init must
     /// have completed in task context before any ISR fires).
-    pub fn setBitsFromIsr(self: *EventGroup, bits: EventBits) EventBits {
+    pub inline fn setBitsFromIsr(self: *EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
 };

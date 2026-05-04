@@ -79,15 +79,15 @@ const HeapTimer = struct {
         c.ove_timer_destroy(self.handle);
     }
 
-    pub fn start(self: Timer) Error!void {
+    pub inline fn start(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_start(self.handle));
     }
 
-    pub fn stop(self: Timer) Error!void {
+    pub inline fn stop(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_stop(self.handle));
     }
 
-    pub fn reset(self: Timer) Error!void {
+    pub inline fn reset(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_reset(self.handle));
     }
 };
@@ -162,17 +162,17 @@ const ZeroHeapTimer = struct {
         self.tracker.clear();
     }
 
-    pub fn start(self: *Timer) Error!void {
+    pub inline fn start(self: *Timer) Error!void {
         self.tracker.assertSame(self, "ove.Timer");
         try err.fromCode(c.ove_timer_start(self.handle));
     }
 
-    pub fn stop(self: *Timer) Error!void {
+    pub inline fn stop(self: *Timer) Error!void {
         self.tracker.assertSame(self, "ove.Timer");
         try err.fromCode(c.ove_timer_stop(self.handle));
     }
 
-    pub fn reset(self: *Timer) Error!void {
+    pub inline fn reset(self: *Timer) Error!void {
         self.tracker.assertSame(self, "ove.Timer");
         try err.fromCode(c.ove_timer_reset(self.handle));
     }

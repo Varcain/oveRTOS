@@ -34,7 +34,7 @@ pub fn getNs() Error!u64 {
 ///
 /// Yields the CPU to other threads during the delay. Actual delay may be
 /// slightly longer depending on scheduler resolution.
-pub fn delayMs(ms: u32) void {
+pub inline fn delayMs(ms: u32) void {
     c.ove_time_delay_ms(ms);
 }
 
@@ -42,6 +42,6 @@ pub fn delayMs(ms: u32) void {
 ///
 /// May be implemented as a busy-wait spin on platforms lacking sub-millisecond
 /// sleep support. Prefer `delayMs()` for longer delays.
-pub fn delayUs(us: u32) void {
+pub inline fn delayUs(us: u32) void {
     c.ove_time_delay_us(us);
 }
