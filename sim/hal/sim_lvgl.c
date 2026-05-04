@@ -39,7 +39,15 @@ static ove_mutex_storage_t lvgl_mutex_storage;
 #endif
 
 /* Framebuffer for the memory-based display driver. */
+#ifdef CONFIG_OVE_ZERO_HEAP
+/* Zero-heap mode: framebuffer must come from BSS — Zephyr's k_malloc /
+ * picolibc malloc is unavailable when CONFIG_HEAP_MEM_POOL_SIZE=0, and
+ * the FreeRTOS / NuttX equivalents trap.  XRGB8888 at design resolution. */
+static uint8_t fb_buf1_storage[OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * 4];
+static uint8_t *fb_buf1 = fb_buf1_storage;
+#else
 static uint8_t *fb_buf1;
+#endif
 
 /* ── High-resolution tick source ──────────────────────────────────── */
 
@@ -129,9 +137,11 @@ int ove_lvgl_init(void)
 	 * to overlap with.  Double-buffering would cause the dashboard
 	 * to flicker between two out-of-sync frames. */
 	size_t buf_size = (size_t)OVE_DISPLAY_WIDTH * OVE_DISPLAY_HEIGHT * 4;
+#ifndef CONFIG_OVE_ZERO_HEAP
 	fb_buf1 = malloc(buf_size);
 	if (!fb_buf1)
 		return OVE_ERR_NO_MEMORY;
+#endif
 
 	lv_display_set_color_format(disp, LV_COLOR_FORMAT_XRGB8888);
 	lv_display_set_buffers(disp, fb_buf1, NULL, buf_size, LV_DISPLAY_RENDER_MODE_FULL);
