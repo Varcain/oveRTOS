@@ -85,6 +85,22 @@ void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
 #endif /* configSUPPORT_STATIC_ALLOCATION */
 
 /* ========================================================================= */
+/* IDLE HOOK                                                                 */
+/* ========================================================================= */
+
+#if configUSE_IDLE_HOOK
+/* configUSE_IDLE_HOOK is hardcoded on in FreeRTOSConfig.h.j2.  Provide a
+ * weak empty default so apps that don't override it still link.
+ * CONFIG_OVE_PM previously hooked PM here; PM now drives from a polling
+ * thread (see backends/freertos/freertos_pm.c) and the idle hook stays
+ * empty regardless of mode. */
+OVE_WEAK
+void vApplicationIdleHook(void)
+{
+}
+#endif
+
+/* ========================================================================= */
 /* STACK OVERFLOW HOOK                                                       */
 /* ========================================================================= */
 

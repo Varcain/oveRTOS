@@ -91,16 +91,10 @@ void ove_hal_pm_idle_hook(void)
 	ove_pm_idle_process();
 }
 
-/* configUSE_IDLE_HOOK is hardcoded on in FreeRTOSConfig.h.j2.  We no
- * longer drive PM from the idle hook (polling thread below does it),
- * so provide a weak empty implementation just to satisfy the linker. */
-#if configUSE_IDLE_HOOK
-__attribute__((weak)) void vApplicationIdleHook(void)
-{
-}
-#endif
-
 /*
+ * The weak vApplicationIdleHook stub lives in freertos_hooks.c so every
+ * FreeRTOS build links cleanly regardless of whether PM is enabled.
+ *
  * Drive the PM state machine from a dedicated low-priority polling
  * thread, mirroring the NuttX / Zephyr backends.  Using
  * vApplicationIdleHook would also work, but only with tickless idle —

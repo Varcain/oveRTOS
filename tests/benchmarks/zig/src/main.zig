@@ -115,6 +115,12 @@ fn threadYieldRun() void {
     ove.thread.yieldCpu();
 }
 
+// Pure "who am I?" query — kernel-side TLS read with no scheduling
+// side-effects.  Distinct from time_get_us_overhead and yield.
+fn threadGetSelfRun() void {
+    std.mem.doNotOptimizeAway(ove.thread.getSelf());
+}
+
 fn threadSleep1msRun() void {
     ove.thread.sleepMs(1);
 }
@@ -177,6 +183,11 @@ const thread_case_sleep_1ms = bench.CaseSpec{
     .run = &threadSleep1msRun,
     .iterations = 100,
 };
+const thread_case_get_self = bench.CaseSpec{
+    .name = "get_self",
+    .kind = .latency,
+    .run = &threadGetSelfRun,
+};
 const thread_case_ctx_switch = bench.CaseSpec{
     .name = "context_switch",
     .kind = .latency,
@@ -189,11 +200,13 @@ const thread_case_ctx_switch = bench.CaseSpec{
 const thread_cases_full = [_]bench.CBenchCase{
     bench.caseAudited("thread", thread_case_create_destroy),
     bench.caseAudited("thread", thread_case_yield),
+    bench.caseAudited("thread", thread_case_get_self),
     bench.caseAudited("thread", thread_case_sleep_1ms),
     bench.caseAudited("thread", thread_case_ctx_switch),
 };
 const thread_cases_zh = [_]bench.CBenchCase{
     bench.caseAudited("thread", thread_case_yield),
+    bench.caseAudited("thread", thread_case_get_self),
     bench.caseAudited("thread", thread_case_sleep_1ms),
     bench.caseAudited("thread", thread_case_ctx_switch),
 };

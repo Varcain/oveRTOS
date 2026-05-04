@@ -49,6 +49,19 @@ static void thread_yield_run(void *ctx)
 	ove_thread_yield();
 }
 
+/* --- get_self ---
+ * Measures the current-thread accessor fast path — kernel-side TLS /
+ * current-task read that returns a stable handle for the calling
+ * thread.  Distinct from `time_get_us_overhead` (counter read) and
+ * `yield` (scheduler invocation): this is a pure "who am I?" query
+ * with no scheduling side-effects. */
+static void thread_get_self_run(void *ctx)
+{
+	(void)ctx;
+	volatile ove_thread_t self = ove_thread_get_self();
+	(void)self;
+}
+
 /* --- sleep 1ms --- */
 
 static void thread_sleep_1ms_run(void *ctx)
@@ -116,6 +129,11 @@ static const bench_case_t thread_cases[] = {
 		.name = "yield",
 		.type = BENCH_TYPE_LATENCY,
 		.run = thread_yield_run,
+	},
+	{
+		.name = "get_self",
+		.type = BENCH_TYPE_LATENCY,
+		.run = thread_get_self_run,
 	},
 	{
 		.name = "sleep_1ms",

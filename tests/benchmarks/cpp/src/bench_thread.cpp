@@ -39,6 +39,14 @@ static void thread_yield_run()
 	ove::Thread<>::yield();
 }
 
+/* --- get_self ---
+ * Pure "who am I?" query — kernel-side TLS read with no scheduling
+ * side-effects.  Distinct from time_get_us_overhead and yield. */
+static void thread_get_self_run()
+{
+	[[maybe_unused]] volatile auto self = ove::Thread<>::self();
+}
+
 /* --- sleep 1ms --- */
 
 static void thread_sleep_1ms_run()
@@ -102,6 +110,11 @@ static constexpr bench::CaseSpec thread_yield_spec{
 	.kind = bench::Type::latency,
 	.run = &thread_yield_run,
 };
+static constexpr bench::CaseSpec thread_get_self_spec{
+	.name = "get_self",
+	.kind = bench::Type::latency,
+	.run = &thread_get_self_run,
+};
 static constexpr bench::CaseSpec thread_sleep_1ms_spec{
 	.name = "sleep_1ms",
 	.kind = bench::Type::latency,
@@ -121,9 +134,8 @@ static constexpr bench_case_t thread_cases[] = {
 #ifndef CONFIG_OVE_ZERO_HEAP
 	bench::case_<thread_create_destroy_spec>(),
 #endif
-	bench::case_<thread_yield_spec>(),
-	bench::case_<thread_sleep_1ms_spec>(),
-	bench::case_<ctx_switch_spec>(),
+	bench::case_<thread_yield_spec>(),	    bench::case_<thread_get_self_spec>(),
+	bench::case_<thread_sleep_1ms_spec>(),	    bench::case_<ctx_switch_spec>(),
 };
 
 OVE_BENCH_SUITE(bench_suite_thread, "thread", thread_is_enabled, thread_cases)
