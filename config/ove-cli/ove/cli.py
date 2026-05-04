@@ -159,9 +159,11 @@ def main():
     p.add_argument("shell", choices=["bash", "zsh", "fish"])
 
     # ── lint / format ─────────────────────────────────────────────────
-    sub.add_parser("lint",
-                   help="Check formatting (clang-format / cargo fmt / "
-                        "zig fmt / ruff)")
+    p = sub.add_parser("lint",
+                       help="Check formatting (clang-format / cargo fmt / "
+                            "zig fmt / ruff)")
+    p.add_argument("--only", default=None,
+                   help="Run only the named check (e.g. clang-tidy-backends)")
     sub.add_parser("format",
                    help="Apply formatters in place (rewrites sources)")
 

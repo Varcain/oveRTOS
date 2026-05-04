@@ -285,6 +285,255 @@ def _clang_tidy(ove_dir, check):
             f"{len(files)} files" if rc == 0 else out.strip()[:200])
 
 
+# gcc-only flags that clang's driver rejects with `unknown argument` errors
+# when consumed via a cross-compile compile_commands.json.  We strip these
+# before invoking clang-tidy so the parser accepts the rest of the cmdline.
+# Anything starting with one of these prefixes (or matching exactly) is
+# dropped.  Keep narrow — over-stripping risks silently masking warnings.
+_GCC_ONLY_PREFIXES = (
+    "-fno-defer-pop",
+    "-fno-printf-return-value",
+    "-fno-reorder-functions",
+    "-fno-allow-store-data-races",
+    "-mfp16-format=",
+    "-mtp=",
+    "-mfix-cmse-cve-2021-35465",
+    "--param=",
+    "-Wno-pointer-sign",  # clang lacks this; gcc-only spelling
+    "-fdiagnostics-color=",  # clang uses different syntax; harmless to drop
+)
+
+
+def _strip_gcc_only(args):
+    return [a for a in args if not any(
+        a == p or a.startswith(p) for p in _GCC_ONLY_PREFIXES)]
+
+
+# Path fragments that mark third-party / vendored include trees.  When
+# we see `-I<path>` whose path contains one of these, we rewrite it to
+# `-isystem<path>` so clang treats the headers as system headers and
+# suppresses diagnostics inside them.  This kills the noise from
+# vendored Zephyr SDK headers / STM32 HAL macros / NuttX libc shims
+# without losing findings in our own backend code.
+_THIRDPARTY_PATH_FRAGMENTS = (
+    "/dl/",
+    "/zephyr-workspace",
+    "/zephyr-sdk",
+    "/cmocka-src/",
+    "/_deps/",
+    "/picolibc-",
+    "arm-zephyr-eabi/",
+    "arm-none-eabi/",
+)
+
+
+def _demote_thirdparty_includes(args):
+    out = []
+    for arg in args:
+        if arg.startswith("-I") and len(arg) > 2:
+            path = arg[2:]
+            if any(frag in path for frag in _THIRDPARTY_PATH_FRAGMENTS):
+                out.append("-isystem" + path)
+                continue
+        out.append(arg)
+    return out
+
+
+def _clang_tidy_backends(ove_dir, check):
+    """Run clang-tidy against each RTOS backend's C code via cross-compile
+    compile_commands.json artefacts.
+
+    The host `_clang_tidy` only sees TUs in the stub-backed test build, so
+    files under `backends/{freertos,nuttx,zephyr}/*.c` never get linted.
+    This check finds existing cross-compile DBs at predictable locations
+    under output/, scopes to backend-specific files, strips gcc-private
+    flags clang's driver rejects, and runs clang-tidy with
+    `--target=arm-none-eabi`.
+
+    Filtered DBs are written to `output/tests/lint_backend_dbs/<rtos>/`
+    so the original firmware-build artefacts aren't disturbed.
+
+    SKIP cleanly if no firmware build is present — bootstrapping firmware
+    requires the cross toolchain, board configure, and Zephyr/NuttX
+    workspace download, none of which the lint pipeline should fight with.
+    Run after `make stm32f746.freertos.<app>` (or NuttX/Zephyr equivalent)
+    or via the dedicated `make lint-backends` target.
+    """
+    import json
+    import shlex
+    import glob
+    del check
+    if not shutil.which("clang-tidy"):
+        return ("clang-tidy-backends", "SKIP", "not installed")
+
+    # Predictable build-output locations (per ove configure conventions):
+    #   - Firmware app builds:  output/<board>/<rtos>/<app>/build/firmware/
+    #   - QEMU/Renode test:     output/tests/{qemu,renode-stm32f746}-<rtos>*/build/
+    #   - Plain test build:     output/tests/<rtos>/build/
+    # Order matters — prefer app builds (full surface) over test builds
+    # (slimmer surface) so we lint the maximum amount of backend code.
+    candidate_globs = [
+        os.path.join(ove_dir, "output", "*", "*", "*", "build",
+                     "firmware", "compile_commands.json"),
+        os.path.join(ove_dir, "output", "tests", "*", "build",
+                     "compile_commands.json"),
+        os.path.join(ove_dir, "output", "tests", "*",
+                     "compile_commands.json"),
+    ]
+    found = []
+    for pat in candidate_globs:
+        for db_path in glob.glob(pat):
+            found.append(db_path)
+    if not found:
+        return ("clang-tidy-backends", "SKIP",
+                "no firmware compile_commands.json — run "
+                "'make stm32f746.<rtos>.<app>' or 'make lint-backends'")
+
+    # Pick the freshest DB per RTOS so we lint against the same toolchain
+    # the latest build used (avoids stale flag drift if toolchain bumped).
+    rtos_db = {}  # rtos -> (mtime, db_path)
+    for db_path in found:
+        # Detect RTOS from the path: prefer explicit /<rtos>/ directory
+        # markers (output/<board>/<rtos>/...) over qemu-<rtos> / renode-<rtos>.
+        norm = db_path.replace(os.sep, "/")
+        rtos = None
+        for candidate in ("freertos", "nuttx", "zephyr"):
+            if f"/{candidate}/" in norm or f"-{candidate}/" in norm \
+                    or f"-{candidate}-" in norm:
+                rtos = candidate
+                break
+        if not rtos:
+            continue
+        try:
+            mt = os.path.getmtime(db_path)
+        except OSError:
+            continue
+        if rtos not in rtos_db or mt > rtos_db[rtos][0]:
+            rtos_db[rtos] = (mt, db_path)
+
+    if not rtos_db:
+        return ("clang-tidy-backends", "SKIP",
+                "no RTOS-tagged compile_commands.json found")
+
+    failures = []
+    files_total = 0
+    filtered_root = os.path.join(ove_dir, "output", "tests",
+                                 "lint_backend_dbs")
+    # Zephyr's SDK headers (arm_acle.h, asm_inline_gcc.h) call
+    # gcc-private ARM intrinsics like `__builtin_arm_cdp` with
+    # non-constant arguments — clang's parser refuses to accept these
+    # because clang's builtin signature requires constants.  The
+    # workaround would need a per-include-path shim that's far out of
+    # scope for a tooling task.  SKIP Zephyr here; its backend-side
+    # bugs are still caught by the firmware build's own gcc-based
+    # warnings + the QEMU/Renode functional test pass.
+    skip_rtoses = {"zephyr"}
+    for rtos in sorted(rtos_db):
+        if rtos in skip_rtoses:
+            continue
+        _, db_path = rtos_db[rtos]
+        backend_root = os.path.abspath(
+            os.path.join(ove_dir, "backends", rtos))
+        try:
+            with open(db_path, encoding="utf-8") as f:
+                entries = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            failures.append(f"{rtos}: db read failed ({e})")
+            continue
+
+        # Build a filtered DB: only backend TUs, with gcc-only flags
+        # stripped.  Each entry's `command` (or `arguments`) is rewritten
+        # so clang-tidy's invocation goes through clang's driver cleanly.
+        filtered = []
+        seen = set()
+        for e in entries:
+            src = e.get("file")
+            if not src or src in seen:
+                continue
+            src_abs = os.path.abspath(src)
+            if not src_abs.startswith(backend_root + os.sep):
+                continue
+            seen.add(src)
+            new_entry = dict(e)
+            if "arguments" in e and e["arguments"]:
+                new_entry["arguments"] = _demote_thirdparty_includes(
+                    _strip_gcc_only(e["arguments"]))
+            elif "command" in e and e["command"]:
+                tokens = shlex.split(e["command"])
+                new_entry["command"] = shlex.join(
+                    _demote_thirdparty_includes(_strip_gcc_only(tokens)))
+            filtered.append(new_entry)
+
+        if not filtered:
+            continue
+        files_total += len(filtered)
+
+        # Write filtered DB to a stable location so clang-tidy can read it.
+        filt_dir = os.path.join(filtered_root, rtos)
+        os.makedirs(filt_dir, exist_ok=True)
+        filt_path = os.path.join(filt_dir, "compile_commands.json")
+        try:
+            with open(filt_path, "w", encoding="utf-8") as f:
+                json.dump(filtered, f)
+        except OSError as e:
+            failures.append(f"{rtos}: filtered db write failed ({e})")
+            continue
+
+        # `--target=arm-none-eabi` keeps clang's parser happy with the
+        # remaining -mcpu / -mthumb / -mfpu flags.  -Qunused-arguments
+        # silences any residual unrecognised flags so findings dominate
+        # the output rather than driver chatter.
+        #
+        # `--checks` overrides the repo .clang-tidy: keep the bug-finding
+        # families (bugprone / cert / concurrency / clang-analyzer) and
+        # drop readability/misc/portability/performance which generate
+        # noise on third-party-influenced cross-compile code (vendored
+        # STM32 HAL macros, Zephyr/NuttX libc shims).  The host
+        # `_clang_tidy` keeps the full check set; this is the
+        # cross-compile-specific scope.
+        cmd = [
+            "clang-tidy",
+            "--quiet",
+            "-p", filt_dir,
+            # Mirror the per-check exclusions from the repo `.clang-tidy`
+            # so cross-compile lint matches host-lint posture.
+            "--checks=-*,bugprone-*,cert-*,concurrency-*,clang-analyzer-*,"
+            "-bugprone-easily-swappable-parameters,"
+            "-bugprone-reserved-identifier,"
+            "-bugprone-macro-parentheses,"
+            "-bugprone-multi-level-implicit-pointer-conversion,"
+            "-bugprone-implicit-widening-of-multiplication-result,"
+            "-bugprone-narrowing-conversions,"
+            "-bugprone-branch-clone,"  # errno mapping noise on backends
+            "-cert-dcl37-c,"
+            "-cert-dcl51-cpp,"
+            "-clang-analyzer-security.insecureAPI."
+            "DeprecatedOrUnsafeBufferHandling,"
+            "-clang-analyzer-security.insecureAPI.strcpy",
+            # Scope header analysis to our own backend headers; the
+            # demote-to-isystem pass above silences vendored headers.
+            "--header-filter=backends/",
+            "--extra-arg-before=--target=arm-none-eabi",
+            "--extra-arg=-Qunused-arguments",
+            "--extra-arg=-Wno-unknown-warning-option",
+            "--extra-arg=-Wno-unused-command-line-argument",
+            "--extra-arg=-ferror-limit=200",
+        ] + [e["file"] for e in filtered]
+        rc, out = _run(cmd, cwd=ove_dir)
+        if rc != 0:
+            failures.append(
+                f"{rtos} ({len(filtered)} files): {out.strip()[:200]}")
+
+    if failures:
+        return ("clang-tidy-backends", "FAIL",
+                "; ".join(failures))
+    if files_total == 0:
+        return ("clang-tidy-backends", "OK",
+                "no backend files in compile dbs")
+    return ("clang-tidy-backends", "OK",
+            f"{len(rtos_db)} backend(s), {files_total} files")
+
+
 def _cargo_clippy(ove_dir, check):
     """Run cargo clippy against the `bindings/rust/ove` crate.
 
@@ -420,6 +669,7 @@ def _run_all(check, include_lint=True):
     if include_lint:
         results += [
             _clang_tidy(ove_dir, check),
+            _clang_tidy_backends(ove_dir, check),
             _cargo_clippy(ove_dir, check),
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
@@ -440,9 +690,23 @@ def _print(results):
 
 
 def cmd_lint(args):
-    """CLI entry point for 'ove lint'. Read-only correctness + format check."""
-    del args
-    sys.exit(_print(_run_all(check=True, include_lint=True)))
+    """CLI entry point for 'ove lint'. Read-only correctness + format check.
+
+    `--only NAME` filters the result list to a single check by its
+    reported name (the first element in each (name, status, msg)
+    tuple) — useful for `make lint-backends` and similar focused
+    one-off runs.
+    """
+    only = getattr(args, "only", None)
+    results = _run_all(check=True, include_lint=True)
+    if only:
+        results = [r for r in results if r[0] == only]
+        if not results:
+            print(f"no check named {only!r}; "
+                  f"see `make lint` output for valid names",
+                  file=sys.stderr)
+            sys.exit(2)
+    sys.exit(_print(results))
 
 
 def cmd_format(args):

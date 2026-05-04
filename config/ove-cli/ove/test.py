@@ -388,8 +388,8 @@ def test_stub_msan(ove_dir, output_dir):
         "-fno-omit-frame-pointer -fno-sanitize-recover=all"
     )
     extra_args = [
-        f"-DCMAKE_C_COMPILER=clang",
-        f"-DCMAKE_CXX_COMPILER=clang++",
+        "-DCMAKE_C_COMPILER=clang",
+        "-DCMAKE_CXX_COMPILER=clang++",
         f"-DCMAKE_C_FLAGS={flags}",
         f"-DCMAKE_CXX_FLAGS={flags}",
         f"-DCMAKE_EXE_LINKER_FLAGS={flags}",

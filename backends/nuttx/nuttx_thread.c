@@ -199,7 +199,7 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 		stack_size = 2048;
 	}
 
-	snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)t);
+	(void)snprintf(addr_str, sizeof(addr_str), "0x%lx", (unsigned long)(uintptr_t)t);
 	{
 		char *argv_args[] = {addr_str, NULL};
 		/*
@@ -462,7 +462,11 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 {
 	if (!stats)
 		return OVE_ERR_INVALID_PARAM;
-	struct mallinfo mi = mallinfo();
+	/* mallinfo() is technically not reentrant in POSIX libc, but on NuttX
+	 * it is the canonical heap-stats API and the implementation grabs
+	 * the kmm lock internally.  This is the ove_sys_get_mem_stats
+	 * surface point — concurrent callers see consistent snapshots. */
+	struct mallinfo mi = mallinfo(); /* NOLINT(concurrency-mt-unsafe) */
 	stats->total = (size_t)mi.arena;
 	stats->used = (size_t)mi.uordblks;
 	stats->free = (size_t)mi.fordblks;

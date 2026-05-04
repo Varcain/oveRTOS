@@ -140,11 +140,16 @@ void ove_shell_process_line(const char *line)
 	if (!line)
 		return;
 
-	/* Copy into the line buffer and execute */
+	/* Copy into the line buffer and execute.  shell_execute() walks the
+	 * argument as a C string (`while (*p != '\0' ...)`), so the buffer
+	 * MUST be null-terminated — the interactive newline branch above
+	 * does this implicitly via `line_buf[line_pos] = '\0'`, but the
+	 * external-line API has to do it explicitly after memcpy. */
 	size_t len = strlen(line);
 	if (len >= SHELL_LINE_MAX)
 		len = SHELL_LINE_MAX - 1;
 	memcpy(line_buf, line, len);
+	line_buf[len] = '\0';
 	line_pos = (unsigned int)len;
 	shell_execute(line_buf);
 	line_pos = 0;
