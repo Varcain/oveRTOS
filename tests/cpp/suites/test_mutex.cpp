@@ -28,10 +28,10 @@ static void cpp_hold_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_hold_ctx *>(arg);
 	(void)ctx->mtx->lock();
-	ctx->locked = 1;
+	__atomic_store_n(&ctx->locked, 1, __ATOMIC_RELEASE);
 	test_msleep(ctx->hold_ms);
 	ctx->mtx->unlock();
-	ctx->released = 1;
+	__atomic_store_n(&ctx->released, 1, __ATOMIC_RELEASE);
 }
 
 } /* extern "C" */
@@ -67,7 +67,7 @@ static void test_cpp_mutex_contention_timeout(void **state)
 
 	cpp_hold_ctx ctx = {&mtx, 0, 0, 200};
 	auto th = make_test_thread("hold", cpp_hold_entry, &ctx);
-	for (int i = 0; i < 500 && !ctx.locked; i++)
+	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
 	assert_int_equal(mtx.lock(50), OVE_ERR_TIMEOUT);
@@ -80,7 +80,7 @@ static void test_cpp_mutex_contention_success(void **state)
 
 	cpp_hold_ctx ctx = {&mtx, 0, 0, 50};
 	auto th = make_test_thread("rel", cpp_hold_entry, &ctx);
-	for (int i = 0; i < 500 && !ctx.locked; i++)
+	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
 	assert_int_equal(mtx.lock(500), OVE_OK);
@@ -90,10 +90,14 @@ static void test_cpp_mutex_contention_success(void **state)
 static void test_cpp_mutex_double_unlock(void **state)
 {
 	(void)state;
+#ifdef __SANITIZE_THREAD__
+	skip(); /* TSan flags double-unlock as UB; same rationale as C side. */
+#else
 	ove::Mutex mtx;
 	(void)mtx.lock(OVE_WAIT_FOREVER);
 	mtx.unlock();
 	mtx.unlock(); /* should not crash */
+#endif
 }
 
 static void test_cpp_mutex_zero_timeout_free(void **state)
@@ -125,7 +129,7 @@ static void test_cpp_mutex_short_timeout(void **state)
 
 	cpp_hold_ctx ctx = {&mtx, 0, 0, 200};
 	auto th = make_test_thread("h2", cpp_hold_entry, &ctx);
-	for (int i = 0; i < 500 && !ctx.locked; i++)
+	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
 	uint64_t start = 0, end = 0;

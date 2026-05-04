@@ -11,7 +11,7 @@ static void cpp_rmtx_hold_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_rmtx_ctx *>(arg);
 	(void)ctx->mtx->lock(OVE_WAIT_FOREVER);
-	ctx->locked = 1;
+	__atomic_store_n(&ctx->locked, 1, __ATOMIC_RELEASE);
 	test_msleep(200);
 	ctx->mtx->unlock();
 }
@@ -55,7 +55,7 @@ static void test_cpp_recursive_timeout(void **state)
 	ove::RecursiveMutex mtx;
 	cpp_rmtx_ctx ctx = {&mtx, 0};
 	auto th = make_test_thread("rh", cpp_rmtx_hold_entry, &ctx);
-	while (!ctx.locked)
+	while (!__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE))
 		test_msleep(1);
 	assert_int_equal(mtx.lock(50), OVE_ERR_TIMEOUT);
 }

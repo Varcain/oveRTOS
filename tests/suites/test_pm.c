@@ -99,7 +99,7 @@ static void domain_stress_entry(void *arg)
 		ove_pm_domain_request(domain);
 		ove_pm_domain_release(domain);
 	}
-	domain_thread_done = 1;
+	TEST_FLAG_SET(domain_thread_done, 1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -620,8 +620,7 @@ static void test_pm_domain_concurrent(void **state)
 	}
 
 	/* Wait for other thread */
-	while (!domain_thread_done)
-		test_msleep(1);
+	(void)wait_for_flag(&domain_thread_done, 1, 5000);
 	test_msleep(10);
 
 	/* Refcount should be zero after both threads balanced */
