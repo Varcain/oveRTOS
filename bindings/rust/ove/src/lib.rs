@@ -90,6 +90,7 @@ pub mod heap {
 
 #[cfg(has_audio)]
 pub mod audio;
+pub mod containers;
 #[cfg(not(docsrs))]
 pub(crate) mod bindings;
 #[cfg(docsrs)]

@@ -15,6 +15,14 @@ std = ["alloc"]
 alloc = []
 panic-handler = []
 
+[dependencies]
+# Fixed-capacity, no_std container library — `ove::containers::*` re-exports
+# `Vec`, `String`, `Deque`, `IndexMap`, `IndexSet`, `LinearMap`, `HistoryBuf`
+# and assorted lock-free queues.  Works in both heap and zeroheap modes
+# without `cfg` gating because heapless never touches a global allocator —
+# capacity is a const generic and storage is owned in the type.
+heapless = { version = "0.9", default-features = false }
+
 [build-dependencies]
 bindgen = "0.72"
 

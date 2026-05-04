@@ -87,3 +87,10 @@ libraries:
   picolibc:
     version: "1.8.10"
     url: "https://github.com/picolibc/picolibc.git"
+  # ETL (Embedded Template Library) — header-only, fixed-capacity STL-like
+  # containers (vector, string, map, list, deque, …) and utilities.  Pulled
+  # only when CONFIG_OVE_APP_LANG_CXX is set; consumed by C++ apps via the
+  # `etl::` namespace.  Header-only, MIT-licensed, no build artefacts.
+  etl:
+    version: "20.47.1"
+    url: "https://github.com/ETLCPP/etl.git"

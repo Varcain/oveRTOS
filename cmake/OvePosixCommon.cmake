@@ -90,6 +90,13 @@ macro(ove_posix_add_common_includes)
         ${LVGL_PATH}
         ${OVE_DL_DIR}
     )
+
+    # ETL — header-only fixed-capacity containers for C++ apps.  No-op
+    # when not vendored or when the app language isn't C++.
+    if(OVE_APP_LANG STREQUAL "cpp")
+        include(${OVE_DIR}/cmake/OveEtl.cmake)
+        ove_use_etl()
+    endif()
 endmacro()
 
 

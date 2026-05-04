@@ -47,6 +47,11 @@ Downloaded dependencies (fetched by the build system into dl/):
     Licensed under the Apache License, Version 2.0
     https://cmocka.org/
 
+  ETL (Embedded Template Library)
+    Copyright (C) 2014 jwellbelove
+    Licensed under the MIT License
+    https://www.etlcpp.com/
+
 ================================================================================
 
 Vendored third-party files included in the repository:

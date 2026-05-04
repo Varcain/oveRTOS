@@ -20,6 +20,7 @@ Including `ove/ove.h` pulls in every subsystem listed below. Individual headers 
 | Thread | `ove/thread.h` | 13 | Thread lifecycle, sleep, yield, suspend/resume, state query, stack usage, runtime stats. [Guide](threads.md) |
 | Sync | `ove/sync.h` | 22 | Mutex, recursive mutex, semaphore, binary event, condition variable. [Guide](sync.md) |
 | Queue | `ove/queue.h` | 8 | Fixed-size item FIFO with ISR-safe variants. [Guide](ipc.md#message-queues) |
+| Containers | (per-binding) | — | General-purpose fixed-capacity vectors, strings, and hashmaps for C++ (ETL), Rust (heapless), and Zig (hybrid). [Guide](containers.md) |
 | Timer | `ove/timer.h` | 7 | Periodic and one-shot software timers. [Guide](timers.md#software-timers) |
 | EventGroup | `ove/eventgroup.h` | 9 | Multi-bit event flags with ISR-safe set. [Guide](ipc.md#event-groups) |
 | WorkQueue | `ove/workqueue.h` | 9 | Deferred work on a dedicated thread. [Guide](timers.md#work-queues) |

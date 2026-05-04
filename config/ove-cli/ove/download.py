@@ -842,6 +842,21 @@ def download_all(ws):
                 if glink:
                     update_symlink(glink, dest)
 
+    # ETL (Embedded Template Library) — header-only fixed-capacity
+    # containers for C++ apps.  Header-only, no build, no link.  Always
+    # pulled in when the app language is C++ regardless of RTOS backend.
+    if get_bool(config, "CONFIG_OVE_APP_LANG_CXX"):
+        etl_url = get_component(manifest, "libraries", "etl", "url")
+        etl_ver = get_component(manifest, "libraries", "etl", "version")
+        if etl_url and etl_ver:
+            dest, link, glink = hashed_dir(ws.dl_dir, "etl",
+                                           etl_ver, ws.ws_dl_dir)
+            ok = git_clone(etl_url, etl_ver, dest, "ETL") and ok
+            if os.path.isdir(dest):
+                update_symlink(link, dest)
+                if glink:
+                    update_symlink(glink, dest)
+
     if get_bool(config, "CONFIG_OVE_BOARD_WASM"):
         ok = download_emscripten(config, ws.dl_dir, ws.ws_dl_dir,
                                  manifest=manifest) and ok
