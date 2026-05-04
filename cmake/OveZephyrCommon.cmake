@@ -152,4 +152,13 @@ macro(ove_zephyr_add_common_includes)
         ${OVE_DIR}/backends/common
         ${_OVE_ZI_EXTRA}
     )
+
+    # ETL — header-only fixed-capacity containers for C++ apps.  Added
+    # to `app` only so it's not paid for in C-only builds.  No-op when
+    # the dl/etl tree is absent.
+    if(OVE_APP_LANG STREQUAL "cpp" AND EXISTS "${OVE_DL_DIR}/etl/include/etl/vector.h")
+        target_include_directories(app PRIVATE ${OVE_DL_DIR}/etl/include)
+        target_compile_definitions(app PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:ETL_NO_EXCEPTIONS>)
+    endif()
 endmacro()

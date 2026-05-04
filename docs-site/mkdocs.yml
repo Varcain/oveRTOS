@@ -33,6 +33,7 @@ nav:
     - Threads: api/threads.md
     - Synchronization: api/sync.md
     - IPC (Queue, Events, Stream): api/ipc.md
+    - Containers (Vec, String, Map): api/containers.md
     - Timers & Work Queues: api/timers.md
     - Audio Engine: api/audio.md
     - Filesystem: api/fs.md

@@ -225,6 +225,19 @@ pub const pm = @import("pm.zig");
 /// Init-once cell for zero-heap static allocation patterns.
 pub const StaticCell = @import("static_cell.zig").StaticCell;
 
+/// General-purpose, fixed-capacity containers (Vec, String) and a stdlib
+/// allocator helper (`fixedBufferAlloc`).  Use these for heap-free
+/// resizable buffers and string builders, or to back stdlib unmanaged
+/// containers (`std.ArrayListUnmanaged`, `std.AutoHashMapUnmanaged`,
+/// `std.PriorityQueue`) with a static byte slice.
+pub const containers = @import("containers.zig");
+/// Fixed-capacity vector with comptime capacity. `Vec(T, N)` returns the type.
+pub const Vec = containers.Vec;
+/// Fixed-capacity, UTF-8-friendly string. `String(N)` returns the type.
+pub const String = containers.String;
+/// Construct a `std.heap.FixedBufferAllocator` over a caller-supplied byte slice.
+pub const fixedBufferAlloc = containers.fixedBufferAlloc;
+
 /// Write a message to the oveRTOS console.
 pub fn print(comptime fmt: []const u8, args: anytype) void {
     log.print(fmt, args);

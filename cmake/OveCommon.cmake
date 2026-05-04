@@ -190,6 +190,15 @@ macro(ove_setup_project _proj_name)
         ${OVE_DIR}/backends/common
     )
 
+    # ETL — header-only fixed-capacity containers for C++ apps.  No-op
+    # when not vendored or when the app language isn't C++.  Loaded after
+    # the main include block so apps can `#include <etl/...>` alongside
+    # `#include <ove/...>`.
+    if(OVE_APP_LANG STREQUAL "cpp")
+        include(${OVE_DIR}/cmake/OveEtl.cmake)
+        ove_use_etl()
+    endif()
+
     # Initialize accumulator lists
     set(_OVE_BOARD_SOURCES "")
     set(_OVE_BACKEND_SRC "")
