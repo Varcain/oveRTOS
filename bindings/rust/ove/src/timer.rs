@@ -78,6 +78,7 @@ impl Timer {
     ///
     /// # Errors
     /// Returns an error if the underlying RTOS call fails.
+    #[inline]
     pub fn start(&self) -> Result<()> {
         let rc = unsafe { bindings::ove_timer_start(self.handle) };
         Error::from_code(rc)
@@ -87,6 +88,7 @@ impl Timer {
     ///
     /// # Errors
     /// Returns an error if the underlying RTOS call fails.
+    #[inline]
     pub fn stop(&self) -> Result<()> {
         let rc = unsafe { bindings::ove_timer_stop(self.handle) };
         Error::from_code(rc)
@@ -98,6 +100,7 @@ impl Timer {
     ///
     /// # Errors
     /// Returns an error if the underlying RTOS call fails.
+    #[inline]
     pub fn reset(&self) -> Result<()> {
         let rc = unsafe { bindings::ove_timer_reset(self.handle) };
         Error::from_code(rc)

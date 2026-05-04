@@ -1,0 +1,24 @@
+# Toolchain pin for the oveRTOS Rust binding.
+#
+# Closes the "what shipped" question for any future safety case — every
+# cargo invocation under this repo auto-installs the components listed
+# below.  Mirrors Gale's `nm zephyr.elf | grep gale_` ethos at the
+# toolchain layer: the binding's binary lineage is reproducible.
+#
+# `channel = "stable"` deliberately tracks the latest stable rather than
+# pinning a single version; the MSRV floor lives in
+# `bindings/rust/ove/Cargo.toml` (`rust-version = "1.85"`).  Pin tighter
+# (e.g. `channel = "1.85.0"`) only when reproducibility for an external
+# audit is contractual.
+#
+# Miri runs on nightly; CI invokes `cargo +nightly miri test` and
+# overrides this file on a per-command basis.
+
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy", "rust-src"]
+targets = [
+    "thumbv7em-none-eabihf",
+    "thumbv7em-none-eabi",
+    "thumbv7m-none-eabi",
+]

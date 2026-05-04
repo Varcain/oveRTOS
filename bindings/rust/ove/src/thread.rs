@@ -92,6 +92,7 @@ impl Thread {
     ///
     /// The returned handle will **not** destroy the thread on drop,
     /// since the caller does not own it.
+    #[inline]
     pub fn current() -> Self {
         let handle = unsafe { bindings::ove_thread_get_self() };
         Self {
@@ -316,21 +317,25 @@ impl Thread {
     }
 
     /// Suspend this thread.
+    #[inline]
     pub fn suspend(&self) {
         unsafe { bindings::ove_thread_suspend(self.handle) }
     }
 
     /// Resume this thread.
+    #[inline]
     pub fn resume(&self) {
         unsafe { bindings::ove_thread_resume(self.handle) }
     }
 
     /// Set this thread's priority.
+    #[inline]
     pub fn set_priority(&self, prio: Priority) {
         unsafe { bindings::ove_thread_set_priority(self.handle, prio as bindings::ove_prio_t) }
     }
 
     /// Get current stack usage in bytes.
+    #[inline]
     pub fn get_stack_usage(&self) -> usize {
         unsafe { bindings::ove_thread_get_stack_usage(self.handle) }
     }

@@ -59,6 +59,7 @@ impl Error {
     /// Convert a C return code to `Result<()>`.
     /// Zero (OVE_OK) maps to `Ok(())`, negative values map to the
     /// corresponding `Error` variant.
+    #[inline]
     pub fn from_code(code: i32) -> Result<()> {
         match code {
             0 => Ok(()),
@@ -83,6 +84,7 @@ impl Error {
     }
 
     /// Convert back to the raw C error code.
+    #[inline]
     pub fn to_code(self) -> i32 {
         match self {
             Error::NotRegistered => -1,
@@ -106,6 +108,7 @@ impl Error {
     }
 
     /// Returns `true` if this is a networking-related error.
+    #[inline]
     pub fn is_net_error(&self) -> bool {
         matches!(
             self,
@@ -119,6 +122,7 @@ impl Error {
     }
 
     /// Returns `true` if this is a bus peripheral error (I2C/SPI).
+    #[inline]
     pub fn is_bus_error(&self) -> bool {
         matches!(self, Error::BusNack | Error::BusBusy | Error::BusError)
     }
@@ -174,5 +178,65 @@ impl core::fmt::Display for Error {
             Error::BusError => write!(f, "bus error"),
             Error::Unknown(c) => write!(f, "unknown error ({c})"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const KNOWN: &[(i32, Error)] = &[
+        (-1, Error::NotRegistered),
+        (-2, Error::InvalidParam),
+        (-3, Error::NoMemory),
+        (-4, Error::Timeout),
+        (-5, Error::NotSupported),
+        (-6, Error::QueueFull),
+        (-7, Error::MlFailed),
+        (-8, Error::NetRefused),
+        (-9, Error::NetUnreachable),
+        (-10, Error::NetAddrInUse),
+        (-11, Error::NetReset),
+        (-12, Error::NetDnsFail),
+        (-13, Error::NetClosed),
+        (-14, Error::BusNack),
+        (-15, Error::BusBusy),
+        (-16, Error::BusError),
+    ];
+
+    #[test]
+    fn from_code_zero_is_ok() {
+        assert_eq!(Error::from_code(0), Ok(()));
+    }
+
+    #[test]
+    fn from_code_known_codes_round_trip_through_to_code() {
+        for &(code, expected) in KNOWN {
+            assert_eq!(Error::from_code(code), Err(expected));
+            assert_eq!(expected.to_code(), code);
+        }
+    }
+
+    #[test]
+    fn from_code_unknown_preserves_raw_code() {
+        assert_eq!(Error::from_code(-999), Err(Error::Unknown(-999)));
+        assert_eq!(Error::Unknown(-999).to_code(), -999);
+        // Positive codes are also "Unknown" (the API contract is
+        // negative-on-error, zero-on-ok; positive should not appear, but
+        // preserving the raw code keeps round-tripping lossless).
+        assert_eq!(Error::from_code(7), Err(Error::Unknown(7)));
+    }
+
+    #[test]
+    fn classifier_predicates() {
+        assert!(Error::NetRefused.is_net_error());
+        assert!(Error::NetClosed.is_net_error());
+        assert!(!Error::Timeout.is_net_error());
+        assert!(!Error::Unknown(-99).is_net_error());
+
+        assert!(Error::BusNack.is_bus_error());
+        assert!(Error::BusError.is_bus_error());
+        assert!(!Error::Timeout.is_bus_error());
+        assert!(!Error::NetRefused.is_bus_error());
     }
 }

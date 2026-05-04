@@ -56,6 +56,18 @@ CPP_FORBIDDEN_MANGLED_PREFIXES = ("_ZTV", "_ZTI", "_ZTS")
 # zero trait objects produce zero such symbols; any presence is a regression.
 RUST_FORBIDDEN_DEMANGLED_SUBSTRS = ("<dyn ", "::vtable")
 
+# Rust panic / formatter machinery — only checked when --no-panic-symbols
+# is passed.  These are red flags in size-critical embedded ELFs where the
+# crate sets `panic = "abort"` AND the apps avoid the std-fmt machinery
+# (typically via a panic_immediate_abort nightly build-std).  In a default
+# stable build with `panic = "abort"`, `core::panicking::panic_fmt` still
+# survives as the panic entry symbol; that's expected and the gate is
+# opt-in, not always-on.
+RUST_FORBIDDEN_PANIC_SUBSTRS = (
+    "core::panicking::",
+    "core::fmt::Arguments::new_v1",
+)
+
 # Symbol-name suffixes that indicate a function-pointer dispatch table.
 # Combined with an `ove_` prefix and a data nm-type, these mark a regression
 # of the "compile-time backend dispatch" claim.  Plain data descriptors
@@ -101,7 +113,8 @@ def parse_nm(nm_output):
             yield m.group(1), m.group(2), m.group(3)
 
 
-def audit(elf, binding, target, nm, cppfilt, output_dir, strict_data=False):
+def audit(elf, binding, target, nm, cppfilt, output_dir,
+          strict_data=False, no_panic_symbols=False):
     nm_out = run([nm, str(elf)])
     symbols = list(parse_nm(nm_out))
 
@@ -112,6 +125,7 @@ def audit(elf, binding, target, nm, cppfilt, output_dir, strict_data=False):
     forbidden_cpp_vtable = []
     forbidden_cpp_typeinfo = []
     forbidden_rust_dyn = []
+    forbidden_rust_panic = []
     forbidden_dispatch_tables = []
     forbidden_ove_data_strict = []
     ove_text_symbols = []
@@ -152,6 +166,10 @@ def audit(elf, binding, target, nm, cppfilt, output_dir, strict_data=False):
                 # `<dyn` and `::vtable` to register as a vtable.
                 if "<dyn " in dem and "::vtable" in dem:
                     forbidden_rust_dyn.append((stype, dem))
+            if no_panic_symbols and any(
+                s in dem for s in RUST_FORBIDDEN_PANIC_SUBSTRS
+            ):
+                forbidden_rust_panic.append((stype, dem))
 
     # Write the symbols artifact for review.
     output_dir = Path(output_dir)
@@ -177,17 +195,18 @@ def audit(elf, binding, target, nm, cppfilt, output_dir, strict_data=False):
     n_vt = len(forbidden_cpp_vtable)
     n_ti = len(forbidden_cpp_typeinfo)
     n_rd = len(forbidden_rust_dyn)
+    n_rp = len(forbidden_rust_panic)
     n_dt = len(forbidden_dispatch_tables)
     n_sd = len(forbidden_ove_data_strict)
     n_txt = len(ove_text_symbols)
     n_dat = len(ove_data_symbols)
-    fail_total = n_vt + n_ti + n_rd + n_dt + n_sd
+    fail_total = n_vt + n_ti + n_rd + n_rp + n_dt + n_sd
     status = "OK" if fail_total == 0 else "FAIL"
     print(
         f"[zero-overhead audit] target={target} binding={binding} "
         f"vtables={n_vt} typeinfo={n_ti} rust_dyn={n_rd} "
-        f"dispatch_tables={n_dt} ove_text={n_txt} ove_data={n_dat} "
-        f"{status}"
+        f"rust_panic={n_rp} dispatch_tables={n_dt} "
+        f"ove_text={n_txt} ove_data={n_dat} {status}"
     )
 
     if status == "FAIL":
@@ -198,6 +217,8 @@ def audit(elf, binding, target, nm, cppfilt, output_dir, strict_data=False):
             print(f"  C++ typeinfo        [{stype}] {name}", file=sys.stderr)
         for stype, name in forbidden_rust_dyn:
             print(f"  Rust dyn-vt         [{stype}] {name}", file=sys.stderr)
+        for stype, name in forbidden_rust_panic:
+            print(f"  Rust panic/fmt      [{stype}] {name}", file=sys.stderr)
         for stype, name in forbidden_dispatch_tables:
             print(f"  dispatch-table-name [{stype}] {name}", file=sys.stderr)
         for stype, name in forbidden_ove_data_strict:
@@ -224,6 +245,13 @@ def main():
         help="also fail on any ove_* data symbol (production-strict mode; "
              "default off because legitimate data descriptors exist)",
     )
+    p.add_argument(
+        "--no-panic-symbols",
+        action="store_true",
+        help="also fail on Rust core::panicking::* / fmt::Arguments::new_v1 "
+             "(opt-in; only meaningful with `panic = \"abort\"` plus "
+             "panic_immediate_abort, otherwise the panic entry survives)",
+    )
     args = p.parse_args()
 
     nm = args.nm or shutil.which("nm")
@@ -238,7 +266,7 @@ def main():
         sys.exit(2)
 
     sys.exit(audit(elf, args.binding, args.target, nm, cppfilt,
-                   args.output_dir, args.strict_data))
+                   args.output_dir, args.strict_data, args.no_panic_symbols))
 
 
 if __name__ == "__main__":

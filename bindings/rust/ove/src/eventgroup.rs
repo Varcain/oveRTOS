@@ -70,11 +70,13 @@ impl EventGroup {
     }
 
     /// Set bits in the event group. Returns the bits value after setting.
+    #[inline]
     pub fn set_bits(&self, bits: u32) -> u32 {
         unsafe { bindings::ove_eventgroup_set_bits(self.handle, bits) }
     }
 
     /// Clear bits in the event group. Returns the bits value before clearing.
+    #[inline]
     pub fn clear_bits(&self, bits: u32) -> u32 {
         unsafe { bindings::ove_eventgroup_clear_bits(self.handle, bits) }
     }
@@ -86,6 +88,7 @@ impl EventGroup {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the bits are not set within `timeout_ms`.
+    #[inline]
     pub fn wait_bits(&self, bits: u32, flags: WaitFlags, timeout_ms: u32) -> Result<u32> {
         let mut result: u32 = 0;
         let rc = unsafe {
@@ -96,11 +99,13 @@ impl EventGroup {
     }
 
     /// Set bits from an ISR context. Returns the bits value after setting.
+    #[inline]
     pub fn set_bits_from_isr(&self, bits: u32) -> u32 {
         unsafe { bindings::ove_eventgroup_set_bits_from_isr(self.handle, bits) }
     }
 
     /// Get current bits value.
+    #[inline]
     pub fn get_bits(&self) -> u32 {
         unsafe { bindings::ove_eventgroup_get_bits(self.handle) }
     }

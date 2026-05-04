@@ -106,6 +106,26 @@ macro(ove_setup_project _proj_name)
         $<$<CONFIG:Release>:-O2>
     )
 
+    # Cross-language LTO opt-in.  Default OFF — enabling wires
+    # `-flto=thin` into the C/C++ side and `-Clinker-plugin-lto` into
+    # the Rust side (handled in config/cmake/ove_rust.cmake).  Requires
+    # a clang-style linker that understands LLVM bitcode (lld ≥ 17 or
+    # gcc with the LLVM gold plugin), which is not the default for
+    # arm-none-eabi-gcc.  Per Gale's "three quiet barriers" post: the
+    # gain on already-fast hot paths is 1–4 cycles per cross-call;
+    # mismatched target-cpu/target-feature between Rust and C will
+    # silently kill inlining without warning.  Turn this on only after
+    # measuring that the FFI hop dominates a real workload, and
+    # validate against `cargo asm` + `objdump -d` that calls actually
+    # inline.
+    option(OVE_CROSS_LTO "Enable cross-language LTO between C and Rust" OFF)
+    if(OVE_CROSS_LTO)
+        message(STATUS "[ove] Cross-language LTO enabled "
+                       "(C: -flto=thin, Rust: -Clinker-plugin-lto)")
+        add_compile_options($<$<CONFIG:Release>:-flto=thin>)
+        add_link_options($<$<CONFIG:Release>:-flto=thin>)
+    endif()
+
     # Sampling profiler: FreeRTOS walks saved-{r7, lr} pairs out of the
     # task stack, which needs the compiler to emit frame pointers. NuttX
     # uses up_backtrace(tcb), which internally relies on the same ARMv7-M

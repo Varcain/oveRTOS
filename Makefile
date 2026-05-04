@@ -337,6 +337,17 @@ format: $(VENV_STAMP)
 ci: $(VENV_STAMP)
 	@$(OVE) ci $(if $(filter 1,$(KEEPGOING)),--keep-going)
 
+# Run Miri (Rust UB detector) over the binding's pure-Rust unit tests.
+# Uses DOCS_RS=1 to take build.rs's stub-bindings path so we don't need a
+# configured C workspace; FFI-calling tests live in tests/rust and are
+# unreachable under Miri by design (Miri can't execute extern "C" calls
+# into the stub library).  Requires nightly + the `miri` component.
+.PHONY: miri
+miri:
+	@DOCS_RS=1 cargo +nightly miri test \
+		--manifest-path bindings/rust/ove/Cargo.toml \
+		--features std
+
 .PHONY: manifest
 manifest: $(VENV_STAMP)
 	@$(OVE) manifest $(if $(filter 1,$(CHECK)),--check)

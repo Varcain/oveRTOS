@@ -237,14 +237,31 @@ def find_matches(symbols, pattern_re):
 
 
 def _callee_matches(callee, patterns):
-    """True if `callee` matches any pattern.  A pattern ending in `*`
-    matches any callee that starts with the prefix; otherwise an exact
-    string match.  This lets allowed_calls handle Rust mangled names
-    whose `17h<hash>E` suffix changes on every rebuild — e.g.
-    `_ZN3ove4sync5Mutex3new17h*` matches any monomorphisation hash."""
+    """True if `callee` matches any pattern.
+
+    Supported pattern forms:
+      `prefix*`   — callee starts with `prefix`
+      `*suffix`   — callee ends with `suffix`
+      `*middle*`  — callee contains `middle`
+      `exact`     — callee equals `exact`
+
+    The `*X*` form matters for std/core symbols that rustc emits under
+    legacy v0 mangling (`_ZN4core6result13unwrap_failed17h<hash>E`) on
+    user code but new v0 mangling (`_RNvNtCs..._4core6result13unwrap_failed`)
+    on pre-built rust-std after a stable bump — the encoded inner path
+    is identical, so a substring match on the path component is stable
+    across mangling-format changes."""
     for p in patterns:
-        if p.endswith("*"):
+        starts = p.startswith("*")
+        ends = p.endswith("*")
+        if starts and ends:
+            if p[1:-1] in callee:
+                return True
+        elif ends:
             if callee.startswith(p[:-1]):
+                return True
+        elif starts:
+            if callee.endswith(p[1:]):
                 return True
         elif callee == p:
             return True

@@ -51,12 +51,14 @@ impl Mutex {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the mutex cannot be acquired within `timeout_ms`.
+    #[inline]
     pub fn lock(&self, timeout_ms: u32) -> Result<()> {
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout_ms) };
         Error::from_code(rc)
     }
 
     /// Unlock the mutex.
+    #[inline]
     pub fn unlock(&self) {
         unsafe { bindings::ove_mutex_unlock(self.handle) }
     }
@@ -65,6 +67,7 @@ impl Mutex {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ms`.
+    #[inline]
     pub fn guard(&self, timeout_ms: u32) -> Result<MutexGuard<'_>> {
         self.lock(timeout_ms)?;
         Ok(MutexGuard { mutex: self })
@@ -136,12 +139,14 @@ impl RecursiveMutex {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ms`.
+    #[inline]
     pub fn lock(&self, timeout_ms: u32) -> Result<()> {
         let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout_ms) };
         Error::from_code(rc)
     }
 
     /// Unlock the recursive mutex.
+    #[inline]
     pub fn unlock(&self) {
         unsafe { bindings::ove_recursive_mutex_unlock(self.handle) }
     }
@@ -150,6 +155,7 @@ impl RecursiveMutex {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ms`.
+    #[inline]
     pub fn guard(&self, timeout_ms: u32) -> Result<RecursiveMutexGuard<'_>> {
         self.lock(timeout_ms)?;
         Ok(RecursiveMutexGuard { mutex: self })
@@ -220,12 +226,14 @@ impl Semaphore {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the semaphore cannot be taken within `timeout_ms`.
+    #[inline]
     pub fn take(&self, timeout_ms: u32) -> Result<()> {
         let rc = unsafe { bindings::ove_sem_take(self.handle, timeout_ms) };
         Error::from_code(rc)
     }
 
     /// Post/give the semaphore.
+    #[inline]
     pub fn give(&self) {
         unsafe { bindings::ove_sem_give(self.handle) }
     }
@@ -268,17 +276,20 @@ impl Event {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the event is not signalled within `timeout_ms`.
+    #[inline]
     pub fn wait(&self, timeout_ms: u32) -> Result<()> {
         let rc = unsafe { bindings::ove_event_wait(self.handle, timeout_ms) };
         Error::from_code(rc)
     }
 
     /// Signal the event.
+    #[inline]
     pub fn signal(&self) {
         unsafe { bindings::ove_event_signal(self.handle) }
     }
 
     /// Signal the event from an ISR context.
+    #[inline]
     pub fn signal_from_isr(&self) {
         unsafe { bindings::ove_event_signal_from_isr(self.handle) }
     }
@@ -324,17 +335,20 @@ impl CondVar {
     /// # Errors
     /// Returns [`Error::Timeout`] if neither [`signal`](CondVar::signal) nor
     /// [`broadcast`](CondVar::broadcast) fires within `timeout_ms`.
+    #[inline]
     pub fn wait(&self, mutex: &Mutex, timeout_ms: u32) -> Result<()> {
         let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout_ms) };
         Error::from_code(rc)
     }
 
     /// Wake one waiter.
+    #[inline]
     pub fn signal(&self) {
         unsafe { bindings::ove_condvar_signal(self.handle) }
     }
 
     /// Wake all waiters.
+    #[inline]
     pub fn broadcast(&self) {
         unsafe { bindings::ove_condvar_broadcast(self.handle) }
     }
