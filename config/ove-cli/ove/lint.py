@@ -419,18 +419,20 @@ def _clang_tidy_backends(ove_dir, check):
     files_total = 0
     filtered_root = os.path.join(ove_dir, "output", "tests",
                                  "lint_backend_dbs")
-    # Zephyr's SDK headers (arm_acle.h, asm_inline_gcc.h) call
-    # gcc-private ARM intrinsics like `__builtin_arm_cdp` with
-    # non-constant arguments — clang's parser refuses to accept these
-    # because clang's builtin signature requires constants.  The
-    # workaround would need a per-include-path shim that's far out of
-    # scope for a tooling task.  SKIP Zephyr here; its backend-side
-    # bugs are still caught by the firmware build's own gcc-based
-    # warnings + the QEMU/Renode functional test pass.
-    skip_rtoses = {"zephyr"}
+    # Per-RTOS extra clang-tidy args.  Zephyr needs a force-included
+    # shim header (scripts/lint/zephyr_clang_compat.h) that pre-sets
+    # the include guard for the SDK's gcc arm_acle.h — the header's
+    # wrapper inlines call `__builtin_arm_cdp` etc. with non-constant
+    # parameters that clang's stricter signature rejects.  The shim
+    # short-circuits arm_acle.h cleanly; backends/zephyr code doesn't
+    # call those intrinsics directly so nothing real is masked.
+    per_rtos_extra_args = {
+        "zephyr": [
+            "--extra-arg=-include" + os.path.abspath(os.path.join(
+                ove_dir, "scripts", "lint", "zephyr_clang_compat.h")),
+        ],
+    }
     for rtos in sorted(rtos_db):
-        if rtos in skip_rtoses:
-            continue
         _, db_path = rtos_db[rtos]
         backend_root = os.path.abspath(
             os.path.join(ove_dir, "backends", rtos))
@@ -509,7 +511,11 @@ def _clang_tidy_backends(ove_dir, check):
             "-cert-dcl51-cpp,"
             "-clang-analyzer-security.insecureAPI."
             "DeprecatedOrUnsafeBufferHandling,"
-            "-clang-analyzer-security.insecureAPI.strcpy",
+            "-clang-analyzer-security.insecureAPI.strcpy,"
+            # Optin EnumCastOutOfRange fires in vendored Zephyr drivers/gpio.h
+            # when our backend casts an int to gpio_flags_t — it can't see
+            # that the int IS a flag combination; third-party-induced noise.
+            "-clang-analyzer-optin.core.EnumCastOutOfRange",
             # Scope header analysis to our own backend headers; the
             # demote-to-isystem pass above silences vendored headers.
             "--header-filter=backends/",
@@ -518,7 +524,7 @@ def _clang_tidy_backends(ove_dir, check):
             "--extra-arg=-Wno-unknown-warning-option",
             "--extra-arg=-Wno-unused-command-line-argument",
             "--extra-arg=-ferror-limit=200",
-        ] + [e["file"] for e in filtered]
+        ] + per_rtos_extra_args.get(rtos, []) + [e["file"] for e in filtered]
         rc, out = _run(cmd, cwd=ove_dir)
         if rc != 0:
             failures.append(
