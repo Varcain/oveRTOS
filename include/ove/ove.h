@@ -48,6 +48,49 @@
  *
  * Application code that prefers fine-grained includes may include individual
  * subsystem headers directly instead.
+ *
+ * @section c_discipline C-binding zero-overhead discipline
+ *
+ * The C API IS the substrate every higher-level binding (Rust / Zig /
+ * C++) wraps over.  The discipline ported back from the higher
+ * bindings — and codified in this header — is:
+ *
+ *   - **Compile-time C-ABI shape pin.** `<ove/types.h>` carries a
+ *     `_Static_assert` block validating every `OVE_ERR_*` numeric
+ *     value.  Mirrors `_assert_codes_match` (Rust), the `comptime`
+ *     block (Zig), and the `static_assert` block (C++).  A future
+ *     re-numbering of an error code fails to compile in every TU
+ *     that includes this header.
+ *
+ *   - **No function-pointer dispatch in hot paths.**  The
+ *     `scripts/zero_overhead_audit.py` gate enforces that no
+ *     `ove_*_{ops,dispatch,vtable,jumptable,funcs,callbacks}`
+ *     data symbol is emitted in any final ELF — every backend selection
+ *     happens at link time, not via a runtime jump table.
+ *
+ *   - **No allocations in hot paths.**  In zero-heap mode
+ *     (`CONFIG_OVE_ZERO_HEAP`), `<ove/heap_assert.h>` redeclares the
+ *     libc allocators with `__attribute__((error(...)))`, turning
+ *     accidental `malloc` / `calloc` / `realloc` reachability into
+ *     compile-time failure.
+ *
+ *   - **Static analysis on demand.**  `make c-analyze` runs GCC's
+ *     `-fanalyzer` over the C source tree (Miri analog for C);
+ *     filtered to ove paths so third-party noise is suppressed.
+ *
+ *   - **Sanitizer coverage in CI.**  `make test-stub-sanitize` runs
+ *     the C stub tests under UBSan + ASan; mirrors the
+ *     `cpp-sanitize` and `rust-miri` CI jobs for binding parity.
+ *
+ *   - **Cross-language LTO opt-in.**  `OVE_CROSS_LTO=ON` (declared in
+ *     `cmake/OveCommon.cmake`) wires `-flto=thin` on the C and C++
+ *     sides, `-Clinker-plugin-lto` on Rust, and `-flto` on Zig.  Off
+ *     by default — see Gale's "three quiet barriers" note in the
+ *     option comment for when to flip it.
+ *
+ * Use these properties when reasoning about binary size, fault
+ * surface, and what guarantees flow through to higher-level bindings.
+ *
  * @{
  */
 

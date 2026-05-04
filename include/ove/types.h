@@ -78,6 +78,32 @@
  */
 #define OVE_WAIT_FOREVER UINT32_MAX
 
+/*
+ * Compile-time C-ABI shape check.  This file IS the C-ABI contract;
+ * the assertions below pin the numeric values that every binding
+ * (Rust `Error::from_code`, Zig `mapErrorCode`, C++ `static_assert`
+ * block in <ove/types.hpp>) reads back.  If a future re-numbering
+ * drifts an `OVE_ERR_*` value, every TU that includes this header
+ * fails to compile with a clear message — the silent-drift surface is
+ * closed at the substrate layer the higher-level bindings sit on.
+ */
+_Static_assert(OVE_ERR_NOT_REGISTERED  == -1,  "OVE_ERR_NOT_REGISTERED drifted");
+_Static_assert(OVE_ERR_INVALID_PARAM   == -2,  "OVE_ERR_INVALID_PARAM drifted");
+_Static_assert(OVE_ERR_NO_MEMORY       == -3,  "OVE_ERR_NO_MEMORY drifted");
+_Static_assert(OVE_ERR_TIMEOUT         == -4,  "OVE_ERR_TIMEOUT drifted");
+_Static_assert(OVE_ERR_NOT_SUPPORTED   == -5,  "OVE_ERR_NOT_SUPPORTED drifted");
+_Static_assert(OVE_ERR_QUEUE_FULL      == -6,  "OVE_ERR_QUEUE_FULL drifted");
+_Static_assert(OVE_ERR_ML_FAILED       == -7,  "OVE_ERR_ML_FAILED drifted");
+_Static_assert(OVE_ERR_NET_REFUSED     == -8,  "OVE_ERR_NET_REFUSED drifted");
+_Static_assert(OVE_ERR_NET_UNREACHABLE == -9,  "OVE_ERR_NET_UNREACHABLE drifted");
+_Static_assert(OVE_ERR_NET_ADDR_IN_USE == -10, "OVE_ERR_NET_ADDR_IN_USE drifted");
+_Static_assert(OVE_ERR_NET_RESET       == -11, "OVE_ERR_NET_RESET drifted");
+_Static_assert(OVE_ERR_NET_DNS_FAIL    == -12, "OVE_ERR_NET_DNS_FAIL drifted");
+_Static_assert(OVE_ERR_NET_CLOSED      == -13, "OVE_ERR_NET_CLOSED drifted");
+_Static_assert(OVE_ERR_BUS_NACK        == -14, "OVE_ERR_BUS_NACK drifted");
+_Static_assert(OVE_ERR_BUS_BUSY        == -15, "OVE_ERR_BUS_BUSY drifted");
+_Static_assert(OVE_ERR_BUS_ERROR       == -16, "OVE_ERR_BUS_ERROR drifted");
+
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */
 typedef struct ove_thread *ove_thread_t;
 

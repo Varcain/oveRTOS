@@ -309,6 +309,37 @@ def test_stub(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
 
 
+def test_stub_sanitize(ove_dir, output_dir):
+    """Build C-side stub tests with UBSan + ASan, then run them.
+
+    Direct analog of `test_cpp_sanitize` and the Rust `make miri` job —
+    catches UB at the substrate layer (uninitialized reads, OOB writes,
+    use-after-free, signed overflow, alignment violations) on the host
+    POSIX target without needing an embedded toolchain.
+    """
+    build = os.path.join(output_dir, "tests", "stub_sanitize")
+    sanitize_flags = (
+        "-fsanitize=undefined,address "
+        "-fno-omit-frame-pointer "
+        "-fno-sanitize-recover=all"
+    )
+    extra_args = [
+        f"-DCMAKE_C_FLAGS={sanitize_flags}",
+        f"-DCMAKE_CXX_FLAGS={sanitize_flags}",
+        f"-DCMAKE_EXE_LINKER_FLAGS={sanitize_flags}",
+        "-DCMAKE_BUILD_TYPE=Debug",
+    ]
+    logger.info("Building C stub tests with -fsanitize=undefined,address")
+    _cmake_build(os.path.join(ove_dir, "tests"), build,
+                 extra_args=extra_args)
+    logger.info("Running C stub tests under sanitizers")
+    env = dict(os.environ)
+    env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
+    env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_stub")], "stub-sanitize", env=env)
+
+
 def test_cpp(ove_dir, output_dir):
     """Build and run C++ binding tests."""
     build = os.path.join(output_dir, "tests", "cpp")
@@ -1852,6 +1883,7 @@ def test_qemu_zephyr_coverage(ove_dir, output_dir):
 # Test name -> function mapping
 TEST_TARGETS = {
     "stub": test_stub,
+    "stub-sanitize": test_stub_sanitize,
     "cpp": test_cpp,
     "cpp-sanitize": test_cpp_sanitize,
     "rust": test_rust,
