@@ -141,8 +141,13 @@ ove_add_cpp_variant(ove_test_cpp)
 # *_init() static-storage paths would otherwise never be exercised.
 option(OVE_TEST_BUILD_COVERAGE "Build ove_test_cpp_coverage with --coverage" OFF)
 if(OVE_TEST_BUILD_COVERAGE)
-    ove_add_cpp_variant(ove_test_cpp_coverage --coverage -O0 -g)
-    ove_add_cpp_variant(ove_test_cpp_coverage_zh --coverage -O0 -g)
+    # `-fprofile-update=atomic` makes gcov counter increments atomic across
+    # threads.  Required by tests like test_lockguard.cpp that exercise the
+    # same source line from multiple threads (LockGuard contention loop) —
+    # without it, counter races can underflow and lcov 2.1+ rejects the
+    # tracefile with "Unexpected negative count".
+    ove_add_cpp_variant(ove_test_cpp_coverage --coverage -fprofile-update=atomic -O0 -g)
+    ove_add_cpp_variant(ove_test_cpp_coverage_zh --coverage -fprofile-update=atomic -O0 -g)
     target_compile_definitions(ove_test_cpp_coverage_zh PRIVATE CONFIG_OVE_ZERO_HEAP=1)
     ove_test_coverage_report(cpp
         ove_test_cpp_coverage

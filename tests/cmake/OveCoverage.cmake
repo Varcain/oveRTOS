@@ -79,7 +79,7 @@ function(ove_test_coverage_report name)
                 --capture --test-name ${name}
                 --rc branch_coverage=1
                 --output-file ${cov_dir}/coverage.info
-                --ignore-errors mismatch,gcov,source
+                --ignore-errors mismatch,gcov,source,negative
         COMMAND ${LCOV_BIN} --extract ${cov_dir}/coverage.info
                 ${ove_extract_patterns}
                 --rc branch_coverage=1
