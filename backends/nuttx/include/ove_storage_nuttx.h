@@ -128,6 +128,15 @@ struct ove_work {
 	volatile int cancelled;
 	uint32_t delay_ms;
 	int pending;
+	/* Completion synchronization — same shape as POSIX/FreeRTOS:
+	 * worker sets in_progress around handler invocation and posts
+	 * completion_sem on every iteration; cancel/free wait on the
+	 * sem while in_progress is observed.  Closes the use-after-free
+	 * window where ove_work_free could reclaim the struct while
+	 * wq_task_fn was still inside w->handler. */
+	int in_progress;
+	sem_t completion_sem;
+	int completion_sem_inited;
 };
 
 struct ove_workqueue {

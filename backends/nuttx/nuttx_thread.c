@@ -25,12 +25,21 @@
 #include <signal.h>
 #include <errno.h>
 #include <malloc.h>
-/* Set thread state with tracking + trace emit (mirrors posix_thread.c). */
-#define SET_STATE(t, s)                                                \
-	do {                                                           \
-		ove_trace_emit_state((uintptr_t)(t), (t)->state, (s)); \
-		ove_state_track_transition(&(t)->st, (s));             \
-		(t)->state = (s);                                      \
+/* Set thread state with tracking + trace emit (mirrors posix_thread.c).
+ *
+ * Atomic store-release on t->state matches the destroying / enumerating
+ * thread's atomic acquire-load — same race that TSan flagged in POSIX
+ * (sanitizers can't reach NuttX bare-metal code, so this fix is by
+ * cross-backend audit rather than a triggered TSan finding).  The
+ * trace-emit `from` snapshot is a relaxed load: it runs on the same
+ * thread that's about to publish the new state, so no cross-thread
+ * happens-before is needed for the read. */
+#define SET_STATE(t, s)                                                                    \
+	do {                                                                               \
+		ove_trace_emit_state((uintptr_t)(t),                                       \
+				     __atomic_load_n(&(t)->state, __ATOMIC_RELAXED), (s)); \
+		ove_state_track_transition(&(t)->st, (s));                                 \
+		__atomic_store_n(&(t)->state, (s), __ATOMIC_RELEASE);                      \
 	} while (0)
 
 /* Per-task pointer via NuttX task TLS */
@@ -138,8 +147,9 @@ static void sigusr1_handler(int sig)
 	struct ove_thread *t = tls_get_current();
 	if (t && t->suspend_inited) {
 		SET_STATE(t, OVE_THREAD_STATE_SUSPENDED);
-		/* Block until resumed via nxsem_post */
-		while (t->state == OVE_THREAD_STATE_SUSPENDED) {
+		/* Acquire-load pairs with the resumer's release-store via
+		 * SET_STATE — keeps the wake observation well-defined. */
+		while (__atomic_load_n(&t->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 			nxsem_wait(&t->suspend_sem);
 		}
 	}
@@ -188,7 +198,7 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 
 	t->entry = entry;
 	t->arg = arg;
-	t->state = OVE_THREAD_STATE_READY;
+	__atomic_store_n(&t->state, OVE_THREAD_STATE_READY, __ATOMIC_RELEASE);
 	t->suspend_inited = 0;
 	t->name = name; /* caller-owned string, retained for trace descriptors */
 	nxsem_init(&t->done_sem, 0, 0);
@@ -242,7 +252,7 @@ static int thread_start(struct ove_thread *t, const char *name, ove_thread_fn en
 	}
 
 	t->pid = pid;
-	t->started = 1;
+	__atomic_store_n(&t->started, 1, __ATOMIC_RELEASE);
 	_register_thread(t);
 
 	if (first_thread == NULL) {
@@ -284,16 +294,18 @@ int ove_thread_deinit(ove_thread_t handle)
 	if (ret)
 		return ret;
 
-	if (handle->started) {
+	if (__atomic_load_n(&handle->started, __ATOMIC_ACQUIRE)) {
 		/* Resume if suspended so it can finish */
-		if (handle->state == OVE_THREAD_STATE_SUSPENDED) {
+		if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) ==
+		    OVE_THREAD_STATE_SUSPENDED) {
 			SET_STATE(handle, OVE_THREAD_STATE_READY);
 			if (handle->suspend_inited) {
 				nxsem_post(&handle->suspend_sem);
 			}
 		}
 		/* Wait for thread to finish naturally (join) */
-		if (handle->state != OVE_THREAD_STATE_TERMINATED) {
+		if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) !=
+		    OVE_THREAD_STATE_TERMINATED) {
 			nxsem_wait_uninterruptible(&handle->done_sem);
 		}
 	}
@@ -396,7 +408,7 @@ void ove_thread_start_scheduler(void)
 
 void ove_thread_suspend(ove_thread_t handle)
 {
-	if (handle && handle->started) {
+	if (handle && __atomic_load_n(&handle->started, __ATOMIC_ACQUIRE)) {
 		if (!handle->suspend_inited) {
 			nxsem_init(&handle->suspend_sem, 0, 0);
 			handle->suspend_inited = 1;
@@ -409,7 +421,8 @@ void ove_thread_suspend(ove_thread_t handle)
 
 void ove_thread_resume(ove_thread_t handle)
 {
-	if (handle && handle->state == OVE_THREAD_STATE_SUSPENDED) {
+	if (handle &&
+	    __atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_SUSPENDED) {
 		SET_STATE(handle, OVE_THREAD_STATE_READY);
 		nxsem_post(&handle->suspend_sem);
 	}
@@ -440,14 +453,14 @@ ove_thread_state_t ove_thread_get_state(ove_thread_t handle)
 
 #ifdef __NuttX__
 	/* Quick liveness check — no procfs file I/O */
-	if (handle->state == OVE_THREAD_STATE_RUNNING) {
+	if (__atomic_load_n(&handle->state, __ATOMIC_ACQUIRE) == OVE_THREAD_STATE_RUNNING) {
 		if (kill(handle->pid, 0) != 0) {
 			return OVE_THREAD_STATE_TERMINATED;
 		}
 	}
 #endif
 
-	return handle->state;
+	return __atomic_load_n(&handle->state, __ATOMIC_ACQUIRE);
 }
 
 int ove_thread_get_runtime_stats(ove_thread_t handle, struct ove_thread_stats *stats)

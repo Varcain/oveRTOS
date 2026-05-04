@@ -168,7 +168,18 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler)
 
 void ove_work_free(ove_work_t work)
 {
-	OVE_BACKEND_FREE(work);
+	if (work != NULL) {
+		/* Cancel + wait for any in-flight handler before reclaiming
+		 * the struct.  Closes the use-after-free window where the
+		 * worker is still inside zephyr_work_handler when the caller
+		 * frees w.  Zephyr's k_work_cancel_delayable_sync is the
+		 * right primitive — must not be called from ISR or from the
+		 * workqueue thread itself, but ove_work_free is documented
+		 * as task-context only. */
+		struct k_work_sync sync;
+		(void)k_work_cancel_delayable_sync(&work->dwork, &sync);
+		OVE_BACKEND_FREE(work);
+	}
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
@@ -188,6 +199,13 @@ int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_
 
 int ove_work_cancel(ove_work_t work)
 {
-	k_work_cancel_delayable(&work->dwork);
+	if (work == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	/* Sync variant: stops the delay timer AND waits for any running
+	 * handler to complete.  After this returns the caller may safely
+	 * free the work struct. */
+	struct k_work_sync sync;
+	(void)k_work_cancel_delayable_sync(&work->dwork, &sync);
 	return OVE_OK;
 }

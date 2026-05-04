@@ -31,14 +31,36 @@ static void wq_thread(void *arg)
 			if (work == NULL) {
 				break; /* poison pill — shutdown */
 			}
+			__atomic_store_n(&work->in_progress, 1, __ATOMIC_RELEASE);
 			if (work->handler != NULL) {
 				work->handler(work);
 			}
+			__atomic_store_n(&work->in_progress, 0, __ATOMIC_RELEASE);
+			/* Unconditional give: cancel/free's wait loop drains
+			 * stale tokens before re-checking in_progress, so an
+			 * extra give from a prior iteration is harmless. */
+			xSemaphoreGive(work->completion_sem);
 		}
 	}
 	/* Signal that worker has finished processing */
 	xSemaphoreGive(wq->done_sem);
 	vTaskSuspend(NULL);
+}
+
+/* Wait until the worker has fully released this work item.
+ *
+ * The loop pattern handles three cases without races:
+ *   1. Worker not yet pulled the work — in_progress==0, immediate exit.
+ *   2. Worker mid-handler — Take blocks until worker's give; loop
+ *      re-checks because that give might be from a prior iteration.
+ *   3. Worker just finished — in_progress==0 but a stale give may
+ *      sit on the sem; subsequent Take drains it and we exit.
+ */
+static void wait_for_completion(struct ove_work *w)
+{
+	while (__atomic_load_n(&w->in_progress, __ATOMIC_ACQUIRE)) {
+		xSemaphoreTake(w->completion_sem, portMAX_DELAY);
+	}
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -86,6 +108,8 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	storage->handler = handler;
 	storage->delay_timer = NULL;
 	storage->target_wq = NULL;
+	storage->in_progress = 0;
+	storage->completion_sem = xSemaphoreCreateBinaryStatic(&storage->static_completion_sem);
 
 	*work = storage;
 	return OVE_OK;
@@ -155,6 +179,8 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler)
 	fw->handler = handler;
 	fw->delay_timer = NULL;
 	fw->target_wq = NULL;
+	fw->in_progress = 0;
+	fw->completion_sem = xSemaphoreCreateBinaryStatic(&fw->static_completion_sem);
 
 	*work = fw;
 	return OVE_OK;
@@ -163,6 +189,9 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler)
 void ove_work_free(ove_work_t work)
 {
 	if (work != NULL) {
+		/* Wait for any in-flight handler to finish before reclaiming
+		 * the struct — closes the UAF window. */
+		wait_for_completion(work);
 		if (work->delay_timer != NULL) {
 			xTimerDelete(work->delay_timer, portMAX_DELAY);
 		}
@@ -212,8 +241,14 @@ int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_
 
 int ove_work_cancel(ove_work_t work)
 {
+	if (work == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	if (work->delay_timer != NULL) {
 		xTimerStop(work->delay_timer, portMAX_DELAY);
 	}
+	/* Wait for any in-flight handler to finish so the caller may
+	 * safely free the struct after cancel returns. */
+	wait_for_completion(work);
 	return OVE_OK;
 }
