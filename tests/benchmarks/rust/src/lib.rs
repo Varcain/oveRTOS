@@ -112,6 +112,12 @@ fn thread_yield_run() {
     Thread::yield_now();
 }
 
+// Pure "who am I?" query — kernel-side TLS read with no scheduling
+// side-effects.  Distinct from time_get_us_overhead and yield.
+fn thread_get_self_run() {
+    let _ = core::hint::black_box(Thread::current());
+}
+
 fn thread_sleep_1ms_run() {
     Thread::sleep_ms(1);
 }
@@ -169,6 +175,12 @@ bench_case!(static THREAD_YIELD: BenchCase = {
     run: thread_yield_run,
 });
 
+bench_case!(static THREAD_GET_SELF: BenchCase = {
+    name: b"get_self\0",
+    kind: BenchType::Latency,
+    run: thread_get_self_run,
+});
+
 bench_case!(static THREAD_SLEEP_1MS: BenchCase = {
     name: b"sleep_1ms\0",
     kind: BenchType::Latency,
@@ -193,6 +205,7 @@ bench_suite!(
         #[cfg(not(zero_heap))]
         THREAD_CREATE_DESTROY,
         THREAD_YIELD,
+        THREAD_GET_SELF,
         THREAD_SLEEP_1MS,
         THREAD_CTX_SWITCH
     ],

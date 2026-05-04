@@ -82,6 +82,51 @@ void bench_print_footer(void)
  */
 #if CONFIG_OVE_BENCHMARK_OUTPUT_JSON
 
+/* Per-case JSON gets composed into a single stack buffer and emitted via
+ * one OVE_LOG call.  Splitting it across many small OVE_LOG calls (the
+ * old shape) tickles a race on Zephyr's deferred logger and on NuttX's
+ * line-buffered console where back-to-back writes can interleave or
+ * resurface stale buffer content as duplicate JSON keys.  See
+ * `grep -lE '"trimmed_mean_ns":[0-9]+.*"trimmed_mean_ns"' output/...`
+ * for the symptom.  512 bytes covers the longest case (≈ 280 chars
+ * with percentiles + stddev). */
+static int json_case_format(char *buf, size_t cap, const bench_case_t *bc, const bench_result_t *r)
+{
+	const char *type_str = bc->type == BENCH_TYPE_LATENCY	   ? "latency"
+			       : bc->type == BENCH_TYPE_THROUGHPUT ? "throughput"
+								   : "memory";
+
+	if (bc->type == BENCH_TYPE_MEMORY) {
+		return snprintf(buf, cap, "{\"name\":\"%s\",\"type\":\"%s\",\"heap_delta\":%d}",
+				bc->name, type_str, (int)r->heap_delta);
+	}
+
+	uint64_t avg_ns = (r->count > 0) ? r->total_ns / r->count : 0;
+
+#if CONFIG_OVE_BENCHMARK_PERCENTILES
+	return snprintf(buf, cap,
+			"{\"name\":\"%s\",\"type\":\"%s\","
+			"\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
+			"\"count\":%u,\"ops_per_sec\":%u,"
+			"\"p50_ns\":%u,\"p95_ns\":%u,\"p99_ns\":%u,"
+			"\"trimmed_mean_ns\":%u,\"stddev_ns_q1000\":%u}",
+			bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
+			(unsigned int)avg_ns, (unsigned int)r->count, (unsigned int)r->ops_per_sec,
+			(unsigned int)r->p50_ns, (unsigned int)r->p95_ns, (unsigned int)r->p99_ns,
+			(unsigned int)r->trimmed_mean_ns, (unsigned int)r->stddev_ns_q);
+#else
+	return snprintf(buf, cap,
+			"{\"name\":\"%s\",\"type\":\"%s\","
+			"\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
+			"\"count\":%u,\"ops_per_sec\":%u}",
+			bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
+			(unsigned int)avg_ns, (unsigned int)r->count, (unsigned int)r->ops_per_sec);
+#endif
+}
+
+/* Each per-case JSON is composed in a single 512-byte stack buffer and
+ * pushed atomically to ove_console_write — bypassing the 256-byte
+ * `OVE_LOG`/`_OVE_LOG_RAW` buffer that would truncate longer cases. */
 void bench_emit_suite_json(const bench_suite_t *suite, const bench_case_t *cases,
 			   const bench_result_t *results, unsigned int n)
 {
@@ -89,35 +134,15 @@ void bench_emit_suite_json(const bench_suite_t *suite, const bench_case_t *cases
 	OVE_LOG("{\"rtos\":\"%s\",\"binding\":\"%s\",\"suite\":\"%s\",\"cases\":[", OVE_RTOS_NAME,
 		OVE_APP_LANG_NAME, suite->name);
 
+	char json_buf[512];
 	for (unsigned int i = 0; i < n; i++) {
-		const bench_case_t *bc = &cases[i];
-		const bench_result_t *r = &results[i];
-		const char *type_str = bc->type == BENCH_TYPE_LATENCY	   ? "latency"
-				       : bc->type == BENCH_TYPE_THROUGHPUT ? "throughput"
-									   : "memory";
-
-		uint64_t avg_ns = (r->count > 0) ? r->total_ns / r->count : 0;
-
-		OVE_LOG("%s{", i ? "," : "");
-		OVE_LOG("\"name\":\"%s\",\"type\":\"%s\",", bc->name, type_str);
-
-		if (bc->type == BENCH_TYPE_MEMORY) {
-			OVE_LOG("\"heap_delta\":%d", (int)r->heap_delta);
-		} else {
-			OVE_LOG("\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,",
-				(unsigned int)r->min_ns, (unsigned int)r->max_ns,
-				(unsigned int)avg_ns);
-			OVE_LOG("\"count\":%u,\"ops_per_sec\":%u", (unsigned int)r->count,
-				(unsigned int)r->ops_per_sec);
-#if CONFIG_OVE_BENCHMARK_PERCENTILES
-			OVE_LOG(",\"p50_ns\":%u,\"p95_ns\":%u,\"p99_ns\":%u,",
-				(unsigned int)r->p50_ns, (unsigned int)r->p95_ns,
-				(unsigned int)r->p99_ns);
-			OVE_LOG("\"trimmed_mean_ns\":%u,\"stddev_ns_q1000\":%u",
-				(unsigned int)r->trimmed_mean_ns, (unsigned int)r->stddev_ns_q);
-#endif
-		}
-		OVE_LOG("}");
+		int payload_len =
+			json_case_format(json_buf, sizeof(json_buf), &cases[i], &results[i]);
+		if (payload_len <= 0 || (size_t)payload_len >= sizeof(json_buf))
+			continue;
+		if (i > 0)
+			ove_console_write(",", 1);
+		ove_console_write(json_buf, (unsigned int)payload_len);
 	}
 
 	OVE_LOG("]}\n");

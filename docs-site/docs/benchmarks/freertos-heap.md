@@ -12,95 +12,98 @@ For methodology, statistical conventions, and how to reproduce, see the [benchma
 
 | Suite | Case | C | CPP | Δ CPP | RUST | Δ RUST | ZIG | Δ ZIG |
 |---|---|---|---|---|---|---|---|---|
-| time | time_get_us_overhead | 263 ns | 344 ns | +30.8% | 358 ns | +36.1% | 307 ns | +16.7% |
-| time | delay_1ms | 993.7 µs | 993.4 µs | -0.0% | 992.2 µs | -0.2% | 993.3 µs | -0.0% |
-| thread | create_destroy | 36.7 µs | 35.5 µs | -3.1% | 20.2 µs | -44.9% | 34.6 µs | -5.5% |
-| thread | yield | 2.4 µs | 2.0 µs | -19.9% | 2.2 µs | -9.5% | 2.2 µs | -7.9% |
-| thread | sleep_1ms | 993.6 µs | 993.4 µs | -0.0% | 992.3 µs | -0.1% | 993.3 µs | -0.0% |
-| thread | context_switch | 22.3 µs | 22.2 µs | -0.2% | — | — | 21.8 µs | -2.3% |
+| time | time_get_us_overhead | 312 ns | 203 ns | -34.9% | 327 ns | +4.8% | 322 ns | +3.2% |
+| time | delay_1ms | 993.3 µs | 992.8 µs | -0.1% | 992.3 µs | -0.1% | 993.8 µs | +0.0% |
+| thread | create_destroy | 34.4 µs | 34.1 µs | -0.7% | 18.2 µs | -47.1% | 33.8 µs | -1.7% |
+| thread | yield | 1.9 µs | 1.5 µs | -17.4% | 1.7 µs | -7.4% | 1.5 µs | -17.1% |
+| thread | get_self | 952 ns | 917 ns | -3.7% | 1.1 µs | +13.1% | 969 ns | +1.8% |
+| thread | sleep_1ms | 993.4 µs | 992.8 µs | -0.1% | 992.2 µs | -0.1% | 993.8 µs | +0.0% |
+| thread | context_switch | 20.0 µs | 20.6 µs | +3.0% | — | — | 20.6 µs | +3.4% |
 | sync | mutex_memory | 96 B | 96 B | — | 96 B | — | 96 B | — |
 | sync | sem_memory | 96 B | 96 B | — | 96 B | — | 96 B | — |
 | sync | event_memory | 96 B | 96 B | — | 96 B | — | 96 B | — |
 | sync | condvar_memory | 16 B | 16 B | — | 16 B | — | 16 B | — |
-| sync | mutex_lock_unlock | 2.5 µs | 2.6 µs | +6.5% | 3.3 µs | +34.3% | 3.2 µs | +29.2% |
-| sync | mutex_create_destroy | 7.6 µs | 8.0 µs | +5.5% | 8.5 µs | +12.1% | 7.8 µs | +2.5% |
-| sync | mutex_contention_2t | 2.7 µs | 2.7 µs | +1.1% | 3.2 µs | +22.1% | 3.3 µs | +23.2% |
-| sync | sem_take_give | 2.4 µs | 2.4 µs | +0.5% | 2.7 µs | +12.9% | 2.5 µs | +4.4% |
-| sync | sem_create_destroy | 6.0 µs | 5.9 µs | -0.9% | 6.7 µs | +11.7% | 6.1 µs | +2.9% |
-| sync | event_signal_wait | 21.8 µs | 21.3 µs | -2.3% | 21.4 µs | -1.7% | 21.8 µs | -0.0% |
-| sync | condvar_signal_wait | 15.1 µs | 14.2 µs | -6.2% | 15.4 µs | +1.8% | 14.4 µs | -4.7% |
-| sync | recursive_mutex_lock_unlock | 3.2 µs | 3.4 µs | +5.6% | 4.1 µs | +27.2% | 3.8 µs | +16.3% |
+| sync | mutex_lock_unlock | 2.8 µs | 2.9 µs | +3.2% | 3.5 µs | +24.4% | 3.1 µs | +12.4% |
+| sync | mutex_create_destroy | 7.1 µs | 7.5 µs | +5.1% | 8.2 µs | +15.6% | 7.7 µs | +7.5% |
+| sync | mutex_contention_2t | 2.8 µs | 3.0 µs | +7.5% | 3.6 µs | +28.9% | 3.2 µs | +13.2% |
+| sync | sem_take_give | 2.3 µs | 2.4 µs | +7.1% | 2.8 µs | +22.9% | 2.4 µs | +6.3% |
+| sync | sem_create_destroy | 5.5 µs | 5.8 µs | +4.1% | 6.6 µs | +19.7% | 5.9 µs | +6.9% |
+| sync | event_signal_wait | 20.2 µs | 19.7 µs | -2.3% | 21.0 µs | +4.1% | 20.1 µs | -0.2% |
+| sync | condvar_signal_wait | 13.1 µs | 13.2 µs | +1.1% | 14.0 µs | +7.2% | 13.1 µs | -0.1% |
+| sync | recursive_mutex_lock_unlock | 3.8 µs | 3.6 µs | -5.3% | 4.3 µs | +14.3% | 3.5 µs | -8.4% |
 | queue | memory | 128 B | 128 B | — | 128 B | — | 128 B | — |
-| queue | send_receive | 2.9 µs | 2.9 µs | +1.3% | 3.3 µs | +16.0% | 3.2 µs | +10.1% |
-| queue | create_destroy | 5.8 µs | 5.9 µs | +1.8% | 6.0 µs | +2.4% | 5.8 µs | -1.0% |
-| queue | throughput_2t | 1.5 µs | 1.5 µs | -1.8% | 1.9 µs | +23.2% | 1.4 µs | -5.7% |
+| queue | send_receive | 3.4 µs | 3.2 µs | -5.3% | 3.7 µs | +7.8% | 3.0 µs | -12.7% |
+| queue | create_destroy | 5.3 µs | 5.5 µs | +3.9% | 6.1 µs | +16.2% | 5.5 µs | +5.0% |
+| queue | throughput_2t | 1.7 µs | 1.7 µs | +2.2% | 2.1 µs | +27.3% | 1.5 µs | -9.0% |
 | timer | memory | 64 B | 64 B | — | 64 B | — | 64 B | — |
-| timer | create_destroy | 19.7 µs | 21.2 µs | +7.6% | 21.2 µs | +7.7% | 20.4 µs | +4.0% |
-| timer | start_stop | 27.5 µs | 29.9 µs | +9.0% | 29.9 µs | +9.0% | 28.7 µs | +4.6% |
+| timer | create_destroy | 19.0 µs | 18.8 µs | -1.2% | 20.6 µs | +8.2% | 19.0 µs | -0.2% |
+| timer | start_stop | 25.5 µs | 25.8 µs | +1.1% | 28.3 µs | +10.8% | 26.6 µs | +4.2% |
 | eventgroup | memory | 48 B | 48 B | — | 48 B | — | 48 B | — |
-| eventgroup | set_get_bits | 3.1 µs | 3.0 µs | -1.3% | 3.1 µs | +1.1% | 2.7 µs | -13.6% |
-| eventgroup | create_destroy | 4.7 µs | 4.8 µs | +3.1% | 5.0 µs | +6.7% | 4.8 µs | +2.3% |
+| eventgroup | set_get_bits | 2.8 µs | 3.1 µs | +12.1% | 3.2 µs | +16.4% | 3.2 µs | +16.2% |
+| eventgroup | create_destroy | 4.8 µs | 4.5 µs | -5.7% | 5.1 µs | +6.1% | 4.6 µs | -4.1% |
 | workqueue | memory | 2520 B | 2520 B | — | 2520 B | — | 2520 B | — |
-| workqueue | create_destroy | 72.8 µs | 73.3 µs | +0.7% | 40.4 µs | -44.5% | 72.5 µs | -0.4% |
-| workqueue | submit_execute | 23.5 µs | 23.0 µs | -2.0% | 24.9 µs | +6.1% | 22.8 µs | -3.1% |
+| workqueue | create_destroy | 71.8 µs | 70.5 µs | -1.8% | 38.7 µs | -46.2% | 70.8 µs | -1.5% |
+| workqueue | submit_execute | 21.1 µs | 21.0 µs | -0.5% | 22.9 µs | +8.6% | 21.5 µs | +1.7% |
 | stream | memory | 352 B | 352 B | — | 352 B | — | 352 B | — |
-| stream | send_recv_64B | 7.7 µs | 7.6 µs | -1.7% | 9.8 µs | +27.1% | 7.7 µs | +0.7% |
-| stream | create_destroy | 12.5 µs | 12.9 µs | +3.5% | 8.9 µs | -28.7% | 12.7 µs | +1.7% |
-| stream | throughput | 10.3 µs | 10.4 µs | +1.0% | 18.8 µs | +82.3% | 10.7 µs | +3.8% |
-| native_freertos | native_mutex_lock_unlock | 2.3 µs | 2.5 µs | +9.4% | 3.1 µs | +33.2% | 2.7 µs | +18.4% |
-| native_freertos | native_mutex_create_destroy | 6.4 µs | 6.8 µs | +6.7% | 7.0 µs | +9.7% | 6.5 µs | +2.6% |
-| native_freertos | native_mutex_contention_2t | 2.4 µs | 2.5 µs | +0.7% | 3.1 µs | +28.6% | 2.7 µs | +11.4% |
-| native_freertos | native_recursive_mutex_lock_unlock | 3.1 µs | 3.2 µs | +3.9% | 3.8 µs | +21.5% | 3.3 µs | +7.3% |
-| native_freertos | native_sem_take_give | 2.0 µs | 2.1 µs | +2.9% | 2.4 µs | +19.5% | 2.3 µs | +12.6% |
-| native_freertos | native_sem_create_destroy | 4.7 µs | 5.0 µs | +5.5% | 5.0 µs | +5.0% | 5.0 µs | +4.9% |
-| native_freertos | native_condvar_signal_wait | 9.7 µs | 8.8 µs | -9.2% | 9.0 µs | -6.7% | 8.8 µs | -9.7% |
-| native_freertos | native_event_signal_wait | 9.6 µs | 8.4 µs | -12.0% | 9.2 µs | -3.5% | 8.9 µs | -7.3% |
-| native_freertos | native_thread_yield | 2.3 µs | 1.9 µs | -16.8% | 2.1 µs | -10.0% | 2.2 µs | -6.0% |
-| native_freertos | native_thread_sleep_1ms | 993.7 µs | 993.4 µs | -0.0% | 992.3 µs | -0.1% | 993.3 µs | -0.0% |
-| native_freertos | native_thread_create_destroy | 28.3 µs | 28.8 µs | +1.8% | 12.2 µs | -56.8% | 28.0 µs | -1.2% |
-| native_freertos | native_thread_context_switch | 14.8 µs | 14.5 µs | -1.9% | 14.6 µs | -0.8% | 14.5 µs | -1.4% |
-| native_freertos | native_queue_send_receive | 2.7 µs | 2.8 µs | +2.6% | 3.0 µs | +12.3% | 3.1 µs | +14.9% |
-| native_freertos | native_queue_create_destroy | 4.8 µs | 4.9 µs | +2.3% | 4.9 µs | +2.5% | 5.0 µs | +5.0% |
-| native_freertos | native_stream_send_recv_64B | 6.7 µs | 6.8 µs | +0.9% | 6.3 µs | -6.0% | 7.0 µs | +4.2% |
-| thread | ctx_switch | — | — | — | 22.1 µs | — | — | — |
+| stream | send_recv_64B | 7.2 µs | 7.4 µs | +3.9% | 10.2 µs | +42.0% | 7.7 µs | +7.4% |
+| stream | create_destroy | 12.2 µs | 12.4 µs | +1.3% | 8.2 µs | -32.7% | 12.3 µs | +0.2% |
+| stream | throughput | 11.2 µs | 10.4 µs | -7.9% | 18.7 µs | +66.7% | 10.2 µs | -9.4% |
+| native_freertos | native_mutex_lock_unlock | 2.8 µs | 2.8 µs | +0.7% | 3.3 µs | +17.7% | 2.8 µs | -1.6% |
+| native_freertos | native_mutex_create_destroy | 6.0 µs | 6.0 µs | +0.7% | 6.7 µs | +12.7% | 6.3 µs | +5.6% |
+| native_freertos | native_mutex_contention_2t | 2.9 µs | 2.9 µs | +1.0% | 3.4 µs | +15.5% | 2.9 µs | +0.8% |
+| native_freertos | native_recursive_mutex_lock_unlock | 3.2 µs | 3.3 µs | +1.8% | 4.0 µs | +22.1% | 3.4 µs | +4.3% |
+| native_freertos | native_sem_take_give | 2.2 µs | 2.3 µs | +2.1% | 2.6 µs | +19.8% | 2.2 µs | -1.1% |
+| native_freertos | native_sem_create_destroy | 4.4 µs | 4.4 µs | -1.3% | 5.0 µs | +13.4% | 4.8 µs | +8.6% |
+| native_freertos | native_condvar_signal_wait | 7.7 µs | 8.2 µs | +6.0% | 8.1 µs | +5.3% | 7.8 µs | +1.3% |
+| native_freertos | native_event_signal_wait | 7.6 µs | 8.1 µs | +6.0% | 8.3 µs | +9.2% | 8.0 µs | +4.7% |
+| native_freertos | native_thread_yield | 1.5 µs | 1.4 µs | -8.8% | 1.7 µs | +12.4% | 1.5 µs | -1.4% |
+| native_freertos | native_thread_sleep_1ms | 993.4 µs | 992.9 µs | -0.0% | 992.3 µs | -0.1% | 993.8 µs | +0.0% |
+| native_freertos | native_thread_create_destroy | 27.9 µs | 28.5 µs | +2.3% | 12.2 µs | -56.3% | 28.2 µs | +1.2% |
+| native_freertos | native_thread_context_switch | 13.4 µs | 13.6 µs | +1.2% | 14.0 µs | +4.6% | 14.1 µs | +4.9% |
+| native_freertos | native_queue_send_receive | 2.8 µs | 2.7 µs | -3.5% | 2.9 µs | +6.8% | 2.9 µs | +3.4% |
+| native_freertos | native_queue_create_destroy | 4.4 µs | 4.6 µs | +4.7% | 5.1 µs | +14.9% | 4.9 µs | +10.7% |
+| native_freertos | native_stream_send_recv_64B | 6.3 µs | 7.0 µs | +12.0% | 7.0 µs | +12.1% | 7.2 µs | +14.3% |
+| thread | ctx_switch | — | — | — | 20.6 µs | — | — | — |
 
 **Cases with |Δ| > 10.0% vs C:**
 
-- **RUST** `stream/throughput` 18757 vs 10288 (+82.3%)
-- **RUST** `native_freertos/native_thread_create_destroy` 12231 vs 28327 (-56.8%)
-- **RUST** `thread/create_destroy` 20188 vs 36658 (-44.9%)
-- **RUST** `workqueue/create_destroy` 40362 vs 72758 (-44.5%)
-- **RUST** `time/time_get_us_overhead` 358 vs 263 (+36.1%)
-- **RUST** `sync/mutex_lock_unlock` 3291 vs 2451 (+34.3%)
-- **RUST** `native_freertos/native_mutex_lock_unlock` 3072 vs 2307 (+33.2%)
-- **CPP** `time/time_get_us_overhead` 344 vs 263 (+30.8%)
-- **ZIG** `sync/mutex_lock_unlock` 3167 vs 2451 (+29.2%)
-- **RUST** `stream/create_destroy` 8878 vs 12455 (-28.7%)
-- **RUST** `native_freertos/native_mutex_contention_2t` 3131 vs 2435 (+28.6%)
-- **RUST** `sync/recursive_mutex_lock_unlock` 4106 vs 3229 (+27.2%)
-- **RUST** `stream/send_recv_64B` 9776 vs 7689 (+27.1%)
-- **RUST** `queue/throughput_2t` 1851 vs 1502 (+23.2%)
-- **ZIG** `sync/mutex_contention_2t` 3275 vs 2659 (+23.2%)
-- **RUST** `sync/mutex_contention_2t` 3247 vs 2659 (+22.1%)
-- **RUST** `native_freertos/native_recursive_mutex_lock_unlock` 3790 vs 3120 (+21.5%)
-- **CPP** `thread/yield` 1955 vs 2442 (-19.9%)
-- **RUST** `native_freertos/native_sem_take_give` 2427 vs 2031 (+19.5%)
-- **ZIG** `native_freertos/native_mutex_lock_unlock` 2732 vs 2307 (+18.4%)
-- **CPP** `native_freertos/native_thread_yield` 1925 vs 2314 (-16.8%)
-- **ZIG** `time/time_get_us_overhead` 307 vs 263 (+16.7%)
-- **ZIG** `sync/recursive_mutex_lock_unlock` 3756 vs 3229 (+16.3%)
-- **RUST** `queue/send_receive` 3326 vs 2867 (+16.0%)
-- **ZIG** `native_freertos/native_queue_send_receive` 3100 vs 2697 (+14.9%)
-- **ZIG** `eventgroup/set_get_bits` 2656 vs 3073 (-13.6%)
-- **RUST** `sync/sem_take_give` 2723 vs 2412 (+12.9%)
-- **ZIG** `native_freertos/native_sem_take_give` 2286 vs 2031 (+12.6%)
-- **RUST** `native_freertos/native_queue_send_receive` 3028 vs 2697 (+12.3%)
-- **RUST** `sync/mutex_create_destroy` 8529 vs 7605 (+12.1%)
-- **CPP** `native_freertos/native_event_signal_wait` 8410 vs 9553 (-12.0%)
-- **RUST** `sync/sem_create_destroy` 6661 vs 5962 (+11.7%)
-- **ZIG** `native_freertos/native_mutex_contention_2t` 2712 vs 2435 (+11.4%)
-- **ZIG** `queue/send_receive` 3156 vs 2867 (+10.1%)
-- **RUST** `native_freertos/native_thread_yield` 2082 vs 2314 (-10.0%)
+- **RUST** `stream/throughput` 18748 vs 11244 (+66.7%)
+- **RUST** `native_freertos/native_thread_create_destroy` 12187 vs 27891 (-56.3%)
+- **RUST** `thread/create_destroy` 18190 vs 34385 (-47.1%)
+- **RUST** `workqueue/create_destroy` 38653 vs 71813 (-46.2%)
+- **RUST** `stream/send_recv_64B` 10156 vs 7152 (+42.0%)
+- **CPP** `time/time_get_us_overhead` 203 vs 312 (-34.9%)
+- **RUST** `stream/create_destroy` 8230 vs 12235 (-32.7%)
+- **RUST** `sync/mutex_contention_2t` 3605 vs 2796 (+28.9%)
+- **RUST** `queue/throughput_2t` 2104 vs 1653 (+27.3%)
+- **RUST** `sync/mutex_lock_unlock` 3485 vs 2802 (+24.4%)
+- **RUST** `sync/sem_take_give` 2783 vs 2264 (+22.9%)
+- **RUST** `native_freertos/native_recursive_mutex_lock_unlock` 3952 vs 3237 (+22.1%)
+- **RUST** `native_freertos/native_sem_take_give` 2642 vs 2206 (+19.8%)
+- **RUST** `sync/sem_create_destroy` 6629 vs 5539 (+19.7%)
+- **RUST** `native_freertos/native_mutex_lock_unlock` 3302 vs 2805 (+17.7%)
+- **CPP** `thread/yield` 1542 vs 1866 (-17.4%)
+- **ZIG** `thread/yield` 1546 vs 1866 (-17.1%)
+- **RUST** `eventgroup/set_get_bits` 3232 vs 2776 (+16.4%)
+- **ZIG** `eventgroup/set_get_bits` 3227 vs 2776 (+16.2%)
+- **RUST** `queue/create_destroy` 6137 vs 5281 (+16.2%)
+- **RUST** `sync/mutex_create_destroy` 8249 vs 7138 (+15.6%)
+- **RUST** `native_freertos/native_mutex_contention_2t` 3355 vs 2906 (+15.5%)
+- **RUST** `native_freertos/native_queue_create_destroy` 5080 vs 4422 (+14.9%)
+- **RUST** `sync/recursive_mutex_lock_unlock` 4343 vs 3798 (+14.3%)
+- **ZIG** `native_freertos/native_stream_send_recv_64B` 7186 vs 6288 (+14.3%)
+- **RUST** `native_freertos/native_sem_create_destroy` 5014 vs 4422 (+13.4%)
+- **ZIG** `sync/mutex_contention_2t` 3164 vs 2796 (+13.2%)
+- **RUST** `thread/get_self` 1077 vs 952 (+13.1%)
+- **RUST** `native_freertos/native_mutex_create_destroy` 6735 vs 5975 (+12.7%)
+- **ZIG** `queue/send_receive` 2972 vs 3405 (-12.7%)
+- **ZIG** `sync/mutex_lock_unlock` 3149 vs 2802 (+12.4%)
+- **RUST** `native_freertos/native_thread_yield` 1708 vs 1520 (+12.4%)
+- **RUST** `native_freertos/native_stream_send_recv_64B` 7047 vs 6288 (+12.1%)
+- **CPP** `eventgroup/set_get_bits` 3111 vs 2776 (+12.1%)
+- **CPP** `native_freertos/native_stream_send_recv_64B` 7041 vs 6288 (+12.0%)
+- **RUST** `timer/start_stop` 28263 vs 25515 (+10.8%)
+- **ZIG** `native_freertos/native_queue_create_destroy` 4895 vs 4422 (+10.7%)
 
 ### Wrapper vs native FreeRTOS API (within-run delta)
 
@@ -110,65 +113,65 @@ Each row is one binding's measurement of its own wrapper paired against the **ra
 
 | Operation | Binding | Wrapper called | Wrapper ns | Native ns | Δ |
 |---|---|---|---|---|---|
-| Thread yield | C | ove_thread_yield | 2442 ns | 2314 ns | +128 ns |
-| Thread yield | CPP | ove::Thread::yield | 1955 ns | 1925 ns | +30 ns |
-| Thread yield | RUST | ove::Thread::yield | 2209 ns | 2082 ns | +127 ns |
-| Thread yield | ZIG | ove.Thread.yield | 2250 ns | 2176 ns | +74 ns |
-| Thread sleep 1ms | C | ove_thread_sleep_ms(1) | 993650 ns | 993676 ns | -26 ns |
-| Thread sleep 1ms | CPP | ove::Thread::sleep_ms(1) | 993376 ns | 993426 ns | -50 ns |
-| Thread sleep 1ms | RUST | ove::Thread::sleep_ms(1) | 992284 ns | 992306 ns | -22 ns |
-| Thread sleep 1ms | ZIG | ove.Thread.sleepMs(1) | 993256 ns | 993348 ns | -92 ns |
-| Thread create+destroy | C | ove_thread_create+destroy | 36658 ns | 28327 ns | +8331 ns |
-| Thread create+destroy | CPP | ove::Thread (ctor+dtor) | 35538 ns | 28824 ns | +6714 ns |
-| Thread create+destroy | RUST | ove::Thread::spawn+join | 20188 ns | 12231 ns | +7957 ns |
-| Thread create+destroy | ZIG | ove.Thread.spawn+join | 34644 ns | 27973 ns | +6671 ns |
-| Thread context_switch (2t) | C | ove ping-pong (2t) | 22261 ns | 14754 ns | +7507 ns |
-| Thread context_switch (2t) | CPP | ove ping-pong (2t) | 22217 ns | 14477 ns | +7740 ns |
-| Thread context_switch (2t) | ZIG | ove ping-pong (2t) | 21752 ns | 14546 ns | +7206 ns |
-| Mutex lock+unlock | C | ove_mutex_lock+unlock | 2451 ns | 2307 ns | +144 ns |
-| Mutex lock+unlock | CPP | ove::Mutex::lock+unlock | 2610 ns | 2524 ns | +86 ns |
-| Mutex lock+unlock | RUST | ove::Mutex::lock+unlock | 3291 ns | 3072 ns | +219 ns |
-| Mutex lock+unlock | ZIG | ove.Mutex.lock+unlock | 3167 ns | 2732 ns | +435 ns |
-| Mutex create+destroy | C | ove_mutex_create+destroy | 7605 ns | 6372 ns | +1233 ns |
-| Mutex create+destroy | CPP | ove::Mutex (ctor+dtor) | 8020 ns | 6797 ns | +1223 ns |
-| Mutex create+destroy | RUST | ove::Mutex (new+drop) | 8529 ns | 6988 ns | +1541 ns |
-| Mutex create+destroy | ZIG | ove.Mutex.create+destroy | 7792 ns | 6537 ns | +1255 ns |
-| Mutex contention (2t) | C | ove_mutex_lock+unlock (×2t) | 2659 ns | 2435 ns | +224 ns |
-| Mutex contention (2t) | CPP | ove::Mutex::lock+unlock (×2t) | 2687 ns | 2453 ns | +234 ns |
-| Mutex contention (2t) | RUST | ove::Mutex::lock+unlock (×2t) | 3247 ns | 3131 ns | +116 ns |
-| Mutex contention (2t) | ZIG | ove.Mutex.lock+unlock (×2t) | 3275 ns | 2712 ns | +563 ns |
-| Recursive mutex lock+unlock | C | ove_rmtx_lock+unlock | 3229 ns | 3120 ns | +109 ns |
-| Recursive mutex lock+unlock | CPP | ove::RMutex::lock+unlock | 3411 ns | 3243 ns | +168 ns |
-| Recursive mutex lock+unlock | RUST | ove::RMutex::lock+unlock | 4106 ns | 3790 ns | +316 ns |
-| Recursive mutex lock+unlock | ZIG | ove.RMutex.lock+unlock | 3756 ns | 3347 ns | +409 ns |
-| Sem take+give | C | ove_sem_take+give | 2412 ns | 2031 ns | +381 ns |
-| Sem take+give | CPP | ove::Sem::take+give | 2423 ns | 2089 ns | +334 ns |
-| Sem take+give | RUST | ove::Sem::take+give | 2723 ns | 2427 ns | +296 ns |
-| Sem take+give | ZIG | ove.Sem.take+give | 2518 ns | 2286 ns | +232 ns |
-| Sem create+destroy | C | ove_sem_create+destroy | 5962 ns | 4743 ns | +1219 ns |
-| Sem create+destroy | CPP | ove::Sem (ctor+dtor) | 5907 ns | 5002 ns | +905 ns |
-| Sem create+destroy | RUST | ove::Sem (new+drop) | 6661 ns | 4979 ns | +1682 ns |
-| Sem create+destroy | ZIG | ove.Sem.create+destroy | 6134 ns | 4974 ns | +1160 ns |
-| Condvar signal+wait | C | ove_condvar_signal+wait | 15094 ns | 9700 ns | +5394 ns |
-| Condvar signal+wait | CPP | ove::Condvar::signal+wait | 14165 ns | 8808 ns | +5357 ns |
-| Condvar signal+wait | RUST | ove::Condvar::signal+wait | 15361 ns | 9046 ns | +6315 ns |
-| Condvar signal+wait | ZIG | ove.Condvar.signal+wait | 14379 ns | 8755 ns | +5624 ns |
-| Event signal+wait | C | ove_event_signal+wait | 21805 ns | 9553 ns | +12252 ns |
-| Event signal+wait | CPP | ove::Event::signal+wait | 21296 ns | 8410 ns | +12886 ns |
-| Event signal+wait | RUST | ove::Event::signal+wait | 21441 ns | 9218 ns | +12223 ns |
-| Event signal+wait | ZIG | ove.Event.signal+wait | 21799 ns | 8854 ns | +12945 ns |
-| Queue send+receive | C | ove_queue_send+receive | 2867 ns | 2697 ns | +170 ns |
-| Queue send+receive | CPP | ove::Queue::send+recv | 2904 ns | 2768 ns | +136 ns |
-| Queue send+receive | RUST | ove::Queue::send+recv | 3326 ns | 3028 ns | +298 ns |
-| Queue send+receive | ZIG | ove.Queue.send+recv | 3156 ns | 3100 ns | +56 ns |
-| Queue create+destroy | C | ove_queue_create+destroy | 5819 ns | 4809 ns | +1010 ns |
-| Queue create+destroy | CPP | ove::Queue (ctor+dtor) | 5926 ns | 4919 ns | +1007 ns |
-| Queue create+destroy | RUST | ove::Queue (new+drop) | 5956 ns | 4927 ns | +1029 ns |
-| Queue create+destroy | ZIG | ove.Queue.create+destroy | 5763 ns | 5049 ns | +714 ns |
-| Stream send+recv 64B | C | ove_stream_send+recv 64B | 7689 ns | 6698 ns | +991 ns |
-| Stream send+recv 64B | CPP | ove::Stream::send+recv 64B | 7561 ns | 6758 ns | +803 ns |
-| Stream send+recv 64B | RUST | ove::Stream::send+recv 64B | 9776 ns | 6298 ns | +3478 ns |
-| Stream send+recv 64B | ZIG | ove.Stream.send+recv 64B | 7744 ns | 6977 ns | +767 ns |
+| Thread yield | C | ove_thread_yield | 1866 ns | 1520 ns | +346 ns |
+| Thread yield | CPP | ove::Thread::yield | 1542 ns | 1387 ns | +155 ns |
+| Thread yield | RUST | ove::Thread::yield | 1728 ns | 1708 ns | +20 ns |
+| Thread yield | ZIG | ove.Thread.yield | 1546 ns | 1498 ns | +48 ns |
+| Thread sleep 1ms | C | ove_thread_sleep_ms(1) | 993363 ns | 993351 ns | +12 ns |
+| Thread sleep 1ms | CPP | ove::Thread::sleep_ms(1) | 992838 ns | 992886 ns | -48 ns |
+| Thread sleep 1ms | RUST | ove::Thread::sleep_ms(1) | 992202 ns | 992296 ns | -94 ns |
+| Thread sleep 1ms | ZIG | ove.Thread.sleepMs(1) | 993756 ns | 993845 ns | -89 ns |
+| Thread create+destroy | C | ove_thread_create+destroy | 34385 ns | 27891 ns | +6494 ns |
+| Thread create+destroy | CPP | ove::Thread (ctor+dtor) | 34144 ns | 28540 ns | +5604 ns |
+| Thread create+destroy | RUST | ove::Thread::spawn+join | 18190 ns | 12187 ns | +6003 ns |
+| Thread create+destroy | ZIG | ove.Thread.spawn+join | 33792 ns | 28232 ns | +5560 ns |
+| Thread context_switch (2t) | C | ove ping-pong (2t) | 19956 ns | 13433 ns | +6523 ns |
+| Thread context_switch (2t) | CPP | ove ping-pong (2t) | 20562 ns | 13599 ns | +6963 ns |
+| Thread context_switch (2t) | ZIG | ove ping-pong (2t) | 20639 ns | 14087 ns | +6552 ns |
+| Mutex lock+unlock | C | ove_mutex_lock+unlock | 2802 ns | 2805 ns | -3 ns |
+| Mutex lock+unlock | CPP | ove::Mutex::lock+unlock | 2891 ns | 2826 ns | +65 ns |
+| Mutex lock+unlock | RUST | ove::Mutex::lock+unlock | 3485 ns | 3302 ns | +183 ns |
+| Mutex lock+unlock | ZIG | ove.Mutex.lock+unlock | 3149 ns | 2759 ns | +390 ns |
+| Mutex create+destroy | C | ove_mutex_create+destroy | 7138 ns | 5975 ns | +1163 ns |
+| Mutex create+destroy | CPP | ove::Mutex (ctor+dtor) | 7504 ns | 6019 ns | +1485 ns |
+| Mutex create+destroy | RUST | ove::Mutex (new+drop) | 8249 ns | 6735 ns | +1514 ns |
+| Mutex create+destroy | ZIG | ove.Mutex.create+destroy | 7675 ns | 6311 ns | +1364 ns |
+| Mutex contention (2t) | C | ove_mutex_lock+unlock (×2t) | 2796 ns | 2906 ns | -110 ns |
+| Mutex contention (2t) | CPP | ove::Mutex::lock+unlock (×2t) | 3005 ns | 2936 ns | +69 ns |
+| Mutex contention (2t) | RUST | ove::Mutex::lock+unlock (×2t) | 3605 ns | 3355 ns | +250 ns |
+| Mutex contention (2t) | ZIG | ove.Mutex.lock+unlock (×2t) | 3164 ns | 2930 ns | +234 ns |
+| Recursive mutex lock+unlock | C | ove_rmtx_lock+unlock | 3798 ns | 3237 ns | +561 ns |
+| Recursive mutex lock+unlock | CPP | ove::RMutex::lock+unlock | 3598 ns | 3296 ns | +302 ns |
+| Recursive mutex lock+unlock | RUST | ove::RMutex::lock+unlock | 4343 ns | 3952 ns | +391 ns |
+| Recursive mutex lock+unlock | ZIG | ove.RMutex.lock+unlock | 3479 ns | 3377 ns | +102 ns |
+| Sem take+give | C | ove_sem_take+give | 2264 ns | 2206 ns | +58 ns |
+| Sem take+give | CPP | ove::Sem::take+give | 2424 ns | 2253 ns | +171 ns |
+| Sem take+give | RUST | ove::Sem::take+give | 2783 ns | 2642 ns | +141 ns |
+| Sem take+give | ZIG | ove.Sem.take+give | 2406 ns | 2182 ns | +224 ns |
+| Sem create+destroy | C | ove_sem_create+destroy | 5539 ns | 4422 ns | +1117 ns |
+| Sem create+destroy | CPP | ove::Sem (ctor+dtor) | 5767 ns | 4364 ns | +1403 ns |
+| Sem create+destroy | RUST | ove::Sem (new+drop) | 6629 ns | 5014 ns | +1615 ns |
+| Sem create+destroy | ZIG | ove.Sem.create+destroy | 5921 ns | 4803 ns | +1118 ns |
+| Condvar signal+wait | C | ove_condvar_signal+wait | 13082 ns | 7738 ns | +5344 ns |
+| Condvar signal+wait | CPP | ove::Condvar::signal+wait | 13228 ns | 8201 ns | +5027 ns |
+| Condvar signal+wait | RUST | ove::Condvar::signal+wait | 14029 ns | 8148 ns | +5881 ns |
+| Condvar signal+wait | ZIG | ove.Condvar.signal+wait | 13069 ns | 7842 ns | +5227 ns |
+| Event signal+wait | C | ove_event_signal+wait | 20155 ns | 7609 ns | +12546 ns |
+| Event signal+wait | CPP | ove::Event::signal+wait | 19684 ns | 8064 ns | +11620 ns |
+| Event signal+wait | RUST | ove::Event::signal+wait | 20983 ns | 8306 ns | +12677 ns |
+| Event signal+wait | ZIG | ove.Event.signal+wait | 20123 ns | 7967 ns | +12156 ns |
+| Queue send+receive | C | ove_queue_send+receive | 3405 ns | 2759 ns | +646 ns |
+| Queue send+receive | CPP | ove::Queue::send+recv | 3225 ns | 2663 ns | +562 ns |
+| Queue send+receive | RUST | ove::Queue::send+recv | 3671 ns | 2946 ns | +725 ns |
+| Queue send+receive | ZIG | ove.Queue.send+recv | 2972 ns | 2853 ns | +119 ns |
+| Queue create+destroy | C | ove_queue_create+destroy | 5281 ns | 4422 ns | +859 ns |
+| Queue create+destroy | CPP | ove::Queue (ctor+dtor) | 5488 ns | 4628 ns | +860 ns |
+| Queue create+destroy | RUST | ove::Queue (new+drop) | 6137 ns | 5080 ns | +1057 ns |
+| Queue create+destroy | ZIG | ove.Queue.create+destroy | 5543 ns | 4895 ns | +648 ns |
+| Stream send+recv 64B | C | ove_stream_send+recv 64B | 7152 ns | 6288 ns | +864 ns |
+| Stream send+recv 64B | CPP | ove::Stream::send+recv 64B | 7430 ns | 7041 ns | +389 ns |
+| Stream send+recv 64B | RUST | ove::Stream::send+recv 64B | 10156 ns | 7047 ns | +3109 ns |
+| Stream send+recv 64B | ZIG | ove.Stream.send+recv 64B | 7678 ns | 7186 ns | +492 ns |
 
 #### Lifecycle and intrinsic-cost caveats
 
