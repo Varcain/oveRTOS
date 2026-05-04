@@ -309,6 +309,15 @@ def test_stub(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_stub")], "stub")
 
 
+def _sanitize_extra_args(flags):
+    return [
+        f"-DCMAKE_C_FLAGS={flags}",
+        f"-DCMAKE_CXX_FLAGS={flags}",
+        f"-DCMAKE_EXE_LINKER_FLAGS={flags}",
+        "-DCMAKE_BUILD_TYPE=Debug",
+    ]
+
+
 def test_stub_sanitize(ove_dir, output_dir):
     """Build C-side stub tests with UBSan + ASan, then run them.
 
@@ -323,21 +332,79 @@ def test_stub_sanitize(ove_dir, output_dir):
         "-fno-omit-frame-pointer "
         "-fno-sanitize-recover=all"
     )
-    extra_args = [
-        f"-DCMAKE_C_FLAGS={sanitize_flags}",
-        f"-DCMAKE_CXX_FLAGS={sanitize_flags}",
-        f"-DCMAKE_EXE_LINKER_FLAGS={sanitize_flags}",
-        "-DCMAKE_BUILD_TYPE=Debug",
-    ]
     logger.info("Building C stub tests with -fsanitize=undefined,address")
     _cmake_build(os.path.join(ove_dir, "tests"), build,
-                 extra_args=extra_args)
+                 extra_args=_sanitize_extra_args(sanitize_flags))
     logger.info("Running C stub tests under sanitizers")
     env = dict(os.environ)
     env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
     return _run_test_binary(
         [os.path.join(build, "ove_test_stub")], "stub-sanitize", env=env)
+
+
+def test_stub_tsan(ove_dir, output_dir):
+    """Build C-side stub tests with ThreadSanitizer, then run them.
+
+    TSan catches data races (concurrent unsynchronized access to
+    shared memory) that UBSan + ASan miss.  TSan is mutually exclusive
+    with ASan (both override malloc) so it lives in its own build, and
+    we explicitly turn off the tests/CMakeLists.txt asan-variant target
+    that would otherwise pick up the thread flag and conflict.
+    """
+    build = os.path.join(output_dir, "tests", "stub_tsan")
+    flags = (
+        "-fsanitize=thread -fno-omit-frame-pointer -fno-sanitize-recover=all"
+    )
+    logger.info("Building C stub tests with -fsanitize=thread")
+    extra = _sanitize_extra_args(flags)
+    extra.append("-DOVE_TEST_BUILD_ASAN=OFF")
+    _cmake_build(os.path.join(ove_dir, "tests"), build, extra_args=extra)
+    logger.info("Running C stub tests under TSan")
+    env = dict(os.environ)
+    env["TSAN_OPTIONS"] = "halt_on_error=1:second_deadlock_stack=1"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_stub")], "stub-tsan", env=env)
+
+
+def test_stub_msan(ove_dir, output_dir):
+    """Build C-side stub tests with MemorySanitizer, then run them.
+
+    MSan catches uninitialized-memory reads — bugs UBSan/ASan don't
+    see and `-Wmaybe-uninitialized` only catches at compile time when
+    flow is statically obvious.  MSan requires every linked TU
+    (including any C deps that read memory the test wrote) to be
+    instrumented; on Ubuntu the system libc isn't, so suppressions
+    are expected for libc internals.  C-only — libstdc++/libc++ are
+    rarely msan-instrumented on stock distros, so we don't extend
+    this to the C++ wrapper tests.
+    """
+    if not shutil.which("clang"):
+        logger.warning("MSan requires clang; skipping test-stub-msan")
+        return ("stub-msan", "SKIP", "clang not installed")
+    build = os.path.join(output_dir, "tests", "stub_msan")
+    flags = (
+        "-fsanitize=memory -fsanitize-memory-track-origins=2 "
+        "-fno-omit-frame-pointer -fno-sanitize-recover=all"
+    )
+    extra_args = [
+        f"-DCMAKE_C_COMPILER=clang",
+        f"-DCMAKE_CXX_COMPILER=clang++",
+        f"-DCMAKE_C_FLAGS={flags}",
+        f"-DCMAKE_CXX_FLAGS={flags}",
+        f"-DCMAKE_EXE_LINKER_FLAGS={flags}",
+        "-DCMAKE_BUILD_TYPE=Debug",
+        "-DOVE_TEST_BUILD_ASAN=OFF",
+    ]
+    logger.info("Building C stub tests with -fsanitize=memory (clang)")
+    _cmake_build(os.path.join(ove_dir, "tests"), build, extra_args=extra_args)
+    logger.info("Running C stub tests under MSan")
+    env = dict(os.environ)
+    # halt_on_error: any uninit-read aborts.  exit_code=1 ensures the test
+    # runner sees a failure even if MSan would otherwise just warn.
+    env["MSAN_OPTIONS"] = "halt_on_error=1:exit_code=1:print_stats=0"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_stub")], "stub-msan", env=env)
 
 
 def test_cpp(ove_dir, output_dir):
@@ -367,15 +434,9 @@ def test_cpp_sanitize(ove_dir, output_dir):
         "-fno-omit-frame-pointer "
         "-fno-sanitize-recover=all"
     )
-    extra_args = [
-        f"-DCMAKE_C_FLAGS={sanitize_flags}",
-        f"-DCMAKE_CXX_FLAGS={sanitize_flags}",
-        f"-DCMAKE_EXE_LINKER_FLAGS={sanitize_flags}",
-        "-DCMAKE_BUILD_TYPE=Debug",
-    ]
     logger.info("Building C++ tests with -fsanitize=undefined,address")
     _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build,
-                 extra_args=extra_args)
+                 extra_args=_sanitize_extra_args(sanitize_flags))
     logger.info("Running C++ tests under sanitizers")
     env = dict(os.environ)
     # halt_on_error: any sanitizer hit aborts immediately so the test
@@ -384,6 +445,28 @@ def test_cpp_sanitize(ove_dir, output_dir):
     env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
     return _run_test_binary(
         [os.path.join(build, "ove_test_cpp")], "cpp-sanitize", env=env)
+
+
+def test_cpp_tsan(ove_dir, output_dir):
+    """Build C++ tests with ThreadSanitizer, then run them.
+
+    Companion to test_stub_tsan — catches races in the C++ RAII wrapper
+    layer (e.g. a Mutex moved across threads, an Event whose `signal()`
+    races with `wait()` due to a missed memory barrier in a stub).
+    Mutually exclusive with ASan; lives in its own build dir.
+    """
+    build = os.path.join(output_dir, "tests", "cpp_tsan")
+    flags = (
+        "-fsanitize=thread -fno-omit-frame-pointer -fno-sanitize-recover=all"
+    )
+    logger.info("Building C++ tests with -fsanitize=thread")
+    _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build,
+                 extra_args=_sanitize_extra_args(flags))
+    logger.info("Running C++ tests under TSan")
+    env = dict(os.environ)
+    env["TSAN_OPTIONS"] = "halt_on_error=1:second_deadlock_stack=1"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_cpp")], "cpp-tsan", env=env)
 
 
 def _rust_test_env(ove_dir, output_dir, target_dir):
@@ -528,12 +611,17 @@ def _find_zig(ove_dir):
     sys.exit(1)
 
 
-def _build_zig_test_binary(ove_dir, output_dir, *, debug=False):
+def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
+                           output_subdir=None):
     """Build tests/zig/main.zig into an executable; return (exe_path, cwd).
 
-    Shared by test_zig and test_zig_coverage. When `debug=True` we pass
-    `-ODebug` so kcov's DWARF-driven source attribution produces useful
-    line-level data instead of aggressive-inlined ReleaseSafe noise.
+    Shared by test_zig, test_zig_coverage, and test_zig_debug.  When
+    `debug=True` we pass `-ODebug` so kcov's DWARF-driven source
+    attribution produces useful line-level data and Zig's safety
+    checks stay live across the whole binary.  `output_subdir` lets a
+    caller distinguish between debug builds with different intents
+    (coverage vs plain debug-mode test) so they don't clobber each
+    other's artefacts under output/tests/.
     """
     stub_build = os.path.join(output_dir, "tests", "zig_stub")
     logger.info("Building Zig stub library")
@@ -545,8 +633,9 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False):
     zig_test_dir = os.path.join(ove_dir, "tests", "zig")
     zig_bindings = os.path.join(ove_dir, "bindings", "zig", "ove",
                                 "src", "root.zig")
-    zig_output = os.path.join(output_dir, "tests",
-                              "zig_coverage" if debug else "zig")
+    if output_subdir is None:
+        output_subdir = "zig_coverage" if debug else "zig"
+    zig_output = os.path.join(output_dir, "tests", output_subdir)
     os.makedirs(zig_output, exist_ok=True)
     zig_exe = os.path.join(zig_output, "ove_test_zig")
 
@@ -589,6 +678,26 @@ def test_zig(ove_dir, output_dir):
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir)
     logger.info("Running Zig tests")
     return _run_test_binary([zig_exe], "zig")
+
+
+def test_zig_debug(ove_dir, output_dir):
+    """Build and run Zig binding tests under -ODebug.
+
+    ReleaseSafe (the default for `make test-zig`) keeps integer-overflow,
+    bounds, alignment, and unreachable-code checks but folds them as
+    branches the optimizer may dead-code if it proves safety.  Debug mode
+    keeps every check live and additionally enables the LLVM-level
+    sanitizer hooks Zig's stdlib emits — useful for catching defects in
+    paths that ReleaseSafe optimization may have erased.
+
+    This is the Zig analog of the C/C++ `*-sanitize` jobs: a separate
+    test mode whose CI signal is "the safety net is intact" rather than
+    "the production build works."
+    """
+    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True,
+                                        output_subdir="zig_debug")
+    logger.info("Running Zig tests (Debug mode)")
+    return _run_test_binary([zig_exe], "zig-debug")
 
 
 def _cobertura_to_lcov(xml_path, out_path):
@@ -1884,11 +1993,15 @@ def test_qemu_zephyr_coverage(ove_dir, output_dir):
 TEST_TARGETS = {
     "stub": test_stub,
     "stub-sanitize": test_stub_sanitize,
+    "stub-tsan": test_stub_tsan,
+    "stub-msan": test_stub_msan,
     "cpp": test_cpp,
     "cpp-sanitize": test_cpp_sanitize,
+    "cpp-tsan": test_cpp_tsan,
     "rust": test_rust,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
+    "zig-debug": test_zig_debug,
     "zig-coverage": test_zig_coverage,
     "nuttx": test_nuttx,
     "nuttx-coverage": test_nuttx_coverage,
