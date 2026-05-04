@@ -189,7 +189,7 @@ benchmarks-%: $(VENV_STAMP)
 
 # Single source of truth for `test-<name>` recipes — each delegates to
 # `ove test <name>`. Add new suites here, not as separate targets.
-TEST_NAMES := stub cpp cpp-sanitize rust zig nuttx zephyr \
+TEST_NAMES := stub stub-sanitize cpp cpp-sanitize rust zig nuttx zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
               qemu-nuttx qemu-nuttx-zeroheap \
               qemu-zephyr qemu-zephyr-zeroheap all \
@@ -347,6 +347,24 @@ miri:
 	@DOCS_RS=1 cargo +nightly miri test \
 		--manifest-path bindings/rust/ove/Cargo.toml \
 		--features std
+
+# Run GCC -fanalyzer over the C source tree.  Closest C analog of Rust's
+# Miri / C++'s UBSan+ASan job: catches null deref, use-after-free,
+# double-free, leak-on-realloc, uninitialized-read defects via abstract
+# interpretation rather than runtime checks.  Output is filtered to
+# ove-only paths because the third-party cmocka harness has known
+# analyzer false-positives that aren't actionable here.  Run on demand;
+# not gated in CI to avoid noise from any future toolchain bump.
+.PHONY: c-analyze
+c-analyze:
+	@cmake -B output/tests/c_analyzer -S tests \
+		-DCMAKE_C_COMPILER=gcc \
+		-DCMAKE_C_FLAGS="-fanalyzer -Wno-analyzer-too-complex" \
+		-DCMAKE_BUILD_TYPE=Debug 2>&1 | tail -5
+	@cmake --build output/tests/c_analyzer -j$$(nproc) 2>&1 \
+		| grep -E "(include/ove|backends|tests/include|tests/src).*analyzer-" \
+		| (grep . && echo "FAIL: see analyzer findings above" && exit 1) \
+		|| echo "OK: no -fanalyzer findings in ove sources"
 
 .PHONY: manifest
 manifest: $(VENV_STAMP)
