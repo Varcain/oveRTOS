@@ -53,21 +53,21 @@ fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
             c.ove_queue_destroy(self.handle);
         }
 
-        pub fn send(self: Self, item: *const T, timeout_ms: u32) Error!void {
+        pub inline fn send(self: Self, item: *const T, timeout_ms: u32) Error!void {
             try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ms));
         }
 
-        pub fn receive(self: Self, timeout_ms: u32) Error!T {
+        pub inline fn receive(self: Self, timeout_ms: u32) Error!T {
             var val: T = undefined;
             try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ms));
             return val;
         }
 
-        pub fn sendFromIsr(self: Self, item: *const T) Error!void {
+        pub inline fn sendFromIsr(self: Self, item: *const T) Error!void {
             try err.fromCode(c.ove_queue_send_from_isr(self.handle, @ptrCast(item)));
         }
 
-        pub fn receiveFromIsr(self: Self) Error!T {
+        pub inline fn receiveFromIsr(self: Self) Error!T {
             var val: T = undefined;
             try err.fromCode(c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val)));
             return val;
@@ -101,12 +101,12 @@ fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
             self.tracker.clear();
         }
 
-        pub fn send(self: *Self, item: *const T, timeout_ms: u32) Error!void {
+        pub inline fn send(self: *Self, item: *const T, timeout_ms: u32) Error!void {
             self.tracker.assertSame(self, "ove.Queue");
             try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ms));
         }
 
-        pub fn receive(self: *Self, timeout_ms: u32) Error!T {
+        pub inline fn receive(self: *Self, timeout_ms: u32) Error!T {
             self.tracker.assertSame(self, "ove.Queue");
             var val: T = undefined;
             try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ms));

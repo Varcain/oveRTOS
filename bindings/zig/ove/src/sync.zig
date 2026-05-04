@@ -69,11 +69,11 @@ const HeapMutex = struct {
         c.ove_mutex_destroy(self.handle);
     }
 
-    pub fn lock(self: Mutex, timeout_ms: u32) Error!void {
+    pub inline fn lock(self: Mutex, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ms));
     }
 
-    pub fn unlock(self: Mutex) void {
+    pub inline fn unlock(self: Mutex) void {
         c.ove_mutex_unlock(self.handle);
     }
 
@@ -123,12 +123,12 @@ const ZeroHeapMutex = struct {
         self.tracker.clear();
     }
 
-    pub fn lock(self: *Mutex, timeout_ms: u32) Error!void {
+    pub inline fn lock(self: *Mutex, timeout_ms: u32) Error!void {
         self.tracker.assertSame(self, "ove.Mutex");
         try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ms));
     }
 
-    pub fn unlock(self: *Mutex) void {
+    pub inline fn unlock(self: *Mutex) void {
         self.tracker.assertSame(self, "ove.Mutex");
         c.ove_mutex_unlock(self.handle);
     }
@@ -168,11 +168,11 @@ const HeapRecursiveMutex = struct {
         c.ove_mutex_destroy(self.handle);
     }
 
-    pub fn lock(self: RecursiveMutex, timeout_ms: u32) Error!void {
+    pub inline fn lock(self: RecursiveMutex, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ms));
     }
 
-    pub fn unlock(self: RecursiveMutex) void {
+    pub inline fn unlock(self: RecursiveMutex) void {
         c.ove_recursive_mutex_unlock(self.handle);
     }
 
@@ -210,12 +210,12 @@ const ZeroHeapRecursiveMutex = struct {
         self.tracker.clear();
     }
 
-    pub fn lock(self: *RecursiveMutex, timeout_ms: u32) Error!void {
+    pub inline fn lock(self: *RecursiveMutex, timeout_ms: u32) Error!void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
         try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ms));
     }
 
-    pub fn unlock(self: *RecursiveMutex) void {
+    pub inline fn unlock(self: *RecursiveMutex) void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
         c.ove_recursive_mutex_unlock(self.handle);
     }
@@ -254,11 +254,11 @@ const HeapSemaphore = struct {
         c.ove_sem_destroy(self.handle);
     }
 
-    pub fn take(self: Semaphore, timeout_ms: u32) Error!void {
+    pub inline fn take(self: Semaphore, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_sem_take(self.handle, timeout_ms));
     }
 
-    pub fn give(self: Semaphore) void {
+    pub inline fn give(self: Semaphore) void {
         c.ove_sem_give(self.handle);
     }
 };
@@ -284,12 +284,12 @@ const ZeroHeapSemaphore = struct {
         self.tracker.clear();
     }
 
-    pub fn take(self: *Semaphore, timeout_ms: u32) Error!void {
+    pub inline fn take(self: *Semaphore, timeout_ms: u32) Error!void {
         self.tracker.assertSame(self, "ove.Semaphore");
         try err.fromCode(c.ove_sem_take(self.handle, timeout_ms));
     }
 
-    pub fn give(self: *Semaphore) void {
+    pub inline fn give(self: *Semaphore) void {
         self.tracker.assertSame(self, "ove.Semaphore");
         c.ove_sem_give(self.handle);
     }
@@ -316,15 +316,15 @@ const HeapEvent = struct {
         c.ove_event_destroy(self.handle);
     }
 
-    pub fn wait(self: Event, timeout_ms: u32) Error!void {
+    pub inline fn wait(self: Event, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_event_wait(self.handle, timeout_ms));
     }
 
-    pub fn signal(self: Event) void {
+    pub inline fn signal(self: Event) void {
         c.ove_event_signal(self.handle);
     }
 
-    pub fn signalFromIsr(self: Event) void {
+    pub inline fn signalFromIsr(self: Event) void {
         c.ove_event_signal_from_isr(self.handle);
     }
 };
@@ -350,17 +350,17 @@ const ZeroHeapEvent = struct {
         self.tracker.clear();
     }
 
-    pub fn wait(self: *Event, timeout_ms: u32) Error!void {
+    pub inline fn wait(self: *Event, timeout_ms: u32) Error!void {
         self.tracker.assertSame(self, "ove.Event");
         try err.fromCode(c.ove_event_wait(self.handle, timeout_ms));
     }
 
-    pub fn signal(self: *Event) void {
+    pub inline fn signal(self: *Event) void {
         self.tracker.assertSame(self, "ove.Event");
         c.ove_event_signal(self.handle);
     }
 
-    pub fn signalFromIsr(self: *Event) void {
+    pub inline fn signalFromIsr(self: *Event) void {
         // ISR path — skip pin check (panics from ISR context are unsafe);
         // the assumption is that init() ran from task context and the
         // wrapper is at a stable address by the time an ISR fires.
@@ -391,15 +391,15 @@ const HeapCondVar = struct {
 
     /// Atomically release `mutex` and wait for a signal/broadcast.
     /// Re-acquires `mutex` before returning.
-    pub fn wait(self: CondVar, mutex: Mutex, timeout_ms: u32) Error!void {
+    pub inline fn wait(self: CondVar, mutex: Mutex, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ms));
     }
 
-    pub fn signal(self: CondVar) void {
+    pub inline fn signal(self: CondVar) void {
         c.ove_condvar_signal(self.handle);
     }
 
-    pub fn broadcast(self: CondVar) void {
+    pub inline fn broadcast(self: CondVar) void {
         c.ove_condvar_broadcast(self.handle);
     }
 };
@@ -427,17 +427,17 @@ const ZeroHeapCondVar = struct {
 
     /// Atomically release `mutex` and wait for a signal/broadcast.
     /// Re-acquires `mutex` before returning.
-    pub fn wait(self: *CondVar, mutex: *Mutex, timeout_ms: u32) Error!void {
+    pub inline fn wait(self: *CondVar, mutex: *Mutex, timeout_ms: u32) Error!void {
         self.tracker.assertSame(self, "ove.CondVar");
         try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ms));
     }
 
-    pub fn signal(self: *CondVar) void {
+    pub inline fn signal(self: *CondVar) void {
         self.tracker.assertSame(self, "ove.CondVar");
         c.ove_condvar_signal(self.handle);
     }
 
-    pub fn broadcast(self: *CondVar) void {
+    pub inline fn broadcast(self: *CondVar) void {
         self.tracker.assertSame(self, "ove.CondVar");
         c.ove_condvar_broadcast(self.handle);
     }

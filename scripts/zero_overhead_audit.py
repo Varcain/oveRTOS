@@ -68,6 +68,17 @@ RUST_FORBIDDEN_PANIC_SUBSTRS = (
     "core::fmt::Arguments::new_v1",
 )
 
+# Zig panic / runtime machinery — only checked when --no-panic-symbols
+# is passed.  Mirrors Rust gate.  Caught by default Zig binding once
+# `-fno-stack-check` is set and `pub fn panic` is overridden to abort;
+# any survival in a release ELF means a runtime branch reached the
+# panic path or the stack-probe runtime leaked through LTO.
+ZIG_FORBIDDEN_PANIC_SUBSTRS = (
+    "std.builtin.default_panic",
+    "__zig_probe_stack",
+    "panic_handler",
+)
+
 # Symbol-name suffixes that indicate a function-pointer dispatch table.
 # Combined with an `ove_` prefix and a data nm-type, these mark a regression
 # of the "compile-time backend dispatch" claim.  Plain data descriptors
@@ -125,7 +136,7 @@ def audit(elf, binding, target, nm, cppfilt, output_dir,
     forbidden_cpp_vtable = []
     forbidden_cpp_typeinfo = []
     forbidden_rust_dyn = []
-    forbidden_rust_panic = []
+    forbidden_lang_panic = []
     forbidden_dispatch_tables = []
     forbidden_ove_data_strict = []
     ove_text_symbols = []
@@ -169,7 +180,15 @@ def audit(elf, binding, target, nm, cppfilt, output_dir,
             if no_panic_symbols and any(
                 s in dem for s in RUST_FORBIDDEN_PANIC_SUBSTRS
             ):
-                forbidden_rust_panic.append((stype, dem))
+                forbidden_lang_panic.append((stype, dem))
+
+        # Zig panic / stack-probe machinery — opt-in mirror of the Rust
+        # gate.  Demangling does nothing for Zig (its symbols are already
+        # human-readable), but checking against `dem` works because c++filt
+        # passes through unrecognized formats unchanged.
+        if binding == "zig" and no_panic_symbols:
+            if any(s in dem or s in raw for s in ZIG_FORBIDDEN_PANIC_SUBSTRS):
+                forbidden_lang_panic.append((stype, dem if dem != raw else raw))
 
     # Write the symbols artifact for review.
     output_dir = Path(output_dir)
@@ -195,7 +214,7 @@ def audit(elf, binding, target, nm, cppfilt, output_dir,
     n_vt = len(forbidden_cpp_vtable)
     n_ti = len(forbidden_cpp_typeinfo)
     n_rd = len(forbidden_rust_dyn)
-    n_rp = len(forbidden_rust_panic)
+    n_rp = len(forbidden_lang_panic)
     n_dt = len(forbidden_dispatch_tables)
     n_sd = len(forbidden_ove_data_strict)
     n_txt = len(ove_text_symbols)
@@ -205,7 +224,7 @@ def audit(elf, binding, target, nm, cppfilt, output_dir,
     print(
         f"[zero-overhead audit] target={target} binding={binding} "
         f"vtables={n_vt} typeinfo={n_ti} rust_dyn={n_rd} "
-        f"rust_panic={n_rp} dispatch_tables={n_dt} "
+        f"lang_panic={n_rp} dispatch_tables={n_dt} "
         f"ove_text={n_txt} ove_data={n_dat} {status}"
     )
 
@@ -217,8 +236,8 @@ def audit(elf, binding, target, nm, cppfilt, output_dir,
             print(f"  C++ typeinfo        [{stype}] {name}", file=sys.stderr)
         for stype, name in forbidden_rust_dyn:
             print(f"  Rust dyn-vt         [{stype}] {name}", file=sys.stderr)
-        for stype, name in forbidden_rust_panic:
-            print(f"  Rust panic/fmt      [{stype}] {name}", file=sys.stderr)
+        for stype, name in forbidden_lang_panic:
+            print(f"  panic/fmt symbol    [{stype}] {name}", file=sys.stderr)
         for stype, name in forbidden_dispatch_tables:
             print(f"  dispatch-table-name [{stype}] {name}", file=sys.stderr)
         for stype, name in forbidden_ove_data_strict:

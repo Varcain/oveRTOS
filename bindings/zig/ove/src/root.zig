@@ -13,6 +13,27 @@
 //! const ove = @import("ove");
 //! ```
 //!
+//! ## Hot-path inline discipline
+//!
+//! Wrapper methods that are a thin `c.ove_*(...)` plus
+//! `err.fromCode(rc)` are marked `pub inline fn` so the LLVM
+//! optimizer folds the FFI call, the error-code switch, and the
+//! `Error!void` construction into the caller's frame.  Without this,
+//! `Mutex.lock` and friends compile as out-of-line `bl` targets that
+//! cost an extra ~50–200 ns per call on Cortex-M and show up as a
+//! 5–15% per-binding overhead on the shortest sync paths.  Any new
+//! wrapper added here should keep the body a one-liner and be marked
+//! `pub inline fn` — Zig's auto-inliner is good but explicit `inline`
+//! removes ambiguity at the IR level for cross-module folding.
+//!
+//! Cross-language inlining between Zig and C is gated behind the
+//! `OVE_CROSS_LTO=ON` CMake option (declared in
+//! `cmake/OveCommon.cmake`).  It is OFF by default because it
+//! requires a bitcode-aware linker matching across the C and Zig
+//! toolchains; per Gale's "three quiet barriers" analysis,
+//! mismatched feature sets between the C and Zig sides silently
+//! kill the inliner without warning.
+//!
 //! ## Key modules
 //!
 //! | Module | Description |
