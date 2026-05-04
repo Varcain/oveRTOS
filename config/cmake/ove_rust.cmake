@@ -167,6 +167,45 @@ function(ove_build_rust_crate TARGET)
         if(ARM_SYSROOT_INCLUDE)
             list(APPEND CARGO_ENV_VARS "ARM_SYSROOT_INCLUDE=${ARM_SYSROOT_INCLUDE}")
         endif()
+
+        # Map MCU to rustc target-cpu so codegen tunes for the exact
+        # pipeline (Cortex-M7 dual-issue, M4 DSP) rather than the generic
+        # thumbv7em baseline.  Mirrors the Zig path's -mcpu mapping; only
+        # target-cpu is set (not target-feature) — feature-set mismatches
+        # against the C side silently kill LLVM's inliner under cross-LTO,
+        # so we let the triple imply features and pin only the model.
+        set(_RUST_FLAGS "")
+        if(DEFINED OVE_MCU)
+            string(TOLOWER "${OVE_MCU}" _MCU_LOWER)
+            set(_RUST_CPU "")
+            if(_MCU_LOWER MATCHES "stm32f7" OR _MCU_LOWER MATCHES "stm32h7"
+               OR _MCU_LOWER MATCHES "cortex.m7" OR _MCU_LOWER MATCHES "cmsdk_cm7")
+                set(_RUST_CPU "cortex-m7")
+            elseif(_MCU_LOWER MATCHES "stm32f4" OR _MCU_LOWER MATCHES "cortex.m4"
+                   OR _MCU_LOWER MATCHES "cmsdk_cm4")
+                set(_RUST_CPU "cortex-m4")
+            elseif(_MCU_LOWER MATCHES "stm32f3" OR _MCU_LOWER MATCHES "cortex.m3"
+                   OR _MCU_LOWER MATCHES "cmsdk_cm3")
+                set(_RUST_CPU "cortex-m3")
+            endif()
+            if(_RUST_CPU)
+                set(_RUST_FLAGS "-Ctarget-cpu=${_RUST_CPU}")
+            endif()
+        endif()
+        # Cross-language LTO opt-in (paired with OveCommon.cmake's
+        # -flto=thin on the C side).  rustc emits LLVM bitcode in the
+        # staticlib so the final linker can inline across the FFI
+        # boundary.  Requires a bitcode-aware linker — lld is the path
+        # of least resistance; arm-none-eabi-gcc needs the gold plugin
+        # which is not the default install.  The CMake option is
+        # declared in cmake/OveCommon.cmake so it is visible at the
+        # board level too.
+        if(OVE_CROSS_LTO)
+            string(STRIP "${_RUST_FLAGS} -Clinker-plugin-lto" _RUST_FLAGS)
+        endif()
+        if(_RUST_FLAGS)
+            list(APPEND CARGO_ENV_VARS "RUSTFLAGS=${_RUST_FLAGS}")
+        endif()
     endif()
 
     # ── Generate storage type sizes for Rust bindings ──────────────────

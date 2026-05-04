@@ -92,6 +92,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     ///
     /// # Errors
     /// Returns [`Error::QueueFull`] if the queue has no space.
+    #[inline]
     pub fn send_from_isr(&self, item: &T) -> Result<()> {
         let rc =
             unsafe { bindings::ove_queue_send_from_isr(self.handle, item as *const T as *const _) };
@@ -102,6 +103,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the queue is empty.
+    #[inline]
     pub fn receive_from_isr(&self) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {

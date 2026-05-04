@@ -97,6 +97,21 @@ jobs:
           path: output/
           retention-days: 7
 
+  rust-miri:
+    name: Rust Miri (UB detector)
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust nightly with Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri, rust-src
+
+      - name: Run Miri on binding's pure-Rust unit tests
+        run: make miri
+
   zig-tests:
     name: Zig Wrapper Tests
     runs-on: ubuntu-latest

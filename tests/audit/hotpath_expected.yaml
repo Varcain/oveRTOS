@@ -246,7 +246,7 @@ host_posix_benchmark_rust:
       allowed_calls:
         - "_ZN3ove6thread6Thread5spawn17h*"
         - ove_thread_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust THREAD_CTX_SWITCH::__run_tramp"
       pattern: '_ZN.+THREAD_CTX_SWITCH11__run_tramp17h[0-9a-f]+E$'
@@ -254,7 +254,7 @@ host_posix_benchmark_rust:
       allowed_calls:
         - ove_sem_give
         - ove_sem_take
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Mutex ─────────────────────────────────────────────────
     - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp"
@@ -268,7 +268,7 @@ host_posix_benchmark_rust:
       allowed_calls:
         - "_ZN3ove4sync5Mutex3new17h*"
         - ove_mutex_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust MUTEX_CONTENTION_2T::__run_tramp"
       pattern: '_ZN.+MUTEX_CONTENTION_2T11__run_tramp17h[0-9a-f]+E$'
@@ -276,7 +276,7 @@ host_posix_benchmark_rust:
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp"
       pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -295,7 +295,7 @@ host_posix_benchmark_rust:
       allowed_calls:
         - "_ZN3ove4sync9Semaphore3new17h*"
         - ove_sem_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Condvar / event ──────────────────────────────────────
     - name: "Rust CONDVAR_SIGNAL_WAIT::__run_tramp"
@@ -324,7 +324,7 @@ host_posix_benchmark_rust:
       allowed_calls:
         - "_ZN3ove5queue18Queue$LT$T$C$_$GT$3new17h*"
         - ove_queue_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust STREAM_SEND_RECV_64B::__run_tramp"
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
@@ -644,7 +644,7 @@ stm32f746_freertos_benchmark_rust:
       allowed_calls:
         - "_ZN3ove6thread6Thread5spawn17h*"
         - ove_thread_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust THREAD_CTX_SWITCH::__run_tramp (ARM)"
       pattern: '_ZN.+THREAD_CTX_SWITCH11__run_tramp17h[0-9a-f]+E$'
@@ -652,7 +652,7 @@ stm32f746_freertos_benchmark_rust:
       allowed_calls:
         - ove_sem_give
         - ove_sem_take
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp (ARM)"
       pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -669,7 +669,7 @@ stm32f746_freertos_benchmark_rust:
         - ove_mutex_destroy
         - "_ZN3ove4sync5Mutex3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust MUTEX_CONTENTION_2T::__run_tramp (ARM)"
       pattern: '_ZN.+MUTEX_CONTENTION_2T11__run_tramp17h[0-9a-f]+E$'
@@ -677,7 +677,7 @@ stm32f746_freertos_benchmark_rust:
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp (ARM)"
       pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -697,7 +697,7 @@ stm32f746_freertos_benchmark_rust:
         - ove_sem_destroy
         - "_ZN3ove4sync9Semaphore3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust CONDVAR_SIGNAL_WAIT::__run_tramp (ARM)"
       pattern: '_ZN.+CONDVAR_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
@@ -729,7 +729,7 @@ stm32f746_freertos_benchmark_rust:
       allowed_calls:
         - "_ZN3ove5queue18Queue$LT$T$C$_$GT$3new17h*"
         - ove_queue_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust STREAM_SEND_RECV_64B::__run_tramp (ARM)"
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
@@ -1001,7 +1001,7 @@ stm32f746_freertos_benchmark_zeroheap_rust:
       allowed_calls:
         - ove_sem_give
         - ove_sem_take
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp (ARM, zeroheap)"
       pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -1014,7 +1014,7 @@ stm32f746_freertos_benchmark_zeroheap_rust:
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp (ARM, zeroheap)"
       pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -1338,7 +1338,7 @@ stm32f746_nuttx_benchmark_rust:
       allowed_calls:
         - "_ZN3ove6thread6Thread5spawn17h*"
         - ove_thread_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust THREAD_CTX_SWITCH::__run_tramp (NuttX, ARM)"
       pattern: '_ZN.+THREAD_CTX_SWITCH11__run_tramp17h[0-9a-f]+E$'
@@ -1346,7 +1346,7 @@ stm32f746_nuttx_benchmark_rust:
       allowed_calls:
         - ove_sem_give
         - ove_sem_take
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp (NuttX, ARM)"
       pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -1361,7 +1361,7 @@ stm32f746_nuttx_benchmark_rust:
         - ove_mutex_destroy
         - "_ZN3ove4sync5Mutex3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust MUTEX_CONTENTION_2T::__run_tramp (NuttX, ARM)"
       pattern: '_ZN.+MUTEX_CONTENTION_2T11__run_tramp17h[0-9a-f]+E$'
@@ -1369,7 +1369,7 @@ stm32f746_nuttx_benchmark_rust:
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp (NuttX, ARM)"
       pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -1389,7 +1389,7 @@ stm32f746_nuttx_benchmark_rust:
         - ove_sem_destroy
         - "_ZN3ove4sync9Semaphore3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust CONDVAR_SIGNAL_WAIT::__run_tramp (NuttX, ARM)"
       pattern: '_ZN.+CONDVAR_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
@@ -1420,7 +1420,7 @@ stm32f746_nuttx_benchmark_rust:
       allowed_calls:
         - "_ZN3ove5queue18Queue$LT$T$C$_$GT$3new17h*"
         - ove_queue_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust STREAM_SEND_RECV_64B::__run_tramp (NuttX, ARM)"
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
@@ -1730,7 +1730,7 @@ stm32f746_zephyr_benchmark_rust:
       allowed_calls:
         - "_ZN3ove6thread6Thread5spawn17h*"
         - ove_thread_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust THREAD_CTX_SWITCH::__run_tramp (Zephyr, ARM)"
       pattern: '_ZN.+THREAD_CTX_SWITCH11__run_tramp17h[0-9a-f]+E$'
@@ -1738,7 +1738,7 @@ stm32f746_zephyr_benchmark_rust:
       allowed_calls:
         - ove_sem_give
         - ove_sem_take
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust MUTEX_LOCK_UNLOCK::__run_tramp (Zephyr, ARM)"
       pattern: '_ZN.+MUTEX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -1753,7 +1753,7 @@ stm32f746_zephyr_benchmark_rust:
         - ove_mutex_destroy
         - "_ZN3ove4sync5Mutex3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust MUTEX_CONTENTION_2T::__run_tramp (Zephyr, ARM)"
       pattern: '_ZN.+MUTEX_CONTENTION_2T11__run_tramp17h[0-9a-f]+E$'
@@ -1761,7 +1761,7 @@ stm32f746_zephyr_benchmark_rust:
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
     - name: "Rust RMTX_LOCK_UNLOCK::__run_tramp (Zephyr, ARM)"
       pattern: '_ZN.+RMTX_LOCK_UNLOCK11__run_tramp17h[0-9a-f]+E$'
@@ -1781,7 +1781,7 @@ stm32f746_zephyr_benchmark_rust:
         - ove_sem_destroy
         - "_ZN3ove4sync9Semaphore3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust CONDVAR_SIGNAL_WAIT::__run_tramp (Zephyr, ARM)"
       pattern: '_ZN.+CONDVAR_SIGNAL_WAIT11__run_tramp17h[0-9a-f]+E$'
@@ -1812,7 +1812,7 @@ stm32f746_zephyr_benchmark_rust:
       allowed_calls:
         - "_ZN3ove5queue18Queue$LT$T$C$_$GT$3new17h*"
         - ove_queue_destroy
-        - "_ZN4core6result13unwrap_failed17h*"
+        - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Rust STREAM_SEND_RECV_64B::__run_tramp (Zephyr, ARM)"
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'

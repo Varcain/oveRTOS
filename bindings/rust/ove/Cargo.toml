@@ -21,3 +21,16 @@ bindgen = "0.72"
 [package.metadata.docs.rs]
 features = ["std"]
 rustdoc-args = ["--cfg", "docsrs"]
+
+# Release profile tuned for the embedded target surface that drives this
+# binding (Cortex-M, no-unwind, size-conscious).  Defaults give
+# lto=false / codegen-units=16 / panic=unwind, which leaves Rust-side
+# inlining off and keeps the panic-unwind machinery in the ELF — neither
+# of those make sense when the C side is compiled `-Os` with abort-on-fault.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+opt-level = "s"
+strip = "symbols"
+overflow-checks = false

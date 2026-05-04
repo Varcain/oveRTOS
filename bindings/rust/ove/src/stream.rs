@@ -101,6 +101,7 @@ impl<const N: usize> Stream<N> {
     ///
     /// # Errors
     /// Returns an error if the stream is full.
+    #[inline]
     pub fn send_from_isr(&self, data: &[u8]) -> Result<usize> {
         let mut bytes_sent: usize = 0;
         let rc = unsafe {
@@ -121,6 +122,7 @@ impl<const N: usize> Stream<N> {
     ///
     /// # Errors
     /// Returns an error if the stream is empty.
+    #[inline]
     pub fn receive_from_isr(&self, buf: &mut [u8]) -> Result<usize> {
         let mut bytes_received: usize = 0;
         let rc = unsafe {
@@ -139,12 +141,14 @@ impl<const N: usize> Stream<N> {
     ///
     /// # Errors
     /// Returns an error if the underlying RTOS call fails.
+    #[inline]
     pub fn reset(&self) -> Result<()> {
         let rc = unsafe { bindings::ove_stream_reset(self.handle) };
         Error::from_code(rc)
     }
 
     /// Return the number of bytes currently available for reading.
+    #[inline]
     pub fn bytes_available(&self) -> usize {
         unsafe { bindings::ove_stream_bytes_available(self.handle) }
     }

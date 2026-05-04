@@ -9,6 +9,25 @@
 //! Provides RAII types for threads, mutexes, semaphores, queues, timers, etc.
 //! and the `app!` macro that generates all FFI boilerplate so application code
 //! can be written in pure safe Rust.
+//!
+//! # Hot-path inline discipline
+//!
+//! Wrapper methods that are a thin `unsafe { ffi::ove_*(...) }` plus
+//! `Error::from_code(rc)` are marked `#[inline]` so the rustc/LLVM
+//! optimizer can fold the FFI call, the error-code match, and the
+//! `Result` construction into the caller's frame.  Without this,
+//! `Mutex::lock` and friends compile as out-of-line `bl` targets that
+//! cost an extra ~20–60 ns per call on Cortex-M and show up as a 6–15%
+//! per-binding overhead on the shortest sync paths.  The same
+//! discipline applies to any new wrapper added here — keep the body a
+//! one-liner and add `#[inline]`.
+//!
+//! Cross-language inlining between Rust and C is gated behind the
+//! `OVE_CROSS_LTO=ON` CMake option.  It is off by default because it
+//! requires a bitcode-aware linker and a target-cpu/target-feature
+//! match that the embedded toolchains do not always provide; per
+//! Gale's "three quiet barriers" analysis, mismatched feature sets
+//! silently kill the inliner without warning.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 // Pedantic/nursery lints intentionally relaxed for this crate:
