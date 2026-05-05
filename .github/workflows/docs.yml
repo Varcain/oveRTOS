@@ -67,8 +67,13 @@ jobs:
           BUILT=""
           FAILED=""
 
-          # Discover apps from app.yaml config_name fields
-          APPS=$(grep -rh 'config_name:' apps/*/app.yaml apps/*/*/app.yaml 2>/dev/null \
+          # Discover apps from app.yaml config_name fields.  Recursive
+          # find — the heap/zh split puts app.yaml at depth 4
+          # (apps/<lang>/<heap|zeroheap>/<name>/app.yaml), and pre-split
+          # apps still live at depth 3 (apps/<lang>/<name>/app.yaml), so
+          # walking the whole tree is the only glob-stable form.
+          APPS=$(find apps -name app.yaml -print0 2>/dev/null \
+                 | xargs -0 grep -h 'config_name:' 2>/dev/null \
                  | sed 's/.*config_name: *//' | sort -u)
 
           for name in $APPS; do

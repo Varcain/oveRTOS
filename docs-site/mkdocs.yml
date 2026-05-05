@@ -13,6 +13,11 @@ theme:
     - scheme: slate
       primary: indigo
 markdown_extensions:
+  # `attr_list` enables the `{:attr="value"}` syntax appended to inline
+  # markdown elements — used by example pages to add target="_blank" to
+  # external WASM-demo links so they open in a new tab instead of
+  # navigating away from the docs.
+  - attr_list
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -76,12 +81,6 @@ nav:
       - C++: examples/example/cpp.md
       - Rust: examples/example/rust.md
       - Zig: examples/example/zig.md
-    - Benchmark:
-      - Overview: examples/benchmark/index.md
-      - C: examples/benchmark/c.md
-      - C++: examples/benchmark/cpp.md
-      - Rust: examples/benchmark/rust.md
-      - Zig: examples/benchmark/zig.md
     - Networking:
       - Overview: examples/example_net/index.md
       - C: examples/example_net/c.md
