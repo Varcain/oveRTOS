@@ -51,10 +51,43 @@ def _glob(root, *exts):
                 yield os.path.join(d, f)
 
 
+def _external_app_roots():
+    """Return absolute paths advertised via the OVE_EXTERNAL_APPS env var.
+
+    Supports a single path or PATH-style `os.pathsep`-separated list so a
+    sibling group of external apps can be linted together (e.g. when CI
+    walks `overtos_apps/{hiroic, hiroic_cpp, hiroic_rust, hiroic_zig}`).
+    Empty entries, nonexistent paths, and duplicates are filtered out so
+    callers can blindly extend `_glob()` results without further checks.
+
+    The variable is set by `config/make/ove_app.mk` when an external
+    app's Makefile delegates `make lint` / `make format` to `ove`.
+    """
+    raw = os.environ.get("OVE_EXTERNAL_APPS", "")
+    seen = set()
+    roots = []
+    for p in raw.split(os.pathsep):
+        p = p.strip()
+        if not p:
+            continue
+        ap = os.path.abspath(p)
+        if ap in seen or not os.path.isdir(ap):
+            continue
+        seen.add(ap)
+        roots.append(ap)
+    return roots
+
+
 def _clang_format(ove_dir, check):
     if not shutil.which("clang-format"):
         return ("clang-format", "SKIP", "not installed")
     files = list(_glob(ove_dir, ".c", ".h", ".cpp", ".hpp"))
+    # External apps advertised via OVE_EXTERNAL_APPS are formatted with
+    # the same .clang-format from ove_dir (clang-format walks up from
+    # each input file to find the nearest config; rooted at ove_dir's
+    # dotfile when the external tree has none, which is the convention).
+    for ext_root in _external_app_roots():
+        files.extend(_glob(ext_root, ".c", ".h", ".cpp", ".hpp"))
     # Doxyfile.cpp is a doxygen config (key=value), not C++ source — skip
     # it despite the .cpp suffix so clang-format doesn't try to reformat
     # it as code.
@@ -86,6 +119,25 @@ def _cargo_fmt(ove_dir, check):
             cargo = os.path.join(root, entry, "Cargo.toml")
             if os.path.isfile(cargo):
                 crates.append(os.path.dirname(cargo))
+    # External apps: each OVE_EXTERNAL_APPS entry may itself be a Rust
+    # crate (single-app case) or contain Rust crates as immediate
+    # subdirectories (sibling-group case, e.g. overtos_apps/hiroic_rust).
+    for ext_root in _external_app_roots():
+        if os.path.isfile(os.path.join(ext_root, "Cargo.toml")):
+            crates.append(ext_root)
+        try:
+            entries = sorted(os.listdir(ext_root))
+        except OSError:
+            entries = []
+        for entry in entries:
+            sub = os.path.join(ext_root, entry, "Cargo.toml")
+            if os.path.isfile(sub):
+                crates.append(os.path.dirname(sub))
+    # De-duplicate while preserving order (a path could be reached via
+    # both the in-tree and external-app code paths in unusual layouts).
+    _seen = set()
+    crates = [c for c in crates
+              if not (c in _seen or _seen.add(c))]
     crates = [c for c in crates if os.path.isfile(
         os.path.join(c, "Cargo.toml"))]
     if not crates:
@@ -124,6 +176,8 @@ def _zig_fmt(ove_dir, check):
     if not zig:
         return ("zig fmt", "SKIP", "not installed (run `ove download` first)")
     files = list(_glob(ove_dir, ".zig"))
+    for ext_root in _external_app_roots():
+        files.extend(_glob(ext_root, ".zig"))
     if not files:
         return ("zig fmt", "OK", "no sources")
     cmd = [zig, "fmt"] + (["--check"] if check else []) + files
@@ -301,6 +355,10 @@ _GCC_ONLY_PREFIXES = (
     "--param=",
     "-Wno-pointer-sign",  # clang lacks this; gcc-only spelling
     "-fdiagnostics-color=",  # clang uses different syntax; harmless to drop
+    # NuttX cross builds inject `-fprofile-abs-path` (gcc 9+) which
+    # clang doesn't accept.  Stripping it has no effect on diagnostics
+    # since coverage instrumentation is irrelevant to clang-tidy.
+    "-fprofile-abs-path",
 )
 
 
@@ -623,6 +681,8 @@ def _zig_ast_check(ove_dir, check):
     if not zig:
         return ("zig ast-check", "SKIP", "not installed (run `ove download` first)")
     files = list(_glob(ove_dir, ".zig"))
+    for ext_root in _external_app_roots():
+        files.extend(_glob(ext_root, ".zig"))
     if not files:
         return ("zig ast-check", "OK", "no sources")
     failures = []

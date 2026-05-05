@@ -30,12 +30,12 @@
 //!   the `alloc` (or `std`) feature is enabled and a `#[global_allocator]`
 //!   is registered.  Cannot be used in zeroheap mode.
 //!
-//! - [`Vec`]`<T, N>` from this module is fixed-capacity; capacity is a
-//!   const generic and storage lives inline in the type.  Always available,
-//!   in both heap and zeroheap modes.  Fallible: `push` returns
-//!   `Result<(), T>`; the [`ContainerExt::ove_push`] adapter converts that
-//!   into [`crate::Error::NoMemory`] for consistency with the rest of the
-//!   binding's error type.
+//! - [`Vec<T, N>`](Vec) from this module is fixed-capacity; capacity is
+//!   a const generic and storage lives inline in the type.  Always
+//!   available, in both heap and zeroheap modes.  Fallible: `push`
+//!   returns `Result<(), T>`; the [`ContainerExt::ove_push`] adapter
+//!   converts that into [`crate::Error::NoMemory`] for consistency with
+//!   the rest of the binding's error type.
 //!
 //! ## What is intentionally **not** re-exported
 //!
@@ -45,7 +45,7 @@
 //!   — the extra import documents the intent.
 
 pub use heapless::{
-    binary_heap, sorted_linked_list, Deque, HistoryBuf, IndexMap, IndexSet, LinearMap, String, Vec,
+    Deque, HistoryBuf, IndexMap, IndexSet, LinearMap, String, Vec, binary_heap, sorted_linked_list,
 };
 
 // `heapless::pool` is gated on architecture features (arm_llsc / 32- or

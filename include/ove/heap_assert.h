@@ -48,7 +48,8 @@
  * sim build doesn't have a kernel heap to protect anyway, and the
  * runtime trap in ove_heap_lock.c remains in place for any backend
  * that does. */
-#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__) && !defined(__EMSCRIPTEN__)
+#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__) && \
+	!defined(__EMSCRIPTEN__)
 
 #include <stddef.h>
 
