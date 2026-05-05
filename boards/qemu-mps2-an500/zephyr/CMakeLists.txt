@@ -71,10 +71,15 @@ ove_zephyr_add_common_includes(
 
 # Redirect malloc/free to k_malloc/k_free so allocations go through
 # Zephyr's _system_heap (queryable via sys_heap_runtime_stats_get).
-# Only affects ove sources — the prebuilt libc is unaffected.
+# Only affects ove C sources — the prebuilt libc is unaffected.
+# C++ is excluded: libstdc++ `<cstdlib>` does `using ::calloc;` etc.,
+# which the preprocessor would rewrite to `using ::k_calloc;` and
+# fail because k_calloc isn't declared at namespace scope yet.  C++
+# code that wants Zephyr's heap should call k_malloc/k_calloc/etc
+# directly (or go through OVE_BACKEND_MALLOC).
 target_compile_definitions(app PRIVATE
-    malloc=k_malloc
-    free=k_free
-    calloc=k_calloc
-    realloc=k_realloc
+    $<$<COMPILE_LANGUAGE:C>:malloc=k_malloc>
+    $<$<COMPILE_LANGUAGE:C>:free=k_free>
+    $<$<COMPILE_LANGUAGE:C>:calloc=k_calloc>
+    $<$<COMPILE_LANGUAGE:C>:realloc=k_realloc>
 )

@@ -40,8 +40,15 @@
  * redeclarations below as "attribute does not appear on the first
  * declaration" against the libc decls.  GCC accepts that pattern; the
  * Rust crate's build.rs passes -D__BINDGEN__, so skip the redecls there
- * — bindgen never emits libc allocator symbols anyway. */
-#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__)
+ * — bindgen never emits libc allocator symbols anyway.
+ *
+ * Emscripten/clang has the same strict behaviour as bindgen's libclang:
+ * the `error` attribute can only appear on the first declaration of a
+ * function, not a redeclaration.  Skip the trap there too — the WASM
+ * sim build doesn't have a kernel heap to protect anyway, and the
+ * runtime trap in ove_heap_lock.c remains in place for any backend
+ * that does. */
+#if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__) && !defined(__EMSCRIPTEN__)
 
 #include <stddef.h>
 

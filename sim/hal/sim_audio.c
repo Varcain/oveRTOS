@@ -161,7 +161,11 @@ static int sim_source_process(void *ctx, const struct ove_audio_buf *in, struct 
 
 static void sim_source_destroy(void *ctx)
 {
+#ifdef CONFIG_OVE_ZERO_HEAP
+	(void)ctx;  /* static storage — see ove_audio_device_source */
+#else
 	free(ctx);
+#endif
 }
 
 static const struct ove_audio_node_ops sim_source_ops = {
@@ -264,7 +268,11 @@ static void sim_sink_destroy(void *ctx)
 	struct sim_sink_ctx *sc = (struct sim_sink_ctx *)ctx;
 	if (sc->running)
 		sim_sink_stop(ctx);
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* static storage — see ove_audio_device_sink */
+#else
 	free(ctx);
+#endif
 }
 
 static const struct ove_audio_node_ops sim_sink_ops = {
@@ -296,16 +304,33 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 
 	/* Accept both sim and I2S transport -- sim handles both. */
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap mode: picolibc / Zephyr / NuttX zh disable malloc/calloc.
+	 * One sim source per app — file-scope static storage suffices. */
+	static struct sim_source_ctx _ctx_storage;
+	static int _ctx_used;
+	if (_ctx_used)
+		return OVE_ERR_NO_MEMORY;
+	struct sim_source_ctx *ctx = &_ctx_storage;
+	memset(ctx, 0, sizeof(*ctx));
+	_ctx_used = 1;
+#else
 	struct sim_source_ctx *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx)
 		return OVE_ERR_NO_MEMORY;
+#endif
 
 	ctx->fmt = cfg->fmt;
 	ctx->sim_fmt = fmt_from_ove(&cfg->fmt);
 
 	int idx = ove_audio_graph_add_node(g, &sim_source_ops, ctx, name, OVE_AUDIO_NODE_SOURCE);
-	if (idx < 0)
+	if (idx < 0) {
+#ifdef CONFIG_OVE_ZERO_HEAP
+		_ctx_used = 0;
+#else
 		free(ctx);
+#endif
+	}
 	return idx;
 }
 
@@ -315,9 +340,20 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	if (!g || !cfg || !name)
 		return OVE_ERR_INVALID_PARAM;
 
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap mode: see ove_audio_device_source comment. */
+	static struct sim_sink_ctx _ctx_storage;
+	static int _ctx_used;
+	if (_ctx_used)
+		return OVE_ERR_NO_MEMORY;
+	struct sim_sink_ctx *ctx = &_ctx_storage;
+	memset(ctx, 0, sizeof(*ctx));
+	_ctx_used = 1;
+#else
 	struct sim_sink_ctx *ctx = calloc(1, sizeof(*ctx));
 	if (!ctx)
 		return OVE_ERR_NO_MEMORY;
+#endif
 
 	ctx->fmt = cfg->fmt;
 	ctx->sim_fmt = fmt_from_ove(&cfg->fmt);
@@ -325,8 +361,13 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 	ctx->frames_per_period = g->frames_per_period;
 
 	int idx = ove_audio_graph_add_node(g, &sim_sink_ops, ctx, name, OVE_AUDIO_NODE_SINK);
-	if (idx < 0)
+	if (idx < 0) {
+#ifdef CONFIG_OVE_ZERO_HEAP
+		_ctx_used = 0;
+#else
 		free(ctx);
+#endif
+	}
 	return idx;
 }
 
