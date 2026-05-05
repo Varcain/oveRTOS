@@ -315,9 +315,22 @@ macro(ove_nuttx_register_app)
 
     # Force C++20 for oveRTOS C++ bindings — NuttX defaults to C++17
     # but the bindings use concepts, requires, and std::integral.
+    #
+    # `-D_STDLIB_H_=1` suppresses the toolchain's <stdlib.h> body when
+    # libstdc++'s <cstdlib> does `#include_next <stdlib.h>`.  NuttX's
+    # own stdlib.h has already been pulled in via the NuttX header chain
+    # (e.g. nuttx/lib/lib.h → kmalloc.h → stdlib.h) and uses guard
+    # `__INCLUDE_STDLIB_H`; the toolchain's picolibc stdlib.h uses
+    # `_STDLIB_H_`.  Without this define, both bodies are processed and
+    # `div_t` / `ldiv_t` / `lldiv_t` collide (toolchain declares them as
+    # anonymous-struct typedefs, NuttX as `struct div_s` aliases).
+    # NuttX's stdlib.h provides all malloc/free/abort/exit/atoi
+    # declarations libstdc++ needs, so dropping the toolchain's body is
+    # safe.
     if(OVE_APP_LANG STREQUAL "cpp")
         target_compile_options(${_OVE_NX_TARGET} PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:-std=c++20>)
+            $<$<COMPILE_LANGUAGE:CXX>:-std=c++20>
+            $<$<COMPILE_LANGUAGE:CXX>:-D_STDLIB_H_=1>)
     endif()
 
     # NuttX doesn't link libstdc++, so std::optional/std::array hard-

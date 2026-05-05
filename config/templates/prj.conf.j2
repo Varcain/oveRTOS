@@ -137,6 +137,16 @@ CONFIG_STD_CPP20=y
 CONFIG_GLIBCXX_LIBCPP=y
 {% endif %}
 
+# GNU-style global static constructors — required by libstdc++ /
+# picolibc and by Zephyr modules that emit C++/init-array constructors.
+# Without it, ld.bfd refuses the link with "GNU-style constructors
+# required but STATIC_INIT_GNU not enabled" on any C app that
+# transitively pulls in such an object (DHCP/DNS/net subsystems on
+# stm32f746 zephyr-zh, picolibc init paths, etc.).  Cheap when no
+# constructors actually exist — just enables the linker section
+# layout.
+CONFIG_STATIC_INIT_GNU=y
+
 {% if config.get("CONFIG_OVE_LVGL") == True %}
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") != True %}
 # LVGL display (v9) — use Zephyr's display subsystem
