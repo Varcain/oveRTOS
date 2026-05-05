@@ -1,6 +1,6 @@
 # Networking Example — Rust
 
-Source: `apps/rust/example_net/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_net_rust/){:target="_blank"}**
+Source: `apps/rust/example_net/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_net_rust_heap/){:target="_blank"}**
 
 Exercises the full networking stack with a pass/fail test framework: netif configuration, DNS resolution, TCP/UDP sockets, HTTP client (GET/POST/PUT), SNTP time sync, MQTT pub/sub, and embedded HTTP server.
 

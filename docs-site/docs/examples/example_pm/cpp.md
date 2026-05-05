@@ -1,6 +1,6 @@
 # Power Management Example — C++
 
-Source: `apps/cpp/example_pm/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_pm_cpp/){:target="_blank"}**
+Source: `apps/cpp/example_pm/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_pm_cpp_heap/){:target="_blank"}**
 
 Demonstrates the PM state machine with automatic idle transitions, peripheral power domain reference counting, wake source registration (GPIO button + UART), custom battery-aware power policy, transition notifications, and runtime power statistics.
 

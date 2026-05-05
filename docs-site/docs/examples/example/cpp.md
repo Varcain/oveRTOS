@@ -1,6 +1,6 @@
 # Basic Example — C++
 
-Source: `apps/cpp/example/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_cpp/){:target="_blank"}**
+Source: `apps/cpp/example/src/app.cpp` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}**
 
 The C++ example demonstrates the `ove::` namespace wrappers with RAII semantics, template-based objects, and the LVGL C++20 fluent builders.
 

@@ -26,9 +26,9 @@ A periodic software timer fires every 200 ms to read the shared counter and upda
 
 | Language | Source | WASM Demo |
 |----------|--------|-----------|
-| [C](c.md) | `apps/c/example/src/app.c` | **[Run in browser](https://varcain.github.io/oveRTOS/example_c/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/example/src/app.cpp` | **[Run in browser](https://varcain.github.io/oveRTOS/example_cpp/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/example/src/lib.rs` | **[Run in browser](https://varcain.github.io/oveRTOS/example_rust/){:target="_blank"}** |
+| [C](c.md) | `apps/c/example/src/app.c` | **[Run in browser](https://varcain.github.io/oveRTOS/example_c_heap/){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/example/src/app.cpp` | **[Run in browser](https://varcain.github.io/oveRTOS/example_cpp_heap/){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/example/src/lib.rs` | **[Run in browser](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"}** |
 | [Zig](zig.md) | `apps/zig/example/src/main.zig` | *Not yet available* |
 
 ## Key APIs demonstrated

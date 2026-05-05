@@ -1,6 +1,6 @@
 # Networking Example — C
 
-Source: `apps/c/example_net/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_net/){:target="_blank"}**
+Source: `apps/c/example_net/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_net_heap/){:target="_blank"}**
 
 Exercises the full networking stack with a pass/fail test framework: netif configuration, DNS resolution, TCP/UDP sockets, HTTP client (GET/POST/PUT), SNTP time sync, MQTT pub/sub, and embedded HTTP server.
 

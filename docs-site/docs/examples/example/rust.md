@@ -1,6 +1,6 @@
 # Basic Example — Rust
 
-Source: `apps/rust/example/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_rust/){:target="_blank"}**
+Source: `apps/rust/example/src/lib.rs` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_rust_heap/){:target="_blank"}**
 
 The Rust example demonstrates the `ove` crate with `no_std` support, atomic shared state, `Result`-based error handling, and compile-time RTOS detection.
 

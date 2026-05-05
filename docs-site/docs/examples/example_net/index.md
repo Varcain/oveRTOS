@@ -6,9 +6,9 @@ Exercises the full networking stack with a pass/fail test framework: netif confi
 
 | Language | Source | WASM Demo |
 |----------|--------|-----------|
-| [C](c.md) | `apps/c/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_cpp/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_rust/){:target="_blank"}** |
+| [C](c.md) | `apps/c/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_heap/){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_cpp_heap/){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_rust_heap/){:target="_blank"}** |
 | [Zig](zig.md) | `apps/zig/example_net/` | *Not yet available* |
 
 ## Key APIs demonstrated

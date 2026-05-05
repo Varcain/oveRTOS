@@ -1,6 +1,6 @@
 # Keyword Detection (Live Audio + ML) — C
 
-Source: `apps/c/example_keyword_live/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_keyword_live_c/){:target="_blank"}**
+Source: `apps/c/example_keyword_live/src/app.c` | **[WASM Demo](https://varcain.github.io/oveRTOS/example_keyword_live_heap/){:target="_blank"}**
 
 Real-time 'yes'/'no' keyword detection using on-board microphones and the TensorFlow Lite Micro micro_speech model. Audio is captured via I2S DMA, spectral features are extracted, and a neural network classifier runs inference every ~1 second.
 
