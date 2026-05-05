@@ -90,7 +90,6 @@ pub mod heap {
 
 #[cfg(has_audio)]
 pub mod audio;
-pub mod containers;
 #[cfg(not(docsrs))]
 pub(crate) mod bindings;
 #[cfg(docsrs)]
@@ -103,6 +102,7 @@ pub mod bsp;
 pub mod cell;
 #[cfg(has_console)]
 pub mod console;
+pub mod containers;
 pub mod error;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;

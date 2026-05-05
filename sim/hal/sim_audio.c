@@ -162,7 +162,7 @@ static int sim_source_process(void *ctx, const struct ove_audio_buf *in, struct 
 static void sim_source_destroy(void *ctx)
 {
 #ifdef CONFIG_OVE_ZERO_HEAP
-	(void)ctx;  /* static storage — see ove_audio_device_source */
+	(void)ctx; /* static storage — see ove_audio_device_source */
 #else
 	free(ctx);
 #endif
@@ -269,7 +269,7 @@ static void sim_sink_destroy(void *ctx)
 	if (sc->running)
 		sim_sink_stop(ctx);
 #ifdef CONFIG_OVE_ZERO_HEAP
-	/* static storage — see ove_audio_device_sink */
+		/* static storage — see ove_audio_device_sink */
 #else
 	free(ctx);
 #endif
@@ -302,7 +302,7 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 	if (!g || !cfg || !name)
 		return OVE_ERR_INVALID_PARAM;
 
-	/* Accept both sim and I2S transport -- sim handles both. */
+		/* Accept both sim and I2S transport -- sim handles both. */
 
 #ifdef CONFIG_OVE_ZERO_HEAP
 	/* Zero-heap mode: picolibc / Zephyr / NuttX zh disable malloc/calloc.
