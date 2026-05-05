@@ -97,6 +97,9 @@ void ove_watchdog_destroy(ove_watchdog_t wdt)
 
 int ove_watchdog_start(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	if (HAL_IWDG_Init(&wdt->hiwdg) != HAL_OK) {
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -112,6 +115,9 @@ int ove_watchdog_stop(ove_watchdog_t wdt)
 
 int ove_watchdog_feed(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	if (HAL_IWDG_Refresh(&wdt->hiwdg) != HAL_OK) {
 		return OVE_ERR_NOT_SUPPORTED;
 	}

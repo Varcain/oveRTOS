@@ -85,18 +85,27 @@ void ove_watchdog_destroy(ove_watchdog_t wdt)
 
 int ove_watchdog_start(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	int ret = ioctl(wdt->fd, WDIOC_START, 0);
 	return (ret == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }
 
 int ove_watchdog_stop(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	int ret = ioctl(wdt->fd, WDIOC_STOP, 0);
 	return (ret == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }
 
 int ove_watchdog_feed(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	int ret = ioctl(wdt->fd, WDIOC_KEEPALIVE, 0);
 	return (ret == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }

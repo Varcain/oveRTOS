@@ -82,18 +82,27 @@ void ove_watchdog_destroy(ove_watchdog_t wdt)
 
 int ove_watchdog_start(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	int ret = wdt_setup(wdt->dev, WDT_OPT_PAUSE_HALTED_BY_DBG);
 	return (ret == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }
 
 int ove_watchdog_stop(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	int ret = wdt_disable(wdt->dev);
 	return (ret == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }
 
 int ove_watchdog_feed(ove_watchdog_t wdt)
 {
+	if (wdt == NULL) {
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 	int ret = wdt_feed(wdt->dev, wdt->channel_id);
 	return (ret == 0) ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }

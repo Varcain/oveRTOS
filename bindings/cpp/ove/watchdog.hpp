@@ -35,10 +35,20 @@ class Watchdog
 {
       public:
 	/**
-	 * @brief Constructs and initialises the watchdog with the given timeout.
-	 * @param[in] timeout_ms Watchdog timeout in milliseconds.
+	 * @brief Constructs the watchdog and tries to initialise it with the
+	 * given timeout.
 	 *
-	 * Asserts at startup if initialisation fails.
+	 * Unlike the other RAII wrappers in this header set, the watchdog
+	 * ctor does **not** abort if the underlying create/init call fails:
+	 * boards without an enabled IWDG/WWDG (or a Zephyr `watchdog0`
+	 * alias) are a common, legitimate runtime configuration, so the
+	 * binding leaves `handle_` as `nullptr` and lets `start()`/`stop()`/
+	 * `feed()` return `OVE_ERR_NOT_SUPPORTED`.  Apps that care can check
+	 * `valid()` after construction or just inspect each method's return
+	 * value (the existing `[[nodiscard]]` discipline already prompts
+	 * callers to do so).
+	 *
+	 * @param[in] timeout_ms Watchdog timeout in milliseconds.
 	 */
 	explicit Watchdog(uint32_t timeout_ms)
 	{
@@ -47,7 +57,9 @@ class Watchdog
 #else
 		int err = ove_watchdog_create(&handle_, timeout_ms);
 #endif
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		if (err != OVE_OK) {
+			handle_ = nullptr;
+		}
 	}
 
 	/**

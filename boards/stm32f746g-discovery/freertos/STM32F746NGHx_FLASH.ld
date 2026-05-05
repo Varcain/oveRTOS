@@ -127,8 +127,15 @@ SECTIONS
     __exidx_end = .;
   } >FLASH
 
+  /* picolibc's __libc_init_array iterates a single contiguous range
+   * delimited by __bothinit_array_{start,end}.  We lay preinit_array
+   * and init_array back-to-back and bracket the pair with those
+   * symbols, while still providing the newlib-style
+   * __preinit_array_{start,end} / __init_array_{start,end} pairs so
+   * either libc's startup code finds the C++ static constructors. */
   .preinit_array     :
   {
+    PROVIDE_HIDDEN (__bothinit_array_start = .);
     PROVIDE_HIDDEN (__preinit_array_start = .);
     KEEP (*(.preinit_array*))
     PROVIDE_HIDDEN (__preinit_array_end = .);
@@ -139,6 +146,7 @@ SECTIONS
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
+    PROVIDE_HIDDEN (__bothinit_array_end = .);
   } >FLASH
   .fini_array :
   {
