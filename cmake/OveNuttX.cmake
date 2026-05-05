@@ -101,9 +101,13 @@ macro(ove_nuttx_setup)
         list(APPEND _OVE_NX_INCLUDE_DIRS ${APP_INCLUDE_DIRS})
     endif()
 
-    # C++ bindings
+    # C++ bindings + ETL fixed-capacity containers (header-only).  ETL
+    # is no-op when the dl/etl tree isn't present (C-only builds).
     if(OVE_APP_LANG STREQUAL "cpp")
         list(APPEND _OVE_NX_INCLUDE_DIRS ${OVE_DIR}/bindings/cpp)
+        if(EXISTS "${OVE_DL_DIR}/etl/include/etl/vector.h")
+            list(APPEND _OVE_NX_INCLUDE_DIRS ${OVE_DL_DIR}/etl/include)
+        endif()
     endif()
 
     message(STATUS "oveRTOS NuttX app setup")
