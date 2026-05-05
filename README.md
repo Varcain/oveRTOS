@@ -85,53 +85,106 @@ The backend is selected at configure time via Kconfig. All API calls resolve dir
 
 ## API Overview
 
-The same operations expressed in each of the four supported languages.
-All four bindings compile down to the same FFI symbols — wrapper
-overhead is benchmarked at
+The same producer + worker shape expressed in every supported binding,
+in both heap mode (kernel objects from the system heap, freed via
+`_destroy`/Drop/`deinit`) and zero-heap mode (every byte from BSS, no
+allocator linked in).  All four bindings compile down to the same FFI
+symbols — per-call wrapper overhead is benchmarked across the matrix at
 [varcain.github.io/oveRTOS/benchmarks](https://varcain.github.io/oveRTOS/benchmarks/).
 
 ### C
 
+**Heap** (`CONFIG_OVE_ZERO_HEAP` not set):
+
 ```c
 #include "ove/ove.h"
 
+static void worker_fn(void *arg) { /* ... */ }
+
 void ove_main(void)
 {
-    ove_queue_t queue;
-    ove_mutex_t mutex;
+    ove_queue_t  queue;
+    ove_mutex_t  mutex;
+    ove_thread_t worker;
+
     ove_queue_create(&queue, sizeof(uint32_t), 8);
     ove_mutex_create(&mutex);
+    ove_thread_create(&worker, "worker", worker_fn, NULL,
+                      OVE_PRIO_NORMAL, 4096);
 
-    struct ove_thread_desc desc = {
-        .name       = "worker",
-        .entry      = worker_fn,
-        .priority   = OVE_PRIO_NORMAL,
-        .stack_size = 4096,
-    };
-    ove_thread_t thread;
-    ove_thread_create(&thread, &desc);
+    ove_run();
+    /* ove_thread_destroy(worker); ove_mutex_destroy(mutex);
+     * ove_queue_destroy(queue);  -- on shutdown */
+}
+```
 
+**Zero-heap** (`CONFIG_OVE_ZERO_HEAP=y`) — file-scope statics, allocator
+never linked:
+
+```c
+#include "ove/ove.h"
+
+static void worker_fn(void *arg) { /* ... */ }
+
+OVE_QUEUE_DEFINE_STATIC(queue, sizeof(uint32_t), 8);
+OVE_MUTEX_DEFINE_STATIC(mutex);
+OVE_THREAD_DEFINE_STATIC(worker, 4096, worker_fn, NULL,
+                         OVE_PRIO_NORMAL, "worker");
+
+void ove_main(void)
+{
+    /* DEFINE_STATIC macros emit __attribute__((constructor)) hooks
+     * that call ove_*_init() with caller-owned BSS storage before
+     * ove_main() runs.  No _create() symbols in this build. */
     ove_run();
 }
 ```
 
-### C++ (RAII, type-safe queues)
+### C++ (RAII, type-safe containers)
+
+**Heap**:
 
 ```cpp
 #include <ove/ove.hpp>
 
+static void worker_fn(void *) { /* ... */ }
+
 void ove_main()
 {
-    ove::Queue<uint32_t, 8> queue;             // typed + bounded
-    ove::Mutex mutex;                          // RAII — destructor cleans up
+    ove::Queue<uint32_t, 8> queue;          // typed + bounded
+    ove::Mutex mutex;                       // RAII — destructor cleans up
     ove::Thread<4096> worker(worker_fn, nullptr,
                              OVE_PRIO_NORMAL, "worker");
 
     ove::run();
+    /* destructors run on scope exit / app shutdown */
 }
 ```
 
-### Rust (no_std crate, error-as-values)
+**Zero-heap** — same wrappers, file-scope statics carry the kernel-object
+storage (and thread stack) inline; constructors call `ove_*_init` with
+pointers into those members during static init:
+
+```cpp
+#include <ove/ove.hpp>
+
+static void worker_fn(void *) { /* ... */ }
+
+static ove::Queue<uint32_t, 8> queue;
+static ove::Mutex mutex;
+static ove::Thread<4096> worker(worker_fn, nullptr,
+                                OVE_PRIO_NORMAL, "worker");
+
+void ove_main() { ove::run(); }
+```
+
+Move/copy are deleted on every wrapper in zero-heap mode (the kernel
+holds pointers into `&storage_`), so each instance is structurally
+pinned to its file-scope address.
+
+### Rust (no_std, errors-as-values)
+
+**Heap**:
 
 ```rust
 use ove::{mutex, queue, thread, Priority};
@@ -139,48 +192,95 @@ use ove::{mutex, queue, thread, Priority};
 fn worker() { /* ... */ }
 
 fn app_main() {
-    let _q = queue!(u32, 8);                    // generic + comptime depth
-    let _m = mutex!();                          // RAII — Drop cleans up
+    let _q = queue!(u32, 8);                // generic + comptime depth
+    let _m = mutex!();                      // RAII — Drop cleans up
     let _t = thread!("worker", worker, Priority::Normal, 4096);
     ove::run();
 }
 
-ove::main!(app_main);                           // exports `ove_main` symbol
+ove::main!(app_main);                       // exports `ove_main` symbol
+```
+
+**Zero-heap** — `ove::shared!` parks each wrapper in a `StaticCell`; the
+`ove::queue!` / `ove::thread!` macros expand to a function-scope
+`static mut <storage>` plus the matching `from_static(...)` call, so the
+caller-owned origin stays visible.  No `Box`, `alloc`, or operator new:
+
+```rust
+#![cfg_attr(not(feature = "std"), no_std)]
+use ove::{Priority, Queue, Thread};
+
+fn worker() { /* ... */ }
+
+ove::shared!(QUEUE: Queue<u32, 8>);
+ove::shared!(WORKER: Thread<4096>);
+
+fn app_main() {
+    QUEUE.init(ove::queue!(u32, 8));
+    WORKER.init(ove::thread!("worker", worker, Priority::Normal, 4096));
+    ove::run();
+}
+
+ove::main!(app_main);
 ```
 
 ### Zig (comptime-safe wrappers, embedded storage)
+
+**Heap** — `Type.create(...)` returns `Error!Self`, calling `ove_*_create`
+under the hood; `deinit()` is the matching destructor:
 
 ```zig
 const ove = @import("ove");
 
 fn worker() void { /* ... */ }
 
+var queue: ?ove.Queue(u32, 8) = null;
+var worker_th: ?ove.Thread(4096) = null;
+
 fn appMain() void {
-    var queue: ove.Queue(u32, 8) = undefined;
+    queue = ove.Queue(u32, 8).create() catch return;
+    worker_th = ove.Thread(4096).create("worker", worker,
+                                        ove.thread.prio.normal) catch return;
+    ove.run();
+    /* if (worker_th) |t| t.deinit();
+     * if (queue)     |q| q.deinit();  -- on shutdown */
+}
+
+comptime { ove.exportMain(appMain); }
+```
+
+**Zero-heap** — file-scope wrappers embed the kernel-object storage and
+(for `Thread`/`Workqueue`) the thread stack inline.  `init()` fills in
+`&self.storage` / `&self.stack` and registers the kernel object against
+those addresses; no global allocator is linked:
+
+```zig
+const ove = @import("ove");
+
+fn worker() void { /* ... */ }
+
+var queue: ove.Queue(u32, 8) = undefined;
+var worker_th: ove.Thread(4096) = undefined;
+
+fn appMain() void {
     queue.init() catch return;
-    defer queue.deinit();
-
-    var mutex: ove.Mutex = undefined;
-    mutex.init() catch return;
-    defer mutex.deinit();
-
-    var worker_th: ove.Thread(4096) = undefined;
     worker_th.init("worker", worker, ove.thread.prio.normal) catch return;
-    defer worker_th.deinit();
-
     ove.run();
 }
 
 comptime { ove.exportMain(appMain); }
 ```
 
-The C example uses heap-allocated kernel objects (`_create()` /
-`_destroy()`); flip the build to `CONFIG_OVE_ZERO_HEAP=y` and the same
-source compiles unchanged with each kernel object backed by static
-storage. C++/Rust/Zig wrappers are mode-agnostic by construction. See
-[Zero-Heap Mode](#zero-heap-mode) below for the static-allocation
-discipline and [docs-site/docs/examples](docs-site/docs/examples) for
-full applications in every binding.
+The two modes are wired through the same FFI:
+`ove_*_create`/`ove_*_destroy` enter the path through the system heap
+(gated by the per-module `OVE_HEAP_*` Kconfig); `ove_*_init`/
+`ove_*_deinit` always operate against caller-owned storage.  In
+zero-heap builds the `_create` symbols are not linked, so any accidental
+heap-mode call site fails at link time rather than at runtime.  See
+[Heap and Zero-Heap Modes](#heap-and-zero-heap-modes) below for the
+allocation-discipline contract and
+[docs-site/docs/examples](docs-site/docs/examples) for full apps in
+every binding.
 
 ### Modules
 
