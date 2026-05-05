@@ -86,3 +86,21 @@
 #include <ove/net_mqtt.hpp>
 #include <ove/net_httpd.hpp>
 #include <ove/pm.hpp>
+
+/* Zephyr's <zephyr/kernel_structs.h> defines `_current` and `_kernel`
+ * as global object-like macros (`#define _current _kernel.cpus[0].current`).
+ * Both leak into every TU that pulls in any Zephyr header (i.e. anything
+ * including ove.hpp on Zephyr).  Third-party C++ libraries — notably
+ * ETL's <etl/ranges.h>, used by lvgl_gallery_cpp — declare members
+ * named `_current`, which the preprocessor then mangles into
+ * `_kernel.cpus[0].current` before C++ parses, producing a torrent of
+ * "expected unqualified-id" errors.
+ *
+ * Undef both AT THE END of the umbrella header.  oveRTOS's C++ bindings
+ * never call into raw Zephyr scheduler internals from app code; the
+ * affected macros are only used inside Zephyr's own static-inline
+ * accessors, which have already been parsed by this point. */
+#ifdef __ZEPHYR__
+#undef _current
+#undef _kernel
+#endif

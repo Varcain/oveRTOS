@@ -257,6 +257,14 @@ struct ove_mqtt_client {
 	size_t rx_size;
 	uint8_t *tx_buf;
 	size_t tx_size;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap mode: ove_mqtt_connect() points rx_buf/tx_buf at these
+	 * embedded buffers instead of OVE_BACKEND_MALLOC.  Sizes match the
+	 * POSIX backend so the shared backends/common/ove_net_mqtt.c
+	 * sizeof(c->_rx_buf) computation lands on the same bytes. */
+	uint8_t _rx_buf[CONFIG_OVE_NET_MQTT_RX_BUF];
+	uint8_t _tx_buf[CONFIG_OVE_NET_MQTT_TX_BUF];
+#endif
 	uint16_t keep_alive_s;
 	uint16_t pkt_id;
 	int connected;
