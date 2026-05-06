@@ -67,6 +67,7 @@ nav:
     - Overview: benchmarks/index.md
     - Heap vs zero-heap: benchmarks/heap-vs-zeroheap.md
     - Per-binding analysis: benchmarks/per-binding.md
+    - Wrapper-vs-native notes: benchmarks/wrapper-vs-native-notes.md
     - FreeRTOS (heap): benchmarks/freertos-heap.md
     - FreeRTOS (zero-heap): benchmarks/freertos-zeroheap.md
     - NuttX (heap): benchmarks/nuttx-heap.md

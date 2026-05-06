@@ -22,10 +22,29 @@ pub const BenchType = enum(c_int) {
     memory = 2,
 };
 
+/// One audit checkpoint — mirrors C `bench_audit_point_t` (24 bytes:
+/// 4-byte n + 4 pad + 8-byte mean + 8-byte stddev).
+pub const BenchAuditPoint = extern struct {
+    n: u32 = 0,
+    _pad: u32 = 0,
+    mean_ns: u64 = 0,
+    stddev_ns_q: u64 = 0,
+};
+
+/// Maximum audit checkpoints — must match C `BENCH_AUDIT_MAX`.
+pub const BENCH_AUDIT_MAX: usize = 6;
+
 /// Mirrors C `bench_result_t` in `tests/benchmarks/c/include/benchmark.h`.
 /// Field order and types must stay byte-compatible with the C struct,
 /// otherwise bench_run_case() will write past the end and corrupt the
 /// stack of the caller in main.zig.
+///
+/// Audit fields are *always* present in the Zig mirror even when the
+/// C struct compiles them out (`CONFIG_OVE_BENCHMARK_NOISE_AUDIT=n`).
+/// The Zig side being larger is harmless: extra trailing bytes stay
+/// zero from the field defaults.  The reverse — Zig smaller than C —
+/// is the bug we're avoiding (C harness would write audit data past
+/// the Zig struct end and clobber the next array element).
 pub const BenchResult = extern struct {
     min_ns: u64 = 0,
     max_ns: u64 = 0,
@@ -41,6 +60,12 @@ pub const BenchResult = extern struct {
     trimmed_mean_ns: u64 = 0,
     /// Fixed-point: stddev_ns × 1000.
     stddev_ns_q: u64 = 0,
+    /// Audit checkpoint snapshots — populated only when
+    /// `CONFIG_OVE_BENCHMARK_NOISE_AUDIT=y` on the C side.
+    audit_points: [BENCH_AUDIT_MAX]BenchAuditPoint =
+        [_]BenchAuditPoint{.{}} ** BENCH_AUDIT_MAX,
+    audit_count: u8 = 0,
+    _audit_pad: [7]u8 = [_]u8{0} ** 7,
 };
 
 /// Mirrors C `bench_case_t`. Construct via [`case`] — do not hand-build.

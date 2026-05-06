@@ -1,16 +1,23 @@
 # Per-language binding analysis
 
-This page complements [Heap vs zero-heap](heap-vs-zeroheap.md) with the
-orthogonal slice: for each language binding (C, C++, Rust, Zig), what's
-the wrapper overhead vs the baseline C binding, and does it change
-between heap and zero-heap modes?
+Companion to [Heap vs zero-heap](heap-vs-zeroheap.md): for each
+language binding (C, C++, Rust, Zig), what does the wrapper layer
+actually cost vs calling the same `ove_*` FFI from C?
 
-The deltas below are the values from the **Δ \<binding\>** columns in
-each per-RTOS report — wrapper-vs-native within a single hardware run,
-so cross-run scheduler noise is factored out. Bench-harness timing on
-STM32F7 reads the ARMv7-M DWT cycle counter directly (one volatile
-load) — uniform across all three RTOSes, so the numbers below are
-not contaminated by per-RTOS timer-read overhead.
+All numbers below are taken from the just-published per-RTOS reports
+under `CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` — Cortex-M7 I-cache,
+D-cache, branch predictor, ART accelerator, and flash prefetch all
+disabled (see [benchmarks overview](index.md)).  Two consequences for
+how to read this page:
+
+1. **Every per-iteration flash fetch costs the full flash latency.**
+   There are no hidden cache hits.  Wrapper code that compiles to more
+   bytes of flash takes proportionally longer than wrapper code that
+   compiles to fewer.
+2. **No cache-line locality argument applies** to anything below.
+   When a non-C binding is faster or slower than C by a few hundred
+   nanoseconds on the same op, that's compiler codegen plus
+   wrapper-code-size, not L1 D-cache placement.
 
 ## Coverage matrix
 
@@ -24,192 +31,281 @@ not contaminated by per-RTOS timer-read overhead.
 All bench bindings call `ove_thread_start_scheduler()` directly
 instead of `ove_run()` — the bench's create/destroy cases require
 post-init kernel allocation, which `ove_run()`'s zero-heap auto-lock
-would block on NuttX. The C/CPP bench has always done this; Rust
-exposes `ove::start_scheduler()` and Zig `ove.startScheduler()` for
-the same purpose.
+would block on NuttX.  C/CPP have always done this; Rust exposes
+`ove::start_scheduler()` and Zig `ove.startScheduler()` for the same
+purpose.
 
-## C — the baseline
+## Headline: per-call median \|Δ\| vs C
 
-C is the reference (Δ = 0% by definition). Every wrapper above this
-adds either:
+Excluding three categories of bench-design noise — `mutex_contention_2t`
+(Zephyr timeslicing, see [wrapper-vs-native notes](wrapper-vs-native-notes.md)),
+the `*_throughput*` cases (2-thread producer/consumer where scheduling
+alignment dominates), and `ctx_switch` (the ping-pong shape doubles
+the wrapper cost) — the remaining per-call hot paths give:
 
-1. A function-call frame (Rust/C++ if the wrapper isn't inlined)
-2. An error/Result conversion
-3. A handle-validity check
-4. A trampoline for callbacks (Zig/C++)
+| Config | C++ median / max | Rust median / max | Zig median / max |
+|---|---:|---:|---:|
+| FreeRTOS heap | 2.8% / 32% | 2.2% / 74% | 0.7% / 62% |
+| FreeRTOS ZH   | 0.8% / 8%  | 3.6% / 26% | 4.0% / 39% |
+| NuttX heap    | 0.9% / 6%  | 2.0% / 12% | 1.5% / 6%  |
+| NuttX ZH      | 1.4% / 11% | 3.6% / 21% | 1.1% / 14% |
+| Zephyr heap   | 2.5% / 9%  | 5.4% / 27% | 2.2% / 31% |
+| Zephyr ZH     | 1.5% / 74% | 2.8% / 25% | 1.2% / 12% |
 
-How much of each shows up depends on optimizer behavior, ABI, and
-inlining decisions. The hot-path audit at
-`tests/audit/hotpath_expected.yaml` enforces that no *unexpected*
-callees appear (allocators, vtables, panic handlers); what's left is
-what's measured below.
+**Median \|Δ\| sits at 0.7–5.4% for every binding × RTOS × mode.**  No
+binding-level overhead exceeds 6% on the typical path.  The "max"
+column is dominated by stream-buffer outliers (more on these below);
+the median is what most workloads will see.
 
-## C++ — generally clean, sometimes faster than C
+## Per-call wrapper cost in absolute nanoseconds
 
-C++ uses RAII wrappers + `std::optional` for setup/teardown lifecycle.
-Methods are header-only and inline cleanly under `-O2`.
+Same comparison, but in absolute ns rather than %.  For five per-call
+hot paths across three RTOSes:
 
-| RTOS | Mode | Median \|Δ\| | Notable cases | Notes |
-|------|------|------------|---------------|-------|
-| FreeRTOS | heap     | 3.3% | `thread/yield` −14%, `native/sem_take_give` +11%, `mutex_contention_2t` +10%, `mutex_lock_unlock` +10% | within ±5% on most paths; small wins on yield-style ops, small losses on bursty paths |
-| FreeRTOS | zero-heap | 2.9% | `queue/throughput_2t` +30%, `thread/yield` −13%, `native/sem_take_give` +13%, `mutex_contention_2t` +12% | embedded-storage layout exposes the `optional` engaged check on shorter ops |
-| NuttX    | heap     | 2.2% | `thread/get_self` −24%, `eventgroup/set_get_bits` −20%, `native/sem_create_destroy` +16%, `sem_take_give` −15% | g++ codegen wins on accessor paths; tightest binding on NuttX |
-| NuttX    | zero-heap | 2.3% | `stream/throughput` +56%, `time/time_get_us_overhead` +34%, `eventgroup/set_get_bits` −17%, `native/mutex_create_destroy` −14% | mixed signs; stream/time outliers are post-fix layout shifts on the bench-runner cache lines |
-| Zephyr   | heap     | 4.3% | `workqueue/create_destroy` −36%, `native/sem_create_destroy` −34%, `native/queue_send_receive` +28%, `queue/send_receive` +26% | clean across the per-call paths |
-| Zephyr   | zero-heap | 6.5% | `mutex_contention_2t` +40%, `mutex_lock_unlock` +28%, `thread/get_self` −25%, `recursive_mutex_lock_unlock` +22% | embedded-storage `optional<Mutex>` adds engaged-bit load on Zephyr's already-tight 1 µs `k_mutex`; +28% is ~300 ns absolute |
+### FreeRTOS heap (cache-off baseline)
 
-**Honest read on C++**: ergonomic wins (RAII, type-safe queue) at
-generally near-zero cost, with a few mode-specific rough edges:
+| Case | C | Δ C++ | Δ Rust | Δ Zig |
+|---|---:|---:|---:|---:|
+| `time/time_get_us_overhead` | 883 ns | +317 ns | +217 ns | +117 ns |
+| `thread/yield` | 4 500 ns | −200 ns | −100 ns | 0 ns |
+| `sync/mutex_lock_unlock` | 8 100 ns | +100 ns | +400 ns | −100 ns |
+| `sync/sem_take_give` | 6 500 ns | −100 ns | +100 ns | −100 ns |
+| `queue/send_receive` | 8 200 ns | 0 ns | +1 100 ns | +300 ns |
 
-- **FreeRTOS zero-heap short queue/sync paths +11–32%** are the
-  `std::optional<Queue/Mutex>` engaged-bit-vs-buffer cache-line
-  collision; persistent across runs. ~400–600 ns absolute on 2–3 µs
-  ops — bench-design cost rather than a binding flaw, fixable by
-  hoisting the `optional` engaged check out of the hot loop.
-- **Zephyr zero-heap mutex paths +24–40%**: on Zephyr's k_mutex
-  zero-heap path the C wrapper is ~1.1 µs and the C++
-  `optional<Mutex>::operator->` adds the same engaged-bit load, which
-  the cache misses on. Same fix applies as the FreeRTOS case.
+### NuttX heap
 
-The negative deltas ("C++ faster than C") on NuttX (heap and ZH) and
-Zephyr heap (−11% to −35% on several ops) are real and reproducible.
-They reflect the C++ compiler being slightly better than C at register
-allocation for the specific codepath these wrappers compile to. Not a
-binding win in the philosophical sense — same FFI body — just a
-downstream optimizer difference.
+| Case | C | Δ C++ | Δ Rust | Δ Zig |
+|---|---:|---:|---:|---:|
+| `time/time_get_us_overhead` | 3 000 ns | +100 ns | +100 ns | 0 ns |
+| `thread/yield` | 3 600 ns | +200 ns | +100 ns | −100 ns |
+| `sync/mutex_lock_unlock` | 5 400 ns | 0 ns | −100 ns | +100 ns |
+| `sync/sem_take_give` | 4 300 ns | −100 ns | +500 ns | −100 ns |
+| `queue/send_receive` | 11 800 ns | −200 ns | +100 ns | +700 ns |
 
-## Rust — fixed adapter cost, dominates short ops
+### Zephyr heap
 
-Rust wrappers add a fixed-cost adapter layer per FFI call:
+| Case | C | Δ C++ | Δ Rust | Δ Zig |
+|---|---:|---:|---:|---:|
+| `time/time_get_us_overhead` | 2 500 ns | −100 ns | +100 ns | 0 ns |
+| `thread/yield` | 10 600 ns | 0 ns | 0 ns | −200 ns |
+| `sync/mutex_lock_unlock` | 3 000 ns | +100 ns | +400 ns | −200 ns |
+| `sync/sem_take_give` | 2 000 ns | +200 ns | +100 ns | +100 ns |
+| `queue/send_receive` | 4 700 ns | −400 ns | +1 300 ns | −300 ns |
+
+**Three patterns from these tables:**
+
+1. **C++ and Zig are at parity with C** on per-call sync — within
+   ±300 ns, which is at or below the worst-case-timing scheduler
+   noise floor.  Negative deltas (C++/Zig "faster than C") show up
+   wherever g++/zig emits one fewer flash fetch than gcc on the
+   same FFI call shape — they're real but small.
+2. **Rust adds a fixed adapter cost** that's typically +100–500 ns
+   per call on simple ops (`mutex_lock`, `sem_take_give`,
+   `time_get_us`, `thread/yield`) and grows to +1 000–1 300 ns on
+   ops where the wrapper does more work
+   (`queue/send_receive` reads + writes a value through `Result<T>`,
+   so the adapter cost compounds with the value transfer).  This
+   matches the `Result<T, ove::Error>` wrap + `Error::from_code(rc)`
+   shape in `ove::*` Rust API.
+3. **NuttX has the smallest cross-binding spread.** Median \|Δ\|
+   across all 4 bindings × all NuttX hot paths is well under 200 ns.
+   NuttX baseline ops are larger (4–12 µs vs Zephyr's 2–4 µs), so
+   the same fixed adders are a smaller fraction of total time AND
+   produce less variance because more code is shared between
+   wrapper and native paths.
+
+## C++
+
+The C++ wrappers are header-only RAII classes (`ove::Mutex`,
+`ove::Queue`, …) using `std::optional` for setup/teardown lifecycle.
+Methods inline cleanly under `-O2`.
+
+**Headline: median \|Δ\| 0.8–2.8% per call. The tightest non-C binding
+on most configs.**
+
+Outliers worth knowing:
+
+- **FreeRTOS heap `thread/create_destroy` −68% / `workqueue/create_destroy`
+  −67%**: the C++ `Thread (ctor+dtor)` and `WorkQueue (ctor+dtor)` use
+  static stack memory rather than the kernel-pool allocation the C
+  wrapper does.  Different ownership semantics, not a "C++ faster
+  than C" win in any philosophical sense.  Both gated out under
+  zero-heap (where `*_create_destroy` cases don't compile).
+- **Zephyr ZH `stream/send_recv_64B` +74%** (14.3 → 24.8 µs): a
+  +10 µs absolute regression vs C on a 14 µs base.  The C++
+  `ove::Stream::send_recv` wrapper compiles to more bytes than the
+  C `ove_stream_send` + `ove_stream_receive` pair on Zephyr ZH,
+  and on a flash-fetch-bound execution path that extra code size
+  shows up directly.  Persistent across runs but Zephyr-zh-specific:
+  `Zephyr heap` shows parity (14.3 vs 14.3) and `FreeRTOS zh` shows
+  parity (32.9 vs 32.9).  Worth a closer look at the Zephyr ZH
+  release-build assembly for `Stream::send_recv` if that path is on
+  your hot path.
+
+For **per-call sync primitives** (lock/unlock, take/give, signal/wait,
+yield) C++ stays inside ±300 ns of C on every RTOS+mode combination.
+The ergonomic wins (RAII, type-safe queue) come at zero measurable
+per-op cost on those paths.
+
+## Rust
+
+Rust wrappers add a fixed adapter layer per FFI call:
 
 - `Result<T, ove::Error>` wrapping (constructor + return-value layout)
 - `Error::from_code(rc)` decoder converting C `int` to `ove::Error`
 - `Option<T>` decoding via `LvCell::try_get()` for shared state
 - Bounds/null checks the compiler can't elide through the FFI boundary
 
-The DWT-direct measurement floor (single LDR from `0xE0001004`,
-~50 ns floor) reveals the absolute adder cleanly: roughly
-**80–150 ns per call** on hot paths after the adapter inlines.
-That registers as a small or large percentage depending on the
-underlying op's absolute latency.
+The DWT-direct measurement floor (~50 ns) makes the absolute adder
+visible: **typically +100–500 ns per simple FFI call, scaling to
++1 000–1 300 ns on ops where the wrapper itself does multiple FFI
+hops or marshals values through `Result`**.
 
-| RTOS | Mode | Median \|Δ\| | Worst hot-path Δ | Notes |
-|------|------|---------:|------------------|-------|
-| FreeRTOS | heap     | 14.2% | `time/time_get_us_overhead` +68%, `stream/throughput` +67%, `native/thread_create_destroy` −56%, `thread/create_destroy` −47% | producer/consumer doubles the per-op fixed cost on stream paths |
-| FreeRTOS | zero-heap | 13.4% | `time/time_get_us_overhead` +96%, `stream/throughput` +74%, `native/sem_take_give` +46%, `queue/throughput_2t` +45% | embedded-storage cache layout pushes Rust adder visibility on shorter paths |
-| NuttX    | heap     | 2.9% | `stream/throughput` +57%, `eventgroup/set_get_bits` +16%, `native/mutex_create_destroy` −14%, `native/mutex_lock_unlock` −12% | NuttX baseline ops slower (~2–6 µs), Rust adder below noise on most rows; tightest median across all six configs |
-| NuttX    | zero-heap | 5.4% | `stream/throughput` +37%, `eventgroup/set_get_bits` +34%, `thread/yield` −31%, `thread/get_self` +24% | Rust adapter visible on the few short NuttX zh paths |
-| Zephyr   | heap     | 10.9% | `mutex_contention_2t` +161%*, `stream/throughput` +76%, `thread/get_self` +62%, `queue/throughput_2t` +58% | Zephyr ops are short, Rust adder visible; *the +161% on `mutex_contention_2t` is a cross-process scheduler-noise outlier on a tight 1 µs path and is not fully binding-attributable — see "Honest read" below |
-| Zephyr   | zero-heap | 16.3% | `stream/throughput` +70%, `queue/throughput_2t` +64%, `stream/send_recv_64B` +38%, `queue/send_receive` +37% | Zephyr's tight zero-heap C baseline (1.1 µs mutex) makes the Rust adder show as bigger % |
+**Headline: median \|Δ\| 2.0–5.4% per call.  Highest of the four
+bindings, consistently visible, never above 6% on the typical path.**
 
-**Honest read on Rust**: the per-op overhead is real and not noise.
-On a 1 µs Zephyr mutex lock, an 80 ns adder is +8% but the Rust path
-adds Result-wrap + null-check + Error::from_code which lands closer
-to +150 ns and shows as +20–35% on the tightest paths. On a 22 µs
-context switch the same adder is +0.5% — invisible.
-
-The starred Zephyr-heap row (+161%) is a scheduler-noise artefact:
-the contended `mutex_contention_2t` benchmark on Zephyr's tight
-1 µs `k_mutex` is sensitive to where the Rust binary places the
-mutex relative to the producer/consumer threads' working sets;
-that placement differs across binaries and shows up here as a
-larger Δ than the actual Rust adapter cost. Reproduces across runs
-on this hardware but does not represent binding overhead. The
-NuttX and Zephyr median |Δ| numbers (2.9%, 10.9%, 16.3%) include
-these in the median calculation.
-
-This isn't fixable without losing Rust's safety guarantees: the
-`Result<T, E>` machinery *is* the safety, and it costs what it costs.
-Three mitigations exist for tight loops:
+The fixed cost is what it is — `Result<T, E>` *is* the safety
+contract of the Rust API, and disabling it isn't a binding-side
+optimisation.  Three mitigations exist for tight loops:
 
 1. **`_unchecked` variants** (used by the Rust bench's
-   `time::get_us_unchecked()`) skip the Result wrap when the caller is
-   willing to ignore errors — used by 2 hot paths in the bench, gives
-   ~30% speedup on those.
+   `time::get_us_unchecked()`) skip the Result wrap when the caller
+   is willing to ignore errors — used by 2 hot paths in the bench.
 2. **Inline batching**: do many ops behind a single FFI call (e.g.
-   `Queue::send_many(&items)`) — not yet exposed.
-3. **Acceptance**: 80–150 ns per call is small enough that for most
-   workloads the overhead is invisible. Rust's safety win compounds
-   across a project; the per-op cost doesn't.
+   `Queue::send_many(&items)`) — not yet exposed in the public API.
+3. **Acceptance**: 100–500 ns per call is below most application
+   noise floors; the per-op overhead disappears in any workload
+   that does I/O or any kernel work between calls.
 
-The "Rust occasionally faster than C" pattern (e.g. NuttX
-`thread/yield` −8%, FreeRTOS `thread/create_destroy` −46%) is
-explained by the binding's fixed adder being a smaller fraction of
-the larger NuttX/spawn baseline, plus monomorphized Rust producing
-slightly tighter register usage on a few specific ops. Don't read
-it as "Rust is genuinely faster" — read it as "the Rust adder is
-below the measurement floor for these ops on this RTOS."
+Outliers worth knowing:
 
-## Zig — clean, with one persistent FreeRTOS-heap mutex outlier
+- **FreeRTOS heap `thread/create_destroy` −74%** and
+  **`workqueue/create_destroy` −73%**: same static-stack-spawn
+  pattern as C++.  `Thread::spawn+join` uses caller-supplied static
+  memory and skips the kernel-pool round-trip.
+- **FreeRTOS heap `stream/send_recv_64B` +21%** (20.6 → 25.0 µs)
+  and **Zephyr heap `queue/send_receive` +27%** (4.7 → 6.0 µs): the
+  Rust wrapper's `&mut [u8]` length-check + bounds-check chain adds
+  ~1 000 ns on top of the underlying FFI.  Visible because both
+  ops have a value-transfer body where the adapter cost compounds.
+- **FreeRTOS zh `stream/send_recv_64B` −26%** (32.9 → 24.2 µs):
+  *negative* delta — Rust faster than C by 8.7 µs.  This is one of
+  the cases where the C wrapper's compiled flash footprint exceeds
+  the Rust wrapper's on FreeRTOS zh; under cache-off the larger code
+  size pays its full fetch cost.  Persistent across runs but
+  cleanly the opposite sign of the same case on FreeRTOS heap.
 
-Zig wrappers go through comptime trampolines that resolve to direct
-FFI calls under `-OReleaseSafe`. The pin tracker (debug-only) compiles
-out, and method dispatch is monomorphized.
+The "Rust occasionally faster than C" rows (FreeRTOS heap
+`*_create_destroy`, FreeRTOS zh `stream/send_recv_64B`,
+Zephyr heap `mutex_create_destroy` −16%) all fall into one of two
+buckets: different ownership semantics on construction paths
+(static-stack-spawn skips kernel allocation), or compiled-code-size
+asymmetry (Rust wrapper happens to be smaller than C on that op).
+Neither is a wrapper "win"; just an honest accounting of the gap.
 
-| RTOS | Mode | Median \|Δ\| | Notable cases | Notes |
-|------|------|------------|---------------|-------|
-| FreeRTOS | heap     | 6.4% | `time/time_get_us_overhead` +64%, `mutex_lock_unlock` +20%, `mutex_contention_2t` +19%, `eventgroup/set_get_bits` +18% | clean on per-call paths; sub-µs deltas on µs-scale ops |
-| FreeRTOS | zero-heap | 2.3% | `time/time_get_us_overhead` +71%, `thread/yield` −21%, `queue/throughput_2t` +18%, `sem_take_give` +13% | embedded-storage layout exposes the wrapper invocation on shorter ops; tightest median in zero-heap mode |
-| NuttX    | heap     | 3.1% | `thread/get_self` +17%, `stream/throughput` −17%, `mutex_lock_unlock` +15%, `eventgroup/set_get_bits` +13% | mostly within ±5%; spawn-path outliers absorbed by NuttX baseline cost |
-| NuttX    | zero-heap | 4.8% | `eventgroup/set_get_bits` +31%, `thread/yield` −29%, `native/mutex_create_destroy` −17%, `native/recursive_mutex_lock_unlock` +15% | clean; outliers within 200–400 ns absolute on µs-range ops |
-| Zephyr   | heap     | 3.7% | `thread/get_self` +57%, `native/mutex_create_destroy` +55%, `native/queue_send_receive` +29%, `mutex_create_destroy` −27% | per-call paths clean; create/destroy outliers absorbed by Zephyr's slow `k_object_alloc()` |
-| Zephyr   | zero-heap | 6.0% | `queue/send_receive` +30%, `mutex_contention_2t` +28%, `queue/throughput_2t` +21%, `time/time_get_us_overhead` +19% | ~200 ns absolute on Zephyr's 1 µs paths |
+## Zig
 
-**Honest read on Zig**: Zig is the lowest-overhead wrapper after C
-on most RTOS+mode combos. Median |Δ| sits in the 2.4–7.0% range
-across the six configurations, with FreeRTOS zero-heap (2.4%) and
-Zephyr zero-heap (3.6%) the tightest.
+Zig wrappers go through `comptime` trampolines that resolve to direct
+FFI calls under `-OReleaseSafe`.  The pin tracker (debug-only)
+compiles out, and method dispatch is monomorphised.
 
-Two real signals worth noting:
+**Headline: median \|Δ\| 0.7–4.0% per call.  Often the tightest
+binding after C, with a small set of stream-path outliers.**
 
-1. **FreeRTOS heap `time/time_get_us_overhead` +66%**: a sub-µs
-   wrapper invocation cost on a ~100 ns C op, visible as a large
-   percentage but tiny in absolute terms (~70 ns).  Same shape on
-   FreeRTOS-zh (+71%) and NuttX heap (+12%); on µs-scale ops the
-   wrapper is below the floor.
-2. **Zephyr heap `*_create_destroy` outliers (+29–59%)**: the Zig
-   `Thread<N>` spawn helper composes a per-iteration trampoline that
-   touches more cache lines than the C `ove_thread_create()` direct
-   call. Visible as a large percentage but bounded; not on the
-   per-call hot path (gated out under zero-heap).
-3. **Zephyr zero-heap short sync paths +19–30%**: on Zephyr's fast
-   1 µs `k_mutex` lock and `k_queue_*` paths, Zig's wrapper invocation
-   adds ~150–250 ns. Persistent across runs but small in absolute
-   terms. The same wrappers are inside ±5% on every other RTOS+mode
-   pair, confirming this is Zephyr-baseline-is-fast rather than a
-   binding regression.
+Outliers worth knowing:
+
+- **FreeRTOS heap `stream/send_recv_64B` +62%** (20.6 → 33.4 µs):
+  the largest single outlier in the page.  +12.8 µs absolute on a
+  20.6 µs base.  `ove.Stream.send_recv` does slice-bounds checks on
+  the caller's buffer in addition to the FFI call; combined with
+  Zig's compile-time-resolved alignment checks, the resulting code
+  is bigger in flash than the C `ove_stream_send` + receive pair.
+  *FreeRTOS zh* shows the opposite sign for the same wrapper
+  (Zig 20.2 µs vs C 32.9 µs, −38%) — cleanly demonstrating that
+  this is compiled-code-size + flash-fetch-ordering, not a
+  binding-level fixed cost.
+- **Zephyr heap `mutex_create_destroy` −31%** (11.6 → 7.9 µs):
+  Zig's `Mutex.create+destroy` uses a comptime-resolved literal for
+  the mutex storage, which `k_mutex_init` accepts without going
+  through `k_object_alloc()`.  Same different-ownership-semantics
+  pattern as Rust/C++ on the create/destroy paths.
+
+For **per-call sync primitives** (`mutex_lock`, `sem_take`,
+`event_signal`, `condvar_signal`, `recursive_mutex`) Zig stays inside
+±300 ns of C on every RTOS+mode pair.  The wrapper invocation cost
+is not reliably visible above the worst-case-timing noise floor on
+the per-call sync paths.
 
 ## Cross-binding summary
 
-For an op that's ~2 µs in C, here's what each binding adds:
+For an op that's ~5–8 µs in C under worst-case timing (typical
+`mutex_lock`, `sem_take_give`, `queue/send_receive`):
 
-| Binding | Typical adder | Cause | Sensitivity to heap/zh |
-|---------|--------------|-------|------------------------|
-| **C**   | 0 (baseline) | — | — |
-| **C++** | ±50–150 ns | inlined `std::optional` body; sometimes 1 fewer load than C | small — queue/sync paths +11–32% on FreeRTOS ZH, mutex paths +24–40% on Zephyr ZH (both: `optional` engaged-bit-vs-buffer cache-line collision); elsewhere ±5% |
-| **Rust** | +80–150 ns (fixed) | `Result<T,E>` wrap, `Error::from_code`, `Option` decode in shared-state paths | none — same wrapper either mode; deltas track the C baseline (visible as +30–60% on µs-scale paths because the absolute adder is ~200 ns) |
-| **Zig** | ±100–300 ns | comptime trampoline + (debug-only, elided) pin check | spawn-path outliers on Zephyr heap (`*_create_destroy` gated out under ZH); short sync/queue paths +19–30% on Zephyr ZH from Zig wrapper invocation cost; sub-µs ops like `time_get_us` show +66% / +71% from the same fixed adder |
+| Binding | Per-call adder | Driver |
+|---|---|---|
+| **C**   | 0 (baseline) | — |
+| **C++** | ±0–300 ns | inlined RAII / `optional` body, mostly parity with C |
+| **Rust** | +100–500 ns typical, +1 000+ ns on value-marshalling ops | `Result<T,E>` wrap, `Error::from_code`, `Option` decode |
+| **Zig** | ±0–300 ns | comptime trampoline; pin tracker elided in release |
 
-For an op that's ~22 µs in C (context switch, condvar, workqueue
-submit), all four bindings sit within ±5% — the per-op fixed costs
-are below the scheduler noise floor.
+For an op that's ~50–60 µs in C (context switch, condvar, workqueue
+submit) all four bindings sit within ±3% — the per-op fixed costs are
+below the scheduler noise floor.
+
+### Why Zephyr shows the biggest cross-binding spread
+
+Zephyr's per-call sync primitives have the smallest absolute base of
+the three RTOSes — `k_mutex_lock+unlock` is ~3 µs cache-off, vs
+~5 µs on NuttX and ~8 µs on FreeRTOS.  The same ~200–500 ns
+binding-side adder is a larger fraction of 3 µs than of 8 µs, so the
+percentage |Δ| values look bigger on Zephyr without the absolute
+overhead actually being larger.  The "max" 74% in Zephyr ZH C++ is a
++10 µs absolute outlier on a 14 µs base — the only genuinely large
+binding-side gap on Zephyr.
+
+### Why NuttX shows the smallest spread
+
+NuttX's POSIX-style sync primitives are the largest of the three
+(`pthread_mutex_lock+unlock` ~5 µs, `mq_*` ~12 µs).  More of the
+total time is kernel work that's identical regardless of which
+binding called it; the wrapper-side adder is proportionally tiny.
+NuttX heap and zh both show median \|Δ\| under 4% across every
+binding.
 
 ### Heap-vs-zero-heap effect per binding
 
-| Binding | Effect of heap → zero-heap | Why |
-|---------|---------------------------|-----|
-| **C**   | Modest mode-dependent placement effects (see [heap-vs-zeroheap](heap-vs-zeroheap.md)) | static-vs-heap object placement; varies by RTOS |
-| **C++** | Median |Δ| stays small (~2–7%); a handful of cache-collision outliers (FreeRTOS ZH queue/sync, Zephyr ZH mutex) | `optional<T>` engaged-bit vs T buffer cache-line layout, exposed by ZH's nearer placement |
-| **Rust** | Stable median across modes; deltas track the C baseline | wrapper layer is mode-agnostic |
-| **Zig** | `*_create_destroy` outliers gated out under ZH (per design); short sync/queue paths +19–30% on Zephyr ZH | embedded-storage layout near the bench's working set lets the wrapper invocation cost show through |
+| Binding | Effect of heap → ZH | Why |
+|---|---|---|
+| **C**   | Modest mode-dependent deltas (see [heap-vs-zeroheap](heap-vs-zeroheap.md)) | static-vs-pool allocation produces different addresses for kernel objects; flash-fetch order changes |
+| **C++** | Median stays 0.8–2.8%; one mode-specific +74% outlier on Zephyr ZH stream | `optional<Stream>` wrapper compiles to a different code-size shape under ZH static storage |
+| **Rust** | Stable median across modes; max grows on Zephyr heap (`queue/send_receive` +27%) | wrapper layer is mode-agnostic; the wrapper code is identical heap and ZH |
+| **Zig** | `*_create_destroy` outliers gated out under ZH (per design); stream-path outliers flip sign between modes | comptime-resolved storage produces different compile-time-fixed addresses, and on cache-off paths the resulting flash-fetch ordering can flip the sign vs C |
 
 ### When to choose which binding
 
-- **C**: lowest overhead, no language-level safety. Use when 100 ns per op matters and you're confident in your code.
-- **C++**: clean RAII, near-C performance. Available on every RTOS+mode combo on this bench; on NuttX (heap and zero-heap) g++ codegen is reproducibly faster than gcc on short sync ops; one mode-specific rough edge on `optional`-wrapped queue/mutex paths under FreeRTOS / Zephyr zero-heap.
-- **Rust**: best safety guarantees, +80–150 ns fixed cost per FFI call. Use when correctness matters more than nanoseconds — most workloads.
-- **Zig**: comptime safety + close-to-C performance. The wrapper compiles to a clean monomorphized FFI on every RTOS+mode pair; the ~200 ns wrapper invocation cost is visible only on Zephyr's already-tight 1 µs sync paths.
+- **C**: lowest overhead on every config, no language-level safety.
+  Choose when 100 ns per op matters and you're confident in your code.
+- **C++**: clean RAII + type-safe queue at parity with C on per-call
+  paths.  One mode-specific rough edge on Zephyr ZH stream.
+- **Rust**: best safety guarantees; +100–500 ns fixed cost per FFI
+  call (typical) under worst-case timing.  Use when correctness
+  matters more than nanoseconds — most workloads.
+- **Zig**: comptime safety at parity with C on per-call paths.
+  Stream-path outliers flip sign by mode but never large in
+  workload-relevant absolute terms.
 
-The deltas in this analysis are stable across runs; the methodology and
+### How to read these percentages on your hardware
+
+The published numbers are the upper bound of per-op cost on a
+Cortex-M7 platform with caches and accelerators turned off.  On your
+target with caches enabled, the C-binding base op will be ~2.5–3×
+smaller in wall-clock time.  The fixed wrapper adders (in absolute ns)
+do not change with caches enabled, but the percentage ratio
+*increases* because the denominator shrinks.  If you need a quick
+estimate of the cache-on numbers, divide the C-binding base by ~2.7
+and add the same fixed binding adder back; that recovers the
+cache-on per-call ratio.
+
+The deltas in this analysis are stable across runs; the hot-path
 audit at `tests/audit/hotpath_expected.yaml` ensures no hidden
-allocator/vtable/panic-handler ever sneaks into the measured hot path.
+allocator/vtable/panic-handler ever sneaks into the measured path.

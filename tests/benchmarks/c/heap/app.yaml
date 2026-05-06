@@ -35,6 +35,11 @@ defconfig:
   - CONFIG_OVE_TRACE_MARKERS=n
   - CONFIG_OVE_TRACE_STREAM=n
   - CONFIG_OVE_THREAD_STATE_STATS=n
+  # Worst-case timing: disable I-cache, D-cache, branch predictor, ART,
+  # and flash prefetch on STM32F7 so published numbers approximate a
+  # cacheless ARM MCU.  See docs-site/docs/benchmarks/index.md
+  # ("Worst-case timing mode").  No-op on POSIX / sim builds.
+  - CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y
 kconfig: |
   config OVE_BENCHMARK_ITERATIONS
   	int "Number of measurement iterations per benchmark case"
@@ -66,15 +71,33 @@ kconfig: |
   	  Consumed by scripts/bench_compare.py for cross-binding diff
   	  reports.
 
-  config OVE_BENCHMARK_DISABLE_ICACHE
-  	bool "Disable Cortex-M I-cache for the bench run"
+  config OVE_BENCHMARK_WORST_CASE_TIMING
+  	bool "Disable Cortex-M caches and accelerators for worst-case bench timing"
   	default n
   	help
-  	  When set, calls SCB_DisableICache() at bench startup (Cortex-M
-  	  with caches only — STM32F7).  Used to investigate whether the
-  	  Rust binary's larger text footprint (+13 KiB vs C on F746)
-  	  causes I-cache pressure on FreeRTOS hot paths.  If disabling
-  	  the I-cache makes the C and Rust same-process native_* numbers
-  	  converge, cache pressure is the cause and the long-term path is
-  	  Rust binary-size cleanup.  Diagnostic only — leave off for
-  	  published benchmark numbers.
+  	  When set, the bench harness disables every hardware feature on
+  	  STM32F7 that hides flash-fetch latency or otherwise injects
+  	  per-call non-determinism: Cortex-M7 I-cache and D-cache
+  	  (SCB_DisableICache / SCB_DisableDCache), branch prediction
+  	  (SCB->CCR BP bit), and the STM32F7 ART accelerator + flash
+  	  prefetch buffer (FLASH->ACR ARTEN/PRFTEN).
+  	  The motivation is that many ARM microcontrollers (Cortex-M0+,
+  	  M3, lower-end M4) ship without caches or accelerators, so a
+  	  bench taken with all of those on overstates real-world
+  	  performance for that class of target.  With this knob set the
+  	  numbers approximate worst-case ARM-MCU timing.  Currently
+  	  STM32F7-only — gated on CONFIG_OVE_BOARD_STM32F746G_DISCO.
+  	  Default off; flip on for the published worst-case benchmark
+  	  reports.
+
+  config OVE_BENCHMARK_NOISE_AUDIT
+  	bool "Snapshot running mean/stddev at iteration checkpoints"
+  	default n
+  	help
+  	  Calibration mode: while running each case, snapshot the Welford
+  	  running mean and stddev at iteration counts 100, 500, 1000,
+  	  2500, 5000, 10000 and emit them as an "audit" array in the
+  	  per-case JSON.  Consumed by scripts/bench_audit.py to compute
+  	  CV (stddev/mean) vs N and recommend a per-class iteration
+  	  count for the production benches.  Throwaway — turn off once
+  	  the iteration counts have been locked in.

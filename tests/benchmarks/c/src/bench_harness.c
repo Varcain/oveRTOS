@@ -12,8 +12,87 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(CONFIG_OVE_BENCHMARK_DISABLE_ICACHE) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#include "stm32f7xx.h" /* SCB_DisableICache */
+#if defined(CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* Direct register access for cache / accelerator disable so the bench
+ * harness compiles identically against FreeRTOS, NuttX, and Zephyr —
+ * the FreeRTOS port stages stm32f7xx.h on its include path but NuttX
+ * and Zephyr resolve STM32F7 registers through different headers we
+ * don't want to thread through the bench app.  The addresses and bit
+ * positions below are ARMv7-M / STM32F7 spec — they don't change.
+ *
+ * Cortex-M7 SCB (System Control Block) at 0xE000ED00:
+ *   CCR     = +0x14  (Configuration and Control Register)
+ *     bit 16: DC   — Data cache enable
+ *     bit 17: IC   — Instruction cache enable
+ *     bit 18: BP   — Branch prediction enable
+ *   CCSIDR  = +0x80  (Cache Size ID Register, read-only)
+ *   CSSELR  = +0x84  (Cache Size Selection Register)
+ *   ICIALLU = +0x250 (I-Cache Invalidate All to PoU)
+ *   DCCISW  = +0x274 (D-Cache Clean and Invalidate by Set/Way)
+ *
+ * STM32F7 FLASH controller at 0x40023C00:
+ *   ACR     = +0x00 (Access Control Register)
+ *     bit 8: PRFTEN — flash prefetch enable
+ *     bit 9: ARTEN  — ART accelerator enable */
+#define _OVE_BENCH_REG32(addr) (*(volatile uint32_t *)(addr))
+#define _OVE_BENCH_SCB_BASE     0xE000ED00UL
+#define _OVE_BENCH_SCB_CCR      _OVE_BENCH_REG32(_OVE_BENCH_SCB_BASE + 0x014)
+#define _OVE_BENCH_SCB_CCSIDR   _OVE_BENCH_REG32(_OVE_BENCH_SCB_BASE + 0x080)
+#define _OVE_BENCH_SCB_CSSELR   _OVE_BENCH_REG32(_OVE_BENCH_SCB_BASE + 0x084)
+#define _OVE_BENCH_SCB_ICIALLU  _OVE_BENCH_REG32(_OVE_BENCH_SCB_BASE + 0x250)
+#define _OVE_BENCH_SCB_DCCISW   _OVE_BENCH_REG32(_OVE_BENCH_SCB_BASE + 0x274)
+#define _OVE_BENCH_CCR_DC_Msk  (1UL << 16)
+#define _OVE_BENCH_CCR_IC_Msk  (1UL << 17)
+#define _OVE_BENCH_CCR_BP_Msk  (1UL << 18)
+
+#define _OVE_BENCH_FLASH_ACR        _OVE_BENCH_REG32(0x40023C00UL)
+#define _OVE_BENCH_FLASH_PRFTEN_Msk (1UL << 8)
+#define _OVE_BENCH_FLASH_ARTEN_Msk  (1UL << 9)
+
+#define _OVE_BENCH_DSB() __asm volatile ("dsb 0xF" ::: "memory")
+#define _OVE_BENCH_ISB() __asm volatile ("isb 0xF" ::: "memory")
+
+/* Replicates CMSIS SCB_DisableICache(): DSB/ISB, clear CCR.IC,
+ * invalidate I-cache to PoU, DSB/ISB. */
+static inline void _ove_bench_disable_icache(void)
+{
+	_OVE_BENCH_DSB();
+	_OVE_BENCH_ISB();
+	_OVE_BENCH_SCB_CCR &= ~_OVE_BENCH_CCR_IC_Msk;
+	_OVE_BENCH_SCB_ICIALLU = 0UL;
+	_OVE_BENCH_DSB();
+	_OVE_BENCH_ISB();
+}
+
+/* Replicates CMSIS SCB_DisableDCache(): select L1 D-cache, clear CCR.DC,
+ * walk every set/way and clean+invalidate, DSB/ISB.  CCSIDR encoding:
+ *   bits  0-2  = LineSize  (log2(line bytes / 16))
+ *   bits  3-12 = Associativity − 1 (ways)
+ *   bits 13-27 = NumSets − 1       (sets) */
+static inline void _ove_bench_disable_dcache(void)
+{
+	uint32_t ccsidr;
+	uint32_t sets;
+	uint32_t ways;
+
+	_OVE_BENCH_SCB_CSSELR = 0U; /* select L1 D-cache */
+	_OVE_BENCH_DSB();
+
+	ccsidr = _OVE_BENCH_SCB_CCSIDR;
+	_OVE_BENCH_SCB_CCR &= ~_OVE_BENCH_CCR_DC_Msk;
+
+	sets = (ccsidr >> 13) & 0x7FFFU;
+	do {
+		ways = (ccsidr >> 3) & 0x3FFU;
+		do {
+			_OVE_BENCH_SCB_DCCISW =
+				((sets & 0x1FFU) << 5) | ((ways & 0x3U) << 30);
+		} while (ways-- != 0U);
+	} while (sets-- != 0U);
+
+	_OVE_BENCH_DSB();
+	_OVE_BENCH_ISB();
+}
 #endif
 
 /*
@@ -45,20 +124,32 @@ static inline uint64_t bench_elapsed_ns(uint64_t start, uint64_t end)
 }
 #endif
 
-/* Diagnostic toggle: turn off the Cortex-M7 I-cache exactly once at the
- * start of the first bench case.  Lets us compare Rust and C same-process
- * native_* numbers with cache pressure removed — if they converge,
- * Rust's larger text footprint is the cause of the within-process
- * baseline elevation.  Off in published numbers.  See app.yaml for the
- * Kconfig.  Applies to all 4 bindings since this file is shared C. */
+/* Worst-case timing toggle: at the start of the first bench case,
+ * disable every STM32F7 hardware feature that hides flash-fetch
+ * latency or otherwise injects non-determinism into per-call timing —
+ * Cortex-M7 I-cache + D-cache, branch prediction (SCB->CCR BP bit
+ * enabled by stm32f7_mcu_init), and the STM32F7 ART accelerator +
+ * flash prefetch buffer (FLASH->ACR).  Approximates the timing of a
+ * cacheless ARM MCU (Cortex-M0+, M3, lower-end M4) so the published
+ * numbers don't overstate performance for that target class.  See
+ * app.yaml for the Kconfig.  Applies to all 4 bindings since this
+ * file is shared C. */
 static void bench_apply_diagnostics_once(void)
 {
-#if defined(CONFIG_OVE_BENCHMARK_DISABLE_ICACHE) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	static int icache_disabled = 0;
-	if (!icache_disabled) {
-		SCB_DisableICache();
-		icache_disabled = 1;
-		OVE_LOG_INF("[diag] Cortex-M7 I-cache DISABLED for this run");
+#if defined(CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	static int worst_case_applied = 0;
+	if (!worst_case_applied) {
+		_ove_bench_disable_icache();
+		_ove_bench_disable_dcache();
+		_OVE_BENCH_SCB_CCR &= ~_OVE_BENCH_CCR_BP_Msk;
+		_OVE_BENCH_DSB();
+		_OVE_BENCH_ISB();
+		_OVE_BENCH_FLASH_ACR &=
+			~(_OVE_BENCH_FLASH_ARTEN_Msk | _OVE_BENCH_FLASH_PRFTEN_Msk);
+		_OVE_BENCH_DSB();
+		_OVE_BENCH_ISB();
+		worst_case_applied = 1;
+		OVE_LOG_INF("[diag] worst-case timing: I-cache, D-cache, branch predictor, ART, prefetch DISABLED");
 	}
 #endif
 #if BENCH_CYCCNT_AVAILABLE
@@ -70,27 +161,12 @@ static void bench_apply_diagnostics_once(void)
 #endif
 }
 
-#if CONFIG_OVE_BENCHMARK_PERCENTILES
-/*
- * Static sample buffer (BSS) — sized at CONFIG_OVE_BENCHMARK_ITERATIONS.
- * Cases that override `iterations` with a higher value get full
- * mean/min/max coverage but their percentiles are computed on the first
- * SAMPLE_BUFFER_SIZE samples only.  Default 1000 samples = 8 KiB.
- */
-#define SAMPLE_BUFFER_SIZE CONFIG_OVE_BENCHMARK_ITERATIONS
-static uint64_t sample_buffer[SAMPLE_BUFFER_SIZE];
-
-static int u64_cmp(const void *a, const void *b)
-{
-	uint64_t va = *(const uint64_t *)a;
-	uint64_t vb = *(const uint64_t *)b;
-	return (va > vb) - (va < vb);
-}
-
+#if CONFIG_OVE_BENCHMARK_PERCENTILES || CONFIG_OVE_BENCHMARK_NOISE_AUDIT
 /*
  * Welford running variance — stable and avoids the catastrophic
  * cancellation a naive sum-of-squares would suffer at ns latencies
- * with µs-scale outliers.
+ * with µs-scale outliers.  Compiled whenever percentiles or the
+ * iteration-count noise audit need running mean/stddev.
  */
 struct welford {
 	uint64_t n;
@@ -128,6 +204,24 @@ static uint64_t welford_stddev_q1000(const struct welford *w)
 		sd = 0.0;
 	return (uint64_t)(sd * 1000.0 + 0.5);
 }
+#endif /* PERCENTILES || NOISE_AUDIT */
+
+#if CONFIG_OVE_BENCHMARK_PERCENTILES
+/*
+ * Static sample buffer (BSS) — sized at CONFIG_OVE_BENCHMARK_ITERATIONS.
+ * Cases that override `iterations` with a higher value get full
+ * mean/min/max coverage but their percentiles are computed on the first
+ * SAMPLE_BUFFER_SIZE samples only.  Default 1000 samples = 8 KiB.
+ */
+#define SAMPLE_BUFFER_SIZE CONFIG_OVE_BENCHMARK_ITERATIONS
+static uint64_t sample_buffer[SAMPLE_BUFFER_SIZE];
+
+static int u64_cmp(const void *a, const void *b)
+{
+	uint64_t va = *(const uint64_t *)a;
+	uint64_t vb = *(const uint64_t *)b;
+	return (va > vb) - (va < vb);
+}
 
 static void compute_percentiles(uint64_t *samples, unsigned int n, bench_result_t *r)
 {
@@ -156,6 +250,16 @@ static void compute_percentiles(uint64_t *samples, unsigned int n, bench_result_
 }
 #endif /* CONFIG_OVE_BENCHMARK_PERCENTILES */
 
+#if CONFIG_OVE_BENCHMARK_NOISE_AUDIT
+/* Iteration-count checkpoints at which to snapshot running mean and
+ * stddev for the calibrate-then-lock methodology.  Reader script
+ * (scripts/bench_audit.py) plots CV = stddev/mean against N and picks
+ * the elbow as the production iteration count. */
+static const uint32_t AUDIT_CHECKPOINTS[] = {100, 500, 1000, 2500, 5000, 10000};
+#define AUDIT_CHECKPOINT_COUNT \
+	(sizeof(AUDIT_CHECKPOINTS) / sizeof(AUDIT_CHECKPOINTS[0]))
+#endif
+
 void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 {
 	bench_apply_diagnostics_once();
@@ -165,6 +269,16 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 
 	if (iters == 0)
 		iters = CONFIG_OVE_BENCHMARK_ITERATIONS;
+
+#if CONFIG_OVE_BENCHMARK_NOISE_AUDIT
+	/* Audit mode: bump default-case iteration count to the highest
+	 * checkpoint (10 000) so we get convergence data per case.  Cases
+	 * with explicit overrides (delay_1ms, ctx_switch, …) keep their
+	 * override so a 10 000-iter run of a 1 ms case doesn't blow past
+	 * 10 s — checkpoints higher than `iters` simply don't fire. */
+	if (bc->iterations == 0 && iters < 10000)
+		iters = 10000;
+#endif
 
 	memset(result, 0, sizeof(*result));
 	result->min_ns = UINT64_MAX;
@@ -208,8 +322,10 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 			bc->run(NULL);
 	}
 
-#if CONFIG_OVE_BENCHMARK_PERCENTILES
+#if CONFIG_OVE_BENCHMARK_PERCENTILES || CONFIG_OVE_BENCHMARK_NOISE_AUDIT
 	struct welford w = {0};
+#endif
+#if CONFIG_OVE_BENCHMARK_PERCENTILES
 	unsigned int sample_count = 0;
 #endif
 
@@ -234,10 +350,26 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 		result->total_ns += elapsed;
 		result->count++;
 
-#if CONFIG_OVE_BENCHMARK_PERCENTILES
+#if CONFIG_OVE_BENCHMARK_PERCENTILES || CONFIG_OVE_BENCHMARK_NOISE_AUDIT
 		welford_push(&w, elapsed);
+#endif
+#if CONFIG_OVE_BENCHMARK_PERCENTILES
 		if (sample_count < SAMPLE_BUFFER_SIZE)
 			sample_buffer[sample_count++] = elapsed;
+#endif
+#if CONFIG_OVE_BENCHMARK_NOISE_AUDIT
+		for (unsigned int k = 0; k < AUDIT_CHECKPOINT_COUNT; k++) {
+			if ((uint32_t)w.n != AUDIT_CHECKPOINTS[k])
+				continue;
+			if (result->audit_count < BENCH_AUDIT_MAX) {
+				bench_audit_point_t *p =
+					&result->audit_points[result->audit_count++];
+				p->n = (uint32_t)w.n;
+				p->mean_ns = (uint64_t)(w.mean + 0.5);
+				p->stddev_ns_q = welford_stddev_q1000(&w);
+			}
+			break;
+		}
 #endif
 	}
 
@@ -252,10 +384,12 @@ void bench_run_case(const bench_case_t *bc, bench_result_t *result)
 			(uint32_t)((uint64_t)result->count * 1000000000ULL / result->total_ns);
 	}
 
-#if CONFIG_OVE_BENCHMARK_PERCENTILES
-	if (sample_count > 0) {
-		compute_percentiles(sample_buffer, sample_count, result);
+#if CONFIG_OVE_BENCHMARK_PERCENTILES || CONFIG_OVE_BENCHMARK_NOISE_AUDIT
+	if (w.n > 0)
 		result->stddev_ns_q = welford_stddev_q1000(&w);
-	}
+#endif
+#if CONFIG_OVE_BENCHMARK_PERCENTILES
+	if (sample_count > 0)
+		compute_percentiles(sample_buffer, sample_count, result);
 #endif
 }

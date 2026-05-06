@@ -140,6 +140,11 @@ def _page_header(by_rtos, mode, threshold_pct):
     without any manual header restoration step.  Falls back to the
     generic cross-binding header if the inputs span multiple RTOSes
     (page model assumes one RTOS per file).
+
+    Page contents are intentionally raw: setup + tables + outlier list.
+    Interpretation lives on dedicated pages (heap-vs-zeroheap.md,
+    per-binding.md, wrapper-vs-native-notes.md) so the data here can be
+    regenerated from a fresh bench run without trampling prose.
     """
     rtos_keys = list(by_rtos.keys())
     if len(rtos_keys) != 1 or rtos_keys[0] not in _PAGE_RTOS_META:
@@ -152,37 +157,48 @@ def _page_header(by_rtos, mode, threshold_pct):
     if mode == "heap":
         out.append(f"# {name} — heap mode\n")
         out.append(
-            f"Cross-binding benchmark report measured on "
+            f"Raw cross-binding benchmark results measured on "
             f"**STM32F746G-DISCOVERY** (Cortex-M7 @ 216 MHz) running "
             f"{long_} in default heap-allocation mode "
-            f"(`_create()` / `_destroy()` API).\n"
+            f"(`_create()` / `_destroy()` API), with "
+            f"`CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` — caches and "
+            f"flash accelerators disabled to approximate cacheless "
+            f"ARM-MCU timing.  See [benchmarks overview](index.md) "
+            f"for the worst-case-timing methodology.\n"
         )
         out.append(
-            f"For methodology, statistical conventions, and how to "
-            f"reproduce, see the [benchmarks overview](index.md).  See "
-            f"[{name} zero-heap]({key}-zeroheap.md) for the same numbers "
-            f"under `CONFIG_OVE_ZERO_HEAP=y`.\n"
+            f"Methodology and reproduction steps: "
+            f"[benchmarks overview](index.md).  Same numbers under "
+            f"`CONFIG_OVE_ZERO_HEAP=y`: "
+            f"[{name} zero-heap]({key}-zeroheap.md).  Interpretation: "
+            f"[heap vs zero-heap](heap-vs-zeroheap.md), "
+            f"[per-binding analysis](per-binding.md), "
+            f"[wrapper-vs-native notes](wrapper-vs-native-notes.md).\n"
         )
     elif mode == "zeroheap":
         out.append(f"# {name} — zero-heap mode\n")
         out.append(
-            f"Cross-binding benchmark report measured on "
+            f"Raw cross-binding benchmark results measured on "
             f"**STM32F746G-DISCOVERY** (Cortex-M7 @ 216 MHz) running "
             f"{long_} with `CONFIG_OVE_ZERO_HEAP=y` "
             f"(`_init()` / `_deinit()` API, caller-supplied static "
-            f"storage, heap locked at `ove_run()`).\n"
+            f"storage, heap locked at `ove_run()`) and "
+            f"`CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` — caches and "
+            f"flash accelerators disabled to approximate cacheless "
+            f"ARM-MCU timing.  See [benchmarks overview](index.md) "
+            f"for the worst-case-timing methodology.\n"
         )
         out.append(
-            f"Compared to [{name} heap mode]({key}-heap.md), the "
-            f"`*_create_destroy` and `*_memory` cases are gated out — "
-            f"the create/destroy API isn't generated under zero-heap.  "
-            f"Per-call hot paths (lock/unlock, take/give, send/receive, "
-            f"signal/wait) should match heap-mode within measurement "
-            f"noise.\n"
+            f"Under zero-heap, `*_create_destroy` and `*_memory` cases "
+            f"are gated out — the create/destroy API isn't generated.\n"
         )
         out.append(
-            f"For methodology, statistical conventions, and how to "
-            f"reproduce, see the [benchmarks overview](index.md).\n"
+            f"Methodology and reproduction steps: "
+            f"[benchmarks overview](index.md).  Heap-mode counterpart: "
+            f"[{name} heap mode]({key}-heap.md).  Interpretation: "
+            f"[heap vs zero-heap](heap-vs-zeroheap.md), "
+            f"[per-binding analysis](per-binding.md), "
+            f"[wrapper-vs-native notes](wrapper-vs-native-notes.md).\n"
         )
     else:
         return None
@@ -193,14 +209,10 @@ def _page_header(by_rtos, mode, threshold_pct):
         f"within typical measurement noise.*\n"
     )
     out.append(
-        f"**Note on `native_*` rows in the main table.** `{native_src}` "
-        f"is C code calling raw {name} APIs ({native_apis}), compiled "
-        f"identically into every binary. The CPP/RUST/ZIG columns for "
-        f"those rows are *the same C code measured in three different "
-        f"processes* — they reflect cross-run scheduler noise, not any "
-        f"binding-level difference. The meaningful number is the "
-        f"**within-run wrapper-vs-native delta** in the dedicated "
-        f"section below.\n"
+        f"**`native_*` rows.** `{native_src}` is C code calling raw "
+        f"{name} APIs ({native_apis}), compiled identically into every "
+        f"binary; the CPP/RUST/ZIG columns for those rows are the same "
+        f"C code measured in three different processes.\n"
     )
     # Section heading replaces the legacy "## RTOS: <name>" so the
     # downstream table renderer doesn't re-emit it (suppressed via
@@ -218,14 +230,10 @@ def _generic_header(threshold_pct):
         f"Trimmed-mean (top 1% dropped) when available, else avg. "
         f"Delta column is `(binding − C) / C` — values within "
         f"±{threshold_pct}% are within typical measurement noise.\n",
-        "**Note on `native_*` rows in the main table.** "
-        "`bench_native_posix.c` is C code calling raw pthread/sem APIs, "
-        "compiled identically into every binary. The CPP/RUST/ZIG "
-        "columns for those rows are *the same C code measured in three "
-        "different processes* — they reflect cross-run scheduler noise, "
-        "not any binding-level difference. The meaningful number is the "
-        "**within-run wrapper-vs-native delta** in the dedicated section "
-        "below each RTOS table.\n",
+        "**`native_*` rows.** `bench_native_<rtos>.c` is C code calling "
+        "raw RTOS APIs, compiled identically into every binary; the "
+        "CPP/RUST/ZIG columns for those rows are the same C code "
+        "measured in three different processes.\n",
     ])
 
 
@@ -327,20 +335,18 @@ def build_report(by_rtos, threshold_pct, page_mode=None):
 
         # Wrapper-vs-native within-run deltas — each row is one
         # (binding × operation) pair from a single benchmark process,
-        # so per-run scheduler noise cancels and the Δ column is a
-        # clean estimate of "wrapper code path − raw API code path"
-        # in nanoseconds.
+        # so per-run scheduler noise cancels and the Δ column is the
+        # raw "wrapper code path − raw API code path" in nanoseconds.
+        # Per-RTOS interpretation (IPC caveats, lifecycle costs) lives
+        # in docs-site/docs/benchmarks/wrapper-vs-native-notes.md so it
+        # isn't trampled when this script regenerates the page.
         #
         # Categories: threading, mutex, semaphore, condvar/event, IPC.
-        # Native baseline suite name is detected per binding — we have
-        # native_posix on POSIX builds and native_freertos on FreeRTOS
-        # builds.  Both share identical case-name suffixes so a single
-        # template works for either.  Cases without a meaningful raw
-        # equivalent (event groups, workqueues — neither is a standard
-        # POSIX or FreeRTOS primitive in the same shape) are absent.
-        # IPC caveat differs by RTOS (POSIX = kernel pipe vs
-        # user-space ring; FreeRTOS = native xQueue / xStreamBuffer);
-        # the section header notes this.
+        # Native baseline suite name is detected per binding (one of
+        # native_posix / native_freertos / native_nuttx / native_zephyr).
+        # All share identical case-name suffixes so a single template
+        # works for every backend.  Cases without a meaningful raw
+        # equivalent (event groups, workqueues) are absent.
         _WRAPPER_NATIVE_TEMPLATES = [
             # (label, wrapper_key, native_case_suffix)
             ("Thread yield",                ("thread", "yield"),                          "thread_yield"),
@@ -422,158 +428,22 @@ def build_report(by_rtos, threshold_pct, page_mode=None):
                 "native_nuttx":    "NuttX API",
                 "native_zephyr":   "Zephyr API",
             }.get(native_suite, "native API")
-            ipc_caveat = {
-                "native_posix": (
-                    "**IPC caveat.** oveRTOS queue and stream are user-space "
-                    "ring buffers; the closest standard POSIX IPC primitive "
-                    "is `pipe()`, which goes through the kernel.  Large "
-                    "negative Δ on `Queue *` / `Stream *` rows therefore "
-                    "reflects oveRTOS staying in user space, *not* a "
-                    "wrapper-layer effect.  Event groups and workqueues "
-                    "have no native POSIX equivalent and are intentionally "
-                    "absent from this table.\n"
-                ),
-                "native_freertos": (
-                    "**IPC caveat.** Both oveRTOS queue and the FreeRTOS "
-                    "`xQueue*` / `xStreamBuffer*` baselines run in-kernel "
-                    "on Cortex-M, so wrapper-vs-native Δ on `Queue *` / "
-                    "`Stream *` rows reflects pure binding overhead "
-                    "(no user-space-vs-kernel asymmetry like on POSIX).  "
-                    "Event groups (FreeRTOS xEventGroup* mirrors oveRTOS "
-                    "1:1, uninformative) and workqueues (no FreeRTOS "
-                    "primitive) are intentionally absent.\n"
-                ),
-                "native_zephyr": (
-                    "**IPC caveat.** Zephyr's `k_msgq` is the kernel "
-                    "message queue (semantically narrower than the "
-                    "wrapper's user-space ring), and `k_pipe` is the "
-                    "kernel byte-stream primitive (the closest "
-                    "analogue to oveRTOS stream).  Both run in-kernel "
-                    "on Cortex-M, so wrapper-vs-native Δ on `Queue *` / "
-                    "`Stream *` rows reflects the binding overhead "
-                    "rather than user-space-vs-kernel asymmetry.  "
-                    "Event groups have no native peer (Zephyr's "
-                    "k_event mirrors oveRTOS event 1:1, uninformative "
-                    "as a comparison row); workqueues likewise.\n\n"
-                    "**`mutex_contention_2t` flakiness.** With "
-                    "`CONFIG_TIMESLICING=y`, Zephyr round-robins "
-                    "same-priority threads every 1 ms.  Whether the "
-                    "bench's contention helper actually collides with "
-                    "the runner during the measurement window depends "
-                    "on initial scheduling alignment — some bindings "
-                    "may show ~22 µs (real contention happened) while "
-                    "others in the same run show ~3 µs (helper ran in "
-                    "different time slice from the runner, no "
-                    "collision).  The wrapper code path is identical "
-                    "across bindings, so cross-binding variance on "
-                    "this row is bench-design noise, not binding "
-                    "overhead.  FreeRTOS / NuttX show consistently "
-                    "low values on this row because their schedulers "
-                    "don't preempt same-priority threads — the helper "
-                    "never runs at all there.\n"
-                ),
-                "native_nuttx": (
-                    "**IPC caveat.** NuttX's `Queue *` native baseline "
-                    "uses `mq_*` (POSIX message queue, kernel-side via "
-                    "VFS path registration under `/var/mqueue/`), while "
-                    "oveRTOS queue on NuttX is a user-space ring buffer "
-                    "over `pthread_mutex+cond` — semantically narrower "
-                    "than mq.  Large negative Δ on `Queue *` rows "
-                    "reflects that semantic asymmetry, not wrapper "
-                    "magic.  `Stream *` rows have no native peer at "
-                    "all: oveRTOS stream on NuttX is itself a user-"
-                    "space ring buffer over pthread_mutex+cond, and "
-                    "NuttX has no kernel byte-stream primitive that "
-                    "would be apples-to-apples (its closest, pipes, is "
-                    "a different abstraction with VFS overhead).  "
-                    "Event groups and workqueues likewise have no "
-                    "NuttX equivalent and are absent.\n"
-                ),
-            }.get(native_suite, "")
             lines.append(
                 f"\n### Wrapper vs native {native_label} (within-run delta)\n"
             )
             lines.append(
-                f"Each row is one binding's measurement of its own "
-                f"wrapper paired against the **raw {native_label} "
-                f"baseline from the same process**.  Same scheduler "
-                f"state, same noise, so the Δ column is a clean "
-                f"per-binding estimate of wrapper overhead.  Δ near 0 ns "
-                f"⇒ binding wrapper matches raw native API within "
-                f"measurement noise.\n"
+                f"Each row pairs one binding's wrapper measurement against "
+                f"the raw {native_label} baseline measured in the same "
+                f"process.  See "
+                f"[wrapper-vs-native notes](wrapper-vs-native-notes.md) "
+                f"for IPC caveats, lifecycle/intrinsic-cost interpretation, "
+                f"and notes on cross-process baseline variance.\n"
             )
-            if ipc_caveat:
-                lines.append(ipc_caveat)
             header = ["Operation", "Binding", "Wrapper called", "Wrapper ns", "Native ns", "Δ"]
             lines.append("| " + " | ".join(header) + " |")
             lines.append("|" + "|".join("---" for _ in header) + "|")
             for row in wn_rows:
                 lines.append("| " + " | ".join(row) + " |")
-
-            if native_suite == "native_freertos":
-                lines.append(
-                    "\n#### Lifecycle and intrinsic-cost caveats\n"
-                )
-                lines.append(
-                    "Per-call wrapper overhead is sub-µs for every primitive: "
-                    "lock/unlock, take/give, send/receive, yield are all within "
-                    "±200 ns of raw FreeRTOS.  The remaining gaps are FreeRTOS-"
-                    "intrinsic costs of the underlying kernel work, **not** "
-                    "wrapper-layer overhead:\n"
-                )
-                lines.append(
-                    "- **Thread create+destroy ≈ +7 µs:** FreeRTOS task "
-                    "lifecycle (`prvInitialiseNewTask` + `prvAddNewTaskToReadyList` "
-                    "+ `vTaskDelete` + list cleanup) runs regardless of how thin "
-                    "the wrapper is.  oveRTOS uses single-allocation static-task "
-                    "creation (no extra heap blocks) and task-notification join "
-                    "via a Dekker-style handshake (no separate semaphore "
-                    "object).  Closing this further requires a thread-pool API "
-                    "(different ownership semantics) and is out of scope for "
-                    "the zero-overhead claim, which is about per-call cost.\n"
-                )
-                lines.append(
-                    "- **Condvar signal+wait ≈ +5 µs:** POSIX-style condvar "
-                    "contract requires the caller's mutex to be released "
-                    "atomically with the wait and re-acquired on wake.  That "
-                    "extra `xSemaphoreGive(mtx) + xSemaphoreTake(mtx)` round "
-                    "trip is what the raw `ulTaskNotifyTake` baseline doesn't "
-                    "pay.  Anyone wanting condvar semantics pays this; the "
-                    "binding doesn't add to it.\n"
-                )
-                lines.append(
-                    "- **Event signal+wait ≈ +2 µs:** `ove_event_*` is "
-                    "implemented directly on top of FreeRTOS task "
-                    "notifications (no semaphore in the middle).  The residual "
-                    "gap vs raw `ulTaskNotifyTake` is the cost of going through "
-                    "the wrapper function (`xTaskGetCurrentTaskHandle` lookup + "
-                    "`evt->waiter` store + frame setup) on each call.  The "
-                    "wrapper buys uniform single-waiter semantics across "
-                    "RTOSes; the per-call cost is what it is.\n"
-                )
-                lines.append(
-                    "- **Context switch (2t) ≈ +6 µs:** the bench runs a "
-                    "full ping-pong cycle (sem give/take across two tasks).  "
-                    "Both directions go through the wrapper, so the wrapper "
-                    "cost adds twice; the native baseline pays the same "
-                    "context-switch cost without that doubling.\n"
-                )
-                lines.append(
-                    "- **Rust same-process native baseline elevation "
-                    "(+40-65% on `native_*` rows):** `bench_native_freertos.c` "
-                    "is *the same C code* compiled into every binary, so the "
-                    "Rust column for those rows does not reflect any binding "
-                    "behaviour.  Investigated via `CONFIG_OVE_BENCHMARK_"
-                    "DISABLE_ICACHE` (toggles `SCB_DisableICache` for the "
-                    "run): with I-cache off, all rows scale up ~2.5× as "
-                    "expected, but the Rust↔C ratio does not converge — "
-                    "the absolute gap actually widens slightly.  I-cache "
-                    "pressure from Rust's larger text footprint is *not* "
-                    "the dominant cause.  The remaining elevation is "
-                    "binary-layout / call-frame / linker-placement noise "
-                    "that varies between Rust and C process images on this "
-                    "Cortex-M7; not closeable from the binding side.\n"
-                )
 
     return "\n".join(lines) + "\n"
 

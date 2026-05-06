@@ -88,8 +88,8 @@ void bench_print_footer(void)
  * line-buffered console where back-to-back writes can interleave or
  * resurface stale buffer content as duplicate JSON keys.  See
  * `grep -lE '"trimmed_mean_ns":[0-9]+.*"trimmed_mean_ns"' output/...`
- * for the symptom.  512 bytes covers the longest case (≈ 280 chars
- * with percentiles + stddev). */
+ * for the symptom.  768 bytes covers the longest case (~280 chars with
+ * percentiles + stddev, +6 audit checkpoints when audit mode is on). */
 static int json_case_format(char *buf, size_t cap, const bench_case_t *bc, const bench_result_t *r)
 {
 	const char *type_str = bc->type == BENCH_TYPE_LATENCY	   ? "latency"
@@ -102,26 +102,61 @@ static int json_case_format(char *buf, size_t cap, const bench_case_t *bc, const
 	}
 
 	uint64_t avg_ns = (r->count > 0) ? r->total_ns / r->count : 0;
+	int n;
 
 #if CONFIG_OVE_BENCHMARK_PERCENTILES
-	return snprintf(buf, cap,
-			"{\"name\":\"%s\",\"type\":\"%s\","
-			"\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
-			"\"count\":%u,\"ops_per_sec\":%u,"
-			"\"p50_ns\":%u,\"p95_ns\":%u,\"p99_ns\":%u,"
-			"\"trimmed_mean_ns\":%u,\"stddev_ns_q1000\":%u}",
-			bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
-			(unsigned int)avg_ns, (unsigned int)r->count, (unsigned int)r->ops_per_sec,
-			(unsigned int)r->p50_ns, (unsigned int)r->p95_ns, (unsigned int)r->p99_ns,
-			(unsigned int)r->trimmed_mean_ns, (unsigned int)r->stddev_ns_q);
+	n = snprintf(buf, cap,
+		     "{\"name\":\"%s\",\"type\":\"%s\","
+		     "\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
+		     "\"count\":%u,\"ops_per_sec\":%u,"
+		     "\"p50_ns\":%u,\"p95_ns\":%u,\"p99_ns\":%u,"
+		     "\"trimmed_mean_ns\":%u,\"stddev_ns_q1000\":%u",
+		     bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
+		     (unsigned int)avg_ns, (unsigned int)r->count,
+		     (unsigned int)r->ops_per_sec, (unsigned int)r->p50_ns,
+		     (unsigned int)r->p95_ns, (unsigned int)r->p99_ns,
+		     (unsigned int)r->trimmed_mean_ns, (unsigned int)r->stddev_ns_q);
 #else
-	return snprintf(buf, cap,
-			"{\"name\":\"%s\",\"type\":\"%s\","
-			"\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
-			"\"count\":%u,\"ops_per_sec\":%u}",
-			bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
-			(unsigned int)avg_ns, (unsigned int)r->count, (unsigned int)r->ops_per_sec);
+	n = snprintf(buf, cap,
+		     "{\"name\":\"%s\",\"type\":\"%s\","
+		     "\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
+		     "\"count\":%u,\"ops_per_sec\":%u",
+		     bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
+		     (unsigned int)avg_ns, (unsigned int)r->count,
+		     (unsigned int)r->ops_per_sec);
 #endif
+	if (n <= 0 || (size_t)n >= cap)
+		return n;
+
+	/* audit_count is always 0 unless CONFIG_OVE_BENCHMARK_NOISE_AUDIT
+	 * is on (the snapshot site is gated; the struct field always
+	 * exists so the layout matches across bindings). */
+	if (r->audit_count > 0) {
+		int m = snprintf(buf + n, cap - (size_t)n, ",\"audit\":[");
+		if (m <= 0 || (size_t)(n + m) >= cap)
+			return n + m;
+		n += m;
+		for (uint8_t i = 0; i < r->audit_count; i++) {
+			m = snprintf(buf + n, cap - (size_t)n,
+				     "%s{\"n\":%u,\"mean_ns\":%u,\"stddev_ns_q1000\":%u}",
+				     i ? "," : "",
+				     (unsigned int)r->audit_points[i].n,
+				     (unsigned int)r->audit_points[i].mean_ns,
+				     (unsigned int)r->audit_points[i].stddev_ns_q);
+			if (m <= 0 || (size_t)(n + m) >= cap)
+				return n + m;
+			n += m;
+		}
+		m = snprintf(buf + n, cap - (size_t)n, "]");
+		if (m <= 0 || (size_t)(n + m) >= cap)
+			return n + m;
+		n += m;
+	}
+
+	int m = snprintf(buf + n, cap - (size_t)n, "}");
+	if (m <= 0)
+		return m;
+	return n + m;
 }
 
 /* Each per-case JSON is composed in a single 512-byte stack buffer and
@@ -134,15 +169,21 @@ void bench_emit_suite_json(const bench_suite_t *suite, const bench_case_t *cases
 	OVE_LOG("{\"rtos\":\"%s\",\"binding\":\"%s\",\"suite\":\"%s\",\"cases\":[", OVE_RTOS_NAME,
 		OVE_APP_LANG_NAME, suite->name);
 
-	char json_buf[512];
+	char json_buf[768];
+	int emitted = 0;
 	for (unsigned int i = 0; i < n; i++) {
 		int payload_len =
 			json_case_format(json_buf, sizeof(json_buf), &cases[i], &results[i]);
+		/* Skipping a case (format failure or buffer overflow) must NOT
+		 * leave a leading comma on the next case — track successful
+		 * emits, not the loop index, so a skipped case 0 doesn't
+		 * produce "[,{...}" malformed JSON. */
 		if (payload_len <= 0 || (size_t)payload_len >= sizeof(json_buf))
 			continue;
-		if (i > 0)
+		if (emitted > 0)
 			ove_console_write(",", 1);
 		ove_console_write(json_buf, (unsigned int)payload_len);
+		emitted++;
 	}
 
 	OVE_LOG("]}\n");

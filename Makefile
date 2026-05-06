@@ -177,10 +177,13 @@ test: $(VENV_STAMP)
 #                            output/stm32f746/freertos/_benchmarks/report.md
 #
 # Use SKIPBUILD=1 to skip the per-binding builds (re-flash + re-run only).
+# Use ZEROHEAP=1 to build and run the *_zh variants and write the
+# generated report to docs-site/docs/benchmarks/<rtos>-zeroheap.md.
 .PHONY: benchmarks-%
 benchmarks-%: $(VENV_STAMP)
 	@$(OVE) benchmarks \
 		$(if $(filter 1,$(SKIPBUILD)),--skip-build) \
+		$(if $(filter 1,$(ZEROHEAP)),--zeroheap) \
 		$(foreach b,$(BINDING),--binding $(b)) \
 		"$*"
 

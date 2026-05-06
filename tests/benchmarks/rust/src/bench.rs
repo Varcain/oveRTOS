@@ -30,12 +30,35 @@ pub enum BenchType {
     Memory = 2,
 }
 
+/// One iteration-count audit checkpoint — mirrors C
+/// `bench_audit_point_t`.  Field order and sizes must match the C
+/// struct (24 bytes total: 4-byte n + 4 pad + 8-byte mean + 8-byte stddev).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct BenchAuditPoint {
+    pub n: u32,
+    _pad: u32,
+    pub mean_ns: u64,
+    pub stddev_ns_q: u64,
+}
+
+/// Maximum audit checkpoints — must match C `BENCH_AUDIT_MAX`.
+pub const BENCH_AUDIT_MAX: usize = 6;
+
 /// Benchmark result published by the harness. Mirrors `bench_result_t`
 /// in `tests/benchmarks/c/include/benchmark.h` — the field order and
 /// types must stay byte-compatible with the C struct, otherwise
 /// bench_run_case() will write past the end of this struct and corrupt
 /// the stack.
+///
+/// Audit fields are *always* present in the Rust mirror even when the
+/// C struct compiles them out (`CONFIG_OVE_BENCHMARK_NOISE_AUDIT=n`).
+/// The Rust side being larger is harmless: extra trailing bytes stay
+/// zero from `Default`.  The reverse — Rust smaller than C — is the
+/// bug we're avoiding (C harness would write audit data past the
+/// Rust struct end and clobber the next array element).
 #[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct BenchResult {
     pub min_ns: u64,
     pub max_ns: u64,
@@ -51,6 +74,11 @@ pub struct BenchResult {
     pub trimmed_mean_ns: u64,
     /// Fixed-point: stddev_ns × 1000.
     pub stddev_ns_q: u64,
+    /// Audit checkpoint snapshots — populated only when
+    /// `CONFIG_OVE_BENCHMARK_NOISE_AUDIT=y` on the C side.
+    pub audit_points: [BenchAuditPoint; BENCH_AUDIT_MAX],
+    pub audit_count: u8,
+    _audit_pad: [u8; 7],
 }
 
 /// C-ABI bench case descriptor — mirrors `bench_case_t`.
