@@ -533,14 +533,35 @@ def ensure_rust_target(config, dl_dir):
     if get_bool(config, "CONFIG_OVE_RUST_TOOLCHAIN_SYSTEM"):
         rustup = shutil.which("rustup")
         if rustup:
-            logger.info(f"Rust: adding targets {targets}...")
-            ret = subprocess.run(
-                [rustup, "target", "add"] + targets,
+            # Check what's already installed so we can skip the `add` call
+            # when nothing is missing.  Two reasons:
+            #   1. CI matrices running many app builds in parallel against
+            #      a shared $RUSTUP_HOME race on `rustup target add` —
+            #      rustup writes `bin/cargo` etc. as part of its toolchain
+            #      sync, and the second invocation hits
+            #      `detected conflict: 'bin/cargo'` and rolls back.
+            #   2. The `add` path triggers a toolchain channel re-sync
+            #      that's slow and doesn't add value when the targets are
+            #      already present.
+            installed = subprocess.run(
+                [rustup, "target", "list", "--installed"],
                 capture_output=True, text=True)
-            if ret.returncode != 0:
-                logger.error(f"rustup target add failed: {ret.stderr}")
-                return False
-            logger.info("Rust: targets ready")
+            installed_set = set()
+            if installed.returncode == 0:
+                installed_set = set(installed.stdout.split())
+
+            missing = [t for t in targets if t not in installed_set]
+            if not missing:
+                logger.info(f"Rust: targets {targets} already installed")
+            else:
+                logger.info(f"Rust: adding targets {missing}...")
+                ret = subprocess.run(
+                    [rustup, "target", "add"] + missing,
+                    capture_output=True, text=True)
+                if ret.returncode != 0:
+                    logger.error(f"rustup target add failed: {ret.stderr}")
+                    return False
+                logger.info("Rust: targets ready")
         else:
             logger.warning("rustup not found, cannot add target "
                   "automatically")
