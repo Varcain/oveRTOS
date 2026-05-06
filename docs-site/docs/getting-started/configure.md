@@ -87,11 +87,15 @@ make stm32f746.zephyr.example_cpp
 make host.posix.example_rust
 ```
 
-For zero-heap variants, append `ZEROHEAP=1`:
+Zero-heap variants are separate apps with the `_zh` suffix:
 
 ```bash
-make host.posix.example_c ZEROHEAP=1
+make host.posix.example_c_zh
+make qemu.freertos.example_cpp_zh
 ```
+
+Each `_zh` app has its own `app.yaml` with `CONFIG_OVE_ZERO_HEAP=y`
+and any storage-mode-specific tuning.
 
 ### Available Boards, RTOSes, and Apps
 
@@ -150,7 +154,7 @@ The `ove` CLI composes the final `.config` by layering these fragments in order:
 3. **RTOS fragment** (`config/fragments/rtos/<rtos>.defconfig`) — RTOS selection and settings
 4. **Board+RTOS overrides** from `board.yaml` `rtos_defconfig.<rtos>` — per-RTOS board tuning
 5. **App selection** + `app.yaml` defconfig entries — app language and required modules
-6. **Variant fragment** (`config/fragments/variant/zeroheap.defconfig`) — applied when `ZEROHEAP=1`
+6. **App+RTOS overrides** from `app.yaml` `rtos_defconfig.<rtos>` — per-RTOS app tuning
 
 Each layer supplements the previous without overwriting, so earlier settings are preserved unless explicitly overridden.
 

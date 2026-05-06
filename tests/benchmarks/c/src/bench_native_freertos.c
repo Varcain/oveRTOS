@@ -17,7 +17,7 @@
  * Storage strategy: every kernel object is allocated via the
  * `*Static` variants (xSemaphoreCreateMutexStatic, xQueueCreateStatic,
  * xTaskCreateStatic, ...) backed by file-scope `Static*_t` storage.
- * This keeps the file compatible with FreeRTOS ZEROHEAP builds (where
+ * This keeps the file compatible with FreeRTOS zero-heap builds (where
  * `configSUPPORT_DYNAMIC_ALLOCATION=0` removes the dynamic variants
  * entirely) and makes setup paths heap-free in both modes.  The
  * `*_create_destroy_run` cases (heap-mode-only by definition) are
@@ -95,7 +95,7 @@ static void native_mutex_lock_unlock_teardown(void *ctx)
 {
 	(void)ctx;
 	/* No vSemaphoreDelete — undefined for static-allocated objects in
-	 * ZEROHEAP builds; storage is reusable for the next setup. */
+	 * zero-heap builds; storage is reusable for the next setup. */
 }
 
 /* ─── Mutex: create/destroy (heap-mode only) ───────────────────── */

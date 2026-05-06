@@ -62,7 +62,7 @@ make host.posix.example_c
 make qemu.freertos.example_c
 make qemu.nuttx.example_rust
 make stm32f746.zephyr.example_cpp
-make host.posix.example_c ZEROHEAP=1    # zero-heap variant
+make host.posix.example_c_zh
 ```
 
 Run `make help` to see all available configurations and targets.
