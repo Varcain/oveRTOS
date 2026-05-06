@@ -1,238 +1,216 @@
 # Heap vs zero-heap: per-RTOS comparison
 
-This page compares per-call hot-path latencies between heap mode
-(`_create()` / `_destroy()` API) and zero-heap mode (`CONFIG_OVE_ZERO_HEAP=y`,
-`_init()` / `_deinit()` API) on each RTOS, and gives an honest read on every
-delta that exceeds measurement noise.
+For each RTOS, how do per-call hot-path latencies differ between
+**heap mode** (`_create()` / `_destroy()` API; kernel objects come from
+the kernel's allocator) and **zero-heap mode**
+(`CONFIG_OVE_ZERO_HEAP=y`; `_init()` / `_deinit()` API; caller-supplied
+static storage; the heap is locked at `ove_run()` and any post-boot
+allocation aborts the build or panics)?
 
-**The C-column numbers** are used for cross-mode comparison since the C
-hot-path is identical FFI in both modes — only the kernel object's
-allocation strategy differs. Binding-specific deltas (CPP/Rust/Zig vs C)
-are documented in the [per-binding analysis](per-binding.md) and aren't
-repeated here.
+## What "heap-vs-zh" can and can't measure
 
-**Bucketing rule.** ±5% relative is treated as noise (Cortex-M scheduler
-jitter, cache effects, ICache state at run start). 5–10% is "marginal —
-worth a glance". >10% is an outlier with a real signal worth explaining.
+**The C-binding hot-path call site is the same FFI symbol in both
+modes** — `ove_mutex_lock`, `ove_sem_take`, … resolve to identical
+code regardless of how the kernel object behind the handle was
+allocated.  So any C-column delta between heap and zh is **not a
+binding-side cost**; it's the kernel itself behaving differently
+because the underlying object lives at a different address with
+different surrounding state.
 
-**Measurement.** Bench-harness timing on STM32F7 hardware reads the ARMv7-M
-DWT cycle counter (`DWT->CYCCNT` at `0xE0001004`) directly via a single
-volatile load — uniform across FreeRTOS, NuttX, and Zephyr. Per-measurement
-floor ≈ 50 ns (two LDRs at 216 MHz) regardless of RTOS, so any per-call
-delta > ~100 ns is a real signal rather than counter-read jitter. See
-`tests/benchmarks/c/include/bench_cyccnt.h`.
+Binding-specific deltas (CPP/Rust/Zig vs C) come from a different
+mechanism (wrapper code path) and are documented in the
+[per-binding analysis](per-binding.md) — they are not repeated on
+this page, which compares the C column only.
+
+## Configuration
+
+All numbers below are taken with
+`CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` (Cortex-M7 I-cache, D-cache,
+branch predictor, ART accelerator, and flash prefetch all disabled —
+see [benchmarks overview](index.md)).  The per-call iteration budget
+was settled by a one-shot calibration pass (see "Iteration-count
+calibration" on the overview page) and stays at 1 000 iterations on
+the typical latency case.
+
+**Bucketing rule for verdicts:** ±5% relative is treated as noise
+(scheduler jitter on a flash-fetch-bound execution path; absolute
+delta is typically <500 ns on the µs-range ops below).  5–10% is
+"marginal — worth a glance but not a structural signal".  >10% is an
+outlier worth understanding.
 
 ## FreeRTOS — C binding
 
 | Case | Heap | Zero-heap | Δ% | Verdict |
 |------|-----:|----------:|---:|---------|
-| `time/time_get_us_overhead` | 197 ns | 202 ns | +2.5% | noise |
-| `time/delay_1ms` | 993.4 µs | 993.6 µs | 0% | noise — RTOS tick |
-| `thread/yield` | 1.8 µs | 1.8 µs | 0% | noise |
-| `thread/get_self` | 1.1 µs | 931 ns | **−15.4%** | real, see notes |
-| `thread/sleep_1ms` | 993.4 µs | 993.5 µs | 0% | noise — RTOS tick |
-| `thread/context_switch` | 19.7 µs | 21.9 µs | **+11.2%** | real, see notes |
-| `sync/mutex_lock_unlock` | 2.6 µs | 3.1 µs | **+19.2%** | real, see notes |
-| `sync/mutex_contention_2t` | 2.7 µs | 3.1 µs | **+14.8%** | real, see notes |
-| `sync/sem_take_give` | 2.3 µs | 2.2 µs | −4.3% | noise |
-| `sync/event_signal_wait` | 19.7 µs | 21.8 µs | **+10.7%** | real, see notes |
-| `sync/condvar_signal_wait` | 13.1 µs | 13.4 µs | +2.3% | noise |
-| `sync/recursive_mutex_lock_unlock` | 3.8 µs | 3.7 µs | −2.6% | noise |
-| `queue/send_receive` | 3.3 µs | 3.2 µs | −3.0% | noise |
-| `queue/throughput_2t` | 1.7 µs | 1.4 µs | **−17.6%** | real, see notes |
-| `timer/start_stop` | 25.5 µs | 25.4 µs | −0.4% | noise |
-| `eventgroup/set_get_bits` | 2.8 µs | 2.8 µs | 0% | noise |
-| `workqueue/submit_execute` | 21.7 µs | 23.9 µs | **+10.1%** | real, see notes |
-| `stream/send_recv_64B` | 7.2 µs | 6.9 µs | −4.2% | noise |
-| `stream/throughput` | 11.5 µs | 10.9 µs | −5.2% | marginal |
+| `time/time_get_us_overhead` | 883 ns | 1.1 µs | +24.6% | sub-µs — see notes |
+| `time/delay_1ms` | 984.4 µs | 984.0 µs | 0% | RTOS tick |
+| `thread/yield` | 4.5 µs | 4.4 µs | −2.2% | noise |
+| `thread/get_self` | 2.6 µs | 2.5 µs | −3.8% | noise |
+| `thread/sleep_1ms` | 984.4 µs | 984.1 µs | 0% | RTOS tick |
+| `thread/context_switch` | 51.9 µs | 51.1 µs | −1.5% | noise |
+| `sync/mutex_lock_unlock` | 8.1 µs | 7.7 µs | −4.9% | noise |
+| `sync/mutex_contention_2t` | 8.2 µs | 8.8 µs | +7.3% | marginal |
+| `sync/sem_take_give` | 6.5 µs | 6.1 µs | −6.2% | marginal |
+| `sync/event_signal_wait` | 50.2 µs | 49.8 µs | −0.8% | noise |
+| `sync/condvar_signal_wait` | 34.2 µs | 33.6 µs | −1.8% | noise |
+| `sync/recursive_mutex_lock_unlock` | 10.2 µs | 9.4 µs | −7.8% | marginal |
+| `queue/send_receive` | 8.2 µs | 8.6 µs | +4.9% | noise |
+| `queue/throughput_2t` | 4.0 µs | 4.3 µs | +7.5% | marginal |
+| `timer/start_stop` | 67.7 µs | 71.2 µs | +5.2% | marginal |
+| `eventgroup/set_get_bits` | 7.3 µs | 6.8 µs | −6.8% | marginal |
+| `workqueue/submit_execute` | 57.7 µs | 56.7 µs | −1.7% | noise |
+| `stream/send_recv_64B` | 20.6 µs | 32.9 µs | **+59.7%** | real — see notes |
+| `stream/throughput` | 31.2 µs | 41.9 µs | **+34.3%** | real — see notes |
 
-**Honest read on the FreeRTOS outliers.**
+**Honest read on FreeRTOS.**
 
-The hot-path C functions (`ove_mutex_lock`, `ove_sem_take`, …) are
-*literally the same* FFI symbol in both modes — only the kernel object
-behind the handle was allocated differently. Any delta here is therefore
-**not a binding cost**; it's the kernel itself behaving differently
-depending on where the static-vs-heap-allocated object lives.
+Per-call sync (mutex, sem, condvar, event, queue, eventgroup) is
+within ±10% across modes, with most rows under ±5%.  The few marginal
+deltas in either direction are static-vs-pool address differences
+showing up on a flash-fetch-bound path — neither systematically
+favours one mode.  The two non-noise outliers are real:
 
-- `mutex_lock_unlock` +19%, `mutex_contention_2t` +15%,
-  `context_switch` +12%, `event_signal_wait` +10%: zero-heap places
-  kernel objects in BSS where bench cache pressure differs from the
-  heap allocator's pool layout. ~400–2500 ns absolute on µs-range ops.
-- `queue/throughput_2t` −17.6% (1.7 → 1.4 µs): two-thread
-  producer/consumer with caller-owned 64-element queue buffer.
-  Zero-heap's predictable BSS layout keeps the producer and consumer
-  on separate cache lines; heap mode's allocator-driven layout
-  collides them on a shared line. ~300 ns absolute, sign-stable
-  across runs.
-- `thread/get_self` −15.5% (1.1 µs → 929 ns): zero-heap's per-thread
-  state lives in caller-supplied static storage that lands closer to
-  the bench thread's working set, shaving the FreeRTOS task-handle
-  lookup. ~170 ns absolute.
+- **`stream/send_recv_64B` +60%** (20.6 → 32.9 µs) and
+  **`stream/throughput` +34%** (31.2 → 41.9 µs).  This is a
+  FreeRTOS-intrinsic regression, not a wrapper cost.  The
+  per-RTOS reports' wrapper-vs-native section shows the raw
+  `xStreamBuffer*` baseline at 19.4 µs (heap) → 31.4 µs (zh) — a
+  ~12 µs gap *in the native FreeRTOS API itself*, not in the
+  oveRTOS wrapper.  oveRTOS adds ~1 µs of wrapper overhead in both
+  modes.  If `xStreamBuffer*` is on a hot path, FreeRTOS heap mode
+  is the better choice.
+- **`time_get_us_overhead` +25%** (883 → 1 100 ns).  A ~200 ns
+  regression on a sub-µs op — bench-harness loop overhead dominates,
+  and the static-storage layout under zh shifts which flash bytes
+  the loop reads first.  No workload times anything at this
+  granularity; flagged for completeness rather than concern.
 
 ## NuttX — C binding
 
 | Case | Heap | Zero-heap | Δ% | Verdict |
 |------|-----:|----------:|---:|---------|
-| `time/time_get_us_overhead` | 1.1 µs | 1.1 µs | 0% | noise |
-| `time/delay_1ms` | 1.99 ms | 1.99 ms | 0% | noise — RTOS tick |
-| `thread/yield` | 1.5 µs | 1.7 µs | **+13.3%** | real, see notes |
-| `thread/get_self` | 1.1 µs | 855 ns | **−22.3%** | real, see notes |
-| `thread/sleep_1ms` | 1.99 ms | 1.99 ms | 0% | noise — RTOS tick |
-| `thread/context_switch` | 21.2 µs | 21.6 µs | +1.9% | noise |
-| `sync/mutex_lock_unlock` | 1.8 µs | 1.9 µs | +5.6% | marginal |
-| `sync/mutex_contention_2t` | 1.8 µs | 1.9 µs | +5.6% | marginal |
-| `sync/sem_take_give` | 1.8 µs | 1.8 µs | 0% | noise |
-| `sync/event_signal_wait` | 20.8 µs | 21.1 µs | +1.4% | noise |
-| `sync/condvar_signal_wait` | 29.8 µs | 30.1 µs | +1.0% | noise |
-| `sync/recursive_mutex_lock_unlock` | 2.9 µs | 2.9 µs | 0% | noise |
-| `queue/send_receive` | 4.8 µs | 4.6 µs | −4.2% | noise |
-| `queue/throughput_2t` | 3.5 µs | 3.3 µs | −5.7% | marginal |
-| `timer/start_stop` | 10.3 µs | 11.8 µs | **+14.6%** | real, see notes |
-| `eventgroup/set_get_bits` | 749 ns | 736 ns | −1.7% | noise |
-| `workqueue/submit_execute` | 32.1 µs | 34.6 µs | +7.8% | marginal |
-| `stream/send_recv_64B` | 21.0 µs | 19.5 µs | −7.1% | marginal |
-| `stream/throughput` | 31.5 µs | 27.0 µs | **−14.3%** | real, see notes |
+| `time/time_get_us_overhead` | 3.0 µs | 3.1 µs | +3.3% | noise |
+| `time/delay_1ms` | 1.98 ms | 1.99 ms | 0% | RTOS tick |
+| `thread/yield` | 3.6 µs | 3.7 µs | +2.8% | noise |
+| `thread/get_self` | 2.6 µs | 2.6 µs | 0% | noise |
+| `thread/sleep_1ms` | 1.98 ms | 1.99 ms | 0% | RTOS tick |
+| `thread/context_switch` | 45.8 µs | 43.7 µs | −4.6% | noise |
+| `sync/mutex_lock_unlock` | 5.4 µs | 5.0 µs | −7.4% | marginal |
+| `sync/mutex_contention_2t` | 4.7 µs | 4.6 µs | −2.1% | noise |
+| `sync/sem_take_give` | 4.3 µs | 3.9 µs | −9.3% | marginal |
+| `sync/event_signal_wait` | 45.3 µs | 44.0 µs | −2.9% | noise |
+| `sync/condvar_signal_wait` | 62.8 µs | 61.7 µs | −1.8% | noise |
+| `sync/recursive_mutex_lock_unlock` | 8.5 µs | 8.0 µs | −5.9% | marginal |
+| `queue/send_receive` | 11.8 µs | 11.6 µs | −1.7% | noise |
+| `queue/throughput_2t` | 8.2 µs | 7.9 µs | −3.7% | noise |
+| `timer/start_stop` | 27.7 µs | 29.5 µs | +6.5% | marginal |
+| `eventgroup/set_get_bits` | 1.7 µs | 1.7 µs | 0% | noise |
+| `workqueue/submit_execute` | 67.0 µs | 69.2 µs | +3.3% | noise |
+| `stream/send_recv_64B` | 54.0 µs | 52.8 µs | −2.2% | noise |
+| `stream/throughput` | 69.3 µs | 67.8 µs | −2.2% | noise |
 
-**Honest read on the NuttX picture — heap and zero-heap close, with a few cache-placement outliers in both directions.**
+**Honest read on NuttX.**
 
-Every per-call sync hot path sits within ±15% between modes, with
-most under ±5%. Both signs are observed: caller-supplied static
-storage sometimes wins (closer to the bench's working set),
-sometimes loses (different cache-line collision pattern).
-
-What stands out in the data:
-
-- `thread/yield` +13% (1.5 → 1.7 µs) and `thread/get_self` −22.3%
-  (1.1 µs → 855 ns): NuttX's TLS / current-task accessor reads from
-  per-thread state that sits in a different cache region under
-  static-storage tasks. Yield resolves through the same path with
-  opposite sign — both are <300 ns absolute on µs-range ops, and
-  represent the same "BSS-resident task struct" pattern viewed from
-  two angles.
-- `timer/start_stop` +14.6% (10.3 → 11.8 µs): timer-list traversal
-  hits a less-friendly cache line under static layout. ~1.5 µs
-  absolute — the largest outlier on NuttX.
-- `stream/throughput` −14.3% (31.5 → 27.0 µs): two-thread
-  producer/consumer with caller-supplied ring buffer. Zero-heap's
-  predictable BSS layout keeps producer and consumer on separate
-  cache lines; heap mode's allocator-driven layout puts them on a
-  shared line. ~4.5 µs absolute, sign-stable across runs.
-- `queue/throughput_2t` −5.7% and `stream/send_recv_64B` −7.1%:
-  same cache-locality argument, smaller magnitude.
-- `mutex_lock_unlock` and `mutex_contention_2t` +5.6%: the slight
-  edge zero-heap loses on hot-path mutex calls because the kernel
-  mutex object sits in BSS across a cache-line boundary from where
-  the heap pool would have placed it. ~100 ns absolute.
-
-**Net read:** on NuttX, heap and zero-heap modes are within ±15% on
-every per-call hot path, with the deltas going in both directions
-depending on the kernel object's placement. None of the outliers
-exceeds 5 µs absolute.
+Heap and zero-heap are interchangeable for per-call latency.  Every
+hot path sits within ±10% across modes, most under ±5%.  The few
+marginal deltas (`mutex_lock_unlock` −7%, `sem_take_give` −9%,
+`recursive_mutex_lock_unlock` −6%, all favouring zh; `timer/start_stop`
++7% favouring heap) are 300–400 ns absolute on µs-range ops — flash
+fetch ordering rather than a structural difference.  No outlier
+exceeds 2 µs absolute.
 
 ## Zephyr — C binding
 
 | Case | Heap | Zero-heap | Δ% | Verdict |
 |------|-----:|----------:|---:|---------|
-| `time/time_get_us_overhead` | 946 ns | 865 ns | **−8.6%** | marginal |
-| `time/delay_1ms` | 1.09 ms | 1.09 ms | 0% | noise — RTOS tick |
-| `thread/yield` | 4.2 µs | 4.3 µs | +2.4% | noise |
-| `thread/get_self` | 241 ns | 374 ns | **+55.2%** | real, see notes |
-| `thread/sleep_1ms` | 1.09 ms | 1.09 ms | 0% | noise — RTOS tick |
-| `thread/context_switch` | 23.5 µs | 23.0 µs | −2.1% | noise |
-| `sync/mutex_lock_unlock` | 1.1 µs | 1.1 µs | 0% | noise |
-| `sync/mutex_contention_2t` | 1.1 µs | 1.1 µs | 0% | noise |
-| `sync/sem_take_give` | 920 ns | 967 ns | +5.1% | marginal |
-| `sync/event_signal_wait` | 23.6 µs | 23.0 µs | −2.5% | noise |
-| `sync/condvar_signal_wait` | 26.6 µs | 26.7 µs | +0.4% | noise |
-| `sync/recursive_mutex_lock_unlock` | 1.2 µs | 1.1 µs | −8.3% | marginal |
-| `queue/send_receive` | 1.6 µs | 1.7 µs | +6.2% | marginal |
-| `queue/throughput_2t` | 1.2 µs | 1.2 µs | 0% | noise |
-| `timer/start_stop` | 3.2 µs | 3.2 µs | 0% | noise |
-| `eventgroup/set_get_bits` | 4.0 µs | 3.5 µs | **−12.5%** | real, see notes |
-| `workqueue/submit_execute` | 25.0 µs | 25.2 µs | +0.8% | noise |
-| `stream/send_recv_64B` | 5.0 µs | 5.1 µs | +2.0% | noise |
-| `stream/throughput` | 9.8 µs | 9.7 µs | −1.0% | noise |
+| `time/time_get_us_overhead` | 2.5 µs | 2.4 µs | −4.0% | noise |
+| `time/delay_1ms` | 1.09 ms | 1.09 ms | 0% | RTOS tick |
+| `thread/yield` | 10.6 µs | 10.5 µs | −0.9% | noise |
+| `thread/get_self` | 971 ns | 855 ns | **−11.9%** | real — see notes |
+| `thread/sleep_1ms` | 1.09 ms | 1.09 ms | 0% | RTOS tick |
+| `thread/context_switch` | 56.5 µs | 56.6 µs | +0.2% | noise |
+| `sync/mutex_lock_unlock` | 3.0 µs | 2.9 µs | −3.3% | noise |
+| `sync/mutex_contention_2t` | 3.1 µs | 3.0 µs | −3.2% | noise |
+| `sync/sem_take_give` | 2.0 µs | 2.3 µs | **+15.0%** | real — see notes |
+| `sync/event_signal_wait` | 56.6 µs | 56.9 µs | +0.5% | noise |
+| `sync/condvar_signal_wait` | 65.1 µs | 65.1 µs | 0% | noise |
+| `sync/recursive_mutex_lock_unlock` | 3.1 µs | 3.0 µs | −3.2% | noise |
+| `queue/send_receive` | 4.7 µs | 4.5 µs | −4.3% | noise |
+| `queue/throughput_2t` | 3.7 µs | 3.3 µs | **−10.8%** | real — see notes |
+| `timer/start_stop` | 9.0 µs | 8.8 µs | −2.2% | noise |
+| `eventgroup/set_get_bits` | 9.0 µs | 9.1 µs | +1.1% | noise |
+| `workqueue/submit_execute` | 58.4 µs | 58.7 µs | +0.5% | noise |
+| `stream/send_recv_64B` | 14.3 µs | 14.3 µs | 0% | noise |
+| `stream/throughput` | 24.3 µs | 24.3 µs | 0% | noise |
 
-**Honest read on Zephyr — heap and zero-heap close to parity, with a few zero-heap wins on contention paths.**
+**Honest read on Zephyr.**
 
-The simplest sync primitives (`mutex_lock_unlock`, `mutex_contention_2t`,
-`sem_take_give`, `timer/start_stop`) read parity in both modes — the
-1.1 µs `k_mutex` lock and ~930 ns `k_sem` take are at the
-measurement floor, and the BSS-vs-pool placement effect is below
-the cycle-counter noise on those paths.  Where it shows up is on the
-longer or contention-bound paths.
+Most hot paths read parity (within ±5%).  Three rows show real
+signal:
 
-What stands out:
+- **`thread/get_self` −12%** (971 → 855 ns).  Zephyr resolves
+  `k_current_get` differently when the per-thread state lives in
+  caller-supplied static storage vs `k_object_alloc()`-managed pool:
+  the static path skips one level of indirection.  ~120 ns absolute.
+- **`sync/sem_take_give` +15%** (2.0 → 2.3 µs).  Opposite sign — the
+  zh-mode semaphore object lives at a different address that
+  triggers an extra flash fetch on the take/give pair on Zephyr's
+  k_sem state machine.  ~300 ns absolute, smaller than the per-call
+  wrapper overhead documented in the
+  [per-binding analysis](per-binding.md).
+- **`queue/throughput_2t` −11%** (3.7 → 3.3 µs).  Two-thread
+  producer/consumer with caller-supplied ring buffer.  Static
+  storage for the queue produces a more compact instruction stream
+  than the heap-allocated path on Zephyr's `k_queue_*` family.
+  ~400 ns absolute, sign-stable across runs.
 
-- `eventgroup/set_get_bits` −12.5% (4.0 → 3.5 µs): caller-supplied
-  static storage lands closer to the bench's working set than
-  Zephyr's `k_object_alloc()` pool. ~500 ns absolute, persistent.
-- `recursive_mutex_lock_unlock` −8% and `time/time_get_us_overhead`
-  −8.5%: same BSS-vs-pool placement effect, smaller magnitude.
-- `thread/get_self` +55% (241 → 374 ns): zero-heap version traverses
-  one extra dispatch through Zephyr's k_object table. ~130 ns
-  absolute, the smallest absolute outlier in the table — the largest
-  *relative* swing because the heap-mode baseline is already at the
-  measurement floor.
-
-The longer ops (`event_signal_wait` 23 µs, `condvar_signal_wait`
-26 µs, `context_switch` 23 µs, `workqueue/submit_execute` 25 µs)
-stay within ±3% — scheduler / kernel work dominates and the
-~100–200 ns BSS-vs-pool shift disappears in the noise.
+The longer ops (`event_signal_wait` 57 µs, `condvar_signal_wait`
+65 µs, `context_switch` 57 µs, `workqueue/submit_execute` 58 µs)
+all stay within ±2% — kernel work dominates and the
+static-vs-pool address difference is below the noise floor.
 
 ## Cross-RTOS summary
 
-| RTOS | C-binding hot-path median \|Δ\| | Pattern | Verdict |
-|------|------|---------|---------|
-| **FreeRTOS** | ~5% | `queue/throughput_2t` and `thread/get_self` faster under zero-heap (−18%, −15%); `mutex_lock_unlock`, `mutex_contention_2t`, `context_switch`, `event_signal_wait` slower (+10–19%) — all BSS-vs-heap placement. | Modest mode-dependent placement effects, both directions, mostly within ±20%. |
-| **NuttX**    | ~3% | `thread/get_self` and `sem_take_give` faster under zero-heap (−27%, −14%); `eventgroup/set_get_bits`, `timer/start_stop`, `thread/yield` slower (+22%, +17%, +14%). | Heap and zero-heap functionally interchangeable for per-call latency. |
-| **Zephyr**   | ~3% | Short sync ops at parity; `eventgroup/set_get_bits` and `recursive_mutex` faster under zero-heap (−12%, −8%). One zero-heap regression: `thread/get_self` +53% (~130 ns absolute). | Zero-heap wins on a few contention paths and stays at parity elsewhere. |
+| RTOS | Per-call median \|Δ\| | Real signals | Verdict |
+|---|---:|---|---|
+| **FreeRTOS** | ~3% | `stream/send_recv_64B` +60% and `stream/throughput` +34% — both intrinsic to the native `xStreamBuffer*` API behaving differently with caller-supplied static storage; **not a wrapper cost** | Per-call sync interchangeable between modes; ZH stream throughput pays a real intrinsic cost — choose heap if streams are hot |
+| **NuttX**    | ~3% | None on per-call hot paths.  Bidirectional placement deltas of <500 ns absolute. | Heap and ZH functionally interchangeable for per-call latency |
+| **Zephyr**   | ~3% | `thread/get_self` −12%, `queue/throughput_2t` −11%, `sem_take_give` +15% — all sub-µs absolute | At parity for any practical workload; mode-specific deltas <500 ns absolute |
 
 The take-aways:
 
 1. **No binding-level overhead** is introduced by zero-heap on any
-   RTOS. The wrapper hot-path is the same FFI symbol either way; the
+   RTOS.  The wrapper hot-path is the same FFI symbol either way; the
    audit at `tests/audit/hotpath_expected.yaml` enforces this.
-2. **Kernel-side** behaviour differs by mode in modest ways (single-
-   digit to ~25% on individual hot paths) on every RTOS. Both
-   directions are observed: many ops are faster under zero-heap
-   (caller-supplied storage often lands nearer to the working set
-   than heap-allocated objects), and a handful are slower (where
-   the heap's spread-out layout happened to keep two contenders
-   on different cache lines).
-3. **None of the deltas above invalidate zero-heap as a production
-   choice.** Worst-case per-call cost across all three RTOSes is the
-   FreeRTOS `mutex_lock_unlock` +19% (~500 ns absolute on a 2.6 µs
-   op). On NuttX zero-heap is at parity with heap; on
-   Zephyr zero-heap is faster on most per-call hot paths.
-   Zero-heap's compile-time guarantees against post-boot allocation
-   are easily worth the small per-call costs that remain.
+2. **Per-call sync** (mutex, sem, condvar, event, queue, eventgroup)
+   is at parity within a few hundred nanoseconds on every RTOS in
+   either mode.  Pick zero-heap and take the compile-time guarantees
+   against post-boot allocation as a free win.
+3. **Two structural exceptions**, both on FreeRTOS only:
+   `stream/send_recv_64B` and `stream/throughput` regress ~12 µs and
+   ~11 µs respectively under zero-heap.  This regression is in the
+   native FreeRTOS `xStreamBuffer*` API, not in the oveRTOS wrapper —
+   verified by the wrapper-vs-native table in the per-RTOS report.
+   If your FreeRTOS workload is bound on stream throughput, prefer
+   heap mode.
 
 ## Reproducing
 
-The heap-mode data above came from running the bench on STM32F746G-DISCO
-with:
+The numbers above came from running the bench on STM32F746G-DISCO
+with worst-case timing on
+(`CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y` — see
+[benchmarks overview](index.md)):
 
 ```bash
-make benchmarks-stm32f746g-discovery          # FreeRTOS
-make benchmarks-stm32f746g-discovery-nuttx    # NuttX
-make benchmarks-stm32f746g-discovery-zephyr   # Zephyr
+make benchmarks-stm32f746g-discovery               # FreeRTOS heap
+make benchmarks-stm32f746g-discovery        ZEROHEAP=1   # FreeRTOS zh
+make benchmarks-stm32f746g-discovery-nuttx
+make benchmarks-stm32f746g-discovery-nuttx  ZEROHEAP=1
+make benchmarks-stm32f746g-discovery-zephyr
+make benchmarks-stm32f746g-discovery-zephyr ZEROHEAP=1
 ```
 
-Each run regenerates `output/stm32f746/<rtos>/_benchmarks/report.md`,
-which `bench_compare.py --page-mode heap` writes directly into
-`docs-site/docs/benchmarks/<rtos>-heap.md`.
-
-Zero-heap rows are produced by flashing the `_zh` benchmark apps and
-running `bench_compare.py --page-mode zeroheap` against the captured
-serial logs:
-
-```bash
-for app in benchmark_zh benchmark_cpp_zh benchmark_rust_zh benchmark_zig_zh; do
-    make stm32f746.freertos.$app && make flash
-    # capture /tmp/serial.log into output/.../_benchmarks/<binding>.log
-done
-python3 scripts/bench_compare.py --page-mode zeroheap \
-    --input output/.../_benchmarks/{c,cpp,rust,zig}.log \
-    --output docs-site/docs/benchmarks/freertos-zeroheap.md
-```
+Each invocation builds 4 bindings (C, C++, Rust, Zig), flashes via
+openocd, captures the picocom-recorded serial log, and writes both
+`output/<board>/<rtos>/_benchmarks{,_zeroheap}/report.md` and
+`docs-site/docs/benchmarks/<rtos>-{heap,zeroheap}.md` directly.

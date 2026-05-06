@@ -59,6 +59,25 @@ typedef struct {
 	unsigned int inner_iters;
 } bench_case_t;
 
+/* One snapshot of running mean / stddev at an iteration-count
+ * checkpoint.  See bench_harness.c for the checkpoint list. */
+typedef struct {
+	uint32_t n;	      /* iteration count at this checkpoint */
+	uint64_t mean_ns;     /* Welford running mean */
+	uint64_t stddev_ns_q; /* Welford running stddev × 1000 */
+} bench_audit_point_t;
+
+#define BENCH_AUDIT_MAX 6
+
+/* Audit fields are *always* present in the struct (regardless of
+ * CONFIG_OVE_BENCHMARK_NOISE_AUDIT) so the layout is identical across
+ * every binding, every config, and every binary in a cross-binding
+ * comparison.  The Rust and Zig mirrors (bench.rs / bench.zig) carry
+ * the same fields unconditionally for the same reason — any C/Rust
+ * stride mismatch silently corrupts every case past index 0 of a
+ * results[] array passed to bench_emit_suite_json.  Filling the
+ * audit fields is gated on the Kconfig knob; their *presence* in
+ * the layout is not. */
 typedef struct {
 	uint64_t min_ns;
 	uint64_t max_ns;
@@ -72,6 +91,9 @@ typedef struct {
 	uint64_t p99_ns;
 	uint64_t trimmed_mean_ns; /* top 1% samples dropped */
 	uint64_t stddev_ns_q;	  /* fixed-point: stddev_ns × 1000 */
+	/* Filled when CONFIG_OVE_BENCHMARK_NOISE_AUDIT=y; zero otherwise. */
+	bench_audit_point_t audit_points[BENCH_AUDIT_MAX];
+	uint8_t audit_count;
 } bench_result_t;
 
 typedef struct {

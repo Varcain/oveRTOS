@@ -123,6 +123,12 @@ def main():
                         "from the union.  Useful for re-running a single "
                         "truncated binding without redoing the whole "
                         "suite.")
+    p.add_argument("--zeroheap", action="store_true",
+                   help="Build and run the zero-heap variants "
+                        "(benchmark_zh / benchmark_cpp_zh / …) instead "
+                        "of the default heap variants.  Logs land under "
+                        "output/<board>/<rtos>/_benchmarks_zeroheap/ "
+                        "and the report uses --page-mode zeroheap.")
 
     # ── clean ──────────────────────────────────────────────────────────
     p = sub.add_parser("clean", help="Clean build artifacts")

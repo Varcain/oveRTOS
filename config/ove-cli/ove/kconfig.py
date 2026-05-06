@@ -562,7 +562,7 @@ def cmd_defconfig_fragments(args):
     kconf.write_config(ws_config)
 
     print(f"Configuration written to {ws_config}")
-    print(f"Active workspace: output/{board}/{rtos}/{ws_app}/")
+    print(f"Active workspace: output/{board}/{rtos}/{app}/")
 
 
 def cmd_savedefconfig(args):

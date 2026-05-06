@@ -67,11 +67,19 @@ _PLATFORMS = {
 }
 
 # config_name (== make app target) -> binding tag (== JSON `binding` field)
-_BINDINGS = [
+_BINDINGS_HEAP = [
     ("benchmark",      "c"),
     ("benchmark_cpp",  "cpp"),
     ("benchmark_rust", "rust"),
     ("benchmark_zig",  "zig"),
+]
+# Zero-heap variants — the `_zh` suffix matches the config_name in
+# tests/benchmarks/<lang>/zeroheap/app.yaml.
+_BINDINGS_ZH = [
+    ("benchmark_zh",      "c"),
+    ("benchmark_cpp_zh",  "cpp"),
+    ("benchmark_rust_zh", "rust"),
+    ("benchmark_zig_zh",  "zig"),
 ]
 
 # Per-binding wall-clock cap on a single bench run.  STM32 was 180 s
@@ -84,9 +92,21 @@ _RUN_TIMEOUT_S = {
 }
 
 
-def _output_dir(board, rtos):
-    """Per-RTOS bench output dir."""
-    return os.path.join(OVE_DIR, "output", board, rtos, "_benchmarks")
+def _output_dir(board, rtos, mode="heap"):
+    """Per-RTOS bench output dir.  mode in {"heap", "zeroheap"}; the zh
+    output goes alongside the heap output so both can coexist."""
+    suffix = "_benchmarks" if mode == "heap" else "_benchmarks_zeroheap"
+    return os.path.join(OVE_DIR, "output", board, rtos, suffix)
+
+
+def _docs_page_path(rtos, mode):
+    """Path of the published per-RTOS docs page for this mode.
+
+    Display-name of the RTOS in the page title comes from
+    bench_compare.py's _PAGE_RTOS_META; the file basename here just
+    needs to match the docs-site/docs/benchmarks/ layout."""
+    return os.path.join(OVE_DIR, "docs-site", "docs", "benchmarks",
+                        f"{rtos}-{mode}.md")
 
 
 def _build_one(make_prefix, app):
@@ -232,24 +252,33 @@ def _run_stm32(image, app, log_path, timeout, binding, rtos="freertos"):
     logger.info(f"captured {n} JSON suites from this run")
 
 
-def _generate_report(out_dir, log_paths, runner=None):
+def _generate_report(out_dir, log_paths, runner=None, mode="heap",
+                     rtos=None):
     """Run scripts/bench_compare.py against the per-binding logs.
 
-    `--page-mode heap` is passed for STM32 runs so the generated
-    report.md drops directly into docs-site/docs/benchmarks/<rtos>-heap.md
+    `--page-mode {heap,zeroheap}` is passed for STM32 runs so the
+    generated report.md drops directly into the per-RTOS docs-site page
     without manual header fixups.  POSIX runs keep the generic header
-    (cross-RTOS, not currently surfaced in the docs site)."""
+    (cross-RTOS, not currently surfaced in the docs site).  Writes
+    report.md both to out_dir (debug artifact for this run) and, on
+    STM32 runs, to docs-site/docs/benchmarks/<rtos>-<mode>.md (the
+    published location)."""
     script = os.path.join(OVE_DIR, "scripts", "bench_compare.py")
     report = os.path.join(out_dir, "report.md")
     cmd = [sys.executable, script,
            "--input", *log_paths,
            "--output", report]
     if runner == "stm32_flash_serial":
-        cmd += ["--page-mode", "heap"]
+        cmd += ["--page-mode", mode]
     logger.info("=== generating report ===")
     rc = subprocess.call(cmd, cwd=OVE_DIR)
     if rc != 0:
         raise RuntimeError(f"bench_compare.py failed (rc={rc})")
+    if runner == "stm32_flash_serial" and rtos:
+        docs_page = _docs_page_path(rtos, mode)
+        os.makedirs(os.path.dirname(docs_page), exist_ok=True)
+        shutil.copyfile(report, docs_page)
+        logger.info(f"docs page updated: {docs_page}")
     return report
 
 
@@ -263,14 +292,16 @@ def cmd_benchmarks(args):
 
     p = _PLATFORMS[platform]
     binding_filter = getattr(args, "binding", None)
-    out_dir = _output_dir(p["board"], p["rtos"])
+    mode = "zeroheap" if getattr(args, "zeroheap", False) else "heap"
+    bindings = _BINDINGS_ZH if mode == "zeroheap" else _BINDINGS_HEAP
+    out_dir = _output_dir(p["board"], p["rtos"], mode=mode)
     os.makedirs(out_dir, exist_ok=True)
 
     # When --binding selects a subset, run only those but include every
     # previously-captured log in the report so the comparison still
     # spans all 4 bindings.
     log_paths = []
-    for app, binding in _BINDINGS:
+    for app, binding in bindings:
         log_path = os.path.join(out_dir, f"{binding}.log")
         if binding_filter and binding not in binding_filter:
             if os.path.isfile(log_path):
@@ -292,6 +323,7 @@ def cmd_benchmarks(args):
             raise RuntimeError(f"unknown runner '{p['runner']}'")
         log_paths.append(log_path)
 
-    report = _generate_report(out_dir, log_paths, runner=p["runner"])
+    report = _generate_report(out_dir, log_paths, runner=p["runner"],
+                              mode=mode, rtos=p["rtos"])
     print(f"\nReport: {report}")
     print(f"Logs:   {out_dir}/<binding>.log  (one per c/cpp/rust/zig)")

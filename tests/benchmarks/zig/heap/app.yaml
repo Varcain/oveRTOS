@@ -25,6 +25,11 @@ defconfig:
   - CONFIG_OVE_TRACE_MARKERS=n
   - CONFIG_OVE_TRACE_STREAM=n
   - CONFIG_OVE_THREAD_STATE_STATS=n
+  # Worst-case timing: disable I-cache, D-cache, branch predictor, ART,
+  # and flash prefetch on STM32F7 so published numbers approximate a
+  # cacheless ARM MCU.  See docs-site/docs/benchmarks/index.md
+  # ("Worst-case timing mode").  No-op on POSIX / sim builds.
+  - CONFIG_OVE_BENCHMARK_WORST_CASE_TIMING=y
 kconfig: |
   config OVE_BENCHMARK_ITERATIONS
   	int "Number of measurement iterations per benchmark case"
@@ -46,6 +51,16 @@ kconfig: |
   	bool "Also emit machine-readable JSON output"
   	default y
 
-  config OVE_BENCHMARK_DISABLE_ICACHE
-  	bool "Disable Cortex-M I-cache for the bench run (diagnostic)"
+  config OVE_BENCHMARK_WORST_CASE_TIMING
+  	bool "Disable Cortex-M caches and accelerators for worst-case bench timing"
   	default n
+  	help
+  	  See c/heap/app.yaml for the canonical help text.  Disables
+  	  I-cache, D-cache, branch predictor, ART accelerator, and flash
+  	  prefetch on STM32F7 to approximate worst-case ARM-MCU timing.
+
+  config OVE_BENCHMARK_NOISE_AUDIT
+  	bool "Snapshot running mean/stddev at iteration checkpoints"
+  	default n
+  	help
+  	  Calibration mode — see c/heap/app.yaml for the canonical help.
