@@ -115,7 +115,7 @@ static void mutex_contention_teardown(void *ctx)
 
 /* --- Mutex memory ---
  *
- * Heap-delta measurement is meaningless under ZEROHEAP (zero by
+ * Heap-delta measurement is meaningless under zero-heap mode (zero by
  * construction).  Gate out; the wrapper's static-storage size is
  * available at compile time via `sizeof(ove_mutex_storage_t)` for
  * users who want it. */
@@ -351,7 +351,7 @@ static int sync_is_enabled(void)
 static const bench_case_t sync_cases[] = {
 #ifndef CONFIG_OVE_ZERO_HEAP
 	/* Memory tests first — before thread-heavy tests affect heap state.
-	 * Heap-mode only — meaningless under ZEROHEAP. */
+	 * Heap-mode only — meaningless under zero-heap mode. */
 	{
 		.name = "mutex_memory",
 		.type = BENCH_TYPE_MEMORY,

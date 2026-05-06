@@ -113,7 +113,7 @@ struct ove_thread {
 	 * + stack_bytes` in one OVE_BACKEND_MALLOC and passes &stack[0] to
 	 * xTaskCreateStatic — collapsing the wrapper alloc, the FreeRTOS
 	 * TCB alloc, and the FreeRTOS stack alloc into a single block.
-	 * Omitted under ZEROHEAP because the heap-create path is gone and
+	 * Omitted under CONFIG_OVE_ZERO_HEAP because the heap-create path is gone and
 	 * a FAM here breaks C++ class layout when the storage struct is
 	 * embedded (e.g. as a non-last member of std::optional<Thread<N>>).
 	 */
@@ -135,8 +135,8 @@ struct ove_queue {
 	 * +3.5 µs delta tracked under the wrapper-overhead audit). */
 	uint8_t *storage;
 #ifndef CONFIG_OVE_ZERO_HEAP
-	/* FAM omitted under ZEROHEAP — see ove_thread.stack[] for the C++
-	 * class-layout reason. */
+	/* FAM omitted under CONFIG_OVE_ZERO_HEAP — see ove_thread.stack[] for
+	 * the C++ class-layout reason. */
 	uint8_t inline_storage[];
 #endif
 };

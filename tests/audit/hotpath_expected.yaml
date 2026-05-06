@@ -854,7 +854,7 @@ stm32f746_freertos_benchmark_zig:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 # ============================================================================
-# FreeRTOS bench, ZEROHEAP variant (CONFIG_OVE_ZERO_HEAP=y).  The
+# FreeRTOS bench, zero-heap variant (CONFIG_OVE_ZERO_HEAP=y).  The
 # *_create_destroy_run cases are gated out at compile time (the
 # create/destroy API is not generated under zero-heap) — so the audit
 # sections drop only those four entries per binding.  All other hot-

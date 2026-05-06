@@ -71,11 +71,11 @@ menuconfig: $(VENV_STAMP)
 %_defconfig: $(VENV_STAMP)
 	@$(OVE) defconfig $@
 
-# Fragment-based configuration: make <board>.<rtos>.<app> [ZEROHEAP=1]
+# Fragment-based configuration: make <board>.<rtos>.<app>
 # Examples:
 #   make qemu.freertos.example_c
 #   make stm32f746.zephyr.benchmark_rust
-#   make host.posix.example_net_cpp ZEROHEAP=1
+#   make host.posix.example_net_cpp_zh
 #
 # Detect dot-separated targets in MAKECMDGOALS and generate rules for them.
 # Exclude paths (slashes) — `setup`'s recursive make passes the absolute
@@ -90,7 +90,7 @@ ifneq ($(_DOT_TARGETS),)
 .NOTPARALLEL:
 .PHONY: $(_DOT_TARGETS)
 $(_DOT_TARGETS): $(VENV_STAMP)
-	@$(OVE) defconfig-fragments "$@" $(if $(ZEROHEAP),--zeroheap)
+	@$(OVE) defconfig-fragments "$@"
 endif
 
 .PHONY: savedefconfig
@@ -177,13 +177,10 @@ test: $(VENV_STAMP)
 #                            output/stm32f746/freertos/_benchmarks/report.md
 #
 # Use SKIPBUILD=1 to skip the per-binding builds (re-flash + re-run only).
-# Use ZEROHEAP=1 to build with CONFIG_OVE_ZERO_HEAP=y; report goes to
-# output/<board>/<rtos>/_benchmarks_zeroheap/ (sibling of _benchmarks/).
 .PHONY: benchmarks-%
 benchmarks-%: $(VENV_STAMP)
 	@$(OVE) benchmarks \
 		$(if $(filter 1,$(SKIPBUILD)),--skip-build) \
-		$(if $(filter 1,$(ZEROHEAP)),--zeroheap) \
 		$(foreach b,$(BINDING),--binding $(b)) \
 		"$*"
 
@@ -512,7 +509,7 @@ help:
 	@echo "oveRTOS Build System"
 	@echo "===================="
 	@echo ""
-	@echo "Configuration:  make <board>.<rtos>.<app> [ZEROHEAP=1]"
+	@echo "Configuration:  make <board>.<rtos>.<app>"
 	@echo ""
 	@echo "  Boards:"
 	@for d in $$(find $(OVE_DIR)/boards -maxdepth 1 -mindepth 1 -type d | sort); do \
@@ -537,7 +534,7 @@ help:
 	@echo "  Examples:"
 	@echo "    make qemu.freertos.example_c"
 	@echo "    make stm32f746.zephyr.benchmark_rust"
-	@echo "    make host.posix.example_net ZEROHEAP=1"
+	@echo "    make host.posix.example_net_zh"
 	@echo ""
 	@echo "  Other:"
 	@echo "    menuconfig              - Interactive configuration (TUI)"

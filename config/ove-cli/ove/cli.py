@@ -33,8 +33,6 @@ def main():
                        help="Configure from hierarchical fragments "
                             "(board.rtos.app)")
     p.add_argument("spec", help="board.rtos.app (e.g. qemu.freertos.example_c)")
-    p.add_argument("--zeroheap", action="store_true",
-                   help="Enable zero-heap build")
 
     # ── menuconfig ─────────────────────────────────────────────────────
     sub.add_parser("menuconfig", help="Interactive configuration (TUI)")
@@ -117,14 +115,6 @@ def main():
                         "/tmp/serial.log) for a picocom-recorded run.")
     p.add_argument("--skip-build", action="store_true",
                    help="Skip building (assume firmware already built)")
-    p.add_argument("--zeroheap", action="store_true",
-                   help="Build with CONFIG_OVE_ZERO_HEAP=y (heap locked "
-                        "after init).  Output goes to "
-                        "output/<board>/<rtos>/_benchmarks_zeroheap/ "
-                        "instead of _benchmarks/.  Per-call op numbers "
-                        "should match heap mode within ±10%; "
-                        "*_create_destroy and *_memory cases are "
-                        "compile-time elided.")
     p.add_argument("--binding", choices=["c", "cpp", "rust", "zig"],
                    action="append",
                    help="Restrict the run to one binding (repeatable).  "

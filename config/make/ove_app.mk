@@ -29,12 +29,12 @@ zephyr-menuconfig: $(VENV_STAMP)
 %_defconfig: $(VENV_STAMP)
 	@$(OVE) defconfig $@
 
-# Fragment-based configuration: make <board>.<rtos>.<app> [ZEROHEAP=1]
+# Fragment-based configuration: make <board>.<rtos>.<app>
 _DOT_TARGETS := $(foreach t,$(MAKECMDGOALS),$(if $(findstring .,$(t)),$(t)))
 ifneq ($(_DOT_TARGETS),)
 .PHONY: $(_DOT_TARGETS)
 $(_DOT_TARGETS): $(VENV_STAMP)
-	@$(OVE) defconfig-fragments "$@" $(if $(ZEROHEAP),--zeroheap)
+	@$(OVE) defconfig-fragments "$@"
 endif
 
 .PHONY: download configure all
@@ -99,7 +99,7 @@ help:
 	@echo ""
 	@echo "oveRTOS out-of-tree app (OVE_DIR: $(OVE_DIR))"
 	@echo ""
-	@echo "  <board>.<rtos>.<app>  Configure from fragments [ZEROHEAP=1]"
+	@echo "  <board>.<rtos>.<app>  Configure from fragments"
 	@echo "  <name>_defconfig   Load config    menuconfig   TUI config"
 	@echo "  all (default)      Full build     run          Run firmware"
 	@echo "  flash              Flash board    alldefconfigs Build all"

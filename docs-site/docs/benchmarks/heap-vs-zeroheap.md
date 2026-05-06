@@ -210,19 +210,29 @@ The take-aways:
 
 ## Reproducing
 
-The data above came from running the bench on STM32F746G-DISCO with
-the chained command:
+The heap-mode data above came from running the bench on STM32F746G-DISCO
+with:
 
 ```bash
-make benchmarks-stm32f746g-discovery        # FreeRTOS heap
-make benchmarks-stm32f746g-discovery ZEROHEAP=1
-make benchmarks-stm32f746g-discovery-nuttx
-make benchmarks-stm32f746g-discovery-nuttx ZEROHEAP=1
-make benchmarks-stm32f746g-discovery-zephyr
-make benchmarks-stm32f746g-discovery-zephyr ZEROHEAP=1
+make benchmarks-stm32f746g-discovery          # FreeRTOS
+make benchmarks-stm32f746g-discovery-nuttx    # NuttX
+make benchmarks-stm32f746g-discovery-zephyr   # Zephyr
 ```
 
-Each run regenerates `output/stm32f746/<rtos>/_benchmarks[_zeroheap]/report.md`,
-which `bench_compare.py --page-mode {heap,zeroheap}` writes directly into
-`docs-site/docs/benchmarks/<rtos>-<mode>.md` with the page-specific
-header included.
+Each run regenerates `output/stm32f746/<rtos>/_benchmarks/report.md`,
+which `bench_compare.py --page-mode heap` writes directly into
+`docs-site/docs/benchmarks/<rtos>-heap.md`.
+
+Zero-heap rows are produced by flashing the `_zh` benchmark apps and
+running `bench_compare.py --page-mode zeroheap` against the captured
+serial logs:
+
+```bash
+for app in benchmark_zh benchmark_cpp_zh benchmark_rust_zh benchmark_zig_zh; do
+    make stm32f746.freertos.$app && make flash
+    # capture /tmp/serial.log into output/.../_benchmarks/<binding>.log
+done
+python3 scripts/bench_compare.py --page-mode zeroheap \
+    --input output/.../_benchmarks/{c,cpp,rust,zig}.log \
+    --output docs-site/docs/benchmarks/freertos-zeroheap.md
+```

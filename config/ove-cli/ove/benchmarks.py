@@ -84,40 +84,23 @@ _RUN_TIMEOUT_S = {
 }
 
 
-def _output_dir(board, rtos, zeroheap=False):
-    """Per-RTOS bench output dir.  Zero-heap variant gets a sibling
-    `_benchmarks_zeroheap/` so heap-mode reports stay intact when both
-    modes are run."""
-    suffix = "_benchmarks_zeroheap" if zeroheap else "_benchmarks"
-    return os.path.join(OVE_DIR, "output", board, rtos, suffix)
+def _output_dir(board, rtos):
+    """Per-RTOS bench output dir."""
+    return os.path.join(OVE_DIR, "output", board, rtos, "_benchmarks")
 
 
-def _build_one(make_prefix, app, zeroheap=False):
-    """Configure + build one (platform, binding) pair via make.
-    `ZEROHEAP=1` propagates through the dot-target rule
-    (Makefile:74-94) → `ove defconfig-fragments --zeroheap` →
-    `config/fragments/variant/zeroheap.defconfig` →
-    `CONFIG_OVE_ZERO_HEAP=y`."""
+def _build_one(make_prefix, app):
+    """Configure + build one (platform, binding) pair via make."""
     target = f"{make_prefix}.{app}"
-    logger.info(f"=== building {target}{' (zeroheap)' if zeroheap else ''} ===")
-    cmd = ["make", target, "all"]
-    if zeroheap:
-        cmd.append("ZEROHEAP=1")
-    rc = subprocess.call(cmd, cwd=OVE_DIR)
+    logger.info(f"=== building {target} ===")
+    rc = subprocess.call(["make", target, "all"], cwd=OVE_DIR)
     if rc != 0:
         raise RuntimeError(f"build failed for {target} (rc={rc})")
 
 
-def _firmware_paths(board, rtos, app, zeroheap=False):
-    """Return (workspace_dir, image_path) for an already-built bench.
-
-    Post heap/zero-heap split, kconfig.py rewrites bare app names:
-      bare `benchmark` + --zeroheap → `benchmark_zh` (the registered
-      tests/benchmarks/c/zeroheap/ app).  The workspace dir then gets
-      a `_zeroheap` suffix appended, yielding `benchmark_zh_zeroheap`.
-    Heap-mode keeps the bare workspace dir name (`benchmark`)."""
-    ws_app = f"{app}_zh_zeroheap" if zeroheap else app
-    ws = os.path.join(OVE_DIR, "output", board, rtos, ws_app)
+def _firmware_paths(board, rtos, app):
+    """Return (workspace_dir, image_path) for an already-built bench."""
+    ws = os.path.join(OVE_DIR, "output", board, rtos, app)
     if rtos == "posix":
         image = os.path.join(ws, "images", "ove_posix")
     else:
@@ -249,21 +232,20 @@ def _run_stm32(image, app, log_path, timeout, binding, rtos="freertos"):
     logger.info(f"captured {n} JSON suites from this run")
 
 
-def _generate_report(out_dir, log_paths, zeroheap=False, runner=None):
+def _generate_report(out_dir, log_paths, runner=None):
     """Run scripts/bench_compare.py against the per-binding logs.
 
-    `--page-mode {heap,zeroheap}` is passed for STM32 runs so the
-    generated report.md drops directly into
-    docs-site/docs/benchmarks/<rtos>-<mode>.md without manual header
-    fixups.  POSIX runs keep the legacy generic header (cross-RTOS,
-    not currently surfaced in the docs site)."""
+    `--page-mode heap` is passed for STM32 runs so the generated
+    report.md drops directly into docs-site/docs/benchmarks/<rtos>-heap.md
+    without manual header fixups.  POSIX runs keep the generic header
+    (cross-RTOS, not currently surfaced in the docs site)."""
     script = os.path.join(OVE_DIR, "scripts", "bench_compare.py")
     report = os.path.join(out_dir, "report.md")
     cmd = [sys.executable, script,
            "--input", *log_paths,
            "--output", report]
     if runner == "stm32_flash_serial":
-        cmd += ["--page-mode", "zeroheap" if zeroheap else "heap"]
+        cmd += ["--page-mode", "heap"]
     logger.info("=== generating report ===")
     rc = subprocess.call(cmd, cwd=OVE_DIR)
     if rc != 0:
@@ -280,9 +262,8 @@ def cmd_benchmarks(args):
         sys.exit(2)
 
     p = _PLATFORMS[platform]
-    zeroheap = getattr(args, "zeroheap", False)
     binding_filter = getattr(args, "binding", None)
-    out_dir = _output_dir(p["board"], p["rtos"], zeroheap)
+    out_dir = _output_dir(p["board"], p["rtos"])
     os.makedirs(out_dir, exist_ok=True)
 
     # When --binding selects a subset, run only those but include every
@@ -296,12 +277,11 @@ def cmd_benchmarks(args):
                 log_paths.append(log_path)
             continue
         if not args.skip_build:
-            _build_one(p["make_prefix"], app, zeroheap)
-        _, image = _firmware_paths(p["board"], p["rtos"], app, zeroheap)
+            _build_one(p["make_prefix"], app)
+        _, image = _firmware_paths(p["board"], p["rtos"], app)
         if not os.path.isfile(image):
             raise RuntimeError(f"firmware not found at {image} "
-                               f"(build={p['make_prefix']}.{app}"
-                               f"{' ZEROHEAP=1' if zeroheap else ''})")
+                               f"(build={p['make_prefix']}.{app})")
         timeout = _RUN_TIMEOUT_S[p["runner"]]
         if p["runner"] == "posix":
             _run_posix(image, log_path, timeout)
@@ -312,7 +292,6 @@ def cmd_benchmarks(args):
             raise RuntimeError(f"unknown runner '{p['runner']}'")
         log_paths.append(log_path)
 
-    report = _generate_report(out_dir, log_paths,
-                              zeroheap=zeroheap, runner=p["runner"])
+    report = _generate_report(out_dir, log_paths, runner=p["runner"])
     print(f"\nReport: {report}")
     print(f"Logs:   {out_dir}/<binding>.log  (one per c/cpp/rust/zig)")

@@ -96,7 +96,7 @@ def cmd_defconfig(args):
         sys.exit(1)
 
     # Parse workspace location from defconfig name.
-    # Filename format: <board>_<rtos>_<app>[_zeroheap]_defconfig
+    # Filename format: <board>_<rtos>_<app>_defconfig
     # Extract board by finding the first known RTOS name in the stem.
     stem = name.replace("_defconfig", "")
     valid_rtos = ("freertos", "nuttx", "zephyr", "posix")
@@ -363,9 +363,8 @@ def _find_app_yaml(ove_dir, app_name):
     """Find the app.yaml for a given app config_name.
 
     For the apps/<lang>/<heapmode>/<app>/ layout, apps register as
-    `<base>_heap` and `<base>_zh`.  Bare names map to `_heap` by default
-    (heap mode is the desktop-development default); use the explicit
-    `_zh` suffix or `--zeroheap` to select the static-allocation variant.
+    `<base>_heap` and `<base>_zh`.  Bare names map to `_heap` by default;
+    pass the explicit `_zh` suffix to select the zero-heap variant.
     """
     import json
     app_paths_file = os.path.join(ove_dir, "output", "kconfig", "app_paths.json")
@@ -437,16 +436,7 @@ def cmd_defconfig_fragments(args):
         print(f"Error: unknown RTOS '{rtos}'. Valid: {', '.join(valid_rtos)}")
         sys.exit(1)
 
-    zeroheap = getattr(args, 'zeroheap', False)
     frag_dir = os.path.join(ove_dir, "config", "fragments")
-
-    # If a bare app name was given (e.g. `example_c`), select the heap
-    # or zeroheap variant based on the --zeroheap flag.
-    if zeroheap and not app.endswith("_zh"):
-        if not app.endswith("_heap"):
-            app = f"{app}_zh"
-        else:
-            app = app[: -len("_heap")] + "_zh"
 
     # ── Resolve board ──────────────────────────────────────────────
     board_dir = _find_board_dir(ove_dir, board)
@@ -496,7 +486,7 @@ def cmd_defconfig_fragments(args):
     # Layer 3: rtos fragment
     # Layer 4: board rtos-specific (from board.yaml rtos_defconfig)
     # Layer 5: app (from app.yaml)
-    # Layer 6: variant
+    # Layer 6: app rtos-specific (from app.yaml rtos_defconfig)
 
     import tempfile
     try:
@@ -563,21 +553,11 @@ def cmd_defconfig_fragments(args):
         if app_rtos_lines:
             _load_lines("app+rtos", app_rtos_lines)
 
-    # 7. Zeroheap variant
-    if zeroheap:
-        variant_path = os.path.join(frag_dir, "variant", "zeroheap.defconfig")
-        _load_fragment("variant", variant_path)
-
     # Clean up temp files
     import shutil
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    # Determine workspace app name
-    ws_app = app
-    if zeroheap:
-        ws_app += "_zeroheap"
-
-    ws_dir = _setup_workspace(ove_dir, board, rtos, ws_app)
+    ws_dir = _setup_workspace(ove_dir, board, rtos, app)
     ws_config = os.path.join(ws_dir, ".config")
     kconf.write_config(ws_config)
 
