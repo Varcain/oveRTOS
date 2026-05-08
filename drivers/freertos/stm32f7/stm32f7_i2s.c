@@ -94,11 +94,23 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 		break;
 	}
 
-	/* I2S always uses 2 slots (L+R frame), even for mono.
-	 * MonoStereoMode tells the SAI to duplicate one channel. */
+	/* I2S always uses 2 slots (L+R frame).  We do *not* enable
+	 * SAI_MONOMODE for mono channels: the audio source/sink in
+	 * `freertos_audio.c` always reads/writes the DMA buffer with a
+	 * stride of 2 (`slot_count = 2`), so the buffer must contain 2
+	 * samples per audio frame.  With SAI_MONOMODE the hardware would
+	 * collapse each frame to a single sample in the DMA buffer, and
+	 * the audio source's `rx_ptr[f*2 + 1]` read would skip every
+	 * other sample → the DSP convolves on a half-rate signal,
+	 * producing a tonally shifted ("boomy") and quieter output that
+	 * was audibly different from the Zephyr backend even though all
+	 * codec registers were byte-identical.  Stereo SAI with the
+	 * audio carried in one slot and zero in the other gives the
+	 * source/sink layout it expects; the codec is configured (reg
+	 * 0x300 bit 14) to copy the left ADC into both ADC slots, so the
+	 * mono signal still reaches the DSP intact. */
 	uint32_t slot_count = 2;
 	uint32_t slot_active = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1;
-	int is_mono = (cfg->channels == 1);
 
 	/* Configure TX SAI (master) */
 	if (cfg->direction & OVE_I2S_DIR_TX) {
@@ -114,8 +126,8 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 		i2s->sai_tx.Init.Synchro = SAI_ASYNCHRONOUS;
 		i2s->sai_tx.Init.OutputDrive = SAI_OUTPUTDRIVE_ENABLED;
 		i2s->sai_tx.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
-		if (is_mono)
-			i2s->sai_tx.Init.MonoStereoMode = SAI_MONOMODE;
+		/* MonoStereoMode left at default SAI_STEREOMODE — see comment
+		 * above; the source/sink rely on a stereo DMA buffer layout. */
 
 		i2s->sai_tx.FrameInit.FrameLength = frame_length;
 		i2s->sai_tx.FrameInit.ActiveFrameLength = active_frame_length;
@@ -146,8 +158,9 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 		i2s->sai_rx.Init.Synchro = SAI_SYNCHRONOUS;
 		i2s->sai_rx.Init.OutputDrive = SAI_OUTPUTDRIVE_DISABLED;
 		i2s->sai_rx.Init.FIFOThreshold = SAI_FIFOTHRESHOLD_FULL;
-		if (is_mono)
-			i2s->sai_rx.Init.MonoStereoMode = SAI_MONOMODE;
+		/* MonoStereoMode left at default SAI_STEREOMODE — see TX-side
+		 * comment above; collapsing to mono here would cause the audio
+		 * source's stride-2 read to skip every other sample. */
 
 		i2s->sai_rx.FrameInit.FrameLength = frame_length;
 		i2s->sai_rx.FrameInit.ActiveFrameLength = active_frame_length;

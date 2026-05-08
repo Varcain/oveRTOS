@@ -156,9 +156,27 @@ static int i2s_sink_process(void *ctx, const struct ove_audio_buf *in, struct ov
 	unsigned int nslots = sc->tx_slot_count;
 
 	memset(tx_ptr, 0, frames * nslots * sizeof(int16_t));
-	for (unsigned int f = 0; f < frames; f++) {
-		for (unsigned int c = 0; c < ch && c < 2; c++)
-			tx_ptr[f * nslots + sc->tx_slots[c]] = src[f * ch + c];
+	if (ch == 1) {
+		/* Mono → duplicate the sample into BOTH stereo TX slots so
+		 * the codec receives identical L/R data on AIF1.  The SAI is
+		 * in MONOMODE which duplicates on the wire, but the audio
+		 * source/sink slot layout is hardcoded to 2 slots/frame; if
+		 * we leave one slot zeroed, the codec ends up with DAC1L =
+		 * mono and DAC1R = silence, producing audible left/right
+		 * asymmetry that the user perceives as quieter + boomier vs
+		 * the Zephyr backend (whose i2s_write delivers mono on both
+		 * LRCLK halves).  Two stores per frame is cheap and matches
+		 * Zephyr's effective behaviour. */
+		for (unsigned int f = 0; f < frames; f++) {
+			int16_t s = src[f];
+			tx_ptr[f * nslots + 0] = s;
+			tx_ptr[f * nslots + 1] = s;
+		}
+	} else {
+		for (unsigned int f = 0; f < frames; f++) {
+			for (unsigned int c = 0; c < ch && c < 2; c++)
+				tx_ptr[f * nslots + sc->tx_slots[c]] = src[f * ch + c];
+		}
 	}
 	return OVE_OK;
 }
