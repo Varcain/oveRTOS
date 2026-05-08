@@ -12,6 +12,12 @@
  *
  * The board must provide HAL_ETH_MspInit() (weak override) to configure
  * the RMII/MII GPIO pins and enable the ETH clock.
+ *
+ * Cache coherency: stm32f7_init.c skips SCB_EnableDCache() when
+ * HAL_ETH_MODULE_ENABLED is defined, so descriptors and buffers can
+ * live in regular SRAM without explicit cache maintenance. A proper
+ * fix would re-enable D-cache and use the MPU to mark the ETH DMA
+ * region non-cacheable (matching ST's LwIP_HTTP_Server demo).
  */
 
 #include "stm32f7xx_hal.h"
@@ -20,6 +26,10 @@
 #include "lwip/etharp.h"
 #include "lwip/pbuf.h"
 #include "netif/ethernet.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "ove_config.h"
 
 #include <string.h>
 
@@ -35,7 +45,7 @@
 #define ETH_RX_BUF_SIZE 1536
 #endif
 
-/* LAN8742A PHY */
+/* LAN8742A PHY (datasheet Table 6) */
 #define LAN8742A_ADDR 0
 #ifndef PHY_BSR
 #define PHY_BSR 0x01
@@ -43,14 +53,25 @@
 #ifndef PHY_BSR_LINK
 #define PHY_BSR_LINK 0x0004
 #endif
+#ifndef PHY_BSR_ANEG_DONE
+#define PHY_BSR_ANEG_DONE 0x0020
+#endif
+/* PHY Special Control/Status Register: bits[4:2] = HCDSPEED (auto-neg result) */
+#define LAN8742A_PHYSCSR 0x1F
+#define LAN8742A_HCDSPEED_MASK 0x001CU
+#define LAN8742A_HCDSPEED_10HD 0x0004U
+#define LAN8742A_HCDSPEED_100HD 0x0008U
+#define LAN8742A_HCDSPEED_10FD 0x0014U
+#define LAN8742A_HCDSPEED_100FD 0x0018U
 
 /* ── DMA descriptors and buffers ─────────────────────────────── */
 
-ETH_HandleTypeDef heth;
 ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT] __attribute__((aligned(4)));
 ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT] __attribute__((aligned(4)));
 
 static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE] __attribute__((aligned(4)));
+
+ETH_HandleTypeDef heth;
 
 static uint8_t MACAddr[6] = {0x02, 0x00, 0x00, 0xDE, 0xAD, 0x01};
 
@@ -108,46 +129,121 @@ static int eth_mac_init(void)
 	if (HAL_ETH_Init(&heth) != HAL_OK)
 		return -1;
 
-	/* Assign Rx buffer addresses (DESC2 = Buffer1 in legacy format) */
 	for (unsigned int i = 0; i < ETH_RX_DESC_CNT; i++) {
 		DMARxDscrTab[i].DESC2 = (uint32_t)RxBuff[i];
 		DMARxDscrTab[i].BackupAddr0 = (uint32_t)RxBuff[i];
 	}
 
-	/* Wait for PHY link */
+	/* Wait for PHY link + ANEG complete (up to 5 s) */
+	uint32_t bsr = 0;
+	int linked = 0;
 	for (int i = 0; i < 50; i++) {
-		uint32_t bsr = 0;
-		if (HAL_ETH_ReadPHYRegister(&heth, LAN8742A_ADDR, PHY_BSR, &bsr) == HAL_OK) {
-			if (bsr & PHY_BSR_LINK)
-				return 0;
+		if (HAL_ETH_ReadPHYRegister(&heth, LAN8742A_ADDR, PHY_BSR, &bsr) == HAL_OK &&
+		    (bsr & PHY_BSR_LINK) && (bsr & PHY_BSR_ANEG_DONE)) {
+			linked = 1;
+			break;
 		}
 		HAL_Delay(100);
 	}
+
+	/* Drive MAC speed/duplex from the PHY's resolved state. HAL
+	 * defaults to 100M/full; if the link partner negotiated something
+	 * different (e.g. 10M half on a slow switch) the MAC silently
+	 * corrupts every frame. PHYSCSR bits[4:2] hold the post-ANEG
+	 * highest-common-denominator. */
+	if (linked) {
+		uint32_t scsr = 0;
+		uint32_t speed = ETH_SPEED_100M;
+		uint32_t duplex = ETH_FULLDUPLEX_MODE;
+		if (HAL_ETH_ReadPHYRegister(&heth, LAN8742A_ADDR, LAN8742A_PHYSCSR, &scsr) ==
+		    HAL_OK) {
+			switch (scsr & LAN8742A_HCDSPEED_MASK) {
+			case LAN8742A_HCDSPEED_10HD:
+				speed = ETH_SPEED_10M;
+				duplex = ETH_HALFDUPLEX_MODE;
+				break;
+			case LAN8742A_HCDSPEED_100HD:
+				speed = ETH_SPEED_100M;
+				duplex = ETH_HALFDUPLEX_MODE;
+				break;
+			case LAN8742A_HCDSPEED_10FD:
+				speed = ETH_SPEED_10M;
+				duplex = ETH_FULLDUPLEX_MODE;
+				break;
+			case LAN8742A_HCDSPEED_100FD:
+			default:
+				break;
+			}
+		}
+		ETH_MACConfigTypeDef macconf = {0};
+		HAL_ETH_GetMACConfig(&heth, &macconf);
+		macconf.Speed = speed;
+		macconf.DuplexMode = duplex;
+		HAL_ETH_SetMACConfig(&heth, &macconf);
+	}
+
 	return 0; /* continue even without link */
 }
 
 /* ── lwIP netif: low-level output ─────────────────────────────── */
 
+#define TX_MAX_SEGMENTS 8
+
 static err_t low_level_output(struct netif *netif, struct pbuf *p)
 {
 	(void)netif;
-	ETH_BufferTypeDef tx_buf;
-	ETH_TxPacketConfigTypeDef tx_cfg;
+	ETH_BufferTypeDef tx_buf[TX_MAX_SEGMENTS] = {0};
+	ETH_TxPacketConfigTypeDef tx_cfg = {0};
+	int n = 0;
 
-	memset(&tx_buf, 0, sizeof(tx_buf));
-	memset(&tx_cfg, 0, sizeof(tx_cfg));
-
-	tx_buf.buffer = p->payload;
-	tx_buf.len = p->tot_len;
-	tx_buf.next = NULL;
+	/* Walk the pbuf chain — pre-existing driver passed only the head
+	 * with Length=tot_len, which lied to the MAC about the buffer
+	 * size when pbufs were chained. */
+	for (struct pbuf *q = p; q != NULL && n < TX_MAX_SEGMENTS; q = q->next) {
+		tx_buf[n].buffer = q->payload;
+		tx_buf[n].len = q->len;
+		if (n > 0)
+			tx_buf[n - 1].next = &tx_buf[n];
+		n++;
+	}
+	if (n == 0)
+		return ERR_BUF;
 
 	tx_cfg.Length = p->tot_len;
-	tx_cfg.TxBuffer = &tx_buf;
+	tx_cfg.TxBuffer = tx_buf;
 
 	if (HAL_ETH_Transmit(&heth, &tx_cfg, 100) != HAL_OK)
 		return ERR_IF;
 
 	return ERR_OK;
+}
+
+/* ── RMII errata workaround (STM32F746 rev 0x1000) ─────────────
+ *
+ * Early STM32F7 silicon (rev A = 0x1000, used on the F746G-Discovery)
+ * has an RMII state-machine errata where the interface fails to lock
+ * at startup — link is up at the PHY but every transmitted frame is
+ * corrupted (FCS / alignment / code errors at the peer, observed as
+ * rx_pkts == rx_fcs in `ethtool -S` on the receiving host).
+ *
+ * Workaround mirrors the official ST `LwIP_HTTP_Server_Netconn_RTOS`
+ * demo: poll MMC counters, and if CRC errors keep accumulating without
+ * any good unicast received, toggle SYSCFG_PMC.MII_RMII_SEL to reset
+ * the RMII state machine. Self-terminates once good frames flow. */
+static void rmii_watchdog_task(void *arg)
+{
+	(void)arg;
+	for (;;) {
+		if (heth.Instance->MMCRGUFCR > 0U) {
+			vTaskDelete(NULL);
+		} else if (heth.Instance->MMCRFCECR > 10U) {
+			SYSCFG->PMC &= ~SYSCFG_PMC_MII_RMII_SEL;
+			SYSCFG->PMC |= SYSCFG_PMC_MII_RMII_SEL;
+			heth.Instance->MMCCR |= ETH_MMCCR_CR;
+		} else {
+			vTaskDelay(pdMS_TO_TICKS(200));
+		}
+	}
 }
 
 /* ── Public: lwIP netif init ─────────────────────────────────── */
@@ -171,6 +267,18 @@ err_t ethernetif_init(struct netif *netif)
 		return ERR_IF;
 
 	HAL_ETH_Start(&heth);
+
+	if (HAL_GetREVID() == 0x1000U) {
+#ifdef CONFIG_OVE_ZERO_HEAP
+		static StaticTask_t s_rmii_wd_tcb;
+		static StackType_t s_rmii_wd_stack[256];
+		xTaskCreateStatic(rmii_watchdog_task, "rmii_wd", 256, NULL, 4, s_rmii_wd_stack,
+				  &s_rmii_wd_tcb);
+#else
+		xTaskCreate(rmii_watchdog_task, "rmii_wd", 256, NULL, 4, NULL);
+#endif
+	}
+
 	return ERR_OK;
 }
 

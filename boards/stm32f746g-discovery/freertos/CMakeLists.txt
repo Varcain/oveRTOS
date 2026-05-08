@@ -49,7 +49,12 @@ ove_add_board_sources(
     ${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_init.c
 )
 
-if(OVE_AUDIO)
+# bus_msp_init.c provides board-specific HAL_<peripheral>_MspInit overrides
+# (UART, SPI, I2C, ETH, SAI/I2S). Each function is guarded by its own
+# CONFIG_OVE_* macro inside the file, so always include it whenever any of
+# those subsystems is enabled — otherwise the weak HAL defaults take over
+# and the peripheral never gets its GPIO/clock configured.
+if(OVE_UART OR OVE_SPI OR OVE_I2C OR OVE_NET OR OVE_AUDIO)
     ove_add_board_sources(src/bus_msp_init.c)
 endif()
 
