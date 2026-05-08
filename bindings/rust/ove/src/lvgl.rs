@@ -47,7 +47,7 @@ pub const ALIGN_CENTER: u8 = 9;
 /// LVGL style selector for the main (background) part of a widget.
 pub const PART_MAIN: u32 = 0x00_0000;
 /// LVGL style selector for the indicator part (e.g. bar fill, checkbox mark).
-pub const PART_INDICATOR: u32 = 0x01_0000;
+pub const PART_INDICATOR: u32 = 0x02_0000;
 /// LVGL style selector for the knob of interactive widgets (slider, arc).
 pub const PART_KNOB: u32 = 0x03_0000;
 /// LVGL style selector for the items part (e.g. table cells, list items).
