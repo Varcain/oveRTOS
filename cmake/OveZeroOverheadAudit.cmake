@@ -214,7 +214,7 @@ endfunction()
 
 
 function(ove_assert_no_dispatch_overhead target)
-    set(options)
+    set(options NO_PANIC_SYMBOLS)
     set(oneValueArgs ELF_PATH BINDING OUTPUT_DIR)
     set(multiValueArgs)
     cmake_parse_arguments(_OVE_ZO "${options}" "${oneValueArgs}"
@@ -229,6 +229,16 @@ function(ove_assert_no_dispatch_overhead target)
         message(FATAL_ERROR
             "ove_assert_no_dispatch_overhead: BINDING must be c, cpp, rust, "
             "or zig (got '${_OVE_ZO_BINDING}')")
+    endif()
+
+    # NO_PANIC_SYMBOLS — pass --no-panic-symbols to the script. Forbids
+    # Rust core::panicking::*, core::fmt::Arguments::new_v1, Zig
+    # std.builtin.default_panic, and __zig_probe_stack symbols. Use on
+    # zero-heap builds where panic-formatting machinery would pull in
+    # allocating fmt paths.
+    set(_no_panic_flag)
+    if(_OVE_ZO_NO_PANIC_SYMBOLS)
+        set(_no_panic_flag "--no-panic-symbols")
     endif()
 
     _ove_pick_nm(_nm)
@@ -268,6 +278,7 @@ function(ove_assert_no_dispatch_overhead target)
                     --nm "${_nm}"
                     --cppfilt "${_cppfilt}"
                     --output-dir "${_OVE_ZO_OUTPUT_DIR}"
+                    ${_no_panic_flag}
             COMMAND ${CMAKE_COMMAND} -E touch "${_stamp}"
             VERBATIM
             COMMENT "Auditing ${_elf} for forbidden zero-overhead symbols"
@@ -287,6 +298,7 @@ function(ove_assert_no_dispatch_overhead target)
                     --nm "${_nm}"
                     --cppfilt "${_cppfilt}"
                     --output-dir "${_OVE_ZO_OUTPUT_DIR}"
+                    ${_no_panic_flag}
             VERBATIM
             COMMENT "Auditing ${target} for forbidden zero-overhead symbols"
         )

@@ -103,3 +103,11 @@ target_include_directories(app PRIVATE
 
 target_compile_definitions(app PRIVATE OVE_QEMU_ARM HAVE_UINTPTR_T)
 zephyr_link_libraries(cmocka_lib m)
+
+# Dispatch-overhead symbol audit (Phase 3 of moat-hardening). Zephyr
+# subscope link → ELF_PATH. Symbol audit only on test scaffolding;
+# hotpath disasm reserved for bench targets.
+include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+ove_assert_no_dispatch_overhead(app
+    BINDING c
+    ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)

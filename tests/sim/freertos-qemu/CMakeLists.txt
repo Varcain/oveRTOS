@@ -199,3 +199,11 @@ target_link_options(ove_test_freertos_qemu PRIVATE
 set_source_files_properties(${FREERTOS_KERNEL_SOURCES} PROPERTIES
     COMPILE_FLAGS "-Wno-missing-field-initializers -Wno-cast-function-type -Wno-sign-compare"
 )
+
+# Symbol audit on the test ELF (Phase 3 of moat-hardening). Proves no
+# vtables / Rust trait-object dispatch / ove_* dispatch tables leaked
+# into the binding through any test-only code path. Hotpath disasm is
+# NOT wired: test ELFs are CMocka scaffolding, not production hot path
+# — that audit runs only on bench targets in boards/*/CMakeLists.txt.
+include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+ove_assert_no_dispatch_overhead(ove_test_freertos_qemu BINDING c)

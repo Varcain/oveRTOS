@@ -408,3 +408,10 @@ include(${OVE_ROOT}/cmake/OveZeroHeapAudit.cmake)
 ove_apply_zero_heap_wrap(ove_test_renode_stm32f746_freertos_zeroheap)
 ove_zero_heap_assert_no_kernel_alloc(ove_test_renode_stm32f746_freertos_zeroheap
     RTOS FREERTOS STRICT)
+
+# Dispatch-overhead symbol audit + NO_PANIC_SYMBOLS on the zeroheap
+# test ELF. Symbol audit only on test scaffolding (see the heap variant
+# for hotpath-disasm rationale).
+include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+ove_assert_no_dispatch_overhead(ove_test_renode_stm32f746_freertos_zeroheap
+    BINDING c NO_PANIC_SYMBOLS)
