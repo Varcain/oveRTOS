@@ -5,15 +5,27 @@
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
 # ── Zero-heap: static sizing + boot-only allocation ──
 # All resources are sized at compile time; oveRTOS creates everything
-# during init (ove_main), then ove_run() calls ove_heap_lock() so any
-# subsequent kernel-mm allocation traps via DEBUGASSERT.
+# during init (ove_main), then ove_run() calls ove_heap_lock() and the
+# main kmm heap stops growing — every subsequent kmm_malloc / __wrap_-
+# malloc that lands after the lock is rerouted to a fixed-size BSS
+# pool (CONFIG_OVE_NUTTX_ZH_RESERVED_HEAP, default 16 KiB) managed by
+# backends/nuttx/nuttx_zh_reserved_heap.c.
 #
-# Irreducible kernel-heap consumers (all bounded, all init-time only):
+# Irreducible kernel-heap consumers that have to land BEFORE the lock
+# (all bounded, all init-time only):
 #   - task_create / pthread_create (TCB + stack alloc per thread)
 #   - mq_open(O_CREAT) in nuttx_audio.c (POSIX-required)
 #   - task_tls_alloc() one-shot per slot index
 #   - group_setuptaskfiles + env_dup at task spawn
-# Anything beyond these (post-lock) traps in nuttx_heap_lock.c.
+#
+# Post-lock consumers that are unavoidable on NuttX's POSIX socket
+# layer and use the reserved pool:
+#   - fs_heap_zalloc(struct file) per FD allocated in fdlist_allocate
+#   - lib_malloc(struct dns_query_data_s) per DNS query
+#   - lib_malloc(NETDB_BUFSIZE) in getaddrinfo
+# These are why FreeRTOS+lwIP can hit pure NULL-on-trap (lwIP runs
+# entirely out of BSS pools) but NuttX needs the reserved-heap
+# fallback. Total RAM footprint is still bounded at compile time.
 CONFIG_MM_REGIONS=1
 # CONFIG_DEBUG_MM is not set
 # CONFIG_MM_BACKTRACE is not set

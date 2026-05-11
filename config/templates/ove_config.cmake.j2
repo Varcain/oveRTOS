@@ -178,6 +178,7 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/nuttx/nuttx_thread.c
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_heap_lock.c
+    ${OVE_DIR}/backends/nuttx/nuttx_zh_reserved_heap.c
 {% endif %}
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",

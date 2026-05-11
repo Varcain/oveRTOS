@@ -169,10 +169,19 @@ SECTIONS
     _sdata = .;        /* create a global symbol at data start */
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
-
-    . = ALIGN(4);
-    _edata = .;        /* define a global symbol at data end */
   } >RAM AT> FLASH
+
+  /* `_edata` is anchored to the next explicit section (.tdata) instead
+   * of the end-of-.data so the startup loader's `_sdata`..`_edata`
+   * copy covers the linker-orphan `.got` and `.got.plt` sections,
+   * which GNU ld places between .data and .tdata. Zig emits TLS-IE
+   * accesses whose offset literal (e.g. `errno` at TP+16) lives in
+   * .got; if .got is left at uninitialised RAM (0xaaaaaaaa here),
+   * the next errno write — first hits inside lwIP's `event_callback`
+   * during `lwip_close` — does `str r2, [TP, 0xaaaaaaaa]` and bus-
+   * faults. C TLS-LE access uses constant offsets and never reads
+   * .got, which is why the C zh build doesn't notice. */
+  _edata = ADDR(.tdata);
 
   /* Picolibc TLS sections.  configUSE_PICOLIBC_TLS=1 in FreeRTOSConfig.h
    * pulls in picolibc-freertos.h, whose _tls_size()/_tls_align() and

@@ -75,14 +75,17 @@ const HeapClient = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: Client) void {
+    /// Idempotent — clears `handle` after destroy so a redundant
+    /// `defer client.deinit()` after an explicit `deinit()` is safe.
+    pub fn deinit(self: *Client) void {
         if (self.handle == null) return;
         c.ove_mqtt_client_destroy(self.handle);
+        self.handle = null;
     }
 
     /// Connect with a simple callback (no context).
     pub fn connect(
-        self: Client,
+        self: *Client,
         cfg: Config,
         comptime callback: fn ([]const u8, []const u8) void,
     ) Error!void {
@@ -108,7 +111,7 @@ const HeapClient = struct {
     /// Connect with a typed context pointer.
     pub fn connectWithContext(
         comptime Context: type,
-        self: Client,
+        self: *Client,
         ctx: *Context,
         cfg: Config,
         comptime callback: fn (*Context, []const u8, []const u8) void,
@@ -133,23 +136,23 @@ const HeapClient = struct {
         try err.fromCode(c.ove_mqtt_connect(self.handle, &cc));
     }
 
-    pub fn disconnect(self: Client) void {
+    pub fn disconnect(self: *Client) void {
         c.ove_mqtt_disconnect(self.handle);
     }
 
-    pub fn publish(self: Client, topic: [:0]const u8, payload: []const u8, qos: Qos) Error!void {
+    pub fn publish(self: *Client, topic: [:0]const u8, payload: []const u8, qos: Qos) Error!void {
         try err.fromCode(c.ove_mqtt_publish(self.handle, topic.ptr, payload.ptr, payload.len, qos.toC()));
     }
 
-    pub fn subscribe(self: Client, topic: [:0]const u8, qos: Qos) Error!void {
+    pub fn subscribe(self: *Client, topic: [:0]const u8, qos: Qos) Error!void {
         try err.fromCode(c.ove_mqtt_subscribe(self.handle, topic.ptr, qos.toC()));
     }
 
-    pub fn unsubscribe(self: Client, topic: [:0]const u8) Error!void {
+    pub fn unsubscribe(self: *Client, topic: [:0]const u8) Error!void {
         try err.fromCode(c.ove_mqtt_unsubscribe(self.handle, topic.ptr));
     }
 
-    pub fn pollOnce(self: Client, timeout_ms: u32) Error!void {
+    pub fn pollOnce(self: *Client, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ms));
     }
 };

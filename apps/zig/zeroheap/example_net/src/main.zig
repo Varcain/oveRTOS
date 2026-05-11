@@ -27,7 +27,16 @@ var pass_count: u32 = 0;
 var fail_count: u32 = 0;
 
 // File-scope thread (zero-heap embeds storage + stack inline).
-var net_thread: ove.Thread(8192) = undefined;
+//
+// 16 KiB rather than the 8 KiB used by the C variant: Zig adds a bit
+// per frame (Tracker.assertSame on every method, error-union return
+// slots), and the lwIP TCP recv path is 14 frames deep with the
+// 512-byte `buf` in testTcp on top. With an 8 KiB array the stack
+// pointer walks off the bottom during sock.recv and trashes BSS that
+// follows the thread struct — most notably the FreeRTOS list at the
+// head of the lwIP sys_arch mbox pool, which corrupts an
+// xEventListItem into a self-loop that hangs the next vListInsert.
+var net_thread: ove.Thread(16384) = undefined;
 
 fn testCase(name: []const u8) void {
     ove.log.inf("  [TEST] {s}", .{name});
