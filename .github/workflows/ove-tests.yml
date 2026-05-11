@@ -186,6 +186,9 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-src
+          targets: thumbv7em-none-eabihf, thumbv7em-none-eabi, thumbv7m-none-eabi
 
       - name: Run tests
         run: make test-rust
