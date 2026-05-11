@@ -222,7 +222,7 @@ static int classify(const int8_t *features, const char **label_out)
 |--------|---------|-------------|
 | `CONFIG_OVE_INFER` | `n` | Enable the ML inference subsystem (requires LiteRT/TFLM) |
 | `CONFIG_OVE_INFER_CMSIS_NN` | `n` | Use CMSIS-NN optimised kernels on Arm Cortex-M (requires CMSIS-NN library) |
-| `CONFIG_OVE_INFER_ARENA_SIZE` | `32768` | Default tensor arena size in bytes when `ove_model_create()` is called without an explicit config (heap mode only) |
+| `CONFIG_OVE_INFER_ARENA_SIZE` | `65536` | Default tensor arena allocation in bytes; can be overridden per-model via `ove_model_config.arena_size`. |
 
 ## Headers
 

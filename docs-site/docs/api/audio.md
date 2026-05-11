@@ -34,41 +34,43 @@ graph LR
 
 ```mermaid
 stateDiagram-v2
-    [*] --> IDLE: graph_init()
-    IDLE --> IDLE: add_node() / connect()
-    IDLE --> READY: build()
-    READY --> RUNNING: start()
-    RUNNING --> READY: stop()
-    READY --> IDLE: deinit()
-    RUNNING --> RUNNING: process()
+    [*] --> IDLE: ove_audio_graph_init()
+    IDLE --> IDLE: add_node() / connect() / set_buf_storage()
+    IDLE --> READY: ove_audio_graph_build()
+    READY --> RUNNING: ove_audio_graph_start()
+    RUNNING --> READY: ove_audio_graph_stop()
+    READY --> IDLE: (stop, then) ove_audio_graph_deinit()
+    RUNNING --> RUNNING: ove_audio_graph_process()
 ```
 
 1. **IDLE** -- Add nodes and connect them. The graph is mutable.
-2. **build()** -- Validates edges, propagates formats via `configure()`, resolves topological execution order, allocates buffers. Transitions to **READY**.
+2. **build()** -- Validates edges, propagates formats via `configure()`, resolves topological execution order, allocates inter-node buffers. Transitions to **READY**.
 3. **READY** -- Graph is immutable. Start begins hardware streaming.
 4. **RUNNING** -- Hardware callbacks drive `process()` each buffer period.
+
+`ove_audio_graph_deinit()` must be called only after stopping the graph. It frees the heap-allocated buffer storage; storage attached with `ove_audio_graph_set_buf_storage()` is left untouched.
 
 ## Execution Modes
 
 ### Sink-driven (real-time)
 
-The hardware sink's DMA interrupt or callback triggers `ove_audio_graph_process()`. The engine walks all nodes in topological order within that callback context.
+The sink device node's driver thread blocks on DMA half/full completion, then drives `ove_audio_graph_process()` on every period boundary. The engine walks all nodes in topological order on that driver thread (not on the DMA ISR — the ISR only signals the driver thread).
 
 ```mermaid
 sequenceDiagram
     participant DMA as Hardware DMA
-    participant Engine as Engine Thread
+    participant Drv as Sink Driver Thread
     participant Src as Source Node
     participant Proc as Processor
     participant Sink as Sink Node
 
-    DMA->>Engine: buffer ready (ISR notify / callback)
-    Engine->>Src: process(NULL, &out_buf)
-    Src-->>Engine: fills output buffer from DMA RX
-    Engine->>Proc: process(&in_buf, &out_buf)
-    Proc-->>Engine: transforms audio
-    Engine->>Sink: process(&in_buf, NULL)
-    Sink-->>Engine: copies to DMA TX buffer
+    DMA->>Drv: half/full complete IRQ (signals semaphore)
+    Drv->>Src: process(NULL, &out_buf)
+    Src-->>Drv: fills output buffer from DMA RX
+    Drv->>Proc: process(&in_buf, &out_buf)
+    Proc-->>Drv: transforms audio
+    Drv->>Sink: process(&in_buf, NULL)
+    Sink-->>Drv: copies to DMA TX buffer
 ```
 
 ### App-driven (testing / offline)
@@ -151,6 +153,22 @@ int node = ove_audio_graph_add_node(&graph, &my_dsp_ops, my_ctx,
                                     "my-dsp", OVE_AUDIO_NODE_PROCESSOR);
 ```
 
+## Buffer Storage and Zero-Heap Mode
+
+The graph holds one intermediate audio buffer per non-sink node. In heap mode the buffers are allocated by `ove_audio_graph_build()`; in zero-heap mode the caller must supply storage before `build()`:
+
+```c
+/* Compile-time storage upper bound. */
+static uint8_t graph_buf[OVE_AUDIO_GRAPH_STORAGE_BYTES(
+    /*nodes=*/3, /*frames=*/512, /*channels=*/1, /*sample_bytes=*/2)]
+    __attribute__((aligned(4)));
+
+ove_audio_graph_init(&graph, 512);
+ove_audio_graph_set_buf_storage(&graph, graph_buf, sizeof(graph_buf));
+```
+
+The `OVE_AUDIO_GRAPH_DEFINE(name, nodes, frames, channels, sample_bytes)` macro combines the storage array and the `struct ove_audio_graph` declaration into one file-scope statement. The companion `ove_audio_graph_create(pg, frames, nodes, channels, sample_bytes)` macro initialises a graph and (in heap mode) calls `_init`. In heap mode the `nodes`/`channels`/`sample_bytes` arguments are unused — the macro signature is shared with the zero-heap path for source compatibility.
+
 ## Example: Guitar IR Convolution
 
 The hIRoic app uses the graph engine for real-time cabinet impulse response convolution:
@@ -168,22 +186,36 @@ graph LR
 ```
 
 ```c
-struct ove_audio_device_cfg dev_cfg = {
-    .transport = OVE_AUDIO_TRANSPORT_I2S,
-    .fmt = { .sample_rate = 44100, .channels = 1,
-             .sample_fmt = OVE_AUDIO_FMT_S16 },
-};
+static struct ove_audio_graph graph;
 
-ove_audio_graph_init(&graph, 512);
-int src  = ove_audio_device_source(&graph, &dev_cfg, "i2s-in");
-int dsp  = ove_audio_graph_add_node(&graph, &hiroic_dsp_ops,
-                                    NULL, "dsp", OVE_AUDIO_NODE_PROCESSOR);
-int sink = ove_audio_device_sink(&graph, &dev_cfg, "i2s-out");
+void app_init(void)
+{
+    struct ove_audio_device_cfg dev_cfg = {
+        .transport = OVE_AUDIO_TRANSPORT_I2S,
+        .fmt = { .sample_rate = 44100, .channels = 1,
+                 .sample_fmt = OVE_AUDIO_FMT_S16 },
+    };
 
-ove_audio_graph_connect(&graph, src, dsp);
-ove_audio_graph_connect(&graph, dsp, sink);
-ove_audio_graph_build(&graph);
-ove_audio_graph_start(&graph);
+    ove_audio_graph_init(&graph, 512);
+    /* In zero-heap mode call ove_audio_graph_set_buf_storage(&graph, …)
+     * here with caller-provided storage; see "Buffer Storage" above. */
+
+    int src  = ove_audio_device_source(&graph, &dev_cfg, "i2s-in");
+    int dsp  = ove_audio_graph_add_node(&graph, &hiroic_dsp_ops,
+                                        NULL, "dsp", OVE_AUDIO_NODE_PROCESSOR);
+    int sink = ove_audio_device_sink(&graph, &dev_cfg, "i2s-out");
+
+    ove_audio_graph_connect(&graph, src, dsp);
+    ove_audio_graph_connect(&graph, dsp, sink);
+    ove_audio_graph_build(&graph);
+    ove_audio_graph_start(&graph);
+}
+
+void app_shutdown(void)
+{
+    ove_audio_graph_stop(&graph);
+    ove_audio_graph_deinit(&graph);
+}
 ```
 
 ## Example: Keyword Detection with DMIC
@@ -219,20 +251,19 @@ Query runtime statistics with `ove_audio_graph_get_stats()`:
 
 Timing fields are populated when `CONFIG_OVE_TIME` is enabled.
 
-## Kconfig Options
+## Kconfig and Heap Gating
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `CONFIG_OVE_AUDIO` | `y` | Enable the audio subsystem |
-| `CONFIG_OVE_AUDIO_NODE_CONVERTER` | `y` | Format converter node (S16/S32/F32) |
-| `CONFIG_OVE_AUDIO_NODE_GAIN` | `n` | Gain/volume node |
-| `CONFIG_OVE_AUDIO_NODE_TAP` | `n` | Observer/tap node |
-| `CONFIG_OVE_AUDIO_NODE_CHANNEL_MAP` | `n` | Channel remapping node |
+| `CONFIG_OVE_AUDIO` | `n` | Enable the audio graph engine. When unset, the public functions become inline stubs returning `OVE_ERR_NOT_SUPPORTED`. |
+| `CONFIG_OVE_TIME` | `n` | When set, populates `max_process_us` / `avg_process_us` in `struct ove_audio_graph_stats`. |
+
+The built-in node factories (`ove_audio_node_converter`, `ove_audio_node_channel_map`, `ove_audio_node_gain`, `ove_audio_node_tap`) and the `ove_audio_graph_create`/`destroy` heap helpers are declared only when `OVE_HEAP_AUDIO` is defined — i.e. when `CONFIG_OVE_ZERO_HEAP` is **not** set. In zero-heap mode, use the static-storage path: `OVE_AUDIO_GRAPH_DEFINE` + `ove_audio_graph_init` + `ove_audio_graph_set_buf_storage`, with custom processor nodes (the bundled factories are heap-only).
 
 ## Headers
 
 | Header | Contents |
 |--------|----------|
-| `ove/audio.h` | Graph struct, graph API, diagnostics |
-| `ove/audio_node.h` | Format types, buffer type, node vtable, built-in node factories |
-| `ove/audio_device.h` | Transport enum, device config, device node factories |
+| `ove/audio.h` | `struct ove_audio_graph`, graph state enum, init/deinit/build/start/stop/process/get_stats, `set_buf_storage`, `OVE_AUDIO_GRAPH_STORAGE_BYTES`, `OVE_AUDIO_GRAPH_DEFINE`, `ove_audio_graph_create`/`destroy` (heap mode). |
+| `ove/audio_node.h` | Format types, buffer type, node vtable, built-in node factories (heap mode). |
+| `ove/audio_device.h` | Transport enum, device config, device source/sink factories. |

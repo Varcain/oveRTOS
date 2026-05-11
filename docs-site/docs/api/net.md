@@ -281,6 +281,9 @@ ove_tls_init(&tls, &tls_storage);
 
 ove_tls_config_t cfg = {0};
 cfg.hostname = "example.com";  /* SNI hostname for verification */
+/* A non-NULL ca_cert is required for a verified handshake.  To opt out of
+ * certificate validation (test/dev only) set cfg.allow_insecure = 1 — the
+ * handshake refuses to complete otherwise. */
 
 ove_tls_handshake(tls, sock, &cfg);  /* sock is an already-connected TCP socket */
 
@@ -363,6 +366,13 @@ ove_mqtt_config_t cfg = {
     .client_id = "my-device",
     .keep_alive_s = 30,
     .on_message = on_message,
+    /* Optional authentication */
+    .username = NULL,
+    .password = NULL,
+    /* Optional TLS — set use_tls = 1 and supply tls_ca_cert (+ tls_ca_cert_len),
+     * or set tls_allow_insecure = 1 for test/dev. */
+    .use_tls = 0,
+    .user_data = NULL,
 };
 ove_mqtt_connect(mqtt, &cfg);
 
@@ -420,35 +430,45 @@ ove_httpd_route("GET", "/api/items/*", my_handler);
 | `/api/gpio` | GET/POST | GPIO pin read/write |
 | `/api/network` | GET | Network interface status |
 | `/api/log` | GET | Recent log messages |
+| `/api/system/memory` | GET | System heap totals (free / used / peak). |
+| `/api/system/threads` | GET | Thread list with state, priority, stack usage, CPU%. |
+| `/api/audio/stats` | GET | Audio graph runtime statistics (requires `CONFIG_OVE_AUDIO`). |
+| `/api/infer/stats` | GET | Last inference latency and stats (requires `CONFIG_OVE_INFER`). |
 
 ### HTTPD API
 
 | Function | Description |
 |----------|-------------|
-| `ove_httpd_start` | Start the HTTP server |
-| `ove_httpd_stop` | Stop the server |
-| `ove_httpd_route` | Register a route handler |
-| `ove_httpd_register_builtin_routes` | Register the built-in dashboard |
-| `ove_httpd_req_method` | Get request method string |
-| `ove_httpd_req_path` | Get request path |
-| `ove_httpd_req_query` | Get query string |
-| `ove_httpd_req_body` | Get POST body |
-| `ove_httpd_req_segment` | Get path segment by index |
-| `ove_httpd_resp_json` | Send JSON response |
-| `ove_httpd_resp_html` | Send HTML response |
-| `ove_httpd_resp_send` | Send response with content type |
-| `ove_httpd_resp_error` | Send error response |
+| `ove_httpd_start` | Start the HTTP server. |
+| `ove_httpd_stop` | Stop the server. |
+| `ove_httpd_set_netif` | Bind the server to a specific network interface for the `/api/network` route. |
+| `ove_httpd_set_audio_graph` | Register an `ove_audio_graph` for the `/api/audio/stats` route (requires `CONFIG_OVE_AUDIO`). |
+| `ove_httpd_set_model` | Register an `ove_model_t` for the `/api/infer/stats` route (requires `CONFIG_OVE_INFER`). |
+| `ove_httpd_route` | Register a route handler. |
+| `ove_httpd_register_builtin_routes` | Register the built-in dashboard. |
+| `ove_httpd_req_method` | Get request method string. |
+| `ove_httpd_req_path` | Get request path. |
+| `ove_httpd_req_query` | Get query string. |
+| `ove_httpd_req_body` | Get POST body. |
+| `ove_httpd_req_body_len` | Get POST body length. |
+| `ove_httpd_req_segment` | Get path segment by index. |
+| `ove_httpd_resp_json` | Send JSON response. |
+| `ove_httpd_resp_html` | Send HTML response (requires explicit `len`, not NUL-terminated). |
+| `ove_httpd_resp_send` | Send response with caller-chosen content type. |
+| `ove_httpd_resp_send_gz` | Send a pre-compressed gzip response (used for the bundled dashboard). |
+| `ove_httpd_resp_error` | Send error response. |
+| `ove_httpd_log_append` | Append a line to the in-memory log ring buffer surfaced at `/api/log`. |
 
 ### WebSocket Support
 
-When `CONFIG_OVE_NET_HTTPD_WS` is enabled, the server supports RFC 6455 WebSocket connections:
+When `CONFIG_OVE_NET_HTTPD_WS` is enabled, the server supports RFC 6455 WebSocket connections. Both handlers return `void`; the third argument to `ove_httpd_ws_route` is an `ove_httpd_ws_close_handler_t` invoked on disconnect (pass `NULL` if not needed).
 
 ```c
-static int ws_on_message(ove_httpd_ws_conn_t *conn,
-                         const void *data, size_t len)
+static void ws_on_message(ove_httpd_ws_conn_t *conn,
+                          const void *data, size_t len)
 {
     /* Echo back */
-    return ove_httpd_ws_send(conn, data, len);
+    ove_httpd_ws_send(conn, data, len);
 }
 
 ove_httpd_ws_route("/ws", ws_on_message, NULL);
@@ -462,9 +482,14 @@ Requires `CONFIG_OVE_NET_SNTP`. Performs a single NTP query to get UTC time.
 ```c
 ove_sntp_config_t cfg = { .server = "pool.ntp.org", .timeout_ms = 5000 };
 ove_sntp_sync(&cfg);
+/* Passing NULL uses the built-in defaults (pool.ntp.org, 5 s timeout). */
 
 uint32_t utc_s;
-ove_sntp_get_utc(&utc_s);  /* seconds since 1970-01-01 */
+ove_sntp_get_utc(&utc_s);    /* seconds since 1970-01-01 */
+
+int64_t offset_us;
+ove_sntp_get_offset_us(&offset_us);  /* microseconds offset between local
+                                        clock and the last successful sync */
 ```
 
 ## Zero-Heap Networking
@@ -485,11 +510,11 @@ All four languages provide equivalent networking APIs. Key type mappings:
 
 | Concept | C | C++ | Rust | Zig |
 |---------|---|-----|------|-----|
-| Address | `ove_sockaddr_t` | `ove::net::Address` | `ove::net::Address` | `ove.Address` |
-| Net interface | `ove_netif_t` | `ove::net::NetIf` | `ove::net::NetIf` | `ove.NetIf` |
-| TCP socket | `ove_socket_t` | `ove::net::TcpSocket` | `ove::net::TcpStream` | `ove.TcpStream` |
-| UDP socket | `ove_socket_t` | `ove::net::UdpSocket` | `ove::net::UdpSocket` | `ove.UdpSocket` |
-| DNS resolve | `ove_dns_resolve()` | `ove::net::dns::resolve()` | `ove::net::dns_resolve()` | `ove.net.dns.resolve()` |
+| Address | `ove_sockaddr_t` | `ove::Address` | `ove::net::Address` | `ove.Address` |
+| Net interface | `ove_netif_t` | `ove::NetIf` | `ove::net::NetIf` | `ove.NetIf` |
+| TCP socket | `ove_socket_t` | `ove::TcpSocket` | `ove::net::TcpStream` | `ove.TcpStream` |
+| UDP socket | `ove_socket_t` | `ove::UdpSocket` | `ove::net::UdpSocket` | `ove.UdpSocket` |
+| DNS resolve | `ove_dns_resolve()` | `ove::dns::resolve()` | `ove::net::dns_resolve()` | `ove.net.dns.resolve()` |
 | HTTP client | `ove_http_client_t` | `ove::http::Client` | `ove::net_http::Client` | `ove.HttpClient` |
 | MQTT client | `ove_mqtt_client_t` | `ove::mqtt::Client` | `ove::net_mqtt::Client` | `ove.MqttClient` |
 | TLS session | `ove_tls_t` | `ove::tls::Session` | `ove::net_tls::Session` | `ove.TlsSession` |

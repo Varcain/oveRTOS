@@ -98,7 +98,7 @@ File and directory handles follow the same dual-allocation pattern used througho
 
 **Static (zero-heap) — `open_init` / `close_deinit`:**
 
-The caller declares storage with `OVE_FILE_DEFINE()` and passes it to `ove_fs_open_init`. No heap allocation is performed; the storage must remain valid for the lifetime of the open file. Use this on targets where `CONFIG_OVE_ZERO_HEAP=y`.
+The caller declares an `ove_file_storage_t` (and, for directory iteration, `ove_dir_storage_t`) at file scope and passes it to `ove_fs_open_init` / `ove_fs_opendir_init`. No heap allocation is performed; the storage must remain valid for the lifetime of the open handle. Use this on targets where `CONFIG_OVE_ZERO_HEAP=y`.
 
 ```c
 static ove_file_storage_t file_storage;

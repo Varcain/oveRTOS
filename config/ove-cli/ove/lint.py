@@ -582,6 +582,10 @@ def _clang_tidy_backends(ove_dir, check):
             "--extra-arg=-Wno-unknown-warning-option",
             "--extra-arg=-Wno-unused-command-line-argument",
             "--extra-arg=-ferror-limit=200",
+            # Sentinel honoured by ove/heap_assert.h to skip its libc
+            # allocator redeclarations — clang rejects the `error`
+            # attribute on a redeclaration (see header for rationale).
+            "--extra-arg=-D__OVE_LINT__",
         ] + per_rtos_extra_args.get(rtos, []) + [e["file"] for e in filtered]
         rc, out = _run(cmd, cwd=ove_dir)
         if rc != 0:

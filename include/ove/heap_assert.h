@@ -47,9 +47,15 @@
  * function, not a redeclaration.  Skip the trap there too — the WASM
  * sim build doesn't have a kernel heap to protect anyway, and the
  * runtime trap in ove_heap_lock.c remains in place for any backend
- * that does. */
+ * that does.
+ *
+ * Cross-compile clang-tidy (config/ove-cli/ove/lint.py:_clang_tidy_backends)
+ * shares clang's strictness: it parses with --target=arm-none-eabi and
+ * trips on the same redeclaration pattern.  The lint script defines
+ * `__OVE_LINT__` so we can opt out — lint never produces a binary, so
+ * the compile-time guard isn't doing anything useful in that pass. */
 #if defined(CONFIG_OVE_ZERO_HEAP) && !defined(__BINDGEN__) && !defined(__ZIG_CIMPORT__) && \
-	!defined(__EMSCRIPTEN__)
+	!defined(__EMSCRIPTEN__) && !defined(__OVE_LINT__)
 
 #include <stddef.h>
 
