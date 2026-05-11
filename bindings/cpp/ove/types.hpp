@@ -74,11 +74,15 @@ static_assert(OVE_ERR_NO_MEMORY == -3, "OVE_ERR_NO_MEMORY drifted");
 static_assert(OVE_ERR_TIMEOUT == -4, "OVE_ERR_TIMEOUT drifted");
 static_assert(OVE_ERR_NOT_SUPPORTED == -5, "OVE_ERR_NOT_SUPPORTED drifted");
 static_assert(OVE_ERR_QUEUE_FULL == -6, "OVE_ERR_QUEUE_FULL drifted");
+static_assert(OVE_ERR_ML_FAILED == -7, "OVE_ERR_ML_FAILED drifted");
 static_assert(OVE_ERR_NET_REFUSED == -8, "OVE_ERR_NET_REFUSED drifted");
 static_assert(OVE_ERR_NET_UNREACHABLE == -9, "OVE_ERR_NET_UNREACHABLE drifted");
 static_assert(OVE_ERR_NET_ADDR_IN_USE == -10, "OVE_ERR_NET_ADDR_IN_USE drifted");
 static_assert(OVE_ERR_NET_RESET == -11, "OVE_ERR_NET_RESET drifted");
 static_assert(OVE_ERR_NET_DNS_FAIL == -12, "OVE_ERR_NET_DNS_FAIL drifted");
 static_assert(OVE_ERR_NET_CLOSED == -13, "OVE_ERR_NET_CLOSED drifted");
+static_assert(OVE_ERR_BUS_NACK == -14, "OVE_ERR_BUS_NACK drifted");
+static_assert(OVE_ERR_BUS_BUSY == -15, "OVE_ERR_BUS_BUSY drifted");
+static_assert(OVE_ERR_BUS_ERROR == -16, "OVE_ERR_BUS_ERROR drifted");
 
 } // namespace ove

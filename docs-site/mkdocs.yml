@@ -62,6 +62,7 @@ nav:
     - Overview: testing/index.md
     - Renode: testing/renode.md
     - Hardware-in-the-loop: testing/hw.md
+    - Audit guarantees: testing/audit-guarantees.md
   - Backends: backends/index.md
   - Benchmarks:
     - Overview: benchmarks/index.md

@@ -24,6 +24,7 @@ import subprocess
 import sys
 
 from . import lint_backend_struct
+from . import lint_error_codes
 from .workspace import find_ove_dir
 
 logger = logging.getLogger("ove")
@@ -721,6 +722,16 @@ def _backend_struct_guard(ove_dir, check):
     return ("backend-struct", "FAIL", detail)
 
 
+def _error_code_pinning(ove_dir, check):
+    """Every OVE_ERR_* in include/ove/types.h must be pinned in every binding."""
+    del check  # read-only
+    violations = lint_error_codes.check(ove_dir)
+    if not violations:
+        return ("error-code-pin", "OK", "all bindings pin every code")
+    detail = lint_error_codes.format_violations(violations)
+    return ("error-code-pin", "FAIL", detail)
+
+
 def _run_all(check, include_lint=True):
     """Run all checks. `check=True` means read-only mode; `check=False`
     rewrites files (only the formatters honour the distinction — the
@@ -743,6 +754,7 @@ def _run_all(check, include_lint=True):
             _cargo_clippy(ove_dir, check),
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
+            _error_code_pinning(ove_dir, check),
         ]
     return results
 
