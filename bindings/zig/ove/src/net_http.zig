@@ -108,20 +108,23 @@ const HeapClient = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: Client) void {
+    /// Idempotent — clears `handle` after destroy so a redundant
+    /// `defer client.deinit()` after an explicit `deinit()` is safe.
+    pub fn deinit(self: *Client) void {
         if (self.handle == null) return;
         c.ove_http_client_destroy(self.handle);
+        self.handle = null;
     }
 
     /// Perform an HTTP GET request.
-    pub fn get(self: Client, url: [:0]const u8) Error!Response {
+    pub fn get(self: *Client, url: [:0]const u8) Error!Response {
         var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
         try err.fromCode(c.ove_http_get(self.handle, url.ptr, &raw));
         return .{ .raw = raw };
     }
 
     /// Perform an HTTP POST request.
-    pub fn post(self: Client, url: [:0]const u8, content_type: [:0]const u8, body_data: []const u8) Error!Response {
+    pub fn post(self: *Client, url: [:0]const u8, content_type: [:0]const u8, body_data: []const u8) Error!Response {
         var raw: c.ove_http_response_t = std.mem.zeroes(c.ove_http_response_t);
         try err.fromCode(c.ove_http_post(self.handle, url.ptr, content_type.ptr, body_data.ptr, body_data.len, &raw));
         return .{ .raw = raw };
@@ -130,7 +133,7 @@ const HeapClient = struct {
     /// Perform an HTTP request with explicit method, optional body, and
     /// optional extra headers.
     pub fn requestEx(
-        self: Client,
+        self: *Client,
         method: Method,
         url: [:0]const u8,
         content_type: ?[:0]const u8,

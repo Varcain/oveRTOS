@@ -116,22 +116,27 @@ const HeapNetIf = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: NetIf) void {
+    /// Idempotent — clears `handle` after destroy so `defer deinit()`
+    /// after an explicit `deinit()` is safe (the second call sees a
+    /// null handle and short-circuits, avoiding a double free that
+    /// would corrupt the kmm freelist).
+    pub fn deinit(self: *NetIf) void {
         if (self.handle == null) return;
         c.ove_netif_destroy(self.handle);
+        self.handle = null;
     }
 
-    pub fn up(self: NetIf, cfg: NetIfConfig) Error!void {
+    pub fn up(self: *NetIf, cfg: NetIfConfig) Error!void {
         try err.fromCode(c.ove_netif_up(self.handle, &cfg.inner));
     }
 
-    pub fn down(self: NetIf) void {
+    pub fn down(self: *NetIf) void {
         c.ove_netif_down(self.handle);
     }
 
     pub const AddrInfo = struct { ip: Address, gateway: Address, netmask: Address };
 
-    pub fn getAddr(self: NetIf) Error!AddrInfo {
+    pub fn getAddr(self: *NetIf) Error!AddrInfo {
         var ip = std.mem.zeroes(c.ove_sockaddr_t);
         var gw = std.mem.zeroes(c.ove_sockaddr_t);
         var nm = std.mem.zeroes(c.ove_sockaddr_t);
@@ -199,36 +204,38 @@ const HeapTcpStream = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: TcpStream) void {
+    /// Idempotent — see HeapNetIf.deinit.
+    pub fn deinit(self: *TcpStream) void {
         if (self.handle == null) return;
         c.ove_socket_destroy(self.handle);
+        self.handle = null;
     }
 
-    pub fn connect(self: TcpStream, addr: Address, timeout_ms: u32) Error!void {
+    pub fn connect(self: *TcpStream, addr: Address, timeout_ms: u32) Error!void {
         try err.fromCode(c.ove_socket_connect(self.handle, &addr.inner, timeout_ms));
     }
 
-    pub fn send(self: TcpStream, data: []const u8) Error!usize {
+    pub fn send(self: *TcpStream, data: []const u8) Error!usize {
         var sent: usize = 0;
         try err.fromCode(c.ove_socket_send(self.handle, data.ptr, data.len, &sent));
         return sent;
     }
 
-    pub fn recv(self: TcpStream, buf: []u8, timeout_ms: u32) Error!usize {
+    pub fn recv(self: *TcpStream, buf: []u8, timeout_ms: u32) Error!usize {
         var received: usize = 0;
         try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ms));
         return received;
     }
 
-    pub fn bind(self: TcpStream, addr: Address) Error!void {
+    pub fn bind(self: *TcpStream, addr: Address) Error!void {
         try err.fromCode(c.ove_socket_bind(self.handle, &addr.inner));
     }
 
-    pub fn listen(self: TcpStream, backlog: i32) Error!void {
+    pub fn listen(self: *TcpStream, backlog: i32) Error!void {
         try err.fromCode(c.ove_socket_listen(self.handle, backlog));
     }
 
-    pub fn accept(self: TcpStream, timeout_ms: u32) Error!TcpStream {
+    pub fn accept(self: *TcpStream, timeout_ms: u32) Error!TcpStream {
         var h: c.ove_socket_t = null;
         try err.fromCode(c.ove_socket_accept(self.handle, &h, null, timeout_ms));
         return .{ .handle = h };
@@ -314,22 +321,24 @@ const HeapUdpSocket = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: UdpSocket) void {
+    /// Idempotent — see HeapNetIf.deinit.
+    pub fn deinit(self: *UdpSocket) void {
         if (self.handle == null) return;
         c.ove_socket_destroy(self.handle);
+        self.handle = null;
     }
 
-    pub fn bind(self: UdpSocket, addr: Address) Error!void {
+    pub fn bind(self: *UdpSocket, addr: Address) Error!void {
         try err.fromCode(c.ove_socket_bind(self.handle, &addr.inner));
     }
 
-    pub fn sendTo(self: UdpSocket, data: []const u8, dest: Address) Error!usize {
+    pub fn sendTo(self: *UdpSocket, data: []const u8, dest: Address) Error!usize {
         var sent: usize = 0;
         try err.fromCode(c.ove_socket_sendto(self.handle, data.ptr, data.len, &sent, &dest.inner));
         return sent;
     }
 
-    pub fn recvFrom(self: UdpSocket, buf: []u8, timeout_ms: u32) Error!struct { len: usize, src: Address } {
+    pub fn recvFrom(self: *UdpSocket, buf: []u8, timeout_ms: u32) Error!struct { len: usize, src: Address } {
         var received: usize = 0;
         var src: c.ove_sockaddr_t = std.mem.zeroes(c.ove_sockaddr_t);
         try err.fromCode(c.ove_socket_recvfrom(self.handle, buf.ptr, buf.len, &received, &src, timeout_ms));

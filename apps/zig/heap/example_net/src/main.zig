@@ -33,7 +33,7 @@ var fail_count: u32 = 0;
 
 // Net test thread — heap-mode value-returning create() returns a 1-pointer
 // handle, parked here as an optional so it stays valid past appMain's exit.
-var net_thread: ?ove.Thread(8192) = null;
+var net_thread: ?ove.Thread(16384) = null;
 
 fn testCase(name: []const u8) void {
     ove.log.inf("  [TEST] {s}", .{name});
@@ -503,7 +503,7 @@ fn netThread() void {
 fn appMain() void {
     ove.log.inf("Zig networking example (heap mode): init", .{});
 
-    net_thread = ove.Thread(8192).create("net-test", netThread, ove.thread.prio.normal) catch |e| {
+    net_thread = ove.Thread(16384).create("net-test", netThread, ove.thread.prio.normal) catch |e| {
         ove.log.err("Failed to create net thread: {d}", .{errCode(e)});
         return;
     };

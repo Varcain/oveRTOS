@@ -55,6 +55,10 @@ static int errno_to_ove(int err)
 		return OVE_ERR_NET_CLOSED;
 	case EPIPE:
 		return OVE_ERR_NET_CLOSED;
+	case ENOMEM:
+	case ENFILE:
+	case EMFILE:
+		return OVE_ERR_NO_MEMORY;
 	default:
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -107,19 +111,26 @@ int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
 	const char *ifname = "eth0";
 
 	if (!cfg->use_dhcp) {
-		/* Static IP configuration */
+		/* Static IP configuration. The netlib_* helpers each open a
+		 * SOCK_DGRAM AF_INET socket internally to issue an ioctl —
+		 * surface non-zero returns to the caller so a failed bring-up
+		 * doesn't masquerade as success with a 0.0.0.0 readback. */
 		struct in_addr addr;
 
 		memcpy(&addr.s_addr, cfg->static_ip.addr, 4);
-		netlib_set_ipv4addr(ifname, &addr);
+		if (netlib_set_ipv4addr(ifname, &addr) < 0)
+			return errno_to_ove(errno);
 
 		memcpy(&addr.s_addr, cfg->netmask.addr, 4);
-		netlib_set_ipv4netmask(ifname, &addr);
+		if (netlib_set_ipv4netmask(ifname, &addr) < 0)
+			return errno_to_ove(errno);
 
 		memcpy(&addr.s_addr, cfg->gateway.addr, 4);
-		netlib_set_dripv4addr(ifname, &addr);
+		if (netlib_set_dripv4addr(ifname, &addr) < 0)
+			return errno_to_ove(errno);
 
-		netlib_ifup(ifname);
+		if (netlib_ifup(ifname) < 0)
+			return errno_to_ove(errno);
 	}
 
 	/* Configure DNS server */
