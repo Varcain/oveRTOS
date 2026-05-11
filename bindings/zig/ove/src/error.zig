@@ -88,10 +88,14 @@ comptime {
     std.debug.assert(c.OVE_ERR_TIMEOUT == -4);
     std.debug.assert(c.OVE_ERR_NOT_SUPPORTED == -5);
     std.debug.assert(c.OVE_ERR_QUEUE_FULL == -6);
+    std.debug.assert(c.OVE_ERR_ML_FAILED == -7);
     std.debug.assert(c.OVE_ERR_NET_REFUSED == -8);
     std.debug.assert(c.OVE_ERR_NET_UNREACHABLE == -9);
     std.debug.assert(c.OVE_ERR_NET_ADDR_IN_USE == -10);
     std.debug.assert(c.OVE_ERR_NET_RESET == -11);
     std.debug.assert(c.OVE_ERR_NET_DNS_FAIL == -12);
     std.debug.assert(c.OVE_ERR_NET_CLOSED == -13);
+    std.debug.assert(c.OVE_ERR_BUS_NACK == -14);
+    std.debug.assert(c.OVE_ERR_BUS_BUSY == -15);
+    std.debug.assert(c.OVE_ERR_BUS_ERROR == -16);
 }
