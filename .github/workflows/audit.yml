@@ -1,0 +1,301 @@
+name: oveRTOS Substrate Audits
+
+# Runs the zero-overhead and zero-heap POST_BUILD audits across the
+# (board × rtos × binding × mode) tuples covered by
+# tests/audit/hotpath_expected.yaml.  The audits are already wired into
+# each board's CMakeLists.txt as POST_BUILD steps; this workflow's job is
+# only to invoke the builds in CI and upload the symbol/disasm dumps as
+# artifacts so regressions are visible on every PR.
+#
+# Per docs-site/docs/testing/audit-guarantees.md, the audits prove three
+# substrate claims at link time:
+#   - no C++ vtables / Rust trait-object dispatch / ove_* dispatch tables
+#   - hot-path wrappers compile within bounded instruction budgets
+#   - zero-heap builds contain no kernel-heap regions and no malloc paths
+#
+# Bench *execution* is deliberately not in this workflow — hosted runners
+# have noisy perf and there is no hardware farm.  The audits run on the
+# built ELF; the binary is never executed.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  audit-posix:
+    name: Audit POSIX (4 bindings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential libclang-dev xz-utils python3-venv
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Bootstrap oveRTOS venv
+        run: make setup
+
+      - name: Build + audit C binding (heap)
+        run: |
+          make host.posix.benchmark
+          make all
+
+      - name: POSIX --no-panic-symbols (C)
+        run: |
+          .venv/bin/python scripts/zero_overhead_audit.py \
+            --elf output/host/posix/benchmark/build/firmware/ove_posix \
+            --binding c --target host_posix_benchmark_c \
+            --no-panic-symbols
+
+      - name: Build + audit C++ binding (heap)
+        run: |
+          make host.posix.benchmark_cpp
+          make all
+
+      - name: POSIX --no-panic-symbols (C++)
+        run: |
+          .venv/bin/python scripts/zero_overhead_audit.py \
+            --elf output/host/posix/benchmark_cpp/build/firmware/ove_posix \
+            --binding cpp --target host_posix_benchmark_cpp \
+            --no-panic-symbols
+
+      - name: Build + audit Rust binding (heap)
+        run: |
+          make host.posix.benchmark_rust
+          make all
+
+      - name: POSIX --no-panic-symbols (Rust)
+        run: |
+          .venv/bin/python scripts/zero_overhead_audit.py \
+            --elf output/host/posix/benchmark_rust/build/firmware/ove_posix \
+            --binding rust --target host_posix_benchmark_rust \
+            --no-panic-symbols
+
+      - name: Build + audit Zig binding (heap)
+        run: |
+          make host.posix.benchmark_zig
+          make all
+
+      - name: POSIX --no-panic-symbols (Zig)
+        run: |
+          .venv/bin/python scripts/zero_overhead_audit.py \
+            --elf output/host/posix/benchmark_zig/build/firmware/ove_posix \
+            --binding zig --target host_posix_benchmark_zig \
+            --no-panic-symbols
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-posix
+          path: |
+            output/host/posix/*/build/**/audit/symbols/*.txt
+            output/host/posix/*/build/**/audit/disasm/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload full build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-posix-build-logs
+          path: output/
+          retention-days: 7
+
+  audit-stm32-freertos:
+    name: Audit STM32 / FreeRTOS (4 bindings × heap + zeroheap)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            meson ninja-build libclang-dev xz-utils python3-venv
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      - name: Bootstrap oveRTOS venv
+        run: make setup
+
+      - name: Build + audit C (heap)
+        run: make stm32f746.freertos.benchmark && make all
+      - name: Build + audit C++ (heap)
+        run: make stm32f746.freertos.benchmark_cpp && make all
+      - name: Build + audit Rust (heap)
+        run: make stm32f746.freertos.benchmark_rust && make all
+      - name: Build + audit Zig (heap)
+        run: make stm32f746.freertos.benchmark_zig && make all
+
+      - name: Build + audit C (zeroheap)
+        run: make stm32f746.freertos.benchmark_zh && make all
+      - name: Build + audit C++ (zeroheap)
+        run: make stm32f746.freertos.benchmark_cpp_zh && make all
+      - name: Build + audit Rust (zeroheap)
+        run: make stm32f746.freertos.benchmark_rust_zh && make all
+      - name: Build + audit Zig (zeroheap)
+        run: make stm32f746.freertos.benchmark_zig_zh && make all
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-stm32-freertos
+          path: |
+            output/stm32f746/freertos/*/build/**/audit/symbols/*.txt
+            output/stm32f746/freertos/*/build/**/audit/disasm/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload full build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-stm32-freertos-build-logs
+          path: output/
+          retention-days: 7
+
+  audit-stm32-nuttx:
+    name: Audit STM32 / NuttX (4 bindings × heap)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential gcc-arm-none-eabi libnewlib-arm-none-eabi \
+            meson ninja-build gperf genromfs xxd \
+            libclang-dev xz-utils python3-pip python3-venv
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache ARM toolchain
+        uses: actions/cache@v4
+        with:
+          path: output/toolchains
+          key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
+
+      - name: Bootstrap oveRTOS venv
+        run: make setup
+
+      - name: Build + audit C (heap)
+        run: make stm32f746.nuttx.benchmark && make all
+      - name: Build + audit C++ (heap)
+        run: make stm32f746.nuttx.benchmark_cpp && make all
+      - name: Build + audit Rust (heap)
+        run: make stm32f746.nuttx.benchmark_rust && make all
+      - name: Build + audit Zig (heap)
+        run: make stm32f746.nuttx.benchmark_zig && make all
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-stm32-nuttx
+          path: |
+            output/stm32f746/nuttx/*/build/**/audit/symbols/*.txt
+            output/stm32f746/nuttx/*/build/**/audit/disasm/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload full build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-stm32-nuttx-build-logs
+          path: output/
+          retention-days: 7
+
+  audit-stm32-zephyr:
+    name: Audit STM32 / Zephyr (4 bindings × heap)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            cmake build-essential meson ninja-build \
+            device-tree-compiler gperf ccache dfu-util \
+            libclang-dev xz-utils wget file \
+            python3-pip python3-venv
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Zephyr SDK
+        run: |
+          SDK_VERSION=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['toolchains']['zephyr-sdk']['version'])")
+          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
+          tar xf "zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz" -C $HOME
+          "$HOME/zephyr-sdk-${SDK_VERSION}/setup.sh" -t arm-zephyr-eabi -c
+
+      - name: Compute Zephyr cache hash
+        id: zephyr-hash
+        run: |
+          REV=$(python3 -c "import yaml; print(yaml.safe_load(open('manifest.yaml'))['rtos']['zephyr']['version'])")
+          HASH=$(python3 -c "import hashlib; print(hashlib.sha256(b'${REV}').hexdigest()[:8])")
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}
+          key: ove-zephyr-audit-${{ steps.zephyr-hash.outputs.hash }}
+
+      - name: Symlink Zephyr workspace
+        run: |
+          if [ -d "dl/zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}/zephyr" ]; then
+            ln -sfn "zephyr-workspace-${{ steps.zephyr-hash.outputs.hash }}" dl/zephyr-workspace
+            echo "Zephyr workspace restored from cache"
+          fi
+
+      - name: Bootstrap oveRTOS venv
+        run: make setup
+
+      - name: Build + audit C (heap)
+        run: make stm32f746.zephyr.benchmark && make all
+      - name: Build + audit C++ (heap)
+        run: make stm32f746.zephyr.benchmark_cpp && make all
+      - name: Build + audit Rust (heap)
+        run: make stm32f746.zephyr.benchmark_rust && make all
+      - name: Build + audit Zig (heap)
+        run: make stm32f746.zephyr.benchmark_zig && make all
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-stm32-zephyr
+          path: |
+            output/stm32f746/zephyr/*/build/**/audit/symbols/*.txt
+            output/stm32f746/zephyr/*/build/**/audit/disasm/**
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Upload full build output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-stm32-zephyr-build-logs
+          path: output/
+          retention-days: 7
