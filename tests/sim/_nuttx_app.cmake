@@ -179,3 +179,22 @@ if(_OVE_ZERO_HEAP AND TARGET nuttx)
     -Wl,--wrap=kmm_memalign -Wl,--wrap=kmm_free
   )
 endif()
+
+# Dispatch-overhead symbol audit on the final `nuttx` ELF (Phase 3 of
+# moat-hardening).  NuttX's flat-build emits the final ELF in a sibling
+# cmake project (nuttx-cmake) that this app dir cannot attach POST_BUILD
+# steps to — same scope problem the zero-heap wrap above solves with
+# target_link_options on the `nuttx` target.  Use ELF_PATH for the
+# file-level dependency hook.  Zero-heap variants also enforce
+# NO_PANIC_SYMBOLS to catch Rust/Zig panic-formatting that would pull in
+# allocating fmt paths.  Symbol audit only — no hotpath disasm on test
+# ELFs (test scaffolding is not the production hot path).
+if(TARGET nuttx)
+  include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
+  set(_audit_args BINDING c ELF_PATH ${CMAKE_BINARY_DIR}/../nuttx-cmake/nuttx)
+  if(_OVE_ZERO_HEAP)
+    list(APPEND _audit_args NO_PANIC_SYMBOLS)
+  endif()
+  ove_assert_no_dispatch_overhead(${CONFIG_EXTERNAL_OVE_TEST_PROGNAME}
+    ${_audit_args})
+endif()

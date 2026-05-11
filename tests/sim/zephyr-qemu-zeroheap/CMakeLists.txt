@@ -123,3 +123,11 @@ add_link_options(LINKER:--wrap=malloc
                  LINKER:--wrap=zalloc)
 ove_zero_heap_assert_no_kernel_alloc(zephyr_final
     ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
+
+# Dispatch-overhead symbol audit + NO_PANIC_SYMBOLS on the zeroheap
+# test ELF. Zephyr subscope → ELF_PATH. Symbol audit only — hotpath
+# disasm reserved for bench targets (see heap variant rationale).
+include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+ove_assert_no_dispatch_overhead(app
+    BINDING c NO_PANIC_SYMBOLS
+    ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)

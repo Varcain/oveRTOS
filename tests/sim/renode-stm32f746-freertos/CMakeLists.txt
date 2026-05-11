@@ -280,3 +280,9 @@ set_source_files_properties(${HAL_SOURCES} PROPERTIES
 set_source_files_properties(${STM32_CMSIS_DIR}/Source/Templates/system_stm32f7xx.c PROPERTIES
     COMPILE_FLAGS "-Wno-unused-parameter"
 )
+
+# Dispatch-overhead symbol audit on the test ELF (Phase 3 of
+# moat-hardening). Symbol audit only — test ELFs are CMocka scaffolding,
+# not the production hot path; hotpath disasm runs only on bench targets.
+include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+ove_assert_no_dispatch_overhead(ove_test_renode_stm32f746_freertos BINDING c)

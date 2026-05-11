@@ -88,3 +88,15 @@ target_include_directories(app PRIVATE
 )
 
 target_link_libraries(app PRIVATE cmocka-static m)
+
+# Dispatch-overhead symbol audit on the test ELF (Phase 3 of
+# moat-hardening). Zephyr's final ELF is built by an internal subscope
+# this directory cannot attach POST_BUILD steps to — use ELF_PATH for
+# the file-level dependency hook (same pattern as the bench target in
+# boards/stm32f746g-discovery/zephyr/CMakeLists.txt). Symbol audit only;
+# hotpath disasm runs only on bench targets (test ELFs are CMocka
+# scaffolding, not the production hot path).
+include(${OVE_ROOT}/cmake/OveZeroOverheadAudit.cmake)
+ove_assert_no_dispatch_overhead(app
+    BINDING c
+    ELF_PATH ${PROJECT_BINARY_DIR}/zephyr/zephyr.elf)
