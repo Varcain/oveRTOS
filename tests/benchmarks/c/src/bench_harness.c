@@ -34,6 +34,7 @@
  *   ACR     = +0x00 (Access Control Register)
  *     bit 8: PRFTEN — flash prefetch enable
  *     bit 9: ARTEN  — ART accelerator enable */
+/* clang-format off */
 #define _OVE_BENCH_REG32(addr) (*(volatile uint32_t *)(addr))
 #define _OVE_BENCH_SCB_BASE     0xE000ED00UL
 #define _OVE_BENCH_SCB_CCR      _OVE_BENCH_REG32(_OVE_BENCH_SCB_BASE + 0x014)
@@ -51,6 +52,7 @@
 
 #define _OVE_BENCH_DSB() __asm volatile ("dsb 0xF" ::: "memory")
 #define _OVE_BENCH_ISB() __asm volatile ("isb 0xF" ::: "memory")
+/* clang-format on */
 
 /* Replicates CMSIS SCB_DisableICache(): DSB/ISB, clear CCR.IC,
  * invalidate I-cache to PoU, DSB/ISB. */
@@ -85,8 +87,7 @@ static inline void _ove_bench_disable_dcache(void)
 	do {
 		ways = (ccsidr >> 3) & 0x3FFU;
 		do {
-			_OVE_BENCH_SCB_DCCISW =
-				((sets & 0x1FFU) << 5) | ((ways & 0x3U) << 30);
+			_OVE_BENCH_SCB_DCCISW = ((sets & 0x1FFU) << 5) | ((ways & 0x3U) << 30);
 		} while (ways-- != 0U);
 	} while (sets-- != 0U);
 
@@ -144,12 +145,12 @@ static void bench_apply_diagnostics_once(void)
 		_OVE_BENCH_SCB_CCR &= ~_OVE_BENCH_CCR_BP_Msk;
 		_OVE_BENCH_DSB();
 		_OVE_BENCH_ISB();
-		_OVE_BENCH_FLASH_ACR &=
-			~(_OVE_BENCH_FLASH_ARTEN_Msk | _OVE_BENCH_FLASH_PRFTEN_Msk);
+		_OVE_BENCH_FLASH_ACR &= ~(_OVE_BENCH_FLASH_ARTEN_Msk | _OVE_BENCH_FLASH_PRFTEN_Msk);
 		_OVE_BENCH_DSB();
 		_OVE_BENCH_ISB();
 		worst_case_applied = 1;
-		OVE_LOG_INF("[diag] worst-case timing: I-cache, D-cache, branch predictor, ART, prefetch DISABLED");
+		OVE_LOG_INF(
+			"[diag] worst-case timing: I-cache, D-cache, branch predictor, ART, prefetch DISABLED");
 	}
 #endif
 #if BENCH_CYCCNT_AVAILABLE
@@ -256,8 +257,7 @@ static void compute_percentiles(uint64_t *samples, unsigned int n, bench_result_
  * (scripts/bench_audit.py) plots CV = stddev/mean against N and picks
  * the elbow as the production iteration count. */
 static const uint32_t AUDIT_CHECKPOINTS[] = {100, 500, 1000, 2500, 5000, 10000};
-#define AUDIT_CHECKPOINT_COUNT \
-	(sizeof(AUDIT_CHECKPOINTS) / sizeof(AUDIT_CHECKPOINTS[0]))
+#define AUDIT_CHECKPOINT_COUNT (sizeof(AUDIT_CHECKPOINTS) / sizeof(AUDIT_CHECKPOINTS[0]))
 #endif
 
 void bench_run_case(const bench_case_t *bc, bench_result_t *result)

@@ -57,8 +57,7 @@
 
 /* MM_ALIGN (default 8 on 32-bit ARM) is what mm_initialize aligns on
  * internally; matching it here keeps the usable region maximal. */
-static uint8_t g_zh_reserved_buf[CONFIG_OVE_NUTTX_ZH_RESERVED_HEAP]
-	__attribute__((aligned(8)));
+static uint8_t g_zh_reserved_buf[CONFIG_OVE_NUTTX_ZH_RESERVED_HEAP] __attribute__((aligned(8)));
 static struct mm_heap_s *g_zh_reserved_heap;
 
 /* Force the linker to pull this .obj from libapps_ove_app.a even though

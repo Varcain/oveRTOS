@@ -112,9 +112,8 @@ static int json_case_format(char *buf, size_t cap, const bench_case_t *bc, const
 		     "\"p50_ns\":%u,\"p95_ns\":%u,\"p99_ns\":%u,"
 		     "\"trimmed_mean_ns\":%u,\"stddev_ns_q1000\":%u",
 		     bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
-		     (unsigned int)avg_ns, (unsigned int)r->count,
-		     (unsigned int)r->ops_per_sec, (unsigned int)r->p50_ns,
-		     (unsigned int)r->p95_ns, (unsigned int)r->p99_ns,
+		     (unsigned int)avg_ns, (unsigned int)r->count, (unsigned int)r->ops_per_sec,
+		     (unsigned int)r->p50_ns, (unsigned int)r->p95_ns, (unsigned int)r->p99_ns,
 		     (unsigned int)r->trimmed_mean_ns, (unsigned int)r->stddev_ns_q);
 #else
 	n = snprintf(buf, cap,
@@ -122,8 +121,7 @@ static int json_case_format(char *buf, size_t cap, const bench_case_t *bc, const
 		     "\"min_ns\":%u,\"max_ns\":%u,\"avg_ns\":%u,"
 		     "\"count\":%u,\"ops_per_sec\":%u",
 		     bc->name, type_str, (unsigned int)r->min_ns, (unsigned int)r->max_ns,
-		     (unsigned int)avg_ns, (unsigned int)r->count,
-		     (unsigned int)r->ops_per_sec);
+		     (unsigned int)avg_ns, (unsigned int)r->count, (unsigned int)r->ops_per_sec);
 #endif
 	if (n <= 0 || (size_t)n >= cap)
 		return n;
@@ -139,8 +137,7 @@ static int json_case_format(char *buf, size_t cap, const bench_case_t *bc, const
 		for (uint8_t i = 0; i < r->audit_count; i++) {
 			m = snprintf(buf + n, cap - (size_t)n,
 				     "%s{\"n\":%u,\"mean_ns\":%u,\"stddev_ns_q1000\":%u}",
-				     i ? "," : "",
-				     (unsigned int)r->audit_points[i].n,
+				     i ? "," : "", (unsigned int)r->audit_points[i].n,
 				     (unsigned int)r->audit_points[i].mean_ns,
 				     (unsigned int)r->audit_points[i].stddev_ns_q);
 			if (m <= 0 || (size_t)(n + m) >= cap)

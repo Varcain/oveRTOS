@@ -21,7 +21,7 @@ graph TD
 |-----------|----------|-----------------|-----------|
 | **Mutex** | Protecting a shared resource from concurrent access | No | No |
 | **Recursive mutex** | Re-entrant critical sections; same thread locks multiple times | No | Yes |
-| **Semaphore** | Counting available resources; producer/consumer slot tracking | Yes (`ove_sem_give`) | N/A |
+| **Semaphore** | Counting available resources; producer/consumer slot tracking | No (use a binary event for ISR signalling) | N/A |
 | **Binary event** | Simple one-shot wakeup; hardware interrupt notifies a task | Yes (`ove_event_signal_from_isr`) | N/A |
 | **Condition variable** | Waiting for an arbitrary predicate guarded by a mutex | No | N/A |
 
@@ -253,7 +253,7 @@ void producer_entry(void *arg)
 
         ove_mutex_lock(state_mutex, OVE_WAIT_FOREVER);
         data_available = true;
-        ove_condvar_signal(&state_ready_cv);
+        ove_condvar_signal(state_ready_cv);
         ove_mutex_unlock(state_mutex);
     }
 }
@@ -389,4 +389,4 @@ graph LR
 
 | Header | Contents |
 |--------|----------|
-| `ove/sync.h` | All 22 sync functions/macros: mutex, recursive mutex, semaphore, binary event, and condition variable — init/deinit, create/destroy, and operation variants |
+| `ove/sync.h` | Mutex, recursive mutex, semaphore, binary event, and condition variable — init/deinit, create/destroy (heap mode), and operation variants (lock/unlock, take/give, wait/signal, broadcast, signal-from-ISR). Static-init macros are declared in `ove/storage.h`. |

@@ -52,6 +52,7 @@ ove_nvs_erase("bypass");
 | Code | Meaning |
 |------|---------|
 | `OVE_OK` | Success |
+| `OVE_ERR_NOT_FOUND` | Key does not exist (returned by `ove_nvs_read` / `ove_nvs_erase`) |
 | `OVE_ERR_INVALID_PARAM` | NULL key or invalid arguments |
 | `OVE_ERR_NOT_SUPPORTED` | `CONFIG_OVE_NVS` not enabled |
 
@@ -59,7 +60,7 @@ ove_nvs_erase("bypass");
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `CONFIG_OVE_NVS` | `y` | Enable non-volatile key-value storage |
+| `CONFIG_OVE_NVS` | `n` | Enable non-volatile key-value storage |
 
 ## Header
 

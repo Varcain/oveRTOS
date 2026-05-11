@@ -4,25 +4,27 @@ oveRTOS provides two complementary primitives for time-based and deferred execut
 
 | Primitive | Best for | Execution context |
 |-----------|----------|------------------|
-| **Timer** | Periodic or one-shot callbacks at a fixed interval | Timer daemon thread (configurable priority) |
+| **Timer** | Periodic or one-shot callbacks at a fixed interval | RTOS timer service (backend-specific) |
 | **WorkQueue** | Deferring work out of ISR context or off the hot path | Dedicated worker thread per queue |
 
 Use a Timer when you need regular time-driven callbacks (polling, statistics, heartbeats). Use a WorkQueue when you need to run heavier work that was triggered from an ISR or a latency-sensitive thread.
+
+Both follow the standard oveRTOS allocation pattern: `_init` / `_deinit` work in zero-heap mode with caller-supplied storage, while `_create` / `_destroy` are heap-only. The matching `OVE_*_DEFINE_STATIC` macros in `ove/storage.h` combine declaration and init at file scope.
 
 ---
 
 ## Timer
 
-A software timer calls a user-supplied callback after a specified period. Timers run on a shared timer daemon thread — callbacks must be short and non-blocking. Two modes are supported:
+A software timer calls a user-supplied callback after a specified period. Callbacks run in a backend-specific RTOS context (e.g. the FreeRTOS timer service task) — they must be short and non-blocking. Two modes are supported, selected by the `one_shot` flag at init/create time:
 
-- **One-shot**: fires once then transitions to IDLE.
-- **Periodic**: automatically reloads and fires repeatedly at the configured interval.
+- `one_shot != 0`: fires once then stops automatically.
+- `one_shot == 0`: periodic — reloads automatically and fires repeatedly.
 
 ### State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*]     --> IDLE    : timer_create()
+    [*]     --> IDLE    : ove_timer_init() / ove_timer_create()
 
     IDLE    --> RUNNING : ove_timer_start()
     RUNNING --> IDLE    : ove_timer_stop()
@@ -30,27 +32,25 @@ stateDiagram-v2
     RUNNING --> RUNNING : period elapses\n(periodic mode)\ncallback fires, auto-reload
     RUNNING --> IDLE    : period elapses\n(one-shot mode)\ncallback fires
 
-    IDLE    --> RUNNING : ove_timer_reset()\n(re-arms from now)
-    RUNNING --> RUNNING : ove_timer_reset()\n(reloads deadline from now)
+    RUNNING --> RUNNING : ove_timer_reset()\n(atomic stop+start — kick)
+    RUNNING --> RUNNING : ove_timer_start()\n(restarts from beginning of period)
 
-    RUNNING --> RUNNING : ove_timer_set_period()\n(new period takes effect\non next reload)
-
-    IDLE    --> [*]     : ove_timer_destroy()
-    RUNNING --> [*]     : ove_timer_destroy()\n(stops first)
+    IDLE    --> [*]     : ove_timer_deinit() / ove_timer_destroy()
+    RUNNING --> [*]     : ove_timer_deinit() / ove_timer_destroy()\n(stops first)
 ```
 
 ### Periodic vs One-Shot
 
 ```mermaid
 graph LR
-    subgraph Periodic["Periodic  (period T)"]
+    subgraph Periodic["Periodic  (one_shot = 0, period T)"]
         direction LR
         S0(["start"]) -->|T| CB0(["callback\nfire"])
         CB0 -->|"reload"| CB1(["callback\nfire"])
         CB1 -->|"reload"| CB2(["…"])
     end
 
-    subgraph OneShot["One-Shot  (period T)"]
+    subgraph OneShot["One-Shot  (one_shot ≠ 0, period T)"]
         direction LR
         S1(["start"]) -->|T| CB3(["callback\nfire"])
         CB3 --> DONE(["IDLE"])
@@ -63,69 +63,79 @@ graph LR
     style DONE fill:#888,stroke:#333,color:#fff
 ```
 
-The callback receives a handle to the fired timer, allowing a single function to serve multiple timers:
+The callback receives a handle to the fired timer and the `user_data` pointer supplied at init/create, so a single handler can serve multiple timers:
 
 ```c
-static void on_timer(ove_timer_t timer, void *arg)
+static void on_timer(ove_timer_t timer, void *user_data)
 {
-    struct my_ctx *ctx = arg;
+    struct my_ctx *ctx = user_data;
     ctx->ticks++;
 }
 ```
 
 ### API
 
-| Function | Description |
-|----------|-------------|
-| `ove_timer_init(cfg)` | Initialise timer subsystem (starts daemon thread) |
-| `ove_timer_deinit()` | Tear down timer subsystem |
-| `ove_timer_create(period_ms, mode, cb, arg)` | Allocate timer; `mode` is `OVE_TIMER_PERIODIC` or `OVE_TIMER_ONESHOT` |
-| `ove_timer_destroy(t)` | Stop and free timer |
-| `ove_timer_start(t)` | Arm timer; begins counting from now |
-| `ove_timer_stop(t)` | Disarm timer without destroying it |
-| `ove_timer_reset(t)` | Reload deadline from now (arm if not already running) |
-| `ove_timer_set_period(t, period_ms)` | Change period; takes effect on next reload |
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ove_timer_init` | `int (ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback, void *user_data, uint32_t period_ms, int one_shot)` | Initialise a timer from caller-supplied storage in the stopped state. |
+| `ove_timer_deinit` | `void (ove_timer_t timer)` | Stop and release the timer. Static storage is not freed. |
+| `ove_timer_create` | `int (ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms, int one_shot)` | Heap-allocate a timer in the stopped state. Requires `OVE_HEAP_TIMER`. |
+| `ove_timer_destroy` | `void (ove_timer_t timer)` | Stop and free a heap-allocated timer. |
+| `ove_timer_start` | `int (ove_timer_t timer)` | Arm the timer. If already running, restarts from the beginning of the period. |
+| `ove_timer_stop` | `int (ove_timer_t timer)` | Stop the timer without invoking the callback. |
+| `ove_timer_reset` | `int (ove_timer_t timer)` | Atomically stop+start — useful for watchdog-style "kick" patterns. |
 
-`ove_timer_start` on an already-running timer is a no-op. Use `ove_timer_reset` to restart the countdown.
+Static-storage macro: `OVE_TIMER_DEFINE_STATIC(name, cb, user_data, period_ms, one_shot)` (in `ove/storage.h`).
 
 ### Example: 1 Hz Stats Collection
 
 ```c
+#include <ove/ove.h>
+
 static ove_timer_t g_stats_timer;
 
-static void stats_cb(ove_timer_t t, void *arg)
+static void stats_cb(ove_timer_t t, void *user_data)
 {
-    struct ove_audio_stats stats;
-    ove_audio_graph_get_stats(&g_graph, &stats);
-    LOG_INF("cycles=%u underruns=%u avg_us=%u",
-            stats.cycles, stats.underruns, stats.avg_process_us);
+    (void)t;
+    struct ove_audio_graph_stats stats;
+    ove_audio_graph_get_stats(g_graph, &stats);
+    OVE_LOG_INF("cycles=%llu underruns=%u avg_us=%u",
+                (unsigned long long)stats.cycles,
+                stats.underruns, stats.avg_process_us);
 }
 
-/* Startup */
-g_stats_timer = ove_timer_create(1000,              /* 1 Hz */
-                                  OVE_TIMER_PERIODIC,
-                                  stats_cb, NULL);
-ove_timer_start(g_stats_timer);
+void app_init(void)
+{
+    ove_timer_create(&g_stats_timer, stats_cb, NULL,
+                     1000 /* ms */, 0 /* periodic */);
+    ove_timer_start(g_stats_timer);
+}
 
 /* On shutdown */
 ove_timer_destroy(g_stats_timer);
+```
+
+Or, with the static-init macro (works in both heap and zero-heap modes):
+
+```c
+OVE_TIMER_DEFINE_STATIC(g_stats_timer, stats_cb, NULL, 1000, 0);
+
+/* … later … */
+ove_timer_start(g_stats_timer);
 ```
 
 ---
 
 ## WorkQueue
 
-A WorkQueue is a dedicated worker thread that drains a queue of work items. Each item carries a function pointer and an argument; the worker calls each item's handler in FIFO order. An optional delay allows items to be scheduled for future execution.
-
-Work items are value types: callers initialise them on the stack or in static storage and submit them by pointer. An item may be re-submitted from inside its own handler to create a self-rescheduling pattern.
+A WorkQueue is a dedicated worker thread that drains a queue of work items. Each work item carries a handler function pointer; the worker calls each handler in FIFO order. An optional delay allows items to be scheduled for future execution, and pending items can be cancelled before execution begins.
 
 ### Execution Flow
 
 ```mermaid
 graph LR
     subgraph Submitters
-        ISR["ISR"]
-        THR["Any Thread"]
+        ISR["ISR / Thread"]
     end
 
     subgraph WQ["WorkQueue"]
@@ -135,14 +145,12 @@ graph LR
         FIFO -->|"dequeue"| WORKER
     end
 
-    ISR -->|"ove_workqueue_submit_from_isr(wq, item)"| FIFO
-    THR -->|"ove_workqueue_submit(wq, item)"| FIFO
-    THR -->|"ove_workqueue_submit_delayed(wq, item, ms)"| FIFO
+    ISR -->|"ove_work_submit(wq, work)"| FIFO
+    ISR -->|"ove_work_submit_delayed(wq, work, ms)"| FIFO
 
-    WORKER -->|"item->handler(item)"| HANDLER["Handler\nFunction"]
+    WORKER -->|"handler(work)"| HANDLER["Handler\nFunction"]
 
     style ISR     fill:#a54,stroke:#333,color:#fff
-    style THR     fill:#4a9,stroke:#333,color:#fff
     style WORKER  fill:#48b,stroke:#333,color:#fff
     style HANDLER fill:#48b,stroke:#333,color:#fff
 ```
@@ -151,89 +159,67 @@ graph LR
 
 ```mermaid
 stateDiagram-v2
-    [*]       --> IDLE      : ove_work_init()
+    [*]       --> IDLE      : ove_work_init() / ove_work_init_static()
 
-    IDLE      --> PENDING   : ove_workqueue_submit()\nove_workqueue_submit_delayed()
-    IDLE      --> PENDING   : ove_workqueue_submit_from_isr()
+    IDLE      --> PENDING   : ove_work_submit()\nove_work_submit_delayed()
 
+    PENDING   --> IDLE      : ove_work_cancel()\n(if not yet executing)
     PENDING   --> EXECUTING : worker thread dequeues item
 
-    EXECUTING --> IDLE      : handler returns\n(item is safe to re-use or free)
+    EXECUTING --> IDLE      : handler returns
     EXECUTING --> PENDING   : handler calls submit() on itself\n(self-rescheduling)
-
-    note right of PENDING
-        Item must not be
-        modified while PENDING
-    end note
 ```
-
-Once an item is submitted it must not be written until the handler has returned (i.e., it transitions back to IDLE). Check `ove_work_is_pending(item)` before re-submitting from outside the handler.
 
 ### API
 
-| Function | Description |
-|----------|-------------|
-| `ove_workqueue_init(cfg)` | Initialise WorkQueue subsystem |
-| `ove_workqueue_deinit()` | Tear down subsystem |
-| `ove_workqueue_create(depth, priority, stack_size)` | Allocate queue and spawn worker thread |
-| `ove_workqueue_destroy(wq)` | Drain queue, stop worker, free resources |
-| `ove_work_init(item, handler)` | Initialise a work item with a handler function |
-| `ove_workqueue_submit(wq, item)` | Enqueue item for immediate execution |
-| `ove_workqueue_submit_delayed(wq, item, delay_ms)` | Enqueue item to run after `delay_ms` milliseconds |
-| `ove_workqueue_submit_from_isr(wq, item, woken)` | ISR-safe submit (no delay variant) |
-| `ove_work_is_pending(item)` | Returns true if item is queued or currently executing |
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ove_workqueue_init` | `int (ove_workqueue_t *wq, ove_workqueue_storage_t *storage, const char *name, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a work queue from caller-supplied storage and stack buffer. Spawns the worker thread. |
+| `ove_workqueue_deinit` | `void (ove_workqueue_t wq)` | Stop the worker and release the queue. |
+| `ove_workqueue_create` | `int (ove_workqueue_t *wq, const char *name, ove_prio_t priority, size_t stack_size)` | Heap-allocate the queue and its stack. Requires `OVE_HEAP_WORKQUEUE`. |
+| `ove_workqueue_destroy` | `void (ove_workqueue_t wq)` | Stop the worker and free a heap-allocated queue. |
+| `ove_work_init_static` | `int (ove_work_t *work, ove_work_storage_t *storage, ove_work_fn handler)` | Initialise a work item from caller-supplied storage. |
+| `ove_work_init` | `int (ove_work_t *work, ove_work_fn handler)` | Heap-allocate a work item. Requires `OVE_HEAP_WORKQUEUE`. |
+| `ove_work_free` | `void (ove_work_t work)` | Free a heap-allocated work item. Must not be pending. |
+| `ove_work_submit` | `int (ove_workqueue_t wq, ove_work_t work)` | Enqueue for immediate execution. |
+| `ove_work_submit_delayed` | `int (ove_workqueue_t wq, ove_work_t work, uint32_t delay_ms)` | Enqueue for execution after `delay_ms`. |
+| `ove_work_cancel` | `int (ove_work_t work)` | Remove a pending item before it executes. Returns `OVE_ERR_INVAL` if not pending. |
 
-### Example: Deferred File I/O from ISR Context
+Handler signature: `typedef void (*ove_work_fn)(ove_work_t work)`. The handler receives the opaque work handle (not a struct pointer), so any per-item context must be associated externally — typically by deriving the work item from a wrapping `OVE_WORK_DEFINE_STATIC` plus a lookup table, or by handing the wrapping struct's pointer via a closure variable.
 
-A DMA completion ISR must not block on file I/O. Instead it submits a work item that runs on the worker thread.
+Static-storage macros (in `ove/storage.h`):
+
+- `OVE_WORKQUEUE_DEFINE_STATIC(name, stack_sz, wq_name, prio)`
+- `OVE_WORK_DEFINE_STATIC(name, handler)`
+
+### Example: Deferred I/O from ISR Context
 
 ```c
-static ove_workqueue_t g_io_wq;
+#include <ove/ove.h>
 
-struct save_ctx {
-    struct ove_work  work;      /* must be first member */
-    uint8_t          buf[256];
-    size_t           len;
-};
+OVE_WORKQUEUE_DEFINE_STATIC(g_io_wq, 2048, "io_wq", OVE_PRIO_NORMAL);
 
-static void save_handler(struct ove_work *item)
+static void save_handler(ove_work_t work)
 {
-    struct save_ctx *ctx = (struct save_ctx *)item;
-    ove_storage_write("/data/capture.bin", ctx->buf, ctx->len);
+    (void)work;
+    do_blocking_save();
 }
-
-/* Startup */
-g_io_wq = ove_workqueue_create(8,          /* queue depth   */
-                                4,          /* thread priority */
-                                2048);      /* stack bytes   */
-
-/* Static item — safe to re-use after handler returns */
-static struct save_ctx g_save_ctx;
-ove_work_init(&g_save_ctx.work, save_handler);
+OVE_WORK_DEFINE_STATIC(g_save_work, save_handler);
 
 /* DMA RX complete ISR */
 void DMA1_Stream0_IRQHandler(void)
 {
-    if (ove_work_is_pending(&g_save_ctx.work))
-        return;  /* previous save still in flight, drop frame */
-
-    memcpy(g_save_ctx.buf, dma_rx_buf, DMA_RX_LEN);
-    g_save_ctx.len = DMA_RX_LEN;
-
-    bool woken = false;
-    ove_workqueue_submit_from_isr(g_io_wq, &g_save_ctx.work, &woken);
-    portYIELD_FROM_ISR(woken);
+    ove_work_submit(g_io_wq, g_save_work);
 }
 ```
 
 For periodic deferred work, a handler can reschedule itself:
 
 ```c
-static void periodic_work_handler(struct ove_work *item)
+static void periodic_work_handler(ove_work_t work)
 {
     do_background_housekeeping();
-    /* re-arm: run again in 500 ms */
-    ove_workqueue_submit_delayed(g_io_wq, item, 500);
+    ove_work_submit_delayed(g_io_wq, work, 500); /* run again in 500 ms */
 }
 ```
 
@@ -243,14 +229,15 @@ static void periodic_work_handler(struct ove_work *item)
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `CONFIG_OVE_TIMER` | `y` | Enable software timer subsystem |
-| `CONFIG_OVE_TIMER_DAEMON_PRIORITY` | `6` | Priority of the timer daemon thread |
-| `CONFIG_OVE_TIMER_DAEMON_STACK` | `1024` | Stack size (bytes) of the timer daemon thread |
-| `CONFIG_OVE_WORKQUEUE` | `n` | Enable WorkQueue subsystem |
+| `CONFIG_OVE_TIMER` | `n` | Enable software timer subsystem. |
+| `CONFIG_OVE_WORKQUEUE` | `n` | Enable WorkQueue subsystem. |
+
+When the corresponding `CONFIG_OVE_*` is unset, every function in that subsystem becomes a static inline stub returning `OVE_ERR_NOT_SUPPORTED`.
 
 ## Headers
 
 | Header | Contents |
 |--------|----------|
-| `ove/timer.h` | Timer handle, mode enum, create/destroy/start/stop/reset API |
-| `ove/workqueue.h` | WorkQueue handle, work item struct, submit API |
+| `ove/timer.h` | Timer handle, `ove_timer_fn` callback typedef, init/deinit, create/destroy, start/stop/reset. |
+| `ove/workqueue.h` | WorkQueue and work item handles, `ove_work_fn` typedef, queue and item init/deinit/create/destroy/submit/cancel APIs. |
+| `ove/storage.h` | `OVE_TIMER_DEFINE_STATIC`, `OVE_WORKQUEUE_DEFINE_STATIC`, `OVE_WORK_DEFINE_STATIC`. |

@@ -44,7 +44,6 @@ void *ove_heap_lock_post_realloc_(void *p, size_t n);
 void *ove_heap_lock_post_memalign_(size_t alignment, size_t size);
 int ove_heap_lock_post_free_(void *p);
 
-
 /* ── Weak __real_* fallbacks for libc malloc family ──────────────────
  * Used only when --wrap=malloc is NOT in effect — those calls resolve
  * here and forward to mm_malloc/mm_free directly.  When --wrap IS in

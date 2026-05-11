@@ -29,6 +29,7 @@ stateDiagram-v2
 | **BLOCKED** | Sleeping or waiting on a sync object; will be unblocked automatically. |
 | **SUSPENDED** | Explicitly paused via `ove_thread_suspend()`; stays suspended until `ove_thread_resume()`. |
 | **TERMINATED** | Entry function has returned. The handle is still valid until the thread is destroyed. |
+| **UNKNOWN** | State could not be determined by the backend. |
 
 ## Priority Levels
 
@@ -53,7 +54,7 @@ sequenceDiagram
     participant Sched as Scheduler
     participant T as Worker Thread
 
-    App->>Sched: ove_thread_create(&handle, STACK_SZ, &desc)
+    App->>Sched: ove_thread_create(&handle, "name", entry, arg, prio, STACK_SZ)
     Note over Sched: Thread enters READY state
 
     Sched->>T: entry(arg) thread begins executing
@@ -90,7 +91,7 @@ sequenceDiagram
 
 ### Heap allocation — `ove_thread_create` / `ove_thread_destroy`
 
-The preferred API. Works in both standard heap mode and zero-heap mode (`CONFIG_OVE_ZERO_HEAP`). In zero-heap mode the macro generates per-call-site static storage — `stack_sz` must be a compile-time constant. Do not call inside a loop to create multiple independent threads; use `ove_thread_init()` with separate storage instead.
+The simpler API when the heap is available. Both the backend storage object and the stack are allocated from the RTOS heap. Available only when `OVE_HEAP_THREAD` is defined (i.e. `CONFIG_OVE_ZERO_HEAP` is **not** set).
 
 ```c
 #include <ove/ove.h>
@@ -108,20 +109,13 @@ static ove_thread_t worker;
 
 void app_start(void)
 {
-    struct ove_thread_desc desc = {
-        .name     = "worker",
-        .entry    = worker_entry,
-        .arg      = NULL,
-        .priority = OVE_PRIO_NORMAL,
-    };
-
-    ove_thread_create(&worker, 2048, &desc);
+    ove_thread_create(&worker, "worker", worker_entry, NULL, OVE_PRIO_NORMAL, 2048);
 }
 ```
 
 ### Static allocation — `ove_thread_init` / `ove_thread_deinit`
 
-Use when the thread object lives in an array, a struct, or when the allocation site cannot be a unique call-site (e.g. inside a loop). The caller supplies both a storage object and a stack buffer.
+Works in both heap and zero-heap mode. The caller supplies both a storage object and a stack buffer.
 
 ```c
 #include <ove/ove.h>
@@ -134,35 +128,27 @@ static ove_thread_t worker;
 
 void app_start(void)
 {
-    struct ove_thread_desc desc = {
-        .name       = "worker",
-        .entry      = worker_entry,
-        .arg        = NULL,
-        .priority   = OVE_PRIO_NORMAL,
-        .stack_size = sizeof(worker_stack),
-        .stack      = worker_stack,
-    };
-
-    ove_thread_init(&worker, &worker_storage, &desc);
+    ove_thread_init(&worker, &worker_storage, "worker", worker_entry, NULL,
+                    OVE_PRIO_NORMAL, sizeof(worker_stack), worker_stack);
 }
 ```
 
 ### `OVE_THREAD_DEFINE_STATIC` macro
 
-Combines storage declaration, stack allocation, and initialisation into a single file-scope statement. Works in both heap and zero-heap mode.
+Combines storage declaration, stack allocation, and initialisation into a single file-scope statement. Works in both heap and zero-heap mode. Parameters: `(hname, stack_sz, fn, ctx, prio, tname)`.
 
 ```c
-OVE_THREAD_DEFINE_STATIC(worker, worker_entry, NULL, OVE_PRIO_NORMAL, 2048);
+OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "worker");
 ```
 
 ## API Reference
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const struct ove_thread_desc *desc)` | Initialise a thread from caller-supplied static storage and stack. |
+| `ove_thread_init` | `int (ove_thread_t *handle, ove_thread_storage_t *storage, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size, void *stack)` | Initialise a thread from caller-supplied static storage and stack. |
 | `ove_thread_deinit` | `int (ove_thread_t handle)` | Stop and release a thread created with `ove_thread_init()`. Static storage is not freed. |
-| `ove_thread_create` | `int (ove_thread_t *handle, size_t stack_sz, const struct ove_thread_desc *desc)` | Create a thread (heap or zero-heap macro). `stack_sz` must be a compile-time constant in zero-heap mode. |
-| `ove_thread_destroy` | `int (ove_thread_t handle)` | Stop and free a thread created with `ove_thread_create()`. |
+| `ove_thread_create` | `int (ove_thread_t *handle, const char *name, ove_thread_fn entry, void *arg, ove_prio_t priority, size_t stack_size)` | Heap-allocate and start a thread. Requires `OVE_HEAP_THREAD` (not declared in zero-heap mode). |
+| `ove_thread_destroy` | `int (ove_thread_t handle)` | Stop and free a thread created with `ove_thread_create()`. Heap mode only. |
 | `ove_thread_get_self` | `ove_thread_t (void)` | Return the handle of the currently executing thread. |
 | `ove_thread_set_priority` | `void (ove_thread_t handle, ove_prio_t prio)` | Change the scheduling priority of a thread at runtime. |
 | `ove_thread_sleep_ms` | `void (uint32_t ms)` | Block the calling thread for at least `ms` milliseconds. Passing `0` yields for one scheduler tick. |
@@ -173,6 +159,8 @@ OVE_THREAD_DEFINE_STATIC(worker, worker_entry, NULL, OVE_PRIO_NORMAL, 2048);
 | `ove_thread_get_stack_usage` | `size_t (ove_thread_t handle)` | Return the historical peak stack usage in bytes (high-water mark). Returns `0` if the backend does not support stack profiling. |
 | `ove_thread_get_state` | `ove_thread_state_t (ove_thread_t handle)` | Query the current execution state of a thread. |
 | `ove_thread_get_runtime_stats` | `int (ove_thread_t handle, struct ove_thread_stats *stats)` | Retrieve total CPU time (`runtime_us`) and utilisation percentage (`cpu_percent_x100`) since the scheduler started. Returns `OVE_ERR_NOT_SUPPORTED` if the backend does not provide runtime accounting. |
+| `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Each entry includes name, state, priority, stack usage/size, CPU usage, and per-state cumulative time. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
+| `ove_sys_get_mem_stats` | `int (struct ove_mem_stats *stats)` | Query system heap totals: `total`, `free`, `used`, `peak_used` bytes. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
 
 ## Runtime Statistics and Stack Profiling
 
@@ -234,14 +222,8 @@ static void sensor_entry(void *arg)
 
 void ove_main(void)
 {
-    struct ove_thread_desc desc = {
-        .name     = "sensor",
-        .entry    = sensor_entry,
-        .arg      = NULL,
-        .priority = OVE_PRIO_NORMAL,
-    };
-
-    ove_thread_create(&sensor_thread, WORKER_STACK_SZ, &desc);
+    ove_thread_create(&sensor_thread, "sensor", sensor_entry, NULL,
+                      OVE_PRIO_NORMAL, WORKER_STACK_SZ);
     ove_run();  /* starts the scheduler — does not return */
 }
 ```
@@ -256,4 +238,4 @@ void ove_main(void)
 
 | Header | Contents |
 |--------|----------|
-| `ove/thread.h` | Thread descriptor struct, priority enum, state enum, runtime stats struct, all 13 thread functions/macros |
+| `ove/thread.h` | Priority enum (`ove_prio_t`), state enum (`ove_thread_state_t`), runtime stats (`struct ove_thread_stats`), thread info / state-time / memory stat structs, 16 thread/sys functions and the `OVE_THREAD_DEFINE_STATIC` macro (in `ove/storage.h`). |

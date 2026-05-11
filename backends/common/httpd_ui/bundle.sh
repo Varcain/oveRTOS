@@ -43,6 +43,7 @@ cat > "$OUT" <<'HEADER'
  * Content-Encoding: gzip
  */
 
+/* clang-format off */
 HEADER
 
 xxd -i "$TMPGZ" | \
@@ -50,5 +51,6 @@ xxd -i "$TMPGZ" | \
     sed 's/unsigned int [^ ]*/static const size_t httpd_dashboard_gz_len/' \
     >> "$OUT"
 
+echo "/* clang-format on */" >> "$OUT"
 echo "" >> "$OUT"
 echo "#endif /* OVE_NET_HTTPD_UI_GZ_H */" >> "$OUT"

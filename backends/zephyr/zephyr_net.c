@@ -118,8 +118,8 @@ int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
 		if (ctx) {
 			static const char *dns_servers[2];
 			static char dns_str[16];
-			snprintf(dns_str, sizeof(dns_str), "%u.%u.%u.%u", cfg->dns.addr[0],
-				 cfg->dns.addr[1], cfg->dns.addr[2], cfg->dns.addr[3]);
+			(void)snprintf(dns_str, sizeof(dns_str), "%u.%u.%u.%u", cfg->dns.addr[0],
+				       cfg->dns.addr[1], cfg->dns.addr[2], cfg->dns.addr[3]);
 			dns_servers[0] = dns_str;
 			dns_servers[1] = NULL;
 			dns_resolve_close(ctx);
