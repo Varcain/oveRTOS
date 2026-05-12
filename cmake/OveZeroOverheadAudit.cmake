@@ -100,6 +100,16 @@ if(NOT COMMAND _ove_pick_python3)
     endfunction()
 endif()
 
+# Capture this .cmake file's directory at include time. Inside a function
+# body CMAKE_CURRENT_LIST_DIR becomes the *caller's* dir (the bottom of
+# the call stack), so we can't rely on it to locate the audit/hotpath
+# scripts at ${OVE_DIR}/scripts/. CMAKE_CURRENT_FUNCTION_LIST_DIR would
+# do the right thing but requires CMake 3.17, and consumer projects in
+# this repo only require 3.14. Stash the dir in a module-level variable
+# that propagates to the including scope via plain set() (include() does
+# not push a new scope).
+set(_OVE_AUDIT_CMAKE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
 # ─── ove_dump_hotpaths(<target> BINDING <c|cpp|rust|zig> ...) ──────
 #
 # Run scripts/dump_hotpaths.py POST_BUILD on <target>, comparing the
@@ -138,7 +148,7 @@ function(ove_dump_hotpaths target)
     endif()
 
     if(NOT DEFINED OVE_DIR)
-        get_filename_component(_ove_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+        get_filename_component(_ove_root "${_OVE_AUDIT_CMAKE_DIR}/.." ABSOLUTE)
     else()
         set(_ove_root "${OVE_DIR}")
     endif()
@@ -246,9 +256,12 @@ function(ove_assert_no_dispatch_overhead target)
     _ove_pick_python3(_py)
 
     # OVE_DIR is set by every project that consumes oveRTOS; fall back to
-    # walking up from this file's location for unusual setups.
+    # walking up from this file's saved-at-include-time location for
+    # unusual setups. CMAKE_CURRENT_LIST_DIR would point at the caller
+    # here (function body lookup, not definition site), so we use the
+    # _OVE_AUDIT_CMAKE_DIR captured when this file was included instead.
     if(NOT DEFINED OVE_DIR)
-        get_filename_component(_ove_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+        get_filename_component(_ove_root "${_OVE_AUDIT_CMAKE_DIR}/.." ABSOLUTE)
     else()
         set(_ove_root "${OVE_DIR}")
     endif()

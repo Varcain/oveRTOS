@@ -71,7 +71,9 @@ if(OVE_APP_DIR MATCHES "/tests/benchmarks/")
     # cmake project (nuttx-cmake) that this directory cannot attach
     # POST_BUILD steps to.  Use a custom target that depends on the
     # final-link artefact so the audit runs after kernel link.
-    set(_nuttx_elf "${CMAKE_BINARY_DIR}/../nuttx-cmake/nuttx")
+    # CMAKE_BINARY_DIR is the kernel CMake project's root (build/nuttx-cmake/
+    # for the production flat-build, plain build/ for the sim test build).
+    set(_nuttx_elf "${CMAKE_BINARY_DIR}/nuttx")
     ove_assert_no_dispatch_overhead(${_OVE_NX_TARGET}
         BINDING ${OVE_APP_LANG}
         ELF_PATH ${_nuttx_elf})
