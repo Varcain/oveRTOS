@@ -189,9 +189,15 @@ endif()
 # NO_PANIC_SYMBOLS to catch Rust/Zig panic-formatting that would pull in
 # allocating fmt paths.  Symbol audit only — no hotpath disasm on test
 # ELFs (test scaffolding is not the production hot path).
+#
+# CMAKE_BINARY_DIR is the kernel CMake project's root either way:
+# the production flat-build configures with -B build/nuttx-cmake (so
+# CMAKE_BINARY_DIR ends in nuttx-cmake/), while the sim test build
+# configures with -B build/ directly. In both cases add_executable(nuttx)
+# emits the ELF at ${CMAKE_BINARY_DIR}/nuttx.
 if(TARGET nuttx)
   include(${OVE_DIR}/cmake/OveZeroOverheadAudit.cmake)
-  set(_audit_args BINDING c ELF_PATH ${CMAKE_BINARY_DIR}/../nuttx-cmake/nuttx)
+  set(_audit_args BINDING c ELF_PATH ${CMAKE_BINARY_DIR}/nuttx)
   if(_OVE_ZERO_HEAP)
     list(APPEND _audit_args NO_PANIC_SYMBOLS)
   endif()
