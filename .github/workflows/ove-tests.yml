@@ -338,11 +338,17 @@ jobs:
           path: output/toolchains
           key: arm-toolchain-${{ hashFiles('manifest.yaml') }}
 
+      # The build pulls FreeRTOS-Kernel and cmocka via CMake FetchContent
+      # at configure time (no `dl/` pre-cache for this variant), so the
+      # wall-clock ceiling has to absorb GitHub/GitLab clone slowdowns.
+      # A previous run hit a ~8 min github.com stall on a single shallow
+      # clone after apt-get itself ran at 2 MB/s — well past the 600 s
+      # budget despite the actual build+test taking ~3 min when warm.
       - name: Run tests
-        run: timeout 600 make test-qemu-freertos
+        run: timeout 1200 make test-qemu-freertos
 
       - name: Run zeroheap tests
-        run: timeout 600 make test-qemu-freertos-zeroheap
+        run: timeout 1200 make test-qemu-freertos-zeroheap
 
       - uses: actions/upload-artifact@v4
         if: failure()
