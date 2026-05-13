@@ -378,18 +378,27 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 		resp->body_len = blen;
 #else
 		resp->headers = OVE_BACKEND_MALLOC(hdr_len + 1);
-		if (resp->headers) {
-			memcpy(resp->headers, buf, hdr_len);
-			resp->headers[hdr_len] = '\0';
-			resp->headers_len = hdr_len;
+		if (!resp->headers) {
+			OVE_BACKEND_FREE(buf);
+			ret = OVE_ERR_NO_MEMORY;
+			goto cleanup_tls;
 		}
+		memcpy(resp->headers, buf, hdr_len);
+		resp->headers[hdr_len] = '\0';
+		resp->headers_len = hdr_len;
 
 		resp->body = OVE_BACKEND_MALLOC(blen + 1);
-		if (resp->body) {
-			memcpy(resp->body, body_start, blen);
-			resp->body[blen] = '\0';
-			resp->body_len = blen;
+		if (!resp->body) {
+			OVE_BACKEND_FREE(resp->headers);
+			resp->headers = NULL;
+			resp->headers_len = 0;
+			OVE_BACKEND_FREE(buf);
+			ret = OVE_ERR_NO_MEMORY;
+			goto cleanup_tls;
 		}
+		memcpy(resp->body, body_start, blen);
+		resp->body[blen] = '\0';
+		resp->body_len = blen;
 #endif
 	}
 
