@@ -75,6 +75,42 @@ pub struct Thread {
     owned: bool,
 }
 
+#[cfg(all(not(zero_heap), feature = "alloc"))]
+type ClosureBox = alloc::boxed::Box<dyn FnOnce() + Send + 'static>;
+
+/// RAII guard for a boxed closure being handed across the C ABI to a
+/// freshly-spawned thread.  Adopts ownership at construction; on drop,
+/// reclaims and frees the box.  Call [`ThunkGuard::forget`] after the
+/// kernel has accepted the thread (and therefore the boxed closure) to
+/// suppress the drop and transfer ownership to the new thread's
+/// trampoline.
+#[cfg(all(not(zero_heap), feature = "alloc"))]
+struct ThunkGuard {
+    raw: *mut ClosureBox,
+}
+
+#[cfg(all(not(zero_heap), feature = "alloc"))]
+impl ThunkGuard {
+    /// Release the guard without freeing.  Call this after the kernel
+    /// has accepted ownership of the boxed closure (i.e. the spawn
+    /// call returned `OVE_OK`) so the trampoline can free it.
+    fn forget(mut self) {
+        self.raw = core::ptr::null_mut();
+    }
+}
+
+#[cfg(all(not(zero_heap), feature = "alloc"))]
+impl Drop for ThunkGuard {
+    fn drop(&mut self) {
+        if !self.raw.is_null() {
+            // SAFETY: forget() never ran, so the kernel did not adopt
+            // the boxed closure (spawn failed or panic between spawn
+            // and forget).  We still own `raw`, free it now.
+            let _ = unsafe { alloc::boxed::Box::from_raw(self.raw) };
+        }
+    }
+}
+
 impl Thread {
     /// Sleep the current thread for `ms` milliseconds.
     #[inline]
@@ -198,7 +234,6 @@ impl Thread {
         // double-box it: the inner `Box<dyn FnOnce>` is the type-erased
         // closure; the outer raw pointer is what we pass through the
         // `*mut c_void` arg slot.
-        type ClosureBox = alloc::boxed::Box<dyn FnOnce() + Send + 'static>;
 
         unsafe extern "C" fn trampoline(arg: *mut core::ffi::c_void) {
             // SAFETY: `arg` is the raw pointer minted by `Box::into_raw`
@@ -212,6 +247,9 @@ impl Thread {
         let boxed: ClosureBox = alloc::boxed::Box::new(f);
         let outer = alloc::boxed::Box::new(boxed);
         let raw = alloc::boxed::Box::into_raw(outer);
+        // RAII: if anything below early-returns or panics before the
+        // kernel adopts the box, the guard frees it on drop.
+        let guard = ThunkGuard { raw };
 
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
         let rc = unsafe {
@@ -224,12 +262,9 @@ impl Thread {
                 stack_size,
             )
         };
-        if let Err(e) = Error::from_code(rc) {
-            // Reclaim the closure so it doesn't leak on spawn failure.
-            // SAFETY: trampoline never ran, so we still own `raw`.
-            let _ = unsafe { alloc::boxed::Box::from_raw(raw) };
-            return Err(e);
-        }
+        Error::from_code(rc)?; // Err: `guard` drops here → box freed.
+        // Kernel accepted the box; transfer ownership to the trampoline.
+        guard.forget();
         Ok(Self {
             handle,
             owned: true,
