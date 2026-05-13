@@ -2,6 +2,7 @@ pyproject.toml
 ove/__init__.py
 ove/allconfigs.py
 ove/appgen.py
+ove/benchmarks.py
 ove/board.py
 ove/build.py
 ove/ci.py
@@ -13,6 +14,7 @@ ove/download.py
 ove/kconfig.py
 ove/lint.py
 ove/lint_backend_struct.py
+ove/lint_error_codes.py
 ove/manifest.py
 ove/rtos_menuconfig.py
 ove/run.py
