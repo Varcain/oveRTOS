@@ -22,6 +22,8 @@ pub const Error = error{
     NotSupported,
     /// A message could not be enqueued because the queue is at capacity.
     QueueFull,
+    /// ML inference or model loading failed.
+    MlFailed,
     /// The remote end refused the connection.
     NetRefused,
     /// The destination network or host is unreachable.
@@ -34,6 +36,12 @@ pub const Error = error{
     NetDnsFail,
     /// The connection has been closed by the peer.
     NetClosed,
+    /// Bus peripheral: device did not acknowledge.
+    BusNack,
+    /// Bus peripheral: bus is busy / arbitration lost.
+    BusBusy,
+    /// Bus peripheral: generic bus error.
+    BusError,
     /// An unrecognized error code was returned by the C layer.
     Unknown,
 };
@@ -49,12 +57,16 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_TIMEOUT => Error.Timeout,
         c.OVE_ERR_NOT_SUPPORTED => Error.NotSupported,
         c.OVE_ERR_QUEUE_FULL => Error.QueueFull,
+        c.OVE_ERR_ML_FAILED => Error.MlFailed,
         c.OVE_ERR_NET_REFUSED => Error.NetRefused,
         c.OVE_ERR_NET_UNREACHABLE => Error.NetUnreachable,
         c.OVE_ERR_NET_ADDR_IN_USE => Error.NetAddrInUse,
         c.OVE_ERR_NET_RESET => Error.NetReset,
         c.OVE_ERR_NET_DNS_FAIL => Error.NetDnsFail,
         c.OVE_ERR_NET_CLOSED => Error.NetClosed,
+        c.OVE_ERR_BUS_NACK => Error.BusNack,
+        c.OVE_ERR_BUS_BUSY => Error.BusBusy,
+        c.OVE_ERR_BUS_ERROR => Error.BusError,
         else => Error.Unknown,
     };
 }

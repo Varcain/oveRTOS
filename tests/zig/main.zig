@@ -1521,12 +1521,16 @@ fn testErrorsKnownCodesRoundTrip() !void {
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_TIMEOUT), error.Timeout);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_SUPPORTED), error.NotSupported);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_QUEUE_FULL), error.QueueFull);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_ML_FAILED), error.MlFailed);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_REFUSED), error.NetRefused);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_UNREACHABLE), error.NetUnreachable);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_ADDR_IN_USE), error.NetAddrInUse);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_RESET), error.NetReset);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_DNS_FAIL), error.NetDnsFail);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NET_CLOSED), error.NetClosed);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_NACK), error.BusNack);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_BUSY), error.BusBusy);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_BUS_ERROR), error.BusError);
 }
 
 fn testErrorsZeroIsOk() !void {
@@ -1545,9 +1549,11 @@ fn testErrorsUnknownNegativeMapsToUnknown() !void {
         ove.ffi.OVE_ERR_NOT_REGISTERED,  ove.ffi.OVE_ERR_INVALID_PARAM,
         ove.ffi.OVE_ERR_NO_MEMORY,       ove.ffi.OVE_ERR_TIMEOUT,
         ove.ffi.OVE_ERR_NOT_SUPPORTED,   ove.ffi.OVE_ERR_QUEUE_FULL,
-        ove.ffi.OVE_ERR_NET_REFUSED,     ove.ffi.OVE_ERR_NET_UNREACHABLE,
-        ove.ffi.OVE_ERR_NET_ADDR_IN_USE, ove.ffi.OVE_ERR_NET_RESET,
-        ove.ffi.OVE_ERR_NET_DNS_FAIL,    ove.ffi.OVE_ERR_NET_CLOSED,
+        ove.ffi.OVE_ERR_ML_FAILED,       ove.ffi.OVE_ERR_NET_REFUSED,
+        ove.ffi.OVE_ERR_NET_UNREACHABLE, ove.ffi.OVE_ERR_NET_ADDR_IN_USE,
+        ove.ffi.OVE_ERR_NET_RESET,       ove.ffi.OVE_ERR_NET_DNS_FAIL,
+        ove.ffi.OVE_ERR_NET_CLOSED,      ove.ffi.OVE_ERR_BUS_NACK,
+        ove.ffi.OVE_ERR_BUS_BUSY,        ove.ffi.OVE_ERR_BUS_ERROR,
     };
     var i: usize = 0;
     while (i < 1024) : (i += 1) {
