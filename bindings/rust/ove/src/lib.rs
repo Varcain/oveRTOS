@@ -113,6 +113,8 @@ pub mod fs;
 pub mod gpio;
 #[cfg(has_i2c)]
 pub mod i2c;
+#[cfg(has_i2s)]
+pub mod i2s;
 #[cfg(has_infer)]
 pub mod infer;
 #[cfg(has_led)]
