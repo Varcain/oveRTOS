@@ -353,6 +353,11 @@ impl Graph {
     }
 
     /// Register a custom processor node.  Returns the node index.
+    ///
+    /// Thin sugar over [`graph_add_processor`] — see that function's
+    /// rustdoc for the full lifetime / aliasing / drop-semantics
+    /// contract.  The `&'static mut T` bound is load-bearing and must
+    /// not be satisfied by lifetime-laundering through `unsafe`.
     pub fn add_processor<T: AudioProcessor>(
         &mut self,
         processor: &'static mut T,
@@ -489,12 +494,77 @@ pub trait AudioProcessor {
 
 /// Register a custom processor node on the graph.
 ///
-/// The processor must live in a `&'static mut` location (e.g. a
-/// `StaticCell` or `static mut`).  All FFI trampolines are generated
-/// internally — no `unsafe` or `extern "C"` needed in application code.
+/// All FFI trampolines are generated internally — no `unsafe` or
+/// `extern "C"` needed in application code.  The processor's `process`
+/// method is called from the audio thread for every period.
+///
+/// # Lifetime contract — `&'static mut T`
+///
+/// The bound on `processor` is `&'static mut T`, *not* `&mut T` with an
+/// inferred shorter lifetime.  This is load-bearing:
+///
+/// - The audio thread holds a raw pointer to `T` (the registered
+///   context) and dereferences it as `&mut T` on every period.  That
+///   pointer must remain valid until the [`Graph`] is dropped.
+/// - [`Graph::drop`] does **not** call into `T::drop` or release the
+///   processor's storage.  The destroy slot in the C ops vtable is
+///   left `None` for processor nodes; `ove_audio_graph_deinit` simply
+///   walks past it.  Lifetime management of `T` is entirely the
+///   caller's responsibility.
+///
+/// ## Recommended patterns
+///
+/// ```ignore
+/// // Preferred — works in both heap and zero-heap modes:
+/// static MY_PROC: StaticCell<MyProc> = StaticCell::new();
+/// let p: &'static mut MyProc = MY_PROC.init(MyProc::new());
+/// graph.add_processor(p, b"my\0")?;
+///
+/// // Heap-only:
+/// let p: &'static mut MyProc = Box::leak(Box::new(MyProc::new()));
+/// graph.add_processor(p, b"my\0")?;
+///
+/// // Older style, no allocator dependency:
+/// static mut PROC: MyProc = MyProc::new();
+/// graph.add_processor(unsafe { &mut PROC }, b"my\0")?;
+/// ```
+///
+/// ## Anti-patterns (compile but break the contract)
+///
+/// - **Lifetime laundering.** Do *not* `transmute` a shorter lifetime
+///   into `'static` to satisfy the bound:
+///
+///   ```ignore
+///   fn install(g: &mut Graph, p: &mut MyProc) -> Result<u32, Error> {
+///       // WRONG — `p` likely dies before the audio thread next runs:
+///       g.add_processor(unsafe { core::mem::transmute(p) }, b"p\0")
+///   }
+///   let mut local = MyProc::new();
+///   install(&mut g, &mut local)?;          // `local` drops at scope end
+///   g.build()?; g.start()?;                // audio thread → dangling pointer
+///   ```
+///
+/// - **Re-initialising a `StaticCell` while registered.** The cell's
+///   storage outlives the program, but `StaticCell::init()` constructs
+///   a fresh `T` on top of the old bytes.  The audio thread's
+///   `&mut T` still points at the same address, now aliasing a
+///   freshly-initialised value — instant UB under Rust's `&mut`
+///   exclusivity rule.  Unregister (drop the [`Graph`]) before
+///   re-initialising the cell.
+///
+/// ## Aliasing rule
+///
+/// While the processor is registered, the audio thread effectively
+/// holds an exclusive `&mut T` borrow for every period.  The caller
+/// MUST NOT construct a second `&mut T` to the same processor (via
+/// `unsafe { &mut *STATIC.as_ptr() }`, transmute, or any other route)
+/// until the [`Graph`] has been dropped.  Multiple `&` shared borrows
+/// across threads are also UB — `process` takes `&mut self`.
 ///
 /// # Errors
-/// Returns an error if the graph is full or not in IDLE state.
+///
+/// Returns an error if the graph is full or not in `IDLE` state
+/// (i.e. [`Graph::build`] has already been called).
 pub fn graph_add_processor<T: AudioProcessor>(
     graph: &mut bindings::ove_audio_graph,
     processor: &'static mut T,
