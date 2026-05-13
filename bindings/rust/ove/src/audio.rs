@@ -14,6 +14,107 @@ use crate::bindings;
 use crate::error::{Error, Result};
 use core::ffi::c_void;
 
+// ---------------------------------------------------------------------------
+// Pin tracker (debug-only) — mirrors `bindings/zig/ove/src/pin.zig::Tracker`.
+//
+// `Graph::build()` causes the C-side `ove_audio_graph` to record self-pointers
+// from `g->buffers[i].fmt` to `&g->nodes[i].out_fmt` (see
+// `backends/common/ove_audio_graph.c:273`).  After that, moving the Graph in
+// Rust (e.g. `let g2 = g;`, returning by value out of an inner scope,
+// `Box::new(g)` after build, storing in a relocating container, etc.) leaves
+// those interior pointers dangling and silently corrupts subsequent audio-
+// thread reads.
+//
+// Rust can't easily enforce no-move at compile time without converting every
+// method to `Pin<&mut Self>` and breaking the documented
+// `let mut g = Graph::new()?;` ergonomics.  Zig settled on a runtime address
+// tracker that panics in `Debug` builds and compiles away in release — we
+// mirror that here so the two bindings have matching safety stories.
+//
+// Lifecycle:
+//   1. `Graph::new()` constructs the tracker with no recorded address — moves
+//      before `build()` are still safe and silent (no self-pointers yet).
+//   2. `Graph::build()` calls `tracker.record(self as *const _)`, capturing
+//      the address at the moment self-pointers are established.
+//   3. `start` / `stop` / `process` call `tracker.assert_same(self as *const _)`
+//      and panic on mismatch with a message naming the offender.
+//   4. `Drop` skips the assertion — `ove_audio_graph_deinit` only walks
+//      `nodes[].ctx` and frees `buf_storage`, never the self-pointers, so
+//      deinit at a moved address is benign.
+// ---------------------------------------------------------------------------
+
+/// Debug-build address tracker.  Zero-sized in release; emits a `dmb`-cheap
+/// pointer compare in debug.
+#[cfg(debug_assertions)]
+#[derive(Default)]
+struct Tracker {
+    /// `Some(addr)` after `record()`; `None` between `new()` and `build()`.
+    /// Stored as a thin pointer (we only ever compare for equality —
+    /// never dereference — so `*const ()` is fine).
+    addr: Option<*const ()>,
+}
+
+#[cfg(debug_assertions)]
+impl Tracker {
+    /// Capture the current address of the wrapper.  Called once from
+    /// `Graph::build()`; subsequent calls overwrite the recorded address
+    /// (harmless — a successful re-build by definition runs at a fresh
+    /// stable address).
+    #[inline]
+    fn record(&mut self, p: *const ()) {
+        self.addr = Some(p);
+    }
+
+    /// Assert that `p` matches the address recorded by `record()`.
+    /// No-op when nothing has been recorded yet (pre-build calls, e.g. a
+    /// caller that constructs a Graph but never builds it before drop).
+    ///
+    /// `type_name` is just a label baked into the panic message so the
+    /// failure says "audio::Graph" rather than "Graph (in some module)".
+    #[inline]
+    #[track_caller]
+    fn assert_same(&self, p: *const (), type_name: &str) {
+        if let Some(orig) = self.addr {
+            if orig != p {
+                panic!(
+                    "{type_name}: wrapper moved after build() — \
+                     inited at {orig:p}, used at {p:p}.  The C graph stores \
+                     interior pointers (buffers[i].fmt → &nodes[i].out_fmt) \
+                     during build(); moving the wrapper afterwards invalidates \
+                     them and silently corrupts audio-thread reads.  Pin the \
+                     Graph in a StaticCell / Box::leak / &'static mut before \
+                     calling build()."
+                );
+            }
+        }
+    }
+}
+
+/// Release-build stub.  Zero-sized — `core::mem::size_of::<Tracker>() == 0`
+/// — and every method inlines to nothing.  `sizeof(Graph)` is identical
+/// between debug and release after `#[repr]` placement.
+#[cfg(not(debug_assertions))]
+#[derive(Default)]
+struct Tracker;
+
+#[cfg(not(debug_assertions))]
+impl Tracker {
+    #[inline(always)]
+    fn record(&mut self, _: *const ()) {}
+    #[inline(always)]
+    fn assert_same(&self, _: *const (), _: &str) {}
+}
+
+// SAFETY: the only field is an `Option<*const ()>` used purely as an
+// identity token — never dereferenced, never read for its target.  The
+// surrounding `Graph` already declares `unsafe impl Send/Sync` (audio
+// thread takes the same address the control thread holds), and the
+// tracker's address-equality semantics are correct under Send/Sync.
+#[cfg(debug_assertions)]
+unsafe impl Send for Tracker {}
+#[cfg(debug_assertions)]
+unsafe impl Sync for Tracker {}
+
 /// Audio sample format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleFmt {
@@ -171,15 +272,27 @@ pub fn device_cfg_i2s(
 /// ```
 pub struct Graph {
     inner: bindings::ove_audio_graph,
+    /// Debug-only address tracker; zero-sized in release.  Records the
+    /// wrapper's address at `build()` time and panics if a later method
+    /// is called from a different address.  See the `Tracker` block
+    /// above for the full rationale and lifecycle.
+    tracker: Tracker,
 }
 
 impl Graph {
     /// Create and initialize a new audio graph.
+    ///
+    /// **Move policy:** moves are safe until [`Graph::build`] is called.
+    /// After build, the C graph stores self-pointers and the wrapper
+    /// must stay at a stable address — see [`Graph::build`] for details.
     pub fn new(frames_per_period: u32) -> Result<Self> {
         let mut inner: bindings::ove_audio_graph = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_audio_graph_init(&mut inner, frames_per_period) };
         Error::from_code(rc)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            tracker: Tracker::default(),
+        })
     }
 
     /// Create and initialize a graph, attaching caller-owned buffer storage.
@@ -187,6 +300,8 @@ impl Graph {
     /// `calloc` inter-node buffers.  In heap-mode builds the storage is
     /// unused but harmless.  Prefer the [`crate::audio_graph!`] macro,
     /// which emits the backing array automatically.
+    ///
+    /// Same move policy as [`Graph::new`].
     pub fn new_with_storage(frames_per_period: u32, storage: &'static mut [u8]) -> Result<Self> {
         let mut inner: bindings::ove_audio_graph = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_audio_graph_init(&mut inner, frames_per_period) };
@@ -199,7 +314,10 @@ impl Graph {
             )
         };
         Error::from_code(rc)?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            tracker: Tracker::default(),
+        })
     }
 
     /// Add a hardware audio source node.  Returns the node index.
@@ -249,22 +367,42 @@ impl Graph {
     }
 
     /// Validate formats, resolve execution order, allocate buffers.
+    ///
+    /// **Pinning:** this call records the wrapper's current address in
+    /// the debug-only tracker.  After build, the C side stores
+    /// self-pointers (`buffers[i].fmt -> &nodes[i].out_fmt`) which
+    /// reference *this* address.  Moving the Graph after build will be
+    /// caught by [`Graph::start`] / [`Graph::stop`] / [`Graph::process`]
+    /// with a panic in debug builds; in release the move silently
+    /// dangles those pointers, so callers must keep the wrapper in a
+    /// stable location (e.g. a `StaticCell`, `Box::leak`, or
+    /// `&'static mut`).
     pub fn build(&mut self) -> Result<()> {
+        // Record FIRST so a successful build but an out-of-place caller
+        // still gets caught on the next start/stop/process.  The C call
+        // does not depend on the tracker being populated.
+        self.tracker.record(self as *const Self as *const ());
         graph_build(&mut self.inner)
     }
 
     /// Start the graph (sink-driven mode).
     pub fn start(&mut self) -> Result<()> {
+        self.tracker
+            .assert_same(self as *const Self as *const (), "audio::Graph");
         graph_start(&mut self.inner)
     }
 
     /// Stop the graph.
     pub fn stop(&mut self) -> Result<()> {
+        self.tracker
+            .assert_same(self as *const Self as *const (), "audio::Graph");
         graph_stop(&mut self.inner)
     }
 
     /// Process one cycle (app-driven mode).
     pub fn process(&mut self) -> Result<()> {
+        self.tracker
+            .assert_same(self as *const Self as *const (), "audio::Graph");
         graph_process(&mut self.inner)
     }
 }
