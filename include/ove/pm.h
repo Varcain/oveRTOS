@@ -185,6 +185,13 @@ int ove_pm_set_state(ove_pm_state_t state);
 /**
  * @brief Query the current power state.
  *
+ * Lock-free, ISR-safe — performs a single volatile read of an
+ * aligned word, which is atomic on every supported target.  The
+ * returned value may be stale if a state transition is in flight on
+ * another context, but it can never tear.  Callers that need a
+ * snapshot synchronised with a specific transition should serialise
+ * around their own primitive.
+ *
  * @return Current power state.
  */
 ove_pm_state_t ove_pm_get_state(void);
