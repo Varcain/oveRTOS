@@ -1,9 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ove/types.h"
 #include "ove/audio.h"
+#include "ove_backend_common.h"
 #include <string.h>
-#include <stdlib.h>
 /* No <math.h> — avoid libm to stay compatible with Zephyr native_sim */
+
+/* Per-node context allocation goes through OVE_BACKEND_MALLOC/FREE so it
+ * lands in the RTOS-managed pool (pvPortMalloc / k_malloc) instead of
+ * the libc heap.  Keeps audio bookkeeping consistent with the rest of
+ * the kernel — heap_lock + xPortGetFreeHeapSize accounting includes it. */
 
 /* The built-in utility nodes below allocate their per-node context from
  * the heap.  Under CONFIG_OVE_ZERO_HEAP the OVE_HEAP_AUDIO gate disables
@@ -109,7 +114,7 @@ static int converter_process(void *ctx, const struct ove_audio_buf *in, struct o
 
 static void converter_destroy(void *ctx)
 {
-	free(ctx);
+	OVE_BACKEND_FREE(ctx);
 }
 
 static const struct ove_audio_node_ops converter_ops = {
@@ -121,13 +126,14 @@ static const struct ove_audio_node_ops converter_ops = {
 int ove_audio_node_converter(struct ove_audio_graph *g, enum ove_audio_sample_fmt target_fmt,
 			     const char *name)
 {
-	struct converter_ctx *ctx = calloc(1, sizeof(*ctx));
+	struct converter_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
 	if (!ctx)
 		return OVE_ERR_NO_MEMORY;
+	memset(ctx, 0, sizeof(*ctx));
 	ctx->target_fmt = target_fmt;
 	int idx = ove_audio_graph_add_node(g, &converter_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 	if (idx < 0)
-		free(ctx);
+		OVE_BACKEND_FREE(ctx);
 	return idx;
 }
 
@@ -177,7 +183,7 @@ static int channel_map_process(void *ctx, const struct ove_audio_buf *in, struct
 
 static void channel_map_destroy(void *ctx)
 {
-	free(ctx);
+	OVE_BACKEND_FREE(ctx);
 }
 
 static const struct ove_audio_node_ops channel_map_ops = {
@@ -191,14 +197,15 @@ int ove_audio_node_channel_map(struct ove_audio_graph *g, const struct ove_audio
 {
 	if (!map || map->out_channels == 0 || map->out_channels > OVE_AUDIO_MAX_CHANNELS)
 		return OVE_ERR_INVALID_PARAM;
-	struct channel_map_ctx *ctx = calloc(1, sizeof(*ctx));
+	struct channel_map_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
 	if (!ctx)
 		return OVE_ERR_NO_MEMORY;
+	memset(ctx, 0, sizeof(*ctx));
 	ctx->map = *map;
 	int idx =
 		ove_audio_graph_add_node(g, &channel_map_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 	if (idx < 0)
-		free(ctx);
+		OVE_BACKEND_FREE(ctx);
 	return idx;
 }
 
@@ -265,7 +272,7 @@ static int gain_process(void *ctx, const struct ove_audio_buf *in, struct ove_au
 
 static void gain_destroy(void *ctx)
 {
-	free(ctx);
+	OVE_BACKEND_FREE(ctx);
 }
 
 static const struct ove_audio_node_ops gain_ops = {
@@ -276,9 +283,10 @@ static const struct ove_audio_node_ops gain_ops = {
 
 int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *name)
 {
-	struct gain_ctx *ctx = calloc(1, sizeof(*ctx));
+	struct gain_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
 	if (!ctx)
 		return OVE_ERR_NO_MEMORY;
+	memset(ctx, 0, sizeof(*ctx));
 	/* Convert dB to linear gain: 10^(dB/20)
      *
      * Avoid libm powf/expf — they pull in glibc optimized code that
@@ -297,7 +305,7 @@ int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *na
 	}
 	int idx = ove_audio_graph_add_node(g, &gain_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 	if (idx < 0)
-		free(ctx);
+		OVE_BACKEND_FREE(ctx);
 	return idx;
 }
 
@@ -330,7 +338,7 @@ static int tap_process(void *ctx, const struct ove_audio_buf *in, struct ove_aud
 
 static void tap_destroy(void *ctx)
 {
-	free(ctx);
+	OVE_BACKEND_FREE(ctx);
 }
 
 static const struct ove_audio_node_ops tap_ops = {
@@ -342,14 +350,15 @@ static const struct ove_audio_node_ops tap_ops = {
 int ove_audio_node_tap(struct ove_audio_graph *g, ove_audio_tap_fn fn, void *user_data,
 		       const char *name)
 {
-	struct tap_ctx *ctx = calloc(1, sizeof(*ctx));
+	struct tap_ctx *ctx = OVE_BACKEND_MALLOC(sizeof(*ctx));
 	if (!ctx)
 		return OVE_ERR_NO_MEMORY;
+	memset(ctx, 0, sizeof(*ctx));
 	ctx->fn = fn;
 	ctx->user_data = user_data;
 	int idx = ove_audio_graph_add_node(g, &tap_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 	if (idx < 0)
-		free(ctx);
+		OVE_BACKEND_FREE(ctx);
 	return idx;
 }
 
