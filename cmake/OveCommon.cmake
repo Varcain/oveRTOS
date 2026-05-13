@@ -176,6 +176,9 @@ macro(ove_setup_project _proj_name)
         include_directories(${OVE_DIR}/backends/nuttx/include)
     elseif(OVE_RTOS STREQUAL "posix")
         include_directories(${OVE_DIR}/backends/posix/include)
+    else()
+        message(FATAL_ERROR
+            "OveCommon: unknown OVE_RTOS '${OVE_RTOS}' (expected freertos|zephyr|nuttx|posix)")
     endif()
 
     # Common include directories
