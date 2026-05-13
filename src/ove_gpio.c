@@ -10,17 +10,27 @@
 #include "ove/gpio.h"
 #include "ove/hal/hal_gpio.h"
 #include "board_desc.h"
+#include <stdatomic.h>
 
 #define GPIO_IRQ_MAX 8
 
+/* `registered` and `enabled` are read from ISR context by
+ * `ove_gpio_irq_dispatch` and written from thread context by register /
+ * enable / disable.  Marking them `volatile` keeps the compiler from
+ * caching or reordering their accesses across function boundaries.
+ *
+ * `registered` is additionally fenced — writers release-fence after
+ * filling the data fields (port/pin/callback/...) and before storing
+ * registered=1, so a dispatch that observes registered=1 is guaranteed
+ * to see the data fields too. */
 struct gpio_irq_entry {
 	unsigned int port;
 	unsigned int pin;
 	ove_gpio_irq_mode_t mode;
 	ove_gpio_irq_cb callback;
 	void *user_data;
-	int registered;
-	int enabled;
+	volatile int registered;
+	volatile int enabled;
 };
 
 static struct gpio_irq_entry irq_table[GPIO_IRQ_MAX];
@@ -81,6 +91,9 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 	irq_table[i].mode = mode;
 	irq_table[i].callback = callback;
 	irq_table[i].user_data = user_data;
+	/* Publish the data fields before marking the slot registered so
+	 * a concurrent dispatch sees a consistent entry. */
+	atomic_thread_fence(memory_order_release);
 	irq_table[i].registered = 1;
 	irq_table[i].enabled = 0;
 
@@ -121,7 +134,13 @@ void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin)
 	unsigned int i;
 
 	for (i = 0; i < GPIO_IRQ_MAX; i++) {
-		if (irq_table[i].registered && irq_table[i].enabled && irq_table[i].port == port &&
+		if (!irq_table[i].registered)
+			continue;
+		/* Pair with the release fence in ove_gpio_irq_register so
+		 * the data fields read below are observed in their
+		 * post-registration state. */
+		atomic_thread_fence(memory_order_acquire);
+		if (irq_table[i].enabled && irq_table[i].port == port &&
 		    irq_table[i].pin == pin) {
 			if (irq_table[i].callback) {
 				irq_table[i].callback(port, pin, irq_table[i].user_data);
