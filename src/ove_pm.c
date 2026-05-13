@@ -236,6 +236,13 @@ int ove_pm_set_state(ove_pm_state_t state)
 
 ove_pm_state_t ove_pm_get_state(void)
 {
+	/* Intentionally lock-free.  current_state is `volatile` (declared
+	 * at the pm_ctx struct), and aligned-int loads are single-store-
+	 * atomic on every supported target (Cortex-M, x86_64, RISC-V,
+	 * WASM).  A reader can observe the pre- or post-transition value
+	 * around a concurrent set_state / idle_process, but can never
+	 * tear.  Keeping this read lock-free is what makes the function
+	 * usable from ISRs — same contract as ove_pm_activity(). */
 	return pm_ctx.current_state;
 }
 
