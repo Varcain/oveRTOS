@@ -115,6 +115,11 @@ macro(ove_setup_project _proj_name)
     # OveTflm.cmake; extending it to the whole CXX surface matches the
     # same posture.  Opt out via `-DOVE_CXX_NOEXCEPT_NORTTI=OFF` if a
     # downstream project legitimately needs exceptions or RTTI in C++.
+    #
+    # DEVELOPER OPTION — intentionally NOT exposed via Kconfig.  Flipping
+    # this in `menuconfig` would invite users to disable a size-critical
+    # default without reading the rationale above.  Override at build
+    # time only:  `cmake -DOVE_CXX_NOEXCEPT_NORTTI=OFF ...`.
     option(OVE_CXX_NOEXCEPT_NORTTI
         "Compile C++ with -fno-exceptions -fno-rtti (smaller firmware)" ON)
     if(OVE_CXX_NOEXCEPT_NORTTI)
@@ -136,6 +141,12 @@ macro(ove_setup_project _proj_name)
     # measuring that the FFI hop dominates a real workload, and
     # validate against `cargo asm` + `objdump -d` that calls actually
     # inline.
+    #
+    # DEVELOPER OPTION — intentionally NOT exposed via Kconfig.  The
+    # tradeoffs above (toolchain plugin requirement, silent inliner
+    # kills, modest gain) make this unsafe to toggle without a specific
+    # measurement in hand.  Override at build time only:
+    #   `cmake -DOVE_CROSS_LTO=ON ...`.
     option(OVE_CROSS_LTO "Enable cross-language LTO between C and Rust" OFF)
     if(OVE_CROSS_LTO)
         message(STATUS "[ove] Cross-language LTO enabled "
