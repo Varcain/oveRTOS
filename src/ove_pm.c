@@ -219,6 +219,13 @@ int ove_pm_set_state(ove_pm_state_t state)
 	pm_ctx.current_state = state;
 	pm_ctx.transition_count[state]++;
 
+	/* Manual sleep entry anchors the idle baseline to now.  This
+	 * preserves the user's explicit choice against the idle policy:
+	 * ove_pm_idle_process() compares (now - last_activity_us) against
+	 * the policy's escalation thresholds.  If we didn't reset here, a
+	 * pre-existing long idle stretch would cause the next idle tick to
+	 * immediately escalate past the user's selected state (e.g. user
+	 * picks STANDBY, idle loop jumps to DEEP_SLEEP one tick later). */
 	if (state > OVE_PM_STATE_ACTIVE) {
 		pm_ctx.last_activity_us = now;
 	}
