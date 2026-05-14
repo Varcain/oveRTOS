@@ -194,19 +194,4 @@ static inline void ove_backend_thread_set_state(int new_state)
 			return OVE_ERR_INVALID_PARAM; \
 	} while (0)
 
-/**
- * OVE_CREATE_IMPL - common create pattern: malloc, check, assign, init
- * @type:       struct type name (without 'struct' prefix)
- * @handle_out: pointer to handle variable to assign
- * @init_call:  init function call expression using 'w' as the allocated ptr
- */
-#define OVE_CREATE_IMPL(type, handle_out, init_call)             \
-	do {                                                     \
-		struct type *w = OVE_BACKEND_MALLOC(sizeof(*w)); \
-		if (!w)                                          \
-			return OVE_ERR_NO_MEMORY;                \
-		*(handle_out) = w;                               \
-		return (init_call);                              \
-	} while (0)
-
 #endif /* OVE_BACKEND_COMMON_H */
