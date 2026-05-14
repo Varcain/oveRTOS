@@ -15,6 +15,25 @@
  * them: apps link only the custom processor nodes they define themselves. */
 #ifdef OVE_HEAP_AUDIO
 
+/* Hand a freshly-allocated `ctx` to the graph.  Returns the node index
+ * on success.  On failure, frees `ctx` (which must have been allocated
+ * with OVE_BACKEND_MALLOC) and propagates the error code.
+ *
+ * Single-source-of-truth for the alloc-fail rollback so each
+ * ove_audio_node_*() builder can end with one self-documenting line
+ * and a future 5th node type can't accidentally leak by copy-paste. */
+static int register_node(struct ove_audio_graph *g,
+			 const struct ove_audio_node_ops *ops,
+			 void *ctx,
+			 const char *name,
+			 enum ove_audio_node_type type)
+{
+	int idx = ove_audio_graph_add_node(g, ops, ctx, name, type);
+	if (idx < 0)
+		OVE_BACKEND_FREE(ctx);
+	return idx;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    Format Converter
    ═══════════════════════════════════════════════════════════════════ */
@@ -131,10 +150,7 @@ int ove_audio_node_converter(struct ove_audio_graph *g, enum ove_audio_sample_fm
 		return OVE_ERR_NO_MEMORY;
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->target_fmt = target_fmt;
-	int idx = ove_audio_graph_add_node(g, &converter_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
-	if (idx < 0)
-		OVE_BACKEND_FREE(ctx);
-	return idx;
+	return register_node(g, &converter_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -202,11 +218,7 @@ int ove_audio_node_channel_map(struct ove_audio_graph *g, const struct ove_audio
 		return OVE_ERR_NO_MEMORY;
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->map = *map;
-	int idx =
-		ove_audio_graph_add_node(g, &channel_map_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
-	if (idx < 0)
-		OVE_BACKEND_FREE(ctx);
-	return idx;
+	return register_node(g, &channel_map_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -303,10 +315,7 @@ int ove_audio_node_gain(struct ove_audio_graph *g, float gain_db, const char *na
 		if (ctx->linear_gain < 0.0f)
 			ctx->linear_gain = 0.0f;
 	}
-	int idx = ove_audio_graph_add_node(g, &gain_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
-	if (idx < 0)
-		OVE_BACKEND_FREE(ctx);
-	return idx;
+	return register_node(g, &gain_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -356,10 +365,7 @@ int ove_audio_node_tap(struct ove_audio_graph *g, ove_audio_tap_fn fn, void *use
 	memset(ctx, 0, sizeof(*ctx));
 	ctx->fn = fn;
 	ctx->user_data = user_data;
-	int idx = ove_audio_graph_add_node(g, &tap_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
-	if (idx < 0)
-		OVE_BACKEND_FREE(ctx);
-	return idx;
+	return register_node(g, &tap_ops, ctx, name, OVE_AUDIO_NODE_PROCESSOR);
 }
 
 #endif /* OVE_HEAP_AUDIO */
