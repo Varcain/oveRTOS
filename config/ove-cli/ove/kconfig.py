@@ -10,6 +10,7 @@ import os
 import sys
 
 from .appgen import generate_app_kconfig
+from .utils import atomic_symlink
 from .workspace import find_ove_dir
 
 
@@ -150,13 +151,11 @@ def cmd_defconfig(args):
     kconf.write_config(ws_config)
     print(f"Configuration written to {ws_config}")
 
-    # Symlink root .config -> workspace .config
+    # Symlink root .config -> workspace .config (atomic; race-safe).
     config_link = os.path.join(ove_dir, ".config")
-    if os.path.islink(config_link) or os.path.exists(config_link):
-        os.unlink(config_link)
-    os.symlink(ws_config, config_link)
+    atomic_symlink(ws_config, config_link)
 
-    # Symlink output/current -> workspace
+    # Symlink output/current -> workspace.
     os.makedirs(output_dir, exist_ok=True)
     current_link = os.path.join(output_dir, "current")
     if ext_app_dir:
@@ -164,9 +163,7 @@ def cmd_defconfig(args):
         target = ws_dir
     else:
         target = os.path.join(ws_board, ws_rtos, ws_app)
-    if os.path.islink(current_link):
-        os.unlink(current_link)
-    os.symlink(target, current_link)
+    atomic_symlink(target, current_link)
 
     # Link toolchain if available
     tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
@@ -177,10 +174,8 @@ def cmd_defconfig(args):
         tc_link = os.path.join(ws_dir, "toolchain")
         rel = os.path.relpath(
             os.path.join(output_dir, "toolchains", tc_name), ws_dir)
-        if os.path.islink(tc_link):
-            os.unlink(tc_link)
         if os.path.isdir(os.path.join(output_dir, "toolchains", tc_name)):
-            os.symlink(rel, tc_link)
+            atomic_symlink(rel, tc_link)
 
     print(f"Active workspace: {ws_dir}/")
 
@@ -197,23 +192,19 @@ def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
 
     os.makedirs(ws_dir, exist_ok=True)
 
-    # Symlink root .config -> workspace .config
+    # Symlink root .config -> workspace .config (atomic; race-safe).
     config_link = os.path.join(ove_dir, ".config")
     ws_config = os.path.join(ws_dir, ".config")
-    if os.path.islink(config_link) or os.path.exists(config_link):
-        os.unlink(config_link)
-    os.symlink(ws_config, config_link)
+    atomic_symlink(ws_config, config_link)
 
-    # Symlink output/current -> workspace
+    # Symlink output/current -> workspace.
     os.makedirs(output_dir, exist_ok=True)
     current_link = os.path.join(output_dir, "current")
     if ext_app_dir:
         target = ws_dir
     else:
         target = os.path.join(ws_board, ws_rtos, ws_app)
-    if os.path.islink(current_link):
-        os.unlink(current_link)
-    os.symlink(target, current_link)
+    atomic_symlink(target, current_link)
 
     # Link toolchain if available
     tc_sentinel = os.path.join(output_dir, "toolchains", "path.txt")
@@ -224,10 +215,8 @@ def _setup_workspace(ove_dir, ws_board, ws_rtos, ws_app, ext_app_dir=None):
         tc_link = os.path.join(ws_dir, "toolchain")
         rel = os.path.relpath(
             os.path.join(output_dir, "toolchains", tc_name), ws_dir)
-        if os.path.islink(tc_link):
-            os.unlink(tc_link)
         if os.path.isdir(os.path.join(output_dir, "toolchains", tc_name)):
-            os.symlink(rel, tc_link)
+            atomic_symlink(rel, tc_link)
 
     return ws_dir
 

@@ -12,7 +12,7 @@ import shlex
 import shutil
 import sys
 
-from .utils import run, nproc, apply_defconfig_overlay
+from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
 from .constants import NUTTX_BOARD_CONFIGS, ZEPHYR_BOARD_MAPPINGS
 from .workspace import Workspace, get_bool
 
@@ -802,13 +802,12 @@ def _link_compile_commands(ws):
         return
     link = os.path.join(ws.output_dir, "compile_commands.json")
     rel = os.path.relpath(src, os.path.dirname(link))
-    if os.path.islink(link) or os.path.exists(link):
-        try:
-            os.unlink(link)
-        except OSError:
-            return
+    # If a regular file occupies the slot (legacy state), refuse to
+    # clobber — atomic_symlink would replace it.
+    if os.path.exists(link) and not os.path.islink(link):
+        return
     try:
-        os.symlink(rel, link)
+        atomic_symlink(rel, link)
     except OSError as e:
         logger.debug(f"compile_commands.json symlink skipped: {e}")
 

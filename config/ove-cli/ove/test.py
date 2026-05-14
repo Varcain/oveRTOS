@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .utils import run, nproc, apply_defconfig_overlay
+from .utils import run, nproc, apply_defconfig_overlay, atomic_symlink
 from .manifest import load_manifest, get_component
 from .workspace import find_ove_dir
 
@@ -882,9 +882,7 @@ def _nuttx_fetch_sources(ove_dir):
         run(["git", "clone", "--depth", "1", "-b", tag, nuttx_url,
              nuttx_hash])
     nuttx_link = os.path.join(dl_dir, "nuttx")
-    if os.path.islink(nuttx_link):
-        os.unlink(nuttx_link)
-    os.symlink(nuttx_hash, nuttx_link)
+    atomic_symlink(nuttx_hash, nuttx_link)
 
     apps_hash = os.path.join(dl_dir, f"nuttx-apps-{tag_hash}")
     if not os.path.isdir(apps_hash):
@@ -892,9 +890,7 @@ def _nuttx_fetch_sources(ove_dir):
         run(["git", "clone", "--depth", "1", "-b", tag, apps_url,
              apps_hash])
     apps_link = os.path.join(dl_dir, "nuttx-apps")
-    if os.path.islink(apps_link):
-        os.unlink(apps_link)
-    os.symlink(apps_hash, apps_link)
+    atomic_symlink(apps_hash, apps_link)
 
     cmocka_dl = os.path.join(dl_dir, "cmocka")
     if not os.path.isdir(cmocka_dl):
@@ -1141,9 +1137,7 @@ def _run_zephyr_native_sim(ove_dir, output_dir, *, build_subdir, label,
         run([west, "update"], cwd=hash_dir)
 
     link = os.path.join(build, "zephyr-workspace")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(hash_dir, link)
+    atomic_symlink(hash_dir, link)
 
     env = dict(os.environ)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
@@ -1455,9 +1449,7 @@ def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label,
         run([west, "update"], cwd=hash_dir)
 
     link = os.path.join(build, "zephyr-workspace")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(hash_dir, link)
+    atomic_symlink(hash_dir, link)
 
     env = dict(os.environ)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
@@ -1852,9 +1844,7 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
         run([west, "update"], cwd=hash_dir)
 
     link = os.path.join(build, "zephyr-workspace")
-    if os.path.islink(link):
-        os.unlink(link)
-    os.symlink(hash_dir, link)
+    atomic_symlink(hash_dir, link)
 
     env = dict(os.environ)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
