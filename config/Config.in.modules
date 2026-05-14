@@ -33,6 +33,7 @@ config OVE_AUDIO_NODE_CONVERTER
 config OVE_AUDIO_NODE_GAIN
     bool "Audio gain node"
     depends on OVE_AUDIO
+    default n
     help
       Per-channel linear gain stage in the audio graph. Configured via
       ove_audio_node_gain_set(); applied in-place during process().
@@ -42,6 +43,7 @@ config OVE_AUDIO_NODE_GAIN
 config OVE_AUDIO_NODE_TAP
     bool "Audio tap/observer node"
     depends on OVE_AUDIO
+    default n
     help
       Read-only observer node that copies frames flowing through a
       point in the graph into a ring buffer readable from another
@@ -51,6 +53,7 @@ config OVE_AUDIO_NODE_TAP
 config OVE_AUDIO_NODE_CHANNEL_MAP
     bool "Audio channel mapper node"
     depends on OVE_AUDIO
+    default n
 
 config OVE_FS
     bool "File system"
