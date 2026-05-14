@@ -51,7 +51,6 @@ output/
 defconfig
 .venv/
 .venv-docs/
-.worktrees/
 
 # Generated documentation artifacts
 docs-site/site/
