@@ -4,10 +4,27 @@
 # builds — and any consumer setting `cfg(docsrs)` — can compile the binding
 # crate without running bindgen against a real C toolchain + LVGL workspace.
 #
-# CI runs clippy with cfg(docsrs) (`scripts/regen-bindings-stub.sh --check`
-# is *not* automated; the cfg(docsrs) clippy run catches drift). After
-# adding a new C FFI symbol, re-run this script and commit the diff.
+# Two modes:
+#   (no args)   Regenerate bindings_stub.rs in place from a fresh bindgen
+#               run.  Run after adding/changing a C FFI symbol; commit
+#               the diff.
+#   --check     Run bindgen and compare against the in-tree stub.  Prints
+#               a warning on drift but ALWAYS exits 0 — wired into
+#               `make lint` to surface stale stubs without blocking the
+#               lint pass.
+#
+# A second drift catch is the cfg(docsrs) clippy run inside `make lint`,
+# which fails-fast on symbols the Rust binding references but the stub
+# lacks.  `--check` catches the inverse direction too: bindgen surface
+# present in real builds but missing from the stub (e.g. a new C
+# function added without yet writing the Rust wrapper for it).
 set -euo pipefail
+
+MODE="regen"
+if [ "${1:-}" = "--check" ]; then
+    MODE="check"
+    shift
+fi
 
 OVE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"
@@ -68,6 +85,10 @@ CFG
 # the in-tree probe (those modules are off in tests/ove_config.h).
 STUB_SIZES="$OVE_DIR/output/tests/rust_stub/ove_storage_sizes.env"
 if [ ! -f "$STUB_SIZES" ]; then
+    if [ "$MODE" = "check" ]; then
+        echo "warning: rust_stub build not present at $STUB_SIZES — skipping bindings_stub.rs drift check" >&2
+        exit 0
+    fi
     echo "Need rust_stub built first: run \`ove test rust\` or \`make lint\`" >&2
     exit 1
 fi
@@ -111,11 +132,20 @@ cargo build --manifest-path "$OVE_DIR/bindings/rust/ove/Cargo.toml" \
 
 BINDINGS=$(find "$TMP/target" -name ove_bindings.rs | head -1)
 if [ -z "$BINDINGS" ]; then
+    if [ "$MODE" = "check" ]; then
+        echo "warning: bindgen never ran (build.rs failed) — skipping bindings_stub.rs drift check" >&2
+        exit 0
+    fi
     echo "bindgen never ran — check build.rs failed earlier" >&2
     exit 1
 fi
 
-OUT="$OVE_DIR/bindings/rust/ove/src/bindings_stub.rs"
+REAL="$OVE_DIR/bindings/rust/ove/src/bindings_stub.rs"
+if [ "$MODE" = "check" ]; then
+    OUT="$TMP/bindings_stub.new.rs"
+else
+    OUT="$REAL"
+fi
 python3 - "$BINDINGS" "$OUT" <<'PY'
 import re, sys
 text = open(sys.argv[1]).read()
@@ -159,5 +189,15 @@ header = '''// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 '''
 open(sys.argv[2], "w").write(header + text)
 PY
+
+if [ "$MODE" = "check" ]; then
+    if ! diff -q "$OUT" "$REAL" >/dev/null 2>&1; then
+        echo "warning: bindings_stub.rs is out of sync with the bindgen output." >&2
+        echo "         Run \`scripts/regen-bindings-stub.sh\` and commit the diff." >&2
+    else
+        echo "bindings_stub.rs: up to date with bindgen output"
+    fi
+    exit 0
+fi
 
 echo "Regenerated $OUT ($(wc -l < "$OUT") lines)"
