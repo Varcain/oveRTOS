@@ -30,26 +30,11 @@ bench_compare.py reads.  Cases without an `audit` array are skipped.
 """
 
 import argparse
-import json
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-
-JSON_BLOCK_RE = re.compile(
-    r"###BENCH_JSON_BEGIN\s*\n(.+?)\n###BENCH_JSON_END",
-    re.DOTALL,
-)
-
-
-def extract_envelopes(text):
-    for m in JSON_BLOCK_RE.finditer(text):
-        try:
-            yield json.loads(m.group(1).strip())
-        except json.JSONDecodeError as e:
-            print(f"warning: malformed JSON envelope skipped: {e}",
-                  file=sys.stderr)
+from bench_utils import extract_envelopes
 
 
 def load_inputs(paths):
