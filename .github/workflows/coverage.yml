@@ -20,9 +20,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
 
       - name: Run coverage
-        run: |
-          cmake -S tests -B output/tests/stub_coverage -DOVE_TEST_BUILD_COVERAGE=ON
-          cmake --build output/tests/stub_coverage --target coverage -j$(nproc)
+        run: make test-stub-coverage
 
       - uses: actions/upload-artifact@v4
         with:
@@ -40,9 +38,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential lcov
 
       - name: Run coverage
-        run: |
-          cmake -S tests/cpp -B output/tests/cpp_coverage -DOVE_TEST_BUILD_COVERAGE=ON
-          cmake --build output/tests/cpp_coverage --target coverage -j$(nproc)
+        run: make test-cpp-coverage
 
       - uses: actions/upload-artifact@v4
         with:

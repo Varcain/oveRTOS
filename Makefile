@@ -262,6 +262,26 @@ WITH_QEMU_FREERTOS  ?= 1
 WITH_QEMU_NUTTX     ?= 1
 WITH_QEMU_ZEPHYR    ?= 1
 
+# Coverage entry points.
+#
+# `make test-stub-coverage` / `make test-cpp-coverage` wrap the cmake
+# invocations the CI workflow used to inline.  They sit outside the
+# auto-generated `test-<name>` pattern (which delegates to `$(OVE) test
+# <name>`) because the stub/cpp coverage builds are plain CMake projects
+# that do not need the `ove` RTOS-orchestration layer.  The rest of the
+# coverage backends (rust/zephyr/nuttx/zig/qemu-*) DO need that layer
+# and continue to flow through `$(OVE) test <name>-coverage` via the
+# pattern rule above.
+.PHONY: test-stub-coverage
+test-stub-coverage:
+	@cmake -S $(OVE_DIR)/tests -B $(COVERAGE_STUB_DIR) -DOVE_TEST_BUILD_COVERAGE=ON
+	@cmake --build $(COVERAGE_STUB_DIR) --target coverage -j$$(nproc)
+
+.PHONY: test-cpp-coverage
+test-cpp-coverage:
+	@cmake -S $(OVE_DIR)/tests/cpp -B $(COVERAGE_CPP_DIR) -DOVE_TEST_BUILD_COVERAGE=ON
+	@cmake --build $(COVERAGE_CPP_DIR) --target coverage -j$$(nproc)
+
 .PHONY: coverage
 coverage: $(VENV_STAMP)
 	@command -v lcov >/dev/null 2>&1 && command -v genhtml >/dev/null 2>&1 || { \
@@ -272,10 +292,8 @@ coverage: $(VENV_STAMP)
 		echo ""; \
 		exit 1; \
 	}
-	@cmake -S $(OVE_DIR)/tests     -B $(COVERAGE_STUB_DIR) -DOVE_TEST_BUILD_COVERAGE=ON
-	@cmake --build $(COVERAGE_STUB_DIR) --target coverage -j$$(nproc)
-	@cmake -S $(OVE_DIR)/tests/cpp -B $(COVERAGE_CPP_DIR)  -DOVE_TEST_BUILD_COVERAGE=ON
-	@cmake --build $(COVERAGE_CPP_DIR)  --target coverage -j$$(nproc)
+	@$(MAKE) --no-print-directory test-stub-coverage
+	@$(MAKE) --no-print-directory test-cpp-coverage
 	@$(OVE) test rust-coverage
 	@if [ "$(WITH_ZEPHYR)" = "1" ];        then $(OVE) test zephyr-coverage;        fi
 	@if [ "$(WITH_NUTTX)" = "1" ];         then $(OVE) test nuttx-coverage;         fi
