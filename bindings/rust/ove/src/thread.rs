@@ -15,6 +15,20 @@ use core::fmt;
 use crate::bindings;
 use crate::error::{Error, Result};
 
+// Round-tripping `fn()` through `*mut c_void` (in `Thread::spawn` and
+// `Thread::spawn_static`) requires the two to be the same size.  This
+// holds on every target oveRTOS supports today — ARM Cortex-M (32-bit
+// thumb), x86_64, RISC-V (32/64), and WebAssembly.  If a future port
+// lands on a target where function pointers are wider than data
+// pointers (some segmented or capability architectures), this
+// assertion fires at compile time so the silent corruption mode
+// becomes a build failure.
+const _: () = assert!(
+    core::mem::size_of::<fn()>() == core::mem::size_of::<*mut core::ffi::c_void>(),
+    "ove::thread: fn() and *mut c_void must be the same size for FFI round-trip; \
+     see Thread::spawn / Thread::spawn_static."
+);
+
 /// Thread priority levels, matching `ove_prio_t`.
 ///
 /// Variants are ordered from lowest (`Idle`) to highest (`Critical`) so that
