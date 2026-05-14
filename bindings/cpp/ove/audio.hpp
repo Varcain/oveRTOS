@@ -25,6 +25,37 @@ namespace audio
 {
 
 /**
+ * @brief Build an audio device config for the I2S transport.
+ *
+ * Mirrors `ove::audio::device_cfg_i2s` in the Rust binding and
+ * `ove.audio.deviceCfgI2s` in the Zig binding.  Both of those need
+ * pointer-cast tricks to write into the anonymous union of
+ * `ove_audio_device_cfg`; C++ supports anonymous unions natively
+ * (`cfg.i2s.input_device`) so the equivalent here is straightforward.
+ *
+ * Sample format defaults to S16.  Callers that need TDM slot masking
+ * can set `cfg.i2s.slot_mask` on the returned value.
+ *
+ * @param sample_rate   Sample rate in Hz (e.g. 16000, 48000).
+ * @param channels      Channel count (1 = mono, 2 = stereo).
+ * @param input_device  Input device selector (e.g. line-in, DMIC index).
+ * @return Filled-in `ove_audio_device_cfg` ready to pass to
+ *         `Graph::device_source` / `Graph::device_sink`.
+ */
+inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate,
+						  uint32_t channels,
+						  uint32_t input_device)
+{
+	struct ove_audio_device_cfg cfg{};
+	cfg.transport = OVE_AUDIO_TRANSPORT_I2S;
+	cfg.fmt.sample_rate = sample_rate;
+	cfg.fmt.channels = channels;
+	cfg.fmt.sample_fmt = OVE_AUDIO_FMT_S16;
+	cfg.i2s.input_device = input_device;
+	return cfg;
+}
+
+/**
  * @brief C++ wrapper around ove_audio_graph.
  *
  * Provides RAII-style init/deinit and forwarding to the C graph API.
