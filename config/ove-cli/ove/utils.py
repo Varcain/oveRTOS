@@ -45,18 +45,53 @@ def hashed_dir(dl_dir, base_name, revision, ws_dl_dir=None):
             global_link)
 
 
+def atomic_symlink(target, link_path):
+    """Atomically create or replace a symlink: `link_path` -> `target`.
+
+    Race-safe across concurrent processes.  Uses a per-pid tempfile in
+    the link's parent directory and POSIX ``rename(2)`` (via
+    ``os.replace``) for an atomic flip — concurrent writers never
+    observe an absent or half-replaced symlink, and none can crash on
+    ``FileNotFoundError`` / ``FileExistsError`` against the
+    unlink+symlink TOCTOU window that bare ``os.symlink`` patterns
+    have.
+
+    The last writer wins on `link_path` (acceptable because each
+    caller was setting up a valid target; non-determinism on which
+    valid target sticks is the user's problem to avoid by serialising).
+    """
+    tmp = f"{link_path}.tmp.{os.getpid()}"
+    # Defensive: a previous crashed attempt by this pid may have left
+    # the tmp slot occupied.
+    if os.path.islink(tmp) or os.path.exists(tmp):
+        os.unlink(tmp)
+    os.symlink(target, tmp)
+    os.replace(tmp, link_path)
+
+
 def update_symlink(link_path, target_path):
-    """Create or update a symlink from link_path -> target_path (relative)."""
+    """Create or update a symlink from link_path -> target_path (relative).
+
+    Computes the relative path internally, short-circuits when the
+    link already points at the right place, and falls back to a
+    backup rename if `link_path` exists as a regular file (legacy
+    migration path).  Atomically replaces the symlink when a change
+    is needed.
+    """
     rel = os.path.relpath(target_path, os.path.dirname(link_path))
     if os.path.islink(link_path):
-        if os.readlink(link_path) == rel:
-            return
-        os.unlink(link_path)
+        try:
+            if os.readlink(link_path) == rel:
+                return
+        except OSError:
+            # Link disappeared between islink() and readlink() —
+            # fall through to atomic replace.
+            pass
     elif os.path.exists(link_path):
         backup = link_path + ".old"
         logger.debug(f"NOTE: moving legacy {link_path} -> {backup}")
         os.rename(link_path, backup)
-    os.symlink(rel, link_path)
+    atomic_symlink(rel, link_path)
 
 
 def nproc() -> int:

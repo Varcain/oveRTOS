@@ -19,7 +19,7 @@ import time
 import urllib.request
 
 from .manifest import get_component, load_manifest, warn_if_dirty
-from .utils import hashed_dir, update_symlink
+from .utils import hashed_dir, update_symlink, atomic_symlink
 from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")
@@ -194,15 +194,13 @@ def symlink_local(src, dest, name):
         logger.error(f"local path does not exist: {src}")
         return False
 
-    if os.path.exists(dest):
-        if os.path.islink(dest):
-            os.unlink(dest)
-        else:
-            logger.debug(f"{name}: destination already exists: {dest}")
-            return True
+    if os.path.exists(dest) and not os.path.islink(dest):
+        # Regular file/dir already present — refuse to overwrite.
+        logger.debug(f"{name}: destination already exists: {dest}")
+        return True
 
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    os.symlink(src, dest)
+    atomic_symlink(src, dest)
     logger.debug(f"{name}: linked {src} -> {dest}")
     return True
 
@@ -814,9 +812,7 @@ def download_all(ws):
             rel = os.path.relpath(
                 os.path.join(ws.toolchains_dir, tc_name),
                 ws.workspace_dir)
-            if os.path.islink(tc_link):
-                os.unlink(tc_link)
-            os.symlink(rel, tc_link)
+            atomic_symlink(rel, tc_link)
 
     if get_bool(config, "CONFIG_OVE_RTOS_FREERTOS"):
         ok = download_freertos(config, ws.dl_dir, ws.build_dir,
