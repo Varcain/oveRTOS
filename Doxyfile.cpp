@@ -19,7 +19,7 @@ MACRO_EXPANSION        = YES
 # Heap-mode toggles and Zig guards are static (defined in headers, not
 # Kconfig); shared with Doxyfile via Doxyfile.shared_predefined.
 # CONFIG_OVE_* Kconfig symbols are auto-generated into Doxyfile.predefined
-# by scripts/kconfig-doxyfile-gen.py (re-run by `make docs`).  Order
+# by scripts/kconfig_doxyfile_gen.py (re-run by `make docs`).  Order
 # matters: shared block uses `=`, generator uses `+=` to accumulate.
 @INCLUDE               = Doxyfile.shared_predefined
 @INCLUDE               = output/docs/Doxyfile.predefined

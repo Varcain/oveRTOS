@@ -396,7 +396,7 @@ ensure-toolchain-%: $(VENV_STAMP)
 
 docs: $(VENV_STAMP) ## Build complete documentation site
 	@echo "==> Generating Doxyfile.predefined from Kconfig..."
-	python3 scripts/kconfig-doxyfile-gen.py
+	python3 scripts/kconfig_doxyfile_gen.py
 	@echo "==> Generating C API docs (Doxygen)..."
 	@mkdir -p output/docs/doxygen
 	doxygen Doxyfile
@@ -418,7 +418,7 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 		-femit-docs=output/docs/zig -fno-emit-bin \
 		-isystem include -isystem output/docs/zig-staging
 	@echo "==> Extracting Kconfig reference..."
-	python3 scripts/kconfig-doc-extract.py
+	python3 scripts/kconfig_doc_extract.py
 	@echo "==> Building MkDocs site..."
 	cd docs-site && mkdocs build
 	@echo "==> Copying C API (Doxygen) into site..."
