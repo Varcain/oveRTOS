@@ -2,6 +2,34 @@
 # OveCommon.cmake — Shared build infrastructure for oveRTOS firmware
 # ============================================================================
 #
+# Scope (what belongs here vs sibling cmake files):
+#
+#   THIS FILE owns the FIRMWARE-LEVEL CMake build pipeline:
+#     - Project bootstrap (paths, includes, generated-config wiring)
+#     - Source / include / flag accumulation (board, app, backend, stub)
+#     - Vendored library integration: LVGL, TFLM, STM32Cube HAL/BSP,
+#       CMSIS-DSP, FatFS, cpu_utils
+#     - Final-link orchestration
+#
+#   What does NOT belong here, and where it does:
+#     - RTOS-specific glue  →  cmake/OveNuttX.cmake
+#                              cmake/OveZephyrCommon.cmake
+#                              (these call into the macros here)
+#     - Per-target binding-language application
+#                          →  config/cmake/ove_app_lang.cmake
+#                              (called after add_executable(); delegates
+#                              to ove_rust.cmake / ove_zig.cmake)
+#     - Cross-binding scaffolding (sysroot resolution, sizes-probe lib,
+#       target-kind detection) shared by Rust and Zig integration
+#                          →  cmake/OveBindingsCommon.cmake
+#     - Specific binding integration (cargo invocation, zig build glue,
+#       bindgen wiring)    →  config/cmake/ove_rust.cmake
+#                              config/cmake/ove_zig.cmake
+#     - Zero-heap link-time symbol audit
+#                          →  cmake/OveZeroHeapAudit.cmake
+#     - Model (TFLite) source generation
+#                          →  cmake/OveModels.cmake
+#
 # Usage (in board CMakeLists.txt):
 #   cmake_minimum_required(VERSION 3.20)
 #   include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveCommon.cmake)
