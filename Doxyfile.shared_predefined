@@ -1,0 +1,42 @@
+# Doxyfile fragment — shared static PREDEFINED set.
+#
+# Included by both Doxyfile (C API) and Doxyfile.cpp (C++ API) so the
+# `OVE_HEAP_*` and `__ZIG_CIMPORT__` predefines stay in sync across the
+# two docs builds.  Loaded BEFORE the auto-generated
+# `output/docs/Doxyfile.predefined`, which appends Kconfig CONFIG_OVE_*
+# symbols using `PREDEFINED += ...`.
+#
+# Add a new heap-bearing module here once — both doc builds pick it up.
+#
+# - OVE_HEAP_*    Heap-mode toggles (defined in include/ove/storage.h
+#                 when CONFIG_OVE_ZERO_HEAP is unset).  Predefining them
+#                 here makes Doxygen render the `_create()`/`_destroy()`
+#                 API surface gated by `#ifdef OVE_HEAP_<MOD>` in each
+#                 module header, regardless of build configuration.
+# - __ZIG_CIMPORT__=0
+#                 Tells Doxygen to skip Zig-`@cImport`-specific blocks
+#                 in headers like storage.h, net.h, net_mqtt.h that use
+#                 minimal opaque types when consumed via Zig.
+PREDEFINED = OVE_HEAP_THREAD=1 \
+             OVE_HEAP_MUTEX=1 \
+             OVE_HEAP_SEM=1 \
+             OVE_HEAP_EVENT=1 \
+             OVE_HEAP_CONDVAR=1 \
+             OVE_HEAP_QUEUE=1 \
+             OVE_HEAP_TIMER=1 \
+             OVE_HEAP_STREAM=1 \
+             OVE_HEAP_EVENTGROUP=1 \
+             OVE_HEAP_WORKQUEUE=1 \
+             OVE_HEAP_FS=1 \
+             OVE_HEAP_WATCHDOG=1 \
+             OVE_HEAP_SYNC=1 \
+             OVE_HEAP_UART=1 \
+             OVE_HEAP_SPI=1 \
+             OVE_HEAP_I2C=1 \
+             OVE_HEAP_I2S=1 \
+             OVE_HEAP_INFER=1 \
+             OVE_HEAP_NET=1 \
+             OVE_HEAP_NET_TLS=1 \
+             OVE_HEAP_NET_HTTP=1 \
+             OVE_HEAP_NET_MQTT=1 \
+             __ZIG_CIMPORT__=0
