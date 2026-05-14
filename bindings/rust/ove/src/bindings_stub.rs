@@ -10,10 +10,11 @@
 //! building documentation on docs.rs (detected via `DOCS_RS` env var
 //! and the `docsrs` cfg flag). Mirrors what bindgen would emit so
 //! `cargo doc` (and `clippy --cfg docsrs`) compile without a real C
-//! toolchain or LVGL headers. Regenerate with
-//! `python3 scripts/gen_bindings_stub.py <bindgen.rs> bindings_stub.rs`
-//! after the C FFI surface changes; lint runs clippy with cfg(docsrs)
-//! to catch drift.
+//! toolchain or LVGL headers.
+//!
+//! Regenerate after touching the C FFI surface:
+//!     scripts/regen-bindings-stub.sh
+//! `make lint` then runs clippy with cfg(docsrs) to catch drift.
 
 #![allow(
     non_upper_case_globals,
