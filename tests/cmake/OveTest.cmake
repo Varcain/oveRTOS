@@ -106,3 +106,63 @@ function(ove_test_all_suite_sources out_var suite_dir)
     ove_test_stub_only_suite_sources(_stub "${suite_dir}")
     set(${out_var} ${_common} ${_fs} ${_stub} PARENT_SCOPE)
 endfunction()
+
+
+# ove_test_validate_suite_membership(<suite_dir>)
+#   Configure-time guard against drift between the three category lists
+#   above and the actual test_*.c files in <suite_dir>.  Fails the
+#   build with a named diagnostic on:
+#     - a file listed in more than one category,
+#     - a category entry that doesn't exist on disk,
+#     - a `test_*.c` file on disk that no category lists.
+#   Call once from tests/CMakeLists.txt after the include of this file.
+function(ove_test_validate_suite_membership suite_dir)
+    # Union of the three category lists, with intra-set duplicate
+    # detection (a file appearing twice in COMMON would not surface
+    # otherwise — list(APPEND) is happy to duplicate).
+    set(_seen "")
+    set(_dups "")
+    foreach(_category COMMON FS STUB_ONLY)
+        foreach(_file ${OVE_TEST_${_category}_SUITES})
+            if(_file IN_LIST _seen)
+                list(APPEND _dups "${_file}")
+            else()
+                list(APPEND _seen "${_file}")
+            endif()
+        endforeach()
+    endforeach()
+
+    # On-disk set (basenames, sorted for stable diagnostics).
+    file(GLOB _on_disk RELATIVE "${suite_dir}" "${suite_dir}/test_*.c")
+    list(SORT _on_disk)
+    list(SORT _seen)
+
+    set(_missing_on_disk "")
+    foreach(_f ${_seen})
+        if(NOT EXISTS "${suite_dir}/${_f}")
+            list(APPEND _missing_on_disk "${_f}")
+        endif()
+    endforeach()
+
+    set(_uncategorized "")
+    foreach(_f ${_on_disk})
+        if(NOT _f IN_LIST _seen)
+            list(APPEND _uncategorized "${_f}")
+        endif()
+    endforeach()
+
+    if(_dups OR _missing_on_disk OR _uncategorized)
+        set(_msg "OveTest: test-suite categorisation mismatch in ${suite_dir}\n")
+        if(_dups)
+            string(APPEND _msg "  Listed in >1 category: ${_dups}\n")
+        endif()
+        if(_missing_on_disk)
+            string(APPEND _msg "  Listed but not on disk:  ${_missing_on_disk}\n")
+        endif()
+        if(_uncategorized)
+            string(APPEND _msg "  On disk but uncategorised: ${_uncategorized}\n")
+        endif()
+        string(APPEND _msg "Update the OVE_TEST_*_SUITES lists in tests/cmake/OveTest.cmake.")
+        message(FATAL_ERROR "${_msg}")
+    endif()
+endfunction()

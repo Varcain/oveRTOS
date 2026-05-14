@@ -37,6 +37,10 @@ set(OVE_SRC ${OVE_ROOT}/src)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveTest.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveCoverage.cmake)
 
+# Fail configure early if the category lists drift from disk reality
+# (file added but not listed, listed but missing, listed twice).
+ove_test_validate_suite_membership(${CMAKE_CURRENT_SOURCE_DIR}/suites)
+
 # Stub backend sources (direct-linked, no dispatcher layer)
 set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
 set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/backends/stub)
