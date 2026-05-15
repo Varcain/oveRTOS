@@ -32,7 +32,15 @@ jobs:
         run: pip install mkdocs-material
 
       - name: Setup Rust (stable, for `make docs`)
+        # rust-src is required by rust-toolchain.toml and must be installed
+        # up-front via this action.  If it isn't, rustup tries to add it on
+        # the fly when `cargo doc` first runs and conflicts with the
+        # GitHub runner's pre-staged Rust install
+        # (lib/rustlib/src/rust/library/Cargo.lock already exists), aborting
+        # the whole job.  Same pattern as ove-tests.yml::test-rust.
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-src
 
       - name: Build documentation
         run: make docs
