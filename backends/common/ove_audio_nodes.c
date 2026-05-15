@@ -22,11 +22,8 @@
  * Single-source-of-truth for the alloc-fail rollback so each
  * ove_audio_node_*() builder can end with one self-documenting line
  * and a future 5th node type can't accidentally leak by copy-paste. */
-static int register_node(struct ove_audio_graph *g,
-			 const struct ove_audio_node_ops *ops,
-			 void *ctx,
-			 const char *name,
-			 enum ove_audio_node_type type)
+static int register_node(struct ove_audio_graph *g, const struct ove_audio_node_ops *ops, void *ctx,
+			 const char *name, enum ove_audio_node_type type)
 {
 	int idx = ove_audio_graph_add_node(g, ops, ctx, name, type);
 	if (idx < 0)

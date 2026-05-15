@@ -100,11 +100,7 @@ pub fn resume(i2s: bindings::ove_i2s_t) -> Result<()> {
 #[inline]
 pub fn rx_buf(i2s: bindings::ove_i2s_t) -> Option<*const u8> {
     let p = unsafe { bindings::ove_i2s_rx_buf(i2s) };
-    if p.is_null() {
-        None
-    } else {
-        Some(p.cast())
-    }
+    if p.is_null() { None } else { Some(p.cast()) }
 }
 
 /// Pointer to the TX half-buffer safe to write, or `None` if the
@@ -117,11 +113,7 @@ pub fn rx_buf(i2s: bindings::ove_i2s_t) -> Option<*const u8> {
 #[inline]
 pub fn tx_buf(i2s: bindings::ove_i2s_t) -> Option<*mut u8> {
     let p = unsafe { bindings::ove_i2s_tx_buf(i2s) };
-    if p.is_null() {
-        None
-    } else {
-        Some(p.cast())
-    }
+    if p.is_null() { None } else { Some(p.cast()) }
 }
 
 /// Size of one half-buffer in bytes.  Pair with [`rx_buf`] / [`tx_buf`]

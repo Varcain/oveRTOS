@@ -42,11 +42,11 @@ namespace audio
  * @return Filled-in `ove_audio_device_cfg` ready to pass to
  *         `Graph::device_source` / `Graph::device_sink`.
  */
-inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate,
-						  uint32_t channels,
+inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t channels,
 						  uint32_t input_device)
 {
-	struct ove_audio_device_cfg cfg{};
+	struct ove_audio_device_cfg cfg {
+	};
 	cfg.transport = OVE_AUDIO_TRANSPORT_I2S;
 	cfg.fmt.sample_rate = sample_rate;
 	cfg.fmt.channels = channels;

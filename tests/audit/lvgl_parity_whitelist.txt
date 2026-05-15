@@ -1,0 +1,22 @@
+# LVGL parity check — intentional-gap whitelist.
+#
+# Format: one entry per line, three whitespace-separated tokens:
+#   <binding>  <Type>  <method>
+#
+# Bindings: rust | zig | cpp
+# Names are normalised to snake_case by the check tool, so both
+# `setText` and `set_text` collapse to `set_text` — write whichever
+# form makes the intent clearest; the tool's normaliser handles it.
+#
+# An entry declares: "binding X has Type::method present, and that's
+# intentionally NOT mirrored in the other bindings."  Wired by
+# `scripts/lvgl_parity_check.py` and surfaced from `make lint` as a
+# non-blocking warning.
+#
+# Lines starting with `#` and blank lines are ignored.
+#
+# Empty whitelist — the baseline parity gap (see the report from
+# `scripts/lvgl_parity_check.py --verbose`) is currently un-curated.
+# Populate this file when triaging the report identifies entries that
+# are deliberate cross-binding API differences (e.g. an idiomatic
+# Rust trait method that has no direct C++ equivalent).

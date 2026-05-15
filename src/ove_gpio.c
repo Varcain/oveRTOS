@@ -140,8 +140,7 @@ void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin)
 		 * the data fields read below are observed in their
 		 * post-registration state. */
 		atomic_thread_fence(memory_order_acquire);
-		if (irq_table[i].enabled && irq_table[i].port == port &&
-		    irq_table[i].pin == pin) {
+		if (irq_table[i].enabled && irq_table[i].port == port && irq_table[i].pin == pin) {
 			if (irq_table[i].callback) {
 				irq_table[i].callback(port, pin, irq_table[i].user_data);
 			}

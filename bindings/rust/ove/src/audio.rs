@@ -75,17 +75,16 @@ impl Tracker {
     #[track_caller]
     fn assert_same(&self, p: *const (), type_name: &str) {
         if let Some(orig) = self.addr {
-            if orig != p {
-                panic!(
-                    "{type_name}: wrapper moved after build() — \
-                     inited at {orig:p}, used at {p:p}.  The C graph stores \
-                     interior pointers (buffers[i].fmt → &nodes[i].out_fmt) \
-                     during build(); moving the wrapper afterwards invalidates \
-                     them and silently corrupts audio-thread reads.  Pin the \
-                     Graph in a StaticCell / Box::leak / &'static mut before \
-                     calling build()."
-                );
-            }
+            assert!(
+                orig == p,
+                "{type_name}: wrapper moved after build() — \
+                 inited at {orig:p}, used at {p:p}.  The C graph stores \
+                 interior pointers (buffers[i].fmt → &nodes[i].out_fmt) \
+                 during build(); moving the wrapper afterwards invalidates \
+                 them and silently corrupts audio-thread reads.  Pin the \
+                 Graph in a StaticCell / Box::leak / &'static mut before \
+                 calling build()."
+            );
         }
     }
 }
