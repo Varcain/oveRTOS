@@ -1,0 +1,13 @@
+# Redirect all ad-hoc cargo invocations under this repo to output/cargo/.
+# Resolved relative to this file, so it lands at
+# <repo-root>/output/cargo/{debug,release}/ regardless of which crate
+# (apps/rust/<X>/, bindings/rust/ove/, tests/rust/, …) cargo runs from.
+# Per-target-triple sub-dirs are added automatically:
+#   output/cargo/<triple?>/<profile>/<binary>
+#
+# Cargo precedence: env > config.  The ove CLI (test.py, lint.py,
+# scripts/regen-bindings-stub.sh) sets CARGO_TARGET_DIR explicitly for
+# orchestrated runs and continues to win; this file only catches the
+# ad-hoc case (developer terminal, rust-analyzer/IDE auto-build).
+[build]
+target-dir = "output/cargo"
