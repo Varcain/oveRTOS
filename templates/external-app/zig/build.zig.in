@@ -1,0 +1,26 @@
+const std = @import("std");
+
+// The oveRTOS build system invokes this with the OVE_DIR injected as a
+// build option.  All cross-compilation / linking concerns are handled
+// upstream — we just declare the static library and its source.
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const lib = b.addStaticLibrary(.{
+        .name = "{{LIB_NAME}}",
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    // The `ove` module is provided by the oveRTOS Zig binding tree; the
+    // upstream build system wires its path via a CLI option.
+    const ove_dep = b.dependency("ove", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    lib.root_module.addImport("ove", ove_dep.module("ove"));
+
+    b.installArtifact(lib);
+}

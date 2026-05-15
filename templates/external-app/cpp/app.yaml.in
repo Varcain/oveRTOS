@@ -1,0 +1,13 @@
+lang: cpp
+config_name: {{CONFIG_NAME}}
+description: "{{NAME}}"
+sources:
+  - src/app.cpp
+includes:
+  - include
+defconfig:
+  - CONFIG_OVE_BSP=y
+  - CONFIG_OVE_CONSOLE=y
+  - CONFIG_OVE_LOG=y
+  - CONFIG_OVE_LOG_LEVEL_INF=y
+  - CONFIG_OVE_THREAD=y

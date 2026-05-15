@@ -1,0 +1,8 @@
+/* App-local configuration constants.
+ *
+ * Tune knobs your app uses go here.  This file is included by app.c via
+ * the includes: list in app.yaml.  Stays in src control alongside the app.
+ */
+#pragma once
+
+#define {{CONFIG_NAME_UPPER}}_TICK_PERIOD_MS  1000

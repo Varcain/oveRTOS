@@ -1,0 +1,9 @@
+output/
+target/
+Cargo.lock
+.config
+.config.old
+*.o
+*.a
+*.elf
+*.bin

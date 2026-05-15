@@ -1,0 +1,10 @@
+output/
+zig-cache/
+zig-out/
+.zig-cache/
+.config
+.config.old
+*.o
+*.a
+*.elf
+*.bin

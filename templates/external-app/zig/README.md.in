@@ -1,0 +1,45 @@
+# {{NAME}}
+
+An external oveRTOS application (Zig).
+
+## Build
+
+```bash
+make host.posix.{{CONFIG_NAME}}     # POSIX host
+make qemu.freertos.{{CONFIG_NAME}}  # QEMU + FreeRTOS
+
+make            # download, configure, build
+make run        # launch (POSIX) or boot in QEMU
+```
+
+`OVE_DIR` is set in `Makefile`. Override per invocation:
+
+```bash
+make OVE_DIR=/other/path/to/oveRTOS host.posix.{{CONFIG_NAME}} && make
+```
+
+## Layout
+
+```
+{{NAME}}/
+├── Makefile         # delegates to $(OVE_DIR)/config/make/ove_app.mk
+├── app.yaml         # manifest
+├── build.zig        # zig build harness
+├── build.zig.zon    # dependencies (ove binding path)
+├── src/main.zig     # entry — comptime { ove.exportMain(appMain) }
+└── output/          # generated workspace
+```
+
+## Zig version
+
+Minimum supported Zig version: **0.15.2**. Run `zig version` to confirm. If your distro ships an older Zig, the oveRTOS build system can fetch a pinned one:
+
+```bash
+make -C $OVE_DIR ensure-toolchain-zig
+```
+
+## Resources
+
+- [oveRTOS Quickstart](https://varcain.github.io/oveRTOS/getting-started/quickstart/)
+- [Basic Example (Zig)](https://varcain.github.io/oveRTOS/examples/example/zig/)
+- [API Reference](https://varcain.github.io/oveRTOS/api/)

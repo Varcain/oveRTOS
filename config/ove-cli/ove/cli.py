@@ -192,6 +192,31 @@ def main():
     p.add_argument("--no-open", action="store_true",
                    help="Generate .vscode/ files only, do not launch code")
 
+    # ── app ────────────────────────────────────────────────────────────
+    p = sub.add_parser("app", help="External-app scaffolding")
+    app_sub = p.add_subparsers(dest="app_action")
+    p_new = app_sub.add_parser(
+        "new",
+        help="Stamp a new external app from a template")
+    p_new.add_argument("--lang", required=True,
+                       choices=["c", "cpp", "rust", "zig"],
+                       help="Application language")
+    p_new.add_argument("--name", required=True,
+                       help="App name (letters, digits, underscores, "
+                            "hyphens; must start with a letter)")
+    p_new.add_argument("--template", default="hello",
+                       choices=["hello", "lvgl", "net", "audio"],
+                       help="Template to stamp (default: hello)")
+    p_new.add_argument("--dir", default=None,
+                       help="Destination directory (default: ./<name>)")
+    p_new.add_argument("--ove-dir", default=None,
+                       help="Path to the oveRTOS checkout "
+                            "(default: $OVE_DIR or the running checkout)")
+    p_new.add_argument("--no-git", action="store_true",
+                       help="Skip 'git init' inside the new app")
+    p_new.add_argument("--force", action="store_true",
+                       help="Overwrite a non-empty destination directory")
+
     # ── Parse and dispatch ─────────────────────────────────────────────
     args = parser.parse_args()
 
@@ -300,6 +325,14 @@ def main():
     elif args.command == "vscode":
         from .vscode import cmd_vscode
         cmd_vscode(args)
+
+    elif args.command == "app":
+        if args.app_action == "new":
+            from .app_new import cmd_app_new
+            cmd_app_new(args)
+        else:
+            parser.print_help()
+            sys.exit(1)
 
     else:
         parser.print_help()

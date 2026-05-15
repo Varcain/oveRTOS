@@ -1,0 +1,16 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
+use ove_allocator as _;
+
+use ove::log::info;
+
+fn app_main() {
+    info!("hello from {{NAME}}");
+
+    loop {
+        ove::thread::sleep_ms(1000);
+        info!("tick");
+    }
+}
+
+ove::main!(app_main);

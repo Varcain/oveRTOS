@@ -1,0 +1,21 @@
+[package]
+name = "{{LIB_NAME}}"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+ove = { path = "{{OVE_DIR}}/bindings/rust/ove", features = ["alloc"] }
+ove-allocator = { path = "{{OVE_DIR}}/bindings/rust/ove-allocator", default-features = false }
+
+[features]
+default = []
+std = ["ove/std", "ove-allocator/no_install"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

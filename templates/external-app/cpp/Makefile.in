@@ -1,0 +1,3 @@
+APP_DIR := $(CURDIR)
+OVE_DIR ?= {{OVE_DIR}}
+include $(OVE_DIR)/config/make/ove_app.mk

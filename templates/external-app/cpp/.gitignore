@@ -1,0 +1,9 @@
+output/
+.config
+.config.old
+*.o
+*.a
+*.elf
+*.bin
+*.hex
+*.map

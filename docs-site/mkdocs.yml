@@ -18,6 +18,16 @@ markdown_extensions:
   # external WASM-demo links so they open in a new tab instead of
   # navigating away from the docs.
   - attr_list
+  # `md_in_html` lets Markdown be parsed inside HTML blocks — used by
+  # the homepage card grid (`<div class="grid cards" markdown>`).
+  - md_in_html
+  # `admonition` enables `!!! note / !!! tip` callout blocks used on the
+  # homepage and quickstart.
+  - admonition
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -28,11 +38,14 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started:
+    - Quickstart: getting-started/quickstart.md
     - Overview: getting-started/overview.md
     - Setup: getting-started/setup.md
+    - Doctor: getting-started/doctor.md
     - Configure: getting-started/configure.md
     - Build: getting-started/build.md
     - Run: getting-started/run.md
+    - Troubleshooting: getting-started/troubleshooting.md
   - API Reference:
     - Overview: api/index.md
     - Threads: api/threads.md
@@ -52,6 +65,20 @@ nav:
     - ML Inference: api/infer.md
     - Networking: api/net.md
     - Power Management: api/pm.md
+  - Cookbook:
+    - Overview: cookbook/index.md
+    - Periodic sensor read: cookbook/periodic-sensor.md
+    - Persist value across reboots: cookbook/persist-nvs.md
+    - UART into a worker thread: cookbook/uart-worker.md
+    - HTTPS POST: cookbook/https-post.md
+    - On-device inference: cookbook/inference.md
+    - LVGL with thread safety: cookbook/lvgl-thread-safe.md
+    - Sleep + wake on GPIO: cookbook/pm-gpio-wake.md
+    - Custom shell command: cookbook/shell-command.md
+  - Migration:
+    - From raw FreeRTOS: migration/from-freertos.md
+    - From Zephyr: migration/from-zephyr.md
+    - From bare-metal C: migration/from-bare-c.md
   - Build System:
     - CMake: build-system/cmake.md
     - Kconfig: build-system/kconfig.md
@@ -100,3 +127,21 @@ nav:
       - C++: examples/example_keyword_live/cpp.md
       - Rust: examples/example_keyword_live/rust.md
       - Zig: examples/example_keyword_live/zig.md
+    - Binding-overhead Benchmark:
+      - Overview: examples/benchmark/index.md
+      - C: examples/benchmark/c.md
+      - C++: examples/benchmark/cpp.md
+      - Rust: examples/benchmark/rust.md
+      - Zig: examples/benchmark/zig.md
+    - LVGL Benchmark:
+      - Overview: examples/lvgl_benchmark/index.md
+      - C: examples/lvgl_benchmark/c.md
+      - C++: examples/lvgl_benchmark/cpp.md
+      - Rust: examples/lvgl_benchmark/rust.md
+      - Zig: examples/lvgl_benchmark/zig.md
+    - LVGL Gallery:
+      - Overview: examples/lvgl_gallery/index.md
+      - C++: examples/lvgl_gallery/cpp.md
+      - Rust: examples/lvgl_gallery/rust.md
+      - Zig: examples/lvgl_gallery/zig.md
+  - Glossary: glossary.md

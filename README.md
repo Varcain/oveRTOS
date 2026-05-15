@@ -5,6 +5,8 @@
 
 A portable RTOS abstraction framework that provides a unified C API across **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX** (with a browser-hosted **WASM** target). Write your application once, deploy it on any supported backend with [minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/) over the native API.
 
+> **New here?** → [**Quickstart in 5 minutes**](https://varcain.github.io/oveRTOS/getting-started/quickstart/). Hit a wall? → run `make doctor` or browse the [Troubleshooting page](https://varcain.github.io/oveRTOS/getting-started/troubleshooting/). Building an app outside the tree? → [`ove app new`](https://varcain.github.io/oveRTOS/build-system/external-apps/) stamps a working skeleton.
+
 ## Key Features
 
 - **Write once, run on any RTOS** -- single API across four RTOS backends plus a WebAssembly target

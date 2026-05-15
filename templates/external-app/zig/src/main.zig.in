@@ -1,0 +1,15 @@
+const std = @import("std");
+const ove = @import("ove");
+
+fn appMain() void {
+    ove.log.info("hello from {{NAME}}", .{});
+
+    while (true) {
+        ove.thread.sleepMs(1000);
+        ove.log.info("tick", .{});
+    }
+}
+
+comptime {
+    ove.exportMain(appMain);
+}

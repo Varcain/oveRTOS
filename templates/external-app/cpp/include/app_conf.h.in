@@ -1,0 +1,4 @@
+/* App-local configuration constants. */
+#pragma once
+
+#define {{CONFIG_NAME_UPPER}}_TICK_PERIOD_MS  1000
