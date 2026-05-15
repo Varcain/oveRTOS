@@ -452,7 +452,7 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	@echo "==> Copying C++ API (Doxygen) into site..."
 	cp -r output/docs/doxygen-cpp/html docs-site/site/api/cpp
 	@echo "==> Copying rustdoc HTML into site..."
-	cp -r bindings/rust/ove/target/doc docs-site/site/api/rust
+	cp -r output/cargo/doc docs-site/site/api/rust
 	@echo "==> Copying Zig autodoc HTML into site..."
 	cp -r output/docs/zig docs-site/site/api/zig
 	@echo "==> Documentation built: docs-site/site/"
@@ -650,8 +650,17 @@ help:
 	@echo "  clean-all               - Remove all workspaces (output/)"
 	@echo "  distclean               - Full reset (output/, dl/, .venv, .config)"
 	@echo ""
+	@echo "Scaffolding:"
+	@echo "  ove app new --lang {c,cpp,rust,zig} --name <name>"
+	@echo "                          - Stamp a new external app from the bundled template"
+	@echo ""
 	@echo "CLI:"
 	@echo "  ove <command>       - Direct CLI usage (after 'make setup')"
+	@echo ""
+	@echo "New to oveRTOS?  Visit the quickstart:"
+	@echo "  https://varcain.github.io/oveRTOS/getting-started/quickstart/"
+	@echo "Hit a wall?  Run 'make doctor' or browse:"
+	@echo "  https://varcain.github.io/oveRTOS/getting-started/troubleshooting/"
 	@echo ""
 
 # Default target

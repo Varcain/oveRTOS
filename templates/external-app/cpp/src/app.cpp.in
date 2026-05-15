@@ -1,0 +1,14 @@
+#include <ove/ove.hpp>
+#include <ove/log.h>
+
+OVE_LOG_MODULE_REGISTER({{CONFIG_NAME}});
+
+void ove_main()
+{
+    OVE_LOG_INF("hello from {{NAME}}");
+
+    while (true) {
+        ove::thread::sleep_ms(1000);
+        OVE_LOG_INF("tick");
+    }
+}

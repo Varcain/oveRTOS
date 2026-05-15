@@ -25,8 +25,11 @@ _SUBCOMMANDS = [
     "defconfig", "defconfig-fragments", "menuconfig", "rtos-menuconfig",
     "savedefconfig", "download", "ensure-toolchain", "configure", "build",
     "allconfigs", "run", "flash", "test", "clean", "manifest", "doctor",
-    "board", "completion", "vscode",
+    "board", "completion", "vscode", "app",
 ]
+
+_APP_LANGS = ["c", "cpp", "rust", "zig"]
+_APP_TEMPLATES = ["hello", "lvgl", "net", "audio"]
 
 _TEST_NAMES = [
     "stub", "cpp", "rust", "zig", "freertos", "nuttx", "zephyr",
@@ -69,6 +72,17 @@ _ove_complete() {
             ;;
         board)
             COMPREPLY=( $(compgen -W "list import register sync" -- "$cur") )
+            ;;
+        app)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "new" -- "$cur") )
+            elif [[ "$prev" == "--lang" ]]; then
+                COMPREPLY=( $(compgen -W "%(app_langs)s" -- "$cur") )
+            elif [[ "$prev" == "--template" ]]; then
+                COMPREPLY=( $(compgen -W "%(app_tpls)s" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "--lang --name --template --dir --ove-dir --no-git --force" -- "$cur") )
+            fi
             ;;
         *)
             COMPREPLY=()
@@ -114,6 +128,15 @@ _ove() {
         board)
             _values 'subcommand' 'list' 'import' 'register' 'sync'
             ;;
+        app)
+            if (( CURRENT == 3 )); then
+                _values 'app subcommand' 'new'
+            else
+                _values 'app option' \
+                    '--lang' '--name' '--template' '--dir' \
+                    '--ove-dir' '--no-git' '--force'
+            fi
+            ;;
     esac
 }
 
@@ -131,6 +154,14 @@ complete -c ove -n '__fish_seen_subcommand_from clean' -l dist -d 'Full reset'
 complete -c ove -n '__fish_seen_subcommand_from manifest' -l check
 complete -c ove -n '__fish_seen_subcommand_from doctor build test' -l json
 complete -c ove -n '__fish_seen_subcommand_from board' -a 'list import register sync'
+complete -c ove -n '__fish_seen_subcommand_from app' -a 'new'
+complete -c ove -n '__fish_seen_subcommand_from app' -l lang -a '%(app_langs)s'
+complete -c ove -n '__fish_seen_subcommand_from app' -l template -a '%(app_tpls)s'
+complete -c ove -n '__fish_seen_subcommand_from app' -l name -d 'App name'
+complete -c ove -n '__fish_seen_subcommand_from app' -l dir -d 'Destination directory'
+complete -c ove -n '__fish_seen_subcommand_from app' -l ove-dir -d 'oveRTOS checkout path'
+complete -c ove -n '__fish_seen_subcommand_from app' -l no-git -d 'Skip git init'
+complete -c ove -n '__fish_seen_subcommand_from app' -l force -d 'Overwrite non-empty dir'
 """
 
 
@@ -139,6 +170,8 @@ def _emit(shell):
         sys.stdout.write(_BASH % {
             "subcmds": " ".join(_SUBCOMMANDS),
             "tests": " ".join(_TEST_NAMES),
+            "app_langs": " ".join(_APP_LANGS),
+            "app_tpls": " ".join(_APP_TEMPLATES),
         })
     elif shell == "zsh":
         sys.stdout.write(_ZSH % {
@@ -149,6 +182,8 @@ def _emit(shell):
         sys.stdout.write(_FISH % {
             "subcmds": " ".join(_SUBCOMMANDS),
             "tests": " ".join(_TEST_NAMES),
+            "app_langs": " ".join(_APP_LANGS),
+            "app_tpls": " ".join(_APP_TEMPLATES),
         })
     else:
         print(f"unknown shell: {shell} (want bash/zsh/fish)", file=sys.stderr)

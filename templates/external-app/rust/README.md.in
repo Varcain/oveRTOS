@@ -1,0 +1,42 @@
+# {{NAME}}
+
+An external oveRTOS application (Rust).
+
+## Build
+
+```bash
+make host.posix.{{CONFIG_NAME}}     # POSIX host
+make qemu.freertos.{{CONFIG_NAME}}  # QEMU + FreeRTOS
+
+make            # download, configure, build
+make run        # launch (POSIX) or boot in QEMU
+```
+
+`OVE_DIR` is set in `Makefile`. Override per invocation:
+
+```bash
+make OVE_DIR=/other/path/to/oveRTOS host.posix.{{CONFIG_NAME}} && make
+```
+
+## Layout
+
+```
+{{NAME}}/
+├── Makefile         # delegates to $(OVE_DIR)/config/make/ove_app.mk
+├── app.yaml         # manifest
+├── Cargo.toml       # Rust dependencies
+├── build.rs         # build script (oveRTOS bindings driven by its own build.rs)
+├── src/lib.rs       # entry — ove::main!(app_main)
+└── output/          # generated workspace
+```
+
+## Allocator
+
+The template links `ove-allocator` which registers a libc-malloc-backed `#[global_allocator]` on bare-metal targets. On `std` builds (POSIX), the install is suppressed via the `no_install` feature so it doesn't conflict with the std allocator.
+
+## Resources
+
+- [oveRTOS Quickstart](https://varcain.github.io/oveRTOS/getting-started/quickstart/)
+- [Basic Example (Rust)](https://varcain.github.io/oveRTOS/examples/example/rust/) — idiomatic patterns
+- [API Reference](https://varcain.github.io/oveRTOS/api/)
+- [Rust binding docs](https://varcain.github.io/oveRTOS/api/rust/ove/)

@@ -1,0 +1,53 @@
+# {{NAME}}
+
+An external oveRTOS application.
+
+## Build
+
+```bash
+make host.posix.{{CONFIG_NAME}}     # POSIX host
+make qemu.freertos.{{CONFIG_NAME}}  # QEMU + FreeRTOS
+
+make            # download, configure, build
+make run        # launch (POSIX) or boot in QEMU
+make flash      # program hardware (if board target supports it)
+```
+
+`OVE_DIR` is set in `Makefile`. Override per invocation:
+
+```bash
+make OVE_DIR=/other/path/to/oveRTOS host.posix.{{CONFIG_NAME}} && make
+```
+
+## Layout
+
+```
+{{NAME}}/
+├── Makefile       # 3-line entry; includes $(OVE_DIR)/config/make/ove_app.mk
+├── app.yaml       # manifest (language, sources, required CONFIG_OVE_*)
+├── include/
+│   └── app_conf.h # app-local tunables
+├── src/
+│   └── app.c      # ove_main() entry point
+└── output/        # generated workspace (gitignored)
+```
+
+## Adding modules
+
+Edit `app.yaml`'s `defconfig:` list. Common additions:
+
+```yaml
+defconfig:
+  - CONFIG_OVE_QUEUE=y      # message queues
+  - CONFIG_OVE_TIMER=y      # software timers
+  - CONFIG_OVE_NET=y        # sockets / TCP / UDP
+  - CONFIG_OVE_LVGL=y       # LVGL display
+  - CONFIG_OVE_NVS=y        # non-volatile storage
+```
+
+## Resources
+
+- [oveRTOS Quickstart](https://varcain.github.io/oveRTOS/getting-started/quickstart/)
+- [API Reference](https://varcain.github.io/oveRTOS/api/)
+- [Cookbook](https://varcain.github.io/oveRTOS/cookbook/) — common patterns
+- [External Apps reference](https://varcain.github.io/oveRTOS/build-system/external-apps/)

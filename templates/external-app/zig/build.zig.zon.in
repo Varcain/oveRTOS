@@ -1,0 +1,14 @@
+.{
+    .name = "{{LIB_NAME}}",
+    .version = "0.1.0",
+    .dependencies = .{
+        .ove = .{
+            .path = "{{OVE_DIR}}/bindings/zig/ove",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
