@@ -3,29 +3,38 @@
 [![tests](https://github.com/Varcain/oveRTOS/actions/workflows/ove-tests.yml/badge.svg)](https://github.com/Varcain/oveRTOS/actions/workflows/ove-tests.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Varcain/2311c373541b067eeb3db3fa9580340b/raw/overtos-coverage.json)](https://github.com/Varcain/oveRTOS/actions/workflows/coverage.yml)
 
-A portable RTOS abstraction framework that provides a unified C API across **FreeRTOS**, **Apache NuttX**, **Zephyr**, and **POSIX** (with a browser-hosted **WASM** target). Write your application once, deploy it on any supported backend with [minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/) over the native API.
+Write embedded RTOS applications in **C++**, **Rust**, or **Zig** — and run them unchanged on **FreeRTOS**, **Zephyr**, or **Apache NuttX**.
+
+First-class language bindings sit on top of a unified application API: threads, synchronisation, networking, audio, ML inference, LVGL, power management. The binding you pick decides the ergonomics; the kernel underneath is a configure-time choice with [minimal runtime overhead](https://varcain.github.io/oveRTOS/benchmarks/).
+
+A pure C API ships alongside the higher-level bindings as the substrate they share. Native POSIX and WebAssembly backends are available for development and browser-hosted demos — production targets are FreeRTOS, Zephyr, and NuttX.
 
 > **New here?** → [**Quickstart in 5 minutes**](https://varcain.github.io/oveRTOS/getting-started/quickstart/). Hit a wall? → run `make doctor` or browse the [Troubleshooting page](https://varcain.github.io/oveRTOS/getting-started/troubleshooting/). Building an app outside the tree? → [`ove app new`](https://varcain.github.io/oveRTOS/build-system/external-apps/) stamps a working skeleton.
 
 ## Key Features
 
-- **Write once, run on any RTOS** -- single API across four RTOS backends plus a WebAssembly target
-- **[Minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/)** -- compile-time backend dispatch, no function pointers or vtables; per-op wrapper cost is benchmarked across all bindings on every commit
-- **Multi-language** -- C, C++, Rust, and Zig bindings
-- **Flexible allocation** -- heap mode (`_create`/`_destroy`, gated by `OVE_HEAP_*`) or zero-heap mode (`_init`/`_deinit` with caller-supplied storage); static-allocation helpers (`OVE_*_DEFINE_STATIC`) work in both modes
-- **Rich module set** -- threads, mutexes, semaphores, queues, timers, GPIO, bus drivers (UART/SPI/I2C/I2S), audio graph engine, networking (TCP/UDP/TLS/HTTP/MQTT/HTTPD/SNTP), ML inference, filesystem, NVS, LVGL GUI, shell, logging, power management, watchdog, and more
-- **Unified configuration** -- single Kconfig-based `.config` drives all backends
-- **Desktop development** -- develop and test on POSIX, deploy to embedded hardware
+- **Modern-language application development** — C++ (RAII + typed containers), Rust (`no_std` + `alloc`), Zig (`comptime`-generic), plus the underlying C surface
+- **Cross-RTOS portability** — same source on FreeRTOS, Zephyr, and NuttX; backend chosen at configure time
+- **Application-grade modules** — sockets / TLS / HTTP / MQTT / HTTPD / SNTP, audio graph engine, TFLite Micro inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, bus drivers (UART/SPI/I2C/I2S)
+- **Flexible allocation** — heap mode (`_create` / `_destroy`, gated by `OVE_HEAP_*`) or zero-heap mode (`_init` / `_deinit` with caller-supplied storage); the static-allocation helpers (`OVE_*_DEFINE_STATIC`) work in both modes
+- **[Minimal abstraction overhead](https://varcain.github.io/oveRTOS/benchmarks/)** — compile-time backend dispatch, no vtables, no indirect calls; per-op wrapper cost is benchmarked across every binding on every commit
+- **Unified configuration** — a single Kconfig-based `.config` drives the binding, the kernel, and every module
+- **POSIX + WebAssembly development backends** — develop on Linux/macOS without hardware, demo in a browser
 
-## Supported Backends
+## Supported deployment targets
 
-| Backend | Target | Toolchain |
-|---------|--------|-----------|
+| RTOS | Boards | Toolchain |
+|------|--------|-----------|
 | FreeRTOS | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
-| NuttX | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
+| Apache NuttX | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
 | Zephyr | STM32F746G-DISCO, QEMU Cortex-M7 | ARM GCC |
-| POSIX | Linux / macOS host | Host GCC/Clang |
-| WASM | Browser (WebAssembly) | Emscripten |
+
+## Development & demo backends
+
+| Backend | Use | Toolchain |
+|---------|-----|-----------|
+| POSIX | Develop and test on Linux / macOS without hardware | Host GCC/Clang |
+| WebAssembly | Same app rendered in a browser for live demos | Emscripten |
 
 ## Quick Start
 
@@ -40,13 +49,21 @@ A portable RTOS abstraction framework that provides a unified C API across **Fre
 
 ```bash
 # 1. Load a configuration (dot-syntax: <board>.<rtos>.<app>)
-make host.posix.example_c
+make host.posix.example_cpp
 
 # 2. Build (downloads RTOS sources, configures, and compiles)
 make
 
 # 3. Run
 make run
+```
+
+The same app in another language:
+
+```bash
+make host.posix.example_rust      # Rust
+make host.posix.example_zig       # Zig
+make host.posix.example_c         # plain C (the binding substrate)
 ```
 
 ### Interactive Configuration
@@ -83,64 +100,11 @@ Run `make help` to see all available configurations and targets.
  └────────┴────────┴─────────┴──────────────────┘
 ```
 
-The backend is selected at configure time via Kconfig. All API calls resolve directly to backend-specific implementations at compile time.
+The backend is selected at configure time via Kconfig. All API calls resolve directly to backend-specific implementations at compile time — there is no runtime dispatch.
 
 ## API Overview
 
-The same producer + worker shape expressed in every supported binding,
-in both heap mode (kernel objects from the system heap, freed via
-`_destroy`/Drop/`deinit`) and zero-heap mode (every byte from BSS, no
-allocator linked in).  All four bindings compile down to the same FFI
-symbols — per-call wrapper overhead is benchmarked across the matrix at
-[varcain.github.io/oveRTOS/benchmarks](https://varcain.github.io/oveRTOS/benchmarks/).
-
-### C
-
-**Heap** (`CONFIG_OVE_ZERO_HEAP` not set):
-
-```c
-#include "ove/ove.h"
-
-static void worker_fn(void *arg) { /* ... */ }
-
-void ove_main(void)
-{
-    ove_queue_t  queue;
-    ove_mutex_t  mutex;
-    ove_thread_t worker;
-
-    ove_queue_create(&queue, sizeof(uint32_t), 8);
-    ove_mutex_create(&mutex);
-    ove_thread_create(&worker, "worker", worker_fn, NULL,
-                      OVE_PRIO_NORMAL, 4096);
-
-    ove_run();
-    /* ove_thread_destroy(worker); ove_mutex_destroy(mutex);
-     * ove_queue_destroy(queue);  -- on shutdown */
-}
-```
-
-**Zero-heap** (`CONFIG_OVE_ZERO_HEAP=y`) — file-scope statics, allocator
-never linked:
-
-```c
-#include "ove/ove.h"
-
-static void worker_fn(void *arg) { /* ... */ }
-
-OVE_QUEUE_DEFINE_STATIC(queue, sizeof(uint32_t), 8);
-OVE_MUTEX_DEFINE_STATIC(mutex);
-OVE_THREAD_DEFINE_STATIC(worker, 4096, worker_fn, NULL,
-                         OVE_PRIO_NORMAL, "worker");
-
-void ove_main(void)
-{
-    /* DEFINE_STATIC macros emit __attribute__((constructor)) hooks
-     * that call ove_*_init() with caller-owned BSS storage before
-     * ove_main() runs.  No _create() symbols in this build. */
-    ove_run();
-}
-```
+The same producer + worker shape expressed in each binding, in both heap mode (kernel objects from the system heap, freed via `Drop`/`deinit`/`_destroy`) and zero-heap mode (every byte from BSS, no allocator linked in). The recommended path for application code is one of the higher-level bindings (C++, Rust, Zig); the C surface below them is the shared substrate that all three compile down to. Every binding lowers to the same FFI symbols — per-call wrapper overhead is benchmarked across the matrix at [varcain.github.io/oveRTOS/benchmarks](https://varcain.github.io/oveRTOS/benchmarks/).
 
 ### C++ (RAII, type-safe containers)
 
@@ -271,6 +235,56 @@ fn appMain() void {
 }
 
 comptime { ove.exportMain(appMain); }
+```
+
+### C (the binding substrate)
+
+The C surface is what every higher-level binding lowers to. Use it directly when you want the smallest possible footprint, or when you're linking oveRTOS into existing C firmware.
+
+**Heap** (`CONFIG_OVE_ZERO_HEAP` not set):
+
+```c
+#include "ove/ove.h"
+
+static void worker_fn(void *arg) { /* ... */ }
+
+void ove_main(void)
+{
+    ove_queue_t  queue;
+    ove_mutex_t  mutex;
+    ove_thread_t worker;
+
+    ove_queue_create(&queue, sizeof(uint32_t), 8);
+    ove_mutex_create(&mutex);
+    ove_thread_create(&worker, "worker", worker_fn, NULL,
+                      OVE_PRIO_NORMAL, 4096);
+
+    ove_run();
+    /* ove_thread_destroy(worker); ove_mutex_destroy(mutex);
+     * ove_queue_destroy(queue);  -- on shutdown */
+}
+```
+
+**Zero-heap** (`CONFIG_OVE_ZERO_HEAP=y`) — file-scope statics, allocator
+never linked:
+
+```c
+#include "ove/ove.h"
+
+static void worker_fn(void *arg) { /* ... */ }
+
+OVE_QUEUE_DEFINE_STATIC(queue, sizeof(uint32_t), 8);
+OVE_MUTEX_DEFINE_STATIC(mutex);
+OVE_THREAD_DEFINE_STATIC(worker, 4096, worker_fn, NULL,
+                         OVE_PRIO_NORMAL, "worker");
+
+void ove_main(void)
+{
+    /* DEFINE_STATIC macros emit __attribute__((constructor)) hooks
+     * that call ove_*_init() with caller-owned BSS storage before
+     * ove_main() runs.  No _create() symbols in this build. */
+    ove_run();
+}
 ```
 
 The two modes are wired through the same FFI:

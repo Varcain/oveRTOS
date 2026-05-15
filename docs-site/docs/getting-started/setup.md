@@ -1,35 +1,67 @@
 # Setup
 
-## Prerequisites
+Install the tools you need for the binding(s) and deployment target(s) you'll work with. Most setup is lazy — the build system fetches the ARM toolchain, Renode, and Zig automatically when first needed. You only have to install host-level prerequisites up front.
 
-Install the following tools before building oveRTOS.
-
-### Required for all targets
+## Always required
 
 | Tool | Minimum version | Notes |
 |---|---|---|
-| Python 3 | 3.8+ | Required for the `ove` CLI and Kconfig |
+| Python 3 | 3.9+ | Required for the `ove` CLI and Kconfig |
 | python3-venv | — | Required to create the `.venv` environment |
 | CMake | 3.20+ | Used by Zephyr and NuttX build systems |
 | Git | — | Source checkout and RTOS source downloads |
+| A native C/C++ compiler | gcc or clang | Builds the POSIX backend, the C and C++ bindings, and the framework's own tooling |
 
 On Debian/Ubuntu:
 
 ```bash
-sudo apt install python3 python3-venv cmake git
+sudo apt install python3 python3-venv cmake git build-essential
 ```
 
 On Fedora:
 
 ```bash
-sudo dnf install python3 cmake git
+sudo dnf install python3 cmake git gcc gcc-c++
 ```
 
-### ARM cross-compiler (for embedded targets)
+## Language toolchains
 
-Required when building for `stm32f746g-discovery` or `qemu-mps2-an500`. The `ove` CLI can download the official ARM GNU toolchain automatically (default), or you can point it at a system-installed or custom toolchain via Kconfig (`Toolchain` menu).
+oveRTOS ships first-class bindings for four languages. Install the toolchain for the binding(s) you're authoring in. The build system invokes each lazily — you can work in C++ without installing Rust or Zig.
 
-To install a system toolchain manually:
+### C / C++
+
+Already covered above (gcc or clang). No further setup.
+
+### Rust (≥ 1.85)
+
+Required when authoring in Rust. Install via rustup:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add thumbv7em-none-eabihf   # for ARM embedded targets
+```
+
+The pinned toolchain version is recorded in `rust-toolchain.toml`; rustup picks it up automatically on first invocation.
+
+### Zig (≥ 0.15.2)
+
+Required when authoring in Zig. Two options:
+
+- **Let the build system fetch it** (recommended for first-time setup):
+
+  ```bash
+  make ensure-toolchain-zig
+  ```
+
+  The pinned Zig lands under `output/toolchains/zig-*/` and the build system uses it transparently.
+
+- **Install system-wide** — download from [ziglang.org/download](https://ziglang.org/download/) and add to PATH.
+
+## Deployment-target toolchains
+
+For embedded deployment targets (`stm32f746g-discovery`, `qemu-mps2-an500`) you need a cross-compiler. The default automatic download fetches `arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi` — no manual install needed.
+
+To install a system toolchain instead:
 
 ```bash
 # Debian/Ubuntu
@@ -39,11 +71,11 @@ sudo apt install gcc-arm-none-eabi
 # https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
 ```
 
-The default automatic download fetches `arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi`.
+Then point the build system at it via Kconfig (`Toolchain` menu).
 
 ### QEMU (for emulated targets)
 
-Required when the selected board is `qemu-mps2-an500`.
+Required when the selected board is `qemu-mps2-an500`:
 
 ```bash
 # Debian/Ubuntu
@@ -53,24 +85,17 @@ sudo apt install qemu-system-arm
 sudo dnf install qemu-system-arm
 ```
 
-### Rust (for Rust bindings)
+Not needed for POSIX or hardware-flash workflows.
 
-Required only when `CONFIG_OVE_APP_LANG_RUST=y`. Install via rustup:
+### OpenOCD (for hardware flashing)
+
+Required only to flash the STM32F746G-Discovery (`make flash`):
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add thumbv7em-none-eabihf   # for ARM targets
+sudo apt install openocd
 ```
 
-Minimum supported Rust version: **1.85**.
-
-### Zig (for Zig bindings)
-
-Required only when `CONFIG_OVE_APP_LANG_ZIG=y`. Download from [ziglang.org/download](https://ziglang.org/download/).
-
-Minimum supported Zig version: **0.15.2**.
-
-## Setting Up the ove CLI
+## Setting up the ove CLI
 
 The build system runs through the `ove` CLI tool, which is installed into a local Python virtual environment. Run:
 
@@ -104,3 +129,13 @@ make setup
 ```
 
 The `setup` target removes the existing stamp file and recreates the environment from scratch.
+
+## Verify your environment
+
+After setup, run:
+
+```bash
+make doctor
+```
+
+It probes every required and optional tool and reports green / yellow / red. See [Doctor](doctor.md) for what each check means.

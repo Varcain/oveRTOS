@@ -74,7 +74,7 @@ button.style()
     .text_color(0xffffff);
 ```
 
-Each setter returns the builder by reference, so chains are zero-overhead — the compiler inlines into a sequence of `lv_obj_set_style_*` calls.
+Each setter returns the builder by reference and the compiler inlines the chain into a flat sequence of `lv_obj_set_style_*` calls — no per-link overhead beyond what the underlying LVGL setter would cost on its own.
 
 ## Image assets
 

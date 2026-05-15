@@ -49,7 +49,7 @@
  * Application code that prefers fine-grained includes may include individual
  * subsystem headers directly instead.
  *
- * @section c_discipline C-binding zero-overhead discipline
+ * @section c_discipline C-binding minimal-overhead discipline
  *
  * The C API IS the substrate every higher-level binding (Rust / Zig /
  * C++) wraps over.  The discipline ported back from the higher

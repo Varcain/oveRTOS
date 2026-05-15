@@ -1,10 +1,12 @@
 # Migrating from Zephyr
 
-If your existing code calls Zephyr's `k_*` APIs directly (and you want to keep that code portable to FreeRTOS / NuttX / POSIX), this page is the translation table.
+If your existing code calls Zephyr's `k_*` APIs directly (and you want to keep that code portable to FreeRTOS / NuttX), this page is the translation table.
+
+The tables below are written against the **C surface** of oveRTOS to mirror Zephyr's C-first idiom. The same operations are available with idiomatic ergonomics through the [C++](../examples/example/cpp.md), [Rust](../examples/example/rust.md), and [Zig](../examples/example/zig.md) bindings, which is the recommended path for new code — the binding choice and the kernel choice are independent. The migration is a one-time API translation; if your existing code is Zephyr-on-C, picking a higher-level binding can happen as a follow-up step.
 
 Two notes up front:
 
-1. **You can run oveRTOS on the Zephyr backend** — `CONFIG_OVE_RTOS_ZEPHYR=y` keeps the Zephyr kernel underneath but presents the oveRTOS API on top. The migration is a one-time API translation; the same binary still runs on Zephyr.
+1. **You can run oveRTOS on the Zephyr backend** — `CONFIG_OVE_RTOS_ZEPHYR=y` keeps the Zephyr kernel underneath but presents the oveRTOS API on top. So the binary still runs on the Zephyr scheduler you know.
 2. **Zephyr's threading model uses negative priorities for cooperative tasks**. oveRTOS abstracts this with named priorities (`OVE_PRIO_*`); the mapping happens inside the backend.
 
 ## Threads

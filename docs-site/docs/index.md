@@ -1,6 +1,6 @@
 # oveRTOS Documentation
 
-oveRTOS is an embedded RTOS framework that provides a unified build system, Kconfig-based configuration, and portable API across **FreeRTOS**, **Apache NuttX**, **Zephyr RTOS**, and **POSIX** (with a browser-hosted **WASM** target). The build system downloads RTOS sources and cross-compilation toolchains, generates RTOS-native configuration files from a single `.config`, and orchestrates compilation through each backend's native build system. Applications written against the oveRTOS API compile unchanged for any supported backend: the correct implementation is selected at compile time via Kconfig preprocessor symbols, with no virtual dispatch tables and [minimal runtime overhead](benchmarks/index.md) over the native API. The core API is written in C, with first-class bindings for C++, Rust, and Zig. LVGL is integrated as the GUI toolkit, with backend-portable display and input driver support across all targets.
+oveRTOS lets you **write embedded RTOS applications in C++, Rust, or Zig** and **run them unchanged on FreeRTOS, Zephyr, or Apache NuttX**. First-class language bindings sit on top of a unified application API — threads, synchronisation, networking (sockets/TLS/HTTP/MQTT), audio graph, ML inference, LVGL, power management — and the kernel underneath is a configure-time choice with [minimal runtime overhead](benchmarks/index.md). The pure C surface that the bindings target is available directly when you want it, but the higher-level bindings are the recommended path for application code. A POSIX backend runs the same source as a native Linux/macOS process; a WebAssembly backend renders it in a browser for live demos.
 
 !!! tip "First time here?"
     Run through the [**Quickstart**](getting-started/quickstart.md) — three commands take you from a fresh clone to a running app in five minutes. No hardware required.
@@ -13,7 +13,7 @@ oveRTOS is an embedded RTOS framework that provides a unified build system, Kcon
 
     ---
 
-    `git clone` → `make setup` → `make doctor` → `make host.posix.example_c` → `make run`. The fastest path to a running oveRTOS app on your machine.
+    `git clone` → `make setup` → `make doctor` → `make host.posix.example_cpp` → `make run`. The fastest path to a running oveRTOS app on your machine — pick C++, Rust, Zig, or C.
 
     [Start here →](getting-started/quickstart.md)
 
@@ -61,23 +61,26 @@ oveRTOS is an embedded RTOS framework that provides a unified build system, Kcon
 
 ## Key features
 
-- **Integrated build system** — downloads RTOS sources and toolchains, generates RTOS-native configuration, orchestrates cross-compilation via each backend's native build tools
-- **35+ API modules** — threads, sync, queues, timers, event groups, work queues, streams, audio, filesystem, GPIO, LEDs, console, logging, shell, NVS, watchdog, networking (sockets, TLS, HTTP, MQTT, HTTPD, SNTP), power management, bus drivers (UART, SPI, I2C, I2S), ML inference, LVGL
-- **4 RTOS backends** — FreeRTOS (via STM32CubeF7), Apache NuttX, Zephyr, POSIX with browser-based sim dashboard for native host development
-- **4 language bindings** — C, C++ (RAII), Rust (`no_std` + `alloc` feature), Zig (`comptime`-safe)
-- **Zero abstraction overhead** — compile-time backend dispatch via preprocessor; no vtables, no indirect calls
-- **Two heap modes** — heap mode with `_create()` / `_destroy()`, and zero-heap mode using caller-supplied static storage via `_init()` / `_deinit()`
-- **Kconfig-based configuration** — `make menuconfig` selects backend, board, and modules from a single `.config`
+- **Modern-language application development** — C++ (RAII + typed containers), Rust (`no_std` + `alloc`), Zig (`comptime`-generic); the underlying C surface is available when you need it
+- **Cross-RTOS portability** — same source on **FreeRTOS**, **Zephyr**, and **Apache NuttX**; backend chosen at configure time, no runtime indirection
+- **Application-grade modules** — sockets / TLS / HTTP / MQTT / HTTPD / SNTP, audio graph engine, TFLite Micro inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, bus drivers
+- **POSIX + WebAssembly development backends** — develop on Linux/macOS without hardware, demo in a browser
+- **Two heap modes** — heap mode (`_create` / `_destroy`) and zero-heap mode (caller-supplied static storage via `_init` / `_deinit` or `OVE_*_DEFINE_STATIC`); both modes share the same source on every binding
+- **Minimal abstraction overhead** — compile-time backend dispatch, no vtables, no indirect calls; per-binding wrapper cost is [measured on every commit](benchmarks/index.md)
+- **Unified Kconfig** — `make menuconfig` selects binding, kernel, board, and modules from a single `.config`
 
-## Module umbrella
+## Pick your binding
 
-Include every module at once with:
+Start with whichever fits your project — every binding compiles down to the same FFI symbols, with near-native overhead.
 
-```c
-#include <ove/ove.h>
-```
+| Binding | Idiomatic style | When to pick |
+|---|---|---|
+| **C++** | RAII wrappers (`ove::Thread<N>`, `ove::Queue<T,N>`, `ove::Mutex`), typed containers, fluent LVGL builder | Existing C++ codebase, or you want destructor-driven cleanup with minimal ceremony |
+| **Rust** | `no_std` crate, errors-as-values (`Result<T, Error>`), optional `alloc` feature for `Vec`/`Arc`, safe wrappers | Memory-safety guarantees matter; coming from server-side Rust |
+| **Zig** | `comptime`-generic wrappers, `defer` for cleanup, `@hasDecl` feature gating | You want C-level visibility into what compiles, with stronger type safety |
+| **C** | Direct `<ove/ove.h>`, `_create()` / `_destroy()` or `OVE_*_DEFINE_STATIC()` | The substrate — pick this for the smallest footprint, or to extend existing C firmware |
 
-The complete module list with descriptions lives in the [API Reference Overview](api/index.md).
+The same producer-consumer example exists in every binding under [`apps/{c,cpp,rust,zig}/`](https://github.com/Varcain/oveRTOS/tree/main/apps), and each has its own [walkthrough page](examples/example/index.md).
 
 ## Live demos
 

@@ -1,8 +1,16 @@
 # Architecture Overview
 
-## What oveRTOS Does
+## What oveRTOS Is
 
-oveRTOS is an embedded RTOS framework with three main parts: a build system that manages RTOS sources, toolchains, and configuration; a portable API layer that maps application calls to the selected backend at compile time; and language bindings that expose the API in C++, Rust, and Zig alongside the core C interface. The build system downloads RTOS kernel sources, acquires cross-compilation toolchains, and translates a single Kconfig-based `.config` into the native configuration format of each RTOS. The API layer resolves every public call directly to the backend implementation at compile time — there are no virtual functions, no function pointer tables, and no branch overhead at runtime. LVGL is integrated as the GUI toolkit, with display and input drivers provided for each backend.
+oveRTOS is an application framework for writing embedded RTOS firmware in **C++**, **Rust**, or **Zig** and deploying it on **FreeRTOS**, **Zephyr**, or **Apache NuttX** without source changes. The application-facing surface is a set of typed bindings — one per supported language — over a shared C API that resolves to the selected kernel's native calls at compile time. The kernel is a configure-time choice; the binding is a project-level choice; nothing about either decision incurs runtime overhead.
+
+Three pieces make up the framework:
+
+- **Language bindings** — `ove::*` (C++), the `ove` Rust crate, and the `ove` Zig module. These are where application code lives. The underlying C API (`<ove/ove.h>`) is the substrate the bindings target and is usable directly when needed.
+- **Application API** — threads, synchronisation, queues, timers, event groups, work queues, audio graph engine, networking stack (sockets / TLS / HTTP / MQTT / HTTPD / SNTP), ML inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, bus drivers. Every module is portable across every supported kernel.
+- **Build system** — downloads RTOS kernel sources and toolchains, generates RTOS-native configuration (`FreeRTOSConfig.h`, Zephyr `prj.conf`, NuttX defconfig) from a single Kconfig-driven `.config`, and orchestrates cross-compilation through each backend's native build system.
+
+LVGL is integrated as the GUI toolkit; display and input drivers are wired per kernel. A POSIX backend lets you develop and test on Linux/macOS without hardware; a WebAssembly backend renders the same app in a browser.
 
 ## Layer Diagram
 
@@ -56,7 +64,7 @@ RTOS source URLs, versions, and download methods are configurable via Kconfig (`
 
 The active backend is selected by a single `CONFIG_OVE_RTOS_*` symbol written into `ove_config.h` by Kconfig. Each backend directory provides its own implementation files for every oveRTOS module. The C preprocessor picks the right source tree at build time — there is no runtime branch on the backend identity.
 
-Because the choice is entirely preprocessor-driven, the compiler sees exactly one implementation per function and inlines or optimises it as it would any other C code. The abstraction costs zero cycles at runtime.
+Because the choice is entirely preprocessor-driven, the compiler sees exactly one implementation per function and inlines or optimises it as it would any other C code. The abstraction adds minimal overhead at runtime — the compiler sees the same code it would generate against the backend directly, plus a handful of inlined wrapper functions.
 
 ## Heap Mode vs Zero-Heap Mode
 

@@ -189,7 +189,7 @@ base op is then 2.5–3× smaller, so the same fixed adapter shows as a
 larger percentage.  The wrappers haven't gotten cheaper between
 configurations; the comparison floor moved.
 
-Many operations approach zero overhead (`mutex_lock_unlock`,
+Many operations measure at near-zero overhead (`mutex_lock_unlock`,
 `sem_take_give`, `thread/yield`, `recursive_mutex_lock_unlock` —
 wrappers are direct FFI passthroughs and inline cleanly under `-O2`).
 Others carry a measurable binding-side cost.  Rust's `Result<T, E>`
