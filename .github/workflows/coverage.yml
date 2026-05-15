@@ -56,9 +56,16 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev lcov
 
       - name: Install Rust
+        # rust-src is required by rust-toolchain.toml and must be installed
+        # up-front via this action.  If it isn't, rustup tries to add it on
+        # the fly when `cargo build` first runs and conflicts with the
+        # GitHub runner's pre-staged Rust install
+        # (lib/rustlib/src/rust/library/Cargo.lock already exists), aborting
+        # the whole job.  Match the components surface used by the
+        # test-rust job in ove-tests.yml.
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: llvm-tools-preview
+          components: llvm-tools-preview, rust-src
 
       - name: Run coverage
         run: make test-rust-coverage
