@@ -1,6 +1,6 @@
 site_name: oveRTOS Documentation
 site_url: https://varcain.github.io/oveRTOS/
-site_description: RTOS framework — unified build system, configuration, and API for FreeRTOS, NuttX, Zephyr, and POSIX
+site_description: Write embedded RTOS applications in C++, Rust, or Zig — and run them unchanged on FreeRTOS, Zephyr, or Apache NuttX.
 theme:
   name: material
   features:

@@ -4,6 +4,8 @@ You have an existing bare-metal firmware (a `while(1)` superloop, optional ISRs,
 
 Good news: bare-metal code generally ports well. The hard parts are *shared mutable state* (which the superloop hid by serialising everything) and *peripheral ownership* (which becomes explicit once threads exist).
 
+The examples below stay in C so existing bare-metal sources can be retrofitted in place. Once the basic port is working, you can move new code to one of the higher-level bindings — [C++](../examples/example/cpp.md), [Rust](../examples/example/rust.md), or [Zig](../examples/example/zig.md) — without changing the kernel underneath; the application API and the FFI layout stay the same.
+
 ## The minimum port
 
 A working superloop usually has this shape:

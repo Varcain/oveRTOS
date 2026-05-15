@@ -1,11 +1,13 @@
 # Migrating from raw FreeRTOS
 
-If you're coming from an existing FreeRTOS application (one that calls `xTaskCreate`, `xQueueSend`, etc. directly), this page is the translation table from FreeRTOS-native APIs to oveRTOS.
+If you're coming from an existing FreeRTOS application (one that calls `xTaskCreate`, `xQueueSend`, etc. directly), this page is the translation table from FreeRTOS-native APIs to the oveRTOS application API.
+
+The tables below are written against the **C surface** because that's the closest analogue to FreeRTOS. The same operations are also available — with idiomatic ergonomics — through the [C++](../examples/example/cpp.md), [Rust](../examples/example/rust.md), and [Zig](../examples/example/zig.md) bindings, and that is the recommended path for new code. Picking a higher-level binding is a per-project decision; the kernel choice (FreeRTOS, Zephyr, NuttX) is independent.
 
 Most concepts map one-to-one. The two real differences:
 
 1. **Allocation model** — FreeRTOS has heap-and-static at the API surface (`xTaskCreate` vs `xTaskCreateStatic`); oveRTOS has heap-and-static at the *build configuration* level (`_create()` vs `OVE_*_DEFINE_STATIC()` driven by `CONFIG_OVE_ZERO_HEAP`).
-2. **Error reporting** — FreeRTOS returns `pdPASS` / `pdFAIL` / typed values; oveRTOS returns a uniform `OVE_OK` / negative-on-error pattern across every module.
+2. **Error reporting** — FreeRTOS returns `pdPASS` / `pdFAIL` / typed values; oveRTOS returns a uniform `OVE_OK` / negative-on-error pattern across every module. The C++ binding wraps this in exceptions-as-values; Rust returns `Result<T, Error>`; Zig returns `Error!T`.
 
 ## Threads (tasks)
 

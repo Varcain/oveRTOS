@@ -107,7 +107,7 @@ not wrapper-layer overhead**:
   static-task creation (no extra heap blocks) and task-notification
   join via a Dekker-style handshake (no separate semaphore object).
   Closing this further requires a thread-pool API (different
-  ownership semantics) and is out of scope for the zero-overhead
+  ownership semantics) and is out of scope for the minimal-overhead
   claim, which is about per-call cost.
 
 - **Condvar signal+wait ≈ +14 µs (worst-case timing).**

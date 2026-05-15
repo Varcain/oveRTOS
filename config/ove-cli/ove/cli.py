@@ -16,7 +16,10 @@ import sys
 def main():
     parser = argparse.ArgumentParser(
         prog="ove",
-        description="oveRTOS RTOS Abstraction Framework — Build CLI",
+        description=(
+            "oveRTOS — write embedded RTOS applications in C++, Rust, "
+            "Zig, or C; deploy on FreeRTOS, Zephyr, or Apache NuttX."
+        ),
     )
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Enable debug logging")
