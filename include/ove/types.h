@@ -82,6 +82,15 @@
  */
 #define OVE_ERR_WOULD_BLOCK (-18)
 
+/** @brief End of file / directory iterator exhausted. */
+#define OVE_ERR_EOF (-19)
+
+/** @brief Argument or state is invalid for this operation. */
+#define OVE_ERR_INVAL (-20)
+
+/** @brief Requested key / entry / resource was not found. */
+#define OVE_ERR_NOT_FOUND (-21)
+
 /**
  * @brief Timeout value that means "block indefinitely".
  *
@@ -128,6 +137,9 @@ OVE_STATIC_ASSERT(OVE_ERR_BUS_BUSY == -15, "OVE_ERR_BUS_BUSY drifted");
 OVE_STATIC_ASSERT(OVE_ERR_BUS_ERROR == -16, "OVE_ERR_BUS_ERROR drifted");
 OVE_STATIC_ASSERT(OVE_ERR_QUEUE_EMPTY == -17, "OVE_ERR_QUEUE_EMPTY drifted");
 OVE_STATIC_ASSERT(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
+OVE_STATIC_ASSERT(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
+OVE_STATIC_ASSERT(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
+OVE_STATIC_ASSERT(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
 
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */
 typedef struct ove_thread *ove_thread_t;
