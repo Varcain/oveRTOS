@@ -117,7 +117,7 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
-				return OVE_ERR_TIMEOUT;
+				return (timeout_ms == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 			}
 		}
 	}
