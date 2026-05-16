@@ -106,7 +106,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 
 	ret = xQueueReceive(q->queue, buf, ticks);
 	if (ret != pdPASS) {
-		return OVE_ERR_TIMEOUT;
+		return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }
@@ -136,7 +136,7 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	portYIELD_FROM_ISR(yield_required);
 
 	if (ret != pdPASS) {
-		return OVE_ERR_TIMEOUT;
+		return OVE_ERR_QUEUE_EMPTY;
 	}
 	return OVE_OK;
 }

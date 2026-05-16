@@ -153,7 +153,8 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms);
  *                         is empty.  Pass @c OVE_WAIT_FOREVER to block
  *                         indefinitely.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue remained empty
- *         for the entire wait period, or another negative error code.
+ *         for the entire wait period, @c OVE_ERR_QUEUE_EMPTY if the queue is
+ *         empty and the timeout is zero, or another negative error code.
  *
  * @see ove_queue_send, ove_queue_receive_from_isr
  */
@@ -187,8 +188,8 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data);
  * @param[in]  q    Queue handle.
  * @param[out] buf  Buffer to copy the received item into.  Must be at
  *                  least @p item_size bytes.
- * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue is empty, or
- *         another negative error code.
+ * @return OVE_OK on success, @c OVE_ERR_QUEUE_EMPTY if the queue is empty,
+ *         or another negative error code.
  *
  * @see ove_queue_receive
  */

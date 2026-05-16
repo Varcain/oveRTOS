@@ -42,6 +42,10 @@ pub const Error = error{
     BusBusy,
     /// Bus peripheral: generic bus error.
     BusError,
+    /// The queue was empty and no item could be received.
+    QueueEmpty,
+    /// A non-blocking operation would have had to block.
+    WouldBlock,
     /// An unrecognized error code was returned by the C layer.
     Unknown,
 };
@@ -67,6 +71,8 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_BUS_NACK => Error.BusNack,
         c.OVE_ERR_BUS_BUSY => Error.BusBusy,
         c.OVE_ERR_BUS_ERROR => Error.BusError,
+        c.OVE_ERR_QUEUE_EMPTY => Error.QueueEmpty,
+        c.OVE_ERR_WOULD_BLOCK => Error.WouldBlock,
         else => Error.Unknown,
     };
 }
@@ -110,4 +116,6 @@ comptime {
     std.debug.assert(c.OVE_ERR_BUS_NACK == -14);
     std.debug.assert(c.OVE_ERR_BUS_BUSY == -15);
     std.debug.assert(c.OVE_ERR_BUS_ERROR == -16);
+    std.debug.assert(c.OVE_ERR_QUEUE_EMPTY == -17);
+    std.debug.assert(c.OVE_ERR_WOULD_BLOCK == -18);
 }

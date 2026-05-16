@@ -146,6 +146,34 @@ static void test_queue_receive_empty_times_out(void **state)
 	ove_test_queue_destroy(q);
 }
 
+/* P0-2: distinguishes "queue empty, no wait" from "waited and timed out". */
+static void test_queue_receive_empty_zero_timeout_returns_empty(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
+
+	int val;
+	int rc = ove_queue_receive(q, &val, 0);
+	assert_int_equal(rc, OVE_ERR_QUEUE_EMPTY);
+
+	ove_test_queue_destroy(q);
+}
+
+/* P0-2: ISR-variant empty case must report QUEUE_EMPTY (was TIMEOUT). */
+static void test_queue_receive_from_isr_empty_returns_empty(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
+
+	int val;
+	int rc = ove_queue_receive_from_isr(q, &val);
+	assert_int_equal(rc, OVE_ERR_QUEUE_EMPTY);
+
+	ove_test_queue_destroy(q);
+}
+
 static void test_queue_send_from_isr(void **state)
 {
 	(void)state;
@@ -317,6 +345,10 @@ int test_queue_run(void)
 		cmocka_unit_test_setup(test_queue_send_full_zero_timeout_returns_full,
 				       queue_setup),
 		cmocka_unit_test_setup(test_queue_receive_empty_times_out, queue_setup),
+		cmocka_unit_test_setup(test_queue_receive_empty_zero_timeout_returns_empty,
+				       queue_setup),
+		cmocka_unit_test_setup(test_queue_receive_from_isr_empty_returns_empty,
+				       queue_setup),
 		cmocka_unit_test_setup(test_queue_send_from_isr, queue_setup),
 		cmocka_unit_test_setup(test_queue_receive_from_isr, queue_setup),
 		cmocka_unit_test_setup(test_queue_producer_consumer, queue_setup),

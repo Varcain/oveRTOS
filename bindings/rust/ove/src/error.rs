@@ -45,6 +45,10 @@ pub enum Error {
     BusBusy,
     /// Bus peripheral: generic bus error (`OVE_ERR_BUS_ERROR`).
     BusError,
+    /// The queue was empty and no item could be received (`OVE_ERR_QUEUE_EMPTY`).
+    QueueEmpty,
+    /// A non-blocking operation would have had to block (`OVE_ERR_WOULD_BLOCK`).
+    WouldBlock,
     /// An error code not covered by the above variants; the raw code is preserved.
     Unknown(i32),
 }
@@ -79,6 +83,8 @@ impl Error {
             -14 => Err(Error::BusNack),
             -15 => Err(Error::BusBusy),
             -16 => Err(Error::BusError),
+            -17 => Err(Error::QueueEmpty),
+            -18 => Err(Error::WouldBlock),
             other => Err(Error::Unknown(other)),
         }
     }
@@ -103,6 +109,8 @@ impl Error {
             Error::BusNack => -14,
             Error::BusBusy => -15,
             Error::BusError => -16,
+            Error::QueueEmpty => -17,
+            Error::WouldBlock => -18,
             Error::Unknown(c) => c,
         }
     }
@@ -151,6 +159,8 @@ const fn _assert_codes_match() {
     assert!(bindings::OVE_ERR_BUS_NACK == -14);
     assert!(bindings::OVE_ERR_BUS_BUSY == -15);
     assert!(bindings::OVE_ERR_BUS_ERROR == -16);
+    assert!(bindings::OVE_ERR_QUEUE_EMPTY == -17);
+    assert!(bindings::OVE_ERR_WOULD_BLOCK == -18);
 }
 
 #[cfg(not(docsrs))]
@@ -176,6 +186,8 @@ impl core::fmt::Display for Error {
             Error::BusNack => write!(f, "bus NACK"),
             Error::BusBusy => write!(f, "bus busy"),
             Error::BusError => write!(f, "bus error"),
+            Error::QueueEmpty => write!(f, "queue empty"),
+            Error::WouldBlock => write!(f, "would block"),
             Error::Unknown(c) => write!(f, "unknown error ({c})"),
         }
     }
@@ -202,6 +214,8 @@ mod tests {
         (-14, Error::BusNack),
         (-15, Error::BusBusy),
         (-16, Error::BusError),
+        (-17, Error::QueueEmpty),
+        (-18, Error::WouldBlock),
     ];
 
     #[test]

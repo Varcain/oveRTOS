@@ -158,7 +158,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
-				return OVE_ERR_TIMEOUT;
+				return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 			}
 		}
 	}
@@ -185,7 +185,7 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	pthread_mutex_lock(&sq->lock);
 	if (sq->count == 0) {
 		pthread_mutex_unlock(&sq->lock);
-		return OVE_ERR_TIMEOUT;
+		return OVE_ERR_QUEUE_EMPTY;
 	}
 	memcpy(buf, (char *)sq->buffer + sq->tail * sq->item_size, sq->item_size);
 	sq->tail = (sq->tail + 1) % sq->max_items;

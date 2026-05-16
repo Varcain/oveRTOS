@@ -38,17 +38,21 @@ fn test_semaphore_take_empty_returns_timeout() {
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
 }
 
-fn test_queue_receive_empty_returns_timeout() {
+fn test_queue_receive_empty_returns_queue_empty() {
+    /* timeout=0 + empty queue is "would-have-blocked", not "timed out".
+     * See substrate P0-2 (OVE_ERR_QUEUE_EMPTY). */
     let q: Queue<u32, 4> = Queue::new().unwrap();
     let rc = q.receive(0);
-    assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
+    assert!(matches!(rc, Err(Error::QueueEmpty)), "got {:?}", rc);
 }
 
-fn test_queue_send_full_returns_timeout() {
+fn test_queue_send_full_returns_queue_full() {
+    /* timeout=0 + full queue is "would-have-blocked", not "timed out".
+     * See substrate P0-1 (OVE_ERR_QUEUE_FULL). */
     let q: Queue<u32, 1> = Queue::new().unwrap();
     q.send(&42, 0).unwrap();
     let rc = q.send(&43, 0);
-    assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
+    assert!(matches!(rc, Err(Error::QueueFull)), "got {:?}", rc);
     assert_eq!(q.receive(0).unwrap(), 42);
 }
 
@@ -200,8 +204,8 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_mutex_try_lock_contended_returns_timeout),
         test_entry!(test_mutex_guard_contention_returns_timeout),
         test_entry!(test_semaphore_take_empty_returns_timeout),
-        test_entry!(test_queue_receive_empty_returns_timeout),
-        test_entry!(test_queue_send_full_returns_timeout),
+        test_entry!(test_queue_receive_empty_returns_queue_empty),
+        test_entry!(test_queue_send_full_returns_queue_full),
         test_entry!(test_eventgroup_wait_bits_timeout),
         test_entry!(test_from_code_ok),
         test_entry!(test_from_code_all_variants),

@@ -132,7 +132,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 		ret = nxsem_tickwait_uninterruptible(&nq->not_empty, MSEC2TICK(timeout_ms));
 	}
 	if (ret < 0) {
-		return OVE_ERR_TIMEOUT;
+		return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
 
 	flags = enter_critical_section();
@@ -167,7 +167,7 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	struct ove_queue *nq = q;
 
 	if (nxsem_trywait(&nq->not_empty) < 0) {
-		return OVE_ERR_TIMEOUT;
+		return OVE_ERR_QUEUE_EMPTY;
 	}
 
 	/* ISR context: implicit exclusion on single-core NuttX */
