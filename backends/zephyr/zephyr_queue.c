@@ -107,7 +107,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 
 	ret = k_msgq_get(&q->msgq, buf, timeout);
 	if (ret != 0) {
-		return OVE_ERR_TIMEOUT;
+		return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }
@@ -127,7 +127,7 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	__ASSERT(q != NULL, "NULL queue handle");
 	int ret = k_msgq_get(&q->msgq, buf, K_NO_WAIT);
 	if (ret != 0) {
-		return OVE_ERR_TIMEOUT;
+		return OVE_ERR_QUEUE_EMPTY;
 	}
 	return OVE_OK;
 }

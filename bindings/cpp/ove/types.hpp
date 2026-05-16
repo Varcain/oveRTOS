@@ -84,5 +84,7 @@ static_assert(OVE_ERR_NET_CLOSED == -13, "OVE_ERR_NET_CLOSED drifted");
 static_assert(OVE_ERR_BUS_NACK == -14, "OVE_ERR_BUS_NACK drifted");
 static_assert(OVE_ERR_BUS_BUSY == -15, "OVE_ERR_BUS_BUSY drifted");
 static_assert(OVE_ERR_BUS_ERROR == -16, "OVE_ERR_BUS_ERROR drifted");
+static_assert(OVE_ERR_QUEUE_EMPTY == -17, "OVE_ERR_QUEUE_EMPTY drifted");
+static_assert(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 
 } // namespace ove

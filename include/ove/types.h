@@ -70,6 +70,18 @@
 /** @brief Framing, parity, or hardware error on a serial bus. */
 #define OVE_ERR_BUS_ERROR (-16)
 
+/** @brief Queue receive failed because the queue is empty. */
+#define OVE_ERR_QUEUE_EMPTY (-17)
+
+/**
+ * @brief Non-blocking operation would have to block.
+ *
+ * Returned by zero-timeout / ISR variants of blocking APIs when the
+ * requested resource is unavailable.  More general than @c OVE_ERR_QUEUE_FULL
+ * / @c OVE_ERR_QUEUE_EMPTY; suitable for mutex/sem/etc. non-blocking paths.
+ */
+#define OVE_ERR_WOULD_BLOCK (-18)
+
 /**
  * @brief Timeout value that means "block indefinitely".
  *
@@ -114,6 +126,8 @@ OVE_STATIC_ASSERT(OVE_ERR_NET_CLOSED == -13, "OVE_ERR_NET_CLOSED drifted");
 OVE_STATIC_ASSERT(OVE_ERR_BUS_NACK == -14, "OVE_ERR_BUS_NACK drifted");
 OVE_STATIC_ASSERT(OVE_ERR_BUS_BUSY == -15, "OVE_ERR_BUS_BUSY drifted");
 OVE_STATIC_ASSERT(OVE_ERR_BUS_ERROR == -16, "OVE_ERR_BUS_ERROR drifted");
+OVE_STATIC_ASSERT(OVE_ERR_QUEUE_EMPTY == -17, "OVE_ERR_QUEUE_EMPTY drifted");
+OVE_STATIC_ASSERT(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */
 typedef struct ove_thread *ove_thread_t;
