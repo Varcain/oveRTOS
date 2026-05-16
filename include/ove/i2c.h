@@ -204,6 +204,9 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint32_t timeout_ms);
 
 #else /* !CONFIG_OVE_I2C */
 
+/* No _init/_deinit stubs: OVE_I2C_DEFINE_STATIC is itself gated by
+ * #ifdef CONFIG_OVE_I2C in storage.h, so the link-failure path doesn't
+ * exist when the subsystem is off. */
 static inline int ove_i2c_create(ove_i2c_t *i, const struct ove_i2c_cfg *c)
 {
 	(void)i;

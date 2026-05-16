@@ -210,6 +210,9 @@ uint64_t ove_model_last_inference_us(ove_model_t model);
 #else /* !CONFIG_OVE_INFER */
 
 /** @cond INTERNAL */
+/* No _init/_deinit stubs here: OVE_MODEL_DEFINE_STATIC is itself gated by
+ * #ifdef CONFIG_OVE_INFER in storage.h, so callers can't reach _init when
+ * the subsystem is off — and ove_model_storage_t isn't declared either. */
 static inline int ove_model_create(ove_model_t *m, const struct ove_model_config *c)
 {
 	(void)m;

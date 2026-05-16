@@ -197,6 +197,23 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf);
 
 #else /* !CONFIG_OVE_QUEUE */
 
+/* P0-3: _init/_deinit stubs so OVE_QUEUE_DEFINE_STATIC links cleanly
+ * when CONFIG_OVE_QUEUE=n. */
+static inline int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *s, void *b, size_t is,
+				 unsigned int mi)
+{
+	(void)q;
+	(void)s;
+	(void)b;
+	(void)is;
+	(void)mi;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_queue_deinit(ove_queue_t q)
+{
+	(void)q;
+}
+
 static inline int ove_queue_create(ove_queue_t *q, size_t is, unsigned int mi)
 {
 	(void)q;

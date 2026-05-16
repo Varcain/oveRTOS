@@ -191,6 +191,23 @@ size_t ove_stream_bytes_available(ove_stream_t stream);
 
 #else /* !CONFIG_OVE_STREAM */
 
+/* P0-3: _init/_deinit stubs so OVE_STREAM_DEFINE_STATIC links cleanly when
+ * CONFIG_OVE_STREAM=n. */
+static inline int ove_stream_init(ove_stream_t *s, ove_stream_storage_t *st, void *b, size_t sz,
+				  size_t t)
+{
+	(void)s;
+	(void)st;
+	(void)b;
+	(void)sz;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_stream_deinit(ove_stream_t s)
+{
+	(void)s;
+}
+
 static inline int ove_stream_create(ove_stream_t *s, size_t sz, size_t t)
 {
 	(void)s;

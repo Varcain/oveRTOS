@@ -193,6 +193,8 @@ void ove_i2s_tx_cplt_isr(ove_i2s_t i2s);
 
 #else /* !CONFIG_OVE_I2S */
 
+/* No _init/_deinit stubs: OVE_I2S_DEFINE_STATIC is itself gated by
+ * #ifdef CONFIG_OVE_I2S in storage.h. */
 static inline int ove_i2s_create(ove_i2s_t *i, const struct ove_i2s_cfg *c)
 {
 	(void)i;

@@ -184,6 +184,19 @@ ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg);
 
 #else /* !CONFIG_OVE_EVENTGROUP */
 
+/* P0-3: _init/_deinit stubs so OVE_EVENTGROUP_DEFINE_STATIC links cleanly
+ * when CONFIG_OVE_EVENTGROUP=n. */
+static inline int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *s)
+{
+	(void)eg;
+	(void)s;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_eventgroup_deinit(ove_eventgroup_t eg)
+{
+	(void)eg;
+}
+
 static inline int ove_eventgroup_create(ove_eventgroup_t *eg)
 {
 	(void)eg;
