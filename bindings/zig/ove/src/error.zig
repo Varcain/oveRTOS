@@ -46,6 +46,12 @@ pub const Error = error{
     QueueEmpty,
     /// A non-blocking operation would have had to block.
     WouldBlock,
+    /// End of file / directory iterator exhausted.
+    Eof,
+    /// Argument or state is invalid for this operation.
+    Inval,
+    /// Requested key / entry / resource was not found.
+    NotFound,
     /// An unrecognized error code was returned by the C layer.
     Unknown,
 };
@@ -73,6 +79,9 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_BUS_ERROR => Error.BusError,
         c.OVE_ERR_QUEUE_EMPTY => Error.QueueEmpty,
         c.OVE_ERR_WOULD_BLOCK => Error.WouldBlock,
+        c.OVE_ERR_EOF => Error.Eof,
+        c.OVE_ERR_INVAL => Error.Inval,
+        c.OVE_ERR_NOT_FOUND => Error.NotFound,
         else => Error.Unknown,
     };
 }
@@ -118,4 +127,7 @@ comptime {
     std.debug.assert(c.OVE_ERR_BUS_ERROR == -16);
     std.debug.assert(c.OVE_ERR_QUEUE_EMPTY == -17);
     std.debug.assert(c.OVE_ERR_WOULD_BLOCK == -18);
+    std.debug.assert(c.OVE_ERR_EOF == -19);
+    std.debug.assert(c.OVE_ERR_INVAL == -20);
+    std.debug.assert(c.OVE_ERR_NOT_FOUND == -21);
 }

@@ -49,6 +49,12 @@ pub enum Error {
     QueueEmpty,
     /// A non-blocking operation would have had to block (`OVE_ERR_WOULD_BLOCK`).
     WouldBlock,
+    /// End of file / directory iterator exhausted (`OVE_ERR_EOF`).
+    Eof,
+    /// Argument or state is invalid for this operation (`OVE_ERR_INVAL`).
+    Inval,
+    /// Requested key / entry / resource was not found (`OVE_ERR_NOT_FOUND`).
+    NotFound,
     /// An error code not covered by the above variants; the raw code is preserved.
     Unknown(i32),
 }
@@ -85,6 +91,9 @@ impl Error {
             -16 => Err(Error::BusError),
             -17 => Err(Error::QueueEmpty),
             -18 => Err(Error::WouldBlock),
+            -19 => Err(Error::Eof),
+            -20 => Err(Error::Inval),
+            -21 => Err(Error::NotFound),
             other => Err(Error::Unknown(other)),
         }
     }
@@ -111,6 +120,9 @@ impl Error {
             Error::BusError => -16,
             Error::QueueEmpty => -17,
             Error::WouldBlock => -18,
+            Error::Eof => -19,
+            Error::Inval => -20,
+            Error::NotFound => -21,
             Error::Unknown(c) => c,
         }
     }
@@ -161,6 +173,9 @@ const fn _assert_codes_match() {
     assert!(bindings::OVE_ERR_BUS_ERROR == -16);
     assert!(bindings::OVE_ERR_QUEUE_EMPTY == -17);
     assert!(bindings::OVE_ERR_WOULD_BLOCK == -18);
+    assert!(bindings::OVE_ERR_EOF == -19);
+    assert!(bindings::OVE_ERR_INVAL == -20);
+    assert!(bindings::OVE_ERR_NOT_FOUND == -21);
 }
 
 #[cfg(not(docsrs))]
@@ -188,6 +203,9 @@ impl core::fmt::Display for Error {
             Error::BusError => write!(f, "bus error"),
             Error::QueueEmpty => write!(f, "queue empty"),
             Error::WouldBlock => write!(f, "would block"),
+            Error::Eof => write!(f, "end of file"),
+            Error::Inval => write!(f, "invalid argument"),
+            Error::NotFound => write!(f, "not found"),
             Error::Unknown(c) => write!(f, "unknown error ({c})"),
         }
     }
@@ -216,6 +234,9 @@ mod tests {
         (-16, Error::BusError),
         (-17, Error::QueueEmpty),
         (-18, Error::WouldBlock),
+        (-19, Error::Eof),
+        (-20, Error::Inval),
+        (-21, Error::NotFound),
     ];
 
     #[test]
