@@ -185,6 +185,8 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 
 #else /* !CONFIG_OVE_SPI */
 
+/* No _init/_deinit stubs: OVE_SPI_DEFINE_STATIC is itself gated by
+ * #ifdef CONFIG_OVE_SPI in storage.h. */
 static inline int ove_spi_create(ove_spi_t *s, const struct ove_spi_cfg *c)
 {
 	(void)s;

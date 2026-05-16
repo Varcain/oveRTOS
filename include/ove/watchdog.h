@@ -133,6 +133,20 @@ int ove_watchdog_feed(ove_watchdog_t wdt);
 
 #else /* !CONFIG_OVE_WATCHDOG */
 
+/* P0-3: _init/_deinit stubs so OVE_WATCHDOG_DEFINE_STATIC links cleanly
+ * when CONFIG_OVE_WATCHDOG=n. */
+static inline int ove_watchdog_init(ove_watchdog_t *w, ove_watchdog_storage_t *s, uint32_t t)
+{
+	(void)w;
+	(void)s;
+	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_watchdog_deinit(ove_watchdog_t w)
+{
+	(void)w;
+}
+
 static inline int ove_watchdog_create(ove_watchdog_t *w, uint32_t t)
 {
 	(void)w;

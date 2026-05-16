@@ -197,6 +197,24 @@ int ove_work_cancel(ove_work_t work);
 
 #else /* !CONFIG_OVE_WORKQUEUE */
 
+/* P0-3: _init/_deinit stubs so OVE_WORKQUEUE_DEFINE_STATIC links cleanly
+ * when CONFIG_OVE_WORKQUEUE=n. */
+static inline int ove_workqueue_init(ove_workqueue_t *wq, ove_workqueue_storage_t *st,
+				     const char *n, ove_prio_t p, size_t s, void *stack)
+{
+	(void)wq;
+	(void)st;
+	(void)n;
+	(void)p;
+	(void)s;
+	(void)stack;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline void ove_workqueue_deinit(ove_workqueue_t wq)
+{
+	(void)wq;
+}
+
 static inline int ove_workqueue_create(ove_workqueue_t *wq, const char *n, ove_prio_t p, size_t s)
 {
 	(void)wq;

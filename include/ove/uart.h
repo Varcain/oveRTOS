@@ -174,6 +174,8 @@ void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len);
 
 #else /* !CONFIG_OVE_UART */
 
+/* No _init/_deinit stubs: OVE_UART_DEFINE_STATIC is itself gated by
+ * #ifdef CONFIG_OVE_UART in storage.h. */
 static inline int ove_uart_create(ove_uart_t *u, const struct ove_uart_cfg *c)
 {
 	(void)u;
