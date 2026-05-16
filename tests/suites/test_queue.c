@@ -114,6 +114,25 @@ static void test_queue_send_full_times_out(void **state)
 	ove_test_queue_destroy(q);
 }
 
+/* P0-1: distinguishes "queue full, no wait" from "waited and timed out".
+ * Header contracts OVE_ERR_QUEUE_FULL for timeout_ms==0 + full queue. */
+static void test_queue_send_full_zero_timeout_returns_full(void **state)
+{
+	(void)state;
+	ove_queue_t q = NULL;
+	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 2);
+
+	int v = 1;
+	assert_int_equal(ove_queue_send(q, &v, 0), OVE_OK);
+	v = 2;
+	assert_int_equal(ove_queue_send(q, &v, 0), OVE_OK);
+	v = 3;
+	int rc = ove_queue_send(q, &v, 0);
+	assert_int_equal(rc, OVE_ERR_QUEUE_FULL);
+
+	ove_test_queue_destroy(q);
+}
+
 static void test_queue_receive_empty_times_out(void **state)
 {
 	(void)state;
@@ -295,6 +314,8 @@ int test_queue_run(void)
 		cmocka_unit_test_setup(test_queue_send_receive_single, queue_setup),
 		cmocka_unit_test_setup(test_queue_fifo_order, queue_setup),
 		cmocka_unit_test_setup(test_queue_send_full_times_out, queue_setup),
+		cmocka_unit_test_setup(test_queue_send_full_zero_timeout_returns_full,
+				       queue_setup),
 		cmocka_unit_test_setup(test_queue_receive_empty_times_out, queue_setup),
 		cmocka_unit_test_setup(test_queue_send_from_isr, queue_setup),
 		cmocka_unit_test_setup(test_queue_receive_from_isr, queue_setup),

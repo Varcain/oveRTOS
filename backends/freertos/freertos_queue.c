@@ -87,7 +87,7 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 
 	ret = xQueueSend(q->queue, data, ticks);
 	if (ret != pdPASS) {
-		return OVE_ERR_TIMEOUT;
+		return (timeout_ms == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }
