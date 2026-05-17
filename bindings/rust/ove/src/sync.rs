@@ -47,13 +47,29 @@ impl Mutex {
         Ok(Self { handle })
     }
 
-    /// Lock with a timeout in milliseconds. Use `WAIT_FOREVER` for no timeout.
+    /// Lock with a timeout. Use [`WAIT_FOREVER`](crate::WAIT_FOREVER) for no timeout.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the mutex cannot be acquired within `timeout_ns`.
+    /// Returns [`Error::Timeout`] if the mutex cannot be acquired within `timeout`.
     #[inline]
     pub fn lock(&self, timeout: core::time::Duration) -> Result<()> {
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::time::dur_to_ns(timeout)) };
+        Error::from_code(rc)
+    }
+
+    /// Lock with an absolute deadline.
+    ///
+    /// `deadline_ns` is a steady-clock value from
+    /// [`crate::time::now_steady_ns`]; pass `u64::MAX` (the value of the
+    /// substrate's `OVE_WAIT_FOREVER` sentinel) to block indefinitely.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before the mutex
+    /// is acquired.
+    #[inline]
+    pub fn lock_until(&self, deadline_ns: u64) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout) };
         Error::from_code(rc)
     }
 
@@ -145,6 +161,18 @@ impl RecursiveMutex {
         Error::from_code(rc)
     }
 
+    /// Lock with an absolute deadline (see [`Mutex::lock_until`]).
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before the lock
+    /// is acquired.
+    #[inline]
+    pub fn lock_until(&self, deadline_ns: u64) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout) };
+        Error::from_code(rc)
+    }
+
     /// Unlock the recursive mutex.
     #[inline]
     pub fn unlock(&self) {
@@ -232,6 +260,18 @@ impl Semaphore {
         Error::from_code(rc)
     }
 
+    /// Take the semaphore with an absolute deadline (see [`Mutex::lock_until`]).
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before a count
+    /// becomes available.
+    #[inline]
+    pub fn take_until(&self, deadline_ns: u64) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let rc = unsafe { bindings::ove_sem_take(self.handle, timeout) };
+        Error::from_code(rc)
+    }
+
     /// Post/give the semaphore.
     #[inline]
     pub fn give(&self) {
@@ -279,6 +319,18 @@ impl Event {
     #[inline]
     pub fn wait(&self, timeout: core::time::Duration) -> Result<()> {
         let rc = unsafe { bindings::ove_event_wait(self.handle, crate::time::dur_to_ns(timeout)) };
+        Error::from_code(rc)
+    }
+
+    /// Wait for the event with an absolute deadline (see [`Mutex::lock_until`]).
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before the event
+    /// is signalled.
+    #[inline]
+    pub fn wait_until(&self, deadline_ns: u64) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let rc = unsafe { bindings::ove_event_wait(self.handle, timeout) };
         Error::from_code(rc)
     }
 
@@ -338,6 +390,23 @@ impl CondVar {
     #[inline]
     pub fn wait(&self, mutex: &Mutex, timeout: core::time::Duration) -> Result<()> {
         let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(timeout)) };
+        Error::from_code(rc)
+    }
+
+    /// Wait with an absolute deadline (see [`Mutex::lock_until`]).
+    ///
+    /// On return (successful or not), `mutex` is re-acquired.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before
+    /// [`signal`](CondVar::signal) or [`broadcast`](CondVar::broadcast)
+    /// fires.
+    #[inline]
+    pub fn wait_until(&self, mutex: &Mutex, deadline_ns: u64) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let rc = unsafe {
+            bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout)
+        };
         Error::from_code(rc)
     }
 

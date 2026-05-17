@@ -127,4 +127,48 @@ inline constexpr uint64_t to_timeout_ns(std::chrono::duration<Rep, Period> d) no
 	return static_cast<uint64_t>(ns.count());
 }
 
+/**
+ * @brief Steady-clock wrapping the substrate's monotonic time source.
+ *
+ * Satisfies the C++ `TrivialClock` requirements so it can be used
+ * with `std::chrono` arithmetic.  The epoch matches whatever
+ * @ref ove_time_now_steady_ns reports — opaque, monotonic, ns-resolved.
+ *
+ * Use with the binding's `_until` variants:
+ * @code
+ * auto deadline = ove::steady_clock::now() + 100ms;
+ * mtx.lock_until(deadline);
+ * @endcode
+ */
+struct steady_clock {
+	using duration = std::chrono::nanoseconds;
+	using rep = duration::rep;
+	using period = duration::period;
+	using time_point = std::chrono::time_point<steady_clock>;
+	static constexpr bool is_steady = true;
+
+	static time_point now() noexcept
+	{
+		return time_point(duration(ove_time_now_steady_ns()));
+	}
+};
+
+/**
+ * @brief Convert an @ref ove::steady_clock::time_point to @c uint64_t
+ *        nanoseconds for the substrate's `_until` APIs.
+ *
+ * Preserves the `time_point` whose duration equals
+ * @c std::chrono::nanoseconds::max() as the @c OVE_WAIT_FOREVER sentinel
+ * so passing @c steady_clock::time_point::max() blocks indefinitely.
+ */
+inline constexpr uint64_t to_deadline_ns(steady_clock::time_point tp) noexcept
+{
+	const auto since_epoch = tp.time_since_epoch();
+	if (since_epoch == std::chrono::nanoseconds::max())
+		return OVE_WAIT_FOREVER;
+	if (since_epoch.count() < 0)
+		return 0u;
+	return static_cast<uint64_t>(since_epoch.count());
+}
+
 } // namespace ove

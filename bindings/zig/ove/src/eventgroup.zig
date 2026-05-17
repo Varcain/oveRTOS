@@ -70,6 +70,13 @@ const HeapEventGroup = struct {
         return result;
     }
 
+    pub inline fn waitBitsUntil(self: EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) Error!EventBits {
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        var result: EventBits = 0;
+        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result));
+        return result;
+    }
+
     pub inline fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
@@ -115,6 +122,14 @@ const ZeroHeapEventGroup = struct {
         self.tracker.assertSame(self, "ove.EventGroup");
         var result: EventBits = 0;
         try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result));
+        return result;
+    }
+
+    pub inline fn waitBitsUntil(self: *EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) Error!EventBits {
+        self.tracker.assertSame(self, "ove.EventGroup");
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        var result: EventBits = 0;
+        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result));
         return result;
     }
 

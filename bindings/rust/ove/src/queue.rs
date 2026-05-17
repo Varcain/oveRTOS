@@ -74,15 +74,45 @@ impl<T: Copy, const N: usize> Queue<T, N> {
         Error::from_code(rc)
     }
 
-    /// Receive an item from the queue, blocking up to `timeout_ns` if the queue is empty.
+    /// Send an item with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no item is available within `timeout_ns`.
+    /// Returns [`Error::QueueFull`] or [`Error::Timeout`] if the item cannot
+    /// be enqueued before the deadline.
+    #[inline]
+    pub fn send_until(&self, item: &T, deadline_ns: u64) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let rc = unsafe {
+            bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout)
+        };
+        Error::from_code(rc)
+    }
+
+    /// Receive an item from the queue, blocking up to `timeout` if the queue is empty.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if no item is available within `timeout`.
     #[inline]
     pub fn receive(&self, timeout: core::time::Duration) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {
             bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, crate::time::dur_to_ns(timeout))
+        };
+        Error::from_code(rc)?;
+        Ok(unsafe { item.assume_init() })
+    }
+
+    /// Receive an item with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before an item
+    /// becomes available.
+    #[inline]
+    pub fn receive_until(&self, deadline_ns: u64) -> Result<T> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
+        let rc = unsafe {
+            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, timeout)
         };
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })

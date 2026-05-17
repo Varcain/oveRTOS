@@ -98,6 +98,24 @@ impl EventGroup {
         Ok(result)
     }
 
+    /// Wait for bits with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
+    ///
+    /// Returns the bits value at the moment the wait condition was satisfied.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before the bits
+    /// are set.
+    #[inline]
+    pub fn wait_bits_until(&self, bits: u32, flags: WaitFlags, deadline_ns: u64) -> Result<u32> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let mut result: u32 = 0;
+        let rc = unsafe {
+            bindings::ove_eventgroup_wait_bits(self.handle, bits, flags.0, timeout, &mut result)
+        };
+        Error::from_code(rc)?;
+        Ok(result)
+    }
+
     /// Set bits from an ISR context. Returns the bits value after setting.
     #[inline]
     pub fn set_bits_from_isr(&self, bits: u32) -> u32 {

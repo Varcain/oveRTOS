@@ -57,9 +57,21 @@ fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
             try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns));
         }
 
+        pub inline fn sendUntil(self: Self, item: *const T, deadline_ns: u64) Error!void {
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), t));
+        }
+
         pub inline fn receive(self: Self, timeout_ns: u64) Error!T {
             var val: T = undefined;
             try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns));
+            return val;
+        }
+
+        pub inline fn receiveUntil(self: Self, deadline_ns: u64) Error!T {
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            var val: T = undefined;
+            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), t));
             return val;
         }
 
@@ -106,10 +118,24 @@ fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
             try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns));
         }
 
+        pub inline fn sendUntil(self: *Self, item: *const T, deadline_ns: u64) Error!void {
+            self.tracker.assertSame(self, "ove.Queue");
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), t));
+        }
+
         pub inline fn receive(self: *Self, timeout_ns: u64) Error!T {
             self.tracker.assertSame(self, "ove.Queue");
             var val: T = undefined;
             try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns));
+            return val;
+        }
+
+        pub inline fn receiveUntil(self: *Self, deadline_ns: u64) Error!T {
+            self.tracker.assertSame(self, "ove.Queue");
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            var val: T = undefined;
+            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), t));
             return val;
         }
 

@@ -134,6 +134,24 @@ class EventGroup
 	}
 
 	/**
+	 * @brief Deadline-based variant of @ref wait_bits.
+	 * @param[in]  bits     Bitmask to wait on.
+	 * @param[in]  flags    Wait flags (e.g., @c OVE_EVENT_WAIT_ALL).
+	 * @param[in]  deadline @ref ove::steady_clock::time_point at which the
+	 *                      wait must complete.
+	 * @param[out] result   Receives the event-group value at the moment the
+	 *                      wait condition was satisfied (or on timeout).
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int wait_bits_until(ove_eventbits_t bits, uint32_t flags,
+					  steady_clock::time_point deadline,
+					  ove_eventbits_t *result)
+	{
+		return ove_eventgroup_wait_bits_until(handle_, bits, flags,
+						      to_deadline_ns(deadline), result);
+	}
+
+	/**
 	 * @brief Sets one or more event bits from an ISR context.
 	 * @param[in] bits Bitmask of bits to set.
 	 * @return The value of the event group after the bits were set.
