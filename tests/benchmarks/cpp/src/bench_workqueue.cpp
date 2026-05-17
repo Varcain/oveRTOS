@@ -10,7 +10,10 @@
 #include "ove_bench.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <optional>
+
+using namespace std::chrono_literals;
 
 using BenchWQ = ove::Workqueue<2048>;
 
@@ -47,7 +50,7 @@ static void wq_submit_run()
 {
 	work_executed.store(false, std::memory_order_release);
 	(void)bench_work->submit(*bench_wq);
-	(void)work_sem->take(1000);
+	(void)work_sem->take(1s);
 }
 
 static void wq_submit_teardown()

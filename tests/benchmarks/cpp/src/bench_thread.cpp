@@ -60,7 +60,7 @@ static void pong_thread(void *arg)
 {
 	(void)arg;
 	while (!ctx_switch_done.load(std::memory_order_acquire)) {
-		(void)ping_sem->take(OVE_WAIT_FOREVER);
+		(void)ping_sem->take(ove::wait_forever);
 		pong_sem->give();
 	}
 }
@@ -77,7 +77,7 @@ static void ctx_switch_run()
 {
 	/* One round-trip = 2 context switches */
 	ping_sem->give();
-	(void)pong_sem->take(OVE_WAIT_FOREVER);
+	(void)pong_sem->take(ove::wait_forever);
 }
 
 static void ctx_switch_teardown()

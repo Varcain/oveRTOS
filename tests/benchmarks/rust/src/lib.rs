@@ -434,7 +434,7 @@ fn condvar_signal_wait_setup() {
 fn condvar_signal_wait_run() {
     if let (Some(mtx), Some(cv)) = (SYNC_CV_MTX.try_get(), SYNC_CV.try_get()) {
         let _ = mtx.lock(WAIT_FOREVER);
-        let _ = cv.wait(mtx, 10);
+        let _ = cv.wait(mtx, core::time::Duration::from_millis(10));
         mtx.unlock();
     }
 }
@@ -652,7 +652,7 @@ fn queue_throughput_run() {
 fn queue_throughput_teardown() {
     QUEUE_THROUGHPUT_DONE.store(true, Ordering::Relaxed);
     if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
-        let _ = q.receive(100);
+        let _ = q.receive(core::time::Duration::from_millis(100));
     }
     Thread::sleep_ms(10);
     QUEUE_PRODUCER_TH.shutdown();
@@ -893,7 +893,7 @@ fn wq_submit_run() {
         (WQ_WORK.try_get(), WQ_BENCH.try_get(), WQ_WORK_SEM.try_get())
     {
         let _ = w.submit(wq);
-        let _ = sem.take(1000);
+        let _ = sem.take(core::time::Duration::from_millis(1000));
     }
 }
 
@@ -1041,7 +1041,7 @@ fn stream_throughput_teardown() {
     if let Some(s) = STREAM_BENCH.try_get() {
         let cell = STREAM_BUFS.get();
         let mut bufs = cell.get();
-        let _ = s.receive(&mut bufs.1, 100);
+        let _ = s.receive(&mut bufs.1, core::time::Duration::from_millis(100));
         cell.set(bufs);
     }
     Thread::sleep_ms(10);

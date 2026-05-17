@@ -10,7 +10,10 @@
 #include "ove_bench.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <optional>
+
+using namespace std::chrono_literals;
 
 /* --- Shared state --- */
 
@@ -34,8 +37,8 @@ static void queue_send_recv_run()
 {
 	uint32_t val = 42;
 	uint32_t buf;
-	(void)bench_q->send(val, OVE_WAIT_FOREVER);
-	(void)bench_q->receive(&buf, OVE_WAIT_FOREVER);
+	(void)bench_q->send(val, ove::wait_forever);
+	(void)bench_q->receive(&buf, ove::wait_forever);
 }
 
 static void queue_send_recv_teardown()
@@ -58,7 +61,7 @@ static void producer_thread(void *arg)
 	(void)arg;
 	uint32_t val = 0;
 	while (!throughput_done.load(std::memory_order_acquire)) {
-		(void)throughput_q->send(val, OVE_WAIT_FOREVER);
+		(void)throughput_q->send(val, ove::wait_forever);
 		val++;
 	}
 }
@@ -73,14 +76,14 @@ static void queue_throughput_setup()
 static void queue_throughput_run()
 {
 	uint32_t buf;
-	(void)throughput_q->receive(&buf, OVE_WAIT_FOREVER);
+	(void)throughput_q->receive(&buf, ove::wait_forever);
 }
 
 static void queue_throughput_teardown()
 {
 	throughput_done.store(true, std::memory_order_release);
 	uint32_t buf;
-	(void)throughput_q->receive(&buf, 100);
+	(void)throughput_q->receive(&buf, 100ms);
 	ove::time::delay_ms(10);
 	producer_th.reset();
 	throughput_q.reset();

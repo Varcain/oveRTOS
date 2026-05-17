@@ -10,7 +10,10 @@
 #include "ove_bench.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <optional>
+
+using namespace std::chrono_literals;
 
 /* --- Shared state (RAII — lives inside std::optional for bench lifecycle) --- */
 
@@ -33,7 +36,7 @@ static void mutex_lock_unlock_setup()
 
 static void mutex_lock_unlock_run()
 {
-	(void)bench_mtx->lock(OVE_WAIT_FOREVER);
+	(void)bench_mtx->lock(ove::wait_forever);
 	bench_mtx->unlock();
 }
 
@@ -56,7 +59,7 @@ static void contention_thread(void *arg)
 {
 	(void)arg;
 	while (!contention_done.load(std::memory_order_acquire)) {
-		(void)bench_mtx->lock(OVE_WAIT_FOREVER);
+		(void)bench_mtx->lock(ove::wait_forever);
 		contention_count.fetch_add(1, std::memory_order_relaxed);
 		bench_mtx->unlock();
 	}
@@ -72,7 +75,7 @@ static void mutex_contention_setup()
 
 static void mutex_contention_run()
 {
-	(void)bench_mtx->lock(OVE_WAIT_FOREVER);
+	(void)bench_mtx->lock(ove::wait_forever);
 	contention_count.fetch_add(1, std::memory_order_relaxed);
 	bench_mtx->unlock();
 }
@@ -109,7 +112,7 @@ static void sem_take_give_setup()
 
 static void sem_take_give_run()
 {
-	(void)bench_sem->take(OVE_WAIT_FOREVER);
+	(void)bench_sem->take(ove::wait_forever);
 	bench_sem->give();
 }
 
@@ -149,7 +152,7 @@ static void evt_signaler(void *arg)
 	(void)arg;
 	while (!evt_done.load(std::memory_order_acquire)) {
 		bench_evt->signal();
-		(void)bench_evt_ack->wait(OVE_WAIT_FOREVER);
+		(void)bench_evt_ack->wait(ove::wait_forever);
 	}
 }
 
@@ -163,7 +166,7 @@ static void event_signal_wait_setup()
 
 static void event_signal_wait_run()
 {
-	(void)bench_evt->wait(OVE_WAIT_FOREVER);
+	(void)bench_evt->wait(ove::wait_forever);
 	bench_evt_ack->signal();
 }
 
@@ -219,8 +222,8 @@ static void condvar_signal_wait_setup()
 
 static void condvar_signal_wait_run()
 {
-	(void)bench_cv_mtx->lock(OVE_WAIT_FOREVER);
-	(void)bench_cv->wait(*bench_cv_mtx, 10);
+	(void)bench_cv_mtx->lock(ove::wait_forever);
+	(void)bench_cv->wait(*bench_cv_mtx, 10ms);
 	bench_cv_mtx->unlock();
 }
 
@@ -258,7 +261,7 @@ static void rmtx_lock_unlock_setup()
 
 static void rmtx_lock_unlock_run()
 {
-	(void)bench_rmtx->lock(OVE_WAIT_FOREVER);
+	(void)bench_rmtx->lock(ove::wait_forever);
 	bench_rmtx->unlock();
 }
 
