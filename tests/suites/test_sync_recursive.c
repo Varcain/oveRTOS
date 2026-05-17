@@ -20,7 +20,7 @@ struct rmtx_ctx {
 static void rmtx_hold_entry(void *arg)
 {
 	struct rmtx_ctx *ctx = arg;
-	ove_recursive_mutex_lock(ctx->mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_RECURSIVE_LOCK(ctx->mtx);
 	TEST_FLAG_SET(ctx->locked, 1);
 	test_msleep(200);
 	ove_recursive_mutex_unlock(ctx->mtx);
@@ -52,7 +52,7 @@ static void test_recursive_matching_unlocks(void **state)
 	ove_mutex_t mtx = NULL;
 	ove_test_recursive_mutex_create(&mtx, &s_rmtx_storage);
 	for (int i = 0; i < 3; i++)
-		ove_recursive_mutex_lock(mtx, OVE_WAIT_FOREVER);
+		OVE_TEST_RECURSIVE_LOCK(mtx);
 	for (int i = 0; i < 3; i++)
 		ove_recursive_mutex_unlock(mtx);
 	assert_int_equal(ove_recursive_mutex_lock(mtx, 0), OVE_OK);

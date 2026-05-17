@@ -135,7 +135,7 @@ int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint32_t timeo
 	if (uart == NULL || (data == NULL && len > 0))
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(uart->tx_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(uart->tx_mtx);
 	ret = ove_hal_uart_tx(uart, data, len, timeout_ms, bytes_written);
 	ove_mutex_unlock(uart->tx_mtx);
 

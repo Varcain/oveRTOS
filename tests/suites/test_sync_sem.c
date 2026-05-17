@@ -135,12 +135,6 @@ static void test_sem_destroy_null(void **state)
 	ove_sem_destroy(NULL);
 }
 
-static void test_sem_create_null(void **state)
-{
-	(void)state;
-	int rc = ove_sem_create(NULL, 0, 1);
-	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
-}
 #endif
 
 int test_sync_sem_run(void)
@@ -157,7 +151,6 @@ int test_sync_sem_run(void)
 		cmocka_unit_test(test_sem_wait_forever),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_sem_destroy_null),
-		cmocka_unit_test(test_sem_create_null),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

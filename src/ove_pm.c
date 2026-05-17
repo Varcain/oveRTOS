@@ -15,6 +15,7 @@
 #include "ove/sync.h"
 #include "ove/time.h"
 #include "ove/log.h"
+#include "ove_backend_common.h"
 #include <string.h>
 
 /* Helper: ove_time_get_us takes a pointer; this returns the value. */
@@ -205,7 +206,7 @@ int ove_pm_set_state(ove_pm_state_t state)
 	if (state >= OVE_PM_STATE_COUNT)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	old = pm_ctx.current_state;
 	if (old == state) {
@@ -260,7 +261,7 @@ int ove_pm_wake_register(const struct ove_pm_wake_src *src)
 	if (!src || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {
 		if (!pm_ctx.wake_table[i].registered) {
@@ -282,7 +283,7 @@ int ove_pm_wake_unregister(const struct ove_pm_wake_src *src)
 	if (!src || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	for (i = 0; i < CONFIG_OVE_PM_MAX_WAKE_SOURCES; i++) {
 		if (pm_ctx.wake_table[i].registered &&
@@ -306,7 +307,7 @@ int ove_pm_domain_request(ove_pm_domain_t domain)
 	if (domain >= OVE_PM_DOMAIN_COUNT || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	if (pm_ctx.domain_refcount[domain] == 0)
 		rc = ove_hal_pm_domain_enable(domain);
@@ -325,7 +326,7 @@ int ove_pm_domain_release(ove_pm_domain_t domain)
 	if (domain >= OVE_PM_DOMAIN_COUNT || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	if (pm_ctx.domain_refcount[domain] <= 0) {
 		ove_mutex_unlock(pm_ctx.mtx);
@@ -356,7 +357,7 @@ int ove_pm_set_policy(ove_pm_policy_fn policy, void *user_data)
 	if (!pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 	pm_ctx.policy_fn = policy ? policy : default_policy;
 	pm_ctx.policy_user_data = policy ? user_data : NULL;
 	ove_mutex_unlock(pm_ctx.mtx);
@@ -370,7 +371,7 @@ int ove_pm_notify_register(ove_pm_notify_fn cb, void *user_data)
 	if (!cb || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	if (pm_ctx.notifier_count >= CONFIG_OVE_PM_MAX_NOTIFIERS) {
 		ove_mutex_unlock(pm_ctx.mtx);
@@ -392,7 +393,7 @@ int ove_pm_notify_unregister(ove_pm_notify_fn cb, void *user_data)
 	if (!cb || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	for (i = 0; i < pm_ctx.notifier_count; i++) {
 		if (pm_ctx.notifiers[i].fn == cb && pm_ctx.notifiers[i].user_data == user_data) {
@@ -423,7 +424,7 @@ int ove_pm_get_stats(struct ove_pm_stats *stats)
 	if (!stats || !pm_ctx.initialized)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	now = pm_now_us();
 
@@ -454,7 +455,7 @@ void ove_pm_reset_stats(void)
 	if (!pm_ctx.initialized)
 		return;
 
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	now = pm_now_us();
 	memset(pm_ctx.time_in_state_us, 0, sizeof(pm_ctx.time_in_state_us));
@@ -512,7 +513,7 @@ void ove_pm_idle_process(void)
 		pm_ctx.activity_flag = 0;
 		pm_ctx.last_activity_us = pm_now_us();
 		if (pm_ctx.current_state != OVE_PM_STATE_ACTIVE) {
-			ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+			OVE_LOCK_INFINITE(pm_ctx.mtx);
 			now = pm_now_us();
 			update_stats(pm_ctx.current_state, now);
 			pm_ctx.current_state = OVE_PM_STATE_ACTIVE;
@@ -537,7 +538,7 @@ void ove_pm_idle_process(void)
 		return;
 
 	/* Transition to deeper sleep */
-	ove_mutex_lock(pm_ctx.mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(pm_ctx.mtx);
 
 	old_state = pm_ctx.current_state;
 	now = pm_now_us();

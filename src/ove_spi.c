@@ -116,7 +116,7 @@ int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx,
 	if (tx == NULL && rx == NULL)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(spi->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(spi->bus_mtx);
 	cs_assert(cs);
 
 	ret = ove_hal_spi_transfer(spi, tx, rx, len, timeout_ms);
@@ -149,7 +149,7 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 	if (spi == NULL || xfers == NULL || num_xfers == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(spi->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(spi->bus_mtx);
 	cs_assert(cs);
 
 	for (i = 0; i < num_xfers; i++) {

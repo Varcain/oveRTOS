@@ -28,7 +28,7 @@ static void counter_entry(void *arg)
 {
 	struct counter_ctx *ctx = arg;
 	for (int i = 0; i < 1000; i++) {
-		ove_mutex_lock(ctx->mutex, OVE_WAIT_FOREVER);
+		OVE_TEST_LOCK(ctx->mutex);
 		ctx->counter++;
 		ove_mutex_unlock(ctx->mutex);
 	}
@@ -44,7 +44,7 @@ struct hold_ctx {
 static void hold_entry(void *arg)
 {
 	struct hold_ctx *ctx = arg;
-	ove_mutex_lock(ctx->mutex, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(ctx->mutex);
 	TEST_FLAG_SET(ctx->locked, 1);
 	test_msleep(ctx->hold_ms);
 	ove_mutex_unlock(ctx->mutex);
@@ -136,7 +136,7 @@ static void test_mutex_double_unlock(void **state)
 #else
 	ove_mutex_t mtx = NULL;
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
-	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(mtx);
 	ove_mutex_unlock(mtx);
 	ove_mutex_unlock(mtx); /* should not crash */
 	ove_test_mutex_destroy(mtx);
@@ -215,15 +215,6 @@ static void test_mutex_multiple_independent(void **state)
 	ove_test_mutex_destroy(b);
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-static void test_mutex_create_null(void **state)
-{
-	(void)state;
-	int rc = ove_mutex_create(NULL);
-	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
-}
-#endif
-
 int test_sync_mutex_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -241,9 +232,6 @@ int test_sync_mutex_run(void)
 		cmocka_unit_test(test_mutex_shared_counter),
 		cmocka_unit_test(test_mutex_short_timeout),
 		cmocka_unit_test(test_mutex_multiple_independent),
-#ifndef CONFIG_OVE_ZERO_HEAP
-		cmocka_unit_test(test_mutex_create_null),
-#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

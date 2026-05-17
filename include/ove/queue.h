@@ -62,8 +62,8 @@ typedef struct ove_queue *ove_queue_t;
  *
  * @see ove_queue_deinit, ove_queue_create
  */
-int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
-		   unsigned int max_items);
+OVE_NODISCARD int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer,
+				 size_t item_size, unsigned int max_items) OVE_NONNULL(1, 2, 3);
 
 /**
  * @brief Release resources held by a queue initialised with ove_queue_init().
@@ -98,7 +98,8 @@ void ove_queue_deinit(ove_queue_t q);
  *
  * @see ove_queue_destroy, ove_queue_init
  */
-int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items);
+OVE_NODISCARD int ove_queue_create(ove_queue_t *q, size_t item_size,
+				   unsigned int max_items) OVE_NONNULL(1);
 
 /**
  * @brief Destroy and free a queue allocated with ove_queue_create().
@@ -133,7 +134,8 @@ void ove_queue_destroy(ove_queue_t q);
  *
  * @see ove_queue_receive, ove_queue_send_from_isr
  */
-int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms);
+OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
+				 uint32_t timeout_ms) OVE_NONNULL(1, 2);
 
 /**
  * @brief Receive (remove) an item from the front of the queue, blocking if
@@ -158,7 +160,8 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms);
  *
  * @see ove_queue_send, ove_queue_receive_from_isr
  */
-int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms);
+OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf,
+				    uint32_t timeout_ms) OVE_NONNULL(1, 2);
 
 /**
  * @brief Send an item to the queue from an interrupt service routine.
@@ -175,7 +178,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms);
  *
  * @see ove_queue_send
  */
-int ove_queue_send_from_isr(ove_queue_t q, const void *data);
+OVE_NODISCARD int ove_queue_send_from_isr(ove_queue_t q, const void *data) OVE_NONNULL(1, 2);
 
 /**
  * @brief Receive an item from the queue from an interrupt service routine.
@@ -193,7 +196,7 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data);
  *
  * @see ove_queue_receive
  */
-int ove_queue_receive_from_isr(ove_queue_t q, void *buf);
+OVE_NODISCARD int ove_queue_receive_from_isr(ove_queue_t q, void *buf) OVE_NONNULL(1, 2);
 
 #else /* !CONFIG_OVE_QUEUE */
 
