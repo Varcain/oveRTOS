@@ -72,6 +72,36 @@ static void test_time_passage(void **state)
 	}
 }
 
+/* Phase 3 / Item 1: ns-resolution duration helpers — assert the
+ * compile-time arithmetic so a typo in the macro definitions is
+ * caught here rather than silently producing wrong timeouts. */
+static void test_time_duration_helpers(void **state)
+{
+	(void)state;
+	assert_true(OVE_NS(1) == 1ULL);
+	assert_true(OVE_US(1) == 1000ULL);
+	assert_true(OVE_MS(1) == 1000000ULL);
+	assert_true(OVE_SEC(1) == 1000000000ULL);
+	assert_true(OVE_MIN(1) == 60ULL * 1000000000ULL);
+	assert_true(OVE_MS(100) == 100ULL * 1000000ULL);
+	assert_true(OVE_SEC(5) == 5ULL * 1000000000ULL);
+	assert_true(OVE_TIMEOUT_INFINITE == UINT64_MAX);
+}
+
+/* Phase 3 / Item 1: ove_time_now_steady_ns is a thin wrapper over
+ * ove_time_get_ns; verify monotonic non-decrease. */
+static void test_time_now_steady_ns_monotonic(void **state)
+{
+	(void)state;
+	uint64_t prev = ove_time_now_steady_ns();
+	for (int i = 0; i < 4; i++) {
+		test_msleep(1);
+		uint64_t now = ove_time_now_steady_ns();
+		assert_true(now >= prev);
+		prev = now;
+	}
+}
+
 /* ── runner ──────────────────────────────────────────────────────────── */
 
 int test_time_run(void)
@@ -82,6 +112,8 @@ int test_time_run(void)
 		cmocka_unit_test(test_time_delay_ms),
 		cmocka_unit_test(test_time_delay_us),
 		cmocka_unit_test(test_time_passage),
+		cmocka_unit_test(test_time_duration_helpers),
+		cmocka_unit_test(test_time_now_steady_ns_monotonic),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
