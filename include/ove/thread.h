@@ -25,6 +25,8 @@
 
 #include "ove/types.h"
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -215,6 +217,50 @@ void ove_thread_suspend(ove_thread_t handle);
  * @see ove_thread_suspend
  */
 void ove_thread_resume(ove_thread_t handle);
+
+/**
+ * @brief Cooperatively request that a thread stop running.
+ *
+ * Sets the thread's stop-requested flag.  The worker must poll
+ * @ref ove_thread_should_stop and exit its entry function in response;
+ * the substrate does NOT forcibly terminate the thread.
+ *
+ * Safe to call from any context (ISR, other thread, or the thread
+ * itself).  Storing the flag is a single uncontended atomic write.
+ *
+ * The flag is per-thread, allocated unconditionally (1 byte storage,
+ * not opt-in).  Calling on a non-stoppable thread is the same as
+ * calling on any other thread — the worker just has to choose to
+ * observe @ref ove_thread_should_stop.
+ *
+ * @param[in] handle  Thread to signal.
+ *
+ * @see ove_thread_should_stop
+ */
+void ove_thread_request_stop(ove_thread_t handle);
+
+/**
+ * @brief Check whether the calling (or specified) thread has been asked to stop.
+ *
+ * Returns @c true if @ref ove_thread_request_stop was called for @p handle.
+ * The flag is sticky: once set it stays set for the thread's lifetime.
+ *
+ * Workers should poll this in their main loop:
+ * @code
+ *   while (!ove_thread_should_stop(ove_thread_get_self())) {
+ *       do_work();
+ *   }
+ * @endcode
+ *
+ * Safe to call from any context.  The load is a single uncontended
+ * atomic read.
+ *
+ * @param[in] handle  Thread to inspect.
+ * @return @c true if a stop has been requested, @c false otherwise.
+ *
+ * @see ove_thread_request_stop
+ */
+bool ove_thread_should_stop(ove_thread_t handle);
 
 /**
  * @brief Query how many bytes of stack the thread has used at its high-water mark.

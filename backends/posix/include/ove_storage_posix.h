@@ -83,6 +83,11 @@ struct ove_thread {
 	 * access is fine on all supported arches. */
 	volatile int profiler_pending;
 #endif
+	/* Cooperative cancellation flag.  Set by ove_thread_request_stop,
+	 * polled by the worker via ove_thread_should_stop.  Accessed via
+	 * __atomic_* builtins so the same field works in C and C++ TUs
+	 * (the C++ binding compiles this header). */
+	volatile int stop_requested;
 };
 
 typedef struct ove_thread ove_thread_storage_t;

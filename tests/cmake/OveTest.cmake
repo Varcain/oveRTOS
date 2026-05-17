@@ -26,6 +26,7 @@ set(OVE_TEST_COMMON_SUITES
     test_renode_stm32_periph.c
     test_renode_stm32_net.c
     test_thread.c
+    test_thread_stop.c
     test_sync_mutex.c
     test_sync_sem.c
     test_sync_event.c
