@@ -45,8 +45,12 @@
 //!     .spawn_simple(entry)?;
 //! ```
 
+#[cfg(zero_heap)]
+use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
+#[cfg(zero_heap)]
+use core::mem::MaybeUninit;
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -560,65 +564,152 @@ impl Builder {
         Ok(JoinHandle::new(handle))
     }
 
-    /// Spawn a thread using caller-provided static storage and stack
-    /// (zero-heap mode).
+    /// Spawn a cooperative-cancellation thread (`fn(StopToken)` entry)
+    /// into caller-provided static storage.  Zero-heap mode.
     ///
-    /// # Safety
-    /// - `storage` must outlive the returned [`JoinHandle`] (or until
-    ///   [`JoinHandle::detach`] is called and the thread terminates).
-    /// - `stack` must point to at least `stack_size` bytes of writable
-    ///   memory with the same lifetime constraint.
+    /// `storage` carries both the kernel TCB and the stack, aligned per
+    /// the active backend's requirements.  Declare it as a `static` for
+    /// `'static`-lifetime workers or as a stack-local for scoped
+    /// workers — the borrow checker enforces "storage outlives handle"
+    /// either way.  Builder's `stack_size` field is ignored; the
+    /// type-level `N` is authoritative.
+    ///
+    /// ```ignore
+    /// static GFX: ThreadStorage<4096> = ThreadStorage::new();
+    /// let h = Thread::builder()
+    ///     .name(c"graphics")
+    ///     .spawn_static(&GFX, |tok| {
+    ///         while !tok.is_stopped() { /* work */ }
+    ///     })?;
+    /// ```
     #[cfg(zero_heap)]
-    pub unsafe fn spawn_static(
+    pub fn spawn_static<'storage, const N: usize>(
         self,
-        storage: *mut bindings::ove_thread_storage_t,
-        stack: *mut core::ffi::c_void,
+        storage: &'storage ThreadStorage<N>,
         entry: fn(StopToken),
-    ) -> Result<JoinHandle<()>> {
+    ) -> Result<JoinHandleBorrowed<'storage, ()>> {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
+        // SAFETY: ThreadStorage owns aligned storage + stack via UnsafeCell.
+        // The kernel becomes the sole writer after ove_thread_init returns;
+        // the returned JoinHandleBorrowed carries `'storage`, so the borrow
+        // checker enforces that `storage` outlives the kernel's use of it.
         let rc = unsafe {
             bindings::ove_thread_init(
                 &mut handle,
-                storage,
+                UnsafeCell::raw_get(&storage.storage).cast(),
                 self.name.as_ptr() as *const _,
                 Some(fn_cooperative_trampoline),
                 entry as *mut core::ffi::c_void,
                 self.priority as bindings::ove_prio_t,
-                self.stack_size,
-                stack,
+                N,
+                UnsafeCell::raw_get(&storage.stack).cast(),
             )
         };
         Error::from_code(rc)?;
-        Ok(JoinHandle::new(handle))
+        Ok(JoinHandleBorrowed::new(handle))
     }
 
     /// Stateless `fn()` variant of [`Builder::spawn_static`] for legacy
-    /// entries that don't accept a `StopToken`.
-    ///
-    /// # Safety
-    /// See [`Builder::spawn_static`].
+    /// entries that don't accept a `StopToken`.  Same safety / lifetime
+    /// rules as [`Builder::spawn_static`].
     #[cfg(zero_heap)]
-    pub unsafe fn spawn_static_simple(
+    pub fn spawn_static_simple<'storage, const N: usize>(
         self,
-        storage: *mut bindings::ove_thread_storage_t,
-        stack: *mut core::ffi::c_void,
+        storage: &'storage ThreadStorage<N>,
         entry: fn(),
-    ) -> Result<JoinHandle<()>> {
+    ) -> Result<JoinHandleBorrowed<'storage, ()>> {
         let mut handle: bindings::ove_thread_t = core::ptr::null_mut();
+        // SAFETY: see spawn_static above.
         let rc = unsafe {
             bindings::ove_thread_init(
                 &mut handle,
-                storage,
+                UnsafeCell::raw_get(&storage.storage).cast(),
                 self.name.as_ptr() as *const _,
                 Some(fn_simple_trampoline),
                 entry as *mut core::ffi::c_void,
                 self.priority as bindings::ove_prio_t,
-                self.stack_size,
-                stack,
+                N,
+                UnsafeCell::raw_get(&storage.stack).cast(),
             )
         };
         Error::from_code(rc)?;
-        Ok(JoinHandle::new(handle))
+        Ok(JoinHandleBorrowed::new(handle))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ThreadStorage — bundled TCB + aligned stack for zero-heap spawn.
+// ---------------------------------------------------------------------------
+
+/// Stack-and-TCB storage for a zero-heap thread.
+///
+/// Wraps the kernel thread control block and an aligned stack buffer
+/// into one const-constructible value.  Declare as a `static`, pass
+/// `&storage` to [`Builder::spawn_static`] / [`Builder::spawn_static_simple`].
+/// The substrate's `ove_thread_storage_t` and stack alignment are
+/// encapsulated — callers never touch them directly.
+///
+/// `STACK_SIZE` is in bytes.  The actual allocation may be larger to
+/// satisfy backend alignment (Zephyr MPU rounds up to next power of two
+/// + a 128-byte FPU guard region; other backends use 8-byte AAPCS
+/// alignment).
+///
+/// ```ignore
+/// static GFX_STORAGE: ThreadStorage<4096> = ThreadStorage::new();
+/// let h = Thread::builder()
+///     .name(c"graphics")
+///     .spawn_static_simple(&GFX_STORAGE, graphics_entry)?;
+/// ```
+#[cfg(zero_heap)]
+pub struct ThreadStorage<const STACK_SIZE: usize> {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_thread_storage_t>>,
+    stack: UnsafeCell<AlignedStack<STACK_SIZE>>,
+}
+
+#[cfg(zero_heap)]
+impl<const STACK_SIZE: usize> ThreadStorage<STACK_SIZE> {
+    /// Construct an empty `ThreadStorage`.  `const fn` so it can
+    /// initialize `static` declarations.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            stack: UnsafeCell::new(AlignedStack::new()),
+        }
+    }
+}
+
+#[cfg(zero_heap)]
+impl<const STACK_SIZE: usize> Default for ThreadStorage<STACK_SIZE> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: ThreadStorage's interior is touched only by the kernel after
+// spawn_static returns.  The kernel synchronizes its own access; the
+// Rust side never reads or writes the storage/stack again.  The
+// 'storage lifetime on JoinHandleBorrowed prevents the Rust side from
+// dropping the storage before the kernel is done with it.
+#[cfg(zero_heap)]
+unsafe impl<const STACK_SIZE: usize> Sync for ThreadStorage<STACK_SIZE> {}
+
+/// Backend-aligned stack buffer.  On Zephyr (MPU) the alignment is
+/// rounded to the next power of two of `(STACK_SIZE + 128)`; on other
+/// backends 8 bytes (ARM AAPCS) suffices.  Private — users go through
+/// [`ThreadStorage`].
+#[cfg(all(zero_heap, not(rtos_zephyr)))]
+#[repr(C, align(8))]
+struct AlignedStack<const N: usize>([u8; N]);
+
+#[cfg(all(zero_heap, rtos_zephyr))]
+#[repr(C, align(8192))]
+struct AlignedStack<const N: usize>([u8; N]);
+
+#[cfg(zero_heap)]
+impl<const N: usize> AlignedStack<N> {
+    const fn new() -> Self {
+        Self([0u8; N])
     }
 }
 
@@ -635,21 +726,43 @@ impl Builder {
 ///     thread keeps running and the handle is consumed without
 ///     destroying the kernel object.
 ///
+/// The `'storage` lifetime ties this handle to caller-provided storage
+/// in zero-heap mode.  Heap-mode spawns return [`JoinHandle<T>`] (the
+/// `'storage = 'static` alias) — kernel owns storage, no borrow.
+/// Zero-heap spawns return `JoinHandleBorrowed<'storage, T>` with the
+/// lifetime tied to the [`ThreadStorage`] reference passed to
+/// [`Builder::spawn_static`] / [`Builder::spawn_static_simple`], so the
+/// borrow checker prevents dropping the storage before the handle.
+///
 /// The `T` type parameter is reserved for future use (substrate doesn't
 /// surface a worker's return value today); ignore it and use
 /// `JoinHandle<()>`.
+/// PhantomData payload for [`JoinHandleBorrowed`]:
+///   - `fn() -> T` keeps `T` covariant for the reserved-for-future-use
+///     worker-return-type slot;
+///   - `fn(&'storage ()) -> &'storage ()` makes the lifetime invariant
+///     so the borrow checker can neither widen nor narrow it across
+///     boundaries.
+type JoinHandleVariance<'storage, T> = (fn() -> T, fn(&'storage ()) -> &'storage ());
+
 #[must_use = "dropping a JoinHandle requests stop and blocks until the worker exits"]
-pub struct JoinHandle<T = ()> {
+pub struct JoinHandleBorrowed<'storage, T = ()> {
     handle: bindings::ove_thread_t,
     detached: bool,
-    _phantom: PhantomData<fn() -> T>,
+    _phantom: PhantomData<JoinHandleVariance<'storage, T>>,
 }
 
-// SAFETY: same as Thread — the handle is RTOS-managed.
-unsafe impl<T> Send for JoinHandle<T> {}
-unsafe impl<T> Sync for JoinHandle<T> {}
+/// Heap-mode `JoinHandle`.  Alias of [`JoinHandleBorrowed`] with
+/// `'storage = 'static` (kernel owns the storage, no caller borrow).
+/// Matches the shape of `std::thread::JoinHandle` for source-level
+/// compatibility with std-style code.
+pub type JoinHandle<T = ()> = JoinHandleBorrowed<'static, T>;
 
-impl<T> JoinHandle<T> {
+// SAFETY: same as Thread — the handle is RTOS-managed.
+unsafe impl<'storage, T> Send for JoinHandleBorrowed<'storage, T> {}
+unsafe impl<'storage, T> Sync for JoinHandleBorrowed<'storage, T> {}
+
+impl<'storage, T> JoinHandleBorrowed<'storage, T> {
     fn new(handle: bindings::ove_thread_t) -> Self {
         Self {
             handle,
@@ -780,7 +893,7 @@ impl<T> JoinHandle<T> {
     }
 }
 
-impl<T> fmt::Debug for JoinHandle<T> {
+impl<'storage, T> fmt::Debug for JoinHandleBorrowed<'storage, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("JoinHandle")
             .field("handle", &format_args!("{:p}", self.handle))
@@ -789,7 +902,7 @@ impl<T> fmt::Debug for JoinHandle<T> {
     }
 }
 
-impl<T> Drop for JoinHandle<T> {
+impl<'storage, T> Drop for JoinHandleBorrowed<'storage, T> {
     /// Signals the cooperative-cancellation flag via
     /// [`Thread::request_stop`] then waits on the substrate's join.
     ///

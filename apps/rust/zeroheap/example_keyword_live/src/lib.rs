@@ -347,7 +347,7 @@ fn app_main() {
     graph.start().expect("audio graph: start");
     ove::log_inf!("Audio streaming: 16kHz mono, DMIC input");
 
-    let _infer = ove::thread!("infer", infer_thread, ove::Priority::Normal, 8192);
+    ove::thread!("infer", infer_thread, ove::Priority::Normal, 8192).detach();
     ove::log_inf!("Say \"yes\" or \"no\" near the microphone...");
     ove::run();
 }

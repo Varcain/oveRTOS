@@ -342,8 +342,7 @@ unsafe extern "C" {
     pub fn ove_httpd_log_append(line: *const core::ffi::c_char);
 }
 #[doc = " @brief Thread entry-point function prototype.\n\n @param[in] arg  Caller-supplied context pointer passed at creation time."]
-pub type ove_thread_fn =
-    Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
+pub type ove_thread_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
 #[doc = "< @brief Currently executing on the CPU."]
 pub const OVE_THREAD_STATE_RUNNING: ove_thread_state_t = 0;
 #[doc = "< @brief Ready to run, waiting for the CPU."]
@@ -443,8 +442,7 @@ pub struct ove_condvar_storage_t {
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of ove_condvar_storage_t"][core::mem::size_of::<ove_condvar_storage_t>() - 48usize];
-    ["Alignment of ove_condvar_storage_t"]
-        [core::mem::align_of::<ove_condvar_storage_t>() - 8usize];
+    ["Alignment of ove_condvar_storage_t"][core::mem::align_of::<ove_condvar_storage_t>() - 8usize];
     ["Offset of field: ove_condvar_storage_t::_opaque"]
         [core::mem::offset_of!(ove_condvar_storage_t, _opaque) - 0usize];
 };
@@ -510,8 +508,7 @@ pub struct ove_workqueue_storage_t {
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_workqueue_storage_t"]
-        [core::mem::size_of::<ove_workqueue_storage_t>() - 616usize];
+    ["Size of ove_workqueue_storage_t"][core::mem::size_of::<ove_workqueue_storage_t>() - 616usize];
     ["Alignment of ove_workqueue_storage_t"]
         [core::mem::align_of::<ove_workqueue_storage_t>() - 8usize];
     ["Offset of field: ove_workqueue_storage_t::_opaque"]
@@ -817,8 +814,7 @@ pub struct ove_mem_stats {
 const _: () = {
     ["Size of ove_mem_stats"][core::mem::size_of::<ove_mem_stats>() - 32usize];
     ["Alignment of ove_mem_stats"][core::mem::align_of::<ove_mem_stats>() - 8usize];
-    ["Offset of field: ove_mem_stats::total"]
-        [core::mem::offset_of!(ove_mem_stats, total) - 0usize];
+    ["Offset of field: ove_mem_stats::total"][core::mem::offset_of!(ove_mem_stats, total) - 0usize];
     ["Offset of field: ove_mem_stats::free"][core::mem::offset_of!(ove_mem_stats, free) - 8usize];
     ["Offset of field: ove_mem_stats::used"][core::mem::offset_of!(ove_mem_stats, used) - 16usize];
     ["Offset of field: ove_mem_stats::peak_used"]
@@ -1113,13 +1109,9 @@ pub struct ove_audio_node_ops {
         ) -> core::ffi::c_int,
     >,
     #[doc = " @brief Start the node (called on graph start).  NULL = no-op.\n\n @param[in] ctx  Node context pointer.\n @return 0 on success, negative error code on failure."]
-    pub start: Option<
-        unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int,
-    >,
+    pub start: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
     #[doc = " @brief Stop the node (called on graph stop).  NULL = no-op.\n\n @param[in] ctx  Node context pointer.\n @return 0 on success, negative error code on failure."]
-    pub stop: Option<
-        unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int,
-    >,
+    pub stop: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void) -> core::ffi::c_int>,
     #[doc = " @brief Process one buffer period.\n\n Called in topological order each graph cycle:\n - Sources: @p in is NULL; the node must fill @p out.\n - Processors: read from @p in, write to @p out (separate buffers).\n - Sinks: read from @p in; @p out is NULL.\n\n @param[in]  ctx  Node context pointer.\n @param[in]  in   Input buffer, or NULL for sources.\n @param[out] out  Output buffer to fill, or NULL for sinks.\n @return 0 on success, negative error code on failure."]
     pub process: Option<
         unsafe extern "C" fn(
@@ -1173,8 +1165,7 @@ pub struct ove_audio_node {
 const _: () = {
     ["Size of ove_audio_node"][core::mem::size_of::<ove_audio_node>() - 48usize];
     ["Alignment of ove_audio_node"][core::mem::align_of::<ove_audio_node>() - 8usize];
-    ["Offset of field: ove_audio_node::name"]
-        [core::mem::offset_of!(ove_audio_node, name) - 0usize];
+    ["Offset of field: ove_audio_node::name"][core::mem::offset_of!(ove_audio_node, name) - 0usize];
     ["Offset of field: ove_audio_node::type_"]
         [core::mem::offset_of!(ove_audio_node, type_) - 8usize];
     ["Offset of field: ove_audio_node::ops"][core::mem::offset_of!(ove_audio_node, ops) - 16usize];
@@ -1194,17 +1185,15 @@ pub struct ove_audio_channel_map {
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of ove_audio_channel_map"][core::mem::size_of::<ove_audio_channel_map>() - 36usize];
-    ["Alignment of ove_audio_channel_map"]
-        [core::mem::align_of::<ove_audio_channel_map>() - 4usize];
+    ["Alignment of ove_audio_channel_map"][core::mem::align_of::<ove_audio_channel_map>() - 4usize];
     ["Offset of field: ove_audio_channel_map::out_channels"]
         [core::mem::offset_of!(ove_audio_channel_map, out_channels) - 0usize];
     ["Offset of field: ove_audio_channel_map::map"]
         [core::mem::offset_of!(ove_audio_channel_map, map) - 4usize];
 };
 #[doc = " @brief Callback invoked by the tap node for every processed buffer.\n\n @param[in] buf        Buffer containing the observed audio data.\n @param[in] user_data  Opaque pointer supplied at node creation."]
-pub type ove_audio_tap_fn = Option<
-    unsafe extern "C" fn(buf: *const ove_audio_buf, user_data: *mut core::ffi::c_void),
->;
+pub type ove_audio_tap_fn =
+    Option<unsafe extern "C" fn(buf: *const ove_audio_buf, user_data: *mut core::ffi::c_void)>;
 unsafe extern "C" {
     #[doc = " @brief Add a sample-format converter processor node to the graph.\n\n Inserts a processor that converts any upstream sample format to\n @p target_fmt while preserving sample rate and channel count.\n\n @param[in] g           Graph to add the node to.\n @param[in] target_fmt  Desired output sample format.\n @param[in] name        Human-readable name for the node.\n @return Non-negative node index on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO and @c OVE_HEAP_AUDIO.\n @see ove_audio_graph_add_node, ove_audio_graph_connect"]
     pub fn ove_audio_node_converter(
@@ -1251,8 +1240,7 @@ pub struct ove_audio_edge {
 const _: () = {
     ["Size of ove_audio_edge"][core::mem::size_of::<ove_audio_edge>() - 8usize];
     ["Alignment of ove_audio_edge"][core::mem::align_of::<ove_audio_edge>() - 4usize];
-    ["Offset of field: ove_audio_edge::from"]
-        [core::mem::offset_of!(ove_audio_edge, from) - 0usize];
+    ["Offset of field: ove_audio_edge::from"][core::mem::offset_of!(ove_audio_edge, from) - 0usize];
     ["Offset of field: ove_audio_edge::to"][core::mem::offset_of!(ove_audio_edge, to) - 4usize];
 };
 #[doc = " @brief Runtime diagnostic counters for an audio graph.\n\n Retrieved with ove_audio_graph_get_stats().  All counters accumulate\n from graph start and are reset on each ove_audio_graph_start() call."]
@@ -1275,8 +1263,7 @@ pub struct ove_audio_graph_stats {
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of ove_audio_graph_stats"][core::mem::size_of::<ove_audio_graph_stats>() - 24usize];
-    ["Alignment of ove_audio_graph_stats"]
-        [core::mem::align_of::<ove_audio_graph_stats>() - 4usize];
+    ["Alignment of ove_audio_graph_stats"][core::mem::align_of::<ove_audio_graph_stats>() - 4usize];
     ["Offset of field: ove_audio_graph_stats::cycles"]
         [core::mem::offset_of!(ove_audio_graph_stats, cycles) - 0usize];
     ["Offset of field: ove_audio_graph_stats::underruns"]
@@ -1602,10 +1589,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Open a directory (heap or backend-managed allocation)."]
-    pub fn ove_fs_opendir(
-        dir: *mut ove_dir_t,
-        path: *const core::ffi::c_char,
-    ) -> core::ffi::c_int;
+    pub fn ove_fs_opendir(dir: *mut ove_dir_t, path: *const core::ffi::c_char) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Close a directory handle returned by @ref ove_fs_opendir."]
@@ -1742,9 +1726,8 @@ pub struct ove_timer {
 #[doc = " @brief Opaque handle for a software timer object."]
 pub type ove_timer_t = *mut ove_timer;
 #[doc = " @brief Timer expiry callback function prototype.\n\n Invoked by the RTOS timer service task (or equivalent) when the timer\n period elapses.  Implementations must be non-blocking and short.\n\n @param[in] timer      Handle of the timer that fired.\n @param[in] user_data  Opaque pointer supplied at timer creation time."]
-pub type ove_timer_fn = Option<
-    unsafe extern "C" fn(timer: ove_timer_t, user_data: *mut core::ffi::c_void),
->;
+pub type ove_timer_fn =
+    Option<unsafe extern "C" fn(timer: ove_timer_t, user_data: *mut core::ffi::c_void)>;
 unsafe extern "C" {
     #[doc = " @brief Initialise a software timer using caller-supplied static storage.\n\n Creates a timer in the stopped state.  Call ove_timer_start() to arm it.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[out] timer      Receives the opaque timer handle on success.\n @param[in]  storage    Pointer to statically allocated backend storage.\n                        Must remain valid for the lifetime of the timer.\n @param[in]  callback   Function invoked when the timer expires.\n                        Must not be NULL.\n @param[in]  user_data  Opaque pointer forwarded to @p callback on each\n                        expiry.  May be NULL.\n @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.\n @param[in]  one_shot   Non-zero to create a one-shot timer (fires once\n                        then stops automatically); zero for a periodic\n                        timer that reloads automatically.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_deinit, ove_timer_create, ove_timer_start"]
     pub fn ove_timer_init(
@@ -1845,8 +1828,7 @@ pub struct ove_board_desc {
 const _: () = {
     ["Size of ove_board_desc"][core::mem::size_of::<ove_board_desc>() - 48usize];
     ["Alignment of ove_board_desc"][core::mem::align_of::<ove_board_desc>() - 8usize];
-    ["Offset of field: ove_board_desc::name"]
-        [core::mem::offset_of!(ove_board_desc, name) - 0usize];
+    ["Offset of field: ove_board_desc::name"][core::mem::offset_of!(ove_board_desc, name) - 0usize];
     ["Offset of field: ove_board_desc::mcu_family"]
         [core::mem::offset_of!(ove_board_desc, mcu_family) - 8usize];
     ["Offset of field: ove_board_desc::mcu"][core::mem::offset_of!(ove_board_desc, mcu) - 16usize];
@@ -1913,10 +1895,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Read the current logical level of a GPIO pin.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return 1 if the pin is high, 0 if low, negative error code on failure."]
-    pub fn ove_gpio_get(
-        port: core::ffi::c_uint,
-        pin: core::ffi::c_uint,
-    ) -> core::ffi::c_int;
+    pub fn ove_gpio_get(port: core::ffi::c_uint, pin: core::ffi::c_uint) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Register an interrupt callback for a GPIO pin.\n\n The interrupt is registered but not enabled; call ove_gpio_irq_enable()\n to arm it.\n\n @param[in] port      GPIO port index.\n @param[in] pin       GPIO pin index within the port.\n @param[in] mode      Edge(s) that should trigger the interrupt.\n @param[in] callback  Function called when the interrupt fires.\n @param[in] user_data Opaque pointer forwarded to @p callback.\n @return OVE_OK on success, negative error code on failure."]
@@ -1930,10 +1909,8 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Enable a previously registered GPIO interrupt.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return OVE_OK on success, negative error code on failure."]
-    pub fn ove_gpio_irq_enable(
-        port: core::ffi::c_uint,
-        pin: core::ffi::c_uint,
-    ) -> core::ffi::c_int;
+    pub fn ove_gpio_irq_enable(port: core::ffi::c_uint, pin: core::ffi::c_uint)
+    -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Disable a previously enabled GPIO interrupt without unregistering it.\n\n The callback and trigger edge are retained; call ove_gpio_irq_enable()\n to re-arm.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return OVE_OK on success, negative error code on failure."]
@@ -2239,9 +2216,8 @@ unsafe extern "C" {
     pub fn ove_nvs_erase(key: *const core::ffi::c_char) -> core::ffi::c_int;
 }
 #[doc = " @brief Prototype for a shell command handler function.\n\n Called by the shell when the user enters a matching command. @p argc is the\n total number of tokens (including the command name in @p argv[0]) and is\n always at least 1. @p argv is a @c NULL-terminated array of pointers to\n the individual tokens within the line buffer; the strings are valid only\n for the duration of the call.\n\n @param[in] argc  Number of arguments (including the command name).\n @param[in] argv  Array of @p argc argument strings, terminated by @c NULL."]
-pub type ove_shell_cmd_fn = Option<
-    unsafe extern "C" fn(argc: core::ffi::c_int, argv: *mut *const core::ffi::c_char),
->;
+pub type ove_shell_cmd_fn =
+    Option<unsafe extern "C" fn(argc: core::ffi::c_int, argv: *mut *const core::ffi::c_char)>;
 #[doc = " @brief Descriptor for a single shell command.\n\n Passed by pointer to @ref ove_shell_register_cmd. The structure must\n remain valid (e.g. declared @c static) for the entire system lifetime\n after registration."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2436,10 +2412,8 @@ const _: () = {
     ["Alignment of ove_sockaddr_t"][core::mem::align_of::<ove_sockaddr_t>() - 4usize];
     ["Offset of field: ove_sockaddr_t::family"]
         [core::mem::offset_of!(ove_sockaddr_t, family) - 0usize];
-    ["Offset of field: ove_sockaddr_t::port"]
-        [core::mem::offset_of!(ove_sockaddr_t, port) - 4usize];
-    ["Offset of field: ove_sockaddr_t::addr"]
-        [core::mem::offset_of!(ove_sockaddr_t, addr) - 6usize];
+    ["Offset of field: ove_sockaddr_t::port"][core::mem::offset_of!(ove_sockaddr_t, port) - 4usize];
+    ["Offset of field: ove_sockaddr_t::addr"][core::mem::offset_of!(ove_sockaddr_t, addr) - 6usize];
 };
 #[doc = " @brief Network interface configuration."]
 #[repr(C)]
@@ -2484,10 +2458,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Bring the network interface up.\n\n @param[in] netif Handle returned by ove_netif_init().\n @param[in] cfg   Interface configuration (DHCP or static).\n @return OVE_OK on success, negative error code on failure."]
-    pub fn ove_netif_up(
-        netif: ove_netif_t,
-        cfg: *const ove_netif_config_t,
-    ) -> core::ffi::c_int;
+    pub fn ove_netif_up(netif: ove_netif_t, cfg: *const ove_netif_config_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Tear down the network interface.\n\n @param[in] netif Handle returned by ove_netif_init()."]
@@ -2533,17 +2504,11 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Bind a socket to a local address.\n\n @param[in] sock Socket handle.\n @param[in] addr Local address to bind.\n @return OVE_OK on success, negative error code on failure."]
-    pub fn ove_socket_bind(
-        sock: ove_socket_t,
-        addr: *const ove_sockaddr_t,
-    ) -> core::ffi::c_int;
+    pub fn ove_socket_bind(sock: ove_socket_t, addr: *const ove_sockaddr_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Mark a bound socket as listening for incoming connections.\n\n @param[in] sock    Socket handle.\n @param[in] backlog Maximum pending connection queue length.\n @return OVE_OK on success, negative error code on failure."]
-    pub fn ove_socket_listen(
-        sock: ove_socket_t,
-        backlog: core::ffi::c_int,
-    ) -> core::ffi::c_int;
+    pub fn ove_socket_listen(sock: ove_socket_t, backlog: core::ffi::c_int) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Accept an incoming connection on a listening socket.\n\n @param[in]  sock           Listening socket handle.\n @param[out] client         Handle for the accepted connection.\n @param[in]  client_storage Caller-allocated storage for the new socket.\n @param[in]  timeout_ns     Timeout in nanoseconds.\n @return OVE_OK on success, negative error code on failure."]
@@ -2662,10 +2627,7 @@ const _: () = {
 };
 unsafe extern "C" {
     #[doc = " @brief Initialise a TLS session from caller-supplied storage.\n\n @param[out] tls     Handle written on success.\n @param[in]  storage Caller-allocated storage.\n @return OVE_OK on success, negative error code on failure."]
-    pub fn ove_tls_init(
-        tls: *mut ove_tls_t,
-        storage: *mut ove_tls_storage_t,
-    ) -> core::ffi::c_int;
+    pub fn ove_tls_init(tls: *mut ove_tls_t, storage: *mut ove_tls_storage_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief De-initialise a TLS session (frees internal resources, not storage).\n\n @param[in] tls Handle returned by ove_tls_init()."]
@@ -3190,8 +3152,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Return non-zero if the HTTP headers request a WebSocket upgrade."]
-    pub fn ove_httpd_ws_is_upgrade(headers: *const core::ffi::c_char)
-    -> core::ffi::c_int;
+    pub fn ove_httpd_ws_is_upgrade(headers: *const core::ffi::c_char) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Complete the WebSocket upgrade handshake on `sock`.\n\n Invoked by the httpd accept loop after `ove_httpd_ws_is_upgrade()` returns\n true.  On success the connection is handed off to the WS subsystem."]
@@ -3274,10 +3235,7 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     #[doc = " @brief Heap-mode counterpart of `ove_uart_init()` — allocates storage and RX buffer.\n @param[out] uart Receives the initialised handle.\n @param[in]  cfg  UART configuration descriptor.\n @return OVE_OK on success, negative error code on failure."]
-    pub fn ove_uart_create(
-        uart: *mut ove_uart_t,
-        cfg: *const ove_uart_cfg,
-    ) -> core::ffi::c_int;
+    pub fn ove_uart_create(uart: *mut ove_uart_t, cfg: *const ove_uart_cfg) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Destroy a UART handle previously created with `ove_uart_create`."]
@@ -3377,8 +3335,7 @@ const _: () = {
     ["Alignment of ove_spi_cs"][core::mem::align_of::<ove_spi_cs>() - 4usize];
     ["Offset of field: ove_spi_cs::gpio_port"]
         [core::mem::offset_of!(ove_spi_cs, gpio_port) - 0usize];
-    ["Offset of field: ove_spi_cs::gpio_pin"]
-        [core::mem::offset_of!(ove_spi_cs, gpio_pin) - 4usize];
+    ["Offset of field: ove_spi_cs::gpio_pin"][core::mem::offset_of!(ove_spi_cs, gpio_pin) - 4usize];
     ["Offset of field: ove_spi_cs::active_low"]
         [core::mem::offset_of!(ove_spi_cs, active_low) - 8usize];
 };
@@ -3573,9 +3530,8 @@ pub const OVE_I2S_DIR_TXRX: ove_i2s_dir_t = 3;
 #[doc = " @brief I2S stream direction."]
 pub type ove_i2s_dir_t = core::ffi::c_uint;
 #[doc = " @brief I2S half-buffer completion callback.\n\n Called from ISR context when a DMA half-transfer or full-transfer\n completes.  The callback should be short — typically it unblocks a\n processing task.\n\n @param[in] i2s       I2S handle.\n @param[in] user_data Opaque pointer supplied at registration time."]
-pub type ove_i2s_cb_t = Option<
-    unsafe extern "C" fn(i2s: ove_i2s_t, user_data: *mut core::ffi::c_void),
->;
+pub type ove_i2s_cb_t =
+    Option<unsafe extern "C" fn(i2s: ove_i2s_t, user_data: *mut core::ffi::c_void)>;
 #[doc = " @brief I2S bus configuration descriptor."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4152,10 +4108,8 @@ const _: () = {
     ["Offset of field: lv_anim_t::dummy"][core::mem::offset_of!(lv_anim_t, dummy) - 8usize];
 };
 pub type lv_timer_cb_t = Option<unsafe extern "C" fn(arg1: *mut lv_timer_t)>;
-pub type lv_anim_exec_xcb_t =
-    Option<unsafe extern "C" fn(arg1: *mut core::ffi::c_void, arg2: i32)>;
-pub type lv_anim_path_cb_t =
-    Option<unsafe extern "C" fn(arg1: *const lv_anim_t) -> i32>;
+pub type lv_anim_exec_xcb_t = Option<unsafe extern "C" fn(arg1: *mut core::ffi::c_void, arg2: i32)>;
+pub type lv_anim_path_cb_t = Option<unsafe extern "C" fn(arg1: *const lv_anim_t) -> i32>;
 pub type lv_anim_completed_cb_t = Option<unsafe extern "C" fn(arg1: *mut lv_anim_t)>;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4170,10 +4124,8 @@ const _: () = {
     ["Alignment of lv_image_header_t"][core::mem::align_of::<lv_image_header_t>() - 4usize];
     ["Offset of field: lv_image_header_t::cf"]
         [core::mem::offset_of!(lv_image_header_t, cf) - 0usize];
-    ["Offset of field: lv_image_header_t::w"]
-        [core::mem::offset_of!(lv_image_header_t, w) - 4usize];
-    ["Offset of field: lv_image_header_t::h"]
-        [core::mem::offset_of!(lv_image_header_t, h) - 8usize];
+    ["Offset of field: lv_image_header_t::w"][core::mem::offset_of!(lv_image_header_t, w) - 4usize];
+    ["Offset of field: lv_image_header_t::h"][core::mem::offset_of!(lv_image_header_t, h) - 8usize];
 };
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -4583,10 +4535,7 @@ unsafe extern "C" {
     pub fn lv_textarea_add_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
 }
 unsafe extern "C" {
-    pub fn lv_textarea_set_placeholder_text(
-        obj: *mut lv_obj_t,
-        text: *const core::ffi::c_char,
-    );
+    pub fn lv_textarea_set_placeholder_text(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
 }
 unsafe extern "C" {
     pub fn lv_textarea_set_one_line(obj: *mut lv_obj_t, en: bool);
@@ -4677,11 +4626,7 @@ unsafe extern "C" {
     pub fn lv_roller_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
 }
 unsafe extern "C" {
-    pub fn lv_roller_set_options(
-        obj: *mut lv_obj_t,
-        opts: *const core::ffi::c_char,
-        mode: u32,
-    );
+    pub fn lv_roller_set_options(obj: *mut lv_obj_t, opts: *const core::ffi::c_char, mode: u32);
 }
 unsafe extern "C" {
     pub fn lv_roller_set_selected(obj: *mut lv_obj_t, sel: u32, anim: i32);
@@ -4832,10 +4777,7 @@ unsafe extern "C" {
     pub fn lv_tabview_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
 }
 unsafe extern "C" {
-    pub fn lv_tabview_add_tab(
-        tv: *mut lv_obj_t,
-        name: *const core::ffi::c_char,
-    ) -> *mut lv_obj_t;
+    pub fn lv_tabview_add_tab(tv: *mut lv_obj_t, name: *const core::ffi::c_char) -> *mut lv_obj_t;
 }
 unsafe extern "C" {
     pub fn lv_tabview_rename_tab(tv: *mut lv_obj_t, idx: u32, name: *const core::ffi::c_char);
@@ -4862,10 +4804,7 @@ unsafe extern "C" {
     pub fn lv_list_create(parent: *mut lv_obj_t) -> *mut lv_obj_t;
 }
 unsafe extern "C" {
-    pub fn lv_list_add_text(
-        list: *mut lv_obj_t,
-        text: *const core::ffi::c_char,
-    ) -> *mut lv_obj_t;
+    pub fn lv_list_add_text(list: *mut lv_obj_t, text: *const core::ffi::c_char) -> *mut lv_obj_t;
 }
 unsafe extern "C" {
     pub fn lv_list_add_button(
@@ -5001,9 +4940,8 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn lv_subject_deinit(subject: *mut lv_subject_t);
 }
-pub type lv_observer_cb_t = Option<
-    unsafe extern "C" fn(observer: *mut lv_observer_t, subject: *mut lv_subject_t),
->;
+pub type lv_observer_cb_t =
+    Option<unsafe extern "C" fn(observer: *mut lv_observer_t, subject: *mut lv_subject_t)>;
 unsafe extern "C" {
     pub fn lv_subject_add_observer_obj(
         subject: *mut lv_subject_t,

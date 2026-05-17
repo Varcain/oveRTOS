@@ -9,16 +9,16 @@
 //! Showcases the static-allocation Rust pattern over the same
 //! producer/consumer/UI flow as the C, C++, and heap-mode Rust examples.
 //!
-//!   - Caller-supplied `static mut` storage for every kernel object.
-//!     Each `Type::from_static(&mut storage, …)` is `unsafe` because
-//!     the caller is asserting that the storage outlives the wrapper
-//!     and is not aliased; the binding itself contains zero `unsafe`
-//!     beyond what those FFI calls require.
+//!   - Caller-supplied static storage for every kernel object.  Thread
+//!     storage uses [`ove::ThreadStorage<N>`], a `Sync` wrapper that the
+//!     borrow checker enforces the lifetime of (no `static mut`, no
+//!     `addr_of_mut!` in user code).  Queue and timer follow the
+//!     established `from_static(&mut storage, …)` `unsafe` pattern
+//!     until they get the same treatment.
 //!   - The `ove::queue!`, `ove::thread!`, and `ove::timer!` macros each
-//!     expand to a function-scope `static mut` plus the matching
-//!     `from_static` call — they encapsulate the boilerplate while
-//!     leaving the static-storage origin visible.  This file uses both
-//!     styles deliberately to make the pattern obvious.
+//!     expand to a function-scope `static <storage>` declaration plus
+//!     the matching constructor — they encapsulate the boilerplate
+//!     while leaving the static-storage origin visible.
 //!   - No `_create()` symbols are linked in this build.  No `Box`, no
 //!     `alloc`, no operator new of any kind.
 //!
@@ -32,7 +32,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{Priority, Queue, StaticCell, Thread, Timer, WAIT_FOREVER};
+use ove::{JoinHandle, Priority, Queue, StaticCell, Thread, Timer, WAIT_FOREVER};
 
 // ---------------------------------------------------------------------------
 // Constants and shared state
@@ -78,11 +78,14 @@ fn count_buf_view() -> &'static [u8] {
     unsafe { &*COUNT_BUF.0.get() }
 }
 
-// Thread handles also live in static cells; their stacks come from the
-// `ove::thread!` macro which emits a `static mut <stack>: AlignedStack;`.
-static GFX_THREAD: StaticCell<Thread> = StaticCell::new();
-static PROD_THREAD: StaticCell<Thread> = StaticCell::new();
-static CONS_THREAD: StaticCell<Thread> = StaticCell::new();
+// Thread handles live in static cells; their TCB + stack come from
+// `ove::ThreadStorage<N>` that the `ove::thread!` macro emits as a
+// `static`.  Drop never runs on a static, so the threads run forever.
+// Apps can still call `.request_stop()` on the JoinHandle to signal
+// cooperative shutdown.
+static GFX_THREAD: StaticCell<JoinHandle<()>> = StaticCell::new();
+static PROD_THREAD: StaticCell<JoinHandle<()>> = StaticCell::new();
+static CONS_THREAD: StaticCell<JoinHandle<()>> = StaticCell::new();
 
 // ---------------------------------------------------------------------------
 // LVGL UI
@@ -210,7 +213,7 @@ fn app_main() {
     ove::log_inf!("Rust example (zero-heap mode): init");
 
     // The `ove::queue!` / `ove::thread!` / `ove::timer!` macros emit
-    // function-scope `static mut <storage>: ...;` declarations and call
+    // function-scope `static <storage>: ...;` declarations and call
     // `Type::from_static(...)` against them.  In zero-heap mode this is
     // the only way to construct the wrappers (the `_create` paths are
     // not linked into the binary).

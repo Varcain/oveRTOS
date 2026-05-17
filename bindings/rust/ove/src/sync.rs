@@ -157,7 +157,9 @@ impl RecursiveMutex {
     /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
     #[inline]
     pub fn lock(&self, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(timeout)) };
+        let rc = unsafe {
+            bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(timeout))
+        };
         Error::from_code(rc)
     }
 
@@ -389,7 +391,9 @@ impl CondVar {
     /// [`broadcast`](CondVar::broadcast) fires within `timeout_ns`.
     #[inline]
     pub fn wait(&self, mutex: &Mutex, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(timeout)) };
+        let rc = unsafe {
+            bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(timeout))
+        };
         Error::from_code(rc)
     }
 
@@ -404,9 +408,7 @@ impl CondVar {
     #[inline]
     pub fn wait_until(&self, mutex: &Mutex, deadline_ns: u64) -> Result<()> {
         let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let rc = unsafe {
-            bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout)
-        };
+        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout) };
         Error::from_code(rc)
     }
 
