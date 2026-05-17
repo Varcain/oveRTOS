@@ -53,7 +53,12 @@ PROVIDE(__heap_end = _estack);
 PROVIDE(__HeapBase = _heap_start);
 PROVIDE(__HeapLimit = _estack);
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x2000;      /* required amount of heap  */
+_Min_Heap_Size = 0x1000;      /* required amount of heap (was 0x2000 / 8 KB;
+                                 reduced to 0x1000 / 4 KB to make room for
+                                 Phase 4's per-thread stop_requested field
+                                 in BSS — actual C heap area is computed
+                                 from whatever RAM is left after BSS+data,
+                                 this just relaxes the build-time check.) */
 _Min_Stack_Size = 0x200; /* required amount of stack */
 
 /* Specify the memory areas */

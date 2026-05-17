@@ -368,6 +368,7 @@ static inline int ove_test_thread_destroy(ove_thread_t th)
 /* Test suite runner declarations */
 int test_thread_run(void);
 int test_thread_stop_run(void);
+int test_thread_stop_isolation_run(void);
 int test_sync_mutex_run(void);
 int test_sync_sem_run(void);
 int test_sync_event_run(void);

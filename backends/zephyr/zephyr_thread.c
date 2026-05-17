@@ -179,6 +179,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->state = OVE_THREAD_STATE_READY;
 	storage->name = name; /* caller-owned; retained for trace descriptor */
 	storage->next = NULL;
+	storage->stop_requested = 0;
 
 	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
 			      (void *)entry, arg, (void *)storage, map_priority(priority), 0,
@@ -246,6 +247,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	info->state = OVE_THREAD_STATE_READY;
 	info->name = name;
 	info->next = NULL;
+	info->stop_requested = 0;
 
 	tid = k_thread_create(&info->thread, stack, stack_size, thread_wrapper, (void *)entry, arg,
 			      (void *)info, map_priority(priority), 0, K_NO_WAIT);
@@ -335,6 +337,19 @@ void ove_thread_resume(ove_thread_t handle)
 		SET_STATE(info, OVE_THREAD_STATE_READY);
 		k_thread_resume(&info->thread);
 	}
+}
+
+void ove_thread_request_stop(ove_thread_t handle)
+{
+	if (handle)
+		__atomic_store_n(&handle->stop_requested, 1, __ATOMIC_RELEASE);
+}
+
+bool ove_thread_should_stop(ove_thread_t handle)
+{
+	if (!handle)
+		return false;
+	return __atomic_load_n(&handle->stop_requested, __ATOMIC_ACQUIRE) != 0;
 }
 
 #ifdef CONFIG_OVE_THREAD_STATE_STATS

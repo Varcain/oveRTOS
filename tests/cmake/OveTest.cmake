@@ -61,6 +61,7 @@ set(OVE_TEST_FS_SUITES
 
 # Stub-only suites — host-side unit tests that don't need an RTOS.
 set(OVE_TEST_STUB_ONLY_SUITES
+    test_thread_stop_isolation.c
     test_static_define.c
     test_infer.c
     test_net_mqtt.c

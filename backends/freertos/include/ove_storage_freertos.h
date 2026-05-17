@@ -107,6 +107,10 @@ struct ove_thread {
 	 * the traceTASK_SWITCHED_IN/OUT hooks in freertos_trace.c. */
 	struct ove_state_tracker st;
 #endif
+	/* Cooperative cancellation flag.  Set by ove_thread_request_stop,
+	 * polled by the worker via ove_thread_should_stop.  Accessed via
+	 * __atomic_* builtins so the same field works in C and C++ TUs. */
+	volatile int stop_requested;
 #ifndef CONFIG_OVE_ZERO_HEAP
 	/* Flexible-array stack tail.  Used by the heap-create path
 	 * (ove_thread_create) which allocates `sizeof(struct ove_thread)

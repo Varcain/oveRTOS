@@ -87,6 +87,7 @@ set(_srcs
   ${_suite_dir}/test_renode_stm32_periph.c
   ${_suite_dir}/test_renode_stm32_net.c
   ${_suite_dir}/test_thread.c
+  ${_suite_dir}/test_thread_stop.c
   ${_suite_dir}/test_sync_mutex.c
   ${_suite_dir}/test_sync_sem.c
   ${_suite_dir}/test_sync_event.c
