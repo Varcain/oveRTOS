@@ -115,6 +115,19 @@ class Mutex
 	}
 
 	/**
+	 * @brief Deadline-based variant of @ref lock.
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
+	 *                     wait must complete.  Pass
+	 *                     `steady_clock::time_point::max()` to block
+	 *                     indefinitely.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int lock_until(steady_clock::time_point deadline)
+	{
+		return ove_mutex_lock_until(handle_, to_deadline_ns(deadline));
+	}
+
+	/**
 	 * @brief Releases the mutex.
 	 *
 	 * Must be called from the same thread context that acquired the lock.
@@ -234,6 +247,17 @@ class RecursiveMutex
 	[[nodiscard]] int lock(std::chrono::nanoseconds timeout = wait_forever)
 	{
 		return ove_recursive_mutex_lock(handle_, to_timeout_ns(timeout));
+	}
+
+	/**
+	 * @brief Deadline-based variant of @ref lock.
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
+	 *                     wait must complete.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int lock_until(steady_clock::time_point deadline)
+	{
+		return ove_recursive_mutex_lock_until(handle_, to_deadline_ns(deadline));
 	}
 
 	/**
@@ -491,6 +515,17 @@ class Semaphore
 	}
 
 	/**
+	 * @brief Deadline-based variant of @ref take.
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
+	 *                     wait must complete.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int take_until(steady_clock::time_point deadline)
+	{
+		return ove_sem_take_until(handle_, to_deadline_ns(deadline));
+	}
+
+	/**
 	 * @brief Increments the semaphore count, unblocking a waiting task if any.
 	 *
 	 * Safe to call from both task and ISR context.
@@ -610,6 +645,17 @@ class Event
 	[[nodiscard]] int wait(std::chrono::nanoseconds timeout = wait_forever)
 	{
 		return ove_event_wait(handle_, to_timeout_ns(timeout));
+	}
+
+	/**
+	 * @brief Deadline-based variant of @ref wait.
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
+	 *                     wait must complete.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int wait_until(steady_clock::time_point deadline)
+	{
+		return ove_event_wait_until(handle_, to_deadline_ns(deadline));
 	}
 
 	/**
@@ -748,6 +794,19 @@ class CondVar
 	[[nodiscard]] int wait(Mutex &mtx, std::chrono::nanoseconds timeout = wait_forever)
 	{
 		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(timeout));
+	}
+
+	/**
+	 * @brief Deadline-based variant of @ref wait.
+	 * @param[in] mtx      Mutex that guards the condition.  Must be locked
+	 *                     by the calling thread.
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
+	 *                     wait must complete.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int wait_until(Mutex &mtx, steady_clock::time_point deadline)
+	{
+		return ove_condvar_wait_until(handle_, mtx.handle(), to_deadline_ns(deadline));
 	}
 
 	/**

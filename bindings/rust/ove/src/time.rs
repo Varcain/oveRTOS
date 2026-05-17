@@ -72,3 +72,38 @@ pub fn delay_us(us: u32) {
     unsafe { bindings::ove_time_delay_us(us) }
 }
 
+/// Get the current monotonic time in nanoseconds since an arbitrary epoch.
+///
+/// The epoch matches the substrate's steady clock; use with `_until`
+/// variants to compose a deadline:
+/// ```ignore
+/// let deadline_ns = ove::time::now_steady_ns() + 100_000_000;
+/// mtx.lock_until(deadline_ns)?;
+/// ```
+#[inline]
+pub fn now_steady_ns() -> u64 {
+    let mut ns: u64 = 0;
+    unsafe { bindings::ove_time_get_ns(&mut ns) };
+    ns
+}
+
+/// Convert an absolute steady-clock deadline to the time remaining,
+/// preserving the `u64::MAX` "wait forever" sentinel.  Returns 0 when
+/// the deadline is in the past.
+///
+/// Used internally by every binding wrapper's `_until` variant.  The
+/// substrate exposes the same helper as `ove_time_deadline_to_timeout_ns`
+/// (a `static inline` in `<ove/time.h>` that bindgen can't reach).
+#[inline]
+pub(crate) fn deadline_to_timeout_ns(deadline_ns: u64) -> u64 {
+    if deadline_ns == u64::MAX {
+        return u64::MAX;
+    }
+    let now = now_steady_ns();
+    if deadline_ns > now {
+        deadline_ns - now
+    } else {
+        0
+    }
+}
+

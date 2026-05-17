@@ -72,6 +72,29 @@ impl<const N: usize> Stream<N> {
         Ok(bytes_sent)
     }
 
+    /// Send bytes with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
+    ///
+    /// Returns the number of bytes actually sent.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if no bytes could be sent before the deadline.
+    #[inline]
+    pub fn send_until(&self, data: &[u8], deadline_ns: u64) -> Result<usize> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let mut bytes_sent: usize = 0;
+        let rc = unsafe {
+            bindings::ove_stream_send(
+                self.handle,
+                data.as_ptr() as *const _,
+                data.len(),
+                timeout,
+                &mut bytes_sent,
+            )
+        };
+        Error::from_code(rc)?;
+        Ok(bytes_sent)
+    }
+
     /// Receive bytes from the stream into `buf`, blocking up to `timeout_ns`.
     ///
     /// Returns the number of bytes actually received. Blocks until at least the
@@ -88,6 +111,29 @@ impl<const N: usize> Stream<N> {
                 buf.as_mut_ptr() as *mut _,
                 buf.len(),
                 crate::time::dur_to_ns(timeout),
+                &mut bytes_received,
+            )
+        };
+        Error::from_code(rc)?;
+        Ok(bytes_received)
+    }
+
+    /// Receive bytes with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
+    ///
+    /// Returns the number of bytes actually received.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if no bytes could be received before the deadline.
+    #[inline]
+    pub fn receive_until(&self, buf: &mut [u8], deadline_ns: u64) -> Result<usize> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+        let mut bytes_received: usize = 0;
+        let rc = unsafe {
+            bindings::ove_stream_receive(
+                self.handle,
+                buf.as_mut_ptr() as *mut _,
+                buf.len(),
+                timeout,
                 &mut bytes_received,
             )
         };

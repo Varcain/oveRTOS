@@ -73,6 +73,13 @@ const HeapMutex = struct {
         try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ns));
     }
 
+    /// Lock with an absolute deadline (steady-clock ns).  Pass
+    /// `ove.wait_forever` to block indefinitely.
+    pub inline fn lockUntil(self: Mutex, deadline_ns: u64) Error!void {
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_mutex_lock(self.handle, t));
+    }
+
     pub inline fn unlock(self: Mutex) void {
         c.ove_mutex_unlock(self.handle);
     }
@@ -128,6 +135,12 @@ const ZeroHeapMutex = struct {
         try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ns));
     }
 
+    pub inline fn lockUntil(self: *Mutex, deadline_ns: u64) Error!void {
+        self.tracker.assertSame(self, "ove.Mutex");
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_mutex_lock(self.handle, t));
+    }
+
     pub inline fn unlock(self: *Mutex) void {
         self.tracker.assertSame(self, "ove.Mutex");
         c.ove_mutex_unlock(self.handle);
@@ -170,6 +183,11 @@ const HeapRecursiveMutex = struct {
 
     pub inline fn lock(self: RecursiveMutex, timeout_ns: u64) Error!void {
         try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ns));
+    }
+
+    pub inline fn lockUntil(self: RecursiveMutex, deadline_ns: u64) Error!void {
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, t));
     }
 
     pub inline fn unlock(self: RecursiveMutex) void {
@@ -215,6 +233,12 @@ const ZeroHeapRecursiveMutex = struct {
         try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ns));
     }
 
+    pub inline fn lockUntil(self: *RecursiveMutex, deadline_ns: u64) Error!void {
+        self.tracker.assertSame(self, "ove.RecursiveMutex");
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, t));
+    }
+
     pub inline fn unlock(self: *RecursiveMutex) void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
         c.ove_recursive_mutex_unlock(self.handle);
@@ -258,6 +282,11 @@ const HeapSemaphore = struct {
         try err.fromCode(c.ove_sem_take(self.handle, timeout_ns));
     }
 
+    pub inline fn takeUntil(self: Semaphore, deadline_ns: u64) Error!void {
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_sem_take(self.handle, t));
+    }
+
     pub inline fn give(self: Semaphore) void {
         c.ove_sem_give(self.handle);
     }
@@ -289,6 +318,12 @@ const ZeroHeapSemaphore = struct {
         try err.fromCode(c.ove_sem_take(self.handle, timeout_ns));
     }
 
+    pub inline fn takeUntil(self: *Semaphore, deadline_ns: u64) Error!void {
+        self.tracker.assertSame(self, "ove.Semaphore");
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_sem_take(self.handle, t));
+    }
+
     pub inline fn give(self: *Semaphore) void {
         self.tracker.assertSame(self, "ove.Semaphore");
         c.ove_sem_give(self.handle);
@@ -318,6 +353,11 @@ const HeapEvent = struct {
 
     pub inline fn wait(self: Event, timeout_ns: u64) Error!void {
         try err.fromCode(c.ove_event_wait(self.handle, timeout_ns));
+    }
+
+    pub inline fn waitUntil(self: Event, deadline_ns: u64) Error!void {
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_event_wait(self.handle, t));
     }
 
     pub inline fn signal(self: Event) void {
@@ -353,6 +393,12 @@ const ZeroHeapEvent = struct {
     pub inline fn wait(self: *Event, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.Event");
         try err.fromCode(c.ove_event_wait(self.handle, timeout_ns));
+    }
+
+    pub inline fn waitUntil(self: *Event, deadline_ns: u64) Error!void {
+        self.tracker.assertSame(self, "ove.Event");
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_event_wait(self.handle, t));
     }
 
     pub inline fn signal(self: *Event) void {
@@ -395,6 +441,11 @@ const HeapCondVar = struct {
         try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns));
     }
 
+    pub inline fn waitUntil(self: CondVar, mutex: Mutex, deadline_ns: u64) Error!void {
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, t));
+    }
+
     pub inline fn signal(self: CondVar) void {
         c.ove_condvar_signal(self.handle);
     }
@@ -430,6 +481,12 @@ const ZeroHeapCondVar = struct {
     pub inline fn wait(self: *CondVar, mutex: *Mutex, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.CondVar");
         try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns));
+    }
+
+    pub inline fn waitUntil(self: *CondVar, mutex: *Mutex, deadline_ns: u64) Error!void {
+        self.tracker.assertSame(self, "ove.CondVar");
+        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, t));
     }
 
     pub inline fn signal(self: *CondVar) void {

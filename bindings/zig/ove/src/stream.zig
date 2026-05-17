@@ -59,9 +59,23 @@ fn HeapStream(comptime size: usize) type {
             return sent;
         }
 
+        pub inline fn sendUntil(self: Self, data: []const u8, deadline_ns: u64) Error!usize {
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            var sent: usize = 0;
+            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent));
+            return sent;
+        }
+
         pub inline fn receive(self: Self, buf: []u8, timeout_ns: u64) Error!usize {
             var received: usize = 0;
             try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received));
+            return received;
+        }
+
+        pub inline fn receiveUntil(self: Self, buf: []u8, deadline_ns: u64) Error!usize {
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            var received: usize = 0;
+            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received));
             return received;
         }
 
@@ -128,10 +142,26 @@ fn ZeroHeapStream(comptime size: usize) type {
             return sent;
         }
 
+        pub inline fn sendUntil(self: *Self, data: []const u8, deadline_ns: u64) Error!usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            var sent: usize = 0;
+            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent));
+            return sent;
+        }
+
         pub inline fn receive(self: *Self, buf: []u8, timeout_ns: u64) Error!usize {
             self.tracker.assertSame(self, "ove.Stream");
             var received: usize = 0;
             try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received));
+            return received;
+        }
+
+        pub inline fn receiveUntil(self: *Self, buf: []u8, deadline_ns: u64) Error!usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+            var received: usize = 0;
+            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received));
             return received;
         }
 

@@ -50,3 +50,29 @@ pub inline fn delayUs(microseconds: u32) void {
 // the idiomatic Zig pattern (mirrors std.time.sleep callers):
 //   try queue.send(&item, 100 * std.time.ns_per_ms);
 //   try mutex.lock(5 * std.time.ns_per_s);
+
+/// Return the current monotonic time in nanoseconds.
+///
+/// Like `getNs()` but skips the error-mapping branch — the substrate's
+/// `ove_time_get_ns` is infallible on every supported backend.  Use
+/// this when composing deadlines for `lockUntil` / `takeUntil` etc.:
+///   const deadline = ove.time.nowSteadyNs() + 100 * std.time.ns_per_ms;
+///   try mutex.lockUntil(deadline);
+pub inline fn nowSteadyNs() u64 {
+    var out: u64 = 0;
+    _ = c.ove_time_get_ns(&out);
+    return out;
+}
+
+/// Convert an absolute steady-clock deadline to the remaining duration,
+/// preserving the `OVE_WAIT_FOREVER` sentinel (== `u64` max).  Returns 0
+/// when the deadline is in the past.
+///
+/// Used internally by every binding's `*Until` variant.  The substrate
+/// exposes the same helper as `ove_time_deadline_to_timeout_ns` (a
+/// `static inline` in `<ove/time.h>` that `@cImport` doesn't surface).
+pub inline fn deadlineToTimeoutNs(deadline_ns: u64) u64 {
+    if (deadline_ns == @import("error.zig").wait_forever) return deadline_ns;
+    const now = nowSteadyNs();
+    return if (deadline_ns > now) deadline_ns - now else 0;
+}

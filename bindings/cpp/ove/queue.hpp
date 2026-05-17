@@ -121,6 +121,18 @@ template <typename T, size_t MaxItems = 0> class Queue
 	}
 
 	/**
+	 * @brief Deadline-based variant of @ref send.
+	 * @param[in] item     The item to enqueue (copied into the queue).
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
+	 *                     wait must complete.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int send_until(const T &item, steady_clock::time_point deadline)
+	{
+		return ove_queue_send_until(handle_, &item, to_deadline_ns(deadline));
+	}
+
+	/**
 	 * @brief Receives an item from the front of the queue from task context.
 	 * @param[out] item      Pointer to storage for the received item.
 	 * @param[in]  timeout_ns Maximum time to wait if the queue is empty; use
@@ -130,6 +142,18 @@ template <typename T, size_t MaxItems = 0> class Queue
 	[[nodiscard]] int receive(T *item, std::chrono::nanoseconds timeout = wait_forever)
 	{
 		return ove_queue_receive(handle_, item, to_timeout_ns(timeout));
+	}
+
+	/**
+	 * @brief Deadline-based variant of @ref receive.
+	 * @param[out] item     Pointer to storage for the received item.
+	 * @param[in]  deadline @ref ove::steady_clock::time_point at which the
+	 *                      wait must complete.
+	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 */
+	[[nodiscard]] int receive_until(T *item, steady_clock::time_point deadline)
+	{
+		return ove_queue_receive_until(handle_, item, to_deadline_ns(deadline));
 	}
 
 	/**
