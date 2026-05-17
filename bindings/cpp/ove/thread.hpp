@@ -90,6 +90,51 @@ class stop_token
 template <typename F>
 concept CooperativeThreadEntry = std::convertible_to<F, void (*)(stop_token)>;
 
+/**
+ * @class thread_id
+ * @brief Opaque identity for an oveRTOS thread.  `std::thread::id` analog.
+ *
+ * Default-constructible (represents "no thread"), equality-comparable,
+ * and strict-weak-ordered (`<=>` via the underlying handle pointer).
+ * Useful for storing thread identities in associative containers.
+ *
+ * Also exposed as @c Thread<N>::id (alias) to mirror @c std::thread::id
+ * usage — `Thread<4096>::id` and `Thread<2048>::id` are the same type,
+ * so values from differently-sized wrappers compare cleanly.
+ *
+ * @code
+ * ove::Thread<4096> th(worker, OVE_PRIO_NORMAL, "w");
+ * auto tid = th.get_id();
+ * std::map<ove::thread_id, const char *> names;
+ * names[tid] = "worker";
+ * @endcode
+ *
+ * Note: like @c std::thread::id, the identity is only meaningful while
+ * the thread is alive.  Once the kernel reaps the thread, the handle
+ * value may be reused by a future thread and the two would compare
+ * equal — same semantics as @c std::thread::id.
+ */
+class thread_id
+{
+      public:
+	constexpr thread_id() noexcept = default;
+	constexpr explicit thread_id(ove_thread_t h) noexcept : handle_(h)
+	{
+	}
+
+	friend constexpr bool operator==(const thread_id &, const thread_id &) noexcept = default;
+	friend constexpr auto operator<=>(const thread_id &, const thread_id &) noexcept = default;
+
+	/** @return The raw `ove_thread_t` handle (may be null for default-constructed id). */
+	[[nodiscard]] ove_thread_t native_handle() const noexcept
+	{
+		return handle_;
+	}
+
+      private:
+	ove_thread_t handle_ = nullptr;
+};
+
 namespace detail
 {
 
@@ -140,6 +185,10 @@ inline void stop_token_trampoline(void *ctx)
 template <size_t StackSize = 0> class Thread
 {
       public:
+	/** @brief Opaque thread identity — alias of @ref thread_id.
+	 *  Matches @c std::thread::id naming. */
+	using id = thread_id;
+
 	/**
 	 * @brief Constructs and starts the thread.
 	 *
@@ -440,6 +489,30 @@ template <size_t StackSize = 0> class Thread
 	bool valid() const
 	{
 		return handle_ != nullptr;
+	}
+
+	/**
+	 * @brief @c std::thread::joinable analog — `true` if this wrapper
+	 * is associated with an active kernel thread.
+	 *
+	 * Returns @c false after @ref join or @ref detach (or default-
+	 * construction failure, though our constructors abort instead).
+	 * Synonym of @ref valid; both stay supported.
+	 */
+	[[nodiscard]] bool joinable() const noexcept
+	{
+		return handle_ != nullptr;
+	}
+
+	/**
+	 * @brief Get the @ref id for this thread.  @c std::thread::get_id analog.
+	 *
+	 * Returns a default-constructed @ref id (compare-equal to @c id{})
+	 * if the wrapper has been joined / detached / never spawned.
+	 */
+	[[nodiscard]] id get_id() const noexcept
+	{
+		return id{handle_};
 	}
 
 	/**
