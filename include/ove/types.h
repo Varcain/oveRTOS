@@ -154,10 +154,11 @@ typedef enum ove_err {
 /**
  * @brief Timeout value that means "block indefinitely".
  *
- * Pass this as the @c timeout_ms argument to any blocking API to wait
- * without a deadline.
+ * Pass this as the @c timeout_ns argument to any blocking API (or as the
+ * @c deadline_ns argument to an @c _until variant) to wait without a
+ * deadline.
  */
-#define OVE_WAIT_FOREVER UINT32_MAX
+#define OVE_WAIT_FOREVER UINT64_MAX
 
 /*
  * Compile-time C-ABI shape check.  This file IS the C-ABI contract;
@@ -200,6 +201,7 @@ OVE_STATIC_ASSERT(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 OVE_STATIC_ASSERT(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
 OVE_STATIC_ASSERT(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
 OVE_STATIC_ASSERT(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
+OVE_STATIC_ASSERT(OVE_WAIT_FOREVER == UINT64_MAX, "OVE_WAIT_FOREVER drifted");
 
 /** @brief Opaque handle for a thread object. @see ove_thread_init, ove_thread_create */
 typedef struct ove_thread *ove_thread_t;

@@ -24,10 +24,19 @@
  */
 
 #include "ove/pm.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief Sentinel value for "no scheduled wake-up" in PM ms timeouts.
+ *
+ * PM uses @c uint32_t milliseconds by design (see ove_pm_register_*).
+ * Distinct from the substrate's ns-based @c OVE_WAIT_FOREVER sentinel.
+ */
+#define OVE_PM_NO_TIMEOUT UINT32_MAX
 
 /**
  * @brief Enter a hardware sleep state.
@@ -82,7 +91,7 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain);
 /**
  * @brief Query the time until the next scheduled RTOS event.
  *
- * @return Milliseconds until next timeout, or OVE_WAIT_FOREVER if none.
+ * @return Milliseconds until next timeout, or @c OVE_PM_NO_TIMEOUT if none.
  */
 uint32_t ove_hal_pm_get_next_timeout_ms(void);
 

@@ -35,7 +35,7 @@
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
-	TickType_t ticks = (expected_idle_ms == OVE_WAIT_FOREVER)
+	TickType_t ticks = (expected_idle_ms == OVE_PM_NO_TIMEOUT)
 				   ? pdMS_TO_TICKS(PM_STATE_RESIDENCY_MS)
 				   : pdMS_TO_TICKS(expected_idle_ms);
 
@@ -81,9 +81,9 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain)
 uint32_t ove_hal_pm_get_next_timeout_ms(void)
 {
 	/* FreeRTOS does not expose the next-task-wake time to application
-	 * threads.  Return OVE_WAIT_FOREVER so enter_state falls back to
+	 * threads.  Return OVE_PM_NO_TIMEOUT so enter_state falls back to
 	 * PM_STATE_RESIDENCY_MS pacing. */
-	return OVE_WAIT_FOREVER;
+	return OVE_PM_NO_TIMEOUT;
 }
 
 void ove_hal_pm_idle_hook(void)

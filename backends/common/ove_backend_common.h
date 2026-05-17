@@ -67,13 +67,13 @@ static inline void *ove_zero_heap_trap(void)
 
 /**
  * ove_timeout_is_forever - check if a timeout value means "wait forever"
- * @ms: timeout in milliseconds
+ * @ns: timeout in nanoseconds
  *
  * Returns true when the caller requested an infinite wait.
  */
-static inline bool ove_timeout_is_forever(uint32_t ms)
+static inline bool ove_timeout_is_forever(uint64_t ns)
 {
-	return ms == OVE_WAIT_FOREVER;
+	return ns == OVE_WAIT_FOREVER;
 }
 
 /**

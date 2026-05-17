@@ -85,7 +85,7 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain)
 
 uint32_t ove_hal_pm_get_next_timeout_ms(void)
 {
-	return OVE_WAIT_FOREVER;
+	return OVE_PM_NO_TIMEOUT;
 }
 
 void ove_hal_pm_idle_hook(void)

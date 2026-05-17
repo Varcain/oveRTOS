@@ -57,8 +57,8 @@ static enum pm_state to_zephyr_state(ove_pm_state_t state)
 
 int ove_hal_pm_enter_state(ove_pm_state_t state, uint32_t expected_idle_ms)
 {
-	int32_t sleep_ms = (expected_idle_ms == OVE_WAIT_FOREVER) ? PM_STATE_RESIDENCY_MS
-								  : (int32_t)expected_idle_ms;
+	int32_t sleep_ms = (expected_idle_ms == OVE_PM_NO_TIMEOUT) ? PM_STATE_RESIDENCY_MS
+								   : (int32_t)expected_idle_ms;
 
 #ifdef CONFIG_PM
 	struct pm_state_info info = {
@@ -116,9 +116,9 @@ int ove_hal_pm_domain_disable(ove_pm_domain_t domain)
 
 uint32_t ove_hal_pm_get_next_timeout_ms(void)
 {
-	/* Return OVE_WAIT_FOREVER — Zephyr's kernel idle path handles
+	/* Return OVE_PM_NO_TIMEOUT — Zephyr's kernel idle path handles
 	 * the actual next-timeout calculation internally. */
-	return OVE_WAIT_FOREVER;
+	return OVE_PM_NO_TIMEOUT;
 }
 
 void ove_hal_pm_idle_hook(void)
