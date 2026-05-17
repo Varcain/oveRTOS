@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <memory>
 
 /* Per-test shared state.  std::atomic so the asserts after thread
@@ -261,6 +262,92 @@ static void test_detach_does_not_signal_stop(void **state)
 	assert_int_equal(g_detach_exited.load(), 1);
 }
 
+/* ── 10. joinable() tracks valid() across the wrapper's lifecycle ──── */
+
+static void test_joinable_matches_valid(void **state)
+{
+	(void)state;
+	reset_flags();
+	{
+		ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "jn"};
+		assert_true(th.joinable());
+		assert_true(th.valid());
+
+		th.request_stop();
+		th.join();
+
+		assert_false(th.joinable());
+		assert_false(th.valid());
+	}
+}
+
+/* ── 11. get_id() returns a non-default id for a live thread ────────── */
+
+static void test_get_id_non_default_for_live_thread(void **state)
+{
+	(void)state;
+	reset_flags();
+	ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "id1"};
+	const ove::Thread<>::id tid = th.get_id();
+	assert_true(tid != ove::thread_id{});
+	assert_non_null(tid.native_handle());
+
+	th.request_stop();
+	th.join();
+	/* After join: get_id() reflects the now-empty wrapper. */
+	assert_true(th.get_id() == ove::thread_id{});
+}
+
+/* ── 12. id equality is stable for the same thread ──────────────────── */
+
+static void test_id_equality_same_thread(void **state)
+{
+	(void)state;
+	reset_flags();
+	ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "id2"};
+	const auto a = th.get_id();
+	const auto b = th.get_id();
+	assert_true(a == b);
+	th.request_stop();
+}
+
+/* ── 13. default-constructed id distinct from any live id ───────────── */
+
+static void test_id_default_ctor_distinct(void **state)
+{
+	(void)state;
+	reset_flags();
+	const ove::thread_id none{};
+	ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "id3"};
+	assert_true(th.get_id() != none);
+	th.request_stop();
+}
+
+/* ── 14. id is usable as a std::map key (ordering works) ─────────────
+ *      Two cooperative threads -> two distinct ids -> two map entries.
+ *      Heap-mode-only because std::map needs an allocator. */
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+static void test_id_ordering_works_in_map(void **state)
+{
+	(void)state;
+	reset_flags();
+	ove::Thread<4096> th_a{cooperative_worker, OVE_PRIO_NORMAL, "ma"};
+	ove::Thread<4096> th_b{cooperative_worker, OVE_PRIO_NORMAL, "mb"};
+
+	std::map<ove::Thread<>::id, const char *> names;
+	names[th_a.get_id()] = "a";
+	names[th_b.get_id()] = "b";
+
+	assert_int_equal(names.size(), 2);
+	assert_string_equal(names[th_a.get_id()], "a");
+	assert_string_equal(names[th_b.get_id()], "b");
+
+	th_a.request_stop();
+	th_b.request_stop();
+}
+#endif
+
 /* ── runner ─────────────────────────────────────────────────────────── */
 
 int test_cpp_thread_stop_run(void)
@@ -275,6 +362,13 @@ int test_cpp_thread_stop_run(void)
 		cmocka_unit_test(test_join_makes_destructor_noop),
 		cmocka_unit_test(test_detach_skips_join),
 		cmocka_unit_test(test_detach_does_not_signal_stop),
+		cmocka_unit_test(test_joinable_matches_valid),
+		cmocka_unit_test(test_get_id_non_default_for_live_thread),
+		cmocka_unit_test(test_id_equality_same_thread),
+		cmocka_unit_test(test_id_default_ctor_distinct),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_id_ordering_works_in_map),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
