@@ -144,6 +144,28 @@ static inline uint64_t ove_time_now_steady_ns(void)
 	return out;
 }
 
+/**
+ * @brief Convert a steady-clock deadline to a duration suitable for the
+ *        existing @c timeout_ns-taking APIs.
+ *
+ * If @p deadline_ns is in the past relative to @ref ove_time_now_steady_ns,
+ * returns 0 (the caller should not block).  The @c OVE_WAIT_FOREVER sentinel
+ * is preserved verbatim so @c _until shims can pass it straight through
+ * without altering the indefinite-block semantics.
+ *
+ * @param[in] deadline_ns Absolute deadline in nanoseconds from the same
+ *                        epoch as @ref ove_time_now_steady_ns.
+ * @return Nanoseconds remaining until the deadline, 0 if the deadline has
+ *         passed, or @c OVE_WAIT_FOREVER if @p deadline_ns is the sentinel.
+ */
+static inline uint64_t ove_time_deadline_to_timeout_ns(uint64_t deadline_ns)
+{
+	if (deadline_ns == OVE_WAIT_FOREVER)
+		return OVE_WAIT_FOREVER;
+	uint64_t now = ove_time_now_steady_ns();
+	return (deadline_ns > now) ? (deadline_ns - now) : 0;
+}
+
 #ifdef __cplusplus
 }
 #endif

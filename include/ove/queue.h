@@ -29,6 +29,7 @@
 
 #include "ove/types.h"
 #include "ove_config.h"
+#include "ove/time.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,6 +140,21 @@ OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
 				 uint64_t timeout_ns) OVE_NONNULL(1, 2);
 
 /**
+ * @brief Deadline-based variant of @ref ove_queue_send.
+ *
+ * Equivalent to calling @ref ove_queue_send with the time remaining until
+ * @p deadline_ns (a steady-clock value from @ref ove_time_now_steady_ns).
+ * Pass @c OVE_WAIT_FOREVER for an indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_QUEUE.
+ */
+OVE_NODISCARD static inline int ove_queue_send_until(ove_queue_t q, const void *data,
+						     uint64_t deadline_ns)
+{
+	return ove_queue_send(q, data, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
+
+/**
  * @brief Receive (remove) an item from the front of the queue, blocking if
  *        it is empty.
  *
@@ -164,6 +180,22 @@ OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
  */
 OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf,
 				    uint64_t timeout_ns) OVE_NONNULL(1, 2);
+
+/**
+ * @brief Deadline-based variant of @ref ove_queue_receive.
+ *
+ * Equivalent to calling @ref ove_queue_receive with the time remaining
+ * until @p deadline_ns (a steady-clock value from
+ * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
+ * indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_QUEUE.
+ */
+OVE_NODISCARD static inline int ove_queue_receive_until(ove_queue_t q, void *buf,
+							uint64_t deadline_ns)
+{
+	return ove_queue_receive(q, buf, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
 
 /**
  * @brief Send an item to the queue from an interrupt service routine.
