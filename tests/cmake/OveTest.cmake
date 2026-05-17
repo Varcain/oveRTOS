@@ -34,6 +34,8 @@ set(OVE_TEST_COMMON_SUITES
     test_queue.c
     test_timer.c
     test_time.c
+    test_timeout_ns.c
+    test_deadline_until.c
     test_eventgroup.c
     test_workqueue.c
     test_stream.c
