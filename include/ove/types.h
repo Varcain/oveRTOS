@@ -19,77 +19,90 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/** @brief Operation completed successfully. */
-#define OVE_OK 0
-
-/** @brief The requested backend or feature has not been registered. */
-#define OVE_ERR_NOT_REGISTERED (-1)
-
-/** @brief One or more parameters are invalid (e.g. NULL pointer, zero size). */
-#define OVE_ERR_INVALID_PARAM (-2)
-
-/** @brief Dynamic allocation failed — heap is full or not available. */
-#define OVE_ERR_NO_MEMORY (-3)
-
-/** @brief Operation timed out before it could complete. */
-#define OVE_ERR_TIMEOUT (-4)
-
-/** @brief The requested feature is not supported by the active backend. */
-#define OVE_ERR_NOT_SUPPORTED (-5)
-
-/** @brief Queue send failed because the queue is at maximum capacity. */
-#define OVE_ERR_QUEUE_FULL (-6)
-
-/** @brief ML inference or model loading failed. */
-#define OVE_ERR_ML_FAILED (-7)
-
-/** @brief Remote peer refused the connection. */
-#define OVE_ERR_NET_REFUSED (-8)
-
-/** @brief Network or host is unreachable. */
-#define OVE_ERR_NET_UNREACHABLE (-9)
-
-/** @brief Local address already in use. */
-#define OVE_ERR_NET_ADDR_IN_USE (-10)
-
-/** @brief Connection was reset by the remote peer. */
-#define OVE_ERR_NET_RESET (-11)
-
-/** @brief DNS name resolution failed. */
-#define OVE_ERR_NET_DNS_FAIL (-12)
-
-/** @brief Connection closed by the remote peer. */
-#define OVE_ERR_NET_CLOSED (-13)
-
-/** @brief Bus device did not acknowledge (I2C NACK). */
-#define OVE_ERR_BUS_NACK (-14)
-
-/** @brief Bus arbitration lost (multi-master). */
-#define OVE_ERR_BUS_BUSY (-15)
-
-/** @brief Framing, parity, or hardware error on a serial bus. */
-#define OVE_ERR_BUS_ERROR (-16)
-
-/** @brief Queue receive failed because the queue is empty. */
-#define OVE_ERR_QUEUE_EMPTY (-17)
-
 /**
- * @brief Non-blocking operation would have to block.
+ * @brief oveRTOS error codes.
  *
- * Returned by zero-timeout / ISR variants of blocking APIs when the
- * requested resource is unavailable.  More general than @c OVE_ERR_QUEUE_FULL
- * / @c OVE_ERR_QUEUE_EMPTY; suitable for mutex/sem/etc. non-blocking paths.
+ * Convention: zero (@c OVE_OK) on success, negative values on error.
+ * Numeric values are pinned by the @c _Static_assert block below — the
+ * names and codes form the stable C ABI between substrate and bindings.
+ *
+ * Function APIs return @c int (not @c ove_err_t) for ABI compatibility
+ * and to keep the @c int rc = ...; if (rc < 0) idiom unchanged.
+ * Bindings consume the typed enum via bindgen / @c \@cImport.
  */
-#define OVE_ERR_WOULD_BLOCK (-18)
+typedef enum ove_err {
+	/** Operation completed successfully. */
+	OVE_OK = 0,
 
-/** @brief End of file / directory iterator exhausted. */
-#define OVE_ERR_EOF (-19)
+	/** The requested backend or feature has not been registered. */
+	OVE_ERR_NOT_REGISTERED = -1,
 
-/** @brief Argument or state is invalid for this operation. */
-#define OVE_ERR_INVAL (-20)
+	/** One or more parameters are invalid (e.g. NULL pointer, zero size). */
+	OVE_ERR_INVALID_PARAM = -2,
 
-/** @brief Requested key / entry / resource was not found. */
-#define OVE_ERR_NOT_FOUND (-21)
+	/** Dynamic allocation failed — heap is full or not available. */
+	OVE_ERR_NO_MEMORY = -3,
+
+	/** Operation timed out before it could complete. */
+	OVE_ERR_TIMEOUT = -4,
+
+	/** The requested feature is not supported by the active backend. */
+	OVE_ERR_NOT_SUPPORTED = -5,
+
+	/** Queue send failed because the queue is at maximum capacity. */
+	OVE_ERR_QUEUE_FULL = -6,
+
+	/** ML inference or model loading failed. */
+	OVE_ERR_ML_FAILED = -7,
+
+	/** Remote peer refused the connection. */
+	OVE_ERR_NET_REFUSED = -8,
+
+	/** Network or host is unreachable. */
+	OVE_ERR_NET_UNREACHABLE = -9,
+
+	/** Local address already in use. */
+	OVE_ERR_NET_ADDR_IN_USE = -10,
+
+	/** Connection was reset by the remote peer. */
+	OVE_ERR_NET_RESET = -11,
+
+	/** DNS name resolution failed. */
+	OVE_ERR_NET_DNS_FAIL = -12,
+
+	/** Connection closed by the remote peer. */
+	OVE_ERR_NET_CLOSED = -13,
+
+	/** Bus device did not acknowledge (I2C NACK). */
+	OVE_ERR_BUS_NACK = -14,
+
+	/** Bus arbitration lost (multi-master). */
+	OVE_ERR_BUS_BUSY = -15,
+
+	/** Framing, parity, or hardware error on a serial bus. */
+	OVE_ERR_BUS_ERROR = -16,
+
+	/** Queue receive failed because the queue is empty. */
+	OVE_ERR_QUEUE_EMPTY = -17,
+
+	/**
+	 * Non-blocking operation would have to block.
+	 *
+	 * Returned by zero-timeout / ISR variants of blocking APIs when the
+	 * requested resource is unavailable.  More general than @c OVE_ERR_QUEUE_FULL
+	 * / @c OVE_ERR_QUEUE_EMPTY; suitable for mutex/sem/etc. non-blocking paths.
+	 */
+	OVE_ERR_WOULD_BLOCK = -18,
+
+	/** End of file / directory iterator exhausted. */
+	OVE_ERR_EOF = -19,
+
+	/** Argument or state is invalid for this operation. */
+	OVE_ERR_INVAL = -20,
+
+	/** Requested key / entry / resource was not found. */
+	OVE_ERR_NOT_FOUND = -21,
+} ove_err_t;
 
 /**
  * @brief Timeout value that means "block indefinitely".
