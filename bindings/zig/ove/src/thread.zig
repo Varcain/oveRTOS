@@ -175,6 +175,21 @@ const EntryInfo = struct {
     user_param_count: usize,
 };
 
+/// `true` for any single-machine-word pointer type — `*T`, `?*T`,
+/// `[*]T`, `[*c]T`, and their optional/const variants.  Slices are
+/// fat pointers (two words) and are rejected — they cannot be packed
+/// into the substrate's `void *arg` slot.
+fn isPointerArg(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .pointer => |p| p.size != .slice,
+        .optional => |o| switch (@typeInfo(o.child)) {
+            .pointer => |p| p.size != .slice,
+            else => false,
+        },
+        else => false,
+    };
+}
+
 inline fn introspect(comptime EntryFn: type, comptime ArgsT: type) EntryInfo {
     const fn_info = @typeInfo(EntryFn);
     if (fn_info != .@"fn") {
@@ -208,6 +223,24 @@ inline fn introspect(comptime EntryFn: type, comptime ArgsT: type) EntryInfo {
     if (user_count > 1) {
         @compileError("ove.Thread.spawn: entry can take at most one non-StopToken parameter " ++
             "(use a pointer to a struct if you need multiple values)");
+    }
+
+    if (user_count == 1) {
+        const param_idx = if (takes_token) @as(usize, 1) else 0;
+        const UserT = params[param_idx].type.?;
+        if (!isPointerArg(UserT)) {
+            @compileError("ove.Thread.spawn: entry's non-token parameter must be a " ++
+                "pointer (`*T`, `?*T`, `[*]T`, `*anyopaque`, etc.).  Got `" ++
+                @typeName(UserT) ++ "`.  The substrate ABI is `void(*)(void*)` — " ++
+                "slices and non-pointer values cannot be packed into the single " ++
+                "arg slot.  Pass a pointer to a struct holding your data instead.");
+        }
+        const ArgT = args_info.@"struct".fields[0].type;
+        if (!isPointerArg(ArgT)) {
+            @compileError("ove.Thread.spawn: args tuple element must be a pointer " ++
+                "matching the entry's parameter.  Got `" ++ @typeName(ArgT) ++
+                "`.  Pass `&value` or an existing pointer, not the value itself.");
+        }
     }
 
     return .{
