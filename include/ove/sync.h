@@ -30,6 +30,7 @@
 #include "ove/types.h"
 #include "ove_config.h"
 #include "ove/storage.h"
+#include "ove/time.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -342,6 +343,20 @@ void ove_condvar_destroy(ove_condvar_t cv);
 OVE_NODISCARD int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns) OVE_NONNULL(1);
 
 /**
+ * @brief Deadline-based variant of @ref ove_mutex_lock.
+ *
+ * Equivalent to calling @ref ove_mutex_lock with the time remaining until
+ * @p deadline_ns (a steady-clock value from @ref ove_time_now_steady_ns).
+ * Pass @c OVE_WAIT_FOREVER for an indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_SYNC.
+ */
+OVE_NODISCARD static inline int ove_mutex_lock_until(ove_mutex_t mtx, uint64_t deadline_ns)
+{
+	return ove_mutex_lock(mtx, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
+
+/**
  * @brief Release a non-recursive mutex previously acquired by ove_mutex_lock().
  *
  * @note Requires @c CONFIG_OVE_SYNC.
@@ -368,6 +383,20 @@ void ove_mutex_unlock(ove_mutex_t mtx);
  * @see ove_sem_give
  */
 OVE_NODISCARD int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns) OVE_NONNULL(1);
+
+/**
+ * @brief Deadline-based variant of @ref ove_sem_take.
+ *
+ * Equivalent to calling @ref ove_sem_take with the time remaining until
+ * @p deadline_ns (a steady-clock value from @ref ove_time_now_steady_ns).
+ * Pass @c OVE_WAIT_FOREVER for an indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_SYNC.
+ */
+OVE_NODISCARD static inline int ove_sem_take_until(ove_sem_t sem, uint64_t deadline_ns)
+{
+	return ove_sem_take(sem, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
 
 /**
  * @brief Increment (give) a semaphore, potentially unblocking a waiting thread.
@@ -400,6 +429,20 @@ void ove_sem_give(ove_sem_t sem);
  * @see ove_event_signal, ove_event_signal_from_isr
  */
 OVE_NODISCARD int ove_event_wait(ove_event_t evt, uint64_t timeout_ns) OVE_NONNULL(1);
+
+/**
+ * @brief Deadline-based variant of @ref ove_event_wait.
+ *
+ * Equivalent to calling @ref ove_event_wait with the time remaining until
+ * @p deadline_ns (a steady-clock value from @ref ove_time_now_steady_ns).
+ * Pass @c OVE_WAIT_FOREVER for an indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_SYNC.
+ */
+OVE_NODISCARD static inline int ove_event_wait_until(ove_event_t evt, uint64_t deadline_ns)
+{
+	return ove_event_wait(evt, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
 
 /**
  * @brief Signal a binary event, unblocking one waiting thread.
@@ -452,6 +495,22 @@ void ove_event_signal_from_isr(ove_event_t evt);
 OVE_NODISCARD int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns) OVE_NONNULL(1);
 
 /**
+ * @brief Deadline-based variant of @ref ove_recursive_mutex_lock.
+ *
+ * Equivalent to calling @ref ove_recursive_mutex_lock with the time
+ * remaining until @p deadline_ns (a steady-clock value from
+ * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
+ * indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_SYNC.
+ */
+OVE_NODISCARD static inline int ove_recursive_mutex_lock_until(ove_mutex_t mtx,
+							       uint64_t deadline_ns)
+{
+	return ove_recursive_mutex_lock(mtx, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
+
+/**
  * @brief Release one level of a recursive mutex lock.
  *
  * Decrements the recursive lock count.  The mutex is fully released and
@@ -488,6 +547,22 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  */
 OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
 				   uint64_t timeout_ns) OVE_NONNULL(1, 2);
+
+/**
+ * @brief Deadline-based variant of @ref ove_condvar_wait.
+ *
+ * Equivalent to calling @ref ove_condvar_wait with the time remaining
+ * until @p deadline_ns (a steady-clock value from
+ * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
+ * indefinite block.
+ *
+ * @note Requires @c CONFIG_OVE_SYNC.
+ */
+OVE_NODISCARD static inline int ove_condvar_wait_until(ove_condvar_t cv, ove_mutex_t mtx,
+						       uint64_t deadline_ns)
+{
+	return ove_condvar_wait(cv, mtx, ove_time_deadline_to_timeout_ns(deadline_ns));
+}
 
 /**
  * @brief Wake one thread waiting on a condition variable.

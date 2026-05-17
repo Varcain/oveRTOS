@@ -33,6 +33,7 @@
 #include "ove/types.h"
 #include "ove_config.h"
 #include "ove/storage.h"
+#include "ove/time.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -118,6 +119,21 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 		    size_t *bytes_sent);
 
 /**
+ * @brief Deadline-based variant of @ref ove_stream_send.
+ *
+ * Equivalent to calling @ref ove_stream_send with the time remaining
+ * until @p deadline_ns (a steady-clock value from
+ * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
+ * indefinite block.
+ */
+static inline int ove_stream_send_until(ove_stream_t stream, const void *data, size_t len,
+					uint64_t deadline_ns, size_t *bytes_sent)
+{
+	return ove_stream_send(stream, data, len, ove_time_deadline_to_timeout_ns(deadline_ns),
+			       bytes_sent);
+}
+
+/**
  * @brief Receive bytes from the stream in task context.
  *
  * Copies up to @p len bytes from the stream into @p buf. Blocks for at most
@@ -136,6 +152,21 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
  */
 int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received);
+
+/**
+ * @brief Deadline-based variant of @ref ove_stream_receive.
+ *
+ * Equivalent to calling @ref ove_stream_receive with the time remaining
+ * until @p deadline_ns (a steady-clock value from
+ * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
+ * indefinite block.
+ */
+static inline int ove_stream_receive_until(ove_stream_t stream, void *buf, size_t len,
+					   uint64_t deadline_ns, size_t *bytes_received)
+{
+	return ove_stream_receive(stream, buf, len, ove_time_deadline_to_timeout_ns(deadline_ns),
+				  bytes_received);
+}
 
 /**
  * @brief Send bytes into the stream from an ISR.

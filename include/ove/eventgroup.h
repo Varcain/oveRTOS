@@ -32,6 +32,7 @@
 #include "ove/types.h"
 #include "ove_config.h"
 #include "ove/storage.h"
+#include "ove/time.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -156,6 +157,22 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
  */
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
 			     uint64_t timeout_ns, ove_eventbits_t *result);
+
+/**
+ * @brief Deadline-based variant of @ref ove_eventgroup_wait_bits.
+ *
+ * Equivalent to calling @ref ove_eventgroup_wait_bits with the time
+ * remaining until @p deadline_ns (a steady-clock value from
+ * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
+ * indefinite block.
+ */
+static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t eg, ove_eventbits_t bits,
+						 uint32_t flags, uint64_t deadline_ns,
+						 ove_eventbits_t *result)
+{
+	return ove_eventgroup_wait_bits(eg, bits, flags,
+					ove_time_deadline_to_timeout_ns(deadline_ns), result);
+}
 
 /**
  * @brief Set bits in the event group from an ISR.
