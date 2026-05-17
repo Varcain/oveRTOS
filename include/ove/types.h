@@ -19,6 +19,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if !defined(__GNUC__) && !defined(__clang__)
+#error "oveRTOS requires a GCC-compatible compiler (gcc or clang). Other toolchains (MSVC, etc.) are not supported: the substrate uses __attribute__ extensions, statement expressions, and other GCC-flavoured features throughout."
+#endif
+
 /**
  * @brief oveRTOS error codes.
  *
