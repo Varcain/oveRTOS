@@ -193,15 +193,15 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread = Thread(4096).spawn("graphics", prio.high, graphicsEntry, .{}) catch {
+    graphics_thread = Thread(4096).spawn(.{ .name = "graphics", .priority = prio.high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread = Thread(4096).spawn("producer", prio.normal, producerEntry, .{}) catch {
+    producer_thread = Thread(4096).spawn(.{ .name = "producer", .priority = prio.normal }, producerEntry, .{}) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread = Thread(4096).spawn("consumer", prio.normal, consumerEntry, .{}) catch {
+    consumer_thread = Thread(4096).spawn(.{ .name = "consumer", .priority = prio.normal }, consumerEntry, .{}) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };

@@ -1004,7 +1004,7 @@ var graphics_thread: ?ove.Thread(4096) = null;
 fn appMain() void {
     ove.log.inf("LVGL benchmark (Zig): init", .{});
 
-    graphics_thread = ove.Thread(4096).spawn("graphics", prio.high, graphicsEntry, .{}) catch {
+    graphics_thread = ove.Thread(4096).spawn(.{ .name = "graphics", .priority = prio.high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };

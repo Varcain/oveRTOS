@@ -30,16 +30,17 @@
 //!     while (!stop.isStopped()) { /* work */ }
 //! }
 //!
-//! var th = try ove.Thread(4096).spawn("worker", .normal, worker, .{&queue});
+//! var th = try ove.Thread(4096).spawn(.{ .name = "worker" }, worker, .{&queue});
 //! defer th.deinit();  // requestStop + destroy
 //! ```
 //!
 //! Legacy fire-and-return entries (no token) are supported by simply
-//! omitting the [`StopToken`] parameter:
+//! omitting the [`StopToken`] parameter.  Pass `.{}` for all config
+//! defaults (anonymous name, normal priority):
 //!
 //! ```zig
 //! fn oneshot() void { /* runs once and returns */ }
-//! var th = try ove.Thread(4096).spawn("oneshot", .normal, oneshot, .{});
+//! var th = try ove.Thread(4096).spawn(.{}, oneshot, .{});
 //! defer th.deinit();
 //! ```
 //!
@@ -93,6 +94,38 @@ pub const Stats = struct {
     cpu_percent_x100: u32,
 };
 
+/// Spawn-time configuration for a new thread.  Pass as `.{ ... }` to
+/// [`Thread.spawn`] / [`Thread.spawnStatic`]; all fields are optional.
+///
+/// ```zig
+/// // Common case — name + priority
+/// try ove.Thread(4096).spawn(.{ .name = "worker", .priority = prio.high },
+///                             entry, .{});
+/// // Defaults — anonymous, normal priority
+/// try ove.Thread(4096).spawn(.{}, entry, .{});
+/// ```
+///
+/// The field is `comptime` at the call boundary because the name flows
+/// through to the substrate as `[*:0]const u8` via comptime
+/// nul-termination, and the priority is a constant tag.  Stack size is
+/// at the type level (`Thread(stack_size)`), not here.
+pub const SpawnConfig = struct {
+    /// Thread name (defaults to `"ove-thread"`).  Nul-terminated at
+    /// comptime before being handed to the substrate.
+    name: ?[]const u8 = null,
+    /// Scheduler priority (defaults to `prio.normal`).
+    priority: Priority = prio.normal,
+};
+
+/// Comptime-produce a `[*:0]const u8` from a `SpawnConfig.name`.
+/// Uses `std.fmt.comptimePrint`, which returns a sentinel-terminated
+/// `*const [N:0]u8` backed by a comptime-static buffer — safe to pass
+/// across the FFI boundary as a long-lived C string.
+inline fn cfgNameZ(comptime cfg: SpawnConfig) [*:0]const u8 {
+    const s = cfg.name orelse "ove-thread";
+    return std.fmt.comptimePrint("{s}", .{s});
+}
+
 // ---------------------------------------------------------------------------
 // StopToken — read-only handle to the per-thread cancellation flag.
 // ---------------------------------------------------------------------------
@@ -112,7 +145,7 @@ pub const Stats = struct {
 ///     }
 /// }
 ///
-/// var th = try ove.Thread(4096).spawn("worker", .normal, worker, .{});
+/// var th = try ove.Thread(4096).spawn(.{ .name = "worker" }, worker, .{});
 /// defer th.deinit();  // sets stop flag, then waits for worker exit
 /// ```
 pub const StopToken = struct {
@@ -308,7 +341,7 @@ inline fn ctxPointer(comptime user_param_count: usize, args: anytype) ?*anyopaqu
 /// stack from the heap based on `stack_size`:
 ///
 /// ```zig
-/// var th = try ove.Thread(2048).spawn("worker", .normal, workerEntry, .{});
+/// var th = try ove.Thread(2048).spawn(.{ .name = "worker" }, workerEntry, .{});
 /// defer th.deinit();
 /// ```
 ///
@@ -316,7 +349,7 @@ inline fn ctxPointer(comptime user_param_count: usize, args: anytype) ?*anyopaqu
 ///
 /// ```zig
 /// var th: ove.Thread(2048) = undefined;
-/// try th.spawnStatic("worker", .normal, workerEntry, .{});
+/// try th.spawnStatic(.{ .name = "worker" }, workerEntry, .{});
 /// defer th.deinit();
 /// ```
 pub fn Thread(comptime stack_size: usize) type {
@@ -329,13 +362,13 @@ fn HeapThread(comptime stack_size: usize) type {
 
         handle: c.ove_thread_t,
 
-        /// Spawn a thread.  `entry` may take zero, one, or two
+        /// Spawn a thread.  `cfg` is a [`SpawnConfig`] literal (pass
+        /// `.{}` for all defaults).  `entry` may take zero, one, or two
         /// parameters; the first may be a [`StopToken`] (auto-injected
         /// by the trampoline).  `args` is a tuple matching the
         /// remaining parameters (zero or one pointer).
         pub fn spawn(
-            name: [*:0]const u8,
-            priority: Priority,
+            comptime cfg: SpawnConfig,
             comptime entry: anytype,
             args: anytype,
         ) Error!Self {
@@ -345,10 +378,10 @@ fn HeapThread(comptime stack_size: usize) type {
             var h: c.ove_thread_t = null;
             try err.fromCode(c.ove_thread_create(
                 &h,
-                name,
+                comptime cfgNameZ(cfg),
                 &Tramp.invoke,
                 ctx_ptr,
-                priority,
+                cfg.priority,
                 stack_size,
             ));
             return .{ .handle = h };
@@ -438,12 +471,11 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
         tracker: pin.Tracker,
 
         /// Spawn a thread into caller-provided embedded storage.  See
-        /// [`HeapThread.spawn`] for the entry/args contract.  The
+        /// [`HeapThread.spawn`] for the cfg/entry/args contract.  The
         /// wrapper must not be moved after this returns.
         pub fn spawnStatic(
             self: *Self,
-            name: [*:0]const u8,
-            priority: Priority,
+            comptime cfg: SpawnConfig,
             comptime entry: anytype,
             args: anytype,
         ) Error!void {
@@ -458,10 +490,10 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
             try err.fromCode(c.ove_thread_init(
                 &self.handle,
                 &self.storage,
-                name,
+                comptime cfgNameZ(cfg),
                 &Tramp.invoke,
                 ctx_ptr,
-                priority,
+                cfg.priority,
                 stack_size,
                 &self.stack,
             ));

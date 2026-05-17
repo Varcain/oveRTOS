@@ -118,6 +118,10 @@ pub const Priority = thread.Priority;
 /// Read-only handle to a thread's cooperative-cancellation flag.
 /// Auto-injected into `spawn` entries whose first param is `StopToken`.
 pub const StopToken = thread.StopToken;
+/// Spawn-time configuration (`name`, `priority`) for [`Thread.spawn`]
+/// and [`Thread.spawnStatic`].  All fields default; pass `.{}` for
+/// anonymous + normal-priority.
+pub const SpawnConfig = thread.SpawnConfig;
 
 /// Type-safe, capacity-bounded message queue. Parameterized by element type and depth.
 pub const Queue = @import("queue.zig").Queue;

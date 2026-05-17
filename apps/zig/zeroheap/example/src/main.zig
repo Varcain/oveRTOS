@@ -203,15 +203,15 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread.spawnStatic("graphics", prio.high, graphicsEntry, .{}) catch {
+    graphics_thread.spawnStatic(.{ .name = "graphics", .priority = prio.high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread.spawnStatic("producer", prio.normal, producerEntry, .{}) catch {
+    producer_thread.spawnStatic(.{ .name = "producer", .priority = prio.normal }, producerEntry, .{}) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread.spawnStatic("consumer", prio.normal, consumerEntry, .{}) catch {
+    consumer_thread.spawnStatic(.{ .name = "consumer", .priority = prio.normal }, consumerEntry, .{}) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };
