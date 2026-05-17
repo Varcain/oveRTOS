@@ -180,6 +180,16 @@ inline fn introspect(comptime EntryFn: type, comptime ArgsT: type) EntryInfo {
     if (fn_info != .@"fn") {
         @compileError("ove.Thread.spawn: `entry` must be a function, got " ++ @typeName(EntryFn));
     }
+    const Ret = fn_info.@"fn".return_type orelse void;
+    if (Ret != void) {
+        @compileError(std.fmt.comptimePrint(
+            "ove.Thread.spawn: `entry` must return `void`, got `{s}`. " ++
+                "RTOS thread entries cannot propagate errors — the kernel ABI " ++
+                "is `void(*)(void*)`.  Handle errors inside the entry body " ++
+                "(try/catch, log, set a flag, etc.).",
+            .{@typeName(Ret)},
+        ));
+    }
     const params = fn_info.@"fn".params;
     const takes_token = params.len > 0 and params[0].type != null and
         params[0].type.? == StopToken;
