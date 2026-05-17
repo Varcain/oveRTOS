@@ -349,7 +349,7 @@ fn app_main() {
     graph.start().expect("audio graph: start");
     ove::log_inf!("Audio streaming: 16kHz mono, DMIC input");
 
-    let infer = ove::Thread::spawn_with(b"infer\0", ove::Priority::Normal, 8192, || {
+    let infer = ove::Thread::builder().name(c"infer").priority(ove::Priority::Normal).stack_size(8192).spawn(|_tok| {
         infer_thread();
     })
     .expect("infer thread spawn");

@@ -745,6 +745,21 @@ fn main() {
     println!("cargo:rerun-if-env-changed=OVE_GEN_DIR");
     println!("cargo:rerun-if-env-changed=ARM_SYSROOT_INCLUDE");
     println!("cargo:rerun-if-env-changed=RUST_IS_NATIVE");
+    /* Force bindgen rerun when public C headers change.  Without
+     * this, cargo caches `ove_bindings.rs` and new substrate symbols
+     * (e.g. Phase 4's ove_thread_request_stop) don't surface until
+     * something else invalidates the build.  Per-file directives so
+     * the watch list stays accurate vs. a glob. */
+    let header_dir = format!("{}/include/ove", ove_dir);
+    println!("cargo:rerun-if-changed={header_dir}");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/thread.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/types.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/sync.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/queue.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/stream.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/eventgroup.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/time.h");
+    println!("cargo:rerun-if-changed={ove_dir}/include/ove/ove.h");
     println!("cargo:rerun-if-env-changed=LV_CONF_PATH");
     println!("cargo:rerun-if-env-changed=LVGL_INCLUDE_PATH");
     println!("cargo:rerun-if-env-changed=LVGL_PARENT_PATH");

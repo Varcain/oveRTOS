@@ -40,7 +40,7 @@ fn entry_sleep_briefly() {
 
 fn test_create_destroy() {
     FLAG.store(0, Ordering::SeqCst);
-    let th = Thread::spawn(b"t1\0", entry_set_flag, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t1").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_set_flag).unwrap();
     Thread::sleep_ms(50);
     assert_eq!(FLAG.load(Ordering::SeqCst), 1);
     drop(th);
@@ -63,7 +63,7 @@ fn test_get_self() {
 
 fn test_set_priority() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"t7\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t7").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(10);
     th.set_priority(ove::Priority::High);
     KEEP_RUNNING.store(0, Ordering::SeqCst);
@@ -73,7 +73,7 @@ fn test_set_priority() {
 
 fn test_get_state_running() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"t8\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t8").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(20);
     let st = th.get_state();
     assert!(
@@ -88,7 +88,7 @@ fn test_get_state_running() {
 
 fn test_get_state_terminated() {
     FLAG.store(0, Ordering::SeqCst);
-    let th = Thread::spawn(b"t9\0", entry_set_flag, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t9").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_set_flag).unwrap();
     Thread::sleep_ms(100);
     let st = th.get_state();
     assert!(
@@ -101,7 +101,7 @@ fn test_get_state_terminated() {
 
 fn test_stack_usage() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"t10\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t10").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(10);
     let _usage = th.get_stack_usage();
     KEEP_RUNNING.store(0, Ordering::SeqCst);
@@ -111,7 +111,7 @@ fn test_stack_usage() {
 
 fn test_suspend_resume() {
     FLAG.store(0, Ordering::SeqCst);
-    let th = Thread::spawn(b"t14\0", entry_sleep_briefly, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t14").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_sleep_briefly).unwrap();
     for _ in 0..100 {
         if FLAG.load(Ordering::Acquire) != 0 { break; }
         Thread::sleep_ms(5);
@@ -127,7 +127,7 @@ fn test_suspend_resume() {
 
 fn test_runtime_stats() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"t16\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"t16").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(20);
     let result = th.get_runtime_stats();
     assert!(result.is_ok() || matches!(result, Err(Error::NotSupported)));
@@ -139,7 +139,7 @@ fn test_runtime_stats() {
 fn test_raii_drop() {
     FLAG.store(0, Ordering::SeqCst);
     {
-        let _th = Thread::spawn(b"raii\0", entry_set_flag, ove::Priority::Normal, 4096).unwrap();
+        let _th = Thread::builder().name(c"raii").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_set_flag).unwrap();
         Thread::sleep_ms(50);
     }
 }
@@ -155,33 +155,35 @@ fn test_thread_debug_format() {
 
 fn test_thread_debug_spawned() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"dbg\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    // Builder::spawn_simple returns JoinHandle (post Phase 4 / Iteration 4
+    // restructure); the previous test asserted the `owned` field appeared
+    // in the Debug output — that field no longer exists.  Now assert the
+    // new JoinHandle shape: type name + handle + detached state.
+    let th = Thread::builder().name(c"dbg").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     let s = format!("{:?}", th);
-    assert!(s.contains("owned: true"), "spawned thread should be owned: {s}");
+    assert!(s.contains("JoinHandle"), "debug output missing type name: {s}");
+    assert!(s.contains("handle"), "debug output missing handle field: {s}");
+    assert!(s.contains("detached: false"), "spawned JoinHandle should not be detached: {s}");
     KEEP_RUNNING.store(0, Ordering::SeqCst);
     Thread::sleep_ms(20);
     drop(th);
 }
 
-/* ── Thread::create raw-entry variant ───────────────────────────── */
-
-unsafe extern "C" fn c_entry_set_flag(_arg: *mut core::ffi::c_void) {
-    FLAG.store(7, Ordering::Release);
-}
-
-fn test_create_raw_entry() {
-    FLAG.store(0, Ordering::SeqCst);
-    let th = Thread::create(b"craw\0", c_entry_set_flag, ove::Priority::Normal, 4096).unwrap();
-    Thread::sleep_ms(50);
-    assert_eq!(FLAG.load(Ordering::SeqCst), 7);
-    drop(th);
-}
+/* ── Raw extern "C" entry path covered via ove::ffi ──────────────
+ *
+ * After the Phase 4 / Iteration 4 Builder/JoinHandle restructure the
+ * binding no longer offers a `Thread::create`-style safe wrapper for
+ * `unsafe extern "C" fn` entries — that path is reachable through the
+ * `ove::ffi` escape hatch (see lib.rs).  The previous test_create_raw_entry
+ * case was deleted to avoid testing a function that no longer exists; the
+ * ffi::ove_thread_create call chain is exercised indirectly by the rest
+ * of the Thread suite through Builder::spawn_simple. */
 
 /* ── ThreadState::Suspended / Unknown match arms ────────────────── */
 
 fn test_get_state_suspended_arm() {
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"susp\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"susp").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(10);
     th.suspend();
     // Poll briefly — POSIX backend may take a moment to report suspension.
@@ -262,7 +264,7 @@ fn test_thread_list_with_spawned() {
     // Spawn a named thread so thread_list returns >= 1 entry, forcing the
     // Rust name-parsing + ThreadInfo construction branch to run.
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"enum\0", entry_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"enum").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_spin).unwrap();
     Thread::sleep_ms(20);
 
     let mut buf = [ThreadInfo {
@@ -296,7 +298,7 @@ fn test_get_state_running_arm() {
     // transitions on sleep/yield).  Poll to exercise the Running/Ready
     // match arms in get_state.
     KEEP_RUNNING.store(1, Ordering::SeqCst);
-    let th = Thread::spawn(b"busy\0", entry_busy_spin, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"busy").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(entry_busy_spin).unwrap();
     Thread::sleep_ms(30);
     for _ in 0..40 {
         let st = th.get_state();
@@ -349,7 +351,6 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_raii_drop),
         test_entry!(test_thread_debug_format),
         test_entry!(test_thread_debug_spawned),
-        test_entry!(test_create_raw_entry),
         test_entry!(test_get_state_suspended_arm),
         test_entry!(test_get_state_running_arm),
         test_entry!(test_get_mem_stats),

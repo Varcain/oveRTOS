@@ -64,7 +64,7 @@ fn test_producer_consumer() {
     SEM_DONE.store(0, Ordering::SeqCst);
     let _guard = PtrGuard::new(&SEM_PTR, &sem as *const Semaphore as *mut ());
 
-    let th = Thread::spawn(b"prod\0", sem_give_entry, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"prod").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(sem_give_entry).unwrap();
     sem.take(core::time::Duration::from_millis(500)).unwrap();
     drop(th);
 

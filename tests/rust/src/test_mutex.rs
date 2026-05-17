@@ -58,7 +58,7 @@ fn test_contention_timeout() {
     let _guard = PtrGuard::new(&HOLD_MTX, &mtx as *const Mutex as *mut Mutex);
 
     // Spawn thread that holds the lock
-    let th = Thread::spawn(b"hold\0", hold_lock_entry, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"hold").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(hold_lock_entry).unwrap();
 
     // Wait until the thread holds the lock
     for _ in 0..200 {
@@ -125,10 +125,18 @@ fn test_shared_counter() {
     COUNTER.store(0, Ordering::SeqCst);
     let _guard = PtrGuard::new(&COUNTER_MTX, &mtx as *const Mutex as *mut Mutex);
 
-    let name1 = b"c1\0";
-    let name2 = b"c2\0";
-    let t1 = Thread::spawn(name1, counter_entry, ove::Priority::Normal, 4096).unwrap();
-    let t2 = Thread::spawn(name2, counter_entry, ove::Priority::Normal, 4096).unwrap();
+    let t1 = Thread::builder()
+        .name(c"c1")
+        .priority(ove::Priority::Normal)
+        .stack_size(4096)
+        .spawn_simple(counter_entry)
+        .unwrap();
+    let t2 = Thread::builder()
+        .name(c"c2")
+        .priority(ove::Priority::Normal)
+        .stack_size(4096)
+        .spawn_simple(counter_entry)
+        .unwrap();
     drop(t1);
     drop(t2);
 

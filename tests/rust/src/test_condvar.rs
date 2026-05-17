@@ -78,7 +78,7 @@ fn test_signal_wakes_one() {
     };
     let _guard = PtrGuard::new(&CV_CTX, &ctx as *const CvCtx as *mut CvCtx);
 
-    let th = Thread::spawn(b"cvw\0", cv_wait_entry, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"cvw").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_wait_entry).unwrap();
     Thread::sleep_ms(50);
 
     mtx.lock(WAIT_FOREVER).unwrap();
@@ -110,7 +110,7 @@ fn test_producer_consumer() {
     };
     let _guard = PtrGuard::new(&CV_PROD_CTX, &ctx as *const CvCtx as *mut CvCtx);
 
-    let th = Thread::spawn(b"prod\0", cv_producer_entry, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"prod").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_producer_entry).unwrap();
 
     mtx.lock(WAIT_FOREVER).unwrap();
     while CV_READY.load(Ordering::Acquire) == 0 {
@@ -134,7 +134,7 @@ fn test_wait_forever() {
     };
     let _guard = PtrGuard::new(&CV_SIG_CTX, &ctx as *const CvCtx as *mut CvCtx);
 
-    let th = Thread::spawn(b"sig\0", cv_signal_entry, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"sig").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_signal_entry).unwrap();
 
     mtx.lock(WAIT_FOREVER).unwrap();
     cv.wait(&mtx, WAIT_FOREVER).unwrap();

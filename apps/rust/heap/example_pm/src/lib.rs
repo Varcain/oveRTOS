@@ -125,7 +125,7 @@ fn app_main() {
     pm::set_policy(&POLICY).ok();
     pm::set_budget(6000).ok();
 
-    let _sensor = Thread::spawn_with(b"sensor\0", Priority::Normal, 4096, || {
+    let _sensor = Thread::builder().name(c"sensor").priority(Priority::Normal).stack_size(4096).spawn(|_tok| {
         ove::log_inf!("sensor: started");
         let mut reading: u32 = 0;
         loop {
@@ -140,7 +140,7 @@ fn app_main() {
     })
     .expect("sensor spawn");
 
-    let _monitor = Thread::spawn_with(b"monitor\0", Priority::Low, 4096, || {
+    let _monitor = Thread::builder().name(c"monitor").priority(Priority::Low).stack_size(4096).spawn(|_tok| {
         ove::log_inf!("monitor: started");
         loop {
             Thread::sleep_ms(10000);

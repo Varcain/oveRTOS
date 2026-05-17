@@ -194,7 +194,7 @@ pub use stream::Stream;
 #[cfg(has_sync)]
 pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
 pub use thread::Priority;
-pub use thread::{MemStats, Thread, ThreadInfo, ThreadState, ThreadStats};
+pub use thread::{Builder, JoinHandle, MemStats, StopToken, Thread, ThreadInfo, ThreadState, ThreadStats};
 #[cfg(has_timer)]
 pub use timer::Timer;
 #[cfg(has_watchdog)]
