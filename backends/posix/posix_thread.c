@@ -482,6 +482,21 @@ void ove_thread_resume(ove_thread_t handle)
 	}
 }
 
+void ove_thread_request_stop(ove_thread_t handle)
+{
+	struct ove_thread *t = handle;
+	if (t)
+		__atomic_store_n(&t->stop_requested, 1, __ATOMIC_RELEASE);
+}
+
+bool ove_thread_should_stop(ove_thread_t handle)
+{
+	struct ove_thread *t = handle;
+	if (!t)
+		return false;
+	return __atomic_load_n(&t->stop_requested, __ATOMIC_ACQUIRE) != 0;
+}
+
 size_t ove_thread_get_stack_usage(ove_thread_t handle)
 {
 	(void)handle;
