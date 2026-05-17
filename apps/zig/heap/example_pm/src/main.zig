@@ -6,7 +6,7 @@
 
 //! oveRTOS Zig Power Management Example — heap mode.
 //!
-//! Threads use the value-returning `Thread(N).create(...)` constructor
+//! Threads use the value-returning `Thread(N).spawn(...)` constructor
 //! and live in `?Thread(N) = null` slots populated inside appMain.
 //! Pair with apps/zig/zeroheap/example_pm/ which uses two-phase init
 //! against embedded storage.
@@ -124,11 +124,11 @@ fn appMain() void {
     pm.setPolicy(batteryPolicy, null) catch {};
     pm.setBudget(6000) catch {};
 
-    sensor_thread = Thread(4096).create("sensor", sensorEntry, prio.normal) catch {
+    sensor_thread = Thread(4096).spawn("sensor", prio.normal, sensorEntry, .{}) catch {
         ove.log.err("Failed to spawn sensor", .{});
         return;
     };
-    monitor_thread = Thread(4096).create("monitor", monitorEntry, prio.low) catch {
+    monitor_thread = Thread(4096).spawn("monitor", prio.low, monitorEntry, .{}) catch {
         ove.log.err("Failed to spawn monitor", .{});
         return;
     };

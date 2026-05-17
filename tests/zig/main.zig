@@ -156,7 +156,7 @@ fn testMutexSharedCounter() !void {
     shared_counter = 0;
     counter_mutex = try ove.Mutex.create();
     defer counter_mutex.deinit();
-    var t = try ove.Thread(4096).create("cnt", counterThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("cnt", prio.normal, counterThread, .{});
     // Main thread also increments
     var i: u32 = 0;
     while (i < 1000) : (i += 1) {
@@ -280,7 +280,7 @@ fn semProducerThread() void {
 fn testSemaphoreProducerConsumer() !void {
     sem_for_thread = try ove.Semaphore.create(0, 1);
     defer sem_for_thread.deinit();
-    var t = try ove.Thread(4096).create("semp", semProducerThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("semp", prio.normal, semProducerThread, .{});
     try sem_for_thread.take(500 * std.time.ns_per_ms);
     t.deinit();
 }
@@ -322,7 +322,7 @@ fn eventSignalThread() void {
 fn testEventCrossThread() !void {
     event_for_thread = try ove.Event.create();
     defer event_for_thread.deinit();
-    var t = try ove.Thread(4096).create("esig", eventSignalThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("esig", prio.normal, eventSignalThread, .{});
     try event_for_thread.wait(500 * std.time.ns_per_ms);
     t.deinit();
 }
@@ -374,7 +374,7 @@ fn testCondVarSignalWakesOne() !void {
     defer cv_mutex_for_thread.deinit();
     cv_for_thread = try ove.CondVar.create();
     defer cv_for_thread.deinit();
-    var t = try ove.Thread(4096).create("cvw", cvWaiterThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("cvw", prio.normal, cvWaiterThread, .{});
     ove.thread.sleepMs(50);
     cv_for_thread.signal();
     ove.thread.sleepMs(50);
@@ -410,7 +410,7 @@ fn testCondVarProducerConsumer() !void {
     defer cv_prod_mutex.deinit();
     cv_prod_cv = try ove.CondVar.create();
     defer cv_prod_cv.deinit();
-    var t = try ove.Thread(4096).create("cvp", cvProducerThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("cvp", prio.normal, cvProducerThread, .{});
     try cv_prod_mutex.lock(ove.wait_forever);
     while (!cv_prod_flag) {
         try cv_prod_cv.wait(cv_prod_mutex, 500 * std.time.ns_per_ms);
@@ -426,7 +426,7 @@ fn testCondVarWaitForever() !void {
     defer cv_prod_mutex.deinit();
     cv_prod_cv = try ove.CondVar.create();
     defer cv_prod_cv.deinit();
-    var t = try ove.Thread(4096).create("cvf", cvProducerThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("cvf", prio.normal, cvProducerThread, .{});
     try cv_prod_mutex.lock(ove.wait_forever);
     while (!cv_prod_flag) {
         try cv_prod_cv.wait(cv_prod_mutex, ove.wait_forever);
@@ -527,7 +527,7 @@ fn testQueueProducerConsumer() !void {
     queue_sum = 0;
     consumer_queue = try Q8.create();
     defer consumer_queue.deinit();
-    var t = try ove.Thread(4096).create("qcon", queueConsumerThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("qcon", prio.normal, queueConsumerThread, .{});
     var i: u32 = 1;
     while (i <= 5) : (i += 1) {
         try consumer_queue.send(&i, 1000 * std.time.ns_per_ms);
@@ -688,7 +688,7 @@ fn threadEntry() void {
 
 fn testThreadCreateDestroy() !void {
     thread_ran = false;
-    var t = try ove.Thread(4096).create("test", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).spawn("test", prio.normal, threadEntry, .{});
     ove.thread.sleepMs(50);
     try expect(thread_ran);
     t.deinit();
@@ -712,14 +712,14 @@ fn testThreadGetSelf() !void {
 }
 
 fn testThreadSetPriority() !void {
-    var t = try ove.Thread(4096).create("prio", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).spawn("prio", prio.normal, threadEntry, .{});
     defer t.deinit();
     t.setPriority(prio.high);
     ove.thread.sleepMs(50);
 }
 
 fn testThreadGetStateRunning() !void {
-    var t = try ove.Thread(4096).create("stat", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).spawn("stat", prio.normal, threadEntry, .{});
     defer t.deinit();
     const state = t.getState();
     // Should be one of Running, Ready, Blocked, or Terminated
@@ -734,14 +734,14 @@ fn terminatingThread() void {
 
 fn testThreadGetStateTerminated() !void {
     terminated_flag = false;
-    var t = try ove.Thread(4096).create("term", terminatingThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("term", prio.normal, terminatingThread, .{});
     ove.thread.sleepMs(100);
     try expect(terminated_flag);
     t.deinit();
 }
 
 fn testThreadStackUsage() !void {
-    var t = try ove.Thread(4096).create("stk", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).spawn("stk", prio.normal, threadEntry, .{});
     ove.thread.sleepMs(50);
     _ = t.getStackUsage();
     t.deinit();
@@ -756,7 +756,7 @@ fn suspendableThread() void {
 
 fn testThreadSuspendResume() !void {
     suspended_flag = false;
-    var t = try ove.Thread(4096).create("susp", suspendableThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("susp", prio.normal, suspendableThread, .{});
     ove.thread.sleepMs(50);
     t.suspendThread();
     ove.thread.sleepMs(100);
@@ -768,7 +768,7 @@ fn testThreadSuspendResume() !void {
 }
 
 fn testThreadRuntimeStats() !void {
-    var t = try ove.Thread(4096).create("rts", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).spawn("rts", prio.normal, threadEntry, .{});
     ove.thread.sleepMs(50);
     // May return error.NotSupported on some backends
     _ = t.getRuntimeStats() catch {};
@@ -776,9 +776,98 @@ fn testThreadRuntimeStats() !void {
 }
 
 fn testThreadRaiiDrop() !void {
-    var t = try ove.Thread(4096).create("raii", threadEntry, prio.normal);
+    var t = try ove.Thread(4096).spawn("raii", prio.normal, threadEntry, .{});
     ove.thread.sleepMs(50);
     t.deinit();
+}
+
+// ---------------------------------------------------------------------------
+// ThreadStop tests — cooperative cancellation (Phase 4 / Iteration 5)
+// ---------------------------------------------------------------------------
+
+var stop_observed_false: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+var stop_observed_true: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+var stop_exited: std.atomic.Value(u32) = std.atomic.Value(u32).init(0);
+
+fn resetStopFlags() void {
+    stop_observed_false.store(0, .release);
+    stop_observed_true.store(0, .release);
+    stop_exited.store(0, .release);
+}
+
+fn waitForFlag(flag: *std.atomic.Value(u32), expected: u32, timeout_ms: u32) bool {
+    var i: u32 = 0;
+    while (i < timeout_ms) : (i += 1) {
+        if (flag.load(.acquire) == expected) return true;
+        ove.thread.sleepMs(1);
+    }
+    return flag.load(.acquire) == expected;
+}
+
+fn cooperativeWorker(stop: ove.StopToken) void {
+    if (!stop.isStopped()) stop_observed_false.store(1, .release);
+    while (!stop.isStopped()) {
+        ove.thread.sleepMs(2);
+    }
+    stop_observed_true.store(1, .release);
+    stop_exited.store(1, .release);
+}
+
+fn testThreadStopCooperativeDeinit() !void {
+    resetStopFlags();
+    {
+        var t = try ove.Thread(4096).spawn("coop", prio.normal, cooperativeWorker, .{});
+        try std.testing.expect(waitForFlag(&stop_observed_false, 1, 1000));
+        // deinit calls requestStop, then destroy.  Cooperative worker exits cleanly.
+        t.deinit();
+    }
+    try std.testing.expectEqual(@as(u32, 1), stop_observed_true.load(.acquire));
+    try std.testing.expectEqual(@as(u32, 1), stop_exited.load(.acquire));
+}
+
+fn testThreadStopExplicitRequest() !void {
+    resetStopFlags();
+    var t = try ove.Thread(4096).spawn("coop", prio.normal, cooperativeWorker, .{});
+    try std.testing.expect(waitForFlag(&stop_observed_false, 1, 1000));
+    try std.testing.expect(!t.shouldStop());
+    t.requestStop();
+    try std.testing.expect(t.shouldStop());
+    t.deinit();
+    try std.testing.expectEqual(@as(u32, 1), stop_exited.load(.acquire));
+}
+
+fn helperChecksToken(tok: ove.StopToken) bool {
+    return tok.stopPossible() and tok.isStopped();
+}
+
+fn testThreadStopTokenShareable() !void {
+    resetStopFlags();
+    var t = try ove.Thread(4096).spawn("coop", prio.normal, cooperativeWorker, .{});
+    const tok = t.stopToken();
+    try std.testing.expect(tok.stopPossible());
+    try std.testing.expect(!helperChecksToken(tok));
+    t.requestStop();
+    try std.testing.expect(helperChecksToken(tok));
+    t.deinit();
+}
+
+fn testThreadStopEmptyToken() !void {
+    const tok = ove.StopToken.empty();
+    try std.testing.expect(!tok.stopPossible());
+    try std.testing.expect(!tok.isStopped());
+}
+
+fn legacyOneshotEntry() void {
+    stop_exited.store(1, .release);
+}
+
+fn testThreadStopLegacyEntryUnaffected() !void {
+    resetStopFlags();
+    {
+        var t = try ove.Thread(4096).spawn("legacy", prio.normal, legacyOneshotEntry, .{});
+        try std.testing.expect(waitForFlag(&stop_exited, 1, 500));
+        t.deinit();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -866,7 +955,7 @@ fn egSetterThread() void {
 fn testEventGroupCrossThread() !void {
     eg_for_thread = try ove.EventGroup.create();
     defer eg_for_thread.deinit();
-    var t = try ove.Thread(4096).create("egst", egSetterThread, prio.normal);
+    var t = try ove.Thread(4096).spawn("egst", prio.normal, egSetterThread, .{});
     const result = try eg_for_thread.waitBits(BIT_0, 0, 500 * std.time.ns_per_ms);
     try expect(result & BIT_0 != 0);
     t.deinit();
@@ -1678,6 +1767,14 @@ pub fn main() void {
         .{ .name = "suspend_resume", .func = testThreadSuspendResume },
         .{ .name = "runtime_stats", .func = testThreadRuntimeStats },
         .{ .name = "raii_drop", .func = testThreadRaiiDrop },
+    });
+
+    runSuite("ThreadStop", &.{
+        .{ .name = "cooperative_deinit", .func = testThreadStopCooperativeDeinit },
+        .{ .name = "explicit_request", .func = testThreadStopExplicitRequest },
+        .{ .name = "token_shareable", .func = testThreadStopTokenShareable },
+        .{ .name = "empty_token", .func = testThreadStopEmptyToken },
+        .{ .name = "legacy_entry_unaffected", .func = testThreadStopLegacyEntryUnaffected },
     });
 
     runSuite("EventGroup", &.{

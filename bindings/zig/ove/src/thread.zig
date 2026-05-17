@@ -9,13 +9,39 @@
 //! `Thread(stack_size)` is the templated wrapper.  Its shape differs by
 //! build mode:
 //!
-//! - **Heap mode**: value-returning `create()`; the wrapper is just a
+//! - **Heap mode**: value-returning `spawn(...)`; the wrapper is just a
 //!   handle, no embedded stack.  `stack_size` is forwarded to the kernel
 //!   as a runtime hint.
-//! - **Zero-heap mode**: two-phase `init()`; the stack is embedded as a
-//!   struct field sized at comptime by `stack_size`.  The wrapper must
-//!   not be moved after `init()` — debug builds panic on any method call
-//!   from a different address; release builds compile the check out.
+//! - **Zero-heap mode**: two-phase `spawnStatic(self, ...)`; the stack
+//!   is embedded as a struct field sized at comptime by `stack_size`.
+//!   The wrapper must not be moved after `spawnStatic()` — debug builds
+//!   panic on any method call from a different address; release builds
+//!   compile the check out.
+//!
+//! Both spawn forms accept any callable via comptime introspection and
+//! a tuple of runtime args.  If the callable's first parameter is
+//! [`StopToken`], the trampoline injects a token referencing the new
+//! thread; otherwise the args go straight through.  Cooperative
+//! cancellation is opt-in via the entry signature:
+//!
+//! ```zig
+//! // Cooperative worker — receives a StopToken; deinit auto-stops + joins.
+//! fn worker(stop: ove.StopToken, queue: *Queue) void {
+//!     while (!stop.isStopped()) { /* work */ }
+//! }
+//!
+//! var th = try ove.Thread(4096).spawn("worker", .normal, worker, .{&queue});
+//! defer th.deinit();  // requestStop + destroy
+//! ```
+//!
+//! Legacy fire-and-return entries (no token) are supported by simply
+//! omitting the [`StopToken`] parameter:
+//!
+//! ```zig
+//! fn oneshot() void { /* runs once and returns */ }
+//! var th = try ove.Thread(4096).spawn("oneshot", .normal, oneshot, .{});
+//! defer th.deinit();
+//! ```
 //!
 //! Module-level helpers (`sleepMs`, `yieldCpu`, `getSelf`, `getMemStats`,
 //! `threadList`, `Priority`, `prio`, `State`) are static — they don't bind
@@ -68,6 +94,55 @@ pub const Stats = struct {
 };
 
 // ---------------------------------------------------------------------------
+// StopToken — read-only handle to the per-thread cancellation flag.
+// ---------------------------------------------------------------------------
+
+/// Read-only handle to a thread's cooperative-cancellation flag.
+///
+/// Cheap to copy and pass by value.  Reads the per-thread atomic flag
+/// set by [`Thread.requestStop`] (or implicitly by the wrapper's
+/// `deinit`).  Workers spawned via `Thread(N).spawn(..., entry, ...)`
+/// receive a token as the entry's first argument when the entry's
+/// signature declares one.
+///
+/// ```zig
+/// fn worker(stop: ove.StopToken) void {
+///     while (!stop.isStopped()) {
+///         // do work
+///     }
+/// }
+///
+/// var th = try ove.Thread(4096).spawn("worker", .normal, worker, .{});
+/// defer th.deinit();  // sets stop flag, then waits for worker exit
+/// ```
+pub const StopToken = struct {
+    handle: c.ove_thread_t = null,
+
+    /// Construct an empty token that never signals stop.  Useful as a
+    /// default for fields filled in later.
+    pub fn empty() StopToken {
+        return .{ .handle = null };
+    }
+
+    /// `true` if [`Thread.requestStop`] has been called on the
+    /// referenced thread.  Returns `false` for an empty token.
+    pub inline fn isStopped(self: StopToken) bool {
+        if (self.handle == null) return false;
+        return c.ove_thread_should_stop(self.handle);
+    }
+
+    /// `true` if this token references a real thread (vs. [`empty`]).
+    pub inline fn stopPossible(self: StopToken) bool {
+        return self.handle != null;
+    }
+
+    /// Raw C handle accessor for advanced use.
+    pub inline fn rawHandle(self: StopToken) c.ove_thread_t {
+        return self.handle;
+    }
+};
+
+// ---------------------------------------------------------------------------
 // Module-level helpers (no instance)
 // ---------------------------------------------------------------------------
 
@@ -89,6 +164,97 @@ pub fn getSelf() c.ove_thread_t {
 }
 
 // ---------------------------------------------------------------------------
+// Trampoline generation (comptime introspection over entry signature)
+// ---------------------------------------------------------------------------
+
+/// Describes a `spawn` entry signature at comptime.  `takes_token` is
+/// `true` when the first parameter is a [`StopToken`] (auto-injected
+/// by the trampoline); `user_param_count` is 0 or 1.
+const EntryInfo = struct {
+    takes_token: bool,
+    user_param_count: usize,
+};
+
+inline fn introspect(comptime EntryFn: type, comptime ArgsT: type) EntryInfo {
+    const fn_info = @typeInfo(EntryFn);
+    if (fn_info != .@"fn") {
+        @compileError("ove.Thread.spawn: `entry` must be a function, got " ++ @typeName(EntryFn));
+    }
+    const params = fn_info.@"fn".params;
+    const takes_token = params.len > 0 and params[0].type != null and
+        params[0].type.? == StopToken;
+    const user_count = if (takes_token) params.len - 1 else params.len;
+
+    const args_info = @typeInfo(ArgsT);
+    if (args_info != .@"struct" or !args_info.@"struct".is_tuple) {
+        @compileError("ove.Thread.spawn: `args` must be a tuple, got " ++ @typeName(ArgsT));
+    }
+    if (args_info.@"struct".fields.len != user_count) {
+        @compileError(std.fmt.comptimePrint(
+            "ove.Thread.spawn: entry takes {d} non-token parameter(s) but args tuple has {d} field(s)",
+            .{ user_count, args_info.@"struct".fields.len },
+        ));
+    }
+    if (user_count > 1) {
+        @compileError("ove.Thread.spawn: entry can take at most one non-StopToken parameter " ++
+            "(use a pointer to a struct if you need multiple values)");
+    }
+
+    return .{
+        .takes_token = takes_token,
+        .user_param_count = user_count,
+    };
+}
+
+/// Produce a `callconv(.c) fn(?*anyopaque) void` trampoline that
+/// unpacks `args` and invokes `entry`, injecting a [`StopToken`] as the
+/// first arg when the entry's signature requires it.
+fn makeTrampoline(
+    comptime entry: anytype,
+    comptime info: anytype,
+) type {
+    return struct {
+        fn invoke(arg: ?*anyopaque) callconv(.c) void {
+            const fn_info = @typeInfo(@TypeOf(entry)).@"fn";
+            if (info.takes_token) {
+                // The substrate's per-thread "self" handle is published
+                // by the parent AFTER the substrate spawn call returns,
+                // on backends that need it (notably FreeRTOS via task
+                // tag).  An equal-priority worker can outrace the parent
+                // and see a null handle on first call — poll-yield until
+                // it shows up.
+                var h: c.ove_thread_t = c.ove_thread_get_self();
+                while (h == null) {
+                    c.ove_thread_yield();
+                    h = c.ove_thread_get_self();
+                }
+                const tok = StopToken{ .handle = h };
+                if (info.user_param_count == 0) {
+                    entry(tok);
+                } else {
+                    const UserT = fn_info.params[1].type.?;
+                    const ptr: UserT = @ptrCast(@alignCast(arg));
+                    entry(tok, ptr);
+                }
+            } else {
+                if (info.user_param_count == 0) {
+                    entry();
+                } else {
+                    const UserT = fn_info.params[0].type.?;
+                    const ptr: UserT = @ptrCast(@alignCast(arg));
+                    entry(ptr);
+                }
+            }
+        }
+    };
+}
+
+inline fn ctxPointer(comptime user_param_count: usize, args: anytype) ?*anyopaque {
+    if (user_param_count == 0) return null;
+    return @ptrCast(args[0]);
+}
+
+// ---------------------------------------------------------------------------
 // Thread(stack_size)
 // ---------------------------------------------------------------------------
 
@@ -99,15 +265,15 @@ pub fn getSelf() c.ove_thread_t {
 /// stack from the heap based on `stack_size`:
 ///
 /// ```zig
-/// var th = try ove.Thread(2048).create("worker", workerEntry, .normal);
+/// var th = try ove.Thread(2048).spawn("worker", .normal, workerEntry, .{});
 /// defer th.deinit();
 /// ```
 ///
-/// In zero-heap mode the stack is embedded; two-phase init is required:
+/// In zero-heap mode the stack is embedded; two-phase spawn is required:
 ///
 /// ```zig
 /// var th: ove.Thread(2048) = undefined;
-/// try th.init("worker", workerEntry, .normal);
+/// try th.spawnStatic("worker", .normal, workerEntry, .{});
 /// defer th.deinit();
 /// ```
 pub fn Thread(comptime stack_size: usize) type {
@@ -120,43 +286,71 @@ fn HeapThread(comptime stack_size: usize) type {
 
         handle: c.ove_thread_t,
 
-        /// Create with a Zig callback (no context).
-        pub fn create(
+        /// Spawn a thread.  `entry` may take zero, one, or two
+        /// parameters; the first may be a [`StopToken`] (auto-injected
+        /// by the trampoline).  `args` is a tuple matching the
+        /// remaining parameters (zero or one pointer).
+        pub fn spawn(
             name: [*:0]const u8,
-            comptime entry: fn () void,
             priority: Priority,
+            comptime entry: anytype,
+            args: anytype,
         ) Error!Self {
-            const Tramp = struct {
-                fn invoke(_: ?*anyopaque) callconv(.c) void {
-                    entry();
-                }
-            };
+            const info = comptime introspect(@TypeOf(entry), @TypeOf(args));
+            const Tramp = makeTrampoline(entry, info);
+            const ctx_ptr = ctxPointer(info.user_param_count, args);
             var h: c.ove_thread_t = null;
-            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke, null, priority, stack_size));
+            try err.fromCode(c.ove_thread_create(
+                &h,
+                name,
+                &Tramp.invoke,
+                ctx_ptr,
+                priority,
+                stack_size,
+            ));
             return .{ .handle = h };
         }
 
-        /// Create with a typed context pointer.  `ctx` must outlive the thread.
-        pub fn createWithContext(
-            name: [*:0]const u8,
-            comptime Context: type,
-            ctx: *Context,
-            comptime entry: fn (*Context) void,
-            priority: Priority,
-        ) Error!Self {
-            const Tramp = struct {
-                fn invoke(arg: ?*anyopaque) callconv(.c) void {
-                    const ptr: *Context = @ptrCast(@alignCast(arg));
-                    entry(ptr);
-                }
-            };
-            var h: c.ove_thread_t = null;
-            try err.fromCode(c.ove_thread_create(&h, name, &Tramp.invoke, @ptrCast(ctx), priority, stack_size));
-            return .{ .handle = h };
+        /// Request cooperative cancellation.  Sets the per-thread atomic
+        /// stop flag.  The worker must poll [`StopToken.isStopped`] for
+        /// this to have any effect — the substrate does NOT
+        /// force-terminate.  Safe from any context (ISR, other thread,
+        /// the thread itself).  Idempotent.
+        pub inline fn requestStop(self: Self) void {
+            if (self.handle == null) return;
+            c.ove_thread_request_stop(self.handle);
         }
 
+        /// `true` if [`requestStop`] has been called on this thread.
+        pub inline fn shouldStop(self: Self) bool {
+            if (self.handle == null) return false;
+            return c.ove_thread_should_stop(self.handle);
+        }
+
+        /// Get a [`StopToken`] referencing this thread's cancellation
+        /// flag.  Cheap to copy; pass freely to helper functions.
+        pub inline fn stopToken(self: Self) StopToken {
+            return .{ .handle = self.handle };
+        }
+
+        /// Consume the wrapper without waiting for the worker to exit.
+        /// The underlying kernel thread keeps running; its resources
+        /// are leaked from the binding's perspective until the worker's
+        /// entry function eventually returns.  Subsequent calls to
+        /// `deinit` on a detached `Self` are no-ops.
+        pub fn detach(self: *Self) void {
+            self.handle = null;
+        }
+
+        /// Request cooperative stop, then wait for the worker to exit
+        /// and release substrate resources.  Cooperative workers (those
+        /// polling [`StopToken.isStopped`]) exit cleanly.  Workers that
+        /// ignore the flag and don't return on their own block here
+        /// indefinitely — the stop signal is set but nothing observes
+        /// it.
         pub fn deinit(self: Self) void {
             if (self.handle == null) return;
+            c.ove_thread_request_stop(self.handle);
             _ = c.ove_thread_destroy(self.handle);
         }
 
@@ -200,52 +394,68 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
         handle: c.ove_thread_t,
         tracker: pin.Tracker,
 
-        /// Initialise with a Zig callback (no context).
-        pub fn init(
+        /// Spawn a thread into caller-provided embedded storage.  See
+        /// [`HeapThread.spawn`] for the entry/args contract.  The
+        /// wrapper must not be moved after this returns.
+        pub fn spawnStatic(
             self: *Self,
             name: [*:0]const u8,
-            comptime entry: fn () void,
             priority: Priority,
+            comptime entry: anytype,
+            args: anytype,
         ) Error!void {
-            const Tramp = struct {
-                fn invoke(_: ?*anyopaque) callconv(.c) void {
-                    entry();
-                }
-            };
+            const info = comptime introspect(@TypeOf(entry), @TypeOf(args));
+            const Tramp = makeTrampoline(entry, info);
+            const ctx_ptr = ctxPointer(info.user_param_count, args);
+
             self.stack = [_]u8{0} ** stackTotal(stack_size);
             self.storage = std.mem.zeroes(c.ove_thread_storage_t);
             self.handle = null;
             self.tracker = .{};
-            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name, &Tramp.invoke, null, priority, stack_size, &self.stack));
+            try err.fromCode(c.ove_thread_init(
+                &self.handle,
+                &self.storage,
+                name,
+                &Tramp.invoke,
+                ctx_ptr,
+                priority,
+                stack_size,
+                &self.stack,
+            ));
             self.tracker.record(self);
         }
 
-        /// Initialise with a typed context pointer.  `ctx` must outlive the thread.
-        pub fn initWithContext(
-            self: *Self,
-            name: [*:0]const u8,
-            comptime Context: type,
-            ctx: *Context,
-            comptime entry: fn (*Context) void,
-            priority: Priority,
-        ) Error!void {
-            const Tramp = struct {
-                fn invoke(arg: ?*anyopaque) callconv(.c) void {
-                    const ptr: *Context = @ptrCast(@alignCast(arg));
-                    entry(ptr);
-                }
-            };
-            self.stack = [_]u8{0} ** stackTotal(stack_size);
-            self.storage = std.mem.zeroes(c.ove_thread_storage_t);
+        /// See [`HeapThread.requestStop`].
+        pub inline fn requestStop(self: *Self) void {
+            self.tracker.assertSame(self, "ove.Thread");
+            if (self.handle == null) return;
+            c.ove_thread_request_stop(self.handle);
+        }
+
+        /// See [`HeapThread.shouldStop`].
+        pub inline fn shouldStop(self: *Self) bool {
+            self.tracker.assertSame(self, "ove.Thread");
+            if (self.handle == null) return false;
+            return c.ove_thread_should_stop(self.handle);
+        }
+
+        /// See [`HeapThread.stopToken`].
+        pub inline fn stopToken(self: *Self) StopToken {
+            self.tracker.assertSame(self, "ove.Thread");
+            return .{ .handle = self.handle };
+        }
+
+        /// See [`HeapThread.detach`].
+        pub fn detach(self: *Self) void {
+            self.tracker.assertSame(self, "ove.Thread");
             self.handle = null;
-            self.tracker = .{};
-            try err.fromCode(c.ove_thread_init(&self.handle, &self.storage, name, &Tramp.invoke, @ptrCast(ctx), priority, stack_size, &self.stack));
-            self.tracker.record(self);
+            self.tracker.clear();
         }
 
         pub fn deinit(self: *Self) void {
             self.tracker.assertSame(self, "ove.Thread");
             if (self.handle == null) return;
+            c.ove_thread_request_stop(self.handle);
             _ = c.ove_thread_deinit(self.handle);
             self.handle = null;
             self.tracker.clear();

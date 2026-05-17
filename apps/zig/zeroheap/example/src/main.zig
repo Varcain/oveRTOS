@@ -203,15 +203,15 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread.init("graphics", graphicsEntry, prio.high) catch {
+    graphics_thread.spawnStatic("graphics", prio.high, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread.init("producer", producerEntry, prio.normal) catch {
+    producer_thread.spawnStatic("producer", prio.normal, producerEntry, .{}) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread.init("consumer", consumerEntry, prio.normal) catch {
+    consumer_thread.spawnStatic("consumer", prio.normal, consumerEntry, .{}) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };

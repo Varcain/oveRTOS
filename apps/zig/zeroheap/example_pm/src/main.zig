@@ -125,11 +125,11 @@ fn appMain() void {
     pm.setPolicy(batteryPolicy, null) catch {};
     pm.setBudget(6000) catch {};
 
-    sensor_thread.init("sensor", sensorEntry, prio.normal) catch {
+    sensor_thread.spawnStatic("sensor", prio.normal, sensorEntry, .{}) catch {
         ove.log.err("Failed to init sensor", .{});
         return;
     };
-    monitor_thread.init("monitor", monitorEntry, prio.low) catch {
+    monitor_thread.spawnStatic("monitor", prio.low, monitorEntry, .{}) catch {
         ove.log.err("Failed to init monitor", .{});
         return;
     };
