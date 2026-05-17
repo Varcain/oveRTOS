@@ -44,6 +44,43 @@
 //! defer th.deinit();
 //! ```
 //!
+//! ## Passing multiple values to the entry
+//!
+//! The substrate's thread ABI is `void(*)(void*)` — a single
+//! machine-word `void *arg` slot.  The binding mirrors that exactly:
+//! the entry can take zero or one non-token pointer parameter, and the
+//! `args` tuple has zero or one pointer element.  To hand a worker
+//! multiple values, define a context struct and pass `&ctx`:
+//!
+//! ```zig
+//! const Ctx = struct {
+//!     queue: *ove.Queue(Msg, 32),
+//!     mutex: *ove.Mutex,
+//!     channel_id: u32,
+//! };
+//!
+//! fn worker(stop: ove.StopToken, ctx: *Ctx) void {
+//!     while (!stop.isStopped()) {
+//!         // ctx.queue, ctx.mutex, ctx.channel_id all available
+//!     }
+//! }
+//!
+//! var ctx = Ctx{ .queue = &q, .mutex = &mtx, .channel_id = 7 };
+//! var th = try ove.Thread(4096).spawn(.{ .name = "worker" }, worker, .{&ctx});
+//! defer th.deinit();   // worker exits before ctx goes out of scope
+//! ```
+//!
+//! `ctx` must outlive the thread.  The simplest discipline is to declare
+//! it at the same (or wider) scope as the wrapper, so `defer th.deinit()`
+//! waits for the worker to exit before `ctx` is popped.  For long-lived
+//! threads, place `ctx` in file-scope storage.
+//!
+//! This binding deliberately does *not* heap-box arbitrary args tuples
+//! the way `std.Thread.spawn` does — the substrate's single-pointer ABI
+//! is a real constraint, hidden allocations would conflict with the
+//! zero-heap mode and the binding's broader "make allocation explicit"
+//! contract, and the workaround above is one line.
+//!
 //! Module-level helpers (`sleepMs`, `yieldCpu`, `getSelf`, `getMemStats`,
 //! `threadList`, `Priority`, `prio`, `State`) are static — they don't bind
 //! to an instance.
@@ -254,8 +291,12 @@ inline fn introspect(comptime EntryFn: type, comptime ArgsT: type) EntryInfo {
         ));
     }
     if (user_count > 1) {
-        @compileError("ove.Thread.spawn: entry can take at most one non-StopToken parameter " ++
-            "(use a pointer to a struct if you need multiple values)");
+        @compileError("ove.Thread.spawn: entry can take at most one non-StopToken parameter — " ++
+            "the substrate's thread ABI is `void(*)(void*)`, a single pointer slot.  " ++
+            "To pass multiple values, define a context struct and have the entry take " ++
+            "`*Ctx`; pass `.{ &ctx }` as args.  Keep `ctx` alive until the thread exits " ++
+            "(simplest: declare it at the same scope as the wrapper).  See thread.zig " ++
+            "module doc for a worked example.");
     }
 
     if (user_count == 1) {
