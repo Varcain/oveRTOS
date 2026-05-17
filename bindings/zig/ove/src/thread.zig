@@ -445,11 +445,21 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
             return .{ .handle = self.handle };
         }
 
-        /// See [`HeapThread.detach`].
-        pub fn detach(self: *Self) void {
-            self.tracker.assertSame(self, "ove.Thread");
-            self.handle = null;
-            self.tracker.clear();
+        /// **Not available in zero-heap mode.**  The wrapper owns the
+        /// stack and storage that the kernel thread reads from, so
+        /// dropping the wrapper while the thread still runs is UAF.
+        /// `detach()` would silently invite that bug by removing the
+        /// implicit wait that `deinit` provides.  Call [`deinit`]
+        /// instead (it `request_stop`s, then waits), or hold the
+        /// wrapper in file-scope/static storage that outlives the
+        /// thread.
+        pub fn detach(_: *Self) noreturn {
+            @compileError("ove.Thread.detach is unsound in zero-heap mode: " ++
+                "the wrapper owns the stack and storage that the kernel " ++
+                "thread reads from.  Dropping the wrapper while the thread " ++
+                "still runs is use-after-free.  Call deinit() instead, or " ++
+                "hold the wrapper in file-scope/static storage that " ++
+                "outlives the thread.");
         }
 
         pub fn deinit(self: *Self) void {
