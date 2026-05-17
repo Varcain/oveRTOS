@@ -106,7 +106,7 @@ int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, ui
 	if (i2c == NULL || (data == NULL && len > 0))
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write(i2c, addr, data, len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
@@ -120,7 +120,7 @@ int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t t
 	if (i2c == NULL || buf == NULL || len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_read(i2c, addr, buf, len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
@@ -135,7 +135,7 @@ int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_l
 	if (i2c == NULL || (tx == NULL && tx_len > 0) || rx == NULL || rx_len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len, rx, rx_len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
@@ -159,7 +159,7 @@ int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, const void *dat
 	if (len > 0)
 		memcpy(&buf[1], data, len);
 
-	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write(i2c, addr, buf, 1 + len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
@@ -174,7 +174,7 @@ int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_
 	if (i2c == NULL || buf == NULL || len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write_read(i2c, addr, &reg, 1, buf, len, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 
@@ -190,7 +190,7 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint32_t timeout_ms)
 	if (i2c == NULL)
 		return OVE_ERR_INVALID_PARAM;
 
-	ove_mutex_lock(i2c->bus_mtx, OVE_WAIT_FOREVER);
+	OVE_LOCK_INFINITE(i2c->bus_mtx);
 	ret = ove_hal_i2c_write(i2c, addr, NULL, 0, timeout_ms);
 	ove_mutex_unlock(i2c->bus_mtx);
 

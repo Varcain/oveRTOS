@@ -103,12 +103,6 @@ static void test_event_destroy_null(void **state)
 	ove_event_destroy(NULL);
 }
 
-static void test_event_create_null(void **state)
-{
-	(void)state;
-	int rc = ove_event_create(NULL);
-	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
-}
 #endif
 
 int test_sync_event_run(void)
@@ -123,7 +117,6 @@ int test_sync_event_run(void)
 		cmocka_unit_test(test_event_auto_reset),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_event_destroy_null),
-		cmocka_unit_test(test_event_create_null),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

@@ -31,11 +31,6 @@ static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	int ret = ove_check_param(mtx);
-	if (ret)
-		return ret;
-	if (!storage)
-		return OVE_ERR_INVALID_PARAM;
 	struct ove_mutex *m = (struct ove_mutex *)storage;
 	pthread_mutex_init(&m->mtx, NULL);
 	*mtx = m;
@@ -77,9 +72,6 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 
 int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 {
-	if (mtx == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	if (ove_timeout_is_forever(timeout_ms)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -109,11 +101,6 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
-	int ret = ove_check_param(sem);
-	if (ret)
-		return ret;
-	if (!storage)
-		return OVE_ERR_INVALID_PARAM;
 	(void)max;
 	struct ove_sem *s = (struct ove_sem *)storage;
 	sem_init(&s->sem, 0, initial);
@@ -200,11 +187,6 @@ void ove_sem_give(ove_sem_t sem)
 
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
-	int ret = ove_check_param(evt);
-	if (ret)
-		return ret;
-	if (!storage)
-		return OVE_ERR_INVALID_PARAM;
 	struct ove_event *e = (struct ove_event *)storage;
 	memset(e, 0, sizeof(*e));
 	pthread_mutex_init(&e->lock, NULL);
@@ -313,8 +295,6 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	if (!mtx || !storage)
-		return OVE_ERR_INVALID_PARAM;
 	struct ove_mutex *m = (struct ove_mutex *)storage;
 	pthread_mutexattr_t attr;
 	pthread_mutexattr_init(&attr);
@@ -363,11 +343,6 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 
 int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
-	int ret = ove_check_param(cv);
-	if (ret)
-		return ret;
-	if (!storage)
-		return OVE_ERR_INVALID_PARAM;
 	struct ove_condvar *c = (struct ove_condvar *)storage;
 	pthread_cond_init(&c->cond, NULL);
 	*cv = c;
@@ -412,9 +387,6 @@ void ove_condvar_destroy(ove_condvar_t cv)
 int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 {
 	struct ove_condvar *c = cv;
-	if (c == NULL || mtx == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	if (ove_timeout_is_forever(timeout_ms)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, c);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);

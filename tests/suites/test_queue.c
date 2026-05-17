@@ -84,7 +84,7 @@ static void test_queue_fifo_order(void **state)
 	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 10);
 
 	for (int i = 0; i < 5; i++) {
-		ove_queue_send(q, &i, 0);
+		assert_int_equal(ove_queue_send(q, &i, 0), OVE_OK);
 	}
 
 	for (int i = 0; i < 5; i++) {
@@ -181,7 +181,7 @@ static void test_queue_send_from_isr(void **state)
 	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
 
 	int v = 99;
-	ove_queue_send_from_isr(q, &v);
+	assert_int_equal(ove_queue_send_from_isr(q, &v), OVE_OK);
 
 	int out = 0;
 	int rc = ove_queue_receive(q, &out, 0);
@@ -198,7 +198,7 @@ static void test_queue_receive_from_isr(void **state)
 	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
 
 	int v = 77;
-	ove_queue_send(q, &v, 0);
+	assert_int_equal(ove_queue_send(q, &v, 0), OVE_OK);
 
 	int out = 0;
 	int rc = ove_queue_receive_from_isr(q, &out);
@@ -221,7 +221,7 @@ static void test_queue_producer_consumer(void **state)
 
 	/* produce 1+2+3+4+5 = 15 */
 	for (int i = 1; i <= 5; i++) {
-		ove_queue_send(q, &i, 100);
+		assert_int_equal(ove_queue_send(q, &i, 100), OVE_OK);
 		test_msleep(5);
 	}
 
@@ -274,7 +274,7 @@ static void test_queue_send_wait_forever(void **state)
 	test_msleep(50); /* let receiver block — no observable flag before it enters receive() */
 
 	int v = 123;
-	ove_queue_send(q, &v, 0);
+	assert_int_equal(ove_queue_send(q, &v, 0), OVE_OK);
 
 	assert_true(wait_for_flag(&s_blocking_done, 1, 500));
 	assert_int_equal(atomic_load(&s_blocking_received), 123);
@@ -313,15 +313,6 @@ static void test_queue_pair_item_size(void **state)
 	ove_test_queue_destroy(q);
 }
 
-#ifndef CONFIG_OVE_ZERO_HEAP
-static void test_queue_create_null_handle(void **state)
-{
-	(void)state;
-	int rc = ove_queue_create(NULL, sizeof(int), 5);
-	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
-}
-#endif
-
 /* ── setup/teardown ──────────────────────────────────────────────────── */
 
 static int queue_setup(void **state)
@@ -358,9 +349,6 @@ int test_queue_run(void)
 #endif
 		cmocka_unit_test_setup(test_queue_send_wait_forever, queue_setup),
 		cmocka_unit_test_setup(test_queue_pair_item_size, queue_setup),
-#ifndef CONFIG_OVE_ZERO_HEAP
-		cmocka_unit_test_setup(test_queue_create_null_handle, queue_setup),
-#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

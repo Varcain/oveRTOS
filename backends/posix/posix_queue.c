@@ -27,7 +27,7 @@ static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (!q || !storage || !buffer || item_size == 0 || max_items == 0)
+	if (item_size == 0 || max_items == 0)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_queue *sq = (struct ove_queue *)storage;
 	memset(sq, 0, sizeof(*sq));
@@ -54,7 +54,7 @@ void ove_queue_deinit(ove_queue_t q)
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 {
-	if (!q || item_size == 0 || max_items == 0)
+	if (item_size == 0 || max_items == 0)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_queue *sq = OVE_BACKEND_MALLOC(sizeof(*sq));
 	if (!sq) {
@@ -93,9 +93,6 @@ void ove_queue_destroy(ove_queue_t q)
 int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 {
 	struct ove_queue *sq = q;
-	if (!sq || !data) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	pthread_mutex_lock(&sq->lock);
 
 	if (timeout_ms == OVE_WAIT_FOREVER) {
@@ -134,9 +131,6 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 {
 	struct ove_queue *sq = q;
-	if (!sq || !buf) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	pthread_mutex_lock(&sq->lock);
 
 	if (timeout_ms == OVE_WAIT_FOREVER) {
@@ -179,9 +173,6 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 {
 	struct ove_queue *sq = q;
-	if (!sq || !buf) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	pthread_mutex_lock(&sq->lock);
 	if (sq->count == 0) {
 		pthread_mutex_unlock(&sq->lock);

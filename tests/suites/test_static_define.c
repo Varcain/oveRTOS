@@ -47,7 +47,7 @@ static void test_static_define_mutex(void **state)
 {
 	(void)state;
 	assert_non_null(s_sd_mutex);
-	ove_mutex_lock(s_sd_mutex, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(s_sd_mutex);
 	ove_mutex_unlock(s_sd_mutex);
 }
 
@@ -55,8 +55,8 @@ static void test_static_define_recursive_mutex(void **state)
 {
 	(void)state;
 	assert_non_null(s_sd_rmutex);
-	ove_recursive_mutex_lock(s_sd_rmutex, OVE_WAIT_FOREVER);
-	ove_recursive_mutex_lock(s_sd_rmutex, OVE_WAIT_FOREVER);
+	OVE_TEST_RECURSIVE_LOCK(s_sd_rmutex);
+	OVE_TEST_RECURSIVE_LOCK(s_sd_rmutex);
 	ove_recursive_mutex_unlock(s_sd_rmutex);
 	ove_recursive_mutex_unlock(s_sd_rmutex);
 }

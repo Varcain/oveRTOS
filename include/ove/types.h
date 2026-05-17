@@ -23,6 +23,49 @@
 #error "oveRTOS requires a GCC-compatible compiler (gcc or clang). Other toolchains (MSVC, etc.) are not supported: the substrate uses __attribute__ extensions, statement expressions, and other GCC-flavoured features throughout."
 #endif
 
+/*
+ * Public-API annotation macros.
+ *
+ * The skip-list (bindgen / Zig @cImport / Emscripten / clang-tidy lint)
+ * mirrors heap_assert.h: those tools either don't grok the attribute
+ * cleanly or never produce a binary the annotation could affect, so
+ * expand to nothing there. Mirroring the existing pattern keeps the
+ * tooling surface consistent.
+ */
+#if defined(__BINDGEN__) || defined(__ZIG_CIMPORT__) || defined(__EMSCRIPTEN__) || \
+	defined(__OVE_LINT__)
+#define OVE_NONNULL(...)
+#define OVE_NODISCARD
+#define OVE_RETURNS_NONNULL
+#define OVE_DEPRECATED(msg)
+#else
+/**
+ * @brief Mark required-non-NULL pointer parameters (1-indexed positions).
+ *
+ * Callers passing @c NULL trigger a compile-time @c -Wnonnull warning.
+ * Caution: GCC may use this as an axiom and eliminate subsequent
+ * @c NULL checks inside the callee body — annotation and defensive
+ * @c if (!ptr) checks must be kept consistent or one will silently
+ * disappear.
+ */
+#define OVE_NONNULL(...) __attribute__((nonnull(__VA_ARGS__)))
+
+/**
+ * @brief Warn at compile time if the return value is discarded.
+ *
+ * Modern GCC does NOT honour the @c (void) cast for this attribute.
+ * Callers that genuinely don't care must consume the return via an
+ * assigned variable: @c int rc = func(); (void)rc;
+ */
+#define OVE_NODISCARD __attribute__((warn_unused_result))
+
+/** @brief Mark a function as never returning a NULL pointer. */
+#define OVE_RETURNS_NONNULL __attribute__((returns_nonnull))
+
+/** @brief Mark an API deprecated with an explanatory message. */
+#define OVE_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#endif
+
 /**
  * @brief oveRTOS error codes.
  *

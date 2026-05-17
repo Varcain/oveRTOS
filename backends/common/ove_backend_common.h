@@ -9,12 +9,33 @@
 #ifndef OVE_BACKEND_COMMON_H
 #define OVE_BACKEND_COMMON_H
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <errno.h>
 
+#include "ove/sync.h"
 #include "ove/types.h"
 #include "ove_config.h"
+
+/**
+ * @brief Take a mutex with OVE_WAIT_FOREVER, asserting on failure.
+ *
+ * For internal substrate code where the lock is known-valid and cannot
+ * legitimately time out (initialized once, never destroyed before
+ * release). Consumes the return value to satisfy @c OVE_NODISCARD on
+ * @ref ove_mutex_lock without burdening every call site with manual
+ * error plumbing.
+ *
+ * Release builds (@c NDEBUG) drop the assert; the return value is
+ * still consumed via @c (void) so no unused-variable warning fires.
+ */
+#define OVE_LOCK_INFINITE(mtx)                                       \
+	do {                                                         \
+		int _rc = ove_mutex_lock((mtx), OVE_WAIT_FOREVER);   \
+		assert(_rc == OVE_OK);                               \
+		(void)_rc;                                           \
+	} while (0)
 
 /*
  * Memory allocation wrappers — resolve to backend-specific allocators.

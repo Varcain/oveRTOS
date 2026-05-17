@@ -27,9 +27,9 @@ struct cv_waiter_ctx {
 static void cv_wait_entry(void *arg)
 {
 	struct cv_waiter_ctx *ctx = arg;
-	ove_mutex_lock(ctx->mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(ctx->mtx);
 	ctx->ready = 1;
-	ove_condvar_wait(ctx->cv, ctx->mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_CONDVAR_WAIT(ctx->cv, ctx->mtx);
 	ctx->woke = 1;
 	ove_mutex_unlock(ctx->mtx);
 }
@@ -44,7 +44,7 @@ static void cv_signal_entry(void *arg)
 {
 	struct cv_signal_ctx *ctx = arg;
 	test_msleep(50);
-	ove_mutex_lock(ctx->mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(ctx->mtx);
 	ctx->signaled = 1;
 	ove_condvar_signal(ctx->cv);
 	ove_mutex_unlock(ctx->mtx);
@@ -60,7 +60,7 @@ static void cv_producer_entry(void *arg)
 {
 	struct cv_prod_ctx *ctx = arg;
 	test_msleep(50);
-	ove_mutex_lock(ctx->mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(ctx->mtx);
 	ctx->ready = 1;
 	ove_condvar_signal(ctx->cv);
 	ove_mutex_unlock(ctx->mtx);
@@ -96,7 +96,7 @@ static void test_condvar_signal_wakes_one(void **state)
 
 	/* Wait until the waiter has entered condvar_wait (holds mutex, sets ready) */
 	for (int i = 0; i < 500; i++) {
-		ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+		OVE_TEST_LOCK(mtx);
 		int rdy = ctx.ready;
 		ove_mutex_unlock(mtx);
 		if (rdy)
@@ -105,7 +105,7 @@ static void test_condvar_signal_wakes_one(void **state)
 	}
 	assert_int_equal(ctx.ready, 1);
 
-	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(mtx);
 	ove_condvar_signal(cv);
 	ove_mutex_unlock(mtx);
 
@@ -132,7 +132,7 @@ static void test_condvar_broadcast(void **state)
 
 	/* Wait until both waiters are ready (inside condvar_wait) */
 	for (int i = 0; i < 500; i++) {
-		ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+		OVE_TEST_LOCK(mtx);
 		int both_ready = c1.ready && c2.ready;
 		ove_mutex_unlock(mtx);
 		if (both_ready)
@@ -142,7 +142,7 @@ static void test_condvar_broadcast(void **state)
 	assert_int_equal(c1.ready, 1);
 	assert_int_equal(c2.ready, 1);
 
-	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(mtx);
 	ove_condvar_broadcast(cv);
 	ove_mutex_unlock(mtx);
 
@@ -161,7 +161,7 @@ static void test_condvar_wait_timeout(void **state)
 	ove_mutex_t mtx = NULL;
 	ove_test_condvar_create(&cv, &s_cv_storage);
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
-	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(mtx);
 	assert_int_equal(ove_condvar_wait(cv, mtx, 50), OVE_ERR_TIMEOUT);
 	ove_mutex_unlock(mtx);
 	ove_test_condvar_destroy(cv);
@@ -180,9 +180,9 @@ static void test_condvar_producer_consumer(void **state)
 	ove_thread_t th = NULL;
 	ove_test_thread_run(&th, &s_th_storage, "prod", cv_producer_entry, &ctx, s_th_stack, 4096);
 
-	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(mtx);
 	while (!ctx.ready)
-		ove_condvar_wait(cv, mtx, OVE_WAIT_FOREVER);
+		OVE_TEST_CONDVAR_WAIT(cv, mtx);
 	ove_mutex_unlock(mtx);
 
 	ove_test_thread_destroy(th);
@@ -203,7 +203,7 @@ static void test_condvar_wait_forever(void **state)
 	ove_thread_t th = NULL;
 	ove_test_thread_run(&th, &s_th_storage, "sig", cv_signal_entry, &ctx, s_th_stack, 4096);
 
-	ove_mutex_lock(mtx, OVE_WAIT_FOREVER);
+	OVE_TEST_LOCK(mtx);
 	assert_int_equal(ove_condvar_wait(cv, mtx, OVE_WAIT_FOREVER), OVE_OK);
 	ove_mutex_unlock(mtx);
 
@@ -220,12 +220,6 @@ static void test_condvar_destroy_null(void **state)
 	ove_condvar_destroy(NULL);
 }
 
-static void test_condvar_create_null(void **state)
-{
-	(void)state;
-	int rc = ove_condvar_create(NULL);
-	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
-}
 #endif
 
 int test_sync_condvar_run(void)
@@ -240,7 +234,6 @@ int test_sync_condvar_run(void)
 		cmocka_unit_test(test_condvar_wait_forever),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_condvar_destroy_null),
-		cmocka_unit_test(test_condvar_create_null),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
