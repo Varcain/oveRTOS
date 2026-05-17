@@ -503,7 +503,7 @@ fn netThread() void {
 fn appMain() void {
     ove.log.inf("Zig networking example (heap mode): init", .{});
 
-    net_thread = ove.Thread(16384).spawn("net-test", ove.thread.prio.normal, netThread, .{}) catch |e| {
+    net_thread = ove.Thread(16384).spawn(.{ .name = "net-test", .priority = ove.thread.prio.normal }, netThread, .{}) catch |e| {
         ove.log.err("Failed to create net thread: {d}", .{errCode(e)});
         return;
     };
