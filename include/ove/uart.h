@@ -113,32 +113,32 @@ void ove_uart_destroy(ove_uart_t uart);
 /**
  * @brief Write data to the UART.
  *
- * Blocks for up to @p timeout_ms until all bytes are accepted.
+ * Blocks for up to @p timeout_ns until all bytes are accepted.
  * Thread-safe (internal TX mutex).
  *
  * @param[in]  uart          UART handle.
  * @param[in]  data          Data to transmit.
  * @param[in]  len           Number of bytes to write.
- * @param[in]  timeout_ms    Maximum wait time.
+ * @param[in]  timeout_ns    Maximum wait time.
  * @param[out] bytes_written Actual bytes written, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
 		   size_t *bytes_written);
 
 /**
  * @brief Read data from the UART RX buffer.
  *
- * Blocks for up to @p timeout_ms until at least 1 byte is available.
+ * Blocks for up to @p timeout_ns until at least 1 byte is available.
  *
  * @param[in]  uart         UART handle.
  * @param[out] buf          Buffer to receive data.
  * @param[in]  len          Maximum bytes to read.
- * @param[in]  timeout_ms   Maximum wait time.
+ * @param[in]  timeout_ns   Maximum wait time.
  * @param[out] bytes_read   Actual bytes read, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint32_t timeout_ms, size_t *bytes_read);
+int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_read);
 
 /**
  * @brief Query the number of bytes available in the RX buffer.
@@ -186,7 +186,7 @@ static inline void ove_uart_destroy(ove_uart_t u)
 {
 	(void)u;
 }
-static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint32_t t, size_t *bw)
+static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint64_t t, size_t *bw)
 {
 	(void)u;
 	(void)d;
@@ -195,7 +195,7 @@ static inline int ove_uart_write(ove_uart_t u, const void *d, size_t l, uint32_t
 	(void)bw;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_uart_read(ove_uart_t u, void *b, size_t l, uint32_t t, size_t *br)
+static inline int ove_uart_read(ove_uart_t u, void *b, size_t l, uint64_t t, size_t *br)
 {
 	(void)u;
 	(void)b;

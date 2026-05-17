@@ -45,9 +45,9 @@ void ove_hal_spi_close(ove_spi_t spi)
 	}
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
-	(void)timeout_ms; /* NuttX spi_transfer ioctl has no timeout knob */
+	(void)timeout_ns; /* NuttX spi_transfer ioctl has no timeout knob */
 
 	/* nwords is uint16_t in NuttX's spi_trans_s — chunk larger transfers
 	 * so we don't silently truncate. */

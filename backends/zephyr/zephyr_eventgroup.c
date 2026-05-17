@@ -72,17 +72,17 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 }
 
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
-			     uint32_t timeout_ms, ove_eventbits_t *result)
+			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
 	k_timeout_t timeout;
 	uint32_t val;
 	int wait_all = (flags & OVE_EG_WAIT_ALL) ? 1 : 0;
 	int clear = (flags & OVE_EG_CLEAR_ON_EXIT) ? 1 : 0;
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
-		timeout = K_MSEC(timeout_ms);
+		timeout = K_NSEC(timeout_ns);
 	}
 
 	/*

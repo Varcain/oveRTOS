@@ -51,10 +51,10 @@ void ove_hal_spi_close(ove_spi_t spi);
  * @param[in]  tx         Transmit buffer, or NULL.
  * @param[out] rx         Receive buffer, or NULL.
  * @param[in]  len        Number of bytes to transfer.
- * @param[in]  timeout_ms Maximum wait time.
+ * @param[in]  timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms);
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns);
 
 #ifdef __cplusplus
 }

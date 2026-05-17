@@ -21,6 +21,7 @@
 #ifdef CONFIG_OVE_NET
 
 #include "ove/net.h"
+#include "ove/time.h"
 #include "ove/types.h"
 #include "ove_backend_common.h"
 
@@ -220,16 +221,24 @@ static uint16_t alloc_ephemeral(void)
 
 /* ── Timed wait helper ─────────────────────────────────────────────── */
 
-static int cond_timedwait_ms(pthread_cond_t *c, pthread_mutex_t *m, uint32_t timeout_ms)
+static int cond_timedwait_ns(pthread_cond_t *c, pthread_mutex_t *m, uint64_t timeout_ns)
 {
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		pthread_cond_wait(c, m);
 		return 0;
 	}
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
-	ts.tv_sec += timeout_ms / 1000;
-	ts.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+	/* Fast path: ns < 4.29 s -> 32-bit divide (single-cycle UDIV
+	 * on Cortex-M7).  Slow path stays a 64-bit divide. */
+	if (timeout_ns <= (uint64_t)UINT32_MAX) {
+		uint32_t n = (uint32_t)timeout_ns;
+		ts.tv_sec += (time_t)(n / 1000000000u);
+		ts.tv_nsec += (long)(n % 1000000000u);
+	} else {
+		ts.tv_sec += (time_t)(timeout_ns / 1000000000ULL);
+		ts.tv_nsec += (long)(timeout_ns % 1000000000ULL);
+	}
 	if (ts.tv_nsec >= 1000000000L) {
 		ts.tv_sec++;
 		ts.tv_nsec -= 1000000000L;
@@ -434,7 +443,7 @@ int ove_socket_listen(ove_socket_t sock, int backlog)
 }
 
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
@@ -446,7 +455,7 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 	pthread_mutex_lock(&l->lock);
 
 	while (l->pend_count == 0 && l->active) {
-		if (cond_timedwait_ms(&l->cond, &l->lock, timeout_ms) != 0) {
+		if (cond_timedwait_ns(&l->cond, &l->lock, timeout_ns) != 0) {
 			pthread_mutex_unlock(&l->lock);
 			return OVE_ERR_TIMEOUT;
 		}
@@ -480,9 +489,9 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 	return OVE_OK;
 }
 
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
-	(void)timeout_ms;
+	(void)timeout_ns;
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
 	struct sim_sock_ext *e = sock_get(sock);
@@ -556,7 +565,7 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
 	return OVE_OK;
 }
 
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint32_t timeout_ms)
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
@@ -588,7 +597,7 @@ int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, 
 			return OVE_ERR_NET_CLOSED;
 		}
 
-		if (cond_timedwait_ms(&p->cond, &p->lock, timeout_ms) != 0) {
+		if (cond_timedwait_ns(&p->cond, &p->lock, timeout_ns) != 0) {
 			pthread_mutex_unlock(&p->lock);
 			return OVE_ERR_TIMEOUT;
 		}
@@ -614,7 +623,7 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 	/* For UDP loopback, auto-connect to the dest port and use send. */
 	struct sim_sock_ext *e = sock_get(sock);
 	if (e->state != SS_CONNECTED && dest) {
-		int ret = ove_socket_connect(sock, dest, 1000);
+		int ret = ove_socket_connect(sock, dest, OVE_MS(1000));
 		if (ret != OVE_OK)
 			return ret;
 	}
@@ -622,7 +631,7 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 }
 
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint32_t timeout_ms)
+			ove_sockaddr_t *src, uint64_t timeout_ns)
 {
 	if (src) {
 		memset(src, 0, sizeof(*src));
@@ -630,14 +639,14 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 		src->addr[0] = 127;
 		src->addr[3] = 1;
 	}
-	return ove_socket_recv(sock, buf, len, received, timeout_ms);
+	return ove_socket_recv(sock, buf, len, received, timeout_ns);
 }
 
 /* ── DNS (sim table) ───────────────────────────────────────────────── */
 
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
-	(void)timeout_ms;
+	(void)timeout_ns;
 	if (!hostname || !addr)
 		return OVE_ERR_INVALID_PARAM;
 

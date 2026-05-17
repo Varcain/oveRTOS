@@ -71,8 +71,8 @@ graph LR
 | `ove_queue_deinit` | `void (ove_queue_t q)` | Release the queue. Static storage is not freed. |
 | `ove_queue_create` | `int (ove_queue_t *q, size_t item_size, unsigned int max_items)` | Heap-allocate storage and data buffer. Requires `OVE_HEAP_QUEUE`. |
 | `ove_queue_destroy` | `void (ove_queue_t q)` | Free a heap-allocated queue. |
-| `ove_queue_send` | `int (ove_queue_t q, const void *data, uint32_t timeout_ms)` | Copy an item into the queue. Blocks up to `timeout_ms` if full (use `OVE_WAIT_FOREVER` for indefinite). Returns `OVE_OK`, `OVE_ERR_TIMEOUT`, or `OVE_ERR_QUEUE_FULL`. |
-| `ove_queue_receive` | `int (ove_queue_t q, void *buf, uint32_t timeout_ms)` | Copy the oldest item out of the queue. Blocks if empty. |
+| `ove_queue_send` | `int (ove_queue_t q, const void *data, uint64_t timeout_ns)` | Copy an item into the queue. Blocks up to `timeout_ns` if full (use `OVE_WAIT_FOREVER` for indefinite). Returns `OVE_OK`, `OVE_ERR_TIMEOUT`, or `OVE_ERR_QUEUE_FULL`. |
+| `ove_queue_receive` | `int (ove_queue_t q, void *buf, uint64_t timeout_ns)` | Copy the oldest item out of the queue. Blocks if empty. |
 | `ove_queue_send_from_isr` | `int (ove_queue_t q, const void *data)` | ISR-safe non-blocking send. Returns `OVE_ERR_QUEUE_FULL` if no space. |
 | `ove_queue_receive_from_isr` | `int (ove_queue_t q, void *buf)` | ISR-safe non-blocking receive. |
 
@@ -173,7 +173,7 @@ Combining both flags (`OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT`) is the recommend
 | `ove_eventgroup_set_bits` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | Set one or more bits (bitwise OR). Returns the new bit value after the operation. Unblocks matching waiters. |
 | `ove_eventgroup_clear_bits` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | Clear one or more bits. Returns the previous bit value. |
 | `ove_eventgroup_get_bits` | `ove_eventbits_t (ove_eventgroup_t eg)` | Read current bit mask without blocking. |
-| `ove_eventgroup_wait_bits` | `int (ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags, uint32_t timeout_ms, ove_eventbits_t *result)` | Block until bit pattern satisfied. Writes the bits value at wake-time to `*result` if non-NULL. |
+| `ove_eventgroup_wait_bits` | `int (ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags, uint64_t timeout_ns, ove_eventbits_t *result)` | Block until bit pattern satisfied. Writes the bits value at wake-time to `*result` if non-NULL. |
 | `ove_eventgroup_set_bits_from_isr` | `ove_eventbits_t (ove_eventgroup_t eg, ove_eventbits_t bits)` | ISR-safe set. |
 
 Static-storage macro: `OVE_EVENTGROUP_DEFINE_STATIC(name)` (in `ove/storage.h`).
@@ -254,8 +254,8 @@ graph LR
 | `ove_stream_deinit` | `void (ove_stream_t stream)` | Release the stream. |
 | `ove_stream_create` | `int (ove_stream_t *stream, size_t size, size_t trigger)` | Heap-allocate. Requires `OVE_HEAP_STREAM`. |
 | `ove_stream_destroy` | `void (ove_stream_t stream)` | Free a heap-allocated stream. |
-| `ove_stream_send` | `int (ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms, size_t *bytes_sent)` | Send bytes; blocks up to `timeout_ms` if there is no space. Actual bytes written written to `*bytes_sent` (may be NULL). |
-| `ove_stream_receive` | `int (ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms, size_t *bytes_received)` | Receive bytes; blocks until `trigger` bytes are available. |
+| `ove_stream_send` | `int (ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns, size_t *bytes_sent)` | Send bytes; blocks up to `timeout_ns` if there is no space. Actual bytes written written to `*bytes_sent` (may be NULL). |
+| `ove_stream_receive` | `int (ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_received)` | Receive bytes; blocks until `trigger` bytes are available. |
 | `ove_stream_send_from_isr` | `int (ove_stream_t stream, const void *data, size_t len, size_t *bytes_sent)` | ISR-safe non-blocking send. |
 | `ove_stream_receive_from_isr` | `int (ove_stream_t stream, void *buf, size_t len, size_t *bytes_received)` | ISR-safe non-blocking receive. |
 | `ove_stream_reset` | `int (ove_stream_t stream)` | Discard all buffered bytes. |

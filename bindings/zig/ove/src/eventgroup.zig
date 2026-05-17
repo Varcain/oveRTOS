@@ -64,9 +64,9 @@ const HeapEventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
+    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) Error!EventBits {
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ms, &result));
+        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result));
         return result;
     }
 
@@ -111,10 +111,10 @@ const ZeroHeapEventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ms: u32) Error!EventBits {
+    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) Error!EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ms, &result));
+        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result));
         return result;
     }
 

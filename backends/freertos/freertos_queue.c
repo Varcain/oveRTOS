@@ -10,13 +10,16 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
+#include "ove_ns_to_ticks.h"
 #include "queue.h"
+
+
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
 		   unsigned int max_items)
 {
-	if (q == NULL || storage == NULL || buffer == NULL || item_size == 0 || max_items == 0) {
+	if (item_size == 0 || max_items == 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -39,7 +42,7 @@ void ove_queue_deinit(ove_queue_t q)
 #ifdef OVE_HEAP_QUEUE
 int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 {
-	if (q == NULL || item_size == 0 || max_items == 0) {
+	if (item_size == 0 || max_items == 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
@@ -73,40 +76,38 @@ void ove_queue_destroy(ove_queue_t q)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
+int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 {
 	TickType_t ticks;
 	BaseType_t ret;
 
-	configASSERT(q != NULL);
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ticks = portMAX_DELAY;
 	} else {
-		ticks = pdMS_TO_TICKS(timeout_ms);
+		ticks = ove_ns_to_ticks(timeout_ns);
 	}
 
 	ret = xQueueSend(q->queue, data, ticks);
 	if (ret != pdPASS) {
-		return (timeout_ms == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
+		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }
 
-int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
+int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
 {
 	TickType_t ticks;
 	BaseType_t ret;
 
-	configASSERT(q != NULL);
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ticks = portMAX_DELAY;
 	} else {
-		ticks = pdMS_TO_TICKS(timeout_ms);
+		ticks = ove_ns_to_ticks(timeout_ns);
 	}
 
 	ret = xQueueReceive(q->queue, buf, ticks);
 	if (ret != pdPASS) {
-		return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
+		return (timeout_ns == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }
@@ -116,7 +117,6 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 	BaseType_t yield_required = pdFALSE;
 	BaseType_t ret;
 
-	configASSERT(q != NULL);
 	ret = xQueueSendFromISR(q->queue, data, &yield_required);
 	portYIELD_FROM_ISR(yield_required);
 
@@ -131,7 +131,6 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	BaseType_t yield_required = pdFALSE;
 	BaseType_t ret;
 
-	configASSERT(q != NULL);
 	ret = xQueueReceiveFromISR(q->queue, buf, &yield_required);
 	portYIELD_FROM_ISR(yield_required);
 

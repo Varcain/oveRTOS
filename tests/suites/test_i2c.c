@@ -43,7 +43,7 @@ static void test_i2c_read_null_buf(void **state)
 	struct ove_i2c_cfg cfg = {.instance = 0, .speed = OVE_I2C_SPEED_STANDARD};
 	ove_i2c_create(&i2c, &cfg);
 
-	int rc = ove_i2c_read(i2c, 0x50, NULL, 4, 100);
+	int rc = ove_i2c_read(i2c, 0x50, NULL, 4, OVE_MS(100));
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 
 	ove_i2c_destroy(i2c);
@@ -82,7 +82,7 @@ static void test_i2c_read_null_buf(void **state)
 	struct ove_i2c_cfg cfg = {.instance = 0, .speed = OVE_I2C_SPEED_STANDARD};
 	ove_i2c_init(&i2c, &s_i2c_rd, &cfg);
 
-	int rc = ove_i2c_read(i2c, 0x50, NULL, 4, 100);
+	int rc = ove_i2c_read(i2c, 0x50, NULL, 4, OVE_MS(100));
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 
 	ove_i2c_deinit(i2c);
@@ -93,14 +93,14 @@ static void test_i2c_write_null_handle(void **state)
 {
 	(void)state;
 	uint8_t data[] = {0x00, 0x01};
-	int rc = ove_i2c_write(NULL, 0x50, data, sizeof(data), 100);
+	int rc = ove_i2c_write(NULL, 0x50, data, sizeof(data), OVE_MS(100));
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 }
 
 static void test_i2c_probe_null_handle(void **state)
 {
 	(void)state;
-	int rc = ove_i2c_probe(NULL, 0x50, 100);
+	int rc = ove_i2c_probe(NULL, 0x50, OVE_MS(100));
 	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
 }
 

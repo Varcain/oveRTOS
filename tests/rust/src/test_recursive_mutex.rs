@@ -29,7 +29,7 @@ fn test_matching_unlocks() {
     for _ in 0..3 {
         mtx.unlock();
     }
-    mtx.lock(0).unwrap();
+    mtx.lock(core::time::Duration::ZERO).unwrap();
     mtx.unlock();
 }
 
@@ -50,7 +50,7 @@ fn test_guard_auto_unlock() {
         mtx.unlock();
     }
     // Guard dropped — still one less lock level
-    mtx.lock(0).unwrap();
+    mtx.lock(core::time::Duration::ZERO).unwrap();
     mtx.unlock();
 }
 
@@ -65,7 +65,7 @@ fn test_guard_nested() {
         // One guard level remaining
     }
     // All released
-    mtx.lock(0).unwrap();
+    mtx.lock(core::time::Duration::ZERO).unwrap();
     mtx.unlock();
 }
 

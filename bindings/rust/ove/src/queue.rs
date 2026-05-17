@@ -61,28 +61,28 @@ impl<T: Copy, const N: usize> Queue<T, N> {
         })
     }
 
-    /// Send an item to the queue, blocking up to `timeout_ms` if the queue is full.
+    /// Send an item to the queue, blocking up to `timeout_ns` if the queue is full.
     ///
     /// # Errors
     /// Returns [`Error::QueueFull`] or [`Error::Timeout`] if the item cannot be
-    /// enqueued within `timeout_ms`.
+    /// enqueued within `timeout_ns`.
     #[inline]
-    pub fn send(&self, item: &T, timeout_ms: u32) -> Result<()> {
+    pub fn send(&self, item: &T, timeout: core::time::Duration) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout_ms)
+            bindings::ove_queue_send(self.handle, item as *const T as *const _, crate::time::dur_to_ns(timeout))
         };
         Error::from_code(rc)
     }
 
-    /// Receive an item from the queue, blocking up to `timeout_ms` if the queue is empty.
+    /// Receive an item from the queue, blocking up to `timeout_ns` if the queue is empty.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no item is available within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if no item is available within `timeout_ns`.
     #[inline]
-    pub fn receive(&self, timeout_ms: u32) -> Result<T> {
+    pub fn receive(&self, timeout: core::time::Duration) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {
-            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, timeout_ms)
+            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, crate::time::dur_to_ns(timeout))
         };
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })

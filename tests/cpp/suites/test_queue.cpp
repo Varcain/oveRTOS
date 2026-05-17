@@ -14,7 +14,7 @@ static void cpp_consumer_thread(void *arg)
 {
 	auto *q = static_cast<ove::Queue<int, 10> *>(arg);
 	int val;
-	while (q->receive(&val, 200) == OVE_OK)
+	while (q->receive(&val, std::chrono::milliseconds{200}) == OVE_OK)
 		s_cpp_consumer_sum.fetch_add(val);
 }
 
@@ -22,7 +22,7 @@ static void cpp_blocking_receiver(void *arg)
 {
 	auto *q = static_cast<ove::Queue<int, 10> *>(arg);
 	int val;
-	if (q->receive(&val, OVE_WAIT_FOREVER) == OVE_OK)
+	if (q->receive(&val, ove::wait_forever) == OVE_OK)
 		s_cpp_blocking_received.store(val);
 }
 
@@ -43,10 +43,10 @@ static void test_cpp_queue_send_receive_single(void **state)
 	ove::Queue<int, 5> q;
 
 	int send_val = 42;
-	assert_int_equal(q.send(send_val, 0), OVE_OK);
+	assert_int_equal(q.send(send_val, std::chrono::milliseconds{0}), OVE_OK);
 
 	int recv_val = 0;
-	assert_int_equal(q.receive(&recv_val, 0), OVE_OK);
+	assert_int_equal(q.receive(&recv_val, std::chrono::milliseconds{0}), OVE_OK);
 	assert_int_equal(recv_val, 42);
 }
 
@@ -56,11 +56,11 @@ static void test_cpp_queue_fifo_order(void **state)
 	ove::Queue<int, 10> q;
 
 	for (int i = 0; i < 5; i++)
-		(void)q.send(i, 0);
+		(void)q.send(i, std::chrono::milliseconds{0});
 
 	for (int i = 0; i < 5; i++) {
 		int val = -1;
-		assert_int_equal(q.receive(&val, 0), OVE_OK);
+		assert_int_equal(q.receive(&val, std::chrono::milliseconds{0}), OVE_OK);
 		assert_int_equal(val, i);
 	}
 }
@@ -71,11 +71,11 @@ static void test_cpp_queue_send_full_times_out(void **state)
 	ove::Queue<int, 2> q;
 
 	int v = 1;
-	assert_int_equal(q.send(v, 0), OVE_OK);
+	assert_int_equal(q.send(v, std::chrono::milliseconds{0}), OVE_OK);
 	v = 2;
-	assert_int_equal(q.send(v, 0), OVE_OK);
+	assert_int_equal(q.send(v, std::chrono::milliseconds{0}), OVE_OK);
 	v = 3;
-	assert_int_equal(q.send(v, 10), OVE_ERR_TIMEOUT);
+	assert_int_equal(q.send(v, std::chrono::milliseconds{10}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_queue_receive_empty_times_out(void **state)
@@ -84,7 +84,7 @@ static void test_cpp_queue_receive_empty_times_out(void **state)
 	ove::Queue<int, 5> q;
 
 	int val;
-	assert_int_equal(q.receive(&val, 10), OVE_ERR_TIMEOUT);
+	assert_int_equal(q.receive(&val, std::chrono::milliseconds{10}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_queue_send_from_isr(void **state)
@@ -96,7 +96,7 @@ static void test_cpp_queue_send_from_isr(void **state)
 	(void)q.send_from_isr(v);
 
 	int out = 0;
-	assert_int_equal(q.receive(&out, 0), OVE_OK);
+	assert_int_equal(q.receive(&out, std::chrono::milliseconds{0}), OVE_OK);
 	assert_int_equal(out, 99);
 }
 
@@ -106,7 +106,7 @@ static void test_cpp_queue_receive_from_isr(void **state)
 	ove::Queue<int, 5> q;
 
 	int v = 77;
-	(void)q.send(v, 0);
+	(void)q.send(v, std::chrono::milliseconds{0});
 
 	int out = 0;
 	assert_int_equal(q.receive_from_isr(&out), OVE_OK);
@@ -124,7 +124,7 @@ static void test_cpp_queue_producer_consumer(void **state)
 		auto th = make_test_thread("consumer", cpp_consumer_thread, &q, OVE_PRIO_LOW);
 
 		for (int i = 1; i <= 5; i++) {
-			(void)q.send(i, 100);
+			(void)q.send(i, std::chrono::milliseconds{100});
 			test_msleep(5);
 		}
 
@@ -140,10 +140,10 @@ static void test_cpp_queue_struct_item(void **state)
 	ove::Queue<pair_t, 4> q;
 
 	pair_t p = {10, 20};
-	assert_int_equal(q.send(p, 0), OVE_OK);
+	assert_int_equal(q.send(p, std::chrono::milliseconds{0}), OVE_OK);
 
 	pair_t out = {};
-	assert_int_equal(q.receive(&out, 0), OVE_OK);
+	assert_int_equal(q.receive(&out, std::chrono::milliseconds{0}), OVE_OK);
 	assert_int_equal(out.a, 10);
 	assert_int_equal(out.b, 20);
 }
@@ -160,7 +160,7 @@ static void test_cpp_queue_send_wait_forever(void **state)
 	test_msleep(50);
 
 	int v = 123;
-	(void)q.send(v, 0);
+	(void)q.send(v, std::chrono::milliseconds{0});
 
 	test_msleep(100);
 	assert_int_equal(s_cpp_blocking_received.load(), 123);
@@ -174,7 +174,7 @@ static void test_cpp_queue_raii_destroy(void **state)
 	{
 		ove::Queue<int, 5> q;
 		int v = 1;
-		(void)q.send(v, 0);
+		(void)q.send(v, std::chrono::milliseconds{0});
 	}
 }
 
@@ -198,16 +198,16 @@ static void test_cpp_queue_type_safety(void **state)
 	/* Queue<uint8_t, N> stores 1-byte items, Queue<uint32_t, N> stores 4-byte */
 	ove::Queue<uint8_t, 4> q8;
 	uint8_t v8 = 0xAB;
-	assert_int_equal(q8.send(v8, 0), OVE_OK);
+	assert_int_equal(q8.send(v8, std::chrono::milliseconds{0}), OVE_OK);
 	uint8_t out8 = 0;
-	assert_int_equal(q8.receive(&out8, 0), OVE_OK);
+	assert_int_equal(q8.receive(&out8, std::chrono::milliseconds{0}), OVE_OK);
 	assert_int_equal(out8, 0xAB);
 
 	ove::Queue<uint32_t, 4> q32;
 	uint32_t v32 = 0xDEADBEEF;
-	assert_int_equal(q32.send(v32, 0), OVE_OK);
+	assert_int_equal(q32.send(v32, std::chrono::milliseconds{0}), OVE_OK);
 	uint32_t out32 = 0;
-	assert_int_equal(q32.receive(&out32, 0), OVE_OK);
+	assert_int_equal(q32.receive(&out32, std::chrono::milliseconds{0}), OVE_OK);
 	assert_true(out32 == 0xDEADBEEF);
 }
 

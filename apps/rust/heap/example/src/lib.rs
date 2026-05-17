@@ -139,7 +139,7 @@ fn app_main() {
         let mut count: u32 = 0;
         loop {
             count += 1;
-            match q.send(&count, 1000) {
+            match q.send(&count, core::time::Duration::from_millis(1000)) {
                 Ok(()) => {}
                 Err(ove::Error::Timeout) => ove::log_wrn!("Producer: send timeout"),
                 Err(ove::Error::QueueFull) => {

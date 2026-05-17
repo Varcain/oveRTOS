@@ -88,17 +88,17 @@ template <size_t RxBufSize = 0> class Uart
 
 	/** @brief Write bytes to the port; `bytes_written` optionally receives the count. */
 	[[nodiscard]] int write(const void *data, size_t len,
-				uint32_t timeout_ms = OVE_WAIT_FOREVER,
+				std::chrono::nanoseconds timeout = wait_forever,
 				size_t *bytes_written = nullptr)
 	{
-		return ove_uart_write(handle_, data, len, timeout_ms, bytes_written);
+		return ove_uart_write(handle_, data, len, to_timeout_ns(timeout), bytes_written);
 	}
 
 	/** @brief Read bytes from the RX buffer; `bytes_read` optionally receives the count. */
-	[[nodiscard]] int read(void *buf, size_t len, uint32_t timeout_ms = OVE_WAIT_FOREVER,
+	[[nodiscard]] int read(void *buf, size_t len, std::chrono::nanoseconds timeout = wait_forever,
 			       size_t *bytes_read = nullptr)
 	{
-		return ove_uart_read(handle_, buf, len, timeout_ms, bytes_read);
+		return ove_uart_read(handle_, buf, len, to_timeout_ns(timeout), bytes_read);
 	}
 
 	/** @brief Bytes currently available in the RX buffer. */

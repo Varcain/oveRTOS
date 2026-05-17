@@ -232,7 +232,7 @@ impl Thread {
     /// let queue = Arc::new(Queue::<u32, 8>::new()?);
     /// let q = Arc::clone(&queue);
     /// let _t = Thread::spawn_with(b"prod\0", Priority::Normal, 4096, move || {
-    ///     q.send(&42u32, 1000).ok();
+    ///     q.send(&42u32, core::time::Duration::from_secs(1)).ok();
     /// })?;
     /// ```
     ///

@@ -56,11 +56,11 @@ void ove_hal_uart_close(ove_uart_t uart);
  * @param[in]  uart          UART handle.
  * @param[in]  data          Data to transmit.
  * @param[in]  len           Number of bytes.
- * @param[in]  timeout_ms    Maximum wait time.
+ * @param[in]  timeout_ns    Maximum wait time.
  * @param[out] bytes_written Actual bytes written, or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_written);
 
 /**

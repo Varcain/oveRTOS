@@ -56,11 +56,11 @@ void ove_hal_i2c_close(ove_i2c_t i2c);
  * @param[in] addr       7-bit device address.
  * @param[in] data       Data to transmit.
  * @param[in] len        Number of bytes.
- * @param[in] timeout_ms Maximum wait time.
+ * @param[in] timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
-		      uint32_t timeout_ms);
+		      uint64_t timeout_ns);
 
 /**
  * @brief Read data from an I2C device.
@@ -71,10 +71,10 @@ int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len
  * @param[in]  addr       7-bit device address.
  * @param[out] buf        Buffer to receive data.
  * @param[in]  len        Number of bytes.
- * @param[in]  timeout_ms Maximum wait time.
+ * @param[in]  timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms);
+int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns);
 
 /**
  * @brief Combined write-then-read with repeated start.
@@ -89,11 +89,11 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32
  * @param[in]  tx_len     Number of bytes to write.
  * @param[out] rx         Receive buffer.
  * @param[in]  rx_len     Number of bytes to read.
- * @param[in]  timeout_ms Maximum wait time.
+ * @param[in]  timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
-			   size_t rx_len, uint32_t timeout_ms);
+			   size_t rx_len, uint64_t timeout_ns);
 
 #ifdef __cplusplus
 }

@@ -345,12 +345,12 @@ class TcpSocket
 	/**
 	 * @brief Connects to a remote address.
 	 * @param[in] addr       Remote address.
-	 * @param[in] timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
+	 * @param[in] timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int connect(const Address &addr, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int connect(const Address &addr, std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_socket_connect(handle_, &addr.raw, timeout_ms);
+		return ove_socket_connect(handle_, &addr.raw, to_timeout_ns(timeout));
 	}
 
 	/**
@@ -370,13 +370,13 @@ class TcpSocket
 	 * @param[out] buf        Buffer to receive into.
 	 * @param[in]  len        Buffer size in bytes.
 	 * @param[out] received   Number of bytes received (may be nullptr).
-	 * @param[in]  timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
+	 * @param[in]  timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, `OVE_ERR_NET_CLOSED` if peer closed.
 	 */
 	[[nodiscard]] int recv(void *buf, size_t len, size_t *received = nullptr,
-			       uint32_t timeout_ms = OVE_WAIT_FOREVER)
+			       std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_socket_recv(handle_, buf, len, received, timeout_ms);
+		return ove_socket_recv(handle_, buf, len, received, to_timeout_ns(timeout));
 	}
 
 	/**
@@ -529,15 +529,15 @@ class UdpSocket
 	 * @param[in]  len        Buffer size in bytes.
 	 * @param[out] src        Filled with sender's address (may be nullptr).
 	 * @param[out] received   Number of bytes received (may be nullptr).
-	 * @param[in]  timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
+	 * @param[in]  timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
 	[[nodiscard]] int recv_from(void *buf, size_t len, Address *src = nullptr,
 				    size_t *received = nullptr,
-				    uint32_t timeout_ms = OVE_WAIT_FOREVER)
+				    std::chrono::nanoseconds timeout = wait_forever)
 	{
 		return ove_socket_recvfrom(handle_, buf, len, received, src ? &src->raw : nullptr,
-					   timeout_ms);
+					   to_timeout_ns(timeout));
 	}
 
 	/**
@@ -679,14 +679,14 @@ class TcpListener
 	 * `client` is left in a closed state.
 	 *
 	 * @param[out] client     Receives the accepted connection.
-	 * @param[in]  timeout_ms Timeout in milliseconds (`OVE_WAIT_FOREVER` to block).
+	 * @param[in]  timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int accept(TcpSocket &client, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int accept(TcpSocket &client, std::chrono::nanoseconds timeout = wait_forever)
 	{
 		ove_socket_t cli_handle{};
 		ove_socket_storage_t cli_storage{};
-		int err = ove_socket_accept(handle_, &cli_handle, &cli_storage, timeout_ms);
+		int err = ove_socket_accept(handle_, &cli_handle, &cli_storage, to_timeout_ns(timeout));
 		if (err == OVE_OK) {
 			client.close();
 			client.handle_ = cli_handle;
@@ -748,12 +748,13 @@ namespace dns
  * @brief Resolves a hostname to an address.
  * @param[in]  hostname   Null-terminated hostname string.
  * @param[out] addr       Receives the resolved address.
- * @param[in]  timeout_ms Timeout in milliseconds.
+ * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return `OVE_OK` on success, or a negative error code.
  */
-[[nodiscard]] inline int resolve(const char *hostname, Address &addr, uint32_t timeout_ms = 5000)
+[[nodiscard]] inline int resolve(const char *hostname, Address &addr,
+				 std::chrono::nanoseconds timeout = std::chrono::seconds{5})
 {
-	return ove_dns_resolve(hostname, &addr.raw, timeout_ms);
+	return ove_dns_resolve(hostname, &addr.raw, to_timeout_ns(timeout));
 }
 
 } /* namespace dns */

@@ -29,7 +29,7 @@
 
 /* Default server and timeout */
 #define SNTP_DEFAULT_SERVER "pool.ntp.org"
-#define SNTP_DEFAULT_TIMEOUT 5000
+#define SNTP_DEFAULT_TIMEOUT_NS OVE_SEC(5)
 
 /* Stored offset from last sync */
 static int64_t s_offset_us;
@@ -38,13 +38,13 @@ static int s_synced;
 int ove_sntp_sync(const ove_sntp_config_t *cfg)
 {
 	const char *server = SNTP_DEFAULT_SERVER;
-	uint32_t timeout = SNTP_DEFAULT_TIMEOUT;
+	uint64_t timeout = SNTP_DEFAULT_TIMEOUT_NS;
 
 	if (cfg) {
 		if (cfg->server)
 			server = cfg->server;
-		if (cfg->timeout_ms > 0)
-			timeout = cfg->timeout_ms;
+		if (cfg->timeout_ns > 0)
+			timeout = cfg->timeout_ns;
 	}
 
 	/* Resolve server hostname */

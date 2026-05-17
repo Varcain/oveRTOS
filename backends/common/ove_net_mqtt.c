@@ -49,14 +49,14 @@ static int mqtt_send(struct ove_mqtt_client *c, const void *data, size_t len)
 }
 
 static int mqtt_recv(struct ove_mqtt_client *c, void *buf, size_t len, size_t *received,
-		     uint32_t timeout_ms)
+		     uint64_t timeout_ns)
 {
 #ifdef CONFIG_OVE_NET_TLS
 	if (c->tls) {
 		return ove_tls_recv(c->tls, buf, len, received);
 	}
 #endif
-	return ove_socket_recv(c->sock, buf, len, received, timeout_ms);
+	return ove_socket_recv(c->sock, buf, len, received, timeout_ns);
 }
 
 /* ---------- Encoding helpers ---------- */
@@ -202,11 +202,11 @@ static size_t mqtt_packet_len(const uint8_t *buf, size_t buflen)
  * Dispatches any incoming PUBLISH messages to the callback.
  * Handles multiple MQTT packets arriving in a single TCP read.
  */
-static int mqtt_wait_for(struct ove_mqtt_client *c, uint8_t expected_type, uint32_t timeout_ms)
+static int mqtt_wait_for(struct ove_mqtt_client *c, uint8_t expected_type, uint64_t timeout_ns)
 {
 	for (int attempts = 0; attempts < 10; attempts++) {
 		size_t got = 0;
-		int ret = mqtt_recv(c, c->rx_buf, c->rx_size, &got, timeout_ms);
+		int ret = mqtt_recv(c, c->rx_buf, c->rx_size, &got, timeout_ns);
 		if (ret == OVE_ERR_TIMEOUT)
 			continue; /* try again */
 		if (ret != OVE_OK)
@@ -319,7 +319,7 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 
 	/* DNS resolve */
 	ove_sockaddr_t addr;
-	int ret = ove_dns_resolve(cfg->host, &addr, 10000);
+	int ret = ove_dns_resolve(cfg->host, &addr, OVE_MS(10000));
 	if (ret != OVE_OK)
 		return ret;
 	addr.port = cfg->port;
@@ -329,7 +329,7 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 	if (ret != OVE_OK)
 		return ret;
 
-	ret = ove_socket_connect(c->sock, &addr, 10000);
+	ret = ove_socket_connect(c->sock, &addr, OVE_MS(10000));
 	if (ret != OVE_OK) {
 		ove_socket_close(c->sock);
 		c->sock = NULL;
@@ -606,14 +606,14 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 	return OVE_OK;
 }
 
-int ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms)
+int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns)
 {
 	if (!client || !client->connected)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_mqtt_client *c = client;
 
 	size_t got = 0;
-	int ret = mqtt_recv(c, c->rx_buf, c->rx_size, &got, timeout_ms);
+	int ret = mqtt_recv(c, c->rx_buf, c->rx_size, &got, timeout_ns);
 	if (ret == OVE_ERR_TIMEOUT) {
 		/* Send PINGREQ on timeout (keepalive) */
 		uint8_t ping[2] = {MQTT_PINGREQ, 0x00};

@@ -72,7 +72,7 @@ static void test_cpp_eg_wait_all(void **state)
 	eg.set_bits(BIT_0 | BIT_1);
 
 	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, 100, &actual);
+	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{100}, &actual);
 	assert_int_equal(rc, OVE_OK);
 	assert_true((actual & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
 }
@@ -85,7 +85,7 @@ static void test_cpp_eg_wait_any(void **state)
 	eg.set_bits(BIT_0);
 
 	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, 0, 100, &actual);
+	int rc = eg.wait_bits(BIT_0 | BIT_1, 0, std::chrono::milliseconds{100}, &actual);
 	assert_int_equal(rc, OVE_OK);
 	assert_true(actual & BIT_0);
 }
@@ -96,7 +96,7 @@ static void test_cpp_eg_wait_timeout(void **state)
 	ove::EventGroup eg;
 
 	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0, OVE_EG_WAIT_ALL, 10, &actual);
+	int rc = eg.wait_bits(BIT_0, OVE_EG_WAIT_ALL, std::chrono::milliseconds{10}, &actual);
 	assert_int_equal(rc, OVE_ERR_TIMEOUT);
 }
 
@@ -108,7 +108,7 @@ static void test_cpp_eg_clear_on_exit(void **state)
 	eg.set_bits(BIT_0 | BIT_1);
 
 	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT, 100, &actual);
+	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT, std::chrono::milliseconds{100}, &actual);
 	assert_int_equal(rc, OVE_OK);
 
 	ove_eventbits_t remaining = eg.get_bits();
@@ -134,7 +134,7 @@ static void test_cpp_eg_cross_thread(void **state)
 	auto th = make_test_thread("setter", cpp_setter_thread, &ctx, OVE_PRIO_LOW);
 
 	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, 500, &actual);
+	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{500}, &actual);
 	assert_int_equal(rc, OVE_OK);
 	assert_true((actual & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
 }

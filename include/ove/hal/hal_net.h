@@ -34,7 +34,7 @@ int ove_hal_socket_open(ove_socket_t sock, int af, int type);
 void ove_hal_socket_close(ove_socket_t sock);
 
 /** @brief Backend: connect to a remote address. */
-int ove_hal_socket_connect(ove_socket_t sock, const void *addr, uint32_t timeout_ms);
+int ove_hal_socket_connect(ove_socket_t sock, const void *addr, uint64_t timeout_ns);
 
 /** @brief Backend: bind to a local address. */
 int ove_hal_socket_bind(ove_socket_t sock, const void *addr);
@@ -43,14 +43,14 @@ int ove_hal_socket_bind(ove_socket_t sock, const void *addr);
 int ove_hal_socket_listen(ove_socket_t sock, int backlog);
 
 /** @brief Backend: accept an incoming connection. */
-int ove_hal_socket_accept(ove_socket_t sock, ove_socket_t client, uint32_t timeout_ms);
+int ove_hal_socket_accept(ove_socket_t sock, ove_socket_t client, uint64_t timeout_ns);
 
 /** @brief Backend: send data on a connected socket. */
 int ove_hal_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent);
 
 /** @brief Backend: receive data from a connected socket. */
 int ove_hal_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			uint32_t timeout_ms);
+			uint64_t timeout_ns);
 
 /** @brief Backend: send a datagram to a destination. */
 int ove_hal_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *sent,
@@ -58,10 +58,10 @@ int ove_hal_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_
 
 /** @brief Backend: receive a datagram and sender address. */
 int ove_hal_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received, void *src,
-			    uint32_t timeout_ms);
+			    uint64_t timeout_ns);
 
 /** @brief Backend: resolve a hostname to an address. */
-int ove_hal_dns_resolve(const char *hostname, void *addr, uint32_t timeout_ms);
+int ove_hal_dns_resolve(const char *hostname, void *addr, uint64_t timeout_ns);
 
 /** @brief Backend: initialise the network interface. */
 int ove_hal_netif_init(ove_netif_t netif);

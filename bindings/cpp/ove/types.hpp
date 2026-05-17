@@ -16,6 +16,7 @@
 #include <ove/ove.h>
 #include <cstdint>
 #include <cstddef>
+#include <chrono>
 #include <concepts>
 #include <type_traits>
 #include <utility>
@@ -89,5 +90,39 @@ static_assert(OVE_ERR_WOULD_BLOCK == -18, "OVE_ERR_WOULD_BLOCK drifted");
 static_assert(OVE_ERR_EOF == -19, "OVE_ERR_EOF drifted");
 static_assert(OVE_ERR_INVAL == -20, "OVE_ERR_INVAL drifted");
 static_assert(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
+
+/* ------------------------------------------------------------------ */
+/*  Duration / timeout types                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Sentinel duration meaning "block indefinitely".
+ *
+ * The C-side @c OVE_WAIT_FOREVER macro is @c UINT32_MAX (a uint32_t value).
+ * Wrapped here as a @c std::chrono::nanoseconds for type-safe use with the
+ * C++ binding's timeout-taking APIs:
+ * @code
+ * mtx.lock(ove::wait_forever);
+ * queue.send(item, 100ms);   // requires `using namespace std::chrono_literals;`
+ * @endcode
+ *
+ * The numeric value (4 294 967 295) is preserved so the C-side
+ * sentinel comparison succeeds via the implicit promotion described in
+ * @c <ove/types.h>.
+ */
+inline constexpr std::chrono::nanoseconds wait_forever{static_cast<int64_t>(OVE_WAIT_FOREVER)};
+
+/**
+ * @brief Convert a chrono duration to @c uint64_t nanoseconds for the C API.
+ *
+ * Used internally by every wrapper that calls a substrate function taking
+ * @c uint64_t timeout_ns. Saturates to 0 on negative durations.
+ */
+template <typename Rep, typename Period>
+inline constexpr uint64_t to_timeout_ns(std::chrono::duration<Rep, Period> d) noexcept
+{
+	const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(d);
+	return ns.count() < 0 ? 0u : static_cast<uint64_t>(ns.count());
+}
 
 } // namespace ove

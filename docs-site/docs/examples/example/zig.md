@@ -47,7 +47,7 @@ fn producerThread() void {
 
     while (true) {
         count += 1;
-        queue.send(&count, 1000) catch {
+        queue.send(&count, 1000 * std.time.ns_per_ms) catch {
             ove.log.warn("Producer: queue full, dropped {}", .{count});
         };
         ove.thread.sleepMs(500);

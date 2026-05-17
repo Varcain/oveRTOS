@@ -133,11 +133,11 @@ void ove_spi_destroy(ove_spi_t spi);
  * @param[in]  tx         Transmit buffer, or NULL.
  * @param[out] rx         Receive buffer, or NULL.
  * @param[in]  len        Number of bytes to transfer.
- * @param[in]  timeout_ms Maximum wait time.
+ * @param[in]  timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
-		     size_t len, uint32_t timeout_ms);
+		     size_t len, uint64_t timeout_ns);
 
 /**
  * @brief Write-only SPI transfer (TX only, ignore RX).
@@ -146,11 +146,11 @@ int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx,
  * @param[in] cs         Chip-select descriptor, or NULL.
  * @param[in] data       Data to transmit.
  * @param[in] len        Number of bytes.
- * @param[in] timeout_ms Maximum wait time.
+ * @param[in] timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs, const void *data, size_t len,
-		  uint32_t timeout_ms);
+		  uint64_t timeout_ns);
 
 /**
  * @brief Read-only SPI transfer (clock out zeros, capture RX).
@@ -159,11 +159,11 @@ int ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs, const void *data, 
  * @param[in]  cs         Chip-select descriptor, or NULL.
  * @param[out] buf        Buffer to receive data.
  * @param[in]  len        Number of bytes.
- * @param[in]  timeout_ms Maximum wait time.
+ * @param[in]  timeout_ns Maximum wait time.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs, void *buf, size_t len,
-		 uint32_t timeout_ms);
+		 uint64_t timeout_ns);
 
 /**
  * @brief Multi-segment SPI transfer under a single CS assertion.
@@ -176,12 +176,12 @@ int ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs, void *buf, size_t l
  * @param[in] cs         Chip-select descriptor, or NULL.
  * @param[in] xfers      Array of transfer segments.
  * @param[in] num_xfers  Number of segments.
- * @param[in] timeout_ms Maximum wait time for the entire sequence.
+ * @param[in] timeout_ns Maximum wait time for the entire sequence.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 			 const struct ove_spi_xfer *xfers, unsigned int num_xfers,
-			 uint32_t timeout_ms);
+			 uint64_t timeout_ns);
 
 #else /* !CONFIG_OVE_SPI */
 
@@ -198,7 +198,7 @@ static inline void ove_spi_destroy(ove_spi_t s)
 	(void)s;
 }
 static inline int ove_spi_transfer(ove_spi_t s, const struct ove_spi_cs *cs, const void *tx,
-				   void *rx, size_t l, uint32_t t)
+				   void *rx, size_t l, uint64_t t)
 {
 	(void)s;
 	(void)cs;
@@ -209,7 +209,7 @@ static inline int ove_spi_transfer(ove_spi_t s, const struct ove_spi_cs *cs, con
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_spi_write(ove_spi_t s, const struct ove_spi_cs *cs, const void *d, size_t l,
-				uint32_t t)
+				uint64_t t)
 {
 	(void)s;
 	(void)cs;
@@ -219,7 +219,7 @@ static inline int ove_spi_write(ove_spi_t s, const struct ove_spi_cs *cs, const 
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_spi_read(ove_spi_t s, const struct ove_spi_cs *cs, void *b, size_t l,
-			       uint32_t t)
+			       uint64_t t)
 {
 	(void)s;
 	(void)cs;
@@ -229,7 +229,7 @@ static inline int ove_spi_read(ove_spi_t s, const struct ove_spi_cs *cs, void *b
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_spi_transfer_seq(ove_spi_t s, const struct ove_spi_cs *cs,
-				       const struct ove_spi_xfer *x, unsigned int n, uint32_t t)
+				       const struct ove_spi_xfer *x, unsigned int n, uint64_t t)
 {
 	(void)s;
 	(void)cs;

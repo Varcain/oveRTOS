@@ -28,10 +28,10 @@ static void test_cpp_lockguard_basic(void **state)
 	{
 		ove::LockGuard guard(mtx);
 		/* Mutex should be locked here */
-		assert_int_equal(mtx.lock(0), OVE_ERR_TIMEOUT);
+		assert_int_equal(mtx.lock(std::chrono::milliseconds{0}), OVE_ERR_TIMEOUT);
 	}
 	/* Mutex should be unlocked after guard goes out of scope */
-	assert_int_equal(mtx.lock(0), OVE_OK);
+	assert_int_equal(mtx.lock(std::chrono::milliseconds{0}), OVE_OK);
 	mtx.unlock();
 }
 
@@ -45,7 +45,7 @@ static void test_cpp_lockguard_scope_exit(void **state)
 		ove::LockGuard guard(mtx);
 	}
 	/* Should be unlocked now — try-lock should succeed */
-	assert_int_equal(mtx.lock(0), OVE_OK);
+	assert_int_equal(mtx.lock(std::chrono::milliseconds{0}), OVE_OK);
 	mtx.unlock();
 }
 

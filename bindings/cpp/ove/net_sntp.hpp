@@ -33,7 +33,7 @@ namespace sntp
  */
 struct Config {
 	const char *server{"pool.ntp.org"}; /**< NTP server hostname. */
-	uint32_t timeout_ms{5000};	    /**< Sync timeout in milliseconds. */
+	uint64_t timeout_ns{OVE_SEC(5)}; /**< Sync timeout (default 5 seconds). */
 };
 
 /**
@@ -43,7 +43,7 @@ struct Config {
  */
 [[nodiscard]] inline int sync(const Config &cfg = {})
 {
-	ove_sntp_config_t c{cfg.server, cfg.timeout_ms};
+	ove_sntp_config_t c{cfg.server, cfg.timeout_ns};
 	return ove_sntp_sync(&c);
 }
 

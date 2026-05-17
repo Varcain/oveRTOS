@@ -68,7 +68,7 @@ fn test_contention_timeout() {
     assert_eq!(HOLD_LOCKED.load(Ordering::SeqCst), 1);
 
     // Now try to lock with timeout — should fail
-    let result = mtx.lock(50);
+    let result = mtx.lock(core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)), "expected timeout, got {:?}", result);
 
     // Release the holder
@@ -79,7 +79,7 @@ fn test_contention_timeout() {
 
 fn test_lock_zero_timeout() {
     let mtx = Mutex::new().unwrap();
-    mtx.lock(0).unwrap();
+    mtx.lock(core::time::Duration::ZERO).unwrap();
     mtx.unlock();
 }
 
@@ -99,7 +99,7 @@ fn test_guard_auto_unlock() {
         // Guard holds the lock
     }
     // Guard dropped — mutex should be unlocked
-    mtx.lock(0).unwrap();
+    mtx.lock(core::time::Duration::ZERO).unwrap();
     mtx.unlock();
 }
 
@@ -107,7 +107,7 @@ fn test_guard_timeout() {
     let mtx = Mutex::new().unwrap();
     let _guard = mtx.guard(WAIT_FOREVER).unwrap();
     // Try to acquire again — should timeout
-    let result = mtx.lock(0);
+    let result = mtx.lock(core::time::Duration::ZERO);
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
@@ -115,7 +115,7 @@ fn test_error_mapping() {
     let mtx = Mutex::new().unwrap();
     mtx.lock(WAIT_FOREVER).unwrap();
     // Try-lock on already-held (same thread, non-recursive) returns timeout with 0ms
-    let result = mtx.lock(0);
+    let result = mtx.lock(core::time::Duration::ZERO);
     assert!(matches!(result, Err(Error::Timeout)));
     mtx.unlock();
 }

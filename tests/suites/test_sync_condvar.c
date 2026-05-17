@@ -162,7 +162,7 @@ static void test_condvar_wait_timeout(void **state)
 	ove_test_condvar_create(&cv, &s_cv_storage);
 	ove_test_mutex_create(&mtx, &s_mtx_storage);
 	OVE_TEST_LOCK(mtx);
-	assert_int_equal(ove_condvar_wait(cv, mtx, 50), OVE_ERR_TIMEOUT);
+	assert_int_equal(ove_condvar_wait(cv, mtx, OVE_MS(50)), OVE_ERR_TIMEOUT);
 	ove_mutex_unlock(mtx);
 	ove_test_condvar_destroy(cv);
 	ove_test_mutex_destroy(mtx);

@@ -18,23 +18,23 @@ use ove::{Error, EventGroup, Mutex, Queue, Semaphore, WaitFlags};
 
 fn test_mutex_try_lock_contended_returns_timeout() {
     let mtx = Mutex::new().unwrap();
-    mtx.lock(0).unwrap();
-    let rc = mtx.lock(0);
+    mtx.lock(core::time::Duration::ZERO).unwrap();
+    let rc = mtx.lock(core::time::Duration::ZERO);
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
     mtx.unlock();
 }
 
 fn test_mutex_guard_contention_returns_timeout() {
     let mtx = Mutex::new().unwrap();
-    let _first = mtx.guard(0).unwrap();
-    let rc = mtx.guard(0);
+    let _first = mtx.guard(core::time::Duration::ZERO).unwrap();
+    let rc = mtx.guard(core::time::Duration::ZERO);
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
 }
 
 fn test_semaphore_take_empty_returns_timeout() {
     // Semaphore::new(initial, max) — start empty so take(0) times out.
     let sem = Semaphore::new(0, 1).unwrap();
-    let rc = sem.take(0);
+    let rc = sem.take(core::time::Duration::ZERO);
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
 }
 
@@ -42,7 +42,7 @@ fn test_queue_receive_empty_returns_queue_empty() {
     /* timeout=0 + empty queue is "would-have-blocked", not "timed out".
      * See substrate P0-2 (OVE_ERR_QUEUE_EMPTY). */
     let q: Queue<u32, 4> = Queue::new().unwrap();
-    let rc = q.receive(0);
+    let rc = q.receive(core::time::Duration::ZERO);
     assert!(matches!(rc, Err(Error::QueueEmpty)), "got {:?}", rc);
 }
 
@@ -50,16 +50,16 @@ fn test_queue_send_full_returns_queue_full() {
     /* timeout=0 + full queue is "would-have-blocked", not "timed out".
      * See substrate P0-1 (OVE_ERR_QUEUE_FULL). */
     let q: Queue<u32, 1> = Queue::new().unwrap();
-    q.send(&42, 0).unwrap();
-    let rc = q.send(&43, 0);
+    q.send(&42, core::time::Duration::ZERO).unwrap();
+    let rc = q.send(&43, core::time::Duration::ZERO);
     assert!(matches!(rc, Err(Error::QueueFull)), "got {:?}", rc);
-    assert_eq!(q.receive(0).unwrap(), 42);
+    assert_eq!(q.receive(core::time::Duration::ZERO).unwrap(), 42);
 }
 
 fn test_eventgroup_wait_bits_timeout() {
     let eg = EventGroup::new().unwrap();
     // WaitFlags::NONE → "wake on any bit set" (WAIT_ALL absent).
-    let rc = eg.wait_bits(0x1, WaitFlags::NONE, 0);
+    let rc = eg.wait_bits(0x1, WaitFlags::NONE, core::time::Duration::ZERO);
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc);
 }
 

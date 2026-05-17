@@ -26,8 +26,11 @@
 
 #include <ove/ove.hpp>
 #include <ove/net_sntp.hpp>
+#include <chrono>
 #include <cstring>
 #include <memory>
+
+using namespace std::chrono_literals;
 
 static int pass_count;
 static int fail_count;
@@ -106,7 +109,7 @@ static void test_dns()
 
 	TEST("resolve example.com");
 	ove::Address addr;
-	int ret = ove::dns::resolve("example.com", addr, 5000);
+	int ret = ove::dns::resolve("example.com", addr, 5s);
 	if (ret == OVE_OK) {
 		OVE_LOG_INF("  -> %u.%u.%u.%u", addr.raw.addr[0], addr.raw.addr[1],
 			    addr.raw.addr[2], addr.raw.addr[3]);
@@ -116,7 +119,7 @@ static void test_dns()
 	}
 
 	TEST("resolve invalid.invalid (expect failure)");
-	ret = ove::dns::resolve("invalid.invalid", addr, 3000);
+	ret = ove::dns::resolve("invalid.invalid", addr, 3s);
 	if (ret != OVE_OK) {
 		PASS("resolve invalid.invalid (correctly failed)");
 	} else {
@@ -140,7 +143,7 @@ static void test_tcp()
 
 	/* Resolve + connect to example.com:80 */
 	ove::Address addr;
-	int ret = ove::dns::resolve("example.com", addr, 5000);
+	int ret = ove::dns::resolve("example.com", addr, 5s);
 	if (ret != OVE_OK) {
 		FAIL("dns for TCP test", ret);
 		return;
@@ -148,7 +151,7 @@ static void test_tcp()
 	addr.set_port(80);
 
 	TEST("socket_connect");
-	ret = sock.connect(addr, 5000);
+	ret = sock.connect(addr, std::chrono::seconds{5});
 	if (ret != OVE_OK) {
 		FAIL("socket_connect", ret);
 		return;
@@ -176,7 +179,7 @@ static void test_tcp()
 
 	/* Read until connection closes */
 	while (total < sizeof(buf) - 1) {
-		ret = sock.recv(buf + total, sizeof(buf) - 1 - total, &received, 5000);
+		ret = sock.recv(buf + total, sizeof(buf) - 1 - total, &received, 5s);
 		if (ret == OVE_ERR_NET_CLOSED)
 			break;
 		if (ret != OVE_OK)
@@ -248,7 +251,7 @@ static void test_udp()
 	char buf[64];
 	size_t received = 0;
 	ove::Address src;
-	ret = sock.recv_from(buf, sizeof(buf) - 1, &src, &received, 2000);
+	ret = sock.recv_from(buf, sizeof(buf) - 1, &src, &received, 2s);
 	if (ret == OVE_OK && received == std::strlen(msg)) {
 		buf[received] = '\0';
 		if (std::strcmp(buf, msg) == 0) {
@@ -347,7 +350,7 @@ static void test_sntp()
 	OVE_LOG_INF("=== SNTP ===");
 
 	TEST("sntp_sync pool.ntp.org");
-	ove::sntp::Config sntp_cfg{"pool.ntp.org", 5000};
+	ove::sntp::Config sntp_cfg{"pool.ntp.org", OVE_SEC(5)};
 	int ret = ove::sntp::sync(sntp_cfg);
 	if (ret == OVE_OK) {
 		PASS("sntp_sync");
@@ -440,7 +443,7 @@ static void test_mqtt()
 	TEST("mqtt_loop (receive published messages)");
 	mqtt_rx_count = 0;
 	for (int i = 0; i < 10; i++) {
-		mqtt.loop(500);
+		mqtt.loop(500ms);
 		if (mqtt_rx_count >= 2)
 			break;
 	}
@@ -468,7 +471,7 @@ static void test_mqtt()
 
 	/* Keepalive ping */
 	TEST("mqtt_loop keepalive ping");
-	mqtt.loop(100);
+	mqtt.loop(100ms);
 	PASS("mqtt_loop keepalive");
 
 	/* Disconnect */

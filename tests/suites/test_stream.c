@@ -146,7 +146,7 @@ static void test_stream_send_timeout_full(void **state)
 	/* Buffer is full; send should transfer 0 bytes */
 	uint8_t extra = 0x22;
 	size_t sent2 = 0;
-	ove_stream_send(s, &extra, 1, 10, &sent2);
+	ove_stream_send(s, &extra, 1, OVE_MS(10), &sent2);
 	assert_int_equal(sent2, 0);
 
 	ove_test_stream_destroy(s);
@@ -160,7 +160,7 @@ static void test_stream_receive_timeout_empty(void **state)
 
 	uint8_t rx[16];
 	size_t received = 0;
-	ove_stream_receive(s, rx, sizeof(rx), 10, &received);
+	ove_stream_receive(s, rx, sizeof(rx), OVE_MS(10), &received);
 	assert_int_equal(received, 0);
 
 	ove_test_stream_destroy(s);
@@ -228,7 +228,7 @@ static void stream_producer_fn(void *arg)
 	for (int i = 0; i < pa->count; i++) {
 		uint8_t byte = (uint8_t)(i & 0xFF);
 		size_t sent = 0;
-		ove_stream_send(pa->stream, &byte, 1, 100, &sent);
+		ove_stream_send(pa->stream, &byte, 1, OVE_MS(100), &sent);
 	}
 }
 
@@ -249,7 +249,7 @@ static void test_stream_cross_thread(void **state)
 	for (int tries = 0; tries < 200 && received_total < 100; tries++) {
 		uint8_t buf[32];
 		size_t received = 0;
-		ove_stream_receive(s, buf, sizeof(buf), 20, &received);
+		ove_stream_receive(s, buf, sizeof(buf), OVE_MS(20), &received);
 		for (size_t j = 0; j < received; j++) {
 			assert_int_equal(buf[j], (uint8_t)(received_total & 0xFF));
 			received_total++;

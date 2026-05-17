@@ -107,7 +107,7 @@ void ove_spi_destroy(ove_spi_t spi)
 /* ── Operations ──────────────────────────────────────────────────── */
 
 int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
-		     size_t len, uint32_t timeout_ms)
+		     size_t len, uint64_t timeout_ns)
 {
 	int ret;
 
@@ -119,7 +119,7 @@ int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx,
 	OVE_LOCK_INFINITE(spi->bus_mtx);
 	cs_assert(cs);
 
-	ret = ove_hal_spi_transfer(spi, tx, rx, len, timeout_ms);
+	ret = ove_hal_spi_transfer(spi, tx, rx, len, timeout_ns);
 
 	cs_deassert(cs);
 	ove_mutex_unlock(spi->bus_mtx);
@@ -128,20 +128,20 @@ int ove_spi_transfer(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx,
 }
 
 int ove_spi_write(ove_spi_t spi, const struct ove_spi_cs *cs, const void *data, size_t len,
-		  uint32_t timeout_ms)
+		  uint64_t timeout_ns)
 {
-	return ove_spi_transfer(spi, cs, data, NULL, len, timeout_ms);
+	return ove_spi_transfer(spi, cs, data, NULL, len, timeout_ns);
 }
 
 int ove_spi_read(ove_spi_t spi, const struct ove_spi_cs *cs, void *buf, size_t len,
-		 uint32_t timeout_ms)
+		 uint64_t timeout_ns)
 {
-	return ove_spi_transfer(spi, cs, NULL, buf, len, timeout_ms);
+	return ove_spi_transfer(spi, cs, NULL, buf, len, timeout_ns);
 }
 
 int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 			 const struct ove_spi_xfer *xfers, unsigned int num_xfers,
-			 uint32_t timeout_ms)
+			 uint64_t timeout_ns)
 {
 	unsigned int i;
 	int ret = OVE_OK;
@@ -155,7 +155,7 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 	for (i = 0; i < num_xfers; i++) {
 		if (xfers[i].len == 0)
 			continue;
-		ret = ove_hal_spi_transfer(spi, xfers[i].tx, xfers[i].rx, xfers[i].len, timeout_ms);
+		ret = ove_hal_spi_transfer(spi, xfers[i].tx, xfers[i].rx, xfers[i].len, timeout_ns);
 		if (ret != OVE_OK)
 			break;
 	}

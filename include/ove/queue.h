@@ -118,16 +118,17 @@ void ove_queue_destroy(ove_queue_t q);
  * @brief Send an item to the back of the queue, blocking if it is full.
  *
  * Copies @p item_size bytes from @p data into the queue.  If the queue
- * is full, the caller blocks for up to @p timeout_ms milliseconds.
+ * is full, the caller blocks for up to @p timeout_ns nanoseconds.
  *
  * @note Must not be called from an ISR — use ove_queue_send_from_isr() instead.
  * @note Requires @c CONFIG_OVE_QUEUE.
  *
  * @param[in] q           Queue handle.
  * @param[in] data        Pointer to the item to copy into the queue.
- * @param[in] timeout_ms  Maximum time to wait in milliseconds if the queue
+ * @param[in] timeout_ns  Maximum time to wait in nanoseconds if the queue
  *                        is full.  Pass @c OVE_WAIT_FOREVER to block
- *                        indefinitely.
+ *                        indefinitely.  Use @c OVE_MS(n) / @c OVE_SEC(n)
+ *                        helpers for ergonomic values.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue remained full
  *         for the entire wait period, @c OVE_ERR_QUEUE_FULL if the queue is
  *         full and the timeout is zero, or another negative error code.
@@ -135,14 +136,14 @@ void ove_queue_destroy(ove_queue_t q);
  * @see ove_queue_receive, ove_queue_send_from_isr
  */
 OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
-				 uint32_t timeout_ms) OVE_NONNULL(1, 2);
+				 uint64_t timeout_ns) OVE_NONNULL(1, 2);
 
 /**
  * @brief Receive (remove) an item from the front of the queue, blocking if
  *        it is empty.
  *
  * Copies @p item_size bytes out of the queue into @p buf.  If the queue is
- * empty, the caller blocks for up to @p timeout_ms milliseconds.
+ * empty, the caller blocks for up to @p timeout_ns nanoseconds.
  *
  * @note Must not be called from an ISR — use ove_queue_receive_from_isr()
  *       instead.
@@ -151,9 +152,10 @@ OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
  * @param[in]  q           Queue handle.
  * @param[out] buf         Buffer to copy the received item into.  Must be at
  *                         least @p item_size bytes.
- * @param[in]  timeout_ms  Maximum time to wait in milliseconds if the queue
+ * @param[in]  timeout_ns  Maximum time to wait in nanoseconds if the queue
  *                         is empty.  Pass @c OVE_WAIT_FOREVER to block
- *                         indefinitely.
+ *                         indefinitely.  Use @c OVE_MS(n) / @c OVE_SEC(n)
+ *                         helpers for ergonomic values.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the queue remained empty
  *         for the entire wait period, @c OVE_ERR_QUEUE_EMPTY if the queue is
  *         empty and the timeout is zero, or another negative error code.
@@ -161,7 +163,7 @@ OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
  * @see ove_queue_send, ove_queue_receive_from_isr
  */
 OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf,
-				    uint32_t timeout_ms) OVE_NONNULL(1, 2);
+				    uint64_t timeout_ns) OVE_NONNULL(1, 2);
 
 /**
  * @brief Send an item to the queue from an interrupt service routine.
@@ -228,14 +230,14 @@ static inline void ove_queue_destroy(ove_queue_t q)
 {
 	(void)q;
 }
-static inline int ove_queue_send(ove_queue_t q, const void *d, uint32_t t)
+static inline int ove_queue_send(ove_queue_t q, const void *d, uint64_t t)
 {
 	(void)q;
 	(void)d;
 	(void)t;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_queue_receive(ove_queue_t q, void *b, uint32_t t)
+static inline int ove_queue_receive(ove_queue_t q, void *b, uint64_t t)
 {
 	(void)q;
 	(void)b;

@@ -98,7 +98,7 @@ static void test_renode_udp_loopback(void **state)
 	uint8_t buf[32] = {0};
 	ove_sockaddr_t from = {0};
 	size_t received = 0;
-	rc = ove_socket_recvfrom(rx, buf, sizeof(buf), &received, &from, 500);
+	rc = ove_socket_recvfrom(rx, buf, sizeof(buf), &received, &from, OVE_MS(500));
 	assert_int_equal(rc, OVE_OK);
 	assert_int_equal(received, sizeof(payload) - 1);
 	assert_memory_equal(buf, payload, sizeof(payload) - 1);

@@ -30,12 +30,12 @@ void ove_hal_uart_close(ove_uart_t uart)
 	uart->fd = -1;
 }
 
-int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_written)
 {
 	(void)uart;
 	(void)data;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	if (bytes_written != NULL)
 		*bytes_written = len;
 	return OVE_OK;

@@ -86,7 +86,7 @@ static void consumer_thread(void *arg)
 	OVE_LOG_INF("Consumer started");
 
 	while (true) {
-		int ret = counter_queue->receive(&val, OVE_WAIT_FOREVER);
+		int ret = counter_queue->receive(&val, ove::wait_forever);
 		if (ret == OVE_OK) {
 			{
 				ove::LockGuard lock(*value_mutex);

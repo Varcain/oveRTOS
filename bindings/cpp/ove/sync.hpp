@@ -105,13 +105,13 @@ class Mutex
 
 	/**
 	 * @brief Acquires the mutex, blocking until it is available or the timeout expires.
-	 * @param[in] timeout_ms Maximum time to wait in milliseconds; use
-	 *            `OVE_WAIT_FOREVER` to block indefinitely.
+	 * @param[in] timeout `std::chrono::duration`; defaults to `ove::wait_forever`.
+	 *                   Pass any duration unit: `100ms`, `5s`, `500us`, etc.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int lock(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int lock(std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_mutex_lock(handle_, timeout_ms);
+		return ove_mutex_lock(handle_, to_timeout_ns(timeout));
 	}
 
 	/**
@@ -227,13 +227,13 @@ class RecursiveMutex
 
 	/**
 	 * @brief Acquires the recursive mutex.
-	 * @param[in] timeout_ms Maximum wait time in milliseconds; use
+	 * @param[in] timeout_ns Maximum wait time in nanoseconds; use
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int lock(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int lock(std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_recursive_mutex_lock(handle_, timeout_ms);
+		return ove_recursive_mutex_lock(handle_, to_timeout_ns(timeout));
 	}
 
 	/**
@@ -481,13 +481,13 @@ class Semaphore
 
 	/**
 	 * @brief Decrements the semaphore count, blocking if the count is zero.
-	 * @param[in] timeout_ms Maximum time to wait in milliseconds; use
+	 * @param[in] timeout_ns Maximum time to wait in nanoseconds; use
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int take(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int take(std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_sem_take(handle_, timeout_ms);
+		return ove_sem_take(handle_, to_timeout_ns(timeout));
 	}
 
 	/**
@@ -603,13 +603,13 @@ class Event
 
 	/**
 	 * @brief Blocks the calling task until the event is signalled or the timeout expires.
-	 * @param[in] timeout_ms Maximum time to wait in milliseconds; use
+	 * @param[in] timeout_ns Maximum time to wait in nanoseconds; use
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int wait(uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int wait(std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_event_wait(handle_, timeout_ms);
+		return ove_event_wait(handle_, to_timeout_ns(timeout));
 	}
 
 	/**
@@ -741,13 +741,13 @@ class CondVar
 	 * call returns.
 	 *
 	 * @param[in] mtx        The mutex associated with the predicate being waited on.
-	 * @param[in] timeout_ms Maximum wait time in milliseconds; use
+	 * @param[in] timeout_ns Maximum wait time in nanoseconds; use
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int wait(Mutex &mtx, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int wait(Mutex &mtx, std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_condvar_wait(handle_, mtx.handle(), timeout_ms);
+		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(timeout));
 	}
 
 	/**

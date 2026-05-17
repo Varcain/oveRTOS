@@ -349,13 +349,13 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 	/* Extended payload length */
 	if (payload_len == 126) {
 		uint8_t ext[2];
-		ret = ove_socket_recv(conn->sock, ext, 2, &got, 1000);
+		ret = ove_socket_recv(conn->sock, ext, 2, &got, OVE_MS(1000));
 		if (ret != OVE_OK || got < 2)
 			return -1;
 		payload_len = ((size_t)ext[0] << 8) | ext[1];
 	} else if (payload_len == 127) {
 		uint8_t ext[8];
-		ret = ove_socket_recv(conn->sock, ext, 8, &got, 1000);
+		ret = ove_socket_recv(conn->sock, ext, 8, &got, OVE_MS(1000));
 		if (ret != OVE_OK || got < 8)
 			return -1;
 		/* Reject frames whose top 32 bits are set — we don't support >4GB */
@@ -381,7 +381,7 @@ static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
 
 	/* Read masking key (4 bytes) — presence already enforced above */
 	uint8_t mask[4] = {0};
-	ret = ove_socket_recv(conn->sock, mask, 4, &got, 1000);
+	ret = ove_socket_recv(conn->sock, mask, 4, &got, OVE_MS(1000));
 	if (ret != OVE_OK || got < 4)
 		return -1;
 

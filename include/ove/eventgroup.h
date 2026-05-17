@@ -148,14 +148,14 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
  * @param[in]  bits        Bitmask of bits to wait for.
  * @param[in]  flags       Combination of @c OVE_EG_WAIT_ALL and/or
  *                         @c OVE_EG_CLEAR_ON_EXIT; pass 0 for defaults.
- * @param[in]  timeout_ms  Maximum wait time in milliseconds; 0 for non-blocking.
+ * @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] result      Receives the event bits value that satisfied the wait,
  *                         or @c NULL if not needed.
  * @return OVE_OK if the wait condition was met, @c OVE_ERR_TIMEOUT on timeout,
  *         negative error code on failure.
  */
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
-			     uint32_t timeout_ms, ove_eventbits_t *result);
+			     uint64_t timeout_ns, ove_eventbits_t *result);
 
 /**
  * @brief Set bits in the event group from an ISR.
@@ -219,13 +219,13 @@ static inline ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove
 	return 0;
 }
 static inline int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits,
-					   uint32_t flags, uint32_t timeout_ms,
+					   uint32_t flags, uint64_t timeout_ns,
 					   ove_eventbits_t *result)
 {
 	(void)eg;
 	(void)bits;
 	(void)flags;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	(void)result;
 	return OVE_ERR_NOT_SUPPORTED;
 }

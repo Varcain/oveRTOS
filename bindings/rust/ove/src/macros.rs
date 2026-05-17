@@ -621,15 +621,15 @@ macro_rules! work {
 #[cfg(has_watchdog)]
 #[macro_export]
 macro_rules! watchdog {
-    ($timeout_ms:expr) => {{
+    ($timeout_ns:expr) => {{
         #[cfg(not(zero_heap))]
         {
-            $crate::Watchdog::new($timeout_ms).unwrap()
+            $crate::Watchdog::new($timeout_ns).unwrap()
         }
         #[cfg(zero_heap)]
         {
             static mut _S: $crate::ffi::ove_watchdog_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::Watchdog::from_static(core::ptr::addr_of_mut!(_S), $timeout_ms) }
+            unsafe { $crate::Watchdog::from_static(core::ptr::addr_of_mut!(_S), $timeout_ns) }
                 .unwrap()
         }
     }};

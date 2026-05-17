@@ -122,15 +122,15 @@ class EventGroup
 	 * @brief Waits until the specified event bits are set, or until the timeout expires.
 	 * @param[in]  bits       Bitmask of bits to wait for.
 	 * @param[in]  flags      Wait flags (e.g., wait-for-all vs. wait-for-any).
-	 * @param[in]  timeout_ms Maximum time to wait in milliseconds.
+	 * @param[in]  timeout_ns Maximum time to wait in nanoseconds.
 	 * @param[out] result     Receives the event-group value at the moment the
 	 *                        wait condition was satisfied (or on timeout).
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int wait_bits(ove_eventbits_t bits, uint32_t flags, uint32_t timeout_ms,
+	[[nodiscard]] int wait_bits(ove_eventbits_t bits, uint32_t flags, std::chrono::nanoseconds timeout,
 				    ove_eventbits_t *result)
 	{
-		return ove_eventgroup_wait_bits(handle_, bits, flags, timeout_ms, result);
+		return ove_eventgroup_wait_bits(handle_, bits, flags, to_timeout_ns(timeout), result);
 	}
 
 	/**

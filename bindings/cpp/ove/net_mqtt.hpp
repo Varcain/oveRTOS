@@ -206,12 +206,12 @@ class Client
 	 *
 	 * Must be called periodically (typically in a loop or timer).
 	 *
-	 * @param[in] timeout_ms Maximum time to wait for incoming data.
+	 * @param[in] timeout_ns Maximum time to wait for incoming data.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int loop(uint32_t timeout_ms = 500)
+	[[nodiscard]] int loop(std::chrono::nanoseconds timeout = std::chrono::milliseconds{500})
 	{
-		return ove_mqtt_loop(handle_, timeout_ms);
+		return ove_mqtt_loop(handle_, to_timeout_ns(timeout));
 	}
 
 	/**

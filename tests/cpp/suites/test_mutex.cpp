@@ -56,7 +56,7 @@ static void test_cpp_mutex_lock_unlock(void **state)
 {
 	(void)state;
 	ove::Mutex mtx;
-	assert_int_equal(mtx.lock(OVE_WAIT_FOREVER), OVE_OK);
+	assert_int_equal(mtx.lock(ove::wait_forever), OVE_OK);
 	mtx.unlock();
 }
 
@@ -70,7 +70,7 @@ static void test_cpp_mutex_contention_timeout(void **state)
 	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
-	assert_int_equal(mtx.lock(50), OVE_ERR_TIMEOUT);
+	assert_int_equal(mtx.lock(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_mutex_contention_success(void **state)
@@ -83,7 +83,7 @@ static void test_cpp_mutex_contention_success(void **state)
 	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
-	assert_int_equal(mtx.lock(500), OVE_OK);
+	assert_int_equal(mtx.lock(std::chrono::milliseconds{500}), OVE_OK);
 	mtx.unlock();
 }
 
@@ -94,7 +94,7 @@ static void test_cpp_mutex_double_unlock(void **state)
 	skip(); /* TSan flags double-unlock as UB; same rationale as C side. */
 #else
 	ove::Mutex mtx;
-	(void)mtx.lock(OVE_WAIT_FOREVER);
+	(void)mtx.lock(ove::wait_forever);
 	mtx.unlock();
 	mtx.unlock(); /* should not crash */
 #endif
@@ -104,7 +104,7 @@ static void test_cpp_mutex_zero_timeout_free(void **state)
 {
 	(void)state;
 	ove::Mutex mtx;
-	assert_int_equal(mtx.lock(0), OVE_OK);
+	assert_int_equal(mtx.lock(std::chrono::milliseconds{0}), OVE_OK);
 	mtx.unlock();
 }
 
@@ -134,7 +134,7 @@ static void test_cpp_mutex_short_timeout(void **state)
 
 	uint64_t start = 0, end = 0;
 	ove_time_get_us(&start);
-	int rc = mtx.lock(50);
+	int rc = mtx.lock(std::chrono::milliseconds{50});
 	ove_time_get_us(&end);
 
 	assert_int_equal(rc, OVE_ERR_TIMEOUT);
@@ -145,8 +145,8 @@ static void test_cpp_mutex_multiple_independent(void **state)
 {
 	(void)state;
 	ove::Mutex a, b;
-	assert_int_equal(a.lock(OVE_WAIT_FOREVER), OVE_OK);
-	assert_int_equal(b.lock(OVE_WAIT_FOREVER), OVE_OK);
+	assert_int_equal(a.lock(ove::wait_forever), OVE_OK);
+	assert_int_equal(b.lock(ove::wait_forever), OVE_OK);
 	b.unlock();
 	a.unlock();
 }
@@ -158,7 +158,7 @@ static void test_cpp_mutex_raii_destroy(void **state)
 	(void)state;
 	{
 		ove::Mutex mtx;
-		(void)mtx.lock(OVE_WAIT_FOREVER);
+		(void)mtx.lock(ove::wait_forever);
 		mtx.unlock();
 		/* mtx goes out of scope — destructor cleans up */
 	}

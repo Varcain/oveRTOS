@@ -74,40 +74,40 @@ void ove_queue_destroy(ove_queue_t q)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
+int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 {
 	k_timeout_t timeout;
 	int ret;
 
 	__ASSERT(q != NULL, "NULL queue handle");
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
-		timeout = K_MSEC(timeout_ms);
+		timeout = K_NSEC(timeout_ns);
 	}
 
 	ret = k_msgq_put(&q->msgq, data, timeout);
 	if (ret != 0) {
-		return (timeout_ms == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
+		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }
 
-int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
+int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
 {
 	k_timeout_t timeout;
 	int ret;
 
 	__ASSERT(q != NULL, "NULL queue handle");
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
-		timeout = K_MSEC(timeout_ms);
+		timeout = K_NSEC(timeout_ns);
 	}
 
 	ret = k_msgq_get(&q->msgq, buf, timeout);
 	if (ret != 0) {
-		return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
+		return (timeout_ns == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
 }

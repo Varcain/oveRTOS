@@ -62,8 +62,12 @@ pub enum Error {
 /// Convenience alias for `core::result::Result<T, Error>`.
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Timeout value meaning "wait forever".
-pub const WAIT_FOREVER: u32 = u32::MAX;
+/// Timeout duration meaning "wait forever".
+///
+/// Matches the numeric value of the C-side `OVE_WAIT_FOREVER` macro
+/// (`UINT32_MAX` nanoseconds) so the substrate's sentinel comparison
+/// succeeds via the implicit promotion described in `<ove/types.h>`.
+pub const WAIT_FOREVER: core::time::Duration = core::time::Duration::from_nanos(u32::MAX as u64);
 
 impl Error {
     /// Convert a C return code to `Result<()>`.

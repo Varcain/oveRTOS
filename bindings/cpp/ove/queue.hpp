@@ -111,25 +111,25 @@ template <typename T, size_t MaxItems = 0> class Queue
 	/**
 	 * @brief Sends an item to the back of the queue from task context.
 	 * @param[in] item       The item to enqueue (copied into the queue).
-	 * @param[in] timeout_ms Maximum time to wait if the queue is full; use
+	 * @param[in] timeout_ns Maximum time to wait if the queue is full; use
 	 *            `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int send(const T &item, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int send(const T &item, std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_queue_send(handle_, &item, timeout_ms);
+		return ove_queue_send(handle_, &item, to_timeout_ns(timeout));
 	}
 
 	/**
 	 * @brief Receives an item from the front of the queue from task context.
 	 * @param[out] item      Pointer to storage for the received item.
-	 * @param[in]  timeout_ms Maximum time to wait if the queue is empty; use
+	 * @param[in]  timeout_ns Maximum time to wait if the queue is empty; use
 	 *             `OVE_WAIT_FOREVER` to block indefinitely.
 	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
 	 */
-	[[nodiscard]] int receive(T *item, uint32_t timeout_ms = OVE_WAIT_FOREVER)
+	[[nodiscard]] int receive(T *item, std::chrono::nanoseconds timeout = wait_forever)
 	{
-		return ove_queue_receive(handle_, item, timeout_ms);
+		return ove_queue_receive(handle_, item, to_timeout_ns(timeout));
 	}
 
 	/**

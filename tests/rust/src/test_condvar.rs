@@ -94,7 +94,7 @@ fn test_wait_timeout() {
     let cv = CondVar::new().unwrap();
     let mtx = Mutex::new().unwrap();
     mtx.lock(WAIT_FOREVER).unwrap();
-    let result = cv.wait(&mtx, 50);
+    let result = cv.wait(&mtx, core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)));
     mtx.unlock();
 }

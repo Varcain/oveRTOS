@@ -54,7 +54,7 @@ static void wq_submit_run(void *ctx)
 	(void)ctx;
 	work_executed = 0;
 	ove_work_submit(bench_wq, bench_work);
-	ove_sem_take(work_sem, 1000);
+	ove_sem_take(work_sem, OVE_MS(1000));
 }
 
 static void wq_submit_teardown(void *ctx)

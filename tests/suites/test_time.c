@@ -85,7 +85,6 @@ static void test_time_duration_helpers(void **state)
 	assert_true(OVE_MIN(1) == 60ULL * 1000000000ULL);
 	assert_true(OVE_MS(100) == 100ULL * 1000000ULL);
 	assert_true(OVE_SEC(5) == 5ULL * 1000000000ULL);
-	assert_true(OVE_TIMEOUT_INFINITE == UINT64_MAX);
 }
 
 /* Phase 3 / Item 1: ove_time_now_steady_ns is a thin wrapper over

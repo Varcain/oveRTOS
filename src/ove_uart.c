@@ -127,7 +127,7 @@ void ove_uart_destroy(ove_uart_t uart)
 
 /* ── Operations ──────────────────────────────────────────────────── */
 
-int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
 		   size_t *bytes_written)
 {
 	int ret;
@@ -136,18 +136,18 @@ int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint32_t timeo
 		return OVE_ERR_INVALID_PARAM;
 
 	OVE_LOCK_INFINITE(uart->tx_mtx);
-	ret = ove_hal_uart_tx(uart, data, len, timeout_ms, bytes_written);
+	ret = ove_hal_uart_tx(uart, data, len, timeout_ns, bytes_written);
 	ove_mutex_unlock(uart->tx_mtx);
 
 	return ret;
 }
 
-int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint32_t timeout_ms, size_t *bytes_read)
+int ove_uart_read(ove_uart_t uart, void *buf, size_t len, uint64_t timeout_ns, size_t *bytes_read)
 {
 	if (uart == NULL || buf == NULL || len == 0)
 		return OVE_ERR_INVALID_PARAM;
 
-	return ove_stream_receive(uart->rx_stream, buf, len, timeout_ms, bytes_read);
+	return ove_stream_receive(uart->rx_stream, buf, len, timeout_ns, bytes_read);
 }
 
 size_t ove_uart_bytes_available(ove_uart_t uart)

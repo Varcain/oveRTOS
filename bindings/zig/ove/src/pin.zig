@@ -28,7 +28,7 @@
 //! var mtx: ove.Mutex = undefined;
 //! try mtx.init();           // if this fails, mtx stays `undefined` — do
 //! defer mtx.deinit();        //   not register the defer above this line
-//! try mtx.lock(timeout_ms);
+//! try mtx.lock(timeout_ns);
 //! ```
 
 const std = @import("std");

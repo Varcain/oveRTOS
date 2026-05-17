@@ -37,14 +37,14 @@ static void test_cpp_event_signal_then_wait(void **state)
 	(void)state;
 	ove::Event evt;
 	evt.signal();
-	assert_int_equal(evt.wait(0), OVE_OK);
+	assert_int_equal(evt.wait(std::chrono::milliseconds{0}), OVE_OK);
 }
 
 static void test_cpp_event_wait_timeout(void **state)
 {
 	(void)state;
 	ove::Event evt;
-	assert_int_equal(evt.wait(50), OVE_ERR_TIMEOUT);
+	assert_int_equal(evt.wait(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_event_cross_thread(void **state)
@@ -55,7 +55,7 @@ static void test_cpp_event_cross_thread(void **state)
 
 	{
 		auto th = make_test_thread("esig", cpp_evt_signal_entry, &ctx);
-		assert_int_equal(evt.wait(500), OVE_OK);
+		assert_int_equal(evt.wait(std::chrono::milliseconds{500}), OVE_OK);
 	}
 	assert_int_equal(ctx.done, 1);
 }
@@ -65,7 +65,7 @@ static void test_cpp_event_signal_from_isr(void **state)
 	(void)state;
 	ove::Event evt;
 	evt.signal_from_isr();
-	assert_int_equal(evt.wait(0), OVE_OK);
+	assert_int_equal(evt.wait(std::chrono::milliseconds{0}), OVE_OK);
 }
 
 static void test_cpp_event_auto_reset(void **state)
@@ -73,8 +73,8 @@ static void test_cpp_event_auto_reset(void **state)
 	(void)state;
 	ove::Event evt;
 	evt.signal();
-	assert_int_equal(evt.wait(0), OVE_OK);
-	assert_int_equal(evt.wait(50), OVE_ERR_TIMEOUT);
+	assert_int_equal(evt.wait(std::chrono::milliseconds{0}), OVE_OK);
+	assert_int_equal(evt.wait(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 }
 
 /* ── Wrapper-specific tests ─────────────────────────────────────────── */
@@ -85,7 +85,7 @@ static void test_cpp_event_raii_destroy(void **state)
 	{
 		ove::Event evt;
 		evt.signal();
-		(void)evt.wait(0);
+		(void)evt.wait(std::chrono::milliseconds{0});
 	}
 }
 

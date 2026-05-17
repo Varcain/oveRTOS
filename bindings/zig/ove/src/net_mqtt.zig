@@ -152,8 +152,8 @@ const HeapClient = struct {
         try err.fromCode(c.ove_mqtt_unsubscribe(self.handle, topic.ptr));
     }
 
-    pub fn pollOnce(self: *Client, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ms));
+    pub fn pollOnce(self: *Client, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ns));
     }
 };
 
@@ -253,8 +253,8 @@ const ZeroHeapClient = struct {
         try err.fromCode(c.ove_mqtt_unsubscribe(self.handle, topic.ptr));
     }
 
-    pub fn pollOnce(self: *Client, timeout_ms: u32) Error!void {
+    pub fn pollOnce(self: *Client, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.MqttClient");
-        try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ms));
+        try err.fromCode(c.ove_mqtt_loop(self.handle, timeout_ns));
     }
 };

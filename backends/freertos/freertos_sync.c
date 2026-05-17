@@ -11,24 +11,15 @@
 #include "ove/trace.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
+#include "ove_ns_to_ticks.h"
 #include "semphr.h"
 #include "task.h"
 
-static TickType_t ms_to_ticks(uint32_t ms)
-{
-	if (ove_timeout_is_forever(ms)) {
-		return portMAX_DELAY;
-	}
-	return pdMS_TO_TICKS(ms);
-}
 
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	if (mtx == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	storage->sem = xSemaphoreCreateMutexStatic(&storage->static_sem);
 	*mtx = storage;
 	return OVE_OK;
@@ -71,10 +62,10 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
-	BaseType_t r = xSemaphoreTake(mtx->sem, ms_to_ticks(timeout_ms));
+	BaseType_t r = xSemaphoreTake(mtx->sem, ove_ns_to_ticks(timeout_ns));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -89,9 +80,6 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
-	if (sem == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	storage->sem = xSemaphoreCreateCountingStatic(max, initial, &storage->static_sem);
 	*sem = storage;
 	return OVE_OK;
@@ -134,10 +122,10 @@ void ove_sem_destroy(ove_sem_t sem)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
+int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, sem);
-	BaseType_t r = xSemaphoreTake(sem->sem, ms_to_ticks(timeout_ms));
+	BaseType_t r = xSemaphoreTake(sem->sem, ove_ns_to_ticks(timeout_ns));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
 	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -152,9 +140,6 @@ void ove_sem_give(ove_sem_t sem)
 
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
-	if (evt == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	storage->sem = xSemaphoreCreateBinaryStatic(&storage->static_sem);
 	if (storage->sem == NULL) {
 		return OVE_ERR_NO_MEMORY;
@@ -200,10 +185,10 @@ void ove_event_destroy(ove_event_t evt)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
+int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
-	BaseType_t got = xSemaphoreTake(evt->sem, ms_to_ticks(timeout_ms));
+	BaseType_t got = xSemaphoreTake(evt->sem, ove_ns_to_ticks(timeout_ns));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
 	return (got == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -225,9 +210,6 @@ void ove_event_signal_from_isr(ove_event_t evt)
 
 int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 {
-	if (mtx == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	storage->sem = xSemaphoreCreateRecursiveMutexStatic(&storage->static_sem);
 	*mtx = storage;
 	return OVE_OK;
@@ -238,9 +220,6 @@ int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
 #ifdef OVE_HEAP_SYNC
 int ove_recursive_mutex_create(ove_mutex_t *mtx)
 {
-	if (mtx == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	struct ove_mutex *w = OVE_BACKEND_MALLOC(sizeof(*w));
 	if (w == NULL) {
 		return OVE_ERR_NO_MEMORY;
@@ -260,10 +239,10 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
-	BaseType_t r = xSemaphoreTakeRecursive(mtx->sem, ms_to_ticks(timeout_ms));
+	BaseType_t r = xSemaphoreTakeRecursive(mtx->sem, ove_ns_to_ticks(timeout_ns));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
 	return (r == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
 }
@@ -285,9 +264,6 @@ struct condvar_waiter {
 
 int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
 {
-	if (cv == NULL || storage == NULL) {
-		return OVE_ERR_INVALID_PARAM;
-	}
 	storage->head = NULL;
 	*cv = storage;
 	return OVE_OK;
@@ -322,15 +298,11 @@ int ove_condvar_create(ove_condvar_t *cv)
 
 void ove_condvar_destroy(ove_condvar_t cv)
 {
-	if (cv == NULL) {
-		return;
-	}
-	ove_condvar_deinit(cv);
 	OVE_BACKEND_FREE(cv);
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	struct condvar_waiter self;
 
@@ -350,7 +322,7 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
 	/* Wait for direct notification from signal/broadcast */
-	uint32_t got = ulTaskNotifyTake(pdTRUE, ms_to_ticks(timeout_ms));
+	uint32_t got = ulTaskNotifyTake(pdTRUE, ove_ns_to_ticks(timeout_ns));
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);
 
 	if (got == 0) {

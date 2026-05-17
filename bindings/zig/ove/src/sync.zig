@@ -69,8 +69,8 @@ const HeapMutex = struct {
         c.ove_mutex_destroy(self.handle);
     }
 
-    pub inline fn lock(self: Mutex, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ms));
+    pub inline fn lock(self: Mutex, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ns));
     }
 
     pub inline fn unlock(self: Mutex) void {
@@ -91,8 +91,8 @@ const HeapMutex = struct {
     /// const g = try mtx.acquire(ove.wait_forever);
     /// defer g.release();
     /// ```
-    pub fn acquire(self: Mutex, timeout_ms: u32) Error!Guard {
-        try self.lock(timeout_ms);
+    pub fn acquire(self: Mutex, timeout_ns: u64) Error!Guard {
+        try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
 };
@@ -123,9 +123,9 @@ const ZeroHeapMutex = struct {
         self.tracker.clear();
     }
 
-    pub inline fn lock(self: *Mutex, timeout_ms: u32) Error!void {
+    pub inline fn lock(self: *Mutex, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.Mutex");
-        try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ms));
+        try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ns));
     }
 
     pub inline fn unlock(self: *Mutex) void {
@@ -140,8 +140,8 @@ const ZeroHeapMutex = struct {
         }
     };
 
-    pub fn acquire(self: *Mutex, timeout_ms: u32) Error!Guard {
-        try self.lock(timeout_ms);
+    pub fn acquire(self: *Mutex, timeout_ns: u64) Error!Guard {
+        try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
 };
@@ -168,8 +168,8 @@ const HeapRecursiveMutex = struct {
         c.ove_mutex_destroy(self.handle);
     }
 
-    pub inline fn lock(self: RecursiveMutex, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ms));
+    pub inline fn lock(self: RecursiveMutex, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ns));
     }
 
     pub inline fn unlock(self: RecursiveMutex) void {
@@ -183,8 +183,8 @@ const HeapRecursiveMutex = struct {
         }
     };
 
-    pub fn acquire(self: RecursiveMutex, timeout_ms: u32) Error!Guard {
-        try self.lock(timeout_ms);
+    pub fn acquire(self: RecursiveMutex, timeout_ns: u64) Error!Guard {
+        try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
 };
@@ -210,9 +210,9 @@ const ZeroHeapRecursiveMutex = struct {
         self.tracker.clear();
     }
 
-    pub inline fn lock(self: *RecursiveMutex, timeout_ms: u32) Error!void {
+    pub inline fn lock(self: *RecursiveMutex, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
-        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ms));
+        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ns));
     }
 
     pub inline fn unlock(self: *RecursiveMutex) void {
@@ -227,8 +227,8 @@ const ZeroHeapRecursiveMutex = struct {
         }
     };
 
-    pub fn acquire(self: *RecursiveMutex, timeout_ms: u32) Error!Guard {
-        try self.lock(timeout_ms);
+    pub fn acquire(self: *RecursiveMutex, timeout_ns: u64) Error!Guard {
+        try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
 };
@@ -254,8 +254,8 @@ const HeapSemaphore = struct {
         c.ove_sem_destroy(self.handle);
     }
 
-    pub inline fn take(self: Semaphore, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_sem_take(self.handle, timeout_ms));
+    pub inline fn take(self: Semaphore, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_sem_take(self.handle, timeout_ns));
     }
 
     pub inline fn give(self: Semaphore) void {
@@ -284,9 +284,9 @@ const ZeroHeapSemaphore = struct {
         self.tracker.clear();
     }
 
-    pub inline fn take(self: *Semaphore, timeout_ms: u32) Error!void {
+    pub inline fn take(self: *Semaphore, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.Semaphore");
-        try err.fromCode(c.ove_sem_take(self.handle, timeout_ms));
+        try err.fromCode(c.ove_sem_take(self.handle, timeout_ns));
     }
 
     pub inline fn give(self: *Semaphore) void {
@@ -316,8 +316,8 @@ const HeapEvent = struct {
         c.ove_event_destroy(self.handle);
     }
 
-    pub inline fn wait(self: Event, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_event_wait(self.handle, timeout_ms));
+    pub inline fn wait(self: Event, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_event_wait(self.handle, timeout_ns));
     }
 
     pub inline fn signal(self: Event) void {
@@ -350,9 +350,9 @@ const ZeroHeapEvent = struct {
         self.tracker.clear();
     }
 
-    pub inline fn wait(self: *Event, timeout_ms: u32) Error!void {
+    pub inline fn wait(self: *Event, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.Event");
-        try err.fromCode(c.ove_event_wait(self.handle, timeout_ms));
+        try err.fromCode(c.ove_event_wait(self.handle, timeout_ns));
     }
 
     pub inline fn signal(self: *Event) void {
@@ -391,8 +391,8 @@ const HeapCondVar = struct {
 
     /// Atomically release `mutex` and wait for a signal/broadcast.
     /// Re-acquires `mutex` before returning.
-    pub inline fn wait(self: CondVar, mutex: Mutex, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ms));
+    pub inline fn wait(self: CondVar, mutex: Mutex, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns));
     }
 
     pub inline fn signal(self: CondVar) void {
@@ -427,9 +427,9 @@ const ZeroHeapCondVar = struct {
 
     /// Atomically release `mutex` and wait for a signal/broadcast.
     /// Re-acquires `mutex` before returning.
-    pub inline fn wait(self: *CondVar, mutex: *Mutex, timeout_ms: u32) Error!void {
+    pub inline fn wait(self: *CondVar, mutex: *Mutex, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.CondVar");
-        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ms));
+        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns));
     }
 
     pub inline fn signal(self: *CondVar) void {

@@ -56,7 +56,7 @@ pub const Error = error{
     Unknown,
 };
 
-/// Sentinel value for `timeout_ms` parameters meaning "block indefinitely".
+/// Sentinel value for `timeout_ns` parameters meaning "block indefinitely".
 pub const wait_forever: u32 = c.OVE_WAIT_FOREVER;
 
 inline fn mapErrorCode(rc: c_int) Error {

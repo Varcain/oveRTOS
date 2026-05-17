@@ -19,8 +19,8 @@ const Error = err.Error;
 pub const Config = struct {
     /// NTP server hostname.
     server: [*:0]const u8 = "pool.ntp.org",
-    /// Query timeout in milliseconds (0 uses the default of 5000).
-    timeout_ms: u32 = 5000,
+    /// Query timeout in nanoseconds (0 uses the default of 5 seconds).
+    timeout_ns: u64 = 5 * std.time.ns_per_s,
 };
 
 /// Synchronize with an NTP server.
@@ -30,7 +30,7 @@ pub const Config = struct {
 pub fn sync(cfg: Config) Error!void {
     const c_cfg = c.ove_sntp_config_t{
         .server = cfg.server,
-        .timeout_ms = cfg.timeout_ms,
+        .timeout_ns = cfg.timeout_ns,
     };
     try err.fromCode(c.ove_sntp_sync(&c_cfg));
 }

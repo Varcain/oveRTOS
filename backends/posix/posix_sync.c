@@ -16,11 +16,11 @@
 #include <string.h>
 /* ---------- helpers ---------- */
 
-static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
+static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 {
 	clock_gettime(CLOCK_REALTIME, ts);
-	ts->tv_sec += timeout_ms / 1000;
-	ts->tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+	ts->tv_sec += (time_t)(timeout_ns / 1000000000ULL);
+	ts->tv_nsec += (long)(timeout_ns % 1000000000ULL);
 	if (ts->tv_nsec >= 1000000000L) {
 		ts->tv_sec += 1;
 		ts->tv_nsec -= 1000000000L;
@@ -70,9 +70,9 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		pthread_mutex_lock(&mtx->mtx);
@@ -81,7 +81,7 @@ int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
 		return OVE_OK;
 	}
 	struct timespec ts;
-	ms_to_abstime(timeout_ms, &ts);
+	ns_to_abstime(timeout_ns, &ts);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = pthread_mutex_timedlock(&mtx->mtx, &ts);
@@ -144,13 +144,13 @@ void ove_sem_destroy(ove_sem_t sem)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
+int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 {
 	struct ove_sem *s = sem;
 	if (s == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, s);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		sem_wait(&s->sem);
@@ -159,7 +159,7 @@ int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
 		return OVE_OK;
 	}
 	struct timespec ts;
-	ms_to_abstime(timeout_ms, &ts);
+	ns_to_abstime(timeout_ns, &ts);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, s);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = sem_timedwait(&s->sem, &ts);
@@ -234,14 +234,14 @@ void ove_event_destroy(ove_event_t evt)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
+int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	struct ove_event *e = evt;
 	if (e == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 	pthread_mutex_lock(&e->lock);
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		while (!e->signaled) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, e);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -251,7 +251,7 @@ int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
 		}
 	} else {
 		struct timespec ts;
-		ms_to_abstime(timeout_ms, &ts);
+		ns_to_abstime(timeout_ns, &ts);
 		while (!e->signaled) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, e);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -322,9 +322,9 @@ int ove_recursive_mutex_create(ove_mutex_t *mtx)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
-	return ove_mutex_lock(mtx, timeout_ms);
+	return ove_mutex_lock(mtx, timeout_ns);
 }
 
 void ove_recursive_mutex_unlock(ove_mutex_t mtx)
@@ -384,10 +384,10 @@ void ove_condvar_destroy(ove_condvar_t cv)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	struct ove_condvar *c = cv;
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, c);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 		pthread_cond_wait(&c->cond, &mtx->mtx);
@@ -396,7 +396,7 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 		return OVE_OK;
 	}
 	struct timespec ts;
-	ms_to_abstime(timeout_ms, &ts);
+	ns_to_abstime(timeout_ns, &ts);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, c);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 	int ret = pthread_cond_timedwait(&c->cond, &mtx->mtx, &ts);

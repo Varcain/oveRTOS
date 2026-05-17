@@ -111,28 +111,28 @@ template <size_t BufSize = 0> class Stream
 	 * @brief Sends bytes into the stream from task context.
 	 * @param[in]  data       Pointer to the data to send.
 	 * @param[in]  len        Number of bytes to send.
-	 * @param[in]  timeout_ms Maximum time to wait if the buffer is full.
+	 * @param[in]  timeout_ns Maximum time to wait if the buffer is full.
 	 * @param[out] bytes_sent Receives the number of bytes actually written.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int send(const void *data, size_t len, uint32_t timeout_ms,
+	[[nodiscard]] int send(const void *data, size_t len, std::chrono::nanoseconds timeout,
 			       size_t *bytes_sent)
 	{
-		return ove_stream_send(handle_, data, len, timeout_ms, bytes_sent);
+		return ove_stream_send(handle_, data, len, to_timeout_ns(timeout), bytes_sent);
 	}
 
 	/**
 	 * @brief Receives bytes from the stream from task context.
 	 * @param[out] buf            Buffer to receive the data.
 	 * @param[in]  len            Maximum number of bytes to read.
-	 * @param[in]  timeout_ms     Maximum time to wait for data.
+	 * @param[in]  timeout_ns     Maximum time to wait for data.
 	 * @param[out] bytes_received Receives the number of bytes actually read.
 	 * @return `OVE_OK` on success, or a negative error code.
 	 */
-	[[nodiscard]] int receive(void *buf, size_t len, uint32_t timeout_ms,
+	[[nodiscard]] int receive(void *buf, size_t len, std::chrono::nanoseconds timeout,
 				  size_t *bytes_received)
 	{
-		return ove_stream_receive(handle_, buf, len, timeout_ms, bytes_received);
+		return ove_stream_receive(handle_, buf, len, to_timeout_ns(timeout), bytes_received);
 	}
 
 	/**

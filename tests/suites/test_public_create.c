@@ -196,7 +196,7 @@ static void test_public_create_thread(void **state)
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(h);
 
-	assert_int_equal(ove_sem_take(s_thread_done_sem, 1000), OVE_OK);
+	assert_int_equal(ove_sem_take(s_thread_done_sem, OVE_MS(1000)), OVE_OK);
 	assert_int_equal(s_thread_ran, 1);
 
 	ove_thread_destroy(h);
@@ -228,7 +228,7 @@ static void test_public_create_workqueue(void **state)
 	assert_non_null(w);
 
 	assert_int_equal(ove_work_submit(wq, w), OVE_OK);
-	assert_int_equal(ove_sem_take(s_work_done_sem, 1000), OVE_OK);
+	assert_int_equal(ove_sem_take(s_work_done_sem, OVE_MS(1000)), OVE_OK);
 	assert_int_equal(s_work_ran, 1);
 
 	ove_workqueue_destroy(wq);

@@ -91,7 +91,7 @@ pub const ffi = @import("c.zig").raw;
 pub const err = @import("error.zig");
 /// Zig error set representing all possible oveRTOS failure codes.
 pub const Error = err.Error;
-/// Sentinel value for `timeout_ms` parameters meaning "block indefinitely".
+/// Sentinel value for `timeout_ns` parameters meaning "block indefinitely".
 pub const wait_forever = err.wait_forever;
 
 /// Synchronization primitives: Mutex, RecursiveMutex, Semaphore, Event, CondVar.

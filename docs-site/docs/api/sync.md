@@ -283,7 +283,7 @@ void consumer_entry(void *arg)
 | `ove_mutex_deinit(mtx)` | Release resources; does not free static storage. |
 | `ove_mutex_create(mtx)` | Allocate and initialise a mutex (heap mode only; gated by `OVE_HEAP_SYNC`). |
 | `ove_mutex_destroy(mtx)` | Destroy and free a mutex created with `ove_mutex_create()` (heap mode only). |
-| `ove_mutex_lock(mtx, timeout_ms)` | Acquire the mutex. Blocks up to `timeout_ms` ms; pass `OVE_WAIT_FOREVER` to block indefinitely. Returns `OVE_ERR_TIMEOUT` if the deadline expires. |
+| `ove_mutex_lock(mtx, timeout_ns)` | Acquire the mutex. Blocks up to `timeout_ns` ns; pass `OVE_WAIT_FOREVER` to block indefinitely. Returns `OVE_ERR_TIMEOUT` if the deadline expires. |
 | `ove_mutex_unlock(mtx)` | Release the mutex. Must be called by the thread that acquired it. |
 
 ### Recursive Mutex
@@ -293,7 +293,7 @@ void consumer_entry(void *arg)
 | `ove_recursive_mutex_init(mtx, storage)` | Initialise a recursive mutex from static storage. |
 | `ove_recursive_mutex_create(mtx)` | Allocate and initialise a recursive mutex (heap mode only; gated by `OVE_HEAP_SYNC`). |
 | `ove_recursive_mutex_destroy(mtx)` | Destroy and free a recursive mutex (heap mode only). |
-| `ove_recursive_mutex_lock(mtx, timeout_ms)` | Acquire one level of the recursive mutex. May be called multiple times by the same thread. |
+| `ove_recursive_mutex_lock(mtx, timeout_ns)` | Acquire one level of the recursive mutex. May be called multiple times by the same thread. |
 | `ove_recursive_mutex_unlock(mtx)` | Release one level. The mutex is fully released when the count reaches zero. |
 
 ### Semaphore
@@ -304,7 +304,7 @@ void consumer_entry(void *arg)
 | `ove_sem_deinit(sem)` | Release resources; does not free static storage. |
 | `ove_sem_create(sem, initial, max)` | Allocate and initialise a semaphore (heap mode only; gated by `OVE_HEAP_SYNC`). |
 | `ove_sem_destroy(sem)` | Destroy and free a semaphore created with `ove_sem_create()` (heap mode only). |
-| `ove_sem_take(sem, timeout_ms)` | Decrement the count. Blocks up to `timeout_ms` ms if count is zero. Returns `OVE_ERR_TIMEOUT` on expiry. |
+| `ove_sem_take(sem, timeout_ns)` | Decrement the count. Blocks up to `timeout_ns` ns if count is zero. Returns `OVE_ERR_TIMEOUT` on expiry. |
 | `ove_sem_give(sem)` | Increment the count, potentially unblocking a waiting thread. Safe to call from normal thread context. |
 
 ### Binary Event
@@ -315,7 +315,7 @@ void consumer_entry(void *arg)
 | `ove_event_deinit(evt)` | Release resources; does not free static storage. |
 | `ove_event_create(evt)` | Allocate and initialise an event (heap mode only; gated by `OVE_HEAP_SYNC`). |
 | `ove_event_destroy(evt)` | Destroy and free an event created with `ove_event_create()` (heap mode only). |
-| `ove_event_wait(evt, timeout_ms)` | Block until the event is signalled or timeout expires. The event is auto-reset (consumed) on success. |
+| `ove_event_wait(evt, timeout_ns)` | Block until the event is signalled or timeout expires. The event is auto-reset (consumed) on success. |
 | `ove_event_signal(evt)` | Signal the event from thread context, unblocking one waiter. |
 | `ove_event_signal_from_isr(evt)` | ISR-safe signal; may trigger a context switch after the interrupt exits. |
 
@@ -327,7 +327,7 @@ void consumer_entry(void *arg)
 | `ove_condvar_deinit(cv)` | Release resources; does not free static storage. |
 | `ove_condvar_create(cv)` | Allocate and initialise a condition variable (heap mode only; gated by `OVE_HEAP_SYNC`). |
 | `ove_condvar_destroy(cv)` | Destroy and free a condition variable created with `ove_condvar_create()` (heap mode only). |
-| `ove_condvar_wait(cv, mtx, timeout_ms)` | Atomically release `mtx` and sleep. Re-acquires `mtx` before returning. |
+| `ove_condvar_wait(cv, mtx, timeout_ns)` | Atomically release `mtx` and sleep. Re-acquires `mtx` before returning. |
 | `ove_condvar_signal(cv)` | Wake one waiting thread. Signal is lost if no thread is waiting. |
 | `ove_condvar_broadcast(cv)` | Wake all threads waiting on the condition variable. |
 
@@ -373,7 +373,7 @@ graph LR
 
 **Rules to follow:**
 
-1. **Use a timeout.** Never pass `OVE_WAIT_FOREVER` when acquiring more than one mutex simultaneously. A bounded `timeout_ms` surfaces deadlocks as `OVE_ERR_TIMEOUT` instead of hangs.
+1. **Use a timeout.** Never pass `OVE_WAIT_FOREVER` when acquiring more than one mutex simultaneously. A bounded `timeout_ns` surfaces deadlocks as `OVE_ERR_TIMEOUT` instead of hangs.
 2. **Consistent lock ordering.** When multiple mutexes are required, always acquire them in the same global order across all threads. This eliminates circular waits.
 3. **Prefer a single mutex.** If possible, protect all shared state with one mutex rather than composing several fine-grained locks.
 4. **Do not call `ove_mutex_lock()` recursively.** The non-recursive mutex will deadlock if the holding thread calls lock again. Use `ove_recursive_mutex_lock()` when re-entrancy is needed.
