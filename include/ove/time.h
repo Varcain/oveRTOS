@@ -111,6 +111,39 @@ static inline void ove_time_delay_us(uint32_t us)
 
 #endif /* CONFIG_OVE_TIME */
 
+/* ── Duration helper macros (ns-resolution) ────────────────────────────
+ *
+ * Express timeouts for the upcoming uint64_t ns APIs ergonomically:
+ *   ove_mutex_lock_ns(m, OVE_MS(100))
+ *   ove_queue_send_ns(q, &item, OVE_SEC(5))
+ *
+ * All multiplications fold at compile time for constant inputs.
+ * Available in both CONFIG_OVE_TIME modes — the macros don't call into
+ * the time backend.
+ */
+#define OVE_NS(n)  ((uint64_t)(n))
+#define OVE_US(n)  ((uint64_t)(n) * 1000ULL)
+#define OVE_MS(n)  ((uint64_t)(n) * 1000000ULL)
+#define OVE_SEC(n) ((uint64_t)(n) * 1000000000ULL)
+#define OVE_MIN(n) (OVE_SEC(n) * 60ULL)
+
+/**
+ * @brief Get the current monotonic time in nanoseconds (value-return form).
+ *
+ * Convenience wrapper over @ref ove_time_get_ns with a friendlier
+ * signature. Failure paths return 0; on every backend supported today
+ * the underlying call cannot fail in practice.
+ *
+ * @return Monotonic timestamp in nanoseconds since an arbitrary epoch.
+ */
+static inline uint64_t ove_time_now_steady_ns(void)
+{
+	uint64_t out = 0;
+	int rc = ove_time_get_ns(&out);
+	(void)rc;
+	return out;
+}
+
 #ifdef __cplusplus
 }
 #endif
