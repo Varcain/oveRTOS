@@ -109,11 +109,15 @@ pub const CondVar = sync.CondVar;
 
 /// Thread creation and lifecycle management.
 pub const thread = @import("thread.zig");
-/// Templated RTOS thread wrapper.  `Thread(stack_size)` returns the type;
-/// declare `var th: ove.Thread(2048) = undefined;` then `try th.init(...)`.
+/// Templated RTOS thread wrapper.  `Thread(stack_size)` returns the type.
+/// Heap mode: `var t = try ove.Thread(2048).spawn(name, prio, entry, .{});`.
+/// Zero-heap: `var t: ove.Thread(2048) = undefined; try t.spawnStatic(...);`.
 pub const Thread = thread.Thread;
 /// Thread priority level (maps to `ove_prio_t`). Use the `thread.prio.*` constants.
 pub const Priority = thread.Priority;
+/// Read-only handle to a thread's cooperative-cancellation flag.
+/// Auto-injected into `spawn` entries whose first param is `StopToken`.
+pub const StopToken = thread.StopToken;
 
 /// Type-safe, capacity-bounded message queue. Parameterized by element type and depth.
 pub const Queue = @import("queue.zig").Queue;

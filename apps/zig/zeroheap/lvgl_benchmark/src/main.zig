@@ -1004,7 +1004,7 @@ var graphics_thread: ove.Thread(4096) = undefined;
 fn appMain() void {
     ove.log.inf("LVGL benchmark (Zig zero-heap): init", .{});
 
-    graphics_thread.init("graphics", graphicsEntry, prio.high) catch {
+    graphics_thread.spawnStatic("graphics", prio.high, graphicsEntry, .{}) catch {
         ove.log.err("Failed to init graphics", .{});
         return;
     };
