@@ -39,7 +39,11 @@ pub enum FlowControl {
 }
 
 /// Write data to the UART. Returns the number of bytes written.
-pub fn write(uart: bindings::ove_uart_t, data: &[u8], timeout: core::time::Duration) -> Result<usize> {
+pub fn write(
+    uart: bindings::ove_uart_t,
+    data: &[u8],
+    timeout: core::time::Duration,
+) -> Result<usize> {
     let mut written: usize = 0;
     let rc = unsafe {
         bindings::ove_uart_write(
@@ -55,7 +59,11 @@ pub fn write(uart: bindings::ove_uart_t, data: &[u8], timeout: core::time::Durat
 }
 
 /// Read data from the UART RX buffer. Returns the number of bytes read.
-pub fn read(uart: bindings::ove_uart_t, buf: &mut [u8], timeout: core::time::Duration) -> Result<usize> {
+pub fn read(
+    uart: bindings::ove_uart_t,
+    buf: &mut [u8],
+    timeout: core::time::Duration,
+) -> Result<usize> {
     let mut read_count: usize = 0;
     let rc = unsafe {
         bindings::ove_uart_read(

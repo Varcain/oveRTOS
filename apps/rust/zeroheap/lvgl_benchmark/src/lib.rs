@@ -1104,7 +1104,7 @@ fn app_main() {
     SCENE.init(LvCell::new(SceneState { current: 0 }));
     STATS.init(LvCell::new([SceneStats::default(); 17]));
 
-    let _graphics = ove::thread!("graphics", graphics_entry, Priority::High, 4096);
+    ove::thread!("graphics", graphics_entry, Priority::High, 4096).detach();
 
     if lvgl::init().is_err() {
         ove::log_err!("Failed to init LVGL");

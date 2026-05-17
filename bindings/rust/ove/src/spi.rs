@@ -50,7 +50,16 @@ pub fn transfer(
     } else {
         rx.as_mut_ptr().cast()
     };
-    let rc = unsafe { bindings::ove_spi_transfer(spi, cs_ptr, tx_ptr, rx_ptr, len, crate::time::dur_to_ns(timeout)) };
+    let rc = unsafe {
+        bindings::ove_spi_transfer(
+            spi,
+            cs_ptr,
+            tx_ptr,
+            rx_ptr,
+            len,
+            crate::time::dur_to_ns(timeout),
+        )
+    };
     Error::from_code(rc)
 }
 
@@ -63,7 +72,13 @@ pub fn write(
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_write(spi, cs_ptr, data.as_ptr().cast(), data.len(), crate::time::dur_to_ns(timeout))
+        bindings::ove_spi_write(
+            spi,
+            cs_ptr,
+            data.as_ptr().cast(),
+            data.len(),
+            crate::time::dur_to_ns(timeout),
+        )
     };
     Error::from_code(rc)
 }
@@ -77,7 +92,13 @@ pub fn read(
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_read(spi, cs_ptr, buf.as_mut_ptr().cast(), buf.len(), crate::time::dur_to_ns(timeout))
+        bindings::ove_spi_read(
+            spi,
+            cs_ptr,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+            crate::time::dur_to_ns(timeout),
+        )
     };
     Error::from_code(rc)
 }
@@ -91,7 +112,13 @@ pub fn transfer_seq(
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_transfer_seq(spi, cs_ptr, xfers.as_ptr(), xfers.len() as u32, crate::time::dur_to_ns(timeout))
+        bindings::ove_spi_transfer_seq(
+            spi,
+            cs_ptr,
+            xfers.as_ptr(),
+            xfers.len() as u32,
+            crate::time::dur_to_ns(timeout),
+        )
     };
     Error::from_code(rc)
 }

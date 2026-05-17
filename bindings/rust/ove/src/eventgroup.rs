@@ -89,10 +89,21 @@ impl EventGroup {
     /// # Errors
     /// Returns [`Error::Timeout`] if the bits are not set within `timeout_ns`.
     #[inline]
-    pub fn wait_bits(&self, bits: u32, flags: WaitFlags, timeout: core::time::Duration) -> Result<u32> {
+    pub fn wait_bits(
+        &self,
+        bits: u32,
+        flags: WaitFlags,
+        timeout: core::time::Duration,
+    ) -> Result<u32> {
         let mut result: u32 = 0;
         let rc = unsafe {
-            bindings::ove_eventgroup_wait_bits(self.handle, bits, flags.0, crate::time::dur_to_ns(timeout), &mut result)
+            bindings::ove_eventgroup_wait_bits(
+                self.handle,
+                bits,
+                flags.0,
+                crate::time::dur_to_ns(timeout),
+                &mut result,
+            )
         };
         Error::from_code(rc)?;
         Ok(result)

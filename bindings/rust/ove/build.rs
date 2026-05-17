@@ -750,7 +750,7 @@ fn main() {
      * (e.g. Phase 4's ove_thread_request_stop) don't surface until
      * something else invalidates the build.  Per-file directives so
      * the watch list stays accurate vs. a glob. */
-    let header_dir = format!("{}/include/ove", ove_dir);
+    let header_dir = format!("{ove_dir}/include/ove");
     println!("cargo:rerun-if-changed={header_dir}");
     println!("cargo:rerun-if-changed={ove_dir}/include/ove/thread.h");
     println!("cargo:rerun-if-changed={ove_dir}/include/ove/types.h");

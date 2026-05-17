@@ -25,16 +25,39 @@ pub enum Speed {
 }
 
 /// Write data to an I2C device.
-pub fn write(i2c: bindings::ove_i2c_t, addr: u16, data: &[u8], timeout: core::time::Duration) -> Result<()> {
-    let rc =
-        unsafe { bindings::ove_i2c_write(i2c, addr, data.as_ptr().cast(), data.len(), crate::time::dur_to_ns(timeout)) };
+pub fn write(
+    i2c: bindings::ove_i2c_t,
+    addr: u16,
+    data: &[u8],
+    timeout: core::time::Duration,
+) -> Result<()> {
+    let rc = unsafe {
+        bindings::ove_i2c_write(
+            i2c,
+            addr,
+            data.as_ptr().cast(),
+            data.len(),
+            crate::time::dur_to_ns(timeout),
+        )
+    };
     Error::from_code(rc)
 }
 
 /// Read data from an I2C device.
-pub fn read(i2c: bindings::ove_i2c_t, addr: u16, buf: &mut [u8], timeout: core::time::Duration) -> Result<()> {
+pub fn read(
+    i2c: bindings::ove_i2c_t,
+    addr: u16,
+    buf: &mut [u8],
+    timeout: core::time::Duration,
+) -> Result<()> {
     let rc = unsafe {
-        bindings::ove_i2c_read(i2c, addr, buf.as_mut_ptr().cast(), buf.len(), crate::time::dur_to_ns(timeout))
+        bindings::ove_i2c_read(
+            i2c,
+            addr,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+            crate::time::dur_to_ns(timeout),
+        )
     };
     Error::from_code(rc)
 }
@@ -70,7 +93,14 @@ pub fn reg_write(
     timeout: core::time::Duration,
 ) -> Result<()> {
     let rc = unsafe {
-        bindings::ove_i2c_reg_write(i2c, addr, reg, data.as_ptr().cast(), data.len(), crate::time::dur_to_ns(timeout))
+        bindings::ove_i2c_reg_write(
+            i2c,
+            addr,
+            reg,
+            data.as_ptr().cast(),
+            data.len(),
+            crate::time::dur_to_ns(timeout),
+        )
     };
     Error::from_code(rc)
 }

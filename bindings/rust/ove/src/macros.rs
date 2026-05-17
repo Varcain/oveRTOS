@@ -425,63 +425,46 @@ macro_rules! timer {
     }};
 }
 
-/// Create a [`crate::Thread`] that works in both heap and zero-heap modes.
+/// Create a [`crate::JoinHandle`] for a thread that works in both heap
+/// and zero-heap modes.
 ///
-/// Uses the safe `fn()` entry pattern (trampoline). The name is
-/// automatically null-terminated.
+/// Uses the safe `fn()` entry pattern (no `StopToken`). The name is
+/// automatically null-terminated.  In zero-heap mode the storage is
+/// emitted as a `static $crate::ThreadStorage<$stack>` and passed by
+/// reference to [`crate::Builder::spawn_static_simple`] — no `static mut`,
+/// no `addr_of_mut!`, no `unsafe` in user-visible expansion.
 ///
 /// # Example
 /// ```ignore
-/// let t = ove::thread!("worker", my_entry, Priority::Normal, 4096);
+/// let h = ove::thread!("worker", my_entry, Priority::Normal, 4096);
+/// h.detach();  // fire-and-forget; or store in StaticCell<JoinHandle<()>>.
 /// ```
 #[macro_export]
 macro_rules! thread {
     ($name:expr, $entry:expr, $prio:expr, $stack:expr) => {{
+        // SAFETY: `concat!($name, "\0")` is a comptime literal that ends
+        // with a single nul; the caller's $name must not contain inner
+        // nuls (responsibility of the macro caller — same as today).
+        let _name = unsafe {
+            core::ffi::CStr::from_bytes_with_nul_unchecked(concat!($name, "\0").as_bytes())
+        };
         #[cfg(not(zero_heap))]
         {
-            $crate::Thread::spawn(concat!($name, "\0").as_bytes(), $entry, $prio, $stack).unwrap()
+            $crate::Thread::builder()
+                .name(_name)
+                .priority($prio)
+                .stack_size($stack)
+                .spawn_simple($entry)
+                .unwrap()
         }
-        #[cfg(all(zero_heap, not(rtos_zephyr)))]
+        #[cfg(zero_heap)]
         {
-            static mut _S: $crate::ffi::ove_thread_storage_t = unsafe { core::mem::zeroed() };
-            // Align to 8 bytes (ARM AAPCS stack alignment requirement).
-            #[repr(C, align(8))]
-            struct AlignedStack([u8; $stack]);
-            static mut _STACK: AlignedStack = AlignedStack([0u8; $stack]);
-            unsafe {
-                $crate::Thread::spawn_static(
-                    core::ptr::addr_of_mut!(_S),
-                    core::ptr::addr_of_mut!(_STACK) as *mut _,
-                    concat!($name, "\0").as_bytes(),
-                    $entry,
-                    $prio,
-                    $stack,
-                )
-            }
-            .unwrap()
-        }
-        #[cfg(all(zero_heap, rtos_zephyr))]
-        {
-            static mut _S: $crate::ffi::ove_thread_storage_t = unsafe { core::mem::zeroed() };
-            // Zephyr with MPU needs power-of-2 aligned stacks.
-            // Add MPU guard region (128 bytes for FPU), round total
-            // to next power of 2. align(8192) covers stacks up to
-            // ~4000 usable bytes (the common embedded case).
-            const _STACK_TOTAL: usize = ($stack + 128usize).next_power_of_two();
-            #[repr(C, align(8192))]
-            struct ZStack([u8; _STACK_TOTAL]);
-            static mut _STACK: ZStack = ZStack([0u8; _STACK_TOTAL]);
-            unsafe {
-                $crate::Thread::spawn_static(
-                    core::ptr::addr_of_mut!(_S),
-                    core::ptr::addr_of_mut!(_STACK) as *mut _,
-                    concat!($name, "\0").as_bytes(),
-                    $entry,
-                    $prio,
-                    $stack,
-                )
-            }
-            .unwrap()
+            static _STORAGE: $crate::ThreadStorage<$stack> = $crate::ThreadStorage::new();
+            $crate::Thread::builder()
+                .name(_name)
+                .priority($prio)
+                .spawn_static_simple(&_STORAGE, $entry)
+                .unwrap()
         }
     }};
 }

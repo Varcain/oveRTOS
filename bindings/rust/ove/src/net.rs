@@ -283,7 +283,13 @@ impl TcpStream {
     /// # Errors
     /// Returns an error if the connection fails or times out.
     pub fn connect(&self, addr: &Address, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_socket_connect(self.handle(), addr.as_ptr(), crate::time::dur_to_ns(timeout)) };
+        let rc = unsafe {
+            bindings::ove_socket_connect(
+                self.handle(),
+                addr.as_ptr(),
+                crate::time::dur_to_ns(timeout),
+            )
+        };
         Error::from_code(rc)
     }
 
@@ -430,7 +436,11 @@ impl UdpSocket {
     ///
     /// # Errors
     /// Returns an error if the receive fails or times out.
-    pub fn recv_from(&self, buf: &mut [u8], timeout: core::time::Duration) -> Result<(usize, Address)> {
+    pub fn recv_from(
+        &self,
+        buf: &mut [u8],
+        timeout: core::time::Duration,
+    ) -> Result<(usize, Address)> {
         let mut received: usize = 0;
         let mut src = Address::default();
         let rc = unsafe {
@@ -483,7 +493,11 @@ unsafe impl Sync for UdpSocket {}
 pub fn dns_resolve(hostname: &[u8], timeout: core::time::Duration) -> Result<Address> {
     let mut addr = Address::default();
     let rc = unsafe {
-        bindings::ove_dns_resolve(hostname.as_ptr() as *const _, addr.as_mut_ptr(), crate::time::dur_to_ns(timeout))
+        bindings::ove_dns_resolve(
+            hostname.as_ptr() as *const _,
+            addr.as_mut_ptr(),
+            crate::time::dur_to_ns(timeout),
+        )
     };
     Error::from_code(rc)?;
     Ok(addr)

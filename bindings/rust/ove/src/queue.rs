@@ -69,7 +69,11 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     #[inline]
     pub fn send(&self, item: &T, timeout: core::time::Duration) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_queue_send(self.handle, item as *const T as *const _, crate::time::dur_to_ns(timeout))
+            bindings::ove_queue_send(
+                self.handle,
+                item as *const T as *const _,
+                crate::time::dur_to_ns(timeout),
+            )
         };
         Error::from_code(rc)
     }
@@ -82,9 +86,8 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     #[inline]
     pub fn send_until(&self, item: &T, deadline_ns: u64) -> Result<()> {
         let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let rc = unsafe {
-            bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout)
-        };
+        let rc =
+            unsafe { bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout) };
         Error::from_code(rc)
     }
 
@@ -96,7 +99,11 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     pub fn receive(&self, timeout: core::time::Duration) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {
-            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, crate::time::dur_to_ns(timeout))
+            bindings::ove_queue_receive(
+                self.handle,
+                item.as_mut_ptr() as *mut _,
+                crate::time::dur_to_ns(timeout),
+            )
         };
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })

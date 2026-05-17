@@ -539,6 +539,6 @@ fn net_thread() {
 fn app_main() {
     ove::log_inf!("Rust networking example (zero-heap mode): ready");
 
-    let _net = ove::thread!("net-test", net_thread, Priority::Normal, 8192);
+    ove::thread!("net-test", net_thread, Priority::Normal, 8192).detach();
     ove::run();
 }

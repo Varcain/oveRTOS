@@ -144,8 +144,8 @@ fn app_main() {
     pm::set_policy(&POLICY).ok();
     pm::set_budget(6000).ok();
 
-    let _sensor = ove::thread!("sensor", sensor_entry, Priority::Normal, 4096);
-    let _monitor = ove::thread!("monitor", monitor_entry, Priority::Low, 4096);
+    ove::thread!("sensor", sensor_entry, Priority::Normal, 4096).detach();
+    ove::thread!("monitor", monitor_entry, Priority::Low, 4096).detach();
 
     ove::log_inf!(
         "pm example (zero-heap mode): ready (battery={}%)",

@@ -496,7 +496,7 @@ fn graphics_entry() {
 fn app_main() {
     ove::log_inf!("LVGL gallery (Rust): init");
 
-    let _graphics = ove::thread!("graphics", graphics_entry, Priority::High, 4096);
+    ove::thread!("graphics", graphics_entry, Priority::High, 4096).detach();
 
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));

@@ -100,10 +100,5 @@ pub(crate) fn deadline_to_timeout_ns(deadline_ns: u64) -> u64 {
         return u64::MAX;
     }
     let now = now_steady_ns();
-    if deadline_ns > now {
-        deadline_ns - now
-    } else {
-        0
-    }
+    deadline_ns.saturating_sub(now)
 }
-

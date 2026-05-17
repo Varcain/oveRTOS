@@ -177,6 +177,28 @@ fn test_builder_defaults() {
     assert_eq!(EXITED.load(Ordering::Acquire), 1);
 }
 
+/// 8. (zero-heap only) Builder::spawn_static with ThreadStorage<N>
+/// gives borrow-checked storage lifetime and cooperative-drop semantics.
+#[cfg(zero_heap)]
+fn test_spawn_static_borrowed() {
+    use ove::ThreadStorage;
+    reset_flags();
+    static STORAGE: ThreadStorage<4096> = ThreadStorage::new();
+    {
+        let _h = Thread::builder()
+            .name(c"coop_static")
+            .priority(Priority::Normal)
+            .spawn_static(&STORAGE, cooperative_worker)
+            .expect("spawn_static");
+        assert!(
+            wait_flag(&OBSERVED_FALSE_BEFORE, 1, 1000),
+            "static worker never observed false on entry"
+        );
+        // _h dropped here -> request_stop + ove_thread_deinit.
+    }
+    assert_eq!(EXITED.load(Ordering::Acquire), 1);
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("ThreadStop", &[
         test_entry!(test_cooperative_drop_exits_cleanly),
@@ -186,5 +208,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_empty_stop_token),
         test_entry!(test_legacy_entry_unaffected),
         test_entry!(test_builder_defaults),
+        #[cfg(zero_heap)]
+        test_entry!(test_spawn_static_borrowed),
     ])
 }
