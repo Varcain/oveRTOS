@@ -86,6 +86,9 @@ struct ove_thread {
 	 * tick; each thread self-captures via emscripten_get_callstack()
 	 * at its next yield point (no signals in WASM pthreads). */
 	volatile uint8_t profiler_pending;
+	/* Cooperative cancellation flag.  Set by ove_thread_request_stop,
+	 * polled by the worker via ove_thread_should_stop. */
+	volatile int stop_requested;
 };
 
 typedef struct ove_thread ove_thread_storage_t;

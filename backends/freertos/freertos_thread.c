@@ -75,6 +75,7 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->arg = arg;
 	storage->destroyer = NULL;
 	storage->exited = 0u;
+	storage->stop_requested = 0;
 
 	ove_state_track_init(&storage->st, OVE_THREAD_STATE_READY);
 
@@ -157,6 +158,7 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	wrapper->arg = arg;
 	wrapper->destroyer = NULL;
 	wrapper->exited = 0u;
+	wrapper->stop_requested = 0;
 
 	ove_state_track_init(&wrapper->st, OVE_THREAD_STATE_READY);
 
@@ -223,6 +225,19 @@ void ove_thread_suspend(ove_thread_t handle)
 void ove_thread_resume(ove_thread_t handle)
 {
 	vTaskResume(handle->task);
+}
+
+void ove_thread_request_stop(ove_thread_t handle)
+{
+	if (handle)
+		__atomic_store_n(&handle->stop_requested, 1, __ATOMIC_RELEASE);
+}
+
+bool ove_thread_should_stop(ove_thread_t handle)
+{
+	if (!handle)
+		return false;
+	return __atomic_load_n(&handle->stop_requested, __ATOMIC_ACQUIRE) != 0;
 }
 
 size_t ove_thread_get_stack_usage(ove_thread_t handle)

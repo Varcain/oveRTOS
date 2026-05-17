@@ -428,6 +428,19 @@ void ove_thread_resume(ove_thread_t handle)
 	}
 }
 
+void ove_thread_request_stop(ove_thread_t handle)
+{
+	if (handle)
+		__atomic_store_n(&handle->stop_requested, 1, __ATOMIC_RELEASE);
+}
+
+bool ove_thread_should_stop(ove_thread_t handle)
+{
+	if (!handle)
+		return false;
+	return __atomic_load_n(&handle->stop_requested, __ATOMIC_ACQUIRE) != 0;
+}
+
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 void ove_backend_thread_set_state(int new_state)
 {

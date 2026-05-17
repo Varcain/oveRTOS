@@ -64,6 +64,9 @@ struct ove_thread {
 #ifdef CONFIG_OVE_THREAD_STATE_STATS
 	struct ove_state_tracker st;
 #endif
+	/* Cooperative cancellation flag.  Set by ove_thread_request_stop,
+	 * polled by the worker via ove_thread_should_stop. */
+	volatile int stop_requested;
 };
 
 typedef struct ove_thread ove_thread_storage_t;
