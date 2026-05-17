@@ -91,7 +91,7 @@ fn test_producer_consumer() {
     Q_CONSUMER_SUM.store(0, Ordering::SeqCst);
     let _guard = PtrGuard::new(&Q_PTR, &q as *const Queue<i32, 10> as *mut ());
 
-    let th = Thread::spawn(b"cons\0", consumer_thread, ove::Priority::Low, 4096).unwrap();
+    let th = Thread::builder().name(c"cons").priority(ove::Priority::Low).stack_size(4096).spawn_simple(consumer_thread).unwrap();
 
     for i in 1..=5 {
         q.send(&i, core::time::Duration::from_millis(100)).unwrap();
@@ -120,7 +120,7 @@ fn test_send_wait_forever() {
     Q_BLOCKING.store(0, Ordering::SeqCst);
     let _guard = PtrGuard::new(&Q_BLOCK_PTR, &q as *const Queue<i32, 5> as *mut ());
 
-    let th = Thread::spawn(b"blk\0", blocking_receiver, ove::Priority::Low, 4096).unwrap();
+    let th = Thread::builder().name(c"blk").priority(ove::Priority::Low).stack_size(4096).spawn_simple(blocking_receiver).unwrap();
     Thread::sleep_ms(50);
 
     q.send(&123, core::time::Duration::ZERO).unwrap();

@@ -43,7 +43,7 @@ fn test_cross_thread() {
     EVT_DONE.store(0, Ordering::SeqCst);
     let _guard = PtrGuard::new(&EVT_PTR, &evt as *const Event as *mut ());
 
-    let th = Thread::spawn(b"esig\0", evt_signal_entry, ove::Priority::Normal, 4096).unwrap();
+    let th = Thread::builder().name(c"esig").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(evt_signal_entry).unwrap();
     evt.wait(core::time::Duration::from_millis(500)).unwrap();
     drop(th);
 

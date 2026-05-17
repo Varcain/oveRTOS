@@ -92,7 +92,7 @@ fn test_cross_thread() {
     let eg = EventGroup::new().unwrap();
     EG_PTR.store(&eg as *const EventGroup as *mut (), Ordering::Release);
 
-    let th = Thread::spawn(b"set\0", setter_thread, ove::Priority::Low, 4096).unwrap();
+    let th = Thread::builder().name(c"set").priority(ove::Priority::Low).stack_size(4096).spawn_simple(setter_thread).unwrap();
     let actual = eg.wait_bits(BIT_0 | BIT_1, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(500)).unwrap();
     assert_eq!(actual & (BIT_0 | BIT_1), BIT_0 | BIT_1);
 

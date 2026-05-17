@@ -778,6 +778,14 @@ unsafe extern "C" {
     pub fn ove_thread_resume(handle: ove_thread_t);
 }
 unsafe extern "C" {
+    #[doc = " @brief Cooperatively request that a thread stop running.\n\n Sets the per-thread atomic cancellation flag.  Safe from any context.\n\n @see ove_thread_should_stop"]
+    pub fn ove_thread_request_stop(handle: ove_thread_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Check whether a stop has been requested for the given thread.\n\n Returns true if ove_thread_request_stop was called.  Safe from any context.\n\n @see ove_thread_request_stop"]
+    pub fn ove_thread_should_stop(handle: ove_thread_t) -> bool;
+}
+unsafe extern "C" {
     #[doc = " @brief Query how many bytes of stack the thread has used at its high-water mark.\n\n @param[in] handle  Thread to inspect.\n @return Number of bytes consumed at the historical peak, or 0 if the\n         backend does not support stack profiling."]
     pub fn ove_thread_get_stack_usage(handle: ove_thread_t) -> usize;
 }

@@ -498,7 +498,7 @@ fn graphics_entry() {
 fn app_main() {
     ove::log_inf!("LVGL gallery (Rust): init");
 
-    let graphics = ove::Thread::spawn_with(b"graphics\0", Priority::High, 4096, || {
+    let graphics = ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
         graphics_entry();
     })
     .expect("graphics thread spawn");

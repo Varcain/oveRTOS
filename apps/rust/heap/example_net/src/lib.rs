@@ -595,7 +595,7 @@ fn app_main() {
     // Heap-allocated thread via spawn_with — closure captures move into
     // the boxed FnOnce, allowing the test runner to be a one-shot
     // closure rather than a free `fn()`.
-    let net = Thread::spawn_with(b"net-test\0", ove::Priority::Normal, 8192, || {
+    let net = Thread::builder().name(c"net-test").priority(ove::Priority::Normal).stack_size(8192).spawn(|_tok| {
         net_thread();
     })
     .expect("net-test spawn");

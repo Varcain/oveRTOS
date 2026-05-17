@@ -13,6 +13,7 @@ mod test_condvar;
 mod test_queue;
 mod test_timer;
 mod test_thread;
+mod test_thread_stop;
 mod test_eventgroup;
 mod test_time;
 mod test_bsp;
@@ -47,6 +48,7 @@ fn main() {
         ("Queue", test_queue::run),
         ("Timer", test_timer::run),
         ("Thread", test_thread::run),
+        ("ThreadStop", test_thread_stop::run),
         ("EventGroup", test_eventgroup::run),
         ("Time", test_time::run),
         ("BSP", test_bsp::run),

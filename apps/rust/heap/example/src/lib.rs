@@ -134,7 +134,7 @@ fn app_main() {
 
     // Producer: clone Arcs into a move closure, hand to spawn_with.
     let q = Arc::clone(&queue);
-    let _producer = Thread::spawn_with(b"producer\0", Priority::Normal, 4096, move || {
+    let _producer = Thread::builder().name(c"producer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         ove::log_inf!("Producer started");
         let mut count: u32 = 0;
         loop {
@@ -154,7 +154,7 @@ fn app_main() {
 
     let q = Arc::clone(&queue);
     let lv = Arc::clone(&last_value);
-    let _consumer = Thread::spawn_with(b"consumer\0", Priority::Normal, 4096, move || {
+    let _consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         ove::log_inf!("Consumer started");
         loop {
             match q.receive(WAIT_FOREVER) {
@@ -171,7 +171,7 @@ fn app_main() {
     })
     .expect("consumer spawn");
 
-    let _graphics = Thread::spawn_with(b"graphics\0", Priority::High, 4096, move || {
+    let _graphics = Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(move |_tok| {
         let mut last_us = ove::time::get_us().unwrap_or(0);
         loop {
             let now_us = ove::time::get_us().unwrap_or(last_us);
