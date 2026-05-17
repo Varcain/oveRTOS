@@ -375,6 +375,8 @@ int test_sync_recursive_run(void);
 int test_queue_run(void);
 int test_timer_run(void);
 int test_time_run(void);
+int test_timeout_ns_run(void);
+int test_deadline_until_run(void);
 int test_eventgroup_run(void);
 int test_workqueue_run(void);
 int test_stream_run(void);

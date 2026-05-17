@@ -95,6 +95,8 @@ set(_srcs
   ${_suite_dir}/test_queue.c
   ${_suite_dir}/test_timer.c
   ${_suite_dir}/test_time.c
+  ${_suite_dir}/test_timeout_ns.c
+  ${_suite_dir}/test_deadline_until.c
   ${_suite_dir}/test_eventgroup.c
   ${_suite_dir}/test_workqueue.c
   ${_suite_dir}/test_stream.c
