@@ -268,6 +268,80 @@ template <size_t StackSize = 0> class Thread
 #endif
 
 	/**
+	 * @brief Block the caller until the worker thread exits, then release
+	 * the kernel handle.  Analog of @c std::thread::join.
+	 *
+	 * After @c join the wrapper is empty: @ref valid returns @c false and
+	 * @ref ~Thread is a no-op.  Further method calls on the wrapper
+	 * (other than @ref valid / @ref handle) are undefined behaviour —
+	 * matches @c std::thread::join post-conditions.
+	 *
+	 * For cooperative workers, call @ref request_stop before @c join if
+	 * the worker's loop terminates on the stop flag.  Workers without
+	 * cooperative logic must terminate on their own; otherwise @c join
+	 * blocks indefinitely.  Calling @c join from the worker thread
+	 * itself deadlocks.
+	 *
+	 * Safe to call after @ref detach (no-op, since the handle is already
+	 * null).
+	 *
+	 * Works in both heap and zero-heap modes — internally calls
+	 * @c ove_thread_destroy (heap) or @c ove_thread_deinit (zero-heap),
+	 * both of which wait for the worker to exit.
+	 */
+	void join() noexcept
+	{
+		if (!handle_)
+			return;
+#ifdef CONFIG_OVE_ZERO_HEAP
+		ove_thread_deinit(handle_);
+#else
+		ove_thread_destroy(handle_);
+#endif
+		handle_ = nullptr;
+	}
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/**
+	 * @brief Detach is **deleted** in zero-heap mode.
+	 *
+	 * Detach would skip the destructor's join wait, but the @c Thread
+	 * wrapper owns the stack and storage that the kernel thread reads
+	 * from.  Dropping the wrapper while the thread is still running is
+	 * use-after-free.  Use @ref join (which waits) instead, or rely on
+	 * the destructor to fire.  For program-lifetime threads, declare
+	 * the wrapper as @c static so the destructor effectively never
+	 * runs — that is the only safe "detach" in zero-heap mode.
+	 */
+	void detach() = delete;
+#else
+	/**
+	 * @brief Release ownership of the kernel thread without waiting.
+	 * Analog of @c std::thread::detach.
+	 *
+	 * After @c detach the wrapper is empty: @ref valid returns @c false
+	 * and @ref ~Thread is a no-op.  The kernel thread keeps running
+	 * with its own resources; the RTOS reaps them when the entry
+	 * function returns.
+	 *
+	 * Unlike @ref ~Thread, @c detach does NOT call @ref request_stop —
+	 * the worker is genuinely fire-and-forget.  Hand it out a
+	 * @ref stop_token via @ref get_stop_token before detaching if you
+	 * still want a way to cooperatively shut it down later.
+	 *
+	 * @code
+	 * ove::Thread<4096>(worker, OVE_PRIO_NORMAL, "bg").detach();
+	 * @endcode
+	 *
+	 * Heap-mode only.  See the zero-heap @ref detach stub for why.
+	 */
+	void detach() noexcept
+	{
+		handle_ = nullptr;
+	}
+#endif
+
+	/**
 	 * @brief Changes the priority of the thread at runtime.
 	 * @param[in] prio New priority value.
 	 */
