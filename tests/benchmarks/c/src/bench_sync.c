@@ -288,7 +288,7 @@ static void condvar_signal_wait_run(void *ctx)
 {
 	(void)ctx;
 	ove_mutex_lock(bench_cv_mtx, OVE_WAIT_FOREVER);
-	ove_condvar_wait(bench_cv, bench_cv_mtx, 10);
+	ove_condvar_wait(bench_cv, bench_cv_mtx, OVE_MS(10));
 	ove_mutex_unlock(bench_cv_mtx);
 }
 

@@ -189,7 +189,7 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 
 	/* DNS resolve */
 	ove_sockaddr_t addr;
-	ret = ove_dns_resolve(c->host, &addr, 10000);
+	ret = ove_dns_resolve(c->host, &addr, OVE_MS(10000));
 	if (ret != OVE_OK)
 		return ret;
 	addr.port = port;
@@ -201,7 +201,7 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 		return ret;
 
 	/* Connect */
-	ret = ove_socket_connect(c->sock, &addr, 10000);
+	ret = ove_socket_connect(c->sock, &addr, OVE_MS(10000));
 	if (ret != OVE_OK)
 		goto cleanup_sock;
 

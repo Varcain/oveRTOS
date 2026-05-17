@@ -150,10 +150,10 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic);
  * Must be called periodically (typically in a loop or timer).
  *
  * @param[in] client     MQTT client handle.
- * @param[in] timeout_ms Maximum time to wait for incoming data.
+ * @param[in] timeout_ns Maximum time to wait for incoming data.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms);
+int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns);
 
 #ifdef OVE_HEAP_NET_MQTT
 /**
@@ -226,10 +226,10 @@ static inline int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *top
 	(void)topic;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_mqtt_loop(ove_mqtt_client_t client, uint32_t timeout_ms)
+static inline int ove_mqtt_loop(ove_mqtt_client_t client, uint64_t timeout_ns)
 {
 	(void)client;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 /** @endcond */

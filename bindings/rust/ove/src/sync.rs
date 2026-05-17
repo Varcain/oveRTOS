@@ -50,10 +50,10 @@ impl Mutex {
     /// Lock with a timeout in milliseconds. Use `WAIT_FOREVER` for no timeout.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the mutex cannot be acquired within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if the mutex cannot be acquired within `timeout_ns`.
     #[inline]
-    pub fn lock(&self, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout_ms) };
+    pub fn lock(&self, timeout: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::time::dur_to_ns(timeout)) };
         Error::from_code(rc)
     }
 
@@ -66,10 +66,10 @@ impl Mutex {
     /// Lock and return an RAII guard that auto-unlocks on drop.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
     #[inline]
-    pub fn guard(&self, timeout_ms: u32) -> Result<MutexGuard<'_>> {
-        self.lock(timeout_ms)?;
+    pub fn guard(&self, timeout: core::time::Duration) -> Result<MutexGuard<'_>> {
+        self.lock(timeout)?;
         Ok(MutexGuard { mutex: self })
     }
 
@@ -138,10 +138,10 @@ impl RecursiveMutex {
     /// paired with a corresponding [`unlock`](RecursiveMutex::unlock).
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
     #[inline]
-    pub fn lock(&self, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout_ms) };
+    pub fn lock(&self, timeout: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(timeout)) };
         Error::from_code(rc)
     }
 
@@ -154,10 +154,10 @@ impl RecursiveMutex {
     /// Lock and return an RAII guard that auto-unlocks on drop.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
     #[inline]
-    pub fn guard(&self, timeout_ms: u32) -> Result<RecursiveMutexGuard<'_>> {
-        self.lock(timeout_ms)?;
+    pub fn guard(&self, timeout: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
+        self.lock(timeout)?;
         Ok(RecursiveMutexGuard { mutex: self })
     }
 }
@@ -222,13 +222,13 @@ impl Semaphore {
         Ok(Self { handle })
     }
 
-    /// Decrement (take) the semaphore, blocking up to `timeout_ms` if the count is zero.
+    /// Decrement (take) the semaphore, blocking up to `timeout_ns` if the count is zero.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the semaphore cannot be taken within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if the semaphore cannot be taken within `timeout_ns`.
     #[inline]
-    pub fn take(&self, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe { bindings::ove_sem_take(self.handle, timeout_ms) };
+    pub fn take(&self, timeout: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_sem_take(self.handle, crate::time::dur_to_ns(timeout)) };
         Error::from_code(rc)
     }
 
@@ -275,10 +275,10 @@ impl Event {
     /// Block until the event is signalled or the timeout expires.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the event is not signalled within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if the event is not signalled within `timeout_ns`.
     #[inline]
-    pub fn wait(&self, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe { bindings::ove_event_wait(self.handle, timeout_ms) };
+    pub fn wait(&self, timeout: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_event_wait(self.handle, crate::time::dur_to_ns(timeout)) };
         Error::from_code(rc)
     }
 
@@ -328,16 +328,16 @@ impl CondVar {
         Ok(Self { handle })
     }
 
-    /// Atomically release `mutex` and block until signalled or `timeout_ms` elapses.
+    /// Atomically release `mutex` and block until signalled or `timeout_ns` elapses.
     ///
     /// On return (successful or not), `mutex` is re-acquired before this function returns.
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if neither [`signal`](CondVar::signal) nor
-    /// [`broadcast`](CondVar::broadcast) fires within `timeout_ms`.
+    /// [`broadcast`](CondVar::broadcast) fires within `timeout_ns`.
     #[inline]
-    pub fn wait(&self, mutex: &Mutex, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout_ms) };
+    pub fn wait(&self, mutex: &Mutex, timeout: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(timeout)) };
         Error::from_code(rc)
     }
 

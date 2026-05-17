@@ -60,11 +60,11 @@ static void test_renode_i2c_ft5336_probe(void **state)
 	 * arbitration error. */
 	uint8_t reg = FT5336_REG_CHIPID;
 	uint8_t out = 0;
-	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, 100);
+	rc = ove_i2c_write_read(i2c, FT5336_ADDR, &reg, 1, &out, 1, OVE_MS(100));
 	assert_int_equal(rc, OVE_OK);
 
 	/* Probe a non-existent address — expect a NACK / timeout, not OK. */
-	rc = ove_i2c_read(i2c, 0x77, &out, 1, 100);
+	rc = ove_i2c_read(i2c, 0x77, &out, 1, OVE_MS(100));
 	assert_int_not_equal(rc, OVE_OK);
 
 	ove_i2c_deinit(i2c);
@@ -105,7 +105,7 @@ static void test_renode_uart_tx_completes(void **state)
 
 	const char msg[] = "renode-uart\n";
 	size_t written = 0;
-	rc = ove_uart_write(uart, msg, sizeof(msg) - 1, 200, &written);
+	rc = ove_uart_write(uart, msg, sizeof(msg) - 1, OVE_MS(200), &written);
 	assert_int_equal(rc, OVE_OK);
 	assert_int_equal(written, sizeof(msg) - 1);
 
@@ -149,7 +149,7 @@ static void test_renode_spi_loopback(void **state)
 
 	const uint8_t tx[8] = {0xA5, 0x5A, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE};
 	uint8_t rx[8] = {0};
-	rc = ove_spi_transfer(spi, NULL, tx, rx, sizeof(tx), 200);
+	rc = ove_spi_transfer(spi, NULL, tx, rx, sizeof(tx), OVE_MS(200));
 	assert_int_equal(rc, OVE_OK);
 
 	/* Even-indexed bytes echo cleanly; odd-indexed are 0 (model gap). */

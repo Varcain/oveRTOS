@@ -44,14 +44,14 @@ static void test_cpp_sem_take_initial_one(void **state)
 {
 	(void)state;
 	ove::Semaphore sem(1, 1);
-	assert_int_equal(sem.take(0), OVE_OK);
+	assert_int_equal(sem.take(std::chrono::milliseconds{0}), OVE_OK);
 }
 
 static void test_cpp_sem_take_timeout(void **state)
 {
 	(void)state;
 	ove::Semaphore sem(0, 10);
-	assert_int_equal(sem.take(50), OVE_ERR_TIMEOUT);
+	assert_int_equal(sem.take(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_sem_give_then_take(void **state)
@@ -59,7 +59,7 @@ static void test_cpp_sem_give_then_take(void **state)
 	(void)state;
 	ove::Semaphore sem(0, 10);
 	sem.give();
-	assert_int_equal(sem.take(0), OVE_OK);
+	assert_int_equal(sem.take(std::chrono::milliseconds{0}), OVE_OK);
 }
 
 static void test_cpp_sem_counting(void **state)
@@ -69,8 +69,8 @@ static void test_cpp_sem_counting(void **state)
 	for (int i = 0; i < 3; i++)
 		sem.give();
 	for (int i = 0; i < 3; i++)
-		assert_int_equal(sem.take(0), OVE_OK);
-	assert_int_equal(sem.take(10), OVE_ERR_TIMEOUT);
+		assert_int_equal(sem.take(std::chrono::milliseconds{0}), OVE_OK);
+	assert_int_equal(sem.take(std::chrono::milliseconds{10}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_sem_producer_consumer(void **state)
@@ -81,7 +81,7 @@ static void test_cpp_sem_producer_consumer(void **state)
 
 	{
 		auto th = make_test_thread("prod", cpp_sem_give_entry, &ctx);
-		assert_int_equal(sem.take(500), OVE_OK);
+		assert_int_equal(sem.take(std::chrono::milliseconds{500}), OVE_OK);
 	}
 	assert_int_equal(ctx.done, 1);
 }
@@ -93,7 +93,7 @@ static void test_cpp_sem_wait_forever(void **state)
 	cpp_sem_ctx ctx = {&sem, 0};
 
 	auto th = make_test_thread("wf", cpp_sem_give_delayed_entry, &ctx);
-	assert_int_equal(sem.take(OVE_WAIT_FOREVER), OVE_OK);
+	assert_int_equal(sem.take(ove::wait_forever), OVE_OK);
 }
 
 /* ── Wrapper-specific tests ─────────────────────────────────────────── */
@@ -103,7 +103,7 @@ static void test_cpp_sem_raii_destroy(void **state)
 	(void)state;
 	{
 		ove::Semaphore sem(1, 1);
-		(void)sem.take(0);
+		(void)sem.take(std::chrono::milliseconds{0});
 		sem.give();
 	}
 }

@@ -12,6 +12,7 @@
 
 #include "ove/hal/hal_uart.h"
 #include "ove_backend_common.h"
+#include "stm32f7_init.h"
 #include "stm32f7xx_hal.h"
 #include <string.h>
 
@@ -105,12 +106,13 @@ void ove_hal_uart_close(ove_uart_t uart)
 	HAL_UART_DeInit(&uart->hal_handle);
 }
 
-int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_written)
 {
 	HAL_StatusTypeDef ret;
 
-	ret = HAL_UART_Transmit(&uart->hal_handle, (uint8_t *)data, (uint16_t)len, timeout_ms);
+	ret = HAL_UART_Transmit(&uart->hal_handle, (uint8_t *)data, (uint16_t)len,
+				stm32f7_ns_to_hal_ms(timeout_ns));
 	if (ret == HAL_OK) {
 		if (bytes_written != NULL)
 			*bytes_written = len;

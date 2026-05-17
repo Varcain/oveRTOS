@@ -12,12 +12,12 @@
 #include "ove/trace.h"
 #include "ove_backend_common.h"
 #include <zephyr/kernel.h>
-static k_timeout_t ms_to_timeout(uint32_t ms)
+static k_timeout_t ns_to_timeout(uint64_t ns)
 {
-	if (ove_timeout_is_forever(ms)) {
+	if (ove_timeout_is_forever(ns)) {
 		return K_FOREVER;
 	}
-	return K_MSEC(ms);
+	return K_NSEC(ns);
 }
 
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
@@ -66,12 +66,12 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	int ret = k_mutex_lock(&mtx->mtx, ms_to_timeout(timeout_ms));
+	int ret = k_mutex_lock(&mtx->mtx, ns_to_timeout(timeout_ns));
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
@@ -123,12 +123,12 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	int ret = k_mutex_lock(&mtx->mtx, ms_to_timeout(timeout_ms));
+	int ret = k_mutex_lock(&mtx->mtx, ns_to_timeout(timeout_ns));
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_EXIT, mtx);
@@ -187,12 +187,12 @@ void ove_sem_destroy(ove_sem_t sem)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
+int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, sem);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	int ret = k_sem_take(&sem->sem, ms_to_timeout(timeout_ms));
+	int ret = k_sem_take(&sem->sem, ns_to_timeout(timeout_ns));
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, sem);
@@ -251,12 +251,12 @@ void ove_event_destroy(ove_event_t evt)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
+int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	int ret = k_sem_take(&evt->sem, ms_to_timeout(timeout_ms));
+	int ret = k_sem_take(&evt->sem, ns_to_timeout(timeout_ns));
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
@@ -321,12 +321,12 @@ void ove_condvar_destroy(ove_condvar_t cv)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	int ret = k_condvar_wait(&cv->cv, &mtx->mtx, ms_to_timeout(timeout_ms));
+	int ret = k_condvar_wait(&cv->cv, &mtx->mtx, ns_to_timeout(timeout_ns));
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_EXIT, cv);

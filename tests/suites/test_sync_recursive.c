@@ -70,7 +70,7 @@ static void test_recursive_timeout(void **state)
 	ove_thread_t th = NULL;
 	ove_test_thread_run(&th, &s_th_storage, "rh", rmtx_hold_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.locked, 1, 2500));
-	assert_int_equal(ove_recursive_mutex_lock(mtx, 50), OVE_ERR_TIMEOUT);
+	assert_int_equal(ove_recursive_mutex_lock(mtx, OVE_MS(50)), OVE_ERR_TIMEOUT);
 	ove_test_thread_destroy(th);
 	ove_test_recursive_mutex_destroy(mtx);
 }

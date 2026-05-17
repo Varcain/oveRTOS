@@ -74,9 +74,9 @@ void ove_hal_spi_close(ove_spi_t spi)
 	}
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
-	(void)timeout_ms;
+	(void)timeout_ns;
 
 #ifdef __linux__
 	struct spi_ioc_transfer xfer;

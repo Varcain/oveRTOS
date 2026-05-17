@@ -9,16 +9,16 @@ const err = @import("error.zig");
 const Error = err.Error;
 
 /// Write data to the UART. Returns the number of bytes written.
-pub fn write(uart: c.ove_uart_t, data: []const u8, timeout_ms: u32) Error!usize {
+pub fn write(uart: c.ove_uart_t, data: []const u8, timeout_ns: u64) Error!usize {
     var written: usize = 0;
-    try err.fromCode(c.ove_uart_write(uart, data.ptr, data.len, timeout_ms, &written));
+    try err.fromCode(c.ove_uart_write(uart, data.ptr, data.len, timeout_ns, &written));
     return written;
 }
 
 /// Read data from the UART RX buffer. Returns the number of bytes read.
-pub fn read(uart: c.ove_uart_t, buf: []u8, timeout_ms: u32) Error!usize {
+pub fn read(uart: c.ove_uart_t, buf: []u8, timeout_ns: u64) Error!usize {
     var read_count: usize = 0;
-    try err.fromCode(c.ove_uart_read(uart, buf.ptr, buf.len, timeout_ms, &read_count));
+    try err.fromCode(c.ove_uart_read(uart, buf.ptr, buf.len, timeout_ns, &read_count));
     return read_count;
 }
 

@@ -150,7 +150,7 @@ fn producerEntry() void {
         // `queue.?` unwraps the optional — `appMain` populated it
         // before this thread was spawned, so it is guaranteed non-null
         // here.
-        queue.?.send(&count, 1000) catch |e| {
+        queue.?.send(&count, 1000 * std.time.ns_per_ms) catch |e| {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),

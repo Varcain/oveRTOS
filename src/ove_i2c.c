@@ -99,7 +99,7 @@ void ove_i2c_destroy(ove_i2c_t i2c)
 
 /* ── Operations ──────────────────────────────────────────────────── */
 
-int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, uint32_t timeout_ms)
+int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, uint64_t timeout_ns)
 {
 	int ret;
 
@@ -107,13 +107,13 @@ int ove_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len, ui
 		return OVE_ERR_INVALID_PARAM;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_write(i2c, addr, data, len, timeout_ms);
+	ret = ove_hal_i2c_write(i2c, addr, data, len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;
 }
 
-int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms)
+int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
 {
 	int ret;
 
@@ -121,14 +121,14 @@ int ove_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t t
 		return OVE_ERR_INVALID_PARAM;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_read(i2c, addr, buf, len, timeout_ms);
+	ret = ove_hal_i2c_read(i2c, addr, buf, len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;
 }
 
 int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
-		       size_t rx_len, uint32_t timeout_ms)
+		       size_t rx_len, uint64_t timeout_ns)
 {
 	int ret;
 
@@ -136,7 +136,7 @@ int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_l
 		return OVE_ERR_INVALID_PARAM;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len, rx, rx_len, timeout_ms);
+	ret = ove_hal_i2c_write_read(i2c, addr, tx, tx_len, rx, rx_len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;
@@ -145,7 +145,7 @@ int ove_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_l
 /* ── Register convenience ────────────────────────────────────────── */
 
 int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, const void *data, size_t len,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	uint8_t buf[1 + OVE_I2C_REG_WRITE_MAX];
 	int ret;
@@ -160,14 +160,14 @@ int ove_i2c_reg_write(ove_i2c_t i2c, uint16_t addr, uint8_t reg, const void *dat
 		memcpy(&buf[1], data, len);
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_write(i2c, addr, buf, 1 + len, timeout_ms);
+	ret = ove_hal_i2c_write(i2c, addr, buf, 1 + len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;
 }
 
 int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_t len,
-		     uint32_t timeout_ms)
+		     uint64_t timeout_ns)
 {
 	int ret;
 
@@ -175,7 +175,7 @@ int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_
 		return OVE_ERR_INVALID_PARAM;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_write_read(i2c, addr, &reg, 1, buf, len, timeout_ms);
+	ret = ove_hal_i2c_write_read(i2c, addr, &reg, 1, buf, len, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;
@@ -183,7 +183,7 @@ int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_
 
 /* ── Bus probe ───────────────────────────────────────────────────── */
 
-int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint32_t timeout_ms)
+int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns)
 {
 	int ret;
 
@@ -191,7 +191,7 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint32_t timeout_ms)
 		return OVE_ERR_INVALID_PARAM;
 
 	OVE_LOCK_INFINITE(i2c->bus_mtx);
-	ret = ove_hal_i2c_write(i2c, addr, NULL, 0, timeout_ms);
+	ret = ove_hal_i2c_write(i2c, addr, NULL, 0, timeout_ns);
 	ove_mutex_unlock(i2c->bus_mtx);
 
 	return ret;

@@ -87,11 +87,11 @@ void ove_socket_destroy(ove_socket_t sock)
 }
 #endif
 
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)addr;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
@@ -110,12 +110,12 @@ int ove_socket_listen(ove_socket_t sock, int backlog)
 }
 
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)client;
 	(void)client_storage;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
@@ -128,13 +128,13 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint32_t timeout_ms)
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)buf;
 	(void)len;
 	(void)received;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
@@ -150,24 +150,24 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 }
 
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint32_t timeout_ms)
+			ove_sockaddr_t *src, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)buf;
 	(void)len;
 	(void)received;
 	(void)src;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
 /* ---------- DNS ---------- */
 
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	(void)hostname;
 	(void)addr;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

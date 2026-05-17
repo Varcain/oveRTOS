@@ -12,7 +12,10 @@
 #include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
+#include "ove_ns_to_ticks.h"
 #include <errno.h>
+
+
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
@@ -102,7 +105,7 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 }
 
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
-			     uint32_t timeout_ms, ove_eventbits_t *result)
+			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
 	struct ove_eventgroup *g = eg;
 	int wait_all = (flags & OVE_EG_WAIT_ALL) ? 1 : 0;
@@ -113,8 +116,8 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 	clock_t deadline = 0;
 	irqstate_t irqflags;
 
-	if (timeout_ms != OVE_WAIT_FOREVER) {
-		remaining_ticks = MSEC2TICK(timeout_ms);
+	if (timeout_ns != OVE_WAIT_FOREVER) {
+		remaining_ticks = ove_ns_to_ticks(timeout_ns);
 		deadline = clock_systime_ticks() + remaining_ticks;
 	}
 
@@ -134,7 +137,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 		g->nwaiters++;
 		leave_critical_section(irqflags);
 
-		if (timeout_ms == OVE_WAIT_FOREVER) {
+		if (timeout_ns == OVE_WAIT_FOREVER) {
 			ret = nxsem_wait_uninterruptible(&g->waiter);
 		} else {
 			clock_t now = clock_systime_ticks();

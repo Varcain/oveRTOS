@@ -93,7 +93,7 @@ static void queue_throughput_teardown(void *ctx)
 	/* Drain queue so producer unblocks */
 	uint32_t buf;
 
-	ove_queue_receive(bench_q, &buf, 100);
+	ove_queue_receive(bench_q, &buf, OVE_MS(100));
 	ove_thread_sleep_ms(10);
 	ove_thread_deinit(producer_th);
 	ove_queue_deinit(bench_q);

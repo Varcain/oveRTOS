@@ -63,7 +63,7 @@ static void producer_thread(void *arg)
 
 	while (1) {
 		++count;
-		int ret = ove_queue_send(counter_queue, &count, 1000);
+		int ret = ove_queue_send(counter_queue, &count, OVE_MS(1000));
 		if (ret != OVE_OK) {
 			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
 		}

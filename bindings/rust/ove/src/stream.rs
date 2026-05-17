@@ -49,22 +49,22 @@ impl<const N: usize> Stream<N> {
         Ok(Self { handle })
     }
 
-    /// Send bytes into the stream, blocking up to `timeout_ms` if the buffer is full.
+    /// Send bytes into the stream, blocking up to `timeout_ns` if the buffer is full.
     ///
     /// Returns the number of bytes actually sent, which may be less than `data.len()`
     /// if the stream fills before the timeout.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no bytes could be sent within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if no bytes could be sent within `timeout_ns`.
     #[inline]
-    pub fn send(&self, data: &[u8], timeout_ms: u32) -> Result<usize> {
+    pub fn send(&self, data: &[u8], timeout: core::time::Duration) -> Result<usize> {
         let mut bytes_sent: usize = 0;
         let rc = unsafe {
             bindings::ove_stream_send(
                 self.handle,
                 data.as_ptr() as *const _,
                 data.len(),
-                timeout_ms,
+                crate::time::dur_to_ns(timeout),
                 &mut bytes_sent,
             )
         };
@@ -72,22 +72,22 @@ impl<const N: usize> Stream<N> {
         Ok(bytes_sent)
     }
 
-    /// Receive bytes from the stream into `buf`, blocking up to `timeout_ms`.
+    /// Receive bytes from the stream into `buf`, blocking up to `timeout_ns`.
     ///
     /// Returns the number of bytes actually received. Blocks until at least the
-    /// trigger byte count (set at creation time) is available, or `timeout_ms` expires.
+    /// trigger byte count (set at creation time) is available, or `timeout_ns` expires.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no bytes could be received within `timeout_ms`.
+    /// Returns [`Error::Timeout`] if no bytes could be received within `timeout_ns`.
     #[inline]
-    pub fn receive(&self, buf: &mut [u8], timeout_ms: u32) -> Result<usize> {
+    pub fn receive(&self, buf: &mut [u8], timeout: core::time::Duration) -> Result<usize> {
         let mut bytes_received: usize = 0;
         let rc = unsafe {
             bindings::ove_stream_receive(
                 self.handle,
                 buf.as_mut_ptr() as *mut _,
                 buf.len(),
-                timeout_ms,
+                crate::time::dur_to_ns(timeout),
                 &mut bytes_received,
             )
         };

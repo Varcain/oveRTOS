@@ -211,8 +211,8 @@ const HeapTcpStream = struct {
         self.handle = null;
     }
 
-    pub fn connect(self: *TcpStream, addr: Address, timeout_ms: u32) Error!void {
-        try err.fromCode(c.ove_socket_connect(self.handle, &addr.inner, timeout_ms));
+    pub fn connect(self: *TcpStream, addr: Address, timeout_ns: u64) Error!void {
+        try err.fromCode(c.ove_socket_connect(self.handle, &addr.inner, timeout_ns));
     }
 
     pub fn send(self: *TcpStream, data: []const u8) Error!usize {
@@ -221,9 +221,9 @@ const HeapTcpStream = struct {
         return sent;
     }
 
-    pub fn recv(self: *TcpStream, buf: []u8, timeout_ms: u32) Error!usize {
+    pub fn recv(self: *TcpStream, buf: []u8, timeout_ns: u64) Error!usize {
         var received: usize = 0;
-        try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ms));
+        try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ns));
         return received;
     }
 
@@ -235,9 +235,9 @@ const HeapTcpStream = struct {
         try err.fromCode(c.ove_socket_listen(self.handle, backlog));
     }
 
-    pub fn accept(self: *TcpStream, timeout_ms: u32) Error!TcpStream {
+    pub fn accept(self: *TcpStream, timeout_ns: u64) Error!TcpStream {
         var h: c.ove_socket_t = null;
-        try err.fromCode(c.ove_socket_accept(self.handle, &h, null, timeout_ms));
+        try err.fromCode(c.ove_socket_accept(self.handle, &h, null, timeout_ns));
         return .{ .handle = h };
     }
 };
@@ -263,9 +263,9 @@ const ZeroHeapTcpStream = struct {
         self.tracker.clear();
     }
 
-    pub fn connect(self: *TcpStream, addr: Address, timeout_ms: u32) Error!void {
+    pub fn connect(self: *TcpStream, addr: Address, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.TcpStream");
-        try err.fromCode(c.ove_socket_connect(self.handle, &addr.inner, timeout_ms));
+        try err.fromCode(c.ove_socket_connect(self.handle, &addr.inner, timeout_ns));
     }
 
     pub fn send(self: *TcpStream, data: []const u8) Error!usize {
@@ -275,10 +275,10 @@ const ZeroHeapTcpStream = struct {
         return sent;
     }
 
-    pub fn recv(self: *TcpStream, buf: []u8, timeout_ms: u32) Error!usize {
+    pub fn recv(self: *TcpStream, buf: []u8, timeout_ns: u64) Error!usize {
         self.tracker.assertSame(self, "ove.TcpStream");
         var received: usize = 0;
-        try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ms));
+        try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ns));
         return received;
     }
 
@@ -295,12 +295,12 @@ const ZeroHeapTcpStream = struct {
     /// Accept an incoming connection into the caller-supplied `client`.
     /// `client` must arrive `undefined`; on success it is fully initialised
     /// and the caller becomes responsible for `client.deinit()`.
-    pub fn accept(self: *TcpStream, client: *TcpStream, timeout_ms: u32) Error!void {
+    pub fn accept(self: *TcpStream, client: *TcpStream, timeout_ns: u64) Error!void {
         self.tracker.assertSame(self, "ove.TcpStream");
         client.storage = std.mem.zeroes(c.ove_socket_storage_t);
         client.handle = null;
         client.tracker = .{};
-        try err.fromCode(c.ove_socket_accept(self.handle, &client.handle, &client.storage, timeout_ms));
+        try err.fromCode(c.ove_socket_accept(self.handle, &client.handle, &client.storage, timeout_ns));
         client.tracker.record(client);
     }
 };
@@ -338,10 +338,10 @@ const HeapUdpSocket = struct {
         return sent;
     }
 
-    pub fn recvFrom(self: *UdpSocket, buf: []u8, timeout_ms: u32) Error!struct { len: usize, src: Address } {
+    pub fn recvFrom(self: *UdpSocket, buf: []u8, timeout_ns: u64) Error!struct { len: usize, src: Address } {
         var received: usize = 0;
         var src: c.ove_sockaddr_t = std.mem.zeroes(c.ove_sockaddr_t);
-        try err.fromCode(c.ove_socket_recvfrom(self.handle, buf.ptr, buf.len, &received, &src, timeout_ms));
+        try err.fromCode(c.ove_socket_recvfrom(self.handle, buf.ptr, buf.len, &received, &src, timeout_ns));
         return .{ .len = received, .src = .{ .inner = src } };
     }
 };
@@ -379,11 +379,11 @@ const ZeroHeapUdpSocket = struct {
         return sent;
     }
 
-    pub fn recvFrom(self: *UdpSocket, buf: []u8, timeout_ms: u32) Error!struct { len: usize, src: Address } {
+    pub fn recvFrom(self: *UdpSocket, buf: []u8, timeout_ns: u64) Error!struct { len: usize, src: Address } {
         self.tracker.assertSame(self, "ove.UdpSocket");
         var received: usize = 0;
         var src: c.ove_sockaddr_t = std.mem.zeroes(c.ove_sockaddr_t);
-        try err.fromCode(c.ove_socket_recvfrom(self.handle, buf.ptr, buf.len, &received, &src, timeout_ms));
+        try err.fromCode(c.ove_socket_recvfrom(self.handle, buf.ptr, buf.len, &received, &src, timeout_ns));
         return .{ .len = received, .src = .{ .inner = src } };
     }
 };
@@ -393,9 +393,9 @@ const ZeroHeapUdpSocket = struct {
 // ---------------------------------------------------------------------------
 
 pub const dns = struct {
-    pub fn resolve(hostname: [:0]const u8, timeout_ms: u32) Error!Address {
+    pub fn resolve(hostname: [:0]const u8, timeout_ns: u64) Error!Address {
         var addr: c.ove_sockaddr_t = std.mem.zeroes(c.ove_sockaddr_t);
-        try err.fromCode(c.ove_dns_resolve(hostname.ptr, &addr, timeout_ms));
+        try err.fromCode(c.ove_dns_resolve(hostname.ptr, &addr, timeout_ns));
         return .{ .inner = addr };
     }
 };

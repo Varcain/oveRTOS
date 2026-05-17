@@ -29,7 +29,7 @@ static void consumer_thread(void *arg)
 {
 	ove_queue_t q = (ove_queue_t)arg;
 	int val;
-	while (ove_queue_receive(q, &val, 200) == OVE_OK) {
+	while (ove_queue_receive(q, &val, OVE_MS(200)) == OVE_OK) {
 		atomic_fetch_add(&s_consumer_sum, val);
 	}
 }
@@ -108,7 +108,7 @@ static void test_queue_send_full_times_out(void **state)
 	v = 2;
 	assert_int_equal(ove_queue_send(q, &v, 0), OVE_OK);
 	v = 3;
-	int rc = ove_queue_send(q, &v, 10);
+	int rc = ove_queue_send(q, &v, OVE_MS(10));
 	assert_int_equal(rc, OVE_ERR_TIMEOUT);
 
 	ove_test_queue_destroy(q);
@@ -140,7 +140,7 @@ static void test_queue_receive_empty_times_out(void **state)
 	ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
 
 	int val;
-	int rc = ove_queue_receive(q, &val, 10);
+	int rc = ove_queue_receive(q, &val, OVE_MS(10));
 	assert_int_equal(rc, OVE_ERR_TIMEOUT);
 
 	ove_test_queue_destroy(q);
@@ -221,7 +221,7 @@ static void test_queue_producer_consumer(void **state)
 
 	/* produce 1+2+3+4+5 = 15 */
 	for (int i = 1; i <= 5; i++) {
-		assert_int_equal(ove_queue_send(q, &i, 100), OVE_OK);
+		assert_int_equal(ove_queue_send(q, &i, OVE_MS(100)), OVE_OK);
 		test_msleep(5);
 	}
 

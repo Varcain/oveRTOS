@@ -12,6 +12,7 @@
 
 #include "ove/hal/hal_spi.h"
 #include "ove_backend_common.h"
+#include "stm32f7_init.h"
 #include "stm32f7xx_hal.h"
 #include <string.h>
 
@@ -94,17 +95,18 @@ void ove_hal_spi_close(ove_spi_t spi)
 	HAL_SPI_DeInit(&spi->hal_handle);
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
 	HAL_StatusTypeDef ret;
+	uint32_t hal_ms = stm32f7_ns_to_hal_ms(timeout_ns);
 
 	if (tx != NULL && rx != NULL) {
 		ret = HAL_SPI_TransmitReceive(&spi->hal_handle, (uint8_t *)tx, rx, (uint16_t)len,
-					      timeout_ms);
+					      hal_ms);
 	} else if (tx != NULL) {
-		ret = HAL_SPI_Transmit(&spi->hal_handle, (uint8_t *)tx, (uint16_t)len, timeout_ms);
+		ret = HAL_SPI_Transmit(&spi->hal_handle, (uint8_t *)tx, (uint16_t)len, hal_ms);
 	} else {
-		ret = HAL_SPI_Receive(&spi->hal_handle, rx, (uint16_t)len, timeout_ms);
+		ret = HAL_SPI_Receive(&spi->hal_handle, rx, (uint16_t)len, hal_ms);
 	}
 
 	switch (ret) {

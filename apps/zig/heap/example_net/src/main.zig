@@ -117,7 +117,7 @@ fn testDns() void {
     ove.log.inf("=== DNS Resolution ===", .{});
 
     testCase("resolve example.com");
-    if (net.dns.resolve("example.com", 5000)) |addr| {
+    if (net.dns.resolve("example.com", 5000 * std.time.ns_per_ms)) |addr| {
         const o = addr.octets();
         ove.log.inf("  -> {d}.{d}.{d}.{d}", .{ o[0], o[1], o[2], o[3] });
         passCase("resolve example.com");
@@ -126,7 +126,7 @@ fn testDns() void {
     }
 
     testCase("resolve invalid.invalid (expect failure)");
-    if (net.dns.resolve("invalid.invalid", 3000)) |_| {
+    if (net.dns.resolve("invalid.invalid", 3000 * std.time.ns_per_ms)) |_| {
         failCase("resolve invalid.invalid (should have failed)", 0);
     } else |_| {
         passCase("resolve invalid.invalid (correctly failed)");
@@ -147,14 +147,14 @@ fn testTcp() void {
     passCase("socket_open TCP");
 
     // Resolve + connect to example.com:80
-    const dest_addr = net.dns.resolve("example.com", 5000) catch |e| {
+    const dest_addr = net.dns.resolve("example.com", 5000 * std.time.ns_per_ms) catch |e| {
         failCase("dns for TCP test", errCode(e));
         return;
     };
     const dest = dest_addr.withPort(80);
 
     testCase("socket_connect");
-    sock.connect(dest, 5000) catch |e| {
+    sock.connect(dest, 5000 * std.time.ns_per_ms) catch |e| {
         failCase("socket_connect", errCode(e));
         return;
     };
@@ -181,7 +181,7 @@ fn testTcp() void {
 
     // Read until connection closes
     while (total < buf.len - 1) {
-        const n = sock.recv(buf[total..], 5000) catch |e| {
+        const n = sock.recv(buf[total..], 5 * std.time.ns_per_s) catch |e| {
             if (e == error.NetClosed) break;
             break;
         };
@@ -343,7 +343,7 @@ fn testSntp() void {
     testCase("sntp_sync pool.ntp.org");
     ove.net_sntp.sync(.{
         .server = "pool.ntp.org",
-        .timeout_ms = 5000,
+        .timeout_ns = 5 * std.time.ns_per_s,
     }) catch |e| {
         failCase("sntp_sync", errCode(e));
         return;

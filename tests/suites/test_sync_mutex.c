@@ -99,7 +99,7 @@ static void test_mutex_contention_timeout(void **state)
 	ove_test_thread_run(&th, &s_th_storage, "hold", hold_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.locked, 1, 500));
 
-	assert_int_equal(ove_mutex_lock(mtx, 50), OVE_ERR_TIMEOUT);
+	assert_int_equal(ove_mutex_lock(mtx, OVE_MS(50)), OVE_ERR_TIMEOUT);
 
 	ove_test_thread_destroy(th);
 	ove_test_mutex_destroy(mtx);
@@ -116,7 +116,7 @@ static void test_mutex_contention_success(void **state)
 	ove_test_thread_run(&th, &s_th_storage, "rel", hold_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.locked, 1, 500));
 
-	assert_int_equal(ove_mutex_lock(mtx, 500), OVE_OK);
+	assert_int_equal(ove_mutex_lock(mtx, OVE_MS(500)), OVE_OK);
 	ove_mutex_unlock(mtx);
 
 	ove_test_thread_destroy(th);
@@ -190,7 +190,7 @@ static void test_mutex_short_timeout(void **state)
 
 	uint64_t start = 0, end = 0;
 	ove_time_get_us(&start);
-	int rc = ove_mutex_lock(mtx, 50);
+	int rc = ove_mutex_lock(mtx, OVE_MS(50));
 	ove_time_get_us(&end);
 	uint64_t elapsed = end - start;
 

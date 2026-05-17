@@ -168,10 +168,10 @@ void ove_socket_close(ove_socket_t sock);
  *
  * @param[in] sock       Socket handle.
  * @param[in] addr       Remote address.
- * @param[in] timeout_ms Timeout in milliseconds (OVE_WAIT_FOREVER to block).
+ * @param[in] timeout_ns Timeout in nanoseconds (OVE_WAIT_FOREVER to block).
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms);
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns);
 
 /**
  * @brief Bind a socket to a local address.
@@ -197,11 +197,11 @@ int ove_socket_listen(ove_socket_t sock, int backlog);
  * @param[in]  sock           Listening socket handle.
  * @param[out] client         Handle for the accepted connection.
  * @param[in]  client_storage Caller-allocated storage for the new socket.
- * @param[in]  timeout_ms     Timeout in milliseconds.
+ * @param[in]  timeout_ns     Timeout in nanoseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint32_t timeout_ms);
+		      uint64_t timeout_ns);
 
 /**
  * @brief Send data on a connected socket.
@@ -221,11 +221,11 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
  * @param[out] buf        Buffer to receive into.
  * @param[in]  len        Buffer size in bytes.
  * @param[out] received   Number of bytes received (may be NULL).
- * @param[in]  timeout_ms Timeout in milliseconds.
+ * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return OVE_OK on success, OVE_ERR_NET_CLOSED if peer closed.
  */
 int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
-		    uint32_t timeout_ms);
+		    uint64_t timeout_ns);
 
 /**
  * @brief Send a datagram to a specific destination.
@@ -248,11 +248,11 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
  * @param[in]  len        Buffer size in bytes.
  * @param[out] received   Number of bytes received (may be NULL).
  * @param[out] src        Filled with sender's address (may be NULL).
- * @param[in]  timeout_ms Timeout in milliseconds.
+ * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint32_t timeout_ms);
+			ove_sockaddr_t *src, uint64_t timeout_ns);
 
 #ifdef OVE_HEAP_NET
 /**
@@ -280,10 +280,10 @@ void ove_socket_destroy(ove_socket_t sock);
  *
  * @param[in]  hostname   Null-terminated hostname string.
  * @param[out] addr       Resolved address written here.
- * @param[in]  timeout_ms Timeout in milliseconds.
+ * @param[in]  timeout_ns Timeout in nanoseconds.
  * @return OVE_OK on success, negative error code on failure.
  */
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms);
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns);
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
@@ -356,11 +356,11 @@ static inline void ove_socket_close(ove_socket_t sock)
 	(void)sock;
 }
 static inline int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr,
-				     uint32_t timeout_ms)
+				     uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)addr;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
@@ -376,12 +376,12 @@ static inline int ove_socket_listen(ove_socket_t sock, int backlog)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_accept(ove_socket_t sock, ove_socket_t *client,
-				    ove_socket_storage_t *client_storage, uint32_t timeout_ms)
+				    ove_socket_storage_t *client_storage, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)client;
 	(void)client_storage;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sent)
@@ -393,13 +393,13 @@ static inline int ove_socket_send(ove_socket_t sock, const void *data, size_t le
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received,
-				  uint32_t timeout_ms)
+				  uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)buf;
 	(void)len;
 	(void)received;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *sent,
@@ -413,21 +413,21 @@ static inline int ove_socket_sendto(ove_socket_t sock, const void *data, size_t 
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-				      ove_sockaddr_t *src, uint32_t timeout_ms)
+				      ove_sockaddr_t *src, uint64_t timeout_ns)
 {
 	(void)sock;
 	(void)buf;
 	(void)len;
 	(void)received;
 	(void)src;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
+static inline int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	(void)hostname;
 	(void)addr;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b, uint8_t c,

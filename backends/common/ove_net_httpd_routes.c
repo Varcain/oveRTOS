@@ -30,6 +30,9 @@
 #include "ove/sync.h"
 #endif
 
+#include "ove_backend_common.h"
+
+#include <assert.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -85,7 +88,7 @@ static int s_log_mutex_inited;
 static void log_lock(void)
 {
 	if (s_log_mutex_inited)
-		ove_mutex_lock(s_log_mutex, OVE_WAIT_FOREVER);
+		OVE_LOCK_INFINITE(s_log_mutex);
 }
 
 static void log_unlock(void)
@@ -521,7 +524,9 @@ void ove_httpd_register_builtin_routes(void)
 {
 #ifdef CONFIG_OVE_SYNC
 	if (!s_log_mutex_inited) {
-		ove_mutex_init(&s_log_mutex, &s_log_mutex_storage);
+		int _rc = ove_mutex_init(&s_log_mutex, &s_log_mutex_storage);
+		assert(_rc == OVE_OK);
+		(void)_rc;
 		s_log_mutex_inited = 1;
 	}
 #endif

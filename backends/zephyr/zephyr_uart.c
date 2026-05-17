@@ -107,12 +107,12 @@ void ove_hal_uart_close(ove_uart_t uart)
 	}
 }
 
-int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint32_t timeout_ms,
+int ove_hal_uart_tx(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_written)
 {
 	const uint8_t *p = data;
 	size_t i;
-	(void)timeout_ms;
+	(void)timeout_ns;
 
 	for (i = 0; i < len; i++)
 		uart_poll_out(uart->dev, p[i]);

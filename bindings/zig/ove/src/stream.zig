@@ -53,15 +53,15 @@ fn HeapStream(comptime size: usize) type {
             c.ove_stream_destroy(self.handle);
         }
 
-        pub inline fn send(self: Self, data: []const u8, timeout_ms: u32) Error!usize {
+        pub inline fn send(self: Self, data: []const u8, timeout_ns: u64) Error!usize {
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ms, &sent));
+            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ns, &sent));
             return sent;
         }
 
-        pub inline fn receive(self: Self, buf: []u8, timeout_ms: u32) Error!usize {
+        pub inline fn receive(self: Self, buf: []u8, timeout_ns: u64) Error!usize {
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ms, &received));
+            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received));
             return received;
         }
 
@@ -121,17 +121,17 @@ fn ZeroHeapStream(comptime size: usize) type {
             self.tracker.clear();
         }
 
-        pub inline fn send(self: *Self, data: []const u8, timeout_ms: u32) Error!usize {
+        pub inline fn send(self: *Self, data: []const u8, timeout_ns: u64) Error!usize {
             self.tracker.assertSame(self, "ove.Stream");
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ms, &sent));
+            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ns, &sent));
             return sent;
         }
 
-        pub inline fn receive(self: *Self, buf: []u8, timeout_ms: u32) Error!usize {
+        pub inline fn receive(self: *Self, buf: []u8, timeout_ns: u64) Error!usize {
             self.tracker.assertSame(self, "ove.Stream");
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ms, &received));
+            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received));
             return received;
         }
 

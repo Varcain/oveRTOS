@@ -159,15 +159,6 @@ typedef enum ove_err {
  */
 #define OVE_WAIT_FOREVER UINT32_MAX
 
-/**
- * @brief uint64_t-ns variant of the wait-forever sentinel.
- *
- * Used by the new ns-resolution timeout APIs landing in the Phase 3
- * conversion. The legacy @c OVE_WAIT_FOREVER (UINT32_MAX) is preserved
- * for current ms-API callers until the atomic ABI break is complete.
- */
-#define OVE_TIMEOUT_INFINITE UINT64_MAX
-
 /*
  * Compile-time C-ABI shape check.  This file IS the C-ABI contract;
  * the assertions below pin the numeric values that every binding

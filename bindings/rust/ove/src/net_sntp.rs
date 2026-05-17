@@ -18,7 +18,7 @@
 //!
 //! let cfg = net_sntp::Config {
 //!     server: b"pool.ntp.org\0",
-//!     timeout_ms: 5000,
+//!     timeout: core::time::Duration::from_secs(5),
 //! };
 //! net_sntp::sync(&cfg).unwrap();
 //! let utc = net_sntp::get_utc().unwrap();
@@ -34,19 +34,19 @@ use crate::error::{Error, Result};
 /// SNTP client configuration.
 ///
 /// `server` must be a null-terminated byte string (e.g. `b"pool.ntp.org\0"`).
-/// A `timeout_ms` of 0 uses the default (5000 ms).
+/// A `timeout` of `Duration::ZERO` uses the default (5 s).
 pub struct Config<'a> {
     /// NTP server hostname (null-terminated).
     pub server: &'a [u8],
-    /// Query timeout in milliseconds (0 = default 5000).
-    pub timeout_ms: u32,
+    /// Query timeout (`Duration::ZERO` selects the default of 5 s).
+    pub timeout: core::time::Duration,
 }
 
 impl Default for Config<'_> {
     fn default() -> Self {
         Self {
             server: b"pool.ntp.org\0",
-            timeout_ms: 5000,
+            timeout: core::time::Duration::from_secs(5),
         }
     }
 }
@@ -65,7 +65,7 @@ impl Default for Config<'_> {
 pub fn sync(cfg: &Config) -> Result<()> {
     let c_cfg = bindings::ove_sntp_config_t {
         server: cfg.server.as_ptr() as *const _,
-        timeout_ms: cfg.timeout_ms,
+        timeout_ns: crate::time::dur_to_ns(cfg.timeout),
     };
     let rc = unsafe { bindings::ove_sntp_sync(&c_cfg) };
     Error::from_code(rc)

@@ -29,12 +29,12 @@ fn test_create() {
 fn test_signal_then_wait() {
     let evt = Event::new().unwrap();
     evt.signal();
-    evt.wait(0).unwrap();
+    evt.wait(core::time::Duration::ZERO).unwrap();
 }
 
 fn test_wait_timeout() {
     let evt = Event::new().unwrap();
-    let result = evt.wait(50);
+    let result = evt.wait(core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
@@ -44,7 +44,7 @@ fn test_cross_thread() {
     let _guard = PtrGuard::new(&EVT_PTR, &evt as *const Event as *mut ());
 
     let th = Thread::spawn(b"esig\0", evt_signal_entry, ove::Priority::Normal, 4096).unwrap();
-    evt.wait(500).unwrap();
+    evt.wait(core::time::Duration::from_millis(500)).unwrap();
     drop(th);
 
     drop(_guard);
@@ -54,14 +54,14 @@ fn test_cross_thread() {
 fn test_signal_from_isr() {
     let evt = Event::new().unwrap();
     evt.signal_from_isr();
-    evt.wait(0).unwrap();
+    evt.wait(core::time::Duration::ZERO).unwrap();
 }
 
 fn test_auto_reset() {
     let evt = Event::new().unwrap();
     evt.signal();
-    evt.wait(0).unwrap();
-    let result = evt.wait(50);
+    evt.wait(core::time::Duration::ZERO).unwrap();
+    let result = evt.wait(core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
@@ -69,7 +69,7 @@ fn test_raii_drop() {
     {
         let evt = Event::new().unwrap();
         evt.signal();
-        evt.wait(0).unwrap();
+        evt.wait(core::time::Duration::ZERO).unwrap();
     }
 }
 

@@ -103,7 +103,7 @@ static void test_dns(void)
 
 	TEST("resolve example.com");
 	ove_sockaddr_t addr;
-	int ret = ove_dns_resolve("example.com", &addr, 5000);
+	int ret = ove_dns_resolve("example.com", &addr, OVE_MS(5000));
 	if (ret == OVE_OK) {
 		OVE_LOG_INF("  -> %u.%u.%u.%u", addr.addr[0], addr.addr[1], addr.addr[2],
 			    addr.addr[3]);
@@ -113,7 +113,7 @@ static void test_dns(void)
 	}
 
 	TEST("resolve invalid.invalid (expect failure)");
-	ret = ove_dns_resolve("invalid.invalid", &addr, 3000);
+	ret = ove_dns_resolve("invalid.invalid", &addr, OVE_MS(3000));
 	if (ret != OVE_OK) {
 		PASS("resolve invalid.invalid (correctly failed)");
 	} else {
@@ -140,7 +140,7 @@ static void test_tcp(void)
 
 	/* Resolve + connect to example.com:80 */
 	ove_sockaddr_t addr;
-	ret = ove_dns_resolve("example.com", &addr, 5000);
+	ret = ove_dns_resolve("example.com", &addr, OVE_MS(5000));
 	if (ret != OVE_OK) {
 		FAIL("dns for TCP test", ret);
 		ove_socket_close(sock);
@@ -149,7 +149,7 @@ static void test_tcp(void)
 	addr.port = 80;
 
 	TEST("socket_connect");
-	ret = ove_socket_connect(sock, &addr, 5000);
+	ret = ove_socket_connect(sock, &addr, OVE_MS(5000));
 	if (ret != OVE_OK) {
 		FAIL("socket_connect", ret);
 		ove_socket_close(sock);
@@ -179,7 +179,7 @@ static void test_tcp(void)
 
 	/* Read until connection closes */
 	while (total < sizeof(buf) - 1) {
-		ret = ove_socket_recv(sock, buf + total, sizeof(buf) - 1 - total, &received, 5000);
+		ret = ove_socket_recv(sock, buf + total, sizeof(buf) - 1 - total, &received, OVE_MS(5000));
 		if (ret == OVE_ERR_NET_CLOSED)
 			break;
 		if (ret != OVE_OK)
@@ -260,7 +260,7 @@ static void test_udp(void)
 	char buf[64];
 	size_t received = 0;
 	ove_sockaddr_t src;
-	ret = ove_socket_recvfrom(sock, buf, sizeof(buf) - 1, &received, &src, 2000);
+	ret = ove_socket_recvfrom(sock, buf, sizeof(buf) - 1, &received, &src, OVE_MS(2000));
 	if (ret == OVE_OK && received == strlen(msg)) {
 		buf[received] = '\0';
 		if (strcmp(buf, msg) == 0) {
@@ -367,7 +367,7 @@ static void test_sntp(void)
 	TEST("sntp_sync pool.ntp.org");
 	ove_sntp_config_t sntp_cfg = {
 		.server = "pool.ntp.org",
-		.timeout_ms = 5000,
+		.timeout_ns = OVE_SEC(5),
 	};
 	int ret = ove_sntp_sync(&sntp_cfg);
 	if (ret == OVE_OK) {
@@ -468,7 +468,7 @@ static void test_mqtt(void)
 	TEST("mqtt_loop (receive published messages)");
 	mqtt_rx_count = 0;
 	for (int i = 0; i < 10; i++) {
-		ove_mqtt_loop(client, 500);
+		ove_mqtt_loop(client, OVE_MS(500));
 		if (mqtt_rx_count >= 2)
 			break;
 	}
@@ -498,7 +498,7 @@ static void test_mqtt(void)
 
 	/* Keepalive ping (skip if connection already closed) */
 	TEST("mqtt_loop keepalive ping");
-	ret = ove_mqtt_loop(client, 100);
+	ret = ove_mqtt_loop(client, OVE_MS(100));
 	PASS("mqtt_loop keepalive");
 
 	/* Disconnect */

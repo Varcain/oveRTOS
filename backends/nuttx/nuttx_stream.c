@@ -13,11 +13,19 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-static void ms_to_abstime(uint32_t ms, struct timespec *ts)
+static void ns_to_abstime(uint64_t ns, struct timespec *ts)
 {
 	clock_gettime(CLOCK_REALTIME, ts);
-	ts->tv_sec += ms / 1000;
-	ts->tv_nsec += (ms % 1000) * 1000000L;
+	/* Fast path: ns < 4.29 s -> 32-bit divide (single-cycle UDIV
+	 * on Cortex-M7).  Slow path stays a 64-bit divide. */
+	if (ns <= (uint64_t)UINT32_MAX) {
+		uint32_t n = (uint32_t)ns;
+		ts->tv_sec += (time_t)(n / 1000000000u);
+		ts->tv_nsec += (long)(n % 1000000000u);
+	} else {
+		ts->tv_sec += (time_t)(ns / 1000000000ULL);
+		ts->tv_nsec += (long)(ns % 1000000000ULL);
+	}
 	if (ts->tv_nsec >= 1000000000L) {
 		ts->tv_sec++;
 		ts->tv_nsec -= 1000000000L;
@@ -109,7 +117,7 @@ void ove_stream_destroy(ove_stream_t stream)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent)
 {
 	struct ove_stream *ns = stream;
@@ -126,11 +134,11 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t 
 
 	while (written < len) {
 		while (ns->count >= ns->size) {
-			if (timeout_ms == OVE_WAIT_FOREVER) {
+			if (timeout_ns == OVE_WAIT_FOREVER) {
 				pthread_cond_wait(&ns->not_full, &ns->lock);
 			} else {
 				struct timespec ts;
-				ms_to_abstime(timeout_ms, &ts);
+				ns_to_abstime(timeout_ns, &ts);
 				int ret = pthread_cond_timedwait(&ns->not_full, &ns->lock, &ts);
 				if (ret != 0) {
 					goto out;
@@ -170,7 +178,7 @@ out:
 	return OVE_OK;
 }
 
-int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received)
 {
 	struct ove_stream *ns = stream;
@@ -191,11 +199,11 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t time
 				goto out;
 			}
 
-			if (timeout_ms == OVE_WAIT_FOREVER) {
+			if (timeout_ns == OVE_WAIT_FOREVER) {
 				pthread_cond_wait(&ns->not_empty, &ns->lock);
 			} else {
 				struct timespec ts;
-				ms_to_abstime(timeout_ms, &ts);
+				ns_to_abstime(timeout_ns, &ts);
 				int ret = pthread_cond_timedwait(&ns->not_empty, &ns->lock, &ts);
 				if (ret != 0) {
 					goto out;

@@ -10,7 +10,10 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
+#include "ove_ns_to_ticks.h"
 #include "event_groups.h"
+
+
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
@@ -72,17 +75,17 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 }
 
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
-			     uint32_t timeout_ms, ove_eventbits_t *result)
+			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
 	BaseType_t wait_all = (flags & OVE_EG_WAIT_ALL) ? pdTRUE : pdFALSE;
 	BaseType_t clear = (flags & OVE_EG_CLEAR_ON_EXIT) ? pdTRUE : pdFALSE;
 	TickType_t ticks;
 	EventBits_t val;
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ticks = portMAX_DELAY;
 	} else {
-		ticks = pdMS_TO_TICKS(timeout_ms);
+		ticks = ove_ns_to_ticks(timeout_ns);
 	}
 
 	val = xEventGroupWaitBits(eg->handle, (EventBits_t)bits, clear, wait_all, ticks);

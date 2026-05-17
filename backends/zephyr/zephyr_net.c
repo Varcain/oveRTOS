@@ -25,6 +25,21 @@
 
 /* ---------- helpers ---------- */
 
+/* ns -> Zephyr struct zsock_timeval with fast path: <4.29 sec inputs
+ * use 32-bit divides (single-cycle UDIV on Cortex-M), >4.29 sec fall
+ * back to a 64-bit divide. */
+static inline void ove_ns_to_zsock_timeval(uint64_t ns, struct zsock_timeval *tv)
+{
+	if (ns <= (uint64_t)UINT32_MAX) {
+		uint32_t n = (uint32_t)ns;
+		tv->tv_sec = (time_t)(n / 1000000000u);
+		tv->tv_usec = (suseconds_t)((n % 1000000000u) / 1000u);
+	} else {
+		tv->tv_sec = (time_t)(ns / 1000000000ULL);
+		tv->tv_usec = (suseconds_t)((ns % 1000000000ULL) / 1000ULL);
+	}
+}
+
 static int zephyr_errno_to_ove(int err)
 {
 	switch (err) {
@@ -262,11 +277,11 @@ void ove_socket_destroy(ove_socket_t sock)
 }
 #endif
 
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	struct sockaddr_in sin;
 	sockaddr_to_zephyr(addr, &sin);
 	if (zsock_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
@@ -295,11 +310,11 @@ int ove_socket_listen(ove_socket_t sock, int backlog)
 }
 
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	int fd = zsock_accept(sock->fd, NULL, NULL);
 	if (fd < 0)
 		return zephyr_errno_to_ove(errno);
@@ -321,14 +336,13 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
 	return OVE_OK;
 }
 
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint32_t timeout_ms)
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct zsock_timeval tv;
-		tv.tv_sec = timeout_ms / 1000;
-		tv.tv_usec = (timeout_ms % 1000) * 1000;
+		ove_ns_to_zsock_timeval(timeout_ns, &tv);
 		zsock_setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	}
 	ssize_t n = zsock_recv(sock->fd, buf, len, 0);
@@ -360,14 +374,13 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 }
 
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint32_t timeout_ms)
+			ove_sockaddr_t *src, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct zsock_timeval tv;
-		tv.tv_sec = timeout_ms / 1000;
-		tv.tv_usec = (timeout_ms % 1000) * 1000;
+		ove_ns_to_zsock_timeval(timeout_ns, &tv);
 		zsock_setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	}
 	struct sockaddr_in sin;
@@ -412,24 +425,28 @@ static void dns_result_cb(enum dns_resolve_status status, struct dns_addrinfo *i
 	}
 }
 
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	if (!hostname || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	if (timeout_ms == 0)
-		timeout_ms = 10000;
+	if (timeout_ns == 0)
+		timeout_ns = OVE_SEC(10);
 
 	s_dns_done = 0;
 	k_sem_reset(&s_dns_sem);
 
 	uint16_t dns_id = 0;
+	/* Zephyr DNS API takes int32_t ms; clamp to that range. */
+	int32_t timeout_ms_clamped = (timeout_ns / 1000000ULL > (uint64_t)INT32_MAX)
+					     ? INT32_MAX
+					     : (int32_t)(timeout_ns / 1000000ULL);
 	int rc = dns_resolve_name(dns_resolve_get_default(), hostname, DNS_QUERY_TYPE_A, &dns_id,
-				  dns_result_cb, NULL, (int32_t)timeout_ms);
+				  dns_result_cb, NULL, timeout_ms_clamped);
 	if (rc < 0)
 		return OVE_ERR_NET_DNS_FAIL;
 
 	/* Wait for completion with timeout */
-	if (k_sem_take(&s_dns_sem, K_MSEC(timeout_ms)) != 0)
+	if (k_sem_take(&s_dns_sem, K_NSEC(timeout_ns)) != 0)
 		return OVE_ERR_TIMEOUT;
 
 	if (s_dns_done != 1)

@@ -10,14 +10,8 @@
 #include "ove/storage.h"
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
+#include "ove_ns_to_ticks.h"
 #include "stream_buffer.h"
-static TickType_t ms_to_ticks(uint32_t ms)
-{
-	if (ms == OVE_WAIT_FOREVER) {
-		return portMAX_DELAY;
-	}
-	return pdMS_TO_TICKS(ms);
-}
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
@@ -83,28 +77,28 @@ void ove_stream_destroy(ove_stream_t stream)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent)
 {
 	if (stream == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	size_t sent = xStreamBufferSend(stream->handle, data, len, ms_to_ticks(timeout_ms));
+	size_t sent = xStreamBufferSend(stream->handle, data, len, ove_ns_to_ticks(timeout_ns));
 	if (bytes_sent != NULL) {
 		*bytes_sent = sent;
 	}
 	return OVE_OK;
 }
 
-int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received)
 {
 	if (stream == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	size_t received = xStreamBufferReceive(stream->handle, buf, len, ms_to_ticks(timeout_ms));
+	size_t received = xStreamBufferReceive(stream->handle, buf, len, ove_ns_to_ticks(timeout_ns));
 	if (bytes_received != NULL) {
 		*bytes_received = received;
 	}

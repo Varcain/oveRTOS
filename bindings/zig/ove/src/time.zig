@@ -34,14 +34,19 @@ pub fn getNs() Error!u64 {
 ///
 /// Yields the CPU to other threads during the delay. Actual delay may be
 /// slightly longer depending on scheduler resolution.
-pub inline fn delayMs(ms: u32) void {
-    c.ove_time_delay_ms(ms);
+pub inline fn delayMs(milliseconds: u32) void {
+    c.ove_time_delay_ms(milliseconds);
 }
 
 /// Block the calling thread for at least `us` microseconds.
 ///
 /// May be implemented as a busy-wait spin on platforms lacking sub-millisecond
 /// sleep support. Prefer `delayMs()` for longer delays.
-pub inline fn delayUs(us: u32) void {
-    c.ove_time_delay_us(us);
+pub inline fn delayUs(microseconds: u32) void {
+    c.ove_time_delay_us(microseconds);
 }
+
+// For timeout expressions, use Zig's stdlib constants directly — that's
+// the idiomatic Zig pattern (mirrors std.time.sleep callers):
+//   try queue.send(&item, 100 * std.time.ns_per_ms);
+//   try mutex.lock(5 * std.time.ns_per_s);

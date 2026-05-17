@@ -32,19 +32,19 @@ fn test_create_counting() {
 
 fn test_take_initial_one() {
     let sem = Semaphore::new(1, 1).unwrap();
-    sem.take(0).unwrap();
+    sem.take(core::time::Duration::ZERO).unwrap();
 }
 
 fn test_take_timeout() {
     let sem = Semaphore::new(0, 10).unwrap();
-    let result = sem.take(50);
+    let result = sem.take(core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
 fn test_give_then_take() {
     let sem = Semaphore::new(0, 10).unwrap();
     sem.give();
-    sem.take(0).unwrap();
+    sem.take(core::time::Duration::ZERO).unwrap();
 }
 
 fn test_counting() {
@@ -53,9 +53,9 @@ fn test_counting() {
         sem.give();
     }
     for _ in 0..3 {
-        sem.take(0).unwrap();
+        sem.take(core::time::Duration::ZERO).unwrap();
     }
-    let result = sem.take(10);
+    let result = sem.take(core::time::Duration::from_millis(10));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
@@ -65,7 +65,7 @@ fn test_producer_consumer() {
     let _guard = PtrGuard::new(&SEM_PTR, &sem as *const Semaphore as *mut ());
 
     let th = Thread::spawn(b"prod\0", sem_give_entry, ove::Priority::Normal, 4096).unwrap();
-    sem.take(500).unwrap();
+    sem.take(core::time::Duration::from_millis(500)).unwrap();
     drop(th);
 
     drop(_guard);
@@ -75,7 +75,7 @@ fn test_producer_consumer() {
 fn test_raii_drop() {
     {
         let sem = Semaphore::new(1, 1).unwrap();
-        sem.take(0).unwrap();
+        sem.take(core::time::Duration::ZERO).unwrap();
         sem.give();
     }
 }

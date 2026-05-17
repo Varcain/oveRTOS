@@ -124,7 +124,7 @@ fn test_dns() {
     ove::log_inf!("=== DNS Resolution ===");
 
     test("resolve example.com");
-    match ove::net::dns_resolve(b"example.com\0", 5000) {
+    match ove::net::dns_resolve(b"example.com\0", core::time::Duration::from_secs(5)) {
         Ok(addr) => {
             let o = addr.octets();
             ove::log_inf!("  -> {}.{}.{}.{}", o[0], o[1], o[2], o[3]);
@@ -134,7 +134,7 @@ fn test_dns() {
     }
 
     test("resolve invalid.invalid (expect failure)");
-    match ove::net::dns_resolve(b"invalid.invalid\0", 3000) {
+    match ove::net::dns_resolve(b"invalid.invalid\0", core::time::Duration::from_secs(3)) {
         Err(_) => pass("resolve invalid.invalid (correctly failed)"),
         Ok(_) => fail("resolve invalid.invalid (should have failed)", 0),
     }
@@ -159,7 +159,7 @@ fn test_tcp() {
         }
     };
 
-    let mut dest = match ove::net::dns_resolve(b"example.com\0", 5000) {
+    let mut dest = match ove::net::dns_resolve(b"example.com\0", core::time::Duration::from_secs(5)) {
         Ok(a) => a,
         Err(e) => {
             fail("dns for TCP test", err_code(e));
@@ -169,7 +169,7 @@ fn test_tcp() {
     dest.set_port(80);
 
     test("socket_connect");
-    match sock.connect(&dest, 5000) {
+    match sock.connect(&dest, core::time::Duration::from_millis(5000)) {
         Ok(()) => pass("socket_connect"),
         Err(e) => {
             fail("socket_connect", err_code(e));
@@ -200,7 +200,7 @@ fn test_tcp() {
     let mut total = 0usize;
     while total < buf.len() - 1 {
         let end = buf.len() - 1;
-        match sock.recv(&mut buf[total..end], 5000) {
+        match sock.recv(&mut buf[total..end], core::time::Duration::from_secs(5)) {
             Ok(n) => total += n,
             Err(ove::Error::NetClosed) => break,
             Err(_) => break,
@@ -274,7 +274,7 @@ fn test_udp() {
 
     test("socket_recvfrom");
     let mut buf = [0u8; 64];
-    match sock.recv_from(&mut buf, 2000) {
+    match sock.recv_from(&mut buf, core::time::Duration::from_secs(2)) {
         Ok((n, _src)) if n == UDP_MSG.len() => {
             if &buf[..n] == UDP_MSG {
                 pass("socket_recvfrom (echo match)");
@@ -380,7 +380,7 @@ fn test_sntp() {
     test("sntp_sync pool.ntp.org");
     let cfg = ove::net_sntp::Config {
         server: b"pool.ntp.org\0",
-        timeout_ms: 5000,
+        timeout: core::time::Duration::from_secs(5),
     };
     match ove::net_sntp::sync(&cfg) {
         Ok(()) => {
@@ -459,7 +459,7 @@ fn test_mqtt() {
     test("mqtt_loop (receive published messages)");
     MQTT_RX_COUNT.store(0, Ordering::Relaxed);
     for _ in 0..10 {
-        let _ = mqtt.poll(500);
+        let _ = mqtt.poll(core::time::Duration::from_millis(500));
         if MQTT_RX_COUNT.load(Ordering::Relaxed) >= 2 {
             break;
         }
@@ -484,7 +484,7 @@ fn test_mqtt() {
     }
 
     test("mqtt_loop keepalive ping");
-    let _ = mqtt.poll(100);
+    let _ = mqtt.poll(core::time::Duration::from_millis(100));
     pass("mqtt_loop keepalive");
 
     test("mqtt_disconnect");

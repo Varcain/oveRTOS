@@ -98,7 +98,7 @@ static void stream_throughput_teardown(void *ctx)
 	/* Drain so producer can unblock */
 	size_t received = 0;
 
-	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE, 100, &received);
+	ove_stream_receive(bench_strm, rx_buf, STREAM_MSG_SIZE, OVE_MS(100), &received);
 	ove_thread_sleep_ms(10);
 	ove_thread_deinit(stream_producer_th);
 	ove_stream_deinit(bench_strm);

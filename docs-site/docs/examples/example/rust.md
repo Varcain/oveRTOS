@@ -42,7 +42,7 @@ fn producer_entry() {
 
     loop {
         count += 1;
-        match QUEUE.send(&count, 1000) {
+        match QUEUE.send(&count, core::time::Duration::from_millis(1000)) {
             Ok(())                  => {}
             Err(Error::QueueFull)   => ove::log_wrn!("Producer: queue full, dropped {}", count),
             Err(_)                  => ove::log_err!("Producer: send error"),

@@ -36,7 +36,7 @@ extern "C" {
  */
 typedef struct {
 	const char *server;  /**< NTP server hostname (e.g. "pool.ntp.org"). */
-	uint32_t timeout_ms; /**< Query timeout in milliseconds (0 = 5000). */
+	uint64_t timeout_ns; /**< Query timeout in nanoseconds (0 = 5 seconds). */
 } ove_sntp_config_t;
 
 #ifdef CONFIG_OVE_NET_SNTP

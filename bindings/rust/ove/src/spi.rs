@@ -36,7 +36,7 @@ pub fn transfer(
     cs: Option<&bindings::ove_spi_cs>,
     tx: &[u8],
     rx: &mut [u8],
-    timeout_ms: u32,
+    timeout: core::time::Duration,
 ) -> Result<()> {
     let len = tx.len().max(rx.len());
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
@@ -50,7 +50,7 @@ pub fn transfer(
     } else {
         rx.as_mut_ptr().cast()
     };
-    let rc = unsafe { bindings::ove_spi_transfer(spi, cs_ptr, tx_ptr, rx_ptr, len, timeout_ms) };
+    let rc = unsafe { bindings::ove_spi_transfer(spi, cs_ptr, tx_ptr, rx_ptr, len, crate::time::dur_to_ns(timeout)) };
     Error::from_code(rc)
 }
 
@@ -59,11 +59,11 @@ pub fn write(
     spi: bindings::ove_spi_t,
     cs: Option<&bindings::ove_spi_cs>,
     data: &[u8],
-    timeout_ms: u32,
+    timeout: core::time::Duration,
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_write(spi, cs_ptr, data.as_ptr().cast(), data.len(), timeout_ms)
+        bindings::ove_spi_write(spi, cs_ptr, data.as_ptr().cast(), data.len(), crate::time::dur_to_ns(timeout))
     };
     Error::from_code(rc)
 }
@@ -73,11 +73,11 @@ pub fn read(
     spi: bindings::ove_spi_t,
     cs: Option<&bindings::ove_spi_cs>,
     buf: &mut [u8],
-    timeout_ms: u32,
+    timeout: core::time::Duration,
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_read(spi, cs_ptr, buf.as_mut_ptr().cast(), buf.len(), timeout_ms)
+        bindings::ove_spi_read(spi, cs_ptr, buf.as_mut_ptr().cast(), buf.len(), crate::time::dur_to_ns(timeout))
     };
     Error::from_code(rc)
 }
@@ -87,11 +87,11 @@ pub fn transfer_seq(
     spi: bindings::ove_spi_t,
     cs: Option<&bindings::ove_spi_cs>,
     xfers: &[bindings::ove_spi_xfer],
-    timeout_ms: u32,
+    timeout: core::time::Duration,
 ) -> Result<()> {
     let cs_ptr = cs.map_or(core::ptr::null(), |c| c as *const _);
     let rc = unsafe {
-        bindings::ove_spi_transfer_seq(spi, cs_ptr, xfers.as_ptr(), xfers.len() as u32, timeout_ms)
+        bindings::ove_spi_transfer_seq(spi, cs_ptr, xfers.as_ptr(), xfers.len() as u32, crate::time::dur_to_ns(timeout))
     };
     Error::from_code(rc)
 }

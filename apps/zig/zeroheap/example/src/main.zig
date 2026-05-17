@@ -157,7 +157,7 @@ fn producerEntry() void {
 
         // In zero-heap mode the wrapper is pinned; methods take *Self,
         // so we call directly on the file-scope `queue` variable.
-        queue.send(&count, 1000) catch |e| {
+        queue.send(&count, 1000 * std.time.ns_per_ms) catch |e| {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),

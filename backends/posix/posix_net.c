@@ -23,6 +23,15 @@
 
 /* ---------- helpers ---------- */
 
+/* poll() expects timeout in int milliseconds. Convert ns to ms with
+ * round-up and saturate to INT_MAX (effectively wait-forever). */
+#include <limits.h>
+static inline int ns_to_poll_ms(uint64_t timeout_ns)
+{
+	uint64_t ms = (timeout_ns + 999999ULL) / 1000000ULL;
+	return ms > (uint64_t)INT_MAX ? INT_MAX : (int)ms;
+}
+
 static int errno_to_ove(int err)
 {
 	switch (err) {
@@ -256,7 +265,7 @@ void ove_socket_destroy(ove_socket_t sock)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
@@ -265,7 +274,7 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t t
 	socklen_t slen;
 	sockaddr_to_posix(addr, &ss, &slen);
 
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		if (connect(sock->fd, (struct sockaddr *)&ss, slen) < 0)
 			return errno_to_ove(errno);
 		return OVE_OK;
@@ -287,7 +296,7 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t t
 	}
 
 	struct pollfd pfd = {.fd = sock->fd, .events = POLLOUT};
-	int pr = poll(&pfd, 1, (int)timeout_ms);
+	int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
 	fcntl(sock->fd, F_SETFL, flags);
 
 	if (pr == 0)
@@ -326,14 +335,14 @@ int ove_socket_listen(ove_socket_t sock, int backlog)
 }
 
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
-		int pr = poll(&pfd, 1, (int)timeout_ms);
+		int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
 		if (pr == 0)
 			return OVE_ERR_TIMEOUT;
 		if (pr < 0)
@@ -362,14 +371,14 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
 	return OVE_OK;
 }
 
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint32_t timeout_ms)
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
-		int pr = poll(&pfd, 1, (int)timeout_ms);
+		int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
 		if (pr == 0)
 			return OVE_ERR_TIMEOUT;
 		if (pr < 0)
@@ -403,14 +412,14 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 }
 
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint32_t timeout_ms)
+			ove_sockaddr_t *src, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
-		int pr = poll(&pfd, 1, (int)timeout_ms);
+		int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
 		if (pr == 0)
 			return OVE_ERR_TIMEOUT;
 		if (pr < 0)
@@ -433,9 +442,9 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 
 /* ---------- DNS ---------- */
 
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
-	(void)timeout_ms; /* POSIX getaddrinfo has no timeout knob */
+	(void)timeout_ns; /* POSIX getaddrinfo has no timeout knob */
 	if (!hostname || !addr)
 		return OVE_ERR_INVALID_PARAM;
 

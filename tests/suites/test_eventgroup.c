@@ -100,7 +100,7 @@ static void test_eg_wait_all(void **state)
 	ove_eventgroup_set_bits(eg, BIT_0 | BIT_1);
 
 	ove_eventbits_t actual = 0;
-	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, OVE_EG_WAIT_ALL, 100, &actual);
+	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, OVE_EG_WAIT_ALL, OVE_MS(100), &actual);
 	assert_int_equal(rc, OVE_OK);
 	assert_true((actual & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
 
@@ -116,7 +116,7 @@ static void test_eg_wait_any(void **state)
 	ove_eventgroup_set_bits(eg, BIT_0);
 
 	ove_eventbits_t actual = 0;
-	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, 0, 100, &actual);
+	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, 0, OVE_MS(100), &actual);
 	assert_int_equal(rc, OVE_OK);
 	assert_true(actual & BIT_0);
 
@@ -130,7 +130,7 @@ static void test_eg_wait_timeout(void **state)
 	ove_test_eventgroup_create(&eg, &s_eg_storage);
 
 	ove_eventbits_t actual = 0;
-	int rc = ove_eventgroup_wait_bits(eg, BIT_0, OVE_EG_WAIT_ALL, 10, &actual);
+	int rc = ove_eventgroup_wait_bits(eg, BIT_0, OVE_EG_WAIT_ALL, OVE_MS(10), &actual);
 	assert_int_equal(rc, OVE_ERR_TIMEOUT);
 
 	ove_test_eventgroup_destroy(eg);
@@ -187,7 +187,7 @@ static void test_eg_cross_thread(void **state)
 	ove_test_thread_run(&th, &s_th_storage, "setter", setter_thread, &ctx, s_th_stack, 4096);
 
 	ove_eventbits_t actual = 0;
-	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, OVE_EG_WAIT_ALL, 500, &actual);
+	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, OVE_EG_WAIT_ALL, OVE_MS(500), &actual);
 	assert_int_equal(rc, OVE_OK);
 	assert_true((actual & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
 

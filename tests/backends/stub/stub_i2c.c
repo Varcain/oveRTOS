@@ -31,34 +31,34 @@ void ove_hal_i2c_close(ove_i2c_t i2c)
 }
 
 int ove_hal_i2c_write(ove_i2c_t i2c, uint16_t addr, const void *data, size_t len,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	(void)i2c;
 	(void)addr;
 	(void)data;
 	(void)len;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	return OVE_OK;
 }
 
-int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint32_t timeout_ms)
+int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64_t timeout_ns)
 {
 	(void)i2c;
 	(void)addr;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	if (buf != NULL && len > 0)
 		memset(buf, 0, len);
 	return OVE_OK;
 }
 
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
-			   size_t rx_len, uint32_t timeout_ms)
+			   size_t rx_len, uint64_t timeout_ns)
 {
 	(void)i2c;
 	(void)addr;
 	(void)tx;
 	(void)tx_len;
-	(void)timeout_ms;
+	(void)timeout_ns;
 	if (rx != NULL && rx_len > 0)
 		memset(rx, 0, rx_len);
 	return OVE_OK;

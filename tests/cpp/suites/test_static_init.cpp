@@ -20,7 +20,7 @@ static void test_cpp_static_mutex_lock_unlock(void **state)
 {
 	(void)state;
 	ove::Mutex mtx;
-	assert_int_equal(mtx.lock(OVE_WAIT_FOREVER), OVE_OK);
+	assert_int_equal(mtx.lock(ove::wait_forever), OVE_OK);
 	mtx.unlock();
 }
 
@@ -40,7 +40,7 @@ static void test_cpp_static_semaphore_init(void **state)
 	(void)state;
 	ove::Semaphore sem(1, 1);
 	assert_true(sem.valid());
-	assert_int_equal(sem.take(0), OVE_OK);
+	assert_int_equal(sem.take(std::chrono::milliseconds{0}), OVE_OK);
 	sem.give();
 }
 
@@ -52,7 +52,7 @@ static void test_cpp_static_event_init(void **state)
 	ove::Event evt;
 	assert_true(evt.valid());
 	evt.signal();
-	assert_int_equal(evt.wait(0), OVE_OK);
+	assert_int_equal(evt.wait(std::chrono::milliseconds{0}), OVE_OK);
 }
 
 /* ── CondVar ────────────────────────────────────────────────────────── */
@@ -84,9 +84,9 @@ static void test_cpp_static_queue_init(void **state)
 	assert_true(q.valid());
 
 	uint32_t val = 42;
-	assert_int_equal(q.send(val, 0), OVE_OK);
+	assert_int_equal(q.send(val, std::chrono::milliseconds{0}), OVE_OK);
 	uint32_t out = 0;
-	assert_int_equal(q.receive(&out, 0), OVE_OK);
+	assert_int_equal(q.receive(&out, std::chrono::milliseconds{0}), OVE_OK);
 	assert_int_equal(out, 42);
 }
 
@@ -148,7 +148,7 @@ static void test_cpp_static_stream_init(void **state)
 
 	const uint8_t data[] = {1, 2, 3};
 	size_t sent = 0;
-	assert_int_equal(s.send(data, sizeof(data), 0, &sent), OVE_OK);
+	assert_int_equal(s.send(data, sizeof(data), std::chrono::milliseconds{0}, &sent), OVE_OK);
 	assert_int_equal(sent, sizeof(data));
 }
 
@@ -179,7 +179,7 @@ static void test_cpp_static_raii_deinit(void **state)
 	 * by the destructor. */
 	{
 		ove::Mutex mtx;
-		(void)mtx.lock(OVE_WAIT_FOREVER);
+		(void)mtx.lock(ove::wait_forever);
 		mtx.unlock();
 		/* destructor runs here */
 	}

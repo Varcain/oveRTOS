@@ -421,13 +421,13 @@ static void httpd_task(void *arg)
 
 	while (s_running) {
 		/*
-		 * Accept timeout: 50ms when WebSocket connections are
-		 * active (to poll them frequently), 1000ms otherwise.
+		 * Accept timeout: 50 ms when WebSocket connections are
+		 * active (to poll them frequently), 1000 ms otherwise.
 		 */
-		int accept_timeout = 1000;
+		uint64_t accept_timeout = OVE_MS(1000);
 #ifdef CONFIG_OVE_NET_HTTPD_WS
 		if (ove_httpd_ws_active_count() > 0)
-			accept_timeout = 50;
+			accept_timeout = OVE_MS(50);
 #endif
 
 		ove_socket_t client;
@@ -446,7 +446,7 @@ static void httpd_task(void *arg)
 		/* Receive request header */
 		char buf[1024];
 		size_t received = 0;
-		ret = ove_socket_recv(client, buf, sizeof(buf) - 1, &received, 5000);
+		ret = ove_socket_recv(client, buf, sizeof(buf) - 1, &received, OVE_MS(5000));
 		if (ret != OVE_OK || received == 0) {
 			ove_socket_close(client);
 			continue;

@@ -77,7 +77,7 @@ void ove_stream_destroy(ove_stream_t stream)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent)
 {
 	k_timeout_t timeout;
@@ -87,10 +87,10 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t 
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
-		timeout = K_MSEC(timeout_ms);
+		timeout = K_NSEC(timeout_ns);
 	}
 
 	ret = k_pipe_write(&stream->pipe, (const uint8_t *)data, len, timeout);
@@ -104,7 +104,7 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t 
 	return OVE_OK;
 }
 
-int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received)
 {
 	k_timeout_t timeout;
@@ -114,10 +114,10 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t time
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		timeout = K_FOREVER;
 	} else {
-		timeout = K_MSEC(timeout_ms);
+		timeout = K_NSEC(timeout_ns);
 	}
 
 	ret = k_pipe_read(&stream->pipe, (uint8_t *)buf, len, timeout);

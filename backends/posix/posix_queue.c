@@ -13,11 +13,11 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
+static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 {
 	clock_gettime(CLOCK_REALTIME, ts);
-	ts->tv_sec += timeout_ms / 1000;
-	ts->tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+	ts->tv_sec += (time_t)(timeout_ns / 1000000000ULL);
+	ts->tv_nsec += (long)(timeout_ns % 1000000000ULL);
 	if (ts->tv_nsec >= 1000000000L) {
 		ts->tv_sec += 1;
 		ts->tv_nsec -= 1000000000L;
@@ -90,12 +90,12 @@ void ove_queue_destroy(ove_queue_t q)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
+int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 {
 	struct ove_queue *sq = q;
 	pthread_mutex_lock(&sq->lock);
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		while (sq->count >= sq->max_items) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -105,7 +105,7 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 		}
 	} else {
 		struct timespec ts;
-		ms_to_abstime(timeout_ms, &ts);
+		ns_to_abstime(timeout_ns, &ts);
 		while (sq->count >= sq->max_items) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -114,7 +114,7 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
-				return (timeout_ms == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
+				return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 			}
 		}
 	}
@@ -128,12 +128,12 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 	return OVE_OK;
 }
 
-int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
+int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
 {
 	struct ove_queue *sq = q;
 	pthread_mutex_lock(&sq->lock);
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		while (sq->count == 0) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -143,7 +143,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 		}
 	} else {
 		struct timespec ts;
-		ms_to_abstime(timeout_ms, &ts);
+		ns_to_abstime(timeout_ns, &ts);
 		while (sq->count == 0) {
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_ENTER, sq);
 			ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
@@ -152,7 +152,7 @@ int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
 			OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_WAIT_EXIT, sq);
 			if (ret == ETIMEDOUT) {
 				pthread_mutex_unlock(&sq->lock);
-				return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
+				return (timeout_ns == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 			}
 		}
 	}

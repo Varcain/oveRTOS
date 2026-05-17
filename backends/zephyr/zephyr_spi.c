@@ -46,9 +46,9 @@ void ove_hal_spi_close(ove_spi_t spi)
 	spi->dev = NULL;
 }
 
-int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint32_t timeout_ms)
+int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, uint64_t timeout_ns)
 {
-	(void)timeout_ms;
+	(void)timeout_ns;
 
 	uint16_t operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(spi->word_size);
 

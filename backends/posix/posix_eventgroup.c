@@ -12,11 +12,11 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
+static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 {
 	clock_gettime(CLOCK_REALTIME, ts);
-	ts->tv_sec += timeout_ms / 1000;
-	ts->tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+	ts->tv_sec += (time_t)(timeout_ns / 1000000000ULL);
+	ts->tv_nsec += (long)(timeout_ns % 1000000000ULL);
 	if (ts->tv_nsec >= 1000000000L) {
 		ts->tv_sec += 1;
 		ts->tv_nsec -= 1000000000L;
@@ -101,7 +101,7 @@ ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t b
 }
 
 int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t flags,
-			     uint32_t timeout_ms, ove_eventbits_t *result)
+			     uint64_t timeout_ns, ove_eventbits_t *result)
 {
 	struct ove_eventgroup *g = eg;
 	if (!g) {
@@ -113,8 +113,8 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 	pthread_mutex_lock(&g->lock);
 
 	struct timespec ts;
-	if (timeout_ms != OVE_WAIT_FOREVER) {
-		ms_to_abstime(timeout_ms, &ts);
+	if (timeout_ns != OVE_WAIT_FOREVER) {
+		ns_to_abstime(timeout_ns, &ts);
 	}
 
 	for (;;) {
@@ -137,7 +137,7 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 		}
 
 		int ret;
-		if (timeout_ms == OVE_WAIT_FOREVER) {
+		if (timeout_ns == OVE_WAIT_FOREVER) {
 			ret = pthread_cond_wait(&g->cond, &g->lock);
 		} else {
 			ret = pthread_cond_timedwait(&g->cond, &g->lock, &ts);

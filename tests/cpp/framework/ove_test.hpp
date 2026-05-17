@@ -9,6 +9,10 @@
 #ifndef OVE_TEST_CPP_HPP
 #define OVE_TEST_CPP_HPP
 
+/* Pull in <chrono> (via ove.hpp) BEFORE cmocka so std::chrono internals
+ * don't collide with cmocka's bare `fail()` macro. */
+#include "ove/ove.hpp"
+
 extern "C" {
 #include <stdarg.h>
 #include <stddef.h>
@@ -16,8 +20,6 @@ extern "C" {
 #include <setjmp.h>
 #include <cmocka.h>
 }
-
-#include "ove/ove.hpp"
 
 #include <atomic>
 #include <type_traits>

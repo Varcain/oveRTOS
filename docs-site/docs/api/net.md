@@ -201,9 +201,9 @@ ove_socket_storage_t storage;
 ove_socket_open(&sock, &storage, OVE_AF_INET, OVE_SOCK_STREAM);
 
 ove_sockaddr_t dest;
-ove_dns_resolve("example.com", &dest, 5000);
+ove_dns_resolve("example.com", &dest, OVE_SEC(5));
 dest.port = 80;
-ove_socket_connect(sock, &dest, 5000);
+ove_socket_connect(sock, &dest, OVE_SEC(5));
 
 const char *req = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
 size_t sent;
@@ -211,7 +211,7 @@ ove_socket_send(sock, req, strlen(req), &sent);
 
 char buf[512];
 size_t received;
-ove_socket_recv(sock, buf, sizeof(buf), &received, 5000);
+ove_socket_recv(sock, buf, sizeof(buf), &received, OVE_SEC(5));
 
 ove_socket_close(sock);
 ```
@@ -261,14 +261,14 @@ ove_socket_close(sock);
 
 ```c
 ove_sockaddr_t addr;
-int rc = ove_dns_resolve("example.com", &addr, 10000);
+int rc = ove_dns_resolve("example.com", &addr, OVE_SEC(10));
 if (rc == OVE_OK) {
     /* addr.addr[0..3] contains the IPv4 address */
     addr.port = 80;  /* set port for subsequent connect */
 }
 ```
 
-The hostname must be a null-terminated C string. The timeout is in milliseconds.
+The hostname must be a null-terminated C string. The timeout is in nanoseconds; use `OVE_MS(...)` or `OVE_SEC(...)` for ergonomic values.
 
 ## TLS
 
@@ -380,7 +380,7 @@ ove_mqtt_subscribe(mqtt, "my/topic", OVE_MQTT_QOS0);
 ove_mqtt_publish(mqtt, "my/topic", "hello", 5, OVE_MQTT_QOS1);
 
 /* Call periodically to process incoming messages and send keep-alive */
-ove_mqtt_loop(mqtt, 500);
+ove_mqtt_loop(mqtt, OVE_MS(500));
 
 ove_mqtt_disconnect(mqtt);
 ove_mqtt_client_deinit(mqtt);
@@ -480,7 +480,7 @@ ove_httpd_ws_broadcast("/ws", "hello", 5);
 Requires `CONFIG_OVE_NET_SNTP`. Performs a single NTP query to get UTC time.
 
 ```c
-ove_sntp_config_t cfg = { .server = "pool.ntp.org", .timeout_ms = 5000 };
+ove_sntp_config_t cfg = { .server = "pool.ntp.org", .timeout_ns = OVE_SEC(5) };
 ove_sntp_sync(&cfg);
 /* Passing NULL uses the built-in defaults (pool.ntp.org, 5 s timeout). */
 

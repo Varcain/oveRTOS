@@ -12,9 +12,12 @@
 #include <nuttx/irq.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
+#include "ove_ns_to_ticks.h"
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
+
+
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,
@@ -94,20 +97,20 @@ void ove_queue_destroy(ove_queue_t q)
 
 /* ─── Operations ─────────────────────────────────────────────────────── */
 
-int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
+int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 {
 	DEBUGASSERT(q != NULL);
 	struct ove_queue *nq = q;
 	irqstate_t flags;
 	int ret;
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ret = nxsem_wait_uninterruptible(&nq->not_full);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&nq->not_full, MSEC2TICK(timeout_ms));
+		ret = nxsem_tickwait_uninterruptible(&nq->not_full, ove_ns_to_ticks(timeout_ns));
 	}
 	if (ret < 0) {
-		return (timeout_ms == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
+		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
 
 	flags = enter_critical_section();
@@ -119,20 +122,20 @@ int ove_queue_send(ove_queue_t q, const void *data, uint32_t timeout_ms)
 	return OVE_OK;
 }
 
-int ove_queue_receive(ove_queue_t q, void *buf, uint32_t timeout_ms)
+int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
 {
 	DEBUGASSERT(q != NULL);
 	struct ove_queue *nq = q;
 	irqstate_t flags;
 	int ret;
 
-	if (timeout_ms == OVE_WAIT_FOREVER) {
+	if (timeout_ns == OVE_WAIT_FOREVER) {
 		ret = nxsem_wait_uninterruptible(&nq->not_empty);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&nq->not_empty, MSEC2TICK(timeout_ms));
+		ret = nxsem_tickwait_uninterruptible(&nq->not_empty, ove_ns_to_ticks(timeout_ns));
 	}
 	if (ret < 0) {
-		return (timeout_ms == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
+		return (timeout_ns == 0) ? OVE_ERR_QUEUE_EMPTY : OVE_ERR_TIMEOUT;
 	}
 
 	flags = enter_critical_section();

@@ -173,7 +173,7 @@ fn producer_entry() {
     loop {
         count += 1;
 
-        match QUEUE.send(&count, 1000) {
+        match QUEUE.send(&count, core::time::Duration::from_millis(1000)) {
             Ok(()) => {}
             Err(ove::Error::Timeout) => ove::log_wrn!("Producer: send timeout"),
             Err(ove::Error::QueueFull) => {

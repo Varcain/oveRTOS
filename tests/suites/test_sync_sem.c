@@ -63,7 +63,7 @@ static void test_sem_take_timeout(void **state)
 	(void)state;
 	ove_sem_t sem = NULL;
 	ove_test_sem_create(&sem, &s_sem_storage, 0, 10);
-	assert_int_equal(ove_sem_take(sem, 50), OVE_ERR_TIMEOUT);
+	assert_int_equal(ove_sem_take(sem, OVE_MS(50)), OVE_ERR_TIMEOUT);
 	ove_test_sem_destroy(sem);
 }
 
@@ -86,7 +86,7 @@ static void test_sem_counting(void **state)
 		ove_sem_give(sem);
 	for (int i = 0; i < 3; i++)
 		assert_int_equal(ove_sem_take(sem, 0), OVE_OK);
-	assert_int_equal(ove_sem_take(sem, 10), OVE_ERR_TIMEOUT);
+	assert_int_equal(ove_sem_take(sem, OVE_MS(10)), OVE_ERR_TIMEOUT);
 	ove_test_sem_destroy(sem);
 }
 
@@ -99,7 +99,7 @@ static void test_sem_producer_consumer(void **state)
 
 	ove_thread_t th = NULL;
 	ove_test_thread_run(&th, &s_th_storage, "prod", sem_give_entry, &ctx, s_th_stack, 4096);
-	assert_int_equal(ove_sem_take(sem, 500), OVE_OK);
+	assert_int_equal(ove_sem_take(sem, OVE_MS(500)), OVE_OK);
 	ove_test_thread_destroy(th);
 	assert_int_equal(ctx.done, 1);
 	ove_test_sem_destroy(sem);

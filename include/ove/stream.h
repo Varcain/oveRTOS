@@ -102,39 +102,39 @@ void ove_stream_destroy(ove_stream_t stream);
  * @brief Send bytes into the stream from task context.
  *
  * Copies up to @p len bytes from @p data into the stream. Blocks for at most
- * @p timeout_ms milliseconds if the stream has insufficient space. The actual
+ * @p timeout_ns nanoseconds if the stream has insufficient space. The actual
  * number of bytes accepted is written to @p bytes_sent when not @c NULL.
  *
  * @param[in]  stream      Stream handle.
  * @param[in]  data        Pointer to the data to send.
  * @param[in]  len         Number of bytes to send.
- * @param[in]  timeout_ms  Maximum wait time in milliseconds; 0 for non-blocking.
+ * @param[in]  timeout_ns  Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_sent  Receives the number of bytes actually written, or
  *                         @c NULL if the caller does not need this value.
  * @return OVE_OK on success, negative error code on failure or timeout.
  * @note Must not be called from an ISR; use @ref ove_stream_send_from_isr instead.
  */
-int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent);
 
 /**
  * @brief Receive bytes from the stream in task context.
  *
  * Copies up to @p len bytes from the stream into @p buf. Blocks for at most
- * @p timeout_ms milliseconds until the stream's trigger threshold is satisfied.
+ * @p timeout_ns nanoseconds until the stream's trigger threshold is satisfied.
  * The actual number of bytes read is written to @p bytes_received when not
  * @c NULL.
  *
  * @param[in]  stream          Stream handle.
  * @param[out] buf             Buffer to receive data.
  * @param[in]  len             Maximum number of bytes to read.
- * @param[in]  timeout_ms      Maximum wait time in milliseconds; 0 for non-blocking.
+ * @param[in]  timeout_ns      Maximum wait time in nanoseconds; 0 for non-blocking.
  * @param[out] bytes_received  Receives the number of bytes actually read, or
  *                             @c NULL if the caller does not need this value.
  * @return OVE_OK on success, negative error code on failure or timeout.
  * @note Must not be called from an ISR; use @ref ove_stream_receive_from_isr instead.
  */
-int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received);
 
 /**
@@ -219,7 +219,7 @@ static inline void ove_stream_destroy(ove_stream_t s)
 {
 	(void)s;
 }
-static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint32_t t, size_t *bs)
+static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint64_t t, size_t *bs)
 {
 	(void)s;
 	(void)d;
@@ -228,7 +228,7 @@ static inline int ove_stream_send(ove_stream_t s, const void *d, size_t l, uint3
 	(void)bs;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_stream_receive(ove_stream_t s, void *b, size_t l, uint32_t t, size_t *br)
+static inline int ove_stream_receive(ove_stream_t s, void *b, size_t l, uint64_t t, size_t *br)
 {
 	(void)s;
 	(void)b;

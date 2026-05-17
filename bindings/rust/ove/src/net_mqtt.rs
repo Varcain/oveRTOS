@@ -243,8 +243,8 @@ impl Client {
     ///
     /// # Errors
     /// Returns an error if the poll encounters a protocol or transport error.
-    pub fn poll(&self, timeout_ms: u32) -> Result<()> {
-        let rc = unsafe { bindings::ove_mqtt_loop(self.handle, timeout_ms) };
+    pub fn poll(&self, timeout: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_mqtt_loop(self.handle, crate::time::dur_to_ns(timeout)) };
         Error::from_code(rc)
     }
 }

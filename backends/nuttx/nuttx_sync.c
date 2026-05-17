@@ -14,7 +14,10 @@
 #include <nuttx/mutex.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/clock.h>
+#include "ove_ns_to_ticks.h"
 #include <errno.h>
+
+
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
@@ -63,17 +66,17 @@ void ove_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret;
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		while ((ret = nxmutex_lock(&mtx->mtx)) == -EINTR)
 			;
 	} else {
-		ret = nxmutex_ticklock(&mtx->mtx, MSEC2TICK(timeout_ms));
+		ret = nxmutex_ticklock(&mtx->mtx, ove_ns_to_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -132,16 +135,16 @@ void ove_recursive_mutex_destroy(ove_mutex_t mtx)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_MUTEX, OVE_TRACE_ACT_WAIT_ENTER, mtx);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret;
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxrmutex_lock(&mtx->rmtx);
 	} else {
-		ret = nxrmutex_ticklock(&mtx->rmtx, MSEC2TICK(timeout_ms));
+		ret = nxrmutex_ticklock(&mtx->rmtx, ove_ns_to_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -204,16 +207,16 @@ void ove_sem_destroy(ove_sem_t sem)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms)
+int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, sem);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret;
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxsem_wait_uninterruptible(&sem->sem);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&sem->sem, MSEC2TICK(timeout_ms));
+		ret = nxsem_tickwait_uninterruptible(&sem->sem, ove_ns_to_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -275,16 +278,16 @@ void ove_event_destroy(ove_event_t evt)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_event_wait(ove_event_t evt, uint32_t timeout_ms)
+int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
 	int ret;
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxsem_wait_uninterruptible(&evt->sem);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&evt->sem, MSEC2TICK(timeout_ms));
+		ret = nxsem_tickwait_uninterruptible(&evt->sem, ove_ns_to_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
@@ -355,7 +358,7 @@ void ove_condvar_destroy(ove_condvar_t cv)
 }
 #endif /* OVE_HEAP_SYNC */
 
-int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
+int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
 {
 	int ret;
 
@@ -369,10 +372,10 @@ int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint32_t timeout_ms)
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_CV, OVE_TRACE_ACT_WAIT_ENTER, cv);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
 
-	if (ove_timeout_is_forever(timeout_ms)) {
+	if (ove_timeout_is_forever(timeout_ns)) {
 		ret = nxsem_wait_uninterruptible(&cv->waiter);
 	} else {
-		ret = nxsem_tickwait_uninterruptible(&cv->waiter, MSEC2TICK(timeout_ms));
+		ret = nxsem_tickwait_uninterruptible(&cv->waiter, ove_ns_to_ticks(timeout_ns));
 	}
 
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);

@@ -12,11 +12,11 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-static void ms_to_abstime(uint32_t timeout_ms, struct timespec *ts)
+static void ns_to_abstime(uint64_t timeout_ns, struct timespec *ts)
 {
 	clock_gettime(CLOCK_REALTIME, ts);
-	ts->tv_sec += timeout_ms / 1000;
-	ts->tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+	ts->tv_sec += (time_t)(timeout_ns / 1000000000ULL);
+	ts->tv_nsec += (long)(timeout_ns % 1000000000ULL);
 	if (ts->tv_nsec >= 1000000000L) {
 		ts->tv_sec += 1;
 		ts->tv_nsec -= 1000000000L;
@@ -89,7 +89,7 @@ void ove_stream_destroy(ove_stream_t stream)
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
-int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t timeout_ms,
+int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t timeout_ns,
 		    size_t *bytes_sent)
 {
 	struct ove_stream *s = stream;
@@ -102,17 +102,17 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint32_t 
 	pthread_mutex_lock(&s->lock);
 
 	struct timespec ts;
-	if (timeout_ms != OVE_WAIT_FOREVER && timeout_ms > 0) {
-		ms_to_abstime(timeout_ms, &ts);
+	if (timeout_ns != OVE_WAIT_FOREVER && timeout_ns > 0) {
+		ns_to_abstime(timeout_ns, &ts);
 	}
 
 	while (sent < len) {
 		while (s->count >= s->size) {
-			if (timeout_ms == 0) {
+			if (timeout_ns == 0) {
 				goto done;
 			}
 			int ret;
-			if (timeout_ms == OVE_WAIT_FOREVER) {
+			if (timeout_ns == OVE_WAIT_FOREVER) {
 				ret = pthread_cond_wait(&s->space_avail, &s->lock);
 			} else {
 				ret = pthread_cond_timedwait(&s->space_avail, &s->lock, &ts);
@@ -136,7 +136,7 @@ done:
 	return OVE_OK;
 }
 
-int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t timeout_ms,
+int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t timeout_ns,
 		       size_t *bytes_received)
 {
 	struct ove_stream *s = stream;
@@ -149,17 +149,17 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint32_t time
 	pthread_mutex_lock(&s->lock);
 
 	struct timespec ts;
-	if (timeout_ms != OVE_WAIT_FOREVER && timeout_ms > 0) {
-		ms_to_abstime(timeout_ms, &ts);
+	if (timeout_ns != OVE_WAIT_FOREVER && timeout_ns > 0) {
+		ns_to_abstime(timeout_ns, &ts);
 	}
 
 	/* Wait for at least trigger bytes */
 	while (s->count < s->trigger) {
-		if (timeout_ms == 0) {
+		if (timeout_ns == 0) {
 			goto done;
 		}
 		int ret;
-		if (timeout_ms == OVE_WAIT_FOREVER) {
+		if (timeout_ns == OVE_WAIT_FOREVER) {
 			ret = pthread_cond_wait(&s->data_avail, &s->lock);
 		} else {
 			ret = pthread_cond_timedwait(&s->data_avail, &s->lock, &ts);

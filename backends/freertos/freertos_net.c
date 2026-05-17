@@ -15,6 +15,7 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
+#include "ove_ns_to_ticks.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -30,6 +31,23 @@
 #include "netif/ethernet.h"
 
 #include <string.h>
+
+/* ns -> struct timeval with fast path: <4.29 sec inputs use 32-bit
+ * divides (single-cycle UDIV on Cortex-M7), >4.29 sec inputs fall
+ * back to __aeabi_uldivmod. Inline static so the compiler folds it
+ * at each call site. Placed after lwip/sockets.h so `struct timeval`
+ * is available. */
+static inline void ove_ns_to_timeval(uint64_t ns, struct timeval *tv)
+{
+	if (ns <= (uint64_t)UINT32_MAX) {
+		uint32_t n = (uint32_t)ns;
+		tv->tv_sec = (long)(n / 1000000000u);
+		tv->tv_usec = (long)((n % 1000000000u) / 1000u);
+	} else {
+		tv->tv_sec = (long)(ns / 1000000000ULL);
+		tv->tv_usec = (long)((ns % 1000000000ULL) / 1000ULL);
+	}
+}
 
 /* Board provides these — weak defaults for boards without hardware NIC. */
 extern err_t ethernetif_init(struct netif *netif) __attribute__((weak));
@@ -334,11 +352,11 @@ void ove_socket_destroy(ove_socket_t sock)
 }
 #endif
 
-int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ms; /* lwIP connect is blocking */
+	(void)timeout_ns; /* lwIP connect is blocking */
 
 	struct sockaddr_in sin;
 	sockaddr_to_lwip(addr, &sin);
@@ -369,11 +387,11 @@ int ove_socket_listen(ove_socket_t sock, int backlog)
 }
 
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
-		      uint32_t timeout_ms)
+		      uint64_t timeout_ns)
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ms;
+	(void)timeout_ns;
 
 	int fd = lwip_accept(sock->fd, NULL, NULL);
 	if (fd < 0)
@@ -397,16 +415,15 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
 	return OVE_OK;
 }
 
-int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint32_t timeout_ms)
+int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
 
 	/* Set receive timeout via SO_RCVTIMEO */
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct timeval tv;
-		tv.tv_sec = timeout_ms / 1000;
-		tv.tv_usec = (timeout_ms % 1000) * 1000;
+		ove_ns_to_timeval(timeout_ns, &tv);
 		lwip_setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	}
 
@@ -439,15 +456,14 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 }
 
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
-			ove_sockaddr_t *src, uint32_t timeout_ms)
+			ove_sockaddr_t *src, uint64_t timeout_ns)
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
 
-	if (!ove_timeout_is_forever(timeout_ms)) {
+	if (!ove_timeout_is_forever(timeout_ns)) {
 		struct timeval tv;
-		tv.tv_sec = timeout_ms / 1000;
-		tv.tv_usec = (timeout_ms % 1000) * 1000;
+		ove_ns_to_timeval(timeout_ns, &tv);
 		lwip_setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 	}
 
@@ -491,12 +507,12 @@ static void dns_found_cb(const char *name, const ip_addr_t *ipaddr, void *callba
 	xSemaphoreGive(s_dns_sem);
 }
 
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout_ms)
+int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
 {
 	if (!hostname || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	if (timeout_ms == 0)
-		timeout_ms = 10000;
+	if (timeout_ns == 0)
+		timeout_ns = OVE_SEC(10);
 
 	if (!s_dns_inited) {
 		s_dns_sem = xSemaphoreCreateBinaryStatic(&s_dns_sem_buf);
@@ -519,7 +535,7 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint32_t timeout
 		return OVE_ERR_NET_DNS_FAIL;
 
 	/* Wait for callback with timeout */
-	if (xSemaphoreTake(s_dns_sem, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
+	if (xSemaphoreTake(s_dns_sem, ove_ns_to_ticks(timeout_ns)) != pdTRUE)
 		return OVE_ERR_TIMEOUT;
 
 	if (s_dns_done != 1)

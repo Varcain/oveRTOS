@@ -332,14 +332,14 @@ void ove_condvar_destroy(ove_condvar_t cv);
  *
  * @param[in] mtx         Mutex handle obtained from ove_mutex_init() or
  *                        ove_mutex_create().
- * @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass
+ * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was
  *         reached, or another negative error code on failure.
  *
  * @see ove_mutex_unlock
  */
-OVE_NODISCARD int ove_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms) OVE_NONNULL(1);
+OVE_NODISCARD int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns) OVE_NONNULL(1);
 
 /**
  * @brief Release a non-recursive mutex previously acquired by ove_mutex_lock().
@@ -360,14 +360,14 @@ void ove_mutex_unlock(ove_mutex_t mtx);
  *
  * @param[in] sem         Semaphore handle obtained from ove_sem_init() or
  *                        ove_sem_create().
- * @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass
+ * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was
  *         reached, or another negative error code on failure.
  *
  * @see ove_sem_give
  */
-OVE_NODISCARD int ove_sem_take(ove_sem_t sem, uint32_t timeout_ms) OVE_NONNULL(1);
+OVE_NODISCARD int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns) OVE_NONNULL(1);
 
 /**
  * @brief Increment (give) a semaphore, potentially unblocking a waiting thread.
@@ -392,14 +392,14 @@ void ove_sem_give(ove_sem_t sem);
  *
  * @param[in] evt         Event handle obtained from ove_event_init() or
  *                        ove_event_create().
- * @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass
+ * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was
  *         reached, or another negative error code on failure.
  *
  * @see ove_event_signal, ove_event_signal_from_isr
  */
-OVE_NODISCARD int ove_event_wait(ove_event_t evt, uint32_t timeout_ms) OVE_NONNULL(1);
+OVE_NODISCARD int ove_event_wait(ove_event_t evt, uint64_t timeout_ns) OVE_NONNULL(1);
 
 /**
  * @brief Signal a binary event, unblocking one waiting thread.
@@ -442,14 +442,14 @@ void ove_event_signal_from_isr(ove_event_t evt);
  * @param[in] mtx         Recursive mutex handle obtained from
  *                        ove_recursive_mutex_init() or
  *                        ove_recursive_mutex_create().
- * @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass
+ * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was
  *         reached, or another negative error code on failure.
  *
  * @see ove_recursive_mutex_unlock
  */
-OVE_NODISCARD int ove_recursive_mutex_lock(ove_mutex_t mtx, uint32_t timeout_ms) OVE_NONNULL(1);
+OVE_NODISCARD int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns) OVE_NONNULL(1);
 
 /**
  * @brief Release one level of a recursive mutex lock.
@@ -479,7 +479,7 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  *                        ove_condvar_init() or ove_condvar_create().
  * @param[in] mtx         Mutex that guards the condition.  Must be locked
  *                        by the calling thread.
- * @param[in] timeout_ms  Maximum time to wait in milliseconds.  Pass
+ * @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass
  *                        @c OVE_WAIT_FOREVER to block indefinitely.
  * @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was
  *         reached, or another negative error code on failure.
@@ -487,7 +487,7 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  * @see ove_condvar_signal, ove_condvar_broadcast
  */
 OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
-				   uint32_t timeout_ms) OVE_NONNULL(1, 2);
+				   uint64_t timeout_ns) OVE_NONNULL(1, 2);
 
 /**
  * @brief Wake one thread waiting on a condition variable.
@@ -577,7 +577,7 @@ static inline void ove_mutex_destroy(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_mutex_lock(ove_mutex_t m, uint32_t t)
+static inline int ove_mutex_lock(ove_mutex_t m, uint64_t t)
 {
 	(void)m;
 	(void)t;
@@ -598,7 +598,7 @@ static inline void ove_sem_destroy(ove_sem_t s)
 {
 	(void)s;
 }
-static inline int ove_sem_take(ove_sem_t s, uint32_t t)
+static inline int ove_sem_take(ove_sem_t s, uint64_t t)
 {
 	(void)s;
 	(void)t;
@@ -617,7 +617,7 @@ static inline void ove_event_destroy(ove_event_t e)
 {
 	(void)e;
 }
-static inline int ove_event_wait(ove_event_t e, uint32_t t)
+static inline int ove_event_wait(ove_event_t e, uint64_t t)
 {
 	(void)e;
 	(void)t;
@@ -636,7 +636,7 @@ static inline int ove_recursive_mutex_create(ove_mutex_t *m)
 	(void)m;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-static inline int ove_recursive_mutex_lock(ove_mutex_t m, uint32_t t)
+static inline int ove_recursive_mutex_lock(ove_mutex_t m, uint64_t t)
 {
 	(void)m;
 	(void)t;
@@ -659,7 +659,7 @@ static inline void ove_condvar_destroy(ove_condvar_t c)
 {
 	(void)c;
 }
-static inline int ove_condvar_wait(ove_condvar_t c, ove_mutex_t m, uint32_t t)
+static inline int ove_condvar_wait(ove_condvar_t c, ove_mutex_t m, uint64_t t)
 {
 	(void)c;
 	(void)m;
