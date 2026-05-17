@@ -88,6 +88,7 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_queue.cpp
     ${SUITE_DIR}/test_timer.cpp
     ${SUITE_DIR}/test_thread.cpp
+    ${SUITE_DIR}/test_thread_stop.cpp
     ${SUITE_DIR}/test_eventgroup.cpp
     ${SUITE_DIR}/test_lockguard.cpp
     ${SUITE_DIR}/test_app.cpp

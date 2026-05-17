@@ -34,6 +34,9 @@ int main(void)
 	printf("=== C++ Thread Tests ===\n");
 	failures += test_cpp_thread_run();
 
+	printf("=== C++ Thread Stop Tests ===\n");
+	failures += test_cpp_thread_stop_run();
+
 	printf("=== C++ EventGroup Tests ===\n");
 	failures += test_cpp_eventgroup_run();
 

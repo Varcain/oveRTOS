@@ -48,6 +48,7 @@ int test_cpp_condvar_run(void);
 int test_cpp_queue_run(void);
 int test_cpp_timer_run(void);
 int test_cpp_thread_run(void);
+int test_cpp_thread_stop_run(void);
 int test_cpp_eventgroup_run(void);
 int test_cpp_lockguard_run(void);
 int test_cpp_app_run(void);
