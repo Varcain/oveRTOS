@@ -118,6 +118,9 @@ fn monitorEntry() void {
 }
 
 fn appMain() void {
+    fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+    const allocator = fba.allocator();
+
     std.log.info("pm example (zero-heap mode): init", .{});
 
     pm.init(.{
@@ -135,11 +138,11 @@ fn appMain() void {
     pm.setPolicy(batteryPolicy, null) catch {};
     pm.setBudget(6000) catch {};
 
-    sensor_thread.spawnStatic(.{ .name = "sensor", .priority = .normal }, sensorEntry, .{}) catch {
+    sensor_thread = ove.Thread(4096).spawn(allocator, .{ .name = "sensor", .priority = .normal }, sensorEntry, .{}) catch {
         std.log.err("Failed to init sensor", .{});
         return;
     };
-    monitor_thread.spawnStatic(.{ .name = "monitor", .priority = .low }, monitorEntry, .{}) catch {
+    monitor_thread = ove.Thread(4096).spawn(allocator, .{ .name = "monitor", .priority = .low }, monitorEntry, .{}) catch {
         std.log.err("Failed to init monitor", .{});
         return;
     };

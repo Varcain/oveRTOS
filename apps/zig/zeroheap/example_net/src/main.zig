@@ -491,9 +491,12 @@ fn netThread() void {
 // -- App entry point --------------------------------------------------------
 
 fn appMain() void {
+    fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+    const allocator = fba.allocator();
+
     std.log.info("Zig networking example (zero-heap mode): init", .{});
 
-    net_thread.spawnStatic(.{ .name = "net-test", .priority = .normal }, netThread, .{}) catch |e| {
+    net_thread = ove.Thread(16384).spawn(allocator, .{ .name = "net-test", .priority = .normal }, netThread, .{}) catch |e| {
         std.log.err("Failed to init net thread: {d}", .{errCode(e)});
         return;
     };

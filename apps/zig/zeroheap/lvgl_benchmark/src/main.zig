@@ -1012,9 +1012,12 @@ fn graphicsEntry() void {
 var graphics_thread: ove.Thread(4096) = undefined;
 
 fn appMain() void {
+    fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+    const allocator = fba.allocator();
+
     std.log.info("LVGL benchmark (Zig zero-heap): init", .{});
 
-    graphics_thread.spawnStatic(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = ove.Thread(4096).spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to init graphics", .{});
         return;
     };

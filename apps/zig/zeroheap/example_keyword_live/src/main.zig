@@ -306,6 +306,9 @@ fn inferThread() void {
 // ── Entry point ────────────────────────────────────────────────────────
 
 fn appMain() void {
+    fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+    const allocator = fba.allocator();
+
     std.log.info("=== Live DMIC Keyword Detection (Zig) ===", .{});
     std.log.info("Models: preprocessor {d} + classifier {d} bytes", .{
         preprocessorModel().len,
@@ -358,7 +361,7 @@ fn appMain() void {
     };
     std.log.info("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    infer_thread.spawnStatic(.{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
+    infer_thread = ove.Thread(8192).spawn(allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
         std.log.err("Failed to init infer thread", .{});
         return;
     };
