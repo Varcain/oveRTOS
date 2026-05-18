@@ -74,6 +74,7 @@ OVE_SUITE(app,             "App")
 OVE_SUITE_FS(fs, "FS")
 
 OVE_SUITE_STUB(static_define, "Static Define")
+OVE_SUITE_STUB(init_no_alloc, "Init: No internal heap allocation")
 OVE_SUITE_STUB(infer,         "Inference")
 OVE_SUITE_STUB(net_mqtt,      "Net: MQTT Wildcard")
 OVE_SUITE_STUB(net_httpd,     "Net: HTTPD (SHA1/Base64)")
