@@ -20,6 +20,12 @@
 const std = @import("std");
 const ove = @import("ove");
 
+/// Route `std.log.*` and any library using `std.log.scoped(...)` through
+/// `ove.log.logFn` — emits to the oveRTOS console.
+pub const std_options: std.Options = .{
+    .logFn = ove.log.logFn,
+};
+
 const lvgl = ove.lvgl;
 const c = ove.ffi;
 
@@ -893,8 +899,8 @@ fn summaryCreate() void {
     c.lv_table_set_cell_value(table, 0, 2, "Avg. FPS");
     c.lv_table_set_cell_value(table, 0, 3, "Avg. time (render + flush)");
 
-    ove.log.inf("Benchmark Summary", .{});
-    ove.log.inf("Name, Avg. CPU, Avg. FPS, Avg. time, render, flush", .{});
+    std.log.info("Benchmark Summary", .{});
+    std.log.info("Name, Avg. CPU, Avg. FPS, Avg. time, render, flush", .{});
 
     c.lv_obj_update_layout(table);
     const col_w: i32 = @divTrunc(c.lv_obj_get_content_width(table), 4);
@@ -935,7 +941,7 @@ fn summaryCreate() void {
             c.lv_table_set_cell_value(table, i + 2, 2, @ptrCast(fps_str.ptr));
             c.lv_table_set_cell_value(table, i + 2, 3, @ptrCast(time_str.ptr));
 
-            ove.log.inf("{s}, {d}%, {d}, {d}, {d}, {d}", .{ scenes[i].name, cpu_val, fps_val, render_val + flush_val, render_val, flush_val });
+            std.log.info("{s}, {d}%, {d}, {d}, {d}, {d}", .{ scenes[i].name, cpu_val, fps_val, render_val + flush_val, render_val, flush_val });
 
             valid += 1;
             total_cpu += @intCast(cpu_val);
@@ -968,7 +974,7 @@ fn summaryCreate() void {
         c.lv_table_set_cell_value(table, 1, 2, @ptrCast(avg_fps_str.ptr));
         c.lv_table_set_cell_value(table, 1, 3, @ptrCast(avg_time_str.ptr));
 
-        ove.log.inf("All avg, {d}%, {d}, {d}, {d}, {d}", .{ avg_cpu, avg_fps, avg_render + avg_flush, avg_render, avg_flush });
+        std.log.info("All avg, {d}%, {d}, {d}, {d}, {d}", .{ avg_cpu, avg_fps, avg_render + avg_flush, avg_render, avg_flush });
     }
 }
 
@@ -1001,15 +1007,15 @@ fn graphicsEntry() void {
 var graphics_thread: ?ove.Thread(4096) = null;
 
 fn appMain() void {
-    ove.log.inf("LVGL benchmark (Zig): init", .{});
+    std.log.info("LVGL benchmark (Zig): init", .{});
 
     graphics_thread = ove.Thread(4096).spawn(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
-        ove.log.err("Failed to spawn graphics", .{});
+        std.log.err("Failed to spawn graphics", .{});
         return;
     };
 
     lvgl.init() catch {
-        ove.log.err("LVGL init fail", .{});
+        std.log.err("LVGL init fail", .{});
         return;
     };
 
@@ -1049,7 +1055,7 @@ fn appMain() void {
         }
     }
 
-    ove.log.inf("LVGL benchmark (Zig): running", .{});
+    std.log.info("LVGL benchmark (Zig): running", .{});
 
     ove.run();
 }

@@ -14,6 +14,12 @@
 
 const std = @import("std");
 const ove = @import("ove");
+
+/// Route `std.log.*` and any library using `std.log.scoped(...)` through
+/// `ove.log.logFn` — emits to the oveRTOS console.
+pub const std_options: std.Options = .{
+    .logFn = ove.log.logFn,
+};
 const Thread = ove.Thread;
 
 const pm = ove.pm;
@@ -48,14 +54,14 @@ fn batteryPolicy(
 
 fn pmNotify(event: pm.Event, from: pm.State, to: pm.State) void {
     if (event == ove.ffi.OVE_PM_EVENT_PRE_SLEEP) {
-        ove.log.inf("pm: preparing sleep {d} -> {d}", .{ from, to });
+        std.log.info("pm: preparing sleep {d} -> {d}", .{ from, to });
     } else {
-        ove.log.inf("pm: woke {d} -> {d}", .{ from, to });
+        std.log.info("pm: woke {d} -> {d}", .{ from, to });
     }
 }
 
 fn sensorEntry() void {
-    ove.log.inf("sensor: started", .{});
+    std.log.info("sensor: started", .{});
     var reading: u32 = 0;
     while (true) {
         pm.domainRequest(ove.ffi.OVE_PM_DOMAIN_SENSOR) catch {};
@@ -63,7 +69,7 @@ fn sensorEntry() void {
 
         ove.thread.sleepMs(50);
         reading +%= 17;
-        ove.log.inf("sensor: reading = {d}", .{reading % 1000});
+        std.log.info("sensor: reading = {d}", .{reading % 1000});
 
         pm.domainRelease(ove.ffi.OVE_PM_DOMAIN_SENSOR) catch {};
         ove.thread.sleepMs(5000);
@@ -71,29 +77,29 @@ fn sensorEntry() void {
 }
 
 fn monitorEntry() void {
-    ove.log.inf("monitor: started", .{});
+    std.log.info("monitor: started", .{});
     while (true) {
         ove.thread.sleepMs(10000);
 
         if (pm.getStats()) |stats| {
-            ove.log.inf("=== Power Stats ===", .{});
-            ove.log.inf("  active:  {d} us ({d} transitions)", .{
+            std.log.info("=== Power Stats ===", .{});
+            std.log.info("  active:  {d} us ({d} transitions)", .{
                 stats.time_in_state_us[0],
                 stats.transition_count[0],
             });
-            ove.log.inf("  idle:    {d} us ({d} transitions)", .{
+            std.log.info("  idle:    {d} us ({d} transitions)", .{
                 stats.time_in_state_us[1],
                 stats.transition_count[1],
             });
-            ove.log.inf("  standby: {d} us ({d} transitions)", .{
+            std.log.info("  standby: {d} us ({d} transitions)", .{
                 stats.time_in_state_us[2],
                 stats.transition_count[2],
             });
-            ove.log.inf("  deep:    {d} us ({d} transitions)", .{
+            std.log.info("  deep:    {d} us ({d} transitions)", .{
                 stats.time_in_state_us[3],
                 stats.transition_count[3],
             });
-            ove.log.inf("  active%: {d}.{d:0>2}%", .{
+            std.log.info("  active%: {d}.{d:0>2}%", .{
                 stats.active_pct_x100 / 100,
                 stats.active_pct_x100 % 100,
             });
@@ -102,19 +108,19 @@ fn monitorEntry() void {
         const cur = battery_pct.load(.monotonic);
         const next = if (cur > 5) cur - 5 else cur;
         battery_pct.store(next, .monotonic);
-        ove.log.inf("battery: {d}%", .{next});
+        std.log.info("battery: {d}%", .{next});
     }
 }
 
 fn appMain() void {
-    ove.log.inf("pm example (zero-heap mode): init", .{});
+    std.log.info("pm example (zero-heap mode): init", .{});
 
     pm.init(.{
         .idle_threshold_ms = 50,
         .standby_threshold_ms = 5000,
         .deep_sleep_threshold_ms = 30000,
     }) catch |e| {
-        ove.log.err("PM init failed: {}", .{e});
+        std.log.err("PM init failed: {}", .{e});
         return;
     };
 
@@ -125,19 +131,19 @@ fn appMain() void {
     pm.setBudget(6000) catch {};
 
     sensor_thread.spawnStatic(.{ .name = "sensor", .priority = .normal }, sensorEntry, .{}) catch {
-        ove.log.err("Failed to init sensor", .{});
+        std.log.err("Failed to init sensor", .{});
         return;
     };
     monitor_thread.spawnStatic(.{ .name = "monitor", .priority = .low }, monitorEntry, .{}) catch {
-        ove.log.err("Failed to init monitor", .{});
+        std.log.err("Failed to init monitor", .{});
         return;
     };
 
-    ove.log.inf("pm example (zero-heap mode): ready (battery={d}%)", .{battery_pct.load(.monotonic)});
+    std.log.info("pm example (zero-heap mode): ready (battery={d}%)", .{battery_pct.load(.monotonic)});
 
     ove.run();
 
-    ove.log.inf("pm example (zero-heap mode): shutdown", .{});
+    std.log.info("pm example (zero-heap mode): shutdown", .{});
 }
 
 comptime {
