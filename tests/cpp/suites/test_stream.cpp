@@ -61,8 +61,7 @@ static void test_cpp_stream_send_from_isr(void **state)
 
 	const uint8_t data[] = {0xAA, 0xBB};
 	size_t sent = 0;
-	int ret = s.send_from_isr(data, sizeof(data), sent);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(s.send_from_isr(data, sizeof(data), sent).has_value());
 	assert_int_equal(sent, 2);
 }
 
@@ -77,8 +76,7 @@ static void test_cpp_stream_receive_from_isr(void **state)
 
 	uint8_t rx[2] = {};
 	size_t received = 0;
-	int ret = s.receive_from_isr(rx, sizeof(rx), received);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(s.receive_from_isr(rx, sizeof(rx), received).has_value());
 	assert_int_equal(received, 2);
 	assert_memory_equal(rx, tx, 2);
 }
@@ -162,6 +160,14 @@ static void test_cpp_stream_return_type_shape(void **state)
 	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive_until(
 					     std::declval<void_p>(), size_t{},
 					     std::chrono::steady_clock::now(),
+					     std::declval<size_t &>())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().send_from_isr(
+					     std::declval<uchar_p>(), size_t{},
+					     std::declval<size_t &>())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().receive_from_isr(
+					     std::declval<void_p>(), size_t{},
 					     std::declval<size_t &>())),
 				     ove::Result<void>>);
 }
