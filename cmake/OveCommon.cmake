@@ -93,7 +93,7 @@ macro(ove_setup_project _proj_name)
     # Declare project — include CXX if app language or ML inference requires it
     if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
         project(${_OVE_PROJ_NAME} C CXX ASM)
-        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD 23)
         set(CMAKE_CXX_STANDARD_REQUIRED ON)
     else()
         project(${_OVE_PROJ_NAME} C ASM)
