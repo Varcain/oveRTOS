@@ -6,32 +6,32 @@
 
 use crate::framework::run_suite;
 use crate::test_entry;
-use ove::{StaticCell, StaticMut};
+use ove::{InitCell, InitMut};
 
-static TEST_CELL: StaticMut<i32> = StaticMut::new();
+static TEST_CELL: InitMut<i32> = InitMut::new();
 
 fn test_init_and_get() {
     // Fresh cell for each test — use a local approach
-    static CELL: StaticMut<u64> = StaticMut::new();
+    static CELL: InitMut<u64> = InitMut::new();
     CELL.init(42);
     assert_eq!(*CELL.get(), 42);
     CELL.shutdown();
 }
 
 fn test_try_get_uninitialized() {
-    static CELL: StaticMut<u32> = StaticMut::new();
+    static CELL: InitMut<u32> = InitMut::new();
     assert!(CELL.try_get().is_none());
 }
 
 fn test_try_get_initialized() {
-    static CELL: StaticMut<u32> = StaticMut::new();
+    static CELL: InitMut<u32> = InitMut::new();
     CELL.init(99);
     assert_eq!(*CELL.try_get().unwrap(), 99);
     CELL.shutdown();
 }
 
 fn test_get_mut() {
-    static CELL: StaticMut<[u8; 4]> = StaticMut::new();
+    static CELL: InitMut<[u8; 4]> = InitMut::new();
     CELL.init([1, 2, 3, 4]);
 
     // SAFETY: single-threaded test
@@ -44,7 +44,7 @@ fn test_get_mut() {
 }
 
 fn test_shutdown_idempotent() {
-    static CELL: StaticMut<i32> = StaticMut::new();
+    static CELL: InitMut<i32> = InitMut::new();
     CELL.init(1);
     CELL.shutdown();
     CELL.shutdown(); // should not panic
@@ -52,7 +52,7 @@ fn test_shutdown_idempotent() {
 }
 
 fn test_reinit_after_shutdown() {
-    static CELL: StaticMut<i32> = StaticMut::new();
+    static CELL: InitMut<i32> = InitMut::new();
     CELL.init(1);
     assert_eq!(*CELL.get(), 1);
     CELL.shutdown();
@@ -72,19 +72,19 @@ fn test_double_init_panics() {
 }
 
 fn test_get_uninitialized_panics() {
-    static CELL: StaticMut<i32> = StaticMut::new();
+    static CELL: InitMut<i32> = InitMut::new();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = *CELL.get();
     }));
     assert!(result.is_err(), "get on uninitialized cell should panic");
 }
 
-/* ── StaticCell (separate type from StaticMut) ─────────────────────── */
+/* ── InitCell (separate type from InitMut) ─────────────────────── */
 
-static SC_TEST: StaticCell<i32> = StaticCell::new();
+static SC_TEST: InitCell<i32> = InitCell::new();
 
-fn test_static_cell_try_get_both_branches() {
-    static SC: StaticCell<u32> = StaticCell::new();
+fn test_init_cell_try_get_both_branches() {
+    static SC: InitCell<u32> = InitCell::new();
     // Pre-init: try_get → None
     assert!(SC.try_get().is_none());
     SC.init(123);
@@ -95,14 +95,14 @@ fn test_static_cell_try_get_both_branches() {
     assert!(SC.try_get().is_none());
 }
 
-fn test_static_cell_double_init_panics() {
+fn test_init_cell_double_init_panics() {
     SC_TEST.shutdown();
     SC_TEST.init(1);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         SC_TEST.init(2);
     }));
     SC_TEST.shutdown();
-    assert!(result.is_err(), "StaticCell double init should panic");
+    assert!(result.is_err(), "InitCell double init should panic");
 }
 
 pub fn run() -> (usize, usize) {
@@ -110,7 +110,7 @@ pub fn run() -> (usize, usize) {
     TEST_CELL.shutdown();
 
     run_suite(
-        "StaticMut",
+        "InitMut",
         &[
             test_entry!(test_init_and_get),
             test_entry!(test_try_get_uninitialized),
@@ -120,8 +120,8 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_reinit_after_shutdown),
             test_entry!(test_double_init_panics),
             test_entry!(test_get_uninitialized_panics),
-            test_entry!(test_static_cell_try_get_both_branches),
-            test_entry!(test_static_cell_double_init_panics),
+            test_entry!(test_init_cell_try_get_both_branches),
+            test_entry!(test_init_cell_double_init_panics),
         ],
     )
 }

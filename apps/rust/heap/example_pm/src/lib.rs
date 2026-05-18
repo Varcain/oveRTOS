@@ -8,12 +8,12 @@
 //!
 //! Threads are spawned via `Thread::spawn_with(...)` taking `FnOnce`
 //! closures.  PM policy / notify handlers necessarily go through
-//! `&'static StaticCell<T>` because the C ABI takes a raw pointer and
+//! `&'static InitCell<T>` because the C ABI takes a raw pointer and
 //! the binding pins it for the program lifetime — there is no heap
 //! analogue.
 //!
 //! Pair with apps/rust/zeroheap/example_pm/ which uses the same
-//! `StaticCell` plus `ove::thread!` macros against caller-supplied
+//! `InitCell` plus `ove::thread!` macros against caller-supplied
 //! storage.
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -23,7 +23,7 @@ use ove_allocator as _;
 use core::sync::atomic::{AtomicI32, Ordering};
 
 use ove::pm::{self, Event, NotifyHandler, PolicyCtx, PolicyHandler, State};
-use ove::{Priority, StaticCell, Thread};
+use ove::{Priority, InitCell, Thread};
 
 /// Battery level in whole percent; the policy reads it, the monitor
 /// thread drains it.
@@ -44,7 +44,7 @@ impl Battery {
     }
 }
 
-static BATTERY: StaticCell<Battery> = StaticCell::new();
+static BATTERY: InitCell<Battery> = InitCell::new();
 
 fn battery_policy(batt: &Battery, ctx: PolicyCtx) -> State {
     if batt.get() < 15 {

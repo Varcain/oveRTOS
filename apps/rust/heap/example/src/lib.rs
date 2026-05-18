@@ -42,7 +42,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use ove::heap::Arc;
 use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{Priority, Queue, StaticCell, Thread, Timer};
+use ove::{Priority, Queue, InitCell, Thread, Timer};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -61,12 +61,12 @@ const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
 
 // LVGL widgets and the timer cannot be captured into closures spawned
 // before they're created (chicken-and-egg with create_ui), so we still
-// keep the timer/UI references in `StaticCell` slots for the timer
+// keep the timer/UI references in `InitCell` slots for the timer
 // callback to reach them.  Everything spawn-by-Arc lives in `app_main`
 // locals and is moved into the closures.
-static UI_TIMER: StaticCell<Timer> = StaticCell::new();
-static COUNTER_LABEL: StaticCell<Label> = StaticCell::new();
-static BAR: StaticCell<Bar> = StaticCell::new();
+static UI_TIMER: InitCell<Timer> = InitCell::new();
+static COUNTER_LABEL: InitCell<Label> = InitCell::new();
+static BAR: InitCell<Bar> = InitCell::new();
 static LAST_VALUE: AtomicU32 = AtomicU32::new(0);
 
 // ---------------------------------------------------------------------------

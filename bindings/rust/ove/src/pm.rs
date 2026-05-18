@@ -262,13 +262,13 @@ pub struct PolicyCtx {
 /// The handler must be `'static` (typically declared at module scope with
 /// [`crate::shared!`] + this type).
 pub struct PolicyHandler<T: Send + Sync + 'static> {
-    cell: &'static crate::StaticCell<T>,
+    cell: &'static crate::InitCell<T>,
     user: fn(&T, PolicyCtx) -> State,
 }
 
 impl<T: Send + Sync + 'static> PolicyHandler<T> {
     pub const fn new(
-        cell: &'static crate::StaticCell<T>,
+        cell: &'static crate::InitCell<T>,
         user: fn(&T, PolicyCtx) -> State,
     ) -> Self {
         Self { cell, user }
@@ -351,13 +351,13 @@ pub unsafe fn notify_unregister_raw(
 ///
 /// Bound to a static state cell and a safe `fn(&T, Event, State, State)` callback.
 pub struct NotifyHandler<T: Send + Sync + 'static> {
-    cell: &'static crate::StaticCell<T>,
+    cell: &'static crate::InitCell<T>,
     user: fn(&T, Event, State, State),
 }
 
 impl<T: Send + Sync + 'static> NotifyHandler<T> {
     pub const fn new(
-        cell: &'static crate::StaticCell<T>,
+        cell: &'static crate::InitCell<T>,
         user: fn(&T, Event, State, State),
     ) -> Self {
         Self { cell, user }

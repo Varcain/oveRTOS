@@ -9,7 +9,7 @@ use crate::test_entry;
 use ove::pm::{
     Cfg, Domain, Event, NotifyHandler, PolicyCtx, PolicyHandler, State, WakeType,
 };
-use ove::StaticCell;
+use ove::InitCell;
 
 /* PM is a singleton — `deinit` first so each test runs from a known state. */
 fn fresh_init() {
@@ -173,7 +173,7 @@ struct PolicyState {
 unsafe impl Send for PolicyState {}
 unsafe impl Sync for PolicyState {}
 
-static POLICY_CELL: StaticCell<PolicyState> = StaticCell::new();
+static POLICY_CELL: InitCell<PolicyState> = InitCell::new();
 static POLICY_HANDLER: PolicyHandler<PolicyState> =
     PolicyHandler::new(&POLICY_CELL, |s: &PolicyState, _ctx: PolicyCtx| s.forced);
 
@@ -213,7 +213,7 @@ struct NotifyState {
 unsafe impl Send for NotifyState {}
 unsafe impl Sync for NotifyState {}
 
-static NOTIFY_CELL: StaticCell<NotifyState> = StaticCell::new();
+static NOTIFY_CELL: InitCell<NotifyState> = InitCell::new();
 static NOTIFY_HANDLER: NotifyHandler<NotifyState> =
     NotifyHandler::new(&NOTIFY_CELL, |_s, _ev, _from, _to| {});
 

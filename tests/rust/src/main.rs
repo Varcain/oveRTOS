@@ -64,7 +64,7 @@ fn main() {
         ("Filesystem", test_fs::run),
         ("Stream", test_stream::run),
         ("Workqueue", test_workqueue::run),
-        ("StaticMut", test_static_mut::run),
+        ("InitMut", test_static_mut::run),
         ("Errors", test_errors::run),
         ("PM", test_pm::run),
         ("Fmt", test_fmt::run),

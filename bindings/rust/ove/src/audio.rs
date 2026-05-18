@@ -82,7 +82,7 @@ impl Tracker {
                  interior pointers (buffers[i].fmt → &nodes[i].out_fmt) \
                  during build(); moving the wrapper afterwards invalidates \
                  them and silently corrupts audio-thread reads.  Pin the \
-                 Graph in a StaticCell / Box::leak / &'static mut before \
+                 Graph in an InitCell / Box::leak / &'static mut before \
                  calling build()."
             );
         }
@@ -379,7 +379,7 @@ impl Graph {
     /// caught by [`Graph::start`] / [`Graph::stop`] / [`Graph::process`]
     /// with a panic in debug builds; in release the move silently
     /// dangles those pointers, so callers must keep the wrapper in a
-    /// stable location (e.g. a `StaticCell`, `Box::leak`, or
+    /// stable location (e.g. an `InitCell`, `Box::leak`, or
     /// `&'static mut`).
     pub fn build(&mut self) -> Result<()> {
         // Record FIRST so a successful build but an out-of-place caller
@@ -420,7 +420,7 @@ impl Drop for Graph {
 // SAFETY: the C-side graph object is safe to hand off between threads once
 // built — audio-thread callbacks only read immutable node state, and control
 // APIs (`connect`, `start`, `stop`) are serialised by the caller.  Required
-// so `Graph` can live inside `StaticCell` / `StaticMut` for FreeRTOS main-stack
+// so `Graph` can live inside `InitCell` / `InitMut` for FreeRTOS main-stack
 // survival (see the hiroic apps' `GRAPH` static).
 unsafe impl Send for Graph {}
 unsafe impl Sync for Graph {}
@@ -515,8 +515,11 @@ pub trait AudioProcessor {
 ///
 /// ```ignore
 /// // Preferred — works in both heap and zero-heap modes:
-/// static MY_PROC: StaticCell<MyProc> = StaticCell::new();
-/// let p: &'static mut MyProc = MY_PROC.init(MyProc::new());
+/// static MY_PROC: InitMut<MyProc> = InitMut::new();
+/// MY_PROC.init(MyProc::new());
+/// // SAFETY: single owner — `MY_PROC` is only ever handed to the audio
+/// // graph; no other code touches it.
+/// let p: &'static mut MyProc = unsafe { MY_PROC.get_mut() };
 /// graph.add_processor(p, b"my\0")?;
 ///
 /// // Heap-only:
@@ -543,8 +546,8 @@ pub trait AudioProcessor {
 ///   g.build()?; g.start()?;                // audio thread → dangling pointer
 ///   ```
 ///
-/// - **Re-initialising a `StaticCell` while registered.** The cell's
-///   storage outlives the program, but `StaticCell::init()` constructs
+/// - **Re-initialising an `InitMut` while registered.** The cell's
+///   storage outlives the program, but `InitMut::init()` constructs
 ///   a fresh `T` on top of the old bytes.  The audio thread's
 ///   `&mut T` still points at the same address, now aliasing a
 ///   freshly-initialised value — instant UB under Rust's `&mut`

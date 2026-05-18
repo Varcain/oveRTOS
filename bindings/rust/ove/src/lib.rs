@@ -143,7 +143,7 @@ pub mod queue;
 pub mod shell;
 #[cfg(has_spi)]
 pub mod spi;
-pub mod static_cell;
+pub mod init_cell;
 #[cfg(has_stream)]
 pub mod stream;
 #[cfg(has_sync)]
@@ -188,7 +188,7 @@ pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, WaitFlags};
 pub use fmt::FmtBuf;
 #[cfg(has_queue)]
 pub use queue::Queue;
-pub use static_cell::{StaticCell, StaticMut};
+pub use init_cell::{InitCell, InitMut};
 #[cfg(has_stream)]
 pub use stream::Stream;
 #[cfg(has_sync)]
