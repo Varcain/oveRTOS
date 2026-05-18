@@ -121,6 +121,7 @@ pub mod i2c;
 pub mod i2s;
 #[cfg(has_infer)]
 pub mod infer;
+pub mod init_cell;
 #[cfg(has_led)]
 pub mod led;
 pub mod log;
@@ -148,7 +149,6 @@ pub mod queue;
 pub mod shell;
 #[cfg(has_spi)]
 pub mod spi;
-pub mod init_cell;
 #[cfg(has_stream)]
 pub mod stream;
 #[cfg(has_sync)]
@@ -186,9 +186,6 @@ pub mod ffi {
 
 // Public re-exports for convenience
 pub use cell::{LvCell, LvRefCell};
-/// `#[ove::main]` proc-macro: marks the application entry point.
-/// Expands into the `extern "C" fn ove_main()` trampoline.
-pub use ove_macros::main;
 pub use error::{Error, Result};
 #[cfg(has_eventgroup)]
 #[allow(deprecated)] // EG_* shims kept for compatibility; new code uses WaitFlags
@@ -196,15 +193,14 @@ pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, WaitFlags};
 pub use fmt::FmtBuf;
 #[cfg(has_i2c)]
 pub use i2c::I2c;
+pub use init_cell::{InitCell, InitMut};
+/// `#[ove::main]` proc-macro: marks the application entry point.
+/// Expands into the `extern "C" fn ove_main()` trampoline.
+pub use ove_macros::main;
 #[cfg(has_queue)]
 pub use queue::Queue;
 #[cfg(has_spi)]
 pub use spi::Spi;
-#[cfg(has_time)]
-pub use time::Delay;
-#[cfg(has_uart)]
-pub use uart::Uart;
-pub use init_cell::{InitCell, InitMut};
 #[cfg(has_stream)]
 pub use stream::Stream;
 #[cfg(has_sync)]
@@ -219,8 +215,12 @@ pub use thread::{
     Builder, JoinHandle, JoinHandleBorrowed, MemStats, StopToken, Thread, ThreadInfo, ThreadState,
     ThreadStats,
 };
+#[cfg(has_time)]
+pub use time::Delay;
 #[cfg(has_timer)]
 pub use timer::Timer;
+#[cfg(has_uart)]
+pub use uart::Uart;
 #[cfg(has_watchdog)]
 pub use watchdog::Watchdog;
 #[cfg(has_workqueue)]

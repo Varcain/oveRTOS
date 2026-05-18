@@ -226,8 +226,7 @@ static void test_detach_skips_join(void **state)
 		 * already null. */
 	}
 	const auto t_elapsed = std::chrono::steady_clock::now() - t_start;
-	const auto ms =
-		std::chrono::duration_cast<std::chrono::milliseconds>(t_elapsed).count();
+	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_elapsed).count();
 	assert_true(ms < 100); /* would block ≥ many seconds without detach */
 
 	/* Clean up: tell the worker to exit, wait for it. */
@@ -442,14 +441,13 @@ static void test_capturing_lambda_by_value(void **state)
 	std::atomic<int> observed{0};
 
 	{
-		ove::Thread<4096> th{
-			[expected, &observed](ove::stop_token tok) {
-				observed.store(expected);
-				while (!tok.stop_requested())
-					test_msleep(2);
-				g_exited.store(1);
-			},
-			OVE_PRIO_NORMAL, "capv"};
+		ove::Thread<4096> th{[expected, &observed](ove::stop_token tok) {
+					     observed.store(expected);
+					     while (!tok.stop_requested())
+						     test_msleep(2);
+					     g_exited.store(1);
+				     },
+				     OVE_PRIO_NORMAL, "capv"};
 		for (int i = 0; i < 200 && observed.load() != expected; ++i)
 			test_msleep(1);
 		assert_int_equal(observed.load(), expected);
@@ -466,15 +464,14 @@ static void test_capturing_lambda_by_ref(void **state)
 	std::atomic<int> counter{0};
 
 	{
-		ove::Thread<4096> th{
-			[&](ove::stop_token tok) {
-				while (!tok.stop_requested()) {
-					counter.fetch_add(1);
-					test_msleep(2);
-				}
-				g_exited.store(1);
-			},
-			OVE_PRIO_NORMAL, "capr"};
+		ove::Thread<4096> th{[&](ove::stop_token tok) {
+					     while (!tok.stop_requested()) {
+						     counter.fetch_add(1);
+						     test_msleep(2);
+					     }
+					     g_exited.store(1);
+				     },
+				     OVE_PRIO_NORMAL, "capr"};
 		for (int i = 0; i < 200 && counter.load() == 0; ++i)
 			test_msleep(1);
 		assert_true(counter.load() > 0);
@@ -490,15 +487,14 @@ static void test_capturing_lambda_drop_semantics(void **state)
 	std::atomic<int> entered{0};
 
 	{
-		ove::Thread<4096> th{
-			[&](ove::stop_token tok) {
-				entered.store(1);
-				while (!tok.stop_requested())
-					test_msleep(2);
-				g_observed_true_after_request.store(1);
-				g_exited.store(1);
-			},
-			OVE_PRIO_NORMAL, "capd"};
+		ove::Thread<4096> th{[&](ove::stop_token tok) {
+					     entered.store(1);
+					     while (!tok.stop_requested())
+						     test_msleep(2);
+					     g_observed_true_after_request.store(1);
+					     g_exited.store(1);
+				     },
+				     OVE_PRIO_NORMAL, "capd"};
 		for (int i = 0; i < 200 && entered.load() == 0; ++i)
 			test_msleep(1);
 		assert_int_equal(entered.load(), 1);
@@ -519,14 +515,13 @@ static void test_capturing_lambda_move_only(void **state)
 	std::atomic<int> observed{0};
 
 	{
-		ove::Thread<4096> th{
-			[p = std::move(payload), &observed](ove::stop_token tok) {
-				observed.store(*p);
-				while (!tok.stop_requested())
-					test_msleep(2);
-				g_exited.store(1);
-			},
-			OVE_PRIO_NORMAL, "capm"};
+		ove::Thread<4096> th{[p = std::move(payload), &observed](ove::stop_token tok) {
+					     observed.store(*p);
+					     while (!tok.stop_requested())
+						     test_msleep(2);
+					     g_exited.store(1);
+				     },
+				     OVE_PRIO_NORMAL, "capm"};
 		for (int i = 0; i < 200 && observed.load() == 0; ++i)
 			test_msleep(1);
 		assert_int_equal(observed.load(), 42);

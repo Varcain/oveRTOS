@@ -74,7 +74,6 @@ pub const OVE_SIZEOF_OVE_SOCKET_STORAGE: u32 = 64;
 pub const OVE_SIZEOF_OVE_SPI_STORAGE: u32 = 64;
 pub const OVE_SIZEOF_OVE_TLS_STORAGE: u32 = 128;
 pub const OVE_SIZEOF_OVE_UART_STORAGE: u32 = 64;
-pub const OVE_WAIT_FOREVER: u32 = 4294967295;
 pub const OVE_LOG_LEVEL: u32 = 0;
 pub const OVE_RTOS_NAME: &[u8; 6] = b"POSIX\0";
 pub const OVE_LOG_LEVEL_ERR: u32 = 0;
@@ -775,11 +774,11 @@ unsafe extern "C" {
     pub fn ove_thread_resume(handle: ove_thread_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Cooperatively request that a thread stop running.\n\n Sets the per-thread atomic cancellation flag.  Safe from any context.\n\n @see ove_thread_should_stop"]
+    #[doc = " @brief Cooperatively request that a thread stop running.\n\n Sets the thread's stop-requested flag.  The worker must poll\n @ref ove_thread_should_stop and exit its entry function in response;\n the substrate does NOT forcibly terminate the thread.\n\n Safe to call from any context (ISR, other thread, or the thread\n itself).  Storing the flag is a single uncontended atomic write.\n\n The flag is per-thread, allocated unconditionally (1 byte storage,\n not opt-in).  Calling on a non-stoppable thread is the same as\n calling on any other thread — the worker just has to choose to\n observe @ref ove_thread_should_stop.\n\n @param[in] handle  Thread to signal.\n\n @see ove_thread_should_stop"]
     pub fn ove_thread_request_stop(handle: ove_thread_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Check whether a stop has been requested for the given thread.\n\n Returns true if ove_thread_request_stop was called.  Safe from any context.\n\n @see ove_thread_request_stop"]
+    #[doc = " @brief Check whether the calling (or specified) thread has been asked to stop.\n\n Returns @c true if @ref ove_thread_request_stop was called for @p handle.\n The flag is sticky: once set it stays set for the thread's lifetime.\n\n Workers should poll this in their main loop:\n @code\n   while (!ove_thread_should_stop(ove_thread_get_self())) {\n       do_work();\n   }\n @endcode\n\n Safe to call from any context.  The load is a single uncontended\n atomic read.\n\n @param[in] handle  Thread to inspect.\n @return @c true if a stop has been requested, @c false otherwise.\n\n @see ove_thread_request_stop"]
     pub fn ove_thread_should_stop(handle: ove_thread_t) -> bool;
 }
 unsafe extern "C" {
@@ -896,6 +895,22 @@ unsafe extern "C" {
         max_count: usize,
         actual_count: *mut usize,
     ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the current monotonic time in microseconds.\n\n Reads the system timer and writes the elapsed microseconds since an\n arbitrary epoch (typically boot) to @p out.\n\n @param[out] out  Receives the current timestamp in microseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_TIME."]
+    pub fn ove_time_get_us(out: *mut u64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Get the current monotonic time in nanoseconds.\n\n Reads the system timer and writes the elapsed nanoseconds since an\n arbitrary epoch (typically boot) to @p out. Actual nanosecond resolution\n depends on the hardware timer; values may be rounded to the nearest tick.\n\n @param[out] out  Receives the current timestamp in nanoseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_TIME."]
+    pub fn ove_time_get_ns(out: *mut u64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Block the calling task for at least @p ms milliseconds.\n\n Suspends the current task for a minimum of @p ms milliseconds. The actual\n sleep duration may be longer due to scheduling granularity and system load.\n Passing 0 yields the CPU to any equal or higher-priority task.\n\n @param[in] ms  Minimum delay in milliseconds.\n @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR."]
+    pub fn ove_time_delay_ms(ms: u32);
+}
+unsafe extern "C" {
+    #[doc = " @brief Block the calling task for at least @p us microseconds.\n\n Suspends the current task for a minimum of @p us microseconds. For very\n short delays the implementation may busy-wait rather than yield,\n depending on the RTOS tick resolution.\n\n @param[in] us  Minimum delay in microseconds.\n @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR."]
+    pub fn ove_time_delay_us(us: u32);
 }
 unsafe extern "C" {
     #[doc = " @brief Initialise a non-recursive mutex using caller-supplied static storage.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] mtx      Receives the opaque mutex handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the mutex.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_mutex_deinit, ove_mutex_create, ove_mutex_lock, ove_mutex_unlock"]
@@ -1768,22 +1783,6 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Restart a timer's countdown from the beginning of its period.\n\n Equivalent to stopping and then starting the timer, but performed\n atomically with respect to the RTOS timer service.  Useful for\n implementing watchdog-style \"kick\" patterns.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer  Timer handle to reset.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_start, ove_timer_stop"]
     pub fn ove_timer_reset(timer: ove_timer_t) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " @brief Get the current monotonic time in microseconds.\n\n Reads the system timer and writes the elapsed microseconds since an\n arbitrary epoch (typically boot) to @p out.\n\n @param[out] out  Receives the current timestamp in microseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_TIME."]
-    pub fn ove_time_get_us(out: *mut u64) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " @brief Get the current monotonic time in nanoseconds.\n\n Reads the system timer and writes the elapsed nanoseconds since an\n arbitrary epoch (typically boot) to @p out. Actual nanosecond resolution\n depends on the hardware timer; values may be rounded to the nearest tick.\n\n @param[out] out  Receives the current timestamp in nanoseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_TIME."]
-    pub fn ove_time_get_ns(out: *mut u64) -> core::ffi::c_int;
-}
-unsafe extern "C" {
-    #[doc = " @brief Block the calling task for at least @p ms milliseconds.\n\n Suspends the current task for a minimum of @p ms milliseconds. The actual\n sleep duration may be longer due to scheduling granularity and system load.\n Passing 0 yields the CPU to any equal or higher-priority task.\n\n @param[in] ms  Minimum delay in milliseconds.\n @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR."]
-    pub fn ove_time_delay_ms(ms: u32);
-}
-unsafe extern "C" {
-    #[doc = " @brief Block the calling task for at least @p us microseconds.\n\n Suspends the current task for a minimum of @p us microseconds. For very\n short delays the implementation may busy-wait rather than yield,\n depending on the RTOS tick resolution.\n\n @param[in] us  Minimum delay in microseconds.\n @note Requires @c CONFIG_OVE_TIME. Must not be called from an ISR."]
-    pub fn ove_time_delay_us(us: u32);
 }
 #[doc = " @brief Descriptor for a single on-board LED.\n\n Identifies the GPIO pin that drives the LED and its polarity."]
 #[repr(C)]

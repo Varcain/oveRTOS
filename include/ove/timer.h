@@ -178,8 +178,8 @@ int ove_timer_reset(ove_timer_t timer);
 
 /* P0-3: _init/_deinit stubs so OVE_TIMER_DEFINE_STATIC links cleanly when
  * CONFIG_OVE_TIMER=n. */
-static inline int ove_timer_init(ove_timer_t *t, ove_timer_storage_t *s, ove_timer_fn cb,
-				 void *ud, uint32_t p, int os)
+static inline int ove_timer_init(ove_timer_t *t, ove_timer_storage_t *s, ove_timer_fn cb, void *ud,
+				 uint32_t p, int os)
 {
 	(void)t;
 	(void)s;

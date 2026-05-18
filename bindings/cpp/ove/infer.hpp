@@ -116,7 +116,8 @@ template <size_t ArenaSize = 0> class Model
 	 */
 	[[nodiscard]] Result<struct ove_tensor_info> input(unsigned int index) const noexcept
 	{
-		struct ove_tensor_info info{};
+		struct ove_tensor_info info {
+		};
 		const int rc = ove_model_input(handle_, index, &info);
 		return from_rc(rc, info);
 	}
@@ -124,7 +125,8 @@ template <size_t ArenaSize = 0> class Model
 	/** @brief Get full tensor descriptor for an output. */
 	[[nodiscard]] Result<struct ove_tensor_info> output(unsigned int index) const noexcept
 	{
-		struct ove_tensor_info info{};
+		struct ove_tensor_info info {
+		};
 		const int rc = ove_model_output(handle_, index, &info);
 		return from_rc(rc, info);
 	}

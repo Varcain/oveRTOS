@@ -239,8 +239,7 @@ concept lockable = basic_lockable<M> && requires(M m) {
 
 static_assert(detail::basic_lockable<Mutex>,
 	      "ove::Mutex must satisfy the BasicLockable named requirement");
-static_assert(detail::lockable<Mutex>,
-	      "ove::Mutex must satisfy the Lockable named requirement");
+static_assert(detail::lockable<Mutex>, "ove::Mutex must satisfy the Lockable named requirement");
 
 /**
  * @class RecursiveMutex
@@ -1092,8 +1091,7 @@ class CondVar
 	 * @param[in] mtx  The mutex (locked by the calling thread).
 	 * @param[in] pred Callable returning bool.  Evaluated under @p mtx.
 	 */
-	template <typename Predicate>
-	void wait(Mutex &mtx, Predicate pred)
+	template <typename Predicate> void wait(Mutex &mtx, Predicate pred)
 	{
 		while (!pred()) {
 			wait(mtx);
@@ -1111,9 +1109,8 @@ class CondVar
 	 *         the timeout elapsed with @p pred() still false.
 	 */
 	template <typename Rep, typename Period, typename Predicate>
-	[[nodiscard]] bool try_wait_for(Mutex &mtx,
-					 std::chrono::duration<Rep, Period> rel,
-					 Predicate pred)
+	[[nodiscard]] bool try_wait_for(Mutex &mtx, std::chrono::duration<Rep, Period> rel,
+					Predicate pred)
 	{
 		const auto deadline = steady_clock::now() + rel;
 		return try_wait_until(mtx, deadline, pred);
@@ -1132,8 +1129,8 @@ class CondVar
 	 */
 	template <typename Clock, typename Duration, typename Predicate>
 	[[nodiscard]] bool try_wait_until(Mutex &mtx,
-					   const std::chrono::time_point<Clock, Duration> &deadline,
-					   Predicate pred)
+					  const std::chrono::time_point<Clock, Duration> &deadline,
+					  Predicate pred)
 	{
 		while (!pred()) {
 			const auto now = Clock::now();

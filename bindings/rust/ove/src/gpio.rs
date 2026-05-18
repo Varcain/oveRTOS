@@ -164,7 +164,7 @@ impl OutputPin {
     /// Drive the pin high (`true`) or low (`false`).
     #[inline]
     pub fn set(&mut self, value: bool) -> Result<()> {
-        set(self.pin, if value { 1 } else { 0 })
+        set(self.pin, i32::from(value))
     }
 
     /// Drive the pin low.

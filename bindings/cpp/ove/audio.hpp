@@ -109,8 +109,7 @@ class Graph
 	/// @return On success, the assigned node index.  On failure,
 	///         an `unexpected` @ref Error.
 	[[nodiscard]] Result<int> add_node(const struct ove_audio_node_ops *ops, void *ctx,
-					   const char *name,
-					   enum ove_audio_node_type type) noexcept
+					   const char *name, enum ove_audio_node_type type) noexcept
 	{
 		const int rc = ove_audio_graph_add_node(&g_, ops, ctx, name, type);
 		if (rc >= 0)
@@ -152,7 +151,8 @@ class Graph
 	/// @return On success, the populated @c ove_audio_graph_stats.
 	[[nodiscard]] Result<struct ove_audio_graph_stats> get_stats() const noexcept
 	{
-		struct ove_audio_graph_stats stats{};
+		struct ove_audio_graph_stats stats {
+		};
 		const int rc = ove_audio_graph_get_stats(&g_, &stats);
 		return from_rc(rc, stats);
 	}
@@ -208,8 +208,8 @@ class Graph
 				-> int { return static_cast<T *>(ctx)->process(in, out); },
 			/* destroy */ nullptr,
 		};
-		const int rc = ove_audio_graph_add_node(&g_, &ops, &node, name,
-							OVE_AUDIO_NODE_PROCESSOR);
+		const int rc =
+			ove_audio_graph_add_node(&g_, &ops, &node, name, OVE_AUDIO_NODE_PROCESSOR);
 		if (rc >= 0)
 			return rc;
 		return std::unexpected{static_cast<Error>(rc)};

@@ -190,6 +190,13 @@ header = '''// Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
 open(sys.argv[2], "w").write(header + text)
 PY
 
+# Format the output so `cargo fmt --check` and the on-disk file stay in
+# sync. Without this, `--check` here diffs against the unformatted bindgen
+# output and reports false drift after any `cargo fmt` pass.
+if command -v rustfmt >/dev/null 2>&1; then
+    rustfmt --edition 2024 "$OUT" 2>/dev/null || true
+fi
+
 if [ "$MODE" = "check" ]; then
     if ! diff -q "$OUT" "$REAL" >/dev/null 2>&1; then
         echo "warning: bindings_stub.rs is out of sync with the bindgen output." >&2

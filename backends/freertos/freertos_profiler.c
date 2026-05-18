@@ -44,7 +44,6 @@
 
 #ifdef CONFIG_OVE_PROFILER
 
-#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -81,14 +80,22 @@ extern uint32_t __etext;
  * Hitting this during the scan means we've reached unused stack. */
 #define OVE_STACK_FILL 0xA5A5A5A5u
 
-static atomic_int profiler_running;
+/* Plain int + __atomic_* builtins rather than C11 _Atomic types: the
+ * Zephyr SDK gcc's stdatomic.h macros use a temporary `_Atomic int`
+ * tmp whose address is then passed to __atomic_load — clang-tidy
+ * trips on the "address argument to atomic op must be pointer to
+ * trivially-copyable type" check during cross-compile lint.  The
+ * builtins give identical codegen on Cortex-M (aligned 4-byte
+ * load/store/fetch_add are single-instruction). Same approach in
+ * backends/zephyr/zephyr_profiler.c. */
+static int profiler_running;
 
 /* Runtime rate control. The tick hook fires at configTICK_RATE_HZ
  * (1 kHz on QEMU MPS2); sample_divisor picks an integer divisor so the
  * actual sampling rate = tick_rate / divisor. divisor == 1 samples every
  * tick. Dashboard → set_rate() → divisor update. */
-static atomic_uint sample_divisor = 1;
-static atomic_uint sample_counter;
+static unsigned int sample_divisor = 1;
+static unsigned int sample_counter;
 
 static inline uint32_t read_psp(void)
 {
@@ -107,14 +114,14 @@ static inline uint32_t read_psp(void)
  */
 void ove_backend_profiler_on_tick(void)
 {
-	if (!atomic_load_explicit(&profiler_running, memory_order_acquire))
+	if (!__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
 		return;
 
-	unsigned div = atomic_load_explicit(&sample_divisor, memory_order_relaxed);
-	unsigned c = atomic_fetch_add_explicit(&sample_counter, 1u, memory_order_relaxed) + 1u;
+	unsigned div = __atomic_load_n(&sample_divisor, __ATOMIC_RELAXED);
+	unsigned c = __atomic_fetch_add(&sample_counter, 1u, __ATOMIC_RELAXED) + 1u;
 	if (c < div)
 		return;
-	atomic_store_explicit(&sample_counter, 0u, memory_order_relaxed);
+	__atomic_store_n(&sample_counter, 0u, __ATOMIC_RELAXED);
 
 	/* The PSP tracks the interrupted task's stack — except when the
 	 * tick fires while the scheduler isn't yet running (PSP == 0) or
@@ -196,13 +203,13 @@ void ove_backend_profiler_sample_tick(void)
 
 int ove_backend_profiler_start(void)
 {
-	atomic_store_explicit(&profiler_running, 1, memory_order_release);
+	__atomic_store_n(&profiler_running, 1, __ATOMIC_RELEASE);
 	return OVE_OK;
 }
 
 void ove_backend_profiler_stop(void)
 {
-	atomic_store_explicit(&profiler_running, 0, memory_order_release);
+	__atomic_store_n(&profiler_running, 0, __ATOMIC_RELEASE);
 }
 
 void ove_backend_profiler_set_rate(uint32_t hz)
@@ -216,8 +223,8 @@ void ove_backend_profiler_set_rate(uint32_t hz)
 	if (div == 0)
 		div = 1;
 
-	atomic_store_explicit(&sample_divisor, div, memory_order_release);
-	atomic_store_explicit(&sample_counter, 0, memory_order_release);
+	__atomic_store_n(&sample_divisor, div, __ATOMIC_RELEASE);
+	__atomic_store_n(&sample_counter, 0u, __ATOMIC_RELEASE);
 }
 
 uint32_t ove_backend_profiler_get_max_hz(void)

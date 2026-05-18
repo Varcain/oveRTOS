@@ -120,11 +120,7 @@ impl<const N: usize> Stream<N> {
 
     /// Receive by the given deadline.
     #[inline]
-    pub fn try_recv_until(
-        &self,
-        buf: &mut [u8],
-        deadline: crate::time::Instant,
-    ) -> Result<usize> {
+    pub fn try_recv_until(&self, buf: &mut [u8], deadline: crate::time::Instant) -> Result<usize> {
         self.recv_with_timeout(buf, crate::time::deadline_to_timeout_ns(deadline))
     }
 

@@ -49,18 +49,18 @@ extern uint32_t SystemCoreClock;
 uint64_t ove_state_stats_now_us(void)
 {
 	uint32_t load = TRACE_SYSTICK_LOAD;
-	TickType_t t1, t2;
+	TickType_t t1;
 	uint32_t val;
 
 	if (xPortIsInsideInterrupt()) {
-		/* SysTick VAL can wrap across the tick boundary; read it
-		 * between two tick reads so we can retry on mismatch. The
-		 * ISR variant reads xTickCount directly and is safe from
-		 * PendSV / SysTick handlers. */
+		/* ISR context: xTickCount is updated from the SysTick handler
+		 * at higher priority, so a tick boundary across our read is
+		 * impossible.  Single read of t1 + val is sufficient and
+		 * matches the no-retry contract of the FromISR variants. */
 		t1 = xTaskGetTickCountFromISR();
 		val = TRACE_SYSTICK_VAL;
-		t2 = xTaskGetTickCountFromISR();
 	} else {
+		TickType_t t2;
 		do {
 			t1 = xTaskGetTickCount();
 			val = TRACE_SYSTICK_VAL;

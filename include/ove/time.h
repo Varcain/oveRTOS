@@ -121,9 +121,9 @@ static inline void ove_time_delay_us(uint32_t us)
  * Available in both CONFIG_OVE_TIME modes — the macros don't call into
  * the time backend.
  */
-#define OVE_NS(n)  ((uint64_t)(n))
-#define OVE_US(n)  ((uint64_t)(n) * 1000ULL)
-#define OVE_MS(n)  ((uint64_t)(n) * 1000000ULL)
+#define OVE_NS(n) ((uint64_t)(n))
+#define OVE_US(n) ((uint64_t)(n) * 1000ULL)
+#define OVE_MS(n) ((uint64_t)(n) * 1000000ULL)
 #define OVE_SEC(n) ((uint64_t)(n) * 1000000000ULL)
 #define OVE_MIN(n) (OVE_SEC(n) * 60ULL)
 

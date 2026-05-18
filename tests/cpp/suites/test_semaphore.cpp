@@ -143,8 +143,7 @@ static void test_cpp_sem_return_type_shape(void **state)
 {
 	(void)state;
 	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().acquire()), void>);
-	static_assert(
-		std::is_same_v<decltype(std::declval<ove::Semaphore>().try_acquire()), bool>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().try_acquire()), bool>);
 	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().try_acquire_for(
 					     std::chrono::milliseconds{1})),
 				     ove::Result<void>>);

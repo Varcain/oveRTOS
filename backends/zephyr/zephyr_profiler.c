@@ -51,7 +51,6 @@
 
 #ifdef CONFIG_OVE_PROFILER
 
-#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -93,7 +92,14 @@ extern char __text_region_end[];
 #define OVE_STACK_FILL 0u
 #endif
 
-static atomic_int profiler_running;
+/* Plain int + __atomic_* builtins rather than C11 _Atomic types: the
+ * Zephyr SDK gcc's stdatomic.h macros use a temporary `_Atomic int`
+ * tmp whose address is passed to __atomic_load — clang-tidy trips on
+ * the "address argument to atomic op must be pointer to trivially-
+ * copyable type" check during cross-compile lint.  The builtins give
+ * identical codegen on Cortex-M (aligned 4-byte load/store is a single
+ * instruction). Same approach in backends/freertos/freertos_profiler.c. */
+static int profiler_running;
 static struct k_timer profiler_timer;
 
 static inline uint32_t read_psp(void)
@@ -112,7 +118,7 @@ static inline uint32_t read_psp(void)
  */
 void ove_backend_profiler_on_tick(void)
 {
-	if (!atomic_load_explicit(&profiler_running, memory_order_acquire))
+	if (!__atomic_load_n(&profiler_running, __ATOMIC_ACQUIRE))
 		return;
 
 	uint32_t psp = read_psp();
@@ -207,13 +213,13 @@ int ove_backend_profiler_start(void)
 	k_timer_init(&profiler_timer, profiler_timer_expiry, NULL);
 	k_timeout_t period = period_for_hz(CONFIG_OVE_PROFILER_HZ);
 	k_timer_start(&profiler_timer, period, period);
-	atomic_store_explicit(&profiler_running, 1, memory_order_release);
+	__atomic_store_n(&profiler_running, 1, __ATOMIC_RELEASE);
 	return OVE_OK;
 }
 
 void ove_backend_profiler_stop(void)
 {
-	atomic_store_explicit(&profiler_running, 0, memory_order_release);
+	__atomic_store_n(&profiler_running, 0, __ATOMIC_RELEASE);
 	k_timer_stop(&profiler_timer);
 }
 

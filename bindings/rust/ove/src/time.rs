@@ -136,13 +136,6 @@ impl Instant {
     /// signature only exposes a deadline variant but the caller wants
     /// to block forever.
     pub const FOREVER: Instant = Instant(u64::MAX);
-
-    /// Raw nanosecond representation — used internally to bridge into
-    /// the substrate's `deadline_ns: uint64_t` parameter.
-    #[inline]
-    pub(crate) fn raw(self) -> u64 {
-        self.0
-    }
 }
 
 impl core::ops::Add<Duration> for Instant {

@@ -15,8 +15,8 @@ static void test_cpp_stream_send_receive(void **state)
 
 	const uint8_t tx[] = {0xDE, 0xAD, 0xBE, 0xEF};
 	size_t sent = 0;
-	assert_true(s.try_send_for(tx, sizeof(tx), std::chrono::milliseconds{100}, sent)
-			    .has_value());
+	assert_true(
+		s.try_send_for(tx, sizeof(tx), std::chrono::milliseconds{100}, sent).has_value());
 	assert_int_equal(sent, sizeof(tx));
 
 	uint8_t rx[4] = {};
@@ -126,50 +126,50 @@ static void test_cpp_stream_return_type_shape(void **state)
 	using S = ove::Stream<64>;
 	using uchar_p = const void *;
 	using void_p = void *;
-	static_assert(std::is_same_v<decltype(std::declval<S>().send(
-					     std::declval<uchar_p>(), size_t{},
-					     std::declval<size_t &>())),
-				     void>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().try_send(
-					     std::declval<uchar_p>(), size_t{},
-					     std::declval<size_t &>())),
-				     bool>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().try_send_for(
-					     std::declval<uchar_p>(), size_t{},
-					     std::chrono::milliseconds{1},
-					     std::declval<size_t &>())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().try_send_until(
-					     std::declval<uchar_p>(), size_t{},
-					     std::chrono::steady_clock::now(),
-					     std::declval<size_t &>())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().receive(
-					     std::declval<void_p>(), size_t{},
-					     std::declval<size_t &>())),
-				     void>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive(
-					     std::declval<void_p>(), size_t{},
-					     std::declval<size_t &>())),
-				     bool>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive_for(
-					     std::declval<void_p>(), size_t{},
-					     std::chrono::milliseconds{1},
-					     std::declval<size_t &>())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive_until(
-					     std::declval<void_p>(), size_t{},
-					     std::chrono::steady_clock::now(),
-					     std::declval<size_t &>())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().send_from_isr(
-					     std::declval<uchar_p>(), size_t{},
-					     std::declval<size_t &>())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<S>().receive_from_isr(
-					     std::declval<void_p>(), size_t{},
-					     std::declval<size_t &>())),
-				     ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().send(std::declval<uchar_p>(), size_t{},
+							       std::declval<size_t &>())),
+			       void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().try_send(std::declval<uchar_p>(), size_t{},
+								   std::declval<size_t &>())),
+			       bool>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().try_send_for(
+				       std::declval<uchar_p>(), size_t{},
+				       std::chrono::milliseconds{1}, std::declval<size_t &>())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().try_send_until(
+				       std::declval<uchar_p>(), size_t{},
+				       std::chrono::steady_clock::now(), std::declval<size_t &>())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().receive(std::declval<void_p>(), size_t{},
+								  std::declval<size_t &>())),
+			       void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().try_receive(
+				       std::declval<void_p>(), size_t{}, std::declval<size_t &>())),
+			       bool>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().try_receive_for(
+				       std::declval<void_p>(), size_t{},
+				       std::chrono::milliseconds{1}, std::declval<size_t &>())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().try_receive_until(
+				       std::declval<void_p>(), size_t{},
+				       std::chrono::steady_clock::now(), std::declval<size_t &>())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().send_from_isr(
+				       std::declval<uchar_p>(), size_t{}, std::declval<size_t &>())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<S>().receive_from_isr(
+				       std::declval<void_p>(), size_t{}, std::declval<size_t &>())),
+			       ove::Result<void>>);
 }
 
 int test_cpp_stream_run(void)

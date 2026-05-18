@@ -120,8 +120,7 @@ static void test_cpp_recursive_not_copyable(void **state)
 static void test_cpp_recursive_return_type_shape(void **state)
 {
 	(void)state;
-	static_assert(
-		std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().lock()), void>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().lock()), void>);
 	static_assert(
 		std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().try_lock()), bool>);
 	static_assert(std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().try_lock_for(
@@ -130,8 +129,7 @@ static void test_cpp_recursive_return_type_shape(void **state)
 	static_assert(std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().try_lock_until(
 					     std::chrono::steady_clock::now())),
 				     ove::Result<void>>);
-	static_assert(
-		std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().unlock()), void>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().unlock()), void>);
 }
 
 int test_cpp_recursive_mutex_run(void)

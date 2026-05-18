@@ -272,8 +272,7 @@ static void test_http()
 	/* GET request */
 	TEST("http_get http://example.com/");
 	if (auto r = client.get("http://example.com/"); r) {
-		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(),
-			    (unsigned)r->body_len());
+		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(), (unsigned)r->body_len());
 		if (r->status() == 200 && r->body_len() > 0) {
 			PASS("http_get (200 OK)");
 		} else {
@@ -289,8 +288,7 @@ static void test_http()
 	if (auto r = client.post("http://httpbin.org/post", "application/json", json,
 				 std::strlen(json));
 	    r) {
-		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(),
-			    (unsigned)r->body_len());
+		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(), (unsigned)r->body_len());
 		if (r->status() == 200) {
 			PASS("http_post (200 OK)");
 			/* Check echo body contains our payload */
@@ -316,8 +314,7 @@ static void test_http()
 	if (auto r = client.request(OVE_HTTP_PUT, "http://httpbin.org/put", "application/json",
 				    put_json, std::strlen(put_json), headers, 2);
 	    r) {
-		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(),
-			    (unsigned)r->body_len());
+		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(), (unsigned)r->body_len());
 		if (r->status() == 200) {
 			PASS("http_put (200 OK)");
 		} else {
@@ -376,9 +373,10 @@ static void test_mqtt()
 	};
 
 	if (auto r = mqtt.connect(
-		    mqtt_cfg, +[](std::string_view topic, std::string_view payload) {
-			    OVE_LOG_INF("  MQTT rx: [%.*s] %.*s", (int)topic.size(),
-					topic.data(), (int)payload.size(), payload.data());
+		    mqtt_cfg,
+		    +[](std::string_view topic, std::string_view payload) {
+			    OVE_LOG_INF("  MQTT rx: [%.*s] %.*s", (int)topic.size(), topic.data(),
+					(int)payload.size(), payload.data());
 			    if (payload.size() < sizeof(mqtt_rx_payload)) {
 				    std::memcpy(mqtt_rx_payload, payload.data(), payload.size());
 				    mqtt_rx_payload[payload.size()] = '\0';

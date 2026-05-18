@@ -125,21 +125,10 @@ impl EventGroup {
     }
 
     #[inline]
-    fn wait_bits_with_timeout(
-        &self,
-        bits: u32,
-        flags: WaitFlags,
-        timeout_ns: u64,
-    ) -> Result<u32> {
+    fn wait_bits_with_timeout(&self, bits: u32, flags: WaitFlags, timeout_ns: u64) -> Result<u32> {
         let mut result: u32 = 0;
         let rc = unsafe {
-            bindings::ove_eventgroup_wait_bits(
-                self.handle,
-                bits,
-                flags.0,
-                timeout_ns,
-                &mut result,
-            )
+            bindings::ove_eventgroup_wait_bits(self.handle, bits, flags.0, timeout_ns, &mut result)
         };
         Error::from_code(rc)?;
         Ok(result)

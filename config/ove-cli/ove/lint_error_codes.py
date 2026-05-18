@@ -32,7 +32,13 @@ import os
 import re
 
 # Patterns extract the OVE_ERR_* names asserted in each block.
-_DEFINE_RE = re.compile(r"^\s*#define\s+(OVE_ERR_\w+)\s*\(-?\d+\)", re.MULTILINE)
+# The C header defines codes via `typedef enum ove_err { OVE_ERR_X = -N, ... }`;
+# the legacy `#define OVE_ERR_X (-N)` form is still recognised for back-compat
+# with older headers (and to make the regex easy to grep for).
+_DEFINE_RE = re.compile(
+    r"^\s*(?:#define\s+)?(OVE_ERR_\w+)\s*[=(]\s*\(?-?\d+\)?",
+    re.MULTILINE,
+)
 _C_ASSERT_RE = re.compile(r"OVE_STATIC_ASSERT\(\s*(OVE_ERR_\w+)\s*==")
 _CPP_ASSERT_RE = re.compile(r"static_assert\(\s*(OVE_ERR_\w+)\s*==")
 _RUST_ASSERT_RE = re.compile(r"bindings::(OVE_ERR_\w+)\s*==")

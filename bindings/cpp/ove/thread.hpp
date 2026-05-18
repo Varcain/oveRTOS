@@ -183,7 +183,8 @@ class stop_source
 		return handle_;
 	}
 
-	friend constexpr bool operator==(const stop_source &, const stop_source &) noexcept = default;
+	friend constexpr bool operator==(const stop_source &,
+					 const stop_source &) noexcept = default;
 
       private:
 	ove_thread_t handle_ = nullptr;
@@ -406,9 +407,8 @@ template <size_t StackSize = 0> class Thread
 		void *ctx = reinterpret_cast<void *>(fn);
 #ifdef CONFIG_OVE_ZERO_HEAP
 		static_assert(StackSize > 0, "StackSize must be > 0 in zero-heap mode");
-		int err = ove_thread_init(&handle_, &storage_, name,
-					  &detail::stop_token_trampoline, ctx, prio, StackSize,
-					  stack_);
+		int err = ove_thread_init(&handle_, &storage_, name, &detail::stop_token_trampoline,
+					  ctx, prio, StackSize, stack_);
 #else
 		int err = ove_thread_create(&handle_, name, &detail::stop_token_trampoline, ctx,
 					    prio, StackSize);
@@ -460,9 +460,8 @@ template <size_t StackSize = 0> class Thread
 	{
 		using FT = std::decay_t<F>;
 		FT *boxed = new FT(std::forward<F>(entry));
-		int err = ove_thread_create(&handle_, name,
-					    &detail::capturing_trampoline<FT>, boxed, prio,
-					    StackSize);
+		int err = ove_thread_create(&handle_, name, &detail::capturing_trampoline<FT>,
+					    boxed, prio, StackSize);
 		if (err != OVE_OK) {
 			delete boxed; /* trampoline never runs; reclaim the box */
 			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
@@ -653,7 +652,8 @@ template <size_t StackSize = 0> class Thread
 	 */
 	[[nodiscard]] Result<struct ove_thread_stats> get_runtime_stats() const noexcept
 	{
-		struct ove_thread_stats stats{};
+		struct ove_thread_stats stats {
+		};
 		const int rc = ove_thread_get_runtime_stats(handle_, &stats);
 		return from_rc(rc, stats);
 	}

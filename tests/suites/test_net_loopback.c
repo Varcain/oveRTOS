@@ -136,7 +136,8 @@ static void test_tcp_loopback_echo(void **state)
 
 	char rxbuf[64] = {0};
 	size_t received = 0;
-	assert_int_equal(ove_socket_recv(sock, rxbuf, sizeof(rxbuf), &received, OVE_SEC(2)), OVE_OK);
+	assert_int_equal(ove_socket_recv(sock, rxbuf, sizeof(rxbuf), &received, OVE_SEC(2)),
+			 OVE_OK);
 	assert_int_equal(received, plen);
 	assert_memory_equal(rxbuf, payload, plen);
 

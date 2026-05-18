@@ -90,8 +90,7 @@ class Spi
 	}
 
 	/** @brief Write-only transfer — receive data is discarded. */
-	[[nodiscard]] Result<void> write(const struct ove_spi_cs *cs, const void *data,
-					 size_t len,
+	[[nodiscard]] Result<void> write(const struct ove_spi_cs *cs, const void *data, size_t len,
 					 std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		return from_rc(ove_spi_write(handle_, cs, data, len, to_timeout_ns(timeout)));
@@ -110,8 +109,8 @@ class Spi
 		     unsigned int num_xfers,
 		     std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return from_rc(
-			ove_spi_transfer_seq(handle_, cs, xfers, num_xfers, to_timeout_ns(timeout)));
+		return from_rc(ove_spi_transfer_seq(handle_, cs, xfers, num_xfers,
+						    to_timeout_ns(timeout)));
 	}
 
 	/** @brief Returns the underlying C handle. */

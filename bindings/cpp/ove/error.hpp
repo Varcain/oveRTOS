@@ -102,8 +102,7 @@ static_assert(static_cast<int>(Error::NoMemory) == OVE_ERR_NO_MEMORY, "Error::No
 static_assert(static_cast<int>(Error::Timeout) == OVE_ERR_TIMEOUT, "Error::Timeout drifted");
 static_assert(static_cast<int>(Error::NotSupported) == OVE_ERR_NOT_SUPPORTED,
 	      "Error::NotSupported drifted");
-static_assert(static_cast<int>(Error::QueueFull) == OVE_ERR_QUEUE_FULL,
-	      "Error::QueueFull drifted");
+static_assert(static_cast<int>(Error::QueueFull) == OVE_ERR_QUEUE_FULL, "Error::QueueFull drifted");
 static_assert(static_cast<int>(Error::MlFailed) == OVE_ERR_ML_FAILED, "Error::MlFailed drifted");
 static_assert(static_cast<int>(Error::NetRefused) == OVE_ERR_NET_REFUSED,
 	      "Error::NetRefused drifted");
@@ -114,8 +113,7 @@ static_assert(static_cast<int>(Error::NetAddrInUse) == OVE_ERR_NET_ADDR_IN_USE,
 static_assert(static_cast<int>(Error::NetReset) == OVE_ERR_NET_RESET, "Error::NetReset drifted");
 static_assert(static_cast<int>(Error::NetDnsFail) == OVE_ERR_NET_DNS_FAIL,
 	      "Error::NetDnsFail drifted");
-static_assert(static_cast<int>(Error::NetClosed) == OVE_ERR_NET_CLOSED,
-	      "Error::NetClosed drifted");
+static_assert(static_cast<int>(Error::NetClosed) == OVE_ERR_NET_CLOSED, "Error::NetClosed drifted");
 static_assert(static_cast<int>(Error::BusNack) == OVE_ERR_BUS_NACK, "Error::BusNack drifted");
 static_assert(static_cast<int>(Error::BusBusy) == OVE_ERR_BUS_BUSY, "Error::BusBusy drifted");
 static_assert(static_cast<int>(Error::BusError) == OVE_ERR_BUS_ERROR, "Error::BusError drifted");
@@ -276,8 +274,7 @@ inline std::error_code make_error_code(Error e) noexcept
  * @param rc Return code from the substrate call.
  * @param value The success-side value, forwarded into the `Result`.
  */
-template <class T>
-[[nodiscard]] inline Result<std::decay_t<T>> from_rc(int rc, T &&value)
+template <class T> [[nodiscard]] inline Result<std::decay_t<T>> from_rc(int rc, T &&value)
 {
 	using V = std::decay_t<T>;
 	if (rc == OVE_OK)

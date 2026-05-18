@@ -98,7 +98,8 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	size_t received = xStreamBufferReceive(stream->handle, buf, len, ove_ns_to_ticks(timeout_ns));
+	size_t received =
+		xStreamBufferReceive(stream->handle, buf, len, ove_ns_to_ticks(timeout_ns));
 	if (bytes_received != NULL) {
 		*bytes_received = received;
 	}

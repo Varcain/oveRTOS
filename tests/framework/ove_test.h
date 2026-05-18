@@ -67,8 +67,7 @@ static inline void test_msleep(uint32_t ms)
  * still consume the return value to silence -Wunused-result. These
  * wrappers assert OK via cmocka's assert_int_equal — unexpected lock
  * failure fails the test cleanly rather than silently proceeding. */
-#define OVE_TEST_LOCK(mtx) \
-	assert_int_equal(ove_mutex_lock((mtx), OVE_WAIT_FOREVER), OVE_OK)
+#define OVE_TEST_LOCK(mtx) assert_int_equal(ove_mutex_lock((mtx), OVE_WAIT_FOREVER), OVE_OK)
 #define OVE_TEST_RECURSIVE_LOCK(mtx) \
 	assert_int_equal(ove_recursive_mutex_lock((mtx), OVE_WAIT_FOREVER), OVE_OK)
 #define OVE_TEST_CONDVAR_WAIT(cv, mtx) \

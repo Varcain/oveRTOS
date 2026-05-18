@@ -21,7 +21,6 @@ const ove = @import("ove");
 var arena_bytes: [8192]u8 = undefined;
 var fba: std.heap.FixedBufferAllocator = undefined;
 
-
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
 pub const std_options: std.Options = .{

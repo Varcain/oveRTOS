@@ -110,7 +110,8 @@ template <size_t RxBufSize = 0> class Uart
 					  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		size_t bytes_read = 0;
-		const int rc = ove_uart_read(handle_, buf, len, to_timeout_ns(timeout), &bytes_read);
+		const int rc =
+			ove_uart_read(handle_, buf, len, to_timeout_ns(timeout), &bytes_read);
 		return from_rc(rc, bytes_read);
 	}
 

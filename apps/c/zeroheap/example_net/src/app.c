@@ -162,7 +162,8 @@ static void test_tcp(void)
 	size_t received = 0;
 
 	while (total < sizeof(buf) - 1) {
-		ret = ove_socket_recv(sock, buf + total, sizeof(buf) - 1 - total, &received, OVE_MS(5000));
+		ret = ove_socket_recv(sock, buf + total, sizeof(buf) - 1 - total, &received,
+				      OVE_MS(5000));
 		if (ret == OVE_ERR_NET_CLOSED)
 			break;
 		if (ret != OVE_OK)
