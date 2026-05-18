@@ -75,9 +75,9 @@ static void test_netif_init()
 #endif
 		;
 
-	int ret = netif.up(cfg);
-	if (ret != OVE_OK) {
-		FAIL("netif_up", ret);
+	auto up_r = netif.up(cfg);
+	if (!up_r) {
+		FAIL("netif_up", static_cast<int>(up_r.error()));
 		return;
 	}
 	PASS("netif_up (static IP)");
@@ -85,19 +85,18 @@ static void test_netif_init()
 	/* Give the link time to come up on hardware */
 #ifndef CONFIG_OVE_RTOS_POSIX
 	OVE_LOG_INF("  Waiting for link...");
-	ove::Thread<0>::sleep_ms(3000);
+	ove::this_thread::sleep_ms(3000);
 #endif
 
 	/* Query actual interface addresses */
 	TEST("netif_get_addr");
 	ove::Address ip, gw, nm;
-	ret = netif.get_addr(&ip, &gw, &nm);
-	if (ret == OVE_OK) {
+	if (auto r = netif.get_addr(&ip, &gw, &nm)) {
 		OVE_LOG_INF("  IP: %u.%u.%u.%u", ip.raw.addr[0], ip.raw.addr[1], ip.raw.addr[2],
 			    ip.raw.addr[3]);
 		PASS("netif_get_addr");
 	} else {
-		FAIL("netif_get_addr", ret);
+		FAIL("netif_get_addr", static_cast<int>(r.error()));
 	}
 }
 
@@ -151,23 +150,20 @@ static void test_tcp()
 	addr.set_port(80);
 
 	TEST("socket_connect");
-	ret = sock.connect(addr, std::chrono::seconds{5});
-	if (ret != OVE_OK) {
-		FAIL("socket_connect", ret);
+	if (auto r = sock.connect(addr, std::chrono::seconds{5}); !r) {
+		FAIL("socket_connect", static_cast<int>(r.error()));
 		return;
 	}
 	PASS("socket_connect");
 
 	/* Send HTTP request */
 	const char *req = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
-	size_t sent = 0;
 
 	TEST("socket_send");
-	ret = sock.send(req, std::strlen(req), &sent);
-	if (ret == OVE_OK && sent == std::strlen(req)) {
+	if (auto r = sock.send(req, std::strlen(req)); r && *r == std::strlen(req)) {
 		PASS("socket_send");
 	} else {
-		FAIL("socket_send", ret);
+		FAIL("socket_send", r ? 0 : static_cast<int>(r.error()));
 		return;
 	}
 
@@ -175,16 +171,16 @@ static void test_tcp()
 	TEST("socket_recv");
 	char buf[512];
 	size_t total = 0;
-	size_t received = 0;
+	int last_err = 0;
 
 	/* Read until connection closes */
 	while (total < sizeof(buf) - 1) {
-		ret = sock.recv(buf + total, sizeof(buf) - 1 - total, &received, 5s);
-		if (ret == OVE_ERR_NET_CLOSED)
-			break;
-		if (ret != OVE_OK)
-			break;
-		total += received;
+		auto r = sock.recv(buf + total, sizeof(buf) - 1 - total, 5s);
+		if (!r) {
+			last_err = static_cast<int>(r.error());
+			break; /* NetClosed treated as clean EOF; other errors abort */
+		}
+		total += *r;
 	}
 
 	if (total > 0) {
@@ -201,7 +197,7 @@ static void test_tcp()
 			FAIL("socket_recv (unexpected status)", 0);
 		}
 	} else {
-		FAIL("socket_recv (no data)", ret);
+		FAIL("socket_recv (no data)", last_err);
 	}
 
 	TEST("socket_close");
@@ -225,9 +221,8 @@ static void test_udp()
 
 	/* Bind to a local port */
 	TEST("socket_bind");
-	int ret = sock.bind(ove::Address::ipv4(0, 0, 0, 0, 9999));
-	if (ret != OVE_OK) {
-		FAIL("socket_bind", ret);
+	if (auto r = sock.bind(ove::Address::ipv4(0, 0, 0, 0, 9999)); !r) {
+		FAIL("socket_bind", static_cast<int>(r.error()));
 		return;
 	}
 	PASS("socket_bind");
@@ -235,34 +230,31 @@ static void test_udp()
 	/* Send to self */
 	auto dest = ove::Address::ipv4(127, 0, 0, 1, 9999);
 	const char *msg = "oveRTOS UDP test";
-	size_t sent = 0;
 
 	TEST("socket_sendto");
-	ret = sock.send_to(msg, std::strlen(msg), dest, &sent);
-	if (ret == OVE_OK) {
+	if (auto r = sock.send_to(msg, std::strlen(msg), dest); r) {
 		PASS("socket_sendto");
 	} else {
-		FAIL("socket_sendto", ret);
+		FAIL("socket_sendto", static_cast<int>(r.error()));
 		return;
 	}
 
 	/* Receive */
 	TEST("socket_recvfrom");
 	char buf[64];
-	size_t received = 0;
 	ove::Address src;
-	ret = sock.recv_from(buf, sizeof(buf) - 1, &src, &received, 2s);
-	if (ret == OVE_OK && received == std::strlen(msg)) {
-		buf[received] = '\0';
+	auto rcv = sock.recv_from(buf, sizeof(buf) - 1, &src, 2s);
+	if (rcv && *rcv == std::strlen(msg)) {
+		buf[*rcv] = '\0';
 		if (std::strcmp(buf, msg) == 0) {
 			PASS("socket_recvfrom (echo match)");
 		} else {
 			FAIL("socket_recvfrom (data mismatch)", 0);
 		}
-	} else if (ret == OVE_ERR_TIMEOUT) {
-		FAIL("socket_recvfrom (timeout)", ret);
+	} else if (!rcv && rcv.error() == ove::Error::Timeout) {
+		FAIL("socket_recvfrom (timeout)", static_cast<int>(rcv.error()));
 	} else {
-		FAIL("socket_recvfrom", ret);
+		FAIL("socket_recvfrom", rcv ? 0 : static_cast<int>(rcv.error()));
 	}
 }
 
@@ -517,7 +509,7 @@ static void net_thread(void *)
 			    (unsigned)httpd_port);
 		/* Keep thread alive so httpd keeps running */
 		while (true) {
-			ove::Thread<0>::sleep_ms(1000);
+			ove::this_thread::sleep_ms(1000);
 		}
 	} else {
 		OVE_LOG_ERR("HTTP server failed to start: %d", ret);
@@ -538,7 +530,7 @@ OVE_MAIN()
 
 	/* On POSIX, ove::run() returns — keep alive for the httpd server */
 	while (true) {
-		ove::Thread<0>::sleep_ms(1000);
+		ove::this_thread::sleep_ms(1000);
 	}
 	(void)net;
 }
