@@ -16,6 +16,10 @@
 #include <ove/thread.h>
 #include <ove/types.hpp>
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+#include <memory> /* std::unique_ptr in the capturing trampoline */
+#endif
+
 namespace ove
 {
 
@@ -169,13 +173,33 @@ class stop_source
  * @concept CooperativeThreadEntry
  * @brief Stateless callable invocable as `void(stop_token)`.
  *
- * The cooperative `Thread` constructor accepts function pointers and
- * stateless lambdas matching this concept.  Capturing lambdas are
- * rejected because the binding cannot heap-allocate captures in
- * zero-heap mode.
+ * The (captureless) cooperative `Thread` constructor accepts function
+ * pointers and stateless lambdas matching this concept.  Capturing
+ * lambdas are matched by @ref CapturingCooperativeEntry instead
+ * (heap-mode only).
  */
 template <typename F>
 concept CooperativeThreadEntry = std::convertible_to<F, void (*)(stop_token)>;
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+/**
+ * @concept CapturingCooperativeEntry
+ * @brief Capturing callable invocable as `void(stop_token)`.
+ *
+ * Picks up lambdas with captures, `std::function`-like wrappers,
+ * functors with member state — anything that satisfies
+ * `std::invocable<F&, stop_token>` but does NOT decay to a plain
+ * function pointer (captureless lambdas / `void(*)(stop_token)` are
+ * matched by @ref CooperativeThreadEntry).
+ *
+ * Heap-mode only: the matching `Thread` constructor heap-allocates a
+ * box for the closure and lets the trampoline reclaim it on entry exit.
+ * Not defined under `CONFIG_OVE_ZERO_HEAP`.
+ */
+template <typename F>
+concept CapturingCooperativeEntry =
+	std::invocable<F &, stop_token> && !std::convertible_to<F, void (*)(stop_token)>;
+#endif
 
 /**
  * @class thread_id
@@ -250,6 +274,30 @@ inline void stop_token_trampoline(void *ctx)
 	}
 	user_fn(stop_token{self});
 }
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+/* Trampoline for the heap-mode capturing cooperative constructor.
+ *
+ * `ctx` is a `new`-allocated closure of type F that the constructor
+ * minted; the trampoline reclaims it via std::unique_ptr so the box
+ * is delete'd after the entry returns (or if the entry throws,
+ * though our binding requires noexcept user code in practice).
+ *
+ * One template instantiation per F — the closure's exact type is
+ * preserved, no type erasure or virtual dispatch.  Each instantiation
+ * is small (typically 1-2 cache lines after LLVM inlining), so the
+ * code-size cost scales with the number of distinct capturing
+ * lambdas, not with the number of spawn sites. */
+template <typename F> inline void capturing_trampoline(void *ctx)
+{
+	std::unique_ptr<F> f{static_cast<F *>(ctx)};
+	ove_thread_t self;
+	while ((self = ove_thread_get_self()) == nullptr) {
+		ove_thread_yield();
+	}
+	(*f)(stop_token{self});
+}
+#endif
 
 } // namespace detail
 
@@ -347,6 +395,60 @@ template <size_t StackSize = 0> class Thread
 #endif
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+	/**
+	 * @brief Cooperative-cancellation constructor for **capturing** entries.
+	 * Heap-mode only.  `std::jthread`-shaped.
+	 *
+	 * Accepts any callable invocable as `void(stop_token)` that isn't a
+	 * plain function pointer — lambdas with captures, `std::function`,
+	 * functors with member state.  The closure is heap-allocated into a
+	 * box owned by the kernel thread; the trampoline reclaims (and
+	 * deletes) it after the entry returns.
+	 *
+	 * @code
+	 * int channel_id = 7;
+	 * ove::Queue<Msg, 32> &q = get_queue();
+	 *
+	 * ove::Thread<4096> th(
+	 *     [&](ove::stop_token tok) {
+	 *         while (!tok.stop_requested()) {
+	 *             q.send(Msg{channel_id});
+	 *         }
+	 *     },
+	 *     OVE_PRIO_NORMAL, "w");
+	 * @endcode
+	 *
+	 * **Lifetime**: captured references must outlive the worker — the
+	 * destructor's `request_stop + join` guarantees that, provided the
+	 * captured data outlives the @c Thread itself.  Same rule as
+	 * @c std::jthread.
+	 *
+	 * **Cost**: one heap allocation per spawn (size = sizeof(F)).  One
+	 * template instantiation per distinct closure type @p F — no type
+	 * erasure or virtual dispatch.
+	 *
+	 * **Zero-heap**: this constructor is not defined.  Use the
+	 * captureless cooperative constructor + a static context struct,
+	 * or the legacy `void(void*)` constructor with a hand-rolled
+	 * pointer.
+	 */
+	template <typename F>
+	Thread(F &&entry, ove_prio_t prio, const char *name)
+		requires(StackSize > 0) && CapturingCooperativeEntry<std::decay_t<F>>
+	{
+		using FT = std::decay_t<F>;
+		FT *boxed = new FT(std::forward<F>(entry));
+		int err = ove_thread_create(&handle_, name,
+					    &detail::capturing_trampoline<FT>, boxed, prio,
+					    StackSize);
+		if (err != OVE_OK) {
+			delete boxed; /* trampoline never runs; reclaim the box */
+			OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		}
+	}
+#endif
 
 	/**
 	 * @brief Destroys the thread wrapper, terminating and releasing the kernel thread.
