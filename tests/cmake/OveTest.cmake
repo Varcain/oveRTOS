@@ -52,6 +52,7 @@ set(OVE_TEST_COMMON_SUITES
     test_led.c
     test_lvgl.c
     test_app.c
+    test_init_no_alloc.c
 )
 
 # Suite that needs a filesystem backend.
@@ -63,7 +64,6 @@ set(OVE_TEST_FS_SUITES
 set(OVE_TEST_STUB_ONLY_SUITES
     test_thread_stop_isolation.c
     test_static_define.c
-    test_init_no_alloc.c
     test_infer.c
     test_net_mqtt.c
     test_net_httpd.c
