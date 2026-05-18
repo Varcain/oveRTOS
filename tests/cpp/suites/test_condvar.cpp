@@ -24,7 +24,7 @@ static void cpp_cv_wait_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_cv_waiter_ctx *>(arg);
 	ctx->mtx->lock();
-	(void)ctx->cv->wait(*ctx->mtx, ove::wait_forever);
+	ctx->cv->wait(*ctx->mtx);
 	ctx->woke = 1;
 	ctx->mtx->unlock();
 }
@@ -35,7 +35,7 @@ static void cpp_cv_signal_entry(void *arg)
 	test_msleep(50);
 	ctx->mtx->lock();
 	ctx->signaled = 1;
-	ctx->cv->signal();
+	ctx->cv->notify_one();
 	ctx->mtx->unlock();
 }
 
@@ -45,7 +45,7 @@ static void cpp_cv_producer_entry(void *arg)
 	test_msleep(50);
 	ctx->mtx->lock();
 	ctx->ready = 1;
-	ctx->cv->signal();
+	ctx->cv->notify_one();
 	ctx->mtx->unlock();
 }
 
@@ -78,7 +78,7 @@ static void test_cpp_condvar_signal_wakes_one(void **state)
 		test_msleep(50);
 
 		mtx.lock();
-		cv.signal();
+		cv.notify_one();
 		mtx.unlock();
 	}
 	assert_int_equal(ctx.woke, 1);
@@ -99,7 +99,7 @@ static void test_cpp_condvar_broadcast(void **state)
 		test_msleep(100);
 
 		mtx.lock();
-		cv.broadcast();
+		cv.notify_all();
 		mtx.unlock();
 	}
 	assert_int_equal(c1.woke, 1);
@@ -112,7 +112,7 @@ static void test_cpp_condvar_wait_timeout(void **state)
 	ove::CondVar cv;
 	ove::Mutex mtx;
 	mtx.lock();
-	assert_int_equal(cv.wait(mtx, std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	assert_int_equal(cv.try_wait_for(mtx, std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 	mtx.unlock();
 }
 
@@ -128,7 +128,7 @@ static void test_cpp_condvar_producer_consumer(void **state)
 
 		mtx.lock();
 		while (!ctx.ready)
-			(void)cv.wait(mtx, ove::wait_forever);
+			cv.wait(mtx);
 		mtx.unlock();
 	}
 	assert_int_equal(ctx.ready, 1);
@@ -145,7 +145,7 @@ static void test_cpp_condvar_wait_forever(void **state)
 		auto th = make_test_thread("sig", cpp_cv_signal_entry, &ctx);
 
 		mtx.lock();
-		assert_int_equal(cv.wait(mtx, ove::wait_forever), OVE_OK);
+		cv.wait(mtx);
 		mtx.unlock();
 	}
 	assert_int_equal(ctx.signaled, 1);

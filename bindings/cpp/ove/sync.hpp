@@ -724,25 +724,46 @@ class Event
 #endif
 
 	/**
-	 * @brief Blocks the calling task until the event is signalled or the timeout expires.
-	 * @param[in] timeout_ns Maximum time to wait in nanoseconds; use
-	 *            `OVE_WAIT_FOREVER` to block indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Blocks the calling task until the event is signalled.
+	 *
+	 * Forever wait; failure means the handle is unusable.  Aborts via
+	 * @c OVE_STATIC_INIT_ASSERT (same shape as @ref Mutex::lock and
+	 * @ref Semaphore::acquire).
 	 */
-	[[nodiscard]] int wait(std::chrono::nanoseconds timeout = wait_forever)
+	void wait()
 	{
-		return ove_event_wait(handle_, to_timeout_ns(timeout));
+		const int err = ove_event_wait(handle_, OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref wait.
-	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
-	 *                     wait must complete.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Non-blocking check.
+	 * @return `true` if the event was signalled (and the wait consumed it),
+	 *         `false` otherwise.
 	 */
-	[[nodiscard]] int wait_until(steady_clock::time_point deadline)
+	[[nodiscard]] bool try_wait()
 	{
-		return ove_event_wait_until(handle_, to_deadline_ns(deadline));
+		return ove_event_wait(handle_, 0) == OVE_OK;
+	}
+
+	/**
+	 * @brief Bounded-wait.  Returns @c OVE_OK on signal, @c OVE_ERR_TIMEOUT
+	 *        on timeout.
+	 */
+	[[nodiscard]] int try_wait_for(std::chrono::nanoseconds rel)
+	{
+		return ove_event_wait(handle_, to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Deadline-based wait templated over the clock.  See
+	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_wait_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_event_wait(handle_, to_timeout_ns(rel));
 	}
 
 	/**
@@ -873,41 +894,60 @@ class CondVar
 	 * is released atomically while the task blocks, and re-acquired before the
 	 * call returns.
 	 *
-	 * @param[in] mtx        The mutex associated with the predicate being waited on.
-	 * @param[in] timeout_ns Maximum wait time in nanoseconds; use
-	 *            `OVE_WAIT_FOREVER` to block indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * Forever wait; failure means the handle is unusable.  Aborts via
+	 * @c OVE_STATIC_INIT_ASSERT.  Always re-check the predicate after
+	 * @c wait returns to guard against spurious wake-ups.
+	 *
+	 * `std::condition_variable::wait` analog.
+	 *
+	 * @param[in] mtx The mutex associated with the predicate being
+	 *                waited on.  Must be locked by the calling thread.
 	 */
-	[[nodiscard]] int wait(Mutex &mtx, std::chrono::nanoseconds timeout = wait_forever)
+	void wait(Mutex &mtx)
 	{
-		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(timeout));
+		const int err = ove_condvar_wait(handle_, mtx.handle(), OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref wait.
-	 * @param[in] mtx      Mutex that guards the condition.  Must be locked
-	 *                     by the calling thread.
-	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
-	 *                     wait must complete.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Bounded-wait.  Returns @c OVE_OK on wake, @c OVE_ERR_TIMEOUT
+	 *        on timeout.  `std::condition_variable::wait_for` analog.
+	 *
+	 * @note No `try_wait()` immediate form — a condvar wait is inherently
+	 * blocking; `std::condition_variable` matches this (no `try_wait`).
 	 */
-	[[nodiscard]] int wait_until(Mutex &mtx, steady_clock::time_point deadline)
+	[[nodiscard]] int try_wait_for(Mutex &mtx, std::chrono::nanoseconds rel)
 	{
-		return ove_condvar_wait_until(handle_, mtx.handle(), to_deadline_ns(deadline));
+		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Deadline-based wait templated over the clock.
+	 * `std::condition_variable::wait_until` analog.  See
+	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_wait_until(Mutex &mtx,
+					  const std::chrono::time_point<Clock, Duration> &deadline)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(rel));
 	}
 
 	/**
 	 * @brief Wakes one task waiting on this condition variable.
+	 * `std::condition_variable::notify_one` analog.
 	 */
-	void signal()
+	void notify_one()
 	{
 		ove_condvar_signal(handle_);
 	}
 
 	/**
 	 * @brief Wakes all tasks waiting on this condition variable.
+	 * `std::condition_variable::notify_all` analog.
 	 */
-	void broadcast()
+	void notify_all()
 	{
 		ove_condvar_broadcast(handle_);
 	}
