@@ -82,8 +82,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     /// Returns [`Error::QueueFull`] if the queue is full.
     #[inline]
     pub fn try_send(&self, item: &T) -> Result<()> {
-        let rc =
-            unsafe { bindings::ove_queue_send(self.handle, item as *const T as *const _, 0) };
+        let rc = unsafe { bindings::ove_queue_send(self.handle, item as *const T as *const _, 0) };
         Error::from_code(rc)
     }
 
@@ -134,9 +133,8 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     #[inline]
     pub fn try_recv(&self) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
-        let rc = unsafe {
-            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, 0)
-        };
+        let rc =
+            unsafe { bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, 0) };
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })
     }

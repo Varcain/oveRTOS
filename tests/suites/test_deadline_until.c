@@ -124,8 +124,7 @@ static void test_mutex_lock_until_near_future(void **state)
 	/* Worker grabs the lock and holds it longer than the deadline. */
 	struct mtx_holder_ctx ctx = {.mtx = mtx, .holding = 0, .hold_ms = 500};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "holder", mtx_holder_entry, &ctx,
-			    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "holder", mtx_holder_entry, &ctx, s_th_stack, 4096);
 	assert_true(wait_for_flag(&ctx.holding, 1, 1000));
 
 	uint64_t before = ove_time_now_steady_ns();
@@ -160,8 +159,8 @@ static void test_sem_take_until_wait_forever_unblocks(void **state)
 
 	struct sem_giver_ctx ctx = {.sem = sem, .after_ms = 30};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage_b, "giver", sem_giver_entry, &ctx,
-			    s_th_stack_b, 4096);
+	ove_test_thread_run(&th, &s_th_storage_b, "giver", sem_giver_entry, &ctx, s_th_stack_b,
+			    4096);
 
 	assert_int_equal(ove_sem_take_until(sem, OVE_WAIT_FOREVER), OVE_OK);
 

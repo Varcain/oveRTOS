@@ -160,14 +160,15 @@ static void test_cpp_error_result_value_or(void **state)
 static void test_cpp_error_result_and_then(void **state)
 {
 	(void)state;
-	auto doubled = ove::from_rc(OVE_OK, 21).and_then([](int v) -> ove::Result<int> {
-		return v * 2;
-	});
+	auto doubled =
+		ove::from_rc(OVE_OK, 21).and_then([](int v) -> ove::Result<int> { return v * 2; });
 	assert_true(doubled.has_value());
 	assert_int_equal(*doubled, 42);
 
-	auto short_circuit = ove::from_rc(OVE_ERR_TIMEOUT, 21)
-				     .and_then([](int v) -> ove::Result<int> { return v * 2; });
+	auto short_circuit =
+		ove::from_rc(OVE_ERR_TIMEOUT, 21).and_then([](int v) -> ove::Result<int> {
+			return v * 2;
+		});
 	assert_false(short_circuit.has_value());
 	assert_true(short_circuit.error() == ove::Error::Timeout);
 }

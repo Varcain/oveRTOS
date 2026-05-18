@@ -99,8 +99,8 @@ void ove_queue_deinit(ove_queue_t q);
  *
  * @see ove_queue_destroy, ove_queue_init
  */
-OVE_NODISCARD int ove_queue_create(ove_queue_t *q, size_t item_size,
-				   unsigned int max_items) OVE_NONNULL(1);
+OVE_NODISCARD int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
+	OVE_NONNULL(1);
 
 /**
  * @brief Destroy and free a queue allocated with ove_queue_create().
@@ -136,8 +136,8 @@ void ove_queue_destroy(ove_queue_t q);
  *
  * @see ove_queue_receive, ove_queue_send_from_isr
  */
-OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data,
-				 uint64_t timeout_ns) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
+	OVE_NONNULL(1, 2);
 
 /**
  * @brief Deadline-based variant of @ref ove_queue_send.
@@ -178,8 +178,8 @@ OVE_NODISCARD static inline int ove_queue_send_until(ove_queue_t q, const void *
  *
  * @see ove_queue_send, ove_queue_receive_from_isr
  */
-OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf,
-				    uint64_t timeout_ns) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_ns)
+	OVE_NONNULL(1, 2);
 
 /**
  * @brief Deadline-based variant of @ref ove_queue_receive.

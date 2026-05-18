@@ -64,8 +64,7 @@ inline void led_toggle(unsigned int led)
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */
-[[nodiscard]] inline Result<void> gpio_set(unsigned int port, unsigned int pin,
-					   int value) noexcept
+[[nodiscard]] inline Result<void> gpio_set(unsigned int port, unsigned int pin, int value) noexcept
 {
 	return from_rc(ove_bsp_gpio_set(port, pin, value));
 }

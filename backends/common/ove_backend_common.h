@@ -30,11 +30,11 @@
  * Release builds (@c NDEBUG) drop the assert; the return value is
  * still consumed via @c (void) so no unused-variable warning fires.
  */
-#define OVE_LOCK_INFINITE(mtx)                                       \
-	do {                                                         \
-		int _rc = ove_mutex_lock((mtx), OVE_WAIT_FOREVER);   \
-		assert(_rc == OVE_OK);                               \
-		(void)_rc;                                           \
+#define OVE_LOCK_INFINITE(mtx)                                     \
+	do {                                                       \
+		int _rc = ove_mutex_lock((mtx), OVE_WAIT_FOREVER); \
+		assert(_rc == OVE_OK);                             \
+		(void)_rc;                                         \
 	} while (0)
 
 /*

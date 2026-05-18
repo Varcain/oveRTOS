@@ -15,7 +15,6 @@
 #include "semphr.h"
 #include "task.h"
 
-
 /* ─── Mutex _init / _deinit ──────────────────────────────────────────── */
 
 int ove_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)

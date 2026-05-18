@@ -62,7 +62,7 @@ static void test_request_stop_is_per_thread(void **state)
 
 	/* A exits; B keeps running. */
 	assert_true(wait_for_flag(&ctx_a.exited, 1, 1000));
-	test_msleep(50);  /* give B time to also observe a stop — it shouldn't */
+	test_msleep(50); /* give B time to also observe a stop — it shouldn't */
 	assert_int_equal(ctx_b.exited, 0);
 	assert_false(ove_thread_should_stop(th_b));
 

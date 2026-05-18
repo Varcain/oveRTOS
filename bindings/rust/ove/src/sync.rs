@@ -95,10 +95,7 @@ impl<T> Mutex<T> {
     /// Caller must ensure `storage` outlives the `Mutex` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(
-        storage: *mut bindings::ove_mutex_storage_t,
-        val: T,
-    ) -> Result<Self> {
+    pub unsafe fn from_static(storage: *mut bindings::ove_mutex_storage_t, val: T) -> Result<Self> {
         let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_mutex_init(&mut handle, storage) };
         Error::from_code(rc)?;
@@ -366,9 +363,8 @@ impl RecursiveMutex {
     /// Attempt to acquire the recursive mutex, waiting up to `d`.
     #[inline]
     pub fn try_lock_for(&self, d: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
-        let rc = unsafe {
-            bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(d))
-        };
+        let rc =
+            unsafe { bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(d)) };
         Error::from_code(rc)?;
         Ok(RecursiveMutexGuard {
             mutex: self,
@@ -681,16 +677,12 @@ impl CondVar {
     /// spurious wake-ups are permitted by the substrate.  Or use
     /// [`wait_while`](Self::wait_while) which does the loop for you.
     #[inline]
-    pub fn wait<'a, T: ?Sized>(
-        &self,
-        guard: MutexGuard<'a, T>,
-    ) -> Result<MutexGuard<'a, T>> {
+    pub fn wait<'a, T: ?Sized>(&self, guard: MutexGuard<'a, T>) -> Result<MutexGuard<'a, T>> {
         let mutex = guard.mutex;
         // Skip the guard's Drop — substrate atomically releases and
         // re-acquires the mutex internally.
         let _suppress = ManuallyDrop::new(guard);
-        let rc =
-            unsafe { bindings::ove_condvar_wait(self.handle, mutex.handle, u64::MAX) };
+        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.handle, u64::MAX) };
         Error::from_code(rc)?;
         Ok(MutexGuard {
             mutex,

@@ -45,14 +45,13 @@ namespace ove
  */
 template <typename T, size_t MaxItems = 0> class Queue
 {
-	static_assert(
-		std::is_trivially_copyable_v<T>,
-		"ove::Queue<T, N> requires T to be trivially copyable. "
-		"The substrate memcpy()s items of sizeof(T) bytes — non-trivial "
-		"types (std::string, std::vector, std::unique_ptr, user types with "
-		"explicit copy/move ctors or destructors that do bookkeeping) corrupt "
-		"their internal state on memcpy.  Wrap them in a smart pointer or "
-		"POD struct, or transfer ownership by pointer through the queue.");
+	static_assert(std::is_trivially_copyable_v<T>,
+		      "ove::Queue<T, N> requires T to be trivially copyable. "
+		      "The substrate memcpy()s items of sizeof(T) bytes — non-trivial "
+		      "types (std::string, std::vector, std::unique_ptr, user types with "
+		      "explicit copy/move ctors or destructors that do bookkeeping) corrupt "
+		      "their internal state on memcpy.  Wrap them in a smart pointer or "
+		      "POD struct, or transfer ownership by pointer through the queue.");
 
       public:
 	/**
@@ -223,8 +222,7 @@ template <typename T, size_t MaxItems = 0> class Queue
 	 */
 	template <class Clock, class Duration>
 	[[nodiscard]] Result<void>
-	try_receive_until(T &out,
-			  const std::chrono::time_point<Clock, Duration> &deadline) noexcept
+	try_receive_until(T &out, const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
 		return from_rc(ove_queue_receive(handle_, &out, to_timeout_ns(rel)));

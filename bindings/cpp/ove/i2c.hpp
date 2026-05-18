@@ -123,8 +123,8 @@ class I2c
 	}
 
 	/** @brief Probe slave `addr` — empty `Result<void>` if the device ACKs. */
-	[[nodiscard]] Result<void>
-	probe(uint16_t addr, std::chrono::nanoseconds timeout = wait_forever) noexcept
+	[[nodiscard]] Result<void> probe(uint16_t addr,
+					 std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		return from_rc(ove_i2c_probe(handle_, addr, to_timeout_ns(timeout)));
 	}

@@ -193,13 +193,13 @@ static void test_cpp_condvar_not_copyable(void **state)
 static void test_cpp_condvar_return_type_shape(void **state)
 {
 	(void)state;
-	static_assert(std::is_same_v<
-		decltype(std::declval<ove::CondVar>().wait(std::declval<ove::Mutex &>())),
-		void>);
-	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_for(
-					     std::declval<ove::Mutex &>(),
-					     std::chrono::milliseconds{1})),
-				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().wait(
+					     std::declval<ove::Mutex &>())),
+				     void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_for(
+				       std::declval<ove::Mutex &>(), std::chrono::milliseconds{1})),
+			       ove::Result<void>>);
 	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_until(
 					     std::declval<ove::Mutex &>(),
 					     std::chrono::steady_clock::now())),
@@ -208,11 +208,11 @@ static void test_cpp_condvar_return_type_shape(void **state)
 					     std::declval<ove::Mutex &>(),
 					     std::chrono::milliseconds{1}, [] { return true; })),
 				     bool>);
-	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_until(
-					     std::declval<ove::Mutex &>(),
-					     std::chrono::steady_clock::now(),
-					     [] { return true; })),
-				     bool>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_until(
+				       std::declval<ove::Mutex &>(),
+				       std::chrono::steady_clock::now(), [] { return true; })),
+			       bool>);
 }
 
 /* ── Iter A3: predicate-overload wait_*  — spurious-wakeup safety ──── */
@@ -226,8 +226,7 @@ static void test_cpp_condvar_wait_predicate_already_true(void **state)
 	bool ready = true;
 
 	mtx.lock();
-	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{500},
-					 [&] { return ready; });
+	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{500}, [&] { return ready; });
 	mtx.unlock();
 	assert_true(ok);
 }
@@ -244,7 +243,7 @@ static void test_cpp_condvar_wait_predicate_becomes_true(void **state)
 
 	mtx.lock();
 	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{1000},
-					 [&] { return ctx.ready != 0; });
+					[&] { return ctx.ready != 0; });
 	mtx.unlock();
 	assert_true(ok);
 	assert_int_equal(ctx.ready, 1);
@@ -260,8 +259,8 @@ static void test_cpp_condvar_wait_predicate_timeout(void **state)
 
 	mtx.lock();
 	const auto t0 = ove::steady_clock::now();
-	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{50},
-					 [&] { return never_ready; });
+	const bool ok =
+		cv.try_wait_for(mtx, std::chrono::milliseconds{50}, [&] { return never_ready; });
 	const auto elapsed = ove::steady_clock::now() - t0;
 	mtx.unlock();
 

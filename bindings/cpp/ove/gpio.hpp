@@ -83,8 +83,7 @@ namespace ove::gpio
  *         on failure.
  */
 [[nodiscard]] inline Result<void> irq_register(unsigned int port, unsigned int pin,
-					       ove_gpio_irq_mode_t mode,
-					       ove_gpio_irq_cb callback,
+					       ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,
 					       void *user_data) noexcept
 {
 	return from_rc(ove_gpio_irq_register(port, pin, mode, callback, user_data));

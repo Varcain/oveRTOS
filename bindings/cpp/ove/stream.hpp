@@ -257,8 +257,8 @@ template <size_t BufSize = 0> class Stream
 	 * @return Empty `Result<void>` on full success; `unexpected`
 	 *         with the appropriate @ref Error variant otherwise.
 	 */
-	[[nodiscard]] Result<void>
-	send_from_isr(const void *data, size_t len, size_t &bytes_sent) noexcept
+	[[nodiscard]] Result<void> send_from_isr(const void *data, size_t len,
+						 size_t &bytes_sent) noexcept
 	{
 		return from_rc(ove_stream_send_from_isr(handle_, data, len, &bytes_sent));
 	}
@@ -272,8 +272,8 @@ template <size_t BufSize = 0> class Stream
 	 * @return Empty `Result<void>` on full success; `unexpected`
 	 *         with the appropriate @ref Error variant otherwise.
 	 */
-	[[nodiscard]] Result<void>
-	receive_from_isr(void *buf, size_t len, size_t &bytes_received) noexcept
+	[[nodiscard]] Result<void> receive_from_isr(void *buf, size_t len,
+						    size_t &bytes_received) noexcept
 	{
 		return from_rc(ove_stream_receive_from_isr(handle_, buf, len, &bytes_received));
 	}

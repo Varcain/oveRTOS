@@ -157,8 +157,8 @@ void ove_event_deinit(ove_event_t evt);
  * @see ove_mutex_deinit, ove_recursive_mutex_create,
  *      ove_recursive_mutex_lock, ove_recursive_mutex_unlock
  */
-OVE_NODISCARD int ove_recursive_mutex_init(ove_mutex_t *mtx,
-					   ove_mutex_storage_t *storage) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_recursive_mutex_init(ove_mutex_t *mtx, ove_mutex_storage_t *storage)
+	OVE_NONNULL(1, 2);
 
 /* =========================================================================
  * Condition variable — _init / _deinit (static storage)
@@ -177,8 +177,8 @@ OVE_NODISCARD int ove_recursive_mutex_init(ove_mutex_t *mtx,
  * @see ove_condvar_deinit, ove_condvar_create, ove_condvar_wait,
  *      ove_condvar_signal, ove_condvar_broadcast
  */
-OVE_NODISCARD int ove_condvar_init(ove_condvar_t *cv,
-				   ove_condvar_storage_t *storage) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_condvar_init(ove_condvar_t *cv, ove_condvar_storage_t *storage)
+	OVE_NONNULL(1, 2);
 
 /**
  * @brief Release resources held by a condition variable initialised with
@@ -234,8 +234,8 @@ void ove_mutex_destroy(ove_mutex_t mtx);
  *
  * @see ove_sem_destroy, ove_sem_init
  */
-OVE_NODISCARD int ove_sem_create(ove_sem_t *sem, unsigned int initial,
-				 unsigned int max) OVE_NONNULL(1);
+OVE_NODISCARD int ove_sem_create(ove_sem_t *sem, unsigned int initial, unsigned int max)
+	OVE_NONNULL(1);
 
 /**
  * @brief Destroy and free a semaphore allocated with ove_sem_create().
@@ -545,8 +545,8 @@ void ove_recursive_mutex_unlock(ove_mutex_t mtx);
  *
  * @see ove_condvar_signal, ove_condvar_broadcast
  */
-OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx,
-				   uint64_t timeout_ns) OVE_NONNULL(1, 2);
+OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t timeout_ns)
+	OVE_NONNULL(1, 2);
 
 /**
  * @brief Deadline-based variant of @ref ove_condvar_wait.
@@ -603,8 +603,7 @@ static inline void ove_mutex_deinit(ove_mutex_t m)
 {
 	(void)m;
 }
-static inline int ove_sem_init(ove_sem_t *s, ove_sem_storage_t *st, unsigned int i,
-			       unsigned int x)
+static inline int ove_sem_init(ove_sem_t *s, ove_sem_storage_t *st, unsigned int i, unsigned int x)
 {
 	(void)s;
 	(void)st;

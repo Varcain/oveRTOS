@@ -284,37 +284,34 @@ static void test_cpp_queue_return_type_shape(void **state)
 {
 	(void)state;
 	using Q = ove::Queue<int, 4>;
-	static_assert(std::is_same_v<decltype(std::declval<Q>().send(std::declval<int &>())),
-				     void>);
-	static_assert(std::is_same_v<decltype(std::declval<Q>().try_send(std::declval<int &>())),
-				     bool>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().send(std::declval<int &>())), void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().try_send(std::declval<int &>())), bool>);
 	static_assert(std::is_same_v<decltype(std::declval<Q>().try_send_for(
-					     std::declval<int &>(),
-					     std::chrono::milliseconds{1})),
+					     std::declval<int &>(), std::chrono::milliseconds{1})),
 				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<Q>().try_send_until(
-					     std::declval<int &>(),
-					     std::chrono::steady_clock::now())),
-				     ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().try_send_until(
+				       std::declval<int &>(), std::chrono::steady_clock::now())),
+			       ove::Result<void>>);
 	static_assert(
 		std::is_same_v<decltype(std::declval<Q>().receive(std::declval<int &>())), void>);
-	static_assert(
-		std::is_same_v<decltype(std::declval<Q>().try_receive(std::declval<int &>())),
-			       bool>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive(std::declval<int &>())),
+				     bool>);
 	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive_for(
-					     std::declval<int &>(),
-					     std::chrono::milliseconds{1})),
+					     std::declval<int &>(), std::chrono::milliseconds{1})),
 				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive_until(
-					     std::declval<int &>(),
-					     std::chrono::steady_clock::now())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<Q>().send_from_isr(
-					     std::declval<int &>())),
-				     ove::Result<void>>);
-	static_assert(std::is_same_v<decltype(std::declval<Q>().receive_from_isr(
-					     std::declval<int &>())),
-				     ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().try_receive_until(
+				       std::declval<int &>(), std::chrono::steady_clock::now())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().send_from_isr(std::declval<int &>())),
+			       ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().receive_from_isr(std::declval<int &>())),
+			       ove::Result<void>>);
 }
 
 int test_cpp_queue_run(void)

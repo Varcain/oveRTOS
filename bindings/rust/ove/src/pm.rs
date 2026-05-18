@@ -267,10 +267,7 @@ pub struct PolicyHandler<T: Send + Sync + 'static> {
 }
 
 impl<T: Send + Sync + 'static> PolicyHandler<T> {
-    pub const fn new(
-        cell: &'static crate::InitCell<T>,
-        user: fn(&T, PolicyCtx) -> State,
-    ) -> Self {
+    pub const fn new(cell: &'static crate::InitCell<T>, user: fn(&T, PolicyCtx) -> State) -> Self {
         Self { cell, user }
     }
 }
@@ -356,10 +353,7 @@ pub struct NotifyHandler<T: Send + Sync + 'static> {
 }
 
 impl<T: Send + Sync + 'static> NotifyHandler<T> {
-    pub const fn new(
-        cell: &'static crate::InitCell<T>,
-        user: fn(&T, Event, State, State),
-    ) -> Self {
+    pub const fn new(cell: &'static crate::InitCell<T>, user: fn(&T, Event, State, State)) -> Self {
         Self { cell, user }
     }
 }

@@ -129,8 +129,7 @@ static void test_sem_timeout_uint32_max_boundary(void **state)
 	 * ns->tick fast path handles) — must succeed without hanging. */
 	struct sem_giver_ctx ctx = {.sem = sem, .after_ms = 30};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "giver", sem_giver_entry, &ctx,
-			    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "giver", sem_giver_entry, &ctx, s_th_stack, 4096);
 
 	assert_int_equal(ove_sem_take(sem, (uint64_t)UINT32_MAX), OVE_OK);
 
@@ -147,8 +146,7 @@ static void test_sem_timeout_above_uint32_max_slow_path(void **state)
 	/* UINT32_MAX + 1 forces the slow-path 64-bit divide; must succeed. */
 	struct sem_giver_ctx ctx = {.sem = sem, .after_ms = 30};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "giver", sem_giver_entry, &ctx,
-			    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "giver", sem_giver_entry, &ctx, s_th_stack, 4096);
 
 	assert_int_equal(ove_sem_take(sem, (uint64_t)UINT32_MAX + 1ULL), OVE_OK);
 
@@ -182,8 +180,7 @@ static void test_sem_wait_forever_unblocks_on_give(void **state)
 
 	struct sem_giver_ctx ctx = {.sem = sem, .after_ms = 30};
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "giver", sem_giver_entry, &ctx,
-			    s_th_stack, 4096);
+	ove_test_thread_run(&th, &s_th_storage, "giver", sem_giver_entry, &ctx, s_th_stack, 4096);
 
 	assert_int_equal(ove_sem_take(sem, OVE_WAIT_FOREVER), OVE_OK);
 

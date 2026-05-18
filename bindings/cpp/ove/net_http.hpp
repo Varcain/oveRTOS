@@ -269,10 +269,10 @@ class Client
 	 * @return On success, the populated @ref Response.  On failure,
 	 *         an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] Result<Response>
-	request(ove_http_method_t method, const char *url, const char *content_type,
-		const void *body, size_t body_len, const ove_http_header_t *headers,
-		size_t header_count) noexcept
+	[[nodiscard]] Result<Response> request(ove_http_method_t method, const char *url,
+					       const char *content_type, const void *body,
+					       size_t body_len, const ove_http_header_t *headers,
+					       size_t header_count) noexcept
 	{
 		Response resp;
 		const int rc = ove_http_request_ex(handle_, method, url, content_type, body,

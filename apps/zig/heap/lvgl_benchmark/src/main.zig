@@ -23,7 +23,6 @@ const ove = @import("ove");
 /// Allocator backing every binding primitive in this app.
 const app_allocator = std.heap.page_allocator;
 
-
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
 pub const std_options: std.Options = .{

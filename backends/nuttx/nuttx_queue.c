@@ -17,7 +17,6 @@
 #include <string.h>
 #include <errno.h>
 
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, size_t item_size,

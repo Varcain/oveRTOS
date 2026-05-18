@@ -32,7 +32,7 @@ namespace ove::sntp
  */
 struct Config {
 	const char *server{"pool.ntp.org"}; /**< NTP server hostname. */
-	uint64_t timeout_ns{OVE_SEC(5)}; /**< Sync timeout (default 5 seconds). */
+	uint64_t timeout_ns{OVE_SEC(5)};    /**< Sync timeout (default 5 seconds). */
 };
 
 /**

@@ -13,7 +13,6 @@
 #include "ove_ns_to_ticks.h"
 #include "event_groups.h"
 
-
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
 int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)

@@ -141,8 +141,8 @@ class EventGroup
 							std::chrono::nanoseconds timeout) noexcept
 	{
 		ove_eventbits_t result = 0;
-		const int rc =
-			ove_eventgroup_wait_bits(handle_, bits, flags, to_timeout_ns(timeout), &result);
+		const int rc = ove_eventgroup_wait_bits(handle_, bits, flags,
+							to_timeout_ns(timeout), &result);
 		return from_rc(rc, result);
 	}
 

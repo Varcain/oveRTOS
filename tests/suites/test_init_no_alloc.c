@@ -61,13 +61,13 @@ static inline int ove_heap_lock_test_end(void)
 /* Wraps an _init call between begin/end, asserts both no-trap and OK.
  * The `rc` slot lets the caller use the rc afterward (deinit needs
  * the handle to have been initialised). */
-#define TRACE_INIT(rc_var, init_expr)                                                              \
-	do {                                                                                       \
-		ove_heap_lock_test_begin();                                                        \
-		(rc_var) = (init_expr);                                                            \
-		const int _traps = ove_heap_lock_test_end();                                       \
-		assert_int_equal(_traps, 0);                                                       \
-		assert_int_equal((rc_var), OVE_OK);                                                \
+#define TRACE_INIT(rc_var, init_expr)                        \
+	do {                                                 \
+		ove_heap_lock_test_begin();                  \
+		(rc_var) = (init_expr);                      \
+		const int _traps = ove_heap_lock_test_end(); \
+		assert_int_equal(_traps, 0);                 \
+		assert_int_equal((rc_var), OVE_OK);          \
 	} while (0)
 
 /* ── Sync primitives ────────────────────────────────────────────────── */

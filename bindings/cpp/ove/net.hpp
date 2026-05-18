@@ -383,8 +383,8 @@ class TcpSocket
 	 *         appropriate @ref Error on failure (`Error::Timeout`,
 	 *         `Error::NetRefused`, `Error::NetUnreachable`, …).
 	 */
-	[[nodiscard]] Result<void>
-	connect(const Address &addr, std::chrono::nanoseconds timeout = wait_forever) noexcept
+	[[nodiscard]] Result<void> connect(const Address &addr,
+					   std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		return from_rc(ove_socket_connect(handle_, &addr.raw, to_timeout_ns(timeout)));
 	}
@@ -418,10 +418,11 @@ class TcpSocket
 	 *         reported as `unexpected(Error::NetClosed)`).
 	 */
 	[[nodiscard]] Result<size_t> recv(void *buf, size_t len,
-					   std::chrono::nanoseconds timeout = wait_forever) noexcept
+					  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		size_t received = 0;
-		const int rc = ove_socket_recv(handle_, buf, len, &received, to_timeout_ns(timeout));
+		const int rc =
+			ove_socket_recv(handle_, buf, len, &received, to_timeout_ns(timeout));
 		return from_rc(rc, received);
 	}
 
@@ -584,8 +585,8 @@ class UdpSocket
 	 * @return On success, the number of bytes actually sent.  On
 	 *         failure, an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] Result<size_t>
-	send_to(const void *data, size_t len, const Address &dest) noexcept
+	[[nodiscard]] Result<size_t> send_to(const void *data, size_t len,
+					     const Address &dest) noexcept
 	{
 		size_t sent = 0;
 		const int rc = ove_socket_sendto(handle_, data, len, &sent, &dest.raw);
@@ -785,8 +786,8 @@ class TcpListener
 	 *         @ref Error on failure (typically `Error::Timeout` or
 	 *         `Error::NetClosed`).
 	 */
-	[[nodiscard]] Result<void>
-	accept(TcpSocket &client, std::chrono::nanoseconds timeout = wait_forever) noexcept
+	[[nodiscard]] Result<void> accept(TcpSocket &client,
+					  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		ove_socket_t cli_handle{};
 		ove_socket_storage_t cli_storage{};
@@ -877,8 +878,7 @@ namespace dns
  *         `Error::Timeout`, …).
  */
 [[nodiscard]] inline Result<Address>
-resolve(const char *hostname,
-	std::chrono::nanoseconds timeout = std::chrono::seconds{5}) noexcept
+resolve(const char *hostname, std::chrono::nanoseconds timeout = std::chrono::seconds{5}) noexcept
 {
 	Address addr;
 	const int rc = ove_dns_resolve(hostname, &addr.raw, to_timeout_ns(timeout));
