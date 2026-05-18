@@ -15,6 +15,7 @@
 
 #include <ove/gpio.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_GPIO
 
@@ -33,12 +34,14 @@ namespace ove::gpio
  * @brief Configures a GPIO pin with the specified mode.
  * @param[in] port GPIO port index.
  * @param[in] pin  Pin number within the port.
- * @param[in] mode Desired pin mode (input, output, alternate function, etc.).
- * @return `OVE_OK` on success, or a negative error code.
+ * @param[in] mode Desired pin mode.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
+[[nodiscard]] inline Result<void> configure(unsigned int port, unsigned int pin,
+					    ove_gpio_mode_t mode) noexcept
 {
-	return ove_gpio_configure(port, pin, mode);
+	return from_rc(ove_gpio_configure(port, pin, mode));
 }
 
 /**
@@ -46,22 +49,27 @@ namespace ove::gpio
  * @param[in] port  GPIO port index.
  * @param[in] pin   Pin number within the port.
  * @param[in] value Logic level to drive (0 = low, non-zero = high).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int set(unsigned int port, unsigned int pin, int value)
+[[nodiscard]] inline Result<void> set(unsigned int port, unsigned int pin, int value) noexcept
 {
-	return ove_gpio_set(port, pin, value);
+	return from_rc(ove_gpio_set(port, pin, value));
 }
 
 /**
  * @brief Reads the current logic level of a GPIO pin.
  * @param[in] port GPIO port index.
  * @param[in] pin  Pin number within the port.
- * @return 0 or 1 for the pin level, or a negative error code.
+ * @return On success, the pin level (0 or 1).  On failure, an
+ *         `unexpected` @ref Error.
  */
-[[nodiscard]] inline int get(unsigned int port, unsigned int pin)
+[[nodiscard]] inline Result<int> get(unsigned int port, unsigned int pin) noexcept
 {
-	return ove_gpio_get(port, pin);
+	const int rc = ove_gpio_get(port, pin);
+	if (rc >= 0)
+		return rc;
+	return std::unexpected{static_cast<Error>(rc)};
 }
 
 /**
@@ -71,12 +79,15 @@ namespace ove::gpio
  * @param[in] mode      Trigger mode (rising, falling, both edges, etc.).
  * @param[in] callback  Function to call when the interrupt fires.
  * @param[in] user_data Opaque pointer forwarded to the callback.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode_t mode,
-				      ove_gpio_irq_cb callback, void *user_data)
+[[nodiscard]] inline Result<void> irq_register(unsigned int port, unsigned int pin,
+					       ove_gpio_irq_mode_t mode,
+					       ove_gpio_irq_cb callback,
+					       void *user_data) noexcept
 {
-	return ove_gpio_irq_register(port, pin, mode, callback, user_data);
+	return from_rc(ove_gpio_irq_register(port, pin, mode, callback, user_data));
 }
 
 // Undef RTOS macros that collide with our function names
@@ -89,24 +100,22 @@ namespace ove::gpio
 
 /**
  * @brief Enables the interrupt for a GPIO pin (must be registered first).
- * @param[in] port GPIO port index.
- * @param[in] pin  Pin number within the port.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int irq_enable(unsigned int port, unsigned int pin)
+[[nodiscard]] inline Result<void> irq_enable(unsigned int port, unsigned int pin) noexcept
 {
-	return ove_gpio_irq_enable(port, pin);
+	return from_rc(ove_gpio_irq_enable(port, pin));
 }
 
 /**
  * @brief Disables the interrupt for a GPIO pin.
- * @param[in] port GPIO port index.
- * @param[in] pin  Pin number within the port.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int irq_disable(unsigned int port, unsigned int pin)
+[[nodiscard]] inline Result<void> irq_disable(unsigned int port, unsigned int pin) noexcept
 {
-	return ove_gpio_irq_disable(port, pin);
+	return from_rc(ove_gpio_irq_disable(port, pin));
 }
 
 } /* namespace ove::gpio */

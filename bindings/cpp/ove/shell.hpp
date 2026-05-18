@@ -15,6 +15,7 @@
 
 #include <ove/shell.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_SHELL
 
@@ -30,21 +31,23 @@ namespace ove::shell
 
 /**
  * @brief Initialises the shell subsystem.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int init()
+[[nodiscard]] inline Result<void> init() noexcept
 {
-	return ove_shell_init();
+	return from_rc(ove_shell_init());
 }
 
 /**
  * @brief Registers a shell command.
  * @param[in] cmd Pointer to the command descriptor structure.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int register_cmd(const struct ove_shell_cmd *cmd)
+[[nodiscard]] inline Result<void> register_cmd(const struct ove_shell_cmd *cmd) noexcept
 {
-	return ove_shell_register_cmd(cmd);
+	return from_rc(ove_shell_register_cmd(cmd));
 }
 
 /**

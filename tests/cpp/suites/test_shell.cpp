@@ -11,8 +11,7 @@ static void test_shell_handler(int argc, const char *argv[])
 static void test_cpp_shell_init(void **state)
 {
 	(void)state;
-	int ret = ove::shell::init();
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::shell::init().has_value());
 }
 
 static void test_cpp_shell_register_cmd(void **state)
@@ -21,8 +20,7 @@ static void test_cpp_shell_register_cmd(void **state)
 	(void)ove::shell::init();
 
 	struct ove_shell_cmd cmd = {"test", "a test command", test_shell_handler};
-	int ret = ove::shell::register_cmd(&cmd);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::shell::register_cmd(&cmd).has_value());
 }
 
 static void test_cpp_shell_process_char(void **state)

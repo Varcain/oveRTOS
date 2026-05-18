@@ -234,15 +234,14 @@ static void test_cpp_thread_list_no_binding_cap(void **state)
 	 * the test sees through the binding. */
 	constexpr size_t kBuf = 64;
 	ove::ThreadInfo info[kBuf]{};
-	size_t n = 0;
-	const int rc = ove::thread_list(info, kBuf, &n);
-	if (rc == OVE_OK) {
-		assert_true(n <= kBuf);
-		/* Substrate cap is 16 today; assert binding lets `n` reach
+	auto r = ove::thread_list(info, kBuf);
+	if (r) {
+		assert_true(*r <= kBuf);
+		/* Substrate cap is 16 today; assert binding lets `*r` reach
 		 * the substrate's actual count, not a binding-narrower
 		 * value. */
 	} else {
-		assert_int_equal(rc, OVE_ERR_NOT_SUPPORTED);
+		assert_true(r.error() == ove::Error::NotSupported);
 	}
 }
 

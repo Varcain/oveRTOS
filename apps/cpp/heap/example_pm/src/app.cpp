@@ -62,14 +62,14 @@ static void sensor_thread(void *)
 	OVE_LOG_INF("sensor: started");
 
 	while (true) {
-		pm::domain_request(OVE_PM_DOMAIN_SENSOR);
+		(void)pm::domain_request(OVE_PM_DOMAIN_SENSOR);
 		pm::activity();
 
 		ove::this_thread::sleep_ms(50);
 		reading += 17;
 		OVE_LOG_INF("sensor: reading = %u", reading % 1000);
 
-		pm::domain_release(OVE_PM_DOMAIN_SENSOR);
+		(void)pm::domain_release(OVE_PM_DOMAIN_SENSOR);
 		ove::this_thread::sleep_ms(5000);
 	}
 }
@@ -81,23 +81,22 @@ static void monitor_thread(void *)
 	while (true) {
 		ove::this_thread::sleep_ms(10000);
 
-		pm::Stats stats{};
-		if (pm::get_stats(stats) == OVE_OK) {
+		if (auto stats = pm::get_stats()) {
 			OVE_LOG_INF("=== Power Stats ===");
 			OVE_LOG_INF("  active:  %u us (%u transitions)",
-				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_ACTIVE],
-				    stats.transition_count[OVE_PM_STATE_ACTIVE]);
+				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_ACTIVE],
+				    stats->transition_count[OVE_PM_STATE_ACTIVE]);
 			OVE_LOG_INF("  idle:    %u us (%u transitions)",
-				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_IDLE],
-				    stats.transition_count[OVE_PM_STATE_IDLE]);
+				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_IDLE],
+				    stats->transition_count[OVE_PM_STATE_IDLE]);
 			OVE_LOG_INF("  standby: %u us (%u transitions)",
-				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_STANDBY],
-				    stats.transition_count[OVE_PM_STATE_STANDBY]);
+				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_STANDBY],
+				    stats->transition_count[OVE_PM_STATE_STANDBY]);
 			OVE_LOG_INF("  deep:    %u us (%u transitions)",
-				    (unsigned)stats.time_in_state_us[OVE_PM_STATE_DEEP_SLEEP],
-				    stats.transition_count[OVE_PM_STATE_DEEP_SLEEP]);
-			OVE_LOG_INF("  active%%: %u.%02u%%", stats.active_pct_x100 / 100,
-				    stats.active_pct_x100 % 100);
+				    (unsigned)stats->time_in_state_us[OVE_PM_STATE_DEEP_SLEEP],
+				    stats->transition_count[OVE_PM_STATE_DEEP_SLEEP]);
+			OVE_LOG_INF("  active%%: %u.%02u%%", stats->active_pct_x100 / 100,
+				    stats->active_pct_x100 % 100);
 		}
 
 		if (battery_pct > 5)
@@ -115,7 +114,7 @@ OVE_MAIN()
 		.standby_threshold_ms = 5000,
 		.deep_sleep_threshold_ms = 30000,
 	};
-	if (pm::init(cfg) != OVE_OK) {
+	if (!pm::init(cfg)) {
 		OVE_LOG_ERR("PM init failed");
 		return;
 	}
@@ -123,16 +122,16 @@ OVE_MAIN()
 	pm::WakeSrc btn{};
 	btn.type = OVE_PM_WAKE_GPIO;
 	btn.gpio = {.port = 0, .pin = 13, .edge = OVE_GPIO_IRQ_FALLING};
-	pm::wake_register(btn);
+	(void)pm::wake_register(btn);
 
 	pm::WakeSrc uart{};
 	uart.type = OVE_PM_WAKE_UART;
 	uart.uart = {.instance = 0};
-	pm::wake_register(uart);
+	(void)pm::wake_register(uart);
 
-	pm::notify_register(pm_notify);
-	pm::set_policy(battery_policy, &battery_pct);
-	pm::set_budget(6000);
+	(void)pm::notify_register(pm_notify);
+	(void)pm::set_policy(battery_policy, &battery_pct);
+	(void)pm::set_budget(6000);
 
 	auto sensor_th = std::make_unique<ove::Thread<4096>>(sensor_thread, nullptr,
 							     OVE_PRIO_NORMAL, "sensor");

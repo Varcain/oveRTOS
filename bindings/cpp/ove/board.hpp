@@ -15,6 +15,7 @@
 
 #include <ove/board.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_BOARD
 
@@ -30,11 +31,12 @@ namespace ove::board
 
 /**
  * @brief Initialises the board hardware (clocks, pin-mux, etc.).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int init()
+[[nodiscard]] inline Result<void> init() noexcept
 {
-	return ove_board_init();
+	return from_rc(ove_board_init());
 }
 
 /**

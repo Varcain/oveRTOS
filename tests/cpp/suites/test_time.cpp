@@ -3,28 +3,24 @@
 static void test_cpp_time_get_us(void **state)
 {
 	(void)state;
-	uint64_t us = 0;
-	int ret = ove::time::get_us(&us);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::time::get_us().has_value());
 }
 
 static void test_cpp_time_delay_ms(void **state)
 {
 	(void)state;
-	uint64_t before = 0, after = 0;
-	(void)ove::time::get_us(&before);
+	const uint64_t before = ove::time::get_us().value_or(0);
 	ove::time::delay_ms(50);
-	(void)ove::time::get_us(&after);
+	const uint64_t after = ove::time::get_us().value_or(0);
 	assert_true((after - before) >= 40000);
 }
 
 static void test_cpp_time_delay_us(void **state)
 {
 	(void)state;
-	uint64_t before = 0, after = 0;
-	(void)ove::time::get_us(&before);
+	const uint64_t before = ove::time::get_us().value_or(0);
 	ove::time::delay_us(10000);
-	(void)ove::time::get_us(&after);
+	const uint64_t after = ove::time::get_us().value_or(0);
 	assert_true((after - before) >= 5000);
 }
 

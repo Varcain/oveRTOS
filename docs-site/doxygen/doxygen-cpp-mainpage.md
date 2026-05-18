@@ -1,14 +1,45 @@
 # oveRTOS C++ API Reference {#mainpage}
 
-C++20 RAII wrappers for the oveRTOS embedded RTOS framework.
+C++23 RAII wrappers for the oveRTOS embedded RTOS framework.
 These wrappers provide type-safe, move-only handles with automatic resource
-cleanup, compile-time stack sizing, and fluent LVGL widget builders.
+cleanup, compile-time stack sizing, `Result<T>` (`std::expected`-based)
+error handling, and fluent LVGL widget builders.
+
+The C++ binding builds with `-std=c++23` across all backends
+(POSIX, FreeRTOS, NuttX, Zephyr).
 
 Include every module at once with the umbrella header:
 
 ```cpp
 #include <ove/ove.hpp>
 ```
+
+## Error handling
+
+Every fallible operation returns `ove::Result<T>` — an alias for
+`std::expected<T, ove::Error>`. The error side is a typed
+`enum class ove::Error` mirroring every substrate `OVE_ERR_*`
+constant, and round-trips through `std::error_code` via the
+bundled category.
+
+```cpp
+// Result<void> when there's nothing to return:
+if (auto r = mtx.try_lock_for(100ms); !r) {
+    if (r.error() == ove::Error::Timeout) { /* timed out */ }
+}
+
+// Result<T> when there's a value:
+auto resp = http_client.get("http://example.com/");
+if (resp) { use(resp->status(), resp->body()); }
+
+auto sent = sock.send(buf, len);  // Result<size_t>
+if (sent && *sent == len) { /* fully sent */ }
+```
+
+Forever-blocking forms (`lock()`, `send()` without a timeout, …)
+return `void` and abort via `OVE_STATIC_INIT_ASSERT` on substrate
+failure — a substrate error in an indefinite wait is treated as a
+programming error rather than a recoverable condition.
 
 ## Wrapper Classes
 
@@ -97,6 +128,8 @@ When `CONFIG_OVE_LVGL` is enabled, `ove/lvgl.hpp` provides:
 - **RAII**: All kernel objects are released in destructors. No manual `_destroy()` calls needed.
 - **Move-only**: Handles are non-copyable, preventing double-free.
 - **Compile-time configuration**: Template parameters encode stack sizes and queue depths.
+- **`Result<T>` everywhere**: Fallible operations return `std::expected`-based results with a typed `Error` enum — no magic-number return codes, no out-parameters for byte counts or response objects.
+- **std-composability**: `ove::Mutex` satisfies the `Lockable` requirement (composes with `std::lock_guard`, `std::scoped_lock`); `ove::stop_token` / `ove::stop_source` mirror their `std::` counterparts; `ove::this_thread::*` mirrors `std::this_thread::*`.
 - **[Minimal overhead](https://varcain.github.io/oveRTOS/benchmarks/)**: Wrappers inline to the underlying C API; per-op cost is benchmarked across all bindings on every commit.
 
 ## Further Documentation

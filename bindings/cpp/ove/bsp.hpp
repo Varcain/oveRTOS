@@ -15,6 +15,7 @@
 
 #include <ove/bsp.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_BSP
 
@@ -31,11 +32,12 @@ namespace ove::bsp
 
 /**
  * @brief Initialises the board hardware (backward-compatibility alias for `board::init`).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int board_init()
+[[nodiscard]] inline Result<void> board_init() noexcept
 {
-	return ove_bsp_board_init();
+	return from_rc(ove_bsp_board_init());
 }
 
 /**
@@ -59,63 +61,59 @@ inline void led_toggle(unsigned int led)
 
 /**
  * @brief Drives a GPIO output pin (backward-compatibility alias for `gpio::set`).
- * @param[in] port  GPIO port index.
- * @param[in] pin   Pin number within the port.
- * @param[in] value Logic level (0 = low, non-zero = high).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int gpio_set(unsigned int port, unsigned int pin, int value)
+[[nodiscard]] inline Result<void> gpio_set(unsigned int port, unsigned int pin,
+					   int value) noexcept
 {
-	return ove_bsp_gpio_set(port, pin, value);
+	return from_rc(ove_bsp_gpio_set(port, pin, value));
 }
 
 /**
  * @brief Reads a GPIO pin level (backward-compatibility alias for `gpio::get`).
- * @param[in] port GPIO port index.
- * @param[in] pin  Pin number within the port.
- * @return 0 or 1 for the pin level, or a negative error code.
+ * @return On success, the pin level (0 or 1).  On failure, an
+ *         `unexpected` @ref Error.
  */
-[[nodiscard]] inline int gpio_get(unsigned int port, unsigned int pin)
+[[nodiscard]] inline Result<int> gpio_get(unsigned int port, unsigned int pin) noexcept
 {
-	return ove_bsp_gpio_get(port, pin);
+	const int rc = ove_bsp_gpio_get(port, pin);
+	if (rc >= 0)
+		return rc;
+	return std::unexpected{static_cast<Error>(rc)};
 }
 
 /**
  * @brief Registers a GPIO interrupt callback (backward-compatibility alias for `gpio::irq_register`).
- * @param[in] port      GPIO port index.
- * @param[in] pin       Pin number within the port.
- * @param[in] mode      Trigger mode.
- * @param[in] callback  Function to call when the interrupt fires.
- * @param[in] user_data Opaque pointer forwarded to the callback.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int gpio_irq_register(unsigned int port, unsigned int pin,
-					   ove_gpio_irq_mode_t mode, ove_gpio_irq_cb callback,
-					   void *user_data)
+[[nodiscard]] inline Result<void> gpio_irq_register(unsigned int port, unsigned int pin,
+						    ove_gpio_irq_mode_t mode,
+						    ove_gpio_irq_cb callback,
+						    void *user_data) noexcept
 {
-	return ove_bsp_gpio_irq_register(port, pin, mode, callback, user_data);
+	return from_rc(ove_bsp_gpio_irq_register(port, pin, mode, callback, user_data));
 }
 
 /**
  * @brief Enables a GPIO interrupt (backward-compatibility alias for `gpio::irq_enable`).
- * @param[in] port GPIO port index.
- * @param[in] pin  Pin number within the port.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int gpio_irq_enable(unsigned int port, unsigned int pin)
+[[nodiscard]] inline Result<void> gpio_irq_enable(unsigned int port, unsigned int pin) noexcept
 {
-	return ove_bsp_gpio_irq_enable(port, pin);
+	return from_rc(ove_bsp_gpio_irq_enable(port, pin));
 }
 
 /**
  * @brief Disables a GPIO interrupt (backward-compatibility alias for `gpio::irq_disable`).
- * @param[in] port GPIO port index.
- * @param[in] pin  Pin number within the port.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int gpio_irq_disable(unsigned int port, unsigned int pin)
+[[nodiscard]] inline Result<void> gpio_irq_disable(unsigned int port, unsigned int pin) noexcept
 {
-	return ove_bsp_gpio_irq_disable(port, pin);
+	return from_rc(ove_bsp_gpio_irq_disable(port, pin));
 }
 
 } /* namespace ove::bsp */
