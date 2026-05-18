@@ -177,6 +177,11 @@ pub const time = @import("time.zig");
 /// GeneralPurposeAllocator) become `@compileError` under
 /// `CONFIG_OVE_ZERO_HEAP` with a remediation message.
 pub const allocators = @import("allocators.zig");
+
+/// Compile-time target descriptors.  `ove.target.current_rtos` is a
+/// typed enum value that callers `switch` over exhaustively, replacing
+/// ad-hoc `@hasDecl(ove.ffi, "CONFIG_OVE_RTOS_*")` checks.
+pub const target = @import("target.zig");
 /// Typed duration for the binding's bounded-wait methods
 /// (`Mutex.lockFor`, `Queue.sendFor`, etc.).
 pub const Duration = time.Duration;

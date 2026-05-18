@@ -57,16 +57,13 @@ var fba: std.heap.FixedBufferAllocator = undefined;
 // Constants
 // ---------------------------------------------------------------------------
 
-const app_title = if (@hasDecl(ove.ffi, "CONFIG_OVE_RTOS_FREERTOS"))
-    "oveRTOS(FreeRTOS) Zig Demo"
-else if (@hasDecl(ove.ffi, "CONFIG_OVE_RTOS_NUTTX"))
-    "oveRTOS(NuttX) Zig Demo"
-else if (@hasDecl(ove.ffi, "CONFIG_OVE_RTOS_ZEPHYR"))
-    "oveRTOS(Zephyr) Zig Demo"
-else if (@hasDecl(ove.ffi, "CONFIG_OVE_RTOS_POSIX"))
-    "oveRTOS(POSIX) Zig Demo"
-else
-    "oveRTOS Zig Demo";
+const app_title = switch (ove.target.current_rtos) {
+    .freertos => "oveRTOS(FreeRTOS) Zig Demo",
+    .nuttx => "oveRTOS(NuttX) Zig Demo",
+    .zephyr => "oveRTOS(Zephyr) Zig Demo",
+    .posix => "oveRTOS(POSIX) Zig Demo",
+    .wasm => "oveRTOS(wasm) Zig Demo",
+};
 
 // ---------------------------------------------------------------------------
 // Shared state — wrappers embed kernel storage and (for Thread) the
