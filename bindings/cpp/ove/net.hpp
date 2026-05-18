@@ -67,12 +67,19 @@ class Address
 	}
 
 	/**
-	 * @brief Sets the port.
+	 * @brief Sets the port, returning a reference for chaining.
+	 *
+	 * Fluent-builder style, matching @ref NetIfConfig.
+	 * @code
+	 * auto a = ove::Address::ipv4(0xC0A80001).set_port(8080);
+	 * @endcode
+	 *
 	 * @param[in] p Port number in host byte order.
 	 */
-	void set_port(uint16_t p)
+	Address &set_port(uint16_t p)
 	{
 		raw.port = p;
+		return *this;
 	}
 
 	/** @brief The underlying C sockaddr. */

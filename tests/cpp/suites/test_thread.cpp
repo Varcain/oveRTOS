@@ -70,7 +70,7 @@ static void test_cpp_thread_sleep_duration(void **state)
 	(void)state;
 	uint64_t before = 0, after = 0;
 	ove_time_get_us(&before);
-	ove::Thread<>::sleep_ms(100);
+	ove::this_thread::sleep_ms(100);
 	ove_time_get_us(&after);
 	assert_duration_within(after - before, 100, OVE_TEST_TIMING_TOLERANCE_MS);
 }
@@ -78,13 +78,13 @@ static void test_cpp_thread_sleep_duration(void **state)
 static void test_cpp_thread_yield(void **state)
 {
 	(void)state;
-	ove::Thread<>::yield();
+	ove::this_thread::yield();
 }
 
 static void test_cpp_thread_get_self(void **state)
 {
 	(void)state;
-	ove::Thread<>::self();
+	ove::this_thread::self();
 }
 
 static void test_cpp_thread_set_priority(void **state)

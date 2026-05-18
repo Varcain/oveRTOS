@@ -72,6 +72,17 @@ class stop_token
 		return handle_ != nullptr;
 	}
 
+	/**
+	 * @brief Convertible to `bool` reflecting @ref stop_requested.
+	 *
+	 * Enables `if (tok) { … }` shorthand.  `explicit` prevents accidental
+	 * implicit conversions in boolean-context-free positions.
+	 */
+	explicit operator bool() const noexcept
+	{
+		return stop_requested();
+	}
+
 	/** @return The raw `ove_thread_t` handle for advanced use. */
 	[[nodiscard]] ove_thread_t handle() const noexcept
 	{
@@ -149,6 +160,15 @@ class stop_source
 	[[nodiscard]] bool stop_possible() const noexcept
 	{
 		return handle_ != nullptr;
+	}
+
+	/**
+	 * @brief Convertible to `bool` reflecting @ref stop_requested.
+	 * See @ref stop_token::operator bool.
+	 */
+	explicit operator bool() const noexcept
+	{
+		return stop_requested();
 	}
 
 	/** @return A @ref stop_token observing the same stop state. */
@@ -731,32 +751,6 @@ template <size_t StackSize = 0> class Thread
 		return handle_;
 	}
 
-	/**
-	 * @brief Suspends the calling thread for the specified duration.
-	 * @param[in] ms Sleep duration in milliseconds.
-	 */
-	static void sleep_ms(uint32_t ms)
-	{
-		ove_thread_sleep_ms(ms);
-	}
-
-	/**
-	 * @brief Yields the calling thread's remaining time slice to the scheduler.
-	 */
-	static void yield()
-	{
-		ove_thread_yield();
-	}
-
-	/**
-	 * @brief Returns the oveRTOS handle of the currently executing thread.
-	 * @return The opaque `ove_thread_t` handle of the calling thread.
-	 */
-	static ove_thread_t self()
-	{
-		return ove_thread_get_self();
-	}
-
       private:
 	ove_thread_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -849,3 +843,49 @@ using ThreadInfo = struct ove_thread_info;
 }
 
 } /* namespace ove */
+
+/* ── ove::this_thread:: ─────────────────────────────────────────────
+ *
+ * Free functions that operate on "the currently running thread."
+ * Mirrors `std::this_thread::`.  Previously these lived as static
+ * members on `Thread<>` (e.g. `Thread<>::sleep_ms(500)`), which
+ * read as "an operation on a thread" when semantically it's "the
+ * current thread."  Hard rename for clarity.
+ */
+namespace ove::this_thread
+{
+
+inline void sleep_ms(uint32_t ms) noexcept
+{
+	ove_thread_sleep_ms(ms);
+}
+
+/**
+ * @brief Suspend the calling thread for the given chrono duration.
+ *        @c std::this_thread::sleep_for analog.
+ */
+template <typename Rep, typename Period>
+inline void sleep_for(std::chrono::duration<Rep, Period> d) noexcept
+{
+	const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
+	ove_thread_sleep_ms(ms > 0 ? static_cast<uint32_t>(ms) : 0u);
+}
+
+inline void yield() noexcept
+{
+	ove_thread_yield();
+}
+
+/** @return Raw C handle of the currently executing thread. */
+inline ove_thread_t self() noexcept
+{
+	return ove_thread_get_self();
+}
+
+/** @return @ref thread_id of the currently executing thread. */
+inline thread_id get_id() noexcept
+{
+	return thread_id{ove_thread_get_self()};
+}
+
+} /* namespace ove::this_thread */
