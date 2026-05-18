@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_BSP
 
-namespace ove
+namespace ove::bsp
 {
 
 /**
@@ -28,8 +28,6 @@ namespace ove
  * Available when `CONFIG_OVE_BSP` is enabled.  New code should prefer the
  * individual `ove::board`, `ove::gpio`, and `ove::led` namespaces.
  */
-namespace bsp
-{
 
 /**
  * @brief Initialises the board hardware (backward-compatibility alias for `board::init`).
@@ -120,8 +118,6 @@ inline void led_toggle(unsigned int led)
 	return ove_bsp_gpio_irq_disable(port, pin);
 }
 
-} /* namespace bsp */
-
-} // namespace ove
+} /* namespace ove::bsp */
 
 #endif /* CONFIG_OVE_BSP */

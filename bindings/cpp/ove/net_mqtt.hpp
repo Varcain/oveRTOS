@@ -19,7 +19,7 @@
 
 #ifdef CONFIG_OVE_NET_MQTT
 
-namespace ove
+namespace ove::mqtt
 {
 
 /**
@@ -30,8 +30,6 @@ namespace ove
  * that manages the MQTT connection lifecycle, QoS-typed publish/subscribe,
  * and a stateless callback trampoline for incoming messages.
  */
-namespace mqtt
-{
 
 /**
  * @enum Qos
@@ -255,8 +253,6 @@ class Client
 #endif
 };
 
-} /* namespace mqtt */
-
-} // namespace ove
+} /* namespace ove::mqtt */
 
 #endif /* CONFIG_OVE_NET_MQTT */

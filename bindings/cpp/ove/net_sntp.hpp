@@ -17,15 +17,13 @@
 
 #ifdef CONFIG_OVE_NET_SNTP
 
-namespace ove
+namespace ove::sntp
 {
 
 /**
  * @namespace ove::sntp
  * @brief C++ wrappers around the oveRTOS SNTP client API.
  */
-namespace sntp
-{
 
 /**
  * @struct Config
@@ -67,8 +65,6 @@ struct Config {
 	return ove_sntp_get_utc(&utc_s);
 }
 
-} /* namespace sntp */
-
-} // namespace ove
+} /* namespace ove::sntp */
 
 #endif /* CONFIG_OVE_NET_SNTP */

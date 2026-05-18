@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_CONSOLE
 
-namespace ove
+namespace ove::console
 {
 
 /**
@@ -28,8 +28,6 @@ namespace ove
  * Available when `CONFIG_OVE_CONSOLE` is enabled.  All functions delegate
  * directly to the corresponding `ove_console_*` C functions.
  */
-namespace console
-{
 
 /**
  * @brief Initialises the console subsystem.
@@ -78,8 +76,6 @@ inline void write(const char *data, unsigned int len)
 	ove_console_write(data, len);
 }
 
-} /* namespace console */
-
-} /* namespace ove */
+} /* namespace ove::console */
 
 #endif /* CONFIG_OVE_CONSOLE */

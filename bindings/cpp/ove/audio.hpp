@@ -19,9 +19,7 @@
 
 #ifdef CONFIG_OVE_AUDIO
 
-namespace ove
-{
-namespace audio
+namespace ove::audio
 {
 
 /**
@@ -196,7 +194,6 @@ class Graph
 	bool initialized_;
 };
 
-} /* namespace audio */
-} /* namespace ove */
+} /* namespace ove::audio */
 
 #endif /* CONFIG_OVE_AUDIO */

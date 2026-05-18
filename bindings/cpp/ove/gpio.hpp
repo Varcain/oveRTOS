@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_GPIO
 
-namespace ove
+namespace ove::gpio
 {
 
 /**
@@ -28,8 +28,6 @@ namespace ove
  * Available when `CONFIG_OVE_GPIO` is enabled.  Pins are addressed by a
  * (port, pin) tuple following the same convention as the underlying C API.
  */
-namespace gpio
-{
 
 /**
  * @brief Configures a GPIO pin with the specified mode.
@@ -111,8 +109,6 @@ namespace gpio
 	return ove_gpio_irq_disable(port, pin);
 }
 
-} /* namespace gpio */
-
-} // namespace ove
+} /* namespace ove::gpio */
 
 #endif /* CONFIG_OVE_GPIO */
