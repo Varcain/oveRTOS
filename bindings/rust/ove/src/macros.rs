@@ -107,39 +107,24 @@ macro_rules! model_data {
     };
 }
 
-/// Generate the `ove_main` entry point from a Rust closure or function.
-///
-/// # Example
-///
-/// ```ignore
-/// ove::main!(app_main);
-///
-/// fn app_main() {
-///     // create resources...
-///     ove::run();
-/// }
-/// ```
-///
-/// # Object lifetime
-///
-/// Anything that worker threads access after `app_main` returns must have
-/// `'static` storage — use [`crate::shared!`] / [`crate::shared_mut!`] or
-/// plain `static` cells.  A stack-local value in `app_main` is dropped
-/// when the function unwinds; a thread that kept a reference into it
-/// then points at freed memory.  Same rule the Rust borrow checker
-/// enforces when you try to return `&T` to a local — it's just less
-/// visible here because workers, not callers, hold the dangling
-/// reference.  On FreeRTOS the failure is immediate (scheduler
-/// reclaims the main stack); on POSIX/NuttX/Zephyr the UB is latent.
-#[macro_export]
-macro_rules! main {
-    ($entry:expr) => {
-        #[unsafe(no_mangle)]
-        pub extern "C" fn ove_main() {
-            $entry();
-        }
-    };
-}
+// Legacy `ove::main!(fn_name)` declarative macro deleted in favour of
+// the `#[ove::main]` proc-macro attribute provided by the `ove-macros`
+// crate (re-exported at the crate root in `lib.rs`).
+//
+// Migration:
+//   fn app_main() { ... }
+//   ove::main!(app_main);
+// becomes
+//   #[ove::main]
+//   fn app_main() { ... }
+//
+// Lifetime caveat (same for both forms): anything worker threads
+// access after `app_main` returns must have `'static` storage — use
+// `static`/`InitCell`/`InitMut` cells.  A stack-local value in
+// `app_main` is dropped when the function unwinds; a thread that
+// captured a reference into it dangles.  On FreeRTOS the failure is
+// immediate (scheduler reclaims the main stack); on POSIX/NuttX/Zephyr
+// the UB is latent.
 
 // ---------------------------------------------------------------------------
 // Unified creation macros

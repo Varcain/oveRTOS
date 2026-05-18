@@ -209,6 +209,7 @@ fn consumer_entry() {
 // App entry point — zero-heap uses caller-supplied static storage.
 // ---------------------------------------------------------------------------
 
+#[ove::main]
 fn app_main() {
     ove::log::try_init();
     log::info!("Rust example (zero-heap mode): init");
@@ -263,4 +264,3 @@ fn app_main() {
     log::info!("Rust example (zero-heap mode): shutdown");
 }
 
-ove::main!(app_main);

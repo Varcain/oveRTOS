@@ -186,6 +186,9 @@ pub mod ffi {
 
 // Public re-exports for convenience
 pub use cell::{LvCell, LvRefCell};
+/// `#[ove::main]` proc-macro: marks the application entry point.
+/// Expands into the `extern "C" fn ove_main()` trampoline.
+pub use ove_macros::main;
 pub use error::{Error, Result};
 #[cfg(has_eventgroup)]
 #[allow(deprecated)] // EG_* shims kept for compatibility; new code uses WaitFlags

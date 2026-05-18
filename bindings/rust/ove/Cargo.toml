@@ -32,6 +32,9 @@ embedded-io = ["dep:embedded-io"]
 # without `cfg` gating because heapless never touches a global allocator —
 # capacity is a const generic and storage is owned in the type.
 heapless = { version = "0.9", default-features = false }
+# Companion proc-macro crate (`#[ove::main]`).  Pinned to a path dep in
+# the workspace; published in lockstep with `ove`.
+ove-macros = { path = "../ove-macros", version = "0.1" }
 # `log` is the de-facto facade for diagnostic logging in the Rust
 # ecosystem.  Non-optional: every meaningful embedded crate
 # (`embassy-*`, `defmt-rtt` competitors, sensor drivers) depends on it,

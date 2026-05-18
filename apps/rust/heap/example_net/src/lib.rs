@@ -26,7 +26,6 @@ use ove_allocator as _;
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::Thread;
 
-ove::main!(app_main);
 
 // ---------------------------------------------------------------------------
 // Test counters
@@ -589,6 +588,7 @@ fn net_thread() {
 // App entry point
 // ---------------------------------------------------------------------------
 
+#[ove::main]
 fn app_main() {
     ove::log::try_init();
     log::info!("Rust networking example (heap mode): init");

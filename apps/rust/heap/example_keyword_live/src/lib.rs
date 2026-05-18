@@ -17,7 +17,6 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::Thread;
 
-ove::main!(app_main);
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -318,6 +317,7 @@ fn infer_thread() {
 static DMIC_PROC: ove::audio::StaticProcessor<DmicProcessor> =
     ove::audio::StaticProcessor::new(DmicProcessor);
 
+#[ove::main]
 fn app_main() {
     ove::log::try_init();
     log::info!("=== Live DMIC Keyword Detection (Rust) ===");

@@ -123,6 +123,7 @@ fn monitor_entry() {
     }
 }
 
+#[ove::main]
 fn app_main() {
     ove::log::try_init();
     log::info!("pm example (zero-heap mode): init");
@@ -158,4 +159,3 @@ fn app_main() {
     log::info!("pm example (zero-heap mode): shutdown");
 }
 
-ove::main!(app_main);
