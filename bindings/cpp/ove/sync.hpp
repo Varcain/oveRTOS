@@ -408,10 +408,15 @@ class LockGuard
  *           arguments passed to `init()`.
  *
  * @note Non-copyable and non-movable.
- * @note `init()` and `get()` are safe to call from a single initialisation
- *       thread.  Concurrent `get()` calls after `init()` completes are safe
- *       due to the atomic flag, but the cell does not protect the contained
- *       object itself.
+ * @note **Thread-safety.** The cell publishes the `init() → get()`
+ *       happens-before edge via an atomic flag, so once `init()` has
+ *       returned on one thread, all subsequent `get()` calls on other
+ *       threads observe a fully constructed object.  Beyond that, the
+ *       cell does **not** synchronise access to the contained `T`:
+ *       concurrent reads/mutations via the returned reference are the
+ *       caller's responsibility — wrap the contents in your own
+ *       @ref Mutex (or use a type that is internally thread-safe) if
+ *       multiple threads will mutate it after publication.
  */
 template <typename T> class StaticCell
 {
@@ -439,6 +444,10 @@ template <typename T> class StaticCell
 	 *
 	 * Asserts if `init()` has not been called yet.
 	 *
+	 * The returned reference is unsynchronised — see the class-level
+	 * thread-safety note: concurrent mutations through this reference
+	 * are the caller's responsibility.
+	 *
 	 * @return Reference to the contained object.
 	 */
 	T &get()
@@ -451,6 +460,12 @@ template <typename T> class StaticCell
 	 * @brief Returns a const reference to the contained object.
 	 *
 	 * Asserts if `init()` has not been called yet.
+	 *
+	 * The returned reference is unsynchronised — see the class-level
+	 * thread-safety note.  Concurrent `const` reads are safe; if any
+	 * thread mutates the contained object (via the non-`const`
+	 * overload or via @c const_cast / @c mutable members), the caller
+	 * must provide external synchronisation.
 	 *
 	 * @return Const reference to the contained object.
 	 */

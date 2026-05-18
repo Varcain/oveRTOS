@@ -227,6 +227,23 @@ class NetIf
 
 	/**
 	 * @brief Tears down the network interface.
+	 *
+	 * **Idempotent.** Safe to call on an already-down interface — the
+	 * call is silently a no-op in that case.  The destructor calls
+	 * this as part of cleanup, so explicit @c down() is rarely needed
+	 * unless you intend to bring the interface back up later.
+	 *
+	 * **Effect on pending I/O.** Sockets bound to this interface that
+	 * are mid-operation (e.g. blocked on @c recv) will unblock with
+	 * a backend-specific error code — typically
+	 * @c OVE_ERR_NET_CLOSED or @c OVE_ERR_NOT_REGISTERED.  Callers
+	 * should treat any blocking socket call as fallible during interface
+	 * lifecycle transitions.
+	 *
+	 * **Thread-safety.** Not safe to call concurrently with @ref up
+	 * on the same handle.  Concurrent calls with socket operations
+	 * on the same interface are safe — sockets observe the teardown
+	 * via their error path.
 	 */
 	void down()
 	{
@@ -387,9 +404,27 @@ class TcpSocket
 	}
 
 	/**
-	 * @brief Closes the socket.
+	 * @brief Closes the TCP socket.
 	 *
-	 * Safe to call on an already-closed socket.
+	 * **Idempotent.** Safe to call on an already-closed socket — the
+	 * call is silently a no-op in that case.  The destructor calls
+	 * this as part of cleanup, so explicit @c close() is only needed
+	 * when you want to release the underlying file descriptor before
+	 * the @c TcpSocket goes out of scope.
+	 *
+	 * **Effect on pending I/O.** Another thread blocked on @ref send
+	 * or @ref recv against the same handle will unblock with a
+	 * backend-specific error code — typically @c OVE_ERR_NET_CLOSED.
+	 * The kernel-side socket is torn down by @c ove_socket_close;
+	 * any further @ref send / @ref recv calls on this wrapper fail
+	 * fast with the closed-socket error.
+	 *
+	 * **Thread-safety.** Not safe to call concurrently with another
+	 * @c close() on the same handle, nor concurrently with @ref send
+	 * or @ref recv on a thread that does not expect the handle to
+	 * disappear.  The shutdown sequence is the caller's
+	 * responsibility — typically: signal the worker thread, join it,
+	 * then close.
 	 */
 	void close()
 	{
@@ -548,9 +583,25 @@ class UdpSocket
 	}
 
 	/**
-	 * @brief Closes the socket.
+	 * @brief Closes the UDP socket.
 	 *
-	 * Safe to call on an already-closed socket.
+	 * **Idempotent.** Safe to call on an already-closed socket — the
+	 * call is silently a no-op in that case.  The destructor calls
+	 * this as part of cleanup, so explicit @c close() is only needed
+	 * when you want to release the underlying file descriptor before
+	 * the @c UdpSocket goes out of scope.
+	 *
+	 * **Effect on pending I/O.** Another thread blocked on
+	 * @ref recv_from (or any @ref send_to in progress) against the
+	 * same handle will unblock with a backend-specific error code —
+	 * typically @c OVE_ERR_NET_CLOSED.  Further @ref send_to /
+	 * @ref recv_from calls on this wrapper fail fast.
+	 *
+	 * **Thread-safety.** Not safe to call concurrently with another
+	 * @c close() on the same handle, nor concurrently with
+	 * @ref send_to or @ref recv_from on a thread that does not
+	 * expect the handle to disappear.  Coordinate teardown via the
+	 * usual signal-then-close pattern.
 	 */
 	void close()
 	{
@@ -706,7 +757,24 @@ class TcpListener
 	/**
 	 * @brief Closes the listening socket.
 	 *
-	 * Safe to call on an already-closed socket.
+	 * **Idempotent.** Safe to call on an already-closed listener —
+	 * the call is silently a no-op in that case.  The destructor
+	 * calls this as part of cleanup, so explicit @c close() is only
+	 * needed when you want to release the listening socket before
+	 * the @c TcpListener goes out of scope.
+	 *
+	 * **Effect on pending I/O.** A thread blocked on @ref accept
+	 * against this listener will unblock with a backend-specific
+	 * error code — typically @c OVE_ERR_NET_CLOSED.  Already-accepted
+	 * @c TcpSocket instances are independent file descriptors and
+	 * are not affected; they continue to operate normally until
+	 * closed individually.
+	 *
+	 * **Thread-safety.** Not safe to call concurrently with another
+	 * @c close() on the same listener, nor concurrently with
+	 * @ref accept on a thread that does not expect the listener to
+	 * disappear.  Coordinate teardown via the usual signal-then-close
+	 * pattern.
 	 */
 	void close()
 	{
