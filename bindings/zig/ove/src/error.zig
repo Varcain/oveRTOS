@@ -15,8 +15,11 @@ pub const Error = error{
     NotRegistered,
     /// An argument or configuration value is out of range or invalid.
     InvalidParam,
-    /// Dynamic memory allocation failed (heap exhausted).
-    NoMemory,
+    /// Dynamic memory allocation failed (heap exhausted).  Named
+    /// `OutOfMemory` to match `std.mem.Allocator.Error` so the
+    /// allocator-returning `create(allocator)` paths in this binding
+    /// compose naturally with stdlib `try`.
+    OutOfMemory,
     /// A blocking operation timed out before completing.
     Timeout,
     /// The requested feature is not available on this platform or configuration.
@@ -62,7 +65,7 @@ inline fn mapErrorCode(rc: c_int) Error {
     return switch (rc) {
         c.OVE_ERR_NOT_REGISTERED => Error.NotRegistered,
         c.OVE_ERR_INVALID_PARAM => Error.InvalidParam,
-        c.OVE_ERR_NO_MEMORY => Error.NoMemory,
+        c.OVE_ERR_NO_MEMORY => Error.OutOfMemory,
         c.OVE_ERR_TIMEOUT => Error.Timeout,
         c.OVE_ERR_NOT_SUPPORTED => Error.NotSupported,
         c.OVE_ERR_QUEUE_FULL => Error.QueueFull,
