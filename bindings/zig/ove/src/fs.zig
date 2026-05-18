@@ -4,6 +4,7 @@
 //
 // This file is part of oveRTOS.
 
+const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
@@ -99,6 +100,32 @@ pub const File = struct {
     /// Return the current file position as a byte offset from the start.
     pub fn tell(self: File) i64 {
         return c.ove_fs_tell(self.handle);
+    }
+
+    // ----- std.io.GenericReader / GenericWriter integration -----
+
+    const FileReader = std.io.GenericReader(File, Error, struct {
+        fn read(self: File, buf: []u8) Error!usize {
+            return File.read(self, buf);
+        }
+    }.read);
+
+    const FileWriter = std.io.GenericWriter(File, Error, struct {
+        fn write(self: File, buf: []const u8) Error!usize {
+            return File.write(self, buf);
+        }
+    }.write);
+
+    /// `std.io.GenericReader` view of this file.  `Reader.Error =
+    /// ove.Error` since the substrate FS layer can fail at runtime
+    /// (I/O errors, EOF signalled via `Ok(0)`).
+    pub fn reader(self: File) FileReader {
+        return .{ .context = self };
+    }
+
+    /// `std.io.GenericWriter` view of this file.
+    pub fn writer(self: File) FileWriter {
+        return .{ .context = self };
     }
 };
 
