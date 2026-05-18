@@ -50,7 +50,7 @@ static void test_cpp_stream_reset(void **state)
 	(void)s.try_send_for(data, sizeof(data), std::chrono::milliseconds{100}, sent);
 	assert_true(s.bytes_available() > 0);
 
-	assert_int_equal(s.reset(), OVE_OK);
+	assert_true(s.reset().has_value());
 	assert_int_equal(s.bytes_available(), 0);
 }
 

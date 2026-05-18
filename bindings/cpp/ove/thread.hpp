@@ -646,12 +646,16 @@ template <size_t StackSize = 0> class Thread
 
 	/**
 	 * @brief Retrieves runtime statistics for the thread.
-	 * @param[out] stats Pointer to a struct that receives the statistics.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return On success, the populated @c ove_thread_stats.  On
+	 *         failure, an `unexpected` @ref Error
+	 *         (`Error::NotSupported` if the substrate doesn't track
+	 *         stats).
 	 */
-	int get_runtime_stats(struct ove_thread_stats *stats) const
+	[[nodiscard]] Result<struct ove_thread_stats> get_runtime_stats() const noexcept
 	{
-		return ove_thread_get_runtime_stats(handle_, stats);
+		struct ove_thread_stats stats{};
+		const int rc = ove_thread_get_runtime_stats(handle_, &stats);
+		return from_rc(rc, stats);
 	}
 
 	/**

@@ -17,6 +17,7 @@
 
 #include <ove/workqueue.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -221,11 +222,12 @@ class Work
 	 * @brief Submits the work item to a workqueue for immediate execution.
 	 * @tparam S Stack size of the target workqueue.
 	 * @param[in] wq The workqueue to submit this work item to.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	template <size_t S> [[nodiscard]] int submit(Workqueue<S> &wq)
+	template <size_t S> [[nodiscard]] Result<void> submit(Workqueue<S> &wq) noexcept
 	{
-		return ove_work_submit(wq.handle(), handle_);
+		return from_rc(ove_work_submit(wq.handle(), handle_));
 	}
 
 	/**
@@ -233,11 +235,13 @@ class Work
 	 * @tparam S Stack size of the target workqueue.
 	 * @param[in] wq       The workqueue to submit this work item to.
 	 * @param[in] delay_ms Delay in milliseconds before the item is executed.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	template <size_t S> [[nodiscard]] int submit_delayed(Workqueue<S> &wq, uint32_t delay_ms)
+	template <size_t S>
+	[[nodiscard]] Result<void> submit_delayed(Workqueue<S> &wq, uint32_t delay_ms) noexcept
 	{
-		return ove_work_submit_delayed(wq.handle(), handle_, delay_ms);
+		return from_rc(ove_work_submit_delayed(wq.handle(), handle_, delay_ms));
 	}
 
 	/**
@@ -245,11 +249,12 @@ class Work
 	 *
 	 * If the item is already running, cancellation may not be possible.
 	 *
-	 * @return `OVE_OK` if cancelled, or a negative error code.
+	 * @return Empty `Result<void>` if cancelled; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int cancel()
+	[[nodiscard]] Result<void> cancel() noexcept
 	{
-		return ove_work_cancel(handle_);
+		return from_rc(ove_work_cancel(handle_));
 	}
 
 	/**

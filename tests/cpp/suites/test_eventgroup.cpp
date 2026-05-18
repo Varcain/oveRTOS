@@ -71,10 +71,9 @@ static void test_cpp_eg_wait_all(void **state)
 
 	(void)eg.set_bits(BIT_0 | BIT_1);
 
-	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{100}, &actual);
-	assert_int_equal(rc, OVE_OK);
-	assert_true((actual & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
+	auto r = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{100});
+	assert_true(r.has_value());
+	assert_true((*r & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
 }
 
 static void test_cpp_eg_wait_any(void **state)
@@ -84,10 +83,9 @@ static void test_cpp_eg_wait_any(void **state)
 
 	(void)eg.set_bits(BIT_0);
 
-	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, 0, std::chrono::milliseconds{100}, &actual);
-	assert_int_equal(rc, OVE_OK);
-	assert_true(actual & BIT_0);
+	auto r = eg.wait_bits(BIT_0 | BIT_1, 0, std::chrono::milliseconds{100});
+	assert_true(r.has_value());
+	assert_true(*r & BIT_0);
 }
 
 static void test_cpp_eg_wait_timeout(void **state)
@@ -95,9 +93,9 @@ static void test_cpp_eg_wait_timeout(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0, OVE_EG_WAIT_ALL, std::chrono::milliseconds{10}, &actual);
-	assert_int_equal(rc, OVE_ERR_TIMEOUT);
+	auto r = eg.wait_bits(BIT_0, OVE_EG_WAIT_ALL, std::chrono::milliseconds{10});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 static void test_cpp_eg_clear_on_exit(void **state)
@@ -107,9 +105,9 @@ static void test_cpp_eg_clear_on_exit(void **state)
 
 	(void)eg.set_bits(BIT_0 | BIT_1);
 
-	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT, std::chrono::milliseconds{100}, &actual);
-	assert_int_equal(rc, OVE_OK);
+	auto r = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT,
+			      std::chrono::milliseconds{100});
+	assert_true(r.has_value());
 
 	ove_eventbits_t remaining = eg.get_bits();
 	assert_false(remaining & BIT_0);
@@ -133,10 +131,9 @@ static void test_cpp_eg_cross_thread(void **state)
 	cpp_setter_ctx ctx = {&eg, BIT_0 | BIT_1, 50};
 	auto th = make_test_thread("setter", cpp_setter_thread, &ctx, OVE_PRIO_LOW);
 
-	ove_eventbits_t actual = 0;
-	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{500}, &actual);
-	assert_int_equal(rc, OVE_OK);
-	assert_true((actual & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
+	auto r = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{500});
+	assert_true(r.has_value());
+	assert_true((*r & (BIT_0 | BIT_1)) == (BIT_0 | BIT_1));
 }
 
 /* ── Wrapper-specific tests ─────────────────────────────────────────── */

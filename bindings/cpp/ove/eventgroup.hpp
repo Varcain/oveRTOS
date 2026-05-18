@@ -15,6 +15,7 @@
 
 #include <ove/eventgroup.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_EVENTGROUP
 
@@ -129,35 +130,38 @@ class EventGroup
 
 	/**
 	 * @brief Waits until the specified event bits are set, or until the timeout expires.
-	 * @param[in]  bits       Bitmask of bits to wait for.
-	 * @param[in]  flags      Wait flags (e.g., wait-for-all vs. wait-for-any).
-	 * @param[in]  timeout_ns Maximum time to wait in nanoseconds.
-	 * @param[out] result     Receives the event-group value at the moment the
-	 *                        wait condition was satisfied (or on timeout).
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @param[in] bits    Bitmask of bits to wait for.
+	 * @param[in] flags   Wait flags (e.g., wait-for-all vs. wait-for-any).
+	 * @param[in] timeout Maximum time to wait.
+	 * @return On success, the event-group value at the moment the
+	 *         wait condition was satisfied.  On failure, an
+	 *         `unexpected` @ref Error (`Error::Timeout` on deadline).
 	 */
-	[[nodiscard]] int wait_bits(ove_eventbits_t bits, uint32_t flags, std::chrono::nanoseconds timeout,
-				    ove_eventbits_t *result)
+	[[nodiscard]] Result<ove_eventbits_t> wait_bits(ove_eventbits_t bits, uint32_t flags,
+							std::chrono::nanoseconds timeout) noexcept
 	{
-		return ove_eventgroup_wait_bits(handle_, bits, flags, to_timeout_ns(timeout), result);
+		ove_eventbits_t result = 0;
+		const int rc =
+			ove_eventgroup_wait_bits(handle_, bits, flags, to_timeout_ns(timeout), &result);
+		return from_rc(rc, result);
 	}
 
 	/**
 	 * @brief Deadline-based variant of @ref wait_bits.
-	 * @param[in]  bits     Bitmask to wait on.
-	 * @param[in]  flags    Wait flags (e.g., @c OVE_EVENT_WAIT_ALL).
-	 * @param[in]  deadline @ref ove::steady_clock::time_point at which the
-	 *                      wait must complete.
-	 * @param[out] result   Receives the event-group value at the moment the
-	 *                      wait condition was satisfied (or on timeout).
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @param[in] bits     Bitmask to wait on.
+	 * @param[in] flags    Wait flags (e.g., @c OVE_EVENT_WAIT_ALL).
+	 * @param[in] deadline @ref ove::steady_clock::time_point at which
+	 *                     the wait must complete.
+	 * @return As @ref wait_bits — `Result<ove_eventbits_t>`.
 	 */
-	[[nodiscard]] int wait_bits_until(ove_eventbits_t bits, uint32_t flags,
-					  steady_clock::time_point deadline,
-					  ove_eventbits_t *result)
+	[[nodiscard]] Result<ove_eventbits_t>
+	wait_bits_until(ove_eventbits_t bits, uint32_t flags,
+			steady_clock::time_point deadline) noexcept
 	{
-		return ove_eventgroup_wait_bits_until(handle_, bits, flags,
-						      to_deadline_ns(deadline), result);
+		ove_eventbits_t result = 0;
+		const int rc = ove_eventgroup_wait_bits_until(handle_, bits, flags,
+							      to_deadline_ns(deadline), &result);
+		return from_rc(rc, result);
 	}
 
 	/**

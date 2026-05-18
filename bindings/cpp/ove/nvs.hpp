@@ -15,6 +15,7 @@
 
 #include <ove/nvs.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_NVS
 
@@ -31,11 +32,12 @@ namespace ove::nvs
 
 /**
  * @brief Initialises the NVS subsystem.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int init()
+[[nodiscard]] inline Result<void> init() noexcept
 {
-	return ove_nvs_init();
+	return from_rc(ove_nvs_init());
 }
 
 /**
@@ -51,12 +53,15 @@ inline void deinit()
  * @param[in]  key The null-terminated key string.
  * @param[out] buf Buffer to receive the stored value.
  * @param[in]  len Size of `buf` in bytes.
- * @param[out] out Receives the number of bytes actually read.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return On success, the number of bytes actually read.  On
+ *         failure, an `unexpected` @ref Error (`Error::NotFound`,
+ *         …).
  */
-[[nodiscard]] inline int read(const char *key, void *buf, size_t len, size_t *out)
+[[nodiscard]] inline Result<size_t> read(const char *key, void *buf, size_t len) noexcept
 {
-	return ove_nvs_read(key, buf, len, out);
+	size_t out = 0;
+	const int rc = ove_nvs_read(key, buf, len, &out);
+	return from_rc(rc, out);
 }
 
 /**
@@ -64,21 +69,23 @@ inline void deinit()
  * @param[in] key  The null-terminated key string.
  * @param[in] data Pointer to the data to store.
  * @param[in] len  Number of bytes to write.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int write(const char *key, const void *data, size_t len)
+[[nodiscard]] inline Result<void> write(const char *key, const void *data, size_t len) noexcept
 {
-	return ove_nvs_write(key, data, len);
+	return from_rc(ove_nvs_write(key, data, len));
 }
 
 /**
  * @brief Erases the value associated with a key from NVS.
  * @param[in] key The null-terminated key string.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure (`Error::NotFound` if no such key).
  */
-[[nodiscard]] inline int erase(const char *key)
+[[nodiscard]] inline Result<void> erase(const char *key) noexcept
 {
-	return ove_nvs_erase(key);
+	return from_rc(ove_nvs_erase(key));
 }
 
 } /* namespace ove::nvs */

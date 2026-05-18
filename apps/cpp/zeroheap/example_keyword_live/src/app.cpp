@@ -131,9 +131,8 @@ static int generate_features(const int16_t *audio, unsigned len)
 			input[i] = static_cast<int16_t>(s);
 		}
 
-		int rc = preproc.invoke();
-		if (rc != OVE_OK)
-			return rc;
+		if (auto r = preproc.invoke(); !r)
+			return static_cast<int>(r.error());
 
 		std::memcpy(features[frame], preproc.output_data<int8_t>(0), FEATURE_SIZE);
 		frame++;
@@ -154,9 +153,8 @@ static int classify_keyword(int &prediction, float &confidence)
 
 	std::memcpy(classifier.input_data<int8_t>(0), features, FEATURE_ELEMENTS);
 
-	int rc = classifier.invoke();
-	if (rc != OVE_OK)
-		return rc;
+	if (auto r = classifier.invoke(); !r)
+		return static_cast<int>(r.error());
 
 	auto *scores = classifier.output_data<int8_t>(0);
 	int best = 0;
@@ -274,23 +272,23 @@ OVE_MAIN()
 	dev_cfg.fmt.sample_fmt = OVE_AUDIO_FMT_S16;
 	dev_cfg.i2s.input_device = 1;
 
-	graph.init(512);
+	(void)graph.init(512);
 
-	int src = graph.device_source(&dev_cfg, "dmic-in");
+	auto src_r = graph.device_source(&dev_cfg, "dmic-in");
 	static DmicProcessor dmic_proc;
-	int proc = graph.add_processor(dmic_proc, "dmic-proc");
-	int sink = graph.device_sink(&dev_cfg, "hp-out");
+	auto proc_r = graph.add_processor(dmic_proc, "dmic-proc");
+	auto sink_r = graph.device_sink(&dev_cfg, "hp-out");
 
-	if (src < 0 || proc < 0 || sink < 0) {
+	if (!src_r || !proc_r || !sink_r) {
 		OVE_LOG_ERR("Audio node creation failed");
 		ove::run();
 		return;
 	}
 
-	graph.connect(src, proc);
-	graph.connect(proc, sink);
-	graph.build();
-	graph.start();
+	(void)graph.connect(*src_r, *proc_r);
+	(void)graph.connect(*proc_r, *sink_r);
+	(void)graph.build();
+	(void)graph.start();
 	OVE_LOG_INF("Audio streaming: 16kHz mono, DMIC input");
 
 	// Inference thread — zero-heap mode: wrapper carries kernel storage

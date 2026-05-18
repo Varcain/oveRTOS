@@ -10,6 +10,7 @@
 
 #include <ove/infer.h>
 #include <ove/storage.h>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_INFER
 
@@ -82,13 +83,16 @@ template <size_t ArenaSize = 0> class Model
 	}
 #endif
 
-	/** @brief Run the model forward pass. */
-	[[nodiscard]] int invoke()
+	/** @brief Run the model forward pass.
+	 *  @return Empty `Result<void>` on success; `unexpected`
+	 *          @ref Error on failure.
+	 */
+	[[nodiscard]] Result<void> invoke() noexcept
 	{
-		return ove_model_invoke(handle_);
+		return from_rc(ove_model_invoke(handle_));
 	}
 
-	/** @brief Get a typed pointer to input tensor data. */
+	/** @brief Get a typed pointer to input tensor data; nullptr on failure. */
 	template <typename T> T *input_data(unsigned int index = 0)
 	{
 		struct ove_tensor_info info;
@@ -97,7 +101,7 @@ template <size_t ArenaSize = 0> class Model
 		return static_cast<T *>(info.data);
 	}
 
-	/** @brief Get a typed pointer to output tensor data (const). */
+	/** @brief Get a typed pointer to output tensor data (const); nullptr on failure. */
 	template <typename T> const T *output_data(unsigned int index = 0) const
 	{
 		struct ove_tensor_info info;
@@ -106,16 +110,23 @@ template <size_t ArenaSize = 0> class Model
 		return static_cast<const T *>(info.data);
 	}
 
-	/** @brief Get full tensor descriptor for an input. */
-	int input(unsigned int index, struct ove_tensor_info &info) const
+	/** @brief Get full tensor descriptor for an input.
+	 *  @return On success, the populated @c ove_tensor_info.  On
+	 *          failure, an `unexpected` @ref Error.
+	 */
+	[[nodiscard]] Result<struct ove_tensor_info> input(unsigned int index) const noexcept
 	{
-		return ove_model_input(handle_, index, &info);
+		struct ove_tensor_info info{};
+		const int rc = ove_model_input(handle_, index, &info);
+		return from_rc(rc, info);
 	}
 
 	/** @brief Get full tensor descriptor for an output. */
-	int output(unsigned int index, struct ove_tensor_info &info) const
+	[[nodiscard]] Result<struct ove_tensor_info> output(unsigned int index) const noexcept
 	{
-		return ove_model_output(handle_, index, &info);
+		struct ove_tensor_info info{};
+		const int rc = ove_model_output(handle_, index, &info);
+		return from_rc(rc, info);
 	}
 
 	/** @brief Return last inference duration in microseconds. */

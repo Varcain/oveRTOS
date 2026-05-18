@@ -17,6 +17,7 @@
 
 #include <ove/fs.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -35,11 +36,12 @@ namespace fs
  * @brief Mounts a filesystem at the given mount point.
  * @param[in] dev_path    Path to the block device or image file.
  * @param[in] mount_point Directory path at which to mount the filesystem.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error on failure.
  */
-[[nodiscard]] inline int mount(const char *dev_path, const char *mount_point)
+[[nodiscard]] inline Result<void> mount(const char *dev_path, const char *mount_point) noexcept
 {
-	return ove_fs_mount(dev_path, mount_point);
+	return from_rc(ove_fs_mount(dev_path, mount_point));
 }
 
 /**
@@ -54,22 +56,24 @@ inline void unmount(const char *mount_point)
 /**
  * @brief Deletes a file from the filesystem.
  * @param[in] path Absolute path to the file.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error on failure (`Error::NotFound`, …).
  */
-[[nodiscard]] inline int unlink(const char *path)
+[[nodiscard]] inline Result<void> unlink(const char *path) noexcept
 {
-	return ove_fs_unlink(path);
+	return from_rc(ove_fs_unlink(path));
 }
 
 /**
  * @brief Renames or moves a file or directory.
  * @param[in] old_path Current path of the file or directory.
  * @param[in] new_path Desired new path.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error on failure.
  */
-[[nodiscard]] inline int rename(const char *old_path, const char *new_path)
+[[nodiscard]] inline Result<void> rename(const char *old_path, const char *new_path) noexcept
 {
-	return ove_fs_rename(old_path, new_path);
+	return from_rc(ove_fs_rename(old_path, new_path));
 }
 
 } /* namespace fs */
@@ -133,63 +137,70 @@ class File
 	 * @brief Opens a file at the specified path.
 	 * @param[in] path  Absolute path to the file.
 	 * @param[in] flags Open flags (e.g., read-only, write, create).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int open(const char *path, int flags)
+	[[nodiscard]] Result<void> open(const char *path, int flags) noexcept
 	{
-		return ove_fs_open(&handle_, path, flags);
+		return from_rc(ove_fs_open(&handle_, path, flags));
 	}
 
 	/**
 	 * @brief Closes the file and invalidates the handle.
 	 *
-	 * Safe to call on an already-closed file (returns `OVE_OK`).
-	 *
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * Safe to call on an already-closed file (no-op).  Errors from
+	 * the backend (e.g. flush failures) are intentionally discarded
+	 * here — call this on a known-good handle if you need to surface
+	 * such failures.  Matches the close-is-void shape used by
+	 * @ref TcpSocket and @ref UdpSocket.
 	 */
-	int close()
+	void close() noexcept
 	{
-		int ret = OVE_OK;
 		if (handle_) {
-			ret = ove_fs_close(handle_);
+			(void)ove_fs_close(handle_);
 			handle_ = nullptr;
 		}
-		return ret;
 	}
 
 	/**
 	 * @brief Reads bytes from the file at the current position.
-	 * @param[out] buf        Buffer to receive the read data.
-	 * @param[in]  count      Maximum number of bytes to read.
-	 * @param[out] bytes_read Receives the actual number of bytes read.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[out] buf   Buffer to receive the read data.
+	 * @param[in]  count Maximum number of bytes to read.
+	 * @return On success, the number of bytes actually read (may be
+	 *         less than @p count near end-of-file).  On failure, an
+	 *         `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int read(void *buf, size_t count, size_t *bytes_read)
+	[[nodiscard]] Result<size_t> read(void *buf, size_t count) noexcept
 	{
-		return ove_fs_read(handle_, buf, count, bytes_read);
+		size_t bytes_read = 0;
+		const int rc = ove_fs_read(handle_, buf, count, &bytes_read);
+		return from_rc(rc, bytes_read);
 	}
 
 	/**
 	 * @brief Writes bytes to the file at the current position.
-	 * @param[in]  buf           Pointer to the data to write.
-	 * @param[in]  count         Number of bytes to write.
-	 * @param[out] bytes_written Receives the actual number of bytes written.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] buf   Pointer to the data to write.
+	 * @param[in] count Number of bytes to write.
+	 * @return On success, the number of bytes actually written.  On
+	 *         failure, an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int write(const void *buf, size_t count, size_t *bytes_written)
+	[[nodiscard]] Result<size_t> write(const void *buf, size_t count) noexcept
 	{
-		return ove_fs_write(handle_, buf, count, bytes_written);
+		size_t bytes_written = 0;
+		const int rc = ove_fs_write(handle_, buf, count, &bytes_written);
+		return from_rc(rc, bytes_written);
 	}
 
 	/**
 	 * @brief Repositions the file offset.
 	 * @param[in] offset Byte offset relative to `whence`.
 	 * @param[in] whence Seek origin (`SEEK_SET`, `SEEK_CUR`, or `SEEK_END`).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int seek(long offset, int whence)
+	[[nodiscard]] Result<void> seek(long offset, int whence) noexcept
 	{
-		return ove_fs_seek(handle_, offset, whence);
+		return from_rc(ove_fs_seek(handle_, offset, whence));
 	}
 
 	/**
@@ -203,12 +214,14 @@ class File
 
 	/**
 	 * @brief Returns the size of the file.
-	 * @param[out] out_size Receives the file size in bytes.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return On success, the file size in bytes.  On failure, an
+	 *         `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int size(size_t *out_size)
+	[[nodiscard]] Result<size_t> size() noexcept
 	{
-		return ove_fs_size(handle_, out_size);
+		size_t out_size = 0;
+		const int rc = ove_fs_size(handle_, &out_size);
+		return from_rc(rc, out_size);
 	}
 
 	/**
@@ -290,39 +303,49 @@ class Dir
 	/**
 	 * @brief Opens a directory at the specified path.
 	 * @param[in] path Absolute path to the directory.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int open(const char *path)
+	[[nodiscard]] Result<void> open(const char *path) noexcept
 	{
-		return ove_fs_opendir(&handle_, path);
+		return from_rc(ove_fs_opendir(&handle_, path));
 	}
 
 	/**
 	 * @brief Closes the directory and invalidates the handle.
 	 *
-	 * Safe to call on an already-closed directory (returns `OVE_OK`).
-	 *
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * Safe to call on an already-closed directory (no-op).  Matches
+	 * @ref File::close — backend errors are discarded.
 	 */
-	int close()
+	void close() noexcept
 	{
-		int ret = OVE_OK;
 		if (handle_) {
-			ret = ove_fs_closedir(handle_);
+			(void)ove_fs_closedir(handle_);
 			handle_ = nullptr;
 		}
-		return ret;
 	}
 
 	/**
 	 * @brief Reads the next entry from the directory.
+	 *
 	 * @param[out] entry Pointer to a dirent struct to receive the entry data.
-	 * @return `OVE_OK` on success, a positive value at end-of-directory, or
-	 *         a negative error code on failure.
+	 * @return On success, `true` if an entry was read into @p entry,
+	 *         `false` at end-of-directory.  On failure, an
+	 *         `unexpected` @ref Error.
+	 *
+	 * @note The substrate signals end-of-directory with a positive
+	 *       (non-OK) rc; that's mapped to `Result<bool>{false}` here
+	 *       so callers can distinguish "no more entries" from "real
+	 *       error" without inspecting magic numbers.
 	 */
-	[[nodiscard]] int readdir(struct ove_dirent *entry)
+	[[nodiscard]] Result<bool> readdir(struct ove_dirent *entry) noexcept
 	{
-		return ove_fs_readdir(handle_, entry);
+		const int rc = ove_fs_readdir(handle_, entry);
+		if (rc == OVE_OK)
+			return true;
+		if (rc > 0)
+			return false; /* end-of-directory */
+		return std::unexpected{static_cast<Error>(rc)};
 	}
 
 	/**

@@ -154,9 +154,8 @@ static void test_cpp_thread_runtime_stats(void **state)
 	ove::Thread<4096> t(cpp_entry_spin, nullptr, OVE_PRIO_NORMAL, "t16");
 	test_msleep(20);
 
-	struct ove_thread_stats stats;
-	int rc = t.get_runtime_stats(&stats);
-	assert_true(rc == OVE_OK || rc == OVE_ERR_NOT_SUPPORTED);
+	auto r = t.get_runtime_stats();
+	assert_true(r.has_value() || r.error() == ove::Error::NotSupported);
 
 	g_cpp_keep_running.store(0);
 	test_msleep(20);

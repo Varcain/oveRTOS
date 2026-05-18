@@ -36,8 +36,7 @@ static void tmppath(char *buf, size_t len, const char *name)
 static void test_cpp_fs_mount_unmount(void **state)
 {
 	(void)state;
-	int ret = ove::fs::mount("/dev/test", "/");
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::fs::mount("/dev/test", "/").has_value());
 	ove::fs::unmount("/");
 }
 
@@ -52,8 +51,7 @@ static void test_cpp_fs_file_open_close(void **state)
 
 	{
 		ove::File f;
-		int ret = f.open(path, OVE_FS_O_CREATE | OVE_FS_O_WRITE);
-		assert_int_equal(ret, OVE_OK);
+		assert_true(f.open(path, OVE_FS_O_CREATE | OVE_FS_O_WRITE).has_value());
 		assert_true(f.valid());
 	} /* File closed via RAII before unmount */
 
@@ -73,20 +71,18 @@ static void test_cpp_fs_file_write_read(void **state)
 		ove::File f;
 		(void)f.open(path, OVE_FS_O_CREATE | OVE_FS_O_WRITE);
 		const char *msg = "hello";
-		size_t written = 0;
-		int ret = f.write(msg, 5, &written);
-		assert_int_equal(ret, OVE_OK);
-		assert_int_equal(written, 5);
+		auto w = f.write(msg, 5);
+		assert_true(w.has_value());
+		assert_int_equal(*w, 5);
 	}
 
 	{
 		ove::File f;
 		(void)f.open(path, OVE_FS_O_READ);
 		char buf[16] = {};
-		size_t rd = 0;
-		int ret = f.read(buf, sizeof(buf), &rd);
-		assert_int_equal(ret, OVE_OK);
-		assert_int_equal(rd, 5);
+		auto r = f.read(buf, sizeof(buf));
+		assert_true(r.has_value());
+		assert_int_equal(*r, 5);
 		assert_memory_equal(buf, "hello", 5);
 	}
 
@@ -106,11 +102,9 @@ static void test_cpp_fs_file_seek_tell(void **state)
 		ove::File f;
 		(void)f.open(path, OVE_FS_O_CREATE | OVE_FS_O_WRITE | OVE_FS_O_READ);
 		const char *data = "abcdef";
-		size_t w = 0;
-		(void)f.write(data, 6, &w);
+		(void)f.write(data, 6);
 
-		int ret = f.seek(0, OVE_FS_SEEK_SET);
-		assert_int_equal(ret, OVE_OK);
+		assert_true(f.seek(0, OVE_FS_SEEK_SET).has_value());
 		assert_int_equal(f.tell(), 0);
 
 		(void)f.seek(3, OVE_FS_SEEK_SET);
@@ -133,13 +127,11 @@ static void test_cpp_fs_file_size(void **state)
 		ove::File f;
 		(void)f.open(path, OVE_FS_O_CREATE | OVE_FS_O_WRITE);
 		const char *data = "12345";
-		size_t w = 0;
-		(void)f.write(data, 5, &w);
+		(void)f.write(data, 5);
 
-		size_t sz = 0;
-		int ret = f.size(&sz);
-		assert_int_equal(ret, OVE_OK);
-		assert_int_equal(sz, 5);
+		auto sz = f.size();
+		assert_true(sz.has_value());
+		assert_int_equal(*sz, 5);
 	}
 
 	ove::fs::unmount("/");
@@ -152,12 +144,11 @@ static void test_cpp_fs_dir_open_readdir(void **state)
 	(void)ove::fs::mount("/dev/test", "/");
 
 	ove::Dir d;
-	int ret = d.open(s_tmpdir);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(d.open(s_tmpdir).has_value());
 	assert_true(d.valid());
 
 	struct ove_dirent entry;
-	/* readdir may return OK or error if empty */
+	/* readdir may return true (got entry), false (EOF), or error. */
 	(void)d.readdir(&entry);
 
 	ove::fs::unmount("/");
@@ -179,16 +170,14 @@ static void test_cpp_fs_unlink_rename(void **state)
 		(void)f.open(delpath, OVE_FS_O_CREATE | OVE_FS_O_WRITE);
 	}
 
-	int ret = ove::fs::unlink(delpath);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::fs::unlink(delpath).has_value());
 
 	{
 		ove::File f;
 		(void)f.open(oldpath, OVE_FS_O_CREATE | OVE_FS_O_WRITE);
 	}
 
-	ret = ove::fs::rename(oldpath, newpath);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::fs::rename(oldpath, newpath).has_value());
 
 	ove::fs::unmount("/");
 }

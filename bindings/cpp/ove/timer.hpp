@@ -15,6 +15,7 @@
 
 #include <ove/timer.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_TIMER
 
@@ -124,29 +125,32 @@ class Timer
 
 	/**
 	 * @brief Starts the timer.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int start()
+	[[nodiscard]] Result<void> start() noexcept
 	{
-		return ove_timer_start(handle_);
+		return from_rc(ove_timer_start(handle_));
 	}
 
 	/**
 	 * @brief Stops the timer without resetting its period.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int stop()
+	[[nodiscard]] Result<void> stop() noexcept
 	{
-		return ove_timer_stop(handle_);
+		return from_rc(ove_timer_stop(handle_));
 	}
 
 	/**
 	 * @brief Restarts the timer, resetting the period countdown.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int reset()
+	[[nodiscard]] Result<void> reset() noexcept
 	{
-		return ove_timer_reset(handle_);
+		return from_rc(ove_timer_reset(handle_));
 	}
 
 	/**

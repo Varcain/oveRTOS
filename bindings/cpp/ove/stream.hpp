@@ -280,11 +280,12 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Resets the stream, discarding any buffered data.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int reset()
+	[[nodiscard]] Result<void> reset() noexcept
 	{
-		return ove_stream_reset(handle_);
+		return from_rc(ove_stream_reset(handle_));
 	}
 
 	/**

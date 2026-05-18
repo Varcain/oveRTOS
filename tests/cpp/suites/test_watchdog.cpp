@@ -12,9 +12,9 @@ static void test_cpp_watchdog_start_stop(void **state)
 	(void)state;
 	ove::Watchdog w(1000);
 
-	assert_int_equal(w.start(), OVE_OK);
-	assert_int_equal(w.feed(), OVE_OK);
-	assert_int_equal(w.stop(), OVE_OK);
+	assert_true(w.start().has_value());
+	assert_true(w.feed().has_value());
+	assert_true(w.stop().has_value());
 }
 
 static void test_cpp_watchdog_feed(void **state)
@@ -25,7 +25,7 @@ static void test_cpp_watchdog_feed(void **state)
 
 	for (int i = 0; i < 3; i++) {
 		test_msleep(100);
-		assert_int_equal(w.feed(), OVE_OK);
+		assert_true(w.feed().has_value());
 	}
 
 	(void)w.stop();

@@ -16,6 +16,7 @@
 #include <ove/net_tls.h>
 #include <ove/net.hpp>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_NET_TLS
 
@@ -73,37 +74,48 @@ class Session
 
 	/**
 	 * @brief Perform TLS handshake over an established TCP socket.
+	 *
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure (cert validation, network error,
+	 *         etc.).
 	 */
-	[[nodiscard]] int handshake(ove_socket_t sock, const Config &cfg = {})
+	[[nodiscard]] Result<void> handshake(ove_socket_t sock, const Config &cfg = {}) noexcept
 	{
 		ove_tls_config_t c{cfg.ca_cert,	      cfg.ca_cert_len,	   cfg.hostname,
 				   cfg.client_cert,   cfg.client_cert_len, cfg.client_key,
 				   cfg.client_key_len};
-		return ove_tls_handshake(handle_, sock, &c);
+		return from_rc(ove_tls_handshake(handle_, sock, &c));
 	}
 
 	/**
 	 * @brief Send encrypted bytes over the TLS session.
-	 * @param[in]  data  Buffer to send.
-	 * @param[in]  len   Buffer length in bytes.
-	 * @param[out] sent  Optional — bytes actually sent.
-	 * @return `OVE_OK` on success or a negative error code.
+	 *
+	 * @param[in] data Buffer to send.
+	 * @param[in] len  Buffer length in bytes.
+	 * @return On success, the number of bytes actually sent.  On
+	 *         failure, an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int send(const void *data, size_t len, size_t *sent = nullptr)
+	[[nodiscard]] Result<size_t> send(const void *data, size_t len) noexcept
 	{
-		return ove_tls_send(handle_, data, len, sent);
+		size_t sent = 0;
+		const int rc = ove_tls_send(handle_, data, len, &sent);
+		return from_rc(rc, sent);
 	}
 
 	/**
 	 * @brief Receive decrypted bytes from the TLS session.
-	 * @param[out] buf       Destination buffer.
-	 * @param[in]  len       Buffer capacity in bytes.
-	 * @param[out] received  Optional — bytes actually received.
-	 * @return `OVE_OK` on success or a negative error code.
+	 *
+	 * @param[out] buf Destination buffer.
+	 * @param[in]  len Buffer capacity in bytes.
+	 * @return On success, the number of bytes received.  On failure,
+	 *         an `unexpected` @ref Error (`Error::NetClosed` for a
+	 *         clean TLS shutdown).
 	 */
-	[[nodiscard]] int recv(void *buf, size_t len, size_t *received = nullptr)
+	[[nodiscard]] Result<size_t> recv(void *buf, size_t len) noexcept
 	{
-		return ove_tls_recv(handle_, buf, len, received);
+		size_t received = 0;
+		const int rc = ove_tls_recv(handle_, buf, len, &received);
+		return from_rc(rc, received);
 	}
 
 	/** @brief Close the TLS session (sends close_notify and tears down state). */

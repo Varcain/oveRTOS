@@ -868,15 +868,21 @@ namespace dns
 
 /**
  * @brief Resolves a hostname to an address.
- * @param[in]  hostname   Null-terminated hostname string.
- * @param[out] addr       Receives the resolved address.
- * @param[in]  timeout_ns Timeout in nanoseconds.
- * @return `OVE_OK` on success, or a negative error code.
+ *
+ * @param[in] hostname Null-terminated hostname string.
+ * @param[in] timeout  Resolve timeout (any `std::chrono::duration`
+ *                     unit; defaults to 5 seconds).
+ * @return On success, the resolved @ref Address.  On failure, an
+ *         `unexpected` @ref Error (`Error::NetDnsFail`,
+ *         `Error::Timeout`, …).
  */
-[[nodiscard]] inline int resolve(const char *hostname, Address &addr,
-				 std::chrono::nanoseconds timeout = std::chrono::seconds{5})
+[[nodiscard]] inline Result<Address>
+resolve(const char *hostname,
+	std::chrono::nanoseconds timeout = std::chrono::seconds{5}) noexcept
 {
-	return ove_dns_resolve(hostname, &addr.raw, to_timeout_ns(timeout));
+	Address addr;
+	const int rc = ove_dns_resolve(hostname, &addr.raw, to_timeout_ns(timeout));
+	return from_rc(rc, addr);
 }
 
 } /* namespace dns */

@@ -15,6 +15,7 @@
 
 #include <ove/net_httpd.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 #include <string_view>
 
 #ifdef CONFIG_OVE_NET_HTTPD
@@ -148,11 +149,12 @@ class Response
 	 * @brief Sends a JSON response.
 	 * @param[in] status HTTP status code (e.g. 200).
 	 * @param[in] json   NUL-terminated JSON string.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	int json(int status, const char *json)
+	Result<void> json(int status, const char *json) noexcept
 	{
-		return ove_httpd_resp_json(raw_, status, json);
+		return from_rc(ove_httpd_resp_json(raw_, status, json));
 	}
 
 	/**
@@ -160,11 +162,12 @@ class Response
 	 * @param[in] status HTTP status code.
 	 * @param[in] html   HTML data.
 	 * @param[in] len    HTML data length in bytes.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	int html(int status, const char *html, size_t len)
+	Result<void> html(int status, const char *html, size_t len) noexcept
 	{
-		return ove_httpd_resp_html(raw_, status, html, len);
+		return from_rc(ove_httpd_resp_html(raw_, status, html, len));
 	}
 
 	/**
@@ -173,11 +176,13 @@ class Response
 	 * @param[in] content_type Content-Type header value.
 	 * @param[in] body         Response body.
 	 * @param[in] len          Body length in bytes.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	int send(int status, const char *content_type, const void *body, size_t len)
+	Result<void> send(int status, const char *content_type, const void *body,
+			  size_t len) noexcept
 	{
-		return ove_httpd_resp_send(raw_, status, content_type, body, len);
+		return from_rc(ove_httpd_resp_send(raw_, status, content_type, body, len));
 	}
 
 	/**
@@ -186,22 +191,25 @@ class Response
 	 * @param[in] content_type Content-Type header value.
 	 * @param[in] body         Gzip-compressed response body.
 	 * @param[in] len          Compressed body length in bytes.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	int send_gz(int status, const char *content_type, const void *body, size_t len)
+	Result<void> send_gz(int status, const char *content_type, const void *body,
+			     size_t len) noexcept
 	{
-		return ove_httpd_resp_send_gz(raw_, status, content_type, body, len);
+		return from_rc(ove_httpd_resp_send_gz(raw_, status, content_type, body, len));
 	}
 
 	/**
 	 * @brief Sends a JSON error response.
 	 * @param[in] status HTTP status code (e.g. 404, 500).
 	 * @param[in] msg    Error message string.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	int error(int status, const char *msg)
+	Result<void> error(int status, const char *msg) noexcept
 	{
-		return ove_httpd_resp_error(raw_, status, msg);
+		return from_rc(ove_httpd_resp_error(raw_, status, msg));
 	}
 
 	/**
@@ -238,12 +246,13 @@ struct Config {
  * Routes may be registered before or after starting.
  *
  * @param[in] cfg Server configuration (defaults: port 80, 1024-byte body).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int start(const Config &cfg = {})
+[[nodiscard]] inline Result<void> start(const Config &cfg = {}) noexcept
 {
 	ove_httpd_config_t c{cfg.port, cfg.max_body_size};
-	return ove_httpd_start(&c);
+	return from_rc(ove_httpd_start(&c));
 }
 
 /**
@@ -259,11 +268,13 @@ inline void stop()
  * @param[in] method  HTTP method string ("GET" or "POST").
  * @param[in] path    URL path prefix (e.g. "/api/leds").
  * @param[in] handler Callback function invoked when the route matches.
- * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if the route table is full.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error::NoMemory if the route table is full.
  */
-[[nodiscard]] inline int route(const char *method, const char *path, Handler handler)
+[[nodiscard]] inline Result<void> route(const char *method, const char *path,
+					Handler handler) noexcept
 {
-	return ove_httpd_route(method, path, handler);
+	return from_rc(ove_httpd_route(method, path, handler));
 }
 
 /**
@@ -335,21 +346,22 @@ class Connection
 	 * @brief Send a text message to this connection.
 	 * @param[in] data Message payload.
 	 * @param[in] len  Payload length in bytes.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	int send(const void *data, size_t len)
+	Result<void> send(const void *data, size_t len) noexcept
 	{
-		return ove_httpd_ws_send(raw_, data, len);
+		return from_rc(ove_httpd_ws_send(raw_, data, len));
 	}
 
 	/**
 	 * @brief Send a string_view as a text message.
 	 * @param[in] sv String view to send.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return As @ref send(const void*, size_t).
 	 */
-	int send(std::string_view sv)
+	Result<void> send(std::string_view sv) noexcept
 	{
-		return ove_httpd_ws_send(raw_, sv.data(), sv.size());
+		return from_rc(ove_httpd_ws_send(raw_, sv.data(), sv.size()));
 	}
 
 	/** @brief Returns the underlying `ove_httpd_ws_conn_t *` (for C-API escape hatches). */
@@ -373,12 +385,13 @@ using CloseHandler = ove_httpd_ws_close_handler_t;
  * @param[in] path       URL path prefix (e.g. "/ws/log").
  * @param[in] on_message Callback for incoming messages.
  * @param[in] on_close   Callback when connection closes (may be nullptr).
- * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if route table full.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error::NoMemory if the route table is full.
  */
-[[nodiscard]] inline int route(const char *path, Handler on_message,
-			       CloseHandler on_close = nullptr)
+[[nodiscard]] inline Result<void> route(const char *path, Handler on_message,
+					CloseHandler on_close = nullptr) noexcept
 {
-	return ove_httpd_ws_route(path, on_message, on_close);
+	return from_rc(ove_httpd_ws_route(path, on_message, on_close));
 }
 
 /**
