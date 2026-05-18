@@ -163,7 +163,7 @@ fn testMutexSharedCounter() !void {
     shared_counter = 0;
     counter_mutex = try ove.Mutex.create(test_allocator);
     defer counter_mutex.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "cnt", .priority = .normal }, counterThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "cnt", .priority = .normal }, counterThread, .{});
     // Main thread also increments
     var i: u32 = 0;
     while (i < 1000) : (i += 1) {
@@ -287,7 +287,7 @@ fn semProducerThread() void {
 fn testSemaphoreProducerConsumer() !void {
     sem_for_thread = try ove.Semaphore.create(test_allocator, 0, 1);
     defer sem_for_thread.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "semp", .priority = .normal }, semProducerThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "semp", .priority = .normal }, semProducerThread, .{});
     try sem_for_thread.timedWait(.millis(500));
     t.deinit();
 }
@@ -329,7 +329,7 @@ fn eventSignalThread() void {
 fn testEventCrossThread() !void {
     event_for_thread = try ove.Event.create(test_allocator);
     defer event_for_thread.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "esig", .priority = .normal }, eventSignalThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "esig", .priority = .normal }, eventSignalThread, .{});
     try event_for_thread.timedWait(.millis(500));
     t.deinit();
 }
@@ -381,7 +381,7 @@ fn testCondVarSignalWakesOne() !void {
     defer cv_mutex_for_thread.deinit();
     cv_for_thread = try ove.CondVar.create(test_allocator);
     defer cv_for_thread.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "cvw", .priority = .normal }, cvWaiterThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "cvw", .priority = .normal }, cvWaiterThread, .{});
     ove.thread.sleepMs(50);
     cv_for_thread.signal();
     ove.thread.sleepMs(50);
@@ -417,7 +417,7 @@ fn testCondVarProducerConsumer() !void {
     defer cv_prod_mutex.deinit();
     cv_prod_cv = try ove.CondVar.create(test_allocator);
     defer cv_prod_cv.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "cvp", .priority = .normal }, cvProducerThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "cvp", .priority = .normal }, cvProducerThread, .{});
     cv_prod_mutex.lock();
     while (!cv_prod_flag) {
         try cv_prod_cv.timedWait(cv_prod_mutex, .millis(500));
@@ -433,7 +433,7 @@ fn testCondVarWaitForever() !void {
     defer cv_prod_mutex.deinit();
     cv_prod_cv = try ove.CondVar.create(test_allocator);
     defer cv_prod_cv.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "cvf", .priority = .normal }, cvProducerThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "cvf", .priority = .normal }, cvProducerThread, .{});
     cv_prod_mutex.lock();
     while (!cv_prod_flag) {
         cv_prod_cv.wait(cv_prod_mutex);
@@ -534,7 +534,7 @@ fn testQueueProducerConsumer() !void {
     queue_sum = 0;
     consumer_queue = try Q8.create(test_allocator);
     defer consumer_queue.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "qcon", .priority = .normal }, queueConsumerThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "qcon", .priority = .normal }, queueConsumerThread, .{});
     var i: u32 = 1;
     while (i <= 5) : (i += 1) {
         try consumer_queue.sendFor(&i, .millis(1000));
@@ -598,18 +598,18 @@ fn timerCallback() void {
 }
 
 fn testTimerCreateDestroyOneshot() !void {
-    var t = try ove.Timer.create(timerCallback, 100, .one_shot);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 100, .one_shot);
     t.deinit();
 }
 
 fn testTimerCreateDestroyPeriodic() !void {
-    var t = try ove.Timer.create(timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .periodic);
     t.deinit();
 }
 
 fn testTimerOneshotFiresOnce() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(timerCallback, 50, .one_shot);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .one_shot);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(200);
@@ -618,7 +618,7 @@ fn testTimerOneshotFiresOnce() !void {
 
 fn testTimerPeriodicFiresMultiple() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .periodic);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(250);
@@ -628,7 +628,7 @@ fn testTimerPeriodicFiresMultiple() !void {
 
 fn testTimerStopPreventsCallbacks() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .periodic);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(150);
@@ -641,7 +641,7 @@ fn testTimerStopPreventsCallbacks() !void {
 
 fn testTimerResetRestarts() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(timerCallback, 200, .one_shot);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 200, .one_shot);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(100);
@@ -655,7 +655,7 @@ fn testTimerResetRestarts() !void {
 
 fn testTimerDoubleStart() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(timerCallback, 100, .periodic);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 100, .periodic);
     defer t.deinit();
     try t.start();
     try t.start();
@@ -664,7 +664,7 @@ fn testTimerDoubleStart() !void {
 }
 
 fn testTimerRaiiDrop() !void {
-    var t = try ove.Timer.create(timerCallback, 100, .periodic);
+    var t = try ove.Timer.create(test_allocator, timerCallback, 100, .periodic);
     t.deinit();
 }
 
@@ -676,7 +676,7 @@ fn ctxTimerCallback(ctx: *u32) void {
 
 fn testTimerContextCallback() !void {
     ctx_count = 0;
-    var t = try ove.Timer.createWithContext(u32, &ctx_count, ctxTimerCallback, 50, .one_shot);
+    var t = try ove.Timer.createWithContext(test_allocator, u32, &ctx_count, ctxTimerCallback, 50, .one_shot);
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(150);
@@ -695,7 +695,7 @@ fn threadEntry() void {
 
 fn testThreadCreateDestroy() !void {
     thread_ran = false;
-    var t = try ove.Thread(4096).spawn(.{ .name = "test", .priority = .normal }, threadEntry, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "test", .priority = .normal }, threadEntry, .{});
     ove.thread.sleepMs(50);
     try expect(thread_ran);
     t.deinit();
@@ -719,14 +719,14 @@ fn testThreadGetSelf() !void {
 }
 
 fn testThreadSetPriority() !void {
-    var t = try ove.Thread(4096).spawn(.{ .name = "prio", .priority = .normal }, threadEntry, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "prio", .priority = .normal }, threadEntry, .{});
     defer t.deinit();
     t.setPriority(.high);
     ove.thread.sleepMs(50);
 }
 
 fn testThreadGetStateRunning() !void {
-    var t = try ove.Thread(4096).spawn(.{ .name = "stat", .priority = .normal }, threadEntry, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "stat", .priority = .normal }, threadEntry, .{});
     defer t.deinit();
     const state = t.getState();
     // Should be one of Running, Ready, Blocked, or Terminated
@@ -741,14 +741,14 @@ fn terminatingThread() void {
 
 fn testThreadGetStateTerminated() !void {
     terminated_flag = false;
-    var t = try ove.Thread(4096).spawn(.{ .name = "term", .priority = .normal }, terminatingThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "term", .priority = .normal }, terminatingThread, .{});
     ove.thread.sleepMs(100);
     try expect(terminated_flag);
     t.deinit();
 }
 
 fn testThreadStackUsage() !void {
-    var t = try ove.Thread(4096).spawn(.{ .name = "stk", .priority = .normal }, threadEntry, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "stk", .priority = .normal }, threadEntry, .{});
     ove.thread.sleepMs(50);
     _ = t.getStackUsage();
     t.deinit();
@@ -763,7 +763,7 @@ fn suspendableThread() void {
 
 fn testThreadSuspendResume() !void {
     suspended_flag = false;
-    var t = try ove.Thread(4096).spawn(.{ .name = "susp", .priority = .normal }, suspendableThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "susp", .priority = .normal }, suspendableThread, .{});
     ove.thread.sleepMs(50);
     t.suspendThread();
     ove.thread.sleepMs(100);
@@ -775,7 +775,7 @@ fn testThreadSuspendResume() !void {
 }
 
 fn testThreadRuntimeStats() !void {
-    var t = try ove.Thread(4096).spawn(.{ .name = "rts", .priority = .normal }, threadEntry, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "rts", .priority = .normal }, threadEntry, .{});
     ove.thread.sleepMs(50);
     // May return error.NotSupported on some backends
     _ = t.getRuntimeStats() catch {};
@@ -783,7 +783,7 @@ fn testThreadRuntimeStats() !void {
 }
 
 fn testThreadRaiiDrop() !void {
-    var t = try ove.Thread(4096).spawn(.{ .name = "raii", .priority = .normal }, threadEntry, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "raii", .priority = .normal }, threadEntry, .{});
     ove.thread.sleepMs(50);
     t.deinit();
 }
@@ -823,7 +823,7 @@ fn cooperativeWorker(stop: ove.StopToken) void {
 fn testThreadStopCooperativeDeinit() !void {
     resetStopFlags();
     {
-        var t = try ove.Thread(4096).spawn(.{ .name = "coop", .priority = .normal }, cooperativeWorker, .{});
+        var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "coop", .priority = .normal }, cooperativeWorker, .{});
         try std.testing.expect(waitForFlag(&stop_observed_false, 1, 1000));
         // deinit calls requestStop, then destroy.  Cooperative worker exits cleanly.
         t.deinit();
@@ -834,7 +834,7 @@ fn testThreadStopCooperativeDeinit() !void {
 
 fn testThreadStopExplicitRequest() !void {
     resetStopFlags();
-    var t = try ove.Thread(4096).spawn(.{ .name = "coop", .priority = .normal }, cooperativeWorker, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "coop", .priority = .normal }, cooperativeWorker, .{});
     try std.testing.expect(waitForFlag(&stop_observed_false, 1, 1000));
     try std.testing.expect(!t.shouldStop());
     t.requestStop();
@@ -849,7 +849,7 @@ fn helperChecksToken(tok: ove.StopToken) bool {
 
 fn testThreadStopTokenShareable() !void {
     resetStopFlags();
-    var t = try ove.Thread(4096).spawn(.{ .name = "coop", .priority = .normal }, cooperativeWorker, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "coop", .priority = .normal }, cooperativeWorker, .{});
     const tok = t.stopToken();
     try std.testing.expect(tok.stopPossible());
     try std.testing.expect(!helperChecksToken(tok));
@@ -871,7 +871,7 @@ fn legacyOneshotEntry() void {
 fn testThreadStopLegacyEntryUnaffected() !void {
     resetStopFlags();
     {
-        var t = try ove.Thread(4096).spawn(.{ .name = "legacy", .priority = .normal }, legacyOneshotEntry, .{});
+        var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "legacy", .priority = .normal }, legacyOneshotEntry, .{});
         try std.testing.expect(waitForFlag(&stop_exited, 1, 500));
         t.deinit();
     }
@@ -962,7 +962,7 @@ fn egSetterThread() void {
 fn testEventGroupCrossThread() !void {
     eg_for_thread = try ove.EventGroup.create(test_allocator);
     defer eg_for_thread.deinit();
-    var t = try ove.Thread(4096).spawn(.{ .name = "egst", .priority = .normal }, egSetterThread, .{});
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "egst", .priority = .normal }, egSetterThread, .{});
     const result = try eg_for_thread.waitBitsFor(BIT_0, 0, .millis(500));
     try expect(result & BIT_0 != 0);
     t.deinit();
@@ -1541,20 +1541,20 @@ fn workHandler() void {
 }
 
 fn testWorkqueueCreateDestroy() !void {
-    var wq = try ove.Workqueue(4096).create("test\x00", .normal);
+    var wq = try ove.Workqueue(4096).create(test_allocator, "test\x00", .normal);
     wq.deinit();
 }
 
 fn testWorkCreateDestroy() !void {
-    var work = try ove.Work.create(workHandler);
+    var work = try ove.Work.create(test_allocator, workHandler);
     work.deinit();
 }
 
 fn testWorkSubmit() !void {
     wq_count = 0;
-    var wq = try ove.Workqueue(4096).create("sub\x00", .normal);
+    var wq = try ove.Workqueue(4096).create(test_allocator, "sub\x00", .normal);
     defer wq.deinit();
-    var work = try ove.Work.create(workHandler);
+    var work = try ove.Work.create(test_allocator, workHandler);
     defer work.deinit();
     try wq.submit(&work);
     ove.thread.sleepMs(100);
@@ -1563,9 +1563,9 @@ fn testWorkSubmit() !void {
 
 fn testWorkSubmitDelayed() !void {
     wq_count = 0;
-    var wq = try ove.Workqueue(4096).create("del\x00", .normal);
+    var wq = try ove.Workqueue(4096).create(test_allocator, "del\x00", .normal);
     defer wq.deinit();
-    var work = try ove.Work.create(workHandler);
+    var work = try ove.Work.create(test_allocator, workHandler);
     defer work.deinit();
     try wq.submitDelayedFor(&work, .millis(50));
     ove.thread.sleepMs(10);
@@ -1575,20 +1575,20 @@ fn testWorkSubmitDelayed() !void {
 }
 
 fn testWorkCancel() !void {
-    var wq = try ove.Workqueue(4096).create("can\x00", .normal);
+    var wq = try ove.Workqueue(4096).create(test_allocator, "can\x00", .normal);
     defer wq.deinit();
-    var work = try ove.Work.create(workHandler);
+    var work = try ove.Work.create(test_allocator, workHandler);
     defer work.deinit();
     _ = work.cancel() catch {};
 }
 
 fn testWorkqueueRaiiDrop() !void {
     {
-        var wq = try ove.Workqueue(4096).create("raii\x00", .normal);
+        var wq = try ove.Workqueue(4096).create(test_allocator, "raii\x00", .normal);
         wq.deinit();
     }
     {
-        var work = try ove.Work.create(workHandler);
+        var work = try ove.Work.create(test_allocator, workHandler);
         work.deinit();
     }
 }

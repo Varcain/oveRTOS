@@ -408,30 +408,26 @@ inline fn ctxPointer(comptime user_param_count: usize, args: anytype) ?*anyopaqu
 /// RTOS thread.  `stack_size` is the user-requested stack in bytes; the
 /// actual allocation may be larger to satisfy Zephyr MPU alignment.
 ///
-/// In heap mode the wrapper is a single handle; the kernel allocates the
-/// stack from the heap based on `stack_size`:
+/// Stack + substrate storage live in allocator-managed memory; the
+/// substrate's `_init` path runs against them.  Works uniformly in
+/// heap and zero-heap builds.
 ///
 /// ```zig
-/// var th = try ove.Thread(2048).spawn(.{ .name = "worker" }, workerEntry, .{});
-/// defer th.deinit();
-/// ```
-///
-/// In zero-heap mode the stack is embedded; two-phase spawn is required:
-///
-/// ```zig
-/// var th: ove.Thread(2048) = undefined;
-/// try th.spawnStatic(.{ .name = "worker" }, workerEntry, .{});
+/// var th = try ove.Thread(2048).spawn(allocator, .{ .name = "worker" }, workerEntry, .{});
 /// defer th.deinit();
 /// ```
 pub fn Thread(comptime stack_size: usize) type {
-    return if (pin.zero_heap) ZeroHeapThread(stack_size) else HeapThread(stack_size);
-}
-
-fn HeapThread(comptime stack_size: usize) type {
     return struct {
         const Self = @This();
 
+        const Backing = struct {
+            stack: [stackTotal(stack_size)]u8 align(stackAlign(stack_size)),
+            storage: c.ove_thread_storage_t,
+        };
+
+        allocator: std.mem.Allocator,
         handle: c.ove_thread_t,
+        backing: ?*Backing, // null after `detach()` (resources leaked).
 
         /// Spawn a thread.  `cfg` is a [`SpawnConfig`] literal (pass
         /// `.{}` for all defaults).  `entry` may take zero, one, or two
@@ -439,6 +435,7 @@ fn HeapThread(comptime stack_size: usize) type {
         /// by the trampoline).  `args` is a tuple matching the
         /// remaining parameters (zero or one pointer).
         pub fn spawn(
+            allocator: std.mem.Allocator,
             comptime cfg: SpawnConfig,
             comptime entry: anytype,
             args: anytype,
@@ -446,59 +443,68 @@ fn HeapThread(comptime stack_size: usize) type {
             const info = comptime introspect(@TypeOf(entry), @TypeOf(args));
             const Tramp = makeTrampoline(entry, info);
             const ctx_ptr = ctxPointer(info.user_param_count, args);
+
+            const backing = try allocator.create(Backing);
+            errdefer allocator.destroy(backing);
+            backing.stack = std.mem.zeroes(@TypeOf(backing.stack));
+            backing.storage = std.mem.zeroes(c.ove_thread_storage_t);
             var h: c.ove_thread_t = null;
-            try err.fromCode(c.ove_thread_create(
+            try err.fromCode(c.ove_thread_init(
                 &h,
+                &backing.storage,
                 comptime cfgNameZ(cfg),
                 &Tramp.invoke,
                 ctx_ptr,
                 @intFromEnum(cfg.priority),
                 stack_size,
+                &backing.stack,
             ));
-            return .{ .handle = h };
+            return .{ .allocator = allocator, .handle = h, .backing = backing };
         }
 
         /// Request cooperative cancellation.  Sets the per-thread atomic
         /// stop flag.  The worker must poll [`StopToken.isStopped`] for
         /// this to have any effect — the substrate does NOT
-        /// force-terminate.  Safe from any context (ISR, other thread,
-        /// the thread itself).  Idempotent.
+        /// force-terminate.  Idempotent.
         pub inline fn requestStop(self: Self) void {
             if (self.handle == null) return;
             c.ove_thread_request_stop(self.handle);
         }
 
-        /// `true` if [`requestStop`] has been called on this thread.
         pub inline fn shouldStop(self: Self) bool {
             if (self.handle == null) return false;
             return c.ove_thread_should_stop(self.handle);
         }
 
-        /// Get a [`StopToken`] referencing this thread's cancellation
-        /// flag.  Cheap to copy; pass freely to helper functions.
         pub inline fn stopToken(self: Self) StopToken {
             return .{ .handle = self.handle };
         }
 
         /// Consume the wrapper without waiting for the worker to exit.
-        /// The underlying kernel thread keeps running; its resources
-        /// are leaked from the binding's perspective until the worker's
-        /// entry function eventually returns.  Subsequent calls to
-        /// `deinit` on a detached `Self` are no-ops.
+        /// The underlying kernel thread keeps running and the backing
+        /// stack+storage stays mapped — they're leaked from the
+        /// binding's perspective.  Subsequent calls to `deinit` on a
+        /// detached `Self` are no-ops.
+        ///
+        /// This is sound because the substrate still reads from the
+        /// backing memory until the worker function returns; freeing
+        /// the backing before that point would be use-after-free.
+        /// Choosing to detach means accepting the leak.
         pub fn detach(self: *Self) void {
             self.handle = null;
+            self.backing = null;
         }
 
         /// Request cooperative stop, then wait for the worker to exit
-        /// and release substrate resources.  Cooperative workers (those
-        /// polling [`StopToken.isStopped`]) exit cleanly.  Workers that
-        /// ignore the flag and don't return on their own block here
-        /// indefinitely — the stop signal is set but nothing observes
-        /// it.
+        /// and free the allocator-managed backing.  Cooperative workers
+        /// (those polling [`StopToken.isStopped`]) exit cleanly.
+        /// Workers that ignore the flag block here indefinitely.
         pub fn deinit(self: Self) void {
-            if (self.handle == null) return;
-            c.ove_thread_request_stop(self.handle);
-            _ = c.ove_thread_destroy(self.handle);
+            if (self.handle != null) {
+                c.ove_thread_request_stop(self.handle);
+                _ = c.ove_thread_deinit(self.handle);
+            }
+            if (self.backing) |b| self.allocator.destroy(b);
         }
 
         pub fn setPriority(self: Self, priority: Priority) void {
@@ -522,128 +528,6 @@ fn HeapThread(comptime stack_size: usize) type {
         }
 
         pub fn getRuntimeStats(self: Self) Error!Stats {
-            var raw_stats: c.struct_ove_thread_stats = undefined;
-            try err.fromCode(c.ove_thread_get_runtime_stats(self.handle, &raw_stats));
-            return .{
-                .runtime_us = raw_stats.runtime_us,
-                .cpu_percent_x100 = raw_stats.cpu_percent_x100,
-            };
-        }
-    };
-}
-
-fn ZeroHeapThread(comptime stack_size: usize) type {
-    return struct {
-        const Self = @This();
-
-        stack: [stackTotal(stack_size)]u8 align(stackAlign(stack_size)),
-        storage: c.ove_thread_storage_t,
-        handle: c.ove_thread_t,
-        tracker: pin.Tracker,
-
-        /// Spawn a thread into caller-provided embedded storage.  See
-        /// [`HeapThread.spawn`] for the cfg/entry/args contract.  The
-        /// wrapper must not be moved after this returns.
-        pub fn spawnStatic(
-            self: *Self,
-            comptime cfg: SpawnConfig,
-            comptime entry: anytype,
-            args: anytype,
-        ) Error!void {
-            const info = comptime introspect(@TypeOf(entry), @TypeOf(args));
-            const Tramp = makeTrampoline(entry, info);
-            const ctx_ptr = ctxPointer(info.user_param_count, args);
-
-            self.stack = [_]u8{0} ** stackTotal(stack_size);
-            self.storage = std.mem.zeroes(c.ove_thread_storage_t);
-            self.handle = null;
-            self.tracker = .{};
-            try err.fromCode(c.ove_thread_init(
-                &self.handle,
-                &self.storage,
-                comptime cfgNameZ(cfg),
-                &Tramp.invoke,
-                ctx_ptr,
-                @intFromEnum(cfg.priority),
-                stack_size,
-                &self.stack,
-            ));
-            self.tracker.record(self);
-        }
-
-        /// See [`HeapThread.requestStop`].
-        pub inline fn requestStop(self: *Self) void {
-            self.tracker.assertSame(self, "ove.Thread");
-            if (self.handle == null) return;
-            c.ove_thread_request_stop(self.handle);
-        }
-
-        /// See [`HeapThread.shouldStop`].
-        pub inline fn shouldStop(self: *Self) bool {
-            self.tracker.assertSame(self, "ove.Thread");
-            if (self.handle == null) return false;
-            return c.ove_thread_should_stop(self.handle);
-        }
-
-        /// See [`HeapThread.stopToken`].
-        pub inline fn stopToken(self: *Self) StopToken {
-            self.tracker.assertSame(self, "ove.Thread");
-            return .{ .handle = self.handle };
-        }
-
-        /// **Not available in zero-heap mode.**  The wrapper owns the
-        /// stack and storage that the kernel thread reads from, so
-        /// dropping the wrapper while the thread still runs is UAF.
-        /// `detach()` would silently invite that bug by removing the
-        /// implicit wait that `deinit` provides.  Call [`deinit`]
-        /// instead (it `request_stop`s, then waits), or hold the
-        /// wrapper in file-scope/static storage that outlives the
-        /// thread.
-        pub fn detach(_: *Self) noreturn {
-            @compileError("ove.Thread.detach is unsound in zero-heap mode: " ++
-                "the wrapper owns the stack and storage that the kernel " ++
-                "thread reads from.  Dropping the wrapper while the thread " ++
-                "still runs is use-after-free.  Call deinit() instead, or " ++
-                "hold the wrapper in file-scope/static storage that " ++
-                "outlives the thread.");
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.tracker.assertSame(self, "ove.Thread");
-            if (self.handle == null) return;
-            c.ove_thread_request_stop(self.handle);
-            _ = c.ove_thread_deinit(self.handle);
-            self.handle = null;
-            self.tracker.clear();
-        }
-
-        pub fn setPriority(self: *Self, priority: Priority) void {
-            self.tracker.assertSame(self, "ove.Thread");
-            c.ove_thread_set_priority(self.handle, @intFromEnum(priority));
-        }
-
-        pub fn suspendThread(self: *Self) void {
-            self.tracker.assertSame(self, "ove.Thread");
-            c.ove_thread_suspend(self.handle);
-        }
-
-        pub fn resumeThread(self: *Self) void {
-            self.tracker.assertSame(self, "ove.Thread");
-            c.ove_thread_resume(self.handle);
-        }
-
-        pub fn getStackUsage(self: *Self) usize {
-            self.tracker.assertSame(self, "ove.Thread");
-            return c.ove_thread_get_stack_usage(self.handle);
-        }
-
-        pub fn getState(self: *Self) State {
-            self.tracker.assertSame(self, "ove.Thread");
-            return c.ove_thread_get_state(self.handle);
-        }
-
-        pub fn getRuntimeStats(self: *Self) Error!Stats {
-            self.tracker.assertSame(self, "ove.Thread");
             var raw_stats: c.struct_ove_thread_stats = undefined;
             try err.fromCode(c.ove_thread_get_runtime_stats(self.handle, &raw_stats));
             return .{
