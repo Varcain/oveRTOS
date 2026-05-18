@@ -184,6 +184,63 @@ static void test_cpp_condvar_not_copyable(void **state)
 		      "CondVar must not be copy assignable");
 }
 
+/* ── Iter A3: predicate-overload wait_*  — spurious-wakeup safety ──── */
+
+/* 1. Predicate already true on entry: returns immediately. */
+static void test_cpp_condvar_wait_predicate_already_true(void **state)
+{
+	(void)state;
+	ove::CondVar cv;
+	ove::Mutex mtx;
+	bool ready = true;
+
+	mtx.lock();
+	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{500},
+					 [&] { return ready; });
+	mtx.unlock();
+	assert_true(ok);
+}
+
+/* 2. Predicate becomes true via notify: returns true. */
+static void test_cpp_condvar_wait_predicate_becomes_true(void **state)
+{
+	(void)state;
+	ove::CondVar cv;
+	ove::Mutex mtx;
+
+	cpp_cv_prod_ctx ctx{&cv, &mtx, 0};
+	auto th = make_test_thread("prod", cpp_cv_producer_entry, &ctx);
+
+	mtx.lock();
+	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{1000},
+					 [&] { return ctx.ready != 0; });
+	mtx.unlock();
+	assert_true(ok);
+	assert_int_equal(ctx.ready, 1);
+}
+
+/* 3. Predicate stays false past timeout: returns false. */
+static void test_cpp_condvar_wait_predicate_timeout(void **state)
+{
+	(void)state;
+	ove::CondVar cv;
+	ove::Mutex mtx;
+	bool never_ready = false;
+
+	mtx.lock();
+	const auto t0 = ove::steady_clock::now();
+	const bool ok = cv.try_wait_for(mtx, std::chrono::milliseconds{50},
+					 [&] { return never_ready; });
+	const auto elapsed = ove::steady_clock::now() - t0;
+	mtx.unlock();
+
+	assert_false(ok);
+	const auto elapsed_ms =
+		std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+	assert_duration_within(static_cast<uint64_t>(elapsed_ms * 1000), 50000,
+			       OVE_TEST_TIMING_TOLERANCE_MS * 1000);
+}
+
 int test_cpp_condvar_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -199,6 +256,9 @@ int test_cpp_condvar_run(void)
 		cmocka_unit_test(test_cpp_condvar_move_construct),
 #endif
 		cmocka_unit_test(test_cpp_condvar_not_copyable),
+		cmocka_unit_test(test_cpp_condvar_wait_predicate_already_true),
+		cmocka_unit_test(test_cpp_condvar_wait_predicate_becomes_true),
+		cmocka_unit_test(test_cpp_condvar_wait_predicate_timeout),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
