@@ -580,7 +580,7 @@ pub trait Styleable: Widget + Sized {
     ///
     /// Takes `&Style` — LVGL reads the pointer but does not mutate the
     /// style once added. `style` must outlive the widget (typical use:
-    /// store in a `StaticCell<Style>` or `&'static`).
+    /// store in a `InitCell<Style>` or `&'static`).
     fn add_style(self, style: &Style, selector: u32) -> Self {
         unsafe { bindings::lv_obj_add_style(self.raw(), style.ptr(), selector) };
         self
@@ -741,17 +741,17 @@ impl<'a> EventCtx<'a> {
 
 /// Static descriptor for a stateful event handler.
 ///
-/// Bundles a `&'static StaticCell<T>` of shared state with a `fn(&T, EventCtx)`
+/// Bundles a `&'static InitCell<T>` of shared state with a `fn(&T, EventCtx)`
 /// user callback. Declare with the [`crate::event_handler!`] macro and pass to
 /// [`EventTarget::on_with`] / [`EventTarget::on_clicked_with`].
 pub struct EventHandler<T: 'static> {
-    cell: &'static crate::StaticCell<T>,
+    cell: &'static crate::InitCell<T>,
     user: fn(&T, EventCtx<'_>),
 }
 
 impl<T: 'static> EventHandler<T> {
     /// Construct a handler descriptor — usable in `static` declarations.
-    pub const fn new(cell: &'static crate::StaticCell<T>, user: fn(&T, EventCtx<'_>)) -> Self {
+    pub const fn new(cell: &'static crate::InitCell<T>, user: fn(&T, EventCtx<'_>)) -> Self {
         Self { cell, user }
     }
 }
@@ -816,7 +816,7 @@ pub trait EventTarget: Widget + Sized {
     }
 
     /// Register a stateful safe handler — the handler receives the shared
-    /// state from the bundled `StaticCell` and an `EventCtx`.
+    /// state from the bundled `InitCell` and an `EventCtx`.
     fn on_with<T: Send + Sync + 'static>(
         self,
         code: bindings::lv_event_code_t,
@@ -4030,7 +4030,7 @@ impl ScaleSection {
     /// Apply a [`Style`] to the given part of the section.
     ///
     /// Takes `&Style` — the style must outlive the scale (typical use:
-    /// store in a `StaticCell<Style>` or `&'static`).
+    /// store in a `InitCell<Style>` or `&'static`).
     pub fn style(self, part: u32, style: &Style) -> Self {
         unsafe { bindings::lv_scale_section_set_style(self.raw, part, style.ptr()) };
         self

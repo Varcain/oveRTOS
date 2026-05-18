@@ -437,7 +437,7 @@ macro_rules! timer {
 /// # Example
 /// ```ignore
 /// let h = ove::thread!("worker", my_entry, Priority::Normal, 4096);
-/// h.detach();  // fire-and-forget; or store in StaticCell<JoinHandle<()>>.
+/// h.detach();  // fire-and-forget; or store in InitCell<JoinHandle<()>>.
 /// ```
 #[macro_export]
 macro_rules! thread {
@@ -622,7 +622,7 @@ macro_rules! watchdog {
     }};
 }
 
-/// Declare a `static` wrapped in [`crate::StaticCell`] for cross-thread shared state.
+/// Declare a `static` wrapped in [`crate::InitCell`] for cross-thread shared state.
 ///
 /// # Example
 /// ```ignore
@@ -632,11 +632,11 @@ macro_rules! watchdog {
 #[macro_export]
 macro_rules! shared {
     ($vis:vis $name:ident : $ty:ty) => {
-        $vis static $name: $crate::StaticCell<$ty> = $crate::StaticCell::new();
+        $vis static $name: $crate::InitCell<$ty> = $crate::InitCell::new();
     };
 }
 
-/// Declare a `static` wrapped in [`crate::StaticMut`] for single-owner mutable state.
+/// Declare a `static` wrapped in [`crate::InitMut`] for single-owner mutable state.
 ///
 /// # Example
 /// ```ignore
@@ -645,12 +645,12 @@ macro_rules! shared {
 #[macro_export]
 macro_rules! shared_mut {
     ($vis:vis $name:ident : $ty:ty) => {
-        $vis static $name: $crate::StaticMut<$ty> = $crate::StaticMut::new();
+        $vis static $name: $crate::InitMut<$ty> = $crate::InitMut::new();
     };
 }
 
 ///
-/// Bundles a `&'static StaticCell<T>` of shared state with a safe
+/// Bundles a `&'static InitCell<T>` of shared state with a safe
 /// `fn(&T, EventCtx)` callback. Pass the resulting static to
 /// [`EventTarget::on_with`](crate::lvgl::EventTarget::on_with) or
 /// [`EventTarget::on_clicked_with`](crate::lvgl::EventTarget::on_clicked_with).

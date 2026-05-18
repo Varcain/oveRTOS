@@ -32,7 +32,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{JoinHandle, Priority, Queue, StaticCell, Thread, Timer};
+use ove::{JoinHandle, Priority, Queue, InitCell, Thread, Timer};
 
 // ---------------------------------------------------------------------------
 // Constants and shared state
@@ -49,7 +49,7 @@ const APP_TITLE: &[u8] = b"oveRTOS(POSIX) Rust Demo\0";
 #[cfg(not(any(rtos_freertos, rtos_nuttx, rtos_zephyr, rtos_posix)))]
 const APP_TITLE: &[u8] = b"oveRTOS Rust Demo\0";
 
-// `ove::shared!` is `static <NAME>: StaticCell<T> = StaticCell::new();`.
+// `ove::shared!` is `static <NAME>: InitCell<T> = InitCell::new();`.
 // In zero-heap mode it parks a wrapper whose internal storage is
 // caller-owned (see app_main).
 ove::shared!(QUEUE: Queue<u32, 8>);
@@ -83,9 +83,9 @@ fn count_buf_view() -> &'static [u8] {
 // `static`.  Drop never runs on a static, so the threads run forever.
 // Apps can still call `.request_stop()` on the JoinHandle to signal
 // cooperative shutdown.
-static GFX_THREAD: StaticCell<JoinHandle<()>> = StaticCell::new();
-static PROD_THREAD: StaticCell<JoinHandle<()>> = StaticCell::new();
-static CONS_THREAD: StaticCell<JoinHandle<()>> = StaticCell::new();
+static GFX_THREAD: InitCell<JoinHandle<()>> = InitCell::new();
+static PROD_THREAD: InitCell<JoinHandle<()>> = InitCell::new();
+static CONS_THREAD: InitCell<JoinHandle<()>> = InitCell::new();
 
 // ---------------------------------------------------------------------------
 // LVGL UI

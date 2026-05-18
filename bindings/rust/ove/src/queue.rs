@@ -66,8 +66,8 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     ///
     /// `item` is taken by `&T` rather than by value because the
     /// substrate `memcpy`s the bytes — `T: Copy` is enforced at the
-    /// `Queue<T, N>` type level.  See A7 for the planned value-by-move +
-    /// `SendError<T>` shape.
+    /// `Queue<T, N>` type level, so `&T` vs `T` is a wash semantically
+    /// and `&T` avoids one stack-side `memcpy` for large `T`.
     #[inline]
     pub fn send(&self, item: &T) -> Result<()> {
         let rc = unsafe {

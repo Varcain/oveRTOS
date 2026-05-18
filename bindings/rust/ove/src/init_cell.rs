@@ -6,7 +6,7 @@
 
 //! Init-once container for `static` declarations.
 //!
-//! `StaticCell<T>` encapsulates the single `unsafe` pattern of "create once in
+//! `InitCell<T>` encapsulates the single `unsafe` pattern of "create once in
 //! `on_init`, use from any thread, destroy in `on_shutdown`" behind a safe API.
 
 use core::cell::UnsafeCell;
@@ -25,18 +25,18 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// `init()` and `shutdown()` must be called single-threaded (framework lifecycle
 /// guarantee: `on_init` / `on_shutdown`). Between init and shutdown the value is
 /// immutable — no data race is possible.
-pub struct StaticCell<T> {
+pub struct InitCell<T> {
     initialized: AtomicBool,
     inner: UnsafeCell<Option<T>>,
 }
 
-impl<T> Default for StaticCell<T> {
+impl<T> Default for InitCell<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> StaticCell<T> {
+impl<T> InitCell<T> {
     /// Create an empty cell. Usable in `static` declarations.
     pub const fn new() -> Self {
         Self {
@@ -55,7 +55,7 @@ impl<T> StaticCell<T> {
     pub fn init(&self, val: T) {
         assert!(
             !self.initialized.load(Ordering::Acquire),
-            "StaticCell::init called on already-initialized cell"
+            "InitCell::init called on already-initialized cell"
         );
         // SAFETY: Single-threaded during init (lifecycle guarantee).
         unsafe {
@@ -77,7 +77,7 @@ impl<T> StaticCell<T> {
         // before WQ_WORK is initialized) require the explicit fence.
         assert!(
             self.initialized.load(Ordering::Acquire),
-            "StaticCell::get called on uninitialized cell"
+            "InitCell::get called on uninitialized cell"
         );
         // SAFETY: Acquire-load above synchronises with init's Release
         // store; the inner value is fully visible.
@@ -132,7 +132,7 @@ impl<T> StaticCell<T> {
     }
 }
 
-impl<T> core::ops::Deref for StaticCell<T> {
+impl<T> core::ops::Deref for InitCell<T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.get()
@@ -142,10 +142,10 @@ impl<T> core::ops::Deref for StaticCell<T> {
 // SAFETY: The init/shutdown lifecycle is single-threaded. Between those points
 // the value is immutable (shared &T only). The AtomicBool + Release/Acquire
 // ordering ensures cross-thread visibility.
-unsafe impl<T: Send + Sync> Sync for StaticCell<T> {}
-unsafe impl<T: Send> Send for StaticCell<T> {}
+unsafe impl<T: Send + Sync> Sync for InitCell<T> {}
+unsafe impl<T: Send> Send for InitCell<T> {}
 
-/// Like `StaticCell` but provides `&mut T` access through `UnsafeCell`.
+/// Like `InitCell` but provides `&mut T` access through `UnsafeCell`.
 ///
 /// Used for types that need mutable access from a single owner thread
 /// (e.g., DspEngine from audio ISR, IrManager from loader thread).
@@ -154,18 +154,18 @@ unsafe impl<T: Send> Send for StaticCell<T> {}
 ///
 /// - `init()` and `shutdown()` must be called single-threaded (lifecycle guarantee).
 /// - `get_mut()` requires the caller to ensure exclusive access.
-pub struct StaticMut<T> {
+pub struct InitMut<T> {
     initialized: AtomicBool,
     inner: UnsafeCell<Option<T>>,
 }
 
-impl<T> Default for StaticMut<T> {
+impl<T> Default for InitMut<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T> StaticMut<T> {
+impl<T> InitMut<T> {
     /// Create an empty cell. Usable in `static` declarations.
     pub const fn new() -> Self {
         Self {
@@ -181,7 +181,7 @@ impl<T> StaticMut<T> {
     pub fn init(&self, val: T) {
         assert!(
             !self.initialized.load(Ordering::Acquire),
-            "StaticMut::init called on already-initialized cell"
+            "InitMut::init called on already-initialized cell"
         );
         unsafe { *self.inner.get() = Some(val) };
         self.initialized.store(true, Ordering::Release);
@@ -228,7 +228,7 @@ impl<T> StaticMut<T> {
     pub fn get(&self) -> &T {
         assert!(
             self.initialized.load(Ordering::Acquire),
-            "StaticMut::get called on uninitialized cell"
+            "InitMut::get called on uninitialized cell"
         );
         unsafe { (*self.inner.get()).as_ref().unwrap() }
     }
@@ -244,16 +244,16 @@ impl<T> StaticMut<T> {
     }
 }
 
-impl<T> core::ops::Deref for StaticMut<T> {
+impl<T> core::ops::Deref for InitMut<T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.get()
     }
 }
 
-// SAFETY: StaticMut provides `&mut T` access only through an unsafe method
+// SAFETY: InitMut provides `&mut T` access only through an unsafe method
 // that requires the caller to prove exclusive access. Init/shutdown are
 // single-threaded (lifecycle guarantee). `T: Sync` is required because
 // shared references (`&T` via `Deref`) may be accessed from multiple threads.
-unsafe impl<T: Send + Sync> Sync for StaticMut<T> {}
-unsafe impl<T: Send> Send for StaticMut<T> {}
+unsafe impl<T: Send + Sync> Sync for InitMut<T> {}
+unsafe impl<T: Send> Send for InitMut<T> {}

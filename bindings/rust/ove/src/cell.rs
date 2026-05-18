@@ -19,7 +19,7 @@
 /// single-access invariant (e.g. via a lock like LVGL's, or by structural
 /// guarantees in an embedded setup/run/teardown flow).
 ///
-/// Pairs naturally with [`crate::StaticCell`] for app-wide state.
+/// Pairs naturally with [`crate::InitCell`] for app-wide state.
 #[repr(transparent)]
 pub struct LvCell<T>(core::cell::Cell<T>);
 
