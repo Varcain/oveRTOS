@@ -16,6 +16,12 @@
 
 const std = @import("std");
 const ove = @import("ove");
+
+/// Route `std.log.*` and any library using `std.log.scoped(...)` through
+/// `ove.log.logFn` — emits to the oveRTOS console.
+pub const std_options: std.Options = .{
+    .logFn = ove.log.logFn,
+};
 const net = ove.net;
 const Address = ove.Address;
 
@@ -39,14 +45,14 @@ var fail_count: u32 = 0;
 var net_thread: ove.Thread(16384) = undefined;
 
 fn testCase(name: []const u8) void {
-    ove.log.inf("  [TEST] {s}", .{name});
+    std.log.info("  [TEST] {s}", .{name});
 }
 fn passCase(name: []const u8) void {
-    ove.log.inf("  [PASS] {s}", .{name});
+    std.log.info("  [PASS] {s}", .{name});
     pass_count += 1;
 }
 fn failCase(name: []const u8, code: i32) void {
-    ove.log.err("  [FAIL] {s} ({d})", .{ name, code });
+    std.log.err("  [FAIL] {s} ({d})", .{ name, code });
     fail_count += 1;
 }
 
@@ -71,7 +77,7 @@ fn errCode(e: anyerror) i32 {
 // -- 1. Network interface ---------------------------------------------------
 
 fn testNetifInit() void {
-    ove.log.inf("=== Network Interface ===", .{});
+    std.log.info("=== Network Interface ===", .{});
 
     testCase("netif_init");
     var netif: net.NetIf = undefined;
@@ -97,14 +103,14 @@ fn testNetifInit() void {
     passCase("netif_up (static IP)");
 
     if (!is_posix) {
-        ove.log.inf("  Waiting for link...", .{});
+        std.log.info("  Waiting for link...", .{});
         ove.thread.sleepMs(3000);
     }
 
     testCase("netif_get_addr");
     if (netif.getAddr()) |info| {
         const o = info.ip.octets();
-        ove.log.inf("  IP: {d}.{d}.{d}.{d}", .{ o[0], o[1], o[2], o[3] });
+        std.log.info("  IP: {d}.{d}.{d}.{d}", .{ o[0], o[1], o[2], o[3] });
         passCase("netif_get_addr");
     } else |e| {
         failCase("netif_get_addr", errCode(e));
@@ -114,12 +120,12 @@ fn testNetifInit() void {
 // -- 2. DNS resolution ------------------------------------------------------
 
 fn testDns() void {
-    ove.log.inf("=== DNS Resolution ===", .{});
+    std.log.info("=== DNS Resolution ===", .{});
 
     testCase("resolve example.com");
     if (net.dns.resolve("example.com", 5000 * std.time.ns_per_ms)) |addr| {
         const o = addr.octets();
-        ove.log.inf("  -> {d}.{d}.{d}.{d}", .{ o[0], o[1], o[2], o[3] });
+        std.log.info("  -> {d}.{d}.{d}.{d}", .{ o[0], o[1], o[2], o[3] });
         passCase("resolve example.com");
     } else |e| {
         failCase("resolve example.com", errCode(e));
@@ -136,7 +142,7 @@ fn testDns() void {
 // -- 3. Raw TCP socket ------------------------------------------------------
 
 fn testTcp() void {
-    ove.log.inf("=== TCP Socket ===", .{});
+    std.log.info("=== TCP Socket ===", .{});
 
     testCase("socket_open TCP");
     var sock: net.TcpStream = undefined;
@@ -187,11 +193,11 @@ fn testTcp() void {
     if (total > 0) {
         const response = buf[0..total];
         if (std.mem.indexOf(u8, response, "200 OK") != null) {
-            ove.log.inf("  -> received {d} bytes, status 200 OK", .{total});
+            std.log.info("  -> received {d} bytes, status 200 OK", .{total});
             passCase("socket_recv (HTTP 200)");
         } else {
             if (std.mem.indexOf(u8, response, "\r\n")) |eol| {
-                ove.log.wrn("  -> {s}", .{response[0..eol]});
+                std.log.warn("  -> {s}", .{response[0..eol]});
             }
             failCase("socket_recv (unexpected status)", 0);
         }
@@ -207,7 +213,7 @@ fn testTcp() void {
 // -- 4. UDP socket ----------------------------------------------------------
 
 fn testUdp() void {
-    ove.log.inf("=== UDP Socket ===", .{});
+    std.log.info("=== UDP Socket ===", .{});
 
     testCase("socket_open UDP");
     var sock: net.UdpSocket = undefined;
@@ -253,7 +259,7 @@ fn testUdp() void {
 // -- 5. HTTP client ---------------------------------------------------------
 
 fn testHttp() void {
-    ove.log.inf("=== HTTP Client ===", .{});
+    std.log.info("=== HTTP Client ===", .{});
 
     testCase("http_client_init");
     var client: ove.net_http.Client = undefined;
@@ -268,7 +274,7 @@ fn testHttp() void {
     if (client.get("http://example.com/")) |resp_| {
         var resp = resp_;
         defer resp.destroy();
-        ove.log.inf("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
+        std.log.info("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
         if (resp.status() == 200 and resp.body().len > 0) {
             passCase("http_get (200 OK)");
         } else {
@@ -283,7 +289,7 @@ fn testHttp() void {
     if (client.post("http://httpbin.org/post", "application/json", json)) |resp_| {
         var resp = resp_;
         defer resp.destroy();
-        ove.log.inf("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
+        std.log.info("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
         if (resp.status() == 200) {
             passCase("http_post (200 OK)");
             if (std.mem.indexOf(u8, resp.body(), "overtos") != null) {
@@ -313,7 +319,7 @@ fn testHttp() void {
     )) |resp_| {
         var resp = resp_;
         defer resp.destroy();
-        ove.log.inf("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
+        std.log.info("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
         if (resp.status() == 200) {
             passCase("http_put (200 OK)");
         } else {
@@ -327,7 +333,7 @@ fn testHttp() void {
 // -- 5b. SNTP ---------------------------------------------------------------
 
 fn testSntp() void {
-    ove.log.inf("=== SNTP ===", .{});
+    std.log.info("=== SNTP ===", .{});
 
     testCase("sntp_sync pool.ntp.org");
     ove.net_sntp.sync(.{
@@ -341,7 +347,7 @@ fn testSntp() void {
 
     testCase("sntp_get_utc");
     if (ove.net_sntp.getUtc()) |utc| {
-        ove.log.inf("  -> UTC: {d}", .{utc});
+        std.log.info("  -> UTC: {d}", .{utc});
         passCase("sntp_get_utc");
     } else |e| {
         failCase("sntp_get_utc", errCode(e));
@@ -355,7 +361,7 @@ var mqtt_rx_payload: [128]u8 = undefined;
 var mqtt_rx_payload_len: usize = 0;
 
 fn onMqttMessage(topic: []const u8, payload: []const u8) void {
-    ove.log.inf("  MQTT rx: [{s}] {s}", .{ topic, payload });
+    std.log.info("  MQTT rx: [{s}] {s}", .{ topic, payload });
     if (payload.len < mqtt_rx_payload.len) {
         @memcpy(mqtt_rx_payload[0..payload.len], payload);
         mqtt_rx_payload_len = payload.len;
@@ -364,7 +370,7 @@ fn onMqttMessage(topic: []const u8, payload: []const u8) void {
 }
 
 fn testMqtt() void {
-    ove.log.inf("=== MQTT Client ===", .{});
+    std.log.info("=== MQTT Client ===", .{});
 
     testCase("mqtt_client_init");
     var mqtt: ove.net_mqtt.Client = undefined;
@@ -416,17 +422,17 @@ fn testMqtt() void {
         if (mqtt_rx_count >= 2) break;
     }
     if (mqtt_rx_count >= 1) {
-        ove.log.inf("  -> received {d} message(s)", .{mqtt_rx_count});
+        std.log.info("  -> received {d} message(s)", .{mqtt_rx_count});
         passCase("mqtt_loop (received messages)");
     } else {
-        ove.log.wrn("  -> received {d} messages (broker may not echo)", .{mqtt_rx_count});
+        std.log.warn("  -> received {d} messages (broker may not echo)", .{mqtt_rx_count});
         passCase("mqtt_loop (ran without error)");
     }
 
     testCase("mqtt_unsubscribe");
     mqtt.unsubscribe("overtos/test") catch |e| {
         if (e == error.NetClosed or e == error.NetReset) {
-            ove.log.wrn("  connection closed by broker ({d})", .{errCode(e)});
+            std.log.warn("  connection closed by broker ({d})", .{errCode(e)});
             passCase("mqtt_unsubscribe (connection closed, acceptable)");
         } else {
             failCase("mqtt_unsubscribe", errCode(e));
@@ -456,38 +462,38 @@ fn netThread() void {
     testSntp();
     testMqtt();
 
-    ove.log.inf("========================================", .{});
-    ove.log.inf("  Results: {d} passed, {d} failed", .{ pass_count, fail_count });
-    ove.log.inf("========================================", .{});
+    std.log.info("========================================", .{});
+    std.log.info("  Results: {d} passed, {d} failed", .{ pass_count, fail_count });
+    std.log.info("========================================", .{});
 
     if (fail_count == 0) {
-        ove.log.inf("  ALL TESTS PASSED", .{});
+        std.log.info("  ALL TESTS PASSED", .{});
     } else {
-        ove.log.err("  {d} TEST(S) FAILED", .{fail_count});
+        std.log.err("  {d} TEST(S) FAILED", .{fail_count});
     }
 
     const httpd_port: u16 = if (is_posix) 8080 else 80;
-    ove.log.inf("Starting HTTP server on port {d}...", .{httpd_port});
+    std.log.info("Starting HTTP server on port {d}...", .{httpd_port});
     ove.net_httpd.start(.{ .port = httpd_port, .max_body_size = 1024 }) catch |e| {
-        ove.log.err("HTTP server failed to start: {d}", .{errCode(e)});
+        std.log.err("HTTP server failed to start: {d}", .{errCode(e)});
         return;
     };
     ove.net_httpd.registerBuiltinRoutes();
-    ove.log.inf("HTTP server running -- open http://<device-ip>:{d}/", .{httpd_port});
+    std.log.info("HTTP server running -- open http://<device-ip>:{d}/", .{httpd_port});
     while (true) ove.thread.sleepMs(1000);
 }
 
 // -- App entry point --------------------------------------------------------
 
 fn appMain() void {
-    ove.log.inf("Zig networking example (zero-heap mode): init", .{});
+    std.log.info("Zig networking example (zero-heap mode): init", .{});
 
     net_thread.spawnStatic(.{ .name = "net-test", .priority = .normal }, netThread, .{}) catch |e| {
-        ove.log.err("Failed to init net thread: {d}", .{errCode(e)});
+        std.log.err("Failed to init net thread: {d}", .{errCode(e)});
         return;
     };
 
-    ove.log.inf("Zig networking example (zero-heap mode): ready", .{});
+    std.log.info("Zig networking example (zero-heap mode): ready", .{});
     ove.run();
 }
 

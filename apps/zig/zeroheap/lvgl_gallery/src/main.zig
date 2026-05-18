@@ -9,6 +9,12 @@
 
 const std = @import("std");
 const ove = @import("ove");
+
+/// Route `std.log.*` and any library using `std.log.scoped(...)` through
+/// `ove.log.logFn` — emits to the oveRTOS console.
+pub const std_options: std.Options = .{
+    .logFn = ove.log.logFn,
+};
 const Timer = ove.Timer;
 
 const lvgl = ove.lvgl;
@@ -344,18 +350,18 @@ fn graphicsEntry() void {
 var graphics_thread: ove.Thread(4096) = undefined;
 
 fn appMain() void {
-    ove.log.inf("LVGL gallery (Zig): init", .{});
+    std.log.info("LVGL gallery (Zig): init", .{});
 
     graphics_thread.spawnStatic(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
-        ove.log.err("Failed to init graphics", .{});
+        std.log.err("Failed to init graphics", .{});
         return;
     };
     ui_timer.init(uiTimerCallback, 100, .periodic) catch {
-        ove.log.err("Timer init fail", .{});
+        std.log.err("Timer init fail", .{});
         return;
     };
     lvgl.init() catch {
-        ove.log.err("LVGL init fail", .{});
+        std.log.err("LVGL init fail", .{});
         return;
     };
     {
@@ -363,13 +369,13 @@ fn appMain() void {
         defer guard.deinit();
         createUi();
     }
-    ove.log.inf("LVGL widgets created", .{});
+    std.log.info("LVGL widgets created", .{});
     ui_timer.start() catch {
-        ove.log.err("Timer start fail", .{});
+        std.log.err("Timer start fail", .{});
         return;
     };
 
-    ove.log.inf("LVGL gallery (Zig): ready", .{});
+    std.log.info("LVGL gallery (Zig): ready", .{});
     ove.run();
 }
 

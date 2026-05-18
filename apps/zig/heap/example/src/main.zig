@@ -28,6 +28,12 @@
 
 const std = @import("std");
 const ove = @import("ove");
+
+/// Route `std.log.*` and any library using `std.log.scoped(...)` through
+/// `ove.log.logFn` — emits to the oveRTOS console.
+pub const std_options: std.Options = .{
+    .logFn = ove.log.logFn,
+};
 const Thread = ove.Thread;
 const Queue = ove.Queue;
 const Timer = ove.Timer;
@@ -115,7 +121,7 @@ fn uiTimerCallback() void {
     // let LVGL own the copy.
     var buf: [24]u8 = undefined;
     _ = std.fmt.bufPrint(&buf, "Count: {d}\x00", .{val}) catch |e| {
-        ove.log.err("ui timer fmt: {}", .{e});
+        std.log.err("ui timer fmt: {}", .{e});
         return;
     };
     if (counter_label) |*label| _ = label.text(@ptrCast(&buf));
@@ -145,7 +151,7 @@ fn graphicsEntry() void {
 }
 
 fn producerEntry() void {
-    ove.log.inf("Producer started", .{});
+    std.log.info("Producer started", .{});
     var count: u32 = 0;
 
     while (true) {
@@ -156,8 +162,8 @@ fn producerEntry() void {
         // here.
         queue.?.sendFor(&count, .millis(1000)) catch |e| {
             switch (e) {
-                error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
-                error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
+                error.Timeout => std.log.warn("Producer: send timeout", .{}),
+                error.QueueFull => std.log.warn("Producer: queue full, dropped {d}", .{count}),
             }
             ove.thread.sleepMs(500);
             continue;
@@ -168,7 +174,7 @@ fn producerEntry() void {
 }
 
 fn consumerEntry() void {
-    ove.log.inf("Consumer started", .{});
+    std.log.info("Consumer started", .{});
 
     while (true) {
         // `recv()` is forever-blocking and infallible — no catch needed.
@@ -177,7 +183,7 @@ fn consumerEntry() void {
         last_value.store(val, .release);
 
         if (val % 5 == 0) {
-            ove.log.inf("Consumer: count = {d}", .{val});
+            std.log.info("Consumer: count = {d}", .{val});
         }
     }
 }
@@ -187,33 +193,33 @@ fn consumerEntry() void {
 // ---------------------------------------------------------------------------
 
 fn appMain() void {
-    ove.log.inf("Zig example (heap mode): init", .{});
+    std.log.info("Zig example (heap mode): init", .{});
 
     queue = Queue(u32, 8).create(app_allocator) catch {
-        ove.log.err("Failed to create queue", .{});
+        std.log.err("Failed to create queue", .{});
         return;
     };
 
     graphics_thread = Thread(4096).spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
-        ove.log.err("Failed to spawn graphics", .{});
+        std.log.err("Failed to spawn graphics", .{});
         return;
     };
     producer_thread = Thread(4096).spawn(app_allocator, .{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
-        ove.log.err("Failed to spawn producer", .{});
+        std.log.err("Failed to spawn producer", .{});
         return;
     };
     consumer_thread = Thread(4096).spawn(app_allocator, .{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
-        ove.log.err("Failed to spawn consumer", .{});
+        std.log.err("Failed to spawn consumer", .{});
         return;
     };
 
     ui_timer = Timer.create(app_allocator, uiTimerCallback, 200, .periodic) catch {
-        ove.log.err("Failed to create UI timer", .{});
+        std.log.err("Failed to create UI timer", .{});
         return;
     };
 
     lvgl.init() catch {
-        ove.log.err("Failed to init LVGL", .{});
+        std.log.err("Failed to init LVGL", .{});
         return;
     };
 
@@ -222,18 +228,18 @@ fn appMain() void {
         defer guard.deinit();
         createUi();
     }
-    ove.log.inf("LVGL widgets created", .{});
+    std.log.info("LVGL widgets created", .{});
 
     ui_timer.?.start() catch {
-        ove.log.err("Failed to start UI timer", .{});
+        std.log.err("Failed to start UI timer", .{});
         return;
     };
 
-    ove.log.inf("Zig example (heap mode): ready", .{});
+    std.log.info("Zig example (heap mode): ready", .{});
 
     ove.run();
 
-    ove.log.inf("Zig example (heap mode): shutdown", .{});
+    std.log.info("Zig example (heap mode): shutdown", .{});
 }
 
 comptime {

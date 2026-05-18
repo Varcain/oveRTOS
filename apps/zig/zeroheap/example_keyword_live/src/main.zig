@@ -13,6 +13,12 @@
 
 const std = @import("std");
 const ove = @import("ove");
+
+/// Route `std.log.*` and any library using `std.log.scoped(...)` through
+/// `ove.log.logFn` — emits to the oveRTOS console.
+pub const std_options: std.Options = .{
+    .logFn = ove.log.logFn,
+};
 const infer = ove.infer;
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -220,7 +226,7 @@ fn classifyKeyword(
 // ── Inference thread ───────────────────────────────────────────────────
 
 fn inferThread() void {
-    ove.log.inf("Inference thread started — listening...", .{});
+    std.log.info("Inference thread started — listening...", .{});
     ove.thread.sleepMs(2000);
     var prev_samples = samples_written.load(.monotonic);
 
@@ -251,11 +257,11 @@ fn inferThread() void {
             const a: i16 = @intCast(@abs(s));
             if (a > peak) peak = a;
         }
-        ove.log.inf("Audio: peak={d}, rate={d}, read={d}", .{ peak, actual_rate, read_count });
+        std.log.info("Audio: peak={d}, rate={d}, read={d}", .{ peak, actual_rate, read_count });
 
         dsp.actual_rate = if (actual_rate > 0) actual_rate else audio_sample_freq;
         if (peak < 10) {
-            ove.log.wrn("Audio silent — check DMIC", .{});
+            std.log.warn("Audio silent — check DMIC", .{});
             continue;
         }
 
@@ -273,17 +279,17 @@ fn inferThread() void {
         if (dc_peak < noise_gate_threshold) continue;
 
         dsp.gain = std.math.clamp(@divTrunc(target_peak, dc_peak), 1, 200);
-        ove.log.inf("  dc_peak={d}, gain={d}", .{ dc_peak, dsp.gain });
+        std.log.info("  dc_peak={d}, gain={d}", .{ dc_peak, dsp.gain });
 
         // Inference pipeline
         generateFeatures(audio_window[0..read_count], &features, &storage, dsp) catch {
-            ove.log.err("Features failed", .{});
+            std.log.err("Features failed", .{});
             continue;
         };
 
         if (classifyKeyword(&features, &storage)) |result| {
             if (result.index > 1 and result.confidence > confidence_threshold) {
-                ove.log.inf(">>> Keyword: \"{s}\" ({d:.0}%)", .{
+                std.log.info(">>> Keyword: \"{s}\" ({d:.0}%)", .{
                     labels[result.index],
                     result.confidence * 100.0,
                 });
@@ -295,14 +301,14 @@ fn inferThread() void {
 // ── Entry point ────────────────────────────────────────────────────────
 
 fn appMain() void {
-    ove.log.inf("=== Live DMIC Keyword Detection (Zig) ===", .{});
-    ove.log.inf("Models: preprocessor {d} + classifier {d} bytes", .{
+    std.log.info("=== Live DMIC Keyword Detection (Zig) ===", .{});
+    std.log.info("Models: preprocessor {d} + classifier {d} bytes", .{
         preprocessorModel().len,
         classifierModel().len,
     });
 
     graph.init(512) catch {
-        ove.log.err("Audio graph init failed", .{});
+        std.log.err("Audio graph init failed", .{});
         ove.run();
         return;
     };
@@ -310,49 +316,49 @@ fn appMain() void {
     const dev_cfg = ove.audio.Graph.deviceCfgI2s(16000, 1, 1);
 
     const src = graph.deviceSource(&dev_cfg, "dmic-in") catch {
-        ove.log.err("Failed to create DMIC source", .{});
+        std.log.err("Failed to create DMIC source", .{});
         ove.run();
         return;
     };
     const proc = graph.addProcessor(DmicProcessor, &dmic_proc, "dmic-proc") catch {
-        ove.log.err("Failed to add processor", .{});
+        std.log.err("Failed to add processor", .{});
         ove.run();
         return;
     };
     const sink = graph.deviceSink(&dev_cfg, "hp-out") catch {
-        ove.log.err("Failed to create HP sink", .{});
+        std.log.err("Failed to create HP sink", .{});
         ove.run();
         return;
     };
 
     graph.connect(@intCast(src), @intCast(proc)) catch {
-        ove.log.err("Graph connect failed", .{});
+        std.log.err("Graph connect failed", .{});
         ove.run();
         return;
     };
     graph.connect(@intCast(proc), @intCast(sink)) catch {
-        ove.log.err("Graph connect failed", .{});
+        std.log.err("Graph connect failed", .{});
         ove.run();
         return;
     };
     graph.build() catch {
-        ove.log.err("Graph build failed", .{});
+        std.log.err("Graph build failed", .{});
         ove.run();
         return;
     };
     graph.start() catch {
-        ove.log.err("Graph start failed", .{});
+        std.log.err("Graph start failed", .{});
         ove.run();
         return;
     };
-    ove.log.inf("Audio streaming: 16kHz mono, DMIC input", .{});
+    std.log.info("Audio streaming: 16kHz mono, DMIC input", .{});
 
     infer_thread.spawnStatic(.{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
-        ove.log.err("Failed to init infer thread", .{});
+        std.log.err("Failed to init infer thread", .{});
         return;
     };
 
-    ove.log.inf("Say \"yes\" or \"no\" near the microphone...", .{});
+    std.log.info("Say \"yes\" or \"no\" near the microphone...", .{});
     ove.run();
 }
 
