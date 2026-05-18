@@ -15,13 +15,13 @@ static void test_cpp_stream_send_receive(void **state)
 
 	const uint8_t tx[] = {0xDE, 0xAD, 0xBE, 0xEF};
 	size_t sent = 0;
-	int ret = s.send(tx, sizeof(tx), std::chrono::milliseconds{100}, &sent);
+	int ret = s.try_send_for(tx, sizeof(tx), std::chrono::milliseconds{100}, sent);
 	assert_int_equal(ret, OVE_OK);
 	assert_int_equal(sent, sizeof(tx));
 
 	uint8_t rx[4] = {};
 	size_t received = 0;
-	ret = s.receive(rx, sizeof(rx), std::chrono::milliseconds{100}, &received);
+	ret = s.try_receive_for(rx, sizeof(rx), std::chrono::milliseconds{100}, received);
 	assert_int_equal(ret, OVE_OK);
 	assert_int_equal(received, sizeof(tx));
 	assert_memory_equal(rx, tx, sizeof(tx));
@@ -36,7 +36,7 @@ static void test_cpp_stream_bytes_available(void **state)
 
 	const uint8_t data[] = {1, 2, 3};
 	size_t sent = 0;
-	(void)s.send(data, sizeof(data), std::chrono::milliseconds{100}, &sent);
+	(void)s.try_send_for(data, sizeof(data), std::chrono::milliseconds{100}, sent);
 	assert_true(s.bytes_available() >= 3);
 }
 
@@ -47,7 +47,7 @@ static void test_cpp_stream_reset(void **state)
 
 	const uint8_t data[] = {1, 2, 3};
 	size_t sent = 0;
-	(void)s.send(data, sizeof(data), std::chrono::milliseconds{100}, &sent);
+	(void)s.try_send_for(data, sizeof(data), std::chrono::milliseconds{100}, sent);
 	assert_true(s.bytes_available() > 0);
 
 	assert_int_equal(s.reset(), OVE_OK);
@@ -61,7 +61,7 @@ static void test_cpp_stream_send_from_isr(void **state)
 
 	const uint8_t data[] = {0xAA, 0xBB};
 	size_t sent = 0;
-	int ret = s.send_from_isr(data, sizeof(data), &sent);
+	int ret = s.send_from_isr(data, sizeof(data), sent);
 	assert_int_equal(ret, OVE_OK);
 	assert_int_equal(sent, 2);
 }
@@ -73,11 +73,11 @@ static void test_cpp_stream_receive_from_isr(void **state)
 
 	const uint8_t tx[] = {0x11, 0x22};
 	size_t sent = 0;
-	(void)s.send(tx, sizeof(tx), std::chrono::milliseconds{100}, &sent);
+	(void)s.try_send_for(tx, sizeof(tx), std::chrono::milliseconds{100}, sent);
 
 	uint8_t rx[2] = {};
 	size_t received = 0;
-	int ret = s.receive_from_isr(rx, sizeof(rx), &received);
+	int ret = s.receive_from_isr(rx, sizeof(rx), received);
 	assert_int_equal(ret, OVE_OK);
 	assert_int_equal(received, 2);
 	assert_memory_equal(rx, tx, 2);
@@ -90,7 +90,7 @@ static void test_cpp_stream_raii_destroy(void **state)
 		ove::Stream<128> s(1);
 		const uint8_t d[] = {1};
 		size_t n = 0;
-		(void)s.send(d, 1, std::chrono::milliseconds{0}, &n);
+		(void)s.try_send_for(d, 1, std::chrono::milliseconds{0}, n);
 	}
 }
 

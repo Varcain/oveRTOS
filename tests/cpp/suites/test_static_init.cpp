@@ -148,7 +148,7 @@ static void test_cpp_static_stream_init(void **state)
 
 	const uint8_t data[] = {1, 2, 3};
 	size_t sent = 0;
-	assert_int_equal(s.send(data, sizeof(data), std::chrono::milliseconds{0}, &sent), OVE_OK);
+	assert_true(s.try_send(data, sizeof(data), sent));
 	assert_int_equal(sent, sizeof(data));
 }
 

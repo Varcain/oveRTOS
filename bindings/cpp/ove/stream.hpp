@@ -108,88 +108,125 @@ template <size_t BufSize = 0> class Stream
 #endif
 
 	/**
-	 * @brief Sends bytes into the stream from task context.
+	 * @brief Sends bytes into the stream, blocking indefinitely.
+	 *
+	 * Forever-wait form: failure means the handle is unusable.  Aborts
+	 * via @c OVE_STATIC_INIT_ASSERT (same pattern as @ref Queue::send).
+	 * Even on success, @p bytes_sent may be less than @p len if the
+	 * substrate's internal buffer dictates a smaller commit — caller
+	 * must inspect @p bytes_sent.
+	 *
 	 * @param[in]  data       Pointer to the data to send.
 	 * @param[in]  len        Number of bytes to send.
-	 * @param[in]  timeout_ns Maximum time to wait if the buffer is full.
-	 * @param[out] bytes_sent Receives the number of bytes actually written.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[out] bytes_sent Number of bytes actually written.
 	 */
-	[[nodiscard]] int send(const void *data, size_t len, std::chrono::nanoseconds timeout,
-			       size_t *bytes_sent)
+	void send(const void *data, size_t len, size_t &bytes_sent)
 	{
-		return ove_stream_send(handle_, data, len, to_timeout_ns(timeout), bytes_sent);
+		const int err = ove_stream_send(handle_, data, len, OVE_WAIT_FOREVER, &bytes_sent);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref send.
-	 * @param[in]  data       Pointer to the data to send.
-	 * @param[in]  len        Number of bytes to send.
-	 * @param[in]  deadline   @ref ove::steady_clock::time_point at which
-	 *                        the wait must complete.
-	 * @param[out] bytes_sent Receives the number of bytes actually written.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @brief Non-blocking send.
+	 * @param[out] bytes_sent Number of bytes actually written
+	 *                        (may be < @p len even on success).
+	 * @return `true` if any bytes were written, `false` if the buffer was full.
 	 */
-	[[nodiscard]] int send_until(const void *data, size_t len,
-				     steady_clock::time_point deadline,
-				     size_t *bytes_sent)
+	[[nodiscard]] bool try_send(const void *data, size_t len, size_t &bytes_sent)
 	{
-		return ove_stream_send_until(handle_, data, len, to_deadline_ns(deadline),
-					     bytes_sent);
+		return ove_stream_send(handle_, data, len, 0, &bytes_sent) == OVE_OK;
 	}
 
 	/**
-	 * @brief Receives bytes from the stream from task context.
+	 * @brief Bounded-wait send.
+	 * @return `OVE_OK` on success (with @p bytes_sent set), `OVE_ERR_TIMEOUT`
+	 *         on timeout, or a negative error code on backend failure.
+	 */
+	[[nodiscard]] int try_send_for(const void *data, size_t len,
+					std::chrono::nanoseconds rel,
+					size_t &bytes_sent)
+	{
+		return ove_stream_send(handle_, data, len, to_timeout_ns(rel), &bytes_sent);
+	}
+
+	/**
+	 * @brief Deadline-based send templated over the clock.
+	 * See @ref Mutex::try_lock_until for the templated-clock rationale.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_send_until(const void *data, size_t len,
+					  const std::chrono::time_point<Clock, Duration> &deadline,
+					  size_t &bytes_sent)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_stream_send(handle_, data, len, to_timeout_ns(rel), &bytes_sent);
+	}
+
+	/**
+	 * @brief Receives bytes from the stream, blocking indefinitely.
+	 *
+	 * Forever-wait form: failure means the handle is unusable.  Aborts
+	 * via @c OVE_STATIC_INIT_ASSERT.  Like @ref send, @p bytes_received
+	 * may be less than @p len on success — caller must inspect it.
+	 *
 	 * @param[out] buf            Buffer to receive the data.
 	 * @param[in]  len            Maximum number of bytes to read.
-	 * @param[in]  timeout_ns     Maximum time to wait for data.
-	 * @param[out] bytes_received Receives the number of bytes actually read.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[out] bytes_received Number of bytes actually read.
 	 */
-	[[nodiscard]] int receive(void *buf, size_t len, std::chrono::nanoseconds timeout,
-				  size_t *bytes_received)
+	void receive(void *buf, size_t len, size_t &bytes_received)
 	{
-		return ove_stream_receive(handle_, buf, len, to_timeout_ns(timeout), bytes_received);
+		const int err =
+			ove_stream_receive(handle_, buf, len, OVE_WAIT_FOREVER, &bytes_received);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref receive.
-	 * @param[out] buf            Buffer to receive the data.
-	 * @param[in]  len            Maximum number of bytes to read.
-	 * @param[in]  deadline       @ref ove::steady_clock::time_point at which
-	 *                            the wait must complete.
-	 * @param[out] bytes_received Receives the number of bytes actually read.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @brief Non-blocking receive.
+	 * @return `true` if any bytes were read, `false` if the buffer was empty.
 	 */
-	[[nodiscard]] int receive_until(void *buf, size_t len, steady_clock::time_point deadline,
-					size_t *bytes_received)
+	[[nodiscard]] bool try_receive(void *buf, size_t len, size_t &bytes_received)
 	{
-		return ove_stream_receive_until(handle_, buf, len, to_deadline_ns(deadline),
-						bytes_received);
+		return ove_stream_receive(handle_, buf, len, 0, &bytes_received) == OVE_OK;
+	}
+
+	/**
+	 * @brief Bounded-wait receive.
+	 */
+	[[nodiscard]] int try_receive_for(void *buf, size_t len,
+					   std::chrono::nanoseconds rel,
+					   size_t &bytes_received)
+	{
+		return ove_stream_receive(handle_, buf, len, to_timeout_ns(rel), &bytes_received);
+	}
+
+	/**
+	 * @brief Deadline-based receive templated over the clock.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_receive_until(void *buf, size_t len,
+					     const std::chrono::time_point<Clock, Duration> &deadline,
+					     size_t &bytes_received)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_stream_receive(handle_, buf, len, to_timeout_ns(rel), &bytes_received);
 	}
 
 	/**
 	 * @brief Sends bytes into the stream from an ISR context (non-blocking).
-	 * @param[in]  data       Pointer to the data to send.
-	 * @param[in]  len        Number of bytes to send.
-	 * @param[out] bytes_sent Receives the number of bytes actually written.
 	 * @return `OVE_OK` on success, or a negative error code if the buffer is full.
 	 */
-	[[nodiscard]] int send_from_isr(const void *data, size_t len, size_t *bytes_sent)
+	[[nodiscard]] int send_from_isr(const void *data, size_t len, size_t &bytes_sent)
 	{
-		return ove_stream_send_from_isr(handle_, data, len, bytes_sent);
+		return ove_stream_send_from_isr(handle_, data, len, &bytes_sent);
 	}
 
 	/**
 	 * @brief Receives bytes from the stream from an ISR context (non-blocking).
-	 * @param[out] buf            Buffer to receive the data.
-	 * @param[in]  len            Maximum number of bytes to read.
-	 * @param[out] bytes_received Receives the number of bytes actually read.
 	 * @return `OVE_OK` on success, or a negative error code if insufficient data.
 	 */
-	[[nodiscard]] int receive_from_isr(void *buf, size_t len, size_t *bytes_received)
+	[[nodiscard]] int receive_from_isr(void *buf, size_t len, size_t &bytes_received)
 	{
-		return ove_stream_receive_from_isr(handle_, buf, len, bytes_received);
+		return ove_stream_receive_from_isr(handle_, buf, len, &bytes_received);
 	}
 
 	/**
