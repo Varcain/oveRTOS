@@ -482,7 +482,7 @@ fn netThread() void {
 fn appMain() void {
     ove.log.inf("Zig networking example (zero-heap mode): init", .{});
 
-    net_thread.spawnStatic(.{ .name = "net-test", .priority = ove.thread.prio.normal }, netThread, .{}) catch |e| {
+    net_thread.spawnStatic(.{ .name = "net-test", .priority = .normal }, netThread, .{}) catch |e| {
         ove.log.err("Failed to init net thread: {d}", .{errCode(e)});
         return;
     };

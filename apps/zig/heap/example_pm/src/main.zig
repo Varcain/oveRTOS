@@ -14,7 +14,6 @@
 const std = @import("std");
 const ove = @import("ove");
 const Thread = ove.Thread;
-const prio = ove.thread.prio;
 
 const pm = ove.pm;
 
@@ -124,11 +123,11 @@ fn appMain() void {
     pm.setPolicy(batteryPolicy, null) catch {};
     pm.setBudget(6000) catch {};
 
-    sensor_thread = Thread(4096).spawn(.{ .name = "sensor", .priority = prio.normal }, sensorEntry, .{}) catch {
+    sensor_thread = Thread(4096).spawn(.{ .name = "sensor", .priority = .normal }, sensorEntry, .{}) catch {
         ove.log.err("Failed to spawn sensor", .{});
         return;
     };
-    monitor_thread = Thread(4096).spawn(.{ .name = "monitor", .priority = prio.low }, monitorEntry, .{}) catch {
+    monitor_thread = Thread(4096).spawn(.{ .name = "monitor", .priority = .low }, monitorEntry, .{}) catch {
         ove.log.err("Failed to spawn monitor", .{});
         return;
     };

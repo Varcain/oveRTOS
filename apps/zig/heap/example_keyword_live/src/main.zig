@@ -346,7 +346,7 @@ fn appMain() void {
     };
     ove.log.inf("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    infer_thread = ove.Thread(8192).spawn(.{ .name = "infer", .priority = ove.thread.prio.normal }, inferThread, .{}) catch {
+    infer_thread = ove.Thread(8192).spawn(.{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
         ove.log.err("Failed to spawn infer thread", .{});
         return;
     };

@@ -19,7 +19,6 @@
 
 const std = @import("std");
 const ove = @import("ove");
-const prio = ove.thread.prio;
 
 const lvgl = ove.lvgl;
 const c = ove.ffi;
@@ -1004,7 +1003,7 @@ var graphics_thread: ?ove.Thread(4096) = null;
 fn appMain() void {
     ove.log.inf("LVGL benchmark (Zig): init", .{});
 
-    graphics_thread = ove.Thread(4096).spawn(.{ .name = "graphics", .priority = prio.high }, graphicsEntry, .{}) catch {
+    graphics_thread = ove.Thread(4096).spawn(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
