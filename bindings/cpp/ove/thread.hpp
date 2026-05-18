@@ -79,6 +79,93 @@ class stop_token
 };
 
 /**
+ * @class stop_source
+ * @brief Writable counterpart to @ref stop_token.  `std::stop_source` analog.
+ *
+ * Use to issue cooperative stop requests on a thread without holding
+ * the owning @ref Thread wrapper.  Pair with @ref stop_token for
+ * read-only observers; together they mirror `std::stop_source` /
+ * `std::stop_token` from C++20.
+ *
+ * Default-constructed is empty — equivalent to
+ * `std::stop_source(std::nostopstate)`.  Bind to a thread either via
+ * @ref Thread::get_stop_source or by explicit construction from an
+ * `ove_thread_t` handle (advanced use).
+ *
+ * @code
+ * ove::Thread<4096> worker(cooperative_worker, OVE_PRIO_NORMAL, "w");
+ * ove::stop_source src = worker.get_stop_source();
+ * // Pass `src` to helpers that need write-only stop capability.
+ * src.request_stop();    // returns true the first time, false after.
+ * @endcode
+ *
+ * Lifetime: the underlying stop state lives in the kernel thread's
+ * TCB.  A stop_source remains usable until that thread terminates;
+ * use after that is undefined (matches `std::stop_source` after the
+ * associated state is destroyed).
+ *
+ * Trivially copyable; pass by value freely.  Distinct from
+ * `std::stop_source` in that there is no shared reference count —
+ * the kernel owns the single stop slot per thread.
+ */
+class stop_source
+{
+      public:
+	constexpr stop_source() noexcept = default;
+	constexpr explicit stop_source(ove_thread_t h) noexcept : handle_(h)
+	{
+	}
+
+	/**
+	 * @brief Set the stop flag on the associated thread.
+	 * @return @c true if this call set the flag (it was previously
+	 * unset AND a stop state exists).  Returns @c false on a
+	 * default-constructed source or on repeat calls.  Matches
+	 * @c std::stop_source::request_stop semantics.
+	 *
+	 * Safe from any context (ISR, other thread, the thread itself).
+	 */
+	bool request_stop() noexcept
+	{
+		if (handle_ == nullptr)
+			return false;
+		const bool was_stopped = ove_thread_should_stop(handle_);
+		if (!was_stopped)
+			ove_thread_request_stop(handle_);
+		return !was_stopped;
+	}
+
+	/** @return @c true if the stop flag is set on the associated thread. */
+	[[nodiscard]] bool stop_requested() const noexcept
+	{
+		return handle_ != nullptr && ove_thread_should_stop(handle_);
+	}
+
+	/** @return @c true if this source references a real thread (not default-constructed). */
+	[[nodiscard]] bool stop_possible() const noexcept
+	{
+		return handle_ != nullptr;
+	}
+
+	/** @return A @ref stop_token observing the same stop state. */
+	[[nodiscard]] stop_token get_token() const noexcept
+	{
+		return stop_token{handle_};
+	}
+
+	/** @return The raw `ove_thread_t` handle (may be null). */
+	[[nodiscard]] ove_thread_t handle() const noexcept
+	{
+		return handle_;
+	}
+
+	friend constexpr bool operator==(const stop_source &, const stop_source &) noexcept = default;
+
+      private:
+	ove_thread_t handle_ = nullptr;
+};
+
+/**
  * @concept CooperativeThreadEntry
  * @brief Stateless callable invocable as `void(stop_token)`.
  *
@@ -474,6 +561,24 @@ template <size_t StackSize = 0> class Thread
 	[[nodiscard]] stop_token get_stop_token() const noexcept
 	{
 		return stop_token{handle_};
+	}
+
+	/**
+	 * @brief Get a writable @ref stop_source for this thread.  Analog of
+	 * @c std::jthread::get_stop_source.
+	 *
+	 * The returned source can issue stop requests without giving away
+	 * the owning @c Thread.  Combine with @ref get_stop_token to hand
+	 * out read-only observers separately from writable signal points.
+	 *
+	 * @code
+	 * void register_shutdown_hook(ove::stop_source ss);
+	 * register_shutdown_hook(worker.get_stop_source());
+	 * @endcode
+	 */
+	[[nodiscard]] stop_source get_stop_source() const noexcept
+	{
+		return stop_source{handle_};
 	}
 
 	/** @return `true` if @ref request_stop has been called on this thread. */

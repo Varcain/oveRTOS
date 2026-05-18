@@ -348,6 +348,78 @@ static void test_id_ordering_works_in_map(void **state)
 }
 #endif
 
+/* ── 15. default-constructed stop_source is empty ───────────────────── */
+
+static void test_stop_source_default_is_empty(void **state)
+{
+	(void)state;
+	ove::stop_source src;
+	assert_false(src.stop_possible());
+	assert_false(src.stop_requested());
+	assert_false(src.request_stop()); /* no stop state → false */
+}
+
+/* ── 16. first request_stop returns true; subsequent calls return false  */
+
+static void test_stop_source_request_returns_true_first_then_false(void **state)
+{
+	(void)state;
+	reset_flags();
+	ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "ss1"};
+	for (int i = 0; i < 200 && !g_observed_false_before_request.load(); ++i)
+		test_msleep(1);
+
+	ove::stop_source src = th.get_stop_source();
+	assert_true(src.stop_possible());
+
+	assert_true(src.request_stop());  /* first call: was unset, now set */
+	assert_false(src.request_stop()); /* second call: already set */
+	assert_true(src.stop_requested());
+	/* Destructor request_stop is no-op (sticky flag, already set). */
+}
+
+/* ── 17. stop_token from get_token() observes the source's request ──── */
+
+static void test_stop_source_token_observes_request(void **state)
+{
+	(void)state;
+	reset_flags();
+	ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "ss2"};
+	for (int i = 0; i < 200 && !g_observed_false_before_request.load(); ++i)
+		test_msleep(1);
+
+	ove::stop_source src = th.get_stop_source();
+	ove::stop_token tok = src.get_token();
+	assert_true(tok.stop_possible());
+	assert_false(tok.stop_requested());
+
+	src.request_stop();
+	assert_true(tok.stop_requested());
+	assert_true(src.stop_requested());
+}
+
+/* ── 18. Thread::get_stop_source gives a writable handle usable elsewhere
+ *      The "helper" function takes only a stop_source (not a Thread&) —
+ *      proves the source can be passed around independently. */
+
+static void helper_takes_source_and_signals(ove::stop_source src)
+{
+	(void)src.request_stop();
+}
+
+static void test_thread_get_stop_source_writable(void **state)
+{
+	(void)state;
+	reset_flags();
+	ove::Thread<4096> th{cooperative_worker, OVE_PRIO_NORMAL, "ss3"};
+	for (int i = 0; i < 200 && !g_observed_false_before_request.load(); ++i)
+		test_msleep(1);
+
+	assert_false(th.stop_requested());
+	helper_takes_source_and_signals(th.get_stop_source());
+	assert_true(th.stop_requested());
+}
+
 /* ── runner ─────────────────────────────────────────────────────────── */
 
 int test_cpp_thread_stop_run(void)
@@ -369,6 +441,10 @@ int test_cpp_thread_stop_run(void)
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_id_ordering_works_in_map),
 #endif
+		cmocka_unit_test(test_stop_source_default_is_empty),
+		cmocka_unit_test(test_stop_source_request_returns_true_first_then_false),
+		cmocka_unit_test(test_stop_source_token_observes_request),
+		cmocka_unit_test(test_thread_get_stop_source_writable),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
