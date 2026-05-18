@@ -17,6 +17,7 @@
 
 #include <ove/stream.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -139,27 +140,45 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Bounded-wait send.
-	 * @return `OVE_OK` on success (with @p bytes_sent set), `OVE_ERR_TIMEOUT`
-	 *         on timeout, or a negative error code on backend failure.
+	 *
+	 * @param[in]  data       Pointer to the data to send.
+	 * @param[in]  len        Number of bytes to send.
+	 * @param[in]  rel        Relative timeout (any
+	 *                        `std::chrono::duration` unit).
+	 * @param[out] bytes_sent Number of bytes actually written (the
+	 *                        substrate may write a non-zero count
+	 *                        even on a `Timeout` failure if some
+	 *                        bytes committed before the deadline —
+	 *                        always inspect this).
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error::Timeout if the deadline elapsed; `unexpected`
+	 *         with another @ref Error value on backend failure.
 	 */
-	[[nodiscard]] int try_send_for(const void *data, size_t len,
-					std::chrono::nanoseconds rel,
-					size_t &bytes_sent)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void> try_send_for(const void *data, size_t len,
+						const std::chrono::duration<Rep, Period> &rel,
+						size_t &bytes_sent) noexcept
 	{
-		return ove_stream_send(handle_, data, len, to_timeout_ns(rel), &bytes_sent);
+		return from_rc(
+			ove_stream_send(handle_, data, len, to_timeout_ns(rel), &bytes_sent));
 	}
 
 	/**
 	 * @brief Deadline-based send templated over the clock.
-	 * See @ref Mutex::try_lock_until for the templated-clock rationale.
+	 *
+	 * Same clock-templating rationale as @ref Mutex::try_lock_until.
+	 *
+	 * @return As @ref try_send_for.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_send_until(const void *data, size_t len,
-					  const std::chrono::time_point<Clock, Duration> &deadline,
-					  size_t &bytes_sent)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_send_until(const void *data, size_t len,
+		       const std::chrono::time_point<Clock, Duration> &deadline,
+		       size_t &bytes_sent) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_stream_send(handle_, data, len, to_timeout_ns(rel), &bytes_sent);
+		return from_rc(
+			ove_stream_send(handle_, data, len, to_timeout_ns(rel), &bytes_sent));
 	}
 
 	/**
@@ -191,24 +210,41 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Bounded-wait receive.
+	 *
+	 * @param[out] buf            Destination buffer.
+	 * @param[in]  len            Maximum bytes to read.
+	 * @param[in]  rel            Relative timeout.
+	 * @param[out] bytes_received Number of bytes actually read (may
+	 *                            be non-zero even on a `Timeout`
+	 *                            failure if some bytes arrived before
+	 *                            the deadline).
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error::Timeout / `Error::Eof` /
+	 *         backend-specific @ref Error otherwise.
 	 */
-	[[nodiscard]] int try_receive_for(void *buf, size_t len,
-					   std::chrono::nanoseconds rel,
-					   size_t &bytes_received)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void> try_receive_for(void *buf, size_t len,
+						   const std::chrono::duration<Rep, Period> &rel,
+						   size_t &bytes_received) noexcept
 	{
-		return ove_stream_receive(handle_, buf, len, to_timeout_ns(rel), &bytes_received);
+		return from_rc(
+			ove_stream_receive(handle_, buf, len, to_timeout_ns(rel), &bytes_received));
 	}
 
 	/**
 	 * @brief Deadline-based receive templated over the clock.
+	 *
+	 * @return As @ref try_receive_for.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_receive_until(void *buf, size_t len,
-					     const std::chrono::time_point<Clock, Duration> &deadline,
-					     size_t &bytes_received)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_receive_until(void *buf, size_t len,
+			  const std::chrono::time_point<Clock, Duration> &deadline,
+			  size_t &bytes_received) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_stream_receive(handle_, buf, len, to_timeout_ns(rel), &bytes_received);
+		return from_rc(
+			ove_stream_receive(handle_, buf, len, to_timeout_ns(rel), &bytes_received));
 	}
 
 	/**
