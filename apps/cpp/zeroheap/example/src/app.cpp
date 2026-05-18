@@ -77,8 +77,7 @@ static void producer_thread(void *arg)
 
 	while (true) {
 		++count;
-		int ret = counter_queue.try_send_for(count, std::chrono::milliseconds{1000});
-		if (ret != OVE_OK) {
+		if (!counter_queue.try_send_for(count, std::chrono::milliseconds{1000})) {
 			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
 		}
 		ove::this_thread::sleep_ms(500);

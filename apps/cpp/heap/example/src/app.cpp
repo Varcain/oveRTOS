@@ -68,12 +68,8 @@ static void producer_thread(void *arg)
 
 	while (true) {
 		++count;
-		/* 1 s timeout per send.  Previous code passed bare `1000` to
-		 * send(item, duration) which the chrono parameter accepted as
-		 * 1000 nanoseconds — likely a latent bug; corrected during the
-		 * std-shape rename to a clear std::chrono::milliseconds{1000}. */
-		int ret = counter_queue->try_send_for(count, std::chrono::milliseconds{1000});
-		if (ret != OVE_OK) {
+		/* 1 s timeout per send. */
+		if (!counter_queue->try_send_for(count, std::chrono::milliseconds{1000})) {
 			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
 		}
 		ove::this_thread::sleep_ms(500);

@@ -16,7 +16,7 @@ static void cpp_consumer_thread(void *arg)
 {
 	auto *q = static_cast<ove::Queue<int, 10> *>(arg);
 	int val;
-	while (q->try_receive_for(val, std::chrono::milliseconds{200}) == OVE_OK)
+	while (q->try_receive_for(val, std::chrono::milliseconds{200}).has_value())
 		s_cpp_consumer_sum.fetch_add(val);
 }
 
@@ -77,7 +77,9 @@ static void test_cpp_queue_send_full_times_out(void **state)
 	v = 2;
 	assert_true(q.try_send(v));
 	v = 3;
-	assert_int_equal(q.try_send_for(v, std::chrono::milliseconds{10}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = q.try_send_for(v, std::chrono::milliseconds{10});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout || r.error() == ove::Error::QueueFull);
 }
 
 static void test_cpp_queue_receive_empty_times_out(void **state)
@@ -86,7 +88,9 @@ static void test_cpp_queue_receive_empty_times_out(void **state)
 	ove::Queue<int, 5> q;
 
 	int val;
-	assert_int_equal(q.try_receive_for(val, std::chrono::milliseconds{10}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = q.try_receive_for(val, std::chrono::milliseconds{10});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout || r.error() == ove::Error::QueueEmpty);
 }
 
 static void test_cpp_queue_send_from_isr(void **state)
@@ -271,6 +275,42 @@ static void test_cpp_queue_trivially_copyable_constraint(void **state)
 		      "vector should not be trivially copyable — sanity check");
 }
 
+/* Method-return-type pins.  Catches an accidental revert of the
+ * `try_send_for/until` / `try_receive_for/until` migration from `int`
+ * to `Result<void>` at compile time.  Forever (`send`/`receive`) and
+ * immediate (`try_send`/`try_receive`) forms keep their existing
+ * shapes. */
+static void test_cpp_queue_return_type_shape(void **state)
+{
+	(void)state;
+	using Q = ove::Queue<int, 4>;
+	static_assert(std::is_same_v<decltype(std::declval<Q>().send(std::declval<int &>())),
+				     void>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_send(std::declval<int &>())),
+				     bool>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_send_for(
+					     std::declval<int &>(),
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_send_until(
+					     std::declval<int &>(),
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().receive(std::declval<int &>())), void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<Q>().try_receive(std::declval<int &>())),
+			       bool>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive_for(
+					     std::declval<int &>(),
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive_until(
+					     std::declval<int &>(),
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+}
+
 int test_cpp_queue_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -291,6 +331,7 @@ int test_cpp_queue_run(void)
 		cmocka_unit_test(test_cpp_queue_type_safety),
 		cmocka_unit_test(test_cpp_queue_not_copyable),
 		cmocka_unit_test(test_cpp_queue_trivially_copyable_constraint),
+		cmocka_unit_test(test_cpp_queue_return_type_shape),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

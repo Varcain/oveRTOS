@@ -15,6 +15,7 @@
 
 #include <ove/queue.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #include <type_traits>
 
@@ -143,26 +144,35 @@ template <typename T, size_t MaxItems = 0> class Queue
 
 	/**
 	 * @brief Bounded-wait send.
+	 *
 	 * @param[in] item The item to enqueue (copied into the queue).
 	 * @param[in] rel  Relative timeout (any `std::chrono::duration` unit).
-	 * @return `OVE_OK` on success, `OVE_ERR_QUEUE_FULL`/`OVE_ERR_TIMEOUT`
-	 *         on timeout, or a negative error code on backend failure.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error::QueueFull / @ref Error::Timeout if the
+	 *         queue stayed full through the deadline; `unexpected`
+	 *         with another @ref Error value on backend failure.
 	 */
-	[[nodiscard]] int try_send_for(const T &item, std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_send_for(const T &item, const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_queue_send(handle_, &item, to_timeout_ns(rel));
+		return from_rc(ove_queue_send(handle_, &item, to_timeout_ns(rel)));
 	}
 
 	/**
 	 * @brief Deadline-based send templated over the clock.  See
 	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 *
+	 * @return As @ref try_send_for — `Result<void>` with the
+	 *         appropriate @ref Error on timeout / backend failure.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_send_until(const T &item,
-					  const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_send_until(const T &item,
+		       const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_queue_send(handle_, &item, to_timeout_ns(rel));
+		return from_rc(ove_queue_send(handle_, &item, to_timeout_ns(rel)));
 	}
 
 	/**
@@ -190,25 +200,34 @@ template <typename T, size_t MaxItems = 0> class Queue
 
 	/**
 	 * @brief Bounded-wait receive.
+	 *
 	 * @param[out] out Reference to storage for the received item.
-	 * @param[in]  rel Relative timeout.
-	 * @return `OVE_OK` on success, `OVE_ERR_QUEUE_EMPTY`/`OVE_ERR_TIMEOUT`
-	 *         on timeout, or a negative error code on backend failure.
+	 * @param[in]  rel Relative timeout (any `std::chrono::duration` unit).
+	 * @return Empty `Result<void>` on success (item written to @p out);
+	 *         `unexpected` @ref Error::QueueEmpty / @ref Error::Timeout
+	 *         if the queue stayed empty through the deadline;
+	 *         `unexpected` with another @ref Error value on backend
+	 *         failure.
 	 */
-	[[nodiscard]] int try_receive_for(T &out, std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_receive_for(T &out, const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_queue_receive(handle_, &out, to_timeout_ns(rel));
+		return from_rc(ove_queue_receive(handle_, &out, to_timeout_ns(rel)));
 	}
 
 	/**
 	 * @brief Deadline-based receive templated over the clock.
+	 *
+	 * @return As @ref try_receive_for.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_receive_until(T &out,
-					     const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_receive_until(T &out,
+			  const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_queue_receive(handle_, &out, to_timeout_ns(rel));
+		return from_rc(ove_queue_receive(handle_, &out, to_timeout_ns(rel)));
 	}
 
 	/**
