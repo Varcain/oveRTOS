@@ -195,8 +195,13 @@ static void test_join_makes_destructor_noop(void **state)
 /* ── 8. detach() skips the destructor's join wait ─────────────────────
  *      Worker self-terminates on an external flag, NOT stop_token.
  *      Without detach, the destructor would block waiting for the
- *      worker to exit, which doesn't happen until we set the flag. */
+ *      worker to exit, which doesn't happen until we set the flag.
+ *
+ *      Gated to heap mode — Thread::detach() is `= delete` under
+ *      CONFIG_OVE_ZERO_HEAP (the wrapper owns the inline stack and
+ *      can't outlive the worker thread). */
 
+#ifndef CONFIG_OVE_ZERO_HEAP
 static std::atomic<int> g_detach_keep_running{1};
 static std::atomic<int> g_detach_exited{0};
 
@@ -261,6 +266,7 @@ static void test_detach_does_not_signal_stop(void **state)
 		test_msleep(1);
 	assert_int_equal(g_detach_exited.load(), 1);
 }
+#endif /* !CONFIG_OVE_ZERO_HEAP */
 
 /* ── 10. joinable() tracks valid() across the wrapper's lifecycle ──── */
 
@@ -543,8 +549,10 @@ int test_cpp_thread_stop_run(void)
 		cmocka_unit_test(test_default_stop_token_is_empty),
 		cmocka_unit_test(test_join_returns_after_worker_exits),
 		cmocka_unit_test(test_join_makes_destructor_noop),
+#ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_detach_skips_join),
 		cmocka_unit_test(test_detach_does_not_signal_stop),
+#endif
 		cmocka_unit_test(test_joinable_matches_valid),
 		cmocka_unit_test(test_get_id_non_default_for_live_thread),
 		cmocka_unit_test(test_id_equality_same_thread),

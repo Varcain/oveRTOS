@@ -91,8 +91,8 @@ int main(void)
 	printf("=== C++ Infer Tests ===\n");
 	failures += test_cpp_infer_run();
 
-	printf("=== ove::cpp::Error Tests ===\n");
-	failures += test_cppns_error_run();
+	printf("=== C++ Error Tests ===\n");
+	failures += test_cpp_error_run();
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;

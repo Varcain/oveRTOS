@@ -15,6 +15,7 @@
 
 #include <ove/sync.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 #include <atomic>
 
 #ifdef CONFIG_OVE_SYNC
@@ -112,10 +113,13 @@ class Mutex
 	 * @c OVE_STATIC_INIT_ASSERT on non-OK return; mirrors how
 	 * @ref Thread / @ref Queue constructors handle similar failures.
 	 *
-	 * Pairs with @ref try_lock / @ref try_lock_for / @ref try_lock_until
-	 * to satisfy the @c std::Lockable / @c std::TimedLockable
-	 * concepts, unlocking @c std::lock_guard<ove::Mutex> and
-	 * @c std::scoped_lock(m1, m2) composition.
+	 * Pairs with @ref try_lock to satisfy the @c Lockable named
+	 * requirement, enabling @c std::lock_guard<ove::Mutex> and
+	 * @c std::scoped_lock(m1, m2) composition.  Does **not** satisfy
+	 * @c TimedLockable — @ref try_lock_for and @ref try_lock_until
+	 * return `Result<void>` not `bool`, so `std::unique_lock<>` 's
+	 * timeout overloads won't compile.  Use those methods directly
+	 * and switch on the @ref Result instead.
 	 */
 	void lock()
 	{
@@ -133,31 +137,47 @@ class Mutex
 	}
 
 	/**
-	 * @brief Attempts to acquire the mutex within @p rel.  `std::TimedLockable` analog.
+	 * @brief Attempts to acquire the mutex within @p rel.
+	 *
+	 * Templated over `std::chrono::duration` so any unit composes
+	 * (`100ms`, `1s`, `2us` …).  Does **not** satisfy the
+	 * `TimedLockable` named requirement — that requires a `bool`
+	 * return; this returns `Result<void>` so timeout (`Error::Timeout`)
+	 * and substrate errors are reported distinctly.  Consequence:
+	 * `std::unique_lock<ove::Mutex>::try_lock_for` won't compile —
+	 * use this method directly and switch on the @ref Result instead.
+	 *
 	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
-	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
-	 *         negative error code on backend failure.
+	 * @return Empty `Result<void>` on acquisition; `unexpected`
+	 *         @ref Error::Timeout if the deadline elapsed without
+	 *         the lock being acquired; `unexpected` with another
+	 *         @ref Error value on backend failure.
 	 */
-	[[nodiscard]] int try_lock_for(std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_lock_for(const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_mutex_lock(handle_, to_timeout_ns(rel));
+		return from_rc(ove_mutex_lock(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
-	 * @brief Attempts to acquire the mutex by @p deadline.  Templated over
-	 * the clock so callers can pass `std::chrono::steady_clock::now() + 100ms`
-	 * or `ove::steady_clock::now() + 100ms` interchangeably (the deadline is
-	 * converted to a relative duration internally; the clock's epoch does
-	 * not need to match @ref ove::steady_clock).
+	 * @brief Attempts to acquire the mutex by @p deadline.
 	 *
-	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
-	 *         negative error code on backend failure.
+	 * Templated over the clock so callers can pass
+	 * `std::chrono::steady_clock::now() + 100ms` or
+	 * `ove::steady_clock::now() + 100ms` interchangeably (the deadline
+	 * is converted to a relative duration internally; the clock's
+	 * epoch does not need to match @ref ove::steady_clock).
+	 *
+	 * @return As @ref try_lock_for — `Result<void>` with
+	 *         `Error::Timeout` on timeout.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_mutex_lock(handle_, to_timeout_ns(rel));
+		return from_rc(ove_mutex_lock(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
@@ -194,6 +214,33 @@ class Mutex
 	ove_mutex_storage_t storage_ = {};
 #endif
 };
+
+/* Regression guard.  `BasicLockable` and `Lockable` are named
+ * requirements (not concepts) in the C++ standard; define equivalent
+ * local concepts and static_assert against them so a future change
+ * that breaks std-composition (e.g. removing `try_lock`) trips the
+ * build instead of failing far away in a user's `std::scoped_lock`
+ * instantiation. */
+namespace detail
+{
+
+template <class M>
+concept basic_lockable = requires(M m) {
+	{ m.lock() };
+	{ m.unlock() };
+};
+
+template <class M>
+concept lockable = basic_lockable<M> && requires(M m) {
+	{ m.try_lock() } -> std::convertible_to<bool>;
+};
+
+} /* namespace detail */
+
+static_assert(detail::basic_lockable<Mutex>,
+	      "ove::Mutex must satisfy the BasicLockable named requirement");
+static_assert(detail::lockable<Mutex>,
+	      "ove::Mutex must satisfy the Lockable named requirement");
 
 /**
  * @class RecursiveMutex
@@ -291,7 +338,14 @@ class RecursiveMutex
 	}
 
 	/**
-	 * @brief Bounded-wait acquisition.  See @ref Mutex::try_lock_for.
+	 * @brief Bounded-wait acquisition.
+	 *
+	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
+	 *         negative error code on backend failure.
+	 *
+	 * @note Currently returns @c int — RecursiveMutex has not yet
+	 *       migrated to the @ref Result<void> shape that @ref Mutex
+	 *       uses.  Tracked as a follow-up iteration.
 	 */
 	[[nodiscard]] int try_lock_for(std::chrono::nanoseconds rel)
 	{
@@ -300,7 +354,14 @@ class RecursiveMutex
 
 	/**
 	 * @brief Deadline-based acquisition templated over the clock.
-	 * See @ref Mutex::try_lock_until.
+	 *
+	 * Same clock-templating rationale as @ref Mutex::try_lock_until
+	 * (deadline converted to a relative duration internally).
+	 *
+	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
+	 *         negative error code on backend failure.
+	 *
+	 * @note Currently returns @c int — see @ref try_lock_for.
 	 */
 	template <typename Clock, typename Duration>
 	[[nodiscard]] int try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline)

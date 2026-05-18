@@ -107,8 +107,7 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_workqueue.cpp
     ${SUITE_DIR}/test_static_init.cpp
     ${SUITE_DIR}/test_infer.cpp
-    # ove::cpp::* (C++23-first redesign) — foundation tests
-    ${SUITE_DIR}/cpp/test_error.cpp
+    ${SUITE_DIR}/test_error.cpp
 )
 
 # ove_add_cpp_variant(<name> [compile_opts...])
