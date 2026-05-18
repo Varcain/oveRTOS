@@ -120,51 +120,95 @@ template <typename T, size_t MaxItems = 0> class Queue
 #endif
 
 	/**
-	 * @brief Sends an item to the back of the queue from task context.
-	 * @param[in] item       The item to enqueue (copied into the queue).
-	 * @param[in] timeout_ns Maximum time to wait if the queue is full; use
-	 *            `OVE_WAIT_FOREVER` to block indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Sends an item to the back of the queue, blocking indefinitely.
+	 *
+	 * Forever-wait form: failure means the handle is unusable.  Aborts
+	 * via @c OVE_STATIC_INIT_ASSERT (same pattern as @ref Mutex::lock,
+	 * @ref Semaphore::acquire).
 	 */
-	[[nodiscard]] int send(const T &item, std::chrono::nanoseconds timeout = wait_forever)
+	void send(const T &item)
 	{
-		return ove_queue_send(handle_, &item, to_timeout_ns(timeout));
+		const int err = ove_queue_send(handle_, &item, OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref send.
-	 * @param[in] item     The item to enqueue (copied into the queue).
-	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
-	 *                     wait must complete.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Non-blocking send.
+	 * @return `true` on success, `false` if the queue was full.
 	 */
-	[[nodiscard]] int send_until(const T &item, steady_clock::time_point deadline)
+	[[nodiscard]] bool try_send(const T &item)
 	{
-		return ove_queue_send_until(handle_, &item, to_deadline_ns(deadline));
+		return ove_queue_send(handle_, &item, 0) == OVE_OK;
 	}
 
 	/**
-	 * @brief Receives an item from the front of the queue from task context.
-	 * @param[out] item      Pointer to storage for the received item.
-	 * @param[in]  timeout_ns Maximum time to wait if the queue is empty; use
-	 *             `OVE_WAIT_FOREVER` to block indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Bounded-wait send.
+	 * @param[in] item The item to enqueue (copied into the queue).
+	 * @param[in] rel  Relative timeout (any `std::chrono::duration` unit).
+	 * @return `OVE_OK` on success, `OVE_ERR_QUEUE_FULL`/`OVE_ERR_TIMEOUT`
+	 *         on timeout, or a negative error code on backend failure.
 	 */
-	[[nodiscard]] int receive(T *item, std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] int try_send_for(const T &item, std::chrono::nanoseconds rel)
 	{
-		return ove_queue_receive(handle_, item, to_timeout_ns(timeout));
+		return ove_queue_send(handle_, &item, to_timeout_ns(rel));
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref receive.
-	 * @param[out] item     Pointer to storage for the received item.
-	 * @param[in]  deadline @ref ove::steady_clock::time_point at which the
-	 *                      wait must complete.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Deadline-based send templated over the clock.  See
+	 * @ref Mutex::try_lock_until for the templated-clock rationale.
 	 */
-	[[nodiscard]] int receive_until(T *item, steady_clock::time_point deadline)
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_send_until(const T &item,
+					  const std::chrono::time_point<Clock, Duration> &deadline)
 	{
-		return ove_queue_receive_until(handle_, item, to_deadline_ns(deadline));
+		const auto rel = deadline - Clock::now();
+		return ove_queue_send(handle_, &item, to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Receives an item from the front of the queue, blocking indefinitely.
+	 *
+	 * Forever-wait form: failure means the handle is unusable.  Aborts
+	 * via @c OVE_STATIC_INIT_ASSERT.
+	 *
+	 * @param[out] out Reference to storage for the received item.
+	 */
+	void receive(T &out)
+	{
+		const int err = ove_queue_receive(handle_, &out, OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+	}
+
+	/**
+	 * @brief Non-blocking receive.
+	 * @return `true` on success, `false` if the queue was empty.
+	 */
+	[[nodiscard]] bool try_receive(T &out)
+	{
+		return ove_queue_receive(handle_, &out, 0) == OVE_OK;
+	}
+
+	/**
+	 * @brief Bounded-wait receive.
+	 * @param[out] out Reference to storage for the received item.
+	 * @param[in]  rel Relative timeout.
+	 * @return `OVE_OK` on success, `OVE_ERR_QUEUE_EMPTY`/`OVE_ERR_TIMEOUT`
+	 *         on timeout, or a negative error code on backend failure.
+	 */
+	[[nodiscard]] int try_receive_for(T &out, std::chrono::nanoseconds rel)
+	{
+		return ove_queue_receive(handle_, &out, to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Deadline-based receive templated over the clock.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_receive_until(T &out,
+					     const std::chrono::time_point<Clock, Duration> &deadline)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_queue_receive(handle_, &out, to_timeout_ns(rel));
 	}
 
 	/**
@@ -179,12 +223,12 @@ template <typename T, size_t MaxItems = 0> class Queue
 
 	/**
 	 * @brief Receives an item from the queue from an ISR context (non-blocking).
-	 * @param[out] item Pointer to storage for the received item.
+	 * @param[out] out Reference to storage for the received item.
 	 * @return `OVE_OK` on success, or a negative error code if the queue is empty.
 	 */
-	[[nodiscard]] int receive_from_isr(T *item)
+	[[nodiscard]] int receive_from_isr(T &out)
 	{
-		return ove_queue_receive_from_isr(handle_, item);
+		return ove_queue_receive_from_isr(handle_, &out);
 	}
 
 	/**

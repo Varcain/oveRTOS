@@ -84,9 +84,9 @@ static void test_cpp_static_queue_init(void **state)
 	assert_true(q.valid());
 
 	uint32_t val = 42;
-	assert_int_equal(q.send(val, std::chrono::milliseconds{0}), OVE_OK);
+	assert_true(q.try_send(val));
 	uint32_t out = 0;
-	assert_int_equal(q.receive(&out, std::chrono::milliseconds{0}), OVE_OK);
+	assert_true(q.try_receive(out));
 	assert_int_equal(out, 42);
 }
 
