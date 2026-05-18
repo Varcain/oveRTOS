@@ -131,5 +131,37 @@ pub fn Stream(comptime size: usize) type {
         pub fn bytesAvailable(self: Self) usize {
             return c.ove_stream_bytes_available(self.handle);
         }
+
+        // ----- std.io.GenericReader / GenericWriter integration -----
+        //
+        // `recv` / `send` are forever-blocking and infallible (panic on
+        // substrate programming-bug codes), so the `Reader.Error` /
+        // `Writer.Error` set is the empty `error{}` — every `std.io`
+        // consumer (`bufferedReader`, line parsers, codecs) composes
+        // with `Stream(N)` without an outer error union.
+
+        const StreamReader = std.io.GenericReader(*const Self, error{}, struct {
+            fn read(self: *const Self, buf: []u8) error{}!usize {
+                return self.recv(buf);
+            }
+        }.read);
+
+        const StreamWriter = std.io.GenericWriter(*const Self, error{}, struct {
+            fn write(self: *const Self, buf: []const u8) error{}!usize {
+                return self.send(buf);
+            }
+        }.write);
+
+        /// `std.io.GenericReader` view of this stream — forever-blocking
+        /// `recv` is wired as the read backend.
+        pub fn reader(self: *const Self) StreamReader {
+            return .{ .context = self };
+        }
+
+        /// `std.io.GenericWriter` view of this stream — forever-blocking
+        /// `send` is wired as the write backend.
+        pub fn writer(self: *const Self) StreamWriter {
+            return .{ .context = self };
+        }
     };
 }
