@@ -198,6 +198,31 @@ fn test_derives() {
     let _ = format!("{:?}", Error::BusNack);
 }
 
+/* ── core::error::Error trait ───────────────────────────────────────── */
+
+fn test_core_error_coercion() {
+    // Anyhow / thiserror downstream consumers need `&dyn core::error::Error`
+    // coercion to work.  This test pins that compile-time property.
+    fn as_core_error(e: &Error) -> &dyn core::error::Error {
+        e
+    }
+    let err = Error::Timeout;
+    let dyn_err: &dyn core::error::Error = as_core_error(&err);
+    // Sanity: `core::error::Error` requires `Display`, so the trait
+    // object's `to_string` should reach our `impl Display`.
+    assert_eq!(dyn_err.to_string(), "timeout");
+    // Default `source()` returns None — we don't chain.
+    assert!(dyn_err.source().is_none());
+}
+
+fn test_std_error_via_re_export() {
+    // `std::error::Error` is `pub use core::error::Error;` since 1.81,
+    // so the single `impl core::error::Error for Error` covers both
+    // sides.  This test exists to catch a future stdlib reshuffle.
+    fn assert_std_error<E: std::error::Error>(_: &E) {}
+    assert_std_error(&Error::QueueFull);
+}
+
 pub fn run() -> (usize, usize) {
     run_suite("Errors", &[
         test_entry!(test_mutex_try_lock_contended_returns_timeout),
@@ -216,5 +241,7 @@ pub fn run() -> (usize, usize) {
         test_entry!(test_is_net_is_bus_negative),
         test_entry!(test_display_all_variants),
         test_entry!(test_derives),
+        test_entry!(test_core_error_coercion),
+        test_entry!(test_std_error_via_re_export),
     ])
 }
