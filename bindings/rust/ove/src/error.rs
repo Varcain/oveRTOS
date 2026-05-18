@@ -185,6 +185,14 @@ const fn _assert_codes_match() {
 #[allow(clippy::used_underscore_items)] // intentional compile-time assertion
 const _: () = _assert_codes_match();
 
+/// `core::error::Error` is stable since Rust 1.81; our MSRV is 1.85 so
+/// the impl can be unconditional.  `std::error::Error` is a re-export
+/// of `core::error::Error` (also since 1.81), so this single `impl`
+/// covers both `no_std` and `std` consumers — no `#[cfg(feature = "std")]`
+/// gymnastics.  The default `source() -> None` is correct: `ove::Error`
+/// doesn't chain to a lower-level cause.
+impl core::error::Error for Error {}
+
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
