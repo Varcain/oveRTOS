@@ -68,14 +68,6 @@ pub enum Error {
 /// Convenience alias for `core::result::Result<T, Error>`.
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Timeout duration meaning "wait forever".
-///
-/// Matches the numeric value of the C-side `OVE_WAIT_FOREVER` macro
-/// (`UINT64_MAX` nanoseconds).  `time::dur_to_ns` returns this value
-/// verbatim because `Duration::from_nanos(u64::MAX).as_nanos()` is
-/// exactly `u64::MAX`.
-pub const WAIT_FOREVER: core::time::Duration = core::time::Duration::from_nanos(u64::MAX);
-
 impl Error {
     /// Convert a C return code to `Result<()>`.
     /// Zero (OVE_OK) maps to `Ok(())`, negative values map to the

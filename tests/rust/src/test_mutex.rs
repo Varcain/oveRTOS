@@ -6,7 +6,7 @@
 
 use crate::framework::{run_suite, PtrGuard};
 use crate::test_entry;
-use ove::{Mutex, MutexGuard, Thread, WAIT_FOREVER, Error};
+use ove::{Mutex, MutexGuard, Thread, Error};
 use static_assertions::assert_not_impl_all;
 use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
 
@@ -24,9 +24,8 @@ fn counter_entry() {
     if mtx_ptr.is_null() { return; }
     let mtx = unsafe { &*(mtx_ptr as *const Mutex) };
     for _ in 0..1000 {
-        mtx.lock(WAIT_FOREVER).unwrap();
+        let _g = mtx.lock().unwrap();
         COUNTER.fetch_add(1, Ordering::Relaxed);
-        mtx.unlock();
     }
 }
 
@@ -37,8 +36,7 @@ fn test_create() {
 
 fn test_lock_unlock() {
     let mtx = Mutex::new().unwrap();
-    mtx.lock(WAIT_FOREVER).unwrap();
-    mtx.unlock();
+    let _g = mtx.lock().unwrap();
 }
 
 static HOLD_MTX: AtomicPtr<Mutex> = AtomicPtr::new(core::ptr::null_mut());
@@ -49,13 +47,12 @@ fn hold_lock_entry() {
     let mtx_ptr = HOLD_MTX.load(Ordering::Acquire);
     if mtx_ptr.is_null() { return; }
     let mtx = unsafe { &*(mtx_ptr as *const Mutex) };
-    mtx.lock(WAIT_FOREVER).unwrap();
+    let _g = mtx.lock().unwrap();
     HOLD_LOCKED.store(1, Ordering::Release);
     // Hold until told to release
     while HOLD_RELEASE.load(Ordering::Acquire) == 0 {
         Thread::sleep_ms(1);
     }
-    mtx.unlock();
 }
 
 fn test_contention_timeout() {
@@ -75,8 +72,8 @@ fn test_contention_timeout() {
     assert_eq!(HOLD_LOCKED.load(Ordering::SeqCst), 1);
 
     // Now try to lock with timeout — should fail
-    let result = mtx.lock(core::time::Duration::from_millis(50));
-    assert!(matches!(result, Err(Error::Timeout)), "expected timeout, got {:?}", result);
+    let result = mtx.try_lock_for(core::time::Duration::from_millis(50));
+    assert!(matches!(result, Err(Error::Timeout)), "expected timeout, got {:?}", result.as_ref().map(|_| ()));
 
     // Release the holder
     HOLD_RELEASE.store(1, Ordering::Release);
@@ -86,15 +83,15 @@ fn test_contention_timeout() {
 
 fn test_lock_zero_timeout() {
     let mtx = Mutex::new().unwrap();
-    mtx.lock(core::time::Duration::ZERO).unwrap();
-    mtx.unlock();
+    let _g = mtx.try_lock().unwrap();
 }
 
 fn test_raii_drop() {
     {
         let mtx = Mutex::new().unwrap();
-        mtx.lock(WAIT_FOREVER).unwrap();
-        mtx.unlock();
+        {
+            let _g = mtx.lock().unwrap();
+        }
         // mtx dropped here — should not leak
     }
 }
@@ -102,29 +99,27 @@ fn test_raii_drop() {
 fn test_guard_auto_unlock() {
     let mtx = Mutex::new().unwrap();
     {
-        let _guard = mtx.guard(WAIT_FOREVER).unwrap();
+        let _guard = mtx.lock().unwrap();
         // Guard holds the lock
     }
     // Guard dropped — mutex should be unlocked
-    mtx.lock(core::time::Duration::ZERO).unwrap();
-    mtx.unlock();
+    let _g = mtx.try_lock().unwrap();
 }
 
 fn test_guard_timeout() {
     let mtx = Mutex::new().unwrap();
-    let _guard = mtx.guard(WAIT_FOREVER).unwrap();
+    let _guard = mtx.lock().unwrap();
     // Try to acquire again — should timeout
-    let result = mtx.lock(core::time::Duration::ZERO);
+    let result = mtx.try_lock();
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
 fn test_error_mapping() {
     let mtx = Mutex::new().unwrap();
-    mtx.lock(WAIT_FOREVER).unwrap();
-    // Try-lock on already-held (same thread, non-recursive) returns timeout with 0ms
-    let result = mtx.lock(core::time::Duration::ZERO);
+    let _g = mtx.lock().unwrap();
+    // Try-lock on already-held (same thread, non-recursive) returns timeout
+    let result = mtx.try_lock();
     assert!(matches!(result, Err(Error::Timeout)));
-    mtx.unlock();
 }
 
 fn test_shared_counter() {
@@ -153,7 +148,7 @@ fn test_shared_counter() {
 
 fn test_guard_debug_format() {
     let mtx = Mutex::new().unwrap();
-    let guard = mtx.guard(WAIT_FOREVER).unwrap();
+    let guard = mtx.lock().unwrap();
     let s = format!("{:?}", guard);
     assert!(s.contains("MutexGuard"), "unexpected debug: {s}");
     assert!(s.contains("mutex"), "unexpected debug: {s}");

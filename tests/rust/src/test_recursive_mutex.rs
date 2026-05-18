@@ -6,7 +6,7 @@
 
 use crate::framework::run_suite;
 use crate::test_entry;
-use ove::{RecursiveMutex, RecursiveMutexGuard, WAIT_FOREVER};
+use ove::{RecursiveMutex, RecursiveMutexGuard};
 use static_assertions::assert_not_impl_all;
 
 // Same `!Send` invariant as `MutexGuard` — see test_mutex.rs.
@@ -19,63 +19,55 @@ fn test_create() {
 
 fn test_lock_twice() {
     let mtx = RecursiveMutex::new().unwrap();
-    mtx.lock(WAIT_FOREVER).unwrap();
-    mtx.lock(WAIT_FOREVER).unwrap();
-    mtx.unlock();
-    mtx.unlock();
+    let _g1 = mtx.lock().unwrap();
+    let _g2 = mtx.lock().unwrap();
 }
 
 fn test_matching_unlocks() {
     let mtx = RecursiveMutex::new().unwrap();
-    for _ in 0..3 {
-        mtx.lock(WAIT_FOREVER).unwrap();
+    {
+        let _g1 = mtx.lock().unwrap();
+        let _g2 = mtx.lock().unwrap();
+        let _g3 = mtx.lock().unwrap();
     }
-    for _ in 0..3 {
-        mtx.unlock();
-    }
-    mtx.lock(core::time::Duration::ZERO).unwrap();
-    mtx.unlock();
+    let _g = mtx.try_lock().unwrap();
 }
 
 fn test_raii_drop() {
     {
         let mtx = RecursiveMutex::new().unwrap();
-        mtx.lock(WAIT_FOREVER).unwrap();
-        mtx.unlock();
+        let _g = mtx.lock().unwrap();
     }
 }
 
 fn test_guard_auto_unlock() {
     let mtx = RecursiveMutex::new().unwrap();
     {
-        let _guard = mtx.guard(WAIT_FOREVER).unwrap();
+        let _guard = mtx.lock().unwrap();
         // Recursive — can re-lock inside guard
-        mtx.lock(WAIT_FOREVER).unwrap();
-        mtx.unlock();
+        let _inner = mtx.lock().unwrap();
     }
     // Guard dropped — still one less lock level
-    mtx.lock(core::time::Duration::ZERO).unwrap();
-    mtx.unlock();
+    let _g = mtx.try_lock().unwrap();
 }
 
 fn test_guard_nested() {
     let mtx = RecursiveMutex::new().unwrap();
     {
-        let _g1 = mtx.guard(WAIT_FOREVER).unwrap();
+        let _g1 = mtx.lock().unwrap();
         {
-            let _g2 = mtx.guard(WAIT_FOREVER).unwrap();
+            let _g2 = mtx.lock().unwrap();
             // Two guard levels held
         }
         // One guard level remaining
     }
     // All released
-    mtx.lock(core::time::Duration::ZERO).unwrap();
-    mtx.unlock();
+    let _g = mtx.try_lock().unwrap();
 }
 
 fn test_guard_debug_format() {
     let mtx = RecursiveMutex::new().unwrap();
-    let guard = mtx.guard(WAIT_FOREVER).unwrap();
+    let guard = mtx.lock().unwrap();
     let s = format!("{:?}", guard);
     assert!(s.contains("RecursiveMutexGuard"), "unexpected debug: {s}");
     assert!(s.contains("mutex"), "unexpected debug: {s}");

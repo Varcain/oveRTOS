@@ -15,11 +15,11 @@ fn test_create_destroy() {
 fn test_send_receive() {
     let s = Stream::<256>::new(1).unwrap();
     let tx = [0xDE_u8, 0xAD, 0xBE, 0xEF];
-    let sent = s.send(&tx, core::time::Duration::from_millis(100)).unwrap();
+    let sent = s.try_send_for(&tx, core::time::Duration::from_millis(100)).unwrap();
     assert_eq!(sent, 4);
 
     let mut rx = [0u8; 4];
-    let received = s.receive(&mut rx, core::time::Duration::from_millis(100)).unwrap();
+    let received = s.try_recv_for(&mut rx, core::time::Duration::from_millis(100)).unwrap();
     assert_eq!(received, 4);
     assert_eq!(rx, tx);
 }
@@ -29,14 +29,14 @@ fn test_bytes_available() {
     assert_eq!(s.bytes_available(), 0);
 
     let data = [1u8, 2, 3];
-    s.send(&data, core::time::Duration::from_millis(100)).unwrap();
+    s.try_send_for(&data, core::time::Duration::from_millis(100)).unwrap();
     assert!(s.bytes_available() >= 3);
 }
 
 fn test_reset() {
     let s = Stream::<256>::new(1).unwrap();
     let data = [1u8, 2, 3];
-    s.send(&data, core::time::Duration::from_millis(100)).unwrap();
+    s.try_send_for(&data, core::time::Duration::from_millis(100)).unwrap();
     assert!(s.bytes_available() > 0);
 
     s.reset().unwrap();
@@ -53,7 +53,7 @@ fn test_send_from_isr() {
 fn test_receive_from_isr() {
     let s = Stream::<256>::new(1).unwrap();
     let tx = [0x11_u8, 0x22];
-    s.send(&tx, core::time::Duration::from_millis(100)).unwrap();
+    s.try_send_for(&tx, core::time::Duration::from_millis(100)).unwrap();
 
     let mut rx = [0u8; 2];
     let received = s.receive_from_isr(&mut rx).unwrap();
@@ -64,7 +64,7 @@ fn test_receive_from_isr() {
 fn test_raii_drop() {
     {
         let s = Stream::<128>::new(1).unwrap();
-        s.send(&[1], core::time::Duration::ZERO).unwrap();
+        s.try_send(&[1]).unwrap();
     }
 }
 

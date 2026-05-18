@@ -181,7 +181,7 @@ pub mod ffi {
 
 // Public re-exports for convenience
 pub use cell::{LvCell, LvRefCell};
-pub use error::{Error, Result, WAIT_FOREVER};
+pub use error::{Error, Result};
 #[cfg(has_eventgroup)]
 #[allow(deprecated)] // EG_* shims kept for compatibility; new code uses WaitFlags
 pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, WaitFlags};

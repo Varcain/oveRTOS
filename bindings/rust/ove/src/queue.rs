@@ -61,62 +61,109 @@ impl<T: Copy, const N: usize> Queue<T, N> {
         })
     }
 
-    /// Send an item to the queue, blocking up to `timeout_ns` if the queue is full.
+    /// Send an item, blocking indefinitely if the queue is full.
+    /// `std::sync::mpsc::SyncSender::send` analog.
+    ///
+    /// `item` is taken by `&T` rather than by value because the
+    /// substrate `memcpy`s the bytes — `T: Copy` is enforced at the
+    /// `Queue<T, N>` type level.  See A7 for the planned value-by-move +
+    /// `SendError<T>` shape.
+    #[inline]
+    pub fn send(&self, item: &T) -> Result<()> {
+        let rc = unsafe {
+            bindings::ove_queue_send(self.handle, item as *const T as *const _, u64::MAX)
+        };
+        Error::from_code(rc)
+    }
+
+    /// Non-blocking send.  `std::sync::mpsc::SyncSender::try_send` analog.
     ///
     /// # Errors
-    /// Returns [`Error::QueueFull`] or [`Error::Timeout`] if the item cannot be
-    /// enqueued within `timeout_ns`.
+    /// Returns [`Error::QueueFull`] if the queue is full.
     #[inline]
-    pub fn send(&self, item: &T, timeout: core::time::Duration) -> Result<()> {
+    pub fn try_send(&self, item: &T) -> Result<()> {
+        let rc =
+            unsafe { bindings::ove_queue_send(self.handle, item as *const T as *const _, 0) };
+        Error::from_code(rc)
+    }
+
+    /// Send, waiting up to `d`.
+    ///
+    /// # Errors
+    /// Returns [`Error::QueueFull`] / [`Error::Timeout`] if the queue
+    /// stays full through `d`.
+    #[inline]
+    pub fn try_send_for(&self, item: &T, d: core::time::Duration) -> Result<()> {
         let rc = unsafe {
             bindings::ove_queue_send(
                 self.handle,
                 item as *const T as *const _,
-                crate::time::dur_to_ns(timeout),
+                crate::time::dur_to_ns(d),
             )
         };
         Error::from_code(rc)
     }
 
-    /// Send an item with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
-    ///
-    /// # Errors
-    /// Returns [`Error::QueueFull`] or [`Error::Timeout`] if the item cannot
-    /// be enqueued before the deadline.
+    /// Send by the given deadline.  Use
+    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
     #[inline]
-    pub fn send_until(&self, item: &T, deadline_ns: u64) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+    pub fn try_send_until(&self, item: &T, deadline: crate::time::Instant) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc =
             unsafe { bindings::ove_queue_send(self.handle, item as *const T as *const _, timeout) };
         Error::from_code(rc)
     }
 
-    /// Receive an item from the queue, blocking up to `timeout` if the queue is empty.
+    /// Receive an item, blocking indefinitely.  `std::sync::mpsc::Receiver::recv`
+    /// analog.
+    #[inline]
+    pub fn recv(&self) -> Result<T> {
+        let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
+        let rc = unsafe {
+            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, u64::MAX)
+        };
+        Error::from_code(rc)?;
+        Ok(unsafe { item.assume_init() })
+    }
+
+    /// Non-blocking receive.  `std::sync::mpsc::Receiver::try_recv` analog.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no item is available within `timeout`.
+    /// Returns [`Error::QueueEmpty`] if the queue is empty.
     #[inline]
-    pub fn receive(&self, timeout: core::time::Duration) -> Result<T> {
+    pub fn try_recv(&self) -> Result<T> {
+        let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
+        let rc = unsafe {
+            bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, 0)
+        };
+        Error::from_code(rc)?;
+        Ok(unsafe { item.assume_init() })
+    }
+
+    /// Receive, waiting up to `d`.
+    ///
+    /// # Errors
+    /// Returns [`Error::QueueEmpty`] / [`Error::Timeout`] if no item is
+    /// available within `d`.
+    #[inline]
+    pub fn try_recv_for(&self, d: core::time::Duration) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {
             bindings::ove_queue_receive(
                 self.handle,
                 item.as_mut_ptr() as *mut _,
-                crate::time::dur_to_ns(timeout),
+                crate::time::dur_to_ns(d),
             )
         };
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })
     }
 
-    /// Receive an item with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before an item
-    /// becomes available.
+    /// Receive by the given deadline.
     #[inline]
-    pub fn receive_until(&self, deadline_ns: u64) -> Result<T> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+    pub fn try_recv_until(&self, deadline: crate::time::Instant) -> Result<T> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();
         let rc = unsafe {
             bindings::ove_queue_receive(self.handle, item.as_mut_ptr() as *mut _, timeout)

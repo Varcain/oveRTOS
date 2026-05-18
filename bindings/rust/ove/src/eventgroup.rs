@@ -81,19 +81,55 @@ impl EventGroup {
         unsafe { bindings::ove_eventgroup_clear_bits(self.handle, bits) }
     }
 
-    /// Wait for the specified bits to be set in the event group.
+    /// Wait indefinitely for the specified bits to be set.  Returns
+    /// the bits value at the moment the wait condition was satisfied.
     ///
-    /// `flags` is a combination of [`WaitFlags::WAIT_ALL`] and [`WaitFlags::CLEAR_ON_EXIT`].
-    /// Returns the bits value at the moment the wait condition was satisfied.
+    /// `flags` is a combination of [`WaitFlags::WAIT_ALL`] and
+    /// [`WaitFlags::CLEAR_ON_EXIT`].
+    #[inline]
+    pub fn wait_bits(&self, bits: u32, flags: WaitFlags) -> Result<u32> {
+        self.wait_bits_with_timeout(bits, flags, u64::MAX)
+    }
+
+    /// Non-blocking check for the specified bits.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the bits are not set within `timeout_ns`.
+    /// Returns [`Error::Timeout`] if the bits are not currently set.
     #[inline]
-    pub fn wait_bits(
+    pub fn try_wait_bits(&self, bits: u32, flags: WaitFlags) -> Result<u32> {
+        self.wait_bits_with_timeout(bits, flags, 0)
+    }
+
+    /// Wait up to `d` for the specified bits.
+    #[inline]
+    pub fn wait_bits_for(
         &self,
         bits: u32,
         flags: WaitFlags,
-        timeout: core::time::Duration,
+        d: core::time::Duration,
+    ) -> Result<u32> {
+        self.wait_bits_with_timeout(bits, flags, crate::time::dur_to_ns(d))
+    }
+
+    /// Wait by the given deadline.  Use
+    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
+    #[inline]
+    pub fn wait_bits_until(
+        &self,
+        bits: u32,
+        flags: WaitFlags,
+        deadline: crate::time::Instant,
+    ) -> Result<u32> {
+        self.wait_bits_with_timeout(bits, flags, crate::time::deadline_to_timeout_ns(deadline))
+    }
+
+    #[inline]
+    fn wait_bits_with_timeout(
+        &self,
+        bits: u32,
+        flags: WaitFlags,
+        timeout_ns: u64,
     ) -> Result<u32> {
         let mut result: u32 = 0;
         let rc = unsafe {
@@ -101,27 +137,9 @@ impl EventGroup {
                 self.handle,
                 bits,
                 flags.0,
-                crate::time::dur_to_ns(timeout),
+                timeout_ns,
                 &mut result,
             )
-        };
-        Error::from_code(rc)?;
-        Ok(result)
-    }
-
-    /// Wait for bits with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
-    ///
-    /// Returns the bits value at the moment the wait condition was satisfied.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before the bits
-    /// are set.
-    #[inline]
-    pub fn wait_bits_until(&self, bits: u32, flags: WaitFlags, deadline_ns: u64) -> Result<u32> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let mut result: u32 = 0;
-        let rc = unsafe {
-            bindings::ove_eventgroup_wait_bits(self.handle, bits, flags.0, timeout, &mut result)
         };
         Error::from_code(rc)?;
         Ok(result)

@@ -42,7 +42,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use ove::heap::Arc;
 use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{Priority, Queue, StaticCell, Thread, Timer, WAIT_FOREVER};
+use ove::{Priority, Queue, StaticCell, Thread, Timer};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -139,7 +139,7 @@ fn app_main() {
         let mut count: u32 = 0;
         loop {
             count += 1;
-            match q.send(&count, core::time::Duration::from_millis(1000)) {
+            match q.try_send_for(&count, core::time::Duration::from_millis(1000)) {
                 Ok(()) => {}
                 Err(ove::Error::Timeout) => ove::log_wrn!("Producer: send timeout"),
                 Err(ove::Error::QueueFull) => {
@@ -157,7 +157,7 @@ fn app_main() {
     let _consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         ove::log_inf!("Consumer started");
         loop {
-            match q.receive(WAIT_FOREVER) {
+            match q.recv() {
                 Ok(val) => {
                     lv.store(val, Ordering::Relaxed);
                     LAST_VALUE.store(val, Ordering::Relaxed);
