@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_NET_HTTP
 
-namespace ove
+namespace ove::http
 {
 
 /**
@@ -29,8 +29,6 @@ namespace ove
  * that manages the lifecycle of the underlying C client handle, and a
  * move-only `Response` that owns the response body and headers.
  */
-namespace http
-{
 
 /**
  * @class Response
@@ -296,8 +294,6 @@ class Client
 #endif
 };
 
-} /* namespace http */
-
-} // namespace ove
+} /* namespace ove::http */
 
 #endif /* CONFIG_OVE_NET_HTTP */

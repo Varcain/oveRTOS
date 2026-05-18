@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_TIME
 
-namespace ove
+namespace ove::time
 {
 
 /**
@@ -27,8 +27,6 @@ namespace ove
  *
  * Available when `CONFIG_OVE_TIME` is enabled.
  */
-namespace time
-{
 
 /**
  * @brief Returns the current system time in microseconds.
@@ -58,8 +56,6 @@ inline void delay_us(uint32_t us)
 	ove_time_delay_us(us);
 }
 
-} /* namespace time */
-
-} /* namespace ove */
+} /* namespace ove::time */
 
 #endif /* CONFIG_OVE_TIME */

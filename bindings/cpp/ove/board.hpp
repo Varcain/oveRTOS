@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_BOARD
 
-namespace ove
+namespace ove::board
 {
 
 /**
@@ -27,8 +27,6 @@ namespace ove
  *
  * Available when `CONFIG_OVE_BOARD` is enabled.
  */
-namespace board
-{
 
 /**
  * @brief Initialises the board hardware (clocks, pin-mux, etc.).
@@ -57,8 +55,6 @@ inline const struct ove_board_desc *desc()
 	return ove_board_desc();
 }
 
-} /* namespace board */
-
-} // namespace ove
+} /* namespace ove::board */
 
 #endif /* CONFIG_OVE_BOARD */

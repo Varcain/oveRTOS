@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_SHELL
 
-namespace ove
+namespace ove::shell
 {
 
 /**
@@ -27,8 +27,6 @@ namespace ove
  *
  * Available when `CONFIG_OVE_SHELL` is enabled.
  */
-namespace shell
-{
 
 /**
  * @brief Initialises the shell subsystem.
@@ -79,8 +77,6 @@ inline void set_output_hook(ove_shell_output_hook_t hook)
 	ove_shell_set_output_hook(hook);
 }
 
-} /* namespace shell */
-
-} // namespace ove
+} /* namespace ove::shell */
 
 #endif /* CONFIG_OVE_SHELL */

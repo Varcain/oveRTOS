@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_LED
 
-namespace ove
+namespace ove::led
 {
 
 /**
@@ -28,8 +28,6 @@ namespace ove
  * Available when `CONFIG_OVE_LED` is enabled.  LEDs are identified by a
  * zero-based index.
  */
-namespace led
-{
 
 /**
  * @brief Turns a LED on or off.
@@ -59,8 +57,6 @@ inline unsigned int count()
 	return ove_led_count();
 }
 
-} /* namespace led */
-
-} // namespace ove
+} /* namespace ove::led */
 
 #endif /* CONFIG_OVE_LED */

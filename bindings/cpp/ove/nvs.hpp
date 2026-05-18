@@ -18,7 +18,7 @@
 
 #ifdef CONFIG_OVE_NVS
 
-namespace ove
+namespace ove::nvs
 {
 
 /**
@@ -28,8 +28,6 @@ namespace ove
  * Available when `CONFIG_OVE_NVS` is enabled.  Keys are null-terminated
  * strings; values are arbitrary byte buffers.
  */
-namespace nvs
-{
 
 /**
  * @brief Initialises the NVS subsystem.
@@ -83,8 +81,6 @@ inline void deinit()
 	return ove_nvs_erase(key);
 }
 
-} /* namespace nvs */
-
-} /* namespace ove */
+} /* namespace ove::nvs */
 
 #endif /* CONFIG_OVE_NVS */

@@ -19,7 +19,7 @@
 
 #ifdef CONFIG_OVE_PM
 
-namespace ove
+namespace ove::pm
 {
 
 /**
@@ -29,8 +29,6 @@ namespace ove
  * The PM subsystem is a singleton — there is one system-wide power state.
  * Available when `CONFIG_OVE_PM` is enabled.
  */
-namespace pm
-{
 
 /* ── Enums (re-export C types for convenience) ──────────────────────── */
 
@@ -247,8 +245,6 @@ inline void idle_process()
 	ove_pm_idle_process();
 }
 
-} /* namespace pm */
-
-} /* namespace ove */
+} /* namespace ove::pm */
 
 #endif /* CONFIG_OVE_PM */
