@@ -76,6 +76,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "embedded-hal"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -158,6 +164,7 @@ name = "ove"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "embedded-hal",
  "heapless",
  "log",
 ]
@@ -166,6 +173,7 @@ dependencies = [
 name = "ove-tests"
 version = "0.1.0"
 dependencies = [
+ "embedded-hal",
  "log",
  "ove",
  "static_assertions",

@@ -14,6 +14,12 @@ std = ["alloc"]
 # own `#[global_allocator]`).
 alloc = []
 panic-handler = []
+# `embedded-hal` activates the `embedded_hal::*` trait impls on
+# `ove::I2c` / `ove::Spi` / `ove::Delay` / `ove::gpio::OutputPin` /
+# `ove::gpio::InputPin`.  Optional because not every consumer wants the
+# upstream crate in their dep tree (e.g. host-only test rigs); enabling
+# unlocks any `embedded-hal`-aware sensor driver from crates.io.
+embedded-hal = ["dep:embedded-hal"]
 
 [dependencies]
 # Fixed-capacity, no_std container library — `ove::containers::*` re-exports
@@ -30,6 +36,9 @@ heapless = { version = "0.9", default-features = false }
 # `ove_console_write` via the existing `FmtBuf` stack-buffer machinery
 # — no alloc dep added.
 log = "0.4"
+# `embedded-hal` traits — opt-in via the `embedded-hal` feature.  See
+# the feature comment for rationale.
+embedded-hal = { version = "1.0", optional = true }
 
 [build-dependencies]
 bindgen = "0.72"
