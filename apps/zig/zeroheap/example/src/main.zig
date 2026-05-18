@@ -216,15 +216,15 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread = Thread(4096).spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = ove.Thread(4096).spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread = Thread(4096).spawn(allocator, .{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
+    producer_thread = ove.Thread(4096).spawn(allocator, .{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
         std.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread = Thread(4096).spawn(allocator, .{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
+    consumer_thread = ove.Thread(4096).spawn(allocator, .{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
         std.log.err("Failed to spawn consumer", .{});
         return;
     };
