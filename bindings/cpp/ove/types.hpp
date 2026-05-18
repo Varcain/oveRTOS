@@ -103,8 +103,9 @@ static_assert(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
  * value and emits the C-side @c OVE_WAIT_FOREVER (= @c UINT64_MAX) sentinel.
  *
  * @code
- * mtx.lock(ove::wait_forever);
- * queue.send(item, 100ms);   // requires `using namespace std::chrono_literals;`
+ * queue.send(item, ove::wait_forever);   // primitives still using the sentinel form
+ * queue.send(item, 100ms);               // requires `using namespace std::chrono_literals;`
+ * mtx.lock();                            // Mutex uses void-return indefinite form
  * @endcode
  */
 inline constexpr std::chrono::nanoseconds wait_forever = std::chrono::nanoseconds::max();

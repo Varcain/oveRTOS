@@ -1,5 +1,7 @@
 #include "../framework/ove_test.hpp"
 
+#include <mutex>
+
 struct cpp_counter_ctx {
 	ove::Mutex *mtx;
 	int counter;
@@ -56,7 +58,7 @@ static void test_cpp_mutex_lock_unlock(void **state)
 {
 	(void)state;
 	ove::Mutex mtx;
-	assert_int_equal(mtx.lock(ove::wait_forever), OVE_OK);
+	mtx.lock();
 	mtx.unlock();
 }
 
@@ -70,7 +72,7 @@ static void test_cpp_mutex_contention_timeout(void **state)
 	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
-	assert_int_equal(mtx.lock(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	assert_int_equal(mtx.try_lock_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_mutex_contention_success(void **state)
@@ -83,7 +85,7 @@ static void test_cpp_mutex_contention_success(void **state)
 	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
-	assert_int_equal(mtx.lock(std::chrono::milliseconds{500}), OVE_OK);
+	assert_int_equal(mtx.try_lock_for(std::chrono::milliseconds{500}), OVE_OK);
 	mtx.unlock();
 }
 
@@ -94,7 +96,7 @@ static void test_cpp_mutex_double_unlock(void **state)
 	skip(); /* TSan flags double-unlock as UB; same rationale as C side. */
 #else
 	ove::Mutex mtx;
-	(void)mtx.lock(ove::wait_forever);
+	mtx.lock();
 	mtx.unlock();
 	mtx.unlock(); /* should not crash */
 #endif
@@ -104,7 +106,7 @@ static void test_cpp_mutex_zero_timeout_free(void **state)
 {
 	(void)state;
 	ove::Mutex mtx;
-	assert_int_equal(mtx.lock(std::chrono::milliseconds{0}), OVE_OK);
+	assert_true(mtx.try_lock());
 	mtx.unlock();
 }
 
@@ -134,7 +136,7 @@ static void test_cpp_mutex_short_timeout(void **state)
 
 	uint64_t start = 0, end = 0;
 	ove_time_get_us(&start);
-	int rc = mtx.lock(std::chrono::milliseconds{50});
+	int rc = mtx.try_lock_for(std::chrono::milliseconds{50});
 	ove_time_get_us(&end);
 
 	assert_int_equal(rc, OVE_ERR_TIMEOUT);
@@ -145,8 +147,8 @@ static void test_cpp_mutex_multiple_independent(void **state)
 {
 	(void)state;
 	ove::Mutex a, b;
-	assert_int_equal(a.lock(ove::wait_forever), OVE_OK);
-	assert_int_equal(b.lock(ove::wait_forever), OVE_OK);
+	a.lock();
+	b.lock();
 	b.unlock();
 	a.unlock();
 }
@@ -158,7 +160,7 @@ static void test_cpp_mutex_raii_destroy(void **state)
 	(void)state;
 	{
 		ove::Mutex mtx;
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		mtx.unlock();
 		/* mtx goes out of scope — destructor cleans up */
 	}
@@ -214,6 +216,45 @@ static void test_cpp_mutex_handle_access(void **state)
 	assert_true(mtx.handle() != nullptr);
 }
 
+/* ── Iter A2.1: std::Lockable composition ────────────────────────────
+ *
+ * ove::Mutex now satisfies std::Lockable (lock/try_lock/unlock).
+ * std::lock_guard, std::scoped_lock, std::unique_lock, and
+ * std::condition_variable_any compose with it directly.  Two
+ * concrete proofs:
+ */
+static void test_cpp_mutex_std_lock_guard_composition(void **state)
+{
+	(void)state;
+	ove::Mutex mtx;
+	{
+		std::lock_guard<ove::Mutex> g{mtx};
+		/* In scope: mtx is held.  Try a non-blocking try_lock — must
+		 * fail (would self-deadlock on a non-recursive mutex). */
+		assert_false(mtx.try_lock());
+	}
+	/* Out of scope: mtx is released.  Another try_lock succeeds. */
+	assert_true(mtx.try_lock());
+	mtx.unlock();
+}
+
+static void test_cpp_mutex_std_scoped_lock_composition(void **state)
+{
+	(void)state;
+	ove::Mutex a, b;
+	{
+		std::scoped_lock<ove::Mutex, ove::Mutex> g{a, b};
+		/* Both held — deadlock-free acquisition order via std::lock. */
+		assert_false(a.try_lock());
+		assert_false(b.try_lock());
+	}
+	/* Released. */
+	assert_true(a.try_lock());
+	assert_true(b.try_lock());
+	a.unlock();
+	b.unlock();
+}
+
 int test_cpp_mutex_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -235,6 +276,8 @@ int test_cpp_mutex_run(void)
 		cmocka_unit_test(test_cpp_mutex_not_copyable),
 		cmocka_unit_test(test_cpp_mutex_valid_after_construct),
 		cmocka_unit_test(test_cpp_mutex_handle_access),
+		cmocka_unit_test(test_cpp_mutex_std_lock_guard_composition),
+		cmocka_unit_test(test_cpp_mutex_std_scoped_lock_composition),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
