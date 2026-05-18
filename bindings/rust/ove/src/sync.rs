@@ -11,9 +11,25 @@
 //! heap and zero-heap modes.
 
 use core::fmt;
+use core::marker::PhantomData;
 
 use crate::bindings;
 use crate::error::{Error, Result};
+
+// ---------------------------------------------------------------------------
+// Guard !Send sentinel
+// ---------------------------------------------------------------------------
+//
+// `MutexGuard` / `RecursiveMutexGuard` must be `!Send` so a guard cannot be
+// sent to another thread and unlocked there — backend-defined UB (POSIX
+// returns `EPERM`, FreeRTOS asserts in debug / silently releases in release).
+//
+// `std::sync::MutexGuard` declares `impl !Send for MutexGuard {}` using the
+// nightly-only `negative_impls` feature.  On stable, the canonical workaround
+// is to embed a `!Send` marker type via `PhantomData`.  This is what
+// `lock_api`, `parking_lot`, and `tokio::sync` all do.  Raw pointers are
+// `!Send + !Sync`, so this newtype propagates both.
+struct GuardNoSend(*mut ());
 
 // ---------------------------------------------------------------------------
 // Mutex
@@ -86,7 +102,10 @@ impl Mutex {
     #[inline]
     pub fn guard(&self, timeout: core::time::Duration) -> Result<MutexGuard<'_>> {
         self.lock(timeout)?;
-        Ok(MutexGuard { mutex: self })
+        Ok(MutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
     }
 
     /// Get the raw handle (for use with CondVar).
@@ -98,8 +117,15 @@ impl Mutex {
 crate::ove_handle_impl!(Mutex, ove_mutex_destroy, ove_mutex_deinit);
 
 /// RAII guard that unlocks a `Mutex` when dropped.
+///
+/// `MutexGuard` is `!Send`: the locking thread must release the lock.
+/// Sending a guard to another thread would cause that thread to issue
+/// `ove_mutex_unlock` with no matching `ove_mutex_lock`, which is
+/// backend-defined UB.  The `_no_send` field carries a [`GuardNoSend`]
+/// `PhantomData` to propagate `!Send` at compile time.
 pub struct MutexGuard<'a> {
     mutex: &'a Mutex,
+    _no_send: PhantomData<GuardNoSend>,
 }
 
 impl fmt::Debug for MutexGuard<'_> {
@@ -188,7 +214,10 @@ impl RecursiveMutex {
     #[inline]
     pub fn guard(&self, timeout: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
         self.lock(timeout)?;
-        Ok(RecursiveMutexGuard { mutex: self })
+        Ok(RecursiveMutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
     }
 }
 
@@ -199,8 +228,12 @@ crate::ove_handle_impl!(
 );
 
 /// RAII guard that unlocks a `RecursiveMutex` when dropped.
+///
+/// Same `!Send` constraint as [`MutexGuard`]: the locking thread must
+/// issue the matching unlock.
 pub struct RecursiveMutexGuard<'a> {
     mutex: &'a RecursiveMutex,
+    _no_send: PhantomData<GuardNoSend>,
 }
 
 impl fmt::Debug for RecursiveMutexGuard<'_> {

@@ -6,7 +6,11 @@
 
 use crate::framework::run_suite;
 use crate::test_entry;
-use ove::{RecursiveMutex, WAIT_FOREVER};
+use ove::{RecursiveMutex, RecursiveMutexGuard, WAIT_FOREVER};
+use static_assertions::assert_not_impl_all;
+
+// Same `!Send` invariant as `MutexGuard` — see test_mutex.rs.
+assert_not_impl_all!(RecursiveMutexGuard<'static>: Send);
 
 fn test_create() {
     let mtx = RecursiveMutex::new().unwrap();
