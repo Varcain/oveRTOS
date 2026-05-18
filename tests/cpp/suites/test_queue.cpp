@@ -115,7 +115,7 @@ static void test_cpp_queue_receive_from_isr(void **state)
 	(void)q.try_send(v);
 
 	int out = 0;
-	assert_int_equal(q.receive_from_isr(out), OVE_OK);
+	assert_true(q.receive_from_isr(out).has_value());
 	assert_int_equal(out, 77);
 }
 
@@ -308,6 +308,12 @@ static void test_cpp_queue_return_type_shape(void **state)
 	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive_until(
 					     std::declval<int &>(),
 					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().send_from_isr(
+					     std::declval<int &>())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().receive_from_isr(
+					     std::declval<int &>())),
 				     ove::Result<void>>);
 }
 

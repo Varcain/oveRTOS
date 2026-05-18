@@ -249,20 +249,33 @@ template <size_t BufSize = 0> class Stream
 
 	/**
 	 * @brief Sends bytes into the stream from an ISR context (non-blocking).
-	 * @return `OVE_OK` on success, or a negative error code if the buffer is full.
+	 *
+	 * @param[out] bytes_sent Number of bytes actually written (may
+	 *                        be non-zero even on `Error::QueueFull`
+	 *                        when a partial commit succeeded before
+	 *                        the buffer filled).
+	 * @return Empty `Result<void>` on full success; `unexpected`
+	 *         with the appropriate @ref Error variant otherwise.
 	 */
-	[[nodiscard]] int send_from_isr(const void *data, size_t len, size_t &bytes_sent)
+	[[nodiscard]] Result<void>
+	send_from_isr(const void *data, size_t len, size_t &bytes_sent) noexcept
 	{
-		return ove_stream_send_from_isr(handle_, data, len, &bytes_sent);
+		return from_rc(ove_stream_send_from_isr(handle_, data, len, &bytes_sent));
 	}
 
 	/**
 	 * @brief Receives bytes from the stream from an ISR context (non-blocking).
-	 * @return `OVE_OK` on success, or a negative error code if insufficient data.
+	 *
+	 * @param[out] bytes_received Number of bytes actually read (may
+	 *                            be non-zero even on a failure if
+	 *                            partial data was available).
+	 * @return Empty `Result<void>` on full success; `unexpected`
+	 *         with the appropriate @ref Error variant otherwise.
 	 */
-	[[nodiscard]] int receive_from_isr(void *buf, size_t len, size_t &bytes_received)
+	[[nodiscard]] Result<void>
+	receive_from_isr(void *buf, size_t len, size_t &bytes_received) noexcept
 	{
-		return ove_stream_receive_from_isr(handle_, buf, len, &bytes_received);
+		return from_rc(ove_stream_receive_from_isr(handle_, buf, len, &bytes_received));
 	}
 
 	/**

@@ -233,21 +233,27 @@ template <typename T, size_t MaxItems = 0> class Queue
 	/**
 	 * @brief Sends an item to the queue from an ISR context (non-blocking).
 	 * @param[in] item The item to enqueue.
-	 * @return `OVE_OK` on success, or a negative error code if the queue is full.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error::QueueFull if the queue was full;
+	 *         `unexpected` with another @ref Error value on backend
+	 *         failure.
 	 */
-	[[nodiscard]] int send_from_isr(const T &item)
+	[[nodiscard]] Result<void> send_from_isr(const T &item) noexcept
 	{
-		return ove_queue_send_from_isr(handle_, &item);
+		return from_rc(ove_queue_send_from_isr(handle_, &item));
 	}
 
 	/**
 	 * @brief Receives an item from the queue from an ISR context (non-blocking).
 	 * @param[out] out Reference to storage for the received item.
-	 * @return `OVE_OK` on success, or a negative error code if the queue is empty.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error::QueueEmpty if the queue was empty;
+	 *         `unexpected` with another @ref Error value on backend
+	 *         failure.
 	 */
-	[[nodiscard]] int receive_from_isr(T &out)
+	[[nodiscard]] Result<void> receive_from_isr(T &out) noexcept
 	{
-		return ove_queue_receive_from_isr(handle_, &out);
+		return from_rc(ove_queue_receive_from_isr(handle_, &out));
 	}
 
 	/**
