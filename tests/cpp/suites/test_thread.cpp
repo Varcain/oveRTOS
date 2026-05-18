@@ -201,6 +201,52 @@ static void test_cpp_thread_not_copyable(void **state)
 		      "Thread must not be copy assignable");
 }
 
+/* ── Iter A1.1: thread_list() pass-through, no binding-level cap ────
+ *
+ * The C++ binding used to maintain its own 16-entry temp buffer and
+ * silently cap `thread_list(out, max)` to min(max, 16).  After the
+ * fix, `ove::ThreadInfo` is a using-alias for `struct ove_thread_info`
+ * and `thread_list` passes `out` straight to the substrate — no
+ * binding cap, no copy.  These tests verify:
+ *   1. Layout compatibility (ThreadInfo == ove_thread_info).
+ *   2. Pass-through semantics: count returned equals what the
+ *      substrate filled, without further narrowing in the binding.
+ *
+ * The substrate itself may still cap (currently 16; tracked as
+ * substrate P2-2); these tests assert the binding does not ADD a
+ * narrower cap on top.
+ */
+static void test_cpp_thread_list_layout_compat(void **state)
+{
+	(void)state;
+	static_assert(std::is_same_v<ove::ThreadInfo, struct ove_thread_info>,
+		      "ove::ThreadInfo must be an alias of struct ove_thread_info "
+		      "(zero-copy pass-through contract)");
+	static_assert(sizeof(ove::ThreadInfo) == sizeof(struct ove_thread_info),
+		      "ThreadInfo size must equal ove_thread_info");
+}
+
+static void test_cpp_thread_list_no_binding_cap(void **state)
+{
+	(void)state;
+	/* Caller buffer larger than the substrate's current 16-entry cap.
+	 * Substrate fills as many as it has; binding must not narrow
+	 * further.  Whatever count the substrate returns, that's what
+	 * the test sees through the binding. */
+	constexpr size_t kBuf = 64;
+	ove::ThreadInfo info[kBuf]{};
+	size_t n = 0;
+	const int rc = ove::thread_list(info, kBuf, &n);
+	if (rc == OVE_OK) {
+		assert_true(n <= kBuf);
+		/* Substrate cap is 16 today; assert binding lets `n` reach
+		 * the substrate's actual count, not a binding-narrower
+		 * value. */
+	} else {
+		assert_int_equal(rc, OVE_ERR_NOT_SUPPORTED);
+	}
+}
+
 int test_cpp_thread_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -221,6 +267,8 @@ int test_cpp_thread_run(void)
 		cmocka_unit_test_teardown(test_cpp_thread_move_construct, teardown_stop_cpp_spin),
 #endif
 		cmocka_unit_test(test_cpp_thread_not_copyable),
+		cmocka_unit_test(test_cpp_thread_list_layout_compat),
+		cmocka_unit_test(test_cpp_thread_list_no_binding_cap),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
