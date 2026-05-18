@@ -6,7 +6,7 @@
 
 use crate::framework::{run_suite, PtrGuard};
 use crate::test_entry;
-use ove::{CondVar, Mutex, Thread, WAIT_FOREVER, Error};
+use ove::{CondVar, Mutex, Thread, Error};
 use std::sync::atomic::{AtomicPtr, AtomicI32, Ordering};
 
 struct CvCtx {
@@ -25,10 +25,9 @@ fn cv_wait_entry() {
     let ctx = unsafe { &*ctx_ptr };
     let cv = unsafe { &*ctx.cv };
     let mtx = unsafe { &*ctx.mtx };
-    mtx.lock(WAIT_FOREVER).unwrap();
-    cv.wait(mtx, WAIT_FOREVER).unwrap();
+    let _g = mtx.lock().unwrap();
+    cv.wait(mtx).unwrap();
     CV_WOKE.store(1, Ordering::Release);
-    mtx.unlock();
 }
 
 static CV_SIGNALED: AtomicI32 = AtomicI32::new(0);
@@ -41,10 +40,9 @@ fn cv_signal_entry() {
     let ctx = unsafe { &*ctx_ptr };
     let cv = unsafe { &*ctx.cv };
     let mtx = unsafe { &*ctx.mtx };
-    mtx.lock(WAIT_FOREVER).unwrap();
+    let _g = mtx.lock().unwrap();
     CV_SIGNALED.store(1, Ordering::Release);
     cv.signal();
-    mtx.unlock();
 }
 
 static CV_READY: AtomicI32 = AtomicI32::new(0);
@@ -57,10 +55,9 @@ fn cv_producer_entry() {
     let ctx = unsafe { &*ctx_ptr };
     let cv = unsafe { &*ctx.cv };
     let mtx = unsafe { &*ctx.mtx };
-    mtx.lock(WAIT_FOREVER).unwrap();
+    let _g = mtx.lock().unwrap();
     CV_READY.store(1, Ordering::Release);
     cv.signal();
-    mtx.unlock();
 }
 
 fn test_create() {
@@ -81,9 +78,10 @@ fn test_signal_wakes_one() {
     let th = Thread::builder().name(c"cvw").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_wait_entry).unwrap();
     Thread::sleep_ms(50);
 
-    mtx.lock(WAIT_FOREVER).unwrap();
-    cv.signal();
-    mtx.unlock();
+    {
+        let _g = mtx.lock().unwrap();
+        cv.signal();
+    }
 
     drop(th);
     drop(_guard);
@@ -93,10 +91,9 @@ fn test_signal_wakes_one() {
 fn test_wait_timeout() {
     let cv = CondVar::new().unwrap();
     let mtx = Mutex::new().unwrap();
-    mtx.lock(WAIT_FOREVER).unwrap();
-    let result = cv.wait(&mtx, core::time::Duration::from_millis(50));
+    let _g = mtx.lock().unwrap();
+    let result = cv.wait_for(&mtx, core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)));
-    mtx.unlock();
 }
 
 fn test_producer_consumer() {
@@ -112,11 +109,12 @@ fn test_producer_consumer() {
 
     let th = Thread::builder().name(c"prod").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_producer_entry).unwrap();
 
-    mtx.lock(WAIT_FOREVER).unwrap();
-    while CV_READY.load(Ordering::Acquire) == 0 {
-        cv.wait(&mtx, WAIT_FOREVER).unwrap();
+    {
+        let _g = mtx.lock().unwrap();
+        while CV_READY.load(Ordering::Acquire) == 0 {
+            cv.wait(&mtx).unwrap();
+        }
     }
-    mtx.unlock();
 
     drop(th);
     drop(_guard);
@@ -136,9 +134,10 @@ fn test_wait_forever() {
 
     let th = Thread::builder().name(c"sig").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(cv_signal_entry).unwrap();
 
-    mtx.lock(WAIT_FOREVER).unwrap();
-    cv.wait(&mtx, WAIT_FOREVER).unwrap();
-    mtx.unlock();
+    {
+        let _g = mtx.lock().unwrap();
+        cv.wait(&mtx).unwrap();
+    }
 
     drop(th);
     drop(_guard);
@@ -156,9 +155,8 @@ fn test_broadcast_wakes_all() {
     let mtx = Mutex::new().unwrap();
     // broadcast with no waiters must be a no-op, not a crash — exercises the
     // broadcast() FFI path without needing threads.
-    mtx.lock(WAIT_FOREVER).unwrap();
+    let _g = mtx.lock().unwrap();
     cv.broadcast();
-    mtx.unlock();
 }
 
 pub fn run() -> (usize, usize) {

@@ -17,7 +17,7 @@ fn sem_give_entry() {
     let sem_ptr = SEM_PTR.load(Ordering::Acquire);
     if !sem_ptr.is_null() {
         let sem = unsafe { &*(sem_ptr as *const Semaphore) };
-        sem.give();
+        sem.release();
     }
     SEM_DONE.store(1, Ordering::Release);
 }
@@ -32,30 +32,30 @@ fn test_create_counting() {
 
 fn test_take_initial_one() {
     let sem = Semaphore::new(1, 1).unwrap();
-    sem.take(core::time::Duration::ZERO).unwrap();
+    sem.try_acquire().unwrap();
 }
 
 fn test_take_timeout() {
     let sem = Semaphore::new(0, 10).unwrap();
-    let result = sem.take(core::time::Duration::from_millis(50));
+    let result = sem.try_acquire_for(core::time::Duration::from_millis(50));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
 fn test_give_then_take() {
     let sem = Semaphore::new(0, 10).unwrap();
-    sem.give();
-    sem.take(core::time::Duration::ZERO).unwrap();
+    sem.release();
+    sem.try_acquire().unwrap();
 }
 
 fn test_counting() {
     let sem = Semaphore::new(0, 10).unwrap();
     for _ in 0..3 {
-        sem.give();
+        sem.release();
     }
     for _ in 0..3 {
-        sem.take(core::time::Duration::ZERO).unwrap();
+        sem.try_acquire().unwrap();
     }
-    let result = sem.take(core::time::Duration::from_millis(10));
+    let result = sem.try_acquire_for(core::time::Duration::from_millis(10));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
@@ -65,7 +65,7 @@ fn test_producer_consumer() {
     let _guard = PtrGuard::new(&SEM_PTR, &sem as *const Semaphore as *mut ());
 
     let th = Thread::builder().name(c"prod").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(sem_give_entry).unwrap();
-    sem.take(core::time::Duration::from_millis(500)).unwrap();
+    sem.try_acquire_for(core::time::Duration::from_millis(500)).unwrap();
     drop(th);
 
     drop(_guard);
@@ -75,8 +75,8 @@ fn test_producer_consumer() {
 fn test_raii_drop() {
     {
         let sem = Semaphore::new(1, 1).unwrap();
-        sem.take(core::time::Duration::ZERO).unwrap();
-        sem.give();
+        sem.try_acquire().unwrap();
+        sem.release();
     }
 }
 

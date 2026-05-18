@@ -56,27 +56,27 @@ fn test_get_bits() {
 fn test_wait_all() {
     let eg = EventGroup::new().unwrap();
     eg.set_bits(BIT_0 | BIT_1);
-    let actual = eg.wait_bits(BIT_0 | BIT_1, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(100)).unwrap();
+    let actual = eg.wait_bits_for(BIT_0 | BIT_1, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(100)).unwrap();
     assert_eq!(actual & (BIT_0 | BIT_1), BIT_0 | BIT_1);
 }
 
 fn test_wait_any() {
     let eg = EventGroup::new().unwrap();
     eg.set_bits(BIT_0);
-    let actual = eg.wait_bits(BIT_0 | BIT_1, WaitFlags::NONE, core::time::Duration::from_millis(100)).unwrap();
+    let actual = eg.wait_bits_for(BIT_0 | BIT_1, WaitFlags::NONE, core::time::Duration::from_millis(100)).unwrap();
     assert!(actual & BIT_0 != 0);
 }
 
 fn test_wait_timeout() {
     let eg = EventGroup::new().unwrap();
-    let result = eg.wait_bits(BIT_0, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(10));
+    let result = eg.wait_bits_for(BIT_0, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(10));
     assert!(matches!(result, Err(Error::Timeout)));
 }
 
 fn test_clear_on_exit() {
     let eg = EventGroup::new().unwrap();
     eg.set_bits(BIT_0 | BIT_1);
-    let _actual = eg.wait_bits(BIT_0 | BIT_1, WaitFlags::WAIT_ALL | WaitFlags::CLEAR_ON_EXIT, core::time::Duration::from_millis(100)).unwrap();
+    let _actual = eg.wait_bits_for(BIT_0 | BIT_1, WaitFlags::WAIT_ALL | WaitFlags::CLEAR_ON_EXIT, core::time::Duration::from_millis(100)).unwrap();
     let remaining = eg.get_bits();
     assert!(remaining & BIT_0 == 0);
     assert!(remaining & BIT_1 == 0);
@@ -93,7 +93,7 @@ fn test_cross_thread() {
     EG_PTR.store(&eg as *const EventGroup as *mut (), Ordering::Release);
 
     let th = Thread::builder().name(c"set").priority(ove::Priority::Low).stack_size(4096).spawn_simple(setter_thread).unwrap();
-    let actual = eg.wait_bits(BIT_0 | BIT_1, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(500)).unwrap();
+    let actual = eg.wait_bits_for(BIT_0 | BIT_1, WaitFlags::WAIT_ALL, core::time::Duration::from_millis(500)).unwrap();
     assert_eq!(actual & (BIT_0 | BIT_1), BIT_0 | BIT_1);
 
     drop(th);

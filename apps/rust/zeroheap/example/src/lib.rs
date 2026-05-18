@@ -32,7 +32,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{JoinHandle, Priority, Queue, StaticCell, Thread, Timer, WAIT_FOREVER};
+use ove::{JoinHandle, Priority, Queue, StaticCell, Thread, Timer};
 
 // ---------------------------------------------------------------------------
 // Constants and shared state
@@ -176,7 +176,7 @@ fn producer_entry() {
     loop {
         count += 1;
 
-        match QUEUE.send(&count, core::time::Duration::from_millis(1000)) {
+        match QUEUE.try_send_for(&count, core::time::Duration::from_millis(1000)) {
             Ok(()) => {}
             Err(ove::Error::Timeout) => ove::log_wrn!("Producer: send timeout"),
             Err(ove::Error::QueueFull) => {
@@ -193,7 +193,7 @@ fn consumer_entry() {
     ove::log_inf!("Consumer started");
 
     loop {
-        match QUEUE.receive(WAIT_FOREVER) {
+        match QUEUE.recv() {
             Ok(val) => {
                 LAST_VALUE.store(val, Ordering::Relaxed);
                 if val % 5 == 0 {

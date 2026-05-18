@@ -64,49 +64,83 @@ impl Mutex {
         Ok(Self { handle })
     }
 
-    /// Lock with a timeout. Use [`WAIT_FOREVER`](crate::WAIT_FOREVER) for no timeout.
+    /// Acquire the mutex, blocking indefinitely.  Returns an RAII guard
+    /// that releases the lock on drop.  `std::sync::Mutex::lock` analog
+    /// (sans poison).
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the mutex cannot be acquired within `timeout`.
+    /// Returns the substrate's error code if the mutex handle is invalid
+    /// (programming error — same failure mode as in C/C++).
     #[inline]
-    pub fn lock(&self, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::time::dur_to_ns(timeout)) };
-        Error::from_code(rc)
-    }
-
-    /// Lock with an absolute deadline.
-    ///
-    /// `deadline_ns` is a steady-clock value from
-    /// [`crate::time::now_steady_ns`]; pass `u64::MAX` (the value of the
-    /// substrate's `OVE_WAIT_FOREVER` sentinel) to block indefinitely.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before the mutex
-    /// is acquired.
-    #[inline]
-    pub fn lock_until(&self, deadline_ns: u64) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout) };
-        Error::from_code(rc)
-    }
-
-    /// Unlock the mutex.
-    #[inline]
-    pub fn unlock(&self) {
-        unsafe { bindings::ove_mutex_unlock(self.handle) }
-    }
-
-    /// Lock and return an RAII guard that auto-unlocks on drop.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
-    #[inline]
-    pub fn guard(&self, timeout: core::time::Duration) -> Result<MutexGuard<'_>> {
-        self.lock(timeout)?;
+    pub fn lock(&self) -> Result<MutexGuard<'_>> {
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, u64::MAX) };
+        Error::from_code(rc)?;
         Ok(MutexGuard {
             mutex: self,
             _no_send: PhantomData,
         })
+    }
+
+    /// Attempt to acquire the mutex without blocking.
+    /// `std::sync::Mutex::try_lock` analog.
+    ///
+    /// # Errors
+    /// Returns [`Error::WouldBlock`] if the mutex is currently held by
+    /// another thread.
+    #[inline]
+    pub fn try_lock(&self) -> Result<MutexGuard<'_>> {
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, 0) };
+        Error::from_code(rc)?;
+        Ok(MutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
+    }
+
+    /// Attempt to acquire the mutex, waiting up to `d`.
+    /// `parking_lot::Mutex::try_lock_for` analog.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the lock cannot be acquired within
+    /// the duration.
+    #[inline]
+    pub fn try_lock_for(&self, d: core::time::Duration) -> Result<MutexGuard<'_>> {
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::time::dur_to_ns(d)) };
+        Error::from_code(rc)?;
+        Ok(MutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
+    }
+
+    /// Attempt to acquire the mutex by the given deadline.
+    /// `parking_lot::Mutex::try_lock_until` analog.  Use
+    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an indefinite wait.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the deadline elapses before the lock
+    /// is acquired.
+    #[inline]
+    pub fn try_lock_until(&self, deadline: crate::time::Instant) -> Result<MutexGuard<'_>> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
+        let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout) };
+        Error::from_code(rc)?;
+        Ok(MutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
+    }
+
+    /// Release the mutex.
+    ///
+    /// Use of the standalone `unlock` is discouraged — prefer the RAII
+    /// guard returned by [`lock`](Self::lock) / [`try_lock`](Self::try_lock)
+    /// etc.  Kept `pub` because [`CondVar`] needs to drive lock state
+    /// through the handle, and so internal-only utilities can release on
+    /// reset paths.
+    #[inline]
+    pub fn unlock(&self) {
+        unsafe { bindings::ove_mutex_unlock(self.handle) }
     }
 
     /// Get the raw handle (for use with CondVar).
@@ -175,50 +209,71 @@ impl RecursiveMutex {
         Ok(Self { handle })
     }
 
-    /// Lock with a timeout in milliseconds.
-    ///
-    /// The same thread may lock the mutex multiple times; each lock must be
-    /// paired with a corresponding [`unlock`](RecursiveMutex::unlock).
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
+    /// Acquire the recursive mutex, blocking indefinitely.  Returns an
+    /// RAII guard that releases one level of the lock on drop.  Same
+    /// thread may call this multiple times — each guard releases one
+    /// level when dropped.
     #[inline]
-    pub fn lock(&self, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(timeout))
-        };
-        Error::from_code(rc)
-    }
-
-    /// Lock with an absolute deadline (see [`Mutex::lock_until`]).
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before the lock
-    /// is acquired.
-    #[inline]
-    pub fn lock_until(&self, deadline_ns: u64) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout) };
-        Error::from_code(rc)
-    }
-
-    /// Unlock the recursive mutex.
-    #[inline]
-    pub fn unlock(&self) {
-        unsafe { bindings::ove_recursive_mutex_unlock(self.handle) }
-    }
-
-    /// Lock and return an RAII guard that auto-unlocks on drop.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the lock cannot be acquired within `timeout_ns`.
-    #[inline]
-    pub fn guard(&self, timeout: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
-        self.lock(timeout)?;
+    pub fn lock(&self) -> Result<RecursiveMutexGuard<'_>> {
+        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, u64::MAX) };
+        Error::from_code(rc)?;
         Ok(RecursiveMutexGuard {
             mutex: self,
             _no_send: PhantomData,
         })
+    }
+
+    /// Attempt to acquire the recursive mutex without blocking.
+    ///
+    /// # Errors
+    /// Returns [`Error::WouldBlock`] if held by a different thread.
+    #[inline]
+    pub fn try_lock(&self) -> Result<RecursiveMutexGuard<'_>> {
+        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, 0) };
+        Error::from_code(rc)?;
+        Ok(RecursiveMutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
+    }
+
+    /// Attempt to acquire the recursive mutex, waiting up to `d`.
+    #[inline]
+    pub fn try_lock_for(&self, d: core::time::Duration) -> Result<RecursiveMutexGuard<'_>> {
+        let rc = unsafe {
+            bindings::ove_recursive_mutex_lock(self.handle, crate::time::dur_to_ns(d))
+        };
+        Error::from_code(rc)?;
+        Ok(RecursiveMutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
+    }
+
+    /// Attempt to acquire the recursive mutex by the given deadline.
+    /// Use [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
+    #[inline]
+    pub fn try_lock_until(
+        &self,
+        deadline: crate::time::Instant,
+    ) -> Result<RecursiveMutexGuard<'_>> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
+        let rc = unsafe { bindings::ove_recursive_mutex_lock(self.handle, timeout) };
+        Error::from_code(rc)?;
+        Ok(RecursiveMutexGuard {
+            mutex: self,
+            _no_send: PhantomData,
+        })
+    }
+
+    /// Release one level of the recursive lock.
+    ///
+    /// As with [`Mutex::unlock`], prefer the RAII guard.  Kept `pub`
+    /// for parity.
+    #[inline]
+    pub fn unlock(&self) {
+        unsafe { bindings::ove_recursive_mutex_unlock(self.handle) }
     }
 }
 
@@ -286,32 +341,61 @@ impl Semaphore {
         Ok(Self { handle })
     }
 
-    /// Decrement (take) the semaphore, blocking up to `timeout_ns` if the count is zero.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the semaphore cannot be taken within `timeout_ns`.
+    /// Acquire one permit, blocking indefinitely.  `tokio::sync::Semaphore::acquire`
+    /// analog (sans `.await`).
     #[inline]
-    pub fn take(&self, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_sem_take(self.handle, crate::time::dur_to_ns(timeout)) };
+    pub fn acquire(&self) -> Result<()> {
+        let rc = unsafe { bindings::ove_sem_take(self.handle, u64::MAX) };
         Error::from_code(rc)
     }
 
-    /// Take the semaphore with an absolute deadline (see [`Mutex::lock_until`]).
+    /// Attempt to acquire one permit without blocking.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before a count
-    /// becomes available.
+    /// Returns [`Error::WouldBlock`] if no permit is available.
     #[inline]
-    pub fn take_until(&self, deadline_ns: u64) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+    pub fn try_acquire(&self) -> Result<()> {
+        let rc = unsafe { bindings::ove_sem_take(self.handle, 0) };
+        Error::from_code(rc)
+    }
+
+    /// Attempt to acquire one permit, waiting up to `d`.
+    /// `parking_lot::Semaphore` doesn't exist; this matches the
+    /// `try_lock_for` convention.
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the duration elapses with no
+    /// permit available.
+    #[inline]
+    pub fn try_acquire_for(&self, d: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_sem_take(self.handle, crate::time::dur_to_ns(d)) };
+        Error::from_code(rc)
+    }
+
+    /// Attempt to acquire one permit by the given deadline.
+    /// Use [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
+    #[inline]
+    pub fn try_acquire_until(&self, deadline: crate::time::Instant) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_sem_take(self.handle, timeout) };
         Error::from_code(rc)
     }
 
-    /// Post/give the semaphore.
+    /// Release one permit.  `tokio::sync::Semaphore::add_permits(1)` /
+    /// `embassy_sync::Semaphore::release(1)` analog.
     #[inline]
-    pub fn give(&self) {
+    pub fn release(&self) {
         unsafe { bindings::ove_sem_give(self.handle) }
+    }
+
+    /// Release `n` permits.  Binding-side loop — substrate currently
+    /// has no `ove_sem_give_n`, so this calls `ove_sem_give` `n` times.
+    #[inline]
+    pub fn release_n(&self, n: u32) {
+        for _ in 0..n {
+            unsafe { bindings::ove_sem_give(self.handle) }
+        }
     }
 }
 
@@ -348,24 +432,47 @@ impl Event {
         Ok(Self { handle })
     }
 
-    /// Block until the event is signalled or the timeout expires.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the event is not signalled within `timeout_ns`.
+    /// Block indefinitely until the event is signalled.
     #[inline]
-    pub fn wait(&self, timeout: core::time::Duration) -> Result<()> {
-        let rc = unsafe { bindings::ove_event_wait(self.handle, crate::time::dur_to_ns(timeout)) };
+    pub fn wait(&self) -> Result<()> {
+        let rc = unsafe { bindings::ove_event_wait(self.handle, u64::MAX) };
         Error::from_code(rc)
     }
 
-    /// Wait for the event with an absolute deadline (see [`Mutex::lock_until`]).
+    /// Non-blocking check.
+    ///
+    /// # Errors
+    /// Returns [`Error::WouldBlock`] if the event is not currently
+    /// signalled.
+    #[inline]
+    pub fn try_wait(&self) -> Result<()> {
+        let rc = unsafe { bindings::ove_event_wait(self.handle, 0) };
+        Error::from_code(rc)
+    }
+
+    /// Wait for the event up to `d`.  `parking_lot::Condvar::wait_for`
+    /// naming convention (waiting primitives don't use the `try_`
+    /// prefix in parking_lot).
+    ///
+    /// # Errors
+    /// Returns [`Error::Timeout`] if the event is not signalled within
+    /// `d`.
+    #[inline]
+    pub fn wait_for(&self, d: core::time::Duration) -> Result<()> {
+        let rc = unsafe { bindings::ove_event_wait(self.handle, crate::time::dur_to_ns(d)) };
+        Error::from_code(rc)
+    }
+
+    /// Wait for the event by the given deadline.  Use
+    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the deadline elapses before the event
     /// is signalled.
     #[inline]
-    pub fn wait_until(&self, deadline_ns: u64) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+    pub fn wait_until(&self, deadline: crate::time::Instant) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_event_wait(self.handle, timeout) };
         Error::from_code(rc)
     }
@@ -416,32 +523,47 @@ impl CondVar {
         Ok(Self { handle })
     }
 
-    /// Atomically release `mutex` and block until signalled or `timeout_ns` elapses.
+    /// Atomically release `mutex` and block indefinitely until
+    /// signalled.  On return, `mutex` is re-acquired.
+    /// `std::sync::Condvar::wait` analog.
     ///
-    /// On return (successful or not), `mutex` is re-acquired before this function returns.
+    /// Always re-check the predicate in a loop after this returns —
+    /// spurious wake-ups are permitted by the substrate.  Or use the
+    /// `wait_while*` predicate variants in [`B3`'s `Mutex<T>`] redesign
+    /// once it lands.
+    #[inline]
+    pub fn wait(&self, mutex: &Mutex) -> Result<()> {
+        let rc =
+            unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), u64::MAX) };
+        Error::from_code(rc)
+    }
+
+    /// Atomically release `mutex` and wait up to `d`.  On return,
+    /// `mutex` is re-acquired.  `parking_lot::Condvar::wait_for` analog.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if neither [`signal`](CondVar::signal) nor
-    /// [`broadcast`](CondVar::broadcast) fires within `timeout_ns`.
+    /// Returns [`Error::Timeout`] if neither [`signal`](CondVar::signal)
+    /// nor [`broadcast`](CondVar::broadcast) fires within `d`.
     #[inline]
-    pub fn wait(&self, mutex: &Mutex, timeout: core::time::Duration) -> Result<()> {
+    pub fn wait_for(&self, mutex: &Mutex, d: core::time::Duration) -> Result<()> {
         let rc = unsafe {
-            bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(timeout))
+            bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(d))
         };
         Error::from_code(rc)
     }
 
-    /// Wait with an absolute deadline (see [`Mutex::lock_until`]).
-    ///
-    /// On return (successful or not), `mutex` is re-acquired.
+    /// Atomically release `mutex` and wait by the given deadline.
+    /// `parking_lot::Condvar::wait_until` analog.  Use
+    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the deadline elapses before
     /// [`signal`](CondVar::signal) or [`broadcast`](CondVar::broadcast)
     /// fires.
     #[inline]
-    pub fn wait_until(&self, mutex: &Mutex, deadline_ns: u64) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
+    pub fn wait_until(&self, mutex: &Mutex, deadline: crate::time::Instant) -> Result<()> {
+        let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout) };
         Error::from_code(rc)
     }

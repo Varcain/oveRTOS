@@ -49,22 +49,45 @@ impl<const N: usize> Stream<N> {
         Ok(Self { handle })
     }
 
-    /// Send bytes into the stream, blocking up to `timeout_ns` if the buffer is full.
-    ///
-    /// Returns the number of bytes actually sent, which may be less than `data.len()`
-    /// if the stream fills before the timeout.
+    /// Send bytes, blocking indefinitely if the buffer is full.
+    /// Returns the number of bytes actually sent (may be < `data.len()`).
+    #[inline]
+    pub fn send(&self, data: &[u8]) -> Result<usize> {
+        self.send_with_timeout(data, u64::MAX)
+    }
+
+    /// Non-blocking send.  Returns the number of bytes actually sent.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no bytes could be sent within `timeout_ns`.
+    /// Returns [`Error::WouldBlock`] if the buffer is full and no
+    /// bytes could be written.
     #[inline]
-    pub fn send(&self, data: &[u8], timeout: core::time::Duration) -> Result<usize> {
+    pub fn try_send(&self, data: &[u8]) -> Result<usize> {
+        self.send_with_timeout(data, 0)
+    }
+
+    /// Send up to `d`.  Returns the number of bytes actually sent.
+    #[inline]
+    pub fn try_send_for(&self, data: &[u8], d: core::time::Duration) -> Result<usize> {
+        self.send_with_timeout(data, crate::time::dur_to_ns(d))
+    }
+
+    /// Send by the given deadline.  Returns the number of bytes
+    /// actually sent.
+    #[inline]
+    pub fn try_send_until(&self, data: &[u8], deadline: crate::time::Instant) -> Result<usize> {
+        self.send_with_timeout(data, crate::time::deadline_to_timeout_ns(deadline))
+    }
+
+    #[inline]
+    fn send_with_timeout(&self, data: &[u8], timeout_ns: u64) -> Result<usize> {
         let mut bytes_sent: usize = 0;
         let rc = unsafe {
             bindings::ove_stream_send(
                 self.handle,
                 data.as_ptr() as *const _,
                 data.len(),
-                crate::time::dur_to_ns(timeout),
+                timeout_ns,
                 &mut bytes_sent,
             )
         };
@@ -72,68 +95,48 @@ impl<const N: usize> Stream<N> {
         Ok(bytes_sent)
     }
 
-    /// Send bytes with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
-    ///
-    /// Returns the number of bytes actually sent.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if no bytes could be sent before the deadline.
+    /// Receive bytes, blocking indefinitely.  Returns the number of
+    /// bytes actually read (may be < `buf.len()` — blocks until at
+    /// least the trigger byte count is available).
     #[inline]
-    pub fn send_until(&self, data: &[u8], deadline_ns: u64) -> Result<usize> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let mut bytes_sent: usize = 0;
-        let rc = unsafe {
-            bindings::ove_stream_send(
-                self.handle,
-                data.as_ptr() as *const _,
-                data.len(),
-                timeout,
-                &mut bytes_sent,
-            )
-        };
-        Error::from_code(rc)?;
-        Ok(bytes_sent)
+    pub fn recv(&self, buf: &mut [u8]) -> Result<usize> {
+        self.recv_with_timeout(buf, u64::MAX)
     }
 
-    /// Receive bytes from the stream into `buf`, blocking up to `timeout_ns`.
-    ///
-    /// Returns the number of bytes actually received. Blocks until at least the
-    /// trigger byte count (set at creation time) is available, or `timeout_ns` expires.
+    /// Non-blocking receive.  Returns the number of bytes read.
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if no bytes could be received within `timeout_ns`.
+    /// Returns [`Error::WouldBlock`] if no bytes are available.
     #[inline]
-    pub fn receive(&self, buf: &mut [u8], timeout: core::time::Duration) -> Result<usize> {
+    pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
+        self.recv_with_timeout(buf, 0)
+    }
+
+    /// Receive up to `d`.
+    #[inline]
+    pub fn try_recv_for(&self, buf: &mut [u8], d: core::time::Duration) -> Result<usize> {
+        self.recv_with_timeout(buf, crate::time::dur_to_ns(d))
+    }
+
+    /// Receive by the given deadline.
+    #[inline]
+    pub fn try_recv_until(
+        &self,
+        buf: &mut [u8],
+        deadline: crate::time::Instant,
+    ) -> Result<usize> {
+        self.recv_with_timeout(buf, crate::time::deadline_to_timeout_ns(deadline))
+    }
+
+    #[inline]
+    fn recv_with_timeout(&self, buf: &mut [u8], timeout_ns: u64) -> Result<usize> {
         let mut bytes_received: usize = 0;
         let rc = unsafe {
             bindings::ove_stream_receive(
                 self.handle,
                 buf.as_mut_ptr() as *mut _,
                 buf.len(),
-                crate::time::dur_to_ns(timeout),
-                &mut bytes_received,
-            )
-        };
-        Error::from_code(rc)?;
-        Ok(bytes_received)
-    }
-
-    /// Receive bytes with an absolute deadline (see [`crate::sync::Mutex::lock_until`]).
-    ///
-    /// Returns the number of bytes actually received.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if no bytes could be received before the deadline.
-    #[inline]
-    pub fn receive_until(&self, buf: &mut [u8], deadline_ns: u64) -> Result<usize> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline_ns);
-        let mut bytes_received: usize = 0;
-        let rc = unsafe {
-            bindings::ove_stream_receive(
-                self.handle,
-                buf.as_mut_ptr() as *mut _,
-                buf.len(),
-                timeout,
+                timeout_ns,
                 &mut bytes_received,
             )
         };

@@ -74,12 +74,9 @@ pub fn delay_us(us: u32) {
 
 /// Get the current monotonic time in nanoseconds since an arbitrary epoch.
 ///
-/// The epoch matches the substrate's steady clock; use with `_until`
-/// variants to compose a deadline:
-/// ```ignore
-/// let deadline_ns = ove::time::now_steady_ns() + 100_000_000;
-/// mtx.lock_until(deadline_ns)?;
-/// ```
+/// Prefer [`Instant::now`] for new code — it's the typed counterpart and
+/// the only constructor for [`Instant`] outside of `FOREVER` / `Add<Duration>`
+/// composition.  This bare-`u64` helper is kept as an escape hatch.
 #[inline]
 pub fn now_steady_ns() -> u64 {
     let mut ns: u64 = 0;
@@ -87,18 +84,89 @@ pub fn now_steady_ns() -> u64 {
     ns
 }
 
-/// Convert an absolute steady-clock deadline to the time remaining,
-/// preserving the `u64::MAX` "wait forever" sentinel.  Returns 0 when
-/// the deadline is in the past.
+/// Typed monotonic timestamp for `try_*_until` deadlines.
 ///
-/// Used internally by every binding wrapper's `_until` variant.  The
-/// substrate exposes the same helper as `ove_time_deadline_to_timeout_ns`
-/// (a `static inline` in `<ove/time.h>` that bindgen can't reach).
+/// Wraps a nanosecond count from the substrate's steady clock.  Construct
+/// only via [`Instant::now`] or by adding a [`Duration`] to an existing
+/// `Instant`.  The internal representation is opaque on purpose: this is
+/// what makes a raw `u64` of microseconds or relative duration nanoseconds
+/// fail to compile when fed to a `try_*_until` call.
+///
+/// Matches `std::time::Instant`'s opaque-newtype shape (we can't use the
+/// std type directly because it lives in `std`, not `core` — see also
+/// `parking_lot::Mutex::try_lock_until` which takes std `Instant` on
+/// host but the equivalent type on `no_std` targets).
+///
+/// # Examples
+///
+/// ```ignore
+/// use core::time::Duration;
+/// use ove::time::Instant;
+///
+/// let deadline = Instant::now() + Duration::from_millis(100);
+/// mtx.try_lock_until(deadline)?;
+///
+/// // Or wait indefinitely:
+/// mtx.try_lock_until(Instant::FOREVER)?;
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Instant(u64);
+
+impl Instant {
+    /// Returns the current value of the substrate steady clock.
+    #[inline]
+    pub fn now() -> Self {
+        Self(now_steady_ns())
+    }
+
+    /// Sentinel "wait indefinitely" deadline.
+    ///
+    /// Mapped to the substrate's `OVE_WAIT_FOREVER` constant via the
+    /// internal raw-ns representation.  Useful when a function's
+    /// signature only exposes a deadline variant but the caller wants
+    /// to block forever.
+    pub const FOREVER: Instant = Instant(u64::MAX);
+
+    /// Raw nanosecond representation — used internally to bridge into
+    /// the substrate's `deadline_ns: uint64_t` parameter.
+    #[inline]
+    pub(crate) fn raw(self) -> u64 {
+        self.0
+    }
+}
+
+impl core::ops::Add<Duration> for Instant {
+    type Output = Instant;
+    #[inline]
+    fn add(self, rhs: Duration) -> Instant {
+        let bumped = self.0.saturating_add(dur_to_ns(rhs));
+        Instant(bumped)
+    }
+}
+
+impl core::ops::AddAssign<Duration> for Instant {
+    #[inline]
+    fn add_assign(&mut self, rhs: Duration) {
+        *self = *self + rhs;
+    }
+}
+
+impl core::ops::Sub<Instant> for Instant {
+    type Output = Duration;
+    #[inline]
+    fn sub(self, rhs: Instant) -> Duration {
+        Duration::from_nanos(self.0.saturating_sub(rhs.0))
+    }
+}
+
+/// Convert an [`Instant`] deadline to the timeout-ns value the substrate
+/// expects (`OVE_WAIT_FOREVER` is preserved; otherwise `deadline - now`,
+/// saturating to 0 if the deadline is in the past).
 #[inline]
-pub(crate) fn deadline_to_timeout_ns(deadline_ns: u64) -> u64 {
-    if deadline_ns == u64::MAX {
+pub(crate) fn deadline_to_timeout_ns(deadline: Instant) -> u64 {
+    if deadline.0 == u64::MAX {
         return u64::MAX;
     }
     let now = now_steady_ns();
-    deadline_ns.saturating_sub(now)
+    deadline.0.saturating_sub(now)
 }
