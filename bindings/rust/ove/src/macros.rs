@@ -149,19 +149,24 @@ macro_rules! main {
 // and call `from_static()`.
 // ---------------------------------------------------------------------------
 
-/// Create a [`crate::Mutex`] that works in both heap and zero-heap modes.
+/// Create a [`crate::Mutex<T>`] around `$val` that works in both heap and
+/// zero-heap modes.
+///
+/// Use `()` as the value for a "no-data" lock (i.e. `Mutex<()>` used
+/// purely to synchronise access to other state) — matches
+/// `std::sync::Mutex<()>` / `parking_lot::Mutex<()>` convention.
 #[cfg(has_sync)]
 #[macro_export]
 macro_rules! mutex {
-    () => {{
+    ($val:expr) => {{
         #[cfg(not(zero_heap))]
         {
-            $crate::Mutex::new().unwrap()
+            $crate::Mutex::new($val).unwrap()
         }
         #[cfg(zero_heap)]
         {
             static mut _S: $crate::ffi::ove_mutex_storage_t = unsafe { core::mem::zeroed() };
-            unsafe { $crate::Mutex::from_static(core::ptr::addr_of_mut!(_S)) }.unwrap()
+            unsafe { $crate::Mutex::from_static(core::ptr::addr_of_mut!(_S), $val) }.unwrap()
         }
     }};
 }

@@ -14,15 +14,15 @@ use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
 // The locking thread must release the lock; cross-thread Send would
 // allow `ove_mutex_unlock` from a thread that never issued the matching
 // `ove_mutex_lock` — backend-defined UB (POSIX EPERM, FreeRTOS assert).
-assert_not_impl_all!(MutexGuard<'static>: Send);
+assert_not_impl_all!(MutexGuard<'static, ()>: Send);
 
 static COUNTER: AtomicI32 = AtomicI32::new(0);
-static COUNTER_MTX: AtomicPtr<Mutex> = AtomicPtr::new(core::ptr::null_mut());
+static COUNTER_MTX: AtomicPtr<Mutex<()>> = AtomicPtr::new(core::ptr::null_mut());
 
 fn counter_entry() {
     let mtx_ptr = COUNTER_MTX.load(Ordering::Acquire);
     if mtx_ptr.is_null() { return; }
-    let mtx = unsafe { &*(mtx_ptr as *const Mutex) };
+    let mtx = unsafe { &*(mtx_ptr as *const Mutex<()>) };
     for _ in 0..1000 {
         let _g = mtx.lock().unwrap();
         COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -30,23 +30,23 @@ fn counter_entry() {
 }
 
 fn test_create() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     drop(mtx);
 }
 
 fn test_lock_unlock() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let _g = mtx.lock().unwrap();
 }
 
-static HOLD_MTX: AtomicPtr<Mutex> = AtomicPtr::new(core::ptr::null_mut());
+static HOLD_MTX: AtomicPtr<Mutex<()>> = AtomicPtr::new(core::ptr::null_mut());
 static HOLD_LOCKED: AtomicI32 = AtomicI32::new(0);
 static HOLD_RELEASE: AtomicI32 = AtomicI32::new(0);
 
 fn hold_lock_entry() {
     let mtx_ptr = HOLD_MTX.load(Ordering::Acquire);
     if mtx_ptr.is_null() { return; }
-    let mtx = unsafe { &*(mtx_ptr as *const Mutex) };
+    let mtx = unsafe { &*(mtx_ptr as *const Mutex<()>) };
     let _g = mtx.lock().unwrap();
     HOLD_LOCKED.store(1, Ordering::Release);
     // Hold until told to release
@@ -56,10 +56,10 @@ fn hold_lock_entry() {
 }
 
 fn test_contention_timeout() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     HOLD_LOCKED.store(0, Ordering::SeqCst);
     HOLD_RELEASE.store(0, Ordering::SeqCst);
-    let _guard = PtrGuard::new(&HOLD_MTX, &mtx as *const Mutex as *mut Mutex);
+    let _guard = PtrGuard::new(&HOLD_MTX, &mtx as *const Mutex<()> as *mut Mutex<()>);
 
     // Spawn thread that holds the lock
     let th = Thread::builder().name(c"hold").priority(ove::Priority::Normal).stack_size(4096).spawn_simple(hold_lock_entry).unwrap();
@@ -73,7 +73,7 @@ fn test_contention_timeout() {
 
     // Now try to lock with timeout — should fail
     let result = mtx.try_lock_for(core::time::Duration::from_millis(50));
-    assert!(matches!(result, Err(Error::Timeout)), "expected timeout, got {:?}", result.as_ref().map(|_| ()));
+    assert!(matches!(result, Err(Error::Timeout)), "expected timeout");
 
     // Release the holder
     HOLD_RELEASE.store(1, Ordering::Release);
@@ -82,13 +82,13 @@ fn test_contention_timeout() {
 }
 
 fn test_lock_zero_timeout() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let _g = mtx.try_lock().unwrap();
 }
 
 fn test_raii_drop() {
     {
-        let mtx = Mutex::new().unwrap();
+        let mtx = Mutex::new(()).unwrap();
         {
             let _g = mtx.lock().unwrap();
         }
@@ -97,7 +97,7 @@ fn test_raii_drop() {
 }
 
 fn test_guard_auto_unlock() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     {
         let _guard = mtx.lock().unwrap();
         // Guard holds the lock
@@ -107,7 +107,7 @@ fn test_guard_auto_unlock() {
 }
 
 fn test_guard_timeout() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let _guard = mtx.lock().unwrap();
     // Try to acquire again — should timeout
     let result = mtx.try_lock();
@@ -115,7 +115,7 @@ fn test_guard_timeout() {
 }
 
 fn test_error_mapping() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let _g = mtx.lock().unwrap();
     // Try-lock on already-held (same thread, non-recursive) returns timeout
     let result = mtx.try_lock();
@@ -123,9 +123,9 @@ fn test_error_mapping() {
 }
 
 fn test_shared_counter() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     COUNTER.store(0, Ordering::SeqCst);
-    let _guard = PtrGuard::new(&COUNTER_MTX, &mtx as *const Mutex as *mut Mutex);
+    let _guard = PtrGuard::new(&COUNTER_MTX, &mtx as *const Mutex<()> as *mut Mutex<()>);
 
     let t1 = Thread::builder()
         .name(c"c1")
@@ -147,17 +147,18 @@ fn test_shared_counter() {
 }
 
 fn test_guard_debug_format() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let guard = mtx.lock().unwrap();
     let s = format!("{:?}", guard);
     assert!(s.contains("MutexGuard"), "unexpected debug: {s}");
-    assert!(s.contains("mutex"), "unexpected debug: {s}");
+    // The guard now derefs to T (= ()), so the inner field is rendered.
+    assert!(s.contains("data"), "unexpected debug: {s}");
 }
 
 fn test_mutex_debug_format() {
-    let mtx = Mutex::new().unwrap();
-    // Exercises the `@debug` arm of `ove_handle_impl!` — the macro-generated
-    // `impl Debug for Mutex` is the only way those lines get hit.
+    let mtx = Mutex::new(()).unwrap();
+    // `Mutex<T>` has a hand-rolled Debug impl that does not lock (would
+    // deadlock if T: Debug had side-effects).  Show only the handle.
     let s = format!("{:?}", mtx);
     assert!(s.contains("Mutex"), "unexpected debug: {s}");
     assert!(s.contains("handle"), "unexpected debug: {s}");

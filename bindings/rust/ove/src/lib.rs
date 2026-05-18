@@ -193,7 +193,10 @@ pub use init_cell::{InitCell, InitMut};
 #[cfg(has_stream)]
 pub use stream::Stream;
 #[cfg(has_sync)]
-pub use sync::{CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore};
+pub use sync::{
+    CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore,
+    WaitTimeoutResult,
+};
 pub use thread::Priority;
 #[cfg(zero_heap)]
 pub use thread::ThreadStorage;

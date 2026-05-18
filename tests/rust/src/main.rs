@@ -6,6 +6,7 @@
 
 mod framework;
 mod test_mutex;
+mod test_mutex_data;
 mod test_recursive_mutex;
 mod test_semaphore;
 mod test_event;
@@ -46,6 +47,7 @@ fn main() {
 
     let suites: &[(&str, fn() -> (usize, usize))] = &[
         ("Mutex", test_mutex::run),
+        ("Mutex<T>", test_mutex_data::run),
         ("RecursiveMutex", test_recursive_mutex::run),
         ("Semaphore", test_semaphore::run),
         ("Event", test_event::run),
