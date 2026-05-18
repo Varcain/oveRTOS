@@ -170,6 +170,13 @@ pub const bsp = @import("bsp.zig");
 
 /// Time query and delay utilities.
 pub const time = @import("time.zig");
+
+/// Allocator namespace.  Wraps `std.heap.*` re-exports — static-backed
+/// allocators (FixedBufferAllocator, ArenaAllocator, MemoryPool) flow
+/// through verbatim; dynamic-backed ones (c_allocator, page_allocator,
+/// GeneralPurposeAllocator) become `@compileError` under
+/// `CONFIG_OVE_ZERO_HEAP` with a remediation message.
+pub const allocators = @import("allocators.zig");
 /// Typed duration for the binding's bounded-wait methods
 /// (`Mutex.lockFor`, `Queue.sendFor`, etc.).
 pub const Duration = time.Duration;
