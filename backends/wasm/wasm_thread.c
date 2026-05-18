@@ -183,6 +183,11 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 {
 	if (!handle || !storage || !entry)
 		return OVE_ERR_INVALID_PARAM;
+	/* Phase 5 / storage hygiene audit: this is a host-mode (Emscripten
+	 * pthreads) backend with no zero-heap obligation.  The host
+	 * pthread_create manages its own stack; the caller-supplied `stack`
+	 * buffer is intentionally unused.  For zero-heap deployments use
+	 * FreeRTOS or Zephyr, which honor the caller-supplied stack. */
 	(void)stack;
 
 	struct ove_thread *t = (struct ove_thread *)storage;

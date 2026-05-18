@@ -42,6 +42,43 @@
  *       functions are compiled.  Application code must use @c _init() with
  *       caller-supplied storage, or the @c OVE_*_DEFINE_STATIC() macros.
  *       Calling a @c _create() symbol in zero-heap mode is a link error.
+ *
+ * @par Storage-hygiene contract (Phase 5 audit)
+ *
+ * Every public @c _init() function accepts a caller-provided
+ * @c ove_*_storage_t and **must not** allocate anything itself.  The
+ * @c tests/suites/test_init_no_alloc.c regression test enforces this
+ * empirically on every backend with @c -Wl,--wrap=malloc engaged
+ * (FreeRTOS-QEMU, Zephyr-QEMU, NuttX-QEMU).
+ *
+ * The @c ove_thread_init() stack-buffer parameter (the final @c void*
+ * argument) has per-backend semantics:
+ *
+ * | Backend  | Uses caller stack? | Notes |
+ * |----------|--------------------|-------|
+ * | FreeRTOS | ✅                 | `xTaskCreateStatic` consumes it directly. |
+ * | Zephyr   | ✅                 | `k_thread_create` over the caller's K_THREAD_STACK_DEFINE buffer. |
+ * | NuttX    | ⚠ Ignored          | `task_create()` and `group_allocate()` kmm-alloc internally; documented in `nuttx_thread.c`.  The trap test does not catch this because kmm is not a libc malloc. |
+ * | POSIX    | ⚠ Ignored          | Host-mode backend; `pthread_create` manages its own stack. |
+ * | WASM     | ⚠ Ignored          | Host-mode backend; host pthreads manage stack. |
+ *
+ * **For strict zero-heap deployments**: FreeRTOS and Zephyr honor the
+ * full storage-hygiene contract including the stack.  NuttX's
+ * limitation is upstream (kernel `group_allocate`) and not fixable
+ * without forking; POSIX and WASM are host/sim backends with no
+ * zero-heap obligation.
+ *
+ * @par Storage struct size stability
+ *
+ * The @c ove_*_storage_t types are concrete (non-opaque) structs whose
+ * size is resolvable at C compile time.  This is a deliberate ABI
+ * commitment: the Zig binding relies on `@sizeOf(ove_queue_storage_t)`
+ * resolving via @c \@cImport at build time, and the Rust binding uses
+ * bindgen to derive the same sizes for `MaybeUninit<...>` wrappers.
+ * Making them opaque would be a breaking change that requires adding
+ * `ove_*_storage_size()` runtime queries and rewriting all binding
+ * static-allocation paths.
+ *
  * @{
  */
 

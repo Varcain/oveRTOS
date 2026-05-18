@@ -276,6 +276,17 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	/* Phase 5 / storage hygiene audit: NuttX backend cannot honor the
+	 * caller-supplied stack.  task_create() (current path) and
+	 * nxtask_init() (caller-storage path) both go through
+	 * sched/group/group_create.c:group_allocate() which kmm_zallocs
+	 * sizeof(task_group_s) per task and pulls the stack from kmm too.
+	 * TCB_FLAG_TTYPE_KERNEL would skip group_allocate but diverges
+	 * heavily in CONFIG_BUILD_FLAT — see the long comment in
+	 * thread_start() below.  Net: NuttX zero-heap incurs unavoidable
+	 * kmm allocations that the test_init_no_alloc trap layer (which
+	 * wraps libc malloc only) does NOT catch.  Documented as a known
+	 * gap; for strict zero-heap use FreeRTOS or Zephyr. */
 	(void)stack;
 
 	memset(storage, 0, sizeof(*storage));
