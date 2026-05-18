@@ -172,6 +172,14 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	if (stack != NULL && ((uintptr_t)stack & 7u) != 0u) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	/* Phase 5 / storage hygiene audit: this is a host-mode (POSIX
+	 * pthreads) backend with no zero-heap obligation.  pthread_create
+	 * manages its own stack via the host kernel, so the caller-supplied
+	 * `stack` buffer is intentionally unused.  We additionally allocate
+	 * a paint-buffer below for stack-coloration HWM tracking — also
+	 * heap-allocated, since malloc is always available on the host.
+	 * For zero-heap deployments use FreeRTOS or Zephyr, which honor
+	 * the caller-supplied stack. */
 	(void)stack;
 
 	struct ove_thread *t = (struct ove_thread *)storage;
