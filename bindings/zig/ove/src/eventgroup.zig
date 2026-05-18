@@ -9,7 +9,9 @@ const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
-const Duration = @import("time.zig").Duration;
+const time_mod = @import("time.zig");
+const Duration = time_mod.Duration;
+const Instant = time_mod.Instant;
 const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
 // Per-operation narrow error set.
@@ -98,6 +100,15 @@ const HeapEventGroup = struct {
         return result;
     }
 
+    /// Deadline-based wait.
+    pub inline fn waitBitsUntil(self: EventGroup, bits: EventBits, flags: u32, deadline: Instant) WaitError!EventBits {
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        var result: EventBits = 0;
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
+        return result;
+    }
+
     pub inline fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
@@ -152,6 +163,15 @@ const ZeroHeapEventGroup = struct {
         var result: EventBits = 0;
         const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, d.ns, &result);
         if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsFor", rc);
+        return result;
+    }
+
+    pub inline fn waitBitsUntil(self: *EventGroup, bits: EventBits, flags: u32, deadline: Instant) WaitError!EventBits {
+        self.tracker.assertSame(self, "ove.EventGroup");
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        var result: EventBits = 0;
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
         return result;
     }
 

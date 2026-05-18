@@ -173,6 +173,9 @@ pub const time = @import("time.zig");
 /// Typed duration for the binding's bounded-wait methods
 /// (`Mutex.lockFor`, `Queue.sendFor`, etc.).
 pub const Duration = time.Duration;
+/// Typed monotonic deadline for the binding's deadline-wait methods
+/// (`Mutex.lockUntil`, `Queue.sendUntil`, etc.).
+pub const Instant = time.Instant;
 
 /// Audio I/O initialization and control.
 pub const audio = @import("audio.zig");
