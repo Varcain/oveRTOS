@@ -67,7 +67,7 @@ class Graph
 	{
 	}
 
-	~Graph()
+	~Graph() noexcept
 	{
 		if (initialized_)
 			ove_audio_graph_deinit(&g_);

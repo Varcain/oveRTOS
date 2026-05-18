@@ -44,7 +44,7 @@ class I2c
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
-	~I2c()
+	~I2c() noexcept
 	{
 		if (!handle_)
 			return;

@@ -78,7 +78,7 @@ class LvglGuard
 	/**
 	 * @brief Releases the LVGL lock.
 	 */
-	~LvglGuard()
+	~LvglGuard() noexcept
 	{
 		ove_lvgl_unlock();
 	}
@@ -1006,7 +1006,7 @@ class Style
 	/**
 	 * @brief Destroys the style, releasing any resources held by LVGL.
 	 */
-	~Style()
+	~Style() noexcept
 	{
 		lv_style_reset(&style_);
 	}
@@ -1185,7 +1185,7 @@ template <std::integral T> class State
 	/**
 	 * @brief Destroys the state and deinitialises the underlying LVGL subject.
 	 */
-	~State()
+	~State() noexcept
 	{
 		lv_subject_deinit(&subject_);
 	}
@@ -3114,7 +3114,7 @@ class Group
 	{
 	}
 
-	~Group()
+	~Group() noexcept
 	{
 		if (group_)
 			lv_group_delete(group_);
@@ -3346,7 +3346,7 @@ class Timer
 	{
 	}
 
-	~Timer()
+	~Timer() noexcept
 	{
 		if (timer_)
 			lv_timer_delete(timer_);

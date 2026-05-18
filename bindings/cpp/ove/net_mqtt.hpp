@@ -101,7 +101,7 @@ class Client
 	 *
 	 * If the handle is null the destructor is a no-op.
 	 */
-	~Client()
+	~Client() noexcept
 	{
 		if (!handle_)
 			return;
