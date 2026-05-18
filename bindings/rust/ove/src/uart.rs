@@ -6,8 +6,9 @@
 
 //! UART serial bus driver.
 //!
-//! Provides safe wrappers around the oveRTOS UART API with interrupt-driven
-//! RX buffering and thread-safe TX.
+//! [`Uart`] wraps an opaque `ove_uart_t` handle and exposes a method-shaped
+//! API.  Trait impls (`embedded_io::Read`, `embedded_io::Write`, ...) attach
+//! in C3.
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -38,53 +39,73 @@ pub enum FlowControl {
     RtsCts = 1,
 }
 
-/// Write data to the UART. Returns the number of bytes written.
-pub fn write(
-    uart: bindings::ove_uart_t,
-    data: &[u8],
-    timeout: core::time::Duration,
-) -> Result<usize> {
-    let mut written: usize = 0;
-    let rc = unsafe {
-        bindings::ove_uart_write(
-            uart,
-            data.as_ptr().cast(),
-            data.len(),
-            timeout_ns,
-            &mut written,
-        )
-    };
-    Error::from_code(rc)?;
-    Ok(written)
+/// UART driver.
+///
+/// Wraps an opaque `ove_uart_t` handle provided by the board configuration.
+/// Construct via [`Uart::from_handle`].
+#[derive(Debug, Copy, Clone)]
+pub struct Uart {
+    handle: bindings::ove_uart_t,
 }
 
-/// Read data from the UART RX buffer. Returns the number of bytes read.
-pub fn read(
-    uart: bindings::ove_uart_t,
-    buf: &mut [u8],
-    timeout: core::time::Duration,
-) -> Result<usize> {
-    let mut read_count: usize = 0;
-    let rc = unsafe {
-        bindings::ove_uart_read(
-            uart,
-            buf.as_mut_ptr().cast(),
-            buf.len(),
-            timeout_ns,
-            &mut read_count,
-        )
-    };
-    Error::from_code(rc)?;
-    Ok(read_count)
-}
+impl Uart {
+    /// Wrap an existing `ove_uart_t` handle.
+    ///
+    /// # Safety
+    /// `handle` must be a valid UART handle returned by the substrate.
+    /// The caller is responsible for ensuring no other `Uart` wrapper
+    /// exists for the same handle concurrently.
+    #[inline]
+    pub const unsafe fn from_handle(handle: bindings::ove_uart_t) -> Self {
+        Self { handle }
+    }
 
-/// Query the number of bytes available in the RX buffer.
-pub fn bytes_available(uart: bindings::ove_uart_t) -> usize {
-    unsafe { bindings::ove_uart_bytes_available(uart) }
-}
+    /// Return the underlying handle.
+    #[inline]
+    pub fn raw(&self) -> bindings::ove_uart_t {
+        self.handle
+    }
 
-/// Flush the TX hardware buffer.
-pub fn flush(uart: bindings::ove_uart_t) -> Result<()> {
-    let rc = unsafe { bindings::ove_uart_flush(uart) };
-    Error::from_code(rc)
+    /// Write data to the UART. Returns the number of bytes written.
+    pub fn write(&self, data: &[u8], timeout: core::time::Duration) -> Result<usize> {
+        let mut written: usize = 0;
+        let rc = unsafe {
+            bindings::ove_uart_write(
+                self.handle,
+                data.as_ptr().cast(),
+                data.len(),
+                crate::time::dur_to_ns(timeout),
+                &mut written,
+            )
+        };
+        Error::from_code(rc)?;
+        Ok(written)
+    }
+
+    /// Read data from the UART RX buffer. Returns the number of bytes read.
+    pub fn read(&self, buf: &mut [u8], timeout: core::time::Duration) -> Result<usize> {
+        let mut read_count: usize = 0;
+        let rc = unsafe {
+            bindings::ove_uart_read(
+                self.handle,
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                crate::time::dur_to_ns(timeout),
+                &mut read_count,
+            )
+        };
+        Error::from_code(rc)?;
+        Ok(read_count)
+    }
+
+    /// Query the number of bytes available in the RX buffer.
+    pub fn bytes_available(&self) -> usize {
+        unsafe { bindings::ove_uart_bytes_available(self.handle) }
+    }
+
+    /// Flush the TX hardware buffer.
+    pub fn flush(&self) -> Result<()> {
+        let rc = unsafe { bindings::ove_uart_flush(self.handle) };
+        Error::from_code(rc)
+    }
 }
