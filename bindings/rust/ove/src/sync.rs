@@ -10,8 +10,11 @@
 //! and condition variables. All types implement `Send + Sync` and work in both
 //! heap and zero-heap modes.
 
+use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
+use core::ops::{Deref, DerefMut};
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -33,46 +36,115 @@ use crate::error::{Error, Result};
 struct GuardNoSend(*mut ());
 
 // ---------------------------------------------------------------------------
-// Mutex
+// Mutex<T>
 // ---------------------------------------------------------------------------
 
-/// RAII wrapper around `ove_mutex_t`.
-pub struct Mutex {
+/// Mutex protecting a value of type `T`.  `std::sync::Mutex<T>` /
+/// `parking_lot::Mutex<T>` analog.
+///
+/// The lock and the data live together in one type.  Acquiring the
+/// lock via [`Mutex::lock`] returns a [`MutexGuard<T>`] that
+/// [`Deref`]s to `T`, so the only way to touch the data is to hold
+/// the lock first — the borrow checker enforces the contract that
+/// `lock` then `*g = …` is the only legal access pattern.
+///
+/// # Differences from `std::sync::Mutex`
+///
+/// - No [poisoning](https://doc.rust-lang.org/std/sync/struct.Mutex.html#poisoning).
+///   `lock()` returns `Result<MutexGuard<T>, Error>`, not std's
+///   `LockResult<MutexGuard<T>>`.  Mirrors parking_lot's choice
+///   — forcing callers to unwrap a never-firing `PoisonError` is
+///   worse ergonomics than reporting only the backend errors that
+///   can actually occur.
+/// - [`try_lock_for`](Self::try_lock_for) /
+///   [`try_lock_until`](Self::try_lock_until) variants for bounded
+///   waits.  Parking_lot has these; std does not.  Return
+///   `Result<MutexGuard, Error>` (with [`Error::Timeout`] on
+///   deadline elapsed), not parking_lot's `Option<MutexGuard>` —
+///   we have backend errors that aren't simply "could not acquire".
+pub struct Mutex<T: ?Sized> {
     handle: bindings::ove_mutex_t,
+    data: UnsafeCell<T>,
 }
 
-impl Mutex {
-    /// Create a new mutex via heap allocation (only in heap mode).
+// SAFETY: `Mutex<T>` synchronises access to `T`; `T: Send` is enough
+// (`Send` is what is needed to ship across thread boundaries, and the
+// mutex provides the cross-thread mutual exclusion).  `T: Sync` is NOT
+// required — the mutex itself provides the synchronisation that would
+// otherwise be `T`'s responsibility.  Matches std / parking_lot.
+unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
+unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
+
+impl<T> Mutex<T> {
+    /// Create a new mutex around `val` via heap allocation (heap mode only).
     #[cfg(not(zero_heap))]
-    pub fn new() -> Result<Self> {
+    pub fn new(val: T) -> Result<Self> {
         let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_mutex_create(&mut handle) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            data: UnsafeCell::new(val),
+        })
     }
 
-    /// Create from caller-provided static storage.
+    /// Create a mutex around `val` using caller-provided static storage
+    /// for the handle.  Available in zero-heap mode.
     ///
     /// # Safety
     /// Caller must ensure `storage` outlives the `Mutex` and is not
     /// shared with another primitive.
     #[cfg(zero_heap)]
-    pub unsafe fn from_static(storage: *mut bindings::ove_mutex_storage_t) -> Result<Self> {
+    pub unsafe fn from_static(
+        storage: *mut bindings::ove_mutex_storage_t,
+        val: T,
+    ) -> Result<Self> {
         let mut handle: bindings::ove_mutex_t = core::ptr::null_mut();
         let rc = unsafe { bindings::ove_mutex_init(&mut handle, storage) };
         Error::from_code(rc)?;
-        Ok(Self { handle })
+        Ok(Self {
+            handle,
+            data: UnsafeCell::new(val),
+        })
+    }
+
+    /// Consume the mutex and return the protected value.
+    ///
+    /// Available in heap mode only (zero-heap mode lacks a destroy path
+    /// for the handle — the handle's storage outlives the `Mutex`
+    /// anyway).
+    #[cfg(not(zero_heap))]
+    pub fn into_inner(self) -> Result<T> {
+        // ManuallyDrop prevents the regular Drop from running (which
+        // would both destroy the handle AND drop the data).  We then
+        // extract T and destroy the handle ourselves.
+        let this = ManuallyDrop::new(self);
+        // SAFETY: `this` is consumed; nothing else accesses `data`.
+        let data = unsafe { core::ptr::read(&this.data) };
+        unsafe { bindings::ove_mutex_destroy(this.handle) };
+        Ok(data.into_inner())
+    }
+}
+
+impl<T: ?Sized> Mutex<T> {
+    /// Get a mutable reference to the protected value without locking.
+    ///
+    /// Safe because `&mut self` proves the caller has exclusive access
+    /// — no other thread can hold a guard at this moment.  Matches
+    /// `std::sync::Mutex::get_mut`.
+    pub fn get_mut(&mut self) -> &mut T {
+        // SAFETY: `&mut self` is exclusive; no aliasing.
+        unsafe { &mut *self.data.get() }
     }
 
     /// Acquire the mutex, blocking indefinitely.  Returns an RAII guard
-    /// that releases the lock on drop.  `std::sync::Mutex::lock` analog
-    /// (sans poison).
+    /// that releases the lock on drop.
     ///
     /// # Errors
     /// Returns the substrate's error code if the mutex handle is invalid
     /// (programming error — same failure mode as in C/C++).
     #[inline]
-    pub fn lock(&self) -> Result<MutexGuard<'_>> {
+    pub fn lock(&self) -> Result<MutexGuard<'_, T>> {
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, u64::MAX) };
         Error::from_code(rc)?;
         Ok(MutexGuard {
@@ -88,7 +160,7 @@ impl Mutex {
     /// Returns [`Error::WouldBlock`] if the mutex is currently held by
     /// another thread.
     #[inline]
-    pub fn try_lock(&self) -> Result<MutexGuard<'_>> {
+    pub fn try_lock(&self) -> Result<MutexGuard<'_, T>> {
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, 0) };
         Error::from_code(rc)?;
         Ok(MutexGuard {
@@ -104,7 +176,7 @@ impl Mutex {
     /// Returns [`Error::Timeout`] if the lock cannot be acquired within
     /// the duration.
     #[inline]
-    pub fn try_lock_for(&self, d: core::time::Duration) -> Result<MutexGuard<'_>> {
+    pub fn try_lock_for(&self, d: core::time::Duration) -> Result<MutexGuard<'_, T>> {
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, crate::time::dur_to_ns(d)) };
         Error::from_code(rc)?;
         Ok(MutexGuard {
@@ -115,13 +187,14 @@ impl Mutex {
 
     /// Attempt to acquire the mutex by the given deadline.
     /// `parking_lot::Mutex::try_lock_until` analog.  Use
-    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an indefinite wait.
+    /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
+    /// indefinite wait.
     ///
     /// # Errors
     /// Returns [`Error::Timeout`] if the deadline elapses before the lock
     /// is acquired.
     #[inline]
-    pub fn try_lock_until(&self, deadline: crate::time::Instant) -> Result<MutexGuard<'_>> {
+    pub fn try_lock_until(&self, deadline: crate::time::Instant) -> Result<MutexGuard<'_, T>> {
         let timeout = crate::time::deadline_to_timeout_ns(deadline);
         let rc = unsafe { bindings::ove_mutex_lock(self.handle, timeout) };
         Error::from_code(rc)?;
@@ -130,50 +203,103 @@ impl Mutex {
             _no_send: PhantomData,
         })
     }
+}
 
-    /// Release the mutex.
-    ///
-    /// Use of the standalone `unlock` is discouraged — prefer the RAII
-    /// guard returned by [`lock`](Self::lock) / [`try_lock`](Self::try_lock)
-    /// etc.  Kept `pub` because [`CondVar`] needs to drive lock state
-    /// through the handle, and so internal-only utilities can release on
-    /// reset paths.
-    #[inline]
-    pub fn unlock(&self) {
-        unsafe { bindings::ove_mutex_unlock(self.handle) }
-    }
-
-    /// Get the raw handle (for use with CondVar).
-    pub(crate) fn raw(&self) -> bindings::ove_mutex_t {
-        self.handle
+impl<T: ?Sized> Drop for Mutex<T> {
+    fn drop(&mut self) {
+        if self.handle.is_null() {
+            return;
+        }
+        // `UnsafeCell<T>`'s Drop runs automatically and drops `T`.
+        #[cfg(not(zero_heap))]
+        unsafe {
+            bindings::ove_mutex_destroy(self.handle);
+        }
+        #[cfg(zero_heap)]
+        unsafe {
+            bindings::ove_mutex_deinit(self.handle);
+        }
     }
 }
 
-crate::ove_handle_impl!(Mutex, ove_mutex_destroy, ove_mutex_deinit);
+impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Don't try to lock — Debug shouldn't deadlock.  Show only the
+        // handle; matches std's "Mutex { data: <locked> }" shape minus
+        // the racy data probe.
+        f.debug_struct("Mutex")
+            .field("handle", &format_args!("{:p}", self.handle))
+            .finish_non_exhaustive()
+    }
+}
 
-/// RAII guard that unlocks a `Mutex` when dropped.
+/// RAII guard that unlocks a `Mutex<T>` when dropped.
 ///
-/// `MutexGuard` is `!Send`: the locking thread must release the lock.
-/// Sending a guard to another thread would cause that thread to issue
+/// Deref / DerefMut expose the protected value.  `MutexGuard` is
+/// `!Send`: the locking thread must release the lock.  Sending a guard
+/// to another thread would cause that thread to issue
 /// `ove_mutex_unlock` with no matching `ove_mutex_lock`, which is
-/// backend-defined UB.  The `_no_send` field carries a [`GuardNoSend`]
-/// `PhantomData` to propagate `!Send` at compile time.
-pub struct MutexGuard<'a> {
-    mutex: &'a Mutex,
+/// backend-defined UB.  The `_no_send` field carries a `GuardNoSend`
+/// `PhantomData` to propagate `!Send` at compile time (see A1
+/// notes).
+///
+/// `Sync` is reinstated for `T: Sync` — a `&MutexGuard<T>` is the same
+/// as a `&T`, which is `Send` if `T: Sync`.  Matches std and
+/// parking_lot.
+pub struct MutexGuard<'a, T: ?Sized> {
+    mutex: &'a Mutex<T>,
     _no_send: PhantomData<GuardNoSend>,
 }
 
-impl fmt::Debug for MutexGuard<'_> {
+// SAFETY: `&MutexGuard<T>` is `&T` once `Deref`-ed; if `T: Sync` then
+// sharing `&T` across threads is sound.  std / parking_lot do the same.
+unsafe impl<T: ?Sized + Sync> Sync for MutexGuard<'_, T> {}
+
+impl<T: ?Sized> Deref for MutexGuard<'_, T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &T {
+        // SAFETY: holding the guard implies the lock is held; we have
+        // exclusive read access.
+        unsafe { &*self.mutex.data.get() }
+    }
+}
+
+impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        // SAFETY: holding the guard implies the lock is held; `&mut self`
+        // ensures no other guard exists, so this is the only `&mut T`.
+        unsafe { &mut *self.mutex.data.get() }
+    }
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // `&&**self` reaches through Deref to `&T`, then a second
+        // `&` makes the result Sized so `field(...)` can erase it
+        // through `&dyn Debug`.  Mirrors std::sync::MutexGuard's
+        // Debug impl.
         f.debug_struct("MutexGuard")
-            .field("mutex", &format_args!("{:p}", self.mutex.handle))
+            .field("data", &&**self)
             .finish()
     }
 }
 
-impl Drop for MutexGuard<'_> {
+impl<T: ?Sized + fmt::Display> fmt::Display for MutexGuard<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
-        self.mutex.unlock();
+        // SAFETY: handle is alive as long as the `&Mutex<T>` is borrowed,
+        // which the `'a` lifetime guarantees.
+        unsafe {
+            bindings::ove_mutex_unlock(self.mutex.handle);
+        }
     }
 }
 
@@ -493,10 +619,34 @@ impl Event {
 crate::ove_handle_impl!(Event, ove_event_destroy, ove_event_deinit);
 
 // ---------------------------------------------------------------------------
-// CondVar
+// CondVar + WaitTimeoutResult
 // ---------------------------------------------------------------------------
 
-/// Condition variable.
+/// Result of a `Condvar::wait_for` / `wait_until` call indicating
+/// whether the wait elapsed without being signalled.
+///
+/// Matches `std::sync::WaitTimeoutResult` exactly — same type name,
+/// same `timed_out()` accessor.  Returned wrapped in a tuple alongside
+/// the re-acquired guard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitTimeoutResult {
+    timed_out: bool,
+}
+
+impl WaitTimeoutResult {
+    /// Returns `true` if the wait elapsed without being signalled.
+    #[inline]
+    pub fn timed_out(&self) -> bool {
+        self.timed_out
+    }
+}
+
+/// Condition variable.  Pair with [`Mutex<T>`] to wait on state changes.
+///
+/// API matches `parking_lot::Condvar` shape — `wait` consumes the
+/// guard, returns it re-acquired.  Predicate variants
+/// (`wait_while*`) loop internally so callers can't accidentally write
+/// the buggy `if cv.wait_for(...) ... && ready` pattern.
 pub struct CondVar {
     handle: bindings::ove_condvar_t,
 }
@@ -523,49 +673,150 @@ impl CondVar {
         Ok(Self { handle })
     }
 
-    /// Atomically release `mutex` and block indefinitely until
-    /// signalled.  On return, `mutex` is re-acquired.
-    /// `std::sync::Condvar::wait` analog.
+    /// Atomically release the guarded mutex and block indefinitely
+    /// until signalled.  On return, the mutex is re-acquired and the
+    /// guard handed back.  `std::sync::Condvar::wait` analog.
     ///
     /// Always re-check the predicate in a loop after this returns —
-    /// spurious wake-ups are permitted by the substrate.  Or use the
-    /// `wait_while*` predicate variants in [`B3`'s `Mutex<T>`] redesign
-    /// once it lands.
+    /// spurious wake-ups are permitted by the substrate.  Or use
+    /// [`wait_while`](Self::wait_while) which does the loop for you.
     #[inline]
-    pub fn wait(&self, mutex: &Mutex) -> Result<()> {
+    pub fn wait<'a, T: ?Sized>(
+        &self,
+        guard: MutexGuard<'a, T>,
+    ) -> Result<MutexGuard<'a, T>> {
+        let mutex = guard.mutex;
+        // Skip the guard's Drop — substrate atomically releases and
+        // re-acquires the mutex internally.
+        let _suppress = ManuallyDrop::new(guard);
         let rc =
-            unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), u64::MAX) };
-        Error::from_code(rc)
+            unsafe { bindings::ove_condvar_wait(self.handle, mutex.handle, u64::MAX) };
+        Error::from_code(rc)?;
+        Ok(MutexGuard {
+            mutex,
+            _no_send: PhantomData,
+        })
     }
 
-    /// Atomically release `mutex` and wait up to `d`.  On return,
-    /// `mutex` is re-acquired.  `parking_lot::Condvar::wait_for` analog.
+    /// Atomically release the guarded mutex and wait up to `d`.  On
+    /// return, the mutex is re-acquired.  `parking_lot::Condvar::wait_for`
+    /// analog.
+    ///
+    /// The returned [`WaitTimeoutResult`] distinguishes "signalled in
+    /// time" (`timed_out() == false`) from "elapsed without signal"
+    /// (`timed_out() == true`).
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if neither [`signal`](CondVar::signal)
-    /// nor [`broadcast`](CondVar::broadcast) fires within `d`.
+    /// Returns an error for backend failures other than a clean timeout
+    /// — a clean timeout returns `Ok((guard, WaitTimeoutResult { ..true }))`.
     #[inline]
-    pub fn wait_for(&self, mutex: &Mutex, d: core::time::Duration) -> Result<()> {
-        let rc = unsafe {
-            bindings::ove_condvar_wait(self.handle, mutex.raw(), crate::time::dur_to_ns(d))
-        };
-        Error::from_code(rc)
+    pub fn wait_for<'a, T: ?Sized>(
+        &self,
+        guard: MutexGuard<'a, T>,
+        d: core::time::Duration,
+    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
+        self.wait_with_timeout(guard, crate::time::dur_to_ns(d))
     }
 
-    /// Atomically release `mutex` and wait by the given deadline.
-    /// `parking_lot::Condvar::wait_until` analog.  Use
+    /// Atomically release the guarded mutex and wait by the given
+    /// deadline.  `parking_lot::Condvar::wait_until` analog.  Use
     /// [`Instant::FOREVER`](crate::time::Instant::FOREVER) for an
     /// indefinite wait.
-    ///
-    /// # Errors
-    /// Returns [`Error::Timeout`] if the deadline elapses before
-    /// [`signal`](CondVar::signal) or [`broadcast`](CondVar::broadcast)
-    /// fires.
     #[inline]
-    pub fn wait_until(&self, mutex: &Mutex, deadline: crate::time::Instant) -> Result<()> {
-        let timeout = crate::time::deadline_to_timeout_ns(deadline);
-        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.raw(), timeout) };
-        Error::from_code(rc)
+    pub fn wait_until<'a, T: ?Sized>(
+        &self,
+        guard: MutexGuard<'a, T>,
+        deadline: crate::time::Instant,
+    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
+        self.wait_with_timeout(guard, crate::time::deadline_to_timeout_ns(deadline))
+    }
+
+    #[inline]
+    fn wait_with_timeout<'a, T: ?Sized>(
+        &self,
+        guard: MutexGuard<'a, T>,
+        timeout_ns: u64,
+    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)> {
+        let mutex = guard.mutex;
+        let _suppress = ManuallyDrop::new(guard);
+        let rc = unsafe { bindings::ove_condvar_wait(self.handle, mutex.handle, timeout_ns) };
+        // OVE_ERR_TIMEOUT is the "clean timeout, mutex re-acquired"
+        // case — re-package as `Ok((guard, timed_out: true))`.  Other
+        // negative codes are real errors.
+        let timed_out = match Error::from_code(rc) {
+            Ok(()) => false,
+            Err(Error::Timeout) => true,
+            Err(e) => return Err(e),
+        };
+        Ok((
+            MutexGuard {
+                mutex,
+                _no_send: PhantomData,
+            },
+            WaitTimeoutResult { timed_out },
+        ))
+    }
+
+    /// Loop until `cond(&mut T)` returns `false`, releasing the lock
+    /// while waiting.  `std::sync::Condvar::wait_while` analog.
+    ///
+    /// Internally handles spurious wake-ups by re-checking the
+    /// predicate after every wake.
+    pub fn wait_while<'a, T: ?Sized, F>(
+        &self,
+        mut guard: MutexGuard<'a, T>,
+        mut cond: F,
+    ) -> Result<MutexGuard<'a, T>>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        while cond(&mut *guard) {
+            guard = self.wait(guard)?;
+        }
+        Ok(guard)
+    }
+
+    /// `wait_while` with a duration bound.
+    ///
+    /// Returns `(guard, WaitTimeoutResult)` — `timed_out()` is `true`
+    /// iff the predicate is still `true` at deadline.
+    pub fn wait_while_for<'a, T: ?Sized, F>(
+        &self,
+        guard: MutexGuard<'a, T>,
+        d: core::time::Duration,
+        cond: F,
+    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        let deadline = crate::time::Instant::now() + d;
+        self.wait_while_until(guard, deadline, cond)
+    }
+
+    /// `wait_while` with an absolute deadline.
+    pub fn wait_while_until<'a, T: ?Sized, F>(
+        &self,
+        mut guard: MutexGuard<'a, T>,
+        deadline: crate::time::Instant,
+        mut cond: F,
+    ) -> Result<(MutexGuard<'a, T>, WaitTimeoutResult)>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        loop {
+            if !cond(&mut *guard) {
+                return Ok((guard, WaitTimeoutResult { timed_out: false }));
+            }
+            let (g, wtr) = self.wait_until(guard, deadline)?;
+            guard = g;
+            if wtr.timed_out() {
+                // Re-evaluate one final time — the substrate may have
+                // released the lock right at the deadline; cond may now
+                // be false.  Matches std's semantics.
+                let timed_out = cond(&mut *guard);
+                return Ok((guard, WaitTimeoutResult { timed_out }));
+            }
+        }
     }
 
     /// Wake one waiter.

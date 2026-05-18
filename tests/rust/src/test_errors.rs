@@ -17,14 +17,14 @@ use crate::test_entry;
 use ove::{Error, EventGroup, Mutex, Queue, Semaphore, WaitFlags};
 
 fn test_mutex_try_lock_contended_returns_timeout() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let _first = mtx.try_lock().unwrap();
     let rc = mtx.try_lock();
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc.as_ref().map(|_| ()));
 }
 
 fn test_mutex_guard_contention_returns_timeout() {
-    let mtx = Mutex::new().unwrap();
+    let mtx = Mutex::new(()).unwrap();
     let _first = mtx.try_lock().unwrap();
     let rc = mtx.try_lock();
     assert!(matches!(rc, Err(Error::Timeout)), "got {:?}", rc.as_ref().map(|_| ()));
