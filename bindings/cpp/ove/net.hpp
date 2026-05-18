@@ -168,7 +168,7 @@ class NetIf
 	/**
 	 * @brief De-initialises the network interface.
 	 */
-	~NetIf()
+	~NetIf() noexcept
 	{
 		if (!handle_)
 			return;
@@ -298,7 +298,7 @@ class TcpSocket
 	/**
 	 * @brief Closes the socket if it is still open.
 	 */
-	~TcpSocket()
+	~TcpSocket() noexcept
 	{
 		if (open_)
 			ove_socket_close(handle_);
@@ -455,7 +455,7 @@ class UdpSocket
 	/**
 	 * @brief Closes the socket if it is still open.
 	 */
-	~UdpSocket()
+	~UdpSocket() noexcept
 	{
 		if (open_)
 			ove_socket_close(handle_);
@@ -607,7 +607,7 @@ class TcpListener
 	/**
 	 * @brief Closes the listening socket if it is still open.
 	 */
-	~TcpListener()
+	~TcpListener() noexcept
 	{
 		if (open_)
 			ove_socket_close(handle_);

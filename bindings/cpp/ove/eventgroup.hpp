@@ -54,7 +54,7 @@ class EventGroup
 	/**
 	 * @brief Destroys the event group, releasing the underlying kernel resource.
 	 */
-	~EventGroup()
+	~EventGroup() noexcept
 	{
 		if (!handle_)
 			return;
@@ -102,8 +102,13 @@ class EventGroup
 	 * @brief Sets one or more event bits atomically.
 	 * @param[in] bits Bitmask of bits to set.
 	 * @return The value of the event group after the bits were set.
+	 *
+	 * `[[nodiscard]]` because the post-set bit state is the only way to
+	 * observe whether your bits actually went on (vs. were cleared by
+	 * a concurrent wait_bits with `clear_on_exit`).  Cast to `(void)`
+	 * if you genuinely don't care.
 	 */
-	ove_eventbits_t set_bits(ove_eventbits_t bits)
+	[[nodiscard]] ove_eventbits_t set_bits(ove_eventbits_t bits)
 	{
 		return ove_eventgroup_set_bits(handle_, bits);
 	}
@@ -112,8 +117,12 @@ class EventGroup
 	 * @brief Clears one or more event bits atomically.
 	 * @param[in] bits Bitmask of bits to clear.
 	 * @return The value of the event group before the bits were cleared.
+	 *
+	 * `[[nodiscard]]` because the pre-clear state lets callers detect
+	 * which bits were actually set at the moment of clearing — useful
+	 * for race-free "consume" patterns.
 	 */
-	ove_eventbits_t clear_bits(ove_eventbits_t bits)
+	[[nodiscard]] ove_eventbits_t clear_bits(ove_eventbits_t bits)
 	{
 		return ove_eventgroup_clear_bits(handle_, bits);
 	}
@@ -155,8 +164,11 @@ class EventGroup
 	 * @brief Sets one or more event bits from an ISR context.
 	 * @param[in] bits Bitmask of bits to set.
 	 * @return The value of the event group after the bits were set.
+	 *
+	 * `[[nodiscard]]` for the same reason as @ref set_bits — the
+	 * post-set state is the observable result.
 	 */
-	ove_eventbits_t set_bits_from_isr(ove_eventbits_t bits)
+	[[nodiscard]] ove_eventbits_t set_bits_from_isr(ove_eventbits_t bits)
 	{
 		return ove_eventgroup_set_bits_from_isr(handle_, bits);
 	}

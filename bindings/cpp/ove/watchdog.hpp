@@ -65,7 +65,7 @@ class Watchdog
 	/**
 	 * @brief Destroys the watchdog, stopping it and releasing the kernel resource.
 	 */
-	~Watchdog()
+	~Watchdog() noexcept
 	{
 		if (!handle_)
 			return;

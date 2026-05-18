@@ -16,7 +16,7 @@ static void cpp_setter_thread(void *arg)
 {
 	auto *ctx = static_cast<cpp_setter_ctx *>(arg);
 	test_msleep(ctx->delay_ms);
-	ctx->eg->set_bits(ctx->bits_to_set);
+	(void)ctx->eg->set_bits(ctx->bits_to_set);
 }
 
 } /* extern "C" */
@@ -35,7 +35,7 @@ static void test_cpp_eg_set_bits(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	eg.set_bits(BIT_0 | BIT_1);
+	(void)eg.set_bits(BIT_0 | BIT_1);
 	ove_eventbits_t bits = eg.get_bits();
 	assert_true(bits & BIT_0);
 	assert_true(bits & BIT_1);
@@ -46,8 +46,8 @@ static void test_cpp_eg_clear_bits(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	eg.set_bits(BIT_0 | BIT_1 | BIT_2);
-	eg.clear_bits(BIT_1);
+	(void)eg.set_bits(BIT_0 | BIT_1 | BIT_2);
+	(void)eg.clear_bits(BIT_1);
 	ove_eventbits_t remaining = eg.get_bits();
 	assert_true(remaining & BIT_0);
 	assert_false(remaining & BIT_1);
@@ -60,7 +60,7 @@ static void test_cpp_eg_get_bits(void **state)
 	ove::EventGroup eg;
 
 	assert_int_equal(eg.get_bits(), 0);
-	eg.set_bits(BIT_2);
+	(void)eg.set_bits(BIT_2);
 	assert_true(eg.get_bits() & BIT_2);
 }
 
@@ -69,7 +69,7 @@ static void test_cpp_eg_wait_all(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	eg.set_bits(BIT_0 | BIT_1);
+	(void)eg.set_bits(BIT_0 | BIT_1);
 
 	ove_eventbits_t actual = 0;
 	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL, std::chrono::milliseconds{100}, &actual);
@@ -82,7 +82,7 @@ static void test_cpp_eg_wait_any(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	eg.set_bits(BIT_0);
+	(void)eg.set_bits(BIT_0);
 
 	ove_eventbits_t actual = 0;
 	int rc = eg.wait_bits(BIT_0 | BIT_1, 0, std::chrono::milliseconds{100}, &actual);
@@ -105,7 +105,7 @@ static void test_cpp_eg_clear_on_exit(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	eg.set_bits(BIT_0 | BIT_1);
+	(void)eg.set_bits(BIT_0 | BIT_1);
 
 	ove_eventbits_t actual = 0;
 	int rc = eg.wait_bits(BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT, std::chrono::milliseconds{100}, &actual);
@@ -121,7 +121,7 @@ static void test_cpp_eg_set_bits_from_isr(void **state)
 	(void)state;
 	ove::EventGroup eg;
 
-	eg.set_bits_from_isr(BIT_2);
+	(void)eg.set_bits_from_isr(BIT_2);
 	assert_true(eg.get_bits() & BIT_2);
 }
 
@@ -146,7 +146,7 @@ static void test_cpp_eg_raii_destroy(void **state)
 	(void)state;
 	{
 		ove::EventGroup eg;
-		eg.set_bits(BIT_0);
+		(void)eg.set_bits(BIT_0);
 	}
 }
 

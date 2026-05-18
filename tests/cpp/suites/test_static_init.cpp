@@ -71,7 +71,7 @@ static void test_cpp_static_eventgroup_init(void **state)
 	(void)state;
 	ove::EventGroup eg;
 	assert_true(eg.valid());
-	eg.set_bits(0x01);
+	(void)eg.set_bits(0x01);
 	assert_true(eg.get_bits() & 0x01);
 }
 

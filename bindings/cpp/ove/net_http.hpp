@@ -53,7 +53,7 @@ class Response
 	/**
 	 * @brief Destroys the response, freeing body and header buffers.
 	 */
-	~Response()
+	~Response() noexcept
 	{
 		ove_http_response_free(&raw_);
 	}
@@ -162,7 +162,7 @@ class Client
 	 *
 	 * If the handle is null (e.g., after a move), the destructor is a no-op.
 	 */
-	~Client()
+	~Client() noexcept
 	{
 		if (!handle_)
 			return;

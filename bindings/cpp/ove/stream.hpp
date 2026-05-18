@@ -63,7 +63,7 @@ template <size_t BufSize = 0> class Stream
 	/**
 	 * @brief Destroys the stream, releasing the underlying kernel resource.
 	 */
-	~Stream()
+	~Stream() noexcept
 	{
 		if (!handle_)
 			return;

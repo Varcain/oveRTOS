@@ -50,7 +50,7 @@ template <size_t RxBufSize = 0> class Uart
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
-	~Uart()
+	~Uart() noexcept
 	{
 		if (!handle_)
 			return;

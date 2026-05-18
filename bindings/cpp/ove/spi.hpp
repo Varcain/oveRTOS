@@ -44,7 +44,7 @@ class Spi
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
-	~Spi()
+	~Spi() noexcept
 	{
 		if (!handle_)
 			return;

@@ -46,7 +46,7 @@ template <size_t ArenaSize = 0> class Model
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
-	~Model()
+	~Model() noexcept
 	{
 		if (!handle_)
 			return;

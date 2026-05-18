@@ -55,7 +55,7 @@ class Session
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
-	~Session()
+	~Session() noexcept
 	{
 		if (!handle_)
 			return;
