@@ -805,37 +805,45 @@ struct MemStats {
 /* ── Thread enumeration ───────────────────────────────────────── */
 
 /**
- * @struct ThreadInfo
  * @brief Snapshot of a single thread.
+ *
+ * Alias of the C @ref ove_thread_info struct.  Exposes the full set of
+ * fields the substrate provides (name, state, priority, stack_used,
+ * stack_size, cpu_percent_x100, state_times), unchanged from the C
+ * layer.  Default-initialise with `ThreadInfo info{};` for zero-init.
+ *
+ * Previous versions of the binding defined a C++-only subset struct
+ * here and did a per-field copy in @ref thread_list.  That added a
+ * silent 16-entry truncation cap (the binding's temp buffer was
+ * fixed-size).  Aliasing the C struct lets @ref thread_list pass the
+ * caller's array straight to the substrate — no temp buffer, no copy,
+ * no binding-side cap.
  */
-struct ThreadInfo {
-	const char *name{};				    ///< Thread name.
-	ove_thread_state_t state{OVE_THREAD_STATE_UNKNOWN}; ///< Current state.
-	int priority{};					    ///< Scheduling priority.
-	size_t stack_used{};				    ///< Peak stack usage in bytes.
-};
+using ThreadInfo = struct ove_thread_info;
 
 /**
  * @brief List all threads in the system.
+ *
+ * Fills @p out with up to @p max @ref ThreadInfo entries.  Returns
+ * the actual count via @p count (when non-null).
+ *
+ * @note The substrate caps the result at @c OVE_THREAD_LIST_MAX (16 in
+ * the current implementation; tracked in `c-substrate-findings.md`
+ * P2-2 for promotion to a public constant).  If @p max exceeds the
+ * substrate's cap, the cap wins and @c *count reflects the substrate
+ * limit, not @p max.
+ *
  * @param[out] out   Array to fill with thread info.
- * @param[in]  max   Maximum entries.
- * @param[out] count Actual count written (may be nullptr).
+ * @param[in]  max   Maximum entries the @p out buffer can hold.
+ * @param[out] count Actual count written (may be `nullptr`).
  * @return `OVE_OK` on success, or a negative error code.
  */
 [[nodiscard]] inline int thread_list(ThreadInfo *out, size_t max, size_t *count = nullptr)
 {
-	struct ove_thread_info buf[16];
 	size_t n = 0;
-	int ret = ove_thread_list(buf, max < 16 ? max : 16, &n);
-	if (ret == OVE_OK) {
-		for (size_t i = 0; i < n && i < max; i++) {
-			out[i].name = buf[i].name;
-			out[i].state = buf[i].state;
-			out[i].priority = buf[i].priority;
-			out[i].stack_used = buf[i].stack_used;
-		}
-		if (count)
-			*count = n;
+	int ret = ove_thread_list(out, max, &n);
+	if (ret == OVE_OK && count) {
+		*count = n;
 	}
 	return ret;
 }
