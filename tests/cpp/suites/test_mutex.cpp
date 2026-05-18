@@ -72,7 +72,9 @@ static void test_cpp_mutex_contention_timeout(void **state)
 	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
-	assert_int_equal(mtx.try_lock_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = mtx.try_lock_for(std::chrono::milliseconds{50});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 static void test_cpp_mutex_contention_success(void **state)
@@ -85,7 +87,8 @@ static void test_cpp_mutex_contention_success(void **state)
 	for (int i = 0; i < 500 && !__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE); i++)
 		test_msleep(1);
 
-	assert_int_equal(mtx.try_lock_for(std::chrono::milliseconds{500}), OVE_OK);
+	ove::Result<void> r = mtx.try_lock_for(std::chrono::milliseconds{500});
+	assert_true(r.has_value());
 	mtx.unlock();
 }
 
@@ -136,10 +139,11 @@ static void test_cpp_mutex_short_timeout(void **state)
 
 	uint64_t start = 0, end = 0;
 	ove_time_get_us(&start);
-	int rc = mtx.try_lock_for(std::chrono::milliseconds{50});
+	ove::Result<void> r = mtx.try_lock_for(std::chrono::milliseconds{50});
 	ove_time_get_us(&end);
 
-	assert_int_equal(rc, OVE_ERR_TIMEOUT);
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 	assert_duration_within(end - start, 50, OVE_TEST_TIMING_TOLERANCE_MS);
 }
 
@@ -200,6 +204,23 @@ static void test_cpp_mutex_not_copyable(void **state)
 		      "Mutex must not be copy constructible");
 	static_assert(!std::is_copy_assignable<ove::Mutex>::value,
 		      "Mutex must not be copy assignable");
+}
+
+/* Method-return-type pins.  Catches an accidental revert of the
+ * `try_lock_for`/`try_lock_until` migration from `int` to
+ * `Result<void>` at compile time. */
+static void test_cpp_mutex_return_type_shape(void **state)
+{
+	(void)state;
+	static_assert(std::is_same_v<decltype(std::declval<ove::Mutex>().lock()), void>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Mutex>().try_lock()), bool>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Mutex>().try_lock_for(
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Mutex>().try_lock_until(
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Mutex>().unlock()), void>);
 }
 
 static void test_cpp_mutex_valid_after_construct(void **state)
@@ -274,6 +295,7 @@ int test_cpp_mutex_run(void)
 		cmocka_unit_test(test_cpp_mutex_move_assign),
 #endif
 		cmocka_unit_test(test_cpp_mutex_not_copyable),
+		cmocka_unit_test(test_cpp_mutex_return_type_shape),
 		cmocka_unit_test(test_cpp_mutex_valid_after_construct),
 		cmocka_unit_test(test_cpp_mutex_handle_access),
 		cmocka_unit_test(test_cpp_mutex_std_lock_guard_composition),

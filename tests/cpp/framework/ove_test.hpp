@@ -67,8 +67,6 @@ int test_cpp_stream_run(void);
 int test_cpp_workqueue_run(void);
 int test_cpp_static_init_run(void);
 int test_cpp_infer_run(void);
-
-/* ove::cpp::* (C++23-first redesign) suite runners */
-int test_cppns_error_run(void);
+int test_cpp_error_run(void);
 
 #endif /* OVE_TEST_CPP_HPP */

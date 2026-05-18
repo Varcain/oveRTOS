@@ -7,29 +7,31 @@
  */
 
 /**
- * @file cpp/error.hpp
- * @brief Strong error type, `Result<T>` alias, and `std::error_code`
- *        interop for the `ove::cpp::*` modern-C++ binding namespace.
+ * @file error.hpp
+ * @brief Strong @ref ove::Error type, `Result<T>` alias, and
+ *        `std::error_code` interop for the oveRTOS C++ binding.
  *
- * The `ove::cpp::*` namespace is the C++23-first redesign of the
- * oveRTOS C++ binding.  Where the original `ove::*` surface returns
- * raw `int` rc-codes and uses `OVE_WAIT_FOREVER`, `ove::cpp::*`
- * returns `std::expected<T, Error>` and accepts `std::chrono::duration`
- * /  `std::chrono::time_point` parameters.
+ * Provides the foundation for `Result<T>`-shaped fallible operations.
+ * Primitives migrate to returning `Result<T>` in their own iterations;
+ * for any not-yet-migrated primitive the substrate's `int rc` is
+ * still the canonical surface, and @ref from_rc lifts those rc-codes
+ * into a `Result` at the call site.
  *
- * This header lays the foundation:
- *   - `enum class Error : int` mirroring every `OVE_ERR_*` value
- *   - `Result<T> = std::expected<T, Error>` (default `T = void`)
- *   - `ove_category()` / `make_error_code(Error)` for `std::error_code`
- *     interop (so `Error` round-trips through generic
- *     `std::error_code`-based code in user libraries)
- *   - `from_rc(int)` and `from_rc(int, T&&)` to lift substrate rc-codes
- *     into a `Result`
+ *   - `enum class Error : int` mirroring every `OVE_ERR_*` substrate
+ *     value bit-for-bit (so `static_cast<int>(Error::Timeout)
+ *     == OVE_ERR_TIMEOUT`).
+ *   - `Result<T> = std::expected<T, Error>` (default `T = void`).
+ *   - `error_category()` + `make_error_code(Error)` for
+ *     `std::error_code` interop — `Error` round-trips through
+ *     generic `std::error_code`-based user code.
+ *   - `from_rc(int)` and `from_rc(int, T&&)` to lift substrate
+ *     rc-codes into a `Result`.
  *
- * **Drift guard.**  Each `Error` variant is `static_assert`-pinned to
- * its `OVE_*` substrate constant — and `<ove/types.h>` independently
- * pins every `OVE_ERR_*` to a literal integer.  A renumbering in
- * either layer breaks the build before producing a binary.
+ * **Drift guard.**  Each `Error` variant is `static_assert`-pinned
+ * to its `OVE_*` substrate constant — and `<ove/types.h>`
+ * independently pins every `OVE_ERR_*` to a literal integer.  A
+ * renumbering in either layer breaks the build before producing a
+ * binary.
  */
 
 #pragma once
@@ -42,27 +44,7 @@
 #include <type_traits>
 #include <utility>
 
-/**
- * @namespace ove::cpp
- * @brief C++23-first redesign of the oveRTOS C++ binding.
- *
- * Conventions for everything inside `ove::cpp`:
- *   - Fallible operations return `Result<T>` (`std::expected<T, Error>`)
- *     instead of raw `int` rc-codes.
- *   - Time parameters are `std::chrono::duration` / `std::chrono::time_point`
- *     templates — never raw nanoseconds or `OVE_WAIT_FOREVER`.
- *   - Public operations carry `[[nodiscard]]` and `noexcept` where
- *     applicable.
- *   - Each primitive composes with the standard library
- *     (`std::lock_guard`, `std::scoped_lock`, `std::stop_token` …)
- *     via the appropriate concept satisfaction.
- *
- * Users adopt incrementally: each primitive lands in `ove::cpp::*`
- * in its own iteration, while the original `ove::*` surface continues
- * to compile unchanged.  Mixing the two namespaces in the same TU is
- * supported — both compile against the same substrate handles.
- */
-namespace ove::cpp
+namespace ove
 {
 
 /**
@@ -76,7 +58,7 @@ namespace ove::cpp
  * `Error::Ok` is included so the enum can round-trip a "no error"
  * value through `std::error_code` (where `value() == 0` denotes
  * success).  Constructing a `Result<T>` with `Error::Ok` as the error
- * state is a misuse — prefer `from_rc()` which maps `OVE_OK` to the
+ * state is a misuse — prefer @ref from_rc which maps `OVE_OK` to the
  * expected-value side of the `std::expected`.
  */
 enum class Error : int {
@@ -150,8 +132,8 @@ static_assert(static_cast<int>(Error::NotFound) == OVE_ERR_NOT_FOUND, "Error::No
  *
  * Carries either a value of type @c T or an @ref Error.  Default
  * template argument `T = void` covers fallible operations that have
- * no success-side payload (`Result<void>` is the analogue of a
- * "returned `int rc` with `OVE_OK` semantics").
+ * no success-side payload (`Result<void>` is the analogue of an
+ * `int rc` with `OVE_OK` success semantics).
  *
  * Composes with the full `std::expected` monadic surface:
  * `.and_then`, `.or_else`, `.transform`, `.value_or`.
@@ -165,11 +147,11 @@ namespace detail
  * @brief `std::error_category` implementation for @ref Error values.
  *
  * Kept inside `detail::` because user code should never construct
- * this directly — call @ref ove_category() to obtain the singleton
+ * this directly — call @ref error_category() to obtain the singleton
  * reference instead.  The class is exposed only because
  * `std::error_category` requires inheritance.
  */
-class ove_error_category : public std::error_category
+class error_category_impl : public std::error_category
 {
       public:
 	const char *name() const noexcept override
@@ -237,11 +219,11 @@ class ove_error_category : public std::error_category
  * Thread-safe under C++11+ guaranteed initialisation of function-local
  * statics.  The returned reference has static storage duration.
  *
- * @return Reference to the canonical `ove::cpp` error category.
+ * @return Reference to the canonical oveRTOS error category.
  */
-inline const std::error_category &ove_category() noexcept
+inline const std::error_category &error_category() noexcept
 {
-	static const detail::ove_error_category instance;
+	static const detail::error_category_impl instance;
 	return instance;
 }
 
@@ -251,13 +233,13 @@ inline const std::error_category &ove_category() noexcept
  * Together with the @c std::is_error_code_enum specialisation at the
  * bottom of this header, this enables implicit conversion:
  * @code
- *   std::error_code ec = ove::cpp::Error::Timeout;
+ *   std::error_code ec = ove::Error::Timeout;
  *   if (ec) std::cerr << ec.message() << '\n';
  * @endcode
  */
 inline std::error_code make_error_code(Error e) noexcept
 {
-	return {static_cast<int>(e), ove_category()};
+	return {static_cast<int>(e), error_category()};
 }
 
 /**
@@ -265,8 +247,7 @@ inline std::error_code make_error_code(Error e) noexcept
  *
  * Maps @c OVE_OK → expected value, anything else → @ref Error of the
  * corresponding variant.  This is the canonical bridge between the C
- * substrate's `int rc` convention and the `ove::cpp::*` `Result<>`
- * convention.
+ * substrate's `int rc` convention and the C++ `Result<>` convention.
  *
  * @param rc Return code from a substrate call (e.g. `ove_mutex_lock`).
  * @return Empty `Result<void>` on success, `unexpected(Error)` on
@@ -304,15 +285,15 @@ template <class T>
 	return std::unexpected{static_cast<Error>(rc)};
 }
 
-} /* namespace ove::cpp */
+} /* namespace ove */
 
 /*
- * Enable `std::error_code ec = ove::cpp::Error::X;` — the standard
- * lookup rule is: if `is_error_code_enum<E>` is true, error_code's
+ * Enable `std::error_code ec = ove::Error::X;` — the standard lookup
+ * rule is: if `is_error_code_enum<E>` is true, error_code's
  * converting constructor calls `make_error_code(E)` via ADL.
  */
 namespace std
 {
-template <> struct is_error_code_enum<ove::cpp::Error> : true_type {
+template <> struct is_error_code_enum<ove::Error> : true_type {
 };
 } /* namespace std */

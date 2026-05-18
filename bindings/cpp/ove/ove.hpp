@@ -61,6 +61,7 @@
 #pragma once
 
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 #include <ove/sync.hpp>
 #include <ove/eventgroup.hpp>
 #include <ove/queue.hpp>
