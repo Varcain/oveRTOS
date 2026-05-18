@@ -44,7 +44,9 @@ static void test_cpp_event_wait_timeout(void **state)
 {
 	(void)state;
 	ove::Event evt;
-	assert_int_equal(evt.try_wait_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = evt.try_wait_for(std::chrono::milliseconds{50});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 static void test_cpp_event_cross_thread(void **state)
@@ -55,7 +57,8 @@ static void test_cpp_event_cross_thread(void **state)
 
 	{
 		auto th = make_test_thread("esig", cpp_evt_signal_entry, &ctx);
-		assert_int_equal(evt.try_wait_for(std::chrono::milliseconds{500}), OVE_OK);
+		ove::Result<void> r = evt.try_wait_for(std::chrono::milliseconds{500});
+		assert_true(r.has_value());
 	}
 	assert_int_equal(ctx.done, 1);
 }
@@ -74,7 +77,9 @@ static void test_cpp_event_auto_reset(void **state)
 	ove::Event evt;
 	evt.signal();
 	assert_true(evt.try_wait());
-	assert_int_equal(evt.try_wait_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = evt.try_wait_for(std::chrono::milliseconds{50});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 /* ── Wrapper-specific tests ─────────────────────────────────────────── */
@@ -112,6 +117,23 @@ static void test_cpp_event_not_copyable(void **state)
 		      "Event must not be copy assignable");
 }
 
+/* Method-return-type pins.  Catches an accidental revert of the
+ * `try_wait_for`/`try_wait_until` migration from `int` to
+ * `Result<void>` at compile time. */
+static void test_cpp_event_return_type_shape(void **state)
+{
+	(void)state;
+	static_assert(std::is_same_v<decltype(std::declval<ove::Event>().wait()), void>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Event>().try_wait()), bool>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Event>().try_wait_for(
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Event>().try_wait_until(
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Event>().signal()), void>);
+}
+
 int test_cpp_event_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -127,6 +149,7 @@ int test_cpp_event_run(void)
 		cmocka_unit_test(test_cpp_event_move_construct),
 #endif
 		cmocka_unit_test(test_cpp_event_not_copyable),
+		cmocka_unit_test(test_cpp_event_return_type_shape),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
