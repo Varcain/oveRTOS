@@ -317,8 +317,9 @@ macro(ove_nuttx_register_app)
     include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
     ove_apply_app_language(${_OVE_NX_TARGET})
 
-    # Force C++20 for oveRTOS C++ bindings — NuttX defaults to C++17
-    # but the bindings use concepts, requires, and std::integral.
+    # Force C++23 for oveRTOS C++ bindings — NuttX defaults to C++17
+    # but the bindings use concepts/requires (C++20) and `ove::cpp`
+    # builds on `std::expected` (C++23).
     #
     # `-D_STDLIB_H_=1` suppresses the toolchain's <stdlib.h> body when
     # libstdc++'s <cstdlib> does `#include_next <stdlib.h>`.  NuttX's
@@ -333,7 +334,7 @@ macro(ove_nuttx_register_app)
     # safe.
     if(OVE_APP_LANG STREQUAL "cpp")
         target_compile_options(${_OVE_NX_TARGET} PRIVATE
-            $<$<COMPILE_LANGUAGE:CXX>:-std=c++20>
+            $<$<COMPILE_LANGUAGE:CXX>:-std=c++23>
             $<$<COMPILE_LANGUAGE:CXX>:-D_STDLIB_H_=1>)
     endif()
 

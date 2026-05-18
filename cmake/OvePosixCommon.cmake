@@ -58,7 +58,7 @@ macro(ove_posix_setup_project)
     # enabled (TFLM is C++).
     if(OVE_APP_LANG STREQUAL "cpp" OR OVE_INFER)
         project(${_OVE_POSIX_NAME} C CXX)
-        set(CMAKE_CXX_STANDARD 17)
+        set(CMAKE_CXX_STANDARD 23)
         set(CMAKE_CXX_STANDARD_REQUIRED ON)
     else()
         project(${_OVE_POSIX_NAME} C)

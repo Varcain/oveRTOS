@@ -163,16 +163,17 @@ macro(ove_zephyr_add_common_includes)
     endif()
 
     # Picolibc's <stdlib.h> guards malloc/calloc/free/realloc behind
-    # `__POSIX_VISIBLE >= 200809`.  GCC's `-std=c++20` (strict, set by
-    # Zephyr's compiler-cpp dialect) predefines __STRICT_ANSI__, which
-    # forces picolibc's sys/cdefs.h to set __POSIX_VISIBLE == 0 — so
+    # `__POSIX_VISIBLE >= 200809`.  GCC's strict-mode `-std=c++NN` (set
+    # by Zephyr's compiler-cpp dialect — currently `-std=c++23` via
+    # `CONFIG_STD_CPP23`) predefines __STRICT_ANSI__, which forces
+    # picolibc's sys/cdefs.h to set __POSIX_VISIBLE == 0 — so
     # libstdc++'s <cstdlib> can't find `::calloc`/`::free`/`::malloc`/
     # `::realloc` and rejects every C++ TU that pulls in <memory>.
     # Undefining __STRICT_ANSI__ tells picolibc to honour
     # _POSIX_C_SOURCE / _DEFAULT_SOURCE, then we set the POSIX level
     # high enough to expose the malloc family.  Switching to
-    # `-std=gnu++20` instead would also work but Zephyr's
-    # CONFIG_STD_CPP20 hard-codes the strict dialect.
+    # `-std=gnu++NN` instead would also work but Zephyr's
+    # CONFIG_STD_CPP* options hard-code the strict dialect.
     if(OVE_APP_LANG STREQUAL "cpp")
         target_compile_options(app PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-U__STRICT_ANSI__>)
