@@ -501,9 +501,13 @@ macro_rules! stream {
 
 /// Create a [`crate::Workqueue`] that works in both heap and zero-heap modes.
 ///
+/// `$name` must be a `c"..."` literal — the underlying API requires a
+/// null-terminated string and the C-string literal makes the compiler
+/// enforce that.
+///
 /// # Example
 /// ```ignore
-/// let wq = ove::workqueue!("myq", Priority::Normal, 4096);
+/// let wq = ove::workqueue!(c"myq", Priority::Normal, 4096);
 /// ```
 #[cfg(has_workqueue)]
 #[macro_export]
@@ -511,7 +515,7 @@ macro_rules! workqueue {
     ($name:expr, $prio:expr, $stack:expr) => {{
         #[cfg(not(zero_heap))]
         {
-            $crate::Workqueue::new(concat!($name, "\0").as_bytes(), $prio, $stack).unwrap()
+            $crate::Workqueue::new($name, $prio, $stack).unwrap()
         }
         #[cfg(all(zero_heap, not(rtos_zephyr)))]
         {
@@ -523,7 +527,7 @@ macro_rules! workqueue {
             unsafe {
                 $crate::Workqueue::from_static(
                     core::ptr::addr_of_mut!(_S),
-                    concat!($name, "\0").as_bytes(),
+                    $name,
                     $prio,
                     $stack,
                     core::ptr::addr_of_mut!(_STACK) as *mut _,
@@ -546,7 +550,7 @@ macro_rules! workqueue {
             unsafe {
                 $crate::Workqueue::from_static(
                     core::ptr::addr_of_mut!(_S),
-                    concat!($name, "\0").as_bytes(),
+                    $name,
                     $prio,
                     $stack,
                     core::ptr::addr_of_mut!(_STACK) as *mut _,
