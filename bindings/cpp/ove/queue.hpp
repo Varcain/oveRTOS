@@ -16,6 +16,8 @@
 #include <ove/queue.h>
 #include <ove/types.hpp>
 
+#include <type_traits>
+
 #ifdef CONFIG_OVE_QUEUE
 
 namespace ove
@@ -42,6 +44,15 @@ namespace ove
  */
 template <typename T, size_t MaxItems = 0> class Queue
 {
+	static_assert(
+		std::is_trivially_copyable_v<T>,
+		"ove::Queue<T, N> requires T to be trivially copyable. "
+		"The substrate memcpy()s items of sizeof(T) bytes — non-trivial "
+		"types (std::string, std::vector, std::unique_ptr, user types with "
+		"explicit copy/move ctors or destructors that do bookkeeping) corrupt "
+		"their internal state on memcpy.  Wrap them in a smart pointer or "
+		"POD struct, or transfer ownership by pointer through the queue.");
+
       public:
 	/**
 	 * @brief Constructs and initialises the queue.

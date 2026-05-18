@@ -1,5 +1,7 @@
 #include "../framework/ove_test.hpp"
 
+#include <vector>
+
 struct pair_t {
 	int a;
 	int b;
@@ -220,6 +222,55 @@ static void test_cpp_queue_not_copyable(void **state)
 		      "Queue must not be copy assignable");
 }
 
+/* ── Iter A1.2: trivially_copyable static_assert constraint ──────────
+ *
+ * The substrate memcpy()s items of sizeof(T) bytes; non-trivial types
+ * (std::string, std::vector, std::unique_ptr, user types with explicit
+ * copy/move ctors or destructors that do bookkeeping) corrupt their
+ * internal state on memcpy.
+ *
+ * The Queue<T,N> template now carries a static_assert rejecting any T
+ * that isn't trivially copyable.  This is a hard compile error at
+ * template instantiation — there's no SFINAE-friendly way to "test"
+ * that a bad type would fail to compile without itself failing the
+ * build, so the verification here is structural:
+ *   1. Trivially-copyable types compile (int, struct of PODs).
+ *   2. Non-trivial type categories are recognized by std::is_trivially_copyable.
+ *
+ * Bad cases (uncomment any to manually verify the static_assert fires):
+ *   // ove::Queue<std::string, 8> bad1;
+ *   // ove::Queue<std::vector<int>, 8> bad2;
+ *   // ove::Queue<std::unique_ptr<int>, 8> bad3;
+ */
+struct CppQueuePodMsg {
+	int id;
+	float value;
+	char tag[8];
+};
+
+static void test_cpp_queue_trivially_copyable_constraint(void **state)
+{
+	(void)state;
+	/* Positive: instantiating with trivially-copyable T compiles. */
+	static_assert(std::is_trivially_copyable_v<int>);
+	static_assert(std::is_trivially_copyable_v<CppQueuePodMsg>);
+	static_assert(std::is_trivially_copyable_v<ove_thread_state_t>);
+
+	/* The Queue template is constrained — declaring these aliases
+	 * proves the static_assert accepts them at instantiation. */
+	using QInt = ove::Queue<int, 4>;
+	using QPod = ove::Queue<CppQueuePodMsg, 4>;
+	using QEnum = ove::Queue<ove_thread_state_t, 4>;
+	(void)sizeof(QInt);
+	(void)sizeof(QPod);
+	(void)sizeof(QEnum);
+
+	/* Sanity-check the std trait recognises a non-trivial type — if
+	 * this fails the static_assert in queue.hpp is the wrong check. */
+	static_assert(!std::is_trivially_copyable_v<std::vector<int>>,
+		      "vector should not be trivially copyable — sanity check");
+}
+
 int test_cpp_queue_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -239,6 +290,7 @@ int test_cpp_queue_run(void)
 #endif
 		cmocka_unit_test(test_cpp_queue_type_safety),
 		cmocka_unit_test(test_cpp_queue_not_copyable),
+		cmocka_unit_test(test_cpp_queue_trivially_copyable_constraint),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
