@@ -935,6 +935,75 @@ class CondVar
 	}
 
 	/**
+	 * @brief Predicate-loop wait.  `std::condition_variable::wait`
+	 * predicate-overload analog.
+	 *
+	 * Equivalent to:
+	 * @code
+	 *   while (!pred()) wait(mtx);
+	 * @endcode
+	 * Handles spurious wake-ups internally; caller cannot accidentally
+	 * write the `if (cv.wait(...) == OVE_OK && ready) { ... }`
+	 * race-prone form.
+	 *
+	 * @param[in] mtx  The mutex (locked by the calling thread).
+	 * @param[in] pred Callable returning bool.  Evaluated under @p mtx.
+	 */
+	template <typename Predicate>
+	void wait(Mutex &mtx, Predicate pred)
+	{
+		while (!pred()) {
+			wait(mtx);
+		}
+	}
+
+	/**
+	 * @brief Bounded-wait with predicate.
+	 * `std::condition_variable::wait_for` predicate-overload analog.
+	 *
+	 * Loops on @p pred, returning when either @p pred() becomes true
+	 * or @p rel elapses.
+	 *
+	 * @return `true` if @p pred() was true on return; `false` if
+	 *         the timeout elapsed with @p pred() still false.
+	 */
+	template <typename Rep, typename Period, typename Predicate>
+	[[nodiscard]] bool try_wait_for(Mutex &mtx,
+					 std::chrono::duration<Rep, Period> rel,
+					 Predicate pred)
+	{
+		const auto deadline = steady_clock::now() + rel;
+		return try_wait_until(mtx, deadline, pred);
+	}
+
+	/**
+	 * @brief Deadline-based wait with predicate.
+	 * `std::condition_variable::wait_until` predicate-overload analog.
+	 *
+	 * Loops on @p pred, recomputing the remaining timeout on each
+	 * iteration so spurious wake-ups don't shorten the effective
+	 * deadline.
+	 *
+	 * @return `true` if @p pred() was true on return; `false` if
+	 *         the deadline elapsed with @p pred() still false.
+	 */
+	template <typename Clock, typename Duration, typename Predicate>
+	[[nodiscard]] bool try_wait_until(Mutex &mtx,
+					   const std::chrono::time_point<Clock, Duration> &deadline,
+					   Predicate pred)
+	{
+		while (!pred()) {
+			const auto now = Clock::now();
+			if (now >= deadline)
+				return pred();
+			const int rc = ove_condvar_wait(handle_, mtx.handle(),
+							to_timeout_ns(deadline - now));
+			(void)rc; /* spurious wake-up or timeout — re-check pred */
+		}
+		return true;
+	}
+
+	/**
 	 * @brief Wakes one task waiting on this condition variable.
 	 * `std::condition_variable::notify_one` analog.
 	 */
