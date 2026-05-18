@@ -52,7 +52,7 @@ static void test_cpp_static_event_init(void **state)
 	ove::Event evt;
 	assert_true(evt.valid());
 	evt.signal();
-	assert_int_equal(evt.wait(std::chrono::milliseconds{0}), OVE_OK);
+	assert_true(evt.try_wait());
 }
 
 /* ── CondVar ────────────────────────────────────────────────────────── */
