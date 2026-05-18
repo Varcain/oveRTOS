@@ -10,3 +10,4 @@ path = "src/main.rs"
 
 [dependencies]
 ove = { path = "../../bindings/rust/ove", features = ["std"], default-features = false }
+static_assertions = "1.1"

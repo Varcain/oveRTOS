@@ -6,8 +6,15 @@
 
 use crate::framework::{run_suite, PtrGuard};
 use crate::test_entry;
-use ove::{Mutex, Thread, WAIT_FOREVER, Error};
+use ove::{Mutex, MutexGuard, Thread, WAIT_FOREVER, Error};
+use static_assertions::assert_not_impl_all;
 use std::sync::atomic::{AtomicI32, AtomicPtr, Ordering};
+
+// Compile-time invariant: a MutexGuard cannot be sent to another thread.
+// The locking thread must release the lock; cross-thread Send would
+// allow `ove_mutex_unlock` from a thread that never issued the matching
+// `ove_mutex_lock` — backend-defined UB (POSIX EPERM, FreeRTOS assert).
+assert_not_impl_all!(MutexGuard<'static>: Send);
 
 static COUNTER: AtomicI32 = AtomicI32::new(0);
 static COUNTER_MTX: AtomicPtr<Mutex> = AtomicPtr::new(core::ptr::null_mut());
