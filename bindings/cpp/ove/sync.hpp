@@ -338,18 +338,21 @@ class RecursiveMutex
 	}
 
 	/**
-	 * @brief Bounded-wait acquisition.
+	 * @brief Bounded-wait acquisition.  Same shape as
+	 *        @ref Mutex::try_lock_for — see that method for the
+	 *        `TimedLockable` non-satisfaction rationale.
 	 *
-	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
-	 *         negative error code on backend failure.
-	 *
-	 * @note Currently returns @c int — RecursiveMutex has not yet
-	 *       migrated to the @ref Result<void> shape that @ref Mutex
-	 *       uses.  Tracked as a follow-up iteration.
+	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
+	 * @return Empty `Result<void>` on acquisition; `unexpected`
+	 *         @ref Error::Timeout if the deadline elapsed without
+	 *         the lock being acquired; `unexpected` with another
+	 *         @ref Error value on backend failure.
 	 */
-	[[nodiscard]] int try_lock_for(std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_lock_for(const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_recursive_mutex_lock(handle_, to_timeout_ns(rel));
+		return from_rc(ove_recursive_mutex_lock(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
@@ -358,16 +361,15 @@ class RecursiveMutex
 	 * Same clock-templating rationale as @ref Mutex::try_lock_until
 	 * (deadline converted to a relative duration internally).
 	 *
-	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
-	 *         negative error code on backend failure.
-	 *
-	 * @note Currently returns @c int — see @ref try_lock_for.
+	 * @return As @ref try_lock_for — `Result<void>` with
+	 *         `Error::Timeout` on timeout.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_recursive_mutex_lock(handle_, to_timeout_ns(rel));
+		return from_rc(ove_recursive_mutex_lock(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
@@ -402,6 +404,11 @@ class RecursiveMutex
 	ove_mutex_storage_t storage_ = {};
 #endif
 };
+
+static_assert(detail::basic_lockable<RecursiveMutex>,
+	      "ove::RecursiveMutex must satisfy the BasicLockable named requirement");
+static_assert(detail::lockable<RecursiveMutex>,
+	      "ove::RecursiveMutex must satisfy the Lockable named requirement");
 
 /**
  * @class LockGuard
