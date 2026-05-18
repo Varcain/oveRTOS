@@ -187,8 +187,14 @@ pub use error::{Error, Result};
 #[allow(deprecated)] // EG_* shims kept for compatibility; new code uses WaitFlags
 pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, WaitFlags};
 pub use fmt::FmtBuf;
+#[cfg(has_i2c)]
+pub use i2c::I2c;
 #[cfg(has_queue)]
 pub use queue::Queue;
+#[cfg(has_spi)]
+pub use spi::Spi;
+#[cfg(has_uart)]
+pub use uart::Uart;
 pub use init_cell::{InitCell, InitMut};
 #[cfg(has_stream)]
 pub use stream::Stream;
