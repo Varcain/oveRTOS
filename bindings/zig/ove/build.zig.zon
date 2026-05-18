@@ -1,7 +1,13 @@
 .{
     .name = "ove",
     .version = "0.1.0",
-    .minimum_zig_version = "0.13.0",
+    // Pinned to 0.15: binding uses 0.15-only patterns throughout
+    // (unified `create(std.mem.Allocator)` shape on every primitive,
+    // `comptime anytype` trampoline introspection on `Thread.spawn`
+    // and `Timer.create`, `Instant.now()` `+|` saturating arithmetic).
+    // Earlier zig versions either lack these constructs or have
+    // incompatible stdlib API shapes.
+    .minimum_zig_version = "0.15.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",
