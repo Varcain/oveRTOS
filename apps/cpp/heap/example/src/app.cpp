@@ -76,7 +76,7 @@ static void producer_thread(void *arg)
 		if (ret != OVE_OK) {
 			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
 		}
-		ove::Thread<>::sleep_ms(500);
+		ove::this_thread::sleep_ms(500);
 	}
 }
 
@@ -176,7 +176,7 @@ static void graphics_thread(void *arg)
 			ove_lvgl_tick(elapsed_ms);
 			ove_lvgl_handler();
 		}
-		ove::Thread<>::sleep_ms(33);
+		ove::this_thread::sleep_ms(33);
 	}
 }
 

@@ -433,7 +433,7 @@ static void graphics_thread(void *arg)
 		ove_lvgl_handler();
 		ove_lvgl_unlock();
 
-		ove::Thread<>::sleep_ms(30);
+		ove::this_thread::sleep_ms(30);
 	}
 }
 

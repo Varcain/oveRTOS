@@ -28,7 +28,7 @@ extern "C" {
 
 static inline void test_msleep(uint32_t ms)
 {
-	ove::Thread<>::sleep_ms(ms);
+	ove::this_thread::sleep_ms(ms);
 }
 
 template <size_t StackSize = 4096>
