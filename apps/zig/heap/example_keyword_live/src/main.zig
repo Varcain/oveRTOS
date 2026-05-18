@@ -14,6 +14,10 @@
 const std = @import("std");
 const ove = @import("ove");
 
+/// Allocator backing every binding primitive in this app.
+const app_allocator = std.heap.page_allocator;
+
+
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
 pub const std_options: std.Options = .{
@@ -352,7 +356,7 @@ fn appMain() void {
     };
     std.log.info("Audio streaming: 16kHz mono, DMIC input", .{});
 
-    infer_thread = ove.Thread(8192).spawn(.{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
+    infer_thread = ove.Thread(8192).spawn(app_allocator, .{ .name = "infer", .priority = .normal }, inferThread, .{}) catch {
         std.log.err("Failed to spawn infer thread", .{});
         return;
     };

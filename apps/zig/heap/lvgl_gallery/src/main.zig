@@ -10,6 +10,10 @@
 const std = @import("std");
 const ove = @import("ove");
 
+/// Allocator backing every binding primitive in this app.
+const app_allocator = std.heap.page_allocator;
+
+
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
 pub const std_options: std.Options = .{
@@ -352,11 +356,11 @@ var graphics_thread: ?ove.Thread(4096) = null;
 fn appMain() void {
     std.log.info("LVGL gallery (Zig): init", .{});
 
-    graphics_thread = ove.Thread(4096).spawn(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = ove.Thread(4096).spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         std.log.err("Failed to spawn graphics", .{});
         return;
     };
-    ui_timer = ove.Timer.create(uiTimerCallback, 100, .periodic) catch {
+    ui_timer = ove.Timer.create(app_allocator, .{ .period_ms = 100, .mode = .periodic }, uiTimerCallback, .{}) catch {
         std.log.err("Timer create fail", .{});
         return;
     };

@@ -14,6 +14,10 @@
 const std = @import("std");
 const ove = @import("ove");
 
+/// Allocator backing every binding primitive in this app.
+const app_allocator = std.heap.page_allocator;
+
+
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
 pub const std_options: std.Options = .{
@@ -129,11 +133,11 @@ fn appMain() void {
     pm.setPolicy(batteryPolicy, null) catch {};
     pm.setBudget(6000) catch {};
 
-    sensor_thread = Thread(4096).spawn(.{ .name = "sensor", .priority = .normal }, sensorEntry, .{}) catch {
+    sensor_thread = Thread(4096).spawn(app_allocator, .{ .name = "sensor", .priority = .normal }, sensorEntry, .{}) catch {
         std.log.err("Failed to spawn sensor", .{});
         return;
     };
-    monitor_thread = Thread(4096).spawn(.{ .name = "monitor", .priority = .low }, monitorEntry, .{}) catch {
+    monitor_thread = Thread(4096).spawn(app_allocator, .{ .name = "monitor", .priority = .low }, monitorEntry, .{}) catch {
         std.log.err("Failed to spawn monitor", .{});
         return;
     };

@@ -213,7 +213,7 @@ fn appMain() void {
         return;
     };
 
-    ui_timer = Timer.create(app_allocator, uiTimerCallback, 200, .periodic) catch {
+    ui_timer = Timer.create(app_allocator, .{ .period_ms = 200, .mode = .periodic }, uiTimerCallback, .{}) catch {
         std.log.err("Failed to create UI timer", .{});
         return;
     };
