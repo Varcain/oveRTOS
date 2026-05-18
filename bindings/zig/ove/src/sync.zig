@@ -95,7 +95,9 @@ inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
     if (rc < 0) panicUnexpected(ctx, rc);
 }
 
-const Duration = @import("time.zig").Duration;
+const time_mod = @import("time.zig");
+const Duration = time_mod.Duration;
+const Instant = time_mod.Instant;
 const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
 // ---------------------------------------------------------------------------
@@ -140,6 +142,14 @@ const HeapMutex = struct {
         if (rc < 0) return mapTimeoutOnly("Mutex.lockFor", rc);
     }
 
+    /// Lock with an absolute deadline.  Pass `Instant.forever` to
+    /// block indefinitely.
+    pub inline fn lockUntil(self: Mutex, deadline: Instant) LockError!void {
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Mutex.lockUntil", rc);
+    }
+
     pub inline fn unlock(self: Mutex) void {
         c.ove_mutex_unlock(self.handle);
     }
@@ -167,6 +177,12 @@ const HeapMutex = struct {
     /// Bounded-duration acquire.
     pub fn acquireFor(self: Mutex, d: Duration) LockError!Guard {
         try self.lockFor(d);
+        return .{ .mutex = self };
+    }
+
+    /// Deadline-based acquire.
+    pub fn acquireUntil(self: Mutex, deadline: Instant) LockError!Guard {
+        try self.lockUntil(deadline);
         return .{ .mutex = self };
     }
 };
@@ -214,6 +230,13 @@ const ZeroHeapMutex = struct {
         if (rc < 0) return mapTimeoutOnly("Mutex.lockFor", rc);
     }
 
+    pub inline fn lockUntil(self: *Mutex, deadline: Instant) LockError!void {
+        self.tracker.assertSame(self, "ove.Mutex");
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Mutex.lockUntil", rc);
+    }
+
     pub inline fn unlock(self: *Mutex) void {
         self.tracker.assertSame(self, "ove.Mutex");
         c.ove_mutex_unlock(self.handle);
@@ -233,6 +256,11 @@ const ZeroHeapMutex = struct {
 
     pub fn acquireFor(self: *Mutex, d: Duration) LockError!Guard {
         try self.lockFor(d);
+        return .{ .mutex = self };
+    }
+
+    pub fn acquireUntil(self: *Mutex, deadline: Instant) LockError!Guard {
+        try self.lockUntil(deadline);
         return .{ .mutex = self };
     }
 };
@@ -273,6 +301,12 @@ const HeapRecursiveMutex = struct {
         if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lockFor", rc);
     }
 
+    pub inline fn lockUntil(self: RecursiveMutex, deadline: Instant) LockError!void {
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_recursive_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lockUntil", rc);
+    }
+
     pub inline fn unlock(self: RecursiveMutex) void {
         c.ove_recursive_mutex_unlock(self.handle);
     }
@@ -291,6 +325,11 @@ const HeapRecursiveMutex = struct {
 
     pub fn acquireFor(self: RecursiveMutex, d: Duration) LockError!Guard {
         try self.lockFor(d);
+        return .{ .mutex = self };
+    }
+
+    pub fn acquireUntil(self: RecursiveMutex, deadline: Instant) LockError!Guard {
+        try self.lockUntil(deadline);
         return .{ .mutex = self };
     }
 };
@@ -333,6 +372,13 @@ const ZeroHeapRecursiveMutex = struct {
         if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lockFor", rc);
     }
 
+    pub inline fn lockUntil(self: *RecursiveMutex, deadline: Instant) LockError!void {
+        self.tracker.assertSame(self, "ove.RecursiveMutex");
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_recursive_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lockUntil", rc);
+    }
+
     pub inline fn unlock(self: *RecursiveMutex) void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
         c.ove_recursive_mutex_unlock(self.handle);
@@ -352,6 +398,11 @@ const ZeroHeapRecursiveMutex = struct {
 
     pub fn acquireFor(self: *RecursiveMutex, d: Duration) LockError!Guard {
         try self.lockFor(d);
+        return .{ .mutex = self };
+    }
+
+    pub fn acquireUntil(self: *RecursiveMutex, deadline: Instant) LockError!Guard {
+        try self.lockUntil(deadline);
         return .{ .mutex = self };
     }
 };
@@ -394,6 +445,13 @@ const HeapSemaphore = struct {
     pub inline fn timedWait(self: Semaphore, d: Duration) WaitError!void {
         const rc = c.ove_sem_take(self.handle, d.ns);
         if (rc < 0) return mapTimeoutOnly("Semaphore.timedWait", rc);
+    }
+
+    /// Decrement with an absolute deadline.
+    pub inline fn timedWaitUntil(self: Semaphore, deadline: Instant) WaitError!void {
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_sem_take(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Semaphore.timedWaitUntil", rc);
     }
 
     /// Increment (release) the semaphore.  `std.Thread.Semaphore.post`
@@ -441,6 +499,13 @@ const ZeroHeapSemaphore = struct {
         if (rc < 0) return mapTimeoutOnly("Semaphore.timedWait", rc);
     }
 
+    pub inline fn timedWaitUntil(self: *Semaphore, deadline: Instant) WaitError!void {
+        self.tracker.assertSame(self, "ove.Semaphore");
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_sem_take(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Semaphore.timedWaitUntil", rc);
+    }
+
     pub inline fn post(self: *Semaphore) void {
         self.tracker.assertSame(self, "ove.Semaphore");
         c.ove_sem_give(self.handle);
@@ -484,6 +549,13 @@ const HeapEvent = struct {
     pub inline fn timedWait(self: Event, d: Duration) WaitError!void {
         const rc = c.ove_event_wait(self.handle, d.ns);
         if (rc < 0) return mapTimeoutOnly("Event.timedWait", rc);
+    }
+
+    /// Block by the given absolute deadline.
+    pub inline fn timedWaitUntil(self: Event, deadline: Instant) WaitError!void {
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_event_wait(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Event.timedWaitUntil", rc);
     }
 
     pub inline fn signal(self: Event) void {
@@ -531,6 +603,13 @@ const ZeroHeapEvent = struct {
         self.tracker.assertSame(self, "ove.Event");
         const rc = c.ove_event_wait(self.handle, d.ns);
         if (rc < 0) return mapTimeoutOnly("Event.timedWait", rc);
+    }
+
+    pub inline fn timedWaitUntil(self: *Event, deadline: Instant) WaitError!void {
+        self.tracker.assertSame(self, "ove.Event");
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_event_wait(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Event.timedWaitUntil", rc);
     }
 
     pub inline fn signal(self: *Event) void {
@@ -582,6 +661,31 @@ const HeapCondVar = struct {
         if (rc < 0) return mapTimeoutOnly("CondVar.timedWait", rc);
     }
 
+    /// Atomically release `mutex` and wait by an absolute deadline.
+    pub inline fn timedWaitUntil(self: CondVar, mutex: Mutex, deadline: Instant) WaitError!void {
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_condvar_wait(self.handle, mutex.handle, t);
+        if (rc < 0) return mapTimeoutOnly("CondVar.timedWaitUntil", rc);
+    }
+
+    /// Predicate-driven deadline wait — loops on `pred(args)` to handle
+    /// spurious wake-ups.  `std.Thread.Condition` lacks this variant;
+    /// it's a binding-side ergonomic add.
+    ///
+    /// Returns `error.Timeout` if `pred` is still true at deadline.
+    pub fn waitWhileUntil(
+        self: CondVar,
+        mutex: Mutex,
+        deadline: Instant,
+        comptime pred: anytype,
+        args: anytype,
+    ) WaitError!void {
+        while (@call(.auto, pred, args)) {
+            if (Instant.now().ns >= deadline.ns) return error.Timeout;
+            try self.timedWaitUntil(mutex, deadline);
+        }
+    }
+
     pub inline fn signal(self: CondVar) void {
         c.ove_condvar_signal(self.handle);
     }
@@ -622,6 +726,27 @@ const ZeroHeapCondVar = struct {
         self.tracker.assertSame(self, "ove.CondVar");
         const rc = c.ove_condvar_wait(self.handle, mutex.handle, d.ns);
         if (rc < 0) return mapTimeoutOnly("CondVar.timedWait", rc);
+    }
+
+    pub inline fn timedWaitUntil(self: *CondVar, mutex: *Mutex, deadline: Instant) WaitError!void {
+        self.tracker.assertSame(self, "ove.CondVar");
+        const t = time_mod.deadlineToTimeoutNs(deadline);
+        const rc = c.ove_condvar_wait(self.handle, mutex.handle, t);
+        if (rc < 0) return mapTimeoutOnly("CondVar.timedWaitUntil", rc);
+    }
+
+    pub fn waitWhileUntil(
+        self: *CondVar,
+        mutex: *Mutex,
+        deadline: Instant,
+        comptime pred: anytype,
+        args: anytype,
+    ) WaitError!void {
+        self.tracker.assertSame(self, "ove.CondVar");
+        while (@call(.auto, pred, args)) {
+            if (Instant.now().ns >= deadline.ns) return error.Timeout;
+            try self.timedWaitUntil(mutex, deadline);
+        }
     }
 
     pub inline fn signal(self: *CondVar) void {

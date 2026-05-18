@@ -9,7 +9,9 @@ const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
-const Duration = @import("time.zig").Duration;
+const time_mod = @import("time.zig");
+const Duration = time_mod.Duration;
+const Instant = time_mod.Instant;
 const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
 // Per-operation narrow error sets.  Stream sends/receives a byte count
@@ -92,6 +94,15 @@ fn HeapStream(comptime size: usize) type {
             return sent;
         }
 
+        /// Deadline-based send.
+        pub inline fn sendUntil(self: Self, data: []const u8, deadline: Instant) SendError!usize {
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            var sent: usize = 0;
+            const rc = c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.sendUntil", rc);
+            return sent;
+        }
+
         /// Forever-blocking receive; returns bytes actually read.
         /// Infallible.
         pub inline fn recv(self: Self, buf: []u8) usize {
@@ -106,6 +117,15 @@ fn HeapStream(comptime size: usize) type {
             var received: usize = 0;
             const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, d.ns, &received);
             if (rc < 0) return mapTimeoutOnly("Stream.recvFor", rc);
+            return received;
+        }
+
+        /// Deadline-based receive.
+        pub inline fn recvUntil(self: Self, buf: []u8, deadline: Instant) RecvError!usize {
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            var received: usize = 0;
+            const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.recvUntil", rc);
             return received;
         }
 
@@ -183,6 +203,15 @@ fn ZeroHeapStream(comptime size: usize) type {
             return sent;
         }
 
+        pub inline fn sendUntil(self: *Self, data: []const u8, deadline: Instant) SendError!usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            var sent: usize = 0;
+            const rc = c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.sendUntil", rc);
+            return sent;
+        }
+
         pub inline fn recv(self: *Self, buf: []u8) usize {
             self.tracker.assertSame(self, "ove.Stream");
             var received: usize = 0;
@@ -196,6 +225,15 @@ fn ZeroHeapStream(comptime size: usize) type {
             var received: usize = 0;
             const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, d.ns, &received);
             if (rc < 0) return mapTimeoutOnly("Stream.recvFor", rc);
+            return received;
+        }
+
+        pub inline fn recvUntil(self: *Self, buf: []u8, deadline: Instant) RecvError!usize {
+            self.tracker.assertSame(self, "ove.Stream");
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            var received: usize = 0;
+            const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.recvUntil", rc);
             return received;
         }
 

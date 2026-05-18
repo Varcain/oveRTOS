@@ -102,15 +102,55 @@ pub inline fn nowSteadyNs() u64 {
     return out;
 }
 
-/// Convert an absolute steady-clock deadline to the remaining duration,
-/// preserving the `OVE_WAIT_FOREVER` sentinel (== `u64` max).  Returns 0
-/// when the deadline is in the past.
+/// Typed monotonic timestamp for `*Until(deadline)` methods.
+///
+/// Wraps a nanosecond count from the substrate's steady clock.
+/// Construct only via `Instant.now()`, the `.forever` sentinel, or
+/// arithmetic on an existing `Instant` — direct `@as(Instant, u64)`
+/// is rejected at compile time by the `pub fn` boundary.  Prevents
+/// the wrong-epoch / wrong-unit footgun:
+/// `std.time.nanoTimestamp()` (wall clock), `ove.time.getUs()`
+/// (wrong unit), or relative offsets all fail the type check at the
+/// call site.
+///
+/// ```zig
+/// const deadline = ove.time.Instant.now().addDuration(.millis(100));
+/// try mtx.lockUntil(deadline);
+/// try mtx.lockUntil(.forever);  // sentinel — block indefinitely
+/// ```
+pub const Instant = struct {
+    ns: u64,
+
+    /// Read the substrate's steady clock.  Infallible.
+    pub inline fn now() Instant {
+        return .{ .ns = nowSteadyNs() };
+    }
+
+    /// Sentinel "wait indefinitely" — maps to OVE_WAIT_FOREVER.  Pass
+    /// to any `*Until` method to block forever via the deadline path.
+    pub const forever: Instant = .{ .ns = std.math.maxInt(u64) };
+
+    /// Offset this instant by `d`.  Saturating add — does not wrap.
+    pub inline fn addDuration(self: Instant, d: Duration) Instant {
+        return .{ .ns = self.ns +| d.ns };
+    }
+
+    /// Duration between `self` and an earlier `other`.  Saturating
+    /// subtract — returns `.zero` if `other` is later than `self`.
+    pub inline fn sub(self: Instant, other: Instant) Duration {
+        return .{ .ns = self.ns -| other.ns };
+    }
+};
+
+/// Convert an absolute deadline to the remaining timeout in
+/// nanoseconds, preserving the `OVE_WAIT_FOREVER` sentinel.  Returns
+/// 0 when the deadline is in the past.
 ///
 /// Used internally by every binding's `*Until` variant.  The substrate
 /// exposes the same helper as `ove_time_deadline_to_timeout_ns` (a
 /// `static inline` in `<ove/time.h>` that `@cImport` doesn't surface).
-pub inline fn deadlineToTimeoutNs(deadline_ns: u64) u64 {
-    if (deadline_ns == @import("error.zig").wait_forever) return deadline_ns;
-    const now = nowSteadyNs();
-    return if (deadline_ns > now) deadline_ns - now else 0;
+pub inline fn deadlineToTimeoutNs(deadline: Instant) u64 {
+    if (deadline.ns == @import("error.zig").wait_forever) return deadline.ns;
+    const now_ns = nowSteadyNs();
+    return if (deadline.ns > now_ns) deadline.ns - now_ns else 0;
 }

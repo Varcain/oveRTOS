@@ -9,7 +9,9 @@ const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
-const Duration = @import("time.zig").Duration;
+const time_mod = @import("time.zig");
+const Duration = time_mod.Duration;
+const Instant = time_mod.Instant;
 const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
 // Per-operation narrow error sets.  See sync.zig for the rationale.
@@ -103,6 +105,13 @@ fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
             if (rc < 0) return mapSendError("Queue.sendFor", rc);
         }
 
+        /// Deadline-based send.  Pass `Instant.forever` to block.
+        pub inline fn sendUntil(self: Self, item: *const T, deadline: Instant) SendError!void {
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), t);
+            if (rc < 0) return mapSendError("Queue.sendUntil", rc);
+        }
+
         /// Forever-blocking receive.  Infallible after `create()`.
         pub inline fn recv(self: Self) T {
             var val: T = undefined;
@@ -125,6 +134,15 @@ fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
             var val: T = undefined;
             const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), d.ns);
             if (rc < 0) return mapRecvError("Queue.recvFor", rc);
+            return val;
+        }
+
+        /// Deadline-based receive.
+        pub inline fn recvUntil(self: Self, deadline: Instant) RecvError!T {
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            var val: T = undefined;
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), t);
+            if (rc < 0) return mapRecvError("Queue.recvUntil", rc);
             return val;
         }
 
@@ -188,6 +206,13 @@ fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
             if (rc < 0) return mapSendError("Queue.sendFor", rc);
         }
 
+        pub inline fn sendUntil(self: *Self, item: *const T, deadline: Instant) SendError!void {
+            self.tracker.assertSame(self, "ove.Queue");
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), t);
+            if (rc < 0) return mapSendError("Queue.sendUntil", rc);
+        }
+
         pub inline fn recv(self: *Self) T {
             self.tracker.assertSame(self, "ove.Queue");
             var val: T = undefined;
@@ -210,6 +235,15 @@ fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
             var val: T = undefined;
             const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), d.ns);
             if (rc < 0) return mapRecvError("Queue.recvFor", rc);
+            return val;
+        }
+
+        pub inline fn recvUntil(self: *Self, deadline: Instant) RecvError!T {
+            self.tracker.assertSame(self, "ove.Queue");
+            const t = time_mod.deadlineToTimeoutNs(deadline);
+            var val: T = undefined;
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), t);
+            if (rc < 0) return mapRecvError("Queue.recvUntil", rc);
             return val;
         }
 
