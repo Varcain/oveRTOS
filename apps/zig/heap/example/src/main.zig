@@ -32,6 +32,11 @@ const Thread = ove.Thread;
 const Queue = ove.Queue;
 const Timer = ove.Timer;
 
+/// Allocator backing every binding primitive in this app.  Page-allocated
+/// pool keeps the substrate's libc-malloc heap separate from
+/// allocator-managed storage so the two don't share accounting state.
+const app_allocator = std.heap.page_allocator;
+
 const lvgl = ove.lvgl;
 
 // ---------------------------------------------------------------------------
@@ -184,7 +189,7 @@ fn consumerEntry() void {
 fn appMain() void {
     ove.log.inf("Zig example (heap mode): init", .{});
 
-    queue = Queue(u32, 8).create() catch {
+    queue = Queue(u32, 8).create(app_allocator) catch {
         ove.log.err("Failed to create queue", .{});
         return;
     };

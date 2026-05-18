@@ -9,6 +9,14 @@ const ove = @import("ove");
 const Thread = ove.Thread;
 const w = ove.log.writer;
 
+/// Shared allocator for every primitive constructed in this test
+/// suite.  `page_allocator` uses mmap directly — separate from the
+/// substrate's libc-malloc heap, so we avoid any cross-allocator
+/// accounting pathologies during the suite's create/deinit churn.
+/// Zero-heap-mode builds would need a static-backed allocator instead
+/// — handled in a future iteration (B2 three-layer ban).
+const test_allocator = std.heap.page_allocator;
+
 // ---------------------------------------------------------------------------
 // Test framework
 // ---------------------------------------------------------------------------
@@ -76,19 +84,19 @@ fn expectErrorIs(result: anytype, comptime expected: anyerror) !void {
 // ---------------------------------------------------------------------------
 
 fn testMutexCreate() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     m.deinit();
 }
 
 fn testMutexLockUnlock() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
     try m.lockFor(.millis(1000));
     m.unlock();
 }
 
 fn testMutexContentionTimeout() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
     try m.lockFor(.millis(1000));
     // Same thread, non-recursive: should timeout
@@ -98,7 +106,7 @@ fn testMutexContentionTimeout() !void {
 }
 
 fn testMutexLockZeroTimeout() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
     // First lock should succeed even with 0 timeout
     try m.lockFor(.{ .ns = 0 });
@@ -106,12 +114,12 @@ fn testMutexLockZeroTimeout() !void {
 }
 
 fn testMutexRaiiDrop() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     m.deinit();
 }
 
 fn testMutexGuardAutoUnlock() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
     const guard = try m.acquireFor(.{ .ns = 1000 });
     guard.release();
@@ -121,7 +129,7 @@ fn testMutexGuardAutoUnlock() !void {
 }
 
 fn testMutexGuardTimeout() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
     try m.lockFor(.millis(1000));
     // Lock held, try-lock should fail
@@ -131,7 +139,7 @@ fn testMutexGuardTimeout() !void {
 }
 
 fn testMutexErrorMapping() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
     try m.lockFor(.millis(1000));
     const result = m.lockFor(.{ .ns = 0 });
@@ -153,7 +161,7 @@ fn counterThread() void {
 
 fn testMutexSharedCounter() !void {
     shared_counter = 0;
-    counter_mutex = try ove.Mutex.create();
+    counter_mutex = try ove.Mutex.create(test_allocator);
     defer counter_mutex.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "cnt", .priority = .normal }, counterThread, .{});
     // Main thread also increments
@@ -173,12 +181,12 @@ fn testMutexSharedCounter() !void {
 // ---------------------------------------------------------------------------
 
 fn testRecursiveMutexCreate() !void {
-    var m = try ove.RecursiveMutex.create();
+    var m = try ove.RecursiveMutex.create(test_allocator);
     m.deinit();
 }
 
 fn testRecursiveMutexLockTwice() !void {
-    var m = try ove.RecursiveMutex.create();
+    var m = try ove.RecursiveMutex.create(test_allocator);
     defer m.deinit();
     try m.lockFor(.millis(1000));
     try m.lockFor(.millis(1000));
@@ -187,7 +195,7 @@ fn testRecursiveMutexLockTwice() !void {
 }
 
 fn testRecursiveMutexMatchingUnlocks() !void {
-    var m = try ove.RecursiveMutex.create();
+    var m = try ove.RecursiveMutex.create(test_allocator);
     defer m.deinit();
     try m.lockFor(.millis(1000));
     try m.lockFor(.millis(1000));
@@ -201,12 +209,12 @@ fn testRecursiveMutexMatchingUnlocks() !void {
 }
 
 fn testRecursiveMutexRaiiDrop() !void {
-    var m = try ove.RecursiveMutex.create();
+    var m = try ove.RecursiveMutex.create(test_allocator);
     m.deinit();
 }
 
 fn testRecursiveMutexGuardAutoUnlock() !void {
-    var m = try ove.RecursiveMutex.create();
+    var m = try ove.RecursiveMutex.create(test_allocator);
     defer m.deinit();
     const guard = try m.acquireFor(.{ .ns = 1000 });
     guard.release();
@@ -216,7 +224,7 @@ fn testRecursiveMutexGuardAutoUnlock() !void {
 }
 
 fn testRecursiveMutexGuardNested() !void {
-    var m = try ove.RecursiveMutex.create();
+    var m = try ove.RecursiveMutex.create(test_allocator);
     defer m.deinit();
     const g1 = try m.acquireFor(.{ .ns = 1000 });
     const g2 = try m.acquireFor(.{ .ns = 1000 });
@@ -229,36 +237,36 @@ fn testRecursiveMutexGuardNested() !void {
 // ---------------------------------------------------------------------------
 
 fn testSemaphoreCreateBinary() !void {
-    var s = try ove.Semaphore.create(1, 1);
+    var s = try ove.Semaphore.create(test_allocator, 1, 1);
     s.deinit();
 }
 
 fn testSemaphoreCreateCounting() !void {
-    var s = try ove.Semaphore.create(0, 10);
+    var s = try ove.Semaphore.create(test_allocator, 0, 10);
     s.deinit();
 }
 
 fn testSemaphoreTakeInitialOne() !void {
-    var s = try ove.Semaphore.create(1, 10);
+    var s = try ove.Semaphore.create(test_allocator, 1, 10);
     defer s.deinit();
     try s.timedWait(.{ .ns = 0 });
 }
 
 fn testSemaphoreTakeTimeout() !void {
-    var s = try ove.Semaphore.create(0, 10);
+    var s = try ove.Semaphore.create(test_allocator, 0, 10);
     defer s.deinit();
     try expectErrorIs(s.timedWait(.millis(10)), ove.Error.Timeout);
 }
 
 fn testSemaphoreGiveThenTake() !void {
-    var s = try ove.Semaphore.create(0, 10);
+    var s = try ove.Semaphore.create(test_allocator, 0, 10);
     defer s.deinit();
     s.post();
     try s.timedWait(.{ .ns = 0 });
 }
 
 fn testSemaphoreCounting() !void {
-    var s = try ove.Semaphore.create(0, 10);
+    var s = try ove.Semaphore.create(test_allocator, 0, 10);
     defer s.deinit();
     s.post();
     s.post();
@@ -277,7 +285,7 @@ fn semProducerThread() void {
 }
 
 fn testSemaphoreProducerConsumer() !void {
-    sem_for_thread = try ove.Semaphore.create(0, 1);
+    sem_for_thread = try ove.Semaphore.create(test_allocator, 0, 1);
     defer sem_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "semp", .priority = .normal }, semProducerThread, .{});
     try sem_for_thread.timedWait(.millis(500));
@@ -285,7 +293,7 @@ fn testSemaphoreProducerConsumer() !void {
 }
 
 fn testSemaphoreRaiiDrop() !void {
-    var s = try ove.Semaphore.create(1, 1);
+    var s = try ove.Semaphore.create(test_allocator, 1, 1);
     s.deinit();
 }
 
@@ -294,19 +302,19 @@ fn testSemaphoreRaiiDrop() !void {
 // ---------------------------------------------------------------------------
 
 fn testEventCreate() !void {
-    var e = try ove.Event.create();
+    var e = try ove.Event.create(test_allocator);
     e.deinit();
 }
 
 fn testEventSignalThenWait() !void {
-    var e = try ove.Event.create();
+    var e = try ove.Event.create(test_allocator);
     defer e.deinit();
     e.signal();
     try e.timedWait(.millis(1000));
 }
 
 fn testEventWaitTimeout() !void {
-    var e = try ove.Event.create();
+    var e = try ove.Event.create(test_allocator);
     defer e.deinit();
     try expectErrorIs(e.timedWait(.millis(10)), ove.Error.Timeout);
 }
@@ -319,7 +327,7 @@ fn eventSignalThread() void {
 }
 
 fn testEventCrossThread() !void {
-    event_for_thread = try ove.Event.create();
+    event_for_thread = try ove.Event.create(test_allocator);
     defer event_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "esig", .priority = .normal }, eventSignalThread, .{});
     try event_for_thread.timedWait(.millis(500));
@@ -327,14 +335,14 @@ fn testEventCrossThread() !void {
 }
 
 fn testEventSignalFromIsr() !void {
-    var e = try ove.Event.create();
+    var e = try ove.Event.create(test_allocator);
     defer e.deinit();
     e.signalFromIsr();
     try e.timedWait(.millis(1000));
 }
 
 fn testEventAutoReset() !void {
-    var e = try ove.Event.create();
+    var e = try ove.Event.create(test_allocator);
     defer e.deinit();
     e.signal();
     try e.timedWait(.millis(100));
@@ -343,7 +351,7 @@ fn testEventAutoReset() !void {
 }
 
 fn testEventRaiiDrop() !void {
-    var e = try ove.Event.create();
+    var e = try ove.Event.create(test_allocator);
     e.deinit();
 }
 
@@ -352,7 +360,7 @@ fn testEventRaiiDrop() !void {
 // ---------------------------------------------------------------------------
 
 fn testCondVarCreate() !void {
-    var cv = try ove.CondVar.create();
+    var cv = try ove.CondVar.create(test_allocator);
     cv.deinit();
 }
 
@@ -369,9 +377,9 @@ fn cvWaiterThread() void {
 
 fn testCondVarSignalWakesOne() !void {
     cv_flag = false;
-    cv_mutex_for_thread = try ove.Mutex.create();
+    cv_mutex_for_thread = try ove.Mutex.create(test_allocator);
     defer cv_mutex_for_thread.deinit();
-    cv_for_thread = try ove.CondVar.create();
+    cv_for_thread = try ove.CondVar.create(test_allocator);
     defer cv_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "cvw", .priority = .normal }, cvWaiterThread, .{});
     ove.thread.sleepMs(50);
@@ -382,9 +390,9 @@ fn testCondVarSignalWakesOne() !void {
 }
 
 fn testCondVarWaitTimeout() !void {
-    var m = try ove.Mutex.create();
+    var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
-    var cv = try ove.CondVar.create();
+    var cv = try ove.CondVar.create(test_allocator);
     defer cv.deinit();
     try m.lockFor(.millis(1000));
     try expectErrorIs(cv.timedWait(m, .millis(10)), ove.Error.Timeout);
@@ -405,9 +413,9 @@ fn cvProducerThread() void {
 
 fn testCondVarProducerConsumer() !void {
     cv_prod_flag = false;
-    cv_prod_mutex = try ove.Mutex.create();
+    cv_prod_mutex = try ove.Mutex.create(test_allocator);
     defer cv_prod_mutex.deinit();
-    cv_prod_cv = try ove.CondVar.create();
+    cv_prod_cv = try ove.CondVar.create(test_allocator);
     defer cv_prod_cv.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "cvp", .priority = .normal }, cvProducerThread, .{});
     cv_prod_mutex.lock();
@@ -421,9 +429,9 @@ fn testCondVarProducerConsumer() !void {
 
 fn testCondVarWaitForever() !void {
     cv_prod_flag = false;
-    cv_prod_mutex = try ove.Mutex.create();
+    cv_prod_mutex = try ove.Mutex.create(test_allocator);
     defer cv_prod_mutex.deinit();
-    cv_prod_cv = try ove.CondVar.create();
+    cv_prod_cv = try ove.CondVar.create(test_allocator);
     defer cv_prod_cv.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "cvf", .priority = .normal }, cvProducerThread, .{});
     cv_prod_mutex.lock();
@@ -436,7 +444,7 @@ fn testCondVarWaitForever() !void {
 }
 
 fn testCondVarRaiiDrop() !void {
-    var cv = try ove.CondVar.create();
+    var cv = try ove.CondVar.create(test_allocator);
     cv.deinit();
 }
 
@@ -449,12 +457,12 @@ const Q2 = ove.Queue(i32, 2);
 const Q8 = ove.Queue(u32, 8);
 
 fn testQueueCreateDestroy() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     q.deinit();
 }
 
 fn testQueueSendReceiveSingle() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     defer q.deinit();
     const val: i32 = 42;
     try q.sendFor(&val, .millis(1000));
@@ -463,7 +471,7 @@ fn testQueueSendReceiveSingle() !void {
 }
 
 fn testQueueFifoOrder() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     defer q.deinit();
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
@@ -477,7 +485,7 @@ fn testQueueFifoOrder() !void {
 }
 
 fn testQueueSendFullTimesOut() !void {
-    var q = try Q2.create();
+    var q = try Q2.create(test_allocator);
     defer q.deinit();
     const a: i32 = 1;
     const b: i32 = 2;
@@ -488,13 +496,13 @@ fn testQueueSendFullTimesOut() !void {
 }
 
 fn testQueueReceiveEmptyTimesOut() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     defer q.deinit();
     try expectErrorIs(q.recvFor(.{ .ns = 10 }), ove.Error.Timeout);
 }
 
 fn testQueueSendFromIsr() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     defer q.deinit();
     const val: i32 = 99;
     try q.sendFromIsr(&val);
@@ -503,7 +511,7 @@ fn testQueueSendFromIsr() !void {
 }
 
 fn testQueueReceiveFromIsr() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     defer q.deinit();
     const val: i32 = 77;
     try q.sendFor(&val, .millis(100));
@@ -524,7 +532,7 @@ fn queueConsumerThread() void {
 
 fn testQueueProducerConsumer() !void {
     queue_sum = 0;
-    consumer_queue = try Q8.create();
+    consumer_queue = try Q8.create(test_allocator);
     defer consumer_queue.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "qcon", .priority = .normal }, queueConsumerThread, .{});
     var i: u32 = 1;
@@ -540,7 +548,7 @@ const Pair = extern struct { a: i32, b: i32 };
 const QPair = ove.Queue(Pair, 4);
 
 fn testQueueStructItem() !void {
-    var q = try QPair.create();
+    var q = try QPair.create(test_allocator);
     defer q.deinit();
     const item: Pair = .{ .a = 10, .b = 20 };
     try q.sendFor(&item, .millis(100));
@@ -550,7 +558,7 @@ fn testQueueStructItem() !void {
 }
 
 fn testQueueSendWaitForever() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     defer q.deinit();
     const val: i32 = 123;
     q.send(&val);
@@ -559,7 +567,7 @@ fn testQueueSendWaitForever() !void {
 }
 
 fn testQueueRaiiDrop() !void {
-    var q = try Q5.create();
+    var q = try Q5.create(test_allocator);
     q.deinit();
 }
 
@@ -567,9 +575,9 @@ const QU8 = ove.Queue(u8, 4);
 const QU32 = ove.Queue(u32, 4);
 
 fn testQueueTypeSafety() !void {
-    var q8 = try QU8.create();
+    var q8 = try QU8.create(test_allocator);
     defer q8.deinit();
-    var q32 = try QU32.create();
+    var q32 = try QU32.create(test_allocator);
     defer q32.deinit();
     const v8: u8 = 0xFF;
     const v32: u32 = 0xDEADBEEF;
@@ -877,12 +885,12 @@ const BIT_0: u32 = 0x01;
 const BIT_1: u32 = 0x02;
 
 fn testEventGroupCreateDestroy() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     eg.deinit();
 }
 
 fn testEventGroupSetBits() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     const bits = eg.getBits();
@@ -890,7 +898,7 @@ fn testEventGroupSetBits() !void {
 }
 
 fn testEventGroupClearBits() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     _ = eg.clearBits(BIT_1);
@@ -900,13 +908,13 @@ fn testEventGroupClearBits() !void {
 }
 
 fn testEventGroupGetBits() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     try expectEqual(u32, 0, eg.getBits());
 }
 
 fn testEventGroupWaitAll() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     const result = try eg.waitBitsFor(BIT_0 | BIT_1, ove.eventgroup.WAIT_ALL, .millis(100));
@@ -914,7 +922,7 @@ fn testEventGroupWaitAll() !void {
 }
 
 fn testEventGroupWaitAny() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     _ = eg.setBits(BIT_0);
     const result = try eg.waitBitsFor(BIT_0 | BIT_1, 0, .millis(100));
@@ -922,13 +930,13 @@ fn testEventGroupWaitAny() !void {
 }
 
 fn testEventGroupWaitTimeout() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     try expectErrorIs(eg.waitBitsFor(BIT_0, 0, .millis(10)), ove.Error.Timeout);
 }
 
 fn testEventGroupClearOnExit() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
     _ = try eg.waitBitsFor(BIT_0, ove.eventgroup.CLEAR_ON_EXIT, .millis(100));
@@ -937,7 +945,7 @@ fn testEventGroupClearOnExit() !void {
 }
 
 fn testEventGroupSetBitsFromIsr() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
     _ = eg.setBitsFromIsr(BIT_0);
     const bits = eg.getBits();
@@ -952,7 +960,7 @@ fn egSetterThread() void {
 }
 
 fn testEventGroupCrossThread() !void {
-    eg_for_thread = try ove.EventGroup.create();
+    eg_for_thread = try ove.EventGroup.create(test_allocator);
     defer eg_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "egst", .priority = .normal }, egSetterThread, .{});
     const result = try eg_for_thread.waitBitsFor(BIT_0, 0, .millis(500));
@@ -961,7 +969,7 @@ fn testEventGroupCrossThread() !void {
 }
 
 fn testEventGroupRaiiDrop() !void {
-    var eg = try ove.EventGroup.create();
+    var eg = try ove.EventGroup.create(test_allocator);
     eg.deinit();
 }
 
@@ -1468,12 +1476,12 @@ fn testFsDirOpenNonexistentFails() !void {
 // ---------------------------------------------------------------------------
 
 fn testStreamCreateDestroy() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     s.deinit();
 }
 
 fn testStreamSendReceive() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
     const data = [_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
     const sent = try s.sendFor(&data, .millis(1000));
@@ -1485,7 +1493,7 @@ fn testStreamSendReceive() !void {
 }
 
 fn testStreamBytesAvailable() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
     try expect(s.bytesAvailable() == 0);
     _ = try s.sendFor("abc", .millis(1000));
@@ -1493,7 +1501,7 @@ fn testStreamBytesAvailable() !void {
 }
 
 fn testStreamReset() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
     _ = try s.sendFor("data", .millis(1000));
     try expect(s.bytesAvailable() > 0);
@@ -1502,14 +1510,14 @@ fn testStreamReset() !void {
 }
 
 fn testStreamSendFromIsr() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
     const sent = try s.sendFromIsr("isr");
     try expectEqual(usize, 3, sent);
 }
 
 fn testStreamReceiveFromIsr() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
     _ = try s.sendFor("isr", .millis(1000));
     var buf: [16]u8 = undefined;
@@ -1518,7 +1526,7 @@ fn testStreamReceiveFromIsr() !void {
 }
 
 fn testStreamRaiiDrop() !void {
-    var s = try ove.Stream(256).create(1);
+    var s = try ove.Stream(256).create(test_allocator, 1);
     s.deinit();
 }
 
@@ -1605,7 +1613,7 @@ fn testErrorsKnownCodesRoundTrip() !void {
     // comptime block in bindings/zig/ove/src/error.zig).
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_REGISTERED), error.NotRegistered);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_INVALID_PARAM), error.InvalidParam);
-    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NO_MEMORY), error.NoMemory);
+    try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NO_MEMORY), error.OutOfMemory);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_TIMEOUT), error.Timeout);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_NOT_SUPPORTED), error.NotSupported);
     try expectErrorIs(ove.err.fromCode(ove.ffi.OVE_ERR_QUEUE_FULL), error.QueueFull);

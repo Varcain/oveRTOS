@@ -36,6 +36,18 @@ const Timer = ove.Timer;
 const lvgl = ove.lvgl;
 
 // ---------------------------------------------------------------------------
+// Static-backed allocator for binding primitives (zero-heap mode).
+//
+// Allocator-aware `create(allocator)` constructors need somewhere to put
+// the substrate's storage struct.  A `FixedBufferAllocator` over a `.bss`
+// byte buffer routes every allocation to caller-owned static memory —
+// substrate `_init` paths see those addresses and run there.  The
+// libc-malloc wrapper is never touched.
+// ---------------------------------------------------------------------------
+var arena_bytes: [4096]u8 = undefined;
+var fba: std.heap.FixedBufferAllocator = undefined;
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -190,11 +202,14 @@ fn consumerEntry() void {
 fn appMain() void {
     ove.log.inf("Zig example (zero-heap mode): init", .{});
 
-    // Two-phase init: each `init()` fills in &self.storage / &self.stack
-    // (which live inside the file-scope variables we declared above)
-    // and registers the kernel object against those addresses.
-    queue.init() catch {
-        ove.log.err("Failed to init queue", .{});
+    // Zero-heap allocator setup: FixedBufferAllocator over a static
+    // BSS buffer.  Allocator-aware `create()` calls draw from this
+    // pool; substrate `_init` paths see those addresses.
+    fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+    const allocator = fba.allocator();
+
+    queue = Queue(u32, 8).create(allocator) catch {
+        ove.log.err("Failed to create queue", .{});
         return;
     };
 
