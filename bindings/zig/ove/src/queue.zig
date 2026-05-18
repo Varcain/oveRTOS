@@ -52,6 +52,24 @@ inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
 /// const v = q.recv();
 /// ```
 pub fn Queue(comptime T: type, comptime N: comptime_int) type {
+    comptime {
+        // Substrate copies items through `memcpy`; `T` with a
+        // `deinit` method would silently leak its resources when
+        // popped from the queue without the destructor running.
+        // Catch the common mistake (queuing `ArrayList(u8)` or
+        // similar resource-owning types) at instantiation time.
+        // `@hasDecl` only works on struct/union/enum/opaque types —
+        // skip primitives.
+        const ti = @typeInfo(T);
+        const has_decls = ti == .@"struct" or ti == .@"union" or ti == .@"enum" or ti == .@"opaque";
+        if (has_decls and @hasDecl(T, "deinit")) {
+            @compileError(
+                "ove.Queue: element type " ++ @typeName(T) ++ " has a deinit() method.  " ++
+                    "Items pass through memcpy — destructors never run.  Use a plain " ++
+                    "data type, or wrap the resource in a heap pointer and queue the pointer.",
+            );
+        }
+    }
     return struct {
         const Self = @This();
 
