@@ -15,6 +15,7 @@
 
 #include <ove/net_http.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_NET_HTTP
 
@@ -206,67 +207,77 @@ class Client
 
 	/**
 	 * @brief Performs an HTTP GET request.
-	 * @param[in]  url  Full URL (e.g. "http://example.com/path").
-	 * @param[out] resp Response filled on success.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] url Full URL (e.g. "http://example.com/path").
+	 * @return On success, the populated @ref Response (owns the body
+	 *         and header buffers).  On failure, an `unexpected`
+	 *         @ref Error.
 	 */
-	[[nodiscard]] int get(const char *url, Response &resp)
+	[[nodiscard]] Result<Response> get(const char *url) noexcept
 	{
-		return ove_http_get(handle_, url, &resp.raw_);
+		Response resp;
+		const int rc = ove_http_get(handle_, url, &resp.raw_);
+		return from_rc(rc, std::move(resp));
 	}
 
 	/**
 	 * @brief Performs an HTTP POST request.
-	 * @param[in]  url          Full URL.
-	 * @param[in]  content_type Content-Type header value.
-	 * @param[in]  body         Request body data.
-	 * @param[in]  body_len     Request body length in bytes.
-	 * @param[out] resp         Response filled on success.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] url          Full URL.
+	 * @param[in] content_type Content-Type header value.
+	 * @param[in] body         Request body data.
+	 * @param[in] body_len     Request body length in bytes.
+	 * @return On success, the populated @ref Response.  On failure,
+	 *         an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int post(const char *url, const char *content_type, const void *body,
-			       size_t body_len, Response &resp)
+	[[nodiscard]] Result<Response> post(const char *url, const char *content_type,
+					    const void *body, size_t body_len) noexcept
 	{
-		return ove_http_post(handle_, url, content_type, body, body_len, &resp.raw_);
+		Response resp;
+		const int rc =
+			ove_http_post(handle_, url, content_type, body, body_len, &resp.raw_);
+		return from_rc(rc, std::move(resp));
 	}
 
 	/**
 	 * @brief Performs a generic HTTP request.
-	 * @param[in]  method       HTTP method (GET, POST).
-	 * @param[in]  url          Full URL.
-	 * @param[in]  content_type Content-Type (may be NULL for GET).
-	 * @param[in]  body         Request body (may be NULL).
-	 * @param[in]  body_len     Request body length.
-	 * @param[out] resp         Response filled on success.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] method       HTTP method (GET, POST, …).
+	 * @param[in] url          Full URL.
+	 * @param[in] content_type Content-Type (may be NULL for GET).
+	 * @param[in] body         Request body (may be NULL).
+	 * @param[in] body_len     Request body length.
+	 * @return On success, the populated @ref Response.  On failure,
+	 *         an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int request(ove_http_method_t method, const char *url,
-				  const char *content_type, const void *body, size_t body_len,
-				  Response &resp)
+	[[nodiscard]] Result<Response> request(ove_http_method_t method, const char *url,
+					       const char *content_type, const void *body,
+					       size_t body_len) noexcept
 	{
-		return ove_http_request(handle_, method, url, content_type, body, body_len,
-					&resp.raw_);
+		Response resp;
+		const int rc = ove_http_request(handle_, method, url, content_type, body, body_len,
+						&resp.raw_);
+		return from_rc(rc, std::move(resp));
 	}
 
 	/**
 	 * @brief Performs an HTTP request with custom headers.
-	 * @param[in]  method       HTTP method.
-	 * @param[in]  url          Full URL.
-	 * @param[in]  content_type Content-Type (may be NULL).
-	 * @param[in]  body         Request body (may be NULL).
-	 * @param[in]  body_len     Request body length.
-	 * @param[in]  headers      Array of extra request headers.
-	 * @param[in]  header_count Number of headers.
-	 * @param[out] resp         Response filled on success.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] method       HTTP method.
+	 * @param[in] url          Full URL.
+	 * @param[in] content_type Content-Type (may be NULL).
+	 * @param[in] body         Request body (may be NULL).
+	 * @param[in] body_len     Request body length.
+	 * @param[in] headers      Array of extra request headers.
+	 * @param[in] header_count Number of headers.
+	 * @return On success, the populated @ref Response.  On failure,
+	 *         an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int request(ove_http_method_t method, const char *url,
-				  const char *content_type, const void *body, size_t body_len,
-				  const ove_http_header_t *headers, size_t header_count,
-				  Response &resp)
+	[[nodiscard]] Result<Response>
+	request(ove_http_method_t method, const char *url, const char *content_type,
+		const void *body, size_t body_len, const ove_http_header_t *headers,
+		size_t header_count) noexcept
 	{
-		return ove_http_request_ex(handle_, method, url, content_type, body, body_len,
-					   headers, header_count, &resp.raw_);
+		Response resp;
+		const int rc = ove_http_request_ex(handle_, method, url, content_type, body,
+						   body_len, headers, header_count, &resp.raw_);
+		return from_rc(rc, std::move(resp));
 	}
 
 	/**
