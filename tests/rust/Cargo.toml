@@ -9,6 +9,7 @@ name = "ove-tests"
 path = "src/main.rs"
 
 [dependencies]
-ove = { path = "../../bindings/rust/ove", features = ["std"], default-features = false }
+ove = { path = "../../bindings/rust/ove", features = ["std", "embedded-hal"], default-features = false }
+embedded-hal = "1.0"
 log = "0.4"
 static_assertions = "1.1"

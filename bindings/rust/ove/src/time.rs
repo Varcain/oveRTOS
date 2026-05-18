@@ -72,6 +72,16 @@ pub fn delay_us(us: u32) {
     unsafe { bindings::ove_time_delay_us(us) }
 }
 
+/// Zero-sized handle used as the trait target for
+/// `embedded_hal::delay::DelayNs` (behind the `embedded-hal` feature).
+///
+/// Routes `delay_*` calls into the substrate's [`delay_us`] / [`delay_ms`].
+/// Sub-microsecond delays round up to one microsecond — the substrate
+/// lacks nanosecond resolution, and most embedded-hal driver use cases
+/// (protocol setup/hold times) tolerate the round-up.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Delay;
+
 /// Get the current monotonic time in nanoseconds since an arbitrary epoch.
 ///
 /// Prefer [`Instant::now`] for new code — it's the typed counterpart and

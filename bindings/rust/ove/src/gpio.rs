@@ -125,3 +125,101 @@ pub fn irq_disable(pin: GpioPin) -> Result<()> {
     let rc = unsafe { bindings::ove_gpio_irq_disable(pin.port, pin.pin) };
     Error::from_code(rc)
 }
+
+// ---------------------------------------------------------------------------
+// Fixed-mode pin newtypes — `embedded_hal::digital::{OutputPin, InputPin}`
+// trait targets.  Created via constructors that pre-configure the
+// underlying pin in the appropriate mode; mode is not changed after
+// construction.  For mode-switching use cases stick with the lower-level
+// `GpioPin` + free-function API above.
+// ---------------------------------------------------------------------------
+
+/// Fixed-mode output GPIO pin.
+///
+/// Pre-configures the underlying pin as a push-pull or open-drain output
+/// at construction time.  Provides simple `set(bool)` access plus the
+/// `embedded_hal::digital::OutputPin` trait impl (behind the
+/// `embedded-hal` feature).
+#[derive(Debug, Clone, Copy)]
+pub struct OutputPin {
+    pin: GpioPin,
+}
+
+impl OutputPin {
+    /// Construct a new output pin and configure it.
+    ///
+    /// # Errors
+    /// Returns an error if `mode` isn't an output mode
+    /// ([`GpioMode::OutputPP`] or [`GpioMode::OutputOD`]) or the pin is
+    /// out of range.
+    pub fn new(port: u32, pin: u32, mode: GpioMode) -> Result<Self> {
+        if matches!(mode, GpioMode::Input) {
+            return Err(Error::InvalidParam);
+        }
+        let p = GpioPin::new(port, pin);
+        configure(p, mode)?;
+        Ok(Self { pin: p })
+    }
+
+    /// Drive the pin high (`true`) or low (`false`).
+    #[inline]
+    pub fn set(&mut self, value: bool) -> Result<()> {
+        set(self.pin, if value { 1 } else { 0 })
+    }
+
+    /// Drive the pin low.
+    #[inline]
+    pub fn set_low(&mut self) -> Result<()> {
+        set(self.pin, 0)
+    }
+
+    /// Drive the pin high.
+    #[inline]
+    pub fn set_high(&mut self) -> Result<()> {
+        set(self.pin, 1)
+    }
+
+    /// Return the underlying `GpioPin` (`(port, pin)`).
+    #[inline]
+    pub fn pin(&self) -> GpioPin {
+        self.pin
+    }
+}
+
+/// Fixed-mode input GPIO pin.
+///
+/// Pre-configures the underlying pin as a digital input at construction
+/// time.  Provides `is_high()` / `is_low()` access plus the
+/// `embedded_hal::digital::InputPin` trait impl (behind the
+/// `embedded-hal` feature).
+#[derive(Debug, Clone, Copy)]
+pub struct InputPin {
+    pin: GpioPin,
+}
+
+impl InputPin {
+    /// Construct a new input pin and configure it as a digital input.
+    pub fn new(port: u32, pin: u32) -> Result<Self> {
+        let p = GpioPin::new(port, pin);
+        configure(p, GpioMode::Input)?;
+        Ok(Self { pin: p })
+    }
+
+    /// Read the pin level — returns `true` if high.
+    #[inline]
+    pub fn is_high(&self) -> Result<bool> {
+        Ok(get(self.pin)? != 0)
+    }
+
+    /// Read the pin level — returns `true` if low.
+    #[inline]
+    pub fn is_low(&self) -> Result<bool> {
+        Ok(!self.is_high()?)
+    }
+
+    /// Return the underlying `GpioPin` (`(port, pin)`).
+    #[inline]
+    pub fn pin(&self) -> GpioPin {
+        self.pin
+    }
+}

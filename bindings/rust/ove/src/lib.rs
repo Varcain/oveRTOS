@@ -103,6 +103,8 @@ pub mod cell;
 #[cfg(has_console)]
 pub mod console;
 pub mod containers;
+#[cfg(feature = "embedded-hal")]
+mod embedded_hal_impl;
 pub mod error;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
@@ -193,6 +195,8 @@ pub use i2c::I2c;
 pub use queue::Queue;
 #[cfg(has_spi)]
 pub use spi::Spi;
+#[cfg(has_time)]
+pub use time::Delay;
 #[cfg(has_uart)]
 pub use uart::Uart;
 pub use init_cell::{InitCell, InitMut};

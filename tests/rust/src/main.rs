@@ -35,6 +35,7 @@ mod test_errors;
 mod test_pm;
 mod test_fmt;
 mod test_lvgl;
+mod test_embedded_hal;
 
 fn main() {
     // Install the `log` crate facade on top of `ove_console_write`.
@@ -76,6 +77,7 @@ fn main() {
         ("PM", test_pm::run),
         ("Fmt", test_fmt::run),
         ("Lvgl", test_lvgl::run),
+        ("embedded-hal", test_embedded_hal::run),
     ];
 
     for (name, runner) in suites {
