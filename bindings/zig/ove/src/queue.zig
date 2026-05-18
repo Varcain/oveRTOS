@@ -9,11 +9,15 @@ const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
+const Duration = @import("time.zig").Duration;
+const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
-// Per-operation narrow error sets (A3).  See sync.zig for the rationale.
-/// Error set for `Queue.send*` and `sendFromIsr`.
+// Per-operation narrow error sets.  See sync.zig for the rationale.
+/// Error set for `Queue.sendFor` and `sendFromIsr`.  `send()` is
+/// forever-blocking and infallible after a successful `create()`.
 pub const SendError = error{ QueueFull, Timeout };
-/// Error set for `Queue.receive*` and `receiveFromIsr`.
+/// Error set for `Queue.recvFor` and `receiveFromIsr`.  `recv()` is
+/// forever-blocking and infallible.
 pub const RecvError = error{ QueueEmpty, Timeout };
 
 inline fn mapSendError(comptime ctx: []const u8, rc: c_int) SendError {
@@ -30,6 +34,10 @@ inline fn mapRecvError(comptime ctx: []const u8, rc: c_int) RecvError {
         c.OVE_ERR_TIMEOUT => error.Timeout,
         else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
     };
+}
+
+inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
+    if (rc < 0) std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc});
 }
 
 /// Type-safe message queue.
@@ -75,29 +83,48 @@ fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
             c.ove_queue_destroy(self.handle);
         }
 
-        pub inline fn send(self: Self, item: *const T, timeout_ns: u64) SendError!void {
-            const rc = c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns);
-            if (rc < 0) return mapSendError("Queue.send", rc);
+        /// Forever-blocking send.  Infallible after `create()`.
+        pub inline fn send(self: Self, item: *const T) void {
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), WAIT_FOREVER);
+            panicOnRc("Queue.send", rc);
         }
 
-        pub inline fn sendUntil(self: Self, item: *const T, deadline_ns: u64) SendError!void {
-            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-            const rc = c.ove_queue_send(self.handle, @ptrCast(item), t);
-            if (rc < 0) return mapSendError("Queue.sendUntil", rc);
+        /// Non-blocking send — fails fast with `error.QueueFull` if full.
+        pub inline fn trySend(self: Self, item: *const T) error{QueueFull}!void {
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), 0);
+            if (rc >= 0) return;
+            if (rc == c.OVE_ERR_QUEUE_FULL or rc == c.OVE_ERR_TIMEOUT) return error.QueueFull;
+            std.debug.panic("ove.Queue.trySend: unexpected substrate rc {d}", .{rc});
         }
 
-        pub inline fn receive(self: Self, timeout_ns: u64) RecvError!T {
+        /// Bounded-duration send.
+        pub inline fn sendFor(self: Self, item: *const T, d: Duration) SendError!void {
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), d.ns);
+            if (rc < 0) return mapSendError("Queue.sendFor", rc);
+        }
+
+        /// Forever-blocking receive.  Infallible after `create()`.
+        pub inline fn recv(self: Self) T {
             var val: T = undefined;
-            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns);
-            if (rc < 0) return mapRecvError("Queue.receive", rc);
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), WAIT_FOREVER);
+            panicOnRc("Queue.recv", rc);
             return val;
         }
 
-        pub inline fn receiveUntil(self: Self, deadline_ns: u64) RecvError!T {
-            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+        /// Non-blocking receive — returns `null` if the queue is empty.
+        pub inline fn tryRecv(self: Self) ?T {
             var val: T = undefined;
-            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), t);
-            if (rc < 0) return mapRecvError("Queue.receiveUntil", rc);
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), 0);
+            if (rc >= 0) return val;
+            if (rc == c.OVE_ERR_QUEUE_EMPTY or rc == c.OVE_ERR_TIMEOUT) return null;
+            std.debug.panic("ove.Queue.tryRecv: unexpected substrate rc {d}", .{rc});
+        }
+
+        /// Bounded-duration receive.
+        pub inline fn recvFor(self: Self, d: Duration) RecvError!T {
+            var val: T = undefined;
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), d.ns);
+            if (rc < 0) return mapRecvError("Queue.recvFor", rc);
             return val;
         }
 
@@ -141,33 +168,48 @@ fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
             self.tracker.clear();
         }
 
-        pub inline fn send(self: *Self, item: *const T, timeout_ns: u64) SendError!void {
+        pub inline fn send(self: *Self, item: *const T) void {
             self.tracker.assertSame(self, "ove.Queue");
-            const rc = c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns);
-            if (rc < 0) return mapSendError("Queue.send", rc);
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), WAIT_FOREVER);
+            panicOnRc("Queue.send", rc);
         }
 
-        pub inline fn sendUntil(self: *Self, item: *const T, deadline_ns: u64) SendError!void {
+        pub inline fn trySend(self: *Self, item: *const T) error{QueueFull}!void {
             self.tracker.assertSame(self, "ove.Queue");
-            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-            const rc = c.ove_queue_send(self.handle, @ptrCast(item), t);
-            if (rc < 0) return mapSendError("Queue.sendUntil", rc);
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), 0);
+            if (rc >= 0) return;
+            if (rc == c.OVE_ERR_QUEUE_FULL or rc == c.OVE_ERR_TIMEOUT) return error.QueueFull;
+            std.debug.panic("ove.Queue.trySend: unexpected substrate rc {d}", .{rc});
         }
 
-        pub inline fn receive(self: *Self, timeout_ns: u64) RecvError!T {
+        pub inline fn sendFor(self: *Self, item: *const T, d: Duration) SendError!void {
+            self.tracker.assertSame(self, "ove.Queue");
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), d.ns);
+            if (rc < 0) return mapSendError("Queue.sendFor", rc);
+        }
+
+        pub inline fn recv(self: *Self) T {
             self.tracker.assertSame(self, "ove.Queue");
             var val: T = undefined;
-            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns);
-            if (rc < 0) return mapRecvError("Queue.receive", rc);
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), WAIT_FOREVER);
+            panicOnRc("Queue.recv", rc);
             return val;
         }
 
-        pub inline fn receiveUntil(self: *Self, deadline_ns: u64) RecvError!T {
+        pub inline fn tryRecv(self: *Self) ?T {
             self.tracker.assertSame(self, "ove.Queue");
-            const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var val: T = undefined;
-            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), t);
-            if (rc < 0) return mapRecvError("Queue.receiveUntil", rc);
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), 0);
+            if (rc >= 0) return val;
+            if (rc == c.OVE_ERR_QUEUE_EMPTY or rc == c.OVE_ERR_TIMEOUT) return null;
+            std.debug.panic("ove.Queue.tryRecv: unexpected substrate rc {d}", .{rc});
+        }
+
+        pub inline fn recvFor(self: *Self, d: Duration) RecvError!T {
+            self.tracker.assertSame(self, "ove.Queue");
+            var val: T = undefined;
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), d.ns);
+            if (rc < 0) return mapRecvError("Queue.recvFor", rc);
             return val;
         }
 

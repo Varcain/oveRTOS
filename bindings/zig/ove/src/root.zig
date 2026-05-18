@@ -170,6 +170,9 @@ pub const bsp = @import("bsp.zig");
 
 /// Time query and delay utilities.
 pub const time = @import("time.zig");
+/// Typed duration for the binding's bounded-wait methods
+/// (`Mutex.lockFor`, `Queue.sendFor`, etc.).
+pub const Duration = time.Duration;
 
 /// Audio I/O initialization and control.
 pub const audio = @import("audio.zig");

@@ -83,16 +83,16 @@ fn testMutexCreate() !void {
 fn testMutexLockUnlock() !void {
     var m = try ove.Mutex.create();
     defer m.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
+    try m.lockFor(.millis(1000));
     m.unlock();
 }
 
 fn testMutexContentionTimeout() !void {
     var m = try ove.Mutex.create();
     defer m.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
+    try m.lockFor(.millis(1000));
     // Same thread, non-recursive: should timeout
-    const result = m.lock(0);
+    const result = m.lockFor(.{ .ns = 0 });
     try expect(result == error.Timeout);
     m.unlock();
 }
@@ -101,7 +101,7 @@ fn testMutexLockZeroTimeout() !void {
     var m = try ove.Mutex.create();
     defer m.deinit();
     // First lock should succeed even with 0 timeout
-    try m.lock(0);
+    try m.lockFor(.{ .ns = 0 });
     m.unlock();
 }
 
@@ -113,19 +113,19 @@ fn testMutexRaiiDrop() !void {
 fn testMutexGuardAutoUnlock() !void {
     var m = try ove.Mutex.create();
     defer m.deinit();
-    const guard = try m.acquire(1000);
+    const guard = try m.acquireFor(.{ .ns = 1000 });
     guard.release();
     // After explicit release, should be able to re-lock
-    try m.lock(1000 * std.time.ns_per_ms);
+    try m.lockFor(.millis(1000));
     m.unlock();
 }
 
 fn testMutexGuardTimeout() !void {
     var m = try ove.Mutex.create();
     defer m.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
+    try m.lockFor(.millis(1000));
     // Lock held, try-lock should fail
-    const result = m.lock(0);
+    const result = m.lockFor(.{ .ns = 0 });
     try expect(result == error.Timeout);
     m.unlock();
 }
@@ -133,8 +133,8 @@ fn testMutexGuardTimeout() !void {
 fn testMutexErrorMapping() !void {
     var m = try ove.Mutex.create();
     defer m.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
-    const result = m.lock(0);
+    try m.lockFor(.millis(1000));
+    const result = m.lockFor(.{ .ns = 0 });
     try expect(result == error.Timeout);
     m.unlock();
 }
@@ -145,7 +145,7 @@ var counter_mutex: ove.Mutex = undefined;
 fn counterThread() void {
     var i: u32 = 0;
     while (i < 1000) : (i += 1) {
-        counter_mutex.lock(ove.wait_forever) catch continue;
+        counter_mutex.lock();
         shared_counter += 1;
         counter_mutex.unlock();
     }
@@ -159,7 +159,7 @@ fn testMutexSharedCounter() !void {
     // Main thread also increments
     var i: u32 = 0;
     while (i < 1000) : (i += 1) {
-        try counter_mutex.lock(ove.wait_forever);
+        counter_mutex.lock();
         shared_counter += 1;
         counter_mutex.unlock();
     }
@@ -180,8 +180,8 @@ fn testRecursiveMutexCreate() !void {
 fn testRecursiveMutexLockTwice() !void {
     var m = try ove.RecursiveMutex.create();
     defer m.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
-    try m.lock(1000 * std.time.ns_per_ms);
+    try m.lockFor(.millis(1000));
+    try m.lockFor(.millis(1000));
     m.unlock();
     m.unlock();
 }
@@ -189,14 +189,14 @@ fn testRecursiveMutexLockTwice() !void {
 fn testRecursiveMutexMatchingUnlocks() !void {
     var m = try ove.RecursiveMutex.create();
     defer m.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
-    try m.lock(1000 * std.time.ns_per_ms);
-    try m.lock(1000 * std.time.ns_per_ms);
+    try m.lockFor(.millis(1000));
+    try m.lockFor(.millis(1000));
+    try m.lockFor(.millis(1000));
     m.unlock();
     m.unlock();
     m.unlock();
     // Should be fully unlocked, re-lock succeeds
-    try m.lock(0);
+    try m.lockFor(.{ .ns = 0 });
     m.unlock();
 }
 
@@ -208,18 +208,18 @@ fn testRecursiveMutexRaiiDrop() !void {
 fn testRecursiveMutexGuardAutoUnlock() !void {
     var m = try ove.RecursiveMutex.create();
     defer m.deinit();
-    const guard = try m.acquire(1000);
+    const guard = try m.acquireFor(.{ .ns = 1000 });
     guard.release();
     // After release, should be able to re-lock
-    try m.lock(0);
+    try m.lockFor(.{ .ns = 0 });
     m.unlock();
 }
 
 fn testRecursiveMutexGuardNested() !void {
     var m = try ove.RecursiveMutex.create();
     defer m.deinit();
-    const g1 = try m.acquire(1000);
-    const g2 = try m.acquire(1000);
+    const g1 = try m.acquireFor(.{ .ns = 1000 });
+    const g2 = try m.acquireFor(.{ .ns = 1000 });
     g2.release();
     g1.release();
 }
@@ -241,46 +241,46 @@ fn testSemaphoreCreateCounting() !void {
 fn testSemaphoreTakeInitialOne() !void {
     var s = try ove.Semaphore.create(1, 10);
     defer s.deinit();
-    try s.take(0);
+    try s.timedWait(.{ .ns = 0 });
 }
 
 fn testSemaphoreTakeTimeout() !void {
     var s = try ove.Semaphore.create(0, 10);
     defer s.deinit();
-    try expectErrorIs(s.take(10 * std.time.ns_per_ms), ove.Error.Timeout);
+    try expectErrorIs(s.timedWait(.millis(10)), ove.Error.Timeout);
 }
 
 fn testSemaphoreGiveThenTake() !void {
     var s = try ove.Semaphore.create(0, 10);
     defer s.deinit();
-    s.give();
-    try s.take(0);
+    s.post();
+    try s.timedWait(.{ .ns = 0 });
 }
 
 fn testSemaphoreCounting() !void {
     var s = try ove.Semaphore.create(0, 10);
     defer s.deinit();
-    s.give();
-    s.give();
-    s.give();
-    try s.take(0);
-    try s.take(0);
-    try s.take(0);
-    try expectErrorIs(s.take(10 * std.time.ns_per_ms), ove.Error.Timeout);
+    s.post();
+    s.post();
+    s.post();
+    try s.timedWait(.{ .ns = 0 });
+    try s.timedWait(.{ .ns = 0 });
+    try s.timedWait(.{ .ns = 0 });
+    try expectErrorIs(s.timedWait(.millis(10)), ove.Error.Timeout);
 }
 
 var sem_for_thread: ove.Semaphore = undefined;
 
 fn semProducerThread() void {
     ove.thread.sleepMs(50);
-    sem_for_thread.give();
+    sem_for_thread.post();
 }
 
 fn testSemaphoreProducerConsumer() !void {
     sem_for_thread = try ove.Semaphore.create(0, 1);
     defer sem_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "semp", .priority = .normal }, semProducerThread, .{});
-    try sem_for_thread.take(500 * std.time.ns_per_ms);
+    try sem_for_thread.timedWait(.millis(500));
     t.deinit();
 }
 
@@ -302,13 +302,13 @@ fn testEventSignalThenWait() !void {
     var e = try ove.Event.create();
     defer e.deinit();
     e.signal();
-    try e.wait(1000 * std.time.ns_per_ms);
+    try e.timedWait(.millis(1000));
 }
 
 fn testEventWaitTimeout() !void {
     var e = try ove.Event.create();
     defer e.deinit();
-    try expectErrorIs(e.wait(10 * std.time.ns_per_ms), ove.Error.Timeout);
+    try expectErrorIs(e.timedWait(.millis(10)), ove.Error.Timeout);
 }
 
 var event_for_thread: ove.Event = undefined;
@@ -322,7 +322,7 @@ fn testEventCrossThread() !void {
     event_for_thread = try ove.Event.create();
     defer event_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "esig", .priority = .normal }, eventSignalThread, .{});
-    try event_for_thread.wait(500 * std.time.ns_per_ms);
+    try event_for_thread.timedWait(.millis(500));
     t.deinit();
 }
 
@@ -330,16 +330,16 @@ fn testEventSignalFromIsr() !void {
     var e = try ove.Event.create();
     defer e.deinit();
     e.signalFromIsr();
-    try e.wait(1000 * std.time.ns_per_ms);
+    try e.timedWait(.millis(1000));
 }
 
 fn testEventAutoReset() !void {
     var e = try ove.Event.create();
     defer e.deinit();
     e.signal();
-    try e.wait(100 * std.time.ns_per_ms);
+    try e.timedWait(.millis(100));
     // Event should auto-reset; second wait should timeout
-    try expectErrorIs(e.wait(10 * std.time.ns_per_ms), ove.Error.Timeout);
+    try expectErrorIs(e.timedWait(.millis(10)), ove.Error.Timeout);
 }
 
 fn testEventRaiiDrop() !void {
@@ -361,8 +361,8 @@ var cv_mutex_for_thread: ove.Mutex = undefined;
 var cv_flag: bool = false;
 
 fn cvWaiterThread() void {
-    cv_mutex_for_thread.lock(ove.wait_forever) catch return;
-    cv_for_thread.wait(cv_mutex_for_thread, ove.wait_forever) catch {};
+    cv_mutex_for_thread.lock();
+    cv_for_thread.wait(cv_mutex_for_thread);
     cv_flag = true;
     cv_mutex_for_thread.unlock();
 }
@@ -386,8 +386,8 @@ fn testCondVarWaitTimeout() !void {
     defer m.deinit();
     var cv = try ove.CondVar.create();
     defer cv.deinit();
-    try m.lock(1000 * std.time.ns_per_ms);
-    try expectErrorIs(cv.wait(m, 10 * std.time.ns_per_ms), ove.Error.Timeout);
+    try m.lockFor(.millis(1000));
+    try expectErrorIs(cv.timedWait(m, .millis(10)), ove.Error.Timeout);
     m.unlock();
 }
 
@@ -397,7 +397,7 @@ var cv_prod_mutex: ove.Mutex = undefined;
 
 fn cvProducerThread() void {
     ove.thread.sleepMs(50);
-    cv_prod_mutex.lock(ove.wait_forever) catch return;
+    cv_prod_mutex.lock();
     cv_prod_flag = true;
     cv_prod_cv.signal();
     cv_prod_mutex.unlock();
@@ -410,9 +410,9 @@ fn testCondVarProducerConsumer() !void {
     cv_prod_cv = try ove.CondVar.create();
     defer cv_prod_cv.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "cvp", .priority = .normal }, cvProducerThread, .{});
-    try cv_prod_mutex.lock(ove.wait_forever);
+    cv_prod_mutex.lock();
     while (!cv_prod_flag) {
-        try cv_prod_cv.wait(cv_prod_mutex, 500 * std.time.ns_per_ms);
+        try cv_prod_cv.timedWait(cv_prod_mutex, .millis(500));
     }
     cv_prod_mutex.unlock();
     try expect(cv_prod_flag);
@@ -426,9 +426,9 @@ fn testCondVarWaitForever() !void {
     cv_prod_cv = try ove.CondVar.create();
     defer cv_prod_cv.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "cvf", .priority = .normal }, cvProducerThread, .{});
-    try cv_prod_mutex.lock(ove.wait_forever);
+    cv_prod_mutex.lock();
     while (!cv_prod_flag) {
-        try cv_prod_cv.wait(cv_prod_mutex, ove.wait_forever);
+        cv_prod_cv.wait(cv_prod_mutex);
     }
     cv_prod_mutex.unlock();
     try expect(cv_prod_flag);
@@ -457,8 +457,8 @@ fn testQueueSendReceiveSingle() !void {
     var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 42;
-    try q.send(&val, 1000 * std.time.ns_per_ms);
-    const received = try q.receive(1000);
+    try q.sendFor(&val, .millis(1000));
+    const received = try q.recvFor(.{ .ns = 1000 });
     try expectEqual(i32, 42, received);
 }
 
@@ -467,11 +467,11 @@ fn testQueueFifoOrder() !void {
     defer q.deinit();
     var i: i32 = 0;
     while (i < 5) : (i += 1) {
-        try q.send(&i, 1000 * std.time.ns_per_ms);
+        try q.sendFor(&i, .millis(1000));
     }
     i = 0;
     while (i < 5) : (i += 1) {
-        const v = try q.receive(1000);
+        const v = try q.recvFor(.{ .ns = 1000 });
         try expectEqual(i32, i, v);
     }
 }
@@ -482,15 +482,15 @@ fn testQueueSendFullTimesOut() !void {
     const a: i32 = 1;
     const b: i32 = 2;
     const c: i32 = 3;
-    try q.send(&a, 100 * std.time.ns_per_ms);
-    try q.send(&b, 100 * std.time.ns_per_ms);
-    try expectErrorIs(q.send(&c, 10 * std.time.ns_per_ms), ove.Error.Timeout);
+    try q.sendFor(&a, .millis(100));
+    try q.sendFor(&b, .millis(100));
+    try expectErrorIs(q.sendFor(&c, .millis(10)), ove.Error.Timeout);
 }
 
 fn testQueueReceiveEmptyTimesOut() !void {
     var q = try Q5.create();
     defer q.deinit();
-    try expectErrorIs(q.receive(10), ove.Error.Timeout);
+    try expectErrorIs(q.recvFor(.{ .ns = 10 }), ove.Error.Timeout);
 }
 
 fn testQueueSendFromIsr() !void {
@@ -498,7 +498,7 @@ fn testQueueSendFromIsr() !void {
     defer q.deinit();
     const val: i32 = 99;
     try q.sendFromIsr(&val);
-    const received = try q.receive(100);
+    const received = try q.recvFor(.{ .ns = 100 });
     try expectEqual(i32, 99, received);
 }
 
@@ -506,7 +506,7 @@ fn testQueueReceiveFromIsr() !void {
     var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 77;
-    try q.send(&val, 100 * std.time.ns_per_ms);
+    try q.sendFor(&val, .millis(100));
     const received = try q.receiveFromIsr();
     try expectEqual(i32, 77, received);
 }
@@ -517,7 +517,7 @@ var consumer_queue: Q8 = undefined;
 fn queueConsumerThread() void {
     var i: u32 = 0;
     while (i < 5) : (i += 1) {
-        const val = consumer_queue.receive(1000) catch break;
+        const val = consumer_queue.recvFor(.{ .ns = 1000 }) catch break;
         queue_sum += val;
     }
 }
@@ -529,7 +529,7 @@ fn testQueueProducerConsumer() !void {
     var t = try ove.Thread(4096).spawn(.{ .name = "qcon", .priority = .normal }, queueConsumerThread, .{});
     var i: u32 = 1;
     while (i <= 5) : (i += 1) {
-        try consumer_queue.send(&i, 1000 * std.time.ns_per_ms);
+        try consumer_queue.sendFor(&i, .millis(1000));
     }
     ove.thread.sleepMs(100);
     t.deinit();
@@ -543,8 +543,8 @@ fn testQueueStructItem() !void {
     var q = try QPair.create();
     defer q.deinit();
     const item: Pair = .{ .a = 10, .b = 20 };
-    try q.send(&item, 100 * std.time.ns_per_ms);
-    const got = try q.receive(100);
+    try q.sendFor(&item, .millis(100));
+    const got = try q.recvFor(.{ .ns = 100 });
     try expectEqual(i32, 10, got.a);
     try expectEqual(i32, 20, got.b);
 }
@@ -553,8 +553,8 @@ fn testQueueSendWaitForever() !void {
     var q = try Q5.create();
     defer q.deinit();
     const val: i32 = 123;
-    try q.send(&val, ove.wait_forever);
-    const got = try q.receive(0);
+    q.send(&val);
+    const got = try q.recvFor(.{ .ns = 0 });
     try expectEqual(i32, 123, got);
 }
 
@@ -573,10 +573,10 @@ fn testQueueTypeSafety() !void {
     defer q32.deinit();
     const v8: u8 = 0xFF;
     const v32: u32 = 0xDEADBEEF;
-    try q8.send(&v8, 100 * std.time.ns_per_ms);
-    try q32.send(&v32, 100 * std.time.ns_per_ms);
-    try expectEqual(u8, 0xFF, try q8.receive(100));
-    try expectEqual(u32, 0xDEADBEEF, try q32.receive(100));
+    try q8.sendFor(&v8, .millis(100));
+    try q32.sendFor(&v32, .millis(100));
+    try expectEqual(u8, 0xFF, try q8.recvFor(.{ .ns = 100 }));
+    try expectEqual(u32, 0xDEADBEEF, try q32.recvFor(.{ .ns = 100 }));
 }
 
 // ---------------------------------------------------------------------------
@@ -909,7 +909,7 @@ fn testEventGroupWaitAll() !void {
     var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
-    const result = try eg.waitBits(BIT_0 | BIT_1, ove.eventgroup.WAIT_ALL, 100 * std.time.ns_per_ms);
+    const result = try eg.waitBitsFor(BIT_0 | BIT_1, ove.eventgroup.WAIT_ALL, .millis(100));
     try expect(result & (BIT_0 | BIT_1) == (BIT_0 | BIT_1));
 }
 
@@ -917,21 +917,21 @@ fn testEventGroupWaitAny() !void {
     var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0);
-    const result = try eg.waitBits(BIT_0 | BIT_1, 0, 100 * std.time.ns_per_ms);
+    const result = try eg.waitBitsFor(BIT_0 | BIT_1, 0, .millis(100));
     try expect(result & BIT_0 != 0);
 }
 
 fn testEventGroupWaitTimeout() !void {
     var eg = try ove.EventGroup.create();
     defer eg.deinit();
-    try expectErrorIs(eg.waitBits(BIT_0, 0, 10 * std.time.ns_per_ms), ove.Error.Timeout);
+    try expectErrorIs(eg.waitBitsFor(BIT_0, 0, .millis(10)), ove.Error.Timeout);
 }
 
 fn testEventGroupClearOnExit() !void {
     var eg = try ove.EventGroup.create();
     defer eg.deinit();
     _ = eg.setBits(BIT_0 | BIT_1);
-    _ = try eg.waitBits(BIT_0, ove.eventgroup.CLEAR_ON_EXIT, 100 * std.time.ns_per_ms);
+    _ = try eg.waitBitsFor(BIT_0, ove.eventgroup.CLEAR_ON_EXIT, .millis(100));
     const bits = eg.getBits();
     try expect(bits & BIT_0 == 0);
 }
@@ -955,7 +955,7 @@ fn testEventGroupCrossThread() !void {
     eg_for_thread = try ove.EventGroup.create();
     defer eg_for_thread.deinit();
     var t = try ove.Thread(4096).spawn(.{ .name = "egst", .priority = .normal }, egSetterThread, .{});
-    const result = try eg_for_thread.waitBits(BIT_0, 0, 500 * std.time.ns_per_ms);
+    const result = try eg_for_thread.waitBitsFor(BIT_0, 0, .millis(500));
     try expect(result & BIT_0 != 0);
     t.deinit();
 }
@@ -1476,10 +1476,10 @@ fn testStreamSendReceive() !void {
     var s = try ove.Stream(256).create(1);
     defer s.deinit();
     const data = [_]u8{ 0xDE, 0xAD, 0xBE, 0xEF };
-    const sent = try s.send(&data, 1000 * std.time.ns_per_ms);
+    const sent = try s.sendFor(&data, .millis(1000));
     try expectEqual(usize, 4, sent);
     var buf: [256]u8 = undefined;
-    const received = try s.receive(&buf, 1000 * std.time.ns_per_ms);
+    const received = try s.recvFor(&buf, .millis(1000));
     try expectEqual(usize, 4, received);
     try expect(std.mem.eql(u8, buf[0..4], &data));
 }
@@ -1488,14 +1488,14 @@ fn testStreamBytesAvailable() !void {
     var s = try ove.Stream(256).create(1);
     defer s.deinit();
     try expect(s.bytesAvailable() == 0);
-    _ = try s.send("abc", 1000 * std.time.ns_per_ms);
+    _ = try s.sendFor("abc", .millis(1000));
     try expect(s.bytesAvailable() >= 3);
 }
 
 fn testStreamReset() !void {
     var s = try ove.Stream(256).create(1);
     defer s.deinit();
-    _ = try s.send("data", 1000 * std.time.ns_per_ms);
+    _ = try s.sendFor("data", .millis(1000));
     try expect(s.bytesAvailable() > 0);
     try s.reset();
     try expect(s.bytesAvailable() == 0);
@@ -1511,7 +1511,7 @@ fn testStreamSendFromIsr() !void {
 fn testStreamReceiveFromIsr() !void {
     var s = try ove.Stream(256).create(1);
     defer s.deinit();
-    _ = try s.send("isr", 1000 * std.time.ns_per_ms);
+    _ = try s.sendFor("isr", .millis(1000));
     var buf: [16]u8 = undefined;
     const received = try s.receiveFromIsr(&buf);
     try expectEqual(usize, 3, received);
@@ -1559,7 +1559,7 @@ fn testWorkSubmitDelayed() !void {
     defer wq.deinit();
     var work = try ove.Work.create(workHandler);
     defer work.deinit();
-    try wq.submitDelayed(&work, 50);
+    try wq.submitDelayedFor(&work, .millis(50));
     ove.thread.sleepMs(10);
     try expectEqual(u32, 0, wq_count);
     ove.thread.sleepMs(150);
