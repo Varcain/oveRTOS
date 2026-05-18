@@ -194,20 +194,20 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread = Thread(4096).spawn(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = Thread(4096).spawn(app_allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread = Thread(4096).spawn(.{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
+    producer_thread = Thread(4096).spawn(app_allocator, .{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread = Thread(4096).spawn(.{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
+    consumer_thread = Thread(4096).spawn(app_allocator, .{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };
 
-    ui_timer = Timer.create(uiTimerCallback, 200, .periodic) catch {
+    ui_timer = Timer.create(app_allocator, uiTimerCallback, 200, .periodic) catch {
         ove.log.err("Failed to create UI timer", .{});
         return;
     };

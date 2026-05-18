@@ -213,20 +213,20 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread.spawnStatic(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
+    graphics_thread = Thread(4096).spawn(allocator, .{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread.spawnStatic(.{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
+    producer_thread = Thread(4096).spawn(allocator, .{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread.spawnStatic(.{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
+    consumer_thread = Thread(4096).spawn(allocator, .{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };
 
-    ui_timer.init(uiTimerCallback, 200, .periodic) catch {
+    ui_timer = Timer.create(allocator, uiTimerCallback, 200, .periodic) catch {
         ove.log.err("Failed to init UI timer", .{});
         return;
     };
