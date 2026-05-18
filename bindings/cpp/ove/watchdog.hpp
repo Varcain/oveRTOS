@@ -17,6 +17,7 @@
 
 #include <ove/watchdog.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -111,20 +112,23 @@ class Watchdog
 
 	/**
 	 * @brief Arms the watchdog and starts the countdown.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error::NotSupported if no watchdog peripheral is
+	 *         available, or other @ref Error variants on failure.
 	 */
-	[[nodiscard]] int start()
+	[[nodiscard]] Result<void> start() noexcept
 	{
-		return ove_watchdog_start(handle_);
+		return from_rc(ove_watchdog_start(handle_));
 	}
 
 	/**
 	 * @brief Disarms the watchdog, stopping the countdown.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int stop()
+	[[nodiscard]] Result<void> stop() noexcept
 	{
-		return ove_watchdog_stop(handle_);
+		return from_rc(ove_watchdog_stop(handle_));
 	}
 
 	/**
@@ -132,11 +136,12 @@ class Watchdog
 	 *
 	 * Must be called within the configured timeout period.
 	 *
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int feed()
+	[[nodiscard]] Result<void> feed() noexcept
 	{
-		return ove_watchdog_feed(handle_);
+		return from_rc(ove_watchdog_feed(handle_));
 	}
 
 	/**

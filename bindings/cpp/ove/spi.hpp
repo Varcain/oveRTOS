@@ -17,6 +17,7 @@
 
 #include <ove/spi.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -81,32 +82,36 @@ class Spi
 #endif
 
 	/** @brief Full-duplex transfer — sends `tx` and receives into `rx`. */
-	[[nodiscard]] int transfer(const struct ove_spi_cs *cs, const void *tx, void *rx,
-				   size_t len, std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	transfer(const struct ove_spi_cs *cs, const void *tx, void *rx, size_t len,
+		 std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_spi_transfer(handle_, cs, tx, rx, len, to_timeout_ns(timeout));
+		return from_rc(ove_spi_transfer(handle_, cs, tx, rx, len, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Write-only transfer — receive data is discarded. */
-	[[nodiscard]] int write(const struct ove_spi_cs *cs, const void *data, size_t len,
-				std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void> write(const struct ove_spi_cs *cs, const void *data,
+					 size_t len,
+					 std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_spi_write(handle_, cs, data, len, to_timeout_ns(timeout));
+		return from_rc(ove_spi_write(handle_, cs, data, len, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Read-only transfer — transmit sends zeros. */
-	[[nodiscard]] int read(const struct ove_spi_cs *cs, void *buf, size_t len,
-			       std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void> read(const struct ove_spi_cs *cs, void *buf, size_t len,
+					std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_spi_read(handle_, cs, buf, len, to_timeout_ns(timeout));
+		return from_rc(ove_spi_read(handle_, cs, buf, len, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Execute a sequence of transfers under a single CS assertion. */
-	[[nodiscard]] int transfer_seq(const struct ove_spi_cs *cs,
-				       const struct ove_spi_xfer *xfers, unsigned int num_xfers,
-				       std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	transfer_seq(const struct ove_spi_cs *cs, const struct ove_spi_xfer *xfers,
+		     unsigned int num_xfers,
+		     std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_spi_transfer_seq(handle_, cs, xfers, num_xfers, to_timeout_ns(timeout));
+		return from_rc(
+			ove_spi_transfer_seq(handle_, cs, xfers, num_xfers, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Returns the underlying C handle. */

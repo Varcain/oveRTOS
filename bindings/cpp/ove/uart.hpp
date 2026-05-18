@@ -17,6 +17,7 @@
 
 #include <ove/uart.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -86,19 +87,31 @@ template <size_t RxBufSize = 0> class Uart
 	}
 #endif
 
-	/** @brief Write bytes to the port; `bytes_written` optionally receives the count. */
-	[[nodiscard]] int write(const void *data, size_t len,
-				std::chrono::nanoseconds timeout = wait_forever,
-				size_t *bytes_written = nullptr)
+	/**
+	 * @brief Write bytes to the port.
+	 * @return On success, number of bytes actually written.  On
+	 *         failure, an `unexpected` @ref Error.
+	 */
+	[[nodiscard]] Result<size_t> write(const void *data, size_t len,
+					   std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_uart_write(handle_, data, len, to_timeout_ns(timeout), bytes_written);
+		size_t bytes_written = 0;
+		const int rc =
+			ove_uart_write(handle_, data, len, to_timeout_ns(timeout), &bytes_written);
+		return from_rc(rc, bytes_written);
 	}
 
-	/** @brief Read bytes from the RX buffer; `bytes_read` optionally receives the count. */
-	[[nodiscard]] int read(void *buf, size_t len, std::chrono::nanoseconds timeout = wait_forever,
-			       size_t *bytes_read = nullptr)
+	/**
+	 * @brief Read bytes from the RX buffer.
+	 * @return On success, number of bytes actually read.  On failure,
+	 *         an `unexpected` @ref Error.
+	 */
+	[[nodiscard]] Result<size_t> read(void *buf, size_t len,
+					  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_uart_read(handle_, buf, len, to_timeout_ns(timeout), bytes_read);
+		size_t bytes_read = 0;
+		const int rc = ove_uart_read(handle_, buf, len, to_timeout_ns(timeout), &bytes_read);
+		return from_rc(rc, bytes_read);
 	}
 
 	/** @brief Bytes currently available in the RX buffer. */
@@ -108,9 +121,9 @@ template <size_t RxBufSize = 0> class Uart
 	}
 
 	/** @brief Block until all pending TX bytes have been drained. */
-	[[nodiscard]] int flush()
+	[[nodiscard]] Result<void> flush() noexcept
 	{
-		return ove_uart_flush(handle_);
+		return from_rc(ove_uart_flush(handle_));
 	}
 
 	/** @brief Returns the underlying C handle. */

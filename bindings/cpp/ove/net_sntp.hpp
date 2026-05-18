@@ -14,6 +14,7 @@
 #pragma once
 
 #include <ove/net_sntp.h>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_NET_SNTP
 
@@ -37,32 +38,38 @@ struct Config {
 /**
  * @brief Synchronize with an NTP time server.
  * @param[in] cfg Configuration (defaults: pool.ntp.org, 5s timeout).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure (`Error::NetDnsFail`, `Error::Timeout`, …).
  */
-[[nodiscard]] inline int sync(const Config &cfg = {})
+[[nodiscard]] inline Result<void> sync(const Config &cfg = {}) noexcept
 {
 	ove_sntp_config_t c{cfg.server, cfg.timeout_ns};
-	return ove_sntp_sync(&c);
+	return from_rc(ove_sntp_sync(&c));
 }
 
 /**
  * @brief Get the UTC offset from the last successful sync.
- * @param[out] offset_us UTC offset in microseconds.
- * @return `OVE_OK` on success, `OVE_ERR_NOT_SUPPORTED` if no sync done.
+ * @return On success, the UTC offset in microseconds.  On failure,
+ *         `unexpected(Error::NotSupported)` if no sync has been
+ *         performed yet.
  */
-[[nodiscard]] inline int get_offset_us(int64_t &offset_us)
+[[nodiscard]] inline Result<int64_t> get_offset_us() noexcept
 {
-	return ove_sntp_get_offset_us(&offset_us);
+	int64_t offset_us = 0;
+	const int rc = ove_sntp_get_offset_us(&offset_us);
+	return from_rc(rc, offset_us);
 }
 
 /**
  * @brief Get current UTC time in seconds since Unix epoch.
- * @param[out] utc_s UTC seconds.
- * @return `OVE_OK` on success.
+ * @return On success, UTC seconds since the Unix epoch.  On failure,
+ *         an `unexpected` @ref Error.
  */
-[[nodiscard]] inline int get_utc(uint32_t &utc_s)
+[[nodiscard]] inline Result<uint32_t> get_utc() noexcept
 {
-	return ove_sntp_get_utc(&utc_s);
+	uint32_t utc_s = 0;
+	const int rc = ove_sntp_get_utc(&utc_s);
+	return from_rc(rc, utc_s);
 }
 
 } /* namespace ove::sntp */

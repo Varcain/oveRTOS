@@ -17,6 +17,7 @@
 
 #include <ove/i2c.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 namespace ove
 {
@@ -81,44 +82,51 @@ class I2c
 #endif
 
 	/** @brief Write `len` bytes to slave `addr`. */
-	[[nodiscard]] int write(uint16_t addr, const void *data, size_t len,
-				std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void> write(uint16_t addr, const void *data, size_t len,
+					 std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_i2c_write(handle_, addr, data, len, to_timeout_ns(timeout));
+		return from_rc(ove_i2c_write(handle_, addr, data, len, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Read `len` bytes from slave `addr` into `buf`. */
-	[[nodiscard]] int read(uint16_t addr, void *buf, size_t len,
-			       std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void> read(uint16_t addr, void *buf, size_t len,
+					std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_i2c_read(handle_, addr, buf, len, to_timeout_ns(timeout));
+		return from_rc(ove_i2c_read(handle_, addr, buf, len, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Combined write-then-read transaction with a repeated start. */
-	[[nodiscard]] int write_read(uint16_t addr, const void *tx, size_t tx_len, void *rx,
-				     size_t rx_len, std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	write_read(uint16_t addr, const void *tx, size_t tx_len, void *rx, size_t rx_len,
+		   std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_i2c_write_read(handle_, addr, tx, tx_len, rx, rx_len, to_timeout_ns(timeout));
+		return from_rc(ove_i2c_write_read(handle_, addr, tx, tx_len, rx, rx_len,
+						  to_timeout_ns(timeout)));
 	}
 
 	/** @brief Write `len` bytes to register `reg` on slave `addr`. */
-	[[nodiscard]] int reg_write(uint16_t addr, uint8_t reg, const void *data, size_t len,
-				    std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	reg_write(uint16_t addr, uint8_t reg, const void *data, size_t len,
+		  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_i2c_reg_write(handle_, addr, reg, data, len, to_timeout_ns(timeout));
+		return from_rc(
+			ove_i2c_reg_write(handle_, addr, reg, data, len, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Read `len` bytes from register `reg` on slave `addr`. */
-	[[nodiscard]] int reg_read(uint16_t addr, uint8_t reg, void *buf, size_t len,
-				   std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	reg_read(uint16_t addr, uint8_t reg, void *buf, size_t len,
+		 std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_i2c_reg_read(handle_, addr, reg, buf, len, to_timeout_ns(timeout));
+		return from_rc(
+			ove_i2c_reg_read(handle_, addr, reg, buf, len, to_timeout_ns(timeout)));
 	}
 
-	/** @brief Probe slave `addr` — returns `OVE_OK` if the device ACKs. */
-	[[nodiscard]] int probe(uint16_t addr, std::chrono::nanoseconds timeout = wait_forever)
+	/** @brief Probe slave `addr` — empty `Result<void>` if the device ACKs. */
+	[[nodiscard]] Result<void>
+	probe(uint16_t addr, std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_i2c_probe(handle_, addr, to_timeout_ns(timeout));
+		return from_rc(ove_i2c_probe(handle_, addr, to_timeout_ns(timeout)));
 	}
 
 	/** @brief Returns the underlying C handle. */

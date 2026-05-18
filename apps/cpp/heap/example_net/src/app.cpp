@@ -107,19 +107,16 @@ static void test_dns()
 	OVE_LOG_INF("=== DNS Resolution ===");
 
 	TEST("resolve example.com");
-	ove::Address addr;
-	int ret = ove::dns::resolve("example.com", addr, 5s);
-	if (ret == OVE_OK) {
-		OVE_LOG_INF("  -> %u.%u.%u.%u", addr.raw.addr[0], addr.raw.addr[1],
-			    addr.raw.addr[2], addr.raw.addr[3]);
+	if (auto r = ove::dns::resolve("example.com", 5s); r) {
+		OVE_LOG_INF("  -> %u.%u.%u.%u", r->raw.addr[0], r->raw.addr[1], r->raw.addr[2],
+			    r->raw.addr[3]);
 		PASS("resolve example.com");
 	} else {
-		FAIL("resolve example.com", ret);
+		FAIL("resolve example.com", static_cast<int>(r.error()));
 	}
 
 	TEST("resolve invalid.invalid (expect failure)");
-	ret = ove::dns::resolve("invalid.invalid", addr, 3s);
-	if (ret != OVE_OK) {
+	if (auto r = ove::dns::resolve("invalid.invalid", 3s); !r) {
 		PASS("resolve invalid.invalid (correctly failed)");
 	} else {
 		FAIL("resolve invalid.invalid (should have failed)", 0);
@@ -141,12 +138,12 @@ static void test_tcp()
 	PASS("socket_open TCP");
 
 	/* Resolve + connect to example.com:80 */
-	ove::Address addr;
-	int ret = ove::dns::resolve("example.com", addr, 5s);
-	if (ret != OVE_OK) {
-		FAIL("dns for TCP test", ret);
+	auto resolved = ove::dns::resolve("example.com", 5s);
+	if (!resolved) {
+		FAIL("dns for TCP test", static_cast<int>(resolved.error()));
 		return;
 	}
+	ove::Address addr = *resolved;
 	addr.set_port(80);
 
 	TEST("socket_connect");
@@ -339,20 +336,17 @@ static void test_sntp()
 
 	TEST("sntp_sync pool.ntp.org");
 	ove::sntp::Config sntp_cfg{"pool.ntp.org", OVE_SEC(5)};
-	int ret = ove::sntp::sync(sntp_cfg);
-	if (ret == OVE_OK) {
+	if (auto r = ove::sntp::sync(sntp_cfg); r) {
 		PASS("sntp_sync");
 		TEST("sntp_get_utc");
-		uint32_t utc = 0;
-		ret = ove::sntp::get_utc(utc);
-		if (ret == OVE_OK) {
-			OVE_LOG_INF("  -> UTC: %lu", (unsigned long)utc);
+		if (auto utc = ove::sntp::get_utc(); utc) {
+			OVE_LOG_INF("  -> UTC: %lu", (unsigned long)*utc);
 			PASS("sntp_get_utc");
 		} else {
-			FAIL("sntp_get_utc", ret);
+			FAIL("sntp_get_utc", static_cast<int>(utc.error()));
 		}
 	} else {
-		FAIL("sntp_sync", ret);
+		FAIL("sntp_sync", static_cast<int>(r.error()));
 	}
 }
 
@@ -381,57 +375,55 @@ static void test_mqtt()
 		.keep_alive_s = 30,
 	};
 
-	int ret = mqtt.connect(
-		mqtt_cfg, +[](std::string_view topic, std::string_view payload) {
-			OVE_LOG_INF("  MQTT rx: [%.*s] %.*s", (int)topic.size(), topic.data(),
-				    (int)payload.size(), payload.data());
-			if (payload.size() < sizeof(mqtt_rx_payload)) {
-				std::memcpy(mqtt_rx_payload, payload.data(), payload.size());
-				mqtt_rx_payload[payload.size()] = '\0';
-			}
-			mqtt_rx_count++;
-		});
-
-	if (ret != OVE_OK) {
-		FAIL("mqtt_connect", ret);
+	if (auto r = mqtt.connect(
+		    mqtt_cfg, +[](std::string_view topic, std::string_view payload) {
+			    OVE_LOG_INF("  MQTT rx: [%.*s] %.*s", (int)topic.size(),
+					topic.data(), (int)payload.size(), payload.data());
+			    if (payload.size() < sizeof(mqtt_rx_payload)) {
+				    std::memcpy(mqtt_rx_payload, payload.data(), payload.size());
+				    mqtt_rx_payload[payload.size()] = '\0';
+			    }
+			    mqtt_rx_count++;
+		    });
+	    !r) {
+		FAIL("mqtt_connect", static_cast<int>(r.error()));
 		return;
 	}
 	PASS("mqtt_connect");
 
 	/* Subscribe */
 	TEST("mqtt_subscribe overtos/test");
-	ret = mqtt.subscribe("overtos/test");
-	if (ret == OVE_OK) {
+	if (auto r = mqtt.subscribe("overtos/test"); r) {
 		PASS("mqtt_subscribe");
 	} else {
-		FAIL("mqtt_subscribe", ret);
+		FAIL("mqtt_subscribe", static_cast<int>(r.error()));
 	}
 
 	/* Publish QoS0 */
 	TEST("mqtt_publish QoS0");
 	const char *msg0 = "hello-qos0";
-	ret = mqtt.publish("overtos/test", msg0, std::strlen(msg0));
-	if (ret == OVE_OK) {
+	if (auto r = mqtt.publish("overtos/test", msg0, std::strlen(msg0)); r) {
 		PASS("mqtt_publish QoS0");
 	} else {
-		FAIL("mqtt_publish QoS0", ret);
+		FAIL("mqtt_publish QoS0", static_cast<int>(r.error()));
 	}
 
 	/* Publish QoS1 */
 	TEST("mqtt_publish QoS1");
 	const char *msg1 = "hello-qos1";
-	ret = mqtt.publish("overtos/test", std::string_view{msg1}, ove::mqtt::Qos::AtLeastOnce);
-	if (ret == OVE_OK) {
+	if (auto r = mqtt.publish("overtos/test", std::string_view{msg1},
+				  ove::mqtt::Qos::AtLeastOnce);
+	    r) {
 		PASS("mqtt_publish QoS1 (PUBACK received)");
 	} else {
-		FAIL("mqtt_publish QoS1", ret);
+		FAIL("mqtt_publish QoS1", static_cast<int>(r.error()));
 	}
 
 	/* Poll to receive our own messages */
 	TEST("mqtt_loop (receive published messages)");
 	mqtt_rx_count = 0;
 	for (int i = 0; i < 10; i++) {
-		mqtt.loop(500ms);
+		(void)mqtt.loop(500ms);
 		if (mqtt_rx_count >= 2)
 			break;
 	}
@@ -445,21 +437,18 @@ static void test_mqtt()
 
 	/* Unsubscribe */
 	TEST("mqtt_unsubscribe");
-	ret = mqtt.unsubscribe("overtos/test");
-	if (ret == OVE_OK) {
+	if (auto r = mqtt.unsubscribe("overtos/test"); r) {
 		PASS("mqtt_unsubscribe");
+	} else if (r.error() == ove::Error::NetClosed || r.error() == ove::Error::NetReset) {
+		OVE_LOG_WRN("  connection closed by broker (%d)", static_cast<int>(r.error()));
+		PASS("mqtt_unsubscribe (connection closed, acceptable)");
 	} else {
-		if (ret == OVE_ERR_NET_CLOSED || ret == OVE_ERR_NET_RESET) {
-			OVE_LOG_WRN("  connection closed by broker (%d)", ret);
-			PASS("mqtt_unsubscribe (connection closed, acceptable)");
-		} else {
-			FAIL("mqtt_unsubscribe", ret);
-		}
+		FAIL("mqtt_unsubscribe", static_cast<int>(r.error()));
 	}
 
 	/* Keepalive ping */
 	TEST("mqtt_loop keepalive ping");
-	mqtt.loop(100ms);
+	(void)mqtt.loop(100ms);
 	PASS("mqtt_loop keepalive");
 
 	/* Disconnect */
@@ -498,8 +487,7 @@ static void net_thread(void *)
 	OVE_LOG_INF("Starting HTTP server on port %u...", (unsigned)httpd_port);
 	ove::httpd::Config httpd_cfg{.port = httpd_port, .max_body_size = 1024};
 	ove::httpd::set_netif(netif.handle());
-	int ret = ove::httpd::start(httpd_cfg);
-	if (ret == OVE_OK) {
+	if (auto r = ove::httpd::start(httpd_cfg); r) {
 		ove::httpd::register_builtin_routes();
 		OVE_LOG_INF("HTTP server running — open http://<device-ip>:%u/",
 			    (unsigned)httpd_port);
@@ -508,7 +496,7 @@ static void net_thread(void *)
 			ove::this_thread::sleep_ms(1000);
 		}
 	} else {
-		OVE_LOG_ERR("HTTP server failed to start: %d", ret);
+		OVE_LOG_ERR("HTTP server failed to start: %d", static_cast<int>(r.error()));
 	}
 }
 

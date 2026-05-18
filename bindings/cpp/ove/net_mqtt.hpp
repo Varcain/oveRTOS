@@ -15,6 +15,7 @@
 
 #include <ove/net_mqtt.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 #include <string_view>
 
 #ifdef CONFIG_OVE_NET_MQTT
@@ -124,9 +125,10 @@ class Client
 	 *
 	 * @param[in] cfg        Connection configuration.
 	 * @param[in] on_message Message callback (nullptr to disable).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int connect(const Config &cfg, MsgFn on_message = nullptr)
+	[[nodiscard]] Result<void> connect(const Config &cfg, MsgFn on_message = nullptr) noexcept
 	{
 		s_msg_fn_ = on_message;
 		ove_mqtt_config_t c{};
@@ -139,7 +141,7 @@ class Client
 		c.use_tls = cfg.use_tls ? 1 : 0;
 		c.on_message = on_message ? trampoline_ : nullptr;
 		c.user_data = nullptr;
-		return ove_mqtt_connect(handle_, &c);
+		return from_rc(ove_mqtt_connect(handle_, &c));
 	}
 
 	/**
@@ -156,13 +158,14 @@ class Client
 	 * @param[in] payload Message payload.
 	 * @param[in] len     Payload length in bytes.
 	 * @param[in] qos     QoS level (default: AtMostOnce).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int publish(const char *topic, const void *payload, size_t len,
-				  Qos qos = Qos::AtMostOnce)
+	[[nodiscard]] Result<void> publish(const char *topic, const void *payload, size_t len,
+					   Qos qos = Qos::AtMostOnce) noexcept
 	{
-		return ove_mqtt_publish(handle_, topic, payload, len,
-					static_cast<ove_mqtt_qos_t>(qos));
+		return from_rc(ove_mqtt_publish(handle_, topic, payload, len,
+						static_cast<ove_mqtt_qos_t>(qos)));
 	}
 
 	/**
@@ -170,10 +173,10 @@ class Client
 	 * @param[in] topic   Topic string (NUL-terminated).
 	 * @param[in] payload Message payload as a string_view.
 	 * @param[in] qos     QoS level (default: AtMostOnce).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return As @ref publish(const char*, const void*, size_t, Qos).
 	 */
-	[[nodiscard]] int publish(const char *topic, std::string_view payload,
-				  Qos qos = Qos::AtMostOnce)
+	[[nodiscard]] Result<void> publish(const char *topic, std::string_view payload,
+					   Qos qos = Qos::AtMostOnce) noexcept
 	{
 		return publish(topic, payload.data(), payload.size(), qos);
 	}
@@ -182,21 +185,24 @@ class Client
 	 * @brief Subscribes to a topic.
 	 * @param[in] topic Topic filter (NUL-terminated).
 	 * @param[in] qos   Maximum QoS level (default: AtMostOnce).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int subscribe(const char *topic, Qos qos = Qos::AtMostOnce)
+	[[nodiscard]] Result<void> subscribe(const char *topic, Qos qos = Qos::AtMostOnce) noexcept
 	{
-		return ove_mqtt_subscribe(handle_, topic, static_cast<ove_mqtt_qos_t>(qos));
+		return from_rc(
+			ove_mqtt_subscribe(handle_, topic, static_cast<ove_mqtt_qos_t>(qos)));
 	}
 
 	/**
 	 * @brief Unsubscribes from a topic.
 	 * @param[in] topic Topic filter (NUL-terminated).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int unsubscribe(const char *topic)
+	[[nodiscard]] Result<void> unsubscribe(const char *topic) noexcept
 	{
-		return ove_mqtt_unsubscribe(handle_, topic);
+		return from_rc(ove_mqtt_unsubscribe(handle_, topic));
 	}
 
 	/**
@@ -204,12 +210,16 @@ class Client
 	 *
 	 * Must be called periodically (typically in a loop or timer).
 	 *
-	 * @param[in] timeout_ns Maximum time to wait for incoming data.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] timeout Maximum time to wait for incoming data (any
+	 *                    `std::chrono::duration` unit; defaults to
+	 *                    500 ms).
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure.
 	 */
-	[[nodiscard]] int loop(std::chrono::nanoseconds timeout = std::chrono::milliseconds{500})
+	[[nodiscard]] Result<void>
+	loop(std::chrono::nanoseconds timeout = std::chrono::milliseconds{500}) noexcept
 	{
-		return ove_mqtt_loop(handle_, to_timeout_ns(timeout));
+		return from_rc(ove_mqtt_loop(handle_, to_timeout_ns(timeout)));
 	}
 
 	/**

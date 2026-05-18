@@ -109,7 +109,7 @@ static void test_cpp_static_timer_init(void **state)
 	g_timer_fired.store(0);
 	ove::Timer tmr(timer_static_cb, nullptr, 50, true);
 	assert_true(tmr.valid());
-	assert_int_equal(tmr.start(), OVE_OK);
+	assert_true(tmr.start().has_value());
 	test_msleep(200);
 	assert_true(g_timer_fired.load());
 #endif

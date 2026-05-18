@@ -211,9 +211,8 @@ OVE_MAIN()
 		create_ui();
 	}
 
-	ret = ui_timer.start();
-	if (ret != OVE_OK) {
-		OVE_LOG_ERR("Failed to start UI timer: %d", ret);
+	if (auto r = ui_timer.start(); !r) {
+		OVE_LOG_ERR("Failed to start UI timer: %d", static_cast<int>(r.error()));
 		return;
 	}
 
