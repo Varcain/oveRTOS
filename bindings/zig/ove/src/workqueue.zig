@@ -42,7 +42,7 @@ fn HeapWorkqueue(comptime stack_size: usize) type {
 
         pub fn create(name: [*:0]const u8, priority: thread_mod.Priority) Error!Self {
             var h: c.ove_workqueue_t = null;
-            try err.fromCode(c.ove_workqueue_create(&h, name, priority, stack_size));
+            try err.fromCode(c.ove_workqueue_create(&h, name, @intFromEnum(priority), stack_size));
             return .{ .handle = h };
         }
 
@@ -87,7 +87,7 @@ fn ZeroHeapWorkqueue(comptime stack_size: usize) type {
                 &self.handle,
                 &self.storage,
                 name,
-                priority,
+                @intFromEnum(priority),
                 stack_size,
                 &self.stack,
             ));

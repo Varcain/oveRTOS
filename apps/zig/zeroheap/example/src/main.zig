@@ -32,7 +32,6 @@ const ove = @import("ove");
 const Thread = ove.Thread;
 const Queue = ove.Queue;
 const Timer = ove.Timer;
-const prio = ove.thread.prio;
 
 const lvgl = ove.lvgl;
 
@@ -203,15 +202,15 @@ fn appMain() void {
         return;
     };
 
-    graphics_thread.spawnStatic(.{ .name = "graphics", .priority = prio.high }, graphicsEntry, .{}) catch {
+    graphics_thread.spawnStatic(.{ .name = "graphics", .priority = .high }, graphicsEntry, .{}) catch {
         ove.log.err("Failed to spawn graphics", .{});
         return;
     };
-    producer_thread.spawnStatic(.{ .name = "producer", .priority = prio.normal }, producerEntry, .{}) catch {
+    producer_thread.spawnStatic(.{ .name = "producer", .priority = .normal }, producerEntry, .{}) catch {
         ove.log.err("Failed to spawn producer", .{});
         return;
     };
-    consumer_thread.spawnStatic(.{ .name = "consumer", .priority = prio.normal }, consumerEntry, .{}) catch {
+    consumer_thread.spawnStatic(.{ .name = "consumer", .priority = .normal }, consumerEntry, .{}) catch {
         ove.log.err("Failed to spawn consumer", .{});
         return;
     };

@@ -111,20 +111,50 @@ pub fn stackTotal(comptime stack_size: usize) usize {
     return stack_size;
 }
 
-/// Thread priority levels.  Use the `prio.*` constants.
-pub const Priority = c.ove_prio_t;
+/// Thread priority levels.
+///
+/// `enum(c_uint)` matching the substrate's `ove_prio_t` C enum exactly
+/// (the C side translates as `c_uint` since all variants are
+/// non-negative), so the FFI conversion at the boundary is
+/// `@intFromEnum(p)` — a no-op at the machine-code level.  Pin block
+/// below catches substrate drift at compile time.
+///
+/// ```zig
+/// try ove.Thread(4096).spawn(.{ .name = "worker", .priority = .high },
+///                             entry, .{});
+/// ```
+pub const Priority = enum(c_uint) {
+    /// Lowest priority; runs only when no other thread is ready.
+    idle = 0,
+    /// Low priority background work.
+    low = 1,
+    /// Below-normal priority.
+    below_normal = 2,
+    /// Default application priority.
+    normal = 3,
+    /// Above-normal priority.
+    above_normal = 4,
+    /// High priority; prefer for time-sensitive tasks.
+    high = 5,
+    /// Real-time priority; use with care.
+    realtime = 6,
+    /// Highest priority; reserved for critical system tasks.
+    critical = 7,
+};
 pub const State = c.ove_thread_state_t;
 
-pub const prio = struct {
-    pub const idle: Priority = c.OVE_PRIO_IDLE;
-    pub const low: Priority = c.OVE_PRIO_LOW;
-    pub const below_normal: Priority = c.OVE_PRIO_BELOW_NORMAL;
-    pub const normal: Priority = c.OVE_PRIO_NORMAL;
-    pub const above_normal: Priority = c.OVE_PRIO_ABOVE_NORMAL;
-    pub const high: Priority = c.OVE_PRIO_HIGH;
-    pub const realtime: Priority = c.OVE_PRIO_REALTIME;
-    pub const critical: Priority = c.OVE_PRIO_CRITICAL;
-};
+comptime {
+    // Pin enum values against the substrate's `OVE_PRIO_*` defines.
+    // If the substrate renumbers a variant, this fails to compile.
+    std.debug.assert(@intFromEnum(Priority.idle) == c.OVE_PRIO_IDLE);
+    std.debug.assert(@intFromEnum(Priority.low) == c.OVE_PRIO_LOW);
+    std.debug.assert(@intFromEnum(Priority.below_normal) == c.OVE_PRIO_BELOW_NORMAL);
+    std.debug.assert(@intFromEnum(Priority.normal) == c.OVE_PRIO_NORMAL);
+    std.debug.assert(@intFromEnum(Priority.above_normal) == c.OVE_PRIO_ABOVE_NORMAL);
+    std.debug.assert(@intFromEnum(Priority.high) == c.OVE_PRIO_HIGH);
+    std.debug.assert(@intFromEnum(Priority.realtime) == c.OVE_PRIO_REALTIME);
+    std.debug.assert(@intFromEnum(Priority.critical) == c.OVE_PRIO_CRITICAL);
+}
 
 pub const Stats = struct {
     runtime_us: u64,
@@ -136,7 +166,7 @@ pub const Stats = struct {
 ///
 /// ```zig
 /// // Common case — name + priority
-/// try ove.Thread(4096).spawn(.{ .name = "worker", .priority = prio.high },
+/// try ove.Thread(4096).spawn(.{ .name = "worker", .priority = .high },
 ///                             entry, .{});
 /// // Defaults — anonymous, normal priority
 /// try ove.Thread(4096).spawn(.{}, entry, .{});
@@ -150,8 +180,8 @@ pub const SpawnConfig = struct {
     /// Thread name (defaults to `"ove-thread"`).  Nul-terminated at
     /// comptime before being handed to the substrate.
     name: ?[]const u8 = null,
-    /// Scheduler priority (defaults to `prio.normal`).
-    priority: Priority = prio.normal,
+    /// Scheduler priority (defaults to [`Priority.normal`]).
+    priority: Priority = .normal,
 };
 
 /// Comptime-produce a `[*:0]const u8` from a `SpawnConfig.name`.
@@ -422,7 +452,7 @@ fn HeapThread(comptime stack_size: usize) type {
                 comptime cfgNameZ(cfg),
                 &Tramp.invoke,
                 ctx_ptr,
-                cfg.priority,
+                @intFromEnum(cfg.priority),
                 stack_size,
             ));
             return .{ .handle = h };
@@ -472,7 +502,7 @@ fn HeapThread(comptime stack_size: usize) type {
         }
 
         pub fn setPriority(self: Self, priority: Priority) void {
-            c.ove_thread_set_priority(self.handle, priority);
+            c.ove_thread_set_priority(self.handle, @intFromEnum(priority));
         }
 
         pub fn suspendThread(self: Self) void {
@@ -534,7 +564,7 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
                 comptime cfgNameZ(cfg),
                 &Tramp.invoke,
                 ctx_ptr,
-                cfg.priority,
+                @intFromEnum(cfg.priority),
                 stack_size,
                 &self.stack,
             ));
@@ -589,7 +619,7 @@ fn ZeroHeapThread(comptime stack_size: usize) type {
 
         pub fn setPriority(self: *Self, priority: Priority) void {
             self.tracker.assertSame(self, "ove.Thread");
-            c.ove_thread_set_priority(self.handle, priority);
+            c.ove_thread_set_priority(self.handle, @intFromEnum(priority));
         }
 
         pub fn suspendThread(self: *Self) void {
