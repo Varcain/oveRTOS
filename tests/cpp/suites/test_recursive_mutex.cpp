@@ -57,7 +57,9 @@ static void test_cpp_recursive_timeout(void **state)
 	auto th = make_test_thread("rh", cpp_rmtx_hold_entry, &ctx);
 	while (!__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE))
 		test_msleep(1);
-	assert_int_equal(mtx.try_lock_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = mtx.try_lock_for(std::chrono::milliseconds{50});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 static void test_cpp_recursive_destroy(void **state)
@@ -112,6 +114,26 @@ static void test_cpp_recursive_not_copyable(void **state)
 		      "RecursiveMutex must not be copy assignable");
 }
 
+/* Method-return-type pins.  Catches an accidental revert of the
+ * `try_lock_for`/`try_lock_until` migration from `int` to
+ * `Result<void>` at compile time. */
+static void test_cpp_recursive_return_type_shape(void **state)
+{
+	(void)state;
+	static_assert(
+		std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().lock()), void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().try_lock()), bool>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().try_lock_for(
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().try_lock_until(
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<ove::RecursiveMutex>().unlock()), void>);
+}
+
 int test_cpp_recursive_mutex_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -126,6 +148,7 @@ int test_cpp_recursive_mutex_run(void)
 		cmocka_unit_test(test_cpp_recursive_move_assign),
 #endif
 		cmocka_unit_test(test_cpp_recursive_not_copyable),
+		cmocka_unit_test(test_cpp_recursive_return_type_shape),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
