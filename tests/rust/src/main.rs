@@ -77,7 +77,7 @@ fn main() {
         ("PM", test_pm::run),
         ("Fmt", test_fmt::run),
         ("Lvgl", test_lvgl::run),
-        ("embedded-hal", test_embedded_hal::run),
+        ("embedded-hal+io", test_embedded_hal::run),
     ];
 
     for (name, runner) in suites {

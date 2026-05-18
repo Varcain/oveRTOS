@@ -20,6 +20,10 @@ panic-handler = []
 # upstream crate in their dep tree (e.g. host-only test rigs); enabling
 # unlocks any `embedded-hal`-aware sensor driver from crates.io.
 embedded-hal = ["dep:embedded-hal"]
+# `embedded-io` activates the `embedded_io::*` trait impls on
+# `ove::Uart` / `ove::Stream` / `ove::fs::File`.  Separate from
+# `embedded-hal` so callers can pick exactly what they need.
+embedded-io = ["dep:embedded-io"]
 
 [dependencies]
 # Fixed-capacity, no_std container library — `ove::containers::*` re-exports
@@ -39,6 +43,8 @@ log = "0.4"
 # `embedded-hal` traits — opt-in via the `embedded-hal` feature.  See
 # the feature comment for rationale.
 embedded-hal = { version = "1.0", optional = true }
+# `embedded-io` traits — opt-in via the `embedded-io` feature.
+embedded-io = { version = "0.6", optional = true }
 
 [build-dependencies]
 bindgen = "0.72"
