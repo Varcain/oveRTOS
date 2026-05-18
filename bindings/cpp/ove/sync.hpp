@@ -308,11 +308,20 @@ class LockGuard
       public:
 	/**
 	 * @brief Constructs the guard, immediately locking the given mutex.
+	 *
+	 * Acquires @p mtx with an indefinite timeout.  If acquisition fails
+	 * (handle is stale, moved-from, or its subsystem is mid-deinit),
+	 * the constructor aborts via @c OVE_STATIC_INIT_ASSERT — matching
+	 * how @c Thread / @c Queue treat similar init failures.  This
+	 * guarantees the destructor's @ref Mutex::unlock cannot run on a
+	 * mutex we never acquired.
+	 *
 	 * @param[in] mtx The mutex to lock.  Must outlive this guard.
 	 */
 	explicit LockGuard(Mutex &mtx) : mtx_(mtx)
 	{
-		(void)mtx_.lock(); /* wait forever — failure is fatal */
+		const int err = mtx_.lock();
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
