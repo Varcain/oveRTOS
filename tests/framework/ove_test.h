@@ -395,6 +395,7 @@ int test_led_run(void);
 int test_fs_run(void);
 int test_lvgl_run(void);
 int test_static_define_run(void);
+int test_init_no_alloc_run(void);
 int test_app_run(void);
 int test_infer_run(void);
 int test_net_mqtt_run(void);
