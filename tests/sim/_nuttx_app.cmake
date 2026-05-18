@@ -114,6 +114,7 @@ set(_srcs
   ${_suite_dir}/test_fs.c
   ${_suite_dir}/test_lvgl.c
   ${_suite_dir}/test_app.c
+  ${_suite_dir}/test_init_no_alloc.c
 
   # CMocka (built as part of this app).
   ${_cmocka_dir}/src/cmocka.c
