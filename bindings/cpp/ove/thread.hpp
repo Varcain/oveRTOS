@@ -783,21 +783,22 @@ struct MemStats {
 
 /**
  * @brief Query system heap statistics.
- * @param[out] stats Structure to fill.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return On success, the populated @ref MemStats.  On failure, an
+ *         `unexpected` @ref Error.
  */
-[[nodiscard]] inline int get_mem_stats(MemStats &stats)
+[[nodiscard]] inline Result<MemStats> get_mem_stats() noexcept
 {
+	MemStats stats{};
 	struct ove_mem_stats ms {
 	};
-	int ret = ove_sys_get_mem_stats(&ms);
-	if (ret == OVE_OK) {
+	const int rc = ove_sys_get_mem_stats(&ms);
+	if (rc == OVE_OK) {
 		stats.total = ms.total;
 		stats.free = ms.free;
 		stats.used = ms.used;
 		stats.peak_used = ms.peak_used;
 	}
-	return ret;
+	return from_rc(rc, stats);
 }
 
 /* ── Thread enumeration ───────────────────────────────────────── */
@@ -822,28 +823,24 @@ using ThreadInfo = struct ove_thread_info;
 /**
  * @brief List all threads in the system.
  *
- * Fills @p out with up to @p max @ref ThreadInfo entries.  Returns
- * the actual count via @p count (when non-null).
+ * Fills @p out with up to @p max @ref ThreadInfo entries.
  *
  * @note The substrate caps the result at @c OVE_THREAD_LIST_MAX (16 in
  * the current implementation; tracked in `c-substrate-findings.md`
  * P2-2 for promotion to a public constant).  If @p max exceeds the
- * substrate's cap, the cap wins and @c *count reflects the substrate
- * limit, not @p max.
+ * substrate's cap, the cap wins and the returned count reflects the
+ * substrate limit, not @p max.
  *
- * @param[out] out   Array to fill with thread info.
- * @param[in]  max   Maximum entries the @p out buffer can hold.
- * @param[out] count Actual count written (may be `nullptr`).
- * @return `OVE_OK` on success, or a negative error code.
+ * @param[out] out Array to fill with thread info.
+ * @param[in]  max Maximum entries the @p out buffer can hold.
+ * @return On success, the actual number of entries written into @p out.
+ *         On failure, an `unexpected` @ref Error.
  */
-[[nodiscard]] inline int thread_list(ThreadInfo *out, size_t max, size_t *count = nullptr)
+[[nodiscard]] inline Result<size_t> thread_list(ThreadInfo *out, size_t max) noexcept
 {
 	size_t n = 0;
-	int ret = ove_thread_list(out, max, &n);
-	if (ret == OVE_OK && count) {
-		*count = n;
-	}
-	return ret;
+	const int rc = ove_thread_list(out, max, &n);
+	return from_rc(rc, n);
 }
 
 } /* namespace ove */

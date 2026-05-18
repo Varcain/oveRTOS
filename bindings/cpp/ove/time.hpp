@@ -15,6 +15,7 @@
 
 #include <ove/time.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_TIME
 
@@ -30,12 +31,14 @@ namespace ove::time
 
 /**
  * @brief Returns the current system time in microseconds.
- * @param[out] out Pointer to a `uint64_t` that receives the timestamp.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return On success, the timestamp in microseconds since boot.  On
+ *         failure, an `unexpected` @ref Error.
  */
-[[nodiscard]] inline int get_us(uint64_t *out)
+[[nodiscard]] inline Result<uint64_t> get_us() noexcept
 {
-	return ove_time_get_us(out);
+	uint64_t out = 0;
+	const int rc = ove_time_get_us(&out);
+	return from_rc(rc, out);
 }
 
 /**

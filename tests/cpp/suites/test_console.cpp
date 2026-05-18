@@ -6,8 +6,7 @@
 static void test_cpp_console_init(void **state)
 {
 	(void)state;
-	int ret = ove::console::init();
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::console::init().has_value());
 }
 
 static void test_cpp_console_putchar(void **state)

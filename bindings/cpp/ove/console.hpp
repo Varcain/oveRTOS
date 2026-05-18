@@ -15,6 +15,7 @@
 
 #include <ove/console.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_CONSOLE
 
@@ -31,11 +32,12 @@ namespace ove::console
 
 /**
  * @brief Initialises the console subsystem.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-inline int init()
+[[nodiscard]] inline Result<void> init() noexcept
 {
-	return ove_console_init();
+	return from_rc(ove_console_init());
 }
 
 /* Some C libraries (NuttX, glibc) define getchar/putchar as macros;

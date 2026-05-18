@@ -3,8 +3,7 @@
 static void test_cpp_board_init(void **state)
 {
 	(void)state;
-	int ret = ove::board::init();
-	assert_int_equal(ret, OVE_OK);
+	assert_true(ove::board::init().has_value());
 }
 
 static void test_cpp_board_name(void **state)

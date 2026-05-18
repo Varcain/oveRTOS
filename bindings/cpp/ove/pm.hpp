@@ -16,6 +16,7 @@
 
 #include <ove/pm.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_PM
 
@@ -52,11 +53,12 @@ using Stats = ove_pm_stats;
 /**
  * @brief Initialise the PM subsystem.
  * @param[in] cfg Configuration parameters.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int init(const Cfg &cfg)
+[[nodiscard]] inline Result<void> init(const Cfg &cfg) noexcept
 {
-	return ove_pm_init(&cfg);
+	return from_rc(ove_pm_init(&cfg));
 }
 
 /**
@@ -72,11 +74,12 @@ inline void deinit()
 /**
  * @brief Request an explicit power state transition.
  * @param[in] state Target power state.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int set_state(State state)
+[[nodiscard]] inline Result<void> set_state(State state) noexcept
 {
-	return ove_pm_set_state(state);
+	return from_rc(ove_pm_set_state(state));
 }
 
 /**
@@ -104,21 +107,23 @@ inline void activity()
 /**
  * @brief Register a wake source.
  * @param[in] src Wake source descriptor.
- * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if table full.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error::NoMemory if the wake-source table is full.
  */
-[[nodiscard]] inline int wake_register(const WakeSrc &src)
+[[nodiscard]] inline Result<void> wake_register(const WakeSrc &src) noexcept
 {
-	return ove_pm_wake_register(&src);
+	return from_rc(ove_pm_wake_register(&src));
 }
 
 /**
  * @brief Unregister a previously registered wake source.
  * @param[in] src Wake source descriptor (must match a registered entry).
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int wake_unregister(const WakeSrc &src)
+[[nodiscard]] inline Result<void> wake_unregister(const WakeSrc &src) noexcept
 {
-	return ove_pm_wake_unregister(&src);
+	return from_rc(ove_pm_wake_unregister(&src));
 }
 
 /* ── Peripheral power domains ───────────────────────────────────────── */
@@ -126,31 +131,37 @@ inline void activity()
 /**
  * @brief Increment the reference count for a peripheral power domain.
  * @param[in] domain Domain identifier.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int domain_request(Domain domain)
+[[nodiscard]] inline Result<void> domain_request(Domain domain) noexcept
 {
-	return ove_pm_domain_request(domain);
+	return from_rc(ove_pm_domain_request(domain));
 }
 
 /**
  * @brief Decrement the reference count for a peripheral power domain.
  * @param[in] domain Domain identifier.
- * @return `OVE_OK` on success, `OVE_ERR_INVALID_PARAM` on underflow.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error::InvalidParam on refcount underflow.
  */
-[[nodiscard]] inline int domain_release(Domain domain)
+[[nodiscard]] inline Result<void> domain_release(Domain domain) noexcept
 {
-	return ove_pm_domain_release(domain);
+	return from_rc(ove_pm_domain_release(domain));
 }
 
 /**
  * @brief Query the current reference count for a domain.
  * @param[in] domain Domain identifier.
- * @return Reference count (>= 0), or a negative error code.
+ * @return On success, the reference count.  On failure, an
+ *         `unexpected` @ref Error.
  */
-[[nodiscard]] inline int domain_get_refcount(Domain domain)
+[[nodiscard]] inline Result<int> domain_get_refcount(Domain domain) noexcept
 {
-	return ove_pm_domain_get_refcount(domain);
+	const int rc = ove_pm_domain_get_refcount(domain);
+	if (rc >= 0)
+		return rc;
+	return std::unexpected{static_cast<Error>(rc)};
 }
 
 /* ── Policy ─────────────────────────────────────────────────────────── */
@@ -159,11 +170,13 @@ inline void activity()
  * @brief Register a custom power policy callback.
  * @param[in] policy Policy function, or nullptr for default.
  * @param[in] user_data Opaque pointer forwarded to the policy.
- * @return `OVE_OK`.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int set_policy(ove_pm_policy_fn policy, void *user_data = nullptr)
+[[nodiscard]] inline Result<void> set_policy(ove_pm_policy_fn policy,
+					     void *user_data = nullptr) noexcept
 {
-	return ove_pm_set_policy(policy, user_data);
+	return from_rc(ove_pm_set_policy(policy, user_data));
 }
 
 /* ── Notifications ──────────────────────────────────────────────────── */
@@ -172,34 +185,40 @@ inline void activity()
  * @brief Register a transition notification callback.
  * @param[in] cb Callback invoked on PRE_SLEEP and POST_WAKE.
  * @param[in] user_data Opaque pointer forwarded to the callback.
- * @return `OVE_OK` on success, `OVE_ERR_NO_MEMORY` if table full.
+ * @return Empty `Result<void>` on success; `unexpected`
+ *         @ref Error::NoMemory if the notification table is full.
  */
-[[nodiscard]] inline int notify_register(ove_pm_notify_fn cb, void *user_data = nullptr)
+[[nodiscard]] inline Result<void> notify_register(ove_pm_notify_fn cb,
+						  void *user_data = nullptr) noexcept
 {
-	return ove_pm_notify_register(cb, user_data);
+	return from_rc(ove_pm_notify_register(cb, user_data));
 }
 
 /**
  * @brief Unregister a transition notification callback.
  * @param[in] cb Previously registered callback.
  * @param[in] user_data Pointer that was passed at registration time.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int notify_unregister(ove_pm_notify_fn cb, void *user_data = nullptr)
+[[nodiscard]] inline Result<void> notify_unregister(ove_pm_notify_fn cb,
+						    void *user_data = nullptr) noexcept
 {
-	return ove_pm_notify_unregister(cb, user_data);
+	return from_rc(ove_pm_notify_unregister(cb, user_data));
 }
 
 /* ── Statistics ─────────────────────────────────────────────────────── */
 
 /**
  * @brief Query accumulated power statistics.
- * @param[out] stats Receives current statistics snapshot.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return On success, the populated @ref Stats snapshot.  On
+ *         failure, an `unexpected` @ref Error.
  */
-[[nodiscard]] inline int get_stats(Stats &stats)
+[[nodiscard]] inline Result<Stats> get_stats() noexcept
 {
-	return ove_pm_get_stats(&stats);
+	Stats stats{};
+	const int rc = ove_pm_get_stats(&stats);
+	return from_rc(rc, stats);
 }
 
 /**
@@ -215,21 +234,24 @@ inline void reset_stats()
 /**
  * @brief Set a target percentage of time in low-power states.
  * @param[in] target_pct_x100 Target in hundredths of percent.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return Empty `Result<void>` on success; `unexpected` @ref Error
+ *         on failure.
  */
-[[nodiscard]] inline int set_budget(uint32_t target_pct_x100)
+[[nodiscard]] inline Result<void> set_budget(uint32_t target_pct_x100) noexcept
 {
-	return ove_pm_set_budget(target_pct_x100);
+	return from_rc(ove_pm_set_budget(target_pct_x100));
 }
 
 /**
  * @brief Query actual low-power percentage vs. budget target.
- * @param[out] actual_pct_x100 Actual low-power % in hundredths.
- * @return `OVE_OK` on success, or a negative error code.
+ * @return On success, the actual low-power percentage in hundredths
+ *         of percent.  On failure, an `unexpected` @ref Error.
  */
-[[nodiscard]] inline int get_budget_status(uint32_t &actual_pct_x100)
+[[nodiscard]] inline Result<uint32_t> get_budget_status() noexcept
 {
-	return ove_pm_get_budget_status(&actual_pct_x100);
+	uint32_t actual_pct_x100 = 0;
+	const int rc = ove_pm_get_budget_status(&actual_pct_x100);
+	return from_rc(rc, actual_pct_x100);
 }
 
 /* ── Idle processing ────────────────────────────────────────────────── */

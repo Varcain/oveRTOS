@@ -13,7 +13,7 @@ A pure C API ships alongside the higher-level bindings as the substrate they sha
 
 ## Key Features
 
-- **Modern-language application development** — C++ (RAII + typed containers), Rust (`no_std` + `alloc`), Zig (`comptime`-generic), plus the underlying C surface
+- **Modern-language application development** — C++23 (RAII + typed containers + `std::expected`-based `Result<T>` returns), Rust (`no_std` + `alloc`), Zig (`comptime`-generic), plus the underlying C surface
 - **Cross-RTOS portability** — same source on FreeRTOS, Zephyr, and NuttX; backend chosen at configure time
 - **Application-grade modules** — sockets / TLS / HTTP / MQTT / HTTPD / SNTP, audio graph engine, TFLite Micro inference, LVGL widgets, NVS, filesystem, power management, shell, watchdog, bus drivers (UART/SPI/I2C/I2S)
 - **Flexible allocation** — heap mode (`_create` / `_destroy`, gated by `OVE_HEAP_*`) or zero-heap mode (`_init` / `_deinit` with caller-supplied storage); the static-allocation helpers (`OVE_*_DEFINE_STATIC`) work in both modes
@@ -106,12 +106,19 @@ The backend is selected at configure time via Kconfig. All API calls resolve dir
 
 The same producer + worker shape expressed in each binding, in both heap mode (kernel objects from the system heap, freed via `Drop`/`deinit`/`_destroy`) and zero-heap mode (every byte from BSS, no allocator linked in). The recommended path for application code is one of the higher-level bindings (C++, Rust, Zig); the C surface below them is the shared substrate that all three compile down to. Every binding lowers to the same FFI symbols — per-call wrapper overhead is benchmarked across the matrix at [varcain.github.io/oveRTOS/benchmarks](https://varcain.github.io/oveRTOS/benchmarks/).
 
-### C++ (RAII, type-safe containers)
+### C++23 (RAII, `Result<T>`, std-composable)
+
+Built with **`-std=c++23`** across every backend. Fallible operations
+return `ove::Result<T>` (an alias for `std::expected<T, ove::Error>`);
+forever-blocking forms return `void` and abort on substrate failure.
+`ove::Mutex` satisfies the `Lockable` named requirement so it composes
+with `std::lock_guard` and `std::scoped_lock` directly.
 
 **Heap**:
 
 ```cpp
 #include <ove/ove.hpp>
+using namespace std::chrono_literals;
 
 static void worker_fn(void *) { /* ... */ }
 
@@ -121,6 +128,17 @@ void ove_main()
     ove::Mutex mutex;                       // RAII — destructor cleans up
     ove::Thread<4096> worker(worker_fn, nullptr,
                              OVE_PRIO_NORMAL, "worker");
+
+    // Bounded operations return Result<T> — no rc-codes to compare.
+    if (auto r = queue.try_send_for(42u, 100ms); !r) {
+        // r.error() is a typed ove::Error: Timeout / QueueFull / ...
+    }
+
+    // std::lock_guard composes with ove::Mutex out of the box.
+    {
+        std::lock_guard<ove::Mutex> g(mutex);
+        /* mutex held */
+    }
 
     ove::run();
     /* destructors run on scope exit / app shutdown */
@@ -147,6 +165,26 @@ void ove_main() { ove::run(); }
 Move/copy are deleted on every wrapper in zero-heap mode (the kernel
 holds pointers into `&storage_`), so each instance is structurally
 pinned to its file-scope address.
+
+**`Result<T>` highlights** — where the success payload is non-trivial,
+the API drops out-parameters in favour of the Result value side:
+
+```cpp
+auto resp = http_client.get("http://example.com/");
+if (resp) { use(resp->status(), resp->body()); }     // Result<Response>
+
+auto sent = sock.send(buf, len);
+if (sent && *sent == len) { /* fully sent */ }       // Result<size_t>
+
+auto addr = ove::dns::resolve("example.com", 5s);    // Result<Address>
+auto utc  = ove::sntp::get_utc();                    // Result<uint32_t>
+```
+
+Other std-mirror conveniences:
+
+- `ove::this_thread::sleep_ms`/`sleep_for`/`yield`/`get_id` — mirrors `std::this_thread::*`.
+- `ove::stop_token` / `ove::stop_source` — mirrors `std::stop_token` / `std::stop_source` for cooperative thread cancellation, with `std::jthread`-style capturing-lambda thread constructors.
+- `ove::Error` round-trips through `std::error_code` via a bundled category.
 
 ### Rust (no_std, errors-as-values)
 
