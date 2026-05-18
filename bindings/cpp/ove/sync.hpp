@@ -849,23 +849,35 @@ class Event
 	}
 
 	/**
-	 * @brief Bounded-wait.  Returns @c OVE_OK on signal, @c OVE_ERR_TIMEOUT
-	 *        on timeout.
+	 * @brief Bounded-wait.
+	 *
+	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
+	 * @return Empty `Result<void>` on signal (wait consumed it);
+	 *         `unexpected` @ref Error::Timeout if no signal arrived by
+	 *         the deadline; `unexpected` with another @ref Error
+	 *         value on backend failure.
 	 */
-	[[nodiscard]] int try_wait_for(std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_wait_for(const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_event_wait(handle_, to_timeout_ns(rel));
+		return from_rc(ove_event_wait(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
-	 * @brief Deadline-based wait templated over the clock.  See
-	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 * @brief Deadline-based wait templated over the clock.
+	 *
+	 * Same clock-templating rationale as @ref Mutex::try_lock_until.
+	 *
+	 * @return As @ref try_wait_for — `Result<void>` with
+	 *         `Error::Timeout` on timeout.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_wait_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_wait_until(const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_event_wait(handle_, to_timeout_ns(rel));
+		return from_rc(ove_event_wait(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
