@@ -49,8 +49,10 @@ pub fn Stream(comptime size: usize) type {
         handle: c.ove_stream_t,
         backing: *Backing,
 
-        /// `trigger` is the minimum bytes a receiver waits for before
-        /// unblocking (0 or 1 = wake on any byte).
+        /// Allocate the stream's ring buffer + substrate-storage from
+        /// `allocator` and `ove_stream_init` against it.  `trigger` is
+        /// the minimum bytes a receiver waits for before unblocking
+        /// (0 or 1 = wake on any byte).
         pub fn create(allocator: std.mem.Allocator, trigger: usize) Error!Self {
             const backing = try allocator.create(Backing);
             errdefer allocator.destroy(backing);
@@ -110,6 +112,8 @@ pub fn Stream(comptime size: usize) type {
             return received;
         }
 
+        /// Push bytes from an ISR.  Non-blocking; returns actually-
+        /// written count (may be 0 if the ring is full).
         pub fn sendFromIsr(self: Self, data: []const u8) SendError!usize {
             var sent: usize = 0;
             const rc = c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent);
@@ -117,6 +121,8 @@ pub fn Stream(comptime size: usize) type {
             return sent;
         }
 
+        /// Pull bytes from an ISR.  Non-blocking; returns actually-
+        /// read count (may be 0 if the ring is empty).
         pub fn receiveFromIsr(self: Self, buf: []u8) RecvError!usize {
             var received: usize = 0;
             const rc = c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received);

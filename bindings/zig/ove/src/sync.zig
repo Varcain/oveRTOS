@@ -83,6 +83,8 @@ pub const Mutex = struct {
     handle: c.ove_mutex_t,
     storage: *c.ove_mutex_storage_t,
 
+    /// Allocate a substrate-storage block from `allocator` and
+    /// `ove_mutex_init` against it.  Wrapper is movable by value.
     pub fn create(allocator: std.mem.Allocator) Error!Mutex {
         const storage = try allocator.create(c.ove_mutex_storage_t);
         errdefer allocator.destroy(storage);
@@ -161,6 +163,8 @@ pub const RecursiveMutex = struct {
     handle: c.ove_mutex_t,
     storage: *c.ove_mutex_storage_t,
 
+    /// Allocate a substrate-storage block and `ove_recursive_mutex_init`
+    /// against it.
     pub fn create(allocator: std.mem.Allocator) Error!RecursiveMutex {
         const storage = try allocator.create(c.ove_mutex_storage_t);
         errdefer allocator.destroy(storage);
@@ -232,6 +236,8 @@ pub const Semaphore = struct {
     handle: c.ove_sem_t,
     storage: *c.ove_sem_storage_t,
 
+    /// Create a counting semaphore with `initial` permits available
+    /// out of a maximum of `max`.
     pub fn create(allocator: std.mem.Allocator, initial: u32, max: u32) Error!Semaphore {
         const storage = try allocator.create(c.ove_sem_storage_t);
         errdefer allocator.destroy(storage);
@@ -281,6 +287,7 @@ pub const Event = struct {
     handle: c.ove_event_t,
     storage: *c.ove_event_storage_t,
 
+    /// Create a binary event in the unsignalled state.
     pub fn create(allocator: std.mem.Allocator) Error!Event {
         const storage = try allocator.create(c.ove_event_storage_t);
         errdefer allocator.destroy(storage);
@@ -315,10 +322,13 @@ pub const Event = struct {
         if (rc < 0) return mapTimeoutOnly("Event.timedWaitUntil", rc);
     }
 
+    /// Signal the event from task context.
     pub inline fn signal(self: Event) void {
         c.ove_event_signal(self.handle);
     }
 
+    /// Signal the event from an ISR.  No blocking, no locking;
+    /// callable from any interrupt priority the substrate allows.
     pub inline fn signalFromIsr(self: Event) void {
         c.ove_event_signal_from_isr(self.handle);
     }
@@ -334,6 +344,8 @@ pub const CondVar = struct {
     handle: c.ove_condvar_t,
     storage: *c.ove_condvar_storage_t,
 
+    /// Create a condition variable.  Pair with a [`Mutex`] when
+    /// waiting via `wait`/`timedWait`/`waitWhileUntil`.
     pub fn create(allocator: std.mem.Allocator) Error!CondVar {
         const storage = try allocator.create(c.ove_condvar_storage_t);
         errdefer allocator.destroy(storage);
@@ -378,10 +390,12 @@ pub const CondVar = struct {
         }
     }
 
+    /// Wake one waiter on this condition variable.
     pub inline fn signal(self: CondVar) void {
         c.ove_condvar_signal(self.handle);
     }
 
+    /// Wake all waiters on this condition variable.
     pub inline fn broadcast(self: CondVar) void {
         c.ove_condvar_broadcast(self.handle);
     }

@@ -82,6 +82,8 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
         handle: c.ove_queue_t,
         backing: *Backing,
 
+        /// Allocate the queue's backing buffer + substrate-storage
+        /// from `allocator` and `ove_queue_init` against it.
         pub fn create(allocator: std.mem.Allocator) Error!Self {
             const backing = try allocator.create(Backing);
             errdefer allocator.destroy(backing);
@@ -151,11 +153,15 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
             return val;
         }
 
+        /// Enqueue `item` from an ISR.  Non-blocking; returns
+        /// `error.QueueFull` when the queue is at capacity.
         pub fn sendFromIsr(self: Self, item: *const T) SendError!void {
             const rc = c.ove_queue_send_from_isr(self.handle, @ptrCast(item));
             if (rc < 0) return mapSendError("Queue.sendFromIsr", rc);
         }
 
+        /// Dequeue from an ISR.  Non-blocking; returns
+        /// `error.QueueEmpty` when no item is available.
         pub fn receiveFromIsr(self: Self) RecvError!T {
             var val: T = undefined;
             const rc = c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val));

@@ -39,6 +39,9 @@ pub fn Workqueue(comptime stack_size: usize) type {
         handle: c.ove_workqueue_t,
         backing: *Backing,
 
+        /// Allocate the worker stack + substrate-storage from
+        /// `allocator` and spawn a dedicated thread running
+        /// `ove_workqueue_init` at `priority`.
         pub fn create(
             allocator: std.mem.Allocator,
             name: [*:0]const u8,
@@ -65,6 +68,7 @@ pub fn Workqueue(comptime stack_size: usize) type {
             self.allocator.destroy(self.backing);
         }
 
+        /// Enqueue `work` for execution by the workqueue thread.
         pub fn submit(self: Self, work: *Work) Error!void {
             try err.fromCode(c.ove_work_submit(self.handle, work.handle));
         }
@@ -93,6 +97,7 @@ pub const Work = struct {
     handle: c.ove_work_t,
     storage: *c.ove_work_storage_t,
 
+    /// Create a deferred work item bound to a plain Zig callback.
     pub fn create(allocator: std.mem.Allocator, comptime handler: fn () void) Error!Work {
         const Tramp = struct {
             fn invoke(_: c.ove_work_t) callconv(.c) void {
@@ -135,6 +140,8 @@ pub const Work = struct {
         self.allocator.destroy(self.storage);
     }
 
+    /// Cancel a pending submission.  No-op if the work has already
+    /// run or is currently executing.
     pub fn cancel(self: Work) Error!void {
         try err.fromCode(c.ove_work_cancel(self.handle));
     }

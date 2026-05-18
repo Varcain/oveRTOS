@@ -127,14 +127,19 @@ pub const Timer = struct {
         self.allocator.destroy(self.storage);
     }
 
+    /// Arm the timer.  The first fire happens `cfg.period_ms` from
+    /// this call.
     pub inline fn start(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_start(self.handle));
     }
 
+    /// Disarm the timer.  A fire already in progress runs to
+    /// completion; subsequent periodic ticks are cancelled.
     pub inline fn stop(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_stop(self.handle));
     }
 
+    /// Re-arm a running timer; the period restart counts from now.
     pub inline fn reset(self: Timer) Error!void {
         try err.fromCode(c.ove_timer_reset(self.handle));
     }

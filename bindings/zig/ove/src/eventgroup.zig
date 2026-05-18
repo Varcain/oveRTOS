@@ -48,6 +48,8 @@ pub const EventGroup = struct {
     handle: c.ove_eventgroup_t,
     storage: *c.ove_eventgroup_storage_t,
 
+    /// Allocate the event group's substrate-storage from `allocator`
+    /// and `ove_eventgroup_init` against it.  All bits start cleared.
     pub fn create(allocator: std.mem.Allocator) Error!EventGroup {
         const storage = try allocator.create(c.ove_eventgroup_storage_t);
         errdefer allocator.destroy(storage);
@@ -62,14 +64,17 @@ pub const EventGroup = struct {
         self.allocator.destroy(self.storage);
     }
 
+    /// Set the bits in `bits`.  Returns the bitmask after the set.
     pub inline fn setBits(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits(self.handle, bits);
     }
 
+    /// Clear the bits in `bits`.  Returns the bitmask before the clear.
     pub inline fn clearBits(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_clear_bits(self.handle, bits);
     }
 
+    /// Read the current bitmask without blocking.
     pub inline fn getBits(self: EventGroup) EventBits {
         return c.ove_eventgroup_get_bits(self.handle);
     }
@@ -97,6 +102,7 @@ pub const EventGroup = struct {
         return result;
     }
 
+    /// Set bits from an ISR.  Returns the bitmask after the set.
     pub inline fn setBitsFromIsr(self: EventGroup, bits: EventBits) EventBits {
         return c.ove_eventgroup_set_bits_from_isr(self.handle, bits);
     }
