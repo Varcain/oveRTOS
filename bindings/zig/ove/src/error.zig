@@ -4,6 +4,7 @@
 //
 // This file is part of oveRTOS.
 
+const std = @import("std");
 const c = @import("c.zig").raw;
 
 /// Error set representing all possible oveRTOS failure codes.
@@ -52,8 +53,6 @@ pub const Error = error{
     Inval,
     /// Requested key / entry / resource was not found.
     NotFound,
-    /// An unrecognized error code was returned by the C layer.
-    Unknown,
 };
 
 /// Sentinel value for `timeout_ns` parameters meaning "block indefinitely".
@@ -82,7 +81,12 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_EOF => Error.Eof,
         c.OVE_ERR_INVAL => Error.Inval,
         c.OVE_ERR_NOT_FOUND => Error.NotFound,
-        else => Error.Unknown,
+        // An unrecognised substrate code is a binding bug — the
+        // substrate added a new `OVE_ERR_*` and this map didn't catch
+        // up.  Panic at the FFI boundary so the failure is localised
+        // to the binding's pin set rather than slipping out as a
+        // runtime `Error.Unknown` callers would have to switch on.
+        else => std.debug.panic("ove binding: unrecognised C error code {d}", .{rc}),
     };
 }
 
@@ -108,7 +112,6 @@ pub inline fn fromCodeInt(rc: c_int) Error!c_int {
 // Analog of Rust's `_assert_codes_match` (per TIGER_STYLE.md "verify
 // type sizes and constant relationships before execution").
 comptime {
-    const std = @import("std");
     std.debug.assert(c.OVE_ERR_NOT_REGISTERED == -1);
     std.debug.assert(c.OVE_ERR_INVALID_PARAM == -2);
     std.debug.assert(c.OVE_ERR_NO_MEMORY == -3);
