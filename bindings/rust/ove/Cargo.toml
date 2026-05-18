@@ -22,6 +22,14 @@ panic-handler = []
 # without `cfg` gating because heapless never touches a global allocator —
 # capacity is a const generic and storage is owned in the type.
 heapless = { version = "0.9", default-features = false }
+# `log` is the de-facto facade for diagnostic logging in the Rust
+# ecosystem.  Non-optional: every meaningful embedded crate
+# (`embassy-*`, `defmt-rtt` competitors, sensor drivers) depends on it,
+# so making it optional would just push the dep up to apps.  The
+# `log::Log` backend is provided by `ove::log` and routes records to
+# `ove_console_write` via the existing `FmtBuf` stack-buffer machinery
+# — no alloc dep added.
+log = "0.4"
 
 [build-dependencies]
 bindgen = "0.72"

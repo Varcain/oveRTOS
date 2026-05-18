@@ -159,12 +159,14 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "heapless",
+ "log",
 ]
 
 [[package]]
 name = "ove-tests"
 version = "0.1.0"
 dependencies = [
+ "log",
  "ove",
  "static_assertions",
 ]

@@ -170,7 +170,7 @@ fn graphics_entry() {
 }
 
 fn producer_entry() {
-    ove::log_inf!("Producer started");
+    log::info!("Producer started");
     let mut count: u32 = 0;
 
     loop {
@@ -178,11 +178,11 @@ fn producer_entry() {
 
         match QUEUE.try_send_for(&count, core::time::Duration::from_millis(1000)) {
             Ok(()) => {}
-            Err(ove::Error::Timeout) => ove::log_wrn!("Producer: send timeout"),
+            Err(ove::Error::Timeout) => log::warn!("Producer: send timeout"),
             Err(ove::Error::QueueFull) => {
-                ove::log_wrn!("Producer: queue full, dropped {}", count)
+                log::warn!("Producer: queue full, dropped {}", count)
             }
-            Err(_) => ove::log_err!("Producer: unexpected send error"),
+            Err(_) => log::error!("Producer: unexpected send error"),
         }
 
         Thread::sleep_ms(500);
@@ -190,17 +190,17 @@ fn producer_entry() {
 }
 
 fn consumer_entry() {
-    ove::log_inf!("Consumer started");
+    log::info!("Consumer started");
 
     loop {
         match QUEUE.recv() {
             Ok(val) => {
                 LAST_VALUE.store(val, Ordering::Relaxed);
                 if val % 5 == 0 {
-                    ove::log_inf!("Consumer: count = {}", val);
+                    log::info!("Consumer: count = {}", val);
                 }
             }
-            Err(_) => ove::log_err!("Consumer: receive error"),
+            Err(_) => log::error!("Consumer: receive error"),
         }
     }
 }
@@ -210,7 +210,8 @@ fn consumer_entry() {
 // ---------------------------------------------------------------------------
 
 fn app_main() {
-    ove::log_inf!("Rust example (zero-heap mode): init");
+    ove::log::try_init();
+    log::info!("Rust example (zero-heap mode): init");
 
     // The `ove::queue!` / `ove::thread!` / `ove::timer!` macros emit
     // function-scope `static <storage>: ...;` declarations and call
@@ -240,7 +241,7 @@ fn app_main() {
     ));
 
     if lvgl::init().is_err() {
-        ove::log_err!("Failed to init LVGL");
+        log::error!("Failed to init LVGL");
         return;
     }
 
@@ -248,18 +249,18 @@ fn app_main() {
         let _g = lvgl::lock();
         create_ui();
     }
-    ove::log_inf!("LVGL widgets created");
+    log::info!("LVGL widgets created");
 
     if UI_TIMER.start().is_err() {
-        ove::log_err!("Failed to start UI timer");
+        log::error!("Failed to start UI timer");
         return;
     }
 
-    ove::log_inf!("Rust example (zero-heap mode): ready");
+    log::info!("Rust example (zero-heap mode): ready");
 
     ove::run();
 
-    ove::log_inf!("Rust example (zero-heap mode): shutdown");
+    log::info!("Rust example (zero-heap mode): shutdown");
 }
 
 ove::main!(app_main);

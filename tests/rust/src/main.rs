@@ -36,6 +36,11 @@ mod test_fmt;
 mod test_lvgl;
 
 fn main() {
+    // Install the `log` crate facade on top of `ove_console_write`.
+    // `try_init` is non-fatal if already set, so re-runs of the harness
+    // (e.g. cargo test with multiple binaries) are tolerated.
+    ove::log::try_init();
+
     let mut total_passed = 0usize;
     let mut total_failed = 0usize;
 

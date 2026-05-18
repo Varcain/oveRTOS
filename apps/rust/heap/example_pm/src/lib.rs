@@ -67,8 +67,8 @@ fn battery_policy(batt: &Battery, ctx: PolicyCtx) -> State {
 
 fn pm_notify(_batt: &Battery, event: Event, from: State, to: State) {
     match event {
-        Event::PreSleep => ove::log_inf!("pm: preparing sleep {} -> {}", from as i32, to as i32),
-        Event::PostWake => ove::log_inf!("pm: woke {} -> {}", from as i32, to as i32),
+        Event::PreSleep => log::info!("pm: preparing sleep {} -> {}", from as i32, to as i32),
+        Event::PostWake => log::info!("pm: woke {} -> {}", from as i32, to as i32),
     }
 }
 
@@ -76,28 +76,28 @@ static POLICY: PolicyHandler<Battery> = PolicyHandler::new(&BATTERY, battery_pol
 static NOTIFY: NotifyHandler<Battery> = NotifyHandler::new(&BATTERY, pm_notify);
 
 fn log_stats(stats: &pm::Stats) {
-    ove::log_inf!("=== Power Stats ===");
-    ove::log_inf!(
+    log::info!("=== Power Stats ===");
+    log::info!(
         "  active:  {} us ({} transitions)",
         stats.time_in_state_us[0],
         stats.transition_count[0]
     );
-    ove::log_inf!(
+    log::info!(
         "  idle:    {} us ({} transitions)",
         stats.time_in_state_us[1],
         stats.transition_count[1]
     );
-    ove::log_inf!(
+    log::info!(
         "  standby: {} us ({} transitions)",
         stats.time_in_state_us[2],
         stats.transition_count[2]
     );
-    ove::log_inf!(
+    log::info!(
         "  deep:    {} us ({} transitions)",
         stats.time_in_state_us[3],
         stats.transition_count[3]
     );
-    ove::log_inf!(
+    log::info!(
         "  active%: {}.{:02}%",
         stats.active_pct_x100 / 100,
         stats.active_pct_x100 % 100
@@ -105,7 +105,8 @@ fn log_stats(stats: &pm::Stats) {
 }
 
 fn app_main() {
-    ove::log_inf!("pm example (heap mode): init");
+    ove::log::try_init();
+    log::info!("pm example (heap mode): init");
 
     BATTERY.init(Battery::new(85));
 
@@ -115,7 +116,7 @@ fn app_main() {
         deep_sleep_threshold_ms: 30000,
     };
     if let Err(e) = pm::init(&cfg) {
-        ove::log_err!("PM init failed: {:?}", e);
+        log::error!("PM init failed: {:?}", e);
         return;
     }
 
@@ -126,14 +127,14 @@ fn app_main() {
     pm::set_budget(6000).ok();
 
     let _sensor = Thread::builder().name(c"sensor").priority(Priority::Normal).stack_size(4096).spawn(|_tok| {
-        ove::log_inf!("sensor: started");
+        log::info!("sensor: started");
         let mut reading: u32 = 0;
         loop {
             pm::domain_request(pm::Domain::Sensor).ok();
             pm::activity();
             Thread::sleep_ms(50);
             reading = reading.wrapping_add(17);
-            ove::log_inf!("sensor: reading = {}", reading % 1000);
+            log::info!("sensor: reading = {}", reading % 1000);
             pm::domain_release(pm::Domain::Sensor).ok();
             Thread::sleep_ms(5000);
         }
@@ -141,7 +142,7 @@ fn app_main() {
     .expect("sensor spawn");
 
     let _monitor = Thread::builder().name(c"monitor").priority(Priority::Low).stack_size(4096).spawn(|_tok| {
-        ove::log_inf!("monitor: started");
+        log::info!("monitor: started");
         loop {
             Thread::sleep_ms(10000);
             if let Ok(stats) = pm::get_stats() {
@@ -149,13 +150,13 @@ fn app_main() {
             }
             if let Some(batt) = BATTERY.try_get() {
                 batt.drain(5);
-                ove::log_inf!("battery: {}%", batt.get());
+                log::info!("battery: {}%", batt.get());
             }
         }
     })
     .expect("monitor spawn");
 
-    ove::log_inf!(
+    log::info!(
         "pm example (heap mode): ready (battery={}%)",
         BATTERY.get().get()
     );
@@ -165,7 +166,7 @@ fn app_main() {
 
     ove::run();
 
-    ove::log_inf!("pm example (heap mode): shutdown");
+    log::info!("pm example (heap mode): shutdown");
 }
 
 ove::main!(app_main);

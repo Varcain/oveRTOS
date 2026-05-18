@@ -962,8 +962,8 @@ fn summary_create() {
         .cell_value(0, 2, b"Avg. FPS\0")
         .cell_value(0, 3, b"Avg. time (render + flush)\0");
 
-    ove::log_inf!("Benchmark Summary");
-    ove::log_inf!("Name, Avg. CPU, Avg. FPS, Avg. time, render, flush");
+    log::info!("Benchmark Summary");
+    log::info!("Name, Avg. CPU, Avg. FPS, Avg. time, render, flush");
 
     table.update_layout();
     let col_w = table.content_width() / 4;
@@ -1012,7 +1012,7 @@ fn summary_create() {
 
             let name_len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
             let name_str = core::str::from_utf8(&name[..name_len]).unwrap_or("?");
-            ove::log_inf!(
+            log::info!(
                 "{}, {}%, {}, {}, {}, {}",
                 name_str,
                 cpu,
@@ -1063,7 +1063,7 @@ fn summary_create() {
         );
         table.cell_value(1, 3, w3.as_cstr());
 
-        ove::log_inf!(
+        log::info!(
             "All avg, {}%, {}, {}, {}, {}",
             avg_cpu,
             avg_fps,
@@ -1098,7 +1098,8 @@ fn graphics_entry() {
 // =========================================================================
 
 fn app_main() {
-    ove::log_inf!("LVGL benchmark (Rust): init");
+    ove::log::try_init();
+    log::info!("LVGL benchmark (Rust): init");
 
     RNG.init(LvCell::new(0));
     SCENE.init(LvCell::new(SceneState { current: 0 }));
@@ -1107,7 +1108,7 @@ fn app_main() {
     ove::thread!("graphics", graphics_entry, Priority::High, 4096).detach();
 
     if lvgl::init().is_err() {
-        ove::log_err!("Failed to init LVGL");
+        log::error!("Failed to init LVGL");
         return;
     }
 
@@ -1150,7 +1151,7 @@ fn app_main() {
         }
     }
 
-    ove::log_inf!("LVGL benchmark (Rust): running");
+    log::info!("LVGL benchmark (Rust): running");
     ove::run();
 }
 

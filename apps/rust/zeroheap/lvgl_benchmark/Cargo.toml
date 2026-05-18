@@ -9,6 +9,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ove = { path = "../../../../bindings/rust/ove" }
+log = "0.4"
 
 [features]
 default = []

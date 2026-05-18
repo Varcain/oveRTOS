@@ -9,6 +9,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ove = { path = "../../../../bindings/rust/ove", features = ["alloc"] }
+log = "0.4"
 ove-allocator = { path = "../../../../bindings/rust/ove-allocator", default-features = false }
 
 [features]

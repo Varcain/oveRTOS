@@ -119,6 +119,7 @@ pub mod i2s;
 pub mod infer;
 #[cfg(has_led)]
 pub mod led;
+pub mod log;
 #[cfg(has_lvgl)]
 pub mod lvgl;
 #[cfg(has_net)]
@@ -160,7 +161,7 @@ pub mod watchdog;
 #[cfg(has_workqueue)]
 pub mod workqueue;
 
-// All user-facing macros (`ove::mutex!`, `ove::thread!`, `ove::log_inf!`, etc.)
+// All user-facing macros (`ove::mutex!`, `ove::thread!`, `log::info!`, etc.)
 // and the internal `ove_handle_impl!` boilerplate live in `macros.rs`.
 // `#[macro_export]` puts them at the crate root regardless of module.
 mod macros;
