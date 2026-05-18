@@ -40,8 +40,8 @@ static void test_cpp_static_semaphore_init(void **state)
 	(void)state;
 	ove::Semaphore sem(1, 1);
 	assert_true(sem.valid());
-	assert_int_equal(sem.take(std::chrono::milliseconds{0}), OVE_OK);
-	sem.give();
+	assert_true(sem.try_acquire());
+	sem.release();
 }
 
 /* ── Event ──────────────────────────────────────────────────────────── */
