@@ -29,6 +29,7 @@ use crate::error::{Error, Result};
 // is to embed a `!Send` marker type via `PhantomData`.  This is what
 // `lock_api`, `parking_lot`, and `tokio::sync` all do.  Raw pointers are
 // `!Send + !Sync`, so this newtype propagates both.
+#[allow(dead_code)] // marker type — field is never read by design
 struct GuardNoSend(*mut ());
 
 // ---------------------------------------------------------------------------

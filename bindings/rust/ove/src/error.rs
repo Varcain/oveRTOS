@@ -11,6 +11,12 @@
 /// When adding a new variant, update [`from_code`](Error::from_code),
 /// [`to_code`](Error::to_code), [`Display`](core::fmt::Display), and
 /// the `_assert_codes_match` function below.
+///
+/// The enum is `#[non_exhaustive]` so the substrate can add new
+/// `OVE_ERR_*` codes (mapped to fresh variants here) without breaking
+/// downstream `match` blocks at compile time.  Callers should always
+/// include a `_ => …` arm.  Matches `std::io::ErrorKind` convention.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     /// The requested resource or subsystem has not been registered (`OVE_ERR_NOT_REGISTERED`).
