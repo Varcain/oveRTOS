@@ -496,7 +496,8 @@ fn graphics_entry() {
 // ---------------------------------------------------------------------------
 
 fn app_main() {
-    ove::log_inf!("LVGL gallery (Rust): init");
+    ove::log::try_init();
+    log::info!("LVGL gallery (Rust): init");
 
     let graphics = ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
         graphics_entry();
@@ -507,21 +508,21 @@ fn app_main() {
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));
         if lvgl::init().is_err() {
-            ove::log_err!("Failed to init LVGL");
+            log::error!("Failed to init LVGL");
             return;
         }
         {
             let _g = lvgl::lock();
             create_ui();
         }
-        ove::log_inf!("LVGL widgets created");
+        log::info!("LVGL widgets created");
         if UI_TIMER.start().is_err() {
-            ove::log_err!("Failed to start UI timer");
+            log::error!("Failed to start UI timer");
             return;
         }
     }
 
-    ove::log_inf!("LVGL gallery (Rust): ready");
+    log::info!("LVGL gallery (Rust): ready");
     ove::run();
 }
 

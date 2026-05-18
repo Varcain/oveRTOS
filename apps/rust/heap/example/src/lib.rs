@@ -123,7 +123,8 @@ fn ui_timer_cb() {
 // ---------------------------------------------------------------------------
 
 fn app_main() {
-    ove::log_inf!("Rust example (heap mode): init");
+    ove::log::try_init();
+    log::info!("Rust example (heap mode): init");
 
     // Heap-allocate the queue and wrap in `Arc` for shared ownership
     // across the producer and consumer threads.  Each thread gets its
@@ -135,17 +136,17 @@ fn app_main() {
     // Producer: clone Arcs into a move closure, hand to spawn_with.
     let q = Arc::clone(&queue);
     let _producer = Thread::builder().name(c"producer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
-        ove::log_inf!("Producer started");
+        log::info!("Producer started");
         let mut count: u32 = 0;
         loop {
             count += 1;
             match q.try_send_for(&count, core::time::Duration::from_millis(1000)) {
                 Ok(()) => {}
-                Err(ove::Error::Timeout) => ove::log_wrn!("Producer: send timeout"),
+                Err(ove::Error::Timeout) => log::warn!("Producer: send timeout"),
                 Err(ove::Error::QueueFull) => {
-                    ove::log_wrn!("Producer: queue full, dropped {}", count)
+                    log::warn!("Producer: queue full, dropped {}", count)
                 }
-                Err(_) => ove::log_err!("Producer: unexpected send error"),
+                Err(_) => log::error!("Producer: unexpected send error"),
             }
             Thread::sleep_ms(500);
         }
@@ -155,17 +156,17 @@ fn app_main() {
     let q = Arc::clone(&queue);
     let lv = Arc::clone(&last_value);
     let _consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
-        ove::log_inf!("Consumer started");
+        log::info!("Consumer started");
         loop {
             match q.recv() {
                 Ok(val) => {
                     lv.store(val, Ordering::Relaxed);
                     LAST_VALUE.store(val, Ordering::Relaxed);
                     if val % 5 == 0 {
-                        ove::log_inf!("Consumer: count = {}", val);
+                        log::info!("Consumer: count = {}", val);
                     }
                 }
-                Err(_) => ove::log_err!("Consumer: receive error"),
+                Err(_) => log::error!("Consumer: receive error"),
             }
         }
     })
@@ -190,17 +191,17 @@ fn app_main() {
     UI_TIMER.init(Timer::new(ui_timer_cb, 200, false).expect("timer create"));
 
     if lvgl::init().is_err() {
-        ove::log_err!("Failed to init LVGL");
+        log::error!("Failed to init LVGL");
         return;
     }
     {
         let _g = lvgl::lock();
         create_ui();
     }
-    ove::log_inf!("LVGL widgets created");
+    log::info!("LVGL widgets created");
 
     if UI_TIMER.start().is_err() {
-        ove::log_err!("Failed to start UI timer");
+        log::error!("Failed to start UI timer");
         return;
     }
 
@@ -216,11 +217,11 @@ fn app_main() {
     core::mem::forget(queue);
     core::mem::forget(last_value);
 
-    ove::log_inf!("Rust example (heap mode): ready");
+    log::info!("Rust example (heap mode): ready");
 
     ove::run();
 
-    ove::log_inf!("Rust example (heap mode): shutdown");
+    log::info!("Rust example (heap mode): shutdown");
 }
 
 ove::main!(app_main);

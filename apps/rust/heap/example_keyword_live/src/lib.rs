@@ -215,7 +215,7 @@ fn classify_keyword(
 // ── Inference thread ───────────────────────────────────────────────────
 
 fn infer_thread() {
-    ove::log_inf!("Inference thread started — listening...");
+    log::info!("Inference thread started — listening...");
     Thread::sleep_ms(2000);
     let mut prev_samples = SAMPLES_WRITTEN.load(Ordering::Relaxed);
 
@@ -253,7 +253,7 @@ fn infer_thread() {
             .map(|s| s.abs())
             .max()
             .unwrap_or(0);
-        ove::log_inf!(
+        log::info!(
             "Audio: peak={}, rate={}, read={}",
             peak,
             actual_rate,
@@ -266,7 +266,7 @@ fn infer_thread() {
             AUDIO_SAMPLE_FREQ
         };
         if peak < 10 {
-            ove::log_wrn!("Audio silent — check DMIC");
+            log::warn!("Audio silent — check DMIC");
             continue;
         }
 
@@ -285,7 +285,7 @@ fn infer_thread() {
         }
 
         dsp.gain = (TARGET_PEAK / dc_peak).clamp(1, 200);
-        ove::log_inf!("  dc_peak={}, gain={}", dc_peak, dsp.gain);
+        log::info!("  dc_peak={}, gain={}", dc_peak, dsp.gain);
 
         // Inference pipeline
         if generate_features(
@@ -296,13 +296,13 @@ fn infer_thread() {
         )
         .is_err()
         {
-            ove::log_err!("Features failed");
+            log::error!("Features failed");
             continue;
         }
 
         match classify_keyword(&features, &mut storage) {
             Ok(pred) if pred.label > 1 && pred.confidence > CONFIDENCE_THRESHOLD => {
-                ove::log_inf!(
+                log::info!(
                     ">>> Keyword: \"{}\" ({:.0}%)",
                     LABELS[pred.label],
                     pred.confidence * 100.0
@@ -319,8 +319,9 @@ static DMIC_PROC: ove::audio::StaticProcessor<DmicProcessor> =
     ove::audio::StaticProcessor::new(DmicProcessor);
 
 fn app_main() {
-    ove::log_inf!("=== Live DMIC Keyword Detection (Rust) ===");
-    ove::log_inf!(
+    ove::log::try_init();
+    log::info!("=== Live DMIC Keyword Detection (Rust) ===");
+    log::info!(
         "Models: preprocessor {} + classifier {} bytes",
         preprocessor_model().len(),
         classifier_model().len()
@@ -347,13 +348,13 @@ fn app_main() {
         .expect("audio graph: connect proc->sink");
     graph.build().expect("audio graph: build");
     graph.start().expect("audio graph: start");
-    ove::log_inf!("Audio streaming: 16kHz mono, DMIC input");
+    log::info!("Audio streaming: 16kHz mono, DMIC input");
 
     let infer = ove::Thread::builder().name(c"infer").priority(ove::Priority::Normal).stack_size(8192).spawn(|_tok| {
         infer_thread();
     })
     .expect("infer thread spawn");
     core::mem::forget(infer);
-    ove::log_inf!("Say \"yes\" or \"no\" near the microphone...");
+    log::info!("Say \"yes\" or \"no\" near the microphone...");
     ove::run();
 }

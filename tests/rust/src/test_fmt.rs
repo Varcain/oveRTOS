@@ -4,8 +4,8 @@
 //
 // This file is part of oveRTOS.
 
-//! Tests for `FmtBuf` (zero-allocation stack formatter) and the log
-//! macros that wrap it (`log_fmt!`, `log_inf!`, `log_wrn!`, `log_err!`).
+//! Tests for `FmtBuf` (zero-allocation stack formatter) and the
+//! `log::Log` backend on top of it (`log::info!`/`warn!`/`error!`).
 
 use crate::framework::run_suite;
 use crate::test_entry;
@@ -127,48 +127,33 @@ fn test_as_cstr_includes_null() {
     assert_eq!(cstr[cstr.len() - 1], 0);
 }
 
-/* ── Log macros ────────────────────────────────────────────────── */
+/* ── log::Log backend ───────────────────────────────────────────── */
 // These emit to the oveRTOS console (POSIX backend = stdout). We can't
 // intercept the output here without a capture hook, so we just exercise
-// the macro paths to get coverage of the stack-buffer + FmtBuf flow and
+// the call sites to get coverage of the OveLogger -> FmtBuf flow and
 // verify they compile with several argument shapes.
 
-fn test_log_fmt_no_args() {
-    ove::log_fmt!("hello\n");
-}
-
-fn test_log_fmt_with_format_args() {
-    ove::log_fmt!("count = {}, flag = {}\n", 42, true);
-}
-
-fn test_log_fmt_truncation() {
-    // 300-char message exceeds the 128-byte log_fmt! buffer — macro must
-    // still succeed (silent truncation) without panicking.
-    let big = "x".repeat(300);
-    ove::log_fmt!("{}\n", big);
-}
-
 fn test_log_inf_basic() {
-    ove::log_inf!("informational");
+    log::info!("informational");
 }
 
 fn test_log_inf_with_args() {
-    ove::log_inf!("Counter={}, ratio={:.2}", 7u32, 0.25f32);
+    log::info!("Counter={}, ratio={:.2}", 7u32, 0.25f32);
 }
 
 fn test_log_wrn_basic() {
-    ove::log_wrn!("warning message");
+    log::warn!("warning message");
 }
 
 fn test_log_err_basic() {
-    ove::log_err!("error: code={}", -42);
+    log::error!("error: code={}", -42);
 }
 
 fn test_log_err_long_message_truncates() {
-    // 500-char message exceeds the 256-byte _log_prefixed buffer — must
+    // 500-char message exceeds OveLogger's 256-byte stack buffer — must
     // still run to completion with silent truncation.
     let big = "z".repeat(500);
-    ove::log_err!("big={}", big);
+    log::error!("big={}", big);
 }
 
 pub fn run() -> (usize, usize) {
@@ -187,9 +172,6 @@ pub fn run() -> (usize, usize) {
             test_entry!(test_write_after_full_is_noop),
             test_entry!(test_as_bytes_excludes_null),
             test_entry!(test_as_cstr_includes_null),
-            test_entry!(test_log_fmt_no_args),
-            test_entry!(test_log_fmt_with_format_args),
-            test_entry!(test_log_fmt_truncation),
             test_entry!(test_log_inf_basic),
             test_entry!(test_log_inf_with_args),
             test_entry!(test_log_wrn_basic),

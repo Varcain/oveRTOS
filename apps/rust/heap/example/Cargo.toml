@@ -9,6 +9,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ove = { path = "../../../../bindings/rust/ove", features = ["alloc"] }
+log = "0.4"
 # `ove-allocator` registers a libc-malloc-backed `#[global_allocator]`.
 # On `std` builds the std allocator is already present, so the `std`
 # feature below activates `ove-allocator/no_install` to suppress the
