@@ -15,14 +15,14 @@ static void test_cpp_stream_send_receive(void **state)
 
 	const uint8_t tx[] = {0xDE, 0xAD, 0xBE, 0xEF};
 	size_t sent = 0;
-	int ret = s.try_send_for(tx, sizeof(tx), std::chrono::milliseconds{100}, sent);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(s.try_send_for(tx, sizeof(tx), std::chrono::milliseconds{100}, sent)
+			    .has_value());
 	assert_int_equal(sent, sizeof(tx));
 
 	uint8_t rx[4] = {};
 	size_t received = 0;
-	ret = s.try_receive_for(rx, sizeof(rx), std::chrono::milliseconds{100}, received);
-	assert_int_equal(ret, OVE_OK);
+	assert_true(s.try_receive_for(rx, sizeof(rx), std::chrono::milliseconds{100}, received)
+			    .has_value());
 	assert_int_equal(received, sizeof(tx));
 	assert_memory_equal(rx, tx, sizeof(tx));
 }
@@ -117,6 +117,55 @@ static void test_cpp_stream_not_copyable(void **state)
 		      "Stream must not be copy assignable");
 }
 
+/* Method-return-type pins.  Catches an accidental revert of the
+ * `try_send_for/until` / `try_receive_for/until` migration from
+ * `int` to `Result<void>` at compile time.  Out-param ordering
+ * preserved (`size_t&` stays at the end of the bounded forms,
+ * matching the prior signature). */
+static void test_cpp_stream_return_type_shape(void **state)
+{
+	(void)state;
+	using S = ove::Stream<64>;
+	using uchar_p = const void *;
+	using void_p = void *;
+	static_assert(std::is_same_v<decltype(std::declval<S>().send(
+					     std::declval<uchar_p>(), size_t{},
+					     std::declval<size_t &>())),
+				     void>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().try_send(
+					     std::declval<uchar_p>(), size_t{},
+					     std::declval<size_t &>())),
+				     bool>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().try_send_for(
+					     std::declval<uchar_p>(), size_t{},
+					     std::chrono::milliseconds{1},
+					     std::declval<size_t &>())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().try_send_until(
+					     std::declval<uchar_p>(), size_t{},
+					     std::chrono::steady_clock::now(),
+					     std::declval<size_t &>())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().receive(
+					     std::declval<void_p>(), size_t{},
+					     std::declval<size_t &>())),
+				     void>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive(
+					     std::declval<void_p>(), size_t{},
+					     std::declval<size_t &>())),
+				     bool>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive_for(
+					     std::declval<void_p>(), size_t{},
+					     std::chrono::milliseconds{1},
+					     std::declval<size_t &>())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<S>().try_receive_until(
+					     std::declval<void_p>(), size_t{},
+					     std::chrono::steady_clock::now(),
+					     std::declval<size_t &>())),
+				     ove::Result<void>>);
+}
+
 int test_cpp_stream_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -131,6 +180,7 @@ int test_cpp_stream_run(void)
 		cmocka_unit_test(test_cpp_stream_move_construct),
 #endif
 		cmocka_unit_test(test_cpp_stream_not_copyable),
+		cmocka_unit_test(test_cpp_stream_return_type_shape),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
