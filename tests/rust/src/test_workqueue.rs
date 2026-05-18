@@ -16,7 +16,7 @@ unsafe extern "C" fn test_work_handler(_work: ove::ffi::ove_work_t) {
 }
 
 fn test_workqueue_create_destroy() {
-    let _wq = Workqueue::new(b"test\0", Priority::Normal, 4096).unwrap();
+    let _wq = Workqueue::new(c"test", Priority::Normal, 4096).unwrap();
 }
 
 fn test_work_create_destroy() {
@@ -25,7 +25,7 @@ fn test_work_create_destroy() {
 
 fn test_work_submit() {
     WQ_COUNT.store(0, Ordering::SeqCst);
-    let wq = Workqueue::new(b"sub\0", Priority::Normal, 4096).unwrap();
+    let wq = Workqueue::new(c"sub", Priority::Normal, 4096).unwrap();
     let w = Work::new(Some(test_work_handler)).unwrap();
     w.submit(&wq).unwrap();
     Thread::sleep_ms(100);
@@ -34,7 +34,7 @@ fn test_work_submit() {
 
 fn test_work_submit_delayed() {
     WQ_COUNT.store(0, Ordering::SeqCst);
-    let wq = Workqueue::new(b"del\0", Priority::Normal, 4096).unwrap();
+    let wq = Workqueue::new(c"del", Priority::Normal, 4096).unwrap();
     let w = Work::new(Some(test_work_handler)).unwrap();
     w.submit_delayed(&wq, 50).unwrap();
 
@@ -46,7 +46,7 @@ fn test_work_submit_delayed() {
 }
 
 fn test_work_cancel() {
-    let wq = Workqueue::new(b"can\0", Priority::Normal, 4096).unwrap();
+    let wq = Workqueue::new(c"can", Priority::Normal, 4096).unwrap();
     let w = Work::new(Some(test_work_handler)).unwrap();
     let _ = w.cancel(); /* best-effort */
     drop(w);
@@ -55,7 +55,7 @@ fn test_work_cancel() {
 
 fn test_raii_drop() {
     {
-        let _wq = Workqueue::new(b"raii\0", Priority::Normal, 4096).unwrap();
+        let _wq = Workqueue::new(c"raii", Priority::Normal, 4096).unwrap();
     }
     {
         let _w = Work::new(Some(test_work_handler)).unwrap();

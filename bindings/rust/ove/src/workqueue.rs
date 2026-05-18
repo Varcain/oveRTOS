@@ -20,13 +20,22 @@ pub struct Workqueue {
 
 impl Workqueue {
     /// Create a workqueue via heap allocation (only in heap mode).
+    ///
+    /// `name` must be a `&'static CStr`; the easiest source is a
+    /// `c"..."` literal (Rust 1.77+).  The compiler enforces null
+    /// termination — `&[u8]` without `\0` was the previous shape and
+    /// was undefined-behaviour-prone.
     #[cfg(not(zero_heap))]
-    pub fn new(name: &[u8], priority: crate::Priority, stack_size: usize) -> Result<Self> {
+    pub fn new(
+        name: &'static core::ffi::CStr,
+        priority: crate::Priority,
+        stack_size: usize,
+    ) -> Result<Self> {
         let mut handle: bindings::ove_workqueue_t = core::ptr::null_mut();
         let rc = unsafe {
             bindings::ove_workqueue_create(
                 &mut handle,
-                name.as_ptr() as *const _,
+                name.as_ptr(),
                 priority as bindings::ove_prio_t,
                 stack_size,
             )
@@ -44,7 +53,7 @@ impl Workqueue {
     #[cfg(zero_heap)]
     pub unsafe fn from_static(
         storage: *mut bindings::ove_workqueue_storage_t,
-        name: &[u8],
+        name: &'static core::ffi::CStr,
         priority: crate::Priority,
         stack_size: usize,
         stack: *mut core::ffi::c_void,
@@ -54,7 +63,7 @@ impl Workqueue {
             bindings::ove_workqueue_init(
                 &mut handle,
                 storage,
-                name.as_ptr() as *const _,
+                name.as_ptr(),
                 priority as bindings::ove_prio_t,
                 stack_size,
                 stack,
