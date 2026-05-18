@@ -15,6 +15,7 @@
 
 #include <ove/net.h>
 #include <ove/types.hpp>
+#include <ove/error.hpp>
 
 #ifdef CONFIG_OVE_NET
 
@@ -218,11 +219,12 @@ class NetIf
 	/**
 	 * @brief Brings the network interface up.
 	 * @param[in] cfg Interface configuration (DHCP or static).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected` with the
+	 *         appropriate @ref Error on failure.
 	 */
-	[[nodiscard]] int up(const NetIfConfig &cfg)
+	[[nodiscard]] Result<void> up(const NetIfConfig &cfg) noexcept
 	{
-		return ove_netif_up(handle_, &cfg.raw);
+		return from_rc(ove_netif_up(handle_, &cfg.raw));
 	}
 
 	/**
@@ -252,17 +254,23 @@ class NetIf
 
 	/**
 	 * @brief Query the current addresses of the network interface.
+	 *
+	 * Three out-params are kept (rather than folded into the Result
+	 * value side) because callers commonly want to query a subset —
+	 * each `Address*` may be @c nullptr to skip it.
+	 *
 	 * @param[out] ip      Current IP address (may be nullptr).
 	 * @param[out] gateway Current gateway (may be nullptr).
 	 * @param[out] netmask Current subnet mask (may be nullptr).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected` with the
+	 *         appropriate @ref Error on failure.
 	 */
-	[[nodiscard]] int get_addr(Address *ip = nullptr, Address *gateway = nullptr,
-				   Address *netmask = nullptr)
+	[[nodiscard]] Result<void> get_addr(Address *ip = nullptr, Address *gateway = nullptr,
+					    Address *netmask = nullptr) noexcept
 	{
-		return ove_netif_get_addr(handle_, ip ? &ip->raw : nullptr,
-					  gateway ? &gateway->raw : nullptr,
-					  netmask ? &netmask->raw : nullptr);
+		return from_rc(ove_netif_get_addr(handle_, ip ? &ip->raw : nullptr,
+						  gateway ? &gateway->raw : nullptr,
+						  netmask ? &netmask->raw : nullptr));
 	}
 
 	/**
@@ -368,39 +376,53 @@ class TcpSocket
 
 	/**
 	 * @brief Connects to a remote address.
-	 * @param[in] addr       Remote address.
-	 * @param[in] timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[in] addr    Remote address.
+	 * @param[in] timeout Connect timeout (any `std::chrono::duration`
+	 *                    unit; defaults to @c wait_forever).
+	 * @return Empty `Result<void>` on success; `unexpected` with the
+	 *         appropriate @ref Error on failure (`Error::Timeout`,
+	 *         `Error::NetRefused`, `Error::NetUnreachable`, …).
 	 */
-	[[nodiscard]] int connect(const Address &addr, std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	connect(const Address &addr, std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_socket_connect(handle_, &addr.raw, to_timeout_ns(timeout));
+		return from_rc(ove_socket_connect(handle_, &addr.raw, to_timeout_ns(timeout)));
 	}
 
 	/**
 	 * @brief Sends data on the connected socket.
-	 * @param[in]  data Pointer to data to send.
-	 * @param[in]  len  Number of bytes to send.
-	 * @param[out] sent Number of bytes actually sent (may be nullptr).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 *
+	 * @param[in] data Pointer to data to send.
+	 * @param[in] len  Number of bytes to attempt to send.
+	 * @return On success, the number of bytes actually written
+	 *         (may be less than @p len if the substrate decides to
+	 *         commit a partial buffer).  On failure, an `unexpected`
+	 *         @ref Error.
 	 */
-	[[nodiscard]] int send(const void *data, size_t len, size_t *sent = nullptr)
+	[[nodiscard]] Result<size_t> send(const void *data, size_t len) noexcept
 	{
-		return ove_socket_send(handle_, data, len, sent);
+		size_t sent = 0;
+		const int rc = ove_socket_send(handle_, data, len, &sent);
+		return from_rc(rc, sent);
 	}
 
 	/**
 	 * @brief Receives data from the connected socket.
-	 * @param[out] buf        Buffer to receive into.
-	 * @param[in]  len        Buffer size in bytes.
-	 * @param[out] received   Number of bytes received (may be nullptr).
-	 * @param[in]  timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
-	 * @return `OVE_OK` on success, `OVE_ERR_NET_CLOSED` if peer closed.
+	 *
+	 * @param[out] buf     Buffer to receive into.
+	 * @param[in]  len     Buffer size in bytes.
+	 * @param[in]  timeout Receive timeout (any `std::chrono::duration`
+	 *                     unit; defaults to @c wait_forever).
+	 * @return On success, the number of bytes actually read (may be
+	 *         less than @p len; never 0 — a clean peer close is
+	 *         reported as `unexpected(Error::NetClosed)`).
 	 */
-	[[nodiscard]] int recv(void *buf, size_t len, size_t *received = nullptr,
-			       std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<size_t> recv(void *buf, size_t len,
+					   std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_socket_recv(handle_, buf, len, received, to_timeout_ns(timeout));
+		size_t received = 0;
+		const int rc = ove_socket_recv(handle_, buf, len, &received, to_timeout_ns(timeout));
+		return from_rc(rc, received);
 	}
 
 	/**
@@ -544,42 +566,56 @@ class UdpSocket
 	/**
 	 * @brief Binds the socket to a local address.
 	 * @param[in] addr Local address to bind.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected` with the
+	 *         appropriate @ref Error on failure
+	 *         (`Error::NetAddrInUse`, …).
 	 */
-	[[nodiscard]] int bind(const Address &addr)
+	[[nodiscard]] Result<void> bind(const Address &addr) noexcept
 	{
-		return ove_socket_bind(handle_, &addr.raw);
+		return from_rc(ove_socket_bind(handle_, &addr.raw));
 	}
 
 	/**
 	 * @brief Sends a datagram to a specific destination.
-	 * @param[in]  data Pointer to data to send.
-	 * @param[in]  len  Number of bytes to send.
-	 * @param[in]  dest Destination address.
-	 * @param[out] sent Number of bytes actually sent (may be nullptr).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 *
+	 * @param[in] data Pointer to data to send.
+	 * @param[in] len  Number of bytes to send.
+	 * @param[in] dest Destination address.
+	 * @return On success, the number of bytes actually sent.  On
+	 *         failure, an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int send_to(const void *data, size_t len, const Address &dest,
-				  size_t *sent = nullptr)
+	[[nodiscard]] Result<size_t>
+	send_to(const void *data, size_t len, const Address &dest) noexcept
 	{
-		return ove_socket_sendto(handle_, data, len, sent, &dest.raw);
+		size_t sent = 0;
+		const int rc = ove_socket_sendto(handle_, data, len, &sent, &dest.raw);
+		return from_rc(rc, sent);
 	}
 
 	/**
 	 * @brief Receives a datagram and the sender's address.
-	 * @param[out] buf        Buffer to receive into.
-	 * @param[in]  len        Buffer size in bytes.
-	 * @param[out] src        Filled with sender's address (may be nullptr).
-	 * @param[out] received   Number of bytes received (may be nullptr).
-	 * @param[in]  timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 *
+	 * @param[out] buf     Buffer to receive into.
+	 * @param[in]  len     Buffer size in bytes.
+	 * @param[out] src     Filled with the sender's address on success
+	 *                     (may be @c nullptr to ignore).  Kept as an
+	 *                     out-param rather than folded into the
+	 *                     `Result` value side so the byte-count is
+	 *                     the natural success payload.
+	 * @param[in]  timeout Receive timeout (any `std::chrono::duration`
+	 *                     unit; defaults to @c wait_forever).
+	 * @return On success, the number of bytes received.  On failure,
+	 *         an `unexpected` @ref Error.
 	 */
-	[[nodiscard]] int recv_from(void *buf, size_t len, Address *src = nullptr,
-				    size_t *received = nullptr,
-				    std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<size_t>
+	recv_from(void *buf, size_t len, Address *src = nullptr,
+		  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
-		return ove_socket_recvfrom(handle_, buf, len, received, src ? &src->raw : nullptr,
-					   to_timeout_ns(timeout));
+		size_t received = 0;
+		const int rc = ove_socket_recvfrom(handle_, buf, len, &received,
+						   src ? &src->raw : nullptr,
+						   to_timeout_ns(timeout));
+		return from_rc(rc, received);
 	}
 
 	/**
@@ -712,46 +748,57 @@ class TcpListener
 	/**
 	 * @brief Binds the socket to a local address.
 	 * @param[in] addr Local address to bind.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected` with the
+	 *         appropriate @ref Error on failure
+	 *         (`Error::NetAddrInUse`, …).
 	 */
-	[[nodiscard]] int bind(const Address &addr)
+	[[nodiscard]] Result<void> bind(const Address &addr) noexcept
 	{
-		return ove_socket_bind(handle_, &addr.raw);
+		return from_rc(ove_socket_bind(handle_, &addr.raw));
 	}
 
 	/**
 	 * @brief Marks the socket as listening for incoming connections.
 	 * @param[in] backlog Maximum pending connection queue length.
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @return Empty `Result<void>` on success; `unexpected` with the
+	 *         appropriate @ref Error on failure.
 	 */
-	[[nodiscard]] int listen(int backlog = 4)
+	[[nodiscard]] Result<void> listen(int backlog = 4) noexcept
 	{
-		return ove_socket_listen(handle_, backlog);
+		return from_rc(ove_socket_listen(handle_, backlog));
 	}
 
 	/**
 	 * @brief Accepts an incoming connection.
 	 *
-	 * On success the returned `TcpSocket` owns the accepted connection.
-	 * The caller must check the return value; on failure the output
-	 * `client` is left in a closed state.
+	 * The accepted socket is written into @p client by reference
+	 * (rather than returned via `Result<TcpSocket>`) because
+	 * @c TcpSocket is non-movable in @c CONFIG_OVE_ZERO_HEAP mode —
+	 * returning one by value would not compile there.  On success
+	 * @p client owns the accepted connection; on failure it is left
+	 * in a closed state.
 	 *
-	 * @param[out] client     Receives the accepted connection.
-	 * @param[in]  timeout_ns Timeout in nanoseconds (`OVE_WAIT_FOREVER` to block).
-	 * @return `OVE_OK` on success, or a negative error code.
+	 * @param[out] client  Receives the accepted connection.
+	 * @param[in]  timeout Accept timeout (any `std::chrono::duration`
+	 *                     unit; defaults to @c wait_forever).
+	 * @return Empty `Result<void>` on success; `unexpected`
+	 *         @ref Error on failure (typically `Error::Timeout` or
+	 *         `Error::NetClosed`).
 	 */
-	[[nodiscard]] int accept(TcpSocket &client, std::chrono::nanoseconds timeout = wait_forever)
+	[[nodiscard]] Result<void>
+	accept(TcpSocket &client, std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
 		ove_socket_t cli_handle{};
 		ove_socket_storage_t cli_storage{};
-		int err = ove_socket_accept(handle_, &cli_handle, &cli_storage, to_timeout_ns(timeout));
-		if (err == OVE_OK) {
+		const int rc = ove_socket_accept(handle_, &cli_handle, &cli_storage,
+						 to_timeout_ns(timeout));
+		if (rc == OVE_OK) {
 			client.close();
 			client.handle_ = cli_handle;
 			client.storage_ = cli_storage;
 			client.open_ = true;
 		}
-		return err;
+		return from_rc(rc);
 	}
 
 	/**
