@@ -1024,28 +1024,57 @@ class CondVar
 	}
 
 	/**
-	 * @brief Bounded-wait.  Returns @c OVE_OK on wake, @c OVE_ERR_TIMEOUT
-	 *        on timeout.  `std::condition_variable::wait_for` analog.
+	 * @brief Bounded-wait.
 	 *
-	 * @note No `try_wait()` immediate form — a condvar wait is inherently
-	 * blocking; `std::condition_variable` matches this (no `try_wait`).
+	 * Loose analog of @c std::condition_variable::wait_for — but
+	 * returns `Result<void>` rather than `std::cv_status`, matching
+	 * the Result-shape convention used by the rest of the
+	 * `ove::Mutex`/`Semaphore`/`Event` timeout-bearing methods.
+	 *
+	 * (`std::cv_status` is unavailable on the bare-metal backends —
+	 * arm-gnu-toolchain's libstdc++ ships with `--enable-threads=single`,
+	 * so neither `std::condition_variable` nor `std::cv_status` are
+	 * declared.  Using `Result<void>` keeps the API uniform across
+	 * POSIX, FreeRTOS, NuttX and Zephyr.)
+	 *
+	 * @param[in] mtx The mutex (locked by the calling thread).  The
+	 *                kernel releases it while blocking and re-acquires
+	 *                it before returning.
+	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
+	 * @return Empty `Result<void>` on wake; `unexpected`
+	 *         @ref Error::Timeout if the deadline elapsed without a
+	 *         notification; `unexpected` with another @ref Error
+	 *         value on backend failure.
+	 *
+	 * @note No `try_wait()` immediate form — a condvar wait is
+	 *       inherently blocking; `std::condition_variable` matches
+	 *       this (no `try_wait`).
+	 * @note Always re-check the predicate in a loop after this
+	 *       returns to guard against spurious wake-ups.  The
+	 *       predicate-overload below does this internally.
 	 */
-	[[nodiscard]] int try_wait_for(Mutex &mtx, std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_wait_for(Mutex &mtx, const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(rel));
+		return from_rc(ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(rel)));
 	}
 
 	/**
 	 * @brief Deadline-based wait templated over the clock.
-	 * `std::condition_variable::wait_until` analog.  See
-	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 *
+	 * Same clock-templating rationale as @ref Mutex::try_lock_until.
+	 *
+	 * @return As @ref try_wait_for — `Result<void>` with
+	 *         `Error::Timeout` on timeout.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_wait_until(Mutex &mtx,
-					  const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_wait_until(Mutex &mtx,
+		       const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(rel));
+		return from_rc(ove_condvar_wait(handle_, mtx.handle(), to_timeout_ns(rel)));
 	}
 
 	/**
