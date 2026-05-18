@@ -149,7 +149,7 @@ fn producerEntry() void {
         // `queue.?` unwraps the optional — `appMain` populated it
         // before this thread was spawned, so it is guaranteed non-null
         // here.
-        queue.?.send(&count, 1000 * std.time.ns_per_ms) catch |e| {
+        queue.?.sendFor(&count, .millis(1000)) catch |e| {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
@@ -166,10 +166,8 @@ fn consumerEntry() void {
     ove.log.inf("Consumer started", .{});
 
     while (true) {
-        const val = queue.?.receive(ove.wait_forever) catch {
-            ove.log.err("Consumer: receive error", .{});
-            continue;
-        };
+        // `recv()` is forever-blocking and infallible — no catch needed.
+        const val = queue.?.recv();
 
         last_value.store(val, .release);
 

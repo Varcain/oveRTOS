@@ -156,7 +156,7 @@ fn producerEntry() void {
 
         // In zero-heap mode the wrapper is pinned; methods take *Self,
         // so we call directly on the file-scope `queue` variable.
-        queue.send(&count, 1000 * std.time.ns_per_ms) catch |e| {
+        queue.sendFor(&count, .millis(1000)) catch |e| {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
@@ -173,10 +173,7 @@ fn consumerEntry() void {
     ove.log.inf("Consumer started", .{});
 
     while (true) {
-        const val = queue.receive(ove.wait_forever) catch {
-            ove.log.err("Consumer: receive error", .{});
-            continue;
-        };
+        const val = queue.recv();
 
         last_value.store(val, .release);
 

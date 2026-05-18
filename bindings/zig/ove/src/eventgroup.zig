@@ -9,9 +9,12 @@ const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
+const Duration = @import("time.zig").Duration;
+const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
-// Per-operation narrow error set (A3).
-/// Error set for `EventGroup.waitBits*`.
+// Per-operation narrow error set.
+/// Error set for `EventGroup.waitBitsFor`.  `waitBits` is forever-
+/// blocking and infallible after a successful create/init.
 pub const WaitError = error{Timeout};
 
 inline fn mapTimeoutOnly(comptime ctx: []const u8, rc: c_int) WaitError {
@@ -19,6 +22,10 @@ inline fn mapTimeoutOnly(comptime ctx: []const u8, rc: c_int) WaitError {
         c.OVE_ERR_TIMEOUT => error.Timeout,
         else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
     };
+}
+
+inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
+    if (rc < 0) std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc});
 }
 
 /// Bitmask type for event group bits (32 bits wide).
@@ -75,18 +82,19 @@ const HeapEventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) WaitError!EventBits {
+    /// Forever-blocking wait.  Returns the matched bits.  Infallible.
+    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32) EventBits {
         var result: EventBits = 0;
-        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result);
-        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBits", rc);
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, WAIT_FOREVER, &result);
+        panicOnRc("EventGroup.waitBits", rc);
         return result;
     }
 
-    pub inline fn waitBitsUntil(self: EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) WaitError!EventBits {
-        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
+    /// Bounded-duration wait.
+    pub inline fn waitBitsFor(self: EventGroup, bits: EventBits, flags: u32, d: Duration) WaitError!EventBits {
         var result: EventBits = 0;
-        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
-        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, d.ns, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsFor", rc);
         return result;
     }
 
@@ -131,20 +139,19 @@ const ZeroHeapEventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) WaitError!EventBits {
+    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32) EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         var result: EventBits = 0;
-        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result);
-        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBits", rc);
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, WAIT_FOREVER, &result);
+        panicOnRc("EventGroup.waitBits", rc);
         return result;
     }
 
-    pub inline fn waitBitsUntil(self: *EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) WaitError!EventBits {
+    pub inline fn waitBitsFor(self: *EventGroup, bits: EventBits, flags: u32, d: Duration) WaitError!EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
-        const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
         var result: EventBits = 0;
-        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
-        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, d.ns, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsFor", rc);
         return result;
     }
 

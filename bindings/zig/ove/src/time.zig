@@ -6,9 +6,47 @@
 
 // Time utilities (trailing underscore avoids std.time clash)
 
+const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;
+
+/// Typed duration value, used throughout the binding for bounded waits.
+///
+/// Carries nanoseconds; constructors disambiguate the unit at the call
+/// site so `queue.sendFor(item, .millis(100))` is the only honest reading.
+/// Saturating multiplication (`*|`) avoids u64 overflow at construction
+/// when a caller passes very large values.
+///
+/// ```zig
+/// try mutex.lockFor(.millis(50));
+/// try sem.timedWait(.secs(5));
+/// try queue.sendFor(&item, .micros(250));
+/// ```
+pub const Duration = struct {
+    ns: u64,
+
+    /// Construct from a raw nanosecond count.
+    pub inline fn nanos(n: u64) Duration {
+        return .{ .ns = n };
+    }
+    /// Construct from microseconds.
+    pub inline fn micros(us: u64) Duration {
+        return .{ .ns = us *| std.time.ns_per_us };
+    }
+    /// Construct from milliseconds.
+    pub inline fn millis(ms: u64) Duration {
+        return .{ .ns = ms *| std.time.ns_per_ms };
+    }
+    /// Construct from seconds.
+    pub inline fn secs(s: u64) Duration {
+        return .{ .ns = s *| std.time.ns_per_s };
+    }
+
+    /// Zero duration — a non-blocking probe.  Prefer the primitive's
+    /// `tryX` method for intent.
+    pub const zero: Duration = .{ .ns = 0 };
+};
 
 /// Return the current system time in microseconds since boot.
 ///

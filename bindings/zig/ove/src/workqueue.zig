@@ -10,6 +10,7 @@ const err = @import("error.zig");
 const Error = err.Error;
 const thread_mod = @import("thread.zig");
 const pin = @import("pin.zig");
+const Duration = @import("time.zig").Duration;
 
 /// Deferred work queue backed by a dedicated RTOS thread.
 ///
@@ -55,8 +56,14 @@ fn HeapWorkqueue(comptime stack_size: usize) type {
             try err.fromCode(c.ove_work_submit(self.handle, work.handle));
         }
 
-        pub fn submitDelayed(self: Self, work: *Work, delay_ms: u32) Error!void {
-            try err.fromCode(c.ove_work_submit_delayed(self.handle, work.handle, delay_ms));
+        /// Submit `work` with a delay.  Substrate takes the delay as
+        /// milliseconds; saturating-cast from the `Duration` ns count.
+        pub fn submitDelayedFor(self: Self, work: *Work, d: Duration) Error!void {
+            const ms: u32 = if (d.ns / std.time.ns_per_ms > std.math.maxInt(u32))
+                std.math.maxInt(u32)
+            else
+                @intCast(d.ns / std.time.ns_per_ms);
+            try err.fromCode(c.ove_work_submit_delayed(self.handle, work.handle, ms));
         }
     };
 }
@@ -107,9 +114,13 @@ fn ZeroHeapWorkqueue(comptime stack_size: usize) type {
             try err.fromCode(c.ove_work_submit(self.handle, work.handle));
         }
 
-        pub fn submitDelayed(self: *Self, work: *Work, delay_ms: u32) Error!void {
+        pub fn submitDelayedFor(self: *Self, work: *Work, d: Duration) Error!void {
             self.tracker.assertSame(self, "ove.Workqueue");
-            try err.fromCode(c.ove_work_submit_delayed(self.handle, work.handle, delay_ms));
+            const ms: u32 = if (d.ns / std.time.ns_per_ms > std.math.maxInt(u32))
+                std.math.maxInt(u32)
+            else
+                @intCast(d.ns / std.time.ns_per_ms);
+            try err.fromCode(c.ove_work_submit_delayed(self.handle, work.handle, ms));
         }
     };
 }
