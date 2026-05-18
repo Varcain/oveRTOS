@@ -1099,6 +1099,7 @@ fn graphics_entry() {
 //  Entry point
 // =========================================================================
 
+#[ove::main]
 fn app_main() {
     ove::log::try_init();
     log::info!("LVGL benchmark (Rust): init");
@@ -1161,4 +1162,3 @@ fn app_main() {
     ove::run();
 }
 
-ove::main!(app_main);

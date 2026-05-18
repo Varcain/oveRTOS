@@ -122,6 +122,7 @@ fn ui_timer_cb() {
 // App entry point — heap mode uses Arc + spawn_with closure capture.
 // ---------------------------------------------------------------------------
 
+#[ove::main]
 fn app_main() {
     ove::log::try_init();
     log::info!("Rust example (heap mode): init");
@@ -224,4 +225,3 @@ fn app_main() {
     log::info!("Rust example (heap mode): shutdown");
 }
 
-ove::main!(app_main);
