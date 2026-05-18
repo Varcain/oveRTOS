@@ -598,18 +598,18 @@ fn timerCallback() void {
 }
 
 fn testTimerCreateDestroyOneshot() !void {
-    var t = try ove.Timer.create(test_allocator, timerCallback, 100, .one_shot);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 100, .mode = .one_shot }, timerCallback, .{});
     t.deinit();
 }
 
 fn testTimerCreateDestroyPeriodic() !void {
-    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 50, .mode = .periodic }, timerCallback, .{});
     t.deinit();
 }
 
 fn testTimerOneshotFiresOnce() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .one_shot);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 50, .mode = .one_shot }, timerCallback, .{});
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(200);
@@ -618,7 +618,7 @@ fn testTimerOneshotFiresOnce() !void {
 
 fn testTimerPeriodicFiresMultiple() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 50, .mode = .periodic }, timerCallback, .{});
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(250);
@@ -628,7 +628,7 @@ fn testTimerPeriodicFiresMultiple() !void {
 
 fn testTimerStopPreventsCallbacks() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(test_allocator, timerCallback, 50, .periodic);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 50, .mode = .periodic }, timerCallback, .{});
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(150);
@@ -641,7 +641,7 @@ fn testTimerStopPreventsCallbacks() !void {
 
 fn testTimerResetRestarts() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(test_allocator, timerCallback, 200, .one_shot);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 200, .mode = .one_shot }, timerCallback, .{});
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(100);
@@ -655,7 +655,7 @@ fn testTimerResetRestarts() !void {
 
 fn testTimerDoubleStart() !void {
     timer_count = 0;
-    var t = try ove.Timer.create(test_allocator, timerCallback, 100, .periodic);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 100, .mode = .periodic }, timerCallback, .{});
     defer t.deinit();
     try t.start();
     try t.start();
@@ -664,7 +664,7 @@ fn testTimerDoubleStart() !void {
 }
 
 fn testTimerRaiiDrop() !void {
-    var t = try ove.Timer.create(test_allocator, timerCallback, 100, .periodic);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 100, .mode = .periodic }, timerCallback, .{});
     t.deinit();
 }
 
@@ -676,7 +676,7 @@ fn ctxTimerCallback(ctx: *u32) void {
 
 fn testTimerContextCallback() !void {
     ctx_count = 0;
-    var t = try ove.Timer.createWithContext(test_allocator, u32, &ctx_count, ctxTimerCallback, 50, .one_shot);
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 50, .mode = .one_shot }, ctxTimerCallback, .{&ctx_count});
     defer t.deinit();
     try t.start();
     ove.thread.sleepMs(150);

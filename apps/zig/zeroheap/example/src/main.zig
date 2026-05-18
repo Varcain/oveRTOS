@@ -232,7 +232,7 @@ fn appMain() void {
         return;
     };
 
-    ui_timer = Timer.create(allocator, uiTimerCallback, 200, .periodic) catch {
+    ui_timer = Timer.create(allocator, .{ .period_ms = 200, .mode = .periodic }, uiTimerCallback, .{}) catch {
         std.log.err("Failed to init UI timer", .{});
         return;
     };

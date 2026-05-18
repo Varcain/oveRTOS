@@ -22,6 +22,10 @@
 const std = @import("std");
 const ove = @import("ove");
 
+/// Allocator backing every binding primitive in this app.
+const app_allocator = std.heap.page_allocator;
+
+
 /// Route `std.log.*` and any library using `std.log.scoped(...)` through
 /// `ove.log.logFn` — emits to the oveRTOS console.
 pub const std_options: std.Options = .{
@@ -509,7 +513,7 @@ fn netThread() void {
 fn appMain() void {
     std.log.info("Zig networking example (heap mode): init", .{});
 
-    net_thread = ove.Thread(16384).spawn(.{ .name = "net-test", .priority = .normal }, netThread, .{}) catch |e| {
+    net_thread = ove.Thread(16384).spawn(app_allocator, .{ .name = "net-test", .priority = .normal }, netThread, .{}) catch |e| {
         std.log.err("Failed to create net thread: {d}", .{errCode(e)});
         return;
     };
