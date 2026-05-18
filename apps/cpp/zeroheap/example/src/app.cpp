@@ -77,7 +77,7 @@ static void producer_thread(void *arg)
 
 	while (true) {
 		++count;
-		int ret = counter_queue.send(count, std::chrono::milliseconds{1000});
+		int ret = counter_queue.try_send_for(count, std::chrono::milliseconds{1000});
 		if (ret != OVE_OK) {
 			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
 		}
@@ -95,15 +95,13 @@ static void consumer_thread(void *arg)
 	OVE_LOG_INF("Consumer started");
 
 	while (true) {
-		int ret = counter_queue.receive(&val, ove::wait_forever);
-		if (ret == OVE_OK) {
-			{
-				ove::LockGuard lock(value_mutex);
-				last_value = val;
-			}
-			if (val % 5 == 0) {
-				OVE_LOG_INF("Consumer: count = %u", val);
-			}
+		counter_queue.receive(val);
+		{
+			ove::LockGuard lock(value_mutex);
+			last_value = val;
+		}
+		if (val % 5 == 0) {
+			OVE_LOG_INF("Consumer: count = %u", val);
 		}
 	}
 }
