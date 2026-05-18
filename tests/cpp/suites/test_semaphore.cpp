@@ -51,7 +51,9 @@ static void test_cpp_sem_take_timeout(void **state)
 {
 	(void)state;
 	ove::Semaphore sem(0, 10);
-	assert_int_equal(sem.try_acquire_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = sem.try_acquire_for(std::chrono::milliseconds{50});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 static void test_cpp_sem_give_then_take(void **state)
@@ -70,7 +72,9 @@ static void test_cpp_sem_counting(void **state)
 		sem.release();
 	for (int i = 0; i < 3; i++)
 		assert_true(sem.try_acquire());
-	assert_int_equal(sem.try_acquire_for(std::chrono::milliseconds{10}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = sem.try_acquire_for(std::chrono::milliseconds{10});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 }
 
 static void test_cpp_sem_producer_consumer(void **state)
@@ -81,7 +85,8 @@ static void test_cpp_sem_producer_consumer(void **state)
 
 	{
 		auto th = make_test_thread("prod", cpp_sem_give_entry, &ctx);
-		assert_int_equal(sem.try_acquire_for(std::chrono::milliseconds{500}), OVE_OK);
+		ove::Result<void> r = sem.try_acquire_for(std::chrono::milliseconds{500});
+		assert_true(r.has_value());
 	}
 	assert_int_equal(ctx.done, 1);
 }
@@ -131,6 +136,24 @@ static void test_cpp_sem_not_copyable(void **state)
 		      "Semaphore must not be copy assignable");
 }
 
+/* Method-return-type pins.  Catches an accidental revert of the
+ * `try_acquire_for`/`try_acquire_until` migration from `int` to
+ * `Result<void>` at compile time. */
+static void test_cpp_sem_return_type_shape(void **state)
+{
+	(void)state;
+	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().acquire()), void>);
+	static_assert(
+		std::is_same_v<decltype(std::declval<ove::Semaphore>().try_acquire()), bool>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().try_acquire_for(
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().try_acquire_until(
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::Semaphore>().release()), void>);
+}
+
 int test_cpp_semaphore_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -147,6 +170,7 @@ int test_cpp_semaphore_run(void)
 		cmocka_unit_test(test_cpp_sem_move_construct),
 #endif
 		cmocka_unit_test(test_cpp_sem_not_copyable),
+		cmocka_unit_test(test_cpp_sem_return_type_shape),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

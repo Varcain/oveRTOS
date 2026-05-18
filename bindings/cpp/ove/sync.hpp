@@ -670,26 +670,45 @@ class Semaphore
 	}
 
 	/**
-	 * @brief Bounded-wait acquisition.  `std::counting_semaphore::try_acquire_for` analog.
+	 * @brief Bounded-wait acquisition.
+	 *
+	 * Loosely analogous to @c std::counting_semaphore::try_acquire_for
+	 * but with a `Result<void>` return instead of `bool` — timeout and
+	 * backend errors are reported distinctly via @ref Error.  This
+	 * means @c std::counting_semaphore's interface is **not** strictly
+	 * satisfied; the standard has no concept for it, so the
+	 * mismatch shows up only if you try to substitute the type into a
+	 * generic template that expects the standard shape.
+	 *
 	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
-	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
-	 *         negative error code on backend failure.
+	 * @return Empty `Result<void>` on acquisition; `unexpected`
+	 *         @ref Error::Timeout if the count was zero at the
+	 *         deadline; `unexpected` with another @ref Error value on
+	 *         backend failure.
 	 */
-	[[nodiscard]] int try_acquire_for(std::chrono::nanoseconds rel)
+	template <class Rep, class Period>
+	[[nodiscard]] Result<void>
+	try_acquire_for(const std::chrono::duration<Rep, Period> &rel) noexcept
 	{
-		return ove_sem_take(handle_, to_timeout_ns(rel));
+		return from_rc(ove_sem_take(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
 	 * @brief Deadline-based acquisition templated over the clock.
-	 * `std::counting_semaphore::try_acquire_until` analog.  See
-	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 *
+	 * Same clock-templating rationale as @ref Mutex::try_lock_until
+	 * (deadline converted to a relative duration internally; clock's
+	 * epoch need not match @c ove::steady_clock).
+	 *
+	 * @return As @ref try_acquire_for — `Result<void>` with
+	 *         `Error::Timeout` on timeout.
 	 */
-	template <typename Clock, typename Duration>
-	[[nodiscard]] int try_acquire_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	template <class Clock, class Duration>
+	[[nodiscard]] Result<void>
+	try_acquire_until(const std::chrono::time_point<Clock, Duration> &deadline) noexcept
 	{
 		const auto rel = deadline - Clock::now();
-		return ove_sem_take(handle_, to_timeout_ns(rel));
+		return from_rc(ove_sem_take(handle_, to_timeout_ns(rel)));
 	}
 
 	/**
