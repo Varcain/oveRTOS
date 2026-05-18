@@ -564,33 +564,60 @@ class Semaphore
 #endif
 
 	/**
-	 * @brief Decrements the semaphore count, blocking if the count is zero.
-	 * @param[in] timeout_ns Maximum time to wait in nanoseconds; use
-	 *            `OVE_WAIT_FOREVER` to block indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Decrements the semaphore count, blocking indefinitely.
+	 *
+	 * `std::counting_semaphore::acquire` analog.  Failure of an
+	 * indefinite wait means the handle is unusable — programming
+	 * error.  Aborts via @c OVE_STATIC_INIT_ASSERT on non-OK return
+	 * (same shape as @ref Mutex::lock).
 	 */
-	[[nodiscard]] int take(std::chrono::nanoseconds timeout = wait_forever)
+	void acquire()
 	{
-		return ove_sem_take(handle_, to_timeout_ns(timeout));
+		const int err = ove_sem_take(handle_, OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref take.
-	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
-	 *                     wait must complete.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Non-blocking acquisition attempt.  `std::counting_semaphore::try_acquire` analog.
+	 * @return `true` on acquisition, `false` if the count was zero.
 	 */
-	[[nodiscard]] int take_until(steady_clock::time_point deadline)
+	[[nodiscard]] bool try_acquire()
 	{
-		return ove_sem_take_until(handle_, to_deadline_ns(deadline));
+		return ove_sem_take(handle_, 0) == OVE_OK;
+	}
+
+	/**
+	 * @brief Bounded-wait acquisition.  `std::counting_semaphore::try_acquire_for` analog.
+	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
+	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
+	 *         negative error code on backend failure.
+	 */
+	[[nodiscard]] int try_acquire_for(std::chrono::nanoseconds rel)
+	{
+		return ove_sem_take(handle_, to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Deadline-based acquisition templated over the clock.
+	 * `std::counting_semaphore::try_acquire_until` analog.  See
+	 * @ref Mutex::try_lock_until for the templated-clock rationale.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_acquire_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_sem_take(handle_, to_timeout_ns(rel));
 	}
 
 	/**
 	 * @brief Increments the semaphore count, unblocking a waiting task if any.
 	 *
-	 * Safe to call from both task and ISR context.
+	 * `std::counting_semaphore::release` analog.  Safe to call from
+	 * both task and ISR context.  Increments by 1; batched form
+	 * `release(unsigned n)` is not yet available pending substrate
+	 * `ove_sem_give_n` (tracked in `c-substrate-findings.md`).
 	 */
-	void give()
+	void release()
 	{
 		ove_sem_give(handle_);
 	}
