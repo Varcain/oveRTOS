@@ -112,7 +112,9 @@ static void test_cpp_condvar_wait_timeout(void **state)
 	ove::CondVar cv;
 	ove::Mutex mtx;
 	mtx.lock();
-	assert_int_equal(cv.try_wait_for(mtx, std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	ove::Result<void> r = cv.try_wait_for(mtx, std::chrono::milliseconds{50});
+	assert_false(r.has_value());
+	assert_true(r.error() == ove::Error::Timeout);
 	mtx.unlock();
 }
 
@@ -182,6 +184,35 @@ static void test_cpp_condvar_not_copyable(void **state)
 		      "CondVar must not be copy constructible");
 	static_assert(!std::is_copy_assignable<ove::CondVar>::value,
 		      "CondVar must not be copy assignable");
+}
+
+/* Method-return-type pins.  Basic try_wait_for/until return
+ * Result<void> (consistent with Mutex/Semaphore/Event); predicate
+ * overloads return bool (caller wants the pred-satisfied truth value,
+ * not a Result-shape wrapping it). */
+static void test_cpp_condvar_return_type_shape(void **state)
+{
+	(void)state;
+	static_assert(std::is_same_v<
+		decltype(std::declval<ove::CondVar>().wait(std::declval<ove::Mutex &>())),
+		void>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_for(
+					     std::declval<ove::Mutex &>(),
+					     std::chrono::milliseconds{1})),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_until(
+					     std::declval<ove::Mutex &>(),
+					     std::chrono::steady_clock::now())),
+				     ove::Result<void>>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_for(
+					     std::declval<ove::Mutex &>(),
+					     std::chrono::milliseconds{1}, [] { return true; })),
+				     bool>);
+	static_assert(std::is_same_v<decltype(std::declval<ove::CondVar>().try_wait_until(
+					     std::declval<ove::Mutex &>(),
+					     std::chrono::steady_clock::now(),
+					     [] { return true; })),
+				     bool>);
 }
 
 /* ── Iter A3: predicate-overload wait_*  — spurious-wakeup safety ──── */
@@ -256,6 +287,7 @@ int test_cpp_condvar_run(void)
 		cmocka_unit_test(test_cpp_condvar_move_construct),
 #endif
 		cmocka_unit_test(test_cpp_condvar_not_copyable),
+		cmocka_unit_test(test_cpp_condvar_return_type_shape),
 		cmocka_unit_test(test_cpp_condvar_wait_predicate_already_true),
 		cmocka_unit_test(test_cpp_condvar_wait_predicate_becomes_true),
 		cmocka_unit_test(test_cpp_condvar_wait_predicate_timeout),
