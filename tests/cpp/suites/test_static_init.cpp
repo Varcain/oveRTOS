@@ -20,7 +20,7 @@ static void test_cpp_static_mutex_lock_unlock(void **state)
 {
 	(void)state;
 	ove::Mutex mtx;
-	assert_int_equal(mtx.lock(ove::wait_forever), OVE_OK);
+	mtx.lock();
 	mtx.unlock();
 }
 
@@ -179,7 +179,7 @@ static void test_cpp_static_raii_deinit(void **state)
 	 * by the destructor. */
 	{
 		ove::Mutex mtx;
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		mtx.unlock();
 		/* destructor runs here */
 	}

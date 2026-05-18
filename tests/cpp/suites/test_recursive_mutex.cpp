@@ -10,7 +10,7 @@ extern "C" {
 static void cpp_rmtx_hold_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_rmtx_ctx *>(arg);
-	(void)ctx->mtx->lock(ove::wait_forever);
+	ctx->mtx->lock();
 	__atomic_store_n(&ctx->locked, 1, __ATOMIC_RELEASE);
 	test_msleep(200);
 	ctx->mtx->unlock();
@@ -31,8 +31,8 @@ static void test_cpp_recursive_lock_twice(void **state)
 {
 	(void)state;
 	ove::RecursiveMutex mtx;
-	assert_int_equal(mtx.lock(ove::wait_forever), OVE_OK);
-	assert_int_equal(mtx.lock(ove::wait_forever), OVE_OK);
+	mtx.lock();
+	mtx.lock();
 	mtx.unlock();
 	mtx.unlock();
 }
@@ -42,10 +42,10 @@ static void test_cpp_recursive_matching_unlocks(void **state)
 	(void)state;
 	ove::RecursiveMutex mtx;
 	for (int i = 0; i < 3; i++)
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 	for (int i = 0; i < 3; i++)
 		mtx.unlock();
-	assert_int_equal(mtx.lock(std::chrono::milliseconds{0}), OVE_OK);
+	assert_true(mtx.try_lock());
 	mtx.unlock();
 }
 
@@ -57,7 +57,7 @@ static void test_cpp_recursive_timeout(void **state)
 	auto th = make_test_thread("rh", cpp_rmtx_hold_entry, &ctx);
 	while (!__atomic_load_n(&ctx.locked, __ATOMIC_ACQUIRE))
 		test_msleep(1);
-	assert_int_equal(mtx.lock(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
+	assert_int_equal(mtx.try_lock_for(std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 }
 
 static void test_cpp_recursive_destroy(void **state)
@@ -74,7 +74,7 @@ static void test_cpp_recursive_raii_destroy(void **state)
 	(void)state;
 	{
 		ove::RecursiveMutex mtx;
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		mtx.unlock();
 	}
 }

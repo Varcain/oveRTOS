@@ -23,7 +23,7 @@ extern "C" {
 static void cpp_cv_wait_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_cv_waiter_ctx *>(arg);
-	(void)ctx->mtx->lock(ove::wait_forever);
+	ctx->mtx->lock();
 	(void)ctx->cv->wait(*ctx->mtx, ove::wait_forever);
 	ctx->woke = 1;
 	ctx->mtx->unlock();
@@ -33,7 +33,7 @@ static void cpp_cv_signal_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_cv_signal_ctx *>(arg);
 	test_msleep(50);
-	(void)ctx->mtx->lock(ove::wait_forever);
+	ctx->mtx->lock();
 	ctx->signaled = 1;
 	ctx->cv->signal();
 	ctx->mtx->unlock();
@@ -43,7 +43,7 @@ static void cpp_cv_producer_entry(void *arg)
 {
 	auto *ctx = static_cast<cpp_cv_prod_ctx *>(arg);
 	test_msleep(50);
-	(void)ctx->mtx->lock(ove::wait_forever);
+	ctx->mtx->lock();
 	ctx->ready = 1;
 	ctx->cv->signal();
 	ctx->mtx->unlock();
@@ -77,7 +77,7 @@ static void test_cpp_condvar_signal_wakes_one(void **state)
 		auto th = make_test_thread("cvw", cpp_cv_wait_entry, &ctx);
 		test_msleep(50);
 
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		cv.signal();
 		mtx.unlock();
 	}
@@ -98,7 +98,7 @@ static void test_cpp_condvar_broadcast(void **state)
 		auto t2 = make_test_thread("w2", cpp_cv_wait_entry, &c2);
 		test_msleep(100);
 
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		cv.broadcast();
 		mtx.unlock();
 	}
@@ -111,7 +111,7 @@ static void test_cpp_condvar_wait_timeout(void **state)
 	(void)state;
 	ove::CondVar cv;
 	ove::Mutex mtx;
-	(void)mtx.lock(ove::wait_forever);
+	mtx.lock();
 	assert_int_equal(cv.wait(mtx, std::chrono::milliseconds{50}), OVE_ERR_TIMEOUT);
 	mtx.unlock();
 }
@@ -126,7 +126,7 @@ static void test_cpp_condvar_producer_consumer(void **state)
 	{
 		auto th = make_test_thread("prod", cpp_cv_producer_entry, &ctx);
 
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		while (!ctx.ready)
 			(void)cv.wait(mtx, ove::wait_forever);
 		mtx.unlock();
@@ -144,7 +144,7 @@ static void test_cpp_condvar_wait_forever(void **state)
 	{
 		auto th = make_test_thread("sig", cpp_cv_signal_entry, &ctx);
 
-		(void)mtx.lock(ove::wait_forever);
+		mtx.lock();
 		assert_int_equal(cv.wait(mtx, ove::wait_forever), OVE_OK);
 		mtx.unlock();
 	}

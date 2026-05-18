@@ -104,27 +104,60 @@ class Mutex
 #endif
 
 	/**
-	 * @brief Acquires the mutex, blocking until it is available or the timeout expires.
-	 * @param[in] timeout `std::chrono::duration`; defaults to `ove::wait_forever`.
-	 *                   Pass any duration unit: `100ms`, `5s`, `500us`, etc.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Acquires the mutex, blocking indefinitely.  `std::mutex::lock` analog.
+	 *
+	 * Failure of an indefinite lock means the handle is unusable
+	 * (moved-from, stale, or subsystem mid-deinit) — programming
+	 * error, not a recoverable runtime condition.  Aborts via
+	 * @c OVE_STATIC_INIT_ASSERT on non-OK return; mirrors how
+	 * @ref Thread / @ref Queue constructors handle similar failures.
+	 *
+	 * Pairs with @ref try_lock / @ref try_lock_for / @ref try_lock_until
+	 * to satisfy the @c std::Lockable / @c std::TimedLockable
+	 * concepts, unlocking @c std::lock_guard<ove::Mutex> and
+	 * @c std::scoped_lock(m1, m2) composition.
 	 */
-	[[nodiscard]] int lock(std::chrono::nanoseconds timeout = wait_forever)
+	void lock()
 	{
-		return ove_mutex_lock(handle_, to_timeout_ns(timeout));
+		const int err = ove_mutex_lock(handle_, OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref lock.
-	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
-	 *                     wait must complete.  Pass
-	 *                     `steady_clock::time_point::max()` to block
-	 *                     indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Attempts to acquire the mutex without blocking.  `std::Lockable` requirement.
+	 * @return `true` on acquisition, `false` if the mutex is held by another thread.
 	 */
-	[[nodiscard]] int lock_until(steady_clock::time_point deadline)
+	[[nodiscard]] bool try_lock()
 	{
-		return ove_mutex_lock_until(handle_, to_deadline_ns(deadline));
+		return ove_mutex_lock(handle_, 0) == OVE_OK;
+	}
+
+	/**
+	 * @brief Attempts to acquire the mutex within @p rel.  `std::TimedLockable` analog.
+	 * @param[in] rel Relative timeout (any `std::chrono::duration` unit).
+	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
+	 *         negative error code on backend failure.
+	 */
+	[[nodiscard]] int try_lock_for(std::chrono::nanoseconds rel)
+	{
+		return ove_mutex_lock(handle_, to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Attempts to acquire the mutex by @p deadline.  Templated over
+	 * the clock so callers can pass `std::chrono::steady_clock::now() + 100ms`
+	 * or `ove::steady_clock::now() + 100ms` interchangeably (the deadline is
+	 * converted to a relative duration internally; the clock's epoch does
+	 * not need to match @ref ove::steady_clock).
+	 *
+	 * @return `OVE_OK` on success, `OVE_ERR_TIMEOUT` on timeout, or a
+	 *         negative error code on backend failure.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_mutex_lock(handle_, to_timeout_ns(rel));
 	}
 
 	/**
@@ -239,25 +272,41 @@ class RecursiveMutex
 #endif
 
 	/**
-	 * @brief Acquires the recursive mutex.
-	 * @param[in] timeout_ns Maximum wait time in nanoseconds; use
-	 *            `OVE_WAIT_FOREVER` to block indefinitely.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Acquires the recursive mutex, blocking indefinitely.
+	 *
+	 * Same fatal-on-failure semantics as @ref Mutex::lock.
 	 */
-	[[nodiscard]] int lock(std::chrono::nanoseconds timeout = wait_forever)
+	void lock()
 	{
-		return ove_recursive_mutex_lock(handle_, to_timeout_ns(timeout));
+		const int err = ove_recursive_mutex_lock(handle_, OVE_WAIT_FOREVER);
+		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
 	/**
-	 * @brief Deadline-based variant of @ref lock.
-	 * @param[in] deadline @ref ove::steady_clock::time_point at which the
-	 *                     wait must complete.
-	 * @return `OVE_OK` on success, or a negative error code on timeout/failure.
+	 * @brief Non-blocking acquisition attempt.  `std::Lockable` requirement.
 	 */
-	[[nodiscard]] int lock_until(steady_clock::time_point deadline)
+	[[nodiscard]] bool try_lock()
 	{
-		return ove_recursive_mutex_lock_until(handle_, to_deadline_ns(deadline));
+		return ove_recursive_mutex_lock(handle_, 0) == OVE_OK;
+	}
+
+	/**
+	 * @brief Bounded-wait acquisition.  See @ref Mutex::try_lock_for.
+	 */
+	[[nodiscard]] int try_lock_for(std::chrono::nanoseconds rel)
+	{
+		return ove_recursive_mutex_lock(handle_, to_timeout_ns(rel));
+	}
+
+	/**
+	 * @brief Deadline-based acquisition templated over the clock.
+	 * See @ref Mutex::try_lock_until.
+	 */
+	template <typename Clock, typename Duration>
+	[[nodiscard]] int try_lock_until(const std::chrono::time_point<Clock, Duration> &deadline)
+	{
+		const auto rel = deadline - Clock::now();
+		return ove_recursive_mutex_lock(handle_, to_timeout_ns(rel));
 	}
 
 	/**
@@ -309,19 +358,21 @@ class LockGuard
 	/**
 	 * @brief Constructs the guard, immediately locking the given mutex.
 	 *
-	 * Acquires @p mtx with an indefinite timeout.  If acquisition fails
-	 * (handle is stale, moved-from, or its subsystem is mid-deinit),
-	 * the constructor aborts via @c OVE_STATIC_INIT_ASSERT — matching
-	 * how @c Thread / @c Queue treat similar init failures.  This
-	 * guarantees the destructor's @ref Mutex::unlock cannot run on a
-	 * mutex we never acquired.
+	 * Acquires @p mtx via @ref Mutex::lock (indefinite wait).  Failure
+	 * is handled by @ref Mutex::lock itself (aborts via
+	 * @c OVE_STATIC_INIT_ASSERT), so the destructor's
+	 * @ref Mutex::unlock cannot run on a mutex we never acquired.
+	 *
+	 * @note Prefer `std::lock_guard<ove::Mutex>` for new code — now
+	 * works since @ref Mutex satisfies `std::Lockable`.  @ref LockGuard
+	 * is retained for code targeting older compiler standard libraries
+	 * and for source-compatibility.
 	 *
 	 * @param[in] mtx The mutex to lock.  Must outlive this guard.
 	 */
 	explicit LockGuard(Mutex &mtx) : mtx_(mtx)
 	{
-		const int err = mtx_.lock();
-		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
+		mtx_.lock();
 	}
 
 	/**
