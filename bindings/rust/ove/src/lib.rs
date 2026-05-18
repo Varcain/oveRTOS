@@ -105,6 +105,8 @@ pub mod console;
 pub mod containers;
 #[cfg(feature = "embedded-hal")]
 mod embedded_hal_impl;
+#[cfg(feature = "embedded-io")]
+mod embedded_io_impl;
 pub mod error;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;

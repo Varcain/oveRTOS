@@ -4,16 +4,16 @@
 //
 // This file is part of oveRTOS.
 
-//! Compile-only tests pinning the `embedded-hal` 1.0 trait impls on
-//! `ove::Delay`, `ove::gpio::OutputPin` and `ove::gpio::InputPin`.
+//! Compile-only tests pinning the `embedded-hal` 1.0 + `embedded-io`
+//! 0.6 trait impls on the ove peripheral / I/O surface.
 //!
+//! In this build (stub) we can exercise: `Delay`, `gpio::OutputPin`,
+//! `gpio::InputPin`, `Stream<N>` (Read+Write), `fs::File` (Read+Write).
 //! The I2C / SPI / UART impls live in the binding crate behind
-//! `#[cfg(has_i2c)]` / `#[cfg(has_spi)]` / `#[cfg(has_uart)]` and are
-//! compiled automatically when those peripherals are enabled in the
-//! substrate config.  The stub build used here doesn't have them
-//! enabled, so they're tested implicitly via the app builds (Zephyr
-//! ARM zeroheap example rust + POSIX heap example rust) that do
-//! include them.
+//! `#[cfg(has_i2c)]` / `#[cfg(has_spi)]` / `#[cfg(has_uart)]` and
+//! compile automatically when those peripherals are enabled in the
+//! substrate config — they're tested implicitly via downstream app
+//! builds that enable them.
 
 use crate::framework::run_suite;
 use crate::test_entry;
@@ -30,6 +30,8 @@ use ove::gpio::{InputPin, OutputPin};
 fn drives_output_pin<P: digital::OutputPin>(_: &mut P) {}
 fn drives_input_pin<P: digital::InputPin>(_: &mut P) {}
 fn drives_delay<D: DelayNs>(_: &mut D) {}
+fn drives_io_read<R: embedded_io::Read>(_: &mut R) {}
+fn drives_io_write<W: embedded_io::Write>(_: &mut W) {}
 
 fn test_delay_impl_compiles() {
     let mut d = Delay;
@@ -66,14 +68,64 @@ fn test_delay_methods_run() {
     d.delay_ms(0);
 }
 
+fn test_stream_io_impl_compiles() {
+    // Construct a real stream — works on the stub.  256-byte buffer,
+    // trigger 1.
+    let mut s = ove::Stream::<256>::new(1).unwrap();
+    drives_io_read(&mut s);
+    drives_io_write(&mut s);
+}
+
+fn test_file_io_impl_compiles() {
+    // Don't actually open a file — the stub backend has no FS.
+    // Use the same dead-branch trick as the GPIO pins.
+    if false {
+        let mut f: ove::fs::File = unsafe { core::mem::zeroed() };
+        drives_io_read(&mut f);
+        drives_io_write(&mut f);
+    }
+}
+
+fn test_io_error_kind_mappings() {
+    use embedded_io::Error as _;
+    use ove::Error;
+    assert!(matches!(
+        Error::Timeout.kind(),
+        embedded_io::ErrorKind::TimedOut
+    ));
+    assert!(matches!(
+        Error::NoMemory.kind(),
+        embedded_io::ErrorKind::OutOfMemory
+    ));
+    assert!(matches!(
+        Error::NotFound.kind(),
+        embedded_io::ErrorKind::NotFound
+    ));
+    assert!(matches!(
+        Error::InvalidParam.kind(),
+        embedded_io::ErrorKind::InvalidInput
+    ));
+    assert!(matches!(
+        Error::NotSupported.kind(),
+        embedded_io::ErrorKind::Unsupported
+    ));
+    assert!(matches!(
+        Error::NetClosed.kind(),
+        embedded_io::ErrorKind::ConnectionAborted
+    ));
+}
+
 pub fn run() -> (usize, usize) {
     run_suite(
-        "embedded-hal",
+        "embedded-hal+io",
         &[
             test_entry!(test_delay_impl_compiles),
             test_entry!(test_output_pin_impl_compiles),
             test_entry!(test_input_pin_impl_compiles),
             test_entry!(test_delay_methods_run),
+            test_entry!(test_stream_io_impl_compiles),
+            test_entry!(test_file_io_impl_compiles),
+            test_entry!(test_io_error_kind_mappings),
         ],
     )
 }
