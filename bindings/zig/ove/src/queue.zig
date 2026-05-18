@@ -10,6 +10,28 @@ const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
 
+// Per-operation narrow error sets (A3).  See sync.zig for the rationale.
+/// Error set for `Queue.send*` and `sendFromIsr`.
+pub const SendError = error{ QueueFull, Timeout };
+/// Error set for `Queue.receive*` and `receiveFromIsr`.
+pub const RecvError = error{ QueueEmpty, Timeout };
+
+inline fn mapSendError(comptime ctx: []const u8, rc: c_int) SendError {
+    return switch (rc) {
+        c.OVE_ERR_QUEUE_FULL => error.QueueFull,
+        c.OVE_ERR_TIMEOUT => error.Timeout,
+        else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
+    };
+}
+
+inline fn mapRecvError(comptime ctx: []const u8, rc: c_int) RecvError {
+    return switch (rc) {
+        c.OVE_ERR_QUEUE_EMPTY => error.QueueEmpty,
+        c.OVE_ERR_TIMEOUT => error.Timeout,
+        else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
+    };
+}
+
 /// Type-safe message queue.
 ///
 /// Generic on element type `T` and capacity `N`.
@@ -53,35 +75,41 @@ fn HeapQueue(comptime T: type, comptime N: comptime_int) type {
             c.ove_queue_destroy(self.handle);
         }
 
-        pub inline fn send(self: Self, item: *const T, timeout_ns: u64) Error!void {
-            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns));
+        pub inline fn send(self: Self, item: *const T, timeout_ns: u64) SendError!void {
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns);
+            if (rc < 0) return mapSendError("Queue.send", rc);
         }
 
-        pub inline fn sendUntil(self: Self, item: *const T, deadline_ns: u64) Error!void {
+        pub inline fn sendUntil(self: Self, item: *const T, deadline_ns: u64) SendError!void {
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), t));
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), t);
+            if (rc < 0) return mapSendError("Queue.sendUntil", rc);
         }
 
-        pub inline fn receive(self: Self, timeout_ns: u64) Error!T {
+        pub inline fn receive(self: Self, timeout_ns: u64) RecvError!T {
             var val: T = undefined;
-            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns));
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns);
+            if (rc < 0) return mapRecvError("Queue.receive", rc);
             return val;
         }
 
-        pub inline fn receiveUntil(self: Self, deadline_ns: u64) Error!T {
+        pub inline fn receiveUntil(self: Self, deadline_ns: u64) RecvError!T {
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var val: T = undefined;
-            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), t));
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), t);
+            if (rc < 0) return mapRecvError("Queue.receiveUntil", rc);
             return val;
         }
 
-        pub inline fn sendFromIsr(self: Self, item: *const T) Error!void {
-            try err.fromCode(c.ove_queue_send_from_isr(self.handle, @ptrCast(item)));
+        pub inline fn sendFromIsr(self: Self, item: *const T) SendError!void {
+            const rc = c.ove_queue_send_from_isr(self.handle, @ptrCast(item));
+            if (rc < 0) return mapSendError("Queue.sendFromIsr", rc);
         }
 
-        pub inline fn receiveFromIsr(self: Self) Error!T {
+        pub inline fn receiveFromIsr(self: Self) RecvError!T {
             var val: T = undefined;
-            try err.fromCode(c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val)));
+            const rc = c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val));
+            if (rc < 0) return mapRecvError("Queue.receiveFromIsr", rc);
             return val;
         }
     };
@@ -113,39 +141,45 @@ fn ZeroHeapQueue(comptime T: type, comptime N: comptime_int) type {
             self.tracker.clear();
         }
 
-        pub inline fn send(self: *Self, item: *const T, timeout_ns: u64) Error!void {
+        pub inline fn send(self: *Self, item: *const T, timeout_ns: u64) SendError!void {
             self.tracker.assertSame(self, "ove.Queue");
-            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns));
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), timeout_ns);
+            if (rc < 0) return mapSendError("Queue.send", rc);
         }
 
-        pub inline fn sendUntil(self: *Self, item: *const T, deadline_ns: u64) Error!void {
+        pub inline fn sendUntil(self: *Self, item: *const T, deadline_ns: u64) SendError!void {
             self.tracker.assertSame(self, "ove.Queue");
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-            try err.fromCode(c.ove_queue_send(self.handle, @ptrCast(item), t));
+            const rc = c.ove_queue_send(self.handle, @ptrCast(item), t);
+            if (rc < 0) return mapSendError("Queue.sendUntil", rc);
         }
 
-        pub inline fn receive(self: *Self, timeout_ns: u64) Error!T {
+        pub inline fn receive(self: *Self, timeout_ns: u64) RecvError!T {
             self.tracker.assertSame(self, "ove.Queue");
             var val: T = undefined;
-            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns));
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), timeout_ns);
+            if (rc < 0) return mapRecvError("Queue.receive", rc);
             return val;
         }
 
-        pub inline fn receiveUntil(self: *Self, deadline_ns: u64) Error!T {
+        pub inline fn receiveUntil(self: *Self, deadline_ns: u64) RecvError!T {
             self.tracker.assertSame(self, "ove.Queue");
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var val: T = undefined;
-            try err.fromCode(c.ove_queue_receive(self.handle, @ptrCast(&val), t));
+            const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), t);
+            if (rc < 0) return mapRecvError("Queue.receiveUntil", rc);
             return val;
         }
 
-        pub fn sendFromIsr(self: *Self, item: *const T) Error!void {
-            try err.fromCode(c.ove_queue_send_from_isr(self.handle, @ptrCast(item)));
+        pub fn sendFromIsr(self: *Self, item: *const T) SendError!void {
+            const rc = c.ove_queue_send_from_isr(self.handle, @ptrCast(item));
+            if (rc < 0) return mapSendError("Queue.sendFromIsr", rc);
         }
 
-        pub fn receiveFromIsr(self: *Self) Error!T {
+        pub fn receiveFromIsr(self: *Self) RecvError!T {
             var val: T = undefined;
-            try err.fromCode(c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val)));
+            const rc = c.ove_queue_receive_from_isr(self.handle, @ptrCast(&val));
+            if (rc < 0) return mapRecvError("Queue.receiveFromIsr", rc);
             return val;
         }
     };

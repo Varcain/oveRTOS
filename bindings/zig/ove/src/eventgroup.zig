@@ -10,6 +10,17 @@ const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
 
+// Per-operation narrow error set (A3).
+/// Error set for `EventGroup.waitBits*`.
+pub const WaitError = error{Timeout};
+
+inline fn mapTimeoutOnly(comptime ctx: []const u8, rc: c_int) WaitError {
+    return switch (rc) {
+        c.OVE_ERR_TIMEOUT => error.Timeout,
+        else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
+    };
+}
+
 /// Bitmask type for event group bits (32 bits wide).
 pub const EventBits = u32;
 
@@ -64,16 +75,18 @@ const HeapEventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) Error!EventBits {
+    pub inline fn waitBits(self: EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) WaitError!EventBits {
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result));
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBits", rc);
         return result;
     }
 
-    pub inline fn waitBitsUntil(self: EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) Error!EventBits {
+    pub inline fn waitBitsUntil(self: EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) WaitError!EventBits {
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result));
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
         return result;
     }
 
@@ -118,18 +131,20 @@ const ZeroHeapEventGroup = struct {
         return c.ove_eventgroup_get_bits(self.handle);
     }
 
-    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) Error!EventBits {
+    pub inline fn waitBits(self: *EventGroup, bits: EventBits, flags: u32, timeout_ns: u64) WaitError!EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result));
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, timeout_ns, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBits", rc);
         return result;
     }
 
-    pub inline fn waitBitsUntil(self: *EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) Error!EventBits {
+    pub inline fn waitBitsUntil(self: *EventGroup, bits: EventBits, flags: u32, deadline_ns: u64) WaitError!EventBits {
         self.tracker.assertSame(self, "ove.EventGroup");
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
         var result: EventBits = 0;
-        try err.fromCode(c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result));
+        const rc = c.ove_eventgroup_wait_bits(self.handle, bits, flags, t, &result);
+        if (rc < 0) return mapTimeoutOnly("EventGroup.waitBitsUntil", rc);
         return result;
     }
 

@@ -160,7 +160,6 @@ fn producerEntry() void {
             switch (e) {
                 error.Timeout => ove.log.wrn("Producer: send timeout", .{}),
                 error.QueueFull => ove.log.wrn("Producer: queue full, dropped {d}", .{count}),
-                else => ove.log.err("Producer: unexpected send error", .{}),
             }
             ove.thread.sleepMs(500);
             continue;

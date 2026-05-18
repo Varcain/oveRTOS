@@ -10,6 +10,23 @@ const err = @import("error.zig");
 const Error = err.Error;
 const pin = @import("pin.zig");
 
+// Per-operation narrow error sets (A3).  Stream sends/receives a byte
+// count via the `*sent` / `*received` out-param; the function-level
+// error is only `Timeout` (the substrate reports buffer-full /
+// would-block scenarios as Timeout with `*sent` clamped to actually-
+// written bytes).
+/// Error set for `Stream.send*` and `sendFromIsr`.
+pub const SendError = error{Timeout};
+/// Error set for `Stream.receive*` and `receiveFromIsr`.
+pub const RecvError = error{Timeout};
+
+inline fn mapTimeoutOnly(comptime ctx: []const u8, rc: c_int) error{Timeout} {
+    return switch (rc) {
+        c.OVE_ERR_TIMEOUT => error.Timeout,
+        else => std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc}),
+    };
+}
+
 /// Variable-length byte stream buffer for inter-task data transfer.
 ///
 /// Generic on the buffer capacity in bytes.
@@ -53,41 +70,47 @@ fn HeapStream(comptime size: usize) type {
             c.ove_stream_destroy(self.handle);
         }
 
-        pub inline fn send(self: Self, data: []const u8, timeout_ns: u64) Error!usize {
+        pub inline fn send(self: Self, data: []const u8, timeout_ns: u64) SendError!usize {
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ns, &sent));
+            const rc = c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ns, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.send", rc);
             return sent;
         }
 
-        pub inline fn sendUntil(self: Self, data: []const u8, deadline_ns: u64) Error!usize {
+        pub inline fn sendUntil(self: Self, data: []const u8, deadline_ns: u64) SendError!usize {
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent));
+            const rc = c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.sendUntil", rc);
             return sent;
         }
 
-        pub inline fn receive(self: Self, buf: []u8, timeout_ns: u64) Error!usize {
+        pub inline fn receive(self: Self, buf: []u8, timeout_ns: u64) RecvError!usize {
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received));
+            const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.receive", rc);
             return received;
         }
 
-        pub inline fn receiveUntil(self: Self, buf: []u8, deadline_ns: u64) Error!usize {
+        pub inline fn receiveUntil(self: Self, buf: []u8, deadline_ns: u64) RecvError!usize {
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received));
+            const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.receiveUntil", rc);
             return received;
         }
 
-        pub fn sendFromIsr(self: Self, data: []const u8) Error!usize {
+        pub fn sendFromIsr(self: Self, data: []const u8) SendError!usize {
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent));
+            const rc = c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.sendFromIsr", rc);
             return sent;
         }
 
-        pub fn receiveFromIsr(self: Self, buf: []u8) Error!usize {
+        pub fn receiveFromIsr(self: Self, buf: []u8) RecvError!usize {
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received));
+            const rc = c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.receiveFromIsr", rc);
             return received;
         }
 
@@ -135,45 +158,51 @@ fn ZeroHeapStream(comptime size: usize) type {
             self.tracker.clear();
         }
 
-        pub inline fn send(self: *Self, data: []const u8, timeout_ns: u64) Error!usize {
+        pub inline fn send(self: *Self, data: []const u8, timeout_ns: u64) SendError!usize {
             self.tracker.assertSame(self, "ove.Stream");
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ns, &sent));
+            const rc = c.ove_stream_send(self.handle, data.ptr, data.len, timeout_ns, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.send", rc);
             return sent;
         }
 
-        pub inline fn sendUntil(self: *Self, data: []const u8, deadline_ns: u64) Error!usize {
+        pub inline fn sendUntil(self: *Self, data: []const u8, deadline_ns: u64) SendError!usize {
             self.tracker.assertSame(self, "ove.Stream");
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent));
+            const rc = c.ove_stream_send(self.handle, data.ptr, data.len, t, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.sendUntil", rc);
             return sent;
         }
 
-        pub inline fn receive(self: *Self, buf: []u8, timeout_ns: u64) Error!usize {
+        pub inline fn receive(self: *Self, buf: []u8, timeout_ns: u64) RecvError!usize {
             self.tracker.assertSame(self, "ove.Stream");
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received));
+            const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, timeout_ns, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.receive", rc);
             return received;
         }
 
-        pub inline fn receiveUntil(self: *Self, buf: []u8, deadline_ns: u64) Error!usize {
+        pub inline fn receiveUntil(self: *Self, buf: []u8, deadline_ns: u64) RecvError!usize {
             self.tracker.assertSame(self, "ove.Stream");
             const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received));
+            const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, t, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.receiveUntil", rc);
             return received;
         }
 
-        pub fn sendFromIsr(self: *Self, data: []const u8) Error!usize {
+        pub fn sendFromIsr(self: *Self, data: []const u8) SendError!usize {
             var sent: usize = 0;
-            try err.fromCode(c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent));
+            const rc = c.ove_stream_send_from_isr(self.handle, data.ptr, data.len, &sent);
+            if (rc < 0) return mapTimeoutOnly("Stream.sendFromIsr", rc);
             return sent;
         }
 
-        pub fn receiveFromIsr(self: *Self, buf: []u8) Error!usize {
+        pub fn receiveFromIsr(self: *Self, buf: []u8) RecvError!usize {
             var received: usize = 0;
-            try err.fromCode(c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received));
+            const rc = c.ove_stream_receive_from_isr(self.handle, buf.ptr, buf.len, &received);
+            if (rc < 0) return mapTimeoutOnly("Stream.receiveFromIsr", rc);
             return received;
         }
 

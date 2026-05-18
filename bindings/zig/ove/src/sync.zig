@@ -49,6 +49,37 @@ const Error = err.Error;
 const pin = @import("pin.zig");
 
 // ---------------------------------------------------------------------------
+// Per-operation narrow error sets (A3).
+//
+// Each blocking wait can only return `error.Timeout` at runtime — every
+// other substrate code (`OVE_ERR_INVALID_PARAM`, etc.) is a programming
+// bug here (handle is null, subsystem deinit'd, …) and panics at the
+// FFI boundary via `panicUnexpected`.  Callers `switch (e) { error.Timeout
+// => …, }` exhaustively without an `else` arm.
+//
+// Initialisation (`create` / `init`) still returns the global `Error`
+// because the substrate failure space at construction is genuinely wide
+// (NoMemory, NotRegistered, NotSupported, …).
+// ---------------------------------------------------------------------------
+
+/// Error set for `Mutex.lock*` / `RecursiveMutex.lock*` / `acquire*`.
+pub const LockError = error{Timeout};
+
+/// Error set for `Semaphore.wait*` / `Event.wait*` / `CondVar.wait*`.
+pub const WaitError = error{Timeout};
+
+inline fn panicUnexpected(comptime ctx: []const u8, rc: c_int) noreturn {
+    std.debug.panic("ove." ++ ctx ++ ": unexpected substrate rc {d}", .{rc});
+}
+
+inline fn mapTimeoutOnly(comptime ctx: []const u8, rc: c_int) error{Timeout} {
+    return switch (rc) {
+        c.OVE_ERR_TIMEOUT => error.Timeout,
+        else => panicUnexpected(ctx, rc),
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Mutex
 // ---------------------------------------------------------------------------
 
@@ -69,15 +100,17 @@ const HeapMutex = struct {
         c.ove_mutex_destroy(self.handle);
     }
 
-    pub inline fn lock(self: Mutex, timeout_ns: u64) Error!void {
-        try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ns));
+    pub inline fn lock(self: Mutex, timeout_ns: u64) LockError!void {
+        const rc = c.ove_mutex_lock(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("Mutex.lock", rc);
     }
 
     /// Lock with an absolute deadline (steady-clock ns).  Pass
     /// `ove.wait_forever` to block indefinitely.
-    pub inline fn lockUntil(self: Mutex, deadline_ns: u64) Error!void {
+    pub inline fn lockUntil(self: Mutex, deadline_ns: u64) LockError!void {
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_mutex_lock(self.handle, t));
+        const rc = c.ove_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Mutex.lockUntil", rc);
     }
 
     pub inline fn unlock(self: Mutex) void {
@@ -98,7 +131,7 @@ const HeapMutex = struct {
     /// const g = try mtx.acquire(ove.wait_forever);
     /// defer g.release();
     /// ```
-    pub fn acquire(self: Mutex, timeout_ns: u64) Error!Guard {
+    pub fn acquire(self: Mutex, timeout_ns: u64) LockError!Guard {
         try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
@@ -130,15 +163,17 @@ const ZeroHeapMutex = struct {
         self.tracker.clear();
     }
 
-    pub inline fn lock(self: *Mutex, timeout_ns: u64) Error!void {
+    pub inline fn lock(self: *Mutex, timeout_ns: u64) LockError!void {
         self.tracker.assertSame(self, "ove.Mutex");
-        try err.fromCode(c.ove_mutex_lock(self.handle, timeout_ns));
+        const rc = c.ove_mutex_lock(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("Mutex.lock", rc);
     }
 
-    pub inline fn lockUntil(self: *Mutex, deadline_ns: u64) Error!void {
+    pub inline fn lockUntil(self: *Mutex, deadline_ns: u64) LockError!void {
         self.tracker.assertSame(self, "ove.Mutex");
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_mutex_lock(self.handle, t));
+        const rc = c.ove_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Mutex.lockUntil", rc);
     }
 
     pub inline fn unlock(self: *Mutex) void {
@@ -153,7 +188,7 @@ const ZeroHeapMutex = struct {
         }
     };
 
-    pub fn acquire(self: *Mutex, timeout_ns: u64) Error!Guard {
+    pub fn acquire(self: *Mutex, timeout_ns: u64) LockError!Guard {
         try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
@@ -181,13 +216,15 @@ const HeapRecursiveMutex = struct {
         c.ove_mutex_destroy(self.handle);
     }
 
-    pub inline fn lock(self: RecursiveMutex, timeout_ns: u64) Error!void {
-        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ns));
+    pub inline fn lock(self: RecursiveMutex, timeout_ns: u64) LockError!void {
+        const rc = c.ove_recursive_mutex_lock(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lock", rc);
     }
 
-    pub inline fn lockUntil(self: RecursiveMutex, deadline_ns: u64) Error!void {
+    pub inline fn lockUntil(self: RecursiveMutex, deadline_ns: u64) LockError!void {
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, t));
+        const rc = c.ove_recursive_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lockUntil", rc);
     }
 
     pub inline fn unlock(self: RecursiveMutex) void {
@@ -201,7 +238,7 @@ const HeapRecursiveMutex = struct {
         }
     };
 
-    pub fn acquire(self: RecursiveMutex, timeout_ns: u64) Error!Guard {
+    pub fn acquire(self: RecursiveMutex, timeout_ns: u64) LockError!Guard {
         try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
@@ -228,15 +265,17 @@ const ZeroHeapRecursiveMutex = struct {
         self.tracker.clear();
     }
 
-    pub inline fn lock(self: *RecursiveMutex, timeout_ns: u64) Error!void {
+    pub inline fn lock(self: *RecursiveMutex, timeout_ns: u64) LockError!void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
-        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, timeout_ns));
+        const rc = c.ove_recursive_mutex_lock(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lock", rc);
     }
 
-    pub inline fn lockUntil(self: *RecursiveMutex, deadline_ns: u64) Error!void {
+    pub inline fn lockUntil(self: *RecursiveMutex, deadline_ns: u64) LockError!void {
         self.tracker.assertSame(self, "ove.RecursiveMutex");
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_recursive_mutex_lock(self.handle, t));
+        const rc = c.ove_recursive_mutex_lock(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("RecursiveMutex.lockUntil", rc);
     }
 
     pub inline fn unlock(self: *RecursiveMutex) void {
@@ -251,7 +290,7 @@ const ZeroHeapRecursiveMutex = struct {
         }
     };
 
-    pub fn acquire(self: *RecursiveMutex, timeout_ns: u64) Error!Guard {
+    pub fn acquire(self: *RecursiveMutex, timeout_ns: u64) LockError!Guard {
         try self.lock(timeout_ns);
         return .{ .mutex = self };
     }
@@ -278,13 +317,15 @@ const HeapSemaphore = struct {
         c.ove_sem_destroy(self.handle);
     }
 
-    pub inline fn take(self: Semaphore, timeout_ns: u64) Error!void {
-        try err.fromCode(c.ove_sem_take(self.handle, timeout_ns));
+    pub inline fn take(self: Semaphore, timeout_ns: u64) WaitError!void {
+        const rc = c.ove_sem_take(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("Semaphore.take", rc);
     }
 
-    pub inline fn takeUntil(self: Semaphore, deadline_ns: u64) Error!void {
+    pub inline fn takeUntil(self: Semaphore, deadline_ns: u64) WaitError!void {
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_sem_take(self.handle, t));
+        const rc = c.ove_sem_take(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Semaphore.takeUntil", rc);
     }
 
     pub inline fn give(self: Semaphore) void {
@@ -313,15 +354,17 @@ const ZeroHeapSemaphore = struct {
         self.tracker.clear();
     }
 
-    pub inline fn take(self: *Semaphore, timeout_ns: u64) Error!void {
+    pub inline fn take(self: *Semaphore, timeout_ns: u64) WaitError!void {
         self.tracker.assertSame(self, "ove.Semaphore");
-        try err.fromCode(c.ove_sem_take(self.handle, timeout_ns));
+        const rc = c.ove_sem_take(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("Semaphore.take", rc);
     }
 
-    pub inline fn takeUntil(self: *Semaphore, deadline_ns: u64) Error!void {
+    pub inline fn takeUntil(self: *Semaphore, deadline_ns: u64) WaitError!void {
         self.tracker.assertSame(self, "ove.Semaphore");
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_sem_take(self.handle, t));
+        const rc = c.ove_sem_take(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Semaphore.takeUntil", rc);
     }
 
     pub inline fn give(self: *Semaphore) void {
@@ -351,13 +394,15 @@ const HeapEvent = struct {
         c.ove_event_destroy(self.handle);
     }
 
-    pub inline fn wait(self: Event, timeout_ns: u64) Error!void {
-        try err.fromCode(c.ove_event_wait(self.handle, timeout_ns));
+    pub inline fn wait(self: Event, timeout_ns: u64) WaitError!void {
+        const rc = c.ove_event_wait(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("Event.wait", rc);
     }
 
-    pub inline fn waitUntil(self: Event, deadline_ns: u64) Error!void {
+    pub inline fn waitUntil(self: Event, deadline_ns: u64) WaitError!void {
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_event_wait(self.handle, t));
+        const rc = c.ove_event_wait(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Event.waitUntil", rc);
     }
 
     pub inline fn signal(self: Event) void {
@@ -390,15 +435,17 @@ const ZeroHeapEvent = struct {
         self.tracker.clear();
     }
 
-    pub inline fn wait(self: *Event, timeout_ns: u64) Error!void {
+    pub inline fn wait(self: *Event, timeout_ns: u64) WaitError!void {
         self.tracker.assertSame(self, "ove.Event");
-        try err.fromCode(c.ove_event_wait(self.handle, timeout_ns));
+        const rc = c.ove_event_wait(self.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("Event.wait", rc);
     }
 
-    pub inline fn waitUntil(self: *Event, deadline_ns: u64) Error!void {
+    pub inline fn waitUntil(self: *Event, deadline_ns: u64) WaitError!void {
         self.tracker.assertSame(self, "ove.Event");
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_event_wait(self.handle, t));
+        const rc = c.ove_event_wait(self.handle, t);
+        if (rc < 0) return mapTimeoutOnly("Event.waitUntil", rc);
     }
 
     pub inline fn signal(self: *Event) void {
@@ -437,13 +484,15 @@ const HeapCondVar = struct {
 
     /// Atomically release `mutex` and wait for a signal/broadcast.
     /// Re-acquires `mutex` before returning.
-    pub inline fn wait(self: CondVar, mutex: Mutex, timeout_ns: u64) Error!void {
-        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns));
+    pub inline fn wait(self: CondVar, mutex: Mutex, timeout_ns: u64) WaitError!void {
+        const rc = c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("CondVar.wait", rc);
     }
 
-    pub inline fn waitUntil(self: CondVar, mutex: Mutex, deadline_ns: u64) Error!void {
+    pub inline fn waitUntil(self: CondVar, mutex: Mutex, deadline_ns: u64) WaitError!void {
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, t));
+        const rc = c.ove_condvar_wait(self.handle, mutex.handle, t);
+        if (rc < 0) return mapTimeoutOnly("CondVar.waitUntil", rc);
     }
 
     pub inline fn signal(self: CondVar) void {
@@ -478,15 +527,17 @@ const ZeroHeapCondVar = struct {
 
     /// Atomically release `mutex` and wait for a signal/broadcast.
     /// Re-acquires `mutex` before returning.
-    pub inline fn wait(self: *CondVar, mutex: *Mutex, timeout_ns: u64) Error!void {
+    pub inline fn wait(self: *CondVar, mutex: *Mutex, timeout_ns: u64) WaitError!void {
         self.tracker.assertSame(self, "ove.CondVar");
-        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns));
+        const rc = c.ove_condvar_wait(self.handle, mutex.handle, timeout_ns);
+        if (rc < 0) return mapTimeoutOnly("CondVar.wait", rc);
     }
 
-    pub inline fn waitUntil(self: *CondVar, mutex: *Mutex, deadline_ns: u64) Error!void {
+    pub inline fn waitUntil(self: *CondVar, mutex: *Mutex, deadline_ns: u64) WaitError!void {
         self.tracker.assertSame(self, "ove.CondVar");
         const t = @import("time.zig").deadlineToTimeoutNs(deadline_ns);
-        try err.fromCode(c.ove_condvar_wait(self.handle, mutex.handle, t));
+        const rc = c.ove_condvar_wait(self.handle, mutex.handle, t);
+        if (rc < 0) return mapTimeoutOnly("CondVar.waitUntil", rc);
     }
 
     pub inline fn signal(self: *CondVar) void {
