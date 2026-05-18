@@ -420,6 +420,117 @@ static void test_thread_get_stop_source_writable(void **state)
 	assert_true(th.stop_requested());
 }
 
+/* ── 19-22. Capturing-lambda cooperative constructor (heap-mode only) ─
+ *      Iter 6d.  The new ctor heap-boxes the closure so users can pass
+ *      lambdas with state — std::jthread shape.  Not defined under
+ *      CONFIG_OVE_ZERO_HEAP, so gate the tests too. */
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+
+/* 19. capture-by-value: int read inside worker */
+static void test_capturing_lambda_by_value(void **state)
+{
+	(void)state;
+	reset_flags();
+	const int expected = 0xC0FFEE;
+	std::atomic<int> observed{0};
+
+	{
+		ove::Thread<4096> th{
+			[expected, &observed](ove::stop_token tok) {
+				observed.store(expected);
+				while (!tok.stop_requested())
+					test_msleep(2);
+				g_exited.store(1);
+			},
+			OVE_PRIO_NORMAL, "capv"};
+		for (int i = 0; i < 200 && observed.load() != expected; ++i)
+			test_msleep(1);
+		assert_int_equal(observed.load(), expected);
+		/* destructor: request_stop + join */
+	}
+	assert_int_equal(g_exited.load(), 1);
+}
+
+/* 20. capture-by-reference: worker increments external atomic */
+static void test_capturing_lambda_by_ref(void **state)
+{
+	(void)state;
+	reset_flags();
+	std::atomic<int> counter{0};
+
+	{
+		ove::Thread<4096> th{
+			[&](ove::stop_token tok) {
+				while (!tok.stop_requested()) {
+					counter.fetch_add(1);
+					test_msleep(2);
+				}
+				g_exited.store(1);
+			},
+			OVE_PRIO_NORMAL, "capr"};
+		for (int i = 0; i < 200 && counter.load() == 0; ++i)
+			test_msleep(1);
+		assert_true(counter.load() > 0);
+	}
+	assert_int_equal(g_exited.load(), 1);
+}
+
+/* 21. drop semantics: capturing worker is cancelled cleanly on destructor */
+static void test_capturing_lambda_drop_semantics(void **state)
+{
+	(void)state;
+	reset_flags();
+	std::atomic<int> entered{0};
+
+	{
+		ove::Thread<4096> th{
+			[&](ove::stop_token tok) {
+				entered.store(1);
+				while (!tok.stop_requested())
+					test_msleep(2);
+				g_observed_true_after_request.store(1);
+				g_exited.store(1);
+			},
+			OVE_PRIO_NORMAL, "capd"};
+		for (int i = 0; i < 200 && entered.load() == 0; ++i)
+			test_msleep(1);
+		assert_int_equal(entered.load(), 1);
+		/* destructor fires: request_stop drives the worker to
+		 * exit via the stop_token check */
+	}
+	assert_int_equal(g_observed_true_after_request.load(), 1);
+	assert_int_equal(g_exited.load(), 1);
+}
+
+/* 22. move-only capture: unique_ptr is moved into the lambda, then
+ *     into the heap box — proves we forward (not copy) the closure. */
+static void test_capturing_lambda_move_only(void **state)
+{
+	(void)state;
+	reset_flags();
+	auto payload = std::make_unique<int>(42);
+	std::atomic<int> observed{0};
+
+	{
+		ove::Thread<4096> th{
+			[p = std::move(payload), &observed](ove::stop_token tok) {
+				observed.store(*p);
+				while (!tok.stop_requested())
+					test_msleep(2);
+				g_exited.store(1);
+			},
+			OVE_PRIO_NORMAL, "capm"};
+		for (int i = 0; i < 200 && observed.load() == 0; ++i)
+			test_msleep(1);
+		assert_int_equal(observed.load(), 42);
+	}
+	assert_int_equal(g_exited.load(), 1);
+	assert_null(payload.get()); /* moved-from on caller side */
+}
+
+#endif /* !CONFIG_OVE_ZERO_HEAP */
+
 /* ── runner ─────────────────────────────────────────────────────────── */
 
 int test_cpp_thread_stop_run(void)
@@ -445,6 +556,12 @@ int test_cpp_thread_stop_run(void)
 		cmocka_unit_test(test_stop_source_request_returns_true_first_then_false),
 		cmocka_unit_test(test_stop_source_token_observes_request),
 		cmocka_unit_test(test_thread_get_stop_source_writable),
+#ifndef CONFIG_OVE_ZERO_HEAP
+		cmocka_unit_test(test_capturing_lambda_by_value),
+		cmocka_unit_test(test_capturing_lambda_by_ref),
+		cmocka_unit_test(test_capturing_lambda_drop_semantics),
+		cmocka_unit_test(test_capturing_lambda_move_only),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
