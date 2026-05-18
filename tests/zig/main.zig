@@ -1627,36 +1627,10 @@ fn testErrorsZeroIsOk() !void {
     try expect(try ove.err.fromCodeInt(42) == 42);
 }
 
-fn testErrorsUnknownNegativeMapsToUnknown() !void {
-    // Any negative code outside the known set must map to Error.Unknown
-    // and never to one of the typed errors.  Property-tested by sweeping
-    // a deterministic-seeded random sample of the negative i32 range.
-    var prng = std.Random.DefaultPrng.init(0xC0FFEE);
-    const rand = prng.random();
-    const known_set = [_]c_int{
-        ove.ffi.OVE_ERR_NOT_REGISTERED,  ove.ffi.OVE_ERR_INVALID_PARAM,
-        ove.ffi.OVE_ERR_NO_MEMORY,       ove.ffi.OVE_ERR_TIMEOUT,
-        ove.ffi.OVE_ERR_NOT_SUPPORTED,   ove.ffi.OVE_ERR_QUEUE_FULL,
-        ove.ffi.OVE_ERR_ML_FAILED,       ove.ffi.OVE_ERR_NET_REFUSED,
-        ove.ffi.OVE_ERR_NET_UNREACHABLE, ove.ffi.OVE_ERR_NET_ADDR_IN_USE,
-        ove.ffi.OVE_ERR_NET_RESET,       ove.ffi.OVE_ERR_NET_DNS_FAIL,
-        ove.ffi.OVE_ERR_NET_CLOSED,      ove.ffi.OVE_ERR_BUS_NACK,
-        ove.ffi.OVE_ERR_BUS_BUSY,        ove.ffi.OVE_ERR_BUS_ERROR,
-    };
-    var i: usize = 0;
-    while (i < 1024) : (i += 1) {
-        // Sample a negative code uniformly across i32's negative range.
-        const raw_bits: u32 = rand.int(u32);
-        const rc: c_int = @intCast(@as(i32, @bitCast(raw_bits | 0x8000_0000)));
-        // Skip if accidentally landed on a known code.
-        var skip = false;
-        for (known_set) |k| if (rc == k) {
-            skip = true;
-        };
-        if (skip) continue;
-        try expectErrorIs(ove.err.fromCode(rc), error.Unknown);
-    }
-}
+// `testErrorsUnknownNegativeMapsToUnknown` deleted in A2: `Error.Unknown`
+// is gone — `mapErrorCode` panics at the FFI boundary on an unrecognised
+// substrate code (programming bug, not a runtime category).  Testing the
+// panic path would need a panic-trap harness we don't run in this suite.
 
 fn testErrorsFromCodeIntPositiveIsValue() !void {
     // fromCodeInt must pass non-negative codes through unchanged.  Random
@@ -1903,7 +1877,6 @@ pub fn main() void {
     runSuite("Errors", &.{
         .{ .name = "known_codes_round_trip", .func = testErrorsKnownCodesRoundTrip },
         .{ .name = "zero_is_ok", .func = testErrorsZeroIsOk },
-        .{ .name = "unknown_negative_maps_to_unknown", .func = testErrorsUnknownNegativeMapsToUnknown },
         .{ .name = "from_code_int_positive_passthrough", .func = testErrorsFromCodeIntPositiveIsValue },
     });
 
