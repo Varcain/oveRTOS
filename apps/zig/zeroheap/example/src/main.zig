@@ -49,8 +49,16 @@ const lvgl = ove.lvgl;
 // byte buffer routes every allocation to caller-owned static memory —
 // substrate `_init` paths see those addresses and run there.  The
 // libc-malloc wrapper is never touched.
+//
+// Sizing: three `Thread(4096)` backings dominate.  Non-Zephyr targets
+// use 8-byte stack alignment, so each backing is ~4 KB stack + ~120 B
+// storage = ~4.2 KB.  Zephyr requires power-of-2 stack alignment
+// matching `stack_size + 128`, so each backing is 8 KB on ARM Zephyr.
+// 32 KB covers the worst case (3 × 8 KB) plus queue/timer storage with
+// headroom — well within the SRAM budget of the canonical zero-heap
+// targets (STM32F746 has 320 KB; Zephyr nucleo-h743 has 1 MB).
 // ---------------------------------------------------------------------------
-var arena_bytes: [4096]u8 = undefined;
+var arena_bytes: [32 * 1024]u8 = undefined;
 var fba: std.heap.FixedBufferAllocator = undefined;
 
 // ---------------------------------------------------------------------------
