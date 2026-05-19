@@ -665,6 +665,19 @@ macro(ove_link_firmware)
         ove_apply_zero_heap_wrap(${_OVE_PROJ_NAME}.elf)
         ove_zero_heap_assert_no_kernel_alloc(${_OVE_PROJ_NAME}.elf
             RTOS FREERTOS)
+    else()
+        # Heap-mode unified-heap policy: wrap libc malloc/free/calloc/
+        # realloc to route through pvPortMalloc / vPortFree via
+        # backends/freertos/freertos_libc_malloc.c's __wrap_* shims.
+        # Same --wrap mechanism the zero-heap path uses, just with a
+        # different destination (forward to pvPortMalloc instead of
+        # trap-or-forward).
+        target_link_options(${_OVE_PROJ_NAME}.elf PRIVATE
+            "LINKER:--wrap=malloc"
+            "LINKER:--wrap=free"
+            "LINKER:--wrap=calloc"
+            "LINKER:--wrap=realloc"
+        )
     endif()
 
     # QEMU run target (if qemu-run.sh exists at board level)

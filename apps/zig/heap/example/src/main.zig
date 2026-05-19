@@ -41,7 +41,7 @@ const Timer = ove.Timer;
 /// Allocator backing every binding primitive in this app.  Page-allocated
 /// pool keeps the substrate's libc-malloc heap separate from
 /// allocator-managed storage so the two don't share accounting state.
-const app_allocator = std.heap.page_allocator;
+const app_allocator = ove.allocators.c_allocator;
 
 const lvgl = ove.lvgl;
 

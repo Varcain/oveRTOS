@@ -269,6 +269,13 @@ set(LINKER_SCRIPT ${BOARD_DIR}/freertos/STM32F746NGHx_FLASH.ld)
 target_link_options(ove_test_renode_stm32f746_freertos PRIVATE
     -T${LINKER_SCRIPT}
     -Wl,--gc-sections
+    # Route libc malloc/free/calloc/realloc through pvPortMalloc via
+    # backends/freertos/freertos_libc_malloc.c's __wrap_* shims.  See
+    # cmake/OveCommon.cmake for the production heap-mode path.
+    "LINKER:--wrap=malloc"
+    "LINKER:--wrap=free"
+    "LINKER:--wrap=calloc"
+    "LINKER:--wrap=realloc"
 )
 
 set_target_properties(ove_test_renode_stm32f746_freertos PROPERTIES

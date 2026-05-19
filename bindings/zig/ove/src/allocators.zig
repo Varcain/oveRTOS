@@ -55,7 +55,16 @@ pub const StackFallbackAllocator = std.heap.StackFallbackAllocator;
 // ---------------------------------------------------------------------------
 
 /// libc malloc.  Banned in zero-heap mode.
-pub const c_allocator = if (pin.zero_heap)
+///
+/// Returns a `std.mem.Allocator` that calls `extern "C" malloc / free /
+/// realloc` directly.  Unlike `std.heap.c_allocator`, we don't require
+/// `builtin.link_libc` to be true — Zig sees a binding library as
+/// `freestanding` since libc is linked at the C-level (picolibc / glibc),
+/// not via `zig build`.  Under heap-mode FreeRTOS those `malloc` /
+/// `free` / `realloc` symbols are wrapped by
+/// `backends/freertos/freertos_libc_malloc.c` so every libc malloc
+/// transparently routes through `pvPortMalloc` (single heap policy).
+pub const c_allocator: std.mem.Allocator = if (pin.zero_heap)
     @compileError(
         \\ove.allocators.c_allocator is unavailable in zero-heap builds.
         \\
@@ -73,7 +82,70 @@ pub const c_allocator = if (pin.zero_heap)
         \\    defer pool.deinit();
     )
 else
-    std.heap.c_allocator;
+    libc_allocator_impl.allocator();
+
+const libc_allocator_impl = struct {
+    extern fn malloc(usize) ?*anyopaque;
+    extern fn free(?*anyopaque) void;
+    extern fn realloc(?*anyopaque, usize) ?*anyopaque;
+
+    const vtable: std.mem.Allocator.VTable = .{
+        .alloc = allocFn,
+        .resize = resizeFn,
+        .remap = remapFn,
+        .free = freeFn,
+    };
+
+    fn allocator() std.mem.Allocator {
+        return .{ .ptr = undefined, .vtable = &vtable };
+    }
+
+    fn allocFn(
+        _: *anyopaque,
+        len: usize,
+        alignment: std.mem.Alignment,
+        _: usize,
+    ) ?[*]u8 {
+        // libc malloc returns 8-byte (or stricter) aligned memory; if
+        // the caller wants tighter alignment we'd need posix_memalign /
+        // aligned_alloc.  Reject over-aligned requests at runtime
+        // rather than miscompile.
+        if (@intFromEnum(alignment) > @sizeOf(usize) * 2) return null;
+        const p = malloc(len) orelse return null;
+        return @ptrCast(@alignCast(p));
+    }
+
+    fn resizeFn(
+        _: *anyopaque,
+        _: []u8,
+        _: std.mem.Alignment,
+        _: usize,
+        _: usize,
+    ) bool {
+        // No in-place resize support — caller must alloc+memcpy+free.
+        return false;
+    }
+
+    fn remapFn(
+        _: *anyopaque,
+        buf: []u8,
+        _: std.mem.Alignment,
+        new_len: usize,
+        _: usize,
+    ) ?[*]u8 {
+        const p = realloc(buf.ptr, new_len) orelse return null;
+        return @ptrCast(@alignCast(p));
+    }
+
+    fn freeFn(
+        _: *anyopaque,
+        buf: []u8,
+        _: std.mem.Alignment,
+        _: usize,
+    ) void {
+        free(buf.ptr);
+    }
+};
 
 /// mmap / VirtualAlloc.  Banned in zero-heap mode.
 pub const page_allocator = if (pin.zero_heap)
