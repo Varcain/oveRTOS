@@ -90,32 +90,10 @@ int _write(int fd, const char *buf, int len)
 	return len;
 }
 
-/* `_sbrk` — same rationale as in semihosting_io.c.  Without rdimon's
- * librdimon.a the linker pulls in newlib's stub `_sbrk` that always
- * returns -ENOMEM; provide a real one backed by the linker-reserved
- * `_end` → stack-bottom region. */
-extern char _end;
-extern char _estack;
-
-#ifndef OVE_HW_HEAP_STACK_RESERVE
-#define OVE_HW_HEAP_STACK_RESERVE (8 * 1024)
-#endif
-
-void *_sbrk(int incr)
-{
-	static char *heap_ptr = NULL;
-	if (heap_ptr == NULL) {
-		heap_ptr = &_end;
-	}
-	char *heap_limit = &_estack - OVE_HW_HEAP_STACK_RESERVE;
-	if (heap_ptr + incr > heap_limit) {
-		errno = ENOMEM;
-		return (void *)-1;
-	}
-	char *prev = heap_ptr;
-	heap_ptr += incr;
-	return prev;
-}
+/* `_sbrk` — intentionally not provided.  Libc malloc is wrapped onto
+ * pvPortMalloc/vPortFree via backends/freertos/freertos_libc_malloc.c,
+ * so picolibc never reaches its _sbrk-backed nano-malloc.  The symbol
+ * is unreferenced and dropped by the linker. */
 
 /* `stub_board.c::ove_hal_board_init` references `stub_gpio_reset()`
  * which previously lived in `stub_gpio.c` (now removed).  Provide a

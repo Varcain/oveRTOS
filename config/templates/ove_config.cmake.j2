@@ -144,6 +144,8 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/backends/freertos/freertos_thread.c
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
     ${OVE_DIR}/backends/freertos/freertos_heap_lock.c
+{% else %}
+    ${OVE_DIR}/backends/freertos/freertos_libc_malloc.c
 {% endif %}
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",
                "QUEUE", "TIMER", "EVENTGROUP", "WORKQUEUE", "STREAM",

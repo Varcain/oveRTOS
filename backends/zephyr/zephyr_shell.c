@@ -145,6 +145,7 @@ void ove_shell_process_line(const char *line)
 	if (len >= SHELL_LINE_MAX)
 		len = SHELL_LINE_MAX - 1;
 	memcpy(line_buf, line, len);
+	line_buf[len] = '\0';
 	line_pos = (unsigned int)len;
 	shell_execute(line_buf);
 	line_pos = 0;
