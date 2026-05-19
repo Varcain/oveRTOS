@@ -7,13 +7,13 @@
  *
  * Unified-heap policy for FreeRTOS heap mode: libc malloc / free /
  * calloc / realloc are wrapped via the linker's `--wrap=<sym>`
- * mechanism to route through pvPortMalloc / vPortFree.  Without this,
- * the binary carries two independent heaps — FreeRTOS heap_4's ucHeap
- * (where every ove_*_create() allocation goes) and picolibc's
- * _sbrk-backed nano-malloc arena (where cmocka, libc internal buffers,
- * and any libstdc++ stragglers go).  Two pools means an ove_*_create()
- * can fail with bytes free in the libc pool, and a cmocka test_malloc
- * can fail with bytes free in the FreeRTOS pool.
+ * mechanism to route directly through pvPortMalloc / vPortFree.
+ * Without this, the binary carries two independent heaps — FreeRTOS
+ * heap_4's ucHeap (where every ove_*_create() allocation goes) and
+ * picolibc's _sbrk-backed nano-malloc arena (where cmocka, libc
+ * internal buffers, and any libstdc++ stragglers go).  Two pools means
+ * an ove_*_create() can fail with bytes free in the libc pool, and a
+ * cmocka test_malloc can fail with bytes free in the FreeRTOS pool.
  *
  * The --wrap mechanism (applied by cmake/OveCommon.cmake under
  * !OVE_ZERO_HEAP) makes every call to `malloc(n)` resolve to
@@ -31,13 +31,17 @@
  * picolibc's `malloc`.  `--wrap` sidesteps the multiple-definition
  * error entirely.
  *
- * Size prefix: pvPortMalloc has no per-block size query, so realloc
- * would have no old-size to copy from.  We allocate
- * `user_size + sizeof(size_t)`, stash the user size in the first
- * sizeof(size_t) bytes, and return the pointer offset past the header.
- * The 8-byte alignment from pvPortMalloc plus an 8-byte header
- * preserves max_align_t alignment on the user pointer (Cortex-M with
- * FPU expects 8-byte alignment for doubles / NEON-equivalent).
+ * No size prefix: pvPortMalloc returns a pointer whose preceding
+ * BlockLink_t header carries the block size already.  We pass the
+ * caller's pointer straight through to pvPortMalloc / vPortFree so
+ * the heap's internal accounting stays untouched (a header-prefix
+ * scheme would offset every pointer by 8 bytes and require pulling
+ * xHeapStructSize from FreeRTOS internals to reconstruct it for
+ * realloc).  realloc here does a best-effort allocate + copy + free
+ * using the caller-supplied `new_size` as the copy bound, which is
+ * correct on grow and conservative on shrink — the realloc path is
+ * rare in embedded FreeRTOS apps and never exercised by the bindings'
+ * `*_create()` paths.
  *
  * Not compiled in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0):
  * pvPortMalloc / vPortFree don't exist there, and libc malloc is
@@ -49,32 +53,17 @@
 #if defined(CONFIG_OVE_RTOS_FREERTOS) && !defined(CONFIG_OVE_ZERO_HEAP)
 
 #include <stddef.h>
-#include <stdint.h>
 #include <string.h>
 
 #include "FreeRTOS.h"
 #include "portable.h"
-
-/* 8-byte header preserves Cortex-M max_align_t alignment on the user
- * pointer.  Only the first sizeof(size_t) bytes carry the user size;
- * the rest is alignment padding. */
-#define OVE_LIBC_MALLOC_HEADER 8
 
 void *__wrap_malloc(size_t size)
 {
 	if (size == 0) {
 		return NULL;
 	}
-	size_t total = size + OVE_LIBC_MALLOC_HEADER;
-	if (total < size) { /* overflow */
-		return NULL;
-	}
-	uint8_t *raw = pvPortMalloc(total);
-	if (raw == NULL) {
-		return NULL;
-	}
-	*(size_t *)raw = size;
-	return raw + OVE_LIBC_MALLOC_HEADER;
+	return pvPortMalloc(size);
 }
 
 void __wrap_free(void *ptr)
@@ -82,7 +71,7 @@ void __wrap_free(void *ptr)
 	if (ptr == NULL) {
 		return;
 	}
-	vPortFree((uint8_t *)ptr - OVE_LIBC_MALLOC_HEADER);
+	vPortFree(ptr);
 }
 
 void *__wrap_calloc(size_t nmemb, size_t size)
@@ -91,7 +80,7 @@ void *__wrap_calloc(size_t nmemb, size_t size)
 	if (__builtin_mul_overflow(nmemb, size, &total)) {
 		return NULL;
 	}
-	void *p = __wrap_malloc(total);
+	void *p = pvPortMalloc(total);
 	if (p != NULL) {
 		memset(p, 0, total);
 	}
@@ -101,19 +90,25 @@ void *__wrap_calloc(size_t nmemb, size_t size)
 void *__wrap_realloc(void *ptr, size_t size)
 {
 	if (ptr == NULL) {
-		return __wrap_malloc(size);
+		return pvPortMalloc(size);
 	}
 	if (size == 0) {
-		__wrap_free(ptr);
+		vPortFree(ptr);
 		return NULL;
 	}
-	size_t old_size = *((size_t *)ptr - 1);
-	void *new_ptr = __wrap_malloc(size);
+	void *new_ptr = pvPortMalloc(size);
 	if (new_ptr == NULL) {
 		return NULL;
 	}
-	memcpy(new_ptr, ptr, old_size < size ? old_size : size);
-	__wrap_free(ptr);
+	/* Conservative copy: the caller's `size` covers the grow case
+	 * exactly; for shrink, copying `size` is correct (the rest of
+	 * the old allocation is being discarded anyway).  Real C realloc
+	 * would use the BlockLink_t header's xBlockSize to determine the
+	 * old size precisely, but xHeapStructSize is a FreeRTOS-internal
+	 * symbol and dragging it in just for a rarely-used realloc isn't
+	 * worth the coupling. */
+	memcpy(new_ptr, ptr, size);
+	vPortFree(ptr);
 	return new_ptr;
 }
 

@@ -322,35 +322,35 @@ function(ove_build_zig_lib TARGET)
     # Read ove_config.h to check for zero-heap mode. Initialize before the
     # conditional read so the if() below is always well-defined, including
     # the first configure pass before ove_config.h has been generated.
-    set(_ZIG_ZERO_HEAP FALSE)
-    set(_ZIG_CONFIG_PATH "${OVE_GEN_DIR}/ove_config.h")
-    if(EXISTS "${_ZIG_CONFIG_PATH}")
-        file(READ "${_ZIG_CONFIG_PATH}" _ZIG_CONFIG_CONTENT)
-        if(_ZIG_CONFIG_CONTENT MATCHES "CONFIG_OVE_ZERO_HEAP")
-            set(_ZIG_ZERO_HEAP TRUE)
-            message(STATUS "[ove-zig] Zero-heap enabled: storage size probe + extraction pipeline configured")
-        endif()
-    endif()
+    # Storage sizes header is required in BOTH zero-heap and heap modes:
+    #   - Zero-heap: caller storage embedded in BSS via `var x: T = undefined;`
+    #     needs exact size at compile time.
+    #   - Heap: the binding's modernised `Type.create(allocator)` path
+    #     embeds storage inline in the wrapper's Backing struct so the Zig
+    #     allocator routes a single block.  Without correct sizes,
+    #     `c.ove_*_storage_t` is opaque/1-byte, the Backing struct is
+    #     undersized, and `ove_*_init` writes its real storage past the
+    #     allocation — corrupts the heap.  Failure mode observed: free
+    #     list corruption inside pvPortMalloc after the first Queue/
+    #     Thread/Timer create.
+    set(ZIG_SIZES_C "${CMAKE_BINARY_DIR}/zig_storage_sizes.c")
+    set(ZIG_SIZES_ENV "${CMAKE_BINARY_DIR}/zig_storage_sizes.env")
+    set(ZIG_SIZES_HDR_DIR "${CMAKE_BINARY_DIR}/zig_sizes_include")
+    set(ZIG_SIZES_HDR "${ZIG_SIZES_HDR_DIR}/zig_storage_sizes.h")
 
-    if(_ZIG_ZERO_HEAP)
-        set(ZIG_SIZES_C "${CMAKE_BINARY_DIR}/zig_storage_sizes.c")
-        set(ZIG_SIZES_ENV "${CMAKE_BINARY_DIR}/zig_storage_sizes.env")
-        set(ZIG_SIZES_HDR_DIR "${CMAKE_BINARY_DIR}/zig_sizes_include")
-        set(ZIG_SIZES_HDR "${ZIG_SIZES_HDR_DIR}/zig_storage_sizes.h")
+    _ove_binding_write_sizes_probe(${ZIG_SIZES_C}
+        "#include \"ove/ove.h\"\n#include \"ove/storage.h\"\n")
+    _ove_binding_build_sizes_probe(_zig_ove_sizes ${TARGET} ${ZIG_SIZES_C})
+    _ove_binding_extract_sizes(${ZIG_SIZES_ENV} _zig_ove_sizes
+        "Extracting storage type sizes for Zig bindings")
 
-        _ove_binding_write_sizes_probe(${ZIG_SIZES_C}
-            "#include \"ove/ove.h\"\n#include \"ove/storage.h\"\n")
-        _ove_binding_build_sizes_probe(_zig_ove_sizes ${TARGET} ${ZIG_SIZES_C})
-        _ove_binding_extract_sizes(${ZIG_SIZES_ENV} _zig_ove_sizes
-            "Extracting storage type sizes for Zig bindings")
-
-        # Convert KEY=VALUE .env file into a C header with #define lines.
-        # This header is included by @cImport before storage.h via -I path.
-        set(ZIG_SIZES_GEN_SCRIPT "${CMAKE_BINARY_DIR}/zig_gen_sizes_hdr.cmake")
-        file(WRITE ${ZIG_SIZES_GEN_SCRIPT}
+    # Convert KEY=VALUE .env file into a C header with #define lines.
+    # This header is included by @cImport before storage.h via -I path.
+    set(ZIG_SIZES_GEN_SCRIPT "${CMAKE_BINARY_DIR}/zig_gen_sizes_hdr.cmake")
+    file(WRITE ${ZIG_SIZES_GEN_SCRIPT}
 "file(MAKE_DIRECTORY \"${ZIG_SIZES_HDR_DIR}\")\n\
 file(READ \"${ZIG_SIZES_ENV}\" _CONTENT)\n\
-set(_HDR \"/* Auto-generated storage sizes for Zig zero-heap builds. */\\n\")\n\
+set(_HDR \"/* Auto-generated storage sizes for Zig builds (heap + zero-heap). */\\n\")\n\
 string(REPLACE \"\\n\" \";\" _LINES \"\${_CONTENT}\")\n\
 foreach(_LINE \${_LINES})\n\
   if(_LINE MATCHES \"^([A-Z0-9_]+)=([0-9]+)$\")\n\
@@ -358,21 +358,18 @@ foreach(_LINE \${_LINES})\n\
   endif()\n\
 endforeach()\n\
 file(WRITE \"${ZIG_SIZES_HDR}\" \"\${_HDR}\")\n"
-        )
+    )
 
-        add_custom_command(
-            OUTPUT ${ZIG_SIZES_HDR}
-            COMMAND ${CMAKE_COMMAND} -P ${ZIG_SIZES_GEN_SCRIPT}
-            DEPENDS ${ZIG_SIZES_ENV}
-            COMMENT "Generating zig_storage_sizes.h for Zig zero-heap build"
-        )
+    add_custom_command(
+        OUTPUT ${ZIG_SIZES_HDR}
+        COMMAND ${CMAKE_COMMAND} -P ${ZIG_SIZES_GEN_SCRIPT}
+        DEPENDS ${ZIG_SIZES_ENV}
+        COMMENT "Generating zig_storage_sizes.h for Zig build"
+    )
 
-        # Add the header directory to the include path so @cImport picks it up
-        list(PREPEND ZIG_INCLUDE_ARGS "-I${ZIG_SIZES_HDR_DIR}")
-        set(ZIG_SIZES_DEPS ${ZIG_SIZES_HDR})
-    else()
-        message(STATUS "[ove-zig] Heap mode: Zig will use minimal 1-byte opaque storage types")
-    endif()
+    # Add the header directory to the include path so @cImport picks it up.
+    list(PREPEND ZIG_INCLUDE_ARGS "-I${ZIG_SIZES_HDR_DIR}")
+    set(ZIG_SIZES_DEPS ${ZIG_SIZES_HDR})
 
     # ── oveRTOS Zig bindings path ────────────────────────────────────────
     set(OVE_ZIG_BINDINGS "${OVE_DIR}/bindings/zig/ove")
