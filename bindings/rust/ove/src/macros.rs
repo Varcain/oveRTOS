@@ -251,8 +251,8 @@ macro_rules! eventgroup {
 /// sample_bytes)` macro: in zero-heap mode emits a per-call-site `static`
 /// backing array sized by `nodes * frames * channels * sample_bytes` bytes
 /// and attaches it to the graph automatically; in heap mode just calls
-/// [`crate::audio::Graph::new`].  Yields a
-/// [`Result`](crate::Result)`<`[`Graph`](crate::audio::Graph)`>`.
+/// [`crate::audio::Graph::new`].  Yields a [`crate::Result`] wrapping a
+/// [`crate::audio::Graph`].
 ///
 /// All arguments must be constant expressions.
 ///
