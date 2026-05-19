@@ -51,14 +51,17 @@ const lvgl = ove.lvgl;
 // libc-malloc wrapper is never touched.
 //
 // Sizing: three `Thread(4096)` backings dominate.  Non-Zephyr targets
-// use 8-byte stack alignment, so each backing is ~4 KB stack + ~120 B
-// storage = ~4.2 KB.  Zephyr requires power-of-2 stack alignment
-// matching `stack_size + 128`, so each backing is 8 KB on ARM Zephyr.
-// 32 KB covers the worst case (3 × 8 KB) plus queue/timer storage with
-// headroom — well within the SRAM budget of the canonical zero-heap
-// targets (STM32F746 has 320 KB; Zephyr nucleo-h743 has 1 MB).
+// use 8-byte stack alignment, so each backing is ~4 KB stack + ~300 B
+// storage = ~4.3 KB.  Zephyr requires power-of-2 stack alignment
+// matching `stack_size + 128`, so the backing struct's alignment is
+// 8192 and its size is rounded UP to that alignment — each Zephyr
+// thread backing consumes 16 KB regardless of actual storage size.
+// 64 KB covers 3 × 16 KB on Zephyr with headroom for queue/timer and
+// FBA alignment waste.  Well within the SRAM budget of the canonical
+// zero-heap targets (STM32F746 has 320 KB; Zephyr nucleo-h743 has
+// 1 MB).
 // ---------------------------------------------------------------------------
-var arena_bytes: [32 * 1024]u8 = undefined;
+var arena_bytes: [64 * 1024]u8 = undefined;
 var fba: std.heap.FixedBufferAllocator = undefined;
 
 // ---------------------------------------------------------------------------
