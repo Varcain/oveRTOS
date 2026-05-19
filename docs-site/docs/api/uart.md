@@ -55,11 +55,4 @@ size_t n;
 ove_uart_read(uart, buf, sizeof(buf), 1000, &n);
 ```
 
-## Backend Notes
-
-| Backend | Implementation |
-|---|---|
-| FreeRTOS/STM32 | `HAL_UART_Init()`, RXNE interrupt, `HAL_UART_Transmit()` |
-| Zephyr | `uart_configure()`, IRQ callback via `uart_irq_rx_ready()` |
-| NuttX | `/dev/ttyS*`, termios, RX polling thread |
-| POSIX | `/dev/ttyUSB*` or `/dev/ttyACM*`, termios, RX polling thread |
+> Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).

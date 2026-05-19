@@ -123,7 +123,7 @@ You're building a zero-heap target but calling a heap-only API. The `_create()` 
 grep -E '^CONFIG_OVE_ZERO_HEAP' .config
 ```
 
-If `=y`, switch to `OVE_*_DEFINE_STATIC()` or `_init()` / `_deinit()`. See [Heap and Zero-Heap Modes](overview.md#heap-mode-vs-zero-heap-mode).
+If `=y`, switch to `OVE_*_DEFINE_STATIC()` or `_init()` / `_deinit()`. See [Two allocation modes](overview.md#two-allocation-modes).
 
 ### Cross-LTO linker errors with the Rust binding
 
@@ -239,6 +239,32 @@ Only needed for hardware-in-the-loop tests. Install it inside the venv:
 ### Renode tests time out on first run
 
 The first run downloads ~150 MB of Renode binaries; subsequent runs reuse `output/tools/renode/`. Re-run if it timed out — it will resume the download.
+
+## Runtime hazards
+
+### `ove_main` locals are UB after `ove_run()`
+
+**Symptom** — a worker thread reads garbage from a variable that `ove_main()` declared and "passed in"; the bug shows up most loudly on FreeRTOS (often as a hard fault on the first context switch) and may stay hidden on POSIX or Zephyr until you change a build flag.
+
+**Why** — `ove_main()` runs on a temporary bootstrap stack. Any object in its automatic storage (plain locals, including arrays and structs) becomes dangling once `ove_main()` returns. `ove_run()` calls into `vTaskStartScheduler()`, which on Cortex-M resets MSP to the initial stack top — the first interrupt then overwrites the region that used to hold those locals. On POSIX / Zephyr the hosting thread never unwinds, so the memory happens to survive, which masks the same UB.
+
+**Fix** — give long-lived state `static` storage:
+
+```c
+void ove_main(void)
+{
+    static struct app_ctx ctx;           /* OK — static storage */
+    /* or */
+    struct app_ctx *ctx_heap = malloc(sizeof(*ctx_heap));   /* OK — heap mode */
+    /* but never: */
+    struct app_ctx ctx_bad;              /* WRONG — automatic storage */
+
+    ove_thread_create(&t, "worker", worker, &ctx, OVE_PRIO_NORMAL, 4096);
+    ove_run();
+}
+```
+
+In zero-heap mode, `static` (or file-scope) is the only option. The technical detail behind the UB is documented under [Internals → Backends → FreeRTOS backend notes](../backends/index.md#freertos-backend-notes).
 
 ## Still stuck?
 

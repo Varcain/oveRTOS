@@ -25,6 +25,16 @@ graph TD
 | **Binary event** | Simple one-shot wakeup; hardware interrupt notifies a task | Yes (`ove_event_signal_from_isr`) | N/A |
 | **Condition variable** | Waiting for an arbitrary predicate guarded by a mutex | No | N/A |
 
+## ISR safety
+
+Only the binary event has an ISR-safe producer. `ove_sem_give()` and the mutex / condvar operations are **not** callable from an interrupt context, even though FreeRTOS, Zephyr, and NuttX each have native ISR variants for some of these — the portable layer doesn't expose them because the semantics differ across backends.
+
+For ISR → thread handoff:
+
+- One-bit wakeup → `ove_event_signal_from_isr()` (this header).
+- Bitmask wakeup → `ove_eventgroup_set_bits_from_isr()` (in `ove/eventgroup.h`).
+- Queue a message → `ove_queue_send_from_isr()` (in `ove/queue.h`).
+
 ## Mutex
 
 A non-recursive mutex serializes access to a shared resource. A thread that already holds the mutex must not call `ove_mutex_lock()` again — this causes a deadlock.
@@ -64,8 +74,8 @@ void init(void)
 
 void update_shared_state(void)
 {
-    if (ove_mutex_lock(shared_mutex, 100 /* ms */) != OVE_OK)
-        return;  /* timed out */
+    if (ove_mutex_lock(shared_mutex, OVE_MS(100)) != OVE_OK)
+        return;  /* timed out after 100 ms */
 
     /* --- critical section --- */
     shared_value++;

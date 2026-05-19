@@ -51,7 +51,8 @@ static void sample_cb(ove_timer_t t, void *arg)
     };
 
     /* Non-blocking enqueue (timer context can't wait).  If the worker
-     * is falling behind, drop and log. */
+     * is falling behind, drop and log.  Timeout is in nanoseconds; 0
+     * means no wait. */
     if (ove_queue_send(samples, &s, 0) != OVE_OK) {
         OVE_LOG_WRN("sample dropped (worker behind)");
     }
@@ -75,8 +76,10 @@ void ove_main(void)
     ove_thread_create(&worker, "sensor_worker", worker_fn, NULL,
                       OVE_PRIO_NORMAL, 4096);
 
-    ove_timer_create(&sample_timer, "sampler", sample_cb, NULL,
-                     SAMPLE_PERIOD_MS, OVE_TIMER_PERIODIC);
+    /* ove_timer_create(timer, cb, user_data, period_ms, one_shot)
+     * — one_shot = 0 for a periodic timer that auto-reloads. */
+    ove_timer_create(&sample_timer, sample_cb, NULL,
+                     SAMPLE_PERIOD_MS, 0);
     ove_timer_start(sample_timer);
 
     ove_run();
@@ -95,8 +98,8 @@ Same shape, file-scope storage:
 
 ```c
 OVE_QUEUE_DEFINE_STATIC(samples, sizeof(sample_t), QUEUE_DEPTH);
-OVE_TIMER_DEFINE_STATIC(sample_timer, "sampler", sample_cb, NULL,
-                        SAMPLE_PERIOD_MS, OVE_TIMER_PERIODIC);
+OVE_TIMER_DEFINE_STATIC(sample_timer, sample_cb, NULL,
+                        SAMPLE_PERIOD_MS, 0 /* periodic */);
 OVE_THREAD_DEFINE_STATIC(worker, 4096, worker_fn, NULL,
                          OVE_PRIO_NORMAL, "sensor_worker");
 

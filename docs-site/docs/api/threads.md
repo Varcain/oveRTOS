@@ -2,6 +2,9 @@
 
 oveRTOS threads are portable wrappers around the native thread primitive of each supported backend: FreeRTOS tasks, Zephyr threads, NuttX pthreads, and POSIX pthreads. The same `ove/thread.h` API compiles unchanged for all four backends — priority mapping, state reporting, and stack profiling are translated at compile time with no runtime indirection.
 
+!!! warning "`ove_main()` locals are UB after `ove_run()`"
+    Anything in `ove_main()`'s automatic storage becomes dangling once the scheduler starts. Pass long-lived state to workers via `static` locals, file-scope variables, or heap allocation. See [Troubleshooting → `ove_main` locals](../getting-started/troubleshooting.md#ove_main-locals-are-ub-after-ove_run) for the full rule.
+
 ## Thread States
 
 ```mermaid
@@ -158,6 +161,8 @@ OVE_THREAD_DEFINE_STATIC(worker, 2048, worker_entry, NULL, OVE_PRIO_NORMAL, "wor
 | `ove_thread_resume` | `void (ove_thread_t handle)` | Resume a previously suspended thread. |
 | `ove_thread_get_stack_usage` | `size_t (ove_thread_t handle)` | Return the historical peak stack usage in bytes (high-water mark). Returns `0` if the backend does not support stack profiling. |
 | `ove_thread_get_state` | `ove_thread_state_t (ove_thread_t handle)` | Query the current execution state of a thread. |
+| `ove_thread_request_stop` | `void (ove_thread_t handle)` | Cooperative stop signal. The thread keeps running until it observes `ove_thread_should_stop()` and exits its entry function. |
+| `ove_thread_should_stop` | `bool (ove_thread_t handle)` | Returns `true` once `ove_thread_request_stop()` has been called for the thread. Polled inside the worker's main loop. |
 | `ove_thread_get_runtime_stats` | `int (ove_thread_t handle, struct ove_thread_stats *stats)` | Retrieve total CPU time (`runtime_us`) and utilisation percentage (`cpu_percent_x100`) since the scheduler started. Returns `OVE_ERR_NOT_SUPPORTED` if the backend does not provide runtime accounting. |
 | `ove_thread_list` | `int (struct ove_thread_info *out, size_t max_count, size_t *actual_count)` | Enumerate all threads. Each entry includes name, state, priority, stack usage/size, CPU usage, and per-state cumulative time. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |
 | `ove_sys_get_mem_stats` | `int (struct ove_mem_stats *stats)` | Query system heap totals: `total`, `free`, `used`, `peak_used` bytes. Returns `OVE_ERR_NOT_SUPPORTED` if unavailable. |

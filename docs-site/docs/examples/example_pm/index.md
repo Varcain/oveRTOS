@@ -6,10 +6,12 @@ Demonstrates the PM state machine with automatic idle transitions, peripheral po
 
 | Language | Source | WASM Demo |
 |----------|--------|-----------|
-| [C](c.md) | `apps/c/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_c_heap/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_cpp_heap/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/example_pm/` | *Not available* |
-| [Zig](zig.md) | `apps/zig/example_pm/` | *Not yet available* |
+| [C](c.md) | `apps/c/heap/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_c_heap/){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/heap/example_pm/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_pm_cpp_heap/){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/heap/example_pm/` | *Not available* |
+| [Zig](zig.md) | `apps/zig/heap/example_pm/` | *Not yet available* |
+
+Zero-heap variants live under `apps/<lang>/zeroheap/example_pm/`.
 
 ## Key APIs demonstrated
 

@@ -6,10 +6,12 @@ Exercises the full networking stack with a pass/fail test framework: netif confi
 
 | Language | Source | WASM Demo |
 |----------|--------|-----------|
-| [C](c.md) | `apps/c/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_heap/){:target="_blank"}** |
-| [C++](cpp.md) | `apps/cpp/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_cpp_heap/){:target="_blank"}** |
-| [Rust](rust.md) | `apps/rust/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_rust_heap/){:target="_blank"}** |
-| [Zig](zig.md) | `apps/zig/example_net/` | *Not yet available* |
+| [C](c.md) | `apps/c/heap/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_heap/){:target="_blank"}** |
+| [C++](cpp.md) | `apps/cpp/heap/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_cpp_heap/){:target="_blank"}** |
+| [Rust](rust.md) | `apps/rust/heap/example_net/` | **[Run in browser](https://varcain.github.io/oveRTOS/example_net_rust_heap/){:target="_blank"}** |
+| [Zig](zig.md) | `apps/zig/heap/example_net/` | *Not yet available* |
+
+Zero-heap variants live under `apps/<lang>/zeroheap/example_net/`.
 
 ## Key APIs demonstrated
 

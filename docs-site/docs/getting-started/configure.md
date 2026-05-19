@@ -117,15 +117,17 @@ and any storage-mode-specific tuning.
 | `nuttx` | qemu, stm32f746 |
 | `zephyr` | qemu, stm32f746 |
 
-**Apps** (from `app.yaml` `config_name` fields):
+**Apps** — the third token of the dot-syntax target is the `config_name` field from each `app.yaml`. The values below are the heap-mode `config_name`s; each has a `_zh` zero-heap sibling (e.g. `example_c_zh`, `example_cpp_zh`).
 
-| App | Languages |
+| `config_name` (heap mode) | Description |
 |---|---|
 | `example_c`, `example_cpp`, `example_rust`, `example_zig` | Basic example |
 | `benchmark`, `benchmark_cpp`, `benchmark_rust`, `benchmark_zig` | Latency/throughput benchmark |
 | `example_net`, `example_net_cpp`, `example_net_rust`, `example_net_zig` | Networking |
 | `example_pm_c`, `example_pm_cpp`, `example_pm_rust`, `example_pm_zig` | Power management |
 | `example_keyword_live`, `example_keyword_live_cpp`, `example_keyword_live_rust`, `example_keyword_live_zig` | Keyword detection |
+
+`make help` prints the live list pulled from the on-disk `app.yaml` files — authoritative if this table drifts.
 
 ### Building All Configurations
 

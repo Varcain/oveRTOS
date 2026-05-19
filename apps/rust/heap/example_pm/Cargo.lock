@@ -169,11 +169,21 @@ dependencies = [
  "bindgen",
  "heapless",
  "log",
+ "ove-macros",
 ]
 
 [[package]]
 name = "ove-allocator"
 version = "0.1.0"
+
+[[package]]
+name = "ove-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "prettyplease"

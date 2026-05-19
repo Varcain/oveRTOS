@@ -130,4 +130,4 @@ A self-contained build output directory: `output/<board>/<rtos>/<app>/`. Holds t
 
 ### Zero-heap mode
 
-The build mode (`CONFIG_OVE_ZERO_HEAP=y`) where the system heap is not linked and every kernel object lives in caller-supplied storage. `_create()` / `_destroy()` are unavailable; `_init()` / `_deinit()` and the `OVE_*_DEFINE_STATIC()` macros are the only ways to bring up objects. The intended target is safety-critical and memory-constrained firmware. See [Heap and Zero-Heap Modes](getting-started/overview.md#heap-mode-vs-zero-heap-mode).
+The build mode (`CONFIG_OVE_ZERO_HEAP=y`) where the system heap is not linked and every kernel object lives in caller-supplied storage. `_create()` / `_destroy()` are unavailable; `_init()` / `_deinit()` and the `OVE_*_DEFINE_STATIC()` macros are the only ways to bring up objects. The intended target is safety-critical and memory-constrained firmware. See [Two allocation modes](getting-started/overview.md#two-allocation-modes).

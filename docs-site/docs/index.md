@@ -21,7 +21,7 @@ oveRTOS lets you **write embedded RTOS applications in C++, Rust, or Zig** and *
 
     ---
 
-    Five reference apps across C, C++, Rust, and Zig, in both heap and zero-heap modes. Producer-consumer, networking, power management, on-device ML, LVGL rendering.
+    Six reference apps across C, C++, Rust, and Zig, in both heap and zero-heap modes. Producer-consumer, networking, power management, on-device ML, LVGL benchmark, LVGL widget gallery.
 
     [Browse examples →](examples/index.md)
 

@@ -363,100 +363,25 @@ output/
 
 Multiple workspaces can coexist. Switching between them is done by loading a different configuration.
 
-## Walkthrough: Creating a New External App
+## Quick start: a new external app
 
-### 1. Create the Directory Structure
+The fastest path is the CLI generator (which stamps the same layout the reference content above describes):
 
 ```bash
-mkdir -p my_app/{src,include,defconfigs/qemu}
+ove app new --lang cpp --name my_app
 cd my_app
+make qemu.freertos.my_app && make && make run
 ```
 
-### 2. Write the Makefile
+If you want to lay it out by hand, the minimum is **three** files in your app directory:
 
-```bash
-cat > Makefile << 'EOF'
-APP_DIR := $(CURDIR)
-OVE_DIR ?= /path/to/oveRTOS
-include $(OVE_DIR)/config/make/ove_app.mk
-EOF
-```
+- `Makefile` — three lines:
+    ```makefile
+    APP_DIR := $(CURDIR)
+    OVE_DIR ?= /path/to/oveRTOS
+    include $(OVE_DIR)/config/make/ove_app.mk
+    ```
+- `app.yaml` — declare language, sources, required Kconfig, and the dot-syntax target name. See [The App Makefile](#the-app-makefile) and [app.yaml](#appyaml) above.
+- `src/app.c` (or `app.cpp` / `lib.rs` / `main.zig`) — define `ove_main()`.
 
-Set `OVE_DIR` to the actual path of your oveRTOS checkout.
-
-### 3. Write app.yaml
-
-```bash
-cat > app.yaml << 'EOF'
-lang: c
-description: "My First oveRTOS App"
-sources:
-  - src/app.c
-includes:
-  - include
-EOF
-```
-
-### 4. Write the Application
-
-`src/app.c`:
-
-```c
-#include "ove/app.h"
-#include "ove/log.h"
-#include "ove/thread.h"
-
-OVE_LOG_MODULE_REGISTER(myapp);
-
-void ove_main(void)
-{
-    OVE_LOG_INF("Hello from my external app!");
-}
-```
-
-### 5. Add Required Modules to app.yaml
-
-Add a `defconfig` field to `app.yaml` listing the Kconfig symbols the app needs:
-
-```yaml
-defconfig:
-  - CONFIG_OVE_CONSOLE=y
-  - CONFIG_OVE_LOG=y
-  - CONFIG_OVE_LOG_LEVEL_INF=y
-```
-
-And a `config_name` field for the dot-syntax target:
-
-```yaml
-config_name: myapp
-```
-
-### 6. Build and Run
-
-```bash
-make qemu.freertos.myapp
-make
-make run
-```
-
-### 7. (Optional) Add a NuttX Config Overlay
-
-If your app needs specific NuttX peripherals:
-
-```bash
-mkdir -p nuttx
-cat > nuttx/stm32f746g-discovery_defconfig << 'EOF'
-# App-specific NuttX peripheral config
-CONFIG_INIT_STACKSIZE=8192
-CONFIG_STM32F7_SDMMC1=y
-CONFIG_FS_FAT=y
-EOF
-```
-
-### 8. (Optional) Add RTOS Patches
-
-```bash
-mkdir -p patches/nuttx
-# Create your patch file
-cp /path/to/0001-my-fix.patch patches/nuttx/
-```
+Optional add-ons (each documented in the reference sections above): NuttX `defconfig` overlays under `nuttx/`, app-level patches under `patches/<rtos>/`, multi-app workspaces.

@@ -45,11 +45,4 @@ for (uint16_t addr = 0x08; addr < 0x78; addr++) {
 }
 ```
 
-## Backend Notes
-
-| Backend | Implementation |
-|---|---|
-| FreeRTOS/STM32 | `HAL_I2C_Master_Transmit/Receive()`, `HAL_I2C_Mem_Read()` |
-| Zephyr | `i2c_write()`, `i2c_read()`, `i2c_write_read()` |
-| NuttX | `/dev/i2c*`, `I2CIOC_TRANSFER` ioctl |
-| POSIX | `/dev/i2c-*`, `I2C_RDWR` ioctl |
+> Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).
