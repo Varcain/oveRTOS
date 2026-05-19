@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file eventgroup.h
  * @defgroup ove_eventgroup Event Group
  * @ingroup ove_comm
  * @brief Bit-based event signaling between tasks and ISRs.
@@ -165,6 +166,17 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
  * remaining until @p deadline_ns (a steady-clock value from
  * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
  * indefinite block.
+ *
+ * @param[in]  eg          Event group handle.
+ * @param[in]  bits        Bitmask of bits to wait for.
+ * @param[in]  flags       Combination of @c OVE_EG_WAIT_ALL and/or
+ *                         @c OVE_EG_CLEAR_ON_EXIT.
+ * @param[in]  deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                         or @c OVE_WAIT_FOREVER.
+ * @param[out] result      Receives the event bits value that satisfied the wait,
+ *                         or @c NULL if not needed.
+ * @return OVE_OK on success, @c OVE_ERR_TIMEOUT on deadline expiry,
+ *         negative error code on failure.
  */
 static inline int ove_eventgroup_wait_bits_until(ove_eventgroup_t eg, ove_eventbits_t bits,
 						 uint32_t flags, uint64_t deadline_ns,

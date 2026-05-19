@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file pm.h
  * @defgroup ove_pm Power Management
  * @ingroup ove_core
  * @brief Unified power management with sleep state machine, peripheral

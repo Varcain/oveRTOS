@@ -237,8 +237,8 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
 /// to another thread would cause that thread to issue
 /// `ove_mutex_unlock` with no matching `ove_mutex_lock`, which is
 /// backend-defined UB.  The `_no_send` field carries a `GuardNoSend`
-/// `PhantomData` to propagate `!Send` at compile time (see A1
-/// notes).
+/// `PhantomData` to propagate `!Send` at compile time (the same trick
+/// `lock_api` / `parking_lot` use on stable Rust).
 ///
 /// `Sync` is reinstated for `T: Sync` — a `&MutexGuard<T>` is the same
 /// as a `&T`, which is `Send` if `T: Sync`.  Matches std and
@@ -391,8 +391,8 @@ impl RecursiveMutex {
 
     /// Release one level of the recursive lock.
     ///
-    /// As with [`Mutex::unlock`], prefer the RAII guard.  Kept `pub`
-    /// for parity.
+    /// Prefer letting the RAII guard ([`RecursiveMutexGuard`]) drop
+    /// release the lock; this is kept `pub` for parity with the C API.
     #[inline]
     pub fn unlock(&self) {
         unsafe { bindings::ove_recursive_mutex_unlock(self.handle) }

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 /**
+ * @file audio_node.h
  * @defgroup ove_audio_node Audio node types and built-in factories
  * @ingroup ove_audio
  * @brief Core types for audio nodes, formats, buffers, and built-in
@@ -109,9 +110,10 @@ struct ove_audio_buf {
 /**
  * @brief Virtual function table (vtable) for an audio processing node.
  *
- * Each node kind implements a subset of these callbacks.  NULL pointers
- * are treated as no-ops by the graph engine (except @c process, which
- * must be provided).
+ * Each node kind implements a subset of these callbacks.  @c configure
+ * and @c process are required (called unconditionally during build and
+ * each cycle).  @c start, @c stop, and @c destroy may be NULL — the
+ * graph engine treats a NULL pointer as a no-op.
  */
 struct ove_audio_node_ops {
 	/**

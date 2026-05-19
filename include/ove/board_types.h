@@ -10,6 +10,7 @@
 #define OVE_BOARD_TYPES_H
 
 /**
+ * @file board_types.h
  * @defgroup ove_board_types Board Type Definitions
  * @brief Data structures used to describe a hardware board.
  *

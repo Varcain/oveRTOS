@@ -26,11 +26,13 @@
  *   - Define the wrapper body in this `.hpp` (no separate `.cpp` TU
  *     for the hot path).
  *   - Mark dtors and move operations `noexcept`.  No `throw` anywhere.
- *   - Mark error-returning calls `[[nodiscard]]`.  Error codes flow as
- *     raw `int` (negative on error); the C++ binding does not wrap them
- *     into typed errors because in-language interop with C is the
- *     point.  Compare with the Rust+Zig bindings, which carry typed
- *     errors because they cross an FFI boundary.
+ *   - Mark error-returning calls `[[nodiscard]]`.  Lift the substrate's
+ *     `int rc` into a `Result<T>` (see @ref error.hpp) via
+ *     @ref from_rc / @ref from_rc(int, T&&).  Forever-blocking
+ *     primitives that cannot meaningfully fail at runtime (e.g.
+ *     @ref Mutex::lock, @ref Queue::send) abort via
+ *     @c OVE_STATIC_INIT_ASSERT instead — failure there means a stale
+ *     handle, which is a programming error.
  *
  * @section build Build profile
  *

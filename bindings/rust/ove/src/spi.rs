@@ -7,7 +7,8 @@
 //! SPI bus master driver.
 //!
 //! [`Spi`] wraps an opaque `ove_spi_t` handle and exposes a method-shaped
-//! API.  Trait impls (`embedded_hal::spi::SpiBus`, ...) attach in C2.
+//! API.  An `embedded_hal::spi::SpiBus` impl is provided when the
+//! `embedded-hal` Cargo feature is enabled.
 
 use crate::bindings;
 use crate::error::{Error, Result};

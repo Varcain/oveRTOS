@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file sync.h
  * @defgroup ove_sync Synchronisation primitives
  * @brief Mutex, counting semaphore, binary event, recursive mutex, and
  *        condition variable APIs.
@@ -112,8 +113,10 @@ void ove_sem_deinit(ove_sem_t sem);
 /**
  * @brief Initialise a binary event object using caller-supplied static storage.
  *
- * A binary event starts in the unsignalled state.  One waiter is unblocked
- * per ove_event_signal() call.
+ * A binary event starts in the unsignalled state.  A signal is sticky:
+ * if posted while no thread is waiting, it remains pending and is
+ * consumed by the next ove_event_wait().  After a successful wait the
+ * event is auto-reset back to unsignalled.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
  *
@@ -350,6 +353,11 @@ OVE_NODISCARD int ove_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns) OVE_NONNU
  * Pass @c OVE_WAIT_FOREVER for an indefinite block.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
+ *
+ * @param[in] mtx         Mutex handle.
+ * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                        or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_mutex_lock.
  */
 OVE_NODISCARD static inline int ove_mutex_lock_until(ove_mutex_t mtx, uint64_t deadline_ns)
 {
@@ -392,6 +400,11 @@ OVE_NODISCARD int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns) OVE_NONNULL(1
  * Pass @c OVE_WAIT_FOREVER for an indefinite block.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
+ *
+ * @param[in] sem         Semaphore handle.
+ * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                        or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_sem_take.
  */
 OVE_NODISCARD static inline int ove_sem_take_until(ove_sem_t sem, uint64_t deadline_ns)
 {
@@ -438,6 +451,11 @@ OVE_NODISCARD int ove_event_wait(ove_event_t evt, uint64_t timeout_ns) OVE_NONNU
  * Pass @c OVE_WAIT_FOREVER for an indefinite block.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
+ *
+ * @param[in] evt         Event handle.
+ * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                        or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_event_wait.
  */
 OVE_NODISCARD static inline int ove_event_wait_until(ove_event_t evt, uint64_t deadline_ns)
 {
@@ -503,6 +521,11 @@ OVE_NODISCARD int ove_recursive_mutex_lock(ove_mutex_t mtx, uint64_t timeout_ns)
  * indefinite block.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
+ *
+ * @param[in] mtx         Recursive mutex handle.
+ * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                        or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_recursive_mutex_lock.
  */
 OVE_NODISCARD static inline int ove_recursive_mutex_lock_until(ove_mutex_t mtx,
 							       uint64_t deadline_ns)
@@ -557,6 +580,13 @@ OVE_NODISCARD int ove_condvar_wait(ove_condvar_t cv, ove_mutex_t mtx, uint64_t t
  * indefinite block.
  *
  * @note Requires @c CONFIG_OVE_SYNC.
+ *
+ * @param[in] cv          Condition variable handle.
+ * @param[in] mtx         Mutex held by the calling thread; released atomically
+ *                        on wait and re-acquired before return.
+ * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                        or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_condvar_wait.
  */
 OVE_NODISCARD static inline int ove_condvar_wait_until(ove_condvar_t cv, ove_mutex_t mtx,
 						       uint64_t deadline_ns)

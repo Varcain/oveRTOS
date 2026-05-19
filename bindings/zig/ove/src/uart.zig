@@ -4,6 +4,13 @@
 //
 // This file is part of oveRTOS.
 
+//! UART driver — `write` / `read` with per-call timeouts, plus
+//! `bytesAvailable` and `flush` helpers.
+//!
+//! Wraps `ove/uart.h`. RX is async-buffered by the backend; reads return as
+//! soon as any bytes are available (or block up to `timeout_ns`). Available
+//! when `CONFIG_OVE_UART` is enabled.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

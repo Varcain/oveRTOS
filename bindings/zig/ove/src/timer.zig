@@ -4,6 +4,13 @@
 //
 // This file is part of oveRTOS.
 
+//! Software timer — `Timer.create(allocator, cfg, callback, args)` with
+//! `.periodic` or `.one_shot` mode.
+//!
+//! Wraps `ove/timer.h`. Callbacks run on the substrate's timer service thread
+//! (FreeRTOS timer task, Zephyr system workqueue, …) — they must be
+//! non-blocking. Available when `CONFIG_OVE_TIMER` is enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

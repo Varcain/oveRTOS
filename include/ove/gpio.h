@@ -10,6 +10,7 @@
 #define OVE_GPIO_H
 
 /**
+ * @file gpio.h
  * @defgroup ove_gpio GPIO
  * @brief General-purpose I/O pin control.
  *

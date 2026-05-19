@@ -4,6 +4,12 @@
 //
 // This file is part of oveRTOS.
 
+//! Non-volatile key-value storage — get/set/erase/iter over a per-board
+//! backing (internal flash, littlefs, host file, …).
+//!
+//! Wraps `ove/nvs.h`. Keys are null-terminated C strings; values are arbitrary
+//! byte blobs sized at write time. Available when `CONFIG_OVE_NVS` is enabled.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

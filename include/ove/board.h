@@ -10,6 +10,7 @@
 #define OVE_BOARD_H
 
 /**
+ * @file board.h
  * @defgroup ove_board Board Initialization
  * @brief Board-level initialisation and identification.
  *

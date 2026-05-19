@@ -1951,14 +1951,14 @@ class Msgbox : public ObjectView,
 		return Msgbox(lv_msgbox_create(parent));
 	}
 
-	/** @brief Adds a title in the header, returning the title label. */
+	/** @brief Adds a title in the header.  Chainable — returns `*this`. */
 	Msgbox &add_title(const char *txt)
 	{
 		lv_msgbox_add_title(obj_, txt);
 		return *this;
 	}
 
-	/** @brief Adds body text, returning the content label. */
+	/** @brief Adds body text.  Chainable — returns `*this`. */
 	Msgbox &add_text(const char *txt)
 	{
 		lv_msgbox_add_text(obj_, txt);

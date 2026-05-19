@@ -168,7 +168,7 @@ crate::ove_handle_impl!(Model, ove_model_destroy, ove_model_deinit);
 ///
 /// ```ignore
 /// let mut storage = ModelStorage::<32768>::new();
-/// let model = storage.load(&cfg)?;
+/// let model = storage.load(model_bytes)?;
 /// let input = model.input_slice_mut::<i16>(0)?;
 /// input[0] = 42;
 /// model.invoke()?;

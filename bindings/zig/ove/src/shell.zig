@@ -4,6 +4,13 @@
 //
 // This file is part of oveRTOS.
 
+//! Interactive command shell — register handlers, dispatch incoming bytes,
+//! print prompts.
+//!
+//! Wraps `ove/shell.h`. Each registered command is identified by a
+//! null-terminated name; the handler receives an argv array. Available when
+//! `CONFIG_OVE_SHELL` is enabled.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

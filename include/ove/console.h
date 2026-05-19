@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file console.h
  * @defgroup ove_console Console
  * @ingroup ove_ui
  * @brief Low-level serial I/O for the system console.

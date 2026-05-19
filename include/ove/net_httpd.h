@@ -10,6 +10,7 @@
 #define OVE_NET_HTTPD_H
 
 /**
+ * @file net_httpd.h
  * @defgroup ove_net_httpd HTTP Server
  * @brief Lightweight embedded HTTP server with REST API routing.
  *

@@ -128,7 +128,8 @@ class Mutex
 	}
 
 	/**
-	 * @brief Attempts to acquire the mutex without blocking.  `std::Lockable` requirement.
+	 * @brief Attempts to acquire the mutex without blocking.  Satisfies the
+	 *        @c Lockable named requirement (alongside @ref lock / @ref unlock).
 	 * @return `true` on acquisition, `false` if the mutex is held by another thread.
 	 */
 	[[nodiscard]] bool try_lock()
@@ -329,7 +330,10 @@ class RecursiveMutex
 	}
 
 	/**
-	 * @brief Non-blocking acquisition attempt.  `std::Lockable` requirement.
+	 * @brief Non-blocking acquisition attempt.  Part of the @c Lockable
+	 *        named requirement satisfied by this class.
+	 * @return `true` on acquisition (or recursive re-acquisition),
+	 *         `false` if the mutex is held by another thread.
 	 */
 	[[nodiscard]] bool try_lock()
 	{
@@ -431,9 +435,9 @@ class LockGuard
 	 * @ref Mutex::unlock cannot run on a mutex we never acquired.
 	 *
 	 * @note Prefer `std::lock_guard<ove::Mutex>` for new code — now
-	 * works since @ref Mutex satisfies `std::Lockable`.  @ref LockGuard
-	 * is retained for code targeting older compiler standard libraries
-	 * and for source-compatibility.
+	 * works since @ref Mutex satisfies the C++ @c Lockable named
+	 * requirement.  @ref LockGuard is retained for code targeting older
+	 * compiler standard libraries and for source-compatibility.
 	 *
 	 * @param[in] mtx The mutex to lock.  Must outlive this guard.
 	 */

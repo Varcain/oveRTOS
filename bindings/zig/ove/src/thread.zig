@@ -6,23 +6,22 @@
 
 //! Thread management.
 //!
-//! `Thread(stack_size)` is the templated wrapper.  Its shape differs by
-//! build mode:
+//! `Thread(stack_size)` is the templated wrapper.  The substrate-storage
+//! block (stack + `ove_thread_storage_t`) lives in caller-supplied
+//! allocator memory; the wrapper itself holds an `Allocator` plus a
+//! kernel handle and is movable by value.  Heap and zero-heap modes
+//! share the same shape — they differ only in which allocator the
+//! caller passes in (libc-backed vs. `FixedBufferAllocator` over BSS).
 //!
-//! - **Heap mode**: value-returning `spawn(...)`; the wrapper is just a
-//!   handle, no embedded stack.  `stack_size` is forwarded to the kernel
-//!   as a runtime hint.
-//! - **Zero-heap mode**: two-phase `spawnStatic(self, ...)`; the stack
-//!   is embedded as a struct field sized at comptime by `stack_size`.
-//!   The wrapper must not be moved after `spawnStatic()` — debug builds
-//!   panic on any method call from a different address; release builds
-//!   compile the check out.
+//! `stack_size` is a comptime parameter so the backing struct can size
+//! its embedded stack array inline; on Zephyr the binding rounds up to
+//! a power-of-two with a 128-byte MPU guard (see [`stackTotal`]).
 //!
-//! Both spawn forms accept any callable via comptime introspection and
-//! a tuple of runtime args.  If the callable's first parameter is
-//! [`StopToken`], the trampoline injects a token referencing the new
-//! thread; otherwise the args go straight through.  Cooperative
-//! cancellation is opt-in via the entry signature:
+//! `spawn` accepts any callable via comptime introspection and a tuple
+//! of runtime args.  If the callable's first parameter is [`StopToken`],
+//! the trampoline injects a token referencing the new thread; otherwise
+//! the args go straight through.  Cooperative cancellation is opt-in
+//! via the entry signature:
 //!
 //! ```zig
 //! // Cooperative worker — receives a StopToken; deinit auto-stops + joins.
@@ -30,7 +29,7 @@
 //!     while (!stop.isStopped()) { /* work */ }
 //! }
 //!
-//! var th = try ove.Thread(4096).spawn(.{ .name = "worker" }, worker, .{&queue});
+//! var th = try ove.Thread(4096).spawn(allocator, .{ .name = "worker" }, worker, .{&queue});
 //! defer th.deinit();  // requestStop + destroy
 //! ```
 //!
@@ -40,7 +39,7 @@
 //!
 //! ```zig
 //! fn oneshot() void { /* runs once and returns */ }
-//! var th = try ove.Thread(4096).spawn(.{}, oneshot, .{});
+//! var th = try ove.Thread(4096).spawn(allocator, .{}, oneshot, .{});
 //! defer th.deinit();
 //! ```
 //!
@@ -66,7 +65,7 @@
 //! }
 //!
 //! var ctx = Ctx{ .queue = &q, .mutex = &mtx, .channel_id = 7 };
-//! var th = try ove.Thread(4096).spawn(.{ .name = "worker" }, worker, .{&ctx});
+//! var th = try ove.Thread(4096).spawn(allocator, .{ .name = "worker" }, worker, .{&ctx});
 //! defer th.deinit();   // worker exits before ctx goes out of scope
 //! ```
 //!
@@ -82,7 +81,7 @@
 //! contract, and the workaround above is one line.
 //!
 //! Module-level helpers (`sleepMs`, `yieldCpu`, `getSelf`, `getMemStats`,
-//! `threadList`, `Priority`, `prio`, `State`) are static — they don't bind
+//! `threadList`, `Priority`, `State`) are static — they don't bind
 //! to an instance.
 
 const std = @import("std");
@@ -120,7 +119,7 @@ pub fn stackTotal(comptime stack_size: usize) usize {
 /// below catches substrate drift at compile time.
 ///
 /// ```zig
-/// try ove.Thread(4096).spawn(.{ .name = "worker", .priority = .high },
+/// try ove.Thread(4096).spawn(allocator, .{ .name = "worker", .priority = .high },
 ///                             entry, .{});
 /// ```
 pub const Priority = enum(c_uint) {
@@ -162,14 +161,14 @@ pub const Stats = struct {
 };
 
 /// Spawn-time configuration for a new thread.  Pass as `.{ ... }` to
-/// [`Thread.spawn`] / [`Thread.spawnStatic`]; all fields are optional.
+/// [`Thread.spawn`]; all fields are optional.
 ///
 /// ```zig
 /// // Common case — name + priority
-/// try ove.Thread(4096).spawn(.{ .name = "worker", .priority = .high },
+/// try ove.Thread(4096).spawn(allocator, .{ .name = "worker", .priority = .high },
 ///                             entry, .{});
 /// // Defaults — anonymous, normal priority
-/// try ove.Thread(4096).spawn(.{}, entry, .{});
+/// try ove.Thread(4096).spawn(allocator, .{}, entry, .{});
 /// ```
 ///
 /// The field is `comptime` at the call boundary because the name flows
@@ -201,9 +200,9 @@ inline fn cfgNameZ(comptime cfg: SpawnConfig) [*:0]const u8 {
 ///
 /// Cheap to copy and pass by value.  Reads the per-thread atomic flag
 /// set by [`Thread.requestStop`] (or implicitly by the wrapper's
-/// `deinit`).  Workers spawned via `Thread(N).spawn(..., entry, ...)`
-/// receive a token as the entry's first argument when the entry's
-/// signature declares one.
+/// `deinit`).  Workers spawned via
+/// `Thread(N).spawn(allocator, cfg, entry, args)` receive a token as
+/// the entry's first argument when the entry's signature declares one.
 ///
 /// ```zig
 /// fn worker(stop: ove.StopToken) void {
@@ -212,7 +211,7 @@ inline fn cfgNameZ(comptime cfg: SpawnConfig) [*:0]const u8 {
 ///     }
 /// }
 ///
-/// var th = try ove.Thread(4096).spawn(.{ .name = "worker" }, worker, .{});
+/// var th = try ove.Thread(4096).spawn(allocator, .{ .name = "worker" }, worker, .{});
 /// defer th.deinit();  // sets stop flag, then waits for worker exit
 /// ```
 pub const StopToken = struct {

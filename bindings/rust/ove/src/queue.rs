@@ -184,7 +184,7 @@ impl<T: Copy, const N: usize> Queue<T, N> {
     /// Receive an item from an ISR context (non-blocking, returns immediately if empty).
     ///
     /// # Errors
-    /// Returns [`Error::Timeout`] if the queue is empty.
+    /// Returns [`Error::QueueEmpty`] if the queue is empty.
     #[inline]
     pub fn receive_from_isr(&self) -> Result<T> {
         let mut item: mem::MaybeUninit<T> = mem::MaybeUninit::uninit();

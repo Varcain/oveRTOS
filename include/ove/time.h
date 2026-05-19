@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file time.h
  * @defgroup ove_time Time
  * @ingroup ove_core
  * @brief High-resolution timestamps and blocking delay utilities.

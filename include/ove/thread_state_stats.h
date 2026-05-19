@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file thread_state_stats.h
  * @brief Per-thread state time tracking.
  *
  * Gated behind CONFIG_OVE_THREAD_STATE_STATS.  Each backend embeds

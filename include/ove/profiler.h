@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file profiler.h
  * @brief Sampling profiler — periodic PC + call-stack capture.
  *
  * When CONFIG_OVE_PROFILER is enabled, a backend-specific sampler
@@ -38,49 +39,70 @@ extern "C" {
 #ifdef CONFIG_OVE_PROFILER
 
 /**
- * Arm the backend sampling mechanism (install signal handler on POSIX,
- * etc.). Idempotent. Does not spawn any thread — the consolidated
- * sim-debug pump drives sampling by calling ove_backend_profiler_sample_tick()
- * on its schedule. Returns 0 on success, negative ove error code on failure.
+ * @brief Arm the backend sampling mechanism (install signal handler on
+ *        POSIX, etc.).
+ *
+ * Idempotent.  Does not spawn any thread — the consolidated sim-debug
+ * pump drives sampling by calling @ref ove_backend_profiler_sample_tick
+ * on its schedule.
+ *
+ * @return OVE_OK on success, negative ove error code on failure.
  */
 int ove_backend_profiler_start(void);
 
 /**
- * Drive one sampler tick. Called from the sim-debug pump at
- * CONFIG_OVE_PROFILER_HZ. Snapshots runnable threads and delivers the
- * profiling signal to each. No-op if start() has not succeeded.
+ * @brief Drive one sampler tick.
+ *
+ * Called from the sim-debug pump at @c CONFIG_OVE_PROFILER_HZ.
+ * Snapshots runnable threads and delivers the profiling signal to
+ * each.  No-op if @ref ove_backend_profiler_start has not succeeded.
  */
 void ove_backend_profiler_sample_tick(void);
 
 /**
- * Disarm the backend sampling mechanism. Safe to call from any context.
+ * @brief Disarm the backend sampling mechanism.
+ *
+ * Safe to call from any context.
  */
 void ove_backend_profiler_stop(void);
 
 /**
- * Set the desired sampling rate in Hz. The compile-time CONFIG_OVE_PROFILER_HZ
- * is the ceiling; @p hz is silently clamped into [1, max]. Thread-safe.
- * Dashboard changes rate by sending OVE_SIM_PROFILER_CMD_SET_RATE to the
- * profiler plugin, which then calls this.
+ * @brief Set the desired sampling rate in Hz.
+ *
+ * The compile-time @c CONFIG_OVE_PROFILER_HZ is the ceiling; @p hz is
+ * silently clamped into [1, max].  Thread-safe.  The dashboard changes
+ * rate by sending @c OVE_SIM_PROFILER_CMD_SET_RATE to the profiler
+ * plugin, which then calls this.
+ *
+ * @param[in] hz Desired sampling rate in Hz.
  */
 void ove_backend_profiler_set_rate(uint32_t hz);
 
 /**
- * Report the compile-time max sampling rate so the dashboard knows the
- * ceiling without parsing Kconfig.
+ * @brief Report the compile-time max sampling rate.
+ *
+ * Lets the dashboard know the ceiling without parsing Kconfig.
+ *
+ * @return Maximum supported sampling rate in Hz.
  */
 uint32_t ove_backend_profiler_get_max_hz(void);
 
 /**
- * Drain newly-interned symbol entries into @p out as a JSON array of
- * @c [pc_start,pc_end,"name"] triples, compatible with the dashboard's
- * existing PROFILE_SUB_SYMBOLS parser. Returns bytes written (0 if
- * nothing to emit or @p out_max too small).
+ * @brief Drain newly-interned symbol entries as a JSON array.
+ *
+ * Writes a JSON array of @c [pc_start,pc_end,"name"] triples into
+ * @p out, compatible with the dashboard's existing
+ * @c PROFILE_SUB_SYMBOLS parser.
  *
  * Used by backends that symbolicate on-target (e.g. WASM uses
- * @c emscripten_get_callstack and interns names to synthetic pseudo-PCs).
- * POSIX returns 0 because symbolication is done host-side by the bridge
- * via @c nm on the ELF.
+ * @c emscripten_get_callstack and interns names to synthetic
+ * pseudo-PCs).  POSIX returns 0 because symbolication is done host-side
+ * by the bridge via @c nm on the ELF.
+ *
+ * @param[out] out     Buffer to receive the JSON fragment.
+ * @param[in]  out_max Size of @p out in bytes.
+ * @return Bytes written to @p out (0 if nothing to emit or @p out_max
+ *         is too small).
  */
 size_t ove_backend_profiler_drain_symbols(char *out, size_t out_max);
 

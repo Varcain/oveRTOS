@@ -10,6 +10,20 @@
  * @file ove/ove.h
  * @brief Umbrella header — single include for all oveRTOS public APIs.
  *
+ * @defgroup ove_core Core
+ * @brief Time, power management, and watchdog — always-on subsystems
+ *        for application lifecycle and reliability.
+ *
+ * @defgroup ove_ui User Interface
+ * @brief Console, logging, and interactive shell — operator-facing I/O.
+ *
+ * @defgroup ove_comm Communication primitives
+ * @brief Event groups, stream buffers, and work queues — building blocks
+ *        layered above the core thread / sync / queue API.
+ *
+ * @defgroup ove_data Data storage
+ * @brief Filesystem and NVS — persistent storage abstractions.
+ *
  * @defgroup ove_umbrella oveRTOS Umbrella Header
  * @brief Convenience header that pulls in the complete oveRTOS public API.
  *
@@ -40,10 +54,17 @@
  * | ove/nvs.h               | Non-volatile storage                       |
  * | ove/shell.h             | Interactive shell                          |
  * | ove/app.h               | Application lifecycle hooks                |
+ * | ove/infer.h             | ML inference (TFLM)                        |
  * | ove/net.h               | TCP/UDP sockets, DNS, network interfaces   |
+ * | ove/net_tls.h           | TLS sessions over sockets                  |
+ * | ove/net_http.h          | HTTP client                                |
+ * | ove/net_mqtt.h          | MQTT client                                |
+ * | ove/net_sntp.h          | SNTP time synchronization                  |
+ * | ove/net_httpd.h         | HTTP server                                |
  * | ove/uart.h              | UART serial bus driver                     |
  * | ove/spi.h               | SPI bus master driver                      |
  * | ove/i2c.h               | I2C bus master driver                      |
+ * | ove/i2s.h               | I2S / SAI audio bus driver                 |
  * | ove/pm.h                | Power management framework                 |
  *
  * Application code that prefers fine-grained includes may include individual

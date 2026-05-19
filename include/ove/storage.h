@@ -10,6 +10,7 @@
 #define OVE_STORAGE_H
 
 /**
+ * @file storage.h
  * @defgroup ove_storage Storage Types
  * @brief Backend-specific opaque storage types and static-allocation macros.
  *

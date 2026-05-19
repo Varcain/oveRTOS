@@ -4,11 +4,13 @@
 //
 // This file is part of oveRTOS.
 
-// Raw C FFI — @cImport("ove/ove.h")
-//
-// Use __ZIG_CIMPORT__ to get opaque storage types — Zig only uses pointer
-// handles, never the struct internals. This avoids pulling in complex
-// RTOS headers (zephyr/kernel.h, nuttx/config.h) that @cImport can't parse.
+//! Raw C FFI — `@cImport("ove/ove.h")` exposing every public C symbol.
+//!
+//! `__ZIG_CIMPORT__` is defined so the headers surface opaque storage types;
+//! Zig only uses pointer handles, never the struct internals. This avoids
+//! pulling in complex RTOS headers (`zephyr/kernel.h`, `nuttx/config.h`) that
+//! `@cImport` can't parse. Higher-level modules build on top and never
+//! re-export `raw` directly to app code.
 
 // Raw C FFI — single @cImport for oveRTOS + LVGL.
 // __ZIG_CIMPORT__ gives opaque storage types (avoids complex RTOS headers).

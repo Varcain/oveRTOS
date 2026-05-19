@@ -4,6 +4,14 @@
 //
 // This file is part of oveRTOS.
 
+//! Workqueue — a dedicated thread that runs deferred `Work` items submitted
+//! from other threads or ISRs.
+//!
+//! Wraps `ove/workqueue.h`. Create one queue per priority class with
+//! `Workqueue.create(allocator, …)`, then `submit(wq, work)` to defer
+//! execution off the producer's stack. `submitDelayed` schedules the work to
+//! run after a `Duration`. Available when `CONFIG_OVE_WORKQUEUE` is enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

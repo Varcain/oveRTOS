@@ -48,6 +48,10 @@ pub fn process_char(c: i32) {
 ///
 /// `name` and `help` must be `\0`-terminated `&'static` byte slices.
 /// A single trampoline dispatches to the correct handler by matching `argv[0]`.
+///
+/// # Errors
+/// Returns [`Error::NoMemory`] when the internal command table is full
+/// (capacity is 16 commands).
 pub fn register_cmd(name: &'static [u8], help: &'static [u8], handler: CmdFn) -> Result<()> {
     let idx = unsafe { CMD_COUNT };
     if idx >= MAX_CMDS {

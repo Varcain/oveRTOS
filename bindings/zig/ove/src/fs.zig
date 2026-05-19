@@ -4,6 +4,13 @@
 //
 // This file is part of oveRTOS.
 
+//! Virtual filesystem — `File` with open/read/write/seek/close and `Dir` for
+//! directory enumeration, plus `mount`/`unmount`/`unlink`/`rename` helpers.
+//!
+//! Wraps `ove/fs.h`. Backed by `littlefs` on FreeRTOS, Zephyr's `fs_*` API on
+//! Zephyr, the host POSIX VFS on POSIX, and NuttX's VFS on NuttX. Available
+//! when `CONFIG_OVE_FS` is enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

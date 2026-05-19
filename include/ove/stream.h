@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file stream.h
  * @defgroup ove_stream Stream
  * @ingroup ove_comm
  * @brief Byte stream communication primitives.
@@ -53,6 +54,7 @@ extern "C" {
  * @param[in]  buffer   Pointer to the backing byte buffer.
  * @param[in]  size     Size of @p buffer in bytes.
  * @param[in]  trigger  Minimum bytes available before a blocked receiver wakes.
+ *                      A value of 0 is treated as 1 by every backend.
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_STREAM.
  */
@@ -81,6 +83,7 @@ void ove_stream_deinit(ove_stream_t stream);
  * @param[out] stream   Receives the created stream handle.
  * @param[in]  size     Capacity of the stream buffer in bytes.
  * @param[in]  trigger  Minimum bytes available before a blocked receiver wakes.
+ *                      A value of 0 is treated as 1 by every backend.
  * @return OVE_OK on success, negative error code on failure.
  * @note Requires @c CONFIG_OVE_STREAM and @c OVE_HEAP_STREAM.
  */
@@ -125,6 +128,15 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
  * until @p deadline_ns (a steady-clock value from
  * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
  * indefinite block.
+ *
+ * @param[in]  stream      Stream handle.
+ * @param[in]  data        Pointer to the data to send.
+ * @param[in]  len         Number of bytes to send.
+ * @param[in]  deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                         or @c OVE_WAIT_FOREVER.
+ * @param[out] bytes_sent  Receives the number of bytes actually written, or
+ *                         @c NULL.
+ * @return OVE_OK on success, negative error code on failure.
  */
 static inline int ove_stream_send_until(ove_stream_t stream, const void *data, size_t len,
 					uint64_t deadline_ns, size_t *bytes_sent)
@@ -160,6 +172,15 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
  * until @p deadline_ns (a steady-clock value from
  * @ref ove_time_now_steady_ns).  Pass @c OVE_WAIT_FOREVER for an
  * indefinite block.
+ *
+ * @param[in]  stream         Stream handle.
+ * @param[out] buf            Buffer to receive data.
+ * @param[in]  len            Maximum number of bytes to read.
+ * @param[in]  deadline_ns    Absolute deadline against @ref ove_time_now_steady_ns,
+ *                            or @c OVE_WAIT_FOREVER.
+ * @param[out] bytes_received Receives the number of bytes actually read, or
+ *                            @c NULL.
+ * @return OVE_OK on success, negative error code on failure.
  */
 static inline int ove_stream_receive_until(ove_stream_t stream, void *buf, size_t len,
 					   uint64_t deadline_ns, size_t *bytes_received)

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 /**
+ * @file audio.h
  * @defgroup ove_audio Audio graph engine
  * @brief Build and execute a DAG of audio processing nodes.
  *
@@ -136,8 +137,9 @@ int ove_audio_graph_init(struct ove_audio_graph *g, unsigned int frames_per_peri
 /**
  * @brief Release all resources held by an audio graph.
  *
- * Frees the heap buffer storage and resets internal state.  The graph
- * must be stopped before calling this function.
+ * Stops the graph (if running), tears down each node, and frees the
+ * heap-allocated inter-node buffer block.  Caller-supplied buffer storage
+ * registered via @ref ove_audio_graph_set_buf_storage is left intact.
  *
  * @param[in] g  Initialised graph instance.
  *
@@ -345,8 +347,11 @@ int ove_audio_graph_stop(struct ove_audio_graph *g);
  * inter-node buffers along the edges.  Intended for test or offline use;
  * in sink-driven mode the hardware callback drives processing instead.
  *
- * @param[in] g  Running graph instance.
- * @return 0 on success, negative error code if any node reports an error.
+ * @param[in] g  Graph instance in @c OVE_AUDIO_GRAPH_READY or
+ *               @c OVE_AUDIO_GRAPH_RUNNING state.
+ * @return 0 on success, @c OVE_ERR_NOT_SUPPORTED if the graph has not
+ *         been built, or another negative error code if any node reports
+ *         an error.
  *
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_start
@@ -357,12 +362,13 @@ int ove_audio_graph_process(struct ove_audio_graph *g);
  * @brief Retrieve a snapshot of graph runtime statistics.
  *
  * Copies the current diagnostic counters from the graph into the
- * caller-supplied @p stats structure.
+ * caller-supplied @p stats structure.  Valid in any state once
+ * @ref ove_audio_graph_init has succeeded.
  *
- * @param[in]  g      Graph instance (running or ready).
+ * @param[in]  g      Graph instance.
  * @param[out] stats  Pointer to a caller-allocated structure that will
  *                    receive the statistics snapshot.
- * @return 0 on success, negative error code on failure.
+ * @return 0 on success, @c OVE_ERR_INVALID_PARAM if @p g or @p stats is NULL.
  *
  * @note Requires @c CONFIG_OVE_AUDIO.
  * @see ove_audio_graph_stats

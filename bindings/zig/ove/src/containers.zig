@@ -54,10 +54,12 @@
 
 const std = @import("std");
 
-/// The only failure these containers can produce.  `error.NoMemory` is
-/// also a member of the binding's broader [`@import("error.zig").Error`]
-/// set, so a `try v.append(x)` in a function returning `ove.Error!void`
-/// composes without ceremony.
+/// The only failure these containers can produce.  This is a
+/// container-local error set distinct from the binding's broader
+/// [`@import("error.zig").Error`] (which uses `OutOfMemory` to match
+/// `std.mem.Allocator.Error`).  When composing with binding code,
+/// either widen the function's return type to a union of both sets
+/// or remap with a small `catch` block at the boundary.
 pub const Error = error{NoMemory};
 
 /// Fixed-capacity vector with embedded storage.

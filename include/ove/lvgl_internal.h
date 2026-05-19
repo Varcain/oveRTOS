@@ -10,6 +10,7 @@
 #define OVE_LVGL_INTERNAL_H
 
 /**
+ * @file lvgl_internal.h
  * @defgroup ove_lvgl_internal LVGL Internal Helpers
  * @brief Internal oveRTOS abstraction layer for LVGL display integration.
  *
@@ -143,7 +144,7 @@ void ove_lvgl_tick(uint32_t ms);
  * @brief Process pending LVGL tasks (rendering, input, animations).
  *
  * Must be called regularly from the UI task — typically every
- * @c LV_DISP_DEF_REFR_PERIOD milliseconds.  Call ove_lvgl_lock() and
+ * @c LV_DEF_REFR_PERIOD milliseconds.  Call ove_lvgl_lock() and
  * ove_lvgl_unlock() around this call when sharing LVGL with other tasks.
  */
 void ove_lvgl_handler(void);

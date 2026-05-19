@@ -4,6 +4,12 @@
 //
 // This file is part of oveRTOS.
 
+//! Board-level initialisation and identification.
+//!
+//! Wraps `ove/board.h`: `init()` runs the BSP bring-up (clocks, power rails,
+//! peripherals) and must be called once at startup; `name()` returns the
+//! null-terminated board name string set in the active board fragment.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

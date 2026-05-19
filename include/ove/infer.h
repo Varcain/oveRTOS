@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file infer.h
  * @defgroup ove_infer ML Inference
  * @brief Portable inference API for running TFLite models via LiteRT
  *        (formerly TensorFlow Lite Micro).

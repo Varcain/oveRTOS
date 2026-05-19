@@ -61,6 +61,9 @@ inline void led_toggle(unsigned int led)
 
 /**
  * @brief Drives a GPIO output pin (backward-compatibility alias for `gpio::set`).
+ * @param[in] port  GPIO port index.
+ * @param[in] pin   Pin number within the port.
+ * @param[in] value Logic level to drive (0 = low, non-zero = high).
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */
@@ -71,6 +74,8 @@ inline void led_toggle(unsigned int led)
 
 /**
  * @brief Reads a GPIO pin level (backward-compatibility alias for `gpio::get`).
+ * @param[in] port GPIO port index.
+ * @param[in] pin  Pin number within the port.
  * @return On success, the pin level (0 or 1).  On failure, an
  *         `unexpected` @ref Error.
  */
@@ -84,6 +89,11 @@ inline void led_toggle(unsigned int led)
 
 /**
  * @brief Registers a GPIO interrupt callback (backward-compatibility alias for `gpio::irq_register`).
+ * @param[in] port      GPIO port index.
+ * @param[in] pin       Pin number within the port.
+ * @param[in] mode      Trigger mode (rising, falling, both edges, etc.).
+ * @param[in] callback  Function to call when the interrupt fires.
+ * @param[in] user_data Opaque pointer forwarded to the callback.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */
@@ -97,6 +107,8 @@ inline void led_toggle(unsigned int led)
 
 /**
  * @brief Enables a GPIO interrupt (backward-compatibility alias for `gpio::irq_enable`).
+ * @param[in] port GPIO port index.
+ * @param[in] pin  Pin number within the port.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */
@@ -107,6 +119,8 @@ inline void led_toggle(unsigned int led)
 
 /**
  * @brief Disables a GPIO interrupt (backward-compatibility alias for `gpio::irq_disable`).
+ * @param[in] port GPIO port index.
+ * @param[in] pin  Pin number within the port.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */

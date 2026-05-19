@@ -9,9 +9,10 @@
 //! All primitives use the substrate's `_init` path with caller-provided
 //! storage allocated from a `std.mem.Allocator`.  Works uniformly in heap
 //! and zero-heap builds — heap-mode users typically pass
-//! `std.heap.c_allocator` (or a `GeneralPurposeAllocator`); zero-heap-
-//! mode users pass a `FixedBufferAllocator` backed by a static byte
-//! buffer in `.bss`.
+//! `ove.allocators.c_allocator` (a libc-backed wrapper that routes
+//! through the substrate's heap policy); zero-heap-mode users pass a
+//! `FixedBufferAllocator` backed by a static byte buffer in `.bss`
+//! (constructed via `ove.fixedBufferAlloc`).
 //!
 //! ```zig
 //! var mtx = try ove.Mutex.create(allocator);

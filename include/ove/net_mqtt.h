@@ -10,6 +10,7 @@
 #define OVE_NET_MQTT_H
 
 /**
+ * @file net_mqtt.h
  * @defgroup ove_net_mqtt MQTT Client
  * @brief Lightweight MQTT 3.1.1 client for IoT pub/sub messaging.
  *

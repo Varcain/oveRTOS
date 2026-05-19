@@ -4,6 +4,11 @@
 //
 // This file is part of oveRTOS.
 
+//! Default `#[panic_handler]` for `no_std` builds — prints the panic message
+//! to the oveRTOS console via `crate::log` and spin-loops.
+//!
+//! Compiled in only when neither `std` nor a host panic handler is available.
+
 use core::fmt::Write;
 use core::panic::PanicInfo;
 

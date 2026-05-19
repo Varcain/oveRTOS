@@ -4,6 +4,11 @@
 //
 // This file is part of oveRTOS.
 
+//! Board LED control — `set(led, on)` toggles a zero-based LED index.
+//!
+//! Wraps `ove/led.h`. LED indices and polarity are board-specific (see
+//! `boards/<name>/board.yaml`). Available when `CONFIG_OVE_LED` is enabled.
+
 const c = @import("c.zig").raw;
 
 /// Set a board LED on or off by index.

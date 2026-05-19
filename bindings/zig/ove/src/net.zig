@@ -21,7 +21,11 @@ const pin = @import("pin.zig");
 // Address  (value type, no kernel resource)
 // ---------------------------------------------------------------------------
 
-/// Generic socket address (IPv4 or IPv6).  Value type — copyable, small.
+/// Socket address.  Value type — copyable, small.  The underlying
+/// `ove_sockaddr_t` carries a 16-byte address buffer (IPv4 + IPv6
+/// capable on the C side), but the Zig-side constructors and
+/// accessors here are IPv4-only — `ipv4(...)` builds an address,
+/// `octets()` returns the first 4 bytes.
 pub const Address = struct {
     inner: c.ove_sockaddr_t,
 

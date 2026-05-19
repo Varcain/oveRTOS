@@ -6,6 +6,12 @@
  * This file is part of oveRTOS.
  */
 
+/**
+ * @file infer.hpp
+ * @brief C++ wrappers for ML inference — `ove::Model` over LiteRT
+ *        (TensorFlow Lite Micro). Available when `CONFIG_OVE_INFER` is set.
+ */
+
 #pragma once
 
 #include <ove/infer.h>

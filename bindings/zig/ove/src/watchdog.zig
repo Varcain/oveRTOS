@@ -4,6 +4,14 @@
 //
 // This file is part of oveRTOS.
 
+//! Hardware watchdog — `Watchdog` with `start`/`feed`/`stop`.
+//!
+//! Wraps `ove/watchdog.h`. Once started, the watchdog must be fed before the
+//! configured timeout elapses; missing a feed triggers a hardware reset.
+//! Whether the timer is suspended during debugger halts is backend-specific.
+//! The public `Watchdog` type is gated on `pin.zero_heap`. Available when
+//! `CONFIG_OVE_WATCHDOG` is enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

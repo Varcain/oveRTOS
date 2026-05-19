@@ -10,6 +10,7 @@
 #define OVE_NET_TLS_H
 
 /**
+ * @file net_tls.h
  * @defgroup ove_net_tls TLS
  * @brief Portable TLS layer using mbedTLS.
  *

@@ -7,8 +7,8 @@
 //! UART serial bus driver.
 //!
 //! [`Uart`] wraps an opaque `ove_uart_t` handle and exposes a method-shaped
-//! API.  Trait impls (`embedded_io::Read`, `embedded_io::Write`, ...) attach
-//! in C3.
+//! API.  `embedded_io::Read` / `embedded_io::Write` impls are provided when
+//! the `embedded-io` Cargo feature is enabled.
 
 use crate::bindings;
 use crate::error::{Error, Result};

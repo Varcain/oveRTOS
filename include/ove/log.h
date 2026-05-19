@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file log.h
  * @defgroup ove_log Logging
  * @ingroup ove_ui
  * @brief Compile-time filtered logging macros over the system console.

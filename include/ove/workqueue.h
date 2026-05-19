@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file workqueue.h
  * @defgroup ove_workqueue Work Queue
  * @ingroup ove_comm
  * @brief Deferred work execution on a dedicated RTOS thread.
