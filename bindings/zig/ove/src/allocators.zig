@@ -100,19 +100,44 @@ const libc_allocator_impl = struct {
         return .{ .ptr = undefined, .vtable = &vtable };
     }
 
+    // libc malloc returns 8-byte (or stricter) aligned memory.  Callers
+    // requesting tighter alignment (e.g. Zephyr's MPU-aligned thread
+    // stacks, where `Thread(4096)`'s `Backing` wants 8192-byte
+    // alignment) need an over-allocate-and-align dance.  We can't lean
+    // on libc's `aligned_alloc` because the FreeRTOS heap-mode shim
+    // (backends/freertos/freertos_libc_malloc.c) only wraps malloc /
+    // free / calloc / realloc — an `aligned_alloc` call there would
+    // fall through to picolibc's nano-malloc against a zero-sized
+    // `__heap_size` and return NULL.  Universal over-alloc trick:
+    //   pad = align_bytes  (covers worst-case slack)
+    //   header = sizeof(usize)  (stashes the raw malloc pointer)
+    //   total = len + pad + header
+    // align the user pointer above the header; freeFn rewinds via the
+    // stashed pointer.  Cross-RTOS, no toolchain dependency beyond the
+    // bog-standard `malloc` / `free` already wrapped on FreeRTOS.
+    const max_simple_align = @sizeOf(usize) * 2;
+
     fn allocFn(
         _: *anyopaque,
         len: usize,
         alignment: std.mem.Alignment,
         _: usize,
     ) ?[*]u8 {
-        // libc malloc returns 8-byte (or stricter) aligned memory; if
-        // the caller wants tighter alignment we'd need posix_memalign /
-        // aligned_alloc.  Reject over-aligned requests at runtime
-        // rather than miscompile.
-        if (@intFromEnum(alignment) > @sizeOf(usize) * 2) return null;
-        const p = malloc(len) orelse return null;
-        return @ptrCast(@alignCast(p));
+        const align_bytes = alignment.toByteUnits();
+        if (align_bytes <= max_simple_align) {
+            const p = malloc(len) orelse return null;
+            return @ptrCast(@alignCast(p));
+        }
+        const total = len + align_bytes + @sizeOf(usize);
+        const raw = malloc(total) orelse return null;
+        const raw_addr = @intFromPtr(raw);
+        const aligned_addr = std.mem.alignForward(
+            usize,
+            raw_addr + @sizeOf(usize),
+            align_bytes,
+        );
+        @as(*usize, @ptrFromInt(aligned_addr - @sizeOf(usize))).* = raw_addr;
+        return @ptrFromInt(aligned_addr);
     }
 
     fn resizeFn(
@@ -129,10 +154,15 @@ const libc_allocator_impl = struct {
     fn remapFn(
         _: *anyopaque,
         buf: []u8,
-        _: std.mem.Alignment,
+        alignment: std.mem.Alignment,
         new_len: usize,
         _: usize,
     ) ?[*]u8 {
+        // realloc preserves only natural libc alignment.  For
+        // over-aligned allocations the caller falls back to alloc +
+        // memcpy + free, which goes through allocFn's manual-align
+        // path correctly.
+        if (alignment.toByteUnits() > max_simple_align) return null;
         const p = realloc(buf.ptr, new_len) orelse return null;
         return @ptrCast(@alignCast(p));
     }
@@ -140,10 +170,16 @@ const libc_allocator_impl = struct {
     fn freeFn(
         _: *anyopaque,
         buf: []u8,
-        _: std.mem.Alignment,
+        alignment: std.mem.Alignment,
         _: usize,
     ) void {
-        free(buf.ptr);
+        if (alignment.toByteUnits() <= max_simple_align) {
+            free(buf.ptr);
+            return;
+        }
+        const aligned_addr = @intFromPtr(buf.ptr);
+        const raw_addr = @as(*usize, @ptrFromInt(aligned_addr - @sizeOf(usize))).*;
+        free(@ptrFromInt(raw_addr));
     }
 };
 
