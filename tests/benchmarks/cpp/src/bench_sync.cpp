@@ -36,7 +36,7 @@ static void mutex_lock_unlock_setup()
 
 static void mutex_lock_unlock_run()
 {
-	(void)bench_mtx->lock(ove::wait_forever);
+	bench_mtx->lock();
 	bench_mtx->unlock();
 }
 
@@ -59,7 +59,7 @@ static void contention_thread(void *arg)
 {
 	(void)arg;
 	while (!contention_done.load(std::memory_order_acquire)) {
-		(void)bench_mtx->lock(ove::wait_forever);
+		bench_mtx->lock();
 		contention_count.fetch_add(1, std::memory_order_relaxed);
 		bench_mtx->unlock();
 	}
@@ -75,7 +75,7 @@ static void mutex_contention_setup()
 
 static void mutex_contention_run()
 {
-	(void)bench_mtx->lock(ove::wait_forever);
+	bench_mtx->lock();
 	contention_count.fetch_add(1, std::memory_order_relaxed);
 	bench_mtx->unlock();
 }
@@ -112,8 +112,8 @@ static void sem_take_give_setup()
 
 static void sem_take_give_run()
 {
-	(void)bench_sem->take(ove::wait_forever);
-	bench_sem->give();
+	bench_sem->acquire();
+	bench_sem->release();
 }
 
 static void sem_take_give_teardown()
@@ -152,7 +152,7 @@ static void evt_signaler(void *arg)
 	(void)arg;
 	while (!evt_done.load(std::memory_order_acquire)) {
 		bench_evt->signal();
-		(void)bench_evt_ack->wait(ove::wait_forever);
+		bench_evt_ack->wait();
 	}
 }
 
@@ -166,7 +166,7 @@ static void event_signal_wait_setup()
 
 static void event_signal_wait_run()
 {
-	(void)bench_evt->wait(ove::wait_forever);
+	bench_evt->wait();
 	bench_evt_ack->signal();
 }
 
@@ -207,8 +207,8 @@ static void cv_signaler(void *arg)
 {
 	(void)arg;
 	while (!cv_done.load(std::memory_order_acquire)) {
-		bench_cv->signal();
-		ove::Thread<>::yield();
+		bench_cv->notify_one();
+		ove::this_thread::yield();
 	}
 }
 
@@ -222,15 +222,15 @@ static void condvar_signal_wait_setup()
 
 static void condvar_signal_wait_run()
 {
-	(void)bench_cv_mtx->lock(ove::wait_forever);
-	(void)bench_cv->wait(*bench_cv_mtx, 10ms);
+	bench_cv_mtx->lock();
+	(void)bench_cv->try_wait_for(*bench_cv_mtx, 10ms);
 	bench_cv_mtx->unlock();
 }
 
 static void condvar_signal_wait_teardown()
 {
 	cv_done.store(true, std::memory_order_release);
-	bench_cv->signal();
+	bench_cv->notify_one();
 	ove::time::delay_ms(10);
 	cv_th.reset();
 	bench_cv.reset();
@@ -261,7 +261,7 @@ static void rmtx_lock_unlock_setup()
 
 static void rmtx_lock_unlock_run()
 {
-	(void)bench_rmtx->lock(ove::wait_forever);
+	bench_rmtx->lock();
 	bench_rmtx->unlock();
 }
 
