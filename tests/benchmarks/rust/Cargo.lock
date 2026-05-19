@@ -166,6 +166,17 @@ version = "0.1.0"
 dependencies = [
  "bindgen",
  "heapless",
+ "log",
+ "ove-macros",
+]
+
+[[package]]
+name = "ove-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
