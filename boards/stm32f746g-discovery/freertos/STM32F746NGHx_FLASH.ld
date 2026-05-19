@@ -35,9 +35,17 @@ ENTRY(Reset_Handler)
  * libc malloc is wrapped onto pvPortMalloc).  Zero-heap builds that
  * need a libc-side arena override via `-Wl,--defsym=__heap_size=N`. */
 PROVIDE(__heap_size = 0);
-/* Boot stack size.  Just covers main() → vTaskStartScheduler — once
- * the scheduler runs every task has its own stack via xTaskCreate. */
-__stack_size = 0x200;
+/* Boot stack size.  Covers main() + `app_main()` setup running on MSP
+ * before `ove::run()` calls vTaskStartScheduler — after that, every
+ * task has its own stack via xTaskCreate.  Sized at 4 KB to fit
+ * Rust/Zig setup paths (Arc/Box, closure boxing inside `spawn_with`,
+ * the entirety of `lvgl::init()` + widget creation) which need deeper
+ * frames than the C/C++ equivalents.  512 B was sufficient for the C
+ * example but Rust's `app_main` peaked at ~592 B mid-`lvgl::init()`
+ * and overflowed into the adjacent `work_mem_int` TLSF pool — the
+ * overflow corrupted a free-block header, and a later allocation
+ * popped a non-Thumb address into PC (INVSTATE hardfault). */
+__stack_size = 0x1000;
 
 MEMORY
 {
