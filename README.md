@@ -188,92 +188,282 @@ Other std-mirror conveniences:
 
 ### Rust (no_std, errors-as-values)
 
-**Heap**:
+Targets stable Rust with `#![cfg_attr(not(feature = "std"), no_std)]`.
+Fallible operations return `Result<T, ove::Error>` with **per-op narrow
+error sets** (`try_send_for` can only fail with `Timeout` or
+`QueueFull`; `try_lock_for` only `Timeout`).  Forever-blocking forms are
+infallible (`q.recv()` returns `T`, `mtx.lock()` returns a guard).
+`#[ove::main]` exports the `ove_main` symbol; the standard `log` crate
+(`log::info!` etc.) routes through the oveRTOS console via
+`ove::log::try_init()`.
 
-```rust
-use ove::{mutex, queue, thread, Priority};
-
-fn worker() { /* ... */ }
-
-fn app_main() {
-    let _q = queue!(u32, 8);                // generic + comptime depth
-    let _m = mutex!();                      // RAII — Drop cleans up
-    let _t = thread!("worker", worker, Priority::Normal, 4096);
-    ove::run();
-}
-
-ove::main!(app_main);                       // exports `ove_main` symbol
-```
-
-**Zero-heap** — `ove::shared!` parks each wrapper in a `StaticCell`; the
-`ove::queue!` / `ove::thread!` macros expand to a function-scope
-`static mut <storage>` plus the matching `from_static(...)` call, so the
-caller-owned origin stays visible.  No `Box`, `alloc`, or operator new:
+**Heap** — `Type::new()` constructors return `Result<Self>`; `Arc<T>` /
+`Box<T>` / `Vec<T>` are re-exported from `ove::heap` for `no_std`
+targets.  Threads spawn via `Thread::builder()` and take a `FnOnce`
+closure that receives a cooperative `StopToken`:
 
 ```rust
 #![cfg_attr(not(feature = "std"), no_std)]
+use core::time::Duration;
+use ove::heap::Arc;
 use ove::{Priority, Queue, Thread};
 
-fn worker() { /* ... */ }
-
-ove::shared!(QUEUE: Queue<u32, 8>);
-ove::shared!(WORKER: Thread<4096>);
-
+#[ove::main]
 fn app_main() {
-    QUEUE.init(ove::queue!(u32, 8));
-    WORKER.init(ove::thread!("worker", worker, Priority::Normal, 4096));
+    ove::log::try_init();
+
+    // Heap-backed kernel object, shared by Arc across threads.
+    let queue: Arc<Queue<u32, 8>> = Arc::new(Queue::new().expect("queue"));
+
+    // Producer — captures its own Arc::clone via `move`.
+    let q = Arc::clone(&queue);
+    let _producer = Thread::builder()
+        .name(c"producer")
+        .priority(Priority::Normal)
+        .stack_size(4096)
+        .spawn(move |stop| {
+            let mut n: u32 = 0;
+            while !stop.is_stopped() {
+                n += 1;
+                match q.try_send_for(&n, Duration::from_millis(1000)) {
+                    Ok(()) => {}
+                    Err(ove::Error::Timeout) => log::warn!("send timeout"),
+                    Err(ove::Error::QueueFull) => log::warn!("dropped {n}"),
+                    Err(_) => unreachable!(),  // narrow set: only Timeout/QueueFull
+                }
+                Thread::sleep_ms(500);
+            }
+        })
+        .expect("spawn");
+
+    // Consumer — forever recv() is infallible, returns T directly.
+    let q = Arc::clone(&queue);
+    let _consumer = Thread::builder()
+        .name(c"consumer")
+        .stack_size(4096)
+        .spawn(move |_stop| loop {
+            if let Ok(v) = q.recv() {
+                log::info!("got {v}");
+            }
+        })
+        .expect("spawn");
+
     ove::run();
 }
-
-ove::main!(app_main);
 ```
 
-### Zig (comptime-safe wrappers, embedded storage)
+**Zero-heap** — `Type::from_static(&mut storage, ...)` against
+caller-owned BSS; `InitCell<T>` parks the wrapper for cross-thread
+visibility.  Convenience macros (`ove::shared!`, `ove::mutex!(val)`,
+`ove::queue!(T, N)`, `ove::thread!(...)`) collapse the storage-decl +
+constructor boilerplate while preserving the static-origin guarantee.
+No `Box`, `Arc`, or `alloc` of any kind:
 
-**Heap** — `Type.create(...)` returns `Error!Self`, calling `ove_*_create`
-under the hood; `deinit()` is the matching destructor:
+```rust
+#![cfg_attr(not(feature = "std"), no_std)]
+use core::time::Duration;
+use ove::{Priority, Queue, Thread};
+
+ove::shared!(QUEUE: Queue<u32, 8>);     // static QUEUE: InitCell<Queue<u32,8>>
+
+#[ove::main]
+fn app_main() {
+    ove::log::try_init();
+    QUEUE.init(ove::queue!(u32, 8));    // expands to from_static(&mut S, ...)
+
+    let _producer = Thread::builder()
+        .name(c"producer")
+        .priority(Priority::Normal)
+        .stack_size(4096)
+        .spawn(|_stop| {
+            let mut n: u32 = 0;
+            loop {
+                n += 1;
+                let _ = QUEUE.try_send_for(&n, Duration::from_millis(1000));
+                Thread::sleep_ms(500);
+            }
+        })
+        .expect("spawn");
+
+    ove::run();
+}
+```
+
+**Highlights** — what the modernised API makes possible:
+
+- **Data-carrying `Mutex<T>`** mirrors `std::sync::Mutex<T>` —
+  `let m = Mutex::new(state);` then `let g = m.lock()?;` returns a
+  guard that `Deref`s to `T`.  Composes with `MutexGuard`-borrowing
+  helpers from any std-shaped library.
+- **Per-op narrow error sets** — `q.try_send_for(...)` is
+  `Result<(), Error>` but the only `Err` variants it returns are
+  `Timeout` and `QueueFull`; exhaustive `match` arms catch every
+  reachable case without `_ =>` fallback noise.
+- **Deadline newtype** — `Instant::now() + Duration::from_secs(5)`
+  composes; `q.try_recv_until(deadline)?` shares one deadline across a
+  sequence of bounded waits (no per-call clock drift).
+- **`std::io`-style traits** — `Stream<N>` and `fs::File` impl
+  `embedded_io::Read` / `Write` (and `std::io` on `feature = "std"`).
+- **Cooperative cancellation** — `Thread::builder().spawn(|stop| { … })`
+  passes a `StopToken`; outer code calls `handle.request_stop()` and
+  the worker checks `stop.is_stopped()` at its own polling points.
+
+### Zig (comptime-safe wrappers, allocator-aware)
+
+Targets Zig 0.15+.  Every wrapper takes a `std.mem.Allocator` —
+`std.heap.page_allocator` in heap mode, a static-backed
+`FixedBufferAllocator` over a BSS arena in zero-heap mode — and the
+wrapper itself works the same in both.  Per-op error sets are
+**structurally narrow** at the type system — `SendError =
+error{ QueueFull, Timeout }`, `LockError = error{Timeout}`, … —
+so exhaustive `switch` arms catch every reachable case with no
+`else =>` fallback.  Forever-blocking forms mirror
+`std.Thread.{Mutex, Semaphore, Condition}` and return `void` / `T`
+directly (substrate programmer-bug codes panic at the FFI boundary
+rather than leaking into typed return paths).  `std.log.*` integrates
+via `ove.log.logFn`, and `ove.target.current_rtos` is a typed `Rtos`
+enum that compiler-enforces exhaustive switches.
+
+**Heap** — `std.heap.page_allocator` backs every primitive.  Thread
+entries and timer callbacks use `comptime anytype` + an `args` tuple,
+matching `std.Thread.spawn`'s shape:
 
 ```zig
+const std = @import("std");
 const ove = @import("ove");
 
-fn worker() void { /* ... */ }
+// std.log.* → oveRTOS console.
+pub const std_options: std.Options = .{ .logFn = ove.log.logFn };
+
+const app_allocator = std.heap.page_allocator;
 
 var queue: ?ove.Queue(u32, 8) = null;
-var worker_th: ?ove.Thread(4096) = null;
+
+const app_title = switch (ove.target.current_rtos) {
+    .freertos => "oveRTOS(FreeRTOS) Zig Demo",
+    .nuttx => "oveRTOS(NuttX) Zig Demo",
+    .zephyr => "oveRTOS(Zephyr) Zig Demo",
+    .posix => "oveRTOS(POSIX) Zig Demo",
+    .wasm => "oveRTOS(wasm) Zig Demo",
+};
+
+fn producerEntry() void {
+    var n: u32 = 0;
+    while (true) {
+        n += 1;
+        queue.?.sendFor(&n, .millis(1000)) catch |e| switch (e) {
+            error.Timeout => std.log.warn("send timeout", .{}),
+            error.QueueFull => std.log.warn("dropped {d}", .{n}),
+        };
+        ove.thread.sleepMs(500);
+    }
+}
+
+fn consumerEntry() void {
+    while (true) {
+        const v = queue.?.recv();   // forever-blocking, infallible: T
+        std.log.info("got {d}", .{v});
+    }
+}
 
 fn appMain() void {
-    queue = ove.Queue(u32, 8).create() catch return;
-    worker_th = ove.Thread(4096).create("worker", worker,
-                                        ove.thread.prio.normal) catch return;
+    queue = ove.Queue(u32, 8).create(app_allocator) catch return;
+
+    _ = ove.Thread(4096).spawn(
+        app_allocator,
+        .{ .name = "producer", .priority = .normal },
+        producerEntry, .{},
+    ) catch return;
+
+    _ = ove.Thread(4096).spawn(
+        app_allocator,
+        .{ .name = "consumer", .priority = .normal },
+        consumerEntry, .{},
+    ) catch return;
+
     ove.run();
-    /* if (worker_th) |t| t.deinit();
-     * if (queue)     |q| q.deinit();  -- on shutdown */
 }
 
 comptime { ove.exportMain(appMain); }
 ```
 
-**Zero-heap** — file-scope wrappers embed the kernel-object storage and
-(for `Thread`/`Workqueue`) the thread stack inline.  `init()` fills in
-`&self.storage` / `&self.stack` and registers the kernel object against
-those addresses; no global allocator is linked:
+**Zero-heap** — same wrapper, same `create(allocator)` call.  Only the
+allocator changes: a `FixedBufferAllocator` over a static BSS arena
+routes every byte to caller-owned memory, with zero substrate libc-malloc
+traffic.  `ove.allocators.c_allocator` / `page_allocator` /
+`GeneralPurposeAllocator` become `@compileError` under `CONFIG_OVE_ZERO_HEAP`
+so an accidental dynamic-allocator import fails at build time:
 
 ```zig
+const std = @import("std");
 const ove = @import("ove");
 
-fn worker() void { /* ... */ }
+pub const std_options: std.Options = .{ .logFn = ove.log.logFn };
+
+// Static BSS arena backs every kernel primitive.
+var arena_bytes: [4096]u8 = undefined;
+var fba: std.heap.FixedBufferAllocator = undefined;
 
 var queue: ove.Queue(u32, 8) = undefined;
-var worker_th: ove.Thread(4096) = undefined;
+var producer_th: ove.Thread(4096) = undefined;
+var consumer_th: ove.Thread(4096) = undefined;
 
 fn appMain() void {
-    queue.init() catch return;
-    worker_th.init("worker", worker, ove.thread.prio.normal) catch return;
+    fba = std.heap.FixedBufferAllocator.init(&arena_bytes);
+    const allocator = fba.allocator();
+
+    queue = ove.Queue(u32, 8).create(allocator) catch return;
+
+    producer_th = ove.Thread(4096).spawn(
+        allocator,
+        .{ .name = "producer", .priority = .normal },
+        producerEntry, .{},
+    ) catch return;
+
+    consumer_th = ove.Thread(4096).spawn(
+        allocator,
+        .{ .name = "consumer", .priority = .normal },
+        consumerEntry, .{},
+    ) catch return;
+
     ove.run();
 }
 
 comptime { ove.exportMain(appMain); }
 ```
+
+**Highlights** — what the modernised API makes possible:
+
+- **One API across both modes** — application code calls
+  `Type.create(allocator)` regardless of heap/zero-heap.  Only the
+  allocator (page vs FBA) differs.  Tests and third-party libraries
+  using the binding don't need to fork zero-heap and heap-mode paths.
+- **Typed `Duration` / `Instant`** — `.millis(N)`, `.secs(N)`, `.nanos(N)`
+  constructors; `Instant.now()` + saturating `+|` / `-|` arithmetic
+  prevents wall-clock-vs-monotonic-vs-relative confusion at compile
+  time.  Deadline-aware variants: `q.sendUntil(item, deadline)`,
+  `cv.timedWaitUntil(mtx, deadline)`, plus a binding-specific
+  `cv.waitWhileUntil(mtx, deadline, predicate, args)` for
+  spurious-wakeup-safe predicate loops.
+- **Per-op narrow error sets** — `q.sendFor(...)` returns
+  `error{ QueueFull, Timeout }!void`; exhaustive `switch` arms catch
+  every reachable case without an `else =>` fallback.
+- **`std.log.*` integration** — declare
+  `pub const std_options: std.Options = .{ .logFn = ove.log.logFn };`
+  once and every library using `std.log.scoped(.tag).info(...)` (or any
+  call in the standard log family) routes through the oveRTOS console.
+- **Exhaustive RTOS switch** — `switch (ove.target.current_rtos)` is
+  compiler-enforced; adding a new RTOS to the substrate fails every
+  consuming switch until updated.  Replaces brittle
+  `@hasDecl(ove.ffi, "CONFIG_OVE_RTOS_FREERTOS")` string checks.
+- **`std.io` integration** — `Stream(N).reader()` /
+  `Stream(N).writer()` return `std.io.GenericReader` /
+  `std.io.GenericWriter`; same for `fs.File`.  Composes with every
+  std-shaped reader chain (`bufferedReader`, line-buffered scanners,
+  codec adapters).
+- **Comptime element-type check** — `Queue(T, N)` `@compileError`s if
+  `T` declares a `deinit()` method (substrate `memcpy`s items, so
+  destructors would silently leak resources).
 
 ### C (the binding substrate)
 

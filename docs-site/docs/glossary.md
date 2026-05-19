@@ -94,7 +94,7 @@ A Rust crate attribute that opts out of the standard library. The `ove` Rust bin
 
 ### `ove_main()`
 
-The application entry point — the symbol the framework calls after `board_init` returns. Every app provides one: directly in C/C++, via `ove::main!(app_main)` in Rust, via `comptime { ove.exportMain(appMain); }` in Zig.
+The application entry point — the symbol the framework calls after `board_init` returns. Every app provides one: directly in C/C++, via the `#[ove::main]` proc-macro attribute on `fn app_main()` in Rust, via `comptime { ove.exportMain(appMain); }` in Zig.
 
 ### `OVE_HEAP_*` macros
 
