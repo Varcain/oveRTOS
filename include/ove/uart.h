@@ -10,6 +10,7 @@
 #define OVE_UART_H
 
 /**
+ * @file uart.h
  * @defgroup ove_uart UART
  * @brief UART serial bus driver.
  *

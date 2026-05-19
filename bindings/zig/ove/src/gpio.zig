@@ -4,6 +4,12 @@
 //
 // This file is part of oveRTOS.
 
+//! GPIO — pin configure, read/write, and IRQ register/enable/disable.
+//!
+//! Wraps `ove/gpio.h`. Pin identification uses `(port, pin)` integer pairs;
+//! IRQ callbacks receive the same pair plus a user-data pointer. Available
+//! when `CONFIG_OVE_GPIO` is enabled.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

@@ -24,6 +24,14 @@ namespace ove::tls
 {
 
 /**
+ * @namespace ove::tls
+ * @brief TLS session wrapper over mbedTLS. Provides handshake, send, recv, and
+ *        close on top of a connected `ove_socket_t`.
+ *
+ * Available when `CONFIG_OVE_NET_TLS` is enabled.
+ */
+
+/**
  * @brief TLS session configuration.
  */
 struct Config {

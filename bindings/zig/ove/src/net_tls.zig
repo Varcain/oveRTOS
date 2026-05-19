@@ -4,6 +4,13 @@
 //
 // This file is part of oveRTOS.
 
+//! TLS session wrapper over mbedTLS — handshake, send, recv, and close on top
+//! of a connected `ove_socket_t`.
+//!
+//! Wraps `ove/net_tls.h`. The public `Session` type is gated on
+//! `pin.zero_heap` (`HeapSession` vs `ZeroHeapSession`). Available when
+//! `CONFIG_OVE_NET_TLS` is enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

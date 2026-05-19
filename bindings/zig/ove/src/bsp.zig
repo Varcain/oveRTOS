@@ -4,8 +4,10 @@
 //
 // This file is part of oveRTOS.
 
-// BSP compatibility shim — maps to board, gpio, led.
-// Provided for API parity with the C BSP header.
+//! Backward-compatibility BSP shim — re-exports `board`, `gpio`, `led`.
+//!
+//! Provided for API parity with the C `<ove/bsp.h>` umbrella header. New
+//! code should prefer the per-subsystem modules directly.
 
 /// Board initialization and identification (re-exported from board.zig).
 pub const board = @import("board.zig");

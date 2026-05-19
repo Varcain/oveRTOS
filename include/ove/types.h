@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file types.h
  * @defgroup ove_types Types
  * @brief Common error codes, opaque handle types, and utility macros used
  *        throughout the oveRTOS public API.

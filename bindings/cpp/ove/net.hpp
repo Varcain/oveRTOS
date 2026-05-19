@@ -70,9 +70,11 @@ class Address
 	/**
 	 * @brief Sets the port, returning a reference for chaining.
 	 *
-	 * Fluent-builder style, matching @ref NetIfConfig.
+	 * Fluent-builder style, matching @ref NetIfConfig.  Useful when an
+	 * @ref Address was constructed without a port (e.g. from a DNS
+	 * resolution result) and you want to attach one inline.
 	 * @code
-	 * auto a = ove::Address::ipv4(0xC0A80001).set_port(8080);
+	 * auto a = ove::Address::ipv4(192, 168, 0, 1, 0).set_port(8080);
 	 * @endcode
 	 *
 	 * @param[in] p Port number in host byte order.

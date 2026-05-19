@@ -717,6 +717,14 @@ impl<const N: usize> AlignedStack<N> {
 // JoinHandle — owning, joinable handle.
 // ---------------------------------------------------------------------------
 
+// PhantomData payload for `JoinHandleBorrowed`:
+//   - `fn() -> T` keeps `T` covariant for the reserved-for-future-use
+//     worker-return-type slot;
+//   - `fn(&'storage ()) -> &'storage ()` makes the lifetime invariant
+//     so the borrow checker can neither widen nor narrow it across
+//     boundaries.
+type JoinHandleVariance<'storage, T> = (fn() -> T, fn(&'storage ()) -> &'storage ());
+
 /// Owning handle to a spawned RTOS thread.
 ///
 /// Drop semantics are cooperative-cancel + join (not detach):
@@ -737,14 +745,6 @@ impl<const N: usize> AlignedStack<N> {
 /// The `T` type parameter is reserved for future use (substrate doesn't
 /// surface a worker's return value today); ignore it and use
 /// `JoinHandle<()>`.
-/// PhantomData payload for [`JoinHandleBorrowed`]:
-///   - `fn() -> T` keeps `T` covariant for the reserved-for-future-use
-///     worker-return-type slot;
-///   - `fn(&'storage ()) -> &'storage ()` makes the lifetime invariant
-///     so the borrow checker can neither widen nor narrow it across
-///     boundaries.
-type JoinHandleVariance<'storage, T> = (fn() -> T, fn(&'storage ()) -> &'storage ());
-
 #[must_use = "dropping a JoinHandle requests stop and blocks until the worker exits"]
 pub struct JoinHandleBorrowed<'storage, T = ()> {
     handle: bindings::ove_thread_t,

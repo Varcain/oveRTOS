@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file app.h
  * @defgroup ove_app Application lifecycle
  * @brief Application entry point and RTOS scheduler startup helpers.
  *

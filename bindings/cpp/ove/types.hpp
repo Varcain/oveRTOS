@@ -102,10 +102,18 @@ static_assert(OVE_ERR_NOT_FOUND == -21, "OVE_ERR_NOT_FOUND drifted");
  * @c int64_t representation).  @c to_timeout_ns recognises this exact
  * value and emits the C-side @c OVE_WAIT_FOREVER (= @c UINT64_MAX) sentinel.
  *
+ * Primitives split forever-blocking from bounded-wait into separate
+ * methods — the forever form takes no timeout argument; the bounded form
+ * takes a @c std::chrono::duration.  Pass `wait_forever` to the C-style
+ * helpers that still accept a single @c nanoseconds timeout (network
+ * sockets, I2C/SPI/UART transfers, …).
+ *
  * @code
- * queue.send(item, ove::wait_forever);   // primitives still using the sentinel form
- * queue.send(item, 100ms);               // requires `using namespace std::chrono_literals;`
- * mtx.lock();                            // Mutex uses void-return indefinite form
+ * using namespace std::chrono_literals;
+ * (void)queue.try_send_for(item, 100ms);  // bounded-wait form returns Result<void>
+ * queue.send(item);                       // forever-blocking form returns void
+ * mtx.lock();                             // Mutex uses void-return indefinite form
+ * sock.recv(buf, sizeof(buf), ove::wait_forever);  // socket recv takes the sentinel
  * @endcode
  */
 inline constexpr std::chrono::nanoseconds wait_forever = std::chrono::nanoseconds::max();
@@ -138,7 +146,10 @@ inline constexpr uint64_t to_timeout_ns(std::chrono::duration<Rep, Period> d) no
  * Use with the binding's `_until` variants:
  * @code
  * auto deadline = ove::steady_clock::now() + 100ms;
- * mtx.lock_until(deadline);
+ * if (mtx.try_lock_until(deadline).has_value()) {
+ *     // …critical section…
+ *     mtx.unlock();
+ * }
  * @endcode
  */
 struct steady_clock {

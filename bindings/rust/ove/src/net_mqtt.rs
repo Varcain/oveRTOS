@@ -72,7 +72,7 @@ unsafe extern "C" fn mqtt_trampoline(
     payload_len: usize,
     user_data: *mut core::ffi::c_void,
 ) {
-    // SAFETY: `user_data` was stored by `Client::subscribe*` from a
+    // SAFETY: `user_data` was stored by `Client::connect` from a
     // `MessageFn` pointer (a `fn(&str, &[u8])`). Supported targets have
     // pointer-sized function pointers with a C-compatible ABI, so
     // round-tripping through `*mut c_void` is sound.

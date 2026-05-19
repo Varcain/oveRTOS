@@ -6,9 +6,11 @@
 
 //! Internal helpers for embedded-storage RTOS wrappers.
 //!
-//! oveRTOS Zig wrappers (Mutex, Semaphore, Thread, ...) embed kernel-object
-//! storage as a struct field under `CONFIG_OVE_ZERO_HEAP=y`.  In heap mode
-//! the storage field collapses to `void` (zero-sized, no overhead).
+//! A handful of subsystems whose handle types are forced by the C layer
+//! (`Watchdog`, `NetIf`, `TcpStream`/`UdpSocket`, `Model`, `net_http.Client`,
+//! `net_mqtt.Client`, `net_tls.Session`, `audio.Graph`) embed kernel-object
+//! storage as a struct field under `CONFIG_OVE_ZERO_HEAP=y`.  In heap
+//! mode those wrappers carry a bare handle; the storage field is absent.
 //!
 //! ## Pinning contract
 //!
@@ -17,18 +19,18 @@
 //! `&self.storage` directly; moving or copying the wrapper invalidates that
 //! pointer and produces silent corruption.
 //!
-//! `Tracker` (in debug builds — `std.debug.runtime_safety == true`) records
-//! `&self` at `init()` time and lets methods assert the address has not
-//! changed.  The check is compiled out in release builds with zero size or
-//! runtime cost.
+//! `Tracker` is only present in `.Debug` builds (not `.ReleaseSafe` —
+//! see the `safety` constant below).  It records `&self` at `init()` and
+//! lets methods assert the address has not changed.  In release builds
+//! the type is zero-sized and every method compiles to nothing.
 //!
 //! ## Idiomatic usage at the call site
 //!
 //! ```zig
-//! var mtx: ove.Mutex = undefined;
-//! try mtx.init();           // if this fails, mtx stays `undefined` — do
-//! defer mtx.deinit();        //   not register the defer above this line
-//! try mtx.lock(timeout_ns);
+//! var wd: ove.Watchdog = undefined;
+//! try wd.init(5000);         // if this fails, wd stays `undefined` — do
+//! defer wd.deinit();          //   not register the defer above this line
+//! try wd.start();
 //! ```
 
 const std = @import("std");

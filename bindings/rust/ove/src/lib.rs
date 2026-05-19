@@ -238,8 +238,8 @@ pub fn log(msg: &[u8]) {
 /// Start audio (if enabled) and the RTOS scheduler. Blocks forever.
 ///
 /// This function must be called at the end of `ove_main` (or the function
-/// passed to the [`main!`] macro). It transfers control to the RTOS and
-/// never returns.
+/// annotated with [`#[ove::main]`](main)). It transfers control to the RTOS
+/// and never returns.
 pub fn run() {
     // SAFETY: `ove_run` is the RTOS scheduler entry; it never returns.
     unsafe {

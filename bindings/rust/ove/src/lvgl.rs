@@ -2708,10 +2708,11 @@ impl Image {
     /// [`ImageSrc`]. This raw variant is kept for narrow cases where a
     /// non-`'static` pointer must be supplied.
     ///
-    /// # Safety
+    /// # Caller obligations
     /// `src` must point to an LVGL-compatible image source that outlives
     /// the widget: a static `lv_image_dsc_t`, a symbol string literal, or
-    /// a null-terminated path string.
+    /// a null-terminated path string. The pointer is not validated; pass
+    /// the wrong shape and LVGL will misinterpret it.
     #[doc(hidden)]
     pub fn src(self, src: *const core::ffi::c_void) -> Self {
         unsafe { bindings::lv_image_set_src(self.raw, src) };
@@ -3034,8 +3035,9 @@ impl<T: Copy + Into<i32> + TryFrom<i32>> State<T> {
         }
     }
 
-    /// Read the current value. Falls back to the `T::Error` default if
-    /// the stored `i32` cannot be converted back to `T`.
+    /// Read the current value. Falls back to a zeroed `T` if the stored
+    /// `i32` cannot be converted back to `T` (unreachable for well-typed
+    /// integer states).
     pub fn get(&self) -> T {
         let raw = unsafe { bindings::lv_subject_get_int(self.subject.get()) };
         T::try_from(raw).unwrap_or_else(|_| {

@@ -4,12 +4,13 @@
 //
 // This file is part of oveRTOS.
 
-// LVGL bindings — widget types, mixins, and fluent builder API.
-// Conditional: only useful when CONFIG_OVE_LVGL is enabled.
-//
-// Uses its own @cImport for LVGL headers (separate from the core oveRTOS
-// cimport) because lvgl/lvgl.h is only available when LVGL is enabled.
-// The oveRTOS LVGL C API (ove_lvgl_*) is imported from the core c.zig.
+//! LVGL 9.x bindings — widget types, mixins, and a fluent builder API.
+//!
+//! Wraps `ove/lvgl.h` plus a parallel `@cImport("lvgl/lvgl.h")` for the
+//! upstream widget surface (`lv_label_*`, `lv_bar_*`, …). Available when
+//! `CONFIG_OVE_LVGL` is enabled. The oveRTOS LVGL C API (`ove_lvgl_*`) is
+//! imported from the core `c.zig`; LVGL's own symbols come from this file's
+//! private `@cImport`.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
@@ -1993,8 +1994,9 @@ pub const Msgbox = struct {
 
     pub const on = EventMixin(Msgbox).on;
 
-    /// Create a new msgbox. Pass an `Obj` with a null parent for a
-    /// screen-centered modal.
+    /// Create a new msgbox as a child of `parent_` (any widget with an
+    /// `obj` field).  For a screen-centered top-level modal, prefer
+    /// `createModal()`.
     pub fn create(parent_: anytype) Msgbox {
         return .{ .obj = c.lv_msgbox_create(parentObj(parent_)).? };
     }
@@ -3303,8 +3305,9 @@ const SUBJECT_STORAGE_ALIGN: usize = 8;
 /// Reactive integer state backed by LVGL's observer subsystem.
 ///
 /// Bind widget properties (Label text, Arc/Slider/Roller/Dropdown value)
-/// to a `State` via `lvgl.labelBindText(&state, …)` and they update
-/// automatically whenever you call `state.set(…)`.
+/// to a `State` via `lvgl.labelBindText(label, &state, fmt)` (and
+/// `arcBindValue`/`sliderBindValue`/etc. — see free functions below) and
+/// they update automatically whenever you call `state.set(…)`.
 ///
 /// # Address stability
 ///
@@ -3376,7 +3379,7 @@ pub fn componentFromEvent(e: ?*c.lv_event_t) ?*anyopaque {
 ///     count: lvgl.State(i32),
 ///     pub fn build(self: *MyCounter, parent: lvgl.Obj) lvgl.Obj {
 ///         const root = lvgl.vbox(parent);
-///         _ = lvgl.Label.create(root).bindText(&self.count, "Count: %d");
+///         _ = lvgl.labelBindText(lvgl.Label.create(root), &self.count, "Count: %d");
 ///         return .{ .obj = root.obj };
 ///     }
 /// };

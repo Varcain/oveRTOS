@@ -73,7 +73,9 @@ impl Workqueue {
         Ok(Self { handle })
     }
 
-    /// Return the raw handle for use with `Work::submit`.
+    /// Return the underlying `ove_workqueue_t` handle for advanced
+    /// FFI interop.  Normal app code should pass the [`Workqueue`]
+    /// itself to [`Work::submit`] / [`Work::submit_delayed`].
     pub fn handle(&self) -> bindings::ove_workqueue_t {
         self.handle
     }

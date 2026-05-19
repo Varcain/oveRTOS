@@ -54,27 +54,39 @@
 //! ## Heap and zero-heap modes
 //!
 //! Both allocation modes are supported transparently — the same API works
-//! in either configuration.  Wrappers follow a uniform two-phase pattern:
+//! in either configuration.  Most wrappers (sync, queue, eventgroup, timer,
+//! workqueue, stream, thread) follow an allocator-aware constructor pattern:
 //!
 //! ```zig
-//! var mtx: ove.Mutex = undefined;
-//! try mtx.init();
-//! defer mtx.deinit();         // register only after init() succeeds
-//! try mtx.lock(ove.wait_forever);
+//! var mtx = try ove.Mutex.create(allocator);
+//! defer mtx.deinit();
+//! mtx.lock();
+//! defer mtx.unlock();
 //! ```
 //!
-//! Under `CONFIG_OVE_ZERO_HEAP=y` each wrapper embeds the kernel-object
-//! storage as a struct field; in heap mode that field is zero-sized.
+//! The substrate-storage block lives in allocator-managed memory; the
+//! wrapper itself holds an `Allocator` plus two pointers and is movable
+//! by value.  Heap mode passes a libc allocator (or `GeneralPurposeAllocator`);
+//! zero-heap mode passes a `FixedBufferAllocator` over a `.bss` byte buffer.
+//!
+//! A handful of subsystems whose handle type is forced by the C layer
+//! (`Watchdog`, `NetIf`, `TcpStream`, `UdpSocket`, `Model`, `net_http.Client`,
+//! `net_mqtt.Client`, `net_tls.Session`) still ship a per-mode shape:
+//! heap mode is value-returning (`create()`); zero-heap mode uses
+//! two-phase init (`var w: Watchdog = undefined; try w.init(...)`).
 //!
 //! ### Pinning contract
 //!
-//! After `init()` the wrapper must remain at a stable address until
-//! `deinit()`.  The kernel handle stored in the wrapper references
-//! `&self.storage` directly, so moving, copying, or storing the wrapper
-//! by value in a relocating container (e.g. `std.ArrayList`) will silently
-//! corrupt RTOS state.  Debug builds (`std.debug.runtime_safety == true`)
-//! record `&self` at `init()` and panic if any subsequent method sees a
-//! different address.  Release builds compile the check out at zero cost.
+//! Embedded-storage wrappers in the per-mode group above must remain at
+//! a stable address between `init()` and `deinit()` under
+//! `CONFIG_OVE_ZERO_HEAP=y` — the kernel handle references `&self.storage`
+//! directly.  `.Debug` builds record `&self` at `init()` via
+//! [`pin.Tracker`] and panic if a subsequent method sees a different
+//! address; `.ReleaseSafe` / `.ReleaseFast` / `.ReleaseSmall` builds
+//! compile the check out at zero cost (see `safety` in `pin.zig`).
+//! The allocator-based wrappers do not need pinning because the storage
+//! lives at the allocator's stable address; only the wrapper's two-word
+//! handle moves.
 //!
 //! ## Entry point
 //!
@@ -91,7 +103,10 @@ pub const ffi = @import("c.zig").raw;
 pub const err = @import("error.zig");
 /// Zig error set representing all possible oveRTOS failure codes.
 pub const Error = err.Error;
-/// Sentinel value for `timeout_ns` parameters meaning "block indefinitely".
+/// Raw nanosecond sentinel meaning "block indefinitely".  Prefer the
+/// typed [`Instant.forever`] sentinel for the binding's `*Until` methods;
+/// `wait_forever` is exposed for callers passing raw `u64` timeouts to
+/// the C FFI layer directly.
 pub const wait_forever = err.wait_forever;
 
 /// Synchronization primitives: Mutex, RecursiveMutex, Semaphore, Event, CondVar.
@@ -110,26 +125,28 @@ pub const CondVar = sync.CondVar;
 /// Thread creation and lifecycle management.
 pub const thread = @import("thread.zig");
 /// Templated RTOS thread wrapper.  `Thread(stack_size)` returns the type.
-/// Heap mode: `var t = try ove.Thread(2048).spawn(name, prio, entry, .{});`.
-/// Zero-heap: `var t: ove.Thread(2048) = undefined; try t.spawnStatic(...);`.
+/// Spawn via `try ove.Thread(2048).spawn(allocator, .{ .name = "worker" }, entry, .{})`;
+/// works uniformly across heap and zero-heap builds.
 pub const Thread = thread.Thread;
-/// Thread priority level (maps to `ove_prio_t`). Use the `thread.prio.*` constants.
+/// Thread priority level (maps to `ove_prio_t`).  See [`thread.Priority`] for
+/// the enum variants (`.idle`, `.low`, `.normal`, `.high`, ...).
 pub const Priority = thread.Priority;
 /// Read-only handle to a thread's cooperative-cancellation flag.
 /// Auto-injected into `spawn` entries whose first param is `StopToken`.
 pub const StopToken = thread.StopToken;
-/// Spawn-time configuration (`name`, `priority`) for [`Thread.spawn`]
-/// and [`Thread.spawnStatic`].  All fields default; pass `.{}` for
-/// anonymous + normal-priority.
+/// Spawn-time configuration (`name`, `priority`) for [`Thread.spawn`].
+/// All fields default; pass `.{}` for anonymous + normal-priority.
 pub const SpawnConfig = thread.SpawnConfig;
 
-/// Type-safe, capacity-bounded message queue. Parameterized by element type and depth.
+/// Type-safe, capacity-bounded message queue.  Parameterised by element
+/// type `T` and depth `N`; construct via `try Queue(T, N).create(allocator)`.
 pub const Queue = @import("queue.zig").Queue;
 
 /// Software timer management.
 pub const timer = @import("timer.zig");
-/// Software timer.  Declare `var t: ove.Timer = undefined;` then
-/// `try t.init(callback, period_ms, .periodic);`.
+/// Software timer.  Create via
+/// `try ove.Timer.create(allocator, .{ .period_ms = 100 }, callback, .{})`;
+/// the substrate-storage lives in allocator-managed memory.
 pub const Timer = timer.Timer;
 
 /// Low-level console I/O (raw byte write / read).
@@ -144,19 +161,24 @@ pub const EventGroup = eventgroup.EventGroup;
 
 /// Deferred work queue management.
 pub const workqueue = @import("workqueue.zig");
-/// Templated work queue. `Workqueue(stack_size)` returns the type.
+/// Templated work queue. `Workqueue(stack_size)` returns the type;
+/// construct via `try Workqueue(N).create(allocator, name, priority)`.
 pub const Workqueue = workqueue.Workqueue;
-/// A single deferred work item.  Declare with `undefined`, init with handler.
+/// A single deferred work item bound to a Zig callback.  Construct via
+/// `try ove.Work.create(allocator, handler)`.
 pub const Work = workqueue.Work;
 
 /// Variable-length byte stream buffer for inter-task data transfer.
 pub const stream = @import("stream.zig");
-/// Templated stream buffer.  `Stream(byte_capacity)` returns the type.
+/// Templated stream buffer.  `Stream(byte_capacity)` returns the type;
+/// construct via `try Stream(N).create(allocator, trigger_bytes)`.
 pub const Stream = stream.Stream;
 
 /// Hardware watchdog timer management.
 pub const watchdog = @import("watchdog.zig");
-/// Watchdog handle. Must be fed periodically to prevent system reset.
+/// Watchdog handle.  Heap mode: `try ove.Watchdog.create(timeout_ms)`.
+/// Zero-heap mode: `var w: Watchdog = undefined; try w.init(timeout_ms)`.
+/// Must be fed periodically to prevent system reset.
 pub const Watchdog = watchdog.Watchdog;
 
 /// GPIO pin configuration and interrupt registration.
@@ -208,7 +230,9 @@ pub const Model = infer.Model;
 
 /// BSD-like sockets, DNS resolution, and network interface management.
 pub const net = @import("net.zig");
-/// Generic socket address (IPv4/IPv6). Value type.
+/// Socket address.  Value type.  Zig-side constructors are IPv4-only
+/// (`Address.ipv4`, `Address.any`); the underlying C struct supports
+/// IPv6 but the binding does not expose it yet.
 pub const Address = net.Address;
 /// Network interface handle.
 pub const NetIf = net.NetIf;

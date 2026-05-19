@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 /**
+ * @file audio_device.h
  * @defgroup ove_audio_device Audio device node factories
  * @ingroup ove_audio
  * @brief Hardware-backed source and sink node factories for the audio graph.

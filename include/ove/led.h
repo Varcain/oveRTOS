@@ -10,6 +10,7 @@
 #define OVE_LED_H
 
 /**
+ * @file led.h
  * @defgroup ove_led LED
  * @brief Board LED control.
  *

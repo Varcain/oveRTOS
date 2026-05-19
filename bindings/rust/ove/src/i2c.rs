@@ -7,7 +7,8 @@
 //! I2C bus master driver.
 //!
 //! [`I2c`] wraps an opaque `ove_i2c_t` handle and exposes a method-shaped
-//! API.  Trait impls (`embedded_hal::i2c::I2c`, ...) attach in C2.
+//! API.  An `embedded_hal::i2c::I2c` impl is provided when the
+//! `embedded-hal` Cargo feature is enabled.
 
 use crate::bindings;
 use crate::error::{Error, Result};

@@ -329,14 +329,19 @@ class Dir
 	 * @brief Reads the next entry from the directory.
 	 *
 	 * @param[out] entry Pointer to a dirent struct to receive the entry data.
-	 * @return On success, `true` if an entry was read into @p entry,
-	 *         `false` at end-of-directory.  On failure, an
-	 *         `unexpected` @ref Error.
+	 * @return On success, `true` if an entry was read into @p entry.
+	 *         The substrate signals end-of-directory with @c OVE_ERR_EOF
+	 *         (a negative code), so EOF currently surfaces as
+	 *         `unexpected(Error::Eof)` — callers should treat that as a
+	 *         non-error terminator rather than a fault.  Any other rc
+	 *         maps to its corresponding @ref Error variant.
 	 *
-	 * @note The substrate signals end-of-directory with a positive
-	 *       (non-OK) rc; that's mapped to `Result<bool>{false}` here
-	 *       so callers can distinguish "no more entries" from "real
-	 *       error" without inspecting magic numbers.
+	 * TODO(doc): the wrapper has a vestigial `rc > 0` branch that
+	 *           maps a positive rc to `Result<bool>{false}` for "no
+	 *           more entries"; the current substrate never returns a
+	 *           positive rc here, so that branch is dead.  Once either
+	 *           the substrate or the wrapper is reconciled, update the
+	 *           `@return` text to drop the @c Error::Eof carve-out.
 	 */
 	[[nodiscard]] Result<bool> readdir(struct ove_dirent *entry) noexcept
 	{

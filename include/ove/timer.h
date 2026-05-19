@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file timer.h
  * @defgroup ove_timer Software timer
  * @brief Periodic and one-shot software timer API backed by the active RTOS.
  *

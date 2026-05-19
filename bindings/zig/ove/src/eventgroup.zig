@@ -4,6 +4,14 @@
 //
 // This file is part of oveRTOS.
 
+//! Event group — bitmask-based wakeups with `wait`/`waitFor`/`waitUntil`
+//! and an ISR-safe `setBitsFromIsr` producer.
+//!
+//! Wraps `ove/eventgroup.h`. Per-op narrow error sets surface only the
+//! timeout vs the substrate `Error` set; bounded waits accept a typed
+//! `Duration` or `Instant`. Available when `CONFIG_OVE_EVENTGROUP` is
+//! enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");

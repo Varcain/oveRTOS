@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file trace.h
  * @brief Thread-state / sync-primitive trace stream.
  *
  * When CONFIG_OVE_TRACE_STREAM is enabled, every thread state transition
@@ -57,28 +58,36 @@ enum {
 #ifdef CONFIG_OVE_TRACE_STREAM
 
 /**
- * Emit a thread state transition.
+ * @brief Emit a thread state transition.
  *
  * Called from backend thread code that already knows the current thread
- * handle. @old_state and @new_state use the ove_thread_state_t encoding.
+ * handle.
+ *
+ * @param[in] thread_handle Stable backend handle of the thread changing state.
+ * @param[in] old_state     Previous state, using the @c ove_thread_state_t encoding.
+ * @param[in] new_state     New state, using the @c ove_thread_state_t encoding.
  */
 void ove_trace_emit_state(uintptr_t thread_handle, int old_state, int new_state);
 
 /**
- * Emit a sync-primitive marker.
+ * @brief Emit a sync-primitive marker.
  *
- * @prim:   one of OVE_TRACE_PRIM_*
- * @act:    one of OVE_TRACE_ACT_*
- * @object: address of the primitive (low 16 bits survive into the record)
+ * @param[in] thread_handle Stable backend handle of the emitting thread.
+ * @param[in] prim          One of @c OVE_TRACE_PRIM_*.
+ * @param[in] act           One of @c OVE_TRACE_ACT_*.
+ * @param[in] object        Address of the primitive (low 16 bits survive
+ *                          into the record).
  */
 void ove_trace_emit_mark(uintptr_t thread_handle, uint8_t prim, uint8_t act, uintptr_t object);
 
 /**
- * Return the current thread's stable handle, or 0 if none.
+ * @brief Return the current thread's stable handle, or 0 if none.
  *
  * Supplied by the thread backend (posix_thread.c, wasm_thread.c). Used by
- * OVE_TRACE_MARK_CURRENT to tag markers emitted from sync-primitive code
- * that doesn't otherwise have the thread pointer in scope.
+ * @c OVE_TRACE_MARK_CURRENT to tag markers emitted from sync-primitive
+ * code that doesn't otherwise have the thread pointer in scope.
+ *
+ * @return Stable backend handle of the calling thread, or 0 if unavailable.
  */
 uintptr_t ove_backend_thread_current_handle(void);
 

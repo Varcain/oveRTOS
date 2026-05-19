@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file nvs.h
  * @defgroup ove_nvs Non-Volatile Storage
  * @ingroup ove_data
  * @brief Key-value store backed by non-volatile memory.

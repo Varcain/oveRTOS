@@ -4,6 +4,11 @@
 //
 // This file is part of oveRTOS.
 
+//! Console UART I/O — init, byte/slice write, formatted print, and blocking read.
+//!
+//! Wraps `ove/console.h`. `print()` integrates with `std.fmt` for inline
+//! formatting; routed to the board's default UART once `init()` has run.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

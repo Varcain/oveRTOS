@@ -4,6 +4,12 @@
 //
 // This file is part of oveRTOS.
 
+//! I²C master driver — write, read, and write-then-read transactions plus a
+//! `probe` helper for bus scanning.
+//!
+//! Wraps `ove/i2c.h`. Timeouts are nanoseconds; pass `OVE_WAIT_FOREVER` for an
+//! indefinite block. Available when `CONFIG_OVE_I2C` is enabled.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

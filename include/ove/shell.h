@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file shell.h
  * @defgroup ove_shell Shell
  * @ingroup ove_ui
  * @brief Interactive command-line interface over the system console.

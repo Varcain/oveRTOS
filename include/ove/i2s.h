@@ -10,6 +10,7 @@
 #define OVE_I2S_H
 
 /**
+ * @file i2s.h
  * @defgroup ove_i2s I2S
  * @brief I2S / SAI audio bus driver.
  *
@@ -112,6 +113,11 @@ void ove_i2s_destroy(ove_i2s_t i2s);
  * @brief Set the RX half-buffer completion callback.
  *
  * Called from ISR when a DMA RX half-buffer is ready for processing.
+ *
+ * @param[in] i2s       I2S handle.
+ * @param[in] cb        Callback invoked on RX half/full transfer; may be NULL to clear.
+ * @param[in] user_data Opaque pointer forwarded to @p cb.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
 
@@ -120,6 +126,11 @@ int ove_i2s_set_rx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
  *
  * Called from ISR when a DMA TX half-buffer has been transmitted and
  * is safe to refill.
+ *
+ * @param[in] i2s       I2S handle.
+ * @param[in] cb        Callback invoked on TX half/full transfer; may be NULL to clear.
+ * @param[in] user_data Opaque pointer forwarded to @p cb.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
 
@@ -130,21 +141,33 @@ int ove_i2s_set_tx_callback(ove_i2s_t i2s, ove_i2s_cb_t cb, void *user_data);
  *
  * Begins circular DMA transfers.  TX starts first to generate clocks
  * for a synchronous RX slave.
+ *
+ * @param[in] i2s I2S handle.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_i2s_start(ove_i2s_t i2s);
 
 /**
  * @brief Stop I2S DMA streaming.
+ *
+ * @param[in] i2s I2S handle.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_i2s_stop(ove_i2s_t i2s);
 
 /**
  * @brief Pause I2S DMA streaming (can be resumed).
+ *
+ * @param[in] i2s I2S handle.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_i2s_pause(ove_i2s_t i2s);
 
 /**
  * @brief Resume I2S DMA streaming after pause.
+ *
+ * @param[in] i2s I2S handle.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_i2s_resume(ove_i2s_t i2s);
 

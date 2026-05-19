@@ -4,6 +4,12 @@
 //
 // This file is part of oveRTOS.
 
+//! SPI master driver — full-duplex `transfer`, with explicit CS descriptor
+//! and per-call timeout.
+//!
+//! Wraps `ove/spi.h`. Pass `null` for `tx` to do an RX-only transfer, or
+//! `null` for `rx` to do TX-only. Available when `CONFIG_OVE_SPI` is enabled.
+
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
 const Error = err.Error;

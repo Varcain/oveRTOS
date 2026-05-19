@@ -10,6 +10,7 @@
 #define OVE_SPI_H
 
 /**
+ * @file spi.h
  * @defgroup ove_spi SPI
  * @brief SPI bus master driver.
  *

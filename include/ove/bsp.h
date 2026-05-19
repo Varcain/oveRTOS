@@ -16,6 +16,7 @@
 #define OVE_BSP_H
 
 /**
+ * @file bsp.h
  * @defgroup ove_bsp BSP Compatibility Shim
  * @brief Backward-compatible Board Support Package API.
  *

@@ -4,6 +4,13 @@
 //
 // This file is part of oveRTOS.
 
+//! Error set and FFI conversion helpers.
+//!
+//! `Error` is the binding's broad error union — every fallible `ove_*` C call
+//! lowers an `int` return code into an `Error` via `fromCode(rc)`. Per-op
+//! narrow sets (e.g. `Queue.SendError`, `Mutex.LockError`) are defined in
+//! their owning modules and inherit from this set.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 
@@ -58,7 +65,10 @@ pub const Error = error{
     NotFound,
 };
 
-/// Sentinel value for `timeout_ns` parameters meaning "block indefinitely".
+/// Raw nanosecond sentinel meaning "block indefinitely" — the binding's
+/// underlying value for `OVE_WAIT_FOREVER`.  Used internally by the
+/// forever-blocking helpers; typed callers should prefer
+/// [`time.Instant.forever`] for `*Until` deadline methods.
 pub const wait_forever: u64 = c.OVE_WAIT_FOREVER;
 
 inline fn mapErrorCode(rc: c_int) Error {

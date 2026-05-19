@@ -99,6 +99,8 @@ namespace ove::gpio
 
 /**
  * @brief Enables the interrupt for a GPIO pin (must be registered first).
+ * @param[in] port GPIO port index.
+ * @param[in] pin  Pin number within the port.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */
@@ -109,6 +111,8 @@ namespace ove::gpio
 
 /**
  * @brief Disables the interrupt for a GPIO pin.
+ * @param[in] port GPIO port index.
+ * @param[in] pin  Pin number within the port.
  * @return Empty `Result<void>` on success; `unexpected` @ref Error
  *         on failure.
  */

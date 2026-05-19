@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file watchdog.h
  * @defgroup ove_watchdog Watchdog
  * @ingroup ove_core
  * @brief Hardware or software watchdog timer control.

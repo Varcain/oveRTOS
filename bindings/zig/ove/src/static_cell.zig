@@ -4,6 +4,12 @@
 //
 // This file is part of oveRTOS.
 
+//! `StaticCell(T)` — an init-once container for zero-heap patterns.
+//!
+//! Holds a value that is constructed exactly once at startup and then shared
+//! by reference. Used by the `shared!` macros in zero-heap apps where the
+//! kernel object must live in BSS and survive `appMain()` returning.
+
 const std = @import("std");
 
 /// Init-once container for zero-heap patterns.

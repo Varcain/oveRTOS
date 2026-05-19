@@ -4,7 +4,13 @@
 //
 // This file is part of oveRTOS.
 
-// Time utilities (trailing underscore avoids std.time clash)
+//! Time utilities — typed `Duration` and `Instant` with saturating arithmetic.
+//!
+//! `Duration.millis(N)` / `.secs(N)` / `.nanos(N)` produce timeouts that
+//! every bounded-wait API in the binding accepts. `Instant.now()` reads the
+//! monotonic clock; `Instant + Duration` yields a deadline for `*Until`
+//! variants. The raw FFI sentinel `WAIT_FOREVER` is also re-exported for
+//! direct C-call use.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
@@ -84,18 +90,17 @@ pub inline fn delayUs(microseconds: u32) void {
     c.ove_time_delay_us(microseconds);
 }
 
-// For timeout expressions, use Zig's stdlib constants directly — that's
-// the idiomatic Zig pattern (mirrors std.time.sleep callers):
-//   try queue.send(&item, 100 * std.time.ns_per_ms);
-//   try mutex.lock(5 * std.time.ns_per_s);
+// Prefer the typed `Duration` constructors for bounded waits:
+//   try queue.sendFor(&item, .millis(100));
+//   try mutex.lockFor(.secs(5));
+// Raw u64 nanosecond timeouts are only used at the FFI boundary now.
 
 /// Return the current monotonic time in nanoseconds.
 ///
 /// Like `getNs()` but skips the error-mapping branch — the substrate's
 /// `ove_time_get_ns` is infallible on every supported backend.  Use
-/// this when composing deadlines for `lockUntil` / `takeUntil` etc.:
-///   const deadline = ove.time.nowSteadyNs() + 100 * std.time.ns_per_ms;
-///   try mutex.lockUntil(deadline);
+/// this when composing raw nanosecond deadlines; the typed deadline
+/// path uses `Instant.now().addDuration(...)` paired with `lockUntil`.
 pub inline fn nowSteadyNs() u64 {
     var out: u64 = 0;
     _ = c.ove_time_get_ns(&out);

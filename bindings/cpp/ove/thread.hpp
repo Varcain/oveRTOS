@@ -37,12 +37,13 @@ namespace ove
  * Workers built with the cooperative `Thread` constructor receive a
  * `stop_token` as their entry argument:
  * @code
- * ove::Thread<4096> th("worker", ove::Priority::Normal,
+ * ove::Thread<4096> th(
  *     [](ove::stop_token tok) {
  *         while (!tok.stop_requested()) {
  *             do_work();
  *         }
- *     });
+ *     },
+ *     OVE_PRIO_NORMAL, "worker");
  * @endcode
  *
  * The token can be passed to helper functions that need to bail out
@@ -383,12 +384,13 @@ template <size_t StackSize = 0> class Thread
 	 * clean exit instead of deadlocking the join wait.
 	 *
 	 * @code
-	 * ove::Thread<4096> th("worker", ove::Priority::Normal,
+	 * ove::Thread<4096> th(
 	 *     [](ove::stop_token tok) {
 	 *         while (!tok.stop_requested()) {
 	 *             do_work();
 	 *         }
-	 *     });
+	 *     },
+	 *     OVE_PRIO_NORMAL, "worker");
 	 * @endcode
 	 *
 	 * The entry must be a stateless callable (function pointer or
@@ -845,17 +847,23 @@ using ThreadInfo = struct ove_thread_info;
 
 } /* namespace ove */
 
-/* ── ove::this_thread:: ─────────────────────────────────────────────
+/**
+ * @namespace ove::this_thread
+ * @brief Free functions that operate on the currently running thread.
  *
- * Free functions that operate on "the currently running thread."
- * Mirrors `std::this_thread::`.  Previously these lived as static
- * members on `Thread<>` (e.g. `Thread<>::sleep_ms(500)`), which
- * read as "an operation on a thread" when semantically it's "the
- * current thread."  Hard rename for clarity.
+ * Mirrors `std::this_thread::`. Use these for sleep, yield, and self-identification
+ * from inside a thread entry function. Previously these lived as static members on
+ * `Thread<>` (e.g. `Thread<>::sleep_ms(500)`), which read as "an operation on a
+ * thread" when semantically it's "the current thread."
  */
 namespace ove::this_thread
 {
 
+/**
+ * @brief Suspend the calling thread for at least @p ms milliseconds.
+ *        Plain-millisecond analog of `std::this_thread::sleep_for`.
+ * @param[in] ms Sleep duration in milliseconds. Pass `0` to yield for one scheduler tick.
+ */
 inline void sleep_ms(uint32_t ms) noexcept
 {
 	ove_thread_sleep_ms(ms);
@@ -864,6 +872,10 @@ inline void sleep_ms(uint32_t ms) noexcept
 /**
  * @brief Suspend the calling thread for the given chrono duration.
  *        @c std::this_thread::sleep_for analog.
+ * @tparam Rep    Underlying arithmetic type of @p d.
+ * @tparam Period Tick period of @p d.
+ * @param[in] d   Sleep duration; rounded down to whole milliseconds (the
+ *                substrate's resolution).
  */
 template <typename Rep, typename Period>
 inline void sleep_for(std::chrono::duration<Rep, Period> d) noexcept
@@ -872,6 +884,10 @@ inline void sleep_for(std::chrono::duration<Rep, Period> d) noexcept
 	ove_thread_sleep_ms(ms > 0 ? static_cast<uint32_t>(ms) : 0u);
 }
 
+/**
+ * @brief Voluntarily relinquish the CPU to another ready thread of equal or higher
+ *        priority. @c std::this_thread::yield analog.
+ */
 inline void yield() noexcept
 {
 	ove_thread_yield();

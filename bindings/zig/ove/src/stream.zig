@@ -4,6 +4,14 @@
 //
 // This file is part of oveRTOS.
 
+//! Byte-stream ring buffer — `Stream(N)` with `send`/`recv` and bounded-wait
+//! variants.
+//!
+//! Wraps `ove/stream.h`. Unlike `Queue`, streams transport raw bytes (not
+//! typed items) and surface a `trigger` threshold at construction time: a
+//! receiver wakes only after at least `trigger` bytes are available.
+//! Available when `CONFIG_OVE_STREAM` is enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
@@ -68,6 +76,9 @@ pub fn Stream(comptime size: usize) type {
             self.allocator.destroy(self.backing);
         }
 
+        /// Forever-blocking send.  Returns the number of bytes actually
+        /// written (always equal to `data.len` on the WAIT_FOREVER path —
+        /// the substrate only short-writes under bounded timeouts).
         pub inline fn send(self: Self, data: []const u8) usize {
             var sent: usize = 0;
             const rc = c.ove_stream_send(self.handle, data.ptr, data.len, WAIT_FOREVER, &sent);
@@ -90,6 +101,9 @@ pub fn Stream(comptime size: usize) type {
             return sent;
         }
 
+        /// Forever-blocking receive.  Returns the number of bytes
+        /// actually read (≥ the stream's `trigger` setting — the
+        /// substrate only wakes once at least that many are available).
         pub inline fn recv(self: Self, buf: []u8) usize {
             var received: usize = 0;
             const rc = c.ove_stream_receive(self.handle, buf.ptr, buf.len, WAIT_FOREVER, &received);

@@ -9,14 +9,17 @@
 //! All `#[macro_export]` macros are re-exported at crate root, so the
 //! location of this file is purely organizational.
 
-/// Generate `Debug`, `Drop`, and thread-safety impls for an oveRTOS handle
-/// wrapper struct that stores a nullable handle in a field named `handle`.
+/// Generate `Drop` and thread-safety impls (plus `Debug` for the
+/// non-generic forms) for an oveRTOS handle wrapper struct that stores a
+/// nullable handle in a field named `handle`.
 ///
 /// # Variants
 ///
-/// - `(Name, destroy_fn, deinit_fn)` — Send + Sync
-/// - `(Name, destroy_fn, deinit_fn, send_only)` — Send only (no Sync)
-/// - `(Name<const N: usize>, destroy_fn, deinit_fn)` — const-generic, Send + Sync
+/// - `(Name, destroy_fn, deinit_fn)` — emits `Debug`, `Drop`, `Send`, `Sync`.
+/// - `(Name, destroy_fn, deinit_fn, send_only)` — emits `Debug`, `Drop`,
+///   `Send`. No `Sync` impl.
+/// - `(Name<const N: usize>, destroy_fn, deinit_fn)` — const-generic;
+///   emits `Drop`, `Send`, `Sync` only (no `Debug`).
 #[doc(hidden)]
 #[macro_export]
 macro_rules! ove_handle_impl {
@@ -248,7 +251,8 @@ macro_rules! eventgroup {
 /// sample_bytes)` macro: in zero-heap mode emits a per-call-site `static`
 /// backing array sized by `nodes * frames * channels * sample_bytes` bytes
 /// and attaches it to the graph automatically; in heap mode just calls
-/// [`crate::audio::Graph::new`].  Returns [`crate::Result`].
+/// [`crate::audio::Graph::new`].  Yields a
+/// [`Result`](crate::Result)`<`[`Graph`](crate::audio::Graph)`>`.
 ///
 /// All arguments must be constant expressions.
 ///
@@ -523,6 +527,9 @@ macro_rules! work {
 }
 
 /// Create a [`crate::Watchdog`] that works in both heap and zero-heap modes.
+///
+/// The argument is the timeout in **milliseconds**, matching
+/// [`crate::Watchdog::new`].
 #[cfg(has_watchdog)]
 #[macro_export]
 macro_rules! watchdog {
@@ -567,6 +574,7 @@ macro_rules! shared_mut {
     };
 }
 
+/// Declare a `static` [`crate::lvgl::EventHandler<T>`] for LVGL event callbacks.
 ///
 /// Bundles a `&'static InitCell<T>` of shared state with a safe
 /// `fn(&T, EventCtx)` callback. Pass the resulting static to

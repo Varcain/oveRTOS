@@ -10,6 +10,7 @@
 #define OVE_NET_SNTP_H
 
 /**
+ * @file net_sntp.h
  * @defgroup ove_net_sntp SNTP Client
  * @brief Simple NTP client for time synchronization.
  *

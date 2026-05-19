@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file queue.h
  * @defgroup ove_queue Message queue
  * @brief Fixed-size item FIFO queue for inter-thread and ISR-to-thread
  *        communication.
@@ -147,6 +148,12 @@ OVE_NODISCARD int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeo
  * Pass @c OVE_WAIT_FOREVER for an indefinite block.
  *
  * @note Requires @c CONFIG_OVE_QUEUE.
+ *
+ * @param[in] q           Queue handle.
+ * @param[in] data        Pointer to the item to copy into the queue.
+ * @param[in] deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                        or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_queue_send.
  */
 OVE_NODISCARD static inline int ove_queue_send_until(ove_queue_t q, const void *data,
 						     uint64_t deadline_ns)
@@ -190,6 +197,13 @@ OVE_NODISCARD int ove_queue_receive(ove_queue_t q, void *buf, uint64_t timeout_n
  * indefinite block.
  *
  * @note Requires @c CONFIG_OVE_QUEUE.
+ *
+ * @param[in]  q           Queue handle.
+ * @param[out] buf         Buffer to receive the item; must be at least
+ *                         @c item_size bytes.
+ * @param[in]  deadline_ns Absolute deadline against @ref ove_time_now_steady_ns,
+ *                         or @c OVE_WAIT_FOREVER.
+ * @return Same set of return codes as @ref ove_queue_receive.
  */
 OVE_NODISCARD static inline int ove_queue_receive_until(ove_queue_t q, void *buf,
 							uint64_t deadline_ns)

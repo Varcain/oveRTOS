@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file fs.h
  * @defgroup ove_fs File System
  * @ingroup ove_data
  * @brief VFS abstraction for portable file and directory access.
@@ -134,32 +135,45 @@ int ove_fs_opendir_init(ove_dir_t *dir, ove_dir_storage_t *storage, const char *
 int ove_fs_closedir_deinit(ove_dir_t dir);
 
 /**
- * @brief Open a file.
+ * @brief Open a file (heap-backed handle).
  *
  * Opens the file at @p path with the given @p flags. The returned handle
  * must be closed with @ref ove_fs_close when no longer needed.
- * In zero-heap mode, the backend uses a static pool instead of malloc.
  *
  * @param[out] file   Receives the opened file handle.
  * @param[in]  path   Absolute path of the file to open.
  * @param[in]  flags  Combination of @c OVE_FS_O_* flags.
  * @return OVE_OK on success, negative error code on failure.
- * @note Requires @c CONFIG_OVE_FS.
+ * @note Requires @c CONFIG_OVE_FS and (per-backend) @c OVE_HEAP_FS. In
+ *       zero-heap mode use @ref ove_fs_open_init with caller-supplied
+ *       storage instead.
  */
 int ove_fs_open(ove_file_t *file, const char *path, int flags);
 
 /**
  * @brief Close a file handle returned by @ref ove_fs_open.
+ *
+ * @param[in] file File handle to close.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_fs_close(ove_file_t file);
 
 /**
- * @brief Open a directory (heap or backend-managed allocation).
+ * @brief Open a directory (heap-backed handle).
+ *
+ * @param[out] dir  Receives the opened directory handle.
+ * @param[in]  path Absolute path of the directory.
+ * @return OVE_OK on success, negative error code on failure.
+ * @note Requires @c CONFIG_OVE_FS and (per-backend) @c OVE_HEAP_FS. In
+ *       zero-heap mode use @ref ove_fs_opendir_init.
  */
 int ove_fs_opendir(ove_dir_t *dir, const char *path);
 
 /**
  * @brief Close a directory handle returned by @ref ove_fs_opendir.
+ *
+ * @param[in] dir Directory handle to close.
+ * @return OVE_OK on success, negative error code on failure.
  */
 int ove_fs_closedir(ove_dir_t dir);
 

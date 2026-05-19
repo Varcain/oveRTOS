@@ -24,6 +24,15 @@ namespace ove::audio
 {
 
 /**
+ * @namespace ove::audio
+ * @brief Audio graph engine — typed node factories, device configuration helpers,
+ *        and graph lifecycle (init/build/start/stop/process).
+ *
+ * Available when `CONFIG_OVE_AUDIO` is enabled. The Rust analog is
+ * `ove::audio` and the Zig analog is `ove.audio`.
+ */
+
+/**
  * @brief Build an audio device config for the I2S transport.
  *
  * Mirrors `ove::audio::device_cfg_i2s` in the Rust binding and

@@ -10,6 +10,7 @@
 #define OVE_NET_HTTP_H
 
 /**
+ * @file net_http.h
  * @defgroup ove_net_http HTTP Client
  * @brief Portable HTTP/1.1 client for REST APIs.
  *

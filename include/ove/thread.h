@@ -7,6 +7,7 @@
  */
 
 /**
+ * @file thread.h
  * @defgroup ove_thread Thread management
  * @brief Create, configure, and query RTOS threads across all supported backends.
  *

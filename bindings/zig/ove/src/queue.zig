@@ -4,6 +4,15 @@
 //
 // This file is part of oveRTOS.
 
+//! Fixed-size FIFO message queue — `Queue(T, N)`.
+//!
+//! Wraps `ove/queue.h`. Items are copied by `memcpy(sizeof(T))` on send/recv,
+//! so `T` must be trivially-copyable. Forever-blocking forms (`send`, `recv`)
+//! return `void` / `T`; bounded forms (`sendFor`, `recvFor`, `sendUntil`,
+//! `recvUntil`) take a typed `Duration`/`Instant` and surface a narrow error
+//! set (`SendError`, `RecvError`). Available when `CONFIG_OVE_QUEUE` is
+//! enabled.
+
 const std = @import("std");
 const c = @import("c.zig").raw;
 const err = @import("error.zig");
@@ -14,9 +23,15 @@ const Instant = time_mod.Instant;
 const WAIT_FOREVER = c.OVE_WAIT_FOREVER;
 
 // Per-operation narrow error sets.
-/// Error set for `Queue.sendFor` / `sendUntil` / `sendFromIsr`.
+/// Error set returned by `Queue.sendFor` / `sendUntil` / `sendFromIsr`.
+/// Bounded waits surface both substrate codes; ISR sends never see
+/// `Timeout` in practice but the set is unified for ergonomic
+/// `try`/`catch` composition.
 pub const SendError = error{ QueueFull, Timeout };
-/// Error set for `Queue.recvFor` / `recvUntil` / `receiveFromIsr`.
+/// Error set returned by `Queue.recvFor` / `recvUntil` / `receiveFromIsr`.
+/// Bounded waits surface both substrate codes; ISR receives never see
+/// `Timeout` in practice but the set is unified for ergonomic
+/// `try`/`catch` composition.
 pub const RecvError = error{ QueueEmpty, Timeout };
 
 inline fn mapSendError(comptime ctx: []const u8, rc: c_int) SendError {
@@ -48,7 +63,8 @@ inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
 /// ```zig
 /// var q = try ove.Queue(u32, 8).create(allocator);
 /// defer q.deinit();
-/// q.send(&42);
+/// const item: u32 = 42;
+/// q.send(&item);
 /// const v = q.recv();
 /// ```
 pub fn Queue(comptime T: type, comptime N: comptime_int) type {
@@ -105,6 +121,10 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
             panicOnRc("Queue.send", rc);
         }
 
+        /// Non-blocking enqueue.  Returns `error.QueueFull` when no slot
+        /// is available (the substrate may surface this as either
+        /// `OVE_ERR_QUEUE_FULL` or `OVE_ERR_TIMEOUT` for a 0-timeout
+        /// send; both are normalised here).
         pub inline fn trySend(self: Self, item: *const T) error{QueueFull}!void {
             const rc = c.ove_queue_send(self.handle, @ptrCast(item), 0);
             if (rc >= 0) return;
@@ -130,6 +150,10 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
             return val;
         }
 
+        /// Non-blocking dequeue.  Returns `null` when no item is
+        /// available (the substrate may surface this as either
+        /// `OVE_ERR_QUEUE_EMPTY` or `OVE_ERR_TIMEOUT` for a 0-timeout
+        /// receive; both are normalised here).
         pub inline fn tryRecv(self: Self) ?T {
             var val: T = undefined;
             const rc = c.ove_queue_receive(self.handle, @ptrCast(&val), 0);

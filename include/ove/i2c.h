@@ -10,6 +10,7 @@
 #define OVE_I2C_H
 
 /**
+ * @file i2c.h
  * @defgroup ove_i2c I2C
  * @brief I2C bus master driver.
  *

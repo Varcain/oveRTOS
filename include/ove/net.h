@@ -10,6 +10,7 @@
 #define OVE_NET_H
 
 /**
+ * @file net.h
  * @defgroup ove_net Networking
  * @brief BSD-like socket API, DNS resolution, and network interface control.
  *

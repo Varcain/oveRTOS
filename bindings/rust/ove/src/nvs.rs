@@ -29,7 +29,7 @@ pub fn init() -> Result<()> {
 /// if the stored value is shorter.
 ///
 /// # Errors
-/// Returns [`Error::NotRegistered`] if the key does not exist, or another error
+/// Returns [`Error::NotFound`] if the key does not exist, or another error
 /// if the read fails.
 pub fn read(key: &[u8], buf: &mut [u8]) -> Result<usize> {
     let mut out_len: usize = 0;
@@ -64,8 +64,11 @@ pub fn write(key: &[u8], data: &[u8]) -> Result<()> {
 
 /// Erase the entry for `key` from NVS. `key` must be `\0`-terminated.
 ///
+/// No-op when the key does not exist (the C API treats erase-of-missing
+/// as success).
+///
 /// # Errors
-/// Returns [`Error::NotRegistered`] if the key does not exist.
+/// Returns an error if the underlying storage backend reports a failure.
 pub fn erase(key: &[u8]) -> Result<()> {
     let rc = unsafe { bindings::ove_nvs_erase(key.as_ptr() as *const _) };
     Error::from_code(rc)
