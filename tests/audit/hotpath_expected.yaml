@@ -244,7 +244,8 @@ host_posix_benchmark_rust:
       # destroy reaches ove_thread_destroy via Drop on the Thread handle.
       # `*` suffix matches any monomorphisation hash (rebuild-volatile).
       allowed_calls:
-        - "_ZN3ove6thread6Thread5spawn17h*"
+        - "_ZN3ove6thread7Builder12spawn_simple17h*"
+        - ove_thread_request_stop
         - ove_thread_destroy
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -266,7 +267,7 @@ host_posix_benchmark_rust:
       pattern: '_ZN.+MUTEX_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 36
       allowed_calls:
-        - "_ZN3ove4sync5Mutex3new17h*"
+        - "_ZN3ove4sync14Mutex$LT$T$GT$3new17h*"
         - ove_mutex_destroy
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -330,7 +331,7 @@ host_posix_benchmark_rust:
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 56
       allowed_calls:
-        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove9init_cell17InitCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
         - ove_stream_send
@@ -358,10 +359,22 @@ host_posix_benchmark_zig:
       max_instructions: 10
       allowed_calls: [ove_thread_sleep_ms]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # Modernised binding: caller-supplied allocator + ove_thread_init
+    # (replaces ove_thread_create); deinit goes through request_stop +
+    # ove_thread_deinit; memset zeroes the storage backing.  Anonymous
+    # debug.panic_* stubs come from panicOnRc at the FFI boundary.
     - name: "Zig zig_bench_run_thread_create_destroy"
       pattern: '^zig_bench_run_thread_create_destroy$'
-      max_instructions: 40
-      allowed_calls: [ove_thread_create, ove_thread_destroy]
+      max_instructions: 200
+      allowed_calls:
+        - ove_thread_init
+        - ove_thread_request_stop
+        - ove_thread_deinit
+        - "memset*"
+        - "main.spawnThreadInPlace*"
+        - "main.createInPlace*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -370,6 +383,7 @@ host_posix_benchmark_zig:
         - ove_sem_give
         - ove_sem_take
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Mutex ─────────────────────────────────────────────────
     - name: "Zig zig_bench_run_sync_mutex_lock_unlock"
@@ -379,11 +393,20 @@ host_posix_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # Modernised binding: ove_mutex_init replaces ove_mutex_create.
+    # createInPlace is the bench helper that calls Mutex.create(allocator).
     - name: "Zig zig_bench_run_sync_mutex_create_destroy"
       pattern: '^zig_bench_run_sync_mutex_create_destroy$'
-      max_instructions: 28
-      allowed_calls: [ove_mutex_create, ove_mutex_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_mutex_init
+        - ove_mutex_deinit
+        - "main.createInPlace*"
+        - "sync.Mutex.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_contention_2t"
       pattern: '^zig_bench_run_sync_mutex_contention_2t$'
@@ -392,6 +415,7 @@ host_posix_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock"
       pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
@@ -400,6 +424,7 @@ host_posix_benchmark_zig:
         - ove_recursive_mutex_lock
         - ove_recursive_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Semaphore ────────────────────────────────────────────
     - name: "Zig zig_bench_run_sync_sem_take_give"
@@ -409,22 +434,30 @@ host_posix_benchmark_zig:
         - ove_sem_take
         - ove_sem_give
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_create_destroy"
       pattern: '^zig_bench_run_sync_sem_create_destroy$'
-      max_instructions: 28
-      allowed_calls: [ove_sem_create, ove_sem_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_sem_init
+        - ove_sem_deinit
+        - "main.createInPlace*"
+        - "sync.Semaphore.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── Condvar / event ──────────────────────────────────────
     - name: "Zig zig_bench_run_sync_condvar_signal_wait"
       pattern: '^zig_bench_run_sync_condvar_signal_wait$'
-      max_instructions: 32
+      max_instructions: 40
       allowed_calls:
         - ove_mutex_lock
         - ove_mutex_unlock
         - ove_condvar_wait
         - ove_condvar_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_event_signal_wait"
       pattern: '^zig_bench_run_sync_event_signal_wait$'
@@ -433,6 +466,7 @@ host_posix_benchmark_zig:
         - ove_event_wait
         - ove_event_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     # ─── IPC (queue / stream) ─────────────────────────────────
     - name: "Zig zig_bench_run_queue_send_receive"
@@ -442,11 +476,18 @@ host_posix_benchmark_zig:
         - ove_queue_send
         - ove_queue_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_create_destroy"
       pattern: '^zig_bench_run_queue_create_destroy$'
-      max_instructions: 28
-      allowed_calls: [ove_queue_create, ove_queue_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_queue_init
+        - ove_queue_deinit
+        - "main.createInPlace*"
+        - "queue.Queue*.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_stream_send_recv_64B"
       pattern: '^zig_bench_run_stream_send_recv_64B$'
@@ -455,6 +496,7 @@ host_posix_benchmark_zig:
         - ove_stream_send
         - ove_stream_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 # ============================================================================
@@ -642,7 +684,8 @@ stm32f746_freertos_benchmark_rust:
       pattern: '_ZN.+THREAD_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 80
       allowed_calls:
-        - "_ZN3ove6thread6Thread5spawn17h*"
+        - "_ZN3ove6thread7Builder12spawn_simple17h*"
+        - ove_thread_request_stop
         - ove_thread_destroy
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -667,7 +710,7 @@ stm32f746_freertos_benchmark_rust:
         # x86 does — direct ove_mutex_create + Error::from_code branch.
         - ove_mutex_create
         - ove_mutex_destroy
-        - "_ZN3ove4sync5Mutex3new17h*"
+        - "_ZN3ove4sync14Mutex$LT$T$GT$3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -735,7 +778,7 @@ stm32f746_freertos_benchmark_rust:
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 70
       allowed_calls:
-        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove9init_cell17InitCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
         # Stream::send / Stream::receive are #[inline] — when LTO inlines
@@ -758,10 +801,23 @@ stm32f746_freertos_benchmark_zig:
       max_instructions: 12
       allowed_calls: [ove_thread_sleep_ms]
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # Modernised binding: ove_thread_init replaces ove_thread_create;
+    # deinit goes through request_stop + ove_thread_deinit; memset zeroes
+    # the storage backing.  Anonymous debug.panic_* stubs come from
+    # panicOnRc at the FFI boundary.
     - name: "Zig zig_bench_run_thread_create_destroy (ARM)"
       pattern: '^zig_bench_run_thread_create_destroy$'
-      max_instructions: 56
-      allowed_calls: [ove_thread_create, ove_thread_destroy]
+      max_instructions: 200
+      allowed_calls:
+        - ove_thread_init
+        - ove_thread_request_stop
+        - ove_thread_deinit
+        - "memset*"
+        - "__aeabi_memset*"
+        - "main.spawnThreadInPlace*"
+        - "main.createInPlace*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch (ARM)"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -770,6 +826,7 @@ stm32f746_freertos_benchmark_zig:
         - ove_sem_give
         - ove_sem_take
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_lock_unlock (ARM)"
       pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
@@ -778,11 +835,20 @@ stm32f746_freertos_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
+    # Modernised binding: ove_mutex_init replaces ove_mutex_create.
+    # createInPlace is the bench helper that calls Mutex.create(allocator).
     - name: "Zig zig_bench_run_sync_mutex_create_destroy (ARM)"
       pattern: '^zig_bench_run_sync_mutex_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_mutex_create, ove_mutex_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_mutex_init
+        - ove_mutex_deinit
+        - "main.createInPlace*"
+        - "sync.Mutex.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_contention_2t (ARM)"
       pattern: '^zig_bench_run_sync_mutex_contention_2t$'
@@ -791,6 +857,7 @@ stm32f746_freertos_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock (ARM)"
       pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
@@ -799,6 +866,7 @@ stm32f746_freertos_benchmark_zig:
         - ove_recursive_mutex_lock
         - ove_recursive_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_take_give (ARM)"
       pattern: '^zig_bench_run_sync_sem_take_give$'
@@ -807,11 +875,18 @@ stm32f746_freertos_benchmark_zig:
         - ove_sem_take
         - ove_sem_give
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_create_destroy (ARM)"
       pattern: '^zig_bench_run_sync_sem_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_sem_create, ove_sem_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_sem_init
+        - ove_sem_deinit
+        - "main.createInPlace*"
+        - "sync.Semaphore.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_condvar_signal_wait (ARM)"
       pattern: '^zig_bench_run_sync_condvar_signal_wait$'
@@ -822,6 +897,7 @@ stm32f746_freertos_benchmark_zig:
         - ove_condvar_wait
         - ove_condvar_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_event_signal_wait (ARM)"
       pattern: '^zig_bench_run_sync_event_signal_wait$'
@@ -830,6 +906,7 @@ stm32f746_freertos_benchmark_zig:
         - ove_event_wait
         - ove_event_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_send_receive (ARM)"
       pattern: '^zig_bench_run_queue_send_receive$'
@@ -838,11 +915,18 @@ stm32f746_freertos_benchmark_zig:
         - ove_queue_send
         - ove_queue_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_create_destroy (ARM)"
       pattern: '^zig_bench_run_queue_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_queue_create, ove_queue_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_queue_init
+        - ove_queue_deinit
+        - "main.createInPlace*"
+        - "queue.Queue*.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_stream_send_recv_64B (ARM)"
       pattern: '^zig_bench_run_stream_send_recv_64B$'
@@ -851,6 +935,7 @@ stm32f746_freertos_benchmark_zig:
         - ove_stream_send
         - ove_stream_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 # ============================================================================
@@ -1053,7 +1138,7 @@ stm32f746_freertos_benchmark_zeroheap_rust:
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 70
       allowed_calls:
-        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove9init_cell17InitCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
         - ove_stream_send
@@ -1080,6 +1165,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_sem_give
         - ove_sem_take
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_lock_unlock (ARM, zeroheap)"
       pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
@@ -1088,6 +1174,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_contention_2t (ARM, zeroheap)"
       pattern: '^zig_bench_run_sync_mutex_contention_2t$'
@@ -1096,6 +1183,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock (ARM, zeroheap)"
       pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
@@ -1104,6 +1192,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_recursive_mutex_lock
         - ove_recursive_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_take_give (ARM, zeroheap)"
       pattern: '^zig_bench_run_sync_sem_take_give$'
@@ -1112,6 +1201,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_sem_take
         - ove_sem_give
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_condvar_signal_wait (ARM, zeroheap)"
       pattern: '^zig_bench_run_sync_condvar_signal_wait$'
@@ -1122,6 +1212,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_condvar_wait
         - ove_condvar_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_event_signal_wait (ARM, zeroheap)"
       pattern: '^zig_bench_run_sync_event_signal_wait$'
@@ -1130,6 +1221,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_event_wait
         - ove_event_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_send_receive (ARM, zeroheap)"
       pattern: '^zig_bench_run_queue_send_receive$'
@@ -1138,6 +1230,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_queue_send
         - ove_queue_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_stream_send_recv_64B (ARM, zeroheap)"
       pattern: '^zig_bench_run_stream_send_recv_64B$'
@@ -1146,6 +1239,7 @@ stm32f746_freertos_benchmark_zeroheap_zig:
         - ove_stream_send
         - ove_stream_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 # ============================================================================
@@ -1336,7 +1430,8 @@ stm32f746_nuttx_benchmark_rust:
       pattern: '_ZN.+THREAD_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 80
       allowed_calls:
-        - "_ZN3ove6thread6Thread5spawn17h*"
+        - "_ZN3ove6thread7Builder12spawn_simple17h*"
+        - ove_thread_request_stop
         - ove_thread_destroy
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -1359,7 +1454,7 @@ stm32f746_nuttx_benchmark_rust:
       allowed_calls:
         - ove_mutex_create
         - ove_mutex_destroy
-        - "_ZN3ove4sync5Mutex3new17h*"
+        - "_ZN3ove4sync14Mutex$LT$T$GT$3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -1426,7 +1521,7 @@ stm32f746_nuttx_benchmark_rust:
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 70
       allowed_calls:
-        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove9init_cell17InitCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
         - ove_stream_send
@@ -1728,7 +1823,8 @@ stm32f746_zephyr_benchmark_rust:
       pattern: '_ZN.+THREAD_CREATE_DESTROY11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 80
       allowed_calls:
-        - "_ZN3ove6thread6Thread5spawn17h*"
+        - "_ZN3ove6thread7Builder12spawn_simple17h*"
+        - ove_thread_request_stop
         - ove_thread_destroy
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -1751,7 +1847,7 @@ stm32f746_zephyr_benchmark_rust:
       allowed_calls:
         - ove_mutex_create
         - ove_mutex_destroy
-        - "_ZN3ove4sync5Mutex3new17h*"
+        - "_ZN3ove4sync14Mutex$LT$T$GT$3new17h*"
         - "_ZN3ove5error5Error9from_code17h*"
         - "*core6result13unwrap_failed*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn ", "alloc::alloc::"]
@@ -1818,7 +1914,7 @@ stm32f746_zephyr_benchmark_rust:
       pattern: '_ZN.+STREAM_SEND_RECV_64B11__run_tramp17h[0-9a-f]+E$'
       max_instructions: 70
       allowed_calls:
-        - "_ZN3ove11static_cell19StaticCell$LT$T$GT$3get17h*"
+        - "_ZN3ove9init_cell17InitCell$LT$T$GT$3get17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$4send17h*"
         - "_ZN3ove6stream15Stream$LT$_$GT$7receive17h*"
         - ove_stream_send

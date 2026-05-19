@@ -34,7 +34,7 @@ mod bench_macros;
 use crate::bench::{BenchType, CBenchSuite};
 use ove::{
     CondVar, Event, EventGroup, LvCell, Mutex, Priority, Queue, RecursiveMutex, Semaphore, Stream,
-    Thread, Timer, WAIT_FOREVER, Work, Workqueue,
+    Thread, Timer, Work, Workqueue,
 };
 
 // =========================================================================
@@ -44,7 +44,7 @@ use ove::{
 fn wq_work_handler() {
     WQ_WORK_EXECUTED.store(true, core::sync::atomic::Ordering::Relaxed);
     if let Some(sem) = WQ_WORK_SEM.try_get() {
-        sem.give();
+        sem.release();
     }
 }
 
@@ -91,7 +91,7 @@ bench_suite!(
 //  Suite: thread
 // =========================================================================
 
-ove::shared!(THREAD_BENCH_TH: Thread);
+ove::shared!(THREAD_BENCH_TH: ove::JoinHandle);
 ove::shared!(THREAD_PING_SEM: Semaphore);
 ove::shared!(THREAD_PONG_SEM: Semaphore);
 static THREAD_CTX_SWITCH_DONE: AtomicBool = AtomicBool::new(false);
@@ -125,8 +125,8 @@ fn thread_sleep_1ms_run() {
 fn pong_thread() {
     while !THREAD_CTX_SWITCH_DONE.load(Ordering::Relaxed) {
         if let (Some(ping), Some(pong)) = (THREAD_PING_SEM.try_get(), THREAD_PONG_SEM.try_get()) {
-            let _ = ping.take(WAIT_FOREVER);
-            pong.give();
+            let _ = ping.acquire();
+            pong.release();
         } else {
             // Don't `break` — see comment on contention_thread.  Helper
             // must outlive the bench loop; transient try_get failures
@@ -145,15 +145,15 @@ fn ctx_switch_setup() {
 
 fn ctx_switch_run() {
     if let (Some(ping), Some(pong)) = (THREAD_PING_SEM.try_get(), THREAD_PONG_SEM.try_get()) {
-        ping.give();
-        let _ = pong.take(WAIT_FOREVER);
+        ping.release();
+        let _ = pong.acquire();
     }
 }
 
 fn ctx_switch_teardown() {
     THREAD_CTX_SWITCH_DONE.store(true, Ordering::Relaxed);
     if let Some(ping) = THREAD_PING_SEM.try_get() {
-        ping.give();
+        ping.release();
     }
     Thread::sleep_ms(10);
     THREAD_BENCH_TH.shutdown();
@@ -215,18 +215,18 @@ bench_suite!(
 //  Suite: sync
 // =========================================================================
 
-ove::shared!(SYNC_MTX: Mutex);
+ove::shared!(SYNC_MTX: Mutex<()>);
 ove::shared!(SYNC_SEM: Semaphore);
 ove::shared!(SYNC_EVT: Event);
 ove::shared!(SYNC_EVT_ACK: Event);
 ove::shared!(SYNC_CV: CondVar);
-ove::shared!(SYNC_CV_MTX: Mutex);
+ove::shared!(SYNC_CV_MTX: Mutex<()>);
 ove::shared!(SYNC_RMTX: RecursiveMutex);
-ove::shared!(SYNC_CONTENTION_TH: Thread);
-ove::shared!(SYNC_EVT_TH: Thread);
-ove::shared!(SYNC_CV_TH: Thread);
+ove::shared!(SYNC_CONTENTION_TH: ove::JoinHandle);
+ove::shared!(SYNC_EVT_TH: ove::JoinHandle);
+ove::shared!(SYNC_CV_TH: ove::JoinHandle);
 #[cfg(not(zero_heap))]
-ove::shared!(SYNC_MEM_MUTEX: Mutex);
+ove::shared!(SYNC_MEM_MUTEX: Mutex<()>);
 #[cfg(not(zero_heap))]
 ove::shared!(SYNC_MEM_SEM: Semaphore);
 #[cfg(not(zero_heap))]
@@ -245,12 +245,13 @@ fn sync_is_enabled() -> bool {
 
 // --- Mutex lock/unlock ---
 fn mutex_lock_unlock_setup() {
-    SYNC_MTX.init(ove::mutex!());
+    SYNC_MTX.init(ove::mutex!(()));
 }
 fn mutex_lock_unlock_run() {
     if let Some(m) = SYNC_MTX.try_get() {
-        let _ = m.lock(WAIT_FOREVER);
-        m.unlock();
+        // Mutex<T> uses RAII: the MutexGuard returned by .lock() drops
+        // (and unlocks) at the end of the statement.
+        drop(m.lock());
     }
 }
 fn mutex_lock_unlock_teardown() {
@@ -260,7 +261,7 @@ fn mutex_lock_unlock_teardown() {
 // --- Mutex create/destroy (heap-mode only) ---
 #[cfg(not(zero_heap))]
 fn mutex_create_destroy_run() {
-    let _m = ove::mutex!();
+    let _m = ove::mutex!(());
 }
 
 // --- Mutex contention (2-thread throughput) ---
@@ -278,9 +279,9 @@ fn mutex_create_destroy_run() {
 fn contention_thread() {
     while !SYNC_CONTENTION_DONE.load(Ordering::Relaxed) {
         if let Some(m) = SYNC_MTX.try_get() {
-            let _ = m.lock(WAIT_FOREVER);
+            let _g = m.lock();
             SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
-            m.unlock();
+            // _g drops at end of scope, releasing the lock.
         } else {
             Thread::yield_now();
         }
@@ -290,7 +291,7 @@ fn contention_thread() {
 fn mutex_contention_setup() {
     SYNC_CONTENTION_DONE.store(false, Ordering::Relaxed);
     SYNC_CONTENTION_COUNT.store(0, Ordering::Relaxed);
-    SYNC_MTX.init(ove::mutex!());
+    SYNC_MTX.init(ove::mutex!(()));
     SYNC_CONTENTION_TH.init(ove::thread!(
         "contention",
         contention_thread,
@@ -301,9 +302,9 @@ fn mutex_contention_setup() {
 
 fn mutex_contention_run() {
     if let Some(m) = SYNC_MTX.try_get() {
-        let _ = m.lock(WAIT_FOREVER);
+        let _g = m.lock();
         SYNC_CONTENTION_COUNT.fetch_add(1, Ordering::Relaxed);
-        m.unlock();
+        // _g drops at end of scope, releasing the lock.
     }
 }
 
@@ -317,7 +318,7 @@ fn mutex_contention_teardown() {
 // --- Mutex memory (heap-mode only) ---
 #[cfg(not(zero_heap))]
 fn mutex_memory_run() {
-    SYNC_MEM_MUTEX.try_init(ove::mutex!()).ok();
+    SYNC_MEM_MUTEX.try_init(ove::mutex!(())).ok();
 }
 #[cfg(not(zero_heap))]
 fn mutex_memory_teardown() {
@@ -330,8 +331,8 @@ fn sem_take_give_setup() {
 }
 fn sem_take_give_run() {
     if let Some(s) = SYNC_SEM.try_get() {
-        let _ = s.take(WAIT_FOREVER);
-        s.give();
+        let _ = s.acquire();
+        s.release();
     }
 }
 fn sem_take_give_teardown() {
@@ -359,7 +360,7 @@ fn evt_signaler() {
     while !SYNC_EVT_DONE.load(Ordering::Relaxed) {
         if let (Some(e), Some(ack)) = (SYNC_EVT.try_get(), SYNC_EVT_ACK.try_get()) {
             e.signal();
-            let _ = ack.wait(WAIT_FOREVER);
+            let _ = ack.wait();
         } else {
             // See comment on contention_thread.
             Thread::yield_now();
@@ -381,7 +382,7 @@ fn event_signal_wait_setup() {
 
 fn event_signal_wait_run() {
     if let (Some(e), Some(ack)) = (SYNC_EVT.try_get(), SYNC_EVT_ACK.try_get()) {
-        let _ = e.wait(WAIT_FOREVER);
+        let _ = e.wait();
         ack.signal();
     }
 }
@@ -426,16 +427,19 @@ fn cv_signaler() {
 
 fn condvar_signal_wait_setup() {
     SYNC_CV_DONE.store(false, Ordering::Relaxed);
-    SYNC_CV_MTX.init(ove::mutex!());
+    SYNC_CV_MTX.init(ove::mutex!(()));
     SYNC_CV.init(ove::condvar!());
     SYNC_CV_TH.init(ove::thread!("cv_sig", cv_signaler, Priority::Normal, 1024));
 }
 
 fn condvar_signal_wait_run() {
     if let (Some(mtx), Some(cv)) = (SYNC_CV_MTX.try_get(), SYNC_CV.try_get()) {
-        let _ = mtx.lock(WAIT_FOREVER);
-        let _ = cv.wait(mtx, core::time::Duration::from_millis(10));
-        mtx.unlock();
+        if let Ok(g) = mtx.lock() {
+            // Bounded wait: returns Ok((guard, ...)) or Err on backend
+            // failure.  Guard re-acquires on return, then drops at end of
+            // scope.
+            let _ = cv.wait_for(g, core::time::Duration::from_millis(10));
+        }
     }
 }
 
@@ -466,8 +470,8 @@ fn rmtx_lock_unlock_setup() {
 }
 fn rmtx_lock_unlock_run() {
     if let Some(rm) = SYNC_RMTX.try_get() {
-        let _ = rm.lock(WAIT_FOREVER);
-        rm.unlock();
+        // RAII guard auto-drops at end of statement.
+        drop(rm.lock());
     }
 }
 fn rmtx_lock_unlock_teardown() {
@@ -591,7 +595,7 @@ bench_suite!(
 
 ove::shared!(QUEUE_SEND_RECV_Q: Queue<u32, 16>);
 ove::shared!(QUEUE_THROUGHPUT_Q: Queue<u32, 64>);
-ove::shared!(QUEUE_PRODUCER_TH: Thread);
+ove::shared!(QUEUE_PRODUCER_TH: ove::JoinHandle);
 #[cfg(not(zero_heap))]
 ove::shared!(QUEUE_MEM_Q: Queue<u32, 8>);
 static QUEUE_THROUGHPUT_DONE: AtomicBool = AtomicBool::new(false);
@@ -606,8 +610,8 @@ fn queue_send_recv_setup() {
 fn queue_send_recv_run() {
     let val: u32 = 42;
     if let Some(q) = QUEUE_SEND_RECV_Q.try_get() {
-        let _ = q.send(&val, WAIT_FOREVER);
-        let _ = q.receive(WAIT_FOREVER);
+        let _ = q.send(&val);
+        let _ = q.recv();
     }
 }
 fn queue_send_recv_teardown() {
@@ -623,7 +627,7 @@ fn producer_thread() {
     let mut val: u32 = 0;
     while !QUEUE_THROUGHPUT_DONE.load(Ordering::Relaxed) {
         if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
-            let _ = q.send(&val, WAIT_FOREVER);
+            let _ = q.send(&val);
             val = val.wrapping_add(1);
         } else {
             // See comment on contention_thread.
@@ -645,14 +649,14 @@ fn queue_throughput_setup() {
 
 fn queue_throughput_run() {
     if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
-        let _ = q.receive(WAIT_FOREVER);
+        let _ = q.recv();
     }
 }
 
 fn queue_throughput_teardown() {
     QUEUE_THROUGHPUT_DONE.store(true, Ordering::Relaxed);
     if let Some(q) = QUEUE_THROUGHPUT_Q.try_get() {
-        let _ = q.receive(core::time::Duration::from_millis(100));
+        let _ = q.try_recv_for(core::time::Duration::from_millis(100));
     }
     Thread::sleep_ms(10);
     QUEUE_PRODUCER_TH.shutdown();
@@ -878,12 +882,12 @@ fn workqueue_is_enabled() -> bool {
 
 #[cfg(not(zero_heap))]
 fn wq_create_destroy_run() {
-    let _wq = ove::workqueue!("bench_wq", Priority::Normal, 2048);
+    let _wq = ove::workqueue!(c"bench_wq", Priority::Normal, 2048);
 }
 
 fn wq_submit_setup() {
     WQ_WORK_SEM.init(ove::semaphore!(0, 1));
-    WQ_BENCH.init(ove::workqueue!("bench_wq", Priority::Normal, 2048));
+    WQ_BENCH.init(ove::workqueue!(c"bench_wq", Priority::Normal, 2048));
     WQ_WORK.init(ove::work!(ove::work_handler!(wq_work_handler)));
 }
 
@@ -893,7 +897,7 @@ fn wq_submit_run() {
         (WQ_WORK.try_get(), WQ_BENCH.try_get(), WQ_WORK_SEM.try_get())
     {
         let _ = w.submit(wq);
-        let _ = sem.take(core::time::Duration::from_millis(1000));
+        let _ = sem.try_acquire_for(core::time::Duration::from_millis(1000));
     }
 }
 
@@ -906,7 +910,7 @@ fn wq_submit_teardown() {
 #[cfg(not(zero_heap))]
 fn wq_memory_run() {
     WQ_MEM
-        .try_init(ove::workqueue!("bench_wq", Priority::Normal, 2048))
+        .try_init(ove::workqueue!(c"bench_wq", Priority::Normal, 2048))
         .ok();
 }
 #[cfg(not(zero_heap))]
@@ -958,7 +962,7 @@ const STREAM_BUF_SIZE: usize = 256;
 const STREAM_MSG_SIZE: usize = 64;
 
 ove::shared!(STREAM_BENCH: Stream<STREAM_BUF_SIZE>);
-ove::shared!(STREAM_PRODUCER_TH: Thread);
+ove::shared!(STREAM_PRODUCER_TH: ove::JoinHandle);
 #[cfg(not(zero_heap))]
 ove::shared!(STREAM_MEM: Stream<STREAM_BUF_SIZE>);
 ove::shared!(STREAM_BUFS: LvCell<([u8; STREAM_MSG_SIZE], [u8; STREAM_MSG_SIZE])>);
@@ -987,8 +991,8 @@ fn stream_send_recv_run() {
         // build a temporary &mut T from the raw pointer.
         let bufs_ptr = STREAM_BUFS.get().as_ptr();
         let bufs = unsafe { &mut *bufs_ptr };
-        let _ = s.send(&bufs.0, WAIT_FOREVER);
-        let _ = s.receive(&mut bufs.1, WAIT_FOREVER);
+        let _ = s.send(&bufs.0);
+        let _ = s.recv(&mut bufs.1);
     }
 }
 
@@ -1005,7 +1009,7 @@ fn stream_producer() {
     while !STREAM_DONE.load(Ordering::Relaxed) {
         if let Some(s) = STREAM_BENCH.try_get() {
             let bufs = STREAM_BUFS.get().get();
-            let _ = s.send(&bufs.0, WAIT_FOREVER);
+            let _ = s.send(&bufs.0);
         } else {
             // See comment on contention_thread.
             Thread::yield_now();
@@ -1031,7 +1035,7 @@ fn stream_throughput_run() {
     if let Some(s) = STREAM_BENCH.try_get() {
         let cell = STREAM_BUFS.get();
         let mut bufs = cell.get();
-        let _ = s.receive(&mut bufs.1, WAIT_FOREVER);
+        let _ = s.recv(&mut bufs.1);
         cell.set(bufs);
     }
 }
@@ -1041,7 +1045,7 @@ fn stream_throughput_teardown() {
     if let Some(s) = STREAM_BENCH.try_get() {
         let cell = STREAM_BUFS.get();
         let mut bufs = cell.get();
-        let _ = s.receive(&mut bufs.1, core::time::Duration::from_millis(100));
+        let _ = s.try_recv_for(&mut bufs.1, core::time::Duration::from_millis(100));
         cell.set(bufs);
     }
     Thread::sleep_ms(10);
@@ -1143,6 +1147,7 @@ fn benchmark_runner() {
 // App entry point
 // ---------------------------------------------------------------------------
 
+#[ove::main]
 fn app_main() {
     ove::log(b"[I] Benchmark app: init\n");
 
@@ -1166,5 +1171,3 @@ fn app_main() {
 }
 
 mod bench_cyccnt;
-
-ove::main!(app_main);
