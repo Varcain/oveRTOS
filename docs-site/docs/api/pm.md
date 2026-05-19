@@ -94,41 +94,7 @@ Initialise the PM subsystem with `ove_pm_init()`, passing a `struct ove_pm_cfg`:
 
 All functions that can fail return `int` (`OVE_OK` on success, negative error code on failure).
 
-## Policy Engine
-
-The default threshold-based policy transitions to deeper sleep states as idle duration increases. Replace it with `ove_pm_set_policy()`:
-
-```c
-ove_pm_state_t my_policy(ove_pm_state_t current, uint32_t idle_ms,
-                         uint32_t next_timeout_ms, void *user_data)
-{
-    /* Custom logic to recommend next state */
-    if (idle_ms > 5000 && next_timeout_ms > 10000)
-        return OVE_PM_STATE_DEEP_SLEEP;
-    return current;
-}
-
-ove_pm_set_policy(my_policy, NULL);
-```
-
-Pass NULL to restore the default policy.
-
-## Transition Notifications
-
-Register callbacks to be notified before sleep entry and after wake:
-
-```c
-void my_notify(ove_pm_event_t event, ove_pm_state_t from,
-               ove_pm_state_t to, void *user_data)
-{
-    if (event == OVE_PM_EVENT_PRE_SLEEP)
-        /* save state before sleep */;
-    else if (event == OVE_PM_EVENT_POST_WAKE)
-        /* restore state after wake */;
-}
-
-ove_pm_notify_register(my_notify, NULL);
-```
+> Replacing the default idle policy (`ove_pm_set_policy`) and registering pre-sleep / post-wake notifications (`ove_pm_notify_register`) are platform-tuning concerns — see [Internals → Backends → Power management policy](../backends/index.md#power-management-policy).
 
 ## Power Statistics
 

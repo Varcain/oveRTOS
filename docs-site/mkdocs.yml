@@ -85,22 +85,6 @@ nav:
     - Boards: build-system/boards.md
     - External Apps: build-system/external-apps.md
     - Simulation: build-system/sim.md
-  - Testing:
-    - Overview: testing/index.md
-    - Renode: testing/renode.md
-    - Hardware-in-the-loop: testing/hw.md
-  - Backends: backends/index.md
-  - Benchmarks:
-    - Overview: benchmarks/index.md
-    - Heap vs zero-heap: benchmarks/heap-vs-zeroheap.md
-    - Per-binding analysis: benchmarks/per-binding.md
-    - Wrapper-vs-native notes: benchmarks/wrapper-vs-native-notes.md
-    - FreeRTOS (heap): benchmarks/freertos-heap.md
-    - FreeRTOS (zero-heap): benchmarks/freertos-zeroheap.md
-    - NuttX (heap): benchmarks/nuttx-heap.md
-    - NuttX (zero-heap): benchmarks/nuttx-zeroheap.md
-    - Zephyr (heap): benchmarks/zephyr-heap.md
-    - Zephyr (zero-heap): benchmarks/zephyr-zeroheap.md
   - Examples:
     - Overview: examples/index.md
     - Basic Example:
@@ -145,3 +129,23 @@ nav:
       - Rust: examples/lvgl_gallery/rust.md
       - Zig: examples/lvgl_gallery/zig.md
   - Glossary: glossary.md
+  - Internals:
+    - Backends: backends/index.md
+    - Backend tuning:
+      - Networking pools: backends/net-tuning.md
+    - Testing:
+      - Overview: testing/index.md
+      - Renode: testing/renode.md
+      - Hardware-in-the-loop: testing/hw.md
+    - Benchmarks:
+      - Overview: benchmarks/index.md
+      - Methodology: benchmarks/methodology.md
+      - Heap vs zero-heap: benchmarks/heap-vs-zeroheap.md
+      - Per-binding analysis: benchmarks/per-binding.md
+      - Wrapper-vs-native notes: benchmarks/wrapper-vs-native-notes.md
+      - FreeRTOS (heap): benchmarks/freertos-heap.md
+      - FreeRTOS (zero-heap): benchmarks/freertos-zeroheap.md
+      - NuttX (heap): benchmarks/nuttx-heap.md
+      - NuttX (zero-heap): benchmarks/nuttx-zeroheap.md
+      - Zephyr (heap): benchmarks/zephyr-heap.md
+      - Zephyr (zero-heap): benchmarks/zephyr-zeroheap.md

@@ -48,7 +48,7 @@ graph TD
 | `ove_fs_read` | `(file, buf, count, bytes_read) → int` | Read bytes from an open file |
 | `ove_fs_write` | `(file, buf, count, bytes_written) → int` | Write bytes to an open file |
 | `ove_fs_seek` | `(file, offset, whence) → int` | Reposition the file read/write offset |
-| `ove_fs_tell` | `(file) → long` | Return the current file position |
+| `ove_fs_tell` | `(file) → long` | Return the current file position. **Note**: unlike the other functions in this table, the return is the position itself (or `-1` on error), not an `OVE_OK`-style code. |
 | `ove_fs_size` | `(file, out_size) → int` | Query the total size of an open file |
 | `ove_fs_unlink` | `(path) → int` | Delete a file by path |
 | `ove_fs_rename` | `(old_path, new_path) → int` | Rename or move a file |

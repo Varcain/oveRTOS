@@ -1,6 +1,6 @@
 # Examples
 
-oveRTOS ships with four example applications, each available in C, C++, Rust, and Zig. All examples compile and run identically across FreeRTOS, Zephyr, NuttX, and POSIX backends.
+oveRTOS ships with six example applications, each available across C, C++, Rust, and Zig (with a handful of language-specific exceptions noted below). All examples compile and run identically across FreeRTOS, Zephyr, NuttX, and POSIX backends.
 
 Interactive WASM demos run directly in your browser — no toolchain needed.
 
@@ -26,9 +26,11 @@ Each example is implemented in all four languages using the same oveRTOS API:
 
 Most examples have browser-based WASM demos. Click the links on each example's page to try them live.
 
-| Language | WASM support |
-|----------|-------------|
-| C | All examples |
-| C++ | All examples |
+| Language | WASM-built demos |
+|----------|------------------|
+| C | Basic, Networking, Power Management, Keyword Detection |
+| C++ | Basic, Networking, Power Management, Keyword Detection, LVGL Gallery |
 | Rust | Basic, Networking |
-| Zig | Not yet supported (Zig 0.15 lacks wasm32-emscripten) |
+| Zig | None — Zig 0.15 lacks `wasm32-emscripten` |
+
+Source for every example exists in every language regardless of WASM-demo availability; see the per-example pages below.

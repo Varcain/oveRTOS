@@ -26,6 +26,16 @@ under [Build System → Simulation](../build-system/sim.md):
   pyserial.  Driven by
   `OVE_HW_SERIAL_PORT=/dev/ttyACMx make test-hw-stm32f746-…`.
 
+## The Stub layer
+
+The Stub layer is a POSIX build of the common CMocka suites — same test sources, no kernel, no QEMU. It runs in ~2 s on a developer laptop. Sources live under `tests/suites/`; the harness driver is `tests/stub_main.c` and the CMake glue is `tests/cmake/`. Run it with:
+
+```bash
+make test-stub
+```
+
+The Stub layer catches API contracts and pure-logic bugs but cannot exercise RTOS-port code (scheduler, ISR plumbing, HAL paths). For those, the QEMU and Renode layers run the same suite list against real backend implementations.
+
 ## Common-suite list
 
 `tests/cmake/OveTest.cmake::OVE_TEST_COMMON_SUITES` is the single source

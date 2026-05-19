@@ -57,11 +57,4 @@ struct ove_spi_xfer xfers[] = {
 ove_spi_transfer_seq(spi, &cs, xfers, 2, OVE_WAIT_FOREVER);
 ```
 
-## Backend Notes
-
-| Backend | Implementation |
-|---|---|
-| FreeRTOS/STM32 | `HAL_SPI_TransmitReceive()` / `Transmit()` / `Receive()` |
-| Zephyr | `spi_transceive()` with `spi_buf_set` |
-| NuttX | `/dev/spi*`, `SPIIOC_TRANSFER` ioctl |
-| POSIX | `/dev/spidev*`, `SPI_IOC_MESSAGE` ioctl |
+> Per-backend implementation (which HAL call or `/dev/*` node the wrapper resolves to) is documented under [Internals → Backends → Peripheral wrappers](../backends/index.md#peripheral-wrappers).
