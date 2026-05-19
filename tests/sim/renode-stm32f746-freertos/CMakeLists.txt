@@ -269,6 +269,12 @@ set(LINKER_SCRIPT ${BOARD_DIR}/freertos/STM32F746NGHx_FLASH.ld)
 target_link_options(ove_test_renode_stm32f746_freertos PRIVATE
     -T${LINKER_SCRIPT}
     -Wl,--gc-sections
+    # Shrink the boot stack back to 512 B for tests — the linker script
+    # PROVIDEs 4 KB to fit Rust/Zig app_main setup, but the CMocka test
+    # binary doesn't run any app code on MSP (sim_main → CMocka → fixtures
+    # that immediately spawn tasks), so 512 B is sufficient and recovers
+    # 3.5 KB of RAM the kernel heap and per-thread stacks need.
+    -Wl,--defsym=__stack_size=0x200
     # Route libc malloc/free/calloc/realloc through pvPortMalloc via
     # backends/freertos/freertos_libc_malloc.c's __wrap_* shims.  See
     # cmake/OveCommon.cmake for the production heap-mode path.

@@ -383,6 +383,11 @@ set(LINKER_SCRIPT ${BOARD_DIR}/freertos/STM32F746NGHx_FLASH.ld)
 target_link_options(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     -T${LINKER_SCRIPT}
     -Wl,--defsym=__heap_size=0x10000
+    # Shrink the boot stack back to 512 B — the linker script PROVIDEs 4 KB
+    # to fit Rust/Zig app_main, but CMocka test binaries don't run app code
+    # on MSP, so 512 B is sufficient and recovers 3.5 KB of RAM for the
+    # picolibc heap arena and per-task stacks.
+    -Wl,--defsym=__stack_size=0x200
     -Wl,--gc-sections
     # rdimon spec from the QEMU toolchain shim routes stdio to semihosting.
 )

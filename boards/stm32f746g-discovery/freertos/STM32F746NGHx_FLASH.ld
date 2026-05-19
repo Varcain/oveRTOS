@@ -37,15 +37,18 @@ ENTRY(Reset_Handler)
 PROVIDE(__heap_size = 0);
 /* Boot stack size.  Covers main() + `app_main()` setup running on MSP
  * before `ove::run()` calls vTaskStartScheduler — after that, every
- * task has its own stack via xTaskCreate.  Sized at 4 KB to fit
- * Rust/Zig setup paths (Arc/Box, closure boxing inside `spawn_with`,
- * the entirety of `lvgl::init()` + widget creation) which need deeper
- * frames than the C/C++ equivalents.  512 B was sufficient for the C
- * example but Rust's `app_main` peaked at ~592 B mid-`lvgl::init()`
- * and overflowed into the adjacent `work_mem_int` TLSF pool — the
- * overflow corrupted a free-block header, and a later allocation
- * popped a non-Thumb address into PC (INVSTATE hardfault). */
-__stack_size = 0x1000;
+ * task has its own stack via xTaskCreate.  Default 4 KB fits Rust/Zig
+ * setup paths (Arc/Box, closure boxing inside `spawn_with`, the entirety
+ * of `lvgl::init()` + widget creation) which need deeper frames than the
+ * C/C++ equivalents.  512 B was sufficient for the C example but Rust's
+ * `app_main` peaked at ~592 B mid-`lvgl::init()` and overflowed into the
+ * adjacent `work_mem_int` TLSF pool — the overflow corrupted a free-block
+ * header, and a later allocation popped a non-Thumb address into PC
+ * (INVSTATE hardfault).
+ *
+ * Builds that don't run a Rust/Zig app (e.g. CMocka test binaries) may
+ * shrink this back via `-Wl,--defsym=__stack_size=N`. */
+PROVIDE(__stack_size = 0x1000);
 
 MEMORY
 {
