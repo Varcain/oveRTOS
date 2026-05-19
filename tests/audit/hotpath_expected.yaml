@@ -814,6 +814,8 @@ stm32f746_freertos_benchmark_zig:
         - ove_thread_deinit
         - "memset*"
         - "__aeabi_memset*"
+        - "__aeabi_memclr*"
+        - bzero
         - "main.spawnThreadInPlace*"
         - "main.createInPlace*"
         - "debug.FullPanic*"
@@ -1543,8 +1545,19 @@ stm32f746_nuttx_benchmark_zig:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_create_destroy (NuttX, ARM)"
       pattern: '^zig_bench_run_thread_create_destroy$'
-      max_instructions: 56
-      allowed_calls: [ove_thread_create, ove_thread_destroy]
+      max_instructions: 200
+      allowed_calls:
+        - ove_thread_init
+        - ove_thread_request_stop
+        - ove_thread_deinit
+        - "memset*"
+        - "__aeabi_memset*"
+        - "__aeabi_memclr*"
+        - bzero
+        - "main.spawnThreadInPlace*"
+        - "main.createInPlace*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch (NuttX, ARM)"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -1553,6 +1566,7 @@ stm32f746_nuttx_benchmark_zig:
         - ove_sem_give
         - ove_sem_take
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_lock_unlock (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
@@ -1561,11 +1575,18 @@ stm32f746_nuttx_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_create_destroy (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_mutex_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_mutex_create, ove_mutex_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_mutex_init
+        - ove_mutex_deinit
+        - "main.createInPlace*"
+        - "sync.Mutex.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_contention_2t (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_mutex_contention_2t$'
@@ -1574,6 +1595,7 @@ stm32f746_nuttx_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
@@ -1582,6 +1604,7 @@ stm32f746_nuttx_benchmark_zig:
         - ove_recursive_mutex_lock
         - ove_recursive_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_take_give (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_sem_take_give$'
@@ -1590,11 +1613,18 @@ stm32f746_nuttx_benchmark_zig:
         - ove_sem_take
         - ove_sem_give
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_create_destroy (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_sem_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_sem_create, ove_sem_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_sem_init
+        - ove_sem_deinit
+        - "main.createInPlace*"
+        - "sync.Semaphore.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_condvar_signal_wait (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_condvar_signal_wait$'
@@ -1605,6 +1635,7 @@ stm32f746_nuttx_benchmark_zig:
         - ove_condvar_wait
         - ove_condvar_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_event_signal_wait (NuttX, ARM)"
       pattern: '^zig_bench_run_sync_event_signal_wait$'
@@ -1613,6 +1644,7 @@ stm32f746_nuttx_benchmark_zig:
         - ove_event_wait
         - ove_event_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_send_receive (NuttX, ARM)"
       pattern: '^zig_bench_run_queue_send_receive$'
@@ -1621,11 +1653,18 @@ stm32f746_nuttx_benchmark_zig:
         - ove_queue_send
         - ove_queue_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_create_destroy (NuttX, ARM)"
       pattern: '^zig_bench_run_queue_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_queue_create, ove_queue_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_queue_init
+        - ove_queue_deinit
+        - "main.createInPlace*"
+        - "queue.Queue*.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_stream_send_recv_64B (NuttX, ARM)"
       pattern: '^zig_bench_run_stream_send_recv_64B$'
@@ -1634,6 +1673,7 @@ stm32f746_nuttx_benchmark_zig:
         - ove_stream_send
         - ove_stream_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
 
 # ============================================================================
@@ -1936,8 +1976,19 @@ stm32f746_zephyr_benchmark_zig:
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_create_destroy (Zephyr, ARM)"
       pattern: '^zig_bench_run_thread_create_destroy$'
-      max_instructions: 56
-      allowed_calls: [ove_thread_create, ove_thread_destroy]
+      max_instructions: 200
+      allowed_calls:
+        - ove_thread_init
+        - ove_thread_request_stop
+        - ove_thread_deinit
+        - "memset*"
+        - "__aeabi_memset*"
+        - "__aeabi_memclr*"
+        - bzero
+        - "main.spawnThreadInPlace*"
+        - "main.createInPlace*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_thread_context_switch (Zephyr, ARM)"
       pattern: '^zig_bench_run_thread_context_switch$'
@@ -1946,6 +1997,7 @@ stm32f746_zephyr_benchmark_zig:
         - ove_sem_give
         - ove_sem_take
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_lock_unlock (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_mutex_lock_unlock$'
@@ -1954,11 +2006,18 @@ stm32f746_zephyr_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_create_destroy (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_mutex_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_mutex_create, ove_mutex_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_mutex_init
+        - ove_mutex_deinit
+        - "main.createInPlace*"
+        - "sync.Mutex.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_mutex_contention_2t (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_mutex_contention_2t$'
@@ -1967,6 +2026,7 @@ stm32f746_zephyr_benchmark_zig:
         - ove_mutex_lock
         - ove_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_recursive_mutex_lock_unlock (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_recursive_mutex_lock_unlock$'
@@ -1975,6 +2035,7 @@ stm32f746_zephyr_benchmark_zig:
         - ove_recursive_mutex_lock
         - ove_recursive_mutex_unlock
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_take_give (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_sem_take_give$'
@@ -1983,11 +2044,18 @@ stm32f746_zephyr_benchmark_zig:
         - ove_sem_take
         - ove_sem_give
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_sem_create_destroy (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_sem_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_sem_create, ove_sem_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_sem_init
+        - ove_sem_deinit
+        - "main.createInPlace*"
+        - "sync.Semaphore.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_condvar_signal_wait (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_condvar_signal_wait$'
@@ -1998,6 +2066,7 @@ stm32f746_zephyr_benchmark_zig:
         - ove_condvar_wait
         - ove_condvar_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_sync_event_signal_wait (Zephyr, ARM)"
       pattern: '^zig_bench_run_sync_event_signal_wait$'
@@ -2006,6 +2075,7 @@ stm32f746_zephyr_benchmark_zig:
         - ove_event_wait
         - ove_event_signal
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_send_receive (Zephyr, ARM)"
       pattern: '^zig_bench_run_queue_send_receive$'
@@ -2014,11 +2084,18 @@ stm32f746_zephyr_benchmark_zig:
         - ove_queue_send
         - ove_queue_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_queue_create_destroy (Zephyr, ARM)"
       pattern: '^zig_bench_run_queue_create_destroy$'
-      max_instructions: 36
-      allowed_calls: [ove_queue_create, ove_queue_destroy]
+      max_instructions: 80
+      allowed_calls:
+        - ove_queue_init
+        - ove_queue_deinit
+        - "main.createInPlace*"
+        - "queue.Queue*.create*"
+        - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
     - name: "Zig zig_bench_run_stream_send_recv_64B (Zephyr, ARM)"
       pattern: '^zig_bench_run_stream_send_recv_64B$'
@@ -2027,4 +2104,5 @@ stm32f746_zephyr_benchmark_zig:
         - ove_stream_send
         - ove_stream_receive
         - "debug.FullPanic*"
+        - "debug.panic*"
       forbid_demangled: ["vtable for ", "typeinfo for ", "<dyn "]
