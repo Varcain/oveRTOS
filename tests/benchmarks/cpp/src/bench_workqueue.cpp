@@ -26,7 +26,7 @@ static void work_handler(ove_work_t work)
 {
 	(void)work;
 	work_executed.store(true, std::memory_order_release);
-	work_sem->give();
+	work_sem->release();
 }
 
 /* --- create/destroy (heap-mode only) --- */
@@ -50,7 +50,7 @@ static void wq_submit_run()
 {
 	work_executed.store(false, std::memory_order_release);
 	(void)bench_work->submit(*bench_wq);
-	(void)work_sem->take(1s);
+	(void)work_sem->try_acquire_for(1s);
 }
 
 static void wq_submit_teardown()

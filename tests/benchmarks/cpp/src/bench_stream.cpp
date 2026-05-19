@@ -40,8 +40,8 @@ static void stream_send_recv_run()
 {
 	size_t sent = 0;
 	size_t received = 0;
-	(void)bench_strm->send(tx_buf, STREAM_MSG_SIZE, ove::wait_forever, &sent);
-	(void)bench_strm->receive(rx_buf, STREAM_MSG_SIZE, ove::wait_forever, &received);
+	bench_strm->send(tx_buf, STREAM_MSG_SIZE, sent);
+	bench_strm->receive(rx_buf, STREAM_MSG_SIZE, received);
 }
 
 static void stream_send_recv_teardown()
@@ -64,7 +64,7 @@ static void stream_producer(void *arg)
 	(void)arg;
 	while (!stream_done.load(std::memory_order_acquire)) {
 		size_t sent = 0;
-		(void)bench_strm->send(tx_buf, STREAM_MSG_SIZE, ove::wait_forever, &sent);
+		bench_strm->send(tx_buf, STREAM_MSG_SIZE, sent);
 	}
 }
 
@@ -79,7 +79,7 @@ static void stream_throughput_setup()
 static void stream_throughput_run()
 {
 	size_t received = 0;
-	(void)bench_strm->receive(rx_buf, STREAM_MSG_SIZE, ove::wait_forever, &received);
+	bench_strm->receive(rx_buf, STREAM_MSG_SIZE, received);
 }
 
 static void stream_throughput_teardown()
@@ -87,7 +87,7 @@ static void stream_throughput_teardown()
 	stream_done.store(true, std::memory_order_release);
 	/* Drain so producer can unblock */
 	size_t received = 0;
-	(void)bench_strm->receive(rx_buf, STREAM_MSG_SIZE, 100ms, &received);
+	(void)bench_strm->try_receive_for(rx_buf, STREAM_MSG_SIZE, 100ms, received);
 	ove::time::delay_ms(10);
 	stream_producer_th.reset();
 	bench_strm.reset();

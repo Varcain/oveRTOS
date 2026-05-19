@@ -36,7 +36,7 @@ static void thread_create_destroy_run()
 
 static void thread_yield_run()
 {
-	ove::Thread<>::yield();
+	ove::this_thread::yield();
 }
 
 /* --- get_self ---
@@ -44,14 +44,14 @@ static void thread_yield_run()
  * side-effects.  Distinct from time_get_us_overhead and yield. */
 static void thread_get_self_run()
 {
-	[[maybe_unused]] volatile auto self = ove::Thread<>::self();
+	[[maybe_unused]] volatile auto self = ove::this_thread::self();
 }
 
 /* --- sleep 1ms --- */
 
 static void thread_sleep_1ms_run()
 {
-	ove::Thread<>::sleep_ms(1);
+	ove::this_thread::sleep_ms(1);
 }
 
 /* --- context switch via semaphore ping-pong --- */
@@ -60,8 +60,8 @@ static void pong_thread(void *arg)
 {
 	(void)arg;
 	while (!ctx_switch_done.load(std::memory_order_acquire)) {
-		(void)ping_sem->take(ove::wait_forever);
-		pong_sem->give();
+		ping_sem->acquire();
+		pong_sem->release();
 	}
 }
 
@@ -76,14 +76,14 @@ static void ctx_switch_setup()
 static void ctx_switch_run()
 {
 	/* One round-trip = 2 context switches */
-	ping_sem->give();
-	(void)pong_sem->take(ove::wait_forever);
+	ping_sem->release();
+	pong_sem->acquire();
 }
 
 static void ctx_switch_teardown()
 {
 	ctx_switch_done.store(true, std::memory_order_release);
-	ping_sem->give();
+	ping_sem->release();
 	ove::time::delay_ms(10);
 	bench_th.reset();
 	ping_sem.reset();

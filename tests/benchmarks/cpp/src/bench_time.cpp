@@ -13,8 +13,7 @@
 
 static void time_get_us_overhead_run()
 {
-	uint64_t t;
-	(void)ove::time::get_us(&t);
+	(void)ove::time::get_us();
 }
 
 /* --- delay 1ms --- */
