@@ -49,37 +49,27 @@ int _write(int fd, const char *buf, int len)
 }
 
 /*
- * Override newlib's _sbrk (normally provided by rdimon.specs's
- * librdimon.a, which asks the host for a heap block via SYS_HEAPINFO —
- * another call Renode 1.16.x doesn't implement).  Back it with the
- * linker-reserved `_end` → stack-bottom region instead.
- *
- * The STM32F746NGHx linker script already defines:
- *   _end            — first free byte after BSS
- *   _estack         — top-of-stack (grows down)
- * We use the range [_end, _estack - 8 KB) as the malloc arena, leaving
- * headroom for the stack that newlib/rdimon can't normally see.  Small
- * enough for cmocka (~64 KB usage) plus a safety margin.
+ * Override newlib/picolibc's _sbrk.  The linker reserves an explicit
+ * `.heap` section sized by `__heap_size` (set via -Wl,--defsym in
+ * this CMakeLists); we hand out `[__heap_start, __heap_end)` to the
+ * libc nano-malloc.  The `.heap` section lives in SDRAM rather than
+ * main SRAM — the test binary's BSS exhausts main SRAM, and Renode
+ * models SDRAM out-of-the-box.  No more `_end` / `_estack` distance
+ * arithmetic (which conflated heap headroom with stack headroom).
  */
 
 #include <errno.h>
 
-extern char _end;
-extern char _estack;
-
-#ifndef RENODE_HEAP_STACK_RESERVE
-#define RENODE_HEAP_STACK_RESERVE (8 * 1024)
-#endif
+extern char __heap_start;
+extern char __heap_end;
 
 void *_sbrk(int incr)
 {
 	static char *heap_ptr = NULL;
 	if (heap_ptr == NULL) {
-		heap_ptr = &_end;
+		heap_ptr = &__heap_start;
 	}
-	char *heap_limit = &_estack - RENODE_HEAP_STACK_RESERVE;
-
-	if (heap_ptr + incr > heap_limit) {
+	if (heap_ptr + incr > &__heap_end) {
 		errno = 12; /* ENOMEM */
 		return (void *)-1;
 	}

@@ -371,10 +371,18 @@ target_link_libraries(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     m
 )
 
-# Linker script — reuse the board's STM32F746 flash layout.
+# Linker script — reuse the board's STM32F746 flash layout.  Override
+# __heap_size to give picolibc _sbrk an arena: zero-heap mode has no
+# pvPortMalloc, so cmocka's malloc() lands in the picolibc nano-malloc
+# path that's backed by _sbrk over `.heap`.  64 KB matches the working
+# pre-cleanup configuration (was [_end, _estack - 8KB) ≈ 47–64 KB
+# depending on BSS); production zero-heap apps don't run cmocka and
+# are expected to avoid libc malloc entirely (audited by
+# backends/common/ove_heap_lock.c).
 set(LINKER_SCRIPT ${BOARD_DIR}/freertos/STM32F746NGHx_FLASH.ld)
 target_link_options(ove_test_renode_stm32f746_freertos_zeroheap PRIVATE
     -T${LINKER_SCRIPT}
+    -Wl,--defsym=__heap_size=0x10000
     -Wl,--gc-sections
     # rdimon spec from the QEMU toolchain shim routes stdio to semihosting.
 )

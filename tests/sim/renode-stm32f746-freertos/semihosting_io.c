@@ -48,45 +48,13 @@ int _write(int fd, const char *buf, int len)
 	return len;
 }
 
-/*
- * Override newlib's _sbrk (normally provided by rdimon.specs's
- * librdimon.a, which asks the host for a heap block via SYS_HEAPINFO —
- * another call Renode 1.16.x doesn't implement).  Back it with the
- * linker-reserved `_end` → stack-bottom region instead.
- *
- * The STM32F746NGHx linker script already defines:
- *   _end            — first free byte after BSS
- *   _estack         — top-of-stack (grows down)
- * We use the range [_end, _estack - 8 KB) as the malloc arena, leaving
- * headroom for the stack that newlib/rdimon can't normally see.  Small
- * enough for cmocka (~64 KB usage) plus a safety margin.
- */
-
-#include <errno.h>
-
-extern char _end;
-extern char _estack;
-
-#ifndef RENODE_HEAP_STACK_RESERVE
-#define RENODE_HEAP_STACK_RESERVE (8 * 1024)
-#endif
-
-void *_sbrk(int incr)
-{
-	static char *heap_ptr = NULL;
-	if (heap_ptr == NULL) {
-		heap_ptr = &_end;
-	}
-	char *heap_limit = &_estack - RENODE_HEAP_STACK_RESERVE;
-
-	if (heap_ptr + incr > heap_limit) {
-		errno = 12; /* ENOMEM */
-		return (void *)-1;
-	}
-	char *prev = heap_ptr;
-	heap_ptr += incr;
-	return prev;
-}
+/* `_sbrk` is intentionally not provided here.  picolibc's nano-malloc
+ * is bypassed by backends/freertos/freertos_libc_malloc.c, which wraps
+ * malloc/free/calloc/realloc onto pvPortMalloc/vPortFree (FreeRTOS
+ * heap_4 ucHeap).  Without those wrappers picolibc would call _sbrk
+ * during its own malloc path; with them the symbol is never referenced
+ * and the linker drops it.  See the "Single-heap policy" comment in
+ * boards/stm32f746g-discovery/freertos/STM32F746NGHx_FLASH.ld. */
 
 /* `stub_board.c::ove_hal_board_init` calls `stub_gpio_reset()`, which
  * previously lived in `stub_gpio.c`.  We dropped the stub GPIO so the

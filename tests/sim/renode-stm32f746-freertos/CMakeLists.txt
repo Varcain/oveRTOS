@@ -125,6 +125,10 @@ set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_watchdog.c
     ${FREERTOS_BACKEND}/freertos_gpio.c
     ${FREERTOS_BACKEND}/freertos_shell.c
+    # Unified-heap wrapper: routes libc malloc/free/calloc/realloc
+    # through pvPortMalloc/vPortFree so cmocka + libc + ove_*_create all
+    # share the single FreeRTOS heap_4 ucHeap pool.
+    ${FREERTOS_BACKEND}/freertos_libc_malloc.c
     # Networking — see zero-heap CMakeLists for rationale.
     ${FREERTOS_BACKEND}/freertos_net.c
     ${FREERTOS_BACKEND}/lwip_sys_arch.c
