@@ -120,8 +120,11 @@ macro(ove_setup_project _proj_name)
     # LVGL expects lv_conf.h via simple include
     add_compile_definitions(LV_CONF_INCLUDE_SIMPLE)
 
-    # Common compiler flags
-    set(CMAKE_C_STANDARD 99)
+    # Common compiler flags.  C11 (not C99) so backends/freertos/freertos_pm.c
+    # can use <stdatomic.h> (`atomic_int`, `atomic_load_explicit`) and have
+    # clang-tidy parse it without complaining that `atomic_int *` isn't a
+    # pointer to `_Atomic` — under gnu99 the typedef isn't expanded.
+    set(CMAKE_C_STANDARD 11)
     set(CMAKE_C_STANDARD_REQUIRED ON)
 
     add_compile_options(
