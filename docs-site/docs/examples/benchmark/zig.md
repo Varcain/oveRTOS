@@ -6,7 +6,7 @@ Measures latency, throughput, and memory usage of all RTOS abstractions.
 
 ## Language-specific patterns
 
-This example uses the `ove` Zig module with comptime feature detection (`@hasDecl`), generic types, `defer`-based cleanup, and catch-based error handling.
+This example uses the `ove` Zig module with allocator-aware constructors (`Type.create(allocator)`), exhaustive RTOS dispatch via `switch (ove.target.current_rtos)`, narrow per-op error sets, `defer`-based cleanup, and `std.log.*` integration through `ove.log.logFn`.
 
 See the [overview](index.md) for architecture details and the full API list.
 

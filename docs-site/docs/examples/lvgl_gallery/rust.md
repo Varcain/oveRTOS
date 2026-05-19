@@ -45,6 +45,7 @@ static PAGES: &[Page] = &[
 ## Entry point
 
 ```rust
+#[ove::main]
 fn app_main() {
     let _guard = ove::lvgl::lock();
     let screen = lvgl::Object::active_screen();
@@ -56,11 +57,9 @@ fn app_main() {
     drop(_guard);   /* release before run() */
     ove::run();
 }
-
-ove::main!(app_main);
 ```
 
-`ove::main!` exports the `ove_main` symbol with the right C ABI; without it the framework can't find the entry point.
+`#[ove::main]` is the proc-macro attribute (from `ove-macros`) that wraps `app_main` in the C-ABI `extern "C" fn ove_main()` symbol the framework links to. (Replaces the older `ove::main!(app_main)` declarative macro.)
 
 ## Cargo.toml
 
