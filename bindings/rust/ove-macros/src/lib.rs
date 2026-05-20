@@ -129,36 +129,16 @@ fn expand_async(input: ItemFn) -> TokenStream {
         // / pthread_create (POSIX) / k_thread_create (Zephyr) so the
         // backend's timer service task, ISR plumbing, and waitqueues are
         // alive — otherwise our ove_timer callback never fires and the
-        // executor stalls in WFE forever.  Spawn the executor on an
-        // ove::Thread, then hand control to ove::run() which starts the
-        // backend scheduler.  Once the scheduler is up, the executor
-        // thread is dispatched and Executor::run takes over.
+        // executor stalls forever.  Spawn the executor on an ove::Thread,
+        // then hand control to ove::run() which starts the backend
+        // scheduler.  Once the scheduler is up, the executor thread is
+        // dispatched and Executor::run takes over, blocking on
+        // ove_event_wait between polls — yielding cleanly to the RTOS
+        // scheduler when other tasks share the CPU.
         fn __ove_async_exec_thread() {
-            // The Executor needs &'static mut, which is the embassy
-            // convention.  In heap mode we Box::leak; in zero-heap mode
-            // we use a function-scope `static mut MaybeUninit<Executor>`
-            // slot — this function runs exactly once per process (it's
-            // spawned once and exec.run never returns), so the unique-
-            // initialisation invariant is satisfied by construction.
-            #[cfg(not(zero_heap))]
             let exec: &'static mut ::ove::async_runtime::Executor =
-                ::ove::heap::Box::leak(::ove::heap::Box::new(
-                    ::ove::async_runtime::Executor::new(),
-                ));
-            #[cfg(zero_heap)]
-            let exec: &'static mut ::ove::async_runtime::Executor = {
-                static mut EXEC_SLOT: ::core::mem::MaybeUninit<
-                    ::ove::async_runtime::Executor,
-                > = ::core::mem::MaybeUninit::uninit();
-                // SAFETY: EXEC_SLOT is touched only by this single
-                // call (this function is the only caller; it runs once
-                // and never returns).
-                unsafe {
-                    let p = ::core::ptr::addr_of_mut!(EXEC_SLOT);
-                    (*p).write(::ove::async_runtime::Executor::new());
-                    (*p).assume_init_mut()
-                }
-            };
+                ::ove::async_runtime::Executor::take()
+                    .expect("ove::async_runtime::Executor::take called twice");
             exec.run(|spawner| {
                 spawner
                     .spawn(#renamed_ident(spawner))

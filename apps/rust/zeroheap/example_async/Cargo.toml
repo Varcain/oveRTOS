@@ -8,8 +8,9 @@ rust-version = "1.85"
 crate-type = ["staticlib"]
 
 [dependencies]
-# Zero-heap async: no `alloc` feature.  The macro-generated trampoline
-# uses a `static mut MaybeUninit<Executor>` slot instead of Box::leak.
+# Zero-heap async: no `alloc` feature. Our Executor::take stores the
+# executor in a function-scope `static mut MaybeUninit` slot instead
+# of leaking a Box.
 ove = { path = "../../../../bindings/rust/ove", features = ["async"] }
 log = "0.4"
 embassy-executor = { version = "0.7", default-features = false }
@@ -19,15 +20,6 @@ embassy-sync = { version = "0.7", default-features = false }
 [features]
 default = []
 std = ["ove/std"]
-
-# POSIX host build: embassy-executor's arch-std + critical-section's
-# built-in std impl.
-[target.'cfg(not(target_os = "none"))'.dependencies]
-ove = { path = "../../../../bindings/rust/ove", features = ["async-arch-std"] }
-
-# Bare-metal ARM build: cortex-m executor + ove_irq_lock critical-section.
-[target.'cfg(target_os = "none")'.dependencies]
-ove = { path = "../../../../bindings/rust/ove", features = ["async-arch-cortex-m"] }
 
 [profile.release]
 opt-level = "s"

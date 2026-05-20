@@ -10,31 +10,27 @@
 //! `CONFIG_OVE_ASYNC=y` (build.rs detects this and emits
 //! `cfg(has_async)`). The module provides:
 //!
-//! - The `embassy_time_driver::Driver` backed by `ove_time_get_us`
-//!   and a re-armed one-shot `ove_timer_*_ns` alarm.
-//! - (On embedded arch features) a `critical_section::Impl` backed
-//!   by `ove_irq_lock` / `ove_irq_unlock`. On `async-arch-std` the
-//!   built-in `critical-section/std` impl from upstream is used
-//!   instead.
-//! - A re-export of the upstream `embassy_executor::Executor` and
-//!   `Spawner` types so users don't need to add `embassy-executor` to
-//!   their dep manifest directly (though they may, for example to use
-//!   the `#[task]` macro).
-//!
-//! The Phase 1 vertical slice relies on embassy-executor's own
-//! `__pender` and run-loop implementations: on POSIX (`arch-std`) the
-//! executor blocks on a `Condvar`; on Cortex-M (`arch-cortex-m`) it
-//! uses WFE. A future revision will provide an oveRTOS-native run-loop
-//! that blocks on `ove_event_wait` so the executor cooperates cleanly
-//! with the RTOS scheduler on FreeRTOS / Zephyr / NuttX targets where
-//! multiple threads compete for the CPU.
+//! - [`Executor`] — wraps `embassy_executor::raw::Executor` and blocks
+//!   on `ove_event_wait` between polls. Yields cleanly to the
+//!   underlying RTOS scheduler on FreeRTOS / Zephyr / NuttX; on POSIX
+//!   blocks on a pthread condvar. Replaces the upstream `__pender`
+//!   symbol with one that signals an `ove_event` via the right
+//!   thread-vs-ISR variant.
+//! - `critical_section::Impl` backed by `ove_irq_lock` /
+//!   `ove_irq_unlock` on every target.
+//! - `embassy_time_driver::Driver` backed by `ove_time_get_us` +
+//!   `ove_timer_*_ns`.
+//! - Async wrappers around the comm primitives ([`AsyncStream`],
+//!   [`AsyncQueue`], [`AsyncEventGroup`], [`AsyncSemaphore`],
+//!   [`AsyncUart`], [`AsyncInput`]) that ride on the C-level
+//!   `_set_notify` hooks.
 
 #![cfg_attr(docsrs, doc(cfg(feature = "async")))]
 
-#[cfg(feature = "async-custom-cs")]
 pub(crate) mod critical_section;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
+pub mod executor;
 #[cfg(has_gpio)]
 pub mod gpio;
 #[cfg(has_queue)]
@@ -49,6 +45,7 @@ pub mod uart;
 
 #[cfg(has_eventgroup)]
 pub use eventgroup::AsyncEventGroup;
+pub use executor::Executor;
 #[cfg(has_gpio)]
 pub use gpio::AsyncInput;
 #[cfg(has_queue)]
@@ -60,8 +57,6 @@ pub use stream::AsyncStream;
 #[cfg(has_uart)]
 pub use uart::AsyncUart;
 
-/// Re-export so users can write `use ove::async_runtime::Executor;`
-/// without a direct dependency on `embassy_executor`.
-pub use embassy_executor::Executor;
-/// Re-export so users can write `use ove::async_runtime::Spawner;`.
+/// Re-export of `embassy_executor::Spawner`. The Spawner returned by
+/// the executor's run-loop init closure is this type.
 pub use embassy_executor::Spawner;
