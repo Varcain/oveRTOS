@@ -205,6 +205,52 @@ static void test_async_timer_set_period_ns_reprograms_running(void **state)
 
 #endif /* !__SANITIZE_THREAD__ */
 
+/* ── ove_stream_set_notify ──────────────────────────────────────────── */
+
+static _Atomic int s_async_notify_count;
+
+static void stream_notify_cb(void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_notify_count++;
+}
+
+OVE_TEST_STORAGE(ove_stream_storage_t, s_async_stream_storage);
+static uint8_t s_async_stream_buf[64];
+
+static void test_async_stream_notify_fires_on_send(void **state)
+{
+	(void)state;
+	s_async_notify_count = 0;
+	int marker = 0;
+
+	ove_stream_t s = NULL;
+	int rc = ove_stream_init(&s, &s_async_stream_storage, s_async_stream_buf,
+				 sizeof(s_async_stream_buf), 1 /* trigger */);
+	assert_int_equal(rc, OVE_OK);
+
+	rc = ove_stream_set_notify(s, stream_notify_cb, &marker);
+	assert_int_equal(rc, OVE_OK);
+
+	/* Send must trigger the callback exactly once. */
+	const uint8_t data[] = {0xAA, 0xBB, 0xCC};
+	size_t sent = 0;
+	rc = ove_stream_send(s, data, sizeof(data), 0 /* non-blocking */, &sent);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(sent, sizeof(data));
+	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_notify_count, 1);
+
+	/* Clearing the hook stops future notifications. */
+	rc = ove_stream_set_notify(s, NULL, NULL);
+	assert_int_equal(rc, OVE_OK);
+	rc = ove_stream_send(s, data, sizeof(data), 0, &sent);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(s_async_notify_count, 1); /* unchanged */
+
+	ove_stream_deinit(s);
+}
+
 /* ── setup ───────────────────────────────────────────────────────────── */
 
 static int async_setup(void **state)
@@ -233,6 +279,7 @@ int test_async_run(void)
 		cmocka_unit_test_setup(test_async_timer_set_period_ns_reprograms_running,
 				       async_setup),
 #endif
+		cmocka_unit_test_setup(test_async_stream_notify_fires_on_send, async_setup),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

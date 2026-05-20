@@ -129,7 +129,15 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 		}
 	}
 done:
+	/* Snapshot the notify hook under the lock so we can fire it after
+	 * unlocking — callbacks (e.g. Rust AtomicWaker::wake) must not run
+	 * with the stream mutex held in case the wake path re-enters. */
+	ove_notify_cb notify_cb = (sent > 0) ? s->notify_cb : NULL;
+	void *notify_ud = s->notify_ud;
 	pthread_mutex_unlock(&s->lock);
+	if (notify_cb) {
+		notify_cb(notify_ud);
+	}
 	if (bytes_sent) {
 		*bytes_sent = sent;
 	}
@@ -217,4 +225,17 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 	size_t avail = s->count;
 	pthread_mutex_unlock(&s->lock);
 	return avail;
+}
+
+int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data)
+{
+	struct ove_stream *s = stream;
+	if (!s) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	pthread_mutex_lock(&s->lock);
+	s->notify_cb = cb;
+	s->notify_ud = user_data;
+	pthread_mutex_unlock(&s->lock);
+	return OVE_OK;
 }

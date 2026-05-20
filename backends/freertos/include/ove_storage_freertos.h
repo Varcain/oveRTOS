@@ -209,6 +209,8 @@ typedef struct ove_work ove_work_storage_t;
 struct ove_stream {
 	StreamBufferHandle_t handle;
 	StaticStreamBuffer_t static_stream;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_stream ove_stream_storage_t;

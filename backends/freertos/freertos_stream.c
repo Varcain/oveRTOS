@@ -25,6 +25,8 @@ int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *b
 
 	storage->handle = xStreamBufferCreateStatic(size, trigger, (uint8_t *)buffer,
 						    &storage->static_stream);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	*stream = storage;
 	return OVE_OK;
 }
@@ -61,6 +63,8 @@ int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 		OVE_BACKEND_FREE(w);
 		return OVE_ERR_NO_MEMORY;
 	}
+	w->notify_cb = NULL;
+	w->notify_ud = NULL;
 
 	*stream = w;
 	return OVE_OK;
@@ -85,6 +89,9 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 	}
 
 	size_t sent = xStreamBufferSend(stream->handle, data, len, ove_ns_to_ticks(timeout_ns));
+	if (sent > 0 && stream->notify_cb != NULL) {
+		stream->notify_cb(stream->notify_ud);
+	}
 	if (bytes_sent != NULL) {
 		*bytes_sent = sent;
 	}
@@ -112,6 +119,9 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
 	size_t sent;
 
 	sent = xStreamBufferSendFromISR(stream->handle, data, len, &yield);
+	if (sent > 0 && stream->notify_cb != NULL) {
+		stream->notify_cb(stream->notify_ud);
+	}
 	portYIELD_FROM_ISR(yield);
 	if (bytes_sent != NULL) {
 		*bytes_sent = sent;
@@ -143,4 +153,18 @@ int ove_stream_reset(ove_stream_t stream)
 size_t ove_stream_bytes_available(ove_stream_t stream)
 {
 	return xStreamBufferBytesAvailable(stream->handle);
+}
+
+int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data)
+{
+	if (stream == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	/* Hooks are touched single-threaded at app init (typically before
+	 * scheduler start) and then read from arbitrary contexts; the
+	 * single-fn-pointer store is naturally atomic on every supported
+	 * arch and the C-side never races with itself. */
+	stream->notify_cb = cb;
+	stream->notify_ud = user_data;
+	return OVE_OK;
 }

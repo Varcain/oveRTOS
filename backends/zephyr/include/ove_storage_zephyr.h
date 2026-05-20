@@ -125,6 +125,8 @@ struct ove_stream {
 	unsigned char *buffer;
 	size_t size;
 	atomic_t bytes_count;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_stream ove_stream_storage_t;

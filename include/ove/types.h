@@ -278,6 +278,19 @@ typedef struct ove_i2s *ove_i2s_t;
  */
 typedef uint32_t ove_eventbits_t;
 
+/**
+ * @brief Notify-callback signature used by the @c _set_notify variants of
+ *        the comm primitives (stream / queue / eventgroup / semaphore).
+ *
+ * Invoked from inside the producing call (e.g. @c ove_stream_send) after a
+ * successful update.  The implementation must be short, non-blocking, and
+ * safe to call from whatever context the originating send/give/set ran
+ * in — typically a Rust @c AtomicWaker::wake bridge for the async runtime.
+ *
+ * @param[in] user_data Opaque pointer supplied at @c _set_notify time.
+ */
+typedef void (*ove_notify_cb)(void *user_data);
+
 /* RTOS name string (compile-time) */
 #include "ove_config.h"
 

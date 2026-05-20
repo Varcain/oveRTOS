@@ -48,6 +48,8 @@ int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *b
 	storage->head = 0;
 	storage->tail = 0;
 	storage->count = 0;
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	pthread_mutex_init(&storage->lock, NULL);
 	pthread_cond_init(&storage->not_empty, NULL);
 	pthread_cond_init(&storage->not_full, NULL);
@@ -94,6 +96,8 @@ int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 	ns->head = 0;
 	ns->tail = 0;
 	ns->count = 0;
+	ns->notify_cb = NULL;
+	ns->notify_ud = NULL;
 	pthread_mutex_init(&ns->lock, NULL);
 	pthread_cond_init(&ns->not_empty, NULL);
 	pthread_cond_init(&ns->not_full, NULL);
@@ -164,12 +168,18 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 		written += chunk;
 	}
 
-out:
+out:;
+	ove_notify_cb notify_cb = (written > 0) ? ns->notify_cb : NULL;
+	void *notify_ud = ns->notify_ud;
 	if (written > 0) {
 		pthread_cond_signal(&ns->not_empty);
 	}
 
 	pthread_mutex_unlock(&ns->lock);
+
+	if (notify_cb) {
+		notify_cb(notify_ud);
+	}
 
 	if (bytes_sent != NULL) {
 		*bytes_sent = written;
@@ -270,11 +280,17 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
 		written += chunk;
 	}
 
+	ove_notify_cb notify_cb = (written > 0) ? ns->notify_cb : NULL;
+	void *notify_ud = ns->notify_ud;
 	if (written > 0) {
 		pthread_cond_signal(&ns->not_empty);
 	}
 
 	pthread_mutex_unlock(&ns->lock);
+
+	if (notify_cb) {
+		notify_cb(notify_ud);
+	}
 
 	if (bytes_sent != NULL) {
 		*bytes_sent = written;
@@ -347,4 +363,17 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 	pthread_mutex_unlock(&ns->lock);
 
 	return count;
+}
+
+int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data)
+{
+	struct ove_stream *ns = stream;
+	if (ns == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	pthread_mutex_lock(&ns->lock);
+	ns->notify_cb = cb;
+	ns->notify_ud = user_data;
+	pthread_mutex_unlock(&ns->lock);
+	return OVE_OK;
 }

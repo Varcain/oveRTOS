@@ -176,6 +176,10 @@ struct ove_stream {
 	pthread_mutex_t lock;
 	pthread_cond_t data_avail;
 	pthread_cond_t space_avail;
+	/* Async wake hook — see ove_stream_set_notify in include/ove/stream.h.
+	 * NULL when no callback is registered. */
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_stream ove_stream_storage_t;
