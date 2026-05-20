@@ -28,8 +28,8 @@ static void zephyr_timer_work(struct k_work *work)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot)
+int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		      void *user_data, uint64_t period_ns, int one_shot)
 {
 	if (timer == NULL || storage == NULL || callback == NULL) {
 		return OVE_ERR_INVALID_PARAM;
@@ -37,7 +37,7 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
 
 	storage->callback = callback;
 	storage->user_data = user_data;
-	storage->period_ms = period_ms;
+	storage->period_ns = period_ns;
 	storage->one_shot = one_shot;
 
 	k_timer_init(&storage->timer, zephyr_timer_expiry, NULL);
@@ -45,6 +45,13 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
 
 	*timer = storage;
 	return OVE_OK;
+}
+
+int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		   void *user_data, uint32_t period_ms, int one_shot)
+{
+	return ove_timer_init_ns(timer, storage, callback, user_data,
+				 (uint64_t)period_ms * 1000000ULL, one_shot);
 }
 
 void ove_timer_deinit(ove_timer_t timer)
@@ -57,8 +64,8 @@ void ove_timer_deinit(ove_timer_t timer)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_TIMER
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot)
+int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
+			uint64_t period_ns, int one_shot)
 {
 	struct ove_timer *ctx;
 
@@ -71,11 +78,18 @@ int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	int ret = ove_timer_init(timer, ctx, callback, user_data, period_ms, one_shot);
+	int ret = ove_timer_init_ns(timer, ctx, callback, user_data, period_ns, one_shot);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(ctx);
 	}
 	return ret;
+}
+
+int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
+		     int one_shot)
+{
+	return ove_timer_create_ns(timer, callback, user_data,
+				   (uint64_t)period_ms * 1000000ULL, one_shot);
 }
 
 void ove_timer_destroy(ove_timer_t timer)
@@ -92,7 +106,12 @@ void ove_timer_destroy(ove_timer_t timer)
 int ove_timer_start(ove_timer_t timer)
 {
 	__ASSERT(timer != NULL, "NULL timer handle");
-	k_timeout_t period = K_MSEC(timer->period_ms);
+	/* Zephyr k_timeout_t carries native ns resolution via K_NSEC; the
+	 * underlying kernel clock determines the actual floor (typically
+	 * hardware-tick granularity, often 31 µs at 32 kHz).  Clamp 0 to
+	 * 1 ns so a zero-duration deadline doesn't disarm the timer. */
+	uint64_t period_ns = timer->period_ns == 0 ? 1 : timer->period_ns;
+	k_timeout_t period = K_NSEC(period_ns);
 	k_timeout_t duration = period;
 
 	if (timer->one_shot) {
@@ -114,5 +133,12 @@ int ove_timer_reset(ove_timer_t timer)
 {
 	__ASSERT(timer != NULL, "NULL timer handle");
 	ove_timer_stop(timer);
+	return ove_timer_start(timer);
+}
+
+int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
+{
+	__ASSERT(timer != NULL, "NULL timer handle");
+	timer->period_ns = period_ns;
 	return ove_timer_start(timer);
 }
