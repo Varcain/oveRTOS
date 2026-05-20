@@ -31,6 +31,8 @@ int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, s
 	storage->max_items = max_items;
 	storage->head = 0;
 	storage->tail = 0;
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	nxsem_init(&storage->not_full, 0, max_items);
 	nxsem_init(&storage->not_empty, 0, 0);
 
@@ -118,6 +120,9 @@ int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 	leave_critical_section(flags);
 
 	nxsem_post(&nq->not_empty);
+	if (nq->notify_cb != NULL) {
+		nq->notify_cb(nq->notify_ud);
+	}
 	return OVE_OK;
 }
 
@@ -160,6 +165,9 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 	nq->head = (nq->head + 1) % nq->max_items;
 
 	nxsem_post(&nq->not_empty);
+	if (nq->notify_cb != NULL) {
+		nq->notify_cb(nq->notify_ud);
+	}
 	return OVE_OK;
 }
 
@@ -177,5 +185,18 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	nq->tail = (nq->tail + 1) % nq->max_items;
 
 	nxsem_post(&nq->not_full);
+	return OVE_OK;
+}
+
+int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
+{
+	struct ove_queue *nq = q;
+	if (nq == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	irqstate_t flags = enter_critical_section();
+	nq->notify_cb = cb;
+	nq->notify_ud = user_data;
+	leave_critical_section(flags);
 	return OVE_OK;
 }

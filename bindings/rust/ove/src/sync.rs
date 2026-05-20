@@ -519,6 +519,24 @@ impl Semaphore {
             unsafe { bindings::ove_sem_give(self.handle) }
         }
     }
+
+    /// Register a notify callback fired after every successful release.
+    /// Wraps the C-level `ove_sem_set_notify`.
+    ///
+    /// # Safety
+    /// Same as [`crate::Stream::set_notify`]: `user_data` must remain
+    /// valid for as long as the callback may fire, and `cb` must be
+    /// ISR-safe.
+    #[cfg(has_async)]
+    #[inline]
+    pub unsafe fn set_notify(
+        &self,
+        cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+        user_data: *mut core::ffi::c_void,
+    ) -> Result<()> {
+        let rc = unsafe { bindings::ove_sem_set_notify(self.handle, cb, user_data) };
+        Error::from_code(rc)
+    }
 }
 
 crate::ove_handle_impl!(Semaphore, ove_sem_destroy, ove_sem_deinit);

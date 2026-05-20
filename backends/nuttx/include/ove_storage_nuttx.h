@@ -46,6 +46,8 @@ struct ove_mutex {
 
 struct ove_sem {
 	sem_t sem;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 struct ove_event {
@@ -94,6 +96,8 @@ struct ove_queue {
 	unsigned int max_items;
 	unsigned int head;
 	unsigned int tail;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 	sem_t not_full;
 	sem_t not_empty;
 };
@@ -118,6 +122,8 @@ struct ove_eventgroup {
 	sem_t waiter;
 	ove_eventbits_t bits;
 	int nwaiters;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_eventgroup ove_eventgroup_storage_t;

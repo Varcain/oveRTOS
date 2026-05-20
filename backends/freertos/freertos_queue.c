@@ -25,6 +25,8 @@ int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, s
 	storage->storage = (uint8_t *)buffer;
 	storage->queue =
 		xQueueCreateStatic(max_items, item_size, storage->storage, &storage->static_queue);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	*q = storage;
 	return OVE_OK;
 }
@@ -59,6 +61,8 @@ int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 
 	w->storage = w->inline_storage;
 	w->queue = xQueueCreateStatic(max_items, item_size, w->storage, &w->static_queue);
+	w->notify_cb = NULL;
+	w->notify_ud = NULL;
 
 	*q = w;
 	return OVE_OK;
@@ -90,6 +94,9 @@ int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 	if (ret != pdPASS) {
 		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
+	if (q->notify_cb != NULL) {
+		q->notify_cb(q->notify_ud);
+	}
 	return OVE_OK;
 }
 
@@ -117,6 +124,9 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 	BaseType_t ret;
 
 	ret = xQueueSendFromISR(q->queue, data, &yield_required);
+	if (ret == pdPASS && q->notify_cb != NULL) {
+		q->notify_cb(q->notify_ud);
+	}
 	portYIELD_FROM_ISR(yield_required);
 
 	if (ret != pdPASS) {
@@ -136,5 +146,14 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	if (ret != pdPASS) {
 		return OVE_ERR_QUEUE_EMPTY;
 	}
+	return OVE_OK;
+}
+
+int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
+{
+	/* OVE_NONNULL(1) on the public decl already guarantees q != NULL;
+	 * an explicit check would trip -Werror=nonnull-compare. */
+	q->notify_cb = cb;
+	q->notify_ud = user_data;
 	return OVE_OK;
 }

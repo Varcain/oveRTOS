@@ -33,10 +33,22 @@
 
 #[cfg(feature = "async-custom-cs")]
 pub(crate) mod critical_section;
+#[cfg(has_eventgroup)]
+pub mod eventgroup;
+#[cfg(has_queue)]
+pub mod queue;
+#[cfg(has_sync)]
+pub mod semaphore;
 #[cfg(has_stream)]
 pub mod stream;
 pub(crate) mod time_driver;
 
+#[cfg(has_eventgroup)]
+pub use eventgroup::AsyncEventGroup;
+#[cfg(has_queue)]
+pub use queue::AsyncQueue;
+#[cfg(has_sync)]
+pub use semaphore::AsyncSemaphore;
 #[cfg(has_stream)]
 pub use stream::AsyncStream;
 

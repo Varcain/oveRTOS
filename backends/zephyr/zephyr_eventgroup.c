@@ -18,6 +18,8 @@ int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	k_event_init(&storage->event);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	*eg = storage;
 	return OVE_OK;
 }
@@ -61,7 +63,11 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg)
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	k_event_post(&eg->event, bits);
-	return k_event_test(&eg->event, 0xFFFFFFFFU);
+	ove_eventbits_t result = k_event_test(&eg->event, 0xFFFFFFFFU);
+	if (bits != 0 && eg->notify_cb != NULL) {
+		eg->notify_cb(eg->notify_ud);
+	}
+	return result;
 }
 
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
@@ -113,10 +119,24 @@ int ove_eventgroup_wait_bits(ove_eventgroup_t eg, ove_eventbits_t bits, uint32_t
 ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
 	k_event_post(&eg->event, bits);
-	return k_event_test(&eg->event, 0xFFFFFFFFU);
+	ove_eventbits_t result = k_event_test(&eg->event, 0xFFFFFFFFU);
+	if (bits != 0 && eg->notify_cb != NULL) {
+		eg->notify_cb(eg->notify_ud);
+	}
+	return result;
 }
 
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	return (ove_eventbits_t)k_event_test(&eg->event, 0xFFFFFFFFU);
+}
+
+int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data)
+{
+	if (eg == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	eg->notify_cb = cb;
+	eg->notify_ud = user_data;
+	return OVE_OK;
 }

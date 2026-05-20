@@ -246,6 +246,29 @@ OVE_NODISCARD int ove_queue_send_from_isr(ove_queue_t q, const void *data) OVE_N
  */
 OVE_NODISCARD int ove_queue_receive_from_isr(ove_queue_t q, void *buf) OVE_NONNULL(1, 2);
 
+/**
+ * @brief Register a notify callback fired after every successful send.
+ *
+ * The callback is invoked at the tail of @ref ove_queue_send and
+ * @ref ove_queue_send_from_isr — once an item has been enqueued. Only
+ * one slot per queue; a later call replaces an earlier registration.
+ * Pass @c cb=NULL to clear.
+ *
+ * Designed for async runtimes that need a wake hook (the Rust binding
+ * uses it to call @c AtomicWaker::wake on a task awaiting
+ * @c AsyncQueue::recv).
+ *
+ * The callback runs in whatever context the originating send used —
+ * thread or ISR. Implementations must be non-blocking and ISR-safe.
+ *
+ * @param[in] q          Queue handle.
+ * @param[in] cb         Callback to invoke after successful sends, or
+ *                       @c NULL to clear.
+ * @param[in] user_data  Opaque pointer forwarded to @p cb.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data) OVE_NONNULL(1);
+
 #else /* !CONFIG_OVE_QUEUE */
 
 /* P0-3: _init/_deinit stubs so OVE_QUEUE_DEFINE_STATIC links cleanly
@@ -300,6 +323,13 @@ static inline int ove_queue_receive_from_isr(ove_queue_t q, void *b)
 {
 	(void)q;
 	(void)b;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *ud)
+{
+	(void)q;
+	(void)cb;
+	(void)ud;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

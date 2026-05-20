@@ -211,6 +211,12 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
  */
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg);
 
+/**
+ * @brief Register a notify callback fired after every successful set of
+ *        one or more bits. See `set_notify` family across primitives.
+ */
+int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data);
+
 #else /* !CONFIG_OVE_EVENTGROUP */
 
 /* P0-3: _init/_deinit stubs so OVE_EVENTGROUP_DEFINE_STATIC links cleanly
@@ -269,6 +275,13 @@ static inline ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	(void)eg;
 	return 0;
+}
+static inline int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *ud)
+{
+	(void)eg;
+	(void)cb;
+	(void)ud;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 #endif /* CONFIG_OVE_EVENTGROUP */

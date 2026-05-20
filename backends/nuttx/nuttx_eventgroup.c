@@ -26,6 +26,8 @@ int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 	nxsem_init(&storage->waiter, 0, 0);
 	storage->bits = 0;
 	storage->nwaiters = 0;
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 
 	*eg = storage;
 	return OVE_OK;
@@ -84,8 +86,13 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
 	for (i = 0; i < g->nwaiters; i++) {
 		nxsem_post(&g->waiter);
 	}
+	ove_notify_cb notify_cb = (bits != 0) ? g->notify_cb : NULL;
+	void *notify_ud = g->notify_ud;
 	leave_critical_section(flags);
 
+	if (notify_cb) {
+		notify_cb(notify_ud);
+	}
 	return result;
 }
 
@@ -180,4 +187,17 @@ ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 
 	/* Lock-free: 32-bit aligned read is atomic on ARM */
 	return g->bits;
+}
+
+int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data)
+{
+	struct ove_eventgroup *g = eg;
+	if (g == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	irqstate_t flags = enter_critical_section();
+	g->notify_cb = cb;
+	g->notify_ud = user_data;
+	leave_critical_section(flags);
+	return OVE_OK;
 }

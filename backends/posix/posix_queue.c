@@ -124,7 +124,14 @@ int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 	sq->count++;
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_QUEUE, OVE_TRACE_ACT_POST, sq);
 	pthread_cond_signal(&sq->not_empty);
+	/* Snapshot notify hook under the lock; fire after unlock so the
+	 * callback can't re-enter the queue while we hold it. */
+	ove_notify_cb notify_cb = sq->notify_cb;
+	void *notify_ud = sq->notify_ud;
 	pthread_mutex_unlock(&sq->lock);
+	if (notify_cb) {
+		notify_cb(notify_ud);
+	}
 	return OVE_OK;
 }
 
@@ -182,6 +189,19 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	sq->tail = (sq->tail + 1) % sq->max_items;
 	sq->count--;
 	pthread_cond_signal(&sq->not_full);
+	pthread_mutex_unlock(&sq->lock);
+	return OVE_OK;
+}
+
+int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
+{
+	struct ove_queue *sq = q;
+	if (!sq) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	pthread_mutex_lock(&sq->lock);
+	sq->notify_cb = cb;
+	sq->notify_ud = user_data;
 	pthread_mutex_unlock(&sq->lock);
 	return OVE_OK;
 }

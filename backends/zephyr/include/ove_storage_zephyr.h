@@ -36,6 +36,8 @@ struct ove_mutex {
 
 struct ove_sem {
 	struct k_sem sem;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 struct ove_event {
@@ -76,6 +78,8 @@ typedef struct ove_thread ove_thread_storage_t;
 struct ove_queue {
 	struct k_msgq msgq;
 	char *buffer;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_queue ove_queue_storage_t;
@@ -97,6 +101,8 @@ typedef struct ove_timer ove_timer_storage_t;
 
 struct ove_eventgroup {
 	struct k_event event;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_eventgroup ove_eventgroup_storage_t;

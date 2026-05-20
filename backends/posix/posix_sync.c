@@ -104,6 +104,8 @@ int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initia
 	(void)max;
 	struct ove_sem *s = (struct ove_sem *)storage;
 	sem_init(&s->sem, 0, initial);
+	s->notify_cb = NULL;
+	s->notify_ud = NULL;
 	*sem = s;
 	return OVE_OK;
 }
@@ -128,6 +130,8 @@ int ove_sem_create(ove_sem_t *sem, unsigned int initial, unsigned int max)
 		return OVE_ERR_NO_MEMORY;
 	}
 	sem_init(&s->sem, 0, initial);
+	s->notify_cb = NULL;
+	s->notify_ud = NULL;
 	*sem = s;
 	return OVE_OK;
 }
@@ -180,7 +184,21 @@ void ove_sem_give(ove_sem_t sem)
 	if (s) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_POST, s);
 		sem_post(&s->sem);
+		if (s->notify_cb != NULL) {
+			s->notify_cb(s->notify_ud);
+		}
 	}
+}
+
+int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
+{
+	struct ove_sem *s = sem;
+	if (s == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	s->notify_cb = cb;
+	s->notify_ud = user_data;
+	return OVE_OK;
 }
 
 /* ---------- Event (binary semaphore) ---------- */

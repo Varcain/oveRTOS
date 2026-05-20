@@ -1042,6 +1042,14 @@ unsafe extern "C" {
     pub fn ove_sem_give(sem: ove_sem_t);
 }
 unsafe extern "C" {
+    #[doc = " @brief Register a notify callback fired after every successful give.\n\n The callback is invoked at the tail of @ref ove_sem_give — once the\n count has been incremented. Only one slot per semaphore; a later\n call replaces an earlier registration. Pass @c cb=NULL to clear.\n\n Designed for async runtimes (Rust binding's @c AsyncSemaphore) that\n need a wake hook. Runs in whatever context the give was issued in —\n implementation must be non-blocking and ISR-safe.\n\n @param[in] sem        Semaphore handle.\n @param[in] cb         Callback to invoke, or @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_sem_set_notify(
+        sem: ove_sem_t,
+        cb: ove_notify_cb,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Wait for a binary event to be signalled.\n\n Blocks the calling thread until ove_event_signal() or\n ove_event_signal_from_isr() is called on @p evt, or until the timeout\n expires.  The event is automatically reset (consumed) after a successful\n wait.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[in] evt         Event handle obtained from ove_event_init() or\n                        ove_event_create().\n @param[in] timeout_ns  Maximum time to wait in nanoseconds.  Pass\n                        @c OVE_WAIT_FOREVER to block indefinitely.\n @return OVE_OK on success, @c OVE_ERR_TIMEOUT if the deadline was\n         reached, or another negative error code on failure.\n\n @see ove_event_signal, ove_event_signal_from_isr"]
     pub fn ove_event_wait(evt: ove_event_t, timeout_ns: u64) -> core::ffi::c_int;
 }
@@ -1749,6 +1757,14 @@ unsafe extern "C" {
         buf: *mut core::ffi::c_void,
     ) -> core::ffi::c_int;
 }
+unsafe extern "C" {
+    #[doc = " @brief Register a notify callback fired after every successful send.\n\n The callback is invoked at the tail of @ref ove_queue_send and\n @ref ove_queue_send_from_isr — once an item has been enqueued. Only\n one slot per queue; a later call replaces an earlier registration.\n Pass @c cb=NULL to clear.\n\n Designed for async runtimes that need a wake hook (the Rust binding\n uses it to call @c AtomicWaker::wake on a task awaiting\n @c AsyncQueue::recv).\n\n The callback runs in whatever context the originating send used —\n thread or ISR. Implementations must be non-blocking and ISR-safe.\n\n @param[in] q          Queue handle.\n @param[in] cb         Callback to invoke after successful sends, or\n                       @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_queue_set_notify(
+        q: ove_queue_t,
+        cb: ove_notify_cb,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_timer {
@@ -2062,6 +2078,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Read the current bit value of the event group without blocking.\n\n Returns a snapshot of the event group's bit pattern at the time of the\n call. The value may change immediately after the call returns.\n\n @param[in] eg  Event group handle.\n @return Current event bits value."]
     pub fn ove_eventgroup_get_bits(eg: ove_eventgroup_t) -> ove_eventbits_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a notify callback fired after every successful set of\n        one or more bits. See `set_notify` family across primitives."]
+    pub fn ove_eventgroup_set_notify(
+        eg: ove_eventgroup_t,
+        cb: ove_notify_cb,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
 }
 #[doc = " @brief Prototype for a work item handler function.\n\n Called by the work queue thread when the work item is executed. The\n @p work handle may be used to reschedule or identify the item inside\n the handler.\n\n @param[in] work  Handle of the work item being executed."]
 pub type ove_work_fn = Option<unsafe extern "C" fn(work: ove_work_t)>;

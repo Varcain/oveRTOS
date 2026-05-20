@@ -21,6 +21,8 @@ int ove_eventgroup_init(ove_eventgroup_t *eg, ove_eventgroup_storage_t *storage)
 		return OVE_ERR_INVALID_PARAM;
 	}
 	storage->handle = xEventGroupCreateStatic(&storage->static_eg);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	*eg = storage;
 	return OVE_OK;
 }
@@ -65,7 +67,11 @@ void ove_eventgroup_destroy(ove_eventgroup_t eg)
 
 ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
 {
-	return (ove_eventbits_t)xEventGroupSetBits(eg->handle, (EventBits_t)bits);
+	ove_eventbits_t result = (ove_eventbits_t)xEventGroupSetBits(eg->handle, (EventBits_t)bits);
+	if (bits != 0 && eg->notify_cb != NULL) {
+		eg->notify_cb(eg->notify_ud);
+	}
+	return result;
 }
 
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits)
@@ -111,6 +117,9 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 	BaseType_t ret;
 
 	ret = xEventGroupSetBitsFromISR(eg->handle, (EventBits_t)bits, &yield);
+	if (ret == pdPASS && bits != 0 && eg->notify_cb != NULL) {
+		eg->notify_cb(eg->notify_ud);
+	}
 	portYIELD_FROM_ISR(yield);
 
 	if (ret == pdPASS) {
@@ -122,4 +131,14 @@ ove_eventbits_t ove_eventgroup_set_bits_from_isr(ove_eventgroup_t eg, ove_eventb
 ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 {
 	return (ove_eventbits_t)xEventGroupGetBits(eg->handle);
+}
+
+int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data)
+{
+	if (eg == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	eg->notify_cb = cb;
+	eg->notify_ud = user_data;
+	return OVE_OK;
 }
