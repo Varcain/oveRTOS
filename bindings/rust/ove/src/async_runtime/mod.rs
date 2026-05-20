@@ -33,7 +33,12 @@
 
 #[cfg(feature = "async-custom-cs")]
 pub(crate) mod critical_section;
+#[cfg(has_stream)]
+pub mod stream;
 pub(crate) mod time_driver;
+
+#[cfg(has_stream)]
+pub use stream::AsyncStream;
 
 /// Re-export so users can write `use ove::async_runtime::Executor;`
 /// without a direct dependency on `embassy_executor`.

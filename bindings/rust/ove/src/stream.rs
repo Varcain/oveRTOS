@@ -197,6 +197,31 @@ impl<const N: usize> Stream<N> {
     pub fn bytes_available(&self) -> usize {
         unsafe { bindings::ove_stream_bytes_available(self.handle) }
     }
+
+    /// Register a notify callback fired after every successful send.
+    /// Wraps the C-level `ove_stream_set_notify`.
+    ///
+    /// # Safety
+    /// - `user_data` must remain valid for as long as the callback may
+    ///   fire — i.e. until either the stream is destroyed or
+    ///   `set_notify(None, ...)` clears the registration.
+    /// - `cb` may be invoked from any context the producer uses,
+    ///   including ISR. Its body must therefore be non-blocking and
+    ///   ISR-safe.
+    ///
+    /// Higher-level users should reach for the async wrappers in
+    /// `ove::async_runtime` instead of using this directly — they hide
+    /// the lifetime and ISR-safety constraints behind a safe API.
+    #[cfg(has_async)]
+    #[inline]
+    pub unsafe fn set_notify(
+        &self,
+        cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+        user_data: *mut core::ffi::c_void,
+    ) -> Result<()> {
+        let rc = unsafe { bindings::ove_stream_set_notify(self.handle, cb, user_data) };
+        Error::from_code(rc)
+    }
 }
 
 crate::ove_handle_impl!(Stream<const N: usize>, ove_stream_destroy, ove_stream_deinit);
