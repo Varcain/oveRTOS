@@ -24,16 +24,23 @@ embedded-hal = ["dep:embedded-hal"]
 # `ove::Uart` / `ove::Stream` / `ove::fs::File`.  Separate from
 # `embedded-hal` so callers can pick exactly what they need.
 embedded-io = ["dep:embedded-io"]
-# `async` activates the Embassy-based async runtime.  Requires the C
-# substrate to be built with `CONFIG_OVE_ASYNC=y` (build.rs detects
-# the symbol and emits `cfg(has_async)`).  The async-runtime module
-# is only compiled when both the feature and the cfg are present;
-# users who turn on the feature without configuring the C side get a
-# clear compile error from the cfg gate.
+# `async` activates the Embassy-based async runtime hosted on the
+# oveRTOS C substrate. Requires the C side to be built with
+# `CONFIG_OVE_ASYNC=y` (build.rs detects this and emits
+# `cfg(has_async)`); users who turn on the feature without configuring
+# the C side get a clear compile error from the cfg gate.
 #
-# Picking the executor architecture is target-specific and exposed
-# via the `async-arch-*` features below — every app must enable
-# exactly one or supply `embassy-executor` features directly.
+# The runtime uses our own [`Executor`](async_runtime::Executor) that
+# wraps `embassy_executor::raw::Executor` and blocks on
+# `ove_event_wait` between polls — this yields cleanly to the
+# FreeRTOS / Zephyr / NuttX scheduler instead of spinning on WFE or
+# parking a host thread. No `embassy-executor` arch feature is
+# selected; our `__pender` symbol replaces the upstream one.
+#
+# Our `critical-section::Impl` is backed by `ove_irq_lock` /
+# `ove_irq_unlock` on every target (POSIX falls through to a pthread
+# mutex via `ove_irq_lock`'s POSIX impl). `restore-state-u64` matches
+# `ove_irq_key_t`.
 async = [
     "dep:embassy-executor",
     "dep:embassy-time",
@@ -41,40 +48,14 @@ async = [
     "dep:embassy-time-queue-utils",
     "dep:embassy-sync",
     "dep:critical-section",
-]
-# `async-arch-std` — POSIX/host target. `embassy-executor/arch-std`
-# transitively activates `critical-section/std`, which provides a
-# pthread_mutex-based critical-section impl. We DON'T register our own
-# `set_impl!` here — the std impl is correct on hosted targets.
-async-arch-std = [
-    "async",
-    "embassy-executor/arch-std",
-    "embassy-executor/executor-thread",
-]
-# `async-arch-cortex-m` — embedded ARM target. We DO register our own
-# impl backed by `ove_irq_lock`, sized to match `ove_irq_key_t`
-# (uint64_t) via `critical-section/restore-state-u64`. The internal
-# `async-custom-cs` feature gates our `set_impl!` so it only compiles
-# on this arch path.
-async-arch-cortex-m = [
-    "async",
-    "async-custom-cs",
-    "embassy-executor/arch-cortex-m",
-    "embassy-executor/executor-thread",
     "critical-section/restore-state-u64",
 ]
-# `async-arch-spin` — generic spin-poll executor for non-Cortex-M
-# embedded targets (RISC-V, AVR, etc.). Same impl plumbing as cortex-m.
-async-arch-spin = [
-    "async",
-    "async-custom-cs",
-    "embassy-executor/arch-spin",
-    "embassy-executor/executor-thread",
-    "critical-section/restore-state-u64",
-]
-# Internal — selected by the arch-* features that need our custom
-# critical-section impl. Don't activate directly.
-async-custom-cs = []
+# Back-compat aliases — all collapse to `async`. The arch is no longer
+# user-selectable because our run loop uses `ove_event_wait` instead of
+# arch-specific wait primitives.
+async-arch-std = ["async"]
+async-arch-cortex-m = ["async"]
+async-arch-spin = ["async"]
 
 [dependencies]
 # Fixed-capacity, no_std container library — `ove::containers::*` re-exports
