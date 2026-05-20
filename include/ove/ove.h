@@ -32,6 +32,7 @@
  * | Header                  | Subsystem                                  |
  * |-------------------------|--------------------------------------------|
  * | ove/types.h             | Common types and error codes               |
+ * | ove/irq.h               | Critical sections and ISR-context detection|
  * | ove/log.h               | Logging                                    |
  * | ove/thread.h            | Thread management                          |
  * | ove/sync.h              | Mutexes, semaphores, events, condvars      |
@@ -124,6 +125,7 @@
  * redeclares malloc / calloc / realloc / zalloc / memalign with
  * __attribute__((error(...))) so subsequent calls fail compilation. */
 #include "ove/heap_assert.h"
+#include "ove/irq.h"
 #include "ove/log.h"
 #include "ove/thread.h"
 #include "ove/sync.h"

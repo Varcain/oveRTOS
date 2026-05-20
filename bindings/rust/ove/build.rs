@@ -107,6 +107,7 @@ fn main() {
             "I2C",
             "I2S",
             "PM",
+            "ASYNC",
         ];
         for m in &modules {
             let cfg_name = format!("has_{}", m.to_lowercase());

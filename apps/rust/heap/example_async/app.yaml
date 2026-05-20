@@ -1,0 +1,10 @@
+lang: rust
+config_name: example_async_rust_heap
+description: "Rust async (Embassy) demo on oveRTOS"
+rust:
+  lib_name: example_async
+defconfig:
+  - CONFIG_OVE_SYNC=y
+  - CONFIG_OVE_TIMER=y
+  - CONFIG_OVE_TIME=y
+  - CONFIG_OVE_ASYNC=y
