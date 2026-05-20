@@ -91,6 +91,39 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
  */
 void ove_timer_deinit(ove_timer_t timer);
 
+/**
+ * @brief Initialise a software timer with a nanosecond period using
+ *        caller-supplied static storage.
+ *
+ * Identical to @ref ove_timer_init except the period is specified in
+ * nanoseconds.  Used primarily by the async runtime substrate
+ * (@c CONFIG_OVE_ASYNC) to drive the Embassy time driver at sub-ms
+ * granularity.
+ *
+ * Effective resolution is backend-dependent:
+ *  - Zephyr:  underlying tick (K_NSEC); typically µs-class.
+ *  - FreeRTOS: rounded up to @c configTICK_RATE_HZ; typically 1 ms.
+ *  - NuttX:   POSIX timer resolution; typically µs.
+ *  - POSIX:   @c timer_create with CLOCK_MONOTONIC; nsec.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.  When @c CONFIG_OVE_ASYNC is off,
+ *       the function is still available — it just isn't routed by the
+ *       async substrate.
+ *
+ * @param[out] timer      Receives the opaque timer handle on success.
+ * @param[in]  storage    Pointer to statically allocated backend storage.
+ * @param[in]  callback   Function invoked when the timer expires.
+ *                        Must not be NULL.
+ * @param[in]  user_data  Opaque pointer forwarded to @p callback.
+ * @param[in]  period_ns  Timer period in nanoseconds.  Must be > 0.
+ * @param[in]  one_shot   Non-zero for one-shot, zero for periodic.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_init, ove_timer_create_ns
+ */
+int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		      void *user_data, uint64_t period_ns, int one_shot);
+
 /* _create / _destroy — heap-gated */
 #ifdef OVE_HEAP_TIMER
 
@@ -116,6 +149,29 @@ void ove_timer_deinit(ove_timer_t timer);
  */
 int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
 		     int one_shot);
+
+/**
+ * @brief Allocate and initialise a software timer with a nanosecond
+ *        period from the heap.
+ *
+ * Identical to @ref ove_timer_create except the period is specified in
+ * nanoseconds.  See @ref ove_timer_init_ns for the per-backend
+ * resolution floor.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.
+ *
+ * @param[out] timer      Receives the opaque timer handle on success.
+ * @param[in]  callback   Function invoked when the timer expires.
+ *                        Must not be NULL.
+ * @param[in]  user_data  Opaque pointer forwarded to @p callback.
+ * @param[in]  period_ns  Timer period in nanoseconds.  Must be > 0.
+ * @param[in]  one_shot   Non-zero for one-shot, zero for periodic.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_create, ove_timer_init_ns
+ */
+int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
+			uint64_t period_ns, int one_shot);
 
 /**
  * @brief Stop and free a timer allocated with ove_timer_create().
@@ -196,6 +252,26 @@ static inline void ove_timer_deinit(ove_timer_t t)
 }
 
 static inline int ove_timer_create(ove_timer_t *t, ove_timer_fn cb, void *ud, uint32_t p, int os)
+{
+	(void)t;
+	(void)cb;
+	(void)ud;
+	(void)p;
+	(void)os;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_timer_init_ns(ove_timer_t *t, ove_timer_storage_t *s, ove_timer_fn cb,
+				    void *ud, uint64_t p, int os)
+{
+	(void)t;
+	(void)s;
+	(void)cb;
+	(void)ud;
+	(void)p;
+	(void)os;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_timer_create_ns(ove_timer_t *t, ove_timer_fn cb, void *ud, uint64_t p, int os)
 {
 	(void)t;
 	(void)cb;

@@ -130,6 +130,23 @@ config OVE_STREAM
     bool "Stream I/O"
     default n
 
+config OVE_ASYNC
+    bool "Async runtime substrate (Embassy)"
+    default n
+    depends on OVE_TIMER && OVE_SYNC && OVE_TIME
+    help
+      Provides the C primitives the Rust binding needs to host
+      Embassy: ove_irq_lock/unlock, ove_is_in_isr, and the
+      nanosecond-period timer variant ove_timer_init_ns. Wakes
+      the executor through the existing ove_event_signal_from_isr.
+
+      No effect on the C API surface for non-async users; symbols
+      are gated by CONFIG_OVE_ASYNC and absent when the option is
+      off.
+
+      Rust apps then opt in via the `async` cargo feature on the
+      `ove` crate.
+
 menu "Bus drivers"
 
 config OVE_UART

@@ -74,6 +74,7 @@ cat > "$TMP/ove_config.h" <<'CFG'
 #define CONFIG_OVE_PM 1
 #define CONFIG_OVE_PM_MAX_WAKE_SOURCES 8
 #define CONFIG_OVE_PM_MAX_NOTIFIERS 4
+#define CONFIG_OVE_ASYNC 1
 #define CONFIG_OVE_APP_NAME "stub"
 #define CONFIG_OVE_APP_VERSION "0.0.0"
 #define OVE_LOG_LEVEL 0

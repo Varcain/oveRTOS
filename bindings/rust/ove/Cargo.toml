@@ -24,6 +24,57 @@ embedded-hal = ["dep:embedded-hal"]
 # `ove::Uart` / `ove::Stream` / `ove::fs::File`.  Separate from
 # `embedded-hal` so callers can pick exactly what they need.
 embedded-io = ["dep:embedded-io"]
+# `async` activates the Embassy-based async runtime.  Requires the C
+# substrate to be built with `CONFIG_OVE_ASYNC=y` (build.rs detects
+# the symbol and emits `cfg(has_async)`).  The async-runtime module
+# is only compiled when both the feature and the cfg are present;
+# users who turn on the feature without configuring the C side get a
+# clear compile error from the cfg gate.
+#
+# Picking the executor architecture is target-specific and exposed
+# via the `async-arch-*` features below — every app must enable
+# exactly one or supply `embassy-executor` features directly.
+async = [
+    "dep:embassy-executor",
+    "dep:embassy-time",
+    "dep:embassy-time-driver",
+    "dep:embassy-time-queue-utils",
+    "dep:embassy-sync",
+    "dep:critical-section",
+]
+# `async-arch-std` — POSIX/host target. `embassy-executor/arch-std`
+# transitively activates `critical-section/std`, which provides a
+# pthread_mutex-based critical-section impl. We DON'T register our own
+# `set_impl!` here — the std impl is correct on hosted targets.
+async-arch-std = [
+    "async",
+    "embassy-executor/arch-std",
+    "embassy-executor/executor-thread",
+]
+# `async-arch-cortex-m` — embedded ARM target. We DO register our own
+# impl backed by `ove_irq_lock`, sized to match `ove_irq_key_t`
+# (uint64_t) via `critical-section/restore-state-u64`. The internal
+# `async-custom-cs` feature gates our `set_impl!` so it only compiles
+# on this arch path.
+async-arch-cortex-m = [
+    "async",
+    "async-custom-cs",
+    "embassy-executor/arch-cortex-m",
+    "embassy-executor/executor-thread",
+    "critical-section/restore-state-u64",
+]
+# `async-arch-spin` — generic spin-poll executor for non-Cortex-M
+# embedded targets (RISC-V, AVR, etc.). Same impl plumbing as cortex-m.
+async-arch-spin = [
+    "async",
+    "async-custom-cs",
+    "embassy-executor/arch-spin",
+    "embassy-executor/executor-thread",
+    "critical-section/restore-state-u64",
+]
+# Internal — selected by the arch-* features that need our custom
+# critical-section impl. Don't activate directly.
+async-custom-cs = []
 
 [dependencies]
 # Fixed-capacity, no_std container library — `ove::containers::*` re-exports
@@ -48,6 +99,21 @@ log = "0.4"
 embedded-hal = { version = "1.0", optional = true }
 # `embedded-io` traits — opt-in via the `embedded-io` feature.
 embedded-io = { version = "0.6", optional = true }
+# Embassy substrate — all opt-in via the `async` feature.  See the
+# feature documentation for arch selection.  Versions pinned to a
+# minor; bumps are intentional and validated by an integration test
+# (one task waiting on a timer) per backend.
+embassy-executor = { version = "0.7", default-features = false, optional = true }
+embassy-time = { version = "0.4", default-features = false, features = ["tick-hz-1_000_000"], optional = true }
+embassy-time-driver = { version = "0.2", default-features = false, optional = true }
+embassy-time-queue-utils = { version = "0.1", default-features = false, optional = true }
+embassy-sync = { version = "0.7", default-features = false, optional = true }
+# Arch-feature gating selects the right restore-state width:
+#  - async-arch-std    → critical-section/std (transitively, restore-state-bool)
+#  - async-arch-cortex-m / -spin → critical-section/restore-state-u64
+# Exactly one is enabled at any time; mixing them is a compile error
+# inside the critical-section crate.
+critical-section = { version = "1.2", default-features = false, optional = true }
 
 [build-dependencies]
 bindgen = "0.72"

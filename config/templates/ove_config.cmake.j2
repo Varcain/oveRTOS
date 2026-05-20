@@ -50,7 +50,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
                "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
-               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "PM"] %}
+               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "PM", "ASYNC"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}
@@ -224,6 +224,9 @@ set(OVE_BACKEND_SOURCES
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/posix/posix_board.c
+{% endif %}
+{% if config.get("CONFIG_OVE_ASYNC") == True and not wasm_on %}
+    ${OVE_DIR}/backends/posix/posix_irq.c
 {% endif %}
 {% if wasm_on %}
     ${OVE_DIR}/backends/wasm/wasm_console.c

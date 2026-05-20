@@ -1,0 +1,32 @@
+[package]
+name = "example_async"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# `async-arch-std` selects `embassy-executor`'s arch-std + executor-thread
+# features, the right combination for POSIX hosts. Embedded targets would
+# use `async-arch-cortex-m` instead.
+ove = { path = "../../../../bindings/rust/ove", features = ["alloc", "async", "async-arch-std"] }
+log = "0.4"
+ove-allocator = { path = "../../../../bindings/rust/ove-allocator", default-features = false }
+# Direct dep so the user can access `#[embassy_executor::task]` and the
+# `Spawner` type. Must match the version pinned in `ove`'s manifest.
+embassy-executor = { version = "0.7", default-features = false }
+embassy-time = { version = "0.4", default-features = false, features = ["tick-hz-1_000_000"] }
+embassy-sync = { version = "0.7", default-features = false }
+
+[features]
+default = []
+# On `std` builds the std allocator is already linked, so we tell
+# ove-allocator not to install its own libc-malloc-backed one.
+std = ["ove/std", "ove-allocator/no_install"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

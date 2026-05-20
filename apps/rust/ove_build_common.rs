@@ -26,7 +26,7 @@ fn ove_detect_config() {
         "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE", "SYNC",
         "QUEUE", "TIMER", "EVENTGROUP", "INFER",
         "NET", "NET_TLS", "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_SNTP",
-        "UART", "SPI", "I2C", "PM",
+        "UART", "SPI", "I2C", "PM", "ASYNC",
     ];
     for m in &modules {
         let cfg_name = format!("has_{}", m.to_lowercase());

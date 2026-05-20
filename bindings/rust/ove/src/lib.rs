@@ -88,6 +88,17 @@ pub mod heap {
     pub use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 }
 
+#[cfg(all(feature = "async", has_async))]
+pub mod async_runtime;
+// A compile-time error to catch the common misconfiguration where the
+// Cargo `async` feature is on but the C side wasn't built with
+// CONFIG_OVE_ASYNC=y. Without this gate the binding would fail with
+// confusing linker errors about missing ove_irq_lock / ove_event_*.
+#[cfg(all(feature = "async", not(has_async)))]
+compile_error!(
+    "feature = \"async\" requires CONFIG_OVE_ASYNC=y on the C side. \
+     Enable it in your board's defconfig (or .config) and rebuild."
+);
 #[cfg(has_audio)]
 pub mod audio;
 #[cfg(not(docsrs))]
