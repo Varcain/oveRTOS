@@ -51,6 +51,7 @@ fn main() {
             "spi",
             "i2c",
             "i2s",
+            "async",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{m})");

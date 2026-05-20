@@ -320,6 +320,20 @@ pub struct ove_i2s {
 pub type ove_i2s_t = *mut ove_i2s;
 #[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag.  Up to 32 independent flags\n can be combined in a single event group."]
 pub type ove_eventbits_t = u32;
+#[doc = " @brief Opaque cookie returned by @ref ove_irq_lock for use with\n        @ref ove_irq_unlock.\n\n The width is sized to fit each backend's native restore state:\n  - Zephyr:  @c unsigned @c int returned by @c irq_lock().\n  - FreeRTOS: 0 (the FreeRTOS @c taskENTER_CRITICAL macros are\n              symmetric and don't return a value).\n  - NuttX:   @c irqstate_t (typically @c uint32_t).\n  - POSIX:   @c uint64_t (a TLS nesting depth — no real ISR-mask).\n\n The C ABI commits to @c uint64_t so the Rust binding's\n `critical-section::Impl::RawRestoreState` can be a single fixed\n size across every target."]
+pub type ove_irq_key_t = u64;
+unsafe extern "C" {
+    #[doc = " @brief Enter a critical section: disable interrupts (or equivalent\n        backend mechanism) and return an opaque restore cookie.\n\n Safe to call from both thread and ISR context. Nestable — each\n @ref ove_irq_lock must be paired with a matching @ref ove_irq_unlock\n passing the same cookie back, in LIFO order. The outermost\n @ref ove_irq_unlock restores the previous interrupt state.\n\n @return Opaque cookie to pass to @ref ove_irq_unlock.\n @note Requires @c CONFIG_OVE_ASYNC."]
+    pub fn ove_irq_lock() -> ove_irq_key_t;
+}
+unsafe extern "C" {
+    #[doc = " @brief Leave a critical section, restoring the interrupt state\n        captured by the corresponding @ref ove_irq_lock.\n\n @param[in] key  Cookie returned by the matching @ref ove_irq_lock.\n @note Requires @c CONFIG_OVE_ASYNC."]
+    pub fn ove_irq_unlock(key: ove_irq_key_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Return true if the caller is currently in interrupt context.\n\n Used by higher-level bindings (Rust async runtime) to dispatch\n between the thread-context and ISR-context variants of a wake\n primitive (e.g. @c ove_event_signal vs @c ove_event_signal_from_isr).\n\n @return @c true if the caller is in an ISR or equivalent\n         interrupt-handling context, @c false otherwise.\n @note On host-sim backends (POSIX, WASM) the simulator sets a\n       thread-local flag inside its ISR wrappers; outside those\n       paths the function returns @c false.\n @note Requires @c CONFIG_OVE_ASYNC."]
+    pub fn ove_is_in_isr() -> bool;
+}
 unsafe extern "C" {
     #[doc = " @brief Initialise the system console hardware.\n\n Configures the underlying serial peripheral (baud rate, framing, etc.)\n as determined by the board support package. Must be called once before\n @ref ove_console_getchar, @ref ove_console_putchar, or\n @ref ove_console_write are used.\n\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_CONSOLE."]
     pub fn ove_console_init() -> core::ffi::c_int;
@@ -937,7 +951,7 @@ unsafe extern "C" {
     pub fn ove_sem_deinit(sem: ove_sem_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  One waiter is unblocked\n per ove_event_signal() call.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
+    #[doc = " @brief Initialise a binary event object using caller-supplied static storage.\n\n A binary event starts in the unsignalled state.  A signal is sticky:\n if posted while no thread is waiting, it remains pending and is\n consumed by the next ove_event_wait().  After a successful wait the\n event is auto-reset back to unsignalled.\n\n @note Requires @c CONFIG_OVE_SYNC.\n\n @param[out] evt      Receives the opaque event handle on success.\n @param[in]  storage  Pointer to statically allocated backend storage.\n                      Must remain valid for the lifetime of the event.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_event_deinit, ove_event_create, ove_event_wait, ove_event_signal"]
     pub fn ove_event_init(
         evt: *mut ove_event_t,
         storage: *mut ove_event_storage_t,
@@ -1111,7 +1125,7 @@ const _: () = {
         [core::mem::offset_of!(ove_audio_buf, frames) - 8usize];
     ["Offset of field: ove_audio_buf::fmt"][core::mem::offset_of!(ove_audio_buf, fmt) - 16usize];
 };
-#[doc = " @brief Virtual function table (vtable) for an audio processing node.\n\n Each node kind implements a subset of these callbacks.  NULL pointers\n are treated as no-ops by the graph engine (except @c process, which\n must be provided)."]
+#[doc = " @brief Virtual function table (vtable) for an audio processing node.\n\n Each node kind implements a subset of these callbacks.  @c configure\n and @c process are required (called unconditionally during build and\n each cycle).  @c start, @c stop, and @c destroy may be NULL — the\n graph engine treats a NULL pointer as a no-op."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_audio_node_ops {
@@ -1365,7 +1379,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Release all resources held by an audio graph.\n\n Frees the heap buffer storage and resets internal state.  The graph\n must be stopped before calling this function.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
+    #[doc = " @brief Release all resources held by an audio graph.\n\n Stops the graph (if running), tears down each node, and frees the\n heap-allocated inter-node buffer block.  Caller-supplied buffer storage\n registered via @ref ove_audio_graph_set_buf_storage is left intact.\n\n @param[in] g  Initialised graph instance.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_init"]
     pub fn ove_audio_graph_deinit(g: *mut ove_audio_graph);
 }
 unsafe extern "C" {
@@ -1418,11 +1432,11 @@ unsafe extern "C" {
     pub fn ove_audio_graph_stop(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Execute one processing cycle (app-driven mode).\n\n Calls each node's @c process callback in topological order, passing\n inter-node buffers along the edges.  Intended for test or offline use;\n in sink-driven mode the hardware callback drives processing instead.\n\n @param[in] g  Running graph instance.\n @return 0 on success, negative error code if any node reports an error.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
+    #[doc = " @brief Execute one processing cycle (app-driven mode).\n\n Calls each node's @c process callback in topological order, passing\n inter-node buffers along the edges.  Intended for test or offline use;\n in sink-driven mode the hardware callback drives processing instead.\n\n @param[in] g  Graph instance in @c OVE_AUDIO_GRAPH_READY or\n               @c OVE_AUDIO_GRAPH_RUNNING state.\n @return 0 on success, @c OVE_ERR_NOT_SUPPORTED if the graph has not\n         been built, or another negative error code if any node reports\n         an error.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_start"]
     pub fn ove_audio_graph_process(g: *mut ove_audio_graph) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Retrieve a snapshot of graph runtime statistics.\n\n Copies the current diagnostic counters from the graph into the\n caller-supplied @p stats structure.\n\n @param[in]  g      Graph instance (running or ready).\n @param[out] stats  Pointer to a caller-allocated structure that will\n                    receive the statistics snapshot.\n @return 0 on success, negative error code on failure.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_stats"]
+    #[doc = " @brief Retrieve a snapshot of graph runtime statistics.\n\n Copies the current diagnostic counters from the graph into the\n caller-supplied @p stats structure.  Valid in any state once\n @ref ove_audio_graph_init has succeeded.\n\n @param[in]  g      Graph instance.\n @param[out] stats  Pointer to a caller-allocated structure that will\n                    receive the statistics snapshot.\n @return 0 on success, @c OVE_ERR_INVALID_PARAM if @p g or @p stats is NULL.\n\n @note Requires @c CONFIG_OVE_AUDIO.\n @see ove_audio_graph_stats"]
     pub fn ove_audio_graph_get_stats(
         g: *const ove_audio_graph,
         stats: *mut ove_audio_graph_stats,
@@ -1591,7 +1605,7 @@ unsafe extern "C" {
     pub fn ove_fs_closedir_deinit(dir: ove_dir_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Open a file.\n\n Opens the file at @p path with the given @p flags. The returned handle\n must be closed with @ref ove_fs_close when no longer needed.\n In zero-heap mode, the backend uses a static pool instead of malloc.\n\n @param[out] file   Receives the opened file handle.\n @param[in]  path   Absolute path of the file to open.\n @param[in]  flags  Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS."]
+    #[doc = " @brief Open a file (heap-backed handle).\n\n Opens the file at @p path with the given @p flags. The returned handle\n must be closed with @ref ove_fs_close when no longer needed.\n\n @param[out] file   Receives the opened file handle.\n @param[in]  path   Absolute path of the file to open.\n @param[in]  flags  Combination of @c OVE_FS_O_* flags.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS and (per-backend) @c OVE_HEAP_FS. In\n       zero-heap mode use @ref ove_fs_open_init with caller-supplied\n       storage instead."]
     pub fn ove_fs_open(
         file: *mut ove_file_t,
         path: *const core::ffi::c_char,
@@ -1599,15 +1613,15 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Close a file handle returned by @ref ove_fs_open."]
+    #[doc = " @brief Close a file handle returned by @ref ove_fs_open.\n\n @param[in] file File handle to close.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_fs_close(file: ove_file_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Open a directory (heap or backend-managed allocation)."]
+    #[doc = " @brief Open a directory (heap-backed handle).\n\n @param[out] dir  Receives the opened directory handle.\n @param[in]  path Absolute path of the directory.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_FS and (per-backend) @c OVE_HEAP_FS. In\n       zero-heap mode use @ref ove_fs_opendir_init."]
     pub fn ove_fs_opendir(dir: *mut ove_dir_t, path: *const core::ffi::c_char) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Close a directory handle returned by @ref ove_fs_opendir."]
+    #[doc = " @brief Close a directory handle returned by @ref ove_fs_opendir.\n\n @param[in] dir Directory handle to close.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_fs_closedir(dir: ove_dir_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
@@ -1759,12 +1773,37 @@ unsafe extern "C" {
     pub fn ove_timer_deinit(timer: ove_timer_t);
 }
 unsafe extern "C" {
+    #[doc = " @brief Initialise a software timer with a nanosecond period using\n        caller-supplied static storage.\n\n Identical to @ref ove_timer_init except the period is specified in\n nanoseconds.  Used primarily by the async runtime substrate\n (@c CONFIG_OVE_ASYNC) to drive the Embassy time driver at sub-ms\n granularity.\n\n Effective resolution is backend-dependent:\n  - Zephyr:  underlying tick (K_NSEC); typically µs-class.\n  - FreeRTOS: rounded up to @c configTICK_RATE_HZ; typically 1 ms.\n  - NuttX:   POSIX timer resolution; typically µs.\n  - POSIX:   @c timer_create with CLOCK_MONOTONIC; nsec.\n\n @note Requires @c CONFIG_OVE_TIMER.  When @c CONFIG_OVE_ASYNC is off,\n       the function is still available — it just isn't routed by the\n       async substrate.\n\n @param[out] timer      Receives the opaque timer handle on success.\n @param[in]  storage    Pointer to statically allocated backend storage.\n @param[in]  callback   Function invoked when the timer expires.\n                        Must not be NULL.\n @param[in]  user_data  Opaque pointer forwarded to @p callback.\n @param[in]  period_ns  Timer period in nanoseconds.  Must be > 0.\n @param[in]  one_shot   Non-zero for one-shot, zero for periodic.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_init, ove_timer_create_ns"]
+    pub fn ove_timer_init_ns(
+        timer: *mut ove_timer_t,
+        storage: *mut ove_timer_storage_t,
+        callback: ove_timer_fn,
+        user_data: *mut core::ffi::c_void,
+        period_ns: u64,
+        one_shot: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Change the period of an existing timer and (re)arm it.\n\n Atomically updates the timer's period to @p period_ns and arms it\n so the next fire happens after that period. If the timer was\n already running it is restarted with the new period (no stale fire\n of the old period). Designed for one-shot alarm reprogramming\n patterns where the deadline keeps changing — used by the Embassy\n time driver to re-arm its global alarm at each schedule_wake.\n\n Underlying primitive per backend:\n  - FreeRTOS: @c xTimerChangePeriod (atomic period change + arm).\n  - POSIX:    @c timer_settime with a new @c itimerspec.\n  - Zephyr:   @c k_timer_start with the new period.\n  - NuttX:    @c timer_settime.\n\n @note Requires @c CONFIG_OVE_TIMER.\n\n @param[in] timer      Timer handle to reprogram.\n @param[in] period_ns  New period in nanoseconds. Must be > 0;\n                       backends round up to the resolution floor.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_init_ns, ove_timer_start, ove_timer_stop"]
+    pub fn ove_timer_set_period_ns(timer: ove_timer_t, period_ns: u64) -> core::ffi::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Allocate and initialise a software timer from the heap.\n\n Creates a timer in the stopped state.  Call ove_timer_start() to arm it.\n\n @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER\n       (i.e. @c CONFIG_OVE_ZERO_HEAP must not be set).\n\n @param[out] timer      Receives the opaque timer handle on success.\n @param[in]  callback   Function invoked when the timer expires.\n                        Must not be NULL.\n @param[in]  user_data  Opaque pointer forwarded to @p callback on each\n                        expiry.  May be NULL.\n @param[in]  period_ms  Timer period in milliseconds.  Must be > 0.\n @param[in]  one_shot   Non-zero to create a one-shot timer; zero for a\n                        periodic auto-reloading timer.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_destroy, ove_timer_init, ove_timer_start"]
     pub fn ove_timer_create(
         timer: *mut ove_timer_t,
         callback: ove_timer_fn,
         user_data: *mut core::ffi::c_void,
         period_ms: u32,
+        one_shot: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate and initialise a software timer with a nanosecond\n        period from the heap.\n\n Identical to @ref ove_timer_create except the period is specified in\n nanoseconds.  See @ref ove_timer_init_ns for the per-backend\n resolution floor.\n\n @note Requires @c CONFIG_OVE_TIMER and @c OVE_HEAP_TIMER.\n\n @param[out] timer      Receives the opaque timer handle on success.\n @param[in]  callback   Function invoked when the timer expires.\n                        Must not be NULL.\n @param[in]  user_data  Opaque pointer forwarded to @p callback.\n @param[in]  period_ns  Timer period in nanoseconds.  Must be > 0.\n @param[in]  one_shot   Non-zero for one-shot, zero for periodic.\n @return OVE_OK on success, or a negative error code on failure.\n\n @see ove_timer_create, ove_timer_init_ns"]
+    pub fn ove_timer_create_ns(
+        timer: *mut ove_timer_t,
+        callback: ove_timer_fn,
+        user_data: *mut core::ffi::c_void,
+        period_ns: u64,
         one_shot: core::ffi::c_int,
     ) -> core::ffi::c_int;
 }
@@ -1969,7 +2008,7 @@ unsafe extern "C" {
     pub fn ove_lvgl_tick(ms: u32);
 }
 unsafe extern "C" {
-    #[doc = " @brief Process pending LVGL tasks (rendering, input, animations).\n\n Must be called regularly from the UI task — typically every\n @c LV_DISP_DEF_REFR_PERIOD milliseconds.  Call ove_lvgl_lock() and\n ove_lvgl_unlock() around this call when sharing LVGL with other tasks."]
+    #[doc = " @brief Process pending LVGL tasks (rendering, input, animations).\n\n Must be called regularly from the UI task — typically every\n @c LV_DEF_REFR_PERIOD milliseconds.  Call ove_lvgl_lock() and\n ove_lvgl_unlock() around this call when sharing LVGL with other tasks."]
     pub fn ove_lvgl_handler();
 }
 unsafe extern "C" {
@@ -2084,7 +2123,7 @@ unsafe extern "C" {
     pub fn ove_work_cancel(work: ove_work_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Initialise a stream using caller-provided static storage.\n\n Constructs a stream object in @p storage and associates the raw byte\n buffer @p buffer of @p size bytes with it. The stream will not unblock\n a waiting receiver until at least @p trigger bytes are present.\n\n @param[out] stream   Receives the initialised stream handle.\n @param[in]  storage  Pointer to statically-allocated stream storage.\n @param[in]  buffer   Pointer to the backing byte buffer.\n @param[in]  size     Size of @p buffer in bytes.\n @param[in]  trigger  Minimum bytes available before a blocked receiver wakes.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_STREAM."]
+    #[doc = " @brief Initialise a stream using caller-provided static storage.\n\n Constructs a stream object in @p storage and associates the raw byte\n buffer @p buffer of @p size bytes with it. The stream will not unblock\n a waiting receiver until at least @p trigger bytes are present.\n\n @param[out] stream   Receives the initialised stream handle.\n @param[in]  storage  Pointer to statically-allocated stream storage.\n @param[in]  buffer   Pointer to the backing byte buffer.\n @param[in]  size     Size of @p buffer in bytes.\n @param[in]  trigger  Minimum bytes available before a blocked receiver wakes.\n                      A value of 0 is treated as 1 by every backend.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_STREAM."]
     pub fn ove_stream_init(
         stream: *mut ove_stream_t,
         storage: *mut ove_stream_storage_t,
@@ -3588,7 +3627,7 @@ unsafe extern "C" {
     pub fn ove_i2s_destroy(i2s: ove_i2s_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Set the RX half-buffer completion callback.\n\n Called from ISR when a DMA RX half-buffer is ready for processing."]
+    #[doc = " @brief Set the RX half-buffer completion callback.\n\n Called from ISR when a DMA RX half-buffer is ready for processing.\n\n @param[in] i2s       I2S handle.\n @param[in] cb        Callback invoked on RX half/full transfer; may be NULL to clear.\n @param[in] user_data Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2s_set_rx_callback(
         i2s: ove_i2s_t,
         cb: ove_i2s_cb_t,
@@ -3596,7 +3635,7 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Set the TX half-buffer completion callback.\n\n Called from ISR when a DMA TX half-buffer has been transmitted and\n is safe to refill."]
+    #[doc = " @brief Set the TX half-buffer completion callback.\n\n Called from ISR when a DMA TX half-buffer has been transmitted and\n is safe to refill.\n\n @param[in] i2s       I2S handle.\n @param[in] cb        Callback invoked on TX half/full transfer; may be NULL to clear.\n @param[in] user_data Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2s_set_tx_callback(
         i2s: ove_i2s_t,
         cb: ove_i2s_cb_t,
@@ -3604,19 +3643,19 @@ unsafe extern "C" {
     ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Start I2S DMA streaming.\n\n Begins circular DMA transfers.  TX starts first to generate clocks\n for a synchronous RX slave."]
+    #[doc = " @brief Start I2S DMA streaming.\n\n Begins circular DMA transfers.  TX starts first to generate clocks\n for a synchronous RX slave.\n\n @param[in] i2s I2S handle.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2s_start(i2s: ove_i2s_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Stop I2S DMA streaming."]
+    #[doc = " @brief Stop I2S DMA streaming.\n\n @param[in] i2s I2S handle.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2s_stop(i2s: ove_i2s_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Pause I2S DMA streaming (can be resumed)."]
+    #[doc = " @brief Pause I2S DMA streaming (can be resumed).\n\n @param[in] i2s I2S handle.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2s_pause(i2s: ove_i2s_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Resume I2S DMA streaming after pause."]
+    #[doc = " @brief Resume I2S DMA streaming after pause.\n\n @param[in] i2s I2S handle.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_i2s_resume(i2s: ove_i2s_t) -> core::ffi::c_int;
 }
 unsafe extern "C" {

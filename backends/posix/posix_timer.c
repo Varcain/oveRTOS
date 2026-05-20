@@ -142,8 +142,8 @@ int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_da
 int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
 		     int one_shot)
 {
-	return ove_timer_create_ns(timer, callback, user_data,
-				   (uint64_t)period_ms * 1000000ULL, one_shot);
+	return ove_timer_create_ns(timer, callback, user_data, (uint64_t)period_ms * 1000000ULL,
+				   one_shot);
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 

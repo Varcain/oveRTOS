@@ -177,10 +177,7 @@ impl OveTimeDriver {
 ///           inside this function, matching the embedded model.
 ///  - Zephyr: system workqueue thread (non-ISR).
 ///  - FreeRTOS: timer service task (non-ISR).
-extern "C" fn alarm_fired(
-    _timer: bindings::ove_timer_t,
-    _user_data: *mut ::core::ffi::c_void,
-) {
+extern "C" fn alarm_fired(_timer: bindings::ove_timer_t, _user_data: *mut ::core::ffi::c_void) {
     ::critical_section::with(|cs| {
         let now = DRIVER.now();
         let mut q = DRIVER.queue.borrow(cs).borrow_mut();
