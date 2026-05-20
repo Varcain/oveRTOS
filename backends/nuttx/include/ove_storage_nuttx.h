@@ -165,6 +165,8 @@ struct ove_stream {
 	size_t head;
 	size_t tail;
 	size_t count;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 	pthread_mutex_t lock;
 	pthread_cond_t not_empty;
 	pthread_cond_t not_full;

@@ -241,6 +241,30 @@ int ove_stream_reset(ove_stream_t stream);
  */
 size_t ove_stream_bytes_available(ove_stream_t stream);
 
+/**
+ * @brief Register a notify callback fired after every successful send.
+ *
+ * The callback is invoked at the tail of @ref ove_stream_send and
+ * @ref ove_stream_send_from_isr — once data has actually been deposited.
+ * Only one callback slot per stream; a later call replaces an earlier
+ * registration. Pass @c cb=NULL to clear.
+ *
+ * Designed for higher-level async runtimes that need a wake hook:
+ * the Rust binding registers a callback that calls
+ * @c AtomicWaker::wake on a task suspended on @c Stream::recv_async.
+ *
+ * The callback runs in whatever context the originating send used
+ * (thread or ISR).  Implementations must therefore be ISR-safe and
+ * non-blocking — typically a single store + waker poke.
+ *
+ * @param[in] stream     Stream handle.
+ * @param[in] cb         Callback to invoke after successful sends, or
+ *                       @c NULL to clear.
+ * @param[in] user_data  Opaque pointer forwarded to @p cb.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data);
+
 #else /* !CONFIG_OVE_STREAM */
 
 /* P0-3: _init/_deinit stubs so OVE_STREAM_DEFINE_STATIC links cleanly when
@@ -314,6 +338,13 @@ static inline size_t ove_stream_bytes_available(ove_stream_t s)
 {
 	(void)s;
 	return 0;
+}
+static inline int ove_stream_set_notify(ove_stream_t s, ove_notify_cb cb, void *ud)
+{
+	(void)s;
+	(void)cb;
+	(void)ud;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 
 #endif /* CONFIG_OVE_STREAM */

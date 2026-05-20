@@ -168,6 +168,8 @@ struct ove_stream {
 	pthread_mutex_t lock;
 	pthread_cond_t data_avail;
 	pthread_cond_t space_avail;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_stream ove_stream_storage_t;

@@ -26,6 +26,8 @@ int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *b
 	storage->buffer = (unsigned char *)buffer;
 	storage->size = size;
 	atomic_set(&storage->bytes_count, 0);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	k_pipe_init(&storage->pipe, storage->buffer, size);
 
 	*stream = storage;
@@ -61,6 +63,8 @@ int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 
 	zs->size = size;
 	atomic_set(&zs->bytes_count, 0);
+	zs->notify_cb = NULL;
+	zs->notify_ud = NULL;
 	k_pipe_init(&zs->pipe, zs->buffer, size);
 
 	*stream = zs;
@@ -97,6 +101,9 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 	size_t written = (ret > 0) ? (size_t)ret : 0;
 	if (written > 0) {
 		atomic_add(&stream->bytes_count, written);
+		if (stream->notify_cb != NULL) {
+			stream->notify_cb(stream->notify_ud);
+		}
 	}
 	if (bytes_sent != NULL) {
 		*bytes_sent = written;
@@ -143,6 +150,9 @@ int ove_stream_send_from_isr(ove_stream_t stream, const void *data, size_t len, 
 	size_t written = (ret > 0) ? (size_t)ret : 0;
 	if (written > 0) {
 		atomic_add(&stream->bytes_count, written);
+		if (stream->notify_cb != NULL) {
+			stream->notify_cb(stream->notify_ud);
+		}
 	}
 	if (bytes_sent != NULL) {
 		*bytes_sent = written;
@@ -180,4 +190,14 @@ size_t ove_stream_bytes_available(ove_stream_t stream)
 {
 	atomic_val_t val = atomic_get(&stream->bytes_count);
 	return (val > 0) ? (size_t)val : 0;
+}
+
+int ove_stream_set_notify(ove_stream_t stream, ove_notify_cb cb, void *user_data)
+{
+	if (stream == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	stream->notify_cb = cb;
+	stream->notify_ud = user_data;
+	return OVE_OK;
 }

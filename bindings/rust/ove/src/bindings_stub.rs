@@ -320,6 +320,8 @@ pub struct ove_i2s {
 pub type ove_i2s_t = *mut ove_i2s;
 #[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag.  Up to 32 independent flags\n can be combined in a single event group."]
 pub type ove_eventbits_t = u32;
+#[doc = " @brief Notify-callback signature used by the @c _set_notify variants of\n        the comm primitives (stream / queue / eventgroup / semaphore).\n\n Invoked from inside the producing call (e.g. @c ove_stream_send) after a\n successful update.  The implementation must be short, non-blocking, and\n safe to call from whatever context the originating send/give/set ran\n in — typically a Rust @c AtomicWaker::wake bridge for the async runtime.\n\n @param[in] user_data Opaque pointer supplied at @c _set_notify time."]
+pub type ove_notify_cb = Option<unsafe extern "C" fn(user_data: *mut core::ffi::c_void)>;
 #[doc = " @brief Opaque cookie returned by @ref ove_irq_lock for use with\n        @ref ove_irq_unlock.\n\n The width is sized to fit each backend's native restore state:\n  - Zephyr:  @c unsigned @c int returned by @c irq_lock().\n  - FreeRTOS: 0 (the FreeRTOS @c taskENTER_CRITICAL macros are\n              symmetric and don't return a value).\n  - NuttX:   @c irqstate_t (typically @c uint32_t).\n  - POSIX:   @c uint64_t (a TLS nesting depth — no real ISR-mask).\n\n The C ABI commits to @c uint64_t so the Rust binding's\n `critical-section::Impl::RawRestoreState` can be a single fixed\n size across every target."]
 pub type ove_irq_key_t = u64;
 unsafe extern "C" {
@@ -2192,6 +2194,14 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Query the number of bytes currently available in the stream.\n\n Returns the count of bytes that can be read without blocking.\n\n @param[in] stream  Stream handle.\n @return Number of bytes available; 0 if the stream is empty or invalid."]
     pub fn ove_stream_bytes_available(stream: ove_stream_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Register a notify callback fired after every successful send.\n\n The callback is invoked at the tail of @ref ove_stream_send and\n @ref ove_stream_send_from_isr — once data has actually been deposited.\n Only one callback slot per stream; a later call replaces an earlier\n registration. Pass @c cb=NULL to clear.\n\n Designed for higher-level async runtimes that need a wake hook:\n the Rust binding registers a callback that calls\n @c AtomicWaker::wake on a task suspended on @c Stream::recv_async.\n\n The callback runs in whatever context the originating send used\n (thread or ISR).  Implementations must therefore be ISR-safe and\n non-blocking — typically a single store + waker poke.\n\n @param[in] stream     Stream handle.\n @param[in] cb         Callback to invoke after successful sends, or\n                       @c NULL to clear.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_stream_set_notify(
+        stream: ove_stream_t,
+        cb: ove_notify_cb,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
 }
 unsafe extern "C" {
     #[doc = " @brief Initialise a watchdog timer using caller-provided static storage.\n\n Configures the watchdog with a timeout of @p timeout_ms milliseconds.\n The watchdog does not start counting until @ref ove_watchdog_start is\n called. The caller must ensure @p storage remains valid for the watchdog's\n lifetime.\n\n @param[out] wdt         Receives the initialised watchdog handle.\n @param[in]  storage     Pointer to statically-allocated watchdog storage.\n @param[in]  timeout_ms  Watchdog timeout period in milliseconds.\n @return OVE_OK on success, negative error code on failure.\n @note Requires @c CONFIG_OVE_WATCHDOG."]
