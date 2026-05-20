@@ -160,6 +160,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/freertos/freertos_board.c
 {% endif %}
+{% if config.get("CONFIG_OVE_ASYNC") == True %}
+    ${OVE_DIR}/backends/freertos/freertos_irq.c
+{% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_thread.c
 {% for mod in ["SYNC", "AUDIO", "FS", "CONSOLE", "TIME", "LVGL",

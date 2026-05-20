@@ -38,6 +38,7 @@
 #define CONFIG_OVE_SPI 1
 #define CONFIG_OVE_UART 1
 #define CONFIG_OVE_NET 1
+#define CONFIG_OVE_ASYNC 1
 #define CONFIG_OVE_APP_NAME "test-renode-stm32f746"
 #define CONFIG_OVE_APP_VERSION "0.0.0"
 

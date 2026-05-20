@@ -132,6 +132,8 @@ set(FREERTOS_BACKEND_SOURCES
     # Networking — see zero-heap CMakeLists for rationale.
     ${FREERTOS_BACKEND}/freertos_net.c
     ${FREERTOS_BACKEND}/lwip_sys_arch.c
+    # Async runtime substrate (CONFIG_OVE_ASYNC).
+    ${FREERTOS_BACKEND}/freertos_irq.c
     # freertos_time.c is intentionally NOT linked — its ove_time_delay_us
     # spins on DWT->CYCCNT which Renode 1.16 doesn't advance.  stub_time
     # has an API-equivalent implementation built on FreeRTOS ticks.
