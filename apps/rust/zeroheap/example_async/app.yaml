@@ -1,0 +1,11 @@
+lang: rust
+config_name: example_async_rust_zh
+description: "Rust async (Embassy) demo on oveRTOS — zero-heap mode"
+rust:
+  lib_name: example_async_zh
+defconfig:
+  - CONFIG_OVE_ZERO_HEAP=y
+  - CONFIG_OVE_SYNC=y
+  - CONFIG_OVE_TIMER=y
+  - CONFIG_OVE_TIME=y
+  - CONFIG_OVE_ASYNC=y
