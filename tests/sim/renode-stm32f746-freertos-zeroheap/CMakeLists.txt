@@ -158,6 +158,8 @@ set(FREERTOS_BACKEND_SOURCES
     ${FREERTOS_BACKEND}/freertos_stream.c
     ${FREERTOS_BACKEND}/freertos_workqueue.c
     ${FREERTOS_BACKEND}/freertos_watchdog.c
+    # Async runtime substrate (CONFIG_OVE_ASYNC).
+    ${FREERTOS_BACKEND}/freertos_irq.c
     # Real HAL-backed drivers — exercised against Renode's modelled
     # STM32 peripherals instead of tests/backends/stub/* surrogates.
     ${FREERTOS_BACKEND}/freertos_gpio.c

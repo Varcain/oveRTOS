@@ -191,6 +191,21 @@ static inline int ove_test_timer_create(ove_timer_t *timer, ove_timer_storage_t 
 #endif
 }
 
+/* Nanosecond-period variant — picks ove_timer_init_ns / ove_timer_create_ns
+ * based on heap policy.  Only meaningful when CONFIG_OVE_ASYNC is set
+ * (the new ns symbols are gated alongside the async substrate). */
+static inline int ove_test_timer_create_ns(ove_timer_t *timer, ove_timer_storage_t *storage,
+					   ove_timer_fn callback, void *user_data,
+					   uint64_t period_ns, int one_shot)
+{
+#ifdef CONFIG_OVE_ZERO_HEAP
+	return ove_timer_init_ns(timer, storage, callback, user_data, period_ns, one_shot);
+#else
+	(void)storage;
+	return ove_timer_create_ns(timer, callback, user_data, period_ns, one_shot);
+#endif
+}
+
 static inline int ove_test_eventgroup_create(ove_eventgroup_t *eg,
 					     ove_eventgroup_storage_t *storage)
 {
@@ -396,6 +411,7 @@ int test_lvgl_run(void);
 int test_static_define_run(void);
 int test_init_no_alloc_run(void);
 int test_app_run(void);
+int test_async_run(void);
 int test_infer_run(void);
 int test_net_mqtt_run(void);
 int test_net_httpd_run(void);

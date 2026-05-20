@@ -70,6 +70,7 @@ OVE_SUITE(gpio,            "GPIO")
 OVE_SUITE(led,             "LED")
 OVE_SUITE(lvgl,            "LVGL")
 OVE_SUITE(app,             "App")
+OVE_SUITE(async,           "Async (irq + ns timer)")
 
 OVE_SUITE_FS(fs, "FS")
 

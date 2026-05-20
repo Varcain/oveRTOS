@@ -52,6 +52,7 @@ set(OVE_TEST_COMMON_SUITES
     test_led.c
     test_lvgl.c
     test_app.c
+    test_async.c
     test_init_no_alloc.c
 )
 
