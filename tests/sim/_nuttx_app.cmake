@@ -62,6 +62,8 @@ set(_srcs
   ${_nuttx_be}/nuttx_stream.c
   ${_nuttx_be}/nuttx_console.c
   ${_nuttx_be}/nuttx_shell.c
+  # Async runtime substrate (CONFIG_OVE_ASYNC).
+  ${_nuttx_be}/nuttx_irq.c
 
   # Core dispatcher modules.
   ${OVE_DIR}/src/ove_board.c

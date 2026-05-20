@@ -106,7 +106,7 @@ struct ove_timer {
 	timer_t posix_timer;
 	void (*callback)(struct ove_timer *, void *);
 	void *user_data;
-	uint32_t period_ms;
+	uint64_t period_ns;
 	int one_shot;
 };
 

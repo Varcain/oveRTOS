@@ -202,6 +202,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_board.c
 {% endif %}
+{% if config.get("CONFIG_OVE_ASYNC") == True %}
+    ${OVE_DIR}/backends/nuttx/nuttx_irq.c
+{% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_POSIX") == True %}
 {% set wasm_on = config.get("CONFIG_OVE_BOARD_WASM") == True %}
 {% set sim_on = config.get("CONFIG_OVE_SIM") == True %}
