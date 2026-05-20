@@ -87,7 +87,7 @@ struct ove_timer {
 	struct k_work work;
 	void (*callback)(struct ove_timer *, void *);
 	void *user_data;
-	uint32_t period_ms;
+	uint64_t period_ns;
 	int one_shot;
 };
 

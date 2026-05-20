@@ -179,6 +179,9 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_BOARD") == True %}
     ${OVE_DIR}/backends/zephyr/zephyr_board.c
 {% endif %}
+{% if config.get("CONFIG_OVE_ASYNC") == True %}
+    ${OVE_DIR}/backends/zephyr/zephyr_irq.c
+{% endif %}
 {% elif config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
     ${OVE_DIR}/backends/nuttx/nuttx_thread.c
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
