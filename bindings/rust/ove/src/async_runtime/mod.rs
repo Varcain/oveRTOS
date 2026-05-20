@@ -25,7 +25,8 @@
 //!   [`AsyncUart`], [`AsyncInput`]) that ride on the C-level
 //!   `_set_notify` hooks.
 
-#![cfg_attr(docsrs, doc(cfg(feature = "async")))]
+// Note: #[doc(cfg(...))] would surface the feature gate on docs.rs but
+// requires nightly. Skipped to keep the crate stable-only.
 
 pub(crate) mod critical_section;
 #[cfg(has_eventgroup)]
