@@ -50,6 +50,12 @@ int ove_spi_init(ove_spi_t *spi, ove_spi_storage_t *storage, const struct ove_sp
 	storage->mode = (uint8_t)cfg->mode;
 	storage->bit_order = (uint8_t)cfg->bit_order;
 	storage->word_size = cfg->word_size;
+#ifdef CONFIG_OVE_ASYNC
+	storage->async_busy = 0;
+	storage->pending_cb = NULL;
+	storage->pending_ud = NULL;
+	storage->pending_cs = NULL;
+#endif
 	*spi = storage;
 
 	ret = ove_mutex_init(&storage->bus_mtx, &storage->bus_mtx_storage);
