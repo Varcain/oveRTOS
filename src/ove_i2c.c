@@ -43,6 +43,11 @@ int ove_i2c_init(ove_i2c_t *i2c, ove_i2c_storage_t *storage, const struct ove_i2
 
 	storage->instance = cfg->instance;
 	storage->speed_hz = speed_to_hz(cfg->speed);
+#ifdef CONFIG_OVE_ASYNC
+	storage->async_busy = 0;
+	storage->pending_cb = NULL;
+	storage->pending_ud = NULL;
+#endif
 	*i2c = storage;
 
 	ret = ove_mutex_init(&storage->bus_mtx, &storage->bus_mtx_storage);
