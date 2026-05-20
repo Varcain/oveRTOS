@@ -31,6 +31,7 @@
 #define CONFIG_OVE_FS 1
 #define CONFIG_OVE_LVGL 1
 #define CONFIG_OVE_ZERO_HEAP 1
+#define CONFIG_OVE_ASYNC 1
 #define CONFIG_OVE_APP_NAME "test"
 #define CONFIG_OVE_APP_VERSION "0.0.0"
 

@@ -47,6 +47,7 @@
  * the Rust build.
  */
 
+#define CONFIG_OVE_ASYNC 1
 #define CONFIG_OVE_APP_NAME "test"
 #define CONFIG_OVE_APP_VERSION "0.0.0"
 #define OVE_LOG_LEVEL 0

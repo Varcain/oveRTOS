@@ -59,6 +59,8 @@ set(ZEPHYR_BACKEND_SOURCES
     ${ZEPHYR_BACKEND}/zephyr_workqueue.c
     ${ZEPHYR_BACKEND}/zephyr_stream.c
     ${ZEPHYR_BACKEND}/zephyr_shell.c
+    # Async runtime substrate (CONFIG_OVE_ASYNC).
+    ${ZEPHYR_BACKEND}/zephyr_irq.c
 )
 
 # --- Core modules (board/GPIO/LED dispatcher) ---

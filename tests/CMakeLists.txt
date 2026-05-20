@@ -60,6 +60,8 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
     ${POSIX_CORE_DIR}/posix_net.c
+    # Async runtime substrate (compiled to no-ops when CONFIG_OVE_ASYNC=n).
+    ${POSIX_CORE_DIR}/posix_irq.c
     # Shared BSP modules
     ${OVE_SRC}/ove_board.c
     ${OVE_SRC}/ove_gpio.c
