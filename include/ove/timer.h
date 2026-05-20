@@ -124,6 +124,33 @@ void ove_timer_deinit(ove_timer_t timer);
 int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
 		      void *user_data, uint64_t period_ns, int one_shot);
 
+/**
+ * @brief Change the period of an existing timer and (re)arm it.
+ *
+ * Atomically updates the timer's period to @p period_ns and arms it
+ * so the next fire happens after that period. If the timer was
+ * already running it is restarted with the new period (no stale fire
+ * of the old period). Designed for one-shot alarm reprogramming
+ * patterns where the deadline keeps changing — used by the Embassy
+ * time driver to re-arm its global alarm at each schedule_wake.
+ *
+ * Underlying primitive per backend:
+ *  - FreeRTOS: @c xTimerChangePeriod (atomic period change + arm).
+ *  - POSIX:    @c timer_settime with a new @c itimerspec.
+ *  - Zephyr:   @c k_timer_start with the new period.
+ *  - NuttX:    @c timer_settime.
+ *
+ * @note Requires @c CONFIG_OVE_TIMER.
+ *
+ * @param[in] timer      Timer handle to reprogram.
+ * @param[in] period_ns  New period in nanoseconds. Must be > 0;
+ *                       backends round up to the resolution floor.
+ * @return OVE_OK on success, or a negative error code on failure.
+ *
+ * @see ove_timer_init_ns, ove_timer_start, ove_timer_stop
+ */
+int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns);
+
 /* _create / _destroy — heap-gated */
 #ifdef OVE_HEAP_TIMER
 
@@ -278,6 +305,12 @@ static inline int ove_timer_create_ns(ove_timer_t *t, ove_timer_fn cb, void *ud,
 	(void)ud;
 	(void)p;
 	(void)os;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_timer_set_period_ns(ove_timer_t t, uint64_t p)
+{
+	(void)t;
+	(void)p;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline void ove_timer_destroy(ove_timer_t t)

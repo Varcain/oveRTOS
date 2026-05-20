@@ -33,12 +33,6 @@ use crate::init_cell::InitMut;
 // separately because `ove_timer_init_ns` writes through both.
 struct AlarmTimer {
     handle: bindings::ove_timer_t,
-    /// Heap-allocated backend storage. Boxed and leaked so its address
-    /// stays stable for the lifetime of the program. The `ove_timer`
-    /// struct retains an interior pointer into this storage, so moving
-    /// it would invalidate the timer.
-    #[allow(dead_code)] // kept to anchor the storage for the C side
-    storage: *mut bindings::ove_timer_storage_t,
 }
 
 // SAFETY: the alarm is only touched under the time-driver mutex.
@@ -99,104 +93,70 @@ impl Driver for OveTimeDriver {
 impl OveTimeDriver {
     /// Re-arm the alarm to fire at absolute deadline `at_us` (in
     /// microseconds), given the current time `now_us`. If `at_us` is
-    /// the sentinel `u64::MAX` (queue empty) we disarm by setting a
-    /// very-far-future deadline; embassy_time_queue_utils uses MAX
-    /// to mean "no scheduled wake".
+    /// the sentinel `u64::MAX` (queue empty) we disarm; embassy_time_
+    /// queue_utils uses MAX to mean "no scheduled wake".
     fn reprogram_alarm(&self, at_us: u64, now_us: u64) {
         // Ensure the alarm exists. Construct on first use.
         if self.alarm.try_get().is_none() {
             self.ensure_alarm();
         }
+        let handle = self.alarm.get().handle;
 
         if at_us == u64::MAX {
             // Empty queue. Stop the alarm so we don't fire spuriously.
             // SAFETY: handle came from ove_timer_init_ns; stop is
             // idempotent.
             unsafe {
-                let _ = bindings::ove_timer_stop(self.alarm.get().handle);
+                let _ = bindings::ove_timer_stop(handle);
             }
             return;
         }
 
         // Compute the delay. Saturating sub guards against the wake
         // being already overdue (in which case we want to fire ASAP,
-        // which means a 1 ns delay — see ove_timer_start guard).
+        // clamped to at least 1 ns by the backend).
         let delay_us = at_us.saturating_sub(now_us);
-        let delay_ns: u64 = delay_us.saturating_mul(1_000);
+        let delay_ns: u64 = delay_us.saturating_mul(1_000).max(1);
 
-        // SAFETY: re-arming a one-shot timer via init_ns + start
-        // is the documented pattern. The init_ns call overwrites the
-        // existing period; start (re)arms it.
+        // SAFETY: ove_timer_set_period_ns atomically changes the
+        // timer's period and rearms it with the new period — no
+        // recreate of the underlying kernel timer (the previous
+        // approach of init_ns + start corrupted FreeRTOS's timer list
+        // because xTimerCreateStatic was called on a slot the kernel
+        // still held in its daemon-task list).
         unsafe {
-            // We rely on `ove_timer_init_ns` being idempotent for
-            // already-initialised storage — it memsets the struct then
-            // rebinds the SIGEV_THREAD dispatcher. For the POSIX
-            // backend this drops the old `posix_timer` handle into
-            // `timer_create` again; the original `timer_delete` is
-            // skipped because the field is overwritten before reuse.
-            // This is acceptable for the alarm-only-on-startup pattern;
-            // a stricter implementation would use ove_timer_reset which
-            // is "atomic stop+start" but doesn't change the period.
-            //
-            // The cleanest path is: stop, re-init with new period,
-            // start. That's what we do.
-            let _ = bindings::ove_timer_stop(self.alarm.get().handle);
-            // Reset the storage cell so init_ns re-creates the
-            // underlying timer cleanly.
-            let storage = self.alarm.get().storage;
-            // Reinitialise into the same storage.
-            let mut handle: bindings::ove_timer_t = ptr::null_mut();
-            let rc = bindings::ove_timer_init_ns(
-                &mut handle,
-                storage,
-                Some(alarm_fired),
-                ptr::null_mut(),
-                delay_ns,
-                1, /* one_shot */
-            );
-            if rc == 0 {
-                let _ = bindings::ove_timer_start(handle);
-            }
+            let _ = bindings::ove_timer_set_period_ns(handle, delay_ns);
         }
     }
 
     /// Lazily construct the alarm timer. Heap-mode only for the
     /// initial vertical slice; zero-heap will switch to caller-supplied
-    /// storage as a follow-up.
+    /// static storage as a follow-up.
+    ///
+    /// The timer is created in the stopped state with a placeholder
+    /// period. `reprogram_alarm` rewrites the period and arms it via
+    /// `ove_timer_set_period_ns` — the kernel-side timer object stays
+    /// the same across re-arms.
     fn ensure_alarm(&self) {
         #[cfg(not(zero_heap))]
         {
-            // Allocate storage on the heap and leak so its address
-            // stays stable for the program lifetime. The C-side
-            // `ove_timer_init_ns` writes through the storage pointer
-            // and the timer struct holds an interior pointer back to
-            // it, so the storage cannot move.
-            extern crate alloc;
-            use ::core::mem::MaybeUninit;
-            let storage: *mut bindings::ove_timer_storage_t = alloc::boxed::Box::into_raw(
-                alloc::boxed::Box::<MaybeUninit<bindings::ove_timer_storage_t>>::new_uninit(),
-            )
-            .cast();
-
-            // Initialise with a 1 µs period as a placeholder; the next
-            // call to reprogram_alarm will rewrite the period before
-            // arming. The handle is captured for later stop/start.
+            // Use ove_timer_create_ns (heap-allocated) so we don't
+            // need to manage the storage cell ourselves. The handle
+            // stays valid for the program lifetime.
             let mut handle: bindings::ove_timer_t = ptr::null_mut();
-            // SAFETY: storage is a freshly-allocated, properly-sized
-            // buffer; init_ns is documented to write through both the
-            // handle and storage pointers.
+            // SAFETY: heap-allocated create variant; period gets
+            // overwritten by the next reprogram_alarm call.
             let rc = unsafe {
-                bindings::ove_timer_init_ns(
+                bindings::ove_timer_create_ns(
                     &mut handle,
-                    storage,
                     Some(alarm_fired),
                     ptr::null_mut(),
-                    1_000, /* 1 µs placeholder */
-                    1,     /* one_shot */
+                    1_000_000, /* 1 ms placeholder, overwritten on first use */
+                    1,         /* one_shot */
                 )
             };
-            assert!(rc == 0, "ove_timer_init_ns failed at alarm init");
-            self.alarm.init(AlarmTimer { handle, storage });
+            assert!(rc == 0, "ove_timer_create_ns failed at alarm init");
+            self.alarm.init(AlarmTimer { handle });
         }
         #[cfg(zero_heap)]
         {

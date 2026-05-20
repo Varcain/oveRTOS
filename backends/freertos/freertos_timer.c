@@ -136,3 +136,25 @@ int ove_timer_reset(ove_timer_t timer)
 	}
 	return OVE_OK;
 }
+
+int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
+{
+	configASSERT(timer != NULL);
+	/* xTimerChangePeriod atomically changes the period and (re)arms the
+	 * timer with the new period from the moment of the call.  No stop +
+	 * recreate is needed — the kernel-side timer object stays valid.  In
+	 * ISR context, dispatch to xTimerChangePeriodFromISR. */
+	if (xPortIsInsideInterrupt()) {
+		BaseType_t woken = pdFALSE;
+		if (xTimerChangePeriodFromISR(timer->handle, ns_to_ticks_ceil(period_ns), &woken) !=
+		    pdPASS) {
+			return OVE_ERR_TIMEOUT;
+		}
+		portYIELD_FROM_ISR(woken);
+	} else {
+		if (xTimerChangePeriod(timer->handle, ns_to_ticks_ceil(period_ns), 0) != pdPASS) {
+			return OVE_ERR_TIMEOUT;
+		}
+	}
+	return OVE_OK;
+}
