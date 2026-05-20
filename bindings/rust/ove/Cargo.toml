@@ -24,6 +24,11 @@ embedded-hal = ["dep:embedded-hal"]
 # `ove::Uart` / `ove::Stream` / `ove::fs::File`.  Separate from
 # `embedded-hal` so callers can pick exactly what they need.
 embedded-io = ["dep:embedded-io"]
+# `embedded-io-async` activates async `Read` trait impls on the
+# `AsyncUart` / `AsyncStream` wrappers. Requires the `async` feature
+# and pulls in the sync `embedded-io` impls (the async trait extends
+# `embedded_io::ErrorType` defined there).
+embedded-io-async = ["dep:embedded-io-async", "embedded-io", "async"]
 # `async` activates the Embassy-based async runtime hosted on the
 # oveRTOS C substrate. Requires the C side to be built with
 # `CONFIG_OVE_ASYNC=y` (build.rs detects this and emits
@@ -78,8 +83,15 @@ log = "0.4"
 # `embedded-hal` traits — opt-in via the `embedded-hal` feature.  See
 # the feature comment for rationale.
 embedded-hal = { version = "1.0", optional = true }
-# `embedded-io` traits — opt-in via the `embedded-io` feature.
-embedded-io = { version = "0.6", optional = true }
+# `embedded-io` traits — opt-in via the `embedded-io` feature. Pinned
+# to 0.7 because the optional `embedded-io-async` feature depends on
+# `embedded-io-async = "0.7"`, which itself depends on `embedded-io =
+# "0.7"`. Cargo can't unify 0.6 + 0.7 — they're separate ABI majors.
+embedded-io = { version = "0.7", optional = true }
+# `embedded-io-async` traits — opt-in via the `embedded-io-async`
+# feature (which also pulls in the sync `embedded-io` impls since
+# the async trait extends the sync `ErrorType`).
+embedded-io-async = { version = "0.7", optional = true }
 # Embassy substrate — all opt-in via the `async` feature.  See the
 # feature documentation for arch selection.  Versions pinned to a
 # minor; bumps are intentional and validated by an integration test

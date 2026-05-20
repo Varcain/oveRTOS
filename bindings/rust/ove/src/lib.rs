@@ -10,6 +10,52 @@
 //! and the `app!` macro that generates all FFI boilerplate so application code
 //! can be written in pure safe Rust.
 //!
+//! # Async (Embassy)
+//!
+//! Activated by the `async` Cargo feature combined with C-side
+//! `CONFIG_OVE_ASYNC=y`. Adds an [Embassy](https://embassy.dev)-based
+//! async runtime hosted on the oveRTOS substrate:
+//!
+//! ```ignore
+//! use embassy_executor::Spawner;
+//! use embassy_time::{Duration, Timer};
+//!
+//! #[embassy_executor::task]
+//! async fn blinker() {
+//!     loop {
+//!         log::info!("tick");
+//!         Timer::after(Duration::from_millis(250)).await;
+//!     }
+//! }
+//!
+//! #[ove::main]
+//! async fn app_main(spawner: Spawner) {
+//!     spawner.must_spawn(blinker());
+//! }
+//! ```
+//!
+//! Under the hood:
+//!
+//! - [`async_runtime::Executor`] wraps `embassy_executor::raw::Executor`
+//!   and blocks on `ove_event_wait` between polls — yields cleanly to
+//!   the FreeRTOS / Zephyr / NuttX scheduler. No `WFE` busy-park, no
+//!   host-thread parking.
+//! - [`async_runtime::AsyncStream`] / [`AsyncQueue`](async_runtime::AsyncQueue)
+//!   / [`AsyncEventGroup`](async_runtime::AsyncEventGroup) /
+//!   [`AsyncSemaphore`](async_runtime::AsyncSemaphore) /
+//!   [`AsyncUart`](async_runtime::AsyncUart) /
+//!   [`AsyncInput`](async_runtime::AsyncInput) wrap the corresponding
+//!   synchronous primitives and bridge their C-level `_set_notify`
+//!   hooks into `embassy_sync::waitqueue::AtomicWaker`.
+//! - Time driver: `embassy_time::Timer::after_*()` runs on a
+//!   re-armable `ove_timer_*_ns` one-shot.
+//! - Critical-section impl: `ove_irq_lock` / `ove_irq_unlock` on every
+//!   target.
+//!
+//! Cargo feature: enable `async`. The optional `embedded-io-async`
+//! feature adds `embedded_io_async::Read` impls on `&'static AsyncUart`
+//! and `&'static AsyncStream`.
+//!
 //! # Hot-path inline discipline
 //!
 //! Wrapper methods that are a thin `unsafe { ffi::ove_*(...) }` plus
@@ -116,6 +162,8 @@ pub mod console;
 pub mod containers;
 #[cfg(feature = "embedded-hal")]
 mod embedded_hal_impl;
+#[cfg(all(feature = "embedded-io-async", feature = "async", has_async))]
+mod embedded_io_async_impl;
 #[cfg(feature = "embedded-io")]
 mod embedded_io_impl;
 pub mod error;
