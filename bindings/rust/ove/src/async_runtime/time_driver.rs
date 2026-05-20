@@ -129,9 +129,7 @@ impl OveTimeDriver {
         }
     }
 
-    /// Lazily construct the alarm timer. Heap-mode only for the
-    /// initial vertical slice; zero-heap will switch to caller-supplied
-    /// static storage as a follow-up.
+    /// Lazily construct the alarm timer.
     ///
     /// The timer is created in the stopped state with a placeholder
     /// period. `reprogram_alarm` rewrites the period and arms it via
@@ -140,9 +138,9 @@ impl OveTimeDriver {
     fn ensure_alarm(&self) {
         #[cfg(not(zero_heap))]
         {
-            // Use ove_timer_create_ns (heap-allocated) so we don't
-            // need to manage the storage cell ourselves. The handle
-            // stays valid for the program lifetime.
+            // Heap mode: ove_timer_create_ns mallocs the backend
+            // storage internally and returns a handle good for the
+            // program lifetime.
             let mut handle: bindings::ove_timer_t = ptr::null_mut();
             // SAFETY: heap-allocated create variant; period gets
             // overwritten by the next reprogram_alarm call.
@@ -160,11 +158,29 @@ impl OveTimeDriver {
         }
         #[cfg(zero_heap)]
         {
-            // Zero-heap variant: requires caller-supplied static
-            // storage. Wired up in a follow-up; until then a panic
-            // here is the loudest possible failure mode for a
-            // misconfigured build.
-            panic!("zero-heap time driver init not yet implemented");
+            // Zero-heap: backend storage is a static slot in BSS,
+            // initialised by ove_timer_init_ns. Matches the pattern
+            // used by `ove::timer!` macro. ensure_alarm() is gated to
+            // run exactly once (InitMut::try_get + init pair).
+            static mut ALARM_STORAGE: bindings::ove_timer_storage_t =
+                unsafe { ::core::mem::zeroed() };
+            let mut handle: bindings::ove_timer_t = ptr::null_mut();
+            // SAFETY: ALARM_STORAGE is touched only by the single
+            // ensure_alarm() call (guarded by InitMut::try_get); the
+            // raw pointer obtained via addr_of_mut! satisfies the
+            // borrow-check rules for `static mut`.
+            let rc = unsafe {
+                bindings::ove_timer_init_ns(
+                    &mut handle,
+                    ::core::ptr::addr_of_mut!(ALARM_STORAGE),
+                    Some(alarm_fired),
+                    ptr::null_mut(),
+                    1_000_000, /* 1 ms placeholder, overwritten on first use */
+                    1,         /* one_shot */
+                )
+            };
+            assert!(rc == 0, "ove_timer_init_ns failed at alarm init");
+            self.alarm.init(AlarmTimer { handle });
         }
     }
 }
