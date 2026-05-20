@@ -33,14 +33,14 @@ static void timer_thread_handler(union sigval sv)
 }
 
 static int timer_setup(struct ove_timer *ctx, ove_timer_fn callback, void *user_data,
-		       uint32_t period_ms, int one_shot)
+		       uint64_t period_ns, int one_shot)
 {
 	struct sigevent sev;
 	int ret;
 
 	ctx->callback = callback;
 	ctx->user_data = user_data;
-	ctx->period_ms = period_ms;
+	ctx->period_ns = period_ns;
 	ctx->one_shot = one_shot;
 
 	memset(&sev, 0, sizeof(sev));
@@ -77,20 +77,27 @@ static void timer_cleanup(struct ove_timer *ctx)
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
 
-int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		   void *user_data, uint32_t period_ms, int one_shot)
+int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		      void *user_data, uint64_t period_ns, int one_shot)
 {
 	if (timer == NULL || storage == NULL || callback == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
-	int ret = timer_setup(storage, callback, user_data, period_ms, one_shot);
+	int ret = timer_setup(storage, callback, user_data, period_ns, one_shot);
 	if (ret != OVE_OK) {
 		return ret;
 	}
 
 	*timer = storage;
 	return OVE_OK;
+}
+
+int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		   void *user_data, uint32_t period_ms, int one_shot)
+{
+	return ove_timer_init_ns(timer, storage, callback, user_data,
+				 (uint64_t)period_ms * 1000000ULL, one_shot);
 }
 
 void ove_timer_deinit(ove_timer_t timer)
@@ -103,8 +110,8 @@ void ove_timer_deinit(ove_timer_t timer)
 /* ─── _create / _destroy ─────────────────────────────────────────────── */
 
 #ifdef OVE_HEAP_TIMER
-int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
-		     int one_shot)
+int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
+			uint64_t period_ns, int one_shot)
 {
 	struct ove_timer *ctx;
 
@@ -117,7 +124,7 @@ int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
 		return OVE_ERR_NO_MEMORY;
 	}
 
-	int ret = timer_setup(ctx, callback, user_data, period_ms, one_shot);
+	int ret = timer_setup(ctx, callback, user_data, period_ns, one_shot);
 	if (ret != OVE_OK) {
 		OVE_BACKEND_FREE(ctx);
 		return ret;
@@ -125,6 +132,13 @@ int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
 
 	*timer = ctx;
 	return OVE_OK;
+}
+
+int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
+		     int one_shot)
+{
+	return ove_timer_create_ns(timer, callback, user_data,
+				   (uint64_t)period_ms * 1000000ULL, one_shot);
 }
 
 void ove_timer_destroy(ove_timer_t timer)
@@ -144,8 +158,15 @@ int ove_timer_start(ove_timer_t timer)
 	struct ove_timer *ctx = timer;
 	struct itimerspec its;
 
-	its.it_value.tv_sec = ctx->period_ms / 1000;
-	its.it_value.tv_nsec = (ctx->period_ms % 1000) * 1000000L;
+	its.it_value.tv_sec = (time_t)(ctx->period_ns / 1000000000ULL);
+	its.it_value.tv_nsec = (long)(ctx->period_ns % 1000000000ULL);
+	/* timer_settime treats all-zero it_value as "disarm"; clamp to 1 ns
+	 * so a zero-duration period doesn't silently stop the alarm. The
+	 * Embassy time driver never schedules zero-delay deadlines, but
+	 * this also catches stale state from a failed reprogram. */
+	if (its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0) {
+		its.it_value.tv_nsec = 1;
+	}
 
 	if (ctx->one_shot) {
 		its.it_interval.tv_sec = 0;
@@ -182,4 +203,14 @@ int ove_timer_reset(ove_timer_t timer)
 	DEBUGASSERT(timer != NULL);
 	ove_timer_stop(timer);
 	return ove_timer_start(timer);
+}
+
+int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
+{
+	struct ove_timer *ctx = timer;
+	if (ctx == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	ctx->period_ns = period_ns;
+	return ove_timer_start(ctx);
 }
