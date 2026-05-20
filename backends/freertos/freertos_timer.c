@@ -46,9 +46,9 @@ int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_time
 	storage->callback = callback;
 	storage->user_data = user_data;
 
-	storage->handle =
-		xTimerCreateStatic("ove", ns_to_ticks_ceil(period_ns), one_shot ? pdFALSE : pdTRUE,
-				   (void *)storage, freertos_timer_callback, &storage->static_timer);
+	storage->handle = xTimerCreateStatic("ove", ns_to_ticks_ceil(period_ns),
+					     one_shot ? pdFALSE : pdTRUE, (void *)storage,
+					     freertos_timer_callback, &storage->static_timer);
 
 	*timer = storage;
 	return OVE_OK;
@@ -95,8 +95,8 @@ int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_da
 int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data, uint32_t period_ms,
 		     int one_shot)
 {
-	return ove_timer_create_ns(timer, callback, user_data,
-				   (uint64_t)period_ms * 1000000ULL, one_shot);
+	return ove_timer_create_ns(timer, callback, user_data, (uint64_t)period_ms * 1000000ULL,
+				   one_shot);
 }
 
 void ove_timer_destroy(ove_timer_t timer)
