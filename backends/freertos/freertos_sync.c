@@ -80,6 +80,8 @@ void ove_mutex_unlock(ove_mutex_t mtx)
 int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initial, unsigned int max)
 {
 	storage->sem = xSemaphoreCreateCountingStatic(max, initial, &storage->static_sem);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	*sem = storage;
 	return OVE_OK;
 }
@@ -133,6 +135,17 @@ void ove_sem_give(ove_sem_t sem)
 {
 	xSemaphoreGive(sem->sem);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_POST, sem);
+	if (sem->notify_cb != NULL) {
+		sem->notify_cb(sem->notify_ud);
+	}
+}
+
+int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
+{
+	/* OVE_NONNULL on the public decl already guarantees sem != NULL. */
+	sem->notify_cb = cb;
+	sem->notify_ud = user_data;
+	return OVE_OK;
 }
 
 /* ─── Event _init / _deinit ──────────────────────────────────────────── */

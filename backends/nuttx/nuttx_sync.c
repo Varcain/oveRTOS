@@ -166,6 +166,8 @@ int ove_sem_init(ove_sem_t *sem, ove_sem_storage_t *storage, unsigned int initia
 	}
 	(void)max;
 	nxsem_init(&storage->sem, 0, initial);
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	*sem = storage;
 	return OVE_OK;
 }
@@ -227,6 +229,19 @@ void ove_sem_give(ove_sem_t sem)
 {
 	nxsem_post(&sem->sem);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_POST, sem);
+	if (sem->notify_cb != NULL) {
+		sem->notify_cb(sem->notify_ud);
+	}
+}
+
+int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
+{
+	if (sem == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	sem->notify_cb = cb;
+	sem->notify_ud = user_data;
+	return OVE_OK;
 }
 
 /* ─── Event _init / _deinit ──────────────────────────────────────────── */

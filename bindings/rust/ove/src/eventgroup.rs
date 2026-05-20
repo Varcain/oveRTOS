@@ -145,6 +145,25 @@ impl EventGroup {
     pub fn get_bits(&self) -> u32 {
         unsafe { bindings::ove_eventgroup_get_bits(self.handle) }
     }
+
+    /// Register a notify callback fired after every successful set_bits.
+    /// Wraps the C-level `ove_eventgroup_set_notify`.
+    ///
+    /// # Safety
+    /// Same as [`crate::Stream::set_notify`]: `user_data` must remain
+    /// valid for as long as the callback may fire, and `cb` must be
+    /// ISR-safe (the C-side invokes it from whatever context the set
+    /// ran in, thread or ISR).
+    #[cfg(has_async)]
+    #[inline]
+    pub unsafe fn set_notify(
+        &self,
+        cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+        user_data: *mut core::ffi::c_void,
+    ) -> Result<()> {
+        let rc = unsafe { bindings::ove_eventgroup_set_notify(self.handle, cb, user_data) };
+        Error::from_code(rc)
+    }
 }
 
 crate::ove_handle_impl!(EventGroup, ove_eventgroup_destroy, ove_eventgroup_deinit);

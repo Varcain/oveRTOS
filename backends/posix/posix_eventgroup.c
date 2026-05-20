@@ -83,7 +83,13 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
 	g->bits |= bits;
 	ove_eventbits_t result = g->bits;
 	pthread_cond_broadcast(&g->cond);
+	/* Snapshot the notify hook under the lock; fire after unlock. */
+	ove_notify_cb notify_cb = (bits != 0) ? g->notify_cb : NULL;
+	void *notify_ud = g->notify_ud;
 	pthread_mutex_unlock(&g->lock);
+	if (notify_cb) {
+		notify_cb(notify_ud);
+	}
 	return result;
 }
 
@@ -167,4 +173,17 @@ ove_eventbits_t ove_eventgroup_get_bits(ove_eventgroup_t eg)
 	ove_eventbits_t result = g->bits;
 	pthread_mutex_unlock(&g->lock);
 	return result;
+}
+
+int ove_eventgroup_set_notify(ove_eventgroup_t eg, ove_notify_cb cb, void *user_data)
+{
+	struct ove_eventgroup *g = eg;
+	if (!g) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	pthread_mutex_lock(&g->lock);
+	g->notify_cb = cb;
+	g->notify_ud = user_data;
+	pthread_mutex_unlock(&g->lock);
+	return OVE_OK;
 }

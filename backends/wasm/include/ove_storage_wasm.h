@@ -40,6 +40,8 @@ struct ove_mutex {
 
 struct ove_sem {
 	sem_t sem;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 struct ove_event {
@@ -105,6 +107,8 @@ struct ove_queue {
 	pthread_mutex_t lock;
 	pthread_cond_t not_full;
 	pthread_cond_t not_empty;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_queue ove_queue_storage_t;
@@ -130,6 +134,8 @@ struct ove_eventgroup {
 	pthread_mutex_t lock;
 	pthread_cond_t cond;
 	uint32_t bits;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_eventgroup ove_eventgroup_storage_t;

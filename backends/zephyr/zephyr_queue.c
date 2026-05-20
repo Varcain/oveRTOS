@@ -21,6 +21,8 @@ int ove_queue_init(ove_queue_t *q, ove_queue_storage_t *storage, void *buffer, s
 	}
 
 	storage->buffer = (char *)buffer;
+	storage->notify_cb = NULL;
+	storage->notify_ud = NULL;
 	k_msgq_init(&storage->msgq, storage->buffer, item_size, max_items);
 
 	*q = storage;
@@ -56,6 +58,8 @@ int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 		return OVE_ERR_NO_MEMORY;
 	}
 
+	zq->notify_cb = NULL;
+	zq->notify_ud = NULL;
 	k_msgq_init(&zq->msgq, zq->buffer, item_size, max_items);
 
 	*q = zq;
@@ -90,6 +94,9 @@ int ove_queue_send(ove_queue_t q, const void *data, uint64_t timeout_ns)
 	if (ret != 0) {
 		return (timeout_ns == 0) ? OVE_ERR_QUEUE_FULL : OVE_ERR_TIMEOUT;
 	}
+	if (q->notify_cb != NULL) {
+		q->notify_cb(q->notify_ud);
+	}
 	return OVE_OK;
 }
 
@@ -119,6 +126,9 @@ int ove_queue_send_from_isr(ove_queue_t q, const void *data)
 	if (ret != 0) {
 		return OVE_ERR_QUEUE_FULL;
 	}
+	if (q->notify_cb != NULL) {
+		q->notify_cb(q->notify_ud);
+	}
 	return OVE_OK;
 }
 
@@ -129,5 +139,15 @@ int ove_queue_receive_from_isr(ove_queue_t q, void *buf)
 	if (ret != 0) {
 		return OVE_ERR_QUEUE_EMPTY;
 	}
+	return OVE_OK;
+}
+
+int ove_queue_set_notify(ove_queue_t q, ove_notify_cb cb, void *user_data)
+{
+	if (q == NULL) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	q->notify_cb = cb;
+	q->notify_ud = user_data;
 	return OVE_OK;
 }

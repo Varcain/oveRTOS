@@ -205,9 +205,52 @@ static void test_async_timer_set_period_ns_reprograms_running(void **state)
 
 #endif /* !__SANITIZE_THREAD__ */
 
-/* ── ove_stream_set_notify ──────────────────────────────────────────── */
+/* ── ove_queue_set_notify ───────────────────────────────────────────── */
 
+/* Shared notify-fire counter — used by stream / queue / eventgroup /
+ * semaphore set_notify tests below.  Reset in async_setup. */
 static _Atomic int s_async_notify_count;
+
+OVE_TEST_STORAGE(ove_queue_storage_t, s_async_queue_storage);
+static uint32_t s_async_queue_buf[4];
+
+static void queue_notify_cb(void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_notify_count++;
+}
+
+static void test_async_queue_notify_fires_on_send(void **state)
+{
+	(void)state;
+	s_async_notify_count = 0;
+	int marker = 0;
+
+	ove_queue_t q = NULL;
+	int rc = ove_queue_init(&q, &s_async_queue_storage, s_async_queue_buf, sizeof(uint32_t),
+				4 /* max_items */);
+	assert_int_equal(rc, OVE_OK);
+
+	rc = ove_queue_set_notify(q, queue_notify_cb, &marker);
+	assert_int_equal(rc, OVE_OK);
+
+	uint32_t v = 0xDEADBEEF;
+	rc = ove_queue_send(q, &v, 0 /* non-blocking */);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_notify_count, 1);
+
+	/* Clearing stops further notifications. */
+	rc = ove_queue_set_notify(q, NULL, NULL);
+	assert_int_equal(rc, OVE_OK);
+	rc = ove_queue_send(q, &v, 0);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(s_async_notify_count, 1);
+
+	ove_queue_deinit(q);
+}
+
+/* ── ove_stream_set_notify ──────────────────────────────────────────── */
 
 static void stream_notify_cb(void *user_data)
 {
@@ -251,6 +294,76 @@ static void test_async_stream_notify_fires_on_send(void **state)
 	ove_stream_deinit(s);
 }
 
+/* ── ove_eventgroup_set_notify ──────────────────────────────────────── */
+
+OVE_TEST_STORAGE(ove_eventgroup_storage_t, s_async_eg_storage);
+
+static void eg_notify_cb(void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_notify_count++;
+}
+
+static void test_async_eventgroup_notify_fires_on_set_bits(void **state)
+{
+	(void)state;
+	s_async_notify_count = 0;
+	int marker = 0;
+
+	ove_eventgroup_t eg = NULL;
+	int rc = ove_eventgroup_init(&eg, &s_async_eg_storage);
+	assert_int_equal(rc, OVE_OK);
+
+	rc = ove_eventgroup_set_notify(eg, eg_notify_cb, &marker);
+	assert_int_equal(rc, OVE_OK);
+
+	(void)ove_eventgroup_set_bits(eg, 0x1);
+	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_notify_count, 1);
+
+	rc = ove_eventgroup_set_notify(eg, NULL, NULL);
+	assert_int_equal(rc, OVE_OK);
+	(void)ove_eventgroup_set_bits(eg, 0x2);
+	assert_int_equal(s_async_notify_count, 1);
+
+	ove_eventgroup_deinit(eg);
+}
+
+/* ── ove_sem_set_notify ─────────────────────────────────────────────── */
+
+OVE_TEST_STORAGE(ove_sem_storage_t, s_async_sem_storage);
+
+static void sem_notify_cb(void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_notify_count++;
+}
+
+static void test_async_sem_notify_fires_on_give(void **state)
+{
+	(void)state;
+	s_async_notify_count = 0;
+	int marker = 0;
+
+	ove_sem_t s = NULL;
+	int rc = ove_sem_init(&s, &s_async_sem_storage, 0 /* initial */, 4 /* max */);
+	assert_int_equal(rc, OVE_OK);
+
+	rc = ove_sem_set_notify(s, sem_notify_cb, &marker);
+	assert_int_equal(rc, OVE_OK);
+
+	ove_sem_give(s);
+	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_notify_count, 1);
+
+	rc = ove_sem_set_notify(s, NULL, NULL);
+	assert_int_equal(rc, OVE_OK);
+	ove_sem_give(s);
+	assert_int_equal(s_async_notify_count, 1);
+
+	ove_sem_deinit(s);
+}
+
 /* ── setup ───────────────────────────────────────────────────────────── */
 
 static int async_setup(void **state)
@@ -280,6 +393,9 @@ int test_async_run(void)
 				       async_setup),
 #endif
 		cmocka_unit_test_setup(test_async_stream_notify_fires_on_send, async_setup),
+		cmocka_unit_test_setup(test_async_queue_notify_fires_on_send, async_setup),
+		cmocka_unit_test_setup(test_async_eventgroup_notify_fires_on_set_bits, async_setup),
+		cmocka_unit_test_setup(test_async_sem_notify_fires_on_give, async_setup),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

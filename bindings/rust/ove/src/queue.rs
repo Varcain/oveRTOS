@@ -194,6 +194,26 @@ impl<T: Copy, const N: usize> Queue<T, N> {
         Error::from_code(rc)?;
         Ok(unsafe { item.assume_init() })
     }
+
+    /// Register a notify callback fired after every successful send.
+    /// Wraps the C-level `ove_queue_set_notify`. Reach for
+    /// [`AsyncQueue`](crate::async_runtime::AsyncQueue) instead of using
+    /// this directly — it hides the lifetime + ISR-safety constraints
+    /// behind a safe API.
+    ///
+    /// # Safety
+    /// Same contract as [`crate::Stream::set_notify`]: `user_data` must
+    /// outlive the registration, and `cb` must be ISR-safe.
+    #[cfg(has_async)]
+    #[inline]
+    pub unsafe fn set_notify(
+        &self,
+        cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+        user_data: *mut core::ffi::c_void,
+    ) -> Result<()> {
+        let rc = unsafe { bindings::ove_queue_set_notify(self.handle, cb, user_data) };
+        Error::from_code(rc)
+    }
 }
 
 impl<T: Copy, const N: usize> fmt::Debug for Queue<T, N> {

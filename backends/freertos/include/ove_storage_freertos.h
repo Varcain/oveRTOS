@@ -59,6 +59,8 @@ struct ove_mutex {
 struct ove_sem {
 	StaticSemaphore_t static_sem;
 	SemaphoreHandle_t sem;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 struct ove_event {
@@ -132,6 +134,8 @@ typedef struct ove_thread ove_thread_storage_t;
 struct ove_queue {
 	StaticQueue_t static_queue;
 	QueueHandle_t queue;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 	/* Pointer to the queue's data buffer.  Init/zero-heap path: caller
 	 * supplies `buffer` and we record it here.  Heap-create path: points
 	 * at the inline_storage[] FAM tail so the wrapper struct + queue
@@ -163,6 +167,8 @@ typedef struct ove_timer ove_timer_storage_t;
 struct ove_eventgroup {
 	StaticEventGroup_t static_eg;
 	EventGroupHandle_t handle;
+	ove_notify_cb notify_cb;
+	void *notify_ud;
 };
 
 typedef struct ove_eventgroup ove_eventgroup_storage_t;
