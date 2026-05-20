@@ -154,4 +154,100 @@ err:
 	}
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+/* HAL_I2C lookup analogue of the SPI implementation above. */
+static struct ove_i2c *s_active_i2c[4];
+
+static void register_active(struct ove_i2c *i2c)
+{
+	unsigned int idx = i2c->instance;
+	if (idx < (sizeof(s_active_i2c) / sizeof(s_active_i2c[0])))
+		s_active_i2c[idx] = i2c;
+}
+
+static struct ove_i2c *find_active(I2C_HandleTypeDef *hi2c)
+{
+	for (unsigned int i = 0; i < sizeof(s_active_i2c) / sizeof(s_active_i2c[0]); i++) {
+		if (s_active_i2c[i] != NULL && &s_active_i2c[i]->hal_handle == hi2c)
+			return s_active_i2c[i];
+	}
+	return NULL;
+}
+
+int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
+				 void *rx, size_t rx_len)
+{
+	HAL_StatusTypeDef ret;
+
+	register_active(i2c);
+
+	/* Most common case: 1-2 byte register prefix into the device, then
+	 * a read. HAL_I2C_Mem_Read_IT handles that natively. */
+	if (tx_len == 1 && rx_len > 0) {
+		uint16_t mem_addr = ((const uint8_t *)tx)[0];
+		ret = HAL_I2C_Mem_Read_IT(&i2c->hal_handle, (uint16_t)(addr << 1), mem_addr,
+					  I2C_MEMADD_SIZE_8BIT, rx, (uint16_t)rx_len);
+	} else if (tx_len == 2 && rx_len > 0) {
+		uint16_t mem_addr =
+			(uint16_t)(((const uint8_t *)tx)[0] << 8 | ((const uint8_t *)tx)[1]);
+		ret = HAL_I2C_Mem_Read_IT(&i2c->hal_handle, (uint16_t)(addr << 1), mem_addr,
+					  I2C_MEMADD_SIZE_16BIT, rx, (uint16_t)rx_len);
+	} else if (tx_len > 0 && rx_len == 0) {
+		ret = HAL_I2C_Master_Transmit_IT(&i2c->hal_handle, (uint16_t)(addr << 1),
+						 (uint8_t *)tx, (uint16_t)tx_len);
+	} else if (tx_len == 0 && rx_len > 0) {
+		ret = HAL_I2C_Master_Receive_IT(&i2c->hal_handle, (uint16_t)(addr << 1), rx,
+						(uint16_t)rx_len);
+	} else {
+		/* Larger tx prefix: fall back to two-stage sequential. */
+		ret = HAL_I2C_Master_Sequential_Transmit_IT(&i2c->hal_handle, (uint16_t)(addr << 1),
+							    (uint8_t *)tx, (uint16_t)tx_len,
+							    I2C_FIRST_FRAME);
+		if (ret != HAL_OK) {
+			s_active_i2c[i2c->instance] = NULL;
+			return (ret == HAL_BUSY) ? OVE_ERR_BUS_BUSY : OVE_ERR_BUS_ERROR;
+		}
+		ret = HAL_I2C_Master_Sequential_Receive_IT(&i2c->hal_handle, (uint16_t)(addr << 1),
+							   rx, (uint16_t)rx_len, I2C_LAST_FRAME);
+	}
+
+	if (ret != HAL_OK) {
+		s_active_i2c[i2c->instance] = NULL;
+		return (ret == HAL_BUSY) ? OVE_ERR_BUS_BUSY : OVE_ERR_BUS_ERROR;
+	}
+	return OVE_OK;
+}
+
+static void i2c_async_done(I2C_HandleTypeDef *hi2c, int result)
+{
+	struct ove_i2c *i2c = find_active(hi2c);
+	if (i2c == NULL)
+		return;
+	s_active_i2c[i2c->instance] = NULL;
+	ove_i2c_async_complete(i2c, result);
+}
+
+void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+	i2c_async_done(hi2c, OVE_OK);
+}
+
+void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+	i2c_async_done(hi2c, OVE_OK);
+}
+
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+	i2c_async_done(hi2c, OVE_OK);
+}
+
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
+{
+	i2c_async_done(hi2c, OVE_ERR_BUS_NACK);
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_I2C */

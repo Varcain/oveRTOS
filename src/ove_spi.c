@@ -166,4 +166,57 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 	return ret;
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+/*
+ * Async transfer: serialised per-peripheral via the async_busy flag. The
+ * caller (typically the Rust AsyncSpi wrapper) is responsible for further
+ * serialisation across concurrent submissions — we surface OVE_ERR_BUS_BUSY
+ * if a transfer is already in flight rather than blocking.
+ *
+ * The bus mutex is NOT taken because the HAL completion can fire from
+ * ISR context (STM32 DMA) and mutex unlock is not ISR-safe.
+ */
+
+int ove_spi_transfer_async(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
+			   size_t len, ove_dma_complete_cb cb, void *user_data)
+{
+	int ret;
+
+	if (spi == NULL || len == 0 || cb == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (tx == NULL && rx == NULL)
+		return OVE_ERR_INVALID_PARAM;
+
+	if (spi->async_busy)
+		return OVE_ERR_BUS_BUSY;
+	spi->async_busy = 1;
+
+	spi->pending_cb = cb;
+	spi->pending_ud = user_data;
+	spi->pending_cs = cs;
+
+	cs_assert(cs);
+	ret = ove_hal_spi_transfer_async(spi, tx, rx, len);
+	if (ret != OVE_OK) {
+		cs_deassert(cs);
+		spi->async_busy = 0;
+	}
+	return ret;
+}
+
+void ove_spi_async_complete(ove_spi_t spi, int result)
+{
+	ove_dma_complete_cb cb = spi->pending_cb;
+	void *user_data = spi->pending_ud;
+	const struct ove_spi_cs *cs = spi->pending_cs;
+
+	cs_deassert(cs);
+	spi->async_busy = 0;
+	if (cb != NULL)
+		cb(result, user_data);
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_SPI */

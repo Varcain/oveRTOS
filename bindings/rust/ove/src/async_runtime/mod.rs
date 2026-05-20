@@ -34,10 +34,14 @@ pub mod eventgroup;
 pub mod executor;
 #[cfg(has_gpio)]
 pub mod gpio;
+#[cfg(has_i2c)]
+pub mod i2c;
 #[cfg(has_queue)]
 pub mod queue;
 #[cfg(has_sync)]
 pub mod semaphore;
+#[cfg(has_spi)]
+pub mod spi;
 #[cfg(has_stream)]
 pub mod stream;
 pub(crate) mod time_driver;
@@ -49,10 +53,14 @@ pub use eventgroup::AsyncEventGroup;
 pub use executor::Executor;
 #[cfg(has_gpio)]
 pub use gpio::AsyncInput;
+#[cfg(has_i2c)]
+pub use i2c::AsyncI2c;
 #[cfg(has_queue)]
 pub use queue::AsyncQueue;
 #[cfg(has_sync)]
 pub use semaphore::AsyncSemaphore;
+#[cfg(has_spi)]
+pub use spi::AsyncSpi;
 #[cfg(has_stream)]
 pub use stream::AsyncStream;
 #[cfg(has_uart)]

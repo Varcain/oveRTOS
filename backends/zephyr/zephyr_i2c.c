@@ -93,4 +93,42 @@ int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t 
 	return (ret == 0) ? OVE_OK : OVE_ERR_BUS_ERROR;
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+static void zephyr_i2c_async_work_handler(struct k_work *work)
+{
+	struct ove_i2c *i2c = CONTAINER_OF(work, struct ove_i2c, async_work);
+	int result;
+
+	if (i2c->pending_tx_len > 0 && i2c->pending_rx_len > 0)
+		result = ove_hal_i2c_write_read(i2c, i2c->pending_addr, i2c->pending_tx,
+						i2c->pending_tx_len, i2c->pending_rx,
+						i2c->pending_rx_len, OVE_WAIT_FOREVER);
+	else if (i2c->pending_rx_len > 0)
+		result = ove_hal_i2c_read(i2c, i2c->pending_addr, i2c->pending_rx,
+					  i2c->pending_rx_len, OVE_WAIT_FOREVER);
+	else
+		result = ove_hal_i2c_write(i2c, i2c->pending_addr, i2c->pending_tx,
+					   i2c->pending_tx_len, OVE_WAIT_FOREVER);
+
+	ove_i2c_async_complete(i2c, result);
+}
+
+int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
+				 void *rx, size_t rx_len)
+{
+	i2c->pending_addr = addr;
+	i2c->pending_tx = tx;
+	i2c->pending_tx_len = tx_len;
+	i2c->pending_rx = rx;
+	i2c->pending_rx_len = rx_len;
+	k_work_init(&i2c->async_work, zephyr_i2c_async_work_handler);
+	int ret = k_work_submit(&i2c->async_work);
+	if (ret < 0)
+		return OVE_ERR_NO_MEMORY;
+	return OVE_OK;
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_I2C */

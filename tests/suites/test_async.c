@@ -391,6 +391,147 @@ static void test_async_uart_set_rx_notify_delegates_to_stream(void **state)
 }
 #endif /* CONFIG_OVE_UART */
 
+/* ── ove_spi_transfer_async / ove_i2c_write_read_async ──────────────── */
+#if defined(CONFIG_OVE_SPI) || defined(CONFIG_OVE_I2C)
+#include <unistd.h>
+#endif
+
+#ifdef CONFIG_OVE_SPI
+#include "ove/spi.h"
+
+OVE_TEST_STORAGE(ove_spi_storage_t, s_async_spi_storage);
+static _Atomic int s_async_spi_done;
+static int s_async_spi_result;
+
+static void async_spi_cb(int result, void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_spi_result = result;
+	atomic_store(&s_async_spi_done, 1);
+}
+
+static void test_async_spi_transfer_completion_fires(void **state)
+{
+	(void)state;
+	atomic_store(&s_async_spi_done, 0);
+	s_async_spi_result = -1;
+	int marker = 0;
+
+	ove_spi_t spi = NULL;
+	struct ove_spi_cfg cfg = {
+		.instance = 0,
+		.clock_hz = 1000000,
+		.mode = OVE_SPI_MODE_0,
+		.bit_order = OVE_SPI_MSB_FIRST,
+		.word_size = 8,
+	};
+	int rc = ove_spi_init(&spi, &s_async_spi_storage, &cfg);
+	assert_int_equal(rc, OVE_OK);
+
+	uint8_t tx[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+	uint8_t rx[4] = {0};
+
+	rc = ove_spi_transfer_async(spi, NULL, tx, rx, sizeof(tx), async_spi_cb, &marker);
+	assert_int_equal(rc, OVE_OK);
+
+	/* Worker-thread fallback completes asynchronously. */
+	for (int i = 0; i < 1000 && !atomic_load(&s_async_spi_done); i++)
+		usleep(1000);
+	assert_int_equal(atomic_load(&s_async_spi_done), 1);
+	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_spi_result, OVE_OK);
+	/* Loopback copies tx -> rx. */
+	assert_memory_equal(rx, tx, sizeof(tx));
+
+	ove_spi_deinit(spi);
+}
+
+static void test_async_spi_transfer_null_cb_rejected(void **state)
+{
+	(void)state;
+	ove_spi_t spi = NULL;
+	struct ove_spi_cfg cfg = {
+		.instance = 0,
+		.clock_hz = 1000000,
+		.mode = OVE_SPI_MODE_0,
+		.bit_order = OVE_SPI_MSB_FIRST,
+		.word_size = 8,
+	};
+	int rc = ove_spi_init(&spi, &s_async_spi_storage, &cfg);
+	assert_int_equal(rc, OVE_OK);
+
+	uint8_t tx[4] = {1, 2, 3, 4};
+	rc = ove_spi_transfer_async(spi, NULL, tx, NULL, sizeof(tx), NULL, NULL);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+
+	ove_spi_deinit(spi);
+}
+#endif /* CONFIG_OVE_SPI */
+
+#ifdef CONFIG_OVE_I2C
+#include "ove/i2c.h"
+
+OVE_TEST_STORAGE(ove_i2c_storage_t, s_async_i2c_storage);
+static _Atomic int s_async_i2c_done;
+static int s_async_i2c_result;
+
+static void async_i2c_cb(int result, void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_i2c_result = result;
+	atomic_store(&s_async_i2c_done, 1);
+}
+
+static void test_async_i2c_write_read_completion_fires(void **state)
+{
+	(void)state;
+	atomic_store(&s_async_i2c_done, 0);
+	s_async_i2c_result = -1;
+	int marker = 0;
+
+	ove_i2c_t i2c = NULL;
+	struct ove_i2c_cfg cfg = {
+		.instance = 0,
+		.speed = OVE_I2C_SPEED_FAST,
+	};
+	int rc = ove_i2c_init(&i2c, &s_async_i2c_storage, &cfg);
+	assert_int_equal(rc, OVE_OK);
+
+	uint8_t tx[2] = {0xAA, 0xBB};
+	uint8_t rx[3] = {0};
+	rc = ove_i2c_write_read_async(i2c, 0x42, tx, sizeof(tx), rx, sizeof(rx), async_i2c_cb,
+				      &marker);
+	assert_int_equal(rc, OVE_OK);
+
+	for (int i = 0; i < 1000 && !atomic_load(&s_async_i2c_done); i++)
+		usleep(1000);
+	assert_int_equal(atomic_load(&s_async_i2c_done), 1);
+	assert_int_equal(marker, 1);
+	assert_int_equal(s_async_i2c_result, OVE_OK);
+
+	ove_i2c_deinit(i2c);
+}
+
+static void test_async_i2c_null_cb_rejected(void **state)
+{
+	(void)state;
+	ove_i2c_t i2c = NULL;
+	struct ove_i2c_cfg cfg = {
+		.instance = 0,
+		.speed = OVE_I2C_SPEED_STANDARD,
+	};
+	int rc = ove_i2c_init(&i2c, &s_async_i2c_storage, &cfg);
+	assert_int_equal(rc, OVE_OK);
+
+	uint8_t tx[1] = {0};
+	uint8_t rx[1] = {0};
+	rc = ove_i2c_write_read_async(i2c, 0x10, tx, 1, rx, 1, NULL, NULL);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+
+	ove_i2c_deinit(i2c);
+}
+#endif /* CONFIG_OVE_I2C */
+
 /* ── setup ───────────────────────────────────────────────────────────── */
 
 static int async_setup(void **state)
@@ -426,6 +567,14 @@ int test_async_run(void)
 #ifdef CONFIG_OVE_UART
 		cmocka_unit_test_setup(test_async_uart_set_rx_notify_delegates_to_stream,
 				       async_setup),
+#endif
+#ifdef CONFIG_OVE_SPI
+		cmocka_unit_test_setup(test_async_spi_transfer_completion_fires, async_setup),
+		cmocka_unit_test_setup(test_async_spi_transfer_null_cb_rejected, async_setup),
+#endif
+#ifdef CONFIG_OVE_I2C
+		cmocka_unit_test_setup(test_async_i2c_write_read_completion_fires, async_setup),
+		cmocka_unit_test_setup(test_async_i2c_null_cb_rejected, async_setup),
 #endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

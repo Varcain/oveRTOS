@@ -95,6 +95,36 @@ int ove_hal_i2c_read(ove_i2c_t i2c, uint16_t addr, void *buf, size_t len, uint64
 int ove_hal_i2c_write_read(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
 			   size_t rx_len, uint64_t timeout_ns);
 
+/**
+ * @brief Submit an async I2C write+read.
+ *
+ * Optional HAL hook, gated by @c CONFIG_OVE_ASYNC. Backends must call
+ * @ref ove_i2c_async_complete with the transaction result; the
+ * portable layer takes care of busy-flag clearing and user callback
+ * dispatch.
+ *
+ * @param[in] i2c      I2C handle.
+ * @param[in] addr     7-bit device address.
+ * @param[in] tx       Transmit buffer (may be NULL for pure read).
+ * @param[in] tx_len   Bytes to write.
+ * @param[in] rx       Receive buffer (may be NULL for pure write).
+ * @param[in] rx_len   Bytes to read.
+ * @return OVE_OK if accepted, negative error code on submission
+ *         failure (no completion in that case).
+ */
+int ove_hal_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len,
+				 void *rx, size_t rx_len);
+
+/**
+ * @brief Completion notification from the HAL.
+ *
+ * Called by the HAL backend on transaction completion.
+ *
+ * @param[in] i2c     I2C handle.
+ * @param[in] result  OVE_OK on success, negative error code on failure.
+ */
+void ove_i2c_async_complete(ove_i2c_t i2c, int result);
+
 #ifdef __cplusplus
 }
 #endif
