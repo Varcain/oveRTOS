@@ -84,4 +84,34 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 	return (ret == 0) ? OVE_OK : OVE_ERR_BUS_ERROR;
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+/*
+ * Zephyr fallback: submit the transfer to the system workqueue. Avoids
+ * depending on CONFIG_SPI_ASYNC (which requires per-driver signal support)
+ * and gives us the same callback-style completion across all Zephyr boards.
+ */
+
+static void zephyr_spi_async_work_handler(struct k_work *work)
+{
+	struct ove_spi *spi = CONTAINER_OF(work, struct ove_spi, async_work);
+	int result = ove_hal_spi_transfer(spi, spi->pending_tx, spi->pending_rx, spi->pending_len,
+					  OVE_WAIT_FOREVER);
+	ove_spi_async_complete(spi, result);
+}
+
+int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t len)
+{
+	spi->pending_tx = tx;
+	spi->pending_rx = rx;
+	spi->pending_len = len;
+	k_work_init(&spi->async_work, zephyr_spi_async_work_handler);
+	int ret = k_work_submit(&spi->async_work);
+	if (ret < 0)
+		return OVE_ERR_NO_MEMORY;
+	return OVE_OK;
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_SPI */

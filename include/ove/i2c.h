@@ -203,6 +203,36 @@ int ove_i2c_reg_read(ove_i2c_t i2c, uint16_t addr, uint8_t reg, void *buf, size_
  */
 int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns);
 
+/**
+ * @brief Submit an I2C write-then-read transaction asynchronously.
+ *
+ * Equivalent to @ref ove_i2c_write_read but returns immediately. The
+ * completion callback fires when the device has been written, the
+ * repeated-start completed, and the read finished — or when an error
+ * (NACK, bus error, timeout) terminates the transaction.
+ *
+ * Same backend completion-context contract as
+ * @ref ove_spi_transfer_async (ISR on STM32 + FreeRTOS DMA, thread on
+ * Zephyr signal / NuttX-POSIX worker fallback).
+ *
+ * @param[in] i2c        I2C handle.
+ * @param[in] addr       7-bit device address.
+ * @param[in] tx         Bytes to write before the repeated start.
+ *                       Must outlive the transaction. May be NULL if
+ *                       @p tx_len is 0 (pure read).
+ * @param[in] tx_len     Number of bytes to write.
+ * @param[in] rx         Buffer for read bytes. Must outlive the
+ *                       transaction. May be NULL if @p rx_len is 0
+ *                       (pure write).
+ * @param[in] rx_len     Number of bytes to read.
+ * @param[in] cb         Completion callback. Must not be NULL.
+ * @param[in] user_data  Opaque pointer forwarded to @p cb.
+ * @return OVE_OK if accepted; negative on submission failure (no
+ *         callback in that case).
+ */
+int ove_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+			     size_t rx_len, ove_dma_complete_cb cb, void *user_data);
+
 #else /* !CONFIG_OVE_I2C */
 
 /* No _init/_deinit stubs: OVE_I2C_DEFINE_STATIC is itself gated by
@@ -275,6 +305,19 @@ static inline int ove_i2c_probe(ove_i2c_t i, uint16_t a, uint64_t t)
 	(void)i;
 	(void)a;
 	(void)t;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_i2c_write_read_async(ove_i2c_t i, uint16_t a, const void *tx, size_t tl,
+					   void *rx, size_t rl, ove_dma_complete_cb cb, void *ud)
+{
+	(void)i;
+	(void)a;
+	(void)tx;
+	(void)tl;
+	(void)rx;
+	(void)rl;
+	(void)cb;
+	(void)ud;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 

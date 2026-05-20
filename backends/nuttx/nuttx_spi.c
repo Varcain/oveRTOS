@@ -90,4 +90,42 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 	return OVE_OK;
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+#include <pthread.h>
+
+static void *nuttx_spi_async_worker(void *arg)
+{
+	ove_spi_t spi = (ove_spi_t)arg;
+	int result;
+
+	result = ove_hal_spi_transfer(spi, spi->pending_tx, spi->pending_rx, spi->pending_len,
+				      OVE_WAIT_FOREVER);
+	ove_spi_async_complete(spi, result);
+	return NULL;
+}
+
+int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t len)
+{
+	pthread_t tid;
+	pthread_attr_t attr;
+	int rc;
+
+	spi->pending_tx = tx;
+	spi->pending_rx = rx;
+	spi->pending_len = len;
+
+	if (pthread_attr_init(&attr) != 0)
+		return OVE_ERR_NO_MEMORY;
+	(void)pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+	rc = pthread_create(&tid, &attr, nuttx_spi_async_worker, spi);
+	pthread_attr_destroy(&attr);
+	if (rc != 0)
+		return OVE_ERR_NO_MEMORY;
+	return OVE_OK;
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_SPI */

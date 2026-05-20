@@ -119,4 +119,93 @@ int ove_hal_spi_transfer(ove_spi_t spi, const void *tx, void *rx, size_t len, ui
 	}
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+/*
+ * IT-mode async transfer. Uses HAL_SPI_TransmitReceive_IT (and the
+ * write-only / read-only variants); completion fires
+ * HAL_SPI_TxRxCpltCallback in the SPI ISR which dispatches to
+ * ove_spi_async_complete.
+ *
+ * DMA mode would be faster but needs per-board DMA-stream wiring at
+ * board init time (cache invalidate for D-cached RX); IT mode works
+ * out of the box and gives us the async semantics. Boards that need
+ * higher throughput can override HAL_SPI_MspInit to register DMA
+ * handles and swap the _IT variants below for _DMA.
+ */
+
+/* Map a HAL SPI handle back to our ove_spi storage so the completion
+ * callback knows which handle to notify. We don't have a per-instance
+ * userdata pointer in the HAL handle, so look up by SPI_TypeDef. */
+static struct ove_spi *s_active_spi[5];
+
+static void register_active(struct ove_spi *spi)
+{
+	unsigned int idx = spi->instance;
+	if (idx < (sizeof(s_active_spi) / sizeof(s_active_spi[0])))
+		s_active_spi[idx] = spi;
+}
+
+static struct ove_spi *find_active(SPI_HandleTypeDef *hspi)
+{
+	for (unsigned int i = 0; i < sizeof(s_active_spi) / sizeof(s_active_spi[0]); i++) {
+		if (s_active_spi[i] != NULL && &s_active_spi[i]->hal_handle == hspi)
+			return s_active_spi[i];
+	}
+	return NULL;
+}
+
+int ove_hal_spi_transfer_async(ove_spi_t spi, const void *tx, void *rx, size_t len)
+{
+	HAL_StatusTypeDef ret;
+
+	register_active(spi);
+
+	if (tx != NULL && rx != NULL) {
+		ret = HAL_SPI_TransmitReceive_IT(&spi->hal_handle, (uint8_t *)tx, rx,
+						 (uint16_t)len);
+	} else if (tx != NULL) {
+		ret = HAL_SPI_Transmit_IT(&spi->hal_handle, (uint8_t *)tx, (uint16_t)len);
+	} else {
+		ret = HAL_SPI_Receive_IT(&spi->hal_handle, rx, (uint16_t)len);
+	}
+
+	if (ret != HAL_OK) {
+		s_active_spi[spi->instance] = NULL;
+		return (ret == HAL_BUSY) ? OVE_ERR_BUS_BUSY : OVE_ERR_BUS_ERROR;
+	}
+	return OVE_OK;
+}
+
+static void async_done(SPI_HandleTypeDef *hspi, int result)
+{
+	struct ove_spi *spi = find_active(hspi);
+	if (spi == NULL)
+		return;
+	s_active_spi[spi->instance] = NULL;
+	ove_spi_async_complete(spi, result);
+}
+
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	async_done(hspi, OVE_OK);
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	async_done(hspi, OVE_OK);
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+	async_done(hspi, OVE_OK);
+}
+
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
+{
+	async_done(hspi, OVE_ERR_BUS_ERROR);
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_SPI */

@@ -291,6 +291,20 @@ typedef uint32_t ove_eventbits_t;
  */
 typedef void (*ove_notify_cb)(void *user_data);
 
+/**
+ * @brief DMA / async transfer completion callback signature.
+ *
+ * Invoked by @c ove_spi_transfer_async / @c ove_i2c_write_read_async
+ * (and similar) when a transfer finishes.  Runs in whatever context
+ * the backend's completion fires in: ISR on real DMA-capable
+ * hardware (STM32F7 HAL), thread on simulator / worker-thread
+ * fallback paths. Implementations must be non-blocking and ISR-safe.
+ *
+ * @param[in] result     OVE_OK on success, negative @c OVE_ERR_* on failure.
+ * @param[in] user_data  Opaque pointer passed to the @c _async call.
+ */
+typedef void (*ove_dma_complete_cb)(int result, void *user_data);
+
 /* RTOS name string (compile-time) */
 #include "ove_config.h"
 

@@ -197,4 +197,45 @@ int ove_i2c_probe(ove_i2c_t i2c, uint16_t addr, uint64_t timeout_ns)
 	return ret;
 }
 
+#ifdef CONFIG_OVE_ASYNC
+
+int ove_i2c_write_read_async(ove_i2c_t i2c, uint16_t addr, const void *tx, size_t tx_len, void *rx,
+			     size_t rx_len, ove_dma_complete_cb cb, void *user_data)
+{
+	int ret;
+
+	if (i2c == NULL || cb == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	if (tx == NULL && tx_len > 0)
+		return OVE_ERR_INVALID_PARAM;
+	if (rx == NULL && rx_len > 0)
+		return OVE_ERR_INVALID_PARAM;
+	if (tx_len == 0 && rx_len == 0)
+		return OVE_ERR_INVALID_PARAM;
+
+	if (i2c->async_busy)
+		return OVE_ERR_BUS_BUSY;
+	i2c->async_busy = 1;
+
+	i2c->pending_cb = cb;
+	i2c->pending_ud = user_data;
+
+	ret = ove_hal_i2c_write_read_async(i2c, addr, tx, tx_len, rx, rx_len);
+	if (ret != OVE_OK)
+		i2c->async_busy = 0;
+	return ret;
+}
+
+void ove_i2c_async_complete(ove_i2c_t i2c, int result)
+{
+	ove_dma_complete_cb cb = i2c->pending_cb;
+	void *user_data = i2c->pending_ud;
+
+	i2c->async_busy = 0;
+	if (cb != NULL)
+		cb(result, user_data);
+}
+
+#endif /* CONFIG_OVE_ASYNC */
+
 #endif /* CONFIG_OVE_I2C */

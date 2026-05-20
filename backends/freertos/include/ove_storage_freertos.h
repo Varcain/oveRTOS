@@ -403,6 +403,12 @@ struct ove_spi {
 	ove_mutex_storage_t bus_mtx_storage;
 	ove_mutex_t bus_mtx;
 	SPI_HandleTypeDef hal_handle;
+#ifdef CONFIG_OVE_ASYNC
+	ove_dma_complete_cb pending_cb;
+	void *pending_ud;
+	const struct ove_spi_cs *pending_cs;
+	volatile int async_busy;
+#endif
 };
 
 typedef struct ove_spi ove_spi_storage_t;
@@ -441,6 +447,11 @@ struct ove_i2c {
 	ove_mutex_storage_t bus_mtx_storage;
 	ove_mutex_t bus_mtx;
 	I2C_HandleTypeDef hal_handle;
+#ifdef CONFIG_OVE_ASYNC
+	ove_dma_complete_cb pending_cb;
+	void *pending_ud;
+	volatile int async_busy;
+#endif
 };
 
 typedef struct ove_i2c ove_i2c_storage_t;

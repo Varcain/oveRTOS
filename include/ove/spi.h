@@ -184,6 +184,40 @@ int ove_spi_transfer_seq(ove_spi_t spi, const struct ove_spi_cs *cs,
 			 const struct ove_spi_xfer *xfers, unsigned int num_xfers,
 			 uint64_t timeout_ns);
 
+/**
+ * @brief Submit an SPI transfer asynchronously and return immediately.
+ *
+ * Initiates a full-duplex transfer (TX from @p tx, RX into @p rx; either
+ * may be NULL but not both). The call returns @c OVE_OK as soon as the
+ * transfer has been accepted by the backend — completion is signalled
+ * via @p cb.
+ *
+ * Completion context is backend-dependent:
+ *  - STM32F7 + FreeRTOS: DMA TC ISR (callable from interrupt context).
+ *  - Zephyr: poll signal handler (typically a system workqueue thread).
+ *  - NuttX / POSIX: a worker thread that runs the blocking transfer
+ *    and invokes @p cb on return.  No real DMA — provides the async
+ *    surface for testing.
+ *
+ * The callback must be non-blocking and ISR-safe.  Higher-level
+ * bindings (Rust @c AsyncSpi) wrap this with @c AtomicWaker.
+ *
+ * @param[in] spi        SPI handle.
+ * @param[in] cs         Chip-select descriptor, or NULL.
+ * @param[in] tx         Transmit buffer, or NULL.  Must outlive the
+ *                       transfer.
+ * @param[in] rx         Receive buffer, or NULL.  Must outlive the
+ *                       transfer.
+ * @param[in] len        Number of bytes to transfer.
+ * @param[in] cb         Completion callback.  Must not be NULL.
+ * @param[in] user_data  Opaque pointer forwarded to @p cb.
+ * @return OVE_OK if accepted (transfer in flight; callback will fire),
+ *         negative error code if the submission itself failed (the
+ *         callback will NOT fire in this case).
+ */
+int ove_spi_transfer_async(ove_spi_t spi, const struct ove_spi_cs *cs, const void *tx, void *rx,
+			   size_t len, ove_dma_complete_cb cb, void *user_data);
+
 #else /* !CONFIG_OVE_SPI */
 
 /* No _init/_deinit stubs: OVE_SPI_DEFINE_STATIC is itself gated by
@@ -197,6 +231,18 @@ static inline int ove_spi_create(ove_spi_t *s, const struct ove_spi_cfg *c)
 static inline void ove_spi_destroy(ove_spi_t s)
 {
 	(void)s;
+}
+static inline int ove_spi_transfer_async(ove_spi_t s, const struct ove_spi_cs *cs, const void *tx,
+					 void *rx, size_t l, ove_dma_complete_cb cb, void *ud)
+{
+	(void)s;
+	(void)cs;
+	(void)tx;
+	(void)rx;
+	(void)l;
+	(void)cb;
+	(void)ud;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_spi_transfer(ove_spi_t s, const struct ove_spi_cs *cs, const void *tx,
 				   void *rx, size_t l, uint64_t t)
