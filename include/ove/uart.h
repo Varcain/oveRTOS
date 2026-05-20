@@ -173,6 +173,27 @@ int ove_uart_flush(ove_uart_t uart);
  */
 void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len);
 
+/**
+ * @brief Register a notify callback fired after every byte (or chunk)
+ *        received into the RX buffer.
+ *
+ * Convenience delegate to @ref ove_stream_set_notify on the UART's
+ * internal RX stream — exposes the wake hook without leaking the
+ * stream handle itself. Designed for the Rust binding's async
+ * `Uart::read().await` path, which registers an `AtomicWaker::wake`
+ * trampoline here.
+ *
+ * The callback fires from whatever context the byte was pushed in —
+ * typically an ISR via @ref ove_uart_rx_isr_push. Must be non-blocking
+ * and ISR-safe.
+ *
+ * @param[in] uart       UART handle.
+ * @param[in] cb         Callback to invoke after each RX, or @c NULL.
+ * @param[in] user_data  Opaque pointer forwarded to @p cb.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_uart_set_rx_notify(ove_uart_t uart, ove_notify_cb cb, void *user_data);
+
 #else /* !CONFIG_OVE_UART */
 
 /* No _init/_deinit stubs: OVE_UART_DEFINE_STATIC is itself gated by
@@ -209,6 +230,13 @@ static inline size_t ove_uart_bytes_available(ove_uart_t u)
 {
 	(void)u;
 	return 0;
+}
+static inline int ove_uart_set_rx_notify(ove_uart_t u, ove_notify_cb cb, void *ud)
+{
+	(void)u;
+	(void)cb;
+	(void)ud;
+	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_uart_flush(ove_uart_t u)
 {

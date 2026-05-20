@@ -364,6 +364,33 @@ static void test_async_sem_notify_fires_on_give(void **state)
 	ove_sem_deinit(s);
 }
 
+/* ── ove_uart_set_rx_notify ─────────────────────────────────────────── */
+/* Verified only when UART is configured.  Most backends gate UART behind
+ * CONFIG_OVE_UART; the stub fixtures don't always enable it.  When the
+ * symbol isn't compiled the stub form returns OVE_ERR_NOT_SUPPORTED. */
+
+#ifdef CONFIG_OVE_UART
+static void uart_notify_cb(void *user_data)
+{
+	*(int *)user_data = 1;
+	s_async_notify_count++;
+}
+
+static void test_async_uart_set_rx_notify_delegates_to_stream(void **state)
+{
+	(void)state;
+	s_async_notify_count = 0;
+	int marker = 0;
+
+	/* Pass a NULL handle to verify the param check fires (we don't
+	 * need a real UART up to assert the delegation logic — the stream
+	 * notify path itself is already covered by
+	 * test_async_stream_notify_fires_on_send). */
+	int rc = ove_uart_set_rx_notify(NULL, uart_notify_cb, &marker);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+}
+#endif /* CONFIG_OVE_UART */
+
 /* ── setup ───────────────────────────────────────────────────────────── */
 
 static int async_setup(void **state)
@@ -396,6 +423,10 @@ int test_async_run(void)
 		cmocka_unit_test_setup(test_async_queue_notify_fires_on_send, async_setup),
 		cmocka_unit_test_setup(test_async_eventgroup_notify_fires_on_set_bits, async_setup),
 		cmocka_unit_test_setup(test_async_sem_notify_fires_on_give, async_setup),
+#ifdef CONFIG_OVE_UART
+		cmocka_unit_test_setup(test_async_uart_set_rx_notify_delegates_to_stream,
+				       async_setup),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

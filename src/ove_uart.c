@@ -173,4 +173,11 @@ void ove_uart_rx_isr_push(ove_uart_t uart, const void *data, size_t len)
 	ove_stream_send_from_isr(uart->rx_stream, data, len, NULL);
 }
 
+int ove_uart_set_rx_notify(ove_uart_t uart, ove_notify_cb cb, void *user_data)
+{
+	if (uart == NULL)
+		return OVE_ERR_INVALID_PARAM;
+	return ove_stream_set_notify(uart->rx_stream, cb, user_data);
+}
+
 #endif /* CONFIG_OVE_UART */
