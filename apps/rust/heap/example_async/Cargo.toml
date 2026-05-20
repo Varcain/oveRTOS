@@ -8,17 +8,24 @@ rust-version = "1.85"
 crate-type = ["staticlib"]
 
 [dependencies]
-# `async-arch-std` selects `embassy-executor`'s arch-std + executor-thread
-# features, the right combination for POSIX hosts. Embedded targets would
-# use `async-arch-cortex-m` instead.
-ove = { path = "../../../../bindings/rust/ove", features = ["alloc", "async", "async-arch-std"] }
+# Base features (target-agnostic). The arch-* feature picks the right
+# embassy-executor arch + critical-section width per target below.
+ove = { path = "../../../../bindings/rust/ove", features = ["alloc", "async"] }
 log = "0.4"
 ove-allocator = { path = "../../../../bindings/rust/ove-allocator", default-features = false }
-# Direct dep so the user can access `#[embassy_executor::task]` and the
-# `Spawner` type. Must match the version pinned in `ove`'s manifest.
 embassy-executor = { version = "0.7", default-features = false }
 embassy-time = { version = "0.4", default-features = false, features = ["tick-hz-1_000_000"] }
 embassy-sync = { version = "0.7", default-features = false }
+
+# POSIX host build: embassy-executor + critical-section's built-in std impl.
+[target.'cfg(not(target_os = "none"))'.dependencies]
+ove = { path = "../../../../bindings/rust/ove", features = ["async-arch-std"] }
+
+# Bare-metal ARM build (target_os = "none"): cortex-m executor + our
+# critical-section impl backed by ove_irq_lock. The `cortex-m` crate is
+# pulled in transitively by `embassy-executor/arch-cortex-m`.
+[target.'cfg(target_os = "none")'.dependencies]
+ove = { path = "../../../../bindings/rust/ove", features = ["async-arch-cortex-m"] }
 
 [features]
 default = []

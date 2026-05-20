@@ -125,11 +125,15 @@ fn expand_async(input: ItemFn) -> TokenStream {
         #[::embassy_executor::task]
         #user_vis #user_sig #user_block
 
-        #[unsafe(no_mangle)]
-        pub extern "C" fn ove_main() {
-            // The Executor must live for 'static; use a function-local
-            // never-deallocated slot. Box::leak gives us a stable
-            // 'static reference without depending on `static_cell`.
+        // The async executor must run after vTaskStartScheduler (FreeRTOS)
+        // / pthread_create (POSIX) / k_thread_create (Zephyr) so the
+        // backend's timer service task, ISR plumbing, and waitqueues are
+        // alive — otherwise our ove_timer callback never fires and the
+        // executor stalls in WFE forever.  Spawn the executor on an
+        // ove::Thread, then hand control to ove::run() which starts the
+        // backend scheduler.  Once the scheduler is up, the executor
+        // thread is dispatched and Executor::run takes over.
+        fn __ove_async_exec_thread() {
             let exec: &'static mut ::ove::async_runtime::Executor =
                 ::ove::heap::Box::leak(::ove::heap::Box::new(
                     ::ove::async_runtime::Executor::new(),
@@ -139,6 +143,20 @@ fn expand_async(input: ItemFn) -> TokenStream {
                     .spawn(#renamed_ident(spawner))
                     .expect("failed to spawn application entry task");
             });
+        }
+
+        #[unsafe(no_mangle)]
+        pub extern "C" fn ove_main() {
+            let _handle = ::ove::Thread::builder()
+                .name(c"async-exec")
+                .stack_size(8192)
+                .spawn_simple(__ove_async_exec_thread)
+                .expect("failed to create async-exec thread");
+            // Intentionally leak the join handle so its Drop doesn't
+            // request_stop on the executor thread when ove_main "returns"
+            // (it won't — ove::run never returns, but be explicit).
+            ::core::mem::forget(_handle);
+            ::ove::run();
         }
     };
     expanded.into()

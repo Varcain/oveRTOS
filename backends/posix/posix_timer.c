@@ -209,3 +209,13 @@ int ove_timer_reset(ove_timer_t timer)
 {
 	return ove_timer_start(timer);
 }
+
+int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
+{
+	struct ove_timer *t = timer;
+	if (!t) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+	t->period_ns = period_ns;
+	return ove_timer_start(t);
+}
