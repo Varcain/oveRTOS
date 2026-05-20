@@ -3345,6 +3345,14 @@ unsafe extern "C" {
     #[doc = " @brief Push received bytes from ISR into the portable RX buffer.\n\n Backend UART ISR handlers call this function to deliver received\n bytes to the portable layer's internal @ref ove_stream.\n\n @param[in] uart  UART handle.\n @param[in] data  Pointer to received byte(s).\n @param[in] len   Number of bytes received."]
     pub fn ove_uart_rx_isr_push(uart: ove_uart_t, data: *const core::ffi::c_void, len: usize);
 }
+unsafe extern "C" {
+    #[doc = " @brief Register a notify callback fired after every byte (or chunk)\n        received into the RX buffer.\n\n Convenience delegate to @ref ove_stream_set_notify on the UART's\n internal RX stream — exposes the wake hook without leaking the\n stream handle itself. Designed for the Rust binding's async\n `Uart::read().await` path, which registers an `AtomicWaker::wake`\n trampoline here.\n\n The callback fires from whatever context the byte was pushed in —\n typically an ISR via @ref ove_uart_rx_isr_push. Must be non-blocking\n and ISR-safe.\n\n @param[in] uart       UART handle.\n @param[in] cb         Callback to invoke after each RX, or @c NULL.\n @param[in] user_data  Opaque pointer forwarded to @p cb.\n @return OVE_OK on success, negative error code on failure."]
+    pub fn ove_uart_set_rx_notify(
+        uart: ove_uart_t,
+        cb: ove_notify_cb,
+        user_data: *mut core::ffi::c_void,
+    ) -> core::ffi::c_int;
+}
 #[doc = "< CPOL=0, CPHA=0."]
 pub const OVE_SPI_MODE_0: ove_spi_mode_t = 0;
 #[doc = "< CPOL=0, CPHA=1."]

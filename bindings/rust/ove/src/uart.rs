@@ -108,4 +108,24 @@ impl Uart {
         let rc = unsafe { bindings::ove_uart_flush(self.handle) };
         Error::from_code(rc)
     }
+
+    /// Register a notify callback fired after every received chunk.
+    /// Wraps the C-level `ove_uart_set_rx_notify`, which delegates to
+    /// `ove_stream_set_notify` on the UART's internal RX stream.
+    ///
+    /// # Safety
+    /// Same as [`crate::Stream::set_notify`]: `user_data` must outlive
+    /// the registration, and `cb` must be ISR-safe (UART RX
+    /// typically pushes from ISR context via
+    /// `ove_uart_rx_isr_push`).
+    #[cfg(has_async)]
+    #[inline]
+    pub unsafe fn set_rx_notify(
+        &self,
+        cb: Option<unsafe extern "C" fn(*mut core::ffi::c_void)>,
+        user_data: *mut core::ffi::c_void,
+    ) -> Result<()> {
+        let rc = unsafe { bindings::ove_uart_set_rx_notify(self.handle, cb, user_data) };
+        Error::from_code(rc)
+    }
 }

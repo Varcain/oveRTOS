@@ -35,6 +35,8 @@
 pub(crate) mod critical_section;
 #[cfg(has_eventgroup)]
 pub mod eventgroup;
+#[cfg(has_gpio)]
+pub mod gpio;
 #[cfg(has_queue)]
 pub mod queue;
 #[cfg(has_sync)]
@@ -42,15 +44,21 @@ pub mod semaphore;
 #[cfg(has_stream)]
 pub mod stream;
 pub(crate) mod time_driver;
+#[cfg(has_uart)]
+pub mod uart;
 
 #[cfg(has_eventgroup)]
 pub use eventgroup::AsyncEventGroup;
+#[cfg(has_gpio)]
+pub use gpio::AsyncInput;
 #[cfg(has_queue)]
 pub use queue::AsyncQueue;
 #[cfg(has_sync)]
 pub use semaphore::AsyncSemaphore;
 #[cfg(has_stream)]
 pub use stream::AsyncStream;
+#[cfg(has_uart)]
+pub use uart::AsyncUart;
 
 /// Re-export so users can write `use ove::async_runtime::Executor;`
 /// without a direct dependency on `embassy_executor`.
