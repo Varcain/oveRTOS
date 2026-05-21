@@ -24,9 +24,15 @@ jobs:
           python3 -m pip install --user ruff
 
       - name: Install Rust (for cargo fmt / cargo clippy)
+        # `rust-src` is listed alongside rustfmt/clippy because the repo's
+        # rust-toolchain.toml requires it; without pre-installation here,
+        # any cargo invocation under `make lint` triggers a rustup auto-
+        # install of rust-src which fails on the runner-cached toolchain
+        # with `detected conflict: Cargo.lock`, breaking cargo fmt and
+        # cargo clippy at startup.
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, rust-src
 
       - name: Bootstrap oveRTOS venv
         run: make setup
