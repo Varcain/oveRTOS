@@ -33,6 +33,13 @@ embedded-io-async = ["dep:embedded-io-async", "embedded-io", "async"]
 # `AsyncSpi` / `AsyncI2c`. Requires `async` and pulls in sync
 # `embedded-hal` impls (the async traits extend `embedded_hal::*::ErrorType`).
 embedded-hal-async = ["dep:embedded-hal-async", "embedded-hal", "async"]
+# `portable-atomic-arc` swaps `alloc::sync::Arc` for
+# `portable_atomic_util::Arc`. Same API; the alternative impl falls
+# back to a critical-section path on targets without native 64-bit
+# atomic CAS (M0+, RV32 without A). Current oveRTOS targets all have
+# CAS so this is a future-proofing toggle, not a workaround for
+# anything we ship today. Re-exported as `ove::Arc`.
+portable-atomic-arc = ["dep:portable-atomic-util", "alloc"]
 # `async-net` activates the embassy-net async IP stack module. Requires
 # `async` and a transport sub-feature. Mutually exclusive with the
 # blocking `ove::net` (C-side `CONFIG_OVE_ASYNC_NET` and `CONFIG_OVE_NET`
@@ -112,6 +119,9 @@ embedded-io-async = { version = "0.7", optional = true }
 # `embedded-hal-async` traits — opt-in via the `embedded-hal-async`
 # feature. Pinned to 1.0 alongside `embedded-hal`.
 embedded-hal-async = { version = "1.0", optional = true }
+# `portable-atomic-util` — alternative `Arc` impl for targets without
+# native CAS. Opt-in via `portable-atomic-arc`.
+portable-atomic-util = { version = "0.2", default-features = false, features = ["alloc"], optional = true }
 # `embassy-net` — async TCP/IP stack (smoltcp-backed). Pulled in by the
 # `async-net` feature. Pinned to 0.7; bumps validated by a per-backend
 # loopback integration test as upstream-bump gate.
