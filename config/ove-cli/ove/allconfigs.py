@@ -94,11 +94,21 @@ def cmd_allconfigs(args):
 
     results = []
     total = len(apps)
+    spec_pair = f"{board}.{rtos}"
     for i, (app, incompat) in enumerate(apps, 1):
         print(f"\n{'=' * 60}")
+        # Entries are either bare board names (`host`, skip on any rtos)
+        # or `<board>.<rtos>` (skip only that pair — used for board/rtos
+        # combos that lack a C-side driver, e.g. STM32F7 ETH driver lives
+        # in drivers/freertos so the NuttX/Zephyr combos won't link).
+        skip_reason = None
         if board in incompat:
+            skip_reason = board
+        elif spec_pair in incompat:
+            skip_reason = spec_pair
+        if skip_reason is not None:
             print(f"[{i}/{total}] Skipping {board}.{rtos}.{app}"
-                  f" (incompatible_boards includes {board})")
+                  f" (incompatible_boards includes {skip_reason})")
             print(f"{'=' * 60}")
             results.append({"app": app, "ok": True, "skipped": True,
                             "seconds": 0.0})
