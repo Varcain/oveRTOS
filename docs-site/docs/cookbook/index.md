@@ -17,6 +17,7 @@ Every recipe is short (one page), runnable, and constrained to either the POSIX 
 | 7 | [Sleep and wake on a GPIO edge](pm-gpio-wake.md) | `ove_pm`, `ove_gpio` |
 | 8 | [Add a custom shell command](shell-command.md) | `ove_shell`, `ove_log` |
 | 9 | [Async TCP heartbeat with embassy-net](async-tcp-echo.md) | `ove_async`, `ove_async_net` (Rust only) |
+| 10 | [MPMC channel between Rust threads](rust-mpmc-channel.md) | `ove_queue`, `ove::channel` (Rust only) |
 
 ## How to use a recipe
 
