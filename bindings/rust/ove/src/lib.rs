@@ -152,7 +152,20 @@ extern crate alloc;
 /// provides a default that wraps libc malloc/free.
 #[cfg(feature = "alloc")]
 pub mod heap {
-    pub use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+    pub use alloc::{boxed::Box, string::String, vec::Vec};
+
+    /// `Arc` re-export. By default this is `alloc::sync::Arc`; enable
+    /// the `portable-atomic-arc` feature to swap in
+    /// `portable_atomic_util::Arc`, which works on targets without
+    /// native CAS (e.g. Cortex-M0+, RV32 without A) by falling through
+    /// to a `critical-section`-based path.
+    ///
+    /// The two implementations are API-compatible; downstream code
+    /// using `ove::heap::Arc` doesn't have to change.
+    #[cfg(not(feature = "portable-atomic-arc"))]
+    pub use alloc::sync::Arc;
+    #[cfg(feature = "portable-atomic-arc")]
+    pub use portable_atomic_util::Arc;
 }
 
 #[cfg(all(feature = "async", has_async))]
