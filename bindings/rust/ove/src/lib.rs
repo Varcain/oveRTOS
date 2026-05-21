@@ -77,6 +77,55 @@
 //! community-crate pairing recipes, and hardware-verified memory
 //! budgets on STM32F7.
 //!
+//! # Ergonomic extras
+//!
+//! A handful of small additions modelled on patterns from
+//! `zephyr-lang-rust` and `embassy-sync` that come up often enough to
+//! warrant first-class support:
+//!
+//! - [`channel`] — crossbeam-style MPMC `Sender` / `Receiver` over the
+//!   existing [`Queue`] FFI. Cloneable halves, refcounted, with
+//!   half-closed detection ([`Error::NetClosed`]). Heap mode uses an
+//!   internal `Arc`; zero-heap uses [`channel::Sender::from_static`] /
+//!   [`channel::Receiver::from_static`] against caller-supplied counters.
+//! - [`config`] — every `CONFIG_OVE_*` symbol from `ove_config.h`
+//!   surfaces as a Rust `const` (`bool` / `i64` / `&str`, plus
+//!   `_USIZE` for non-negative ints) and a `#[cfg(config_ove_*)]`
+//!   flag. Lets apps reference build-time tunables (e.g.
+//!   `CONFIG_OVE_PM_MAX_WAKE_SOURCES_USIZE`) without hard-coding the
+//!   number twice.
+//! - [`printk!`] / [`printkln!`] / [`ove_print!`] — direct
+//!   `ove_console_write` macros that bypass the `log` framework. Use
+//!   for early-boot banners before [`log::try_init`] runs and for
+//!   ISR-adjacent contexts.
+//! - [`sync::SpinMutex`] — IRQ-locking mutex (`ove_irq_lock`-backed)
+//!   for sub-microsecond critical sections, ISR-shared state, and
+//!   crossing `.await` points where a real [`sync::Mutex`] would
+//!   deadlock. Requires the `async` feature (the `ove_irq_*` substrate
+//!   lives in `irq.h` under `CONFIG_OVE_ASYNC`); not available on WASM.
+//! - [`ove_macros::thread`] (`#[ove::thread(stack_size = N, name = "...")]`)
+//!   — attribute-macro form of static-storage thread spawn. The
+//!   decorated `fn name()` becomes a spawn helper that, on first call,
+//!   creates a thread with a `static ThreadStorage<N>`. Complements
+//!   the existing declarative [`thread!`] macro.
+//!
+//! ## Optional ecosystem interop
+//!
+//! Two opt-in Cargo features add ecosystem-standard types alongside
+//! the defaults (neither is enabled by default — the existing API
+//! stays unchanged for callers who don't opt in):
+//!
+//! - `fugit` — exposes [`time::DurationUs`] / [`time::DurationNs`] /
+//!   [`time::DurationMs`] / [`time::InstantUs`] from the
+//!   [`fugit`](https://crates.io/crates/fugit) crate, with conversions
+//!   to/from [`core::time::Duration`]. Catches `from_secs(N)` vs
+//!   `from_millis(N)` mix-ups at compile time. Zero-heap friendly.
+//! - `portable-atomic-arc` — swaps [`heap::Arc`] from `alloc::sync::Arc`
+//!   to [`portable_atomic_util::Arc`]. Same API; the alternative impl
+//!   falls back to a `critical-section` path on targets without native
+//!   CAS (Cortex-M0+, RV32 without A). Current oveRTOS targets all
+//!   have CAS, so this is future-proofing.
+//!
 //! # Hot-path inline discipline
 //!
 //! Wrapper methods that are a thin `unsafe { ffi::ove_*(...) }` plus

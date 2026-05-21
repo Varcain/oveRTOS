@@ -63,6 +63,24 @@ fn main() {
         for r in &["freertos", "zephyr", "nuttx", "posix"] {
             println!("cargo:rustc-check-cfg=cfg(rtos_{r})");
         }
+        // board_<name> cfgs (used by SpinMutex gate etc.); doc-only
+        // build registers them as known cfgs without setting any.
+        for b in &["qemu_mps2", "stm32f746g_disco", "host_posix", "wasm"] {
+            println!("cargo:rustc-check-cfg=cfg(board_{b})");
+        }
+        // config_ove_<name> cfgs (G3 generic Kconfig surface); doc-only
+        // build also generates an empty config_consts.rs so src/config.rs
+        // include! resolves.
+        println!("cargo:rustc-check-cfg=cfg(config_ove_async)");
+        let out_dir = env::var("OUT_DIR").unwrap_or_default();
+        if !out_dir.is_empty() {
+            let path = format!("{out_dir}/config_consts.rs");
+            let _ = std::fs::write(
+                &path,
+                "// docs.rs stub — real consts come from build.rs's non-docsrs branch.\n",
+            );
+            println!("cargo:rustc-env=OVE_CONFIG_CONSTS={path}");
+        }
         return;
     }
 
