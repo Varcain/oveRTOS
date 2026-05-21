@@ -137,6 +137,24 @@ fn main() {
             }
         }
 
+        // Board cfgs — mirror `apps/rust/ove_build_common.rs` so the
+        // `ove` crate itself can gate on `board_<name>` (e.g. SpinMutex
+        // is excluded on WASM).
+        let boards = [
+            ("QEMU_MPS2_AN500", "qemu_mps2"),
+            ("STM32F746G_DISCO", "stm32f746g_disco"),
+            ("HOST_POSIX", "host_posix"),
+            ("WASM", "wasm"),
+        ];
+        for (cfg_token, rust_cfg) in &boards {
+            let cfg_name = format!("board_{rust_cfg}");
+            println!("cargo:rustc-check-cfg=cfg({cfg_name})");
+            let define = format!("#define CONFIG_OVE_BOARD_{cfg_token} 1");
+            if config.contains(&define) {
+                println!("cargo:rustc-cfg={cfg_name}");
+            }
+        }
+
         // Generic CONFIG_OVE_* surface (G3): emit per-symbol cfg flags
         // for booleans and a Rust `const`-bearing config_consts.rs for
         // numeric / string symbols. The generated file is `include!`d
