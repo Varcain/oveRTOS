@@ -227,6 +227,20 @@ config OVE_NET
       its native TCP/IP stack (POSIX sockets, lwIP, Zephyr net,
       NuttX sockets).
 
+config OVE_ASYNC_NET
+    bool "Async networking substrate (embassy-net)"
+    default n
+    depends on OVE_ASYNC
+    help
+      Provides board-specific transport hooks the Rust embassy-net
+      driver consumes (ove_qemu_net_async_*, future ove_eth_*).
+      Mutually exclusive with OVE_NET at runtime — both want the
+      same MAC/transport; only one IP stack at a time.
+
+      Rust apps opt in via the `async-net` cargo feature on the
+      `ove` crate plus a board-specific transport feature (e.g.
+      `async-net-qemu-shm`).
+
 config OVE_NET_TLS
     bool "TLS (mbedTLS)"
     default n
