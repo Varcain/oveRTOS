@@ -187,6 +187,8 @@ pub mod board;
 #[cfg(has_bsp)]
 pub mod bsp;
 pub mod cell;
+#[cfg(has_queue)]
+pub mod channel;
 pub mod config;
 #[cfg(has_console)]
 pub mod console;
