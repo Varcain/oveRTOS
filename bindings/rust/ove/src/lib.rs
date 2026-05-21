@@ -301,7 +301,7 @@ pub use i2c::I2c;
 pub use init_cell::{InitCell, InitMut};
 /// `#[ove::main]` proc-macro: marks the application entry point.
 /// Expands into the `extern "C" fn ove_main()` trampoline.
-pub use ove_macros::main;
+pub use ove_macros::{main, thread as thread_attr};
 #[cfg(has_queue)]
 pub use queue::Queue;
 #[cfg(has_spi)]
