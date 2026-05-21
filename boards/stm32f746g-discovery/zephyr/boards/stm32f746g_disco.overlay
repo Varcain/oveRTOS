@@ -87,9 +87,14 @@
  * Resulting sample rate = 11.28125 / 256 = 44032.22656 Hz (approx. 44.03 kHz)
  */
 &pllsai {
+	/* Zephyr 4.4.0 reworked the st,stm32fx-pll-clock binding: div-divq was
+	 * renamed to post-div-q, and div-m + clocks are now required.  div-m
+	 * is shared between PLL/PLLSAI/PLLI2S on F7, so it must match &pll's. */
+	div-m = <25>;
 	mul-n = <361>;
 	div-q = <8>;
-	div-divq = <4>;
+	post-div-q = <4>;
+	clocks = <&clk_hse>;
 	status = "okay";
 };
 
@@ -99,7 +104,7 @@ i2s_tx: &sai2_a {
 		     &sai2_sd_a_pi6 &sai2_fs_a_pi7>;
 	pinctrl-names = "default";
 	clocks = <&rcc STM32_CLOCK(APB2, 23)>,
-		 <&rcc STM32_SRC_PLLSAI_DIVQ SAI2_SEL(0)>;
+		 <&rcc STM32_SRC_PLLSAI_POST_Q SAI2_SEL(0)>;
 	dma-names = "tx";
 	mclk-enable;
 	mclk-divider = "div-256";
