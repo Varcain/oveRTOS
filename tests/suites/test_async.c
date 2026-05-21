@@ -44,6 +44,7 @@ static _Atomic int s_async_fire_count;
  * the wake of the test thread. */
 static volatile uint64_t s_async_fire_us;
 
+#ifndef __SANITIZE_THREAD__
 static void async_fire_cb(ove_timer_t timer, void *user_data)
 {
 	(void)timer;
@@ -53,6 +54,7 @@ static void async_fire_cb(ove_timer_t timer, void *user_data)
 	(void)ove_time_get_us(&now);
 	s_async_fire_us = now;
 }
+#endif
 
 /* ── ove_irq_lock / unlock / is_in_isr ──────────────────────────────── */
 
