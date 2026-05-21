@@ -136,6 +136,60 @@ fn main() {
                 println!("cargo:rustc-cfg={cfg_name}");
             }
         }
+
+        // Generic CONFIG_OVE_* surface (G3): emit per-symbol cfg flags
+        // for booleans and a Rust `const`-bearing config_consts.rs for
+        // numeric / string symbols. The generated file is `include!`d
+        // by src/config.rs.
+        let out_dir = env::var("OUT_DIR").unwrap_or_default();
+        let consts_path = format!("{out_dir}/config_consts.rs");
+        let mut consts = String::new();
+        consts.push_str("// Auto-generated from ove_config.h by build.rs (G3). Do not edit.\n");
+        // Each line: `#define CONFIG_OVE_<NAME> <value>` where value is
+        // 1 (bool), an integer literal, or a quoted string. We use a
+        // line-based parse rather than a regex to keep the build.rs
+        // dep-free.
+        for raw in config.lines() {
+            let line = raw.trim();
+            let Some(rest) = line.strip_prefix("#define CONFIG_OVE_") else {
+                continue;
+            };
+            let Some((name, value)) = rest.split_once(char::is_whitespace) else {
+                continue;
+            };
+            let name = name.trim();
+            let value = value.trim();
+            // Skip name-only defines (no value), and the RTOS/has_/
+            // board_ shapes already handled above.
+            if value.is_empty() {
+                continue;
+            }
+            let cfg_name = format!("config_ove_{}", name.to_lowercase());
+            println!("cargo:rustc-check-cfg=cfg({cfg_name})");
+
+            if value == "1" {
+                println!("cargo:rustc-cfg={cfg_name}");
+                writeln!(consts, "pub const CONFIG_OVE_{name}: bool = true;").unwrap();
+            } else if let Ok(n) = value.parse::<i64>() {
+                // Numeric — emit both i64 and a usize-friendly cast.
+                writeln!(consts, "pub const CONFIG_OVE_{name}: i64 = {n};").unwrap();
+                if n >= 0 {
+                    writeln!(
+                        consts,
+                        "pub const CONFIG_OVE_{name}_USIZE: usize = {n} as usize;"
+                    )
+                    .unwrap();
+                }
+            } else if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+                writeln!(consts, "pub const CONFIG_OVE_{name}: &str = {value};").unwrap();
+            }
+            // Anything else (hex literal, complex expression) is
+            // ignored — Kconfig in oveRTOS only emits the three shapes
+            // above.
+        }
+        std::fs::write(&consts_path, consts).expect("write config_consts.rs");
+        println!("cargo:rustc-env=OVE_CONFIG_CONSTS={consts_path}");
+
         println!("cargo:rerun-if-changed={config_path}");
     }
     let lvgl_include = env::var("LVGL_INCLUDE_PATH")

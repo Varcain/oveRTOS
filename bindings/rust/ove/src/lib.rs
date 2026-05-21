@@ -187,6 +187,7 @@ pub mod board;
 #[cfg(has_bsp)]
 pub mod bsp;
 pub mod cell;
+pub mod config;
 #[cfg(has_console)]
 pub mod console;
 pub mod containers;
