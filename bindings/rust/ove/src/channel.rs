@@ -37,11 +37,11 @@ use ::core::sync::atomic::{AtomicUsize, Ordering};
 use crate::error::{Error, Result};
 use crate::queue::Queue;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", not(zero_heap)))]
 extern crate alloc;
 
 /// Shared refcount + queue handle for the heap-mode allocation.
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", not(zero_heap)))]
 struct ChannelInner<T: Copy, const N: usize> {
     queue: Queue<T, N>,
     tx_count: AtomicUsize,
@@ -54,7 +54,7 @@ pub struct Sender<T: Copy + 'static, const N: usize> {
 }
 
 enum SenderState<T: Copy + 'static, const N: usize> {
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", not(zero_heap)))]
     Heap(alloc::sync::Arc<ChannelInner<T, N>>),
     Static {
         queue: &'static Queue<T, N>,
@@ -69,7 +69,7 @@ pub struct Receiver<T: Copy + 'static, const N: usize> {
 }
 
 enum ReceiverState<T: Copy + 'static, const N: usize> {
-    #[cfg(feature = "alloc")]
+    #[cfg(all(feature = "alloc", not(zero_heap)))]
     Heap(alloc::sync::Arc<ChannelInner<T, N>>),
     Static {
         queue: &'static Queue<T, N>,
@@ -81,8 +81,10 @@ enum ReceiverState<T: Copy + 'static, const N: usize> {
 /// Construct a heap-allocated channel with one initial sender + one
 /// initial receiver. Clone either half to fan out.
 ///
-/// Requires the `alloc` feature.
-#[cfg(feature = "alloc")]
+/// Requires the `alloc` feature and a heap-mode build (i.e. not
+/// `CONFIG_OVE_ZERO_HEAP=y`). Zero-heap callers must use
+/// [`Sender::from_static`] + [`Receiver::from_static`] instead.
+#[cfg(all(feature = "alloc", not(zero_heap)))]
 pub fn channel<T: Copy + 'static, const N: usize>() -> Result<(Sender<T, N>, Receiver<T, N>)> {
     let inner = alloc::sync::Arc::new(ChannelInner {
         queue: Queue::<T, N>::new()?,
@@ -104,7 +106,7 @@ pub fn channel<T: Copy + 'static, const N: usize>() -> Result<(Sender<T, N>, Rec
 #[inline]
 fn queue_of<T: Copy + 'static, const N: usize>(s: &SenderState<T, N>) -> &Queue<T, N> {
     match s {
-        #[cfg(feature = "alloc")]
+        #[cfg(all(feature = "alloc", not(zero_heap)))]
         SenderState::Heap(arc) => &arc.queue,
         SenderState::Static { queue, .. } => queue,
     }
@@ -113,7 +115,7 @@ fn queue_of<T: Copy + 'static, const N: usize>(s: &SenderState<T, N>) -> &Queue<
 #[inline]
 fn rx_count_of<T: Copy + 'static, const N: usize>(s: &SenderState<T, N>) -> &AtomicUsize {
     match s {
-        #[cfg(feature = "alloc")]
+        #[cfg(all(feature = "alloc", not(zero_heap)))]
         SenderState::Heap(arc) => &arc.rx_count,
         SenderState::Static { rx_count, .. } => rx_count,
     }
@@ -122,7 +124,7 @@ fn rx_count_of<T: Copy + 'static, const N: usize>(s: &SenderState<T, N>) -> &Ato
 #[inline]
 fn tx_count_of<T: Copy + 'static, const N: usize>(s: &SenderState<T, N>) -> &AtomicUsize {
     match s {
-        #[cfg(feature = "alloc")]
+        #[cfg(all(feature = "alloc", not(zero_heap)))]
         SenderState::Heap(arc) => &arc.tx_count,
         SenderState::Static { tx_count, .. } => tx_count,
     }
@@ -131,7 +133,7 @@ fn tx_count_of<T: Copy + 'static, const N: usize>(s: &SenderState<T, N>) -> &Ato
 #[inline]
 fn queue_of_rx<T: Copy + 'static, const N: usize>(s: &ReceiverState<T, N>) -> &Queue<T, N> {
     match s {
-        #[cfg(feature = "alloc")]
+        #[cfg(all(feature = "alloc", not(zero_heap)))]
         ReceiverState::Heap(arc) => &arc.queue,
         ReceiverState::Static { queue, .. } => queue,
     }
@@ -140,7 +142,7 @@ fn queue_of_rx<T: Copy + 'static, const N: usize>(s: &ReceiverState<T, N>) -> &Q
 #[inline]
 fn rx_count_of_rx<T: Copy + 'static, const N: usize>(s: &ReceiverState<T, N>) -> &AtomicUsize {
     match s {
-        #[cfg(feature = "alloc")]
+        #[cfg(all(feature = "alloc", not(zero_heap)))]
         ReceiverState::Heap(arc) => &arc.rx_count,
         ReceiverState::Static { rx_count, .. } => rx_count,
     }
@@ -149,7 +151,7 @@ fn rx_count_of_rx<T: Copy + 'static, const N: usize>(s: &ReceiverState<T, N>) ->
 #[inline]
 fn tx_count_of_rx<T: Copy + 'static, const N: usize>(s: &ReceiverState<T, N>) -> &AtomicUsize {
     match s {
-        #[cfg(feature = "alloc")]
+        #[cfg(all(feature = "alloc", not(zero_heap)))]
         ReceiverState::Heap(arc) => &arc.tx_count,
         ReceiverState::Static { tx_count, .. } => tx_count,
     }
@@ -217,7 +219,7 @@ impl<T: Copy + 'static, const N: usize> Clone for Sender<T, N> {
         tx_count_of(&self.state).fetch_add(1, Ordering::AcqRel);
         Self {
             state: match &self.state {
-                #[cfg(feature = "alloc")]
+                #[cfg(all(feature = "alloc", not(zero_heap)))]
                 SenderState::Heap(arc) => SenderState::Heap(arc.clone()),
                 SenderState::Static {
                     queue,
@@ -310,7 +312,7 @@ impl<T: Copy + 'static, const N: usize> Clone for Receiver<T, N> {
         rx_count_of_rx(&self.state).fetch_add(1, Ordering::AcqRel);
         Self {
             state: match &self.state {
-                #[cfg(feature = "alloc")]
+                #[cfg(all(feature = "alloc", not(zero_heap)))]
                 ReceiverState::Heap(arc) => ReceiverState::Heap(arc.clone()),
                 ReceiverState::Static {
                     queue,

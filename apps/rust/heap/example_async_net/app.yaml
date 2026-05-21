@@ -3,6 +3,12 @@ config_name: example_async_net_rust_heap
 description: "Rust async networking (embassy-net) demo on oveRTOS"
 rust:
   lib_name: example_async_net
+# embassy-net needs a board-specific driver (QemuShmDriver on QEMU MPS2,
+# Stm32f7EthDriver on STM32F746G-DISCO). WASM has no irq backend, host
+# has no NetDriver — both link/compile-fail.
+incompatible_boards:
+  - host
+  - wasm
 defconfig:
   - CONFIG_OVE_SYNC=y
   - CONFIG_OVE_TIMER=y

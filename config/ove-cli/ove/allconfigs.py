@@ -27,15 +27,31 @@ _CONFIG_NAME_RE = re.compile(r"^\s*config_name\s*:\s*(\S+)", re.MULTILINE)
 
 
 def _discover_apps(ove_dir):
-    """Return sorted unique list of `config_name` values from app.yaml files."""
+    """Return sorted list of (config_name, incompatible_boards) tuples
+    discovered from app.yaml files.
+
+    `incompatible_boards` is a list of board directory names (e.g.
+    `["host", "wasm"]`); empty when the app sets no such field. Used to
+    skip board/rtos combos an app cannot satisfy (e.g. apps that need
+    CONFIG_OVE_ASYNC on a board that has no irq backend).
+    """
+    import yaml
     apps_dir = os.path.join(ove_dir, "apps")
-    names = set()
+    found = {}
     for root, _dirs, files in os.walk(apps_dir):
-        if "app.yaml" in files:
-            with open(os.path.join(root, "app.yaml")) as f:
-                for m in _CONFIG_NAME_RE.finditer(f.read()):
-                    names.add(m.group(1))
-    return sorted(names)
+        if "app.yaml" not in files:
+            continue
+        path = os.path.join(root, "app.yaml")
+        with open(path) as f:
+            data = yaml.safe_load(f) or {}
+        name = data.get("config_name")
+        if not name:
+            continue
+        incompat = data.get("incompatible_boards") or []
+        if not isinstance(incompat, list):
+            incompat = []
+        found[name] = sorted(str(b) for b in incompat)
+    return sorted(found.items())
 
 
 def _run_app(ove_dir, board, rtos, app, ove_bin):
@@ -78,12 +94,21 @@ def cmd_allconfigs(args):
 
     results = []
     total = len(apps)
-    for i, app in enumerate(apps, 1):
+    for i, (app, incompat) in enumerate(apps, 1):
         print(f"\n{'=' * 60}")
+        if board in incompat:
+            print(f"[{i}/{total}] Skipping {board}.{rtos}.{app}"
+                  f" (incompatible_boards includes {board})")
+            print(f"{'=' * 60}")
+            results.append({"app": app, "ok": True, "skipped": True,
+                            "seconds": 0.0})
+            print(f"[{i}/{total}] {board}.{rtos}.{app}: SKIPPED")
+            continue
         print(f"[{i}/{total}] Building {board}.{rtos}.{app}")
         print(f"{'=' * 60}")
         ok, elapsed = _run_app(ws.ove_dir, board, rtos, app, ove_bin)
-        results.append({"app": app, "ok": ok, "seconds": round(elapsed, 1)})
+        results.append({"app": app, "ok": ok, "skipped": False,
+                        "seconds": round(elapsed, 1)})
         status = "OK" if ok else "FAILED"
         print(f"[{i}/{total}] {board}.{rtos}.{app}: {status} ({elapsed:.1f}s)")
 
