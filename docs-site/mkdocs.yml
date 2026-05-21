@@ -75,6 +75,7 @@ nav:
     - LVGL with thread safety: cookbook/lvgl-thread-safe.md
     - Sleep + wake on GPIO: cookbook/pm-gpio-wake.md
     - Custom shell command: cookbook/shell-command.md
+    - Async TCP heartbeat (embassy-net): cookbook/async-tcp-echo.md
   - Migration:
     - From raw FreeRTOS: migration/from-freertos.md
     - From Zephyr: migration/from-zephyr.md

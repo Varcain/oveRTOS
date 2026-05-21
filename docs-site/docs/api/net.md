@@ -4,6 +4,29 @@ The oveRTOS networking subsystem provides a portable BSD-like socket API, DNS re
 
 All networking modules require `CONFIG_OVE_NET`. When it is not set, every function is replaced by a static inline stub that returns `OVE_ERR_NOT_SUPPORTED`.
 
+## Two stacks: blocking vs async
+
+oveRTOS exposes **two** TCP/IP stacks via separate Kconfig options. Pick one per build — they are mutually exclusive at the transport layer because both want to own the MAC + ARP cache + descriptor ring.
+
+| | `CONFIG_OVE_NET` (blocking) | `CONFIG_OVE_ASYNC_NET` (async, Rust-only) |
+|---|---|---|
+| TCP/IP stack | lwIP (FreeRTOS) / Zephyr net / NuttX net / POSIX | smoltcp via embassy-net |
+| Language | C, C++, Rust, Zig | Rust only |
+| API style | Blocking BSD sockets | `embassy_net::TcpSocket`, async/await |
+| TLS | mbedTLS in-tree (`net_tls`) | `embedded-tls` (crates.io) |
+| HTTP client | In-tree C (`net_http`) | `reqwless` (crates.io) |
+| MQTT client | In-tree C (`net_mqtt`) | `rust-mqtt` (crates.io) |
+| HTTPD | In-tree C, REST + WS (`net_httpd`) | `picoserve` (crates.io) |
+| SNTP | In-tree C (`net_sntp`) | `sntpc` (crates.io) |
+| Boards | All 4 RTOSes on every supported board | qemu-mps2-an500 (FreeRTOS+Zephyr+NuttX), stm32f746g-discovery (FreeRTOS) — hardware-verified |
+| RAM | ~30-50 KB lwIP heap | ~25 KB total (3 KB StackResources + smoltcp bufs + DMA descriptors) |
+
+**Use blocking when:** you're writing synchronous code, need all five protocol layers production-ready, are using C / C++ / Zig, or need cross-RTOS portability on hardware where embassy-net isn't ported yet.
+
+**Use async when:** you want many concurrent network tasks on one thread, need `embedded-hal-async` / `embedded-io-async` interop with sensor drivers, or are already using async elsewhere (`embassy_time::Timer::after`, `AsyncUart`, etc.).
+
+The rest of this page documents the blocking stack. For the async stack see the [`ove::async_net` Rust API docs](../rust/ove/async_net/) and the [async-networking cookbook](../cookbook/async-tcp-echo.md).
+
 ## Architecture
 
 ```mermaid
@@ -50,6 +73,7 @@ Each layer only depends on the layer directly below it. The socket layer is the 
 | `CONFIG_OVE_NET_HTTPD_MAX_BODY` | 1024 | Max POST body for HTTPD |
 | `CONFIG_OVE_NET_MQTT_RX_BUF` | 1024 | MQTT receive buffer |
 | `CONFIG_OVE_NET_MQTT_TX_BUF` | 512 | MQTT transmit buffer |
+| `CONFIG_OVE_ASYNC_NET` | n | Async stack (embassy-net) — **mutually exclusive with `CONFIG_OVE_NET`** |
 
 ### Backend pool sizing
 
