@@ -14,9 +14,13 @@
 //!   - Kernel handles allocated via the binding's `Type::new()` and
 //!     `Timer::new()` constructors (which call `ove_*_create` under the
 //!     hood — the wrapper itself is just a heap-backed handle).
-//!   - Cross-thread shared state is wrapped in `Arc<T>`; threads are
-//!     spawned via `Thread::spawn_with(...)` taking a `FnOnce` closure
-//!     so each can capture its own `Arc::clone`.
+//!   - Cross-thread producer/consumer uses [`ove::channel`]'s
+//!     [`Sender`](ove::channel::Sender) / [`Receiver`](ove::channel::Receiver)
+//!     halves — the refcount + half-closed detection is the
+//!     "MPMC channel" pattern other languages get out of the box.
+//!   - Other shared state (counters, atomics) is wrapped in `Arc<T>`;
+//!     threads are spawned via `Thread::spawn_with(...)` taking a
+//!     `FnOnce` closure so each captures its own clone.
 //!   - This exercises the full alloc stack on the target: Box (closure
 //!     boxing inside `spawn_with`), Arc (refcounted shared ownership),
 //!     and the `ove-allocator` crate's libc-malloc-backed
@@ -40,9 +44,10 @@ use ove_allocator as _;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use ove::channel;
 use ove::heap::Arc;
 use ove::lvgl::{self, Bar, Color, Label, Layout, Styleable};
-use ove::{Priority, Queue, InitCell, Thread, Timer};
+use ove::{InitCell, Priority, Thread, Timer};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -127,25 +132,27 @@ fn app_main() {
     ove::log::try_init();
     log::info!("Rust example (heap mode): init");
 
-    // Heap-allocate the queue and wrap in `Arc` for shared ownership
-    // across the producer and consumer threads.  Each thread gets its
-    // own `Arc::clone`; refcount drops to zero only when both threads
-    // exit (or the program ends).
-    let queue: Arc<Queue<u32, 8>> = Arc::new(Queue::<u32, 8>::new().expect("queue create"));
+    // Construct an MPMC channel: clone Sender/Receiver into each
+    // closure rather than juggling Arc<Queue> by hand. The refcount
+    // lives inside the channel; we still detach the JoinHandles with
+    // core::mem::forget below so they outlive app_main.
+    let (tx, rx) = channel::channel::<u32, 8>().expect("channel create");
     let last_value: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 
-    // Producer: clone Arcs into a move closure, hand to spawn_with.
-    let q = Arc::clone(&queue);
+    let tx_p = tx.clone();
     let _producer = Thread::builder().name(c"producer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         log::info!("Producer started");
         let mut count: u32 = 0;
         loop {
             count += 1;
-            match q.try_send_for(&count, core::time::Duration::from_millis(1000)) {
+            match tx_p.try_send(count) {
                 Ok(()) => {}
-                Err(ove::Error::Timeout) => log::warn!("Producer: send timeout"),
-                Err(ove::Error::QueueFull) => {
+                Err(ove::Error::Timeout) | Err(ove::Error::QueueFull) => {
                     log::warn!("Producer: queue full, dropped {}", count)
+                }
+                Err(ove::Error::NetClosed) => {
+                    log::warn!("Producer: receivers gone");
+                    break;
                 }
                 Err(_) => log::error!("Producer: unexpected send error"),
             }
@@ -154,18 +161,21 @@ fn app_main() {
     })
     .expect("producer spawn");
 
-    let q = Arc::clone(&queue);
     let lv = Arc::clone(&last_value);
     let _consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         log::info!("Consumer started");
         loop {
-            match q.recv() {
+            match rx.recv() {
                 Ok(val) => {
                     lv.store(val, Ordering::Relaxed);
                     LAST_VALUE.store(val, Ordering::Relaxed);
                     if val % 5 == 0 {
                         log::info!("Consumer: count = {}", val);
                     }
+                }
+                Err(ove::Error::NetClosed) => {
+                    log::warn!("Consumer: senders gone");
+                    break;
                 }
                 Err(_) => log::error!("Consumer: receive error"),
             }
@@ -212,10 +222,9 @@ fn app_main() {
     core::mem::forget(_producer);
     core::mem::forget(_consumer);
     core::mem::forget(_graphics);
-    // The Arc<Queue> producer and consumer cloned still keeps the
-    // queue alive for the kernel side — refcount stays > 0 because
-    // the closures own their Arc clones for the program lifetime.
-    core::mem::forget(queue);
+    // The Sender/Receiver clones inside each closure keep the channel
+    // alive (refcount stays > 0 for the program lifetime). Drop our
+    // original `tx` Sender — its closure copy is what matters.
     core::mem::forget(last_value);
 
     log::info!("Rust example (heap mode): ready");
