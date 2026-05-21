@@ -108,6 +108,14 @@ fn log_stats(stats: &pm::Stats) {
 fn app_main() {
     ove::log::try_init();
     log::info!("pm example (heap mode): init");
+    // Surface the build-time limits the C substrate compiled in;
+    // sourced directly from ove_config.h via the generated
+    // `ove::config::CONFIG_OVE_PM_MAX_*` consts.
+    log::info!(
+        "pm: max wake sources = {}, max notifiers = {}",
+        ove::config::CONFIG_OVE_PM_MAX_WAKE_SOURCES,
+        ove::config::CONFIG_OVE_PM_MAX_NOTIFIERS,
+    );
 
     BATTERY.init(Battery::new(85));
 
