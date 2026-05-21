@@ -151,7 +151,7 @@ void HAL_I2C_MspDeInit(I2C_HandleTypeDef *hi2c)
 
 /* ── ETH MSP ─────────────────────────────────────────────────── */
 
-#ifdef CONFIG_OVE_NET
+#if defined(CONFIG_OVE_NET) || defined(CONFIG_OVE_ASYNC_NET)
 
 /*
  * STM32F746G-Discovery RMII pin mapping:
@@ -185,7 +185,7 @@ void HAL_ETH_MspInit(ETH_HandleTypeDef *h)
 	__HAL_RCC_ETH_CLK_ENABLE();
 }
 
-#endif /* CONFIG_OVE_NET */
+#endif /* CONFIG_OVE_NET || CONFIG_OVE_ASYNC_NET */
 
 /* ── SAI / I2S MSP + codec init ──────────────────────────────── */
 
