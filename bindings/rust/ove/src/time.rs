@@ -173,3 +173,70 @@ pub(crate) fn deadline_to_timeout_ns(deadline: Instant) -> u64 {
     let now = now_steady_ns();
     deadline.0.saturating_sub(now)
 }
+
+// ── fugit interop (G6) ───────────────────────────────────────────────
+//
+// `core::time::Duration` is unit-blind: `from_secs(10)` and
+// `from_millis(10)` produce different durations with the same shape,
+// so the compiler can't catch swaps. `fugit::Duration<u64, NUM, DENOM>`
+// encodes the tick rate as a const-generic ratio, turning the same
+// mix-up into a `type mismatch` at the call site.
+//
+// We don't switch the public API — that would churn every existing
+// app — but offer conversions so users who opt into the `fugit`
+// feature can keep their own time in `fugit` types and only convert
+// at the ove API boundary.
+
+#[cfg(feature = "fugit")]
+pub use fugit_impl::*;
+
+#[cfg(feature = "fugit")]
+mod fugit_impl {
+    use super::Duration;
+
+    /// Microsecond-resolution duration. Same precision as the
+    /// substrate's native `uint64_t timeout_ns / 1000` representation.
+    pub type DurationUs = ::fugit::Duration<u64, 1, 1_000_000>;
+    /// Nanosecond-resolution duration. Use when sub-µs precision
+    /// matters (matches `ove_time_get_ns`).
+    pub type DurationNs = ::fugit::Duration<u64, 1, 1_000_000_000>;
+    /// Millisecond-resolution duration — convenient for the common
+    /// `200ms`-style timeouts.
+    pub type DurationMs = ::fugit::Duration<u64, 1, 1_000>;
+    /// Microsecond-resolution instant; pairs with [`DurationUs`].
+    pub type InstantUs = ::fugit::Instant<u64, 1, 1_000_000>;
+
+    /// Convert a fugit [`DurationUs`] to the std [`Duration`] used by
+    /// the rest of the binding.
+    #[inline]
+    pub fn dur_us_to_std(d: DurationUs) -> Duration {
+        Duration::from_micros(d.ticks())
+    }
+
+    /// Convert a fugit [`DurationNs`] to the std [`Duration`] used by
+    /// the rest of the binding.
+    #[inline]
+    pub fn dur_ns_to_std(d: DurationNs) -> Duration {
+        Duration::from_nanos(d.ticks())
+    }
+
+    /// Convert a fugit [`DurationMs`] to the std [`Duration`] used by
+    /// the rest of the binding.
+    #[inline]
+    pub fn dur_ms_to_std(d: DurationMs) -> Duration {
+        Duration::from_millis(d.ticks())
+    }
+
+    /// Convert a [`Duration`] back to a fugit microsecond-resolution
+    /// duration. Saturates at `u64::MAX` µs (~584 000 years).
+    #[inline]
+    pub fn dur_us_from_std(d: Duration) -> DurationUs {
+        let us = d.as_micros();
+        let ticks = if us > u64::MAX as u128 {
+            u64::MAX
+        } else {
+            us as u64
+        };
+        DurationUs::from_ticks(ticks)
+    }
+}
