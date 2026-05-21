@@ -56,6 +56,27 @@
 //! feature adds `embedded_io_async::Read` impls on `&'static AsyncUart`
 //! and `&'static AsyncStream`.
 //!
+//! # Async networking (embassy-net)
+//!
+//! Layered on top of the async runtime, [`async_net`] adds an
+//! `embassy_net::Stack` backed by a per-board Ethernet Driver
+//! (`QemuShmDriver` for QEMU MPS2-AN500, `Stm32f7EthDriver` for the
+//! STM32F746G-Discovery). Open async TCP / UDP / DNS sockets via the
+//! standard `embassy_net` types; pair with crates.io community libraries
+//! ([`reqwless`](https://crates.io/crates/reqwless),
+//! [`rust-mqtt`](https://crates.io/crates/rust-mqtt),
+//! [`embedded-tls`](https://crates.io/crates/embedded-tls),
+//! [`picoserve`](https://crates.io/crates/picoserve)) for the protocol
+//! layers.
+//!
+//! Mutually exclusive with the blocking [`net`] stack at build time —
+//! both want to own the MAC. Cargo features: `async-net` plus a
+//! transport sub-feature (`async-net-qemu-shm`, `async-net-stm32f7-eth`)
+//! and C-side `CONFIG_OVE_ASYNC_NET=y`. See the [`async_net`] module
+//! docs for the full decision guide vs. blocking [`net`], the
+//! community-crate pairing recipes, and hardware-verified memory
+//! budgets on STM32F7.
+//!
 //! # Hot-path inline discipline
 //!
 //! Wrapper methods that are a thin `unsafe { ffi::ove_*(...) }` plus
