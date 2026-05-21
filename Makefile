@@ -431,7 +431,7 @@ docs: $(VENV_STAMP) ## Build complete documentation site
 	doxygen Doxyfile.cpp
 	@echo "==> Generating Rust API docs..."
 	DOCS_RS=1 RUSTDOCFLAGS="--cfg docsrs" cargo doc --no-deps \
-		--features std,async,async-net,async-net-qemu-shm,async-net-stm32f7-eth,embedded-hal,embedded-hal-async,embedded-io,embedded-io-async \
+		--features std,async,async-net,async-net-qemu-shm,async-net-stm32f7-eth,embedded-hal,embedded-hal-async,embedded-io,embedded-io-async,fugit,portable-atomic-arc \
 		--manifest-path bindings/rust/ove/Cargo.toml
 	@echo "==> Generating Zig API docs (autodoc)..."
 	@mkdir -p output/docs/zig-staging
