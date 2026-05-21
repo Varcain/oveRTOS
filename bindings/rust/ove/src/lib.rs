@@ -145,6 +145,15 @@ compile_error!(
     "feature = \"async\" requires CONFIG_OVE_ASYNC=y on the C side. \
      Enable it in your board's defconfig (or .config) and rebuild."
 );
+#[cfg(all(feature = "async-net", has_async_net))]
+pub mod async_net;
+#[cfg(all(feature = "async-net", not(has_async_net)))]
+compile_error!(
+    "feature = \"async-net\" requires CONFIG_OVE_ASYNC_NET=y on the C side. \
+     Enable it in your board's defconfig (or .config) and rebuild. \
+     Note CONFIG_OVE_NET (the blocking lwIP path) and CONFIG_OVE_ASYNC_NET \
+     are mutually exclusive."
+);
 #[cfg(has_audio)]
 pub mod audio;
 #[cfg(not(docsrs))]

@@ -33,6 +33,15 @@ embedded-io-async = ["dep:embedded-io-async", "embedded-io", "async"]
 # `AsyncSpi` / `AsyncI2c`. Requires `async` and pulls in sync
 # `embedded-hal` impls (the async traits extend `embedded_hal::*::ErrorType`).
 embedded-hal-async = ["dep:embedded-hal-async", "embedded-hal", "async"]
+# `async-net` activates the embassy-net async IP stack module. Requires
+# `async` and a transport sub-feature. Mutually exclusive with the
+# blocking `ove::net` (C-side `CONFIG_OVE_ASYNC_NET` and `CONFIG_OVE_NET`
+# don't both compile in — the build picks one).
+async-net = ["dep:embassy-net", "dep:embassy-net-driver", "async"]
+# Transport: shared-memory ring on QEMU MPS2-AN500 (semihosting bridge).
+# Pulls in C-side `boards/qemu-mps2-an500/src/qemu_net_async.c` and
+# requires `CONFIG_OVE_ASYNC_NET=y` in the build config.
+async-net-qemu-shm = ["async-net"]
 # `async` activates the Embassy-based async runtime hosted on the
 # oveRTOS C substrate. Requires the C side to be built with
 # `CONFIG_OVE_ASYNC=y` (build.rs detects this and emits
@@ -99,6 +108,12 @@ embedded-io-async = { version = "0.7", optional = true }
 # `embedded-hal-async` traits — opt-in via the `embedded-hal-async`
 # feature. Pinned to 1.0 alongside `embedded-hal`.
 embedded-hal-async = { version = "1.0", optional = true }
+# `embassy-net` — async TCP/IP stack (smoltcp-backed). Pulled in by the
+# `async-net` feature. Pinned to 0.7; bumps validated by a per-backend
+# loopback integration test as upstream-bump gate.
+embassy-net = { version = "0.7", default-features = false, features = ["proto-ipv4", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet"], optional = true }
+# `embassy-net-driver` — Driver trait we implement per board.
+embassy-net-driver = { version = "0.2", default-features = false, optional = true }
 # Embassy substrate — all opt-in via the `async` feature.  See the
 # feature documentation for arch selection.  Versions pinned to a
 # minor; bumps are intentional and validated by an integration test

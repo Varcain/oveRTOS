@@ -52,6 +52,7 @@ fn main() {
             "i2c",
             "i2s",
             "async",
+            "async_net",
         ];
         for m in &modules {
             println!("cargo:rustc-check-cfg=cfg(has_{m})");
@@ -109,6 +110,7 @@ fn main() {
             "I2S",
             "PM",
             "ASYNC",
+            "ASYNC_NET",
         ];
         for m in &modules {
             let cfg_name = format!("has_{}", m.to_lowercase());
