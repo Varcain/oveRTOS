@@ -11,7 +11,7 @@ crate-type = ["staticlib"]
 # `async-net-qemu-shm` activates the embassy-net Driver over the
 # shared-memory ring transport — the same transport the existing
 # qemu_net.c uses for the lwIP path, but with embassy-net on top.
-ove = { path = "../../../../bindings/rust/ove", features = ["alloc", "async", "async-net", "async-net-qemu-shm"] }
+ove = { path = "../../../../bindings/rust/ove", features = ["alloc", "async", "async-net", "async-net-qemu-shm", "async-net-stm32f7-eth"] }
 log = "0.4"
 ove-allocator = { path = "../../../../bindings/rust/ove-allocator", default-features = false }
 embassy-executor = { version = "0.7", default-features = false }

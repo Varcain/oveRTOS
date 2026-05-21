@@ -31,9 +31,13 @@
 
 #[cfg(has_async_net)]
 pub mod qemu_shm;
+#[cfg(has_async_net)]
+pub mod stm32f7_eth;
 
 #[cfg(has_async_net)]
 pub use qemu_shm::QemuShmDriver;
+#[cfg(has_async_net)]
+pub use stm32f7_eth::Stm32f7EthDriver;
 
 /// Re-export of [`embassy_net::Stack`].
 pub use embassy_net::Stack;

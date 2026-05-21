@@ -40,23 +40,43 @@ use embassy_net::tcp::TcpSocket;
 use embassy_net::{Config, IpAddress, IpEndpoint, Ipv4Address, Ipv4Cidr, Runner, Stack, StaticConfigV4};
 use embassy_time::{Duration, Timer};
 
-use ove::async_net::{QemuShmDriver, StackResources};
+use ove::async_net::StackResources;
+
+#[cfg(board_qemu_mps2)]
+use ove::async_net::QemuShmDriver as NetDriver;
+#[cfg(board_stm32f746g_disco)]
+use ove::async_net::Stm32f7EthDriver as NetDriver;
+
+#[cfg(board_qemu_mps2)]
+fn poll_kick() {
+    ove::async_net::qemu_shm::wake_poll();
+}
+#[cfg(board_stm32f746g_disco)]
+fn poll_kick() {
+    ove::async_net::stm32f7_eth::wake_poll();
+}
 
 const MAC_ADDR: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xEF, 0x01];
 
-/// Background poller — wakes the embassy-net runner every 10 ms so the
-/// SHM-ring RX path advances (no interrupt source for QEMU SHM).
+/// Background poller — wakes the embassy-net runner so RX-ring polls
+/// advance even without an ISR-backed wake. Tighter cadence on real
+/// Ethernet (STM32F7 RMII at 100 Mbit fills 4 max-size frames in ~480
+/// µs); SHM transport can poll more lazily.
 #[embassy_executor::task]
 async fn poll_task() {
+    #[cfg(board_qemu_mps2)]
+    let period = Duration::from_millis(10);
+    #[cfg(board_stm32f746g_disco)]
+    let period = Duration::from_millis(2);
     loop {
-        Timer::after(Duration::from_millis(10)).await;
-        ove::async_net::qemu_shm::wake_poll();
+        Timer::after(period).await;
+        poll_kick();
     }
 }
 
 /// embassy-net runner driver task.
 #[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, QemuShmDriver>) -> ! {
+async fn net_task(mut runner: Runner<'static, NetDriver>) -> ! {
     runner.run().await
 }
 
@@ -101,7 +121,7 @@ async fn app_main(spawner: Spawner) {
     let _ = ove::log::try_init();
     log::info!("oveRTOS Rust async-net demo starting");
 
-    let driver = QemuShmDriver::new(MAC_ADDR);
+    let driver = NetDriver::new(MAC_ADDR);
     // Static IP matches the existing qemu-net-setup.sh layout
     // (172.1.1.0/24 with host at .1, guest at .2).
     let config = Config::ipv4_static(StaticConfigV4 {

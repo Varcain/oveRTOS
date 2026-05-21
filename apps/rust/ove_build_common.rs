@@ -26,7 +26,7 @@ fn ove_detect_config() {
         "GPIO", "LED", "TIME", "CONSOLE", "STREAM", "WORKQUEUE", "SYNC",
         "QUEUE", "TIMER", "EVENTGROUP", "INFER",
         "NET", "NET_TLS", "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_SNTP",
-        "UART", "SPI", "I2C", "PM", "ASYNC",
+        "UART", "SPI", "I2C", "PM", "ASYNC", "ASYNC_NET",
     ];
     for m in &modules {
         let cfg_name = format!("has_{}", m.to_lowercase());
@@ -42,6 +42,21 @@ fn ove_detect_config() {
         let cfg_name = format!("rtos_{}", r.to_lowercase());
         println!("cargo:rustc-check-cfg=cfg({})", cfg_name);
         let define = format!("#define CONFIG_OVE_RTOS_{} 1", r);
+        if config.contains(&define) {
+            println!("cargo:rustc-cfg={}", cfg_name);
+        }
+    }
+
+    let boards = [
+        ("QEMU_MPS2_AN500", "qemu_mps2"),
+        ("STM32F746G_DISCO", "stm32f746g_disco"),
+        ("HOST_POSIX", "host_posix"),
+        ("WASM", "wasm"),
+    ];
+    for (cfg_token, rust_cfg) in &boards {
+        let cfg_name = format!("board_{}", rust_cfg);
+        println!("cargo:rustc-check-cfg=cfg({})", cfg_name);
+        let define = format!("#define CONFIG_OVE_BOARD_{} 1", cfg_token);
         if config.contains(&define) {
             println!("cargo:rustc-cfg={}", cfg_name);
         }

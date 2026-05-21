@@ -21,7 +21,7 @@ ove_add_compile_definitions(
     STM32F746xx
     USE_HAL_DRIVER
     ARM_MATH_CM7
-    $<$<BOOL:${OVE_NET}>:HAL_ETH_MODULE_ENABLED>
+    $<$<OR:$<BOOL:${OVE_NET}>,$<BOOL:${OVE_ASYNC_NET}>>:HAL_ETH_MODULE_ENABLED>
 )
 
 ove_add_compile_options(
@@ -54,12 +54,15 @@ ove_add_board_sources(
 # CONFIG_OVE_* macro inside the file, so always include it whenever any of
 # those subsystems is enabled — otherwise the weak HAL defaults take over
 # and the peripheral never gets its GPIO/clock configured.
-if(OVE_UART OR OVE_SPI OR OVE_I2C OR OVE_NET OR OVE_AUDIO)
+if(OVE_UART OR OVE_SPI OR OVE_I2C OR OVE_NET OR OVE_ASYNC_NET OR OVE_AUDIO)
     ove_add_board_sources(src/bus_msp_init.c)
 endif()
 
 if(OVE_NET)
     ove_add_board_sources(${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_eth.c)
+endif()
+if(OVE_ASYNC_NET)
+    ove_add_board_sources(${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_eth_async.c)
 endif()
 
 # ── oveRTOS backend sources (from generated config) ─────────────────
