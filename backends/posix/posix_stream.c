@@ -128,7 +128,7 @@ int ove_stream_send(ove_stream_t stream, const void *data, size_t len, uint64_t 
 			pthread_cond_signal(&s->data_avail);
 		}
 	}
-done:
+done:;
 	/* Snapshot the notify hook under the lock so we can fire it after
 	 * unlocking — callbacks (e.g. Rust AtomicWaker::wake) must not run
 	 * with the stream mutex held in case the wake path re-enters. */
