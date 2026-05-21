@@ -131,7 +131,11 @@ async fn app_main(spawner: Spawner) {
     });
     let seed: u64 = 0x0123_4567_89ab_cdef;
 
-    let resources = alloc::boxed::Box::leak(alloc::boxed::Box::new(StackResources::<3>::new()));
+    // StaticCell rather than Box::leak: keeps the ~3 KB StackResources
+    // out of the FreeRTOS heap (which fills up fast on STM32F7's tight
+    // SRAM budget) and matches the zero-heap variant exactly.
+    static RESOURCES: static_cell::StaticCell<StackResources<3>> = static_cell::StaticCell::new();
+    let resources = RESOURCES.init(StackResources::new());
     let (stack, runner) = embassy_net::new(driver, config, resources, seed);
 
     spawner.must_spawn(net_task(runner));
@@ -139,4 +143,3 @@ async fn app_main(spawner: Spawner) {
     spawner.must_spawn(app_task(stack));
 }
 
-extern crate alloc;
