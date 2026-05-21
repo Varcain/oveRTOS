@@ -179,7 +179,7 @@ static bool configure_i2s_streams(void)
 	config.word_size = 16;
 	config.channels = 1;
 	config.format = I2S_FMT_DATA_FORMAT_I2S;
-	config.options = I2S_OPT_BIT_CLK_MASTER | I2S_OPT_FRAME_CLK_MASTER;
+	config.options = I2S_OPT_BIT_CLK_CONTROLLER | I2S_OPT_FRAME_CLK_CONTROLLER;
 	config.frame_clk_freq = OVE_AUDIO_I2S_SAMPLE_RATE;
 	config.mem_slab = &audio_slab;
 	config.block_size = BLOCK_SIZE;
@@ -194,7 +194,7 @@ static bool configure_i2s_streams(void)
 	}
 
 	struct i2s_config rx_config = config;
-	rx_config.options = I2S_OPT_BIT_CLK_SLAVE | I2S_OPT_FRAME_CLK_SLAVE;
+	rx_config.options = I2S_OPT_BIT_CLK_TARGET | I2S_OPT_FRAME_CLK_TARGET;
 
 	ret = i2s_configure(dev_rx, I2S_DIR_RX, &rx_config);
 	if (ret < 0)
@@ -307,7 +307,7 @@ static int zephyr_i2s_init_once(void)
 	audio_cfg.dai_cfg.i2s.word_size = 16;
 	audio_cfg.dai_cfg.i2s.channels = 1;
 	audio_cfg.dai_cfg.i2s.format = I2S_FMT_DATA_FORMAT_I2S;
-	audio_cfg.dai_cfg.i2s.options = I2S_OPT_FRAME_CLK_MASTER;
+	audio_cfg.dai_cfg.i2s.options = I2S_OPT_FRAME_CLK_CONTROLLER;
 	audio_cfg.dai_cfg.i2s.frame_clk_freq = OVE_AUDIO_I2S_SAMPLE_RATE;
 	audio_cfg.dai_cfg.i2s.mem_slab = &audio_slab;
 	audio_cfg.dai_cfg.i2s.block_size = BLOCK_SIZE;
