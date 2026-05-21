@@ -40,6 +40,12 @@ embedded-hal-async = ["dep:embedded-hal-async", "embedded-hal", "async"]
 # CAS so this is a future-proofing toggle, not a workaround for
 # anything we ship today. Re-exported as `ove::Arc`.
 portable-atomic-arc = ["dep:portable-atomic-util", "alloc"]
+# `fugit` adds unit-safe `Duration` and `Instant` types alongside the
+# default `core::time::Duration` API. Useful when you want the compiler
+# to catch `from_secs(10)` vs `from_millis(10)` mix-ups; the existing
+# `core::time::Duration` API is unchanged for callers who don't enable
+# this feature.
+fugit = ["dep:fugit"]
 # `async-net` activates the embassy-net async IP stack module. Requires
 # `async` and a transport sub-feature. Mutually exclusive with the
 # blocking `ove::net` (C-side `CONFIG_OVE_ASYNC_NET` and `CONFIG_OVE_NET`
@@ -122,6 +128,9 @@ embedded-hal-async = { version = "1.0", optional = true }
 # `portable-atomic-util` — alternative `Arc` impl for targets without
 # native CAS. Opt-in via `portable-atomic-arc`.
 portable-atomic-util = { version = "0.2", default-features = false, features = ["alloc"], optional = true }
+# `fugit` — unit-safe `Duration`/`Instant` types. Opt-in via the
+# `fugit` feature.
+fugit = { version = "0.3", default-features = false, optional = true }
 # `embassy-net` — async TCP/IP stack (smoltcp-backed). Pulled in by the
 # `async-net` feature. Pinned to 0.7; bumps validated by a per-backend
 # loopback integration test as upstream-bump gate.
