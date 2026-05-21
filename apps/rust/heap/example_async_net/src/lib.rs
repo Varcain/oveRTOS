@@ -119,8 +119,11 @@ async fn app_task(stack: Stack<'static>) {
 
 #[ove::main]
 async fn app_main(spawner: Spawner) {
+    // printk! before log init: if `NetDriver::new()` panics during
+    // PHY autoneg / DMA descriptor setup, this is the only line that
+    // survives — the log framework isn't up yet.
+    ove::printk!("oveRTOS Rust async-net demo starting\n");
     let _ = ove::log::try_init();
-    log::info!("oveRTOS Rust async-net demo starting");
 
     let driver = NetDriver::new(MAC_ADDR);
     // Static IP matches the existing qemu-net-setup.sh layout

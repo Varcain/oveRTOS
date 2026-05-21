@@ -61,8 +61,12 @@ async fn consumer() {
 
 #[ove::main]
 async fn app_main(spawner: Spawner) {
+    // Boot banner via direct console write — if `log::try_init` fails
+    // (no console backend, log mutex unavailable, etc.) the message
+    // still lands on the UART so the user isn't staring at a blank
+    // serial port.
+    ove::printk!("oveRTOS Rust async demo starting\n");
     let _ = ove::log::try_init();
-    log::info!("oveRTOS Rust async demo starting");
 
     spawner.must_spawn(blinker());
     spawner.must_spawn(consumer());

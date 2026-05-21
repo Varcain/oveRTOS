@@ -70,8 +70,10 @@ async fn app_task(stack: Stack<'static>) {
 
 #[ove::main]
 async fn app_main(spawner: Spawner) {
+    // printk! before log init — if `QemuShmDriver::new()` fails during
+    // SHM init this banner still lands on the UART.
+    ove::printk!("oveRTOS Rust async-net demo (zero-heap) starting\n");
     let _ = ove::log::try_init();
-    log::info!("oveRTOS Rust async-net demo (zero-heap) starting");
 
     let driver = QemuShmDriver::new(MAC_ADDR);
     let config = Config::ipv4_static(StaticConfigV4 {
