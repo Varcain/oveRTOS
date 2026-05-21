@@ -4,7 +4,7 @@
 //
 // This file is part of oveRTOS.
 
-//! MQTT 3.1.1 client with safe callback.
+//! Blocking MQTT 3.1.1 client with safe callback.
 //!
 //! [`Client`] wraps the oveRTOS MQTT handle with automatic cleanup and a
 //! safe Rust `fn(&str, &[u8])` message callback.  The trampoline pattern
@@ -12,6 +12,13 @@
 //! Rust function call.
 //!
 //! Works in both heap and zero-heap modes.
+//!
+//! ## Async alternative
+//!
+//! For async MQTT on top of [`crate::async_net`] use the
+//! [`rust-mqtt`](https://crates.io/crates/rust-mqtt) crate from crates.io.
+//! Supports MQTT 3.1.1 and 5.0, QoS 0/1/2, no_std mode. See
+//! [`crate::async_net`]'s module docs for the full pairing recipe.
 
 use crate::bindings;
 use crate::error::{Error, Result};

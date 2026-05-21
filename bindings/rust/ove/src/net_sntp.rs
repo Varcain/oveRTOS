@@ -4,12 +4,19 @@
 //
 // This file is part of oveRTOS.
 
-//! SNTP time synchronization client.
+//! Blocking SNTP time synchronization client.
 //!
 //! Provides a safe Rust API for the oveRTOS SNTP subsystem.  A single NTP
 //! query is sent to a time server and the resulting UTC offset is stored
 //! internally.  Useful for wall-clock timestamps, TLS certificate
 //! validation, and log correlation.
+//!
+//! ## Async alternative
+//!
+//! For async SNTP on top of [`crate::async_net`] use the
+//! [`sntpc`](https://crates.io/crates/sntpc) crate from crates.io
+//! with the `embassy-socket` feature. Single-shot NTP query against
+//! any UDP-reachable server; no global UTC-offset state.
 //!
 //! # Example
 //!

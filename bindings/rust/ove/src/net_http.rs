@@ -4,13 +4,21 @@
 //
 // This file is part of oveRTOS.
 
-//! HTTP/1.1 client with RAII response management.
+//! Blocking HTTP/1.1 client with RAII response management.
 //!
 //! [`Client`] wraps the oveRTOS HTTP client handle with automatic resource
 //! cleanup.  [`Response`] owns the heap-allocated body and headers returned
 //! by `ove_http_get` / `ove_http_post` and frees them on drop.
 //!
 //! Works in both heap and zero-heap modes.
+//!
+//! ## Async alternative
+//!
+//! For async HTTP on top of [`crate::async_net`] use the
+//! [`reqwless`](https://crates.io/crates/reqwless) crate from crates.io.
+//! Supports HTTPS via `embedded-tls`, chunked encoding, redirects, and
+//! produces an `embedded_io_async::Read` body. See [`crate::async_net`]'s
+//! module docs for the full pairing recipe.
 
 use core::fmt;
 
