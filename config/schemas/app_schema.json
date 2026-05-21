@@ -99,6 +99,11 @@
         "items": { "type": "string" }
       },
       "description": "Per-RTOS Kconfig overrides applied after app defconfig, keyed by RTOS name (freertos, zephyr, nuttx, posix)."
+    },
+    "incompatible_boards": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Board directory names this app cannot be built for (e.g. apps that need CONFIG_OVE_ASYNC on a board with no irq backend). 'ove allconfigs' skips matching boards."
     }
   },
   "additionalProperties": false,

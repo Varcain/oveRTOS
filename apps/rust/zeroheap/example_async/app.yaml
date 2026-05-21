@@ -3,6 +3,10 @@ config_name: example_async_rust_zh
 description: "Rust async (Embassy) demo on oveRTOS — zero-heap mode"
 rust:
   lib_name: example_async_zh
+# WASM has no irq backend (no wasm_irq.c), so CONFIG_OVE_ASYNC links
+# fail with undefined ove_irq_lock / ove_irq_unlock symbols.
+incompatible_boards:
+  - wasm
 defconfig:
   - CONFIG_OVE_ZERO_HEAP=y
   - CONFIG_OVE_SYNC=y

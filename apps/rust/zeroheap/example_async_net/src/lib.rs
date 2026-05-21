@@ -19,20 +19,38 @@ use embassy_net::{Config, IpAddress, IpEndpoint, Ipv4Address, Ipv4Cidr, Runner, 
 use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 
-use ove::async_net::{QemuShmDriver, StackResources};
+use ove::async_net::StackResources;
+
+#[cfg(board_qemu_mps2)]
+use ove::async_net::QemuShmDriver as NetDriver;
+#[cfg(board_stm32f746g_disco)]
+use ove::async_net::Stm32f7EthDriver as NetDriver;
+
+#[cfg(board_qemu_mps2)]
+fn poll_kick() {
+    ove::async_net::qemu_shm::wake_poll();
+}
+#[cfg(board_stm32f746g_disco)]
+fn poll_kick() {
+    ove::async_net::stm32f7_eth::wake_poll();
+}
 
 const MAC_ADDR: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xEF, 0x02];
 
 #[embassy_executor::task]
 async fn poll_task() {
+    #[cfg(board_qemu_mps2)]
+    let period = Duration::from_millis(10);
+    #[cfg(board_stm32f746g_disco)]
+    let period = Duration::from_millis(500);
     loop {
-        Timer::after(Duration::from_millis(10)).await;
-        ove::async_net::qemu_shm::wake_poll();
+        Timer::after(period).await;
+        poll_kick();
     }
 }
 
 #[embassy_executor::task]
-async fn net_task(mut runner: Runner<'static, QemuShmDriver>) -> ! {
+async fn net_task(mut runner: Runner<'static, NetDriver>) -> ! {
     runner.run().await
 }
 
@@ -70,12 +88,12 @@ async fn app_task(stack: Stack<'static>) {
 
 #[ove::main]
 async fn app_main(spawner: Spawner) {
-    // printk! before log init — if `QemuShmDriver::new()` fails during
-    // SHM init this banner still lands on the UART.
+    // printk! before log init — if `NetDriver::new()` fails during
+    // PHY autoneg / SHM init this banner still lands on the UART.
     ove::printk!("oveRTOS Rust async-net demo (zero-heap) starting\n");
     let _ = ove::log::try_init();
 
-    let driver = QemuShmDriver::new(MAC_ADDR);
+    let driver = NetDriver::new(MAC_ADDR);
     let config = Config::ipv4_static(StaticConfigV4 {
         address: Ipv4Cidr::new(Ipv4Address::new(172, 1, 1, 2), 24),
         gateway: Some(Ipv4Address::new(172, 1, 1, 1)),
