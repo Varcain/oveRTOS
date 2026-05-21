@@ -1,0 +1,28 @@
+[package]
+name = "example_async_net_zh"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# Zero-heap async-net: no `alloc` feature. The Stack resources sit in
+# a function-scope `static` cell instead of a leaked Box.
+ove = { path = "../../../../bindings/rust/ove", features = ["async", "async-net", "async-net-qemu-shm"] }
+log = "0.4"
+embassy-executor = { version = "0.7", default-features = false }
+embassy-time = { version = "0.4", default-features = false, features = ["tick-hz-1_000_000"] }
+embassy-net = { version = "0.6", default-features = false, features = ["proto-ipv4", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet"] }
+embedded-io-async = "0.6"
+static_cell = "2"
+
+[features]
+default = []
+std = ["ove/std"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
