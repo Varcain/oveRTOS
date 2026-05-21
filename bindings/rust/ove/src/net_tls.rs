@@ -4,7 +4,7 @@
 //
 // This file is part of oveRTOS.
 
-//! TLS/SSL session wrapper (mbedTLS).
+//! Blocking TLS/SSL session wrapper (mbedTLS).
 //!
 //! [`Session`] wraps the oveRTOS TLS handle with automatic cleanup.
 //! After creating a session and completing the handshake over an existing
@@ -12,6 +12,14 @@
 //! [`Session::recv`].
 //!
 //! Works in both heap and zero-heap modes.
+//!
+//! ## Async alternative
+//!
+//! For async TLS on top of [`crate::async_net`] use the
+//! [`embedded-tls`](https://crates.io/crates/embedded-tls) crate from
+//! crates.io. Smaller binary (no mbedTLS in the image) and the same
+//! cipher suites we ship here (AES-128/256-GCM, ChaCha20-Poly1305).
+//! See [`crate::async_net`]'s module docs for the full pairing recipe.
 
 use crate::bindings;
 use crate::error::{Error, Result};

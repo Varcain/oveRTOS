@@ -4,7 +4,7 @@
 //
 // This file is part of oveRTOS.
 
-//! Embedded HTTP server with REST-style routing.
+//! Blocking embedded HTTP server with REST-style routing.
 //!
 //! Wraps the oveRTOS `ove_httpd_*` API.  The server runs on a background
 //! task; routes are registered with [`route`] and dispatched to
@@ -12,6 +12,13 @@
 //!
 //! The server is a singleton (one per process), so start/stop/route are
 //! free functions rather than methods on a struct.
+//!
+//! ## Async alternative
+//!
+//! For an async HTTP server on top of [`crate::async_net`] use
+//! [`picoserve`](https://crates.io/crates/picoserve) from crates.io.
+//! Macro-driven routing, JSON via `serde`, optional WebSocket upgrade.
+//! See [`crate::async_net`]'s module docs for the full pairing recipe.
 
 use core::fmt;
 use core::marker::PhantomData;

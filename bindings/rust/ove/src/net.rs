@@ -4,11 +4,77 @@
 //
 // This file is part of oveRTOS.
 
-//! Networking primitives for oveRTOS.
+//! Blocking BSD-style networking primitives for oveRTOS.
 //!
-//! Provides safe wrappers for BSD-like sockets (TCP and UDP), network interface
-//! management, DNS resolution, and socket addresses.  All types use inline
-//! storage and implement `Send + Sync`.
+//! Provides safe wrappers for sockets (TCP and UDP), network interface
+//! management, DNS resolution, and socket addresses. All types use
+//! inline storage and implement `Send + Sync`.
+//!
+//! Each backend uses its native TCP/IP stack:
+//!
+//! | Backend  | Stack         | Notes |
+//! |----------|---------------|-------|
+//! | FreeRTOS | lwIP (vendored) | Bare-metal target; sockets in oveRTOS heap |
+//! | Zephyr   | Zephyr `net`  | Uses Zephyr's POSIX `sockets` shim |
+//! | NuttX    | NuttX net     | Native socket layer |
+//! | POSIX    | host kernel   | Native `socket(2)` via libc |
+//!
+//! ## When to pick `ove::net` (blocking) vs [`crate::async_net`]
+//!
+//! Both stacks coexist as separate Cargo features ([`crate::net`] is
+//! always available; [`crate::async_net`] requires `async-net` +
+//! `CONFIG_OVE_ASYNC_NET=y`), but at build time they are **mutually
+//! exclusive at the transport layer**: lwIP (or Zephyr/NuttX net) and
+//! embassy-net both want to own the MAC + ARP cache + descriptor ring.
+//! Pick **one** stack per build.
+//!
+//! Choose `ove::net` (this module) when:
+//!
+//! - You're writing **synchronous code** in a dedicated networking
+//!   thread (the common bare-metal pattern). One thread, one socket,
+//!   one blocking `recv` per loop iteration.
+//! - You need **TLS + HTTP + MQTT + SNTP + HTTPD** all in one app and
+//!   want production-tested implementations — the [`crate::net_tls`] /
+//!   [`crate::net_http`] / [`crate::net_mqtt`] / [`crate::net_sntp`] /
+//!   [`crate::net_httpd`] sister modules wrap mbedTLS + battle-tested
+//!   C clients that are part of oveRTOS itself.
+//! - You're on a backend where the **native socket layer is mature**
+//!   (Zephyr/NuttX/POSIX). The HAL is doing the heavy lifting; the
+//!   Rust wrapper is just type-safe glue.
+//! - You're **interoperating with existing C code** that already
+//!   opens sockets, calls DNS, etc.
+//!
+//! Choose [`crate::async_net`] (Embassy + embassy-net) when:
+//!
+//! - You're writing **multiple concurrent tasks** that all do network
+//!   I/O — TCP listener + MQTT client + sensor uplink — and don't
+//!   want one thread per task.
+//! - You want **embedded-hal-async / embedded-io-async** trait impls
+//!   so async sensor drivers from crates.io work directly on top of
+//!   your sockets.
+//! - You're on **bare-metal FreeRTOS** (the lwIP path is fine, but
+//!   embassy-net is smaller and gives you the Rust-native API).
+//! - You're using async elsewhere ([`crate::timer::Timer`] →
+//!   `Timer::after_millis().await`, `embedded_io_async::Write`) and
+//!   want a single async story end-to-end.
+//!
+//! ## Protocol layers
+//!
+//! oveRTOS ships C clients for the common app-layer protocols, with
+//! Rust wrappers that hand back RAII-cleaning handles:
+//!
+//! - [`crate::net_tls`] — mbedTLS sessions on top of [`TcpStream`]
+//! - [`crate::net_http`] — HTTP/1.1 client with `get`/`post`/`put`,
+//!   automatic redirect handling, gzip decode
+//! - [`crate::net_mqtt`] — MQTT 3.1.1 client (QoS 0/1, keep-alive,
+//!   optional TLS)
+//! - [`crate::net_sntp`] — SNTP time sync (single-shot or periodic)
+//! - [`crate::net_httpd`] — embedded HTTP server with REST routes +
+//!   WebSocket upgrade
+//!
+//! For the async equivalents, see [`crate::async_net`]'s module docs —
+//! it documents which crates.io community crates pair with embassy-net
+//! ([`rust-mqtt`], [`reqwless`], [`embedded-tls`], `sntpc`, `picoserve`).
 
 use core::fmt;
 
