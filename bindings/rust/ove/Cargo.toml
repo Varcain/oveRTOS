@@ -42,6 +42,10 @@ async-net = ["dep:embassy-net", "dep:embassy-net-driver", "async"]
 # Pulls in C-side `boards/qemu-mps2-an500/src/qemu_net_async.c` and
 # requires `CONFIG_OVE_ASYNC_NET=y` in the build config.
 async-net-qemu-shm = ["async-net"]
+# Transport: STM32F7 ETH MAC + LAN8742A PHY (stm32f746g-discovery).
+# Pulls in C-side `drivers/freertos/stm32f7/stm32f7_eth_async.c` and
+# requires `CONFIG_OVE_ASYNC_NET=y`.
+async-net-stm32f7-eth = ["async-net"]
 # `async` activates the Embassy-based async runtime hosted on the
 # oveRTOS C substrate. Requires the C side to be built with
 # `CONFIG_OVE_ASYNC=y` (build.rs detects this and emits
