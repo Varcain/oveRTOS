@@ -63,6 +63,9 @@ set(SIM_QEMU_SOURCES
 if(OVE_LVGL)
     list(APPEND SIM_QEMU_SOURCES ${SIM_DIR}/hal/sim_lvgl.c)
 endif()
+if(OVE_ASYNC_NET)
+    list(APPEND SIM_QEMU_SOURCES ${QEMU_SRC_DIR}/qemu_net_async.c)
+endif()
 
 ove_nuttx_add_sources(${SIM_QEMU_SOURCES})
 

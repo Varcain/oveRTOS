@@ -1,0 +1,29 @@
+[package]
+name = "example_async_net"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+# `async-net-qemu-shm` activates the embassy-net Driver over the
+# shared-memory ring transport — the same transport the existing
+# qemu_net.c uses for the lwIP path, but with embassy-net on top.
+ove = { path = "../../../../bindings/rust/ove", features = ["alloc", "async", "async-net", "async-net-qemu-shm"] }
+log = "0.4"
+ove-allocator = { path = "../../../../bindings/rust/ove-allocator", default-features = false }
+embassy-executor = { version = "0.7", default-features = false }
+embassy-time = { version = "0.4", default-features = false, features = ["tick-hz-1_000_000"] }
+embassy-net = { version = "0.6", default-features = false, features = ["proto-ipv4", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet"] }
+embedded-io-async = "0.6"
+
+[features]
+default = []
+std = ["ove/std", "ove-allocator/no_install"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

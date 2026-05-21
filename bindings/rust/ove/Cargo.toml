@@ -111,7 +111,7 @@ embedded-hal-async = { version = "1.0", optional = true }
 # `embassy-net` — async TCP/IP stack (smoltcp-backed). Pulled in by the
 # `async-net` feature. Pinned to 0.7; bumps validated by a per-backend
 # loopback integration test as upstream-bump gate.
-embassy-net = { version = "0.7", default-features = false, features = ["proto-ipv4", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet"], optional = true }
+embassy-net = { version = "0.6", default-features = false, features = ["proto-ipv4", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet"], optional = true }
 # `embassy-net-driver` — Driver trait we implement per board.
 embassy-net-driver = { version = "0.2", default-features = false, optional = true }
 # Embassy substrate — all opt-in via the `async` feature.  See the

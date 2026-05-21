@@ -47,6 +47,9 @@ endif()
 if(OVE_AUDIO)
     list(APPEND SIM_QEMU_SOURCES ${OVE_DIR}/sim/hal/sim_audio.c)
 endif()
+if(OVE_ASYNC_NET)
+    list(APPEND SIM_QEMU_SOURCES ${OVE_BOARD_DIR}/../src/qemu_net_async.c)
+endif()
 
 target_sources(app PRIVATE
     ${OVE_BOARD_DIR}/main.c
