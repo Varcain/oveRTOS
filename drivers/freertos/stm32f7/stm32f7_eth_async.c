@@ -69,6 +69,31 @@ static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE] __attribute__((aligned(4
 ETH_HandleTypeDef heth;
 static uint8_t s_mac[6];
 
+/* ── ISR notify hook ───────────────────────────────────────────
+ *
+ * ETH_IRQHandler dispatches to HAL_ETH_IRQHandler which calls the
+ * HAL_ETH_*CpltCallback weak symbols. We override them and fire a
+ * user-registered notify cb (typically an AtomicWaker::wake() shim
+ * on the Rust side) so the embassy-net runner re-polls receive(). */
+
+typedef void (*eth_notify_cb)(void *ud);
+static volatile eth_notify_cb s_notify_cb;
+static volatile void *s_notify_ud;
+
+void ove_stm32f7_eth_async_set_notify(eth_notify_cb cb, void *ud)
+{
+	s_notify_ud = ud;
+	__atomic_store_n((void *volatile *)&s_notify_cb, (void *)cb, __ATOMIC_RELEASE);
+}
+
+static inline void fire_notify(void)
+{
+	eth_notify_cb cb =
+		(eth_notify_cb)__atomic_load_n((void *volatile *)&s_notify_cb, __ATOMIC_ACQUIRE);
+	if (cb != NULL)
+		cb((void *)s_notify_ud);
+}
+
 /* ── RX queue ────────────────────────────────────────────────
  *
  * HAL_ETH_RxLinkCallback fires synchronously inside HAL_ETH_ReadData
@@ -109,6 +134,31 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t 
 	s_rx_q[head].buf = buff;
 	s_rx_q[head].len = Length;
 	__atomic_store_n(&s_rx_head, next, __ATOMIC_RELEASE);
+}
+
+/* ── ETH ISR + HAL completion callbacks ──────────────────────── */
+
+void ETH_IRQHandler(void)
+{
+	HAL_ETH_IRQHandler(&heth);
+}
+
+void HAL_ETH_RxCpltCallback(ETH_HandleTypeDef *h)
+{
+	(void)h;
+	fire_notify();
+}
+
+void HAL_ETH_TxCpltCallback(ETH_HandleTypeDef *h)
+{
+	(void)h;
+	fire_notify();
+}
+
+void HAL_ETH_ErrorCallback(ETH_HandleTypeDef *h)
+{
+	(void)h;
+	fire_notify();
 }
 
 /* ── MAC init (parallel to stm32f7_eth.c::eth_mac_init) ──────── */
@@ -206,6 +256,14 @@ int ove_stm32f7_eth_async_init(const uint8_t mac[6])
 		return ret;
 
 	HAL_ETH_Start(&heth);
+
+	/* Enable ETH IRQ so RX completions wake the embassy-net runner
+	 * without polling. Priority chosen to be ≥
+	 * configMAX_SYSCALL_INTERRUPT_PRIORITY so FreeRTOS API calls from
+	 * the user notify cb (e.g. ove_event_signal_from_isr inside an
+	 * AtomicWaker::wake()) are legal. */
+	HAL_NVIC_SetPriority(ETH_IRQn, 5, 0);
+	HAL_NVIC_EnableIRQ(ETH_IRQn);
 
 	if (HAL_GetREVID() == 0x1000U) {
 #ifdef CONFIG_OVE_ZERO_HEAP

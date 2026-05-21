@@ -44,16 +44,28 @@ unsafe extern "C" {
         out_len: *mut u32,
     ) -> ::core::ffi::c_int;
     fn ove_stm32f7_eth_async_link_up() -> ::core::ffi::c_int;
+    fn ove_stm32f7_eth_async_set_notify(
+        cb: Option<unsafe extern "C" fn(*mut c_void)>,
+        user_data: *mut c_void,
+    );
+}
+
+/// ISR trampoline: the ETH IRQ → HAL_ETH_RxCpltCallback fires this,
+/// which wakes the embassy-net runner. We pass `&RX_WAKER` as user_data;
+/// dereferencing is sound because it's a 'static.
+unsafe extern "C" fn isr_notify(_ud: *mut c_void) {
+    RX_WAKER.wake();
 }
 
 static RX_WAKER: AtomicWaker = AtomicWaker::new();
 static INITED: AtomicBool = AtomicBool::new(false);
 
-/// Wake the embassy-net runner to re-poll the ETH MAC. Call from a
-/// periodic timer task (typical: every 2-5 ms — RMII at 100 Mbit can
-/// queue 4 max-size frames in roughly 480 µs, so don't poll slower
-/// than once per ~1 ms if you want to avoid the descriptor ring backing
-/// up).
+/// Wake the embassy-net runner to re-poll the ETH MAC.
+///
+/// Since the driver wakes itself from `ETH_IRQHandler` on RX/TX
+/// completion, calling this is only useful as a slow link-state poll
+/// (every few hundred ms — enough to notice cable unplugs). It is
+/// idempotent and safe from any context.
 pub fn wake_poll() {
     RX_WAKER.wake();
 }
@@ -70,6 +82,11 @@ impl Stm32f7EthDriver {
         // SAFETY: C init touches static MAC state only; idempotent on
         // re-init (resets ring positions).
         let _ = unsafe { ove_stm32f7_eth_async_init(mac.as_ptr()) };
+        // SAFETY: passing a function pointer + null user_data (the
+        // trampoline reads the 'static RX_WAKER directly).
+        unsafe {
+            ove_stm32f7_eth_async_set_notify(Some(isr_notify), ::core::ptr::null_mut());
+        }
         INITED.store(true, Ordering::Release);
         Self { mac }
     }
