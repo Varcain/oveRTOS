@@ -843,3 +843,140 @@ impl CondVar {
 }
 
 crate::ove_handle_impl!(CondVar, ove_condvar_destroy, ove_condvar_deinit);
+
+// ── SpinMutex (G5) ───────────────────────────────────────────────────
+//
+// IRQ-locking mutex for very short critical sections. Distinct from
+// the sleeping `Mutex<T>` above:
+//
+// - `Mutex::lock` blocks the calling thread on a kernel mutex; legal
+//   from thread context only.
+// - `SpinMutex::lock` disables interrupts globally and holds them
+//   disabled for the body of the closure / lifetime of the guard. Use
+//   for sub-microsecond updates to shared state that must be readable
+//   from ISR context, or to bridge `&` data into an async task that
+//   can't hold a real mutex across an `.await`.
+//
+// Requires the async substrate (`CONFIG_OVE_ASYNC=y`) — `ove_irq_lock`
+// lives in `include/ove/irq.h` under that gate. Not available on WASM
+// (no interrupt model). Consumers that need to be portable across
+// builds with `CONFIG_OVE_ASYNC=n` should gate with
+// `#[cfg(all(has_async, not(board_wasm)))]`.
+
+#[cfg(all(has_async, not(board_wasm)))]
+pub use spin_mutex::{SpinMutex, SpinMutexGuard};
+
+#[cfg(all(has_async, not(board_wasm)))]
+mod spin_mutex {
+    use ::core::cell::UnsafeCell;
+    use ::core::ops::{Deref, DerefMut};
+
+    use crate::bindings;
+
+    /// IRQ-locking mutex for very short critical sections.
+    ///
+    /// Acquiring the lock disables interrupts globally for the lifetime
+    /// of the [`SpinMutexGuard`]; releasing it restores the previous
+    /// interrupt state. **Do not hold across blocking calls or `.await`
+    /// points** — the system will deadlock if a higher-priority
+    /// interrupt is needed to make progress.
+    ///
+    /// Maps to `ove_irq_lock` / `ove_irq_unlock` on the C side, which
+    /// is itself a thin wrapper over the host RTOS's
+    /// interrupt-disable primitive (`taskENTER_CRITICAL` on FreeRTOS,
+    /// `irq_lock()` on Zephyr, `enter_critical_section()` on NuttX,
+    /// `pthread_sigmask` on POSIX).
+    pub struct SpinMutex<T: ?Sized> {
+        // UnsafeCell — `lock()` hands out `&mut T` while interrupts
+        // are disabled, which is sound because the disable masks out
+        // any other code path that could observe the same `&mut`.
+        inner: UnsafeCell<T>,
+    }
+
+    // SAFETY: any `T: Send` may be shared between threads because the
+    // mutex enforces mutual exclusion via the interrupt-disable.
+    unsafe impl<T: ?Sized + Send> Send for SpinMutex<T> {}
+    unsafe impl<T: ?Sized + Send> Sync for SpinMutex<T> {}
+
+    impl<T> SpinMutex<T> {
+        /// Wrap `value` in a new `SpinMutex`.
+        #[inline]
+        pub const fn new(value: T) -> Self {
+            Self {
+                inner: UnsafeCell::new(value),
+            }
+        }
+
+        /// Consume the mutex and return the wrapped value.
+        #[inline]
+        pub fn into_inner(self) -> T {
+            self.inner.into_inner()
+        }
+    }
+
+    impl<T: ?Sized> SpinMutex<T> {
+        /// Acquire the lock by disabling interrupts. The returned
+        /// guard restores them when dropped.
+        #[inline]
+        pub fn lock(&self) -> SpinMutexGuard<'_, T> {
+            // SAFETY: ove_irq_lock is safe from any context.
+            let key = unsafe { bindings::ove_irq_lock() };
+            SpinMutexGuard {
+                mtx: self,
+                key,
+                _not_send: ::core::marker::PhantomData,
+            }
+        }
+
+        /// Run `f` with the value, restoring the IRQ state afterwards.
+        /// Sugar around [`SpinMutex::lock`] that scopes the lock to
+        /// the closure body.
+        #[inline]
+        pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+            let mut g = self.lock();
+            f(&mut *g)
+        }
+
+        /// Get a mutable reference without taking the lock. Sound
+        /// because `&mut self` proves there are no other handles.
+        #[inline]
+        pub fn get_mut(&mut self) -> &mut T {
+            // SAFETY: `&mut self` is exclusive.
+            unsafe { &mut *self.inner.get() }
+        }
+    }
+
+    /// RAII guard that releases the [`SpinMutex`] when dropped.
+    pub struct SpinMutexGuard<'a, T: ?Sized> {
+        mtx: &'a SpinMutex<T>,
+        key: bindings::ove_irq_key_t,
+        // `*const ()` is !Send + !Sync by default; ensures the guard
+        // can't migrate to another thread and call ove_irq_unlock from
+        // the wrong context.
+        _not_send: ::core::marker::PhantomData<*const ()>,
+    }
+
+    impl<T: ?Sized> Deref for SpinMutexGuard<'_, T> {
+        type Target = T;
+        #[inline]
+        fn deref(&self) -> &T {
+            // SAFETY: the lock guarantees exclusive access.
+            unsafe { &*self.mtx.inner.get() }
+        }
+    }
+
+    impl<T: ?Sized> DerefMut for SpinMutexGuard<'_, T> {
+        #[inline]
+        fn deref_mut(&mut self) -> &mut T {
+            unsafe { &mut *self.mtx.inner.get() }
+        }
+    }
+
+    impl<T: ?Sized> Drop for SpinMutexGuard<'_, T> {
+        #[inline]
+        fn drop(&mut self) {
+            // SAFETY: `key` was returned by the matching ove_irq_lock.
+            unsafe { bindings::ove_irq_unlock(self.key) }
+        }
+    }
+}
