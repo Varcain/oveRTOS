@@ -127,6 +127,11 @@ fn monitor_entry() {
 fn app_main() {
     ove::log::try_init();
     log::info!("pm example (zero-heap mode): init");
+    log::info!(
+        "pm: max wake sources = {}, max notifiers = {}",
+        ove::config::CONFIG_OVE_PM_MAX_WAKE_SOURCES,
+        ove::config::CONFIG_OVE_PM_MAX_NOTIFIERS,
+    );
 
     BATTERY.init(Battery::new(85));
 
