@@ -58,16 +58,17 @@ fn poll_kick() {
 
 const MAC_ADDR: [u8; 6] = [0x02, 0x00, 0x00, 0xBE, 0xEF, 0x01];
 
-/// Background poller — wakes the embassy-net runner so RX-ring polls
-/// advance even without an ISR-backed wake. Tighter cadence on real
-/// Ethernet (STM32F7 RMII at 100 Mbit fills 4 max-size frames in ~480
-/// µs); SHM transport can poll more lazily.
+/// Background poller — keeps the embassy-net runner ticking.
+///
+/// On STM32 the ETH ISR wakes the runner on RX completion, so this is
+/// only a slow link-state heartbeat. On QEMU SHM there's no ISR; the
+/// poller drives every RX poll, so it ticks fast.
 #[embassy_executor::task]
 async fn poll_task() {
     #[cfg(board_qemu_mps2)]
     let period = Duration::from_millis(10);
     #[cfg(board_stm32f746g_disco)]
-    let period = Duration::from_millis(2);
+    let period = Duration::from_millis(500);
     loop {
         Timer::after(period).await;
         poll_kick();

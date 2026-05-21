@@ -63,6 +63,16 @@ int ove_stm32f7_eth_async_rx(void *buf, uint32_t buf_size, uint32_t *out_len);
  */
 int ove_stm32f7_eth_async_link_up(void);
 
+/**
+ * @brief Register a callback invoked from ETH_IRQHandler on RX/TX
+ * completion. Lets the embassy-net Driver wake its task without
+ * polling — typical implementation forwards to an AtomicWaker.
+ *
+ * The callback runs in ISR context — must be non-blocking and
+ * ISR-safe. Pass NULL/NULL to disarm.
+ */
+void ove_stm32f7_eth_async_set_notify(void (*cb)(void *user_data), void *user_data);
+
 #ifdef __cplusplus
 }
 #endif
