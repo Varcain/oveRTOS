@@ -191,9 +191,9 @@ try list.append(allocator, 42);
 
 `ove.fixedBufferAlloc(buf)` returns a `std.heap.FixedBufferAllocator` (a struct holding a cursor); the caller must keep it alive for as long as any container backed by `.allocator()` is in use.
 
-### Note on Zig 0.15
+### Note on `std.BoundedArray`
 
-Zig 0.15 removed `std.BoundedArray` from the standard library. The recommended replacements are:
+Current Zig stdlib no longer ships `std.BoundedArray` (removed in 0.15). The recommended replacements are:
 
 - `ove.Vec(T, N)` (Tier 1) — for ergonomic embedded use, the natural successor.
 - `std.ArrayListUnmanaged(T)` plus its new `Bounded` methods (`appendBounded`, etc.) backed by `ove.fixedBufferAlloc(buf)` — when stdlib interop matters.

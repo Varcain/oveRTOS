@@ -1,6 +1,6 @@
 # Keyword Detection (Live Audio + ML) — Zig
 
-Source: `apps/zig/heap/example_keyword_live/src/main.zig` (also `apps/zig/zeroheap/example_keyword_live/src/main.zig`) | *WASM demo not available — Zig 0.15 lacks wasm32-emscripten support*
+Source: `apps/zig/heap/example_keyword_live/src/main.zig` (also `apps/zig/zeroheap/example_keyword_live/src/main.zig`) | *WASM demo not available — Zig 0.16 still lacks wasm32-emscripten support*
 
 Real-time 'yes'/'no' keyword detection using on-board microphones and the TensorFlow Lite Micro micro_speech model. Audio is captured via I2S DMA, spectral features are extracted, and a neural network classifier runs inference every ~1 second.
 

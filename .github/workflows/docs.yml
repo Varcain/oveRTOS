@@ -85,8 +85,10 @@ jobs:
                  | sed 's/.*config_name: *//' | sort -u)
 
           for name in $APPS; do
-            # Skip Zig — Zig 0.15.x doesn't support wasm32-emscripten yet
-            case "$name" in *_zig) echo "Skipping $name (Zig wasm32-emscripten not supported in Zig 0.15)"; continue;; esac
+            # Skip Zig — Zig 0.16 still doesn't support wasm32-emscripten
+            # (std.posix lacks emscripten `system` fields and std.Io.Threaded
+            # pulls them in transitively; see config/cmake/ove_zig.cmake).
+            case "$name" in *_zig) echo "Skipping $name (Zig wasm32-emscripten not supported in Zig 0.16)"; continue;; esac
             echo ""
             echo "========================================="
             echo "Building: $name"

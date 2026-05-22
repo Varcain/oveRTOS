@@ -1,6 +1,6 @@
 # Power Management Example — Zig
 
-Source: `apps/zig/heap/example_pm/src/main.zig` (also `apps/zig/zeroheap/example_pm/src/main.zig`) | *WASM demo not available — Zig 0.15 lacks wasm32-emscripten support*
+Source: `apps/zig/heap/example_pm/src/main.zig` (also `apps/zig/zeroheap/example_pm/src/main.zig`) | *WASM demo not available — Zig 0.16 still lacks wasm32-emscripten support*
 
 Demonstrates the PM state machine with automatic idle transitions, peripheral power domain reference counting, wake source registration (GPIO button + UART), custom battery-aware power policy, transition notifications, and runtime power statistics.
 

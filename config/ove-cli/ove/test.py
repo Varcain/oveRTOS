@@ -670,11 +670,10 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
         "-lc",
         "-femit-bin=" + zig_exe,
     ]
-    # Zig 0.14+ defaults to the self-hosted x86_64 backend for Debug builds,
-    # whose DWARF output kcov can't parse (Zig issue #25368). Force LLVM
-    # codegen for coverage builds so kcov gets usable line tables.
-    if debug:
-        cmd.append("-fllvm")
+    # Zig 0.14/0.15 defaulted to a self-hosted x86_64 Debug backend whose
+    # DWARF was unreadable to kcov (issue #25368), so we used to force
+    # `-fllvm`.  Verified 0.16 emits kcov-attributable DWARF directly;
+    # the workaround was retired in the 0.16 bump.
     run(cmd, cwd=zig_test_dir)
     return zig_exe, zig_test_dir
 
@@ -755,15 +754,10 @@ def _cobertura_to_lcov(xml_path, out_path):
 def test_zig_coverage(ove_dir, output_dir):
     """Build and run Zig binding tests under kcov; emit lcov tracefile.
 
-    Zig 0.15 has no native source-based coverage; we wrap the debug-built
+    Zig has no native source-based coverage; we wrap the debug-built
     test binary with kcov (locally built per manifest, see _ensure_kcov).
     kcov walks DWARF via ptrace and writes cobertura.xml + HTML; we
     convert to lcov so the result merges with the other backends.
-
-    The debug build is forced through the LLVM backend via `-fllvm` in
-    `_build_zig_test_binary` — Zig 0.14+ defaults to the self-hosted
-    x86_64 codegen for Debug, and its DWARF output is unreadable to kcov
-    (Zig issue #25368).
     """
     kcov = _ensure_kcov(ove_dir)
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True)
@@ -802,9 +796,10 @@ def test_zig_coverage(ove_dir, output_dir):
 
     if n_files == 0:
         logger.warning(
-            "kcov attributed 0 Zig source files — check that the zig "
-            "build-exe invocation includes -fllvm so the x86_64 self-hosted "
-            "backend isn't used (its DWARF is unreadable to kcov). "
+            "kcov attributed 0 Zig source files — kcov's DWARF parser may "
+            "have regressed against the current Zig codegen.  If reverting "
+            "to LLVM via `-fllvm` in `_build_zig_test_binary` restores "
+            "attribution, that's the workaround (cf. Zig issue #25368).  "
             "Emitted empty tracefile: %s", filtered)
     else:
         logger.info("Zig coverage: %s (%d files)", filtered, n_files)
