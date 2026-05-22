@@ -163,26 +163,30 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *ga
 	if (ip) {
 		memset(ip, 0, sizeof(*ip));
 		ip->family = OVE_AF_INET;
-		struct net_if_addr *unicast =
+		/* Zephyr 4.4 changed `net_if_ipv4_get_global_addr` to return
+		 * `struct net_in_addr *` directly (was `struct net_if_addr *`,
+		 * which wrapped it). */
+		struct net_in_addr *unicast =
 			net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED);
 		if (unicast)
-			memcpy(ip->addr, &unicast->address.in_addr, 4);
+			memcpy(ip->addr, unicast, 4);
 	}
 	if (gateway) {
 		memset(gateway, 0, sizeof(*gateway));
 		gateway->family = OVE_AF_INET;
-		struct net_if_router *router = net_if_ipv4_router_find_default(NULL, iface);
+		/* Zephyr 4.4 swapped the arg order: now `(iface, addr)` with
+		 * `addr=NULL` selecting the default router on that iface. */
+		struct net_if_router *router = net_if_ipv4_router_find_default(iface, NULL);
 		if (router)
 			memcpy(gateway->addr, &router->address.in_addr, 4);
 	}
 	if (netmask) {
 		memset(netmask, 0, sizeof(*netmask));
 		netmask->family = OVE_AF_INET;
-		struct net_if_addr *unicast_nm =
+		struct net_in_addr *unicast_nm =
 			net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED);
 		if (unicast_nm) {
-			struct net_in_addr nm = net_if_ipv4_get_netmask_by_addr(
-				iface, &unicast_nm->address.in_addr);
+			struct net_in_addr nm = net_if_ipv4_get_netmask_by_addr(iface, unicast_nm);
 			memcpy(netmask->addr, &nm, 4);
 		}
 	}
