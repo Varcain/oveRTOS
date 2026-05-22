@@ -15,6 +15,15 @@
 // Raw C FFI — single @cImport for oveRTOS + LVGL.
 // __ZIG_CIMPORT__ gives opaque storage types (avoids complex RTOS headers).
 // LVGL headers are included when CONFIG_OVE_LVGL is set in ove_config.h.
+//
+// Raw C FFI — single @cImport for oveRTOS + LVGL.
+// __ZIG_CIMPORT__ gives opaque storage types (avoids complex RTOS headers).
+// LVGL headers are included when CONFIG_OVE_LVGL is set in ove_config.h.
+//
+// CMake may inject `wint_t=unsigned int` at the -D level for cross builds
+// where the sysroot's `sys/_types.h` references `wint_t` without including
+// its definition (newlib + Zig 0.16 translate-c regression — Zig 0.15
+// papered over this via an implicit libc).  See config/cmake/ove_zig.cmake.
 pub const raw = @cImport({
     @cDefine("__ZIG_CIMPORT__", "1");
     @cInclude("ove/ove.h");

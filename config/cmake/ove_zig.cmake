@@ -115,8 +115,7 @@ function(ove_build_zig_lib TARGET)
         # output (debuginfo flows via the link map / .elf separately).
         list(APPEND ZIG_CPU_ARGS
             "-fno-stack-check"
-            "-fsingle-threaded"
-            "-fstrip")
+            "-fsingle-threaded")
 
         # Cross-language LTO opt-in (paired with cmake/OveCommon.cmake's
         # -flto=thin on the C side).  Default OFF — declared as a CMake
@@ -311,6 +310,20 @@ function(ove_build_zig_lib TARGET)
     # lv_conf.h via include paths rather than relative #include.
     if(NOT "-DLV_CONF_INCLUDE_SIMPLE" IN_LIST ZIG_DEFINE_ARGS)
         list(APPEND ZIG_DEFINE_ARGS "-DLV_CONF_INCLUDE_SIMPLE")
+    endif()
+
+    # arm cross sysroots (arm-gnu-toolchain newlib, zephyr-sdk newlib)
+    # reference `wint_t` inside `_mbstate_t` without including its
+    # definition.  Zig 0.16's translate-c (unlike 0.15) does not inject
+    # an implicit libc for freestanding targets, so we paper over the
+    # missing typedef with a preprocessor macro.  The substrate never
+    # touches mbstate so the alias is purely a parse-time fix.  NuttX
+    # provides its own libc with a real `wint_t` typedef, so the macro
+    # is skipped there to avoid a `typedef _wint_t unsigned int` parse
+    # error.  Native (posix) and WASM builds also skip — their libc
+    # paths already provide wint_t cleanly.
+    if(NOT ZIG_IS_NATIVE AND NOT ZIG_IS_WASM AND NOT OVE_RTOS STREQUAL "nuttx")
+        list(APPEND ZIG_DEFINE_ARGS "-Dwint_t=unsigned int")
     endif()
 
     # ── Generate storage sizes for zero-heap mode ─────────────────────────
