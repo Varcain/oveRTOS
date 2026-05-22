@@ -164,6 +164,18 @@ function(_ove_binding_build_sizes_probe LIB_NAME TARGET SIZES_C)
             ${OVE_DIR}/backends/zephyr/include
             ${OVE_GEN_DIR}
         )
+        # Zephyr 4.4 added `heap_constants` (a gen_offset target that
+        # emits `<build>/zephyr/include/generated/zephyr/heap_constants.h`,
+        # transitively included from `kernel.h`).  zephyr_interface
+        # carries the include path but not the build-order edge, so the
+        # OBJECT probe races the generator and fails with
+        # `fatal error: zephyr/heap_constants.h: No such file`.
+        if(TARGET heap_constants)
+            add_dependencies(${LIB_NAME} heap_constants)
+        endif()
+        if(TARGET offsets)
+            add_dependencies(${LIB_NAME} offsets)
+        endif()
     else()
         target_include_directories(${LIB_NAME} PRIVATE
             $<TARGET_PROPERTY:${TARGET},INCLUDE_DIRECTORIES>)

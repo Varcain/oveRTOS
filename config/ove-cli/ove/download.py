@@ -556,6 +556,23 @@ def ensure_rust_target(config, dl_dir):
                 ret = subprocess.run(
                     [rustup, "target", "add"] + missing,
                     capture_output=True, text=True)
+                # rust-toolchain.toml mandates `rust-src` for our cross
+                # builds, so any rustup invocation triggers a channel
+                # sync that ensures the component is present.  If a
+                # prior install left rust-src half-extracted (CI
+                # symptom: `detected conflict: 'lib/rustlib/src/rust/library/Cargo.lock'`),
+                # remove the broken component and retry once.
+                if (ret.returncode != 0
+                        and "detected conflict" in ret.stderr
+                        and "rust-src" in ret.stderr):
+                    logger.warning(
+                        "Rust: rust-src component install conflicted, "
+                        "removing and retrying")
+                    subprocess.run([rustup, "component", "remove", "rust-src"],
+                                   capture_output=True, text=True)
+                    ret = subprocess.run(
+                        [rustup, "target", "add"] + missing,
+                        capture_output=True, text=True)
                 if ret.returncode != 0:
                     logger.error(f"rustup target add failed: {ret.stderr}")
                     return False

@@ -11,7 +11,7 @@
 #if LV_USE_PERF_MONITOR
 
 #include "src/display/lv_display_private.h"
-#include "src/others/sysmon/lv_sysmon_private.h"
+#include "src/debugging/sysmon/lv_sysmon_private.h"
 
 lv_subject_t *benchmark_get_perf_subject(void)
 {
