@@ -54,12 +54,13 @@ function(ove_build_zig_lib TARGET)
     if(ZIG_IS_WASM)
         # The pinned Zig (see manifest.yaml: toolchains.zig) has broken
         # emscripten OS support in std: std.posix references emscripten
-        # `system` fields that don't exist, and std.Thread aborts at
-        # compile time. Use wasm32-freestanding instead — our Zig code
-        # is a library that emcc links into the final executable, so we
-        # only need the wasm32 C ABI, not any Zig std OS services.
-        # C-header discovery still goes through the emscripten sysroot
-        # below.
+        # `system` fields that don't exist (IOV_MAX, getrandom, …) and
+        # the new 0.16 std.Io.Threaded backend transitively pulls those
+        # in even when our code doesn't touch posix directly.  Use
+        # wasm32-freestanding instead — our Zig code is a library that
+        # emcc links into the final executable, so we only need the
+        # wasm32 C ABI, not any Zig std OS services.  C-header
+        # discovery still goes through the emscripten sysroot below.
         #
         # The emscripten executable uses -sUSE_PTHREADS which makes
         # wasm-ld link with --shared-memory. Static libraries linked

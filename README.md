@@ -250,7 +250,7 @@ fn app_main() {
 
 ### Zig — comptime-safe wrappers, allocator-aware
 
-Targets Zig 0.15+. Every wrapper takes a `std.mem.Allocator` — `std.heap.page_allocator` in heap mode, a `FixedBufferAllocator` over a BSS arena in zero-heap mode — and the wrapper itself works the same in both. Per-op error sets are **structurally narrow** at the type system (`error{ QueueFull, Timeout }`, `error{Timeout}`, …) so exhaustive `switch` arms catch every reachable case with no `else =>` fallback. `std.log.*` integrates via `ove.log.logFn`; `ove.target.current_rtos` is a typed enum so the compiler flags non-exhaustive switches.
+Targets Zig 0.16+. Every wrapper takes a `std.mem.Allocator` — `std.heap.page_allocator` in heap mode, a `FixedBufferAllocator` over a BSS arena in zero-heap mode — and the wrapper itself works the same in both. Per-op error sets are **structurally narrow** at the type system (`error{ QueueFull, Timeout }`, `error{Timeout}`, …) so exhaustive `switch` arms catch every reachable case with no `else =>` fallback. `std.log.*` integrates via `ove.log.logFn`; `ove.target.current_rtos` is a typed enum so the compiler flags non-exhaustive switches.
 
 **Heap:**
 

@@ -43,7 +43,7 @@ rustup target add thumbv7em-none-eabihf   # for ARM embedded targets
 
 The pinned toolchain version is recorded in `rust-toolchain.toml`; rustup picks it up automatically on first invocation.
 
-### Zig (≥ 0.15.2)
+### Zig (≥ 0.16.0)
 
 Required when authoring in Zig. Two options:
 

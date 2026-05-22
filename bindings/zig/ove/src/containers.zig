@@ -45,10 +45,10 @@
 //! try map.put(allocator, 1, 100);
 //! ```
 //!
-//! ## Note on Zig 0.15
+//! ## Note on `std.BoundedArray`
 //!
-//! Zig 0.15 removed `std.BoundedArray` from the standard library.  The
-//! recommended replacements are the `Bounded` methods on
+//! Current Zig stdlib no longer ships `std.BoundedArray` (removed in
+//! 0.15).  The recommended replacements are the `Bounded` methods on
 //! `std.ArrayListUnmanaged` (when interop with stdlib algorithms is
 //! needed) or `Vec(T, N)` here (when ergonomic embedded use is the goal).
 

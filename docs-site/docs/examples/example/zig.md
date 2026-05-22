@@ -1,6 +1,6 @@
 # Basic Example — Zig
 
-Source: `apps/zig/heap/example/src/main.zig` (also `apps/zig/zeroheap/example/src/main.zig`) | *WASM demo not available — Zig 0.15 lacks wasm32-emscripten support*
+Source: `apps/zig/heap/example/src/main.zig` (also `apps/zig/zeroheap/example/src/main.zig`) | *WASM demo not available — Zig 0.16 still lacks wasm32-emscripten support*
 
 The Zig example demonstrates the `ove` module with allocator-aware constructors, `comptime`-typed wrappers, exhaustive RTOS dispatch, narrow per-op error sets, and `std.log` integration.
 

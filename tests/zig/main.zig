@@ -1598,8 +1598,9 @@ fn testWorkqueueRaiiDrop() !void {
 // ---------------------------------------------------------------------------
 //
 // We don't have a Miri-equivalent for Zig, and integrated --fuzz isn't in
-// 0.15.2 yet (per Zig PR #20725 only the -ffuzz instrumentation flag has
-// landed; the test-runner orchestration is in master).  So we lean on the
+// the pinned Zig release yet (per Zig PR #20725 only the -ffuzz
+// instrumentation flag has landed; test-runner orchestration is still in
+// master as of 0.16).  So we lean on the
 // "build mental models, encode them as assertions, validate with random
 // inputs" rule from TIGER_STYLE.md: deterministic-seeded property tests
 // over the full code surface that error.fromCode/fromCodeInt/mapErrorCode

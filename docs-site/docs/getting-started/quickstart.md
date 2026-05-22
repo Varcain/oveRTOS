@@ -67,7 +67,7 @@ The same producer/consumer example exists in every supported language. Swap the 
 ```bash
 make host.posix.example_cpp       # C++ — what you just ran
 make host.posix.example_rust      # Rust  (needs rustup, see Setup)
-make host.posix.example_zig       # Zig   (needs zig 0.15.2, see Setup)
+make host.posix.example_zig       # Zig   (needs zig 0.16.0, see Setup)
 make host.posix.example_c         # plain C — the binding substrate
 ```
 

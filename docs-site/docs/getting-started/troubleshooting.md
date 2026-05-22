@@ -138,7 +138,7 @@ rustc --version    # should report >= 1.85
 
 The required version is recorded in `rust-toolchain.toml`.
 
-### Zig build fails with "expected version 0.15.2"
+### Zig build fails with "expected version 0.16.0"
 
 **Diagnose**
 

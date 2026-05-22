@@ -31,6 +31,6 @@ Most examples have browser-based WASM demos. Click the links on each example's p
 | C | Basic, Networking, Power Management, Keyword Detection |
 | C++ | Basic, Networking, Power Management, Keyword Detection, LVGL Gallery |
 | Rust | Basic, Networking |
-| Zig | None — Zig 0.15 lacks `wasm32-emscripten` |
+| Zig | None — Zig 0.16 still lacks `wasm32-emscripten` |
 
 Source for every example exists in every language regardless of WASM-demo availability; see the per-example pages below.

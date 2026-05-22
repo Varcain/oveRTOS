@@ -1,6 +1,6 @@
 # Networking Example — Zig
 
-Source: `apps/zig/heap/example_net/src/main.zig` (also `apps/zig/zeroheap/example_net/src/main.zig`) | *WASM demo not available — Zig 0.15 lacks wasm32-emscripten support*
+Source: `apps/zig/heap/example_net/src/main.zig` (also `apps/zig/zeroheap/example_net/src/main.zig`) | *WASM demo not available — Zig 0.16 still lacks wasm32-emscripten support*
 
 Exercises the full networking stack with a pass/fail test framework: netif configuration, DNS resolution, TCP/UDP sockets, HTTP client (GET/POST/PUT), SNTP time sync, MQTT pub/sub, and embedded HTTP server.
 
