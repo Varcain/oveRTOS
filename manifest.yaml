@@ -13,7 +13,7 @@ toolchains:
     version: "15.2.rel1"
     url: "https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi.tar.xz"
   zig:
-    version: "0.15.2"
+    version: "0.16.0"
   rust:
     min_version: "1.85"
   zephyr-sdk:

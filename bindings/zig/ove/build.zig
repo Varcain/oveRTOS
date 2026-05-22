@@ -22,8 +22,7 @@ pub fn build(b: *std.Build) void {
         "Semicolon-separated list of -Dkey=value defines",
     );
 
-    const lib = b.addStaticLibrary(.{
-        .name = "ove_zig",
+    const root_module = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -34,7 +33,7 @@ pub fn build(b: *std.Build) void {
         var it = std.mem.splitScalar(u8, paths, ';');
         while (it.next()) |p| {
             if (p.len > 0) {
-                lib.addIncludePath(.{ .cwd_relative = p });
+                root_module.addIncludePath(.{ .cwd_relative = p });
             }
         }
     }
@@ -45,12 +44,18 @@ pub fn build(b: *std.Build) void {
         while (it.next()) |d| {
             if (d.len == 0) continue;
             if (std.mem.indexOfScalar(u8, d, '=')) |eq| {
-                lib.defineCMacro(d[0..eq], d[eq + 1 ..]);
+                root_module.addCMacro(d[0..eq], d[eq + 1 ..]);
             } else {
-                lib.defineCMacro(d, null);
+                root_module.addCMacro(d, "");
             }
         }
     }
+
+    const lib = b.addLibrary(.{
+        .name = "ove_zig",
+        .root_module = root_module,
+        .linkage = .static,
+    });
 
     b.installArtifact(lib);
 }
