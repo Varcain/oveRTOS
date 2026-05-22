@@ -2823,7 +2823,7 @@ class Tabview : public ObjectView,
 	/** @brief Renames an existing tab. */
 	Tabview &rename_tab(uint32_t idx, const char *name)
 	{
-		lv_tabview_rename_tab(obj_, idx, name);
+		lv_tabview_set_tab_text(obj_, idx, name);
 		return *this;
 	}
 

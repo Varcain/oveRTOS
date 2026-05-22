@@ -2074,7 +2074,7 @@ impl Tabview {
 
     /// Fluent: rename an existing tab by index.
     pub fn rename_tab(self, idx: u32, name: &[u8]) -> Self {
-        unsafe { bindings::lv_tabview_rename_tab(self.raw, idx, name.as_ptr() as *const _) };
+        unsafe { bindings::lv_tabview_set_tab_text(self.raw, idx, name.as_ptr() as *const _) };
         self
     }
 

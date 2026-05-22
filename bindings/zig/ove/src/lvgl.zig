@@ -2481,7 +2481,7 @@ pub const Tabview = struct {
     }
 
     pub fn renameTab(self: Tabview, idx: u32, name: [*:0]const u8) Tabview {
-        c.lv_tabview_rename_tab(self.obj, idx, name);
+        c.lv_tabview_set_tab_text(self.obj, idx, name);
         return self;
     }
 
