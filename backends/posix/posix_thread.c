@@ -62,7 +62,14 @@ static struct ove_thread *first_thread;
 /* ── Stack coloration ─────────────────────────────────────────────── */
 
 #define STACK_COLOR 0xDEADBEEFu
-#define STACK_MIN_SIZE (64 * 1024) /* pthread minimum (PTHREAD_STACK_MIN + guard) */
+/* glibc's dynamic minimum stack for `pthread_attr_setstack` grows with
+ * the binary's TLS footprint; under Zig 0.16 toolchains it lands around
+ * ~272 KiB on x86_64-linux (vs ~16 KiB under Zig 0.15 and the C-only
+ * baseline).  Bumped to 512 KiB to give comfortable headroom across
+ * future glibc/TLS-layout drift.  This only inflates the painted-stack
+ * paint buffer on the host posix backend; embedded RTOS backends
+ * honour the caller-supplied stack verbatim. */
+#define STACK_MIN_SIZE (512 * 1024)
 
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void *_alloc_painted_stack(size_t requested, size_t *actual)

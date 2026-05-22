@@ -7,7 +7,7 @@
 const std = @import("std");
 const ove = @import("ove");
 const Thread = ove.Thread;
-const w = ove.log.writer;
+const w = &ove.log.writer;
 
 /// Shared allocator for every primitive constructed in this test
 /// suite.  `page_allocator` uses mmap directly — separate from the

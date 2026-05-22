@@ -42,8 +42,10 @@ static void timer_thread_handler(union sigval sv)
 /* SIGEV_THREAD spawns a fresh pthread per timer firing.  glibc's default
  * stack for the dispatch thread is too small for sanitizer-instrumented
  * builds (TSan needs ~140 KB; ASan ~96 KB; the default is 64 KB).
- * Provide a 256 KB stack via pthread_attr_t so all sanitizer flavours
- * fit; harmless on a regular release build. */
+ * Additionally, the binary's TLS footprint inflates glibc's dynamic
+ * stack-min: Zig 0.16 toolchains land it just above 256 KB on
+ * x86_64-linux (vs ~16 KB under Zig 0.15 / pure-C builds).
+ * 512 KB covers every flavour with comfortable headroom. */
 static pthread_attr_t s_timer_thread_attr;
 static int s_timer_thread_attr_initialized;
 
@@ -51,7 +53,7 @@ static pthread_attr_t *get_timer_thread_attr(void)
 {
 	if (!s_timer_thread_attr_initialized) {
 		if (pthread_attr_init(&s_timer_thread_attr) == 0) {
-			(void)pthread_attr_setstacksize(&s_timer_thread_attr, 256u * 1024u);
+			(void)pthread_attr_setstacksize(&s_timer_thread_attr, 512u * 1024u);
 			s_timer_thread_attr_initialized = 1;
 		}
 	}
