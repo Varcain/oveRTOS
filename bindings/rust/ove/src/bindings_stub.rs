@@ -4888,7 +4888,7 @@ unsafe extern "C" {
     pub fn lv_tabview_add_tab(tv: *mut lv_obj_t, name: *const core::ffi::c_char) -> *mut lv_obj_t;
 }
 unsafe extern "C" {
-    pub fn lv_tabview_rename_tab(tv: *mut lv_obj_t, idx: u32, name: *const core::ffi::c_char);
+    pub fn lv_tabview_set_tab_text(tv: *mut lv_obj_t, idx: u32, name: *const core::ffi::c_char);
 }
 unsafe extern "C" {
     pub fn lv_tabview_set_active(tv: *mut lv_obj_t, idx: u32, anim: i32);

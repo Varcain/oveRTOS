@@ -451,7 +451,7 @@ int32_t lv_table_get_column_width(lv_obj_t *obj, uint32_t col);
 
 lv_obj_t *lv_tabview_create(lv_obj_t *parent);
 lv_obj_t *lv_tabview_add_tab(lv_obj_t *tv, const char *name);
-void lv_tabview_rename_tab(lv_obj_t *tv, uint32_t idx, const char *name);
+void lv_tabview_set_tab_text(lv_obj_t *tv, uint32_t idx, const char *name);
 void lv_tabview_set_active(lv_obj_t *tv, uint32_t idx, int32_t anim);
 void lv_tabview_set_tab_bar_position(lv_obj_t *tv, lv_dir_t dir);
 void lv_tabview_set_tab_bar_size(lv_obj_t *tv, int32_t size);

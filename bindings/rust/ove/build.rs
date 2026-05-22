@@ -654,7 +654,7 @@ fn main() {
             // LVGL — tabview
             .allowlist_function("lv_tabview_create")
             .allowlist_function("lv_tabview_add_tab")
-            .allowlist_function("lv_tabview_rename_tab")
+            .allowlist_function("lv_tabview_set_tab_text")
             .allowlist_function("lv_tabview_set_active")
             .allowlist_function("lv_tabview_set_tab_bar_position")
             .allowlist_function("lv_tabview_set_tab_bar_size")

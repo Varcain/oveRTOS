@@ -1313,7 +1313,7 @@ lv_obj_t *lv_tabview_add_tab(lv_obj_t *tv, const char *name)
 	return NULL;
 }
 
-void lv_tabview_rename_tab(lv_obj_t *tv, uint32_t idx, const char *name)
+void lv_tabview_set_tab_text(lv_obj_t *tv, uint32_t idx, const char *name)
 {
 	(void)tv;
 	(void)idx;
