@@ -358,8 +358,8 @@ static inline void ove_test_watchdog_destroy(ove_watchdog_t wdt)
 /* ── Thread helper ───────────────────────────────────────────────────── */
 
 static inline int ove_test_thread_run(ove_thread_t *th, ove_thread_storage_t *storage,
-				      const char *name, ove_thread_fn entry, void *arg,
-				      void *stack, size_t stack_size)
+				      const char *name, ove_thread_fn entry, void *arg, void *stack,
+				      size_t stack_size)
 {
 #ifdef CONFIG_OVE_ZERO_HEAP
 	return ove_thread_init(th, storage, name, entry, arg, OVE_PRIO_NORMAL, stack_size, stack);
