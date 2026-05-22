@@ -340,19 +340,31 @@ pub const GRID_ALIGN_STRETCH = c.LV_GRID_ALIGN_STRETCH;
 //  Fonts
 // =========================================================================
 
+// `struct _lv_font_t` has bitfields, so Zig 0.16's translate-c demotes
+// it to an opaque type and emits `@compileError("local variable has
+// opaque type")` for every `extern const lv_font_t lv_font_montserrat_*`
+// declaration.  Skip the broken cimport entries by re-declaring the
+// externs as plain opaque symbols here — we only ever take the address,
+// so the opaque shape is sufficient and the resulting `*const`
+// coerces to `*const c.lv_font_t` (also opaque) via `@ptrCast`.
+const LvFontExtern = opaque {};
+extern const lv_font_montserrat_14: LvFontExtern;
+extern const lv_font_montserrat_24: LvFontExtern;
+extern const lv_font_montserrat_32: LvFontExtern;
+
 /// Return a pointer to the Montserrat 14-pt font.
 pub fn fontMontserrat14() *const c.lv_font_t {
-    return &c.lv_font_montserrat_14;
+    return @ptrCast(&lv_font_montserrat_14);
 }
 
 /// Return a pointer to the Montserrat 24-pt font.
 pub fn fontMontserrat24() *const c.lv_font_t {
-    return &c.lv_font_montserrat_24;
+    return @ptrCast(&lv_font_montserrat_24);
 }
 
 /// Return a pointer to the Montserrat 32-pt font.
 pub fn fontMontserrat32() *const c.lv_font_t {
-    return &c.lv_font_montserrat_32;
+    return @ptrCast(&lv_font_montserrat_32);
 }
 
 // =========================================================================

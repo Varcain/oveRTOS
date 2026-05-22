@@ -888,8 +888,8 @@ fn summaryCreate() void {
     c.lv_obj_set_width(table, c.lv_pct(100));
     c.lv_obj_set_style_max_height(table, c.lv_pct(100), 0);
     c.lv_obj_add_flag(table, c.LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
-    c.lv_obj_set_style_text_font(table, &c.lv_font_montserrat_14, c.LV_PART_ITEMS);
-    c.lv_obj_set_style_text_font(table, &c.lv_font_montserrat_14, 0);
+    c.lv_obj_set_style_text_font(table, lvgl.fontMontserrat14(), c.LV_PART_ITEMS);
+    c.lv_obj_set_style_text_font(table, lvgl.fontMontserrat14(), 0);
     c.lv_obj_set_style_pad_top(table, 2, c.LV_PART_ITEMS);
     c.lv_obj_set_style_pad_bottom(table, 2, c.LV_PART_ITEMS);
     c.lv_obj_set_style_pad_left(table, 4, c.LV_PART_ITEMS);
@@ -1046,7 +1046,7 @@ fn appMain() void {
         c.lv_obj_set_style_bg_opa(title, c.LV_OPA_COVER, 0);
         c.lv_obj_set_style_bg_color(title, c.lv_color_white(), 0);
         c.lv_obj_set_style_text_color(title, c.lv_color_black(), 0);
-        c.lv_obj_set_style_text_font(title, &c.lv_font_montserrat_14, 0);
+        c.lv_obj_set_style_text_font(title, lvgl.fontMontserrat14(), 0);
         c.lv_obj_set_width(title, c.lv_pct(100));
 
         loadScene(scene_act);
