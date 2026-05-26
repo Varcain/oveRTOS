@@ -157,20 +157,16 @@ static int i2s_sink_process(void *ctx, const struct ove_audio_buf *in, struct ov
 
 	memset(tx_ptr, 0, frames * nslots * sizeof(int16_t));
 	if (ch == 1) {
-		/* Mono → duplicate the sample into BOTH stereo TX slots so
-		 * the codec receives identical L/R data on AIF1.  The SAI is
-		 * in MONOMODE which duplicates on the wire, but the audio
-		 * source/sink slot layout is hardcoded to 2 slots/frame; if
-		 * we leave one slot zeroed, the codec ends up with DAC1L =
-		 * mono and DAC1R = silence, producing audible left/right
-		 * asymmetry that the user perceives as quieter + boomier vs
-		 * the Zephyr backend (whose i2s_write delivers mono on both
-		 * LRCLK halves).  Two stores per frame is cheap and matches
-		 * Zephyr's effective behaviour. */
+		/* Mono → duplicate the sample into BOTH stereo DAC1 slots so
+		 * the codec receives identical L/R data on AIF1.  If we left
+		 * one slot zeroed, the codec would end up with DAC1L = mono
+		 * and DAC1R = silence (audibly quieter + boomier than the
+		 * Zephyr backend, whose i2s_write delivers mono on both LRCLK
+		 * halves).  Two stores per frame is cheap. */
 		for (unsigned int f = 0; f < frames; f++) {
 			int16_t s = src[f];
-			tx_ptr[f * nslots + 0] = s;
-			tx_ptr[f * nslots + 1] = s;
+			tx_ptr[f * nslots + sc->tx_slots[0]] = s;
+			tx_ptr[f * nslots + sc->tx_slots[1]] = s;
 		}
 	} else {
 		for (unsigned int f = 0; f < frames; f++) {
@@ -297,12 +293,17 @@ int ove_audio_device_source(struct ove_audio_graph *g, const struct ove_audio_de
 		memset(ctx, 0, sizeof(*ctx));
 		ctx->fmt = cfg->fmt;
 		ctx->input_device = cfg->i2s.input_device;
-		/* Default I2S slot mapping for STM32F746-DISCO (SAI, 2 slots).
-		 * DMIC: L = slot 1, R = slot 0 (swapped in SAI frame).
-		 * Override via cfg->i2s.slot_mask if needed. */
-		ctx->slot_count = 2;
-		ctx->rx_slots[0] = 1; /* mono/left channel from slot 1 */
-		ctx->rx_slots[1] = 0; /* right channel from slot 0 */
+		/* 4-slot 64-bit SAI frame — see stm32f7_i2s.c for the WM8994
+		 * AIF1 layout.  DMIC2 lives on AIF1 Timeslot 1 (slots 1/3);
+		 * line-in/ADC1 lives on AIF1 Timeslot 0 (slots 0/2). */
+		ctx->slot_count = 4;
+		if (cfg->i2s.input_device != 0) {
+			ctx->rx_slots[0] = 1; /* DMIC L */
+			ctx->rx_slots[1] = 3; /* DMIC R */
+		} else {
+			ctx->rx_slots[0] = 0; /* line-in L */
+			ctx->rx_slots[1] = 2; /* line-in R */
+		}
 
 		return ove_audio_graph_add_node(g, &i2s_source_ops, ctx, name,
 						OVE_AUDIO_NODE_SOURCE);
@@ -329,15 +330,17 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 		ctx->thread_stack_size = cfg->thread_stack_size ? cfg->thread_stack_size
 								: DEFAULT_AUDIO_STACK;
 
-		/* TX slot mapping: HP DAC L = slot 0, R = slot 1 */
-		ctx->tx_slot_count = 2;
-		ctx->tx_slots[0] = 0; /* mono/left to slot 0 */
-		ctx->tx_slots[1] = 1; /* right to slot 1 */
+		/* TX slot mapping: WM8994 DAC1 is on AIF1 Timeslot 0, which
+		 * in the 4-slot 64-bit frame corresponds to slot 0 (L) and
+		 * slot 2 (R).  Slots 1/3 = AIF1 Timeslot 1 are left zero. */
+		ctx->tx_slot_count = 4;
+		ctx->tx_slots[0] = 0; /* DAC1 L */
+		ctx->tx_slots[1] = 2; /* DAC1 R */
 
 		/* Create I2S bus.
 		 * DMA buffer holds frames_per_period * slot_count * 2 samples
-		 * (slot_count=2 for SAI, *2 for double-buffering). */
-		unsigned int slot_count = 2;
+		 * (slot_count=4 for 4-slot SAI, *2 for double-buffering). */
+		unsigned int slot_count = 4;
 		struct ove_i2s_cfg i2s_cfg = {
 			.instance = 1, /* SAI2 */
 			.sample_rate = cfg->fmt.sample_rate,
@@ -349,9 +352,10 @@ int ove_audio_device_sink(struct ove_audio_graph *g, const struct ove_audio_devi
 
 		/* DMA buffers MUST be in non-cacheable memory (DTCM on Cortex-M7).
 		 * Heap is in cached SRAM — cannot use ove_i2s_create() here.
-		 * Board linker script places .RxBUF / .TxBUF in DTCM. */
-		static uint8_t tx_dma[4096] __attribute__((section(".TxBUF"), aligned(32)));
-		static uint8_t rx_dma[4096] __attribute__((section(".RxBUF"), aligned(32)));
+		 * Board linker script places .RxBUF / .TxBUF in DTCM.
+		 * 8192 bytes = frames_per_period(512) × 4 slots × 2 bytes × 2 halves. */
+		static uint8_t tx_dma[8192] __attribute__((section(".TxBUF"), aligned(32)));
+		static uint8_t rx_dma[8192] __attribute__((section(".RxBUF"), aligned(32)));
 #ifndef CONFIG_OVE_ZERO_HEAP
 		static ove_i2s_storage_t i2s_stor;
 		int ret = ove_i2s_init(&ctx->i2s, &i2s_stor, tx_dma, rx_dma, &i2s_cfg);
