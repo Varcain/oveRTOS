@@ -13,9 +13,19 @@
 #include "stm32f7_init.h"
 
 static void SystemClock_Config(void);
+static void MPU_Config_SDRAM(void);
 
 int bsp_boardInit(void)
 {
+	/* Remap external SDRAM (0xC0000000, 8 MB) from the default ARM
+	 * Device-memory attributes to Normal non-cacheable.  Without this,
+	 * any unaligned access into SDRAM (compiler-emitted strh/strd to
+	 * an odd stack offset, toolchain memcpy widening to 4-byte stores,
+	 * etc.) raises UFSR.UNALIGNED → HardFault.  Heap_4 ucHeap lives in
+	 * .sdram_bss when CONFIG_OVE_INFER=y, so every heap-allocated task
+	 * stack would otherwise fault on its first non-trivial stack frame. */
+	MPU_Config_SDRAM();
+
 	/* MCU-level init (cache, branch prediction, HAL_Init) */
 	stm32f7_mcu_init();
 
@@ -23,6 +33,33 @@ int bsp_boardInit(void)
 	SystemClock_Config();
 
 	return 0;
+}
+
+static void MPU_Config_SDRAM(void)
+{
+	MPU_Region_InitTypeDef mpu = {0};
+
+	HAL_MPU_Disable();
+
+	mpu.Enable = MPU_REGION_ENABLE;
+	mpu.Number = MPU_REGION_NUMBER0;
+	mpu.BaseAddress = 0xC0000000;
+	mpu.Size = MPU_REGION_SIZE_8MB;
+	mpu.SubRegionDisable = 0x00;
+	/* Normal, non-cacheable, non-shareable.  Non-cacheable keeps LTDC
+	 * framebuffer reads automatically coherent with CPU writes — no
+	 * SCB_CleanDCache calls needed.  Switch to write-back cacheable
+	 * (TEX=0, C=1, B=1) once the framebuffer is carved out into its
+	 * own non-cacheable sub-region. */
+	mpu.TypeExtField = MPU_TEX_LEVEL1;
+	mpu.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+	mpu.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+	mpu.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+	mpu.AccessPermission = MPU_REGION_FULL_ACCESS;
+	mpu.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+	HAL_MPU_ConfigRegion(&mpu);
+
+	HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 }
 
 void bsp_toggleLed(unsigned int led)

@@ -87,30 +87,28 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 		frame_length = 64;
 		active_frame_length = 32;
 		break;
-	default: /* 16 */
+	default: /* 16 — 4 slots × 16 bits = 64-bit frame */
 		data_size = SAI_DATASIZE_16;
-		frame_length = 32; /* 2 slots * 16 bits */
-		active_frame_length = 16;
+		frame_length = 64;
+		active_frame_length = 32;
 		break;
 	}
 
-	/* I2S always uses 2 slots (L+R frame).  We do *not* enable
+	/* 4-slot 64-bit frame matches the WM8994's AIF1 layout used by the
+	 * STM32CubeF7 BSP_AUDIO_IN reference (CODEC_AUDIOFRAME_SLOT_0123).
+	 * Within each LRCLK half, the codec multiplexes two AIF1 timeslots:
+	 *   slot 0 / slot 2 = AIF1 Timeslot 0 L / R (DAC1 in, line-in/ADC1 out)
+	 *   slot 1 / slot 3 = AIF1 Timeslot 1 L / R (DMIC2 out)
+	 * With 2-slot 32-bit framing the codec's frame sync wouldn't align and
+	 * the DMIC routing (reg 0x608/0x609 → AIF1ADC2 Timeslot 1) had no path
+	 * onto the SAI bus.  `freertos_audio.c` picks which slots to read or
+	 * write based on `cfg->i2s.input_device`.  We do *not* enable
 	 * SAI_MONOMODE for mono channels: the audio source/sink in
-	 * `freertos_audio.c` always reads/writes the DMA buffer with a
-	 * stride of 2 (`slot_count = 2`), so the buffer must contain 2
-	 * samples per audio frame.  With SAI_MONOMODE the hardware would
-	 * collapse each frame to a single sample in the DMA buffer, and
-	 * the audio source's `rx_ptr[f*2 + 1]` read would skip every
-	 * other sample → the DSP convolves on a half-rate signal,
-	 * producing a tonally shifted ("boomy") and quieter output that
-	 * was audibly different from the Zephyr backend even though all
-	 * codec registers were byte-identical.  Stereo SAI with the
-	 * audio carried in one slot and zero in the other gives the
-	 * source/sink layout it expects; the codec is configured (reg
-	 * 0x300 bit 14) to copy the left ADC into both ADC slots, so the
-	 * mono signal still reaches the DSP intact. */
-	uint32_t slot_count = 2;
-	uint32_t slot_active = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1;
+	 * `freertos_audio.c` always reads/writes with a stride of `slot_count`,
+	 * so every frame must contain that many samples on the bus. */
+	uint32_t slot_count = 4;
+	uint32_t slot_active = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1 | SAI_SLOTACTIVE_2 |
+			      SAI_SLOTACTIVE_3;
 
 	/* Configure TX SAI (master) */
 	if (cfg->direction & OVE_I2S_DIR_TX) {

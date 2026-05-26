@@ -63,9 +63,9 @@ MEMORY
      * are left implicitly unused — ETH descriptors used to live there
      * via section attrs but stm32f7_eth.c now declares them in default
      * .bss. */
-    Memory3 (xrw)   : ORIGIN = 0x20000140, LENGTH = 0x1dc4     /* I2S RX DMA buf */
-    Memory4 (xrw)   : ORIGIN = 0x20001F04, LENGTH = 0x1dc4     /* I2S TX DMA buf */
-    DSP_DTCM (xrw)  : ORIGIN = 0x20003CC8, LENGTH = 0xC338     /* 49 KB — DSP    */
+    Memory3 (xrw)   : ORIGIN = 0x20000140, LENGTH = 0x2000     /* I2S RX DMA buf (8 KB) */
+    Memory4 (xrw)   : ORIGIN = 0x20002140, LENGTH = 0x2000     /* I2S TX DMA buf (8 KB) */
+    DSP_DTCM (xrw)  : ORIGIN = 0x20004140, LENGTH = 0xBEC0     /* 47.7 KB — DSP    */
 
     /* SRAM1 + SRAM2 (256 KB from 0x20010000) — general-purpose RAM. */
     RAM (xrw)       : ORIGIN = 0x20010000, LENGTH = 0x40000
