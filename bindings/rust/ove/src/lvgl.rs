@@ -739,6 +739,37 @@ impl<'a> EventCtx<'a> {
     }
 }
 
+// =========================================================================
+//  Event handler soundness — why `fn` pointers and `'static EventHandler`?
+//
+// LVGL stores event handlers as raw C function pointers + a `void*` user
+// data, and invokes them later from the LVGL task.  That asynchrony forces
+// two constraints on the Rust side:
+//
+// 1. **No closure captures.** A `Box<dyn FnMut(...)>` would require us to
+//    leak the box and store a thin wrapper; we'd then have no safe way to
+//    free it when LVGL deletes the target widget.  Instead we pass plain
+//    `fn(EventCtx<'_>)` pointers (the stateless [`EventTarget::on_fn`]) or
+//    a `&'static EventHandler<T>` descriptor that bundles a static state
+//    cell with a `fn(&T, EventCtx<'_>)` (the stateful
+//    [`EventTarget::on_with`]).  Both shapes are `'static` by construction
+//    — there is no way to register a handler that outlives its captures.
+//
+// 2. **State must be `Send + Sync`.** `EventHandler<T>` requires
+//    `T: Send + Sync + 'static`; the trampoline calls
+//    `h.cell.try_get()` to fetch `&T` from an `InitCell<T>`, and LVGL may
+//    dispatch the event from a thread other than the one that registered
+//    the handler.  `Sync` makes shared `&T` reads sound; `'static` keeps
+//    the address stable for the trampoline's `&*ud` deref.
+//
+// The trampolines themselves (`event_trampoline_fn`,
+// `event_trampoline_with::<T>`) are `unsafe extern "C" fn` that cast the
+// `void*` back to its original Rust type.  The two `// SAFETY:` lines
+// inside each trampoline document why the cast is valid (the
+// corresponding `on_fn` / `on_with` set the pointer with the matching
+// type).
+// =========================================================================
+
 /// Static descriptor for a stateful event handler.
 ///
 /// Bundles a `&'static InitCell<T>` of shared state with a `fn(&T, EventCtx)`
