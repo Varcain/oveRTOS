@@ -157,7 +157,24 @@ critical-section = { version = "1.2", default-features = false, optional = true 
 bindgen = "0.72"
 
 [package.metadata.docs.rs]
-features = ["std"]
+# Mirror the Makefile docs target's feature list (Makefile:439) so the
+# external docs.rs render shows the same surface as the in-tree
+# `docs-site/site/api/rust` build.  Board-specific transports
+# (async-net-qemu-shm, async-net-stm32f7-eth) are intentionally omitted
+# — they require QEMU / STM32 hardware not available in the docs.rs
+# sandbox; the parent `async-net` feature alone documents the API.
+features = [
+    "std",
+    "alloc",
+    "async",
+    "async-net",
+    "embedded-hal",
+    "embedded-hal-async",
+    "embedded-io",
+    "embedded-io-async",
+    "fugit",
+    "portable-atomic-arc",
+]
 rustdoc-args = ["--cfg", "docsrs"]
 
 # Release profile tuned for the embedded target surface that drives this
