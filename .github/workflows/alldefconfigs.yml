@@ -3,9 +3,9 @@ name: Build All Defconfigs
 on:
   workflow_dispatch:
   push:
-    branches: [main, develop]
+    branches: [main, devel]
   pull_request:
-    branches: [main, develop]
+    branches: [main, devel]
 
 permissions:
   contents: read
