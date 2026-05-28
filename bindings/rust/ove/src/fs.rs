@@ -145,13 +145,21 @@ impl Dir {
 
     /// Read the next directory entry.
     ///
-    /// Returns `Ok(None)` at end-of-directory. Different backends signal
-    /// end-of-dir differently (error code vs. empty name), so both are
-    /// treated as `Ok(None)`.
+    /// Returns `Ok(None)` at end-of-directory — signalled either by the
+    /// `OVE_ERR_EOF` code or (on some backends) an empty entry name. Any
+    /// other negative code is surfaced as an `Err`, so a genuine I/O failure
+    /// mid-iteration is not silently mistaken for end-of-directory.
     pub fn read_entry(&mut self) -> Result<Option<DirEntry>> {
         let mut entry: bindings::ove_dirent = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_fs_readdir(self.handle, &mut entry) };
-        if rc != 0 || entry.name[0] == 0 {
+        match Error::from_code(rc) {
+            Ok(()) => {}
+            Err(Error::Eof) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+        // Some backends signal end-of-directory with an empty name instead
+        // of OVE_ERR_EOF.
+        if entry.name[0] == 0 {
             return Ok(None);
         }
         Ok(Some(DirEntry { inner: entry }))
