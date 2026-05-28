@@ -3931,15 +3931,26 @@ impl ColorFormat {
     pub const ARGB8888: Self = Self(0x10);
     pub const XRGB8888: Self = Self(0x11);
 
-    /// Bytes per pixel for this format. Panics for unknown formats.
-    pub const fn bpp(self) -> usize {
+    /// Bytes per pixel for this format.
+    ///
+    /// Returns `None` for unknown formats — the inner field is public,
+    /// so callers can construct arbitrary `lv_color_format_t` values
+    /// that aren't one of the named constants.  Match `None` if you
+    /// receive a `ColorFormat` from raw FFI; otherwise use one of the
+    /// associated constants (`I1`, `A8`, `RGB565`, `RGB888`, `ARGB8888`,
+    /// `XRGB8888`) and `unwrap()` is safe.
+    ///
+    /// `I1` returns `Some(0)` — the format is sub-byte per pixel and
+    /// callers must size the canvas buffer externally (one bit per pixel,
+    /// rounded up to a whole byte per row).
+    pub const fn bpp(self) -> Option<usize> {
         match self.0 {
-            0x10 | 0x11 => 4, // ARGB8888 / XRGB8888
-            0x0F => 3,        // RGB888
-            0x12 => 2,        // RGB565
-            0x0E => 1,        // A8
-            0x07 => 0,        // I1: < 1 byte/px (caller must size externally)
-            _ => panic!("ColorFormat::bpp: unknown format"),
+            0x10 | 0x11 => Some(4), // ARGB8888 / XRGB8888
+            0x0F => Some(3),        // RGB888
+            0x12 => Some(2),        // RGB565
+            0x0E => Some(1),        // A8
+            0x07 => Some(0),        // I1: < 1 byte/px (caller must size externally)
+            _ => None,
         }
     }
 }
@@ -3956,10 +3967,14 @@ pub struct CanvasBuffer<'a> {
 impl<'a> CanvasBuffer<'a> {
     /// Wrap a mutable byte slice as canvas pixel storage.
     ///
-    /// Asserts `buf.len() == w * h * cf.bpp()`. Panics on mismatch — sizing
-    /// errors are programming bugs, not runtime conditions.
+    /// # Panics
+    /// Panics if `cf` is not one of the named [`ColorFormat`] constants
+    /// (unknown formats have no defined byte-per-pixel ratio), or if
+    /// `buf.len() != w * h * cf.bpp()`.  Sizing errors are programming
+    /// bugs, not runtime conditions.
     pub fn new(buf: &'a mut [u8], w: i32, h: i32, cf: ColorFormat) -> Self {
-        let need = (w as usize) * (h as usize) * cf.bpp();
+        let bpp = cf.bpp().expect("CanvasBuffer: unknown ColorFormat");
+        let need = (w as usize) * (h as usize) * bpp;
         assert!(
             buf.len() == need,
             "CanvasBuffer: expected {} bytes, got {}",
