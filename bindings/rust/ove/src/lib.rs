@@ -219,6 +219,15 @@ pub mod heap {
 
 #[cfg(all(feature = "async", has_async))]
 pub mod async_runtime;
+/// Async wrappers re-exported at the crate root for symmetry with the
+/// blocking primitives (`ove::Queue` → `ove::AsyncQueue`, etc.). The
+/// `Spawner` type remains at [`async_runtime::Spawner`] since it is an
+/// `embassy_executor` re-export rather than an ove-native type.
+#[cfg(all(feature = "async", has_async))]
+pub use async_runtime::{
+    AsyncEventGroup, AsyncI2c, AsyncInput, AsyncQueue, AsyncSemaphore, AsyncSpi, AsyncStream,
+    AsyncUart, Executor,
+};
 // A compile-time error to catch the common misconfiguration where the
 // Cargo `async` feature is on but the C side wasn't built with
 // CONFIG_OVE_ASYNC=y. Without this gate the binding would fail with
