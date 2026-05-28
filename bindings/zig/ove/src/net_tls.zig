@@ -44,9 +44,10 @@ const HeapSession = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: Session) void {
+    pub fn deinit(self: *Session) void {
         if (self.handle == null) return;
         c.ove_tls_destroy(self.handle);
+        self.handle = null;
     }
 };
 

@@ -67,9 +67,10 @@ const HeapModel = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: Model) void {
+    pub fn deinit(self: *Model) void {
         if (self.handle == null) return;
         c.ove_model_destroy(self.handle);
+        self.handle = null;
     }
 
     /// Run the model forward pass.

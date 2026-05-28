@@ -47,9 +47,10 @@ const HeapWatchdog = struct {
         return .{ .handle = h };
     }
 
-    pub fn deinit(self: Watchdog) void {
+    pub fn deinit(self: *Watchdog) void {
         if (self.handle == null) return;
         c.ove_watchdog_destroy(self.handle);
+        self.handle = null;
     }
 
     pub fn start(self: Watchdog) Error!void {
