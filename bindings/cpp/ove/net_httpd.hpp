@@ -152,7 +152,7 @@ class Response
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */
-	Result<void> json(int status, const char *json) noexcept
+	[[nodiscard]] Result<void> json(int status, const char *json) noexcept
 	{
 		return from_rc(ove_httpd_resp_json(raw_, status, json));
 	}
@@ -165,7 +165,7 @@ class Response
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */
-	Result<void> html(int status, const char *html, size_t len) noexcept
+	[[nodiscard]] Result<void> html(int status, const char *html, size_t len) noexcept
 	{
 		return from_rc(ove_httpd_resp_html(raw_, status, html, len));
 	}
@@ -179,8 +179,8 @@ class Response
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */
-	Result<void> send(int status, const char *content_type, const void *body,
-			  size_t len) noexcept
+	[[nodiscard]] Result<void> send(int status, const char *content_type, const void *body,
+					size_t len) noexcept
 	{
 		return from_rc(ove_httpd_resp_send(raw_, status, content_type, body, len));
 	}
@@ -194,8 +194,8 @@ class Response
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */
-	Result<void> send_gz(int status, const char *content_type, const void *body,
-			     size_t len) noexcept
+	[[nodiscard]] Result<void> send_gz(int status, const char *content_type, const void *body,
+					   size_t len) noexcept
 	{
 		return from_rc(ove_httpd_resp_send_gz(raw_, status, content_type, body, len));
 	}
@@ -207,7 +207,7 @@ class Response
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */
-	Result<void> error(int status, const char *msg) noexcept
+	[[nodiscard]] Result<void> error(int status, const char *msg) noexcept
 	{
 		return from_rc(ove_httpd_resp_error(raw_, status, msg));
 	}
@@ -349,7 +349,7 @@ class Connection
 	 * @return Empty `Result<void>` on success; `unexpected`
 	 *         @ref Error on failure.
 	 */
-	Result<void> send(const void *data, size_t len) noexcept
+	[[nodiscard]] Result<void> send(const void *data, size_t len) noexcept
 	{
 		return from_rc(ove_httpd_ws_send(raw_, data, len));
 	}
@@ -359,7 +359,7 @@ class Connection
 	 * @param[in] sv String view to send.
 	 * @return As @ref send(const void*, size_t).
 	 */
-	Result<void> send(std::string_view sv) noexcept
+	[[nodiscard]] Result<void> send(std::string_view sv) noexcept
 	{
 		return from_rc(ove_httpd_ws_send(raw_, sv.data(), sv.size()));
 	}
