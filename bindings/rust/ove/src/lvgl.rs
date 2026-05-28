@@ -1770,6 +1770,7 @@ pub struct Chart {
 }
 
 impl Chart {
+    /// Create a new `Chart` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_chart_create(parent.raw()) };
         Self { raw }
@@ -1846,6 +1847,7 @@ pub struct Calendar {
 }
 
 impl Calendar {
+    /// Create a new `Calendar` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_calendar_create(parent.raw()) };
         Self { raw }
@@ -1924,6 +1926,7 @@ pub struct Canvas {
 }
 
 impl Canvas {
+    /// Create a new `Canvas` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_canvas_create(parent.raw()) };
         Self { raw }
@@ -1992,6 +1995,7 @@ pub struct Table {
 }
 
 impl Table {
+    /// Create a new `Table` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_table_create(parent.raw()) };
         Self { raw }
@@ -2061,6 +2065,7 @@ pub struct Tabview {
 }
 
 impl Tabview {
+    /// Create a new `Tabview` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_tabview_create(parent.raw()) };
         Self { raw }
@@ -2140,6 +2145,7 @@ pub struct List {
 }
 
 impl List {
+    /// Create a new `List` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_list_create(parent.raw()) };
         Self { raw }
@@ -2185,6 +2191,7 @@ pub struct Textarea {
 }
 
 impl Textarea {
+    /// Create a new `Textarea` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_textarea_create(parent.raw()) };
         Self { raw }
@@ -2302,6 +2309,7 @@ pub struct Dropdown {
 }
 
 impl Dropdown {
+    /// Create a new `Dropdown` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_dropdown_create(parent.raw()) };
         Self { raw }
@@ -2409,6 +2417,7 @@ pub struct Roller {
 }
 
 impl Roller {
+    /// Create a new `Roller` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_roller_create(parent.raw()) };
         Self { raw }
@@ -2482,6 +2491,7 @@ pub struct Spinbox {
 }
 
 impl Spinbox {
+    /// Create a new `Spinbox` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_spinbox_create(parent.raw()) };
         Self { raw }
@@ -2584,6 +2594,7 @@ pub struct Keyboard {
 }
 
 impl Keyboard {
+    /// Create a new `Keyboard` widget as a child of `parent`.
     pub fn create(parent: impl Widget) -> Self {
         let raw = unsafe { bindings::lv_keyboard_create(parent.raw()) };
         Self { raw }

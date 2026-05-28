@@ -95,6 +95,8 @@ impl Default for ClientStorage {
 }
 
 impl ClientStorage {
+    /// Zero-initialised backing storage for a [`Client`] in zero-heap
+    /// mode.  Place in a `static` and pass to [`Client::from_static`].
     pub fn new() -> Self {
         Self(unsafe { core::mem::zeroed() })
     }

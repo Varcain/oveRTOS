@@ -267,6 +267,8 @@ pub struct PolicyHandler<T: Send + Sync + 'static> {
 }
 
 impl<T: Send + Sync + 'static> PolicyHandler<T> {
+    /// Bind a static state `cell` and a safe `user` callback into a
+    /// handler descriptor usable in `static` declarations.
     pub const fn new(cell: &'static crate::InitCell<T>, user: fn(&T, PolicyCtx) -> State) -> Self {
         Self { cell, user }
     }
@@ -353,6 +355,8 @@ pub struct NotifyHandler<T: Send + Sync + 'static> {
 }
 
 impl<T: Send + Sync + 'static> NotifyHandler<T> {
+    /// Bind a static state `cell` and a safe `user` callback into a
+    /// handler descriptor usable in `static` declarations.
     pub const fn new(cell: &'static crate::InitCell<T>, user: fn(&T, Event, State, State)) -> Self {
         Self { cell, user }
     }
