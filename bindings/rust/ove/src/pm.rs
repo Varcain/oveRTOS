@@ -274,6 +274,10 @@ impl<T: Send + Sync + 'static> PolicyHandler<T> {
     }
 }
 
+// SAFETY: `PolicyHandler<T>` holds only `&'static InitCell<T>` (which is
+// `Sync` when `T: Send + Sync`) and a `fn(&T, PolicyCtx) -> State`
+// pointer; no thread-bound state.  The PM substrate invokes the policy
+// from its own task — the Rust handle is read-only after registration.
 unsafe impl<T: Send + Sync + 'static> Sync for PolicyHandler<T> {}
 
 unsafe extern "C" fn policy_trampoline<T: Send + Sync + 'static>(
@@ -362,6 +366,9 @@ impl<T: Send + Sync + 'static> NotifyHandler<T> {
     }
 }
 
+// SAFETY: same structure as `PolicyHandler<T>` — a `&'static InitCell<T>`
+// plus a `fn(...)` pointer.  PM dispatches notify callbacks from its
+// own task; the Rust handle is immutable after registration.
 unsafe impl<T: Send + Sync + 'static> Sync for NotifyHandler<T> {}
 
 unsafe extern "C" fn notify_trampoline<T: Send + Sync + 'static>(

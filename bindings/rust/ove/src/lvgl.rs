@@ -756,6 +756,11 @@ impl<T: 'static> EventHandler<T> {
     }
 }
 
+// SAFETY: `EventHandler<T>` holds only `&'static InitCell<T>` (which is
+// itself `Sync` when `T: Send + Sync`) and a `fn(&T, EventCtx<'_>)`
+// pointer (functions are always `Send + Sync`).  No interior mutability
+// or thread-bound state — sharing an `&EventHandler<T>` across threads is
+// trivially sound.
 unsafe impl<T: Send + Sync + 'static> Sync for EventHandler<T> {}
 
 unsafe extern "C" fn event_trampoline_fn(e: *mut bindings::lv_event_t) {
@@ -1760,6 +1765,9 @@ impl Series {
     }
 }
 
+// SAFETY: `Series` wraps an `lv_chart_series_t` pointer owned by its
+// parent `Chart`.  Same contract as the widget Send/Sync block below —
+// access only under `LvglGuard` (or from the LVGL task).
 unsafe impl Send for Series {}
 unsafe impl Sync for Series {}
 
@@ -2902,6 +2910,9 @@ impl Default for Group {
     }
 }
 
+// SAFETY: `Group` wraps an `lv_group_t` focus group; LVGL maintains its
+// own registry, and access is gated by `LvglGuard`.  Same contract as
+// the widget block.
 unsafe impl Send for Group {}
 unsafe impl Sync for Group {}
 
@@ -2987,6 +2998,9 @@ impl Drop for Timer {
     }
 }
 
+// SAFETY: `Timer` wraps `lv_timer_t`.  LVGL drives timer callbacks from
+// its own task; the Rust `Timer` handle is just a registry pointer.
+// Creation/destruction goes through the LVGL lock, same as widgets.
 unsafe impl Send for Timer {}
 unsafe impl Sync for Timer {}
 
@@ -3069,6 +3083,9 @@ impl<T: Copy> Drop for State<T> {
     }
 }
 
+// SAFETY: `State<T>` is a reactive observer state.  Writes dispatch
+// LV_EVENT_VALUE_CHANGED under the LVGL lock; the `T: Copy + Send` bound
+// ensures the stored value can cross thread boundaries when read.
 unsafe impl<T: Copy + Send> Send for State<T> {}
 unsafe impl<T: Copy + Send> Sync for State<T> {}
 
@@ -3493,6 +3510,18 @@ impl Drop for Style {
 
 // =========================================================================
 //  Send + Sync (same contract as C/C++: all access under LVGL lock)
+//
+// SAFETY: every widget below is a `#[repr(transparent)]` newtype around
+// `*mut bindings::lv_obj_t` (or a phantom alias such as `ObjectView`).
+// LVGL maintains its own internal object registry, and every method that
+// touches an `lv_obj_t` is required by the C library to run with
+// `ove_lvgl_lock()` held (use `LvglGuard` from this module).
+// Cross-thread ownership is therefore safe (Send): the receiving thread
+// can only do anything with the handle after re-acquiring the lock.
+// Shared aliasing is safe (Sync) for the same reason — concurrent
+// readers serialise through the LVGL mutex.  Failing to hold the lock
+// is a contract violation already documented at the LVGL API surface;
+// it would be UB at the C level too.
 // =========================================================================
 
 unsafe impl Send for Obj {}
@@ -4063,6 +4092,8 @@ impl core::ops::Deref for Scale {
     }
 }
 
+// SAFETY: `Scale` wraps an `lv_scale_t` widget; same LVGL-lock contract
+// as the widget block above.
 unsafe impl Send for Scale {}
 unsafe impl Sync for Scale {}
 

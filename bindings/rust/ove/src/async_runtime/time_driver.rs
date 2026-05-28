@@ -51,6 +51,10 @@ pub(crate) struct OveTimeDriver {
     alarm: InitMut<AlarmTimer>,
 }
 
+// SAFETY: `OveTimeDriver` is the singleton embassy time driver.  Its
+// `queue` field is a `CsMutex<RefCell<Queue<_>>>` which synchronises
+// access via `critical_section`; `alarm: InitMut<AlarmTimer>` is touched
+// only by the scheduler thread once initialised.
 unsafe impl Send for OveTimeDriver {}
 unsafe impl Sync for OveTimeDriver {}
 

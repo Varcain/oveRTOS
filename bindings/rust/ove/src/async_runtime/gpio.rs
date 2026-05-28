@@ -34,6 +34,9 @@ pub struct AsyncInput {
     waker: AtomicWaker,
 }
 
+// SAFETY: `AsyncInput` holds an `AtomicBool` + `AtomicWaker` (both already
+// `Sync`).  No interior thread-bound state; the waker dispatch path uses
+// `critical_section` for synchronisation.
 unsafe impl Send for AsyncInput {}
 unsafe impl Sync for AsyncInput {}
 

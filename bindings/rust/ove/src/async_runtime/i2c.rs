@@ -31,6 +31,10 @@ pub struct AsyncI2c {
     slot: UnsafeCell<DmaSlot>,
 }
 
+// SAFETY: `AsyncI2c` wraps an `ove_i2c_t` handle.  The substrate serialises
+// bus transactions via its driver-level lock; the `UnsafeCell<DmaSlot>` is
+// only touched between `arm()` and the completion ISR, never concurrently
+// from Rust code.
 unsafe impl Send for AsyncI2c {}
 unsafe impl Sync for AsyncI2c {}
 

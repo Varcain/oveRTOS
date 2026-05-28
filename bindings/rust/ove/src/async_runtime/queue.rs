@@ -27,6 +27,9 @@ pub struct AsyncQueue<T: Copy, const N: usize> {
     waker: AtomicWaker,
 }
 
+// SAFETY: `AsyncQueue<T, N>` wraps a `Queue<T, N>` whose own Send/Sync
+// impls (see `queue.rs`) reflect the substrate's locking.  The `T: Copy +
+// Send` bound guarantees items can cross thread boundaries.
 unsafe impl<T: Copy + Send, const N: usize> Send for AsyncQueue<T, N> {}
 unsafe impl<T: Copy + Send, const N: usize> Sync for AsyncQueue<T, N> {}
 
