@@ -243,7 +243,7 @@ class File
 	}
 
       private:
-	ove_file_t handle_;
+	ove_file_t handle_ = nullptr;
 };
 
 /**
@@ -372,7 +372,7 @@ class Dir
 	}
 
       private:
-	ove_dir_t handle_;
+	ove_dir_t handle_ = nullptr;
 };
 
 } /* namespace ove */

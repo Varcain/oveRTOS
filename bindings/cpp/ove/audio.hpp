@@ -71,7 +71,7 @@ inline struct ove_audio_device_cfg device_cfg_i2s(uint32_t sample_rate, uint32_t
 class Graph
 {
       public:
-	Graph() : initialized_(false)
+	Graph() : g_{}, initialized_(false)
 	{
 	}
 
