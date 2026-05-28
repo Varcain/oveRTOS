@@ -140,6 +140,12 @@ pub const Priority = enum(c_uint) {
     /// Highest priority; reserved for critical system tasks.
     critical = 7,
 };
+/// Scheduler-observable thread state.  Re-exported as the raw C enum
+/// (`c.ove_thread_state_t`); compare against the substrate's variants:
+/// `c.OVE_THREAD_STATE_RUNNING` (on CPU), `_READY` (runnable, waiting),
+/// `_BLOCKED` (waiting on sync primitive / delay), `_SUSPENDED` (explicit
+/// `Thread.suspend`), `_TERMINATED` (entry returned, not yet destroyed),
+/// or `_UNKNOWN`.
 pub const State = c.ove_thread_state_t;
 
 comptime {
