@@ -21,6 +21,27 @@
 #include <concepts>
 
 /**
+ * @defgroup ove_lvgl_core      LVGL Core
+ * @brief Foundation: RAII lock, non-owning view, CRTP mixins.
+ */
+/**
+ * @defgroup ove_lvgl_style     LVGL Style & State
+ * @brief Style objects and reactive `State<T>`.
+ */
+/**
+ * @defgroup ove_lvgl_widgets   LVGL Widgets
+ * @brief Concrete widget wrappers (Label, Button, Slider, Chart, etc.).
+ */
+/**
+ * @defgroup ove_lvgl_layout    LVGL Layout, Focus & Screen
+ * @brief Layout helpers (vbox/hbox), focus groups, and screen helpers.
+ */
+/**
+ * @defgroup ove_lvgl_animation LVGL Animation, Timer & Composition
+ * @brief LVGL timer, animation builder, and `Component<Derived>` CRTP base.
+ */
+
+/**
  * @namespace ove::lvgl
  * @brief C++ abstractions for the LVGL embedded GUI library.
  *
@@ -41,6 +62,9 @@
  */
 namespace ove::lvgl
 {
+
+/** @addtogroup ove_lvgl_core
+ *  @{ */
 
 /* ================================================================== */
 /*  LvglGuard — RAII lock for thread-safe LVGL access                 */
@@ -975,6 +999,11 @@ template <typename Derived> class StyleMixin
 	}
 };
 
+/** @} */ /* end of ove_lvgl_core */
+
+/** @addtogroup ove_lvgl_style
+ *  @{ */
+
 /* ================================================================== */
 /*  Style — RAII style object                                         */
 /* ================================================================== */
@@ -1254,6 +1283,11 @@ template <std::integral T> class State
 };
 
 #endif /* LV_USE_OBSERVER */
+
+/** @} */ /* end of ove_lvgl_style */
+
+/** @addtogroup ove_lvgl_widgets
+ *  @{ */
 
 /* ================================================================== */
 /*  Widget wrappers — Label, Bar, Box                                 */
@@ -3057,6 +3091,11 @@ class Calendar : public ObjectView,
 
 static_assert(sizeof(Calendar) == sizeof(void *), "Calendar must be pointer-sized");
 
+/** @} */ /* end of ove_lvgl_widgets */
+
+/** @addtogroup ove_lvgl_layout
+ *  @{ */
+
 /* ================================================================== */
 /*  Layout helpers                                                    */
 /* ================================================================== */
@@ -3307,6 +3346,11 @@ class Screen : public ObjectView,
 };
 
 static_assert(sizeof(Screen) == sizeof(void *), "Screen must be pointer-sized");
+
+/** @} */ /* end of ove_lvgl_layout */
+
+/** @addtogroup ove_lvgl_animation
+ *  @{ */
 
 /* ================================================================== */
 /*  Timer — RAII wrapper around lv_timer_t                            */
@@ -3806,5 +3850,7 @@ inline ObjectView layer_top()
 {
 	return ObjectView(lv_layer_top());
 }
+
+/** @} */ /* end of ove_lvgl_animation */
 
 } /* namespace ove::lvgl */
