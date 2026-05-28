@@ -14,6 +14,18 @@ use crate::bindings;
 use crate::error::{Error, Result};
 use core::ffi::c_void;
 
+// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
+// calls below): any handle passed to the C API is non-null and refers to a
+// live RTOS object — wrapper constructors establish validity via
+// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
+// a handle is released. Pointer and slice arguments reference caller-owned
+// memory valid for the duration of the call; the C side copies whatever it
+// retains and does not alias them past return (verified against the
+// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
+// pointer casts from user data, slice reconstruction via `from_raw_parts`,
+// or storing a callback across the FFI boundary — carry their own
+// `// SAFETY:` comment.
+
 // ---------------------------------------------------------------------------
 // Pin tracker (debug-only) — mirrors `bindings/zig/ove/src/pin.zig::Tracker`.
 //
@@ -437,6 +449,10 @@ pub struct AudioBuf {
 impl AudioBuf {
     /// Get a slice of interleaved S16 samples.
     pub fn data_s16(&self) -> &[i16] {
+        // SAFETY: `self.raw` points to a live `ove_audio_buf` supplied by the
+        // graph for the duration of the processing callback; `data` is a
+        // `frames * channels`-element S16 buffer the C side keeps valid while
+        // the callback runs.
         unsafe {
             let buf = &*self.raw;
             let count = buf.frames as usize * (*buf.fmt).channels as usize;
@@ -452,6 +468,9 @@ impl AudioBuf {
     /// Aliasing safety is the C side's responsibility.
     #[allow(clippy::mut_from_ref)]
     pub fn data_s16_mut(&self) -> &mut [i16] {
+        // SAFETY: as `data_s16`, but mutable — the graph hands the output
+        // buffer to the processor as `&AudioBuf` and the C side owns aliasing
+        // (read-in / write-out through separate references each cycle).
         unsafe {
             let buf = &*self.raw;
             let count = buf.frames as usize * (*buf.fmt).channels as usize;

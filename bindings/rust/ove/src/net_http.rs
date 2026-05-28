@@ -25,6 +25,18 @@ use core::fmt;
 use crate::bindings;
 use crate::error::{Error, Result};
 
+// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
+// calls below): any handle passed to the C API is non-null and refers to a
+// live RTOS object — wrapper constructors establish validity via
+// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
+// a handle is released. Pointer and slice arguments reference caller-owned
+// memory valid for the duration of the call; the C side copies whatever it
+// retains and does not alias them past return (verified against the
+// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
+// pointer casts from user data, slice reconstruction via `from_raw_parts`,
+// or storing a callback across the FFI boundary — carry their own
+// `// SAFETY:` comment.
+
 // ---------------------------------------------------------------------------
 // Method
 // ---------------------------------------------------------------------------
@@ -125,6 +137,9 @@ impl Response {
         if self.raw.body.is_null() || self.raw.body_len == 0 {
             return &[];
         }
+        // SAFETY: null/zero-len handled above; `body` points to `body_len`
+        // bytes owned by this `Response` and freed only on its `Drop`, so the
+        // slice is valid for `&self`.
         unsafe { core::slice::from_raw_parts(self.raw.body as *const u8, self.raw.body_len) }
     }
 
@@ -133,6 +148,9 @@ impl Response {
         if self.raw.headers.is_null() || self.raw.headers_len == 0 {
             return &[];
         }
+        // SAFETY: null/zero-len handled above; `headers` points to
+        // `headers_len` bytes owned by this `Response` and freed only on its
+        // `Drop`, so the slice is valid for `&self`.
         unsafe { core::slice::from_raw_parts(self.raw.headers as *const u8, self.raw.headers_len) }
     }
 }
