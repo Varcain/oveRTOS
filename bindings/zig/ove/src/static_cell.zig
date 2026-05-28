@@ -39,7 +39,12 @@ pub fn StaticCell(comptime T: type) type {
             };
         }
 
-        /// Get a pointer to the value. Panics if not initialized.
+        /// Get a pointer to the value.
+        ///
+        /// Asserts the cell has been initialized via `init()` — panics
+        /// otherwise. This is intended for the init-once-at-startup
+        /// invariant; if a caller cannot guarantee prior initialization,
+        /// use `tryGet()` for the fallible (`?*T`) form instead.
         pub fn get(self: *Self) *T {
             return self.tryGet() orelse @panic("StaticCell not initialized");
         }
