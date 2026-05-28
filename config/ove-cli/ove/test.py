@@ -54,17 +54,24 @@ def _parse_cmocka(stdout: str) -> TestResults:
         if m:
             passed += int(m.group(1))
             continue
-        # CMocka format: "[  FAILED  ] tests: N test(s), listed below:"
-        m = re.match(r'\[\s+FAILED\s+\]\s+tests:\s+(\d+)\s+test', line)
+        # Aggregate failure line: "[  FAILED  ] <group>: N test(s), listed
+        # below:".  <group> is the cmocka array name (the macro stringifies
+        # it) — almost always "tests", but match ANY name with \w+ so a
+        # suite that renames its array still has its count summed instead of
+        # falling through to the name regex below (which would capture the
+        # group name and leave failed==0 — a silent pass on the sim paths
+        # that can't fall back to a process exit code).
+        m = re.match(r'\[\s+FAILED\s+\]\s+\w+:\s+(\d+)\s+test', line)
         if m:
             failed += int(m.group(1))
             continue
-        # Older / alternative form: "[  FAILED  ] N test(s)" without "tests:"
+        # Older / alternative form: "[  FAILED  ] N test(s)" with no group prefix.
         m = re.match(r'\[\s+FAILED\s+\]\s+(\d+)\s+test', line)
         if m:
             failed += int(m.group(1))
             continue
-        # Individual failure name (no digit, no "tests:" prefix).
+        # Individual failure name (e.g. "[  FAILED  ] test_foo" or a
+        # "[  FAILED  ] GROUP SETUP" error line) — no "<group>: N test" prefix.
         m = re.match(r'\[\s+FAILED\s+\]\s+([A-Za-z_]\w*)', line)
         if m:
             failed_names.append(m.group(1))
@@ -2157,6 +2164,14 @@ def cmd_test(args):
             result = func(ove_dir, output_dir)
             if result:
                 results.append(result)
+                # A populated failed_names with failed==0 can occur when
+                # _parse_cmocka captured a failure it couldn't fold into the
+                # integer count (a cmocka GROUP SETUP/TEARDOWN error, which
+                # cmocka reports as total_errors not total_failed) or a
+                # driver appended a "<...>" marker. Treat that as a real
+                # failure too — never let names-without-count slip past.
+                if result.failed == 0 and result.failed_names:
+                    result.failed = len(result.failed_names)
                 if result.failed > 0:
                     any_failed = True
     finally:
