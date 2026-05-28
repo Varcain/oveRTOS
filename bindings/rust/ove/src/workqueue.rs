@@ -165,5 +165,9 @@ impl Drop for Work {
     }
 }
 
+// SAFETY: `Work` wraps `ove_work_t`.  Submission and cancellation are
+// substrate-synchronised; the handler trampoline runs on the workqueue
+// thread, never the constructing thread, so cross-thread transfer is
+// the expected access pattern.
 unsafe impl Send for Work {}
 unsafe impl Sync for Work {}

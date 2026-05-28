@@ -37,6 +37,8 @@ pub struct AsyncUart {
     waker: AtomicWaker,
 }
 
+// SAFETY: `AsyncUart` wraps a `Uart` (whose own Send/Sync reflects the
+// substrate's tx/rx serialisation) plus an `AtomicWaker`.
 unsafe impl Send for AsyncUart {}
 unsafe impl Sync for AsyncUart {}
 

@@ -21,6 +21,9 @@ pub struct AsyncSemaphore {
     waker: AtomicWaker,
 }
 
+// SAFETY: `AsyncSemaphore` wraps a `Semaphore` (whose own Send/Sync
+// reflects the substrate's atomic counter + waiter list).  The
+// `AtomicWaker` is `Sync` by construction.
 unsafe impl Send for AsyncSemaphore {}
 unsafe impl Sync for AsyncSemaphore {}
 

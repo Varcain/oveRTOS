@@ -240,5 +240,8 @@ impl<T: Copy, const N: usize> Drop for Queue<T, N> {
     }
 }
 
+// SAFETY: `Queue<T, N>` wraps an `ove_queue_t` FIFO.  The substrate
+// serialises producer/consumer access via internal locks; the `T: Copy +
+// Send` bound ensures items can be safely transferred across threads.
 unsafe impl<T: Copy + Send, const N: usize> Send for Queue<T, N> {}
 unsafe impl<T: Copy + Send, const N: usize> Sync for Queue<T, N> {}

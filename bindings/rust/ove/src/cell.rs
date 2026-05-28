@@ -91,6 +91,10 @@ impl<T: Copy> LvCell<T> {
 #[repr(transparent)]
 pub struct LvRefCell<T>(core::cell::RefCell<T>);
 
+// SAFETY: `LvRefCell<T>` is a `RefCell`-shaped interior-mutable cell whose
+// borrow tracking is sound only while the LVGL lock is held.  `T: Send` is
+// sufficient because all access happens inside the LVGL task or behind
+// `LvglGuard`, both of which serialise readers and the single writer.
 unsafe impl<T: Send> Sync for LvRefCell<T> {}
 
 impl<T> LvRefCell<T> {

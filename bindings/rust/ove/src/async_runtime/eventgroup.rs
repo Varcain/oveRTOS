@@ -21,6 +21,9 @@ pub struct AsyncEventGroup {
     waker: AtomicWaker,
 }
 
+// SAFETY: `AsyncEventGroup` wraps an `ove_event_group_t` FFI handle.  The
+// substrate serialises concurrent waiters via its own internal lock, so
+// cross-thread `&self` access is sound.
 unsafe impl Send for AsyncEventGroup {}
 unsafe impl Sync for AsyncEventGroup {}
 

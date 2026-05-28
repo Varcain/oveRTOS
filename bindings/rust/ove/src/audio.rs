@@ -641,6 +641,10 @@ pub struct StaticProcessor<T> {
     inner: core::cell::UnsafeCell<T>,
 }
 
+// SAFETY: `StaticProcessor<T>` is `UnsafeCell<T>` accessed only from the
+// audio thread (single-writer/single-reader by construction — the C side
+// owns the call site).  The `T: Send` bound ensures `T` can cross from
+// the construction thread to the audio thread.
 unsafe impl<T: Send> Send for StaticProcessor<T> {}
 unsafe impl<T: Send> Sync for StaticProcessor<T> {}
 
