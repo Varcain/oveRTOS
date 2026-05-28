@@ -58,4 +58,19 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(lib);
+
+    // `zig build docs` — emit autodoc HTML under zig-out/docs/.
+    // Mirrors the Makefile docs target (which currently shells out to
+    // `zig build-lib --femit-docs` directly, bypassing this build.zig).
+    const docs_obj = b.addObject(.{
+        .name = "ove_docs",
+        .root_module = root_module,
+    });
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs_obj.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    const docs_step = b.step("docs", "Emit autodoc HTML under zig-out/docs/");
+    docs_step.dependOn(&install_docs.step);
 }
