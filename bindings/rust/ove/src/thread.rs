@@ -71,6 +71,18 @@ const _: () = assert!(
     "ove::thread: fn(StopToken) and *mut c_void must be the same size for FFI round-trip"
 );
 
+// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
+// calls below): any handle passed to the C API is non-null and refers to a
+// live RTOS object — wrapper constructors establish validity via
+// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
+// a handle is released. Pointer and slice arguments reference caller-owned
+// memory valid for the duration of the call; the C side copies whatever it
+// retains and does not alias them past return (verified against the
+// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
+// pointer casts from user data, slice reconstruction via `from_raw_parts`,
+// or storing a callback across the FFI boundary — carry their own
+// `// SAFETY:` comment.
+
 /// Thread priority levels, matching `ove_prio_t`.
 ///
 /// Variants are ordered from lowest (`Idle`) to highest (`Critical`) so that
@@ -1004,6 +1016,9 @@ pub fn thread_list(buf: &mut [ThreadInfo]) -> Result<&[ThreadInfo]> {
         let name = if raw[i].name.is_null() {
             &[]
         } else {
+            // SAFETY: non-null checked above; `name` is a static NUL-terminated
+            // string owned by the RTOS thread object (outlives this snapshot).
+            // The scan stops at the NUL and the slice covers the bytes before it.
             unsafe {
                 let p = raw[i].name as *const u8;
                 let mut len = 0;

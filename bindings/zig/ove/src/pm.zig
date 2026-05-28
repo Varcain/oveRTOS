@@ -131,12 +131,7 @@ pub fn domainRelease(domain: Domain) Error!void {
 
 /// Query the current reference count for a domain.
 pub fn domainGetRefcount(domain: Domain) Error!i32 {
-    const rc = c.ove_pm_domain_get_refcount(domain);
-    if (rc < 0) {
-        try err.fromCode(rc);
-        unreachable;
-    }
-    return rc;
+    return err.fromCodeInt(c.ove_pm_domain_get_refcount(domain));
 }
 
 // ── Policy ──────────────────────────────────────────────────────────────

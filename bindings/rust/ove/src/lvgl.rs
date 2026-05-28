@@ -19,6 +19,16 @@
 use crate::bindings;
 use crate::error::{Error, Result};
 
+// SAFETY (module-wide contract for the `unsafe { bindings::lv_*(...) }` and
+// `bindings::ove_lvgl_*(...)` calls below): every LVGL object handle is a
+// pointer into LVGL's own registry, valid until the widget is deleted, and
+// all calls must run with the LVGL lock held (see `LvglGuard` / `lock()`),
+// matching the C/C++ contract. The event-handler trampolines and the widget
+// `Send`/`Sync` impls carry their own dedicated SAFETY banners (search
+// "Event handler soundness" and "Send + Sync"). Blocks that deviate —
+// `transmute` of the event user-data pointer, `from_raw_parts` over a canvas
+// buffer — carry their own `// SAFETY:` note.
+
 // =========================================================================
 //  Constants
 // =========================================================================

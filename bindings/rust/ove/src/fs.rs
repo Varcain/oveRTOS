@@ -13,6 +13,18 @@
 use crate::bindings;
 use crate::error::{Error, Result};
 
+// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
+// calls below): any handle passed to the C API is non-null and refers to a
+// live RTOS object — wrapper constructors establish validity via
+// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
+// a handle is released. Pointer and slice arguments reference caller-owned
+// memory valid for the duration of the call; the C side copies whatever it
+// retains and does not alias them past return (verified against the
+// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
+// pointer casts from user data, slice reconstruction via `from_raw_parts`,
+// or storing a callback across the FFI boundary — carry their own
+// `// SAFETY:` comment.
+
 /// Open flag: open file for reading.
 pub const O_READ: i32 = bindings::OVE_FS_O_READ as i32;
 /// Open flag: open file for writing.
@@ -95,6 +107,8 @@ pub struct DirEntry {
 impl DirEntry {
     /// The entry name as a byte slice (without trailing `\0`).
     pub fn name(&self) -> &[u8] {
+        // SAFETY: `self.inner.name` is an inline fixed-size array owned by this
+        // `DirEntry`; the slice borrows it for `&self`'s lifetime.
         let name_bytes = unsafe {
             core::slice::from_raw_parts(
                 self.inner.name.as_ptr() as *const u8,

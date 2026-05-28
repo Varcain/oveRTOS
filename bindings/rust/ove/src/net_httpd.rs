@@ -26,6 +26,18 @@ use core::marker::PhantomData;
 use crate::bindings;
 use crate::error::{Error, Result};
 
+// SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
+// calls below): any handle passed to the C API is non-null and refers to a
+// live RTOS object — wrapper constructors establish validity via
+// `Error::from_code`, and `Drop` (or an explicit `deinit`) is the only place
+// a handle is released. Pointer and slice arguments reference caller-owned
+// memory valid for the duration of the call; the C side copies whatever it
+// retains and does not alias them past return (verified against the
+// signatures in `include/ove/*.h`). Blocks that deviate — `transmute`, raw
+// pointer casts from user data, slice reconstruction via `from_raw_parts`,
+// or storing a callback across the FFI boundary — carry their own
+// `// SAFETY:` comment.
+
 // ---------------------------------------------------------------------------
 // Handler type
 // ---------------------------------------------------------------------------
@@ -96,6 +108,9 @@ impl<'a> Request<'a> {
         if p.is_null() || len == 0 {
             return &[];
         }
+        // SAFETY: null/zero-len handled above; `p` points to `len` bytes of
+        // request body owned by the C request object, valid for `&self` (the
+        // handler borrow that produced this `Request`).
         unsafe { core::slice::from_raw_parts(p as *const u8, len) }
     }
 
