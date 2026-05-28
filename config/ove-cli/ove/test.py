@@ -72,6 +72,34 @@ def _parse_cmocka(stdout: str) -> TestResults:
                        failed_names=failed_names)
 
 
+def _summary_failures(stdout: str):
+    """Return the firmware's self-reported group-failure count, or None.
+
+    Every test firmware ends a *complete* run with a line of the form
+
+        === Summary: N test group(s) had failures ===
+
+    emitted by tests/stub_main.c and every per-sim main (QEMU/Renode/native
+    NuttX/Zephyr) after the suite runner returns.  Its presence is proof the
+    run reached the end; N is the firmware's own authoritative failure tally
+    (it includes cmocka GROUP SETUP/TEARDOWN errors, which surface as
+    ``total_errors`` and so never appear in the aggregate ``[  FAILED  ]
+    tests: N`` line that _parse_cmocka counts).
+
+    Returns the integer N, or None when the line is absent — i.e. an
+    incomplete run (fault, hang, or early exit).  Used by the sim drivers
+    that have no usable process exit code (Renode exits 0 unconditionally;
+    the native NuttX sim idles until a timeout), where scraping
+    ``[  PASSED  ]`` lines alone scores a partial run as a pass.
+
+    The last occurrence wins so a reset-and-resume firmware (the HW
+    watchdog suite reboots on boot #1) is scored on its final summary.
+    """
+    matches = re.findall(
+        r'=== Summary:\s*(\d+)\s+test group\(s\) had failures ===', stdout)
+    return int(matches[-1]) if matches else None
+
+
 def _run_test_binary(cmd, suite, **kwargs) -> TestResults:
     """Run a test binary, print its output, and parse CMocka results."""
     result = subprocess.run(
@@ -1055,6 +1083,20 @@ def _run_nuttx_sim(ove_dir, output_dir, *, build_subdir, label,
 
     parsed = _parse_cmocka(stdout)
     parsed.suite = label
+    # The native NuttX sim never self-exits (it idles after the init task
+    # returns), so the timeout above is the *normal* exit path and
+    # result.returncode tells us nothing.  Require the firmware's end-of-run
+    # summary line as proof the run completed (see _summary_failures): its
+    # absence means the run faulted/hung mid-way — some suites may have
+    # printed [ PASSED ] before stopping, which must NOT score as a pass.
+    # A non-zero N is the firmware's own failure tally.
+    n = _summary_failures(stdout)
+    if n is None:
+        logger.error("%s: no completion summary — run stopped early", label)
+        parsed.failed = max(parsed.failed, 1)
+        parsed.failed_names.append("<incomplete run: no summary>")
+    elif n > 0:
+        parsed.failed = max(parsed.failed, n)
     if parsed.failed > 0 or parsed.passed == 0:
         logger.error("%s had failures", label)
         parsed.failed = max(parsed.failed, 1)
@@ -1336,9 +1378,21 @@ def _renode_run_elf(ove_dir, output_dir, *, label, elf, resc):
     print(output, end="")
     parsed = _parse_cmocka(output)
     parsed.suite = label
-    if parsed.passed == 0 and parsed.failed == 0:
-        parsed.failed = 1
-        parsed.failed_names.append("<no cmocka output>")
+    # Renode ignores ARM semihosting exit (the process exits 0 regardless),
+    # so r.returncode can't distinguish a clean finish from a fault/hang.
+    # Require the firmware's end-of-run summary line as proof of completion
+    # (see _summary_failures): its absence means the run stopped early — a
+    # partial run that printed some [ PASSED ] lines before faulting would
+    # otherwise score green.  N>0 is the firmware's own tally (includes
+    # cmocka GROUP errors _parse_cmocka cannot see).  This subsumes the old
+    # "no cmocka output -> fail" check (no output -> no summary -> fail).
+    n = _summary_failures(output)
+    if n is None:
+        parsed.failed = max(parsed.failed, 1)
+        parsed.failed_names.append("<incomplete run: no summary>")
+    elif n > 0:
+        parsed.failed = max(parsed.failed, n)
+    # Defence-in-depth: a non-zero Renode exit (e.g. tool error) still fails.
     if r.returncode != 0 and parsed.failed == 0:
         parsed.failed = 1
     return parsed
