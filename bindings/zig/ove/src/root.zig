@@ -46,10 +46,27 @@
 //! | `Workqueue` / `Work` | Deferred work on a dedicated thread |
 //! | `Stream` | Variable-length byte-stream ring buffer |
 //! | `Watchdog` | Hardware watchdog timer |
-//! | `gpio`, `led`, `board` | Hardware I/O and board identification |
-//! | `audio`, `fs`, `nvs` | Audio streaming, filesystem, non-volatile storage |
-//! | `console`, `log` | Console I/O and formatted logging |
+//! | `time` | Monotonic clock, sleep, deadline helpers |
+//! | `gpio`, `led`, `uart`, `i2c`, `spi`, `board`, `bsp` | Hardware I/O and board services |
+//! | `audio`, `fs`, `nvs` | Audio graph, filesystem, non-volatile storage |
+//! | `net`, `net_http`, `net_httpd`, `net_mqtt`, `net_sntp`, `net_tls` | Sockets, HTTP client/server, MQTT, SNTP, TLS |
+//! | `shell`, `console`, `log` | Console I/O, shell command registration, `std.log` facade |
+//! | `infer` | TFLite Micro inference (per-mode `Model`) |
+//! | `pm` | Power management (states, wake sources, policy/notify handlers) |
 //! | `lvgl` | LVGL UI toolkit bindings |
+//! | `containers`, `static_cell`, `allocators`, `target` | Utility containers and runtime helpers |
+//!
+//! ## Known gaps
+//!
+//! The following oveRTOS C headers do not yet have a typed Zig wrapper —
+//! callers must reach into `ove.ffi` (raw `c.ove_*` symbols) directly:
+//! - `i2s.h` — I²S audio driver (no `i2s.zig`).
+//! - `audio_device.h`, `audio_node.h` — only `audio.Graph` lifecycle is
+//!   wrapped; device source/sink factories and individual node types
+//!   require raw FFI.
+//! - `storage.h` — storage backend abstraction (~1 kLOC C API).
+//! - `profiler.h`, `trace.h`, `ove_arm_backtrace.h` — diagnostic /
+//!   platform-specific; intentionally C-only.
 //!
 //! ## Heap and zero-heap modes
 //!
