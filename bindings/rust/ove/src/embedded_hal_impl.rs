@@ -37,6 +37,9 @@ mod i2c_impl {
         fn kind(&self) -> i2c::ErrorKind {
             match self {
                 Error::BusNack => i2c::ErrorKind::NoAcknowledge(i2c::NoAcknowledgeSource::Unknown),
+                // `embedded-hal` 1.0 has no "busy" ErrorKind; ArbitrationLoss
+                // is the closest retryable bus-contention signal, so drivers
+                // that back off on arbitration loss also back off on a busy bus.
                 Error::BusBusy => i2c::ErrorKind::ArbitrationLoss,
                 Error::BusError => i2c::ErrorKind::Bus,
                 _ => i2c::ErrorKind::Other,
