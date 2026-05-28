@@ -41,11 +41,7 @@ pub fn set(port: u32, pin: u32, value: bool) Error!void {
 /// Returns `true` for high, `false` for low.
 /// Returns `Error` if the pin is unavailable or an I/O error occurs.
 pub fn get(port: u32, pin: u32) Error!bool {
-    const val = c.ove_gpio_get(port, pin);
-    if (val < 0) {
-        try err.fromCode(val);
-        unreachable;
-    }
+    const val = try err.fromCodeInt(c.ove_gpio_get(port, pin));
     return val != 0;
 }
 
