@@ -166,8 +166,12 @@ pub const Dir = struct {
     /// Returns a `Dirent` describing the next entry, or `Error` on I/O failure.
     pub fn readEntry(self: Dir) Error!?Dirent {
         var raw_entry: c.struct_ove_dirent = undefined;
-        try err.fromCode(c.ove_fs_readdir(self.handle, &raw_entry));
-        // rc == 0 with empty name means end of directory
+        const rc = c.ove_fs_readdir(self.handle, &raw_entry);
+        // OVE_ERR_EOF is the documented end-of-directory sentinel; surface
+        // any other negative code as a real error.
+        if (rc == c.OVE_ERR_EOF) return null;
+        try err.fromCode(rc);
+        // Some backends signal end-of-directory with an empty name instead.
         if (raw_entry.name[0] == 0) return null;
         var entry: Dirent = .{
             .name = undefined,
