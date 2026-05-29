@@ -351,9 +351,13 @@ lint: $(VENV_STAMP)
 	@# stale relative to a fresh bindgen run.  The script always exits 0
 	@# in --check mode, but `|| true` is belt-and-braces.
 	@$(OVE_DIR)/scripts/regen-bindings-stub.sh --check || true
-	@# Non-blocking LVGL cross-binding parity report.  Default mode
-	@# prints summary counts only; full per-method gap list available
-	@# via `scripts/lvgl_parity_check.py --verbose`.
+	@# LVGL cross-binding parity — intentionally NON-GATING (report only).
+	@# Do NOT add `--strict` / drop the `|| true` yet: there is a backlog of
+	@# ~180 cross-binding gaps today (a mix of real gaps and heuristic
+	@# name-normalisation false positives), so --strict would fail CI lint
+	@# immediately.  Gate only after triaging the backlog — whitelist the
+	@# intentional/false-positive tuples in tests/audit/lvgl_parity_whitelist.txt
+	@# and fix the real gaps.  Full per-method list: `... --verbose`.
 	@python3 $(OVE_DIR)/scripts/lvgl_parity_check.py || true
 
 # Run clang-tidy specifically against cross-compile backend code.  Reuses

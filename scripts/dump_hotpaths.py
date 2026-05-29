@@ -348,8 +348,25 @@ def main():
         sys.exit(2)
 
     target_key = args.target or f"host_posix_benchmark_{args.binding}"
-    config = load_config(args.config).get(target_key, {})
+    full_config = load_config(args.config)
+    # A missing/renamed/typo'd target key (or a missing config file, which
+    # load_config returns as {}) must FAIL, not silently pass: with an empty
+    # expected-symbol list the audit loop below runs zero times and reports
+    # status=OK, so a wholly un-audited target would score green.  The audit
+    # only runs for benchmark builds and every such target has an entry, so
+    # this can only trip on genuine misconfiguration (e.g. a new
+    # binding/board/variant added without a hotpath_expected.yaml entry).
+    if target_key not in full_config:
+        print(f"[hotpath dump] FAIL: target '{target_key}' not found in "
+              f"{args.config} — add an entry or fix --target/--binding.",
+              file=sys.stderr)
+        sys.exit(2)
+    config = full_config[target_key]
     expected_symbols = config.get("symbols", [])
+    if not expected_symbols:
+        print(f"[hotpath dump] FAIL: target '{target_key}' lists no "
+              f"'symbols' to audit in {args.config}.", file=sys.stderr)
+        sys.exit(2)
 
     symbols = list(list_symbols(nm, elf))
     addr_map = addr_to_symbol(nm, elf)
