@@ -154,7 +154,14 @@ static void test_external_irq_trigger(void **state)
 int test_renode_stm32_obs_run(void)
 {
 #if !OVE_OBS_AVAILABLE
-	printf("  [SKIP] renode_stm32_obs — non-Renode target\n");
+	/* OVE_OBS_AVAILABLE is 0 on genuinely non-Renode targets (QEMU/POSIX)
+	 * AND on the NuttX/Zephyr Renode targets, which run under Renode but do
+	 * not yet wire up the STM32 HAL register layer (only the FreeRTOS Renode
+	 * build defines OVE_RENODE_STM32F746).  Word the skip so it does not
+	 * falsely claim "non-Renode" on those Renode backends.  See
+	 * framework/renode_obs.h for the gap + what enabling them requires. */
+	printf("  [SKIP] renode_stm32_obs — register observation not wired here "
+	       "(non-Renode target, or NuttX/Zephyr-Renode w/o the STM32 HAL register layer)\n");
 	return 0;
 #else
 	const struct CMUnitTest tests[] = {

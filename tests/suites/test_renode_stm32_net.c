@@ -112,7 +112,11 @@ static void test_renode_udp_loopback(void **state)
 int test_renode_stm32_net_run(void)
 {
 #if !OVE_OBS_AVAILABLE || !defined(CONFIG_OVE_NET)
-	printf("  [SKIP] renode_stm32_net — non-Renode or net disabled\n");
+	/* Skipped when net is disabled, on non-Renode targets, OR on the
+	 * NuttX/Zephyr Renode targets (real Renode without the STM32 HAL
+	 * register layer — see test_renode_stm32_obs.c). */
+	printf("  [SKIP] renode_stm32_net — not exercised here "
+	       "(net disabled, non-Renode target, or NuttX/Zephyr-Renode w/o the STM32 HAL register layer)\n");
 	return 0;
 #else
 	const struct CMUnitTest tests[] = {
