@@ -45,9 +45,26 @@ static inline uint32_t ove_obs_read32(uintptr_t addr)
 
 #else /* !OVE_RENODE_STM32F746 */
 
-/* On non-Renode targets these expand to constants that always make the
- * dependent assertion fall into a skip branch — see the
- * OVE_OBS_AVAILABLE gate inside each test. */
+/* These expand to constants that always make the dependent assertion fall
+ * into a skip branch — see the OVE_OBS_AVAILABLE gate inside each test.
+ *
+ * This branch is taken on two distinct kinds of target:
+ *   1. Genuinely non-Renode builds (QEMU/POSIX/native sims), where there is
+ *      no modelled STM32 peripheral to observe.
+ *   2. The NuttX/Zephyr *Renode* targets — these DO run under Renode against
+ *      the modelled STM32F746, but they do not define OVE_RENODE_STM32F746
+ *      because the register layer above (`stm32f7xx_hal.h` → GPIO_TypeDef,
+ *      SPI_TypeDef, …) is only on the include path for the FreeRTOS Renode
+ *      build (which links the ST HAL).  So register-level driver
+ *      verification — the whole point of the Renode tier — currently runs
+ *      for FreeRTOS only; the NuttX/Zephyr Renode jobs skip these suites.
+ *
+ * TODO(renode-obs-nuttx-zephyr): close gap #2 by making the CMSIS register
+ * defs available to the NuttX/Zephyr Renode builds (NuttX arch headers /
+ * Zephyr hal_stm32), defining OVE_RENODE_STM32F746 there, and adding the
+ * matching .resc stimulus (SPI loopback peripheral + GPIO/EXTI injection,
+ * which today exist only in renode-stm32f746-freertos/test.resc).
+ */
 #define OVE_OBS_AVAILABLE 0
 #define OVE_OBS_GPIO_ODR(port) (0U)
 #define OVE_OBS_GPIO_PIN_HIGH(port, n) (0)

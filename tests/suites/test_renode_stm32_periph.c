@@ -202,7 +202,11 @@ static void test_renode_spi_loopback(void **state)
 int test_renode_stm32_periph_run(void)
 {
 #if !OVE_OBS_AVAILABLE
-	printf("  [SKIP] renode_stm32_periph — non-Renode target\n");
+	/* See test_renode_stm32_obs.c: this branch is also hit on the
+	 * NuttX/Zephyr Renode targets (real Renode, but no STM32 HAL register
+	 * layer), so do not claim "non-Renode" there. */
+	printf("  [SKIP] renode_stm32_periph — register observation not wired here "
+	       "(non-Renode target, or NuttX/Zephyr-Renode w/o the STM32 HAL register layer)\n");
 	return 0;
 #else
 	const struct CMUnitTest tests[] = {
