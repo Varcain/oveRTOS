@@ -189,7 +189,7 @@ benchmarks-%: $(VENV_STAMP)
 
 # Single source of truth for `test-<name>` recipes — each delegates to
 # `ove test <name>`. Add new suites here, not as separate targets.
-TEST_NAMES := stub stub-sanitize stub-tsan stub-msan \
+TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               cpp cpp-sanitize cpp-tsan rust zig zig-debug nuttx zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
               qemu-nuttx qemu-nuttx-zeroheap \
