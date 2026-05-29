@@ -73,6 +73,9 @@ jobs:
       - name: Run tests under sanitizers
         run: make test-stub-sanitize
 
+      - name: Run zero-heap tests under sanitizers
+        run: make test-stub-sanitize-zh
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

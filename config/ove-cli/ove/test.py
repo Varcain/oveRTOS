@@ -353,6 +353,37 @@ def _sanitize_extra_args(flags):
     ]
 
 
+def _stub_sanitize(ove_dir, output_dir, *, zero_heap):
+    """Shared body for the heap and zero-heap UBSan+ASan stub runs."""
+    label = "stub-sanitize-zh" if zero_heap else "stub-sanitize"
+    build = os.path.join(output_dir, "tests",
+                         "stub_sanitize_zh" if zero_heap else "stub_sanitize")
+    sanitize_flags = (
+        "-fsanitize=undefined,address "
+        "-fno-omit-frame-pointer "
+        "-fno-sanitize-recover=all"
+    )
+    # Zero-heap twin: define CONFIG_OVE_ZERO_HEAP so every object routes
+    # through the static-storage *_init() APIs instead of the heap *_create()
+    # path the default run exercises.  Passed as a -D inside CMAKE_C_FLAGS so
+    # it reaches every translation unit — same effect as the
+    # ove_test_stub_coverage_zh target in tests/CMakeLists.txt, but under
+    # ASan+UBSan rather than gcov.
+    if zero_heap:
+        sanitize_flags += " -DCONFIG_OVE_ZERO_HEAP=1"
+    mode = "zero-heap" if zero_heap else "heap"
+    logger.info("Building C stub tests (%s) with -fsanitize=undefined,address",
+                mode)
+    _cmake_build(os.path.join(ove_dir, "tests"), build,
+                 extra_args=_sanitize_extra_args(sanitize_flags))
+    logger.info("Running C stub tests (%s) under sanitizers", mode)
+    env = dict(os.environ)
+    env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
+    env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_stub")], label, env=env)
+
+
 def test_stub_sanitize(ove_dir, output_dir):
     """Build C-side stub tests with UBSan + ASan, then run them.
 
@@ -361,21 +392,18 @@ def test_stub_sanitize(ove_dir, output_dir):
     use-after-free, signed overflow, alignment violations) on the host
     POSIX target without needing an embedded toolchain.
     """
-    build = os.path.join(output_dir, "tests", "stub_sanitize")
-    sanitize_flags = (
-        "-fsanitize=undefined,address "
-        "-fno-omit-frame-pointer "
-        "-fno-sanitize-recover=all"
-    )
-    logger.info("Building C stub tests with -fsanitize=undefined,address")
-    _cmake_build(os.path.join(ove_dir, "tests"), build,
-                 extra_args=_sanitize_extra_args(sanitize_flags))
-    logger.info("Running C stub tests under sanitizers")
-    env = dict(os.environ)
-    env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
-    env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
-    return _run_test_binary(
-        [os.path.join(build, "ove_test_stub")], "stub-sanitize", env=env)
+    return _stub_sanitize(ove_dir, output_dir, zero_heap=False)
+
+
+def test_stub_sanitize_zh(ove_dir, output_dir):
+    """UBSan + ASan over the zero-heap (static-storage) stub build.
+
+    The default sanitize run exercises only the heap *_create() path; this
+    twin defines CONFIG_OVE_ZERO_HEAP so the *_init() static-storage APIs
+    (mutex/sem/queue/timer/workqueue/stream/eventgroup/...) are checked for
+    UAF/UB too — they otherwise get only -O0 gcov coverage, no sanitizer.
+    """
+    return _stub_sanitize(ove_dir, output_dir, zero_heap=True)
 
 
 def test_stub_tsan(ove_dir, output_dir):
@@ -2045,6 +2073,7 @@ def test_qemu_zephyr_coverage(ove_dir, output_dir):
 TEST_TARGETS = {
     "stub": test_stub,
     "stub-sanitize": test_stub_sanitize,
+    "stub-sanitize-zh": test_stub_sanitize_zh,
     "stub-tsan": test_stub_tsan,
     "stub-msan": test_stub_msan,
     "cpp": test_cpp,
