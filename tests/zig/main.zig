@@ -15,6 +15,15 @@ const w = &ove.log.writer;
 /// accounting pathologies during the suite's create/deinit churn.
 /// Zero-heap-mode builds would need a static-backed allocator instead
 /// — handled in a future iteration (B2 three-layer ban).
+///
+/// NB: a `std.heap.DebugAllocator` leak-check pass was attempted here (to
+/// catch a wrapper created-but-not-deinit'd) but it *hangs immediately* at
+/// run start against this threaded substrate — its mmap/guard-page-per-alloc
+/// scheme is incompatible with how the substrate manages memory across the
+/// pthreads the suite spawns (disabling stack_trace_frames did not help).
+/// Leak detection therefore needs a bespoke lightweight counting-allocator
+/// wrapper over page_allocator (forward + track outstanding count, assert
+/// zero at exit) — deferred follow-up; do NOT swap in DebugAllocator.
 const test_allocator = std.heap.page_allocator;
 
 // ---------------------------------------------------------------------------
