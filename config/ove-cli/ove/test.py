@@ -958,6 +958,18 @@ def test_zig_coverage(ove_dir, output_dir):
     convert to lcov so the result merges with the other backends.
     """
     kcov = _ensure_kcov(ove_dir)
+    # Heap build only — intentionally NO zero-heap coverage twin here (unlike
+    # the C stub's coverage_zh and rust-coverage's zero-heap pass).  For Zig
+    # the primitives' `create(allocator)` is mode-agnostic: it always allocates
+    # storage from the caller's allocator and calls the static `ove_*_init()`,
+    # so the static-storage path is identical in both modes and already covered
+    # by this heap run.  The only genuinely zero-heap-only Zig code is the
+    # `ZeroHeap*` type variants (Watchdog/infer.Model/net.*), which the
+    # zero-heap suite (test_zig_zeroheap) gates OUT — so a zero-heap kcov pass
+    # would merely add those untested variants at 0%, lowering the number
+    # without covering anything new.  (Rust differed: its `from_static` is
+    # distinct binding code the heap run never touched, hence rust-coverage's
+    # zero-heap pass.)
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, debug=True)
 
     cov_dir = os.path.join(output_dir, "tests", "zig_coverage", "kcov")
