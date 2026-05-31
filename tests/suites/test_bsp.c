@@ -21,6 +21,17 @@ static void gpio_irq_handler(unsigned int port, unsigned int pin, void *user_dat
 	s_irq_fired = 1;
 }
 
+/* Internal ISR hook the backend calls to deliver a GPIO edge to the
+ * registered callback.  The BSP irq wrappers delegate to the same ove_gpio
+ * irq_table, so dispatching here drives a BSP-registered handler too.  No
+ * public header declares it — forward-declare to test delivery on the host. */
+extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
+
+/* Dedicated IRQ pin for this suite — distinct from LED0 (shared) and from
+ * test_gpio.c's pin, so first-match dispatch reliably delivers to our
+ * handler.  See the rationale in test_gpio.c. */
+#define TEST_BSP_IRQ_PIN 8
+
 /* ── tests ───────────────────────────────────────────────────────────── */
 
 static void test_bsp_board_init(void **state)
@@ -99,14 +110,27 @@ static void test_bsp_gpio_irq_enable_disable(void **state)
 {
 	(void)state;
 	ove_bsp_board_init();
-	ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_IRQ_RISING,
+	/* Dedicated pin so this test owns the only registration (see
+	 * TEST_BSP_IRQ_PIN) — first-match dispatch reliably hits our handler. */
+	ove_bsp_gpio_irq_register(OVE_LED0_PORT, TEST_BSP_IRQ_PIN, OVE_GPIO_IRQ_RISING,
 				  gpio_irq_handler, NULL);
 
-	int rc = ove_bsp_gpio_irq_enable(OVE_LED0_PORT, OVE_LED0_PIN);
+	int rc = ove_bsp_gpio_irq_enable(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
 	assert_int_equal(rc, OVE_OK);
 
-	rc = ove_bsp_gpio_irq_disable(OVE_LED0_PORT, OVE_LED0_PIN);
+	/* Drive the real ISR dispatch path: an enabled, registered line must
+	 * deliver to the handler (the BSP wrappers share ove_gpio's irq_table). */
+	s_irq_fired = 0;
+	ove_gpio_irq_dispatch(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
+	assert_int_equal(s_irq_fired, 1);
+
+	rc = ove_bsp_gpio_irq_disable(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
 	assert_int_equal(rc, OVE_OK);
+
+	/* After disable the same dispatch must NOT reach the handler. */
+	s_irq_fired = 0;
+	ove_gpio_irq_dispatch(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
+	assert_int_equal(s_irq_fired, 0);
 }
 
 static void test_bsp_gpio_set_invalid_port(void **state)
