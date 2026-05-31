@@ -10,9 +10,11 @@
 //! type `T` (which must be `Copy`) between threads or between ISR and thread
 //! contexts. `N` is the maximum number of items the queue can hold.
 
+use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
+use core::mem::MaybeUninit;
 
 use crate::bindings;
 use crate::error::{Error, Result};
@@ -28,6 +30,38 @@ use crate::error::{Error, Result};
 // pointer casts from user data, slice reconstruction via `from_raw_parts`,
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
+
+/// Caller-owned storage + item buffer for a [`Queue`] in zero-heap mode.
+/// Declare in a `static` and pass `&STORAGE` to [`Queue::create`]; in heap
+/// mode it is ignored.  See [`crate::MutexStorage`] for the pattern; this one
+/// additionally embeds the `[T; N]` item buffer the queue needs.
+#[allow(dead_code)]
+pub struct QueueStorage<T: Copy, const N: usize> {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_queue_storage_t>>,
+    buffer: UnsafeCell<MaybeUninit<[T; N]>>,
+}
+
+impl<T: Copy, const N: usize> QueueStorage<T, N> {
+    /// Zero-initialised storage with an uninitialised item buffer.  `const`
+    /// so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            buffer: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+}
+
+impl<T: Copy, const N: usize> Default for QueueStorage<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see crate::MutexStorage.  The buffer is only ever addressed as a
+// raw pointer handed to C; `T: Copy` carries no interior mutability.
+unsafe impl<T: Copy, const N: usize> Sync for QueueStorage<T, N> {}
 
 /// Type-safe FIFO queue with compile-time capacity.
 ///
@@ -71,6 +105,23 @@ impl<T: Copy, const N: usize> Queue<T, N> {
             handle,
             _marker: PhantomData,
         })
+    }
+
+    /// Mode-agnostic constructor (see [`crate::Mutex::create`]).  Heap mode
+    /// ignores `storage`; zero-heap mode backs the queue with its storage and
+    /// embedded item buffer.
+    pub fn create(storage: &'static QueueStorage<T, N>) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            let sptr = UnsafeCell::raw_get(&storage.storage).cast();
+            let bptr = UnsafeCell::raw_get(&storage.buffer).cast::<core::ffi::c_void>();
+            unsafe { Self::from_static(sptr, bptr) }
+        }
     }
 
     /// Send an item, blocking indefinitely if the queue is full.

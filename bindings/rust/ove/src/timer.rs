@@ -9,6 +9,9 @@
 //! [`Timer`] wraps an RTOS software timer with a safe Rust `fn()` callback.
 //! Timers can be periodic or one-shot and are driven by the RTOS tick.
 
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -23,6 +26,32 @@ use crate::error::{Error, Result};
 // pointer casts from user data, slice reconstruction via `from_raw_parts`,
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
+
+/// Caller-owned storage for a [`Timer`] in zero-heap mode (see
+/// [`crate::MutexStorage`]).
+#[allow(dead_code)]
+pub struct TimerStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_timer_storage_t>>,
+}
+
+impl TimerStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for TimerStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see crate::MutexStorage.
+unsafe impl Sync for TimerStorage {}
 
 /// Software timer with a safe Rust callback.
 ///
@@ -84,6 +113,26 @@ impl Timer {
         };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Mode-agnostic constructor (see [`crate::Mutex::create`]).  Heap mode
+    /// ignores `storage`; zero-heap mode backs the timer with it.
+    pub fn create(
+        storage: &'static TimerStorage,
+        callback: fn(),
+        period_ms: u32,
+        one_shot: bool,
+    ) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new(callback, period_ms, one_shot)
+        }
+        #[cfg(zero_heap)]
+        {
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr, callback, period_ms, one_shot) }
+        }
     }
 
     /// Start the timer, beginning countdown from now.

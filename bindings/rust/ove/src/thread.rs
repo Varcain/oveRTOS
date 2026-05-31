@@ -662,8 +662,8 @@ impl Builder {
 /// encapsulated — callers never touch them directly.
 ///
 /// `STACK_SIZE` is in bytes.  The actual allocation may be larger to
-/// satisfy backend alignment (Zephyr MPU rounds up to next power of two
-/// + a 128-byte FPU guard region; other backends use 8-byte AAPCS
+/// satisfy backend alignment (Zephyr MPU rounds up to the next power of
+/// two plus a 128-byte FPU guard region; other backends use 8-byte AAPCS
 /// alignment).
 ///
 /// ```ignore

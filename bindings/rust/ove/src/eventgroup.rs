@@ -10,6 +10,9 @@
 //! Other threads can block until specific bit patterns appear, enabling fine-grained
 //! inter-task signalling without dedicated queues.
 
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -54,6 +57,32 @@ pub const EG_WAIT_ALL: WaitFlags = WaitFlags::WAIT_ALL;
 #[deprecated(note = "use WaitFlags::CLEAR_ON_EXIT instead")]
 pub const EG_CLEAR_ON_EXIT: WaitFlags = WaitFlags::CLEAR_ON_EXIT;
 
+/// Caller-owned storage for an [`EventGroup`] in zero-heap mode (see
+/// [`crate::MutexStorage`]).
+#[allow(dead_code)]
+pub struct EventGroupStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_eventgroup_storage_t>>,
+}
+
+impl EventGroupStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for EventGroupStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see crate::MutexStorage.
+unsafe impl Sync for EventGroupStorage {}
+
 /// Event group — a set of named bits that can be set, cleared, and waited on.
 pub struct EventGroup {
     handle: bindings::ove_eventgroup_t,
@@ -79,6 +108,20 @@ impl EventGroup {
         let rc = unsafe { bindings::ove_eventgroup_init(&mut handle, storage) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Mode-agnostic constructor (see [`crate::Mutex::create`]).
+    pub fn create(storage: &'static EventGroupStorage) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr) }
+        }
     }
 
     /// Set bits in the event group. Returns the bits value after setting.
