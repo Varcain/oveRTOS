@@ -146,7 +146,7 @@ static void test_eg_clear_on_exit(void **state)
 
 	ove_eventbits_t actual = 0;
 	int rc = ove_eventgroup_wait_bits(eg, BIT_0 | BIT_1, OVE_EG_WAIT_ALL | OVE_EG_CLEAR_ON_EXIT,
-					  100, &actual);
+					  OVE_MS(100), &actual);
 	assert_int_equal(rc, OVE_OK);
 
 	/* After CLEAR_ON_EXIT the waited bits should be cleared */
