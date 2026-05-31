@@ -79,7 +79,11 @@ function(ove_test_coverage_report name)
                 --capture --test-name ${name}
                 --rc branch_coverage=1
                 --output-file ${cov_dir}/coverage.info
-                --ignore-errors mismatch,gcov,source,negative
+                # `negative` is NOT ignored: a negative line count means gcov
+                # saw more covered lines than exist in source (corrupt/
+                # mismatched .gcda) — letting it through can silently inflate
+                # the coverage number, so surface it as an error instead.
+                --ignore-errors mismatch,gcov,source
         COMMAND ${LCOV_BIN} --extract ${cov_dir}/coverage.info
                 ${ove_extract_patterns}
                 --rc branch_coverage=1
