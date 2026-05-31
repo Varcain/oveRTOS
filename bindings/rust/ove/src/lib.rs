@@ -368,8 +368,8 @@ pub use spi::Spi;
 pub use stream::Stream;
 #[cfg(has_sync)]
 pub use sync::{
-    CondVar, Event, Mutex, MutexGuard, RecursiveMutex, RecursiveMutexGuard, Semaphore,
-    WaitTimeoutResult,
+    CondVar, Event, Mutex, MutexGuard, MutexStorage, RecursiveMutex, RecursiveMutexGuard,
+    Semaphore, SemaphoreStorage, WaitTimeoutResult,
 };
 pub use thread::Priority;
 #[cfg(zero_heap)]
