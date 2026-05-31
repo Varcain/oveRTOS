@@ -177,6 +177,16 @@ static inline int ove_bsp_gpio_irq_disable(unsigned int port, unsigned int pin)
 	return ove_gpio_irq_disable(port, pin);
 }
 
+/**
+ * @brief Unregister a GPIO interrupt (BSP compatibility wrapper).
+ *
+ * Delegates to ove_gpio_irq_unregister().
+ */
+static inline int ove_bsp_gpio_irq_unregister(unsigned int port, unsigned int pin)
+{
+	return ove_gpio_irq_unregister(port, pin);
+}
+
 #else /* !CONFIG_OVE_BSP */
 
 static inline int ove_bsp_board_init(void)
@@ -223,6 +233,12 @@ static inline int ove_bsp_gpio_irq_enable(unsigned int port, unsigned int pin)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_bsp_gpio_irq_disable(unsigned int port, unsigned int pin)
+{
+	(void)port;
+	(void)pin;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_bsp_gpio_irq_unregister(unsigned int port, unsigned int pin)
 {
 	(void)port;
 	(void)pin;

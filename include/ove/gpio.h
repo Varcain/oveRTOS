@@ -131,6 +131,19 @@ int ove_gpio_irq_enable(unsigned int port, unsigned int pin);
  */
 int ove_gpio_irq_disable(unsigned int port, unsigned int pin);
 
+/**
+ * @brief Unregister a GPIO interrupt, freeing its slot.
+ *
+ * Disables the line and releases the registration so the (port, pin) can be
+ * registered again with a different callback/edge.  The inverse of
+ * ove_gpio_irq_register().
+ *
+ * @param[in] port  GPIO port index.
+ * @param[in] pin   GPIO pin index within the port.
+ * @return OVE_OK on success, negative error code if no matching registration.
+ */
+int ove_gpio_irq_unregister(unsigned int port, unsigned int pin);
+
 #else /* !CONFIG_OVE_GPIO */
 
 static inline int ove_gpio_configure(unsigned int port, unsigned int pin, ove_gpio_mode_t mode)
