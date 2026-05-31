@@ -768,7 +768,7 @@ def _find_zig(ove_dir):
 
 
 def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
-                           output_subdir=None):
+                           output_subdir=None, zero_heap=False):
     """Build tests/zig/main.zig into an executable; return (exe_path, cwd).
 
     Shared by test_zig, test_zig_coverage, and test_zig_debug.  When
@@ -779,23 +779,58 @@ def _build_zig_test_binary(ove_dir, output_dir, *, debug=False,
     (coverage vs plain debug-mode test) so they don't clobber each
     other's artefacts under output/tests/.
     """
-    stub_build = os.path.join(output_dir, "tests", "zig_stub")
-    logger.info("Building Zig stub library")
+    stub_build = os.path.join(output_dir, "tests",
+                              "zig_stub_zh" if zero_heap else "zig_stub")
+    logger.info("Building Zig stub library%s",
+                " (zero-heap)" if zero_heap else "")
     _cmake_build(
         os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
-        stub_build)
+        stub_build,
+        extra_args=(["-DOVE_STUB_ZERO_HEAP=ON"] if zero_heap else None))
+
+    # Zero-heap: generate an ove_config.h carrying CONFIG_OVE_ZERO_HEAP and put
+    # its dir first on the include path so the ove module's @cImport sees it —
+    # `pin.zero_heap = @hasDecl(c, "CONFIG_OVE_ZERO_HEAP")` then flips on, and
+    # the primitives' create() route through the static-storage *_init() APIs.
+    zh_include = []
+    if zero_heap:
+        zh_dir = os.path.join(output_dir, "tests", "zig_zh_gen")
+        os.makedirs(zh_dir, exist_ok=True)
+        with open(os.path.join(ove_dir, "tests", "ove_config.h")) as f:
+            base_cfg = f.read()
+        zh_cfg = base_cfg.replace(
+            "#endif /* OVE_CONFIG_H */",
+            "#define CONFIG_OVE_ZERO_HEAP 1\n\n#endif /* OVE_CONFIG_H */")
+        with open(os.path.join(zh_dir, "ove_config.h"), "w") as f:
+            f.write(zh_cfg)
+        # storage.h's @ZIG_CIMPORT zero-heap path embeds each storage struct by
+        # size, so it needs OVE_SIZEOF_*/OVE_ALIGNOF_* defines.  The stub build
+        # emits ove_storage_sizes.env (KEY=VALUE); convert to `#define OVE_KEY
+        # VALUE` (same mapping as config/cmake/ove_zig.cmake's generator).
+        with open(os.path.join(stub_build, "ove_storage_sizes.env")) as f:
+            sizes = f.read()
+        with open(os.path.join(zh_dir, "zig_storage_sizes.h"), "w") as out:
+            out.write("/* Auto-generated storage sizes for the zero-heap Zig "
+                      "test build. */\n")
+            for line in sizes.splitlines():
+                line = line.strip()
+                if "=" in line and not line.startswith("#"):
+                    key, val = line.split("=", 1)
+                    out.write(f"#define OVE_{key} {val}\n")
+        zh_include = ["-I" + zh_dir]
 
     zig = _find_zig(ove_dir)
     zig_test_dir = os.path.join(ove_dir, "tests", "zig")
     zig_bindings = os.path.join(ove_dir, "bindings", "zig", "ove",
                                 "src", "root.zig")
     if output_subdir is None:
-        output_subdir = "zig_coverage" if debug else "zig"
+        output_subdir = ("zig_coverage" if debug
+                         else "zig_zh" if zero_heap else "zig")
     zig_output = os.path.join(output_dir, "tests", output_subdir)
     os.makedirs(zig_output, exist_ok=True)
     zig_exe = os.path.join(zig_output, "ove_test_zig")
 
-    include_args = [
+    include_args = zh_include + [
         "-I" + os.path.join(ove_dir, "include"),
         "-I" + os.path.join(ove_dir, "tests"),
         "-I" + os.path.join(ove_dir, "backends", "posix", "include"),
@@ -833,6 +868,19 @@ def test_zig(ove_dir, output_dir):
     zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir)
     logger.info("Running Zig tests")
     return _run_test_binary([zig_exe], "zig")
+
+
+def test_zig_zeroheap(ove_dir, output_dir):
+    """Build and run the Zig binding tests in zero-heap (static-storage) mode.
+
+    The Zig primitives' `create(allocator)` already allocate the storage from
+    the caller's allocator and call the static `ove_*_init()` APIs, so the
+    core suites run unchanged with CONFIG_OVE_ZERO_HEAP defined.  Suites using
+    zero-heap-incompatible type variants (audio Graph buf-storage, net, infer)
+    are `comptime`-gated off in main.zig via `ove.pin.zero_heap`."""
+    zig_exe, _ = _build_zig_test_binary(ove_dir, output_dir, zero_heap=True)
+    logger.info("Running Zig tests (zero-heap)")
+    return _run_test_binary([zig_exe], "zig-zeroheap")
 
 
 def test_zig_debug(ove_dir, output_dir):
@@ -2171,6 +2219,7 @@ TEST_TARGETS = {
     "rust-zeroheap": test_rust_zeroheap,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
+    "zig-zeroheap": test_zig_zeroheap,
     "zig-debug": test_zig_debug,
     "zig-coverage": test_zig_coverage,
     "nuttx": test_nuttx,

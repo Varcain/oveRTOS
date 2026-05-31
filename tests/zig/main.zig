@@ -1830,13 +1830,19 @@ pub fn main() void {
         .{ .name = "binary_data", .func = testNvsBinaryData },
     });
 
-    runSuite("Watchdog", &.{
-        .{ .name = "create_destroy", .func = testWatchdogCreateDestroy },
-        .{ .name = "start", .func = testWatchdogStart },
-        .{ .name = "feed", .func = testWatchdogFeed },
-        .{ .name = "raii_drop", .func = testWatchdogRaiiDrop },
-        .{ .name = "feed_multiple", .func = testWatchdogFeedMultiple },
-    });
+    // Watchdog/Inference/Audio use storage-backed `ZeroHeap*` type variants
+    // (or, for Audio, a Graph that needs setBufStorage) with a different API
+    // under CONFIG_OVE_ZERO_HEAP, so their heap-allocator suites are gated to
+    // heap mode.  The mode-agnostic primitives above run in both.
+    if (!ove.zero_heap) {
+        runSuite("Watchdog", &.{
+            .{ .name = "create_destroy", .func = testWatchdogCreateDestroy },
+            .{ .name = "start", .func = testWatchdogStart },
+            .{ .name = "feed", .func = testWatchdogFeed },
+            .{ .name = "raii_drop", .func = testWatchdogRaiiDrop },
+            .{ .name = "feed_multiple", .func = testWatchdogFeedMultiple },
+        });
+    }
 
     runSuite("Audio", &.{
         .{ .name = "graph_init_deinit", .func = testAudioGraphInitDeinit },
@@ -1848,11 +1854,13 @@ pub fn main() void {
         .{ .name = "graph_build_then_start", .func = testAudioGraphBuildThenStart },
     });
 
-    runSuite("Inference", &.{
-        .{ .name = "create_null", .func = testInferCreateNull },
-        .{ .name = "invoke_null", .func = testInferInvokeNull },
-        .{ .name = "last_inference_null", .func = testInferLastInferenceNull },
-    });
+    if (!ove.zero_heap) {
+        runSuite("Inference", &.{
+            .{ .name = "create_null", .func = testInferCreateNull },
+            .{ .name = "invoke_null", .func = testInferInvokeNull },
+            .{ .name = "last_inference_null", .func = testInferLastInferenceNull },
+        });
+    }
 
     runSuite("Shell", &.{
         .{ .name = "init", .func = testShellInit },
@@ -1862,16 +1870,21 @@ pub fn main() void {
         .{ .name = "multiple_commands", .func = testShellMultipleCommands },
     });
 
-    runSuite("Filesystem", &.{
-        .{ .name = "mount", .func = testFsMount },
-        .{ .name = "file_write_read_roundtrip", .func = testFsFileWriteReadRoundtrip },
-        .{ .name = "file_raii_close", .func = testFsFileRaiiClose },
-        .{ .name = "open_nonexistent_fails", .func = testFsOpenNonexistentFails },
-        .{ .name = "dir_open_read", .func = testFsDirOpenRead },
-        .{ .name = "dir_entry_name", .func = testFsDirEntryName },
-        .{ .name = "dir_open_nonexistent_fails", .func = testFsDirOpenNonexistentFails },
-        .{ .name = "dir_end_returns_null", .func = testFsDirEndReturnsNull },
-    });
+    // Filesystem: the heap fs C API (ove_fs_open/opendir/...) is
+    // `#ifndef CONFIG_OVE_ZERO_HEAP`, and the Zig fs wrapper has no zero-heap
+    // variant, so the suite is heap-only.
+    if (!ove.zero_heap) {
+        runSuite("Filesystem", &.{
+            .{ .name = "mount", .func = testFsMount },
+            .{ .name = "file_write_read_roundtrip", .func = testFsFileWriteReadRoundtrip },
+            .{ .name = "file_raii_close", .func = testFsFileRaiiClose },
+            .{ .name = "open_nonexistent_fails", .func = testFsOpenNonexistentFails },
+            .{ .name = "dir_open_read", .func = testFsDirOpenRead },
+            .{ .name = "dir_entry_name", .func = testFsDirEntryName },
+            .{ .name = "dir_open_nonexistent_fails", .func = testFsDirOpenNonexistentFails },
+            .{ .name = "dir_end_returns_null", .func = testFsDirEndReturnsNull },
+        });
+    }
 
     runSuite("Stream", &.{
         .{ .name = "create_destroy", .func = testStreamCreateDestroy },
