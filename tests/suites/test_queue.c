@@ -225,8 +225,9 @@ static void test_queue_producer_consumer(void **state)
 		test_msleep(5);
 	}
 
-	/* let consumer drain and timeout-exit */
-	test_msleep(500);
+	/* ove_test_thread_destroy joins: it blocks until consumer_thread returns,
+	 * which happens once it has drained the queue and its next receive times
+	 * out — so the sum is final without a fixed settle delay. */
 	ove_test_thread_destroy(th);
 
 	assert_int_equal(atomic_load(&s_consumer_sum), 15);

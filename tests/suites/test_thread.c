@@ -16,6 +16,25 @@ static atomic_int g_flag;
 static atomic_intptr_t g_arg_val;
 static atomic_int g_keep_running;
 
+/* Bounded wait for an atomic_int flag — the stdatomic analogue of the
+ * framework's wait_for_flag (which takes a plain volatile int).  Uses a
+ * wall-clock budget, not an iteration count, so it is robust under gcov/CI
+ * load; replaces fixed test_msleep() guesses about "has the spawned thread
+ * run yet". */
+static int wait_for_atomic(atomic_int *flag, int expected, uint32_t timeout_ms)
+{
+	uint64_t start = 0, now = 0;
+	(void)ove_time_get_us(&start);
+	uint64_t deadline = start + (uint64_t)timeout_ms * 1000u;
+	while (atomic_load(flag) != expected) {
+		(void)ove_time_get_us(&now);
+		if (now >= deadline)
+			return atomic_load(flag) == expected;
+		test_msleep(1);
+	}
+	return 1;
+}
+
 /* Teardown ensures spinning threads are stopped even if an assertion fails
    (cmocka longjmps past the cleanup code in the test body). */
 static int teardown_stop_spin(void **state)
@@ -35,6 +54,7 @@ static void entry_set_flag(void *arg)
 static void entry_capture_arg(void *arg)
 {
 	atomic_store(&g_arg_val, (intptr_t)arg);
+	atomic_store(&g_flag, 1); /* signal "arg captured" for wait_for_atomic */
 }
 
 static void entry_spin(void *arg)
@@ -61,8 +81,7 @@ static void test_create_destroy(void **state)
 	ove_thread_t h = NULL;
 	ove_test_thread_run(&h, &s_th_storage, "t1", entry_set_flag, NULL, s_th_stack, 4096);
 	assert_non_null(h);
-	test_msleep(50);
-	assert_int_equal(atomic_load(&g_flag), 1);
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 	ove_test_thread_destroy(h);
 }
 
@@ -71,11 +90,12 @@ static void test_entry_arg(void **state)
 {
 	(void)state;
 	atomic_store(&g_arg_val, 0);
+	atomic_store(&g_flag, 0);
 	int sentinel = 0xBEEF;
 	ove_thread_t h = NULL;
 	ove_test_thread_run(&h, &s_th_storage, "t2", entry_capture_arg, &sentinel, s_th_stack,
 			    4096);
-	test_msleep(50);
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 	assert_int_equal((intptr_t)atomic_load(&g_arg_val), (intptr_t)&sentinel);
 	ove_test_thread_destroy(h);
 }
@@ -153,9 +173,21 @@ static void test_get_state_terminated(void **state)
 	ove_thread_t h = NULL;
 	atomic_store(&g_flag, 0);
 	ove_test_thread_run(&h, &s_th_storage, "t9", entry_set_flag, NULL, s_th_stack, 4096);
-	test_msleep(100);
+	/* Entry sets the flag then returns; wait for it to have run, then
+	 * bounded-poll (wall-clock) until the backend reflects the exit rather
+	 * than guessing a fixed delay. */
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
+	uint64_t st_start = 0, st_now = 0;
+	(void)ove_time_get_us(&st_start);
 	ove_thread_state_t st = ove_thread_get_state(h);
 	/* FreeRTOS threads suspend after entry returns; stub marks terminated */
+	while (st != OVE_THREAD_STATE_TERMINATED && st != OVE_THREAD_STATE_SUSPENDED) {
+		(void)ove_time_get_us(&st_now);
+		if (st_now >= st_start + 1000000u)
+			break;
+		test_msleep(1);
+		st = ove_thread_get_state(h);
+	}
 	assert_true(st == OVE_THREAD_STATE_TERMINATED || st == OVE_THREAD_STATE_SUSPENDED);
 	ove_test_thread_destroy(h);
 }
@@ -202,15 +234,19 @@ static void test_suspend_resume(void **state)
 	atomic_store(&g_flag, 0);
 	ove_thread_t h = NULL;
 	ove_test_thread_run(&h, &s_th_storage, "t14", entry_sleep_briefly, NULL, s_th_stack, 4096);
-	/* Wait for thread to start */
-	for (int i = 0; i < 100 && atomic_load(&g_flag) == 0; i++)
-		test_msleep(5);
-	assert_int_equal(atomic_load(&g_flag), 1);
+	/* Wait for the thread to start (it sets g_flag=1 on entry). */
+	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 
 	ove_thread_suspend(h);
 	test_msleep(10);
 	ove_thread_resume(h);
 
+	/* Settle delay (not a flag-poll): let the resumed worker finish its
+	 * sleep before we destroy it, so destroy's join can't race a thread
+	 * that resume hasn't woken yet.  We don't assert post-resume progress —
+	 * suspend/resume wake latency is backend/scheduler-sensitive (notably
+	 * under TSan's signal interception); this test verifies suspend/resume
+	 * don't crash and the thread stays joinable. */
 	test_msleep(300);
 	ove_test_thread_destroy(h);
 }
