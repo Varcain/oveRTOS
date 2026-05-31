@@ -370,6 +370,32 @@ impl<T: ?Sized> Drop for MutexGuard<'_, T> {
 // RecursiveMutex
 // ---------------------------------------------------------------------------
 
+/// Caller-owned storage for a [`RecursiveMutex`] in zero-heap mode (see
+/// [`MutexStorage`]).
+#[allow(dead_code)]
+pub struct RecursiveMutexStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_mutex_storage_t>>,
+}
+
+impl RecursiveMutexStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for RecursiveMutexStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see MutexStorage.
+unsafe impl Sync for RecursiveMutexStorage {}
+
 /// RAII wrapper around a recursive mutex.
 pub struct RecursiveMutex {
     handle: bindings::ove_mutex_t,
@@ -396,6 +422,20 @@ impl RecursiveMutex {
         let rc = unsafe { bindings::ove_recursive_mutex_init(&mut handle, storage) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Mode-agnostic constructor (see [`Mutex::create`]).
+    pub fn create(storage: &'static RecursiveMutexStorage) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr) }
+        }
     }
 
     /// Acquire the recursive mutex, blocking indefinitely.  Returns an
@@ -654,6 +694,31 @@ crate::ove_handle_impl!(Semaphore, ove_sem_destroy, ove_sem_deinit);
 // Event
 // ---------------------------------------------------------------------------
 
+/// Caller-owned storage for an [`Event`] in zero-heap mode (see [`MutexStorage`]).
+#[allow(dead_code)]
+pub struct EventStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_event_storage_t>>,
+}
+
+impl EventStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for EventStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see MutexStorage.
+unsafe impl Sync for EventStorage {}
+
 /// Binary event (signal/wait).
 pub struct Event {
     handle: bindings::ove_event_t,
@@ -679,6 +744,20 @@ impl Event {
         let rc = unsafe { bindings::ove_event_init(&mut handle, storage) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Mode-agnostic constructor (see [`Mutex::create`]).
+    pub fn create(storage: &'static EventStorage) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr) }
+        }
     }
 
     /// Block indefinitely until the event is signalled.
@@ -770,6 +849,31 @@ impl WaitTimeoutResult {
 /// guard, returns it re-acquired.  Predicate variants
 /// (`wait_while*`) loop internally so callers can't accidentally write
 /// the buggy `if cv.wait_for(...) ... && ready` pattern.
+/// Caller-owned storage for a [`CondVar`] in zero-heap mode (see [`MutexStorage`]).
+#[allow(dead_code)]
+pub struct CondVarStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_condvar_storage_t>>,
+}
+
+impl CondVarStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for CondVarStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see MutexStorage.
+unsafe impl Sync for CondVarStorage {}
+
 pub struct CondVar {
     handle: bindings::ove_condvar_t,
 }
@@ -794,6 +898,20 @@ impl CondVar {
         let rc = unsafe { bindings::ove_condvar_init(&mut handle, storage) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Mode-agnostic constructor (see [`Mutex::create`]).
+    pub fn create(storage: &'static CondVarStorage) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new()
+        }
+        #[cfg(zero_heap)]
+        {
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr) }
+        }
     }
 
     /// Atomically release the guarded mutex and block indefinitely

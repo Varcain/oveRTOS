@@ -11,6 +11,9 @@
 //! transfers discrete items, a `Stream` treats data as a continuous byte flow with
 //! a configurable receive-trigger threshold.
 
+use core::cell::UnsafeCell;
+use core::mem::MaybeUninit;
+
 use crate::bindings;
 use crate::error::{Error, Result};
 
@@ -25,6 +28,37 @@ use crate::error::{Error, Result};
 // pointer casts from user data, slice reconstruction via `from_raw_parts`,
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
+
+/// Caller-owned storage + byte buffer for a [`Stream`] in zero-heap mode.
+/// Declare in a `static` and pass `&STORAGE` to [`Stream::create`]; in heap
+/// mode it is ignored.  See [`crate::MutexStorage`]; this one additionally
+/// embeds the `[u8; N]` ring buffer the stream needs.
+#[allow(dead_code)]
+pub struct StreamStorage<const N: usize> {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_stream_storage_t>>,
+    buffer: UnsafeCell<MaybeUninit<[u8; N]>>,
+}
+
+impl<const N: usize> StreamStorage<N> {
+    /// Zero-initialised storage with an uninitialised byte buffer.  `const`
+    /// so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+            buffer: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+}
+
+impl<const N: usize> Default for StreamStorage<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see crate::MutexStorage.
+unsafe impl<const N: usize> Sync for StreamStorage<N> {}
 
 /// Byte-oriented stream buffer with compile-time buffer size.
 ///
@@ -59,6 +93,23 @@ impl<const N: usize> Stream<N> {
         let rc = unsafe { bindings::ove_stream_init(&mut handle, storage, buffer, N, trigger) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Mode-agnostic constructor (see [`crate::Mutex::create`]).  Heap mode
+    /// ignores `storage`; zero-heap mode backs the stream with its storage and
+    /// embedded byte buffer.
+    pub fn create(storage: &'static StreamStorage<N>, trigger: usize) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new(trigger)
+        }
+        #[cfg(zero_heap)]
+        {
+            let sptr = UnsafeCell::raw_get(&storage.storage).cast();
+            let bptr = UnsafeCell::raw_get(&storage.buffer).cast::<core::ffi::c_void>();
+            unsafe { Self::from_static(sptr, bptr, trigger) }
+        }
     }
 
     /// Send bytes, blocking indefinitely if the buffer is full.

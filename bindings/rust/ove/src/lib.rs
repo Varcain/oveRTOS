@@ -352,7 +352,7 @@ pub use cell::{LvCell, LvRefCell};
 pub use error::{Error, Result};
 #[cfg(has_eventgroup)]
 #[allow(deprecated)] // EG_* shims kept for compatibility; new code uses WaitFlags
-pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, WaitFlags};
+pub use eventgroup::{EG_CLEAR_ON_EXIT, EG_WAIT_ALL, EventGroup, EventGroupStorage, WaitFlags};
 pub use fmt::FmtBuf;
 #[cfg(has_i2c)]
 pub use i2c::I2c;
@@ -361,15 +361,15 @@ pub use init_cell::{InitCell, InitMut};
 /// Expands into the `extern "C" fn ove_main()` trampoline.
 pub use ove_macros::{main, thread as thread_attr};
 #[cfg(has_queue)]
-pub use queue::Queue;
+pub use queue::{Queue, QueueStorage};
 #[cfg(has_spi)]
 pub use spi::Spi;
 #[cfg(has_stream)]
-pub use stream::Stream;
+pub use stream::{Stream, StreamStorage};
 #[cfg(has_sync)]
 pub use sync::{
-    CondVar, Event, Mutex, MutexGuard, MutexStorage, RecursiveMutex, RecursiveMutexGuard,
-    Semaphore, SemaphoreStorage, WaitTimeoutResult,
+    CondVar, CondVarStorage, Event, EventStorage, Mutex, MutexGuard, MutexStorage, RecursiveMutex,
+    RecursiveMutexGuard, RecursiveMutexStorage, Semaphore, SemaphoreStorage, WaitTimeoutResult,
 };
 pub use thread::Priority;
 #[cfg(zero_heap)]
@@ -381,7 +381,7 @@ pub use thread::{
 #[cfg(has_time)]
 pub use time::Delay;
 #[cfg(has_timer)]
-pub use timer::Timer;
+pub use timer::{Timer, TimerStorage};
 #[cfg(has_uart)]
 pub use uart::Uart;
 #[cfg(has_watchdog)]
