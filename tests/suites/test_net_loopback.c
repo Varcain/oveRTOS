@@ -103,52 +103,108 @@ static int echo_server_start(struct echo_server *s)
 
 static void echo_server_stop(struct echo_server *s)
 {
-	if (s->started)
+	if (s->started) {
+		/* The worker may still be blocked in accept() — e.g. the test
+		 * aborted (cmocka longjmp on a failed assert) before the client
+		 * connected.  Poke the listen port with a throwaway connection so
+		 * accept() returns and the thread can exit; otherwise pthread_join
+		 * would hang forever.  In the normal path the client's close has
+		 * already let the worker exit and this extra connection just sits
+		 * unaccepted until we close it. */
+		int waker = socket(AF_INET, SOCK_STREAM, 0);
+		if (waker >= 0) {
+			struct sockaddr_in sin = {0};
+			sin.sin_family = AF_INET;
+			sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+			sin.sin_port = htons(s->port);
+			(void)connect(waker, (struct sockaddr *)&sin, sizeof(sin));
+			close(waker);
+		}
 		pthread_join(s->thr, NULL);
-	if (s->listen_fd >= 0)
+		s->started = 0;
+	}
+	if (s->listen_fd >= 0) {
 		close(s->listen_fd);
+		s->listen_fd = -1;
+	}
+}
+
+/* Fixture context: holds the server + client socket so loopback_teardown can
+ * reclaim them even when the test body aborts mid-way via a failed assert.
+ * A single static instance is fine — cmocka runs the test serially. */
+struct loopback_ctx {
+	struct echo_server srv;
+	int srv_started;
+	ove_socket_storage_t sock_storage;
+	ove_socket_t sock;
+	int sock_open;
+};
+
+static struct loopback_ctx g_loopback;
+
+static int loopback_setup(void **state)
+{
+	memset(&g_loopback, 0, sizeof(g_loopback));
+	if (echo_server_start(&g_loopback.srv) != 0)
+		return -1;
+	g_loopback.srv_started = 1;
+	*state = &g_loopback;
+	return 0;
+}
+
+static int loopback_teardown(void **state)
+{
+	struct loopback_ctx *ctx = (struct loopback_ctx *)*state;
+	if (!ctx)
+		return 0;
+	/* Runs even when the test aborts on a failed assert, so the client
+	 * socket and the echo server (incl. its pthread) are always reclaimed:
+	 * no fd/socket leak and no joinless thread wedging process teardown. */
+	if (ctx->sock_open)
+		ove_socket_close(ctx->sock);
+	if (ctx->srv_started)
+		echo_server_stop(&ctx->srv);
+	return 0;
 }
 
 static void test_tcp_loopback_echo(void **state)
 {
-	(void)state;
+	struct loopback_ctx *ctx = (struct loopback_ctx *)*state;
 
-	struct echo_server srv;
-	assert_int_equal(echo_server_start(&srv), 0);
-
-	ove_socket_storage_t sock_storage;
-	ove_socket_t sock;
-	assert_int_equal(ove_socket_open(&sock, &sock_storage, OVE_AF_INET, OVE_SOCK_STREAM),
+	assert_int_equal(ove_socket_open(&ctx->sock, &ctx->sock_storage, OVE_AF_INET,
+					 OVE_SOCK_STREAM),
 			 OVE_OK);
+	ctx->sock_open = 1;
 
 	ove_sockaddr_t dst = {
 		.family = OVE_AF_INET,
-		.port = srv.port,
+		.port = ctx->srv.port,
 		.addr = {127, 0, 0, 1},
 	};
-	assert_int_equal(ove_socket_connect(sock, &dst, OVE_SEC(2)), OVE_OK);
+	assert_int_equal(ove_socket_connect(ctx->sock, &dst, OVE_SEC(2)), OVE_OK);
 
 	static const char payload[] = "oveRTOS loopback";
 	const size_t plen = sizeof(payload) - 1;
 	size_t sent = 0;
-	assert_int_equal(ove_socket_send(sock, payload, plen, &sent), OVE_OK);
+	assert_int_equal(ove_socket_send(ctx->sock, payload, plen, &sent), OVE_OK);
 	assert_int_equal(sent, plen);
 
 	char rxbuf[64] = {0};
 	size_t received = 0;
-	assert_int_equal(ove_socket_recv(sock, rxbuf, sizeof(rxbuf), &received, OVE_SEC(2)),
+	assert_int_equal(ove_socket_recv(ctx->sock, rxbuf, sizeof(rxbuf), &received, OVE_SEC(2)),
 			 OVE_OK);
 	assert_int_equal(received, plen);
 	assert_memory_equal(rxbuf, payload, plen);
 
-	ove_socket_close(sock);
-	echo_server_stop(&srv);
+	/* Socket + server reclaimed by loopback_teardown (runs on success and
+	 * on assert-failure alike). */
 }
 
 int test_net_loopback_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_tcp_loopback_echo),
+		cmocka_unit_test_setup_teardown(test_tcp_loopback_echo,
+						loopback_setup, loopback_teardown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
