@@ -205,6 +205,9 @@ jobs:
       - name: Run tests
         run: make test-rust
 
+      - name: Run zero-heap tests
+        run: make test-rust-zeroheap
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

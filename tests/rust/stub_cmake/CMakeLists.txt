@@ -58,6 +58,16 @@ target_include_directories(ove_stub PRIVATE
     ${POSIX_CORE_DIR}/include
 )
 
+# Optional zero-heap (static-storage) build — routes the kernel objects
+# through the *_init() APIs.  Enabled by the `rust-zeroheap` test runner so the
+# binding's zero-heap create()/from_static paths link against a matching stub.
+# The runner also points OVE_GEN_DIR at an ove_config.h carrying the same
+# define so the Rust side stays consistent.
+option(OVE_STUB_ZERO_HEAP "Build the stub in zero-heap (static-storage) mode" OFF)
+if(OVE_STUB_ZERO_HEAP)
+    target_compile_definitions(ove_stub PRIVATE CONFIG_OVE_ZERO_HEAP=1)
+endif()
+
 # ── Generate storage type sizes for Rust bindings ──────────────────
 # Compile a probe file that measures sizeof/alignof of each storage type,
 # then extract the values into a KEY=VALUE .env file.

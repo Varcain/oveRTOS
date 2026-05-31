@@ -15,5 +15,22 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=rt");
 
+    // Mirror bindings/rust/ove/build.rs: enable the `zero_heap` cfg (which
+    // gates the test crate's zero-heap suite) when OVE_GEN_DIR/ove_config.h
+    // selects the static-storage mode. cfgs are per-crate, so the test crate
+    // needs its own emission even though the ove crate emits the same signal.
+    println!("cargo:rustc-check-cfg=cfg(zero_heap)");
+    if let Ok(gen_dir) = env::var("OVE_GEN_DIR") {
+        let cfg = std::path::Path::new(&gen_dir).join("ove_config.h");
+        println!("cargo:rerun-if-changed={}", cfg.display());
+        if std::fs::read_to_string(&cfg)
+            .map(|s| s.contains("#define CONFIG_OVE_ZERO_HEAP 1"))
+            .unwrap_or(false)
+        {
+            println!("cargo:rustc-cfg=zero_heap");
+        }
+    }
+
     println!("cargo:rerun-if-env-changed=STUB_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=OVE_GEN_DIR");
 }
