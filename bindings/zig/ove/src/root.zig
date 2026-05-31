@@ -113,6 +113,11 @@
 //! comptime { ove.exportMain(appMain); }
 //! ```
 
+/// True when built against a `CONFIG_OVE_ZERO_HEAP` config — the static-storage
+/// mode where some types (Watchdog, infer.Model, net.*) use a different
+/// (storage-backed) API.  Lets callers `comptime`-branch on the allocation mode.
+pub const zero_heap = @import("pin.zig").zero_heap;
+
 /// Raw C FFI symbols from the oveRTOS C layer. Prefer the typed wrappers above this.
 pub const ffi = @import("c.zig").raw;
 

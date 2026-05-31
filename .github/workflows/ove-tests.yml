@@ -243,6 +243,9 @@ jobs:
       - name: Run tests
         run: make test-zig
 
+      - name: Run zero-heap tests
+        run: make test-zig-zeroheap
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
