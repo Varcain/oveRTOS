@@ -172,3 +172,83 @@ function(ove_test_validate_suite_membership suite_dir)
         message(FATAL_ERROR "${_msg}")
     endif()
 endfunction()
+
+
+# ove_test_validate_suites_inc_parity(<suites_inc>)
+#   Cross-check that the per-suite categories in framework/suites.inc
+#   (OVE_SUITE / OVE_SUITE_FS / OVE_SUITE_STUB) agree with the
+#   OVE_TEST_{COMMON,FS,STUB_ONLY}_SUITES lists above.  These are two
+#   independent sources of truth: suites.inc drives the *runtime* dispatch
+#   (which test_*_run() the firmware calls per backend) while the cmake
+#   lists drive *compilation*.  If a suite is COMMON in one and STUB in the
+#   other it silently misbehaves — e.g. COMMON in cmake (compiled on QEMU)
+#   but STUB in suites.inc (never dispatched there) ⇒ the suite is dead on
+#   QEMU/Renode with no error.  ove_test_validate_suite_membership only
+#   guards cmake-vs-disk; this guards cmake-vs-suites.inc.  Fails configure
+#   on any divergence.
+function(ove_test_validate_suites_inc_parity suites_inc)
+    if(NOT EXISTS "${suites_inc}")
+        message(FATAL_ERROR "OveTest: suites.inc not found at ${suites_inc}")
+    endif()
+
+    # Pull the real suite entries (anchored at column 0 so the macro
+    # #defines, the `_OVE_SUITES_INC_DEFAULTED_*` guards and the comment
+    # examples are ignored).  More-specific macros first.
+    file(STRINGS "${suites_inc}" _stub_lines REGEX "^OVE_SUITE_STUB\\(")
+    file(STRINGS "${suites_inc}" _fs_lines   REGEX "^OVE_SUITE_FS\\(")
+    file(STRINGS "${suites_inc}" _all_lines  REGEX "^OVE_SUITE")
+
+    set(_inc_stub "")
+    foreach(_l ${_stub_lines})
+        string(REGEX MATCH "^OVE_SUITE_STUB\\(([a-z0-9_]+)" _ "${_l}")
+        if(CMAKE_MATCH_1)
+            list(APPEND _inc_stub "test_${CMAKE_MATCH_1}.c")
+        endif()
+    endforeach()
+    set(_inc_fs "")
+    foreach(_l ${_fs_lines})
+        string(REGEX MATCH "^OVE_SUITE_FS\\(([a-z0-9_]+)" _ "${_l}")
+        if(CMAKE_MATCH_1)
+            list(APPEND _inc_fs "test_${CMAKE_MATCH_1}.c")
+        endif()
+    endforeach()
+    # COMMON = OVE_SUITE(...) lines, i.e. ^OVE_SUITE followed directly by `(`.
+    set(_inc_common "")
+    foreach(_l ${_all_lines})
+        if("${_l}" MATCHES "^OVE_SUITE\\(([a-z0-9_]+)")
+            list(APPEND _inc_common "test_${CMAKE_MATCH_1}.c")
+        endif()
+    endforeach()
+
+    set(_problems "")
+    foreach(_cat COMMON FS STUB_ONLY)
+        if(_cat STREQUAL "COMMON")
+            set(_inc ${_inc_common})
+        elseif(_cat STREQUAL "FS")
+            set(_inc ${_inc_fs})
+        else()
+            set(_inc ${_inc_stub})
+        endif()
+        set(_cm ${OVE_TEST_${_cat}_SUITES})
+        list(SORT _inc)
+        list(SORT _cm)
+        foreach(_f ${_inc})
+            if(NOT _f IN_LIST _cm)
+                list(APPEND _problems "${_f}: suites.inc=${_cat} but missing from cmake ${_cat}")
+            endif()
+        endforeach()
+        foreach(_f ${_cm})
+            if(NOT _f IN_LIST _inc)
+                list(APPEND _problems "${_f}: cmake ${_cat} but not suites.inc ${_cat}")
+            endif()
+        endforeach()
+    endforeach()
+
+    if(_problems)
+        string(REPLACE ";" "\n  " _pp "${_problems}")
+        message(FATAL_ERROR
+            "OveTest: framework/suites.inc <-> OveTest.cmake category mismatch:\n  ${_pp}\n"
+            "Keep the OVE_SUITE/OVE_SUITE_FS/OVE_SUITE_STUB categories in suites.inc "
+            "in sync with the OVE_TEST_{COMMON,FS,STUB_ONLY}_SUITES lists.")
+    endif()
+endfunction()

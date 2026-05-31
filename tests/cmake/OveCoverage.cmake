@@ -36,7 +36,7 @@ function(ove_test_coverage_report name)
     find_program(LCOV_BIN lcov)
     find_program(GENHTML_BIN genhtml)
     if(NOT LCOV_BIN OR NOT GENHTML_BIN)
-        message(STATUS "lcov/genhtml not found — `coverage` target disabled for ${target}")
+        message(STATUS "lcov/genhtml not found — `coverage` target disabled for ${name}")
         return()
     endif()
 
