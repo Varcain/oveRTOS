@@ -41,6 +41,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/OveCoverage.cmake)
 # (file added but not listed, listed but missing, listed twice).
 ove_test_validate_suite_membership(${CMAKE_CURRENT_SOURCE_DIR}/suites)
 
+# Also fail if the cmake category lists drift from the runtime dispatch
+# categories in framework/suites.inc (e.g. COMMON in one, STUB in the other).
+ove_test_validate_suites_inc_parity(${CMAKE_CURRENT_SOURCE_DIR}/framework/suites.inc)
+
 # Stub backend sources (direct-linked, no dispatcher layer)
 set(POSIX_CORE_DIR ${OVE_ROOT}/backends/posix)
 set(STUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/backends/stub)
