@@ -14,6 +14,7 @@ use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
+use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
 
 use crate::bindings;
@@ -87,6 +88,38 @@ pub struct Mutex<T: ?Sized> {
 unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 
+/// Caller-owned backing storage for a [`Mutex`] in zero-heap mode.  Declare
+/// it in a `static` and hand `&STORAGE` to [`Mutex::create`]; in heap mode the
+/// storage is ignored.  Mirrors [`crate::ThreadStorage`] — `const fn new()`
+/// makes it usable from a `static`, and the bytes are only ever handed to C as
+/// a raw pointer (the kernel owns the object's synchronisation).
+// The field is only addressed via a raw pointer handed to C, so it reads as
+// "never read" in heap mode — same as ClientStorage.
+#[allow(dead_code)]
+pub struct MutexStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_mutex_storage_t>>,
+}
+
+impl MutexStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for MutexStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: the storage is only ever addressed as a raw pointer passed to C;
+// the kernel owns the mutex's synchronisation.  Mirrors ThreadStorage's Sync.
+unsafe impl Sync for MutexStorage {}
+
 impl<T> Mutex<T> {
     /// Create a new mutex around `val` via heap allocation (heap mode only).
     #[cfg(not(zero_heap))]
@@ -115,6 +148,27 @@ impl<T> Mutex<T> {
             handle,
             data: UnsafeCell::new(val),
         })
+    }
+
+    /// Create a mutex around `val` that works in **both** heap and zero-heap
+    /// modes: heap mode ignores `storage` and allocates; zero-heap mode backs
+    /// the handle with the caller-provided `storage` (which must outlive the
+    /// `Mutex`).  This is the mode-agnostic constructor downstream crates use
+    /// — `new`/`from_static` are gated to one mode and `from_static` needs the
+    /// crate-private storage type, so neither is callable portably.
+    pub fn create(storage: &'static MutexStorage, val: T) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new(val)
+        }
+        #[cfg(zero_heap)]
+        {
+            // SAFETY: `storage` is 'static and, by this `&'static` borrow of a
+            // dedicated `static`, uniquely backs this one Mutex.
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr, val) }
+        }
     }
 
     /// Consume the mutex and return the protected value.
@@ -444,6 +498,32 @@ impl Drop for RecursiveMutexGuard<'_> {
 // Semaphore
 // ---------------------------------------------------------------------------
 
+/// Caller-owned backing storage for a [`Semaphore`] in zero-heap mode.  See
+/// [`MutexStorage`] for the pattern; pass `&STORAGE` to [`Semaphore::create`].
+#[allow(dead_code)]
+pub struct SemaphoreStorage {
+    storage: UnsafeCell<MaybeUninit<bindings::ove_sem_storage_t>>,
+}
+
+impl SemaphoreStorage {
+    /// Zero-initialised storage.  `const` so it can initialise a `static`.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            storage: UnsafeCell::new(MaybeUninit::zeroed()),
+        }
+    }
+}
+
+impl Default for SemaphoreStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// SAFETY: see MutexStorage.
+unsafe impl Sync for SemaphoreStorage {}
+
 /// Counting semaphore.
 pub struct Semaphore {
     handle: bindings::ove_sem_t,
@@ -473,6 +553,23 @@ impl Semaphore {
         let rc = unsafe { bindings::ove_sem_init(&mut handle, storage, initial, max) };
         Error::from_code(rc)?;
         Ok(Self { handle })
+    }
+
+    /// Create a counting semaphore that works in **both** heap and zero-heap
+    /// modes (see [`Mutex::create`]).  Heap mode ignores `storage`; zero-heap
+    /// mode backs the handle with the caller-provided `storage`.
+    pub fn create(storage: &'static SemaphoreStorage, initial: u32, max: u32) -> Result<Self> {
+        #[cfg(not(zero_heap))]
+        {
+            let _ = storage;
+            Self::new(initial, max)
+        }
+        #[cfg(zero_heap)]
+        {
+            // SAFETY: see Mutex::create.
+            let ptr = UnsafeCell::raw_get(&storage.storage).cast();
+            unsafe { Self::from_static(ptr, initial, max) }
+        }
     }
 
     /// Acquire one permit, blocking indefinitely.  `tokio::sync::Semaphore::acquire`
