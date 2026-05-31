@@ -484,6 +484,38 @@ def test_cpp(ove_dir, output_dir):
     return _run_test_binary([os.path.join(build, "ove_test_cpp")], "cpp")
 
 
+def _cpp_sanitize(ove_dir, output_dir, *, zero_heap):
+    """Shared body for the heap and zero-heap UBSan+ASan C++ runs."""
+    label = "cpp-sanitize-zh" if zero_heap else "cpp-sanitize"
+    build = os.path.join(output_dir, "tests",
+                         "cpp_sanitize_zh" if zero_heap else "cpp_sanitize")
+    sanitize_flags = (
+        "-fsanitize=undefined,address "
+        "-fno-omit-frame-pointer "
+        "-fno-sanitize-recover=all"
+    )
+    # Zero-heap twin: define CONFIG_OVE_ZERO_HEAP so the C++ wrappers route
+    # through the static-storage *_init() APIs instead of the heap path the
+    # default run exercises.  Passed as a -D inside CMAKE_CXX_FLAGS (via
+    # _sanitize_extra_args) so it reaches every TU — same effect as the
+    # ove_test_cpp_coverage_zh target, but under ASan+UBSan rather than gcov.
+    if zero_heap:
+        sanitize_flags += " -DCONFIG_OVE_ZERO_HEAP=1"
+    mode = "zero-heap" if zero_heap else "heap"
+    logger.info("Building C++ tests (%s) with -fsanitize=undefined,address",
+                mode)
+    _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build,
+                 extra_args=_sanitize_extra_args(sanitize_flags))
+    logger.info("Running C++ tests (%s) under sanitizers", mode)
+    env = dict(os.environ)
+    # halt_on_error: any sanitizer hit aborts immediately so the test
+    # runner sees a non-zero exit.  detect_leaks: catch leaks at exit.
+    env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
+    env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
+    return _run_test_binary(
+        [os.path.join(build, "ove_test_cpp")], label, env=env)
+
+
 def test_cpp_sanitize(ove_dir, output_dir):
     """Build C++ tests with UBSan + ASan, then run them.
 
@@ -496,23 +528,19 @@ def test_cpp_sanitize(ove_dir, output_dir):
     apply here — host tests build with full C++ runtime so sanitizer
     libs link cleanly.
     """
-    build = os.path.join(output_dir, "tests", "cpp_sanitize")
-    sanitize_flags = (
-        "-fsanitize=undefined,address "
-        "-fno-omit-frame-pointer "
-        "-fno-sanitize-recover=all"
-    )
-    logger.info("Building C++ tests with -fsanitize=undefined,address")
-    _cmake_build(os.path.join(ove_dir, "tests", "cpp"), build,
-                 extra_args=_sanitize_extra_args(sanitize_flags))
-    logger.info("Running C++ tests under sanitizers")
-    env = dict(os.environ)
-    # halt_on_error: any sanitizer hit aborts immediately so the test
-    # runner sees a non-zero exit.  detect_leaks: catch leaks at exit.
-    env["UBSAN_OPTIONS"] = "halt_on_error=1:print_stacktrace=1"
-    env["ASAN_OPTIONS"] = "halt_on_error=1:detect_leaks=1:strict_string_checks=1"
-    return _run_test_binary(
-        [os.path.join(build, "ove_test_cpp")], "cpp-sanitize", env=env)
+    return _cpp_sanitize(ove_dir, output_dir, zero_heap=False)
+
+
+def test_cpp_sanitize_zh(ove_dir, output_dir):
+    """UBSan + ASan over the zero-heap (static-storage) C++ build.
+
+    The default C++ sanitize run exercises only the heap path; this twin
+    defines CONFIG_OVE_ZERO_HEAP so the binding's *_init() static-storage
+    constructors are checked for UAF/UB too — they otherwise get only -O0
+    gcov coverage (ove_test_cpp_coverage_zh), no sanitizer.  C analog:
+    test_stub_sanitize_zh.
+    """
+    return _cpp_sanitize(ove_dir, output_dir, zero_heap=True)
 
 
 def test_cpp_tsan(ove_dir, output_dir):
@@ -2078,6 +2106,7 @@ TEST_TARGETS = {
     "stub-msan": test_stub_msan,
     "cpp": test_cpp,
     "cpp-sanitize": test_cpp_sanitize,
+    "cpp-sanitize-zh": test_cpp_sanitize_zh,
     "cpp-tsan": test_cpp_tsan,
     "rust": test_rust,
     "rust-coverage": test_rust_coverage,
