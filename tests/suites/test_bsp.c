@@ -27,10 +27,15 @@ static void gpio_irq_handler(unsigned int port, unsigned int pin, void *user_dat
  * public header declares it — forward-declare to test delivery on the host. */
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 
-/* Dedicated IRQ pin for this suite — distinct from LED0 (shared) and from
- * test_gpio.c's pin, so first-match dispatch reliably delivers to our
- * handler.  See the rationale in test_gpio.c. */
-#define TEST_BSP_IRQ_PIN 8
+/* Unregister the IRQ line after each IRQ test so the BSP suite's LED0
+ * registrations don't leak into later suites (notably test_gpio, which shares
+ * LED0) — that leakage is why a dedicated pin was previously needed. */
+static int bsp_irq_teardown(void **state)
+{
+	(void)state;
+	(void)ove_bsp_gpio_irq_unregister(OVE_LED0_PORT, OVE_LED0_PIN);
+	return 0;
+}
 
 /* ── tests ───────────────────────────────────────────────────────────── */
 
@@ -110,26 +115,27 @@ static void test_bsp_gpio_irq_enable_disable(void **state)
 {
 	(void)state;
 	ove_bsp_board_init();
-	/* Dedicated pin so this test owns the only registration (see
-	 * TEST_BSP_IRQ_PIN) — first-match dispatch reliably hits our handler. */
-	ove_bsp_gpio_irq_register(OVE_LED0_PORT, TEST_BSP_IRQ_PIN, OVE_GPIO_IRQ_RISING,
+	/* bsp_irq_teardown unregisters the line afterwards, so registrations
+	 * don't leak across suites and dispatch reliably hits this file's
+	 * handler — LED0 is safe to use for the delivery + gating assertions. */
+	ove_bsp_gpio_irq_register(OVE_LED0_PORT, OVE_LED0_PIN, OVE_GPIO_IRQ_RISING,
 				  gpio_irq_handler, NULL);
 
-	int rc = ove_bsp_gpio_irq_enable(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
+	int rc = ove_bsp_gpio_irq_enable(OVE_LED0_PORT, OVE_LED0_PIN);
 	assert_int_equal(rc, OVE_OK);
 
 	/* Drive the real ISR dispatch path: an enabled, registered line must
 	 * deliver to the handler (the BSP wrappers share ove_gpio's irq_table). */
 	s_irq_fired = 0;
-	ove_gpio_irq_dispatch(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
+	ove_gpio_irq_dispatch(OVE_LED0_PORT, OVE_LED0_PIN);
 	assert_int_equal(s_irq_fired, 1);
 
-	rc = ove_bsp_gpio_irq_disable(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
+	rc = ove_bsp_gpio_irq_disable(OVE_LED0_PORT, OVE_LED0_PIN);
 	assert_int_equal(rc, OVE_OK);
 
 	/* After disable the same dispatch must NOT reach the handler. */
 	s_irq_fired = 0;
-	ove_gpio_irq_dispatch(OVE_LED0_PORT, TEST_BSP_IRQ_PIN);
+	ove_gpio_irq_dispatch(OVE_LED0_PORT, OVE_LED0_PIN);
 	assert_int_equal(s_irq_fired, 0);
 }
 
@@ -152,8 +158,8 @@ int test_bsp_run(void)
 		cmocka_unit_test(test_bsp_led_toggle),
 		cmocka_unit_test(test_bsp_gpio_set),
 		cmocka_unit_test(test_bsp_gpio_get),
-		cmocka_unit_test(test_bsp_gpio_irq_register),
-		cmocka_unit_test(test_bsp_gpio_irq_enable_disable),
+		cmocka_unit_test_teardown(test_bsp_gpio_irq_register, bsp_irq_teardown),
+		cmocka_unit_test_teardown(test_bsp_gpio_irq_enable_disable, bsp_irq_teardown),
 		cmocka_unit_test(test_bsp_gpio_set_invalid_port),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

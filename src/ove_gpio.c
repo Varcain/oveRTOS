@@ -128,6 +128,25 @@ int ove_gpio_irq_disable(unsigned int port, unsigned int pin)
 	return OVE_ERR_NOT_SUPPORTED;
 }
 
+int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
+{
+	unsigned int i;
+
+	for (i = 0; i < GPIO_IRQ_MAX; i++) {
+		if (irq_table[i].registered && irq_table[i].port == port &&
+		    irq_table[i].pin == pin) {
+			/* Disable the line, then free the slot so the (port,pin)
+			 * can be re-registered.  Clearing `enabled` before
+			 * `registered` keeps a concurrent dispatch from firing a
+			 * half-torn-down entry (it gates on `enabled`). */
+			irq_table[i].enabled = 0;
+			irq_table[i].registered = 0;
+			return ove_hal_gpio_irq_hw_disable(port, pin);
+		}
+	}
+	return OVE_ERR_NOT_SUPPORTED;
+}
+
 /* Called by backend HAL when a GPIO interrupt fires */
 void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin)
 {
