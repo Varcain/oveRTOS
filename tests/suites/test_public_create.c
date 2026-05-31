@@ -58,6 +58,61 @@ static void timer_cb_noop(ove_timer_t timer, void *user_data)
 	(void)user_data;
 }
 
+/* ── fixtures for the thread / workqueue creators ────────────────────────
+ * These two tests create a sem plus a thread/workqueue and tear them down at
+ * the end of the body.  A mid-test assert failure longjmps past that cleanup
+ * (cmocka), leaking the objects — and since the sem is a file-static, its
+ * handle is also left stale.  Track what was created in a fixture so the
+ * teardown (which runs on success AND on assert-failure) always reclaims it.
+ * The worker only signals a sem and returns, so destroy's join can't hang. */
+static struct {
+	ove_thread_t th;
+	int sem_created;
+	int th_created;
+} s_thread_fx;
+
+static int pub_thread_setup(void **state)
+{
+	(void)state;
+	s_thread_fx.sem_created = 0;
+	s_thread_fx.th_created = 0;
+	return 0;
+}
+
+static int pub_thread_teardown(void **state)
+{
+	(void)state;
+	if (s_thread_fx.th_created)
+		ove_thread_destroy(s_thread_fx.th);
+	if (s_thread_fx.sem_created)
+		ove_sem_destroy(s_thread_done_sem);
+	return 0;
+}
+
+static struct {
+	ove_workqueue_t wq;
+	int sem_created;
+	int wq_created;
+} s_wq_fx;
+
+static int pub_wq_setup(void **state)
+{
+	(void)state;
+	s_wq_fx.sem_created = 0;
+	s_wq_fx.wq_created = 0;
+	return 0;
+}
+
+static int pub_wq_teardown(void **state)
+{
+	(void)state;
+	if (s_wq_fx.wq_created)
+		ove_workqueue_destroy(s_wq_fx.wq);
+	if (s_wq_fx.sem_created)
+		ove_sem_destroy(s_work_done_sem);
+	return 0;
+}
+
 /* ── tests ───────────────────────────────────────────────────────────── */
 
 static void test_public_create_mutex(void **state)
@@ -183,6 +238,7 @@ static void test_public_create_thread(void **state)
 {
 	(void)state;
 	assert_int_equal(ove_sem_create(&s_thread_done_sem, 0, 1), OVE_OK);
+	s_thread_fx.sem_created = 1;
 	s_thread_ran = 0;
 
 	ove_thread_t h = NULL;
@@ -195,12 +251,12 @@ static void test_public_create_thread(void **state)
 	int rc = ove_thread_create(&h, "pub_th", thread_entry_signal, NULL, OVE_PRIO_NORMAL, 4096);
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(h);
+	s_thread_fx.th = h;
+	s_thread_fx.th_created = 1;
 
 	assert_int_equal(ove_sem_take(s_thread_done_sem, OVE_MS(1000)), OVE_OK);
 	assert_int_equal(s_thread_ran, 1);
-
-	ove_thread_destroy(h);
-	ove_sem_destroy(s_thread_done_sem);
+	/* thread + sem reclaimed by pub_thread_teardown (success and failure). */
 }
 
 /*
@@ -214,6 +270,7 @@ static void test_public_create_workqueue(void **state)
 {
 	(void)state;
 	assert_int_equal(ove_sem_create(&s_work_done_sem, 0, 1), OVE_OK);
+	s_wq_fx.sem_created = 1;
 	s_work_ran = 0;
 
 	ove_workqueue_t wq = NULL;
@@ -221,6 +278,8 @@ static void test_public_create_workqueue(void **state)
 	int rc = ove_workqueue_create(&wq, "pub_wq", OVE_PRIO_NORMAL, 4096);
 	assert_int_equal(rc, OVE_OK);
 	assert_non_null(wq);
+	s_wq_fx.wq = wq;
+	s_wq_fx.wq_created = 1;
 
 	static ove_work_storage_t work_storage;
 	ove_work_t w = NULL;
@@ -230,9 +289,7 @@ static void test_public_create_workqueue(void **state)
 	assert_int_equal(ove_work_submit(wq, w), OVE_OK);
 	assert_int_equal(ove_sem_take(s_work_done_sem, OVE_MS(1000)), OVE_OK);
 	assert_int_equal(s_work_ran, 1);
-
-	ove_workqueue_destroy(wq);
-	ove_sem_destroy(s_work_done_sem);
+	/* workqueue + sem reclaimed by pub_wq_teardown (success and failure). */
 }
 
 /* ove_work_init self-allocates the work item from the heap. */
@@ -346,8 +403,10 @@ int test_public_create_run(void)
 		cmocka_unit_test(test_public_create_timer),
 		cmocka_unit_test(test_public_create_eventgroup),
 		cmocka_unit_test(test_public_create_stream),
-		cmocka_unit_test(test_public_create_thread),
-		cmocka_unit_test(test_public_create_workqueue),
+		cmocka_unit_test_setup_teardown(test_public_create_thread, pub_thread_setup,
+						pub_thread_teardown),
+		cmocka_unit_test_setup_teardown(test_public_create_workqueue, pub_wq_setup,
+						pub_wq_teardown),
 		cmocka_unit_test(test_public_create_work),
 		cmocka_unit_test(test_public_create_watchdog),
 #endif
