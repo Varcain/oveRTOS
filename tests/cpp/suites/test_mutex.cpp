@@ -175,6 +175,19 @@ static void test_cpp_mutex_raii_destroy(void **state)
 /* Move semantics are only supported in heap-allocating mode: in zero-heap
  * builds the wrapper owns inline storage and Move is deleted to prevent
  * dangling-handle bugs. */
+/* Verify a moved-to mutex actually works: the handle transferred intact, so it
+ * locks, self-fails a non-blocking try_lock while held, and re-locks once
+ * released.  A bare `.valid()` flag check would pass even if the handle were
+ * lost. */
+static void assert_mutex_usable(ove::Mutex &m)
+{
+	m.lock();
+	assert_false(m.try_lock()); /* held -> non-recursive try_lock fails */
+	m.unlock();
+	assert_true(m.try_lock()); /* now free */
+	m.unlock();
+}
+
 static void test_cpp_mutex_move_construct(void **state)
 {
 	(void)state;
@@ -184,6 +197,10 @@ static void test_cpp_mutex_move_construct(void **state)
 	ove::Mutex b(std::move(a));
 	assert_true(b.valid());
 	assert_false(a.valid());
+
+	assert_mutex_usable(b);
+	/* `a` is now handle-less; its destructor at scope end must NOT double-free
+	 * the handle `b` owns — caught by cpp-sanitize (ASan). */
 }
 
 static void test_cpp_mutex_move_assign(void **state)
@@ -194,6 +211,8 @@ static void test_cpp_mutex_move_assign(void **state)
 	b = std::move(a);
 	assert_true(b.valid());
 	assert_false(a.valid());
+
+	assert_mutex_usable(b);
 }
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
