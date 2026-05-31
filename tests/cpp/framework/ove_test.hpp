@@ -9,6 +9,21 @@
 #ifndef OVE_TEST_CPP_HPP
 #define OVE_TEST_CPP_HPP
 
+/*
+ * ⚠ cmocka + C++ RAII: cmocka's assert_*() macros report failure via
+ * longjmp() (see <setjmp.h> below).  A longjmp does NOT unwind the C++ stack,
+ * so any stack RAII object live at the point of a *failing* assertion has its
+ * destructor SKIPPED — e.g. a `ove::LockGuard`/`ove::Mutex` is left
+ * locked/leaked, and a destructor-based cleanup in the test body never runs.
+ *
+ * Impact is failure-path only (the test has already failed), so it does not
+ * cause false passes, but it can muddy leak reports and, if a *shared* object
+ * is left in a bad state, perturb a later test.  Guidance: keep asserts out of
+ * scopes that hold RAII cleanup you depend on, or move cleanup into a cmocka
+ * teardown (which DOES run after a failed assert).  Do not rely on stack
+ * destructors for correctness across an assertion.
+ */
+
 /* Pull in <chrono> (via ove.hpp) BEFORE cmocka so std::chrono internals
  * don't collide with cmocka's bare `fail()` macro. */
 #include "ove/ove.hpp"
