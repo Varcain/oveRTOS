@@ -626,6 +626,12 @@ static void test_pm_domain_concurrent(void **state)
 	/* Refcount should be zero after both threads balanced */
 	assert_int_equal(ove_pm_domain_get_refcount(OVE_PM_DOMAIN_AUDIO), 0);
 
+	/* Join + free the worker before PM teardown.  ove_test_thread_destroy
+	 * blocks until the entry returns, so this also joins — without it the
+	 * thread handle/storage leaks every run (all other thread tests pair
+	 * create with destroy). */
+	ove_test_thread_destroy(th);
+
 	ove_pm_deinit();
 }
 
