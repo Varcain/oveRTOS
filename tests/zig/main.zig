@@ -9,22 +9,58 @@ const ove = @import("ove");
 const Thread = ove.Thread;
 const w = &ove.log.writer;
 
-/// Shared allocator for every primitive constructed in this test
-/// suite.  `page_allocator` uses mmap directly — separate from the
-/// substrate's libc-malloc heap, so we avoid any cross-allocator
-/// accounting pathologies during the suite's create/deinit churn.
-/// Zero-heap-mode builds would need a static-backed allocator instead
-/// — handled in a future iteration (B2 three-layer ban).
+/// Leak-counting allocator wrapper.  Forwards every call to a backing
+/// allocator (`page_allocator`) and tracks the number of live allocations so
+/// main() can assert it returned to zero — a wrapper created-but-not-deinit'd
+/// shows up as a non-zero count at exit.
 ///
-/// NB: a `std.heap.DebugAllocator` leak-check pass was attempted here (to
-/// catch a wrapper created-but-not-deinit'd) but it *hangs immediately* at
-/// run start against this threaded substrate — its mmap/guard-page-per-alloc
-/// scheme is incompatible with how the substrate manages memory across the
-/// pthreads the suite spawns (disabling stack_trace_frames did not help).
-/// Leak detection therefore needs a bespoke lightweight counting-allocator
-/// wrapper over page_allocator (forward + track outstanding count, assert
-/// zero at exit) — deferred follow-up; do NOT swap in DebugAllocator.
-const test_allocator = std.heap.page_allocator;
+/// Why not `std.heap.DebugAllocator`?  It *hangs immediately* at run start
+/// against this threaded substrate — its mmap/guard-page-per-alloc + internal
+/// locking scheme is incompatible with how the substrate manages memory across
+/// the pthreads the suite spawns (disabling stack_trace_frames did not help).
+/// This thin wrapper behaves like `page_allocator` (which the suite already
+/// uses without hanging) plus one atomic counter, so it is hang-free.  The
+/// count is atomic because worker threads may alloc/free through it.
+const CountingAllocator = struct {
+    backing: std.mem.Allocator,
+    live: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+
+    const vtable = std.mem.Allocator.VTable{
+        .alloc = allocFn,
+        .resize = resizeFn,
+        .remap = remapFn,
+        .free = freeFn,
+    };
+
+    fn allocator(self: *CountingAllocator) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &vtable };
+    }
+
+    fn allocFn(ctx: *anyopaque, len: usize, a: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        const p = self.backing.rawAlloc(len, a, ra);
+        if (p != null) _ = self.live.fetchAdd(1, .monotonic);
+        return p;
+    }
+    fn resizeFn(ctx: *anyopaque, buf: []u8, a: std.mem.Alignment, new_len: usize, ra: usize) bool {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        return self.backing.rawResize(buf, a, new_len, ra);
+    }
+    fn remapFn(ctx: *anyopaque, buf: []u8, a: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        return self.backing.rawRemap(buf, a, new_len, ra);
+    }
+    fn freeFn(ctx: *anyopaque, buf: []u8, a: std.mem.Alignment, ra: usize) void {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        self.backing.rawFree(buf, a, ra);
+        _ = self.live.fetchSub(1, .monotonic);
+    }
+};
+
+var counting_allocator = CountingAllocator{ .backing = std.heap.page_allocator };
+/// Shared allocator for every primitive constructed in this suite.  Assigned
+/// `counting_allocator.allocator()` at the top of main() before any test runs.
+var test_allocator: std.mem.Allocator = undefined;
 
 // ---------------------------------------------------------------------------
 // Test framework
@@ -1668,6 +1704,8 @@ fn testErrorsFromCodeIntPositiveIsValue() !void {
 // ---------------------------------------------------------------------------
 
 pub fn main() void {
+    test_allocator = counting_allocator.allocator();
+
     runSuite("Mutex", &.{
         .{ .name = "create", .func = testMutexCreate },
         .{ .name = "lock_unlock", .func = testMutexLockUnlock },
@@ -1910,6 +1948,16 @@ pub fn main() void {
         .{ .name = "zero_is_ok", .func = testErrorsZeroIsOk },
         .{ .name = "from_code_int_positive_passthrough", .func = testErrorsFromCodeIntPositiveIsValue },
     });
+
+    // Every primitive constructed above should have been deinit'd, so the
+    // counting allocator must be back to zero live allocations.  All worker
+    // threads have joined by now (their suites returned), so the count is
+    // final.  A non-zero value means a wrapper leaked.
+    const leaked = counting_allocator.live.load(.monotonic);
+    if (leaked != 0) {
+        w.print("[  FAILED  ] CountingAllocator: {d} allocation(s) leaked\n", .{leaked}) catch {};
+        total_failed += 1;
+    }
 
     w.print("\n=== Summary: {d} passed, {d} failed ===\n", .{ total_passed, total_failed }) catch {};
 
