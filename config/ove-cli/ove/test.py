@@ -674,6 +674,25 @@ def test_rust_coverage(ove_dir, output_dir):
     binary = os.path.join(target_dir, "release", "ove-tests")
     result = _run_test_binary([binary], "rust", env=env)
 
+    # Also exercise the zero-heap suite under the same instrumentation so the
+    # binding's static-storage create()/from_static paths are counted — the C
+    # stub coverage runs heap + zero-heap twins for the same reason.  Its
+    # .profraw lands in the same profraw_dir (distinct name → merged below),
+    # and its binary is passed to llvm-cov as a second `-object`.
+    zh_target = os.path.join(cov_dir, "target_zh")
+    _, zh_env = _rust_test_env(ove_dir, output_dir, zh_target, zero_heap=True)
+    zh_env["RUSTFLAGS"] = zh_env.get("RUSTFLAGS", "") + " -C instrument-coverage"
+    zh_env["LLVM_PROFILE_FILE"] = os.path.join(
+        profraw_dir, "coverage-zh-%p-%m.profraw")
+    logger.info("Building Rust tests (coverage, zero-heap)")
+    run(["cargo", "build", "--release"], env=zh_env, cwd=rust_dir)
+    logger.info("Running Rust tests (coverage, zero-heap)")
+    zh_binary = os.path.join(zh_target, "release", "ove-tests")
+    zh_result = _run_test_binary([zh_binary], "rust-zeroheap", env=zh_env)
+    # Fold the zero-heap verdict into the coverage run's result.
+    result.failed += zh_result.failed
+    result.failed_names += zh_result.failed_names
+
     # Rust's raw profile format moves with the compiler's bundled LLVM; the
     # system llvm-profdata will frequently be older and reject the .profraw.
     # Prefer the toolchain-bundled tools under $(rustc --print sysroot).
@@ -711,7 +730,7 @@ def test_rust_coverage(ove_dir, output_dir):
     with open(info, "w") as f:
         subprocess.run(
             [llvm_cov, "export", "--format=lcov",
-             "--instr-profile=" + profdata, binary],
+             "--instr-profile=" + profdata, binary, "-object", zh_binary],
             stdout=f, check=True)
 
     filtered = os.path.join(cov_dir, "coverage.filtered.info")
