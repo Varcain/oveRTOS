@@ -566,18 +566,40 @@ def test_cpp_tsan(ove_dir, output_dir):
         [os.path.join(build, "ove_test_cpp")], "cpp-tsan", env=env)
 
 
-def _rust_test_env(ove_dir, output_dir, target_dir):
+def _rust_test_env(ove_dir, output_dir, target_dir, *, zero_heap=False):
     """Return (rust_dir, env) set up to build tests/rust/ against the
-    rust_stub CMake library. Both test_rust and test_rust_coverage use this."""
-    stub_build = os.path.join(output_dir, "tests", "rust_stub")
+    rust_stub CMake library. test_rust, test_rust_coverage and
+    test_rust_zeroheap use this.
+
+    zero_heap=True builds the stub with CONFIG_OVE_ZERO_HEAP and points
+    OVE_GEN_DIR at a generated ove_config.h carrying that define, so both the
+    ove crate and the test crate light up their zero-heap (`zero_heap` cfg)
+    static-storage paths against a matching stub. build.rs text-greps the
+    config, so the define must be literal (not pulled in via #include)."""
+    suffix = "_zh" if zero_heap else ""
+    stub_build = os.path.join(output_dir, "tests", "rust_stub" + suffix)
     _cmake_build(
         os.path.join(ove_dir, "tests", "rust", "stub_cmake"),
-        stub_build)
+        stub_build,
+        extra_args=(["-DOVE_STUB_ZERO_HEAP=ON"] if zero_heap else None))
+
+    gen_dir = os.path.join(ove_dir, "tests")
+    if zero_heap:
+        gen_dir = os.path.join(output_dir, "tests", "rust_zh_gen")
+        os.makedirs(gen_dir, exist_ok=True)
+        with open(os.path.join(ove_dir, "tests", "ove_config.h")) as f:
+            base_cfg = f.read()
+        zh_cfg = base_cfg.replace(
+            "#endif /* OVE_CONFIG_H */",
+            "#define CONFIG_OVE_ZERO_HEAP 1\n\n#endif /* OVE_CONFIG_H */")
+        with open(os.path.join(gen_dir, "ove_config.h"), "w") as f:
+            f.write(zh_cfg)
+
     rust_dir = os.path.join(ove_dir, "tests", "rust")
     env = dict(os.environ)
     env.update({
         "OVE_DIR": ove_dir,
-        "OVE_GEN_DIR": os.path.join(ove_dir, "tests"),
+        "OVE_GEN_DIR": gen_dir,
         "RUST_IS_NATIVE": "1",
         "STUB_LIB_DIR": stub_build,
         "OVE_STORAGE_SIZES": os.path.join(stub_build,
@@ -603,6 +625,24 @@ def test_rust(ove_dir, output_dir):
     logger.info("Running Rust tests")
     return _run_test_binary(
         [os.path.join(target_dir, "release", "ove-tests")], "rust")
+
+
+def test_rust_zeroheap(ove_dir, output_dir):
+    """Build and run the Rust tests in zero-heap (static-storage) mode.
+
+    Exercises the binding's `create(&STORAGE, …)` / `from_static` paths (the
+    test_zero_heap suite, gated `#[cfg(zero_heap)]`) that the default heap-mode
+    `test_rust` compiles out — the heap suites use `::new()` constructors that
+    don't exist under CONFIG_OVE_ZERO_HEAP and are themselves gated off."""
+    target_dir = os.path.join(output_dir, "tests", "rust_zh")
+    logger.info("Building Rust stub library (zero-heap)")
+    rust_dir, env = _rust_test_env(ove_dir, output_dir, target_dir,
+                                   zero_heap=True)
+    logger.info("Building Rust tests (zero-heap)")
+    run(["cargo", "build", "--release"], env=env, cwd=rust_dir)
+    logger.info("Running Rust tests (zero-heap)")
+    return _run_test_binary(
+        [os.path.join(target_dir, "release", "ove-tests")], "rust-zeroheap")
 
 
 def test_rust_coverage(ove_dir, output_dir):
@@ -2109,6 +2149,7 @@ TEST_TARGETS = {
     "cpp-sanitize-zh": test_cpp_sanitize_zh,
     "cpp-tsan": test_cpp_tsan,
     "rust": test_rust,
+    "rust-zeroheap": test_rust_zeroheap,
     "rust-coverage": test_rust_coverage,
     "zig": test_zig,
     "zig-debug": test_zig_debug,
