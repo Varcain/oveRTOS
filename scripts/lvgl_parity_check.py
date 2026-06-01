@@ -49,16 +49,55 @@ WHITELIST_FILE = OVE_DIR / "tests/audit/lvgl_parity_whitelist.txt"
 
 # ── Name normalisation ────────────────────────────────────────────
 
+# Base-object carrier types per binding.  Each binding factors the
+# *shared* widget base surface (size / position / flags / style / event
+# callbacks) differently — Rust uses blanket-impl'd traits, Zig comptime
+# mixin functions, C++ inherited mixin classes — and attributes those
+# methods to a carrier type whose name differs per binding (and, in Zig,
+# is copied onto every widget).  A per-`(type, method)` comparison can
+# therefore never reconcile a base method across bindings.  We collapse
+# every carrier below to the synthetic canonical type `obj`, so a base
+# method compares equal regardless of which carrier hosts it.  Concrete
+# widget types (label, slider, …) and genuinely distinct types (style,
+# state, component, …) are intentionally left as-is.
+CANON_BASE = "obj"
+BASE_CARRIERS = {
+    "rust": {"widget", "layout", "styleable", "event_target"},
+    "zig":  {"object_mixin", "style_mixin", "event_mixin"},
+    "cpp":  {"object_mixin", "object_view", "style_mixin", "event_mixin"},
+}
+
+
+def canonicalise(surface: set, binding: str) -> set:
+    """Collapse base-object carrier types to the synthetic `obj` type.
+
+    See `BASE_CARRIERS`.  `Obj`/`obj` (the concrete root object) already
+    snake-cases to `obj`, so its own methods merge cleanly with the
+    canonicalised base surface.
+    """
+    carriers = BASE_CARRIERS.get(binding, set())
+    out = set()
+    for type_name, method in surface:
+        out.add((CANON_BASE if type_name in carriers else type_name, method))
+    return out
+
+
 _CAMEL_RE = re.compile(r"([a-z0-9])([A-Z])")
 
 
 def snake(name: str) -> str:
     """camelCase / PascalCase → snake_case.
 
+    Only splits on a lower/digit → upper boundary, so consecutive
+    capitals are left fused (the LVGL bindings don't use ALLCAPS method
+    names, so this is fine in practice).
+
     >>> snake("setText")
     'set_text'
+    >>> snake("alignTo")
+    'align_to'
     >>> snake("HTTPRequest")
-    'h_t_t_p_request'   # imperfect; LVGL bindings don't use ALLCAPS so it's fine
+    'httprequest'
     """
     return _CAMEL_RE.sub(r"\1_\2", name).lower()
 
@@ -85,9 +124,15 @@ def _close_brace_pos(text: str, start: int) -> int:
 def extract_rust(path: Path) -> set:
     """Extract (type, method) tuples from `lvgl.rs`.
 
-    Captures **inherent** impls only — `impl T { ... }` blocks.
-    Skips `impl Trait for T { ... }` because those expose the trait's
-    surface, not the type's per-binding API.
+    Captures two surfaces:
+      * **inherent** impls — `impl T { ... }` blocks — for the
+        widget-specific API (skips `impl Trait for T`, whose body is the
+        trait's surface, not the type's).
+      * **trait** definitions — `trait T { ... }` — whose default
+        methods form the *shared base surface*.  The LVGL Rust binding
+        factors the base-object API into the blanket-impl'd `Widget` /
+        `Layout` / `Styleable` / `EventTarget` traits; `canonicalise`
+        later collapses those carrier names to `obj`.
     """
     text = path.read_text()
     surface = set()
@@ -110,15 +155,37 @@ def extract_rust(path: Path) -> set:
         body = text[body_start:body_end]
         for fn in re.finditer(r"\bpub\s+(?:const\s+|async\s+|unsafe\s+)*fn\s+(\w+)", body):
             surface.add((snake(type_name), snake(fn.group(1))))
+    # Trait definitions: `[pub] trait Name[: bounds] { ... }`.  Default
+    # methods (with or without bodies) are the base-object surface.
+    trait_pat = re.compile(
+        r"\b(?:pub\s+)?trait\s+(\w+)\s*(?::[^{]*)?\{",
+        re.MULTILINE,
+    )
+    for m in trait_pat.finditer(text):
+        type_name = m.group(1)
+        body_start = m.end()
+        body_end = _close_brace_pos(text, body_start)
+        body = text[body_start:body_end]
+        for fn in re.finditer(r"\bfn\s+(\w+)", body):
+            surface.add((snake(type_name), snake(fn.group(1))))
     return surface
 
 
 def extract_zig(path: Path) -> set:
     """Extract (type, method) tuples from `lvgl.zig`.
 
-    Pattern: `pub const TypeName = struct { ... pub fn method(...) ... };`.
-    Nested structs inside a struct (rare in this file) would be
-    miscounted but the LVGL binding keeps one struct per widget.
+    Captures two surfaces:
+      * `pub const TypeName = struct { ... pub fn method(...) ... };` —
+        the widget-specific API (one struct per widget).
+      * `pub fn NameMixin(comptime Self: type) type { return struct {
+        ... pub fn method(...) ... }; }` — the *shared base surface*.
+        Zig factors the base-object API into comptime mixin functions
+        (`ObjectMixin` / `StyleMixin` / `EventMixin`) which each widget
+        re-exports per method (`pub const width = ObjectMixin(W).width;`).
+        Those `pub const` re-exports are intentionally NOT matched (they
+        would duplicate the base surface onto every widget type); we read
+        the mixin definitions once instead, and `canonicalise` collapses
+        the mixin carrier names to `obj`.
     """
     text = path.read_text()
     surface = set()
@@ -133,7 +200,22 @@ def extract_zig(path: Path) -> set:
         body = text[body_start:body_end]
         for fn in re.finditer(r"\bpub\s+(?:inline\s+|extern\s+)?fn\s+(\w+)", body):
             surface.add((snake(type_name), snake(fn.group(1))))
+    # Comptime mixin functions: `pub fn NameMixin(comptime ...) type { ... }`.
+    mixin_pat = re.compile(
+        r"\bpub\s+fn\s+(\w*Mixin)\s*\(\s*comptime[^)]*\)\s*type\s*\{",
+        re.MULTILINE,
+    )
+    for m in mixin_pat.finditer(text):
+        type_name = m.group(1)
+        body_start = m.end()
+        body_end = _close_brace_pos(text, body_start)
+        body = text[body_start:body_end]
+        for fn in re.finditer(r"\bpub\s+(?:inline\s+|extern\s+)?fn\s+(\w+)", body):
+            surface.add((snake(type_name), snake(fn.group(1))))
     return surface
+
+
+_CPP_TEMPLATE_PREFIX = re.compile(r"^\s*template\s*<[^>]*>\s*")
 
 
 def extract_cpp(path: Path) -> set:
@@ -199,6 +281,10 @@ def extract_cpp(path: Path) -> set:
         flat = "".join(out)
 
         for line in flat.splitlines():
+            # Strip a leading `template <...>` prefix so templated member
+            # functions (e.g. EventMixin's `template <...> Derived &on(...)`)
+            # are matched by the return-type-anchored decl pattern below.
+            line = _CPP_TEMPLATE_PREFIX.sub("", line)
             mm = decl_pat.match(line)
             if not mm:
                 continue
@@ -324,6 +410,7 @@ def main() -> int:
             surfaces[name] = extract_zig(path)
         elif name == "cpp":
             surfaces[name] = extract_cpp(path)
+        surfaces[name] = canonicalise(surfaces[name], name)
 
     if len(surfaces) < 2:
         print(
