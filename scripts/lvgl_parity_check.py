@@ -68,16 +68,29 @@ BASE_CARRIERS = {
 }
 
 
-def canonicalise(surface: set, binding: str) -> set:
-    """Collapse base-object carrier types to the synthetic `obj` type.
+# Method names that are binding lifetime / raw-handle plumbing, not part
+# of the comparable LVGL widget surface.  They differ per language by
+# design (pointer access, FFI handle conversion) and are never a parity
+# signal, so they are dropped from every binding's surface.
+IGNORE_METHODS = {
+    "raw", "as_raw", "from_raw", "raw_obj",
+    "as_mut_ptr", "as_ptr", "ptr", "param_raw",
+}
 
-    See `BASE_CARRIERS`.  `Obj`/`obj` (the concrete root object) already
-    snake-cases to `obj`, so its own methods merge cleanly with the
-    canonicalised base surface.
+
+def canonicalise(surface: set, binding: str) -> set:
+    """Collapse base-object carrier types to the synthetic `obj` type and
+    drop raw-handle plumbing methods.
+
+    See `BASE_CARRIERS` / `IGNORE_METHODS`.  `Obj`/`obj` (the concrete
+    root object) already snake-cases to `obj`, so its own methods merge
+    cleanly with the canonicalised base surface.
     """
     carriers = BASE_CARRIERS.get(binding, set())
     out = set()
     for type_name, method in surface:
+        if method in IGNORE_METHODS:
+            continue
         out.add((CANON_BASE if type_name in carriers else type_name, method))
     return out
 
@@ -98,8 +111,16 @@ def snake(name: str) -> str:
     'align_to'
     >>> snake("HTTPRequest")
     'httprequest'
+
+    A trailing underscore is stripped: it is a keyword-escape idiom
+    (Zig's `resume_` / `init_` for the `resume` / `init` keywords, Rust's
+    `type_`), so it must compare equal to the un-escaped name in another
+    binding.
+
+    >>> snake("resume_")
+    'resume'
     """
-    return _CAMEL_RE.sub(r"\1_\2", name).lower()
+    return _CAMEL_RE.sub(r"\1_\2", name).lower().rstrip("_")
 
 
 # ── Per-binding extractors ────────────────────────────────────────
@@ -254,8 +275,12 @@ def extract_cpp(path: Path) -> set:
         "reinterpret_cast", "const_cast", "noexcept", "decltype",
         "new", "do", "case", "default", "catch", "try",
     }
+    # Type tokens that the return-type-greedy regex can miscapture as a
+    # method name.  NB: do NOT add real method names here — `size` was
+    # previously listed and silently dropped the legitimate
+    # `size()` (lv_obj_set_size) wrapper, manufacturing a phantom gap.
     NOT_METHODS = {
-        "bool", "int", "uint", "void", "char", "float", "double", "size",
+        "bool", "int", "uint", "void", "char", "float", "double",
         "size_t", "uint8_t", "uint16_t", "uint32_t", "int8_t", "int16_t",
         "int32_t", "auto", "explicit", "this", "self",
     }
@@ -307,15 +332,17 @@ def load_whitelist(path: Path) -> set:
     """Read intentional-gaps whitelist.
 
     Format: one entry per line, `binding type method` (whitespace
-    separated).  Blank lines and lines starting with `#` are ignored.
-    Returns a set of (binding, type_snake, method_snake) tuples.
+    separated).  Blank lines and lines starting with `#` are ignored, and
+    a trailing `# ...` comment on an entry line is stripped (so each gap
+    can carry an inline rationale).  Returns a set of
+    (binding, type_snake, method_snake) tuples.
     """
     out = set()
     if not path.is_file():
         return out
     for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+        line = line.split("#", 1)[0].strip()
+        if not line:
             continue
         parts = line.split()
         if len(parts) != 3:
@@ -331,6 +358,26 @@ def load_whitelist(path: Path) -> set:
 
 # ── Report ────────────────────────────────────────────────────────
 
+def live_gaps(surfaces: dict) -> set:
+    """All `(binding, type, method)` tuples that are *only* in `binding`
+    relative to at least one other binding (before whitelist filtering).
+
+    This is the ground truth a whitelist entry must match to be useful:
+    an entry naming a tuple that is no longer only-in-one-binding (the
+    method got added everywhere, or removed from its own binding) is
+    stale and should be deleted.
+    """
+    names = sorted(surfaces.keys())
+    out = set()
+    for a in names:
+        for b in names:
+            if a == b:
+                continue
+            for tm in surfaces[a] - surfaces[b]:
+                out.add((a, *tm))
+    return out
+
+
 def report(surfaces: dict, whitelist: set, strict: bool, verbose: bool) -> int:
     """Print cross-binding gaps, return exit code."""
     names = sorted(surfaces.keys())
@@ -345,10 +392,8 @@ def report(surfaces: dict, whitelist: set, strict: bool, verbose: bool) -> int:
     for i, a in enumerate(names):
         for b in names[i + 1:]:
             sa, sb = surfaces[a], surfaces[b]
-            only_a = sa - sb
-            only_b = sb - sa
-            only_a = {x for x in only_a if (a, *x) not in whitelist}
-            only_b = {x for x in only_b if (b, *x) not in whitelist}
+            only_a = {x for x in sa - sb if (a, *x) not in whitelist}
+            only_b = {x for x in sb - sa if (b, *x) not in whitelist}
 
             if not only_a and not only_b:
                 print(f"## {a} ↔ {b}: in sync")
@@ -366,7 +411,21 @@ def report(surfaces: dict, whitelist: set, strict: bool, verbose: bool) -> int:
                     for tn, mn in sorted(only_b):
                         print(f"    - {tn}::{mn}")
 
+    # Whitelist-staleness guard: every whitelisted tuple must still name a
+    # real only-in-one-binding gap.  A stale entry silently suppresses
+    # nothing and rots — flag it (and fail under --strict so the gate
+    # forces the whitelist to track reality).
+    stale = sorted(whitelist - live_gaps(surfaces))
     print()
+    if stale:
+        print(f"## stale whitelist entries ({len(stale)})")
+        print("  These no longer match any gap (method added everywhere, "
+              "renamed, or removed) — delete them from "
+              f"{WHITELIST_FILE.relative_to(OVE_DIR)}:")
+        for binding, tn, mn in stale:
+            print(f"    - {binding} {tn} {mn}")
+        print()
+
     if any_gap:
         if not verbose:
             print(
@@ -379,7 +438,7 @@ def report(surfaces: dict, whitelist: set, strict: bool, verbose: bool) -> int:
             "expected when a method has different names across bindings — add a "
             f"line to {WHITELIST_FILE.relative_to(OVE_DIR)} when an entry is intentional."
         )
-    return 1 if (any_gap and strict) else 0
+    return 1 if (strict and (any_gap or stale)) else 0
 
 
 def main() -> int:

@@ -352,14 +352,15 @@ lint: $(VENV_STAMP)
 	@# stale relative to a fresh bindgen run.  The script always exits 0
 	@# in --check mode, but `|| true` is belt-and-braces.
 	@$(OVE_DIR)/scripts/regen-bindings-stub.sh --check || true
-	@# LVGL cross-binding parity — intentionally NON-GATING (report only).
-	@# Do NOT add `--strict` / drop the `|| true` yet: there is a backlog of
-	@# ~180 cross-binding gaps today (a mix of real gaps and heuristic
-	@# name-normalisation false positives), so --strict would fail CI lint
-	@# immediately.  Gate only after triaging the backlog — whitelist the
-	@# intentional/false-positive tuples in tests/audit/lvgl_parity_whitelist.txt
-	@# and fix the real gaps.  Full per-method list: `... --verbose`.
-	@python3 $(OVE_DIR)/scripts/lvgl_parity_check.py || true
+	@# LVGL cross-binding parity — GATING.  The whole backlog has been
+	@# triaged: intentional/idiomatic gaps are whitelisted with a rationale
+	@# in tests/audit/lvgl_parity_whitelist.txt, and the checker's staleness
+	@# guard fails if a whitelist line stops matching a real gap.  A NEW
+	@# cross-binding drift (or a stale whitelist entry) now fails lint here.
+	@# Genuine drops still pending a build-verified binding fix are tracked
+	@# under the whitelist's "GENUINE DROPS" section.  `... --verbose` lists
+	@# every gap; remove a line as you close its gap.
+	@python3 $(OVE_DIR)/scripts/lvgl_parity_check.py --strict
 
 # Run clang-tidy specifically against cross-compile backend code.  Reuses
 # any existing output/<board>/<rtos>/<app>/build/firmware/compile_commands.json

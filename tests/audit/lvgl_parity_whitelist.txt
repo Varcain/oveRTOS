@@ -1,22 +1,243 @@
-# LVGL parity check — intentional-gap whitelist.
+# LVGL binding parity whitelist
 #
-# Format: one entry per line, three whitespace-separated tokens:
-#   <binding>  <Type>  <method>
+# Each non-comment line is `binding type method` (snake_case): an
+# intentional or tracked gap the parity checker should not fail on.
+# A trailing `# ...` comment carries the per-gap rationale.  The
+# checker's staleness guard fails --strict if a line here no longer
+# names a real only-in-one-binding gap, so this file tracks reality.
 #
-# Bindings: rust | zig | cpp
-# Names are normalised to snake_case by the check tool, so both
-# `setText` and `set_text` collapse to `set_text` — write whichever
-# form makes the intent clearest; the tool's normaliser handles it.
-#
-# An entry declares: "binding X has Type::method present, and that's
-# intentionally NOT mirrored in the other bindings."  Wired by
-# `scripts/lvgl_parity_check.py` and surfaced from `make lint` as a
-# non-blocking warning.
-#
-# Lines starting with `#` and blank lines are ignored.
-#
-# Empty whitelist — the baseline parity gap (see the report from
-# `scripts/lvgl_parity_check.py --verbose`) is currently un-curated.
-# Populate this file when triaging the report identifies entries that
-# are deliberate cross-binding API differences (e.g. an idiomatic
-# Rust trait method that has no direct C++ equivalent).
+# Bootstrapped from a per-method source triage of all three bindings;
+# hand-maintained thereafter — when a new gap appears, either fix it in
+# the binding or add a line here with a rationale.
+
+# ====================================================================
+# Naming-idiom divergences — the SAME capability under a different
+# method name across bindings (getter prefixes, event-callback spelling,
+# C++ selector overloads vs. rust/zig `_sel` suffix).
+# ====================================================================
+rust animation completed_cb  # rust completed_cb wraps lv_anim_set_completed_cb; cpp/zig use ready_cb
+cpp animation ready_cb  # cpp/zig ready_cb (lv_anim_set_ready_cb); rust names it completed_cb
+zig animation ready_cb  # cpp/zig ready_cb (lv_anim_set_ready_cb); rust names it completed_cb
+rust bar value_anim  # cpp folds into value(v, anim) overload
+zig bar value_anim  # cpp folds into value(v, anim) overload
+rust canvas set_buffer  # rust typed-CanvasBuffer variant of the shared buffer setter
+rust chart chart_type  # cpp names it type (reserved-ish in rust/zig)
+zig chart chart_type  # cpp names it type (reserved-ish in rust/zig)
+cpp chart type  # rust/zig name it chart_type
+rust image source  # rust typed-ImageSrc variant of the shared src setter
+cpp obj align  # zig spells it alignTo (lv_obj_align)
+rust obj align  # zig spells it alignTo (lv_obj_align)
+zig obj align_to  # cpp/rust spell it align (lv_obj_align)
+cpp obj arc_color  # rust/zig name the selector form arc_color_sel; cpp overloads arc_color
+rust obj arc_color_sel  # cpp folds into the overloaded arc_color(c, part)
+zig obj arc_color_sel  # cpp folds into the overloaded arc_color(c, part)
+rust obj bg_color_sel  # cpp folds into the overloaded bg_color(c, part)
+zig obj bg_color_sel  # cpp folds into the overloaded bg_color(c, part)
+rust obj bg_opa_sel  # cpp folds into the overloaded bg_opa(o, part)
+zig obj bg_opa_sel  # cpp folds into the overloaded bg_opa(o, part)
+rust obj border_color_sel  # cpp folds into the overloaded border_color(c, part)
+zig obj border_color_sel  # cpp folds into the overloaded border_color(c, part)
+rust obj content_width  # cpp/zig spell it get_content_width
+cpp obj get_content_width  # rust drops the get_ prefix -> content_width
+zig obj get_content_width  # rust drops the get_ prefix -> content_width
+cpp obj get_scroll_bottom  # rust drops the get_ prefix -> scroll_bottom
+zig obj get_scroll_bottom  # rust drops the get_ prefix -> scroll_bottom
+cpp obj on_click  # event-callback idiom: rust on_clicked / cpp on_click
+zig obj on_click  # event-callback idiom: rust on_clicked / cpp on_click
+rust obj on_clicked  # event-callback idiom: cpp on_click
+zig obj on_clicked  # event-callback idiom: cpp on_click
+rust obj on_clicked_with  # event-callback idiom: cpp on_click<MemFn> overload
+zig obj on_clicked_with  # event-callback idiom: cpp on_click<MemFn> overload
+rust obj on_fn  # event-callback idiom: cpp on() typed overload
+zig obj on_fn  # event-callback idiom: cpp on() typed overload
+zig obj on_fn_with  # event-callback idiom: rust on_with / cpp on<MemFn>
+rust obj on_value_change  # event-callback idiom: cpp on_value_changed
+zig obj on_value_change  # event-callback idiom: cpp on_value_changed
+rust obj on_value_change_with  # event-callback idiom: cpp on_value_changed<MemFn>
+cpp obj on_value_changed  # event-callback idiom: rust on_value_change
+zig obj on_value_changed  # event-callback idiom: rust on_value_change
+rust obj on_with  # event-callback idiom: zig onFnWith / cpp on<MemFn>
+rust obj scroll_bottom  # cpp/zig spell it get_scroll_bottom
+rust obj text_color_sel  # cpp folds into the overloaded text_color(c, part)
+zig obj text_color_sel  # cpp folds into the overloaded text_color(c, part)
+rust slider value_anim  # cpp folds into value(v, anim) overload
+zig slider value_anim  # cpp folds into value(v, anim) overload
+cpp state subject  # rust subject_ptr / zig subjectPtr
+rust style arc_color  # rust Style::arc_color setter; cpp/zig cover via inline StyleMixin arc_color
+rust style arc_width  # rust Style::arc_width setter; cpp/zig cover via inline StyleMixin arc_width
+rust tabview set_active  # cpp names it set_active_tab (lv_tabview_set_active)
+zig tabview set_active  # cpp names it set_active_tab (lv_tabview_set_active)
+cpp tabview set_active_tab  # rust/zig name it set_active (lv_tabview_set_active)
+zig tabview set_tab_bar_position  # cpp/rust name it tab_bar_position
+zig tabview set_tab_bar_size  # cpp/rust name it tab_bar_size
+cpp tabview tab_bar_position  # zig prefixes setTabBarPosition
+rust tabview tab_bar_position  # zig prefixes setTabBarPosition
+cpp tabview tab_bar_size  # zig prefixes setTabBarSize
+rust tabview tab_bar_size  # zig prefixes setTabBarSize
+cpp textarea get_text  # rust names it get_text_ptr (returns raw ptr)
+zig textarea get_text  # rust names it get_text_ptr (returns raw ptr)
+rust textarea get_text_ptr  # cpp/zig name it get_text
+
+# ====================================================================
+# Construction / lifetime / setter idioms — `new`/`create`/`init`/`deinit`
+# (RAII vs. explicit), and rust's legacy non-fluent `set_*` duplicates of
+# the shared fluent setters.
+# ====================================================================
+zig animation init  # zig Animation.init_; rust new; cpp constructor
+rust animation new  # rust Animation::new; zig init_; cpp constructor
+zig animation target_obj  # zig widget overload of target; cpp/rust overload target itself
+rust bar set_range  # rust non-fluent duplicate of range
+rust bar set_value  # rust non-fluent duplicate of value
+cpp group create  # cpp/zig Group::create; rust names it new
+zig group create  # cpp/zig Group::create; rust names it new
+zig group deinit  # zig explicit deinit; rust/cpp release via RAII
+rust group new  # rust Group::new; cpp/zig name the factory create
+rust label set_text  # rust non-fluent duplicate of text
+rust label set_text_static  # rust non-fluent duplicate of text_static
+zig lvgl_guard deinit  # zig explicit release; rust/cpp via RAII
+rust msgbox create_modal  # rust/zig named ctor; cpp create(null parent)
+zig msgbox create_modal  # rust/zig named ctor; cpp create(null parent)
+rust obj create  # rust/zig explicit Obj::create on the base; cpp constructs concrete widgets
+zig obj create  # rust/zig explicit Obj::create on the base; cpp constructs concrete widgets
+rust obj get_user_data  # rust splits get/set; cpp/zig expose a single user_data
+rust obj set_pos  # rust legacy non-fluent duplicate of pos
+rust obj set_size  # rust legacy non-fluent duplicate of size
+rust obj set_style_bg_color  # rust legacy non-fluent duplicate of bg_color
+rust obj set_style_radius  # rust legacy non-fluent duplicate of radius
+rust obj set_style_text_color  # rust legacy non-fluent duplicate of text_color
+rust obj set_style_text_font  # rust legacy non-fluent duplicate of text_font
+rust obj set_user_data  # rust splits get/set; cpp/zig expose a single user_data
+cpp obj user_data  # cpp/zig single setter; rust splits into set_/get_user_data
+zig obj user_data  # cpp/zig single setter; rust splits into set_/get_user_data
+zig style deinit  # zig explicit deinit; rust/cpp release via RAII
+zig style init  # zig Style.init_; rust new; cpp constructor
+rust style new  # rust Style::new; zig init_; cpp constructor
+zig timer create  # zig Timer.create; rust new; cpp constructor
+zig timer deinit  # zig explicit deinit; rust/cpp release via RAII
+rust timer new  # rust Timer::new; zig create; cpp constructor
+cpp timer timer  # cpp constructor (extractor reads the ctor name)
+
+# ====================================================================
+# Language-specific features genuinely absent elsewhere by design —
+# reactive `bind_*`, typed helper structs (ImageSrc/EventCtx/Color/...),
+# and per-language conveniences that don't port.
+# ====================================================================
+rust animation tick_fn  # rust/zig custom-exec tick trampoline; cpp has none
+rust arc bind_value  # reactive binding; rust method, zig free fn, cpp none
+rust canvas_buffer new  # rust-only lifetime-tracked CanvasBuffer helper
+rust color black  # rust Color::black; zig free fn colorBlack; cpp raw lv_color_black
+rust color hex  # rust Color::hex; zig free fn colorHex; cpp raw lv_color_hex
+rust color hex3  # rust-only Color::hex3 convenience (lv_color_hex3)
+rust color make  # rust Color::make; zig free fn colorMake; cpp raw lv_color_make
+rust color palette_darken  # rust Color::palette_darken; zig free fn paletteDarken
+rust color palette_lighten  # rust Color::palette_lighten; zig free fn paletteLighten
+rust color palette_main  # rust Color::palette_main; zig free fn paletteMain
+rust color white  # rust Color::white; zig free fn colorWhite; cpp raw lv_color_white
+rust color_format bpp  # rust-only ColorFormat newtype helper
+cpp component delete_cb  # cpp-only Component framework internal (LV_EVENT_DELETE tracking)
+cpp component from_event  # cpp/zig method; rust exposes a free fn component_from_event
+cpp component hide  # cpp-only Component convenience (widget hide lives on the base elsewhere)
+cpp component is_mounted  # cpp/zig Component framework; rust has no Component type
+cpp component mount  # cpp/zig Component framework; rust uses fn-ptr + EventHandler instead
+cpp component root  # cpp root(); zig getRoot(); rust has no Component type
+cpp component show  # cpp-only Component convenience (widget show lives on the base elsewhere)
+cpp component unmount  # cpp/zig Component framework; rust has no Component type
+zig display dpi  # zig display struct method; rust module fn; cpp free fn display_dpi
+zig display height  # zig display struct method; rust module fn; cpp free fn display_height
+zig display width  # zig display struct method; rust module fn; cpp free fn display_width
+rust dropdown bind_value  # reactive binding; rust method, zig free fn, cpp none
+rust event_ctx code  # rust/zig EventCtx accessor; cpp uses raw lv_event_get_code
+zig event_ctx code  # rust/zig EventCtx accessor; cpp uses raw lv_event_get_code
+rust event_ctx current_target  # rust/zig EventCtx accessor; cpp uses raw lv_event_*
+zig event_ctx current_target  # rust/zig EventCtx accessor; cpp uses raw lv_event_*
+rust event_ctx target  # rust/zig EventCtx accessor; cpp uses raw lv_event_get_target
+zig event_ctx target  # rust/zig EventCtx accessor; cpp uses raw lv_event_get_target
+rust event_handler new  # rust-only EventHandler<T> descriptor type
+cpp group get_default  # cpp-only static lv_group_get_default query
+rust image_src from_dsc  # rust/zig typed ImageSrc helper; cpp passes raw void*
+zig image_src from_dsc  # rust/zig typed ImageSrc helper; cpp passes raw void*
+rust image_src from_path  # rust/zig typed ImageSrc helper; cpp passes raw void*
+zig image_src from_path  # rust/zig typed ImageSrc helper; cpp passes raw void*
+rust image_src from_symbol  # rust/zig typed ImageSrc helper; cpp passes raw void*
+zig image_src from_symbol  # rust/zig typed ImageSrc helper; cpp passes raw void*
+cpp label bind_text  # reactive binding; cpp/rust methods, zig free fn labelBindText
+rust label bind_text  # reactive binding; cpp/rust methods, zig free fn labelBindText
+cpp label text_fmt  # cpp-only variadic printf-style setter (no C-variadic port)
+cpp obj screen_active  # cpp/zig expose as a module/static fn; rust on the Screen type
+rust roller bind_value  # reactive binding; rust method, zig free fn, cpp none
+rust slider bind_value  # reactive binding; rust method, zig free fn, cpp none
+cpp state t  # cpp operator T() implicit conversion idiom
+rust timer new_fn  # rust-only safe fn() constructor via trampoline
+
+# ====================================================================
+# Whole widget not (yet) ported to a binding (currently: the Scale
+# family is rust/zig only — cpp has no Scale/ScaleSection).
+# ====================================================================
+rust scale add_section  # Scale widget not ported to cpp
+zig scale add_section  # Scale widget not ported to cpp
+rust scale angle_range  # Scale widget not ported to cpp
+zig scale angle_range  # Scale widget not ported to cpp
+rust scale create  # Scale widget not ported to cpp
+zig scale create  # Scale widget not ported to cpp
+rust scale major_tick_every  # Scale widget not ported to cpp
+zig scale major_tick_every  # Scale widget not ported to cpp
+rust scale mode  # Scale widget not ported to cpp
+zig scale mode  # Scale widget not ported to cpp
+rust scale range  # Scale widget not ported to cpp
+zig scale range  # Scale widget not ported to cpp
+rust scale rotation  # Scale widget not ported to cpp
+zig scale rotation  # Scale widget not ported to cpp
+zig scale style  # Scale widget not ported to cpp
+rust scale total_tick_count  # Scale widget not ported to cpp
+zig scale total_tick_count  # Scale widget not ported to cpp
+rust scale_section range  # Scale family not ported to cpp
+zig scale_section range  # Scale family not ported to cpp
+rust scale_section style  # Scale family not ported to cpp
+zig scale_section style  # Scale family not ported to cpp
+
+# ====================================================================
+# Raw-handle / pointer accessors — binding glue, not LVGL surface
+# (C++ `.get()` returning the raw `lv_*_t*`, generic State<T> attribution).
+# ====================================================================
+cpp group get  # cpp .get() returns the raw lv_group_t*
+cpp obj get  # cpp .get() returns the raw lv_obj_t*
+cpp series get  # cpp .get() returns the raw lv_chart_series_t*
+cpp state get  # rust/zig State<T> generic — extractor attribution artifact
+cpp state set  # rust/zig State<T> generic — extractor attribution artifact
+cpp style get  # cpp .get() returns the raw lv_style_t* (rust ptr/zig raw)
+cpp timer get  # cpp .get() returns the raw lv_timer_t* (rust as_raw/zig .raw field)
+
+# ====================================================================
+# GENUINE DROPS — a real cross-binding inconsistency: the capability
+# exists in some bindings and was dropped from another. TODO: add the
+# wrapper (build-verified) to the missing binding, then DELETE the line
+# here (the staleness guard will flag it once the gap closes).
+# ====================================================================
+rust animation duration_for_speed  # add to zig+cpp: lv_anim_speed helper
+cpp calendar get_pressed_date  # add to zig: lv_calendar_get_pressed_date
+rust calendar get_pressed_date  # add to zig: lv_calendar_get_pressed_date
+cpp calendar highlighted_dates  # add to rust+zig: lv_calendar_set_highlighted_dates
+cpp canvas finish_layer  # add to rust+zig: lv_canvas_finish_layer
+cpp canvas init_layer  # add to rust+zig: lv_canvas_init_layer
+cpp dropdown dir  # add to zig: lv_dropdown_set_dir
+rust dropdown dir  # add to zig: lv_dropdown_set_dir
+cpp dropdown get_options  # add to rust+zig: lv_dropdown_get_options
+cpp dropdown symbol  # add to rust+zig: lv_dropdown_set_symbol
+cpp group focus_obj  # add to zig: lv_group_focus_obj
+rust group focus_obj  # add to zig: lv_group_focus_obj
+cpp group remove_obj  # add to zig: lv_group_remove_obj
+rust group remove_obj  # add to zig: lv_group_remove_obj
+rust image inner_align  # add to zig+cpp: lv_image_set_inner_align
+cpp keyboard get_textarea  # add to rust+zig: lv_keyboard_get_textarea
+cpp label long_mode  # add to rust: lv_label_set_long_mode
+zig label long_mode  # add to rust: lv_label_set_long_mode
+cpp list get_button_text  # add to rust+zig: lv_list_get_button_text
+rust obj add_style  # add to cpp+zig: lv_obj_add_style on the object surface
+rust obj get_child  # add to cpp+zig: lv_obj_get_child indexed accessor
+cpp roller get_options  # add to rust+zig: lv_roller_get_options
+cpp table get_cell_value  # add to rust+zig: lv_table_get_cell_value
+cpp table get_column_width  # add to zig: lv_table_get_column_width
+rust table get_column_width  # add to zig: lv_table_get_column_width
+cpp tabview get_content  # add to zig: lv_tabview_get_content
+rust tabview get_content  # add to zig: lv_tabview_get_content
+
