@@ -207,37 +207,3 @@ cpp state set  # rust/zig State<T> generic — extractor attribution artifact
 cpp style get  # cpp .get() returns the raw lv_style_t* (rust ptr/zig raw)
 cpp timer get  # cpp .get() returns the raw lv_timer_t* (rust as_raw/zig .raw field)
 
-# ====================================================================
-# GENUINE DROPS — a real cross-binding inconsistency: the capability
-# exists in some bindings and was dropped from another. TODO: add the
-# wrapper (build-verified) to the missing binding, then DELETE the line
-# here (the staleness guard will flag it once the gap closes).
-# ====================================================================
-rust animation duration_for_speed  # add to zig+cpp: lv_anim_speed helper
-cpp calendar get_pressed_date  # add to zig: lv_calendar_get_pressed_date
-rust calendar get_pressed_date  # add to zig: lv_calendar_get_pressed_date
-cpp calendar highlighted_dates  # add to rust+zig: lv_calendar_set_highlighted_dates
-cpp canvas finish_layer  # add to rust+zig: lv_canvas_finish_layer
-cpp canvas init_layer  # add to rust+zig: lv_canvas_init_layer
-cpp dropdown dir  # add to zig: lv_dropdown_set_dir
-rust dropdown dir  # add to zig: lv_dropdown_set_dir
-cpp dropdown get_options  # add to rust+zig: lv_dropdown_get_options
-cpp dropdown symbol  # add to rust+zig: lv_dropdown_set_symbol
-cpp group focus_obj  # add to zig: lv_group_focus_obj
-rust group focus_obj  # add to zig: lv_group_focus_obj
-cpp group remove_obj  # add to zig: lv_group_remove_obj
-rust group remove_obj  # add to zig: lv_group_remove_obj
-rust image inner_align  # add to zig+cpp: lv_image_set_inner_align
-cpp keyboard get_textarea  # add to rust+zig: lv_keyboard_get_textarea
-cpp label long_mode  # add to rust: lv_label_set_long_mode
-zig label long_mode  # add to rust: lv_label_set_long_mode
-cpp list get_button_text  # add to rust+zig: lv_list_get_button_text
-rust obj add_style  # add to cpp+zig: lv_obj_add_style on the object surface
-rust obj get_child  # add to cpp+zig: lv_obj_get_child indexed accessor
-cpp roller get_options  # add to rust+zig: lv_roller_get_options
-cpp table get_cell_value  # add to rust+zig: lv_table_get_cell_value
-cpp table get_column_width  # add to zig: lv_table_get_column_width
-rust table get_column_width  # add to zig: lv_table_get_column_width
-cpp tabview get_content  # add to zig: lv_tabview_get_content
-rust tabview get_content  # add to zig: lv_tabview_get_content
-

@@ -195,6 +195,16 @@ class ObjectView
 	}
 
 	/**
+	 * @brief Returns an `ObjectView` wrapping the child at the given index.
+	 * @param[in] idx Zero-based child index (negative indexes from the end).
+	 * @return `ObjectView` of the child, or a null view if none exists.
+	 */
+	ObjectView get_child(int32_t idx) const
+	{
+		return ObjectView(lv_obj_get_child(obj_, idx));
+	}
+
+	/**
 	 * @brief Returns the current rendered width of this object.
 	 * @return Width in pixels.
 	 */
@@ -246,6 +256,10 @@ class ObjectView
 };
 
 static_assert(sizeof(ObjectView) == sizeof(void *), "ObjectView must be pointer-sized");
+
+/* Forward declaration so ObjectMixin::add_style can reference Style,
+ * whose full definition appears further below. */
+class Style;
 
 /* ================================================================== */
 /*  ObjectMixin<Derived> — fluent setters via CRTP                    */
@@ -543,6 +557,16 @@ template <typename Derived> class ObjectMixin
 				     row_span);
 		return self();
 	}
+
+	/**
+	 * @brief Applies a reusable `Style` to this object for the given selector.
+	 * @param[in] style    The style to add (its data is referenced, not copied).
+	 * @param[in] selector Part/state selector (e.g. `LV_PART_MAIN`).
+	 * @return Reference to the derived object for method chaining.
+	 *
+	 * @note Defined out-of-line below, after `Style` is a complete type.
+	 */
+	Derived &add_style(Style &style, lv_style_selector_t selector);
 
       private:
 	Derived &self()
@@ -1176,6 +1200,15 @@ class Style
       private:
 	lv_style_t style_;
 };
+
+/* Out-of-line definition: now that `Style` is complete, `style.get()` is
+ * a valid call. (Declared inside ObjectMixin above.) */
+template <typename Derived>
+Derived &ObjectMixin<Derived>::add_style(Style &style, lv_style_selector_t selector)
+{
+	lv_obj_add_style(self().get(), style.get(), selector);
+	return self();
+}
 
 /* ================================================================== */
 /*  State<T> — reactive state (requires LV_USE_OBSERVER)              */
@@ -1952,6 +1985,13 @@ class Image : public ObjectView,
 	Image &pivot(int32_t x, int32_t y)
 	{
 		lv_image_set_pivot(obj_, x, y);
+		return *this;
+	}
+
+	/** @brief Sets how the image is aligned within its own coordinates. */
+	Image &inner_align(lv_image_align_t align)
+	{
+		lv_image_set_inner_align(obj_, align);
 		return *this;
 	}
 };
@@ -3610,6 +3650,12 @@ class Animation
 	static bool stop(void *var, lv_anim_exec_xcb_t exec_cb)
 	{
 		return lv_anim_delete(var, exec_cb);
+	}
+
+	/** @brief Computes the duration (ms) needed to animate at the given speed. */
+	static uint32_t duration_for_speed(uint32_t speed)
+	{
+		return lv_anim_speed(speed);
 	}
 
       private:

@@ -1093,6 +1093,12 @@ impl Label {
         unsafe { bindings::lv_obj_set_style_text_color(self.raw, c.to_raw(), PART_MAIN) };
         self
     }
+
+    /// Fluent: set the long-text behaviour (wrap, scroll, dot, etc.).
+    pub fn long_mode(self, mode: bindings::lv_label_long_mode_t) -> Self {
+        unsafe { bindings::lv_label_set_long_mode(self.raw(), mode) };
+        self
+    }
 }
 
 impl Widget for Label {
@@ -1942,6 +1948,19 @@ impl Calendar {
         let raw = unsafe { bindings::lv_calendar_add_header_dropdown(self.raw) };
         unsafe { Obj::from_raw(raw) }
     }
+
+    /// Fluent: mark a set of dates as highlighted. LVGL stores the pointer
+    /// instead of copying, so `dates` must outlive the calendar.
+    pub fn highlighted_dates(self, dates: &'static [bindings::lv_calendar_date_t]) -> Self {
+        unsafe {
+            bindings::lv_calendar_set_highlighted_dates(
+                self.raw(),
+                dates.as_ptr() as *mut _,
+                dates.len() as _,
+            );
+        }
+        self
+    }
 }
 
 impl Widget for Calendar {
@@ -2018,6 +2037,20 @@ impl Canvas {
     pub fn raw_obj(self) -> *mut bindings::lv_obj_t {
         self.raw
     }
+
+    /// Fluent: initialise a draw layer bound to this canvas. Pair with
+    /// [`Canvas::finish_layer`] around low-level draw operations.
+    pub fn init_layer(self, layer: *mut bindings::lv_layer_t) -> Self {
+        unsafe { bindings::lv_canvas_init_layer(self.raw(), layer) };
+        self
+    }
+
+    /// Fluent: flush a draw layer previously opened with
+    /// [`Canvas::init_layer`], committing its draw tasks to the canvas.
+    pub fn finish_layer(self, layer: *mut bindings::lv_layer_t) -> Self {
+        unsafe { bindings::lv_canvas_finish_layer(self.raw(), layer) };
+        self
+    }
 }
 
 impl Widget for Canvas {
@@ -2087,6 +2120,12 @@ impl Table {
     /// Returns the pixel width of a specific column.
     pub fn get_column_width(self, col: u32) -> i32 {
         unsafe { bindings::lv_table_get_column_width(self.raw, col) }
+    }
+
+    /// Returns a cell's text as a raw C pointer owned by LVGL. The pointer
+    /// is invalidated by any subsequent mutation of the table.
+    pub fn get_cell_value(self, row: u32, col: u32) -> *const core::ffi::c_char {
+        unsafe { bindings::lv_table_get_cell_value(self.raw(), row, col) }
     }
 }
 
@@ -2212,6 +2251,12 @@ impl List {
         let raw =
             unsafe { bindings::lv_list_add_button(self.raw, icon_ptr, text.as_ptr() as *const _) };
         unsafe { Obj::from_raw(raw) }
+    }
+
+    /// Returns a list button's text as a raw C pointer owned by LVGL. The
+    /// pointer is invalidated by any subsequent mutation of the list.
+    pub fn get_button_text(self, btn: Obj) -> *const core::ffi::c_char {
+        unsafe { bindings::lv_list_get_button_text(self.raw(), btn.as_raw()) }
     }
 }
 
@@ -2435,6 +2480,19 @@ impl Dropdown {
     pub fn close(self) {
         unsafe { bindings::lv_dropdown_close(self.raw) };
     }
+
+    /// Fluent: set the icon/symbol shown on the dropdown button (e.g. an
+    /// `LV_SYMBOL_*` string or an image source).
+    pub fn symbol(self, symbol: *const core::ffi::c_void) -> Self {
+        unsafe { bindings::lv_dropdown_set_symbol(self.raw(), symbol) };
+        self
+    }
+
+    /// Returns the newline-separated option list as a raw C pointer owned
+    /// by LVGL. The pointer is invalidated by any subsequent mutation.
+    pub fn get_options(self) -> *const core::ffi::c_char {
+        unsafe { bindings::lv_dropdown_get_options(self.raw()) }
+    }
 }
 
 impl Widget for Dropdown {
@@ -2513,6 +2571,12 @@ impl Roller {
                 buf.len() as u32,
             );
         }
+    }
+
+    /// Returns the newline-separated option list as a raw C pointer owned
+    /// by LVGL. The pointer is invalidated by any subsequent mutation.
+    pub fn get_options(self) -> *const core::ffi::c_char {
+        unsafe { bindings::lv_roller_get_options(self.raw()) }
     }
 }
 
@@ -2665,6 +2729,13 @@ impl Keyboard {
     pub fn popovers(self, en: bool) -> Self {
         unsafe { bindings::lv_keyboard_set_popovers(self.raw, en) };
         self
+    }
+
+    /// Returns the Textarea this keyboard is attached to, wrapped as an
+    /// [`Obj`] (null if none is attached).
+    pub fn get_textarea(self) -> Obj {
+        let raw = unsafe { bindings::lv_keyboard_get_textarea(self.raw()) };
+        unsafe { Obj::from_raw(raw) }
     }
 }
 

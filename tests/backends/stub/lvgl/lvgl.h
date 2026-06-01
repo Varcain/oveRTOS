@@ -41,6 +41,8 @@ typedef uint32_t lv_obj_flag_t;
 typedef uint32_t lv_state_t;
 typedef bool lv_anim_enable_t;
 typedef uint32_t lv_label_long_mode_t;
+typedef uint32_t lv_style_selector_t;
+typedef uint8_t lv_result_t;
 typedef void lv_event_t;
 typedef void (*lv_event_cb_t)(lv_event_t *e);
 typedef uint32_t lv_event_code_t;
@@ -381,6 +383,7 @@ void lv_dropdown_set_selected(lv_obj_t *obj, uint32_t sel);
 uint32_t lv_dropdown_get_selected(lv_obj_t *obj);
 uint32_t lv_dropdown_get_option_count(lv_obj_t *obj);
 void lv_dropdown_get_selected_str(lv_obj_t *obj, char *buf, uint32_t buf_size);
+const char *lv_dropdown_get_options(lv_obj_t *obj);
 void lv_dropdown_set_dir(lv_obj_t *obj, lv_dir_t dir);
 void lv_dropdown_set_symbol(lv_obj_t *obj, const void *symbol);
 bool lv_dropdown_is_open(lv_obj_t *obj);
@@ -397,6 +400,7 @@ void lv_roller_set_visible_row_count(lv_obj_t *obj, uint32_t rows);
 uint32_t lv_roller_get_selected(lv_obj_t *obj);
 uint32_t lv_roller_get_option_count(lv_obj_t *obj);
 void lv_roller_get_selected_str(lv_obj_t *obj, char *buf, uint32_t buf_size);
+const char *lv_roller_get_options(lv_obj_t *obj);
 void lv_roller_bind_value(lv_obj_t *obj, lv_subject_t *subject);
 
 /* ── Spinbox ─────────────────────────────────────────────────────── */

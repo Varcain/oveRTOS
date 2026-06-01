@@ -2216,9 +2216,159 @@ def test_qemu_zephyr_coverage(ove_dir, output_dir):
     return result
 
 
+def _compile_probe(label, cmd, *, env=None, cwd=None):
+    """Run a compile-only command; return (ok, combined_output).
+
+    Never raises — unlike `run()` — so all three bindings get probed even
+    when one fails, and every failure is reported together.
+    """
+    logger.info("lvgl-compile: %s", label)
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       text=True, env=env, cwd=cwd)
+    if p.returncode != 0:
+        print(p.stdout, end="")
+    return p.returncode == 0, (p.stdout or "")
+
+
+def test_lvgl_bindings_compile(ove_dir, output_dir):
+    """Compile-check the C++/Rust/Zig LVGL bindings against the REAL
+    vendored LVGL (dl/lvgl) + the host lv_conf, not the test stub header.
+
+    Why this exists: the binding wrappers are otherwise only ever compiled
+    against the hand-written stub `tests/backends/stub/lvgl/lvgl.h` (during
+    `make test-{rust,zig,cpp}`, whose `ove_config.h` sets CONFIG_OVE_LVGL).
+    The stub declares "just enough for bindgen", so it can neither catch a
+    wrapper that calls an `lv_*` function with the wrong signature nor
+    detect stub drift from upstream LVGL.  Pointing each binding's compile
+    at `dl/lvgl` makes a bad `lv_*` call fail here against ground truth.
+
+    Compile-only (no run): it validates the binding *surface*, not runtime
+    behaviour.  C++ is `-fsyntax-only`; Zig is `build-obj`; Rust is
+    `cargo check` reusing the stub-build env from `_rust_test_env` with the
+    LVGL include path swapped from the stub to `dl/lvgl`.
+    """
+    res = TestResults(suite="lvgl-compile")
+    lvgl_dir = os.path.join(ove_dir, "dl", "lvgl")
+    if not os.path.isfile(os.path.join(lvgl_dir, "lvgl.h")):
+        logger.warning("lvgl-compile: dl/lvgl not present — skipping")
+        res.skipped = 3
+        return res
+
+    host_lv_conf = os.path.join(ove_dir, "boards", "host", "posix")
+    # tests/ove_config.h carries CONFIG_OVE_LVGL=1 + the host-stub backend,
+    # so it is a complete host config for a compile-only check.
+    gen_dir = os.path.join(ove_dir, "tests")
+
+    def _inc(*parts):
+        return "-I" + os.path.join(ove_dir, *parts)
+
+    # The Zig binding backs Animation with a fixed byte buffer because
+    # @cImport renders lv_anim_t opaque (inline union + bitfields).  Pull
+    # its size out of the Zig source and static-assert it against real
+    # LVGL below, so the buffer can never silently under-size.
+    anim_buf = 256
+    try:
+        zsrc = Path(ove_dir, "bindings", "zig", "ove", "src", "lvgl.zig").read_text()
+        m = re.search(r"pub const ANIM_STORAGE_SIZE\s*=\s*(\d+)", zsrc)
+        if m:
+            anim_buf = int(m.group(1))
+    except OSError:
+        pass
+
+    # ── C++ : syntax-only compile of a TU that includes the binding ──
+    probe_cpp = os.path.join(output_dir, "tests", "lvgl_compile_probe.cpp")
+    os.makedirs(os.path.dirname(probe_cpp), exist_ok=True)
+    with open(probe_cpp, "w") as f:
+        f.write(
+            "#include <ove/lvgl.hpp>\n"
+            f"static_assert(sizeof(lv_anim_t) <= {anim_buf},\n"
+            '    "ANIM_STORAGE_SIZE in bindings/zig/ove/src/lvgl.zig is '
+            'smaller than sizeof(lv_anim_t) against real LVGL — enlarge it");\n')
+    ok, _ = _compile_probe("cpp", [
+        "g++", "-std=c++20", "-fsyntax-only", "-DCONFIG_OVE_LVGL=1",
+        _inc("bindings", "cpp"), _inc("include"), "-I" + gen_dir,
+        _inc("dl"), "-I" + host_lv_conf, _inc("backends", "posix", "include"),
+        probe_cpp,
+    ])
+    res.passed += ok
+    if not ok:
+        res.failed += 1
+        res.failed_names.append("cpp")
+
+    # ── Zig : build-obj of the binding against real LVGL ──
+    # Zig analyses function bodies lazily — `build-obj root.zig` skips any
+    # wrapper method that isn't referenced, so a typo in an uncalled method
+    # would slip through.  Compile a probe that force-references every decl
+    # in the lvgl module (refAllDeclsRecursive), which instantiates the
+    # comptime mixins and analyses each method body.
+    zig = _find_zig(ove_dir)
+    # std.testing.refAllDecls is a no-op outside test builds AND
+    # non-recursive, so roll our own: ref every decl (forcing fn/const
+    # analysis) and recurse into nested type decls so each widget's method
+    # bodies — including the comptime-mixin re-exports — get analysed.
+    zig_probe = os.path.join(output_dir, "tests", "lvgl_compile_probe.zig")
+    with open(zig_probe, "w") as f:
+        f.write(
+            'const std = @import("std");\n'
+            'const ove = @import("ove");\n'
+            'fn refAll(comptime T: type) void {\n'
+            '    inline for (comptime std.meta.declarations(T)) |decl| {\n'
+            '        _ = &@field(T, decl.name);\n'
+            '        const D = @field(T, decl.name);\n'
+            '        if (@TypeOf(D) == type) switch (@typeInfo(D)) {\n'
+            '            .@"struct", .@"enum", .@"union", .@"opaque" '
+            '=> refAll(D),\n'
+            '            else => {},\n'
+            '        };\n'
+            '    }\n'
+            '}\n'
+            'comptime {\n'
+            '    @setEvalBranchQuota(1000000);\n'
+            '    refAll(ove.lvgl);\n'
+            '}\n')
+    zig_obj = os.path.join(output_dir, "tests", "lvgl_compile_zig.o")
+    ok, _ = _compile_probe("zig", [
+        zig, "build-obj", "-target", "native-native-gnu", "-OReleaseSafe",
+        "--dep", "ove",
+        "-Mroot=" + zig_probe,
+        "-Move=" + os.path.join(ove_dir, "bindings", "zig", "ove", "src",
+                                "root.zig"),
+        _inc("include"), _inc("backends", "posix", "include"),
+        _inc("dl", "lvgl"), _inc("dl"), "-I" + host_lv_conf, "-I" + gen_dir,
+        "-lc",  # add libc include paths so @cImport finds <stdio.h> etc.
+        "-femit-bin=" + zig_obj,
+    ])
+    res.passed += ok
+    if not ok:
+        res.failed += 1
+        res.failed_names.append("zig")
+
+    # ── Rust : cargo check the binding crate against real LVGL ──
+    # Reuse the stub-build env (builds rust_stub + generates ove_config.h),
+    # then swap the LVGL include path from the stub to dl/lvgl.
+    rust_target = os.path.join(output_dir, "tests", "lvgl_compile_rust")
+    _rust_dir, env = _rust_test_env(ove_dir, output_dir, rust_target)
+    env["LVGL_INCLUDE_PATH"] = lvgl_dir
+    env["LVGL_PARENT_PATH"] = os.path.join(ove_dir, "dl")
+    ok, _ = _compile_probe("rust", [
+        "cargo", "check", "--manifest-path",
+        os.path.join(ove_dir, "bindings", "rust", "ove", "Cargo.toml"),
+        "--features", "std",
+    ], env=env, cwd=ove_dir)
+    res.passed += ok
+    if not ok:
+        res.failed += 1
+        res.failed_names.append("rust")
+
+    logger.info("lvgl-compile: %d/3 bindings compiled against real LVGL",
+                res.passed)
+    return res
+
+
 # Test name -> function mapping
 TEST_TARGETS = {
     "stub": test_stub,
+    "lvgl-compile": test_lvgl_bindings_compile,
     "stub-sanitize": test_stub_sanitize,
     "stub-sanitize-zh": test_stub_sanitize_zh,
     "stub-tsan": test_stub_tsan,
