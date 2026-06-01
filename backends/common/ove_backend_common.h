@@ -147,7 +147,7 @@ static inline int ove_errno_to_ove(int e)
 	case EFAULT:
 		return OVE_ERR_INVALID_PARAM;
 	case ENOENT:
-		return OVE_ERR_INVALID_PARAM;
+		return OVE_ERR_NOT_FOUND;
 	case ENOTDIR:
 		return OVE_ERR_INVALID_PARAM;
 	case EISDIR:

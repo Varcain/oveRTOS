@@ -51,7 +51,7 @@ int ove_nvs_read(const char *key, void *buf, size_t buf_len, size_t *out_len)
 	}
 	struct nvs_entry *e = nvs_find(key);
 	if (!e) {
-		return OVE_ERR_NOT_SUPPORTED;
+		return OVE_ERR_NOT_FOUND;
 	}
 	size_t copy = e->len < buf_len ? e->len : buf_len;
 	memcpy(buf, e->value, copy);

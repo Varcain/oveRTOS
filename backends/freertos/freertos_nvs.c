@@ -99,6 +99,12 @@ int ove_nvs_write(const char *key, const void *data, size_t len)
 	if (ret != OVE_OK) {
 		return ret;
 	}
+	/* A short write (e.g. medium full) reports FR_OK with bytes_written <
+	 * len; treat it as failure so callers never see silent data loss
+	 * (matches nuttx_nvs). */
+	if (bytes_written != len) {
+		return OVE_ERR_NO_MEMORY;
+	}
 
 	return OVE_OK;
 }
