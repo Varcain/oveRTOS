@@ -273,6 +273,41 @@ jobs:
           path: output/
           retention-days: 7
 
+  lvgl-bindings-compile:
+    name: LVGL Bindings Compile (vs real LVGL)
+    runs-on: ubuntu-latest
+    needs: stub-tests
+    steps:
+      - uses: actions/checkout@v5
+
+      # Needs every binding toolchain at once: g++ (C++), cmake+libclang
+      # (Rust stub build + bindgen), and the Zig toolchain (fetched by the
+      # target itself). Unlike the stub-based binding jobs, this one
+      # compiles against real LVGL, so it must fetch dl/lvgl below.
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake build-essential libclang-dev xz-utils
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-src
+
+      - name: Fetch LVGL (manifest-pinned) into dl/lvgl
+        run: |
+          LVGL_URL=$(python3 scripts/manifest_query.py libraries.lvgl.url)
+          LVGL_TAG=$(python3 scripts/manifest_query.py libraries.lvgl.version)
+          git clone --depth 1 --branch "$LVGL_TAG" "$LVGL_URL" dl/lvgl
+
+      - name: Compile-check bindings against real LVGL
+        run: make test-lvgl-compile
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: lvgl-bindings-compile-logs
+          path: output/
+          retention-days: 7
+
   nuttx-sim-tests:
     name: NuttX Simulator Tests
     runs-on: ubuntu-latest
