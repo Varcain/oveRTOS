@@ -47,7 +47,9 @@ static void test_nvs_read_nonexistent(void **state)
 	uint8_t buf[32];
 	size_t len = 0;
 	int rc = ove_nvs_read("no_such_key", buf, sizeof(buf), &len);
-	assert_int_not_equal(rc, OVE_OK);
+	/* Contract (ove/nvs.h): a missing key reads back OVE_ERR_NOT_FOUND,
+	 * not a generic failure — callers distinguish "absent" from "broken". */
+	assert_int_equal(rc, OVE_ERR_NOT_FOUND);
 
 	ove_nvs_deinit();
 }
