@@ -42,13 +42,13 @@ pub const OVE_ALIGNOF_OVE_WORKQUEUE_STORAGE: u32 = 8;
 pub const OVE_ALIGNOF_OVE_WORK_STORAGE: u32 = 8;
 pub const OVE_SIZEOF_OVE_CONDVAR_STORAGE: u32 = 48;
 pub const OVE_SIZEOF_OVE_DIR_STORAGE: u32 = 8;
-pub const OVE_SIZEOF_OVE_EVENTGROUP_STORAGE: u32 = 96;
+pub const OVE_SIZEOF_OVE_EVENTGROUP_STORAGE: u32 = 112;
 pub const OVE_SIZEOF_OVE_EVENT_STORAGE: u32 = 96;
 pub const OVE_SIZEOF_OVE_FILE_STORAGE: u32 = 4;
 pub const OVE_SIZEOF_OVE_MUTEX_STORAGE: u32 = 40;
-pub const OVE_SIZEOF_OVE_QUEUE_STORAGE: u32 = 168;
-pub const OVE_SIZEOF_OVE_SEM_STORAGE: u32 = 32;
-pub const OVE_SIZEOF_OVE_STREAM_STORAGE: u32 = 184;
+pub const OVE_SIZEOF_OVE_QUEUE_STORAGE: u32 = 184;
+pub const OVE_SIZEOF_OVE_SEM_STORAGE: u32 = 48;
+pub const OVE_SIZEOF_OVE_STREAM_STORAGE: u32 = 200;
 pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 128;
 pub const OVE_SIZEOF_OVE_TIMER_STORAGE: u32 = 40;
 pub const OVE_SIZEOF_OVE_WATCHDOG_STORAGE: u32 = 16;
@@ -429,11 +429,11 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_sem_storage_t {
-    pub _opaque: [u8; 32usize],
+    pub _opaque: [u8; 48usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_sem_storage_t"][core::mem::size_of::<ove_sem_storage_t>() - 32usize];
+    ["Size of ove_sem_storage_t"][core::mem::size_of::<ove_sem_storage_t>() - 48usize];
     ["Alignment of ove_sem_storage_t"][core::mem::align_of::<ove_sem_storage_t>() - 8usize];
     ["Offset of field: ove_sem_storage_t::_opaque"]
         [core::mem::offset_of!(ove_sem_storage_t, _opaque) - 0usize];
@@ -481,11 +481,11 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_queue_storage_t {
-    pub _opaque: [u8; 168usize],
+    pub _opaque: [u8; 184usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_queue_storage_t"][core::mem::size_of::<ove_queue_storage_t>() - 168usize];
+    ["Size of ove_queue_storage_t"][core::mem::size_of::<ove_queue_storage_t>() - 184usize];
     ["Alignment of ove_queue_storage_t"][core::mem::align_of::<ove_queue_storage_t>() - 8usize];
     ["Offset of field: ove_queue_storage_t::_opaque"]
         [core::mem::offset_of!(ove_queue_storage_t, _opaque) - 0usize];
@@ -507,12 +507,12 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_eventgroup_storage_t {
-    pub _opaque: [u8; 96usize],
+    pub _opaque: [u8; 112usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of ove_eventgroup_storage_t"]
-        [core::mem::size_of::<ove_eventgroup_storage_t>() - 96usize];
+        [core::mem::size_of::<ove_eventgroup_storage_t>() - 112usize];
     ["Alignment of ove_eventgroup_storage_t"]
         [core::mem::align_of::<ove_eventgroup_storage_t>() - 8usize];
     ["Offset of field: ove_eventgroup_storage_t::_opaque"]
@@ -549,11 +549,11 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_stream_storage_t {
-    pub _opaque: [u8; 184usize],
+    pub _opaque: [u8; 200usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_stream_storage_t"][core::mem::size_of::<ove_stream_storage_t>() - 184usize];
+    ["Size of ove_stream_storage_t"][core::mem::size_of::<ove_stream_storage_t>() - 200usize];
     ["Alignment of ove_stream_storage_t"][core::mem::align_of::<ove_stream_storage_t>() - 8usize];
     ["Offset of field: ove_stream_storage_t::_opaque"]
         [core::mem::offset_of!(ove_stream_storage_t, _opaque) - 0usize];
@@ -1974,6 +1974,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Disable a previously enabled GPIO interrupt without unregistering it.\n\n The callback and trigger edge are retained; call ove_gpio_irq_enable()\n to re-arm.\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_gpio_irq_disable(
+        port: core::ffi::c_uint,
+        pin: core::ffi::c_uint,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Unregister a GPIO interrupt, freeing its slot.\n\n Disables the line and releases the registration so the (port, pin) can be\n registered again with a different callback/edge.  The inverse of\n ove_gpio_irq_register().\n\n @param[in] port  GPIO port index.\n @param[in] pin   GPIO pin index within the port.\n @return OVE_OK on success, negative error code if no matching registration."]
+    pub fn ove_gpio_irq_unregister(
         port: core::ffi::c_uint,
         pin: core::ffi::c_uint,
     ) -> core::ffi::c_int;
@@ -4091,6 +4098,7 @@ pub type lv_opa_t = u8;
 pub type lv_obj_flag_t = u32;
 pub type lv_state_t = u32;
 pub type lv_anim_enable_t = bool;
+pub type lv_label_long_mode_t = u32;
 pub type lv_event_t = core::ffi::c_void;
 pub type lv_event_cb_t = Option<unsafe extern "C" fn(e: *mut lv_event_t)>;
 pub type lv_event_code_t = u32;
@@ -4492,6 +4500,9 @@ unsafe extern "C" {
     pub fn lv_label_set_text_static(obj: *mut lv_obj_t, text: *const core::ffi::c_char);
 }
 unsafe extern "C" {
+    pub fn lv_label_set_long_mode(obj: *mut lv_obj_t, mode: lv_label_long_mode_t);
+}
+unsafe extern "C" {
     pub fn lv_label_bind_text(
         obj: *mut lv_obj_t,
         subject: *mut lv_subject_t,
@@ -4713,6 +4724,9 @@ unsafe extern "C" {
     );
 }
 unsafe extern "C" {
+    pub fn lv_dropdown_get_options(obj: *mut lv_obj_t) -> *const core::ffi::c_char;
+}
+unsafe extern "C" {
     pub fn lv_dropdown_set_dir(obj: *mut lv_obj_t, dir: lv_dir_t);
 }
 unsafe extern "C" {
@@ -4754,6 +4768,9 @@ unsafe extern "C" {
         buf: *mut core::ffi::c_char,
         buf_size: u32,
     );
+}
+unsafe extern "C" {
+    pub fn lv_roller_get_options(obj: *mut lv_obj_t) -> *const core::ffi::c_char;
 }
 unsafe extern "C" {
     pub fn lv_roller_bind_value(obj: *mut lv_obj_t, subject: *mut lv_subject_t);

@@ -985,7 +985,7 @@ pub const Obj = struct {
 
     /// Return the parent of this object as an `Obj`.
     pub fn parent(self: Obj) Obj {
-        return .{ .obj = c.lv_obj_get_parent(self.obj) };
+        return .{ .obj = c.lv_obj_get_parent(self.obj).? };
     }
 
     /// Return the number of direct children this object has.
@@ -1011,6 +1011,17 @@ pub const Obj = struct {
     /// Return the underlying raw `lv_obj_t` pointer for C interop.
     pub fn raw(self: Obj) *c.lv_obj_t {
         return self.obj;
+    }
+
+    /// Add a reusable `Style` to this object for the given state/part `selector`. Returns `self`.
+    pub fn addStyle(self: Obj, style: *Style, selector: c.lv_style_selector_t) Obj {
+        c.lv_obj_add_style(self.obj, &style.style, selector);
+        return self;
+    }
+
+    /// Return the child at index `idx` as an `Obj`.
+    pub fn getChild(self: Obj, idx: i32) Obj {
+        return .{ .obj = c.lv_obj_get_child(self.obj, idx).? };
     }
 };
 
@@ -1985,6 +1996,12 @@ pub const Image = struct {
         c.lv_image_set_pivot(self.obj, x, y);
         return self;
     }
+
+    /// Set how the image is aligned within the widget when they differ in size. Returns `self`.
+    pub fn innerAlign(self: Image, align_: c.lv_image_align_t) Image {
+        c.lv_image_set_inner_align(self.obj, align_);
+        return self;
+    }
 };
 
 // =========================================================================
@@ -2335,6 +2352,17 @@ pub const Calendar = struct {
     pub fn addHeaderDropdown(self: Calendar) Obj {
         return .{ .obj = c.lv_calendar_header_dropdown_create(self.obj).? };
     }
+
+    /// Read the most recently pressed date into `out`. Returns the LVGL result code.
+    pub fn getPressedDate(self: Calendar, out: *c.lv_calendar_date_t) c.lv_result_t {
+        return c.lv_calendar_get_pressed_date(self.obj, out);
+    }
+
+    /// Mark the given dates as highlighted. The slice must outlive the calendar. Returns `self`.
+    pub fn highlightedDates(self: Calendar, dates: []const c.lv_calendar_date_t) Calendar {
+        c.lv_calendar_set_highlighted_dates(self.obj, @constCast(dates.ptr), @intCast(dates.len));
+        return self;
+    }
 };
 
 // =========================================================================
@@ -2377,6 +2405,18 @@ pub const Canvas = struct {
     /// Set a single pixel.
     pub fn setPixel(self: Canvas, x: i32, y: i32, color: Color) Canvas {
         c.lv_canvas_set_px(self.obj, x, y, color, 255);
+        return self;
+    }
+
+    /// Initialize a draw layer over the canvas buffer. Pair with `finishLayer`. Returns `self`.
+    pub fn initLayer(self: Canvas, layer: *c.lv_layer_t) Canvas {
+        c.lv_canvas_init_layer(self.obj, layer);
+        return self;
+    }
+
+    /// Flush a draw layer back into the canvas buffer. Pair with `initLayer`. Returns `self`.
+    pub fn finishLayer(self: Canvas, layer: *c.lv_layer_t) Canvas {
+        c.lv_canvas_finish_layer(self.obj, layer);
         return self;
     }
 };
@@ -2459,6 +2499,16 @@ pub const Table = struct {
     pub fn getColumnCount(self: Table) u32 {
         return c.lv_table_get_column_count(self.obj);
     }
+
+    /// Return the text stored in the cell at (`row`, `col`).
+    pub fn getCellValue(self: Table, row: u32, col: u32) [*:0]const u8 {
+        return c.lv_table_get_cell_value(self.obj, row, col);
+    }
+
+    /// Return the configured width of column `col` in pixels.
+    pub fn getColumnWidth(self: Table, col: u32) i32 {
+        return c.lv_table_get_column_width(self.obj, col);
+    }
 };
 
 // =========================================================================
@@ -2527,6 +2577,11 @@ pub const Tabview = struct {
     pub fn getTabActive(self: Tabview) u32 {
         return c.lv_tabview_get_tab_active(self.obj);
     }
+
+    /// Return the content container holding the tab pages as an `Obj`.
+    pub fn getContent(self: Tabview) Obj {
+        return .{ .obj = c.lv_tabview_get_content(self.obj).? };
+    }
 };
 
 // =========================================================================
@@ -2559,6 +2614,11 @@ pub const List = struct {
     /// Add a button row with optional icon (pass `null` for none).
     pub fn addButton(self: List, icon: ?*const anyopaque, text_: [*:0]const u8) Obj {
         return .{ .obj = c.lv_list_add_button(self.obj, icon, text_).? };
+    }
+
+    /// Return the text label of a list button row.
+    pub fn getButtonText(self: List, btn: Obj) [*:0]const u8 {
+        return c.lv_list_get_button_text(self.obj, btn.obj);
     }
 };
 
@@ -2806,6 +2866,23 @@ pub const Dropdown = struct {
     pub fn close(self: Dropdown) void {
         c.lv_dropdown_close(self.obj);
     }
+
+    /// Set the direction the option list expands in (LV_DIR_*). Returns `self`.
+    pub fn dir(self: Dropdown, d: c.lv_dir_t) Dropdown {
+        c.lv_dropdown_set_dir(self.obj, d);
+        return self;
+    }
+
+    /// Set the symbol shown next to the selected option (e.g. an arrow icon). Returns `self`.
+    pub fn symbol(self: Dropdown, sym: ?*const anyopaque) Dropdown {
+        c.lv_dropdown_set_symbol(self.obj, sym);
+        return self;
+    }
+
+    /// Return the newline-separated option string.
+    pub fn getOptions(self: Dropdown) [*:0]const u8 {
+        return c.lv_dropdown_get_options(self.obj);
+    }
 };
 
 // Roller mode constants
@@ -2895,6 +2972,11 @@ pub const Roller = struct {
 
     pub fn getSelectedStr(self: Roller, buf: []u8) void {
         c.lv_roller_get_selected_str(self.obj, buf.ptr, @intCast(buf.len));
+    }
+
+    /// Return the newline-separated option string.
+    pub fn getOptions(self: Roller) [*:0]const u8 {
+        return c.lv_roller_get_options(self.obj);
     }
 };
 
@@ -3051,6 +3133,11 @@ pub const Keyboard = struct {
     pub fn popovers(self: Keyboard, en: bool) Keyboard {
         c.lv_keyboard_set_popovers(self.obj, en);
         return self;
+    }
+
+    /// Return the textarea this keyboard is attached to as an `Obj`.
+    pub fn getTextarea(self: Keyboard) Obj {
+        return .{ .obj = c.lv_keyboard_get_textarea(self.obj).? };
     }
 };
 
@@ -3240,6 +3327,18 @@ pub const Group = struct {
     /// Returns the number of widgets in the group.
     pub fn objCount(self: Group) u32 {
         return c.lv_group_get_obj_count(self.raw);
+    }
+
+    /// Focus the given widget within its group. Returns `self`.
+    pub fn focusObj(self: Group, obj: anytype) Group {
+        c.lv_group_focus_obj(obj.obj);
+        return self;
+    }
+
+    /// Remove the given widget from its group. Returns `self`.
+    pub fn removeObj(self: Group, obj: anytype) Group {
+        c.lv_group_remove_obj(obj.obj);
+        return self;
     }
 };
 
@@ -3501,97 +3600,116 @@ pub const ANIM_REPEAT_INFINITE: u32 = 0xFFFF_FFFF;
 /// into its internal list, so the builder can go out of scope right
 /// after. Callbacks run under the LVGL lock; do not call `lock()` from
 /// them.
+/// Backing-store size for an `lv_anim_t`.  Zig's `@cImport` renders
+/// `lv_anim_t` opaque (it has an inline union + bitfields), so it can be
+/// neither embedded by value nor `@sizeOf`'d.  `Animation` is therefore
+/// backed by an over-aligned byte buffer reinterpreted as `*lv_anim_t`.
+/// `make test-lvgl-compile` static-asserts `sizeof(lv_anim_t) <=
+/// ANIM_STORAGE_SIZE` against real LVGL, so an undersized buffer fails the
+/// build loudly rather than corrupting memory.
+pub const ANIM_STORAGE_SIZE = 256;
+
 pub const Animation = struct {
-    inner: c.lv_anim_t,
+    inner: [ANIM_STORAGE_SIZE]u8 align(16) = undefined,
+
+    /// Reinterpret the backing buffer as the opaque `lv_anim_t`.
+    fn anim(self: *Animation) *c.lv_anim_t {
+        return @ptrCast(@alignCast(&self.inner));
+    }
 
     /// Create a fresh animation with defaults.
     pub fn init_() Animation {
-        var a: c.lv_anim_t = undefined;
-        c.lv_anim_init(&a);
-        return .{ .inner = a };
+        var self = Animation{};
+        c.lv_anim_init(self.anim());
+        return self;
     }
 
     /// Set the target variable. Returns `*self` for chaining.
     pub fn target(self: *Animation, var_: ?*anyopaque) *Animation {
-        c.lv_anim_set_var(&self.inner, var_);
+        c.lv_anim_set_var(self.anim(),var_);
         return self;
     }
 
     /// Set the target as any widget-like struct with an `obj` field.
     pub fn targetObj(self: *Animation, widget: anytype) *Animation {
-        c.lv_anim_set_var(&self.inner, widget.obj);
+        c.lv_anim_set_var(self.anim(),widget.obj);
         return self;
     }
 
     /// Set start and end values. Returns `*self`.
     pub fn values(self: *Animation, from: i32, to: i32) *Animation {
-        c.lv_anim_set_values(&self.inner, from, to);
+        c.lv_anim_set_values(self.anim(),from, to);
         return self;
     }
 
     /// Set duration in milliseconds. Returns `*self`.
     pub fn duration(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_duration(&self.inner, ms);
+        c.lv_anim_set_duration(self.anim(),ms);
         return self;
     }
 
     /// Set the delay before the animation starts. Returns `*self`.
     pub fn delay(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_delay(&self.inner, ms);
+        c.lv_anim_set_delay(self.anim(),ms);
         return self;
     }
 
     /// Set the easing path callback. Returns `*self`.
     pub fn path(self: *Animation, cb: c.lv_anim_path_cb_t) *Animation {
-        c.lv_anim_set_path_cb(&self.inner, cb);
+        c.lv_anim_set_path_cb(self.anim(),cb);
         return self;
     }
 
     /// Set the repeat count. Returns `*self`.
     pub fn repeatCount(self: *Animation, count: u32) *Animation {
-        c.lv_anim_set_repeat_count(&self.inner, count);
+        c.lv_anim_set_repeat_count(self.anim(),count);
         return self;
     }
 
     /// Set the delay between repeats. Returns `*self`.
     pub fn repeatDelay(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_repeat_delay(&self.inner, ms);
+        c.lv_anim_set_repeat_delay(self.anim(),ms);
         return self;
     }
 
     /// Set the reverse (playback) phase duration. Returns `*self`.
     pub fn playbackDuration(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_playback_duration(&self.inner, ms);
+        c.lv_anim_set_playback_duration(self.anim(),ms);
         return self;
     }
 
     /// Set the delay before the playback phase. Returns `*self`.
     pub fn playbackDelay(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_playback_delay(&self.inner, ms);
+        c.lv_anim_set_playback_delay(self.anim(),ms);
         return self;
     }
 
     /// Set the exec callback invoked every frame. Returns `*self`.
     pub fn execCb(self: *Animation, cb: c.lv_anim_exec_xcb_t) *Animation {
-        c.lv_anim_set_exec_cb(&self.inner, cb);
+        c.lv_anim_set_exec_cb(self.anim(),cb);
         return self;
     }
 
     /// Set the ready callback invoked when the animation completes. Returns `*self`.
     pub fn readyCb(self: *Animation, cb: c.lv_anim_ready_cb_t) *Animation {
-        c.lv_anim_set_ready_cb(&self.inner, cb);
+        c.lv_anim_set_ready_cb(self.anim(),cb);
         return self;
     }
 
     /// Start the animation. LVGL copies the inner state so the builder
     /// can go out of scope immediately after.
     pub fn start(self: *Animation) void {
-        _ = c.lv_anim_start(&self.inner);
+        _ = c.lv_anim_start(self.anim());
     }
 
     /// Stop any animations matching `(var, exec_cb)`.
     pub fn stop(var_: ?*anyopaque, exec_cb: c.lv_anim_exec_xcb_t) bool {
         return c.lv_anim_delete(var_, exec_cb);
+    }
+
+    /// Convert a speed (px/sec-style units) into a duration usable by `duration()`.
+    pub fn durationForSpeed(speed: u32) u32 {
+        return c.lv_anim_speed(speed);
     }
 };
 
@@ -4019,14 +4137,14 @@ pub const Scale = struct {
     }
 
     pub const ScaleSection = struct {
-        raw: *anyopaque,
+        raw: *c.lv_scale_section_t,
 
         pub fn range(self: ScaleSection, min_v: i32, max_v: i32) ScaleSection {
             c.lv_scale_section_set_range(self.raw, min_v, max_v);
             return self;
         }
         pub fn style(self: ScaleSection, part: u32, s: *Style) ScaleSection {
-            c.lv_scale_section_set_style(self.raw, part, &s.inner);
+            c.lv_scale_section_set_style(self.raw, part, &s.style);
             return self;
         }
     };
