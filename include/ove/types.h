@@ -287,6 +287,12 @@ typedef uint32_t ove_eventbits_t;
  * safe to call from whatever context the originating send/give/set ran
  * in — typically a Rust @c AtomicWaker::wake bridge for the async runtime.
  *
+ * @note The @c _set_notify registration is *setup-time only*: it is NOT safe
+ *       to call concurrently with producing operations on the same primitive,
+ *       since those read the callback pointer without synchronisation. Register
+ *       the callback once before the primitive is shared across contexts (the
+ *       async bridge registers it at construction).
+ *
  * @param[in] user_data Opaque pointer supplied at @c _set_notify time.
  */
 typedef void (*ove_notify_cb)(void *user_data);

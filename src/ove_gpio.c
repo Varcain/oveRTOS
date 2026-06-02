@@ -22,7 +22,12 @@
  * `registered` is additionally fenced — writers release-fence after
  * filling the data fields (port/pin/callback/...) and before storing
  * registered=1, so a dispatch that observes registered=1 is guaranteed
- * to see the data fields too. */
+ * to see the data fields too.
+ *
+ * `enabled` is volatile-but-unfenced (a single word, effectively atomic on
+ * every supported target). A disable racing an already-in-flight dispatch
+ * may let one more callback fire — inherent to disarming a live interrupt
+ * and benign, so no stronger ordering is imposed. */
 struct gpio_irq_entry {
 	unsigned int port;
 	unsigned int pin;
