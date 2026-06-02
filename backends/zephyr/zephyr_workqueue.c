@@ -204,8 +204,10 @@ int ove_work_cancel(ove_work_t work)
 	}
 	/* Sync variant: stops the delay timer AND waits for any running
 	 * handler to complete.  After this returns the caller may safely
-	 * free the work struct. */
+	 * free the work struct.  The return is true when the work was still
+	 * pending/running, false when there was nothing to cancel. */
 	struct k_work_sync sync;
-	(void)k_work_cancel_delayable_sync(&work->dwork, &sync);
-	return OVE_OK;
+	bool was_active = k_work_cancel_delayable_sync(&work->dwork, &sync);
+	/* Contract: OVE_ERR_INVAL when the item was not pending. */
+	return was_active ? OVE_OK : OVE_ERR_INVAL;
 }

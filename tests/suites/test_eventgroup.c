@@ -65,7 +65,11 @@ static void test_eg_clear_bits_returns_previous(void **state)
 
 	ove_eventgroup_set_bits(eg, BIT_0 | BIT_1 | BIT_2);
 
-	ove_eventgroup_clear_bits(eg, BIT_1);
+	/* clear_bits returns the value as it was *before* the clear (contract
+	 * in ove/eventgroup.h; matches FreeRTOS xEventGroupClearBits). */
+	ove_eventbits_t prev = ove_eventgroup_clear_bits(eg, BIT_1);
+	assert_int_equal(prev, BIT_0 | BIT_1 | BIT_2);
+
 	ove_eventbits_t remaining = ove_eventgroup_get_bits(eg);
 	/* BIT_1 should now be cleared */
 	assert_true(remaining & BIT_0);

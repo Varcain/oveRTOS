@@ -342,10 +342,12 @@ int ove_work_cancel(ove_work_t work)
 	if (nw == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	int was_pending = nw->pending;
 	nw->cancelled = 1;
 	nw->pending = 0;
 	/* Wait for any in-flight handler to finish so the caller may
 	 * safely free the struct after cancel returns. */
 	wait_for_completion(nw);
-	return OVE_OK;
+	/* Contract: OVE_ERR_INVAL when the item was not pending. */
+	return was_pending ? OVE_OK : OVE_ERR_INVAL;
 }

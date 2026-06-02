@@ -194,6 +194,10 @@ struct ove_work {
 	StaticSemaphore_t static_completion_sem;
 	SemaphoreHandle_t completion_sem;
 	int in_progress;
+	/* Set when the item is queued/scheduled, cleared when the worker
+	 * dequeues it; lets ove_work_cancel report OVE_ERR_INVAL for a
+	 * not-pending item (atomic store-release / load-acquire). */
+	int pending;
 };
 
 struct ove_workqueue {

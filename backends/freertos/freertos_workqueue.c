@@ -31,6 +31,8 @@ static void wq_thread(void *arg)
 			if (work == NULL) {
 				break; /* poison pill — shutdown */
 			}
+			/* Pulled from the queue — no longer pending. */
+			__atomic_store_n(&work->pending, 0, __ATOMIC_RELEASE);
 			__atomic_store_n(&work->in_progress, 1, __ATOMIC_RELEASE);
 			if (work->handler != NULL) {
 				work->handler(work);
@@ -109,6 +111,7 @@ int ove_work_init_static(ove_work_t *work, ove_work_storage_t *storage, ove_work
 	storage->delay_timer = NULL;
 	storage->target_wq = NULL;
 	storage->in_progress = 0;
+	storage->pending = 0;
 	storage->completion_sem = xSemaphoreCreateBinaryStatic(&storage->static_completion_sem);
 
 	*work = storage;
@@ -180,6 +183,7 @@ int ove_work_init(ove_work_t *work, ove_work_fn handler)
 	fw->delay_timer = NULL;
 	fw->target_wq = NULL;
 	fw->in_progress = 0;
+	fw->pending = 0;
 	fw->completion_sem = xSemaphoreCreateBinaryStatic(&fw->static_completion_sem);
 
 	*work = fw;
@@ -204,7 +208,11 @@ void ove_work_free(ove_work_t work)
 
 int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 {
+	/* Mark pending before enqueue so the worker (which clears it on
+	 * dequeue) and a concurrent cancel see a consistent value. */
+	__atomic_store_n(&work->pending, 1, __ATOMIC_RELEASE);
 	if (xQueueSend(wq->queue, &work, 0) != pdPASS) {
+		__atomic_store_n(&work->pending, 0, __ATOMIC_RELEASE);
 		return OVE_ERR_TIMEOUT;
 	}
 	return OVE_OK;
@@ -236,6 +244,8 @@ int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_
 	if (xTimerStart(work->delay_timer, portMAX_DELAY) != pdPASS) {
 		return OVE_ERR_TIMEOUT;
 	}
+	/* Scheduled — pending until the timer fires and the worker dequeues it. */
+	__atomic_store_n(&work->pending, 1, __ATOMIC_RELEASE);
 	return OVE_OK;
 }
 
@@ -244,11 +254,13 @@ int ove_work_cancel(ove_work_t work)
 	if (work == NULL) {
 		return OVE_ERR_INVALID_PARAM;
 	}
+	int was_pending = __atomic_exchange_n(&work->pending, 0, __ATOMIC_ACQ_REL);
 	if (work->delay_timer != NULL) {
 		xTimerStop(work->delay_timer, portMAX_DELAY);
 	}
 	/* Wait for any in-flight handler to finish so the caller may
 	 * safely free the struct after cancel returns. */
 	wait_for_completion(work);
-	return OVE_OK;
+	/* Contract: OVE_ERR_INVAL when the item was not pending. */
+	return was_pending ? OVE_OK : OVE_ERR_INVAL;
 }

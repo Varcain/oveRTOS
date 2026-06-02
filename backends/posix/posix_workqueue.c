@@ -249,8 +249,8 @@ int ove_work_cancel(ove_work_t work)
 	}
 	struct ove_workqueue *wq = w->wq;
 	if (!wq) {
-		/* Never submitted — nothing to cancel. */
-		return OVE_ERR_NOT_SUPPORTED;
+		/* Never submitted — not pending. */
+		return OVE_ERR_INVAL;
 	}
 	pthread_mutex_lock(&wq->lock);
 	int was_pending = __atomic_load_n(&w->pending, __ATOMIC_ACQUIRE);
@@ -262,5 +262,6 @@ int ove_work_cancel(ove_work_t work)
 		pthread_cond_wait(&wq->cond, &wq->lock);
 	}
 	pthread_mutex_unlock(&wq->lock);
-	return was_pending ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
+	/* Contract: OVE_ERR_INVAL when the item was not pending. */
+	return was_pending ? OVE_OK : OVE_ERR_INVAL;
 }
