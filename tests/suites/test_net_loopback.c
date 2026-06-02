@@ -203,8 +203,8 @@ static void test_tcp_loopback_echo(void **state)
 int test_net_loopback_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test_setup_teardown(test_tcp_loopback_echo,
-						loopback_setup, loopback_teardown),
+		cmocka_unit_test_setup_teardown(test_tcp_loopback_echo, loopback_setup,
+						loopback_teardown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

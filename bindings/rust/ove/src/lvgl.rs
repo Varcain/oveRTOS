@@ -1955,7 +1955,7 @@ impl Calendar {
         unsafe {
             bindings::lv_calendar_set_highlighted_dates(
                 self.raw(),
-                dates.as_ptr() as *mut _,
+                dates.as_ptr().cast_mut(),
                 dates.len() as _,
             );
         }

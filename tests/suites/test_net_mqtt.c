@@ -100,8 +100,8 @@ static void test_hash_no_match(void **state)
 static void test_hash_malformed_not_wildcard(void **state)
 {
 	(void)state;
-	assert_false(MATCH("a#b", "axyz"));    /* '#' mid-string */
-	assert_false(MATCH("a#", "axyz"));     /* '#' not preceded by '/' */
+	assert_false(MATCH("a#b", "axyz"));	 /* '#' mid-string */
+	assert_false(MATCH("a#", "axyz"));	 /* '#' not preceded by '/' */
 	assert_false(MATCH("sport#", "sportX")); /* ditto */
 	/* Sanity: the legitimate forms still match. */
 	assert_true(MATCH("#", "a/b/c"));
@@ -142,12 +142,17 @@ static void test_trailing_slash(void **state)
 int test_net_mqtt_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_exact_match),	  cmocka_unit_test(test_exact_mismatch),
-		cmocka_unit_test(test_plus_single_level), cmocka_unit_test(test_plus_no_match),
-		cmocka_unit_test(test_plus_multiple),	  cmocka_unit_test(test_hash_all),
-		cmocka_unit_test(test_hash_suffix),	  cmocka_unit_test(test_hash_no_match),
+		cmocka_unit_test(test_exact_match),
+		cmocka_unit_test(test_exact_mismatch),
+		cmocka_unit_test(test_plus_single_level),
+		cmocka_unit_test(test_plus_no_match),
+		cmocka_unit_test(test_plus_multiple),
+		cmocka_unit_test(test_hash_all),
+		cmocka_unit_test(test_hash_suffix),
+		cmocka_unit_test(test_hash_no_match),
 		cmocka_unit_test(test_hash_malformed_not_wildcard),
-		cmocka_unit_test(test_combined),	  cmocka_unit_test(test_empty_filter),
+		cmocka_unit_test(test_combined),
+		cmocka_unit_test(test_empty_filter),
 		cmocka_unit_test(test_trailing_slash),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
