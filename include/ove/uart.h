@@ -114,14 +114,20 @@ void ove_uart_destroy(ove_uart_t uart);
 /**
  * @brief Write data to the UART.
  *
- * Blocks for up to @p timeout_ns until all bytes are accepted.
- * Thread-safe (internal TX mutex).
+ * Thread-safe (internal TX mutex). On success @p bytes_written holds the
+ * number of bytes actually accepted, which **may be less than @p len** on a
+ * short write — callers that require all bytes must check it and resubmit the
+ * remainder; @c OVE_OK alone does not guarantee a full write.
+ *
+ * @note @p timeout_ns is best-effort and is currently ignored by several
+ *       backends (the posix/zephyr/freertos TX paths transmit synchronously);
+ *       do not rely on it to bound a write.
  *
  * @param[in]  uart          UART handle.
  * @param[in]  data          Data to transmit.
  * @param[in]  len           Number of bytes to write.
- * @param[in]  timeout_ns    Maximum wait time.
- * @param[out] bytes_written Actual bytes written, or NULL.
+ * @param[in]  timeout_ns    Maximum wait time (best-effort; see note).
+ * @param[out] bytes_written Actual bytes written (may be < @p len), or NULL.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_uart_write(ove_uart_t uart, const void *data, size_t len, uint64_t timeout_ns,
