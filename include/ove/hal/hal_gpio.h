@@ -83,14 +83,32 @@ int ove_hal_gpio_irq_hw_enable(unsigned int port, unsigned int pin, ove_gpio_irq
 /**
  * @brief Disable a GPIO interrupt in hardware without unregistering the callback.
  *
- * Called by ove_gpio_irq_disable().  The interrupt controller entry for
- * this pin must be masked so no further callbacks are dispatched.
+ * Called by ove_gpio_irq_disable() (a *temporary* mask — the registration is
+ * kept so ove_gpio_irq_enable() can re-arm the line).  The interrupt
+ * controller entry for this pin must be masked so no further callbacks are
+ * dispatched.
  *
  * @param[in] port  GPIO port index.
  * @param[in] pin   GPIO pin index within the port.
  * @return OVE_OK on success, negative error code on failure.
  */
 int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin);
+
+/**
+ * @brief Permanently unregister a GPIO interrupt in hardware.
+ *
+ * Called by ove_gpio_irq_unregister().  Distinct from hw_disable(): besides
+ * masking the line, the backend must release any per-registration hardware
+ * state it owns (e.g. a Zephyr gpio_callback registered with the driver, or a
+ * slot in a backend-private IRQ table) so the same (port,pin) can be cleanly
+ * re-registered.  Backends that keep no per-registration state may simply
+ * mirror hw_disable().
+ *
+ * @param[in] port  GPIO port index.
+ * @param[in] pin   GPIO pin index within the port.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin);
 
 #ifdef __cplusplus
 }

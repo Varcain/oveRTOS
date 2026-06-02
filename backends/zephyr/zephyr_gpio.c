@@ -184,3 +184,24 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	}
 	return OVE_ERR_NOT_SUPPORTED;
 }
+
+int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
+{
+	unsigned int i;
+
+	for (i = 0; i < GPIO_IRQ_MAX; i++) {
+		if (zephyr_irq_table[i].registered && zephyr_irq_table[i].port == port &&
+		    zephyr_irq_table[i].pin == (gpio_pin_t)pin) {
+			gpio_pin_interrupt_configure(zephyr_irq_table[i].dev, pin,
+						     GPIO_INT_DISABLE);
+			/* Release the driver callback and free the slot, else a
+			 * re-register of this pin adds a second callback and the
+			 * handler dispatches the user callback twice. */
+			gpio_remove_callback(zephyr_irq_table[i].dev,
+					     &zephyr_irq_table[i].cb_data);
+			zephyr_irq_table[i].registered = 0;
+			return OVE_OK;
+		}
+	}
+	return OVE_ERR_NOT_SUPPORTED;
+}

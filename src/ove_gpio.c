@@ -100,6 +100,19 @@ int ove_gpio_irq_register(unsigned int port, unsigned int pin, ove_gpio_irq_mode
 	return ove_hal_gpio_irq_hw_enable(port, pin, mode, callback, user_data);
 }
 
+/*
+ * NB (cross-backend caveats, tracked):
+ *  - `enabled` is the authoritative dispatch gate (see ove_gpio_irq_dispatch);
+ *    enable/disable toggle it in software. enable() does NOT re-arm the line in
+ *    hardware, so on backends whose hw_disable() actually masks the IRQ
+ *    (freertos NVIC, zephyr gpio_pin_interrupt_configure) a disable→enable
+ *    cycle leaves the hardware line masked even though dispatch is re-gated on.
+ *    The host/posix backend (hw_disable is a no-op) relies purely on the gate,
+ *    so it round-trips correctly. Re-arming HW on enable would need a
+ *    hw_reenable HAL hook — deferred.
+ *  - hw_disable() return codes diverge: posix OVE_OK (no-op), freertos OVE_OK,
+ *    zephyr OVE_OK, nuttx OVE_ERR_NOT_SUPPORTED (GPIO IRQ masking unimplemented).
+ */
 int ove_gpio_irq_enable(unsigned int port, unsigned int pin)
 {
 	unsigned int i;
@@ -141,7 +154,11 @@ int ove_gpio_irq_unregister(unsigned int port, unsigned int pin)
 			 * half-torn-down entry (it gates on `enabled`). */
 			irq_table[i].enabled = 0;
 			irq_table[i].registered = 0;
-			return ove_hal_gpio_irq_hw_disable(port, pin);
+			/* Permanent teardown — hw_unregister (not hw_disable) so
+			 * the backend also releases per-registration HW state
+			 * (e.g. Zephyr's gpio_callback), otherwise re-registering
+			 * the same (port,pin) double-registers and double-fires. */
+			return ove_hal_gpio_irq_hw_unregister(port, pin);
 		}
 	}
 	return OVE_ERR_NOT_SUPPORTED;
