@@ -15,7 +15,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NVS_MAX_ENTRIES 64
+/* 32 entries (×328 B ≈ 10.5 KB) — the NVS suite stores at most ~4
+ * concurrent keys, so 64 was 16× over-provisioned.  This stub is linked
+ * into the RAM-tight STM32F746 Renode firmwares (256 KB main RAM); 64
+ * entries left no headroom once the freertos/zephyr stream storage grew
+ * (ring + two static semaphores for exact `trigger` parity), tipping
+ * .bss over the region.  32 keeps 8× headroom over real test usage. */
+#define NVS_MAX_ENTRIES 32
 #define NVS_MAX_KEY_LEN 64
 #define NVS_MAX_VAL_LEN 256
 
