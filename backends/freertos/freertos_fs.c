@@ -83,9 +83,8 @@ int ove_fs_open_init(ove_file_t *file, ove_file_storage_t *storage, const char *
 	fres = f_open(&f->fil, path, mode);
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path, (int)fres);
-		return (fres == FR_NO_FILE || fres == FR_NO_PATH)
-			       ? OVE_ERR_NOT_FOUND
-			       : OVE_ERR_NOT_SUPPORTED;
+		return (fres == FR_NO_FILE || fres == FR_NO_PATH) ? OVE_ERR_NOT_FOUND
+								  : OVE_ERR_NOT_SUPPORTED;
 	}
 
 	*file = f;
@@ -158,9 +157,8 @@ int ove_fs_open(ove_file_t *file, const char *path, int flags)
 	if (fres != FR_OK) {
 		OVE_LOG("fs: f_open(%s) failed: FRESULT=%d\n", path, (int)fres);
 		OVE_BACKEND_FREE(f);
-		return (fres == FR_NO_FILE || fres == FR_NO_PATH)
-			       ? OVE_ERR_NOT_FOUND
-			       : OVE_ERR_NOT_SUPPORTED;
+		return (fres == FR_NO_FILE || fres == FR_NO_PATH) ? OVE_ERR_NOT_FOUND
+								  : OVE_ERR_NOT_SUPPORTED;
 	}
 
 	*file = f;

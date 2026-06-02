@@ -197,8 +197,7 @@ int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
 			/* Release the driver callback and free the slot, else a
 			 * re-register of this pin adds a second callback and the
 			 * handler dispatches the user callback twice. */
-			gpio_remove_callback(zephyr_irq_table[i].dev,
-					     &zephyr_irq_table[i].cb_data);
+			gpio_remove_callback(zephyr_irq_table[i].dev, &zephyr_irq_table[i].cb_data);
 			zephyr_irq_table[i].registered = 0;
 			return OVE_OK;
 		}

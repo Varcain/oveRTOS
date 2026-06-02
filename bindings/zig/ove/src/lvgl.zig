@@ -3626,73 +3626,73 @@ pub const Animation = struct {
 
     /// Set the target variable. Returns `*self` for chaining.
     pub fn target(self: *Animation, var_: ?*anyopaque) *Animation {
-        c.lv_anim_set_var(self.anim(),var_);
+        c.lv_anim_set_var(self.anim(), var_);
         return self;
     }
 
     /// Set the target as any widget-like struct with an `obj` field.
     pub fn targetObj(self: *Animation, widget: anytype) *Animation {
-        c.lv_anim_set_var(self.anim(),widget.obj);
+        c.lv_anim_set_var(self.anim(), widget.obj);
         return self;
     }
 
     /// Set start and end values. Returns `*self`.
     pub fn values(self: *Animation, from: i32, to: i32) *Animation {
-        c.lv_anim_set_values(self.anim(),from, to);
+        c.lv_anim_set_values(self.anim(), from, to);
         return self;
     }
 
     /// Set duration in milliseconds. Returns `*self`.
     pub fn duration(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_duration(self.anim(),ms);
+        c.lv_anim_set_duration(self.anim(), ms);
         return self;
     }
 
     /// Set the delay before the animation starts. Returns `*self`.
     pub fn delay(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_delay(self.anim(),ms);
+        c.lv_anim_set_delay(self.anim(), ms);
         return self;
     }
 
     /// Set the easing path callback. Returns `*self`.
     pub fn path(self: *Animation, cb: c.lv_anim_path_cb_t) *Animation {
-        c.lv_anim_set_path_cb(self.anim(),cb);
+        c.lv_anim_set_path_cb(self.anim(), cb);
         return self;
     }
 
     /// Set the repeat count. Returns `*self`.
     pub fn repeatCount(self: *Animation, count: u32) *Animation {
-        c.lv_anim_set_repeat_count(self.anim(),count);
+        c.lv_anim_set_repeat_count(self.anim(), count);
         return self;
     }
 
     /// Set the delay between repeats. Returns `*self`.
     pub fn repeatDelay(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_repeat_delay(self.anim(),ms);
+        c.lv_anim_set_repeat_delay(self.anim(), ms);
         return self;
     }
 
     /// Set the reverse (playback) phase duration. Returns `*self`.
     pub fn playbackDuration(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_playback_duration(self.anim(),ms);
+        c.lv_anim_set_playback_duration(self.anim(), ms);
         return self;
     }
 
     /// Set the delay before the playback phase. Returns `*self`.
     pub fn playbackDelay(self: *Animation, ms: u32) *Animation {
-        c.lv_anim_set_playback_delay(self.anim(),ms);
+        c.lv_anim_set_playback_delay(self.anim(), ms);
         return self;
     }
 
     /// Set the exec callback invoked every frame. Returns `*self`.
     pub fn execCb(self: *Animation, cb: c.lv_anim_exec_xcb_t) *Animation {
-        c.lv_anim_set_exec_cb(self.anim(),cb);
+        c.lv_anim_set_exec_cb(self.anim(), cb);
         return self;
     }
 
     /// Set the ready callback invoked when the animation completes. Returns `*self`.
     pub fn readyCb(self: *Animation, cb: c.lv_anim_ready_cb_t) *Animation {
-        c.lv_anim_set_ready_cb(self.anim(),cb);
+        c.lv_anim_set_ready_cb(self.anim(), cb);
         return self;
     }
 

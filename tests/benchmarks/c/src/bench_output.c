@@ -193,13 +193,12 @@ void bench_emit_suite_json(const bench_suite_t *suite, const bench_case_t *cases
 	 * actually dropped (emitted < n); json_case_format is pure formatting. */
 	if (emitted < (int)n) {
 		for (unsigned int i = 0; i < n; i++) {
-			int payload_len = json_case_format(json_buf, sizeof(json_buf),
-							   &cases[i], &results[i]);
+			int payload_len = json_case_format(json_buf, sizeof(json_buf), &cases[i],
+							   &results[i]);
 			if (payload_len <= 0 || (size_t)payload_len >= sizeof(json_buf))
 				OVE_LOG("[bench] WARNING: case \"%s\" omitted from JSON "
 					"(formatted %d B vs %u B buffer)\n",
-					cases[i].name, payload_len,
-					(unsigned int)sizeof(json_buf));
+					cases[i].name, payload_len, (unsigned int)sizeof(json_buf));
 		}
 	}
 }

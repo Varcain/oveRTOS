@@ -97,8 +97,8 @@ static void test_gpio_irq_enable_disable(void **state)
 	/* The gpio_irq_teardown registered on this test unregisters the line
 	 * afterwards, so registrations don't leak across suites and dispatch
 	 * reliably delivers to *this* file's handler — LED0 is safe to use. */
-	ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING,
-			      gpio_irq_handler, NULL);
+	ove_gpio_irq_register(TEST_GPIO_PORT, TEST_GPIO_PIN, OVE_GPIO_IRQ_RISING, gpio_irq_handler,
+			      NULL);
 
 	int rc = ove_gpio_irq_enable(TEST_GPIO_PORT, TEST_GPIO_PIN);
 	assert_int_equal(rc, OVE_OK);

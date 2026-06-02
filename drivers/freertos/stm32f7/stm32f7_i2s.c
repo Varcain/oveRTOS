@@ -108,7 +108,7 @@ int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 	 * so every frame must contain that many samples on the bus. */
 	uint32_t slot_count = 4;
 	uint32_t slot_active = SAI_SLOTACTIVE_0 | SAI_SLOTACTIVE_1 | SAI_SLOTACTIVE_2 |
-			      SAI_SLOTACTIVE_3;
+			       SAI_SLOTACTIVE_3;
 
 	/* Configure TX SAI (master) */
 	if (cfg->direction & OVE_I2S_DIR_TX) {
