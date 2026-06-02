@@ -131,7 +131,9 @@ ove_eventbits_t ove_eventgroup_set_bits(ove_eventgroup_t eg, ove_eventbits_t bit
  *
  * @param[in] eg    Event group handle.
  * @param[in] bits  Bitmask of bits to clear.
- * @return The value of the event group immediately after the clear operation.
+ * @return The value of the event group as it was *before* the clear operation
+ *         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps
+ *         or mirrors).
  */
 ove_eventbits_t ove_eventgroup_clear_bits(ove_eventgroup_t eg, ove_eventbits_t bits);
 

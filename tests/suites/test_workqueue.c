@@ -204,6 +204,25 @@ static void test_wq_cancel_work(void **state)
 #endif
 }
 
+static void test_wq_cancel_not_pending(void **state)
+{
+	(void)state;
+	ove_work_t w = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_work_init_static(&w, &s_work_storage, delayed_handler);
+#else
+	ove_work_init(&w, delayed_handler);
+#endif
+
+	/* Never submitted -> not pending -> OVE_ERR_INVAL (ove/workqueue.h). */
+	int rc = ove_work_cancel(w);
+	assert_int_equal(rc, OVE_ERR_INVAL);
+
+#ifndef CONFIG_OVE_ZERO_HEAP
+	ove_work_free(w);
+#endif
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void test_wq_destroy_null(void **state)
 {
@@ -281,6 +300,7 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_submit_multiple, wq_setup),
 		cmocka_unit_test_setup(test_wq_submit_delayed, wq_setup),
 		cmocka_unit_test_setup(test_wq_cancel_work, wq_setup),
+		cmocka_unit_test_setup(test_wq_cancel_not_pending, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif
