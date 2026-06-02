@@ -127,10 +127,18 @@ typedef struct ove_work ove_work_storage_t;
 /* ── Stream ───────────────────────────────────────────────────────── */
 
 struct ove_stream {
-	struct k_pipe pipe;
 	unsigned char *buffer;
 	size_t size;
-	atomic_t bytes_count;
+	size_t trigger;
+	size_t head;
+	size_t tail;
+	size_t count;
+	/* k_pipe has no "wake when >= trigger bytes" mode, so the stream is a
+	 * plain ring guarded by a spinlock (usable from both thread and ISR
+	 * context, unlike k_mutex) with two counting semaphores for blocking. */
+	struct k_spinlock lock;
+	struct k_sem data_sem;	/* given when bytes arrive */
+	struct k_sem space_sem; /* given when space frees */
 	ove_notify_cb notify_cb;
 	void *notify_ud;
 };

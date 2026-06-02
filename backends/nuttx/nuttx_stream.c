@@ -37,14 +37,13 @@ static void ns_to_abstime(uint64_t ns, struct timespec *ts)
 int ove_stream_init(ove_stream_t *stream, ove_stream_storage_t *storage, void *buffer, size_t size,
 		    size_t trigger)
 {
-	(void)trigger;
-
 	if (stream == NULL || storage == NULL || buffer == NULL || size == 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
 
 	storage->buffer = (unsigned char *)buffer;
 	storage->size = size;
+	storage->trigger = (trigger > 0) ? trigger : 1; /* 0 is treated as 1 */
 	storage->head = 0;
 	storage->tail = 0;
 	storage->count = 0;
@@ -75,8 +74,6 @@ int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 {
 	struct ove_stream *ns;
 
-	(void)trigger;
-
 	if (stream == NULL || size == 0) {
 		return OVE_ERR_INVALID_PARAM;
 	}
@@ -93,6 +90,7 @@ int ove_stream_create(ove_stream_t *stream, size_t size, size_t trigger)
 	}
 
 	ns->size = size;
+	ns->trigger = (trigger > 0) ? trigger : 1; /* 0 is treated as 1 */
 	ns->head = 0;
 	ns->tail = 0;
 	ns->count = 0;
@@ -204,7 +202,11 @@ int ove_stream_receive(ove_stream_t stream, void *buf, size_t len, uint64_t time
 	pthread_mutex_lock(&ns->lock);
 
 	while (read_bytes < len) {
-		while (ns->count == 0) {
+		/* Trigger-aware: the first read blocks until at least `trigger`
+		 * bytes are present; once draining has started (read_bytes > 0)
+		 * any single byte suffices, returning what is available. */
+		size_t min_avail = (read_bytes == 0) ? ns->trigger : 1;
+		while (ns->count < min_avail) {
 			if (read_bytes > 0) {
 				goto out;
 			}
