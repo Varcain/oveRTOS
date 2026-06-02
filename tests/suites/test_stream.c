@@ -166,6 +166,44 @@ static void test_stream_receive_timeout_empty(void **state)
 	ove_test_stream_destroy(s);
 }
 
+static void trigger_producer_fn(void *arg)
+{
+	ove_stream_t s = (ove_stream_t)arg;
+	const uint8_t a[] = {0xA1, 0xA2};
+	const uint8_t b[] = {0xA3, 0xA4};
+	/* Two bytes (below the trigger), a gap so a correct receiver is left
+	 * blocked, then the two that complete the trigger threshold. */
+	ove_stream_send(s, a, 2, OVE_WAIT_FOREVER, NULL);
+	test_msleep(50);
+	ove_stream_send(s, b, 2, OVE_WAIT_FOREVER, NULL);
+}
+
+static void test_stream_trigger(void **state)
+{
+	(void)state;
+	ove_stream_t s = NULL;
+	/* trigger = 4: a blocked receive must wait until >= 4 bytes are present
+	 * (ove/stream.h contract). A backend that ignores trigger (wake on any
+	 * byte) would return after the producer's first 2 bytes -> received==2. */
+	int rc = ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 4);
+	assert_int_equal(rc, OVE_OK);
+
+	ove_thread_t th = NULL;
+	ove_test_thread_run(&th, &s_th_storage, "trig_prod", trigger_producer_fn, s, s_th_stack,
+			    4096);
+
+	uint8_t rx[16] = {0};
+	size_t received = 0;
+	rc = ove_stream_receive(s, rx, sizeof(rx), OVE_MS(2000), &received);
+	assert_int_equal(rc, OVE_OK);
+	assert_int_equal(received, 4);
+	assert_int_equal(rx[0], 0xA1);
+	assert_int_equal(rx[3], 0xA4);
+
+	ove_test_thread_destroy(th);
+	ove_test_stream_destroy(s);
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void test_stream_create_null_handle(void **state)
 {
@@ -275,6 +313,7 @@ int test_stream_run(void)
 		cmocka_unit_test(test_stream_partial_receive),
 		cmocka_unit_test(test_stream_send_timeout_full),
 		cmocka_unit_test(test_stream_receive_timeout_empty),
+		cmocka_unit_test(test_stream_trigger),
 		cmocka_unit_test(test_stream_cross_thread),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_stream_create_null_handle),

@@ -168,6 +168,7 @@ typedef struct ove_work ove_work_storage_t;
 struct ove_stream {
 	unsigned char *buffer;
 	size_t size;
+	size_t trigger;
 	size_t head;
 	size_t tail;
 	size_t count;

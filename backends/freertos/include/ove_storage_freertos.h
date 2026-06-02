@@ -213,8 +213,21 @@ typedef struct ove_work ove_work_storage_t;
 /* ── Stream ───────────────────────────────────────────────────────── */
 
 struct ove_stream {
-	StreamBufferHandle_t handle;
-	StaticStreamBuffer_t static_stream;
+	/* FreeRTOS StreamBuffer's receive doesn't withhold sub-trigger data, so
+	 * the stream is a plain ring honouring `trigger` directly: a critical
+	 * section guards the ring (mutual exclusion vs. the *_from_isr ops) and
+	 * two counting semaphores provide the blocking wait/wake. Sem counts are
+	 * hints — every waiter re-checks the ring after waking. */
+	unsigned char *buffer;
+	size_t size;
+	size_t trigger;
+	size_t head;
+	size_t tail;
+	size_t count;
+	SemaphoreHandle_t data_sem;  /* given when bytes arrive */
+	SemaphoreHandle_t space_sem; /* given when space frees */
+	StaticSemaphore_t data_sem_buf;
+	StaticSemaphore_t space_sem_buf;
 	ove_notify_cb notify_cb;
 	void *notify_ud;
 };
