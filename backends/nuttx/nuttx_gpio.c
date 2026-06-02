@@ -49,3 +49,9 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	(void)pin;
 	return OVE_ERR_NOT_SUPPORTED;
 }
+
+int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
+{
+	/* No per-registration HW state to release; mirror hw_disable. */
+	return ove_hal_gpio_irq_hw_disable(port, pin);
+}

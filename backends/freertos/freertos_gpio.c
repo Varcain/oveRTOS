@@ -157,6 +157,12 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	return OVE_OK;
 }
 
+int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
+{
+	/* No per-registration HW state beyond the NVIC mask; same as disable. */
+	return ove_hal_gpio_irq_hw_disable(port, pin);
+}
+
 /* HAL EXTI callback — dispatches to shared IRQ dispatch */
 extern void ove_gpio_irq_dispatch(unsigned int port, unsigned int pin);
 

@@ -61,3 +61,9 @@ int ove_hal_gpio_irq_hw_disable(unsigned int port, unsigned int pin)
 	}
 	return OVE_OK;
 }
+
+int ove_hal_gpio_irq_hw_unregister(unsigned int port, unsigned int pin)
+{
+	/* No per-registration HW state on the host sim; same as a disable. */
+	return ove_hal_gpio_irq_hw_disable(port, pin);
+}
