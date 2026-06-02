@@ -368,6 +368,10 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 	size_t cid_len = strlen(cfg->client_id);
 	size_t usr_len = cfg->username ? strlen(cfg->username) : 0;
 	size_t pwd_len = cfg->password ? strlen(cfg->password) : 0;
+	/* Each is a uint16 length-prefixed field on the wire; reject rather
+	 * than silently truncate the length (which would desync the frame). */
+	if (cid_len > 0xFFFF || usr_len > 0xFFFF || pwd_len > 0xFFFF)
+		return OVE_ERR_INVALID_PARAM;
 
 	/* Variable header: protocol name(6) + level(1) + flags(1) + keepalive(2) = 10 */
 	size_t remaining = 10 + 2 + cid_len;
@@ -475,6 +479,8 @@ int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *pa
 	struct ove_mqtt_client *c = client;
 
 	size_t topic_len = strlen(topic);
+	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
+		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + topic_len + payload_len;
 	if (qos == OVE_MQTT_QOS1)
 		remaining += 2; /* packet ID */
@@ -524,6 +530,8 @@ int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos
 	struct ove_mqtt_client *c = client;
 
 	size_t topic_len = strlen(topic);
+	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
+		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + 2 + topic_len + 1; /* pkt_id + topic + qos */
 
 	uint8_t *p = c->tx_buf;
@@ -567,6 +575,8 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 	struct ove_mqtt_client *c = client;
 
 	size_t topic_len = strlen(topic);
+	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
+		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + 2 + topic_len; /* pkt_id + topic */
 
 	uint8_t *p = c->tx_buf;
