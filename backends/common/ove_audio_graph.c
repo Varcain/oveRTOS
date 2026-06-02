@@ -10,9 +10,13 @@
 
 /* ── Helpers ────────────────────────────────────────────────────── */
 
-static unsigned int buf_byte_size(const struct ove_audio_fmt *fmt, unsigned int frames)
+/* Returns uint64_t (not size_t/unsigned int) so the product can't wrap before
+ * the caller's `bs > SIZE_MAX - total_size` overflow guard runs — on a 32-bit
+ * target size_t is the same width as the multiply, so an unsigned-int product
+ * would silently truncate a pathological frames/channels config. */
+static uint64_t buf_byte_size(const struct ove_audio_fmt *fmt, unsigned int frames)
 {
-	return frames * fmt->channels * ove_audio_sample_size(fmt->sample_fmt);
+	return (uint64_t)frames * fmt->channels * ove_audio_sample_size(fmt->sample_fmt);
 }
 
 static int find_upstream(const struct ove_audio_graph *g, unsigned int node)
@@ -239,11 +243,13 @@ int ove_audio_graph_build(struct ove_audio_graph *g)
 	for (unsigned int i = 0; i < g->node_count; i++) {
 		offsets[i] = total_size;
 		if (g->nodes[i].type != OVE_AUDIO_NODE_SINK) {
-			size_t bs = buf_byte_size(&g->nodes[i].out_fmt, g->frames_per_period);
-			/* Overflow check: reject pathological configs before calloc */
-			if (bs > SIZE_MAX - total_size)
+			uint64_t bs = buf_byte_size(&g->nodes[i].out_fmt, g->frames_per_period);
+			/* Overflow check: reject pathological configs before calloc.
+			 * bs is uint64_t so the comparison catches a product that
+			 * exceeds size_t on a 32-bit target. */
+			if (bs > (uint64_t)(SIZE_MAX - total_size))
 				return OVE_ERR_NO_MEMORY;
-			total_size += bs;
+			total_size += (size_t)bs;
 		}
 	}
 

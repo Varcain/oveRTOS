@@ -95,6 +95,19 @@ static void test_hash_no_match(void **state)
 	assert_false(MATCH("a/b/#", "a/c"));
 }
 
+/* '#' is a wildcard only as the final char after '/' (or as the whole
+ * filter).  Malformed placements must not match every topic. */
+static void test_hash_malformed_not_wildcard(void **state)
+{
+	(void)state;
+	assert_false(MATCH("a#b", "axyz"));    /* '#' mid-string */
+	assert_false(MATCH("a#", "axyz"));     /* '#' not preceded by '/' */
+	assert_false(MATCH("sport#", "sportX")); /* ditto */
+	/* Sanity: the legitimate forms still match. */
+	assert_true(MATCH("#", "a/b/c"));
+	assert_true(MATCH("sport/#", "sport/x"));
+}
+
 /* ── Combined wildcards ────────────────────────────────────────── */
 
 static void test_combined(void **state)
@@ -133,6 +146,7 @@ int test_net_mqtt_run(void)
 		cmocka_unit_test(test_plus_single_level), cmocka_unit_test(test_plus_no_match),
 		cmocka_unit_test(test_plus_multiple),	  cmocka_unit_test(test_hash_all),
 		cmocka_unit_test(test_hash_suffix),	  cmocka_unit_test(test_hash_no_match),
+		cmocka_unit_test(test_hash_malformed_not_wildcard),
 		cmocka_unit_test(test_combined),	  cmocka_unit_test(test_empty_filter),
 		cmocka_unit_test(test_trailing_slash),
 	};
