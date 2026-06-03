@@ -219,15 +219,35 @@ pub mod heap {
 
 #[cfg(all(feature = "async", has_async))]
 pub mod async_runtime;
-/// Async wrappers re-exported at the crate root for symmetry with the
-/// blocking primitives (`ove::Queue` → `ove::AsyncQueue`, etc.). The
-/// `Spawner` type remains at [`async_runtime::Spawner`] since it is an
-/// `embassy_executor` re-export rather than an ove-native type.
+// Async wrappers re-exported at the crate root for symmetry with the
+// blocking primitives (`ove::Queue` → `ove::AsyncQueue`, etc.). The
+// `Spawner` type stays at `async_runtime::Spawner` — an `embassy_executor`
+// re-export, not an ove-native type.
+//
+// Each `Async*` wrapper is gated on its primitive's `has_*` cfg, mirroring
+// the per-feature gates in `async_runtime/mod.rs`: a config that enables
+// CONFIG_OVE_ASYNC without (say) CONFIG_OVE_QUEUE compiles out the
+// `async_runtime::queue` module, so re-exporting it unconditionally here
+// would be an unresolved import (the example_async_rust defconfigs do
+// exactly this — async on, most comm primitives off).
+#[cfg(all(feature = "async", has_async, has_eventgroup))]
+pub use async_runtime::AsyncEventGroup;
+#[cfg(all(feature = "async", has_async, has_i2c))]
+pub use async_runtime::AsyncI2c;
+#[cfg(all(feature = "async", has_async, has_gpio))]
+pub use async_runtime::AsyncInput;
+#[cfg(all(feature = "async", has_async, has_queue))]
+pub use async_runtime::AsyncQueue;
+#[cfg(all(feature = "async", has_async, has_sync))]
+pub use async_runtime::AsyncSemaphore;
+#[cfg(all(feature = "async", has_async, has_spi))]
+pub use async_runtime::AsyncSpi;
+#[cfg(all(feature = "async", has_async, has_stream))]
+pub use async_runtime::AsyncStream;
+#[cfg(all(feature = "async", has_async, has_uart))]
+pub use async_runtime::AsyncUart;
 #[cfg(all(feature = "async", has_async))]
-pub use async_runtime::{
-    AsyncEventGroup, AsyncI2c, AsyncInput, AsyncQueue, AsyncSemaphore, AsyncSpi, AsyncStream,
-    AsyncUart, Executor,
-};
+pub use async_runtime::Executor;
 // A compile-time error to catch the common misconfiguration where the
 // Cargo `async` feature is on but the C side wasn't built with
 // CONFIG_OVE_ASYNC=y. Without this gate the binding would fail with
