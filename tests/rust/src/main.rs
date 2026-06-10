@@ -71,6 +71,8 @@ mod test_fmt;
 mod test_lvgl;
 #[cfg(not(zero_heap))]
 mod test_embedded_hal;
+#[cfg(not(zero_heap))]
+mod test_net_mqtt;
 
 // Zero-heap suite: exercises the binding's static-storage `create(&STORAGE, …)`
 // constructors (D-1) that the heap suites above cannot reach.
@@ -119,6 +121,7 @@ fn main() {
         ("Fmt", test_fmt::run),
         ("Lvgl", test_lvgl::run),
         ("embedded-hal+io", test_embedded_hal::run),
+        ("NetMqtt", test_net_mqtt::run),
     ];
 
     #[cfg(zero_heap)]

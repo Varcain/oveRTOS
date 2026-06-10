@@ -318,6 +318,8 @@ pub mod net_http;
 pub mod net_httpd;
 #[cfg(has_net_mqtt)]
 pub mod net_mqtt;
+#[cfg(any(has_net_mqtt, ove_test))]
+mod net_mqtt_common;
 #[cfg(has_net_sntp)]
 pub mod net_sntp;
 #[cfg(has_net_tls)]
@@ -365,6 +367,25 @@ mod macros;
 #[doc(hidden)]
 pub mod ffi {
     pub use crate::bindings::*;
+}
+
+#[cfg(ove_test)]
+#[doc(hidden)]
+pub mod __test_support {
+    /// Validate the MQTT topic decoding helper used by the C callback
+    /// trampoline.
+    pub fn mqtt_topic_str_from_bytes(topic: &[u8]) -> Option<&str> {
+        crate::net_mqtt_common::topic_str_from_bytes(topic)
+    }
+
+    /// Validate the MQTT callback byte-slice guard used before reconstructing
+    /// slices from C pointers.
+    ///
+    /// # Safety
+    /// `ptr` must be valid for `len` bytes when `len != 0`.
+    pub unsafe fn mqtt_callback_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+        unsafe { crate::net_mqtt_common::callback_bytes(ptr, len) }
+    }
 }
 
 // Public re-exports for convenience

@@ -612,6 +612,8 @@ def _rust_test_env(ove_dir, output_dir, target_dir, *, zero_heap=False):
                                           "stub"),
         "CARGO_TARGET_DIR": target_dir,
     })
+    env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "").strip() +
+                        " --cfg ove_test").strip()
     return rust_dir, env
 
 

@@ -18,6 +18,7 @@ fn main() {
     // reused by `ove lint` for clippy without a configured workspace.
     if std::env::var("DOCS_RS").is_ok() {
         println!("cargo:rustc-cfg=docsrs");
+        println!("cargo:rustc-check-cfg=cfg(ove_test)");
         let modules = [
             "sync",
             "queue",
@@ -89,6 +90,7 @@ fn main() {
         env::var("OVE_GEN_DIR").expect("OVE_GEN_DIR env var must be set by build system");
 
     println!("cargo:rustc-check-cfg=cfg(docsrs)");
+    println!("cargo:rustc-check-cfg=cfg(ove_test)");
 
     // Detect enabled subsystems from ove_config.h and emit cfg flags
     {

@@ -22,6 +22,7 @@
 
 use crate::bindings;
 use crate::error::{Error, Result};
+use crate::net_mqtt_common::{callback_bytes, topic_str_from_bytes};
 
 // SAFETY (module-wide contract for the `unsafe { bindings::ove_*(...) }` FFI
 // calls below): any handle passed to the C API is non-null and refers to a
@@ -80,6 +81,15 @@ pub struct Config<'a> {
 /// Message callback -- topic as `&str` (UTF-8 per MQTT spec), payload as `&[u8]`.
 pub type MessageFn = fn(&str, &[u8]);
 
+// Round-tripping `MessageFn` through `*mut c_void` requires function
+// pointers and data pointers to have the same size. If a future port lands
+// on a target where that is false, fail at compile time instead of silently
+// corrupting callback pointers.
+const _: () = assert!(
+    core::mem::size_of::<MessageFn>() == core::mem::size_of::<*mut core::ffi::c_void>(),
+    "ove::net_mqtt: MessageFn and *mut c_void must be the same size for FFI round-trip"
+);
+
 /// Internal trampoline that converts the C callback into a safe Rust call.
 ///
 /// The user's `fn(&str, &[u8])` is stored as the `user_data` pointer
@@ -91,17 +101,30 @@ unsafe extern "C" fn mqtt_trampoline(
     payload_len: usize,
     user_data: *mut core::ffi::c_void,
 ) {
+    if user_data.is_null() {
+        return;
+    }
+
     // SAFETY: `user_data` was stored by `Client::connect` from a
     // `MessageFn` pointer (a `fn(&str, &[u8])`). Supported targets have
     // pointer-sized function pointers with a C-compatible ABI, so
     // round-tripping through `*mut c_void` is sound.
     let cb: MessageFn = unsafe { core::mem::transmute(user_data) };
-    // SAFETY: `topic`/`payload` are valid for `topic_len`/`payload_len` bytes
-    // as guaranteed by the MQTT client for the duration of this callback.
-    let t = unsafe { core::slice::from_raw_parts(topic as *const u8, topic_len) };
-    let p = unsafe { core::slice::from_raw_parts(payload as *const u8, payload_len) };
-    // SAFETY: MQTT topic strings are UTF-8 per specification.
-    let topic_str = unsafe { core::str::from_utf8_unchecked(t) };
+
+    // SAFETY: `topic` and `payload` are valid for `topic_len` and
+    // `payload_len` bytes as guaranteed by the MQTT client for the duration
+    // of this callback. Invalid null/non-empty pairs are rejected defensively.
+    let Some(t) = (unsafe { callback_bytes(topic as *const u8, topic_len) }) else {
+        return;
+    };
+    let Some(p) = (unsafe { callback_bytes(payload as *const u8, payload_len) }) else {
+        return;
+    };
+
+    let Some(topic_str) = topic_str_from_bytes(t) else {
+        return;
+    };
+
     cb(topic_str, p);
 }
 
