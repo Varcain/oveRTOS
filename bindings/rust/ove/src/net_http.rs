@@ -303,3 +303,19 @@ impl Client {
 }
 
 crate::ove_handle_impl!(Client, ove_http_client_destroy, ove_http_client_deinit);
+
+/// Configure the process-wide HTTPS TLS policy (see `ove_http_set_tls`).
+///
+/// Secure by default: with `ca_cert == None` and `allow_insecure == false`,
+/// `https://` requests fail closed (the peer cannot be verified).  Call once
+/// at startup before issuing requests.  The CA must outlive every request,
+/// hence the `'static` bound.
+pub fn set_tls(ca_cert: Option<&'static [u8]>, allow_insecure: bool) {
+    let (ptr, len) = match ca_cert {
+        Some(c) => (c.as_ptr(), c.len()),
+        None => (core::ptr::null(), 0),
+    };
+    // SAFETY: a `'static` CA slice outlives all requests; the C side stores
+    // the pointer for use during later TLS handshakes (it does not copy).
+    unsafe { bindings::ove_http_set_tls(ptr, len, allow_insecure as i32) };
+}

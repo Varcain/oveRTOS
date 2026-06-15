@@ -2874,6 +2874,14 @@ unsafe extern "C" {
     pub fn ove_http_response_free(resp: *mut ove_http_response_t);
 }
 unsafe extern "C" {
+    #[doc = " @brief Configure the process-wide TLS policy for HTTPS requests.\n\n Secure by default: with no CA configured and @p allow_insecure zero,\n `https://` requests fail closed (the peer cannot be verified).  Call once\n at startup, before issuing requests, to install a trust anchor or to\n explicitly opt into insecure TLS.\n\n @param[in] ca_cert        PEM/DER CA certificate to verify the peer against\n                           (NULL leaves it unset).\n @param[in] ca_cert_len    Length of @p ca_cert in bytes (incl. NUL for PEM).\n @param[in] allow_insecure Non-zero permits unverified TLS (no CA) — do not\n                           use in production."]
+    pub fn ove_http_set_tls(
+        ca_cert: *const core::ffi::c_uchar,
+        ca_cert_len: usize,
+        allow_insecure: core::ffi::c_int,
+    );
+}
+unsafe extern "C" {
     #[doc = " @brief Heap-allocate and initialise an HTTP client.\n\n @param[out] client Handle written on success.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_http_client_create(client: *mut ove_http_client_t) -> core::ffi::c_int;
 }

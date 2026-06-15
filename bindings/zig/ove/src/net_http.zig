@@ -99,6 +99,20 @@ pub const Response = struct {
 /// ```
 pub const Client = if (pin.zero_heap) ZeroHeapClient else HeapClient;
 
+/// Configure the process-wide HTTPS TLS policy (see `ove_http_set_tls`).
+///
+/// Secure by default: with an empty `ca_cert` and `allow_insecure` false,
+/// `https://` requests fail closed (the peer cannot be verified).  Call once
+/// at startup before issuing requests; the CA bytes must outlive every
+/// request.
+pub fn setTls(ca_cert: []const u8, allow_insecure: bool) void {
+    c.ove_http_set_tls(
+        if (ca_cert.len == 0) null else ca_cert.ptr,
+        ca_cert.len,
+        @intFromBool(allow_insecure),
+    );
+}
+
 const HeapClient = struct {
     handle: c.ove_http_client_t,
 

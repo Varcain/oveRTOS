@@ -305,6 +305,23 @@ class Client
 #endif
 };
 
+/**
+ * @brief Configure the process-wide HTTPS TLS policy (see @c ove_http_set_tls).
+ *
+ * Secure by default: with no CA and @p allow_insecure false, `https://`
+ * requests fail closed.  Call once at startup before issuing requests; the
+ * CA bytes must outlive every request.
+ *
+ * @param[in] ca_cert        PEM/DER CA certificate (nullptr leaves it unset).
+ * @param[in] ca_cert_len    Length of @p ca_cert in bytes.
+ * @param[in] allow_insecure Permit unverified TLS — do not use in production.
+ */
+inline void set_tls(const unsigned char *ca_cert, size_t ca_cert_len,
+		    bool allow_insecure = false) noexcept
+{
+	ove_http_set_tls(ca_cert, ca_cert_len, allow_insecure ? 1 : 0);
+}
+
 } /* namespace ove::http */
 
 #endif /* CONFIG_OVE_NET_HTTP */
