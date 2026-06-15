@@ -58,6 +58,15 @@ void ove_timer_deinit(ove_timer_t timer)
 {
 	if (timer != NULL) {
 		k_timer_stop(&timer->timer);
+		/* k_timer_stop does not cancel the k_work the expiry submitted;
+		 * a pending/running deferred callback would deref freed storage
+		 * via CONTAINER_OF (use-after-free).  k_work_cancel_sync()
+		 * removes a queued item and blocks until a running one returns,
+		 * so the caller may safely free the storage afterwards.  Must
+		 * not run on the system workqueue thread (deinit/destroy are
+		 * called from app context, never the worker). */
+		struct k_work_sync sync;
+		k_work_cancel_sync(&timer->work, &sync);
 	}
 }
 
