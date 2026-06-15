@@ -47,6 +47,12 @@ int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 		return OVE_ERR_INVALID_PARAM;
 	}
 
+	/* Reject item_size * max_items (and the + sizeof(*w) below) overflow
+	 * before it wraps to an undersized allocation (heap overflow on send). */
+	if (item_size > SIZE_MAX / max_items) {
+		return OVE_ERR_INVALID_PARAM;
+	}
+
 	/* Single allocation for the wrapper struct + queue data buffer.
 	 * The data buffer occupies the flexible-array `inline_storage[]`
 	 * tail of struct ove_queue; `w->storage` points at it so init-
@@ -54,6 +60,9 @@ int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 	 * pointer.  Replaces the earlier 2-allocation path measured at
 	 * +3.5 µs over raw xQueueCreate on STM32F746/heap_4. */
 	size_t storage_size = (size_t)max_items * item_size;
+	if (storage_size > SIZE_MAX - sizeof(struct ove_queue)) {
+		return OVE_ERR_INVALID_PARAM;
+	}
 	struct ove_queue *w = OVE_BACKEND_MALLOC(sizeof(*w) + storage_size);
 	if (w == NULL) {
 		return OVE_ERR_NO_MEMORY;

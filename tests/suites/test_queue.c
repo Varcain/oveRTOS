@@ -258,6 +258,17 @@ static void test_queue_destroy_null(void **state)
 	/* Should not crash */
 	ove_queue_destroy(NULL);
 }
+
+static void test_queue_create_overflow_rejected(void **state)
+{
+	(void)state;
+	/* item_size * max_items overflows size_t — must be rejected, not wrapped
+	 * to an undersized buffer (which would heap-overflow on send). */
+	ove_queue_t q = NULL;
+	int rc = ove_queue_create(&q, SIZE_MAX / 2 + 1, 2);
+	assert_int_equal(rc, OVE_ERR_INVALID_PARAM);
+	assert_null(q);
+}
 #endif
 
 static void test_queue_send_wait_forever(void **state)
@@ -346,6 +357,7 @@ int test_queue_run(void)
 		cmocka_unit_test_setup(test_queue_struct_item, queue_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_queue_destroy_null, queue_setup),
+		cmocka_unit_test_setup(test_queue_create_overflow_rejected, queue_setup),
 #endif
 		cmocka_unit_test_setup(test_queue_send_wait_forever, queue_setup),
 		cmocka_unit_test_setup(test_queue_pair_item_size, queue_setup),

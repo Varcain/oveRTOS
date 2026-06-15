@@ -56,6 +56,10 @@ int ove_queue_create(ove_queue_t *q, size_t item_size, unsigned int max_items)
 {
 	if (item_size == 0 || max_items == 0)
 		return OVE_ERR_INVALID_PARAM;
+	/* Reject item_size * max_items overflow before it wraps to an
+	 * undersized buffer allocation (heap overflow on send). */
+	if (item_size > SIZE_MAX / max_items)
+		return OVE_ERR_INVALID_PARAM;
 	struct ove_queue *sq = OVE_BACKEND_MALLOC(sizeof(*sq));
 	if (!sq) {
 		return OVE_ERR_NO_MEMORY;
