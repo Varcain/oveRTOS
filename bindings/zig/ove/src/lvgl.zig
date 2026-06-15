@@ -3259,7 +3259,7 @@ pub const Screen = struct {
 /// widget. Essential for non-touch targets. Create, `add` widgets, then
 /// call `deinit()` once when done.
 pub const Group = struct {
-    raw: *c.lv_group_t,
+    raw: ?*c.lv_group_t,
 
     /// Create a fresh focus group.
     pub fn create() Group {
@@ -3267,8 +3267,15 @@ pub const Group = struct {
     }
 
     /// Delete the underlying group. Call once per Group.
-    pub fn deinit(self: Group) void {
-        c.lv_group_delete(self.raw);
+    ///
+    /// Idempotent — clears `raw` after delete so a redundant
+    /// `defer g.deinit()` after an explicit `deinit()` is a safe no-op
+    /// rather than a double delete.
+    pub fn deinit(self: *Group) void {
+        if (self.raw) |r| {
+            c.lv_group_delete(r);
+            self.raw = null;
+        }
     }
 
     /// Mark this group as the default. Returns `self` for chaining.
@@ -3355,7 +3362,7 @@ pub const Group = struct {
 ///
 /// Call `deinit()` once to free the underlying timer.
 pub const Timer = struct {
-    raw: *c.lv_timer_t,
+    raw: ?*c.lv_timer_t,
 
     /// Create and start an LVGL timer. Returns the wrapper.
     pub fn create(cb: c.lv_timer_cb_t, period_ms: u32, user_data: ?*anyopaque) Timer {
@@ -3363,8 +3370,15 @@ pub const Timer = struct {
     }
 
     /// Delete the underlying `lv_timer_t`. Call once per Timer.
-    pub fn deinit(self: Timer) void {
-        c.lv_timer_delete(self.raw);
+    ///
+    /// Idempotent — clears `raw` after delete so a redundant
+    /// `defer t.deinit()` after an explicit `deinit()` is a safe no-op
+    /// rather than a double delete.
+    pub fn deinit(self: *Timer) void {
+        if (self.raw) |r| {
+            c.lv_timer_delete(r);
+            self.raw = null;
+        }
     }
 
     /// Update the period in milliseconds. Returns `self` for chaining.
