@@ -1670,8 +1670,23 @@ fn testWorkqueueCreateDestroy() !void {
     wq.deinit();
 }
 
+fn testWorkqueueDeinitIdempotent() !void {
+    var wq = try ove.Workqueue(4096).create(test_allocator, "wqdi\x00", .normal);
+    wq.deinit();
+    try expect(wq.handle == null);
+    try expect(wq.backing == null);
+    wq.deinit();
+}
+
 fn testWorkCreateDestroy() !void {
     var work = try ove.Work.create(test_allocator, workHandler);
+    work.deinit();
+}
+
+fn testWorkDeinitIdempotent() !void {
+    var work = try ove.Work.create(test_allocator, workHandler);
+    work.deinit();
+    try expect(work.storage == null);
     work.deinit();
 }
 
@@ -2026,7 +2041,9 @@ pub fn main() void {
 
     runSuite("Workqueue", &.{
         .{ .name = "create_destroy", .func = testWorkqueueCreateDestroy },
+        .{ .name = "deinit_idempotent", .func = testWorkqueueDeinitIdempotent },
         .{ .name = "work_create_destroy", .func = testWorkCreateDestroy },
+        .{ .name = "work_deinit_idempotent", .func = testWorkDeinitIdempotent },
         .{ .name = "submit", .func = testWorkSubmit },
         .{ .name = "submit_delayed", .func = testWorkSubmitDelayed },
         .{ .name = "cancel", .func = testWorkCancel },

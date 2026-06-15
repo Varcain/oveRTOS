@@ -45,7 +45,7 @@ pub fn Workqueue(comptime stack_size: usize) type {
 
         allocator: std.mem.Allocator,
         handle: c.ove_workqueue_t,
-        backing: *Backing,
+        backing: ?*Backing,
 
         /// Allocate the worker stack + substrate-storage from
         /// `allocator` and spawn a dedicated thread running
@@ -71,9 +71,18 @@ pub fn Workqueue(comptime stack_size: usize) type {
             return .{ .allocator = allocator, .handle = h, .backing = backing };
         }
 
-        pub fn deinit(self: Self) void {
-            if (self.handle != null) c.ove_workqueue_deinit(self.handle);
-            self.allocator.destroy(self.backing);
+        /// Idempotent — clears `handle` and `backing` after teardown so a
+        /// redundant `defer wq.deinit()` after an explicit `deinit()` is a
+        /// safe no-op rather than a double free.
+        pub fn deinit(self: *Self) void {
+            if (self.handle) |h| {
+                c.ove_workqueue_deinit(h);
+                self.handle = null;
+            }
+            if (self.backing) |b| {
+                self.allocator.destroy(b);
+                self.backing = null;
+            }
         }
 
         /// Enqueue `work` for execution by the workqueue thread.
@@ -103,7 +112,7 @@ pub fn Workqueue(comptime stack_size: usize) type {
 pub const Work = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_work_t,
-    storage: *c.ove_work_storage_t,
+    storage: ?*c.ove_work_storage_t,
 
     /// Create a deferred work item bound to a plain Zig callback.
     pub fn create(allocator: std.mem.Allocator, comptime handler: fn () void) Error!Work {
@@ -142,10 +151,15 @@ pub const Work = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: Work) void {
-        // Static work items have no substrate-level deinit; we just
-        // release our storage.
-        self.allocator.destroy(self.storage);
+    /// Idempotent — static work items have no substrate-level deinit; we
+    /// just release our storage and clear it so a redundant
+    /// `defer work.deinit()` after an explicit `deinit()` is a safe no-op
+    /// rather than a double free.
+    pub fn deinit(self: *Work) void {
+        if (self.storage) |s| {
+            self.allocator.destroy(s);
+            self.storage = null;
+        }
     }
 
     /// Cancel a pending submission.  No-op if the work has already
