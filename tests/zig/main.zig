@@ -998,6 +998,14 @@ fn testEventGroupCreateDestroy() !void {
     eg.deinit();
 }
 
+fn testEventGroupDeinitIdempotent() !void {
+    var eg = try ove.EventGroup.create(test_allocator);
+    eg.deinit();
+    try expect(eg.handle == null);
+    try expect(eg.storage == null);
+    eg.deinit();
+}
+
 fn testEventGroupSetBits() !void {
     var eg = try ove.EventGroup.create(test_allocator);
     defer eg.deinit();
@@ -1880,6 +1888,7 @@ pub fn main() void {
 
     runSuite("EventGroup", &.{
         .{ .name = "create_destroy", .func = testEventGroupCreateDestroy },
+        .{ .name = "deinit_idempotent", .func = testEventGroupDeinitIdempotent },
         .{ .name = "set_bits", .func = testEventGroupSetBits },
         .{ .name = "clear_bits", .func = testEventGroupClearBits },
         .{ .name = "get_bits", .func = testEventGroupGetBits },

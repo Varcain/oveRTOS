@@ -54,7 +54,7 @@ inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
 pub const EventGroup = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_eventgroup_t,
-    storage: *c.ove_eventgroup_storage_t,
+    storage: ?*c.ove_eventgroup_storage_t,
 
     /// Allocate the event group's substrate-storage from `allocator`
     /// and `ove_eventgroup_init` against it.  All bits start cleared.
@@ -67,9 +67,18 @@ pub const EventGroup = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: EventGroup) void {
-        if (self.handle != null) c.ove_eventgroup_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    /// Idempotent — clears `handle` and `storage` after teardown so a
+    /// redundant `defer eg.deinit()` after an explicit `deinit()` is a safe
+    /// no-op rather than a double free.
+    pub fn deinit(self: *EventGroup) void {
+        if (self.handle) |h| {
+            c.ove_eventgroup_deinit(h);
+            self.handle = null;
+        }
+        if (self.storage) |s| {
+            self.allocator.destroy(s);
+            self.storage = null;
+        }
     }
 
     /// Set the bits in `bits`.  Returns the bitmask after the set.
