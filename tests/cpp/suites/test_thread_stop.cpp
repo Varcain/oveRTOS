@@ -265,6 +265,55 @@ static void test_detach_does_not_signal_stop(void **state)
 		test_msleep(1);
 	assert_int_equal(g_detach_exited.load(), 1);
 }
+
+/* ── 9b. move-assignment requests stop before releasing old thread ─────
+ *
+ * Assigning over an already-owned cooperative Thread must behave like
+ * destruction of that old handle: request_stop first, then wait/release.
+ * Otherwise the assignment can block indefinitely on workers that exit only
+ * when their stop_token is set.
+ */
+
+static std::atomic<int> g_move_assign_started{0};
+static std::atomic<int> g_move_assign_stop_observed{0};
+static std::atomic<int> g_move_assign_timeout_exit{0};
+
+static void move_assign_victim_worker(ove::stop_token tok)
+{
+	g_move_assign_started.store(1);
+	for (int i = 0; i < 500; ++i) {
+		if (tok.stop_requested()) {
+			g_move_assign_stop_observed.store(1);
+			return;
+		}
+		test_msleep(1);
+	}
+	g_move_assign_timeout_exit.store(1);
+}
+
+static void test_move_assignment_stops_replaced_thread(void **state)
+{
+	(void)state;
+	g_move_assign_started.store(0);
+	g_move_assign_stop_observed.store(0);
+	g_move_assign_timeout_exit.store(0);
+	reset_flags();
+
+	ove::Thread<4096> target{move_assign_victim_worker, OVE_PRIO_NORMAL, "mav"};
+	for (int i = 0; i < 200 && !g_move_assign_started.load(); ++i)
+		test_msleep(1);
+	assert_int_equal(g_move_assign_started.load(), 1);
+
+	ove::Thread<4096> incoming{cooperative_worker, OVE_PRIO_NORMAL, "mai"};
+	target = std::move(incoming);
+
+	assert_true(target.valid());
+	assert_false(incoming.valid());
+	assert_int_equal(g_move_assign_stop_observed.load(), 1);
+	assert_int_equal(g_move_assign_timeout_exit.load(), 0);
+
+	target.request_stop();
+}
 #endif /* !CONFIG_OVE_ZERO_HEAP */
 
 /* ── 10. joinable() tracks valid() across the wrapper's lifecycle ──── */
@@ -547,6 +596,7 @@ int test_cpp_thread_stop_run(void)
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_detach_skips_join),
 		cmocka_unit_test(test_detach_does_not_signal_stop),
+		cmocka_unit_test(test_move_assignment_stops_replaced_thread),
 #endif
 		cmocka_unit_test(test_joinable_matches_valid),
 		cmocka_unit_test(test_get_id_non_default_for_live_thread),

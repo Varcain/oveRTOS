@@ -483,14 +483,7 @@ template <size_t StackSize = 0> class Thread
 	 */
 	~Thread() noexcept
 	{
-		if (!handle_)
-			return;
-		ove_thread_request_stop(handle_);
-#ifdef CONFIG_OVE_ZERO_HEAP
-		ove_thread_deinit(handle_);
-#else
-		ove_thread_destroy(handle_);
-#endif
+		release_owned_thread(true);
 	}
 
 	Thread(const Thread &) = delete;
@@ -517,8 +510,7 @@ template <size_t StackSize = 0> class Thread
 	Thread &operator=(Thread &&other) noexcept
 	{
 		if (this != &other) {
-			if (handle_)
-				ove_thread_destroy(handle_);
+			release_owned_thread(true);
 			handle_ = other.handle_;
 			other.handle_ = nullptr;
 		}
@@ -550,14 +542,7 @@ template <size_t StackSize = 0> class Thread
 	 */
 	void join() noexcept
 	{
-		if (!handle_)
-			return;
-#ifdef CONFIG_OVE_ZERO_HEAP
-		ove_thread_deinit(handle_);
-#else
-		ove_thread_destroy(handle_);
-#endif
-		handle_ = nullptr;
+		release_owned_thread(false);
 	}
 
 #ifdef CONFIG_OVE_ZERO_HEAP
@@ -758,6 +743,20 @@ template <size_t StackSize = 0> class Thread
 	}
 
       private:
+	void release_owned_thread(bool request_stop) noexcept
+	{
+		if (!handle_)
+			return;
+		if (request_stop)
+			ove_thread_request_stop(handle_);
+#ifdef CONFIG_OVE_ZERO_HEAP
+		ove_thread_deinit(handle_);
+#else
+		ove_thread_destroy(handle_);
+#endif
+		handle_ = nullptr;
+	}
+
 	ove_thread_t handle_ = nullptr;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	/* `stack_` precedes `storage_` so the latter (whose underlying C
