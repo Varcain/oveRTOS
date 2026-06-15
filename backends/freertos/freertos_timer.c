@@ -11,12 +11,20 @@
 #include "ove_backend_common.h"
 #include "FreeRTOS.h"
 #include "timers.h"
+#include "semphr.h"
 static void freertos_timer_callback(TimerHandle_t xTimer)
 {
 	struct ove_timer *ctx = pvTimerGetTimerID(xTimer);
 	if (ctx != NULL && ctx->callback != NULL) {
 		ctx->callback(ctx, ctx->user_data);
 	}
+}
+
+/* Pended onto the timer daemon by teardown; gives the drain semaphore. */
+static void freertos_timer_drain_done(void *param1, uint32_t param2)
+{
+	(void)param2;
+	xSemaphoreGive((SemaphoreHandle_t)param1);
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
@@ -63,8 +71,28 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
 
 void ove_timer_deinit(ove_timer_t timer)
 {
-	if (timer != NULL) {
-		xTimerDelete(timer->handle, 0);
+	if (timer == NULL) {
+		return;
+	}
+
+	/* xTimerDelete only queues a delete command — the timer daemon may be
+	 * mid-callback (pvTimerGetTimerID -> ctx) or have yet to process the
+	 * delete, so freeing the wrapper (which embeds static_timer) here would
+	 * be a use-after-free.  Pend a give onto the daemon after the delete:
+	 * the daemon runs the callback, the delete, and this give serially on
+	 * one task, so taking the semaphore means the timer has fully drained
+	 * and the storage is safe to reuse/free.
+	 *
+	 * Must not be called from the timer's own callback (i.e. the daemon
+	 * task) — that would self-deadlock, same constraint as join-from-self. */
+	xTimerDelete(timer->handle, portMAX_DELAY);
+
+	StaticSemaphore_t sem_buf;
+	SemaphoreHandle_t done = xSemaphoreCreateBinaryStatic(&sem_buf);
+	if (done != NULL &&
+	    xTimerPendFunctionCall(freertos_timer_drain_done, done, 0, portMAX_DELAY) == pdPASS) {
+		xSemaphoreTake(done, portMAX_DELAY);
+		vSemaphoreDelete(done);
 	}
 }
 
