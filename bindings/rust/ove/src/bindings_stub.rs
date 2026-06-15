@@ -320,7 +320,7 @@ pub struct ove_i2s {
 pub type ove_i2s_t = *mut ove_i2s;
 #[doc = " @brief Bit-mask type used by the event-group API.\n\n Each bit represents a distinct event flag.  Up to 32 independent flags\n can be combined in a single event group."]
 pub type ove_eventbits_t = u32;
-#[doc = " @brief Notify-callback signature used by the @c _set_notify variants of\n        the comm primitives (stream / queue / eventgroup / semaphore).\n\n Invoked from inside the producing call (e.g. @c ove_stream_send) after a\n successful update.  The implementation must be short, non-blocking, and\n safe to call from whatever context the originating send/give/set ran\n in — typically a Rust @c AtomicWaker::wake bridge for the async runtime.\n\n @param[in] user_data Opaque pointer supplied at @c _set_notify time."]
+#[doc = " @brief Notify-callback signature used by the @c _set_notify variants of\n        the comm primitives (stream / queue / eventgroup / semaphore).\n\n Invoked from inside the producing call (e.g. @c ove_stream_send) after a\n successful update.  The implementation must be short, non-blocking, and\n safe to call from whatever context the originating send/give/set ran\n in — typically a Rust @c AtomicWaker::wake bridge for the async runtime.\n\n @note The @c _set_notify registration is *setup-time only*: it is NOT safe\n       to call concurrently with producing operations on the same primitive,\n       since those read the callback pointer without synchronisation. Register\n       the callback once before the primitive is shared across contexts (the\n       async bridge registers it at construction).\n\n @param[in] user_data Opaque pointer supplied at @c _set_notify time."]
 pub type ove_notify_cb = Option<unsafe extern "C" fn(user_data: *mut core::ffi::c_void)>;
 #[doc = " @brief DMA / async transfer completion callback signature.\n\n Invoked by @c ove_spi_transfer_async / @c ove_i2c_write_read_async\n (and similar) when a transfer finishes.  Runs in whatever context\n the backend's completion fires in: ISR on real DMA-capable\n hardware (STM32F7 HAL), thread on simulator / worker-thread\n fallback paths. Implementations must be non-blocking and ISR-safe.\n\n @param[in] result     OVE_OK on success, negative @c OVE_ERR_* on failure.\n @param[in] user_data  Opaque pointer passed to the @c _async call."]
 pub type ove_dma_complete_cb =
@@ -2062,7 +2062,7 @@ unsafe extern "C" {
     pub fn ove_eventgroup_set_bits(eg: ove_eventgroup_t, bits: ove_eventbits_t) -> ove_eventbits_t;
 }
 unsafe extern "C" {
-    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group immediately after the clear operation."]
+    #[doc = " @brief Clear one or more bits in the event group.\n\n Atomically ANDs the complement of @p bits into the current event group\n value. Clearing bits will not unblock any waiting tasks.\n\n @param[in] eg    Event group handle.\n @param[in] bits  Bitmask of bits to clear.\n @return The value of the event group as it was *before* the clear operation\n         (matches FreeRTOS @c xEventGroupClearBits, which every backend wraps\n         or mirrors)."]
     pub fn ove_eventgroup_clear_bits(
         eg: ove_eventgroup_t,
         bits: ove_eventbits_t,
@@ -3324,7 +3324,7 @@ unsafe extern "C" {
     pub fn ove_uart_destroy(uart: ove_uart_t);
 }
 unsafe extern "C" {
-    #[doc = " @brief Write data to the UART.\n\n Blocks for up to @p timeout_ns until all bytes are accepted.\n Thread-safe (internal TX mutex).\n\n @param[in]  uart          UART handle.\n @param[in]  data          Data to transmit.\n @param[in]  len           Number of bytes to write.\n @param[in]  timeout_ns    Maximum wait time.\n @param[out] bytes_written Actual bytes written, or NULL.\n @return OVE_OK on success, negative error code on failure."]
+    #[doc = " @brief Write data to the UART.\n\n Thread-safe (internal TX mutex). On success @p bytes_written holds the\n number of bytes actually accepted, which **may be less than @p len** on a\n short write — callers that require all bytes must check it and resubmit the\n remainder; @c OVE_OK alone does not guarantee a full write.\n\n @note @p timeout_ns is best-effort and is currently ignored by several\n       backends (the posix/zephyr/freertos TX paths transmit synchronously);\n       do not rely on it to bound a write.\n\n @param[in]  uart          UART handle.\n @param[in]  data          Data to transmit.\n @param[in]  len           Number of bytes to write.\n @param[in]  timeout_ns    Maximum wait time (best-effort; see note).\n @param[out] bytes_written Actual bytes written (may be < @p len), or NULL.\n @return OVE_OK on success, negative error code on failure."]
     pub fn ove_uart_write(
         uart: ove_uart_t,
         data: *const core::ffi::c_void,
