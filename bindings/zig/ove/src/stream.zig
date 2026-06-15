@@ -55,7 +55,7 @@ pub fn Stream(comptime size: usize) type {
 
         allocator: std.mem.Allocator,
         handle: c.ove_stream_t,
-        backing: *Backing,
+        backing: ?*Backing,
 
         /// Allocate the stream's ring buffer + substrate-storage from
         /// `allocator` and `ove_stream_init` against it.  `trigger` is
@@ -71,9 +71,18 @@ pub fn Stream(comptime size: usize) type {
             return .{ .allocator = allocator, .handle = h, .backing = backing };
         }
 
-        pub fn deinit(self: Self) void {
-            if (self.handle != null) c.ove_stream_deinit(self.handle);
-            self.allocator.destroy(self.backing);
+        /// Idempotent — clears `handle` and `backing` after teardown so a
+        /// redundant `defer s.deinit()` after an explicit `deinit()` is a
+        /// safe no-op rather than a double free.
+        pub fn deinit(self: *Self) void {
+            if (self.handle) |h| {
+                c.ove_stream_deinit(h);
+                self.handle = null;
+            }
+            if (self.backing) |b| {
+                self.allocator.destroy(b);
+                self.backing = null;
+            }
         }
 
         /// Forever-blocking send.  Returns the number of bytes actually

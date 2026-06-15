@@ -1597,6 +1597,14 @@ fn testStreamCreateDestroy() !void {
     s.deinit();
 }
 
+fn testStreamDeinitIdempotent() !void {
+    var s = try ove.Stream(256).create(test_allocator, 1);
+    s.deinit();
+    try expect(s.handle == null);
+    try expect(s.backing == null);
+    s.deinit();
+}
+
 fn testStreamSendReceive() !void {
     var s = try ove.Stream(256).create(test_allocator, 1);
     defer s.deinit();
@@ -2007,6 +2015,7 @@ pub fn main() void {
 
     runSuite("Stream", &.{
         .{ .name = "create_destroy", .func = testStreamCreateDestroy },
+        .{ .name = "deinit_idempotent", .func = testStreamDeinitIdempotent },
         .{ .name = "send_receive", .func = testStreamSendReceive },
         .{ .name = "bytes_available", .func = testStreamBytesAvailable },
         .{ .name = "reset", .func = testStreamReset },
