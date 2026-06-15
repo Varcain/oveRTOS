@@ -82,7 +82,7 @@ inline fn panicOnRc(comptime ctx: []const u8, rc: c_int) void {
 pub const Mutex = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_mutex_t,
-    storage: *c.ove_mutex_storage_t,
+    storage: ?*c.ove_mutex_storage_t,
 
     /// Allocate a substrate-storage block from `allocator` and
     /// `ove_mutex_init` against it.  Wrapper is movable by value.
@@ -95,9 +95,15 @@ pub const Mutex = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: Mutex) void {
-        if (self.handle != null) c.ove_mutex_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    pub fn deinit(self: *Mutex) void {
+        if (self.handle) |handle| {
+            c.ove_mutex_deinit(handle);
+            self.handle = null;
+        }
+        if (self.storage) |storage| {
+            self.allocator.destroy(storage);
+            self.storage = null;
+        }
     }
 
     /// Acquire the lock, blocking indefinitely.  Infallible.
@@ -162,7 +168,7 @@ pub const Mutex = struct {
 pub const RecursiveMutex = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_mutex_t,
-    storage: *c.ove_mutex_storage_t,
+    storage: ?*c.ove_mutex_storage_t,
 
     /// Allocate a substrate-storage block and `ove_recursive_mutex_init`
     /// against it.
@@ -175,9 +181,15 @@ pub const RecursiveMutex = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: RecursiveMutex) void {
-        if (self.handle != null) c.ove_mutex_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    pub fn deinit(self: *RecursiveMutex) void {
+        if (self.handle) |handle| {
+            c.ove_mutex_deinit(handle);
+            self.handle = null;
+        }
+        if (self.storage) |storage| {
+            self.allocator.destroy(storage);
+            self.storage = null;
+        }
     }
 
     pub inline fn lock(self: RecursiveMutex) void {
@@ -235,7 +247,7 @@ pub const RecursiveMutex = struct {
 pub const Semaphore = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_sem_t,
-    storage: *c.ove_sem_storage_t,
+    storage: ?*c.ove_sem_storage_t,
 
     /// Create a counting semaphore with `initial` permits available
     /// out of a maximum of `max`.
@@ -248,9 +260,15 @@ pub const Semaphore = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: Semaphore) void {
-        if (self.handle != null) c.ove_sem_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    pub fn deinit(self: *Semaphore) void {
+        if (self.handle) |handle| {
+            c.ove_sem_deinit(handle);
+            self.handle = null;
+        }
+        if (self.storage) |storage| {
+            self.allocator.destroy(storage);
+            self.storage = null;
+        }
     }
 
     pub inline fn wait(self: Semaphore) void {
@@ -286,7 +304,7 @@ pub const Semaphore = struct {
 pub const Event = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_event_t,
-    storage: *c.ove_event_storage_t,
+    storage: ?*c.ove_event_storage_t,
 
     /// Create a binary event in the unsignalled state.
     pub fn create(allocator: std.mem.Allocator) Error!Event {
@@ -298,9 +316,15 @@ pub const Event = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: Event) void {
-        if (self.handle != null) c.ove_event_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    pub fn deinit(self: *Event) void {
+        if (self.handle) |handle| {
+            c.ove_event_deinit(handle);
+            self.handle = null;
+        }
+        if (self.storage) |storage| {
+            self.allocator.destroy(storage);
+            self.storage = null;
+        }
     }
 
     pub inline fn wait(self: Event) void {
@@ -343,7 +367,7 @@ pub const Event = struct {
 pub const CondVar = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_condvar_t,
-    storage: *c.ove_condvar_storage_t,
+    storage: ?*c.ove_condvar_storage_t,
 
     /// Create a condition variable.  Pair with a [`Mutex`] when
     /// waiting via `wait`/`timedWait`/`waitWhileUntil`.
@@ -356,9 +380,15 @@ pub const CondVar = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: CondVar) void {
-        if (self.handle != null) c.ove_condvar_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    pub fn deinit(self: *CondVar) void {
+        if (self.handle) |handle| {
+            c.ove_condvar_deinit(handle);
+            self.handle = null;
+        }
+        if (self.storage) |storage| {
+            self.allocator.destroy(storage);
+            self.storage = null;
+        }
     }
 
     pub inline fn wait(self: CondVar, mutex: Mutex) void {

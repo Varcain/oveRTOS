@@ -163,6 +163,14 @@ fn testMutexRaiiDrop() !void {
     m.deinit();
 }
 
+fn testMutexDeinitIdempotent() !void {
+    var m = try ove.Mutex.create(test_allocator);
+    m.deinit();
+    try expect(m.handle == null);
+    try expect(m.storage == null);
+    m.deinit();
+}
+
 fn testMutexGuardAutoUnlock() !void {
     var m = try ove.Mutex.create(test_allocator);
     defer m.deinit();
@@ -258,6 +266,14 @@ fn testRecursiveMutexRaiiDrop() !void {
     m.deinit();
 }
 
+fn testRecursiveMutexDeinitIdempotent() !void {
+    var m = try ove.RecursiveMutex.create(test_allocator);
+    m.deinit();
+    try expect(m.handle == null);
+    try expect(m.storage == null);
+    m.deinit();
+}
+
 fn testRecursiveMutexGuardAutoUnlock() !void {
     var m = try ove.RecursiveMutex.create(test_allocator);
     defer m.deinit();
@@ -342,6 +358,14 @@ fn testSemaphoreRaiiDrop() !void {
     s.deinit();
 }
 
+fn testSemaphoreDeinitIdempotent() !void {
+    var s = try ove.Semaphore.create(test_allocator, 1, 1);
+    s.deinit();
+    try expect(s.handle == null);
+    try expect(s.storage == null);
+    s.deinit();
+}
+
 // ---------------------------------------------------------------------------
 // Event tests (7)
 // ---------------------------------------------------------------------------
@@ -397,6 +421,14 @@ fn testEventAutoReset() !void {
 
 fn testEventRaiiDrop() !void {
     var e = try ove.Event.create(test_allocator);
+    e.deinit();
+}
+
+fn testEventDeinitIdempotent() !void {
+    var e = try ove.Event.create(test_allocator);
+    e.deinit();
+    try expect(e.handle == null);
+    try expect(e.storage == null);
     e.deinit();
 }
 
@@ -490,6 +522,14 @@ fn testCondVarWaitForever() !void {
 
 fn testCondVarRaiiDrop() !void {
     var cv = try ove.CondVar.create(test_allocator);
+    cv.deinit();
+}
+
+fn testCondVarDeinitIdempotent() !void {
+    var cv = try ove.CondVar.create(test_allocator);
+    cv.deinit();
+    try expect(cv.handle == null);
+    try expect(cv.storage == null);
     cv.deinit();
 }
 
@@ -1712,6 +1752,7 @@ pub fn main() void {
         .{ .name = "contention_timeout", .func = testMutexContentionTimeout },
         .{ .name = "lock_zero_timeout", .func = testMutexLockZeroTimeout },
         .{ .name = "raii_drop", .func = testMutexRaiiDrop },
+        .{ .name = "deinit_idempotent", .func = testMutexDeinitIdempotent },
         .{ .name = "guard_auto_unlock", .func = testMutexGuardAutoUnlock },
         .{ .name = "guard_timeout", .func = testMutexGuardTimeout },
         .{ .name = "error_mapping", .func = testMutexErrorMapping },
@@ -1723,6 +1764,7 @@ pub fn main() void {
         .{ .name = "lock_twice", .func = testRecursiveMutexLockTwice },
         .{ .name = "matching_unlocks", .func = testRecursiveMutexMatchingUnlocks },
         .{ .name = "raii_drop", .func = testRecursiveMutexRaiiDrop },
+        .{ .name = "deinit_idempotent", .func = testRecursiveMutexDeinitIdempotent },
         .{ .name = "guard_auto_unlock", .func = testRecursiveMutexGuardAutoUnlock },
         .{ .name = "guard_nested", .func = testRecursiveMutexGuardNested },
     });
@@ -1736,6 +1778,7 @@ pub fn main() void {
         .{ .name = "counting", .func = testSemaphoreCounting },
         .{ .name = "producer_consumer", .func = testSemaphoreProducerConsumer },
         .{ .name = "raii_drop", .func = testSemaphoreRaiiDrop },
+        .{ .name = "deinit_idempotent", .func = testSemaphoreDeinitIdempotent },
     });
 
     runSuite("Event", &.{
@@ -1746,6 +1789,7 @@ pub fn main() void {
         .{ .name = "signal_from_isr", .func = testEventSignalFromIsr },
         .{ .name = "auto_reset", .func = testEventAutoReset },
         .{ .name = "raii_drop", .func = testEventRaiiDrop },
+        .{ .name = "deinit_idempotent", .func = testEventDeinitIdempotent },
     });
 
     runSuite("CondVar", &.{
@@ -1755,6 +1799,7 @@ pub fn main() void {
         .{ .name = "producer_consumer", .func = testCondVarProducerConsumer },
         .{ .name = "wait_forever", .func = testCondVarWaitForever },
         .{ .name = "raii_drop", .func = testCondVarRaiiDrop },
+        .{ .name = "deinit_idempotent", .func = testCondVarDeinitIdempotent },
     });
 
     runSuite("Queue", &.{
