@@ -21,6 +21,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* ---------- TLS policy (process-wide, secure by default) ---------- */
+
+#ifdef CONFIG_OVE_NET_TLS
+/* HTTPS verification policy.  Secure by default: with no CA configured and
+ * allow_insecure unset, https:// requests fail closed.  Set once at startup
+ * via ove_http_set_tls() before issuing requests (no internal locking). */
+static const unsigned char *s_tls_ca_cert;
+static size_t s_tls_ca_cert_len;
+static int s_tls_allow_insecure;
+#endif
+
+void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allow_insecure)
+{
+#ifdef CONFIG_OVE_NET_TLS
+	s_tls_ca_cert = ca_cert;
+	s_tls_ca_cert_len = ca_cert_len;
+	s_tls_allow_insecure = allow_insecure;
+#else
+	(void)ca_cert;
+	(void)ca_cert_len;
+	(void)allow_insecure;
+#endif
+}
+
 /* ---------- URL parsing ---------- */
 
 static int parse_url(const char *url, int *use_tls, char *host, size_t host_sz, uint16_t *port,
@@ -210,18 +234,21 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 	ove_tls_storage_t tls_storage;
 	ove_tls_t tls = NULL;
 	if (use_tls) {
+		/* Secure by default: refuse HTTPS unless the caller installed a
+		 * CA via ove_http_set_tls() or explicitly opted into insecure
+		 * TLS.  Otherwise the peer cannot be verified — fail closed. */
+		if (s_tls_ca_cert == NULL && !s_tls_allow_insecure) {
+			ret = OVE_ERR_INVALID_PARAM;
+			goto cleanup_sock;
+		}
 		ret = ove_tls_init(&tls, &tls_storage);
 		if (ret != OVE_OK)
 			goto cleanup_sock;
-		/* TODO: expose CA cert / mTLS knobs on the HTTP client so
-		 * callers can configure proper verification. Today the
-		 * client has no config surface, so we explicitly opt into
-		 * unverified TLS and emit a warning (see net_tls.h). */
 		ove_tls_config_t tls_cfg = {
-			.ca_cert = NULL,
-			.ca_cert_len = 0,
+			.ca_cert = s_tls_ca_cert,
+			.ca_cert_len = s_tls_ca_cert_len,
 			.hostname = c->host,
-			.allow_insecure = 1,
+			.allow_insecure = s_tls_allow_insecure,
 		};
 		ret = ove_tls_handshake(tls, c->sock, &tls_cfg);
 		if (ret != OVE_OK) {

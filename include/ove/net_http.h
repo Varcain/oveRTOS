@@ -144,6 +144,22 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
  */
 void ove_http_response_free(ove_http_response_t *resp);
 
+/**
+ * @brief Configure the process-wide TLS policy for HTTPS requests.
+ *
+ * Secure by default: with no CA configured and @p allow_insecure zero,
+ * `https://` requests fail closed (the peer cannot be verified).  Call once
+ * at startup, before issuing requests, to install a trust anchor or to
+ * explicitly opt into insecure TLS.
+ *
+ * @param[in] ca_cert        PEM/DER CA certificate to verify the peer against
+ *                           (NULL leaves it unset).
+ * @param[in] ca_cert_len    Length of @p ca_cert in bytes (incl. NUL for PEM).
+ * @param[in] allow_insecure Non-zero permits unverified TLS (no CA) — do not
+ *                           use in production.
+ */
+void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len, int allow_insecure);
+
 #ifdef OVE_HEAP_NET_HTTP
 /**
  * @brief Heap-allocate and initialise an HTTP client.
@@ -231,6 +247,13 @@ static inline int ove_http_request_ex(ove_http_client_t client, ove_http_method_
 static inline void ove_http_response_free(ove_http_response_t *resp)
 {
 	(void)resp;
+}
+static inline void ove_http_set_tls(const unsigned char *ca_cert, size_t ca_cert_len,
+				    int allow_insecure)
+{
+	(void)ca_cert;
+	(void)ca_cert_len;
+	(void)allow_insecure;
 }
 /** @endcond */
 
