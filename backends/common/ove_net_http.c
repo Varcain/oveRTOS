@@ -278,11 +278,16 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 		char hdr_line[256];
 		int hn = snprintf(hdr_line, sizeof(hdr_line), "%s: %s\r\n", headers[hi].name,
 				  headers[hi].value);
-		if (hn > 0 && (size_t)hn < sizeof(hdr_line)) {
-			ret = http_send_all(c, hdr_line, (size_t)hn);
-			if (ret != OVE_OK)
-				goto cleanup_tls;
+		if (hn < 0 || (size_t)hn >= sizeof(hdr_line)) {
+			/* Header too long for the line buffer — fail rather than
+			 * silently omit it (and never feed an out-of-range length
+			 * to http_send_all). */
+			ret = OVE_ERR_INVALID_PARAM;
+			goto cleanup_tls;
 		}
+		ret = http_send_all(c, hdr_line, (size_t)hn);
+		if (ret != OVE_OK)
+			goto cleanup_tls;
 	}
 
 	if (content_type && body) {
@@ -291,6 +296,12 @@ int ove_http_request_ex(ove_http_client_t client, ove_http_method_t method, cons
 				 "Content-Type: %s\r\n"
 				 "Content-Length: %zu\r\n",
 				 content_type, body_len);
+		if (n < 0 || (size_t)n >= sizeof(ct_hdr)) {
+			/* Truncated/error: (size_t)n would over-read past ct_hdr
+			 * (a long content_type, or n == -1 -> SIZE_MAX). */
+			ret = OVE_ERR_INVALID_PARAM;
+			goto cleanup_tls;
+		}
 		ret = http_send_all(c, ct_hdr, (size_t)n);
 		if (ret != OVE_OK)
 			goto cleanup_tls;
