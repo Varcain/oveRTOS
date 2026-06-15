@@ -107,7 +107,7 @@ static void *timer_manager(void *arg)
 
 		if (!t->one_shot) {
 			/* Re-arm periodic timer. */
-			t->next_fire_us = now + (uint64_t)t->period_ms * 1000;
+			t->next_fire_us = now + t->period_us;
 			list_insert(t);
 		} else {
 			t->armed = 0;
@@ -143,7 +143,33 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
 	memset(t, 0, sizeof(*t));
 	t->callback = callback;
 	t->user_data = user_data;
-	t->period_ms = period_ms;
+	t->period_us = (uint64_t)period_ms * 1000;
+	t->one_shot = one_shot;
+	t->created = 1;
+	*timer = t;
+
+	ensure_manager_started();
+	return OVE_OK;
+}
+
+/* Round a nanosecond period to the manager's microsecond resolution,
+ * clamping a sub-microsecond non-zero period up to 1 us. */
+static uint64_t ns_to_period_us(uint64_t period_ns)
+{
+	uint64_t us = period_ns / 1000;
+	return us == 0 ? 1 : us;
+}
+
+int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		      void *user_data, uint64_t period_ns, int one_shot)
+{
+	if (!timer || !storage || !callback)
+		return OVE_ERR_INVALID_PARAM;
+	struct ove_timer *t = (struct ove_timer *)storage;
+	memset(t, 0, sizeof(*t));
+	t->callback = callback;
+	t->user_data = user_data;
+	t->period_us = ns_to_period_us(period_ns);
 	t->one_shot = one_shot;
 	t->created = 1;
 	*timer = t;
@@ -175,7 +201,27 @@ int ove_timer_create(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
 	memset(t, 0, sizeof(*t));
 	t->callback = callback;
 	t->user_data = user_data;
-	t->period_ms = period_ms;
+	t->period_us = (uint64_t)period_ms * 1000;
+	t->one_shot = one_shot;
+	t->created = 1;
+	*timer = t;
+
+	ensure_manager_started();
+	return OVE_OK;
+}
+
+int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_data,
+			uint64_t period_ns, int one_shot)
+{
+	if (!timer || !callback)
+		return OVE_ERR_INVALID_PARAM;
+	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
+	if (!t)
+		return OVE_ERR_NO_MEMORY;
+	memset(t, 0, sizeof(*t));
+	t->callback = callback;
+	t->user_data = user_data;
+	t->period_us = ns_to_period_us(period_ns);
 	t->one_shot = one_shot;
 	t->created = 1;
 	*timer = t;
@@ -210,7 +256,7 @@ int ove_timer_start(ove_timer_t timer)
 	pthread_mutex_lock(&mgr_lock);
 	if (t->armed)
 		list_remove(t);
-	t->next_fire_us = now_us() + (uint64_t)t->period_ms * 1000;
+	t->next_fire_us = now_us() + t->period_us;
 	list_insert(t);
 	pthread_cond_signal(&mgr_cond);
 	pthread_mutex_unlock(&mgr_lock);
@@ -233,6 +279,15 @@ int ove_timer_stop(ove_timer_t timer)
 int ove_timer_reset(ove_timer_t timer)
 {
 	return ove_timer_start(timer);
+}
+
+int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
+{
+	struct ove_timer *t = timer;
+	if (!t)
+		return OVE_ERR_INVALID_PARAM;
+	t->period_us = ns_to_period_us(period_ns);
+	return ove_timer_start(t); /* reprogram + (re)arm from now, like POSIX */
 }
 
 #endif /* CONFIG_OVE_TIMER */

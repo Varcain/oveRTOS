@@ -118,7 +118,7 @@ typedef struct ove_queue ove_queue_storage_t;
 struct ove_timer {
 	void (*callback)(struct ove_timer *, void *);
 	void *user_data;
-	uint32_t period_ms;
+	uint64_t period_us; /* period in microseconds (manager resolution) */
 	int one_shot;
 	int created;
 	int armed;
