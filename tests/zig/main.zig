@@ -700,6 +700,14 @@ fn testTimerCreateDestroyPeriodic() !void {
     t.deinit();
 }
 
+fn testTimerDeinitIdempotent() !void {
+    var t = try ove.Timer.create(test_allocator, .{ .period_ms = 100, .mode = .one_shot }, timerCallback, .{});
+    t.deinit();
+    try expect(t.handle == null);
+    try expect(t.storage == null);
+    t.deinit();
+}
+
 fn testTimerOneshotFiresOnce() !void {
     timer_count = 0;
     var t = try ove.Timer.create(test_allocator, .{ .period_ms = 50, .mode = .one_shot }, timerCallback, .{});
@@ -1837,6 +1845,7 @@ pub fn main() void {
     runSuite("Timer", &.{
         .{ .name = "create_destroy_oneshot", .func = testTimerCreateDestroyOneshot },
         .{ .name = "create_destroy_periodic", .func = testTimerCreateDestroyPeriodic },
+        .{ .name = "deinit_idempotent", .func = testTimerDeinitIdempotent },
         .{ .name = "oneshot_fires_once", .func = testTimerOneshotFiresOnce },
         .{ .name = "periodic_fires_multiple", .func = testTimerPeriodicFiresMultiple },
         .{ .name = "stop_prevents_callbacks", .func = testTimerStopPreventsCallbacks },

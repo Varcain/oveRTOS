@@ -86,7 +86,7 @@ fn validateCallback(comptime Cb: type, comptime ArgsT: type) struct {
 pub const Timer = struct {
     allocator: std.mem.Allocator,
     handle: c.ove_timer_t,
-    storage: *c.ove_timer_storage_t,
+    storage: ?*c.ove_timer_storage_t,
 
     pub fn create(
         allocator: std.mem.Allocator,
@@ -129,9 +129,18 @@ pub const Timer = struct {
         return .{ .allocator = allocator, .handle = h, .storage = storage };
     }
 
-    pub fn deinit(self: Timer) void {
-        if (self.handle != null) c.ove_timer_deinit(self.handle);
-        self.allocator.destroy(self.storage);
+    /// Idempotent — clears `handle` and `storage` after teardown so a
+    /// redundant `defer t.deinit()` after an explicit `deinit()` is a safe
+    /// no-op rather than a double free.
+    pub fn deinit(self: *Timer) void {
+        if (self.handle) |h| {
+            c.ove_timer_deinit(h);
+            self.handle = null;
+        }
+        if (self.storage) |s| {
+            self.allocator.destroy(s);
+            self.storage = null;
+        }
     }
 
     /// Arm the timer.  The first fire happens `cfg.period_ms` from
