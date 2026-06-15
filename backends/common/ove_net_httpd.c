@@ -587,6 +587,7 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 #endif
 	if (ret != OVE_OK) {
 		s_running = 0;
+		s_thread = NULL; /* spawn failed — keep stop() idempotent */
 		ove_socket_close(s_server_sock);
 		return ret;
 	}
@@ -596,5 +597,22 @@ int ove_httpd_start(const ove_httpd_config_t *cfg)
 
 void ove_httpd_stop(void)
 {
+	if (s_thread == NULL) {
+		return; /* not running / already stopped — idempotent */
+	}
+
+	/* Signal the accept loop to exit, then block until the server task has
+	 * actually returned (on its way out it closes s_server_sock).  Without
+	 * the join, stop() returned while the task was still mid-accept or
+	 * handling a request, racing a caller that frees/reinits — a teardown
+	 * use-after-free.  Worst-case latency is one accept timeout (<= 1s).
+	 *
+	 * Must not be called from the server task itself (would self-deadlock). */
 	s_running = 0;
+#ifdef OVE_HEAP_THREAD
+	ove_thread_destroy(s_thread);
+#else
+	ove_thread_deinit(s_thread);
+#endif
+	s_thread = NULL;
 }
