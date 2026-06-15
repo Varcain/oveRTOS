@@ -15,6 +15,8 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <nuttx/mutex.h>
+#include <nuttx/wdog.h>
+#include <nuttx/wqueue.h>
 #include <signal.h>
 #include <time.h>
 #include <dirent.h>
@@ -107,7 +109,12 @@ typedef struct ove_queue ove_queue_storage_t;
 /* ── Timer ────────────────────────────────────────────────────────── */
 
 struct ove_timer {
-	timer_t posix_timer;
+	/* Native NuttX timing: a watchdog drives the period in IRQ context and
+	 * defers the user callback to the HPWORK thread.  Teardown joins a
+	 * running handler via work_cancel_sync() — no POSIX timer pool, no
+	 * SIGEV_THREAD, no UAF window (see nuttx_timer.c). */
+	struct wdog_s wdog;
+	struct work_s work;
 	void (*callback)(struct ove_timer *, void *);
 	void *user_data;
 	uint64_t period_ns;
