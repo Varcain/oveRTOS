@@ -504,12 +504,20 @@ pub fn Thread(comptime stack_size: usize) type {
         /// and free the allocator-managed backing.  Cooperative workers
         /// (those polling [`StopToken.isStopped`]) exit cleanly.
         /// Workers that ignore the flag block here indefinitely.
-        pub fn deinit(self: Self) void {
-            if (self.handle != null) {
-                c.ove_thread_request_stop(self.handle);
-                _ = c.ove_thread_deinit(self.handle);
+        ///
+        /// Idempotent — clears `handle` and `backing` after teardown so a
+        /// redundant `defer t.deinit()` after an explicit `deinit()` (or
+        /// after `detach()`) is a safe no-op rather than a double free.
+        pub fn deinit(self: *Self) void {
+            if (self.handle) |h| {
+                c.ove_thread_request_stop(h);
+                _ = c.ove_thread_deinit(h);
+                self.handle = null;
             }
-            if (self.backing) |b| self.allocator.destroy(b);
+            if (self.backing) |b| {
+                self.allocator.destroy(b);
+                self.backing = null;
+            }
         }
 
         pub fn setPriority(self: Self, priority: Priority) void {

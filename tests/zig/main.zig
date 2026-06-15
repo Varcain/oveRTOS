@@ -794,6 +794,14 @@ fn testThreadCreateDestroy() !void {
     t.deinit();
 }
 
+fn testThreadDeinitIdempotent() !void {
+    var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "tdi", .priority = .normal }, threadEntry, .{});
+    t.deinit();
+    try expect(t.handle == null);
+    try expect(t.backing == null);
+    t.deinit();
+}
+
 fn testThreadSleepDuration() !void {
     const before = try ove.time.getUs();
     ove.thread.sleepMs(50);
@@ -1840,6 +1848,7 @@ pub fn main() void {
 
     runSuite("Thread", &.{
         .{ .name = "create_destroy", .func = testThreadCreateDestroy },
+        .{ .name = "deinit_idempotent", .func = testThreadDeinitIdempotent },
         .{ .name = "sleep_duration", .func = testThreadSleepDuration },
         .{ .name = "yield_no_crash", .func = testThreadYieldNoCrash },
         .{ .name = "get_self", .func = testThreadGetSelf },
