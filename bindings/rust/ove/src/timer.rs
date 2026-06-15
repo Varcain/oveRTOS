@@ -27,6 +27,15 @@ use crate::error::{Error, Result};
 // or storing a callback across the FFI boundary — carry their own
 // `// SAFETY:` comment.
 
+// Round-tripping the `fn()` callback through `*mut c_void` requires
+// function pointers and data pointers to have the same size. If a future
+// port lands on a target where that is false, fail at compile time instead
+// of silently corrupting callback pointers.
+const _: () = assert!(
+    core::mem::size_of::<fn()>() == core::mem::size_of::<*mut core::ffi::c_void>(),
+    "ove::timer: fn() and *mut c_void must be the same size for FFI round-trip"
+);
+
 /// Caller-owned storage for a [`Timer`] in zero-heap mode (see
 /// [`crate::MutexStorage`]).
 #[allow(dead_code)]
@@ -172,10 +181,15 @@ impl Timer {
         _timer: bindings::ove_timer_t,
         user_data: *mut core::ffi::c_void,
     ) {
+        if user_data.is_null() {
+            return;
+        }
+
         // SAFETY: `user_data` was stored by `Timer::new`/`from_static` from a
         // `fn()` pointer. Targets supported by oveRTOS have pointer-sized
         // function pointers with a C-compatible ABI, so round-tripping
-        // through `*mut c_void` is well-defined.
+        // through `*mut c_void` is well-defined. A null pointer (which a
+        // valid `fn()` never is) is rejected above before the transmute.
         let cb: fn() = unsafe { core::mem::transmute(user_data) };
         cb();
     }
