@@ -21,12 +21,18 @@
 //! defer mtx.unlock();
 //! ```
 //!
-//! The wrappers are fully movable — every method dereferences the
-//! allocator-managed storage via the stable pointer the wrapper carries,
-//! so passing the wrapper by value across function boundaries is safe.
-//! No `pin.Tracker` needed at the wrapper level (the storage lives at
-//! the allocator's stable address; only the wrapper's two-word handle
-//! moves).
+//! The wrappers are movable for operations — every operation method
+//! (`lock`, `wait`, …) dereferences the allocator-managed storage via the
+//! stable pointer the wrapper carries, so passing the wrapper by value
+//! across function boundaries is safe.  No `pin.Tracker` needed at the
+//! wrapper level (the storage lives at the allocator's stable address;
+//! only the wrapper's two-word handle moves).
+//!
+//! Ownership is single-owner: `deinit` takes `*Self` and clears the
+//! wrapper's handle/storage, so call it on the owning variable rather than
+//! a by-value copy.  `deinit` is idempotent — a redundant `defer
+//! x.deinit()` after an explicit `deinit()` is a safe no-op, not a double
+//! free.
 
 const std = @import("std");
 const c = @import("c.zig").raw;
@@ -85,7 +91,8 @@ pub const Mutex = struct {
     storage: ?*c.ove_mutex_storage_t,
 
     /// Allocate a substrate-storage block from `allocator` and
-    /// `ove_mutex_init` against it.  Wrapper is movable by value.
+    /// `ove_mutex_init` against it.  Wrapper is movable by value for
+    /// operations; `deinit` is single-owner and idempotent.
     pub fn create(allocator: std.mem.Allocator) Error!Mutex {
         const storage = try allocator.create(c.ove_mutex_storage_t);
         errdefer allocator.destroy(storage);

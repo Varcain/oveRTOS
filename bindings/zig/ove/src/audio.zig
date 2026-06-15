@@ -47,6 +47,9 @@ pub const Graph = struct {
         try err.fromCode(c.ove_audio_graph_set_buf_storage(&self.raw, bytes.ptr, bytes.len));
     }
 
+    /// Not idempotent — the graph is an embedded C struct torn down in
+    /// place (no nullable handle to clear), so call exactly once.  The
+    /// `pin.Tracker` catches a use-after-deinit in Debug builds.
     pub fn deinit(self: *Graph) void {
         self.tracker.assertSame(self, "ove.audio.Graph");
         c.ove_audio_graph_deinit(&self.raw);

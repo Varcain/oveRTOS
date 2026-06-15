@@ -9,7 +9,10 @@
 //! Provides typed wrappers for BSD-like sockets (TCP and UDP), network
 //! interface management, DNS resolution, and socket addresses.  Resource
 //! types use a per-mode shape: heap mode is value-returning and movable;
-//! zero-heap mode embeds storage and uses two-phase init.
+//! zero-heap mode embeds storage and uses two-phase init.  Cleanup is
+//! single-owner in both modes: `deinit` takes `*Self`, clears the handle,
+//! and is idempotent — a redundant `defer x.deinit()` after an explicit
+//! `deinit()` is a safe no-op.
 
 const std = @import("std");
 const c = @import("c.zig").raw;

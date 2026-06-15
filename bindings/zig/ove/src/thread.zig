@@ -9,9 +9,13 @@
 //! `Thread(stack_size)` is the templated wrapper.  The substrate-storage
 //! block (stack + `ove_thread_storage_t`) lives in caller-supplied
 //! allocator memory; the wrapper itself holds an `Allocator` plus a
-//! kernel handle and is movable by value.  Heap and zero-heap modes
-//! share the same shape — they differ only in which allocator the
-//! caller passes in (libc-backed vs. `FixedBufferAllocator` over BSS).
+//! kernel handle and is movable by value for operations.  Cleanup is
+//! single-owner: `deinit` (and `detach`) take `*Self` and clear the
+//! wrapper, so call them on the owning variable; `deinit` is idempotent —
+//! a redundant `defer t.deinit()` after an explicit `deinit()`/`detach()`
+//! is a safe no-op.  Heap and zero-heap modes share the same shape — they
+//! differ only in which allocator the caller passes in (libc-backed vs.
+//! `FixedBufferAllocator` over BSS).
 //!
 //! `stack_size` is a comptime parameter so the backing struct can size
 //! its embedded stack array inline; on Zephyr the binding rounds up to

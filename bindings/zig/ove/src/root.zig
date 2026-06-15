@@ -82,9 +82,13 @@
 //! ```
 //!
 //! The substrate-storage block lives in allocator-managed memory; the
-//! wrapper itself holds an `Allocator` plus two pointers and is movable
-//! by value.  Heap mode passes a libc allocator (or `GeneralPurposeAllocator`);
-//! zero-heap mode passes a `FixedBufferAllocator` over a `.bss` byte buffer.
+//! wrapper itself holds an `Allocator` plus two pointers and is movable by
+//! value for operations.  Cleanup is single-owner: `deinit` takes `*Self`,
+//! clears the wrapper, and is idempotent — call it on the owning variable
+//! (not a by-value copy), and a redundant `defer x.deinit()` after an
+//! explicit `deinit()` is a safe no-op.  Heap mode passes a libc allocator
+//! (or `GeneralPurposeAllocator`); zero-heap mode passes a
+//! `FixedBufferAllocator` over a `.bss` byte buffer.
 //!
 //! A handful of subsystems whose handle type is forced by the C layer
 //! (`Watchdog`, `NetIf`, `TcpStream`, `UdpSocket`, `Model`, `net_http.Client`,

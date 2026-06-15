@@ -3464,6 +3464,9 @@ pub fn State(comptime T: type) type {
 
         /// Tear down the underlying subject. Call once; no more accesses
         /// after this point.
+        ///
+        /// Not idempotent — the subject lives in embedded storage torn down
+        /// in place (no nullable handle to clear), so call exactly once.
         pub fn deinit(self: *Self) void {
             c.lv_subject_deinit(self.rawPtr());
         }
@@ -3838,6 +3841,9 @@ pub const Style = struct {
     }
 
     /// Reset and free internal style resources.
+    ///
+    /// Not idempotent — the style is an embedded C struct reset in place
+    /// (no nullable handle to clear), so call exactly once.
     pub fn deinit(self: *Style) void {
         c.lv_style_reset(&self.style);
     }
