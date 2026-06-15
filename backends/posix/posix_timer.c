@@ -8,14 +8,12 @@
 
 #include "ove/ove.h"
 #include "ove_backend_common.h"
-#include "posix_sleep.h"
 #include <pthread.h>
-#include <signal.h>
 #include <time.h>
 #include <string.h>
-#include <unistd.h>
+#include <errno.h>
 #ifdef CONFIG_OVE_ASYNC
-/* Forward declarations from posix_irq.c — used to mark the SIGEV_THREAD
+/* Forward declarations from posix_irq.c — used to mark the timer
  * dispatcher as ISR context so async wakers dispatch through
  * ove_event_signal_from_isr correctly. Only declared when async is
  * compiled in; without it the symbols don't exist and the brackets
@@ -29,23 +27,10 @@ void posix_irq_leave_isr(void);
 #define OVE_POSIX_ISR_LEAVE() ((void)0)
 #endif
 
-static void timer_thread_handler(union sigval sv)
-{
-	struct ove_timer *t = sv.sival_ptr;
-	if (t && t->callback) {
-		OVE_POSIX_ISR_ENTER();
-		t->callback(t, t->user_data);
-		OVE_POSIX_ISR_LEAVE();
-	}
-}
-
-/* SIGEV_THREAD spawns a fresh pthread per timer firing.  glibc's default
- * stack for the dispatch thread is too small for sanitizer-instrumented
- * builds (TSan needs ~140 KB; ASan ~96 KB; the default is 64 KB).
- * Additionally, the binary's TLS footprint inflates glibc's dynamic
- * stack-min: Zig 0.16 toolchains land it just above 256 KB on
- * x86_64-linux (vs ~16 KB under Zig 0.15 / pure-C builds).
- * 512 KB covers every flavour with comfortable headroom. */
+/* The dispatcher runs the user callback, so it needs a generous stack:
+ * sanitizer-instrumented builds want ~140 KB (TSan) / ~96 KB (ASan), and
+ * the Zig 0.16 toolchain's TLS footprint inflates glibc's dynamic
+ * stack-min above 256 KB on x86_64-linux.  512 KB covers every flavour. */
 static pthread_attr_t s_timer_thread_attr;
 static int s_timer_thread_attr_initialized;
 
@@ -60,29 +45,122 @@ static pthread_attr_t *get_timer_thread_attr(void)
 	return s_timer_thread_attr_initialized ? &s_timer_thread_attr : NULL;
 }
 
-int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
-		      void *user_data, uint64_t period_ns, int one_shot)
+static void timespec_add_ns(struct timespec *ts, uint64_t ns)
 {
-	if (!timer || !storage || !callback)
-		return OVE_ERR_INVALID_PARAM;
-	struct ove_timer *t = (struct ove_timer *)storage;
+	ts->tv_sec += (time_t)(ns / 1000000000ULL);
+	ts->tv_nsec += (long)(ns % 1000000000ULL);
+	if (ts->tv_nsec >= 1000000000L) {
+		ts->tv_sec += 1;
+		ts->tv_nsec -= 1000000000L;
+	}
+}
+
+/* Owned dispatcher: self-times each firing and runs the callback.  Because
+ * teardown pthread_join()s this thread, no callback can run after the timer
+ * storage is deleted/freed — eliminating the SIGEV_THREAD UAF window. */
+static void *timer_dispatch(void *arg)
+{
+	struct ove_timer *t = arg;
+	pthread_mutex_lock(&t->lock);
+	for (;;) {
+		/* Idle until armed or torn down. */
+		while (!t->armed && !t->stop)
+			pthread_cond_wait(&t->cond, &t->lock);
+		if (t->stop)
+			break;
+
+		/* Program the next absolute deadline from now. */
+		struct timespec deadline;
+		clock_gettime(CLOCK_MONOTONIC, &deadline);
+		timespec_add_ns(&deadline, t->period_ns ? t->period_ns : 1);
+		t->reprogram = 0;
+
+		/* Wait for the deadline, or wake early on a state change. */
+		int fired = 0;
+		while (t->armed && !t->stop && !t->reprogram) {
+			if (pthread_cond_timedwait(&t->cond, &t->lock, &deadline) == ETIMEDOUT) {
+				fired = 1;
+				break;
+			}
+		}
+		if (t->stop)
+			break;
+		if (!fired || t->reprogram || !t->armed)
+			continue; /* disarmed / reprogrammed before firing */
+
+		if (t->one_shot)
+			t->armed = 0;
+		ove_timer_fn cb = t->callback;
+		void *ud = t->user_data;
+		/* Run the callback with the lock released so it may call
+		 * stop/reset on its own timer without deadlocking.  The
+		 * dispatcher cannot exit mid-callback, so teardown's join still
+		 * waits for the callback to return before freeing. */
+		pthread_mutex_unlock(&t->lock);
+		if (cb) {
+			OVE_POSIX_ISR_ENTER();
+			cb(t, ud);
+			OVE_POSIX_ISR_LEAVE();
+		}
+		pthread_mutex_lock(&t->lock);
+	}
+	pthread_mutex_unlock(&t->lock);
+	return NULL;
+}
+
+static int timer_setup(struct ove_timer *t, ove_timer_fn callback, void *user_data,
+		       uint64_t period_ns, int one_shot)
+{
 	memset(t, 0, sizeof(*t));
 	t->callback = callback;
 	t->user_data = user_data;
 	t->period_ns = period_ns;
 	t->one_shot = one_shot;
 
-	struct sigevent sev;
-	memset(&sev, 0, sizeof(sev));
-	sev.sigev_notify = SIGEV_THREAD;
-	sev.sigev_notify_function = timer_thread_handler;
-	sev.sigev_value.sival_ptr = t;
-	sev.sigev_notify_attributes = get_timer_thread_attr();
-
-	if (timer_create(CLOCK_MONOTONIC, &sev, &t->posix_timer) != 0) {
+	pthread_condattr_t cattr;
+	if (pthread_condattr_init(&cattr) != 0)
+		return OVE_ERR_NO_MEMORY;
+	(void)pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
+	int rc = pthread_cond_init(&t->cond, &cattr);
+	pthread_condattr_destroy(&cattr);
+	if (rc != 0)
+		return OVE_ERR_NO_MEMORY;
+	if (pthread_mutex_init(&t->lock, NULL) != 0) {
+		pthread_cond_destroy(&t->cond);
+		return OVE_ERR_NO_MEMORY;
+	}
+	if (pthread_create(&t->thread, get_timer_thread_attr(), timer_dispatch, t) != 0) {
+		pthread_mutex_destroy(&t->lock);
+		pthread_cond_destroy(&t->cond);
 		return OVE_ERR_NO_MEMORY;
 	}
 	t->created = 1;
+	return OVE_OK;
+}
+
+/* Stop the dispatcher and reclaim its sync primitives.  Joins the thread so
+ * any in-flight callback has returned before the caller frees the storage. */
+static void timer_teardown(struct ove_timer *t)
+{
+	pthread_mutex_lock(&t->lock);
+	t->stop = 1;
+	t->armed = 0;
+	pthread_cond_signal(&t->cond);
+	pthread_mutex_unlock(&t->lock);
+	pthread_join(t->thread, NULL);
+	pthread_mutex_destroy(&t->lock);
+	pthread_cond_destroy(&t->cond);
+}
+
+int ove_timer_init_ns(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_fn callback,
+		      void *user_data, uint64_t period_ns, int one_shot)
+{
+	if (!timer || !storage || !callback)
+		return OVE_ERR_INVALID_PARAM;
+	struct ove_timer *t = (struct ove_timer *)storage;
+	int rc = timer_setup(t, callback, user_data, period_ns, one_shot);
+	if (rc != OVE_OK)
+		return rc;
 	*timer = t;
 	return OVE_OK;
 }
@@ -97,15 +175,9 @@ int ove_timer_init(ove_timer_t *timer, ove_timer_storage_t *storage, ove_timer_f
 void ove_timer_deinit(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
-	if (t) {
-		if (t->created) {
-			/* Disarm first, then let any in-flight SIGEV_THREAD
-			 * callback drain before deleting the timer. */
-			struct itimerspec its = {{0, 0}, {0, 0}};
-			timer_settime(t->posix_timer, 0, &its, NULL);
-			posix_sleep_ns(5000000ULL);
-			timer_delete(t->posix_timer);
-		}
+	if (t && t->created) {
+		timer_teardown(t);
+		t->created = 0;
 	}
 }
 
@@ -116,27 +188,13 @@ int ove_timer_create_ns(ove_timer_t *timer, ove_timer_fn callback, void *user_da
 	if (!timer || !callback)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_timer *t = OVE_BACKEND_MALLOC(sizeof(*t));
-	if (!t) {
+	if (!t)
 		return OVE_ERR_NO_MEMORY;
-	}
-	memset(t, 0, sizeof(*t));
-	t->callback = callback;
-	t->user_data = user_data;
-	t->period_ns = period_ns;
-	t->one_shot = one_shot;
-
-	struct sigevent sev;
-	memset(&sev, 0, sizeof(sev));
-	sev.sigev_notify = SIGEV_THREAD;
-	sev.sigev_notify_function = timer_thread_handler;
-	sev.sigev_value.sival_ptr = t;
-	sev.sigev_notify_attributes = get_timer_thread_attr();
-
-	if (timer_create(CLOCK_MONOTONIC, &sev, &t->posix_timer) != 0) {
+	int rc = timer_setup(t, callback, user_data, period_ns, one_shot);
+	if (rc != OVE_OK) {
 		OVE_BACKEND_FREE(t);
-		return OVE_ERR_NO_MEMORY;
+		return rc;
 	}
-	t->created = 1;
 	*timer = t;
 	return OVE_OK;
 }
@@ -154,14 +212,8 @@ void ove_timer_destroy(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
 	if (t) {
-		if (t->created) {
-			/* Disarm first, then let any in-flight SIGEV_THREAD
-			 * callback drain before deleting the timer. */
-			struct itimerspec its = {{0, 0}, {0, 0}};
-			timer_settime(t->posix_timer, 0, &its, NULL);
-			posix_sleep_ns(5000000ULL);
-			timer_delete(t->posix_timer);
-		}
+		if (t->created)
+			timer_teardown(t);
 		OVE_BACKEND_FREE(t);
 	}
 }
@@ -170,40 +222,25 @@ void ove_timer_destroy(ove_timer_t timer)
 int ove_timer_start(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
-	if (!t) {
+	if (!t)
 		return OVE_ERR_INVALID_PARAM;
-	}
-	struct itimerspec its;
-	its.it_value.tv_sec = (time_t)(t->period_ns / 1000000000ULL);
-	its.it_value.tv_nsec = (long)(t->period_ns % 1000000000ULL);
-	/* timer_settime treats an all-zero it_value as "disarm" — guard
-	 * against an accidental no-op when the caller passes period_ns=0
-	 * by clamping to 1 ns. The Embassy time driver never schedules a
-	 * zero-duration alarm, but this also catches stale state from a
-	 * failed reprogram. */
-	if (its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0) {
-		its.it_value.tv_nsec = 1;
-	}
-	if (t->one_shot) {
-		its.it_interval.tv_sec = 0;
-		its.it_interval.tv_nsec = 0;
-	} else {
-		its.it_interval = its.it_value;
-	}
-	if (timer_settime(t->posix_timer, 0, &its, NULL) != 0) {
-		return OVE_ERR_NOT_SUPPORTED;
-	}
+	pthread_mutex_lock(&t->lock);
+	t->armed = 1;
+	t->reprogram = 1; /* (re)compute the deadline from now */
+	pthread_cond_signal(&t->cond);
+	pthread_mutex_unlock(&t->lock);
 	return OVE_OK;
 }
 
 int ove_timer_stop(ove_timer_t timer)
 {
 	struct ove_timer *t = timer;
-	if (!t) {
+	if (!t)
 		return OVE_ERR_INVALID_PARAM;
-	}
-	struct itimerspec its = {{0, 0}, {0, 0}};
-	timer_settime(t->posix_timer, 0, &its, NULL);
+	pthread_mutex_lock(&t->lock);
+	t->armed = 0;
+	pthread_cond_signal(&t->cond);
+	pthread_mutex_unlock(&t->lock);
 	return OVE_OK;
 }
 
@@ -215,9 +252,13 @@ int ove_timer_reset(ove_timer_t timer)
 int ove_timer_set_period_ns(ove_timer_t timer, uint64_t period_ns)
 {
 	struct ove_timer *t = timer;
-	if (!t) {
+	if (!t)
 		return OVE_ERR_INVALID_PARAM;
-	}
+	pthread_mutex_lock(&t->lock);
 	t->period_ns = period_ns;
-	return ove_timer_start(t);
+	t->armed = 1;
+	t->reprogram = 1;
+	pthread_cond_signal(&t->cond);
+	pthread_mutex_unlock(&t->lock);
+	return OVE_OK;
 }

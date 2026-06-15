@@ -116,12 +116,23 @@ typedef struct ove_queue ove_queue_storage_t;
 /* ── Timer ────────────────────────────────────────────────────────── */
 
 struct ove_timer {
-	timer_t posix_timer;
 	void (*callback)(struct ove_timer *, void *);
 	void *user_data;
 	uint64_t period_ns;
 	int one_shot;
 	int created;
+
+	/* Owned dispatcher thread + its control state.  We run our own timing
+	 * thread (pthread_cond_timedwait on a MONOTONIC cond) instead of
+	 * SIGEV_THREAD so that teardown can pthread_join the thread — closing
+	 * the use-after-free window where a glibc-spawned notification thread
+	 * could run after timer_delete()/free().  Flags are guarded by `lock`. */
+	pthread_t thread;
+	pthread_mutex_t lock;
+	pthread_cond_t cond;
+	int armed;     /* timer running; should fire after `period_ns` */
+	int reprogram; /* start/reset/set_period asked for a fresh deadline */
+	int stop;      /* teardown asked the dispatcher to exit */
 };
 
 typedef struct ove_timer ove_timer_storage_t;

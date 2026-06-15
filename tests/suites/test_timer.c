@@ -39,6 +39,21 @@ __attribute__((unused)) static void userdata_cb(ove_timer_t timer, void *user_da
 	s_user_data_received = (uintptr_t)user_data;
 }
 
+/* Slow callback for the teardown-drain test: signals entry, sleeps long
+ * enough that destroy is guaranteed to be called mid-execution, then
+ * signals completion.  Gated like the other firing tests (TSan). */
+static _Atomic int s_slow_cb_entered;
+static _Atomic int s_slow_cb_completed;
+
+__attribute__((unused)) static void slow_cb(ove_timer_t timer, void *user_data)
+{
+	(void)timer;
+	(void)user_data;
+	s_slow_cb_entered = 1;
+	test_msleep(80);
+	s_slow_cb_completed = 1;
+}
+
 /* ── tests ───────────────────────────────────────────────────────────── */
 
 static void test_timer_create_destroy_oneshot(void **state)
@@ -191,6 +206,30 @@ static void test_timer_destroy_while_running(void **state)
 	ove_test_timer_destroy(t);
 }
 
+/* Regression for the teardown UAF: destroy must block until an in-flight
+ * SIGEV_THREAD callback returns, not free out from under it.  We catch the
+ * callback mid-sleep, then assert destroy only returns after it completes. */
+static void test_timer_destroy_waits_for_active_callback(void **state)
+{
+	(void)state;
+	s_slow_cb_entered = 0;
+	s_slow_cb_completed = 0;
+
+	ove_timer_t t = NULL;
+	ove_test_timer_create(&t, &s_tmr_storage, slow_cb, NULL, 20, 1);
+	ove_timer_start(t);
+
+	/* Wait until the callback has entered and is mid-sleep. */
+	for (int i = 0; i < 1000 && !s_slow_cb_entered; i++)
+		test_msleep(1);
+	assert_int_equal(s_slow_cb_entered, 1);
+	assert_int_equal(s_slow_cb_completed, 0);
+
+	/* Destroy must drain the executing callback before returning. */
+	ove_test_timer_destroy(t);
+	assert_int_equal(s_slow_cb_completed, 1);
+}
+
 static void test_timer_callback_user_data(void **state)
 {
 	(void)state;
@@ -265,6 +304,7 @@ int test_timer_run(void)
 #ifndef __SANITIZE_THREAD__
 		cmocka_unit_test_setup(test_timer_double_start, timer_setup),
 		cmocka_unit_test_setup(test_timer_destroy_while_running, timer_setup),
+		cmocka_unit_test_setup(test_timer_destroy_waits_for_active_callback, timer_setup),
 		cmocka_unit_test_setup(test_timer_callback_user_data, timer_setup),
 #endif
 #ifndef CONFIG_OVE_ZERO_HEAP
