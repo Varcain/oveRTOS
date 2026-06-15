@@ -546,6 +546,14 @@ fn testQueueCreateDestroy() !void {
     q.deinit();
 }
 
+fn testQueueDeinitIdempotent() !void {
+    var q = try Q5.create(test_allocator);
+    q.deinit();
+    try expect(q.handle == null);
+    try expect(q.backing == null);
+    q.deinit();
+}
+
 fn testQueueSendReceiveSingle() !void {
     var q = try Q5.create(test_allocator);
     defer q.deinit();
@@ -1804,6 +1812,7 @@ pub fn main() void {
 
     runSuite("Queue", &.{
         .{ .name = "create_destroy", .func = testQueueCreateDestroy },
+        .{ .name = "deinit_idempotent", .func = testQueueDeinitIdempotent },
         .{ .name = "send_receive_single", .func = testQueueSendReceiveSingle },
         .{ .name = "fifo_order", .func = testQueueFifoOrder },
         .{ .name = "send_full_times_out", .func = testQueueSendFullTimesOut },

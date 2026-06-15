@@ -96,7 +96,7 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
 
         allocator: std.mem.Allocator,
         handle: c.ove_queue_t,
-        backing: *Backing,
+        backing: ?*Backing,
 
         /// Allocate the queue's backing buffer + substrate-storage
         /// from `allocator` and `ove_queue_init` against it.
@@ -110,9 +110,15 @@ pub fn Queue(comptime T: type, comptime N: comptime_int) type {
             return .{ .allocator = allocator, .handle = h, .backing = backing };
         }
 
-        pub fn deinit(self: Self) void {
-            if (self.handle != null) c.ove_queue_deinit(self.handle);
-            self.allocator.destroy(self.backing);
+        pub fn deinit(self: *Self) void {
+            if (self.handle) |handle| {
+                c.ove_queue_deinit(handle);
+                self.handle = null;
+            }
+            if (self.backing) |backing| {
+                self.allocator.destroy(backing);
+                self.backing = null;
+            }
         }
 
         /// Forever-blocking send.  Infallible.
