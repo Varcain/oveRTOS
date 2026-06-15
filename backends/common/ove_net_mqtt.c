@@ -74,6 +74,25 @@ static size_t encode_remaining_length(uint8_t *buf, size_t len)
 	return i;
 }
 
+/* Number of bytes encode_remaining_length() writes for `len` (the MQTT
+ * Remaining Length varint width: 1..4 bytes). */
+static size_t remaining_length_bytes(size_t len)
+{
+	size_t n = 1;
+	while (len >= 128) {
+		len /= 128;
+		n++;
+	}
+	return n;
+}
+
+/* True if a packet whose Remaining Length is `remaining` fits c->tx_buf:
+ * 1 (fixed header) + Remaining Length varint + the Remaining Length bytes. */
+static int mqtt_tx_frame_fits(const struct ove_mqtt_client *c, size_t remaining)
+{
+	return 1 + remaining_length_bytes(remaining) + remaining <= c->tx_size;
+}
+
 /*
  * Decode an MQTT Remaining Length varint (MQTT 3.1.1 §2.2.3).
  * The spec caps the encoding at 4 bytes (max value 268,435,455).
@@ -481,9 +500,18 @@ int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *pa
 	size_t topic_len = strlen(topic);
 	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
 		return OVE_ERR_INVALID_PARAM;
+	/* Reject a payload that can't fit the TX buffer up front — this also
+	 * keeps `remaining` below from overflowing size_t (topic_len <= 0xFFFF,
+	 * tx_size is small). */
+	if (payload_len > c->tx_size)
+		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + topic_len + payload_len;
 	if (qos == OVE_MQTT_QOS1)
 		remaining += 2; /* packet ID */
+
+	/* Ensure the whole assembled frame fits before writing into tx_buf. */
+	if (!mqtt_tx_frame_fits(c, remaining))
+		return OVE_ERR_INVALID_PARAM;
 
 	uint8_t *p = c->tx_buf;
 	*p = MQTT_PUBLISH;
@@ -533,6 +561,8 @@ int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos
 	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
 		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + 2 + topic_len + 1; /* pkt_id + topic + qos */
+	if (!mqtt_tx_frame_fits(c, remaining))
+		return OVE_ERR_INVALID_PARAM;
 
 	uint8_t *p = c->tx_buf;
 	*p++ = MQTT_SUBSCRIBE;
@@ -578,6 +608,8 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 	if (topic_len > 0xFFFF) /* uint16 topic length on the wire */
 		return OVE_ERR_INVALID_PARAM;
 	size_t remaining = 2 + 2 + topic_len; /* pkt_id + topic */
+	if (!mqtt_tx_frame_fits(c, remaining))
+		return OVE_ERR_INVALID_PARAM;
 
 	uint8_t *p = c->tx_buf;
 	*p++ = MQTT_UNSUBSCRIBE;
