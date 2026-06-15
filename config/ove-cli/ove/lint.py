@@ -732,6 +732,65 @@ def _error_code_pinning(ove_dir, check):
     return ("error-code-pin", "FAIL", detail)
 
 
+def _src_needs_emscripten(path):
+    """True if a .c includes an <emscripten/...> header (so it can only be
+    compiled by the real emscripten toolchain, not host gcc)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                s = line.strip()
+                if s.startswith("#include") and "emscripten" in s:
+                    return True
+    except OSError:
+        return False
+    return False
+
+
+def _wasm_parity(ove_dir, check):
+    """Compile-only parity check for the WASM backend.
+
+    The clang-tidy-backends check above is driven by real board builds and
+    only covers freertos/nuttx/zephyr, so the WASM stubs (wasm_net_stubs.c,
+    wasm_bus_stubs.c, wasm_timer.c, ...) are never compiled in the lint
+    matrix and can silently drift from the public headers.  Here we host-gcc
+    -fsyntax-only every host-compilable WASM source against an all-modules-on
+    config in both heap and zero-heap, so any signature mismatch (a hard
+    conflicting-types error) fails fast.  No emscripten toolchain needed.
+
+    WASM sources that pull in <emscripten/...> headers can't be compiled by
+    host gcc and are skipped (they need the real toolchain); the stub/HAL
+    surface that actually drifts against the public headers is emscripten-
+    free and fully covered.
+    """
+    del check  # read-only
+    cc = shutil.which("cc") or shutil.which("gcc")
+    if not cc:
+        return ("wasm-parity", "SKIP", "no C compiler")
+    all_srcs = sorted(_glob(os.path.join(ove_dir, "backends", "wasm"), ".c"))
+    srcs = [s for s in all_srcs if not _src_needs_emscripten(s)]
+    skipped = len(all_srcs) - len(srcs)
+    if not srcs:
+        return ("wasm-parity", "SKIP", "all WASM sources need emscripten")
+    inc = []
+    for d in ("tests/wasm_parity", "include", "backends/common",
+              "backends/wasm/include"):
+        inc += ["-I", os.path.join(ove_dir, d)]
+    base = [cc, "-fsyntax-only", "-std=gnu11", "-Wall"] + inc
+    failures = []
+    for zh in ([], ["-DCONFIG_OVE_ZERO_HEAP=1"]):
+        mode = "zero-heap" if zh else "heap"
+        for src in srcs:
+            rc, out = _run(base + zh + [src], cwd=ove_dir)
+            if rc != 0:
+                rel = os.path.relpath(src, ove_dir)
+                failures.append((f"{rel} [{mode}]", out.strip()[:120]))
+    if failures:
+        detail = "; ".join(f"{p}: {e}" for p, e in failures[:3])
+        return ("wasm-parity", "FAIL", detail[:200])
+    return ("wasm-parity", "OK",
+            f"{len(srcs)} files x heap+zero-heap ({skipped} emscripten-only skipped)")
+
+
 def _run_all(check, include_lint=True):
     """Run all checks. `check=True` means read-only mode; `check=False`
     rewrites files (only the formatters honour the distinction — the
@@ -751,6 +810,7 @@ def _run_all(check, include_lint=True):
         results += [
             _clang_tidy(ove_dir, check),
             _clang_tidy_backends(ove_dir, check),
+            _wasm_parity(ove_dir, check),
             _cargo_clippy(ove_dir, check),
             _zig_ast_check(ove_dir, check),
             _backend_struct_guard(ove_dir, check),
