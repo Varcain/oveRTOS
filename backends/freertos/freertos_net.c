@@ -488,16 +488,28 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 
 /* DNS with timeout via lwIP raw API + semaphore */
 
+/* DNS shared state is guarded by s_dns_mutex (one resolve in flight at a
+ * time) plus a per-call generation token passed through lwIP's callback_arg.
+ * lwIP cannot cancel a pending query, so a request that we timed out on may
+ * still complete later; the callback checks its token against s_dns_gen and
+ * drops the result if a newer call has superseded it — preventing a stale
+ * completion from corrupting the next resolve or leaving a phantom sem token. */
+static SemaphoreHandle_t s_dns_mutex;
+static StaticSemaphore_t s_dns_mutex_buf;
 static SemaphoreHandle_t s_dns_sem;
 static StaticSemaphore_t s_dns_sem_buf;
 static ip_addr_t s_dns_result;
 static volatile int s_dns_done;
+static volatile uintptr_t s_dns_gen;
 static int s_dns_inited;
 
 static void dns_found_cb(const char *name, const ip_addr_t *ipaddr, void *callback_arg)
 {
 	(void)name;
-	(void)callback_arg;
+	/* Ignore a late completion whose call already timed out / was
+	 * superseded — its generation no longer matches the active one. */
+	if ((uintptr_t)callback_arg != s_dns_gen)
+		return;
 	if (ipaddr) {
 		s_dns_result = *ipaddr;
 		s_dns_done = 1;
@@ -515,36 +527,49 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout
 		timeout_ns = OVE_SEC(10);
 
 	if (!s_dns_inited) {
+		s_dns_mutex = xSemaphoreCreateMutexStatic(&s_dns_mutex_buf);
 		s_dns_sem = xSemaphoreCreateBinaryStatic(&s_dns_sem_buf);
 		s_dns_inited = 1;
 	}
 
-	s_dns_done = 0;
-	ip_addr_t resolved;
+	/* Serialize: the result/done/sem globals have a single owner per call. */
+	xSemaphoreTake(s_dns_mutex, portMAX_DELAY);
 
-	err_t err = dns_gethostbyname(hostname, &resolved, dns_found_cb, NULL);
+	/* Unique non-zero generation for this call; the callback echoes it back. */
+	uintptr_t gen = ++s_dns_gen;
+	if (gen == 0)
+		gen = ++s_dns_gen;
+	s_dns_done = 0;
+	/* Drop any stale token a prior late completion may have left. */
+	xSemaphoreTake(s_dns_sem, 0);
+
+	ip_addr_t resolved;
+	int rc;
+	err_t err = dns_gethostbyname(hostname, &resolved, dns_found_cb, (void *)gen);
 	if (err == ERR_OK) {
 		/* Already cached — result is in 'resolved' */
 		memset(addr, 0, sizeof(*addr));
 		addr->family = OVE_AF_INET;
 		memcpy(addr->addr, &resolved.addr, 4);
-		return OVE_OK;
+		rc = OVE_OK;
+	} else if (err != ERR_INPROGRESS) {
+		rc = OVE_ERR_NET_DNS_FAIL;
+	} else if (xSemaphoreTake(s_dns_sem, ove_ns_to_ticks(timeout_ns)) != pdTRUE) {
+		/* Timed out — invalidate this call so the eventual late callback
+		 * is recognized as stale and dropped. */
+		s_dns_gen++;
+		rc = OVE_ERR_TIMEOUT;
+	} else if (s_dns_done != 1) {
+		rc = OVE_ERR_NET_DNS_FAIL;
+	} else {
+		memset(addr, 0, sizeof(*addr));
+		addr->family = OVE_AF_INET;
+		memcpy(addr->addr, &s_dns_result.addr, 4);
+		rc = OVE_OK;
 	}
 
-	if (err != ERR_INPROGRESS)
-		return OVE_ERR_NET_DNS_FAIL;
-
-	/* Wait for callback with timeout */
-	if (xSemaphoreTake(s_dns_sem, ove_ns_to_ticks(timeout_ns)) != pdTRUE)
-		return OVE_ERR_TIMEOUT;
-
-	if (s_dns_done != 1)
-		return OVE_ERR_NET_DNS_FAIL;
-
-	memset(addr, 0, sizeof(*addr));
-	addr->family = OVE_AF_INET;
-	memcpy(addr->addr, &s_dns_result.addr, 4);
-	return OVE_OK;
+	xSemaphoreGive(s_dns_mutex);
+	return rc;
 }
 
 /* ---------- Address helpers ---------- */

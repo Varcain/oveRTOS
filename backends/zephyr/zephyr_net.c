@@ -408,14 +408,24 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 
 /* DNS with timeout via Zephyr dns_resolve API + semaphore */
 
+/* DNS shared state is guarded by s_dns_mutex (one resolve in flight) plus a
+ * per-call generation token passed through the resolver's user_data.  On
+ * timeout we cancel the pending query (dns_cancel_addr_info) and bump the
+ * generation, so a late callback whose token no longer matches is dropped —
+ * it cannot corrupt the next resolve or leave a phantom sem token. */
+static K_MUTEX_DEFINE(s_dns_mutex);
 static K_SEM_DEFINE(s_dns_sem, 0, 1);
 static struct sockaddr_in s_dns_result_addr;
 static volatile int s_dns_done;
+static volatile uintptr_t s_dns_gen;
 
 static void dns_result_cb(enum dns_resolve_status status, struct dns_addrinfo *info,
 			  void *user_data)
 {
-	(void)user_data;
+	/* Ignore a late completion whose call already timed out / was
+	 * superseded — its generation no longer matches the active one. */
+	if ((uintptr_t)user_data != s_dns_gen)
+		return;
 	if (status == DNS_EAI_INPROGRESS && info) {
 		if (info->ai_family == AF_INET) {
 			memcpy(&s_dns_result_addr, &info->ai_addr, sizeof(s_dns_result_addr));
@@ -436,6 +446,13 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout
 	if (timeout_ns == 0)
 		timeout_ns = OVE_SEC(10);
 
+	/* Serialize: the result/done/sem globals have a single owner per call. */
+	k_mutex_lock(&s_dns_mutex, K_FOREVER);
+
+	/* Unique non-zero generation for this call; the callback echoes it back. */
+	uintptr_t gen = ++s_dns_gen;
+	if (gen == 0)
+		gen = ++s_dns_gen;
 	s_dns_done = 0;
 	k_sem_reset(&s_dns_sem);
 
@@ -444,22 +461,28 @@ int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout
 	int32_t timeout_ms_clamped = (timeout_ns / 1000000ULL > (uint64_t)INT32_MAX)
 					     ? INT32_MAX
 					     : (int32_t)(timeout_ns / 1000000ULL);
-	int rc = dns_resolve_name(dns_resolve_get_default(), hostname, DNS_QUERY_TYPE_A, &dns_id,
-				  dns_result_cb, NULL, timeout_ms_clamped);
-	if (rc < 0)
-		return OVE_ERR_NET_DNS_FAIL;
+	int rc;
+	int rc_dns = dns_resolve_name(dns_resolve_get_default(), hostname, DNS_QUERY_TYPE_A,
+				      &dns_id, dns_result_cb, (void *)gen, timeout_ms_clamped);
+	if (rc_dns < 0) {
+		rc = OVE_ERR_NET_DNS_FAIL;
+	} else if (k_sem_take(&s_dns_sem, K_NSEC(timeout_ns)) != 0) {
+		/* Cancel the pending query and invalidate this call so any late
+		 * callback is recognized as stale and dropped. */
+		dns_cancel_addr_info(dns_id);
+		s_dns_gen++;
+		rc = OVE_ERR_TIMEOUT;
+	} else if (s_dns_done != 1) {
+		rc = OVE_ERR_NET_DNS_FAIL;
+	} else {
+		memset(addr, 0, sizeof(*addr));
+		addr->family = OVE_AF_INET;
+		memcpy(addr->addr, &s_dns_result_addr.sin_addr, 4);
+		rc = OVE_OK;
+	}
 
-	/* Wait for completion with timeout */
-	if (k_sem_take(&s_dns_sem, K_NSEC(timeout_ns)) != 0)
-		return OVE_ERR_TIMEOUT;
-
-	if (s_dns_done != 1)
-		return OVE_ERR_NET_DNS_FAIL;
-
-	memset(addr, 0, sizeof(*addr));
-	addr->family = OVE_AF_INET;
-	memcpy(addr->addr, &s_dns_result_addr.sin_addr, 4);
-	return OVE_OK;
+	k_mutex_unlock(&s_dns_mutex);
+	return rc;
 }
 
 /* ---------- Address helpers ---------- */
