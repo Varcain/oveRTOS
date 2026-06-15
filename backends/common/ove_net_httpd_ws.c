@@ -130,6 +130,24 @@ static struct ws_route *ws_match_route(const char *path)
 	return best;
 }
 
+/* Send the full buffer, looping over partial sends: ove_socket_send may
+ * accept fewer than `len` bytes per call, so a single call (as the WS frame
+ * writers used to do) can truncate a frame on the wire.  Mirrors
+ * http_send_all() in ove_net_http.c. */
+static int ws_send_all(ove_socket_t sock, const void *data, size_t len)
+{
+	const uint8_t *p = data;
+	while (len > 0) {
+		size_t sent = 0;
+		int ret = ove_socket_send(sock, p, len, &sent);
+		if (ret != OVE_OK)
+			return ret;
+		p += sent;
+		len -= sent;
+	}
+	return OVE_OK;
+}
+
 /* ---------- Handshake (RFC 6455 Section 4.2.2) ---------- */
 
 static const char ws_magic[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -194,7 +212,7 @@ int ove_httpd_ws_handshake(const char *headers, size_t headers_len, const char *
 			    "\r\n",
 			    accept);
 
-	int ret = ove_socket_send(sock, resp, (size_t)rlen, NULL);
+	int ret = ws_send_all(sock, resp, (size_t)rlen);
 	if (ret != OVE_OK) {
 		conn->active = 0;
 		return -1;
@@ -252,14 +270,14 @@ int ove_httpd_ws_send(ove_httpd_ws_conn_t *conn_opaque, const void *data, size_t
 		hlen = 10;
 	}
 
-	int ret = ove_socket_send(conn->sock, hdr, (size_t)hlen, NULL);
+	int ret = ws_send_all(conn->sock, hdr, (size_t)hlen);
 	if (ret != OVE_OK) {
 		ws_pool_free(conn);
 		return ret;
 	}
 
 	if (len > 0) {
-		ret = ove_socket_send(conn->sock, data, len, NULL);
+		ret = ws_send_all(conn->sock, data, len);
 		if (ret != OVE_OK) {
 			ws_pool_free(conn);
 			return ret;
@@ -293,7 +311,7 @@ int ove_httpd_ws_broadcast(const char *path, const void *data, size_t len)
 static void ws_send_close(struct ove_httpd_ws_conn *conn)
 {
 	uint8_t frame[2] = {0x80 | WS_OP_CLOSE, 0};
-	ove_socket_send(conn->sock, frame, 2, NULL);
+	(void)ws_send_all(conn->sock, frame, 2);
 }
 
 static void ws_send_close_code(struct ove_httpd_ws_conn *conn, uint16_t code)
@@ -303,7 +321,7 @@ static void ws_send_close_code(struct ove_httpd_ws_conn *conn, uint16_t code)
 	frame[1] = 2;
 	frame[2] = (uint8_t)(code >> 8);
 	frame[3] = (uint8_t)code;
-	ove_socket_send(conn->sock, frame, 4, NULL);
+	(void)ws_send_all(conn->sock, frame, 4);
 }
 
 static void ws_send_pong(struct ove_httpd_ws_conn *conn, const uint8_t *payload, size_t len)
@@ -311,9 +329,9 @@ static void ws_send_pong(struct ove_httpd_ws_conn *conn, const uint8_t *payload,
 	uint8_t hdr[2];
 	hdr[0] = 0x80 | WS_OP_PONG;
 	hdr[1] = (uint8_t)len; /* ping payloads are always < 126 */
-	ove_socket_send(conn->sock, hdr, 2, NULL);
+	(void)ws_send_all(conn->sock, hdr, 2);
 	if (len > 0)
-		ove_socket_send(conn->sock, payload, len, NULL);
+		(void)ws_send_all(conn->sock, payload, len);
 }
 
 static int ws_recv_frame(struct ove_httpd_ws_conn *conn)
