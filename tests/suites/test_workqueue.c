@@ -223,6 +223,40 @@ static void test_wq_cancel_not_pending(void **state)
 #endif
 }
 
+static void test_wq_resubmit_after_cancel(void **state)
+{
+	(void)state;
+	ove_workqueue_t wq = NULL;
+	ove_test_workqueue_create(&wq, &s_wq_storage, "resub_wq", OVE_PRIO_NORMAL, 2048,
+				  s_wq_stack);
+
+	ove_work_t w = NULL;
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_work_init_static(&w, &s_work_storage, counting_handler);
+#else
+	ove_work_init(&w, counting_handler);
+#endif
+
+	/* Cancel the work, then submit it: the work MUST run.  NuttX sets a
+	 * per-work 'cancelled' flag in ove_work_cancel() and previously left it
+	 * set across a subsequent submit, so the resubmitted work was silently
+	 * dropped — this regresses that. */
+	atomic_store(&s_work_count, 0);
+	(void)ove_work_cancel(w);
+	ove_work_submit(wq, w);
+
+	for (int i = 0; i < 200 && atomic_load(&s_work_count) == 0; i++)
+		test_msleep(1);
+	assert_int_equal(atomic_load(&s_work_count), 1);
+
+#ifdef CONFIG_OVE_ZERO_HEAP
+	ove_test_workqueue_destroy(wq);
+#else
+	ove_work_free(w);
+	ove_test_workqueue_destroy(wq);
+#endif
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 static void test_wq_destroy_null(void **state)
 {
@@ -301,6 +335,7 @@ int test_workqueue_run(void)
 		cmocka_unit_test_setup(test_wq_submit_delayed, wq_setup),
 		cmocka_unit_test_setup(test_wq_cancel_work, wq_setup),
 		cmocka_unit_test_setup(test_wq_cancel_not_pending, wq_setup),
+		cmocka_unit_test_setup(test_wq_resubmit_after_cancel, wq_setup),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test_setup(test_wq_destroy_null, wq_setup),
 #endif

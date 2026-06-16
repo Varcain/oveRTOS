@@ -297,6 +297,7 @@ int ove_work_submit(ove_workqueue_t wq, ove_work_t work)
 
 	nw->delay_ms = 0;
 	nw->pending = 1;
+	nw->cancelled = 0; /* clear a prior cancel so a resubmit runs again */
 
 	int ret = nxsem_wait_uninterruptible(&nwq->not_full);
 	if (ret < 0) {
@@ -320,6 +321,7 @@ int ove_work_submit_delayed(ove_workqueue_t wq, ove_work_t work, uint32_t delay_
 
 	nw->delay_ms = delay_ms;
 	nw->pending = 1;
+	nw->cancelled = 0; /* clear a prior cancel so a resubmit runs again */
 
 	int ret = nxsem_wait_uninterruptible(&nwq->not_full);
 	if (ret < 0) {
