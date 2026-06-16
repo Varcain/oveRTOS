@@ -157,16 +157,26 @@ int ove_sem_take(ove_sem_t sem, uint64_t timeout_ns)
 	if (ove_timeout_is_forever(timeout_ns)) {
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, s);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
-		sem_wait(&s->sem);
+		/* Retry on EINTR: a signal (suspend/profiler) must not make the
+		 * wait return without actually acquiring the semaphore. */
+		int rc;
+		do {
+			rc = sem_wait(&s->sem);
+		} while (rc != 0 && errno == EINTR);
 		ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 		OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, s);
-		return OVE_OK;
+		return rc == 0 ? OVE_OK : OVE_ERR_INVALID_PARAM;
 	}
 	struct timespec ts;
 	ns_to_abstime(timeout_ns, &ts);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_ENTER, s);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_BLOCKED);
-	int ret = sem_timedwait(&s->sem, &ts);
+	/* Retry on EINTR; the absolute deadline `ts` keeps the total wait
+	 * bounded across signal interruptions. */
+	int ret;
+	do {
+		ret = sem_timedwait(&s->sem, &ts);
+	} while (ret != 0 && errno == EINTR);
 	ove_backend_thread_set_state(OVE_THREAD_STATE_RUNNING);
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_SEM, OVE_TRACE_ACT_WAIT_EXIT, s);
 	if (ret == 0)
