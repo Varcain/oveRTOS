@@ -13,7 +13,12 @@
 #include "ove/hal/hal_i2s.h"
 #include "ove_backend_common.h"
 
-/* TODO: Implement NuttX I2S backend */
+/*
+ * I2S is intentionally unimplemented on NuttX: every entry point below
+ * returns OVE_ERR_NOT_SUPPORTED.  This is a deliberate stub, not
+ * work-in-progress — code that enables CONFIG_OVE_I2S on NuttX must handle
+ * OVE_ERR_NOT_SUPPORTED rather than assume I2S works.
+ */
 
 int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 {

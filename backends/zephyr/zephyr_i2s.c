@@ -14,7 +14,13 @@
 #include "ove_backend_common.h"
 #include <zephyr/drivers/i2s.h>
 
-/* TODO: Implement Zephyr I2S backend using zephyr/drivers/i2s.h */
+/*
+ * I2S is intentionally unimplemented on Zephyr: every entry point below
+ * returns OVE_ERR_NOT_SUPPORTED.  This is a deliberate stub, not
+ * work-in-progress — a real implementation would build on
+ * <zephyr/drivers/i2s.h>.  Code that enables CONFIG_OVE_I2S on Zephyr must
+ * handle OVE_ERR_NOT_SUPPORTED rather than assume I2S works.
+ */
 
 int ove_hal_i2s_open(ove_i2s_t i2s, const struct ove_i2s_cfg *cfg)
 {
