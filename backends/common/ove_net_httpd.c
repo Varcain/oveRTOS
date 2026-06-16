@@ -253,8 +253,15 @@ static struct ove_httpd_route *match_route(struct ove_httpd_req *req)
 
 		size_t rlen = strlen(r->path);
 		if (strncmp(req->path, r->path, rlen) == 0) {
+			/* Require a path-segment boundary so route "/api" matches
+			 * "/api", "/api/x", "/api?q" — but NOT "/api_evil".  A
+			 * route that itself ends in '/' (e.g. "/" or "/static/")
+			 * keeps prefix semantics and matches any sub-path. */
+			char after = req->path[rlen];
+			int at_boundary = after == '\0' || after == '/' || after == '?' ||
+					  (rlen > 0 && r->path[rlen - 1] == '/');
 			/* Pick the longest matching prefix */
-			if (rlen > best_len) {
+			if (at_boundary && rlen > best_len) {
 				best = r;
 				best_len = rlen;
 			}
