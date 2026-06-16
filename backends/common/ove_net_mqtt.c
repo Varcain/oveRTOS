@@ -381,6 +381,15 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 		}
 		c->tls = tls;
 	}
+#else
+	if (cfg->use_tls) {
+		/* TLS requested but the TLS layer is not compiled in.  Fail
+		 * rather than silently connecting in plaintext (mirrors the
+		 * HTTP client's #ifndef CONFIG_OVE_NET_TLS rejection). */
+		ove_socket_close(c->sock);
+		c->sock = NULL;
+		return OVE_ERR_NOT_SUPPORTED;
+	}
 #endif
 
 	/* Build CONNECT packet */
