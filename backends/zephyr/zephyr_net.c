@@ -285,12 +285,45 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
 	struct sockaddr_in sin;
 	sockaddr_to_zephyr(addr, &sin);
-	if (zsock_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-		return zephyr_errno_to_ove(errno);
-	return OVE_OK;
+
+	if (ove_timeout_is_forever(timeout_ns)) {
+		if (zsock_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
+			return zephyr_errno_to_ove(errno);
+		return OVE_OK;
+	}
+
+	/* Bounded connect: go non-blocking, then poll() for writability (or the
+	 * timeout) and read SO_ERROR for the result. */
+	int flags = zsock_fcntl(sock->fd, F_GETFL, 0);
+	zsock_fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK);
+
+	int result;
+	if (zsock_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) == 0) {
+		result = OVE_OK; /* completed immediately (e.g. loopback) */
+	} else if (errno != EINPROGRESS) {
+		result = zephyr_errno_to_ove(errno);
+	} else {
+		struct zsock_pollfd pfd = {.fd = sock->fd, .events = ZSOCK_POLLOUT};
+		int timeout_ms = (timeout_ns / 1000000ULL > (uint64_t)INT32_MAX)
+					 ? INT32_MAX
+					 : (int)(timeout_ns / 1000000ULL);
+		int pr = zsock_poll(&pfd, 1, timeout_ms);
+		if (pr == 0) {
+			result = OVE_ERR_TIMEOUT;
+		} else if (pr < 0) {
+			result = zephyr_errno_to_ove(errno);
+		} else {
+			int soerr = 0;
+			socklen_t sl = sizeof(soerr);
+			zsock_getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &soerr, &sl);
+			result = (soerr == 0) ? OVE_OK : zephyr_errno_to_ove(soerr);
+		}
+	}
+
+	zsock_fcntl(sock->fd, F_SETFL, flags); /* restore blocking mode */
+	return result;
 }
 
 int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
@@ -318,10 +351,20 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
+
+	/* Bound the accept wait via SO_RCVTIMEO. */
+	if (!ove_timeout_is_forever(timeout_ns)) {
+		struct zsock_timeval tv;
+		ove_ns_to_zsock_timeval(timeout_ns, &tv);
+		zsock_setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	}
+
 	int fd = zsock_accept(sock->fd, NULL, NULL);
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == EAGAIN)
+			return OVE_ERR_TIMEOUT;
 		return zephyr_errno_to_ove(errno);
+	}
 	struct ove_socket *cs = (struct ove_socket *)client_storage;
 	cs->fd = fd;
 	*client = cs;

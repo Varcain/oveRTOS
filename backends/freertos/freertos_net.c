@@ -356,14 +356,47 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns; /* lwIP connect is blocking */
 
 	struct sockaddr_in sin;
 	sockaddr_to_lwip(addr, &sin);
 
-	if (lwip_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-		return lwip_errno_to_ove(errno);
-	return OVE_OK;
+	if (ove_timeout_is_forever(timeout_ns)) {
+		if (lwip_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
+			return lwip_errno_to_ove(errno);
+		return OVE_OK;
+	}
+
+	/* Bounded connect: go non-blocking, then select() for writability (or
+	 * the timeout) and read SO_ERROR for the result. */
+	int flags = lwip_fcntl(sock->fd, F_GETFL, 0);
+	lwip_fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK);
+
+	int result;
+	if (lwip_connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) == 0) {
+		result = OVE_OK; /* completed immediately (e.g. loopback) */
+	} else if (errno != EINPROGRESS) {
+		result = lwip_errno_to_ove(errno);
+	} else {
+		fd_set wfds;
+		FD_ZERO(&wfds);
+		FD_SET(sock->fd, &wfds);
+		struct timeval tv;
+		ove_ns_to_timeval(timeout_ns, &tv);
+		int sr = lwip_select(sock->fd + 1, NULL, &wfds, NULL, &tv);
+		if (sr == 0) {
+			result = OVE_ERR_TIMEOUT;
+		} else if (sr < 0) {
+			result = lwip_errno_to_ove(errno);
+		} else {
+			int soerr = 0;
+			socklen_t sl = sizeof(soerr);
+			lwip_getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &soerr, &sl);
+			result = (soerr == 0) ? OVE_OK : lwip_errno_to_ove(soerr);
+		}
+	}
+
+	lwip_fcntl(sock->fd, F_SETFL, flags); /* restore blocking mode */
+	return result;
 }
 
 int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
@@ -391,11 +424,20 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
-	(void)timeout_ns;
+
+	/* Bound the accept wait via SO_RCVTIMEO (lwip_accept honours it). */
+	if (!ove_timeout_is_forever(timeout_ns)) {
+		struct timeval tv;
+		ove_ns_to_timeval(timeout_ns, &tv);
+		lwip_setsockopt(sock->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	}
 
 	int fd = lwip_accept(sock->fd, NULL, NULL);
-	if (fd < 0)
+	if (fd < 0) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK)
+			return OVE_ERR_TIMEOUT;
 		return lwip_errno_to_ove(errno);
+	}
 
 	struct ove_socket *cs = (struct ove_socket *)client_storage;
 	cs->fd = fd;
