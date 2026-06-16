@@ -10,6 +10,12 @@
 //! and the `app!` macro that generates all FFI boilerplate so application code
 //! can be written in pure safe Rust.
 //!
+//! All three language bindings (C++/Rust/Zig) conform to one cross-binding
+//! behavioural contract — blocking vs non-blocking semantics, ownership and
+//! drop, error mapping, channels, the LVGL lock. It is defined once in
+//! `docs-site/docs/internals/binding-semantics.md` (docs-site: Internals →
+//! Binding Semantics); keep this binding in sync with it.
+//!
 //! # Async (Embassy)
 //!
 //! Activated by the `async` Cargo feature combined with C-side

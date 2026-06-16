@@ -135,6 +135,7 @@ nav:
     - Backends: backends/index.md
     - Backend tuning:
       - Networking pools: backends/net-tuning.md
+    - Binding Semantics: internals/binding-semantics.md
     - Testing:
       - Overview: testing/index.md
       - Renode: testing/renode.md

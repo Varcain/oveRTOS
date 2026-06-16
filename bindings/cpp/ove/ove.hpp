@@ -10,6 +10,13 @@
  * @file ove.hpp
  * @brief Umbrella header — includes all oveRTOS C++ wrappers
  *
+ * @note All three language bindings (C++/Rust/Zig) conform to one
+ *       cross-binding behavioural contract — blocking vs non-blocking
+ *       semantics, ownership/RAII, error mapping, the LVGL lock.  It is
+ *       defined once in `docs-site/docs/internals/binding-semantics.md`
+ *       (docs-site: Internals → Binding Semantics); keep this binding in
+ *       sync with it.
+ *
  * @section discipline Hot-path inline discipline
  *
  * Every wrapper in this binding lives in a `.hpp` (header-only).  The

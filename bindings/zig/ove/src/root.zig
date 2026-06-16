@@ -13,6 +13,12 @@
 //! const ove = @import("ove");
 //! ```
 //!
+//! All three language bindings (C++/Rust/Zig) conform to one cross-binding
+//! behavioural contract — blocking vs non-blocking semantics, ownership and
+//! deinit, error mapping, the LVGL lock.  It is defined once in
+//! `docs-site/docs/internals/binding-semantics.md` (docs-site: Internals →
+//! Binding Semantics); keep this binding in sync with it.
+//!
 //! ## Hot-path inline discipline
 //!
 //! Wrapper methods that are a thin `c.ove_*(...)` plus
