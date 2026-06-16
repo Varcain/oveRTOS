@@ -140,7 +140,7 @@ fn app_main() {
     let last_value: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
 
     let tx_p = tx.clone();
-    let _producer = Thread::builder().name(c"producer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
+    let producer = Thread::builder().name(c"producer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         log::info!("Producer started");
         let mut count: u32 = 0;
         loop {
@@ -162,7 +162,7 @@ fn app_main() {
     .expect("producer spawn");
 
     let lv = Arc::clone(&last_value);
-    let _consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
+    let consumer = Thread::builder().name(c"consumer").priority(Priority::Normal).stack_size(4096).spawn(move |_tok| {
         log::info!("Consumer started");
         loop {
             match rx.recv() {
@@ -183,7 +183,7 @@ fn app_main() {
     })
     .expect("consumer spawn");
 
-    let _graphics = Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(move |_tok| {
+    let graphics = Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(move |_tok| {
         let mut last_us = ove::time::get_us().unwrap_or(0);
         loop {
             let now_us = ove::time::get_us().unwrap_or(last_us);
@@ -216,15 +216,16 @@ fn app_main() {
         return;
     }
 
-    // Detach the spawned thread handles so their Drop doesn't run
-    // `ove_thread_destroy` when `app_main` returns.  The kernel side
-    // outlives the Rust wrappers either way.
-    core::mem::forget(_producer);
-    core::mem::forget(_consumer);
-    core::mem::forget(_graphics);
-    // The Sender/Receiver clones inside each closure keep the channel
-    // alive (refcount stays > 0 for the program lifetime). Drop our
-    // original `tx` Sender — its closure copy is what matters.
+    // Detach the worker threads: the kernel side runs for the program
+    // lifetime, so we don't want their `Drop` to request-stop + join when
+    // `app_main` returns.  `detach()` makes the fire-and-forget intent
+    // explicit at the call site (the binding recommends it over
+    // `core::mem::forget`).
+    producer.detach();
+    consumer.detach();
+    graphics.detach();
+    // Leak the original `last_value` Arc so the shared counter lives for
+    // the program lifetime (the consumer holds a clone regardless).
     core::mem::forget(last_value);
 
     log::info!("Rust example (heap mode): ready");

@@ -6,8 +6,10 @@
 
 //! Live DMIC Keyword Detection — Rust implementation
 //!
-//! Zero `unsafe` in application code.  All FFI bridging is inside
-//! the `ove` crate's binding layer.
+//! The only `unsafe` in this app is a single-producer/single-consumer
+//! audio ring buffer (interior mutability via `UnsafeCell`, sound under
+//! its SPSC access invariant); all RTOS/FFI bridging stays inside the
+//! `ove` crate's binding layer.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 

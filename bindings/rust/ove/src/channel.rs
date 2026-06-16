@@ -16,7 +16,11 @@
 //! - `Receiver::recv` blocks until a producer sends, or returns
 //!   [`Error::NetClosed`] if all senders have been dropped.
 //! - `Sender::try_send` / `Receiver::try_recv` are non-blocking
-//!   variants returning [`Error::Timeout`] when empty/full.
+//!   variants: they return [`Error::Timeout`] when the queue is
+//!   momentarily full/empty, or [`Error::NetClosed`] once the peer half
+//!   (all receivers / all senders) has been dropped.  (The underlying
+//!   [`crate::Queue`] reports full/empty as `Error::QueueFull`/
+//!   `Error::QueueEmpty`; the channel maps those to the above.)
 //!
 //! Variants:
 //!
