@@ -454,7 +454,7 @@ int ove_mqtt_connect(ove_mqtt_client_t client, const ove_mqtt_config_t *cfg)
 
 	/* Read CONNACK */
 	size_t got = 0;
-	ret = mqtt_recv(c, c->rx_buf, 4, &got, 10000);
+	ret = mqtt_recv(c, c->rx_buf, 4, &got, OVE_MS(10000));
 	if (ret != OVE_OK)
 		goto fail;
 	if (got < 4 || c->rx_buf[0] != MQTT_CONNACK || c->rx_buf[3] != 0) {
@@ -552,7 +552,7 @@ int ove_mqtt_publish(ove_mqtt_client_t client, const char *topic, const void *pa
 
 	/* Wait for PUBACK on QoS 1 */
 	if (qos == OVE_MQTT_QOS1) {
-		ret = mqtt_wait_for(c, MQTT_PUBACK, 5000);
+		ret = mqtt_wait_for(c, MQTT_PUBACK, OVE_MS(5000));
 		if (ret != OVE_OK)
 			return ret;
 	}
@@ -593,7 +593,7 @@ int ove_mqtt_subscribe(ove_mqtt_client_t client, const char *topic, ove_mqtt_qos
 		return ret;
 
 	/* Wait for SUBACK */
-	ret = mqtt_wait_for(c, MQTT_SUBACK, 5000);
+	ret = mqtt_wait_for(c, MQTT_SUBACK, OVE_MS(5000));
 	if (ret != OVE_OK)
 		return ret;
 
@@ -639,7 +639,7 @@ int ove_mqtt_unsubscribe(ove_mqtt_client_t client, const char *topic)
 		return ret;
 
 	/* Wait for UNSUBACK */
-	ret = mqtt_wait_for(c, MQTT_UNSUBACK, 2000);
+	ret = mqtt_wait_for(c, MQTT_UNSUBACK, OVE_MS(2000));
 	if (ret != OVE_OK)
 		return ret;
 
