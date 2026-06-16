@@ -90,21 +90,21 @@ fn createUi() void {
         .text(app_title)
         .font(lvgl.fontMontserrat32())
         .color(lvgl.colorWhite())
-        .alignTo(ove.ffi.LV_ALIGN_TOP_MID, 0, 16);
+        .alignTo(lvgl.ALIGN_TOP_MID, 0, 16);
 
     counter_label = lvgl.Label.create(screen)
         .text("Count: 0")
         .font(lvgl.fontMontserrat14())
         .color(lvgl.colorWhite())
-        .alignTo(ove.ffi.LV_ALIGN_TOP_MID, 0, 64);
+        .alignTo(lvgl.ALIGN_TOP_MID, 0, 64);
 
     bar = lvgl.Bar.create(screen)
         .size(200, 16)
         .range(0, 100)
         .value(0)
-        .indicatorColor(lvgl.paletteMain(ove.ffi.LV_PALETTE_BLUE))
+        .indicatorColor(lvgl.paletteMain(lvgl.PALETTE_BLUE))
         .radius(8)
-        .alignTo(ove.ffi.LV_ALIGN_TOP_MID, 0, 96);
+        .alignTo(lvgl.ALIGN_TOP_MID, 0, 96);
 }
 
 fn uiTimerCallback() void {
