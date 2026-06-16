@@ -144,13 +144,29 @@ pub const Priority = enum(c_uint) {
     /// Highest priority; reserved for critical system tasks.
     critical = 7,
 };
-/// Scheduler-observable thread state.  Re-exported as the raw C enum
-/// (`c.ove_thread_state_t`); compare against the substrate's variants:
-/// `c.OVE_THREAD_STATE_RUNNING` (on CPU), `_READY` (runnable, waiting),
-/// `_BLOCKED` (waiting on sync primitive / delay), `_SUSPENDED` (explicit
-/// `Thread.suspend`), `_TERMINATED` (entry returned, not yet destroyed),
-/// or `_UNKNOWN`.
-pub const State = c.ove_thread_state_t;
+/// Scheduler-observable thread state, as reported by the active backend.
+///
+/// A real Zig `enum(c_uint)` (mirrors [`Priority`]) rather than a raw
+/// `c.ove_thread_state_t` alias, so a `switch` over it is exhaustive and
+/// callers compare against typed tags (`.running`) instead of bare C
+/// defines.  The tag type matches the substrate enum's representation, so
+/// the FFI conversion at the boundary is `@enumFromInt` — a no-op at the
+/// machine-code level.  The pin block below catches substrate drift at
+/// compile time.
+pub const State = enum(c_uint) {
+    /// Currently executing on the CPU.
+    running = 0,
+    /// Ready to run, waiting for the CPU.
+    ready = 1,
+    /// Blocked on a synchronisation object or delay.
+    blocked = 2,
+    /// Explicitly suspended via [`Thread.suspendThread`].
+    suspended = 3,
+    /// Entry function has returned; not yet destroyed.
+    terminated = 4,
+    /// State could not be determined.
+    unknown = 5,
+};
 
 comptime {
     // Pin enum values against the substrate's `OVE_PRIO_*` defines.
@@ -163,6 +179,14 @@ comptime {
     std.debug.assert(@intFromEnum(Priority.high) == c.OVE_PRIO_HIGH);
     std.debug.assert(@intFromEnum(Priority.realtime) == c.OVE_PRIO_REALTIME);
     std.debug.assert(@intFromEnum(Priority.critical) == c.OVE_PRIO_CRITICAL);
+
+    // Pin State values against the substrate's `OVE_THREAD_STATE_*` enum.
+    std.debug.assert(@intFromEnum(State.running) == c.OVE_THREAD_STATE_RUNNING);
+    std.debug.assert(@intFromEnum(State.ready) == c.OVE_THREAD_STATE_READY);
+    std.debug.assert(@intFromEnum(State.blocked) == c.OVE_THREAD_STATE_BLOCKED);
+    std.debug.assert(@intFromEnum(State.suspended) == c.OVE_THREAD_STATE_SUSPENDED);
+    std.debug.assert(@intFromEnum(State.terminated) == c.OVE_THREAD_STATE_TERMINATED);
+    std.debug.assert(@intFromEnum(State.unknown) == c.OVE_THREAD_STATE_UNKNOWN);
 }
 
 pub const Stats = struct {
@@ -541,7 +565,7 @@ pub fn Thread(comptime stack_size: usize) type {
         }
 
         pub fn getState(self: Self) State {
-            return c.ove_thread_get_state(self.handle);
+            return @enumFromInt(c.ove_thread_get_state(self.handle));
         }
 
         pub fn getRuntimeStats(self: Self) Error!Stats {
@@ -596,7 +620,7 @@ pub fn threadList(buf: []ThreadInfo) Error![]ThreadInfo {
     for (0..actual) |i| {
         buf[i] = .{
             .name = @ptrCast(raw[i].name),
-            .state = raw[i].state,
+            .state = @enumFromInt(raw[i].state),
             .priority = raw[i].priority,
             .stack_used = raw[i].stack_used,
         };

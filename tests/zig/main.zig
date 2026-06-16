@@ -838,8 +838,14 @@ fn testThreadGetStateRunning() !void {
     var t = try ove.Thread(4096).spawn(test_allocator, .{ .name = "stat", .priority = .normal }, threadEntry, .{});
     defer t.deinit();
     const state = t.getState();
-    // Should be one of Running, Ready, Blocked, or Terminated
-    _ = state;
+    // A freshly-spawned, un-suspended thread must be in one of the active
+    // states (the entry may already have returned -> terminated).  The
+    // typed `State` enum makes this check exhaustive — it must never be
+    // `.suspended` (we never suspended it) or `.unknown`.
+    try expect(switch (state) {
+        .running, .ready, .blocked, .terminated => true,
+        .suspended, .unknown => false,
+    });
 }
 
 var terminated_flag: bool = false;
@@ -854,6 +860,20 @@ fn testThreadGetStateTerminated() !void {
     ove.thread.sleepMs(100);
     try expect(terminated_flag);
     t.deinit();
+}
+
+fn testThreadList() !void {
+    // Exercises threadList's typed-`State` conversion path.  Enumeration
+    // may be unsupported on some backends; a clean error is acceptable —
+    // the point is that the `@enumFromInt` path compiles and runs without
+    // UB, and that every reported entry carries a valid `State` variant.
+    var buf: [16]ove.thread.ThreadInfo = undefined;
+    const list = ove.thread.threadList(&buf) catch return;
+    for (list) |info| {
+        switch (info.state) {
+            .running, .ready, .blocked, .suspended, .terminated, .unknown => {},
+        }
+    }
 }
 
 fn testThreadStackUsage() !void {
@@ -1895,6 +1915,7 @@ pub fn main() void {
         .{ .name = "set_priority", .func = testThreadSetPriority },
         .{ .name = "get_state_running", .func = testThreadGetStateRunning },
         .{ .name = "get_state_terminated", .func = testThreadGetStateTerminated },
+        .{ .name = "thread_list", .func = testThreadList },
         .{ .name = "stack_usage", .func = testThreadStackUsage },
         .{ .name = "suspend_resume", .func = testThreadSuspendResume },
         .{ .name = "runtime_stats", .func = testThreadRuntimeStats },
