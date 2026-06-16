@@ -5,6 +5,7 @@
 // This file is part of oveRTOS.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const ove = @import("ove");
 const Thread = ove.Thread;
 const w = &ove.log.writer;
@@ -1796,10 +1797,21 @@ fn testErrorsZeroIsOk() !void {
     try expect(try ove.err.fromCodeInt(42) == 42);
 }
 
-// `testErrorsUnknownNegativeMapsToUnknown` deleted in A2: `Error.Unknown`
-// is gone — `mapErrorCode` panics at the FFI boundary on an unrecognised
-// substrate code (programming bug, not a runtime category).  Testing the
-// panic path would need a panic-trap harness we don't run in this suite.
+fn testErrorsUnknownCodeGracefulInRelease() !void {
+    // Unknown-code policy (T6): an unrecognised negative code panics in
+    // `Debug` (loud, localised drift detection) but degrades to
+    // `Error.UnknownErrorCode` in release builds — never crashing a
+    // shipped binary, mirroring the Rust/C++ `Error::Unknown` policy.
+    //
+    // `make test-zig` runs this suite in both `ReleaseSafe` (graceful)
+    // and `Debug` (panicking).  We can only observe — and only safely
+    // invoke — the graceful path when panics are not Debug-fatal, so the
+    // Debug pass treats this as a no-op.  (`OVE_ERR_NOT_FOUND == -21` is
+    // the last pinned code, so `-22` is guaranteed unmapped.)
+    if (builtin.mode == .Debug) return;
+    try expectErrorIs(ove.err.fromCode(-22), error.UnknownErrorCode);
+    try expectErrorIs(ove.err.fromCodeInt(-22), error.UnknownErrorCode);
+}
 
 fn testErrorsFromCodeIntPositiveIsValue() !void {
     // fromCodeInt must pass non-negative codes through unchanged.  Random
@@ -2075,6 +2087,7 @@ pub fn main() void {
         .{ .name = "known_codes_round_trip", .func = testErrorsKnownCodesRoundTrip },
         .{ .name = "zero_is_ok", .func = testErrorsZeroIsOk },
         .{ .name = "from_code_int_positive_passthrough", .func = testErrorsFromCodeIntPositiveIsValue },
+        .{ .name = "unknown_code_graceful_in_release", .func = testErrorsUnknownCodeGracefulInRelease },
     });
 
     // Every primitive constructed above should have been deinit'd, so the

@@ -12,6 +12,7 @@
 //! their owning modules and inherit from this set.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("c.zig").raw;
 
 /// Error set representing all possible oveRTOS failure codes.
@@ -63,6 +64,14 @@ pub const Error = error{
     Inval,
     /// Requested key / entry / resource was not found.
     NotFound,
+    /// The C layer returned a negative code this binding does not
+    /// recognise — almost always because the substrate added a new
+    /// `OVE_ERR_*` that `mapErrorCode` has not caught up with.  In
+    /// `Debug` builds an unrecognised code panics at the FFI boundary
+    /// (loud, localised drift detection); release builds surface it as
+    /// this error instead of crashing a shipped binary — matching the
+    /// graceful `Error::Unknown` policy of the Rust/C++ bindings.
+    UnknownErrorCode,
 };
 
 /// Raw nanosecond sentinel meaning "block indefinitely" — the binding's
@@ -94,12 +103,18 @@ inline fn mapErrorCode(rc: c_int) Error {
         c.OVE_ERR_EOF => Error.Eof,
         c.OVE_ERR_INVAL => Error.Inval,
         c.OVE_ERR_NOT_FOUND => Error.NotFound,
-        // An unrecognised substrate code is a binding bug — the
-        // substrate added a new `OVE_ERR_*` and this map didn't catch
-        // up.  Panic at the FFI boundary so the failure is localised
-        // to the binding's pin set rather than slipping out as a
-        // runtime `Error.Unknown` callers would have to switch on.
-        else => std.debug.panic("ove binding: unrecognised C error code {d}", .{rc}),
+        // An unrecognised substrate code is almost always a binding bug —
+        // the substrate added a new `OVE_ERR_*` and this map didn't catch
+        // up.  In `Debug` builds, panic at the FFI boundary so the failure
+        // is localised to the binding's pin set during development/tests.
+        // Release builds must not hard-crash a shipped device on an
+        // unmapped code, so they degrade to `Error.UnknownErrorCode`
+        // (mirroring the Rust/C++ bindings' graceful `Error::Unknown`).
+        else => blk: {
+            if (builtin.mode == .Debug)
+                std.debug.panic("ove binding: unrecognised C error code {d}", .{rc});
+            break :blk Error.UnknownErrorCode;
+        },
     };
 }
 
