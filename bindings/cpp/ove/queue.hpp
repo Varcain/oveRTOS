@@ -189,12 +189,37 @@ template <typename T, size_t MaxItems = 0> class Queue
 	}
 
 	/**
-	 * @brief Non-blocking receive.
+	 * @brief Non-blocking receive (out-param form).
 	 * @return `true` on success, `false` if the queue was empty.
+	 *
+	 * @note Retained for back-compat and hot-path use where constructing
+	 *       a `Result` is undesirable.  New code should prefer the
+	 *       value-returning @ref try_receive() overload.
 	 */
 	[[nodiscard]] bool try_receive(T &out)
 	{
 		return ove_queue_receive(handle_, &out, 0) == OVE_OK;
+	}
+
+	/**
+	 * @brief Non-blocking receive returning the item by value.
+	 *
+	 * The idiomatic counterpart to the out-param @ref try_receive(T&):
+	 * dequeues without blocking and hands the item back inside a
+	 * `Result`, so the success value and the empty/error case share one
+	 * return channel.
+	 *
+	 * @return `Result<T>` holding the dequeued item on success;
+	 *         `unexpected` @ref Error::QueueEmpty when the queue was
+	 *         empty; `unexpected` with another @ref Error value on
+	 *         backend failure.
+	 */
+	[[nodiscard]] Result<T> try_receive() noexcept
+	{
+		T out;
+		if (const Result<void> r = from_rc(ove_queue_receive(handle_, &out, 0)); !r)
+			return std::unexpected(r.error());
+		return out;
 	}
 
 	/**

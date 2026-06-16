@@ -280,6 +280,27 @@ static void test_cpp_queue_trivially_copyable_constraint(void **state)
  * to `Result<void>` at compile time.  Forever (`send`/`receive`) and
  * immediate (`try_send`/`try_receive`) forms keep their existing
  * shapes. */
+static void test_cpp_queue_try_receive_value(void **state)
+{
+	(void)state;
+	ove::Queue<int, 4> q;
+
+	// Empty queue -> unexpected(QueueEmpty).
+	ove::Result<int> empty = q.try_receive();
+	assert_false(empty.has_value());
+	assert_true(empty.error() == ove::Error::QueueEmpty);
+
+	// Item present -> value by return.
+	int v = 55;
+	assert_true(q.try_send(v));
+	ove::Result<int> got = q.try_receive();
+	assert_true(got.has_value());
+	assert_int_equal(*got, 55);
+
+	// Drained again -> unexpected(QueueEmpty).
+	assert_false(q.try_receive().has_value());
+}
+
 static void test_cpp_queue_return_type_shape(void **state)
 {
 	(void)state;
@@ -299,6 +320,7 @@ static void test_cpp_queue_return_type_shape(void **state)
 		std::is_same_v<decltype(std::declval<Q>().receive(std::declval<int &>())), void>);
 	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive(std::declval<int &>())),
 				     bool>);
+	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive()), ove::Result<int>>);
 	static_assert(std::is_same_v<decltype(std::declval<Q>().try_receive_for(
 					     std::declval<int &>(), std::chrono::milliseconds{1})),
 				     ove::Result<void>>);
@@ -334,6 +356,7 @@ int test_cpp_queue_run(void)
 		cmocka_unit_test(test_cpp_queue_type_safety),
 		cmocka_unit_test(test_cpp_queue_not_copyable),
 		cmocka_unit_test(test_cpp_queue_trivially_copyable_constraint),
+		cmocka_unit_test(test_cpp_queue_try_receive_value),
 		cmocka_unit_test(test_cpp_queue_return_type_shape),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);

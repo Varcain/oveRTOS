@@ -24,6 +24,8 @@ mod test_condvar;
 #[cfg(not(zero_heap))]
 mod test_queue;
 #[cfg(not(zero_heap))]
+mod test_channel;
+#[cfg(not(zero_heap))]
 mod test_timer;
 #[cfg(not(zero_heap))]
 mod test_thread;
@@ -97,6 +99,7 @@ fn main() {
         ("Event", test_event::run),
         ("CondVar", test_condvar::run),
         ("Queue", test_queue::run),
+        ("Channel", test_channel::run),
         ("Timer", test_timer::run),
         ("Thread", test_thread::run),
         ("ThreadStop", test_thread_stop::run),

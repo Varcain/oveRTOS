@@ -15,12 +15,16 @@
 //!   [`Error::NetClosed`] if all receivers have been dropped.
 //! - `Receiver::recv` blocks until a producer sends, or returns
 //!   [`Error::NetClosed`] if all senders have been dropped.
-//! - `Sender::try_send` / `Receiver::try_recv` are non-blocking
-//!   variants: they return [`Error::Timeout`] when the queue is
-//!   momentarily full/empty, or [`Error::NetClosed`] once the peer half
-//!   (all receivers / all senders) has been dropped.  (The underlying
-//!   [`crate::Queue`] reports full/empty as `Error::QueueFull`/
-//!   `Error::QueueEmpty`; the channel maps those to the above.)
+//! - `Sender::try_send` is the non-blocking send: it returns
+//!   [`Error::Timeout`] when the queue is momentarily full, or
+//!   [`Error::NetClosed`] once all receivers have been dropped.  (The
+//!   underlying [`crate::Queue`] reports full as `Error::QueueFull`; the
+//!   channel maps that to the above.)
+//! - `Receiver::try_recv` is the non-blocking receive: it returns
+//!   [`TryRecvError::Empty`] when the queue is momentarily empty but
+//!   senders remain, or [`TryRecvError::Disconnected`] once the queue is
+//!   empty *and* all senders have been dropped — matching
+//!   `std::sync::mpsc::Receiver::try_recv`.
 //!
 //! Variants:
 //!
@@ -43,6 +47,38 @@ use crate::queue::Queue;
 
 #[cfg(all(feature = "alloc", not(zero_heap)))]
 extern crate alloc;
+
+/// Error returned by [`Receiver::try_recv`].
+///
+/// Mirrors [`std::sync::mpsc::TryRecvError`]: distinguishes a channel
+/// that is *momentarily* empty (an item may still arrive) from one that
+/// is empty *and* permanently closed (every [`Sender`] has been dropped,
+/// so no item ever will).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryRecvError {
+    /// The channel is currently empty, but senders are still alive — an
+    /// item may become available later.
+    Empty,
+    /// The channel is empty *and* every [`Sender`] has been dropped, so
+    /// no further item can ever arrive.
+    Disconnected,
+}
+
+impl core::fmt::Display for TryRecvError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            TryRecvError::Empty => write!(f, "receiving on an empty channel"),
+            TryRecvError::Disconnected => {
+                write!(f, "receiving on an empty and disconnected channel")
+            }
+        }
+    }
+}
+
+// `core::error::Error` is stable since Rust 1.81 (< our 1.85 MSRV) and is
+// re-exported as `std::error::Error`, so this single impl covers both
+// `no_std` and `std` consumers.
+impl core::error::Error for TryRecvError {}
 
 /// Shared refcount + queue handle for the heap-mode allocation.
 #[cfg(all(feature = "alloc", not(zero_heap)))]
@@ -283,20 +319,24 @@ impl<T: Copy + 'static, const N: usize> Receiver<T, N> {
         queue_of_rx(&self.state).recv()
     }
 
-    /// Non-blocking receive. Returns [`Error::Timeout`] when empty
-    /// and senders are still alive; [`Error::NetClosed`] when empty *and*
-    /// all senders are gone.
-    pub fn try_recv(&self) -> Result<T> {
-        match queue_of_rx(&self.state).try_recv() {
-            Ok(v) => Ok(v),
-            Err(Error::QueueEmpty | Error::Timeout) => {
-                if tx_count_of_rx(&self.state).load(Ordering::Acquire) == 0 {
-                    Err(Error::NetClosed)
-                } else {
-                    Err(Error::Timeout)
-                }
-            }
-            Err(e) => Err(e),
+    /// Non-blocking receive. Returns the item if one is ready, otherwise
+    /// [`TryRecvError::Empty`] when senders are still alive, or
+    /// [`TryRecvError::Disconnected`] when the channel is empty *and*
+    /// every [`Sender`] has been dropped.  Mirrors
+    /// [`std::sync::mpsc::Receiver::try_recv`].
+    pub fn try_recv(&self) -> core::result::Result<T, TryRecvError> {
+        // Fast path: a successful non-blocking read wins regardless of
+        // sender liveness (mirrors `recv`).
+        if let Ok(v) = queue_of_rx(&self.state).try_recv() {
+            return Ok(v);
+        }
+        // Empty now (QueueEmpty / Timeout / WouldBlock all mean "nothing
+        // ready"): disambiguate momentarily-empty from disconnected by the
+        // live-sender count.
+        if tx_count_of_rx(&self.state).load(Ordering::Acquire) == 0 {
+            Err(TryRecvError::Disconnected)
+        } else {
+            Err(TryRecvError::Empty)
         }
     }
 
