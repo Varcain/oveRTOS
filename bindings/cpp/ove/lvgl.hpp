@@ -114,6 +114,42 @@ class LvglGuard
 };
 
 /* ================================================================== */
+/*  Lifecycle — init / tick / handler                                 */
+/* ================================================================== */
+
+/**
+ * @brief Initialise the LVGL display integration (wraps `ove_lvgl_init`).
+ * @return `OVE_OK` on success, otherwise a negative `OVE_ERR_*` code.
+ *
+ * Call once at startup before creating any widgets.  Returns the raw rc
+ * (not `Result`) so this header stays usable under C++20 — lift it with
+ * `ove::from_rc(ove::lvgl::init())` where the `std::expected` API is wanted.
+ */
+[[nodiscard]] inline int init() noexcept
+{
+	return ove_lvgl_init();
+}
+
+/**
+ * @brief Advance LVGL's internal tick by @p ms milliseconds (wraps
+ *        `ove_lvgl_tick`).  Call from the LVGL task or while holding a
+ *        @ref LvglGuard.
+ */
+inline void tick(uint32_t ms) noexcept
+{
+	ove_lvgl_tick(ms);
+}
+
+/**
+ * @brief Run one LVGL handler pass (wraps `ove_lvgl_handler`).  Call from
+ *        the LVGL task or while holding a @ref LvglGuard.
+ */
+inline void handler() noexcept
+{
+	ove_lvgl_handler();
+}
+
+/* ================================================================== */
 /*  ObjectView — non-owning lv_obj_t* wrapper                         */
 /* ================================================================== */
 

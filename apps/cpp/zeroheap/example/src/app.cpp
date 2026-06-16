@@ -41,9 +41,9 @@ namespace lv = ove::lvgl;
 
 /* --- Forward declarations for thread entry points --- */
 
-static void producer_thread(void *arg);
-static void consumer_thread(void *arg);
-static void graphics_thread(void *arg);
+static void producer_thread(ove::stop_token st);
+static void consumer_thread(ove::stop_token st);
+static void graphics_thread(ove::stop_token st);
 static void ui_timer_cb(ove_timer_t, void *);
 
 /* --- File-scope statically-allocated kernel objects ---
@@ -62,23 +62,28 @@ static char count_buf[32] = "Count: 0"; /* pinned via lv::Label::text_static */
 
 /* Timer + threads — wrappers embed storage in zero-heap mode. */
 static ove::Timer ui_timer(ui_timer_cb, nullptr, 200);
-static ove::Thread<4096> gfx_thread(graphics_thread, nullptr, OVE_PRIO_HIGH, "graphics");
-static ove::Thread<4096> prod_thread(producer_thread, nullptr, OVE_PRIO_NORMAL, "producer");
-static ove::Thread<4096> cons_thread(consumer_thread, nullptr, OVE_PRIO_NORMAL, "consumer");
+static ove::Thread<4096> gfx_thread(graphics_thread, OVE_PRIO_HIGH, "graphics");
+static ove::Thread<4096> prod_thread(producer_thread, OVE_PRIO_NORMAL, "producer");
+static ove::Thread<4096> cons_thread(consumer_thread, OVE_PRIO_NORMAL, "consumer");
 
 /* --- Producer thread: generates incrementing counter values --- */
 
-static void producer_thread(void *arg)
+static void producer_thread(ove::stop_token st)
 {
-	(void)arg;
 	uint32_t count = 0;
 
 	OVE_LOG_INF("Producer started");
 
-	while (true) {
+	while (!st.stop_requested()) {
 		++count;
-		if (!counter_queue.try_send_for(count, std::chrono::milliseconds{1000})) {
-			OVE_LOG_WRN("Producer: queue full, dropped %u", count);
+		if (auto r = counter_queue.try_send_for(count, std::chrono::milliseconds{1000});
+		    !r) {
+			if (r.error() == ove::Error::QueueFull) {
+				OVE_LOG_WRN("Producer: queue full, dropped %u", count);
+			} else {
+				OVE_LOG_WRN("Producer: send failed (%d), dropped %u",
+					    static_cast<int>(r.error()), count);
+			}
 		}
 		ove::this_thread::sleep_ms(500);
 	}
@@ -86,15 +91,18 @@ static void producer_thread(void *arg)
 
 /* --- Consumer thread: reads values, updates shared state --- */
 
-static void consumer_thread(void *arg)
+static void consumer_thread(ove::stop_token st)
 {
-	(void)arg;
 	uint32_t val = 0;
 
 	OVE_LOG_INF("Consumer started");
 
-	while (true) {
-		counter_queue.receive(val);
+	while (!st.stop_requested()) {
+		/* Bounded receive so the loop re-checks the stop token instead
+		 * of blocking forever (clean cooperative shutdown). */
+		if (!counter_queue.try_receive_for(val, std::chrono::milliseconds{500})) {
+			continue;
+		}
 		{
 			ove::LockGuard lock(value_mutex);
 			last_value = val;
@@ -169,23 +177,19 @@ static void ui_timer_cb(ove_timer_t, void *)
 		bar.value(val % 101, LV_ANIM_ON);
 }
 
-static void graphics_thread(void *arg)
+static void graphics_thread(ove::stop_token st)
 {
-	(void)arg;
+	uint64_t last_us = ove::time::get_us().value_or(0);
 
-	uint64_t last_us = 0;
-	ove_time_get_us(&last_us);
-
-	while (true) {
-		uint64_t now_us = 0;
-		ove_time_get_us(&now_us);
+	while (!st.stop_requested()) {
+		uint64_t now_us = ove::time::get_us().value_or(last_us);
 		uint32_t elapsed_ms = static_cast<uint32_t>((now_us - last_us) / 1000);
 		last_us = now_us;
 
 		{
 			lv::LvglGuard guard;
-			ove_lvgl_tick(elapsed_ms);
-			ove_lvgl_handler();
+			lv::tick(elapsed_ms);
+			lv::handler();
 		}
 		ove::this_thread::sleep_ms(33);
 	}
@@ -200,9 +204,8 @@ OVE_MAIN()
 	/* All ove::* wrappers are already constructed by static init.  No
 	 * heap allocations from this point on. */
 
-	int ret = ove_lvgl_init();
-	if (ret != OVE_OK) {
-		OVE_LOG_ERR("Failed to initialize LVGL: %d", ret);
+	if (int rc = lv::init(); rc != OVE_OK) {
+		OVE_LOG_ERR("Failed to initialize LVGL: %d", rc);
 		return;
 	}
 
