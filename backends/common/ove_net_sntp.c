@@ -120,7 +120,10 @@ int ove_sntp_sync(const ove_sntp_config_t *cfg)
 	 * offset = ntp_time - local_midpoint
 	 */
 	uint64_t local_mid_us = t1_us + (t4_us - t1_us) / 2;
-	s_offset_us = (int64_t)(ntp_us - local_mid_us);
+	/* Cast each operand to signed BEFORE subtracting: a uint64 subtraction
+	 * wraps when the local clock is ahead of NTP, turning a negative offset
+	 * into a huge positive one. */
+	s_offset_us = (int64_t)ntp_us - (int64_t)local_mid_us;
 	s_synced = 1;
 
 	return OVE_OK;
