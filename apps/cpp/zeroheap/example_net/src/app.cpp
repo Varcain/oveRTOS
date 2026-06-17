@@ -23,6 +23,7 @@
 #include <ove/ove.hpp>
 #include <ove/net_sntp.hpp>
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 
 using namespace std::chrono_literals;
@@ -256,8 +257,8 @@ static void test_http()
 	}
 	PASS("http_client_init");
 
-	TEST("http_get http://example.com/");
-	if (auto r = http_client.get("http://example.com/"); r) {
+	TEST("http_get " CONFIG_OVE_EXAMPLE_NET_HTTP_URL);
+	if (auto r = http_client.get(CONFIG_OVE_EXAMPLE_NET_HTTP_URL); r) {
 		OVE_LOG_INF("  -> status %d, body %u bytes", r->status(), (unsigned)r->body_len());
 		if (r->status() == 200 && r->body_len() > 0) {
 			PASS("http_get (200 OK)");
@@ -314,8 +315,8 @@ static void test_sntp()
 {
 	OVE_LOG_INF("=== SNTP ===");
 
-	TEST("sntp_sync pool.ntp.org");
-	ove::sntp::Config sntp_cfg{"pool.ntp.org", OVE_SEC(5)};
+	TEST("sntp_sync " CONFIG_OVE_EXAMPLE_NET_SNTP_SERVER);
+	ove::sntp::Config sntp_cfg{CONFIG_OVE_EXAMPLE_NET_SNTP_SERVER, OVE_SEC(5)};
 	if (auto r = ove::sntp::sync(sntp_cfg); r) {
 		PASS("sntp_sync");
 		TEST("sntp_get_utc");
@@ -346,11 +347,11 @@ static void test_mqtt()
 	}
 	PASS("mqtt_client_init");
 
-	TEST("mqtt_connect test.mosquitto.org:1883");
+	TEST("mqtt_connect " CONFIG_OVE_EXAMPLE_NET_MQTT_HOST);
 	ove::mqtt::Config mqtt_cfg{
-		.host = "test.mosquitto.org",
-		.port = 1883,
-		.client_id = "overtos-test-zh",
+		.host = CONFIG_OVE_EXAMPLE_NET_MQTT_HOST,
+		.port = CONFIG_OVE_EXAMPLE_NET_MQTT_PORT,
+		.client_id = CONFIG_OVE_EXAMPLE_NET_MQTT_CLIENT_ID,
 		.keep_alive_s = 30,
 	};
 
@@ -371,8 +372,16 @@ static void test_mqtt()
 	}
 	PASS("mqtt_connect");
 
-	TEST("mqtt_subscribe overtos/test");
-	if (auto r = mqtt_client.subscribe("overtos/test"); r) {
+	/* Build a per-run-unique topic so concurrent runs against the shared
+	 * public broker don't collide on the same topic. */
+	char mqtt_topic[96];
+	uint64_t now_us = 0;
+	ove_time_get_us(&now_us);
+	std::snprintf(mqtt_topic, sizeof(mqtt_topic), "%s/%llu", CONFIG_OVE_EXAMPLE_NET_MQTT_TOPIC,
+		      (unsigned long long)(now_us % 1000000ULL));
+
+	TEST("mqtt_subscribe");
+	if (auto r = mqtt_client.subscribe(mqtt_topic); r) {
 		PASS("mqtt_subscribe");
 	} else {
 		FAIL("mqtt_subscribe", static_cast<int>(r.error()));
@@ -380,7 +389,7 @@ static void test_mqtt()
 
 	TEST("mqtt_publish QoS0");
 	const char *msg0 = "hello-qos0";
-	if (auto r = mqtt_client.publish("overtos/test", msg0, std::strlen(msg0)); r) {
+	if (auto r = mqtt_client.publish(mqtt_topic, msg0, std::strlen(msg0)); r) {
 		PASS("mqtt_publish QoS0");
 	} else {
 		FAIL("mqtt_publish QoS0", static_cast<int>(r.error()));
@@ -388,7 +397,7 @@ static void test_mqtt()
 
 	TEST("mqtt_publish QoS1");
 	const char *msg1 = "hello-qos1";
-	if (auto r = mqtt_client.publish("overtos/test", std::string_view{msg1},
+	if (auto r = mqtt_client.publish(mqtt_topic, std::string_view{msg1},
 					 ove::mqtt::Qos::AtLeastOnce);
 	    r) {
 		PASS("mqtt_publish QoS1 (PUBACK received)");
@@ -412,7 +421,7 @@ static void test_mqtt()
 	}
 
 	TEST("mqtt_unsubscribe");
-	if (auto r = mqtt_client.unsubscribe("overtos/test"); r) {
+	if (auto r = mqtt_client.unsubscribe(mqtt_topic); r) {
 		PASS("mqtt_unsubscribe");
 	} else if (r.error() == ove::Error::NetClosed || r.error() == ove::Error::NetReset) {
 		OVE_LOG_WRN("  connection closed by broker (%d)", static_cast<int>(r.error()));
@@ -452,10 +461,7 @@ static void net_thread(void *)
 		OVE_LOG_ERR("  %d TEST(S) FAILED", fail_count);
 	}
 
-	uint16_t httpd_port = 80;
-#ifdef CONFIG_OVE_RTOS_POSIX
-	httpd_port = 8080;
-#endif
+	uint16_t httpd_port = CONFIG_OVE_EXAMPLE_NET_HTTPD_PORT;
 	OVE_LOG_INF("Starting HTTP server on port %u...", (unsigned)httpd_port);
 	ove::httpd::Config httpd_cfg{.port = httpd_port,
 				     .max_body_size = CONFIG_OVE_NET_HTTPD_MAX_BODY};

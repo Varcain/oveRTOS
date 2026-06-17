@@ -274,8 +274,9 @@ fn testHttp() void {
     defer client.deinit();
     passCase("http_client_init");
 
-    testCase("http_get http://example.com/");
-    if (client.get("http://example.com/")) |resp_| {
+    const http_url = std.mem.span(@as([*:0]const u8, ove.ffi.CONFIG_OVE_EXAMPLE_NET_HTTP_URL));
+    testCase("http_get");
+    if (client.get(http_url)) |resp_| {
         var resp = resp_;
         defer resp.destroy();
         std.log.info("  -> status {d}, body {d} bytes", .{ resp.status(), resp.body().len });
@@ -339,9 +340,9 @@ fn testHttp() void {
 fn testSntp() void {
     std.log.info("=== SNTP ===", .{});
 
-    testCase("sntp_sync pool.ntp.org");
+    testCase("sntp_sync");
     ove.net_sntp.sync(.{
-        .server = "pool.ntp.org",
+        .server = ove.ffi.CONFIG_OVE_EXAMPLE_NET_SNTP_SERVER,
         .timeout_ns = 5 * std.time.ns_per_s,
     }) catch |e| {
         failCase("sntp_sync", errCode(e));
@@ -385,11 +386,11 @@ fn testMqtt() void {
     defer mqtt.deinit();
     passCase("mqtt_client_init");
 
-    testCase("mqtt_connect test.mosquitto.org:1883");
+    testCase("mqtt_connect");
     mqtt.connect(.{
-        .host = "test.mosquitto.org",
-        .port = 1883,
-        .client_id = "overtos-test-zh",
+        .host = std.mem.span(@as([*:0]const u8, ove.ffi.CONFIG_OVE_EXAMPLE_NET_MQTT_HOST)),
+        .port = @intCast(ove.ffi.CONFIG_OVE_EXAMPLE_NET_MQTT_PORT),
+        .client_id = std.mem.span(@as([*:0]const u8, ove.ffi.CONFIG_OVE_EXAMPLE_NET_MQTT_CLIENT_ID)),
         .keep_alive_s = 30,
     }, onMqttMessage) catch |e| {
         failCase("mqtt_connect", errCode(e));
@@ -397,22 +398,31 @@ fn testMqtt() void {
     };
     passCase("mqtt_connect");
 
-    testCase("mqtt_subscribe overtos/test");
-    if (mqtt.subscribe("overtos/test", .at_most_once)) |_| {
+    // Build a per-run-unique topic so concurrent runs against the shared
+    // public broker don't collide on the same topic.
+    var topic_buf: [96]u8 = undefined;
+    const now_us = ove.time.getUs() catch 0;
+    const mqtt_topic = std.fmt.bufPrintZ(&topic_buf, "{s}/{d}", .{
+        std.mem.span(@as([*:0]const u8, ove.ffi.CONFIG_OVE_EXAMPLE_NET_MQTT_TOPIC)),
+        now_us % 1_000_000,
+    }) catch unreachable;
+
+    testCase("mqtt_subscribe");
+    if (mqtt.subscribe(mqtt_topic, .at_most_once)) |_| {
         passCase("mqtt_subscribe");
     } else |e| {
         failCase("mqtt_subscribe", errCode(e));
     }
 
     testCase("mqtt_publish QoS0");
-    if (mqtt.publish("overtos/test", "hello-qos0", .at_most_once)) |_| {
+    if (mqtt.publish(mqtt_topic, "hello-qos0", .at_most_once)) |_| {
         passCase("mqtt_publish QoS0");
     } else |e| {
         failCase("mqtt_publish QoS0", errCode(e));
     }
 
     testCase("mqtt_publish QoS1");
-    if (mqtt.publish("overtos/test", "hello-qos1", .at_least_once)) |_| {
+    if (mqtt.publish(mqtt_topic, "hello-qos1", .at_least_once)) |_| {
         passCase("mqtt_publish QoS1 (PUBACK received)");
     } else |e| {
         failCase("mqtt_publish QoS1", errCode(e));
@@ -434,7 +444,7 @@ fn testMqtt() void {
     }
 
     testCase("mqtt_unsubscribe");
-    mqtt.unsubscribe("overtos/test") catch |e| {
+    mqtt.unsubscribe(mqtt_topic) catch |e| {
         if (e == error.NetClosed or e == error.NetReset) {
             std.log.warn("  connection closed by broker ({d})", .{errCode(e)});
             passCase("mqtt_unsubscribe (connection closed, acceptable)");
@@ -476,7 +486,7 @@ fn netThread() void {
         std.log.err("  {d} TEST(S) FAILED", .{fail_count});
     }
 
-    const httpd_port: u16 = if (is_posix) 8080 else 80;
+    const httpd_port: u16 = @intCast(ove.ffi.CONFIG_OVE_EXAMPLE_NET_HTTPD_PORT);
     std.log.info("Starting HTTP server on port {d}...", .{httpd_port});
     ove.net_httpd.start(.{ .port = httpd_port, .max_body_size = 1024 }) catch |e| {
         std.log.err("HTTP server failed to start: {d}", .{errCode(e)});

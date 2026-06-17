@@ -10,3 +10,25 @@ defconfig:
   - CONFIG_OVE_NET_MQTT=y
   - CONFIG_OVE_NET_HTTPD=y
   - CONFIG_OVE_NET_SNTP=y
+kconfig: |
+  config OVE_EXAMPLE_NET_HTTP_URL
+      string "example_net: HTTP GET URL"
+      default "http://example.com/"
+  config OVE_EXAMPLE_NET_SNTP_SERVER
+      string "example_net: SNTP server"
+      default "pool.ntp.org"
+  config OVE_EXAMPLE_NET_MQTT_HOST
+      string "example_net: MQTT broker host"
+      default "test.mosquitto.org"
+  config OVE_EXAMPLE_NET_MQTT_PORT
+      int "example_net: MQTT broker port"
+      default 1883
+  config OVE_EXAMPLE_NET_MQTT_CLIENT_ID
+      string "example_net: MQTT client id"
+      default "overtos-test"
+  config OVE_EXAMPLE_NET_MQTT_TOPIC
+      string "example_net: MQTT topic prefix"
+      default "overtos/test"
+  config OVE_EXAMPLE_NET_HTTPD_PORT
+      int "example_net: embedded HTTPD port"
+      default 8080

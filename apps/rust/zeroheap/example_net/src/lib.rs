@@ -21,6 +21,18 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 use ove::{Priority, Thread};
 
+/// Copy a string into `buf` as a NUL-terminated C string and borrow it as a
+/// `&CStr`. Bridges `ove::config` string consts (`&str`) to the net APIs
+/// (which take `&CStr`) without heap allocation. `buf` must outlive the
+/// returned `&CStr` and hold at least `s.len() + 1` bytes.
+fn cfg_cstr<'a>(buf: &'a mut [u8], s: &str) -> &'a core::ffi::CStr {
+    use core::fmt::Write;
+    let mut fb = ove::FmtBuf::new(buf);
+    let _ = write!(fb, "{}", s);
+    let pos = fb.as_bytes().len();
+    drop(fb);
+    core::ffi::CStr::from_bytes_with_nul(&buf[..=pos]).unwrap()
+}
 
 // ---------------------------------------------------------------------------
 // Test counters
@@ -52,8 +64,6 @@ fn fail(name: &str, err: i32) {
 // ---------------------------------------------------------------------------
 
 const UDP_MSG: &[u8] = b"oveRTOS UDP test";
-const MQTT_TOPIC: &core::ffi::CStr = c"overtos/test";
-const MQTT_CLIENT_ID: &core::ffi::CStr = c"overtos-test-zh";
 const HTTP_POST_BODY: &[u8] = b"{\"test\":\"overtos\"}";
 const HTTP_PUT_BODY: &[u8] = b"{\"update\":\"value\"}";
 
@@ -298,8 +308,10 @@ fn test_http() {
     let client = ove::http_client!();
     pass("http_client_init");
 
-    test("http_get http://example.com/");
-    match client.get(c"http://example.com/") {
+    test("http_get");
+    let mut url_buf = [0u8; 128];
+    let url = cfg_cstr(&mut url_buf, ove::config::CONFIG_OVE_EXAMPLE_NET_HTTP_URL);
+    match client.get(url) {
         Ok(resp) => {
             let st = resp.status();
             let blen = resp.body().len();
@@ -376,9 +388,13 @@ fn test_http() {
 fn test_sntp() {
     log::info!("=== SNTP ===");
 
-    test("sntp_sync pool.ntp.org");
+    test("sntp_sync");
+    let mut srv_buf = [0u8; 64];
     let cfg = ove::net_sntp::Config {
-        server: c"pool.ntp.org",
+        server: cfg_cstr(
+            &mut srv_buf,
+            ove::config::CONFIG_OVE_EXAMPLE_NET_SNTP_SERVER,
+        ),
         timeout: core::time::Duration::from_secs(5),
     };
     match ove::net_sntp::sync(&cfg) {
@@ -419,11 +435,18 @@ fn test_mqtt() {
     let mut mqtt = ove::mqtt_client!();
     pass("mqtt_client_init");
 
-    test("mqtt_connect test.mosquitto.org:1883");
+    test("mqtt_connect");
+    let mut host_buf = [0u8; 128];
+    let mut cid_buf = [0u8; 64];
+    let host = cfg_cstr(&mut host_buf, ove::config::CONFIG_OVE_EXAMPLE_NET_MQTT_HOST);
+    let client_id = cfg_cstr(
+        &mut cid_buf,
+        ove::config::CONFIG_OVE_EXAMPLE_NET_MQTT_CLIENT_ID,
+    );
     let cfg = ove::net_mqtt::Config {
-        host: c"test.mosquitto.org",
-        port: 1883,
-        client_id: MQTT_CLIENT_ID,
+        host,
+        port: ove::config::CONFIG_OVE_EXAMPLE_NET_MQTT_PORT as u16,
+        client_id,
         username: None,
         password: None,
         keep_alive_s: 30,
@@ -437,20 +460,36 @@ fn test_mqtt() {
         }
     }
 
-    test("mqtt_subscribe overtos/test");
-    match mqtt.subscribe(MQTT_TOPIC, ove::net_mqtt::Qos::AtMostOnce) {
+    // Build a unique topic once so its backing buffer outlives every use.
+    let mut topic_buf = [0u8; 96];
+    let mqtt_topic = {
+        use core::fmt::Write;
+        let mut fb = ove::FmtBuf::new(&mut topic_buf);
+        let _ = write!(
+            fb,
+            "{}/{}",
+            ove::config::CONFIG_OVE_EXAMPLE_NET_MQTT_TOPIC,
+            ove::time::get_us_unchecked() % 1_000_000
+        );
+        let pos = fb.as_bytes().len();
+        drop(fb);
+        core::ffi::CStr::from_bytes_with_nul(&topic_buf[..=pos]).unwrap()
+    };
+
+    test("mqtt_subscribe");
+    match mqtt.subscribe(mqtt_topic, ove::net_mqtt::Qos::AtMostOnce) {
         Ok(()) => pass("mqtt_subscribe"),
         Err(e) => fail("mqtt_subscribe", err_code(e)),
     }
 
     test("mqtt_publish QoS0");
-    match mqtt.publish(MQTT_TOPIC, b"hello-qos0", ove::net_mqtt::Qos::AtMostOnce) {
+    match mqtt.publish(mqtt_topic, b"hello-qos0", ove::net_mqtt::Qos::AtMostOnce) {
         Ok(()) => pass("mqtt_publish QoS0"),
         Err(e) => fail("mqtt_publish QoS0", err_code(e)),
     }
 
     test("mqtt_publish QoS1");
-    match mqtt.publish(MQTT_TOPIC, b"hello-qos1", ove::net_mqtt::Qos::AtLeastOnce) {
+    match mqtt.publish(mqtt_topic, b"hello-qos1", ove::net_mqtt::Qos::AtLeastOnce) {
         Ok(()) => pass("mqtt_publish QoS1 (PUBACK received)"),
         Err(e) => fail("mqtt_publish QoS1", err_code(e)),
     }
@@ -473,7 +512,7 @@ fn test_mqtt() {
     }
 
     test("mqtt_unsubscribe");
-    match mqtt.unsubscribe(MQTT_TOPIC) {
+    match mqtt.unsubscribe(mqtt_topic) {
         Ok(()) => pass("mqtt_unsubscribe"),
         Err(e @ ove::Error::NetClosed) | Err(e @ ove::Error::NetReset) => {
             log::warn!("  connection closed by broker ({})", err_code(e));
@@ -517,7 +556,7 @@ fn net_thread() {
         log::error!("  {} TEST(S) FAILED", failed);
     }
 
-    let port: u16 = if cfg!(rtos_posix) { 8080 } else { 80 };
+    let port: u16 = ove::config::CONFIG_OVE_EXAMPLE_NET_HTTPD_PORT as u16;
     log::info!("Starting HTTP server on port {}...", port);
     match ove::net_httpd::start(port, 1024) {
         Ok(()) => {

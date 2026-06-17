@@ -267,9 +267,9 @@ static void test_http(void)
 	 * into the client's CONFIG_OVE_NET_HTTP_MAX_RESPONSE byte buffer
 	 * and are valid only until the next request. */
 
-	TEST("http_get http://example.com/");
+	TEST("http_get " CONFIG_OVE_EXAMPLE_NET_HTTP_URL);
 	ove_http_response_t resp;
-	int ret = ove_http_get(g_http, "http://example.com/", &resp);
+	int ret = ove_http_get(g_http, CONFIG_OVE_EXAMPLE_NET_HTTP_URL, &resp);
 	if (ret == OVE_OK) {
 		OVE_LOG_INF("  -> status %d, body %u bytes", resp.status, (unsigned)resp.body_len);
 		if (resp.status == 200 && resp.body_len > 0) {
@@ -332,9 +332,9 @@ static void test_sntp(void)
 {
 	OVE_LOG_INF("=== SNTP ===");
 
-	TEST("sntp_sync pool.ntp.org");
+	TEST("sntp_sync " CONFIG_OVE_EXAMPLE_NET_SNTP_SERVER);
 	ove_sntp_config_t sntp_cfg = {
-		.server = "pool.ntp.org",
+		.server = CONFIG_OVE_EXAMPLE_NET_SNTP_SERVER,
 		.timeout_ns = OVE_SEC(5),
 	};
 	int ret = ove_sntp_sync(&sntp_cfg);
@@ -376,11 +376,11 @@ static void test_mqtt(void)
 {
 	OVE_LOG_INF("=== MQTT Client ===");
 
-	TEST("mqtt_connect test.mosquitto.org:1883");
+	TEST("mqtt_connect " CONFIG_OVE_EXAMPLE_NET_MQTT_HOST);
 	ove_mqtt_config_t mqtt_cfg = {
-		.host = "test.mosquitto.org",
-		.port = 1883,
-		.client_id = "overtos-test-zh",
+		.host = CONFIG_OVE_EXAMPLE_NET_MQTT_HOST,
+		.port = CONFIG_OVE_EXAMPLE_NET_MQTT_PORT,
+		.client_id = CONFIG_OVE_EXAMPLE_NET_MQTT_CLIENT_ID,
 		.keep_alive_s = 30,
 		.on_message = mqtt_on_message,
 	};
@@ -391,8 +391,16 @@ static void test_mqtt(void)
 	}
 	PASS("mqtt_connect");
 
-	TEST("mqtt_subscribe overtos/test");
-	ret = ove_mqtt_subscribe(g_mqtt, "overtos/test", OVE_MQTT_QOS0);
+	/* Build a per-run-unique topic so concurrent runs against the shared
+	 * public broker don't collide on the same topic. */
+	char mqtt_topic[96];
+	uint64_t now_us = 0;
+	ove_time_get_us(&now_us);
+	snprintf(mqtt_topic, sizeof(mqtt_topic), "%s/%llu", CONFIG_OVE_EXAMPLE_NET_MQTT_TOPIC,
+		 (unsigned long long)(now_us % 1000000ULL));
+
+	TEST("mqtt_subscribe");
+	ret = ove_mqtt_subscribe(g_mqtt, mqtt_topic, OVE_MQTT_QOS0);
 	if (ret == OVE_OK) {
 		PASS("mqtt_subscribe");
 	} else {
@@ -401,7 +409,7 @@ static void test_mqtt(void)
 
 	TEST("mqtt_publish QoS0");
 	const char *msg0 = "hello-qos0";
-	ret = ove_mqtt_publish(g_mqtt, "overtos/test", msg0, strlen(msg0), OVE_MQTT_QOS0);
+	ret = ove_mqtt_publish(g_mqtt, mqtt_topic, msg0, strlen(msg0), OVE_MQTT_QOS0);
 	if (ret == OVE_OK) {
 		PASS("mqtt_publish QoS0");
 	} else {
@@ -410,7 +418,7 @@ static void test_mqtt(void)
 
 	TEST("mqtt_publish QoS1");
 	const char *msg1 = "hello-qos1";
-	ret = ove_mqtt_publish(g_mqtt, "overtos/test", msg1, strlen(msg1), OVE_MQTT_QOS1);
+	ret = ove_mqtt_publish(g_mqtt, mqtt_topic, msg1, strlen(msg1), OVE_MQTT_QOS1);
 	if (ret == OVE_OK) {
 		PASS("mqtt_publish QoS1 (PUBACK received)");
 	} else {
@@ -433,7 +441,7 @@ static void test_mqtt(void)
 	}
 
 	TEST("mqtt_unsubscribe");
-	ret = ove_mqtt_unsubscribe(g_mqtt, "overtos/test");
+	ret = ove_mqtt_unsubscribe(g_mqtt, mqtt_topic);
 	if (ret == OVE_OK) {
 		PASS("mqtt_unsubscribe");
 	} else if (ret == OVE_ERR_NET_CLOSED || ret == OVE_ERR_NET_RESET) {
@@ -476,10 +484,7 @@ static void net_thread(void *arg)
 		OVE_LOG_ERR("  %d TEST(S) FAILED", fail_count);
 	}
 
-	uint16_t httpd_port = 80;
-#ifdef CONFIG_OVE_RTOS_POSIX
-	httpd_port = 8080;
-#endif
+	uint16_t httpd_port = CONFIG_OVE_EXAMPLE_NET_HTTPD_PORT;
 	OVE_LOG_INF("Starting HTTP server on port %u...", (unsigned)httpd_port);
 	ove_httpd_config_t httpd_cfg = {.port = httpd_port,
 					.max_body_size = CONFIG_OVE_NET_HTTPD_MAX_BODY};
