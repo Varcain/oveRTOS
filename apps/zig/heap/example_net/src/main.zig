@@ -172,16 +172,11 @@ fn testTcp() void {
     // Send HTTP request
     const req = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
     testCase("socket_send");
-    const sent = sock.send(req) catch |e| {
+    sock.sendAll(req) catch |e| {
         failCase("socket_send", errCode(e));
         return;
     };
-    if (sent == req.len) {
-        passCase("socket_send");
-    } else {
-        failCase("socket_send", 0);
-        return;
-    }
+    passCase("socket_send");
 
     // Receive response
     testCase("socket_recv");

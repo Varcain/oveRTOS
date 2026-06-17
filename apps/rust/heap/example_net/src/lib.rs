@@ -187,12 +187,8 @@ fn test_tcp() {
     // Send HTTP request
     let req = b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
     test("socket_send");
-    match sock.send(req) {
-        Ok(n) if n == req.len() => pass("socket_send"),
-        Ok(_) => {
-            fail("socket_send", 0);
-            return;
-        }
+    match sock.send_all(req) {
+        Ok(()) => pass("socket_send"),
         Err(e) => {
             fail("socket_send", err_code(e));
             return;

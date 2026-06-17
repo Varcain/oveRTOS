@@ -436,6 +436,32 @@ class TcpSocket
 	}
 
 	/**
+	 * @brief Sends the entire buffer, looping over @ref send until every
+	 *        byte is written.
+	 *
+	 * A single @ref send may commit only part of the buffer; this wrapper
+	 * drives the partial-write loop so callers don't have to track the
+	 * unsent tail themselves.
+	 *
+	 * @param[in] data Pointer to data to send.
+	 * @param[in] len  Number of bytes to send.
+	 * @return Empty `Result<void>` once all @p len bytes are written;
+	 *         `unexpected` @ref Error on the first failing @ref send.
+	 */
+	[[nodiscard]] Result<void> send_all(const void *data, size_t len) noexcept
+	{
+		const auto *p = static_cast<const uint8_t *>(data);
+		size_t total = 0;
+		while (total < len) {
+			const auto r = send(p + total, len - total);
+			if (!r)
+				return std::unexpected(r.error());
+			total += *r;
+		}
+		return {};
+	}
+
+	/**
 	 * @brief Receives data from the connected socket.
 	 *
 	 * @param[out] buf     Buffer to receive into.

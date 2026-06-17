@@ -157,10 +157,10 @@ static void test_tcp()
 	const char *req = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
 
 	TEST("socket_send");
-	if (auto r = sock.send(req, std::strlen(req)); r && *r == std::strlen(req)) {
+	if (auto r = sock.send_all(req, std::strlen(req)); r) {
 		PASS("socket_send");
 	} else {
-		FAIL("socket_send", r ? 0 : static_cast<int>(r.error()));
+		FAIL("socket_send", static_cast<int>(r.error()));
 		return;
 	}
 

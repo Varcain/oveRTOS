@@ -123,6 +123,25 @@ static void test_dns(void)
 
 /* ── 3. Raw TCP socket ──────────────────────────────────────────── */
 
+/*
+ * Send the whole buffer, looping over ove_socket_send for partial writes:
+ * a single send may commit only part of the buffer, so the caller must
+ * drive the loop over the unsent tail.
+ */
+static int send_all(ove_socket_t sock, const void *data, size_t len)
+{
+	const uint8_t *p = (const uint8_t *)data;
+	size_t total = 0;
+	while (total < len) {
+		size_t sent = 0;
+		int ret = ove_socket_send(sock, p + total, len - total, &sent);
+		if (ret != OVE_OK)
+			return ret;
+		total += sent;
+	}
+	return OVE_OK;
+}
+
 static void test_tcp(void)
 {
 	OVE_LOG_INF("=== TCP Socket ===");
@@ -159,11 +178,10 @@ static void test_tcp(void)
 
 	/* Send HTTP request */
 	const char *req = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
-	size_t sent = 0;
 
 	TEST("socket_send");
-	ret = ove_socket_send(sock, req, strlen(req), &sent);
-	if (ret == OVE_OK && sent == strlen(req)) {
+	ret = send_all(sock, req, strlen(req));
+	if (ret == OVE_OK) {
 		PASS("socket_send");
 	} else {
 		FAIL("socket_send", ret);

@@ -228,6 +228,15 @@ const HeapTcpStream = struct {
         return sent;
     }
 
+    /// Send the entire buffer, looping over `send` until every byte is
+    /// written.  A single `send` may commit only part of `data`.
+    pub fn sendAll(self: *TcpStream, data: []const u8) Error!void {
+        var total: usize = 0;
+        while (total < data.len) {
+            total += try self.send(data[total..]);
+        }
+    }
+
     pub fn recv(self: *TcpStream, buf: []u8, timeout_ns: u64) Error!usize {
         var received: usize = 0;
         try err.fromCode(c.ove_socket_recv(self.handle, buf.ptr, buf.len, &received, timeout_ns));
@@ -280,6 +289,16 @@ const ZeroHeapTcpStream = struct {
         var sent: usize = 0;
         try err.fromCode(c.ove_socket_send(self.handle, data.ptr, data.len, &sent));
         return sent;
+    }
+
+    /// Send the entire buffer, looping over `send` until every byte is
+    /// written.  A single `send` may commit only part of `data`.
+    pub fn sendAll(self: *TcpStream, data: []const u8) Error!void {
+        self.tracker.assertSame(self, "ove.TcpStream");
+        var total: usize = 0;
+        while (total < data.len) {
+            total += try self.send(data[total..]);
+        }
     }
 
     pub fn recv(self: *TcpStream, buf: []u8, timeout_ns: u64) Error!usize {

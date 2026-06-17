@@ -94,8 +94,8 @@ void *connector_fn(void *)
 		sleep_ms(10);
 	}
 	const char msg[] = "hi";
-	(void)c.send(msg, sizeof(msg));
-	sleep_ms(100); /* hold the connection so the server can recv */
+	(void)c.send_all(msg, sizeof(msg)); /* also exercises the send_all loop */
+	sleep_ms(100);			    /* hold the connection so the server can recv */
 	return nullptr;
 }
 

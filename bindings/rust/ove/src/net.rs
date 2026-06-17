@@ -391,6 +391,23 @@ impl TcpStream {
         Ok(sent)
     }
 
+    /// Send the entire buffer, looping over [`send`](Self::send) until
+    /// every byte has been written.
+    ///
+    /// A single [`send`](Self::send) may write only part of the buffer;
+    /// this drives the partial-write loop so callers don't have to track
+    /// the unsent tail themselves.
+    ///
+    /// # Errors
+    /// Returns the first error from [`send`](Self::send).
+    pub fn send_all(&self, data: &[u8]) -> Result<()> {
+        let mut total = 0;
+        while total < data.len() {
+            total += self.send(&data[total..])?;
+        }
+        Ok(())
+    }
+
     /// Receive data from the connected socket.
     ///
     /// Returns the number of bytes received.
