@@ -55,19 +55,19 @@ pub enum Qos {
 
 /// MQTT connection configuration.
 ///
-/// String fields (`host`, `client_id`, `username`, `password`) must be
-/// null-terminated byte slices.
+/// String fields (`host`, `client_id`, `username`, `password`) are passed
+/// as `&CStr` (e.g. `c"..."` literals).
 pub struct Config<'a> {
-    /// Broker hostname or IP (null-terminated).
-    pub host: &'a [u8],
+    /// Broker hostname or IP.
+    pub host: &'a core::ffi::CStr,
     /// Broker port (typically 1883 or 8883 for TLS).
     pub port: u16,
-    /// Client identifier (null-terminated).
-    pub client_id: &'a [u8],
-    /// Username for authentication (null-terminated, or `None`).
-    pub username: Option<&'a [u8]>,
-    /// Password for authentication (null-terminated, or `None`).
-    pub password: Option<&'a [u8]>,
+    /// Client identifier.
+    pub client_id: &'a core::ffi::CStr,
+    /// Username for authentication (or `None`).
+    pub username: Option<&'a core::ffi::CStr>,
+    /// Password for authentication (or `None`).
+    pub password: Option<&'a core::ffi::CStr>,
     /// Keep-alive interval in seconds.
     pub keep_alive_s: u16,
     /// Whether to use TLS for the connection.
@@ -236,11 +236,11 @@ impl Client {
 
     /// Publish a message on a topic.
     ///
-    /// `topic` must be a null-terminated byte string.
+    /// `topic` is passed as a `&CStr`; `payload` is raw bytes.
     ///
     /// # Errors
     /// Returns an error if the publish fails.
-    pub fn publish(&self, topic: &[u8], payload: &[u8], qos: Qos) -> Result<()> {
+    pub fn publish(&self, topic: &core::ffi::CStr, payload: &[u8], qos: Qos) -> Result<()> {
         let rc = unsafe {
             bindings::ove_mqtt_publish(
                 self.handle,
@@ -255,11 +255,11 @@ impl Client {
 
     /// Subscribe to a topic filter.
     ///
-    /// `topic` must be a null-terminated byte string.
+    /// `topic` is passed as a `&CStr`.
     ///
     /// # Errors
     /// Returns an error if the subscribe fails.
-    pub fn subscribe(&self, topic: &[u8], qos: Qos) -> Result<()> {
+    pub fn subscribe(&self, topic: &core::ffi::CStr, qos: Qos) -> Result<()> {
         let rc = unsafe {
             bindings::ove_mqtt_subscribe(
                 self.handle,
@@ -272,11 +272,11 @@ impl Client {
 
     /// Unsubscribe from a topic filter.
     ///
-    /// `topic` must be a null-terminated byte string.
+    /// `topic` is passed as a `&CStr`.
     ///
     /// # Errors
     /// Returns an error if the unsubscribe fails.
-    pub fn unsubscribe(&self, topic: &[u8]) -> Result<()> {
+    pub fn unsubscribe(&self, topic: &core::ffi::CStr) -> Result<()> {
         let rc = unsafe { bindings::ove_mqtt_unsubscribe(self.handle, topic.as_ptr() as *const _) };
         Error::from_code(rc)
     }

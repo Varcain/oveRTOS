@@ -20,6 +20,7 @@
 //! produces an `embedded_io_async::Read` body. See [`crate::async_net`]'s
 //! module docs for the full pairing recipe.
 
+use core::ffi::CStr;
 use core::fmt;
 
 use crate::bindings;
@@ -74,11 +75,11 @@ impl Method {
 
 /// HTTP request header.
 ///
-/// Both `name` and `value` must be null-terminated byte strings
-/// (e.g. `b"Authorization\0"`, `b"Bearer token\0"`).
+/// Both `name` and `value` are passed as `&CStr`
+/// (e.g. `c"Authorization"`, `c"Bearer token"`).
 pub struct Header<'a> {
-    pub name: &'a [u8],
-    pub value: &'a [u8],
+    pub name: &'a CStr,
+    pub value: &'a CStr,
 }
 
 // ---------------------------------------------------------------------------
@@ -224,11 +225,11 @@ impl Client {
 
     /// Perform an HTTP GET request.
     ///
-    /// `url` must be a null-terminated URL (e.g. `b"http://example.com/path\0"`).
+    /// `url` is passed as a `&CStr` (e.g. `c"http://example.com/path"`).
     ///
     /// # Errors
     /// Returns an error if the request fails at the transport or protocol level.
-    pub fn get(&self, url: &[u8]) -> Result<Response> {
+    pub fn get(&self, url: &CStr) -> Result<Response> {
         let mut raw: bindings::ove_http_response_t = unsafe { core::mem::zeroed() };
         let rc = unsafe { bindings::ove_http_get(self.handle, url.as_ptr() as *const _, &mut raw) };
         Error::from_code(rc)?;
@@ -237,11 +238,11 @@ impl Client {
 
     /// Perform an HTTP POST request.
     ///
-    /// `url` and `content_type` must be null-terminated byte strings.
+    /// `url` and `content_type` are passed as `&CStr`; `body` is raw bytes.
     ///
     /// # Errors
     /// Returns an error if the request fails at the transport or protocol level.
-    pub fn post(&self, url: &[u8], content_type: &[u8], body: &[u8]) -> Result<Response> {
+    pub fn post(&self, url: &CStr, content_type: &CStr, body: &[u8]) -> Result<Response> {
         let mut raw: bindings::ove_http_response_t = unsafe { core::mem::zeroed() };
         let rc = unsafe {
             bindings::ove_http_post(
@@ -260,16 +261,16 @@ impl Client {
     /// Perform an HTTP request with explicit method, optional body, and
     /// optional extra headers.
     ///
-    /// `url` and `content_type` must be null-terminated byte strings.
-    /// Each [`Header`] name/value must also be null-terminated.
+    /// `url` and `content_type` are passed as `&CStr`; `body` is raw bytes.
+    /// Each [`Header`] name/value is also a `&CStr`.
     ///
     /// # Errors
     /// Returns an error if the request fails at the transport or protocol level.
     pub fn request_ex(
         &self,
         method: Method,
-        url: &[u8],
-        content_type: &[u8],
+        url: &CStr,
+        content_type: &CStr,
         body: &[u8],
         headers: &[Header<'_>],
     ) -> Result<Response> {

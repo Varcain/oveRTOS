@@ -581,11 +581,11 @@ unsafe impl Sync for UdpSocket {}
 
 /// Resolve a hostname to an address.
 ///
-/// The `hostname` byte slice must be null-terminated (e.g. `b"example.com\0"`).
+/// The `hostname` is passed as a `&CStr` (e.g. a `c"example.com"` literal).
 ///
 /// # Errors
 /// Returns an error if name resolution fails or times out.
-pub fn dns_resolve(hostname: &[u8], timeout: core::time::Duration) -> Result<Address> {
+pub fn dns_resolve(hostname: &core::ffi::CStr, timeout: core::time::Duration) -> Result<Address> {
     let mut addr = Address::default();
     let rc = unsafe {
         bindings::ove_dns_resolve(

@@ -52,8 +52,8 @@ fn fail(name: &str, err: i32) {
 // ---------------------------------------------------------------------------
 
 const UDP_MSG: &[u8] = b"oveRTOS UDP test";
-const MQTT_TOPIC: &[u8] = b"overtos/test\0";
-const MQTT_CLIENT_ID: &[u8] = b"overtos-test-zh\0";
+const MQTT_TOPIC: &core::ffi::CStr = c"overtos/test";
+const MQTT_CLIENT_ID: &core::ffi::CStr = c"overtos-test-zh";
 const HTTP_POST_BODY: &[u8] = b"{\"test\":\"overtos\"}";
 const HTTP_PUT_BODY: &[u8] = b"{\"update\":\"value\"}";
 
@@ -123,7 +123,7 @@ fn test_dns() {
     log::info!("=== DNS Resolution ===");
 
     test("resolve example.com");
-    match ove::net::dns_resolve(b"example.com\0", core::time::Duration::from_secs(5)) {
+    match ove::net::dns_resolve(c"example.com", core::time::Duration::from_secs(5)) {
         Ok(addr) => {
             let o = addr.octets();
             log::info!("  -> {}.{}.{}.{}", o[0], o[1], o[2], o[3]);
@@ -133,7 +133,7 @@ fn test_dns() {
     }
 
     test("resolve invalid.invalid (expect failure)");
-    match ove::net::dns_resolve(b"invalid.invalid\0", core::time::Duration::from_secs(3)) {
+    match ove::net::dns_resolve(c"invalid.invalid", core::time::Duration::from_secs(3)) {
         Err(_) => pass("resolve invalid.invalid (correctly failed)"),
         Ok(_) => fail("resolve invalid.invalid (should have failed)", 0),
     }
@@ -158,7 +158,7 @@ fn test_tcp() {
         }
     };
 
-    let mut dest = match ove::net::dns_resolve(b"example.com\0", core::time::Duration::from_secs(5)) {
+    let mut dest = match ove::net::dns_resolve(c"example.com", core::time::Duration::from_secs(5)) {
         Ok(a) => a,
         Err(e) => {
             fail("dns for TCP test", err_code(e));
@@ -299,7 +299,7 @@ fn test_http() {
     pass("http_client_init");
 
     test("http_get http://example.com/");
-    match client.get(b"http://example.com/\0") {
+    match client.get(c"http://example.com/") {
         Ok(resp) => {
             let st = resp.status();
             let blen = resp.body().len();
@@ -315,8 +315,8 @@ fn test_http() {
 
     test("http_post http://httpbin.org/post");
     match client.post(
-        b"http://httpbin.org/post\0",
-        b"application/json\0",
+        c"http://httpbin.org/post",
+        c"application/json",
         HTTP_POST_BODY,
     ) {
         Ok(resp) => {
@@ -340,18 +340,18 @@ fn test_http() {
     test("http_put http://httpbin.org/put");
     let headers = [
         ove::net_http::Header {
-            name: b"X-Custom\0",
-            value: b"oveRTOS\0",
+            name: c"X-Custom",
+            value: c"oveRTOS",
         },
         ove::net_http::Header {
-            name: b"Accept\0",
-            value: b"application/json\0",
+            name: c"Accept",
+            value: c"application/json",
         },
     ];
     match client.request_ex(
         ove::net_http::Method::Put,
-        b"http://httpbin.org/put\0",
-        b"application/json\0",
+        c"http://httpbin.org/put",
+        c"application/json",
         HTTP_PUT_BODY,
         &headers,
     ) {
@@ -378,7 +378,7 @@ fn test_sntp() {
 
     test("sntp_sync pool.ntp.org");
     let cfg = ove::net_sntp::Config {
-        server: b"pool.ntp.org\0",
+        server: c"pool.ntp.org",
         timeout: core::time::Duration::from_secs(5),
     };
     match ove::net_sntp::sync(&cfg) {
@@ -421,7 +421,7 @@ fn test_mqtt() {
 
     test("mqtt_connect test.mosquitto.org:1883");
     let cfg = ove::net_mqtt::Config {
-        host: b"test.mosquitto.org\0",
+        host: c"test.mosquitto.org",
         port: 1883,
         client_id: MQTT_CLIENT_ID,
         username: None,

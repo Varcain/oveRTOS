@@ -24,7 +24,7 @@
 //! use ove::net_sntp;
 //!
 //! let cfg = net_sntp::Config {
-//!     server: b"pool.ntp.org\0",
+//!     server: c"pool.ntp.org",
 //!     timeout: core::time::Duration::from_secs(5),
 //! };
 //! net_sntp::sync(&cfg).unwrap();
@@ -40,11 +40,11 @@ use crate::error::{Error, Result};
 
 /// SNTP client configuration.
 ///
-/// `server` must be a null-terminated byte string (e.g. `b"pool.ntp.org\0"`).
+/// `server` is passed as a `&CStr` (e.g. a `c"pool.ntp.org"` literal).
 /// A `timeout` of `Duration::ZERO` uses the default (5 s).
 pub struct Config<'a> {
-    /// NTP server hostname (null-terminated).
-    pub server: &'a [u8],
+    /// NTP server hostname.
+    pub server: &'a core::ffi::CStr,
     /// Query timeout (`Duration::ZERO` selects the default of 5 s).
     pub timeout: core::time::Duration,
 }
@@ -52,7 +52,7 @@ pub struct Config<'a> {
 impl Default for Config<'_> {
     fn default() -> Self {
         Self {
-            server: b"pool.ntp.org\0",
+            server: c"pool.ntp.org",
             timeout: core::time::Duration::from_secs(5),
         }
     }
