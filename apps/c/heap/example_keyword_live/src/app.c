@@ -25,6 +25,7 @@
 #include "ove/ove.h"
 #include "ove/infer.h"
 
+#include <stdatomic.h>
 #include <string.h>
 
 #include "keyword_models.h"
@@ -53,8 +54,12 @@ static ove_model_storage_t model_storage;
 
 /* ── Audio callback ────────────────────────────────────────────────── */
 
-static volatile uint32_t audio_cb_count;
-static volatile uint32_t samples_written;
+/* Cross-thread counters: the audio callback writes them; the inference
+ * thread reads `samples_written` for rate estimation.  C11 atomics (relaxed)
+ * make the read-modify-write well-defined — a bare `volatile ++` shared
+ * across threads is a data race. */
+static atomic_uint audio_cb_count;
+static atomic_uint samples_written;
 /* ── DMIC processor node ───────────────────────────────────────────
  *
  * Receives clean mono PCM from the audio source (driver handles
@@ -79,14 +84,14 @@ static int dmic_proc_process(void *ctx, const struct ove_audio_buf *in, struct o
 	unsigned int frames = in->frames;
 	unsigned int ch = in->fmt->channels;
 
-	audio_cb_count++;
+	atomic_fetch_add_explicit(&audio_cb_count, 1, memory_order_relaxed);
 
 	for (unsigned int f = 0; f < frames; f++) {
 		int16_t sample = src[f * ch]; /* left / mono channel */
 
 		/* Feed to ring buffer for inference */
 		ring_buffer_write(&audio_ring, &sample, 1);
-		samples_written++;
+		atomic_fetch_add_explicit(&samples_written, 1, memory_order_relaxed);
 
 		/* Passthrough to output for monitoring */
 		for (unsigned int c = 0; c < ch; c++)
@@ -244,13 +249,13 @@ static void infer_thread(void *arg)
 
 	/* Initial wait: let ring buffer fill and measure actual sample rate */
 	ove_thread_sleep_ms(2000);
-	uint32_t prev_samples = samples_written;
+	uint32_t prev_samples = atomic_load_explicit(&samples_written, memory_order_relaxed);
 
 	for (;;) {
 		ove_thread_sleep_ms(1000);
 
 		/* Measure actual sample rate */
-		uint32_t cur_samples = samples_written;
+		uint32_t cur_samples = atomic_load_explicit(&samples_written, memory_order_relaxed);
 		uint32_t actual_rate = cur_samples - prev_samples;
 		prev_samples = cur_samples;
 

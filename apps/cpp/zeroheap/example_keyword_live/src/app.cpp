@@ -75,7 +75,11 @@ struct RingBuffer {
 
 static RingBuffer audio_ring;
 static int8_t features[FEATURE_COUNT][FEATURE_SIZE];
-static volatile uint32_t samples_written;
+/* Written by the audio callback, read by the inference thread.  Relaxed
+ * suffices: it is a monotonic counter used only for rate estimation; the
+ * audio samples themselves are published through `audio_ring`'s own
+ * acquire/release ordering. */
+static std::atomic<uint32_t> samples_written{0};
 static unsigned g_actual_rate = AUDIO_SAMPLE_FREQ;
 static int32_t g_dc_offset;
 static int32_t g_gain = 1;
@@ -94,7 +98,7 @@ struct DmicProcessor {
 		for (unsigned f = 0; f < frames; f++) {
 			int16_t sample = src[f * ch];
 			audio_ring.write(sample);
-			samples_written++;
+			samples_written.fetch_add(1, std::memory_order_relaxed);
 			for (unsigned c = 0; c < ch; c++)
 				dst[f * ch + c] = src[f * ch + c];
 		}
@@ -175,12 +179,12 @@ static void infer_thread(void *)
 {
 	OVE_LOG_INF("Inference thread started — listening...");
 	ove_thread_sleep_ms(2000);
-	uint32_t prev_samples = samples_written;
+	uint32_t prev_samples = samples_written.load(std::memory_order_relaxed);
 
 	for (;;) {
 		ove_thread_sleep_ms(1000);
 
-		uint32_t cur = samples_written;
+		uint32_t cur = samples_written.load(std::memory_order_relaxed);
 		uint32_t actual_rate = cur - prev_samples;
 		prev_samples = cur;
 
