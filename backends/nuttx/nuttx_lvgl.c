@@ -86,7 +86,7 @@ int ove_lvgl_init(void)
 {
 	lv_display_t *disp = NULL;
 
-	if (lvgl_initialized) {
+	if (__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE)) {
 		return OVE_OK;
 	}
 
@@ -117,33 +117,48 @@ int ove_lvgl_init(void)
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 
-	lvgl_initialized = 1;
-
 	lv_theme_t *th = lv_theme_default_init(disp, lv_palette_main(LV_PALETTE_BLUE),
 					       lv_palette_main(LV_PALETTE_RED), true,
 					       &lv_font_montserrat_32);
 	lv_display_set_theme(disp, th);
+
+	/*
+	 * Publish readiness only after LVGL is fully initialised (release).
+	 * The lock/tick/handler entry points no-op until this flag is set, so
+	 * an application thread that calls into LVGL before ove_lvgl_init()
+	 * completes — e.g. a graphics worker spawned ahead of init — does
+	 * nothing instead of driving LVGL before lv_init().
+	 */
+	__atomic_store_n(&lvgl_initialized, 1, __ATOMIC_RELEASE);
 
 	return OVE_OK;
 }
 
 void ove_lvgl_lock(void)
 {
+	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
+		return;
 	pthread_mutex_lock(&lvgl_mutex);
 }
 
 void ove_lvgl_unlock(void)
 {
+	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
+		return;
 	pthread_mutex_unlock(&lvgl_mutex);
 }
 
 void ove_lvgl_tick(uint32_t ms)
 {
+	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
+		return;
 	lv_tick_inc(ms);
 }
 
 void ove_lvgl_handler(void)
 {
+	if (!__atomic_load_n(&lvgl_initialized, __ATOMIC_ACQUIRE))
+		return;
 	lv_timer_handler();
 }
 
