@@ -50,7 +50,7 @@ pub const OVE_SIZEOF_OVE_QUEUE_STORAGE: u32 = 184;
 pub const OVE_SIZEOF_OVE_SEM_STORAGE: u32 = 48;
 pub const OVE_SIZEOF_OVE_STREAM_STORAGE: u32 = 200;
 pub const OVE_SIZEOF_OVE_THREAD_STORAGE: u32 = 128;
-pub const OVE_SIZEOF_OVE_TIMER_STORAGE: u32 = 40;
+pub const OVE_SIZEOF_OVE_TIMER_STORAGE: u32 = 144;
 pub const OVE_SIZEOF_OVE_WATCHDOG_STORAGE: u32 = 16;
 pub const OVE_SIZEOF_OVE_WORKQUEUE_STORAGE: u32 = 616;
 pub const OVE_SIZEOF_OVE_WORK_STORAGE: u32 = 32;
@@ -494,11 +494,11 @@ const _: () = {
 #[repr(align(8))]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_timer_storage_t {
-    pub _opaque: [u8; 40usize],
+    pub _opaque: [u8; 144usize],
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_timer_storage_t"][core::mem::size_of::<ove_timer_storage_t>() - 40usize];
+    ["Size of ove_timer_storage_t"][core::mem::size_of::<ove_timer_storage_t>() - 144usize];
     ["Alignment of ove_timer_storage_t"][core::mem::align_of::<ove_timer_storage_t>() - 8usize];
     ["Offset of field: ove_timer_storage_t::_opaque"]
         [core::mem::offset_of!(ove_timer_storage_t, _opaque) - 0usize];
