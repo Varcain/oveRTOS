@@ -500,11 +500,14 @@ fn app_main() {
     ove::log::try_init();
     log::info!("LVGL gallery (Rust): init");
 
-    let graphics = ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
+    // Detach the graphics worker: it runs for the program lifetime, so we
+    // don't want its `Drop` to request-stop + join.  `detach()` is the
+    // binding's recommended fire-and-forget over `core::mem::forget`.
+    ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
         graphics_entry();
     })
-    .expect("graphics thread spawn");
-    core::mem::forget(graphics);
+    .expect("graphics thread spawn")
+    .detach();
 
     {
         UI_TIMER.init(ove::timer!(ui_timer_cb, 100, false));

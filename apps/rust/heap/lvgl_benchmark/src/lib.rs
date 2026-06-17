@@ -1108,11 +1108,14 @@ fn app_main() {
     SCENE.init(LvCell::new(SceneState { current: 0 }));
     STATS.init(LvCell::new([SceneStats::default(); 17]));
 
-    let graphics = ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
+    // Detach the graphics worker: it runs for the program lifetime, so we
+    // don't want its `Drop` to request-stop + join.  `detach()` is the
+    // binding's recommended fire-and-forget over `core::mem::forget`.
+    ove::Thread::builder().name(c"graphics").priority(Priority::High).stack_size(4096).spawn(|_tok| {
         graphics_entry();
     })
-    .expect("graphics thread spawn");
-    core::mem::forget(graphics);
+    .expect("graphics thread spawn")
+    .detach();
 
     if lvgl::init().is_err() {
         log::error!("Failed to init LVGL");
