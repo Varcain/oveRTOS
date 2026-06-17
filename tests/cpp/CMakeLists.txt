@@ -58,6 +58,7 @@ set(STUB_SOURCES
     ${POSIX_CORE_DIR}/posix_nvs.c
     ${POSIX_CORE_DIR}/posix_shell.c
     ${POSIX_CORE_DIR}/posix_fs.c
+    ${POSIX_CORE_DIR}/posix_net.c
     # Async runtime substrate (compiled to no-ops when CONFIG_OVE_ASYNC=n).
     ${POSIX_CORE_DIR}/posix_irq.c
     # Shared BSP modules
@@ -110,6 +111,7 @@ set(SUITE_SOURCES
     ${SUITE_DIR}/test_static_init.cpp
     ${SUITE_DIR}/test_infer.cpp
     ${SUITE_DIR}/test_error.cpp
+    ${SUITE_DIR}/test_net.cpp
 )
 
 # ove_add_cpp_variant(<name> [compile_opts...])
@@ -131,6 +133,9 @@ function(ove_add_cpp_variant name)
         ${cmocka_SOURCE_DIR}/include
     )
     target_link_libraries(${name} PRIVATE cmocka-static pthread rt m)
+    # Enable the net wrappers (and their POSIX BSD-socket backend) so the
+    # net storage-ownership regression suite can exercise move + accept.
+    target_compile_definitions(${name} PRIVATE CONFIG_OVE_NET=1)
     if(ARGN)
         target_compile_options(${name} PRIVATE ${ARGN})
         target_link_options(${name} PRIVATE ${ARGN})

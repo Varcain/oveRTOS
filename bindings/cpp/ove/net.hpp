@@ -17,6 +17,10 @@
 #include <ove/types.hpp>
 #include <ove/error.hpp>
 
+#ifndef CONFIG_OVE_ZERO_HEAP
+#include <memory>
+#endif
+
 #ifdef CONFIG_OVE_NET
 
 namespace ove
@@ -171,7 +175,7 @@ class NetIf
 	 */
 	NetIf()
 	{
-		int err = ove_netif_init(&handle_, &storage_);
+		int err = ove_netif_init(&handle_, storage_ptr());
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 	}
 
@@ -193,16 +197,19 @@ class NetIf
 	NetIf &operator=(NetIf &&) = delete;
 #else
 	/**
-	 * @brief Move constructor — transfers ownership of the handle.
+	 * @brief Move constructor — transfers ownership of the handle and its
+	 *        heap-allocated storage, so the C handle (which points into
+	 *        that storage) stays valid across the move.
 	 * @param other The source; its handle is set to null after the move.
 	 */
-	NetIf(NetIf &&other) noexcept : handle_(other.handle_)
+	NetIf(NetIf &&other) noexcept : handle_(other.handle_), storage_(std::move(other.storage_))
 	{
 		other.handle_ = nullptr;
 	}
 
 	/**
-	 * @brief Move-assignment operator — transfers ownership of the handle.
+	 * @brief Move-assignment operator — transfers ownership of the handle
+	 *        and its heap-allocated storage.
 	 * @param other The source; its handle is set to null after the move.
 	 * @return Reference to this object.
 	 */
@@ -212,6 +219,7 @@ class NetIf
 			if (handle_)
 				ove_netif_deinit(handle_);
 			handle_ = other.handle_;
+			storage_ = std::move(other.storage_);
 			other.handle_ = nullptr;
 		}
 		return *this;
@@ -295,7 +303,23 @@ class NetIf
 
       private:
 	ove_netif_t handle_{};
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap: storage is inline and pinned (moves are deleted). */
 	ove_netif_storage_t storage_{};
+#else
+	/* Heap: storage is heap-owned so its address is stable across moves —
+	 * the C handle points into it, so a value move must keep it put. */
+	std::unique_ptr<ove_netif_storage_t> storage_ = std::make_unique<ove_netif_storage_t>();
+#endif
+
+	ove_netif_storage_t *storage_ptr() noexcept
+	{
+#ifdef CONFIG_OVE_ZERO_HEAP
+		return &storage_;
+#else
+		return storage_.get();
+#endif
+	}
 };
 
 /* ── Forward declaration for friend access ──────────────────────── */
@@ -324,7 +348,7 @@ class TcpSocket
 	 */
 	TcpSocket()
 	{
-		int err = ove_socket_open(&handle_, &storage_, OVE_AF_INET, OVE_SOCK_STREAM);
+		int err = ove_socket_open(&handle_, storage_ptr(), OVE_AF_INET, OVE_SOCK_STREAM);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 		open_ = true;
 	}
@@ -346,18 +370,21 @@ class TcpSocket
 	TcpSocket &operator=(TcpSocket &&) = delete;
 #else
 	/**
-	 * @brief Move constructor — transfers ownership of the socket.
+	 * @brief Move constructor — transfers ownership of the socket and its
+	 *        heap-allocated storage, so the C handle (which points into
+	 *        that storage) stays valid across the move.
 	 * @param other The source; left in a closed, null state after the move.
 	 */
 	TcpSocket(TcpSocket &&other) noexcept
-		: handle_(other.handle_), storage_(other.storage_), open_(other.open_)
+		: handle_(other.handle_), storage_(std::move(other.storage_)), open_(other.open_)
 	{
 		other.handle_ = nullptr;
 		other.open_ = false;
 	}
 
 	/**
-	 * @brief Move-assignment operator — transfers ownership of the socket.
+	 * @brief Move-assignment operator — transfers ownership of the socket
+	 *        and its heap-allocated storage.
 	 * @param other The source; left in a closed, null state after the move.
 	 * @return Reference to this object.
 	 */
@@ -367,7 +394,7 @@ class TcpSocket
 			if (open_)
 				ove_socket_close(handle_);
 			handle_ = other.handle_;
-			storage_ = other.storage_;
+			storage_ = std::move(other.storage_);
 			open_ = other.open_;
 			other.handle_ = nullptr;
 			other.open_ = false;
@@ -480,18 +507,25 @@ class TcpSocket
       private:
 	friend class TcpListener;
 
-	/**
-	 * @brief Adopts an already-accepted connection (used by TcpListener).
-	 * @param[in] h Socket handle from ove_socket_accept().
-	 * @param[in] s Storage backing the accepted socket.
-	 */
-	TcpSocket(ove_socket_t h, ove_socket_storage_t s) : handle_(h), storage_(s), open_(true)
-	{
-	}
-
 	ove_socket_t handle_{};
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap: storage is inline and pinned (moves are deleted). */
 	ove_socket_storage_t storage_{};
+#else
+	/* Heap: storage is heap-owned so its address is stable across moves —
+	 * the C handle points into it, so a value move must keep it put. */
+	std::unique_ptr<ove_socket_storage_t> storage_ = std::make_unique<ove_socket_storage_t>();
+#endif
 	bool open_{false};
+
+	ove_socket_storage_t *storage_ptr() noexcept
+	{
+#ifdef CONFIG_OVE_ZERO_HEAP
+		return &storage_;
+#else
+		return storage_.get();
+#endif
+	}
 };
 
 /* ── UdpSocket (RAII UDP socket) ────────────────────────────────── */
@@ -514,7 +548,7 @@ class UdpSocket
 	 */
 	UdpSocket()
 	{
-		int err = ove_socket_open(&handle_, &storage_, OVE_AF_INET, OVE_SOCK_DGRAM);
+		int err = ove_socket_open(&handle_, storage_ptr(), OVE_AF_INET, OVE_SOCK_DGRAM);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 		open_ = true;
 	}
@@ -536,18 +570,21 @@ class UdpSocket
 	UdpSocket &operator=(UdpSocket &&) = delete;
 #else
 	/**
-	 * @brief Move constructor — transfers ownership of the socket.
+	 * @brief Move constructor — transfers ownership of the socket and its
+	 *        heap-allocated storage, so the C handle (which points into
+	 *        that storage) stays valid across the move.
 	 * @param other The source; left in a closed, null state after the move.
 	 */
 	UdpSocket(UdpSocket &&other) noexcept
-		: handle_(other.handle_), storage_(other.storage_), open_(other.open_)
+		: handle_(other.handle_), storage_(std::move(other.storage_)), open_(other.open_)
 	{
 		other.handle_ = nullptr;
 		other.open_ = false;
 	}
 
 	/**
-	 * @brief Move-assignment operator — transfers ownership of the socket.
+	 * @brief Move-assignment operator — transfers ownership of the socket
+	 *        and its heap-allocated storage.
 	 * @param other The source; left in a closed, null state after the move.
 	 * @return Reference to this object.
 	 */
@@ -557,7 +594,7 @@ class UdpSocket
 			if (open_)
 				ove_socket_close(handle_);
 			handle_ = other.handle_;
-			storage_ = other.storage_;
+			storage_ = std::move(other.storage_);
 			open_ = other.open_;
 			other.handle_ = nullptr;
 			other.open_ = false;
@@ -670,8 +707,24 @@ class UdpSocket
 
       private:
 	ove_socket_t handle_{};
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap: storage is inline and pinned (moves are deleted). */
 	ove_socket_storage_t storage_{};
+#else
+	/* Heap: storage is heap-owned so its address is stable across moves —
+	 * the C handle points into it, so a value move must keep it put. */
+	std::unique_ptr<ove_socket_storage_t> storage_ = std::make_unique<ove_socket_storage_t>();
+#endif
 	bool open_{false};
+
+	ove_socket_storage_t *storage_ptr() noexcept
+	{
+#ifdef CONFIG_OVE_ZERO_HEAP
+		return &storage_;
+#else
+		return storage_.get();
+#endif
+	}
 };
 
 /* ── TcpListener (RAII listening socket) ────────────────────────── */
@@ -696,7 +749,7 @@ class TcpListener
 	 */
 	TcpListener()
 	{
-		int err = ove_socket_open(&handle_, &storage_, OVE_AF_INET, OVE_SOCK_STREAM);
+		int err = ove_socket_open(&handle_, storage_ptr(), OVE_AF_INET, OVE_SOCK_STREAM);
 		OVE_STATIC_INIT_ASSERT(err == OVE_OK);
 		open_ = true;
 	}
@@ -718,18 +771,21 @@ class TcpListener
 	TcpListener &operator=(TcpListener &&) = delete;
 #else
 	/**
-	 * @brief Move constructor — transfers ownership of the socket.
+	 * @brief Move constructor — transfers ownership of the socket and its
+	 *        heap-allocated storage, so the C handle (which points into
+	 *        that storage) stays valid across the move.
 	 * @param other The source; left in a closed, null state after the move.
 	 */
 	TcpListener(TcpListener &&other) noexcept
-		: handle_(other.handle_), storage_(other.storage_), open_(other.open_)
+		: handle_(other.handle_), storage_(std::move(other.storage_)), open_(other.open_)
 	{
 		other.handle_ = nullptr;
 		other.open_ = false;
 	}
 
 	/**
-	 * @brief Move-assignment operator — transfers ownership of the socket.
+	 * @brief Move-assignment operator — transfers ownership of the socket
+	 *        and its heap-allocated storage.
 	 * @param other The source; left in a closed, null state after the move.
 	 * @return Reference to this object.
 	 */
@@ -739,7 +795,7 @@ class TcpListener
 			if (open_)
 				ove_socket_close(handle_);
 			handle_ = other.handle_;
-			storage_ = other.storage_;
+			storage_ = std::move(other.storage_);
 			open_ = other.open_;
 			other.handle_ = nullptr;
 			other.open_ = false;
@@ -791,14 +847,16 @@ class TcpListener
 	[[nodiscard]] Result<void> accept(TcpSocket &client,
 					  std::chrono::nanoseconds timeout = wait_forever) noexcept
 	{
+		/* Close the destination's throwaway socket first, then accept
+		 * directly into its own (address-stable) storage.  The accepted
+		 * handle points into that storage, so it must not be a stack
+		 * local that dies when this function returns. */
+		client.close();
 		ove_socket_t cli_handle{};
-		ove_socket_storage_t cli_storage{};
-		const int rc = ove_socket_accept(handle_, &cli_handle, &cli_storage,
+		const int rc = ove_socket_accept(handle_, &cli_handle, client.storage_ptr(),
 						 to_timeout_ns(timeout));
 		if (rc == OVE_OK) {
-			client.close();
 			client.handle_ = cli_handle;
-			client.storage_ = cli_storage;
 			client.open_ = true;
 		}
 		return from_rc(rc);
@@ -854,8 +912,24 @@ class TcpListener
 
       private:
 	ove_socket_t handle_{};
+#ifdef CONFIG_OVE_ZERO_HEAP
+	/* Zero-heap: storage is inline and pinned (moves are deleted). */
 	ove_socket_storage_t storage_{};
+#else
+	/* Heap: storage is heap-owned so its address is stable across moves —
+	 * the C handle points into it, so a value move must keep it put. */
+	std::unique_ptr<ove_socket_storage_t> storage_ = std::make_unique<ove_socket_storage_t>();
+#endif
 	bool open_{false};
+
+	ove_socket_storage_t *storage_ptr() noexcept
+	{
+#ifdef CONFIG_OVE_ZERO_HEAP
+		return &storage_;
+#else
+		return storage_.get();
+#endif
+	}
 };
 
 /* ── DNS ────────────────────────────────────────────────────────── */

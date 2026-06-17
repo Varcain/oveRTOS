@@ -94,6 +94,9 @@ int main(void)
 	printf("=== C++ Error Tests ===\n");
 	failures += test_cpp_error_run();
 
+	printf("=== C++ Net Tests ===\n");
+	failures += test_cpp_net_run();
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 	return failures ? 1 : 0;
 }

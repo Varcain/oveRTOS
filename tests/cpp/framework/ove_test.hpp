@@ -83,5 +83,6 @@ int test_cpp_workqueue_run(void);
 int test_cpp_static_init_run(void);
 int test_cpp_infer_run(void);
 int test_cpp_error_run(void);
+int test_cpp_net_run(void);
 
 #endif /* OVE_TEST_CPP_HPP */
