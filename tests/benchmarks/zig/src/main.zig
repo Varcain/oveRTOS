@@ -38,7 +38,17 @@ const is_zero_heap = @hasDecl(ove.ffi, "CONFIG_OVE_ZERO_HEAP");
 // allocation in caller-owned static memory regardless of mode and
 // avoids the substrate's libc-malloc heap entirely (which the bench
 // doesn't measure).
-var bench_arena_bytes: [16 * 1024]u8 = undefined;
+//
+// Sizing/alignment: `Thread(N)` rounds its stack up to a power-of-two on
+// Zephyr (MPU), so the 8192-byte benchmark runner needs a 16 KiB backing
+// (`stackTotal(8192)` = 16384) plus its `ove_thread_storage_t`.  A 16 KiB
+// arena therefore can't even hold the runner on Zephyr — `create(Backing)`
+// fails and the bench reports "Failed to create benchmark thread".  Size
+// for the 16 KiB runner plus per-suite helper threads/workqueues, and
+// align the arena to the runner's 16 KiB boundary so the FBA doesn't burn
+// most of it on alignment padding.  FreeRTOS/NuttX don't round up, so they
+// simply leave the slack unused.
+var bench_arena_bytes: [48 * 1024]u8 align(16 * 1024) = undefined;
 var bench_fba: std.heap.FixedBufferAllocator = undefined;
 var bench_allocator_initialised: bool = false;
 
@@ -1063,7 +1073,20 @@ fn benchmarkRunner() void {
         100;
     std.log.info("Iterations: {d}  Warmup: {d}", .{ iterations, warmup });
 
+    // Watermark just past the runner's own backing (only the runner has
+    // been allocated from the FBA at this point).  The FBA is a bump
+    // allocator whose LIFO free does NOT reclaim alignment padding — and on
+    // Zephyr every helper Thread/Workqueue backing is rounded up to a
+    // power-of-two and aligned to it, so that padding would accumulate and
+    // exhaust the arena a few suites in.  When it does, a helper spawn
+    // (e.g. q_prod) fails its `catch return`, and the case's consumer then
+    // blocks forever on an empty queue — the bench hangs partway through.
+    // Rewinding to this mark before each suite reclaims the prior suite's
+    // backings + padding, bounding live usage to runner + one suite's peak.
+    // (FreeRTOS/NuttX don't round up, so this is a no-op reset for them.)
+    const suite_mark = bench_fba.end_index;
     for (suites) |suite| {
+        bench_fba.end_index = suite_mark;
         bench.runSuite(suite);
     }
 
