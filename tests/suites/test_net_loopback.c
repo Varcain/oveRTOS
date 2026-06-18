@@ -38,6 +38,10 @@ struct echo_server {
 	uint16_t port;
 	pthread_t thr;
 	int started;
+	/* On a failed start: which syscall failed and its errno, so the test
+	 * body can tell an environment-denied socket (sandbox) from a real bug. */
+	const char *fail_stage;
+	int fail_errno;
 };
 
 static void *echo_server_thread(void *arg)
@@ -66,8 +70,11 @@ static int echo_server_start(struct echo_server *s)
 {
 	memset(s, 0, sizeof(*s));
 	s->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-	if (s->listen_fd < 0)
+	if (s->listen_fd < 0) {
+		s->fail_stage = "socket";
+		s->fail_errno = errno;
 		return -1;
+	}
 
 	int one = 1;
 	setsockopt(s->listen_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
@@ -77,23 +84,33 @@ static int echo_server_start(struct echo_server *s)
 	sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 	sin.sin_port = 0; /* kernel-assigned */
 	if (bind(s->listen_fd, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+		s->fail_stage = "bind";
+		s->fail_errno = errno;
 		close(s->listen_fd);
 		return -1;
 	}
 
 	socklen_t slen = sizeof(sin);
 	if (getsockname(s->listen_fd, (struct sockaddr *)&sin, &slen) < 0) {
+		s->fail_stage = "getsockname";
+		s->fail_errno = errno;
 		close(s->listen_fd);
 		return -1;
 	}
 	s->port = ntohs(sin.sin_port);
 
 	if (listen(s->listen_fd, 1) < 0) {
+		s->fail_stage = "listen";
+		s->fail_errno = errno;
 		close(s->listen_fd);
 		return -1;
 	}
 
-	if (pthread_create(&s->thr, NULL, echo_server_thread, s) != 0) {
+	/* pthread_create returns the error number directly (does not set errno). */
+	int thr_rc = pthread_create(&s->thr, NULL, echo_server_thread, s);
+	if (thr_rc != 0) {
+		s->fail_stage = "pthread_create";
+		s->fail_errno = thr_rc;
 		close(s->listen_fd);
 		return -1;
 	}
@@ -145,9 +162,11 @@ static struct loopback_ctx g_loopback;
 static int loopback_setup(void **state)
 {
 	memset(&g_loopback, 0, sizeof(g_loopback));
-	if (echo_server_start(&g_loopback.srv) != 0)
-		return -1;
-	g_loopback.srv_started = 1;
+	/* Always succeed setup (so teardown runs) even if the echo server could
+	 * not start — the test body inspects srv.fail_* to skip (environment
+	 * denied the socket) vs. fail (a real bug) with a clear message, instead
+	 * of cmocka reporting an opaque "setup error". */
+	g_loopback.srv_started = (echo_server_start(&g_loopback.srv) == 0);
 	*state = &g_loopback;
 	return 0;
 }
@@ -170,6 +189,20 @@ static int loopback_teardown(void **state)
 static void test_tcp_loopback_echo(void **state)
 {
 	struct loopback_ctx *ctx = (struct loopback_ctx *)*state;
+
+	if (!ctx->srv_started) {
+		const int e = ctx->srv.fail_errno;
+		/* Restricted sandboxes (seccomp/containers) deny opening a local
+		 * TCP socket — that's an environment limitation, not a backend
+		 * bug, so skip rather than fail.  Any other failure is real. */
+		if (e == EPERM || e == EACCES || e == EAFNOSUPPORT || e == EPROTONOSUPPORT) {
+			print_message("[  SKIP  ] net_loopback — local TCP socket denied "
+				      "at %s(): %s\n",
+				      ctx->srv.fail_stage, strerror(e));
+			skip();
+		}
+		fail_msg("loopback echo server %s() failed: %s", ctx->srv.fail_stage, strerror(e));
+	}
 
 	assert_int_equal(ove_socket_open(&ctx->sock, &ctx->sock_storage, OVE_AF_INET,
 					 OVE_SOCK_STREAM),
