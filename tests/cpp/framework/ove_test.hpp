@@ -54,35 +54,9 @@ inline ove::Thread<StackSize> make_test_thread(const char *name, ove_thread_fn e
 	return ove::Thread<StackSize>(entry, arg, prio, name);
 }
 
-/* C++ test suite runner declarations */
-int test_cpp_mutex_run(void);
-int test_cpp_recursive_mutex_run(void);
-int test_cpp_semaphore_run(void);
-int test_cpp_event_run(void);
-int test_cpp_condvar_run(void);
-int test_cpp_queue_run(void);
-int test_cpp_timer_run(void);
-int test_cpp_thread_run(void);
-int test_cpp_thread_stop_run(void);
-int test_cpp_eventgroup_run(void);
-int test_cpp_lockguard_run(void);
-int test_cpp_app_run(void);
-int test_cpp_console_run(void);
-int test_cpp_time_run(void);
-int test_cpp_watchdog_run(void);
-int test_cpp_nvs_run(void);
-int test_cpp_shell_run(void);
-int test_cpp_bsp_run(void);
-int test_cpp_board_run(void);
-int test_cpp_gpio_run(void);
-int test_cpp_led_run(void);
-int test_cpp_audio_run(void);
-int test_cpp_fs_run(void);
-int test_cpp_stream_run(void);
-int test_cpp_workqueue_run(void);
-int test_cpp_static_init_run(void);
-int test_cpp_infer_run(void);
-int test_cpp_error_run(void);
-int test_cpp_net_run(void);
+/* C++ test suite runner declarations — single-sourced from suites.inc. */
+#define OVE_CPP_SUITE(name, label) int test_cpp_##name##_run(void);
+#include "suites.inc"
+#undef OVE_CPP_SUITE
 
 #endif /* OVE_TEST_CPP_HPP */

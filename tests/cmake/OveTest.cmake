@@ -252,3 +252,77 @@ function(ove_test_validate_suites_inc_parity suites_inc)
             "in sync with the OVE_TEST_{COMMON,FS,STUB_ONLY}_SUITES lists.")
     endif()
 endfunction()
+
+
+# ove_test_cpp_suites(<suites_inc> <suite_dir> <out_sources_var>)
+#   Single-source the C++ test suite list from <suites_inc> — the
+#   OVE_CPP_SUITE(name, label) x-macro file that also drives the runtime
+#   dispatch (cpp_main.cpp) and runner declarations (framework/ove_test.hpp).
+#   Parses the suite names, validates them against the test_*.cpp files in
+#   <suite_dir>, and returns the matching ${suite_dir}/test_<name>.cpp list in
+#   <out_sources_var>.  Fails configure (FATAL_ERROR) when a suite is listed
+#   more than once, listed but has no test_<name>.cpp on disk, or a
+#   test_*.cpp on disk is not listed in the .inc.  This is the C++ analogue
+#   of ove_test_validate_suite_membership (single category — all C++ suites
+#   are runnable).
+function(ove_test_cpp_suites suites_inc suite_dir out_sources_var)
+    if(NOT EXISTS "${suites_inc}")
+        message(FATAL_ERROR "OveTest: C++ suites.inc not found at ${suites_inc}")
+    endif()
+
+    # Parse OVE_CPP_SUITE(<name>, ...) entries (anchored at column 0 so the
+    # macro #defines, the defaulted guards and comment examples are ignored).
+    file(STRINGS "${suites_inc}" _lines REGEX "^OVE_CPP_SUITE\\(")
+    set(_names "")
+    set(_dups "")
+    foreach(_l ${_lines})
+        string(REGEX MATCH "^OVE_CPP_SUITE\\(([a-z0-9_]+)" _ "${_l}")
+        if(CMAKE_MATCH_1)
+            if(CMAKE_MATCH_1 IN_LIST _names)
+                list(APPEND _dups "${CMAKE_MATCH_1}")
+            else()
+                list(APPEND _names "${CMAKE_MATCH_1}")
+            endif()
+        endif()
+    endforeach()
+
+    # Expected sources from the .inc + listed-but-missing detection.
+    set(_sources "")
+    set(_missing_on_disk "")
+    foreach(_n ${_names})
+        if(EXISTS "${suite_dir}/test_${_n}.cpp")
+            list(APPEND _sources "${suite_dir}/test_${_n}.cpp")
+        else()
+            list(APPEND _missing_on_disk "test_${_n}.cpp")
+        endif()
+    endforeach()
+
+    # On-disk test_*.cpp not listed in the .inc.
+    file(GLOB _on_disk RELATIVE "${suite_dir}" "${suite_dir}/test_*.cpp")
+    set(_uncategorized "")
+    foreach(_f ${_on_disk})
+        string(REGEX REPLACE "^test_(.+)\\.cpp$" "\\1" _n "${_f}")
+        if(NOT _n IN_LIST _names)
+            list(APPEND _uncategorized "${_f}")
+        endif()
+    endforeach()
+
+    if(_dups OR _missing_on_disk OR _uncategorized)
+        set(_msg "OveTest: C++ test-suite mismatch (${suites_inc} <-> ${suite_dir})\n")
+        if(_dups)
+            string(APPEND _msg "  Duplicated in suites.inc: ${_dups}\n")
+        endif()
+        if(_missing_on_disk)
+            string(APPEND _msg "  Listed but no file on disk:  ${_missing_on_disk}\n")
+        endif()
+        if(_uncategorized)
+            string(APPEND _msg "  On disk but not in suites.inc: ${_uncategorized}\n")
+        endif()
+        string(APPEND _msg
+            "Add an OVE_CPP_SUITE(<name>, \"<Label>\") line to "
+            "tests/cpp/framework/suites.inc for each suites/test_<name>.cpp.")
+        message(FATAL_ERROR "${_msg}")
+    endif()
+
+    set(${out_sources_var} ${_sources} PARENT_SCOPE)
+endfunction()

@@ -80,39 +80,12 @@ set(STUB_SOURCES
     ${OVE_SRC}/ove_app.c
 )
 
-# C++ test suite sources
+# C++ test suite sources — single-sourced from framework/suites.inc (the
+# x-macro that also drives cpp_main.cpp dispatch + ove_test.hpp runner
+# declarations).  ove_test_cpp_suites() validates the .inc against the
+# suites/test_*.cpp files and fails configure on any drift.
 set(SUITE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/suites)
-set(SUITE_SOURCES
-    ${SUITE_DIR}/test_mutex.cpp
-    ${SUITE_DIR}/test_recursive_mutex.cpp
-    ${SUITE_DIR}/test_semaphore.cpp
-    ${SUITE_DIR}/test_event.cpp
-    ${SUITE_DIR}/test_condvar.cpp
-    ${SUITE_DIR}/test_queue.cpp
-    ${SUITE_DIR}/test_timer.cpp
-    ${SUITE_DIR}/test_thread.cpp
-    ${SUITE_DIR}/test_thread_stop.cpp
-    ${SUITE_DIR}/test_eventgroup.cpp
-    ${SUITE_DIR}/test_lockguard.cpp
-    ${SUITE_DIR}/test_app.cpp
-    ${SUITE_DIR}/test_console.cpp
-    ${SUITE_DIR}/test_time.cpp
-    ${SUITE_DIR}/test_watchdog.cpp
-    ${SUITE_DIR}/test_nvs.cpp
-    ${SUITE_DIR}/test_shell.cpp
-    ${SUITE_DIR}/test_bsp.cpp
-    ${SUITE_DIR}/test_board.cpp
-    ${SUITE_DIR}/test_gpio.cpp
-    ${SUITE_DIR}/test_led.cpp
-    ${SUITE_DIR}/test_audio.cpp
-    ${SUITE_DIR}/test_fs.cpp
-    ${SUITE_DIR}/test_stream.cpp
-    ${SUITE_DIR}/test_workqueue.cpp
-    ${SUITE_DIR}/test_static_init.cpp
-    ${SUITE_DIR}/test_infer.cpp
-    ${SUITE_DIR}/test_error.cpp
-    ${SUITE_DIR}/test_net.cpp
-)
+ove_test_cpp_suites(${CMAKE_CURRENT_SOURCE_DIR}/framework/suites.inc ${SUITE_DIR} SUITE_SOURCES)
 
 # ove_add_cpp_variant(<name> [compile_opts...])
 # Mirrors ove_add_stub_variant in tests/CMakeLists.txt: shared sources +
