@@ -1008,8 +1008,12 @@ fn stream_create_destroy_run() {
 fn stream_producer() {
     while !STREAM_DONE.load(Ordering::Relaxed) {
         if let Some(s) = STREAM_BENCH.try_get() {
-            let bufs = STREAM_BUFS.get().get();
-            let _ = s.send(&bufs.0);
+            // Send the tx half in place; the prior `get()` Copy memcpy'd the
+            // whole 128-byte cell out on every send.  SAFETY: the producer
+            // reads only `.0`; the consumer writes only the disjoint `.1`, so
+            // the two threads never touch the same bytes.
+            let tx = unsafe { &(*STREAM_BUFS.get().as_ptr()).0 };
+            let _ = s.send(tx);
         } else {
             // See comment on contention_thread.
             Thread::yield_now();
@@ -1033,20 +1037,23 @@ fn stream_throughput_setup() {
 
 fn stream_throughput_run() {
     if let Some(s) = STREAM_BENCH.try_get() {
-        let cell = STREAM_BUFS.get();
-        let mut bufs = cell.get();
-        let _ = s.recv(&mut bufs.1);
-        cell.set(bufs);
+        // Receive in place into the rx half.  The prior get()/set() Copy
+        // round-trip memcpy'd the full 128-byte cell twice per iteration
+        // (~+4.8 µs), inflating the Rust stream-throughput number against the
+        // C bench (which receives straight into a static rx_buf).  Same fix
+        // as stream_send_recv_run.  SAFETY: only this consumer writes `.1`;
+        // the producer reads only the disjoint `.0`, so they never alias.
+        let rx = unsafe { &mut (*STREAM_BUFS.get().as_ptr()).1 };
+        let _ = s.recv(rx);
     }
 }
 
 fn stream_throughput_teardown() {
     STREAM_DONE.store(true, Ordering::Relaxed);
     if let Some(s) = STREAM_BENCH.try_get() {
-        let cell = STREAM_BUFS.get();
-        let mut bufs = cell.get();
-        let _ = s.try_recv_for(&mut bufs.1, core::time::Duration::from_millis(100));
-        cell.set(bufs);
+        // Drain in place — see stream_throughput_run.
+        let rx = unsafe { &mut (*STREAM_BUFS.get().as_ptr()).1 };
+        let _ = s.try_recv_for(rx, core::time::Duration::from_millis(100));
     }
     Thread::sleep_ms(10);
     STREAM_PRODUCER_TH.shutdown();
