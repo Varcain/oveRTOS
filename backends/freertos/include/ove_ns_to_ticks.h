@@ -30,6 +30,12 @@ static inline TickType_t ove_ns_to_ticks(uint64_t ns)
 	if (ns == OVE_WAIT_FOREVER) {
 		return portMAX_DELAY;
 	}
+	if (ns == 0) {
+		/* Poll / try-* fast path: 0 ns ⇒ 0 ticks (non-blocking).  The
+		 * round-up divide below already yields 0 for ns==0, so this is
+		 * correctness-neutral; it just skips the UDIV on every poll. */
+		return 0;
+	}
 
 	const uint64_t nsec_per_tick = 1000000000ULL / configTICK_RATE_HZ;
 	const uint64_t plus = ns + (nsec_per_tick - 1u);
