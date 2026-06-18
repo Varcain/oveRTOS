@@ -36,7 +36,15 @@
  * ISR-driven (SysTick-style) and identifies targets via k_thread_custom_data
  * — no enumeration needed from there — so the registry exists mainly for
  * the trace swimlane. Lock is a k_mutex so it's safe from any task context
- * but not ISR; trace enumeration runs off the sim_debug pump thread. */
+ * but not ISR; trace enumeration runs off the sim_debug pump thread.
+ *
+ * Gated on CONFIG_OVE_TRACE_STREAM — the same guard the sole consumer,
+ * ove_backend_trace_list_threads() in zephyr_trace.c, compiles under. With
+ * trace off the registry is pure overhead (a global k_mutex taken twice on
+ * every thread create/destroy), so it and _register/_unregister compile to
+ * nothing. struct ove_thread keeps its `next` field either way so the
+ * storage size (size probes / test_storage_bounds) is unchanged. */
+#ifdef CONFIG_OVE_TRACE_STREAM
 struct ove_thread *ove_zephyr_thread_list_head;
 static struct k_mutex thread_list_lock;
 static bool thread_list_lock_initialised;
@@ -59,6 +67,7 @@ void ove_zephyr_thread_list_unlock(void)
 {
 	k_mutex_unlock(&thread_list_lock);
 }
+#endif /* CONFIG_OVE_TRACE_STREAM */
 
 struct ove_thread *ove_zephyr_current_thread(void)
 {
@@ -67,6 +76,7 @@ struct ove_thread *ove_zephyr_current_thread(void)
 	return (struct ove_thread *)k_thread_custom_data_get();
 }
 
+#ifdef CONFIG_OVE_TRACE_STREAM
 static void _register_thread(struct ove_thread *t)
 {
 	ove_zephyr_thread_list_lock();
@@ -88,6 +98,18 @@ static void _unregister_thread(struct ove_thread *t)
 	}
 	ove_zephyr_thread_list_unlock();
 }
+#else
+/* Trace off: the registry is compiled out (see comment above); these
+ * no-ops keep the create/destroy/init/deinit call sites unchanged. */
+static inline void _register_thread(struct ove_thread *t)
+{
+	(void)t;
+}
+static inline void _unregister_thread(struct ove_thread *t)
+{
+	(void)t;
+}
+#endif /* CONFIG_OVE_TRACE_STREAM */
 
 static int map_priority(ove_prio_t prio)
 {
