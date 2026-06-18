@@ -479,7 +479,15 @@ pub fn Thread(comptime stack_size: usize) type {
 
             const backing = try allocator.create(Backing);
             errdefer allocator.destroy(backing);
-            backing.stack = std.mem.zeroes(@TypeOf(backing.stack));
+            // Deliberately do NOT zero `backing.stack`.  It is the worker's
+            // stack (8 KiB here, rounded up to 16 KiB on Zephyr's MPU): the
+            // substrate sets up the initial frame, the worker writes the rest
+            // as it runs, and `getStackUsage` reads the RTOS's own
+            // high-water-mark fill — nothing reads the stack before it is
+            // written, so pre-zeroing it is pure spawn-time overhead.  It
+            // dominated `thread/create_destroy` in the benchmarks (worst-case
+            // cacheless timing amplifies the multi-KiB memset).  Only the
+            // small control block needs a clean slate.
             backing.storage = std.mem.zeroes(c.ove_thread_storage_t);
             var h: c.ove_thread_t = null;
             try err.fromCode(c.ove_thread_init(

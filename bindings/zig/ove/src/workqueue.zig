@@ -57,7 +57,11 @@ pub fn Workqueue(comptime stack_size: usize) type {
         ) Error!Self {
             const backing = try allocator.create(Backing);
             errdefer allocator.destroy(backing);
-            backing.stack = std.mem.zeroes(@TypeOf(backing.stack));
+            // Don't zero `backing.stack` — same rationale as ove.Thread.spawn:
+            // it's the workqueue worker thread's stack, substrate-initialised
+            // and RTOS-fill-pattern for usage accounting, so pre-zeroing the
+            // multi-KiB buffer is pure overhead (dominated workqueue
+            // create_destroy).  Only the control block needs zeroing.
             backing.storage = std.mem.zeroes(c.ove_workqueue_storage_t);
             var h: c.ove_workqueue_t = null;
             try err.fromCode(c.ove_workqueue_init(
