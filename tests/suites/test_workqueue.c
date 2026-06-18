@@ -185,16 +185,16 @@ static void test_wq_cancel_work(void **state)
 	ove_work_init(&w, delayed_handler);
 #endif
 
+	/* Cancel immediately — well before the 200 ms delay could fire — so the
+	 * outcome is unambiguous: the cancel must succeed, and the handler must
+	 * never run.  (Cancel clears `pending` ~200 ms before the worker
+	 * re-checks it after its delay sleep, so there is no firing race here.) */
 	ove_work_submit_delayed(wq, w, 200);
-	/* Try to cancel before it fires */
-	int rc = ove_work_cancel(w);
-	/* Cancel should return OK or a valid error code */
-	assert_true(rc == OVE_OK || rc == OVE_ERR_TIMEOUT || rc < 0);
+	assert_int_equal(ove_work_cancel(w), OVE_OK);
 
+	/* Wait past the original delay window; a cancelled item never fires. */
 	test_msleep(300);
-	/* POSIX stub cancel is best-effort: handler may still run even after
-       cancel returns OK due to timer/thread races.  On RTOS backends with
-       reliable cancel, s_work_called should be 0 when rc == OK. */
+	assert_int_equal(__atomic_load_n(&s_work_called, __ATOMIC_ACQUIRE), 0);
 
 #ifdef CONFIG_OVE_ZERO_HEAP
 	ove_test_workqueue_destroy(wq);
