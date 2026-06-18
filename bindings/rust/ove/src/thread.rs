@@ -714,14 +714,39 @@ unsafe impl<const STACK_SIZE: usize> Sync for ThreadStorage<STACK_SIZE> {}
 #[repr(C, align(8))]
 struct AlignedStack<const N: usize>([u8; N]);
 
-#[cfg(all(zero_heap, rtos_zephyr))]
-#[repr(C, align(8192))]
-struct AlignedStack<const N: usize>([u8; N]);
-
-#[cfg(zero_heap)]
+#[cfg(all(zero_heap, not(rtos_zephyr)))]
 impl<const N: usize> AlignedStack<N> {
     const fn new() -> Self {
         Self([0u8; N])
+    }
+}
+
+/// Bytes appended to a Zephyr zero-heap stack buffer beyond the requested
+/// usable size `N`.
+///
+/// `spawn_static` passes `N` to `ove_thread_init` as the usable
+/// `stack_size`, but Zephyr's `k_thread_create` lays the stack out as
+/// `K_THREAD_STACK_LEN(N)` — `N` rounded up plus a guard/reserved region.
+/// Measured on this Cortex-M7 + MPU-stack-guard build:
+/// `K_THREAD_STACK_LEN(8192) = 8320` (= `8192 + 128`).  If the *buffer* is
+/// only `N` bytes (`[u8; N]`), the kernel writes the guard past its end,
+/// corrupting adjacent storage and leaving the thread unschedulable — it
+/// never runs and the CPU sits in the idle loop.  Appending a fixed reserve
+/// makes the buffer `>= K_THREAD_STACK_LEN(N)` for every stack size we use;
+/// 512 leaves ample margin over the measured 128.  (The `align(8192)` below
+/// already exceeds the modest object alignment Zephyr needs here, so only
+/// the size was wrong.)
+#[cfg(all(zero_heap, rtos_zephyr))]
+const ZEPHYR_STACK_RESERVE: usize = 512;
+
+#[cfg(all(zero_heap, rtos_zephyr))]
+#[repr(C, align(8192))]
+struct AlignedStack<const N: usize>([u8; N], [u8; ZEPHYR_STACK_RESERVE]);
+
+#[cfg(all(zero_heap, rtos_zephyr))]
+impl<const N: usize> AlignedStack<N> {
+    const fn new() -> Self {
+        Self([0u8; N], [0u8; ZEPHYR_STACK_RESERVE])
     }
 }
 
