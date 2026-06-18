@@ -152,20 +152,15 @@ int ove_sem_set_notify(ove_sem_t sem, ove_notify_cb cb, void *user_data)
 
 int ove_event_init(ove_event_t *evt, ove_event_storage_t *storage)
 {
-	storage->sem = xSemaphoreCreateBinaryStatic(&storage->static_sem);
-	if (storage->sem == NULL) {
-		return OVE_ERR_NO_MEMORY;
-	}
+	__atomic_store_n(&storage->signaled, 0u, __ATOMIC_RELAXED);
+	__atomic_store_n(&storage->waiter, (TaskHandle_t)NULL, __ATOMIC_RELAXED);
 	*evt = storage;
 	return OVE_OK;
 }
 
 void ove_event_deinit(ove_event_t evt)
 {
-	if (evt != NULL && evt->sem != NULL) {
-		vSemaphoreDelete(evt->sem);
-		evt->sem = NULL;
-	}
+	(void)evt; /* no kernel object to release */
 }
 
 /* ─── Event _create / _destroy ───────────────────────────────────────── */
@@ -181,17 +176,12 @@ int ove_event_create(ove_event_t *evt)
 	if (w == NULL) {
 		return OVE_ERR_NO_MEMORY;
 	}
-	ret = ove_event_init(evt, w);
-	if (ret != OVE_OK) {
-		OVE_BACKEND_FREE(w);
-	}
-	return ret;
+	return ove_event_init(evt, w); /* cannot fail — no kernel object */
 }
 
 void ove_event_destroy(ove_event_t evt)
 {
 	if (evt != NULL) {
-		ove_event_deinit(evt);
 		OVE_BACKEND_FREE(evt);
 	}
 }
@@ -200,21 +190,84 @@ void ove_event_destroy(ove_event_t evt)
 int ove_event_wait(ove_event_t evt, uint64_t timeout_ns)
 {
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_ENTER, evt);
-	BaseType_t got = xSemaphoreTake(evt->sem, ove_ns_to_ticks(timeout_ns));
+
+	/* Drop any stale notification left in this task's single slot (e.g.
+	 * from another event whose signaller raced our deregister) so it can't
+	 * satisfy this wait spuriously. */
+	(void)ulTaskNotifyTake(pdTRUE, 0);
+
+	const int forever = (timeout_ns == OVE_WAIT_FOREVER);
+	const TickType_t deadline =
+		xTaskGetTickCount() + (forever ? 0 : ove_ns_to_ticks(timeout_ns));
+	int ret = OVE_ERR_TIMEOUT;
+
+	/* Register as the (single) waiter for the signaller to notify. */
+	__atomic_store_n(&evt->waiter, xTaskGetCurrentTaskHandle(), __ATOMIC_SEQ_CST);
+	for (;;) {
+		/* The latch is the per-event source of truth; a task
+		 * notification is only a wakeup hint (per-task, shared across
+		 * every event this thread waits on).  Checking the latch first
+		 * also closes the signal-between-register-and-block race. */
+		if (__atomic_exchange_n(&evt->signaled, 0u, __ATOMIC_SEQ_CST) != 0u) {
+			ret = OVE_OK;
+			break;
+		}
+
+		TickType_t wait_ticks;
+		if (forever) {
+			wait_ticks = portMAX_DELAY;
+		} else {
+			TickType_t now = xTaskGetTickCount();
+			if ((int32_t)(deadline - now) <= 0) {
+				ret = OVE_ERR_TIMEOUT;
+				break;
+			}
+			wait_ticks = deadline - now;
+		}
+
+		uint32_t got = ulTaskNotifyTake(pdTRUE, wait_ticks);
+
+		/* Re-check the latch regardless of why we woke — a signal that
+		 * raced the timeout still set it, and `got` alone can't tell our
+		 * event's signal from a stale cross-event notification. */
+		if (__atomic_exchange_n(&evt->signaled, 0u, __ATOMIC_SEQ_CST) != 0u) {
+			ret = OVE_OK;
+			break;
+		}
+		if (got == 0u) {
+			ret = OVE_ERR_TIMEOUT; /* timed out, no latch (forever never hits this) */
+			break;
+		}
+		/* got != 0 but no latch: stale notification from another event —
+		 * re-block on the remaining time. */
+	}
+	__atomic_store_n(&evt->waiter, (TaskHandle_t)NULL, __ATOMIC_SEQ_CST);
+
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_WAIT_EXIT, evt);
-	return (got == pdTRUE) ? OVE_OK : OVE_ERR_TIMEOUT;
+	return ret;
 }
 
 void ove_event_signal(ove_event_t evt)
 {
-	(void)xSemaphoreGive(evt->sem);
+	/* Publish the latch first (level-triggered), then wake the waiter if
+	 * one is registered.  SEQ_CST pairs with ove_event_wait's
+	 * register-then-recheck so a signal can never be lost. */
+	__atomic_store_n(&evt->signaled, 1u, __ATOMIC_SEQ_CST);
+	TaskHandle_t w = __atomic_load_n(&evt->waiter, __ATOMIC_SEQ_CST);
+	if (w != NULL) {
+		xTaskNotifyGive(w);
+	}
 	OVE_TRACE_MARK_CURRENT(OVE_TRACE_PRIM_EVENT, OVE_TRACE_ACT_POST, evt);
 }
 
 void ove_event_signal_from_isr(ove_event_t evt)
 {
+	__atomic_store_n(&evt->signaled, 1u, __ATOMIC_SEQ_CST);
+	TaskHandle_t w = __atomic_load_n(&evt->waiter, __ATOMIC_SEQ_CST);
 	BaseType_t yield = pdFALSE;
-	(void)xSemaphoreGiveFromISR(evt->sem, &yield);
+	if (w != NULL) {
+		vTaskNotifyGiveFromISR(w, &yield);
+	}
 	portYIELD_FROM_ISR(yield);
 }
 

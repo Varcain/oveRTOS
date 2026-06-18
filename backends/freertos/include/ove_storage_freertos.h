@@ -64,14 +64,21 @@ struct ove_sem {
 };
 
 struct ove_event {
-	/* Binary-semaphore-backed event: matches NuttX/Zephyr/POSIX
-	 * level-triggered semantics — a signal delivered before a wait is
-	 * latched and consumed by the next wait.  An earlier task-
-	 * notification implementation was edge-triggered (signal dropped if
-	 * no waiter was registered yet) and broke `signal-then-wait` and
-	 * `signal_from_isr` tests; reverted to the binary-sem design. */
-	StaticSemaphore_t static_sem;
-	SemaphoreHandle_t sem;
+	/* Level-triggered single-token latch + at-most-one registered waiter.
+	 * `signaled` is the sticky latch (a signal posted before a wait is
+	 * consumed by the next wait — keeps signal-then-wait and
+	 * signal_from_isr working, which an earlier *edge-triggered*
+	 * task-notification attempt broke); `waiter` is the blocked task to
+	 * notify.  Accessed via __atomic_* (SEQ_CST) on plain fields so the
+	 * C++ binding — which includes this header — isn't fed the C-only
+	 * _Atomic keyword.  Replaces a binary semaphore, which cost ~2.5× the
+	 * raw FreeRTOS task-notification path on signal+wait.  Single-waiter
+	 * is within the API contract (ove_event_signal wakes "one waiting
+	 * thread"); ove_event_wait re-checks the latch on every wake so a
+	 * stale notification from another event sharing this task's single
+	 * notification slot can never return a false wake. */
+	unsigned int signaled;
+	TaskHandle_t waiter;
 };
 
 struct ove_condvar {
