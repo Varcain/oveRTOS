@@ -77,9 +77,18 @@ typedef struct ove_thread ove_thread_storage_t;
 
 struct ove_queue {
 	struct k_msgq msgq;
+	/* Heap-create path points this at the inline_storage[] FAM; the
+	 * init / zero-heap path records the caller-supplied buffer. */
 	char *buffer;
 	ove_notify_cb notify_cb;
 	void *notify_ud;
+#ifndef CONFIG_OVE_ZERO_HEAP
+	/* Message buffer for the heap-create path, so the wrapper struct +
+	 * queue data live in one OVE_BACKEND_MALLOC block (was two).  FAM
+	 * omitted under CONFIG_OVE_ZERO_HEAP for C++ class layout — see
+	 * ove_thread.stack[] / the FreeRTOS ove_queue. */
+	char inline_storage[];
+#endif
 };
 
 typedef struct ove_queue ove_queue_storage_t;
