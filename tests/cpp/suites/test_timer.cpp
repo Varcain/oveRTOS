@@ -18,7 +18,7 @@ static void cpp_periodic_cb(ove_timer_t timer, void *user_data)
 	s_cpp_periodic_count++;
 }
 
-[[maybe_unused]] static void cpp_userdata_cb(ove_timer_t timer, void *user_data)
+static void cpp_userdata_cb(ove_timer_t timer, void *user_data)
 {
 	(void)timer;
 	s_cpp_user_data_received = (uintptr_t)user_data;
@@ -40,10 +40,6 @@ static void test_cpp_timer_create_destroy_periodic(void **state)
 	assert_true(t.valid());
 }
 
-/* Timer-firing tests skipped under TSan (gated at registration);
- * gate the function definitions too so -Werror=unused-function stays
- * happy on TSan builds. */
-#ifndef __SANITIZE_THREAD__
 static void test_cpp_timer_oneshot_fires_once(void **state)
 {
 	(void)state;
@@ -128,7 +124,7 @@ static void test_cpp_timer_destroy_while_running(void **state)
 		test_msleep(60);
 		/* RAII destroy without explicit stop */
 	}
-	/* Let any in-flight SIGEV_THREAD callbacks drain before next test */
+	/* Let any in-flight dispatcher callbacks drain before next test */
 	test_msleep(50);
 }
 
@@ -144,25 +140,19 @@ static void test_cpp_timer_callback_user_data(void **state)
 	test_msleep(150);
 	assert_true(s_cpp_user_data_received == magic);
 }
-#endif /* !__SANITIZE_THREAD__ */
 
 /* ── Wrapper-specific tests ─────────────────────────────────────────── */
 
 static void test_cpp_timer_raii_destroy(void **state)
 {
 	(void)state;
-#ifdef __SANITIZE_THREAD__
-	skip(); /* Calls t.start() which triggers SIGEV_THREAD; same skip
-		 * rationale as the firing tests above. */
-#else
 	{
 		ove::Timer t(cpp_periodic_cb, nullptr, 50, false);
 		(void)t.start();
 		test_msleep(60);
 	}
-	/* Let any in-flight SIGEV_THREAD callbacks drain before next test */
+	/* Let any in-flight dispatcher callbacks drain before next test */
 	test_msleep(50);
-#endif
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -193,9 +183,6 @@ int test_cpp_timer_run(void)
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_cpp_timer_create_destroy_oneshot),
 		cmocka_unit_test(test_cpp_timer_create_destroy_periodic),
-	/* Firing-dependent tests skipped under TSan — same SIGEV_THREAD
-		 * runtime issue as the C side test_timer_run. */
-#ifndef __SANITIZE_THREAD__
 		cmocka_unit_test(test_cpp_timer_oneshot_fires_once),
 		cmocka_unit_test(test_cpp_timer_periodic_fires_multiple),
 		cmocka_unit_test(test_cpp_timer_stop_prevents_callbacks),
@@ -203,7 +190,6 @@ int test_cpp_timer_run(void)
 		cmocka_unit_test(test_cpp_timer_double_start),
 		cmocka_unit_test(test_cpp_timer_destroy_while_running),
 		cmocka_unit_test(test_cpp_timer_callback_user_data),
-#endif
 		cmocka_unit_test(test_cpp_timer_raii_destroy),
 #ifndef CONFIG_OVE_ZERO_HEAP
 		cmocka_unit_test(test_cpp_timer_move_construct),
