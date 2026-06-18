@@ -186,6 +186,16 @@ macro(ove_setup_project _proj_name)
         add_link_options($<$<CONFIG:Release>:-flto=thin>)
     endif()
 
+    # NOTE on intra-image GCC LTO (to inline the thin ove_* backend wrappers
+    # into callers): investigated and found NOT viable on the arm-none-eabi-gcc
+    # 15.2 Cortex-M7 target — whole-image `-flto` fails to assemble the
+    # FreeRTOS image with "Error: offset out of range" (a PC-relative
+    # literal-pool load exceeds range after LTO merges TUs).  The only
+    # mitigations (`-mlong-calls`, partition tuning) negate the inlining gain,
+    # which the wrapper-vs-native data shows is modest (~hundreds of ns,
+    # worst-case-timing only).  Left unimplemented deliberately; revisit if the
+    # toolchain/linker gains robust Cortex-M LTO.
+
     # Sampling profiler: FreeRTOS walks saved-{r7, lr} pairs out of the
     # task stack, which needs the compiler to emit frame pointers. NuttX
     # uses up_backtrace(tcb), which internally relies on the same ARMv7-M
