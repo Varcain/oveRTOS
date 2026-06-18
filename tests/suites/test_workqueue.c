@@ -44,9 +44,8 @@ static void test_wq_create_destroy(void **state)
 {
 	(void)state;
 	ove_workqueue_t wq = NULL;
-	int rc = ove_test_workqueue_create(&wq, &s_wq_storage, "test_wq", OVE_PRIO_NORMAL, 2048,
-					   s_wq_stack);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_workqueue_create(&wq, &s_wq_storage, "test_wq", OVE_PRIO_NORMAL,
+						     2048, s_wq_stack));
 	assert_non_null(wq);
 	ove_test_workqueue_destroy(wq);
 }
@@ -56,11 +55,10 @@ static void test_wq_init_free_work(void **state)
 	(void)state;
 	ove_work_t w = NULL;
 #ifdef CONFIG_OVE_ZERO_HEAP
-	int rc = ove_work_init_static(&w, &s_work_storage, work_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init_static(&w, &s_work_storage, work_handler));
 #else
-	int rc = ove_work_init(&w, work_handler);
+	OVE_TEST_ASSERT_OK(ove_work_init(&w, work_handler));
 #endif
-	assert_int_equal(rc, OVE_OK);
 	assert_non_null(w);
 #ifndef CONFIG_OVE_ZERO_HEAP
 	ove_work_free(w);
@@ -82,8 +80,7 @@ static void test_wq_submit_handler_called(void **state)
 	ove_work_init(&w, work_handler);
 #endif
 
-	int rc = ove_work_submit(wq, w);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_work_submit(wq, w));
 
 	assert_true(wait_for_flag(&s_work_called, 1, 500));
 
@@ -152,8 +149,7 @@ static void test_wq_submit_delayed(void **state)
 	ove_work_init(&w, delayed_handler);
 #endif
 
-	int rc = ove_work_submit_delayed(wq, w, 50);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_work_submit_delayed(wq, w, 50));
 
 	/* Should not have fired yet — check well before the 50 ms delay */
 	test_msleep(10);
@@ -190,7 +186,7 @@ static void test_wq_cancel_work(void **state)
 	 * never run.  (Cancel clears `pending` ~200 ms before the worker
 	 * re-checks it after its delay sleep, so there is no firing race here.) */
 	ove_work_submit_delayed(wq, w, 200);
-	assert_int_equal(ove_work_cancel(w), OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_work_cancel(w));
 
 	/* Wait past the original delay window; a cancelled item never fires. */
 	test_msleep(300);

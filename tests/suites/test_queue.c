@@ -53,8 +53,7 @@ static void test_queue_create_destroy(void **state)
 {
 	(void)state;
 	ove_queue_t q = NULL;
-	int rc = ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_queue_create(&q, &s_q_storage, s_q_buf, sizeof(int), 5));
 	assert_non_null(q);
 	ove_test_queue_destroy(q);
 }
@@ -217,7 +216,8 @@ static void test_queue_producer_consumer(void **state)
 	atomic_store(&s_consumer_sum, 0);
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "consumer", consumer_thread, q, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_th_storage, "consumer", consumer_thread, q,
+					       s_th_stack, 4096));
 
 	/* produce 1+2+3+4+5 = 15 */
 	for (int i = 1; i <= 5; i++) {
@@ -281,7 +281,8 @@ static void test_queue_send_wait_forever(void **state)
 	s_blocking_done = 0;
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "blocker", blocking_receiver, q, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_th_storage, "blocker", blocking_receiver, q,
+					       s_th_stack, 4096));
 
 	test_msleep(50); /* let receiver block — no observable flag before it enters receive() */
 
@@ -300,12 +301,12 @@ static void test_queue_pair_item_size(void **state)
 	(void)state;
 	/* Verify we can create a queue with item_size = sizeof(pair_t) = 2*sizeof(int) */
 	ove_queue_t q = NULL;
-	int rc = ove_test_queue_create(&q, &s_q_storage_pair, s_q_buf_pair, sizeof(struct {
-		int a;
-		int b;
-	}),
-				       8);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_queue_create(&q, &s_q_storage_pair, s_q_buf_pair,
+						 sizeof(struct {
+							 int a;
+							 int b;
+						 }),
+						 8));
 	assert_non_null(q);
 
 	struct {

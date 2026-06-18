@@ -79,7 +79,8 @@ static void test_create_destroy(void **state)
 	(void)state;
 	atomic_store(&g_flag, 0);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t1", entry_set_flag, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t1", entry_set_flag, NULL,
+					       s_th_stack, 4096));
 	assert_non_null(h);
 	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 	ove_test_thread_destroy(h);
@@ -93,8 +94,8 @@ static void test_entry_arg(void **state)
 	atomic_store(&g_flag, 0);
 	int sentinel = 0xBEEF;
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t2", entry_capture_arg, &sentinel, s_th_stack,
-			    4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t2", entry_capture_arg,
+					       &sentinel, s_th_stack, 4096));
 	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 	assert_int_equal((intptr_t)atomic_load(&g_arg_val), (intptr_t)&sentinel);
 	ove_test_thread_destroy(h);
@@ -141,7 +142,8 @@ static void test_set_priority(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t7", entry_spin, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(
+		ove_test_thread_run(&h, &s_th_storage, "t7", entry_spin, NULL, s_th_stack, 4096));
 	test_msleep(10);
 	ove_thread_set_priority(h, OVE_PRIO_HIGH);
 	atomic_store(&g_keep_running, 0);
@@ -155,7 +157,8 @@ static void test_get_state_running(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t8", entry_spin, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(
+		ove_test_thread_run(&h, &s_th_storage, "t8", entry_spin, NULL, s_th_stack, 4096));
 	test_msleep(20);
 	ove_thread_state_t st = ove_thread_get_state(h);
 	/* RUNNING, READY, or BLOCKED (FreeRTOS: vTaskDelay in spin loop) */
@@ -172,7 +175,8 @@ static void test_get_state_terminated(void **state)
 	(void)state;
 	ove_thread_t h = NULL;
 	atomic_store(&g_flag, 0);
-	ove_test_thread_run(&h, &s_th_storage, "t9", entry_set_flag, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t9", entry_set_flag, NULL,
+					       s_th_stack, 4096));
 	/* Entry sets the flag then returns; wait for it to have run, then
 	 * bounded-poll (wall-clock) until the backend reflects the exit rather
 	 * than guessing a fixed delay. */
@@ -198,7 +202,8 @@ static void test_stack_usage(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t10", entry_spin, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(
+		ove_test_thread_run(&h, &s_th_storage, "t10", entry_spin, NULL, s_th_stack, 4096));
 	test_msleep(10);
 	/* Stub returns 0; FreeRTOS returns actual HWM bytes — just verify no crash */
 	(void)ove_thread_get_stack_usage(h);
@@ -233,7 +238,8 @@ static void test_suspend_resume(void **state)
 	(void)state;
 	atomic_store(&g_flag, 0);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t14", entry_sleep_briefly, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&h, &s_th_storage, "t14", entry_sleep_briefly, NULL,
+					       s_th_stack, 4096));
 	/* Wait for the thread to start (it sets g_flag=1 on entry). */
 	assert_true(wait_for_atomic(&g_flag, 1, 1000));
 
@@ -266,7 +272,8 @@ static void test_runtime_stats(void **state)
 	(void)state;
 	atomic_store(&g_keep_running, 1);
 	ove_thread_t h = NULL;
-	ove_test_thread_run(&h, &s_th_storage, "t16", entry_spin, NULL, s_th_stack, 4096);
+	OVE_TEST_ASSERT_OK(
+		ove_test_thread_run(&h, &s_th_storage, "t16", entry_spin, NULL, s_th_stack, 4096));
 	test_msleep(20);
 
 	struct ove_thread_stats stats;

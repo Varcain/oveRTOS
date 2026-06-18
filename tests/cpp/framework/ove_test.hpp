@@ -54,6 +54,25 @@ inline ove::Thread<StackSize> make_test_thread(const char *name, ove_thread_fn e
 	return ove::Thread<StackSize>(entry, arg, prio, name);
 }
 
+/* Assert that an ove::Result<…> succeeded.  On failure prints the strong
+ * Error code, then fails the test — so a submit/reset/send error reads
+ * clearly instead of surfacing later as a misleading behavioural mismatch.
+ * Mirrors the C-side OVE_TEST_ASSERT_OK in tests/framework/ove_test.h.
+ * (Construction success is a separate idiom: assert_true(obj.valid()).) */
+template <class T>
+inline void ove_test_assert_ok(const ove::Result<T> &r, const char *expr, const char *file,
+			       int line)
+{
+	if (!r.has_value()) {
+		print_message("%s:%d: %s failed: Error(%d)\n", file, line, expr,
+			      static_cast<int>(r.error()));
+		_fail(file, line);
+	}
+}
+
+#define OVE_TEST_ASSERT_OK(r) ove_test_assert_ok((r), #r, __FILE__, __LINE__)
+#define assert_ok(r) OVE_TEST_ASSERT_OK(r)
+
 /* C++ test suite runner declarations — single-sourced from suites.inc. */
 #define OVE_CPP_SUITE(name, label) int test_cpp_##name##_run(void);
 #include "suites.inc"

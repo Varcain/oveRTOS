@@ -60,8 +60,7 @@ static void test_timer_create_destroy_oneshot(void **state)
 {
 	(void)state;
 	ove_timer_t t = NULL;
-	int rc = ove_test_timer_create(&t, &s_tmr_storage, oneshot_cb, NULL, 100, 1);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, oneshot_cb, NULL, 100, 1));
 	assert_non_null(t);
 	ove_test_timer_destroy(t);
 }
@@ -70,8 +69,7 @@ static void test_timer_create_destroy_periodic(void **state)
 {
 	(void)state;
 	ove_timer_t t = NULL;
-	int rc = ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 50, 0);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 50, 0));
 	assert_non_null(t);
 	ove_test_timer_destroy(t);
 }
@@ -86,8 +84,8 @@ static void test_timer_oneshot_fires_once(void **state)
 	s_oneshot_count = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, oneshot_cb, NULL, 30, 1);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, oneshot_cb, NULL, 30, 1));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(200); /* 200 ms — plenty of time */
 
@@ -102,12 +100,12 @@ static void test_timer_periodic_fires_multiple(void **state)
 	s_periodic_count = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 30, 0);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 30, 0));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(250); /* 250 ms — should get ~8 fires at 30 ms period */
 
-	ove_timer_stop(t);
+	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
 
 	/* Expected ~8 fires; allow 3–20 for scheduler jitter but cap to catch
      * runaway timers. */
@@ -123,11 +121,11 @@ static void test_timer_stop_prevents_callbacks(void **state)
 	s_periodic_count = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 20, 0);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 20, 0));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(100);
-	ove_timer_stop(t);
+	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
 
 	int count_after_stop = s_periodic_count;
 	test_msleep(150);
@@ -144,19 +142,19 @@ static void test_timer_reset_restarts(void **state)
 	s_periodic_count = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 50, 0);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 50, 0));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(80);
 	int before_reset = s_periodic_count;
-	ove_timer_reset(t);
+	OVE_TEST_ASSERT_OK(ove_timer_reset(t));
 
 	test_msleep(200);
 
 	/* After reset the timer keeps running; we should see more callbacks */
 	assert_true(s_periodic_count > before_reset);
 
-	ove_timer_stop(t);
+	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
 	ove_test_timer_destroy(t);
 }
 #endif /* !__SANITIZE_THREAD__ (firing tests block 1) */
@@ -177,14 +175,14 @@ static void test_timer_double_start(void **state)
 	s_periodic_count = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 30, 0);
-	ove_timer_start(t);
-	/* Start again while running — should not crash */
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 30, 0));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
+	/* Start again while running — should not crash (return value unspecified). */
 	ove_timer_start(t);
 
 	test_msleep(150);
 
-	ove_timer_stop(t);
+	OVE_TEST_ASSERT_OK(ove_timer_stop(t));
 	assert_true(s_periodic_count >= 2);
 
 	ove_test_timer_destroy(t);
@@ -196,8 +194,8 @@ static void test_timer_destroy_while_running(void **state)
 	s_periodic_count = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 20, 0);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, periodic_cb, NULL, 20, 0));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(60);
 
@@ -216,8 +214,8 @@ static void test_timer_destroy_waits_for_active_callback(void **state)
 	s_slow_cb_completed = 0;
 
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, slow_cb, NULL, 20, 1);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(ove_test_timer_create(&t, &s_tmr_storage, slow_cb, NULL, 20, 1));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	/* Wait until the callback has entered and is mid-sleep. */
 	for (int i = 0; i < 1000 && !s_slow_cb_entered; i++)
@@ -237,8 +235,9 @@ static void test_timer_callback_user_data(void **state)
 
 	uintptr_t magic = 0xDEADBEEF;
 	ove_timer_t t = NULL;
-	ove_test_timer_create(&t, &s_tmr_storage, userdata_cb, (void *)magic, 20, 1);
-	ove_timer_start(t);
+	OVE_TEST_ASSERT_OK(
+		ove_test_timer_create(&t, &s_tmr_storage, userdata_cb, (void *)magic, 20, 1));
+	OVE_TEST_ASSERT_OK(ove_timer_start(t));
 
 	test_msleep(150);
 

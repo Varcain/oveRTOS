@@ -25,8 +25,7 @@ static void test_stream_create_destroy(void **state)
 {
 	(void)state;
 	ove_stream_t s = NULL;
-	int rc = ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 1);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 1));
 	assert_non_null(s);
 	ove_test_stream_destroy(s);
 }
@@ -102,8 +101,7 @@ static void test_stream_reset(void **state)
 	const uint8_t tx[] = "data";
 	ove_stream_send(s, tx, 4, 0, NULL);
 
-	int rc = ove_stream_reset(s);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_stream_reset(s));
 
 	size_t avail = ove_stream_bytes_available(s);
 	assert_int_equal(avail, 0);
@@ -185,16 +183,15 @@ static void test_stream_trigger(void **state)
 	/* trigger = 4: a blocked receive must wait until >= 4 bytes are present
 	 * (ove/stream.h contract). A backend that ignores trigger (wake on any
 	 * byte) would return after the producer's first 2 bytes -> received==2. */
-	int rc = ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 4);
-	assert_int_equal(rc, OVE_OK);
+	OVE_TEST_ASSERT_OK(ove_test_stream_create(&s, &s_strm_storage, s_strm_buf, 256, 4));
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "trig_prod", trigger_producer_fn, s, s_th_stack,
-			    4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_th_storage, "trig_prod", trigger_producer_fn,
+					       s, s_th_stack, 4096));
 
 	uint8_t rx[16] = {0};
 	size_t received = 0;
-	rc = ove_stream_receive(s, rx, sizeof(rx), OVE_MS(2000), &received);
+	int rc = ove_stream_receive(s, rx, sizeof(rx), OVE_MS(2000), &received);
 	assert_int_equal(rc, OVE_OK);
 	assert_int_equal(received, 4);
 	assert_int_equal(rx[0], 0xA1);
@@ -279,8 +276,8 @@ static void test_stream_cross_thread(void **state)
 	struct stream_producer_arg pa = {.stream = s, .count = 100};
 
 	ove_thread_t th = NULL;
-	ove_test_thread_run(&th, &s_th_storage, "producer", stream_producer_fn, &pa, s_th_stack,
-			    4096);
+	OVE_TEST_ASSERT_OK(ove_test_thread_run(&th, &s_th_storage, "producer", stream_producer_fn,
+					       &pa, s_th_stack, 4096));
 
 	/* Consumer: receive all bytes */
 	int received_total = 0;

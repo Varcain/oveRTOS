@@ -73,6 +73,13 @@ static inline void test_msleep(uint32_t ms)
 #define OVE_TEST_CONDVAR_WAIT(cv, mtx) \
 	assert_int_equal(ove_condvar_wait((cv), (mtx), OVE_WAIT_FOREVER), OVE_OK)
 
+/* Assert that an oveRTOS API call returned OVE_OK. Use for create/start/
+ * stop/setup calls whose only valid result is success — an unexpected error
+ * fails the test cleanly (and prints the offending value) instead of letting
+ * a half-initialised object reach the behavioural asserts below, where the
+ * failure would surface as a misleading timing/state mismatch. */
+#define OVE_TEST_ASSERT_OK(expr) assert_int_equal((expr), OVE_OK)
+
 /* Read flag with C11 acquire ordering so TSan / language-rules see this
  * as an atomic load.  Writers must pair via TEST_FLAG_SET (above). */
 static inline int wait_for_flag(volatile int *flag, int expected, uint32_t timeout_ms)

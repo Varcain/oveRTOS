@@ -31,7 +31,7 @@ static void test_cpp_work_submit(void **state)
 
 	ove::Work w(test_wq_handler);
 
-	assert_true(w.submit(wq).has_value());
+	OVE_TEST_ASSERT_OK(w.submit(wq));
 	test_msleep(100);
 	assert_int_equal(s_wq_count, 1);
 }
@@ -45,7 +45,7 @@ static void test_cpp_work_submit_delayed(void **state)
 
 	ove::Work w(test_wq_handler);
 
-	assert_true(w.submit_delayed(wq, 50).has_value());
+	OVE_TEST_ASSERT_OK(w.submit_delayed(wq, 50));
 
 	/* Should not have fired immediately */
 	test_msleep(10);
