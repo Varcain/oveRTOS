@@ -6,8 +6,10 @@
  * This file is part of oveRTOS.
  *
  * On-target loader test: load a real ELF32/ARM module into RAM and *execute*
- * its functions on the Cortex-M. Lives outside tests/suites/ (it is not a
- * host-categorised suite) and is dispatched only from the NuttX runner.
+ * its functions on the Cortex-M, exercising reloc-free code and an
+ * R_ARM_ABS32 relocation (an internal global's address materialised from a
+ * .text literal pool). Lives outside tests/suites/ (not a host-categorised
+ * suite) and is dispatched only from the NuttX runner.
  */
 
 #include "framework/ove_test.h"
@@ -37,10 +39,16 @@ static void test_loader_target_exec(void **state)
 	assert_non_null(m_mul);
 	assert_non_null(m_neg);
 
-	/* Execute the loaded code on the Cortex-M. */
+	/* Reloc-free leaf functions execute on the Cortex-M. */
 	assert_int_equal(m_add(3, 4), 7);
 	assert_int_equal(m_mul(6, 7), 42);
 	assert_int_equal(m_neg(5), -5);
+
+	/* R_ARM_ABS32 (literal pool): the loaded code reads its own global,
+	 * proving the relocation was applied correctly before execution. */
+	int (*m_read_global)(void) = (int (*)(void))ove_loader_sym(&mod, "m_read_global");
+	assert_non_null(m_read_global);
+	assert_int_equal(m_read_global(), 0x1234);
 }
 
 int test_loader_target_run(void)

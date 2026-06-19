@@ -385,9 +385,11 @@ static int apply_rel_arm(const ove_module_t *mod, unsigned tgt, const Elf32_Rel 
 		break;
 	}
 	default:
-		/* Thumb-2 instruction relocations (THM_CALL / MOVW / MOVT / ...)
-		 * are not yet implemented — they need QEMU-execution validation
-		 * rather than un-runnable bit-twiddling. */
+		/* Thumb-2 instruction relocations (THM_CALL / THM_JUMP24 /
+		 * MOVW / MOVT / ...) are not yet implemented. Branch relocations
+		 * additionally need veneers when the target is beyond a Thumb
+		 * BL's +/-16 MB reach (e.g. a firmware import from a distant load
+		 * region) -- the next step. */
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 	return OVE_OK;
