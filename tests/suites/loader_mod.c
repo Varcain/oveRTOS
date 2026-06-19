@@ -31,3 +31,8 @@ long mod_compute(long x)
 {
 	return host_mul(x, 3) + g_bias;
 }
+
+void mod_store(long *p, long v) /* writes through a caller pointer */
+{
+	*p = v;
+}

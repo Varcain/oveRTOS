@@ -88,6 +88,7 @@ OVE_SUITE_STUB(pm,            "PM")
 OVE_SUITE_STUB(arena,         "Arena allocator")
 OVE_SUITE_STUB(loader,        "Module loader")
 OVE_SUITE_STUB(protected,     "Protected tasks")
+OVE_SUITE_STUB(sandbox,       "Phase-0 integration")
 
 #ifdef _OVE_SUITES_INC_DEFAULTED_CORE
 #undef OVE_SUITE
