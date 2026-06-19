@@ -34,6 +34,15 @@ config OVE_LOADER
       symbols. Reusable for plugins / OTA code modules and the basis for the
       Linux personality's program loader.
 
+config OVE_PROTECTED
+    bool "Protected tasks (fault-contained execution)"
+    default n
+    help
+      Run untrusted/loaded code so a memory-protection fault is trapped and
+      contained instead of taking down the system. The POSIX host backend uses
+      the process MMU + signals; target backends add the unprivileged-task /
+      MPU model.
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n

@@ -261,6 +261,13 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_arena.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/loader/ove_loader.c")
 {% endif %}
 
+# Protected tasks (fault containment; per-RTOS backend)
+{% if config.get("CONFIG_OVE_PROTECTED") == True %}
+{% if config.get("CONFIG_OVE_RTOS_POSIX") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/posix/posix_protected.c")
+{% endif %}
+{% endif %}
+
 # Trace stream (dashboard swimlane) — backend-agnostic ring + emit
 {% if config.get("CONFIG_OVE_TRACE_STREAM") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace_ring.c")

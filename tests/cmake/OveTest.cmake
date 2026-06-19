@@ -65,6 +65,7 @@ set(OVE_TEST_FS_SUITES
 set(OVE_TEST_STUB_ONLY_SUITES
     test_arena.c
     test_loader.c
+    test_protected.c
     test_thread_stop_isolation.c
     test_static_define.c
     test_infer.c

@@ -162,6 +162,7 @@
 #include "ove/pm.h"
 #include "ove/arena.h"
 #include "ove/loader.h"
+#include "ove/protected.h"
 
 /** @} */
 
