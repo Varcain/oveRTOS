@@ -428,6 +428,7 @@ int test_i2c_run(void);
 int test_spi_run(void);
 int test_uart_run(void);
 int test_pm_run(void);
+int test_arena_run(void);
 int test_storage_bounds_run(void);
 int test_renode_stm32_obs_run(void);
 int test_renode_stm32_periph_run(void);

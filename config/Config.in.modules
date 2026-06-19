@@ -16,6 +16,15 @@ config OVE_APP
 
 comment "Optional modules"
 
+config OVE_ARENA
+    bool "Arena allocator (bounded region allocator)"
+    default n
+    help
+      Backend-independent fixed-capacity region allocator. Manages a
+      caller-supplied buffer with first-fit alloc/free + coalescing and
+      never grows the system heap. Backing pool for loadable modules and
+      for carving private, fault-bounded pools.
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n

@@ -160,6 +160,7 @@
 #include "ove/i2c.h"
 #include "ove/i2s.h"
 #include "ove/pm.h"
+#include "ove/arena.h"
 
 /** @} */
 

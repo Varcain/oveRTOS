@@ -73,6 +73,8 @@ set(STUB_SOURCES
     # Audio graph engine (platform-independent)
     ${OVE_ROOT}/backends/common/ove_audio_graph.c
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
+    # Arena allocator (platform-independent)
+    ${OVE_ROOT}/backends/common/ove_arena.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
     # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
     ${OVE_ROOT}/backends/common/ove_heap_lock.c
