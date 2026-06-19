@@ -4235,13 +4235,13 @@ pub struct ove_flat {
     pub region: *mut u8,
     #[doc = "< Size of @c region."]
     pub region_size: usize,
-    #[doc = "< Bytes consumed (header + text + data + bss)."]
+    #[doc = "< Bytes consumed (text + data + bss)."]
     pub region_used: usize,
-    #[doc = "< Runtime entry address (the program's start)."]
+    #[doc = "< Runtime entry address; directly callable (carries\n   the ARM Thumb bit where applicable)."]
     pub entry: usize,
-    #[doc = "< Runtime base of the text segment."]
+    #[doc = "< Runtime base of the text segment (== @c region)."]
     pub text_base: usize,
-    #[doc = "< Text size (includes the 64-byte bFLT header)."]
+    #[doc = "< Text segment size."]
     pub text_size: usize,
     #[doc = "< Runtime base of the data segment."]
     pub data_base: usize,

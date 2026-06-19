@@ -131,10 +131,11 @@ size_t ove_loader_image_size(const ove_module_t *mod);
 typedef struct ove_flat {
 	uint8_t *region;     /**< Destination region (caller-owned; must be RX). */
 	size_t region_size;  /**< Size of @c region. */
-	size_t region_used;  /**< Bytes consumed (header + text + data + bss). */
-	uintptr_t entry;     /**< Runtime entry address (the program's start). */
-	uintptr_t text_base; /**< Runtime base of the text segment. */
-	size_t text_size;    /**< Text size (includes the 64-byte bFLT header). */
+	size_t region_used;  /**< Bytes consumed (text + data + bss). */
+	uintptr_t entry;     /**< Runtime entry address; directly callable (carries
+			      *   the ARM Thumb bit where applicable). */
+	uintptr_t text_base; /**< Runtime base of the text segment (== @c region). */
+	size_t text_size;    /**< Text segment size. */
 	uintptr_t data_base; /**< Runtime base of the data segment. */
 	size_t data_size;    /**< Initialised-data size. */
 	size_t bss_size;     /**< Zero-initialised data size. */

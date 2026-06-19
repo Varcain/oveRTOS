@@ -169,10 +169,12 @@ static void put_be32(uint8_t *p, uint32_t v)
 }
 
 /*
- * Build a minimal valid bFLT v4 image (big-endian header + reloc table, native
- * payload). Layout: [hdr 64][text 8][data 4][reloc 4]; the single data word is
- * a program-relative pointer (value 64 -> text start) fixed up by one base
- * relocation; 8 bytes of bss follow data in the load region. Returns length.
+ * Build a minimal valid bFLT v4 image mirroring real elf2flt output. The
+ * big-endian header offset fields are VMA + 64 (the 64-byte header is not
+ * loaded); the relocation table is big-endian with VMA-relative offsets, and
+ * the relocated word is itself stored big-endian. VMA layout: text [0,8),
+ * data [8,12) (one pointer -> VMA 4), bss [12,20). File: [hdr 64][payload 12]
+ * [reloc 4]. Returns length.
  */
 static size_t build_flat(uint8_t *img, uint32_t rev, uint32_t flags)
 {
@@ -182,19 +184,18 @@ static size_t build_flat(uint8_t *img, uint32_t rev, uint32_t flags)
 	img[2] = 'L';
 	img[3] = 'T';
 	put_be32(img + 4, rev);	  /* rev */
-	put_be32(img + 8, 64);	  /* entry */
-	put_be32(img + 12, 72);	  /* data_start (end of text, incl. 64B header) */
-	put_be32(img + 16, 76);	  /* data_end */
-	put_be32(img + 20, 84);	  /* bss_end */
+	put_be32(img + 8, 64);	  /* entry: VMA 0 + hdr */
+	put_be32(img + 12, 72);	  /* data_start: VMA 8 + hdr */
+	put_be32(img + 16, 76);	  /* data_end: VMA 12 + hdr */
+	put_be32(img + 20, 84);	  /* bss_end: VMA 20 + hdr */
 	put_be32(img + 24, 4096); /* stack_size */
-	put_be32(img + 28, 76);	  /* reloc_start */
+	put_be32(img + 28, 76);	  /* reloc_start: file offset of reloc table */
 	put_be32(img + 32, 1);	  /* reloc_count */
 	put_be32(img + 36, flags);
 	for (int i = 0; i < 8; i++)
-		img[64 + i] = (uint8_t)(i + 1); /* text marker bytes */
-	uint32_t ptr = 64;			/* data pointer word (native) */
-	memcpy(img + 72, &ptr, 4);
-	put_be32(img + 76, 72); /* reloc: offset of the data pointer word */
+		img[64 + i] = (uint8_t)(i + 1); /* text marker bytes, VMA [0,8) */
+	put_be32(img + 72, 4); /* data pointer word: big-endian VMA-relative -> VMA 4 */
+	put_be32(img + 76, 8); /* reloc: VMA offset of the data pointer word */
 	return 80;
 }
 
@@ -209,25 +210,25 @@ static void test_loader_flat_load(void **state)
 	assert_int_equal(ove_loader_load_flat(&prog, img, n, region, sizeof(region)), OVE_OK);
 
 	assert_ptr_equal((void *)prog.text_base, region);
-	assert_int_equal(prog.text_size, 72);
-	assert_ptr_equal((void *)prog.data_base, region + 72);
+	assert_int_equal(prog.text_size, 8);
+	assert_ptr_equal((void *)prog.data_base, region + 8);
 	assert_int_equal(prog.data_size, 4);
 	assert_int_equal(prog.bss_size, 8);
 	assert_int_equal(prog.stack_size, 4096);
-	assert_int_equal(prog.region_used, 84);
-	assert_int_equal(prog.entry, (uintptr_t)region + 64);
+	assert_int_equal(prog.region_used, 20);
+	assert_int_equal(prog.entry, (uintptr_t)region); /* VMA 0 */
 
-	/* Text copied verbatim. */
+	/* Text copied verbatim (header stripped: VMA 0 is at region[0]). */
 	for (int i = 0; i < 8; i++)
-		assert_int_equal(region[64 + i], i + 1);
+		assert_int_equal(region[i], i + 1);
 
-	/* The data pointer word was relocated: program offset 64 -> base + 64. */
+	/* The pointer word was rebased: big-endian VMA 4 -> native (base + 4). */
 	uint32_t reloc;
-	memcpy(&reloc, region + 72, 4);
-	assert_int_equal(reloc, (uint32_t)(uintptr_t)region + 64);
+	memcpy(&reloc, region + 8, 4);
+	assert_int_equal(reloc, (uint32_t)(uintptr_t)region + 4);
 
 	/* bss zeroed. */
-	for (int i = 76; i < 84; i++)
+	for (int i = 12; i < 20; i++)
 		assert_int_equal(region[i], 0);
 }
 
@@ -251,8 +252,8 @@ static void test_loader_flat_rejects(void **state)
 	assert_int_equal(ove_loader_load_flat(&prog, bad, n, region, sizeof(region)),
 			 OVE_ERR_INVALID_PARAM);
 
-	/* Region smaller than bss_end. */
-	assert_int_equal(ove_loader_load_flat(&prog, img, n, region, 64), OVE_ERR_NO_MEMORY);
+	/* Region smaller than the text+data+bss footprint (mem_len == 20). */
+	assert_int_equal(ove_loader_load_flat(&prog, img, n, region, 8), OVE_ERR_NO_MEMORY);
 
 	/* Unsupported revision and flag. */
 	uint8_t r3[96];

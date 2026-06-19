@@ -620,14 +620,21 @@ size_t ove_loader_image_size(const ove_module_t *mod)
 /* ── Flat (bFLT / uClinux) program loader ───────────────────────────────── */
 
 /*
- * bFLT v4 (uClinux flat binary). The 64-byte header and the relocation table
- * are stored big-endian (network order) by elf2flt regardless of target; the
- * text/data payload is in target byte order. We support the common form
- * elf2flt emits for a NOMMU target: load-to-RAM, uncompressed, fully relocated
- * (non-GOTPIC). The header is part of the loaded image (entry and relocations
- * are file-relative offsets), so text spans [0, data_start) and data follows
- * contiguously. Each relocation is a file-relative offset to a 32-bit word
- * holding a file-relative pointer; we add the runtime load base to it.
+ * bFLT v4 (uClinux flat binary), as emitted by elf2flt for a NOMMU target.
+ * Modelled against real elf2flt output and the elf2flt source. Wire facts that
+ * matter to the loader:
+ *  - The 64-byte header and the relocation table are big-endian; the header is
+ *    NOT loaded — the runtime image is text+data starting at VMA 0.
+ *  - Header offset fields (entry, data_start, ...) are stored as VMA +
+ *    sizeof(header), so the header size is subtracted to recover a VMA offset.
+ *    The entry field also carries the ARM Thumb bit, so prog->entry is directly
+ *    callable.
+ *  - Each relocation-table entry is a VMA-relative offset (header-exclusive) to
+ *    a 32-bit word; that word holds a VMA-relative pointer stored big-endian
+ *    (elf2flt writes relocation targets in network order). We read it big-
+ *    endian, add the runtime load base, and store it back native-endian.
+ * Scope: FLAT_FLAG_RAM, uncompressed, non-GOTPIC (the simplest elf2flt form);
+ * GOTPIC / compressed images return OVE_ERR_NOT_SUPPORTED.
  */
 
 #define FLAT_VERSION 4u
@@ -669,50 +676,51 @@ int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size,
 	if (flags & (FLAT_FLAG_GOTPIC | FLAT_FLAG_GZIP | FLAT_FLAG_GZDATA))
 		return OVE_ERR_NOT_SUPPORTED;
 
-	/* Layout sanity: header <= entry < data_start <= data_end <= bss_end, and
-	 * the image actually contains text+data and the relocation table. */
+	/* Header fields are VMA + header size; the header itself is not loaded.
+	 * Sanity: header <= entry < data_start <= data_end <= bss_end, the image
+	 * holds the payload + reloc table. */
 	if (entry < FLAT_HDR_SIZE || data_start <= entry)
 		return OVE_ERR_INVALID_PARAM;
-	if (data_start > data_end || data_end > bss_end)
+	if (data_start < FLAT_HDR_SIZE || data_start > data_end || data_end > bss_end)
 		return OVE_ERR_INVALID_PARAM;
 	if ((uint64_t)data_end > image_size)
 		return OVE_ERR_INVALID_PARAM;
 	if ((uint64_t)reloc_start + (uint64_t)reloc_count * 4u > image_size)
 		return OVE_ERR_INVALID_PARAM;
-	if ((uint64_t)bss_end > region_size)
+
+	uint32_t load_len = data_end - FLAT_HDR_SIZE; /* text+data bytes to copy */
+	uint32_t mem_len = bss_end - FLAT_HDR_SIZE;   /* ... plus zeroed bss */
+	if ((uint64_t)mem_len > region_size)
 		return OVE_ERR_NO_MEMORY;
 
 	uint8_t *base = (uint8_t *)region;
 
-	/* Place header+text+data, zero bss. */
-	memcpy(base, img, data_end);
-	memset(base + data_end, 0, (size_t)bss_end - data_end);
+	/* Strip the header: the loaded image starts at VMA 0. Zero the bss. */
+	memcpy(base, img + FLAT_HDR_SIZE, load_len);
+	memset(base + load_len, 0, (size_t)mem_len - load_len);
 
-	/* Apply base relocations. */
+	/* Rebase relocations: each entry is a VMA offset to a big-endian
+	 * VMA-relative pointer; add the load base, store back native-endian. */
 	for (uint32_t i = 0; i < reloc_count; i++) {
 		uint32_t ro = be32(img + reloc_start + (size_t)i * 4u);
-		if (ro > data_end - 4u)
+		if ((uint64_t)ro + 4u > load_len)
 			return OVE_ERR_INVALID_PARAM;
-		uint32_t v;
-		memcpy(&v, base + ro, 4);
-		v += (uint32_t)(uintptr_t)base;
+		uint32_t v = be32(base + ro) + (uint32_t)(uintptr_t)base;
 		memcpy(base + ro, &v, 4);
 	}
 
 	prog->region = base;
 	prog->region_size = region_size;
-	prog->region_used = bss_end;
+	prog->region_used = mem_len;
 	prog->text_base = (uintptr_t)base;
-	prog->text_size = data_start;
-	prog->data_base = (uintptr_t)base + data_start;
+	prog->text_size = data_start - FLAT_HDR_SIZE;
+	prog->data_base = (uintptr_t)base + (data_start - FLAT_HDR_SIZE);
 	prog->data_size = (size_t)data_end - data_start;
 	prog->bss_size = (size_t)bss_end - data_end;
 	prog->stack_size = stack_size;
-	/* Raw runtime entry address. bFLT does not encode the ARM Thumb bit, so
-	 * unlike ove_loader_sym() this is not pre-decorated: a caller invoking it
-	 * directly on a Thumb target must set bit 0 (the personality's start path
-	 * does this when it enters the program). */
-	prog->entry = (uintptr_t)base + entry;
+	/* The entry field is VMA + header size and carries the ARM Thumb bit, so
+	 * this runtime address is directly callable as the program's entry. */
+	prog->entry = (uintptr_t)base + (entry - FLAT_HDR_SIZE);
 	return OVE_OK;
 }
 
