@@ -30,9 +30,11 @@
  * split I/D cache the caller is also responsible for the post-load i-cache
  * sync.
  *
- * Phase-0 scope: 64-bit ELF (@c ELFCLASS64) for the host architecture. Other
- * classes/machines return @c OVE_ERR_NOT_SUPPORTED until their relocation
- * backends land.
+ * Supported: ELFCLASS64 / x86-64 (host development) and ELFCLASS32 / EM_ARM
+ * (Cortex-M target). ARM support currently covers data relocations
+ * (R_ARM_ABS32 / REL32 / TARGET1 / PREL31); Thumb-2 instruction relocations
+ * are not yet implemented. Other classes/machines return
+ * @c OVE_ERR_NOT_SUPPORTED.
  *
  * @note Requires @c CONFIG_OVE_LOADER.
  * @{
@@ -79,6 +81,7 @@ typedef struct ove_module {
 	uint32_t sym_count;			 /**< Number of symbols. */
 	const char *strtab;			 /**< String table (within @c image). */
 	uint32_t strtab_size;			 /**< Size of the string table, bytes. */
+	uint8_t is_elf64;			 /**< Non-zero for ELFCLASS64, else ELFCLASS32. */
 } ove_module_t;
 
 /**

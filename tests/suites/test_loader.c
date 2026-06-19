@@ -15,6 +15,11 @@
 /* Generated: a real relocatable object built from suites/loader_mod.c. */
 #include "loader_mod_image.h"
 
+#ifdef OVE_TEST_HAVE_ARM
+/* Generated: a real ELF32/ARM object built from suites/loader_mod_arm.c. */
+#include "loader_mod_arm_image.h"
+#endif
+
 #define REGION_BYTES (64u * 1024u)
 
 /* The symbol the test module imports. */
@@ -115,6 +120,41 @@ static void test_loader_load_and_execute(void **state)
 	munmap(region, REGION_BYTES);
 }
 
+#ifdef OVE_TEST_HAVE_ARM
+/* The symbol the ARM module imports. */
+static int ext_sym_storage;
+
+/* ELF32/ARM data relocations, verified by value (ARM code is not executed on
+ * the host; the written low-32 bits of each resolved address are checked). */
+static void test_loader_arm_data_relocs(void **state)
+{
+	(void)state;
+	static uint8_t region[8192];
+	ove_loader_sym_t imports[] = {{"ext_sym", &ext_sym_storage}};
+	ove_module_t mod;
+	assert_int_equal(ove_loader_load(&mod, ove_loader_test_mod_arm, ove_loader_test_mod_arm_len,
+					 region, sizeof(region), imports, 1),
+			 OVE_OK);
+	assert_int_equal(mod.is_elf64, 0);
+
+	/* Internal data section loaded verbatim. */
+	uint32_t *g_data = (uint32_t *)ove_loader_sym(&mod, "g_data");
+	assert_non_null(g_data);
+	assert_int_equal(g_data[0], 11);
+	assert_int_equal(g_data[1], 22);
+
+	/* R_ARM_ABS32 to an import. */
+	uint32_t *g_to_ext = (uint32_t *)ove_loader_sym(&mod, "g_to_ext");
+	assert_non_null(g_to_ext);
+	assert_int_equal(*g_to_ext, (uint32_t)(uintptr_t)&ext_sym_storage);
+
+	/* R_ARM_ABS32 to an internal symbol with addend (&g_data[1]). */
+	uint32_t *g_to_data = (uint32_t *)ove_loader_sym(&mod, "g_to_data");
+	assert_non_null(g_to_data);
+	assert_int_equal(*g_to_data, (uint32_t)(uintptr_t)&g_data[1]);
+}
+#endif /* OVE_TEST_HAVE_ARM */
+
 int test_loader_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -122,6 +162,9 @@ int test_loader_run(void)
 		cmocka_unit_test(test_loader_missing_import),
 		cmocka_unit_test(test_loader_region_too_small),
 		cmocka_unit_test(test_loader_load_and_execute),
+#ifdef OVE_TEST_HAVE_ARM
+		cmocka_unit_test(test_loader_arm_data_relocs),
+#endif
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

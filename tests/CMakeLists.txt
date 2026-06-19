@@ -132,7 +132,31 @@ add_custom_command(
     COMMENT "Building + embedding loader test module"
     VERBATIM
 )
-add_custom_target(loader_mod_gen DEPENDS ${LOADER_MOD_HDR})
+set(LOADER_MOD_DEPS ${LOADER_MOD_HDR})
+
+# If an ARM cross-compiler is available, also build a real ELF32/ARM module so
+# the loader's ARM relocation path is exercised on the host (verified by value;
+# ARM code is not executed here).
+find_program(OVE_ARM_GCC arm-none-eabi-gcc)
+if(OVE_ARM_GCC)
+    set(LOADER_MOD_ARM_HDR ${LOADER_MOD_GEN}/loader_mod_arm_image.h)
+    add_custom_command(
+        OUTPUT ${LOADER_MOD_ARM_HDR}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${LOADER_MOD_GEN}
+        COMMAND ${OVE_ARM_GCC}
+                -mcpu=cortex-m4 -mthumb -O2 -fno-pic -ffreestanding
+                -fno-asynchronous-unwind-tables
+                -c ${SUITE_DIR}/loader_mod_arm.c -o ${LOADER_MOD_GEN}/loader_mod_arm.o
+        COMMAND ${CMAKE_COMMAND} -DIN=${LOADER_MOD_GEN}/loader_mod_arm.o
+                -DOUT=${LOADER_MOD_ARM_HDR} -DSYM=ove_loader_test_mod_arm
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
+        DEPENDS ${SUITE_DIR}/loader_mod_arm.c ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
+        COMMENT "Building + embedding ARM loader test module"
+        VERBATIM
+    )
+    list(APPEND LOADER_MOD_DEPS ${LOADER_MOD_ARM_HDR})
+endif()
+add_custom_target(loader_mod_gen DEPENDS ${LOADER_MOD_DEPS})
 
 # ove_add_stub_variant(<name> [compile_opts...])
 # Declares a stub-test executable that shares STUB_SOURCES + SUITE_SOURCES
@@ -161,6 +185,9 @@ function(ove_add_stub_variant name)
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1
     )
+    if(OVE_ARM_GCC)
+        target_compile_definitions(${name} PRIVATE OVE_TEST_HAVE_ARM=1)
+    endif()
     if(ARGN)
         target_compile_options(${name} PRIVATE ${ARGN})
         target_link_options(${name} PRIVATE ${ARGN})
