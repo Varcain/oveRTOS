@@ -45,6 +45,13 @@ int main(int argc, char *argv[])
 	failures += test_##name##_run();
 #include "framework/suites.inc"
 
+	/* Phase-0 reusable layers — host suites are STUB-only; dispatch the
+	 * pure-C ones explicitly so they also run on the NuttX target. */
+#ifdef CONFIG_OVE_ARENA
+	printf("=== Arena allocator Tests ===\n");
+	failures += test_arena_run();
+#endif
+
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 #ifdef OVE_COVERAGE
 	/* libgcov writes .gcda via fopen — with hostfs mounted at /host,
