@@ -51,6 +51,10 @@ int main(int argc, char *argv[])
 	printf("=== Arena allocator Tests ===\n");
 	failures += test_arena_run();
 #endif
+#ifdef CONFIG_OVE_LOADER
+	printf("=== Loader (on-target execute) Tests ===\n");
+	failures += test_loader_target_run();
+#endif
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 #ifdef OVE_COVERAGE

@@ -542,6 +542,9 @@ void *ove_loader_sym(const ove_module_t *mod, const char *name)
 			continue;
 		const char *sn = sym_name(mod, st_name);
 		if (sn && strcmp(sn, name) == 0)
+			/* On ARM, a Thumb function symbol already carries the
+			 * Thumb bit (bit 0) in st_value, so the address is
+			 * directly callable as a function pointer. */
 			return (uint8_t *)mod->sec_addr[shndx] + value;
 	}
 	return NULL;
