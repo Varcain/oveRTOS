@@ -66,6 +66,8 @@
 #define R_ARM_NONE 0
 #define R_ARM_ABS32 2
 #define R_ARM_REL32 3
+#define R_ARM_THM_CALL 10
+#define R_ARM_THM_JUMP24 30
 #define R_ARM_TARGET1 38
 #define R_ARM_PREL31 42
 
@@ -342,7 +344,30 @@ static void rd_shdr32(const Elf32_Ehdr *eh, const uint8_t *img, unsigned i, Elf3
 	memcpy(out, img + eh->e_shoff + (size_t)i * eh->e_shentsize, sizeof(*out));
 }
 
-static int apply_rel_arm(const ove_module_t *mod, unsigned tgt, const Elf32_Rel *rel,
+/*
+ * Allocate an 8-byte Thumb veneer ("ldr.w pc, [pc, #0]; .word target") in the
+ * spare tail of the load region and return its even entry address (0 if the
+ * region is full). Used when a Thumb BL/B.W target is beyond the +/-16 MB
+ * reach of a direct branch (e.g. a firmware import from a distant load
+ * region). The target word keeps its Thumb bit, so the long branch via PC
+ * stays in Thumb state.
+ */
+static uintptr_t arm_veneer(ove_module_t *mod, uintptr_t target)
+{
+	size_t off = (mod->region_used + 3u) & ~(size_t)3u;
+	if (off + 8 > mod->region_size)
+		return 0;
+	uint8_t *v = mod->region + off;
+	uint16_t hw1 = 0xf8df, hw2 = 0xf000;
+	uint32_t t = (uint32_t)target;
+	memcpy(v, &hw1, 2);
+	memcpy(v + 2, &hw2, 2);
+	memcpy(v + 4, &t, 4);
+	mod->region_used = off + 8;
+	return (uintptr_t)v;
+}
+
+static int apply_rel_arm(ove_module_t *mod, unsigned tgt, const Elf32_Rel *rel,
 			 const ove_loader_sym_t *imports, size_t n_imports)
 {
 	uint32_t symidx = rel->r_info >> 8;
@@ -384,12 +409,47 @@ static int apply_rel_arm(const ove_module_t *mod, unsigned tgt, const Elf32_Rel 
 		memcpy(loc, &v, 4);
 		break;
 	}
+	case R_ARM_THM_CALL:
+	case R_ARM_THM_JUMP24: {
+		/* Thumb-2 BL / B.W: a 32-bit instruction in two little-endian
+		 * halfwords. Decode the current signed 25-bit displacement (the
+		 * REL addend), recompute it against the resolved target (Thumb
+		 * bit stripped — the branch stays in Thumb state), and re-encode
+		 * the S/J1/J2/imm10/imm11 fields while preserving the opcode. A
+		 * target beyond +/-16 MB is routed through a veneer. */
+		uint16_t hw1, hw2;
+		memcpy(&hw1, loc, 2);
+		memcpy(&hw2, loc + 2, 2);
+		uint32_t bs = (hw1 >> 10) & 1;
+		uint32_t j1 = (hw2 >> 13) & 1;
+		uint32_t j2 = (hw2 >> 11) & 1;
+		uint32_t i1 = (~(j1 ^ bs)) & 1;
+		uint32_t i2 = (~(j2 ^ bs)) & 1;
+		uint32_t raw = (bs << 24) | (i1 << 23) | (i2 << 22) |
+			       ((uint32_t)(hw1 & 0x3ff) << 12) | ((uint32_t)(hw2 & 0x7ff) << 1);
+		int32_t addend = (raw & 0x01000000u) ? (int32_t)(raw | 0xfe000000u) : (int32_t)raw;
+		int32_t want = (int32_t)((S & ~(uintptr_t)1) - (uintptr_t)loc) + addend;
+		if (want < -0x01000000 || want > 0x00fffffe) {
+			uintptr_t v = arm_veneer(mod, S);
+			if (!v)
+				return OVE_ERR_NO_MEMORY;
+			want = (int32_t)(v - (uintptr_t)loc) + addend;
+		}
+		uint32_t u = (uint32_t)want;
+		uint32_t ns = (u >> 24) & 1;
+		uint32_t ni1 = (u >> 23) & 1;
+		uint32_t ni2 = (u >> 22) & 1;
+		uint32_t nj1 = ((ni1 ^ 1) ^ ns) & 1;
+		uint32_t nj2 = ((ni2 ^ 1) ^ ns) & 1;
+		hw1 = (uint16_t)((hw1 & ~0x07ffu) | (ns << 10) | ((u >> 12) & 0x3ff));
+		hw2 = (uint16_t)((hw2 & ~0x2fffu) | (nj1 << 13) | (nj2 << 11) | ((u >> 1) & 0x7ff));
+		memcpy(loc, &hw1, 2);
+		memcpy(loc + 2, &hw2, 2);
+		break;
+	}
 	default:
-		/* Thumb-2 instruction relocations (THM_CALL / THM_JUMP24 /
-		 * MOVW / MOVT / ...) are not yet implemented. Branch relocations
-		 * additionally need veneers when the target is beyond a Thumb
-		 * BL's +/-16 MB reach (e.g. a firmware import from a distant load
-		 * region) -- the next step. */
+		/* MOVW/MOVT absolute and GOT-based relocations are not yet
+		 * implemented. */
 		return OVE_ERR_NOT_SUPPORTED;
 	}
 	return OVE_OK;
