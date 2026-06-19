@@ -115,6 +115,8 @@ pub const OVE_SHELL_MAX_ARGS: u32 = 8;
 pub const OVE_HTTPD_MAX_ROUTES: u32 = 16;
 pub const OVE_HTTPD_MAX_SEGMENTS: u32 = 8;
 pub const OVE_I2C_REG_WRITE_MAX: u32 = 32;
+pub const OVE_ARENA_ALIGN: u32 = 16;
+pub const OVE_LOADER_MAX_SECTIONS: u32 = 32;
 pub const LV_SIZE_CONTENT: u32 = 1073741823;
 #[doc = " Operation completed successfully."]
 pub const OVE_OK: ove_err = 0;
@@ -4059,6 +4061,193 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[doc = " @brief Process idle — called from RTOS idle context by the HAL.\n\n This drives the state machine: checks activity, invokes policy,\n arms wake sources, transitions state, fires notifications.\n Not intended to be called by application code."]
     pub fn ove_pm_idle_process();
+}
+#[doc = " @brief Arena control block.\n\n Allocate one per managed buffer. The fields are exposed so the control\n block can live in static storage (zero-heap), but they are an\n implementation detail — use the accessor functions rather than reading\n them directly."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_arena {
+    #[doc = "< Aligned start of the managed region."]
+    pub base: *mut u8,
+    #[doc = "< Usable bytes of the managed region."]
+    pub size: usize,
+    #[doc = "< Footprint (header + payload) currently allocated."]
+    pub used: usize,
+    #[doc = "< Peak @c used observed since init."]
+    pub high_water: usize,
+    #[doc = "< Head of the address-ordered block list."]
+    pub first: *mut core::ffi::c_void,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_arena"][core::mem::size_of::<ove_arena>() - 40usize];
+    ["Alignment of ove_arena"][core::mem::align_of::<ove_arena>() - 8usize];
+    ["Offset of field: ove_arena::base"][core::mem::offset_of!(ove_arena, base) - 0usize];
+    ["Offset of field: ove_arena::size"][core::mem::offset_of!(ove_arena, size) - 8usize];
+    ["Offset of field: ove_arena::used"][core::mem::offset_of!(ove_arena, used) - 16usize];
+    ["Offset of field: ove_arena::high_water"]
+        [core::mem::offset_of!(ove_arena, high_water) - 24usize];
+    ["Offset of field: ove_arena::first"][core::mem::offset_of!(ove_arena, first) - 32usize];
+};
+#[doc = " @brief Arena control block.\n\n Allocate one per managed buffer. The fields are exposed so the control\n block can live in static storage (zero-heap), but they are an\n implementation detail — use the accessor functions rather than reading\n them directly."]
+pub type ove_arena_t = ove_arena;
+unsafe extern "C" {
+    #[doc = " @brief Initialise an arena over a caller-supplied buffer.\n\n The buffer is consumed in full as the arena's backing store; its alignment\n need not match @c OVE_ARENA_ALIGN (the arena aligns internally, possibly\n skipping a few leading bytes).\n\n @param[out] arena Control block to initialise.\n @param[in]  buf   Backing buffer.\n @param[in]  size  Size of @p buf in bytes.\n @return OVE_OK on success, OVE_ERR_INVALID_PARAM on NULL args,\n         OVE_ERR_NO_MEMORY if the buffer is too small to host one block.\n @note Requires @c CONFIG_OVE_ARENA."]
+    pub fn ove_arena_init(
+        arena: *mut ove_arena_t,
+        buf: *mut core::ffi::c_void,
+        size: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate an @c OVE_ARENA_ALIGN-aligned block.\n @param[in] arena Initialised arena.\n @param[in] size  Requested bytes (0 is treated as 1).\n @return Pointer to the block, or NULL if no free extent is large enough."]
+    pub fn ove_arena_alloc(arena: *mut ove_arena_t, size: usize) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Allocate a zero-filled block (see @c ove_arena_alloc)."]
+    pub fn ove_arena_calloc(arena: *mut ove_arena_t, size: usize) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Release a block previously returned by this arena.\n\n NULL and pointers outside the arena are ignored. Double frees and\n corrupted headers are ignored defensively rather than aborting."]
+    pub fn ove_arena_free(arena: *mut ove_arena_t, ptr: *mut core::ffi::c_void);
+}
+unsafe extern "C" {
+    #[doc = " @brief Release every block, returning the arena to a single free extent.\n\n Outstanding pointers become invalid. @c high_water is preserved."]
+    pub fn ove_arena_reset(arena: *mut ove_arena_t);
+}
+unsafe extern "C" {
+    #[doc = " @brief Non-zero if @p ptr lies within the arena's managed region."]
+    pub fn ove_arena_owns(arena: *const ove_arena_t, ptr: *const core::ffi::c_void) -> bool;
+}
+unsafe extern "C" {
+    #[doc = " @brief Footprint (header + payload) currently allocated, in bytes."]
+    pub fn ove_arena_used(arena: *const ove_arena_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Total managed bytes (fixed at init)."]
+    pub fn ove_arena_capacity(arena: *const ove_arena_t) -> usize;
+}
+unsafe extern "C" {
+    #[doc = " @brief Peak @c ove_arena_used observed since init."]
+    pub fn ove_arena_high_water(arena: *const ove_arena_t) -> usize;
+}
+#[doc = " An imported (or exported) symbol: a name bound to an address."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_loader_sym {
+    #[doc = "< Symbol name."]
+    pub name: *const core::ffi::c_char,
+    #[doc = "< Resolved address."]
+    pub addr: *mut core::ffi::c_void,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_loader_sym"][core::mem::size_of::<ove_loader_sym>() - 16usize];
+    ["Alignment of ove_loader_sym"][core::mem::align_of::<ove_loader_sym>() - 8usize];
+    ["Offset of field: ove_loader_sym::name"][core::mem::offset_of!(ove_loader_sym, name) - 0usize];
+    ["Offset of field: ove_loader_sym::addr"][core::mem::offset_of!(ove_loader_sym, addr) - 8usize];
+};
+#[doc = " An imported (or exported) symbol: a name bound to an address."]
+pub type ove_loader_sym_t = ove_loader_sym;
+#[doc = " @brief A loaded module.\n\n Allocate one per load (it may live in static storage). Fields are exposed\n so the control block can be sized at build time, but they are an\n implementation detail — use @c ove_loader_sym() to query the module.\n\n The original @p image must remain valid for the lifetime of the module:\n symbol lookup reads the module's symbol/string tables in place rather than\n copying them."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_module {
+    #[doc = "< Original ELF image (caller-owned)."]
+    pub image: *const u8,
+    #[doc = "< Size of @c image."]
+    pub image_size: usize,
+    #[doc = "< Destination region (caller-owned)."]
+    pub region: *mut u8,
+    #[doc = "< Size of @c region."]
+    pub region_size: usize,
+    #[doc = "< Bytes of @c region consumed by the load."]
+    pub region_used: usize,
+    #[doc = "< Section count."]
+    pub n_sections: u16,
+    #[doc = "< Runtime base per section."]
+    pub sec_addr: [*mut core::ffi::c_void; 32usize],
+    #[doc = "< Symbol table (within @c image)."]
+    pub symtab: *const core::ffi::c_void,
+    #[doc = "< Number of symbols."]
+    pub sym_count: u32,
+    #[doc = "< String table (within @c image)."]
+    pub strtab: *const core::ffi::c_char,
+    #[doc = "< Size of the string table, bytes."]
+    pub strtab_size: u32,
+    #[doc = "< Non-zero for ELFCLASS64, else ELFCLASS32."]
+    pub is_elf64: u8,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_module"][core::mem::size_of::<ove_module>() - 336usize];
+    ["Alignment of ove_module"][core::mem::align_of::<ove_module>() - 8usize];
+    ["Offset of field: ove_module::image"][core::mem::offset_of!(ove_module, image) - 0usize];
+    ["Offset of field: ove_module::image_size"]
+        [core::mem::offset_of!(ove_module, image_size) - 8usize];
+    ["Offset of field: ove_module::region"][core::mem::offset_of!(ove_module, region) - 16usize];
+    ["Offset of field: ove_module::region_size"]
+        [core::mem::offset_of!(ove_module, region_size) - 24usize];
+    ["Offset of field: ove_module::region_used"]
+        [core::mem::offset_of!(ove_module, region_used) - 32usize];
+    ["Offset of field: ove_module::n_sections"]
+        [core::mem::offset_of!(ove_module, n_sections) - 40usize];
+    ["Offset of field: ove_module::sec_addr"]
+        [core::mem::offset_of!(ove_module, sec_addr) - 48usize];
+    ["Offset of field: ove_module::symtab"][core::mem::offset_of!(ove_module, symtab) - 304usize];
+    ["Offset of field: ove_module::sym_count"]
+        [core::mem::offset_of!(ove_module, sym_count) - 312usize];
+    ["Offset of field: ove_module::strtab"][core::mem::offset_of!(ove_module, strtab) - 320usize];
+    ["Offset of field: ove_module::strtab_size"]
+        [core::mem::offset_of!(ove_module, strtab_size) - 328usize];
+    ["Offset of field: ove_module::is_elf64"]
+        [core::mem::offset_of!(ove_module, is_elf64) - 332usize];
+};
+#[doc = " @brief A loaded module.\n\n Allocate one per load (it may live in static storage). Fields are exposed\n so the control block can be sized at build time, but they are an\n implementation detail — use @c ove_loader_sym() to query the module.\n\n The original @p image must remain valid for the lifetime of the module:\n symbol lookup reads the module's symbol/string tables in place rather than\n copying them."]
+pub type ove_module_t = ove_module;
+unsafe extern "C" {
+    #[doc = " @brief Load a relocatable ELF object into @p region.\n\n @param[out] mod          Module control block to fill.\n @param[in]  image        ELF @c ET_REL image.\n @param[in]  image_size   Size of @p image in bytes.\n @param[in]  region       Destination for the module's allocatable sections.\n                          Must be executable before any loaded code runs.\n @param[in]  region_size  Size of @p region in bytes.\n @param[in]  imports      Symbols the module may reference (undefined symbols\n                          are resolved against this table). May be NULL when\n                          @p n_imports is 0.\n @param[in]  n_imports    Number of entries in @p imports.\n @return OVE_OK on success;\n         OVE_ERR_INVALID_PARAM on bad arguments or a malformed image;\n         OVE_ERR_NOT_SUPPORTED for an unsupported class/machine/relocation;\n         OVE_ERR_NO_MEMORY if @p region is too small or the module has too\n         many sections;\n         OVE_ERR_NOT_FOUND if an undefined symbol is not in @p imports.\n @note Requires @c CONFIG_OVE_LOADER."]
+    pub fn ove_loader_load(
+        mod_: *mut ove_module_t,
+        image: *const core::ffi::c_void,
+        image_size: usize,
+        region: *mut core::ffi::c_void,
+        region_size: usize,
+        imports: *const ove_loader_sym_t,
+        n_imports: usize,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Resolve an exported (defined, global/weak) symbol by name.\n @return The symbol's runtime address, or NULL if not found."]
+    pub fn ove_loader_sym(
+        mod_: *const ove_module_t,
+        name: *const core::ffi::c_char,
+    ) -> *mut core::ffi::c_void;
+}
+unsafe extern "C" {
+    #[doc = " @brief Bytes of the destination region consumed by the loaded module."]
+    pub fn ove_loader_image_size(mod_: *const ove_module_t) -> usize;
+}
+#[doc = " Entry function for a protected task."]
+pub type ove_ptask_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
+#[doc = "< Entry returned normally."]
+pub const OVE_PTASK_OK: ove_ptask_result = 0;
+#[doc = "< Entry trapped on a memory-protection violation."]
+pub const OVE_PTASK_FAULT: ove_ptask_result = 1;
+#[doc = " Outcome of running a protected task."]
+pub type ove_ptask_result = core::ffi::c_uint;
+#[doc = " Outcome of running a protected task."]
+pub use self::ove_ptask_result as ove_ptask_result_t;
+unsafe extern "C" {
+    #[doc = " @brief Run @p entry in a fault-contained context.\n\n If @p entry triggers a memory-protection fault, the fault is trapped, the\n supervisor regains control, and @p result is set to @c OVE_PTASK_FAULT.\n Otherwise @p result is @c OVE_PTASK_OK.\n\n @param[in]  entry  Function to run.\n @param[in]  arg    Opaque argument passed to @p entry.\n @param[out] result Outcome; may be NULL.\n @return OVE_OK if the run was performed (whether it completed or faulted),\n         OVE_ERR_INVALID_PARAM if @p entry is NULL.\n @note Requires @c CONFIG_OVE_PROTECTED."]
+    pub fn ove_ptask_run(
+        entry: ove_ptask_fn,
+        arg: *mut core::ffi::c_void,
+        result: *mut ove_ptask_result_t,
+    ) -> core::ffi::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Number of faults contained since process start (diagnostics)."]
+    pub fn ove_ptask_fault_count() -> core::ffi::c_ulong;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
