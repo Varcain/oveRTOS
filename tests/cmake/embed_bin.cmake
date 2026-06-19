@@ -26,7 +26,11 @@ foreach(_b ${_bytes})
     endif()
 endforeach()
 
+# clang-format off/on brackets the byte array so the linter leaves the
+# hand-laid 16-per-line layout alone (it otherwise exceeds the column limit).
 file(WRITE "${OUT}"
     "/* Generated from ${IN} — do not edit. */\n"
+    "/* clang-format off */\n"
     "static const unsigned char ${SYM}[] __attribute__((aligned(8))) = {\n\t${_body}\n};\n"
+    "/* clang-format on */\n"
     "static const unsigned long ${SYM}_len = sizeof(${SYM});\n")

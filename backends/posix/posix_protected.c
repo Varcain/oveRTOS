@@ -51,7 +51,7 @@ static void chain_prev(int sig, siginfo_t *info, void *uc)
 		return;
 	}
 	/* Default / ignore: restore the default action and let it re-fault. */
-	signal(sig, SIG_DFL);
+	(void)signal(sig, SIG_DFL);
 }
 
 static void prot_handler(int sig, siginfo_t *info, void *uc)

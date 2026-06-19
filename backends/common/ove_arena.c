@@ -80,7 +80,7 @@ int ove_arena_init(ove_arena_t *arena, void *buf, size_t size)
 	if (usable < ARENA_HDR + OVE_ARENA_ALIGN)
 		return OVE_ERR_NO_MEMORY;
 
-	arena->base = (uint8_t *)start;
+	arena->base = (uint8_t *)buf + adjust; /* == aligned `start`, via ptr arithmetic */
 	arena->size = usable;
 	arena->high_water = 0;
 	arena_lay_first(arena);
