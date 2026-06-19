@@ -76,6 +76,7 @@ set(_srcs
   ${OVE_DIR}/backends/common/ove_audio_nodes.c
   ${OVE_DIR}/backends/common/ove_arena.c
   ${OVE_DIR}/loader/ove_loader.c
+  ${_nuttx_be}/nuttx_protected.c
   ${_stub_dir}/stub_bsp.c
   ${_stub_dir}/stub_lvgl.c
   ${_stub_dir}/stub_gpio.c
@@ -122,6 +123,7 @@ set(_srcs
   ${_suite_dir}/test_init_no_alloc.c
   ${_suite_dir}/test_arena.c
   ${OVE_DIR}/tests/ontarget/test_loader_target.c
+  ${OVE_DIR}/tests/ontarget/test_protected_target.c
 
   # CMocka (built as part of this app).
   ${_cmocka_dir}/src/cmocka.c

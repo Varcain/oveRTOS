@@ -266,6 +266,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/loader/ove_loader.c")
 {% if config.get("CONFIG_OVE_RTOS_POSIX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/posix/posix_protected.c")
 {% endif %}
+{% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
+{% endif %}
 {% endif %}
 
 # Trace stream (dashboard swimlane) — backend-agnostic ring + emit

@@ -45,16 +45,25 @@ int main(int argc, char *argv[])
 	failures += test_##name##_run();
 #include "framework/suites.inc"
 
-	/* Phase-0 reusable layers — host suites are STUB-only; dispatch the
-	 * pure-C ones explicitly so they also run on the NuttX target. */
+	/* Phase-0 reusable layers — host suites are STUB-only; dispatch them
+	 * explicitly so they also run on the NuttX target. The arena is pure C
+	 * and runs anywhere; the loader-execute and MPU-containment tests run
+	 * real ARM machine code / program the Cortex-M MPU, so they are skipped
+	 * on the x86 NuttX sim. */
 #ifdef CONFIG_OVE_ARENA
 	printf("=== Arena allocator Tests ===\n");
 	failures += test_arena_run();
 #endif
+#ifndef CONFIG_ARCH_SIM
 #ifdef CONFIG_OVE_LOADER
 	printf("=== Loader (on-target execute) Tests ===\n");
 	failures += test_loader_target_run();
 #endif
+#ifdef CONFIG_OVE_PROTECTED
+	printf("=== Protected (on-target MPU containment) Tests ===\n");
+	failures += test_protected_target_run();
+#endif
+#endif /* !CONFIG_ARCH_SIM */
 
 	printf("\n=== Summary: %d test group(s) had failures ===\n", failures);
 #ifdef OVE_COVERAGE
