@@ -75,6 +75,8 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_audio_nodes.c
     # Arena allocator (platform-independent)
     ${OVE_ROOT}/backends/common/ove_arena.c
+    # Module loader (platform-independent)
+    ${OVE_ROOT}/loader/ove_loader.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
     # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
     ${OVE_ROOT}/backends/common/ove_heap_lock.c
@@ -110,6 +112,27 @@ set(STUB_SOURCES
 set(SUITE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/suites)
 ove_test_all_suite_sources(SUITE_SOURCES ${SUITE_DIR})
 
+# The loader suite needs a real relocatable object to load. Compile
+# suites/loader_mod.c to a freestanding ET_REL .o (absolute relocations via
+# -mcmodel=large -fno-pic) and embed it as a byte array the suite #includes.
+set(LOADER_MOD_GEN ${CMAKE_BINARY_DIR}/generated)
+set(LOADER_MOD_HDR ${LOADER_MOD_GEN}/loader_mod_image.h)
+add_custom_command(
+    OUTPUT ${LOADER_MOD_HDR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${LOADER_MOD_GEN}
+    COMMAND ${CMAKE_C_COMPILER}
+            -O2 -fno-pic -mcmodel=large -ffreestanding
+            -fno-stack-protector -fno-asynchronous-unwind-tables
+            -c ${SUITE_DIR}/loader_mod.c -o ${LOADER_MOD_GEN}/loader_mod.o
+    COMMAND ${CMAKE_COMMAND} -DIN=${LOADER_MOD_GEN}/loader_mod.o
+            -DOUT=${LOADER_MOD_HDR} -DSYM=ove_loader_test_mod
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
+    DEPENDS ${SUITE_DIR}/loader_mod.c ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_bin.cmake
+    COMMENT "Building + embedding loader test module"
+    VERBATIM
+)
+add_custom_target(loader_mod_gen DEPENDS ${LOADER_MOD_HDR})
+
 # ove_add_stub_variant(<name> [compile_opts...])
 # Declares a stub-test executable that shares STUB_SOURCES + SUITE_SOURCES
 # but applies extra compile/link options (sanitizer, coverage, ...).
@@ -125,7 +148,9 @@ function(ove_add_stub_variant name)
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${POSIX_CORE_DIR}/include
         ${cmocka_SOURCE_DIR}/include
+        ${LOADER_MOD_GEN}
     )
+    add_dependencies(${name} loader_mod_gen)
     target_link_libraries(${name} PRIVATE cmocka-static pthread rt m)
     # Enable the socket / bus APIs for the stub test target only.  See
     # tests/ove_config.h for why this is per-target rather than global.

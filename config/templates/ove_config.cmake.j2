@@ -256,6 +256,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_audio_nodes.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_arena.c")
 {% endif %}
 
+# Module loader (platform-independent)
+{% if config.get("CONFIG_OVE_LOADER") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/loader/ove_loader.c")
+{% endif %}
+
 # Trace stream (dashboard swimlane) — backend-agnostic ring + emit
 {% if config.get("CONFIG_OVE_TRACE_STREAM") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_trace_ring.c")

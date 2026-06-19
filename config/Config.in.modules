@@ -25,6 +25,15 @@ config OVE_ARENA
       never grows the system heap. Backing pool for loadable modules and
       for carving private, fault-bounded pools.
 
+config OVE_LOADER
+    bool "Module loader (relocatable ELF / bFLT / FDPIC)"
+    default n
+    help
+      Runtime loader for relocatable native code modules: resolves imports
+      against a symbol table, applies relocations, and exposes loaded
+      symbols. Reusable for plugins / OTA code modules and the basis for the
+      Linux personality's program loader.
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n

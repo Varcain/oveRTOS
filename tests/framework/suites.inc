@@ -86,6 +86,7 @@ OVE_SUITE_STUB(spi,           "SPI")
 OVE_SUITE_STUB(uart,          "UART")
 OVE_SUITE_STUB(pm,            "PM")
 OVE_SUITE_STUB(arena,         "Arena allocator")
+OVE_SUITE_STUB(loader,        "Module loader")
 
 #ifdef _OVE_SUITES_INC_DEFAULTED_CORE
 #undef OVE_SUITE
