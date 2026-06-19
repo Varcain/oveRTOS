@@ -4227,6 +4227,61 @@ unsafe extern "C" {
     #[doc = " @brief Bytes of the destination region consumed by the loaded module."]
     pub fn ove_loader_image_size(mod_: *const ove_module_t) -> usize;
 }
+#[doc = " @brief A loaded flat (bFLT / uClinux) program.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding bFLT can also be loaded and\n called directly (no syscall environment required)."]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ove_flat {
+    #[doc = "< Destination region (caller-owned; must be RX)."]
+    pub region: *mut u8,
+    #[doc = "< Size of @c region."]
+    pub region_size: usize,
+    #[doc = "< Bytes consumed (header + text + data + bss)."]
+    pub region_used: usize,
+    #[doc = "< Runtime entry address (the program's start)."]
+    pub entry: usize,
+    #[doc = "< Runtime base of the text segment."]
+    pub text_base: usize,
+    #[doc = "< Text size (includes the 64-byte bFLT header)."]
+    pub text_size: usize,
+    #[doc = "< Runtime base of the data segment."]
+    pub data_base: usize,
+    #[doc = "< Initialised-data size."]
+    pub data_size: usize,
+    #[doc = "< Zero-initialised data size."]
+    pub bss_size: usize,
+    #[doc = "< Stack size the program requests."]
+    pub stack_size: usize,
+}
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of ove_flat"][core::mem::size_of::<ove_flat>() - 80usize];
+    ["Alignment of ove_flat"][core::mem::align_of::<ove_flat>() - 8usize];
+    ["Offset of field: ove_flat::region"][core::mem::offset_of!(ove_flat, region) - 0usize];
+    ["Offset of field: ove_flat::region_size"]
+        [core::mem::offset_of!(ove_flat, region_size) - 8usize];
+    ["Offset of field: ove_flat::region_used"]
+        [core::mem::offset_of!(ove_flat, region_used) - 16usize];
+    ["Offset of field: ove_flat::entry"][core::mem::offset_of!(ove_flat, entry) - 24usize];
+    ["Offset of field: ove_flat::text_base"][core::mem::offset_of!(ove_flat, text_base) - 32usize];
+    ["Offset of field: ove_flat::text_size"][core::mem::offset_of!(ove_flat, text_size) - 40usize];
+    ["Offset of field: ove_flat::data_base"][core::mem::offset_of!(ove_flat, data_base) - 48usize];
+    ["Offset of field: ove_flat::data_size"][core::mem::offset_of!(ove_flat, data_size) - 56usize];
+    ["Offset of field: ove_flat::bss_size"][core::mem::offset_of!(ove_flat, bss_size) - 64usize];
+    ["Offset of field: ove_flat::stack_size"]
+        [core::mem::offset_of!(ove_flat, stack_size) - 72usize];
+};
+#[doc = " @brief A loaded flat (bFLT / uClinux) program.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding bFLT can also be loaded and\n called directly (no syscall environment required)."]
+pub type ove_flat_t = ove_flat;
+unsafe extern "C" {
+    #[doc = " @brief Load a bFLT (uClinux flat) executable into @p region.\n\n Parses the big-endian bFLT v4 header, places the text+data image into\n @p region, zeroes bss, and applies the program's base relocations so\n @c prog->entry is directly callable. Scope: @c FLAT_FLAG_RAM, uncompressed,\n fully-relocated (non-GOTPIC) programs — the simplest form @c elf2flt emits;\n GOTPIC / compressed images return @c OVE_ERR_NOT_SUPPORTED.\n\n @param[out] prog        Program control block to fill.\n @param[in]  image       bFLT image (caller-owned; only read during the load).\n @param[in]  image_size  Size of @p image in bytes.\n @param[in]  region      Destination; must be executable before @c entry runs.\n @param[in]  region_size Size of @p region in bytes.\n @return OVE_OK on success;\n         OVE_ERR_INVALID_PARAM on bad arguments or a malformed image;\n         OVE_ERR_NOT_SUPPORTED for an unsupported revision/flag;\n         OVE_ERR_NO_MEMORY if @p region is too small.\n @note Requires @c CONFIG_OVE_LOADER."]
+    pub fn ove_loader_load_flat(
+        prog: *mut ove_flat_t,
+        image: *const core::ffi::c_void,
+        image_size: usize,
+        region: *mut core::ffi::c_void,
+        region_size: usize,
+    ) -> core::ffi::c_int;
+}
 #[doc = " Entry function for a protected task."]
 pub type ove_ptask_fn = Option<unsafe extern "C" fn(arg: *mut core::ffi::c_void)>;
 #[doc = "< Entry returned normally."]

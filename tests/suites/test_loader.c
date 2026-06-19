@@ -155,6 +155,116 @@ static void test_loader_arm_data_relocs(void **state)
 }
 #endif /* OVE_TEST_HAVE_ARM */
 
+/* ── bFLT (flat program) load ────────────────────────────────────────── */
+
+#define FLAT_RAM 0x1u
+#define FLAT_GOTPIC 0x2u
+
+static void put_be32(uint8_t *p, uint32_t v)
+{
+	p[0] = (uint8_t)(v >> 24);
+	p[1] = (uint8_t)(v >> 16);
+	p[2] = (uint8_t)(v >> 8);
+	p[3] = (uint8_t)v;
+}
+
+/*
+ * Build a minimal valid bFLT v4 image (big-endian header + reloc table, native
+ * payload). Layout: [hdr 64][text 8][data 4][reloc 4]; the single data word is
+ * a program-relative pointer (value 64 -> text start) fixed up by one base
+ * relocation; 8 bytes of bss follow data in the load region. Returns length.
+ */
+static size_t build_flat(uint8_t *img, uint32_t rev, uint32_t flags)
+{
+	memset(img, 0, 96);
+	img[0] = 'b';
+	img[1] = 'F';
+	img[2] = 'L';
+	img[3] = 'T';
+	put_be32(img + 4, rev);	  /* rev */
+	put_be32(img + 8, 64);	  /* entry */
+	put_be32(img + 12, 72);	  /* data_start (end of text, incl. 64B header) */
+	put_be32(img + 16, 76);	  /* data_end */
+	put_be32(img + 20, 84);	  /* bss_end */
+	put_be32(img + 24, 4096); /* stack_size */
+	put_be32(img + 28, 76);	  /* reloc_start */
+	put_be32(img + 32, 1);	  /* reloc_count */
+	put_be32(img + 36, flags);
+	for (int i = 0; i < 8; i++)
+		img[64 + i] = (uint8_t)(i + 1); /* text marker bytes */
+	uint32_t ptr = 64;			/* data pointer word (native) */
+	memcpy(img + 72, &ptr, 4);
+	put_be32(img + 76, 72); /* reloc: offset of the data pointer word */
+	return 80;
+}
+
+static void test_loader_flat_load(void **state)
+{
+	(void)state;
+	uint8_t img[96];
+	size_t n = build_flat(img, 4, FLAT_RAM);
+
+	static uint8_t region[256];
+	ove_flat_t prog;
+	assert_int_equal(ove_loader_load_flat(&prog, img, n, region, sizeof(region)), OVE_OK);
+
+	assert_ptr_equal((void *)prog.text_base, region);
+	assert_int_equal(prog.text_size, 72);
+	assert_ptr_equal((void *)prog.data_base, region + 72);
+	assert_int_equal(prog.data_size, 4);
+	assert_int_equal(prog.bss_size, 8);
+	assert_int_equal(prog.stack_size, 4096);
+	assert_int_equal(prog.region_used, 84);
+	assert_int_equal(prog.entry, (uintptr_t)region + 64);
+
+	/* Text copied verbatim. */
+	for (int i = 0; i < 8; i++)
+		assert_int_equal(region[64 + i], i + 1);
+
+	/* The data pointer word was relocated: program offset 64 -> base + 64. */
+	uint32_t reloc;
+	memcpy(&reloc, region + 72, 4);
+	assert_int_equal(reloc, (uint32_t)(uintptr_t)region + 64);
+
+	/* bss zeroed. */
+	for (int i = 76; i < 84; i++)
+		assert_int_equal(region[i], 0);
+}
+
+static void test_loader_flat_rejects(void **state)
+{
+	(void)state;
+	uint8_t img[96];
+	size_t n = build_flat(img, 4, FLAT_RAM);
+	static uint8_t region[256];
+	ove_flat_t prog;
+
+	assert_int_equal(ove_loader_load_flat(NULL, img, n, region, sizeof(region)),
+			 OVE_ERR_INVALID_PARAM);
+	assert_int_equal(ove_loader_load_flat(&prog, NULL, n, region, sizeof(region)),
+			 OVE_ERR_INVALID_PARAM);
+
+	/* Bad magic. */
+	uint8_t bad[96];
+	memcpy(bad, img, n);
+	bad[0] = 'x';
+	assert_int_equal(ove_loader_load_flat(&prog, bad, n, region, sizeof(region)),
+			 OVE_ERR_INVALID_PARAM);
+
+	/* Region smaller than bss_end. */
+	assert_int_equal(ove_loader_load_flat(&prog, img, n, region, 64), OVE_ERR_NO_MEMORY);
+
+	/* Unsupported revision and flag. */
+	uint8_t r3[96];
+	build_flat(r3, 3, FLAT_RAM);
+	assert_int_equal(ove_loader_load_flat(&prog, r3, n, region, sizeof(region)),
+			 OVE_ERR_NOT_SUPPORTED);
+	uint8_t got[96];
+	build_flat(got, 4, FLAT_RAM | FLAT_GOTPIC);
+	assert_int_equal(ove_loader_load_flat(&prog, got, n, region, sizeof(region)),
+			 OVE_ERR_NOT_SUPPORTED);
+}
+
 int test_loader_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -165,6 +275,8 @@ int test_loader_run(void)
 #ifdef OVE_TEST_HAVE_ARM
 		cmocka_unit_test(test_loader_arm_data_relocs),
 #endif
+		cmocka_unit_test(test_loader_flat_load),
+		cmocka_unit_test(test_loader_flat_rejects),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

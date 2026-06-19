@@ -117,6 +117,53 @@ void *ove_loader_sym(const ove_module_t *mod, const char *name);
 /** @brief Bytes of the destination region consumed by the loaded module. */
 size_t ove_loader_image_size(const ove_module_t *mod);
 
+/* ── Flat (bFLT) program loader ─────────────────────────────────────────── */
+
+/**
+ * @brief A loaded flat (bFLT / uClinux) program.
+ *
+ * Unlike @c ove_module_t (a relocatable object queried by symbol), this is a
+ * fully-linked program: an entry point plus laid-out text/data/bss segments,
+ * not an import/export symbol surface. It is the substrate beneath the Linux
+ * personality's program loader; a freestanding bFLT can also be loaded and
+ * called directly (no syscall environment required).
+ */
+typedef struct ove_flat {
+	uint8_t *region;     /**< Destination region (caller-owned; must be RX). */
+	size_t region_size;  /**< Size of @c region. */
+	size_t region_used;  /**< Bytes consumed (header + text + data + bss). */
+	uintptr_t entry;     /**< Runtime entry address (the program's start). */
+	uintptr_t text_base; /**< Runtime base of the text segment. */
+	size_t text_size;    /**< Text size (includes the 64-byte bFLT header). */
+	uintptr_t data_base; /**< Runtime base of the data segment. */
+	size_t data_size;    /**< Initialised-data size. */
+	size_t bss_size;     /**< Zero-initialised data size. */
+	size_t stack_size;   /**< Stack size the program requests. */
+} ove_flat_t;
+
+/**
+ * @brief Load a bFLT (uClinux flat) executable into @p region.
+ *
+ * Parses the big-endian bFLT v4 header, places the text+data image into
+ * @p region, zeroes bss, and applies the program's base relocations so
+ * @c prog->entry is directly callable. Scope: @c FLAT_FLAG_RAM, uncompressed,
+ * fully-relocated (non-GOTPIC) programs — the simplest form @c elf2flt emits;
+ * GOTPIC / compressed images return @c OVE_ERR_NOT_SUPPORTED.
+ *
+ * @param[out] prog        Program control block to fill.
+ * @param[in]  image       bFLT image (caller-owned; only read during the load).
+ * @param[in]  image_size  Size of @p image in bytes.
+ * @param[in]  region      Destination; must be executable before @c entry runs.
+ * @param[in]  region_size Size of @p region in bytes.
+ * @return OVE_OK on success;
+ *         OVE_ERR_INVALID_PARAM on bad arguments or a malformed image;
+ *         OVE_ERR_NOT_SUPPORTED for an unsupported revision/flag;
+ *         OVE_ERR_NO_MEMORY if @p region is too small.
+ * @note Requires @c CONFIG_OVE_LOADER.
+ */
+int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size, void *region,
+			 size_t region_size);
+
 #ifdef __cplusplus
 }
 #endif

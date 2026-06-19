@@ -617,4 +617,103 @@ size_t ove_loader_image_size(const ove_module_t *mod)
 	return mod ? mod->region_used : 0;
 }
 
+/* ── Flat (bFLT / uClinux) program loader ───────────────────────────────── */
+
+/*
+ * bFLT v4 (uClinux flat binary). The 64-byte header and the relocation table
+ * are stored big-endian (network order) by elf2flt regardless of target; the
+ * text/data payload is in target byte order. We support the common form
+ * elf2flt emits for a NOMMU target: load-to-RAM, uncompressed, fully relocated
+ * (non-GOTPIC). The header is part of the loaded image (entry and relocations
+ * are file-relative offsets), so text spans [0, data_start) and data follows
+ * contiguously. Each relocation is a file-relative offset to a 32-bit word
+ * holding a file-relative pointer; we add the runtime load base to it.
+ */
+
+#define FLAT_VERSION 4u
+#define FLAT_HDR_SIZE 64u
+#define FLAT_FLAG_RAM 0x1u
+#define FLAT_FLAG_GOTPIC 0x2u
+#define FLAT_FLAG_GZIP 0x4u
+#define FLAT_FLAG_GZDATA 0x8u
+
+/* Read a big-endian uint32 from a (possibly unaligned) byte pointer. */
+static uint32_t be32(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) |
+	       (uint32_t)p[3];
+}
+
+int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size, void *region,
+			 size_t region_size)
+{
+	if (!prog || !image || !region || image_size < FLAT_HDR_SIZE)
+		return OVE_ERR_INVALID_PARAM;
+
+	const uint8_t *img = (const uint8_t *)image;
+	if (img[0] != 'b' || img[1] != 'F' || img[2] != 'L' || img[3] != 'T')
+		return OVE_ERR_INVALID_PARAM;
+
+	uint32_t rev = be32(img + 4);
+	uint32_t entry = be32(img + 8);
+	uint32_t data_start = be32(img + 12);
+	uint32_t data_end = be32(img + 16);
+	uint32_t bss_end = be32(img + 20);
+	uint32_t stack_size = be32(img + 24);
+	uint32_t reloc_start = be32(img + 28);
+	uint32_t reloc_count = be32(img + 32);
+	uint32_t flags = be32(img + 36);
+
+	if (rev != FLAT_VERSION)
+		return OVE_ERR_NOT_SUPPORTED;
+	if (flags & (FLAT_FLAG_GOTPIC | FLAT_FLAG_GZIP | FLAT_FLAG_GZDATA))
+		return OVE_ERR_NOT_SUPPORTED;
+
+	/* Layout sanity: header <= entry < data_start <= data_end <= bss_end, and
+	 * the image actually contains text+data and the relocation table. */
+	if (entry < FLAT_HDR_SIZE || data_start <= entry)
+		return OVE_ERR_INVALID_PARAM;
+	if (data_start > data_end || data_end > bss_end)
+		return OVE_ERR_INVALID_PARAM;
+	if ((uint64_t)data_end > image_size)
+		return OVE_ERR_INVALID_PARAM;
+	if ((uint64_t)reloc_start + (uint64_t)reloc_count * 4u > image_size)
+		return OVE_ERR_INVALID_PARAM;
+	if ((uint64_t)bss_end > region_size)
+		return OVE_ERR_NO_MEMORY;
+
+	uint8_t *base = (uint8_t *)region;
+
+	/* Place header+text+data, zero bss. */
+	memcpy(base, img, data_end);
+	memset(base + data_end, 0, (size_t)bss_end - data_end);
+
+	/* Apply base relocations. */
+	for (uint32_t i = 0; i < reloc_count; i++) {
+		uint32_t ro = be32(img + reloc_start + (size_t)i * 4u);
+		if (ro > data_end - 4u)
+			return OVE_ERR_INVALID_PARAM;
+		uint32_t v;
+		memcpy(&v, base + ro, 4);
+		v += (uint32_t)(uintptr_t)base;
+		memcpy(base + ro, &v, 4);
+	}
+
+	prog->region = base;
+	prog->region_size = region_size;
+	prog->region_used = bss_end;
+	prog->text_base = (uintptr_t)base;
+	prog->text_size = data_start;
+	prog->data_base = (uintptr_t)base + data_start;
+	prog->data_size = (size_t)data_end - data_start;
+	prog->bss_size = (size_t)bss_end - data_end;
+	prog->stack_size = stack_size;
+	/* Raw runtime entry address. bFLT does not encode the ARM Thumb bit, so
+	 * unlike ove_loader_sym() this is not pre-decorated: a caller invoking it
+	 * directly on a Thumb target must set bit 0 (the personality's start path
+	 * does this when it enters the program). */
+	prog->entry = (uintptr_t)base + entry;
+	return OVE_OK;
+}
+
 #endif /* CONFIG_OVE_LOADER */
