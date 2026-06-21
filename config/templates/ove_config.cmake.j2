@@ -271,10 +271,12 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
 {% endif %}
 {% endif %}
 
-# Linux personality — engine-agnostic syscall dispatch (per-engine SVC trap is
-# wired separately alongside the backend that hosts the program).
+# Linux personality — engine-agnostic syscall dispatch + per-engine SVC trap.
 {% if config.get("CONFIG_OVE_LINUX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
+{% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
+{% endif %}
 {% endif %}
 
 # Trace stream (dashboard swimlane) — backend-agnostic ring + emit

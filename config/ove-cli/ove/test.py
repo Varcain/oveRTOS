@@ -1987,11 +1987,14 @@ def test_qemu_freertos_coverage(ove_dir, output_dir):
 
 
 # ── NuttX QEMU shared driver ───────────────────────────────────────────
-def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False):
+def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
+                    board_config="mps2-an500:nsh"):
     """Build and run a NuttX QEMU ARM test variant via CMake.
 
     `app_subdir` is the tests/sim/<dir>/ holding nuttx_app/ and
     nuttx_test_defconfig (e.g. "nuttx-qemu" or "nuttx-qemu-zeroheap").
+    `board_config` selects the NuttX base config — "mps2-an500:nsh" (flat) by
+    default, or "mps2-an500:knsh" for the CONFIG_BUILD_PROTECTED variant.
     """
     tc_dir = _ensure_arm_toolchain(ove_dir)
     build_base = os.path.join(output_dir, "tests", label)
@@ -2026,7 +2029,7 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False):
         nuttx_src=nuttx_src,
         apps_build=apps_build,
         build_dir=build_dir,
-        board_config="mps2-an500:nsh",
+        board_config=board_config,
         defconfig_overlays=overlays,
         coverage=coverage,
         variant_dir=_nuttx_variant_config_dir(ove_dir, app_subdir),
@@ -2110,6 +2113,18 @@ def test_qemu_nuttx_zeroheap(ove_dir, output_dir):
     return _run_nuttx_qemu(ove_dir, output_dir,
                            app_subdir="nuttx-qemu-zeroheap",
                            label="qemu-nuttx-zeroheap")
+
+
+def test_qemu_nuttx_linux(ove_dir, output_dir):
+    """Build and run the isolated Linux-personality on-target test (a minimal
+    NuttX/QEMU firmware running only the bFLT/SVC-trap test). WIP: the on-target
+    SVC trap is blocked on the flat-build svc/scheduling collision; the clean
+    fix (CONFIG_BUILD_PROTECTED) needs NuttX CMake-PROTECTED support that
+    mps2-an500 lacks upstream. Not in the auto-run set; on-target personality
+    validation moved to Zephyr (CONFIG_USERSPACE)."""
+    return _run_nuttx_qemu(ove_dir, output_dir,
+                           app_subdir="nuttx-qemu-linux",
+                           label="qemu-nuttx-linux")
 
 
 def test_qemu_nuttx_coverage(ove_dir, output_dir):
@@ -2395,6 +2410,7 @@ TEST_TARGETS = {
     "qemu-freertos-coverage": test_qemu_freertos_coverage,
     "qemu-nuttx": test_qemu_nuttx,
     "qemu-nuttx-zeroheap": test_qemu_nuttx_zeroheap,
+    "qemu-nuttx-linux": test_qemu_nuttx_linux,
     "qemu-nuttx-coverage": test_qemu_nuttx_coverage,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
@@ -2417,8 +2433,12 @@ TEST_TARGETS = {
 
 # Grouped test sets
 SIM_TESTS = ["stub", "cpp", "rust", "zig", "nuttx", "zephyr"]
+# qemu-nuttx-linux is a manually-run WIP (the on-target SVC trap is blocked on
+# the NuttX flat-build svc/scheduling collision), deliberately not in the
+# auto-run group.
 QEMU_TESTS = ["qemu-freertos", "qemu-freertos-zeroheap", "qemu-nuttx",
-               "qemu-nuttx-zeroheap", "qemu-zephyr", "qemu-zephyr-zeroheap"]
+               "qemu-nuttx-zeroheap",
+               "qemu-zephyr", "qemu-zephyr-zeroheap"]
 RENODE_TESTS = ["renode-stm32f746-freertos",
                 "renode-stm32f746-freertos-zeroheap",
                 "renode-stm32f746-zephyr",
