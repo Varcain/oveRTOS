@@ -2045,8 +2045,13 @@ def _run_nuttx_qemu(ove_dir, output_dir, *, app_subdir, label, coverage=False,
 
 # ── Zephyr QEMU shared driver ──────────────────────────────────────────
 def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
-                     extra_conf=None):
+                     extra_conf=None, board="mps2/an500", run_via_west=False):
     """Build and run a Zephyr QEMU ARM test variant.
+
+    `board` selects the Zephyr board (default the Cortex-M7 mps2/an500). Boards
+    the oveRTOS an500 qemu-run.sh can't host (e.g. mps2/an521/cpu0, the Cortex-M33
+    USERSPACE target) set `run_via_west=True` to run through Zephyr's own QEMU
+    integration (`west build -t run`) instead.
 
     `extra_conf` is applied as Zephyr's EXTRA_CONF_FILE so Kconfig overlays
     (e.g. overlay-coverage.conf) layer on top of the baseline prj.conf
@@ -2086,7 +2091,7 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
     build_cmd = [
         west, "build",
-        "-b", "mps2/an500",
+        "-b", board,
         "-d", build,
         os.path.join(ove_dir, "tests", "sim", src_subdir),
     ]
@@ -2095,6 +2100,20 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     run(build_cmd, env=env)
 
     logger.info(f"Running {label}")
+    if run_via_west:
+        # mps2/an521 (Cortex-M33): the oveRTOS an500 qemu-run.sh can't host it,
+        # and Zephyr's own `-t run` routes the UART to a host pty without
+        # semihosting. Drive QEMU directly with -semihosting so the firmware's
+        # semihosting I/O reaches stdout and SYS_EXIT shuts QEMU down for us.
+        elf = os.path.join(build, "zephyr", "zephyr.elf")
+        qemu_cmd = ["qemu-system-arm", "-cpu", "cortex-m33",
+                    "-machine", "mps2-an521", "-m", "16", "-vga", "none",
+                    "-nographic", "-semihosting", "-kernel", elf]
+        try:
+            return _run_test_binary(qemu_cmd, label, timeout=60)
+        except subprocess.TimeoutExpired:
+            logger.error("%s: QEMU run timed out", label)
+            return TestResults(suite=label, passed=0, failed=1)
     qemu_run = os.path.join(ove_dir, "boards", "qemu-mps2-an500",
                             "qemu-run.sh")
     return _run_test_binary(
@@ -2173,6 +2192,15 @@ def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
     return _run_zephyr_qemu(ove_dir, output_dir,
                             src_subdir="zephyr-qemu-zeroheap",
                             label="qemu-zephyr-zeroheap")
+
+
+def test_qemu_zephyr_linux(ove_dir, output_dir):
+    """Build and run the isolated Zephyr CONFIG_USERSPACE Linux-personality
+    bring-up on QEMU mps2/an521/cpu0 (Cortex-M33, the USERSPACE-capable target).
+    WIP; not in the auto-run group."""
+    return _run_zephyr_qemu(ove_dir, output_dir,
+                            src_subdir="zephyr-linux", label="qemu-zephyr-linux",
+                            board="mps2/an521/cpu0", run_via_west=True)
 
 
 def test_qemu_zephyr_coverage(ove_dir, output_dir):
@@ -2414,6 +2442,7 @@ TEST_TARGETS = {
     "qemu-nuttx-coverage": test_qemu_nuttx_coverage,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
+    "qemu-zephyr-linux": test_qemu_zephyr_linux,
     "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
     "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
     "renode-stm32f746-freertos-zeroheap": test_renode_stm32f746_freertos_zeroheap,
