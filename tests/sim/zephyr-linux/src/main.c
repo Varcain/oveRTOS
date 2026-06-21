@@ -20,6 +20,10 @@
  */
 
 #include <zephyr/kernel.h>
+#include <string.h>
+
+#include "ove/arena.h"
+#include "ove/linux/syscall.h"
 
 /* ARM semihosting (Armv7-M/Armv8-M): host console + clean QEMU exit. The
  * canonical in/out r0 form ("+r") keeps the op live in r0 across inlining. */
@@ -60,6 +64,7 @@ extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t 
 				    uint32_t exc_return);
 
 static volatile int g_lnx_active;
+static ove_lnx_proc_t g_proc; /* the running Linux program's context */
 
 void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee,
 			     uint32_t exc_return)
@@ -69,40 +74,71 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 		 * (0xDFxx) at pc-2; Linux uses #0. */
 		const uint16_t *svc = (const uint16_t *)(esf->basic.pc - 2);
 		if ((*svc & 0xff00u) == 0xdf00u && (*svc & 0x00ffu) == 0x00u) {
-			long nr = (long)callee->v4; /* r7 = Linux syscall number */
-			/* PoC dispatch: echo nr+1000 back in r0. Replaced by
-			 * ove_lnx_syscall(nr, r0..r5) in the next step. */
-			((struct arch_esf *)esf)->basic.r0 = (uint32_t)(nr + 1000);
-			return; /* svc.S resumes the thread with the new r0 */
+			/* Linux ABI: nr in r7, args r0..r5. r0..r3 are in the
+			 * stacked basic frame; r4/r5/r7 in the callee-saved set. */
+			long r = ove_lnx_syscall(&g_proc, (long)callee->v4, (int32_t)esf->basic.r0,
+						 (int32_t)esf->basic.r1, (int32_t)esf->basic.r2,
+						 (int32_t)esf->basic.r3, (int32_t)callee->v1,
+						 (int32_t)callee->v2);
+			((struct arch_esf *)esf)->basic.r0 = (uint32_t)r;
+			return; /* svc.S resumes the thread with the result in r0 */
 		}
 	}
 	__real_z_do_kernel_oops(esf, callee, exc_return);
 }
 
-/* Linux-ABI syscall trap: number in r7, result in r0 (the form uClibc emits). */
-static inline long lnx_svc(long nr, long a0)
+/* fd 1/2 sink: capture what the program writes so main can verify it. */
+static char g_cap[64];
+static volatile size_t g_cap_len;
+
+static long capture_write(void *ctx, int fd, const void *buf, size_t len)
 {
-	register long r7 __asm__("r7") = nr;
-	register long r0 __asm__("r0") = a0;
-	__asm__ volatile("svc #0" : "+r"(r0) : "r"(r7) : "memory");
+	ARG_UNUSED(ctx);
+	ARG_UNUSED(fd);
+	if (g_cap_len + len > sizeof(g_cap)) {
+		len = sizeof(g_cap) - g_cap_len;
+	}
+	memcpy(g_cap + g_cap_len, buf, len);
+	g_cap_len += len;
+	return (long)len;
+}
+
+/* Linux write(2) via the trap: nr=4 in r7, fd/buf/len in r0/r1/r2. */
+static inline long lnx_write(int fd, const void *buf, unsigned int len)
+{
+	register long r7 __asm__("r7") = OVE_LNX_NR_write;
+	register long r0 __asm__("r0") = fd;
+	register long r1 __asm__("r1") = (long)buf;
+	register long r2 __asm__("r2") = (long)len;
+	__asm__ volatile("svc #0" : "+r"(r0) : "r"(r7), "r"(r1), "r"(r2) : "memory");
 	return r0;
 }
+
+static const char k_msg[] = "hi from svc\n";
 
 static void user_entry(void *a, void *b, void *c)
 {
 	ARG_UNUSED(a);
 	ARG_UNUSED(b);
 	ARG_UNUSED(c);
-	/* Unprivileged Linux-style trap: svc #0 with nr in r7. The seam should
-	 * resume us with nr+1000. Only then signal success. */
-	if (lnx_svc(42, 0) == 1042) {
+	/* Unprivileged Linux write(1, ...): traps via svc #0, dispatched by the
+	 * seam into ove_lnx_syscall -> our sink. Signal only on the right count. */
+	if (lnx_write(1, k_msg, sizeof(k_msg) - 1) == (long)(sizeof(k_msg) - 1)) {
 		k_sem_give(&done_sem);
 	}
 }
 
+static uint8_t s_pool[2048] __aligned(16);
+
 int main(void)
 {
-	sh_write0("=== Zephyr Linux-SVC interposition test (an521) ===\n");
+	sh_write0("=== Zephyr Linux write(2) personality test (an521) ===\n");
+
+	/* Engine-agnostic process context: arena-backed brk + our fd sink. */
+	ove_arena_t arena;
+	ove_arena_init(&arena, s_pool, sizeof(s_pool));
+	ove_lnx_proc_init(&g_proc, &arena, 512);
+	g_proc.write_fn = capture_write;
 
 	g_lnx_active = 1;
 
@@ -116,13 +152,13 @@ int main(void)
 	int ok = (k_sem_take(&done_sem, K_MSEC(1000)) == 0);
 	g_lnx_active = 0;
 
-	if (ok) {
-		sh_write0("[zephyr-linux] unprivileged svc #0 trapped + resumed OK\n");
+	if (ok && g_cap_len == sizeof(k_msg) - 1 && memcmp(g_cap, k_msg, g_cap_len) == 0) {
+		sh_write0("[zephyr-linux] write(1) svc #0 -> ove_lnx_syscall -> sink OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
 
-	sh_write0("[zephyr-linux] FAIL: svc #0 not trapped / wrong result\n");
+	sh_write0("[zephyr-linux] FAIL: write not dispatched / output mismatch\n");
 	sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
 	sh_exit(1);
 	return 0;

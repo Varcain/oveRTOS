@@ -13,8 +13,18 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_test_zephyr_linux)
 
-target_sources(app PRIVATE src/main.c)
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+
+# src/main.c plus the engine-agnostic layers the SVC seam dispatches into.
+target_sources(app PRIVATE
+    src/main.c
+    ${OVE_ROOT}/backends/common/ove_arena.c
+    ${OVE_ROOT}/linux/ove_linux_syscall.c
+)
+target_include_directories(app PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}  # ove_config.h
+    ${OVE_ROOT}/include
+)
 
 # Interpose the engine's software-fault handler at link time (no Zephyr source
 # patch): svc #0 from the unprivileged program reaches z_do_kernel_oops (svc #0
