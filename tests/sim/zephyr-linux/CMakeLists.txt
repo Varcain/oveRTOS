@@ -15,3 +15,9 @@ project(ove_test_zephyr_linux)
 
 target_sources(app PRIVATE src/main.c)
 target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Interpose the engine's software-fault handler at link time (no Zephyr source
+# patch): svc #0 from the unprivileged program reaches z_do_kernel_oops (svc #0
+# is "Unused" in Zephyr's dispatch); --wrap routes it to our Linux SVC seam,
+# which chains real oopses through to __real_z_do_kernel_oops.
+target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
