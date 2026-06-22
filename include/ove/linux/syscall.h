@@ -43,6 +43,7 @@ extern "C" {
 
 /* Linux ARM EABI syscall numbers (subset). */
 #define OVE_LNX_NR_exit 1
+#define OVE_LNX_NR_fork 2
 #define OVE_LNX_NR_read 3
 #define OVE_LNX_NR_write 4
 #define OVE_LNX_NR_open 5
@@ -57,6 +58,7 @@ extern "C" {
 #define OVE_LNX_NR_munmap 91
 #define OVE_LNX_NR_writev 146
 #define OVE_LNX_NR_rt_sigprocmask 175
+#define OVE_LNX_NR_vfork 190
 #define OVE_LNX_NR_mmap2 192
 #define OVE_LNX_NR_fstat64 197
 #define OVE_LNX_NR_getuid32 199
