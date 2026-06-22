@@ -142,6 +142,69 @@ void ove_lnx_proc_set_rootfs(ove_lnx_proc_t *proc, const ove_lnx_file_t *files, 
 	proc->fs_count = (files && count > 0) ? count : 0;
 }
 
+/* Parse 8 ASCII-hex chars (a newc CPIO header field). */
+static uint32_t cpio_hex(const char *s)
+{
+	uint32_t v = 0;
+	for (int i = 0; i < 8; i++) {
+		char c = s[i];
+		uint32_t d = (c >= '0' && c <= '9')   ? (uint32_t)(c - '0')
+			     : (c >= 'a' && c <= 'f') ? (uint32_t)(c - 'a' + 10)
+			     : (c >= 'A' && c <= 'F') ? (uint32_t)(c - 'A' + 10)
+						      : 0u;
+		v = (v << 4) | d;
+	}
+	return v;
+}
+
+int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out, int max,
+			   char *namebuf, size_t nblen)
+{
+	if (!cpio || !out || !namebuf)
+		return -1;
+	size_t pos = 0, nb = 0;
+	int n = 0;
+	while (pos + 110 <= len) {
+		const char *h = (const char *)(cpio + pos);
+		if (memcmp(h, "070701", 6) != 0) /* newc magic */
+			return -1;
+		uint32_t mode = cpio_hex(h + 14);  /* c_mode */
+		uint32_t fsize = cpio_hex(h + 54); /* c_filesize */
+		uint32_t nsize = cpio_hex(h + 94); /* c_namesize (incl NUL) */
+		if (pos + 110 + nsize > len)
+			return -1;
+		const char *name = h + 110;
+		if (strcmp(name, "TRAILER!!!") == 0)
+			break;
+		size_t data_off = (pos + 110 + nsize + 3u) & ~(size_t)3u;
+		int isreg = (mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFREG;
+		if (isreg && data_off + fsize > len)
+			return -1;
+		if (n >= max)
+			return -1;
+		/* Write "/" + relative-name (strip a leading "./") into namebuf. */
+		const char *nm = name;
+		if (nm[0] == '.' && nm[1] == '/')
+			nm += 2;
+		else if (nm[0] == '.' && nm[1] == 0)
+			nm += 1; /* "." -> "" -> "/" */
+		size_t l = strlen(nm);
+		if (nb + 2 + l > nblen)
+			return -1;
+		char *path = namebuf + nb;
+		path[0] = '/';
+		memcpy(path + 1, nm, l + 1);
+		nb += 2 + l;
+		out[n].path = path;
+		out[n].data = isreg ? (cpio + data_off) : NULL;
+		out[n].size = isreg ? fsize : 0;
+		out[n].mode = mode;
+		n++;
+		pos = (data_off + fsize + 3u) & ~(size_t)3u;
+	}
+	return n;
+}
+
 /* Bound on argv/envp entries the startup stack will lay out. */
 #define OVE_LNX_MAX_VEC 32
 

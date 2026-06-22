@@ -282,6 +282,20 @@ typedef struct ove_lnx_proc {
 void ove_lnx_proc_set_rootfs(ove_lnx_proc_t *proc, const ove_lnx_file_t *files, int count);
 
 /**
+ * @brief Parse a newc CPIO archive (e.g. a Buildroot rootfs.cpio) into a rootfs
+ *        table usable by @ref ove_lnx_proc_set_rootfs.
+ *
+ * Each entry's relative name gets a leading "/" written into @p namebuf (a
+ * leading "./" is stripped); regular-file @c data points into @p cpio in place.
+ * Stops at the "TRAILER!!!" entry.
+ *
+ * @return number of entries, or -1 on malformed input / table-or-namebuf overflow.
+ * @note Requires @c CONFIG_OVE_LINUX.
+ */
+int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out, int max_entries,
+			   char *namebuf, size_t namebuf_len);
+
+/**
  * @brief Initialise a process context with an arena-backed program break.
  *
  * Reserves @p brk_bytes from @p arena for the program break. The caller wires

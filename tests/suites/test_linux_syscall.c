@@ -14,6 +14,7 @@
 #include "ove/arena.h"
 #include "ove/linux/syscall.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* Captures fd 1/2 output so writes can be asserted by value. */
@@ -445,6 +446,69 @@ static void test_lnx_exit_and_unknown(void **state)
 	assert_int_equal(ove_lnx_syscall(&p, 999, 0, 0, 0, 0, 0, 0), -OVE_LNX_ENOSYS);
 }
 
+/* Emit one newc CPIO entry into buf at off; returns the new offset. */
+static size_t cpio_emit(uint8_t *buf, size_t off, const char *name, uint32_t mode, const char *data,
+			uint32_t fsize)
+{
+	uint32_t nsize = (uint32_t)strlen(name) + 1;
+	uint32_t f[13] = {1, mode, 0, 0, 1, 0, fsize, 0, 0, 0, 0, nsize, 0};
+	char tmp[9];
+	memcpy(buf + off, "070701", 6);
+	off += 6;
+	for (int i = 0; i < 13; i++) {
+		snprintf(tmp, sizeof(tmp), "%08x", f[i]);
+		memcpy(buf + off, tmp, 8);
+		off += 8;
+	}
+	memcpy(buf + off, name, nsize);
+	off += nsize;
+	while (off & 3u)
+		buf[off++] = 0;
+	if (fsize) {
+		memcpy(buf + off, data, fsize);
+		off += fsize;
+		while (off & 3u)
+			buf[off++] = 0;
+	}
+	return off;
+}
+
+static void test_lnx_cpio(void **state)
+{
+	(void)state;
+	/* Hand-build a tiny newc CPIO: "/", "/etc", "/etc/motd". */
+	static uint8_t cpio[512];
+	size_t off = 0;
+	off = cpio_emit(cpio, off, ".", OVE_LNX_S_IFDIR | 0755, NULL, 0);
+	off = cpio_emit(cpio, off, "etc", OVE_LNX_S_IFDIR | 0755, NULL, 0);
+	off = cpio_emit(cpio, off, "etc/motd", OVE_LNX_S_IFREG | 0644, "hi\n", 3);
+	off = cpio_emit(cpio, off, "TRAILER!!!", 0, NULL, 0);
+
+	static ove_lnx_file_t tbl[8];
+	static char nbuf[256];
+	int n = ove_lnx_cpio_to_rootfs(cpio, off, tbl, 8, nbuf, sizeof(nbuf));
+	assert_int_equal(n, 3); /* TRAILER stops the parse */
+	assert_string_equal(tbl[0].path, "/");
+	assert_true((tbl[0].mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR);
+	assert_string_equal(tbl[2].path, "/etc/motd");
+	assert_int_equal((int)tbl[2].size, 3);
+	assert_memory_equal(tbl[2].data, "hi\n", 3);
+	assert_true((tbl[2].mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFREG);
+
+	/* The parsed table drives the VFS: open + read the file. */
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+	ove_lnx_proc_set_rootfs(&p, tbl, n);
+	long fd =
+		ove_lnx_syscall(&p, OVE_LNX_NR_open, (long)(uintptr_t) "/etc/motd", 0, 0, 0, 0, 0);
+	assert_true(fd >= 0);
+	char b[8] = {0};
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)b, 8, 0, 0, 0),
+			 3);
+	assert_memory_equal(b, "hi\n", 3);
+}
+
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -453,6 +517,7 @@ int test_linux_syscall_run(void)
 		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_setup_stack),
 		cmocka_unit_test(test_lnx_file),       cmocka_unit_test(test_lnx_getdents),
 		cmocka_unit_test(test_lnx_execve),     cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_cpio),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
