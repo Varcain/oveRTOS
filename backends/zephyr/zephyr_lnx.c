@@ -471,6 +471,15 @@ int ove_lnx_zephyr_run(const ove_lnx_zephyr_config_t *cfg, const char *path, int
 		}
 		k_msleep(1);
 	}
+	/* Tear down any still-running slot threads (the exited init parks in a busy
+	 * loop, a child may be mid-flight) so a subsequent ove_lnx_zephyr_run()
+	 * starts from a clean slate and no leaked thread starves the next program. */
+	for (int i = 0; i < NSLOT; i++) {
+		if (g_slots[i].used) {
+			k_thread_abort(g_slots[i].tid);
+			g_slots[i].used = 0;
+		}
+	}
 	g_lnx_active = 0;
 	return rc;
 }

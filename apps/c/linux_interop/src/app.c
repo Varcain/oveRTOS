@@ -7,23 +7,25 @@
  *
  * RTOS-kernel <-> Linux-personality interop demo (mps2/an521, Cortex-M33).
  *
- * One firmware image runs two worlds side by side:
- *   - a NATIVE RTOS thread (a privileged Zephyr kernel thread) that blocks on a
- *     kernel message queue and processes whatever it receives, in real time;
- *   - a stock LINUX program (BusyBox, an unprivileged uClibc bFLT) launched
- *     through the Linux personality (ove_lnx_zephyr_run) from a real Buildroot
- *     rootfs.
+ * One firmware image, two worlds, two phases:
  *
- * They INTEROP across the personality boundary: the Linux program's stdout is
- * fed — by the host write callback, straight from the svc trap — into the RTOS
- * kernel's k_msgq; the native RTOS thread drains that queue and acts on each
- * line. So a Linux process and an RTOS task exchange data through an ordinary
- * RTOS kernel object, in one image, concurrently.
+ *  Phase 1 — BIDIRECTIONAL round trip. A native RTOS thread (a privileged Zephyr
+ *  kernel thread) feeds three "sensor readings" INTO a stock Linux program
+ *  (BusyBox `cat`, an unprivileged uClibc bFLT) through the program's stdin, and
+ *  drains what `cat` echoes back OUT of its stdout — both halves crossing the
+ *  personality boundary through ordinary RTOS kernel message queues:
+ *      RTOS feeder -> g_feed_q -> read cb -> [Linux cat] -> write cb -> g_consume_q -> RTOS consumer
+ *  So an RTOS task and a Linux process exchange data in both directions.
  *
- * The boundary callback (demo_write) runs in the svc-trap (exception) context,
- * so it only does k_msgq_put(K_NO_WAIT) (ISR-safe); the worker blocks with
- * k_msgq_get in thread context. Output is via ARM semihosting (matches the
- * personality test; deterministic under QEMU).
+ *  Phase 2 — INTERACTIVE shell. The program then drops into an interactive
+ *  BusyBox `sh`: the read callback returns real keystrokes (ARM semihosting
+ *  SYS_READC) and the write callback echoes to the console, so the user can run
+ *  commands (ls, echo, cat, pwd, ...) and `exit` to finish.
+ *
+ * The personality callbacks run in the svc-trap (exception) context, so they do
+ * only non-blocking work there: k_msgq_put/get(K_NO_WAIT) and semihosting. The
+ * RTOS worker blocks (k_msgq_get) in normal thread context. Phase 1 pre-fills
+ * the feed queue before launching, so the program never sees a premature EOF.
  */
 
 #include <zephyr/kernel.h>
@@ -46,6 +48,16 @@ static long semihost(unsigned long op, void *arg)
 static void sh_write0(const char *s)
 {
 	semihost(0x04 /* SYS_WRITE0 */, (void *)s);
+}
+
+static void sh_writec(char c)
+{
+	semihost(0x03 /* SYS_WRITEC */, &c);
+}
+
+static int sh_readc(void)
+{
+	return (int)semihost(0x07 /* SYS_READC */, NULL);
 }
 
 static void sh_exit(unsigned int code)
@@ -81,19 +93,22 @@ static char *put_dec(char *p, uint32_t v)
 	return p;
 }
 
-/* ---- the RTOS <-> Linux bridge: a native kernel message queue -------------- */
+/* ---- the RTOS <-> Linux bridges: two native kernel message queues ---------- */
 struct lnx_line {
 	char text[56];
 };
-K_MSGQ_DEFINE(g_to_rtos, sizeof(struct lnx_line), 8, 4);
+K_MSGQ_DEFINE(g_feed_q, sizeof(struct lnx_line), 8, 4);	   /* RTOS -> Linux (program stdin) */
+K_MSGQ_DEFINE(g_consume_q, sizeof(struct lnx_line), 8, 4); /* Linux -> RTOS (program stdout) */
 
-static volatile int g_linux_done; /* set when the Linux program has exited */
-static char g_consumed[4][56];	  /* what the worker received (for the verdict) */
-static volatile int g_consumed_n;
+#define N_READINGS 3
+static volatile int g_feed_ready;	  /* all feed lines queued (so no premature EOF) */
+static volatile int g_linux_done;	  /* the phase-1 program has exited */
+static char g_round_trip[N_READINGS][56]; /* what came back through Linux (for the verdict) */
+static volatile int g_round_trip_n;
 
-/* ---- the native RTOS worker thread ----------------------------------------- */
+/* ---- the native RTOS worker thread (feeds, then consumes) ------------------ */
 #define WORKER_STACK 2048
-#define WORKER_PRIO 4 /* preempts the unprivileged user threads (prio 5) to consume promptly */
+#define WORKER_PRIO 4 /* preempts the unprivileged user threads (prio 5) */
 K_THREAD_STACK_DEFINE(g_worker_stack, WORKER_STACK);
 static struct k_thread g_worker;
 
@@ -102,41 +117,68 @@ static void rtos_worker(void *a, void *b, void *c)
 	ARG_UNUSED(a);
 	ARG_UNUSED(b);
 	ARG_UNUSED(c);
-	sh_write0(
-		"[rtos-worker] native Zephyr thread up; blocking on the kernel msgq for Linux data\n");
 
+	/* RTOS -> Linux: produce the readings up front so they are all waiting when
+	 * the program starts reading (the read callback cannot block to wait). */
+	for (int i = 1; i <= N_READINGS; i++) {
+		struct lnx_line m;
+		char *p = put_str(m.text, "reading-");
+		p = put_dec(p, (uint32_t)i);
+		*p++ = '\n'; /* the program reads a line at a time */
+		*p = 0;
+		k_msgq_put(&g_feed_q, &m, K_NO_WAIT);
+		char b2[40];
+		char *q = put_str(b2, "[rtos-feeder] -> Linux: reading-");
+		q = put_dec(q, (uint32_t)i);
+		*q++ = '\n';
+		*q = 0;
+		sh_write0(b2);
+	}
+	g_feed_ready = 1;
+
+	/* Linux -> RTOS: drain what the program echoes back, concurrently with it. */
 	struct lnx_line m;
 	for (;;) {
-		/* Drain the queue the Linux side feeds; time out periodically to notice
-		 * the Linux program has exited and there is nothing left to consume. */
-		if (k_msgq_get(&g_to_rtos, &m, K_MSEC(50)) == 0) {
-			if (g_consumed_n < (int)(sizeof(g_consumed) / sizeof(g_consumed[0]))) {
-				strncpy(g_consumed[g_consumed_n], m.text,
-					sizeof(g_consumed[0]) - 1);
-				g_consumed[g_consumed_n][sizeof(g_consumed[0]) - 1] = 0;
+		if (k_msgq_get(&g_consume_q, &m, K_MSEC(50)) == 0) {
+			if (g_round_trip_n < N_READINGS) {
+				strncpy(g_round_trip[g_round_trip_n], m.text,
+					sizeof(g_round_trip[0]) - 1);
+				g_round_trip[g_round_trip_n][sizeof(g_round_trip[0]) - 1] = 0;
 			}
-			g_consumed_n++;
-			char line[112];
-			char *p = put_str(line, "[rtos-worker] consumed from Linux #");
-			p = put_dec(p, (uint32_t)g_consumed_n);
-			p = put_str(p, " @ ");
-			p = put_dec(p, (uint32_t)k_uptime_get());
-			p = put_str(p, " ms: \"");
+			g_round_trip_n++;
+			char line[80];
+			char *p = put_str(line, "[rtos-consumer] <- Linux (round trip #");
+			p = put_dec(p, (uint32_t)g_round_trip_n);
+			p = put_str(p, "): \"");
 			p = put_str(p, m.text);
 			p = put_str(p, "\"\n");
 			*p = 0;
 			sh_write0(line);
 		} else if (g_linux_done) {
-			break; /* Linux finished and the queue is drained */
+			break;
 		}
 	}
-	sh_write0("[rtos-worker] Linux side finished; worker exiting\n");
 }
 
-/* ---- the Linux personality's console callbacks ----------------------------- */
-/* stdout: runs in the svc-trap context, so only ISR-safe work — hand each line
- * to the RTOS worker via the kernel msgq (K_NO_WAIT; drop if the worker is slow). */
-static long demo_write(void *ctx, int fd, const void *buf, size_t len)
+/* ---- phase 1 callbacks: round-trip through the RTOS message queues ---------- */
+/* stdin: hand the program the next RTOS-produced line; empty queue == EOF (the
+ * feeder pre-filled it, so "empty" really does mean the readings are exhausted). */
+static long feed_read(void *ctx, int fd, void *buf, size_t len)
+{
+	ARG_UNUSED(ctx);
+	ARG_UNUSED(fd);
+	struct lnx_line m;
+	if (k_msgq_get(&g_feed_q, &m, K_NO_WAIT) != 0)
+		return 0; /* EOF */
+	size_t l = strlen(m.text);
+	if (l > len)
+		l = len;
+	memcpy(buf, m.text, l);
+	return (long)l;
+}
+
+/* stdout: push each line the program emits to the RTOS consumer (ISR-safe). */
+static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 {
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(fd);
@@ -144,20 +186,43 @@ static long demo_write(void *ctx, int fd, const void *buf, size_t len)
 	size_t n = len < sizeof(m.text) - 1 ? len : sizeof(m.text) - 1;
 	memcpy(m.text, buf, n);
 	while (n && (m.text[n - 1] == '\n' || m.text[n - 1] == '\r'))
-		n--; /* trim the line ending for a clean log */
+		n--;
 	m.text[n] = 0;
 	if (n)
-		k_msgq_put(&g_to_rtos, &m, K_NO_WAIT);
-	return (long)len; /* the program sees a full write regardless */
+		k_msgq_put(&g_consume_q, &m, K_NO_WAIT);
+	return (long)len;
 }
 
-static long demo_read(void *ctx, int fd, void *buf, size_t len)
+/* ---- phase 2 callbacks: a live console for the interactive shell ------------ */
+/* stdin: one real keystroke at a time (the shell's line editor reads char-by-char). */
+static long console_read(void *ctx, int fd, void *buf, size_t len)
 {
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(fd);
-	ARG_UNUSED(buf);
-	ARG_UNUSED(len);
-	return 0; /* the program has no stdin (it is `sh -c <script>`) */
+	if (len == 0)
+		return 0;
+	int c = sh_readc();
+	if (c < 0)
+		return 0; /* host EOF -> the shell exits */
+	if (c == '\n')
+		c = '\r'; /* normalize Enter to CR: the shell's raw line editor expects it */
+	*(char *)buf = (char)c;
+	return 1;
+}
+
+/* stdout: echo to the host console; translate \n -> \r\n so it reads cleanly
+ * regardless of the host terminal mode. */
+static long console_write(void *ctx, int fd, const void *buf, size_t len)
+{
+	ARG_UNUSED(ctx);
+	ARG_UNUSED(fd);
+	const char *p = (const char *)buf;
+	for (size_t i = 0; i < len; i++) {
+		if (p[i] == '\n')
+			sh_writec('\r');
+		sh_writec(p[i]);
+	}
+	return (long)len;
 }
 
 static void on_enosys(long nr)
@@ -174,59 +239,72 @@ static void on_enosys(long nr)
 #define ROOTFS_MAX_FILES 256
 static ove_lnx_file_t g_rootfs[ROOTFS_MAX_FILES];
 static char g_rootfs_names[8192];
-
-/* The Linux program emits three "measurements" the RTOS worker consumes. */
-static const char *const g_expect[] = {"measurement-1", "measurement-2", "measurement-3"};
+static int g_rootfs_n;
 
 int main(void)
 {
 	sh_write0(
-		"=== oveRTOS demo: a native RTOS thread + a Linux program, side by side (an521) ===\n");
+		"=== oveRTOS demo: a native RTOS thread + a Linux program, two-way (an521) ===\n");
 
-	int rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
-					      g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
-					      sizeof(g_rootfs_names));
-	if (rootfs_n <= 0) {
+	g_rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
+					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
+					    sizeof(g_rootfs_names));
+	if (g_rootfs_n <= 0) {
 		sh_write0("[demo] FAIL: rootfs CPIO parse failed\n");
 		sh_exit(1);
 	}
 
-	/* Start the native RTOS worker; it runs concurrently with the Linux program. */
+	/* ---- Phase 1: bidirectional round trip through BusyBox `cat` ---------- */
+	sh_write0("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
 	k_thread_create(&g_worker, g_worker_stack, WORKER_STACK, rtos_worker, NULL, NULL, NULL,
 			WORKER_PRIO, 0, K_NO_WAIT);
 	k_thread_name_set(&g_worker, "rtos-worker");
+	while (!g_feed_ready) /* let the feeder fill the queue before the program reads */
+		k_msleep(1);
 
-	/* Launch the Linux program through the personality: BusyBox sh runs a small
-	 * script that prints three measurements (each echo -> stdout -> the worker). */
-	const ove_lnx_zephyr_config_t cfg = {
+	const ove_lnx_zephyr_config_t cfg1 = {
 		.rootfs = g_rootfs,
-		.rootfs_count = rootfs_n,
-		.write_fn = demo_write,
-		.read_fn = demo_read,
+		.rootfs_count = g_rootfs_n,
+		.write_fn = consume_write,
+		.read_fn = feed_read,
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
 	};
-	const char *const sh_argv[] = {
-		"sh", "-c", "echo measurement-1; echo measurement-2; echo measurement-3", NULL};
-	sh_write0("[demo] launching the Linux program (BusyBox sh) via the personality...\n");
-	int rc = ove_lnx_zephyr_run(&cfg, "/bin/busybox", 3, sh_argv);
-
-	/* The Linux program has exited; let the worker drain and stop, then verify. */
+	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
+	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
+	int rc1 = ove_lnx_zephyr_run(&cfg1, "/bin/busybox", 1, cat_argv);
 	g_linux_done = 1;
 	k_thread_join(&g_worker, K_FOREVER);
 
-	int ok = (rc >= 0) && (g_consumed_n == 3);
-	for (int i = 0; ok && i < 3; i++)
-		ok = (strcmp(g_consumed[i], g_expect[i]) == 0);
-
-	if (ok) {
-		sh_write0(
-			"[demo] the RTOS worker received all 3 measurements from the Linux process.\n");
-		sh_write0(
-			"=== interop demo OK: RTOS kernel + Linux personality ran concurrently ===\n");
-		sh_exit(0);
+	int ok = (rc1 >= 0) && (g_round_trip_n == N_READINGS);
+	for (int i = 0; ok && i < N_READINGS; i++) {
+		char want[16];
+		char *p = put_str(want, "reading-");
+		p = put_dec(p, (uint32_t)(i + 1));
+		*p = 0;
+		ok = (strcmp(g_round_trip[i], want) == 0);
 	}
-	sh_write0("[demo] FAIL: interop mismatch (rc or consumed count/text)\n");
-	sh_exit(1);
+	if (!ok) {
+		sh_write0("[demo] FAIL: phase-1 round trip mismatch\n");
+		sh_exit(1);
+	}
+	sh_write0(
+		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
+
+	/* ---- Phase 2: drop into an interactive shell -------------------------- */
+	sh_write0("\n-- phase 2: interactive BusyBox shell (type commands; `exit` to quit) --\n");
+	const ove_lnx_zephyr_config_t cfg2 = {
+		.rootfs = g_rootfs,
+		.rootfs_count = g_rootfs_n,
+		.write_fn = console_write,
+		.read_fn = console_read,
+		.io_ctx = NULL,
+		.on_enosys = on_enosys,
+	};
+	const char *const sh_argv[] = {"sh", NULL};
+	int rc2 = ove_lnx_zephyr_run(&cfg2, "/bin/busybox", 1, sh_argv);
+
+	sh_write0("\n=== interop demo done (interactive shell exited) ===\n");
+	sh_exit(rc2 >= 0 ? 0 : 1);
 	return 0;
 }
