@@ -95,6 +95,7 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 
 	memset(proc, 0, sizeof(*proc));
 	proc->arena = arena;
+	proc->pid = 1; /* the initial program is pid 1 (ppid 0); fork assigns the rest */
 	/* fd 0/1/2 are the standard streams, routed to the caller's callbacks. */
 	proc->fds[0].kind = OVE_LNX_FD_CONSOLE;
 	proc->fds[1].kind = OVE_LNX_FD_CONSOLE;
@@ -612,7 +613,12 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_exit(proc, (int)a0);
 	/* libc-init / identity stubs: enough for a static uClibc program to start. */
 	case OVE_LNX_NR_getpid:
-		return 1;
+		return proc->pid;
+	case OVE_LNX_NR_getppid:
+		return proc->ppid;
+	case OVE_LNX_NR_wait4:
+		/* No child-process tracking yet (fork lands next): nothing to reap. */
+		return -OVE_LNX_ECHILD;
 	case OVE_LNX_NR_getuid32:
 	case OVE_LNX_NR_geteuid32:
 	case OVE_LNX_NR_getgid32:

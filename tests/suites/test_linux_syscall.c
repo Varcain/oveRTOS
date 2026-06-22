@@ -134,7 +134,10 @@ static void test_lnx_init_stubs(void **state)
 	ove_lnx_proc_t p;
 	setup_proc(&p, &arena);
 
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getpid, 0, 0, 0, 0, 0, 0), 1);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getpid, 0, 0, 0, 0, 0, 0), 1);	/* pid */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getppid, 0, 0, 0, 0, 0, 0), 0); /* ppid */
+	/* No children tracked yet, so wait4 reports -ECHILD. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_wait4, -1, 0, 0, 0, 0, 0), -OVE_LNX_ECHILD);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getuid32, 0, 0, 0, 0, 0, 0), 0);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getegid32, 0, 0, 0, 0, 0, 0), 0);
 	/* ioctl(TCGETS) on a non-tty → -ENOTTY, so stdio block-buffers. */

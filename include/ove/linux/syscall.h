@@ -50,6 +50,8 @@ extern "C" {
 #define OVE_LNX_NR_execve 11
 #define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR_getpid 20
+#define OVE_LNX_NR_getppid 64
+#define OVE_LNX_NR_wait4 114
 #define OVE_LNX_NR_brk 45
 #define OVE_LNX_NR_ioctl 54
 #define OVE_LNX_NR_munmap 91
@@ -97,6 +99,7 @@ extern "C" {
 /* Linux errno values returned (negated) on syscall failure. */
 #define OVE_LNX_ENOENT 2
 #define OVE_LNX_EBADF 9
+#define OVE_LNX_ECHILD 10
 #define OVE_LNX_ENOMEM 12
 #define OVE_LNX_EACCES 13
 #define OVE_LNX_EFAULT 14
@@ -162,6 +165,8 @@ typedef struct ove_lnx_proc {
 	const ove_lnx_file_t *fs;	   /**< Read-only rootfs table (NULL → no files). */
 	int fs_count;			   /**< Number of entries in @c fs. */
 	ove_lnx_fd_t fds[OVE_LNX_MAX_FDS]; /**< fd table; 0/1/2 are the std streams. */
+	int pid;			   /**< This process's id (1 for the initial program). */
+	int ppid;			   /**< Parent process id (0 for the initial program). */
 	int exited;			   /**< Set once @c exit / @c exit_group is called. */
 	int exit_status;		   /**< Low 8 bits of the exit code. */
 	/* execve request: the engine seam relaunches the thread on this rootfs
