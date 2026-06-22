@@ -278,7 +278,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_lnx.c")
-# The Zephyr seam (ove_lnx_zephyr_run) traps svc #0 by interposing the engine's
+# The Zephyr seam (ove_lnx_run) traps svc #0 by interposing the engine's
 # software-fault handler; the app must add the link option:
 #   target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
 {% endif %}

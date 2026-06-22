@@ -76,17 +76,24 @@ once first.
 
 ## How it works (and its constraints)
 
+The RTOS side is built entirely on the **engine-agnostic oveRTOS APIs** —
+`ove_thread` (the worker), `ove_queue` (the two bridges), `ove_time` — and the
+Linux side on `ove_lnx_run` (the personality runner, `include/ove/linux/run.h`).
+There are no direct Zephyr kernel calls; semihosting is used only as the console
+transport (an architecture facility, not an RTOS primitive).
+
 The personality's I/O callbacks run in the `svc`-trap (exception) context, so
 they do only non-blocking work there:
 
 - **RTOS → Linux** — the read callback hands the program the next queued line
-  with `k_msgq_get(K_NO_WAIT)`. Because that callback *cannot block to wait*, the
-  feeder pre-fills the queue before the program is launched, so the program
-  never sees a premature EOF. (A paced, blocking feed would need an MMU tier or a
-  worker-pumped buffered fd; out of scope here.)
+  with `ove_queue_receive_from_isr` (the ISR-safe, non-blocking variant). Because
+  that callback *cannot block to wait*, the feeder pre-fills the queue before the
+  program is launched, so the program never sees a premature EOF. (A paced,
+  blocking feed would need an MMU tier or a worker-pumped buffered fd; out of
+  scope here.)
 - **Linux → RTOS** — the write callback pushes each line with
-  `k_msgq_put(K_NO_WAIT)`; the RTOS worker blocks on `k_msgq_get` in normal
-  thread context.
+  `ove_queue_send_from_isr`; the RTOS worker blocks on `ove_queue_receive` in
+  normal thread context.
 - **Interactive input** — `SYS_READC` blocks the CPU in the trap while waiting
   for a keystroke, so during an input wait the RTOS threads are paused; that is
   fine here because the phase-1 worker has already finished. (The demo's two
@@ -108,10 +115,10 @@ and adds the one required link option `-Wl,--wrap=z_do_kernel_oops`.
 
 | File | Role |
 |------|------|
-| `src/app.c`   | the demo: the RTOS worker, the two `k_msgq` bridges, the interactive console, the two-phase launch |
+| `src/app.c`   | the demo: the `ove_thread` worker, the two `ove_queue` bridges, the interactive console, the two-phase launch |
 | `prj.conf`    | `CONFIG_USERSPACE` + console/printk (mps2/an521) |
-| `ove_config.h`| selects the engine-agnostic layers (arena + loader + Linux core) |
-| `CMakeLists.txt` | links the seam + core and adds the `--wrap` |
+| `ove_config.h`| selects the Zephyr backend (so `ove_thread`/`ove_queue`/`ove_time` resolve) + the engine-agnostic layers (arena + loader + Linux core) |
+| `CMakeLists.txt` | links the oveRTOS backend primitives + the seam + core and adds the `--wrap` |
 | `run.sh`      | build for an521 + run on QEMU (with the interactive console wired up) |
 
 The Linux rootfs is the same embedded Buildroot CPIO the personality test uses

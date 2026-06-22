@@ -9,7 +9,7 @@
  * real minimal Buildroot rootfs and run an interactive shell. This file is now a
  * thin test driver — the engine seam (svc trap, NOMMU process model, MPU
  * domains, run loop) lives in the reusable backends/zephyr/zephyr_lnx.c module
- * (ove_lnx_zephyr_run); here we only supply the host pieces:
+ * (ove_lnx_run); here we only supply the host pieces:
  *   - the rootfs: an embedded newc CPIO (a Buildroot rootfs.cpio: BusyBox 1.38 +
  *     /etc + /dev + applet symlinks), parsed by ove_lnx_cpio_to_rootfs;
  *   - console I/O: ARM semihosting for output, a scripted keystroke buffer for
@@ -26,7 +26,7 @@
 #include <string.h>
 
 #include "ove/linux/syscall.h"
-#include "ove/linux/zephyr.h"
+#include "ove/linux/run.h"
 
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len (a real Buildroot rootfs) */
 
@@ -98,11 +98,11 @@ static long console_read(void *ctx, int fd, void *buf, size_t len)
 	size_t n = 0;
 	while (n < len && g_input_pos < sizeof(g_input) - 1) {
 		char c = g_input[g_input_pos];
-		if (c == 0x03 && ove_lnx_zephyr_tty_isig()) {
+		if (c == 0x03 && ove_lnx_tty_isig()) {
 			if (n > 0)
 				break; /* deliver buffered input first; ^C next read */
 			g_input_pos++; /* consume the ^C */
-			ove_lnx_zephyr_post_signal(OVE_LNX_SIGINT);
+			ove_lnx_post_signal(OVE_LNX_SIGINT);
 			return -OVE_LNX_EINTR;
 		}
 		g_input_pos++;
@@ -142,7 +142,7 @@ int main(void)
 	}
 
 	/* Run /bin/busybox as the "sh" init process via the engine seam. */
-	const ove_lnx_zephyr_config_t cfg = {
+	const ove_lnx_run_config_t cfg = {
 		.rootfs = g_rootfs,
 		.rootfs_count = rootfs_n,
 		.write_fn = capture_write,
@@ -151,7 +151,7 @@ int main(void)
 		.on_enosys = on_enosys,
 	};
 	const char *const sh_argv[] = {"sh", NULL};
-	int rc = ove_lnx_zephyr_run(&cfg, "/bin/busybox", 1, sh_argv);
+	int rc = ove_lnx_run(&cfg, "/bin/busybox", 1, sh_argv);
 
 	if (rc >= 0 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {

@@ -5,7 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * Zephyr engine seam for the Linux personality (see include/ove/linux/zephyr.h).
+ * Zephyr engine seam for the Linux personality (see include/ove/linux/run.h).
  * Binds the engine-agnostic syscall core to a Zephyr/Cortex-M target: traps the
  * unprivileged program's svc, runs each loaded bFLT in its own MPU domain, and
  * drives the NOMMU process model.
@@ -31,7 +31,7 @@
 #include "ove/arena.h"
 #include "ove/loader.h"
 #include "ove/linux/syscall.h"
-#include "ove/linux/zephyr.h"
+#include "ove/linux/run.h"
 
 /* ---- program memory: two regions, so a parent + child image coexist -------- */
 #define PROG_REGION_SIZE 0x60000u /* 384K: BusyBox loads ~129K + arena + stack */
@@ -66,7 +66,7 @@ struct slot {
 static struct slot g_slots[NSLOT];
 K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, NSLOT, 1024);
 
-static const ove_lnx_zephyr_config_t *g_cfg;
+static const ove_lnx_run_config_t *g_cfg;
 static volatile int g_lnx_active;
 
 /* Captured parent context at a vfork svc, replayed to resume parent + child. */
@@ -90,16 +90,16 @@ static struct {
 } g_sig_save;
 
 /* Terminal line discipline + async-signal latch (the host's read_fn drives both
- * via ove_lnx_zephyr_tty_isig()/ove_lnx_zephyr_post_signal()). */
+ * via ove_lnx_tty_isig()/ove_lnx_post_signal()). */
 static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
 
-int ove_lnx_zephyr_tty_isig(void)
+int ove_lnx_tty_isig(void)
 {
 	return g_tty_isig;
 }
 
-void ove_lnx_zephyr_post_signal(int sig)
+void ove_lnx_post_signal(int sig)
 {
 	g_pending_sig = sig;
 }
@@ -372,11 +372,11 @@ static void resume_slot(int sidx, int ridx, long r0val)
 	k_thread_start(g_slots[sidx].tid);
 }
 
-int ove_lnx_zephyr_run(const ove_lnx_zephyr_config_t *cfg, const char *path, int argc,
-		       const char *const argv[])
+int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
+		const char *const argv[])
 {
 	if (!cfg || !cfg->rootfs || !path || argc < 1 || !argv)
-		return OVE_LNX_ZEPHYR_ELAUNCH;
+		return OVE_LNX_RUN_ELAUNCH;
 	g_cfg = cfg;
 	for (int i = 0; i < NSLOT; i++)
 		g_slots[i].used = 0;
@@ -393,15 +393,15 @@ int ove_lnx_zephyr_run(const ove_lnx_zephyr_config_t *cfg, const char *path, int
 			break;
 		}
 	if (bb < 0 || !cfg->rootfs[bb].data)
-		return OVE_LNX_ZEPHYR_ELAUNCH;
+		return OVE_LNX_RUN_ELAUNCH;
 
 	g_lnx_active = 1;
 	if (launch_slot(0, 0, cfg->rootfs[bb].data, cfg->rootfs[bb].size, 1, 0, argc, argv) != 0) {
 		g_lnx_active = 0;
-		return OVE_LNX_ZEPHYR_ELAUNCH;
+		return OVE_LNX_RUN_ELAUNCH;
 	}
 
-	int rc = OVE_LNX_ZEPHYR_ETIMEOUT;
+	int rc = OVE_LNX_RUN_ETIMEOUT;
 	int next_pid = 2;  /* assigned to each new child */
 	int cur_child = 2; /* the child currently being spawned/reaped */
 	for (int i = 0; i < 8000; i++) {
@@ -443,7 +443,7 @@ int ove_lnx_zephyr_run(const ove_lnx_zephyr_config_t *cfg, const char *path, int
 			k_thread_abort(g_slots[1].tid);
 			if (launch_slot(1, 1, cfg->rootfs[idx].data, cfg->rootfs[idx].size,
 					cur_child, 1, eargc, ptrs) != 0) {
-				rc = OVE_LNX_ZEPHYR_EEXEC;
+				rc = OVE_LNX_RUN_EEXEC;
 				break;
 			}
 			memcpy(g_slots[1].proc.fds, saved_fds, sizeof(saved_fds));
@@ -472,7 +472,7 @@ int ove_lnx_zephyr_run(const ove_lnx_zephyr_config_t *cfg, const char *path, int
 		k_msleep(1);
 	}
 	/* Tear down any still-running slot threads (the exited init parks in a busy
-	 * loop, a child may be mid-flight) so a subsequent ove_lnx_zephyr_run()
+	 * loop, a child may be mid-flight) so a subsequent ove_lnx_run()
 	 * starts from a clean slate and no leaked thread starves the next program. */
 	for (int i = 0; i < NSLOT; i++) {
 		if (g_slots[i].used) {

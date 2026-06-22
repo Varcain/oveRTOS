@@ -17,10 +17,14 @@ project(ove_linux_interop)
 
 set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 
-# The demo (src/app.c) + the Zephyr engine seam + the engine-agnostic layers it
-# dispatches into (the same set the personality test links).
+# The demo (src/app.c) + the oveRTOS Zephyr backend primitives it uses
+# (ove_thread / ove_queue / ove_time) + the Linux personality seam + the
+# engine-agnostic layers the seam dispatches into.
 target_sources(app PRIVATE
     src/app.c
+    ${OVE_ROOT}/backends/zephyr/zephyr_thread.c
+    ${OVE_ROOT}/backends/zephyr/zephyr_queue.c
+    ${OVE_ROOT}/backends/zephyr/zephyr_time.c
     ${OVE_ROOT}/backends/zephyr/zephyr_lnx.c
     ${OVE_ROOT}/backends/common/ove_arena.c
     ${OVE_ROOT}/loader/ove_loader.c
@@ -29,6 +33,8 @@ target_sources(app PRIVATE
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}      # ove_config.h
     ${OVE_ROOT}/include
+    ${OVE_ROOT}/backends/common      # ove_backend_common.h
+    ${OVE_ROOT}/backends/zephyr/include  # ove_storage_zephyr.h (real storage sizes)
     ${OVE_ROOT}/tests/ontarget       # loader_rootfs_image.h (the embedded Buildroot rootfs)
 )
 

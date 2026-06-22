@@ -6,8 +6,8 @@
  * This file is part of oveRTOS.
  */
 
-#ifndef OVE_LINUX_ZEPHYR_H
-#define OVE_LINUX_ZEPHYR_H
+#ifndef OVE_LINUX_RUN_H
+#define OVE_LINUX_RUN_H
 
 #include "ove/linux/syscall.h"
 
@@ -17,21 +17,22 @@ extern "C" {
 
 /**
  * @file
- * Zephyr engine seam for the Linux personality.
+ * @defgroup ove_lnx_run Linux personality runner
+ * @brief Engine-agnostic public API for running a Linux program under the
+ *        oveRTOS Linux personality.
  *
  * The engine-agnostic core (@ref ove_lnx_syscall) translates the Linux ABI into
- * oveRTOS primitives; this seam binds it to a Zephyr/Cortex-M target. It traps
- * the unprivileged program's @c svc (via a linker @c --wrap of
- * @c z_do_kernel_oops — no Zephyr source patch), runs each loaded bFLT in its
- * own MPU memory domain, and implements the NOMMU process model
- * (sequentialised vfork/exec/wait, signal delivery, and the run loop).
+ * oveRTOS primitives; a per-engine SEAM binds it to a concrete RTOS engine —
+ * trapping the unprivileged program's syscalls, running each loaded bFLT in its
+ * own isolated memory domain, and implementing the NOMMU process model
+ * (sequentialised vfork/exec/wait, signal delivery, the run loop). This header
+ * is the public contract a host application uses; the seam provides the
+ * implementation (currently @c backends/zephyr/zephyr_lnx.c for Cortex-M with
+ * @c CONFIG_USERSPACE).
  *
  * A host supplies a parsed rootfs and console callbacks, then calls
- * @ref ove_lnx_zephyr_run with an init program; the seam owns the program
- * memory regions, the slot/domain bookkeeping, and the orchestration.
- *
- * Requires @c CONFIG_USERSPACE and the link option
- * @c -Wl,--wrap=z_do_kernel_oops.
+ * @ref ove_lnx_run with an init program.
+ * @{
  */
 
 /** Host configuration for a personality run. */
@@ -42,13 +43,13 @@ typedef struct {
 	ove_lnx_read_fn read_fn;      /**< Console source (fd 0); see the tty helpers. */
 	void *io_ctx;		      /**< Opaque, passed to @p write_fn / @p read_fn. */
 	void (*on_enosys)(long nr);   /**< Optional: notified of an unimplemented syscall. */
-} ove_lnx_zephyr_config_t;
+} ove_lnx_run_config_t;
 
-/** @ref ove_lnx_zephyr_run outcomes (negative; a non-negative result is the
- * init process's exit status). */
-#define OVE_LNX_ZEPHYR_ELAUNCH (-1)  /**< The init program could not be loaded. */
-#define OVE_LNX_ZEPHYR_EEXEC (-2)    /**< A child execve relaunch failed. */
-#define OVE_LNX_ZEPHYR_ETIMEOUT (-3) /**< init did not exit within the run budget. */
+/** @ref ove_lnx_run outcomes (negative; a non-negative result is the init
+ * process's exit status). */
+#define OVE_LNX_RUN_ELAUNCH (-1)  /**< The init program could not be loaded. */
+#define OVE_LNX_RUN_EEXEC (-2)	  /**< A child execve relaunch failed. */
+#define OVE_LNX_RUN_ETIMEOUT (-3) /**< init did not exit within the run budget. */
 
 /**
  * Load @p path from the rootfs and run it as pid 1, driving the NOMMU process
@@ -56,30 +57,32 @@ typedef struct {
  *
  * @p argv[0] is the program name seen by the program (it may differ from
  * @p path, e.g. run @c /bin/busybox as @c "sh"). @p path must name a regular
- * file in @p cfg->rootfs.
+ * file in @p cfg->rootfs. Calls are sequential: each run tears down its threads
+ * before returning, so a host may call this repeatedly.
  *
- * @return the init exit status (>= 0), or one of the @c OVE_LNX_ZEPHYR_E*
- *         codes (< 0).
+ * @return the init exit status (>= 0), or one of the @c OVE_LNX_RUN_E* codes (< 0).
  */
-int ove_lnx_zephyr_run(const ove_lnx_zephyr_config_t *cfg, const char *path, int argc,
-		       const char *const argv[]);
+int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
+		const char *const argv[]);
 
 /**
  * Whether the tty is in ISIG (canonical) mode. A @c read_fn consults this to
  * decide whether a console ^C is the interrupt key (raise SIGINT) or a literal
  * byte (the shell's raw line editor turns ISIG off). Tracked from TCSETS.
  */
-int ove_lnx_zephyr_tty_isig(void);
+int ove_lnx_tty_isig(void);
 
 /**
  * Latch an asynchronous signal (e.g. SIGINT from a console ^C) for delivery to
  * the running program at the next syscall boundary (the Linux async-delivery
  * model). Typically called by a @c read_fn that is returning @c -OVE_LNX_EINTR.
  */
-void ove_lnx_zephyr_post_signal(int sig);
+void ove_lnx_post_signal(int sig);
+
+/** @} */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* OVE_LINUX_ZEPHYR_H */
+#endif /* OVE_LINUX_RUN_H */
