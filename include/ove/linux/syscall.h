@@ -97,6 +97,11 @@ extern "C" {
 /* open(2) flags: low two bits select the access mode (read-only filesystem). */
 #define OVE_LNX_O_ACCMODE 0x3
 #define OVE_LNX_O_RDONLY 0x0
+#define OVE_LNX_O_WRONLY 0x1
+#define OVE_LNX_O_RDWR 0x2
+#define OVE_LNX_O_CREAT 0x40
+#define OVE_LNX_O_TRUNC 0x200
+#define OVE_LNX_O_APPEND 0x400
 /* openat dirfd sentinel for the current working directory. */
 #define OVE_LNX_AT_FDCWD (-100)
 /* lseek(2) whence. */
@@ -169,6 +174,7 @@ extern "C" {
 #define OVE_LNX_EISDIR 21
 #define OVE_LNX_EMFILE 24
 #define OVE_LNX_ENOTTY 25
+#define OVE_LNX_EFBIG 27
 #define OVE_LNX_ESPIPE 29
 #define OVE_LNX_EROFS 30
 #define OVE_LNX_EINVAL 22

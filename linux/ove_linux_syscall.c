@@ -48,6 +48,30 @@ typedef struct {
 static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
 
 /*
+ * Writable in-memory tmpfs overlaid on the read-only CPIO rootfs: open(O_CREAT)
+ * creates a file here (e.g. shell redirects `echo x > /tmp/f`). Files persist
+ * across processes (global kernel state, like pipes). Bounded; not freed.
+ */
+#define OVE_LNX_FD_TMPFS 4
+#define OVE_LNX_NTMP 4
+#define OVE_LNX_TMP_BUF 1024
+typedef struct {
+	char path[64];
+	uint8_t buf[OVE_LNX_TMP_BUF];
+	size_t size;
+	int used;
+} ove_lnx_tmpfile_t;
+static ove_lnx_tmpfile_t g_tmp[OVE_LNX_NTMP];
+
+static int tmp_find(const char *path)
+{
+	for (int i = 0; i < OVE_LNX_NTMP; i++)
+		if (g_tmp[i].used && strcmp(g_tmp[i].path, path) == 0)
+			return i;
+	return -1;
+}
+
+/*
  * ARM kernel struct stat64. Spelled with fixed-width types (the kernel's
  * `unsigned long` is 32-bit on ARM but 64-bit on the x86-64 host) so the binary
  * layout is identical on target and in host tests.
@@ -315,6 +339,20 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		pp->wpos += len;
 		return (long)len;
 	}
+	/* A tmpfs file write copies into its (bounded) buffer at the fd offset. */
+	if (s->kind == OVE_LNX_FD_TMPFS) {
+		ove_lnx_tmpfile_t *t = &g_tmp[s->file_idx];
+		if (s->offset >= OVE_LNX_TMP_BUF)
+			return -OVE_LNX_EFBIG;
+		size_t space = OVE_LNX_TMP_BUF - s->offset;
+		if (len > space)
+			len = space;
+		memcpy(t->buf + s->offset, buf, len);
+		s->offset += len;
+		if (s->offset > t->size)
+			t->size = s->offset;
+		return (long)len;
+	}
 	/* Only output consoles are writable (file_idx != 0); the rootfs is read-only. */
 	if (s->kind != OVE_LNX_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
 		return -OVE_LNX_EBADF;
@@ -374,6 +412,19 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		memcpy(buf, pp->buf + pp->rpos, len);
 		pp->rpos += len;
 		return (long)len;
+	}
+
+	/* A tmpfs file read returns bytes from its buffer at the fd offset. */
+	if (s->kind == OVE_LNX_FD_TMPFS) {
+		ove_lnx_tmpfile_t *t = &g_tmp[s->file_idx];
+		if (s->offset >= t->size)
+			return 0; /* EOF */
+		size_t n = t->size - s->offset;
+		if (n > len)
+			n = len;
+		memcpy(buf, t->buf + s->offset, n);
+		s->offset += n;
+		return (long)n;
 	}
 
 	/* Read from a rootfs file at the current offset. */
@@ -441,33 +492,64 @@ static long sys_munmap(ove_lnx_proc_t *p, uintptr_t addr, size_t len)
 }
 
 /* open a rootfs file read-only; the fs is immutable, so writes are refused. */
+/* Claim the lowest free fd for (kind, idx, off); -EMFILE if the table is full. */
+static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
+{
+	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
+		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
+			p->fds[fd].kind = kind;
+			p->fds[fd].rw = 0;
+			p->fds[fd].file_idx = idx;
+			p->fds[fd].offset = off;
+			return fd;
+		}
+	}
+	return -OVE_LNX_EMFILE;
+}
+
 static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags)
 {
 	(void)dirfd; /* rootfs paths are absolute */
 	if (!path)
 		return -OVE_LNX_EFAULT;
-	if ((flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY)
-		return -OVE_LNX_EROFS;
+	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
+	int ti = tmp_find(path);
 
-	int idx = -1;
-	for (int i = 0; i < p->fs_count; i++) {
-		if (strcmp(p->fs[i].path, path) == 0) {
-			idx = i;
-			break;
+	/* A writable open (or O_CREAT) goes to the writable tmpfs overlay. */
+	if (wr || (flags & OVE_LNX_O_CREAT)) {
+		if (ti < 0) {
+			if (!(flags & OVE_LNX_O_CREAT)) {
+				for (int i = 0; i < p->fs_count; i++)
+					if (strcmp(p->fs[i].path, path) == 0)
+						return -OVE_LNX_EROFS; /* RO rootfs file */
+				return -OVE_LNX_ENOENT;
+			}
+			for (int i = 0; i < OVE_LNX_NTMP; i++)
+				if (!g_tmp[i].used) {
+					ti = i;
+					break;
+				}
+			if (ti < 0)
+				return -OVE_LNX_EMFILE;
+			if (strlen(path) >= sizeof(g_tmp[ti].path))
+				return -OVE_LNX_EINVAL;
+			strcpy(g_tmp[ti].path, path);
+			g_tmp[ti].size = 0;
+			g_tmp[ti].used = 1;
+		} else if (flags & OVE_LNX_O_TRUNC) {
+			g_tmp[ti].size = 0;
 		}
+		return fd_alloc(p, OVE_LNX_FD_TMPFS, ti,
+				(flags & OVE_LNX_O_APPEND) ? g_tmp[ti].size : 0);
 	}
-	if (idx < 0)
-		return -OVE_LNX_ENOENT;
 
-	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
-		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
-			p->fds[fd].kind = OVE_LNX_FD_FILE;
-			p->fds[fd].file_idx = idx;
-			p->fds[fd].offset = 0;
-			return fd;
-		}
-	}
-	return -OVE_LNX_EMFILE;
+	/* Read: a created tmpfs file shadows the rootfs; else the read-only rootfs. */
+	if (ti >= 0)
+		return fd_alloc(p, OVE_LNX_FD_TMPFS, ti, 0);
+	for (int i = 0; i < p->fs_count; i++)
+		if (strcmp(p->fs[i].path, path) == 0)
+			return fd_alloc(p, OVE_LNX_FD_FILE, i, 0);
+	return -OVE_LNX_ENOENT;
 }
 
 static long sys_close(ove_lnx_proc_t *p, int fd)
@@ -547,9 +629,11 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
-	if (s->kind != OVE_LNX_FD_FILE)
-		return -OVE_LNX_ESPIPE; /* console is not seekable */
+	if (s->kind != OVE_LNX_FD_FILE && s->kind != OVE_LNX_FD_TMPFS)
+		return -OVE_LNX_ESPIPE; /* console/pipe is not seekable */
 
+	long end = (s->kind == OVE_LNX_FD_TMPFS) ? (long)g_tmp[s->file_idx].size
+						 : (long)p->fs[s->file_idx].size;
 	long base;
 	switch (whence) {
 	case OVE_LNX_SEEK_SET:
@@ -559,7 +643,7 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 		base = (long)s->offset;
 		break;
 	case OVE_LNX_SEEK_END:
-		base = (long)p->fs[s->file_idx].size;
+		base = end;
 		break;
 	default:
 		return -OVE_LNX_EINVAL;
@@ -588,6 +672,12 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 		st->st_size = (int64_t)f->size;
 		st->st_blksize = 512;
 		st->st_blocks = (uint64_t)((f->size + 511u) / 512u);
+	} else if (s->kind == OVE_LNX_FD_TMPFS) {
+		size_t sz = g_tmp[s->file_idx].size;
+		st->st_mode = OVE_LNX_S_IFREG | 0644u;
+		st->st_size = (int64_t)sz;
+		st->st_blksize = 512;
+		st->st_blocks = (uint64_t)((sz + 511u) / 512u);
 	} else {
 		/* A character device: makes uClibc block-buffer stdio. */
 		st->st_mode = OVE_LNX_S_IFCHR | 0620u;

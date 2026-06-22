@@ -9,9 +9,9 @@
  * real minimal Buildroot rootfs and run an interactive shell. An embedded newc
  * CPIO (a Buildroot rootfs.cpio: BusyBox 1.38 + /etc + /dev + applet symlinks)
  * is parsed into the personality's rootfs; the engine execs /bin/busybox as the
- * "sh" init process. The shell then reads commands from stdin and runs them: the
- * cat applet reads /etc/hostname and ls lists /etc/init.d, both straight from the
- * CPIO-backed VFS (each /bin/<applet> symlink resolving to busybox). This boots
+ * "sh" init process. The shell then runs commands from stdin: it writes /tmp/foo
+ * with a `>` redirect and appends with `>>` (into a writable in-memory tmpfs
+ * overlaid on the read-only CPIO rootfs), then reads it back with cat. This boots
  * stock upstream userspace from a stock rootfs image, unprivileged, on a NOMMU
  * MCU. (Signals + pipes are covered by host tests and earlier on-target milestones.)
  *
@@ -122,9 +122,9 @@ static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
 
 /* Scripted stdin (the engine is the terminal; deterministic, no live-TTY flake).
- * Reads a real rootfs file with the cat applet and lists a real directory with
- * ls (both resolve /bin/<applet> -> busybox + use the CPIO-backed VFS). */
-static const char g_input[] = "cat /etc/hostname\nls -1 /etc/init.d\nexit\n";
+ * Writes a file into the writable tmpfs overlay (shell `>` redirect -> open(O_CREAT)
+ * + write), appends to it (`>>` -> O_APPEND), then reads it back with cat. */
+static const char g_input[] = "echo hello > /tmp/foo\necho world >> /tmp/foo\ncat /tmp/foo\nexit\n";
 static volatile size_t g_input_pos;
 
 static long console_read(void *ctx, int fd, void *buf, size_t len)
@@ -473,9 +473,9 @@ static void resume_slot(int sidx, int ridx, long r0val)
  * handler and raise()s it: the engine delivers the signal (the handler prints
  * "caught SIGINT"), rt_sigreturn resumes after raise(). Demonstrates the prompt,
  * raw-mode line editing, vfork/execve, AND real signal delivery in one session. */
-#define EXPECT_MSG                           \
-	"/ # cat /etc/hostname\nbuildroot\n" \
-	"/ # ls -1 /etc/init.d\nrcS\nrcK\nS11modules\nS01seedrng\n/ # exit\n"
+#define EXPECT_MSG                                                \
+	"/ # echo hello > /tmp/foo\n/ # echo world >> /tmp/foo\n" \
+	"/ # cat /tmp/foo\nhello\nworld\n/ # exit\n"
 
 int main(void)
 {
@@ -582,8 +582,8 @@ int main(void)
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
 		sh_write0(
-			"[zephyr-linux] booted a real Buildroot rootfs (CPIO) -> busybox /bin/sh; "
-			"cat'd /etc/hostname + ls'd /etc/init.d from the rootfs, then exit OK\n");
+			"[zephyr-linux] booted a Buildroot rootfs -> busybox /bin/sh; wrote + "
+			"appended /tmp/foo in the writable tmpfs overlay, cat'd it back, exit OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}

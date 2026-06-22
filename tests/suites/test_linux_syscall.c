@@ -341,6 +341,59 @@ static void test_lnx_file(void **state)
 	assert_int_equal(st2.st_mode & 0xf000u, OVE_LNX_S_IFCHR);
 }
 
+/* Writable tmpfs overlay: O_CREAT makes a file, O_APPEND extends it, reads see it. */
+static void test_lnx_tmpfs(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+	ove_lnx_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
+
+	/* O_CREAT|O_WRONLY|O_TRUNC creates a fresh writable file; write "hello". */
+	long fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+				  (long)(uintptr_t) "/tmp/t.txt",
+				  OVE_LNX_O_WRONLY | OVE_LNX_O_CREAT | OVE_LNX_O_TRUNC, 0644, 0, 0);
+	assert_true(fd >= 3);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_write, fd, (long)(uintptr_t) "hello", 5, 0,
+					 0, 0),
+			 5);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0), 0);
+
+	/* Re-open O_APPEND: the offset starts at end-of-file, so "!" extends it. */
+	fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+			     (long)(uintptr_t) "/tmp/t.txt", OVE_LNX_O_WRONLY | OVE_LNX_O_APPEND, 0,
+			     0, 0);
+	assert_true(fd >= 3);
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_write, fd, (long)(uintptr_t) "!", 1, 0, 0, 0), 1);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0), 0);
+
+	/* Read it back: "hello!" (a tmpfs file shadows the read-only rootfs). */
+	fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+			     (long)(uintptr_t) "/tmp/t.txt", OVE_LNX_O_RDONLY, 0, 0, 0);
+	assert_true(fd >= 3);
+	char buf[16];
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)buf, sizeof(buf),
+					 0, 0, 0),
+			 6);
+	assert_memory_equal(buf, "hello!", 6);
+
+	/* fstat64: a regular file sized 6. */
+	struct test_kstat64 st;
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_fstat64, fd, (long)(uintptr_t)&st, 0, 0, 0, 0), 0);
+	assert_int_equal(st.st_mode & 0xf000u, OVE_LNX_S_IFREG);
+	assert_int_equal((long)st.st_size, 6);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0), 0);
+
+	/* Reading a non-existent path without O_CREAT does NOT create it. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+					 (long)(uintptr_t) "/tmp/missing", OVE_LNX_O_RDONLY, 0, 0,
+					 0),
+			 -OVE_LNX_ENOENT);
+}
+
 /* Search a getdents64 buffer for an entry by name; returns its d_type or -1. */
 static int dirents_find(const uint8_t *buf, long len, const char *name)
 {
@@ -513,11 +566,17 @@ static void test_lnx_cpio(void **state)
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_lnx_write),      cmocka_unit_test(test_lnx_writev),
-		cmocka_unit_test(test_lnx_brk),	       cmocka_unit_test(test_lnx_mmap),
-		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_setup_stack),
-		cmocka_unit_test(test_lnx_file),       cmocka_unit_test(test_lnx_getdents),
-		cmocka_unit_test(test_lnx_execve),     cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_write),
+		cmocka_unit_test(test_lnx_writev),
+		cmocka_unit_test(test_lnx_brk),
+		cmocka_unit_test(test_lnx_mmap),
+		cmocka_unit_test(test_lnx_init_stubs),
+		cmocka_unit_test(test_lnx_setup_stack),
+		cmocka_unit_test(test_lnx_file),
+		cmocka_unit_test(test_lnx_tmpfs),
+		cmocka_unit_test(test_lnx_getdents),
+		cmocka_unit_test(test_lnx_execve),
+		cmocka_unit_test(test_lnx_exit_and_unknown),
 		cmocka_unit_test(test_lnx_cpio),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
