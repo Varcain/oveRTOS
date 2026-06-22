@@ -19,6 +19,16 @@ config OVE_BOARD_QEMU_MPS2_AN500
       Cortex-M7 @ 25 MHz, 4 MB Flash, 4 MB RAM.
       Uses semihosting for I/O and sim dashboard for display.
 
+config OVE_BOARD_QEMU_MPS2_AN521
+    bool "QEMU MPS2-AN521 (Cortex-M33, USERSPACE)"
+    depends on OVE_RTOS_ZEPHYR
+    select OVE_DEBUG_BUILD
+    help
+      ARM MPS2-AN521 board emulated by QEMU.
+      Cortex-M33 @ 25 MHz, 4 MB Flash, 4 MB RAM, MPU + CONFIG_USERSPACE.
+      The substrate for the Linux personality: runs a loaded program
+      unprivileged and traps its svc. Console + exit via semihosting.
+
 config OVE_BOARD_HOST_PC
     bool "Host PC (native)"
     depends on OVE_RTOS_POSIX
@@ -41,6 +51,7 @@ config OVE_BOARD_NAME
     string
     default "stm32f746g-discovery" if OVE_BOARD_STM32F746G_DISCO
     default "qemu-mps2-an500" if OVE_BOARD_QEMU_MPS2_AN500
+    default "qemu-mps2-an521" if OVE_BOARD_QEMU_MPS2_AN521
     default "host" if OVE_BOARD_HOST_PC
     default "wasm" if OVE_BOARD_WASM
 
@@ -48,18 +59,21 @@ config OVE_FLASH_SIZE
     int
     default 1048576 if OVE_BOARD_STM32F746G_DISCO
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
+    default 4194304 if OVE_BOARD_QEMU_MPS2_AN521
     default 0 if OVE_BOARD_HOST_PC || OVE_BOARD_WASM
 
 config OVE_RAM_SIZE
     int
     default 327680 if OVE_BOARD_STM32F746G_DISCO
     default 4194304 if OVE_BOARD_QEMU_MPS2_AN500
+    default 4194304 if OVE_BOARD_QEMU_MPS2_AN521
     default 0 if OVE_BOARD_HOST_PC || OVE_BOARD_WASM
 
 config OVE_MCU
     string
     default "STM32F746xx" if OVE_BOARD_STM32F746G_DISCO
     default "CMSDK_CM7" if OVE_BOARD_QEMU_MPS2_AN500
+    default "CMSDK_CM33" if OVE_BOARD_QEMU_MPS2_AN521
     default "host" if OVE_BOARD_HOST_PC
     default "wasm32" if OVE_BOARD_WASM
 

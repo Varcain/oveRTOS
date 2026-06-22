@@ -273,6 +273,7 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
 
 # Linux personality — engine-agnostic syscall dispatch + per-engine SVC seam.
 {% if config.get("CONFIG_OVE_LINUX") == True %}
+set(OVE_LINUX ON)
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")

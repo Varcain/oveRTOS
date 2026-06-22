@@ -261,7 +261,7 @@ static ove_lnx_file_t g_rootfs[ROOTFS_MAX_FILES];
 static char g_rootfs_names[8192];
 static int g_rootfs_n;
 
-int main(void)
+void ove_main(void)
 {
 	sh_write0(
 		"=== oveRTOS demo: a native RTOS thread + a Linux program, two-way (an521) ===\n");
@@ -340,5 +340,4 @@ int main(void)
 
 	sh_write0("\n=== interop demo done (interactive shell exited) ===\n");
 	sh_exit(rc2 >= 0 ? 0 : 1);
-	return 0;
 }

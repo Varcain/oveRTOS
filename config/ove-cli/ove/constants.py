@@ -14,4 +14,5 @@ NUTTX_BOARD_CONFIGS = {
 ZEPHYR_BOARD_MAPPINGS = {
     "stm32f746g-discovery": "stm32f746g_disco",
     "qemu-mps2-an500": "mps2/an500",
+    "qemu-mps2-an521": "mps2/an521/cpu0",
 }
