@@ -818,6 +818,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
 	case OVE_LNX_NR_fstat64:
 		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
+	case OVE_LNX_NR_fcntl: /* old 32-bit fcntl: same dispatch as fcntl64 here */
 	case OVE_LNX_NR_fcntl64: {
 		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
 		if (!s)

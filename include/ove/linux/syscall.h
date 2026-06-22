@@ -47,6 +47,7 @@ extern "C" {
 #define OVE_LNX_NR_read 3
 #define OVE_LNX_NR_dup 41
 #define OVE_LNX_NR_pipe 42
+#define OVE_LNX_NR_fcntl 55
 #define OVE_LNX_NR_dup2 63
 #define OVE_LNX_NR_kill 37
 #define OVE_LNX_NR_sigreturn 119

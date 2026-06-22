@@ -9,11 +9,11 @@
  * real minimal Buildroot rootfs and run an interactive shell. An embedded newc
  * CPIO (a Buildroot rootfs.cpio: BusyBox 1.38 + /etc + /dev + applet symlinks)
  * is parsed into the personality's rootfs; the engine execs /bin/busybox as the
- * "sh" init process. The shell then reads commands from stdin and runs them —
- * the echo applet (resolved /bin/echo -> busybox via the symlink) and the pwd
- * builtin. This boots stock upstream userspace from a stock rootfs image,
- * unprivileged, on a NOMMU MCU. (Signals + pipes are covered by host tests and
- * earlier on-target milestones; this test focuses on the rootfs boot.)
+ * "sh" init process. The shell then reads commands from stdin and runs them: the
+ * cat applet reads /etc/hostname and ls lists /etc/init.d, both straight from the
+ * CPIO-backed VFS (each /bin/<applet> symlink resolving to busybox). This boots
+ * stock upstream userspace from a stock rootfs image, unprivileged, on a NOMMU
+ * MCU. (Signals + pipes are covered by host tests and earlier on-target milestones.)
  *
  * NOMMU process model on Zephyr (sequentialised, which is observationally
  * identical to vfork for the shell pattern since the parent waitpid()s anyway):
@@ -122,9 +122,9 @@ static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
 
 /* Scripted stdin (the engine is the terminal; deterministic, no live-TTY flake).
- * Driven into the booted shell: the echo applet (resolved /bin/echo -> busybox),
- * the pwd builtin, then exit. */
-static const char g_input[] = "echo hello\npwd\nexit\n";
+ * Reads a real rootfs file with the cat applet and lists a real directory with
+ * ls (both resolve /bin/<applet> -> busybox + use the CPIO-backed VFS). */
+static const char g_input[] = "cat /etc/hostname\nls -1 /etc/init.d\nexit\n";
 static volatile size_t g_input_pos;
 
 static long console_read(void *ctx, int fd, void *buf, size_t len)
@@ -473,7 +473,9 @@ static void resume_slot(int sidx, int ridx, long r0val)
  * handler and raise()s it: the engine delivers the signal (the handler prints
  * "caught SIGINT"), rt_sigreturn resumes after raise(). Demonstrates the prompt,
  * raw-mode line editing, vfork/execve, AND real signal delivery in one session. */
-#define EXPECT_MSG "/ # echo hello\nhello\n/ # pwd\n/\n/ # exit\n"
+#define EXPECT_MSG                           \
+	"/ # cat /etc/hostname\nbuildroot\n" \
+	"/ # ls -1 /etc/init.d\nrcS\nrcK\nS11modules\nS01seedrng\n/ # exit\n"
 
 int main(void)
 {
@@ -580,8 +582,8 @@ int main(void)
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
 		sh_write0(
-			"[zephyr-linux] booted a real Buildroot rootfs (CPIO) -> /bin/busybox as "
-			"an interactive shell; ran the echo applet + pwd builtin, then exit OK\n");
+			"[zephyr-linux] booted a real Buildroot rootfs (CPIO) -> busybox /bin/sh; "
+			"cat'd /etc/hostname + ls'd /etc/init.d from the rootfs, then exit OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
