@@ -298,7 +298,8 @@ static void resume_slot(int sidx, int ridx, long r0val)
 	k_thread_start(g_slots[sidx].tid);
 }
 
-#define EXPECT_MSG "execed: hello2\nshell: child done\n"
+/* The shell spawns /bin/hello2 three times in a loop, then prints. */
+#define EXPECT_MSG "execed: hello2\nexeced: hello2\nexeced: hello2\nshell done\n"
 
 int main(void)
 {
@@ -314,7 +315,8 @@ int main(void)
 	}
 
 	int ok = 0;
-	int child_pid = 2;
+	int next_pid = 2;  /* assigned to each new child */
+	int cur_child = 2; /* the child currently being spawned/reaped */
 	for (int i = 0; i < 8000; i++) {
 		/* The shell vfork()ed: spawn the child resuming at vfork (r0=0),
 		 * sharing the parent's region/domain until it execs; park the
@@ -324,8 +326,9 @@ int main(void)
 			/* vfork shares the parent's address space: the child's proc is
 			 * a copy of the parent's (same arena/fds/rootfs) with its own
 			 * process identity and cleared exec/exit/reap latches. */
+			cur_child = next_pid++;
 			g_slots[1].proc = g_slots[0].proc;
-			g_slots[1].proc.pid = child_pid;
+			g_slots[1].proc.pid = cur_child;
 			g_slots[1].proc.ppid = 1;
 			g_slots[1].proc.exited = 0;
 			g_slots[1].proc.exec_pending = 0;
@@ -350,7 +353,7 @@ int main(void)
 			}
 			ptrs[eargc] = NULL;
 			k_thread_abort(g_slots[1].tid);
-			if (launch_slot(1, 1, g_rootfs[idx].data, g_rootfs[idx].size, child_pid, 1,
+			if (launch_slot(1, 1, g_rootfs[idx].data, g_rootfs[idx].size, cur_child, 1,
 					eargc, ptrs) != 0) {
 				sh_write0("[zephyr-linux] FAIL: child execve relaunch failed\n");
 				sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
@@ -365,10 +368,10 @@ int main(void)
 			k_thread_abort(g_slots[1].tid);
 			g_slots[1].used = 0;
 			/* Restore the parent into slot 0, region 0 (intact). */
-			g_slots[0].proc.child_pid = child_pid;
+			g_slots[0].proc.child_pid = cur_child;
 			g_slots[0].proc.child_status = status;
 			g_slots[0].proc.child_exited = 1;
-			resume_slot(0, 0, child_pid);
+			resume_slot(0, 0, cur_child);
 			continue;
 		}
 		/* The parent (shell) exited: done. */
@@ -380,10 +383,10 @@ int main(void)
 	}
 	g_lnx_active = 0;
 
-	if (ok && g_slots[0].proc.exit_status == 2 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
+	if (ok && g_slots[0].proc.exit_status == 0 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0(
-			"[zephyr-linux] shell vfork->child execve(/bin/hello2)->parent waitpid OK\n");
+		sh_write0("[zephyr-linux] shell spawned 3 commands (vfork/execve/wait loop), "
+			  "parent survived OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
