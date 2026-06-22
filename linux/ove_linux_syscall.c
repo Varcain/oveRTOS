@@ -89,28 +89,40 @@ void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *
 	for (int i = 0; i < 16; i++)
 		rnd[i] = (uint8_t)(0xa5u ^ (unsigned)i);
 
-	/* Word block: argc, argv[]+NULL, envp[]+NULL, auxv(PAGESZ,RANDOM,NULL). */
-	size_t nwords = 1 + (size_t)argc + 1 + (size_t)envc + 1 + 6;
-	uintptr_t *w = (uintptr_t *)((uintptr_t)(sp - nwords * sizeof(uintptr_t)) & ~(uintptr_t)7);
-	if ((uint8_t *)w < floor)
+	/*
+	 * uClinux/bFLT (flat_argvp_envp_on_stack, used on ARM) layout — NOT the
+	 * ELF inline layout: the kernel passes the argv/envp array *pointers* on
+	 * the stack, so an elf2flt crt0 reads sp[0]=argc, sp[1]=argv, sp[2]=envp.
+	 * Below the strings lay the 3-word header, the argv[] and envp[] arrays it
+	 * points at, then a terminated auxv — __uClibc_main scans for one right
+	 * after the envp array, and unterminated garbage there crashes it.
+	 */
+	size_t nwords = 3 + (size_t)argc + 1 + (size_t)envc + 1 + 6;
+	uintptr_t *hdr =
+		(uintptr_t *)((uintptr_t)(sp - nwords * sizeof(uintptr_t)) & ~(uintptr_t)7);
+	if ((uint8_t *)hdr < floor)
 		return NULL;
 
-	uintptr_t *p = w;
-	*p++ = (uintptr_t)argc;
+	uintptr_t *argv_arr = hdr + 3;
+	uintptr_t *envp_arr = argv_arr + (size_t)argc + 1;
+	uintptr_t *auxv = envp_arr + (size_t)envc + 1;
+	hdr[0] = (uintptr_t)argc;
+	hdr[1] = (uintptr_t)argv_arr;
+	hdr[2] = (uintptr_t)envp_arr;
 	for (int i = 0; i < argc; i++)
-		*p++ = argp[i];
-	*p++ = 0; /* argv terminator */
+		argv_arr[i] = argp[i];
+	argv_arr[argc] = 0;
 	for (int i = 0; i < envc; i++)
-		*p++ = envpp[i];
-	*p++ = 0; /* envp terminator */
-	*p++ = OVE_LNX_AT_PAGESZ;
-	*p++ = 4096;
-	*p++ = OVE_LNX_AT_RANDOM;
-	*p++ = (uintptr_t)rnd;
-	*p++ = OVE_LNX_AT_NULL;
-	*p++ = 0;
+		envp_arr[i] = envpp[i];
+	envp_arr[envc] = 0;
+	auxv[0] = OVE_LNX_AT_PAGESZ;
+	auxv[1] = 4096;
+	auxv[2] = OVE_LNX_AT_RANDOM;
+	auxv[3] = (uintptr_t)rnd;
+	auxv[4] = OVE_LNX_AT_NULL;
+	auxv[5] = 0;
 
-	return w; /* initial SP, pointing at argc */
+	return hdr; /* initial SP, pointing at argc */
 }
 
 static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)

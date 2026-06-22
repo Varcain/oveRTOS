@@ -113,20 +113,23 @@ typedef struct ove_lnx_proc {
  */
 int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes);
 
-/* ELF auxiliary-vector types laid down by the startup stack. */
+/* ELF auxiliary-vector types in the startup block (uClibc scans them after envp). */
 #define OVE_LNX_AT_NULL 0
 #define OVE_LNX_AT_PAGESZ 6
 #define OVE_LNX_AT_RANDOM 25
 
 /**
- * @brief Build a Linux process stack for a loaded program's crt0.
+ * @brief Build a uClinux/bFLT process stack for a loaded program's crt0.
  *
- * Lays out, at the top of @p stack, the System V/Linux startup block the C
- * runtime expects: @c argc, the @c argv pointers + NULL, the @c envp pointers +
- * NULL, and a minimal auxv (@c AT_PAGESZ, @c AT_RANDOM, @c AT_NULL). Argument
- * and environment strings are copied into the same region. The returned pointer
- * is the initial stack pointer (8-byte aligned, pointing at @c argc) to hand the
- * program entry.
+ * Lays out, at the top of @p stack, the @c flat_argvp_envp_on_stack startup
+ * block an @c elf2flt crt0 reads on ARM: @c sp[0]=argc, @c sp[1]=argv (a pointer
+ * to the argv array), @c sp[2]=envp (a pointer to the envp array), followed by
+ * the NULL-terminated @c argv[] and @c envp[] arrays, a minimal auxv
+ * (@c AT_PAGESZ, @c AT_RANDOM, @c AT_NULL), and the argument/environment strings.
+ * The header is NOT the ELF inline layout, but @c __uClibc_main still scans for
+ * an auxv right after the envp array, so a terminated one must be present.
+ * The returned pointer is the initial stack pointer (8-byte aligned, pointing at
+ * @c argc) to hand the program entry.
  *
  * @param[in] stack      Base of the stack region.
  * @param[in] stack_size Size of the stack region in bytes.

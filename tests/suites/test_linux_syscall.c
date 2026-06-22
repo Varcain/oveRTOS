@@ -153,31 +153,38 @@ static void test_lnx_setup_stack(void **state)
 	const char *const argv[] = {"/bin/app", "arg1", NULL};
 	const char *const envp[] = {"PATH=/bin", "HOME=/", NULL};
 
+	/* uClinux/bFLT layout: sp[0]=argc, sp[1]=argv ptr, sp[2]=envp ptr. */
 	uintptr_t *sp = ove_lnx_setup_stack(stk, sizeof(stk), 2, argv, envp);
 	assert_non_null(sp);
 	assert_int_equal((uintptr_t)sp & 7u, 0); /* SP is 8-aligned */
 
-	int i = 0;
-	assert_int_equal((int)sp[i++], 2); /* argc */
-	assert_string_equal((const char *)sp[i++], "/bin/app");
-	assert_string_equal((const char *)sp[i++], "arg1");
-	assert_int_equal(sp[i++], 0); /* argv terminator */
-	assert_string_equal((const char *)sp[i++], "PATH=/bin");
-	assert_string_equal((const char *)sp[i++], "HOME=/");
-	assert_int_equal(sp[i++], 0); /* envp terminator */
-	assert_int_equal(sp[i++], OVE_LNX_AT_PAGESZ);
-	assert_int_equal(sp[i++], 4096);
-	assert_int_equal(sp[i++], OVE_LNX_AT_RANDOM);
-	assert_non_null((void *)sp[i++]); /* AT_RANDOM points into the stack */
-	assert_int_equal(sp[i++], OVE_LNX_AT_NULL);
+	assert_int_equal((int)sp[0], 2); /* argc */
+	char *const *av = (char *const *)sp[1];
+	assert_string_equal(av[0], "/bin/app");
+	assert_string_equal(av[1], "arg1");
+	assert_null((void *)av[2]); /* argv terminator */
+	char *const *ev = (char *const *)sp[2];
+	assert_string_equal(ev[0], "PATH=/bin");
+	assert_string_equal(ev[1], "HOME=/");
+	assert_null((void *)ev[2]); /* envp terminator */
+
+	/* auxv follows the envp array's NULL (envc=2 -> at ev[3]). */
+	const uintptr_t *aux = (const uintptr_t *)&ev[3];
+	assert_int_equal(aux[0], OVE_LNX_AT_PAGESZ);
+	assert_int_equal(aux[1], 4096);
+	assert_int_equal(aux[2], OVE_LNX_AT_RANDOM);
+	assert_non_null((void *)aux[3]); /* AT_RANDOM points into the stack */
+	assert_int_equal(aux[4], OVE_LNX_AT_NULL);
 
 	/* A NULL environment is accepted (empty envp). */
 	uintptr_t *sp2 = ove_lnx_setup_stack(stk, sizeof(stk), 1, argv, NULL);
 	assert_non_null(sp2);
 	assert_int_equal((int)sp2[0], 1);
-	assert_string_equal((const char *)sp2[1], "/bin/app");
-	assert_int_equal(sp2[2], 0); /* argv terminator */
-	assert_int_equal(sp2[3], 0); /* envp terminator (no entries) */
+	char *const *av2 = (char *const *)sp2[1];
+	assert_string_equal(av2[0], "/bin/app");
+	assert_null((void *)av2[1]); /* argv terminator */
+	char *const *ev2 = (char *const *)sp2[2];
+	assert_null((void *)ev2[0]); /* empty envp */
 }
 
 static void test_lnx_exit_and_unknown(void **state)
