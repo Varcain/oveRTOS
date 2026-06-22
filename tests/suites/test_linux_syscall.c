@@ -187,6 +187,90 @@ static void test_lnx_setup_stack(void **state)
 	assert_null((void *)ev2[0]); /* empty envp */
 }
 
+/* Mirrors the kernel struct stat64 prefix through st_size (offset 48). */
+struct test_kstat64 {
+	uint64_t st_dev;
+	uint8_t __pad0[4];
+	uint32_t __st_ino;
+	uint32_t st_mode;
+	uint32_t st_nlink;
+	uint32_t st_uid;
+	uint32_t st_gid;
+	uint64_t st_rdev;
+	uint8_t __pad3[4];
+	int64_t st_size;
+	uint8_t __tail[64];
+};
+
+static const uint8_t k_motd[] = "Welcome to oveRTOS\n"; /* 19 bytes + NUL */
+static const uint8_t k_elf[] = {0x7f, 'E', 'L', 'F'};
+static const ove_lnx_file_t k_rootfs[] = {
+	{"/etc/motd", k_motd, sizeof(k_motd) - 1},
+	{"/bin/sh", k_elf, sizeof(k_elf)},
+};
+
+static void test_lnx_file(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+	ove_lnx_proc_set_rootfs(&p, k_rootfs, 2);
+
+	const long motd_len = (long)(sizeof(k_motd) - 1);
+
+	/* open a rootfs file -> a fresh (>= 3) fd. */
+	long fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+				  (long)(uintptr_t) "/etc/motd", OVE_LNX_O_RDONLY, 0, 0, 0);
+	assert_true(fd >= 3);
+
+	/* sequential read + short read + EOF. */
+	char buf[32];
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)buf, 7, 0, 0, 0),
+			 7);
+	assert_memory_equal(buf, "Welcome", 7);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)buf, sizeof(buf),
+					 0, 0, 0),
+			 motd_len - 7);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)buf, sizeof(buf),
+					 0, 0, 0),
+			 0);
+
+	/* lseek SET / END. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_lseek, fd, 0, OVE_LNX_SEEK_SET, 0, 0, 0),
+			 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)buf, 7, 0, 0, 0),
+			 7);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_lseek, fd, 0, OVE_LNX_SEEK_END, 0, 0, 0),
+			 motd_len);
+
+	/* fstat64: a regular file with the right size. */
+	struct test_kstat64 st;
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_fstat64, fd, (long)(uintptr_t)&st, 0, 0, 0, 0), 0);
+	assert_int_equal(st.st_mode & 0xf000u, OVE_LNX_S_IFREG);
+	assert_int_equal((long)st.st_size, motd_len);
+
+	/* close -> the fd is no longer valid. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0), 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)buf, 1, 0, 0, 0),
+			 -OVE_LNX_EBADF);
+
+	/* errors: missing path, write attempt on the read-only fs. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+					 (long)(uintptr_t) "/nope", OVE_LNX_O_RDONLY, 0, 0, 0),
+			 -OVE_LNX_ENOENT);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
+					 (long)(uintptr_t) "/etc/motd", 1 /* O_WRONLY */, 0, 0, 0),
+			 -OVE_LNX_EROFS);
+
+	/* fstat64 on a standard stream reports a character device. */
+	struct test_kstat64 st2;
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_fstat64, 1, (long)(uintptr_t)&st2, 0, 0, 0, 0), 0);
+	assert_int_equal(st2.st_mode & 0xf000u, OVE_LNX_S_IFCHR);
+}
+
 static void test_lnx_exit_and_unknown(void **state)
 {
 	(void)state;
@@ -206,13 +290,10 @@ static void test_lnx_exit_and_unknown(void **state)
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_lnx_write),
-		cmocka_unit_test(test_lnx_writev),
-		cmocka_unit_test(test_lnx_brk),
-		cmocka_unit_test(test_lnx_mmap),
-		cmocka_unit_test(test_lnx_init_stubs),
-		cmocka_unit_test(test_lnx_setup_stack),
-		cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_write),      cmocka_unit_test(test_lnx_writev),
+		cmocka_unit_test(test_lnx_brk),	       cmocka_unit_test(test_lnx_mmap),
+		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_setup_stack),
+		cmocka_unit_test(test_lnx_file),       cmocka_unit_test(test_lnx_exit_and_unknown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

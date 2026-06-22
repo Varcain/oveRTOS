@@ -45,6 +45,8 @@ extern "C" {
 #define OVE_LNX_NR_exit 1
 #define OVE_LNX_NR_read 3
 #define OVE_LNX_NR_write 4
+#define OVE_LNX_NR_close 6
+#define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR_getpid 20
 #define OVE_LNX_NR_brk 45
 #define OVE_LNX_NR_ioctl 54
@@ -52,23 +54,44 @@ extern "C" {
 #define OVE_LNX_NR_writev 146
 #define OVE_LNX_NR_rt_sigprocmask 175
 #define OVE_LNX_NR_mmap2 192
+#define OVE_LNX_NR_fstat64 197
 #define OVE_LNX_NR_getuid32 199
 #define OVE_LNX_NR_getgid32 200
 #define OVE_LNX_NR_geteuid32 201
 #define OVE_LNX_NR_getegid32 202
+#define OVE_LNX_NR_getdents64 217
+#define OVE_LNX_NR_fcntl64 221
 #define OVE_LNX_NR_exit_group 248
 #define OVE_LNX_NR_set_tid_address 256
+#define OVE_LNX_NR_openat 322
 #define OVE_LNX_NR_set_robust_list 338
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
 #define OVE_LNX_MAP_ANONYMOUS 0x20
 
+/* open(2) flags: low two bits select the access mode (read-only filesystem). */
+#define OVE_LNX_O_ACCMODE 0x3
+#define OVE_LNX_O_RDONLY 0x0
+/* openat dirfd sentinel for the current working directory. */
+#define OVE_LNX_AT_FDCWD (-100)
+/* lseek(2) whence. */
+#define OVE_LNX_SEEK_SET 0
+#define OVE_LNX_SEEK_CUR 1
+#define OVE_LNX_SEEK_END 2
+/* struct stat st_mode file-type bits. */
+#define OVE_LNX_S_IFREG 0x8000u
+#define OVE_LNX_S_IFCHR 0x2000u
+
 /* Linux errno values returned (negated) on syscall failure. */
+#define OVE_LNX_ENOENT 2
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ENOMEM 12
 #define OVE_LNX_EFAULT 14
-#define OVE_LNX_EINVAL 22
+#define OVE_LNX_EMFILE 24
 #define OVE_LNX_ENOTTY 25
+#define OVE_LNX_ESPIPE 29
+#define OVE_LNX_EROFS 30
+#define OVE_LNX_EINVAL 22
 #define OVE_LNX_ENOSYS 38
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */
@@ -82,24 +105,51 @@ typedef long (*ove_lnx_write_fn)(void *ctx, int fd, const void *buf, size_t len)
 /** fd 0 input source. Returns bytes read (0 = EOF) or a negated Linux errno. */
 typedef long (*ove_lnx_read_fn)(void *ctx, int fd, void *buf, size_t len);
 
+/** One file in the read-only in-memory rootfs (a flat path → bytes table). */
+typedef struct ove_lnx_file {
+	const char *path;    /**< Absolute path, e.g. "/etc/hostname". */
+	const uint8_t *data; /**< File contents. */
+	size_t size;	     /**< Length in bytes. */
+} ove_lnx_file_t;
+
+/** Open-file-descriptor slot. */
+typedef struct ove_lnx_fd {
+	uint8_t kind;  /**< 0 = free, 1 = console (std stream), 2 = rootfs file. */
+	int file_idx;  /**< Index into the rootfs table (kind == file). */
+	size_t offset; /**< Read cursor (kind == file). */
+} ove_lnx_fd_t;
+
+/** Maximum simultaneously-open file descriptors per process. */
+#define OVE_LNX_MAX_FDS 16
+
 /**
  * @brief A Linux process context — the state syscalls act on.
  *
- * Minimal Phase-A model: a bounded program break carved from an @c ove_arena,
- * standard-stream I/O via caller-set callbacks, and an exit latch. A full fd
- * table / signal state / mmap land in later phases.
+ * NOMMU model: a bounded program break + anonymous mmap carved from an
+ * @c ove_arena, a small fd table over standard streams (caller callbacks) and a
+ * read-only in-memory rootfs, and an exit latch. Signals / a writable VFS /
+ * fork+exec land in later phases.
  */
 typedef struct ove_lnx_proc {
-	ove_arena_t *arena;	   /**< Backs @c brk (and, later, mmap(ANON)). */
-	uintptr_t brk_base;	   /**< Initial program break. */
-	uintptr_t brk_cur;	   /**< Current program break. */
-	uintptr_t brk_max;	   /**< Ceiling imposed by the arena reservation. */
-	ove_lnx_write_fn write_fn; /**< fd 1/2 sink; NULL → @c -OVE_LNX_EBADF. */
-	ove_lnx_read_fn read_fn;   /**< fd 0 source; NULL → EOF. */
-	void *io_ctx;		   /**< Opaque, passed to @c write_fn / @c read_fn. */
-	int exited;		   /**< Set once @c exit / @c exit_group is called. */
-	int exit_status;	   /**< Low 8 bits of the exit code. */
+	ove_arena_t *arena;		   /**< Backs @c brk and anonymous @c mmap. */
+	uintptr_t brk_base;		   /**< Initial program break. */
+	uintptr_t brk_cur;		   /**< Current program break. */
+	uintptr_t brk_max;		   /**< Ceiling imposed by the arena reservation. */
+	ove_lnx_write_fn write_fn;	   /**< fd 1/2 sink; NULL → @c -OVE_LNX_EBADF. */
+	ove_lnx_read_fn read_fn;	   /**< fd 0 source; NULL → EOF. */
+	void *io_ctx;			   /**< Opaque, passed to @c write_fn / @c read_fn. */
+	const ove_lnx_file_t *fs;	   /**< Read-only rootfs table (NULL → no files). */
+	int fs_count;			   /**< Number of entries in @c fs. */
+	ove_lnx_fd_t fds[OVE_LNX_MAX_FDS]; /**< fd table; 0/1/2 are the std streams. */
+	int exited;			   /**< Set once @c exit / @c exit_group is called. */
+	int exit_status;		   /**< Low 8 bits of the exit code. */
 } ove_lnx_proc_t;
+
+/**
+ * @brief Attach a read-only in-memory rootfs the program can @c open / @c read.
+ * @note Requires @c CONFIG_OVE_LINUX.
+ */
+void ove_lnx_proc_set_rootfs(ove_lnx_proc_t *proc, const ove_lnx_file_t *files, int count);
 
 /**
  * @brief Initialise a process context with an arena-backed program break.

@@ -25,6 +25,38 @@
  * directly after a NULL check (a future MMU tier would translate them).
  */
 
+/* fd-slot kinds (ove_lnx_fd.kind). */
+#define OVE_LNX_FD_FREE 0
+#define OVE_LNX_FD_CONSOLE 1
+#define OVE_LNX_FD_FILE 2
+
+/*
+ * ARM kernel struct stat64. Spelled with fixed-width types (the kernel's
+ * `unsigned long` is 32-bit on ARM but 64-bit on the x86-64 host) so the binary
+ * layout is identical on target and in host tests.
+ */
+struct ove_lnx_kstat64 {
+	uint64_t st_dev;
+	uint8_t __pad0[4];
+	uint32_t __st_ino;
+	uint32_t st_mode;
+	uint32_t st_nlink;
+	uint32_t st_uid;
+	uint32_t st_gid;
+	uint64_t st_rdev;
+	uint8_t __pad3[4];
+	int64_t st_size;
+	uint32_t st_blksize;
+	uint64_t st_blocks;
+	uint32_t st_atime;
+	uint32_t st_atime_nsec;
+	uint32_t st_mtime;
+	uint32_t st_mtime_nsec;
+	uint32_t st_ctime;
+	uint32_t st_ctime_nsec;
+	uint64_t st_ino;
+};
+
 int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes)
 {
 	if (!proc || !arena)
@@ -32,6 +64,10 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 
 	memset(proc, 0, sizeof(*proc));
 	proc->arena = arena;
+	/* fd 0/1/2 are the standard streams, routed to the caller's callbacks. */
+	proc->fds[0].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[1].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[2].kind = OVE_LNX_FD_CONSOLE;
 	if (brk_bytes) {
 		void *brk = ove_arena_alloc(arena, brk_bytes);
 		if (!brk)
@@ -41,6 +77,14 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 		proc->brk_max = proc->brk_base + brk_bytes;
 	}
 	return OVE_OK;
+}
+
+void ove_lnx_proc_set_rootfs(ove_lnx_proc_t *proc, const ove_lnx_file_t *files, int count)
+{
+	if (!proc)
+		return;
+	proc->fs = files;
+	proc->fs_count = (files && count > 0) ? count : 0;
 }
 
 /* Bound on argv/envp entries the startup stack will lay out. */
@@ -125,14 +169,24 @@ void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *
 	return hdr; /* initial SP, pointing at argc */
 }
 
+/* Validate an fd index and return its slot, or NULL. */
+static ove_lnx_fd_t *fd_slot(ove_lnx_proc_t *p, int fd)
+{
+	if (fd < 0 || fd >= OVE_LNX_MAX_FDS || p->fds[fd].kind == OVE_LNX_FD_FREE)
+		return NULL;
+	return &p->fds[fd];
+}
+
 static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 {
-	if (fd != 1 && fd != 2)
-		return -OVE_LNX_EBADF;
-	if (!p->write_fn)
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
 		return -OVE_LNX_EBADF;
 	if (len && !buf)
 		return -OVE_LNX_EFAULT;
+	/* Only the standard output streams are writable; the rootfs is read-only. */
+	if (s->kind != OVE_LNX_FD_CONSOLE || (fd != 1 && fd != 2) || !p->write_fn)
+		return -OVE_LNX_EBADF;
 	return p->write_fn(p->io_ctx, fd, buf, len);
 }
 
@@ -161,13 +215,30 @@ static long sys_writev(ove_lnx_proc_t *p, int fd, const ove_lnx_iovec *iov, int 
 
 static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 {
-	if (fd != 0)
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
 		return -OVE_LNX_EBADF;
-	if (!p->read_fn)
-		return 0; /* EOF */
 	if (len && !buf)
 		return -OVE_LNX_EFAULT;
-	return p->read_fn(p->io_ctx, fd, buf, len);
+
+	if (s->kind == OVE_LNX_FD_CONSOLE) {
+		if (fd != 0) /* stdout/stderr are not readable */
+			return -OVE_LNX_EBADF;
+		if (!p->read_fn)
+			return 0; /* EOF */
+		return p->read_fn(p->io_ctx, fd, buf, len);
+	}
+
+	/* Read from a rootfs file at the current offset. */
+	const ove_lnx_file_t *f = &p->fs[s->file_idx];
+	if (s->offset >= f->size)
+		return 0; /* EOF */
+	size_t n = f->size - s->offset;
+	if (n > len)
+		n = len;
+	memcpy(buf, f->data + s->offset, n);
+	s->offset += n;
+	return (long)n;
 }
 
 static long sys_brk(ove_lnx_proc_t *p, uintptr_t addr)
@@ -219,6 +290,98 @@ static long sys_munmap(ove_lnx_proc_t *p, uintptr_t addr, size_t len)
 	return 0;
 }
 
+/* open a rootfs file read-only; the fs is immutable, so writes are refused. */
+static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags)
+{
+	(void)dirfd; /* rootfs paths are absolute */
+	if (!path)
+		return -OVE_LNX_EFAULT;
+	if ((flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY)
+		return -OVE_LNX_EROFS;
+
+	int idx = -1;
+	for (int i = 0; i < p->fs_count; i++) {
+		if (strcmp(p->fs[i].path, path) == 0) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx < 0)
+		return -OVE_LNX_ENOENT;
+
+	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
+		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
+			p->fds[fd].kind = OVE_LNX_FD_FILE;
+			p->fds[fd].file_idx = idx;
+			p->fds[fd].offset = 0;
+			return fd;
+		}
+	}
+	return -OVE_LNX_EMFILE;
+}
+
+static long sys_close(ove_lnx_proc_t *p, int fd)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	s->kind = OVE_LNX_FD_FREE;
+	return 0;
+}
+
+static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	if (s->kind != OVE_LNX_FD_FILE)
+		return -OVE_LNX_ESPIPE; /* console is not seekable */
+
+	long base;
+	switch (whence) {
+	case OVE_LNX_SEEK_SET:
+		base = 0;
+		break;
+	case OVE_LNX_SEEK_CUR:
+		base = (long)s->offset;
+		break;
+	case OVE_LNX_SEEK_END:
+		base = (long)p->fs[s->file_idx].size;
+		break;
+	default:
+		return -OVE_LNX_EINVAL;
+	}
+	long pos = base + off;
+	if (pos < 0)
+		return -OVE_LNX_EINVAL;
+	s->offset = (size_t)pos;
+	return pos;
+}
+
+static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	if (!statbuf)
+		return -OVE_LNX_EFAULT;
+
+	struct ove_lnx_kstat64 *st = statbuf;
+	memset(st, 0, sizeof(*st));
+	st->st_nlink = 1;
+	if (s->kind == OVE_LNX_FD_FILE) {
+		st->st_mode = OVE_LNX_S_IFREG | 0644u;
+		st->st_size = (int64_t)p->fs[s->file_idx].size;
+		st->st_blksize = 512;
+		st->st_blocks = (uint64_t)((p->fs[s->file_idx].size + 511u) / 512u);
+	} else {
+		/* A character device: makes uClibc block-buffer stdio. */
+		st->st_mode = OVE_LNX_S_IFCHR | 0620u;
+		st->st_blksize = 1024;
+	}
+	return 0;
+}
+
 long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
 		     long a5)
 {
@@ -239,6 +402,19 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4);
 	case OVE_LNX_NR_munmap:
 		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
+	case OVE_LNX_NR_openat:
+		return sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
+	case OVE_LNX_NR_close:
+		return sys_close(proc, (int)a0);
+	case OVE_LNX_NR_lseek:
+		return sys_lseek(proc, (int)a0, a1, (int)a2);
+	case OVE_LNX_NR_fstat64:
+		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
+	case OVE_LNX_NR_fcntl64:
+		/* Enough for stdio/dup probing: report read-only flags / succeed. */
+		return 0;
+	case OVE_LNX_NR_getdents64:
+		return -OVE_LNX_ENOSYS; /* directory listing: a later step */
 	case OVE_LNX_NR_exit:
 	case OVE_LNX_NR_exit_group:
 		return sys_exit(proc, (int)a0);
