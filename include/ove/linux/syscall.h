@@ -169,6 +169,10 @@ typedef struct ove_lnx_proc {
 	int ppid;			   /**< Parent process id (0 for the initial program). */
 	int exited;			   /**< Set once @c exit / @c exit_group is called. */
 	int exit_status;		   /**< Low 8 bits of the exit code. */
+	/* Reaped-child state, populated by the engine for wait4 (one child for now). */
+	int child_pid;	  /**< pid of the exited child, or 0. */
+	int child_status; /**< the child's exit code. */
+	int child_exited; /**< a child has exited and is awaiting wait4. */
 	/* execve request: the engine seam relaunches the thread on this rootfs
 	 * program with the captured argument vector (image replacement). */
 	int exec_pending;			 /**< Set when execve() should relaunch. */

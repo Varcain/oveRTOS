@@ -616,9 +616,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return proc->pid;
 	case OVE_LNX_NR_getppid:
 		return proc->ppid;
-	case OVE_LNX_NR_wait4:
-		/* No child-process tracking yet (fork lands next): nothing to reap. */
-		return -OVE_LNX_ECHILD;
+	case OVE_LNX_NR_wait4: {
+		/* Reap the engine-recorded child, if any (the wait-status word encodes
+		 * a normal exit as exit_code << 8). a1 is the int* status, else NULL. */
+		if (!proc->child_exited)
+			return -OVE_LNX_ECHILD;
+		int *status = (int *)(uintptr_t)a1;
+		if (status)
+			*status = (proc->child_status & 0xff) << 8;
+		proc->child_exited = 0;
+		return proc->child_pid;
+	}
 	case OVE_LNX_NR_getuid32:
 	case OVE_LNX_NR_geteuid32:
 	case OVE_LNX_NR_getgid32:

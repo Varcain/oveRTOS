@@ -136,7 +136,16 @@ static void test_lnx_init_stubs(void **state)
 
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getpid, 0, 0, 0, 0, 0, 0), 1);	/* pid */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getppid, 0, 0, 0, 0, 0, 0), 0); /* ppid */
-	/* No children tracked yet, so wait4 reports -ECHILD. */
+	/* wait4: -ECHILD with no child; reaps the engine-recorded child otherwise. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_wait4, -1, 0, 0, 0, 0, 0), -OVE_LNX_ECHILD);
+	p.child_pid = 2;
+	p.child_status = 7;
+	p.child_exited = 1;
+	int wstatus = -1;
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_wait4, -1, (long)(uintptr_t)&wstatus, 0, 0,
+					 0, 0),
+			 2);
+	assert_int_equal(wstatus, 7 << 8); /* WEXITSTATUS == 7 */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_wait4, -1, 0, 0, 0, 0, 0), -OVE_LNX_ECHILD);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getuid32, 0, 0, 0, 0, 0, 0), 0);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getegid32, 0, 0, 0, 0, 0, 0), 0);
