@@ -45,8 +45,12 @@ extern "C" {
 #define OVE_LNX_NR_exit 1
 #define OVE_LNX_NR_fork 2
 #define OVE_LNX_NR_read 3
+#define OVE_LNX_NR_dup 41
+#define OVE_LNX_NR_pipe 42
+#define OVE_LNX_NR_dup2 63
 #define OVE_LNX_NR_kill 37
 #define OVE_LNX_NR_sigreturn 119
+#define OVE_LNX_NR_dup3 358
 #define OVE_LNX_NR_rt_sigreturn 173
 #define OVE_LNX_NR_gettid 224
 #define OVE_LNX_NR_tkill 238
@@ -216,13 +220,16 @@ typedef struct ove_lnx_file {
 
 /** Open-file-descriptor slot. */
 typedef struct ove_lnx_fd {
-	uint8_t kind;  /**< 0 = free, 1 = console (std stream), 2 = rootfs file. */
-	int file_idx;  /**< Index into the rootfs table (kind == file). */
+	uint8_t kind;  /**< 0 = free, 1 = console, 2 = rootfs file, 3 = pipe. */
+	uint8_t rw;    /**< pipe end: 0 = read, 1 = write (kind == pipe). */
+	int file_idx;  /**< rootfs index (kind == file) or pipe index (kind == pipe). */
 	size_t offset; /**< Read cursor (kind == file). */
 } ove_lnx_fd_t;
 
 /** Maximum simultaneously-open file descriptors per process. */
 #define OVE_LNX_MAX_FDS 16
+/** Max exited children queued for wait4 (a pipeline forks several). */
+#define OVE_LNX_MAX_CHILD 8
 /** Bounds for an execve() argument vector captured for the engine to relaunch. */
 #define OVE_LNX_EXEC_MAXARGS 8
 #define OVE_LNX_EXEC_ARGBUF 256
@@ -250,10 +257,11 @@ typedef struct ove_lnx_proc {
 	int ppid;			   /**< Parent process id (0 for the initial program). */
 	int exited;			   /**< Set once @c exit / @c exit_group is called. */
 	int exit_status;		   /**< Low 8 bits of the exit code. */
-	/* Reaped-child state, populated by the engine for wait4 (one child for now). */
-	int child_pid;	  /**< pid of the exited child, or 0. */
-	int child_status; /**< the child's exit code. */
-	int child_exited; /**< a child has exited and is awaiting wait4. */
+	/* Queue of exited (zombie) children awaiting wait4, FIFO. A pipeline forks
+	 * more than one child, so a single slot is not enough. */
+	int child_pid[OVE_LNX_MAX_CHILD];    /**< pids of exited children. */
+	int child_status[OVE_LNX_MAX_CHILD]; /**< their exit codes. */
+	int child_count;		     /**< number queued. */
 	/* Signal disposition: per-signal handler address (or SIG_DFL/SIG_IGN) and
 	 * the libc-supplied sa_restorer the engine returns to after the handler. */
 	uintptr_t sig_handler[OVE_LNX_NSIG];

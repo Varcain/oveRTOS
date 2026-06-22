@@ -29,6 +29,23 @@
 #define OVE_LNX_FD_FREE 0
 #define OVE_LNX_FD_CONSOLE 1
 #define OVE_LNX_FD_FILE 2
+#define OVE_LNX_FD_PIPE 3
+
+/*
+ * Pipe objects. A pipe is shared kernel state (like a real kernel's pipe inode):
+ * the writer process fills the buffer, the reader process drains it. The model
+ * is sequentialised, so the writer always runs to completion before the reader,
+ * and "buffer empty" == EOF (no concurrent writer to wait for). Bounded buffer.
+ */
+#define OVE_LNX_NPIPE 4
+#define OVE_LNX_PIPE_BUF 1024
+typedef struct {
+	uint8_t buf[OVE_LNX_PIPE_BUF];
+	size_t rpos; /* bytes consumed by the reader */
+	size_t wpos; /* bytes produced by the writer */
+	int used;
+} ove_lnx_pipe_t;
+static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
 
 /*
  * ARM kernel struct stat64. Spelled with fixed-width types (the kernel's
@@ -222,6 +239,18 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		return -OVE_LNX_EBADF;
 	if (len && !buf)
 		return -OVE_LNX_EFAULT;
+	/* A pipe write end appends to the (bounded) shared pipe buffer. */
+	if (s->kind == OVE_LNX_FD_PIPE) {
+		if (s->rw != 1)
+			return -OVE_LNX_EBADF;
+		ove_lnx_pipe_t *pp = &g_pipes[s->file_idx];
+		size_t space = OVE_LNX_PIPE_BUF - pp->wpos;
+		if (len > space)
+			len = space;
+		memcpy(pp->buf + pp->wpos, buf, len);
+		pp->wpos += len;
+		return (long)len;
+	}
 	/* Only output consoles are writable (file_idx != 0); the rootfs is read-only. */
 	if (s->kind != OVE_LNX_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
 		return -OVE_LNX_EBADF;
@@ -265,6 +294,22 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		if (!p->read_fn)
 			return 0; /* EOF */
 		return p->read_fn(p->io_ctx, fd, buf, len);
+	}
+
+	/* A pipe read end drains the shared buffer; empty == EOF (sequentialised:
+	 * the writer has already run to completion, so no more data will arrive). */
+	if (s->kind == OVE_LNX_FD_PIPE) {
+		if (s->rw != 0)
+			return -OVE_LNX_EBADF;
+		ove_lnx_pipe_t *pp = &g_pipes[s->file_idx];
+		size_t avail = pp->wpos - pp->rpos;
+		if (avail == 0)
+			return 0; /* EOF */
+		if (len > avail)
+			len = avail;
+		memcpy(buf, pp->buf + pp->rpos, len);
+		pp->rpos += len;
+		return (long)len;
 	}
 
 	/* Read from a rootfs file at the current offset. */
@@ -368,6 +413,69 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 		return -OVE_LNX_EBADF;
 	s->kind = OVE_LNX_FD_FREE;
 	return 0;
+}
+
+/* pipe(2): allocate a pipe object + a read-end / write-end fd pair. */
+static long sys_pipe(ove_lnx_proc_t *p, int *fds)
+{
+	if (!fds)
+		return -OVE_LNX_EFAULT;
+	int pi = -1;
+	for (int i = 0; i < OVE_LNX_NPIPE; i++) {
+		if (!g_pipes[i].used) {
+			pi = i;
+			break;
+		}
+	}
+	if (pi < 0)
+		return -OVE_LNX_EMFILE;
+	int rfd = -1, wfd = -1;
+	for (int fd = 0; fd < OVE_LNX_MAX_FDS && wfd < 0; fd++) {
+		if (p->fds[fd].kind != OVE_LNX_FD_FREE)
+			continue;
+		if (rfd < 0)
+			rfd = fd;
+		else
+			wfd = fd;
+	}
+	if (wfd < 0)
+		return -OVE_LNX_EMFILE;
+	g_pipes[pi].used = 1;
+	g_pipes[pi].rpos = 0;
+	g_pipes[pi].wpos = 0;
+	p->fds[rfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .file_idx = pi};
+	p->fds[wfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .file_idx = pi};
+	fds[0] = rfd;
+	fds[1] = wfd;
+	return 0;
+}
+
+/* dup2/dup3: make newfd alias oldfd's target (the pipe wiring the shell does). */
+static long sys_dup2(ove_lnx_proc_t *p, int oldfd, int newfd)
+{
+	ove_lnx_fd_t *s = fd_slot(p, oldfd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	if (newfd < 0 || newfd >= OVE_LNX_MAX_FDS)
+		return -OVE_LNX_EBADF;
+	if (oldfd != newfd)
+		p->fds[newfd] = *s;
+	return newfd;
+}
+
+/* dup(2): alias oldfd onto the lowest free fd. */
+static long sys_dup(ove_lnx_proc_t *p, int oldfd)
+{
+	ove_lnx_fd_t *s = fd_slot(p, oldfd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
+		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
+			p->fds[fd] = *s;
+			return fd;
+		}
+	}
+	return -OVE_LNX_EMFILE;
 }
 
 static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
@@ -602,6 +710,13 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
 	case OVE_LNX_NR_close:
 		return sys_close(proc, (int)a0);
+	case OVE_LNX_NR_pipe:
+		return sys_pipe(proc, (int *)(uintptr_t)a0);
+	case OVE_LNX_NR_dup:
+		return sys_dup(proc, (int)a0);
+	case OVE_LNX_NR_dup2: /* dup3 ignores its flags arg here */
+	case OVE_LNX_NR_dup3:
+		return sys_dup2(proc, (int)a0, (int)a1);
 	case OVE_LNX_NR_lseek:
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
 	case OVE_LNX_NR_fstat64:
@@ -690,15 +805,21 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return ready;
 	}
 	case OVE_LNX_NR_wait4: {
-		/* Reap the engine-recorded child, if any (the wait-status word encodes
-		 * a normal exit as exit_code << 8). a1 is the int* status, else NULL. */
-		if (!proc->child_exited)
+		/* Reap the oldest queued child (FIFO); the wait-status word encodes a
+		 * normal exit as exit_code << 8. a1 is the int* status, else NULL. */
+		if (proc->child_count == 0)
 			return -OVE_LNX_ECHILD;
+		int pid = proc->child_pid[0];
+		int code = proc->child_status[0];
+		for (int i = 1; i < proc->child_count; i++) {
+			proc->child_pid[i - 1] = proc->child_pid[i];
+			proc->child_status[i - 1] = proc->child_status[i];
+		}
+		proc->child_count--;
 		int *status = (int *)(uintptr_t)a1;
 		if (status)
-			*status = (proc->child_status & 0xff) << 8;
-		proc->child_exited = 0;
-		return proc->child_pid;
+			*status = (code & 0xff) << 8;
+		return pid;
 	}
 	case OVE_LNX_NR_getuid32:
 	case OVE_LNX_NR_geteuid32:

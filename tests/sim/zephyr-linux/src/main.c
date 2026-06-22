@@ -12,9 +12,11 @@
  *   - /bin/sigtest  installs a SIGINT handler and raise()s it (SYNCHRONOUS);
  *   - /bin/sigwait  blocks in read() and is interrupted by a console ^C, which
  *     the tty turns into an ASYNCHRONOUS SIGINT (delivered at the read boundary,
- *     which then returns EINTR after the handler runs).
- * This exercises the whole personality — loader, ~45 syscalls, the NOMMU process
- * model, and synchronous + async signal delivery — end to end with stock software.
+ *     which then returns EINTR after the handler runs);
+ *   - /bin/pipewrite | /bin/pipecat  a PIPELINE: hush wires the two via pipe() +
+ *     dup2(), runs both, and the data flows pipewrite -> pipe -> pipecat -> tty.
+ * This exercises the whole personality — loader, ~50 syscalls, the NOMMU process
+ * model, signals (sync + async), and pipes — end to end with stock software.
  *
  * NOMMU process model on Zephyr (sequentialised, which is observationally
  * identical to vfork for the shell pattern since the parent waitpid()s anyway):
@@ -42,10 +44,12 @@
 #include "ove/linux/syscall.h"
 #include "ove/loader.h"
 
-#include "loader_hello_image.h"	  /* ove_test_hello_bflt[], _len  (BusyBox hush) */
-#include "loader_hello2_image.h"  /* ove_test_hello2_bflt[], _len (an external command) */
-#include "loader_sigtest_image.h" /* ove_test_sigtest_bflt[], _len (synchronous signal) */
-#include "loader_sigwait_image.h" /* ove_test_sigwait_bflt[], _len (async ^C interrupt) */
+#include "loader_hello_image.h"	    /* ove_test_hello_bflt[], _len  (BusyBox hush) */
+#include "loader_hello2_image.h"    /* ove_test_hello2_bflt[], _len (an external command) */
+#include "loader_sigtest_image.h"   /* ove_test_sigtest_bflt[], _len (synchronous signal) */
+#include "loader_sigwait_image.h"   /* ove_test_sigwait_bflt[], _len (async ^C interrupt) */
+#include "loader_pipewrite_image.h" /* ove_test_pipewrite_bflt[], _len (pipeline writer) */
+#include "loader_pipecat_image.h"   /* ove_test_pipecat_bflt[], _len (pipeline reader) */
 
 /* ARM semihosting (host console + clean QEMU exit). */
 static long semihost(unsigned long op, void *arg)
@@ -125,11 +129,11 @@ static long capture_write(void *ctx, int fd, const void *buf, size_t len)
 static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
 
-/* Scripted stdin: the shell read(0)s these command lines as if typed at a
- * console (the engine is the terminal). Deterministic, so no live-TTY flake. */
-/* Run /bin/sigtest (synchronous raise), then /bin/sigwait followed by a ^C (0x03)
- * that the console turns into an async SIGINT interrupting sigwait's read, then exit. */
-static const char g_input[] = "/bin/sigtest\n/bin/sigwait\n\003exit\n";
+/* Scripted stdin (the engine is the terminal; deterministic, no live-TTY flake).
+ * A full tour: sigtest (synchronous raise), sigwait + a ^C (0x03) that becomes an
+ * async SIGINT interrupting its read, a pipeline pipewrite|pipecat, then exit. */
+static const char g_input[] =
+	"/bin/sigtest\n/bin/sigwait\n\003/bin/pipewrite | /bin/pipecat\nexit\n";
 static volatile size_t g_input_pos;
 
 static long console_read(void *ctx, int fd, void *buf, size_t len)
@@ -396,6 +400,8 @@ static const ove_lnx_file_t g_rootfs[] = {
 	{"/bin/hello2", ove_test_hello2_bflt, sizeof(ove_test_hello2_bflt), 0},
 	{"/bin/sigtest", ove_test_sigtest_bflt, sizeof(ove_test_sigtest_bflt), 0},
 	{"/bin/sigwait", ove_test_sigwait_bflt, sizeof(ove_test_sigwait_bflt), 0},
+	{"/bin/pipewrite", ove_test_pipewrite_bflt, sizeof(ove_test_pipewrite_bflt), 0},
+	{"/bin/pipecat", ove_test_pipecat_bflt, sizeof(ove_test_pipecat_bflt), 0},
 };
 #define G_ROOTFS_N ((int)(sizeof(g_rootfs) / sizeof(g_rootfs[0])))
 
@@ -474,7 +480,8 @@ static void resume_slot(int sidx, int ridx, long r0val)
  * raw-mode line editing, vfork/execve, AND real signal delivery in one session. */
 #define EXPECT_MSG                                                     \
 	"/ # /bin/sigtest\nbefore raise\ncaught SIGINT\nafter raise\n" \
-	"/ # /bin/sigwait\nwaiting\n[SIGINT]\ndone\n/ # exit\n"
+	"/ # /bin/sigwait\nwaiting\n[SIGINT]\ndone\n"                  \
+	"/ # /bin/pipewrite | /bin/pipecat\nfrom-writer\n/ # exit\n"
 
 int main(void)
 {
@@ -507,7 +514,7 @@ int main(void)
 			g_slots[1].proc.ppid = 1;
 			g_slots[1].proc.exited = 0;
 			g_slots[1].proc.exec_pending = 0;
-			g_slots[1].proc.child_exited = 0;
+			g_slots[1].proc.child_count = 0; /* the child inherits no zombies */
 			k_thread_abort(g_slots[0].tid);
 			g_slots[0].used = 0; /* parent parked; resumed after child exit */
 			resume_slot(1, 0, 0);
@@ -527,6 +534,10 @@ int main(void)
 				off += n;
 			}
 			ptrs[eargc] = NULL;
+			/* fds survive execve (no close-on-exec here): preserve the table so
+			 * a pipe wired by dup2 before exec reaches the new image. */
+			ove_lnx_fd_t saved_fds[OVE_LNX_MAX_FDS];
+			memcpy(saved_fds, g_slots[1].proc.fds, sizeof(saved_fds));
 			k_thread_abort(g_slots[1].tid);
 			if (launch_slot(1, 1, g_rootfs[idx].data, g_rootfs[idx].size, cur_child, 1,
 					eargc, ptrs) != 0) {
@@ -534,6 +545,7 @@ int main(void)
 				sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
 				sh_exit(1);
 			}
+			memcpy(g_slots[1].proc.fds, saved_fds, sizeof(saved_fds));
 			continue;
 		}
 		/* The child exited: record its status for wait4, then resume the
@@ -542,10 +554,14 @@ int main(void)
 			int status = g_slots[1].proc.exit_status;
 			k_thread_abort(g_slots[1].tid);
 			g_slots[1].used = 0;
-			/* Restore the parent into slot 0, region 0 (intact). */
-			g_slots[0].proc.child_pid = cur_child;
-			g_slots[0].proc.child_status = status;
-			g_slots[0].proc.child_exited = 1;
+			/* Queue the zombie on the parent (slot 0) for wait4, then resume
+			 * the parent in region 0 (intact) at the vfork context. */
+			ove_lnx_proc_t *par = &g_slots[0].proc;
+			if (par->child_count < OVE_LNX_MAX_CHILD) {
+				par->child_pid[par->child_count] = cur_child;
+				par->child_status[par->child_count] = status;
+				par->child_count++;
+			}
 			resume_slot(0, 0, cur_child);
 			continue;
 		}
@@ -560,8 +576,8 @@ int main(void)
 
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] BusyBox hush + REAL signals: sigtest (synchronous raise) "
-			  "AND sigwait (ASYNC ^C interrupts read -> SIGINT, handler runs) OK\n");
+		sh_write0("[zephyr-linux] BusyBox hush full tour: signals (sync raise + async ^C) "
+			  "AND a pipeline (pipewrite | pipecat via pipe/dup2, two children) OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
