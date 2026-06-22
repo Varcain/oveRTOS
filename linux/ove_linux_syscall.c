@@ -402,6 +402,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4);
 	case OVE_LNX_NR_munmap:
 		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
+	case OVE_LNX_NR_open: /* legacy open(path, flags, mode): dirfd = cwd */
+		return sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
 	case OVE_LNX_NR_openat:
 		return sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
 	case OVE_LNX_NR_close:

@@ -7,7 +7,9 @@
  *
  * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): load a
  * REAL Buildroot uClibc-ng static bFLT and run it as an unprivileged (K_USER)
- * thread, trapping its Linux syscalls.
+ * thread, trapping its Linux syscalls. The program open()s /etc/motd from the
+ * read-only in-memory rootfs, read()s it, and write()s it to stdout — so this
+ * exercises the file syscalls (open/read/close) end-to-end on real libc code.
  *
  *   uClibc crt0 (svc #0, nr in r7)  ->  Zephyr routes the unprivileged "unused"
  *   svc to z_do_kernel_oops, which linker --wrap reroutes to our seam  ->
@@ -145,6 +147,12 @@ K_APP_BMEM(prog_partition) static uint8_t prog_region[PROG_REGION_SIZE] __aligne
 
 static uint8_t s_pool[0x10000] __aligned(16); /* arena: brk + anonymous mmap */
 
+/* A one-file read-only rootfs the program opens as /etc/motd. */
+static const uint8_t g_motd[] = "hello from uClibc\n";
+static const ove_lnx_file_t g_rootfs[] = {
+	{"/etc/motd", g_motd, sizeof(g_motd) - 1},
+};
+
 static struct k_mem_partition text_part;
 static struct k_mem_partition data_part;
 
@@ -185,6 +193,7 @@ int main(void)
 	ove_arena_init(&arena, s_pool, sizeof(s_pool));
 	ove_lnx_proc_init(&g_proc, &arena, 0x8000);
 	g_proc.write_fn = capture_write;
+	ove_lnx_proc_set_rootfs(&g_proc, g_rootfs, 1);
 
 	/* Build the System V startup stack in the RW tail of the program region
 	 * (above the loaded image), and remember the resulting SP. */
@@ -235,7 +244,8 @@ int main(void)
 
 	if (ok && g_proc.exit_status == 1 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] uClibc bFLT ran unprivileged: write + exit trapped OK\n");
+		sh_write0("[zephyr-linux] uClibc bFLT ran unprivileged: open+read /etc/motd, "
+			  "write, exit trapped OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}

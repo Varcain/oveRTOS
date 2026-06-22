@@ -45,6 +45,7 @@ extern "C" {
 #define OVE_LNX_NR_exit 1
 #define OVE_LNX_NR_read 3
 #define OVE_LNX_NR_write 4
+#define OVE_LNX_NR_open 5
 #define OVE_LNX_NR_close 6
 #define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR_getpid 20
