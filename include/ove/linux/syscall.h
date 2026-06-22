@@ -113,6 +113,32 @@ typedef struct ove_lnx_proc {
  */
 int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes);
 
+/* ELF auxiliary-vector types laid down by the startup stack. */
+#define OVE_LNX_AT_NULL 0
+#define OVE_LNX_AT_PAGESZ 6
+#define OVE_LNX_AT_RANDOM 25
+
+/**
+ * @brief Build a Linux process stack for a loaded program's crt0.
+ *
+ * Lays out, at the top of @p stack, the System V/Linux startup block the C
+ * runtime expects: @c argc, the @c argv pointers + NULL, the @c envp pointers +
+ * NULL, and a minimal auxv (@c AT_PAGESZ, @c AT_RANDOM, @c AT_NULL). Argument
+ * and environment strings are copied into the same region. The returned pointer
+ * is the initial stack pointer (8-byte aligned, pointing at @c argc) to hand the
+ * program entry.
+ *
+ * @param[in] stack      Base of the stack region.
+ * @param[in] stack_size Size of the stack region in bytes.
+ * @param[in] argc       Argument count (<= a small internal bound).
+ * @param[in] argv       @p argc argument strings.
+ * @param[in] envp       NULL-terminated environment strings (may be NULL).
+ * @return The initial stack pointer, or NULL on bad arguments / insufficient room.
+ * @note Requires @c CONFIG_OVE_LINUX.
+ */
+void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
+			  const char *const envp[]);
+
 /**
  * @brief Dispatch one Linux syscall against @p proc.
  *

@@ -43,6 +43,76 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 	return OVE_OK;
 }
 
+/* Bound on argv/envp entries the startup stack will lay out. */
+#define OVE_LNX_MAX_VEC 32
+
+void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
+			  const char *const envp[])
+{
+	if (!stack || !argv || argc < 0 || argc > OVE_LNX_MAX_VEC)
+		return NULL;
+
+	int envc = 0;
+	while (envp && envp[envc])
+		envc++;
+	if (envc > OVE_LNX_MAX_VEC)
+		return NULL;
+
+	uintptr_t argp[OVE_LNX_MAX_VEC];
+	uintptr_t envpp[OVE_LNX_MAX_VEC];
+	uint8_t *sp = (uint8_t *)stack + stack_size;
+	uint8_t *floor = (uint8_t *)stack;
+
+	/* Copy env then arg strings to the top of the stack, recording addresses. */
+	for (int i = envc - 1; i >= 0; i--) {
+		size_t n = strlen(envp[i]) + 1;
+		if (sp - n < floor)
+			return NULL;
+		sp -= n;
+		memcpy(sp, envp[i], n);
+		envpp[i] = (uintptr_t)sp;
+	}
+	for (int i = argc - 1; i >= 0; i--) {
+		size_t n = strlen(argv[i]) + 1;
+		if (sp - n < floor)
+			return NULL;
+		sp -= n;
+		memcpy(sp, argv[i], n);
+		argp[i] = (uintptr_t)sp;
+	}
+
+	/* 16 bytes for AT_RANDOM (stack-canary seed; not cryptographic here). */
+	if (sp - 16 < floor)
+		return NULL;
+	sp -= 16;
+	uint8_t *rnd = sp;
+	for (int i = 0; i < 16; i++)
+		rnd[i] = (uint8_t)(0xa5u ^ (unsigned)i);
+
+	/* Word block: argc, argv[]+NULL, envp[]+NULL, auxv(PAGESZ,RANDOM,NULL). */
+	size_t nwords = 1 + (size_t)argc + 1 + (size_t)envc + 1 + 6;
+	uintptr_t *w = (uintptr_t *)((uintptr_t)(sp - nwords * sizeof(uintptr_t)) & ~(uintptr_t)7);
+	if ((uint8_t *)w < floor)
+		return NULL;
+
+	uintptr_t *p = w;
+	*p++ = (uintptr_t)argc;
+	for (int i = 0; i < argc; i++)
+		*p++ = argp[i];
+	*p++ = 0; /* argv terminator */
+	for (int i = 0; i < envc; i++)
+		*p++ = envpp[i];
+	*p++ = 0; /* envp terminator */
+	*p++ = OVE_LNX_AT_PAGESZ;
+	*p++ = 4096;
+	*p++ = OVE_LNX_AT_RANDOM;
+	*p++ = (uintptr_t)rnd;
+	*p++ = OVE_LNX_AT_NULL;
+	*p++ = 0;
+
+	return w; /* initial SP, pointing at argc */
+}
+
 static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 {
 	if (fd != 1 && fd != 2)

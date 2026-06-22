@@ -146,6 +146,40 @@ static void test_lnx_init_stubs(void **state)
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigprocmask, 0, 0, 0, 0, 0, 0), 0);
 }
 
+static void test_lnx_setup_stack(void **state)
+{
+	(void)state;
+	static uint8_t stk[512] __attribute__((aligned(8)));
+	const char *const argv[] = {"/bin/app", "arg1", NULL};
+	const char *const envp[] = {"PATH=/bin", "HOME=/", NULL};
+
+	uintptr_t *sp = ove_lnx_setup_stack(stk, sizeof(stk), 2, argv, envp);
+	assert_non_null(sp);
+	assert_int_equal((uintptr_t)sp & 7u, 0); /* SP is 8-aligned */
+
+	int i = 0;
+	assert_int_equal((int)sp[i++], 2); /* argc */
+	assert_string_equal((const char *)sp[i++], "/bin/app");
+	assert_string_equal((const char *)sp[i++], "arg1");
+	assert_int_equal(sp[i++], 0); /* argv terminator */
+	assert_string_equal((const char *)sp[i++], "PATH=/bin");
+	assert_string_equal((const char *)sp[i++], "HOME=/");
+	assert_int_equal(sp[i++], 0); /* envp terminator */
+	assert_int_equal(sp[i++], OVE_LNX_AT_PAGESZ);
+	assert_int_equal(sp[i++], 4096);
+	assert_int_equal(sp[i++], OVE_LNX_AT_RANDOM);
+	assert_non_null((void *)sp[i++]); /* AT_RANDOM points into the stack */
+	assert_int_equal(sp[i++], OVE_LNX_AT_NULL);
+
+	/* A NULL environment is accepted (empty envp). */
+	uintptr_t *sp2 = ove_lnx_setup_stack(stk, sizeof(stk), 1, argv, NULL);
+	assert_non_null(sp2);
+	assert_int_equal((int)sp2[0], 1);
+	assert_string_equal((const char *)sp2[1], "/bin/app");
+	assert_int_equal(sp2[2], 0); /* argv terminator */
+	assert_int_equal(sp2[3], 0); /* envp terminator (no entries) */
+}
+
 static void test_lnx_exit_and_unknown(void **state)
 {
 	(void)state;
@@ -165,9 +199,13 @@ static void test_lnx_exit_and_unknown(void **state)
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_lnx_write),      cmocka_unit_test(test_lnx_writev),
-		cmocka_unit_test(test_lnx_brk),	       cmocka_unit_test(test_lnx_mmap),
-		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_write),
+		cmocka_unit_test(test_lnx_writev),
+		cmocka_unit_test(test_lnx_brk),
+		cmocka_unit_test(test_lnx_mmap),
+		cmocka_unit_test(test_lnx_init_stubs),
+		cmocka_unit_test(test_lnx_setup_stack),
+		cmocka_unit_test(test_lnx_exit_and_unknown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
