@@ -18,6 +18,7 @@ set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 # src/main.c plus the engine-agnostic layers the SVC seam dispatches into.
 target_sources(app PRIVATE
     src/main.c
+    ${OVE_ROOT}/backends/zephyr/zephyr_lnx.c
     ${OVE_ROOT}/backends/common/ove_arena.c
     ${OVE_ROOT}/loader/ove_loader.c
     ${OVE_ROOT}/linux/ove_linux_syscall.c
