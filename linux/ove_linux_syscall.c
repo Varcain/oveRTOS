@@ -527,6 +527,46 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 	return 0;
 }
 
+/*
+ * execve: resolve the program in the rootfs and capture its argument vector,
+ * then flag the request. The per-engine seam (privileged) does the actual image
+ * replacement — reload the bFLT, rebuild the MPU domain + stack, and relaunch
+ * the thread — because that is engine-specific. We never truly return: on
+ * success the old image is gone; on failure we report a negated errno.
+ */
+static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
+{
+	if (!path)
+		return -OVE_LNX_EFAULT;
+	int idx = -1;
+	for (int i = 0; i < p->fs_count; i++) {
+		if (strcmp(p->fs[i].path, path) == 0) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx < 0)
+		return -OVE_LNX_ENOENT;
+	if ((file_mode(&p->fs[idx]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+		return -OVE_LNX_EACCES;
+
+	int argc = 0;
+	size_t off = 0;
+	while (argv && argv[argc] && argc < OVE_LNX_EXEC_MAXARGS) {
+		size_t n = strlen(argv[argc]) + 1;
+		if (off + n > sizeof(p->exec_argv_buf))
+			break;
+		memcpy(p->exec_argv_buf + off, argv[argc], n);
+		p->exec_argv[argc] = p->exec_argv_buf + off;
+		off += n;
+		argc++;
+	}
+	p->exec_argc = argc;
+	p->exec_file_idx = idx;
+	p->exec_pending = 1;
+	return 0;
+}
+
 long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
 		     long a5)
 {
@@ -549,6 +589,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
 	case OVE_LNX_NR_open: /* legacy open(path, flags, mode): dirfd = cwd */
 		return sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
+	case OVE_LNX_NR_execve: /* (path, argv, envp); envp ignored for now */
+		return sys_execve(proc, (const char *)(uintptr_t)a0, (char *const *)(uintptr_t)a1);
 	case OVE_LNX_NR_openat:
 		return sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
 	case OVE_LNX_NR_close:

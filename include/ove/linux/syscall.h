@@ -47,6 +47,7 @@ extern "C" {
 #define OVE_LNX_NR_write 4
 #define OVE_LNX_NR_open 5
 #define OVE_LNX_NR_close 6
+#define OVE_LNX_NR_execve 11
 #define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR_getpid 20
 #define OVE_LNX_NR_brk 45
@@ -97,6 +98,7 @@ extern "C" {
 #define OVE_LNX_ENOENT 2
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ENOMEM 12
+#define OVE_LNX_EACCES 13
 #define OVE_LNX_EFAULT 14
 #define OVE_LNX_ENOTDIR 20
 #define OVE_LNX_EISDIR 21
@@ -137,6 +139,9 @@ typedef struct ove_lnx_fd {
 
 /** Maximum simultaneously-open file descriptors per process. */
 #define OVE_LNX_MAX_FDS 16
+/** Bounds for an execve() argument vector captured for the engine to relaunch. */
+#define OVE_LNX_EXEC_MAXARGS 8
+#define OVE_LNX_EXEC_ARGBUF 256
 
 /**
  * @brief A Linux process context — the state syscalls act on.
@@ -159,6 +164,13 @@ typedef struct ove_lnx_proc {
 	ove_lnx_fd_t fds[OVE_LNX_MAX_FDS]; /**< fd table; 0/1/2 are the std streams. */
 	int exited;			   /**< Set once @c exit / @c exit_group is called. */
 	int exit_status;		   /**< Low 8 bits of the exit code. */
+	/* execve request: the engine seam relaunches the thread on this rootfs
+	 * program with the captured argument vector (image replacement). */
+	int exec_pending;			 /**< Set when execve() should relaunch. */
+	int exec_file_idx;			 /**< Rootfs index of the program to run. */
+	int exec_argc;				 /**< Captured argument count. */
+	char *exec_argv[OVE_LNX_EXEC_MAXARGS];	 /**< Captured argv (into exec_argv_buf). */
+	char exec_argv_buf[OVE_LNX_EXEC_ARGBUF]; /**< Backing store for exec_argv. */
 } ove_lnx_proc_t;
 
 /**

@@ -337,6 +337,34 @@ static void test_lnx_getdents(void **state)
 			 -OVE_LNX_ENOTDIR);
 }
 
+static void test_lnx_execve(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+	ove_lnx_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
+
+	/* execve captures the request for the engine: which program + argv. */
+	char *const argv[] = {"prog", "x", NULL};
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_execve, (long)(uintptr_t) "/bin/sh",
+					 (long)(uintptr_t)argv, 0, 0, 0, 0),
+			 0);
+	assert_int_equal(p.exec_pending, 1);
+	assert_string_equal(k_rootfs[p.exec_file_idx].path, "/bin/sh");
+	assert_int_equal(p.exec_argc, 2);
+	assert_string_equal(p.exec_argv[0], "prog");
+	assert_string_equal(p.exec_argv[1], "x");
+
+	/* A missing path is -ENOENT; exec'ing a directory is -EACCES. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_execve, (long)(uintptr_t) "/nope",
+					 (long)(uintptr_t)argv, 0, 0, 0, 0),
+			 -OVE_LNX_ENOENT);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_execve, (long)(uintptr_t) "/etc",
+					 (long)(uintptr_t)argv, 0, 0, 0, 0),
+			 -OVE_LNX_EACCES);
+}
+
 static void test_lnx_exit_and_unknown(void **state)
 {
 	(void)state;
@@ -356,15 +384,11 @@ static void test_lnx_exit_and_unknown(void **state)
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_lnx_write),
-		cmocka_unit_test(test_lnx_writev),
-		cmocka_unit_test(test_lnx_brk),
-		cmocka_unit_test(test_lnx_mmap),
-		cmocka_unit_test(test_lnx_init_stubs),
-		cmocka_unit_test(test_lnx_setup_stack),
-		cmocka_unit_test(test_lnx_file),
-		cmocka_unit_test(test_lnx_getdents),
-		cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_write),      cmocka_unit_test(test_lnx_writev),
+		cmocka_unit_test(test_lnx_brk),	       cmocka_unit_test(test_lnx_mmap),
+		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_setup_stack),
+		cmocka_unit_test(test_lnx_file),       cmocka_unit_test(test_lnx_getdents),
+		cmocka_unit_test(test_lnx_execve),     cmocka_unit_test(test_lnx_exit_and_unknown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
