@@ -7,12 +7,14 @@
  *
  * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): a real
  * BusyBox 1.36 hush (uClibc-ng, static bFLT) runs tty-interactive as the
- * unprivileged init program, reads commands from stdin, and spawns /bin/sigtest
- * via vfork/execve/wait. sigtest installs a SIGINT handler and raise()s it: the
- * engine DELIVERS the signal (the handler runs, then rt_sigreturn resumes the
- * interrupted code). This exercises the whole personality — loader, ~40
- * syscalls, the NOMMU process model, and real signal delivery — end to end with
- * stock upstream software.
+ * unprivileged init program, reads commands from stdin, and spawns two helpers
+ * via vfork/execve/wait, exercising REAL signal delivery both ways:
+ *   - /bin/sigtest  installs a SIGINT handler and raise()s it (SYNCHRONOUS);
+ *   - /bin/sigwait  blocks in read() and is interrupted by a console ^C, which
+ *     the tty turns into an ASYNCHRONOUS SIGINT (delivered at the read boundary,
+ *     which then returns EINTR after the handler runs).
+ * This exercises the whole personality — loader, ~45 syscalls, the NOMMU process
+ * model, and synchronous + async signal delivery — end to end with stock software.
  *
  * NOMMU process model on Zephyr (sequentialised, which is observationally
  * identical to vfork for the shell pattern since the parent waitpid()s anyway):
@@ -42,7 +44,8 @@
 
 #include "loader_hello_image.h"	  /* ove_test_hello_bflt[], _len  (BusyBox hush) */
 #include "loader_hello2_image.h"  /* ove_test_hello2_bflt[], _len (an external command) */
-#include "loader_sigtest_image.h" /* ove_test_sigtest_bflt[], _len (signal-delivery test) */
+#include "loader_sigtest_image.h" /* ove_test_sigtest_bflt[], _len (synchronous signal) */
+#include "loader_sigwait_image.h" /* ove_test_sigwait_bflt[], _len (async ^C interrupt) */
 
 /* ARM semihosting (host console + clean QEMU exit). */
 static long semihost(unsigned long op, void *arg)
@@ -114,9 +117,19 @@ static long capture_write(void *ctx, int fd, const void *buf, size_t len)
 	return (long)len;
 }
 
+/* Terminal line discipline: in ISIG mode (canonical, the default) a ^C in the
+ * input generates SIGINT for the foreground reader; the shell's line editor
+ * turns ISIG off (raw mode) so its own ^C stays a literal key. The seam peeks
+ * at TCSETS to track this. g_pending_sig latches a console-generated signal for
+ * the seam to deliver at the syscall boundary (the Linux async-delivery model). */
+static volatile int g_tty_isig = 1;
+static volatile int g_pending_sig;
+
 /* Scripted stdin: the shell read(0)s these command lines as if typed at a
  * console (the engine is the terminal). Deterministic, so no live-TTY flake. */
-static const char g_input[] = "/bin/sigtest\nexit\n";
+/* Run /bin/sigtest (synchronous raise), then /bin/sigwait followed by a ^C (0x03)
+ * that the console turns into an async SIGINT interrupting sigwait's read, then exit. */
+static const char g_input[] = "/bin/sigtest\n/bin/sigwait\n\003exit\n";
 static volatile size_t g_input_pos;
 
 static long console_read(void *ctx, int fd, void *buf, size_t len)
@@ -124,11 +137,21 @@ static long console_read(void *ctx, int fd, void *buf, size_t len)
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(fd);
 	/* Feed the scripted keystrokes; hush is in raw mode (FEATURE_EDITING) and
-	 * echoes them itself, so the engine does not echo. One line per block read. */
+	 * echoes them itself, so the engine does not echo. One line per block read.
+	 * A ^C in ISIG (canonical) mode is the tty interrupt key: latch SIGINT for
+	 * the seam to deliver and interrupt the read (EINTR), rather than return it. */
 	char *out = (char *)buf;
 	size_t n = 0;
 	while (n < len && g_input_pos < sizeof(g_input) - 1) {
-		char c = g_input[g_input_pos++];
+		char c = g_input[g_input_pos];
+		if (c == 0x03 && g_tty_isig) {
+			if (n > 0)
+				break; /* deliver buffered input first; ^C next read */
+			g_input_pos++; /* consume the ^C */
+			g_pending_sig = OVE_LNX_SIGINT;
+			return -OVE_LNX_EINTR;
+		}
+		g_input_pos++;
 		out[n++] = c;
 		if (c == '\n')
 			break;
@@ -191,7 +214,10 @@ static struct slot *current_slot(void)
  *                 r0=sig and lr=libc sa_restorer (which will call rt_sigreturn).
  * SIG_IGN       -> the kill simply succeeds.
  * SIG_DFL       -> default action: terminate (status 128+sig), park for reaping. */
-static void deliver_signal(struct arch_esf *esf, _callee_saved_t *callee, struct slot *s, int sig)
+/* `ret` is the value the interrupted syscall should return once the handler is
+ * done (0 for a kill/tkill, -EINTR for a console-interrupted read). */
+static void deliver_signal(struct arch_esf *esf, _callee_saved_t *callee, struct slot *s, int sig,
+			   long ret)
 {
 	ARG_UNUSED(callee);
 	if (sig < 1 || sig >= OVE_LNX_NSIG) {
@@ -200,7 +226,7 @@ static void deliver_signal(struct arch_esf *esf, _callee_saved_t *callee, struct
 	}
 	uintptr_t h = s->proc.sig_handler[sig];
 	if (h == OVE_LNX_SIG_IGN) {
-		esf->basic.r0 = 0;
+		esf->basic.r0 = (uint32_t)ret;
 		return;
 	}
 	if (h == OVE_LNX_SIG_DFL) {
@@ -209,7 +235,7 @@ static void deliver_signal(struct arch_esf *esf, _callee_saved_t *callee, struct
 		esf->basic.pc = ((uint32_t)&park_loop) | 1u;
 		return;
 	}
-	g_sig_save.r0 = 0; /* the kill/tkill itself returns success */
+	g_sig_save.r0 = (uint32_t)ret; /* the interrupted syscall's return value */
 	g_sig_save.r1 = esf->basic.r1;
 	g_sig_save.r2 = esf->basic.r2;
 	g_sig_save.r3 = esf->basic.r3;
@@ -253,13 +279,27 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 			struct slot *s = current_slot();
 			if (s) {
 				long nr = (long)callee->v4; /* r7 */
+				/* Track the tty ISIG mode so console ^C knows whether to raise
+				 * SIGINT (canonical) or pass ^C through (the shell's raw editor). */
+				if (nr == OVE_LNX_NR_ioctl) {
+					unsigned long cmd = (unsigned long)esf->basic.r1;
+					if (cmd == OVE_LNX_TCSETS || cmd == OVE_LNX_TCSETSW ||
+					    cmd == OVE_LNX_TCSETSF) {
+						const ove_lnx_termios *t =
+							(const ove_lnx_termios *)(uintptr_t)
+								esf->basic.r2;
+						if (t)
+							g_tty_isig =
+								(t->c_lflag & OVE_LNX_ISIG) ? 1 : 0;
+					}
+				}
 				/* Signal delivery (kill/tkill/tgkill) + return need the trap
 				 * frame, so the seam handles them directly. */
 				if (nr == OVE_LNX_NR_kill || nr == OVE_LNX_NR_tkill ||
 				    nr == OVE_LNX_NR_tgkill) {
 					int sig = (nr == OVE_LNX_NR_tgkill) ? (int)esf->basic.r2
 									    : (int)esf->basic.r1;
-					deliver_signal((struct arch_esf *)esf, callee, s, sig);
+					deliver_signal((struct arch_esf *)esf, callee, s, sig, 0);
 					return;
 				}
 				if (nr == OVE_LNX_NR_rt_sigreturn || nr == OVE_LNX_NR_sigreturn) {
@@ -304,6 +344,15 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 						((uint32_t)&park_loop) | 1u;
 					return;
 				}
+				/* A console ^C latched a signal during this syscall (e.g. a
+				 * read): deliver it now, resuming the syscall with its result
+				 * (-EINTR), the Linux at-the-boundary async-delivery model. */
+				if (g_pending_sig) {
+					int sig = g_pending_sig;
+					g_pending_sig = 0;
+					deliver_signal((struct arch_esf *)esf, callee, s, sig, r);
+					return;
+				}
 				((struct arch_esf *)esf)->basic.r0 = (uint32_t)r;
 				return;
 			}
@@ -346,6 +395,7 @@ static const ove_lnx_file_t g_rootfs[] = {
 	{"/bin", NULL, 0, OVE_LNX_S_IFDIR},
 	{"/bin/hello2", ove_test_hello2_bflt, sizeof(ove_test_hello2_bflt), 0},
 	{"/bin/sigtest", ove_test_sigtest_bflt, sizeof(ove_test_sigtest_bflt), 0},
+	{"/bin/sigwait", ove_test_sigwait_bflt, sizeof(ove_test_sigwait_bflt), 0},
 };
 #define G_ROOTFS_N ((int)(sizeof(g_rootfs) / sizeof(g_rootfs[0])))
 
@@ -422,7 +472,9 @@ static void resume_slot(int sidx, int ridx, long r0val)
  * handler and raise()s it: the engine delivers the signal (the handler prints
  * "caught SIGINT"), rt_sigreturn resumes after raise(). Demonstrates the prompt,
  * raw-mode line editing, vfork/execve, AND real signal delivery in one session. */
-#define EXPECT_MSG "/ # /bin/sigtest\nbefore raise\ncaught SIGINT\nafter raise\n/ # exit\n"
+#define EXPECT_MSG                                                     \
+	"/ # /bin/sigtest\nbefore raise\ncaught SIGINT\nafter raise\n" \
+	"/ # /bin/sigwait\nwaiting\n[SIGINT]\ndone\n/ # exit\n"
 
 int main(void)
 {
@@ -508,9 +560,8 @@ int main(void)
 
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0(
-			"[zephyr-linux] BusyBox hush TTY-INTERACTIVE ran /bin/sigtest: vfork/execve "
-			"+ REAL signal delivery (SIGINT handler ran, rt_sigreturn resumed) OK\n");
+		sh_write0("[zephyr-linux] BusyBox hush + REAL signals: sigtest (synchronous raise) "
+			  "AND sigwait (ASYNC ^C interrupts read -> SIGINT, handler runs) OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}

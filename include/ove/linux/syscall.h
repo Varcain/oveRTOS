@@ -150,6 +150,7 @@ extern "C" {
 
 /* Linux errno values returned (negated) on syscall failure. */
 #define OVE_LNX_ENOENT 2
+#define OVE_LNX_EINTR 4
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ECHILD 10
 #define OVE_LNX_ENOMEM 12
