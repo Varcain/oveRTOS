@@ -6,8 +6,13 @@ One firmware image, two worlds running side by side — a **native RTOS thread**
 a real Buildroot rootfs — exchanging data **in both directions**, then handing
 you an interactive shell.
 
-This is a first-class oveRTOS framework app, built by the `ove` build system for
-the Cortex-M33 **qemu-mps2-an521** board.
+This is a first-class oveRTOS framework app, built by the `ove` build system, and
+the *same demo* runs on two engines through the engine-agnostic personality core:
+
+| Engine | Board | CPU | Program isolation |
+|--------|-------|-----|-------------------|
+| **Zephyr**   | `qemu-mps2-an521` | Cortex-M33 | unprivileged + MPU (`CONFIG_USERSPACE`) |
+| **FreeRTOS** | `qemu-mps2-an500` | Cortex-M7  | privileged (functional parity; MPU isolation is a follow-up) |
 
 ## Phase 1 — bidirectional round trip
 
@@ -31,17 +36,21 @@ to the console, so **you can type commands** — `ls /`, `echo hi`,
 ## Build & run
 
 ```sh
+# Zephyr / Cortex-M33 (an521):
 ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop
-ove download        # first time only — fetches the Zephyr workspace
+# …or FreeRTOS / Cortex-M7 (an500):
+ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop
+
+ove download        # first time only — fetches the engine workspace
 ove build
 ove run
 ```
 
-`ove run` launches QEMU mps2-an521 with an interactive semihosting console
-(phase 1 is deterministic; phase 2 is your session):
+`ove run` launches QEMU with an interactive semihosting console (phase 1 is
+deterministic; phase 2 is your session):
 
 ```
-=== oveRTOS demo: a native RTOS thread + a Linux program, two-way (an521) ===
+=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===
 
 -- phase 1: RTOS thread <-> Linux program (bidirectional) --
 [rtos-feeder] -> Linux: reading-1/2/3
@@ -62,8 +71,12 @@ tmp      run      opt      linuxrc  init     bin
 
 The RTOS side is built entirely on the **engine-agnostic oveRTOS APIs**
 (`ove_thread`, `ove_queue`, `ove_time`) and the Linux side on `ove_lnx_run`
-(`include/ove/linux/run.h`); no direct Zephyr kernel calls. Semihosting is the
-console transport (an architecture facility, not an RTOS primitive).
+(`include/ove/linux/run.h`); no direct kernel calls — which is why the *same*
+`src/app.c` runs on both Zephyr and FreeRTOS (the only engine-specific line is
+the lifecycle: on FreeRTOS the demo runs in a task because the scheduler starts
+inside `ove_run()`, whereas Zephyr's `ove_main()` is already a thread).
+Semihosting is the console transport (an architecture facility, not an RTOS
+primitive).
 
 The personality's I/O callbacks run in the `svc`-trap (exception) context, so
 they do only non-blocking work there:
@@ -76,16 +89,23 @@ they do only non-blocking work there:
   `ove_queue_send_from_isr`; the RTOS worker blocks on `ove_queue_receive` in
   normal thread context.
 
-## The qemu-mps2-an521 board
+## The boards
 
-The Linux personality needs a Cortex-M33 with an MPU and `CONFIG_USERSPACE` to
-run a loaded program unprivileged and trap its `svc`. The framework's other QEMU
-board, `mps2-an500`, is a Cortex-M7 with no MPU node, so it can't host the
-personality. This app therefore targets `boards/qemu-mps2-an521` — a minimal M33
-USERSPACE board (no LVGL/audio sim). When `CONFIG_OVE_LINUX` is set, that board
-adds the one engine-seam link option (`-Wl,--wrap=z_do_kernel_oops`) and the
-rootfs-fixture include path; the `CONFIG_USERSPACE` knobs come from the
-personality block in `config/templates/prj.conf.j2`.
+**Zephyr — `qemu-mps2-an521` (Cortex-M33).** Runs the program *unprivileged* with
+its `svc` trapped via `CONFIG_USERSPACE`. A minimal M33 USERSPACE board (no
+LVGL/audio sim); when `CONFIG_OVE_LINUX` is set it adds the one engine-seam link
+option (`-Wl,--wrap=z_do_kernel_oops`) and the rootfs-fixture include path, and
+the `CONFIG_USERSPACE` knobs come from `config/templates/prj.conf.j2`.
+
+**FreeRTOS — `qemu-mps2-an500` (Cortex-M7).** Reuses the *stock* an500 FreeRTOS
+board (no dedicated board); when `CONFIG_OVE_LINUX` is set it (a) drops the sim
+framework + dashboard/trace/profiler (the personality is headless), (b) drops the
+`vPortSVCHandler → SVC_Handler` alias so the seam (`backends/freertos/freertos_lnx.c`)
+owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to
+`vPortSVCHandler`, and (c) adds the rootfs include + the interactive semihosting
+console in the run script. Phase 1 runs the program *privileged* on the non-MPU
+`ARM_CM7` port (functional parity); switching to the `ARM_CM4_MPU` port for
+unprivileged + MPU isolation is a follow-up.
 
 ## Files
 

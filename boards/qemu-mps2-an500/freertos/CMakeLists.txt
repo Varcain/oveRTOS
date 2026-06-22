@@ -35,6 +35,14 @@ ove_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG SHELL NVS FS)
 # BOARD backend excluded — qemu_board.c provides the implementation directly
 ove_exclude_backends(BOARD)
 
+# The Linux personality build is headless (no sim display/audio); it only needs
+# the embedded rootfs CPIO fixture on the include path. Everything below is the
+# sim framework, used by the normal (non-personality) an500 builds.
+if(OVE_LINUX)
+    ove_add_include_directories(${OVE_DIR}/tests/ontarget)
+    ove_add_stub_backends(AUDIO)
+else()
+
 # ── Sim framework (replaces lv_port_disp.c and qemu_audio.c) ──────
 # The sim framework provides unified display/audio/input through the
 # SHM guest transport (semihosting I/O to /dev/shm files).
@@ -65,6 +73,8 @@ else()
     ove_add_stub_backends(AUDIO)
 endif()
 ove_add_board_sources(${SIM_QEMU_SOURCES})
+
+endif() # OVE_LINUX (sim framework excluded for the headless personality build)
 
 # lwIP for networking
 if(OVE_NET)

@@ -40,6 +40,11 @@ macro(ove_add_freertos_kernel _port_path)
         ${FREERTOS_PATH}/portable/GCC/${_port_path}/port.c
         ${OVE_DIR}/backends/freertos/freertos_hooks.c
     )
+    # MPU ports (ARM_CMx_MPU) need the privileged API wrappers.
+    if(_port_path MATCHES "_MPU")
+        list(APPEND _OVE_FREERTOS_SOURCES
+            ${FREERTOS_PATH}/portable/Common/mpu_wrappers.c)
+    endif()
     if(NOT OVE_ZERO_HEAP)
         list(APPEND _OVE_FREERTOS_SOURCES
             ${FREERTOS_PATH}/portable/MemMang/heap_4.c)

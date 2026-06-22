@@ -282,6 +282,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/zephyr/zephyr_lnx.c")
 # The Zephyr seam (ove_lnx_run) traps svc #0 by interposing the engine's
 # software-fault handler; the app must add the link option:
 #   target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
+{% elif config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/freertos/freertos_lnx.c")
+# The FreeRTOS seam owns SVC_Handler (a strong symbol; the board FreeRTOSConfig.h
+# must NOT alias vPortSVCHandler->SVC_Handler) and uses the ARM_CM4_MPU port for
+# per-task privilege + MPU. No --wrap needed.
 {% endif %}
 {% endif %}
 

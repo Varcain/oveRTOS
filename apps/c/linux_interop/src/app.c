@@ -38,8 +38,11 @@
 #include "ove/thread.h"
 #include "ove/time.h"
 
+#include "ove/app.h"
 #include "ove/linux/run.h"
 #include "ove/linux/syscall.h"
+
+#include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
 
@@ -261,10 +264,19 @@ static ove_lnx_file_t g_rootfs[ROOTFS_MAX_FILES];
 static char g_rootfs_names[8192];
 static int g_rootfs_n;
 
-void ove_main(void)
+/* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
+ * this must run in a task; on Zephyr ove_main() is already a running thread and
+ * calls it inline. ove_main() (below) wires the per-engine lifecycle. */
+#ifdef CONFIG_OVE_RTOS_FREERTOS
+static ove_thread_t g_demo;
+static ove_thread_storage_t g_demo_storage;
+static uint8_t g_demo_stack[4096] __attribute__((aligned(8)));
+#endif
+
+static void demo_body(void *arg)
 {
-	sh_write0(
-		"=== oveRTOS demo: a native RTOS thread + a Linux program, two-way (an521) ===\n");
+	UNUSED(arg);
+	sh_write0("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
 
 	g_rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
 					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
@@ -340,4 +352,20 @@ void ove_main(void)
 
 	sh_write0("\n=== interop demo done (interactive shell exited) ===\n");
 	sh_exit(rc2 >= 0 ? 0 : 1);
+}
+
+void ove_main(void)
+{
+#ifdef CONFIG_OVE_RTOS_FREERTOS
+	/* FreeRTOS: the scheduler starts in ove_run(); run the demo in a task. */
+	if (ove_thread_init(&g_demo, &g_demo_storage, "demo", demo_body, NULL, OVE_PRIO_NORMAL,
+			    sizeof(g_demo_stack), g_demo_stack) != OVE_OK) {
+		sh_write0("[demo] FAIL: demo thread init\n");
+		sh_exit(1);
+	}
+	ove_run(); /* ove_thread_start_scheduler() — never returns */
+#else
+	/* Zephyr: ove_main() already runs as a thread with the scheduler up. */
+	demo_body(NULL);
+#endif
 }

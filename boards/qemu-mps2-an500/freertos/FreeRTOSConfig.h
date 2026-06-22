@@ -134,8 +134,13 @@ extern void ove_backend_trace_task_blocking(void);
 #define traceTASK_DELAY_UNTIL(xTimeToWake) ove_backend_trace_task_blocking()
 #endif
 
-/* Map FreeRTOS port handlers to CMSIS names */
+/* Map FreeRTOS port handlers to CMSIS names. The Linux personality seam owns the
+ * SVC_Handler vector (to trap a loaded program's svc), so under CONFIG_OVE_LINUX
+ * this alias is dropped: FreeRTOS's handler stays named vPortSVCHandler and the
+ * seam (backends/freertos/freertos_lnx.c) forwards the start-scheduler svc to it. */
+#ifndef CONFIG_OVE_LINUX
 #define vPortSVCHandler SVC_Handler
+#endif
 #define xPortPendSVHandler PendSV_Handler
 
 #endif /* FREERTOS_CONFIG_H */

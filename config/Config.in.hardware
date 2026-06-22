@@ -12,12 +12,16 @@ config OVE_BOARD_STM32F746G_DISCO
 config OVE_BOARD_QEMU_MPS2_AN500
     bool "QEMU MPS2-AN500 (Cortex-M7)"
     depends on OVE_RTOS_FREERTOS || OVE_RTOS_ZEPHYR || OVE_RTOS_NUTTX
-    select OVE_SIM
+    # The Linux personality is headless: no sim framework, trace stream, or
+    # profiler (all of which pull the sim display transport). Normal an500
+    # builds keep the sim dashboard.
+    select OVE_SIM if !OVE_LINUX
     select OVE_DEBUG_BUILD
     help
       ARM MPS2-AN500 board emulated by QEMU.
       Cortex-M7 @ 25 MHz, 4 MB Flash, 4 MB RAM.
-      Uses semihosting for I/O and sim dashboard for display.
+      Uses semihosting for I/O and sim dashboard for display
+      (the Linux personality build is headless — semihosting console only).
 
 config OVE_BOARD_QEMU_MPS2_AN521
     bool "QEMU MPS2-AN521 (Cortex-M33, USERSPACE)"
@@ -28,6 +32,7 @@ config OVE_BOARD_QEMU_MPS2_AN521
       Cortex-M33 @ 25 MHz, 4 MB Flash, 4 MB RAM, MPU + CONFIG_USERSPACE.
       The substrate for the Linux personality: runs a loaded program
       unprivileged and traps its svc. Console + exit via semihosting.
+
 
 config OVE_BOARD_HOST_PC
     bool "Host PC (native)"

@@ -67,6 +67,34 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# ── Linux personality build: headless, interactive semihosting console ───────
+# The personality is no-sim; route SYS_READC/SYS_WRITEC to a dedicated stdio
+# chardev (serial/monitor/display off) so the shell can read keystrokes —
+# `target=native` + `-nographic` (the sim path below) does NOT route stdin to
+# semihosting. Detected via CONFIG_OVE_LINUX in the workspace .config.
+PERSONALITY_CFG="$(dirname "$(realpath "${ELF}")")/../.config"
+if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_CFG}"; then
+    PERS_ARGS=(
+        -machine "${QEMU_MACHINE}" -m 16
+        -semihosting-config enable=on,chardev=c0 -chardev stdio,id=c0
+        -serial none -monitor none -display none
+        -kernel "${ELF}"
+    )
+    SAVED_TTY=""
+    if [ -t 0 ]; then
+        SAVED_TTY="$(stty -g 2>/dev/null || true)"
+        stty -icanon -echo -icrnl min 1 time 0 2>/dev/null || true
+    fi
+    pers_restore() { [ -n "${SAVED_TTY}" ] && stty "${SAVED_TTY}" 2>/dev/null || true; }
+    trap pers_restore EXIT INT TERM
+    if [ -n "${QEMU_TIMEOUT}" ]; then
+        timeout --foreground "${QEMU_TIMEOUT}" qemu-system-arm "${PERS_ARGS[@]}" "${EXTRA_ARGS[@]}"
+    else
+        qemu-system-arm "${PERS_ARGS[@]}" "${EXTRA_ARGS[@]}"
+    fi
+    exit $?
+fi
+
 # Kill any stale QEMU instance writing to the same shm files.
 STALE_QEMU=$(pgrep -f "qemu-system-arm.*ove-fb" 2>/dev/null || true)
 if [ -n "${STALE_QEMU}" ]; then
