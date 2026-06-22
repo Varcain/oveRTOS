@@ -7,9 +7,11 @@
  *
  * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): load a
  * REAL Buildroot uClibc-ng static bFLT and run it as an unprivileged (K_USER)
- * thread, trapping its Linux syscalls. The program cat's /etc/motd and ls's
- * /etc from the read-only in-memory rootfs — exercising the file + directory
- * syscalls (open/read/close/statx/getdents64) end-to-end on real libc code.
+ * thread, trapping its Linux syscalls. The launcher execve()s /bin/hello2 from
+ * the rootfs; main reloads that bFLT, rebuilds the (per-program) MPU domain +
+ * stack, and relaunches the thread — exercising the process model's image
+ * replacement (execve) end-to-end on real libc code. The program runs in its
+ * own k_mem_domain so privileged main (default domain) can always reload it.
  *
  *   uClibc crt0 (svc #0, nr in r7)  ->  Zephyr routes the unprivileged "unused"
  *   svc to z_do_kernel_oops, which linker --wrap reroutes to our seam  ->
@@ -38,7 +40,8 @@
 #include "ove/linux/syscall.h"
 #include "ove/loader.h"
 
-#include "loader_hello_image.h" /* ove_test_hello_bflt[], _len */
+#include "loader_hello_image.h"	 /* ove_test_hello_bflt[], _len  (the launcher) */
+#include "loader_hello2_image.h" /* ove_test_hello2_bflt[], _len (execve target) */
 
 /* ARM semihosting (host console + clean QEMU exit). */
 static long semihost(unsigned long op, void *arg)
@@ -107,10 +110,11 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 						 (int32_t)callee->v2);
 			if (r == -OVE_LNX_ENOSYS)
 				g_last_enosys = nr;
-			if (g_proc.exited) {
-				/* exit/exit_group: don't resume into uClibc's
-				 * post-exit path (it would abort and loop). Park
-				 * the thread; main reaps it with the real status. */
+			if (g_proc.exited || g_proc.exec_pending) {
+				/* exit/exit_group, or execve image replacement: do
+				 * NOT resume the old image (it would run past the
+				 * syscall and race main). Park; main reaps it (exit)
+				 * or relaunches it (execve). */
 				((struct arch_esf *)esf)->basic.pc = ((uint32_t)&park_loop) | 1u;
 				return;
 			}
@@ -149,17 +153,29 @@ static long capture_write(void *ctx, int fd, const void *buf, size_t len)
 K_APPMEM_PARTITION_DEFINE(prog_partition);
 K_APP_BMEM(prog_partition) static uint8_t prog_region[PROG_REGION_SIZE] __aligned(32);
 
-/* A small read-only rootfs: the program cat's /etc/motd and ls's /etc. */
+/* A small read-only rootfs: /etc/motd plus /bin/hello2, the execve target. */
 static const uint8_t g_motd[] = "hello from uClibc\n";
 static const ove_lnx_file_t g_rootfs[] = {
 	{"/", NULL, 0, OVE_LNX_S_IFDIR},
 	{"/etc", NULL, 0, OVE_LNX_S_IFDIR},
 	{"/etc/motd", g_motd, sizeof(g_motd) - 1, 0},
+	{"/bin", NULL, 0, OVE_LNX_S_IFDIR},
+	{"/bin/hello2", ove_test_hello2_bflt, sizeof(ove_test_hello2_bflt), 0},
 };
 #define G_ROOTFS_N ((int)(sizeof(g_rootfs) / sizeof(g_rootfs[0])))
 
 static struct k_mem_partition text_part;
 static struct k_mem_partition data_part;
+
+/*
+ * The program runs in its OWN memory domain (program partitions + the libc/heap
+ * partitions a user thread needs), NOT the default domain. That leaves the
+ * privileged main thread in the unrestricted default domain so it can always
+ * (re)load the bFLT into prog_region — needed for execve image replacement.
+ */
+extern struct k_mem_partition z_libc_partition;
+extern struct k_mem_partition z_malloc_partition;
+static struct k_mem_domain prog_domain;
 
 /* User-mode trampoline: enter the loaded program with the System V SP and the
  * static-fini r0 the crt0 expects. */
@@ -178,69 +194,107 @@ static void lnx_trampoline(void *sp, void *entry, void *unused)
 K_THREAD_STACK_DEFINE(tramp_stack, 1024);
 static struct k_thread prog_thread;
 
-#define EXPECT_MSG "hello from uClibc\nmotd\n"
+static k_tid_t g_tid;
+static ove_arena_t g_arena; /* persists while the user thread runs */
+static int g_parts_added;
 
-int main(void)
+/* Captured execve argv, copied out of the process before it is re-initialised. */
+static char g_exec_args[OVE_LNX_EXEC_ARGBUF];
+static const char *g_exec_ptrs[OVE_LNX_EXEC_MAXARGS + 1];
+
+#define EXPECT_MSG "execed: hello2\n"
+
+/*
+ * Load a bFLT into prog_region and launch it as the unprivileged user thread in
+ * its own MPU domain. main stays in the default domain, so reloading the image
+ * (for the initial program and for each execve replacement) never faults.
+ */
+static int run_program(const uint8_t *data, size_t len, int argc, const char *const argv[])
 {
-	sh_write0("=== Zephyr uClibc bFLT personality test (an521) ===\n");
-
-	/* Load the real uClibc bFLT (copies text+data, zeroes bss, relocates). */
-	ove_flat_t prog;
-	if (ove_loader_load_flat(&prog, ove_test_hello_bflt, ove_test_hello_bflt_len, prog_region,
-				 sizeof(prog_region)) != OVE_OK) {
-		sh_write0("[zephyr-linux] FAIL: bFLT load failed\n");
-		sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
-		sh_exit(1);
+	/* Tear down the previous image's program partitions (its thread is already
+	 * aborted); the libc/heap partitions in prog_domain stay. */
+	if (g_parts_added) {
+		k_mem_domain_remove_partition(&prog_domain, &text_part);
+		k_mem_domain_remove_partition(&prog_domain, &data_part);
 	}
 
-	/* Carve the program's RW tail (above the loaded image) into an arena for
-	 * brk + anonymous mmap, then the startup stack. Both live in the program's
-	 * MPU domain so the unprivileged program can touch malloc'd memory + stack. */
+	ove_flat_t prog;
+	if (ove_loader_load_flat(&prog, data, len, prog_region, sizeof(prog_region)) != OVE_OK)
+		return -1;
+
 	uint8_t *rw = prog_region + ((prog.region_used + 15u) & ~15u);
 	uint8_t *rw_end = prog_region + sizeof(prog_region);
-	ove_arena_t arena;
-	ove_arena_init(&arena, rw, PROG_ARENA_SIZE);
-	ove_lnx_proc_init(&g_proc, &arena, 0x8000);
+	ove_arena_init(&g_arena, rw, PROG_ARENA_SIZE);
+	ove_lnx_proc_init(&g_proc, &g_arena, 0x8000);
 	g_proc.write_fn = capture_write;
 	ove_lnx_proc_set_rootfs(&g_proc, g_rootfs, G_ROOTFS_N);
 
-	/* Startup stack above the arena, in the same RW partition. */
 	uint8_t *stack_lo = rw + PROG_ARENA_SIZE;
-	size_t stack_sz = (size_t)(rw_end - stack_lo);
-	const char *const argv[] = {"hello", NULL};
-	void *sp = ove_lnx_setup_stack(stack_lo, stack_sz, 1, argv, NULL);
-	if (!sp) {
-		sh_write0("[zephyr-linux] FAIL: startup stack setup failed\n");
-		sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
-		sh_exit(1);
-	}
+	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL);
+	if (!sp)
+		return -1;
 
-	g_lnx_active = 1;
+	g_tid = k_thread_create(&prog_thread, tramp_stack, K_THREAD_STACK_SIZEOF(tramp_stack),
+				lnx_trampoline, sp, (void *)prog.entry, NULL, 5, K_USER, K_FOREVER);
 
-	k_tid_t tid = k_thread_create(&prog_thread, tramp_stack, K_THREAD_STACK_SIZEOF(tramp_stack),
-				      lnx_trampoline, sp, (void *)prog.entry, NULL, 5, K_USER,
-				      K_FOREVER);
-
-	/* W^X split: text RX, data + bss + program stack RW (32-aligned by elf2flt). */
 	text_part.start = (uintptr_t)prog_region;
 	text_part.size = prog.text_size;
 	text_part.attr = K_MEM_PARTITION_P_RX_U_RX;
 	data_part.start = (uintptr_t)prog_region + prog.text_size;
 	data_part.size = sizeof(prog_region) - prog.text_size;
 	data_part.attr = K_MEM_PARTITION_P_RW_U_RW;
-	int rc = k_mem_domain_add_partition(&k_mem_domain_default, &text_part);
-	rc |= k_mem_domain_add_partition(&k_mem_domain_default, &data_part);
-	if (rc != 0) {
-		sh_write0("[zephyr-linux] FAIL: program MPU mapping rejected\n");
+	if (!g_parts_added) {
+		struct k_mem_partition *base[] = {&z_libc_partition, &z_malloc_partition};
+		if (k_mem_domain_init(&prog_domain, 2, base) != 0)
+			return -1;
+	}
+	if (k_mem_domain_add_partition(&prog_domain, &text_part) != 0 ||
+	    k_mem_domain_add_partition(&prog_domain, &data_part) != 0)
+		return -1;
+	g_parts_added = 1;
+	k_mem_domain_add_thread(&prog_domain, g_tid);
+
+	k_thread_start(g_tid);
+	return 0;
+}
+
+int main(void)
+{
+	sh_write0("=== Zephyr uClibc execve personality test (an521) ===\n");
+
+	g_lnx_active = 1;
+	const char *const init_argv[] = {"launcher", NULL};
+	if (run_program(ove_test_hello_bflt, ove_test_hello_bflt_len, 1, init_argv) != 0) {
+		sh_write0("[zephyr-linux] FAIL: initial program launch failed\n");
 		sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
 		sh_exit(1);
 	}
 
-	k_thread_start(tid);
-
-	/* uClibc loops after exit_group; poll the exit latch, then reclaim. */
+	/* Drive the program(s): service execve image replacements, stop on exit. */
 	int ok = 0;
-	for (int i = 0; i < 2000; i++) {
+	for (int i = 0; i < 4000; i++) {
+		if (g_proc.exec_pending) {
+			/* Copy the captured argv out before re-init clobbers the proc. */
+			int idx = g_proc.exec_file_idx;
+			int eargc = g_proc.exec_argc;
+			size_t off = 0;
+			for (int j = 0; j < eargc; j++) {
+				size_t n = strlen(g_proc.exec_argv[j]) + 1;
+				memcpy(g_exec_args + off, g_proc.exec_argv[j], n);
+				g_exec_ptrs[j] = g_exec_args + off;
+				off += n;
+			}
+			g_exec_ptrs[eargc] = NULL;
+			const uint8_t *ed = g_rootfs[idx].data;
+			size_t el = g_rootfs[idx].size;
+			k_thread_abort(g_tid);
+			if (run_program(ed, el, eargc, g_exec_ptrs) != 0) {
+				sh_write0("[zephyr-linux] FAIL: execve relaunch failed\n");
+				sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
+				sh_exit(1);
+			}
+			continue;
+		}
 		if (g_proc.exited) {
 			ok = 1;
 			break;
@@ -248,12 +302,12 @@ int main(void)
 		k_msleep(1);
 	}
 	g_lnx_active = 0;
-	k_thread_abort(tid);
+	k_thread_abort(g_tid);
 
-	if (ok && g_proc.exit_status == 1 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
+	if (ok && g_proc.exit_status == 2 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] uClibc bFLT ran unprivileged: cat /etc/motd + ls /etc "
-			  "(open/read/statx/getdents) trapped OK\n");
+		sh_write0("[zephyr-linux] launcher execve(/bin/hello2) replaced the image + ran it "
+			  "OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
