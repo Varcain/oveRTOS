@@ -19,11 +19,13 @@ set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 target_sources(app PRIVATE
     src/main.c
     ${OVE_ROOT}/backends/common/ove_arena.c
+    ${OVE_ROOT}/loader/ove_loader.c
     ${OVE_ROOT}/linux/ove_linux_syscall.c
 )
 target_include_directories(app PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}  # ove_config.h
+    ${CMAKE_CURRENT_SOURCE_DIR}      # ove_config.h
     ${OVE_ROOT}/include
+    ${OVE_ROOT}/tests/ontarget       # loader_lnx_mod_image.h (bFLT fixture)
 )
 
 # Interpose the engine's software-fault handler at link time (no Zephyr source
