@@ -96,6 +96,25 @@ static long capture_write(void *ctx, int fd, const void *buf, size_t len)
 	return (long)len;
 }
 
+/* Scripted stdin: the shell read(0)s these command lines as if typed at a
+ * console (the engine is the terminal). Deterministic, so no live-TTY flake. */
+static const char g_input[] = "hello2\nhello2\nexit\n";
+static volatile size_t g_input_pos;
+
+static long console_read(void *ctx, int fd, void *buf, size_t len)
+{
+	ARG_UNUSED(ctx);
+	ARG_UNUSED(fd);
+	size_t avail = sizeof(g_input) - 1 - g_input_pos;
+	if (avail == 0)
+		return 0; /* EOF */
+	if (len > avail)
+		len = avail;
+	memcpy(buf, g_input + g_input_pos, len);
+	g_input_pos += len;
+	return (long)len;
+}
+
 /* ---- per-process slots ----------------------------------------------------- */
 #define NSLOT 2
 struct slot {
@@ -270,6 +289,7 @@ static int launch_slot(int sidx, int ridx, const uint8_t *data, size_t len, int 
 	ove_arena_init(&g_arenas[ridx], rw, PROG_ARENA_SIZE);
 	ove_lnx_proc_init(&g_slots[sidx].proc, &g_arenas[ridx], 0x8000);
 	g_slots[sidx].proc.write_fn = capture_write;
+	g_slots[sidx].proc.read_fn = console_read;
 	g_slots[sidx].proc.pid = pid;
 	g_slots[sidx].proc.ppid = ppid;
 	ove_lnx_proc_set_rootfs(&g_slots[sidx].proc, g_rootfs, G_ROOTFS_N);
@@ -298,8 +318,9 @@ static void resume_slot(int sidx, int ridx, long r0val)
 	k_thread_start(g_slots[sidx].tid);
 }
 
-/* The shell spawns /bin/hello2 three times in a loop, then prints. */
-#define EXPECT_MSG "execed: hello2\nexeced: hello2\nexeced: hello2\nshell done\n"
+/* The shell reads "hello2\nhello2\nexit\n" from stdin, spawning /bin/hello2 for
+ * each line (prompt "$ " before each read), then "bye" on exit. */
+#define EXPECT_MSG "$ execed: hello2\n$ execed: hello2\n$ bye\n"
 
 int main(void)
 {
@@ -385,8 +406,8 @@ int main(void)
 
 	if (ok && g_slots[0].proc.exit_status == 0 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] shell spawned 3 commands (vfork/execve/wait loop), "
-			  "parent survived OK\n");
+		sh_write0("[zephyr-linux] interactive shell read commands from stdin + spawned "
+			  "each (vfork/execve/wait), parent survived OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
