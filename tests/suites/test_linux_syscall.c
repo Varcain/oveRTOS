@@ -174,8 +174,9 @@ static void test_lnx_init_stubs(void **state)
 	 * arg has no slot (the shell then retries low for its interactive fd). */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_fcntl64, 0, OVE_LNX_F_DUPFD, 3, 0, 0, 0),
 			 3);
+	/* A too-high arg (the shell asks for >=255) falls back to the lowest free fd. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_fcntl64, 0, OVE_LNX_F_DUPFD, 255, 0, 0, 0),
-			 -OVE_LNX_EINVAL);
+			 4);
 	/* poll reports the console immediately ready. */
 	ove_lnx_pollfd pfd = {.fd = 0, .events = OVE_LNX_POLLIN, .revents = 0};
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pfd, 1, 0, 0, 0, 0),

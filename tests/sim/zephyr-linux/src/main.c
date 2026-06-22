@@ -5,18 +5,15 @@
  *
  * This file is part of oveRTOS.
  *
- * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): a real
- * BusyBox 1.36 hush (uClibc-ng, static bFLT) runs tty-interactive as the
- * unprivileged init program, reads commands from stdin, and spawns two helpers
- * via vfork/execve/wait, exercising REAL signal delivery both ways:
- *   - /bin/sigtest  installs a SIGINT handler and raise()s it (SYNCHRONOUS);
- *   - /bin/sigwait  blocks in read() and is interrupted by a console ^C, which
- *     the tty turns into an ASYNCHRONOUS SIGINT (delivered at the read boundary,
- *     which then returns EINTR after the handler runs);
- *   - /bin/pipewrite | /bin/pipecat  a PIPELINE: hush wires the two via pipe() +
- *     dup2(), runs both, and the data flows pipewrite -> pipe -> pipecat -> tty.
- * This exercises the whole personality — loader, ~50 syscalls, the NOMMU process
- * model, signals (sync + async), and pipes — end to end with stock software.
+ * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): boot a
+ * real minimal Buildroot rootfs and run an interactive shell. An embedded newc
+ * CPIO (a Buildroot rootfs.cpio: BusyBox 1.38 + /etc + /dev + applet symlinks)
+ * is parsed into the personality's rootfs; the engine execs /bin/busybox as the
+ * "sh" init process. The shell then reads commands from stdin and runs them —
+ * the echo applet (resolved /bin/echo -> busybox via the symlink) and the pwd
+ * builtin. This boots stock upstream userspace from a stock rootfs image,
+ * unprivileged, on a NOMMU MCU. (Signals + pipes are covered by host tests and
+ * earlier on-target milestones; this test focuses on the rootfs boot.)
  *
  * NOMMU process model on Zephyr (sequentialised, which is observationally
  * identical to vfork for the shell pattern since the parent waitpid()s anyway):
@@ -44,12 +41,7 @@
 #include "ove/linux/syscall.h"
 #include "ove/loader.h"
 
-#include "loader_hello_image.h"	    /* ove_test_hello_bflt[], _len  (BusyBox hush) */
-#include "loader_hello2_image.h"    /* ove_test_hello2_bflt[], _len (an external command) */
-#include "loader_sigtest_image.h"   /* ove_test_sigtest_bflt[], _len (synchronous signal) */
-#include "loader_sigwait_image.h"   /* ove_test_sigwait_bflt[], _len (async ^C interrupt) */
-#include "loader_pipewrite_image.h" /* ove_test_pipewrite_bflt[], _len (pipeline writer) */
-#include "loader_pipecat_image.h"   /* ove_test_pipecat_bflt[], _len (pipeline reader) */
+#include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len (a real Buildroot rootfs) */
 
 /* ARM semihosting (host console + clean QEMU exit). */
 static long semihost(unsigned long op, void *arg)
@@ -87,7 +79,7 @@ static void sh_exit(unsigned int code)
 }
 
 /* ---- program memory: two regions, so a parent + child image coexist -------- */
-#define PROG_REGION_SIZE 0x40000u /* 256K: BusyBox loads ~101K + arena + stack */
+#define PROG_REGION_SIZE 0x60000u /* 384K: BusyBox loads ~129K + arena + stack */
 #define PROG_ARENA_SIZE 0x18000u  /* 96K heap for hush */
 #define NREG 2
 K_APPMEM_PARTITION_DEFINE(prog_partition);
@@ -130,10 +122,9 @@ static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
 
 /* Scripted stdin (the engine is the terminal; deterministic, no live-TTY flake).
- * A full tour: sigtest (synchronous raise), sigwait + a ^C (0x03) that becomes an
- * async SIGINT interrupting its read, a pipeline pipewrite|pipecat, then exit. */
-static const char g_input[] =
-	"/bin/sigtest\n/bin/sigwait\n\003/bin/pipewrite | /bin/pipecat\nexit\n";
+ * Driven into the booted shell: the echo applet (resolved /bin/echo -> busybox),
+ * the pwd builtin, then exit. */
+static const char g_input[] = "echo hello\npwd\nexit\n";
 static volatile size_t g_input_pos;
 
 static long console_read(void *ctx, int fd, void *buf, size_t len)
@@ -394,16 +385,20 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 	__builtin_unreachable();
 }
 
-/* ---- rootfs ---------------------------------------------------------------- */
-static const ove_lnx_file_t g_rootfs[] = {
-	{"/bin", NULL, 0, OVE_LNX_S_IFDIR},
-	{"/bin/hello2", ove_test_hello2_bflt, sizeof(ove_test_hello2_bflt), 0},
-	{"/bin/sigtest", ove_test_sigtest_bflt, sizeof(ove_test_sigtest_bflt), 0},
-	{"/bin/sigwait", ove_test_sigwait_bflt, sizeof(ove_test_sigwait_bflt), 0},
-	{"/bin/pipewrite", ove_test_pipewrite_bflt, sizeof(ove_test_pipewrite_bflt), 0},
-	{"/bin/pipecat", ove_test_pipecat_bflt, sizeof(ove_test_pipecat_bflt), 0},
-};
-#define G_ROOTFS_N ((int)(sizeof(g_rootfs) / sizeof(g_rootfs[0])))
+/* ---- rootfs (parsed at boot from the embedded Buildroot CPIO) -------------- */
+#define ROOTFS_MAX_FILES 256
+static ove_lnx_file_t g_rootfs[ROOTFS_MAX_FILES];
+static char g_rootfs_names[8192];
+static int g_rootfs_n;
+
+/* Find a rootfs entry by absolute path; -1 if absent. */
+static int rootfs_find(const char *path)
+{
+	for (int i = 0; i < g_rootfs_n; i++)
+		if (strcmp(g_rootfs[i].path, path) == 0)
+			return i;
+	return -1;
+}
 
 /* (Re)build region ridx's MPU domain (W^X text/data split) for a loaded image. */
 static int setup_domain(int ridx, const ove_flat_t *prog)
@@ -448,7 +443,7 @@ static int launch_slot(int sidx, int ridx, const uint8_t *data, size_t len, int 
 	g_slots[sidx].proc.read_fn = console_read;
 	g_slots[sidx].proc.pid = pid;
 	g_slots[sidx].proc.ppid = ppid;
-	ove_lnx_proc_set_rootfs(&g_slots[sidx].proc, g_rootfs, G_ROOTFS_N);
+	ove_lnx_proc_set_rootfs(&g_slots[sidx].proc, g_rootfs, g_rootfs_n);
 	uint8_t *stack_lo = rw + PROG_ARENA_SIZE;
 	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL);
 	if (!sp || setup_domain(ridx, &prog) != 0)
@@ -478,20 +473,28 @@ static void resume_slot(int sidx, int ridx, long r0val)
  * handler and raise()s it: the engine delivers the signal (the handler prints
  * "caught SIGINT"), rt_sigreturn resumes after raise(). Demonstrates the prompt,
  * raw-mode line editing, vfork/execve, AND real signal delivery in one session. */
-#define EXPECT_MSG                                                     \
-	"/ # /bin/sigtest\nbefore raise\ncaught SIGINT\nafter raise\n" \
-	"/ # /bin/sigwait\nwaiting\n[SIGINT]\ndone\n"                  \
-	"/ # /bin/pipewrite | /bin/pipecat\nfrom-writer\n/ # exit\n"
+#define EXPECT_MSG "/ # echo hello\nhello\n/ # pwd\n/\n/ # exit\n"
 
 int main(void)
 {
-	sh_write0("=== Zephyr Linux personality: BusyBox hush interactive shell (an521) ===\n");
+	sh_write0("=== Zephyr Linux personality: Buildroot rootfs boot (an521) ===\n");
+
+	/* Parse the embedded Buildroot CPIO into the rootfs table. */
+	g_rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
+					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
+					    sizeof(g_rootfs_names));
+	int bb = (g_rootfs_n > 0) ? rootfs_find("/bin/busybox") : -1;
+	if (bb < 0) {
+		sh_write0("[zephyr-linux] FAIL: rootfs parse / no /bin/busybox\n");
+		sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
+		sh_exit(1);
+	}
 
 	g_lnx_active = 1;
+	/* init: run /bin/busybox as "sh" (standalone applets need no symlink). */
 	const char *const sh_argv[] = {"sh", NULL};
-	if (launch_slot(0, 0, ove_test_hello_bflt, ove_test_hello_bflt_len, 1, 0, 1, sh_argv) !=
-	    0) {
-		sh_write0("[zephyr-linux] FAIL: shell launch failed\n");
+	if (launch_slot(0, 0, g_rootfs[bb].data, g_rootfs[bb].size, 1, 0, 1, sh_argv) != 0) {
+		sh_write0("[zephyr-linux] FAIL: busybox launch failed\n");
 		sh_write0("\n=== Summary: 1 test group(s) had failures ===\n");
 		sh_exit(1);
 	}
@@ -576,8 +579,9 @@ int main(void)
 
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] BusyBox hush full tour: signals (sync raise + async ^C) "
-			  "AND a pipeline (pipewrite | pipecat via pipe/dup2, two children) OK\n");
+		sh_write0(
+			"[zephyr-linux] booted a real Buildroot rootfs (CPIO) -> /bin/busybox as "
+			"an interactive shell; ran the echo applet + pwd builtin, then exit OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}

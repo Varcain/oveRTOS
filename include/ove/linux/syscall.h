@@ -61,9 +61,12 @@ extern "C" {
 #define OVE_LNX_NR_execve 11
 #define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR_getpid 20
+#define OVE_LNX_NR_setpgid 57
 #define OVE_LNX_NR_getppid 64
 #define OVE_LNX_NR_wait4 114
+#define OVE_LNX_NR_uname 122
 #define OVE_LNX_NR_poll 168
+#define OVE_LNX_NR_ppoll_time64 414
 #define OVE_LNX_NR_brk 45
 #define OVE_LNX_NR_ioctl 54
 #define OVE_LNX_NR_munmap 91
@@ -104,6 +107,7 @@ extern "C" {
 #define OVE_LNX_S_IFREG 0x8000u
 #define OVE_LNX_S_IFDIR 0x4000u
 #define OVE_LNX_S_IFCHR 0x2000u
+#define OVE_LNX_S_IFLNK 0xa000u
 /* getdents64 d_type values. */
 #define OVE_LNX_DT_DIR 4
 #define OVE_LNX_DT_REG 8

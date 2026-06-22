@@ -177,8 +177,7 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 		if (strcmp(name, "TRAILER!!!") == 0)
 			break;
 		size_t data_off = (pos + 110 + nsize + 3u) & ~(size_t)3u;
-		int isreg = (mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFREG;
-		if (isreg && data_off + fsize > len)
+		if (fsize && data_off + fsize > len)
 			return -1;
 		if (n >= max)
 			return -1;
@@ -196,8 +195,10 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 		memcpy(path + 1, nm, l + 1);
 		nb += 2 + l;
 		out[n].path = path;
-		out[n].data = isreg ? (cpio + data_off) : NULL;
-		out[n].size = isreg ? fsize : 0;
+		/* Keep content for regular files AND symlinks (the link target string),
+		 * so exec can resolve /bin/<applet> -> busybox. Dirs have no content. */
+		out[n].data = fsize ? (cpio + data_off) : NULL;
+		out[n].size = fsize;
 		out[n].mode = mode;
 		n++;
 		pos = (data_off + fsize + 3u) & ~(size_t)3u;
@@ -725,6 +726,39 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	}
 	if (idx < 0)
 		return -OVE_LNX_ENOENT;
+	/* Follow symlinks, e.g. /bin/echo -> busybox (Buildroot installs applets as
+	 * symlinks). The argv (argv[0] = "echo") is kept, so busybox runs that applet. */
+	for (int hop = 0; hop < 8; hop++) {
+		const ove_lnx_file_t *lnk = &p->fs[idx];
+		if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK)
+			break;
+		size_t tl = lnk->size;
+		char abspath[128];
+		if (!lnk->data || tl == 0 || tl >= sizeof(abspath))
+			return -OVE_LNX_ENOENT;
+		if (((const char *)lnk->data)[0] == '/') {
+			memcpy(abspath, lnk->data, tl);
+			abspath[tl] = 0;
+		} else { /* relative to the symlink's own directory */
+			const char *base = strrchr(lnk->path, '/');
+			size_t dir = base ? (size_t)(base - lnk->path + 1) : 0;
+			if (dir + tl >= sizeof(abspath))
+				return -OVE_LNX_ENOENT;
+			memcpy(abspath, lnk->path, dir);
+			memcpy(abspath + dir, lnk->data, tl);
+			abspath[dir + tl] = 0;
+		}
+		int ni = -1;
+		for (int i = 0; i < p->fs_count; i++) {
+			if (strcmp(p->fs[i].path, abspath) == 0) {
+				ni = i;
+				break;
+			}
+		}
+		if (ni < 0)
+			return -OVE_LNX_ENOENT;
+		idx = ni;
+	}
 	if ((file_mode(&p->fs[idx]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
 		return -OVE_LNX_EACCES;
 
@@ -789,17 +823,20 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		if (!s)
 			return -OVE_LNX_EBADF;
 		if ((int)a1 == OVE_LNX_F_DUPFD || (int)a1 == OVE_LNX_F_DUPFD_CLOEXEC) {
-			/* Duplicate to the lowest free fd >= arg. The shell dups stdin
-			 * to a high fd for its interactive fd; a high arg simply finds
-			 * no slot here, so it retries with a low one (which we satisfy). */
-			int from = (int)a2 < 0 ? 0 : (int)a2;
+			/* Duplicate to the lowest free fd >= arg. The shell asks for a high
+			 * fd (>=255) for its interactive fd; our table is small, so a too-high
+			 * arg falls back to any free fd (the shell tolerates a low one and
+			 * relocates it if needed). */
+			int from = (int)a2;
+			if (from < 0 || from >= OVE_LNX_MAX_FDS)
+				from = 0;
 			for (int nfd = from; nfd < OVE_LNX_MAX_FDS; nfd++) {
 				if (proc->fds[nfd].kind == OVE_LNX_FD_FREE) {
 					proc->fds[nfd] = *s;
 					return nfd;
 				}
 			}
-			return -OVE_LNX_EINVAL;
+			return -OVE_LNX_EMFILE;
 		}
 		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
 		return 0;
@@ -830,9 +867,25 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return 2;
 	}
 	case OVE_LNX_NR_prctl:
+	case OVE_LNX_NR_setpgid:
 		return 0; /* process-control setup accepted (inert) */
 	case OVE_LNX_NR_gettid:
 		return proc->pid; /* single-threaded: tid == pid */
+	case OVE_LNX_NR_uname: {
+		/* struct utsname: 6 fixed 65-byte fields (sysname, nodename, release,
+		 * version, machine, domainname). The shell reads these at startup. */
+		char *u = (char *)(uintptr_t)a0;
+		if (!u)
+			return -OVE_LNX_EFAULT;
+		static const char *const f[6] = {"Linux",   "overtos", "6.1.0",
+						 "oveRTOS", "armv7l",  "(none)"};
+		memset(u, 0, 6 * 65);
+		for (int i = 0; i < 6; i++) {
+			size_t l = strlen(f[i]);
+			memcpy(u + i * 65, f[i], l + 1);
+		}
+		return 0;
+	}
 	case OVE_LNX_NR_rt_sigaction: {
 		/* Record the per-signal disposition; the engine seam delivers it.
 		 * struct sigaction: sa_handler@0, sa_flags@4, sa_restorer@8. */
@@ -851,9 +904,11 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		}
 		return 0;
 	}
-	case OVE_LNX_NR_poll: {
+	case OVE_LNX_NR_poll:
+	case OVE_LNX_NR_ppoll_time64: {
 		/* The console is always ready and rootfs files never block, so report
-		 * the requested readiness immediately (the shell polls stdin). */
+		 * the requested readiness immediately (the shell polls stdin). ppoll's
+		 * timeout/sigmask args are ignored; only fds (a0) + nfds (a1) matter. */
 		ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)a0;
 		unsigned nfds = (unsigned)a1;
 		int ready = 0;
