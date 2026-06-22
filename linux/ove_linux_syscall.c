@@ -57,6 +57,37 @@ struct ove_lnx_kstat64 {
 	uint64_t st_ino;
 };
 
+/* getdents64 record: fixed 19-byte head (d_ino..d_type) then a NUL-terminated name. */
+struct ove_lnx_dirent64 {
+	uint64_t d_ino;
+	int64_t d_off;
+	uint16_t d_reclen;
+	uint8_t d_type;
+	char d_name[];
+};
+
+/* Effective st_mode for a rootfs node (0 in the table means a regular file). */
+static uint32_t file_mode(const ove_lnx_file_t *f)
+{
+	return f->mode ? f->mode : (OVE_LNX_S_IFREG | 0644u);
+}
+
+/* If @p path names an entry exactly one component below directory @p dir, return
+ * that child's name; otherwise NULL. */
+static const char *child_name(const char *dir, const char *path)
+{
+	if (dir[0] == '/' && dir[1] == 0) { /* root */
+		if (path[0] != '/' || path[1] == 0)
+			return NULL;
+		return strchr(path + 1, '/') ? NULL : path + 1;
+	}
+	size_t dl = strlen(dir);
+	if (strncmp(path, dir, dl) != 0 || path[dl] != '/')
+		return NULL;
+	const char *name = path + dl + 1;
+	return (*name && !strchr(name, '/')) ? name : NULL;
+}
+
 int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes)
 {
 	if (!proc || !arena)
@@ -231,6 +262,8 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 
 	/* Read from a rootfs file at the current offset. */
 	const ove_lnx_file_t *f = &p->fs[s->file_idx];
+	if ((file_mode(f) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+		return -OVE_LNX_EISDIR;
 	if (s->offset >= f->size)
 		return 0; /* EOF */
 	size_t n = f->size - s->offset;
@@ -265,7 +298,8 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
 {
 	(void)addr;
 	(void)prot;
-	if (!(flags & OVE_LNX_MAP_ANONYMOUS) || fd >= 0)
+	(void)fd; /* anonymous mappings ignore fd; file mmap is unsupported */
+	if (!(flags & OVE_LNX_MAP_ANONYMOUS))
 		return -OVE_LNX_ENOSYS;
 	if (len == 0)
 		return -OVE_LNX_EINVAL;
@@ -370,15 +404,126 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 	memset(st, 0, sizeof(*st));
 	st->st_nlink = 1;
 	if (s->kind == OVE_LNX_FD_FILE) {
-		st->st_mode = OVE_LNX_S_IFREG | 0644u;
-		st->st_size = (int64_t)p->fs[s->file_idx].size;
+		const ove_lnx_file_t *f = &p->fs[s->file_idx];
+		st->st_mode = file_mode(f);
+		st->st_size = (int64_t)f->size;
 		st->st_blksize = 512;
-		st->st_blocks = (uint64_t)((p->fs[s->file_idx].size + 511u) / 512u);
+		st->st_blocks = (uint64_t)((f->size + 511u) / 512u);
 	} else {
 		/* A character device: makes uClibc block-buffer stdio. */
 		st->st_mode = OVE_LNX_S_IFCHR | 0620u;
 		st->st_blksize = 1024;
 	}
+	return 0;
+}
+
+/* getdents64: emit the directory's immediate children as linux_dirent64 records. */
+static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s || s->kind != OVE_LNX_FD_FILE)
+		return -OVE_LNX_EBADF;
+	if (!buf)
+		return -OVE_LNX_EFAULT;
+	const ove_lnx_file_t *dir = &p->fs[s->file_idx];
+	if ((file_mode(dir) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
+		return -OVE_LNX_ENOTDIR;
+
+	uint8_t *out = (uint8_t *)buf;
+	size_t filled = 0;
+	long pos = 0; /* running child index; s->offset = how many already emitted */
+	for (int i = 0; i < p->fs_count; i++) {
+		const char *name = child_name(dir->path, p->fs[i].path);
+		if (!name)
+			continue;
+		if (pos < (long)s->offset) {
+			pos++;
+			continue;
+		}
+		size_t namelen = strlen(name);
+		size_t reclen = (offsetof(struct ove_lnx_dirent64, d_name) + namelen + 1 + 7u) &
+				~(size_t)7u;
+		if (filled + reclen > count) {
+			if (filled == 0)
+				return -OVE_LNX_EINVAL; /* buffer too small for one entry */
+			break;
+		}
+		struct ove_lnx_dirent64 *de = (struct ove_lnx_dirent64 *)(out + filled);
+		de->d_ino = (uint64_t)(i + 1);
+		de->d_off = pos + 1;
+		de->d_reclen = (uint16_t)reclen;
+		de->d_type = ((file_mode(&p->fs[i]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+				     ? OVE_LNX_DT_DIR
+				     : OVE_LNX_DT_REG;
+		memcpy(de->d_name, name, namelen + 1);
+		filled += reclen;
+		pos++;
+		s->offset++;
+	}
+	return (long)filled;
+}
+
+/* Modern struct statx (256 bytes); fixed-width so host tests match the target. */
+struct ove_lnx_statx {
+	uint32_t stx_mask;
+	uint32_t stx_blksize;
+	uint64_t stx_attributes;
+	uint32_t stx_nlink;
+	uint32_t stx_uid;
+	uint32_t stx_gid;
+	uint16_t stx_mode;
+	uint16_t __spare0;
+	uint64_t stx_ino;
+	uint64_t stx_size;
+	uint64_t stx_blocks;
+	uint64_t stx_attributes_mask;
+	uint8_t __rest[256 - 64];
+};
+
+/*
+ * statx: the stat() uClibc-ng actually issues. With AT_EMPTY_PATH (or an empty
+ * path) it stats the open dirfd (fstat); otherwise it resolves a rootfs path.
+ */
+static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags, void *buf)
+{
+	if (!buf)
+		return -OVE_LNX_EFAULT;
+
+	uint32_t mode;
+	uint64_t size;
+	if (path && path[0] && !(flags & OVE_LNX_AT_EMPTY_PATH)) {
+		int idx = -1;
+		for (int i = 0; i < p->fs_count; i++) {
+			if (strcmp(p->fs[i].path, path) == 0) {
+				idx = i;
+				break;
+			}
+		}
+		if (idx < 0)
+			return -OVE_LNX_ENOENT;
+		mode = file_mode(&p->fs[idx]);
+		size = p->fs[idx].size;
+	} else {
+		ove_lnx_fd_t *s = fd_slot(p, dirfd);
+		if (!s)
+			return -OVE_LNX_EBADF;
+		if (s->kind == OVE_LNX_FD_FILE) {
+			mode = file_mode(&p->fs[s->file_idx]);
+			size = p->fs[s->file_idx].size;
+		} else {
+			mode = OVE_LNX_S_IFCHR | 0620u;
+			size = 0;
+		}
+	}
+
+	struct ove_lnx_statx *st = buf;
+	memset(st, 0, sizeof(*st));
+	st->stx_mask = OVE_LNX_STATX_BASIC_STATS;
+	st->stx_blksize = 512;
+	st->stx_nlink = 1;
+	st->stx_mode = (uint16_t)mode;
+	st->stx_size = size;
+	st->stx_blocks = (size + 511u) / 512u;
 	return 0;
 }
 
@@ -416,7 +561,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* Enough for stdio/dup probing: report read-only flags / succeed. */
 		return 0;
 	case OVE_LNX_NR_getdents64:
-		return -OVE_LNX_ENOSYS; /* directory listing: a later step */
+		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2);
+	case OVE_LNX_NR_statx: /* (dirfd, path, flags, mask, buf); mask ignored */
+		return sys_statx(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2,
+				 (void *)(uintptr_t)a4);
 	case OVE_LNX_NR_exit:
 	case OVE_LNX_NR_exit_group:
 		return sys_exit(proc, (int)a0);

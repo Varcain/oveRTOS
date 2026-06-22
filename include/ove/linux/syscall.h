@@ -66,6 +66,7 @@ extern "C" {
 #define OVE_LNX_NR_set_tid_address 256
 #define OVE_LNX_NR_openat 322
 #define OVE_LNX_NR_set_robust_list 338
+#define OVE_LNX_NR_statx 397
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
 #define OVE_LNX_MAP_ANONYMOUS 0x20
@@ -80,14 +81,25 @@ extern "C" {
 #define OVE_LNX_SEEK_CUR 1
 #define OVE_LNX_SEEK_END 2
 /* struct stat st_mode file-type bits. */
+#define OVE_LNX_S_IFMT 0xf000u
 #define OVE_LNX_S_IFREG 0x8000u
+#define OVE_LNX_S_IFDIR 0x4000u
 #define OVE_LNX_S_IFCHR 0x2000u
+/* getdents64 d_type values. */
+#define OVE_LNX_DT_DIR 4
+#define OVE_LNX_DT_REG 8
+/* statx: AT_EMPTY_PATH means "stat the dirfd itself" (fstat); the basic-stats
+ * result mask reported back in stx_mask. */
+#define OVE_LNX_AT_EMPTY_PATH 0x1000
+#define OVE_LNX_STATX_BASIC_STATS 0x000007ffu
 
 /* Linux errno values returned (negated) on syscall failure. */
 #define OVE_LNX_ENOENT 2
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ENOMEM 12
 #define OVE_LNX_EFAULT 14
+#define OVE_LNX_ENOTDIR 20
+#define OVE_LNX_EISDIR 21
 #define OVE_LNX_EMFILE 24
 #define OVE_LNX_ENOTTY 25
 #define OVE_LNX_ESPIPE 29
@@ -106,11 +118,14 @@ typedef long (*ove_lnx_write_fn)(void *ctx, int fd, const void *buf, size_t len)
 /** fd 0 input source. Returns bytes read (0 = EOF) or a negated Linux errno. */
 typedef long (*ove_lnx_read_fn)(void *ctx, int fd, void *buf, size_t len);
 
-/** One file in the read-only in-memory rootfs (a flat path → bytes table). */
+/** One node in the read-only in-memory rootfs (a flat path → bytes table). */
 typedef struct ove_lnx_file {
 	const char *path;    /**< Absolute path, e.g. "/etc/hostname". */
-	const uint8_t *data; /**< File contents. */
-	size_t size;	     /**< Length in bytes. */
+	const uint8_t *data; /**< File contents (NULL for a directory). */
+	size_t size;	     /**< Length in bytes (0 for a directory). */
+	uint32_t mode;	     /**< st_mode; 0 means a regular file. Set @c OVE_LNX_S_IFDIR
+			      *   for directories (their children are the entries one
+			      *   path component below @c path). */
 } ove_lnx_file_t;
 
 /** Open-file-descriptor slot. */

@@ -205,9 +205,13 @@ struct test_kstat64 {
 static const uint8_t k_motd[] = "Welcome to oveRTOS\n"; /* 19 bytes + NUL */
 static const uint8_t k_elf[] = {0x7f, 'E', 'L', 'F'};
 static const ove_lnx_file_t k_rootfs[] = {
-	{"/etc/motd", k_motd, sizeof(k_motd) - 1},
-	{"/bin/sh", k_elf, sizeof(k_elf)},
+	{"/", NULL, 0, OVE_LNX_S_IFDIR},
+	{"/etc", NULL, 0, OVE_LNX_S_IFDIR},
+	{"/etc/motd", k_motd, sizeof(k_motd) - 1, 0},
+	{"/bin", NULL, 0, OVE_LNX_S_IFDIR},
+	{"/bin/sh", k_elf, sizeof(k_elf), 0},
 };
+#define K_ROOTFS_N ((int)(sizeof(k_rootfs) / sizeof(k_rootfs[0])))
 
 static void test_lnx_file(void **state)
 {
@@ -215,7 +219,7 @@ static void test_lnx_file(void **state)
 	ove_arena_t arena;
 	ove_lnx_proc_t p;
 	setup_proc(&p, &arena);
-	ove_lnx_proc_set_rootfs(&p, k_rootfs, 2);
+	ove_lnx_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
 
 	const long motd_len = (long)(sizeof(k_motd) - 1);
 
@@ -271,6 +275,68 @@ static void test_lnx_file(void **state)
 	assert_int_equal(st2.st_mode & 0xf000u, OVE_LNX_S_IFCHR);
 }
 
+/* Search a getdents64 buffer for an entry by name; returns its d_type or -1. */
+static int dirents_find(const uint8_t *buf, long len, const char *name)
+{
+	long off = 0;
+	while (off + 19 <= len) {
+		uint16_t reclen;
+		memcpy(&reclen, buf + off + 16, sizeof(reclen));
+		if (reclen == 0)
+			break;
+		uint8_t type = buf[off + 18];
+		if (strcmp((const char *)(buf + off + 19), name) == 0)
+			return type;
+		off += reclen;
+	}
+	return -1;
+}
+
+static void test_lnx_getdents(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+	ove_lnx_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
+
+	uint8_t dbuf[256];
+
+	/* "/etc" lists one regular file: motd. */
+	long fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD, (long)(uintptr_t) "/etc",
+				  OVE_LNX_O_RDONLY, 0, 0, 0);
+	assert_true(fd >= 3);
+	long n = ove_lnx_syscall(&p, OVE_LNX_NR_getdents64, fd, (long)(uintptr_t)dbuf, sizeof(dbuf),
+				 0, 0, 0);
+	assert_true(n > 0);
+	assert_int_equal(dirents_find(dbuf, n, "motd"), OVE_LNX_DT_REG);
+	/* A second call drains the directory (returns 0). */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getdents64, fd, (long)(uintptr_t)dbuf,
+					 sizeof(dbuf), 0, 0, 0),
+			 0);
+	/* read() on a directory is -EISDIR. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)dbuf, 4, 0, 0,
+					 0),
+			 -OVE_LNX_EISDIR);
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
+
+	/* "/" lists the subdirectories etc and bin. */
+	fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD, (long)(uintptr_t) "/",
+			     OVE_LNX_O_RDONLY, 0, 0, 0);
+	n = ove_lnx_syscall(&p, OVE_LNX_NR_getdents64, fd, (long)(uintptr_t)dbuf, sizeof(dbuf), 0,
+			    0, 0);
+	assert_int_equal(dirents_find(dbuf, n, "etc"), OVE_LNX_DT_DIR);
+	assert_int_equal(dirents_find(dbuf, n, "bin"), OVE_LNX_DT_DIR);
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
+
+	/* getdents64 on a regular file is -ENOTDIR. */
+	fd = ove_lnx_syscall(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD, (long)(uintptr_t) "/etc/motd",
+			     OVE_LNX_O_RDONLY, 0, 0, 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getdents64, fd, (long)(uintptr_t)dbuf,
+					 sizeof(dbuf), 0, 0, 0),
+			 -OVE_LNX_ENOTDIR);
+}
+
 static void test_lnx_exit_and_unknown(void **state)
 {
 	(void)state;
@@ -290,10 +356,15 @@ static void test_lnx_exit_and_unknown(void **state)
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_lnx_write),      cmocka_unit_test(test_lnx_writev),
-		cmocka_unit_test(test_lnx_brk),	       cmocka_unit_test(test_lnx_mmap),
-		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_setup_stack),
-		cmocka_unit_test(test_lnx_file),       cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_write),
+		cmocka_unit_test(test_lnx_writev),
+		cmocka_unit_test(test_lnx_brk),
+		cmocka_unit_test(test_lnx_mmap),
+		cmocka_unit_test(test_lnx_init_stubs),
+		cmocka_unit_test(test_lnx_setup_stack),
+		cmocka_unit_test(test_lnx_file),
+		cmocka_unit_test(test_lnx_getdents),
+		cmocka_unit_test(test_lnx_exit_and_unknown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -7,9 +7,9 @@
  *
  * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): load a
  * REAL Buildroot uClibc-ng static bFLT and run it as an unprivileged (K_USER)
- * thread, trapping its Linux syscalls. The program open()s /etc/motd from the
- * read-only in-memory rootfs, read()s it, and write()s it to stdout — so this
- * exercises the file syscalls (open/read/close) end-to-end on real libc code.
+ * thread, trapping its Linux syscalls. The program cat's /etc/motd and ls's
+ * /etc from the read-only in-memory rootfs — exercising the file + directory
+ * syscalls (open/read/close/statx/getdents64) end-to-end on real libc code.
  *
  *   uClibc crt0 (svc #0, nr in r7)  ->  Zephyr routes the unprivileged "unused"
  *   svc to z_do_kernel_oops, which linker --wrap reroutes to our seam  ->
@@ -141,17 +141,22 @@ static long capture_write(void *ctx, int fd, const void *buf, size_t len)
  * rather than kernel .bss). Holds the loaded text+data+bss followed by the
  * program's stack; carved into RX (text) and RW (the rest) partitions below.
  */
-#define PROG_REGION_SIZE 0x18000u /* 96 KiB: ~63 KiB image + program stack */
+/* 192 KiB: ~63 KiB image, then a 64 KiB arena (brk + mmap) and the program's
+ * stack — all of which must sit in the program's RW MPU partition so the
+ * unprivileged program can touch its heap and stack. */
+#define PROG_REGION_SIZE 0x30000u
+#define PROG_ARENA_SIZE 0x10000u
 K_APPMEM_PARTITION_DEFINE(prog_partition);
 K_APP_BMEM(prog_partition) static uint8_t prog_region[PROG_REGION_SIZE] __aligned(32);
 
-static uint8_t s_pool[0x10000] __aligned(16); /* arena: brk + anonymous mmap */
-
-/* A one-file read-only rootfs the program opens as /etc/motd. */
+/* A small read-only rootfs: the program cat's /etc/motd and ls's /etc. */
 static const uint8_t g_motd[] = "hello from uClibc\n";
 static const ove_lnx_file_t g_rootfs[] = {
-	{"/etc/motd", g_motd, sizeof(g_motd) - 1},
+	{"/", NULL, 0, OVE_LNX_S_IFDIR},
+	{"/etc", NULL, 0, OVE_LNX_S_IFDIR},
+	{"/etc/motd", g_motd, sizeof(g_motd) - 1, 0},
 };
+#define G_ROOTFS_N ((int)(sizeof(g_rootfs) / sizeof(g_rootfs[0])))
 
 static struct k_mem_partition text_part;
 static struct k_mem_partition data_part;
@@ -173,7 +178,7 @@ static void lnx_trampoline(void *sp, void *entry, void *unused)
 K_THREAD_STACK_DEFINE(tramp_stack, 1024);
 static struct k_thread prog_thread;
 
-#define EXPECT_MSG "hello from uClibc\n"
+#define EXPECT_MSG "hello from uClibc\nmotd\n"
 
 int main(void)
 {
@@ -188,17 +193,20 @@ int main(void)
 		sh_exit(1);
 	}
 
-	/* Process context: arena-backed brk + anonymous mmap + the fd sink. */
+	/* Carve the program's RW tail (above the loaded image) into an arena for
+	 * brk + anonymous mmap, then the startup stack. Both live in the program's
+	 * MPU domain so the unprivileged program can touch malloc'd memory + stack. */
+	uint8_t *rw = prog_region + ((prog.region_used + 15u) & ~15u);
+	uint8_t *rw_end = prog_region + sizeof(prog_region);
 	ove_arena_t arena;
-	ove_arena_init(&arena, s_pool, sizeof(s_pool));
+	ove_arena_init(&arena, rw, PROG_ARENA_SIZE);
 	ove_lnx_proc_init(&g_proc, &arena, 0x8000);
 	g_proc.write_fn = capture_write;
-	ove_lnx_proc_set_rootfs(&g_proc, g_rootfs, 1);
+	ove_lnx_proc_set_rootfs(&g_proc, g_rootfs, G_ROOTFS_N);
 
-	/* Build the System V startup stack in the RW tail of the program region
-	 * (above the loaded image), and remember the resulting SP. */
-	uint8_t *stack_lo = prog_region + prog.region_used;
-	size_t stack_sz = sizeof(prog_region) - prog.region_used;
+	/* Startup stack above the arena, in the same RW partition. */
+	uint8_t *stack_lo = rw + PROG_ARENA_SIZE;
+	size_t stack_sz = (size_t)(rw_end - stack_lo);
 	const char *const argv[] = {"hello", NULL};
 	void *sp = ove_lnx_setup_stack(stack_lo, stack_sz, 1, argv, NULL);
 	if (!sp) {
@@ -244,8 +252,8 @@ int main(void)
 
 	if (ok && g_proc.exit_status == 1 && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] uClibc bFLT ran unprivileged: open+read /etc/motd, "
-			  "write, exit trapped OK\n");
+		sh_write0("[zephyr-linux] uClibc bFLT ran unprivileged: cat /etc/motd + ls /etc "
+			  "(open/read/statx/getdents) trapped OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}
