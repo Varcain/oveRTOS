@@ -41,8 +41,15 @@ en CONFIG_SH_IS_HUSH
 en CONFIG_ECHO
 dis CONFIG_ASH        # ash #errors out on NOMMU
 dis CONFIG_SH_IS_ASH
-dis CONFIG_HUSH_JOB   # no job control (needs signals/tty)
-dis CONFIG_FEATURE_EDITING
+dis CONFIG_HUSH_JOB   # no job control yet (needs full signals)
+# True tty-interactive: prompt + raw-mode line editing, intro banner suppressed
+# (the banner carries a build timestamp, which would break the golden output).
+en CONFIG_HUSH_INTERACTIVE
+en CONFIG_FEATURE_EDITING
+en CONFIG_FEATURE_USE_TERMIOS
+en CONFIG_FEATURE_SH_EXTRA_QUIET
+sed -i "s/^CONFIG_FEATURE_EDITING_MAX_LEN=.*/CONFIG_FEATURE_EDITING_MAX_LEN=1024/" "$cfg"
+grep -q "^CONFIG_FEATURE_EDITING_MAX_LEN=" "$cfg" || echo "CONFIG_FEATURE_EDITING_MAX_LEN=1024" >>"$cfg"
 yes "" | make oldconfig >/dev/null
 make -j"$(nproc)" || true   # the final strip step fails on FLAT; busybox_unstripped is the bFLT
 

@@ -149,9 +149,33 @@ static void test_lnx_init_stubs(void **state)
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_wait4, -1, 0, 0, 0, 0, 0), -OVE_LNX_ECHILD);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getuid32, 0, 0, 0, 0, 0, 0), 0);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getegid32, 0, 0, 0, 0, 0, 0), 0);
-	/* ioctl(TCGETS) on a non-tty → -ENOTTY, so stdio block-buffers. */
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, 1, 0x5401, 0, 0, 0, 0),
+	/* Console fds are ttys: TCGETS fills a canonical termios (so isatty → the
+	 * shell goes interactive); a non-open fd is not a tty. */
+	ove_lnx_termios tio;
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, 0, OVE_LNX_TCGETS,
+					 (long)(uintptr_t)&tio, 0, 0, 0),
+			 0);
+	assert_true((tio.c_lflag & OVE_LNX_ICANON) != 0);
+	assert_true((tio.c_lflag & OVE_LNX_ECHO) != 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, 7, OVE_LNX_TCGETS,
+					 (long)(uintptr_t)&tio, 0, 0, 0),
 			 -OVE_LNX_ENOTTY);
+	ove_lnx_winsize ws;
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, 1, OVE_LNX_TIOCGWINSZ,
+					 (long)(uintptr_t)&ws, 0, 0, 0),
+			 0);
+	assert_int_equal(ws.ws_col, 80);
+	/* fcntl F_DUPFD duplicates stdin to the lowest free fd >= arg; a too-high
+	 * arg has no slot (the shell then retries low for its interactive fd). */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_fcntl64, 0, OVE_LNX_F_DUPFD, 3, 0, 0, 0),
+			 3);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_fcntl64, 0, OVE_LNX_F_DUPFD, 255, 0, 0, 0),
+			 -OVE_LNX_EINVAL);
+	/* poll reports the console immediately ready. */
+	ove_lnx_pollfd pfd = {.fd = 0, .events = OVE_LNX_POLLIN, .revents = 0};
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pfd, 1, 0, 0, 0, 0),
+			 1);
+	assert_int_equal(pfd.revents, OVE_LNX_POLLIN);
 	/* Thread-bookkeeping stubs succeed so libc startup proceeds. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_tid_address, 0, 0, 0, 0, 0, 0), 1);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_robust_list, 0, 0, 0, 0, 0, 0), 0);

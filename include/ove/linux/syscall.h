@@ -53,6 +53,7 @@ extern "C" {
 #define OVE_LNX_NR_getpid 20
 #define OVE_LNX_NR_getppid 64
 #define OVE_LNX_NR_wait4 114
+#define OVE_LNX_NR_poll 168
 #define OVE_LNX_NR_brk 45
 #define OVE_LNX_NR_ioctl 54
 #define OVE_LNX_NR_munmap 91
@@ -96,6 +97,35 @@ extern "C" {
 /* getdents64 d_type values. */
 #define OVE_LNX_DT_DIR 4
 #define OVE_LNX_DT_REG 8
+/* termios ioctls so a console looks like a tty (isatty → interactive shell). */
+#define OVE_LNX_TCGETS 0x5401
+#define OVE_LNX_TCSETS 0x5402
+#define OVE_LNX_TCSETSW 0x5403
+#define OVE_LNX_TCSETSF 0x5404
+#define OVE_LNX_TIOCGWINSZ 0x5413
+/* c_lflag/c_iflag/c_oflag/c_cflag bits used for the canonical-tty default. */
+#define OVE_LNX_ISIG 0x0001u
+#define OVE_LNX_ICANON 0x0002u
+#define OVE_LNX_ECHO 0x0008u
+#define OVE_LNX_ICRNL 0x0100u
+#define OVE_LNX_OPOST 0x0001u
+#define OVE_LNX_ONLCR 0x0004u
+#define OVE_LNX_CS8 0x0030u
+#define OVE_LNX_CREAD 0x0080u
+/* fcntl commands: F_DUPFD duplicates an fd (the shell dups stdin for its
+ * interactive fd); the rest are benign get/set probes. */
+#define OVE_LNX_F_DUPFD 0
+#define OVE_LNX_F_GETFD 1
+#define OVE_LNX_F_SETFD 2
+#define OVE_LNX_F_GETFL 3
+#define OVE_LNX_F_SETFL 4
+#define OVE_LNX_F_DUPFD_CLOEXEC 1030
+/* c_cc indices (Linux generic, NCCS=19). */
+#define OVE_LNX_VINTR 0
+#define OVE_LNX_VERASE 2
+#define OVE_LNX_VEOF 4
+#define OVE_LNX_VMIN 6
+#define OVE_LNX_NCCS 19
 /* statx: AT_EMPTY_PATH means "stat the dirfd itself" (fstat); the basic-stats
  * result mask reported back in stx_mask. */
 #define OVE_LNX_AT_EMPTY_PATH 0x1000
@@ -123,6 +153,33 @@ typedef struct ove_lnx_iovec {
 	void *iov_base; /**< Start of the buffer (in the program's address space). */
 	size_t iov_len; /**< Length of the buffer in bytes. */
 } ove_lnx_iovec;
+
+/** Kernel @c struct termios (ARM, NCCS=19), filled by the TCGETS ioctl. */
+typedef struct ove_lnx_termios {
+	uint32_t c_iflag;
+	uint32_t c_oflag;
+	uint32_t c_cflag;
+	uint32_t c_lflag;
+	uint8_t c_line;
+	uint8_t c_cc[OVE_LNX_NCCS];
+} ove_lnx_termios;
+
+/** @c struct winsize returned by TIOCGWINSZ. */
+typedef struct ove_lnx_winsize {
+	uint16_t ws_row;
+	uint16_t ws_col;
+	uint16_t ws_xpixel;
+	uint16_t ws_ypixel;
+} ove_lnx_winsize;
+
+/** @c struct pollfd for poll(2). */
+typedef struct ove_lnx_pollfd {
+	int fd;
+	short events;
+	short revents;
+} ove_lnx_pollfd;
+#define OVE_LNX_POLLIN 0x0001
+#define OVE_LNX_POLLOUT 0x0004
 
 /** fd 1/2 output sink. Returns bytes written or a negated Linux errno. */
 typedef long (*ove_lnx_write_fn)(void *ctx, int fd, const void *buf, size_t len);

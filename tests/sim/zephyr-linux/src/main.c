@@ -97,7 +97,7 @@ static struct k_mem_partition g_text[NREG], g_data[NREG];
 static int g_dom_inited[NREG];
 
 /* ---- output sink ----------------------------------------------------------- */
-static char g_cap[128];
+static char g_cap[512];
 static volatile size_t g_cap_len;
 
 static long capture_write(void *ctx, int fd, const void *buf, size_t len)
@@ -120,14 +120,17 @@ static long console_read(void *ctx, int fd, void *buf, size_t len)
 {
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(fd);
-	size_t avail = sizeof(g_input) - 1 - g_input_pos;
-	if (avail == 0)
-		return 0; /* EOF */
-	if (len > avail)
-		len = avail;
-	memcpy(buf, g_input + g_input_pos, len);
-	g_input_pos += len;
-	return (long)len;
+	/* Feed the scripted keystrokes; hush is in raw mode (FEATURE_EDITING) and
+	 * echoes them itself, so the engine does not echo. One line per block read. */
+	char *out = (char *)buf;
+	size_t n = 0;
+	while (n < len && g_input_pos < sizeof(g_input) - 1) {
+		char c = g_input[g_input_pos++];
+		out[n++] = c;
+		if (c == '\n')
+			break;
+	}
+	return (long)n; /* 0 = EOF */
 }
 
 /* ---- per-process slots ----------------------------------------------------- */
@@ -335,10 +338,11 @@ static void resume_slot(int sidx, int ridx, long r0val)
 	k_thread_start(g_slots[sidx].tid);
 }
 
-/* BusyBox hush reads "pwd\n/bin/hello2\nexit\n" from stdin: the pwd builtin
- * prints the cwd "/", then /bin/hello2 runs as an external command via
- * vfork/execve (it echoes its argv[0]), then exit. */
-#define EXPECT_MSG "/\nexeced: /bin/hello2\n"
+/* True tty-interactive BusyBox hush: it sees a terminal (ioctl TCGETS/TCSETS),
+ * prints the "/ # " prompt, echoes each typed line in raw-mode line editing,
+ * runs the pwd builtin + the external /bin/hello2, then exit. The whole session
+ * (prompt + echo + output) is deterministic with the intro banner suppressed. */
+#define EXPECT_MSG "/ # pwd\n/\n/ # /bin/hello2\nexeced: /bin/hello2\n/ # exit\n"
 
 int main(void)
 {
@@ -424,8 +428,9 @@ int main(void)
 
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
-		sh_write0("[zephyr-linux] BusyBox hush ran a builtin (pwd) + an external command "
-			  "(/bin/hello2 via vfork/execve/wait) from stdin, then exited OK\n");
+		sh_write0(
+			"[zephyr-linux] BusyBox hush ran TTY-INTERACTIVE (prompt + raw-mode line "
+			"editing): pwd builtin + /bin/hello2 via vfork/execve/wait, then exit OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}

@@ -96,10 +96,16 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 	memset(proc, 0, sizeof(*proc));
 	proc->arena = arena;
 	proc->pid = 1; /* the initial program is pid 1 (ppid 0); fork assigns the rest */
-	/* fd 0/1/2 are the standard streams, routed to the caller's callbacks. */
+	/* fd 0/1/2 are the standard streams, routed to the caller's callbacks.
+	 * For console fds, file_idx marks the direction: 0 = readable (stdin),
+	 * 1 = writable (stdout/stderr); this survives F_DUPFD so a dup of stdin
+	 * stays readable (the shell dups stdin for its interactive fd). */
 	proc->fds[0].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[0].file_idx = 0;
 	proc->fds[1].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[1].file_idx = 1;
 	proc->fds[2].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[2].file_idx = 1;
 	if (brk_bytes) {
 		void *brk = ove_arena_alloc(arena, brk_bytes);
 		if (!brk)
@@ -216,8 +222,8 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		return -OVE_LNX_EBADF;
 	if (len && !buf)
 		return -OVE_LNX_EFAULT;
-	/* Only the standard output streams are writable; the rootfs is read-only. */
-	if (s->kind != OVE_LNX_FD_CONSOLE || (fd != 1 && fd != 2) || !p->write_fn)
+	/* Only output consoles are writable (file_idx != 0); the rootfs is read-only. */
+	if (s->kind != OVE_LNX_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
 		return -OVE_LNX_EBADF;
 	return p->write_fn(p->io_ctx, fd, buf, len);
 }
@@ -254,7 +260,7 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		return -OVE_LNX_EFAULT;
 
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
-		if (fd != 0) /* stdout/stderr are not readable */
+		if (s->file_idx != 0) /* output consoles (stdout/stderr) are not readable */
 			return -OVE_LNX_EBADF;
 		if (!p->read_fn)
 			return 0; /* EOF */
@@ -600,9 +606,26 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
 	case OVE_LNX_NR_fstat64:
 		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
-	case OVE_LNX_NR_fcntl64:
-		/* Enough for stdio/dup probing: report read-only flags / succeed. */
+	case OVE_LNX_NR_fcntl64: {
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s)
+			return -OVE_LNX_EBADF;
+		if ((int)a1 == OVE_LNX_F_DUPFD || (int)a1 == OVE_LNX_F_DUPFD_CLOEXEC) {
+			/* Duplicate to the lowest free fd >= arg. The shell dups stdin
+			 * to a high fd for its interactive fd; a high arg simply finds
+			 * no slot here, so it retries with a low one (which we satisfy). */
+			int from = (int)a2 < 0 ? 0 : (int)a2;
+			for (int nfd = from; nfd < OVE_LNX_MAX_FDS; nfd++) {
+				if (proc->fds[nfd].kind == OVE_LNX_FD_FREE) {
+					proc->fds[nfd] = *s;
+					return nfd;
+				}
+			}
+			return -OVE_LNX_EINVAL;
+		}
+		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
 		return 0;
+	}
 	case OVE_LNX_NR_getdents64:
 		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2);
 	case OVE_LNX_NR_statx: /* (dirfd, path, flags, mask, buf); mask ignored */
@@ -633,6 +656,22 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* No signal delivery yet: accept handler / process-control setup so the
 		 * shell starts; handlers stay inert (children are reaped via wait4). */
 		return 0;
+	case OVE_LNX_NR_poll: {
+		/* The console is always ready and rootfs files never block, so report
+		 * the requested readiness immediately (the shell polls stdin). */
+		ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)a0;
+		unsigned nfds = (unsigned)a1;
+		int ready = 0;
+		for (unsigned i = 0; i < nfds; i++) {
+			pfds[i].revents = 0;
+			if (!fd_slot(proc, pfds[i].fd))
+				continue;
+			pfds[i].revents = pfds[i].events & (OVE_LNX_POLLIN | OVE_LNX_POLLOUT);
+			if (pfds[i].revents)
+				ready++;
+		}
+		return ready;
+	}
 	case OVE_LNX_NR_wait4: {
 		/* Reap the engine-recorded child, if any (the wait-status word encodes
 		 * a normal exit as exit_code << 8). a1 is the int* status, else NULL. */
@@ -649,8 +688,46 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_getgid32:
 	case OVE_LNX_NR_getegid32:
 		return 0; /* run as root */
-	case OVE_LNX_NR_ioctl:
-		return -OVE_LNX_ENOTTY; /* no tty: stdio falls back to block buffering */
+	case OVE_LNX_NR_ioctl: {
+		/* Make the console fds look like a tty so the shell goes interactive
+		 * (isatty → prompt + line editing). Non-console fds are not ttys. */
+		ove_lnx_fd_t *tty = fd_slot(proc, (int)a0);
+		if (!tty || tty->kind != OVE_LNX_FD_CONSOLE)
+			return -OVE_LNX_ENOTTY;
+		switch ((unsigned long)a1) {
+		case OVE_LNX_TCGETS: {
+			ove_lnx_termios *t = (ove_lnx_termios *)(uintptr_t)a2;
+			if (!t)
+				return -OVE_LNX_EFAULT;
+			memset(t, 0, sizeof(*t));
+			t->c_iflag = OVE_LNX_ICRNL;
+			t->c_oflag = OVE_LNX_OPOST | OVE_LNX_ONLCR;
+			t->c_cflag = OVE_LNX_CS8 | OVE_LNX_CREAD;
+			t->c_lflag = OVE_LNX_ICANON | OVE_LNX_ECHO | OVE_LNX_ISIG;
+			t->c_cc[OVE_LNX_VINTR] = 3;	/* ^C */
+			t->c_cc[OVE_LNX_VERASE] = 0x7f; /* DEL */
+			t->c_cc[OVE_LNX_VEOF] = 4;	/* ^D */
+			t->c_cc[OVE_LNX_VMIN] = 1;
+			return 0;
+		}
+		case OVE_LNX_TCSETS:
+		case OVE_LNX_TCSETSW:
+		case OVE_LNX_TCSETSF:
+			return 0; /* accept mode changes; the console echo is the engine's job */
+		case OVE_LNX_TIOCGWINSZ: {
+			ove_lnx_winsize *w = (ove_lnx_winsize *)(uintptr_t)a2;
+			if (!w)
+				return -OVE_LNX_EFAULT;
+			w->ws_row = 24;
+			w->ws_col = 80;
+			w->ws_xpixel = 0;
+			w->ws_ypixel = 0;
+			return 0;
+		}
+		default:
+			return -OVE_LNX_ENOTTY;
+		}
+	}
 	case OVE_LNX_NR_rt_sigprocmask:
 		return 0;
 	case OVE_LNX_NR_set_tid_address:
