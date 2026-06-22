@@ -45,14 +45,30 @@ extern "C" {
 #define OVE_LNX_NR_exit 1
 #define OVE_LNX_NR_read 3
 #define OVE_LNX_NR_write 4
+#define OVE_LNX_NR_getpid 20
 #define OVE_LNX_NR_brk 45
+#define OVE_LNX_NR_ioctl 54
+#define OVE_LNX_NR_munmap 91
 #define OVE_LNX_NR_writev 146
+#define OVE_LNX_NR_rt_sigprocmask 175
+#define OVE_LNX_NR_mmap2 192
+#define OVE_LNX_NR_getuid32 199
+#define OVE_LNX_NR_getgid32 200
+#define OVE_LNX_NR_geteuid32 201
+#define OVE_LNX_NR_getegid32 202
 #define OVE_LNX_NR_exit_group 248
+#define OVE_LNX_NR_set_tid_address 256
+#define OVE_LNX_NR_set_robust_list 338
+
+/* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
+#define OVE_LNX_MAP_ANONYMOUS 0x20
 
 /* Linux errno values returned (negated) on syscall failure. */
 #define OVE_LNX_EBADF 9
+#define OVE_LNX_ENOMEM 12
 #define OVE_LNX_EFAULT 14
 #define OVE_LNX_EINVAL 22
+#define OVE_LNX_ENOTTY 25
 #define OVE_LNX_ENOSYS 38
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */

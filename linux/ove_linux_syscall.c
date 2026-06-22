@@ -104,11 +104,42 @@ static long sys_exit(ove_lnx_proc_t *p, int status)
 	return 0;
 }
 
+/*
+ * Anonymous mmap, backed by the process arena (uClibc's malloc uses it for
+ * larger allocations). File mappings need a VFS and are not supported yet.
+ */
+static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, int flags, int fd)
+{
+	(void)addr;
+	(void)prot;
+	if (!(flags & OVE_LNX_MAP_ANONYMOUS) || fd >= 0)
+		return -OVE_LNX_ENOSYS;
+	if (len == 0)
+		return -OVE_LNX_EINVAL;
+
+	void *m = ove_arena_alloc(p->arena, len);
+	if (!m)
+		return -OVE_LNX_ENOMEM;
+	memset(m, 0, len); /* anonymous memory reads as zero */
+	return (long)(uintptr_t)m;
+}
+
+/*
+ * munmap is a no-op for now: the bump/free-list arena is reclaimed wholesale at
+ * process teardown, and a partial unmap of an arena chunk could corrupt the
+ * free list. Tracking mmap extents for precise release is a later step.
+ */
+static long sys_munmap(ove_lnx_proc_t *p, uintptr_t addr, size_t len)
+{
+	(void)p;
+	(void)addr;
+	(void)len;
+	return 0;
+}
+
 long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
 		     long a5)
 {
-	(void)a3;
-	(void)a4;
 	(void)a5;
 	if (!proc)
 		return -OVE_LNX_EINVAL;
@@ -122,9 +153,29 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_writev(proc, (int)a0, (const ove_lnx_iovec *)(uintptr_t)a1, (int)a2);
 	case OVE_LNX_NR_brk:
 		return sys_brk(proc, (uintptr_t)a0);
+	case OVE_LNX_NR_mmap2:
+		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4);
+	case OVE_LNX_NR_munmap:
+		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
 	case OVE_LNX_NR_exit:
 	case OVE_LNX_NR_exit_group:
 		return sys_exit(proc, (int)a0);
+	/* libc-init / identity stubs: enough for a static uClibc program to start. */
+	case OVE_LNX_NR_getpid:
+		return 1;
+	case OVE_LNX_NR_getuid32:
+	case OVE_LNX_NR_geteuid32:
+	case OVE_LNX_NR_getgid32:
+	case OVE_LNX_NR_getegid32:
+		return 0; /* run as root */
+	case OVE_LNX_NR_ioctl:
+		return -OVE_LNX_ENOTTY; /* no tty: stdio falls back to block buffering */
+	case OVE_LNX_NR_rt_sigprocmask:
+		return 0;
+	case OVE_LNX_NR_set_tid_address:
+		return 1; /* our single thread's tid */
+	case OVE_LNX_NR_set_robust_list:
+		return 0;
 	default:
 		return -OVE_LNX_ENOSYS;
 	}

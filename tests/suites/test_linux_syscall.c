@@ -97,6 +97,55 @@ static void test_lnx_brk(void **state)
 	assert_int_equal(over, base + 100);
 }
 
+static void test_lnx_mmap(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+
+	/* Anonymous mmap returns usable, zeroed memory from the arena. */
+	long m = ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 256, 0x3 /*PROT_RW*/,
+				 OVE_LNX_MAP_ANONYMOUS, -1, 0);
+	assert_true(m > 0);
+	uint8_t *mem = (uint8_t *)(uintptr_t)m;
+	for (int i = 0; i < 256; i++)
+		assert_int_equal(mem[i], 0);
+	mem[0] = 0xab; /* and it is writable */
+	assert_int_equal(mem[0], 0xab);
+
+	/* munmap succeeds (wholesale reclaim at teardown). */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_munmap, m, 256, 0, 0, 0, 0), 0);
+
+	/* A file-backed mapping is refused until there is a VFS. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 256, 0x3, 0, 3, 0),
+			 -OVE_LNX_ENOSYS);
+
+	/* Exhausting the arena yields -ENOMEM rather than a crash. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 1 << 20, 0x3,
+					 OVE_LNX_MAP_ANONYMOUS, -1, 0),
+			 -OVE_LNX_ENOMEM);
+}
+
+static void test_lnx_init_stubs(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getpid, 0, 0, 0, 0, 0, 0), 1);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getuid32, 0, 0, 0, 0, 0, 0), 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getegid32, 0, 0, 0, 0, 0, 0), 0);
+	/* ioctl(TCGETS) on a non-tty → -ENOTTY, so stdio block-buffers. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, 1, 0x5401, 0, 0, 0, 0),
+			 -OVE_LNX_ENOTTY);
+	/* Thread-bookkeeping stubs succeed so libc startup proceeds. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_tid_address, 0, 0, 0, 0, 0, 0), 1);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_robust_list, 0, 0, 0, 0, 0, 0), 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigprocmask, 0, 0, 0, 0, 0, 0), 0);
+}
+
 static void test_lnx_exit_and_unknown(void **state)
 {
 	(void)state;
@@ -116,10 +165,9 @@ static void test_lnx_exit_and_unknown(void **state)
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_lnx_write),
-		cmocka_unit_test(test_lnx_writev),
-		cmocka_unit_test(test_lnx_brk),
-		cmocka_unit_test(test_lnx_exit_and_unknown),
+		cmocka_unit_test(test_lnx_write),      cmocka_unit_test(test_lnx_writev),
+		cmocka_unit_test(test_lnx_brk),	       cmocka_unit_test(test_lnx_mmap),
+		cmocka_unit_test(test_lnx_init_stubs), cmocka_unit_test(test_lnx_exit_and_unknown),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
