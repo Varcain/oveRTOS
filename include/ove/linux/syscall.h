@@ -57,7 +57,10 @@ extern "C" {
 #define OVE_LNX_NR_ioctl 54
 #define OVE_LNX_NR_munmap 91
 #define OVE_LNX_NR_writev 146
+#define OVE_LNX_NR_prctl 172
+#define OVE_LNX_NR_rt_sigaction 174
 #define OVE_LNX_NR_rt_sigprocmask 175
+#define OVE_LNX_NR_getcwd 183
 #define OVE_LNX_NR_vfork 190
 #define OVE_LNX_NR_mmap2 192
 #define OVE_LNX_NR_fstat64 197
@@ -112,6 +115,7 @@ extern "C" {
 #define OVE_LNX_ESPIPE 29
 #define OVE_LNX_EROFS 30
 #define OVE_LNX_EINVAL 22
+#define OVE_LNX_ERANGE 34
 #define OVE_LNX_ENOSYS 38
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */

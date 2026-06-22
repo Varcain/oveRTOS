@@ -616,6 +616,23 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return proc->pid;
 	case OVE_LNX_NR_getppid:
 		return proc->ppid;
+	case OVE_LNX_NR_getcwd: {
+		/* getcwd(buf, size): the rootfs has a single "/" working directory.
+		 * The raw syscall writes the path and returns its length incl. NUL. */
+		char *cwd = (char *)(uintptr_t)a0;
+		if (!cwd)
+			return -OVE_LNX_EFAULT;
+		if ((size_t)a1 < 2)
+			return -OVE_LNX_ERANGE;
+		cwd[0] = '/';
+		cwd[1] = '\0';
+		return 2;
+	}
+	case OVE_LNX_NR_prctl:
+	case OVE_LNX_NR_rt_sigaction:
+		/* No signal delivery yet: accept handler / process-control setup so the
+		 * shell starts; handlers stay inert (children are reaped via wait4). */
+		return 0;
 	case OVE_LNX_NR_wait4: {
 		/* Reap the engine-recorded child, if any (the wait-status word encodes
 		 * a normal exit as exit_code << 8). a1 is the int* status, else NULL. */

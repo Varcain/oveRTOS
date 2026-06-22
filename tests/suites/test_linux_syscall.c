@@ -156,6 +156,18 @@ static void test_lnx_init_stubs(void **state)
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_tid_address, 0, 0, 0, 0, 0, 0), 1);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_robust_list, 0, 0, 0, 0, 0, 0), 0);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigprocmask, 0, 0, 0, 0, 0, 0), 0);
+	/* Signal-handler / process-control setup is accepted (inert) so a shell starts. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigaction, 2, 0, 0, 0, 0, 0), 0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_prctl, 0, 0, 0, 0, 0, 0), 0);
+	/* getcwd writes "/" and returns its length incl. NUL; -ERANGE if too small. */
+	char cwd[8] = {0};
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getcwd, (long)(uintptr_t)cwd, sizeof(cwd),
+					 0, 0, 0, 0),
+			 2);
+	assert_string_equal(cwd, "/");
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getcwd, (long)(uintptr_t)cwd, 1, 0, 0, 0,
+					 0),
+			 -OVE_LNX_ERANGE);
 }
 
 static void test_lnx_setup_stack(void **state)
