@@ -180,9 +180,21 @@ static void test_lnx_init_stubs(void **state)
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_tid_address, 0, 0, 0, 0, 0, 0), 1);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_robust_list, 0, 0, 0, 0, 0, 0), 0);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigprocmask, 0, 0, 0, 0, 0, 0), 0);
-	/* Signal-handler / process-control setup is accepted (inert) so a shell starts. */
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigaction, 2, 0, 0, 0, 0, 0), 0);
+	/* gettid == pid (single-threaded); prctl is accepted (inert). */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_gettid, 0, 0, 0, 0, 0, 0), 1);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_prctl, 0, 0, 0, 0, 0, 0), 0);
+	/* rt_sigaction records the per-signal disposition (sa_handler@0, sa_restorer@8)
+	 * for the engine seam to deliver; the old disposition is reported via oact. */
+	uint32_t act[4] = {0x1234, 0, 0x5678, 0}, oact[4] = {0xff, 0, 0xff, 0};
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigaction, OVE_LNX_SIGINT,
+					 (long)(uintptr_t)act, (long)(uintptr_t)oact, 0, 0, 0),
+			 0);
+	assert_int_equal((uint32_t)p.sig_handler[OVE_LNX_SIGINT], 0x1234);
+	assert_int_equal((uint32_t)p.sig_restorer[OVE_LNX_SIGINT], 0x5678);
+	assert_int_equal(oact[0], OVE_LNX_SIG_DFL); /* was unset (default) */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_rt_sigaction, 99, (long)(uintptr_t)act, 0,
+					 0, 0, 0),
+			 -OVE_LNX_EINVAL);
 	/* getcwd writes "/" and returns its length incl. NUL; -ERANGE if too small. */
 	char cwd[8] = {0};
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getcwd, (long)(uintptr_t)cwd, sizeof(cwd),

@@ -652,10 +652,27 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return 2;
 	}
 	case OVE_LNX_NR_prctl:
-	case OVE_LNX_NR_rt_sigaction:
-		/* No signal delivery yet: accept handler / process-control setup so the
-		 * shell starts; handlers stay inert (children are reaped via wait4). */
+		return 0; /* process-control setup accepted (inert) */
+	case OVE_LNX_NR_gettid:
+		return proc->pid; /* single-threaded: tid == pid */
+	case OVE_LNX_NR_rt_sigaction: {
+		/* Record the per-signal disposition; the engine seam delivers it.
+		 * struct sigaction: sa_handler@0, sa_flags@4, sa_restorer@8. */
+		int sig = (int)a0;
+		if (sig < 1 || sig >= OVE_LNX_NSIG)
+			return -OVE_LNX_EINVAL;
+		const uint32_t *act = (const uint32_t *)(uintptr_t)a1;
+		uint32_t *oact = (uint32_t *)(uintptr_t)a2;
+		if (oact) {
+			oact[0] = (uint32_t)proc->sig_handler[sig];
+			oact[2] = (uint32_t)proc->sig_restorer[sig];
+		}
+		if (act) {
+			proc->sig_handler[sig] = act[0];
+			proc->sig_restorer[sig] = act[2];
+		}
 		return 0;
+	}
 	case OVE_LNX_NR_poll: {
 		/* The console is always ready and rootfs files never block, so report
 		 * the requested readiness immediately (the shell polls stdin). */

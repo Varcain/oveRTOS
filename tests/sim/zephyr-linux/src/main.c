@@ -6,11 +6,13 @@
  * This file is part of oveRTOS.
  *
  * Zephyr Linux-personality on-target test (mps2/an521/cpu0, Cortex-M33): a real
- * BusyBox 1.36 hush (uClibc-ng, static bFLT) runs as the unprivileged init
- * program, reads commands from stdin, runs a builtin (pwd) and an external
- * command (/bin/hello2 via vfork/execve/wait), then exits. This exercises the
- * whole personality — loader, ~30 syscalls, the NOMMU process model — end to
- * end with stock upstream software.
+ * BusyBox 1.36 hush (uClibc-ng, static bFLT) runs tty-interactive as the
+ * unprivileged init program, reads commands from stdin, and spawns /bin/sigtest
+ * via vfork/execve/wait. sigtest installs a SIGINT handler and raise()s it: the
+ * engine DELIVERS the signal (the handler runs, then rt_sigreturn resumes the
+ * interrupted code). This exercises the whole personality — loader, ~40
+ * syscalls, the NOMMU process model, and real signal delivery — end to end with
+ * stock upstream software.
  *
  * NOMMU process model on Zephyr (sequentialised, which is observationally
  * identical to vfork for the shell pattern since the parent waitpid()s anyway):
@@ -38,8 +40,9 @@
 #include "ove/linux/syscall.h"
 #include "ove/loader.h"
 
-#include "loader_hello_image.h"	 /* ove_test_hello_bflt[], _len  (BusyBox hush) */
-#include "loader_hello2_image.h" /* ove_test_hello2_bflt[], _len (an external command) */
+#include "loader_hello_image.h"	  /* ove_test_hello_bflt[], _len  (BusyBox hush) */
+#include "loader_hello2_image.h"  /* ove_test_hello2_bflt[], _len (an external command) */
+#include "loader_sigtest_image.h" /* ove_test_sigtest_bflt[], _len (signal-delivery test) */
 
 /* ARM semihosting (host console + clean QEMU exit). */
 static long semihost(unsigned long op, void *arg)
@@ -113,7 +116,7 @@ static long capture_write(void *ctx, int fd, const void *buf, size_t len)
 
 /* Scripted stdin: the shell read(0)s these command lines as if typed at a
  * console (the engine is the terminal). Deterministic, so no live-TTY flake. */
-static const char g_input[] = "pwd\n/bin/hello2\nexit\n";
+static const char g_input[] = "/bin/sigtest\nexit\n";
 static volatile size_t g_input_pos;
 
 static long console_read(void *ctx, int fd, void *buf, size_t len)
@@ -157,6 +160,15 @@ struct resume_ctx {
 K_APP_BMEM(shared_partition) static struct resume_ctx g_vfork_ctx;
 static volatile int g_vfork_pending;
 
+/* Saved interrupted context for an in-flight signal handler. Only the privileged
+ * seam reads/writes it (no user trampoline), so it stays in kernel .bss. r4-r11
+ * are NOT saved: a C handler preserves them, so they are already correct when
+ * rt_sigreturn runs. No nesting (one handler at a time). */
+static struct {
+	uint32_t r0, r1, r2, r3, r12, lr, pc, xpsr;
+	int active;
+} g_sig_save;
+
 /* Where a program parks (in its own text) after a blocking syscall, until main
  * reaps/relaunches/resumes it. */
 static void park_loop(void)
@@ -174,6 +186,60 @@ static struct slot *current_slot(void)
 	return NULL;
 }
 
+/* Deliver signal `sig` to slot `s` synchronously (from its own kill/tkill).
+ * Real handler  -> save the post-syscall context, redirect to the handler with
+ *                 r0=sig and lr=libc sa_restorer (which will call rt_sigreturn).
+ * SIG_IGN       -> the kill simply succeeds.
+ * SIG_DFL       -> default action: terminate (status 128+sig), park for reaping. */
+static void deliver_signal(struct arch_esf *esf, _callee_saved_t *callee, struct slot *s, int sig)
+{
+	ARG_UNUSED(callee);
+	if (sig < 1 || sig >= OVE_LNX_NSIG) {
+		esf->basic.r0 = (uint32_t)-OVE_LNX_EINVAL;
+		return;
+	}
+	uintptr_t h = s->proc.sig_handler[sig];
+	if (h == OVE_LNX_SIG_IGN) {
+		esf->basic.r0 = 0;
+		return;
+	}
+	if (h == OVE_LNX_SIG_DFL) {
+		s->proc.exited = 1;
+		s->proc.exit_status = 128 + sig;
+		esf->basic.pc = ((uint32_t)&park_loop) | 1u;
+		return;
+	}
+	g_sig_save.r0 = 0; /* the kill/tkill itself returns success */
+	g_sig_save.r1 = esf->basic.r1;
+	g_sig_save.r2 = esf->basic.r2;
+	g_sig_save.r3 = esf->basic.r3;
+	g_sig_save.r12 = esf->basic.ip;
+	g_sig_save.lr = esf->basic.lr;
+	g_sig_save.pc = esf->basic.pc;
+	g_sig_save.xpsr = esf->basic.xpsr;
+	g_sig_save.active = 1;
+	esf->basic.pc = h | 1u;
+	esf->basic.r0 = (uint32_t)sig;
+	esf->basic.lr = s->proc.sig_restorer[sig] | 1u;
+}
+
+/* rt_sigreturn: restore the context saved at delivery (r4-r11 were preserved by
+ * the C handler, so they need no restore). */
+static void sig_restore(struct arch_esf *esf)
+{
+	if (!g_sig_save.active)
+		return;
+	esf->basic.r0 = g_sig_save.r0;
+	esf->basic.r1 = g_sig_save.r1;
+	esf->basic.r2 = g_sig_save.r2;
+	esf->basic.r3 = g_sig_save.r3;
+	esf->basic.ip = g_sig_save.r12;
+	esf->basic.lr = g_sig_save.lr;
+	esf->basic.pc = g_sig_save.pc;
+	esf->basic.xpsr = g_sig_save.xpsr;
+	g_sig_save.active = 0;
+}
+
 /* ---- the Linux SVC seam ---------------------------------------------------- */
 extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee,
 				    uint32_t exc_return);
@@ -187,6 +253,19 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 			struct slot *s = current_slot();
 			if (s) {
 				long nr = (long)callee->v4; /* r7 */
+				/* Signal delivery (kill/tkill/tgkill) + return need the trap
+				 * frame, so the seam handles them directly. */
+				if (nr == OVE_LNX_NR_kill || nr == OVE_LNX_NR_tkill ||
+				    nr == OVE_LNX_NR_tgkill) {
+					int sig = (nr == OVE_LNX_NR_tgkill) ? (int)esf->basic.r2
+									    : (int)esf->basic.r1;
+					deliver_signal((struct arch_esf *)esf, callee, s, sig);
+					return;
+				}
+				if (nr == OVE_LNX_NR_rt_sigreturn || nr == OVE_LNX_NR_sigreturn) {
+					sig_restore((struct arch_esf *)esf);
+					return;
+				}
 				if (nr == OVE_LNX_NR_vfork || nr == OVE_LNX_NR_fork) {
 					/* Capture the resume context; the parent's
 					 * vfork return (0xd8) does mov r7,ip; bxcc lr,
@@ -266,6 +345,7 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 static const ove_lnx_file_t g_rootfs[] = {
 	{"/bin", NULL, 0, OVE_LNX_S_IFDIR},
 	{"/bin/hello2", ove_test_hello2_bflt, sizeof(ove_test_hello2_bflt), 0},
+	{"/bin/sigtest", ove_test_sigtest_bflt, sizeof(ove_test_sigtest_bflt), 0},
 };
 #define G_ROOTFS_N ((int)(sizeof(g_rootfs) / sizeof(g_rootfs[0])))
 
@@ -338,11 +418,11 @@ static void resume_slot(int sidx, int ridx, long r0val)
 	k_thread_start(g_slots[sidx].tid);
 }
 
-/* True tty-interactive BusyBox hush: it sees a terminal (ioctl TCGETS/TCSETS),
- * prints the "/ # " prompt, echoes each typed line in raw-mode line editing,
- * runs the pwd builtin + the external /bin/hello2, then exit. The whole session
- * (prompt + echo + output) is deterministic with the intro banner suppressed. */
-#define EXPECT_MSG "/ # pwd\n/\n/ # /bin/hello2\nexeced: /bin/hello2\n/ # exit\n"
+/* True tty-interactive BusyBox hush runs /bin/sigtest, which installs a SIGINT
+ * handler and raise()s it: the engine delivers the signal (the handler prints
+ * "caught SIGINT"), rt_sigreturn resumes after raise(). Demonstrates the prompt,
+ * raw-mode line editing, vfork/execve, AND real signal delivery in one session. */
+#define EXPECT_MSG "/ # /bin/sigtest\nbefore raise\ncaught SIGINT\nafter raise\n/ # exit\n"
 
 int main(void)
 {
@@ -429,8 +509,8 @@ int main(void)
 	if (ok && g_cap_len == sizeof(EXPECT_MSG) - 1 &&
 	    memcmp(g_cap, EXPECT_MSG, g_cap_len) == 0) {
 		sh_write0(
-			"[zephyr-linux] BusyBox hush ran TTY-INTERACTIVE (prompt + raw-mode line "
-			"editing): pwd builtin + /bin/hello2 via vfork/execve/wait, then exit OK\n");
+			"[zephyr-linux] BusyBox hush TTY-INTERACTIVE ran /bin/sigtest: vfork/execve "
+			"+ REAL signal delivery (SIGINT handler ran, rt_sigreturn resumed) OK\n");
 		sh_write0("\n=== Summary: 0 test group(s) had failures ===\n");
 		sh_exit(0);
 	}

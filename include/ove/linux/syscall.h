@@ -45,6 +45,12 @@ extern "C" {
 #define OVE_LNX_NR_exit 1
 #define OVE_LNX_NR_fork 2
 #define OVE_LNX_NR_read 3
+#define OVE_LNX_NR_kill 37
+#define OVE_LNX_NR_sigreturn 119
+#define OVE_LNX_NR_rt_sigreturn 173
+#define OVE_LNX_NR_gettid 224
+#define OVE_LNX_NR_tkill 238
+#define OVE_LNX_NR_tgkill 268
 #define OVE_LNX_NR_write 4
 #define OVE_LNX_NR_open 5
 #define OVE_LNX_NR_close 6
@@ -112,6 +118,17 @@ extern "C" {
 #define OVE_LNX_ONLCR 0x0004u
 #define OVE_LNX_CS8 0x0030u
 #define OVE_LNX_CREAD 0x0080u
+/* Signals: a per-process disposition table + the handful the shell cares about.
+ * SIG_DFL/SIG_IGN are the special handler sentinels. */
+#define OVE_LNX_NSIG 32
+#define OVE_LNX_SIG_DFL 0
+#define OVE_LNX_SIG_IGN 1
+#define OVE_LNX_SIGINT 2
+#define OVE_LNX_SIGQUIT 3
+#define OVE_LNX_SIGABRT 6
+#define OVE_LNX_SIGKILL 9
+#define OVE_LNX_SIGSEGV 11
+#define OVE_LNX_SIGTERM 15
 /* fcntl commands: F_DUPFD duplicates an fd (the shell dups stdin for its
  * interactive fd); the rest are benign get/set probes. */
 #define OVE_LNX_F_DUPFD 0
@@ -236,6 +253,10 @@ typedef struct ove_lnx_proc {
 	int child_pid;	  /**< pid of the exited child, or 0. */
 	int child_status; /**< the child's exit code. */
 	int child_exited; /**< a child has exited and is awaiting wait4. */
+	/* Signal disposition: per-signal handler address (or SIG_DFL/SIG_IGN) and
+	 * the libc-supplied sa_restorer the engine returns to after the handler. */
+	uintptr_t sig_handler[OVE_LNX_NSIG];
+	uintptr_t sig_restorer[OVE_LNX_NSIG];
 	/* execve request: the engine seam relaunches the thread on this rootfs
 	 * program with the captured argument vector (image replacement). */
 	int exec_pending;			 /**< Set when execve() should relaunch. */
