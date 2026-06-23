@@ -1267,6 +1267,28 @@ static long sys_utimensat(ove_lnx_proc_t *p, const char *path)
 	return -OVE_LNX_ENOENT;
 }
 
+/* getrandom: a non-cryptographic xorshift PRNG seeded from uptime (no hardware
+ * RNG); enough for mktemp suffixes etc. */
+static long sys_getrandom(void *buf, size_t count)
+{
+	if (count && !buf)
+		return -OVE_LNX_EFAULT;
+	static uint32_t s;
+	if (!s) {
+		uint64_t ns = 0;
+		ove_time_get_ns(&ns);
+		s = (uint32_t)ns | 1u;
+	}
+	uint8_t *b = buf;
+	for (size_t i = 0; i < count; i++) {
+		s ^= s << 13;
+		s ^= s >> 17;
+		s ^= s << 5;
+		b[i] = (uint8_t)(s >> 24);
+	}
+	return (long)count;
+}
+
 /* statfs64: synthetic filesystem stats (no real block device backs the rootfs). */
 struct ove_lnx_statfs64 {
 	uint32_t f_type, f_bsize;
@@ -1628,6 +1650,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_statfs64:  /* (path, sz, buf) */
 	case OVE_LNX_NR_fstatfs64: /* (fd, sz, buf) */
 		return sys_statfs((void *)(uintptr_t)a2);
+	case OVE_LNX_NR_getrandom: /* (buf, count, flags) */
+		return sys_getrandom((void *)(uintptr_t)a0, (size_t)a1);
 	case OVE_LNX_NR_sysinfo: { /* uptime + ram totals (uptime/free read this) */
 		struct ove_lnx_sysinfo {
 			int32_t uptime;

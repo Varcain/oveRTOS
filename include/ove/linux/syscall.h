@@ -128,6 +128,7 @@ extern "C" {
 #define OVE_LNX_NR_umount2 52
 #define OVE_LNX_NR_statfs64 266
 #define OVE_LNX_NR_fstatfs64 267
+#define OVE_LNX_NR_getrandom 384
 #define OVE_LNX_AT_REMOVEDIR 0x200
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
