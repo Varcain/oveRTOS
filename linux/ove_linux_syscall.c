@@ -1045,6 +1045,21 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 	return pos;
 }
 
+/* _llseek(fd, offset_high, offset_low, loff_t *result, whence): the 64-bit-offset
+ * seek uClibc uses in large-file mode. Pagers/editors (less/more/vi) seek to size
+ * the file (the %-position). Our files are well under 4 GB so offset_high is 0. */
+static long sys_llseek(ove_lnx_proc_t *p, int fd, unsigned long off_hi, unsigned long off_lo,
+		       uint64_t *result, unsigned int whence)
+{
+	(void)off_hi;
+	long pos = sys_lseek(p, fd, (long)off_lo, (int)whence);
+	if (pos < 0)
+		return pos;
+	if (result)
+		*result = (uint64_t)pos;
+	return 0;
+}
+
 /* Fill an ARM kstat64 from a node's mode + size. */
 static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t mode, uint64_t size)
 {
@@ -1664,6 +1679,9 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_dup2(proc, (int)a0, (int)a1);
 	case OVE_LNX_NR_lseek:
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
+	case OVE_LNX_NR__llseek:
+		return sys_llseek(proc, (int)a0, (unsigned long)a1, (unsigned long)a2,
+				  (uint64_t *)(uintptr_t)a3, (unsigned int)a4);
 	case OVE_LNX_NR_fstat64:
 		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
 	case OVE_LNX_NR_stat64: /* (path, statbuf) — follows symlinks */
