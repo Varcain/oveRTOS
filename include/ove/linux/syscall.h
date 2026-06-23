@@ -130,6 +130,7 @@ extern "C" {
 #define OVE_LNX_NR_fstatfs64 267
 #define OVE_LNX_NR_getrandom 384
 /* init / getty / login boot + shell job control. */
+#define OVE_LNX_NR_umask 60
 #define OVE_LNX_NR_getpgrp 65
 #define OVE_LNX_NR_setsid 66
 #define OVE_LNX_NR_reboot 88

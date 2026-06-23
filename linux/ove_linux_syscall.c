@@ -15,8 +15,10 @@
 
 #include <string.h>
 
-/* Set by reboot(2)/poweroff to stop the run loop (defined in the common seam). */
-extern volatile int g_ove_lnx_halt;
+/* Set by reboot(2)/poweroff to stop the run loop; the common run loop observes
+ * it (declared extern there). Defined here so the host syscall tests, which do
+ * not link the run loop, still resolve the symbol. */
+volatile int g_ove_lnx_halt;
 
 /*
  * Linux syscall personality — engine-agnostic dispatch.
@@ -424,6 +426,8 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 			t->size = s->offset;
 		return (long)len;
 	}
+	if (s->kind == OVE_LNX_FD_CONSOLE && s->file_idx == 3)
+		return (long)len; /* /dev/null: discard */
 	/* Only output consoles are writable (file_idx != 0); the rootfs is read-only. */
 	if (s->kind != OVE_LNX_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
 		return -OVE_LNX_EBADF;
@@ -464,6 +468,8 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
 		if (s->file_idx == 1) /* output consoles (stdout/stderr) are not readable */
 			return -OVE_LNX_EBADF;
+		if (s->file_idx == 3) /* /dev/null */
+			return 0;     /* EOF */
 		if (!p->read_fn)
 			return 0; /* EOF */
 		return p->read_fn(p->io_ctx, fd, buf, len);
@@ -897,6 +903,10 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	if (strcmp(path, "/dev/console") == 0 || strcmp(path, "/dev/tty") == 0 ||
 	    strcmp(path, "/dev/tty0") == 0 || strcmp(path, "/dev/ttyS0") == 0)
 		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 2, 0);
+	/* /dev/null (file_idx 3): reads EOF, writes are discarded. init points a
+	 * child's stdio here when it has no controlling tty. */
+	if (strcmp(path, "/dev/null") == 0)
+		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 3, 0);
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
 	int wi = wfs_find(path);
 
@@ -1758,15 +1768,23 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	}
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_setpgid:
-		return 0;	    /* process-control setup accepted (inert) */
-	case OVE_LNX_NR_getpgrp:    /* shell job control: process group == pid */
-	case OVE_LNX_NR_setsid:	    /* getty/login start a new session */
-		return proc->pid;   /* the caller becomes the session/group leader */
-	case OVE_LNX_NR_reboot:	    /* halt/poweroff/reboot: stop the system */
-		g_ove_lnx_halt = 1; /* the run loop breaks + tears down */
-		proc->exited = 1;   /* park this process meanwhile */
-		proc->exit_status = 0;
+	case OVE_LNX_NR_umask:
+		return 0;	  /* process-control / umask setup accepted (inert) */
+	case OVE_LNX_NR_getpgrp:  /* shell job control: process group == pid */
+	case OVE_LNX_NR_setsid:	  /* getty/login start a new session */
+		return proc->pid; /* the caller becomes the session/group leader */
+	case OVE_LNX_NR_reboot: { /* reboot(magic1, magic2, cmd, arg) — cmd is a2 */
+		unsigned cmd = (unsigned)a2;
+		/* Only an actual halt/poweroff/restart stops the system; init calls
+		 * reboot(CAD_OFF=0) at startup to disable Ctrl-Alt-Del — a no-op here. */
+		if (cmd == 0x01234567u /* RESTART */ || cmd == 0xcdef0123u /* HALT */ ||
+		    cmd == 0x4321fedcu /* POWER_OFF */ || cmd == 0xa1b2c3d4u /* RESTART2 */) {
+			g_ove_lnx_halt = 1;
+			proc->exited = 1;
+			proc->exit_status = 0;
+		}
 		return 0;
+	}
 	case OVE_LNX_NR_gettid:
 		return proc->pid;	 /* single-threaded: tid == pid */
 	case OVE_LNX_NR_clock_gettime: { /* (clockid, struct timespec*) — 32-bit time_t */

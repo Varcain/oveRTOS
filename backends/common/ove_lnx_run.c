@@ -30,7 +30,8 @@ struct ove_lnx_resume_ctx g_ove_lnx_vfork;
 ove_lnx_proc_t g_ove_lnx_proc[OVE_LNX_NSLOT];
 int g_ove_lnx_used[OVE_LNX_NSLOT];
 volatile int g_ove_lnx_active;
-volatile int g_ove_lnx_halt;
+/* g_ove_lnx_halt is defined in the syscall layer (reboot(2) sets it) so the
+ * host syscall tests link without the run loop; the run loop only observes it. */
 
 static ove_arena_t g_arenas[OVE_LNX_NREG];
 static const ove_lnx_run_config_t *g_cfg;
@@ -223,8 +224,21 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	if (bb < 0 || !cfg->rootfs[bb].data)
 		return OVE_LNX_RUN_ELAUNCH;
 
+	/* Sequentialised process STACK: slots 0..top are live (0..top-1 parked
+	 * parents, top running). Each slot uses a region (a vfork child shares its
+	 * parent's region until it execs into a fresh one). vctx[s] remembers slot
+	 * s's fork-return context so it can be resumed when its child exits. */
+	int R[OVE_LNX_NSLOT];	  /* region used by each live slot */
+	int rowner[OVE_LNX_NREG]; /* slot that owns each region, or -1 */
+	struct ove_lnx_resume_ctx vctx[OVE_LNX_NSLOT];
+	for (int r = 0; r < OVE_LNX_NREG; r++)
+		rowner[r] = -1;
+
 	g_ove_lnx_active = 1;
 	g_ove_lnx_halt = 0;
+	int top = 0;
+	R[0] = 0;
+	rowner[0] = 0;
 	if (launch(eng, 0, 0, cfg->rootfs[bb].data, cfg->rootfs[bb].size, 1, 0, argc, argv) != 0) {
 		g_ove_lnx_active = 0;
 		return OVE_LNX_RUN_ELAUNCH;
@@ -232,70 +246,101 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 	int rc = OVE_LNX_RUN_ETIMEOUT;
 	int next_pid = 2;
-	int cur_child = 2;
-	for (int i = 0; i < 8000; i++) {
+	for (int it = 0; it < 20000; it++) {
 		if (g_ove_lnx_halt) { /* reboot(2)/poweroff: stop the whole system */
 			rc = 0;
 			break;
 		}
+		/* (a) the running slot forked: push a child sharing the parent's region. */
 		if (g_vfork_pending) {
 			g_vfork_pending = 0;
-			cur_child = next_pid++;
-			g_ove_lnx_proc[1] = g_ove_lnx_proc[0]; /* same arena/fds/rootfs */
-			g_ove_lnx_proc[1].pid = cur_child;
-			g_ove_lnx_proc[1].ppid = 1;
-			g_ove_lnx_proc[1].exited = 0;
-			g_ove_lnx_proc[1].exec_pending = 0;
-			g_ove_lnx_proc[1].child_count = 0;
-			eng->abort_slot(0); /* parent parked; resumed after child exit */
-			eng->spawn_resume(1, 0, 0);
+			if (top + 1 >= OVE_LNX_NSLOT) {
+				/* process stack full — fail the fork (parent gets -ENOMEM). */
+				eng->abort_slot(top);
+				eng->spawn_resume(top, R[top], -OVE_LNX_ENOMEM);
+				continue;
+			}
+			vctx[top] = g_ove_lnx_vfork; /* remember the parent's resume point */
+			int child = top + 1;
+			g_ove_lnx_proc[child] = g_ove_lnx_proc[top]; /* vfork shares the image */
+			g_ove_lnx_proc[child].pid = next_pid++;
+			g_ove_lnx_proc[child].ppid = g_ove_lnx_proc[top].pid;
+			g_ove_lnx_proc[child].exited = 0;
+			g_ove_lnx_proc[child].exec_pending = 0;
+			g_ove_lnx_proc[child].child_count = 0;
+			R[child] = R[top]; /* child shares the parent's region until it execs */
+			eng->abort_slot(top);
+			eng->spawn_resume(child, R[child], 0); /* g_ove_lnx_vfork = parent ctx */
+			top = child;
 			continue;
 		}
-		if (g_ove_lnx_used[1] && g_ove_lnx_proc[1].exec_pending) {
-			int idx = g_ove_lnx_proc[1].exec_file_idx;
-			int eargc = g_ove_lnx_proc[1].exec_argc;
+		/* (b) the running slot execs: load the new image into a fresh region. */
+		if (g_ove_lnx_used[top] && g_ove_lnx_proc[top].exec_pending) {
+			int idx = g_ove_lnx_proc[top].exec_file_idx;
+			int eargc = g_ove_lnx_proc[top].exec_argc;
 			static char args[OVE_LNX_EXEC_ARGBUF];
 			static const char *ptrs[OVE_LNX_EXEC_MAXARGS + 1];
 			size_t off = 0;
 			for (int j = 0; j < eargc; j++) {
-				size_t n = strlen(g_ove_lnx_proc[1].exec_argv[j]) + 1;
-				memcpy(args + off, g_ove_lnx_proc[1].exec_argv[j], n);
+				size_t n = strlen(g_ove_lnx_proc[top].exec_argv[j]) + 1;
+				memcpy(args + off, g_ove_lnx_proc[top].exec_argv[j], n);
 				ptrs[j] = args + off;
 				off += n;
 			}
 			ptrs[eargc] = NULL;
-			/* fds + cwd survive execve (no close-on-exec): preserve them across
-			 * the relaunch (launch() re-inits the proc), so a pipe wired by dup2
-			 * before exec reaches the new image and the child keeps its cwd. */
+			/* fds + cwd survive execve (no close-on-exec): preserve them across the
+			 * relaunch (launch() re-inits the proc), so a pipe wired by dup2 before
+			 * exec reaches the new image and the child keeps its cwd. */
 			ove_lnx_fd_t saved_fds[OVE_LNX_MAX_FDS];
 			char saved_cwd[OVE_LNX_PATH_MAX];
-			memcpy(saved_fds, g_ove_lnx_proc[1].fds, sizeof(saved_fds));
-			memcpy(saved_cwd, g_ove_lnx_proc[1].cwd, sizeof(saved_cwd));
-			eng->abort_slot(1);
-			if (launch(eng, 1, 1, cfg->rootfs[idx].data, cfg->rootfs[idx].size,
-				   cur_child, 1, eargc, ptrs) != 0) {
+			int pid = g_ove_lnx_proc[top].pid, ppid = g_ove_lnx_proc[top].ppid;
+			memcpy(saved_fds, g_ove_lnx_proc[top].fds, sizeof(saved_fds));
+			memcpy(saved_cwd, g_ove_lnx_proc[top].cwd, sizeof(saved_cwd));
+			if (rowner[R[top]] == top) /* free this slot's prior owned region */
+				rowner[R[top]] = -1;
+			int nr = -1;
+			for (int r = 0; r < OVE_LNX_NREG; r++)
+				if (rowner[r] < 0) {
+					nr = r;
+					break;
+				}
+			if (nr < 0) {
 				rc = OVE_LNX_RUN_EEXEC;
 				break;
 			}
-			memcpy(g_ove_lnx_proc[1].fds, saved_fds, sizeof(saved_fds));
-			memcpy(g_ove_lnx_proc[1].cwd, saved_cwd, sizeof(saved_cwd));
+			R[top] = nr;
+			rowner[nr] = top;
+			eng->abort_slot(top);
+			if (launch(eng, top, nr, cfg->rootfs[idx].data, cfg->rootfs[idx].size, pid,
+				   ppid, eargc, ptrs) != 0) {
+				rc = OVE_LNX_RUN_EEXEC;
+				break;
+			}
+			memcpy(g_ove_lnx_proc[top].fds, saved_fds, sizeof(saved_fds));
+			memcpy(g_ove_lnx_proc[top].cwd, saved_cwd, sizeof(saved_cwd));
 			continue;
 		}
-		if (g_ove_lnx_used[1] && g_ove_lnx_proc[1].exited) {
-			int status = g_ove_lnx_proc[1].exit_status;
-			eng->abort_slot(1);
-			ove_lnx_proc_t *par = &g_ove_lnx_proc[0];
+		/* (c) the running slot exited: pop it, resume its parent. */
+		if (g_ove_lnx_used[top] && g_ove_lnx_proc[top].exited) {
+			int status = g_ove_lnx_proc[top].exit_status;
+			int child_pid = g_ove_lnx_proc[top].pid;
+			eng->abort_slot(top);
+			if (rowner[R[top]] == top) /* free the owned region */
+				rowner[R[top]] = -1;
+			if (top == 0) { /* init exited → the system is done */
+				rc = status;
+				break;
+			}
+			top--;
+			ove_lnx_proc_t *par = &g_ove_lnx_proc[top]; /* queue the zombie for wait4 */
 			if (par->child_count < OVE_LNX_MAX_CHILD) {
-				par->child_pid[par->child_count] = cur_child;
+				par->child_pid[par->child_count] = child_pid;
 				par->child_status[par->child_count] = status;
 				par->child_count++;
 			}
-			eng->spawn_resume(0, 0, cur_child);
+			g_ove_lnx_vfork = vctx[top]; /* resume the parent at its fork ctx */
+			eng->spawn_resume(top, R[top], child_pid);
 			continue;
-		}
-		if (g_ove_lnx_used[0] && g_ove_lnx_proc[0].exited) {
-			rc = g_ove_lnx_proc[0].exit_status;
-			break;
 		}
 		eng->sleep_ms(1);
 	}

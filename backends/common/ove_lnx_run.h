@@ -28,8 +28,11 @@
 
 #define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
-#define OVE_LNX_NREG 2			  /* two regions: a parent + child image */
-#define OVE_LNX_NSLOT 2
+/* The process model is a sequentialised STACK: at most OVE_LNX_NSLOT nested live
+ * processes (init -> shell -> command -> ...), each loaded image in its own
+ * region. Depth 4 covers init -> getty/login/sh -> command -> sub-command. */
+#define OVE_LNX_NREG 4
+#define OVE_LNX_NSLOT 4
 
 /* A uniform Cortex-M register frame the dispatch reads/writes. The seam populates
  * it from its native exception frame and writes the modified HW registers back.
