@@ -91,6 +91,15 @@ extern "C" {
 #define OVE_LNX_NR_openat 322
 #define OVE_LNX_NR_set_robust_list 338
 #define OVE_LNX_NR_statx 397
+/* path-based metadata: stat/lstat/readlink/access families. */
+#define OVE_LNX_NR_access 33
+#define OVE_LNX_NR_readlink 85
+#define OVE_LNX_NR_stat64 195
+#define OVE_LNX_NR_lstat64 196
+#define OVE_LNX_NR_fstatat64 327
+#define OVE_LNX_NR_readlinkat 332
+#define OVE_LNX_NR_faccessat 334
+#define OVE_LNX_NR_faccessat2 439
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
 #define OVE_LNX_MAP_ANONYMOUS 0x20
@@ -161,6 +170,7 @@ extern "C" {
 /* statx: AT_EMPTY_PATH means "stat the dirfd itself" (fstat); the basic-stats
  * result mask reported back in stx_mask. */
 #define OVE_LNX_AT_EMPTY_PATH 0x1000
+#define OVE_LNX_AT_SYMLINK_NOFOLLOW 0x100
 #define OVE_LNX_STATX_BASIC_STATS 0x000007ffu
 
 /* Linux errno values returned (negated) on syscall failure. */

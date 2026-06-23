@@ -510,32 +510,14 @@ static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
 }
 
 /*
- * Resolve `in` (absolute, or relative to the process cwd) into a normalized
- * absolute path in out[outlen]: joins against cwd, then collapses ".", "..",
- * and duplicate/trailing slashes. Returns 0, or -ENAMETOOLONG on overflow.
+ * Collapse ".", "..", and duplicate/trailing slashes in absolute path `in` into
+ * out[outlen]. Returns 0, or -ENAMETOOLONG on overflow.
  */
-static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, size_t outlen)
+static long normalize_abs(const char *in, char *out, size_t outlen)
 {
-	char joined[OVE_LNX_PATH_MAX];
-	size_t jl = 0;
-	if (in[0] != '/') { /* prefix the cwd (which is absolute + normalized) */
-		for (const char *c = p->cwd; *c; c++) {
-			if (jl + 2 >= sizeof(joined))
-				return -OVE_LNX_ENAMETOOLONG;
-			joined[jl++] = *c;
-		}
-		joined[jl++] = '/';
-	}
-	for (const char *c = in; *c; c++) {
-		if (jl + 1 >= sizeof(joined))
-			return -OVE_LNX_ENAMETOOLONG;
-		joined[jl++] = *c;
-	}
-	joined[jl] = '\0';
-
 	size_t ol = 0;
 	out[0] = '\0';
-	const char *s = joined;
+	const char *s = in;
 	while (*s) {
 		while (*s == '/')
 			s++;
@@ -568,6 +550,75 @@ static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, siz
 		out[1] = '\0';
 	}
 	return 0;
+}
+
+/*
+ * Resolve `in` (absolute, or relative to the process cwd) into a normalized
+ * absolute path in out[outlen]. Returns 0, or -ENAMETOOLONG on overflow.
+ */
+static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, size_t outlen)
+{
+	char joined[OVE_LNX_PATH_MAX];
+	size_t jl = 0;
+	if (in[0] != '/') { /* prefix the cwd (which is absolute + normalized) */
+		for (const char *c = p->cwd; *c; c++) {
+			if (jl + 2 >= sizeof(joined))
+				return -OVE_LNX_ENAMETOOLONG;
+			joined[jl++] = *c;
+		}
+		joined[jl++] = '/';
+	}
+	for (const char *c = in; *c; c++) {
+		if (jl + 1 >= sizeof(joined))
+			return -OVE_LNX_ENAMETOOLONG;
+		joined[jl++] = *c;
+	}
+	joined[jl] = '\0';
+	return normalize_abs(joined, out, outlen);
+}
+
+/* Find the rootfs index for an absolute path, or -1. */
+static int fs_lookup(const ove_lnx_proc_t *p, const char *abspath)
+{
+	for (int i = 0; i < p->fs_count; i++)
+		if (strcmp(p->fs[i].path, abspath) == 0)
+			return i;
+	return -1;
+}
+
+/*
+ * Follow symlinks from rootfs index `idx` (up to 8 hops), normalizing each
+ * target against the link's own directory (so e.g. /sbin/init -> ../bin/busybox
+ * resolves to /bin/busybox). Returns the final non-symlink index, or -1.
+ */
+static int fs_follow(const ove_lnx_proc_t *p, int idx)
+{
+	for (int hop = 0; hop < 8 && idx >= 0; hop++) {
+		const ove_lnx_file_t *lnk = &p->fs[idx];
+		if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK)
+			return idx;
+		const char *tgt = (const char *)lnk->data;
+		size_t tl = lnk->size;
+		if (!tgt || tl == 0)
+			return -1;
+		char raw[OVE_LNX_PATH_MAX], abs[OVE_LNX_PATH_MAX];
+		size_t rl = 0;
+		if (tgt[0] != '/') { /* relative to the link's own directory */
+			const char *base = strrchr(lnk->path, '/');
+			rl = base ? (size_t)(base - lnk->path + 1) : 0;
+			if (rl >= sizeof(raw))
+				return -1;
+			memcpy(raw, lnk->path, rl);
+		}
+		if (rl + tl >= sizeof(raw))
+			return -1;
+		memcpy(raw + rl, tgt, tl);
+		raw[rl + tl] = '\0';
+		if (normalize_abs(raw, abs, sizeof(abs)) < 0)
+			return -1;
+		idx = fs_lookup(p, abs);
+	}
+	return idx;
 }
 
 static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags)
@@ -723,6 +774,18 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 	return pos;
 }
 
+/* Fill an ARM kstat64 from a node's mode + size. */
+static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t mode, uint64_t size)
+{
+	memset(st, 0, sizeof(*st));
+	st->st_nlink = 1;
+	st->st_mode = mode;
+	st->st_size = (int64_t)size;
+	/* A character device blksize makes uClibc block-buffer stdio. */
+	st->st_blksize = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFCHR) ? 1024u : 512u;
+	st->st_blocks = (uint64_t)((size + 511u) / 512u);
+}
+
 static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 {
 	ove_lnx_fd_t *s = fd_slot(p, fd);
@@ -730,28 +793,76 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 		return -OVE_LNX_EBADF;
 	if (!statbuf)
 		return -OVE_LNX_EFAULT;
-
-	struct ove_lnx_kstat64 *st = statbuf;
-	memset(st, 0, sizeof(*st));
-	st->st_nlink = 1;
-	if (s->kind == OVE_LNX_FD_FILE) {
-		const ove_lnx_file_t *f = &p->fs[s->file_idx];
-		st->st_mode = file_mode(f);
-		st->st_size = (int64_t)f->size;
-		st->st_blksize = 512;
-		st->st_blocks = (uint64_t)((f->size + 511u) / 512u);
-	} else if (s->kind == OVE_LNX_FD_TMPFS) {
-		size_t sz = g_tmp[s->file_idx].size;
-		st->st_mode = OVE_LNX_S_IFREG | 0644u;
-		st->st_size = (int64_t)sz;
-		st->st_blksize = 512;
-		st->st_blocks = (uint64_t)((sz + 511u) / 512u);
-	} else {
-		/* A character device: makes uClibc block-buffer stdio. */
-		st->st_mode = OVE_LNX_S_IFCHR | 0620u;
-		st->st_blksize = 1024;
-	}
+	if (s->kind == OVE_LNX_FD_FILE)
+		fill_kstat64(statbuf, file_mode(&p->fs[s->file_idx]), p->fs[s->file_idx].size);
+	else if (s->kind == OVE_LNX_FD_TMPFS)
+		fill_kstat64(statbuf, OVE_LNX_S_IFREG | 0644u, g_tmp[s->file_idx].size);
+	else
+		fill_kstat64(statbuf, OVE_LNX_S_IFCHR | 0620u, 0);
 	return 0;
+}
+
+/* path-based stat: resolve, optionally follow a trailing symlink, fill kstat64. */
+static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void *statbuf)
+{
+	if (!path || !statbuf)
+		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	int idx = fs_lookup(p, abspath);
+	if (idx < 0) {
+		int ti = tmp_find(abspath);
+		if (ti >= 0) {
+			fill_kstat64(statbuf, OVE_LNX_S_IFREG | 0644u, g_tmp[ti].size);
+			return 0;
+		}
+		return -OVE_LNX_ENOENT;
+	}
+	if (follow) {
+		idx = fs_follow(p, idx);
+		if (idx < 0)
+			return -OVE_LNX_ENOENT;
+	}
+	fill_kstat64(statbuf, file_mode(&p->fs[idx]), p->fs[idx].size);
+	return 0;
+}
+
+/* readlink: write the symlink target (not NUL-terminated) + return its length. */
+static long sys_readlink(ove_lnx_proc_t *p, const char *path, char *buf, size_t bufsiz)
+{
+	if (!path || !buf)
+		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	int idx = fs_lookup(p, abspath);
+	if (idx < 0)
+		return -OVE_LNX_ENOENT;
+	const ove_lnx_file_t *lnk = &p->fs[idx];
+	if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK || !lnk->data)
+		return -OVE_LNX_EINVAL;
+	size_t n = lnk->size > bufsiz ? bufsiz : lnk->size;
+	memcpy(buf, lnk->data, n);
+	return (long)n;
+}
+
+/* access/faccessat: existence check (all existing nodes are accessible). */
+static long sys_access(ove_lnx_proc_t *p, const char *path)
+{
+	if (!path)
+		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	if (abspath[0] == '/' && abspath[1] == '\0')
+		return 0; /* root */
+	if (fs_lookup(p, abspath) >= 0 || tmp_find(abspath) >= 0)
+		return 0;
+	return -OVE_LNX_ENOENT;
 }
 
 /* getdents64: emit the directory's immediate children as linux_dirent64 records. */
@@ -883,49 +994,11 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	long rr = resolve_path(p, path, execabs, sizeof(execabs));
 	if (rr < 0)
 		return rr;
-	path = execabs;
-	int idx = -1;
-	for (int i = 0; i < p->fs_count; i++) {
-		if (strcmp(p->fs[i].path, path) == 0) {
-			idx = i;
-			break;
-		}
-	}
-	if (idx < 0)
-		return -OVE_LNX_ENOENT;
 	/* Follow symlinks, e.g. /bin/echo -> busybox (Buildroot installs applets as
 	 * symlinks). The argv (argv[0] = "echo") is kept, so busybox runs that applet. */
-	for (int hop = 0; hop < 8; hop++) {
-		const ove_lnx_file_t *lnk = &p->fs[idx];
-		if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK)
-			break;
-		size_t tl = lnk->size;
-		char abspath[128];
-		if (!lnk->data || tl == 0 || tl >= sizeof(abspath))
-			return -OVE_LNX_ENOENT;
-		if (((const char *)lnk->data)[0] == '/') {
-			memcpy(abspath, lnk->data, tl);
-			abspath[tl] = 0;
-		} else { /* relative to the symlink's own directory */
-			const char *base = strrchr(lnk->path, '/');
-			size_t dir = base ? (size_t)(base - lnk->path + 1) : 0;
-			if (dir + tl >= sizeof(abspath))
-				return -OVE_LNX_ENOENT;
-			memcpy(abspath, lnk->path, dir);
-			memcpy(abspath + dir, lnk->data, tl);
-			abspath[dir + tl] = 0;
-		}
-		int ni = -1;
-		for (int i = 0; i < p->fs_count; i++) {
-			if (strcmp(p->fs[i].path, abspath) == 0) {
-				ni = i;
-				break;
-			}
-		}
-		if (ni < 0)
-			return -OVE_LNX_ENOENT;
-		idx = ni;
-	}
+	int idx = fs_follow(p, fs_lookup(p, execabs));
+	if (idx < 0)
+		return -OVE_LNX_ENOENT;
 	if ((file_mode(&p->fs[idx]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
 		return -OVE_LNX_EACCES;
 
@@ -985,6 +1058,25 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
 	case OVE_LNX_NR_fstat64:
 		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
+	case OVE_LNX_NR_stat64: /* (path, statbuf) — follows symlinks */
+		return sys_stat_path(proc, (const char *)(uintptr_t)a0, 1, (void *)(uintptr_t)a1);
+	case OVE_LNX_NR_lstat64: /* (path, statbuf) — does NOT follow */
+		return sys_stat_path(proc, (const char *)(uintptr_t)a0, 0, (void *)(uintptr_t)a1);
+	case OVE_LNX_NR_fstatat64: /* (dirfd, path, statbuf, flags) */
+		return sys_stat_path(proc, (const char *)(uintptr_t)a1,
+				     !((int)a3 & OVE_LNX_AT_SYMLINK_NOFOLLOW),
+				     (void *)(uintptr_t)a2);
+	case OVE_LNX_NR_readlink: /* (path, buf, bufsiz) */
+		return sys_readlink(proc, (const char *)(uintptr_t)a0, (char *)(uintptr_t)a1,
+				    (size_t)a2);
+	case OVE_LNX_NR_readlinkat: /* (dirfd, path, buf, bufsiz) */
+		return sys_readlink(proc, (const char *)(uintptr_t)a1, (char *)(uintptr_t)a2,
+				    (size_t)a3);
+	case OVE_LNX_NR_access: /* (path, mode) — mode ignored */
+		return sys_access(proc, (const char *)(uintptr_t)a0);
+	case OVE_LNX_NR_faccessat:  /* (dirfd, path, mode) */
+	case OVE_LNX_NR_faccessat2: /* (dirfd, path, mode, flags) */
+		return sys_access(proc, (const char *)(uintptr_t)a1);
 	case OVE_LNX_NR_fcntl: /* old 32-bit fcntl: same dispatch as fcntl64 here */
 	case OVE_LNX_NR_fcntl64: {
 		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
