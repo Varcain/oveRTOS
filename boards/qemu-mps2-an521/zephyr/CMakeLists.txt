@@ -17,6 +17,13 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveZephyrCommon.cmake)
 
 ove_zephyr_pre_find()
 
+# The Linux personality places its program-image regions in a NOLOAD PSRAM linker
+# region (see ove-psram.overlay) so they cost RAM but not flash. Must be set before
+# find_package(Zephyr) (devicetree is processed there).
+if(OVE_LINUX)
+    set(EXTRA_DTC_OVERLAY_FILE ${CMAKE_CURRENT_LIST_DIR}/ove-psram.overlay)
+endif()
+
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_firmware)
 

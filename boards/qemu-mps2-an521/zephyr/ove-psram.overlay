@@ -1,0 +1,17 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Linux personality: turn the AN521 PSRAM (16 MB @ 0x80000000) into a NOLOAD
+ * linker region ("OVE_PROG_RAM") for the program-image regions. Placed here they
+ * cost RAM (inherent) but NOT flash — unlike Zephyr's app_smem, a *loaded* section
+ * that stored the 2 MB of zero-init regions as 2 MB of flash zeros. PSRAM is also
+ * a separate region from the kernel SRAM, so the per-program MPU partitions don't
+ * overlap the kernel's region (the reason app_smem was used originally).
+ */
+
+&psram {
+	compatible = "zephyr,memory-region", "mmio-sram";
+	zephyr,memory-region = "OVE_PROG_RAM";
+};

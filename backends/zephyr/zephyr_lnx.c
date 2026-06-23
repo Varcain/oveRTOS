@@ -18,13 +18,19 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/app_memory/app_memdomain.h>
+#include <zephyr/linker/devicetree_regions.h>
 #include <string.h>
 
 #include "../common/ove_lnx_run.h"
 
-K_APPMEM_PARTITION_DEFINE(ove_lnx_prog_partition);
-K_APP_BMEM(ove_lnx_prog_partition)
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __aligned(32);
+/* The program-image regions live in a NOLOAD PSRAM linker region (the board's
+ * ove-psram.overlay turns the AN521 PSRAM into "OVE_PROG_RAM"): RAM-resident but
+ * ZERO flash cost — Zephyr's app_smem is a *loaded* section, so a K_APP_BMEM array
+ * this big would store 2 MB of zero-init regions as 2 MB of flash. PSRAM is also a
+ * region separate from the kernel SRAM, so the per-program MPU partitions built in
+ * setup_domain() don't overlap the kernel's region (the reason app_smem was used). */
+static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] Z_GENERIC_SECTION(
+	LINKER_DT_NODE_REGION_NAME(DT_NODELABEL(psram))) __aligned(32);
 
 /* A user-readable partition (in every program domain) for the vfork resume
  * context the unprivileged resume thread replays. The common capture buffer is
