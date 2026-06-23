@@ -256,10 +256,13 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				off += n;
 			}
 			ptrs[eargc] = NULL;
-			/* fds survive execve (no close-on-exec): preserve the table so a pipe
-			 * wired by dup2 before exec reaches the new image. */
+			/* fds + cwd survive execve (no close-on-exec): preserve them across
+			 * the relaunch (launch() re-inits the proc), so a pipe wired by dup2
+			 * before exec reaches the new image and the child keeps its cwd. */
 			ove_lnx_fd_t saved_fds[OVE_LNX_MAX_FDS];
+			char saved_cwd[OVE_LNX_PATH_MAX];
 			memcpy(saved_fds, g_ove_lnx_proc[1].fds, sizeof(saved_fds));
+			memcpy(saved_cwd, g_ove_lnx_proc[1].cwd, sizeof(saved_cwd));
 			eng->abort_slot(1);
 			if (launch(eng, 1, 1, cfg->rootfs[idx].data, cfg->rootfs[idx].size,
 				   cur_child, 1, eargc, ptrs) != 0) {
@@ -267,6 +270,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				break;
 			}
 			memcpy(g_ove_lnx_proc[1].fds, saved_fds, sizeof(saved_fds));
+			memcpy(g_ove_lnx_proc[1].cwd, saved_cwd, sizeof(saved_cwd));
 			continue;
 		}
 		if (g_ove_lnx_used[1] && g_ove_lnx_proc[1].exited) {

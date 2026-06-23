@@ -59,6 +59,7 @@ extern "C" {
 #define OVE_LNX_NR_write 4
 #define OVE_LNX_NR_open 5
 #define OVE_LNX_NR_close 6
+#define OVE_LNX_NR_chdir 12
 #define OVE_LNX_NR_execve 11
 #define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR_getpid 20
@@ -179,6 +180,7 @@ extern "C" {
 #define OVE_LNX_EROFS 30
 #define OVE_LNX_EINVAL 22
 #define OVE_LNX_ERANGE 34
+#define OVE_LNX_ENAMETOOLONG 36
 #define OVE_LNX_ENOSYS 38
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */
@@ -239,6 +241,8 @@ typedef struct ove_lnx_fd {
 
 /** Maximum simultaneously-open file descriptors per process. */
 #define OVE_LNX_MAX_FDS 16
+/** Maximum path length (absolute, normalized) the personality resolves. */
+#define OVE_LNX_PATH_MAX 256
 /** Max exited children queued for wait4 (a pipeline forks several). */
 #define OVE_LNX_MAX_CHILD 8
 /** Bounds for an execve() argument vector captured for the engine to relaunch. */
@@ -266,6 +270,7 @@ typedef struct ove_lnx_proc {
 	ove_lnx_fd_t fds[OVE_LNX_MAX_FDS]; /**< fd table; 0/1/2 are the std streams. */
 	int pid;			   /**< This process's id (1 for the initial program). */
 	int ppid;			   /**< Parent process id (0 for the initial program). */
+	char cwd[OVE_LNX_PATH_MAX];	   /**< Current working directory (absolute, normalized). */
 	int exited;			   /**< Set once @c exit / @c exit_group is called. */
 	int exit_status;		   /**< Low 8 bits of the exit code. */
 	/* Queue of exited (zombie) children awaiting wait4, FIFO. A pipeline forks

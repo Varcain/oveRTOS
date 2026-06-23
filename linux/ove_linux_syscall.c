@@ -136,7 +136,9 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 
 	memset(proc, 0, sizeof(*proc));
 	proc->arena = arena;
-	proc->pid = 1; /* the initial program is pid 1 (ppid 0); fork assigns the rest */
+	proc->pid = 1;	    /* the initial program is pid 1 (ppid 0); fork assigns the rest */
+	proc->cwd[0] = '/'; /* start at the root directory */
+	proc->cwd[1] = '\0';
 	/* fd 0/1/2 are the standard streams, routed to the caller's callbacks.
 	 * For console fds, file_idx marks the direction: 0 = readable (stdin),
 	 * 1 = writable (stdout/stderr); this survives F_DUPFD so a dup of stdin
@@ -507,11 +509,77 @@ static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
 	return -OVE_LNX_EMFILE;
 }
 
+/*
+ * Resolve `in` (absolute, or relative to the process cwd) into a normalized
+ * absolute path in out[outlen]: joins against cwd, then collapses ".", "..",
+ * and duplicate/trailing slashes. Returns 0, or -ENAMETOOLONG on overflow.
+ */
+static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, size_t outlen)
+{
+	char joined[OVE_LNX_PATH_MAX];
+	size_t jl = 0;
+	if (in[0] != '/') { /* prefix the cwd (which is absolute + normalized) */
+		for (const char *c = p->cwd; *c; c++) {
+			if (jl + 2 >= sizeof(joined))
+				return -OVE_LNX_ENAMETOOLONG;
+			joined[jl++] = *c;
+		}
+		joined[jl++] = '/';
+	}
+	for (const char *c = in; *c; c++) {
+		if (jl + 1 >= sizeof(joined))
+			return -OVE_LNX_ENAMETOOLONG;
+		joined[jl++] = *c;
+	}
+	joined[jl] = '\0';
+
+	size_t ol = 0;
+	out[0] = '\0';
+	const char *s = joined;
+	while (*s) {
+		while (*s == '/')
+			s++;
+		if (!*s)
+			break;
+		const char *seg = s;
+		while (*s && *s != '/')
+			s++;
+		size_t seglen = (size_t)(s - seg);
+		if (seglen == 1 && seg[0] == '.') {
+			continue; /* "." → current dir */
+		}
+		if (seglen == 2 && seg[0] == '.' && seg[1] == '.') {
+			while (ol > 0 && out[ol - 1] != '/') /* drop last component */
+				ol--;
+			if (ol > 0)
+				ol--; /* drop the separating '/' */
+			out[ol] = '\0';
+			continue;
+		}
+		if (ol + 1 + seglen >= outlen)
+			return -OVE_LNX_ENAMETOOLONG;
+		out[ol++] = '/';
+		memcpy(out + ol, seg, seglen);
+		ol += seglen;
+		out[ol] = '\0';
+	}
+	if (ol == 0) { /* everything collapsed away → root */
+		out[0] = '/';
+		out[1] = '\0';
+	}
+	return 0;
+}
+
 static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags)
 {
-	(void)dirfd; /* rootfs paths are absolute */
+	(void)dirfd; /* dirfd is AT_FDCWD; relative paths resolve against p->cwd */
 	if (!path)
 		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	path = abspath;
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
 	int ti = tmp_find(path);
 
@@ -761,9 +829,13 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 	uint32_t mode;
 	uint64_t size;
 	if (path && path[0] && !(flags & OVE_LNX_AT_EMPTY_PATH)) {
+		char abspath[OVE_LNX_PATH_MAX];
+		long rr = resolve_path(p, path, abspath, sizeof(abspath));
+		if (rr < 0)
+			return rr;
 		int idx = -1;
 		for (int i = 0; i < p->fs_count; i++) {
-			if (strcmp(p->fs[i].path, path) == 0) {
+			if (strcmp(p->fs[i].path, abspath) == 0) {
 				idx = i;
 				break;
 			}
@@ -807,6 +879,11 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 {
 	if (!path)
 		return -OVE_LNX_EFAULT;
+	char execabs[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, execabs, sizeof(execabs));
+	if (rr < 0)
+		return rr;
+	path = execabs;
 	int idx = -1;
 	for (int i = 0; i < p->fs_count; i++) {
 		if (strcmp(p->fs[i].path, path) == 0) {
@@ -946,16 +1023,42 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_getppid:
 		return proc->ppid;
 	case OVE_LNX_NR_getcwd: {
-		/* getcwd(buf, size): the rootfs has a single "/" working directory.
-		 * The raw syscall writes the path and returns its length incl. NUL. */
-		char *cwd = (char *)(uintptr_t)a0;
-		if (!cwd)
+		/* getcwd(buf, size): write the cwd; the raw syscall returns the length
+		 * including the NUL terminator. */
+		char *buf = (char *)(uintptr_t)a0;
+		if (!buf)
 			return -OVE_LNX_EFAULT;
-		if ((size_t)a1 < 2)
+		size_t len = strlen(proc->cwd) + 1;
+		if ((size_t)a1 < len)
 			return -OVE_LNX_ERANGE;
-		cwd[0] = '/';
-		cwd[1] = '\0';
-		return 2;
+		memcpy(buf, proc->cwd, len);
+		return (long)len;
+	}
+	case OVE_LNX_NR_chdir: {
+		const char *path = (const char *)(uintptr_t)a0;
+		if (!path)
+			return -OVE_LNX_EFAULT;
+		char abspath[OVE_LNX_PATH_MAX];
+		long r = resolve_path(proc, path, abspath, sizeof(abspath));
+		if (r < 0)
+			return r;
+		/* "/" is always valid; otherwise require an existing rootfs directory. */
+		if (!(abspath[0] == '/' && abspath[1] == '\0')) {
+			int found = 0;
+			for (int i = 0; i < proc->fs_count; i++) {
+				if (strcmp(proc->fs[i].path, abspath) == 0) {
+					if ((file_mode(&proc->fs[i]) & OVE_LNX_S_IFMT) !=
+					    OVE_LNX_S_IFDIR)
+						return -OVE_LNX_ENOTDIR;
+					found = 1;
+					break;
+				}
+			}
+			if (!found)
+				return -OVE_LNX_ENOENT;
+		}
+		strcpy(proc->cwd, abspath);
+		return 0;
 	}
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_setpgid:
