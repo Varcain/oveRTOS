@@ -49,27 +49,81 @@ typedef struct {
 static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
 
 /*
- * Writable in-memory tmpfs overlaid on the read-only CPIO rootfs: open(O_CREAT)
- * creates a file here (e.g. shell redirects `echo x > /tmp/f`). Files persist
- * across processes (global kernel state, like pipes). Bounded; not freed.
+ * Writable VFS overlaid on the read-only CPIO rootfs: regular files, directories
+ * (mkdir), and symlinks (ln -s) created at runtime live here (e.g. `mkdir /tmp/d`,
+ * `echo x > /tmp/f`). Nodes are global kernel state (shared across processes, like
+ * pipes), keyed by absolute path. File bytes come from a bump-allocated pool;
+ * growth re-allocates (the old block leaks — bounded by the pool, ENOSPC when
+ * exhausted), and unlink/rmdir frees the node (not its bytes). Not a tree: a node
+ * is "in" a directory iff its path is one component below the dir's path.
  */
 #define OVE_LNX_FD_TMPFS 4
-#define OVE_LNX_NTMP 4
-#define OVE_LNX_TMP_BUF 1024
+#define OVE_LNX_NWNODE 32
+#define OVE_LNX_WFS_POOL (64u * 1024u)
 typedef struct {
-	char path[64];
-	uint8_t buf[OVE_LNX_TMP_BUF];
+	char path[OVE_LNX_PATH_MAX]; /* absolute, normalized */
+	uint32_t mode;		     /* S_IFREG|perms, S_IFDIR|perms, or S_IFLNK */
+	uint8_t *data;		     /* file/symlink bytes (pool); NULL when empty */
 	size_t size;
+	size_t cap;
 	int used;
-} ove_lnx_tmpfile_t;
-static ove_lnx_tmpfile_t g_tmp[OVE_LNX_NTMP];
+} ove_lnx_wnode_t;
+static ove_lnx_wnode_t g_wnodes[OVE_LNX_NWNODE];
+static uint8_t g_wfs_pool[OVE_LNX_WFS_POOL];
+static size_t g_wfs_off;
 
-static int tmp_find(const char *path)
+static uint8_t *wfs_alloc(size_t n)
 {
-	for (int i = 0; i < OVE_LNX_NTMP; i++)
-		if (g_tmp[i].used && strcmp(g_tmp[i].path, path) == 0)
+	n = (n + 7u) & ~(size_t)7u;
+	if (g_wfs_off + n > sizeof(g_wfs_pool))
+		return NULL;
+	uint8_t *p = g_wfs_pool + g_wfs_off;
+	g_wfs_off += n;
+	return p;
+}
+
+/* Find a writable node by absolute path (any type), or -1. */
+static int wfs_find(const char *abspath)
+{
+	for (int i = 0; i < OVE_LNX_NWNODE; i++)
+		if (g_wnodes[i].used && strcmp(g_wnodes[i].path, abspath) == 0)
 			return i;
 	return -1;
+}
+
+/* Allocate a node for abspath with mode; -1 if the table is full / path too long. */
+static int wfs_create(const char *abspath, uint32_t mode)
+{
+	if (strlen(abspath) >= OVE_LNX_PATH_MAX)
+		return -1;
+	for (int i = 0; i < OVE_LNX_NWNODE; i++)
+		if (!g_wnodes[i].used) {
+			strcpy(g_wnodes[i].path, abspath);
+			g_wnodes[i].mode = mode;
+			g_wnodes[i].data = NULL;
+			g_wnodes[i].size = 0;
+			g_wnodes[i].cap = 0;
+			g_wnodes[i].used = 1;
+			return i;
+		}
+	return -1;
+}
+
+/* Ensure node i can hold `need` bytes (grows from the pool; old block leaks). */
+static int wfs_reserve(int i, size_t need)
+{
+	ove_lnx_wnode_t *w = &g_wnodes[i];
+	if (need <= w->cap)
+		return 0;
+	size_t ncap = (need + 255u) & ~(size_t)255u;
+	uint8_t *nd = wfs_alloc(ncap);
+	if (!nd)
+		return -1;
+	if (w->data && w->size)
+		memcpy(nd, w->data, w->size);
+	w->data = nd;
+	w->cap = ncap;
+	return 0;
 }
 
 /*
@@ -342,15 +396,14 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		pp->wpos += len;
 		return (long)len;
 	}
-	/* A tmpfs file write copies into its (bounded) buffer at the fd offset. */
+	/* A writable-node file write copies into its (growable) buffer at the offset. */
 	if (s->kind == OVE_LNX_FD_TMPFS) {
-		ove_lnx_tmpfile_t *t = &g_tmp[s->file_idx];
-		if (s->offset >= OVE_LNX_TMP_BUF)
-			return -OVE_LNX_EFBIG;
-		size_t space = OVE_LNX_TMP_BUF - s->offset;
-		if (len > space)
-			len = space;
-		memcpy(t->buf + s->offset, buf, len);
+		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+			return -OVE_LNX_EBADF;
+		if (wfs_reserve(s->file_idx, s->offset + len) != 0)
+			return -OVE_LNX_EFBIG; /* writable-fs pool exhausted */
+		memcpy(t->data + s->offset, buf, len);
 		s->offset += len;
 		if (s->offset > t->size)
 			t->size = s->offset;
@@ -417,15 +470,17 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		return (long)len;
 	}
 
-	/* A tmpfs file read returns bytes from its buffer at the fd offset. */
+	/* A writable-node file read returns bytes from its buffer at the fd offset. */
 	if (s->kind == OVE_LNX_FD_TMPFS) {
-		ove_lnx_tmpfile_t *t = &g_tmp[s->file_idx];
+		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+			return -OVE_LNX_EISDIR;
 		if (s->offset >= t->size)
 			return 0; /* EOF */
 		size_t n = t->size - s->offset;
 		if (n > len)
 			n = len;
-		memcpy(buf, t->buf + s->offset, n);
+		memcpy(buf, t->data + s->offset, n);
 		s->offset += n;
 		return (long)n;
 	}
@@ -633,42 +688,35 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 		return rr;
 	path = abspath;
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
-	int ti = tmp_find(path);
+	int wi = wfs_find(path);
 
-	/* A writable open (or O_CREAT) goes to the writable tmpfs overlay. */
+	/* A writable open (or O_CREAT) goes to the writable VFS overlay. */
 	if (wr || (flags & OVE_LNX_O_CREAT)) {
-		if (ti < 0) {
+		if (wi < 0) {
 			if (!(flags & OVE_LNX_O_CREAT)) {
-				for (int i = 0; i < p->fs_count; i++)
-					if (strcmp(p->fs[i].path, path) == 0)
-						return -OVE_LNX_EROFS; /* RO rootfs file */
+				if (fs_lookup(p, path) >= 0)
+					return -OVE_LNX_EROFS; /* RO rootfs file */
 				return -OVE_LNX_ENOENT;
 			}
-			for (int i = 0; i < OVE_LNX_NTMP; i++)
-				if (!g_tmp[i].used) {
-					ti = i;
-					break;
-				}
-			if (ti < 0)
+			wi = wfs_create(path, OVE_LNX_S_IFREG | 0644u);
+			if (wi < 0)
 				return -OVE_LNX_EMFILE;
-			if (strlen(path) >= sizeof(g_tmp[ti].path))
-				return -OVE_LNX_EINVAL;
-			strcpy(g_tmp[ti].path, path);
-			g_tmp[ti].size = 0;
-			g_tmp[ti].used = 1;
-		} else if (flags & OVE_LNX_O_TRUNC) {
-			g_tmp[ti].size = 0;
+		} else {
+			if ((g_wnodes[wi].mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+				return -OVE_LNX_EISDIR;
+			if (flags & OVE_LNX_O_TRUNC)
+				g_wnodes[wi].size = 0;
 		}
-		return fd_alloc(p, OVE_LNX_FD_TMPFS, ti,
-				(flags & OVE_LNX_O_APPEND) ? g_tmp[ti].size : 0);
+		return fd_alloc(p, OVE_LNX_FD_TMPFS, wi,
+				(flags & OVE_LNX_O_APPEND) ? g_wnodes[wi].size : 0);
 	}
 
-	/* Read: a created tmpfs file shadows the rootfs; else the read-only rootfs. */
-	if (ti >= 0)
-		return fd_alloc(p, OVE_LNX_FD_TMPFS, ti, 0);
-	for (int i = 0; i < p->fs_count; i++)
-		if (strcmp(p->fs[i].path, path) == 0)
-			return fd_alloc(p, OVE_LNX_FD_FILE, i, 0);
+	/* Read: a writable node shadows the rootfs; else the read-only rootfs. */
+	if (wi >= 0)
+		return fd_alloc(p, OVE_LNX_FD_TMPFS, wi, 0);
+	int idx = fs_lookup(p, path);
+	if (idx >= 0)
+		return fd_alloc(p, OVE_LNX_FD_FILE, idx, 0);
 	return -OVE_LNX_ENOENT;
 }
 
@@ -752,7 +800,7 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 	if (s->kind != OVE_LNX_FD_FILE && s->kind != OVE_LNX_FD_TMPFS)
 		return -OVE_LNX_ESPIPE; /* console/pipe is not seekable */
 
-	long end = (s->kind == OVE_LNX_FD_TMPFS) ? (long)g_tmp[s->file_idx].size
+	long end = (s->kind == OVE_LNX_FD_TMPFS) ? (long)g_wnodes[s->file_idx].size
 						 : (long)p->fs[s->file_idx].size;
 	long base;
 	switch (whence) {
@@ -797,7 +845,7 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 	if (s->kind == OVE_LNX_FD_FILE)
 		fill_kstat64(statbuf, file_mode(&p->fs[s->file_idx]), p->fs[s->file_idx].size);
 	else if (s->kind == OVE_LNX_FD_TMPFS)
-		fill_kstat64(statbuf, OVE_LNX_S_IFREG | 0644u, g_tmp[s->file_idx].size);
+		fill_kstat64(statbuf, g_wnodes[s->file_idx].mode, g_wnodes[s->file_idx].size);
 	else
 		fill_kstat64(statbuf, OVE_LNX_S_IFCHR | 0620u, 0);
 	return 0;
@@ -812,15 +860,14 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
-	int idx = fs_lookup(p, abspath);
-	if (idx < 0) {
-		int ti = tmp_find(abspath);
-		if (ti >= 0) {
-			fill_kstat64(statbuf, OVE_LNX_S_IFREG | 0644u, g_tmp[ti].size);
-			return 0;
-		}
-		return -OVE_LNX_ENOENT;
+	int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
+	if (wi >= 0) {
+		fill_kstat64(statbuf, g_wnodes[wi].mode, g_wnodes[wi].size);
+		return 0;
 	}
+	int idx = fs_lookup(p, abspath);
+	if (idx < 0)
+		return -OVE_LNX_ENOENT;
 	if (follow) {
 		idx = fs_follow(p, idx);
 		if (idx < 0)
@@ -839,6 +886,15 @@ static long sys_readlink(ove_lnx_proc_t *p, const char *path, char *buf, size_t 
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
+	int wi = wfs_find(abspath); /* a writable symlink (ln -s) shadows the rootfs */
+	if (wi >= 0) {
+		ove_lnx_wnode_t *w = &g_wnodes[wi];
+		if ((w->mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK || !w->data)
+			return -OVE_LNX_EINVAL;
+		size_t n = w->size > bufsiz ? bufsiz : w->size;
+		memcpy(buf, w->data, n);
+		return (long)n;
+	}
 	int idx = fs_lookup(p, abspath);
 	if (idx < 0)
 		return -OVE_LNX_ENOENT;
@@ -861,54 +917,202 @@ static long sys_access(ove_lnx_proc_t *p, const char *path)
 		return rr;
 	if (abspath[0] == '/' && abspath[1] == '\0')
 		return 0; /* root */
-	if (fs_lookup(p, abspath) >= 0 || tmp_find(abspath) >= 0)
+	if (wfs_find(abspath) >= 0 || fs_lookup(p, abspath) >= 0)
 		return 0;
 	return -OVE_LNX_ENOENT;
 }
 
-/* getdents64: emit the directory's immediate children as linux_dirent64 records. */
+static long sys_mkdir(ove_lnx_proc_t *p, const char *path, uint32_t mode)
+{
+	if (!path)
+		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	if (wfs_find(abspath) >= 0 || fs_lookup(p, abspath) >= 0)
+		return -OVE_LNX_EEXIST;
+	if (wfs_create(abspath, OVE_LNX_S_IFDIR | (mode & 0777u)) < 0)
+		return -OVE_LNX_ENOSPC;
+	return 0;
+}
+
+/* unlink (is_rmdir=0) / rmdir (is_rmdir=1) on a writable node. */
+static long sys_unlink(ove_lnx_proc_t *p, const char *path, int is_rmdir)
+{
+	if (!path)
+		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	int wi = wfs_find(abspath);
+	if (wi < 0)
+		return (fs_lookup(p, abspath) >= 0) ? -OVE_LNX_EROFS : -OVE_LNX_ENOENT;
+	int isdir = (g_wnodes[wi].mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR;
+	if (is_rmdir && !isdir)
+		return -OVE_LNX_ENOTDIR;
+	if (!is_rmdir && isdir)
+		return -OVE_LNX_EISDIR;
+	if (isdir) {
+		for (int j = 0; j < OVE_LNX_NWNODE; j++)
+			if (g_wnodes[j].used && child_name(abspath, g_wnodes[j].path))
+				return -OVE_LNX_ENOTEMPTY;
+	}
+	g_wnodes[wi].used = 0; /* node freed; its pool bytes leak (bounded) */
+	return 0;
+}
+
+static long sys_rename(ove_lnx_proc_t *p, const char *oldp, const char *newp)
+{
+	if (!oldp || !newp)
+		return -OVE_LNX_EFAULT;
+	char oldabs[OVE_LNX_PATH_MAX], newabs[OVE_LNX_PATH_MAX];
+	long r1 = resolve_path(p, oldp, oldabs, sizeof(oldabs));
+	if (r1 < 0)
+		return r1;
+	long r2 = resolve_path(p, newp, newabs, sizeof(newabs));
+	if (r2 < 0)
+		return r2;
+	int wi = wfs_find(oldabs);
+	if (wi < 0)
+		return (fs_lookup(p, oldabs) >= 0) ? -OVE_LNX_EROFS : -OVE_LNX_ENOENT;
+	if (strlen(newabs) >= OVE_LNX_PATH_MAX)
+		return -OVE_LNX_ENAMETOOLONG;
+	int di = wfs_find(newabs); /* replace an existing destination node */
+	if (di >= 0 && di != wi)
+		g_wnodes[di].used = 0;
+	strcpy(g_wnodes[wi].path, newabs);
+	return 0;
+}
+
+static long sys_symlink(ove_lnx_proc_t *p, const char *target, const char *linkp)
+{
+	if (!target || !linkp)
+		return -OVE_LNX_EFAULT;
+	char linkabs[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, linkp, linkabs, sizeof(linkabs));
+	if (rr < 0)
+		return rr;
+	if (wfs_find(linkabs) >= 0 || fs_lookup(p, linkabs) >= 0)
+		return -OVE_LNX_EEXIST;
+	int wi = wfs_create(linkabs, OVE_LNX_S_IFLNK | 0777u);
+	if (wi < 0)
+		return -OVE_LNX_ENOSPC;
+	size_t tl = strlen(target);
+	if (wfs_reserve(wi, tl) < 0) {
+		g_wnodes[wi].used = 0;
+		return -OVE_LNX_ENOSPC;
+	}
+	memcpy(g_wnodes[wi].data, target, tl);
+	g_wnodes[wi].size = tl;
+	return 0;
+}
+
+static long sys_chmod(ove_lnx_proc_t *p, const char *path, uint32_t mode)
+{
+	if (!path)
+		return -OVE_LNX_EFAULT;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	int wi = wfs_find(abspath);
+	if (wi >= 0) {
+		g_wnodes[wi].mode = (g_wnodes[wi].mode & OVE_LNX_S_IFMT) | (mode & 0777u);
+		return 0;
+	}
+	return (fs_lookup(p, abspath) >= 0) ? 0 : -OVE_LNX_ENOENT; /* rootfs: accept, inert */
+}
+
+/* utimensat: times are not tracked, but the existence check must be honest —
+ * `touch` probes with utimensat first and only creates the file on -ENOENT. */
+static long sys_utimensat(ove_lnx_proc_t *p, const char *path)
+{
+	if (!path) /* futimens(fd): operate on the open fd — accept */
+		return 0;
+	char abspath[OVE_LNX_PATH_MAX];
+	long rr = resolve_path(p, path, abspath, sizeof(abspath));
+	if (rr < 0)
+		return rr;
+	if ((abspath[0] == '/' && abspath[1] == '\0') || wfs_find(abspath) >= 0 ||
+	    fs_lookup(p, abspath) >= 0)
+		return 0;
+	return -OVE_LNX_ENOENT;
+}
+
+/* Append one dirent record. Skips entries already emitted (pos < s->offset);
+ * returns 0 if the record does not fit (caller stops), else 1 (and advances). */
+static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ove_lnx_fd_t *s,
+		       uint64_t ino, const char *name, uint32_t mode)
+{
+	if (*pos < (long)s->offset) {
+		(*pos)++;
+		return 1; /* already returned by an earlier getdents call */
+	}
+	size_t namelen = strlen(name);
+	size_t reclen = (offsetof(struct ove_lnx_dirent64, d_name) + namelen + 1 + 7u) &
+			~(size_t)7u;
+	if (*filled + reclen > count)
+		return 0;
+	struct ove_lnx_dirent64 *de = (struct ove_lnx_dirent64 *)(out + *filled);
+	de->d_ino = ino;
+	de->d_off = *pos + 1;
+	de->d_reclen = (uint16_t)reclen;
+	de->d_type = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR) ? OVE_LNX_DT_DIR : OVE_LNX_DT_REG;
+	memcpy(de->d_name, name, namelen + 1);
+	*filled += reclen;
+	(*pos)++;
+	s->offset++;
+	return 1;
+}
+
+/* getdents64: emit the directory's immediate children (read-only rootfs entries
+ * + writable-overlay nodes) as linux_dirent64 records. */
 static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
 {
 	ove_lnx_fd_t *s = fd_slot(p, fd);
-	if (!s || s->kind != OVE_LNX_FD_FILE)
+	if (!s || !buf)
 		return -OVE_LNX_EBADF;
-	if (!buf)
-		return -OVE_LNX_EFAULT;
-	const ove_lnx_file_t *dir = &p->fs[s->file_idx];
-	if ((file_mode(dir) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
+	const char *dirpath;
+	if (s->kind == OVE_LNX_FD_FILE) {
+		if ((file_mode(&p->fs[s->file_idx]) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
+			return -OVE_LNX_ENOTDIR;
+		dirpath = p->fs[s->file_idx].path;
+	} else if (s->kind == OVE_LNX_FD_TMPFS) {
+		if ((g_wnodes[s->file_idx].mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
+			return -OVE_LNX_ENOTDIR;
+		dirpath = g_wnodes[s->file_idx].path;
+	} else {
 		return -OVE_LNX_ENOTDIR;
+	}
 
 	uint8_t *out = (uint8_t *)buf;
 	size_t filled = 0;
-	long pos = 0; /* running child index; s->offset = how many already emitted */
-	for (int i = 0; i < p->fs_count; i++) {
-		const char *name = child_name(dir->path, p->fs[i].path);
+	long pos = 0; /* running child index across both sources; s->offset = emitted */
+	int full = 0;
+	/* rootfs children (a writable node of the same path shadows the rootfs one) */
+	for (int i = 0; i < p->fs_count && !full; i++) {
+		const char *name = child_name(dirpath, p->fs[i].path);
+		if (!name || wfs_find(p->fs[i].path) >= 0)
+			continue;
+		if (!dirent_emit(out, count, &filled, &pos, s, (uint64_t)(i + 1), name,
+				 file_mode(&p->fs[i])))
+			full = 1;
+	}
+	/* writable-overlay children */
+	for (int i = 0; i < OVE_LNX_NWNODE && !full; i++) {
+		if (!g_wnodes[i].used)
+			continue;
+		const char *name = child_name(dirpath, g_wnodes[i].path);
 		if (!name)
 			continue;
-		if (pos < (long)s->offset) {
-			pos++;
-			continue;
-		}
-		size_t namelen = strlen(name);
-		size_t reclen = (offsetof(struct ove_lnx_dirent64, d_name) + namelen + 1 + 7u) &
-				~(size_t)7u;
-		if (filled + reclen > count) {
-			if (filled == 0)
-				return -OVE_LNX_EINVAL; /* buffer too small for one entry */
-			break;
-		}
-		struct ove_lnx_dirent64 *de = (struct ove_lnx_dirent64 *)(out + filled);
-		de->d_ino = (uint64_t)(i + 1);
-		de->d_off = pos + 1;
-		de->d_reclen = (uint16_t)reclen;
-		de->d_type = ((file_mode(&p->fs[i]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-				     ? OVE_LNX_DT_DIR
-				     : OVE_LNX_DT_REG;
-		memcpy(de->d_name, name, namelen + 1);
-		filled += reclen;
-		pos++;
-		s->offset++;
+		if (!dirent_emit(out, count, &filled, &pos, s, (uint64_t)(100000 + i), name,
+				 g_wnodes[i].mode))
+			full = 1;
 	}
+	if (full && filled == 0)
+		return -OVE_LNX_EINVAL; /* buffer too small for even one entry */
 	return (long)filled;
 }
 
@@ -945,17 +1149,22 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 		long rr = resolve_path(p, path, abspath, sizeof(abspath));
 		if (rr < 0)
 			return rr;
-		int idx = -1;
-		for (int i = 0; i < p->fs_count; i++) {
-			if (strcmp(p->fs[i].path, abspath) == 0) {
-				idx = i;
-				break;
+		int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
+		if (wi >= 0) {
+			mode = g_wnodes[wi].mode;
+			size = g_wnodes[wi].size;
+		} else {
+			int idx = fs_lookup(p, abspath);
+			if (idx < 0)
+				return -OVE_LNX_ENOENT;
+			if (!(flags & OVE_LNX_AT_SYMLINK_NOFOLLOW)) { /* lstat passes NOFOLLOW */
+				idx = fs_follow(p, idx);
+				if (idx < 0)
+					return -OVE_LNX_ENOENT;
 			}
+			mode = file_mode(&p->fs[idx]);
+			size = p->fs[idx].size;
 		}
-		if (idx < 0)
-			return -OVE_LNX_ENOENT;
-		mode = file_mode(&p->fs[idx]);
-		size = p->fs[idx].size;
 	} else {
 		ove_lnx_fd_t *s = fd_slot(p, dirfd);
 		if (!s)
@@ -963,6 +1172,9 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 		if (s->kind == OVE_LNX_FD_FILE) {
 			mode = file_mode(&p->fs[s->file_idx]);
 			size = p->fs[s->file_idx].size;
+		} else if (s->kind == OVE_LNX_FD_TMPFS) {
+			mode = g_wnodes[s->file_idx].mode;
+			size = g_wnodes[s->file_idx].size;
 		} else {
 			mode = OVE_LNX_S_IFCHR | 0620u;
 			size = 0;
@@ -1091,6 +1303,33 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_faccessat:  /* (dirfd, path, mode) */
 	case OVE_LNX_NR_faccessat2: /* (dirfd, path, mode, flags) */
 		return sys_access(proc, (const char *)(uintptr_t)a1);
+	case OVE_LNX_NR_mkdir: /* (path, mode) */
+		return sys_mkdir(proc, (const char *)(uintptr_t)a0, (uint32_t)a1);
+	case OVE_LNX_NR_mkdirat: /* (dirfd, path, mode) */
+		return sys_mkdir(proc, (const char *)(uintptr_t)a1, (uint32_t)a2);
+	case OVE_LNX_NR_rmdir: /* (path) */
+		return sys_unlink(proc, (const char *)(uintptr_t)a0, 1);
+	case OVE_LNX_NR_unlink: /* (path) */
+		return sys_unlink(proc, (const char *)(uintptr_t)a0, 0);
+	case OVE_LNX_NR_unlinkat: /* (dirfd, path, flags) */
+		return sys_unlink(proc, (const char *)(uintptr_t)a1,
+				  ((int)a2 & OVE_LNX_AT_REMOVEDIR) ? 1 : 0);
+	case OVE_LNX_NR_rename: /* (oldpath, newpath) */
+		return sys_rename(proc, (const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1);
+	case OVE_LNX_NR_renameat:  /* (olddirfd, old, newdirfd, new) */
+	case OVE_LNX_NR_renameat2: /* (olddirfd, old, newdirfd, new, flags) */
+		return sys_rename(proc, (const char *)(uintptr_t)a1, (const char *)(uintptr_t)a3);
+	case OVE_LNX_NR_symlink: /* (target, linkpath) */
+		return sys_symlink(proc, (const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1);
+	case OVE_LNX_NR_symlinkat: /* (target, newdirfd, linkpath) */
+		return sys_symlink(proc, (const char *)(uintptr_t)a0, (const char *)(uintptr_t)a2);
+	case OVE_LNX_NR_chmod: /* (path, mode) */
+		return sys_chmod(proc, (const char *)(uintptr_t)a0, (uint32_t)a1);
+	case OVE_LNX_NR_fchmodat: /* (dirfd, path, mode) */
+		return sys_chmod(proc, (const char *)(uintptr_t)a1, (uint32_t)a2);
+	case OVE_LNX_NR_utimensat:	  /* (dirfd, path, times, flags) — times not tracked */
+	case OVE_LNX_NR_utimensat_time64: /* time64 variant uClibc-ng issues for touch */
+		return sys_utimensat(proc, (const char *)(uintptr_t)a1);
 	case OVE_LNX_NR_fcntl: /* old 32-bit fcntl: same dispatch as fcntl64 here */
 	case OVE_LNX_NR_fcntl64: {
 		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
@@ -1148,20 +1387,20 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		long r = resolve_path(proc, path, abspath, sizeof(abspath));
 		if (r < 0)
 			return r;
-		/* "/" is always valid; otherwise require an existing rootfs directory. */
+		/* "/" is always valid; else require an existing directory in either the
+		 * writable overlay or the read-only rootfs. */
 		if (!(abspath[0] == '/' && abspath[1] == '\0')) {
-			int found = 0;
-			for (int i = 0; i < proc->fs_count; i++) {
-				if (strcmp(proc->fs[i].path, abspath) == 0) {
-					if ((file_mode(&proc->fs[i]) & OVE_LNX_S_IFMT) !=
-					    OVE_LNX_S_IFDIR)
-						return -OVE_LNX_ENOTDIR;
-					found = 1;
-					break;
-				}
+			int wi = wfs_find(abspath);
+			if (wi >= 0) {
+				if ((g_wnodes[wi].mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
+					return -OVE_LNX_ENOTDIR;
+			} else {
+				int idx = fs_lookup(proc, abspath);
+				if (idx < 0)
+					return -OVE_LNX_ENOENT;
+				if ((file_mode(&proc->fs[idx]) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
+					return -OVE_LNX_ENOTDIR;
 			}
-			if (!found)
-				return -OVE_LNX_ENOENT;
 		}
 		strcpy(proc->cwd, abspath);
 		return 0;

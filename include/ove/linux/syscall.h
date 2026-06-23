@@ -107,6 +107,22 @@ extern "C" {
 #define OVE_LNX_NR_clock_nanosleep 265
 #define OVE_LNX_NR_clock_gettime64 403
 #define OVE_LNX_NR_clock_nanosleep_time64 407
+/* writable filesystem mutation. */
+#define OVE_LNX_NR_unlink 10
+#define OVE_LNX_NR_chmod 15
+#define OVE_LNX_NR_rename 38
+#define OVE_LNX_NR_mkdir 39
+#define OVE_LNX_NR_rmdir 40
+#define OVE_LNX_NR_symlink 83
+#define OVE_LNX_NR_mkdirat 323
+#define OVE_LNX_NR_unlinkat 328
+#define OVE_LNX_NR_renameat 329
+#define OVE_LNX_NR_symlinkat 331
+#define OVE_LNX_NR_fchmodat 333
+#define OVE_LNX_NR_utimensat 348
+#define OVE_LNX_NR_renameat2 382
+#define OVE_LNX_NR_utimensat_time64 412
+#define OVE_LNX_AT_REMOVEDIR 0x200
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
 #define OVE_LNX_MAP_ANONYMOUS 0x20
@@ -195,9 +211,12 @@ extern "C" {
 #define OVE_LNX_EFBIG 27
 #define OVE_LNX_ESPIPE 29
 #define OVE_LNX_EROFS 30
+#define OVE_LNX_EEXIST 17
 #define OVE_LNX_EINVAL 22
+#define OVE_LNX_ENOSPC 28
 #define OVE_LNX_ERANGE 34
 #define OVE_LNX_ENAMETOOLONG 36
+#define OVE_LNX_ENOTEMPTY 39
 #define OVE_LNX_ENOSYS 38
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */
