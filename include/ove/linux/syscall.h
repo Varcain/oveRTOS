@@ -135,7 +135,13 @@ extern "C" {
 #define OVE_LNX_NR_getpgrp 65
 #define OVE_LNX_NR_setsid 66
 #define OVE_LNX_NR_reboot 88
+#define OVE_LNX_NR_fchmod 94
+#define OVE_LNX_NR_setitimer 104
 #define OVE_LNX_NR_clone 120
+#define OVE_LNX_NR_setgroups32 206
+#define OVE_LNX_NR_fchown32 207
+#define OVE_LNX_NR_setuid32 213
+#define OVE_LNX_NR_setgid32 214
 #define OVE_LNX_AT_REMOVEDIR 0x200
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */

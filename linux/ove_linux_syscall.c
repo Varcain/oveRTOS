@@ -1819,12 +1819,18 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_setpgid:
 	case OVE_LNX_NR_umask:
-	case OVE_LNX_NR_sync:	  /* no backing store to flush */
-		return 0;	  /* process-control / umask / sync accepted (inert) */
-	case OVE_LNX_NR_getpgrp:  /* shell job control: process group == pid */
-	case OVE_LNX_NR_setsid:	  /* getty/login start a new session */
-		return proc->pid; /* the caller becomes the session/group leader */
-	case OVE_LNX_NR_reboot: { /* reboot(magic1, magic2, cmd, arg) — cmd is a2 */
+	case OVE_LNX_NR_sync:	/* no backing store to flush */
+	case OVE_LNX_NR_fchmod: /* modes/ownership not tracked (login chmods the tty) */
+	case OVE_LNX_NR_fchown32:
+	case OVE_LNX_NR_setgroups32: /* uid/gid not enforced (login's privilege drop is */
+	case OVE_LNX_NR_setuid32:    /* inert — programs run privileged in this tier) */
+	case OVE_LNX_NR_setgid32:
+	case OVE_LNX_NR_setitimer: /* no interval timers (login's login-timeout alarm) */
+		return 0;	   /* process-control / fs-mode / timer setup accepted (inert) */
+	case OVE_LNX_NR_getpgrp:   /* shell job control: process group == pid */
+	case OVE_LNX_NR_setsid:	   /* getty/login start a new session */
+		return proc->pid;  /* the caller becomes the session/group leader */
+	case OVE_LNX_NR_reboot: {  /* reboot(magic1, magic2, cmd, arg) — cmd is a2 */
 		unsigned cmd = (unsigned)a2;
 		/* Only an actual halt/poweroff/restart stops the system; init calls
 		 * reboot(CAD_OFF=0) at startup to disable Ctrl-Alt-Del — a no-op here. */
