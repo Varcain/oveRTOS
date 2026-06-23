@@ -337,9 +337,9 @@ static void demo_body(void *arg)
 	sh_write0(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
 
-	/* ---- Phase 2: drop into an interactive shell -------------------------- */
-	sh_write0("\n-- phase 2: interactive BusyBox shell (cd/ls -l, ps/free/df, /proc,"
-		  " mkdir/cp/rm, grep/sed/awk/find, date; `exit` to quit) --\n");
+	/* ---- Phase 2: boot a full uClinux userspace --------------------------- */
+	sh_write0("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
+		  " run commands, `poweroff` to halt) --\n");
 	const ove_lnx_run_config_t cfg2 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,
@@ -348,10 +348,12 @@ static void demo_body(void *arg)
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
 	};
-	const char *const sh_argv[] = {"sh", NULL};
-	int rc2 = ove_lnx_run(&cfg2, "/bin/busybox", 1, sh_argv);
+	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
+	 * a login shell on the console. */
+	const char *const init_argv[] = {"init", NULL};
+	int rc2 = ove_lnx_run(&cfg2, "/bin/busybox", 1, init_argv);
 
-	sh_write0("\n=== interop demo done (interactive shell exited) ===\n");
+	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
 	sh_exit(rc2 >= 0 ? 0 : 1);
 }
 

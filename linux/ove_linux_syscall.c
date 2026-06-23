@@ -1531,6 +1531,20 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
  * the thread — because that is engine-specific. We never truly return: on
  * success the old image is gone; on failure we report a negated errno.
  */
+/* Append one NUL-terminated arg to the pending-exec argv; ignore on overflow. */
+static void exec_push_arg(ove_lnx_proc_t *p, int *argc, size_t *off, const char *str)
+{
+	if (*argc >= OVE_LNX_EXEC_MAXARGS)
+		return;
+	size_t n = strlen(str) + 1;
+	if (*off + n > sizeof(p->exec_argv_buf))
+		return;
+	memcpy(p->exec_argv_buf + *off, str, n);
+	p->exec_argv[*argc] = p->exec_argv_buf + *off;
+	*off += n;
+	(*argc)++;
+}
+
 static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 {
 	if (!path)
@@ -1547,16 +1561,52 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	if ((file_mode(&p->fs[idx]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
 		return -OVE_LNX_EACCES;
 
+	/* Interpreter scripts: a "#!interp [arg]" first line re-targets the exec to
+	 * the interpreter, with argv = [interp, arg?, scriptpath, original argv[1:]].
+	 * init runs /etc/init.d/rcS (a #!/bin/sh script) this way. */
+	const ove_lnx_file_t *f = &p->fs[idx];
+	char interp[64], iarg[64];
+	int have_iarg = 0, interp_idx = -1;
+	if (f->data && f->size >= 2 && f->data[0] == '#' && f->data[1] == '!') {
+		const char *s = (const char *)f->data + 2, *end = (const char *)f->data + f->size;
+		while (s < end && (*s == ' ' || *s == '\t'))
+			s++;
+		int k = 0;
+		while (s < end && *s != ' ' && *s != '\t' && *s != '\n' &&
+		       k < (int)sizeof(interp) - 1)
+			interp[k++] = *s++;
+		interp[k] = '\0';
+		while (s < end && (*s == ' ' || *s == '\t'))
+			s++;
+		int m = 0;
+		while (s < end && *s != '\n' && *s != ' ' && *s != '\t' &&
+		       m < (int)sizeof(iarg) - 1)
+			iarg[m++] = *s++;
+		iarg[m] = '\0';
+		have_iarg = (m > 0);
+		if (k == 0)
+			return -OVE_LNX_ENOEXEC;
+		char interpabs[OVE_LNX_PATH_MAX];
+		if (resolve_path(p, interp, interpabs, sizeof(interpabs)) < 0)
+			return -OVE_LNX_ENOENT;
+		interp_idx = fs_follow(p, fs_lookup(p, interpabs));
+		if (interp_idx < 0)
+			return -OVE_LNX_ENOENT;
+	}
+
 	int argc = 0;
 	size_t off = 0;
-	while (argv && argv[argc] && argc < OVE_LNX_EXEC_MAXARGS) {
-		size_t n = strlen(argv[argc]) + 1;
-		if (off + n > sizeof(p->exec_argv_buf))
-			break;
-		memcpy(p->exec_argv_buf + off, argv[argc], n);
-		p->exec_argv[argc] = p->exec_argv_buf + off;
-		off += n;
-		argc++;
+	if (interp_idx >= 0) {
+		exec_push_arg(p, &argc, &off, interp);
+		if (have_iarg)
+			exec_push_arg(p, &argc, &off, iarg);
+		exec_push_arg(p, &argc, &off, execabs); /* the script pathname */
+		for (int j = 1; argv && argv[j]; j++)
+			exec_push_arg(p, &argc, &off, argv[j]);
+		idx = interp_idx;
+	} else {
+		for (int j = 0; argv && argv[j]; j++)
+			exec_push_arg(p, &argc, &off, argv[j]);
 	}
 	p->exec_argc = argc;
 	p->exec_file_idx = idx;
@@ -1769,7 +1819,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_setpgid:
 	case OVE_LNX_NR_umask:
-		return 0;	  /* process-control / umask setup accepted (inert) */
+	case OVE_LNX_NR_sync:	  /* no backing store to flush */
+		return 0;	  /* process-control / umask / sync accepted (inert) */
 	case OVE_LNX_NR_getpgrp:  /* shell job control: process group == pid */
 	case OVE_LNX_NR_setsid:	  /* getty/login start a new session */
 		return proc->pid; /* the caller becomes the session/group leader */

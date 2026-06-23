@@ -130,6 +130,7 @@ extern "C" {
 #define OVE_LNX_NR_fstatfs64 267
 #define OVE_LNX_NR_getrandom 384
 /* init / getty / login boot + shell job control. */
+#define OVE_LNX_NR_sync 36
 #define OVE_LNX_NR_umask 60
 #define OVE_LNX_NR_getpgrp 65
 #define OVE_LNX_NR_setsid 66
@@ -217,6 +218,7 @@ extern "C" {
 /* Linux errno values returned (negated) on syscall failure. */
 #define OVE_LNX_ENOENT 2
 #define OVE_LNX_EINTR 4
+#define OVE_LNX_ENOEXEC 8
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ECHILD 10
 #define OVE_LNX_ENOMEM 12

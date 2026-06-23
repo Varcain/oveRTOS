@@ -133,6 +133,15 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	}
 	if (nr == OVE_LNX_NR_kill || nr == OVE_LNX_NR_tkill || nr == OVE_LNX_NR_tgkill) {
 		int sig = (nr == OVE_LNX_NR_tgkill) ? (int)f->r[2] : (int)f->r[1];
+		/* halt/poweroff/reboot signal a shutdown to init (pid 1) — SIGUSR1/SIGUSR2/
+		 * SIGTERM respectively. init is parked in the sequentialised model and can't
+		 * receive it, so honor a shutdown signal to pid 1 directly as a system halt. */
+		if (nr == OVE_LNX_NR_kill && (int)f->r[0] == 1 &&
+		    (sig == 10 || sig == 12 || sig == 15)) {
+			g_ove_lnx_halt = 1;
+			f->r[0] = 0; /* kill() succeeds; the run loop stops next iteration */
+			return;
+		}
 		deliver_signal(f, proc, sig, 0);
 		return;
 	}
