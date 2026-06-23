@@ -41,6 +41,14 @@ ove_nuttx_add_stub_backends(BSP GPIO CONSOLE TIME WATCHDOG SHELL NVS FS)
 # BOARD backend excluded — qemu_board.c is provided via sim framework
 ove_nuttx_exclude_backends(BOARD)
 
+if(OVE_LINUX)
+    # Linux personality build is headless: no sim display/audio framework. It
+    # only needs the embedded rootfs CPIO fixture on the include path; stub the
+    # hardware modules it doesn't use.
+    ove_nuttx_exclude_backends(LVGL AUDIO)
+    ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget)
+else()
+
 # ── Sim framework (replaces NuttX display/audio backends) ────────
 set(SIM_DIR "${OVE_DIR}/sim")
 set(OVE_BOARD_BASE "${OVE_DIR}/boards/qemu-mps2-an500")
@@ -77,6 +85,8 @@ ove_nuttx_add_include_dirs(
 
 # LVGL
 ove_nuttx_build_lvgl()
+
+endif() # OVE_LINUX (sim framework excluded for the headless personality build)
 
 # Build firmware app
 ove_nuttx_register_app()

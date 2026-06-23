@@ -7,12 +7,14 @@ a real Buildroot rootfs — exchanging data **in both directions**, then handing
 you an interactive shell.
 
 This is a first-class oveRTOS framework app, built by the `ove` build system, and
-the *same demo* runs on two engines through the engine-agnostic personality core:
+the *same demo* runs on **all three RTOS engines** through the engine-agnostic
+personality core:
 
 | Engine | Board | CPU | Program isolation |
 |--------|-------|-----|-------------------|
 | **Zephyr**   | `qemu-mps2-an521` | Cortex-M33 | unprivileged + MPU (`CONFIG_USERSPACE`) |
 | **FreeRTOS** | `qemu-mps2-an500` | Cortex-M7  | privileged (functional parity; MPU isolation is a follow-up) |
+| **NuttX**    | `qemu-mps2-an500` | Cortex-M7  | privileged (functional parity; MPU isolation is a follow-up) |
 
 ## Phase 1 — bidirectional round trip
 
@@ -40,6 +42,8 @@ to the console, so **you can type commands** — `ls /`, `echo hi`,
 ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop
 # …or FreeRTOS / Cortex-M7 (an500):
 ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop
+# …or NuttX / Cortex-M7 (an500):
+ove defconfig-fragments qemu-mps2-an500.nuttx.linux_interop
 
 ove download        # first time only — fetches the engine workspace
 ove build
@@ -106,6 +110,19 @@ owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to
 console in the run script. Phase 1 runs the program *privileged* on the non-MPU
 `ARM_CM7` port (functional parity); switching to the `ARM_CM4_MPU` port for
 unprivileged + MPU isolation is a follow-up.
+
+**NuttX — `qemu-mps2-an500` (Cortex-M7).** Also reuses the *stock* an500 board.
+NuttX is the hard engine: its own `svc #0` *is* the syscall/context-switch ABI, so
+the seam (`backends/nuttx/nuttx_lnx_trap.c`) `irq_attach`es SVCall and discriminates
+by the program's PC range (in-region → Linux, else chain `arm_svcall`). Each program
+is a real NuttX task created with `nxtask_init` given its own region as the task
+stack, its initial register context set to the uClinux entry state. Two NuttX
+landmines the seam handles: `task_create` makes argv[0] the task *name* (the index
+is argv[1]), and `arm_doirq` treats an SVCall with `r0 == SYS_restore_context (1)`
+as its own command — which a Linux `ioctl(fd=1, …)` collides with — so the handler
+re-asserts `nxsched_self()->xcp.regs`. A `CONFIG_OVE_LINUX` defconfig overlay
+disables the MPU (NuttX's FLAT MPU marks the program's RAM region execute-never).
+Phase 1 is privileged (FLAT); unprivileged + MPU = `CONFIG_BUILD_PROTECTED` follow-up.
 
 ## Files
 

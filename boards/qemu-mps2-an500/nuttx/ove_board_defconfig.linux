@@ -1,0 +1,17 @@
+# NuttX defconfig overlay for the Linux personality on qemu-mps2-an500.
+# Applied automatically when CONFIG_OVE_LINUX=y (layer 2b, see
+# config/ove-cli/ove/rtos_menuconfig.py:_merge_nuttx_layers).
+#
+# The personality loads bFLT programs into a RAM region (prog_regions, in .bss
+# at 0x60000000+) and EXECUTES from there. NuttX's FLAT MPU setup
+# (mps_allocateheap.c -> mpu_user_intsram) marks that RAM region RW +
+# execute-never, so the program faults on its first instruction fetch. Phase 1
+# is functional-parity with the program privileged and no MPU isolation (the
+# isolation is the CONFIG_BUILD_PROTECTED follow-up), so disable the MPU: in
+# FLAT the privileged background map is RWX and the program runs from RAM.
+CONFIG_ARM_MPU=n
+
+# The personality's svc handler runs on NuttX's interrupt stack and calls into
+# the syscall core + the app's I/O callbacks; give it headroom over the 2 KB
+# default.
+CONFIG_ARCH_INTERRUPTSTACK=4096
