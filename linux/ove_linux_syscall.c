@@ -11,6 +11,7 @@
 #if defined(CONFIG_OVE_LINUX)
 
 #include "ove/linux/syscall.h"
+#include "ove/time.h"
 
 #include <string.h>
 
@@ -1019,6 +1020,19 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	return 0;
 }
 
+/* There is no RTC: wall-clock time is a fixed base epoch (~2026-06-23) + uptime. */
+#define OVE_LNX_BOOT_EPOCH 1782172800ull
+
+static void now_sec_nsec(int clockid, uint64_t *sec, uint32_t *nsec)
+{
+	uint64_t ns = 0;
+	ove_time_get_ns(&ns);
+	uint64_t up = ns / 1000000000ull;
+	*nsec = (uint32_t)(ns % 1000000000ull);
+	/* CLOCK_MONOTONIC(1)/_RAW(4)/BOOTTIME(7) → uptime; REALTIME(0) → wall clock. */
+	*sec = (clockid == 0) ? (OVE_LNX_BOOT_EPOCH + up) : up;
+}
+
 long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
 		     long a5)
 {
@@ -1156,7 +1170,47 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_setpgid:
 		return 0; /* process-control setup accepted (inert) */
 	case OVE_LNX_NR_gettid:
-		return proc->pid; /* single-threaded: tid == pid */
+		return proc->pid;	 /* single-threaded: tid == pid */
+	case OVE_LNX_NR_clock_gettime: { /* (clockid, struct timespec*) — 32-bit time_t */
+		int32_t *ts = (int32_t *)(uintptr_t)a1;
+		if (!ts)
+			return -OVE_LNX_EFAULT;
+		uint64_t sec;
+		uint32_t nsec;
+		now_sec_nsec((int)a0, &sec, &nsec);
+		ts[0] = (int32_t)sec;
+		ts[1] = (int32_t)nsec;
+		return 0;
+	}
+	case OVE_LNX_NR_clock_gettime64: { /* (clockid, struct __kernel_timespec*) — 64-bit */
+		int64_t *ts = (int64_t *)(uintptr_t)a1;
+		if (!ts)
+			return -OVE_LNX_EFAULT;
+		uint64_t sec;
+		uint32_t nsec;
+		now_sec_nsec((int)a0, &sec, &nsec);
+		ts[0] = (int64_t)sec;
+		ts[1] = (int64_t)nsec;
+		return 0;
+	}
+	case OVE_LNX_NR_gettimeofday: { /* (struct timeval*, tz) */
+		int32_t *tv = (int32_t *)(uintptr_t)a0;
+		if (!tv)
+			return -OVE_LNX_EFAULT;
+		uint64_t sec;
+		uint32_t nsec;
+		now_sec_nsec(0, &sec, &nsec);
+		tv[0] = (int32_t)sec;
+		tv[1] = (int32_t)(nsec / 1000u);
+		return 0;
+	}
+	case OVE_LNX_NR_nanosleep:	 /* (req, rem) */
+	case OVE_LNX_NR_clock_nanosleep: /* (clockid, flags, req, rem) */
+	case OVE_LNX_NR_clock_nanosleep_time64:
+		/* No RTC-driven scheduler hook here: report success without delaying
+		 * (the program runs in the seam's trap context, where blocking the
+		 * thread is unsafe). A real sleep is a run-loop follow-up. */
+		return 0;
 	case OVE_LNX_NR_uname: {
 		/* struct utsname: 6 fixed 65-byte fields (sysname, nodename, release,
 		 * version, machine, domainname). The shell reads these at startup. */

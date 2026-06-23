@@ -100,6 +100,13 @@ extern "C" {
 #define OVE_LNX_NR_readlinkat 332
 #define OVE_LNX_NR_faccessat 334
 #define OVE_LNX_NR_faccessat2 439
+/* time: clock_gettime / gettimeofday / nanosleep (+ the time64 variants). */
+#define OVE_LNX_NR_gettimeofday 78
+#define OVE_LNX_NR_nanosleep 162
+#define OVE_LNX_NR_clock_gettime 263
+#define OVE_LNX_NR_clock_nanosleep 265
+#define OVE_LNX_NR_clock_gettime64 403
+#define OVE_LNX_NR_clock_nanosleep_time64 407
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
 #define OVE_LNX_MAP_ANONYMOUS 0x20
