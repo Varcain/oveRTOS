@@ -338,7 +338,8 @@ static void demo_body(void *arg)
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
 
 	/* ---- Phase 2: drop into an interactive shell -------------------------- */
-	sh_write0("\n-- phase 2: interactive BusyBox shell (type commands; `exit` to quit) --\n");
+	sh_write0("\n-- phase 2: interactive BusyBox shell (cd/ls -l, ps/free/df, /proc,"
+		  " mkdir/cp/rm, grep/sed/awk/find, date; `exit` to quit) --\n");
 	const ove_lnx_run_config_t cfg2 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,

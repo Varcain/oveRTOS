@@ -30,6 +30,7 @@ struct ove_lnx_resume_ctx g_ove_lnx_vfork;
 ove_lnx_proc_t g_ove_lnx_proc[OVE_LNX_NSLOT];
 int g_ove_lnx_used[OVE_LNX_NSLOT];
 volatile int g_ove_lnx_active;
+volatile int g_ove_lnx_halt;
 
 static ove_arena_t g_arenas[OVE_LNX_NREG];
 static const ove_lnx_run_config_t *g_cfg;
@@ -138,7 +139,9 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 		sig_restore(f);
 		return;
 	}
-	if (nr == OVE_LNX_NR_vfork || nr == OVE_LNX_NR_fork) {
+	/* uClibc fork()/vfork() issue vfork, fork, or clone — all map to the
+	 * sequentialised model (parent parks, child runs to completion). */
+	if (nr == OVE_LNX_NR_vfork || nr == OVE_LNX_NR_fork || nr == OVE_LNX_NR_clone) {
 		for (int i = 0; i < 8; i++)
 			g_ove_lnx_vfork.r4_11[i] = f->r[4 + i];
 		g_ove_lnx_vfork.r12 = f->r[12];
@@ -221,6 +224,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		return OVE_LNX_RUN_ELAUNCH;
 
 	g_ove_lnx_active = 1;
+	g_ove_lnx_halt = 0;
 	if (launch(eng, 0, 0, cfg->rootfs[bb].data, cfg->rootfs[bb].size, 1, 0, argc, argv) != 0) {
 		g_ove_lnx_active = 0;
 		return OVE_LNX_RUN_ELAUNCH;
@@ -230,6 +234,10 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	int next_pid = 2;
 	int cur_child = 2;
 	for (int i = 0; i < 8000; i++) {
+		if (g_ove_lnx_halt) { /* reboot(2)/poweroff: stop the whole system */
+			rc = 0;
+			break;
+		}
 		if (g_vfork_pending) {
 			g_vfork_pending = 0;
 			cur_child = next_pid++;

@@ -26,7 +26,7 @@
 #include "ove/linux/run.h"
 #include "ove/linux/syscall.h"
 
-#define OVE_LNX_PROG_REGION_SIZE 0x60000u /* 384K: BusyBox ~129K + arena + stack */
+#define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
 #define OVE_LNX_NREG 2			  /* two regions: a parent + child image */
 #define OVE_LNX_NSLOT 2
@@ -68,6 +68,7 @@ extern struct ove_lnx_resume_ctx g_ove_lnx_vfork; /* vfork capture buffer */
 extern ove_lnx_proc_t g_ove_lnx_proc[OVE_LNX_NSLOT];
 extern int g_ove_lnx_used[OVE_LNX_NSLOT]; /* slot in use (run loop + seam read) */
 extern volatile int g_ove_lnx_active;	  /* a run is in progress (seam trap gate) */
+extern volatile int g_ove_lnx_halt;	  /* reboot(2)/poweroff: stop the run loop */
 
 /* Where a parked program spins (in shared .text) until the run loop reaps it. */
 void ove_lnx_park_loop(void);

@@ -129,6 +129,11 @@ extern "C" {
 #define OVE_LNX_NR_statfs64 266
 #define OVE_LNX_NR_fstatfs64 267
 #define OVE_LNX_NR_getrandom 384
+/* init / getty / login boot + shell job control. */
+#define OVE_LNX_NR_getpgrp 65
+#define OVE_LNX_NR_setsid 66
+#define OVE_LNX_NR_reboot 88
+#define OVE_LNX_NR_clone 120
 #define OVE_LNX_AT_REMOVEDIR 0x200
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
@@ -163,6 +168,11 @@ extern "C" {
 #define OVE_LNX_TCSETSW 0x5403
 #define OVE_LNX_TCSETSF 0x5404
 #define OVE_LNX_TIOCGWINSZ 0x5413
+/* tty/session ioctls getty + login issue (accepted; we are a single console). */
+#define OVE_LNX_TIOCSCTTY 0x540e
+#define OVE_LNX_TIOCGPGRP 0x540f
+#define OVE_LNX_TIOCSPGRP 0x5410
+#define OVE_LNX_TIOCNOTTY 0x5422
 /* c_lflag/c_iflag/c_oflag/c_cflag bits used for the canonical-tty default. */
 #define OVE_LNX_ISIG 0x0001u
 #define OVE_LNX_ICANON 0x0002u

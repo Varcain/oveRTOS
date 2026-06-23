@@ -15,6 +15,9 @@
 
 #include <string.h>
 
+/* Set by reboot(2)/poweroff to stop the run loop (defined in the common seam). */
+extern volatile int g_ove_lnx_halt;
+
 /*
  * Linux syscall personality — engine-agnostic dispatch.
  *
@@ -459,7 +462,7 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		return -OVE_LNX_EFAULT;
 
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
-		if (s->file_idx != 0) /* output consoles (stdout/stderr) are not readable */
+		if (s->file_idx == 1) /* output consoles (stdout/stderr) are not readable */
 			return -OVE_LNX_EBADF;
 		if (!p->read_fn)
 			return 0; /* EOF */
@@ -889,6 +892,11 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	path = abspath;
 	if (proc_is(path)) /* synthetic /proc shadows everything */
 		return proc_open(p, path);
+	/* The console devices open as a read+write console (file_idx 2): getty opens
+	 * /dev/console, makes it the controlling tty, and dups it to fds 0/1/2. */
+	if (strcmp(path, "/dev/console") == 0 || strcmp(path, "/dev/tty") == 0 ||
+	    strcmp(path, "/dev/tty0") == 0 || strcmp(path, "/dev/ttyS0") == 0)
+		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 2, 0);
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
 	int wi = wfs_find(path);
 
@@ -1750,7 +1758,15 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	}
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_setpgid:
-		return 0; /* process-control setup accepted (inert) */
+		return 0;	    /* process-control setup accepted (inert) */
+	case OVE_LNX_NR_getpgrp:    /* shell job control: process group == pid */
+	case OVE_LNX_NR_setsid:	    /* getty/login start a new session */
+		return proc->pid;   /* the caller becomes the session/group leader */
+	case OVE_LNX_NR_reboot:	    /* halt/poweroff/reboot: stop the system */
+		g_ove_lnx_halt = 1; /* the run loop breaks + tears down */
+		proc->exited = 1;   /* park this process meanwhile */
+		proc->exit_status = 0;
+		return 0;
 	case OVE_LNX_NR_gettid:
 		return proc->pid;	 /* single-threaded: tid == pid */
 	case OVE_LNX_NR_clock_gettime: { /* (clockid, struct timespec*) — 32-bit time_t */
@@ -1900,6 +1916,16 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			w->ws_col = 80;
 			w->ws_xpixel = 0;
 			w->ws_ypixel = 0;
+			return 0;
+		}
+		case OVE_LNX_TIOCSCTTY: /* getty/login: become/drop/set the tty session */
+		case OVE_LNX_TIOCNOTTY:
+		case OVE_LNX_TIOCSPGRP:
+			return 0;
+		case OVE_LNX_TIOCGPGRP: {
+			int *pgrp = (int *)(uintptr_t)a2;
+			if (pgrp)
+				*pgrp = proc->pid;
 			return 0;
 		}
 		default:
