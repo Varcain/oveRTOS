@@ -126,6 +126,18 @@ static int wfs_reserve(int i, size_t need)
 	return 0;
 }
 
+/* Synthetic /proc fd backing (content generated on open; see proc_* below). */
+#define OVE_LNX_FD_PROC 5
+#define OVE_LNX_NPROCF 4
+#define OVE_LNX_PROCBUF 1024
+static struct {
+	char path[OVE_LNX_PATH_MAX];
+	char buf[OVE_LNX_PROCBUF];
+	size_t len;
+	int is_dir;
+	int used;
+} g_procf[OVE_LNX_NPROCF];
+
 /*
  * ARM kernel struct stat64. Spelled with fixed-width types (the kernel's
  * `unsigned long` is 32-bit on ARM but 64-bit on the x86-64 host) so the binary
@@ -485,6 +497,21 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		return (long)n;
 	}
 
+	/* A /proc file read returns bytes from the content generated at open. */
+	if (s->kind == OVE_LNX_FD_PROC) {
+		if (g_procf[s->file_idx].is_dir)
+			return -OVE_LNX_EISDIR;
+		size_t plen = g_procf[s->file_idx].len;
+		if ((size_t)s->offset >= plen)
+			return 0; /* EOF */
+		size_t n = plen - s->offset;
+		if (n > len)
+			n = len;
+		memcpy(buf, g_procf[s->file_idx].buf + s->offset, n);
+		s->offset += n;
+		return (long)n;
+	}
+
 	/* Read from a rootfs file at the current offset. */
 	const ove_lnx_file_t *f = &p->fs[s->file_idx];
 	if ((file_mode(f) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
@@ -677,6 +704,179 @@ static int fs_follow(const ove_lnx_proc_t *p, int idx)
 	return idx;
 }
 
+/* ---- synthetic /proc (read-only, generated on open) ----------------------- */
+static size_t p_str(char *o, size_t off, size_t cap, const char *s)
+{
+	while (*s && off < cap)
+		o[off++] = *s++;
+	return off;
+}
+static size_t p_dec(char *o, size_t off, size_t cap, uint64_t v)
+{
+	char t[20];
+	int n = 0;
+	if (!v)
+		t[n++] = '0';
+	while (v) {
+		t[n++] = (char)('0' + v % 10u);
+		v /= 10u;
+	}
+	while (n && off < cap)
+		o[off++] = t[--n];
+	return off;
+}
+
+/* True for any path inside the synthetic /proc tree. */
+static int proc_is(const char *abs)
+{
+	return strcmp(abs, "/proc") == 0 || strncmp(abs, "/proc/", 6) == 0;
+}
+
+/* Parse "/proc/<pid|self>[/file]": returns the pid (>0) + sets *file to the
+ * trailing component (NULL if the path is the /proc/<pid> dir itself), or 0. */
+static int proc_pid(const char *abs, const ove_lnx_proc_t *p, const char **file)
+{
+	*file = NULL;
+	if (strncmp(abs, "/proc/", 6) != 0)
+		return 0;
+	const char *s = abs + 6;
+	int pid = 0;
+	if (strncmp(s, "self", 4) == 0 && (s[4] == '\0' || s[4] == '/')) {
+		pid = p->pid;
+		s += 4;
+	} else if (*s >= '0' && *s <= '9') {
+		while (*s >= '0' && *s <= '9')
+			pid = pid * 10 + (*s++ - '0');
+	} else {
+		return 0;
+	}
+	if (*s == '/')
+		*file = s + 1;
+	else if (*s != '\0')
+		return 0;
+	return pid;
+}
+
+static int proc_pid_known(const ove_lnx_proc_t *p, int pid)
+{
+	return pid == 1 || pid == p->pid; /* the parked init + the running process */
+}
+
+static const char *const g_proc_files[] = {"version", "uptime", "meminfo",     "cpuinfo",
+					   "mounts",  "stat",	"filesystems", NULL};
+
+/* st_mode for a /proc node, or 0 if the path is not a synthetic /proc node. */
+static uint32_t proc_mode(const char *abs, const ove_lnx_proc_t *p)
+{
+	if (strcmp(abs, "/proc") == 0)
+		return OVE_LNX_S_IFDIR | 0555u;
+	if (strcmp(abs, "/proc/self") == 0)
+		return OVE_LNX_S_IFLNK | 0777u;
+	const char *file;
+	int pid = proc_pid(abs, p, &file);
+	if (pid > 0)
+		return !proc_pid_known(p, pid) ? 0u
+		       : file		       ? (OVE_LNX_S_IFREG | 0444u)
+					       : (OVE_LNX_S_IFDIR | 0555u);
+	for (int i = 0; g_proc_files[i]; i++)
+		if (strcmp(abs + 6, g_proc_files[i]) == 0)
+			return OVE_LNX_S_IFREG | 0444u;
+	return 0;
+}
+
+/* Generate the content of a /proc FILE into buf[cap]; returns length, or -1. */
+static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t cap)
+{
+	size_t o = 0;
+	const char *file;
+	int pid = proc_pid(abs, p, &file);
+	if (pid > 0 && file) {
+		if (!proc_pid_known(p, pid))
+			return -1;
+		const char *comm = (pid == 1) ? "init" : "busybox";
+		int ppid = (pid == 1) ? 0 : 1;
+		if (strcmp(file, "stat") == 0) {
+			o = p_dec(buf, o, cap, (uint64_t)pid);
+			o = p_str(buf, o, cap, " (");
+			o = p_str(buf, o, cap, comm);
+			o = p_str(buf, o, cap, ") S ");
+			o = p_dec(buf, o, cap, (uint64_t)ppid);
+			/* pad to ~fields 5..24 (pgrp..rss) — busybox ps sscanf's this far. */
+			o = p_str(buf, o, cap, " 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
+		} else if (strcmp(file, "cmdline") == 0) {
+			o = p_str(buf, o, cap, comm);
+			if (o < cap)
+				buf[o++] = '\0';
+		} else if (strcmp(file, "comm") == 0) {
+			o = p_str(buf, o, cap, comm);
+			o = p_str(buf, o, cap, "\n");
+		} else if (strcmp(file, "status") == 0) {
+			o = p_str(buf, o, cap, "Name:\t");
+			o = p_str(buf, o, cap, comm);
+			o = p_str(buf, o, cap, "\nState:\tS (sleeping)\nPid:\t");
+			o = p_dec(buf, o, cap, (uint64_t)pid);
+			o = p_str(buf, o, cap, "\nPPid:\t");
+			o = p_dec(buf, o, cap, (uint64_t)ppid);
+			o = p_str(buf, o, cap, "\n");
+		} else {
+			return -1;
+		}
+		return (long)o;
+	}
+	if (strcmp(abs, "/proc/version") == 0) {
+		o = p_str(buf, o, cap, "Linux version 6.1.0 (overtos) (uClibc) #1 oveRTOS\n");
+	} else if (strcmp(abs, "/proc/uptime") == 0) {
+		uint64_t ns = 0;
+		ove_time_get_ns(&ns);
+		o = p_dec(buf, o, cap, ns / 1000000000ull);
+		o = p_str(buf, o, cap, ".00 ");
+		o = p_dec(buf, o, cap, ns / 1000000000ull);
+		o = p_str(buf, o, cap, ".00\n");
+	} else if (strcmp(abs, "/proc/meminfo") == 0) {
+		o = p_str(buf, o, cap,
+			  "MemTotal:       4096 kB\nMemFree:        2048 kB\n"
+			  "MemAvailable:   2048 kB\nBuffers:           0 kB\nCached:            0 "
+			  "kB\n");
+	} else if (strcmp(abs, "/proc/cpuinfo") == 0) {
+		o = p_str(buf, o, cap,
+			  "processor\t: 0\nmodel name\t: ARM Cortex-M\nFeatures\t: thumb\n\n");
+	} else if (strcmp(abs, "/proc/mounts") == 0) {
+		o = p_str(buf, o, cap,
+			  "rootfs / rootfs ro 0 0\nproc /proc proc rw 0 0\n"
+			  "tmpfs /tmp tmpfs rw 0 0\n");
+	} else if (strcmp(abs, "/proc/stat") == 0) {
+		o = p_str(buf, o, cap, "cpu  0 0 0 0 0 0 0 0 0 0\nctxt 0\nbtime 0\n");
+	} else if (strcmp(abs, "/proc/filesystems") == 0) {
+		o = p_str(buf, o, cap, "nodev\tproc\nnodev\ttmpfs\n");
+	} else {
+		return -1;
+	}
+	return (long)o;
+}
+
+/* Open a /proc node: a generated-content file fd, or a directory fd for
+ * getdents. Returns an fd, or a negative errno (caller already resolved `abs`). */
+static long proc_open(ove_lnx_proc_t *p, const char *abs)
+{
+	uint32_t m = proc_mode(abs, p);
+	if (m == 0 || (m & OVE_LNX_S_IFMT) == OVE_LNX_S_IFLNK)
+		return -OVE_LNX_ENOENT; /* /proc/self resolves via readlink, not open */
+	int dir = (m & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR;
+	for (int i = 0; i < OVE_LNX_NPROCF; i++) {
+		if (g_procf[i].used)
+			continue;
+		long n = dir ? 0 : proc_gen(abs, p, g_procf[i].buf, OVE_LNX_PROCBUF);
+		if (n < 0)
+			return -OVE_LNX_ENOENT;
+		strcpy(g_procf[i].path, abs);
+		g_procf[i].len = (size_t)n;
+		g_procf[i].is_dir = dir;
+		g_procf[i].used = 1;
+		return fd_alloc(p, OVE_LNX_FD_PROC, i, 0);
+	}
+	return -OVE_LNX_EMFILE;
+}
+
 static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags)
 {
 	(void)dirfd; /* dirfd is AT_FDCWD; relative paths resolve against p->cwd */
@@ -687,6 +887,8 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	if (rr < 0)
 		return rr;
 	path = abspath;
+	if (proc_is(path)) /* synthetic /proc shadows everything */
+		return proc_open(p, path);
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
 	int wi = wfs_find(path);
 
@@ -725,6 +927,8 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
+	if (s->kind == OVE_LNX_FD_PROC)
+		g_procf[s->file_idx].used = 0; /* release the generated-content slot */
 	s->kind = OVE_LNX_FD_FREE;
 	return 0;
 }
@@ -846,6 +1050,11 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 		fill_kstat64(statbuf, file_mode(&p->fs[s->file_idx]), p->fs[s->file_idx].size);
 	else if (s->kind == OVE_LNX_FD_TMPFS)
 		fill_kstat64(statbuf, g_wnodes[s->file_idx].mode, g_wnodes[s->file_idx].size);
+	else if (s->kind == OVE_LNX_FD_PROC)
+		fill_kstat64(statbuf,
+			     g_procf[s->file_idx].is_dir ? (OVE_LNX_S_IFDIR | 0555u)
+							 : (OVE_LNX_S_IFREG | 0444u),
+			     g_procf[s->file_idx].len);
 	else
 		fill_kstat64(statbuf, OVE_LNX_S_IFCHR | 0620u, 0);
 	return 0;
@@ -860,6 +1069,13 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
+	if (proc_is(abspath)) {
+		uint32_t m = proc_mode(abspath, p);
+		if (m == 0)
+			return -OVE_LNX_ENOENT;
+		fill_kstat64(statbuf, m, 0);
+		return 0;
+	}
 	int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
 	if (wi >= 0) {
 		fill_kstat64(statbuf, g_wnodes[wi].mode, g_wnodes[wi].size);
@@ -886,6 +1102,14 @@ static long sys_readlink(ove_lnx_proc_t *p, const char *path, char *buf, size_t 
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
+	if (strcmp(abspath, "/proc/self") == 0) { /* -> the running process's pid */
+		char tmp[12];
+		size_t n = p_dec(tmp, 0, sizeof(tmp), (uint64_t)p->pid);
+		if (n > bufsiz)
+			n = bufsiz;
+		memcpy(buf, tmp, n);
+		return (long)n;
+	}
 	int wi = wfs_find(abspath); /* a writable symlink (ln -s) shadows the rootfs */
 	if (wi >= 0) {
 		ove_lnx_wnode_t *w = &g_wnodes[wi];
@@ -917,6 +1141,8 @@ static long sys_access(ove_lnx_proc_t *p, const char *path)
 		return rr;
 	if (abspath[0] == '/' && abspath[1] == '\0')
 		return 0; /* root */
+	if (proc_is(abspath))
+		return proc_mode(abspath, p) ? 0 : -OVE_LNX_ENOENT;
 	if (wfs_find(abspath) >= 0 || fs_lookup(p, abspath) >= 0)
 		return 0;
 	return -OVE_LNX_ENOENT;
@@ -1041,6 +1267,30 @@ static long sys_utimensat(ove_lnx_proc_t *p, const char *path)
 	return -OVE_LNX_ENOENT;
 }
 
+/* statfs64: synthetic filesystem stats (no real block device backs the rootfs). */
+struct ove_lnx_statfs64 {
+	uint32_t f_type, f_bsize;
+	uint64_t f_blocks, f_bfree, f_bavail, f_files, f_ffree;
+	uint32_t f_fsid[2], f_namelen, f_frsize, f_flags, f_spare[4];
+};
+static long sys_statfs(void *buf)
+{
+	if (!buf)
+		return -OVE_LNX_EFAULT;
+	struct ove_lnx_statfs64 *st = buf;
+	memset(st, 0, sizeof(*st));
+	st->f_type = 0x01021994u; /* TMPFS_MAGIC */
+	st->f_bsize = 4096;
+	st->f_frsize = 4096;
+	st->f_blocks = 256;
+	st->f_bfree = 192;
+	st->f_bavail = 192;
+	st->f_files = 64;
+	st->f_ffree = 48;
+	st->f_namelen = 255;
+	return 0;
+}
+
 /* Append one dirent record. Skips entries already emitted (pos < s->offset);
  * returns 0 if the record does not fit (caller stops), else 1 (and advances). */
 static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ove_lnx_fd_t *s,
@@ -1083,6 +1333,10 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
 		if ((g_wnodes[s->file_idx].mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
 			return -OVE_LNX_ENOTDIR;
 		dirpath = g_wnodes[s->file_idx].path;
+	} else if (s->kind == OVE_LNX_FD_PROC) {
+		if (!g_procf[s->file_idx].is_dir)
+			return -OVE_LNX_ENOTDIR;
+		dirpath = g_procf[s->file_idx].path;
 	} else {
 		return -OVE_LNX_ENOTDIR;
 	}
@@ -1110,6 +1364,39 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
 		if (!dirent_emit(out, count, &filled, &pos, s, (uint64_t)(100000 + i), name,
 				 g_wnodes[i].mode))
 			full = 1;
+	}
+	/* synthetic /proc children */
+	if (!full && proc_is(dirpath)) {
+		const char *file;
+		int dpid = proc_pid(dirpath, p, &file);
+		if (strcmp(dirpath, "/proc") == 0) {
+			uint64_t ino = 200000;
+			for (int i = 0; g_proc_files[i] && !full; i++)
+				if (!dirent_emit(out, count, &filled, &pos, s, ino++,
+						 g_proc_files[i], OVE_LNX_S_IFREG))
+					full = 1;
+			if (!full && !dirent_emit(out, count, &filled, &pos, s, ino++, "self",
+						  OVE_LNX_S_IFLNK))
+				full = 1;
+			if (!full &&
+			    !dirent_emit(out, count, &filled, &pos, s, ino++, "1", OVE_LNX_S_IFDIR))
+				full = 1;
+			if (!full && p->pid != 1) {
+				char pidstr[12];
+				size_t k = p_dec(pidstr, 0, sizeof(pidstr) - 1, (uint64_t)p->pid);
+				pidstr[k] = '\0';
+				if (!dirent_emit(out, count, &filled, &pos, s, ino++, pidstr,
+						 OVE_LNX_S_IFDIR))
+					full = 1;
+			}
+		} else if (dpid > 0 && !file && proc_pid_known(p, dpid)) {
+			static const char *const pf[] = {"stat", "cmdline", "status", "comm", NULL};
+			uint64_t ino = 300000;
+			for (int i = 0; pf[i] && !full; i++)
+				if (!dirent_emit(out, count, &filled, &pos, s, ino++, pf[i],
+						 OVE_LNX_S_IFREG))
+					full = 1;
+		}
 	}
 	if (full && filled == 0)
 		return -OVE_LNX_EINVAL; /* buffer too small for even one entry */
@@ -1149,8 +1436,13 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 		long rr = resolve_path(p, path, abspath, sizeof(abspath));
 		if (rr < 0)
 			return rr;
-		int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
-		if (wi >= 0) {
+		int wi;
+		if (proc_is(abspath)) {
+			mode = proc_mode(abspath, p);
+			if (mode == 0)
+				return -OVE_LNX_ENOENT;
+			size = 0;
+		} else if ((wi = wfs_find(abspath)) >= 0) { /* writable overlay shadows rootfs */
 			mode = g_wnodes[wi].mode;
 			size = g_wnodes[wi].size;
 		} else {
@@ -1330,6 +1622,33 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_utimensat:	  /* (dirfd, path, times, flags) — times not tracked */
 	case OVE_LNX_NR_utimensat_time64: /* time64 variant uClibc-ng issues for touch */
 		return sys_utimensat(proc, (const char *)(uintptr_t)a1);
+	case OVE_LNX_NR_mount:	 /* synthetic /proc + overlay are always present */
+	case OVE_LNX_NR_umount2: /* (rcS does `mount -t proc proc /proc`) */
+		return 0;
+	case OVE_LNX_NR_statfs64:  /* (path, sz, buf) */
+	case OVE_LNX_NR_fstatfs64: /* (fd, sz, buf) */
+		return sys_statfs((void *)(uintptr_t)a2);
+	case OVE_LNX_NR_sysinfo: { /* uptime + ram totals (uptime/free read this) */
+		struct ove_lnx_sysinfo {
+			int32_t uptime;
+			uint32_t loads[3];
+			uint32_t totalram, freeram, sharedram, bufferram, totalswap, freeswap;
+			uint16_t procs, pad;
+			uint32_t totalhigh, freehigh, mem_unit;
+			char _f[8];
+		} *si = (void *)(uintptr_t)a0;
+		if (!si)
+			return -OVE_LNX_EFAULT;
+		memset(si, 0, sizeof(*si));
+		uint64_t ns = 0;
+		ove_time_get_ns(&ns);
+		si->uptime = (int32_t)(ns / 1000000000ull);
+		si->totalram = 4u * 1024u * 1024u;
+		si->freeram = 2u * 1024u * 1024u;
+		si->procs = 2;
+		si->mem_unit = 1;
+		return 0;
+	}
 	case OVE_LNX_NR_fcntl: /* old 32-bit fcntl: same dispatch as fcntl64 here */
 	case OVE_LNX_NR_fcntl64: {
 		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);

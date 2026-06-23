@@ -122,6 +122,12 @@ extern "C" {
 #define OVE_LNX_NR_utimensat 348
 #define OVE_LNX_NR_renameat2 382
 #define OVE_LNX_NR_utimensat_time64 412
+/* mount (no-op) + statfs (synthetic, for df) + sysinfo (uptime/free). */
+#define OVE_LNX_NR_sysinfo 116
+#define OVE_LNX_NR_mount 21
+#define OVE_LNX_NR_umount2 52
+#define OVE_LNX_NR_statfs64 266
+#define OVE_LNX_NR_fstatfs64 267
 #define OVE_LNX_AT_REMOVEDIR 0x200
 
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
