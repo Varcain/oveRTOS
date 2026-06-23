@@ -63,6 +63,7 @@ extern "C" {
 #define OVE_LNX_NR_execve 11
 #define OVE_LNX_NR_lseek 19
 #define OVE_LNX_NR__llseek 140
+#define OVE_LNX_NR_ftruncate64 194
 #define OVE_LNX_NR_getpid 20
 #define OVE_LNX_NR_setpgid 57
 #define OVE_LNX_NR_getppid 64

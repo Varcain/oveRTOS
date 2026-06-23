@@ -1060,6 +1060,29 @@ static long sys_llseek(ove_lnx_proc_t *p, int fd, unsigned long off_hi, unsigned
 	return 0;
 }
 
+/* ftruncate64(fd, length) on a writable-VFS file: set its logical size, growing
+ * with zeros if needed. vi's :w writes the new content then truncates to the exact
+ * length, so editing an existing file shorter drops the old trailing bytes. */
+static long sys_ftruncate(ove_lnx_proc_t *p, int fd, uint64_t length)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	if (s->kind != OVE_LNX_FD_TMPFS)
+		return -OVE_LNX_EINVAL; /* the rootfs is read-only; console/pipe N/A */
+	ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
+	if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+		return -OVE_LNX_EISDIR;
+	size_t newlen = (size_t)length;
+	if (newlen > t->size) {
+		if (wfs_reserve(s->file_idx, newlen) != 0)
+			return -OVE_LNX_EFBIG;
+		memset(t->data + t->size, 0, newlen - t->size);
+	}
+	t->size = newlen;
+	return 0;
+}
+
 /* Fill an ARM kstat64 from a node's mode + size. */
 static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t mode, uint64_t size)
 {
@@ -1682,6 +1705,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR__llseek:
 		return sys_llseek(proc, (int)a0, (unsigned long)a1, (unsigned long)a2,
 				  (uint64_t *)(uintptr_t)a3, (unsigned int)a4);
+	case OVE_LNX_NR_ftruncate64:
+		/* 64-bit length is register-pair aligned on ARM: fd=a0, len=(a2,a3). */
+		return sys_ftruncate(proc, (int)a0,
+				     (uint64_t)(uint32_t)a2 | ((uint64_t)(uint32_t)a3 << 32));
 	case OVE_LNX_NR_fstat64:
 		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
 	case OVE_LNX_NR_stat64: /* (path, statbuf) — follows symlinks */
@@ -1937,15 +1964,31 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	}
 	case OVE_LNX_NR_poll:
 	case OVE_LNX_NR_ppoll_time64: {
-		/* The console is always ready and rootfs files never block, so report
-		 * the requested readiness immediately (the shell polls stdin). ppoll's
-		 * timeout/sigmask args are ignored; only fds (a0) + nfds (a1) matter. */
 		ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)a0;
 		unsigned nfds = (unsigned)a1;
+		/* Timeout: poll(2) passes ms in a2 (<0 = block); ppoll passes a struct
+		 * timespec* (NULL = block). A SHORT finite timeout means the caller is
+		 * probing for input that might *immediately* follow — e.g. vi/hush's
+		 * read_key polling ~50 ms after ESC to tell a lone ESC from an escape
+		 * sequence. We keep no read-ahead, so honestly report "no data yet" for
+		 * such probes: a lone ESC then stays ESC (Esc then :q works in vi). vi
+		 * also uses poll(timeout 0) as "is input pending? if not, repaint the
+		 * screen" — reporting ready there made it never repaint while inserting
+		 * (edits stayed invisible). A blocking/long poll reports ready and the
+		 * caller blocks in read() for the real byte (the console read blocks
+		 * until a key arrives). */
+		long tmo_ms;
+		if (nr == OVE_LNX_NR_poll) {
+			tmo_ms = (long)(int32_t)a2;
+		} else {
+			const int64_t *ts = (const int64_t *)(uintptr_t)a2; /* {sec, nsec} */
+			tmo_ms = ts ? (long)(ts[0] * 1000 + ts[1] / 1000000) : -1;
+		}
+		int probe = (tmo_ms >= 0 && tmo_ms <= 100);
 		int ready = 0;
 		for (unsigned i = 0; i < nfds; i++) {
 			pfds[i].revents = 0;
-			if (!fd_slot(proc, pfds[i].fd))
+			if (probe || !fd_slot(proc, pfds[i].fd))
 				continue;
 			pfds[i].revents = pfds[i].events & (OVE_LNX_POLLIN | OVE_LNX_POLLOUT);
 			if (pfds[i].revents)

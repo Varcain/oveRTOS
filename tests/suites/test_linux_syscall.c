@@ -177,11 +177,19 @@ static void test_lnx_init_stubs(void **state)
 	/* A too-high arg (the shell asks for >=255) falls back to the lowest free fd. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_fcntl64, 0, OVE_LNX_F_DUPFD, 255, 0, 0, 0),
 			 4);
-	/* poll reports the console immediately ready. */
+	/* A blocking poll (timeout < 0) reports the console ready; the caller then
+	 * blocks in read() for the real byte. */
 	ove_lnx_pollfd pfd = {.fd = 0, .events = OVE_LNX_POLLIN, .revents = 0};
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pfd, 1, 0, 0, 0, 0),
-			 1);
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pfd, 1, -1, 0, 0, 0), 1);
 	assert_int_equal(pfd.revents, OVE_LNX_POLLIN);
+	/* A short finite poll is a "is input pending right now?" probe (vi's repaint
+	 * gate / read_key's ESC-sequence timeout). With no read-ahead we honestly
+	 * report not-ready so a lone ESC stays ESC and vi repaints while inserting. */
+	pfd.revents = 0;
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pfd, 1, 50, 0, 0, 0), 0);
+	assert_int_equal(pfd.revents, 0);
 	/* Thread-bookkeeping stubs succeed so libc startup proceeds. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_tid_address, 0, 0, 0, 0, 0, 0), 1);
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_set_robust_list, 0, 0, 0, 0, 0, 0), 0);
