@@ -32,7 +32,11 @@ ove_zephyr_add_profiler_flags()
 # software-fault handler at link time, and the demo embeds a rootfs CPIO fixture.
 if(OVE_LINUX)
     target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
-    ove_zephyr_add_common_includes(EXTRA ${OVE_DIR}/tests/ontarget)
+    # Generate the rootfs fixture header from the Buildroot image at build time
+    # (it is not committed); fail clearly if the Buildroot image is unavailable.
+    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+    ove_zephyr_add_common_includes(EXTRA ${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
 else()
     ove_zephyr_add_common_includes()
 endif()

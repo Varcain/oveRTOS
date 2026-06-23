@@ -50,6 +50,10 @@ dl/
 output/
 defconfig
 .venv/
+
+# Linux-personality rootfs fixture — generated at build from the Buildroot image
+# (cmake/OveLinuxFixtures.cmake), never committed.
+tests/ontarget/loader_rootfs_image.h
 .venv-docs/
 
 # Generated documentation artifacts

@@ -46,7 +46,9 @@ if(OVE_LINUX)
     # only needs the embedded rootfs CPIO fixture on the include path; stub the
     # hardware modules it doesn't use.
     ove_nuttx_exclude_backends(LVGL AUDIO)
-    ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget)
+    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+    ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
 else()
 
 # ── Sim framework (replaces NuttX display/audio backends) ────────

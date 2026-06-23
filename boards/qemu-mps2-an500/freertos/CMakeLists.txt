@@ -39,7 +39,9 @@ ove_exclude_backends(BOARD)
 # the embedded rootfs CPIO fixture on the include path. Everything below is the
 # sim framework, used by the normal (non-personality) an500 builds.
 if(OVE_LINUX)
-    ove_add_include_directories(${OVE_DIR}/tests/ontarget)
+    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+    ove_add_include_directories(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
     ove_add_stub_backends(AUDIO)
 else()
 

@@ -29,8 +29,9 @@ make busybox-dirclean >/dev/null
 make            # builds busybox + assembles output/images/rootfs.cpio
 
 [ "$(head -c6 output/images/rootfs.cpio)" = "070701" ] || { echo "no newc cpio produced"; exit 1; }
-cmake -DIN="$BUILDROOT/output/images/rootfs.cpio" \
-      -DOUT="$OVE_DIR/tests/ontarget/loader_rootfs_image.h" \
-      -DSYM=ove_test_rootfs_cpio \
-      -P "$OVE_DIR/tests/cmake/embed_bin.cmake"
-echo "regenerated tests/ontarget/loader_rootfs_image.h ($(stat -c%s output/images/rootfs.cpio) bytes)"
+# The oveRTOS build embeds output/images/rootfs.cpio into loader_rootfs_image.h
+# at build time (cmake/OveLinuxFixtures.cmake) — the header is NOT committed, so
+# this script only (re)produces the cpio. Reconfigure the oveRTOS build to pick
+# it up: `ove configure && ove build`.
+echo "produced $BUILDROOT/output/images/rootfs.cpio ($(stat -c%s output/images/rootfs.cpio) bytes)"
+echo "now run 'ove configure && ove build' to re-embed it"

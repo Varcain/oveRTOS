@@ -14,6 +14,12 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_test_zephyr_linux)
 
 set(OVE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
+set(OVE_DIR ${OVE_ROOT})
+
+# Generate the rootfs fixture header from the Buildroot image at build time (it
+# is not committed); fails clearly if the Buildroot image is unavailable.
+include(${OVE_ROOT}/cmake/OveLinuxFixtures.cmake)
+ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
 
 # src/main.c plus the engine-agnostic layers the SVC seam dispatches into.
 target_sources(app PRIVATE
@@ -26,7 +32,7 @@ target_sources(app PRIVATE
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}      # ove_config.h
     ${OVE_ROOT}/include
-    ${OVE_ROOT}/tests/ontarget       # loader_rootfs_image.h (bFLT/rootfs fixtures)
+    ${OVE_LNX_GENDIR}                # generated loader_rootfs_image.h
 )
 
 # Interpose the engine's software-fault handler at link time (no Zephyr source
