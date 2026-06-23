@@ -436,7 +436,6 @@ int test_linux_syscall_run(void);
 int test_loader_target_run(void);
 int test_loader_flat_target_run(void);
 int test_protected_target_run(void);
-int test_linux_target_run(void);
 int test_storage_bounds_run(void);
 int test_renode_stm32_obs_run(void);
 int test_renode_stm32_periph_run(void);

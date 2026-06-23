@@ -193,7 +193,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               cpp cpp-sanitize cpp-sanitize-zh cpp-tsan rust rust-zeroheap \
               zig zig-zeroheap zig-debug lvgl-compile nuttx zephyr \
               qemu qemu-freertos qemu-freertos-zeroheap \
-              qemu-nuttx qemu-nuttx-zeroheap qemu-nuttx-linux \
+              qemu-nuttx qemu-nuttx-zeroheap \
               qemu-zephyr qemu-zephyr-zeroheap qemu-zephyr-linux all \
               renode renode-stm32f746-freertos \
               renode-stm32f746-freertos-zeroheap \

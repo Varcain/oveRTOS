@@ -26,7 +26,7 @@ target_sources(app PRIVATE
 target_include_directories(app PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}      # ove_config.h
     ${OVE_ROOT}/include
-    ${OVE_ROOT}/tests/ontarget       # loader_lnx_mod_image.h (bFLT fixture)
+    ${OVE_ROOT}/tests/ontarget       # loader_rootfs_image.h (bFLT/rootfs fixtures)
 )
 
 # Interpose the engine's software-fault handler at link time (no Zephyr source
