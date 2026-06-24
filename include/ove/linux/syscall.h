@@ -226,6 +226,7 @@ extern "C" {
 
 /* Linux errno values returned (negated) on syscall failure. */
 #define OVE_LNX_ENOENT 2
+#define OVE_LNX_ESRCH 3
 #define OVE_LNX_EINTR 4
 #define OVE_LNX_ENOEXEC 8
 #define OVE_LNX_EBADF 9
@@ -382,6 +383,10 @@ typedef struct ove_lnx_proc {
 	int pipe_idx;	    /**< g_pipes[] index being waited on. */
 	uintptr_t pipe_buf; /**< User buffer for the parked read/write. */
 	size_t pipe_len;    /**< Requested length for the parked read/write. */
+	/* Cross-process signal (Phase D3): kill(pid,sig) from another proc latches the
+	 * signal here; it is delivered at this proc's next syscall boundary (if running)
+	 * or by the coordinator (if parked in sleep/wait/pipe). 0 = none. */
+	int pending_sig;
 } ove_lnx_proc_t;
 
 /** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan

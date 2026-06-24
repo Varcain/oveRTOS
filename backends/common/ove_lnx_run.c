@@ -245,14 +245,25 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 			f->r[0] = 0; /* kill() succeeds; the run loop stops next iteration */
 			return;
 		}
-		/* Self-signal (tkill/tgkill, or kill to own pid) is delivered. Cross-process
-		 * kill(other) is Phase D3 — accept it (return 0) rather than mis-deliver to
-		 * the caller (which would, e.g., let `kill %1` terminate the shell). */
+		/* Self-signal (tkill/tgkill, or kill to own pid) is delivered inline. */
 		if (nr != OVE_LNX_NR_kill || target == proc->pid) {
 			deliver_signal(f, proc, sig, 0);
 			return;
 		}
-		f->r[0] = 0;
+		/* Cross-process kill (Phase D3): latch the signal on the target proc; it is
+		 * delivered at the target's next syscall boundary (running) or by the
+		 * coordinator (parked in sleep/wait/pipe). pid<=0 (process group / all) is
+		 * approximated as "every other live userspace proc". */
+		f->r[0] = -OVE_LNX_ESRCH;
+		for (int t = 0; t < OVE_LNX_NSLOT; t++) {
+			ove_lnx_proc_t *tp = &g_ove_lnx_proc[t];
+			if (!tp->alive || tp == proc || tp->pid <= 1)
+				continue;
+			if (target > 0 && tp->pid != target)
+				continue;
+			tp->pending_sig = sig;
+			f->r[0] = 0;
+		}
 		return;
 	}
 	if (nr == OVE_LNX_NR_rt_sigreturn || nr == OVE_LNX_NR_sigreturn) {
@@ -283,6 +294,14 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	}
 	if (proc->exited || proc->exec_pending) {
 		park_frame(f);
+		return;
+	}
+	/* Cross-process signal (Phase D3): another proc's kill() latched a signal on us;
+	 * deliver it at this syscall boundary (Linux at-the-boundary async delivery). */
+	if (proc->pending_sig) {
+		int sig = proc->pending_sig;
+		proc->pending_sig = 0;
+		deliver_signal(f, proc, sig, r);
 		return;
 	}
 	/* A console ^C latched a signal during this syscall (e.g. a read): deliver
@@ -491,6 +510,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->exited = ch->exec_pending = ch->fork_pending = 0;
 			ch->sleep_pending = ch->wait_pending = ch->sleeping = 0;
 			ch->pipe_wait = 0;
+			ch->pending_sig = 0;
 			ch->child_count = ch->live_children = 0;
 			ch->alive = 1;
 			ch->region = par->region;
@@ -625,6 +645,21 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_busy = 1;
 			if (p->pipe_wait)
 				any_pipe_wait = 1;
+			/* Cross-process signal (D3) to a parked, blocked proc: the dispatch can't
+			 * deliver (no live thread), so the coordinator does. SIG_IGN is dropped;
+			 * otherwise terminate (default action — a custom handler on a blocked proc
+			 * is approximated as terminate). EV_EXIT reaps it next pass. */
+			if (p->pending_sig && !g_ove_lnx_used[s] &&
+			    (p->sleeping || p->wait_pending || p->pipe_wait)) {
+				int sig = p->pending_sig;
+				p->pending_sig = 0;
+				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+					p->exited = 1;
+					p->exit_status = 128 + sig;
+					p->sleeping = p->wait_pending = p->pipe_wait = 0;
+					progress = 1;
+				}
+			}
 			if (p->sleeping) {
 				any_busy = 1;
 				if (now >= p->sleep_until_us) {
