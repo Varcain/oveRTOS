@@ -2097,21 +2097,31 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return ready;
 	}
 	case OVE_LNX_NR_wait4: {
-		/* Reap the oldest queued child (FIFO); the wait-status word encodes a
-		 * normal exit as exit_code << 8. a1 is the int* status, else NULL. */
-		if (proc->child_count == 0)
-			return -OVE_LNX_ECHILD;
-		int pid = proc->child_pid[0];
-		int code = proc->child_status[0];
-		for (int i = 1; i < proc->child_count; i++) {
-			proc->child_pid[i - 1] = proc->child_pid[i];
-			proc->child_status[i - 1] = proc->child_status[i];
+		/* Reap an already-exited child immediately (FIFO; status = exit_code << 8).
+		 * Else, if children are still live, BLOCK: set wait_pending so the dispatch
+		 * parks us and the run-loop coordinator resumes us (returning the reaped pid
+		 * + writing *status) when one exits. No children at all → -ECHILD. */
+		if (proc->child_count > 0) {
+			int pid = proc->child_pid[0];
+			int code = proc->child_status[0];
+			for (int i = 1; i < proc->child_count; i++) {
+				proc->child_pid[i - 1] = proc->child_pid[i];
+				proc->child_status[i - 1] = proc->child_status[i];
+			}
+			proc->child_count--;
+			int *status = (int *)(uintptr_t)a1;
+			if (status)
+				*status = (code & 0xff) << 8;
+			return pid;
 		}
-		proc->child_count--;
-		int *status = (int *)(uintptr_t)a1;
-		if (status)
-			*status = (code & 0xff) << 8;
-		return pid;
+		if (proc->live_children == 0)
+			return -OVE_LNX_ECHILD;
+		if ((int)a2 & 1) /* WNOHANG: children live but none ready */
+			return 0;
+		proc->wait_pending = 1;
+		proc->wait_pid = (int)a0;
+		proc->wait_status_p = (uintptr_t)a1;
+		return 0; /* dispatch parks; the coordinator's resume supplies the real r0 */
 	}
 	case OVE_LNX_NR_getuid32:
 	case OVE_LNX_NR_geteuid32:

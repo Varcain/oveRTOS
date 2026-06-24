@@ -28,11 +28,17 @@
 
 #define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
-/* The process model is a sequentialised STACK: at most OVE_LNX_NSLOT nested live
- * processes (init -> shell -> command -> ...), each loaded image in its own
- * region. Depth 4 covers init -> getty/login/sh -> command -> sub-command. */
-#define OVE_LNX_NREG 4
-#define OVE_LNX_NSLOT 4
+/* Concurrent process model (Phase D): the run loop coordinates a live process SET,
+ * each loaded image in its own region. OVE_LNX_NREG = max images live at once
+ * (init + login-shell + a few concurrent jobs); OVE_LNX_NSLOT = NREG + vfork-window
+ * slots (a vfork child shares its parent's region until it execs). Per-engine
+ * overridable so an521 (PSRAM, roomy) can run more than the an500 (4 MB) engines. */
+#ifndef OVE_LNX_NREG
+#define OVE_LNX_NREG 6
+#endif
+#ifndef OVE_LNX_NSLOT
+#define OVE_LNX_NSLOT 8
+#endif
 
 /* A uniform Cortex-M register frame the dispatch reads/writes. The seam populates
  * it from its native exception frame and writes the modified HW registers back.
@@ -58,12 +64,26 @@ struct ove_lnx_engine {
 	/* Spawn slot `sidx` running the freshly-loaded `prog` at (entry, sp). */
 	int (*spawn_launch)(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
 			    void *stack_lo);
-	/* Spawn slot `sidx` resuming at g_ove_lnx_vfork with r0 = r0val. */
-	void (*spawn_resume)(int sidx, int ridx, long r0val);
+	/* Spawn slot `sidx` resuming at the captured context `ctx` with r0 = r0val.
+	 * (Per-proc ctx, not the single global — many forks/sleeps/waits can be
+	 * outstanding at once under the concurrent model.) */
+	void (*spawn_resume)(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx, long r0val);
 	/* Abort (delete) slot `sidx`'s task. */
 	void (*abort_slot)(int sidx);
 	/* Sleep the run-loop task for `ms` milliseconds. */
 	void (*sleep_ms)(unsigned ms);
+	/* Coordinator critical section: mask the program svc EXCEPTION (NOT just thread
+	 * preemption) so a program's syscall can't preempt the coordinator mid-edit of
+	 * the shared proc table. irq_lock / taskENTER_CRITICAL / enter_critical_section. */
+	void (*crit_enter)(void);
+	void (*crit_exit)(void);
+	/* Event wakeup: the dispatch posts when a program parks (fork/exec/exit/sleep/
+	 * wait); the coordinator blocks in event_wait instead of busy-polling — so it
+	 * doesn't preempt running programs every tick (which would reset their RTOS
+	 * time-slice and let a CPU-bound background job starve the foreground). The wait
+	 * also times out (ms) for sleeper deadlines + the ps/top snapshot refresh. */
+	void (*event_post)(void);
+	void (*event_wait)(unsigned ms);
 };
 
 /* ---- shared state (defined in ove_lnx_run.c) ------------------------------- */
