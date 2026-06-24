@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "ove/arena.h"
+#include "ove/time.h"
 #include "ove_lnx_run.h"
 
 /* ---- shared state ---------------------------------------------------------- */
@@ -36,6 +37,7 @@ volatile int g_ove_lnx_active;
 static ove_arena_t g_arenas[OVE_LNX_NREG];
 static const ove_lnx_run_config_t *g_cfg;
 static volatile int g_vfork_pending;
+static volatile int g_sleep_pending; /* a proc asked to nanosleep; run loop delays it */
 
 /* Saved interrupted context for an in-flight signal handler. r4-r11 are NOT
  * saved (a C handler preserves them, so they are already correct at sigreturn).
@@ -168,6 +170,22 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 				 (int32_t)f->r[3], (int32_t)f->r[4], (int32_t)f->r[5]);
 	if (r == -OVE_LNX_ENOSYS && g_cfg && g_cfg->on_enosys)
 		g_cfg->on_enosys(nr);
+	if (proc->sleep_pending) {
+		/* Capture the post-svc context (like vfork, but resume the SAME image at
+		 * the instruction after the svc with r0 = 0). The run loop aborts the slot
+		 * for the requested delay, then spawn_resume's it from g_ove_lnx_vfork. */
+		proc->sleep_pending = 0;
+		for (int i = 0; i < 8; i++)
+			g_ove_lnx_vfork.r4_11[i] = f->r[4 + i];
+		g_ove_lnx_vfork.r12 = f->r[12];
+		g_ove_lnx_vfork.lr = f->r[14];
+		g_ove_lnx_vfork.sp = f->r[13];
+		g_ove_lnx_vfork.pc = f->r[15] | 1u;
+		g_sleep_pending = 1;
+		f->r[15] = ((uint32_t)&ove_lnx_park_loop) & ~1u;
+		f->xpsr |= (1u << 24);
+		return;
+	}
 	if (proc->exited || proc->exec_pending) {
 		f->r[15] = ((uint32_t)&ove_lnx_park_loop) & ~1u;
 		f->xpsr |= (1u << 24);
@@ -220,6 +238,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	for (int i = 0; i < OVE_LNX_NSLOT; i++)
 		g_ove_lnx_used[i] = 0;
 	g_vfork_pending = 0;
+	g_sleep_pending = 0;
 	g_pending_sig = 0;
 	g_tty_isig = 1;
 	g_sig_save.active = 0;
@@ -281,6 +300,26 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			eng->abort_slot(top);
 			eng->spawn_resume(child, R[child], 0); /* g_ove_lnx_vfork = parent ctx */
 			top = child;
+			continue;
+		}
+		/* (a2) the running slot asked to nanosleep: abort it for the delay so the
+		 * RTOS idle/kernel/other threads run (real time + CPU stats advance), then
+		 * resume it after the svc with r0 = 0. */
+		if (g_sleep_pending) {
+			g_sleep_pending = 0;
+			uint64_t deadline = g_ove_lnx_proc[top].sleep_until_us;
+			eng->abort_slot(top);
+			for (;;) {
+				if (g_ove_lnx_halt)
+					break;
+				uint64_t now = 0;
+				ove_time_get_us(&now);
+				if (now >= deadline)
+					break;
+				uint64_t rem_ms = (deadline - now) / 1000ull;
+				eng->sleep_ms(rem_ms > 50 ? 50 : (unsigned)(rem_ms ? rem_ms : 1));
+			}
+			eng->spawn_resume(top, R[top], 0);
 			continue;
 		}
 		/* (b) the running slot execs: load the new image into a fresh region. */

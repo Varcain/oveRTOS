@@ -1924,11 +1924,33 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	}
 	case OVE_LNX_NR_nanosleep:	 /* (req, rem) */
 	case OVE_LNX_NR_clock_nanosleep: /* (clockid, flags, req, rem) */
-	case OVE_LNX_NR_clock_nanosleep_time64:
-		/* No RTC-driven scheduler hook here: report success without delaying
-		 * (the program runs in the seam's trap context, where blocking the
-		 * thread is unsafe). A real sleep is a run-loop follow-up. */
+	case OVE_LNX_NR_clock_nanosleep_time64: {
+		/* Record a wake deadline and ask the run loop to park + delay this proc
+		 * (the trap context cannot block). The run loop aborts the slot for the
+		 * duration so the RTOS idle/kernel/other threads run and real time + CPU
+		 * stats advance — which is what top needs between its two samples. */
+		uintptr_t reqp = (nr == OVE_LNX_NR_nanosleep) ? (uintptr_t)a0 : (uintptr_t)a2;
+		if (!reqp)
+			return -OVE_LNX_EFAULT;
+		uint64_t sec, nsec;
+		if (nr == OVE_LNX_NR_clock_nanosleep_time64) {
+			const int64_t *t = (const int64_t *)reqp; /* time64 {sec, nsec} */
+			sec = (uint64_t)t[0];
+			nsec = (uint64_t)t[1];
+		} else {
+			const int32_t *t = (const int32_t *)reqp; /* time32 {sec, nsec} */
+			sec = (uint64_t)(uint32_t)t[0];
+			nsec = (uint64_t)(uint32_t)t[1];
+		}
+		uint64_t dur_us = sec * 1000000ull + nsec / 1000ull;
+		if (dur_us > 100000000ull)
+			dur_us = 100000000ull; /* clamp to 100 s */
+		uint64_t now_ns = 0;
+		ove_time_get_ns(&now_ns);
+		proc->sleep_until_us = now_ns / 1000ull + dur_us;
+		proc->sleep_pending = 1;
 		return 0;
+	}
 	case OVE_LNX_NR_uname: {
 		/* struct utsname: 6 fixed 65-byte fields (sysname, nodename, release,
 		 * version, machine, domainname). The shell reads these at startup. */

@@ -353,6 +353,10 @@ typedef struct ove_lnx_proc {
 	int exec_argc;				 /**< Captured argument count. */
 	char *exec_argv[OVE_LNX_EXEC_MAXARGS];	 /**< Captured argv (into exec_argv_buf). */
 	char exec_argv_buf[OVE_LNX_EXEC_ARGBUF]; /**< Backing store for exec_argv. */
+	/* nanosleep request: the dispatch parks the program and the run loop delays
+	 * to the deadline (so RTOS idle/kernel threads run + time advances). */
+	int sleep_pending;	 /**< Set when nanosleep() should park + delay. */
+	uint64_t sleep_until_us; /**< Absolute wake deadline (ove_time_get_us base). */
 } ove_lnx_proc_t;
 
 /**
