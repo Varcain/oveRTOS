@@ -435,7 +435,12 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 
 /* ELF auxiliary-vector types in the startup block (uClibc scans them after envp). */
 #define OVE_LNX_AT_NULL 0
+#define OVE_LNX_AT_PHDR 3  /* program headers (FDPIC crt finds PT_TLS etc. here) */
+#define OVE_LNX_AT_PHENT 4 /* size of one program header (Elf32_Phdr = 32) */
+#define OVE_LNX_AT_PHNUM 5 /* number of program headers */
 #define OVE_LNX_AT_PAGESZ 6
+#define OVE_LNX_AT_BASE 7 /* interpreter base (0: static, no ld.so) */
+#define OVE_LNX_AT_ENTRY 9
 #define OVE_LNX_AT_RANDOM 25
 
 /**
@@ -456,11 +461,17 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
  * @param[in] argc       Argument count (<= a small internal bound).
  * @param[in] argv       @p argc argument strings.
  * @param[in] envp       NULL-terminated environment strings (may be NULL).
+ * @param[in] fdpic      Non-zero → the standard ELF inline stack (FDPIC programs);
+ *                       zero → the uClinux/bFLT 3-word argc/argv-ptr/envp-ptr header.
+ * @param[in] phdr       FDPIC only: runtime program-header address (AT_PHDR).
+ * @param[in] phnum      FDPIC only: number of program headers (AT_PHNUM).
+ * @param[in] entry      FDPIC only: program entry point (AT_ENTRY).
  * @return The initial stack pointer, or NULL on bad arguments / insufficient room.
  * @note Requires @c CONFIG_OVE_LINUX.
  */
 void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
-			  const char *const envp[]);
+			  const char *const envp[], int fdpic, uintptr_t phdr, int phnum,
+			  uintptr_t entry);
 
 /**
  * @brief Dispatch one Linux syscall against @p proc.

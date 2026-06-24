@@ -397,7 +397,8 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 #define OVE_LNX_MAX_VEC 32
 
 void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
-			  const char *const envp[])
+			  const char *const envp[], int fdpic, uintptr_t phdr, int phnum,
+			  uintptr_t entry)
 {
 	if (!stack || !argv || argc < 0 || argc > OVE_LNX_MAX_VEC)
 		return NULL;
@@ -438,6 +439,44 @@ void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *
 	uint8_t *rnd = sp;
 	for (int i = 0; i < 16; i++)
 		rnd[i] = (uint8_t)(0xa5u ^ (unsigned)i);
+
+	/* FDPIC programs use the STANDARD ELF inline stack (the crt reads argc at sp,
+	 * argv[] inline at sp+4, then computes envp = &argv[argc+1]): argc, argv[0..],
+	 * NULL, envp[0..], NULL, auxv. (bFLT instead wants a 3-word
+	 * argc/argv-ptr/envp-ptr header — see below.) */
+	if (fdpic) {
+		size_t nwords = 1 + (size_t)argc + 1 + (size_t)envc + 1 + 16;
+		uintptr_t *hdr =
+			(uintptr_t *)((uintptr_t)(sp - nwords * sizeof(uintptr_t)) & ~(uintptr_t)7);
+		if ((uint8_t *)hdr < floor)
+			return NULL;
+		size_t k = 0;
+		hdr[k++] = (uintptr_t)argc;
+		for (int i = 0; i < argc; i++)
+			hdr[k++] = argp[i];
+		hdr[k++] = 0; /* argv[] terminator */
+		for (int i = 0; i < envc; i++)
+			hdr[k++] = envpp[i];
+		hdr[k++] = 0; /* envp[] terminator */
+		/* auxv — the FDPIC crt locates PT_TLS / the segments via AT_PHDR/AT_PHNUM. */
+		hdr[k++] = OVE_LNX_AT_PHDR;
+		hdr[k++] = phdr;
+		hdr[k++] = OVE_LNX_AT_PHENT;
+		hdr[k++] = 32; /* sizeof(Elf32_Phdr) */
+		hdr[k++] = OVE_LNX_AT_PHNUM;
+		hdr[k++] = (uintptr_t)phnum;
+		hdr[k++] = OVE_LNX_AT_BASE;
+		hdr[k++] = 0;
+		hdr[k++] = OVE_LNX_AT_ENTRY;
+		hdr[k++] = entry;
+		hdr[k++] = OVE_LNX_AT_PAGESZ;
+		hdr[k++] = 4096;
+		hdr[k++] = OVE_LNX_AT_RANDOM;
+		hdr[k++] = (uintptr_t)rnd;
+		hdr[k++] = OVE_LNX_AT_NULL;
+		hdr[k++] = 0;
+		return hdr; /* SP -> argc, argv[] inline */
+	}
 
 	/*
 	 * uClinux/bFLT (flat_argvp_envp_on_stack, used on ARM) layout — NOT the
