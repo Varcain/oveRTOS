@@ -57,19 +57,48 @@ static long semihost(unsigned long op, void *arg)
 	return (long)r0;
 }
 
-static void sh_write0(const char *s)
+/* ---- CMSDK UART1 console — so the console is NON-BLOCKING-pollable (unlike
+ * semihosting SYS_READC, which blocks the whole vCPU): needed for interactive
+ * top's 'q' quit. The engines use UART0 for their own console; the program
+ * console rides UART1 (QEMU: `-serial none -serial stdio` routes UART1 to stdio).
+ * These run in the PRIVILEGED personality context, so the MMIO is reachable. */
+#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+#define OVE_UART1_BASE 0x50201000u /* AN521 UART1 (secure peripheral region) */
+#else
+#define OVE_UART1_BASE 0x40005000u /* AN500 UART1 */
+#endif
+#define OVE_UART_REG(off) (*(volatile unsigned int *)(OVE_UART1_BASE + (off)))
+/* CMSDK regs: DATA=0x00, STATE=0x04 (b0 TX-full, b1 RX-valid), CTRL=0x08, BAUDDIV=0x10. */
+
+static void uart_init(void)
 {
-	semihost(0x04 /* SYS_WRITE0 */, (void *)s);
+	OVE_UART_REG(0x10) = 16;  /* BAUDDIV >= 16 required to operate */
+	OVE_UART_REG(0x08) = 0x3; /* TX enable | RX enable */
 }
 
 static void sh_writec(char c)
 {
-	semihost(0x03 /* SYS_WRITEC */, &c);
+	while (OVE_UART_REG(0x04) & 1u) { /* spin while the TX buffer is full */
+	}
+	OVE_UART_REG(0x00) = (unsigned char)c;
+}
+
+static void sh_write0(const char *s)
+{
+	for (; *s; s++)
+		sh_writec(*s);
+}
+
+static int uart_rx_ready(void)
+{
+	return (OVE_UART_REG(0x04) & 2u) ? 1 : 0; /* RX-valid bit */
 }
 
 static int sh_readc(void)
 {
-	return (int)semihost(0x07 /* SYS_READC */, NULL);
+	while (!uart_rx_ready()) { /* block until a keystroke arrives */
+	}
+	return (int)(OVE_UART_REG(0x00) & 0xffu);
 }
 
 static void sh_exit(unsigned int code)
@@ -273,9 +302,18 @@ static ove_thread_storage_t g_demo_storage;
 static uint8_t g_demo_stack[4096] __attribute__((aligned(8)));
 #endif
 
+/* Non-blocking console-readiness probe for the personality's poll(2) (interactive
+ * top's 'q' quit): true when a UART1 RX byte is waiting. */
+static int console_poll(void *ctx)
+{
+	UNUSED(ctx);
+	return uart_rx_ready();
+}
+
 static void demo_body(void *arg)
 {
 	UNUSED(arg);
+	uart_init(); /* bring up the UART1 program console before any I/O */
 	sh_write0("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
 
 	g_rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
@@ -345,6 +383,7 @@ static void demo_body(void *arg)
 		.rootfs_count = g_rootfs_n,
 		.write_fn = console_write,
 		.read_fn = console_read,
+		.console_poll = console_poll,
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
 	};

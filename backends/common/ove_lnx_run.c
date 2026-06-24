@@ -331,6 +331,7 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	ove_lnx_proc_init(&g_ove_lnx_proc[sidx], &g_arenas[ridx], 0x8000);
 	g_ove_lnx_proc[sidx].write_fn = g_cfg->write_fn;
 	g_ove_lnx_proc[sidx].read_fn = g_cfg->read_fn;
+	g_ove_lnx_proc[sidx].console_poll = g_cfg->console_poll;
 	g_ove_lnx_proc[sidx].io_ctx = g_cfg->io_ctx;
 	g_ove_lnx_proc[sidx].pid = pid;
 	g_ove_lnx_proc[sidx].ppid = ppid;
