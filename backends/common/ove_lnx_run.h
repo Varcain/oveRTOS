@@ -33,8 +33,12 @@
  * (init + login-shell + a few concurrent jobs); OVE_LNX_NSLOT = NREG + vfork-window
  * slots (a vfork child shares its parent's region until it execs). Per-engine
  * overridable so an521 (PSRAM, roomy) can run more than the an500 (4 MB) engines. */
+/* NREG = max program images live at once. 4 × 512K = 2 MB fits the an500 engines'
+ * 4 MB RAM (the an521/PSRAM has far more headroom); 4 regions cover init + the login
+ * shell + a background job + a foreground command (e.g. `yes & ; top`). NSLOT > NREG
+ * adds transient vfork-window slots (a vfork child shares its parent's region). */
 #ifndef OVE_LNX_NREG
-#define OVE_LNX_NREG 6
+#define OVE_LNX_NREG 4
 #endif
 #ifndef OVE_LNX_NSLOT
 #define OVE_LNX_NSLOT 8
