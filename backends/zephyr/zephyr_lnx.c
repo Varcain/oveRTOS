@@ -182,6 +182,7 @@ static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void 
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), arg_tramp, sp,
 				      entry, NULL, 5, K_USER, K_FOREVER);
+	k_thread_name_set(g_tid[sidx], "lnx"); /* ps/top: classify as a Linux program */
 	g_ove_lnx_used[sidx] = 1;
 	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
 	k_thread_start(g_tid[sidx]);
@@ -194,6 +195,7 @@ static void zephyr_spawn_resume(int sidx, int ridx, long r0val)
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
 				      (void *)r0val, &g_vfork_user, NULL, 5, K_USER, K_FOREVER);
+	k_thread_name_set(g_tid[sidx], "lnx"); /* ps/top: classify as a Linux program */
 	g_ove_lnx_used[sidx] = 1;
 	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
 	k_thread_start(g_tid[sidx]);

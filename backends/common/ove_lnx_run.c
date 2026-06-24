@@ -23,8 +23,58 @@
 #include <string.h>
 
 #include "ove/arena.h"
+#include "ove/thread.h"
 #include "ove/time.h"
 #include "ove_lnx_run.h"
+#include "ove/linux/stats.h"
+
+/* Rebuild the ps/top snapshot: the live Linux slots + the RTOS kernel threads, with
+ * CPU. Run-loop thread only (ove_thread_list iterates/locks the scheduler — unsafe
+ * from the svc handler). @top is the running slot index (-1 if none). */
+static void refresh_stats(int top)
+{
+	struct ove_thread_info ti[OVE_LNX_MAX_KTHREAD];
+	size_t n = 0;
+	ove_thread_list(ti, OVE_LNX_MAX_KTHREAD, &n);
+
+	/* Sum idle vs busy, and the running Linux program's (lnx) thread CPU. */
+	uint64_t idle = 0, busy = 0, lnx_us = 0;
+	for (size_t i = 0; i < n; i++) {
+		const char *name = ti[i].name ? ti[i].name : "?";
+		uint64_t rus = ti[i].state_times.running_us;
+		int cls = ove_lnx_stats_classify(name);
+		if (cls == 1) {
+			idle += rus;
+			continue;
+		}
+		busy += rus;
+		if (cls == 2)
+			lnx_us += rus;
+	}
+	int run_pid = (top >= 0) ? g_ove_lnx_proc[top].pid : 0;
+	uint64_t run_cpu = run_pid > 0 ? ove_lnx_stats_charge(run_pid, lnx_us) : 0;
+
+	ove_lnx_stats_begin();
+	/* The sequentialised stack: slots 0..top are all live (0..top-1 are PARKED
+	 * parents whose RTOS thread was aborted, so g_ove_lnx_used clears — walk the
+	 * stack index, not the used flags). */
+	for (int s = 0; s <= top && s < OVE_LNX_NSLOT; s++) {
+		int pid = g_ove_lnx_proc[s].pid;
+		uint64_t cpu = (s == top) ? run_cpu : ove_lnx_proc_cpu_us(pid);
+		ove_lnx_stats_add(pid, g_ove_lnx_proc[s].ppid, g_ove_lnx_proc[s].comm,
+				  (s == top) ? 'R' : 'S', cpu, 0);
+	}
+	/* RTOS kernel threads as bracketed [name] procs (idle included, so the idle
+	 * task is visible); the "lnx" slot threads are attributed to the Linux pids. */
+	for (size_t i = 0; i < n; i++) {
+		const char *name = ti[i].name ? ti[i].name : "?";
+		if (ove_lnx_stats_classify(name) == 2)
+			continue; /* a Linux program slot thread */
+		ove_lnx_stats_add(ove_lnx_kpid_for(name), 0, name, 'S',
+				  ti[i].state_times.running_us, 1);
+	}
+	ove_lnx_stats_set_cpu(idle, busy);
+}
 
 /* ---- shared state ---------------------------------------------------------- */
 struct ove_lnx_resume_ctx g_ove_lnx_vfork;
@@ -221,6 +271,21 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_proc[sidx].io_ctx = g_cfg->io_ctx;
 	g_ove_lnx_proc[sidx].pid = pid;
 	g_ove_lnx_proc[sidx].ppid = ppid;
+	/* comm = argv[0] basename (strip the login-shell leading '-') for ps/top. */
+	{
+		const char *a0 = (argc > 0 && argv && argv[0]) ? argv[0] : "?";
+		if (a0[0] == '-')
+			a0++;
+		const char *base = a0;
+		for (const char *s = a0; *s; s++)
+			if (*s == '/')
+				base = s + 1;
+		size_t cl = strlen(base);
+		if (cl >= sizeof(g_ove_lnx_proc[sidx].comm))
+			cl = sizeof(g_ove_lnx_proc[sidx].comm) - 1;
+		memcpy(g_ove_lnx_proc[sidx].comm, base, cl);
+		g_ove_lnx_proc[sidx].comm[cl] = '\0';
+	}
 	ove_lnx_proc_set_rootfs(&g_ove_lnx_proc[sidx], g_cfg->rootfs, g_cfg->rootfs_count);
 	uint8_t *stack_lo = rw + OVE_LNX_PROG_ARENA_SIZE;
 	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL);
@@ -241,6 +306,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	g_sleep_pending = 0;
 	g_pending_sig = 0;
 	g_tty_isig = 1;
+	ove_lnx_stats_reset();
 	g_sig_save.active = 0;
 
 	int bb = -1;
@@ -274,6 +340,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 	int rc = OVE_LNX_RUN_ETIMEOUT;
 	int next_pid = 2;
+	uint64_t last_refresh_us = 0;
 	for (int it = 0; it < 20000; it++) {
 		if (g_ove_lnx_halt) { /* reboot(2)/poweroff: stop the whole system */
 			rc = 0;
@@ -300,6 +367,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			eng->abort_slot(top);
 			eng->spawn_resume(child, R[child], 0); /* g_ove_lnx_vfork = parent ctx */
 			top = child;
+			refresh_stats(top); /* parent now parked (S), child running (R) */
 			continue;
 		}
 		/* (a2) the running slot asked to nanosleep: abort it for the delay so the
@@ -318,6 +386,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 					break;
 				uint64_t rem_ms = (deadline - now) / 1000ull;
 				eng->sleep_ms(rem_ms > 50 ? 50 : (unsigned)(rem_ms ? rem_ms : 1));
+				refresh_stats(top); /* top's CPU advances */
 			}
 			eng->spawn_resume(top, R[top], 0);
 			continue;
@@ -366,6 +435,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			}
 			memcpy(g_ove_lnx_proc[top].fds, saved_fds, sizeof(saved_fds));
 			memcpy(g_ove_lnx_proc[top].cwd, saved_cwd, sizeof(saved_cwd));
+			refresh_stats(top); /* reflect the new program name in ps/top */
 			continue;
 		}
 		/* (c) the running slot exited: pop it, resume its parent. */
@@ -388,7 +458,15 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			}
 			g_ove_lnx_vfork = vctx[top]; /* resume the parent at its fork ctx */
 			eng->spawn_resume(top, R[top], child_pid);
+			refresh_stats(top); /* drop the exited child from ps/top promptly */
 			continue;
+		}
+		/* Keep the ps/top snapshot fresh while a program runs (throttled). */
+		uint64_t now_us = 0;
+		ove_time_get_us(&now_us);
+		if (now_us - last_refresh_us >= 200000ull) {
+			last_refresh_us = now_us;
+			refresh_stats(top);
 		}
 		eng->sleep_ms(1);
 	}

@@ -80,6 +80,8 @@ set(STUB_SOURCES
     ${OVE_ROOT}/loader/ove_loader.c
     # Linux personality syscall dispatch (platform-independent)
     ${OVE_ROOT}/linux/ove_linux_syscall.c
+    # CPU/process snapshot for ps/top (read by the /proc generator; no RTOS deps)
+    ${OVE_ROOT}/backends/common/ove_lnx_stats.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
     # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
     ${OVE_ROOT}/backends/common/ove_heap_lock.c

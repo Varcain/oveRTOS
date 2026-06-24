@@ -277,6 +277,8 @@ set(OVE_LINUX ON)
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
 # Engine-agnostic run loop + svc dispatch + signals (shared by all three seams).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_run.c")
+# CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_stats.c")
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}

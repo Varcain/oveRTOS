@@ -10,6 +10,7 @@
 
 #if defined(CONFIG_OVE_LINUX)
 
+#include "ove/linux/stats.h"
 #include "ove/linux/syscall.h"
 #include "ove/time.h"
 
@@ -133,7 +134,7 @@ static int wfs_reserve(int i, size_t need)
 
 /* Synthetic /proc fd backing (content generated on open; see proc_* below). */
 #define OVE_LNX_FD_PROC 5
-#define OVE_LNX_NPROCF 4
+#define OVE_LNX_NPROCF 12
 #define OVE_LNX_PROCBUF 1024
 static struct {
 	char path[OVE_LNX_PATH_MAX];
@@ -768,11 +769,13 @@ static int proc_pid(const char *abs, const ove_lnx_proc_t *p, const char **file)
 
 static int proc_pid_known(const ove_lnx_proc_t *p, int pid)
 {
-	return pid == 1 || pid == p->pid; /* the parked init + the running process */
+	/* pid 1 + the running process are always valid; every other live Linux slot
+	 * and RTOS kernel thread comes from the ps/top snapshot. */
+	return pid == 1 || pid == p->pid || ove_lnx_pent_find(pid) != NULL;
 }
 
-static const char *const g_proc_files[] = {"version", "uptime", "meminfo",     "cpuinfo",
-					   "mounts",  "stat",	"filesystems", NULL};
+static const char *const g_proc_files[] = {"version", "uptime",	 "meminfo",	"cpuinfo", "mounts",
+					   "stat",    "loadavg", "filesystems", NULL};
 
 /* st_mode for a /proc node, or 0 if the path is not a synthetic /proc node. */
 static uint32_t proc_mode(const char *abs, const ove_lnx_proc_t *p)
@@ -802,27 +805,66 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 	if (pid > 0 && file) {
 		if (!proc_pid_known(p, pid))
 			return -1;
-		const char *comm = (pid == 1) ? "init" : "busybox";
-		int ppid = (pid == 1) ? 0 : 1;
+		/* Metadata from the ps/top snapshot; fall back to pid 1 / the current
+		 * process before the first snapshot refresh. comm is the bare name —
+		 * kernel threads get an empty cmdline so ps/top bracket them as [name]. */
+		const struct ove_lnx_pentry *e = ove_lnx_pent_find(pid);
+		char comm[20];
+		int ppid, is_kernel;
+		char state;
+		uint64_t cpu_us;
+		size_t ci = 0;
+		if (e) {
+			for (const char *s = e->comm; *s && ci < sizeof(comm) - 1; s++)
+				comm[ci++] = *s;
+			ppid = e->ppid;
+			state = e->state;
+			cpu_us = e->cpu_us;
+			is_kernel = e->is_kernel;
+		} else {
+			const char *c = (pid == 1)			? "init"
+					: (pid == p->pid && p->comm[0]) ? p->comm
+									: "busybox";
+			for (const char *s = c; *s && ci < sizeof(comm) - 1; s++)
+				comm[ci++] = *s;
+			ppid = (pid == 1) ? 0 : (pid == p->pid) ? p->ppid : 1;
+			state = (pid == p->pid) ? 'R' : 'S';
+			cpu_us = ove_lnx_proc_cpu_us(pid);
+			is_kernel = 0;
+		}
+		comm[ci] = '\0';
+		uint64_t utime = cpu_us / 10000ull; /* USER_HZ = 100 → jiffies */
 		if (strcmp(file, "stat") == 0) {
 			o = p_dec(buf, o, cap, (uint64_t)pid);
 			o = p_str(buf, o, cap, " (");
 			o = p_str(buf, o, cap, comm);
-			o = p_str(buf, o, cap, ") S ");
-			o = p_dec(buf, o, cap, (uint64_t)ppid);
-			/* pad to ~fields 5..24 (pgrp..rss) — busybox ps sscanf's this far. */
-			o = p_str(buf, o, cap, " 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n");
-		} else if (strcmp(file, "cmdline") == 0) {
-			o = p_str(buf, o, cap, comm);
+			o = p_str(buf, o, cap, ") ");
 			if (o < cap)
-				buf[o++] = '\0';
+				buf[o++] = state;
+			o = p_str(buf, o, cap, " ");
+			o = p_dec(buf, o, cap, (uint64_t)ppid);
+			/* fields 5..13 (pgrp..cmajflt), then field 14 utime, then 15..24. */
+			o = p_str(buf, o, cap, " 0 0 0 0 0 0 0 0 0 ");
+			o = p_dec(buf, o, cap, utime);
+			o = p_str(buf, o, cap, " 0 0 0 0 0 0 0 0 0 0\n");
+		} else if (strcmp(file, "cmdline") == 0) {
+			/* kernel threads have a 0-byte cmdline so ps/top bracket them. */
+			if (!is_kernel) {
+				o = p_str(buf, o, cap, comm);
+				if (o < cap)
+					buf[o++] = '\0';
+			}
 		} else if (strcmp(file, "comm") == 0) {
 			o = p_str(buf, o, cap, comm);
 			o = p_str(buf, o, cap, "\n");
 		} else if (strcmp(file, "status") == 0) {
 			o = p_str(buf, o, cap, "Name:\t");
 			o = p_str(buf, o, cap, comm);
-			o = p_str(buf, o, cap, "\nState:\tS (sleeping)\nPid:\t");
+			o = p_str(buf, o, cap, "\nState:\t");
+			if (o < cap)
+				buf[o++] = state;
+			o = p_str(buf, o, cap,
+				  (state == 'R') ? " (running)\nPid:\t" : " (sleeping)\nPid:\t");
 			o = p_dec(buf, o, cap, (uint64_t)pid);
 			o = p_str(buf, o, cap, "\nPPid:\t");
 			o = p_dec(buf, o, cap, (uint64_t)ppid);
@@ -854,7 +896,27 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 			  "rootfs / rootfs ro 0 0\nproc /proc proc rw 0 0\n"
 			  "tmpfs /tmp tmpfs rw 0 0\n");
 	} else if (strcmp(abs, "/proc/stat") == 0) {
-		o = p_str(buf, o, cap, "cpu  0 0 0 0 0 0 0 0 0 0\nctxt 0\nbtime 0\n");
+		/* All busy time is reported as "user"; top derives %CPU from the
+		 * user-vs-idle delta between two reads (USER_HZ = 100 → jiffies). */
+		uint64_t idle_us = 0, busy_us = 0;
+		ove_lnx_cpu_totals(&idle_us, &busy_us);
+		uint64_t user = busy_us / 10000ull, idle = idle_us / 10000ull;
+		o = p_str(buf, o, cap, "cpu  ");
+		o = p_dec(buf, o, cap, user);
+		o = p_str(buf, o, cap, " 0 0 ");
+		o = p_dec(buf, o, cap, idle);
+		o = p_str(buf, o, cap, " 0 0 0 0 0 0\ncpu0 ");
+		o = p_dec(buf, o, cap, user);
+		o = p_str(buf, o, cap, " 0 0 ");
+		o = p_dec(buf, o, cap, idle);
+		o = p_str(buf, o, cap, " 0 0 0 0 0 0\nctxt 0\nbtime 0\n");
+	} else if (strcmp(abs, "/proc/loadavg") == 0) {
+		int nproc = ove_lnx_pent_count();
+		o = p_str(buf, o, cap, "0.00 0.00 0.00 1/");
+		o = p_dec(buf, o, cap, (uint64_t)(nproc > 0 ? nproc : 1));
+		o = p_str(buf, o, cap, " ");
+		o = p_dec(buf, o, cap, (uint64_t)p->pid);
+		o = p_str(buf, o, cap, "\n");
 	} else if (strcmp(abs, "/proc/filesystems") == 0) {
 		o = p_str(buf, o, cap, "nodev\tproc\nnodev\ttmpfs\n");
 	} else {
@@ -1456,10 +1518,26 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
 			if (!full && !dirent_emit(out, count, &filled, &pos, s, ino++, "self",
 						  OVE_LNX_S_IFLNK))
 				full = 1;
-			if (!full &&
+			/* every live process + kernel thread from the ps/top snapshot */
+			int np = ove_lnx_pent_count(), seen1 = 0, seenself = 0;
+			for (int i = 0; i < np && !full; i++) {
+				const struct ove_lnx_pentry *e = ove_lnx_pent_at(i);
+				if (!e)
+					break;
+				char pidstr[12];
+				size_t k = p_dec(pidstr, 0, sizeof(pidstr) - 1, (uint64_t)e->pid);
+				pidstr[k] = '\0';
+				seen1 |= (e->pid == 1);
+				seenself |= (e->pid == p->pid);
+				if (!dirent_emit(out, count, &filled, &pos, s, ino++, pidstr,
+						 OVE_LNX_S_IFDIR))
+					full = 1;
+			}
+			/* fallbacks before the first snapshot refresh populates the table */
+			if (!full && !seen1 &&
 			    !dirent_emit(out, count, &filled, &pos, s, ino++, "1", OVE_LNX_S_IFDIR))
 				full = 1;
-			if (!full && p->pid != 1) {
+			if (!full && !seenself && p->pid != 1) {
 				char pidstr[12];
 				size_t k = p_dec(pidstr, 0, sizeof(pidstr) - 1, (uint64_t)p->pid);
 				pidstr[k] = '\0';
