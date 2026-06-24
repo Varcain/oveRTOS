@@ -15,16 +15,17 @@
  * (default domain) can always (re)load a region. The program's svc #0 is an
  * unprivileged fault that Zephyr routes to z_do_kernel_oops, which we --wrap.
  *
- * KNOWN ISSUE (Zephyr-only, under investigation): after ~6-7 forking commands
- * (fork+exec cycles) in one session — e.g. several pipelines, or `ls` repeated —
- * a freshly spawned program thread silently stops being scheduled and the system
- * hangs. FreeRTOS + NuttX (which spawn program tasks the same way, privileged) run
- * unbounded, so the engine-agnostic run loop is correct; the fault is in this seam's
- * Zephyr thread spawn/abort reuse. RULED OUT by test: the per-region k_mem_domain
- * reuse (fresh k_mem_domain_init each exec), refresh_stats/k_thread_foreach, K_USER
- * (privileged threads hang too), the dispatch's k_sem_give event_post, and
- * k_thread_join-after-abort. Needs on-target GDB / kernel instrumentation, not blind
- * QEMU iteration. Until fixed, Zephyr suits short sessions; FreeRTOS/NuttX are robust.
+ * MPU REGION BUDGET (the source of a since-fixed hang): the AN521 PMSAv8 MPU has
+ * only 8 regions; 2 are static (kernel) leaving 6 dynamic, and a K_USER thread also
+ * needs a stack region. So each program domain may use at most FOUR partitions
+ * (libc + malloc + text + data) — a fifth (a dedicated shared partition for the
+ * vfork resume ctx), once a NON_OVERLAPPING split bumped the live count past 6,
+ * silently overflowed (CONFIG_ASSERT is off in this build) and dropped the
+ * kernel-text region, so a parked program took an instruction-access MemManage
+ * fault in park_loop after a handful of fork+exec cycles → kernel panic → halt-loop
+ * (looked like a hang). The resume ctx now rides in the program's own region just
+ * below its resume SP (see zephyr_spawn_resume), keeping the domain at 4 partitions.
+ * Found via on-target GDB (reason=K_ERR_ARM_MEM_INSTRUCTION_ACCESS at &park_loop).
  */
 
 #include <zephyr/kernel.h>
@@ -42,12 +43,6 @@
  * setup_domain() don't overlap the kernel's region (the reason app_smem was used). */
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] Z_GENERIC_SECTION(
 	LINKER_DT_NODE_REGION_NAME(DT_NODELABEL(psram))) __aligned(32);
-
-/* A user-readable partition (in every program domain) for the vfork resume
- * context the unprivileged resume thread replays. The common capture buffer is
- * privileged kernel .bss, so spawn_resume copies it here first. */
-K_APPMEM_PARTITION_DEFINE(ove_lnx_shared_partition);
-K_APP_BMEM(ove_lnx_shared_partition) static struct ove_lnx_resume_ctx g_vfork_user;
 
 /* Per-region MPU domain: program text/data + the libc/heap partitions. */
 extern struct k_mem_partition z_libc_partition;
@@ -166,9 +161,14 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 	g_data[ridx].size = OVE_LNX_PROG_REGION_SIZE - prog->text_size;
 	g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
 	if (!g_dom_inited[ridx]) {
-		struct k_mem_partition *base[] = {&z_libc_partition, &z_malloc_partition,
-						  &ove_lnx_shared_partition};
-		if (k_mem_domain_init(&g_domains[ridx], 3, base) != 0)
+		/* libc + malloc only (the resume ctx now rides in the program's own region —
+		 * see zephyr_spawn_resume — so there is no separate shared partition); text +
+		 * data are added below → 4 partitions. The AN521 MPU has 8 regions (2 static →
+		 * 6 dynamic) and a K_USER thread also needs a stack region, so staying at 4
+		 * partitions (= 5 dynamic) leaves the headroom that a 5th + a NON_OVERLAPPING
+		 * split previously overran. */
+		struct k_mem_partition *base[] = {&z_libc_partition, &z_malloc_partition};
+		if (k_mem_domain_init(&g_domains[ridx], 2, base) != 0)
 			return -1;
 		g_dom_inited[ridx] = 1;
 	}
@@ -206,10 +206,18 @@ static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void 
 static void zephyr_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
 				long r0val)
 {
-	g_vfork_user = *ctx; /* copy the per-proc ctx to the user-readable partition */
+	/* Stash the resume ctx in the program's OWN region (user-RW data), just below the
+	 * resume SP, so the unprivileged resume_tramp can read it WITHOUT a dedicated
+	 * shared MPU partition. The AN521 MPU has only 6 dynamic region slots and a K_USER
+	 * program already needs 5 (libc+malloc+text+data+stack); a 6th shared partition,
+	 * once a NON_OVERLAPPING split pushed the count to 7, silently overflowed (CONFIG_
+	 * ASSERT off) and dropped the kernel-text region → IACCVIOL in park_loop after a
+	 * few fork+exec cycles. The slot is dead stack space (below SP) the program reuses. */
+	struct ove_lnx_resume_ctx *slot = (struct ove_lnx_resume_ctx *)((uintptr_t)ctx->sp - 64u);
+	*slot = *ctx;
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
-				      (void *)r0val, &g_vfork_user, NULL, 5, K_USER, K_FOREVER);
+				      (void *)r0val, slot, NULL, 5, K_USER, K_FOREVER);
 	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
 		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
 		k_thread_name_set(g_tid[sidx], nm);
