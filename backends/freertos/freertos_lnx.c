@@ -20,6 +20,7 @@
  */
 
 #include "FreeRTOS.h"
+#include "semphr.h"
 #include "task.h"
 
 #include <string.h>
@@ -117,6 +118,7 @@ struct launch_args {
 };
 struct resume_args {
 	long r0;
+	const struct ove_lnx_resume_ctx *ctx;
 };
 static struct launch_args g_largs[OVE_LNX_NSLOT];
 static struct resume_args g_rargs[OVE_LNX_NSLOT];
@@ -149,7 +151,7 @@ __attribute__((naked)) static void resume_tramp(void *r0val __attribute__((unuse
 static void resume_tramp_task(void *arg)
 {
 	struct resume_args *a = (struct resume_args *)arg;
-	resume_tramp((void *)a->r0, &g_ove_lnx_vfork);
+	resume_tramp((void *)a->r0, (void *)a->ctx); /* privileged: read the ctx directly */
 }
 
 /* ---- the vtable: FreeRTOS task spawn --------------------------------------- */
@@ -166,17 +168,21 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	(void)stack_lo;
 	g_largs[sidx].sp = sp;
 	g_largs[sidx].entry = entry;
-	g_tid[sidx] = xTaskCreateStatic(arg_tramp_task, "lnx", TRAMP_STACK_WORDS, &g_largs[sidx],
+	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
+	g_tid[sidx] = xTaskCreateStatic(arg_tramp_task, nm, TRAMP_STACK_WORDS, &g_largs[sidx],
 					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);
 	g_ove_lnx_used[sidx] = 1;
 	return g_tid[sidx] ? 0 : -1;
 }
 
-static void freertos_spawn_resume(int sidx, int ridx, long r0val)
+static void freertos_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
+				  long r0val)
 {
 	(void)ridx;
 	g_rargs[sidx].r0 = r0val;
-	g_tid[sidx] = xTaskCreateStatic(resume_tramp_task, "lnx", TRAMP_STACK_WORDS, &g_rargs[sidx],
+	g_rargs[sidx].ctx = ctx;
+	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
+	g_tid[sidx] = xTaskCreateStatic(resume_tramp_task, nm, TRAMP_STACK_WORDS, &g_rargs[sidx],
 					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);
 	g_ove_lnx_used[sidx] = (g_tid[sidx] != NULL);
 }
@@ -194,16 +200,50 @@ static void freertos_sleep_ms(unsigned ms)
 	vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+/* Coordinator critical section: taskENTER_CRITICAL raises BASEPRI to mask the
+ * configurable-priority interrupts (NOT vTaskSuspendAll, which only defers thread
+ * switches). Held only for the brief proc-table flag snapshot. */
+static void freertos_crit_enter(void)
+{
+	taskENTER_CRITICAL();
+}
+static void freertos_crit_exit(void)
+{
+	taskEXIT_CRITICAL();
+}
+
+/* Event wakeup: the coordinator blocks here instead of busy-polling; the dispatch
+ * (SVC exception context) gives the binary semaphore when a program parks. */
+static StaticSemaphore_t g_ev_buf;
+static SemaphoreHandle_t g_ev;
+static void freertos_event_post(void)
+{
+	BaseType_t woken = pdFALSE;
+	if (g_ev)
+		xSemaphoreGiveFromISR(g_ev, &woken);
+}
+static void freertos_event_wait(unsigned ms)
+{
+	if (g_ev)
+		xSemaphoreTake(g_ev, pdMS_TO_TICKS(ms));
+}
+
 static const struct ove_lnx_engine g_freertos_engine = {
 	.region = freertos_region,
 	.spawn_launch = freertos_spawn_launch,
 	.spawn_resume = freertos_spawn_resume,
 	.abort_slot = freertos_abort_slot,
 	.sleep_ms = freertos_sleep_ms,
+	.crit_enter = freertos_crit_enter,
+	.crit_exit = freertos_crit_exit,
+	.event_post = freertos_event_post,
+	.event_wait = freertos_event_wait,
 };
 
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {
+	if (!g_ev) /* create the coordinator wakeup sem in thread context */
+		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
 	return ove_lnx_run_common(&g_freertos_engine, cfg, path, argc, argv);
 }
