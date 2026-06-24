@@ -40,19 +40,107 @@ volatile int g_ove_lnx_halt;
 
 /*
  * Pipe objects. A pipe is shared kernel state (like a real kernel's pipe inode):
- * the writer process fills the buffer, the reader process drains it. The model
- * is sequentialised, so the writer always runs to completion before the reader,
- * and "buffer empty" == EOF (no concurrent writer to wait for). Bounded buffer.
+ * a bounded ring buffer with concurrent producer/consumer (Phase D2). A read on an
+ * empty pipe blocks while any write end is open (EOF only once all writers close); a
+ * write on a full pipe blocks while a reader is open (-EPIPE once all readers close).
+ * The run-loop coordinator parks/wakes the blocked proc — see ove_lnx_pipe_retry.
  */
 #define OVE_LNX_NPIPE 4
 #define OVE_LNX_PIPE_BUF 1024
 typedef struct {
 	uint8_t buf[OVE_LNX_PIPE_BUF];
-	size_t rpos; /* bytes consumed by the reader */
-	size_t wpos; /* bytes produced by the writer */
+	size_t rpos;  /* ring read index [0, BUF) */
+	size_t wpos;  /* ring write index [0, BUF) */
+	size_t count; /* bytes currently buffered */
 	int used;
 } ove_lnx_pipe_t;
 static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
+
+/* Count a pipe's open read/write ends across ALL live procs' fd tables (a pipe end
+ * is open in every proc that holds an fd onto it — inherited across fork, dropped on
+ * close/exit). Recomputed on demand → no per-fd refcount bookkeeping to keep in sync. */
+/* Weak fallbacks so the host syscall test (which links this layer but not the run
+ * loop) resolves these; the run loop supplies the strong on-target versions. The
+ * host test never exercises pipes, so pipe_ends is never actually called there. */
+__attribute__((weak)) ove_lnx_proc_t *ove_lnx_proc_table(void)
+{
+	return NULL;
+}
+__attribute__((weak)) int ove_lnx_proc_nslot(void)
+{
+	return 0;
+}
+
+static void pipe_ends(int pi, int *readers, int *writers)
+{
+	*readers = 0;
+	*writers = 0;
+	ove_lnx_proc_t *tab = ove_lnx_proc_table();
+	int n = ove_lnx_proc_nslot();
+	if (!tab)
+		return;
+	for (int s = 0; s < n; s++) {
+		if (!tab[s].alive)
+			continue;
+		for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++)
+			if (tab[s].fds[fd].kind == OVE_LNX_FD_PIPE && tab[s].fds[fd].file_idx == pi)
+				(tab[s].fds[fd].rw ? (*writers)++ : (*readers)++);
+	}
+}
+
+/* Drain up to len bytes from pipe pi. >0 = bytes read; 0 = EOF (empty, no writers);
+ * -EAGAIN = empty but a writer is open (caller should block). */
+static long pipe_try_read(int pi, void *buf, size_t len)
+{
+	ove_lnx_pipe_t *pp = &g_pipes[pi];
+	if (pp->count == 0) {
+		int rd, wr;
+		pipe_ends(pi, &rd, &wr);
+		return wr > 0 ? -OVE_LNX_EAGAIN : 0;
+	}
+	if (len > pp->count)
+		len = pp->count;
+	uint8_t *out = (uint8_t *)buf;
+	for (size_t i = 0; i < len; i++) {
+		out[i] = pp->buf[pp->rpos];
+		pp->rpos = (pp->rpos + 1) % OVE_LNX_PIPE_BUF;
+	}
+	pp->count -= len;
+	return (long)len;
+}
+
+/* Append up to len bytes to pipe pi. >0 = bytes written; -EPIPE = no readers open
+ * (broken pipe); -EAGAIN = full but a reader is open (caller should block). */
+static long pipe_try_write(int pi, const void *buf, size_t len)
+{
+	ove_lnx_pipe_t *pp = &g_pipes[pi];
+	int rd, wr;
+	pipe_ends(pi, &rd, &wr);
+	if (rd == 0)
+		return -OVE_LNX_EPIPE;
+	size_t space = OVE_LNX_PIPE_BUF - pp->count;
+	if (space == 0)
+		return -OVE_LNX_EAGAIN;
+	if (len > space)
+		len = space;
+	const uint8_t *in = (const uint8_t *)buf;
+	for (size_t i = 0; i < len; i++) {
+		pp->buf[pp->wpos] = in[i];
+		pp->wpos = (pp->wpos + 1) % OVE_LNX_PIPE_BUF;
+	}
+	pp->count += len;
+	return (long)len;
+}
+
+/* Retry a parked pipe read/write for the run-loop coordinator (declared in syscall.h). */
+long ove_lnx_pipe_retry(ove_lnx_proc_t *p)
+{
+	if (p->pipe_wait == 1)
+		return pipe_try_read(p->pipe_idx, (void *)p->pipe_buf, p->pipe_len);
+	if (p->pipe_wait == 2)
+		return pipe_try_write(p->pipe_idx, (const void *)p->pipe_buf, p->pipe_len);
+	return 0;
+}
 
 /*
  * Writable VFS overlaid on the read-only CPIO rootfs: regular files, directories
@@ -402,17 +490,24 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		return -OVE_LNX_EBADF;
 	if (len && !buf)
 		return -OVE_LNX_EFAULT;
-	/* A pipe write end appends to the (bounded) shared pipe buffer. */
+	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
 	if (s->kind == OVE_LNX_FD_PIPE) {
 		if (s->rw != 1)
 			return -OVE_LNX_EBADF;
-		ove_lnx_pipe_t *pp = &g_pipes[s->file_idx];
-		size_t space = OVE_LNX_PIPE_BUF - pp->wpos;
-		if (len > space)
-			len = space;
-		memcpy(pp->buf + pp->wpos, buf, len);
-		pp->wpos += len;
-		return (long)len;
+		long r = pipe_try_write(s->file_idx, buf, len);
+		if (r == -OVE_LNX_EAGAIN) { /* full but a reader is open → park + retry */
+			p->pipe_wait = 2;
+			p->pipe_idx = s->file_idx;
+			p->pipe_buf = (uintptr_t)buf;
+			p->pipe_len = len;
+			return 0; /* dispatch parks; coordinator completes via ove_lnx_pipe_retry */
+		}
+		if (r == -OVE_LNX_EPIPE && /* no readers: SIGPIPE — default terminates the writer */
+		    p->sig_handler[OVE_LNX_SIGPIPE] != OVE_LNX_SIG_IGN) {
+			p->exited = 1;
+			p->exit_status = 128 + OVE_LNX_SIGPIPE;
+		}
+		return r; /* bytes written, or -EPIPE (no readers; writer exits unless it ignores it) */
 	}
 	/* A writable-node file write copies into its (growable) buffer at the offset. */
 	if (s->kind == OVE_LNX_FD_TMPFS) {
@@ -476,20 +571,20 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		return p->read_fn(p->io_ctx, fd, buf, len);
 	}
 
-	/* A pipe read end drains the shared buffer; empty == EOF (sequentialised:
-	 * the writer has already run to completion, so no more data will arrive). */
+	/* A pipe read end drains the shared ring; blocks while empty + a writer is open,
+	 * EOF (0) once all writers have closed. */
 	if (s->kind == OVE_LNX_FD_PIPE) {
 		if (s->rw != 0)
 			return -OVE_LNX_EBADF;
-		ove_lnx_pipe_t *pp = &g_pipes[s->file_idx];
-		size_t avail = pp->wpos - pp->rpos;
-		if (avail == 0)
-			return 0; /* EOF */
-		if (len > avail)
-			len = avail;
-		memcpy(buf, pp->buf + pp->rpos, len);
-		pp->rpos += len;
-		return (long)len;
+		long r = pipe_try_read(s->file_idx, buf, len);
+		if (r == -OVE_LNX_EAGAIN) { /* empty but a writer is open → park + retry */
+			p->pipe_wait = 1;
+			p->pipe_idx = s->file_idx;
+			p->pipe_buf = (uintptr_t)buf;
+			p->pipe_len = len;
+			return 0;
+		}
+		return r; /* bytes read, or 0 (EOF) */
 	}
 
 	/* A writable-node file read returns bytes from its buffer at the fd offset. */
@@ -1018,9 +1113,13 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds)
 {
 	if (!fds)
 		return -OVE_LNX_EFAULT;
+	/* A pipe slot is free when no live proc holds either end (auto-reclaimed when
+	 * both ends close or the holders exit — there is no explicit pipe free path). */
 	int pi = -1;
 	for (int i = 0; i < OVE_LNX_NPIPE; i++) {
-		if (!g_pipes[i].used) {
+		int rd, wr;
+		pipe_ends(i, &rd, &wr);
+		if (rd == 0 && wr == 0) {
 			pi = i;
 			break;
 		}
@@ -1041,6 +1140,7 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds)
 	g_pipes[pi].used = 1;
 	g_pipes[pi].rpos = 0;
 	g_pipes[pi].wpos = 0;
+	g_pipes[pi].count = 0;
 	p->fds[rfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .file_idx = pi};
 	p->fds[wfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .file_idx = pi};
 	fds[0] = rfd;
