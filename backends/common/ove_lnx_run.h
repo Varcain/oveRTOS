@@ -22,6 +22,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ove_config.h" /* CONFIG_OVE_RTOS_* for the per-engine NREG sizing below */
 #include "ove/loader.h"
 #include "ove/linux/run.h"
 #include "ove/linux/syscall.h"
@@ -33,15 +34,20 @@
  * (init + login-shell + a few concurrent jobs); OVE_LNX_NSLOT = NREG + vfork-window
  * slots (a vfork child shares its parent's region until it execs). Per-engine
  * overridable so an521 (PSRAM, roomy) can run more than the an500 (4 MB) engines. */
-/* NREG = max program images live at once. 4 × 512K = 2 MB fits the an500 engines'
- * 4 MB RAM (the an521/PSRAM has far more headroom); 4 regions cover init + the login
- * shell + a background job + a foreground command (e.g. `yes & ; top`). NSLOT > NREG
- * adds transient vfork-window slots (a vfork child shares its parent's region). */
+/* NREG = max program images live at once (init + login shell + concurrent jobs).
+ * Per-engine: Zephyr/an521 places the regions in a NOLOAD 16 MB PSRAM region, so it
+ * can afford several (8 × 512K = 4 MB PSRAM) — enough for e.g. two background jobs +
+ * top. FreeRTOS/NuttX on an500 keep the regions in .bss within 4 MB RAM, so 4 × 512K
+ * = 2 MB (NREG=6 overflowed an500 RAM). NSLOT = NREG + transient vfork-window slots. */
 #ifndef OVE_LNX_NREG
+#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+#define OVE_LNX_NREG 8
+#else
 #define OVE_LNX_NREG 4
 #endif
+#endif
 #ifndef OVE_LNX_NSLOT
-#define OVE_LNX_NSLOT 8
+#define OVE_LNX_NSLOT (OVE_LNX_NREG + 4)
 #endif
 
 /* A uniform Cortex-M register frame the dispatch reads/writes. The seam populates
