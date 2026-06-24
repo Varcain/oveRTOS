@@ -2311,6 +2311,22 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return 1; /* our single thread's tid */
 	case OVE_LNX_NR_set_robust_list:
 		return 0;
+	case OVE_LNX_NR_futex:
+	case OVE_LNX_NR_futex_time64: {
+		/* uClibc-ng DOES do NOMMU pthreads (LinuxThreads; this build has
+		 * UCLIBC_HAS_THREADS=y), but this personality handles every clone() — incl. a
+		 * thread's clone(CLONE_VM) — as a VFORK: the parent is suspended until the child
+		 * execs (into its own region) or exits (ove_lnx_run.c). A pthread thread never
+		 * execs, so it can't co-run with its parent, and there is no uaddr-keyed futex
+		 * queue — i.e. no concurrent threads for a futex to coordinate. BusyBox is
+		 * single-threaded anyway, so the futexes we see are libc-internal lock
+		 * fallbacks: reply benignly (WAIT-family → -EAGAIN, the caller retries its
+		 * uncontended userspace lock; WAKE etc. → 0) instead of a noisy -ENOSYS. Real
+		 * threads — a co-running clone(CLONE_VM) in the shared region + a true futex
+		 * wait/wake — are a future item. */
+		int op = (int)a1 & 0x7f; /* mask FUTEX_PRIVATE_FLAG / FUTEX_CLOCK_REALTIME */
+		return (op == 0 || op == 9) ? -OVE_LNX_EAGAIN : 0; /* WAIT / WAIT_BITSET */
+	}
 	default:
 		return -OVE_LNX_ENOSYS;
 	}

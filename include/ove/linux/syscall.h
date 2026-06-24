@@ -92,6 +92,8 @@ extern "C" {
 #define OVE_LNX_NR_set_tid_address 256
 #define OVE_LNX_NR_openat 322
 #define OVE_LNX_NR_set_robust_list 338
+#define OVE_LNX_NR_futex 240
+#define OVE_LNX_NR_futex_time64 421
 #define OVE_LNX_NR_statx 397
 /* path-based metadata: stat/lstat/readlink/access families. */
 #define OVE_LNX_NR_access 33
