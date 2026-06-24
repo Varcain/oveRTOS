@@ -14,6 +14,17 @@
  * (program text/data partitions, W^X, + libc/heap), so the privileged run loop
  * (default domain) can always (re)load a region. The program's svc #0 is an
  * unprivileged fault that Zephyr routes to z_do_kernel_oops, which we --wrap.
+ *
+ * KNOWN ISSUE (Zephyr-only, under investigation): after ~6-7 forking commands
+ * (fork+exec cycles) in one session — e.g. several pipelines, or `ls` repeated —
+ * a freshly spawned program thread silently stops being scheduled and the system
+ * hangs. FreeRTOS + NuttX (which spawn program tasks the same way, privileged) run
+ * unbounded, so the engine-agnostic run loop is correct; the fault is in this seam's
+ * Zephyr thread spawn/abort reuse. RULED OUT by test: the per-region k_mem_domain
+ * reuse (fresh k_mem_domain_init each exec), refresh_stats/k_thread_foreach, K_USER
+ * (privileged threads hang too), the dispatch's k_sem_give event_post, and
+ * k_thread_join-after-abort. Needs on-target GDB / kernel instrumentation, not blind
+ * QEMU iteration. Until fixed, Zephyr suits short sessions; FreeRTOS/NuttX are robust.
  */
 
 #include <zephyr/kernel.h>
