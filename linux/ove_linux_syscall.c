@@ -2184,17 +2184,44 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			const int64_t *ts = (const int64_t *)(uintptr_t)a2; /* {sec, nsec} */
 			tmo_ms = ts ? (long)(ts[0] * 1000 + ts[1] / 1000000) : -1;
 		}
+		/* With a console_poll callback (UART console) we report the console fd's REAL
+		 * readiness, enabling interactive top's `q` quit; without one a short finite
+		 * timeout is a read_key probe (vi/hush ESC + "input pending?") reported
+		 * not-ready (no read-ahead), and a longer/blocking poll reports ready so the
+		 * caller blocks in read() for the byte. */
 		int probe = (tmo_ms >= 0 && tmo_ms <= 100);
+		int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
 		int ready = 0;
 		for (unsigned i = 0; i < nfds; i++) {
 			pfds[i].revents = 0;
-			if (probe || !fd_slot(proc, pfds[i].fd))
+			ove_lnx_fd_t *s = fd_slot(proc, pfds[i].fd);
+			if (!s)
 				continue;
-			pfds[i].revents = pfds[i].events & (OVE_LNX_POLLIN | OVE_LNX_POLLOUT);
-			if (pfds[i].revents)
-				ready++;
+			int avail;
+			if (s->kind == OVE_LNX_FD_CONSOLE)
+				avail = (tmo_ms < 0) ? 1 : (proc->console_poll ? key : !probe);
+			else
+				avail = 1; /* files / pipes: readable/writable */
+			if (avail) {
+				pfds[i].revents = pfds[i].events &
+						  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT);
+				if (pfds[i].revents)
+					ready++;
+			}
 		}
-		return ready;
+		if (ready > 0 || tmo_ms == 0)
+			return ready;
+		/* Nothing ready + a real timeout: with the UART console, park for the timeout
+		 * (paces interactive top's refresh, returns 0); a buffered keystroke is caught
+		 * at the next poll. Without console_poll a long timeout already reported ready
+		 * above, so we only reach here on a no-callback probe → return 0. */
+		if (proc->console_poll && tmo_ms > 0) {
+			uint64_t now_ns = 0;
+			ove_time_get_ns(&now_ns);
+			proc->sleep_until_us = now_ns / 1000ull + (uint64_t)tmo_ms * 1000ull;
+			proc->sleep_pending = 1;
+		}
+		return 0;
 	}
 	case OVE_LNX_NR_wait4: {
 		/* Reap an already-exited child immediately (FIFO; status = exit_code << 8).

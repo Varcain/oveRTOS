@@ -43,6 +43,11 @@ typedef struct {
 	ove_lnx_read_fn read_fn;      /**< Console source (fd 0); see the tty helpers. */
 	void *io_ctx;		      /**< Opaque, passed to @p write_fn / @p read_fn. */
 	void (*on_enosys)(long nr);   /**< Optional: notified of an unimplemented syscall. */
+	/** Optional: non-blocking "is a console keystroke available right now?" (1/0).
+	 * Enables a true poll(2) on the console fd (e.g. interactive `top`'s 'q' quit):
+	 * without it the console transport is blocking-only and poll falls back to a
+	 * heuristic. Backed by a UART RX-ready check when the host uses a UART console. */
+	int (*console_poll)(void *ctx);
 } ove_lnx_run_config_t;
 
 /** @ref ove_lnx_run outcomes (negative; a non-negative result is the init

@@ -76,8 +76,11 @@ PERSONALITY_CFG="$(dirname "$(realpath "${ELF}")")/../.config"
 if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_CFG}"; then
     PERS_ARGS=(
         -machine "${QEMU_MACHINE}" -m 16
-        -semihosting-config enable=on,chardev=c0 -chardev stdio,id=c0
-        -serial none -monitor none -display none
+        # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive
+        # top's 'q' quit). UART0 (serial0) = the engine's own console, discarded.
+        # Semihosting → null (kept only for the clean SYS_EXIT).
+        -semihosting-config enable=on,chardev=c0 -chardev null,id=c0
+        -serial none -serial stdio -monitor none -display none
         -kernel "${ELF}"
     )
     SAVED_TTY=""

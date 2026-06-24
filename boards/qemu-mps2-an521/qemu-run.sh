@@ -31,8 +31,11 @@ done
 
 QEMU_ARGS=(
     -cpu cortex-m33 -machine mps2-an521 -m 16
-    -semihosting-config enable=on,chardev=c0 -chardev stdio,id=c0
-    -serial none -monitor none -display none
+    # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive top's
+    # 'q' quit). UART0 (serial0) = the engine's own console, discarded. Semihosting →
+    # null (kept only for the clean SYS_EXIT).
+    -semihosting-config enable=on,chardev=c0 -chardev null,id=c0
+    -serial none -serial stdio -monitor none -display none
     -kernel "${ELF}"
 )
 

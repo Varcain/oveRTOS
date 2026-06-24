@@ -326,15 +326,16 @@ typedef struct ove_lnx_fd {
  * fork+exec land in later phases.
  */
 typedef struct ove_lnx_proc {
-	ove_arena_t *arena;		   /**< Backs @c brk and anonymous @c mmap. */
-	uintptr_t brk_base;		   /**< Initial program break. */
-	uintptr_t brk_cur;		   /**< Current program break. */
-	uintptr_t brk_max;		   /**< Ceiling imposed by the arena reservation. */
-	ove_lnx_write_fn write_fn;	   /**< fd 1/2 sink; NULL → @c -OVE_LNX_EBADF. */
-	ove_lnx_read_fn read_fn;	   /**< fd 0 source; NULL → EOF. */
-	void *io_ctx;			   /**< Opaque, passed to @c write_fn / @c read_fn. */
-	const ove_lnx_file_t *fs;	   /**< Read-only rootfs table (NULL → no files). */
-	int fs_count;			   /**< Number of entries in @c fs. */
+	ove_arena_t *arena;		/**< Backs @c brk and anonymous @c mmap. */
+	uintptr_t brk_base;		/**< Initial program break. */
+	uintptr_t brk_cur;		/**< Current program break. */
+	uintptr_t brk_max;		/**< Ceiling imposed by the arena reservation. */
+	ove_lnx_write_fn write_fn;	/**< fd 1/2 sink; NULL → @c -OVE_LNX_EBADF. */
+	ove_lnx_read_fn read_fn;	/**< fd 0 source; NULL → EOF. */
+	int (*console_poll)(void *ctx); /**< Optional non-blocking "key available?" for poll(2). */
+	void *io_ctx;			/**< Opaque, passed to @c write_fn / @c read_fn. */
+	const ove_lnx_file_t *fs;	/**< Read-only rootfs table (NULL → no files). */
+	int fs_count;			/**< Number of entries in @c fs. */
 	ove_lnx_fd_t fds[OVE_LNX_MAX_FDS]; /**< fd table; 0/1/2 are the std streams. */
 	int pid;			   /**< This process's id (1 for the initial program). */
 	int ppid;			   /**< Parent process id (0 for the initial program). */
