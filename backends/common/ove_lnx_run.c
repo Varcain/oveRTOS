@@ -392,6 +392,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				refresh_stats(top); /* top's CPU advances */
 			}
 			eng->spawn_resume(top, R[top], 0);
+			it = 0; /* a nanosleeping program (e.g. top) is alive: reset the
+				 * idle watchdog so it isn't capped after ~20k iterations */
 			continue;
 		}
 		/* (b) the running slot execs: load the new image into a fresh region. */
