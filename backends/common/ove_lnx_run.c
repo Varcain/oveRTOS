@@ -64,12 +64,15 @@ static void refresh_stats(int top)
 		ove_lnx_stats_add(pid, g_ove_lnx_proc[s].ppid, g_ove_lnx_proc[s].comm,
 				  (s == top) ? 'R' : 'S', cpu, 0);
 	}
-	/* RTOS kernel threads as bracketed [name] procs (idle included, so the idle
-	 * task is visible); the "lnx" slot threads are attributed to the Linux pids. */
+	/* Real RTOS kernel threads as bracketed [name] procs. The idle thread is NOT
+	 * a process (like Linux pid 0): its time is reported as /proc/stat idle and
+	 * shown in top's CPU summary. Charging it as a process utime would dominate
+	 * busybox top's sum(all pcpu) denominator and crush every %CPU to ~0. The "lnx"
+	 * slot threads are attributed to their Linux pid, not shown as kernel procs. */
 	for (size_t i = 0; i < n; i++) {
 		const char *name = ti[i].name ? ti[i].name : "?";
-		if (ove_lnx_stats_classify(name) == 2)
-			continue; /* a Linux program slot thread */
+		if (ove_lnx_stats_classify(name) != 0)
+			continue; /* idle or a Linux slot thread */
 		ove_lnx_stats_add(ove_lnx_kpid_for(name), 0, name, 'S',
 				  ti[i].state_times.running_us, 1);
 	}
