@@ -202,6 +202,7 @@ extern "C" {
 #define OVE_LNX_SIGABRT 6
 #define OVE_LNX_SIGKILL 9
 #define OVE_LNX_SIGSEGV 11
+#define OVE_LNX_SIGPIPE 13
 #define OVE_LNX_SIGTERM 15
 /* fcntl commands: F_DUPFD duplicates an fd (the shell dups stdin for its
  * interactive fd); the rest are benign get/set probes. */
@@ -229,6 +230,7 @@ extern "C" {
 #define OVE_LNX_ENOEXEC 8
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ECHILD 10
+#define OVE_LNX_EAGAIN 11
 #define OVE_LNX_ENOMEM 12
 #define OVE_LNX_EACCES 13
 #define OVE_LNX_EFAULT 14
@@ -239,6 +241,7 @@ extern "C" {
 #define OVE_LNX_EFBIG 27
 #define OVE_LNX_ESPIPE 29
 #define OVE_LNX_EROFS 30
+#define OVE_LNX_EPIPE 32
 #define OVE_LNX_EEXIST 17
 #define OVE_LNX_EINVAL 22
 #define OVE_LNX_ENOSPC 28
@@ -372,7 +375,23 @@ typedef struct ove_lnx_proc {
 	int wait_nohang;  /**< WNOHANG was set. */
 	uintptr_t wait_status_p; /**< User int* to fill with the wait status on wake. */
 	int live_children;	 /**< Count of live (un-reaped) children, for wait4. */
+	/* Blocking pipe I/O (Phase D2): a read on an empty pipe with a writer still open,
+	 * or a write on a full pipe with a reader still open, parks the proc; the
+	 * coordinator retries each pass and resumes it when the peer drains/fills. */
+	int pipe_wait;	    /**< 0 = none, 1 = blocked reading, 2 = blocked writing. */
+	int pipe_idx;	    /**< g_pipes[] index being waited on. */
+	uintptr_t pipe_buf; /**< User buffer for the parked read/write. */
+	size_t pipe_len;    /**< Requested length for the parked read/write. */
 } ove_lnx_proc_t;
+
+/** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan
+ * all live procs' fds to count a pipe's open read/write ends (for EOF / EPIPE). */
+ove_lnx_proc_t *ove_lnx_proc_table(void);
+int ove_lnx_proc_nslot(void);
+
+/** @brief Retry a parked pipe read/write (run-loop coordinator). Returns the byte
+ * count, 0 (EOF), or -EPIPE on completion; @c -OVE_LNX_EAGAIN while still blocked. */
+long ove_lnx_pipe_retry(ove_lnx_proc_t *p);
 
 /**
  * @brief Attach a read-only in-memory rootfs the program can @c open / @c read.

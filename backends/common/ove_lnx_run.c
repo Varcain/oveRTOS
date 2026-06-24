@@ -98,6 +98,17 @@ static ove_arena_t g_arenas[OVE_LNX_NREG];
 static const ove_lnx_run_config_t *g_cfg;
 static const struct ove_lnx_engine *g_eng; /* for the dispatch to post coordinator events */
 
+/* Proc-table accessors so the pipe layer can scan all live procs' fds (count a pipe's
+ * open read/write ends for EOF / EPIPE) without the syscall layer knowing OVE_LNX_NSLOT. */
+ove_lnx_proc_t *ove_lnx_proc_table(void)
+{
+	return g_ove_lnx_proc;
+}
+int ove_lnx_proc_nslot(void)
+{
+	return OVE_LNX_NSLOT;
+}
+
 /* Per-slot captured resume context (replaces the single global g_ove_lnx_vfork +
  * the run-loop-local vctx[] — many forks/sleeps/waits can be outstanding at once
  * under the concurrent model). A proc is only ever in ONE of fork/sleep/wait at a
@@ -265,7 +276,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	/* nanosleep / blocking wait4: the syscall set the pending flag; capture the
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
-	if (proc->sleep_pending || proc->wait_pending) {
+	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
 		return;
@@ -417,7 +428,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		 * masked window keeps a preempting program svc from racing the read/clear).
 		 * Act on it OUTSIDE the crit — abort/spawn/launch may yield. */
 		int es = -1, et = 0;
-		enum { EV_EXIT = 1, EV_EXEC, EV_FORK, EV_SLEEP, EV_WAITPARK };
+		enum { EV_EXIT = 1, EV_EXEC, EV_FORK, EV_SLEEP, EV_WAITPARK, EV_PIPE };
 		eng->crit_enter();
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -450,6 +461,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_WAITPARK;
 				break;
 			}
+			if (p->pipe_wait && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_PIPE;
+				break;
+			}
 		}
 		eng->crit_exit();
 
@@ -474,6 +490,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->ppid = par->pid;
 			ch->exited = ch->exec_pending = ch->fork_pending = 0;
 			ch->sleep_pending = ch->wait_pending = ch->sleeping = 0;
+			ch->pipe_wait = 0;
 			ch->child_count = ch->live_children = 0;
 			ch->alive = 1;
 			ch->region = par->region;
@@ -589,11 +606,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+		if (et == EV_PIPE) { /* free the spin thread; the retry below resumes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
 
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
 		ove_time_get_us(&now);
-		int progress = 0, any_alive = 0, any_busy = 0;
+		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0;
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
 			if (!p->alive)
@@ -601,11 +623,31 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			any_alive = 1;
 			if (g_ove_lnx_used[s])
 				any_busy = 1;
+			if (p->pipe_wait)
+				any_pipe_wait = 1;
 			if (p->sleeping) {
 				any_busy = 1;
 				if (now >= p->sleep_until_us) {
 					p->sleeping = 0;
 					eng->spawn_resume(s, p->region, &g_ctx[s], 0);
+					progress = 1;
+				}
+			}
+			/* Blocked pipe I/O: retry now that a peer may have drained/filled the
+			 * ring (or closed its end → EOF/EPIPE); resume the proc when it completes. */
+			if (p->pipe_wait && !g_ove_lnx_used[s]) {
+				long r = ove_lnx_pipe_retry(p);
+				if (r != -OVE_LNX_EAGAIN) {
+					p->pipe_wait = 0;
+					if (r == -OVE_LNX_EPIPE &&
+					    p->sig_handler[OVE_LNX_SIGPIPE] != OVE_LNX_SIG_IGN) {
+						/* broken pipe + default SIGPIPE → terminate the
+						 * writer; the EV_EXIT pass reaps it (no live thread). */
+						p->exited = 1;
+						p->exit_status = 128 + OVE_LNX_SIGPIPE;
+					} else {
+						eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					}
 					progress = 1;
 				}
 			}
@@ -633,8 +675,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		/* Block until a program parks (event_post) or the timeout (sleeper deadlines
 		 * + snapshot refresh). NOT a busy 1ms poll — that would preempt running
 		 * programs every tick and reset their time-slice, starving a fg command
-		 * while a CPU-bound background job runs. */
-		eng->event_wait(50);
+		 * while a CPU-bound background job runs. A short timeout while a pipe is
+		 * blocked keeps `a | b` snappy (the peer's read/write doesn't post an event). */
+		eng->event_wait(any_pipe_wait ? 5 : 50);
 	}
 	/* Tear down any still-running slot tasks so a subsequent ove_lnx_run() starts
 	 * clean and no leaked task starves the next program. */
