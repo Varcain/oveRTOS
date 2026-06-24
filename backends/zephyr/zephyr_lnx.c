@@ -182,23 +182,55 @@ static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void 
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), arg_tramp, sp,
 				      entry, NULL, 5, K_USER, K_FOREVER);
-	k_thread_name_set(g_tid[sidx], "lnx"); /* ps/top: classify as a Linux program */
+	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
+		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
+		k_thread_name_set(g_tid[sidx], nm);
+	}
 	g_ove_lnx_used[sidx] = 1;
 	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
 	k_thread_start(g_tid[sidx]);
 	return 0;
 }
 
-static void zephyr_spawn_resume(int sidx, int ridx, long r0val)
+static void zephyr_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
+				long r0val)
 {
-	g_vfork_user = g_ove_lnx_vfork; /* copy to the user-readable partition */
+	g_vfork_user = *ctx; /* copy the per-proc ctx to the user-readable partition */
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
 				      (void *)r0val, &g_vfork_user, NULL, 5, K_USER, K_FOREVER);
-	k_thread_name_set(g_tid[sidx], "lnx"); /* ps/top: classify as a Linux program */
+	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
+		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
+		k_thread_name_set(g_tid[sidx], nm);
+	}
 	g_ove_lnx_used[sidx] = 1;
 	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
 	k_thread_start(g_tid[sidx]);
+}
+
+/* Coordinator critical section: irq_lock masks SVCall (the program svc is an
+ * exception, so k_sched_lock would NOT exclude it). Held only for the brief
+ * proc-table flag snapshot — never across abort/spawn (which may yield). */
+static unsigned int g_crit_key;
+static void zephyr_crit_enter(void)
+{
+	g_crit_key = irq_lock();
+}
+static void zephyr_crit_exit(void)
+{
+	irq_unlock(g_crit_key);
+}
+
+/* Event wakeup: the dispatch (fault/exception context) gives this when a program
+ * parks; the coordinator takes it instead of busy-polling. ISR-safe k_sem_give. */
+K_SEM_DEFINE(g_ove_lnx_ev, 0, 1);
+static void zephyr_event_post(void)
+{
+	k_sem_give(&g_ove_lnx_ev);
+}
+static void zephyr_event_wait(unsigned ms)
+{
+	k_sem_take(&g_ove_lnx_ev, K_MSEC(ms));
 }
 
 static void zephyr_abort_slot(int sidx)
@@ -219,6 +251,10 @@ static const struct ove_lnx_engine g_zephyr_engine = {
 	.spawn_resume = zephyr_spawn_resume,
 	.abort_slot = zephyr_abort_slot,
 	.sleep_ms = zephyr_sleep_ms,
+	.crit_enter = zephyr_crit_enter,
+	.crit_exit = zephyr_crit_exit,
+	.event_post = zephyr_event_post,
+	.event_wait = zephyr_event_wait,
 };
 
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,

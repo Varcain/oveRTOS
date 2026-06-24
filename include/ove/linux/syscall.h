@@ -358,6 +358,20 @@ typedef struct ove_lnx_proc {
 	 * to the deadline (so RTOS idle/kernel threads run + time advances). */
 	int sleep_pending;	 /**< Set when nanosleep() should park + delay. */
 	uint64_t sleep_until_us; /**< Absolute wake deadline (ove_time_get_us base). */
+	/* Concurrent process model (Phase D): the run loop is a coordinator over the
+	 * live process SET, not a stack. These were the run-loop locals top/R[]/rowner[]/
+	 * vctx[]; the per-slot resume contexts live in ove_lnx_run.c. */
+	int alive;	  /**< This slot holds a live process. */
+	int region;	  /**< Program-image region index this proc runs in. */
+	int region_owner; /**< 1 = owns/must-free its region; 0 = shares a parent's (vfork window). */
+	int vfork_parent_slot; /**< Slot of a parent suspended awaiting this child's exec/exit, or -1. */
+	int fork_pending; /**< This proc issued vfork/fork/clone; coordinator spawns a child. */
+	int sleeping;	  /**< Parked for nanosleep until sleep_until_us. */
+	int wait_pending; /**< Blocked in wait4 (parked) awaiting a child exit. */
+	int wait_pid;	  /**< wait4 pid arg (-1 = any child). */
+	int wait_nohang;  /**< WNOHANG was set. */
+	uintptr_t wait_status_p; /**< User int* to fill with the wait status on wake. */
+	int live_children;	 /**< Count of live (un-reaped) children, for wait4. */
 } ove_lnx_proc_t;
 
 /**
