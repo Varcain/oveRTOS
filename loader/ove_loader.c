@@ -721,6 +721,255 @@ int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size,
 	/* The entry field is VMA + header size and carries the ARM Thumb bit, so
 	 * this runtime address is directly callable as the program's entry. */
 	prog->entry = (uintptr_t)base + (entry - FLAT_HDR_SIZE);
+	prog->is_fdpic = 0;
+	prog->loadmap = 0;
+	prog->phdr = 0;
+	prog->phnum = 0;
+	return OVE_OK;
+}
+
+/* ── FDPIC (ARM ELFOSABI_ARM_FDPIC) ELF loader ───────────────────────────────
+ * FDPIC binaries self-relocate: _start reads the elf32_fdpic_loadmap (passed in r7),
+ * calls __self_reloc() to apply the .rofixup function-descriptor list, and derives
+ * r9 (the GOT) itself. So we do the kernel's binfmt_elf_fdpic job — load the PT_LOAD
+ * segments + build the loadmap for r7 — PLUS apply the .rel.dyn relocations ld.so
+ * would (R_ARM_RELATIVE + R_ARM_FUNCDESC_VALUE): __self_reloc covers only the small
+ * .rofixup, not .rel.dyn. Static (no DT_NEEDED) → we ignore PT_INTERP, no ld.so.
+ * All PT_LOAD placed contiguously (one uniform bias) for now. Little-endian. */
+
+/* Read little-endian halfword / word from a (possibly unaligned) byte pointer. */
+static uint16_t le16(const uint8_t *p)
+{
+	return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+static uint32_t le32(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+	       ((uint32_t)p[3] << 24);
+}
+
+#define ELF_ET_DYN 3u
+#define ELF_EM_ARM 40u
+#define ELF_OSABI_ARM_FDPIC 65u /* e_ident[EI_OSABI] for ARM uClinux FDPIC */
+#define ELF_EF_ARM_FDPIC 0x10000000u
+#define ELF_PT_LOAD 1u
+#define ELF_PT_DYNAMIC 2u
+#define ELF_PT_INTERP 3u
+#define ELF_PF_X 1u
+#define ELF_DT_NULL 0u
+#define ELF_DT_PLTGOT 3u
+#define ELF_DT_SYMTAB 6u
+#define ELF_DT_REL 17u
+#define ELF_DT_RELSZ 18u
+#define ELF_DT_RELENT 19u
+/* ARM relocation types (ELF for the ARM Architecture). */
+#define ELF_R_ARM_ABS32 2u
+#define ELF_R_ARM_RELATIVE 23u
+#define ELF_R_ARM_FUNCDESC 163u
+#define ELF_R_ARM_FUNCDESC_VALUE 164u
+
+int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
+			  size_t region_size)
+{
+	if (!prog || !image || !region || image_size < 52u /* Elf32_Ehdr */)
+		return OVE_ERR_INVALID_PARAM;
+	const uint8_t *img = (const uint8_t *)image;
+	if (img[0] != 0x7f || img[1] != 'E' || img[2] != 'L' || img[3] != 'F' || img[4] != 1u)
+		return OVE_ERR_INVALID_PARAM; /* not ELF / not ELFCLASS32 */
+	if (le16(img + 16) != ELF_ET_DYN || le16(img + 18) != ELF_EM_ARM)
+		return OVE_ERR_INVALID_PARAM;
+	/* FDPIC marker: EI_OSABI (byte 7) == ELFOSABI_ARM_FDPIC (uClinux-fdpic uses this);
+	 * some toolchains also set EF_ARM_FDPIC in e_flags. */
+	if (img[7] != ELF_OSABI_ARM_FDPIC && !(le32(img + 36) & ELF_EF_ARM_FDPIC))
+		return OVE_ERR_NOT_SUPPORTED; /* not an FDPIC image */
+
+	uint32_t e_entry = le32(img + 24);
+	uint32_t e_phoff = le32(img + 28);
+	uint16_t e_phentsize = le16(img + 42);
+	uint16_t e_phnum = le16(img + 44);
+	if ((uint64_t)e_phoff + (uint64_t)e_phnum * e_phentsize > image_size)
+		return OVE_ERR_INVALID_PARAM;
+
+	/* Pass 1: the vaddr span across PT_LOAD + the segment count. PT_INTERP is ignored
+	 * (the binary is static/self-relocating; we never run a dynamic loader). */
+	uint32_t vaddr_lo = 0xffffffffu, vaddr_hi = 0;
+	uint32_t dyn_off = 0, dyn_sz = 0;
+	int nload = 0;
+	for (uint16_t i = 0; i < e_phnum; i++) {
+		const uint8_t *ph = img + e_phoff + (size_t)i * e_phentsize;
+		uint32_t p_type = le32(ph);
+		if (p_type == ELF_PT_DYNAMIC) {
+			dyn_off = le32(ph + 8); /* p_vaddr of the dynamic table */
+			dyn_sz = le32(ph + 20); /* p_memsz */
+		}
+		if (p_type != ELF_PT_LOAD)
+			continue;
+		nload++;
+		uint32_t v = le32(ph + 8), msz = le32(ph + 20);
+		if (v < vaddr_lo)
+			vaddr_lo = v;
+		if (v + msz > vaddr_hi)
+			vaddr_hi = v + msz;
+	}
+	if (vaddr_lo == 0xffffffffu || vaddr_hi <= vaddr_lo || nload < 1)
+		return OVE_ERR_INVALID_PARAM;
+	uint32_t span = vaddr_hi - vaddr_lo;
+	uint32_t span_a = (span + 3u) & ~3u; /* the loadmap follows the image, 4-aligned */
+	uint32_t loadmap_sz = 4u + (uint32_t)nload * 12u;
+	if ((uint64_t)span_a + loadmap_sz > region_size)
+		return OVE_ERR_NO_MEMORY;
+
+	uint8_t *base = (uint8_t *)region;
+	uintptr_t bias = (uintptr_t)base - vaddr_lo; /* runtime = vaddr + bias */
+	memset(base, 0, span);
+
+	/* The loadmap (elf32_fdpic_loadmap: u16 version=0, u16 nsegs, then nsegs ×
+	 * {u32 addr, u32 p_vaddr, u32 p_memsz}) sits just past the image; _start reads it
+	 * through r7 and __self_reloc derives each segment's bias from it. */
+	uint8_t *lm = base + span_a;
+	{
+		uint16_t ver = 0, ns = (uint16_t)nload;
+		memcpy(lm, &ver, 2);
+		memcpy(lm + 2, &ns, 2);
+	}
+
+	/* Pass 2: place each PT_LOAD (preserving relative vaddrs), fill the loadmap, and
+	 * record the text/data segments. */
+	uint32_t text_v = 0, text_sz = 0, data_v = 0, data_fsz = 0, data_msz = 0;
+	int si = 0;
+	for (uint16_t i = 0; i < e_phnum; i++) {
+		const uint8_t *ph = img + e_phoff + (size_t)i * e_phentsize;
+		if (le32(ph) != ELF_PT_LOAD)
+			continue;
+		uint32_t p_off = le32(ph + 4), p_vaddr = le32(ph + 8);
+		uint32_t p_filesz = le32(ph + 16), p_memsz = le32(ph + 20);
+		uint32_t p_flags = le32(ph + 24);
+		if ((uint64_t)p_off + p_filesz > image_size)
+			return OVE_ERR_INVALID_PARAM;
+		memcpy(base + (p_vaddr - vaddr_lo), img + p_off, p_filesz);
+		uint32_t seg_addr = (uint32_t)(uintptr_t)(base + (p_vaddr - vaddr_lo));
+		uint8_t *s = lm + 4 + (size_t)si * 12;
+		memcpy(s, &seg_addr, 4);
+		memcpy(s + 4, &p_vaddr, 4);
+		memcpy(s + 8, &p_memsz, 4);
+		si++;
+		if (p_flags & ELF_PF_X) {
+			text_v = p_vaddr;
+			text_sz = p_memsz;
+		} else {
+			data_v = p_vaddr;
+			data_fsz = p_filesz;
+			data_msz = p_memsz;
+		}
+	}
+
+	/* Walk the dynamic table for the relocation table, the symbol table + the GOT. */
+	uint32_t rel_v = 0, rel_sz = 0, rel_ent = 8, pltgot_v = 0, sym_v = 0;
+	if (dyn_off) {
+		const uint8_t *dp = base + (dyn_off - vaddr_lo);
+		for (uint32_t o = 0; o + 8 <= dyn_sz; o += 8) {
+			uint32_t tag = le32(dp + o), val = le32(dp + o + 4);
+			if (tag == ELF_DT_NULL)
+				break;
+			else if (tag == ELF_DT_REL)
+				rel_v = val;
+			else if (tag == ELF_DT_RELSZ)
+				rel_sz = val;
+			else if (tag == ELF_DT_RELENT)
+				rel_ent = val;
+			else if (tag == ELF_DT_PLTGOT)
+				pltgot_v = val;
+			else if (tag == ELF_DT_SYMTAB)
+				sym_v = val;
+		}
+	}
+
+	/* Apply the .rel.dyn relocations ld.so would (the .rofixup is left to _start's
+	 * __self_reloc): R_ARM_RELATIVE/ABS32 rebase a word; R_ARM_FUNCDESC_VALUE fills a
+	 * {func, got} descriptor in place; R_ARM_FUNCDESC stores the address of a symbol's
+	 * canonical descriptor — the FUNCDESC_VALUE slot if one exists, else a fresh
+	 * descriptor we allocate (as ld.so's _dl_funcdesc_for does), since most defined
+	 * functions (busybox applets, _init, libc helpers) have a FUNCDESC but no
+	 * FUNCDESC_VALUE. */
+	uint32_t got_base = (uint32_t)((uintptr_t)base + (pltgot_v - vaddr_lo));
+	const uint8_t *rel0 = base + (rel_v - vaddr_lo);
+	/* A descriptor pool just past the loadmap; at most one per reloc (upper bound). */
+	uint32_t pool_off = ((uint32_t)(span_a + loadmap_sz) + 7u) & ~7u;
+	uint32_t max_fd = rel_ent ? rel_sz / rel_ent : 0;
+	if ((uint64_t)pool_off + (uint64_t)max_fd * 8u > region_size)
+		return OVE_ERR_NO_MEMORY;
+	uint8_t *fdpool = base + pool_off;
+	uint32_t pool_used = 0;
+	for (uint32_t o = 0; o + rel_ent <= rel_sz; o += rel_ent) {
+		const uint8_t *r = rel0 + o;
+		uint32_t r_offset = le32(r), r_info = le32(r + 4);
+		uint32_t r_type = r_info & 0xffu, r_sym = r_info >> 8;
+		uint8_t *where = base + (r_offset - vaddr_lo);
+		if (r_type == ELF_R_ARM_RELATIVE || r_type == ELF_R_ARM_ABS32) {
+			uint32_t w = le32(where) + (uint32_t)bias;
+			memcpy(where, &w, 4);
+		} else if (r_type == ELF_R_ARM_FUNCDESC_VALUE) {
+			/* A function descriptor {func, got} (matches uClibc ld.so): func =
+			 * symbol_addr = st_value + bias (carries the Thumb bit), PLUS the in-place
+			 * addend ONLY for a STB_LOCAL symbol; got = the module GOT. An UNDEFINED
+			 * (weak EH) symbol → null {0,0} so the crt's guarded call skips it. */
+			const uint8_t *sym = base + (sym_v - vaddr_lo) + r_sym * 16u;
+			uint32_t w0 = 0, w1 = 0;
+			if (sym_v && le16(sym + 14) != 0) { /* st_shndx != SHN_UNDEF */
+				w0 = le32(sym + 4) + (uint32_t)bias;
+				if ((sym[12] >> 4) == 0) /* ELF_ST_BIND == STB_LOCAL */
+					w0 += le32(where);
+				w1 = got_base;
+			}
+			memcpy(where, &w0, 4);
+			memcpy(where + 4, &w1, 4);
+		} else if (r_type == ELF_R_ARM_FUNCDESC) {
+			/* point this GOT slot at the symbol's canonical descriptor (the slot a
+			 * FUNCDESC_VALUE relocates) — but NULL for an undefined weak symbol, so a
+			 * caller's "if (funcptr) call" guard skips it rather than dereferencing a
+			 * {0,0} descriptor and branching to 0. */
+			const uint8_t *sym = base + (sym_v - vaddr_lo) + r_sym * 16u;
+			uint32_t descr = 0;
+			if (sym_v && le16(sym + 14) != 0) { /* defined (st_shndx != SHN_UNDEF) */
+				for (uint32_t p = 0; p + rel_ent <= rel_sz; p += rel_ent) {
+					uint32_t i2 = le32(rel0 + p + 4);
+					if ((i2 & 0xffu) == ELF_R_ARM_FUNCDESC_VALUE &&
+					    (i2 >> 8) == r_sym) {
+						descr = (uint32_t)((uintptr_t)base +
+								   (le32(rel0 + p) - vaddr_lo));
+						break;
+					}
+				}
+				if (!descr && pool_used + 8u <= max_fd * 8u) {
+					/* no FUNCDESC_VALUE for this symbol (busybox applets, _init,
+					 * libc helpers) — synthesize its descriptor {func = st_value +
+					 * bias + addend, got}, as ld.so's _dl_funcdesc_for does. */
+					uint8_t *d = fdpool + pool_used;
+					uint32_t fn = le32(sym + 4) + (uint32_t)bias + le32(where);
+					memcpy(d, &fn, 4);
+					memcpy(d + 4, &got_base, 4);
+					descr = (uint32_t)(uintptr_t)d;
+					pool_used += 8;
+				}
+			}
+			memcpy(where, &descr, 4);
+		}
+	}
+
+	prog->region = base;
+	prog->region_size = region_size;
+	prog->region_used = pool_off + pool_used; /* image + loadmap + descriptor pool */
+	prog->text_base = (uintptr_t)base + (text_v - vaddr_lo);
+	prog->text_size = text_sz;
+	prog->data_base = (uintptr_t)base + (data_v - vaddr_lo);
+	prog->data_size = data_fsz;
+	prog->bss_size = data_msz - data_fsz;
+	prog->stack_size = 0x4000u;
+	prog->entry = (uintptr_t)base + (e_entry - vaddr_lo);
+	prog->is_fdpic = 1;
+	prog->loadmap = (uintptr_t)lm; /* passed in r7; _start self-relocates from it */
+	prog->phdr = bias + e_phoff;   /* program headers live in the (file-offset-0) text seg */
+	prog->phnum = e_phnum;
 	return OVE_OK;
 }
 

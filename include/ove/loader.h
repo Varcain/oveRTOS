@@ -140,6 +140,11 @@ typedef struct ove_flat {
 	size_t data_size;    /**< Initialised-data size. */
 	size_t bss_size;     /**< Zero-initialised data size. */
 	size_t stack_size;   /**< Stack size the program requests. */
+	int is_fdpic;	     /**< Non-zero if loaded from an FDPIC ELF (PIC, self-relocating). */
+	uintptr_t loadmap;   /**< FDPIC: the elf32_fdpic_loadmap to pass in r7 at entry (the
+			      *   crt _start self-relocates from it). 0 for bFLT. */
+	uintptr_t phdr;	     /**< FDPIC: runtime address of the program headers (AT_PHDR). */
+	int phnum;	     /**< FDPIC: number of program headers (AT_PHNUM). */
 } ove_flat_t;
 
 /**
@@ -164,6 +169,29 @@ typedef struct ove_flat {
  */
 int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size, void *region,
 			 size_t region_size);
+
+/**
+ * @brief Load a static FDPIC (ARM @c EF_ARM_FDPIC) ELF executable into @p region.
+ *
+ * FDPIC is position-independent with independently-placed segments addressed through a
+ * per-process GOT (the "FDPIC register" r9). This loads the @c PT_LOAD segments, applies
+ * the @c DT_REL dynamic relocations (incl. @c R_ARM_RELATIVE / @c R_ARM_FUNCDESC_VALUE),
+ * and reports @c prog->got — the GOT base the launcher must place in r9 before @c entry.
+ * Scope: static FDPIC (no @c PT_INTERP / dynamic loader). Unlike bFLT this format lets
+ * multiple processes later share one read-only text copy.
+ *
+ * @param[out] prog        Program control block to fill (@c is_fdpic set, @c got reported).
+ * @param[in]  image       FDPIC ELF image (caller-owned; only read during the load).
+ * @param[in]  image_size  Size of @p image in bytes.
+ * @param[in]  region      Destination; must be executable before @c entry runs.
+ * @param[in]  region_size Size of @p region in bytes.
+ * @return OVE_OK on success; OVE_ERR_INVALID_PARAM on a malformed/non-FDPIC image;
+ *         OVE_ERR_NOT_SUPPORTED for a dynamic (PT_INTERP) image or an unhandled reloc;
+ *         OVE_ERR_NO_MEMORY if @p region is too small.
+ * @note Requires @c CONFIG_OVE_LOADER.
+ */
+int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
+			  size_t region_size);
 
 #ifdef __cplusplus
 }

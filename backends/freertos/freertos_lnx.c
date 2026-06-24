@@ -115,6 +115,7 @@ __attribute__((naked)) void SVC_Handler(void)
 struct launch_args {
 	void *sp;
 	void *entry;
+	void *loadmap; /* FDPIC: the elf32_fdpic_loadmap for r7 (NULL/0 for bFLT). */
 };
 struct resume_args {
 	long r0;
@@ -124,17 +125,24 @@ static struct launch_args g_largs[OVE_LNX_NSLOT];
 static struct resume_args g_rargs[OVE_LNX_NSLOT];
 
 __attribute__((naked)) static void arg_tramp(void *sp __attribute__((unused)),
-					     void *entry __attribute__((unused)))
+					     void *entry __attribute__((unused)),
+					     void *loadmap __attribute__((unused)))
 {
-	/* AAPCS: r0 = sp, r1 = entry. */
+	/* AAPCS: r0 = sp, r1 = entry, r2 = loadmap. The FDPIC entry contract: r7 = the
+	 * executable's loadmap (the crt _start self-relocates from it), r8 = the
+	 * interpreter (ld.so) loadmap which is 0 for a static program — the crt branches
+	 * on r8, so leaving it uninitialised makes the crt deref garbage. Both 0 for
+	 * bFLT, which ignores them. */
 	__asm__ volatile("mov sp, r0\n"
+			 "mov r7, r2\n"
+			 "mov r8, #0\n"
 			 "mov r0, #0\n"
 			 "bx  r1\n");
 }
 static void arg_tramp_task(void *arg)
 {
 	struct launch_args *a = (struct launch_args *)arg;
-	arg_tramp(a->sp, a->entry);
+	arg_tramp(a->sp, a->entry, a->loadmap);
 }
 
 __attribute__((naked)) static void resume_tramp(void *r0val __attribute__((unused)),
@@ -164,10 +172,10 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 				 void *stack_lo)
 {
 	(void)ridx;
-	(void)prog;
 	(void)stack_lo;
 	g_largs[sidx].sp = sp;
 	g_largs[sidx].entry = entry;
+	g_largs[sidx].loadmap = prog->is_fdpic ? (void *)prog->loadmap : (void *)0;
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
 	g_tid[sidx] = xTaskCreateStatic(arg_tramp_task, nm, TRAMP_STACK_WORDS, &g_largs[sidx],
 					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);

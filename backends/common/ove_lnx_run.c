@@ -323,7 +323,13 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 {
 	uint8_t *region = eng->region(ridx);
 	ove_flat_t prog;
-	if (ove_loader_load_flat(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE) != OVE_OK)
+	/* Format by magic: 0x7f'ELF' → FDPIC, else bFLT. spawn_launch reads prog.is_fdpic
+	 * / prog.got to put the GOT in r9 for FDPIC (bFLT is single-base, no r9). */
+	int lrc =
+		(len >= 4 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F')
+			? ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE)
+			: ove_loader_load_flat(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE);
+	if (lrc != OVE_OK)
 		return -1;
 	uint8_t *rw = region + ((prog.region_used + 15u) & ~15u);
 	uint8_t *rw_end = region + OVE_LNX_PROG_REGION_SIZE;
@@ -357,7 +363,8 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	}
 	ove_lnx_proc_set_rootfs(&g_ove_lnx_proc[sidx], g_cfg->rootfs, g_cfg->rootfs_count);
 	uint8_t *stack_lo = rw + OVE_LNX_PROG_ARENA_SIZE;
-	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL);
+	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL,
+				       prog.is_fdpic, prog.phdr, prog.phnum, prog.entry);
 	if (!sp)
 		return -1;
 	return eng->spawn_launch(sidx, ridx, &prog, (void *)prog.entry, sp, stack_lo);
