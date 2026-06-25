@@ -50,12 +50,24 @@ manage funcdescs — ld.so allocates them via `_dl_malloc` (our mmap2/brk).
   `readlinkat`, `write`, `exit_group`, `getuid/euid/gid/egid`, `getpid`, `gettimeofday`
   (or a `/dev/urandom` that opens+reads — for the SSP canary, if SSP is on).
 
-## Memory model
-A per-run **mmap pool** (a contiguous block) that mmap2(anon) bump-allocates page-aligned.
-Sizing: ld.so + libc.so segments + ld.so heap (loadmaps, funcdescs, hash, elf_resolve) ≈
-0.6–1 MB for one process. Engine budget: FR/NuttX an500 4MB (regions 2MB + pool); Zephyr
-an521 16MB PSRAM. The exec + ld.so can live in regions; the pool backs ld.so's anon mmaps.
-(Text-sharing across procs is a later optimization — first get one process booting.)
+## Memory model (analyzed — the pool MUST go in PSRAM on an500)
+mmap2(anon) bump-allocates page-aligned from a per-process **mmap pool**; the exec + ld.so
+load into the program region, the pool backs ld.so's anon mmaps. Per process ≈ libc.so text
+PT_LOAD (~500K — ld.so mmaps anon for the whole memsz then preads it in) + data (~30K) +
+ld.so heap (loadmaps/funcdescs/hash/elf_resolve ~50K) ≈ **~580K**.
+
+an500 layout (FR/NuttX): **FLASH 4M @ 0x0** (.text/.rodata — the 864K cpio is `static const`
+so it lives HERE, NOT RAM) + **RAM 4M @ 0x20000000** (.bss: the 2MB program regions + ~350K
+personality/FreeRTOS heap → only ~1.6MB headroom) + **PSRAM 4M @ 0x60000000**. The boot's ~3
+concurrent procs need ~3×580K = ~1.74MB of pool, which does NOT fit the ~1.6MB RAM headroom
+beside the 2MB regions. So the mmap pool MUST live in **PSRAM (0x60000000)** — the an500 has
+it (NuttX already executes from there); mirror Zephyr an521's NOLOAD-PSRAM region placement
+(`backends/zephyr/zephyr_lnx.c` + `ove-psram.overlay`). Per-region pool slices (NREG × ~640K)
+fit PSRAM comfortably; reclaim = reset the slice cursor on launch (slot reuse). FR an500 needs
+a PSRAM MEMORY region added to `mps2_an500.ld` + the pool placed there via a section attr.
+**Later payoff:** libc.so **text-sharing** (one ~500K copy across all procs, not N) — harder
+with ld.so's anon+pread model (the personality would have to dedup the mapping by file). Get
+one process booting in PSRAM first, then share.
 
 ## elf32_fdpic_loadmap (confirmed)
 `{u16 version=0; u16 nsegs; seg[]{u32 addr; u32 p_vaddr; u32 p_memsz}}`, segs ordered by
