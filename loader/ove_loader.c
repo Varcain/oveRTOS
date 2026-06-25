@@ -979,7 +979,10 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	prog->phdr = bias + e_phoff;   /* program headers live in the (file-offset-0) text seg */
 	prog->phnum = e_phnum;
 	prog->is_dynamic = is_dynamic; /* exec with DT_NEEDED → caller loads + enters ld.so */
-	prog->got = got_base;	       /* DT_PLTGOT base; r9 when this object is the interpreter */
+	prog->got = got_base;	       /* DT_PLTGOT base */
+	/* PT_DYNAMIC runtime addr — for an interpreter this is r9 at entry (uClibc-ng's FDPIC
+	 * dl_boot_ldso_dyn_pointer, which DL_BOOT_COMPUTE_DYN uses as the dynamic-table ptr). */
+	prog->dynamic = dyn_off ? ((uintptr_t)base + (dyn_off - vaddr_lo)) : 0;
 	return OVE_OK;
 }
 

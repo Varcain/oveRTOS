@@ -147,9 +147,12 @@ typedef struct ove_flat {
 	int phnum;	     /**< FDPIC: number of program headers (AT_PHNUM). */
 	int is_dynamic;	     /**< FDPIC: non-zero if the exec has DT_NEEDED (needs ld.so). The
 			      *   personality must then ALSO load the interpreter + enter it. */
-	uintptr_t got;	     /**< FDPIC: the GOT base (DT_PLTGOT). For the interpreter this is
-			      *   r9 at entry; for the exec it is what ld.so installs as the
-			      *   program GOT. */
+	uintptr_t got;	     /**< FDPIC: the GOT base (DT_PLTGOT-relative); for the exec it is
+			      *   what ld.so installs as the program GOT. */
+	uintptr_t dynamic;   /**< FDPIC: runtime address of PT_DYNAMIC (_DYNAMIC). For the
+			      *   INTERPRETER this is r9 at entry — uClibc-ng's FDPIC
+			      *   dl_boot_ldso_dyn_pointer, which DL_BOOT_COMPUTE_DYN uses as the
+			      *   dpnt (NOT the GOT). 0 if the object has no PT_DYNAMIC. */
 	uintptr_t interp_loadmap; /**< FDPIC dynamic: the interpreter (ld.so) loadmap → r8 at
 				   *   entry; 0 for static. Filled by the launcher, not the
 				   *   loader (which loads one object at a time). */

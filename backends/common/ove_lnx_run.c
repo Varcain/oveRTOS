@@ -358,7 +358,12 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 		pc = ld.entry;
 		at_base = ld_base;
 		prog.interp_loadmap = ld.loadmap; /* r8 */
-		prog.got = ld.got;		  /* r9 */
+		/* r9 = ld.so's _DYNAMIC, NOT its GOT: uClibc-ng's FDPIC DL_BOOT_COMPUTE_DYN sets
+		 * the dynamic-table ptr = dl_boot_ldso_dyn_pointer = the entry r9. (The working
+		 * GOT is derived by __self_reloc.) Passing the GOT/base here mis-parses ld.so's
+		 * dynamic → its RELATIVE relocs target wrong → _dl_malloc derefs an unrelocated
+		 * GOT entry. */
+		prog.got = ld.dynamic;
 		prog.region_used = (size_t)(ld_base - (uintptr_t)region) + ld.region_used;
 	}
 
