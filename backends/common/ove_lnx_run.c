@@ -327,7 +327,7 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	 * / prog.got to put the GOT in r9 for FDPIC (bFLT is single-base, no r9). */
 	int lrc =
 		(len >= 4 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F')
-			? ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE)
+			? ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0)
 			: ove_loader_load_flat(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE);
 	if (lrc != OVE_OK)
 		return -1;

@@ -757,6 +757,7 @@ static uint32_t le32(const uint8_t *p)
 #define ELF_PT_INTERP 3u
 #define ELF_PF_X 1u
 #define ELF_DT_NULL 0u
+#define ELF_DT_NEEDED 1u /* a shared-library dependency → the exec is dynamic, needs ld.so */
 #define ELF_DT_PLTGOT 3u
 #define ELF_DT_SYMTAB 6u
 #define ELF_DT_REL 17u
@@ -769,7 +770,7 @@ static uint32_t le32(const uint8_t *p)
 #define ELF_R_ARM_FUNCDESC_VALUE 164u
 
 int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
-			  size_t region_size)
+			  size_t region_size, int is_interp)
 {
 	if (!prog || !image || !region || image_size < 52u /* Elf32_Ehdr */)
 		return OVE_ERR_INVALID_PARAM;
@@ -865,12 +866,15 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 
 	/* Walk the dynamic table for the relocation table, the symbol table + the GOT. */
 	uint32_t rel_v = 0, rel_sz = 0, rel_ent = 8, pltgot_v = 0, sym_v = 0;
+	int is_dynamic = 0;
 	if (dyn_off) {
 		const uint8_t *dp = base + (dyn_off - vaddr_lo);
 		for (uint32_t o = 0; o + 8 <= dyn_sz; o += 8) {
 			uint32_t tag = le32(dp + o), val = le32(dp + o + 4);
 			if (tag == ELF_DT_NULL)
 				break;
+			else if (tag == ELF_DT_NEEDED)
+				is_dynamic = 1; /* a .so dependency → ld.so relocates it, not us */
 			else if (tag == ELF_DT_REL)
 				rel_v = val;
 			else if (tag == ELF_DT_RELSZ)
@@ -900,7 +904,11 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 		return OVE_ERR_NO_MEMORY;
 	uint8_t *fdpool = base + pool_off;
 	uint32_t pool_used = 0;
-	for (uint32_t o = 0; o + rel_ent <= rel_sz; o += rel_ent) {
+	/* Skip for the interpreter (ld.so self-relocs via _start's __self_reloc + _dl_start's
+	 * bootstrap) and for a dynamic exec (ld.so relocates it after loading its .so deps);
+	 * applying .rel.dyn here would double-bias R_ARM_RELATIVE. Only a STATIC exec relocates
+	 * here (nothing else would). */
+	for (uint32_t o = 0; !is_interp && !is_dynamic && o + rel_ent <= rel_sz; o += rel_ent) {
 		const uint8_t *r = rel0 + o;
 		uint32_t r_offset = le32(r), r_info = le32(r + 4);
 		uint32_t r_type = r_info & 0xffu, r_sym = r_info >> 8;
@@ -970,6 +978,8 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	prog->loadmap = (uintptr_t)lm; /* passed in r7; _start self-relocates from it */
 	prog->phdr = bias + e_phoff;   /* program headers live in the (file-offset-0) text seg */
 	prog->phnum = e_phnum;
+	prog->is_dynamic = is_dynamic; /* exec with DT_NEEDED → caller loads + enters ld.so */
+	prog->got = got_base;	       /* DT_PLTGOT base; r9 when this object is the interpreter */
 	return OVE_OK;
 }
 
