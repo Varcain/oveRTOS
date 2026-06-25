@@ -26,11 +26,19 @@ foreach(_b ${_bytes})
     endif()
 endforeach()
 
+# An optional -DSECTION=<name> places the array in a named section (e.g. an executable .text
+# subsection, so an MPU engine's UNPRIVILEGED threads can execute embedded code in-place — the
+# FDPIC text-sharing maps libc.so's RO text straight out of the embedded cpio).
+set(_sectattr "")
+if(DEFINED SECTION AND NOT SECTION STREQUAL "")
+    set(_sectattr ", section(\"${SECTION}\")")
+endif()
+
 # clang-format off/on brackets the byte array so the linter leaves the
 # hand-laid 16-per-line layout alone (it otherwise exceeds the column limit).
 file(WRITE "${OUT}"
     "/* Generated from ${IN} — do not edit. */\n"
     "/* clang-format off */\n"
-    "static const unsigned char ${SYM}[] __attribute__((aligned(8))) = {\n\t${_body}\n};\n"
+    "static const unsigned char ${SYM}[] __attribute__((aligned(8)${_sectattr})) = {\n\t${_body}\n};\n"
     "/* clang-format on */\n"
     "static const unsigned long ${SYM}_len = sizeof(${SYM});\n")
