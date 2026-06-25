@@ -43,6 +43,10 @@
  * setup_domain() don't overlap the kernel's region (the reason app_smem was used). */
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] Z_GENERIC_SECTION(
 	LINKER_DT_NODE_REGION_NAME(DT_NODELABEL(psram))) __aligned(32);
+/* Per-region dynamic-link scratch pool (also PSRAM/NOLOAD): a dynamic FDPIC proc's arena lives
+ * here so ld.so can mmap libc.so (~500K), far past the in-region arena. */
+static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] Z_GENERIC_SECTION(
+	LINKER_DT_NODE_REGION_NAME(DT_NODELABEL(psram))) __aligned(32);
 
 /* Per-region MPU domain: program text/data + the libc/heap partitions. */
 extern struct k_mem_partition z_libc_partition;
@@ -154,12 +158,26 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_text[ridx]);
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_data[ridx]);
 	}
-	g_text[ridx].start = (uintptr_t)region;
-	g_text[ridx].size = prog->text_size;
-	g_text[ridx].attr = K_MEM_PARTITION_P_RX_U_RX;
-	g_data[ridx].start = (uintptr_t)region + prog->text_size;
-	g_data[ridx].size = OVE_LNX_PROG_REGION_SIZE - prog->text_size;
-	g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
+	if (prog->is_dynamic) {
+		/* Dynamic FDPIC: the region interleaves the exec + ld.so (each its own text+data) so
+		 * a single W^X text/data split is impossible, and libc.so lives in the arena. Cover
+		 * the whole region + the arena as two RWX partitions — W^X is RELAXED for dynamic
+		 * procs only (documented; static/bFLT keep full W^X). Still 2 partitions (+ libc/malloc
+		 * + the K_USER stack = 5 dynamic MPU regions), the same budget as the static path. */
+		g_text[ridx].start = (uintptr_t)region;
+		g_text[ridx].size = OVE_LNX_PROG_REGION_SIZE;
+		g_text[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
+		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
+		g_data[ridx].size = OVE_LNX_DYN_POOL_SIZE;
+		g_data[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
+	} else {
+		g_text[ridx].start = (uintptr_t)region;
+		g_text[ridx].size = prog->text_size;
+		g_text[ridx].attr = K_MEM_PARTITION_P_RX_U_RX;
+		g_data[ridx].start = (uintptr_t)region + prog->text_size;
+		g_data[ridx].size = OVE_LNX_PROG_REGION_SIZE - prog->text_size;
+		g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
+	}
 	if (!g_dom_inited[ridx]) {
 		/* libc + malloc only (the resume ctx now rides in the program's own region —
 		 * see zephyr_spawn_resume — so there is no separate shared partition); text +
@@ -184,15 +202,40 @@ static uint8_t *zephyr_region(int ridx)
 	return prog_regions[ridx];
 }
 
+static uint8_t *zephyr_dyn_pool(int ridx, size_t *size)
+{
+	if (size)
+		*size = OVE_LNX_DYN_POOL_SIZE;
+	return dyn_pools[ridx];
+}
+
 static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
 			       void *stack_lo)
 {
 	ARG_UNUSED(stack_lo);
 	if (setup_domain(ridx, prog) != 0)
 		return -1;
-	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
-				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), arg_tramp, sp,
-				      entry, NULL, 5, K_USER, K_FOREVER);
+	if (prog->is_fdpic) {
+		/* FDPIC needs r7=exec loadmap, r8=ld.so loadmap, r9=GOT at entry. Rather than a
+		 * bespoke unprivileged trampoline, REUSE the proven resume_tramp: synthesize a resume
+		 * ctx with the FDPIC registers + the entry as the resume PC, stashed below SP in the
+		 * program's own region (where resume_tramp already reads it). r4_11[3..5] = r7/r8/r9
+		 * (all 0 for static FDPIC's r8/r9, which the crt overwrites). r0 = 0 (static fini). */
+		struct ove_lnx_resume_ctx *slot = (struct ove_lnx_resume_ctx *)((uintptr_t)sp - 64u);
+		memset(slot, 0, sizeof(*slot));
+		slot->r4_11[3] = (uint32_t)prog->loadmap;	 /* r7 */
+		slot->r4_11[4] = (uint32_t)prog->interp_loadmap; /* r8 */
+		slot->r4_11[5] = (uint32_t)prog->got;		 /* r9 */
+		slot->sp = (uint32_t)(uintptr_t)sp;
+		slot->pc = (uint32_t)(uintptr_t)entry;
+		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
+					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
+					      (void *)0, slot, NULL, 5, K_USER, K_FOREVER);
+	} else {
+		g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
+					      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), arg_tramp, sp,
+					      entry, NULL, 5, K_USER, K_FOREVER);
+	}
 	{ /* ps/top: "lnx<slot>" classifies as a Linux program + attributes per-process CPU */
 		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
 		k_thread_name_set(g_tid[sidx], nm);
@@ -266,6 +309,7 @@ static void zephyr_sleep_ms(unsigned ms)
 
 static const struct ove_lnx_engine g_zephyr_engine = {
 	.region = zephyr_region,
+	.dyn_pool = zephyr_dyn_pool,
 	.spawn_launch = zephyr_spawn_launch,
 	.spawn_resume = zephyr_spawn_resume,
 	.abort_slot = zephyr_abort_slot,
