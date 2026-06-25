@@ -72,18 +72,36 @@ r9=prog.got via the launch_args struct (arg_tramp reads fields by offset). prog.
 = got_base = ld_base (ld.so has no DT_PLTGOT → falls back to the load base; _dl_parse_dynamic_
 info accepts it, so it's "right enough"). FR seam loads r7/r8/r9 from the struct.
 
-### D3 — IN PROGRESS: ld.so runs its bootstrap, faults in _dl_malloc
-With r7/r8/r9 correct, ld.so self-relocates (.rofixup via __self_reloc) → _dl_start →
-_dl_parse_dynamic_info (OK) → **_dl_malloc, where it HardFaults** at an FDPIC indirect call:
-`ldr lr,[r9,r3]; ldr r3,[lr,#24]; ldr r9,[r3,#4]; ldr r2,[r3]; blx r2` — the function
-descriptor at [lr+24] is unrelocated (BFAR=garbage). NOT the .rel.dyn FUNCDESC_VALUE (the
-bootstrap applies those, arm/dl-startup.h:257). Next suspects: (a) an unrelocated GOT entry
-(lr) — is __self_reloc's .rofixup pass covering the whole GOT? verify the working r9/GOT
-(0x2004b710 = ld_base+0x5fa0=.got) + walk [lr]; (b) the heap — _dl_malloc's first mmap2/brk
-returning something it then derefs wrong; (c) is _dl_malloc reached before the bootstrap reloc
-loop finishes? GDB recipe: qemu `-gdb tcp::1234 -S`, `break arg_tramp` (r7/r8/r9), `break
-HardFault_Handler`, `frame 2`+BFAR; map the fault PC via `nm -n ld-uClibc*.so` (ld_base =
-ldso-entry − 0xab1). The full openat/read/pread64/mmap2 libc.so load is still downstream.
+### D3 — IN PROGRESS: ld.so runs its bootstrap, faults in _dl_malloc. PINNED PRECISELY.
+ld.so self-relocates (__self_reloc on .rofixup) → _dl_start → _dl_parse_dynamic_info →
+**`_dl_find_hash` → `_dl_malloc`, HardFaults** at `_dl_malloc+0x16`: `ldr lr,[r9,r3]; ldr
+r3,[lr,#24]; ldr r9,[r3,#4]; blx r2`. Root cause: **`lr` (a GOT data-pointer entry) = `0x6008`
+— the LINK-TIME vaddr, NOT relocated to `ld_base+0x6008`**. So `[lr+24]` is garbage → faults.
+`lr` points at a `_dl_` global (the malloc state). ld.so's 13 `R_ARM_RELATIVE` relocs
+(DT_RELCOUNT=13) that rebase these GOT entries **were not applied** before `_dl_find_hash`
+needed them.
+
+**VERIFIED CORRECT on-target (all ruled out):** entry r7=exec-loadmap, r8=ld.so-loadmap; the
+ld.so loadmap (`ver=0 nsegs=2`, seg0 `addr=ld_base vaddr=0`, seg1 `addr=ld_base+0x5efc
+vaddr=0x5efc` → both bias=ld_base ✓); AT_BASE=ld_base (→ `_dl_start` header/load_addr); the
+working GOT `r9=0x2004b710=ld_base+0x5fa0` (from __self_reloc ✓); `load_addr` =
+`__dl_init_loadaddr_map(got=working-GOT, map=dl_boot_ldsomap=r8)` so it has the right loadmap.
+**`dl_boot_ldso_dyn_pointer` (r3 = my entry-r9) is DECLARED BUT NEVER USED** in dl-startup.c —
+so the r9 value is a red herring (commit 8376adc moved the fault via the arg_tramp refactor,
+not r9; keep r9=GOT anyway, it's conventionally correct + harmless).
+
+**THE remaining question:** why ld.so's bootstrap RELATIVE pass
+(`elf_machine_relative(load_addr, rel_addr, relative_count=13)`, dl-startup.c:294-299) doesn't
+rebase this GOT entry. `rel_addr` comes from `dynamic_info[DT_REL]`, parsed from the **dpnt**
+= `DL_BOOT_COMPUTE_DYN(dpnt, got, header=AT_BASE)`. NEXT: (1) read DL_BOOT_COMPUTE_DYN
+(`fdpic/dl-sysdep.h`) — is the dpnt (ld.so's runtime _DYNAMIC) correct from got+AT_BASE? (2)
+GDB-verify: break after _dl_parse_dynamic_info, read `tpnt->dynamic_info[DT_REL]`/[DT_RELCONT]
+and whether `elf_machine_relative` actually ran + rebased [lr]'s entry (the FDPIC
+per-segment rebase in `fdpic/dl-inlines.h` __reloc_pointer). Suspect the dpnt or the FDPIC
+elf_machine_relative per-segment lookup. GDB recipe: qemu `-gdb tcp::1234 -S`; `break
+arg_tramp`; `set $ldbase=*(unsigned*)($r0+4)-0xab1`; `add-symbol-file ld-uClibc-1.0.58.so
+$ldbase`; `break *($ldbase+0x1694)`; read r9/lr/[lr]/[lr+24], `*(sp+28)`=caller. The libc.so
+openat/read/pread64/mmap2 load is still downstream of this.
 
 ## Syscalls to add/upgrade (linux/ove_linux_syscall.c)
 - **`pread64` (180)** NEW: read `count` bytes at `offset` (64-bit, ARM passes hi/lo + a pad)
