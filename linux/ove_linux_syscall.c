@@ -751,9 +751,27 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
 		      uint32_t pgoff)
 {
 	(void)addr;
-	(void)prot;
 	if (len == 0)
 		return -OVE_LNX_EINVAL;
+
+#if !defined(CONFIG_OVE_RTOS_ZEPHYR)
+	/* Text-sharing: a read-only file map of a rootfs file whose whole extent lies within the
+	 * file is returned IN-PLACE (zero-copy). FDPIC text is pure PIC — its relocations land in the
+	 * per-process GOT/data, never the shared text — so every dynamic process shares ONE libc.so
+	 * text copy (the embedded cpio bytes) instead of its own ~500K arena copy. Privileged engines
+	 * reach the cpio directly; Zephyr's unprivileged MPU domain can't, so it falls through to the
+	 * per-process copy below (a per-engine #if, not a runtime check — the cpio is RO + persistent). */
+	if (!(flags & OVE_LNX_MAP_ANONYMOUS) && fd >= 0 && !(prot & 0x2 /* PROT_WRITE */)) {
+		ove_lnx_fd_t *s = fd_slot(p, fd);
+		if (s && s->kind == OVE_LNX_FD_FILE) {
+			const ove_lnx_file_t *f = &p->fs[s->file_idx];
+			if ((size_t)pgoff * 4096u + len <= f->size)
+				return (long)(uintptr_t)(f->data + (size_t)pgoff * 4096u);
+		}
+	}
+#else
+	(void)prot;
+#endif
 
 	void *m = ove_arena_alloc(p->arena, len);
 	if (!m)
