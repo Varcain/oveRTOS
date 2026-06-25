@@ -33,9 +33,37 @@ manage funcdescs — ld.so allocates them via `_dl_malloc` (our mmap2/brk).
   into a given region/base + return its loadmap + got. For a DYNAMIC exec (has PT_INTERP, has
   DT_NEEDED) we DON'T apply .rel.dyn / build descriptor pools (ld.so does that) — we only
   load the PT_LOADs + build the loadmap. (Static path stays as-is.)
-- launch(): if the exec has PT_INTERP → also load `/lib/ld-uClibc.so.1` (resolve the interp
-  path from PT_INTERP, fall back to the rootfs `/lib/ld*.so*`) into a 2nd region, build its
-  loadmap+got, set the entry = ld.so entry, r7/r8/r9 accordingly.
+### D2 part 1 DONE (commit 01b0376)
+`ove_loader_load_fdpic(.., is_interp)` auto-detects DT_NEEDED → `is_dynamic`, skips .rel.dyn
+for interp + dynamic exec, reports `got`. `ove_flat_t` has is_dynamic/got. (ld.so confirmed:
+no DT_NEEDED, 18 .rel.dyn it self-applies → personality must NOT apply, else double-bias.)
+
+### D2 part 2 — launch() wiring (NEXT, worked out — pure execution)
+In `launch()` (ove_lnx_run.c), after `load_fdpic(&prog, exec, .., is_interp=0)`:
+- `pc = prog.entry; at_entry = prog.entry; at_base = 0; prog.interp_loadmap = 0;`
+- if `prog.is_dynamic`:
+  - **find ld.so**: read the exec's PT_INTERP string (`/usr/lib/ld.so.1`), resolve it through
+    the rootfs following symlinks (post-build adds `/usr/lib/ld.so.1`→`/lib/ld-uClibc.so.0`→
+    `…so.1`→`ld-uClibc-1.0.58.so`) → the ELF bytes. (Reuse execve's symlink-resolving lookup;
+    or hardcode `/lib/ld-uClibc.so.0` + follow links.)
+  - `ld_base = region + align(prog.region_used);` (ld.so loads just past the exec in the region)
+  - `load_fdpic(&ld, ld_data, ld_len, ld_base, region_size-(ld_base-region), is_interp=1);`
+  - **the entry contract**: `pc = ld.entry` (jump to ld.so, NOT the exec); `at_base = ld_base`;
+    `prog.interp_loadmap = ld.loadmap` (→ **r8**); `prog.got = ld.got` (→ **r9**). `prog.loadmap`
+    stays = exec's (→ **r7**); `prog.phdr/phnum` stay = exec (→ AT_PHDR/PHNUM); `at_entry` stays
+    = exec.entry (→ AT_ENTRY — the *program's* entry, not ld.so's).
+  - `prog.region_used = (ld_base-region) + ld.region_used;` (so the arena lands past ld.so)
+- **arena/pool**: for a dynamic proc, init the arena in the **PSRAM** slice (≥640K) not the
+  in-region 96K — ld.so mmaps libc.so (~500K) from it. Static/bFLT keep the in-region arena.
+- `setup_stack(.., is_fdpic, prog.phdr, prog.phnum, at_entry, at_base)` — add the at_base
+  param → emit AT_BASE; keep AT_ENTRY=at_entry.
+- `spawn_launch(.., &prog, (void*)pc, ..)` — the seam jumps to `pc` and sets r7=prog.loadmap,
+  **r8=prog.interp_loadmap** (new — FR arg_tramp currently hardcodes r8=0), r9=prog.got.
+- New `ove_flat_t` field: `uintptr_t interp_loadmap;` (r8; 0 for static).
+- Per-engine seam: FR `arg_tramp` `mov r8, interp_loadmap` (from launch_args); same for NuttX/
+  Zephyr later.
+
+### D3 — boot: GDB-iterate ld.so through openat/read/pread64/mmap2 of libc.so to busybox main.
 
 ## Syscalls to add/upgrade (linux/ove_linux_syscall.c)
 - **`pread64` (180)** NEW: read `count` bytes at `offset` (64-bit, ARM passes hi/lo + a pad)
