@@ -45,10 +45,19 @@ function(ove_linux_generate_fixtures out_var)
                     "    tests/sim/zephyr-linux/regen-rootfs-fixture.sh\n"
                     "  or set -DOVE_BUILDROOT=<tree with output/images/rootfs.cpio>.")
             endif()
+            # Zephyr runs the program UNPRIVILEGED: place the cpio in an executable .text
+            # subsection so its user threads can execute libc.so's RO text IN-PLACE from the
+            # embedded cpio (the kernel's user-RX .text MPU region already covers .text — no
+            # separate partition, so no MPU-budget overflow). FreeRTOS/NuttX run privileged and
+            # reach .rodata directly, so they keep the default section.
+            set(_extra_args)
+            if(OVE_RTOS STREQUAL "zephyr")
+                set(_extra_args "-DSECTION=.text.ove_rootfs")
+            endif()
             execute_process(
                 COMMAND ${CMAKE_COMMAND} -DIN=${cpio}
                         -DOUT=${gendir}/loader_rootfs_image.h
-                        -DSYM=ove_test_rootfs_cpio -P ${embed}
+                        -DSYM=ove_test_rootfs_cpio ${_extra_args} -P ${embed}
                 RESULT_VARIABLE _rc)
             if(NOT _rc EQUAL 0)
                 message(FATAL_ERROR "embed ${cpio} failed (${_rc})")
