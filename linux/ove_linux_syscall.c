@@ -747,20 +747,26 @@ static long sys_exit(ove_lnx_proc_t *p, int status)
  * Anonymous mmap, backed by the process arena (uClibc's malloc uses it for
  * larger allocations). File mappings need a VFS and are not supported yet.
  */
-static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, int flags, int fd)
+static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, int flags, int fd,
+		      uint32_t pgoff)
 {
 	(void)addr;
 	(void)prot;
-	(void)fd; /* anonymous mappings ignore fd; file mmap is unsupported */
-	if (!(flags & OVE_LNX_MAP_ANONYMOUS))
-		return -OVE_LNX_ENOSYS;
 	if (len == 0)
 		return -OVE_LNX_EINVAL;
 
 	void *m = ove_arena_alloc(p->arena, len);
 	if (!m)
 		return -OVE_LNX_ENOMEM;
-	memset(m, 0, len); /* anonymous memory reads as zero */
+	memset(m, 0, len); /* anon reads as zero; also zero-fills a file map's bss tail */
+	if (!(flags & OVE_LNX_MAP_ANONYMOUS) && fd >= 0) {
+		/* File-backed mapping: ld.so loads a .so's read-only segment (the symtab/hash/
+		 * text) this way on NOMMU — read the file's bytes at the page offset into the
+		 * freshly-allocated block. (Anonymous maps ignore the fd.) */
+		long r = sys_pread(p, fd, m, len, pgoff * 4096u);
+		if (r < 0)
+			return r;
+	}
 	return (long)(uintptr_t)m;
 }
 
@@ -1985,7 +1991,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_brk:
 		return sys_brk(proc, (uintptr_t)a0);
 	case OVE_LNX_NR_mmap2:
-		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4);
+		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4,
+				 (uint32_t)a5);
 	case OVE_LNX_NR_munmap:
 		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
 	case OVE_LNX_NR_mprotect: /* NOMMU: RELRO/protection is a no-op */
