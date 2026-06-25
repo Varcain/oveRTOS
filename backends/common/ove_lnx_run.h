@@ -29,6 +29,8 @@
 
 #define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
+#define OVE_LNX_DYN_POOL_SIZE 0xC0000u /* 768K: a dynamic proc's arena (ld.so mmaps libc.so ~500K
+					* + its heap from here; in PSRAM, far past the 96K arena) */
 /* Concurrent process model (Phase D): the run loop coordinates a live process SET,
  * each loaded image in its own region. OVE_LNX_NREG = max images live at once
  * (init + login-shell + a few concurrent jobs); OVE_LNX_NSLOT = NREG + vfork-window
@@ -94,6 +96,11 @@ struct ove_lnx_engine {
 	 * also times out (ms) for sleeper deadlines + the ps/top snapshot refresh. */
 	void (*event_post)(void);
 	void (*event_wait)(unsigned ms);
+	/* FDPIC dynamic linking: a per-region scratch pool the dynamic arena lives in — ld.so
+	 * mmaps libc.so (~500K) from it, far past the in-region 96K arena. NULL if the engine
+	 * has no room (dynamic execs then fail to launch; static/bFLT unaffected). Returns
+	 * region `ridx`'s slice + its size. (an500: PSRAM @ 0x60000000.) */
+	uint8_t *(*dyn_pool)(int ridx, size_t *size);
 };
 
 /* ---- shared state (defined in ove_lnx_run.c) ------------------------------- */

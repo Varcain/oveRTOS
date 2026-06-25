@@ -150,6 +150,9 @@ typedef struct ove_flat {
 	uintptr_t got;	     /**< FDPIC: the GOT base (DT_PLTGOT). For the interpreter this is
 			      *   r9 at entry; for the exec it is what ld.so installs as the
 			      *   program GOT. */
+	uintptr_t interp_loadmap; /**< FDPIC dynamic: the interpreter (ld.so) loadmap → r8 at
+				   *   entry; 0 for static. Filled by the launcher, not the
+				   *   loader (which loads one object at a time). */
 } ove_flat_t;
 
 /**

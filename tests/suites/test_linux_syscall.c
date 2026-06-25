@@ -228,7 +228,7 @@ static void test_lnx_setup_stack(void **state)
 	const char *const envp[] = {"PATH=/bin", "HOME=/", NULL};
 
 	/* uClinux/bFLT layout: sp[0]=argc, sp[1]=argv ptr, sp[2]=envp ptr. */
-	uintptr_t *sp = ove_lnx_setup_stack(stk, sizeof(stk), 2, argv, envp, 0, 0, 0, 0);
+	uintptr_t *sp = ove_lnx_setup_stack(stk, sizeof(stk), 2, argv, envp, 0, 0, 0, 0, 0);
 	assert_non_null(sp);
 	assert_int_equal((uintptr_t)sp & 7u, 0); /* SP is 8-aligned */
 
@@ -251,7 +251,7 @@ static void test_lnx_setup_stack(void **state)
 	assert_int_equal(aux[4], OVE_LNX_AT_NULL);
 
 	/* A NULL environment is accepted (empty envp). */
-	uintptr_t *sp2 = ove_lnx_setup_stack(stk, sizeof(stk), 1, argv, NULL, 0, 0, 0, 0);
+	uintptr_t *sp2 = ove_lnx_setup_stack(stk, sizeof(stk), 1, argv, NULL, 0, 0, 0, 0, 0);
 	assert_non_null(sp2);
 	assert_int_equal((int)sp2[0], 1);
 	char *const *av2 = (char *const *)sp2[1];

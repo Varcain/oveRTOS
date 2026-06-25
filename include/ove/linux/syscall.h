@@ -424,6 +424,16 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 			   char *namebuf, size_t namebuf_len);
 
 /**
+ * @brief Resolve an absolute path through a rootfs (following symlinks) to a file's bytes.
+ *
+ * Used by the run loop to locate the FDPIC interpreter (ld.so) at launch, before a proc
+ * exists. Follows up to 8 symlink hops (each normalized against the link's directory).
+ * @return 0 with @p data / @p len set, or a negative errno (@c -ENOENT if unresolved).
+ */
+long ove_lnx_rootfs_resolve(const ove_lnx_file_t *fs, int count, const char *abspath,
+			    const uint8_t **data, size_t *len);
+
+/**
  * @brief Initialise a process context with an arena-backed program break.
  *
  * Reserves @p brk_bytes from @p arena for the program break. The caller wires
@@ -473,7 +483,7 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
  */
 void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
 			  const char *const envp[], int fdpic, uintptr_t phdr, int phnum,
-			  uintptr_t entry);
+			  uintptr_t entry, uintptr_t at_base);
 
 /**
  * @brief Dispatch one Linux syscall against @p proc.
