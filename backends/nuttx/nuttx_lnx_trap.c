@@ -49,6 +49,11 @@ extern int arm_svcall(int irq, void *context, void *arg);
 
 /* ---- NuttX-specific state -------------------------------------------------- */
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
+/* Per-region dynamic-link scratch pool: a dynamic FDPIC proc's arena lives here so ld.so can
+ * mmap libc.so (~500K), far past the in-region arena. NuttX runs from PSRAM (0x60000000, 16M),
+ * so this plain .bss array already lands in PSRAM — no dedicated section is needed (unlike the
+ * FreeRTOS seam, whose 4M SRAM is too tight beside the 2M of regions). */
+static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] __attribute__((aligned(32)));
 static uintptr_t g_region_stack_lo[OVE_LNX_NREG];
 static struct task_tcb_s g_tcb[OVE_LNX_NSLOT];
 static int g_pid[OVE_LNX_NSLOT];
@@ -74,7 +79,13 @@ static int ove_lnx_svc_handler(int irq, void *context, void *arg)
 	 * else (NuttX's own scheduling svcs from kernel .text) chains to arm_svcall.
 	 * prog_regions is one contiguous block, so a single range test covers all. */
 	uintptr_t pc = (uintptr_t)regs[REG_PC];
-	if (pc < (uintptr_t)prog_regions || pc >= (uintptr_t)prog_regions + sizeof(prog_regions))
+	int in_region = pc >= (uintptr_t)prog_regions &&
+			pc < (uintptr_t)prog_regions + sizeof(prog_regions);
+	/* A dynamic FDPIC proc's libc.so runs from the dyn_pool arena (not prog_regions), so the
+	 * svc PC in libc.so's own syscall wrappers lands there — count the arena as "program"
+	 * too, else the Linux syscall is misrouted to NuttX's arm_svcall (the program hangs). */
+	int in_arena = pc >= (uintptr_t)dyn_pools && pc < (uintptr_t)dyn_pools + sizeof(dyn_pools);
+	if (!in_region && !in_arena)
 		return arm_svcall(irq, context, arg);
 	int sidx = current_slot();
 	if (sidx < 0)
@@ -126,6 +137,13 @@ static uint8_t *nuttx_region(int ridx)
 	return prog_regions[ridx];
 }
 
+static uint8_t *nuttx_dyn_pool(int ridx, size_t *size)
+{
+	if (size)
+		*size = OVE_LNX_DYN_POOL_SIZE;
+	return dyn_pools[ridx];
+}
+
 /* nxtask_init needs a main_t entry; we override REG_PC, so it is never called. */
 static int slot_noentry(int argc, char *argv[])
 {
@@ -153,7 +171,6 @@ static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
 static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
 			      void *stack_lo)
 {
-	(void)prog;
 	g_region_stack_lo[ridx] = (uintptr_t)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)stack_lo, (uintptr_t)sp) != 0)
 		return -1;
@@ -161,6 +178,13 @@ static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *
 	regs[REG_PC] = (uint32_t)(uintptr_t)entry & ~1u;
 	regs[REG_SP] = (uint32_t)(uintptr_t)sp;
 	regs[REG_R0] = 0; /* static fini = NULL (uClinux entry convention) */
+	/* FDPIC entry registers (all 0 for bFLT, which ignores them): r7 = the exec's loadmap
+	 * (the crt _start self-relocates from it); r8 = ld.so's loadmap (dynamic only); r9 = the
+	 * GOT base — for a dynamic exec ld.so's _start reads the entry r9 as its _DYNAMIC ptr. The
+	 * resume path restores all three from the captured ctx->r4_11[3..5]. */
+	regs[REG_R7] = prog->is_fdpic ? (uint32_t)prog->loadmap : 0u;
+	regs[REG_R8] = prog->is_fdpic ? (uint32_t)prog->interp_loadmap : 0u;
+	regs[REG_R9] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
 	nxtask_activate(&g_tcb[sidx].cmn);
 	return 0;
 }
@@ -224,6 +248,7 @@ static void nuttx_event_wait(unsigned ms)
 
 static const struct ove_lnx_engine g_nuttx_engine = {
 	.region = nuttx_region,
+	.dyn_pool = nuttx_dyn_pool,
 	.spawn_launch = nuttx_spawn_launch,
 	.spawn_resume = nuttx_spawn_resume,
 	.abort_slot = nuttx_abort_slot,
