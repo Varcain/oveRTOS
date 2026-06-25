@@ -1378,11 +1378,16 @@ static long sys_ftruncate(ove_lnx_proc_t *p, int fd, uint64_t length)
 	return 0;
 }
 
-/* Fill an ARM kstat64 from a node's mode + size. */
-static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t mode, uint64_t size)
+/* Fill an ARM kstat64 from a node's inode + mode + size. */
+static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t ino, uint32_t mode, uint64_t size)
 {
 	memset(st, 0, sizeof(*st));
 	st->st_nlink = 1;
+	/* A UNIQUE, non-zero inode per node: ld.so dedups loaded objects by (st_dev, st_ino),
+	 * so a zero inode makes every .so look already-loaded — libc.so would be skipped and
+	 * its symbols never resolve. */
+	st->__st_ino = ino;
+	st->st_ino = ino;
 	st->st_mode = mode;
 	st->st_size = (int64_t)size;
 	/* A character device blksize makes uClibc block-buffer stdio. */
@@ -1398,16 +1403,18 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 	if (!statbuf)
 		return -OVE_LNX_EFAULT;
 	if (s->kind == OVE_LNX_FD_FILE)
-		fill_kstat64(statbuf, file_mode(&p->fs[s->file_idx]), p->fs[s->file_idx].size);
+		fill_kstat64(statbuf, 1u + (uint32_t)s->file_idx,
+			     file_mode(&p->fs[s->file_idx]), p->fs[s->file_idx].size);
 	else if (s->kind == OVE_LNX_FD_TMPFS)
-		fill_kstat64(statbuf, g_wnodes[s->file_idx].mode, g_wnodes[s->file_idx].size);
+		fill_kstat64(statbuf, 0x100000u + (uint32_t)s->file_idx,
+			     g_wnodes[s->file_idx].mode, g_wnodes[s->file_idx].size);
 	else if (s->kind == OVE_LNX_FD_PROC)
-		fill_kstat64(statbuf,
+		fill_kstat64(statbuf, 0x200000u + (uint32_t)s->file_idx,
 			     g_procf[s->file_idx].is_dir ? (OVE_LNX_S_IFDIR | 0555u)
 							 : (OVE_LNX_S_IFREG | 0444u),
 			     g_procf[s->file_idx].len);
 	else
-		fill_kstat64(statbuf, OVE_LNX_S_IFCHR | 0620u, 0);
+		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, OVE_LNX_S_IFCHR | 0620u, 0);
 	return 0;
 }
 
@@ -1424,12 +1431,12 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 		uint32_t m = proc_mode(abspath, p);
 		if (m == 0)
 			return -OVE_LNX_ENOENT;
-		fill_kstat64(statbuf, m, 0);
+		fill_kstat64(statbuf, 0x200000u, m, 0);
 		return 0;
 	}
 	int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
 	if (wi >= 0) {
-		fill_kstat64(statbuf, g_wnodes[wi].mode, g_wnodes[wi].size);
+		fill_kstat64(statbuf, 0x100000u + (uint32_t)wi, g_wnodes[wi].mode, g_wnodes[wi].size);
 		return 0;
 	}
 	int idx = fs_lookup(p, abspath);
@@ -1440,7 +1447,7 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 		if (idx < 0)
 			return -OVE_LNX_ENOENT;
 	}
-	fill_kstat64(statbuf, file_mode(&p->fs[idx]), p->fs[idx].size);
+	fill_kstat64(statbuf, 1u + (uint32_t)idx, file_mode(&p->fs[idx]), p->fs[idx].size);
 	return 0;
 }
 
