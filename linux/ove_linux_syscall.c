@@ -1222,7 +1222,9 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	/* Read: a writable node shadows the rootfs; else the read-only rootfs. */
 	if (wi >= 0)
 		return fd_alloc(p, OVE_LNX_FD_TMPFS, wi, 0);
-	int idx = fs_lookup(p, path);
+	/* Follow symlinks so a read open of e.g. /lib/libc.so.0 -> libuClibc.so returns the
+	 * target ELF (ld.so opens its .so deps by their symlinked SONAMEs). */
+	int idx = fs_follow(p, fs_lookup(p, path));
 	if (idx >= 0)
 		return fd_alloc(p, OVE_LNX_FD_FILE, idx, 0);
 	return -OVE_LNX_ENOENT;
