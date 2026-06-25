@@ -63,7 +63,27 @@ In `launch()` (ove_lnx_run.c), after `load_fdpic(&prog, exec, .., is_interp=0)`:
 - Per-engine seam: FR `arg_tramp` `mov r8, interp_loadmap` (from launch_args); same for NuttX/
   Zephyr later.
 
-### D3 — boot: GDB-iterate ld.so through openat/read/pread64/mmap2 of libc.so to busybox main.
+### D2 pt2 DONE (commit afb0968 + 8376adc) — ld.so loads + runs
+launch() loads ld.so just past the exec + enters it. **Verified on-target**: r7=exec-loadmap,
+r8=ld.so-loadmap, r9=GOT are all correct at entry (GDB break arg_tramp). THE r9 BUG (commit
+8376adc): arg_tramp set r7/r8 but NOT r9 — ld.so's _start passes the ENTRY r9 to _dl_start as
+its _DYNAMIC ptr, so it must be set (the program crt overwrites r9 → 0 fine for static). Wired
+r9=prog.got via the launch_args struct (arg_tramp reads fields by offset). prog.got for ld.so
+= got_base = ld_base (ld.so has no DT_PLTGOT → falls back to the load base; _dl_parse_dynamic_
+info accepts it, so it's "right enough"). FR seam loads r7/r8/r9 from the struct.
+
+### D3 — IN PROGRESS: ld.so runs its bootstrap, faults in _dl_malloc
+With r7/r8/r9 correct, ld.so self-relocates (.rofixup via __self_reloc) → _dl_start →
+_dl_parse_dynamic_info (OK) → **_dl_malloc, where it HardFaults** at an FDPIC indirect call:
+`ldr lr,[r9,r3]; ldr r3,[lr,#24]; ldr r9,[r3,#4]; ldr r2,[r3]; blx r2` — the function
+descriptor at [lr+24] is unrelocated (BFAR=garbage). NOT the .rel.dyn FUNCDESC_VALUE (the
+bootstrap applies those, arm/dl-startup.h:257). Next suspects: (a) an unrelocated GOT entry
+(lr) — is __self_reloc's .rofixup pass covering the whole GOT? verify the working r9/GOT
+(0x2004b710 = ld_base+0x5fa0=.got) + walk [lr]; (b) the heap — _dl_malloc's first mmap2/brk
+returning something it then derefs wrong; (c) is _dl_malloc reached before the bootstrap reloc
+loop finishes? GDB recipe: qemu `-gdb tcp::1234 -S`, `break arg_tramp` (r7/r8/r9), `break
+HardFault_Handler`, `frame 2`+BFAR; map the fault PC via `nm -n ld-uClibc*.so` (ld_base =
+ldso-entry − 0xab1). The full openat/read/pread64/mmap2 libc.so load is still downstream.
 
 ## Syscalls to add/upgrade (linux/ove_linux_syscall.c)
 - **`pread64` (180)** NEW: read `count` bytes at `offset` (64-bit, ARM passes hi/lo + a pad)
