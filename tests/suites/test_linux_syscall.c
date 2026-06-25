@@ -118,9 +118,10 @@ static void test_lnx_mmap(void **state)
 	/* munmap succeeds (wholesale reclaim at teardown). */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_munmap, m, 256, 0, 0, 0, 0), 0);
 
-	/* A file-backed mapping is refused until there is a VFS. */
+	/* A file-backed mapping reads the fd's bytes into the block (ld.so loads .so segments
+	 * this way on NOMMU); an unopened fd is rejected. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 256, 0x3, 0, 3, 0),
-			 -OVE_LNX_ENOSYS);
+			 -OVE_LNX_EBADF);
 
 	/* Exhausting the arena yields -ENOMEM rather than a crash. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 1 << 20, 0x3,
