@@ -117,11 +117,14 @@ __attribute__((naked)) void SVC_Handler(void)
 }
 
 /* ---- thread entry trampolines (naked) -------------------------------------- */
-struct launch_args {
-	void *sp;
-	void *entry;
-	void *loadmap;	      /* FDPIC: the exec's elf32_fdpic_loadmap for r7 (0 for bFLT). */
-	void *interp_loadmap; /* FDPIC dynamic: ld.so's loadmap for r8 (0 for static/bFLT). */
+struct launch_args { /* arg_tramp reads these by offset — keep the order. */
+	void *sp;	      /* +0 */
+	void *entry;	      /* +4 */
+	void *loadmap;	      /* +8  FDPIC: the exec's elf32_fdpic_loadmap for r7 (0 for bFLT). */
+	void *interp_loadmap; /* +12 FDPIC dynamic: ld.so's loadmap for r8 (0 for static/bFLT). */
+	void *got;	      /* +16 FDPIC: the GOT base for r9. ld.so's _start passes the entry
+			       *     r9 to _dl_start as its _DYNAMIC ptr, so it MUST be set (the
+			       *     program crt overwrites r9, so it's harmless for static). */
 };
 struct resume_args {
 	long r0;
@@ -130,26 +133,26 @@ struct resume_args {
 static struct launch_args g_largs[OVE_LNX_NSLOT];
 static struct resume_args g_rargs[OVE_LNX_NSLOT];
 
-__attribute__((naked)) static void arg_tramp(void *sp __attribute__((unused)),
-					     void *entry __attribute__((unused)),
-					     void *loadmap __attribute__((unused)),
-					     void *interp_loadmap __attribute__((unused)))
+__attribute__((naked)) static void arg_tramp(struct launch_args *a __attribute__((unused)))
 {
-	/* AAPCS: r0 = sp, r1 = entry, r2 = loadmap, r3 = interp_loadmap. The FDPIC entry
-	 * contract: r7 = the executable's loadmap (the crt _start self-relocates from it),
-	 * r8 = the interpreter (ld.so) loadmap — 0 for a static program (the crt branches on
-	 * r8, so leaving it uninitialised would deref garbage), the ld.so loadmap for a
-	 * dynamic exec (ld.so self-relocates from it + derives r9 itself). Both 0 for bFLT. */
-	__asm__ volatile("mov sp, r0\n"
-			 "mov r7, r2\n"
-			 "mov r8, r3\n"
+	/* a is in r0. Set the FDPIC entry registers from the struct, switch to the program
+	 * stack last (it clobbers sp), then branch. r7 = the exec's loadmap (the crt _start
+	 * self-relocates from it); r8 = the interpreter (ld.so) loadmap — 0 for static (the
+	 * crt branches on it, so leaving it garbage would fault); r9 = the GOT base — ld.so's
+	 * _start passes the ENTRY r9 to _dl_start as its _DYNAMIC pointer, so it MUST be set
+	 * for a dynamic exec (the program crt overwrites r9, so 0 is fine for static). Offsets
+	 * must match struct launch_args. All of r7/r8/r9 are 0 for bFLT, which ignores them. */
+	__asm__ volatile("ldr r7, [r0, #8]\n"  /* loadmap */
+			 "ldr r8, [r0, #12]\n" /* interp_loadmap */
+			 "ldr r9, [r0, #16]\n" /* got */
+			 "ldr r1, [r0, #4]\n"  /* entry */
+			 "ldr sp, [r0, #0]\n"  /* program sp (last — clobbers sp) */
 			 "mov r0, #0\n"
 			 "bx  r1\n");
 }
 static void arg_tramp_task(void *arg)
 {
-	struct launch_args *a = (struct launch_args *)arg;
-	arg_tramp(a->sp, a->entry, a->loadmap, a->interp_loadmap);
+	arg_tramp((struct launch_args *)arg);
 }
 
 __attribute__((naked)) static void resume_tramp(void *r0val __attribute__((unused)),
@@ -191,6 +194,7 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	g_largs[sidx].entry = entry;
 	g_largs[sidx].loadmap = prog->is_fdpic ? (void *)prog->loadmap : (void *)0;
 	g_largs[sidx].interp_loadmap = prog->is_fdpic ? (void *)prog->interp_loadmap : (void *)0;
+	g_largs[sidx].got = prog->is_fdpic ? (void *)prog->got : (void *)0;
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
 	g_tid[sidx] = xTaskCreateStatic(arg_tramp_task, nm, TRAMP_STACK_WORDS, &g_largs[sidx],
 					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);
