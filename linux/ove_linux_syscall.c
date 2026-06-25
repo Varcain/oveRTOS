@@ -1827,6 +1827,7 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 
 	uint32_t mode;
 	uint64_t size;
+	uint32_t ino = 0x300000u; /* unique, non-zero inode: ld.so dedups by (st_dev, st_ino) */
 	if (path && path[0] && !(flags & OVE_LNX_AT_EMPTY_PATH)) {
 		char abspath[OVE_LNX_PATH_MAX];
 		long rr = resolve_path(p, path, abspath, sizeof(abspath));
@@ -1838,9 +1839,11 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 			if (mode == 0)
 				return -OVE_LNX_ENOENT;
 			size = 0;
+			ino = 0x200000u;
 		} else if ((wi = wfs_find(abspath)) >= 0) { /* writable overlay shadows rootfs */
 			mode = g_wnodes[wi].mode;
 			size = g_wnodes[wi].size;
+			ino = 0x100000u + (uint32_t)wi;
 		} else {
 			int idx = fs_lookup(p, abspath);
 			if (idx < 0)
@@ -1852,6 +1855,7 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 			}
 			mode = file_mode(&p->fs[idx]);
 			size = p->fs[idx].size;
+			ino = 1u + (uint32_t)idx;
 		}
 	} else {
 		ove_lnx_fd_t *s = fd_slot(p, dirfd);
@@ -1860,12 +1864,15 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 		if (s->kind == OVE_LNX_FD_FILE) {
 			mode = file_mode(&p->fs[s->file_idx]);
 			size = p->fs[s->file_idx].size;
+			ino = 1u + (uint32_t)s->file_idx;
 		} else if (s->kind == OVE_LNX_FD_TMPFS) {
 			mode = g_wnodes[s->file_idx].mode;
 			size = g_wnodes[s->file_idx].size;
+			ino = 0x100000u + (uint32_t)s->file_idx;
 		} else {
 			mode = OVE_LNX_S_IFCHR | 0620u;
 			size = 0;
+			ino = 0x300000u + (uint32_t)s->file_idx;
 		}
 	}
 
@@ -1877,6 +1884,7 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 	st->stx_mode = (uint16_t)mode;
 	st->stx_size = size;
 	st->stx_blocks = (size + 511u) / 512u;
+	st->stx_ino = ino; /* ld.so dedups loaded .so objects by (st_dev, st_ino) */
 	return 0;
 }
 
