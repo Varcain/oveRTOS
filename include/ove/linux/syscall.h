@@ -81,6 +81,8 @@ extern "C" {
 #define OVE_LNX_NR_getcwd 183
 #define OVE_LNX_NR_vfork 190
 #define OVE_LNX_NR_mmap2 192
+#define OVE_LNX_NR_mprotect 125 /* ld.so RELRO hardening — no-op on NOMMU */
+#define OVE_LNX_NR_pread64 180  /* ld.so loads .so segments via positioned reads (NOMMU) */
 #define OVE_LNX_NR_fstat64 197
 #define OVE_LNX_NR_getuid32 199
 #define OVE_LNX_NR_getgid32 200

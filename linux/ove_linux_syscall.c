@@ -670,6 +670,63 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 	return (long)n;
 }
 
+/*
+ * pread64(fd, buf, count, offset): a positioned read that does NOT move the fd offset.
+ * ld.so uses it to pull each PT_LOAD of a .so out of the rootfs into the anonymous memory
+ * it mapped (the NOMMU path: MAP_FIXED-file mmap fails, so it mmaps anon + preads). Only
+ * regular (seekable) files are supported — console/pipe return ESPIPE.
+ */
+static long sys_pread(ove_lnx_proc_t *p, int fd, void *buf, size_t len, uint32_t off)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	if (len && !buf)
+		return -OVE_LNX_EFAULT;
+
+	const uint8_t *data;
+	size_t size;
+	if (s->kind == OVE_LNX_FD_TMPFS) {
+		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+			return -OVE_LNX_EISDIR;
+		data = (const uint8_t *)t->data;
+		size = t->size;
+	} else if (s->kind == OVE_LNX_FD_PROC) {
+		if (g_procf[s->file_idx].is_dir)
+			return -OVE_LNX_EISDIR;
+		data = (const uint8_t *)g_procf[s->file_idx].buf;
+		size = g_procf[s->file_idx].len;
+	} else if (s->kind == OVE_LNX_FD_CONSOLE || s->kind == OVE_LNX_FD_PIPE) {
+		return -OVE_LNX_ESPIPE; /* not seekable */
+	} else {
+		const ove_lnx_file_t *f = &p->fs[s->file_idx];
+		if ((file_mode(f) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+			return -OVE_LNX_EISDIR;
+		data = (const uint8_t *)f->data;
+		size = f->size;
+	}
+	if ((size_t)off >= size)
+		return 0; /* EOF */
+	size_t n = size - off;
+	if (n > len)
+		n = len;
+	memcpy(buf, data + off, n);
+	return (long)n;
+}
+
+/*
+ * mprotect: a no-op on NOMMU (there is no per-page protection). ld.so calls it to apply
+ * PT_GNU_RELRO hardening; it must succeed rather than fault the loader.
+ */
+static long sys_mprotect(uintptr_t addr, size_t len, int prot)
+{
+	(void)addr;
+	(void)len;
+	(void)prot;
+	return 0;
+}
+
 static long sys_brk(ove_lnx_proc_t *p, uintptr_t addr)
 {
 	/* Linux brk: move the break to addr if valid, then return the (possibly
@@ -1902,6 +1959,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4);
 	case OVE_LNX_NR_munmap:
 		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
+	case OVE_LNX_NR_mprotect: /* NOMMU: RELRO/protection is a no-op */
+		return sys_mprotect((uintptr_t)a0, (size_t)a1, (int)a2);
+	case OVE_LNX_NR_pread64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
+		return sys_pread(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, (uint32_t)a4);
 	case OVE_LNX_NR_open: /* legacy open(path, flags, mode): dirfd = cwd */
 		return sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
 	case OVE_LNX_NR_execve: /* (path, argv, envp); envp ignored for now */
