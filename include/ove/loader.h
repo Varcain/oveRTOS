@@ -145,6 +145,11 @@ typedef struct ove_flat {
 			      *   crt _start self-relocates from it). 0 for bFLT. */
 	uintptr_t phdr;	     /**< FDPIC: runtime address of the program headers (AT_PHDR). */
 	int phnum;	     /**< FDPIC: number of program headers (AT_PHNUM). */
+	int is_dynamic;	     /**< FDPIC: non-zero if the exec has DT_NEEDED (needs ld.so). The
+			      *   personality must then ALSO load the interpreter + enter it. */
+	uintptr_t got;	     /**< FDPIC: the GOT base (DT_PLTGOT). For the interpreter this is
+			      *   r9 at entry; for the exec it is what ld.so installs as the
+			      *   program GOT. */
 } ove_flat_t;
 
 /**
@@ -185,13 +190,16 @@ int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size,
  * @param[in]  image_size  Size of @p image in bytes.
  * @param[in]  region      Destination; must be executable before @c entry runs.
  * @param[in]  region_size Size of @p region in bytes.
+ * @param[in]  is_interp   Non-zero when loading the interpreter (ld.so): the personality
+ *                         loads its segments + loadmap but applies NO .rel.dyn (ld.so
+ *                         self-relocates). A dynamic exec (DT_NEEDED) likewise skips relocs
+ *                         (auto-detected, @c is_dynamic reported) for ld.so to apply.
  * @return OVE_OK on success; OVE_ERR_INVALID_PARAM on a malformed/non-FDPIC image;
- *         OVE_ERR_NOT_SUPPORTED for a dynamic (PT_INTERP) image or an unhandled reloc;
- *         OVE_ERR_NO_MEMORY if @p region is too small.
+ *         OVE_ERR_NOT_SUPPORTED for an unhandled reloc; OVE_ERR_NO_MEMORY if too small.
  * @note Requires @c CONFIG_OVE_LOADER.
  */
 int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
-			  size_t region_size);
+			  size_t region_size, int is_interp);
 
 #ifdef __cplusplus
 }
