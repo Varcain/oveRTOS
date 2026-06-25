@@ -31,6 +31,11 @@
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
 
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
+/* Per-region dynamic-link scratch pool in PSRAM (0x60000000): a dynamic FDPIC proc's arena
+ * lives here so ld.so can mmap libc.so (~500K) — far past the in-region 96K arena. an500 RAM
+ * (4M) is too tight for this beside the 2M of regions; PSRAM is 16M. NOLOAD → no flash cost. */
+static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
+	__attribute__((section(".psram"), aligned(32)));
 static StaticTask_t g_tcb[OVE_LNX_NSLOT];
 static TaskHandle_t g_tid[OVE_LNX_NSLOT];
 static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS] __attribute__((aligned(8)));
@@ -115,7 +120,8 @@ __attribute__((naked)) void SVC_Handler(void)
 struct launch_args {
 	void *sp;
 	void *entry;
-	void *loadmap; /* FDPIC: the elf32_fdpic_loadmap for r7 (NULL/0 for bFLT). */
+	void *loadmap;	      /* FDPIC: the exec's elf32_fdpic_loadmap for r7 (0 for bFLT). */
+	void *interp_loadmap; /* FDPIC dynamic: ld.so's loadmap for r8 (0 for static/bFLT). */
 };
 struct resume_args {
 	long r0;
@@ -126,23 +132,24 @@ static struct resume_args g_rargs[OVE_LNX_NSLOT];
 
 __attribute__((naked)) static void arg_tramp(void *sp __attribute__((unused)),
 					     void *entry __attribute__((unused)),
-					     void *loadmap __attribute__((unused)))
+					     void *loadmap __attribute__((unused)),
+					     void *interp_loadmap __attribute__((unused)))
 {
-	/* AAPCS: r0 = sp, r1 = entry, r2 = loadmap. The FDPIC entry contract: r7 = the
-	 * executable's loadmap (the crt _start self-relocates from it), r8 = the
-	 * interpreter (ld.so) loadmap which is 0 for a static program — the crt branches
-	 * on r8, so leaving it uninitialised makes the crt deref garbage. Both 0 for
-	 * bFLT, which ignores them. */
+	/* AAPCS: r0 = sp, r1 = entry, r2 = loadmap, r3 = interp_loadmap. The FDPIC entry
+	 * contract: r7 = the executable's loadmap (the crt _start self-relocates from it),
+	 * r8 = the interpreter (ld.so) loadmap — 0 for a static program (the crt branches on
+	 * r8, so leaving it uninitialised would deref garbage), the ld.so loadmap for a
+	 * dynamic exec (ld.so self-relocates from it + derives r9 itself). Both 0 for bFLT. */
 	__asm__ volatile("mov sp, r0\n"
 			 "mov r7, r2\n"
-			 "mov r8, #0\n"
+			 "mov r8, r3\n"
 			 "mov r0, #0\n"
 			 "bx  r1\n");
 }
 static void arg_tramp_task(void *arg)
 {
 	struct launch_args *a = (struct launch_args *)arg;
-	arg_tramp(a->sp, a->entry, a->loadmap);
+	arg_tramp(a->sp, a->entry, a->loadmap, a->interp_loadmap);
 }
 
 __attribute__((naked)) static void resume_tramp(void *r0val __attribute__((unused)),
@@ -168,6 +175,13 @@ static uint8_t *freertos_region(int ridx)
 	return prog_regions[ridx];
 }
 
+static uint8_t *freertos_dyn_pool(int ridx, size_t *size)
+{
+	if (size)
+		*size = OVE_LNX_DYN_POOL_SIZE;
+	return dyn_pools[ridx];
+}
+
 static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
 				 void *stack_lo)
 {
@@ -176,6 +190,7 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	g_largs[sidx].sp = sp;
 	g_largs[sidx].entry = entry;
 	g_largs[sidx].loadmap = prog->is_fdpic ? (void *)prog->loadmap : (void *)0;
+	g_largs[sidx].interp_loadmap = prog->is_fdpic ? (void *)prog->interp_loadmap : (void *)0;
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
 	g_tid[sidx] = xTaskCreateStatic(arg_tramp_task, nm, TRAMP_STACK_WORDS, &g_largs[sidx],
 					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);
@@ -238,6 +253,7 @@ static void freertos_event_wait(unsigned ms)
 
 static const struct ove_lnx_engine g_freertos_engine = {
 	.region = freertos_region,
+	.dyn_pool = freertos_dyn_pool,
 	.spawn_launch = freertos_spawn_launch,
 	.spawn_resume = freertos_spawn_resume,
 	.abort_slot = freertos_abort_slot,

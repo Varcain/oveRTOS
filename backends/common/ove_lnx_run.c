@@ -331,9 +331,52 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 			: ove_loader_load_flat(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE);
 	if (lrc != OVE_OK)
 		return -1;
+
+	/* FDPIC dynamic exec (DT_NEEDED): load the interpreter ld.so just past the exec in the
+	 * region, build its loadmap, and enter IT (not the program) — r7 = the exec loadmap,
+	 * r8 = ld.so's loadmap, r9 = ld.so's GOT, AT_ENTRY = the program's own entry, AT_BASE =
+	 * ld.so's base. ld.so then loads the .so deps, relocates, and jumps to the program. */
+	uintptr_t pc = prog.entry;	 /* what the seam jumps to (ld.so for a dynamic exec) */
+	uintptr_t at_entry = prog.entry; /* AT_ENTRY = the program's own entry, always */
+	uintptr_t at_base = 0;		 /* AT_BASE = ld.so base (0 when static) */
+	prog.interp_loadmap = 0;
+	int dynamic = prog.is_fdpic && prog.is_dynamic;
+	if (dynamic) {
+		const uint8_t *ld_data = NULL;
+		size_t ld_len = 0;
+		if (ove_lnx_rootfs_resolve(g_cfg->rootfs, g_cfg->rootfs_count,
+					   "/lib/ld-uClibc.so.0", &ld_data, &ld_len) != 0 ||
+		    !ld_data)
+			return -1; /* no interpreter in the rootfs */
+		uintptr_t ld_base = (uintptr_t)region + ((prog.region_used + 15u) & ~15u);
+		ove_flat_t ld;
+		if (ove_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
+					  OVE_LNX_PROG_REGION_SIZE -
+						  (size_t)(ld_base - (uintptr_t)region),
+					  1) != OVE_OK)
+			return -1;
+		pc = ld.entry;
+		at_base = ld_base;
+		prog.interp_loadmap = ld.loadmap; /* r8 */
+		prog.got = ld.got;		  /* r9 */
+		prog.region_used = (size_t)(ld_base - (uintptr_t)region) + ld.region_used;
+	}
+
 	uint8_t *rw = region + ((prog.region_used + 15u) & ~15u);
 	uint8_t *rw_end = region + OVE_LNX_PROG_REGION_SIZE;
-	ove_arena_init(&g_arenas[ridx], rw, OVE_LNX_PROG_ARENA_SIZE);
+	/* A dynamic proc's arena lives in the engine's PSRAM dyn_pool (ld.so mmaps libc.so
+	 * ~500K from it); static/bFLT use the in-region 96K arena. The stack always sits
+	 * in-region above the loaded image(s). */
+	uint8_t *arena_mem = rw;
+	size_t arena_sz = OVE_LNX_PROG_ARENA_SIZE;
+	uint8_t *stack_lo = rw + OVE_LNX_PROG_ARENA_SIZE;
+	if (dynamic) {
+		if (!eng->dyn_pool)
+			return -1; /* this engine has no room to host a dynamic proc */
+		arena_mem = eng->dyn_pool(ridx, &arena_sz);
+		stack_lo = rw; /* the region tail is the stack; the arena is in PSRAM */
+	}
+	ove_arena_init(&g_arenas[ridx], arena_mem, arena_sz);
 	ove_lnx_proc_init(&g_ove_lnx_proc[sidx], &g_arenas[ridx], 0x8000);
 	g_ove_lnx_proc[sidx].write_fn = g_cfg->write_fn;
 	g_ove_lnx_proc[sidx].read_fn = g_cfg->read_fn;
@@ -362,12 +405,11 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 		g_ove_lnx_proc[sidx].comm[cl] = '\0';
 	}
 	ove_lnx_proc_set_rootfs(&g_ove_lnx_proc[sidx], g_cfg->rootfs, g_cfg->rootfs_count);
-	uint8_t *stack_lo = rw + OVE_LNX_PROG_ARENA_SIZE;
 	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL,
-				       prog.is_fdpic, prog.phdr, prog.phnum, prog.entry);
+				       prog.is_fdpic, prog.phdr, prog.phnum, at_entry, at_base);
 	if (!sp)
 		return -1;
-	return eng->spawn_launch(sidx, ridx, &prog, (void *)prog.entry, sp, stack_lo);
+	return eng->spawn_launch(sidx, ridx, &prog, (void *)pc, sp, stack_lo);
 }
 
 /* A child (cpid, status) exited: hand it to its parent (ppid). Wake a parent blocked

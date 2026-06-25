@@ -16,6 +16,7 @@ MEMORY
 {
     FLASH (rx)  : ORIGIN = 0x00000000, LENGTH = 4M
     RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 4M
+    PSRAM (rwx) : ORIGIN = 0x60000000, LENGTH = 16M
 }
 
 ENTRY(Reset_Handler)
@@ -153,6 +154,13 @@ SECTIONS
         PROVIDE(__HeapLimit = .);
         PROVIDE(__heap_end = .);
     } > RAM
+
+    /* Dynamic-FDPIC scratch pools (ld.so's per-proc arena, where it mmaps libc.so) live in
+     * PSRAM @ 0x60000000, NOLOAD so they cost neither flash nor the (full) 4 MB RAM. */
+    .psram (NOLOAD) :
+    {
+        *(.psram*)
+    } > PSRAM
 
     /* Stack at top of RAM. Size comes from startup .s (.space 0x2000). */
     .stack (ORIGIN(RAM) + LENGTH(RAM) - 0x2000) :

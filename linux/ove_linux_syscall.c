@@ -398,7 +398,7 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 
 void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
 			  const char *const envp[], int fdpic, uintptr_t phdr, int phnum,
-			  uintptr_t entry)
+			  uintptr_t entry, uintptr_t at_base)
 {
 	if (!stack || !argv || argc < 0 || argc > OVE_LNX_MAX_VEC)
 		return NULL;
@@ -466,9 +466,9 @@ void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *
 		hdr[k++] = OVE_LNX_AT_PHNUM;
 		hdr[k++] = (uintptr_t)phnum;
 		hdr[k++] = OVE_LNX_AT_BASE;
-		hdr[k++] = 0;
+		hdr[k++] = at_base; /* ld.so's load base for a dynamic exec; 0 when static */
 		hdr[k++] = OVE_LNX_AT_ENTRY;
-		hdr[k++] = entry;
+		hdr[k++] = entry; /* the program's own entry (AT_ENTRY), even when ld.so runs first */
 		hdr[k++] = OVE_LNX_AT_PAGESZ;
 		hdr[k++] = 4096;
 		hdr[k++] = OVE_LNX_AT_RANDOM;
@@ -861,11 +861,11 @@ static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, siz
 	return normalize_abs(joined, out, outlen);
 }
 
-/* Find the rootfs index for an absolute path, or -1. */
-static int fs_lookup(const ove_lnx_proc_t *p, const char *abspath)
+/* Find the rootfs index for an absolute path in (fs,count), or -1. */
+static int fsx_lookup(const ove_lnx_file_t *fs, int count, const char *abspath)
 {
-	for (int i = 0; i < p->fs_count; i++)
-		if (strcmp(p->fs[i].path, abspath) == 0)
+	for (int i = 0; i < count; i++)
+		if (strcmp(fs[i].path, abspath) == 0)
 			return i;
 	return -1;
 }
@@ -875,10 +875,10 @@ static int fs_lookup(const ove_lnx_proc_t *p, const char *abspath)
  * target against the link's own directory (so e.g. /sbin/init -> ../bin/busybox
  * resolves to /bin/busybox). Returns the final non-symlink index, or -1.
  */
-static int fs_follow(const ove_lnx_proc_t *p, int idx)
+static int fsx_follow(const ove_lnx_file_t *fs, int count, int idx)
 {
 	for (int hop = 0; hop < 8 && idx >= 0; hop++) {
-		const ove_lnx_file_t *lnk = &p->fs[idx];
+		const ove_lnx_file_t *lnk = &fs[idx];
 		if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK)
 			return idx;
 		const char *tgt = (const char *)lnk->data;
@@ -900,9 +900,38 @@ static int fs_follow(const ove_lnx_proc_t *p, int idx)
 		raw[rl + tl] = '\0';
 		if (normalize_abs(raw, abs, sizeof(abs)) < 0)
 			return -1;
-		idx = fs_lookup(p, abs);
+		idx = fsx_lookup(fs, count, abs);
 	}
 	return idx;
+}
+
+/* Find the rootfs index for an absolute path, or -1. */
+static int fs_lookup(const ove_lnx_proc_t *p, const char *abspath)
+{
+	return fsx_lookup(p->fs, p->fs_count, abspath);
+}
+
+static int fs_follow(const ove_lnx_proc_t *p, int idx)
+{
+	return fsx_follow(p->fs, p->fs_count, idx);
+}
+
+/*
+ * Resolve an absolute path through (fs,count), following symlinks, to its target file's
+ * bytes. Public so the run loop can locate the FDPIC interpreter (ld.so) at launch, before
+ * a proc (and its fd table) exists. Returns 0 + sets data/len, or -ENOENT.
+ */
+long ove_lnx_rootfs_resolve(const ove_lnx_file_t *fs, int count, const char *abspath,
+			    const uint8_t **data, size_t *len)
+{
+	int idx = fsx_follow(fs, count, fsx_lookup(fs, count, abspath));
+	if (idx < 0)
+		return -OVE_LNX_ENOENT;
+	if (data)
+		*data = fs[idx].data;
+	if (len)
+		*len = fs[idx].size;
+	return 0;
 }
 
 /* ---- synthetic /proc (read-only, generated on open) ----------------------- */
