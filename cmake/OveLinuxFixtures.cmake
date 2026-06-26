@@ -15,18 +15,34 @@ if(COMMAND ove_linux_generate_fixtures)
     return()
 endif()
 
-set(OVE_BUILDROOT "$ENV{HOME}/projects/private/hIRoic/buildroot" CACHE PATH
-    "Buildroot clone providing output/images/rootfs.cpio + the uClibc/bFLT toolchain")
+# The Buildroot tree (OVE_BUILDROOT) and the output subdir (OVE_LINUX_ROOTFS_OUTPUT) are CONFIG_*
+# (Kconfig), set by the generated ove_config.cmake that the board includes before this — NO local
+# path is hardcoded here. A relative OVE_BUILDROOT is resolved against the oveRTOS root below.
 
 # ove_linux_generate_fixtures(<out-dir-var> FIXTURES <names...>)
 #   Generates loader_<name>_image.h headers into <build>/ove_linux_fixtures and
 #   returns that directory in <out-dir-var>. Supported names:
-#     rootfs — embed ${OVE_BUILDROOT}/output/images/rootfs.cpio (SYM ove_test_rootfs_cpio)
+#     rootfs — embed ${OVE_BUILDROOT}/${OVE_LINUX_ROOTFS_OUTPUT}/images/rootfs.cpio (SYM ove_test_rootfs_cpio)
 #   FATAL_ERROR if a required artifact is missing.
 function(ove_linux_generate_fixtures out_var)
     cmake_parse_arguments(F "" "" "FIXTURES" ${ARGN})
     if(NOT DEFINED OVE_DIR)
         message(FATAL_ERROR "ove_linux_generate_fixtures: OVE_DIR is not set")
+    endif()
+    # OVE_BUILDROOT / OVE_LINUX_ROOTFS_OUTPUT come from CONFIG_* via ove_config.cmake. Resolve a
+    # relative OVE_BUILDROOT against the oveRTOS root so the "../buildroot" sibling default works
+    # with no path baked into the sources.
+    if(NOT DEFINED OVE_BUILDROOT OR OVE_BUILDROOT STREQUAL "")
+        message(FATAL_ERROR
+            "CONFIG_OVE_BUILDROOT is empty — point it at your Buildroot tree (menuconfig or a "
+            "defconfig fragment), e.g. CONFIG_OVE_BUILDROOT=\"../buildroot\".")
+    endif()
+    set(_buildroot "${OVE_BUILDROOT}")
+    if(NOT IS_ABSOLUTE "${_buildroot}")
+        get_filename_component(_buildroot "${OVE_DIR}/${_buildroot}" ABSOLUTE)
+    endif()
+    if(NOT DEFINED OVE_LINUX_ROOTFS_OUTPUT OR OVE_LINUX_ROOTFS_OUTPUT STREQUAL "")
+        set(OVE_LINUX_ROOTFS_OUTPUT "output-fdpic")
     endif()
     set(gendir "${CMAKE_BINARY_DIR}/ove_linux_fixtures")
     file(MAKE_DIRECTORY "${gendir}")
@@ -34,7 +50,7 @@ function(ove_linux_generate_fixtures out_var)
 
     foreach(fx ${F_FIXTURES})
         if(fx STREQUAL "rootfs")
-            set(cpio "${OVE_BUILDROOT}/output/images/rootfs.cpio")
+            set(cpio "${_buildroot}/${OVE_LINUX_ROOTFS_OUTPUT}/images/rootfs.cpio")
             # Re-run CMake configure (and thus re-embed) whenever the cpio changes,
             # so a Buildroot rootfs rebuild is picked up by `ove build` alone.
             set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${cpio}")
@@ -43,7 +59,7 @@ function(ove_linux_generate_fixtures out_var)
                     "Linux-personality fixture: ${cpio} not found.\n"
                     "  Build the Buildroot rootfs first:\n"
                     "    tests/sim/zephyr-linux/regen-rootfs-fixture.sh\n"
-                    "  or set -DOVE_BUILDROOT=<tree with output/images/rootfs.cpio>.")
+                    "  or set -DOVE_LINUX_ROOTFS_OUTPUT=output (bFLT) / -DOVE_BUILDROOT=<tree>.")
             endif()
             # Zephyr runs the program UNPRIVILEGED: place the cpio in an executable .text
             # subsection so its user threads can execute libc.so's RO text IN-PLACE from the

@@ -53,6 +53,26 @@ config OVE_LINUX
       syscall dispatch; a per-engine SVC trap feeds it. Requires the module
       loader and the bounded process arena.
 
+config OVE_BUILDROOT
+    string "Buildroot tree path (Linux-personality rootfs.cpio source)"
+    depends on OVE_LINUX
+    default "../buildroot"
+    help
+      Path to the Buildroot clone that provides <output>/images/rootfs.cpio —
+      the BusyBox userspace embedded into the firmware. A relative path is
+      resolved against the oveRTOS root, so the default expects buildroot as a
+      sibling checkout. Build the rootfs with
+      tests/sim/zephyr-linux/regen-rootfs-fixture.sh. NOT used by non-Linux builds.
+
+config OVE_LINUX_ROOTFS_OUTPUT
+    string "Buildroot output subdir for the embedded rootfs.cpio"
+    depends on OVE_LINUX
+    default "output-fdpic"
+    help
+      Which Buildroot output to embed: "output-fdpic" (the dynamic-FDPIC userspace —
+      every process shares one in-place copy of busybox.so/ld.so/libc.so text and
+      Zephyr keeps W^X; the default) or "output" (the legacy bFLT userspace).
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n
