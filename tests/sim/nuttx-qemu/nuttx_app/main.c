@@ -58,8 +58,6 @@ int main(int argc, char *argv[])
 #ifdef CONFIG_OVE_LOADER
 	printf("=== Loader (on-target execute) Tests ===\n");
 	failures += test_loader_target_run();
-	printf("=== Loader bFLT (on-target execute) Tests ===\n");
-	failures += test_loader_flat_target_run();
 #endif
 #ifdef CONFIG_OVE_PROTECTED
 	printf("=== Protected (on-target MPU containment) Tests ===\n");

@@ -182,7 +182,7 @@ static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *
 	regs[REG_PC] = (uint32_t)(uintptr_t)entry & ~1u;
 	regs[REG_SP] = (uint32_t)(uintptr_t)sp;
 	regs[REG_R0] = 0; /* static fini = NULL (uClinux entry convention) */
-	/* FDPIC entry registers (all 0 for bFLT, which ignores them): r7 = the exec's loadmap
+	/* FDPIC entry registers: r7 = the exec's loadmap
 	 * (the crt _start self-relocates from it); r8 = ld.so's loadmap (dynamic only); r9 = the
 	 * GOT base — for a dynamic exec ld.so's _start reads the entry r9 as its _DYNAMIC ptr. The
 	 * resume path restores all three from the captured ctx->r4_11[3..5]. */

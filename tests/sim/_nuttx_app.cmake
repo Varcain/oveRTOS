@@ -123,7 +123,6 @@ set(_srcs
   ${_suite_dir}/test_init_no_alloc.c
   ${_suite_dir}/test_arena.c
   ${OVE_DIR}/tests/ontarget/test_loader_target.c
-  ${OVE_DIR}/tests/ontarget/test_loader_flat_target.c
   ${OVE_DIR}/tests/ontarget/test_protected_target.c
 
   # CMocka (built as part of this app).

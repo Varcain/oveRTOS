@@ -23,7 +23,7 @@ extern "C" {
  *
  * The engine-agnostic core (@ref ove_lnx_syscall) translates the Linux ABI into
  * oveRTOS primitives; a per-engine SEAM binds it to a concrete RTOS engine —
- * trapping the unprivileged program's syscalls, running each loaded bFLT in its
+ * trapping the unprivileged program's syscalls, running each loaded FDPIC program in its
  * own isolated memory domain, and implementing the NOMMU process model
  * (sequentialised vfork/exec/wait, signal delivery, the run loop). This header
  * is the public contract a host application uses; the seam provides the

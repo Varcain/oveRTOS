@@ -5,7 +5,7 @@
 # This file is part of oveRTOS.
 #
 # OveLinuxFixtures.cmake — generate the Linux-personality guest fixtures (the
-# Buildroot rootfs CPIO + the uClibc/bFLT guest test programs) at build time
+# Buildroot rootfs CPIO + the uClibc/FDPIC guest test programs) at build time
 # from the Buildroot artifacts, so the large byte-array headers are NOT
 # committed to git. If the required Buildroot image/toolchain is unavailable the
 # build FAILS with an actionable message (per the project decision to keep
@@ -59,7 +59,7 @@ function(ove_linux_generate_fixtures out_var)
                     "Linux-personality fixture: ${cpio} not found.\n"
                     "  Build the Buildroot rootfs first:\n"
                     "    tests/sim/zephyr-linux/regen-rootfs-fixture.sh\n"
-                    "  or set -DOVE_LINUX_ROOTFS_OUTPUT=output (bFLT) / -DOVE_BUILDROOT=<tree>.")
+                    "  or set -DOVE_LINUX_ROOTFS_OUTPUT=<dir> (default output-fdpic) / -DOVE_BUILDROOT=<tree>.")
             endif()
             # Zephyr runs the program UNPRIVILEGED: place the cpio in an executable .text
             # subsection so its user threads can execute libc.so's RO text IN-PLACE from the

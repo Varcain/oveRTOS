@@ -100,7 +100,7 @@ struct ove_lnx_engine {
 	void (*event_wait)(unsigned ms);
 	/* FDPIC dynamic linking: a per-region scratch pool the dynamic arena lives in — ld.so
 	 * mmaps libc.so (~500K) from it, far past the in-region 96K arena. NULL if the engine
-	 * has no room (dynamic execs then fail to launch; static/bFLT unaffected). Returns
+	 * has no room (dynamic execs then fail to launch; static FDPIC unaffected). Returns
 	 * region `ridx`'s slice + its size. (an500: PSRAM @ 0x60000000.) */
 	uint8_t *(*dyn_pool)(int ridx, size_t *size);
 };
