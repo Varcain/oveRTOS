@@ -122,6 +122,20 @@ int ove_lnx_proc_nslot(void)
  * time, so one ctx per slot suffices; a vfork child resumes from its PARENT's ctx. */
 static struct ove_lnx_resume_ctx g_ctx[OVE_LNX_NSLOT];
 
+/* Per-slot FDPIC runtime load addresses, exported (non-static) for SOURCE-LEVEL GDB DEBUGGING of
+ * the userspace program. An FDPIC exec is loaded at runtime addresses (the loadmap relocates each
+ * segment independently), so the on-disk ELF's link addresses don't match memory. A GDB helper
+ * reads this table and does, per live slot:
+ *   add-symbol-file <rootfs/path/to/prog> -s .text <text_base> -s .data <data_base>
+ * which maps the program's source/symbols onto the running code. comm[] (in g_ove_lnx_proc) names
+ * the program; text_base/data_base are the loadmap-relocated bases of its text/data segments. */
+struct ove_lnx_dbg_s {
+	uintptr_t text_base; /* runtime base of the program's text (shared in-place from the cpio) */
+	uintptr_t data_base; /* runtime base of the program's RW data (in the slot's region) */
+	uintptr_t entry;     /* the program's own entry (AT_ENTRY), not ld.so's */
+};
+struct ove_lnx_dbg_s g_ove_lnx_dbg[OVE_LNX_NSLOT];
+
 static int slot_of(const ove_lnx_proc_t *p)
 {
 	return (int)(p - g_ove_lnx_proc);
@@ -468,6 +482,10 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 				       prog.is_fdpic, prog.phdr, prog.phnum, at_entry, at_base);
 	if (!sp)
 		return -1;
+	/* Publish the program's runtime segment bases for the GDB source-level-debug helper. */
+	g_ove_lnx_dbg[sidx].text_base = prog.text_base;
+	g_ove_lnx_dbg[sidx].data_base = prog.data_base;
+	g_ove_lnx_dbg[sidx].entry = at_entry;
 	return eng->spawn_launch(sidx, ridx, &prog, (void *)pc, sp, stack_lo);
 }
 
