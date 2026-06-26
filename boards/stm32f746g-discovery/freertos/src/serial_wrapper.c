@@ -138,25 +138,30 @@ void USART1_IRQHandler(void)
 	}
 }
 
-/* ---- polled USART1 console for the Linux personality (see serial_wrapper.h) ---- */
+/* ---- IRQ-buffered USART1 console for the Linux personality (see serial_wrapper.h) ---- */
 void serial_poll_begin(void)
 {
 	if (mutex == NULL) /* serial_init() creates `mutex` last — call it once to bring USART1 up */
 		serial_init();
-	/* Hand the receiver to polled access: the personality reads RXNE/RDR directly from the
-	 * svc-exception context, so the IRQ-driven RX must not consume bytes ahead of it. */
-	__HAL_UART_DISABLE_IT(&uartHandle, UART_IT_RXNE);
-	HAL_NVIC_DisableIRQ(USART1_IRQn);
+	/* Keep the IRQ-driven RX (the circular buffer) ON — the personality reads the buffer, not
+	 * the 1-byte RDR. A direct RDR poll loses bytes when a multi-byte command arrives while the
+	 * reading task is time-sliced behind a CPU-bound peer (e.g. `yes &`): the shell then never
+	 * receives the command. The IRQ (prio 2) drains the RDR promptly, but the personality reads
+	 * in the svc-exception context, so SVCall must sit BELOW that IRQ (numerically higher) for
+	 * the IRQ to preempt the read-spin and keep the buffer filled — while still AT the FreeRTOS
+	 * syscall ceiling so a coordinator critical section (BASEPRI) still masks it AND the
+	 * dispatch's xSemaphoreGiveFromISR is a valid call from that priority. */
+	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 }
 
 int serial_poll_rx_ready(void)
 {
-	return __HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_RXNE) ? 1 : 0;
+	return (head != tail) ? 1 : 0; /* the IRQ-filled circular buffer has a byte waiting */
 }
 
 int serial_poll_getc(void)
 {
-	return (int)(uartHandle.Instance->RDR & 0xFFU);
+	return (int)serial_getChar(); /* pop one byte from the IRQ-filled buffer */
 }
 
 void serial_poll_putc(char c)
