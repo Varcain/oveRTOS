@@ -10,35 +10,19 @@
 #   static const unsigned char <SYM>[] __attribute__((aligned(8))) = { ... };
 #   static const unsigned long <SYM>_len = sizeof(<SYM>);
 
-file(READ "${IN}" _hex HEX)
-string(REGEX MATCHALL "[0-9a-f][0-9a-f]" _bytes "${_hex}")
-
-set(_body "")
-set(_i 0)
-foreach(_b ${_bytes})
-    string(APPEND _body "0x${_b},")
-    math(EXPR _i "${_i} + 1")
-    math(EXPR _wrap "${_i} % 16")
-    if(_wrap EQUAL 0)
-        string(APPEND _body "\n\t")
-    else()
-        string(APPEND _body " ")
-    endif()
-endforeach()
-
-# An optional -DSECTION=<name> places the array in a named section (e.g. an executable .text
-# subsection, so an MPU engine's UNPRIVILEGED threads can execute embedded code in-place — the
-# FDPIC text-sharing maps libc.so's RO text straight out of the embedded cpio).
-set(_sectattr "")
+# A pure-CMake byte loop is O(n^2) on string(APPEND) and takes >10 minutes for the ~900 KB FDPIC
+# rootfs cpio (re-run on every cpio change). Delegate to a tiny O(n) Python generator (<1 s) that
+# emits byte-identical output. The optional -DSECTION=<name> places the array in a named section
+# (e.g. an executable .text subsection so an MPU engine's UNPRIVILEGED threads can execute embedded
+# code in-place — the FDPIC text-sharing maps libc.so's RO text straight out of the embedded cpio).
+set(_section "")
 if(DEFINED SECTION AND NOT SECTION STREQUAL "")
-    set(_sectattr ", section(\"${SECTION}\")")
+    set(_section "${SECTION}")
 endif()
-
-# clang-format off/on brackets the byte array so the linter leaves the
-# hand-laid 16-per-line layout alone (it otherwise exceeds the column limit).
-file(WRITE "${OUT}"
-    "/* Generated from ${IN} — do not edit. */\n"
-    "/* clang-format off */\n"
-    "static const unsigned char ${SYM}[] __attribute__((aligned(8)${_sectattr})) = {\n\t${_body}\n};\n"
-    "/* clang-format on */\n"
-    "static const unsigned long ${SYM}_len = sizeof(${SYM});\n")
+find_program(_EMBED_PY NAMES python3 python REQUIRED)
+execute_process(
+    COMMAND "${_EMBED_PY}" "${CMAKE_CURRENT_LIST_DIR}/embed_bin.py" "${IN}" "${OUT}" "${SYM}" "${_section}"
+    RESULT_VARIABLE _embed_rc)
+if(NOT _embed_rc EQUAL 0)
+    message(FATAL_ERROR "embed_bin.py failed (${_embed_rc}) for ${IN}")
+endif()
