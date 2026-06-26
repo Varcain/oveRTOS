@@ -281,6 +281,13 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	 * to spawn a child. The parent is suspended (no thread) through the vfork window
 	 * (NOMMU shares the image) until the child execs into its own region or exits. */
 	if (nr == OVE_LNX_NR_vfork || nr == OVE_LNX_NR_fork || nr == OVE_LNX_NR_clone) {
+		/* clone(CLONE_VM) is a pthread: the child shares the parent's region for life and
+		 * runs on its own stack (clone arg r1), and the parent CO-RUNS (gets the child tid)
+		 * — unlike fork/vfork, which suspend the parent until the child execs/exits. */
+		if (nr == OVE_LNX_NR_clone && ((uint32_t)f->r[0] & OVE_LNX_CLONE_VM)) {
+			proc->clone_is_thread = 1;
+			proc->clone_child_stack = f->r[1];
+		}
 		capture_ctx(slot_of(proc), f);
 		proc->fork_pending = 1;
 		park_frame(f);
@@ -588,13 +595,32 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->pipe_wait = 0;
 			ch->pending_sig = 0;
 			ch->child_count = ch->live_children = 0;
+			ch->clone_is_thread = 0;
 			ch->alive = 1;
 			ch->region = par->region;
-			ch->region_owner =
-				0; /* shares the parent's region during the vfork window */
+			ch->region_owner = 0; /* shares the parent's region */
+			par->live_children++; /* the creator can waitpid()/join this child */
+			if (par->clone_is_thread) {
+				/* pthread: the child shares the region for LIFE and runs on its own
+				 * stack; the parent CO-RUNS (gets the child tid). No vfork suspend —
+				 * a thread never execs, so it co-runs with its creator immediately. */
+				par->clone_is_thread = 0;
+				ch->is_thread = 1;
+				ch->vfork_parent_slot = -1;
+				g_ctx[c] = g_ctx[es]; /* clone resumes from the parent's ctx... */
+				g_ctx[c].sp =
+					par->clone_child_stack; /* ...but on the child stack */
+				eng->abort_slot(es);		/* drop the parent's parked task */
+				eng->spawn_resume(es, par->region, &g_ctx[es],
+						  ch->pid); /* parent co-runs, gets the tid */
+				eng->spawn_resume(c, ch->region, &g_ctx[c],
+						  0); /* child enters the thread fn (r0=0) */
+				idle = 0;
+				continue;
+			}
+			ch->is_thread = 0;
 			ch->vfork_parent_slot =
 				es; /* resume the parent when this child execs/exits */
-			par->live_children++;
 			eng->abort_slot(es); /* suspend the parent (no thread) */
 			eng->spawn_resume(c, ch->region, &g_ctx[es],
 					  0); /* child returns 0 from fork */
