@@ -27,15 +27,30 @@
 
 #include "../common/ove_lnx_run.h"
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#include "stm32f7xx.h" /* SCB_CleanDCache / SCB_InvalidateICache: M7 loaded-code coherency */
+#endif
+
 #define TRAMP_STACK_WORDS 256u		  /* tramp prologue; the program uses its own stack */
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* Real STM32F746 hardware: the MCU has only 320K of internal SRAM — far too small for the 2M
+ * region pool + 1M dyn pools — so both live in the board's 8M external SDRAM (0xC0000000) via
+ * the linker's .sdram_bss (NOLOAD) section. The board (bsp.c) brings up the FMC controller and
+ * makes the SDRAM region executable + Normal non-cacheable (the latter keeps loaded/relocated
+ * program code coherent on the M7 with no SCB cache maintenance) before the run loop runs. */
+#define OVE_LNX_POOL_SECT __attribute__((section(".sdram_bss"), aligned(32)))
+static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] OVE_LNX_POOL_SECT;
+static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] OVE_LNX_POOL_SECT;
+#else
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
 /* Per-region dynamic-link scratch pool in PSRAM (0x60000000): a dynamic FDPIC proc's arena
  * lives here so ld.so can mmap libc.so (~500K) — far past the in-region 96K arena. an500 RAM
  * (4M) is too tight for this beside the 2M of regions; PSRAM is 16M. NOLOAD → no flash cost. */
 static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
 	__attribute__((section(".psram"), aligned(32)));
+#endif
 static StaticTask_t g_tcb[OVE_LNX_NSLOT];
 static TaskHandle_t g_tid[OVE_LNX_NSLOT];
 static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS] __attribute__((aligned(8)));
@@ -190,6 +205,16 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 {
 	(void)ridx;
 	(void)stack_lo;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	/* The program image was just written into the SDRAM program region through the M7's
+	 * D-cache (loader memcpy + relocations). Flush those dirty lines to SDRAM and drop any
+	 * stale I-cache so the CPU fetches the real code — without this it executes whatever was
+	 * physically in SDRAM (zeroes) and faults. Cheap, once per program launch. */
+	SCB_CleanDCache();
+	SCB_InvalidateICache();
+	__DSB();
+	__ISB();
+#endif
 	g_largs[sidx].sp = sp;
 	g_largs[sidx].entry = entry;
 	g_largs[sidx].loadmap = prog->is_fdpic ? (void *)prog->loadmap : (void *)0;

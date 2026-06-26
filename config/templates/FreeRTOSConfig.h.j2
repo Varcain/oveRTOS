@@ -112,8 +112,14 @@ header file. */
 #define configASSERT( x ) if( ( x ) == 0 ) { taskDISABLE_INTERRUPTS(); for( ;; ); }
 
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS
-standard names. */
+standard names.  The SVC alias is OMITTED for the Linux personality
+(CONFIG_OVE_LINUX): the personality seam (backends/freertos/freertos_lnx.c) OWNS
+the SVC_Handler vector and forwards FreeRTOS's start-scheduler svc to the port's
+vPortSVCHandler, so vPortSVCHandler must keep its own name (else the seam's
+`b vPortSVCHandler` is an undefined reference). PendSV is untouched by the seam. */
+{% if config.get("CONFIG_OVE_LINUX") != True %}
 #define vPortSVCHandler SVC_Handler
+{% endif %}
 #define xPortPendSVHandler PendSV_Handler
 
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
