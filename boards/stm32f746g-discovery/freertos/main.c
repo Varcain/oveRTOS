@@ -33,7 +33,10 @@
  * - .RamData2 (first 64 KB of SRAM1) when the heap fits
  * - Main RAM (.bss) otherwise
  * Not allocated at all in zero-heap mode (configSUPPORT_DYNAMIC_ALLOCATION=0). */
-#if defined(CONFIG_OVE_INFER)
+#if defined(CONFIG_OVE_INFER) || defined(CONFIG_OVE_LINUX)
+/* Inference (TFLM models) and the Linux personality (a 2 MB program-region pool already in
+ * SDRAM) both far exceed the 320 KB internal SRAM, so the FreeRTOS heap rides the external
+ * 8 MB SDRAM too — otherwise a 128 KB ucHeap overflows the RAM region. */
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8), section(".sdram_bss")));
 #elif defined(HAL_ETH_MODULE_ENABLED) || configTOTAL_HEAP_SIZE > 0x10000
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((aligned(8)));

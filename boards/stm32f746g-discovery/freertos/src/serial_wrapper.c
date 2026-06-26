@@ -137,3 +137,31 @@ void USART1_IRQHandler(void)
 		__HAL_UART_CLEAR_OREFLAG(&uartHandle);
 	}
 }
+
+/* ---- polled USART1 console for the Linux personality (see serial_wrapper.h) ---- */
+void serial_poll_begin(void)
+{
+	if (mutex == NULL) /* serial_init() creates `mutex` last — call it once to bring USART1 up */
+		serial_init();
+	/* Hand the receiver to polled access: the personality reads RXNE/RDR directly from the
+	 * svc-exception context, so the IRQ-driven RX must not consume bytes ahead of it. */
+	__HAL_UART_DISABLE_IT(&uartHandle, UART_IT_RXNE);
+	HAL_NVIC_DisableIRQ(USART1_IRQn);
+}
+
+int serial_poll_rx_ready(void)
+{
+	return __HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_RXNE) ? 1 : 0;
+}
+
+int serial_poll_getc(void)
+{
+	return (int)(uartHandle.Instance->RDR & 0xFFU);
+}
+
+void serial_poll_putc(char c)
+{
+	while (!__HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_TXE)) {
+	}
+	uartHandle.Instance->TDR = (unsigned char)c;
+}

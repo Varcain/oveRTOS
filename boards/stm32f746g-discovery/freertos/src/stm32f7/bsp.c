@@ -10,10 +10,12 @@
 
 #include "bsp.h"
 #include "stm32f7xx_hal.h"
+#include "stm32746g_discovery_sdram.h" /* BSP_SDRAM_Init — bring up the FMC + external SDRAM */
 #include "stm32f7_init.h"
 
 static void SystemClock_Config(void);
 static void MPU_Config_SDRAM(void);
+static int sdram_selftest(void);
 
 int bsp_boardInit(void)
 {
@@ -32,6 +34,32 @@ int bsp_boardInit(void)
 	/* Board-specific clock: 25 MHz HSE → 216 MHz SYSCLK */
 	SystemClock_Config();
 
+	/* Bring up the FMC controller + the external 8 MB SDRAM at 0xC0000000.  On QEMU/Renode
+	 * the SDRAM is modeled as always-present so this step was never needed; on real silicon
+	 * the controller MUST be initialized or the first access to 0xC0000000 faults.  The Linux
+	 * personality's 2 MB program-region pool + 1 MB dyn pools live here (.sdram_bss), so this
+	 * runs at board init before anything touches them.  Validate the array before trusting it. */
+	(void)BSP_SDRAM_Init();
+	if (sdram_selftest() != 0)
+		for (;;) { /* SDRAM read/write/verify failed — halt here (GDB-findable) */
+		}
+
+	return 0;
+}
+
+/* Walk the 8 MB SDRAM at a coarse stride writing an address-dependent pattern, then read it
+ * back — catches a dead controller, a wrong refresh rate, or address-line aliasing before the
+ * personality relies on the region pool living there.  Returns 0 on success, -1 on mismatch. */
+static int sdram_selftest(void)
+{
+	volatile uint32_t *sdram = (volatile uint32_t *)0xC0000000u;
+	const uint32_t span = 8u * 1024u * 1024u;
+	const uint32_t stride = 0x10000u; /* 64 KB */
+	for (uint32_t off = 0; off < span; off += stride)
+		sdram[off / 4u] = 0xA5A50000u ^ off;
+	for (uint32_t off = 0; off < span; off += stride)
+		if (sdram[off / 4u] != (0xA5A50000u ^ off))
+			return -1;
 	return 0;
 }
 
@@ -46,17 +74,19 @@ static void MPU_Config_SDRAM(void)
 	mpu.BaseAddress = 0xC0000000;
 	mpu.Size = MPU_REGION_SIZE_8MB;
 	mpu.SubRegionDisable = 0x00;
-	/* Normal, non-cacheable, non-shareable.  Non-cacheable keeps LTDC
-	 * framebuffer reads automatically coherent with CPU writes — no
-	 * SCB_CleanDCache calls needed.  Switch to write-back cacheable
-	 * (TEX=0, C=1, B=1) once the framebuffer is carved out into its
-	 * own non-cacheable sub-region. */
+	/* Normal, non-cacheable, non-shareable, EXECUTABLE.  Non-cacheable keeps the
+	 * LTDC framebuffer — and, importantly, the Linux personality's loaded and
+	 * relocated program code — coherent with CPU writes without any
+	 * SCB_CleanDCache/InvalidateICache maintenance on the M7.  Execution is
+	 * ENABLED because a NOMMU personality process runs its bFLT/FDPIC code
+	 * in-place from a program region that lives in this SDRAM (.sdram_bss);
+	 * leaving the region XN would MemManage-fault on the program's first fetch. */
 	mpu.TypeExtField = MPU_TEX_LEVEL1;
 	mpu.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
 	mpu.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
 	mpu.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
 	mpu.AccessPermission = MPU_REGION_FULL_ACCESS;
-	mpu.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+	mpu.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
 	HAL_MPU_ConfigRegion(&mpu);
 
 	HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);

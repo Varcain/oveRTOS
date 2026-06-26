@@ -6,6 +6,7 @@
  * This file is part of oveRTOS.
  */
 
+#include "ove_config.h"
 #include "ove/hal/hal_board.h"
 #include "ove/hal/hal_gpio.h"
 #include "ove_backend_common.h"
@@ -16,6 +17,11 @@
 int ove_hal_board_init(void)
 {
 	bsp_boardInit();
+#ifndef CONFIG_OVE_LINUX
+	/* The Linux-personality build is headless and minimal: it needs only bsp_boardInit
+	 * (clock + the external SDRAM/FMC its program pool lives in + the MPU region that makes
+	 * that SDRAM executable & non-cacheable). Skip the LVGL display + LED/GPIO bring-up, which
+	 * would otherwise pull in the display stack the personality never uses. */
 	lv_port_disp_hw_init();
 
 	/* Configure LED pin(s) as output */
@@ -28,6 +34,7 @@ int ove_hal_board_init(void)
 		}
 	}
 #endif
+#endif /* !CONFIG_OVE_LINUX */
 
 	return OVE_OK;
 }

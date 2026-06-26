@@ -48,7 +48,52 @@
 
 #define UNUSED(x) ((void)(x))
 
-/* ---- ARM semihosting (console transport + clean QEMU exit) ----------------- */
+/* ---- the personality console (program stdin/stdout + program exit) --------- */
+/* Driven from the PRIVILEGED personality context; must be NON-BLOCKING-pollable so
+ * interactive top's 'q' quit works (a finite poll reports readiness instead of blocking the
+ * whole CPU the way semihosting SYS_READC would). */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* Real STM32F746 hardware: poll the board's USART1 directly. The personality reads in the
+ * svc-exception context, where the board's IRQ-filled RX buffer cannot be used (the svc masks
+ * the prio-2 USART1 IRQ → a blocking read would deadlock), so serial_wrapper.c hands the
+ * receiver to polled register access and owns the USART/HAL details. */
+extern void serial_poll_begin(void);
+extern int serial_poll_rx_ready(void);
+extern int serial_poll_getc(void);
+extern void serial_poll_putc(char c);
+
+static void uart_init(void)
+{
+	serial_poll_begin();
+}
+static void sh_writec(char c)
+{
+	serial_poll_putc(c);
+}
+static int uart_rx_ready(void)
+{
+	return serial_poll_rx_ready();
+}
+static int sh_readc(void)
+{
+	while (!serial_poll_rx_ready()) { /* block until a keystroke arrives */
+	}
+	return serial_poll_getc();
+}
+static void sh_exit(unsigned int code)
+{
+	(void)code;
+	/* No semihosting on bare metal: poweroff/halt → system reset (back to the boot banner).
+	 * SCB->AIRCR = VECTKEY(0x05FA) | SYSRESETREQ(bit 2). */
+	*(volatile unsigned int *)0xE000ED0Cu = 0x05FA0004u;
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	for (;;) {
+	}
+}
+#else
+/* QEMU an500/an521: the engines use UART0 for their own console; the program console rides the
+ * CMSDK UART1 (`-serial none -serial stdio` routes UART1 to stdio). SYS_EXIT_EXTENDED via ARM
+ * semihosting gives QEMU a clean exit. The MMIO is reachable from the privileged context. */
 static long semihost(unsigned long op, void *arg)
 {
 	register unsigned long r0 __asm__("r0") = op;
@@ -56,12 +101,6 @@ static long semihost(unsigned long op, void *arg)
 	__asm__ volatile("bkpt 0xab" : "+r"(r0) : "r"(r1) : "memory");
 	return (long)r0;
 }
-
-/* ---- CMSDK UART1 console — so the console is NON-BLOCKING-pollable (unlike
- * semihosting SYS_READC, which blocks the whole vCPU): needed for interactive
- * top's 'q' quit. The engines use UART0 for their own console; the program
- * console rides UART1 (QEMU: `-serial none -serial stdio` routes UART1 to stdio).
- * These run in the PRIVILEGED personality context, so the MMIO is reachable. */
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 #define OVE_UART1_BASE 0x50201000u /* AN521 UART1 (secure peripheral region) */
 #else
@@ -69,44 +108,41 @@ static long semihost(unsigned long op, void *arg)
 #endif
 #define OVE_UART_REG(off) (*(volatile unsigned int *)(OVE_UART1_BASE + (off)))
 /* CMSDK regs: DATA=0x00, STATE=0x04 (b0 TX-full, b1 RX-valid), CTRL=0x08, BAUDDIV=0x10. */
-
 static void uart_init(void)
 {
 	OVE_UART_REG(0x10) = 16;  /* BAUDDIV >= 16 required to operate */
 	OVE_UART_REG(0x08) = 0x3; /* TX enable | RX enable */
 }
-
 static void sh_writec(char c)
 {
 	while (OVE_UART_REG(0x04) & 1u) { /* spin while the TX buffer is full */
 	}
 	OVE_UART_REG(0x00) = (unsigned char)c;
 }
-
-static void sh_write0(const char *s)
-{
-	for (; *s; s++)
-		sh_writec(*s);
-}
-
 static int uart_rx_ready(void)
 {
 	return (OVE_UART_REG(0x04) & 2u) ? 1 : 0; /* RX-valid bit */
 }
-
 static int sh_readc(void)
 {
 	while (!uart_rx_ready()) { /* block until a keystroke arrives */
 	}
 	return (int)(OVE_UART_REG(0x00) & 0xffu);
 }
-
 static void sh_exit(unsigned int code)
 {
 	unsigned long block[2] = {0x20026u /* ADP_Stopped_ApplicationExit */, code};
 	semihost(0x20 /* SYS_EXIT_EXTENDED */, block);
 	for (;;) {
 	}
+}
+#endif
+
+/* stdout string helper shared by both console backends. */
+static void sh_write0(const char *s)
+{
+	for (; *s; s++)
+		sh_writec(*s);
 }
 
 /* Minimal string builders (no libc printf dependency). */

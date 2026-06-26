@@ -68,6 +68,16 @@ endif()
 # ── oveRTOS backend sources (from generated config) ─────────────────
 ove_add_backend_sources()
 
+# ── Linux personality (headless): embed the BusyBox rootfs.cpio fixture ──────
+# The personality demo (#include "loader_rootfs_image.h") needs the embedded cpio on the
+# include path; the program-region pool lives in external SDRAM (.sdram_bss, bsp.c brings up
+# the FMC + makes it executable). Mirrors the QEMU an500 board's OVE_LINUX block.
+if(OVE_LINUX)
+    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+    ove_add_include_directories(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+endif()
+
 # ── STM32CubeF7 HAL + BSP + FatFs + CMSIS-DSP ───────────────────────
 ove_add_stm32cube_hal(FAMILY f7 STARTUP stm32f746xx)
 ove_add_stm32cube_bsp(

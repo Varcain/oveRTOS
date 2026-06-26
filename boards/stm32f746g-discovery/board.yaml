@@ -61,3 +61,11 @@ defconfig:
 rtos_defconfig:
   freertos:
     - CONFIG_FREERTOS_TOTAL_HEAP_SIZE=131072
+    # The Linux personality embeds the BusyBox rootfs.cpio into the 1 MB internal flash, so
+    # this board uses the bFLT userspace (~328 KB) — the dynamic-FDPIC one (~865 KB) doesn't
+    # fit beside the firmware. Harmless for non-personality apps (the var depends on OVE_LINUX).
+    - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output"
+    # Real hardware needs bsp_boardInit() to run (clock + FMC external SDRAM + the MPU region
+    # that makes that SDRAM executable & non-cacheable for the program pool). That init only
+    # runs when OVE_BOARD is enabled (ove_app_run -> ove_board_init). Required on silicon.
+    - CONFIG_OVE_BOARD=y
