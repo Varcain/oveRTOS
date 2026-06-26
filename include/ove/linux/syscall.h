@@ -13,7 +13,7 @@
  * @file syscall.h
  * @defgroup ove_linux Linux personality
  * @ingroup ove_mem
- * @brief Linux syscall dispatch for loaded bFLT/FDPIC programs.
+ * @brief Linux syscall dispatch for loaded FDPIC programs.
  *
  * The engine-agnostic core of the oveRTOS Linux personality: it impersonates
  * the Linux kernel's syscall ABI for stock uClibc-ng binaries. A per-engine
@@ -456,7 +456,7 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 #define OVE_LNX_AT_RANDOM 25
 
 /**
- * @brief Build a uClinux/bFLT process stack for a loaded program's crt0.
+ * @brief Build a uClinux/FDPIC process stack for a loaded program's crt0.
  *
  * Lays out, at the top of @p stack, the @c flat_argvp_envp_on_stack startup
  * block an @c elf2flt crt0 reads on ARM: @c sp[0]=argc, @c sp[1]=argv (a pointer
@@ -474,7 +474,7 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
  * @param[in] argv       @p argc argument strings.
  * @param[in] envp       NULL-terminated environment strings (may be NULL).
  * @param[in] fdpic      Non-zero → the standard ELF inline stack (FDPIC programs);
- *                       zero → the uClinux/bFLT 3-word argc/argv-ptr/envp-ptr header.
+ *                       zero → the legacy uClinux 3-word argc/argv-ptr/envp-ptr header.
  * @param[in] phdr       FDPIC only: runtime program-header address (AT_PHDR).
  * @param[in] phnum      FDPIC only: number of program headers (AT_PHNUM).
  * @param[in] entry      FDPIC only: program entry point (AT_ENTRY).

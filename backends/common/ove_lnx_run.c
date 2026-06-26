@@ -324,18 +324,17 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 }
 
 /* ---- the run loop ---------------------------------------------------------- */
-/* Load a bFLT into region ridx + set up slot sidx's proc, then spawn it. */
+/* Load an FDPIC ELF into region ridx + set up slot sidx's proc, then spawn it. */
 static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const uint8_t *data,
 		  size_t len, int pid, int ppid, int argc, const char *const argv[])
 {
 	uint8_t *region = eng->region(ridx);
 	ove_flat_t prog;
-	/* Format by magic: 0x7f'ELF' → FDPIC, else bFLT. spawn_launch reads prog.is_fdpic
-	 * / prog.got to put the GOT in r9 for FDPIC (bFLT is single-base, no r9). */
-	int lrc =
-		(len >= 4 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F')
-			? ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0)
-			: ove_loader_load_flat(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE);
+	/* Every personality program is an FDPIC ELF (0x7f'ELF', ELFOSABI_ARM_FDPIC); reject
+	 * anything else. spawn_launch reads prog.is_fdpic / prog.got to put the GOT base in r9. */
+	if (!(len >= 4 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F'))
+		return -1;
+	int lrc = ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0);
 	if (lrc != OVE_OK)
 		return -1;
 
@@ -381,7 +380,7 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	uint8_t *rw = region + ((prog.region_used + 15u) & ~15u);
 	uint8_t *rw_end = region + OVE_LNX_PROG_REGION_SIZE;
 	/* A dynamic proc's arena lives in the engine's PSRAM dyn_pool (ld.so mmaps libc.so
-	 * ~500K from it); static/bFLT use the in-region 96K arena. The stack always sits
+	 * ~500K from it); a static FDPIC proc uses the in-region 96K arena. The stack always sits
 	 * in-region above the loaded image(s). */
 	uint8_t *arena_mem = rw;
 	size_t arena_sz = OVE_LNX_PROG_ARENA_SIZE;

@@ -4227,7 +4227,7 @@ unsafe extern "C" {
     #[doc = " @brief Bytes of the destination region consumed by the loaded module."]
     pub fn ove_loader_image_size(mod_: *const ove_module_t) -> usize;
 }
-#[doc = " @brief A loaded flat (bFLT / uClinux) program.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding bFLT can also be loaded and\n called directly (no syscall environment required)."]
+#[doc = " @brief A loaded FDPIC program — the loaded-program control block.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding FDPIC program can also be loaded\n and called directly (no syscall environment required).\n\n The @c ove_flat_t / \"flat\" name is historical: this struct was once shared\n with the now-removed bFLT loader, but only FDPIC ELF programs are loaded now."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ove_flat {
@@ -4251,10 +4251,26 @@ pub struct ove_flat {
     pub bss_size: usize,
     #[doc = "< Stack size the program requests."]
     pub stack_size: usize,
+    #[doc = "< Non-zero if loaded from an FDPIC ELF (PIC, self-relocating)."]
+    pub is_fdpic: core::ffi::c_int,
+    #[doc = "< FDPIC: the elf32_fdpic_loadmap to pass in r7 at entry (the\n   crt _start self-relocates from it)."]
+    pub loadmap: usize,
+    #[doc = "< FDPIC: runtime address of the program headers (AT_PHDR)."]
+    pub phdr: usize,
+    #[doc = "< FDPIC: number of program headers (AT_PHNUM)."]
+    pub phnum: core::ffi::c_int,
+    #[doc = "< FDPIC: non-zero if the exec has DT_NEEDED (needs ld.so). The\n   personality must then ALSO load the interpreter + enter it."]
+    pub is_dynamic: core::ffi::c_int,
+    #[doc = "< FDPIC: the GOT base (DT_PLTGOT-relative); for the exec it is\n   what ld.so installs as the program GOT."]
+    pub got: usize,
+    #[doc = "< FDPIC: runtime address of PT_DYNAMIC (_DYNAMIC). For the\n   INTERPRETER this is r9 at entry — uClibc-ng's FDPIC\n   dl_boot_ldso_dyn_pointer, which DL_BOOT_COMPUTE_DYN uses as the\n   dpnt (NOT the GOT). 0 if the object has no PT_DYNAMIC."]
+    pub dynamic: usize,
+    #[doc = "< FDPIC dynamic: the interpreter (ld.so) loadmap → r8 at\n   entry; 0 for static. Filled by the launcher, not the\n   loader (which loads one object at a time)."]
+    pub interp_loadmap: usize,
 }
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
-    ["Size of ove_flat"][core::mem::size_of::<ove_flat>() - 80usize];
+    ["Size of ove_flat"][core::mem::size_of::<ove_flat>() - 136usize];
     ["Alignment of ove_flat"][core::mem::align_of::<ove_flat>() - 8usize];
     ["Offset of field: ove_flat::region"][core::mem::offset_of!(ove_flat, region) - 0usize];
     ["Offset of field: ove_flat::region_size"]
@@ -4269,17 +4285,28 @@ const _: () = {
     ["Offset of field: ove_flat::bss_size"][core::mem::offset_of!(ove_flat, bss_size) - 64usize];
     ["Offset of field: ove_flat::stack_size"]
         [core::mem::offset_of!(ove_flat, stack_size) - 72usize];
+    ["Offset of field: ove_flat::is_fdpic"][core::mem::offset_of!(ove_flat, is_fdpic) - 80usize];
+    ["Offset of field: ove_flat::loadmap"][core::mem::offset_of!(ove_flat, loadmap) - 88usize];
+    ["Offset of field: ove_flat::phdr"][core::mem::offset_of!(ove_flat, phdr) - 96usize];
+    ["Offset of field: ove_flat::phnum"][core::mem::offset_of!(ove_flat, phnum) - 104usize];
+    ["Offset of field: ove_flat::is_dynamic"]
+        [core::mem::offset_of!(ove_flat, is_dynamic) - 108usize];
+    ["Offset of field: ove_flat::got"][core::mem::offset_of!(ove_flat, got) - 112usize];
+    ["Offset of field: ove_flat::dynamic"][core::mem::offset_of!(ove_flat, dynamic) - 120usize];
+    ["Offset of field: ove_flat::interp_loadmap"]
+        [core::mem::offset_of!(ove_flat, interp_loadmap) - 128usize];
 };
-#[doc = " @brief A loaded flat (bFLT / uClinux) program.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding bFLT can also be loaded and\n called directly (no syscall environment required)."]
+#[doc = " @brief A loaded FDPIC program — the loaded-program control block.\n\n Unlike @c ove_module_t (a relocatable object queried by symbol), this is a\n fully-linked program: an entry point plus laid-out text/data/bss segments,\n not an import/export symbol surface. It is the substrate beneath the Linux\n personality's program loader; a freestanding FDPIC program can also be loaded\n and called directly (no syscall environment required).\n\n The @c ove_flat_t / \"flat\" name is historical: this struct was once shared\n with the now-removed bFLT loader, but only FDPIC ELF programs are loaded now."]
 pub type ove_flat_t = ove_flat;
 unsafe extern "C" {
-    #[doc = " @brief Load a bFLT (uClinux flat) executable into @p region.\n\n Parses the big-endian bFLT v4 header, places the text+data image into\n @p region, zeroes bss, and applies the program's base relocations so\n @c prog->entry is directly callable. Scope: @c FLAT_FLAG_RAM, uncompressed,\n fully-relocated (non-GOTPIC) programs — the simplest form @c elf2flt emits;\n GOTPIC / compressed images return @c OVE_ERR_NOT_SUPPORTED.\n\n @param[out] prog        Program control block to fill.\n @param[in]  image       bFLT image (caller-owned; only read during the load).\n @param[in]  image_size  Size of @p image in bytes.\n @param[in]  region      Destination; must be executable before @c entry runs.\n @param[in]  region_size Size of @p region in bytes.\n @return OVE_OK on success;\n         OVE_ERR_INVALID_PARAM on bad arguments or a malformed image;\n         OVE_ERR_NOT_SUPPORTED for an unsupported revision/flag;\n         OVE_ERR_NO_MEMORY if @p region is too small.\n @note Requires @c CONFIG_OVE_LOADER."]
-    pub fn ove_loader_load_flat(
+    #[doc = " @brief Load a static FDPIC (ARM @c EF_ARM_FDPIC) ELF executable into @p region.\n\n FDPIC is position-independent with independently-placed segments addressed through a\n per-process GOT (the \"FDPIC register\" r9). This loads the @c PT_LOAD segments, applies\n the @c DT_REL dynamic relocations (incl. @c R_ARM_RELATIVE / @c R_ARM_FUNCDESC_VALUE),\n and reports @c prog->got — the GOT base the launcher must place in r9 before @c entry.\n Scope: static FDPIC (no @c PT_INTERP / dynamic loader). This format lets\n multiple processes later share one read-only text copy.\n\n @param[out] prog        Program control block to fill (@c is_fdpic set, @c got reported).\n @param[in]  image       FDPIC ELF image (caller-owned; only read during the load).\n @param[in]  image_size  Size of @p image in bytes.\n @param[in]  region      Destination; must be executable before @c entry runs.\n @param[in]  region_size Size of @p region in bytes.\n @param[in]  is_interp   Non-zero when loading the interpreter (ld.so): the personality\n                         loads its segments + loadmap but applies NO .rel.dyn (ld.so\n                         self-relocates). A dynamic exec (DT_NEEDED) likewise skips relocs\n                         (auto-detected, @c is_dynamic reported) for ld.so to apply.\n @return OVE_OK on success; OVE_ERR_INVALID_PARAM on a malformed/non-FDPIC image;\n         OVE_ERR_NOT_SUPPORTED for an unhandled reloc; OVE_ERR_NO_MEMORY if too small.\n @note Requires @c CONFIG_OVE_LOADER."]
+    pub fn ove_loader_load_fdpic(
         prog: *mut ove_flat_t,
         image: *const core::ffi::c_void,
         image_size: usize,
         region: *mut core::ffi::c_void,
         region_size: usize,
+        is_interp: core::ffi::c_int,
     ) -> core::ffi::c_int;
 }
 #[doc = " Entry function for a protected task."]

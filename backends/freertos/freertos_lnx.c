@@ -135,8 +135,8 @@ __attribute__((naked)) void SVC_Handler(void)
 struct launch_args { /* arg_tramp reads these by offset — keep the order. */
 	void *sp;	      /* +0 */
 	void *entry;	      /* +4 */
-	void *loadmap;	      /* +8  FDPIC: the exec's elf32_fdpic_loadmap for r7 (0 for bFLT). */
-	void *interp_loadmap; /* +12 FDPIC dynamic: ld.so's loadmap for r8 (0 for static/bFLT). */
+	void *loadmap;	      /* +8  FDPIC: the exec's elf32_fdpic_loadmap for r7. */
+	void *interp_loadmap; /* +12 FDPIC dynamic: ld.so's loadmap for r8 (0 for static). */
 	void *got;	      /* +16 FDPIC: the GOT base for r9. ld.so's _start passes the entry
 			       *     r9 to _dl_start as its _DYNAMIC ptr, so it MUST be set (the
 			       *     program crt overwrites r9, so it's harmless for static). */
@@ -156,7 +156,7 @@ __attribute__((naked)) static void arg_tramp(struct launch_args *a __attribute__
 	 * crt branches on it, so leaving it garbage would fault); r9 = the GOT base — ld.so's
 	 * _start passes the ENTRY r9 to _dl_start as its _DYNAMIC pointer, so it MUST be set
 	 * for a dynamic exec (the program crt overwrites r9, so 0 is fine for static). Offsets
-	 * must match struct launch_args. All of r7/r8/r9 are 0 for bFLT, which ignores them. */
+	 * must match struct launch_args; every program is FDPIC, so r7/r8/r9 are always set. */
 	__asm__ volatile("ldr r7, [r0, #8]\n"  /* loadmap */
 			 "ldr r8, [r0, #12]\n" /* interp_loadmap */
 			 "ldr r9, [r0, #16]\n" /* got */
