@@ -29,8 +29,10 @@
 
 #define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
-#define OVE_LNX_DYN_POOL_SIZE 0xC0000u /* 768K: a dynamic proc's arena (ld.so mmaps libc.so ~500K
-					* + its heap from here; in PSRAM, far past the 96K arena) */
+#define OVE_LNX_DYN_POOL_SIZE 0x40000u /* 256K: a dynamic proc's arena. Was 768K when ld.so mmap'd
+					* the WHOLE libc.so (~500K) here; now libc.so's text is shared
+					* in-place from the cpio, so this holds only its ~40K RW segment
+					* + the brk/mmap heap. In PSRAM (Zephyr) / per-engine RAM. */
 /* Concurrent process model (Phase D): the run loop coordinates a live process SET,
  * each loaded image in its own region. OVE_LNX_NREG = max images live at once
  * (init + login-shell + a few concurrent jobs); OVE_LNX_NSLOT = NREG + vfork-window
@@ -109,6 +111,9 @@ extern ove_lnx_proc_t g_ove_lnx_proc[OVE_LNX_NSLOT];
 extern int g_ove_lnx_used[OVE_LNX_NSLOT]; /* slot in use (run loop + seam read) */
 extern volatile int g_ove_lnx_active;	  /* a run is in progress (seam trap gate) */
 extern volatile int g_ove_lnx_halt;	  /* reboot(2)/poweroff: stop the run loop */
+/* The embedded cpio's data span [lo, hi): a dynamic FDPIC proc runs its shared in-place text from
+ * here, so a PC-discriminating seam (NuttX) treats a cpio PC as a program svc. NULL pre-run. */
+extern const uint8_t *g_ove_lnx_rootfs_lo, *g_ove_lnx_rootfs_hi;
 
 /* Where a parked program spins (in shared .text) until the run loop reaps it. */
 void ove_lnx_park_loop(void);

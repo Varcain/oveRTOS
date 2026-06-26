@@ -81,11 +81,15 @@ static int ove_lnx_svc_handler(int irq, void *context, void *arg)
 	uintptr_t pc = (uintptr_t)regs[REG_PC];
 	int in_region = pc >= (uintptr_t)prog_regions &&
 			pc < (uintptr_t)prog_regions + sizeof(prog_regions);
-	/* A dynamic FDPIC proc's libc.so runs from the dyn_pool arena (not prog_regions), so the
-	 * svc PC in libc.so's own syscall wrappers lands there — count the arena as "program"
-	 * too, else the Linux syscall is misrouted to NuttX's arm_svcall (the program hangs). */
+	/* A dynamic FDPIC proc now runs ALL its code — busybox.so + ld.so + libc.so text, shared
+	 * IN-PLACE — straight from the embedded cpio, so the svc PC in those syscall wrappers lands
+	 * THERE, not in the per-process region/arena (which hold only RW data). Count the cpio (and
+	 * the arena, for any RW-resident trampoline) as "program" too, else the Linux syscall is
+	 * misrouted to NuttX's arm_svcall and the program hangs. */
 	int in_arena = pc >= (uintptr_t)dyn_pools && pc < (uintptr_t)dyn_pools + sizeof(dyn_pools);
-	if (!in_region && !in_arena)
+	int in_cpio = g_ove_lnx_rootfs_lo && pc >= (uintptr_t)g_ove_lnx_rootfs_lo &&
+		      pc < (uintptr_t)g_ove_lnx_rootfs_hi;
+	if (!in_region && !in_arena && !in_cpio)
 		return arm_svcall(irq, context, arg);
 	int sidx = current_slot();
 	if (sidx < 0)

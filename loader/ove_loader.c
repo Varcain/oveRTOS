@@ -735,7 +735,11 @@ int ove_loader_load_flat(ove_flat_t *prog, const void *image, size_t image_size,
  * segments + build the loadmap for r7 — PLUS apply the .rel.dyn relocations ld.so
  * would (R_ARM_RELATIVE + R_ARM_FUNCDESC_VALUE): __self_reloc covers only the small
  * .rofixup, not .rel.dyn. Static (no DT_NEEDED) → we ignore PT_INTERP, no ld.so.
- * All PT_LOAD placed contiguously (one uniform bias) for now. Little-endian. */
+ * TEXT-SHARING: the RO/executable segment is mapped IN-PLACE from the image (the cpio) —
+ * one copy shared by every process, since FDPIC text never self-relocates (all relocations
+ * land in the per-process GOT/data). Only the RW segment(s) are copied into the region, so
+ * the two are independently biased — the loadmap carries each segment's runtime address and
+ * fdpic_rt() resolves a vaddr through it. Little-endian. */
 
 /* Read little-endian halfword / word from a (possibly unaligned) byte pointer. */
 static uint16_t le16(const uint8_t *p)
@@ -769,6 +773,21 @@ static uint32_t le32(const uint8_t *p)
 #define ELF_R_ARM_FUNCDESC 163u
 #define ELF_R_ARM_FUNCDESC_VALUE 164u
 
+/* The runtime address of a link-time vaddr via the FDPIC loadmap, where each segment is
+ * independently biased: the executable segment maps IN-PLACE from the image (the cpio — one
+ * copy shared by every process, since FDPIC text never self-relocates: all relocations land
+ * in the per-process GOT/data), the RW segment(s) into the per-process region. 0 if unmapped. */
+static uint32_t fdpic_rt(const uint8_t *lm, int nseg, uint32_t vaddr)
+{
+	for (int i = 0; i < nseg; i++) {
+		const uint8_t *e = lm + 4 + (size_t)i * 12;
+		uint32_t addr = le32(e), pv = le32(e + 4), msz = le32(e + 8);
+		if (vaddr >= pv && vaddr < pv + msz)
+			return addr + (vaddr - pv);
+	}
+	return 0;
+}
+
 int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
 			  size_t region_size, int is_interp)
 {
@@ -791,9 +810,12 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	if ((uint64_t)e_phoff + (uint64_t)e_phnum * e_phentsize > image_size)
 		return OVE_ERR_INVALID_PARAM;
 
-	/* Pass 1: the vaddr span across PT_LOAD + the segment count. PT_INTERP is ignored
-	 * (the binary is static/self-relocating; we never run a dynamic loader). */
-	uint32_t vaddr_lo = 0xffffffffu, vaddr_hi = 0;
+	/* Pass 1: classify the PT_LOADs. The single executable segment is shared IN-PLACE from
+	 * the image (the cpio); the RW segment(s) are packed into the per-process region. Also
+	 * locate the dynamic table. PT_INTERP is ignored (we never run a nested loader). */
+	uint32_t text_sz = 0, text_off = 0;
+	int have_text = 0;
+	uint32_t rw_lo = 0xffffffffu, rw_hi = 0;
 	uint32_t dyn_off = 0, dyn_sz = 0;
 	int nload = 0;
 	for (uint16_t i = 0; i < e_phnum; i++) {
@@ -806,37 +828,47 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 		if (p_type != ELF_PT_LOAD)
 			continue;
 		nload++;
-		uint32_t v = le32(ph + 8), msz = le32(ph + 20);
-		if (v < vaddr_lo)
-			vaddr_lo = v;
-		if (v + msz > vaddr_hi)
-			vaddr_hi = v + msz;
+		uint32_t p_off = le32(ph + 4), v = le32(ph + 8), msz = le32(ph + 20);
+		if (le32(ph + 24) & ELF_PF_X) {
+			/* the RO/executable segment — shared in-place from the image */
+			text_sz = msz;
+			text_off = p_off;
+			have_text = 1;
+		} else {
+			if (v < rw_lo)
+				rw_lo = v;
+			if (v + msz > rw_hi)
+				rw_hi = v + msz;
+		}
 	}
-	if (vaddr_lo == 0xffffffffu || vaddr_hi <= vaddr_lo || nload < 1)
+	if (!have_text || nload < 1)
 		return OVE_ERR_INVALID_PARAM;
-	uint32_t span = vaddr_hi - vaddr_lo;
-	uint32_t span_a = (span + 3u) & ~3u; /* the loadmap follows the image, 4-aligned */
+	uint32_t rw_span = (rw_hi > rw_lo) ? (rw_hi - rw_lo) : 0;
+	uint32_t rw_a = (rw_span + 3u) & ~3u; /* the loadmap follows the RW block, 4-aligned */
 	uint32_t loadmap_sz = 4u + (uint32_t)nload * 12u;
-	if ((uint64_t)span_a + loadmap_sz > region_size)
+	if ((uint64_t)rw_a + loadmap_sz > region_size)
 		return OVE_ERR_NO_MEMORY;
 
+	/* The per-process region now holds ONLY the RW block (the text is shared in-place from the
+	 * image) + the loadmap + the descriptor pool — a fraction of the old text+data image. */
 	uint8_t *base = (uint8_t *)region;
-	uintptr_t bias = (uintptr_t)base - vaddr_lo; /* runtime = vaddr + bias */
-	memset(base, 0, span);
+	if (rw_span)
+		memset(base, 0, rw_span); /* clear so each RW segment's bss tail is zero */
 
 	/* The loadmap (elf32_fdpic_loadmap: u16 version=0, u16 nsegs, then nsegs ×
-	 * {u32 addr, u32 p_vaddr, u32 p_memsz}) sits just past the image; _start reads it
+	 * {u32 addr, u32 p_vaddr, u32 p_memsz}) sits just past the RW block; _start reads it
 	 * through r7 and __self_reloc derives each segment's bias from it. */
-	uint8_t *lm = base + span_a;
+	uint8_t *lm = base + rw_a;
 	{
 		uint16_t ver = 0, ns = (uint16_t)nload;
 		memcpy(lm, &ver, 2);
 		memcpy(lm + 2, &ns, 2);
 	}
 
-	/* Pass 2: place each PT_LOAD (preserving relative vaddrs), fill the loadmap, and
-	 * record the text/data segments. */
-	uint32_t text_v = 0, text_sz = 0, data_v = 0, data_fsz = 0, data_msz = 0;
+	/* Pass 2: the executable segment points IN-PLACE at the image (the cpio); each RW segment
+	 * is copied into the region at base + (p_vaddr - rw_lo). The loadmap records each segment's
+	 * runtime address (text → cpio, RW → region) so __self_reloc biases them independently. */
+	uint32_t data_v = 0, data_fsz = 0, data_msz = 0;
 	int si = 0;
 	for (uint16_t i = 0; i < e_phnum; i++) {
 		const uint8_t *ph = img + e_phoff + (size_t)i * e_phentsize;
@@ -847,29 +879,30 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 		uint32_t p_flags = le32(ph + 24);
 		if ((uint64_t)p_off + p_filesz > image_size)
 			return OVE_ERR_INVALID_PARAM;
-		memcpy(base + (p_vaddr - vaddr_lo), img + p_off, p_filesz);
-		uint32_t seg_addr = (uint32_t)(uintptr_t)(base + (p_vaddr - vaddr_lo));
+		uint32_t seg_addr;
+		if (p_flags & ELF_PF_X) {
+			seg_addr = (uint32_t)(uintptr_t)(img + p_off); /* shared in-place from the cpio */
+		} else {
+			uint8_t *d = base + (p_vaddr - rw_lo);
+			memcpy(d, img + p_off, p_filesz);
+			seg_addr = (uint32_t)(uintptr_t)d;
+			data_v = p_vaddr;
+			data_fsz = p_filesz;
+			data_msz = p_memsz;
+		}
 		uint8_t *s = lm + 4 + (size_t)si * 12;
 		memcpy(s, &seg_addr, 4);
 		memcpy(s + 4, &p_vaddr, 4);
 		memcpy(s + 8, &p_memsz, 4);
 		si++;
-		if (p_flags & ELF_PF_X) {
-			text_v = p_vaddr;
-			text_sz = p_memsz;
-		} else {
-			data_v = p_vaddr;
-			data_fsz = p_filesz;
-			data_msz = p_memsz;
-		}
 	}
 
 	/* Walk the dynamic table for the relocation table, the symbol table + the GOT. */
 	uint32_t rel_v = 0, rel_sz = 0, rel_ent = 8, pltgot_v = 0, sym_v = 0;
 	int is_dynamic = 0;
 	if (dyn_off) {
-		const uint8_t *dp = base + (dyn_off - vaddr_lo);
-		for (uint32_t o = 0; o + 8 <= dyn_sz; o += 8) {
+		const uint8_t *dp = (const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, dyn_off);
+		for (uint32_t o = 0; dp && o + 8 <= dyn_sz; o += 8) {
 			uint32_t tag = le32(dp + o), val = le32(dp + o + 4);
 			if (tag == ELF_DT_NULL)
 				break;
@@ -894,11 +927,13 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	 * canonical descriptor — the FUNCDESC_VALUE slot if one exists, else a fresh
 	 * descriptor we allocate (as ld.so's _dl_funcdesc_for does), since most defined
 	 * functions (busybox applets, _init, libc helpers) have a FUNCDESC but no
-	 * FUNCDESC_VALUE. */
-	uint32_t got_base = (uint32_t)((uintptr_t)base + (pltgot_v - vaddr_lo));
-	const uint8_t *rel0 = base + (rel_v - vaddr_lo);
-	/* A descriptor pool just past the loadmap; at most one per reloc (upper bound). */
-	uint32_t pool_off = ((uint32_t)(span_a + loadmap_sz) + 7u) & ~7u;
+	 * FUNCDESC_VALUE. Addresses resolve through the loadmap (fdpic_rt): rel/symtab are read
+	 * from the in-place text, GOT slots written in the per-process RW region. */
+	uint32_t got_base = fdpic_rt(lm, nload, pltgot_v);
+	const uint8_t *rel0 = (const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, rel_v);
+	/* A descriptor pool just past the loadmap (per-process, in the region); at most one per
+	 * reloc (upper bound). */
+	uint32_t pool_off = ((uint32_t)(rw_a + loadmap_sz) + 7u) & ~7u;
 	uint32_t max_fd = rel_ent ? rel_sz / rel_ent : 0;
 	if ((uint64_t)pool_off + (uint64_t)max_fd * 8u > region_size)
 		return OVE_ERR_NO_MEMORY;
@@ -907,26 +942,31 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	/* Skip for the interpreter (ld.so self-relocs via _start's __self_reloc + _dl_start's
 	 * bootstrap) and for a dynamic exec (ld.so relocates it after loading its .so deps);
 	 * applying .rel.dyn here would double-bias R_ARM_RELATIVE. Only a STATIC exec relocates
-	 * here (nothing else would). */
-	for (uint32_t o = 0; !is_interp && !is_dynamic && o + rel_ent <= rel_sz; o += rel_ent) {
+	 * here (nothing else would). Every address goes through fdpic_rt: the rel/symtab are read
+	 * from the in-place text, the relocated GOT slots written in the per-process RW region. */
+	for (uint32_t o = 0; !is_interp && !is_dynamic && rel0 && o + rel_ent <= rel_sz; o += rel_ent) {
 		const uint8_t *r = rel0 + o;
 		uint32_t r_offset = le32(r), r_info = le32(r + 4);
 		uint32_t r_type = r_info & 0xffu, r_sym = r_info >> 8;
-		uint8_t *where = base + (r_offset - vaddr_lo);
+		uint8_t *where = (uint8_t *)(uintptr_t)fdpic_rt(lm, nload, r_offset);
+		if (!where)
+			continue;
 		if (r_type == ELF_R_ARM_RELATIVE || r_type == ELF_R_ARM_ABS32) {
-			uint32_t w = le32(where) + (uint32_t)bias;
+			uint32_t w = fdpic_rt(lm, nload, le32(where)); /* rebase the target vaddr */
 			memcpy(where, &w, 4);
 		} else if (r_type == ELF_R_ARM_FUNCDESC_VALUE) {
 			/* A function descriptor {func, got} (matches uClibc ld.so): func =
-			 * symbol_addr = st_value + bias (carries the Thumb bit), PLUS the in-place
-			 * addend ONLY for a STB_LOCAL symbol; got = the module GOT. An UNDEFINED
-			 * (weak EH) symbol → null {0,0} so the crt's guarded call skips it. */
-			const uint8_t *sym = base + (sym_v - vaddr_lo) + r_sym * 16u;
+			 * st_value (carries the Thumb bit) PLUS the in-place addend ONLY for a
+			 * STB_LOCAL symbol, mapped through the loadmap; got = the module GOT. An
+			 * UNDEFINED (weak EH) symbol → null {0,0} so the crt's guarded call skips it. */
+			const uint8_t *sym =
+				(const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, sym_v) + r_sym * 16u;
 			uint32_t w0 = 0, w1 = 0;
 			if (sym_v && le16(sym + 14) != 0) { /* st_shndx != SHN_UNDEF */
-				w0 = le32(sym + 4) + (uint32_t)bias;
+				uint32_t fnv = le32(sym + 4);
 				if ((sym[12] >> 4) == 0) /* ELF_ST_BIND == STB_LOCAL */
-					w0 += le32(where);
+					fnv += le32(where);
+				w0 = fdpic_rt(lm, nload, fnv);
 				w1 = got_base;
 			}
 			memcpy(where, &w0, 4);
@@ -936,24 +976,25 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 			 * FUNCDESC_VALUE relocates) — but NULL for an undefined weak symbol, so a
 			 * caller's "if (funcptr) call" guard skips it rather than dereferencing a
 			 * {0,0} descriptor and branching to 0. */
-			const uint8_t *sym = base + (sym_v - vaddr_lo) + r_sym * 16u;
+			const uint8_t *sym =
+				(const uint8_t *)(uintptr_t)fdpic_rt(lm, nload, sym_v) + r_sym * 16u;
 			uint32_t descr = 0;
 			if (sym_v && le16(sym + 14) != 0) { /* defined (st_shndx != SHN_UNDEF) */
 				for (uint32_t p = 0; p + rel_ent <= rel_sz; p += rel_ent) {
 					uint32_t i2 = le32(rel0 + p + 4);
 					if ((i2 & 0xffu) == ELF_R_ARM_FUNCDESC_VALUE &&
 					    (i2 >> 8) == r_sym) {
-						descr = (uint32_t)((uintptr_t)base +
-								   (le32(rel0 + p) - vaddr_lo));
+						descr = fdpic_rt(lm, nload, le32(rel0 + p));
 						break;
 					}
 				}
 				if (!descr && pool_used + 8u <= max_fd * 8u) {
 					/* no FUNCDESC_VALUE for this symbol (busybox applets, _init,
 					 * libc helpers) — synthesize its descriptor {func = st_value +
-					 * bias + addend, got}, as ld.so's _dl_funcdesc_for does. */
+					 * addend (loadmap-mapped), got}, as ld.so's _dl_funcdesc_for. */
 					uint8_t *d = fdpool + pool_used;
-					uint32_t fn = le32(sym + 4) + (uint32_t)bias + le32(where);
+					uint32_t fn =
+						fdpic_rt(lm, nload, le32(sym + 4) + le32(where));
 					memcpy(d, &fn, 4);
 					memcpy(d + 4, &got_base, 4);
 					descr = (uint32_t)(uintptr_t)d;
@@ -966,23 +1007,23 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 
 	prog->region = base;
 	prog->region_size = region_size;
-	prog->region_used = pool_off + pool_used; /* image + loadmap + descriptor pool */
-	prog->text_base = (uintptr_t)base + (text_v - vaddr_lo);
+	prog->region_used = pool_off + pool_used; /* RW block + loadmap + descriptor pool */
+	prog->text_base = (uintptr_t)(img + text_off); /* shared IN-PLACE from the cpio */
 	prog->text_size = text_sz;
-	prog->data_base = (uintptr_t)base + (data_v - vaddr_lo);
+	prog->data_base = (uintptr_t)fdpic_rt(lm, nload, data_v); /* RW block in the region */
 	prog->data_size = data_fsz;
 	prog->bss_size = data_msz - data_fsz;
 	prog->stack_size = 0x4000u;
-	prog->entry = (uintptr_t)base + (e_entry - vaddr_lo);
+	prog->entry = (uintptr_t)fdpic_rt(lm, nload, e_entry);
 	prog->is_fdpic = 1;
 	prog->loadmap = (uintptr_t)lm; /* passed in r7; _start self-relocates from it */
-	prog->phdr = bias + e_phoff;   /* program headers live in the (file-offset-0) text seg */
+	prog->phdr = (uintptr_t)(img + e_phoff); /* program headers live in the file-offset-0 text seg */
 	prog->phnum = e_phnum;
 	prog->is_dynamic = is_dynamic; /* exec with DT_NEEDED → caller loads + enters ld.so */
 	prog->got = got_base;	       /* DT_PLTGOT base */
 	/* PT_DYNAMIC runtime addr — for an interpreter this is r9 at entry (uClibc-ng's FDPIC
 	 * dl_boot_ldso_dyn_pointer, which DL_BOOT_COMPUTE_DYN uses as the dynamic-table ptr). */
-	prog->dynamic = dyn_off ? ((uintptr_t)base + (dyn_off - vaddr_lo)) : 0;
+	prog->dynamic = dyn_off ? (uintptr_t)fdpic_rt(lm, nload, dyn_off) : 0;
 	return OVE_OK;
 }
 
