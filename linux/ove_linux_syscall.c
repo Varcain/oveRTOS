@@ -2291,9 +2291,15 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		uint64_t dur_us = sec * 1000000ull + nsec / 1000ull;
 		if (dur_us > 100000000ull)
 			dur_us = 100000000ull; /* clamp to 100 s */
-		uint64_t now_ns = 0;
-		ove_time_get_ns(&now_ns);
-		proc->sleep_until_us = now_ns / 1000ull + dur_us;
+		/* Use the FreeRTOS TICK (ove_time_get_us), NOT the DWT (ove_time_get_ns): with
+		 * configUSE_TICKLESS_IDLE the idle task WFI-sleeps between events, gating the CPU clock
+		 * so the DWT cycle counter FREEZES across the sleep, while the tick is re-accounted by
+		 * vTaskStepTick() on wake. The run-loop coordinator compares this deadline against
+		 * ove_time_get_us, so both must use the same cross-idle clock or every sleep / poll
+		 * timeout drifts (on real silicon interactive top ran ~1.66x slow + un-quittable). */
+		uint64_t now_us = 0;
+		ove_time_get_us(&now_us);
+		proc->sleep_until_us = now_us + dur_us;
 		proc->sleep_pending = 1;
 		return 0;
 	}
@@ -2384,9 +2390,12 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * at the next poll. Without console_poll a long timeout already reported ready
 		 * above, so we only reach here on a no-callback probe → return 0. */
 		if (proc->console_poll && tmo_ms > 0) {
-			uint64_t now_ns = 0;
-			ove_time_get_ns(&now_ns);
-			proc->sleep_until_us = now_ns / 1000ull + (uint64_t)tmo_ms * 1000ull;
+			/* TICK (cross-idle), not DWT: tickless idle freezes the DWT while the proc is
+			 * parked here, and the coordinator checks this against ove_time_get_us (see the
+			 * nanosleep handler). Both must use the same clock or top's refresh + q drift. */
+			uint64_t now_us = 0;
+			ove_time_get_us(&now_us);
+			proc->sleep_until_us = now_us + (uint64_t)tmo_ms * 1000ull;
 			proc->sleep_pending = 1;
 		}
 		return 0;
