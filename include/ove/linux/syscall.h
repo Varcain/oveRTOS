@@ -144,6 +144,10 @@ extern "C" {
 #define OVE_LNX_NR_fchmod 94
 #define OVE_LNX_NR_setitimer 104
 #define OVE_LNX_NR_clone 120
+
+/* clone(2) flags. CLONE_VM => the child shares the caller's address space — a pthread,
+ * not a fork. The run loop co-runs such a child in the parent's region (see EV_FORK). */
+#define OVE_LNX_CLONE_VM 0x00000100u
 #define OVE_LNX_NR_setgroups32 206
 #define OVE_LNX_NR_fchown32 207
 #define OVE_LNX_NR_setuid32 213
@@ -375,6 +379,10 @@ typedef struct ove_lnx_proc {
 	int region_owner; /**< 1 = owns/must-free its region; 0 = shares a parent's (vfork window). */
 	int vfork_parent_slot; /**< Slot of a parent suspended awaiting this child's exec/exit, or -1. */
 	int fork_pending; /**< This proc issued vfork/fork/clone; coordinator spawns a child. */
+	int is_thread;	  /**< This proc is a pthread: shares its creator's region for life. */
+	int clone_is_thread;	     /**< Pending fork is a clone(CLONE_VM) thread (set at the
+				      *   syscall, consumed by the coordinator's EV_FORK). */
+	uintptr_t clone_child_stack; /**< clone(2) child_stack arg: the new thread runs on this. */
 	int sleeping;	  /**< Parked for nanosleep until sleep_until_us. */
 	int wait_pending; /**< Blocked in wait4 (parked) awaiting a child exit. */
 	int wait_pid;	  /**< wait4 pid arg (-1 = any child). */
