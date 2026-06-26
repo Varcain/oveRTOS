@@ -2482,6 +2482,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			return -OVE_LNX_ENOTTY;
 		}
 	}
+	case OVE_LNX_NR_rt_sigsuspend: {
+		/* LinuxThreads suspend(): block until a signal (the restart) is delivered. If one is
+		 * already pending (a restart that beat us here), fall through so the dispatch delivers
+		 * it now; otherwise ask the run loop to park us — the coordinator runs the handler on
+		 * the restart kill() and resumes us. sigsuspend always "returns" -EINTR. The mask arg
+		 * is honoured loosely: any delivered signal wakes us, matching the restart protocol
+		 * (the restart signal is the only one sent to a suspended thread). */
+		if (!proc->pending_sig)
+			proc->sigsuspend_pending = 1;
+		return -OVE_LNX_EINTR;
+	}
 	case OVE_LNX_NR_rt_sigprocmask:
 		return 0;
 	case OVE_LNX_NR_set_tid_address:
