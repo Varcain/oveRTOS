@@ -78,6 +78,7 @@ extern "C" {
 #define OVE_LNX_NR_prctl 172
 #define OVE_LNX_NR_rt_sigaction 174
 #define OVE_LNX_NR_rt_sigprocmask 175
+#define OVE_LNX_NR_rt_sigsuspend 179
 #define OVE_LNX_NR_getcwd 183
 #define OVE_LNX_NR_vfork 190
 #define OVE_LNX_NR_mmap2 192
@@ -201,8 +202,10 @@ extern "C" {
 #define OVE_LNX_CS8 0x0030u
 #define OVE_LNX_CREAD 0x0080u
 /* Signals: a per-process disposition table + the handful the shell cares about.
- * SIG_DFL/SIG_IGN are the special handler sentinels. */
-#define OVE_LNX_NSIG 32
+ * SIG_DFL/SIG_IGN are the special handler sentinels. Must cover the POSIX RT signals
+ * (SIGRTMIN..): LinuxThreads uses __SIGRTMIN (>=32) for its thread restart/cancel/debug
+ * signals, so a 32-wide table would reject the restart kill() and hang every pthread. */
+#define OVE_LNX_NSIG 65
 #define OVE_LNX_SIG_DFL 0
 #define OVE_LNX_SIG_IGN 1
 #define OVE_LNX_SIGINT 2
@@ -383,6 +386,8 @@ typedef struct ove_lnx_proc {
 	int clone_is_thread;	     /**< Pending fork is a clone(CLONE_VM) thread (set at the
 				      *   syscall, consumed by the coordinator's EV_FORK). */
 	uintptr_t clone_child_stack; /**< clone(2) child_stack arg: the new thread runs on this. */
+	int sigsuspend_pending;	     /**< Parked in rt_sigsuspend; woken by a delivered signal (the
+				      *   LinuxThreads restart) — the coordinator runs the handler. */
 	int sleeping;	  /**< Parked for nanosleep until sleep_until_us. */
 	int wait_pending; /**< Blocked in wait4 (parked) awaiting a child exit. */
 	int wait_pid;	  /**< wait4 pid arg (-1 = any child). */

@@ -151,10 +151,13 @@ static void park_frame(struct ove_lnx_frame *f)
 /* Saved interrupted context for an in-flight signal handler. r4-r11 are NOT
  * saved (a C handler preserves them, so they are already correct at sigreturn).
  * No nesting (one handler at a time). */
-static struct {
+/* Per-slot, NOT a single global: pthreads (LinuxThreads) deliver restart signals to
+ * several threads concurrently — each slot's handler frame must save/restore its own
+ * interrupted context, or one thread's sigreturn clobbers another's. */
+static struct sig_save_s {
 	uint32_t r0, r1, r2, r3, r12, lr, pc, xpsr;
 	int active;
-} g_sig_save;
+} g_sig_save[OVE_LNX_NSLOT];
 
 static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
@@ -195,15 +198,16 @@ static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int si
 		park_frame(f); /* the coordinator reaps it */
 		return;
 	}
-	g_sig_save.r0 = (uint32_t)ret;
-	g_sig_save.r1 = f->r[1];
-	g_sig_save.r2 = f->r[2];
-	g_sig_save.r3 = f->r[3];
-	g_sig_save.r12 = f->r[12];
-	g_sig_save.lr = f->r[14];
-	g_sig_save.pc = f->r[15];
-	g_sig_save.xpsr = f->xpsr;
-	g_sig_save.active = 1;
+	struct sig_save_s *sv = &g_sig_save[slot_of(proc)];
+	sv->r0 = (uint32_t)ret;
+	sv->r1 = f->r[1];
+	sv->r2 = f->r[2];
+	sv->r3 = f->r[3];
+	sv->r12 = f->r[12];
+	sv->lr = f->r[14];
+	sv->pc = f->r[15];
+	sv->xpsr = f->xpsr;
+	sv->active = 1;
 	f->r[15] = h & ~1u;			 /* pc -> handler (Thumb via xPSR.T) */
 	f->r[0] = (uint32_t)sig;		 /* r0 = signo */
 	f->r[14] = proc->sig_restorer[sig] | 1u; /* lr -> sa_restorer */
@@ -211,19 +215,20 @@ static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int si
 }
 
 /* rt_sigreturn: restore the context saved at delivery. */
-static void sig_restore(struct ove_lnx_frame *f)
+static void sig_restore(struct ove_lnx_frame *f, const ove_lnx_proc_t *proc)
 {
-	if (!g_sig_save.active)
+	struct sig_save_s *sv = &g_sig_save[slot_of(proc)];
+	if (!sv->active)
 		return;
-	f->r[0] = g_sig_save.r0;
-	f->r[1] = g_sig_save.r1;
-	f->r[2] = g_sig_save.r2;
-	f->r[3] = g_sig_save.r3;
-	f->r[12] = g_sig_save.r12;
-	f->r[14] = g_sig_save.lr;
-	f->r[15] = g_sig_save.pc & ~1u;
-	f->xpsr = g_sig_save.xpsr;
-	g_sig_save.active = 0;
+	f->r[0] = sv->r0;
+	f->r[1] = sv->r1;
+	f->r[2] = sv->r2;
+	f->r[3] = sv->r3;
+	f->r[12] = sv->r12;
+	f->r[14] = sv->lr;
+	f->r[15] = sv->pc & ~1u;
+	f->xpsr = sv->xpsr;
+	sv->active = 0;
 }
 
 /* ---- the syscall dispatch body --------------------------------------------- */
@@ -274,7 +279,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 		return;
 	}
 	if (nr == OVE_LNX_NR_rt_sigreturn || nr == OVE_LNX_NR_sigreturn) {
-		sig_restore(f);
+		sig_restore(f, proc);
 		return;
 	}
 	/* fork/vfork/clone: capture the parent's resume context and ask the coordinator
@@ -301,7 +306,8 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	/* nanosleep / blocking wait4: the syscall set the pending flag; capture the
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
-	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait) {
+	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait ||
+	    proc->sigsuspend_pending) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
 		return;
@@ -464,6 +470,44 @@ static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid,
 	}
 }
 
+/* Deliver `sig` to a proc PARKED in rt_sigsuspend (the LinuxThreads restart). There is no live
+ * frame — the interrupted context is the captured g_ctx[slot]. Save that as the slot's sigreturn
+ * frame (to resume with `ret` = -EINTR), then resume the proc INTO its handler; the handler's
+ * sa_restorer -> rt_sigreturn restores the saved frame and the syscall returns -EINTR. SIG_IGN
+ * just resumes with `ret`; SIG_DFL terminates (the EV_EXIT pass reaps it). */
+static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
+				  ove_lnx_proc_t *proc, int sig, long ret)
+{
+	uintptr_t h = proc->sig_handler[sig];
+	if (h == OVE_LNX_SIG_IGN) {
+		eng->spawn_resume(slot, proc->region, &g_ctx[slot], ret);
+		return;
+	}
+	if (h == OVE_LNX_SIG_DFL) {
+		proc->exited = 1;
+		proc->exit_status = 128 + sig;
+		return;
+	}
+	struct sig_save_s *sv = &g_sig_save[slot];
+	sv->r0 = (uint32_t)ret;
+	sv->r1 = sv->r2 = sv->r3 = 0; /* r0-r3 not captured; the sigsuspend caller reloads them */
+	sv->r12 = g_ctx[slot].r12;
+	sv->lr = g_ctx[slot].lr;
+	sv->pc = g_ctx[slot].pc; /* the rt_sigsuspend resume point */
+	sv->xpsr = (1u << 24);	 /* Thumb */
+	sv->active = 1;
+	/* Reuse the slot ctx as the handler-entry frame; sp + r4-r11 stay = the thread's, EXCEPT
+	 * r9: FDPIC sa_handler/sa_restorer are function DESCRIPTORS {entry, GOT}, not raw entries.
+	 * Enter the handler at its entry with r9 = ITS OWN GOT — it lives in libpthread, a different
+	 * module than the interrupted libc sigsuspend, so the interrupted r9 would fault it. */
+	const uint32_t *hfd = (const uint32_t *)(uintptr_t)h;
+	const uint32_t *rfd = (const uint32_t *)(uintptr_t)proc->sig_restorer[sig];
+	g_ctx[slot].r4_11[5] = hfd[1];		    /* r9 = handler's GOT */
+	g_ctx[slot].lr = rfd[0] | 1u;		    /* return -> sa_restorer entry -> sigreturn */
+	g_ctx[slot].pc = hfd[0] | 1u;		    /* enter the handler (Thumb) */
+	eng->spawn_resume(slot, proc->region, &g_ctx[slot], sig); /* r0 = signo */
+}
+
 int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_config_t *cfg,
 		       const char *path, int argc, const char *const argv[])
 {
@@ -489,7 +533,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	g_pending_sig = 0;
 	g_tty_isig = 1;
 	ove_lnx_stats_reset();
-	g_sig_save.active = 0;
+	for (int i = 0; i < OVE_LNX_NSLOT; i++)
+		g_sig_save[i].active = 0;
 
 	int bb = -1;
 	for (int i = 0; i < cfg->rootfs_count; i++)
@@ -530,7 +575,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		 * masked window keeps a preempting program svc from racing the read/clear).
 		 * Act on it OUTSIDE the crit — abort/spawn/launch may yield. */
 		int es = -1, et = 0;
-		enum { EV_EXIT = 1, EV_EXEC, EV_FORK, EV_SLEEP, EV_WAITPARK, EV_PIPE };
+		enum { EV_EXIT = 1, EV_EXEC, EV_FORK, EV_SLEEP, EV_WAITPARK, EV_PIPE, EV_SIGSUSPEND };
 		eng->crit_enter();
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -566,6 +611,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			if (p->pipe_wait && g_ove_lnx_used[s]) {
 				es = s;
 				et = EV_PIPE;
+				break;
+			}
+			if (p->sigsuspend_pending && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_SIGSUSPEND;
 				break;
 			}
 		}
@@ -733,6 +783,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+		if (et == EV_SIGSUSPEND) { /* free the spin thread; pending_sig below wakes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
 
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
@@ -751,8 +806,18 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			 * deliver (no live thread), so the coordinator does. SIG_IGN is dropped;
 			 * otherwise terminate (default action — a custom handler on a blocked proc
 			 * is approximated as terminate). EV_EXIT reaps it next pass. */
-			if (p->pending_sig && !g_ove_lnx_used[s] &&
-			    (p->sleeping || p->wait_pending || p->pipe_wait)) {
+			if (p->pending_sig && !g_ove_lnx_used[s] && p->sigsuspend_pending) {
+				/* rt_sigsuspend-parked thread woken by a delivered signal (the
+				 * LinuxThreads restart): run the handler, then resume the syscall
+				 * returning -EINTR. Unlike a sleep/wait/pipe block (terminated by a
+				 * default-action signal), sigsuspend EXPECTS the signal and continues. */
+				int sig = p->pending_sig;
+				p->pending_sig = 0;
+				p->sigsuspend_pending = 0;
+				deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+				progress = 1;
+			} else if (p->pending_sig && !g_ove_lnx_used[s] &&
+				   (p->sleeping || p->wait_pending || p->pipe_wait)) {
 				int sig = p->pending_sig;
 				p->pending_sig = 0;
 				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
