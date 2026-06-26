@@ -159,17 +159,18 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		k_mem_domain_remove_partition(&g_domains[ridx], &g_data[ridx]);
 	}
 	if (prog->is_dynamic) {
-		/* Dynamic FDPIC: the region interleaves the exec + ld.so (each its own text+data) so
-		 * a single W^X text/data split is impossible, and libc.so lives in the arena. Cover
-		 * the whole region + the arena as two RWX partitions — W^X is RELAXED for dynamic
-		 * procs only (documented; static/bFLT keep full W^X). Still 2 partitions (+ libc/malloc
-		 * + the K_USER stack = 5 dynamic MPU regions), the same budget as the static path. */
+		/* Dynamic FDPIC: ALL code (exec + ld.so + libc.so text) is shared IN-PLACE from the
+		 * cpio's executable .text subsection (.text.ove_rootfs — user-RX, already covered by the
+		 * kernel's static .text MPU region the K_USER thread runs trampolines from), so the
+		 * per-process region + arena hold ONLY RW data now. Map them RW — W^X is RESTORED (the
+		 * old RWX relaxation, and CONFIG_EXECUTE_XOR_WRITE=n, are gone). region(RW) + arena(RW) +
+		 * libc/malloc + the K_USER stack = 5 dynamic MPU regions, the same budget as static. */
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = OVE_LNX_PROG_REGION_SIZE;
-		g_text[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
+		g_text[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
 		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
 		g_data[ridx].size = OVE_LNX_DYN_POOL_SIZE;
-		g_data[ridx].attr = K_MEM_PARTITION_P_RWX_U_RWX;
+		g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
 	} else {
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = prog->text_size;

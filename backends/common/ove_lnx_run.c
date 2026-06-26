@@ -98,6 +98,13 @@ static ove_arena_t g_arenas[OVE_LNX_NREG];
 static const ove_lnx_run_config_t *g_cfg;
 static const struct ove_lnx_engine *g_eng; /* for the dispatch to post coordinator events */
 
+/* The cpio data region [lo, hi): the embedded rootfs files' bytes. A dynamic FDPIC proc now runs
+ * ALL its code — busybox.so + ld.so + libc.so text, shared in-place — straight from here, so a
+ * PC-discriminating seam (NuttX) must count a cpio PC as "in a program" when routing the svc.
+ * NULL until a run starts. */
+const uint8_t *g_ove_lnx_rootfs_lo;
+const uint8_t *g_ove_lnx_rootfs_hi;
+
 /* Proc-table accessors so the pipe layer can scan all live procs' fds (count a pipe's
  * open read/write ends for EOF / EPIPE) without the syscall layer knowing OVE_LNX_NSLOT. */
 ove_lnx_proc_t *ove_lnx_proc_table(void)
@@ -356,7 +363,11 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 					  1) != OVE_OK)
 			return -1;
 		pc = ld.entry;
-		at_base = ld_base;
+		/* AT_BASE = ld.so's ELF header, which ld.so reads at _dl_start (dl-startup.c). With the
+		 * text shared IN-PLACE, that header is in the cpio (ld.text_base), NOT at ld_base — which
+		 * now holds only ld.so's RW block. (Pre-sharing, text+data were contiguous at ld_base, so
+		 * the old `at_base = ld_base` happened to coincide with the header.) */
+		at_base = ld.text_base;
 		prog.interp_loadmap = ld.loadmap; /* r8 */
 		/* r9 = ld.so's _DYNAMIC, NOT its GOT: uClibc-ng's FDPIC DL_BOOT_COMPUTE_DYN sets
 		 * the dynamic-table ptr = dl_boot_ldso_dyn_pointer = the entry r9. (The working
@@ -454,6 +465,17 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		return OVE_LNX_RUN_ELAUNCH;
 	g_cfg = cfg;
 	g_eng = eng;
+	g_ove_lnx_rootfs_lo = NULL; /* the cpio span — a seam's svc discrimination treats a cpio PC */
+	g_ove_lnx_rootfs_hi = NULL; /* as a program svc (the shared in-place text runs from here) */
+	for (int i = 0; i < cfg->rootfs_count; i++) {
+		const ove_lnx_file_t *f = &cfg->rootfs[i];
+		if (!f->data)
+			continue;
+		if (!g_ove_lnx_rootfs_lo || f->data < g_ove_lnx_rootfs_lo)
+			g_ove_lnx_rootfs_lo = f->data;
+		if (!g_ove_lnx_rootfs_hi || f->data + f->size > g_ove_lnx_rootfs_hi)
+			g_ove_lnx_rootfs_hi = f->data + f->size;
+	}
 	for (int i = 0; i < OVE_LNX_NSLOT; i++) {
 		g_ove_lnx_used[i] = 0;
 		g_ove_lnx_proc[i].alive = 0;

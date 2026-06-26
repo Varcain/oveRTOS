@@ -187,9 +187,9 @@ CONFIG_LV_USE_FLEX=y
 CONFIG_USERSPACE=y
 CONFIG_EXTRA_EXCEPTION_INFO=y
 CONFIG_THREAD_CUSTOM_DATA=y
-# A dynamically-linked (FDPIC) program interleaves the exec + ld.so (each its own text+data)
-# in one region and runs libc.so from the arena, so its per-process MPU domain cannot fit
-# separate W^X RX/RW splits within the AN521's 6 dynamic regions — it uses RWX partitions.
-# Relax W^X to allow them (bFLT + static-FDPIC keep RX/RW attrs, so they remain W^X in fact).
-CONFIG_EXECUTE_XOR_WRITE=n
+# W^X holds for every program: bFLT + static-FDPIC use RX-text / RW-data partitions, and a
+# DYNAMIC FDPIC proc shares ALL its code IN-PLACE from the cpio's user-RX .text subsection, so
+# its per-process region + arena are RW-only (see setup_domain) — no RWX partitions anywhere.
+# Enforce W^X explicitly (Zephyr's own default is OFF) now that no program needs an RWX region.
+CONFIG_EXECUTE_XOR_WRITE=y
 {% endif %}
