@@ -179,6 +179,26 @@ void ove_lnx_park_loop(void)
 }
 
 /* ---- signal delivery (over the uniform frame) ------------------------------ */
+/* Resolve a handler + restorer for delivery. FDPIC: sa_handler/sa_restorer are function DESCRIPTORS
+ * {entry, GOT} — deref, since the handler may live in a different module (e.g. libpthread) than the
+ * interrupted code and needs its own r9=GOT. Non-FDPIC (e.g. the posix host test): raw entries, no
+ * GOT change. */
+static void resolve_handler(const ove_lnx_proc_t *proc, int sig, uintptr_t *entry, uint32_t *got,
+			    uintptr_t *restorer)
+{
+	uintptr_t h = proc->sig_handler[sig];
+	uintptr_t r = proc->sig_restorer[sig];
+	if (proc->is_fdpic) {
+		*entry = ((const uint32_t *)h)[0];
+		*got = ((const uint32_t *)h)[1];
+		*restorer = ((const uint32_t *)r)[0];
+	} else {
+		*entry = h;
+		*got = 0;
+		*restorer = r;
+	}
+}
+
 /* Deliver signal `sig` to `proc`; `ret` is the interrupted syscall's result
  * (0 for a kill/tkill, -EINTR for a console-interrupted read). */
 static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int sig, long ret)
@@ -208,9 +228,14 @@ static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int si
 	sv->pc = f->r[15];
 	sv->xpsr = f->xpsr;
 	sv->active = 1;
-	f->r[15] = h & ~1u;			 /* pc -> handler (Thumb via xPSR.T) */
+	uintptr_t entry, restorer;
+	uint32_t got;
+	resolve_handler(proc, sig, &entry, &got, &restorer);
+	if (proc->is_fdpic)
+		f->r[9] = got;			 /* FDPIC: r9 = the handler's own GOT */
+	f->r[15] = entry & ~1u;			 /* pc -> handler entry (Thumb via xPSR.T) */
 	f->r[0] = (uint32_t)sig;		 /* r0 = signo */
-	f->r[14] = proc->sig_restorer[sig] | 1u; /* lr -> sa_restorer */
+	f->r[14] = restorer | 1u;		 /* lr -> sa_restorer */
 	f->xpsr |= (1u << 24);
 }
 
@@ -276,6 +301,11 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 			tp->pending_sig = sig;
 			f->r[0] = 0;
 		}
+		/* Wake the coordinator NOW so it delivers the signal at once (the LinuxThreads
+		 * restart) instead of at its next ~poll-interval tick — otherwise every thread
+		 * wakeup costs up to one event_wait timeout. */
+		if (f->r[0] == 0 && g_eng && g_eng->event_post)
+			g_eng->event_post();
 		return;
 	}
 	if (nr == OVE_LNX_NR_rt_sigreturn || nr == OVE_LNX_NR_sigreturn) {
@@ -416,6 +446,7 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_proc[sidx].alive = 1;
 	g_ove_lnx_proc[sidx].region = ridx;
 	g_ove_lnx_proc[sidx].region_owner = 1;
+	g_ove_lnx_proc[sidx].is_fdpic = prog.is_fdpic;
 	g_ove_lnx_proc[sidx].vfork_parent_slot = -1;
 	/* comm = argv[0] basename (strip the login-shell leading '-') for ps/top. */
 	{
@@ -496,15 +527,16 @@ static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
 	sv->pc = g_ctx[slot].pc; /* the rt_sigsuspend resume point */
 	sv->xpsr = (1u << 24);	 /* Thumb */
 	sv->active = 1;
-	/* Reuse the slot ctx as the handler-entry frame; sp + r4-r11 stay = the thread's, EXCEPT
-	 * r9: FDPIC sa_handler/sa_restorer are function DESCRIPTORS {entry, GOT}, not raw entries.
-	 * Enter the handler at its entry with r9 = ITS OWN GOT — it lives in libpthread, a different
-	 * module than the interrupted libc sigsuspend, so the interrupted r9 would fault it. */
-	const uint32_t *hfd = (const uint32_t *)(uintptr_t)h;
-	const uint32_t *rfd = (const uint32_t *)(uintptr_t)proc->sig_restorer[sig];
-	g_ctx[slot].r4_11[5] = hfd[1];		    /* r9 = handler's GOT */
-	g_ctx[slot].lr = rfd[0] | 1u;		    /* return -> sa_restorer entry -> sigreturn */
-	g_ctx[slot].pc = hfd[0] | 1u;		    /* enter the handler (Thumb) */
+	/* Reuse the slot ctx as the handler-entry frame; sp + r4-r11 stay = the thread's, except r9
+	 * (the handler's own GOT for FDPIC — resolve_handler derefs the {entry,GOT} funcdescs; the
+	 * restart handler lives in libpthread, a different module than the interrupted libc). */
+	uintptr_t entry, restorer;
+	uint32_t got;
+	resolve_handler(proc, sig, &entry, &got, &restorer);
+	if (proc->is_fdpic)
+		g_ctx[slot].r4_11[5] = got;	    /* r9 = handler's GOT */
+	g_ctx[slot].lr = restorer | 1u;		    /* return -> sa_restorer entry -> sigreturn */
+	g_ctx[slot].pc = entry | 1u;		    /* enter the handler (Thumb) */
 	eng->spawn_resume(slot, proc->region, &g_ctx[slot], sig); /* r0 = signo */
 }
 
