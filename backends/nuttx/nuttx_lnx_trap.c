@@ -195,7 +195,19 @@ static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *
 
 static void nuttx_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx, long r0val)
 {
-	if (spawn_task(sidx, g_region_stack_lo[ridx], (uintptr_t)ctx->sp) != 0)
+	uintptr_t klo = g_region_stack_lo[ridx], ktop = (uintptr_t)ctx->sp;
+	if (g_ove_lnx_proc[sidx].is_thread) {
+		/* Thread: run it on its clone child_stack (ctx->sp is the stack TOP, allocated by libpthread
+		 * down in the region heap). nxtask_init([g_region_stack_lo, ctx->sp)) would INVERT (child_stack
+		 * is below the main stack). A separate bookkeeping kstack fails too: NuttX sets PSP from the
+		 * TCB stack top, ignoring our REG_SP override, so the thread would run on that tiny stack. Hand
+		 * nxtask_init a small valid window at the TOP of the child stack instead → the TCB stack top IS
+		 * child_stack, PSP lands there, and the thread runs on its full libpthread-allocated stack (no
+		 * runtime stack-check; only the top 1 KB is colored). */
+		klo = (uintptr_t)ctx->sp - 1024;
+		ktop = (uintptr_t)ctx->sp;
+	}
+	if (spawn_task(sidx, klo, ktop) != 0)
 		return;
 	uint32_t *regs = g_tcb[sidx].cmn.xcp.regs;
 	regs[REG_R4] = ctx->r4_11[0];
