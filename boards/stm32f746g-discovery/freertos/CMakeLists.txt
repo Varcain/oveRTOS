@@ -94,8 +94,16 @@ ove_add_fatfs(
 )
 ove_add_cmsis_dsp()
 
-# ── FreeRTOS kernel (Cortex-M7 port from STM32CubeF7 bundle) ────────
-ove_add_freertos_kernel(ARM_CM7/r0p1)
+# ── FreeRTOS kernel ────────────────────────────────────────────────
+# OVE_LINUX wants the V11 standalone ARM_CM4_MPU port (PMSAv7, runs on the M7) for
+# unprivileged Linux-personality isolation; the STM32Cube V10 MPU port is ABI-incompatible
+# with configUSE_PICOLIBC_TLS. Non-Linux keeps the fast STM32Cube V10 ARM_CM7 port.
+if(OVE_LINUX)
+    set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
+    ove_add_freertos_kernel(ARM_CM4_MPU)
+else()
+    ove_add_freertos_kernel(ARM_CM7/r0p1)
+endif()
 
 # ── Optional networking + TLS ───────────────────────────────────────
 if(OVE_NET)
