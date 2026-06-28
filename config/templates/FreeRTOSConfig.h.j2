@@ -122,6 +122,26 @@ vPortSVCHandler, so vPortSVCHandler must keep its own name (else the seam's
 {% endif %}
 #define xPortPendSVHandler PendSV_Handler
 
+{% if config.get("CONFIG_OVE_LINUX") == True and (config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True or config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True) %}
+/* Phase-2 MPU isolation (ARM_CM4_MPU port): each Linux program runs as an
+ * UNPRIVILEGED restricted task so a stray access faults instead of corrupting the
+ * kernel. MPU_TYPE.DREGION = 8 on both the QEMU an500 (Cortex-M7 r1p2) and the real
+ * STM32F746-Disco (r0p1). The r0p1 silicon needs the errata-837070 BASEPRI workaround;
+ * QEMU's r1p2 must NOT have it (its prvSetupMPU configASSERT hangs at boot if enabled). */
+#define configUSE_MPU_WRAPPERS_V1                       1
+#define configTOTAL_MPU_REGIONS                         8
+{% if config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+#define configENABLE_ERRATA_837070_WORKAROUND           1
+{% else %}
+#define configENABLE_ERRATA_837070_WORKAROUND           0
+{% endif %}
+/* Our SVC vector is the seam's strong SVC_Handler (not vPortSVCHandler), so the
+ * port's handler-installation assert must be disabled or it hangs at boot. */
+#define configCHECK_HANDLER_INSTALLATION                0
+#define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY     0
+#define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS      0
+{% endif %}
+
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True %}
 /* QEMU doesn't emulate the DWT cycle counter — use a SysTick-based
  * millisecond counter instead.  Incremented from vApplicationTickHook()

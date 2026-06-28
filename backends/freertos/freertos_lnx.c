@@ -34,26 +34,45 @@
 #define TRAMP_STACK_WORDS 256u		  /* tramp prologue; the program uses its own stack */
 #define SLOT_PRIO (tskIDLE_PRIORITY + 1u) /* below the run-loop task (its creator) */
 
+/* Under the ARM_CM4_MPU port the task's privilege rides in the top bit of its priority
+ * (portPRIVILEGE_BIT); on the non-MPU port the symbol is undefined → 0 (a no-op, all
+ * tasks privileged). PHASE A keeps the Linux program PRIVILEGED so the MPU port is
+ * exercised before the isolation change; PHASE B drops the bit + spawns it restricted. */
+#ifndef portPRIVILEGE_BIT
+#define portPRIVILEGE_BIT 0u
+#endif
+#define SLOT_PROG_PRIO (SLOT_PRIO | portPRIVILEGE_BIT)
+
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* Real STM32F746 hardware: the MCU has only 320K of internal SRAM — far too small for the 2M
  * region pool + 1M dyn pools — so both live in the board's 8M external SDRAM (0xC0000000) via
  * the linker's .sdram_bss (NOLOAD) section. The board (bsp.c) brings up the FMC controller and
  * makes the SDRAM region executable + Normal non-cacheable (the latter keeps loaded/relocated
  * program code coherent on the M7 with no SCB cache maintenance) before the run loop runs. */
-#define OVE_LNX_POOL_SECT __attribute__((section(".sdram_bss"), aligned(32)))
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] OVE_LNX_POOL_SECT;
-static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] OVE_LNX_POOL_SECT;
-#else
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
-/* Per-region dynamic-link scratch pool in PSRAM (0x60000000): a dynamic FDPIC proc's arena
- * lives here so ld.so can mmap libc.so (~500K) — far past the in-region 96K arena. an500 RAM
- * (4M) is too tight for this beside the 2M of regions; PSRAM is 16M. NOLOAD → no flash cost. */
+/* Phase-2 MPU isolation: the program runs UNPRIVILEGED with a per-task MPU region over its
+ * program region + dyn_pool, and PMSAv7 requires each region's base aligned to its power-of-2
+ * size — so both arrays are size-aligned (not just 32B) within .sdram_bss. */
+static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE]
+	__attribute__((section(".sdram_bss"), aligned(OVE_LNX_PROG_REGION_SIZE)));
 static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
-	__attribute__((section(".psram"), aligned(32)));
+	__attribute__((section(".sdram_bss"), aligned(OVE_LNX_DYN_POOL_SIZE)));
+#else
+/* Both pools live in PSRAM (0x60000000, 16M; NOLOAD → no flash cost). Phase-2 MPU isolation:
+ * the program runs UNPRIVILEGED with a per-task MPU region over its program region + dyn_pool,
+ * and PMSAv7 requires each region's base to be aligned to its (power-of-2) size — so both arrays
+ * are size-aligned. PSRAM also keeps them off the kernel's 4M SRAM (the dynamic FDPIC proc's
+ * arena anyway needs room to mmap libc.so ~500K, far past the in-region 96K arena). */
+static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE]
+	__attribute__((section(".psram"), aligned(OVE_LNX_PROG_REGION_SIZE)));
+static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
+	__attribute__((section(".psram"), aligned(OVE_LNX_DYN_POOL_SIZE)));
 #endif
 static StaticTask_t g_tcb[OVE_LNX_NSLOT];
 static TaskHandle_t g_tid[OVE_LNX_NSLOT];
-static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS] __attribute__((aligned(8)));
+/* The tramp/program stacks are the restricted task's auto MPU stack region, so each must be
+ * aligned to its (power-of-2) size (PMSAv7). 256 words = 1 KB. */
+static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS]
+	__attribute__((aligned(TRAMP_STACK_WORDS * sizeof(StackType_t))));
 
 static int current_slot(void)
 {
@@ -74,12 +93,19 @@ struct lnx_capture {
 };
 static struct lnx_capture g_cap __attribute__((used)); /* referenced from SVC_Handler asm */
 
-/* The C body of the svc trap: build the uniform frame, dispatch, write back. */
-void freertos_lnx_svc_c(struct lnx_capture *g)
+/* The C body of the svc trap: build the uniform frame, dispatch, write back.
+ * Returns 1 if it handled a program's svc #0 (Linux syscall), 0 to FORWARD the svc
+ * to FreeRTOS. Under the MPU port FreeRTOS uses svc itself (portYIELD = svc #101,
+ * raised by the privileged idle task; raise-privilege = svc #102; start-scheduler =
+ * svc #100), so any svc from a non-program task (current_slot() < 0) must reach
+ * vPortSVCHandler. The current_slot() gate also blocks escalation: a malicious svc
+ * #102 from a program task is current_slot() >= 0 → dispatched as a (bogus) syscall,
+ * never reaching the port's raise-privilege path. */
+int freertos_lnx_svc_c(struct lnx_capture *g)
 {
 	int sidx = current_slot();
 	if (sidx < 0)
-		return;
+		return 0; /* not a program task → forward to FreeRTOS */
 	struct ove_lnx_frame f;
 	f.r[0] = g->hw[0];
 	f.r[1] = g->hw[1];
@@ -104,9 +130,10 @@ void freertos_lnx_svc_c(struct lnx_capture *g)
 	g->hw[5] = f.r[14];
 	g->hw[6] = f.r[15];
 	g->hw[7] = f.xpsr;
+	return 1;
 }
 
-extern void vPortSVCHandler(void); /* FreeRTOS's own (start-scheduler) handler */
+extern void vPortSVCHandler(void); /* FreeRTOS's own (start-scheduler / yield / priv) handler */
 
 /* SVC vector: while a run is active, capture the frame + dispatch the program's
  * svc; otherwise forward to FreeRTOS (start scheduler). */
@@ -116,6 +143,13 @@ __attribute__((naked)) void SVC_Handler(void)
 			 "ldr   r1, [r1]              \n"
 			 "cmp   r1, #0                \n"
 			 "beq   1f                    \n" /* inactive -> FreeRTOS */
+			 /* EXC_RETURN bit 3 == 0 -> the svc was taken from HANDLER mode.  A Linux program
+			  * always syscalls from THREAD mode (it runs as an unprivileged thread-mode task),
+			  * so a handler-mode svc is never a program syscall — it is FreeRTOS's own (yield /
+			  * raise-privilege / start-scheduler).  Capturing it from PSP (stale program frame)
+			  * + dispatching it as a syscall is what corrupted the post-exit context.  Forward. */
+			 "tst   lr, #8                \n"
+			 "beq   1f                    \n"
 			 "mrs   r0, psp               \n" /* r0 = HW exception frame */
 			 "ldr   r1, =g_cap            \n"
 			 "str   r0, [r1, #0]          \n" /* g_cap.hw  */
@@ -123,68 +157,140 @@ __attribute__((naked)) void SVC_Handler(void)
 			 "add   r2, r1, #8            \n"
 			 "stmia r2, {r4-r11}          \n" /* g_cap.r4_11 */
 			 "mov   r0, r1                \n"
-			 "push  {lr}                  \n"
+			 /* The dispatch runs in HANDLER mode but inherits the program's CONTROL.nPRIV=1.
+			  * FreeRTOS MPU_* wrappers (e.g. the event_post semaphore-give on a parking syscall)
+			  * read nPRIV, believe they're unprivileged, and raise-privilege via svc #102 — taken
+			  * inside this active SVCall it escalates to a HardFault. Clear nPRIV across the
+			  * dispatch (handler mode is privileged regardless), then restore so the program
+			  * resumes UNPRIVILEGED. */
+			 "mrs   r2, control           \n"
+			 "push  {r2, lr}              \n"
+			 "bic   r3, r2, #1            \n"
+			 "msr   control, r3           \n"
+			 "isb                         \n"
 			 "bl    freertos_lnx_svc_c    \n"
-			 "pop   {lr}                  \n"
-			 "bx    lr                    \n" /* exception return: replay frame */
+			 "pop   {r2, lr}              \n"
+			 "msr   control, r2           \n"
+			 "isb                         \n"
+			 "cmp   r0, #0                \n"
+			 "beq   1f                    \n" /* 0 = not a program svc -> forward */
+			 "bx    lr                    \n" /* 1 = handled: exception return, replay frame */
 			 "1:                          \n"
 			 "b     vPortSVCHandler       \n");
 }
 
-/* ---- thread entry trampolines (naked) -------------------------------------- */
-struct launch_args { /* arg_tramp reads these by offset — keep the order. */
-	void *sp;	      /* +0 */
-	void *entry;	      /* +4 */
-	void *loadmap;	      /* +8  FDPIC: the exec's elf32_fdpic_loadmap for r7. */
-	void *interp_loadmap; /* +12 FDPIC dynamic: ld.so's loadmap for r8 (0 for static). */
-	void *got;	      /* +16 FDPIC: the GOT base for r9. ld.so's _start passes the entry
-			       *     r9 to _dl_start as its _DYNAMIC ptr, so it MUST be set (the
-			       *     program crt overwrites r9, so it's harmless for static). */
-};
-struct resume_args {
-	long r0;
-	const struct ove_lnx_resume_ctx *ctx;
-};
-static struct launch_args g_largs[OVE_LNX_NSLOT];
-static struct resume_args g_rargs[OVE_LNX_NSLOT];
+/* ---- MemManage fault containment ------------------------------------------- */
+/* An UNPRIVILEGED program making an illegal access raises MemManage (enabled by the MPU port's
+ * prvSetupMPU). Contain it like a default-action SIGSEGV: mark the proc exited (139), redirect its
+ * stacked return PC to the park loop, wake the coordinator (which reaps the slot + frees the region
+ * via EV_EXIT) and exception-return — the kernel and other programs are untouched. A fault from any
+ * NON-program (privileged kernel) context is a real bug → fatal. Strong symbol overriding the weak
+ * MemManage_Handler in the CMSIS startup. */
+static void freertos_event_post(void); /* forward decl; defined with the vtable below */
+extern void HardFault_Handler(void);
 
-__attribute__((naked)) static void arg_tramp(struct launch_args *a __attribute__((unused)))
+void freertos_lnx_memfault_c(uint32_t *frame /* the faulting program's PSP HW frame */)
 {
-	/* a is in r0. Set the FDPIC entry registers from the struct, switch to the program
-	 * stack last (it clobbers sp), then branch. r7 = the exec's loadmap (the crt _start
-	 * self-relocates from it); r8 = the interpreter (ld.so) loadmap — 0 for static (the
-	 * crt branches on it, so leaving it garbage would fault); r9 = the GOT base — ld.so's
-	 * _start passes the ENTRY r9 to _dl_start as its _DYNAMIC pointer, so it MUST be set
-	 * for a dynamic exec (the program crt overwrites r9, so 0 is fine for static). Offsets
-	 * must match struct launch_args; every program is FDPIC, so r7/r8/r9 are always set. */
-	__asm__ volatile("ldr r7, [r0, #8]\n"  /* loadmap */
-			 "ldr r8, [r0, #12]\n" /* interp_loadmap */
-			 "ldr r9, [r0, #16]\n" /* got */
-			 "ldr r1, [r0, #4]\n"  /* entry */
-			 "ldr sp, [r0, #0]\n"  /* program sp (last — clobbers sp) */
-			 "mov r0, #0\n"
-			 "bx  r1\n");
-}
-static void arg_tramp_task(void *arg)
-{
-	arg_tramp((struct launch_args *)arg);
+	int sidx = current_slot();
+	if (g_ove_lnx_active && sidx >= 0) {
+		g_ove_lnx_proc[sidx].exited = 1;
+		g_ove_lnx_proc[sidx].exit_status = 139;		 /* 128 + SIGSEGV */
+		frame[6] = ((uint32_t)&ove_lnx_park_loop) & ~1u; /* stacked PC -> park loop */
+		frame[7] |= (1u << 24);				 /* xPSR.T (Thumb) */
+		*(volatile uint32_t *)0xE000ED28 =
+			*(volatile uint32_t *)0xE000ED28; /* clear MMFSR (write-1-to-clear) */
+		freertos_event_post();
+		return;
+	}
+	HardFault_Handler(); /* not a program fault -> fatal */
 }
 
-__attribute__((naked)) static void resume_tramp(void *r0val __attribute__((unused)),
-						void *ctx __attribute__((unused)))
+__attribute__((naked)) void MemManage_Handler(void)
 {
-	/* AAPCS: r0 = r0val (kept as the resumed program's r0), r1 = ctx. */
-	__asm__ volatile("ldmia r1!, {r4-r11}\n"
+	__asm__ volatile("mrs  r0, psp                \n" /* r0 = faulting program's HW frame */
+			 /* Same nPRIV dance as SVC_Handler: memfault_c calls FreeRTOS APIs
+			  * (event_post) which must not raise-privilege via svc from here. */
+			 "mrs  r2, control            \n"
+			 "push {r2, lr}               \n"
+			 "bic  r3, r2, #1             \n"
+			 "msr  control, r3            \n"
+			 "isb                         \n"
+			 "bl   freertos_lnx_memfault_c\n"
+			 "pop  {r2, lr}               \n"
+			 "msr  control, r2            \n"
+			 "isb                         \n"
+			 "bx   lr                     \n");
+}
+
+/* ---- thread entry: in-region descriptor + unified trampoline --------------- */
+/* The program's entry/resume context is stashed in the program's OWN region (just below SP)
+ * as a resume_desc, so the program task's (possibly UNPRIVILEGED) trampoline can read it without
+ * touching kernel memory, and the privileged coordinator writes it via background access. */
+struct resume_desc {
+	uint32_t r0;
+	struct ove_lnx_resume_ctx ctx; /* r4_11[8], r12, lr, sp, pc */
+};
+
+__attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused)))
+{
+	/* desc in r0. Restore r4..r11 (r7/r8/r9 = FDPIC exec-loadmap / interp-loadmap / GOT), r12,
+	 * lr, then r0 = desc->r0, switch SP last (it clobbers sp), and branch to ctx.pc. */
+	__asm__ volatile("add   r1, r0, #4    \n" /* r1 -> ctx */
+			 "ldmia r1!, {r4-r11}\n"
 			 "ldr   r12, [r1], #4\n"
-			 "ldr   lr, [r1], #4\n"
-			 "ldr   sp, [r1], #4\n"
-			 "ldr   r1, [r1]\n"
-			 "bx    r1\n");
+			 "ldr   lr,  [r1], #4\n"
+			 "ldr   r2,  [r1], #4\n" /* ctx.sp */
+			 "ldr   r3,  [r1]    \n" /* ctx.pc */
+			 "ldr   r0,  [r0]    \n" /* desc->r0 */
+			 "mov   sp,  r2      \n"
+			 "bx    r3           \n");
 }
-static void resume_tramp_task(void *arg)
+
+/* Stash the descriptor just below the program SP, INSIDE the program region (xRegions[0]). */
+static struct resume_desc *stash_desc(uint32_t sp, const struct ove_lnx_resume_ctx *ctx, long r0)
 {
-	struct resume_args *a = (struct resume_args *)arg;
-	resume_tramp((void *)a->r0, (void *)a->ctx); /* privileged: read the ctx directly */
+	struct resume_desc *d = (struct resume_desc *)(((sp & ~7u) - sizeof(struct resume_desc)) & ~7u);
+	d->r0 = (uint32_t)r0;
+	d->ctx = *ctx;
+	return d;
+}
+
+/* Spawn the program task entering prog_tramp. MPU build: a RESTRICTED, UNPRIVILEGED task whose
+ * only RW regions are its program region + dyn_pool (both execute-never; code runs from the flash
+ * cpio via the static unprivileged-RX flash region — clean W^X). Non-MPU build (e.g. STM32): a
+ * plain privileged task. */
+static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
+{
+	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
+#if (portUSING_MPU_WRAPPERS == 1)
+	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
+			       (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
+	/* pxTaskBuffer is `StaticTask_t * const`, so a designated initializer is required (it also
+	 * zeroes the remaining configurable region xRegions[2]). xRegions[0] = the program region,
+	 * xRegions[1] = the dyn_pool — both RW + execute-never (W^X; code runs from the flash cpio). */
+	TaskParameters_t tp = {
+		.pvTaskCode = prog_tramp,
+		.pcName = nm,
+		.usStackDepth = TRAMP_STACK_WORDS,
+		.pvParameters = desc,
+		.uxPriority = SLOT_PRIO, /* NO portPRIVILEGE_BIT -> UNPRIVILEGED */
+		.puxStackBuffer = g_tramp_stacks[sidx],
+		.pxTaskBuffer = &g_tcb[sidx],
+		.xRegions = {
+			{prog_regions[ridx], OVE_LNX_PROG_REGION_SIZE, rw_xn},
+			{dyn_pools[ridx], OVE_LNX_DYN_POOL_SIZE, rw_xn},
+		},
+	};
+	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
+	g_ove_lnx_used[sidx] = (ok == pdPASS);
+	return (ok == pdPASS) ? 0 : -1;
+#else
+	(void)ridx;
+	g_tid[sidx] = xTaskCreateStatic(prog_tramp, nm, TRAMP_STACK_WORDS, desc, SLOT_PROG_PRIO,
+					g_tramp_stacks[sidx], &g_tcb[sidx]);
+	g_ove_lnx_used[sidx] = (g_tid[sidx] != NULL);
+	return g_tid[sidx] ? 0 : -1;
+#endif
 }
 
 /* ---- the vtable: FreeRTOS task spawn --------------------------------------- */
@@ -215,28 +321,22 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	__DSB();
 	__ISB();
 #endif
-	g_largs[sidx].sp = sp;
-	g_largs[sidx].entry = entry;
-	g_largs[sidx].loadmap = prog->is_fdpic ? (void *)prog->loadmap : (void *)0;
-	g_largs[sidx].interp_loadmap = prog->is_fdpic ? (void *)prog->interp_loadmap : (void *)0;
-	g_largs[sidx].got = prog->is_fdpic ? (void *)prog->got : (void *)0;
-	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
-	g_tid[sidx] = xTaskCreateStatic(arg_tramp_task, nm, TRAMP_STACK_WORDS, &g_largs[sidx],
-					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);
-	g_ove_lnx_used[sidx] = 1;
-	return g_tid[sidx] ? 0 : -1;
+	/* FDPIC entry: r7 = exec loadmap, r8 = interp (ld.so) loadmap, r9 = GOT (r4_11[3..5]);
+	 * r4/5/6/10/11/r12/lr = 0 (the crt _start sets them up); r0 = 0 (static fini = NULL); pc = entry. */
+	struct ove_lnx_resume_ctx c;
+	memset(&c, 0, sizeof(c));
+	c.r4_11[3] = prog->is_fdpic ? (uint32_t)prog->loadmap : 0u;
+	c.r4_11[4] = prog->is_fdpic ? (uint32_t)prog->interp_loadmap : 0u;
+	c.r4_11[5] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
+	c.sp = (uint32_t)sp;
+	c.pc = (uint32_t)entry;
+	return freertos_spawn_common(sidx, ridx, stash_desc((uint32_t)sp, &c, 0));
 }
 
 static void freertos_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
 				  long r0val)
 {
-	(void)ridx;
-	g_rargs[sidx].r0 = r0val;
-	g_rargs[sidx].ctx = ctx;
-	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
-	g_tid[sidx] = xTaskCreateStatic(resume_tramp_task, nm, TRAMP_STACK_WORDS, &g_rargs[sidx],
-					SLOT_PRIO, g_tramp_stacks[sidx], &g_tcb[sidx]);
-	g_ove_lnx_used[sidx] = (g_tid[sidx] != NULL);
+	(void)freertos_spawn_common(sidx, ridx, stash_desc(ctx->sp, ctx, r0val));
 }
 
 static void freertos_abort_slot(int sidx)
@@ -273,6 +373,12 @@ static void freertos_event_post(void)
 	BaseType_t woken = pdFALSE;
 	if (g_ev)
 		xSemaphoreGiveFromISR(g_ev, &woken);
+	/* Pend a context switch if the (higher-priority) coordinator was woken: event_post runs
+	 * from the SVC/MemManage handler (e.g. a program's exit park_frame). Without this yield the
+	 * woken coordinator does NOT preempt, so an EXITED unprivileged restricted task keeps spinning
+	 * in ove_lnx_park_loop and is context-switched (corrupting its saved registers under the MPU
+	 * port) before the coordinator reaps it. Yielding reaps it promptly, before any such switch. */
+	portYIELD_FROM_ISR(woken);
 }
 static void freertos_event_wait(unsigned ms)
 {

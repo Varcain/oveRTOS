@@ -40,8 +40,11 @@ macro(ove_add_freertos_kernel _port_path)
         ${FREERTOS_PATH}/portable/GCC/${_port_path}/port.c
         ${OVE_DIR}/backends/freertos/freertos_hooks.c
     )
-    # MPU ports (ARM_CMx_MPU) need the privileged API wrappers.
-    if(_port_path MATCHES "_MPU")
+    # MPU ports (ARM_CMx_MPU) need the privileged API wrappers. NOTE: this is a
+    # cmake MACRO, so the parameter must be dereferenced as "${_port_path}" — a bare
+    # `_port_path` is the literal string, which never matches (the wrappers would be
+    # silently dropped and every MPU_* symbol would be an undefined reference).
+    if("${_port_path}" MATCHES "_MPU")
         list(APPEND _OVE_FREERTOS_SOURCES
             ${FREERTOS_PATH}/portable/Common/mpu_wrappers.c)
     endif()

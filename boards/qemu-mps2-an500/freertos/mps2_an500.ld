@@ -32,6 +32,16 @@ SECTIONS
                                integers in the vector table don't pass
                                the is-text-address filter */
         *(.text*)
+        /* FreeRTOS-MPU (ARM_CM4_MPU) annotates kernel code PRIVILEGED_FUNCTION ->
+         * section "privileged_functions", and the V1 wrappers put the unprivileged
+         * system-call entry points in "freertos_system_calls". BOTH must land here,
+         * INSIDE .text and BEFORE __etext — otherwise they become orphan sections
+         * placed after __etext, which pushes .data's flash LMA past __etext and the
+         * startup's `.data`-copy-from-__etext reads garbage (corrupting __stdio etc.).
+         * The whole flash is unprivileged-RX via the static MPU region, so no separate
+         * region is needed. Empty for the non-MPU port. */
+        *(privileged_functions)
+        *(freertos_system_calls)
         *(.rodata*)
 
         KEEP(*(.init))
@@ -124,6 +134,10 @@ SECTIONS
     {
         __bss_start__ = .;
         *(.bss*)
+        /* FreeRTOS-MPU kernel data (PRIVILEGED_DATA) -> section "privileged_data";
+         * place it in RAM .bss (covered by the privileged background region — no
+         * unprivileged access). Empty for the non-MPU port. */
+        *(privileged_data)
         *(COMMON)
         . = ALIGN(4);
         __bss_end__ = .;
@@ -172,4 +186,19 @@ SECTIONS
 
     __stack = __StackTop;
     PROVIDE(__stack = __StackTop);
+
+    /* FreeRTOS-MPU (ARM_CM4_MPU) static-region bounds, referenced by prvSetupMPU().
+     * The unprivileged-flash region spans the WHOLE flash RX so an unprivileged Linux
+     * program executes ld.so/libc/busybox in-place from the .rodata cpio. The privileged
+     * sub-regions are DEGENERATE (start==end at the segment end → a harmless 32 B region):
+     * isolation comes from the MPU background region (unprivileged access to any unmapped
+     * address faults) + the per-task regions, not from privilege-gating the kernel here. */
+    __FLASH_segment_start__        = ORIGIN(FLASH);
+    __FLASH_segment_end__          = ORIGIN(FLASH) + LENGTH(FLASH);
+    __SRAM_segment_start__         = ORIGIN(RAM);
+    __SRAM_segment_end__           = ORIGIN(RAM) + LENGTH(RAM);
+    __privileged_functions_start__ = ORIGIN(FLASH) + LENGTH(FLASH);
+    __privileged_functions_end__   = ORIGIN(FLASH) + LENGTH(FLASH);
+    __privileged_data_start__      = ORIGIN(RAM) + LENGTH(RAM);
+    __privileged_data_end__        = ORIGIN(RAM) + LENGTH(RAM);
 }

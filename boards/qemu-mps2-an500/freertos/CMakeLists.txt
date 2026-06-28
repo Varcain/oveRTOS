@@ -23,8 +23,15 @@ ove_add_board_sources(
     ../qemu_board.c
 )
 
-# FreeRTOS kernel (standalone, Cortex-M7 port)
-ove_add_freertos_kernel(ARM_CM7/r0p1)
+# FreeRTOS kernel (standalone, Cortex-M7). The Linux personality runs each program
+# UNPRIVILEGED in a per-task MPU region set, so it uses the ARM_CM4_MPU port (V11;
+# ARMv7-M PMSAv7, runs unchanged on the CM7). Other an500 builds keep the faster
+# non-MPU ARM_CM7 port.
+if(OVE_LINUX)
+    ove_add_freertos_kernel(ARM_CM4_MPU)
+else()
+    ove_add_freertos_kernel(ARM_CM7/r0p1)
+endif()
 
 # oveRTOS backend sources (from generated config)
 ove_add_backend_sources()
