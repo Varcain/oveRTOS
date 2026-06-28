@@ -143,4 +143,19 @@ extern void ove_backend_trace_task_blocking(void);
 #endif
 #define xPortPendSVHandler PendSV_Handler
 
+#ifdef CONFIG_OVE_LINUX
+/* Phase-2 MPU isolation (ARM_CM4_MPU port): each Linux program runs UNPRIVILEGED in a
+ * per-task MPU region set so a stray access faults instead of corrupting the kernel.
+ * Values verified against QEMU's an500 Cortex-M7 via the gdbstub: MPU_TYPE.DREGION = 8,
+ * CPUID = 0x411fc272 (r1p2 — so the r0p0/r0p1 errata workaround must stay OFF, else
+ * prvSetupMPU's configASSERT hangs at boot). Our SVC vector is the seam's strong
+ * SVC_Handler (not vPortSVCHandler) → configCHECK_HANDLER_INSTALLATION must be 0. */
+#define configUSE_MPU_WRAPPERS_V1                       1
+#define configTOTAL_MPU_REGIONS                         8
+#define configENABLE_ERRATA_837070_WORKAROUND           0
+#define configCHECK_HANDLER_INSTALLATION                0
+#define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY     0
+#define configALLOW_UNPRIVILEGED_CRITICAL_SECTIONS      0
+#endif /* CONFIG_OVE_LINUX */
+
 #endif /* FREERTOS_CONFIG_H */

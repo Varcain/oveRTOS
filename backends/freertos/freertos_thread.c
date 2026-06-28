@@ -49,7 +49,16 @@ static void freertos_thread_wrapper(void *param)
 static UBaseType_t map_priority(ove_prio_t prio)
 {
 	/* Direct mapping: ove priority value + tskIDLE_PRIORITY */
-	return tskIDLE_PRIORITY + (UBaseType_t)prio;
+	UBaseType_t p = tskIDLE_PRIORITY + (UBaseType_t)prio;
+#if (portUSING_MPU_WRAPPERS == 1)
+	/* Under the MPU port (Linux personality), the framework threads — the
+	 * run-loop coordinator, the rtos-worker, the console — are TRUSTED runtime
+	 * code that writes the program regions + the personality's kernel .bss and
+	 * calls FreeRTOS APIs, so they must run PRIVILEGED. Only the Linux program
+	 * slots (spawned in freertos_lnx.c) are unprivileged. */
+	p |= portPRIVILEGE_BIT;
+#endif
+	return p;
 }
 
 /* ─── _init / _deinit ────────────────────────────────────────────────── */
