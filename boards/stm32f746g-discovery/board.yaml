@@ -71,3 +71,9 @@ rtos_defconfig:
     # that makes that SDRAM executable & non-cacheable for the program pool). That init only
     # runs when OVE_BOARD is enabled (ove_app_run -> ove_board_init). Required on silicon.
     - CONFIG_OVE_BOARD=y
+  nuttx:
+    # NuttX brings its OWN STM32F746 board init (clock + FMC external SDRAM via CONFIG_STM32F7_FMC,
+    # USART1 console), so it does NOT use oveRTOS's bsp_boardInit (CONFIG_OVE_BOARD is FreeRTOS-only).
+    # The program runs PRIVILEGED here (no per-task MPU isolation — that's a follow-up); the seam
+    # places the program pool at a fixed external-SDRAM address past the LTDC framebuffer.
+    - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output-fdpic"
