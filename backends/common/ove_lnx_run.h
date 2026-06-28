@@ -41,13 +41,15 @@
 /* NREG = max program images live at once (init + login shell + concurrent jobs).
  * Per-engine: Zephyr/an521 places the regions in a NOLOAD 16 MB PSRAM region, so it
  * can afford several (8 × 512K = 4 MB PSRAM) — enough for e.g. two background jobs +
- * top. FreeRTOS/NuttX on an500 keep the regions in .bss within 4 MB RAM, so 4 × 512K
- * = 2 MB (NREG=6 overflowed an500 RAM). NSLOT = NREG + transient vfork-window slots. */
+ * top. FreeRTOS/NuttX place the regions in external PSRAM (an500 0x60000000, 16 MB) /
+ * SDRAM (STM32F746 0xC0000000, 8 MB) — both far larger than the 4 MB internal RAM — so
+ * 6 × 768K = 4.5 MB fits comfortably (the old "NREG=6 overflowed RAM" note was the
+ * retired .bss placement). NSLOT = NREG + transient vfork-window slots. */
 #ifndef OVE_LNX_NREG
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 #define OVE_LNX_NREG 8
 #else
-#define OVE_LNX_NREG 4
+#define OVE_LNX_NREG 6
 #endif
 #endif
 #ifndef OVE_LNX_NSLOT
