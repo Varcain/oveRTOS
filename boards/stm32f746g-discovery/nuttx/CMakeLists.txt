@@ -41,11 +41,21 @@ endif()
 add_compile_definitions(ARM_MATH_CM7 __FPU_PRESENT=1)
 add_compile_options(-O3)
 
-# ── CMSIS-DSP library ────────────────────────────────────────────
-ove_nuttx_add_cmsis_dsp()
+if(OVE_LINUX)
+    # Headless Linux personality: put the build-generated rootfs CPIO fixture on the include
+    # path (app.c #includes loader_rootfs_image.h) and skip the LVGL/CMSIS-DSP framework — the
+    # 1 MB internal flash is tight beside the embedded rootfs.cpio.
+    ove_nuttx_exclude_backends(LVGL AUDIO)
+    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+    ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+else()
+    # ── CMSIS-DSP library ────────────────────────────────────────────
+    ove_nuttx_add_cmsis_dsp()
 
-# LVGL
-ove_nuttx_build_lvgl()
+    # LVGL
+    ove_nuttx_build_lvgl()
+endif()
 
 # Build firmware app
 ove_nuttx_register_app()

@@ -48,12 +48,32 @@ extern int arm_svcall(int irq, void *context, void *arg);
 #define SLOT_PRIO 60	      /* below the run-loop/main task (100) */
 
 /* ---- NuttX-specific state -------------------------------------------------- */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* Real STM32F746: the MCU's 320K internal SRAM (NuttX's heap) is far too small for the 4.5M region
+ * pool, so it lives in the board's 8M external SDRAM (0xC0000000). NuttX's CONFIG_STM32F7_FMC brings
+ * the FMC + SDRAM up for its LTDC framebuffer (the first 255K at 0xC0000000) and uses none of the
+ * rest as heap (MM_REGIONS=2, internal-SRAM-only), so the span past 1M is free. Fixed-address
+ * pointers (NuttX owns its linker script — no NOLOAD section to hook). The program runs PRIVILEGED,
+ * so no per-task PMSAv7 region/alignment is needed; nuttx_sdram_mpu_init() sets ONE MPU region
+ * making the whole SDRAM Normal non-cacheable so the loader's/program's data accesses don't fault
+ * the default Device-typed 0xC0000000 (NuttX leaves the MPU disabled). */
+#define NUTTX_SDRAM_POOL_BASE 0xC0100000u /* 1M past the SDRAM base, well clear of the framebuffer */
+static uint8_t (*const prog_regions)[OVE_LNX_PROG_REGION_SIZE] =
+	(uint8_t(*)[OVE_LNX_PROG_REGION_SIZE])NUTTX_SDRAM_POOL_BASE;
+static uint8_t (*const dyn_pools)[OVE_LNX_DYN_POOL_SIZE] =
+	(uint8_t(*)[OVE_LNX_DYN_POOL_SIZE])(NUTTX_SDRAM_POOL_BASE +
+					    (size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE);
+#else
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
 /* Per-region dynamic-link scratch pool: a dynamic FDPIC proc's arena lives here so ld.so can
  * mmap libc.so (~500K), far past the in-region arena. NuttX runs from PSRAM (0x60000000, 16M),
  * so this plain .bss array already lands in PSRAM — no dedicated section is needed (unlike the
  * FreeRTOS seam, whose 4M SRAM is too tight beside the 2M of regions). */
 static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] __attribute__((aligned(32)));
+#endif
+/* Byte extents of the (contiguous) pools — sizeof() can't see through the STM32 fixed pointers. */
+#define PROG_REGIONS_BYTES ((size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE)
+#define DYN_POOLS_BYTES ((size_t)OVE_LNX_NREG * OVE_LNX_DYN_POOL_SIZE)
 static uintptr_t g_region_stack_lo[OVE_LNX_NREG];
 static struct task_tcb_s g_tcb[OVE_LNX_NSLOT];
 static int g_pid[OVE_LNX_NSLOT];
@@ -80,13 +100,13 @@ static int ove_lnx_svc_handler(int irq, void *context, void *arg)
 	 * prog_regions is one contiguous block, so a single range test covers all. */
 	uintptr_t pc = (uintptr_t)regs[REG_PC];
 	int in_region = pc >= (uintptr_t)prog_regions &&
-			pc < (uintptr_t)prog_regions + sizeof(prog_regions);
+			pc < (uintptr_t)prog_regions + PROG_REGIONS_BYTES;
 	/* A dynamic FDPIC proc now runs ALL its code — busybox.so + ld.so + libc.so text, shared
 	 * IN-PLACE — straight from the embedded cpio, so the svc PC in those syscall wrappers lands
 	 * THERE, not in the per-process region/arena (which hold only RW data). Count the cpio (and
 	 * the arena, for any RW-resident trampoline) as "program" too, else the Linux syscall is
 	 * misrouted to NuttX's arm_svcall and the program hangs. */
-	int in_arena = pc >= (uintptr_t)dyn_pools && pc < (uintptr_t)dyn_pools + sizeof(dyn_pools);
+	int in_arena = pc >= (uintptr_t)dyn_pools && pc < (uintptr_t)dyn_pools + DYN_POOLS_BYTES;
 	int in_cpio = g_ove_lnx_rootfs_lo && pc >= (uintptr_t)g_ove_lnx_rootfs_lo &&
 		      pc < (uintptr_t)g_ove_lnx_rootfs_hi;
 	if (!in_region && !in_arena && !in_cpio)
@@ -275,9 +295,64 @@ static const struct ove_lnx_engine g_nuttx_engine = {
 	.event_wait = nuttx_event_wait,
 };
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* NuttX leaves the MPU disabled, so the external SDRAM at 0xC0000000 is Device-typed by the ARM
+ * default memory map — unaligned loads/stores there fault and the FDPIC loader + program assume
+ * Normal memory. Map the whole 8M SDRAM as Normal non-cacheable (executable, RW) via one MPU region
+ * + enable the MPU with PRIVDEFENA: everything else keeps the privileged default map, so NuttX's
+ * flash/SRAM/peripheral access is unchanged. */
+static void nuttx_sdram_mpu_init(void)
+{
+	volatile uint32_t *const mpu_ctrl = (uint32_t *)0xE000ED94u;
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	*mpu_rnr = 0;
+	*mpu_rbar = 0xC0000000u; /* SDRAM base (8M-aligned); region 0 via RNR */
+	/* EN | SIZE=22 (2^23=8M) | TEXSCB=0x08 (Normal non-cacheable) | AP=0b011 (RW) | XN=0 (exec). */
+	*mpu_rasr = (1u << 0) | (22u << 1) | (0x08u << 16) | (0x3u << 24);
+	*mpu_ctrl = (1u << 0) | (1u << 2); /* ENABLE | PRIVDEFENA */
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	__asm__ volatile("isb 0xf" ::: "memory");
+}
+
+/* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch) polls
+ * USART1 directly. NuttX already brought USART1 up as its own console (CONFIG_USART1), so we only
+ * steal RX from its IRQ path: serial_poll_begin() clears RXNEIE so the personality's polled reads own
+ * the receiver (raw register polling works in the svc-exception context, where NuttX's IRQ-driven
+ * serial read would deadlock). STM32F7 USART1 @ 0x40011000: CR1(0x00) RXNEIE=b5, ISR(0x1C) RXNE=b5
+ * TXE=b7, RDR(0x24), TDR(0x28). */
+#define OVE_NX_USART1 0x40011000u
+#define OVE_NX_U1_CR1 (*(volatile uint32_t *)(OVE_NX_USART1 + 0x00u))
+#define OVE_NX_U1_ISR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x1Cu))
+#define OVE_NX_U1_RDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x24u))
+#define OVE_NX_U1_TDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x28u))
+void serial_poll_begin(void)
+{
+	OVE_NX_U1_CR1 &= ~(1u << 5); /* clear RXNEIE → polled access owns RX */
+}
+int serial_poll_rx_ready(void)
+{
+	return (OVE_NX_U1_ISR & (1u << 5)) ? 1 : 0; /* RXNE */
+}
+int serial_poll_getc(void)
+{
+	return (int)(OVE_NX_U1_RDR & 0xFFu);
+}
+void serial_poll_putc(char c)
+{
+	while (!(OVE_NX_U1_ISR & (1u << 7))) { /* wait for TXE */
+	}
+	OVE_NX_U1_TDR = (unsigned char)c;
+}
+#endif
+
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	nuttx_sdram_mpu_init();
+#endif
 	for (int i = 0; i < OVE_LNX_NSLOT; i++)
 		g_pid[i] = -1;
 	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
