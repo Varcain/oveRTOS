@@ -91,6 +91,12 @@ SECTIONS
         *(.glue_7t)
         *(.eh_frame)
 
+        /* FreeRTOS-MPU (ARM_CM4_MPU, OVE_LINUX): the privileged kernel functions +
+         * system-call wrappers must land in FLASH .text — else they orphan past _etext
+         * and the .data LMA copy reads garbage (boots into a HardFault). */
+        *(privileged_functions)
+        *(freertos_system_calls)
+
         KEEP(*(.init))
         KEEP(*(.fini))
 
@@ -197,11 +203,26 @@ SECTIONS
         __bss_start__ = _sbss;
         *(.bss)
         *(.bss*)
+        *(privileged_data)   /* FreeRTOS-MPU privileged kernel data */
         *(COMMON)
         . = ALIGN(4);
         _ebss = .;
         __bss_end__ = _ebss;
     } > RAM
+
+    /* FreeRTOS-MPU (ARM_CM4_MPU) static-region bounds for prvSetupMPU.  __SRAM_segment is
+     * the full on-chip SRAM block (0x20000000, 512K — PMSAv7 needs a size-aligned base, and
+     * the ld RAM region at 0x20010000 is not 256K-aligned).  privileged_functions/data are
+     * DEGENERATE (start==end at the segment ends): isolation comes from the unprivileged
+     * restricted tasks having no background region, not from a dedicated privileged region. */
+    __FLASH_segment_start__        = ORIGIN(FLASH);
+    __FLASH_segment_end__          = ORIGIN(FLASH) + LENGTH(FLASH);
+    __SRAM_segment_start__         = 0x20000000;
+    __SRAM_segment_end__           = 0x20080000;
+    __privileged_functions_start__ = ORIGIN(FLASH) + LENGTH(FLASH);
+    __privileged_functions_end__   = ORIGIN(FLASH) + LENGTH(FLASH);
+    __privileged_data_start__      = 0x20080000;
+    __privileged_data_end__        = 0x20080000;
 
     /* Boot stack at the top of main RAM.  Just covers main() until
      * vTaskStartScheduler() runs — per-task stacks come from FreeRTOS
