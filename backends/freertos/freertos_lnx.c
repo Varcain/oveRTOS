@@ -263,8 +263,18 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 {
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
 #if (portUSING_MPU_WRAPPERS == 1)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	/* The program region + dyn_pool live in external SDRAM, which bsp.c maps Normal
+	 * NON-cacheable (MPU_TEX_LEVEL1, S/C/B=0). The port default configTEX_S_C_B_SRAM
+	 * (0x07 = Normal write-back cacheable + shareable) would re-type our per-task SDRAM
+	 * region and precise-BusFault the M7's FMC accesses on real silicon (QEMU doesn't model
+	 * the FMC, so the an500 PSRAM is fine with the default). Match the board's SDRAM. */
+	const uint32_t tex_s_c_b = 0x08u; /* TEX=001, S=0, C=0, B=0 — Normal non-cacheable */
+#else
+	const uint32_t tex_s_c_b = configTEX_S_C_B_SRAM; /* an500 PSRAM: port default 0x07 */
+#endif
 	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
-			       (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
+			       (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
 	/* pxTaskBuffer is `StaticTask_t * const`, so a designated initializer is required (it also
 	 * zeroes the remaining configurable region xRegions[2]). xRegions[0] = the program region,
 	 * xRegions[1] = the dyn_pool — both RW + execute-never (W^X; code runs from the flash cpio). */
