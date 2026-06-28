@@ -2191,6 +2191,29 @@ def test_qemu_zephyr_linux(ove_dir, output_dir):
                             board="mps2/an521/cpu0", run_via_west=True)
 
 
+def test_qemu_freertos_linux_segv(ove_dir, output_dir):
+    """Build the QEMU mps2-an500 FreeRTOS ARM_CM4_MPU Linux personality and run the
+    NEGATIVE isolation test: /usr/bin/segv deliberately writes kernel SRAM, which the
+    MPU must contain — segv is killed (exit 139), the shell survives, the kernel does
+    not fault. tests/sim/freertos-linux/segv_drive.py boots the firmware, logs in, runs
+    segv, and asserts all of that (exit 0 = pass).
+
+    Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/segv (the
+    overtos board's post-build compiles it) plus QEMU and the slow uClinux boot, so it
+    is deliberately NOT in any auto-run group (mirrors qemu-zephyr-linux)."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "segv_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-segv")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "segv.log")
+    # segv_drive.py emits no CMocka output, so _run_test_binary maps its exit code
+    # (0 = contained / pass, non-zero = isolation broke / fail).
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-segv", cwd=ove_dir)
+
+
 def test_qemu_zephyr_coverage(ove_dir, output_dir):
     """Build and run Zephyr QEMU tests with CONFIG_COVERAGE=y; emit lcov.
 
@@ -2430,6 +2453,7 @@ TEST_TARGETS = {
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-zephyr-linux": test_qemu_zephyr_linux,
+    "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
     "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
     "renode-stm32f746-freertos-zeroheap": test_renode_stm32f746_freertos_zeroheap,
