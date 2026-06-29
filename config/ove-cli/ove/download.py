@@ -24,6 +24,8 @@ from .workspace import Workspace, get_bool, get_str
 
 logger = logging.getLogger("ove")
 
+ZEPHYR_SDK_TARGET = "arm-zephyr-eabi"
+
 
 def _retry(fn, description, attempts=3, backoff=2):
     """Retry fn() with exponential backoff. Returns fn()'s result."""
@@ -639,6 +641,180 @@ def download_zig_toolchain(config, dl_dir, toolchains_dir, manifest=None):
     return True
 
 
+def _zephyr_sdk_arch():
+    """Return Zephyr SDK release architecture name for this host."""
+    import platform
+
+    arch = platform.machine().lower()
+    if arch in ("x86_64", "amd64"):
+        return "x86_64"
+    if arch in ("aarch64", "arm64"):
+        return "aarch64"
+    logger.error(f"unsupported architecture for Zephyr SDK: {arch}")
+    return None
+
+
+def _zephyr_sdk_compiler_candidates(sdk_dir):
+    return [
+        os.path.join(sdk_dir, ZEPHYR_SDK_TARGET, "bin",
+                     f"{ZEPHYR_SDK_TARGET}-gcc"),
+        os.path.join(sdk_dir, "gnu", ZEPHYR_SDK_TARGET, "bin",
+                     f"{ZEPHYR_SDK_TARGET}-gcc"),
+    ]
+
+
+def _zephyr_sdk_compiler(sdk_dir):
+    for compiler in _zephyr_sdk_compiler_candidates(sdk_dir):
+        if os.path.isfile(compiler):
+            return compiler
+    return None
+
+
+def _zephyr_sdk_bin_dir(sdk_dir):
+    compiler = _zephyr_sdk_compiler(sdk_dir)
+    if compiler:
+        return os.path.dirname(compiler)
+    return os.path.join(sdk_dir, "gnu", ZEPHYR_SDK_TARGET, "bin")
+
+
+def _zephyr_sdk_paths(dl_dir, toolchains_dir, manifest=None):
+    """Resolve manifest-pinned Zephyr SDK paths for this host."""
+    version = get_component(manifest, "toolchains", "zephyr-sdk", "version")
+    if not version:
+        logger.error("Zephyr SDK version missing from manifest.yaml")
+        return None
+
+    arch = _zephyr_sdk_arch()
+    if not arch:
+        return None
+
+    dirname = f"zephyr-sdk-{version}"
+    filename = f"{dirname}_linux-{arch}_minimal.tar.xz"
+    url = get_component(manifest, "toolchains", "zephyr-sdk", "url")
+    if not url:
+        url = (
+            "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/"
+            f"v{version}/{filename}"
+        )
+
+    sdk_dir = os.path.join(toolchains_dir, dirname)
+    setup = os.path.join(sdk_dir, "setup.sh")
+    cmake_config = os.path.join(sdk_dir, "cmake", "Zephyr-sdkConfig.cmake")
+    stamp = os.path.join(sdk_dir, f".ove_setup_{ZEPHYR_SDK_TARGET}")
+    return {
+        "version": version,
+        "filename": filename,
+        "url": url,
+        "tarball": os.path.join(dl_dir, filename),
+        "sdk_dir": sdk_dir,
+        "compiler_candidates": _zephyr_sdk_compiler_candidates(sdk_dir),
+        "cmake_config": cmake_config,
+        "setup": setup,
+        "stamp": stamp,
+    }
+
+
+def find_zephyr_sdk(toolchains_dir, manifest=None):
+    """Return the local Zephyr SDK dir if the pinned SDK is installed."""
+    paths = _zephyr_sdk_paths("", toolchains_dir, manifest=manifest)
+    if not paths:
+        return None
+    if _zephyr_sdk_compiler(paths["sdk_dir"]):
+        return paths["sdk_dir"]
+    return None
+
+
+def zephyr_sdk_env(env, sdk_dir):
+    """Inject local Zephyr SDK discovery into a subprocess environment."""
+    env = dict(env or os.environ)
+    sdk_bin = _zephyr_sdk_bin_dir(sdk_dir)
+    env["ZEPHYR_TOOLCHAIN_VARIANT"] = "zephyr"
+    env["ZEPHYR_SDK_INSTALL_DIR"] = sdk_dir
+    env["PATH"] = sdk_bin + os.pathsep + env.get("PATH", "")
+    prefix = env.get("CMAKE_PREFIX_PATH", "")
+    env["CMAKE_PREFIX_PATH"] = (
+        sdk_dir if not prefix else sdk_dir + os.pathsep + prefix)
+    return env
+
+
+def download_zephyr_sdk(dl_dir, toolchains_dir, manifest=None):
+    """Download, extract, and set up the manifest-pinned Zephyr SDK."""
+    paths = _zephyr_sdk_paths(dl_dir, toolchains_dir, manifest=manifest)
+    if not paths:
+        return None
+
+    if (_zephyr_sdk_compiler(paths["sdk_dir"])
+            and os.path.isfile(paths["cmake_config"])
+            and os.path.isfile(paths["stamp"])):
+        logger.info(f"Zephyr SDK {paths['version']}: up to date")
+        return paths["sdk_dir"]
+
+    os.makedirs(dl_dir, exist_ok=True)
+    os.makedirs(toolchains_dir, exist_ok=True)
+
+    if not os.path.isfile(paths["tarball"]):
+        logger.info(f"Zephyr SDK {paths['version']}: downloading "
+                    f"{paths['filename']}...")
+        try:
+            _retry(
+                lambda: urllib.request.urlretrieve(
+                    paths["url"], paths["tarball"], _download_progress),
+                "download Zephyr SDK")
+            print()
+        except Exception as e:
+            print()
+            logger.error(f"Zephyr SDK download failed: {e}")
+            if os.path.isfile(paths["tarball"]):
+                os.unlink(paths["tarball"])
+            return None
+
+    if not os.path.isdir(paths["sdk_dir"]):
+        logger.info(f"Zephyr SDK {paths['version']}: extracting...")
+        ret = subprocess.run(
+            ["tar", "xf", paths["tarball"], "-C", toolchains_dir],
+            capture_output=True, text=True)
+        if ret.returncode != 0:
+            logger.error(f"Zephyr SDK extraction failed: {ret.stderr}")
+            return None
+
+    if (_zephyr_sdk_compiler(paths["sdk_dir"])
+            and os.path.isfile(paths["cmake_config"])):
+        with open(paths["stamp"], "w") as f:
+            f.write(paths["version"] + "\n")
+        logger.info(f"Zephyr SDK {paths['version']}: ready")
+        return paths["sdk_dir"]
+
+    if not os.path.isfile(paths["setup"]):
+        logger.error(f"Zephyr SDK setup script not found: {paths['setup']}")
+        return None
+
+    if not _zephyr_sdk_compiler(paths["sdk_dir"]):
+        logger.info(f"Zephyr SDK {paths['version']}: setting up "
+                    f"{ZEPHYR_SDK_TARGET}...")
+        ret = subprocess.run(
+            [paths["setup"], "-t", ZEPHYR_SDK_TARGET],
+            cwd=paths["sdk_dir"], capture_output=True, text=True)
+        if ret.returncode != 0:
+            logger.error(f"Zephyr SDK setup failed: {ret.stderr}")
+            return None
+
+    if not _zephyr_sdk_compiler(paths["sdk_dir"]):
+        logger.error("Zephyr SDK compiler not found; checked:")
+        for compiler in paths["compiler_candidates"]:
+            logger.error(f"  {compiler}")
+        return None
+    if not os.path.isfile(paths["cmake_config"]):
+        logger.error(f"Zephyr SDK CMake config not found: "
+                     f"{paths['cmake_config']}")
+        return None
+
+    with open(paths["stamp"], "w") as f:
+        f.write(paths["version"] + "\n")
+
+    logger.info(f"Zephyr SDK {paths['version']}: ready")
+    return paths["sdk_dir"]
+
+
 def download_renode(dl_dir, tools_dir, manifest=None):
     """Download and extract a portable Renode build from the manifest.
 
@@ -835,6 +1011,8 @@ def download_all(ws):
         ok = download_freertos(config, ws.dl_dir, ws.build_dir,
                                ws.ws_dl_dir, manifest=manifest) and ok
     elif get_bool(config, "CONFIG_OVE_RTOS_ZEPHYR"):
+        ok = download_zephyr_sdk(ws.dl_dir, ws.toolchains_dir,
+                                 manifest=manifest) is not None and ok
         ok = download_zephyr(config, ws.dl_dir, ws.build_dir,
                              ws.ws_dl_dir, ws.ove_dir,
                              manifest=manifest) and ok
@@ -919,7 +1097,7 @@ def cmd_download(args):
         if get_bool(ws.config, "CONFIG_OVE_RTOS_FREERTOS"):
             wanted += ["FreeRTOS-Kernel", "STM32CubeF7", "lvgl"]
         elif get_bool(ws.config, "CONFIG_OVE_RTOS_ZEPHYR"):
-            wanted += ["zephyr-workspace", "lvgl"]
+            wanted += ["zephyr-sdk", "zephyr-workspace", "lvgl"]
         elif get_bool(ws.config, "CONFIG_OVE_RTOS_NUTTX"):
             wanted += ["nuttx", "nuttx-apps", "lvgl",
                        "CMSIS_5", "CMSIS-DSP"]
@@ -940,8 +1118,9 @@ def cmd_ensure_toolchain(args):
     """CLI entry point for 'ove ensure-toolchain <name>'.
 
     Workspace-independent — used by `make docs` to fetch a host Zig
-    before .config exists, and by `make test-renode-*` to grab the
-    Renode emulator on demand.  Supported names: `zig`, `renode`.
+    before .config exists, by Zephyr build/test paths to fetch the
+    Zephyr SDK, and by `make test-renode-*` to grab the Renode emulator
+    on demand.  Supported names: `zig`, `zephyr-sdk`, `renode`.
     """
     ws = Workspace()
     manifest = load_manifest(ws.ove_dir)
@@ -951,6 +1130,11 @@ def cmd_ensure_toolchain(args):
         if not download_zig_toolchain({}, ws.dl_dir, ws.toolchains_dir,
                                       manifest=manifest):
             sys.exit(1)
+    elif args.name == "zephyr-sdk":
+        os.makedirs(ws.toolchains_dir, exist_ok=True)
+        if download_zephyr_sdk(ws.dl_dir, ws.toolchains_dir,
+                               manifest=manifest) is None:
+            sys.exit(1)
     elif args.name == "renode":
         tools_dir = os.path.join(ws.ove_dir, "output", "tools")
         os.makedirs(tools_dir, exist_ok=True)
@@ -958,5 +1142,5 @@ def cmd_ensure_toolchain(args):
             sys.exit(1)
     else:
         logger.error(f"unknown toolchain: {args.name} "
-                     "(supported: zig, renode)")
+                     "(supported: zig, zephyr-sdk, renode)")
         sys.exit(2)

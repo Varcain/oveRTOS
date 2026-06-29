@@ -192,6 +192,18 @@ def build_freertos(ws):
 def build_zephyr(ws):
     """Build Zephyr firmware via west."""
     env = ws.toolchain_env()
+    from .download import download_zephyr_sdk, zephyr_sdk_env
+    from .manifest import load_manifest
+
+    manifest = load_manifest(ws.ove_dir)
+    sdk_dir = download_zephyr_sdk(ws.dl_dir, ws.toolchains_dir,
+                                  manifest=manifest)
+    if sdk_dir is None:
+        logger.error("Zephyr SDK unavailable; run "
+                     "'ove ensure-toolchain zephyr-sdk'")
+        sys.exit(1)
+    env = zephyr_sdk_env(env, sdk_dir)
+
     west = os.path.join(ws.venv_dir, "bin", "west")
     board_dir = os.path.join(ws.board_dir, "zephyr")
     fw_build = os.path.join(ws.build_dir, "firmware")

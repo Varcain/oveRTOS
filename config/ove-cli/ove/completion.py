@@ -56,7 +56,7 @@ _ove_complete() {
             COMPREPLY=( $(compgen -W "%(tests)s" -- "$cur") )
             ;;
         ensure-toolchain)
-            COMPREPLY=( $(compgen -W "zig" -- "$cur") )
+            COMPREPLY=( $(compgen -W "zig zephyr-sdk renode" -- "$cur") )
             ;;
         completion)
             COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
@@ -111,7 +111,7 @@ _ove() {
             _describe 'test target' tests
             ;;
         ensure-toolchain)
-            _values 'toolchain' 'zig'
+            _values 'toolchain' 'zig' 'zephyr-sdk' 'renode'
             ;;
         completion)
             _values 'shell' 'bash' 'zsh' 'fish'
@@ -147,7 +147,7 @@ _ove "$@"
 _FISH = """\
 complete -c ove -n '__fish_use_subcommand' -a '%(subcmds)s'
 complete -c ove -n '__fish_seen_subcommand_from test' -a '%(tests)s'
-complete -c ove -n '__fish_seen_subcommand_from ensure-toolchain' -a 'zig'
+complete -c ove -n '__fish_seen_subcommand_from ensure-toolchain' -a 'zig zephyr-sdk renode'
 complete -c ove -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
 complete -c ove -n '__fish_seen_subcommand_from clean' -l all -d 'Clean all workspaces'
 complete -c ove -n '__fish_seen_subcommand_from clean' -l dist -d 'Full reset'

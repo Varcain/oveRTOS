@@ -282,13 +282,6 @@ jobs:
           components: rustfmt, clippy, rust-src
           targets: thumbv7em-none-eabihf, thumbv7em-none-eabi, thumbv7m-none-eabi
 
-      - name: Install Zephyr SDK
-        run: |
-          SDK_VERSION=$(python3 scripts/manifest_query.py toolchains.zephyr-sdk.version)
-          wget -q "https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz"
-          tar xf "zephyr-sdk-${SDK_VERSION}_linux-x86_64_minimal.tar.xz" -C $HOME
-          "$HOME/zephyr-sdk-${SDK_VERSION}/setup.sh" -t arm-zephyr-eabi -c
-
       - name: Compute Zephyr cache hash
         id: zephyr-hash
         run: |
