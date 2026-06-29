@@ -99,6 +99,7 @@ All optional. `make lint` skips any tool it cannot find rather than failing.
 |---|---|
 | `arm-gnu (downloaded)` | Fetched by `make download` for embedded builds |
 | `zig (downloaded)` | Fetched by `make ensure-toolchain-zig` |
+| `zephyr-sdk (downloaded)` | Fetched by `make download` for Zephyr builds, or `make ensure-toolchain-zephyr-sdk` |
 | `renode (downloaded)` | Fetched by `make ensure-toolchain-renode` for `make test-renode-*` |
 
 ### Manifest source trees (under `dl/`)

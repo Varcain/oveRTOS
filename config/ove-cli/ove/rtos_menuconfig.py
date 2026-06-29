@@ -313,6 +313,18 @@ def _run_nuttx_menuconfig(ws, env):
 
 def _run_zephyr_menuconfig(ws, env):
     """Zephyr native menuconfig flow."""
+    from .download import download_zephyr_sdk, zephyr_sdk_env
+    from .manifest import load_manifest
+
+    manifest = load_manifest(ws.ove_dir)
+    sdk_dir = download_zephyr_sdk(ws.dl_dir, ws.toolchains_dir,
+                                  manifest=manifest)
+    if sdk_dir is None:
+        print("error: Zephyr SDK unavailable. "
+              "Run 'ove ensure-toolchain zephyr-sdk'.")
+        sys.exit(1)
+    env = zephyr_sdk_env(env, sdk_dir)
+
     ensure_rtos_build_tree(ws, "zephyr", env)
 
     board_dir = os.path.join(ws.board_dir, "zephyr")

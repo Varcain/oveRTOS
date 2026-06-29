@@ -641,6 +641,7 @@ help:
 	@echo "  manifest CHECK=1        - Exit non-zero if manifest has uncommitted changes"
 	@echo "  completion-bash|zsh|fish  - Emit shell completion script on stdout"
 	@echo "  ensure-toolchain-zig    - Install the zig toolchain"
+	@echo "  ensure-toolchain-zephyr-sdk - Install the Zephyr SDK"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  docs                    - Build complete documentation site"

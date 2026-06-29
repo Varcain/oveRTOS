@@ -60,7 +60,7 @@ def _check_downloaded_binary(display_name, path, version_cmd=None,
                              hint=None, required=False):
     """Binary that lives at a fixed path (inside output/toolchains/ or
     output/tools/), not necessarily in PATH.  `path` may be a glob."""
-    matches = sorted(glob.glob(path))
+    matches = sorted(glob.glob(path, recursive=True))
     real = next((p for p in matches if os.path.isfile(p)), None)
     if not real:
         return {
@@ -203,6 +203,12 @@ def _checks():
         os.path.join(ove_dir, "output", "toolchains", "zig-*", "zig"),
         version_cmd=["version"],
         hint="run 'ove ensure-toolchain zig' to fetch"))
+    out.append(_check_downloaded_binary(
+        "zephyr-sdk (downloaded)",
+        os.path.join(ove_dir, "output", "toolchains", "zephyr-sdk-*",
+                     "**", "bin", "arm-zephyr-eabi-gcc"),
+        version_cmd=["--version"],
+        hint="run 'ove ensure-toolchain zephyr-sdk' to fetch"))
     out.append(_check_downloaded_binary(
         "renode (downloaded)",
         os.path.join(ove_dir, "output", "tools", "renode",

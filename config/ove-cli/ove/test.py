@@ -289,6 +289,23 @@ def _ensure_arm_toolchain(ove_dir):
     return tc_dir
 
 
+def _zephyr_sdk_build_env(ove_dir, env=None):
+    """Ensure the pinned Zephyr SDK and return an env for ARM Zephyr builds."""
+    from .download import download_zephyr_sdk, zephyr_sdk_env
+
+    dl_dir = os.path.join(ove_dir, "dl")
+    toolchains_dir = os.path.join(ove_dir, "output", "toolchains")
+    os.makedirs(dl_dir, exist_ok=True)
+    os.makedirs(toolchains_dir, exist_ok=True)
+
+    manifest = load_manifest(ove_dir)
+    sdk_dir = download_zephyr_sdk(dl_dir, toolchains_dir, manifest=manifest)
+    if sdk_dir is None:
+        logger.error("Zephyr SDK unavailable")
+        sys.exit(1)
+    return zephyr_sdk_env(env or os.environ, sdk_dir)
+
+
 def _ensure_stm32f746_renode_deps(ove_dir):
     """Clone STM32CubeF7 + lwIP into dl/ if missing.
 
@@ -1684,7 +1701,7 @@ def _build_renode_stm32f746_zephyr(ove_dir, output_dir, *, src_subdir, label,
     link = os.path.join(build, "zephyr-workspace")
     atomic_symlink(hash_dir, link)
 
-    env = dict(os.environ)
+    env = _zephyr_sdk_build_env(ove_dir)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
     cmd = [west, "build",
            "-b", "stm32f746g_disco",
@@ -2087,7 +2104,7 @@ def _run_zephyr_qemu(ove_dir, output_dir, *, src_subdir, label,
     link = os.path.join(build, "zephyr-workspace")
     atomic_symlink(hash_dir, link)
 
-    env = dict(os.environ)
+    env = _zephyr_sdk_build_env(ove_dir)
     env["ZEPHYR_BASE"] = os.path.join(link, "zephyr")
     build_cmd = [
         west, "build",

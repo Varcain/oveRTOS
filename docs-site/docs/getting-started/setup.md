@@ -59,7 +59,13 @@ Required when authoring in Zig. Two options:
 
 ## Deployment-target toolchains
 
-For embedded deployment targets (`stm32f746g-discovery`, `qemu-mps2-an500`) you need a cross-compiler. The default automatic download fetches `arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi` — no manual install needed.
+For embedded deployment targets (`stm32f746g-discovery`, `qemu-mps2-an500`, `qemu-mps2-an521`) you need a cross-compiler. The default automatic download fetches `arm-gnu-toolchain-15.2.rel1-x86_64-arm-none-eabi` for FreeRTOS/NuttX and the pinned Zephyr SDK for Zephyr — no manual install needed.
+
+You can prefetch the Zephyr SDK explicitly with:
+
+```bash
+make ensure-toolchain-zephyr-sdk
+```
 
 To install a system toolchain instead:
 

@@ -61,8 +61,9 @@ def main():
     p = sub.add_parser("ensure-toolchain",
                        help="Download a single toolchain / tool "
                             "(workspace-independent)")
-    p.add_argument("name", choices=["zig", "renode"],
-                   help="Toolchain/tool to ensure (zig, renode)")
+    p.add_argument("name", choices=["zig", "zephyr-sdk", "renode"],
+                   help="Toolchain/tool to ensure "
+                        "(zig, zephyr-sdk, renode)")
 
     # ── configure ──────────────────────────────────────────────────────
     p = sub.add_parser("configure", help="Generate config files from .config")
