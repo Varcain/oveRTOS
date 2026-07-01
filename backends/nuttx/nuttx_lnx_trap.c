@@ -43,9 +43,27 @@
  * Declared in arch/arm/src/common/arm_internal.h (off the app include path);
  * restated here as the one internal-symbol coupling. */
 extern int arm_svcall(int irq, void *context, void *arg);
+/* NuttX's HardFault handler (panics) — chained for a genuine kernel fault (same coupling pattern). */
+extern int arm_hardfault(int irq, void *context, void *arg);
 
-#define OVE_LNX_IRQ_SVCALL 11 /* == NuttX's internal NVIC_IRQ_SVCALL */
-#define SLOT_PRIO 60	      /* below the run-loop/main task (100) */
+#define OVE_LNX_IRQ_SVCALL 11   /* == NuttX's internal NVIC_IRQ_SVCALL */
+#define OVE_LNX_IRQ_MEMFAULT 4  /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
+
+/* ARMv7-M System Control Space (restated — the NuttX arch headers are off the app include path). */
+#define OVE_SCS_SHCSR (*(volatile uint32_t *)0xE000ED24u) /* system handler ctrl/state */
+#define OVE_SCS_CFSR (*(volatile uint32_t *)0xE000ED28u)  /* configurable fault status */
+#define OVE_SHCSR_MEMFAULTENA (1u << 16)		  /* route MPU faults to MemManage (not HardFault) */
+#define OVE_CFSR_MMFSR 0x000000ffu			  /* low byte = MemManage fault status (W1C) */
+
+#define SLOT_PRIO 60 /* below the run-loop/main task (100) */
+
+/* CONTROL.nPRIV — the unprivileged-thread-mode bit we OR into a program task's saved CONTROL so it
+ * runs UNPRIVILEGED (restricted to the MPU regions). arch/arm/include/armv7-m/irq.h defines this and
+ * REG_CONTROL (reached via <nuttx/irq.h>); restated as a fallback since it is otherwise off the app
+ * include path. */
+#ifndef CONTROL_NPRIV
+#define CONTROL_NPRIV (1u << 0)
+#endif
 
 /* ---- NuttX-specific state -------------------------------------------------- */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -63,12 +81,25 @@ static uint8_t (*const prog_regions)[OVE_LNX_PROG_REGION_SIZE] =
 static uint8_t (*const dyn_pools)[OVE_LNX_DYN_POOL_SIZE] =
 	(uint8_t(*)[OVE_LNX_DYN_POOL_SIZE])(NUTTX_SDRAM_POOL_BASE +
 					    (size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE);
+#elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
+/* QEMU mps2-an500: 16M PSRAM at 0x60000000 (-m 16). For unprivileged isolation the program pool
+ * must be a power-of-2-aligned block SEPARATE from the kernel's .data/.bss/heap (which the linker
+ * packs at the low end, ~2M) so ONE MPU region can grant it unprivileged-RW while everything below
+ * stays kernel-only. Place it at the 8M mark (0x60800000): kernel + heap live in [0x60000000,
+ * 0x60800000) (denied to the unprivileged program), the pool in [0x60800000, 0x61000000) (granted).
+ * Fixed pointers, like the STM32 branch — NuttX owns its linker script, so there is no NOLOAD hook;
+ * the low-end .bss array the pool used to be would have straddled the kernel's own .bss at a
+ * non-power-of-2 boundary, defeating a clean per-region grant. */
+#define NUTTX_AN500_POOL_BASE 0x60800000u
+static uint8_t (*const prog_regions)[OVE_LNX_PROG_REGION_SIZE] =
+	(uint8_t(*)[OVE_LNX_PROG_REGION_SIZE])NUTTX_AN500_POOL_BASE;
+static uint8_t (*const dyn_pools)[OVE_LNX_DYN_POOL_SIZE] =
+	(uint8_t(*)[OVE_LNX_DYN_POOL_SIZE])(NUTTX_AN500_POOL_BASE +
+					    (size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE);
 #else
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
 /* Per-region dynamic-link scratch pool: a dynamic FDPIC proc's arena lives here so ld.so can
- * mmap libc.so (~500K), far past the in-region arena. NuttX runs from PSRAM (0x60000000, 16M),
- * so this plain .bss array already lands in PSRAM — no dedicated section is needed (unlike the
- * FreeRTOS seam, whose 4M SRAM is too tight beside the 2M of regions). */
+ * mmap libc.so (~500K), far past the in-region arena. */
 static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] __attribute__((aligned(32)));
 #endif
 /* Byte extents of the (contiguous) pools — sizeof() can't see through the STM32 fixed pointers. */
@@ -95,21 +126,13 @@ static int ove_lnx_svc_handler(int irq, void *context, void *arg)
 	uint32_t *regs = (uint32_t *)context;
 	if (!g_ove_lnx_active || !regs)
 		return arm_svcall(irq, context, arg);
-	/* A svc returning into ANY live program region is a Linux syscall; anything
-	 * else (NuttX's own scheduling svcs from kernel .text) chains to arm_svcall.
-	 * prog_regions is one contiguous block, so a single range test covers all. */
-	uintptr_t pc = (uintptr_t)regs[REG_PC];
-	int in_region = pc >= (uintptr_t)prog_regions &&
-			pc < (uintptr_t)prog_regions + PROG_REGIONS_BYTES;
-	/* A dynamic FDPIC proc now runs ALL its code — busybox.so + ld.so + libc.so text, shared
-	 * IN-PLACE — straight from the embedded cpio, so the svc PC in those syscall wrappers lands
-	 * THERE, not in the per-process region/arena (which hold only RW data). Count the cpio (and
-	 * the arena, for any RW-resident trampoline) as "program" too, else the Linux syscall is
-	 * misrouted to NuttX's arm_svcall and the program hangs. */
-	int in_arena = pc >= (uintptr_t)dyn_pools && pc < (uintptr_t)dyn_pools + DYN_POOLS_BYTES;
-	int in_cpio = g_ove_lnx_rootfs_lo && pc >= (uintptr_t)g_ove_lnx_rootfs_lo &&
-		      pc < (uintptr_t)g_ove_lnx_rootfs_hi;
-	if (!in_region && !in_arena && !in_cpio)
+	/* Escalation gate + Linux-vs-NuttX discriminator. The Linux program runs UNPRIVILEGED, so a svc
+	 * from an unprivileged frame (saved CONTROL.nPRIV set) is ALWAYS a Linux syscall — dispatch it
+	 * here, NEVER chain to arm_svcall (which would let a hostile program invoke a NuttX scheduling
+	 * svc; the program CAN reach a kernel svc site, the code region being unprivileged-RX). NuttX's
+	 * own scheduling svcs come from privileged context → chain them. This supersedes the old
+	 * PC-in-region test, which a program executing kernel .text could have slipped past. */
+	if (!(regs[REG_CONTROL] & CONTROL_NPRIV))
 		return arm_svcall(irq, context, arg);
 	int sidx = current_slot();
 	if (sidx < 0)
@@ -209,6 +232,7 @@ static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *
 	regs[REG_R7] = prog->is_fdpic ? (uint32_t)prog->loadmap : 0u;
 	regs[REG_R8] = prog->is_fdpic ? (uint32_t)prog->interp_loadmap : 0u;
 	regs[REG_R9] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
+	regs[REG_CONTROL] |= CONTROL_NPRIV; /* run UNPRIVILEGED — MPU-restricted to its granted regions */
 	nxtask_activate(&g_tcb[sidx].cmn);
 	return 0;
 }
@@ -243,6 +267,7 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_c
 	regs[REG_SP] = ctx->sp;
 	regs[REG_PC] = ctx->pc & ~1u;
 	regs[REG_R0] = (uint32_t)r0val;
+	regs[REG_CONTROL] |= CONTROL_NPRIV; /* unprivileged — MPU-restricted (resumed vfork/clone child) */
 	nxtask_activate(&g_tcb[sidx].cmn);
 }
 
@@ -295,27 +320,68 @@ static const struct ove_lnx_engine g_nuttx_engine = {
 	.event_wait = nuttx_event_wait,
 };
 
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* NuttX leaves the MPU disabled, so the external SDRAM at 0xC0000000 is Device-typed by the ARM
- * default memory map — unaligned loads/stores there fault and the FDPIC loader + program assume
- * Normal memory. Map the whole 8M SDRAM as Normal non-cacheable (executable, RW) via one MPU region
- * + enable the MPU with PRIVDEFENA: everything else keeps the privileged default map, so NuttX's
- * flash/SRAM/peripheral access is unchanged. */
-static void nuttx_sdram_mpu_init(void)
+/* ---- unprivileged isolation: MPU region setup ------------------------------ */
+/* Run the Linux program UNPRIVILEGED behind a per-program MPU view so a stray/hostile access
+ * faults MemManage (contained — see the memfault handler) instead of corrupting the kernel or a
+ * sibling program. PRIVDEFENA keeps the privileged kernel on the ARM default map (unchanged); the
+ * unprivileged program sees ONLY these regions:
+ *   region 0 = code (flash/ROM): unprivileged RO + executable (XN=0) — the shared FDPIC text runs
+ *              in-place from the embedded cpio here, and the contained-fault park loop lives here;
+ *   region 1 = the program pool (PSRAM/SDRAM): unprivileged RW, execute-never (W^X).
+ * Everything else — kernel .data/.bss/heap, peripherals — is ungranted, so an unprivileged access
+ * to it faults. NuttX leaves the MPU disabled in FLAT, so we own it (raw registers; arm_mpu.c is
+ * not compiled). */
+static void ove_lnx_mpu_init(void)
 {
 	volatile uint32_t *const mpu_ctrl = (uint32_t *)0xE000ED94u;
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	const uint32_t code_base = 0x08000000u, code_sz = 19u; /* 1M internal flash */
+	const uint32_t code_texscb = 0x02u;		       /* Normal write-through (real flash) */
+	const uint32_t pool_base = 0xC0000000u, pool_sz = 22u; /* 8M external SDRAM (pool @ +1M) */
+#else					     /* QEMU mps2-an500 */
+	const uint32_t code_base = 0x00000000u, code_sz = 20u; /* 2M ROM/flash at 0x0 (kernel .text) */
+	const uint32_t code_texscb = 0x08u;		       /* Normal non-cacheable */
+	const uint32_t pool_base = 0x60800000u, pool_sz = 22u; /* 8M upper PSRAM = the program pool */
+#endif
+	/* Region 0: code — priv RW / unpriv RO (AP=0b010), executable (XN=0). */
 	*mpu_rnr = 0;
-	*mpu_rbar = 0xC0000000u; /* SDRAM base (8M-aligned); region 0 via RNR */
-	/* EN | SIZE=22 (2^23=8M) | TEXSCB=0x08 (Normal non-cacheable) | AP=0b011 (RW) | XN=0 (exec). */
-	*mpu_rasr = (1u << 0) | (22u << 1) | (0x08u << 16) | (0x3u << 24);
-	*mpu_ctrl = (1u << 0) | (1u << 2); /* ENABLE | PRIVDEFENA */
+	*mpu_rbar = code_base;
+	*mpu_rasr = (1u << 0) | (code_sz << 1) | (code_texscb << 16) | (0x2u << 24);
+	/* Region 1: program pool — priv RW / unpriv RW (AP=0b011), Normal non-cacheable, XN. */
+	*mpu_rnr = 1;
+	*mpu_rbar = pool_base;
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28);
+	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
+	*mpu_ctrl = (1u << 0) | (1u << 2);	/* ENABLE | PRIVDEFENA */
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
 }
 
+/* MemManage fault containment. The unprivileged program's stray/hostile access to an ungranted
+ * address (kernel RAM, a peripheral, a sibling's region) traps HERE instead of corrupting the
+ * system: kill JUST that program (exit 139 = 128+SIGSEGV), park it in the shared park loop, and wake
+ * the coordinator so its EV_EXIT pass reaps the slot + reports the status to the parent (the shell
+ * sees $?=139) — the kernel and any sibling programs run on. A MemManage from a non-program
+ * (privileged) context is a genuine kernel bug → chain to NuttX's panicking HardFault path. */
+static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
+{
+	uint32_t *regs = (uint32_t *)context;
+	int sidx = (g_ove_lnx_active && regs) ? current_slot() : -1;
+	if (sidx < 0)
+		return arm_hardfault(irq, context, arg);
+	OVE_SCS_CFSR = OVE_SCS_CFSR & OVE_CFSR_MMFSR; /* write-1-clear the MemManage fault status */
+	g_ove_lnx_proc[sidx].exited = 1;
+	g_ove_lnx_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+	regs[REG_PC] = (uint32_t)(uintptr_t)&ove_lnx_park_loop & ~1u;
+	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
+	nuttx_event_post();	      /* wake the coordinator → its EV_EXIT pass reaps this slot */
+	return 0;		      /* exception-return: the program spins in park_loop until reaped */
+}
+
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch) polls
  * USART1 directly. NuttX already brought USART1 up as its own console (CONFIG_USART1), so we only
  * steal RX from its IRQ path: serial_poll_begin() clears RXNEIE so the personality's polled reads own
@@ -350,15 +416,15 @@ void serial_poll_putc(char c)
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {
-#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	nuttx_sdram_mpu_init();
-#endif
+	ove_lnx_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
 	for (int i = 0; i < OVE_LNX_NSLOT; i++)
 		g_pid[i] = -1;
 	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
 	irq_attach(OVE_LNX_IRQ_SVCALL, ove_lnx_svc_handler, NULL);
+	irq_attach(OVE_LNX_IRQ_MEMFAULT, ove_lnx_memfault_handler, NULL); /* contain program MPU faults */
 	int rc = ove_lnx_run_common(&g_nuttx_engine, cfg, path, argc, argv);
-	irq_attach(OVE_LNX_IRQ_SVCALL, arm_svcall, NULL); /* restore NuttX's handler */
+	irq_attach(OVE_LNX_IRQ_SVCALL, arm_svcall, NULL);	 /* restore NuttX's handlers */
+	irq_attach(OVE_LNX_IRQ_MEMFAULT, arm_hardfault, NULL);
 	return rc;
 }
 
