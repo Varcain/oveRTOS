@@ -105,6 +105,15 @@ static const struct ove_lnx_engine *g_eng; /* for the dispatch to post coordinat
 const uint8_t *g_ove_lnx_rootfs_lo;
 const uint8_t *g_ove_lnx_rootfs_hi;
 
+/* access_ok (ove_linux_syscall.c) asks for the shared read-only rootfs span so a read-source user
+ * pointer may point into a program's .rodata (shared in-place from the cpio). Strong override of the
+ * weak stub in the syscall layer. */
+void ove_lnx_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
+{
+	*lo = (uintptr_t)g_ove_lnx_rootfs_lo;
+	*hi = (uintptr_t)g_ove_lnx_rootfs_hi;
+}
+
 /* Proc-table accessors so the pipe layer can scan all live procs' fds (count a pipe's
  * open read/write ends for EOF / EPIPE) without the syscall layer knowing OVE_LNX_NSLOT. */
 ove_lnx_proc_t *ove_lnx_proc_table(void)
@@ -460,6 +469,12 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_proc[sidx].alive = 1;
 	g_ove_lnx_proc[sidx].region = ridx;
 	g_ove_lnx_proc[sidx].region_owner = 1;
+	/* access_ok bounds: this proc's own writable memory (image region + dynamic arena). The syscall
+	 * layer rejects any user pointer outside these (+ the shared RO rootfs for reads). */
+	g_ove_lnx_proc[sidx].region_lo = (uintptr_t)region;
+	g_ove_lnx_proc[sidx].region_hi = (uintptr_t)region + OVE_LNX_PROG_REGION_SIZE;
+	g_ove_lnx_proc[sidx].pool_lo = (uintptr_t)arena_mem;
+	g_ove_lnx_proc[sidx].pool_hi = (uintptr_t)arena_mem + arena_sz;
 	g_ove_lnx_proc[sidx].is_fdpic = prog.is_fdpic;
 	g_ove_lnx_proc[sidx].vfork_parent_slot = -1;
 	/* comm = argv[0] basename (strip the login-shell leading '-') for ps/top. */
