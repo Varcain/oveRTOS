@@ -2199,15 +2199,6 @@ def test_qemu_zephyr_zeroheap(ove_dir, output_dir):
                             label="qemu-zephyr-zeroheap")
 
 
-def test_qemu_zephyr_linux(ove_dir, output_dir):
-    """Build and run the isolated Zephyr CONFIG_USERSPACE Linux-personality
-    bring-up on QEMU mps2/an521/cpu0 (Cortex-M33, the USERSPACE-capable target).
-    WIP; not in the auto-run group."""
-    return _run_zephyr_qemu(ove_dir, output_dir,
-                            src_subdir="zephyr-linux", label="qemu-zephyr-linux",
-                            board="mps2/an521/cpu0", run_via_west=True)
-
-
 def test_qemu_freertos_linux_segv(ove_dir, output_dir):
     """Build the QEMU mps2-an500 FreeRTOS ARM_CM4_MPU Linux personality and run the
     NEGATIVE isolation test: /usr/bin/segv deliberately writes kernel SRAM, which the
@@ -2217,7 +2208,7 @@ def test_qemu_freertos_linux_segv(ove_dir, output_dir):
 
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/segv (the
     overtos board's post-build compiles it) plus QEMU and the slow uClinux boot, so it
-    is deliberately NOT in any auto-run group (mirrors qemu-zephyr-linux)."""
+    is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
@@ -2469,7 +2460,6 @@ TEST_TARGETS = {
     "qemu-nuttx-coverage": test_qemu_nuttx_coverage,
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
-    "qemu-zephyr-linux": test_qemu_zephyr_linux,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
     "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
