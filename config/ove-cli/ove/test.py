@@ -2287,6 +2287,35 @@ def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
                             "qemu-zephyr-linux-segv", cwd=ove_dir)
 
 
+def _linux_kstress(ove_dir, output_dir, board_frag, engine):
+    """Kernel-hardening regression: /usr/bin/kstress ptr (access_ok rejects a bad syscall pointer with
+    -EFAULT, so the privileged handler never dereferences it) + udf (a UsageFault is contained, exit
+    139, not a kernel panic) — the shell survives both. Proves the syscall-boundary + fault-type
+    hardening. Manual/opt-in — needs the embedded rootfs carrying /usr/bin/kstress plus QEMU and the
+    slow uClinux boot, so it is deliberately NOT in any auto-run group."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", board_frag], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", engine + "-linux", "kstress_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-" + engine + "-linux-kstress")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "kstress.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-" + engine + "-linux-kstress", cwd=ove_dir)
+
+
+def test_qemu_nuttx_linux_kstress(ove_dir, output_dir):
+    return _linux_kstress(ove_dir, output_dir, "qemu.nuttx.linux_interop", "nuttx")
+
+
+def test_qemu_zephyr_linux_kstress(ove_dir, output_dir):
+    return _linux_kstress(ove_dir, output_dir, "qemu-mps2-an521.zephyr.linux_interop", "zephyr")
+
+
+def test_qemu_freertos_linux_kstress(ove_dir, output_dir):
+    return _linux_kstress(ove_dir, output_dir, "qemu.freertos.linux_interop", "freertos")
+
+
 def test_qemu_zephyr_coverage(ove_dir, output_dir):
     """Build and run Zephyr QEMU tests with CONFIG_COVERAGE=y; emit lcov.
 
@@ -2529,6 +2558,9 @@ TEST_TARGETS = {
     "qemu-nuttx-linux-segv": test_qemu_nuttx_linux_segv,
     "qemu-nuttx-linux-xregion": test_qemu_nuttx_linux_xregion,
     "qemu-zephyr-linux-segv": test_qemu_zephyr_linux_segv,
+    "qemu-nuttx-linux-kstress": test_qemu_nuttx_linux_kstress,
+    "qemu-zephyr-linux-kstress": test_qemu_zephyr_linux_kstress,
+    "qemu-freertos-linux-kstress": test_qemu_freertos_linux_kstress,
     "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
     "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
     "renode-stm32f746-freertos-zeroheap": test_renode_stm32f746_freertos_zeroheap,
