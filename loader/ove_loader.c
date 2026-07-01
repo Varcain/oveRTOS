@@ -254,6 +254,14 @@ static int apply_rela64(const ove_module_t *mod, unsigned tgt, const Elf64_Rela 
 	return OVE_OK;
 }
 
+/* Overflow-safe out-of-bounds test: is [off, off+size) NOT within [0, limit)? Guards a crafted ELF
+ * whose off+size would wrap past the buffer. (The FDPIC loader below already casts to uint64_t before
+ * adding; these module loaders used raw sums.) */
+static int ld_oob(uint64_t off, uint64_t size, size_t limit)
+{
+	return size > (uint64_t)limit || off > (uint64_t)limit - size;
+}
+
 static int load64(ove_module_t *mod, const uint8_t *img, size_t image_size, void *region,
 		  size_t region_size, const ove_loader_sym_t *imports, size_t n_imports)
 {
@@ -266,7 +274,7 @@ static int load64(ove_module_t *mod, const uint8_t *img, size_t image_size, void
 		return OVE_ERR_INVALID_PARAM;
 	if (eh.e_shnum > OVE_LOADER_MAX_SECTIONS)
 		return OVE_ERR_NO_MEMORY;
-	if (eh.e_shoff + (size_t)eh.e_shnum * eh.e_shentsize > image_size)
+	if (ld_oob(eh.e_shoff, (uint64_t)eh.e_shnum * eh.e_shentsize, image_size))
 		return OVE_ERR_INVALID_PARAM;
 
 	mod->is_elf64 = 1;
@@ -280,13 +288,13 @@ static int load64(ove_module_t *mod, const uint8_t *img, size_t image_size, void
 		    (sh.sh_flags & SHF_ALLOC) && sh.sh_size > 0) {
 			size_t align = sh.sh_addralign ? (size_t)sh.sh_addralign : 1;
 			off = (off + align - 1) & ~(align - 1);
-			if (off + sh.sh_size > region_size)
+			if (ld_oob(off, sh.sh_size, region_size))
 				return OVE_ERR_NO_MEMORY;
 			uint8_t *dst = mod->region + off;
 			if (sh.sh_type == SHT_NOBITS) {
 				memset(dst, 0, sh.sh_size);
 			} else {
-				if (sh.sh_offset + sh.sh_size > image_size)
+				if (ld_oob(sh.sh_offset, sh.sh_size, image_size))
 					return OVE_ERR_INVALID_PARAM;
 				memcpy(dst, img + sh.sh_offset, sh.sh_size);
 			}
@@ -295,14 +303,14 @@ static int load64(ove_module_t *mod, const uint8_t *img, size_t image_size, void
 		} else if (sh.sh_type == SHT_SYMTAB) {
 			if (sh.sh_entsize != sizeof(Elf64_Sym))
 				return OVE_ERR_NOT_SUPPORTED;
-			if (sh.sh_offset + sh.sh_size > image_size)
+			if (ld_oob(sh.sh_offset, sh.sh_size, image_size))
 				return OVE_ERR_INVALID_PARAM;
 			mod->symtab = img + sh.sh_offset;
 			mod->sym_count = (uint32_t)(sh.sh_size / sizeof(Elf64_Sym));
 			if (sh.sh_link < eh.e_shnum) {
 				Elf64_Shdr st;
 				rd_shdr64(&eh, img, sh.sh_link, &st);
-				if (st.sh_offset + st.sh_size > image_size)
+				if (ld_oob(st.sh_offset, st.sh_size, image_size))
 					return OVE_ERR_INVALID_PARAM;
 				mod->strtab = (const char *)(img + st.sh_offset);
 				mod->strtab_size = (uint32_t)st.sh_size;
@@ -323,7 +331,7 @@ static int load64(ove_module_t *mod, const uint8_t *img, size_t image_size, void
 			continue;
 		if (sh.sh_entsize != sizeof(Elf64_Rela))
 			return OVE_ERR_NOT_SUPPORTED;
-		if (sh.sh_offset + sh.sh_size > image_size)
+		if (ld_oob(sh.sh_offset, sh.sh_size, image_size))
 			return OVE_ERR_INVALID_PARAM;
 		size_t n = sh.sh_size / sizeof(Elf64_Rela);
 		for (size_t r = 0; r < n; r++) {
@@ -467,7 +475,7 @@ static int load32_arm(ove_module_t *mod, const uint8_t *img, size_t image_size, 
 		return OVE_ERR_INVALID_PARAM;
 	if (eh.e_shnum > OVE_LOADER_MAX_SECTIONS)
 		return OVE_ERR_NO_MEMORY;
-	if (eh.e_shoff + (size_t)eh.e_shnum * eh.e_shentsize > image_size)
+	if (ld_oob(eh.e_shoff, (uint64_t)eh.e_shnum * eh.e_shentsize, image_size))
 		return OVE_ERR_INVALID_PARAM;
 
 	mod->is_elf64 = 0;
@@ -481,13 +489,13 @@ static int load32_arm(ove_module_t *mod, const uint8_t *img, size_t image_size, 
 		    (sh.sh_flags & SHF_ALLOC) && sh.sh_size > 0) {
 			size_t align = sh.sh_addralign ? (size_t)sh.sh_addralign : 1;
 			off = (off + align - 1) & ~(align - 1);
-			if (off + sh.sh_size > region_size)
+			if (ld_oob(off, sh.sh_size, region_size))
 				return OVE_ERR_NO_MEMORY;
 			uint8_t *dst = mod->region + off;
 			if (sh.sh_type == SHT_NOBITS) {
 				memset(dst, 0, sh.sh_size);
 			} else {
-				if (sh.sh_offset + sh.sh_size > image_size)
+				if (ld_oob(sh.sh_offset, sh.sh_size, image_size))
 					return OVE_ERR_INVALID_PARAM;
 				memcpy(dst, img + sh.sh_offset, sh.sh_size);
 			}
@@ -496,14 +504,14 @@ static int load32_arm(ove_module_t *mod, const uint8_t *img, size_t image_size, 
 		} else if (sh.sh_type == SHT_SYMTAB) {
 			if (sh.sh_entsize != sizeof(Elf32_Sym))
 				return OVE_ERR_NOT_SUPPORTED;
-			if (sh.sh_offset + sh.sh_size > image_size)
+			if (ld_oob(sh.sh_offset, sh.sh_size, image_size))
 				return OVE_ERR_INVALID_PARAM;
 			mod->symtab = img + sh.sh_offset;
 			mod->sym_count = (uint32_t)(sh.sh_size / sizeof(Elf32_Sym));
 			if (sh.sh_link < eh.e_shnum) {
 				Elf32_Shdr st;
 				rd_shdr32(&eh, img, sh.sh_link, &st);
-				if (st.sh_offset + st.sh_size > image_size)
+				if (ld_oob(st.sh_offset, st.sh_size, image_size))
 					return OVE_ERR_INVALID_PARAM;
 				mod->strtab = (const char *)(img + st.sh_offset);
 				mod->strtab_size = st.sh_size;
@@ -524,7 +532,7 @@ static int load32_arm(ove_module_t *mod, const uint8_t *img, size_t image_size, 
 			continue;
 		if (sh.sh_entsize != sizeof(Elf32_Rel))
 			return OVE_ERR_NOT_SUPPORTED;
-		if (sh.sh_offset + sh.sh_size > image_size)
+		if (ld_oob(sh.sh_offset, sh.sh_size, image_size))
 			return OVE_ERR_INVALID_PARAM;
 		size_t n = sh.sh_size / sizeof(Elf32_Rel);
 		for (size_t r = 0; r < n; r++) {
