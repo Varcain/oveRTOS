@@ -18,10 +18,10 @@ defconfig:
 #   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)
 #   ove defconfig-fragments stm32f746g-discovery.freertos.linux_interop  (Cortex-M7 real HW)
 #   ove defconfig-fragments stm32f746g-discovery.nuttx.linux_interop     (Cortex-M7 real HW)
-# The FreeRTOS + NuttX seams are ported to real STM32F746 hardware (program pool in the external
-# SDRAM, USART1 console); FreeRTOS runs the program in per-task MPU regions, NuttX privileged. The
-# zephyr seam on this board is a follow-up.
+#   ove defconfig-fragments stm32f746g-discovery.zephyr.linux_interop    (Cortex-M7 real HW)
+# All three seams are ported to real STM32F746 hardware (program pool in the external SDRAM, USART1
+# console). FreeRTOS + Zephyr run the program in per-task MPU regions (Zephyr unprivileged K_USER),
+# NuttX privileged.
 incompatible_boards:
-  - stm32f746g-discovery.zephyr
   - host
   - wasm

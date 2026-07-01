@@ -198,7 +198,10 @@ static volatile int g_round_trip_n;
 /* ---- the native RTOS worker thread (feeds, then consumes) ------------------ */
 static ove_thread_t g_worker;
 static ove_thread_storage_t g_worker_storage;
-static uint8_t g_worker_stack[2048] __attribute__((aligned(8)));
+/* Aligned to its own (power-of-2) size: Zephyr USERSPACE on a power-of-2 MPU (PMSAv7, e.g. the
+ * STM32F746) requires thread-stack objects to be power-of-2 aligned+sized, else k_thread_create
+ * rounds the base up to Z_POW2_CEIL(size) and overruns the buffer. Harmless on other engines. */
+static uint8_t g_worker_stack[2048] __attribute__((aligned(2048)));
 
 static void rtos_worker(void *arg)
 {

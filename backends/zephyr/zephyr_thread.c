@@ -203,6 +203,14 @@ int ove_thread_init(ove_thread_t *handle, ove_thread_storage_t *storage, const c
 	storage->next = NULL;
 	storage->stop_requested = 0;
 
+	/* NB: on Zephyr USERSPACE with a power-of-2 MPU (PMSAv7, e.g. the STM32F746 with
+	 * CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT=y), the caller's stack buffer must itself be
+	 * power-of-2 aligned AND power-of-2 sized: k_thread_create rounds the base up to
+	 * Z_POW2_CEIL(size) and fills that many bytes, so a smaller/misaligned buffer overruns into
+	 * whatever follows in memory (here it poisoned the adjacent k_thread with 0xaa and the thread
+	 * never ran). ARCH_THREAD_STACK_RESERVED is 0 on ARM, so the guard lives inside that power-of-2
+	 * region, not beyond it. Callers on such boards must align the buffer to its own size — the
+	 * flexible PMSAv8 layout on the an521 tolerates a plain buffer, which masks this. */
 	tid = k_thread_create(&storage->thread, storage->stack, stack_size, thread_wrapper,
 			      (void *)entry, arg, (void *)storage, map_priority(priority), 0,
 			      K_NO_WAIT);

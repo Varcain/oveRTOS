@@ -192,4 +192,33 @@ CONFIG_THREAD_CUSTOM_DATA=y
 # its per-process region + arena are RW-only (see setup_domain) — no RWX partitions anywhere.
 # Enforce W^X explicitly (Zephyr's own default is OFF) now that no program needs an RWX region.
 CONFIG_EXECUTE_XOR_WRITE=y
+# The USERSPACE thread-id bitmap must cover every k_thread kobject: the NSLOT program slots
+# (NREG+4) + the kernel's own threads + the board's driver threads. On the real STM32F746 the
+# driver threads push the total to 18, needing 3 bytes (24 slots); harmless for the an521 (fewer).
+CONFIG_MAX_THREAD_BYTES=3
+# Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the
+# program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC
+# display, which the headless personality disables — so enable it explicitly. No-op on the an521.
+CONFIG_MEMC=y
+# Headless personality: drop the board's app drivers (display/audio/SD) — the personality uses none
+# of them and they cost RAM, flash, and USERSPACE thread-id slots. No-ops on boards without them.
+CONFIG_DISPLAY=n
+CONFIG_AUDIO=n
+CONFIG_AUDIO_CODEC=n
+CONFIG_I2S=n
+CONFIG_DISK_ACCESS=n
+CONFIG_DISK_DRIVERS=n
+{% if get_bool("CONFIG_OVE_BOARD_STM32F746G_DISCO") %}
+# Real STM32F746 (M7, PMSAv7 — only 8 MPU regions): free one region for the program's memory
+# domain. USERSPACE's static regions (flash, SRAM, SDRAM, QSPI window) leave 3 dynamic; the
+# per-thread stack + supervisor stack guard reserve 2 -> only 1 left for domain partitions, but
+# each program domain needs 2 (text + data) -> k_mem_domain_init faults ("num_parts 2 exceeds max
+# 1"). Dropping the supervisor stack guard reclaims that region. MPU_STACK_GUARD is select-ed by
+# ARM_STACK_PROTECTION (default y if HW_STACK_PROTECTION), so a bare CONFIG_MPU_STACK_GUARD=n is
+# overridden — disable the parent HW_STACK_PROTECTION. The program's OWN overflow protection is
+# intact (a user thread faults out of its domain region); this only drops overflow detection for
+# the trusted framework threads, matching how FreeRTOS/NuttX run on this board. Board-gated so the
+# QEMU an521 (with MPU headroom to spare) keeps its guard.
+CONFIG_HW_STACK_PROTECTION=n
+{% endif %}
 {% endif %}

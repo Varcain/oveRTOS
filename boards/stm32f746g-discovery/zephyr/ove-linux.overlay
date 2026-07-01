@@ -1,0 +1,29 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Linux personality (headless) on the STM32F746G-Discovery. The upstream board enables the LTDC
+ * display, which uses the 8 MB FMC SDRAM (sdram1 @0xC0000000) as its framebuffer. The Linux
+ * personality places its program-image pool (NREG x 768K) in that same SDRAM (the "SDRAM1" NOLOAD
+ * linker region, via Z_GENERIC_SECTION in backends/zephyr/zephyr_lnx.c), so disable the display to
+ * free the whole region. The FMC controller itself stays enabled (the memc driver still brings the
+ * SDRAM up at boot).
+ */
+
+&ltdc {
+	status = "disabled";
+};
+
+/*
+ * Free MPU region(s) for the program's memory domain. This M7 has only 8 PMSAv7 regions; the Linux
+ * program's K_USER domain needs 4 partitions (libc + malloc + text + data), which don't fit
+ * alongside the full static set. The build never uses the memory-mapped QSPI window at 0x90000000,
+ * whose placeholder memory-region ("QSPI_PLACEHOLDER") costs a static MPU region — delete it (and
+ * disable the unused controller) to reclaim the room.
+ */
+/delete-node/ &quadspi_memory;
+
+&quadspi {
+	status = "disabled";
+};

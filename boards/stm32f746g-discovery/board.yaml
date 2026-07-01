@@ -77,3 +77,8 @@ rtos_defconfig:
     # The program runs PRIVILEGED here (no per-task MPU isolation — that's a follow-up); the seam
     # places the program pool at a fixed external-SDRAM address past the LTDC framebuffer.
     - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output-fdpic"
+  zephyr:
+    # Zephyr runs the program UNPRIVILEGED in per-task MPU domains (K_USER). The Zephyr-side knobs
+    # (USERSPACE, the FMC SDRAM memc node + the OVE_PROG_RAM NOLOAD region, USART1 console) live in
+    # the prj.conf template + the board overlay; here only the oveRTOS rootfs selector is needed.
+    - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output-fdpic"
