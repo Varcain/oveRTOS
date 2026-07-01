@@ -151,7 +151,14 @@ extern void ove_backend_trace_task_blocking(void);
  * prvSetupMPU's configASSERT hangs at boot). Our SVC vector is the seam's strong
  * SVC_Handler (not vPortSVCHandler) → configCHECK_HANDLER_INSTALLATION must be 0. */
 #define configUSE_MPU_WRAPPERS_V1                       1
-#define configTOTAL_MPU_REGIONS                         8
+/* 16, NOT 8: QEMU's mps2-an500 Cortex-M7 reports MPU_TYPE.DREGION=16, and the ARM_CM4_MPU port
+ * SILENTLY SKIPS all MPU setup — the region programming AND the CTRL ENABLE|BACKGROUND(=PRIVDEFENA)
+ * write — when configTOTAL_MPU_REGIONS != the hardware region count (port.c prvSetupMPU:
+ * `if (portMPU_TYPE_REG == (configTOTAL_MPU_REGIONS << 8))`). A mismatch (the old 8) HardFaults at
+ * scheduler start: prvRestoreContextOfFirstTask enables the MPU with no regions + PRIVDEFENA off, so
+ * the first privileged instruction fetch is a MemManage IACCVIOL. The real STM32F746 M7 has 8 MPU
+ * regions, so its own board config keeps 8. */
+#define configTOTAL_MPU_REGIONS                         16
 #define configENABLE_ERRATA_837070_WORKAROUND           0
 #define configCHECK_HANDLER_INSTALLATION                0
 #define configENFORCE_SYSTEM_CALLS_FROM_KERNEL_ONLY     0
