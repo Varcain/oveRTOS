@@ -222,6 +222,20 @@ __attribute__((naked)) void MemManage_Handler(void)
 			 "bx   lr                     \n");
 }
 
+/* UsageFault (undefined instruction / bad control flow) + BusFault get the SAME containment as
+ * MemManage: a program fault is killed (139), a kernel fault is fatal. Both tail-branch into
+ * MemManage_Handler's body (which reads the faulting PSP frame + calls freertos_lnx_memfault_c —
+ * fault-type-agnostic, and its CFSR write-back already clears BFSR/UFSR too). Enabled via SHCSR in
+ * ove_lnx_run; the MPU port's prvSetupMPU only turns on MEMFAULTENA. */
+__attribute__((naked)) void UsageFault_Handler(void)
+{
+	__asm__ volatile("b MemManage_Handler");
+}
+__attribute__((naked)) void BusFault_Handler(void)
+{
+	__asm__ volatile("b MemManage_Handler");
+}
+
 /* ---- thread entry: in-region descriptor + unified trampoline --------------- */
 /* The program's entry/resume context is stashed in the program's OWN region (just below SP)
  * as a resume_desc, so the program task's (possibly UNPRIVILEGED) trampoline can read it without
@@ -414,5 +428,9 @@ int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 {
 	if (!g_ev) /* create the coordinator wakeup sem in thread context */
 		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
+	/* Enable BusFault + UsageFault so a program's bus/usage fault is contained by our handlers
+	 * instead of escalating to HardFault (the MPU port's prvSetupMPU only turns on MEMFAULTENA).
+	 * SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
+	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
 	return ove_lnx_run_common(&g_freertos_engine, cfg, path, argc, argv);
 }

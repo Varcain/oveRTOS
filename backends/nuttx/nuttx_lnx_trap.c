@@ -51,11 +51,15 @@ extern int arm_hardfault(int irq, void *context, void *arg);
 
 #define OVE_LNX_IRQ_SVCALL 11   /* == NuttX's internal NVIC_IRQ_SVCALL */
 #define OVE_LNX_IRQ_MEMFAULT 4  /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
+#define OVE_LNX_IRQ_BUSFAULT 5  /* == NuttX's NVIC_IRQ_BUSFAULT */
+#define OVE_LNX_IRQ_USGFAULT 6  /* == NuttX's NVIC_IRQ_USAGEFAULT (undefined instr, bad control flow) */
 
 /* ARMv7-M System Control Space (restated — the NuttX arch headers are off the app include path). */
 #define OVE_SCS_SHCSR (*(volatile uint32_t *)0xE000ED24u) /* system handler ctrl/state */
 #define OVE_SCS_CFSR (*(volatile uint32_t *)0xE000ED28u)  /* configurable fault status */
 #define OVE_SHCSR_MEMFAULTENA (1u << 16)		  /* route MPU faults to MemManage (not HardFault) */
+#define OVE_SHCSR_BUSFAULTENA (1u << 17)		  /* route bus faults to BusFault (not HardFault) */
+#define OVE_SHCSR_USGFAULTENA (1u << 18)		  /* route usage faults to UsageFault (not HardFault) */
 #define OVE_CFSR_MMFSR 0x000000ffu			  /* low byte = MemManage fault status (W1C) */
 
 /* ARMv7-M MPU RASR SIZE field for a power-of-2 region size: ((log2(size) - 1) << 1). */
@@ -375,7 +379,7 @@ static void ove_lnx_mpu_init(void)
 #else
 	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28); /* RW/RW (Phase 1) */
 #endif
-	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
+	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA | OVE_SHCSR_BUSFAULTENA | OVE_SHCSR_USGFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
 	*mpu_ctrl = (1u << 0) | (1u << 2);	/* ENABLE | PRIVDEFENA */
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
@@ -393,7 +397,7 @@ static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
 	int sidx = (g_ove_lnx_active && regs) ? current_slot() : -1;
 	if (sidx < 0)
 		return arm_hardfault(irq, context, arg);
-	OVE_SCS_CFSR = OVE_SCS_CFSR & OVE_CFSR_MMFSR; /* write-1-clear the MemManage fault status */
+	OVE_SCS_CFSR = OVE_SCS_CFSR & 0x03ffffffu; /* write-1-clear the set fault status (MM/Bus/Usage) */
 	g_ove_lnx_proc[sidx].exited = 1;
 	g_ove_lnx_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
 	regs[REG_PC] = (uint32_t)(uintptr_t)&ove_lnx_park_loop & ~1u;
@@ -498,12 +502,16 @@ int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
 	irq_attach(OVE_LNX_IRQ_SVCALL, ove_lnx_svc_handler, NULL);
 	irq_attach(OVE_LNX_IRQ_MEMFAULT, ove_lnx_memfault_handler, NULL); /* contain program MPU faults */
+	irq_attach(OVE_LNX_IRQ_BUSFAULT, ove_lnx_memfault_handler, NULL); /* + bus faults */
+	irq_attach(OVE_LNX_IRQ_USGFAULT, ove_lnx_memfault_handler, NULL); /* + usage faults (bad instr) */
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	note_driver_register(&g_ove_lnx_note_driver); /* Phase 2: per-switch per-program MPU region swap */
 #endif
 	int rc = ove_lnx_run_common(&g_nuttx_engine, cfg, path, argc, argv);
 	irq_attach(OVE_LNX_IRQ_SVCALL, arm_svcall, NULL);	 /* restore NuttX's handlers */
 	irq_attach(OVE_LNX_IRQ_MEMFAULT, arm_hardfault, NULL);
+	irq_attach(OVE_LNX_IRQ_BUSFAULT, arm_hardfault, NULL);
+	irq_attach(OVE_LNX_IRQ_USGFAULT, arm_hardfault, NULL);
 	return rc;
 }
 
