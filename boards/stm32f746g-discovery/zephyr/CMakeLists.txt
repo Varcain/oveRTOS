@@ -12,8 +12,15 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveZephyrCommon.cmake)
 
 ove_zephyr_pre_find()
 
-# Add out-of-tree WM8994 driver
-list(APPEND ZEPHYR_EXTRA_MODULES ${OVE_BOARD_DIR}/drivers/wm8994)
+if(OVE_LINUX)
+    # Headless Linux personality: place the program-image regions in the FMC SDRAM (NOLOAD) and
+    # free it from the LTDC display (ove-linux.overlay disables the display + LTDC). Must be set
+    # before find_package(Zephyr) — devicetree is processed there.
+    set(EXTRA_DTC_OVERLAY_FILE ${CMAKE_CURRENT_LIST_DIR}/ove-linux.overlay)
+else()
+    # Add out-of-tree WM8994 driver (audio codec — not used headless)
+    list(APPEND ZEPHYR_EXTRA_MODULES ${OVE_BOARD_DIR}/drivers/wm8994)
+endif()
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(ove_firmware)
@@ -25,9 +32,19 @@ target_sources(app PRIVATE
     ${OVE_BACKEND_SOURCES}
 )
 
-ove_zephyr_add_tflm_if_enabled()
 ove_zephyr_include_app_sources()
-ove_zephyr_add_common_includes()
+
+if(OVE_LINUX)
+    # The seam traps the program's svc by interposing the kernel-oops handler at link time, and
+    # the demo embeds a rootfs CPIO fixture (generated at build time, not committed).
+    target_link_options(app PUBLIC "-Wl,--wrap=z_do_kernel_oops")
+    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+    ove_zephyr_add_common_includes(EXTRA ${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+else()
+    ove_zephyr_add_tflm_if_enabled()
+    ove_zephyr_add_common_includes()
+endif()
 
 # Zero-heap link-time audit: fail the link if a kernel/libc heap
 # region is instantiated.  STRICT also forbids __HeapBase / __HeapLimit

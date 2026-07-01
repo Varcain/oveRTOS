@@ -35,18 +35,70 @@
 
 #include "../common/ove_lnx_run.h"
 
-/* The program-image regions live in a NOLOAD PSRAM linker region (the board's
- * ove-psram.overlay turns the AN521 PSRAM into "OVE_PROG_RAM"): RAM-resident but
- * ZERO flash cost — Zephyr's app_smem is a *loaded* section, so a K_APP_BMEM array
- * this big would store 2 MB of zero-init regions as 2 MB of flash. PSRAM is also a
- * region separate from the kernel SRAM, so the per-program MPU partitions built in
- * setup_domain() don't overlap the kernel's region (the reason app_smem was used). */
+/* The program-image regions live in a NOLOAD external-RAM linker region: RAM-resident but ZERO
+ * flash cost — Zephyr's app_smem is a *loaded* section, so a K_APP_BMEM array this big would store
+ * the zero-init regions as that many MB of flash. External RAM is also a region separate from the
+ * kernel SRAM, so the per-program MPU partitions built in setup_domain() don't overlap the kernel's
+ * region (the reason app_smem was used). The node differs per board: an521 uses the 16 MB PSRAM
+ * (ove-psram.overlay → "OVE_PROG_RAM"); the real STM32F746 uses the 8 MB FMC SDRAM @0xC0000000
+ * (upstream `sdram1` node → "SDRAM1"; the LTDC display that would share it is disabled in the
+ * linux_interop overlay). */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#define OVE_PROG_RAM_NODE DT_NODELABEL(sdram1)
+#else
+#define OVE_PROG_RAM_NODE DT_NODELABEL(psram)
+#endif
+/* Per-program partition base alignment. On a power-of-2 MPU (PMSAv7, e.g. the STM32F746, where
+ * CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT=y) an MPU region's base must be aligned to its SIZE, so
+ * each per-program partition (one row of these arrays) must start on a PROG_REGION/DYN_POOL boundary
+ * — otherwise the hardware aligns the base DOWN at context switch and the region spans the wrong
+ * range, so the unprivileged program's data/IO lands in unmapped memory (it launches but silently
+ * relays nothing). PMSAv8 (the an521) allows a 32-byte-aligned base, so it needs no size alignment
+ * (and avoids the padding). */
+#if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
+#define OVE_LNX_PROG_REGION_ALIGN OVE_LNX_PROG_REGION_SIZE
+#define OVE_LNX_DYN_POOL_ALIGN OVE_LNX_DYN_POOL_SIZE
+#else
+#define OVE_LNX_PROG_REGION_ALIGN 32
+#define OVE_LNX_DYN_POOL_ALIGN 32
+#endif
 static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(DT_NODELABEL(psram))) __aligned(32);
-/* Per-region dynamic-link scratch pool (also PSRAM/NOLOAD): a dynamic FDPIC proc's arena lives
- * here so ld.so can mmap libc.so (~500K), far past the in-region arena. */
+	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(OVE_LNX_PROG_REGION_ALIGN);
+/* Per-region dynamic-link scratch pool (also external-RAM/NOLOAD): a dynamic FDPIC proc's arena
+ * lives here so ld.so can mmap libc.so (~500K), far past the in-region arena. */
 static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(DT_NODELABEL(psram))) __aligned(32);
+	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(OVE_LNX_DYN_POOL_ALIGN);
+
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch)
+ * polls USART1 directly from the PRIVILEGED run loop. Zephyr already brought USART1 up as its own
+ * console; we only steal RX from its IRQ path: serial_poll_begin() clears RXNEIE so the polled
+ * reads own the receiver. STM32F7 USART1 @ 0x40011000: CR1(0x00) RXNEIE=b5, ISR(0x1C) RXNE=b5
+ * TXE=b7, RDR(0x24), TDR(0x28). */
+#define OVE_Z_USART1 0x40011000u
+#define OVE_Z_U1_CR1 (*(volatile uint32_t *)(OVE_Z_USART1 + 0x00u))
+#define OVE_Z_U1_ISR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x1Cu))
+#define OVE_Z_U1_RDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x24u))
+#define OVE_Z_U1_TDR (*(volatile uint32_t *)(OVE_Z_USART1 + 0x28u))
+void serial_poll_begin(void)
+{
+	OVE_Z_U1_CR1 &= ~(1u << 5); /* clear RXNEIE → polled access owns RX */
+}
+int serial_poll_rx_ready(void)
+{
+	return (OVE_Z_U1_ISR & (1u << 5)) ? 1 : 0; /* RXNE */
+}
+int serial_poll_getc(void)
+{
+	return (int)(OVE_Z_U1_RDR & 0xFFu);
+}
+void serial_poll_putc(char c)
+{
+	while (!(OVE_Z_U1_ISR & (1u << 7))) { /* wait for TXE */
+	}
+	OVE_Z_U1_TDR = (unsigned char)c;
+}
+#endif
 
 /* Per-region MPU domain: program text/data + the libc/heap partitions. */
 extern struct k_mem_partition z_libc_partition;
@@ -180,6 +232,19 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
 	}
 	if (!g_dom_inited[ridx]) {
+#if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
+		/* Real STM32F746 (M7, PMSAv7): only 8 MPU regions. After the static set (the board frees
+		 * the guard + the QSPI placeholder — see the board prj.conf/overlay) and the K_USER thread's
+		 * own stack region, exactly 3 domain partitions fit. z_libc_partition is REQUIRED (Zephyr's
+		 * z_thread_entry reads the per-thread TLS pointer z_arm_tls_ptr there via __aeabi_read_tp,
+		 * for EVERY thread incl. the program — dropping it faults at entry), but z_malloc_partition
+		 * is NOT: the FDPIC program uses its OWN uClibc malloc inside its region and never touches
+		 * Zephyr's picolibc heap (the kernel reaches it privileged via PRIVDEFENA). Keep libc, drop
+		 * malloc → libc + text + data = 3 partitions. */
+		struct k_mem_partition *base[] = {&z_libc_partition};
+		if (k_mem_domain_init(&g_domains[ridx], 1, base) != 0)
+			return -1;
+#else
 		/* libc + malloc only (the resume ctx now rides in the program's own region —
 		 * see zephyr_spawn_resume — so there is no separate shared partition); text +
 		 * data are added below → 4 partitions. The AN521 MPU has 8 regions (2 static →
@@ -189,6 +254,7 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		struct k_mem_partition *base[] = {&z_libc_partition, &z_malloc_partition};
 		if (k_mem_domain_init(&g_domains[ridx], 2, base) != 0)
 			return -1;
+#endif
 		g_dom_inited[ridx] = 1;
 	}
 	if (k_mem_domain_add_partition(&g_domains[ridx], &g_text[ridx]) != 0 ||
