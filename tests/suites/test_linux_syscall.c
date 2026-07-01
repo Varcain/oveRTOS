@@ -38,6 +38,12 @@ static void setup_proc(ove_lnx_proc_t *p, ove_arena_t *arena)
 {
 	assert_int_equal(ove_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
 	assert_int_equal(ove_lnx_proc_init(p, arena, 4096), OVE_OK);
+	/* The host test uses ordinary host buffers, not a bounded program region, so give this proc an
+	 * all-permitting access_ok range (NULL is still rejected via region_lo=1). On-target the run loop
+	 * restricts region_lo/hi to the real image region. */
+	p->region_lo = 1;
+	p->region_hi = UINTPTR_MAX;
+	p->pool_lo = p->pool_hi = 0;
 	p->write_fn = cap_write;
 	g_cap_len = 0;
 }

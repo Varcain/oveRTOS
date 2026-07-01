@@ -380,6 +380,12 @@ typedef struct ove_lnx_proc {
 	int alive;	  /**< This slot holds a live process. */
 	int region;	  /**< Program-image region index this proc runs in. */
 	int region_owner; /**< 1 = owns/must-free its region; 0 = shares a parent's (vfork window). */
+	/* access_ok validation ranges — the program's OWN writable memory. region_lo/hi = its image
+	 * region [base, base+512K); pool_lo/hi = its dynamic-link arena (== region for a static proc).
+	 * A syscall rejects (-EFAULT) any user pointer+len not wholly inside these (a READ source may
+	 * also point into the shared read-only rootfs). Filled at launch; a vfork child / thread inherits
+	 * its parent's. Guards the confused-deputy vector (the syscall handlers run PRIVILEGED). */
+	uintptr_t region_lo, region_hi, pool_lo, pool_hi;
 	int vfork_parent_slot; /**< Slot of a parent suspended awaiting this child's exec/exit, or -1. */
 	int fork_pending; /**< This proc issued vfork/fork/clone; coordinator spawns a child. */
 	int is_thread;	  /**< This proc is a pthread: shares its creator's region for life. */

@@ -71,6 +71,66 @@ __attribute__((weak)) int ove_lnx_proc_nslot(void)
 	return 0;
 }
 
+/* The shared read-only rootfs span [lo,hi): a program's .rodata (its FDPIC text is shared in-place
+ * from the embedded cpio) lives here, so a READ-source user pointer may legitimately point into it.
+ * Weak fallback (empty range) so the host test links; the run loop supplies the strong version. */
+__attribute__((weak)) void ove_lnx_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
+{
+	*lo = 0;
+	*hi = 0;
+}
+
+/* ---- user-pointer validation (access_ok) ----------------------------------
+ * The syscall handlers run PRIVILEGED, so an unchecked user pointer would let a program make the
+ * KERNEL read/write kernel, device, or unmapped memory on its behalf — a confused deputy the
+ * per-program MPU cannot stop. Every syscall that dereferences a user pointer must first prove the
+ * whole [ptr, ptr+len) lies inside the calling program's own writable memory (its image region or
+ * dynamic arena), or — for a read SOURCE only — the shared read-only rootfs. */
+
+/* Upper bound of the valid range that CONTAINS `a`, or 0 if `a` is in none. */
+static uintptr_t user_range_hi(const ove_lnx_proc_t *p, uintptr_t a, int write)
+{
+	if (a >= p->region_lo && a < p->region_hi)
+		return p->region_hi;
+	if (p->pool_hi > p->pool_lo && a >= p->pool_lo && a < p->pool_hi)
+		return p->pool_hi;
+	if (!write) {
+		uintptr_t rlo, rhi;
+		ove_lnx_rootfs_bounds(&rlo, &rhi);
+		if (rhi > rlo && a >= rlo && a < rhi)
+			return rhi;
+	}
+	return 0;
+}
+
+/* True iff [ptr, ptr+len) is wholly readable (write==0) or writable (write==1) by program `p`. */
+static int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write)
+{
+	uintptr_t a = (uintptr_t)ptr, end = a + len;
+	if (len == 0)
+		return 1; /* zero length: nothing is dereferenced */
+	if (end < a)
+		return 0; /* ptr+len wrapped the address space */
+	uintptr_t hi = user_range_hi(p, a, write);
+	return hi != 0 && end <= hi;
+}
+
+/* strlen of a user string, or -EFAULT if it is not NUL-terminated wholly within a valid readable
+ * range (so a later strlen/copy can't walk off the region into kernel memory). Bounded by `max`. */
+static long user_strnlen(const ove_lnx_proc_t *p, const char *s, size_t max)
+{
+	uintptr_t a = (uintptr_t)s;
+	uintptr_t hi = user_range_hi(p, a, 0);
+	if (!hi)
+		return -OVE_LNX_EFAULT;
+	size_t avail = (size_t)(hi - a);
+	size_t lim = avail < max ? avail : max;
+	for (size_t i = 0; i < lim; i++)
+		if (s[i] == '\0')
+			return (long)i;
+	return -OVE_LNX_EFAULT; /* no NUL within the range / max */
+}
+
 static void pipe_ends(int pi, int *readers, int *writers)
 {
 	*readers = 0;
@@ -527,7 +587,7 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
-	if (len && !buf)
+	if (!user_ok(p, buf, len, 0)) /* the kernel READS buf → reject a bad source pointer */
 		return -OVE_LNX_EFAULT;
 	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
 	if (s->kind == OVE_LNX_FD_PIPE) {
@@ -575,8 +635,8 @@ static long sys_writev(ove_lnx_proc_t *p, int fd, const ove_lnx_iovec *iov, int 
 		return -OVE_LNX_EBADF;
 	if (iovcnt < 0)
 		return -OVE_LNX_EINVAL;
-	if (iovcnt && !iov)
-		return -OVE_LNX_EFAULT;
+	if (iovcnt && !user_ok(p, iov, (size_t)iovcnt * sizeof(*iov), 0))
+		return -OVE_LNX_EFAULT; /* the iov array itself; each iov_base is checked in sys_write */
 
 	long total = 0;
 	for (int i = 0; i < iovcnt; i++) {
@@ -597,7 +657,7 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
-	if (len && !buf)
+	if (!user_ok(p, buf, len, 1)) /* the kernel WRITES buf → reject a bad destination pointer */
 		return -OVE_LNX_EFAULT;
 
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
@@ -681,7 +741,7 @@ static long sys_pread(ove_lnx_proc_t *p, int fd, void *buf, size_t len, uint32_t
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
-	if (len && !buf)
+	if (!user_ok(p, buf, len, 1))
 		return -OVE_LNX_EFAULT;
 
 	const uint8_t *data;
@@ -863,6 +923,11 @@ static long normalize_abs(const char *in, char *out, size_t outlen)
  */
 static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, size_t outlen)
 {
+	/* Every path syscall funnels through here, so one check guards them all: reject a path pointer
+	 * that isn't a NUL-terminated string wholly inside the program's memory (-EFAULT) before any
+	 * deref — else a bad `in` faults the kernel or walks a strlen off the region. */
+	if (user_strnlen(p, in, OVE_LNX_PATH_MAX) < 0)
+		return -OVE_LNX_EFAULT;
 	char joined[OVE_LNX_PATH_MAX];
 	size_t jl = 0;
 	if (in[0] != '/') { /* prefix the cwd (which is absolute + normalized) */
@@ -1259,7 +1324,7 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 /* pipe(2): allocate a pipe object + a read-end / write-end fd pair. */
 static long sys_pipe(ove_lnx_proc_t *p, int *fds)
 {
-	if (!fds)
+	if (!user_ok(p, fds, 2 * sizeof(int), 1)) /* the kernel writes fds[0],fds[1] */
 		return -OVE_LNX_EFAULT;
 	/* A pipe slot is free when no live proc holds either end (auto-reclaimed when
 	 * both ends close or the holders exit — there is no explicit pipe free path). */
@@ -1365,6 +1430,8 @@ static long sys_llseek(ove_lnx_proc_t *p, int fd, unsigned long off_hi, unsigned
 	long pos = sys_lseek(p, fd, (long)off_lo, (int)whence);
 	if (pos < 0)
 		return pos;
+	if (result && !user_ok(p, result, sizeof(*result), 1))
+		return -OVE_LNX_EFAULT;
 	if (result)
 		*result = (uint64_t)pos;
 	return 0;
@@ -1415,7 +1482,7 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
-	if (!statbuf)
+	if (!user_ok(p, statbuf, sizeof(struct ove_lnx_kstat64), 1))
 		return -OVE_LNX_EFAULT;
 	if (s->kind == OVE_LNX_FD_FILE)
 		fill_kstat64(statbuf, 1u + (uint32_t)s->file_idx,
@@ -1436,8 +1503,8 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 /* path-based stat: resolve, optionally follow a trailing symlink, fill kstat64. */
 static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void *statbuf)
 {
-	if (!path || !statbuf)
-		return -OVE_LNX_EFAULT;
+	if (!user_ok(p, statbuf, sizeof(struct ove_lnx_kstat64), 1))
+		return -OVE_LNX_EFAULT; /* path is validated by resolve_path below */
 	char abspath[OVE_LNX_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
@@ -1469,8 +1536,8 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 /* readlink: write the symlink target (not NUL-terminated) + return its length. */
 static long sys_readlink(ove_lnx_proc_t *p, const char *path, char *buf, size_t bufsiz)
 {
-	if (!path || !buf)
-		return -OVE_LNX_EFAULT;
+	if (!user_ok(p, buf, bufsiz, 1))
+		return -OVE_LNX_EFAULT; /* path is validated by resolve_path below */
 	char abspath[OVE_LNX_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
@@ -1642,9 +1709,9 @@ static long sys_utimensat(ove_lnx_proc_t *p, const char *path)
 
 /* getrandom: a non-cryptographic xorshift PRNG seeded from uptime (no hardware
  * RNG); enough for mktemp suffixes etc. */
-static long sys_getrandom(void *buf, size_t count)
+static long sys_getrandom(ove_lnx_proc_t *p, void *buf, size_t count)
 {
-	if (count && !buf)
+	if (!user_ok(p, buf, count, 1))
 		return -OVE_LNX_EFAULT;
 	static uint32_t s;
 	if (!s) {
@@ -1668,9 +1735,9 @@ struct ove_lnx_statfs64 {
 	uint64_t f_blocks, f_bfree, f_bavail, f_files, f_ffree;
 	uint32_t f_fsid[2], f_namelen, f_frsize, f_flags, f_spare[4];
 };
-static long sys_statfs(void *buf)
+static long sys_statfs(ove_lnx_proc_t *p, void *buf)
 {
-	if (!buf)
+	if (!user_ok(p, buf, sizeof(struct ove_lnx_statfs64), 1))
 		return -OVE_LNX_EFAULT;
 	struct ove_lnx_statfs64 *st = buf;
 	memset(st, 0, sizeof(*st));
@@ -1717,8 +1784,10 @@ static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ov
 static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
 {
 	ove_lnx_fd_t *s = fd_slot(p, fd);
-	if (!s || !buf)
+	if (!s)
 		return -OVE_LNX_EBADF;
+	if (!user_ok(p, buf, count, 1))
+		return -OVE_LNX_EFAULT;
 	const char *dirpath;
 	if (s->kind == OVE_LNX_FD_FILE) {
 		if ((file_mode(&p->fs[s->file_idx]) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
@@ -1837,7 +1906,7 @@ struct ove_lnx_statx {
  */
 static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags, void *buf)
 {
-	if (!buf)
+	if (!user_ok(p, buf, sizeof(struct ove_lnx_statx), 1))
 		return -OVE_LNX_EFAULT;
 
 	uint32_t mode;
@@ -1928,6 +1997,21 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 {
 	if (!path)
 		return -OVE_LNX_EFAULT;
+	/* Validate the whole argv vector before the walk below reads it: a malicious argv could point at
+	 * kernel memory or never NUL-terminate. Each element must be readable and each string in-bounds;
+	 * cap the count so a non-terminated array can't spin. */
+	if (argv) {
+		for (int j = 0;; j++) {
+			if (j > 256)
+				return -OVE_LNX_EINVAL;
+			if (!user_ok(p, &argv[j], sizeof(argv[j]), 0))
+				return -OVE_LNX_EFAULT;
+			if (!argv[j])
+				break;
+			if (user_strnlen(p, argv[j], (size_t)-1) < 0)
+				return -OVE_LNX_EFAULT;
+		}
+	}
 	char execabs[OVE_LNX_PATH_MAX];
 	long rr = resolve_path(p, path, execabs, sizeof(execabs));
 	if (rr < 0)
@@ -2108,9 +2192,9 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return 0;
 	case OVE_LNX_NR_statfs64:  /* (path, sz, buf) */
 	case OVE_LNX_NR_fstatfs64: /* (fd, sz, buf) */
-		return sys_statfs((void *)(uintptr_t)a2);
+		return sys_statfs(proc, (void *)(uintptr_t)a2);
 	case OVE_LNX_NR_getrandom: /* (buf, count, flags) */
-		return sys_getrandom((void *)(uintptr_t)a0, (size_t)a1);
+		return sys_getrandom(proc, (void *)(uintptr_t)a0, (size_t)a1);
 	case OVE_LNX_NR_sysinfo: { /* uptime + ram totals (uptime/free read this) */
 		struct ove_lnx_sysinfo {
 			int32_t uptime;
@@ -2120,7 +2204,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			uint32_t totalhigh, freehigh, mem_unit;
 			char _f[8];
 		} *si = (void *)(uintptr_t)a0;
-		if (!si)
+		if (!user_ok(proc, si, sizeof(*si), 1))
 			return -OVE_LNX_EFAULT;
 		memset(si, 0, sizeof(*si));
 		uint64_t ns = 0;
@@ -2178,6 +2262,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		size_t len = strlen(proc->cwd) + 1;
 		if ((size_t)a1 < len)
 			return -OVE_LNX_ERANGE;
+		if (!user_ok(proc, buf, len, 1))
+			return -OVE_LNX_EFAULT;
 		memcpy(buf, proc->cwd, len);
 		return (long)len;
 	}
@@ -2237,7 +2323,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return proc->pid;	 /* single-threaded: tid == pid */
 	case OVE_LNX_NR_clock_gettime: { /* (clockid, struct timespec*) — 32-bit time_t */
 		int32_t *ts = (int32_t *)(uintptr_t)a1;
-		if (!ts)
+		if (!user_ok(proc, ts, 2 * sizeof(int32_t), 1))
 			return -OVE_LNX_EFAULT;
 		uint64_t sec;
 		uint32_t nsec;
@@ -2248,7 +2334,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	}
 	case OVE_LNX_NR_clock_gettime64: { /* (clockid, struct __kernel_timespec*) — 64-bit */
 		int64_t *ts = (int64_t *)(uintptr_t)a1;
-		if (!ts)
+		if (!user_ok(proc, ts, 2 * sizeof(int64_t), 1))
 			return -OVE_LNX_EFAULT;
 		uint64_t sec;
 		uint32_t nsec;
@@ -2259,7 +2345,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	}
 	case OVE_LNX_NR_gettimeofday: { /* (struct timeval*, tz) */
 		int32_t *tv = (int32_t *)(uintptr_t)a0;
-		if (!tv)
+		if (!user_ok(proc, tv, 2 * sizeof(int32_t), 1))
 			return -OVE_LNX_EFAULT;
 		uint64_t sec;
 		uint32_t nsec;
@@ -2276,7 +2362,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * duration so the RTOS idle/kernel/other threads run and real time + CPU
 		 * stats advance — which is what top needs between its two samples. */
 		uintptr_t reqp = (nr == OVE_LNX_NR_nanosleep) ? (uintptr_t)a0 : (uintptr_t)a2;
-		if (!reqp)
+		if (!user_ok(proc, (const void *)reqp,
+			     (nr == OVE_LNX_NR_clock_nanosleep_time64) ? 16u : 8u, 0))
 			return -OVE_LNX_EFAULT;
 		uint64_t sec, nsec;
 		if (nr == OVE_LNX_NR_clock_nanosleep_time64) {
@@ -2307,7 +2394,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* struct utsname: 6 fixed 65-byte fields (sysname, nodename, release,
 		 * version, machine, domainname). The shell reads these at startup. */
 		char *u = (char *)(uintptr_t)a0;
-		if (!u)
+		if (!user_ok(proc, u, 6 * 65, 1))
 			return -OVE_LNX_EFAULT;
 		static const char *const f[6] = {"Linux",   "overtos", "6.1.0",
 						 "oveRTOS", "armv7l",  "(none)"};
@@ -2326,6 +2413,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			return -OVE_LNX_EINVAL;
 		const uint32_t *act = (const uint32_t *)(uintptr_t)a1;
 		uint32_t *oact = (uint32_t *)(uintptr_t)a2;
+		if (act && !user_ok(proc, act, 3 * sizeof(uint32_t), 0))
+			return -OVE_LNX_EFAULT;
+		if (oact && !user_ok(proc, oact, 3 * sizeof(uint32_t), 1))
+			return -OVE_LNX_EFAULT;
 		if (oact) {
 			oact[0] = (uint32_t)proc->sig_handler[sig];
 			oact[2] = (uint32_t)proc->sig_restorer[sig];
@@ -2340,6 +2431,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_ppoll_time64: {
 		ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)a0;
 		unsigned nfds = (unsigned)a1;
+		if (nfds && !user_ok(proc, pfds, (size_t)nfds * sizeof(ove_lnx_pollfd), 1))
+			return -OVE_LNX_EFAULT;
 		/* Timeout: poll(2) passes ms in a2 (<0 = block); ppoll passes a struct
 		 * timespec* (NULL = block). A SHORT finite timeout means the caller is
 		 * probing for input that might *immediately* follow — e.g. vi/hush's
@@ -2356,6 +2449,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			tmo_ms = (long)(int32_t)a2;
 		} else {
 			const int64_t *ts = (const int64_t *)(uintptr_t)a2; /* {sec, nsec} */
+			if (ts && !user_ok(proc, ts, 2 * sizeof(int64_t), 0))
+				return -OVE_LNX_EFAULT;
 			tmo_ms = ts ? (long)(ts[0] * 1000 + ts[1] / 1000000) : -1;
 		}
 		/* With a console_poll callback (UART console) we report the console fd's REAL
