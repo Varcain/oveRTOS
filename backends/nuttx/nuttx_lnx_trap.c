@@ -360,18 +360,20 @@ static void ove_lnx_mpu_init(void)
 	*mpu_rnr = 0;
 	*mpu_rbar = code_base;
 	*mpu_rasr = (1u << 0) | (code_sz << 1) | (code_texscb << 16) | (0x2u << 24);
-#if !defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-	/* Phase-2 inter-program isolation OFF (no per-switch note hook — e.g. the STM32 build, whose
-	 * cache/scheduler interaction with the per-switch MPU reprogram is an open follow-up): grant the
-	 * WHOLE program pool as one static region (region 1) so a program still gets its data. This is
-	 * Phase 1 — kernel-isolated, but programs are NOT isolated from each other. With the note hook on
-	 * (an500), region 1 is instead (re)programmed per-program on every switch (set_prog_regions). */
+	/* Region 1: the WHOLE program pool, Normal non-cacheable, execute-never. Phase 1 (no per-switch
+	 * hook): unprivileged RW too (AP=0b011), so a program reaches its data — kernel-isolated, but not
+	 * isolated from siblings. Phase 2: PRIVILEGED-ONLY (AP=0b001) — the base that lets the privileged
+	 * coordinator/seam touch ANY program's pool region as Normal memory; the per-program regions 2+3
+	 * (set_prog_regions) grant the RUNNING program unprivileged RW to its OWN region, overriding this.
+	 * Without the base, a non-running program's pool region falls to the ARM default map, which types
+	 * the external SDRAM (0xC0000000) as DEVICE — and the coordinator's unaligned access to it
+	 * Usage-Faults on the real M7 (QEMU's PSRAM default is Normal, so the an500 never hit it). */
 	*mpu_rnr = 1;
 	*mpu_rbar = pool_base;
-	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28);
+#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x1u << 24) | (1u << 28); /* priv RW, unpriv NO */
 #else
-	(void)pool_base;
-	(void)pool_sz;
+	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28); /* RW/RW (Phase 1) */
 #endif
 	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
 	*mpu_ctrl = (1u << 0) | (1u << 2);	/* ENABLE | PRIVDEFENA */
@@ -402,21 +404,23 @@ static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
 
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 /* ---- inter-program isolation (Phase 2): per-program MPU regions on every context switch ------ */
-/* Program regions 1+2 for the program that owns region `ridx`: region 1 = its data segment
- * (prog_regions[ridx]), region 2 = its dynamic-link arena (dyn_pools[ridx]). Both are power-of-2
- * sized and naturally aligned (the pool base is aligned to the region size and the array stride
- * equals the size), so each maps as one exact MPU region. Unprivileged RW, execute-never (W^X —
+/* Program regions 2+3 for the program that owns region `ridx`: region 2 = its data segment
+ * (prog_regions[ridx]), region 3 = its dynamic-link arena (dyn_pools[ridx]) — HIGHER priority than
+ * the privileged-only whole-pool base (region 1), so for THIS program those two ranges become
+ * unprivileged RW while the rest of the pool stays privileged-only (a sibling's region is denied).
+ * Both are power-of-2 sized and naturally aligned (the pool base is aligned to the region size and
+ * the array stride equals the size), so each maps as one exact MPU region. Execute-never (W^X —
  * code lives in the shared region 0). */
 static void set_prog_regions(int ridx)
 {
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	*mpu_rnr = 1;
+	*mpu_rnr = 2;
 	*mpu_rbar = (uint32_t)(uintptr_t)prog_regions[ridx];
 	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_PROG_REGION_SIZE) | (0x08u << 16) |
 		    (0x3u << 24) | (1u << 28);
-	*mpu_rnr = 2;
+	*mpu_rnr = 3;
 	*mpu_rbar = (uint32_t)(uintptr_t)dyn_pools[ridx];
 	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_DYN_POOL_SIZE) | (0x08u << 16) | (0x3u << 24) |
 		    (1u << 28);
