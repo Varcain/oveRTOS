@@ -196,7 +196,7 @@ TEST_NAMES := stub stub-sanitize stub-sanitize-zh stub-tsan stub-msan \
               qemu-nuttx qemu-nuttx-zeroheap \
               qemu-zephyr qemu-zephyr-zeroheap \
               qemu-freertos-linux-segv qemu-nuttx-linux-segv \
-              qemu-nuttx-linux-xregion all \
+              qemu-nuttx-linux-xregion qemu-zephyr-linux-segv all \
               renode renode-stm32f746-freertos \
               renode-stm32f746-freertos-zeroheap \
               renode-stm32f746-zephyr \

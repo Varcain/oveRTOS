@@ -362,6 +362,30 @@ static void zephyr_event_wait(unsigned ms)
 	k_sem_take(&g_ove_lnx_ev, K_MSEC(ms));
 }
 
+/* Contain a program fault — the piece Zephyr lacked vs FreeRTOS/NuttX. A K_USER program that
+ * touches memory outside its MPU domain (kernel SRAM, a sibling's region, a wild pointer) raises a
+ * fatal MPU fault; Zephyr's default k_sys_fatal_error_handler HALTS the whole system, taking the
+ * shell down with it. Override it: when the faulting thread is a Linux program, mark it killed
+ * (128 + SIGSEGV = 139) and wake the coordinator, then RETURN — z_fatal_error then aborts only that
+ * thread, and the coordinator's EV_EXIT pass reaps it to its parent, so the shell survives (exactly
+ * like the FreeRTOS/NuttX MemManage containment handlers). current_slot() reads _current, which the
+ * fault has not switched away from, so it still names the faulting program. A fault in privileged
+ * runtime code (current_slot() < 0) is a genuine bug → fall through to the halt. */
+void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+	ARG_UNUSED(esf);
+	if (g_ove_lnx_active) {
+		int sidx = current_slot();
+		if (sidx >= 0) {
+			g_ove_lnx_proc[sidx].exited = 1;
+			g_ove_lnx_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+			zephyr_event_post();
+			return;
+		}
+	}
+	k_fatal_halt(reason);
+}
+
 static void zephyr_abort_slot(int sidx)
 {
 	if (g_ove_lnx_used[sidx] && g_tid[sidx])
