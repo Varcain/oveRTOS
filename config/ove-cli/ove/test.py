@@ -2264,6 +2264,29 @@ def test_qemu_nuttx_linux_xregion(ove_dir, output_dir):
                             "qemu-nuttx-linux-xregion", cwd=ove_dir)
 
 
+def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
+    """Build the QEMU mps2-an521 Zephyr Linux personality and run the NEGATIVE isolation test:
+    /usr/bin/segv deliberately writes kernel SRAM, outside its K_USER MPU domain. Zephyr's default
+    fatal handler would HALT the whole system; the personality's k_sys_fatal_error_handler override
+    contains it instead — the UNPRIVILEGED program is killed (exit 139), the shell survives, exactly
+    like the FreeRTOS/NuttX MemManage handlers. tests/sim/zephyr-linux/segv_drive.py boots, logs in,
+    runs segv, and asserts all of that (exit 0 = pass).
+
+    Uses the FULL board name (qemu-mps2-an521.zephyr.linux_interop) — `qemu.zephyr` prefix-matches the
+    an500 and would drop USERSPACE. Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying
+    /usr/bin/segv plus QEMU and the slow uClinux boot, so it is deliberately NOT in any auto-run
+    group."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu-mps2-an521.zephyr.linux_interop"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "zephyr-linux", "segv_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-zephyr-linux-segv")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "segv.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-zephyr-linux-segv", cwd=ove_dir)
+
+
 def test_qemu_zephyr_coverage(ove_dir, output_dir):
     """Build and run Zephyr QEMU tests with CONFIG_COVERAGE=y; emit lcov.
 
@@ -2505,6 +2528,7 @@ TEST_TARGETS = {
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-nuttx-linux-segv": test_qemu_nuttx_linux_segv,
     "qemu-nuttx-linux-xregion": test_qemu_nuttx_linux_xregion,
+    "qemu-zephyr-linux-segv": test_qemu_zephyr_linux_segv,
     "qemu-zephyr-coverage": test_qemu_zephyr_coverage,
     "renode-stm32f746-freertos": test_renode_stm32f746_freertos,
     "renode-stm32f746-freertos-zeroheap": test_renode_stm32f746_freertos_zeroheap,
