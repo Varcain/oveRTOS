@@ -32,7 +32,10 @@
 #include <nuttx/irq.h>	     /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
 #include <nuttx/sched.h>     /* nxtask_init, nxtask_activate, struct task_tcb_s */
 #include <nuttx/semaphore.h> /* nxsem_init/post/tickwait — coordinator wakeup */
-#include <sched.h>	     /* task_delete */
+#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+#include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
+#endif
+#include <sched.h> /* task_delete */
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h> /* usleep */
@@ -54,6 +57,9 @@ extern int arm_hardfault(int irq, void *context, void *arg);
 #define OVE_SCS_CFSR (*(volatile uint32_t *)0xE000ED28u)  /* configurable fault status */
 #define OVE_SHCSR_MEMFAULTENA (1u << 16)		  /* route MPU faults to MemManage (not HardFault) */
 #define OVE_CFSR_MMFSR 0x000000ffu			  /* low byte = MemManage fault status (W1C) */
+
+/* ARMv7-M MPU RASR SIZE field for a power-of-2 region size: ((log2(size) - 1) << 1). */
+#define OVE_MPU_RASR_SIZE(sz) (((30u - (unsigned)__builtin_clz((unsigned)(sz))) << 1))
 
 #define SLOT_PRIO 60 /* below the run-loop/main task (100) */
 
@@ -340,20 +346,33 @@ static void ove_lnx_mpu_init(void)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	const uint32_t code_base = 0x08000000u, code_sz = 19u; /* 1M internal flash */
 	const uint32_t code_texscb = 0x02u;		       /* Normal write-through (real flash) */
-	const uint32_t pool_base = 0xC0000000u, pool_sz = 22u; /* 8M external SDRAM (pool @ +1M) */
+	const uint32_t pool_base = 0xC0000000u, pool_sz = 22u; /* 8M external SDRAM (whole pool) */
 #else					     /* QEMU mps2-an500 */
 	const uint32_t code_base = 0x00000000u, code_sz = 20u; /* 2M ROM/flash at 0x0 (kernel .text) */
 	const uint32_t code_texscb = 0x08u;		       /* Normal non-cacheable */
-	const uint32_t pool_base = 0x60800000u, pool_sz = 22u; /* 8M upper PSRAM = the program pool */
+	const uint32_t pool_base = 0x60800000u, pool_sz = 22u; /* 8M upper PSRAM (whole pool) */
 #endif
-	/* Region 0: code — priv RW / unpriv RO (AP=0b010), executable (XN=0). */
+	/* Region 0: code (shared by every program) — priv RW / unpriv RO (AP=0b010), executable
+	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park loop. The
+	 * per-PROGRAM data regions (region 1 = prog_regions[ridx], region 2 = dyn_pools[ridx]) are
+	 * (re)programmed on EVERY context switch by the note driver (set_prog_regions / ove_lnx_note_
+	 * resume), so a running program sees only ITS OWN region — not a sibling's. */
 	*mpu_rnr = 0;
 	*mpu_rbar = code_base;
 	*mpu_rasr = (1u << 0) | (code_sz << 1) | (code_texscb << 16) | (0x2u << 24);
-	/* Region 1: program pool — priv RW / unpriv RW (AP=0b011), Normal non-cacheable, XN. */
+#if !defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+	/* Phase-2 inter-program isolation OFF (no per-switch note hook — e.g. the STM32 build, whose
+	 * cache/scheduler interaction with the per-switch MPU reprogram is an open follow-up): grant the
+	 * WHOLE program pool as one static region (region 1) so a program still gets its data. This is
+	 * Phase 1 — kernel-isolated, but programs are NOT isolated from each other. With the note hook on
+	 * (an500), region 1 is instead (re)programmed per-program on every switch (set_prog_regions). */
 	*mpu_rnr = 1;
 	*mpu_rbar = pool_base;
 	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28);
+#else
+	(void)pool_base;
+	(void)pool_sz;
+#endif
 	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
 	*mpu_ctrl = (1u << 0) | (1u << 2);	/* ENABLE | PRIVDEFENA */
 	__asm__ volatile("dsb 0xf" ::: "memory");
@@ -380,6 +399,59 @@ static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
 	nuttx_event_post();	      /* wake the coordinator → its EV_EXIT pass reaps this slot */
 	return 0;		      /* exception-return: the program spins in park_loop until reaped */
 }
+
+#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+/* ---- inter-program isolation (Phase 2): per-program MPU regions on every context switch ------ */
+/* Program regions 1+2 for the program that owns region `ridx`: region 1 = its data segment
+ * (prog_regions[ridx]), region 2 = its dynamic-link arena (dyn_pools[ridx]). Both are power-of-2
+ * sized and naturally aligned (the pool base is aligned to the region size and the array stride
+ * equals the size), so each maps as one exact MPU region. Unprivileged RW, execute-never (W^X —
+ * code lives in the shared region 0). */
+static void set_prog_regions(int ridx)
+{
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	*mpu_rnr = 1;
+	*mpu_rbar = (uint32_t)(uintptr_t)prog_regions[ridx];
+	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_PROG_REGION_SIZE) | (0x08u << 16) |
+		    (0x3u << 24) | (1u << 28);
+	*mpu_rnr = 2;
+	*mpu_rbar = (uint32_t)(uintptr_t)dyn_pools[ridx];
+	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_DYN_POOL_SIZE) | (0x08u << 16) | (0x3u << 24) |
+		    (1u << 28);
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	__asm__ volatile("isb 0xf" ::: "memory");
+}
+
+/* Note-driver resume hook — fires on EVERY switch TO a task (sched_note_resume, in
+ * sched_switchcontext), INCLUDING round-robin preemption between two runnable program tasks that
+ * never enters the seam's svc handler. If the incoming task is a program slot, swap the MPU to ITS
+ * region so it cannot reach a sibling's. Kernel/coordinator tasks are privileged (PRIVDEFENA), so
+ * their region set is irrelevant → skip (leaving the last program's regions is harmless; privileged
+ * access uses the default map). Runs in the switch context: a few register writes + a barrier, no
+ * allocation, no blocking. */
+static void ove_lnx_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
+{
+	(void)drv;
+	if (!g_ove_lnx_active || !tcb)
+		return;
+	pid_t pid = tcb->pid;
+	for (int i = 0; i < OVE_LNX_NSLOT; i++) {
+		if (g_ove_lnx_used[i] && g_pid[i] == pid) {
+			set_prog_regions(g_ove_lnx_proc[i].region);
+			return;
+		}
+	}
+}
+
+static const struct note_driver_ops_s g_ove_lnx_note_ops = {
+	.resume = ove_lnx_note_resume,
+};
+static struct note_driver_s g_ove_lnx_note_driver = {
+	.ops = &g_ove_lnx_note_ops,
+};
+#endif /* CONFIG_SCHED_INSTRUMENTATION_SWITCH */
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch) polls
@@ -422,6 +494,9 @@ int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
 	irq_attach(OVE_LNX_IRQ_SVCALL, ove_lnx_svc_handler, NULL);
 	irq_attach(OVE_LNX_IRQ_MEMFAULT, ove_lnx_memfault_handler, NULL); /* contain program MPU faults */
+#if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
+	note_driver_register(&g_ove_lnx_note_driver); /* Phase 2: per-switch per-program MPU region swap */
+#endif
 	int rc = ove_lnx_run_common(&g_nuttx_engine, cfg, path, argc, argv);
 	irq_attach(OVE_LNX_IRQ_SVCALL, arm_svcall, NULL);	 /* restore NuttX's handlers */
 	irq_attach(OVE_LNX_IRQ_MEMFAULT, arm_hardfault, NULL);
