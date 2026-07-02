@@ -133,6 +133,56 @@ def _host_elf(target_path, exec_comm, exec_elf, sysroot):
     return None
 
 
+_unshadowed = [False]
+
+
+def _unshadow_cpio():
+    """The firmware embeds the rootfs cpio as one big OBJECT symbol (ove_test_rootfs_cpio) in the
+    EXECUTABLE .text — the FDPIC code is shared in-place from it, so it must be executable — and that
+    symbol spans the whole shared-flash region. For a libc/exec address that has no debug-info
+    function (a syscall stub like write), GDB's msymbol lookup returns the cpio blob instead of the
+    real symbol, so the frame shows `ove_test_rootfs_cpio` not `write`. Strip JUST that one symbol
+    from a debug copy of the firmware ELF and reload it — the array data + every other symbol
+    (launch, g_ove_lnx_dbg, ...) stay, so nothing else changes. Afterwards a debug-info function (the
+    program, libc C functions) resolves fully (name + source); a bare syscall stub, which GDB's
+    section-filtered frame lookup can't name once the blob is gone, shows `?? ()` — its real name is
+    one `info symbol $pc` away (that global lookup now returns the lib symbol uniquely)."""
+    if _unshadowed[0]:
+        return
+    _unshadowed[0] = True
+    objs = gdb.objfiles()
+    if not objs or not objs[0].filename or not os.path.exists(objs[0].filename):
+        return
+    fw = objs[0].filename
+    # (_unshadowed guards this to once per session; objcopy is a harmless no-op if the symbol is
+    # absent, e.g. a non-personality firmware — so we don't need a fragile presence pre-check.)
+    import subprocess
+    import shutil
+    import glob
+    # Prefer the ARM toolchain objcopy (the host /usr/bin/objcopy often can't rewrite an arm-fdpic
+    # ELF). Look on PATH, then in the oveRTOS toolchains dir relative to the firmware.
+    objcopy = shutil.which("arm-none-eabi-objcopy")
+    if not objcopy and (os.sep + "output" + os.sep) in fw:
+        root = fw.split(os.sep + "output" + os.sep)[0]
+        hits = glob.glob(os.path.join(root, "output", "toolchains", "*", "bin", "arm-none-eabi-objcopy"))
+        objcopy = hits[0] if hits else None
+    if not objcopy:
+        objcopy = shutil.which("objcopy")  # last resort
+    if not objcopy:
+        print("[ove-fdpic] no ARM objcopy found — libc/exec frames may show the cpio blob symbol")
+        return
+    dbg = fw + ".fdpic-dbg"
+    try:
+        subprocess.run([objcopy, "--strip-symbol=ove_test_rootfs_cpio", fw, dbg],
+                       check=True, capture_output=True)
+        gdb.execute("symbol-file %s" % dbg)
+        print("[ove-fdpic] stripped the rootfs-cpio blob symbol: it no longer mislabels libc/exec "
+              "frames (a debug-info function shows its name+source; a bare syscall stub shows "
+              "`?? ()` — use `info symbol $pc` for its real name).")
+    except Exception as e:  # noqa: BLE001 — best-effort cosmetic; never abort debugging over it
+        print("[ove-fdpic] could not strip the cpio symbol (%s) — frames may show the blob" % e)
+
+
 def _default_sysroot(exec_elf):
     """Best-effort: a Buildroot exec at .../output-fdpic/target/... implies libs (with debug info)
     live under .../output-fdpic/staging."""
@@ -207,6 +257,7 @@ def _map_slot(sidx, elf):
 
 def _find_launch_slot(comm):
     """continue until launch() is hit for a program whose argv[0] basename == comm; return sidx."""
+    print("[ove-fdpic] waiting for %r to exec on the target — run it now (the shell is live)..." % comm)
     bp = gdb.Breakpoint("launch", internal=True)
     try:
         for _ in range(64):
@@ -241,6 +292,7 @@ class OveFdpicAuto(gdb.Command):
             return
         comm, exec_elf = args[0], args[1]
         sysroot = args[2] if len(args) > 2 else _default_sysroot(exec_elf)
+        _unshadow_cpio()
         sidx = _find_launch_slot(comm)
         if sidx is None:
             print("[ove-fdpic] never saw %r exec" % comm)
@@ -274,6 +326,7 @@ class OveFdpicMap(gdb.Command):
 
     def invoke(self, arg, from_tty):
         comm, elf = arg.split()
+        _unshadow_cpio()
         for s in range(_nslot()):
             p = gdb.parse_and_eval("g_ove_lnx_proc[%d]" % s)
             if not int(p["alive"]):
@@ -292,6 +345,7 @@ class OveFdpicDebug(gdb.Command):
 
     def invoke(self, arg, from_tty):
         comm, elf = arg.split()
+        _unshadow_cpio()
         sidx = _find_launch_slot(comm)
         if sidx is None:
             print("[ove-fdpic] never saw %r exec" % comm)
