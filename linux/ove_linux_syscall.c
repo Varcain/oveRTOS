@@ -103,8 +103,9 @@ static uintptr_t user_range_hi(const ove_lnx_proc_t *p, uintptr_t a, int write)
 	return 0;
 }
 
-/* True iff [ptr, ptr+len) is wholly readable (write==0) or writable (write==1) by program `p`. */
-static int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write)
+/* True iff [ptr, ptr+len) is wholly readable (write==0) or writable (write==1) by program `p`.
+ * Non-static so the host unit tests exercise the boundary/overflow logic directly. */
+int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write)
 {
 	uintptr_t a = (uintptr_t)ptr, end = a + len;
 	if (len == 0)
@@ -116,8 +117,9 @@ static int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int wri
 }
 
 /* strlen of a user string, or -EFAULT if it is not NUL-terminated wholly within a valid readable
- * range (so a later strlen/copy can't walk off the region into kernel memory). Bounded by `max`. */
-static long user_strnlen(const ove_lnx_proc_t *p, const char *s, size_t max)
+ * range (so a later strlen/copy can't walk off the region into kernel memory). Bounded by `max`.
+ * Non-static so the host unit tests exercise the terminated/unterminated/at-edge cases directly. */
+long user_strnlen(const ove_lnx_proc_t *p, const char *s, size_t max)
 {
 	uintptr_t a = (uintptr_t)s;
 	uintptr_t hi = user_range_hi(p, a, 0);
