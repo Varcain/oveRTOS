@@ -2293,9 +2293,13 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		strcpy(proc->cwd, abspath);
 		return 0;
 	}
+	case OVE_LNX_NR_umask: { /* set the file-creation mask, return the previous (per-proc, inherited) */
+		int old = proc->umask;
+		proc->umask = (unsigned short)(a0 & 0777);
+		return old;
+	}
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_setpgid:
-	case OVE_LNX_NR_umask:
 	case OVE_LNX_NR_sync:	/* no backing store to flush */
 	case OVE_LNX_NR_fchmod: /* modes/ownership not tracked (login chmods the tty) */
 	case OVE_LNX_NR_fchown32:
@@ -2496,6 +2500,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return 0;
 	}
 	case OVE_LNX_NR_wait4: {
+		if (a1 && !user_ok(proc, (void *)(uintptr_t)a1, sizeof(int), 1))
+			return -OVE_LNX_EFAULT; /* the kernel WRITES *status */
 		/* Reap an already-exited child immediately (FIFO; status = exit_code << 8).
 		 * Else, if children are still live, BLOCK: set wait_pending so the dispatch
 		 * parks us and the run-loop coordinator resumes us (returning the reaped pid
@@ -2510,7 +2516,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			proc->child_count--;
 			int *status = (int *)(uintptr_t)a1;
 			if (status)
-				*status = (code & 0xff) << 8;
+				*status = (code > 128 && code <= 128 + 31) ? (code - 128)
+									   : ((code & 0xff) << 8);
 			return pid;
 		}
 		if (proc->live_children == 0)

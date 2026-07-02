@@ -354,7 +354,9 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 
 	long r = ove_lnx_syscall(proc, nr, (int32_t)f->r[0], (int32_t)f->r[1], (int32_t)f->r[2],
 				 (int32_t)f->r[3], (int32_t)f->r[4], (int32_t)f->r[5]);
-	if (r == -OVE_LNX_ENOSYS && g_cfg && g_cfg->on_enosys)
+	/* Suppress the console diagnostic for syscalls we deliberately don't implement but the guest
+	 * probes and gracefully falls back on: getdents(141)→getdents64, socket(281)→no networking. */
+	if (r == -OVE_LNX_ENOSYS && g_cfg && g_cfg->on_enosys && nr != 141 && nr != 281)
 		g_cfg->on_enosys(nr);
 	/* nanosleep / blocking wait4: the syscall set the pending flag; capture the
 	 * post-svc context (resume the SAME image after the svc) and park. The
@@ -476,6 +478,7 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_proc[sidx].pool_lo = (uintptr_t)arena_mem;
 	g_ove_lnx_proc[sidx].pool_hi = (uintptr_t)arena_mem + arena_sz;
 	g_ove_lnx_proc[sidx].is_fdpic = prog.is_fdpic;
+	g_ove_lnx_proc[sidx].umask = 022; /* standard default; a fork inherits it via the struct copy */
 	g_ove_lnx_proc[sidx].vfork_parent_slot = -1;
 	/* comm = argv[0] basename (strip the login-shell leading '-') for ps/top. */
 	{
@@ -521,8 +524,15 @@ static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid,
 	if (par->live_children > 0)
 		par->live_children--;
 	if (par->wait_pending && (par->wait_pid <= 0 || par->wait_pid == cpid)) {
-		if (par->wait_status_p)
-			*(int *)(uintptr_t)par->wait_status_p = (status & 0xff) << 8;
+		if (par->wait_status_p) {
+			/* Encode the wait status the way Linux does: a signal-killed child (our exit_status
+			 * convention is 128 + signal) becomes WIFSIGNALED — low 7 bits = the signal — so the
+			 * shell prints "Terminated"/"Killed", not "Done"; a normal exit stays WIFEXITED with
+			 * the code in bits 8-15. (1..31 covers every signal we deliver.) */
+			int raw = (status > 128 && status <= 128 + 31) ? (status - 128)
+								       : ((status & 0xff) << 8);
+			*(int *)(uintptr_t)par->wait_status_p = raw;
+		}
 		par->wait_pending = 0;
 		if (g_ove_lnx_used[pslot]) /* abort the parked-waiter spin thread first */
 			eng->abort_slot(pslot);
