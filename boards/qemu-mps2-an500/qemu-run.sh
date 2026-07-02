@@ -83,6 +83,12 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         -serial none -serial stdio -monitor none -display none
         -kernel "${ELF}"
     )
+    # GDB server (enabled by default; --no-gdb turns it off): just opens the port, the firmware
+    # still boots normally. Enables turnkey FDPIC source-level debugging via
+    # config/scripts/ove-fdpic-gdb.py (`target remote :GDB_PORT` + `ove-fdpic-auto <comm> <elf>`).
+    if [ "${NO_GDB}" -eq 0 ]; then
+        PERS_ARGS+=( -gdb "tcp::${GDB_PORT}" )
+    fi
     SAVED_TTY=""
     if [ -t 0 ]; then
         SAVED_TTY="$(stty -g 2>/dev/null || true)"
