@@ -342,7 +342,13 @@ static struct {
 void ove_backend_thread_cpu_sample(void);
 void ove_backend_thread_cpu_sample(void)
 {
-	TaskHandle_t h = xTaskGetCurrentTaskHandle();
+	/* MUST read the raw pxCurrentTCB, NOT xTaskGetCurrentTaskHandle(): under the
+	 * MPU port that API is wrapped and raises privilege via `svc` when the
+	 * interrupted task is unprivileged (CONTROL.nPRIV=1). An `svc` from handler
+	 * mode HardFaults on a real Cortex-M7 (QEMU tolerates it, so this only bites
+	 * on silicon). pxCurrentTCB is a single word — a plain read is ISR-safe. */
+	extern void *volatile pxCurrentTCB;
+	TaskHandle_t h = (TaskHandle_t)pxCurrentTCB;
 	if (!h)
 		return;
 	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
