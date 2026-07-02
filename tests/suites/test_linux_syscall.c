@@ -16,6 +16,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+
+/* Syscall-boundary pointer validators — non-static in ove_linux_syscall.c so their
+ * bounds/overflow logic can be unit-tested here directly (access_ok / user_strnlen). */
+int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write);
+long user_strnlen(const ove_lnx_proc_t *p, const char *s, size_t max);
 
 /* Captures fd 1/2 output so writes can be asserted by value. */
 static char g_cap[256];
@@ -578,6 +584,88 @@ static void test_lnx_cpio(void **state)
 	assert_memory_equal(b, "hi\n", 3);
 }
 
+/* access_ok: good / out-of-range / boundary / overflow, against a bounded region. */
+static void test_lnx_user_ok(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+
+	/* Bound the proc to a concrete host buffer so access_ok has a real [lo,hi) to police. */
+	static char rgn[4096] __attribute__((aligned(16)));
+	uintptr_t lo = (uintptr_t)rgn, hi = lo + sizeof(rgn);
+	p.region_lo = lo;
+	p.region_hi = hi;
+	p.pool_lo = p.pool_hi = 0;
+
+	/* good: wholly inside, both read and write */
+	assert_true(user_ok(&p, rgn, sizeof(rgn), 0));
+	assert_true(user_ok(&p, rgn, sizeof(rgn), 1));
+	assert_true(user_ok(&p, rgn + 100, 1, 1));
+	/* zero length dereferences nothing → always ok, even for a wild pointer */
+	assert_true(user_ok(&p, (void *)0x20000000u, 0, 1));
+	/* NULL and out-of-region are rejected */
+	assert_false(user_ok(&p, NULL, 1, 0));
+	assert_false(user_ok(&p, (void *)(lo - 1), 1, 0));
+	assert_false(user_ok(&p, (void *)hi, 1, 1));
+	assert_false(user_ok(&p, (void *)(hi + 4096), 8, 1));
+	assert_false(user_ok(&p, (void *)0x20000000u, 64, 1)); /* a "kernel" pointer */
+	/* boundary: the last byte is in range; a run ending one past hi is not */
+	assert_true(user_ok(&p, (void *)(hi - 1), 1, 1));
+	assert_false(user_ok(&p, (void *)(hi - 1), 2, 1));
+	assert_true(user_ok(&p, (void *)lo, hi - lo, 0));	   /* exactly fills the region */
+	assert_false(user_ok(&p, (void *)lo, (hi - lo) + 1, 0)); /* one byte past the end */
+	/* overflow: ptr+len must not wrap the address space into a "valid" range */
+	assert_false(user_ok(&p, (void *)(UINTPTR_MAX - 8), 64, 0));
+	assert_false(user_ok(&p, (void *)(hi - 4), SIZE_MAX, 1));
+
+	/* a separate dynamic-pool range is honoured too */
+	static char pool[512] __attribute__((aligned(16)));
+	p.pool_lo = (uintptr_t)pool;
+	p.pool_hi = (uintptr_t)pool + sizeof(pool);
+	assert_true(user_ok(&p, pool, sizeof(pool), 1));
+	assert_false(user_ok(&p, pool, sizeof(pool) + 1, 1));
+}
+
+/* user_strnlen: terminated / unterminated-runs-off-the-end / at-edge / max-bounded. */
+static void test_lnx_user_strnlen(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup_proc(&p, &arena);
+
+	static char rgn[256] __attribute__((aligned(16)));
+	uintptr_t lo = (uintptr_t)rgn, hi = lo + sizeof(rgn);
+	p.region_lo = lo;
+	p.region_hi = hi;
+	p.pool_lo = p.pool_hi = 0;
+
+	/* terminated inside the region → its length */
+	memset(rgn, 'x', sizeof(rgn));
+	memcpy(rgn + 10, "hello", 6); /* copies the trailing NUL too */
+	assert_int_equal(user_strnlen(&p, rgn + 10, 256), 5);
+
+	/* a start pointer outside every range → EFAULT */
+	assert_int_equal(user_strnlen(&p, (const char *)0x20000000u, 256), -OVE_LNX_EFAULT);
+
+	/* unterminated: no NUL before the region end → EFAULT (must not walk past hi) */
+	memset(rgn, 'A', sizeof(rgn));
+	assert_int_equal(user_strnlen(&p, rgn, 256), -OVE_LNX_EFAULT);
+	assert_int_equal(user_strnlen(&p, rgn + 250, 256), -OVE_LNX_EFAULT);
+
+	/* at-edge: the NUL is the very last byte of the region → still OK */
+	memset(rgn, 'B', sizeof(rgn));
+	rgn[255] = '\0';
+	assert_int_equal(user_strnlen(&p, rgn + 250, 256), 5); /* B B B B B \0 */
+
+	/* bounded by max: no NUL within `max` (though one exists later) → EFAULT */
+	memset(rgn, 'C', sizeof(rgn));
+	rgn[100] = '\0';
+	assert_int_equal(user_strnlen(&p, rgn, 10), -OVE_LNX_EFAULT);
+}
+
 int test_linux_syscall_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -593,6 +681,8 @@ int test_linux_syscall_run(void)
 		cmocka_unit_test(test_lnx_execve),
 		cmocka_unit_test(test_lnx_exit_and_unknown),
 		cmocka_unit_test(test_lnx_cpio),
+		cmocka_unit_test(test_lnx_user_ok),
+		cmocka_unit_test(test_lnx_user_strnlen),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
