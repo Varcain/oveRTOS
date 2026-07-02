@@ -76,6 +76,11 @@ CONFIG_STACK_COLORATION=y
 # CPU load monitoring (for sim dashboard thread view)
 CONFIG_SCHED_CPULOAD_SYSCLK=y
 
+# Task names — the Linux personality's ps/top attributes each program's CPU by
+# matching its worker thread's name ("lnx<slot>"), so names must be available.
+# Some board defconfigs (e.g. stm32f746g-disco/nsh) disable them (=0); force on.
+CONFIG_TASK_NAME_SIZE=31
+
 # Thread-local storage (needed for ove_thread_get_self)
 CONFIG_TLS_NELEM=4
 CONFIG_TLS_TASK_NELEM=4
