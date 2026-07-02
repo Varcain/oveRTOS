@@ -154,7 +154,12 @@ OVE_WEAK
 void vApplicationTickHook(void)
 {
 #if (configGENERATE_RUN_TIME_STATS == 1)
+	/* Statistical CPU accounting: charge the running task one tick. Unlike
+	 * FreeRTOS's switch-time ulRunTimeCounter, this also credits a flat-out
+	 * task that never yields (see ove_backend_thread_cpu_sample). */
+	extern void ove_backend_thread_cpu_sample(void);
 	ove_runtime_counter_ms++;
+	ove_backend_thread_cpu_sample();
 #endif
 #ifdef CONFIG_OVE_PROFILER
 	ove_backend_profiler_on_tick();
