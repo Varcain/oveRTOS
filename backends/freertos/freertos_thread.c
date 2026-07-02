@@ -316,6 +316,79 @@ int ove_sys_get_mem_stats(struct ove_mem_stats *stats)
 	return OVE_OK;
 }
 
+/*
+ * Per-task CPU tick sampling.
+ *
+ * FreeRTOS credits a task's ulRunTimeCounter only at a context SWITCH (the
+ * outgoing task is charged `now - switched-in`). A CPU-bound program that runs
+ * flat-out and never blocks (e.g. `yes >/dev/null`, which discards every write
+ * with no yield) is therefore never charged and reads 0 % in ps/top even while
+ * it saturates the core — meanwhile the tick ISR keeps advancing the global
+ * run-time counter, so the totals look busy but no task owns the time.
+ *
+ * Sample the running task once per SysTick (from vApplicationTickHook) into a
+ * small per-handle table so a busy task accrues time every tick — the same
+ * statistical approach NuttX's clock_cpuload sampling takes. The single writer
+ * is the tick ISR; reads run in task context (ove_thread_list), so a plain read
+ * is race-safe to within one tick.
+ */
+#define OVE_FRT_CPUINT_MAX 16
+static struct {
+	TaskHandle_t h;
+	uint32_t ticks;
+} g_frt_cpuint[OVE_FRT_CPUINT_MAX];
+
+/* Charge the currently-running task one tick. Called from the SysTick ISR. */
+void ove_backend_thread_cpu_sample(void);
+void ove_backend_thread_cpu_sample(void)
+{
+	TaskHandle_t h = xTaskGetCurrentTaskHandle();
+	if (!h)
+		return;
+	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
+		if (g_frt_cpuint[i].h == h) {
+			g_frt_cpuint[i].ticks++;
+			return;
+		}
+	}
+	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
+		if (g_frt_cpuint[i].h == NULL) {
+			g_frt_cpuint[i].h = h;
+			g_frt_cpuint[i].ticks = 1;
+			return;
+		}
+	}
+}
+
+static uint32_t frt_cpuint_ticks(TaskHandle_t h)
+{
+	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++)
+		if (g_frt_cpuint[i].h == h)
+			return g_frt_cpuint[i].ticks;
+	return 0;
+}
+
+/* Drop table entries whose task no longer exists so a recycled TCB handle
+ * (static allocation reuses TCB buffers across program launches) starts fresh. */
+static void frt_cpuint_reclaim(const TaskStatus_t *tasks, UBaseType_t n)
+{
+	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++) {
+		if (!g_frt_cpuint[i].h)
+			continue;
+		int live = 0;
+		for (UBaseType_t j = 0; j < n; j++) {
+			if (tasks[j].xHandle == g_frt_cpuint[i].h) {
+				live = 1;
+				break;
+			}
+		}
+		if (!live) {
+			g_frt_cpuint[i].h = NULL;
+			g_frt_cpuint[i].ticks = 0;
+		}
+	}
+}
+
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 #if configUSE_TRACE_FACILITY
@@ -335,6 +408,7 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 
 	uint32_t total_runtime = 0;
 	UBaseType_t filled = uxTaskGetSystemState(tasks, count, &total_runtime);
+	frt_cpuint_reclaim(tasks, filled);
 	for (UBaseType_t i = 0; i < filled; i++) {
 		out[i].name = tasks[i].pcTaskName;
 		out[i].priority = (int)tasks[i].uxCurrentPriority;
@@ -369,16 +443,18 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 			out[i].state = OVE_THREAD_STATE_UNKNOWN;
 			break;
 		}
-		/* CPU utilisation: task_runtime / total_runtime * 10000 */
+		/* CPU utilisation from the tick-sampled per-task counter (NOT
+		 * ulRunTimeCounter, which misses flat-out never-yielding tasks). */
+		uint32_t sampled = frt_cpuint_ticks(tasks[i].xHandle);
 		if (total_runtime > 0)
-			out[i].cpu_percent_x100 = (uint32_t)((uint64_t)tasks[i].ulRunTimeCounter *
-							     10000U / total_runtime);
+			out[i].cpu_percent_x100 =
+				(uint32_t)((uint64_t)sampled * 10000U / total_runtime);
 		else
 			out[i].cpu_percent_x100 = 0;
 
-		/* State times: derive from runtime counter (ms).
-		 * running = ulRunTimeCounter, blocked ≈ total - running. */
-		uint64_t run_us = (uint64_t)tasks[i].ulRunTimeCounter * 1000U;
+		/* State times: one sample tick == one ms at configTICK_RATE_HZ=1000.
+		 * running = sampled ticks, blocked ≈ total - running. */
+		uint64_t run_us = (uint64_t)sampled * 1000U;
 		uint64_t tot_us = (uint64_t)total_runtime * 1000U;
 		out[i].state_times.running_us = run_us;
 		out[i].state_times.ready_us = 0;
