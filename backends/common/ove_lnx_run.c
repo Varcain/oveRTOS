@@ -134,14 +134,16 @@ static struct ove_lnx_resume_ctx g_ctx[OVE_LNX_NSLOT];
 /* Per-slot FDPIC runtime load addresses, exported (non-static) for SOURCE-LEVEL GDB DEBUGGING of
  * the userspace program. An FDPIC exec is loaded at runtime addresses (the loadmap relocates each
  * segment independently), so the on-disk ELF's link addresses don't match memory. A GDB helper
- * reads this table and does, per live slot:
- *   add-symbol-file <rootfs/path/to/prog> -s .text <text_base> -s .data <data_base>
- * which maps the program's source/symbols onto the running code. comm[] (in g_ove_lnx_proc) names
+ * (config/scripts/ove-fdpic-gdb.py) reads this table and `add-symbol-file <elf> -o <text_base>`s the
+ * program, then walks the exec's _DYNAMIC[DT_DEBUG] rendezvous (populated by ld.so once it has run)
+ * to auto-load ld.so + every shared library at its own FDPIC bias. comm[] (in g_ove_lnx_proc) names
  * the program; text_base/data_base are the loadmap-relocated bases of its text/data segments. */
 struct ove_lnx_dbg_s {
 	uintptr_t text_base; /* runtime base of the program's text (shared in-place from the cpio) */
 	uintptr_t data_base; /* runtime base of the program's RW data (in the slot's region) */
 	uintptr_t entry;     /* the program's own entry (AT_ENTRY), not ld.so's */
+	uintptr_t dynamic;   /* runtime addr of the exec's _DYNAMIC → DT_DEBUG → the ld.so link-map chain */
+	uintptr_t interp_base; /* ld.so's text base (0 for a static exec); auto-solib loads ld.so there */
 };
 struct ove_lnx_dbg_s g_ove_lnx_dbg[OVE_LNX_NSLOT];
 
@@ -504,6 +506,8 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_dbg[sidx].text_base = prog.text_base;
 	g_ove_lnx_dbg[sidx].data_base = prog.data_base;
 	g_ove_lnx_dbg[sidx].entry = at_entry;
+	g_ove_lnx_dbg[sidx].dynamic = prog.dynamic; /* _DYNAMIC → DT_DEBUG → ld.so's link-map chain */
+	g_ove_lnx_dbg[sidx].interp_base = at_base;   /* ld.so text base (0 if static) */
 	return eng->spawn_launch(sidx, ridx, &prog, (void *)pc, sp, stack_lo);
 }
 
