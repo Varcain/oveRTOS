@@ -515,7 +515,24 @@ struct _nuttx_list_ctx {
 	struct ove_thread_info *out;
 	size_t max;
 	size_t count;
+	uint64_t dt_us; /* wall-µs elapsed since the previous ove_thread_list() call */
 };
+
+/* NuttX's per-thread cpuload is an exponentially-DECAYED load average (sched_cpuload.c halves every
+ * thread's tick count every ~2s), NOT a cumulative runtime. The personality's ps/top stats layer
+ * charges DELTAS of running_us expecting it cumulative, so a decayed value plateaus at steady state
+ * → per-proc %CPU reads 0. Rebuild a MONOTONIC cumulative running_us by integrating each thread's
+ * load fraction (cpu_percent_x100) over the wall-time between ove_thread_list() calls. Keyed by pid;
+ * a slot whose thread wasn't seen in a pass is reclaimed, so recreated/exited threads neither leak
+ * a slot nor carry a stale total. */
+#define OVE_NX_CPUINT_MAX 24
+static struct {
+	pid_t pid;
+	uint64_t cum_us;
+	bool used;
+	bool seen;
+} g_nx_cpuint[OVE_NX_CPUINT_MAX];
+static clock_t g_nx_cpuint_last;
 
 static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 {
@@ -561,13 +578,30 @@ static void _nuttx_list_cb(struct tcb_s *tcb, void *arg)
 	{
 		struct cpuload_s cl;
 		if (clock_cpuload(tcb->pid, &cl) == OK && cl.total > 0) {
-			info->cpu_percent_x100 =
-				(uint32_t)((uint64_t)cl.active * 10000U / cl.total);
-			/* Derive state times from tick counts (ms). */
-			uint64_t run_us = (uint64_t)cl.active * 10000U;
-			uint64_t tot_us = (uint64_t)cl.total * 10000U;
-			info->state_times.running_us = run_us;
-			info->state_times.blocked_us = (tot_us > run_us) ? tot_us - run_us : 0;
+			uint32_t pct = (uint32_t)((uint64_t)cl.active * 10000U / cl.total);
+			info->cpu_percent_x100 = pct;
+			/* cl.active is a DECAYED average, not cumulative — integrate the load fraction
+			 * into a monotonic cumulative running_us (see the g_nx_cpuint note). */
+			int idx = -1, freeidx = -1;
+			for (int k = 0; k < OVE_NX_CPUINT_MAX; k++) {
+				if (g_nx_cpuint[k].used && g_nx_cpuint[k].pid == tcb->pid) {
+					idx = k;
+					break;
+				}
+				if (!g_nx_cpuint[k].used && freeidx < 0)
+					freeidx = k;
+			}
+			if (idx < 0 && freeidx >= 0) {
+				idx = freeidx;
+				g_nx_cpuint[idx].used = true;
+				g_nx_cpuint[idx].pid = tcb->pid;
+				g_nx_cpuint[idx].cum_us = 0;
+			}
+			if (idx >= 0) {
+				g_nx_cpuint[idx].seen = true;
+				g_nx_cpuint[idx].cum_us += (uint64_t)pct * ctx->dt_us / 10000U;
+				info->state_times.running_us = g_nx_cpuint[idx].cum_us;
+			}
 		}
 	}
 #endif
@@ -589,7 +623,19 @@ int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actua
 		.count = 0,
 	};
 
+	/* Advance the load-integration clock and mark every accumulator unseen; the callback re-marks
+	 * the ones it touches and we reclaim the rest below (exited/recreated threads). */
+	clock_t now = clock_systime_ticks();
+	ctx.dt_us = (g_nx_cpuint_last == 0) ? 0 : (uint64_t)(now - g_nx_cpuint_last) * USEC_PER_TICK;
+	g_nx_cpuint_last = now;
+	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
+		g_nx_cpuint[k].seen = false;
+
 	nxsched_foreach(_nuttx_list_cb, &ctx);
+
+	for (int k = 0; k < OVE_NX_CPUINT_MAX; k++)
+		if (g_nx_cpuint[k].used && !g_nx_cpuint[k].seen)
+			g_nx_cpuint[k].used = false;
 
 	if (actual_count)
 		*actual_count = ctx.count;
