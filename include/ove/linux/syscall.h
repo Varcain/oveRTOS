@@ -390,6 +390,7 @@ typedef struct ove_lnx_proc {
 	int fork_pending; /**< This proc issued vfork/fork/clone; coordinator spawns a child. */
 	int is_thread;	  /**< This proc is a pthread: shares its creator's region for life. */
 	int is_fdpic;	  /**< Program is FDPIC: signal handlers/restorers are funcdescs {entry,GOT}. */
+	unsigned short umask; /**< umask(2) file-creation mask; 022 at launch, inherited on fork. */
 	int clone_is_thread;	     /**< Pending fork is a clone(CLONE_VM) thread (set at the
 				      *   syscall, consumed by the coordinator's EV_FORK). */
 	uintptr_t clone_child_stack; /**< clone(2) child_stack arg: the new thread runs on this. */
