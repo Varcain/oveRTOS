@@ -38,21 +38,18 @@ per task), which deflates its spawn **ratio** even though its absolute spawn is
 ## Results (after the optimisation pass)
 
 The baseline exposed three cost classes — Zephyr uncached compute, ms-scale
-cross-process wake on NuttX/Zephyr, and coordinator-bound pipe throughput. Each
-was attacked at the root; personality min cost, **before → after** on the same
-silicon:
+cross-process cost on NuttX/Zephyr (different root causes — see below), and
+coordinator-bound pipe throughput. Each was attacked at the root; personality min
+cost, **before → after** on the same silicon:
 
 | Axis | FreeRTOS | NuttX | Zephyr |
 |------|----------|-------|--------|
 | **compute** | 1.9 Kc *(unch.)* | 1.9 Kc *(unch.)* | **6.4 → 1.7 Kc** · 3.8× |
 | **null syscall** | 1.13 → 1.06 Kc | 1.71 → 1.46 Kc · −15% | 1.43 → 1.15 Kc · −20% |
 | **clock_gettime** | 1.8 Kc *(+ wrap fix)* | 2.26 → 2.01 Kc | 3.11 → 1.99 Kc · −36% |
-| **ctx-switch** | 197 µs *(unch.)* | 7.8 → 5.6 ms · −28% | **40.5 ms → 300 µs** · 135× |
-| **pipe 4 KiB** | 685 → 224 µs · 3× | 16 ms → 243 µs · 66×† | **82 ms → 600 µs** · 137× |
-| **spawn** | 7.4 ms *(unch.)* | 24 → 17.8 ms · −26% | **95 → 7.4 ms** · 13× |
-
-† NuttX pipe: *best-case* (a single 4 KiB write into the enlarged ring) is
-243 µs; *sustained* p50 stays ~5.9 ms — bound by per-hop task churn (below).
+| **ctx-switch** | 197 µs *(unch.)* | **7.8 ms → 319 µs** · 24× | **40.5 ms → 300 µs** · 135× |
+| **pipe 4 KiB** | 685 → 224 µs · 3× | **16 ms → 633 µs** · 25× | **82 ms → 600 µs** · 137× |
+| **spawn** | 7.4 ms *(unch.)* | **24 → 7.26 ms** · 3.3× | **95 → 7.4 ms** · 13× |
 
 ### Optimisations applied
 
@@ -68,6 +65,12 @@ silicon:
   (its K_USER domains leave less SRAM).
 - **NuttX kernel −O2** + note-driver guard (skip the 6-write MPU reprogram when
   the region is unchanged) — syscall/ctx/spawn −15…−28%.
+- **NuttX bounded stack coloring** — `nxtask_init` memset-colors the *whole* stack
+  window per spawn, and a program's window is the ~400K region tail in uncached
+  SDRAM (~2.7 ms/hop). The color is only a high-water debug aid (we override the SP
+  and the MPU bounds the real stack), so bounding it to 8 KB cut ctx-switch
+  5.6 ms → 319 µs and spawn 17.8 ms → 7.26 ms — the "task churn" was really the
+  coloring memset, not task create/delete.
 - **FreeRTOS 64-bit cycle epoch** — a real correctness fix: guest
   `CLOCK_MONOTONIC` no longer wraps every **19.86 s** (verified across the wrap
   on hardware), and the per-read `__aeabi_uldivmod` becomes a Q32 multiply.
@@ -80,24 +83,21 @@ silicon:
 - **A syscall is cheap and engine-independent** — the SVC boundary is now
   **~1.1–1.5 Kc** (5–7 µs) everywhere. Pure compute is nearly free (≈1.1×) on
   *every* engine — Zephyr's isolation no longer costs a 3.5× compute penalty.
-- **Cross-process cost, once ~200× divergent, is now within ~2× on FreeRTOS and
-  Zephyr.** The dominant baseline gap was Zephyr's wake path skipping the
-  scheduler; with PendSV pended, its context switch (300 µs) and spawn (7.4 ms)
-  match FreeRTOS. IPC and spawn are **sub-ms / single-digit-ms** on both.
-- **NuttX remains ms-scale for the multi-process axes** (ctx-switch 5.6 ms,
-  spawn 17.8 ms) — instrumentation showed its wake *is* already event-driven; the
-  cost is per-hop **task churn** (`nxtask_init` + activate + `task_delete` every
-  resume, ≈18× Zephyr's `k_thread_create`). The single-write pipe case is fast
-  (243 µs) because it avoids the hop. Collapsing the churn to persistent
-  block/unblock slot-tasks is the one remaining lever — a deferred concurrency
-  refactor, not a config flip.
+- **Cross-process cost, once ~200× divergent, is now within ~2× across all three
+  engines.** Two different root causes: Zephyr's wake path skipped the scheduler
+  (fixed by pending PendSV → context switch 300 µs, spawn 7.4 ms), and NuttX spent
+  ~2.7 ms/hop **coloring the stack** (fixed by bounding the colored window →
+  context switch 319 µs, spawn 7.26 ms). All three now land at
+  **~200–320 µs context switch and ~7.4 ms spawn** — IPC sub-ms, spawn
+  ld.so-bound, no ms-scale outlier.
 
 !!! note "Takeaway"
-    After the pass, a syscall is ~1 Kc on every engine and multi-process IPC/spawn
-    is **sub-millisecond to single-digit-millisecond on FreeRTOS and Zephyr**.
-    Zephyr went from 40 ms to 300 µs per context switch (135×) once its wake path
-    stopped skipping the scheduler. NuttX's per-hop RTOS-task rebuild is the last
-    ms-scale cost, and the only remaining structural optimisation.
+    After the pass, a syscall is ~1 Kc on **every** engine and multi-process
+    IPC/spawn is **sub-millisecond context switch (200–320 µs) and ~7.4 ms spawn
+    on all three**. The two big wins were one-line-ish root-cause fixes on
+    hardware: Zephyr's wake path was skipping the scheduler (40 ms → 300 µs, 135×),
+    and NuttX was memset-coloring a 400K stack every hop (5.6 ms → 319 µs). No
+    engine is a multi-process outlier any more.
 
 ## Reproduce
 
