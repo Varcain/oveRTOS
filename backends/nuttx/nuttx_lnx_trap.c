@@ -393,6 +393,17 @@ static void ove_lnx_mpu_init(void)
 #else
 	*mpu_rasr = (1u << 0) | (pool_sz << 1) | (0x08u << 16) | (0x3u << 24) | (1u << 28); /* RW/RW (Phase 1) */
 #endif
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
+	/* Region 4: the QSPI NOR XIP window. The UNPRIVILEGED guest XIPs its FDPIC text in place
+	 * from 0x90000000 → unpriv RO + executable (XN=0), like the internal-flash code region 0.
+	 * 16 MB (SIZE=23), 16 MB-aligned = one PMSAv7 region; Normal write-through so the I-cache
+	 * absorbs the slow external-flash fetches (RO, so no coherence issue). STATIC and shared by
+	 * every program — set_prog_regions only ever rewrites regions 2+3, so region 4 survives every
+	 * context switch. Regions 0,1,4 static + 2,3 per-program = 5 of the M7's 8, no overlap. */
+	*mpu_rnr = 4;
+	*mpu_rbar = 0x90000000u;
+	*mpu_rasr = (1u << 0) | (23u << 1) | (0x02u << 16) | (0x2u << 24);
+#endif
 	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA | OVE_SHCSR_BUSFAULTENA | OVE_SHCSR_USGFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
 	*mpu_ctrl = (1u << 0) | (1u << 2);	/* ENABLE | PRIVDEFENA */
 	__asm__ volatile("dsb 0xf" ::: "memory");

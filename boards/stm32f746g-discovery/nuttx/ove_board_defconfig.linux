@@ -29,3 +29,12 @@ CONFIG_DRIVERS_NOTE=y
 CONFIG_DRIVERS_NOTERAM=n
 CONFIG_SCHED_INSTRUMENTATION=y
 CONFIG_SCHED_INSTRUMENTATION_SWITCH=y
+
+# QUADSPI controller for the QSPI-XIP rootfs (CONFIG_OVE_LINUX_ROOTFS_QSPI). board_init.c uses
+# stm32f7_qspi_initialize + stm32f7_qspi_enter_memorymapped to memory-map the N25Q128A NOR at
+# 0x90000000 (read-only, 0xEB quad). Do NOT enable CONFIG_MTD_N25QXXX — its board setup mounts
+# NXFFS on the NOR, which would try to format/erase the already-programmed rootfs. (Bank 1 +
+# 16 MB flash size are the Kconfig defaults.)
+CONFIG_STM32F7_QUADSPI=y
+CONFIG_STM32F7_QSPI_POLLING=y
+CONFIG_STM32F7_QSPI_FLASH_SIZE=16777216
