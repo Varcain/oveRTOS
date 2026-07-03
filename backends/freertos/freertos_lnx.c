@@ -76,7 +76,14 @@ static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS]
 
 static int current_slot(void)
 {
-	TaskHandle_t t = xTaskGetCurrentTaskHandle();
+	/* Read pxCurrentTCB directly instead of xTaskGetCurrentTaskHandle(): under the MPU port the
+	 * accessor is an MPU_* wrapper that does a privilege check + trampoline on every call, and it
+	 * svc-raises-privilege when the caller looks unprivileged — which HardFaults from the svc-handler
+	 * context (the reason e70fc5f switched the tick sampler to the raw read too). The handle IS the
+	 * TCB pointer, and handler mode reads privileged data fine. Removes the wrapper indirection from
+	 * every syscall's slot lookup. */
+	extern void *volatile pxCurrentTCB;
+	TaskHandle_t t = (TaskHandle_t)pxCurrentTCB;
 	for (int i = 0; i < OVE_LNX_NSLOT; i++)
 		if (g_ove_lnx_used[i] && g_tid[i] == t)
 			return i;
