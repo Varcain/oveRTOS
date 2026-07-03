@@ -107,6 +107,17 @@ static struct k_mem_domain g_domains[OVE_LNX_NREG];
 static struct k_mem_partition g_text[OVE_LNX_NREG], g_data[OVE_LNX_NREG];
 static int g_dom_inited[OVE_LNX_NREG];
 
+/* Normal NON-cacheable RW — like K_MEM_PARTITION_P_RW_U_RW but non-cacheable, matching how
+ * FreeRTOS/NuttX map the guest program pool. The guest's data/heap live in the FMC SDRAM that the
+ * LTDC (fb backend) also scans continuously; a non-cacheable region keeps the guest coherent with
+ * that scanout without any cache maintenance. With CONFIG_DCACHE off in this build it is a
+ * functional no-op (a Cortex-M7 allocates no lines while the D-cache is disabled), but it is the
+ * correct attribute and stays right if the D-cache is ever enabled. (It is NOT what fixed the
+ * fb-build guest corruption — that was the QSPI read clock; see ove-linux-fb.overlay.) */
+#define OVE_MEM_PART_RW_NOCACHE                                                                     \
+	((k_mem_partition_attr_t){ _K_MEM_PARTITION_P_RW_U_RW |                                     \
+				   NORMAL_OUTER_INNER_NON_CACHEABLE_NON_SHAREABLE })
+
 static struct k_thread g_thread[OVE_LNX_NSLOT];
 static k_tid_t g_tid[OVE_LNX_NSLOT];
 K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, OVE_LNX_NSLOT, 1024);
@@ -219,17 +230,17 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		 * libc/malloc + the K_USER stack = 5 dynamic MPU regions, the same budget as static. */
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = OVE_LNX_PROG_REGION_SIZE;
-		g_text[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
+		g_text[ridx].attr = OVE_MEM_PART_RW_NOCACHE;
 		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
 		g_data[ridx].size = OVE_LNX_DYN_POOL_SIZE;
-		g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
+		g_data[ridx].attr = OVE_MEM_PART_RW_NOCACHE;
 	} else {
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = prog->text_size;
 		g_text[ridx].attr = K_MEM_PARTITION_P_RX_U_RX;
 		g_data[ridx].start = (uintptr_t)region + prog->text_size;
 		g_data[ridx].size = OVE_LNX_PROG_REGION_SIZE - prog->text_size;
-		g_data[ridx].attr = K_MEM_PARTITION_P_RW_U_RW;
+		g_data[ridx].attr = OVE_MEM_PART_RW_NOCACHE;
 	}
 	if (!g_dom_inited[ridx]) {
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)

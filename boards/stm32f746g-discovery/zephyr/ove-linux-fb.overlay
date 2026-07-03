@@ -1,0 +1,72 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Linux personality WITH a display (lvbench): re-enable the LTDC panel + the QSPI-XIP rootfs that
+ * the headless ove-linux.overlay disabled, and set up the guest-text MPU window + the FMC read-pipe
+ * fix. Applied AFTER ove-linux.overlay so it overrides the disables. The framebuffer (in SDRAM1,
+ * 255 KB) coexists with the personality's program pool (both NOLOAD in SDRAM1, disjoint).
+ */
+
+#include <zephyr/dt-bindings/memory-controller/stm32-fmc-sdram.h>
+
+&ltdc {
+	status = "okay";
+};
+
+&quadspi {
+	status = "okay";
+};
+
+/*
+ * Guest-text XIP window. The board maps 0x90000000 (16 MB) as a static MPU region, but typed
+ * ATTR_MPU_IO = Device / execute-never / unprivileged-No-Access — so the unprivileged guest cannot
+ * XIP its FDPIC text there. Retype to ATTR_MPU_FLASH = Normal, user Read + eXecute, not writable:
+ * exactly the RO+X XIP window, I-cacheable. It is the SAME static region slot, so the 8-region
+ * PMSAv7 budget stays 8/8 (no per-domain partition needed — analogous to how the internal-flash
+ * cpio was covered by the kernel's user-RX flash region). Keep &quadspi_memory deleted (done in
+ * ove-linux.overlay) so there is no duplicate 0x90000000 region.
+ */
+&ext_memory {
+	zephyr,memory-attr = <DT_MEM_ARM(ATTR_MPU_FLASH)>;
+};
+
+/* Fast 1-4-4 quad memory-mapped read (0xEB); without this the driver falls back to slow
+ * single-line 0x03 and the guest's XIP text fetch crawls.
+ *
+ * Clock the NOR at 54 MHz (216 MHz AHB3 / 4), NOT the board default 72 MHz (/3). The guest XIPs its
+ * entire program text AND reads rodata straight from this NOR, memory-mapped, continuously. At the
+ * board's 72 MHz the quad reads are marginal on the Disco's QSPI routing: an occasional mis-clocked
+ * word feeds the loader/ld.so a garbage pointer, which then faults (e.g. the dynamic-tag store
+ * `info[d_tag]=dyn` with a corrupt base) — an intermittent, execution-driven crash mistaken for
+ * SDRAM/LTDC corruption. FreeRTOS and NuttX both run this NOR at 54 MHz and are rock-solid; match
+ * them. (54 MHz still saturates the guest's XIP demand — the I-cache hides the read latency.) */
+&n25q128a1 {
+	spi-bus-width = <4>;
+	qspi-max-frequency = <54000000>;
+};
+
+/*
+ * FMC read-pipe delay = 1. At the 108 MHz FMC clock RPIPE=0 leaves no read-capture margin; once the
+ * LTDC continuously burst-reads the framebuffer out of this SDRAM, the CPU's uncached program-heap
+ * reads go marginal. Same fix as the FreeRTOS bsp_sdram_fixup / NuttX raw write — here it is the
+ * st,sdram-control RPIPE field (index 7). The memc driver programs SDCR1[14:13]=01 during init,
+ * before the LTDC starts fetching. (The board's SDTR timing + 108 MHz-spec refresh are left stock:
+ * they match the ST BSP closely enough and the guest-corruption culprit turned out to be the QSPI
+ * read clock, not the SDRAM — see &n25q128a1 below.)
+ */
+&fmc {
+	sdram {
+		bank@0 {
+			st,sdram-control = <STM32_FMC_SDRAM_NC_8
+					    STM32_FMC_SDRAM_NR_12
+					    STM32_FMC_SDRAM_MWID_16
+					    STM32_FMC_SDRAM_NB_4
+					    STM32_FMC_SDRAM_CAS_2
+					    STM32_FMC_SDRAM_SDCLK_PERIOD_2
+					    STM32_FMC_SDRAM_RBURST_ENABLE
+					    STM32_FMC_SDRAM_RPIPE_1>;
+		};
+	};
+};

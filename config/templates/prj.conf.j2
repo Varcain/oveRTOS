@@ -220,6 +220,19 @@ CONFIG_DISK_DRIVERS=n
 # the trusted framework threads, matching how FreeRTOS/NuttX run on this board. Board-gated so the
 # QEMU an521 (with MPU headroom to spare) keeps its guard.
 CONFIG_HW_STACK_PROTECTION=n
+{% if get_bool("CONFIG_OVE_FB") %}
+# lvbench on the panel: re-enable the LTDC display + the QSPI-XIP rootfs (overrides the headless
+# CONFIG_DISPLAY=n above; the ove-linux-fb.overlay re-enables the DT nodes). STM32_MEMMAP auto-maps
+# the N25Q at 0x90000000 at boot so the personality reads its rootfs from it. Board-gated: only the
+# real F746 has the panel + NOR (the an521 has neither).
+CONFIG_DISPLAY=y
+CONFIG_STM32_LTDC=y
+CONFIG_STM32_LTDC_RGB565=y
+CONFIG_STM32_LTDC_FB_NUM=1
+CONFIG_FLASH=y
+CONFIG_FLASH_STM32_QSPI=y
+CONFIG_STM32_MEMMAP=y
+{% endif %}
 # Enable the Cortex-M7 I-cache. Zephyr's stm32f7 soc init calls sys_cache_instr_enable() /
 # sys_cache_data_enable(), but both are no-ops unless CONFIG_CACHE_MANAGEMENT is set — so the M7
 # boots with caches OFF and the guest program (text XIP'd from the embedded cpio in flash) runs
