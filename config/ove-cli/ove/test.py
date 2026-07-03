@@ -2222,6 +2222,46 @@ def test_qemu_freertos_linux_segv(ove_dir, output_dir):
                             "qemu-freertos-linux-segv", cwd=ove_dir)
 
 
+def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
+    """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the /dev/fb0
+    framebuffer smoke: /usr/bin/fbtest reads the panel geometry via FBIOGET_*SCREENINFO,
+    fills an RGB565 gradient, and verifies a pwrite()/pread() round-trip (LVGL's fbdev
+    write path). tests/sim/freertos-linux/fbtest_drive.py boots, logs in, runs fbtest,
+    and asserts geometry + PASS + a crw /dev/fb0 node + shell survival (exit 0 = pass).
+
+    Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/fbtest
+    (the overtos board's post-build compiles it) plus QEMU and the slow uClinux boot."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "fbtest_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-fbtest")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "fbtest.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-fbtest", cwd=ove_dir)
+
+
+def test_qemu_freertos_linux_lvbench(ove_dir, output_dir):
+    """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the LVGL
+    benchmark: /usr/bin/lvbench (a stock LVGL fbdev program, lv_demo_benchmark)
+    renders every scene to /dev/fb0 as an FDPIC Linux binary, then prints an
+    FPS/CPU/render summary. tests/sim/freertos-linux/lvbench_drive.py boots, logs
+    in, runs it, and asserts completion with a non-zero FPS + shell survival.
+
+    Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/lvbench
+    (the overtos-lvbench package) plus QEMU and the slow uClinux boot + benchmark run."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "lvbench_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-lvbench")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "lvbench.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-lvbench", cwd=ove_dir)
+
+
 def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     """Build the QEMU mps2-an500 NuttX Linux personality and run the NEGATIVE isolation test:
     /usr/bin/segv deliberately writes kernel SRAM, which the per-program MPU view must contain —
@@ -2555,6 +2595,8 @@ TEST_TARGETS = {
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
+    "qemu-freertos-linux-fbtest": test_qemu_freertos_linux_fbtest,
+    "qemu-freertos-linux-lvbench": test_qemu_freertos_linux_lvbench,
     "qemu-nuttx-linux-segv": test_qemu_nuttx_linux_segv,
     "qemu-nuttx-linux-xregion": test_qemu_nuttx_linux_xregion,
     "qemu-zephyr-linux-segv": test_qemu_zephyr_linux_segv,
