@@ -50,8 +50,8 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
                "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
-               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "FB", "PM", "ASYNC",
-               "ASYNC_NET"] %}
+               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "FB", "QSPI",
+               "LINUX_ROOTFS_QSPI", "PM", "ASYNC", "ASYNC_NET"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
 {% elif config.get("CONFIG_OVE_" + mod) == True %}

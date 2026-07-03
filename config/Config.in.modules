@@ -73,6 +73,26 @@ config OVE_LINUX_ROOTFS_OUTPUT
       every process shares one in-place copy of busybox.so/ld.so/libc.so text and
       Zephyr keeps W^X; the default) or "output" (the legacy bFLT userspace).
 
+config OVE_QSPI
+    bool "QSPI NOR flash (memory-mapped XIP)"
+    default n
+    help
+      Bring up the on-board QSPI NOR (STM32F746-Discovery: N25Q128A, 16 MB) in
+      memory-mapped mode at 0x90000000, so large read-only data (the Linux
+      personality rootfs) can be executed/read in place from external flash
+      instead of consuming the internal 1 MB flash.
+
+config OVE_LINUX_ROOTFS_QSPI
+    bool "Linux personality: rootfs.cpio in QSPI NOR (XIP), not internal flash"
+    default n
+    depends on OVE_LINUX
+    select OVE_QSPI
+    help
+      Read the embedded rootfs from the QSPI memory-mapped window (0x90000000)
+      instead of embedding it in the firmware image. Frees the internal flash
+      for the firmware, so a large (LVGL) rootfs fits on the STM32F746. The
+      CPIO must be programmed into QSPI separately (flash-qspi.sh).
+
 config OVE_LINUX_DEV
     bool "Linux personality: /dev character-device layer"
     default n

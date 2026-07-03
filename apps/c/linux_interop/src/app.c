@@ -44,7 +44,16 @@
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
+/* The rootfs.cpio is programmed into the on-board QSPI NOR, memory-mapped at
+ * 0x90000000 (bsp_qspi_init brings up QUADSPI before we parse it), freeing the
+ * internal flash for the firmware. The length is an upper bound — the CPIO parse
+ * stops at the TRAILER!!! record before the erased tail. */
+#define OVE_LNX_QSPI_ROOTFS ((const uint8_t *)0x90000000u)
+#define OVE_LNX_QSPI_ROOTFS_MAX (16u * 1024u * 1024u)
+#else
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
+#endif
 
 #define UNUSED(x) ((void)(x))
 
@@ -355,9 +364,14 @@ static void demo_body(void *arg)
 	uart_init(); /* bring up the UART1 program console before any I/O */
 	sh_write0("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
 
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
+	g_rootfs_n = ove_lnx_cpio_to_rootfs(OVE_LNX_QSPI_ROOTFS, OVE_LNX_QSPI_ROOTFS_MAX, g_rootfs,
+					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
+#else
 	g_rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
 					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
 					    sizeof(g_rootfs_names));
+#endif
 	if (g_rootfs_n <= 0) {
 		sh_write0("[demo] FAIL: rootfs CPIO parse failed\n");
 		sh_exit(1);

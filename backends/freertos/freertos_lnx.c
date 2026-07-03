@@ -312,6 +312,21 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 			{dyn_pools[ridx], OVE_LNX_DYN_POOL_SIZE, rw_xn},
 		},
 	};
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
+	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in the on-board QSPI NOR
+	 * (memory-mapped at 0x90000000). The static unprivileged-flash MPU region stays on internal
+	 * flash — that is where prog_tramp / ove_lnx_park_loop / the resume stubs live, which this
+	 * unprivileged task must execute before and between running its own code — so the QSPI XIP
+	 * window needs its own per-task region. Unprivileged RO + executable (W^X: the guest never
+	 * writes QSPI; its RW data/stack are the SDRAM regions above). Normal-cacheable so the M7's
+	 * I-cache absorbs the slow external-flash fetches. 16 MB is the whole NOR window (16 MB-aligned
+	 * base → a single valid PMSAv7 region). Uses xRegions[2] = MPU region 2, the last free
+	 * configurable slot (portNUM_CONFIGURABLE_REGIONS == 3 at configTOTAL_MPU_REGIONS == 8). */
+	tp.xRegions[2].pvBaseAddress = (void *)0x90000000u;
+	tp.xRegions[2].ulLengthInBytes = 16u * 1024u * 1024u;
+	tp.xRegions[2].ulParameters =
+		portMPU_REGION_READ_ONLY | (configTEX_S_C_B_FLASH << portMPU_RASR_TEX_S_C_B_LOCATION);
+#endif
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
 	g_ove_lnx_used[sidx] = (ok == pdPASS);
 	return (ok == pdPASS) ? 0 : -1;
