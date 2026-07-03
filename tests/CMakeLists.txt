@@ -80,6 +80,8 @@ set(STUB_SOURCES
     ${OVE_ROOT}/loader/ove_loader.c
     # Linux personality syscall dispatch (platform-independent)
     ${OVE_ROOT}/linux/ove_linux_syscall.c
+    # Linux personality /dev character-device core (CONFIG_OVE_LINUX_DEV)
+    ${OVE_ROOT}/linux/dev/ove_linux_dev.c
     # CPU/process snapshot for ps/top (read by the /proc generator; no RTOS deps)
     ${OVE_ROOT}/backends/common/ove_lnx_stats.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*

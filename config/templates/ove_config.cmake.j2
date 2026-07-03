@@ -50,7 +50,7 @@ set(OVE_ZIG_PATH "{{ config.get('CONFIG_OVE_ZIG_CUSTOM_PATH_VALUE', '') }}")
                "TIMER", "EVENTGROUP", "SHELL", "NVS", "WATCHDOG",
                "WORKQUEUE", "STREAM", "INFER", "NET", "NET_TLS",
                "NET_HTTP", "NET_MQTT", "NET_HTTPD", "NET_HTTPD_WS",
-               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "PM", "ASYNC",
+               "NET_SNTP", "UART", "SPI", "I2C", "I2S", "FB", "PM", "ASYNC",
                "ASYNC_NET"] %}
 {% if mod in ["THREAD", "APP"] %}
 set(OVE_{{ mod }} ON)
@@ -136,7 +136,7 @@ set(OVE_BACKEND_SOURCES
 {% if config.get("CONFIG_OVE_PM") == True %}
     ${OVE_DIR}/src/ove_pm.c
 {% endif %}
-{% for mod in ["UART", "SPI", "I2C", "I2S"] %}
+{% for mod in ["UART", "SPI", "I2C", "I2S", "FB"] %}
 {% if config.get("CONFIG_OVE_" + mod) == True %}
     ${OVE_DIR}/src/ove_{{ mod|lower }}.c
 {% endif %}
@@ -284,6 +284,14 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_run.c")
 # CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_stats.c")
+{% if config.get("CONFIG_OVE_LINUX_DEV") == True %}
+# /dev character-device layer: core registry + routing (class drivers added by
+# their own CONFIG_OVE_LINUX_DEV_* below).
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev.c")
+{% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_fb.c")
+{% endif %}
+{% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}

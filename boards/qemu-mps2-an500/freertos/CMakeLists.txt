@@ -50,6 +50,10 @@ if(OVE_LINUX)
     ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
     ove_add_include_directories(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
     ove_add_stub_backends(AUDIO)
+    # /dev/fb0 framebuffer backend: a RAM RGB565 panel pushed to /dev/shm/ove-fb.
+    if(OVE_FB)
+        ove_add_board_sources(../src/qemu_fb.c)
+    endif()
 else()
 
 # ── Sim framework (replaces lv_port_disp.c and qemu_audio.c) ──────

@@ -105,6 +105,11 @@ struct ove_lnx_engine {
 	 * has no room (dynamic execs then fail to launch; static FDPIC unaffected). Returns
 	 * region `ridx`'s slice + its size. (an500: PSRAM @ 0x60000000.) */
 	uint8_t *(*dyn_pool)(int ridx, size_t *size);
+	/* Device mmap (Phase P3): map [addr, addr+size) RW into slot sidx's program view
+	 * with attrs (OVE_LNX_MAP_NC/WT/DEV). Coordinator thread only (domain/TCB edits
+	 * aren't exception-safe). NULL => a device mmap returns -ENODEV, leaving the
+	 * write()/pwrite() framebuffer path unaffected. */
+	int (*map_device)(int sidx, uintptr_t addr, size_t size, unsigned attrs);
 };
 
 /* ---- shared state (defined in ove_lnx_run.c) ------------------------------- */

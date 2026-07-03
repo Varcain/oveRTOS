@@ -433,6 +433,7 @@ int test_loader_run(void);
 int test_protected_run(void);
 int test_sandbox_run(void);
 int test_linux_syscall_run(void);
+int test_linux_dev_run(void);
 int test_loader_target_run(void);
 int test_protected_target_run(void);
 int test_storage_bounds_run(void);

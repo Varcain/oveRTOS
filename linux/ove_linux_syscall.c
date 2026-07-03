@@ -13,6 +13,9 @@
 #include "ove/linux/stats.h"
 #include "ove/linux/syscall.h"
 #include "ove/time.h"
+#if defined(CONFIG_OVE_LINUX_DEV)
+#include "ove/linux/dev.h" /* /dev character-device routing (FD_DEV) */
+#endif
 
 #include <string.h>
 
@@ -103,6 +106,13 @@ static uintptr_t user_range_hi(const ove_lnx_proc_t *p, uintptr_t a, int write)
 		return p->region_hi;
 	if (p->pool_hi > p->pool_lo && a >= p->pool_lo && a < p->pool_hi)
 		return p->pool_hi;
+#if defined(CONFIG_OVE_LINUX_DEV)
+	/* A mapped device buffer (framebuffer, P3) is RW-valid for the program. */
+	for (int i = 0; i < 2; i++)
+		if (p->dev_map_hi[i] > p->dev_map_lo[i] && a >= p->dev_map_lo[i] &&
+		    a < p->dev_map_hi[i])
+			return p->dev_map_hi[i];
+#endif
 	if (!write) {
 		uintptr_t rlo, rhi;
 		ove_lnx_rootfs_bounds(&rlo, &rhi);
@@ -604,6 +614,10 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		return -OVE_LNX_EBADF;
 	if (!user_ok(p, buf, len, 0)) /* the kernel READS buf → reject a bad source pointer */
 		return -OVE_LNX_EFAULT;
+#if defined(CONFIG_OVE_LINUX_DEV)
+	if (s->kind == OVE_LNX_FD_DEV)
+		return ove_lnx_dev_write(p, s->file_idx, buf, len);
+#endif
 	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
 	if (s->kind == OVE_LNX_FD_PIPE) {
 		if (s->rw != 1)
@@ -674,6 +688,11 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		return -OVE_LNX_EBADF;
 	if (!user_ok(p, buf, len, 1)) /* the kernel WRITES buf → reject a bad destination pointer */
 		return -OVE_LNX_EFAULT;
+
+#if defined(CONFIG_OVE_LINUX_DEV)
+	if (s->kind == OVE_LNX_FD_DEV)
+		return ove_lnx_dev_read(p, s->file_idx, buf, len);
+#endif
 
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
 		if (s->file_idx == 1) /* output consoles (stdout/stderr) are not readable */
@@ -759,6 +778,10 @@ static long sys_pread(ove_lnx_proc_t *p, int fd, void *buf, size_t len, uint32_t
 	if (!user_ok(p, buf, len, 1))
 		return -OVE_LNX_EFAULT;
 
+#if defined(CONFIG_OVE_LINUX_DEV)
+	if (s->kind == OVE_LNX_FD_DEV)
+		return ove_lnx_dev_pread(p, s->file_idx, buf, len, off);
+#endif
 	const uint8_t *data;
 	size_t size;
 	if (s->kind == OVE_LNX_FD_TMPFS) {
@@ -788,6 +811,37 @@ static long sys_pread(ove_lnx_proc_t *p, int fd, void *buf, size_t len, uint32_t
 		n = len;
 	memcpy(buf, data + off, n);
 	return (long)n;
+}
+
+/*
+ * pwrite64(fd, buf, count, offset): a positioned write that does NOT move the fd offset.
+ * LVGL's fbdev driver (LV_LINUX_FBDEV_MMAP=0) writes each framebuffer scanline this way.
+ * Device fds route to the driver; the writable overlay writes at the offset; the read-only
+ * rootfs and console/pipe are not positioned-writable (ESPIPE).
+ */
+static long sys_pwrite(ove_lnx_proc_t *p, int fd, const void *buf, size_t len, uint32_t off)
+{
+	ove_lnx_fd_t *s = fd_slot(p, fd);
+	if (!s)
+		return -OVE_LNX_EBADF;
+	if (!user_ok(p, buf, len, 0))
+		return -OVE_LNX_EFAULT;
+#if defined(CONFIG_OVE_LINUX_DEV)
+	if (s->kind == OVE_LNX_FD_DEV)
+		return ove_lnx_dev_pwrite(p, s->file_idx, buf, len, off);
+#endif
+	if (s->kind == OVE_LNX_FD_TMPFS) {
+		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
+			return -OVE_LNX_EBADF;
+		if (wfs_reserve(s->file_idx, (size_t)off + len) != 0)
+			return -OVE_LNX_EFBIG;
+		memcpy(t->data + off, buf, len);
+		if ((size_t)off + len > t->size)
+			t->size = (size_t)off + len;
+		return (long)len;
+	}
+	return -OVE_LNX_ESPIPE; /* console / pipe / read-only rootfs */
 }
 
 /*
@@ -1290,6 +1344,22 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	 * child's stdio here when it has no controlling tty. */
 	if (strcmp(path, "/dev/null") == 0)
 		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 3, 0);
+#if defined(CONFIG_OVE_LINUX_DEV)
+	/* Registered character devices (/dev/fb0, /dev/input/event0, ...). A hit opens
+	 * an FD_DEV whose file_idx is the device open-pool index; a miss falls through. */
+	{
+		int di = ove_lnx_dev_lookup(path);
+		if (di >= 0) {
+			long oi = ove_lnx_dev_open_new(p, di, flags);
+			if (oi < 0)
+				return oi;
+			int fd = fd_alloc(p, OVE_LNX_FD_DEV, (int)oi, 0);
+			if (fd < 0)
+				ove_lnx_dev_close((int)oi);
+			return fd;
+		}
+	}
+#endif
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
 	int wi = wfs_find(path);
 
@@ -1332,6 +1402,10 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 		return -OVE_LNX_EBADF;
 	if (s->kind == OVE_LNX_FD_PROC)
 		g_procf[s->file_idx].used = 0; /* release the generated-content slot */
+#if defined(CONFIG_OVE_LINUX_DEV)
+	if (s->kind == OVE_LNX_FD_DEV)
+		ove_lnx_dev_close(s->file_idx); /* refs--, ops->release at the last close */
+#endif
 	s->kind = OVE_LNX_FD_FREE;
 	return 0;
 }
@@ -1384,8 +1458,17 @@ static long sys_dup2(ove_lnx_proc_t *p, int oldfd, int newfd)
 		return -OVE_LNX_EBADF;
 	if (newfd < 0 || newfd >= OVE_LNX_MAX_FDS)
 		return -OVE_LNX_EBADF;
-	if (oldfd != newfd)
+	if (oldfd != newfd) {
+#if defined(CONFIG_OVE_LINUX_DEV)
+		if (p->fds[newfd].kind == OVE_LNX_FD_DEV)
+			ove_lnx_dev_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
+#endif
 		p->fds[newfd] = *s;
+#if defined(CONFIG_OVE_LINUX_DEV)
+		if (s->kind == OVE_LNX_FD_DEV)
+			ove_lnx_dev_get(s->file_idx); /* the new fd shares the open */
+#endif
+	}
 	return newfd;
 }
 
@@ -1398,6 +1481,10 @@ static long sys_dup(ove_lnx_proc_t *p, int oldfd)
 	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
 		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
 			p->fds[fd] = *s;
+#if defined(CONFIG_OVE_LINUX_DEV)
+			if (s->kind == OVE_LNX_FD_DEV)
+				ove_lnx_dev_get(s->file_idx); /* the dup shares the open */
+#endif
 			return fd;
 		}
 	}
@@ -1409,6 +1496,10 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
+#if defined(CONFIG_OVE_LINUX_DEV)
+	if (s->kind == OVE_LNX_FD_DEV)
+		return ove_lnx_dev_lseek(s->file_idx, off, whence);
+#endif
 	if (s->kind != OVE_LNX_FD_FILE && s->kind != OVE_LNX_FD_TMPFS)
 		return -OVE_LNX_ESPIPE; /* console/pipe is not seekable */
 
@@ -1510,6 +1601,15 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 			     g_procf[s->file_idx].is_dir ? (OVE_LNX_S_IFDIR | 0555u)
 							 : (OVE_LNX_S_IFREG | 0444u),
 			     g_procf[s->file_idx].len);
+#if defined(CONFIG_OVE_LINUX_DEV)
+	else if (s->kind == OVE_LNX_FD_DEV) {
+		uint32_t mode;
+		uint64_t rdev, size;
+		ove_lnx_dev_fstat(s->file_idx, &mode, &rdev, &size);
+		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, mode, size);
+		((struct ove_lnx_kstat64 *)statbuf)->st_rdev = rdev;
+	}
+#endif
 	else
 		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, OVE_LNX_S_IFCHR | 0620u, 0);
 	return 0;
@@ -1531,6 +1631,17 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 		fill_kstat64(statbuf, 0x200000u, m, 0);
 		return 0;
 	}
+#if defined(CONFIG_OVE_LINUX_DEV)
+	{
+		uint32_t dmode;
+		uint64_t drdev;
+		if (ove_lnx_dev_stat_path(abspath, &dmode, &drdev) == 0) {
+			fill_kstat64(statbuf, 0x300000u, dmode, 0);
+			((struct ove_lnx_kstat64 *)statbuf)->st_rdev = drdev;
+			return 0;
+		}
+	}
+#endif
 	int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
 	if (wi >= 0) {
 		fill_kstat64(statbuf, 0x100000u + (uint32_t)wi, g_wnodes[wi].mode, g_wnodes[wi].size);
@@ -1786,7 +1897,9 @@ static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ov
 	de->d_ino = ino;
 	de->d_off = *pos + 1;
 	de->d_reclen = (uint16_t)reclen;
-	de->d_type = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR) ? OVE_LNX_DT_DIR : OVE_LNX_DT_REG;
+	de->d_type = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)   ? OVE_LNX_DT_DIR
+		     : ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFCHR) ? OVE_LNX_DT_CHR
+								    : OVE_LNX_DT_REG;
 	memcpy(de->d_name, name, namelen + 1);
 	*filled += reclen;
 	(*pos)++;
@@ -1844,6 +1957,18 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
 				 g_wnodes[i].mode))
 			full = 1;
 	}
+#if defined(CONFIG_OVE_LINUX_DEV)
+	/* registered character devices whose node sits directly under this dir (/dev/fb0). */
+	for (int i = 0; i < ove_lnx_dev_count() && !full; i++) {
+		uint32_t dmode = OVE_LNX_S_IFCHR | 0666u;
+		const char *dp = ove_lnx_dev_path(i, &dmode);
+		const char *name = dp ? child_name(dirpath, dp) : NULL;
+		if (!name)
+			continue;
+		if (!dirent_emit(out, count, &filled, &pos, s, (uint64_t)(0x300000 + i), name, dmode))
+			full = 1;
+	}
+#endif
 	/* synthetic /proc children */
 	if (!full && proc_is(dirpath)) {
 		const char *file;
@@ -1912,7 +2037,12 @@ struct ove_lnx_statx {
 	uint64_t stx_size;
 	uint64_t stx_blocks;
 	uint64_t stx_attributes_mask;
-	uint8_t __rest[256 - 64];
+	uint8_t __times[64];	 /* atime/btime/ctime/mtime (4 x 16B) — offsets 64..128 */
+	uint32_t stx_rdev_major; /* offset 128 */
+	uint32_t stx_rdev_minor; /* offset 132 */
+	uint32_t stx_dev_major;
+	uint32_t stx_dev_minor;
+	uint8_t __rest[256 - 144];
 };
 
 /*
@@ -1926,6 +2056,7 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 
 	uint32_t mode;
 	uint64_t size;
+	uint64_t rdev = 0;	  /* device id for a character node, else 0 */
 	uint32_t ino = 0x300000u; /* unique, non-zero inode: ld.so dedups by (st_dev, st_ino) */
 	if (path && path[0] && !(flags & OVE_LNX_AT_EMPTY_PATH)) {
 		char abspath[OVE_LNX_PATH_MAX];
@@ -1939,6 +2070,16 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 				return -OVE_LNX_ENOENT;
 			size = 0;
 			ino = 0x200000u;
+#if defined(CONFIG_OVE_LINUX_DEV)
+		} else if (ove_lnx_dev_lookup(abspath) >= 0) { /* /dev character node */
+			uint32_t dmode;
+			uint64_t drdev;
+			ove_lnx_dev_stat_path(abspath, &dmode, &drdev);
+			mode = dmode;
+			size = 0;
+			rdev = drdev;
+			ino = 0x300000u;
+#endif
 		} else if ((wi = wfs_find(abspath)) >= 0) { /* writable overlay shadows rootfs */
 			mode = g_wnodes[wi].mode;
 			size = g_wnodes[wi].size;
@@ -1968,6 +2109,16 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 			mode = g_wnodes[s->file_idx].mode;
 			size = g_wnodes[s->file_idx].size;
 			ino = 0x100000u + (uint32_t)s->file_idx;
+#if defined(CONFIG_OVE_LINUX_DEV)
+		} else if (s->kind == OVE_LNX_FD_DEV) {
+			uint32_t dmode;
+			uint64_t drdev, dsize;
+			ove_lnx_dev_fstat(s->file_idx, &dmode, &drdev, &dsize);
+			mode = dmode;
+			size = dsize;
+			rdev = drdev;
+			ino = 0x300000u + (uint32_t)s->file_idx;
+#endif
 		} else {
 			mode = OVE_LNX_S_IFCHR | 0620u;
 			size = 0;
@@ -1984,6 +2135,8 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 	st->stx_size = size;
 	st->stx_blocks = (size + 511u) / 512u;
 	st->stx_ino = ino; /* ld.so dedups loaded .so objects by (st_dev, st_ino) */
+	st->stx_rdev_major = (uint32_t)(rdev >> 8);
+	st->stx_rdev_minor = (uint32_t)(rdev & 0xffu);
 	return 0;
 }
 
@@ -2130,6 +2283,9 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_mprotect((uintptr_t)a0, (size_t)a1, (int)a2);
 	case OVE_LNX_NR_pread64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
 		return sys_pread(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, (uint32_t)a4);
+	case OVE_LNX_NR_pwrite64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
+		return sys_pwrite(proc, (int)a0, (const void *)(uintptr_t)a1, (size_t)a2,
+				  (uint32_t)a4);
 	case OVE_LNX_NR_open: /* legacy open(path, flags, mode): dirfd = cwd */
 		return sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
 	case OVE_LNX_NR_execve: /* (path, argv, envp); envp ignored for now */
@@ -2247,6 +2403,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			for (int nfd = from; nfd < OVE_LNX_MAX_FDS; nfd++) {
 				if (proc->fds[nfd].kind == OVE_LNX_FD_FREE) {
 					proc->fds[nfd] = *s;
+#if defined(CONFIG_OVE_LINUX_DEV)
+					if (s->kind == OVE_LNX_FD_DEV)
+						ove_lnx_dev_get(s->file_idx);
+#endif
 					return nfd;
 				}
 			}
@@ -2488,6 +2648,18 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			int avail;
 			if (s->kind == OVE_LNX_FD_CONSOLE)
 				avail = (tmo_ms < 0) ? 1 : (proc->console_poll ? key : !probe);
+#if defined(CONFIG_OVE_LINUX_DEV)
+			else if (s->kind == OVE_LNX_FD_DEV) {
+				/* Report the driver's real readiness bits (fb POLLOUT, evdev
+				 * POLLIN when the event ring is non-empty). */
+				unsigned pb = ove_lnx_dev_poll(s->file_idx);
+				pfds[i].revents = (short)(pfds[i].events & pb &
+							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+				if (pfds[i].revents)
+					ready++;
+				continue;
+			}
+#endif
 			else
 				avail = 1; /* files / pipes: readable/writable */
 			if (avail) {
@@ -2553,7 +2725,16 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* Make the console fds look like a tty so the shell goes interactive
 		 * (isatty → prompt + line editing). Non-console fds are not ttys. */
 		ove_lnx_fd_t *tty = fd_slot(proc, (int)a0);
-		if (!tty || tty->kind != OVE_LNX_FD_CONSOLE)
+		if (!tty)
+			return -OVE_LNX_ENOTTY;
+#if defined(CONFIG_OVE_LINUX_DEV)
+		/* Device ioctls (FBIOGET_VSCREENINFO, EVIOCG*, ...) dispatch to the driver
+		 * BEFORE the console-only tty gate below (which would else -ENOTTY them). */
+		if (tty->kind == OVE_LNX_FD_DEV)
+			return ove_lnx_dev_ioctl(proc, tty->file_idx, (unsigned long)a1,
+						 (unsigned long)a2);
+#endif
+		if (tty->kind != OVE_LNX_FD_CONSOLE)
 			return -OVE_LNX_ENOTTY;
 		switch ((unsigned long)a1) {
 		case OVE_LNX_TCGETS: {

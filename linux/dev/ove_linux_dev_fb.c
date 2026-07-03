@@ -1,0 +1,184 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of oveRTOS.
+ *
+ * /dev/fb0 framebuffer class driver: exposes the ove_fb HAL as a Linux fbdev so
+ * a stock LVGL fbdev program (lv_linux_fbdev, LV_LINUX_FBDEV_MMAP=0) can render
+ * under the personality — FBIOGET_*SCREENINFO to size the panel, then pwrite()
+ * scanlines. Writes copy into the ove_fb buffer with 16-bit stores (the F746
+ * SDRAM is Device-typed when a program region doesn't cover it, so a 4-byte
+ * store to a 2-byte-aligned pixel would UsageFault); the run-loop tick presents.
+ */
+
+#include "ove_config.h"
+
+#if defined(CONFIG_OVE_LINUX_DEV_FB)
+
+#include "ove/fb.h"
+#include "ove/linux/dev.h"
+#include "ove/time.h"
+#include "ove_linux_uapi.h"
+
+#include <string.h>
+
+static struct ove_fb_info g_fbinfo;
+
+/* Copy `len` bytes with 16-bit stores when both ends are halfword-aligned (fb
+ * writes always are: RGB565 pixels at even byte offsets), else byte-by-byte. */
+static void fb_copy16(uint8_t *dst, const uint8_t *src, size_t len)
+{
+	if ((((uintptr_t)dst | (uintptr_t)src | len) & 1u) == 0) {
+		uint16_t *d = (uint16_t *)dst;
+		const uint16_t *s = (const uint16_t *)src;
+		for (size_t i = 0; i < len / 2; i++)
+			d[i] = s[i];
+	} else {
+		for (size_t i = 0; i < len; i++)
+			dst[i] = src[i];
+	}
+}
+
+static long fb_read(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p, void *buf,
+		    size_t len)
+{
+	(void)p;
+	uint8_t *fb = ove_fb_get_buffer();
+	if (!fb || o->pos >= d->size)
+		return 0; /* EOF at/after the buffer end */
+	size_t n = d->size - o->pos;
+	if (n > len)
+		n = len;
+	fb_copy16(buf, fb + o->pos, n);
+	o->pos += (uint32_t)n;
+	return (long)n;
+}
+
+static long fb_write(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p,
+		     const void *buf, size_t len)
+{
+	(void)p;
+	uint8_t *fb = ove_fb_get_buffer();
+	if (!fb || o->pos >= d->size)
+		return -OVE_LNX_EFBIG; /* a write past the framebuffer end */
+	size_t n = d->size - o->pos;
+	if (n > len)
+		n = len;
+	fb_copy16(fb + o->pos, buf, n);
+	ove_fb_flush(0, (int)(o->pos / g_fbinfo.stride_bytes), g_fbinfo.width,
+		     (int)((n + g_fbinfo.stride_bytes - 1) / g_fbinfo.stride_bytes));
+	o->pos += (uint32_t)n;
+	return (long)n;
+}
+
+static void fill_vinfo(struct ove_lnx_fb_var_screeninfo *v)
+{
+	memset(v, 0, sizeof(*v));
+	v->xres = v->xres_virtual = g_fbinfo.width;
+	v->yres = v->yres_virtual = g_fbinfo.height;
+	v->bits_per_pixel = 16;
+	/* RGB565 channel positions. */
+	v->red.offset = 11;
+	v->red.length = 5;
+	v->green.offset = 5;
+	v->green.length = 6;
+	v->blue.offset = 0;
+	v->blue.length = 5;
+}
+
+static void fill_finfo(struct ove_lnx_fb_fix_screeninfo *f)
+{
+	memset(f, 0, sizeof(*f));
+	memcpy(f->id, "ovefb", 5);
+	f->smem_start = (uint32_t)(uintptr_t)ove_fb_get_buffer();
+	f->smem_len = g_fbinfo.smem_len;
+	f->type = OVE_LNX_FB_TYPE_PACKED_PIXELS;
+	f->visual = OVE_LNX_FB_VISUAL_TRUECOLOR;
+	f->line_length = g_fbinfo.stride_bytes;
+}
+
+static long fb_ioctl(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p,
+		     unsigned long cmd, unsigned long arg)
+{
+	(void)d;
+	(void)o;
+	switch (cmd) {
+	case OVE_LNX_FBIOGET_VSCREENINFO: {
+		struct ove_lnx_fb_var_screeninfo *v = (void *)arg;
+		if (!user_ok(p, v, sizeof(*v), 1))
+			return -OVE_LNX_EFAULT;
+		fill_vinfo(v);
+		return 0;
+	}
+	case OVE_LNX_FBIOGET_FSCREENINFO: {
+		struct ove_lnx_fb_fix_screeninfo *f = (void *)arg;
+		if (!user_ok(p, f, sizeof(*f), 1))
+			return -OVE_LNX_EFAULT;
+		fill_finfo(f);
+		return 0;
+	}
+	case OVE_LNX_FBIOPUT_VSCREENINFO: {
+		/* Accept iff the requested geometry matches ours (busybox fbset / LVGL's
+		 * force-refresh do GET-modify-PUT); we run a single fixed mode. */
+		struct ove_lnx_fb_var_screeninfo *v = (void *)arg;
+		if (!user_ok(p, v, sizeof(*v), 0))
+			return -OVE_LNX_EFAULT;
+		if (v->xres != g_fbinfo.width || v->yres != g_fbinfo.height ||
+		    v->bits_per_pixel != 16)
+			return -OVE_LNX_EINVAL;
+		return 0;
+	}
+	case OVE_LNX_FBIOBLANK:
+		return 0; /* no power management; always on */
+	case OVE_LNX_FBIOPAN_DISPLAY:
+		return -OVE_LNX_EINVAL; /* no hardware panning */
+	default:
+		return -OVE_LNX_ENOTTY;
+	}
+}
+
+static unsigned fb_poll(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o)
+{
+	(void)d;
+	(void)o;
+	return OVE_LNX_POLLOUT; /* always writable, never readable-blocking */
+}
+
+static const struct ove_lnx_dev_ops fb_ops = {
+	.read = fb_read,
+	.write = fb_write,
+	.ioctl = fb_ioctl,
+	.poll = fb_poll,
+};
+
+/* Present the framebuffer to the display at ~30 Hz (coalesces a per-scanline
+ * write burst into one push). Runs on the coordinator thread. */
+static void fb_tick(uint64_t now_us)
+{
+	static uint64_t last_us;
+	if (now_us - last_us < 33000ull)
+		return;
+	last_us = now_us;
+	ove_fb_present();
+}
+
+void ove_lnx_dev_autoreg_fb(void)
+{
+	if (ove_fb_init() != 0)
+		return; /* no display on this board (e.g. an521) → /dev/fb0 absent */
+	if (ove_fb_get_info(&g_fbinfo) != 0)
+		return;
+	struct ove_lnx_dev dev = {
+		.path = "/dev/fb0",
+		.ops = &fb_ops,
+		.major = 29,
+		.minor = 0,
+		.size = g_fbinfo.smem_len,
+	};
+	if (ove_lnx_dev_register(&dev) == 0)
+		ove_lnx_dev_tick_register(fb_tick);
+}
+
+#endif /* CONFIG_OVE_LINUX_DEV_FB */

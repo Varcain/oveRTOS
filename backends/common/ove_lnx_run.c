@@ -27,6 +27,9 @@
 #include "ove/time.h"
 #include "ove_lnx_run.h"
 #include "ove/linux/stats.h"
+#if defined(CONFIG_OVE_LINUX_DEV)
+#include "ove/linux/dev.h" /* device-layer park/retry + autoreg + tick + kick */
+#endif
 
 /* Parse the slot index from a Linux-program thread name "lnx<slot>". */
 static int lnx_slot_of_name(const char *name)
@@ -124,6 +127,17 @@ int ove_lnx_proc_nslot(void)
 {
 	return OVE_LNX_NSLOT;
 }
+
+#if defined(CONFIG_OVE_LINUX_DEV)
+/* Wake the coordinator so it retries parked device I/O at once (a driver calls this
+ * from its data-ready path). Strong override of the weak no-op in the device core
+ * — that stub is used only by the host test, which links no run loop. */
+void ove_lnx_dev_kick(void)
+{
+	if (g_eng && g_eng->event_post)
+		g_eng->event_post();
+}
+#endif
 
 
 /* Per-slot captured resume context (replaces the single global g_ove_lnx_vfork +
@@ -364,7 +378,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	/* nanosleep / blocking wait4: the syscall set the pending flag; capture the
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
-	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait ||
+	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait || proc->dev_wait ||
 	    proc->sigsuspend_pending) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
@@ -615,6 +629,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	ove_lnx_stats_reset();
 	for (int i = 0; i < OVE_LNX_NSLOT; i++)
 		g_sig_save[i].active = 0;
+#if defined(CONFIG_OVE_LINUX_DEV)
+	/* Register the Kconfig-enabled /dev class drivers (fb, input, ...) on this
+	 * coordinator thread, where blocking HAL init (ove_fb_init, ove_i2c_create) is legal. */
+	ove_lnx_dev_autoreg_all();
+#endif
 
 	int bb = -1;
 	for (int i = 0; i < cfg->rootfs_count; i++)
@@ -655,7 +674,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		 * masked window keeps a preempting program svc from racing the read/clear).
 		 * Act on it OUTSIDE the crit — abort/spawn/launch may yield. */
 		int es = -1, et = 0;
-		enum { EV_EXIT = 1, EV_EXEC, EV_FORK, EV_SLEEP, EV_WAITPARK, EV_PIPE, EV_SIGSUSPEND };
+		enum {
+			EV_EXIT = 1,
+			EV_EXEC,
+			EV_FORK,
+			EV_SLEEP,
+			EV_WAITPARK,
+			EV_PIPE,
+			EV_DEVWAIT,
+			EV_SIGSUSPEND
+		};
 		eng->crit_enter();
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -693,6 +721,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_PIPE;
 				break;
 			}
+			if (p->dev_wait && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_DEVWAIT;
+				break;
+			}
 			if (p->sigsuspend_pending && g_ove_lnx_used[s]) {
 				es = s;
 				et = EV_SIGSUSPEND;
@@ -718,11 +751,15 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			}
 			ove_lnx_proc_t *ch = &g_ove_lnx_proc[c];
 			*ch = *par; /* vfork shares the image + region */
+#if defined(CONFIG_OVE_LINUX_DEV)
+			ove_lnx_dev_fork_inherit(ch); /* the child shares the parent's device opens */
+#endif
 			ch->pid = next_pid++;
 			ch->ppid = par->pid;
 			ch->exited = ch->exec_pending = ch->fork_pending = 0;
 			ch->sleep_pending = ch->wait_pending = ch->sleeping = 0;
 			ch->pipe_wait = 0;
+			ch->dev_wait = 0;
 			ch->pending_sig = 0;
 			ch->child_count = ch->live_children = 0;
 			ch->clone_is_thread = 0;
@@ -828,6 +865,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[es];
 			int cpid = p->pid, status = p->exit_status, vp = p->vfork_parent_slot,
 			    ppid = p->ppid;
+#if defined(CONFIG_OVE_LINUX_DEV)
+			ove_lnx_dev_proc_exit(p); /* release the exiting process's device opens */
+#endif
 			eng->abort_slot(es);
 			if (p->region_owner && rowner[p->region] == es)
 				rowner[p->region] = -1;
@@ -863,6 +903,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+		if (et == EV_DEVWAIT) { /* free the spin thread; the device retry below resumes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
 		if (et == EV_SIGSUSPEND) { /* free the spin thread; pending_sig below wakes it. */
 			eng->abort_slot(es);
 			idle = 0;
@@ -872,7 +917,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
 		ove_time_get_us(&now);
-		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0;
+		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -883,6 +928,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_busy = 1;
 			if (p->pipe_wait)
 				any_pipe_wait = 1;
+			if (p->dev_wait)
+				any_dev_wait = 1;
 			/* Cross-process signal (D3) to a parked, blocked proc: the dispatch can't
 			 * deliver (no live thread), so the coordinator does. SIG_IGN is dropped;
 			 * otherwise terminate (default action — a custom handler on a blocked proc
@@ -936,6 +983,18 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 					progress = 1;
 				}
 			}
+#if defined(CONFIG_OVE_LINUX_DEV)
+			/* Blocked device I/O: retry (the driver may now have data/space); resume
+			 * the proc when the op completes. Mirrors the pipe retry above. */
+			if (p->dev_wait && !g_ove_lnx_used[s]) {
+				long r = ove_lnx_dev_retry(p);
+				if (r != -OVE_LNX_EAGAIN) {
+					p->dev_wait = 0;
+					eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					progress = 1;
+				}
+			}
+#endif
 		}
 		if (!any_alive) {
 			rc = 0;
@@ -957,13 +1016,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			last_refresh_us = now;
 			refresh_stats();
 		}
+#if defined(CONFIG_OVE_LINUX_DEV)
+		ove_lnx_dev_tick(now); /* coordinator-thread periodic work (fb flush, touch poll) */
+#endif
 		/* Block until a program parks (event_post) or the timeout. NOT a busy 1ms poll —
 		 * that would preempt running programs every tick and reset their time-slice,
 		 * starving a fg command while a CPU-bound background job runs. The timeout is the
 		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
 		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
 		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
-		unsigned to = any_pipe_wait ? 5u : 50u;
+		unsigned to = (any_pipe_wait || any_dev_wait) ? 5u : 50u;
 		if (next_sleep != UINT64_MAX && next_sleep > now) {
 			uint64_t d_ms = (next_sleep - now + 999u) / 1000u; /* round up, don't wake early */
 			if (d_ms < 1u)
