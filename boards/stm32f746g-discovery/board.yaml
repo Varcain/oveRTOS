@@ -61,12 +61,15 @@ defconfig:
 rtos_defconfig:
   freertos:
     - CONFIG_FREERTOS_TOTAL_HEAP_SIZE=131072
-    # The Linux personality embeds the BusyBox rootfs.cpio into the 1 MB internal flash. The
-    # dynamic FDPIC userspace fits (firmware ~53 KB + ~865 KB cpio = ~916 KB of 1 MB) and is
-    # used: FDPIC shares the read-only program text in-place from flash — one copy for every
-    # process — which bFLT cannot. Verified booting + interactive on real silicon. Harmless for
-    # non-personality apps (the var depends on OVE_LINUX).
     - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output-fdpic"
+    # The Linux personality runs its rootfs from the on-board QSPI NOR (N25Q128A, 16 MB),
+    # memory-mapped + XIP'd at 0x90000000: the FDPIC userspace with LVGL is ~1.45 MB — far past
+    # the 1 MB internal flash — and FDPIC shares the read-only program text in-place from the
+    # cpio (one copy per process, which bFLT cannot). The firmware then holds only itself
+    # (~250 KB); the rootfs is programmed separately (flash-qspi.sh). ROOTFS_QSPI depends on
+    # OVE_LINUX so it is inert for non-personality F746 apps; OVE_QSPI just mem-maps the NOR.
+    - CONFIG_OVE_QSPI=y
+    - CONFIG_OVE_LINUX_ROOTFS_QSPI=y
     # Real hardware needs bsp_boardInit() to run (clock + FMC external SDRAM + the MPU region
     # that makes that SDRAM executable & non-cacheable for the program pool). That init only
     # runs when OVE_BOARD is enabled (ove_app_run -> ove_board_init). Required on silicon.
