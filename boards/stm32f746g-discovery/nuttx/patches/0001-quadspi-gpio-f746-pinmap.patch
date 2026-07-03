@@ -1,0 +1,28 @@
+stm32f746g-disco: fix the QUADSPI pinset to the F746 pinmap names
+
+The board.h QSPI pinset used the bare GPIO_QUADSPI_BK1_NCS / GPIO_QUADSPI_CLK,
+but the F746 pinmap (stm32f74xx75xx_pinmap.h) only defines the _0-suffixed
+variants (NCS = PB6, CLK = PB2). The bare names exist on no F7 pinmap, so
+enabling CONFIG_STM32F7_QUADSPI fails to compile stm32_qspi.c ("GPIO_QUADSPI_
+BK1_NCS undeclared"). The QUADSPI was never actually built for this board
+(only the N25Q MTD path referenced it, and that path was not exercised), so the
+bug was latent. Add the _0 suffix. oveRTOS needs the QUADSPI for the Linux
+personality's QSPI-XIP rootfs (memory-mapped N25Q at 0x90000000).
+
+--- a/boards/arm/stm32f7/stm32f746g-disco/include/board.h
++++ b/boards/arm/stm32f7/stm32f746g-disco/include/board.h
+@@ -519,12 +519,12 @@
+
+ /* QSPI pinset */
+
+-#define GPIO_QSPI_CS          (GPIO_QUADSPI_BK1_NCS|GPIO_SPEED_100MHz)
++#define GPIO_QSPI_CS          (GPIO_QUADSPI_BK1_NCS_0|GPIO_SPEED_100MHz)
+ #define GPIO_QSPI_IO0         (GPIO_QUADSPI_BK1_IO0_3|GPIO_SPEED_100MHz)
+ #define GPIO_QSPI_IO1         (GPIO_QUADSPI_BK1_IO1_3|GPIO_SPEED_100MHz)
+ #define GPIO_QSPI_IO2         (GPIO_QUADSPI_BK1_IO2_1|GPIO_SPEED_100MHz)
+ #define GPIO_QSPI_IO3         (GPIO_QUADSPI_BK1_IO3_2|GPIO_SPEED_100MHz)
+-#define GPIO_QSPI_SCK         (GPIO_QUADSPI_CLK|GPIO_SPEED_100MHz)
++#define GPIO_QSPI_SCK         (GPIO_QUADSPI_CLK_0|GPIO_SPEED_100MHz)
+
+ /* SAI2 pinset */
+

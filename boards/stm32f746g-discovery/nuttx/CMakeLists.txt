@@ -42,19 +42,36 @@ add_compile_definitions(ARM_MATH_CM7 __FPU_PRESENT=1)
 add_compile_options(-O3)
 
 if(OVE_LINUX)
-    # Headless Linux personality: put the build-generated rootfs CPIO fixture on the include
-    # path (app.c #includes loader_rootfs_image.h) and skip the LVGL/CMSIS-DSP framework — the
-    # 1 MB internal flash is tight beside the embedded rootfs.cpio.
+    # Headless Linux personality: skip the LVGL/CMSIS-DSP framework (the guest brings its own
+    # LVGL as an FDPIC binary).
     ove_nuttx_exclude_backends(LVGL AUDIO)
-    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
-    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
-    ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+    # With the rootfs in QSPI (OVE_LINUX_ROOTFS_QSPI) it is programmed to the NOR separately
+    # (flash-qspi.sh), NOT embedded — the 1 MB internal flash can't hold the ~1.45 MB LVGL
+    # rootfs. Otherwise embed the build-generated cpio fixture (app.c #includes it).
+    if(NOT OVE_LINUX_ROOTFS_QSPI)
+        include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+        ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+        ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+    else()
+        ove_nuttx_add_include_dirs(${OVE_DIR}/tests/ontarget)
+    endif()
 else()
     # ── CMSIS-DSP library ────────────────────────────────────────────
     ove_nuttx_add_cmsis_dsp()
 
     # LVGL
     ove_nuttx_build_lvgl()
+endif()
+
+# Board source for the personality's QSPI-XIP rootfs + LTDC /dev/fb0 (real-panel LVGL).
+# board_init.c provides ove_hal_board_init AND (when OVE_FB) the ove_hal_fb_* backend. Exclude the
+# BOARD backend stub so board_init.c is the sole ove_hal_board_init — ove_board_init references it,
+# which force-pulls this object (and its strong fb overrides) into the NuttX app archive link (a
+# standalone fb source would not be pulled — the weak ove_fb.c stubs would win). nuttx_add_
+# application SRCS needs an absolute path (the board dir is copied under nuttx-apps).
+if(OVE_QSPI)
+    ove_nuttx_exclude_backends(BOARD)
+    ove_nuttx_add_sources(${CMAKE_CURRENT_LIST_DIR}/src/board_init.c)
 endif()
 
 # Build firmware app
