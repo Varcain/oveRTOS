@@ -211,14 +211,28 @@ static int slot_noentry(int argc, char *argv[])
 	return 0;
 }
 
-/* Create slot `sidx` as a NuttX task whose real stack is [stack_lo, sp_top). */
+/* nxtask_init()/up_use_stack() colors (memsets STACK_COLOR over) the ENTIRE stack window on every
+ * spawn. A program's window is the region tail — up to ~400K of uncached external SDRAM — so
+ * coloring it on every resume cost ~2.7 ms/hop, the dominant NuttX multi-process latency (a pipe
+ * round-trip = 2 hops ≈ 5.4 ms; a spawn = several). The color is purely a high-water-mark debug aid:
+ * we override REG_SP with the real (captured/setup) SP right after, and the program's true stack
+ * bound is its MPU region, so the colored span need not match the usable stack. Bound the coloring
+ * to a small window just below the initial SP. Safe on our targets: CONFIG_ARMV7M_STACKCHECK is off
+ * (nothing reads adj_stack_size at runtime) and ARMv7-M (Cortex-M7) has no PSPLIM. */
+#define OVE_LNX_COLOR_WINDOW 0x2000u /* 8K — ample for nxtask_init's own frame setup */
+
+/* Create slot `sidx` as a NuttX task. The usable stack is set by our REG_SP override; the window
+ * passed here only governs the (bounded) coloring + the TCB stack top (= sp_top). */
 static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
 {
+	uintptr_t color_lo = stack_lo;
+	if (sp_top - stack_lo > OVE_LNX_COLOR_WINDOW)
+		color_lo = sp_top - OVE_LNX_COLOR_WINDOW; /* color only the top window, not the whole region */
 	memset(&g_tcb[sidx], 0, sizeof(g_tcb[sidx]));
 	g_tcb[sidx].cmn.flags = TCB_FLAG_TTYPE_TASK; /* static TCB: no FREE_TCB/FREE_STACK */
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
-	if (nxtask_init(&g_tcb[sidx], nm, SLOT_PRIO, (void *)stack_lo,
-			(uint32_t)(sp_top - stack_lo), slot_noentry, NULL, NULL, NULL) < 0)
+	if (nxtask_init(&g_tcb[sidx], nm, SLOT_PRIO, (void *)color_lo,
+			(uint32_t)(sp_top - color_lo), slot_noentry, NULL, NULL, NULL) < 0)
 		return -1;
 	g_pid[sidx] = g_tcb[sidx].cmn.pid;
 	g_ove_lnx_used[sidx] = 1;
