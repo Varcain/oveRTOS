@@ -154,6 +154,10 @@ long ove_lnx_dev_open_new(ove_lnx_proc_t *p, int devidx, int flags);
 void ove_lnx_dev_close(int oi);
 /** Add a reference on open @p oi (dup/fork inheritance). */
 void ove_lnx_dev_get(int oi);
+/** fcntl F_SETFL / F_GETFL: the open's status flags (O_NONBLOCK gates blocking;
+ *  LVGL's evdev sets O_NONBLOCK via fcntl after open). */
+void ove_lnx_dev_setfl(int oi, int flags);
+int ove_lnx_dev_getfl(int oi);
 long ove_lnx_dev_read(ove_lnx_proc_t *p, int oi, void *buf, size_t len);
 long ove_lnx_dev_write(ove_lnx_proc_t *p, int oi, const void *buf, size_t len);
 /** Positioned read/write at @p off without moving the fd cursor (pread/pwrite;

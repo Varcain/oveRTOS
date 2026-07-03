@@ -74,4 +74,46 @@ struct ove_lnx_fb_fix_screeninfo {
 /* FBIOBLANK arg. */
 #define OVE_LNX_FB_BLANK_UNBLANK 0
 
+/* ---- input / evdev (linux/input.h) ----------------------------------------- */
+/* struct input_event on ARM32: the kernel uapi uses __kernel_ulong_t (32-bit)
+ * for the timestamp even with a 64-bit-time_t libc, so this stays 16 bytes. */
+struct ove_lnx_input_event {
+	uint32_t sec;
+	uint32_t usec;
+	uint16_t type;
+	uint16_t code;
+	int32_t value;
+};
+
+#define OVE_LNX_EV_SYN 0x00
+#define OVE_LNX_EV_KEY 0x01
+#define OVE_LNX_EV_ABS 0x03
+#define OVE_LNX_SYN_REPORT 0
+#define OVE_LNX_SYN_DROPPED 3
+#define OVE_LNX_BTN_TOUCH 0x14a
+#define OVE_LNX_ABS_X 0x00
+#define OVE_LNX_ABS_Y 0x01
+
+/* struct input_id (EVIOCGID). */
+struct ove_lnx_input_id {
+	uint16_t bustype, vendor, product, version;
+};
+#define OVE_LNX_BUS_I2C 0x18
+
+/* struct input_absinfo (EVIOCGABS). */
+struct ove_lnx_input_absinfo {
+	int32_t value, minimum, maximum, fuzz, flat, resolution;
+};
+
+/* evdev ioctls (fixed-arg ones; the size-encoded EVIOCGNAME/GBIT are matched by
+ * their 'E'-type + nr, ignoring the encoded length). */
+#define OVE_LNX_EVIOCGVERSION 0x80044501ul     /* _IOR('E',0x01,int) */
+#define OVE_LNX_EVIOCGID 0x80084502ul	       /* _IOR('E',0x02,input_id) */
+#define OVE_LNX_EVIOCGRAB 0x40044590ul	       /* _IOW('E',0x90,int) */
+#define OVE_LNX_EVIOC_TYPE(cmd) (((cmd) >> 8) & 0xff) /* 'E' == 0x45 for evdev */
+#define OVE_LNX_EVIOC_NR(cmd) ((cmd) & 0xff)
+#define OVE_LNX_EVIOC_E 0x45
+#define OVE_LNX_EVIOCGNAME_NR 0x06
+#define OVE_LNX_EVIOCGABS_BASE 0x40 /* EVIOCGABS(abs) nr = 0x40 + abs */
+
 #endif /* OVE_LINUX_UAPI_H */

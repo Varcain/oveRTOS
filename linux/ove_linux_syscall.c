@@ -2412,6 +2412,18 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			}
 			return -OVE_LNX_EMFILE;
 		}
+#if defined(CONFIG_OVE_LINUX_DEV)
+		/* A device fd honours F_SETFL/F_GETFL so O_NONBLOCK takes effect (LVGL's
+		 * evdev opens blocking, then fcntl(F_SETFL, O_NONBLOCK)). */
+		if (s->kind == OVE_LNX_FD_DEV) {
+			if ((int)a1 == OVE_LNX_F_SETFL) {
+				ove_lnx_dev_setfl(s->file_idx, (int)a2);
+				return 0;
+			}
+			if ((int)a1 == OVE_LNX_F_GETFL)
+				return ove_lnx_dev_getfl(s->file_idx);
+		}
+#endif
 		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
 		return 0;
 	}

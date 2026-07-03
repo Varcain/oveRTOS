@@ -1,0 +1,225 @@
+/*
+ * Copyright (C) 2026 Kamil Lulko <kamil.lulko@gmail.com>
+ *
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * This file is part of oveRTOS.
+ *
+ * /dev/input/event0 evdev touch class for the Linux personality. A single-touch
+ * stream (ABS_X, ABS_Y, BTN_TOUCH, SYN_REPORT) fed by an engine-neutral feeder
+ * (ove_lnx_input_report_touch) — from the FT5336 driver on real hardware, or the
+ * synthetic testpad injector on QEMU. LVGL's lv_evdev reads the raw events
+ * (O_NONBLOCK) and needs no ioctls; a couple of EVIOCG* are provided for evtest.
+ */
+
+#include "ove_config.h"
+
+#if defined(CONFIG_OVE_LINUX_DEV_INPUT)
+
+#include "ove/linux/dev.h"
+#include "ove/time.h"
+#include "board_desc.h"
+#include "ove_linux_uapi.h"
+#if defined(CONFIG_OVE_FT5336)
+#include "ove/ft5336.h"
+#endif
+
+#include <string.h>
+
+#ifndef OVE_DISPLAY_WIDTH
+#define OVE_DISPLAY_WIDTH 480
+#endif
+#ifndef OVE_DISPLAY_HEIGHT
+#define OVE_DISPLAY_HEIGHT 272
+#endif
+
+/* A shared monotonic event ring; each open() tracks its own tail cursor. */
+#define OVE_LNX_IN_RING 64
+static struct ove_lnx_input_event g_in_ring[OVE_LNX_IN_RING];
+static uint32_t g_in_head; /* total events ever produced (slot = head % RING) */
+
+static void ring_push(uint16_t type, uint16_t code, int32_t value)
+{
+	uint64_t us = 0;
+	ove_time_get_us(&us);
+	struct ove_lnx_input_event *e = &g_in_ring[g_in_head % OVE_LNX_IN_RING];
+	e->sec = (uint32_t)(us / 1000000u);
+	e->usec = (uint32_t)(us % 1000000u);
+	e->type = type;
+	e->code = code;
+	e->value = value;
+	g_in_head++;
+}
+
+/* Engine-neutral feeder: one single-touch report → 4 events + wake a blocked reader.
+ * Strong override of the weak stub in the device core. */
+void ove_lnx_input_report_touch(int x, int y, int pressed)
+{
+	if (x < 0)
+		x = 0;
+	if (y < 0)
+		y = 0;
+	if (x >= OVE_DISPLAY_WIDTH)
+		x = OVE_DISPLAY_WIDTH - 1;
+	if (y >= OVE_DISPLAY_HEIGHT)
+		y = OVE_DISPLAY_HEIGHT - 1;
+	ring_push(OVE_LNX_EV_ABS, OVE_LNX_ABS_X, x);
+	ring_push(OVE_LNX_EV_ABS, OVE_LNX_ABS_Y, y);
+	ring_push(OVE_LNX_EV_KEY, OVE_LNX_BTN_TOUCH, pressed ? 1 : 0);
+	ring_push(OVE_LNX_EV_SYN, OVE_LNX_SYN_REPORT, 0);
+	ove_lnx_dev_kick(); /* resume a parked reader promptly */
+}
+
+static long in_read(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p, void *buf,
+		    size_t len)
+{
+	(void)d;
+	(void)p;
+	uint32_t tail = o->u.input.tail;
+	/* Overflow: the reader fell more than a ring behind → drop to the oldest kept
+	 * event and report SYN_DROPPED once. */
+	if (g_in_head - tail > OVE_LNX_IN_RING) {
+		tail = g_in_head - OVE_LNX_IN_RING;
+		o->u.input.overrun = 1;
+	}
+	if (tail == g_in_head)
+		return -OVE_LNX_EAGAIN; /* empty → O_NONBLOCK returns EAGAIN, else park */
+
+	size_t nmax = len / sizeof(struct ove_lnx_input_event);
+	if (nmax == 0)
+		return -OVE_LNX_EINVAL;
+	size_t avail = g_in_head - tail;
+	if (nmax > avail)
+		nmax = avail;
+	struct ove_lnx_input_event *out = buf;
+	for (size_t i = 0; i < nmax; i++)
+		out[i] = g_in_ring[(tail + i) % OVE_LNX_IN_RING];
+	o->u.input.tail = (uint16_t)(tail + nmax);
+	return (long)(nmax * sizeof(struct ove_lnx_input_event));
+}
+
+static unsigned in_poll(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o)
+{
+	(void)d;
+	return (o->u.input.tail != g_in_head) ? OVE_LNX_POLLIN : 0;
+}
+
+static long in_open(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, int flags)
+{
+	(void)d;
+	(void)flags;
+	o->u.input.tail = (uint16_t)g_in_head; /* start at the live head — no stale backlog */
+	o->u.input.overrun = 0;
+	return 0;
+}
+
+static long in_ioctl(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p,
+		     unsigned long cmd, unsigned long arg)
+{
+	(void)d;
+	(void)o;
+	/* LVGL needs none of these; provided for evtest / evread. */
+	if (cmd == OVE_LNX_EVIOCGVERSION) {
+		int *v = (void *)arg;
+		if (!user_ok(p, v, sizeof(*v), 1))
+			return -OVE_LNX_EFAULT;
+		*v = 0x010001; /* EV_VERSION */
+		return 0;
+	}
+	if (cmd == OVE_LNX_EVIOCGID) {
+		struct ove_lnx_input_id *id = (void *)arg;
+		if (!user_ok(p, id, sizeof(*id), 1))
+			return -OVE_LNX_EFAULT;
+		id->bustype = OVE_LNX_BUS_I2C;
+		id->vendor = id->product = id->version = 1;
+		return 0;
+	}
+	if (cmd == OVE_LNX_EVIOCGRAB)
+		return 0; /* single reader — grab is a no-op */
+	/* EVIOCGABS(ABS_X/ABS_Y): report the panel extent so a calibrated reader scales. */
+	if (OVE_LNX_EVIOC_TYPE(cmd) == OVE_LNX_EVIOC_E) {
+		unsigned nr = OVE_LNX_EVIOC_NR(cmd);
+		if (nr == OVE_LNX_EVIOCGABS_BASE + OVE_LNX_ABS_X ||
+		    nr == OVE_LNX_EVIOCGABS_BASE + OVE_LNX_ABS_Y) {
+			struct ove_lnx_input_absinfo *a = (void *)arg;
+			if (!user_ok(p, a, sizeof(*a), 1))
+				return -OVE_LNX_EFAULT;
+			memset(a, 0, sizeof(*a));
+			a->maximum = (nr == OVE_LNX_EVIOCGABS_BASE + OVE_LNX_ABS_X)
+					     ? OVE_DISPLAY_WIDTH - 1
+					     : OVE_DISPLAY_HEIGHT - 1;
+			return 0;
+		}
+		if (nr == OVE_LNX_EVIOCGNAME_NR) {
+			char *nm = (void *)arg;
+			static const char name[] = "overtos-touch";
+			if (!user_ok(p, nm, sizeof(name), 1))
+				return -OVE_LNX_EFAULT;
+			memcpy(nm, name, sizeof(name));
+			return (long)sizeof(name);
+		}
+	}
+	return -OVE_LNX_ENOTTY;
+}
+
+static const struct ove_lnx_dev_ops in_ops = {
+	.open = in_open,
+	.read = in_read,
+	.ioctl = in_ioctl,
+	.poll = in_poll,
+};
+
+/* ---- QEMU synthetic testpad: replay a canned gesture from the tick ---------- */
+#if defined(CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD)
+static void testpad_tick(uint64_t now_us)
+{
+	/* A slow diagonal drag across the panel, then release, looping — deterministic
+	 * input with no host channel (proves the evdev path + drives LVGL's pointer). */
+	static uint64_t t0, last_us;
+	if (t0 == 0)
+		t0 = now_us;
+	if (now_us - last_us < 100000u)
+		return; /* one report per 100 ms step */
+	last_us = now_us;
+	uint64_t phase = ((now_us - t0) / 100000u) % 12u; /* 100 ms steps, 1.2 s cycle */
+	int x = (int)(phase * OVE_DISPLAY_WIDTH / 12u);
+	int y = (int)(phase * OVE_DISPLAY_HEIGHT / 12u);
+	ove_lnx_input_report_touch(x, y, phase != 11);
+}
+#endif
+
+#if defined(CONFIG_OVE_FT5336)
+/* Poll the FT5336 controller over i2c (~60 Hz) and report the primary touch. */
+static void ft5336_tick(uint64_t now_us)
+{
+	static uint64_t last_us;
+	if (now_us - last_us < 16000u)
+		return;
+	last_us = now_us;
+	int x, y, pressed;
+	if (ove_ft5336_read(&x, &y, &pressed) == 0)
+		ove_lnx_input_report_touch(x, y, pressed);
+}
+#endif
+
+void ove_lnx_dev_autoreg_input(void)
+{
+	struct ove_lnx_dev dev = {
+		.path = "/dev/input/event0",
+		.ops = &in_ops,
+		.major = 13,
+		.minor = 64,
+		.size = 0, /* not seekable */
+	};
+	if (ove_lnx_dev_register(&dev) != 0)
+		return;
+#if defined(CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD)
+	ove_lnx_dev_tick_register(testpad_tick);
+#endif
+#if defined(CONFIG_OVE_FT5336)
+	if (ove_ft5336_init() == 0)
+		ove_lnx_dev_tick_register(ft5336_tick); /* real HW touch panel */
+#endif
+}
+
+#endif /* CONFIG_OVE_LINUX_DEV_INPUT */

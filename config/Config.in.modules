@@ -93,6 +93,33 @@ config OVE_LINUX_DEV_FB
       Expose the OVE_FB framebuffer as /dev/fb0 (FBIOGET_*SCREENINFO + pwrite
       scanlines), so a stock LVGL fbdev program renders under the personality.
 
+config OVE_LINUX_DEV_INPUT
+    bool "Linux personality: /dev/input/event0 evdev touch node"
+    default n
+    depends on OVE_LINUX_DEV
+    help
+      Expose a single-touch evdev stream (ABS_X/ABS_Y/BTN_TOUCH/SYN_REPORT) as
+      /dev/input/event0, fed by the FT5336 driver on real hardware or the testpad
+      injector on QEMU, so an LVGL program becomes touch-interactive.
+
+config OVE_LINUX_DEV_INPUT_TESTPAD
+    bool "Linux personality: synthetic touch injector (QEMU)"
+    default n
+    depends on OVE_LINUX_DEV_INPUT
+    help
+      Replay a canned touch gesture from the run-loop tick (no host channel), so
+      the evdev path is deterministically testable on QEMU where there is no
+      touch panel.
+
+config OVE_FT5336
+    bool "FT5336 capacitive touch controller (STM32F746-Discovery)"
+    default n
+    select OVE_I2C
+    help
+      Minimal FT5336 driver (ove_i2c client at 0x38). The evdev class polls it
+      from the run-loop tick to produce /dev/input/event0 touch events on real
+      STM32F746 hardware.
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n

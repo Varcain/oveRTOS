@@ -144,6 +144,19 @@ void ove_lnx_dev_get(int oi)
 		o->refs++;
 }
 
+void ove_lnx_dev_setfl(int oi, int flags)
+{
+	struct ove_lnx_dev_open *o = open_slot(oi);
+	if (o)
+		o->oflags = (uint16_t)flags;
+}
+
+int ove_lnx_dev_getfl(int oi)
+{
+	struct ove_lnx_dev_open *o = open_slot(oi);
+	return o ? o->oflags : 0;
+}
+
 void ove_lnx_dev_close(int oi)
 {
 	struct ove_lnx_dev_open *o = open_slot(oi);
