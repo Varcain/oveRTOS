@@ -46,7 +46,10 @@ volatile int g_ove_lnx_halt;
  * The run-loop coordinator parks/wakes the blocked proc — see ove_lnx_pipe_retry.
  */
 #define OVE_LNX_NPIPE 4
-#define OVE_LNX_PIPE_BUF 1024
+/* 4 KiB ring: a typical write/splice fits in one shot (no partial-write park/resume round trip
+ * per 1 KiB), so streaming throughput is copy-bound not coordinator-bound. 4 pipes × 4 KiB = 16 KiB
+ * of .bss on internal SRAM. */
+#define OVE_LNX_PIPE_BUF 4096
 typedef struct {
 	uint8_t buf[OVE_LNX_PIPE_BUF];
 	size_t rpos;  /* ring read index [0, BUF) */
@@ -182,10 +185,12 @@ static long pipe_try_read(int pi, void *buf, size_t len)
 	if (len > pp->count)
 		len = pp->count;
 	uint8_t *out = (uint8_t *)buf;
-	for (size_t i = 0; i < len; i++) {
-		out[i] = pp->buf[pp->rpos];
-		pp->rpos = (pp->rpos + 1) % OVE_LNX_PIPE_BUF;
-	}
+	size_t n1 = OVE_LNX_PIPE_BUF - pp->rpos; /* contiguous bytes to the ring end */
+	if (n1 > len)
+		n1 = len;
+	memcpy(out, &pp->buf[pp->rpos], n1);
+	memcpy(out + n1, &pp->buf[0], len - n1); /* wrapped tail (len-n1 may be 0 = no-op) */
+	pp->rpos = (pp->rpos + len) % OVE_LNX_PIPE_BUF;
 	pp->count -= len;
 	return (long)len;
 }
@@ -205,10 +210,12 @@ static long pipe_try_write(int pi, const void *buf, size_t len)
 	if (len > space)
 		len = space;
 	const uint8_t *in = (const uint8_t *)buf;
-	for (size_t i = 0; i < len; i++) {
-		pp->buf[pp->wpos] = in[i];
-		pp->wpos = (pp->wpos + 1) % OVE_LNX_PIPE_BUF;
-	}
+	size_t n1 = OVE_LNX_PIPE_BUF - pp->wpos; /* contiguous space to the ring end */
+	if (n1 > len)
+		n1 = len;
+	memcpy(&pp->buf[pp->wpos], in, n1);
+	memcpy(&pp->buf[0], in + n1, len - n1); /* wrapped tail (len-n1 may be 0 = no-op) */
+	pp->wpos = (pp->wpos + len) % OVE_LNX_PIPE_BUF;
 	pp->count += len;
 	return (long)len;
 }
