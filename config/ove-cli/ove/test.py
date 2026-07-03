@@ -2262,6 +2262,26 @@ def test_qemu_freertos_linux_lvbench(ove_dir, output_dir):
                             "qemu-freertos-linux-lvbench", cwd=ove_dir)
 
 
+def test_qemu_freertos_linux_evread(ove_dir, output_dir):
+    """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the evdev touch
+    smoke: /usr/bin/evread blocking-reads /dev/input/event0 and prints the touch
+    coordinates the testpad injector feeds — exercising the evdev class, the input
+    feeder, and the blocking-read park/retry + coordinator-kick path.
+    tests/sim/freertos-linux/evread_drive.py asserts the 16-byte event layout,
+    several touch reports, and shell survival.
+
+    Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/evread."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "evread_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-evread")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "evread.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-evread", cwd=ove_dir)
+
+
 def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     """Build the QEMU mps2-an500 NuttX Linux personality and run the NEGATIVE isolation test:
     /usr/bin/segv deliberately writes kernel SRAM, which the per-program MPU view must contain —
@@ -2597,6 +2617,7 @@ TEST_TARGETS = {
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-freertos-linux-fbtest": test_qemu_freertos_linux_fbtest,
     "qemu-freertos-linux-lvbench": test_qemu_freertos_linux_lvbench,
+    "qemu-freertos-linux-evread": test_qemu_freertos_linux_evread,
     "qemu-nuttx-linux-segv": test_qemu_nuttx_linux_segv,
     "qemu-nuttx-linux-xregion": test_qemu_nuttx_linux_xregion,
     "qemu-zephyr-linux-segv": test_qemu_zephyr_linux_segv,
