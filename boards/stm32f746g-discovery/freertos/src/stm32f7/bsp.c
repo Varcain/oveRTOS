@@ -48,6 +48,7 @@ int bsp_boardInit(void)
 	 * personality's 2 MB program-region pool + 1 MB dyn pools live here (.sdram_bss), so this
 	 * runs at board init before anything touches them.  Validate the array before trusting it. */
 	(void)BSP_SDRAM_Init();
+	bsp_sdram_fixup();
 	if (sdram_selftest() != 0)
 		for (;;) { /* SDRAM read/write/verify failed — halt here (GDB-findable) */
 		}
@@ -118,6 +119,25 @@ static void bsp_qspi_init(void)
 		}
 }
 #endif
+
+/* Add one FMC read-data pipe-delay cycle (SDCR.RPIPE = 1) for reliable SDRAM
+ * reads at the 108 MHz FMC clock under LTDC contention.  The Cube Discovery BSP
+ * programs RPIPE=0 (no delay).  With the Linux personality that alone is fine —
+ * until the fb backend turns the LTDC on: the LTDC then continuously burst-reads
+ * the framebuffer out of the SAME SDRAM, and those bursts shift the bus timing
+ * enough that the CPU's read-data capture (the personality runs the program pool
+ * UNCACHED — D-cache off — so every heap access is a real SDRAM read) goes
+ * marginal at 108 MHz → the guest heap takes bit-flips → a corrupted lv_obj
+ * class pointer crashes LVGL's event dispatch.  One read-pipe cycle restores the
+ * capture margin.  Verified on silicon: lvbench renders to completion with the
+ * LTDC scanning the panel only with RPIPE>=1 (AC timing + refresh were ruled out
+ * — neither relaxing SDTR nor doubling the refresh rate helped).  SDCR is honored
+ * live (no re-init needed), but BSP_SDRAM_Init resets it, so this must be
+ * re-applied after anything that re-runs it — notably BSP_LCD_Init. */
+void bsp_sdram_fixup(void)
+{
+	MODIFY_REG(FMC_Bank5_6->SDCR[0], FMC_SDCR1_RPIPE, FMC_SDCR1_RPIPE_0);
+}
 
 /* Walk the 8 MB SDRAM at a coarse stride writing an address-dependent pattern, then read it
  * back — catches a dead controller, a wrong refresh rate, or address-line aliasing before the

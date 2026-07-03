@@ -58,6 +58,11 @@ if(OVE_UART OR OVE_SPI OR OVE_I2C OR OVE_NET OR OVE_ASYNC_NET OR OVE_AUDIO)
     ove_add_board_sources(src/bus_msp_init.c)
 endif()
 
+# Linux-personality framebuffer backend (/dev/fb0) over the on-board LTDC panel.
+if(OVE_FB)
+    ove_add_board_sources(src/fb_port.c)
+endif()
+
 if(OVE_NET)
     ove_add_board_sources(${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_eth.c)
 endif()
