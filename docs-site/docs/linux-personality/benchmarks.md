@@ -17,10 +17,10 @@ comparable. `lbench_compare.py` pairs them per axis. The B1 compute kernel is
 identical in both builds (cross-checked by a checksum), so its ≈1× ratio on the
 privileged engines confirms the comparison is fair.
 
-## Results
+## Results (baseline)
 
 Per-op cost of the **personality** side (min, cycles @216 MHz) and the **tax**
-(personality ÷ native for the same axis):
+(personality ÷ native for the same axis), as first measured (commit `8459073`):
 
 | Axis | FreeRTOS | NuttX | Zephyr |
 |------|----------|-------|--------|
@@ -35,27 +35,69 @@ Per-op cost of the **personality** side (min, cycles @216 MHz) and the **tax**
 per task), which deflates its spawn **ratio** even though its absolute spawn is
 3× FreeRTOS's. Compare absolutes across a row, not just ratios.)*
 
+## Results (after the optimisation pass)
+
+The baseline exposed three cost classes — Zephyr uncached compute, ms-scale
+cross-process wake on NuttX/Zephyr, and coordinator-bound pipe throughput. Each
+was attacked at the root; personality min cost, **before → after** on the same
+silicon:
+
+| Axis | FreeRTOS | NuttX | Zephyr |
+|------|----------|-------|--------|
+| **compute** | 1.9 Kc *(unch.)* | 1.9 Kc *(unch.)* | **6.4 → 1.7 Kc** · 3.8× |
+| **null syscall** | 1.13 → 1.06 Kc | 1.71 → 1.46 Kc · −15% | 1.43 → 1.15 Kc · −20% |
+| **clock_gettime** | 1.8 Kc *(+ wrap fix)* | 2.26 → 2.01 Kc | 3.11 → 1.99 Kc · −36% |
+| **ctx-switch** | 197 µs *(unch.)* | 7.8 → 5.6 ms · −28% | **40.5 ms → 300 µs** · 135× |
+| **pipe 4 KiB** | 685 → 224 µs · 3× | 16 ms → 243 µs · 66×† | **82 ms → 600 µs** · 137× |
+| **spawn** | 7.4 ms *(unch.)* | 24 → 17.8 ms · −26% | **95 → 7.4 ms** · 13× |
+
+† NuttX pipe: *best-case* (a single 4 KiB write into the enlarged ring) is
+243 µs; *sustained* p50 stays ~5.9 ms — bound by per-hop task churn (below).
+
+### Optimisations applied
+
+- **Zephyr I-cache** (`CACHE_MANAGEMENT=y`, D-cache off) — the K_USER text now
+  executes cached; compute 3.5× → 1.1×, every Zephyr row drops.
+- **Zephyr wake-path PendSV** — the program `svc` oops-path return skipped the
+  scheduler, so a readied coordinator waited out the parked program's 20 ms
+  timeslice. Pending PendSV from `event_post` (as `z_arm_exc_exit` would) makes
+  the wake immediate: ctx-switch **135×**, pipe **137×**, spawn **13×**. Zephyr
+  now matches FreeRTOS.
+- **4 KiB pipe ring** + two-segment `memcpy` — a typical write is copy-bound, not
+  a park/resume round trip per 1 KiB (FreeRTOS 3×, Zephyr 137×). 2 KiB on Zephyr
+  (its K_USER domains leave less SRAM).
+- **NuttX kernel −O2** + note-driver guard (skip the 6-write MPU reprogram when
+  the region is unchanged) — syscall/ctx/spawn −15…−28%.
+- **FreeRTOS 64-bit cycle epoch** — a real correctness fix: guest
+  `CLOCK_MONOTONIC` no longer wraps every **19.86 s** (verified across the wrap
+  on hardware), and the per-read `__aeabi_uldivmod` becomes a Q32 multiply.
+- **FreeRTOS `current_slot`** direct `pxCurrentTCB` read (drop the MPU-wrapped
+  `xTaskGetCurrentTaskHandle`); **D-cache clean skipped** at exec when D-cache is
+  off.
+
 ## What it says
 
-- **A syscall is cheap and engine-independent** — the SVC boundary is
-  **~1100–1700 cycles** (5–8 µs) everywhere. Pure compute is nearly free (≈1×)
-  when the program runs privileged and cached.
-- **Multi-process cost diverges ~200× across engines** — this dominates. On
-  **FreeRTOS** a context switch is **197 µs** and a spawn **7.4 ms**, because its
-  coordinator is *event-driven* (the dispatch posts a semaphore the coordinator
-  waits on). **NuttX** (7.8 ms / 24 ms) and **Zephyr** (40 ms / 95 ms) pay
-  ms-scale latencies — their cross-process wake is tick/work-queue-quantized, and
-  Zephyr adds K_USER MPU domain switches on top.
-- **Zephyr's isolation has a compute cost** — B1 is **3.5×** (vs 1.1× elsewhere)
-  because the unprivileged program's K_USER text region executes **uncached**,
-  unlike the privileged FreeRTOS/NuttX path from cacheable flash. A real cost of
-  stronger isolation (and a candidate optimisation — an MPU cache-attribute fix).
+- **A syscall is cheap and engine-independent** — the SVC boundary is now
+  **~1.1–1.5 Kc** (5–7 µs) everywhere. Pure compute is nearly free (≈1.1×) on
+  *every* engine — Zephyr's isolation no longer costs a 3.5× compute penalty.
+- **Cross-process cost, once ~200× divergent, is now within ~2× on FreeRTOS and
+  Zephyr.** The dominant baseline gap was Zephyr's wake path skipping the
+  scheduler; with PendSV pended, its context switch (300 µs) and spawn (7.4 ms)
+  match FreeRTOS. IPC and spawn are **sub-ms / single-digit-ms** on both.
+- **NuttX remains ms-scale for the multi-process axes** (ctx-switch 5.6 ms,
+  spawn 17.8 ms) — instrumentation showed its wake *is* already event-driven; the
+  cost is per-hop **task churn** (`nxtask_init` + activate + `task_delete` every
+  resume, ≈18× Zephyr's `k_thread_create`). The single-write pipe case is fast
+  (243 µs) because it avoids the hop. Collapsing the churn to persistent
+  block/unblock slot-tasks is the one remaining lever — a deferred concurrency
+  refactor, not a config flip.
 
 !!! note "Takeaway"
-    Running Linux software costs ~1–2k cycles per syscall regardless of engine,
-    but the **choice of engine dominates multi-process performance**:
-    FreeRTOS's event-driven coordinator is 40–200× ahead of NuttX/Zephyr for IPC
-    and process spawn.
+    After the pass, a syscall is ~1 Kc on every engine and multi-process IPC/spawn
+    is **sub-millisecond to single-digit-millisecond on FreeRTOS and Zephyr**.
+    Zephyr went from 40 ms to 300 µs per context switch (135×) once its wake path
+    stopped skipping the scheduler. NuttX's per-hop RTOS-task rebuild is the last
+    ms-scale cost, and the only remaining structural optimisation.
 
 ## Reproduce
 
