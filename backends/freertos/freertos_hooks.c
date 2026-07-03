@@ -150,9 +150,18 @@ __attribute__((weak)) void ove_backend_profiler_on_tick(void)
 }
 #endif
 
+/* Advances the 64-bit wrap-stitched nanosecond clock. The strong version lives in
+ * freertos_time.c (real HW, with the DWT cycle counter); a weak no-op here keeps the
+ * QEMU/stub-time build — which substitutes stub_time.c for freertos_time.c — linking. */
+__attribute__((weak)) void ove_freertos_time_tick(void)
+{
+}
+
 OVE_WEAK
 void vApplicationTickHook(void)
 {
+	/* Sampling CYCCNT every 1 ms catches its ~19.86 s wrap so CLOCK_MONOTONIC stays 64-bit. */
+	ove_freertos_time_tick();
 #if (configGENERATE_RUN_TIME_STATS == 1)
 	/* Statistical CPU accounting: charge the running task one tick. Unlike
 	 * FreeRTOS's switch-time ulRunTimeCounter, this also credits a flat-out
