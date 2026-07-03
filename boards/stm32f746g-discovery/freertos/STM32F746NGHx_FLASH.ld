@@ -215,6 +215,14 @@ SECTIONS
      * the ld RAM region at 0x20010000 is not 256K-aligned).  privileged_functions/data are
      * DEGENERATE (start==end at the segment ends): isolation comes from the unprivileged
      * restricted tasks having no background region, not from a dedicated privileged region. */
+    /* The unprivileged-flash MPU region always covers the INTERNAL flash: the
+     * unprivileged personality guest first executes the kernel's prog_tramp /
+     * park_loop trampolines (which live here) before and between running its own
+     * code.  With the rootfs in QSPI the guest's cpio text is XIP'd from the
+     * 0x90000000 window instead — that window gets its OWN per-task MPU region in
+     * freertos_spawn_common (RO+X), since one static region cannot span both
+     * internal flash and QSPI.  The internal-flash kernel is reached by
+     * privileged code via PRIVDEFENA. */
     __FLASH_segment_start__        = ORIGIN(FLASH);
     __FLASH_segment_end__          = ORIGIN(FLASH) + LENGTH(FLASH);
     __SRAM_segment_start__         = 0x20000000;

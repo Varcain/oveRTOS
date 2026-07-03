@@ -73,9 +73,16 @@ ove_add_backend_sources()
 # include path; the program-region pool lives in external SDRAM (.sdram_bss, bsp.c brings up
 # the FMC + makes it executable). Mirrors the QEMU an500 board's OVE_LINUX block.
 if(OVE_LINUX)
-    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
-    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
-    ove_add_include_directories(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+    # With the rootfs in QSPI (OVE_LINUX_ROOTFS_QSPI) it is programmed to the NOR
+    # separately (flash-qspi.sh), NOT embedded in the firmware image — so skip the
+    # cpio-embed fixture generation there.
+    if(NOT OVE_LINUX_ROOTFS_QSPI)
+        include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
+        ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
+        ove_add_include_directories(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+    else()
+        ove_add_include_directories(${OVE_DIR}/tests/ontarget)
+    endif()
 endif()
 
 # ── STM32CubeF7 HAL + BSP + FatFs + CMSIS-DSP ───────────────────────
@@ -89,6 +96,21 @@ ove_add_stm32cube_bsp(
         stm32746g_discovery_sdram.c
     COMPONENTS wm8994
 )
+# QSPI NOR (N25Q128A) memory-mapped XIP — the rootfs lives here on real hardware.
+if(OVE_QSPI)
+    ove_add_stm32cube_bsp(
+        BOARD STM32746G-Discovery
+        FILES stm32746g_discovery_qspi.c
+    )
+    # stm32746g_discovery_qspi.h does #include "../Components/n25q128a/n25q128a.h".
+    # That component is a git submodule ST does NOT ship in the sparse download, so
+    # we vendor it (BSD-3-Clause; see stm32cube/README.md) and install our tracked
+    # copy into the Cube tree at the relative-include path. Re-copied every configure,
+    # so it survives `make clean` / a fresh checkout (the authoritative file lives
+    # under boards/, not in the gitignored dl/ tree).
+    file(COPY ${CMAKE_CURRENT_LIST_DIR}/stm32cube/n25q128a.h
+         DESTINATION ${OVE_STM32CUBE_PATH}/Drivers/BSP/Components/n25q128a)
+endif()
 ove_add_fatfs(
     BOARD_DISKIO src/stm32f7/fatfs/sd_diskio.c
 )
