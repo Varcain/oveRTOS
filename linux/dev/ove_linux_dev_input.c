@@ -213,12 +213,20 @@ void ove_lnx_dev_autoreg_input(void)
 	};
 	if (ove_lnx_dev_register(&dev) != 0)
 		return;
-#if defined(CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD)
-	ove_lnx_dev_tick_register(testpad_tick);
-#endif
+	/* Prefer a real touch panel (FT5336) when present; the synthetic testpad is the
+	 * fallback for QEMU (no touch HW) or if the FT5336 does not probe. Registering
+	 * both would let two sources drive one /dev/input/event0 — garbage. */
+	int touch_ready = 0;
+	(void)touch_ready;
 #if defined(CONFIG_OVE_FT5336)
-	if (ove_ft5336_init() == 0)
+	if (ove_ft5336_init() == 0) {
 		ove_lnx_dev_tick_register(ft5336_tick); /* real HW touch panel */
+		touch_ready = 1;
+	}
+#endif
+#if defined(CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD)
+	if (!touch_ready)
+		ove_lnx_dev_tick_register(testpad_tick); /* QEMU synthetic gestures */
 #endif
 }
 
