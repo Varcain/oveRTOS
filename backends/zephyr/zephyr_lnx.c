@@ -350,12 +350,30 @@ static void zephyr_crit_exit(void)
 	irq_unlock(g_crit_key);
 }
 
-/* Event wakeup: the dispatch (fault/exception context) gives this when a program
- * parks; the coordinator takes it instead of busy-polling. ISR-safe k_sem_give. */
+/* SCB->ICSR PENDSVSET — raw (0xE000ED04, bit 28), matching the raw-SCS style used elsewhere
+ * in the personality seams; avoids a cmsis_core.h include dependency. Writing the whole word
+ * is the documented idiom (the other writable ICSR bits are write-1-to-act, so writing 0 to
+ * them is a no-op) — Zephyr's own z_arm_exc_exit does `SCB->ICSR = SCB_ICSR_PENDSVSET_Msk`. */
+#define OVE_LNX_ICSR (*(volatile uint32_t *)0xE000ED04u)
+#define OVE_LNX_PENDSVSET (1u << 28)
+
+/* Event wakeup: the dispatch (fault/exception context) gives this when a program parks; the
+ * coordinator takes it instead of busy-polling. ISR-safe k_sem_give. */
 K_SEM_DEFINE(g_ove_lnx_ev, 0, 1);
 static void zephyr_event_post(void)
 {
 	k_sem_give(&g_ove_lnx_ev);
+	/* The give readies the higher-priority coordinator, but a program svc reaches us via the
+	 * kernel-oops path (svc.S .L_oops returns with `pop {r0,pc}`, bypassing z_arm_int_exit),
+	 * so nothing pends PendSV — the just-parked K_USER program keeps busy-spinning in
+	 * ove_lnx_park_loop until its timeslice expires (~tens of ms), which is the entire cause
+	 * of the multi-ms pipe/spawn latency. Pend PendSV ourselves so the coordinator is switched
+	 * in on exception return, exactly as z_arm_exc_exit would for a real ISR. A rare no-op
+	 * self-switch (nothing higher became ready) is harmless. In thread context (the
+	 * coordinator's own cross-kill post) k_sem_give already reschedules, so skip. */
+	if (k_is_in_isr()) {
+		OVE_LNX_ICSR = OVE_LNX_PENDSVSET;
+	}
 }
 static void zephyr_event_wait(unsigned ms)
 {
