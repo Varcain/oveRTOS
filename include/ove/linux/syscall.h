@@ -424,6 +424,12 @@ int ove_lnx_proc_nslot(void);
  * count, 0 (EOF), or -EPIPE on completion; @c -OVE_LNX_EAGAIN while still blocked. */
 long ove_lnx_pipe_retry(ove_lnx_proc_t *p);
 
+/** @brief Wake the run-loop coordinator (engine event_post) so it re-attempts blocked pipe
+ * I/O immediately — called from a pipe read/write that just unblocked a peer, instead of
+ * relying on the writer's next park or the poll timeout. Weak no-op fallback in the syscall
+ * layer for the host test; the run loop supplies the strong version. */
+void ove_lnx_pipe_kick(void);
+
 /**
  * @brief Attach a read-only in-memory rootfs the program can @c open / @c read.
  * @note Requires @c CONFIG_OVE_LINUX.

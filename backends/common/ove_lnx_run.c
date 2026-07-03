@@ -125,6 +125,15 @@ int ove_lnx_proc_nslot(void)
 	return OVE_LNX_NSLOT;
 }
 
+/* Strong override of the weak syscall-layer stub: a pipe read/write that unblocked a peer
+ * wakes the coordinator so it re-runs its pipe-retry pass immediately, instead of the peer
+ * waiting for the writer's own next park or the poll timeout. */
+void ove_lnx_pipe_kick(void)
+{
+	if (g_eng && g_eng->event_post)
+		g_eng->event_post();
+}
+
 /* Per-slot captured resume context (replaces the single global g_ove_lnx_vfork +
  * the run-loop-local vctx[] — many forks/sleeps/waits can be outstanding at once
  * under the concurrent model). A proc is only ever in ONE of fork/sleep/wait at a
@@ -872,6 +881,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		uint64_t now = 0;
 		ove_time_get_us(&now);
 		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0;
+		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
 			if (!p->alive)
@@ -912,6 +922,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 					p->sleeping = 0;
 					eng->spawn_resume(s, p->region, &g_ctx[s], 0);
 					progress = 1;
+				} else if (p->sleep_until_us < next_sleep) {
+					next_sleep = p->sleep_until_us; /* wake the coordinator at this deadline */
 				}
 			}
 			/* Blocked pipe I/O: retry now that a peer may have drained/filled the
@@ -953,12 +965,21 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			last_refresh_us = now;
 			refresh_stats();
 		}
-		/* Block until a program parks (event_post) or the timeout (sleeper deadlines
-		 * + snapshot refresh). NOT a busy 1ms poll — that would preempt running
-		 * programs every tick and reset their time-slice, starving a fg command
-		 * while a CPU-bound background job runs. A short timeout while a pipe is
-		 * blocked keeps `a | b` snappy (the peer's read/write doesn't post an event). */
-		eng->event_wait(any_pipe_wait ? 5 : 50);
+		/* Block until a program parks (event_post) or the timeout. NOT a busy 1ms poll —
+		 * that would preempt running programs every tick and reset their time-slice,
+		 * starving a fg command while a CPU-bound background job runs. The timeout is the
+		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
+		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
+		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
+		unsigned to = any_pipe_wait ? 5u : 50u;
+		if (next_sleep != UINT64_MAX && next_sleep > now) {
+			uint64_t d_ms = (next_sleep - now + 999u) / 1000u; /* round up, don't wake early */
+			if (d_ms < 1u)
+				d_ms = 1u;
+			if (d_ms < (uint64_t)to)
+				to = (unsigned)d_ms;
+		}
+		eng->event_wait(to);
 	}
 	/* Tear down any still-running slot tasks so a subsequent ove_lnx_run() starts
 	 * clean and no leaked task starves the next program. */
