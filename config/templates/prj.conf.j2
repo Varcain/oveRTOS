@@ -220,5 +220,16 @@ CONFIG_DISK_DRIVERS=n
 # the trusted framework threads, matching how FreeRTOS/NuttX run on this board. Board-gated so the
 # QEMU an521 (with MPU headroom to spare) keeps its guard.
 CONFIG_HW_STACK_PROTECTION=n
+# Enable the Cortex-M7 I-cache. Zephyr's stm32f7 soc init calls sys_cache_instr_enable() /
+# sys_cache_data_enable(), but both are no-ops unless CONFIG_CACHE_MANAGEMENT is set — so the M7
+# boots with caches OFF and the guest program (text XIP'd from the embedded cpio in flash) runs
+# fully uncached, ~3.5x slower than the I-cached FreeRTOS/NuttX personalities. Turning cache
+# management on lets the I-cache cover the flash-resident program text.
+CONFIG_CACHE_MANAGEMENT=y
+# D-cache MUST stay off: the program-image pool lives in FMC SDRAM whose per-program MPU partitions
+# are Normal write-back write-allocate cacheable — a D-cache over the FMC precise-BusFaults on real
+# silicon (same reason FreeRTOS keeps D-cache off for OVE_LINUX; see commit 14ab3cc). I-cache alone
+# recovers the compute tax. Board-gated: the QEMU an521 has no cache model, so this is a no-op there.
+CONFIG_DCACHE=n
 {% endif %}
 {% endif %}
