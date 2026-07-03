@@ -2,6 +2,15 @@
 # NuttX defconfig overlay for oveRTOS application.
 # Applied on top of the NuttX board config.
 
+# ── Kernel optimization ──
+# Upstream NuttX board configs enable CONFIG_DEBUG_SYMBOLS, and NuttX's Kconfig then
+# DEFAULTS the optimization level to DEBUG_NOOPT ("default DEBUG_NOOPT if DEBUG_SYMBOLS") —
+# i.e. the whole kernel builds at -O0. Every exception/scheduler/syscall path is
+# unoptimized, which inflates the Linux-personality syscall and wake-path cost (and all
+# NuttX code). Force full optimization while keeping the -g symbols. Applied globally so the
+# native benchmark and the personality build identically (a fair tax comparison).
+CONFIG_DEBUG_FULLOPT=y
+
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
 # ── Zero-heap: static sizing + boot-only allocation ──
 # All resources are sized at compile time; oveRTOS creates everything
