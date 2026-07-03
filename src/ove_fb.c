@@ -55,24 +55,11 @@ void ove_fb_present(void)
 	ove_hal_fb_present();
 }
 
-/* Weak "no display" HAL: a board WITH a framebuffer (an500 qemu_fb.c, F746
- * fb_port.c) provides strong overrides; a board without one (an521, a bare
- * nuttx) links these and ove_fb_init fails, so the fb class simply does not
- * register /dev/fb0 — no link error, and no framebuffer RAM is reserved (that
- * lives in the board backend). */
-__attribute__((weak)) int ove_hal_fb_init(void)
-{
-	return OVE_ERR_NOT_SUPPORTED;
-}
-__attribute__((weak)) int ove_hal_fb_get_info(struct ove_fb_info *info)
-{
-	(void)info;
-	return OVE_ERR_NOT_SUPPORTED;
-}
-__attribute__((weak)) void *ove_hal_fb_buffer(void)
-{
-	return 0;
-}
-__attribute__((weak)) void ove_hal_fb_present(void) {}
+/* The weak "no display" ove_hal_fb_* stubs live in a SEPARATE object (ove_fb_stub.c)
+ * on purpose: GCC's default -fno-semantic-interposition binds a same-TU call to a
+ * defined weak symbol locally, so if the stubs were here the forwarders above would
+ * call them directly and a board's strong override (an500 qemu_fb.c, F746 fb_port.c /
+ * nuttx board_init.c) would be silently ignored + garbage-collected. Keeping the calls
+ * inter-object forces the linker to resolve them — strong preferred over weak. */
 
 #endif /* CONFIG_OVE_FB */
