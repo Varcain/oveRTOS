@@ -5,6 +5,7 @@ sources:
   - ../src/app.c
   - ../src/bench_harness.c
   - ../src/bench_output.c
+  - ../src/bench_compute.c
   - ../src/bench_memory.c
   - ../src/bench_time.c
   - ../src/bench_thread.c
@@ -32,6 +33,9 @@ defconfig:
   - CONFIG_OVE_TRACE_MARKERS=n
   - CONFIG_OVE_TRACE_STREAM=n
   - CONFIG_OVE_THREAD_STATE_STATS=n
+  # The sampling profiler is observability overhead too — off for the same
+  # reason (measure the wrapper layer, not the profiler's exception-walk).
+  - CONFIG_OVE_PROFILER=n
   # Worst-case timing: disable I-cache, D-cache, branch predictor, ART,
   # and flash prefetch on STM32F7 so published numbers approximate a
   # cacheless ARM MCU.  See docs-site/docs/benchmarks/index.md

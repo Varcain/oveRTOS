@@ -115,6 +115,7 @@ void bench_print_footer(void);
 int32_t bench_get_free_heap(void);
 
 /* Suite registrations */
+extern const bench_suite_t bench_suite_compute;
 extern const bench_suite_t bench_suite_time;
 extern const bench_suite_t bench_suite_thread;
 extern const bench_suite_t bench_suite_sync;
