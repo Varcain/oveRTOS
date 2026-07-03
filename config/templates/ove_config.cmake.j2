@@ -291,6 +291,12 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_fb.c")
 {% endif %}
+{% if config.get("CONFIG_OVE_LINUX_DEV_INPUT") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_input.c")
+{% endif %}
+{% if config.get("CONFIG_OVE_FT5336") == True %}
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
+{% endif %}
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
