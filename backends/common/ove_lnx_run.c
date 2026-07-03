@@ -125,14 +125,6 @@ int ove_lnx_proc_nslot(void)
 	return OVE_LNX_NSLOT;
 }
 
-/* Strong override of the weak syscall-layer stub: a pipe read/write that unblocked a peer
- * wakes the coordinator so it re-runs its pipe-retry pass immediately, instead of the peer
- * waiting for the writer's own next park or the poll timeout. */
-void ove_lnx_pipe_kick(void)
-{
-	if (g_eng && g_eng->event_post)
-		g_eng->event_post();
-}
 
 /* Per-slot captured resume context (replaces the single global g_ove_lnx_vfork +
  * the run-loop-local vctx[] — many forks/sleeps/waits can be outstanding at once
