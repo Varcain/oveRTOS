@@ -46,10 +46,16 @@ volatile int g_ove_lnx_halt;
  * The run-loop coordinator parks/wakes the blocked proc — see ove_lnx_pipe_retry.
  */
 #define OVE_LNX_NPIPE 4
-/* 4 KiB ring: a typical write/splice fits in one shot (no partial-write park/resume round trip
- * per 1 KiB), so streaming throughput is copy-bound not coordinator-bound. 4 pipes × 4 KiB = 16 KiB
- * of .bss on internal SRAM. */
+/* Ring size: a bigger ring means a typical write/splice fits in fewer shots (no partial-write
+ * park/resume round trip per chunk), so streaming throughput is copy-bound not coordinator-bound.
+ * 4 KiB on FreeRTOS/NuttX (4 pipes × 4 KiB = 16 KiB .bss). Zephyr runs programs in per-program
+ * K_USER MPU domains + privilege stacks that eat the STM32F746's internal SRAM, so 4 KiB there
+ * overflows RAM by ~5 KiB — cap it at 2 KiB (still 2x the old 1 KiB). */
+#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+#define OVE_LNX_PIPE_BUF 2048
+#else
 #define OVE_LNX_PIPE_BUF 4096
+#endif
 typedef struct {
 	uint8_t buf[OVE_LNX_PIPE_BUF];
 	size_t rpos;  /* ring read index [0, BUF) */
