@@ -343,11 +343,14 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	(void)ridx;
 	(void)stack_lo;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* The program image was just written into the SDRAM program region through the M7's
-	 * D-cache (loader memcpy + relocations). Flush those dirty lines to SDRAM and drop any
-	 * stale I-cache so the CPU fetches the real code — without this it executes whatever was
-	 * physically in SDRAM (zeroes) and faults. Cheap, once per program launch. */
-	SCB_CleanDCache();
+	/* The loader wrote the program's data segment + relocations into SDRAM and materialised new
+	 * code paths. Drop any stale I-cache so the CPU fetches the real code (else it runs whatever
+	 * was physically in SDRAM and faults). The D-cache is kept OFF for the personality
+	 * (stm32f7_init.c gates SCB_EnableDCache on !CONFIG_OVE_LINUX — the SDRAM program pool is
+	 * non-cacheable), so those writes went straight to SDRAM and a full clean-by-set/way is a
+	 * wasted walk of the whole cache per spawn — only clean when the D-cache is actually on. */
+	if (SCB->CCR & SCB_CCR_DC_Msk)
+		SCB_CleanDCache();
 	SCB_InvalidateICache();
 	__DSB();
 	__ISB();
