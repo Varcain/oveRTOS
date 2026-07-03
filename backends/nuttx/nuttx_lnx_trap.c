@@ -415,6 +415,13 @@ static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
  * Both are power-of-2 sized and naturally aligned (the pool base is aligned to the region size and
  * the array stride equals the size), so each maps as one exact MPU region. Execute-never (W^X —
  * code lives in the shared region 0). */
+/* Which region index is currently programmed into MPU regions 2+3. set_prog_regions is the ONLY
+ * writer of those regions (ove_lnx_mpu_init sets only 0+1), so this stays accurate — even across
+ * ove_lnx_run() calls, since a region index maps to a fixed memory range. -1 = none (boot). Lets
+ * ove_lnx_note_resume skip the 6 MPU writes + dsb + isb when the incoming program already owns the
+ * mapped region (the common case: a syscall returns to the same program on every trap). */
+static int g_mapped_ridx = -1;
+
 static void set_prog_regions(int ridx)
 {
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
@@ -430,6 +437,7 @@ static void set_prog_regions(int ridx)
 		    (1u << 28);
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
+	g_mapped_ridx = ridx;
 }
 
 /* Note-driver resume hook — fires on EVERY switch TO a task (sched_note_resume, in
@@ -447,7 +455,9 @@ static void ove_lnx_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < OVE_LNX_NSLOT; i++) {
 		if (g_ove_lnx_used[i] && g_pid[i] == pid) {
-			set_prog_regions(g_ove_lnx_proc[i].region);
+			int ridx = g_ove_lnx_proc[i].region;
+			if (ridx != g_mapped_ridx) /* skip the MPU reprogram when unchanged */
+				set_prog_regions(ridx);
 			return;
 		}
 	}
