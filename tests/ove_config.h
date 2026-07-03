@@ -37,6 +37,7 @@
 #define CONFIG_OVE_LOADER 1
 #define CONFIG_OVE_PROTECTED 1
 #define CONFIG_OVE_LINUX 1
+#define CONFIG_OVE_LINUX_DEV 1 /* /dev character-device layer (test_linux_dev.c) */
 #define CONFIG_OVE_WORKQUEUE 1
 #define CONFIG_OVE_STREAM 1
 #define CONFIG_OVE_PM 1

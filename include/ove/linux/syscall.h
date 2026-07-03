@@ -84,6 +84,7 @@ extern "C" {
 #define OVE_LNX_NR_mmap2 192
 #define OVE_LNX_NR_mprotect 125 /* ld.so RELRO hardening — no-op on NOMMU */
 #define OVE_LNX_NR_pread64 180  /* ld.so loads .so segments via positioned reads (NOMMU) */
+#define OVE_LNX_NR_pwrite64 181 /* LVGL fbdev writes framebuffer scanlines via positioned writes */
 #define OVE_LNX_NR_fstat64 197
 #define OVE_LNX_NR_getuid32 199
 #define OVE_LNX_NR_getgid32 200
@@ -166,6 +167,7 @@ extern "C" {
 #define OVE_LNX_O_CREAT 0x40
 #define OVE_LNX_O_TRUNC 0x200
 #define OVE_LNX_O_APPEND 0x400
+#define OVE_LNX_O_NONBLOCK 0x800 /* a device open that returns -EAGAIN instead of blocking */
 /* openat dirfd sentinel for the current working directory. */
 #define OVE_LNX_AT_FDCWD (-100)
 /* lseek(2) whence. */
@@ -179,6 +181,7 @@ extern "C" {
 #define OVE_LNX_S_IFCHR 0x2000u
 #define OVE_LNX_S_IFLNK 0xa000u
 /* getdents64 d_type values. */
+#define OVE_LNX_DT_CHR 2
 #define OVE_LNX_DT_DIR 4
 #define OVE_LNX_DT_REG 8
 /* termios ioctls so a console looks like a tty (isatty → interactive shell). */
@@ -312,11 +315,17 @@ typedef struct ove_lnx_file {
 
 /** Open-file-descriptor slot. */
 typedef struct ove_lnx_fd {
-	uint8_t kind;  /**< 0 = free, 1 = console, 2 = rootfs file, 3 = pipe. */
+	uint8_t kind;  /**< 0 = free, 1 = console, 2 = rootfs file, 3 = pipe, 4 = tmpfs,
+			*   5 = /proc, 6 = device (values 4-6 are private to the syscall +
+			*   device layers; only FD_DEV is exported below). */
 	uint8_t rw;    /**< pipe end: 0 = read, 1 = write (kind == pipe). */
-	int file_idx;  /**< rootfs index (kind == file) or pipe index (kind == pipe). */
+	int file_idx;  /**< rootfs index (file) / pipe index (pipe) / open-pool index (device). */
 	size_t offset; /**< Read cursor (kind == file). */
 } ove_lnx_fd_t;
+
+/** Device fd kind (shared by the syscall + device layers; the FD_FREE..FD_PROC
+ *  kinds stay private to ove_linux_syscall.c). @c file_idx = open-pool index. */
+#define OVE_LNX_FD_DEV 6
 
 /** Maximum simultaneously-open file descriptors per process. */
 #define OVE_LNX_MAX_FDS 16
@@ -413,6 +422,18 @@ typedef struct ove_lnx_proc {
 	 * signal here; it is delivered at this proc's next syscall boundary (if running)
 	 * or by the coordinator (if parked in sleep/wait/pipe). 0 = none. */
 	int pending_sig;
+	/* Blocking device I/O (P0 device layer): a read/write/ioctl on a /dev node that
+	 * would block parks the proc; the coordinator retries via ove_lnx_dev_retry (the
+	 * same park/retry as pipe_wait) and resumes it on completion. */
+	uint8_t dev_wait;	  /**< 0 = none, else a DEVW_* op the coordinator retries. */
+	int dev_oi;		  /**< Open-pool index being waited on. */
+	uintptr_t dev_buf;	  /**< User buffer (read/write) or ioctl arg. */
+	size_t dev_len;		  /**< Requested length (read/write). */
+	unsigned long dev_cmd;	  /**< ioctl command. */
+	uint64_t dev_deadline_us; /**< 0 = infinite (poll timeout / read VTIME). */
+	/* Device mmap ranges (P3): a successful /dev mmap records its [lo,hi) here so
+	 * user_ok accepts the mapped framebuffer (two mappings max). */
+	uintptr_t dev_map_lo[2], dev_map_hi[2];
 } ove_lnx_proc_t;
 
 /** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan

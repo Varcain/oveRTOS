@@ -73,6 +73,26 @@ config OVE_LINUX_ROOTFS_OUTPUT
       every process shares one in-place copy of busybox.so/ld.so/libc.so text and
       Zephyr keeps W^X; the default) or "output" (the legacy bFLT userspace).
 
+config OVE_LINUX_DEV
+    bool "Linux personality: /dev character-device layer"
+    default n
+    depends on OVE_LINUX
+    help
+      A small in-kernel device model for the Linux personality: class drivers
+      register /dev nodes (framebuffer /dev/fb0, touch /dev/input/event0, ...)
+      and open/read/write/ioctl/poll/mmap on those paths route to the driver,
+      bridging to the engine-neutral ove_* HALs. Needed to run a graphical
+      (LVGL fbdev) program under the personality. Enable a class below.
+
+config OVE_LINUX_DEV_FB
+    bool "Linux personality: /dev/fb0 framebuffer node"
+    default n
+    depends on OVE_LINUX_DEV
+    select OVE_FB
+    help
+      Expose the OVE_FB framebuffer as /dev/fb0 (FBIOGET_*SCREENINFO + pwrite
+      scanlines), so a stock LVGL fbdev program renders under the personality.
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n
@@ -231,6 +251,15 @@ config OVE_I2C
     help
       I2C master driver with standard/fast/fast-plus speed,
       register-level convenience APIs, and thread-safe bus locking.
+
+config OVE_FB
+    bool "Framebuffer (raw linear RGB565 display)"
+    default n
+    help
+      A minimal raw framebuffer HAL: one linear RGB565 buffer plus a board
+      backend (an500 pushes RAM to a host viewer; STM32F746 uses the LTDC
+      scanout buffer in SDRAM). Bridged to /dev/fb0 by the Linux personality's
+      framebuffer class driver (OVE_LINUX_DEV_FB).
 
 config OVE_I2S
     bool "I2S / SAI audio bus"

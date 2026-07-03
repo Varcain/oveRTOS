@@ -13,6 +13,10 @@ defconfig:
   - CONFIG_OVE_LOADER=y
   - CONFIG_OVE_QUEUE=y
   - CONFIG_OVE_TIME=y
+  # /dev character-device layer + framebuffer (/dev/fb0). A board without an fb
+  # backend links weak "no display" HAL stubs, so /dev/fb0 is simply absent there.
+  - CONFIG_OVE_LINUX_DEV=y
+  - CONFIG_OVE_LINUX_DEV_FB=y
 # Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
 #   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
 #   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)
