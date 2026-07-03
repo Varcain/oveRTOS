@@ -70,6 +70,9 @@ __attribute__((weak)) int ove_lnx_proc_nslot(void)
 {
 	return 0;
 }
+__attribute__((weak)) void ove_lnx_pipe_kick(void)
+{
+}
 
 /* The shared read-only rootfs span [lo,hi): a program's .rodata (its FDPIC text is shared in-place
  * from the embedded cpio) lives here, so a READ-source user pointer may legitimately point into it.
@@ -148,6 +151,22 @@ static void pipe_ends(int pi, int *readers, int *writers)
 			if (tab[s].fds[fd].kind == OVE_LNX_FD_PIPE && tab[s].fds[fd].file_idx == pi)
 				(tab[s].fds[fd].rw ? (*writers)++ : (*readers)++);
 	}
+}
+
+/* True iff some live proc is parked blocked on pipe `pi` in direction `want` (1 = a reader
+ * waiting for data, 2 = a writer waiting for space). Used to decide whether a completed
+ * read/write should kick the coordinator to resume that peer NOW rather than at the writer's
+ * next park or the poll timeout. */
+static int pipe_peer_waiting(int pi, int want)
+{
+	ove_lnx_proc_t *tab = ove_lnx_proc_table();
+	int n = ove_lnx_proc_nslot();
+	if (!tab)
+		return 0;
+	for (int s = 0; s < n; s++)
+		if (tab[s].alive && tab[s].pipe_wait == want && tab[s].pipe_idx == pi)
+			return 1;
+	return 0;
 }
 
 /* Drain up to len bytes from pipe pi. >0 = bytes read; 0 = EOF (empty, no writers);
@@ -608,6 +627,8 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 			p->exited = 1;
 			p->exit_status = 128 + OVE_LNX_SIGPIPE;
 		}
+		if (r > 0 && pipe_peer_waiting(s->file_idx, 1))
+			ove_lnx_pipe_kick(); /* data now available → resume a blocked reader now */
 		return r; /* bytes written, or -EPIPE (no readers; writer exits unless it ignores it) */
 	}
 	/* A writable-node file write copies into its (growable) buffer at the offset. */
@@ -685,6 +706,8 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 			p->pipe_len = len;
 			return 0;
 		}
+		if (r > 0 && pipe_peer_waiting(s->file_idx, 2))
+			ove_lnx_pipe_kick(); /* space freed → resume a blocked writer now */
 		return r; /* bytes read, or 0 (EOF) */
 	}
 
