@@ -140,6 +140,15 @@ config OVE_FT5336
       from the run-loop tick to produce /dev/input/event0 touch events on real
       STM32F746 hardware.
 
+config OVE_FT5336_I2C_INSTANCE
+    int "FT5336 ove_i2c instance"
+    default 0
+    depends on OVE_FT5336
+    help
+      Which ove_i2c controller the FT5336 touch panel is wired to. On the
+      STM32F746-Discovery the touch controller is on I2C3 = ove_i2c instance 2
+      (the stm32f7 i2c backend maps 0->I2C1, 1->I2C2, 2->I2C3).
+
 config OVE_SYNC
     bool "Synchronization primitives (mutex, sem, event, condvar)"
     default n

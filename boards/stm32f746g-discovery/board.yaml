@@ -70,6 +70,11 @@ rtos_defconfig:
     # OVE_LINUX so it is inert for non-personality F746 apps; OVE_QSPI just mem-maps the NOR.
     - CONFIG_OVE_QSPI=y
     - CONFIG_OVE_LINUX_ROOTFS_QSPI=y
+    # Real capacitive touch: the FT5336 is on I2C3 (ove_i2c instance 2) on the Disco. The Linux
+    # personality's evdev class polls it into /dev/input/event0; it takes precedence over the
+    # QEMU synthetic testpad (inert for the personality unless OVE_LINUX_DEV_INPUT is on).
+    - CONFIG_OVE_FT5336=y
+    - CONFIG_OVE_FT5336_I2C_INSTANCE=2
     # Real hardware needs bsp_boardInit() to run (clock + FMC external SDRAM + the MPU region
     # that makes that SDRAM executable & non-cacheable for the program pool). That init only
     # runs when OVE_BOARD is enabled (ove_app_run -> ove_board_init). Required on silicon.
