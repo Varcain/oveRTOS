@@ -389,17 +389,30 @@ void ove_lnx_dev_proc_exit(ove_lnx_proc_t *p)
 }
 
 /* ---- Kconfig-auto class registration --------------------------------------- */
-/* Each class driver (fb, input, ...) provides a strong ove_lnx_dev_autoreg_<c>()
- * behind its CONFIG_OVE_LINUX_DEV_<C>; these weak no-ops keep the core linkable
- * before those classes exist. Run once on the coordinator thread (blocking HAL
- * init — ove_fb_init, ove_i2c_create — is legal there). */
-__attribute__((weak)) void ove_lnx_dev_autoreg_fb(void) {}
-__attribute__((weak)) void ove_lnx_dev_autoreg_input(void) {}
+/* Each class driver (fb, input, ...) provides ove_lnx_dev_autoreg_<c>() behind its
+ * CONFIG_OVE_LINUX_DEV_<C>. Gate the CALLS on the same config rather than relying on
+ * weak no-op fallbacks: a weak fallback here would be bound to the same-TU definition
+ * by GCC's default -fno-semantic-interposition, and the class object — reachable only
+ * through this hook — would never be pulled from the archive (so /dev/fb0 /
+ * /dev/input/event0 would silently not register on an archive+GC link, e.g. NuttX).
+ * Gating makes the call a direct reference to the compiled class's strong definition.
+ * Run once on the coordinator thread (blocking HAL init — ove_fb_init / ove_i2c_create
+ * — is legal there). */
+#if defined(CONFIG_OVE_LINUX_DEV_FB)
+void ove_lnx_dev_autoreg_fb(void);
+#endif
+#if defined(CONFIG_OVE_LINUX_DEV_INPUT)
+void ove_lnx_dev_autoreg_input(void);
+#endif
 
 void ove_lnx_dev_autoreg_all(void)
 {
+#if defined(CONFIG_OVE_LINUX_DEV_FB)
 	ove_lnx_dev_autoreg_fb();
+#endif
+#if defined(CONFIG_OVE_LINUX_DEV_INPUT)
 	ove_lnx_dev_autoreg_input();
+#endif
 }
 
 /* Weak input feeder so the core links before the evdev class (P4) defines it. */

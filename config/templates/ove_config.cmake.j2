@@ -141,6 +141,9 @@ set(OVE_BACKEND_SOURCES
     ${OVE_DIR}/src/ove_{{ mod|lower }}.c
 {% endif %}
 {% endfor %}
+{% if config.get("CONFIG_OVE_FB") == True %}
+    ${OVE_DIR}/src/ove_fb_stub.c
+{% endif %}
 {% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
     ${OVE_DIR}/backends/freertos/freertos_thread.c
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
