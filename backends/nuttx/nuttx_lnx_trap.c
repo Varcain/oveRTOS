@@ -28,6 +28,7 @@
 
 #if defined(CONFIG_OVE_LINUX)
 
+#include <nuttx/cache.h>     /* up_invalidate_dcache — reused-region coherency (cacheable prog pool) */
 #include <nuttx/clock.h>     /* MSEC2TICK */
 #include <nuttx/irq.h>	     /* irq_attach, enter/leave_critical_section; arch/irq.h REG_* */
 #include <nuttx/sched.h>     /* nxtask_init, nxtask_activate, struct task_tcb_s */
@@ -242,6 +243,18 @@ static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
 static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
 			      void *stack_lo)
 {
+	/* The prog/dyn regions are Normal WB-WA CACHEABLE (set_prog_regions), and regions are reused
+	 * across execs. The loader just wrote THIS program's image to SDRAM non-cacheable (the region
+	 * being loaded is never the currently-mapped one, so the coordinator's write falls through the
+	 * non-cacheable base region 1), but stale cacheable lines from the PREVIOUS tenant of this ridx
+	 * may still sit in the D-cache. Discard them so the program reads its freshly-loaded image, not
+	 * the last tenant's cached data. A plain invalidate (no writeback) is correct: the discarded
+	 * lines belong to an exited program, .bss/data were written straight to SDRAM by the loader, and
+	 * the regions are 32-byte (cache-line) aligned. */
+	up_invalidate_dcache((uintptr_t)prog_regions[ridx],
+			     (uintptr_t)prog_regions[ridx] + OVE_LNX_PROG_REGION_SIZE);
+	up_invalidate_dcache((uintptr_t)dyn_pools[ridx],
+			     (uintptr_t)dyn_pools[ridx] + OVE_LNX_DYN_POOL_SIZE);
 	g_region_stack_lo[ridx] = (uintptr_t)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)stack_lo, (uintptr_t)sp) != 0)
 		return -1;
@@ -452,13 +465,21 @@ static void set_prog_regions(int ridx)
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	/* TEX=001,C=1,B=1 = Normal Write-Back Write-Allocate CACHEABLE (was 0x08 = non-cacheable). The
+	 * program's data/bss/heap/stack live in region 2 and ld.so's arena in region 3; LVGL's malloc'd
+	 * draw buffer lands here, so caching the per-pixel compositing writes is a large win on the
+	 * memory-bound heavy scenes (text/containers/layers), which were writing every pixel straight to
+	 * uncached FMC SDRAM. Safe: no DMA reads these regions — the LTDC scans only the framebuffer
+	 * @0xC0000000, covered by the non-cacheable base region 1 — and the privileged personality reads
+	 * the draw buffer coherently on the same core, then blits to the non-cacheable framebuffer, so no
+	 * SCB cache maintenance is needed. (No code executes from here: FDPIC text XIPs from QSPI/reg 4.) */
 	*mpu_rnr = 2;
 	*mpu_rbar = (uint32_t)(uintptr_t)prog_regions[ridx];
-	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_PROG_REGION_SIZE) | (0x08u << 16) |
+	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_PROG_REGION_SIZE) | (0x0Bu << 16) |
 		    (0x3u << 24) | (1u << 28);
 	*mpu_rnr = 3;
 	*mpu_rbar = (uint32_t)(uintptr_t)dyn_pools[ridx];
-	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_DYN_POOL_SIZE) | (0x08u << 16) | (0x3u << 24) |
+	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_DYN_POOL_SIZE) | (0x0Bu << 16) | (0x3u << 24) |
 		    (1u << 28);
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
