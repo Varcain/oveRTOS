@@ -35,8 +35,10 @@
 /* RGB565 color display */
 #define LV_COLOR_DEPTH 16
 
-/* LVGL memory pool size (32KB for color display) */
-#define LV_MEM_SIZE (32 * 1024)
+/* LVGL memory pool. 96KB: the lv_demo-style benchmark's heavier scenes (widgets demo, nested
+ * containers, many images) exhaust a 32KB pool → LV_ASSERT_MALLOC spins. 96KB is the largest that
+ * still fits internal SRAM alongside the FreeRTOS heap (128KB → RAM overflow). */
+#define LV_MEM_SIZE (96 * 1024)
 
 /*=================
  * OPERATING SYSTEM
