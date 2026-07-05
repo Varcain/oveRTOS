@@ -153,6 +153,17 @@ macro(ove_zephyr_add_common_includes)
         ${_OVE_ZI_EXTRA}
     )
 
+    # LVGL module root.  Apps that reach LVGL internals (e.g. lvgl_benchmark reads the
+    # sysmon perf subject via "src/display/lv_display_private.h") need the LVGL root on
+    # the include path so those "src/..."-prefixed includes resolve — native builds get
+    # this from the vendored dl/lvgl root, but Zephyr's module layout only exposes
+    # lvgl/src.  Add the root here so the app sources stay engine-neutral.  Appended last
+    # (lowest priority) so it can't shadow Zephyr's own lvgl.h wrapper; no-op if absent.
+    if(EXISTS "${ZEPHYR_BASE}/../modules/lib/gui/lvgl/lvgl.h")
+        target_include_directories(app PRIVATE
+            ${ZEPHYR_BASE}/../modules/lib/gui/lvgl)
+    endif()
+
     # ETL — header-only fixed-capacity containers for C++ apps.  Added
     # to `app` only so it's not paid for in C-only builds.  No-op when
     # the dl/etl tree is absent.

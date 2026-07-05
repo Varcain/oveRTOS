@@ -161,11 +161,17 @@ CONFIG_STATIC_INIT_GNU=y
 CONFIG_LVGL=y
 CONFIG_DISPLAY=y
 CONFIG_STATIC_INIT_GNU=y
-CONFIG_LV_Z_RUN_LVGL_ON_WORKQUEUE=y
+# Drive LVGL from the app's own graphics thread (ove_lvgl_handler -> lv_timer_handler),
+# matching the FreeRTOS/NuttX seams — NOT Zephyr's system workqueue.  The workqueue path
+# rendered but never advanced periodic lv_timers (the benchmark's scene-change timer stuck
+# on frame 0); the app thread has a 16 KB stack and is the sole lv_timer_handler caller.
+CONFIG_LV_Z_RUN_LVGL_ON_WORKQUEUE=n
 CONFIG_LV_Z_LVGL_MUTEX=y
-# Workqueue needs enough stack for LVGL rendering + display_write
-CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=4096
-CONFIG_LV_COLOR_DEPTH_24=y
+# 16-bit RGB565 to match the STM32F746 panel (and the FreeRTOS/NuttX native build,
+# lv_conf_stm32f746g_discovery.h LV_COLOR_DEPTH 16).  At 24-bit the opacity-layer
+# benchmark scene allocates a layer buffer too large for the LVGL heap and tiles/
+# thrashes (scene stuck), plus every flush pays a 24->16 conversion for the panel.
+CONFIG_LV_COLOR_DEPTH_16=y
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
@@ -175,6 +181,15 @@ CONFIG_LV_Z_MEM_POOL_SIZE={{ config.get("CONFIG_ZEPHYR_LV_MEM_POOL_SIZE", 16384)
 {% endif %}
 CONFIG_LV_USE_OBSERVER=y
 CONFIG_LV_USE_FLEX=y
+# Perf monitor — mirror the native global LVGL config (include/ove/lv_conf_common.h sets
+# LV_USE_SYSMON / LV_USE_PERF_MONITOR / *_LOG_MODE all on).  lvgl_benchmark accumulates
+# per-scene FPS by observing the sysmon perf subject; without SYSMON the whole path is
+# compiled out (LV_USE_PERF_MONITOR forced 0) and every scene reports N/A.  Zephyr configures
+# LVGL via Kconfig, not lv_conf.h, so wire the same globals here.  LOG_MODE routes perf to the
+# log instead of an on-screen overlay, so the measured render cost matches the native build.
+CONFIG_LV_USE_SYSMON=y
+CONFIG_LV_USE_PERF_MONITOR=y
+CONFIG_LV_USE_PERF_MONITOR_LOG_MODE=y
 {% endif %}
 {% endif %}
 

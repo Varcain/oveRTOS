@@ -13,3 +13,8 @@ defconfig:
   - CONFIG_OVE_BSP=y
   - CONFIG_OVE_LVGL=y
   - CONFIG_OVE_TIMER=y
+  # Zephyr: the LVGL sys_heap IS the allocator (LV_MEM_SIZE is ignored) and its 16 KB
+  # default wedges the software renderer on the heavy scenes — the opacity-layer scene
+  # allocates ~15 KB ARGB8888 layer tiles (GDB-confirmed).  96 KB matches the FreeRTOS/
+  # NuttX LV_MEM_SIZE.  Zephyr-only symbol (depends on ZEPHYR_LVGL) — inert on other engines.
+  - CONFIG_ZEPHYR_LV_MEM_POOL_SIZE=98304
