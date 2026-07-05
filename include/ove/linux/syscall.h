@@ -466,6 +466,21 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 			   char *namebuf, size_t namebuf_len);
 
 /**
+ * @brief Declare a memory-mapped rootfs image window so the coordinator task reads it safely.
+ *
+ * Call once, from the coordinator task, BEFORE the first read of a rootfs image that lives in a
+ * memory-mapped device window (before @ref ove_lnx_cpio_to_rootfs and any @ref ove_lnx_run over
+ * it).  On most engines/boards this is a no-op.  On the STM32F746 with the QUADSPI-XIP rootfs and
+ * the M7 D-cache enabled, the FreeRTOS backend installs a bounded, non-cacheable per-task MPU
+ * region over [base, base+len) so the cache never issues a line-fill burst — nor speculatively
+ * prefetches past the flash chip — into the memory-mapped NOR (both corrupt the read otherwise).
+ *
+ * @param base start of the memory-mapped rootfs window.
+ * @param len  size of the window in bytes (an upper bound is fine; use the mapped device size).
+ */
+void ove_lnx_rootfs_window(const void *base, size_t len);
+
+/**
  * @brief Resolve an absolute path through a rootfs (following symlinks) to a file's bytes.
  *
  * Used by the run loop to locate the FDPIC interpreter (ld.so) at launch, before a proc

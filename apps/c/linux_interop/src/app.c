@@ -375,6 +375,11 @@ static void demo_body(void *arg)
 	sh_write0("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
+	/* The rootfs is XIP'd from the memory-mapped QUADSPI NOR.  Declare that window to the
+	 * personality BEFORE the first read of it (the CPIO parse just below): on the STM32F746 this
+	 * installs a bounded, non-cacheable MPU region for this coordinator task so the M7 D-cache
+	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
+	ove_lnx_rootfs_window(OVE_LNX_QSPI_ROOTFS, OVE_LNX_QSPI_ROOTFS_MAX);
 	g_rootfs_n = ove_lnx_cpio_to_rootfs(OVE_LNX_QSPI_ROOTFS, OVE_LNX_QSPI_ROOTFS_MAX, g_rootfs,
 					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
 #else
@@ -393,7 +398,9 @@ static void demo_body(void *arg)
 	 * launches) and drains its output (during/after the run). It runs when demo_body blocks — in
 	 * the pre-feed wait just below and, once the program is running, in the event-driven
 	 * coordinator's event_wait — so both directions co-run without the worker preempting the
-	 * coordinator while it is loading a program. */
+	 * coordinator. (The loader's QUADSPI-NOR reads are preemption-safe in their own right — the
+	 * coordinator reads the NOR through a non-cacheable bounded MPU region, see
+	 * ove_lnx_rootfs_window — so this priority is about I/O ordering, not protecting the load.) */
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
 			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
 		sh_write0("[demo] FAIL: ove_thread_init\n");
