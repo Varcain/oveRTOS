@@ -249,6 +249,7 @@ extern "C" {
 #define OVE_LNX_ENOMEM 12
 #define OVE_LNX_EACCES 13
 #define OVE_LNX_EFAULT 14
+#define OVE_LNX_ENODEV 19
 #define OVE_LNX_ENOTDIR 20
 #define OVE_LNX_EISDIR 21
 #define OVE_LNX_EMFILE 24

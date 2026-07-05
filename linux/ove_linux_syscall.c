@@ -899,6 +899,21 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
 		}
 	}
 
+#if defined(CONFIG_OVE_LINUX_DEV)
+	/* Device mmap (P3): a real /dev fd with a driver .mmap op (e.g. /dev/fb0) is mapped to
+	 * the device's own buffer — ove_lnx_dev_mmap parks on DEVW_MMAP and the coordinator
+	 * installs the unprivileged MPU region + resumes with the mapped address. Devices
+	 * without an .mmap op return -ENODEV and fall through to the anonymous-arena copy. */
+	if (fd >= 0 && !(flags & OVE_LNX_MAP_ANONYMOUS)) {
+		ove_lnx_fd_t *s = fd_slot(p, fd);
+		if (s && s->kind == OVE_LNX_FD_DEV) {
+			long r = ove_lnx_dev_mmap(p, s->file_idx, len, pgoff);
+			if (r != -OVE_LNX_ENODEV)
+				return r;
+		}
+	}
+#endif
+
 	void *m = ove_arena_alloc(p->arena, len);
 	if (!m)
 		return -OVE_LNX_ENOMEM;

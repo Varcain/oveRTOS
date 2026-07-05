@@ -202,6 +202,41 @@ static uint8_t *nuttx_dyn_pool(int ridx, size_t *size)
 	return dyn_pools[ridx];
 }
 
+/* map_device (P3): install the framebuffer as an UNPRIVILEGED MPU region so a guest that
+ * mmap'd /dev/fb0 (LV_LINUX_FBDEV_MMAP=1) writes pixels straight into it — no per-scanline
+ * pwrite. NuttX uses only 5 of the M7's 8 regions (0,1 static + 2,3 per-program + 4 QSPI), so
+ * this takes region 5: HIGHER than the priv-only whole-pool base (region 1), so it wins the
+ * overlap and grants the guest unpriv RW to the fb while the rest of the pool stays priv-only.
+ * set_prog_regions only ever rewrites regions 2+3, so region 5 survives every context switch.
+ * size 0 tears it down (exec/relaunch). One display, shared by every program — not a memory-
+ * safety concern (the segv/xregion isolation tests target kernel SRAM + sibling pools, not the
+ * fb). Runs on the coordinator thread (raw MPU writes; NuttX FLAT leaves the MPU to us). */
+#define OVE_LNX_FB_MPU_REGION 5u
+static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attrs)
+{
+	(void)sidx;
+	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
+	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
+	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
+	*mpu_rnr = OVE_LNX_FB_MPU_REGION;
+	if (size == 0) {
+		*mpu_rasr = 0; /* disable */
+	} else {
+		size_t rsz = 32u;
+		while (rsz < size)
+			rsz <<= 1; /* a PMSAv7 region size is a power of 2 */
+		/* TEX/S/C/B from the OVE_LNX_MAP_* hint (ove/linux/dev.h): NC=0 -> 0x08 (the fb: the
+		 * guest's stores reach SDRAM for the LTDC scanout), WT=1 -> 0x02, DEV=2 -> 0x01. */
+		uint32_t texscb = (attrs == 1u) ? 0x02u : (attrs == 2u) ? 0x01u : 0x08u;
+		*mpu_rbar = (uint32_t)(addr & ~(rsz - 1u));
+		*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(rsz) | (texscb << 16) | (0x3u << 24) |
+			    (1u << 28); /* enable | size | attr | unpriv-RW | execute-never */
+	}
+	__asm__ volatile("dsb 0xf" ::: "memory");
+	__asm__ volatile("isb 0xf" ::: "memory");
+	return 0;
+}
+
 /* nxtask_init needs a main_t entry; we override REG_PC, so it is never called. */
 static int slot_noentry(int argc, char *argv[])
 {
@@ -347,6 +382,7 @@ static void nuttx_event_wait(unsigned ms)
 static const struct ove_lnx_engine g_nuttx_engine = {
 	.region = nuttx_region,
 	.dyn_pool = nuttx_dyn_pool,
+	.map_device = nuttx_map_device,
 	.spawn_launch = nuttx_spawn_launch,
 	.spawn_resume = nuttx_spawn_resume,
 	.abort_slot = nuttx_abort_slot,
