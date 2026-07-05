@@ -339,8 +339,17 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	 * configurable slot (portNUM_CONFIGURABLE_REGIONS == 3 at configTOTAL_MPU_REGIONS == 8). */
 	tp.xRegions[2].pvBaseAddress = (void *)0x90000000u;
 	tp.xRegions[2].ulLengthInBytes = 16u * 1024u * 1024u;
+	/* 0x02 = Normal WRITE-THROUGH, NON-shareable → D-CACHEABLE.  NOT the port default
+	 * configTEX_S_C_B_FLASH (0x07), which is SHAREABLE: the single-core M7 has no coherency unit, so
+	 * it treats shareable Normal memory as NON-cacheable for the D-cache — meaning the guest reads its
+	 * fonts / images / rodata straight from the slow QSPI NOR on every pixel, the dominant render cost
+	 * (the D-cache is "on" but the biggest read source bypasses it → render no better than uncached).
+	 * Non-shareable lets the D-cache absorb those reads (RO XIP window → no coherency concern), and the
+	 * I-cache still covers code fetch.  Matches NuttX region 4 (0x02): lvbench render 108 -> 65 ms,
+	 * 12 -> 16 FPS — closes the ~2x gap to NuttX.  (Write-through vs write-back is moot for a RO
+	 * window.) */
 	tp.xRegions[2].ulParameters =
-		portMPU_REGION_READ_ONLY | (configTEX_S_C_B_FLASH << portMPU_RASR_TEX_S_C_B_LOCATION);
+		portMPU_REGION_READ_ONLY | (0x02u << portMPU_RASR_TEX_S_C_B_LOCATION);
 #endif
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
 	g_ove_lnx_used[sidx] = (ok == pdPASS);
