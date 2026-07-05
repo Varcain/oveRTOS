@@ -107,16 +107,23 @@ static struct k_mem_domain g_domains[OVE_LNX_NREG];
 static struct k_mem_partition g_text[OVE_LNX_NREG], g_data[OVE_LNX_NREG];
 static int g_dom_inited[OVE_LNX_NREG];
 
-/* Normal NON-cacheable RW — like K_MEM_PARTITION_P_RW_U_RW but non-cacheable, matching how
- * FreeRTOS/NuttX map the guest program pool. The guest's data/heap live in the FMC SDRAM that the
- * LTDC (fb backend) also scans continuously; a non-cacheable region keeps the guest coherent with
- * that scanout without any cache maintenance. With CONFIG_DCACHE off in this build it is a
- * functional no-op (a Cortex-M7 allocates no lines while the D-cache is disabled), but it is the
- * correct attribute and stays right if the D-cache is ever enabled. (It is NOT what fixed the
- * fb-build guest corruption — that was the QSPI read clock; see ove-linux-fb.overlay.) */
-#define OVE_MEM_PART_RW_NOCACHE                                                                     \
-	((k_mem_partition_attr_t){ _K_MEM_PARTITION_P_RW_U_RW |                                     \
-				   NORMAL_OUTER_INNER_NON_CACHEABLE_NON_SHAREABLE })
+/* Guest program pool: Normal write-back write-allocate, NON-shareable, CACHEABLE — deliberately the
+ * SAME memory attribute the privileged run loop sees the FMC SDRAM through (Zephyr's static SDRAM1
+ * MPU region, DT ATTR_MPU_RAM = REGION_RAM_ATTR = WBWA non-shareable). Coordinator and guest MUST
+ * agree on cacheability: the run loop writes into this pool PRIVILEGED (the loader's ELF/RW load,
+ * syscall result buffers, argv/auxv setup, and the resume ctx that zephyr_spawn_resume stashes just
+ * below the guest SP), then the UNPRIVILEGED guest reads it back. This region previously mapped the
+ * guest NON-cacheable while the coordinator's view stayed cacheable — a mismatched-attribute alias:
+ * with the D-cache on, the coordinator's writes sit in the D-cache and the guest reads stale SDRAM
+ * around them → a garbage resume ctx → wild jump → "hang". (D-cache OFF hid it: every write reached
+ * SDRAM.) With BOTH sides cacheable on this single M7 core there is ONE coherent cache, so no
+ * per-handoff maintenance is needed — unlike FreeRTOS, whose coordinator writes through the uncached
+ * background map and therefore must SCB_InvalidateDCache_by_Addr the region before each resume.
+ * NON-shareable is essential: the single-core M7 has no snoop unit and precise-BusFaults on
+ * shareable Normal FMC accesses. XN — the guest's text XIPs from the RO cpio, never this data pool.
+ * Cacheable also speeds the render (the LVGL draw buffer lives here). an521/QEMU has no cache model,
+ * so this is a functional no-op there. */
+#define OVE_MEM_PART_RW_CACHE K_MEM_PARTITION_P_RW_U_RW
 
 static struct k_thread g_thread[OVE_LNX_NSLOT];
 static k_tid_t g_tid[OVE_LNX_NSLOT];
@@ -230,17 +237,17 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		 * libc/malloc + the K_USER stack = 5 dynamic MPU regions, the same budget as static. */
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = OVE_LNX_PROG_REGION_SIZE;
-		g_text[ridx].attr = OVE_MEM_PART_RW_NOCACHE;
+		g_text[ridx].attr = OVE_MEM_PART_RW_CACHE;
 		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
 		g_data[ridx].size = OVE_LNX_DYN_POOL_SIZE;
-		g_data[ridx].attr = OVE_MEM_PART_RW_NOCACHE;
+		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	} else {
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = prog->text_size;
 		g_text[ridx].attr = K_MEM_PARTITION_P_RX_U_RX;
 		g_data[ridx].start = (uintptr_t)region + prog->text_size;
 		g_data[ridx].size = OVE_LNX_PROG_REGION_SIZE - prog->text_size;
-		g_data[ridx].attr = OVE_MEM_PART_RW_NOCACHE;
+		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	}
 	if (!g_dom_inited[ridx]) {
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
