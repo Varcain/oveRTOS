@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "../common/ove_lnx_run.h"
+#include "ove/linux/syscall.h" /* ove_lnx_rootfs_window — strong-overridden below for QSPI-XIP */
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "stm32f7xx.h" /* SCB_CleanDCache / SCB_InvalidateICache: M7 loaded-code coherency */
@@ -267,10 +268,18 @@ __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused))
 			 "bx    r3           \n");
 }
 
-/* Stash the descriptor just below the program SP, INSIDE the program region (xRegions[0]). */
+/* Bytes the descriptor occupies, rounded up to whole 32-byte D-cache lines. */
+#define RESUME_DESC_CLSPAN (((uint32_t)sizeof(struct resume_desc) + 31u) & ~31u)
+
+/* Stash the descriptor just below the program SP, INSIDE the program region (xRegions[0]).
+ * Cache-line (32B) aligned and rounded to whole lines that sit ENTIRELY below sp's line: with the
+ * D-cache on the coordinator writes this through its uncached (Device) view but the guest's
+ * prog_tramp reads it cacheable, so freertos_spawn_resume must invalidate its lines — and that
+ * invalidate must not clip the parent's live stack at/above sp (which may hold dirty, not-yet
+ * written-back data the resuming child still needs). */
 static struct resume_desc *stash_desc(uint32_t sp, const struct ove_lnx_resume_ctx *ctx, long r0)
 {
-	struct resume_desc *d = (struct resume_desc *)(((sp & ~7u) - sizeof(struct resume_desc)) & ~7u);
+	struct resume_desc *d = (struct resume_desc *)((sp & ~31u) - RESUME_DESC_CLSPAN);
 	d->r0 = (uint32_t)r0;
 	d->ctx = *ctx;
 	return d;
@@ -285,12 +294,18 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
 #if (portUSING_MPU_WRAPPERS == 1)
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* The program region + dyn_pool live in external SDRAM, which bsp.c maps Normal
-	 * NON-cacheable (MPU_TEX_LEVEL1, S/C/B=0). The port default configTEX_S_C_B_SRAM
-	 * (0x07 = Normal write-back cacheable + shareable) would re-type our per-task SDRAM
-	 * region and precise-BusFault the M7's FMC accesses on real silicon (QEMU doesn't model
-	 * the FMC, so the an500 PSRAM is fine with the default). Match the board's SDRAM. */
-	const uint32_t tex_s_c_b = 0x08u; /* TEX=001, S=0, C=0, B=0 — Normal non-cacheable */
+	/* The program region + dyn_pool live in external SDRAM.  Make them Normal WBWA CACHEABLE,
+	 * non-shareable (0x0B): LVGL's malloc'd draw buffer lands in the program region's heap, so
+	 * caching the per-pixel compositing writes is the large lvbench win on the memory-bound scenes
+	 * (they were writing every pixel straight to uncached FMC SDRAM).  NON-shareable is required —
+	 * the port default 0x07 is *shareable*, which precise-BusFaults the M7's FMC accesses on real
+	 * silicon.  Coherency: the loader writes each program's image to SDRAM through the coordinator's
+	 * uncached (Device background) view, so freertos_spawn_launch INVALIDATES this region's D-cache
+	 * before the guest runs (drop stale lines from the previous tenant of this ridx → the guest
+	 * fills the fresh image from SDRAM); the LTDC framebuffer at 0xC0000000 stays non-cacheable
+	 * (bsp region 0), and the guest blits its cacheable draw buffer to it coherently on the same
+	 * core.  Mirrors the NuttX backend (nuttx_lnx_trap.c set_prog_regions, also 0x0B). */
+	const uint32_t tex_s_c_b = 0x0Bu; /* TEX=001, S=0, C=1, B=1 — Normal WBWA cacheable, non-shareable */
 #else
 	const uint32_t tex_s_c_b = configTEX_S_C_B_SRAM; /* an500 PSRAM: port default 0x07 */
 #endif
@@ -355,17 +370,18 @@ static uint8_t *freertos_dyn_pool(int ridx, size_t *size)
 static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
 				 void *stack_lo)
 {
-	(void)ridx;
 	(void)stack_lo;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-	/* The loader wrote the program's data segment + relocations into SDRAM and materialised new
-	 * code paths. Drop any stale I-cache so the CPU fetches the real code (else it runs whatever
-	 * was physically in SDRAM and faults). The D-cache is kept OFF for the personality
-	 * (stm32f7_init.c gates SCB_EnableDCache on !CONFIG_OVE_LINUX — the SDRAM program pool is
-	 * non-cacheable), so those writes went straight to SDRAM and a full clean-by-set/way is a
-	 * wasted walk of the whole cache per spawn — only clean when the D-cache is actually on. */
+	/* The loader wrote this program's image (data + relocations) to the SDRAM program region
+	 * through the coordinator's uncached (Device background) view, and materialised new code paths.
+	 * With the D-cache ON the region is Normal WBWA cacheable (freertos_spawn_common), so INVALIDATE
+	 * exactly this region before the guest runs: drop stale cacheable lines from the previous tenant
+	 * of this ridx so the guest's first reads miss + fill the fresh image from SDRAM.  Invalidate —
+	 * NOT clean — a clean would write those stale lines back OVER the loader's fresh SDRAM.  (D-cache
+	 * off: no lines to drop; skip the walk.)  Then invalidate the I-cache so the CPU fetches the real
+	 * code rather than whatever was physically in SDRAM. */
 	if (SCB->CCR & SCB_CCR_DC_Msk)
-		SCB_CleanDCache();
+		SCB_InvalidateDCache_by_Addr((void *)prog_regions[ridx], (int32_t)OVE_LNX_PROG_REGION_SIZE);
 	SCB_InvalidateICache();
 	__DSB();
 	__ISB();
@@ -385,7 +401,17 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 static void freertos_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
 				  long r0val)
 {
-	(void)freertos_spawn_common(sidx, ridx, stash_desc(ctx->sp, ctx, r0val));
+	struct resume_desc *d = stash_desc(ctx->sp, ctx, r0val);
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	/* Unlike a launch (freertos_spawn_launch invalidates the whole freshly-loaded region), a resume
+	 * keeps the region's LIVE guest data — so invalidate only the descriptor's own cache lines.
+	 * stash_desc wrote it through the coordinator's uncached (Device background) view; prog_tramp
+	 * reads it cacheable, so drop any stale line covering it → that read fills fresh from SDRAM.
+	 * The lines sit below sp (stash_desc), so no live parent stack is clipped. */
+	if (SCB->CCR & SCB_CCR_DC_Msk)
+		SCB_InvalidateDCache_by_Addr((void *)d, (int32_t)RESUME_DESC_CLSPAN);
+#endif
+	(void)freertos_spawn_common(sidx, ridx, d);
 }
 
 static void freertos_abort_slot(int sidx)
@@ -447,6 +473,51 @@ static const struct ove_lnx_engine g_freertos_engine = {
 	.event_post = freertos_event_post,
 	.event_wait = freertos_event_wait,
 };
+
+#if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
+	(portUSING_MPU_WRAPPERS == 1)
+/* Strong override of the engine-common weak no-op (backends/common/ove_lnx_run.c).
+ *
+ * The rootfs.cpio is XIP'd from the memory-mapped QUADSPI NOR at 0x90000000.  The coordinator —
+ * THIS task: it runs ove_lnx_cpio_to_rootfs + the FDPIC loader — is a PRIVILEGED, non-restricted
+ * FreeRTOS-MPU task, so absent an explicit region it reads the NOR through the PRIVDEFENA
+ * background map: the 512 MB Normal-cacheable 0x80000000..0x9FFFFFFF block.  With the M7 D-cache
+ * on, that view corrupts the reads two ways —
+ *   (1) the cache issues 32-byte line-fill BURSTS to the memory-mapped QUADSPI; a non-cacheable
+ *       region issues none (proven on silicon: an NC bounded region reads the NOR reliably where
+ *       a cacheable / write-through one still faults), and
+ *   (2) speculative prefetch within the oversized 512 MB region wanders PAST the 16 MB chip into
+ *       unmapped QUADSPI address space.
+ * Give THIS task a private MPU region over exactly the mapped NOR — Normal non-cacheable +
+ * execute-never: no bursts (1), speculation bounded to the chip (2).  It rides configurable
+ * region 0 and, being per-task, leaves the UNPRIVILEGED guest's own cacheable QSPI region
+ * (freertos_spawn_common — fast in-place XIP) untouched.  vPortStoreTaskMPUSettings with
+ * uxStackDepth==0 preserves this task's stack/all-SRAM region; taskYIELD forces the pended MPU
+ * reprogram so the region is live before the very next QUADSPI read (the cpio parse). */
+void ove_lnx_rootfs_window(const void *base, size_t len)
+{
+	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS] = {0};
+	regions[0].pvBaseAddress = (void *)(uintptr_t)base;
+	regions[0].ulLengthInBytes = (uint32_t)len;
+	regions[0].ulParameters = portMPU_REGION_PRIVILEGED_READ_ONLY | portMPU_REGION_EXECUTE_NEVER |
+				  (0x08u << portMPU_RASR_TEX_S_C_B_LOCATION); /* TEX=001,S/C/B=0 = Normal NC */
+	/* Record it in this task's TCB (configurable region 0) so PendSV re-applies it on every
+	 * context switch back to the coordinator — persistent for the whole coordinator life. */
+	vTaskAllocateMPURegions(NULL, regions);
+	/* vTaskAllocateMPURegions only updates the TCB; the live MPU is not reprogrammed until the
+	 * next context switch.  The very next thing the coordinator does is read the NOR (the cpio
+	 * parse), which needs the bounded NC view immediately — so program configurable region 0
+	 * into the hardware MPU by hand, with the same encoding the port uses on a switch.  Doing it
+	 * directly (not via taskYIELD) avoids forcing a context switch from here, which for this task
+	 * would be its first switch and trips the FreeRTOS stack-overflow guard. */
+	unsigned l2 = 31u - (unsigned)__builtin_clz((unsigned)len); /* log2(len); len is a power of 2 */
+	volatile uint32_t *const mpu_rbar = (volatile uint32_t *)0xE000ED9Cu;
+	volatile uint32_t *const mpu_rasr = (volatile uint32_t *)0xE000EDA0u;
+	*mpu_rbar = (uint32_t)(uintptr_t)base | (1u << 4) /* VALID */ | 0u /* region 0 */;
+	*mpu_rasr = 1u /* ENABLE */ | ((l2 - 1u) << 1) /* SIZE field */ | regions[0].ulParameters;
+	__asm__ volatile("dsb 0xf\n\tisb 0xf" ::: "memory");
+}
+#endif
 
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])

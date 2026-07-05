@@ -31,6 +31,19 @@
 #include "ove/linux/dev.h" /* device-layer park/retry + autoreg + tick + kick */
 #endif
 
+/* Declare a memory-mapped rootfs image window [base, base+len) so the coordinator task can
+ * read it safely on the target.  Default: no-op — an ordinary CPU view of the window is already
+ * correct (a RAM-backed rootfs, or an engine that covers the window with a global MPU region,
+ * e.g. NuttX region 4 / Zephyr).  The FreeRTOS seam strong-overrides this on the STM32F746
+ * (QUADSPI-XIP rootfs + M7 D-cache): it installs a bounded, non-cacheable MPU region for the
+ * calling task so cache line-fill bursts + speculative prefetch never reach the memory-mapped
+ * NOR.  A weak definition so only the engines that need it provide one. */
+__attribute__((weak)) void ove_lnx_rootfs_window(const void *base, size_t len)
+{
+	(void)base;
+	(void)len;
+}
+
 /* Parse the slot index from a Linux-program thread name "lnx<slot>". */
 static int lnx_slot_of_name(const char *name)
 {
@@ -419,6 +432,11 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	 * anything else. spawn_launch reads prog.is_fdpic / prog.got to put the GOT base in r9. */
 	if (!(len >= 4 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F'))
 		return -1;
+	/* The loader reads the FDPIC ELF from `data` — on the STM32F746 that points into the
+	 * QUADSPI-mapped NOR (0x90000000).  Correctness of that read is a memory-attribute concern,
+	 * not a timing one: the coordinator reads the NOR through a bounded, non-cacheable MPU region
+	 * (ove_lnx_rootfs_window), so no D-cache burst or speculative prefetch can garble it and a
+	 * context switch mid-load is harmless.  No preemption masking needed. */
 	int lrc = ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0);
 	if (lrc != OVE_OK)
 		return -1;
@@ -441,10 +459,11 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 			return -1; /* no interpreter in the rootfs */
 		uintptr_t ld_base = (uintptr_t)region + ((prog.region_used + 15u) & ~15u);
 		ove_flat_t ld;
-		if (ove_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
-					  OVE_LNX_PROG_REGION_SIZE -
-						  (size_t)(ld_base - (uintptr_t)region),
-					  1) != OVE_OK)
+		int ldrc = ove_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
+						 OVE_LNX_PROG_REGION_SIZE -
+							 (size_t)(ld_base - (uintptr_t)region),
+						 1);
+		if (ldrc != OVE_OK)
 			return -1;
 		pc = ld.entry;
 		/* AT_BASE = ld.so's ELF header, which ld.so reads at _dl_start (dl-startup.c). With the

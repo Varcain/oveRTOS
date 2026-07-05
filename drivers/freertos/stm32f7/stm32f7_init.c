@@ -39,15 +39,25 @@ void stm32f7_mcu_init(void)
 	/* Enable D-Cache.  Disabled when Ethernet DMA is active — the ETH
 	 * DMA reads/writes descriptors and buffers in SRAM that must be
 	 * cache-coherent.  A proper fix would use MPU to mark the DMA
-	 * region non-cacheable; for now we disable D-Cache entirely.
-	 *
-	 * ALSO disabled for the FreeRTOS-MPU (ARM_CM4_MPU) Linux-personality build: that port
-	 * reads task contexts/stacks through MPU static regions whose cacheability differs from
-	 * how they were written, and (unlike the non-MPU CM7 build) it does no SCB cache
-	 * maintenance at the scheduler start / context switch → a stale D-cache read faults
-	 * vSVCHandler_C at the start-scheduler SVC.  Keep the D-cache off (the SDRAM program
-	 * pool is already Normal non-cacheable); a finer fix is cacheable-coherent MPU attrs. */
-#if !defined(HAL_ETH_MODULE_ENABLED) && !defined(CONFIG_OVE_LINUX)
+	 * region non-cacheable; for now we disable D-Cache entirely. */
+#if defined(CONFIG_OVE_LINUX) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+	/* Linux personality on the real STM32F746: the D-cache runs FULLY ENABLED in its default
+	 * write-back mode (the lvbench compositing win + full SRAM performance — no global
+	 * write-through compromise).  The guest XIPs its FDPIC text and the loader/rootfs parse read
+	 * the CPIO from the QUADSPI-mapped NOR at 0x90000000, where naive D-cached memory-mapped reads
+	 * corrupt.  That hazard is fixed WHERE IT BELONGS — at the MPU-region level, per accessing
+	 * context — not by detuning the whole cache:
+	 *   - every context reads the QUADSPI through a region sized to exactly the 16 MB N25Q128A,
+	 *     so the M7 cannot speculatively prefetch past the chip into unmapped QUADSPI space;
+	 *   - the privileged coordinator/loader reads it through a NON-cacheable per-task region
+	 *     (ove_lnx_rootfs_window, backends/freertos/freertos_lnx.c), so the cache never issues a
+	 *     line-fill burst to the memory-mapped QUADSPI (the decisive factor: on silicon an NC
+	 *     bounded region reads the NOR reliably where a cacheable/write-through one does not);
+	 *   - the unprivileged guest keeps a cacheable bounded region (freertos_spawn_common) for
+	 *     fast in-place XIP, and creates no dirty write-back lines (its RW data is non-cacheable
+	 *     SDRAM), so it never triggers the burst-collision path either. */
+	SCB_EnableDCache();
+#elif !defined(HAL_ETH_MODULE_ENABLED) && !defined(CONFIG_OVE_LINUX)
 	SCB_EnableDCache();
 #endif
 
