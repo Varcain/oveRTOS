@@ -211,6 +211,17 @@ CONFIG_EXECUTE_XOR_WRITE=y
 # (NREG+4) + the kernel's own threads + the board's driver threads. On the real STM32F746 the
 # driver threads push the total to 18, needing 3 bytes (24 slots); harmless for the an521 (fewer).
 CONFIG_MAX_THREAD_BYTES=3
+# Disable Zephyr's round-robin timeslicer: the personality self-schedules and does not need it, and
+# under the personality's workload it DEADLOCKS the kernel. The coordinator (main, priority 0)
+# preempts guest programs (priority 5) by priority the instant it is readied (event_post), and guests
+# yield by PARKING on every blocking syscall — so nothing relies on round-robin. Worse, the run loop
+# creates+aborts a guest thread on each park/resume (hundreds/sec); under that churn the per-CPU
+# slice_timeout gets re-added to the timeout list with dticks==0, so sys_clock_announce()'s drain
+# loop never makes progress (announce_remaining stays pinned) and the SysTick handler spins forever —
+# the guest freezes mid-render. Root-caused on the real STM32F746 via GDB: PC wedged in
+# z_thread_timeout, slice_timeouts.dticks==0, announce_remaining stuck at 101. Latent with the
+# D-cache off; the faster guest exposed it. FreeRTOS/NuttX never timesliced the personality — match.
+CONFIG_TIMESLICING=n
 # Real STM32F746: enable the FMC memory controller so the external SDRAM (which hosts the
 # program-image pool) is brought up at boot. The upstream board only pulls MEMC in via the LTDC
 # display, which the headless personality disables — so enable it explicitly. No-op on the an521.
@@ -254,10 +265,15 @@ CONFIG_STM32_MEMMAP=y
 # fully uncached, ~3.5x slower than the I-cached FreeRTOS/NuttX personalities. Turning cache
 # management on lets the I-cache cover the flash-resident program text.
 CONFIG_CACHE_MANAGEMENT=y
-# D-cache MUST stay off: the program-image pool lives in FMC SDRAM whose per-program MPU partitions
-# are Normal write-back write-allocate cacheable — a D-cache over the FMC precise-BusFaults on real
-# silicon (same reason FreeRTOS keeps D-cache off for OVE_LINUX; see commit 14ab3cc). I-cache alone
-# recovers the compute tax. Board-gated: the QEMU an521 has no cache model, so this is a no-op there.
-CONFIG_DCACHE=n
+# Enable the D-cache for the Linux personality. The program pool + framebuffer live in FMC SDRAM; the
+# guest maps its pool WBWA-cacheable NON-shareable (OVE_MEM_PART_RW_CACHE), the SAME attribute the
+# privileged run loop sees the SDRAM through (the static SDRAM1 region, ATTR_MPU_RAM), so
+# coordinator<->guest is coherent through one cache on this single core with no per-handoff
+# maintenance, and /dev/fb0 cleans the framebuffer to SDRAM on present (fb_port.c) for the LTDC DMA.
+# NON-shareable throughout avoids the shareable-Normal FMC precise-BusFault that kept the D-cache off
+# before — the old "keep it off" note predated FreeRTOS commit 8c5f067, which turned the personality
+# D-cache on too. Halves the guest render: the LVGL draw buffer + the fonts/rodata XIP'd from the
+# QSPI NOR are now D-cached. Board-gated; the an521 QEMU has no cache model, so this is a no-op there.
+CONFIG_DCACHE=y
 {% endif %}
 {% endif %}
