@@ -407,7 +407,10 @@ static void demo_body(void *arg)
 		sh_exit(1);
 	}
 	while (!g_feed_ready) /* let the feeder fill the queue before the program reads */
-		ove_time_delay_ms(1);
+		ove_thread_sleep_ms(1); /* BLOCKING sleep so the lower-priority worker runs: NuttX's
+					 * ove_time_delay_ms(1) busy-waits sub-tick (10 ms tick) and never
+					 * yields → the OVE_PRIO_LOW worker starves and the demo hangs here
+					 * before phase 2.  ove_thread_sleep_ms always usleep()s. */
 
 	const ove_lnx_run_config_t cfg1 = {
 		.rootfs = g_rootfs,
@@ -423,7 +426,7 @@ static void demo_body(void *arg)
 
 	g_linux_done = 1;
 	while (!g_worker_exited) /* wait for the worker to drain and return */
-		ove_time_delay_ms(1);
+		ove_thread_sleep_ms(1); /* blocking — must yield to the lower-priority worker (see above) */
 	(void)ove_thread_deinit(g_worker);
 
 	int ok = (rc1 >= 0) && (g_round_trip_n == N_READINGS);
