@@ -38,13 +38,18 @@ void ove_lvgl_unlock(void)
 
 void ove_lvgl_tick(uint32_t ms)
 {
-	/* Zephyr LVGL integration handles tick automatically */
-	(void)ms;
+	/* Feed the app's real elapsed time as the LVGL tick.  Harmless if Zephyr's auto-init
+	 * also installed an lv_tick_set_cb source (LVGL then ignores lv_tick_inc). */
+	lv_tick_inc(ms);
 }
 
 void ove_lvgl_handler(void)
 {
-	/* Zephyr LVGL integration handles rendering via workqueue */
+	/* Drive LVGL from the calling (app) thread.  CONFIG_LV_Z_RUN_LVGL_ON_WORKQUEUE is OFF, so
+	 * the app is the SOLE caller of lv_timer_handler — matching the FreeRTOS/NuttX seams.  The
+	 * Zephyr workqueue path rendered but never advanced periodic lv_timers (e.g. the benchmark's
+	 * scene-change timer), so scenes stuck on frame 0; driving it here is deterministic. */
+	lv_timer_handler();
 }
 #else /* !CONFIG_LVGL */
 
