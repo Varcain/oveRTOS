@@ -14,27 +14,26 @@
  *
  *  Phase 1 — BIDIRECTIONAL round trip. A native RTOS thread (ove_thread) feeds
  *  three "sensor readings" INTO a stock Linux program (BusyBox `cat`, an
- *  unprivileged uClibc bFLT) through its stdin, and drains what it echoes back
- *  OUT of its stdout — both halves crossing the personality boundary through
- *  oveRTOS message queues (ove_queue):
- *      RTOS feeder -> g_feed_q -> read cb -> [Linux cat] -> write cb -> g_consume_q -> RTOS consumer
+ *  unprivileged uClibc FDPIC) through its stdin, and drains what it echoes back
+ *  OUT of its stdout:
+ *      RTOS feeder -> g_feed_lines[] -> read cb -> [Linux cat] -> write cb -> g_round_trip[] -> RTOS consumer
  *
  *  Phase 2 — INTERACTIVE shell. The program then drops into an interactive
  *  BusyBox `sh`; type commands (ls /, echo hi, cat /etc/hostname, ...) and
  *  `exit` to finish.
  *
- * The personality's I/O callbacks run in the svc-trap (exception) context, so
- * there they use only the ISR-safe queue variants
- * (ove_queue_send_from_isr / ove_queue_receive_from_isr) and ARM semihosting
- * (the console transport — an architecture facility, not an RTOS primitive). The
- * RTOS worker uses the blocking ove_queue_send / ove_queue_receive in thread
- * context. Phase 1 pre-fills the feed queue before launching, so the program
- * never sees a premature EOF.
+ * The personality's I/O callbacks run in the svc-trap (exception/handler) context.
+ * That context is above configMAX_SYSCALL_INTERRUPT_PRIORITY, where the FreeRTOS
+ * FromISR queue APIs are undefined (their list ops race the scheduler — with the
+ * D-cache on the timing shift makes that corrupt a list and hang vListInsert). So
+ * phase 1 crosses the boundary with plain arrays + a published index, no RTOS list
+ * op from the handler. Phase 1 stages the feed array before launching, so the
+ * program never sees a premature EOF. (The console transport is ARM semihosting /
+ * a non-blocking UART — an architecture facility, not an RTOS primitive.)
  */
 
 #include <string.h>
 
-#include "ove/queue.h"
 #include "ove/thread.h"
 #include "ove/time.h"
 
@@ -55,7 +54,9 @@
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
 #endif
 
+#ifndef UNUSED
 #define UNUSED(x) ((void)(x))
+#endif
 
 /* ---- the personality console (program stdin/stdout + program exit) --------- */
 /* Driven from the PRIVILEGED personality context; must be NON-BLOCKING-pollable so
@@ -190,14 +191,16 @@ static uint32_t uptime_ms(void)
 struct lnx_line {
 	char text[56];
 };
-#define QDEPTH 8
-static ove_queue_t g_feed_q;	/* RTOS -> Linux (program stdin)  */
-static ove_queue_t g_consume_q; /* Linux -> RTOS (program stdout) */
-static ove_queue_storage_t g_feed_storage, g_consume_storage;
-static uint8_t g_feed_buf[sizeof(struct lnx_line) * QDEPTH];
-static uint8_t g_consume_buf[sizeof(struct lnx_line) * QDEPTH];
-
 #define N_READINGS 3
+
+/* Phase-1 I/O uses plain arrays, NOT FreeRTOS queues. feed_read/consume_write run in the guest's
+ * SVC handler (handler mode, above configMAX_SYSCALL_INTERRUPT_PRIORITY), where the FromISR queue
+ * APIs are UNDEFINED — their internal FreeRTOS-list operations race the scheduler and (with the M7
+ * D-cache on, which speeds the guest up and shifts the timing) corrupt a list, hanging vListInsert.
+ * A pre-staged array served by a published index touches no FreeRTOS list, so it is safe from the
+ * handler. The native worker thread + the two-way data flow are preserved. */
+static struct lnx_line g_feed_lines[N_READINGS]; /* RTOS -> Linux: readings staged up front */
+static volatile int g_feed_idx;			 /* feed_read cursor; == N_READINGS => EOF */
 static volatile int g_feed_ready;	  /* all feed lines queued (so no premature EOF) */
 static volatile int g_linux_done;	  /* the phase-1 program has exited */
 static volatile int g_worker_exited;	  /* the worker thread has returned */
@@ -216,15 +219,14 @@ static void rtos_worker(void *arg)
 {
 	UNUSED(arg);
 
-	/* RTOS -> Linux: produce the readings up front so they are all waiting when
-	 * the program starts reading (the read callback cannot block to wait). */
+	/* RTOS -> Linux: stage all the readings up front into a plain array; feed_read (in the guest's
+	 * SVC handler) serves them by index. The program cannot block waiting for input, so pre-staging
+	 * also guarantees "empty == genuine EOF". */
 	for (int i = 1; i <= N_READINGS; i++) {
-		struct lnx_line m;
-		char *p = put_str(m.text, "reading-");
+		char *p = put_str(g_feed_lines[i - 1].text, "reading-");
 		p = put_dec(p, (uint32_t)i);
 		*p++ = '\n'; /* the program reads a line at a time */
 		*p = 0;
-		(void)ove_queue_send(g_feed_q, &m, OVE_MS(100));
 		char b2[40];
 		char *q = put_str(b2, "[rtos-feeder] -> Linux: reading-");
 		q = put_dec(q, (uint32_t)i);
@@ -234,29 +236,31 @@ static void rtos_worker(void *arg)
 	}
 	g_feed_ready = 1;
 
-	/* Linux -> RTOS: drain what the program echoes back, concurrently with it. */
-	struct lnx_line m;
+	/* Linux -> RTOS: print each reply the moment consume_write records it — concurrently with the
+	 * running program. consume_write publishes g_round_trip_n AFTER the text, so any count we read
+	 * here has its text fully written. */
+	int printed = 0;
 	for (;;) {
-		if (ove_queue_receive(g_consume_q, &m, OVE_MS(50)) == OVE_OK) {
-			if (g_round_trip_n < N_READINGS) {
-				strncpy(g_round_trip[g_round_trip_n], m.text,
-					sizeof(g_round_trip[0]) - 1);
-				g_round_trip[g_round_trip_n][sizeof(g_round_trip[0]) - 1] = 0;
-			}
-			g_round_trip_n++;
+		while (printed < g_round_trip_n) {
 			char line[96];
 			char *p = put_str(line, "[rtos-consumer] <- Linux (round trip #");
-			p = put_dec(p, (uint32_t)g_round_trip_n);
+			p = put_dec(p, (uint32_t)(printed + 1));
 			p = put_str(p, " @ ");
 			p = put_dec(p, uptime_ms());
 			p = put_str(p, " ms): \"");
-			p = put_str(p, m.text);
+			p = put_str(p, g_round_trip[printed]);
 			p = put_str(p, "\"\n");
 			*p = 0;
 			sh_write0(line);
-		} else if (g_linux_done) {
-			break;
+			printed++;
 		}
+		if (g_linux_done && printed >= g_round_trip_n)
+			break;
+		/* Poll coarsely (not a tight spin): the worker must stay fully idle across the whole load
+		 * window so it neither preempts nor churns the scheduler while demo_body reads the program
+		 * image from the QUADSPI (see the OVE_PRIO_LOW note above). 50 ms comfortably spans the load;
+		 * the replies then print in a small burst — correct, just not one-at-a-time. */
+		ove_time_delay_ms(50);
 	}
 	g_worker_exited = 1;
 }
@@ -268,13 +272,13 @@ static long feed_read(void *ctx, int fd, void *buf, size_t len)
 {
 	UNUSED(ctx);
 	UNUSED(fd);
-	struct lnx_line m;
-	if (ove_queue_receive_from_isr(g_feed_q, &m) != OVE_OK)
-		return 0; /* EOF */
-	size_t l = strlen(m.text);
+	if (g_feed_idx >= N_READINGS)
+		return 0; /* EOF: every staged reading has been served */
+	const char *src = g_feed_lines[g_feed_idx++].text;
+	size_t l = strlen(src);
 	if (l > len)
 		l = len;
-	memcpy(buf, m.text, l);
+	memcpy(buf, src, l);
 	return (long)l;
 }
 
@@ -283,14 +287,20 @@ static long consume_write(void *ctx, int fd, const void *buf, size_t len)
 {
 	UNUSED(ctx);
 	UNUSED(fd);
-	struct lnx_line m;
-	size_t n = len < sizeof(m.text) - 1 ? len : sizeof(m.text) - 1;
-	memcpy(m.text, buf, n);
-	while (n && (m.text[n - 1] == '\n' || m.text[n - 1] == '\r'))
+	char tmp[56];
+	size_t n = len < sizeof(tmp) - 1 ? len : sizeof(tmp) - 1;
+	memcpy(tmp, buf, n);
+	while (n && (tmp[n - 1] == '\n' || tmp[n - 1] == '\r'))
 		n--;
-	m.text[n] = 0;
-	if (n)
-		(void)ove_queue_send_from_isr(g_consume_q, &m);
+	tmp[n] = 0;
+	if (n) {
+		int idx = g_round_trip_n;
+		if (idx < N_READINGS) {
+			memcpy(g_round_trip[idx], tmp, n + 1);
+			__asm__ volatile("" ::: "memory"); /* publish the text before the count */
+			g_round_trip_n = idx + 1; /* the worker prints replies as this advances */
+		}
+	}
 	return (long)len;
 }
 
@@ -377,19 +387,15 @@ static void demo_body(void *arg)
 		sh_exit(1);
 	}
 
-	/* RTOS-side primitives, all via oveRTOS APIs. */
-	if (ove_queue_init(&g_feed_q, &g_feed_storage, g_feed_buf, sizeof(struct lnx_line),
-			   QDEPTH) != OVE_OK ||
-	    ove_queue_init(&g_consume_q, &g_consume_storage, g_consume_buf, sizeof(struct lnx_line),
-			   QDEPTH) != OVE_OK) {
-		sh_write0("[demo] FAIL: ove_queue_init\n");
-		sh_exit(1);
-	}
-
 	/* ---- Phase 1: bidirectional round trip through BusyBox `cat` ---------- */
 	sh_write0("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");
+	/* BELOW the demo task (OVE_PRIO_NORMAL): the worker feeds the readings (before the program
+	 * launches) and drains its output (during/after the run). It runs when demo_body blocks — in
+	 * the pre-feed wait just below and, once the program is running, in the event-driven
+	 * coordinator's event_wait — so both directions co-run without the worker preempting the
+	 * coordinator while it is loading a program. */
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
-			    OVE_PRIO_HIGH, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
+			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
 		sh_write0("[demo] FAIL: ove_thread_init\n");
 		sh_exit(1);
 	}
