@@ -105,6 +105,21 @@ static unsigned mock_poll(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o)
 	return OVE_LNX_POLLIN | OVE_LNX_POLLOUT;
 }
 
+/* mmap(2) (P3): hand back a fixed "device buffer" + a cache-attr hint, rejecting a
+ * request past the device extent — the shape the /dev/fb0 driver's op has. */
+static uint8_t g_mock_fb[256];
+static long mock_mmap(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p,
+		      size_t len, uint32_t pgoff, uintptr_t *phys, unsigned *attrs)
+{
+	(void)o;
+	(void)p;
+	if (pgoff != 0 || len > d->size)
+		return -OVE_LNX_EINVAL;
+	*phys = (uintptr_t)g_mock_fb;
+	*attrs = OVE_LNX_MAP_NC;
+	return 0;
+}
+
 static const struct ove_lnx_dev_ops mock_ops = {
 	.open = mock_open,
 	.release = mock_release,
@@ -112,6 +127,7 @@ static const struct ove_lnx_dev_ops mock_ops = {
 	.write = mock_write,
 	.ioctl = mock_ioctl,
 	.poll = mock_poll,
+	.mmap = mock_mmap,
 };
 
 static const struct ove_lnx_dev mock_dev = {
@@ -229,6 +245,37 @@ static void test_dev_ioctl(void **state)
 	/* A bad user pointer (NULL) is rejected by the handler's user_ok → -EFAULT. */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, fd, MOCK_IOC_GET, 0, 0, 0, 0),
 			 -OVE_LNX_EFAULT);
+
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
+}
+
+/* mmap(2) of a device buffer (P3): sys_mmap2 routes a /dev fd with an .mmap op to it, which
+ * PARKS on DEVW_MMAP — the run-loop coordinator (not present in this unit test) would then
+ * install the MPU region + resume with r0 = the mapped address. Assert the deferral state the
+ * coordinator consumes (dev_wait/dev_buf/dev_len/dev_cmd), and that a request past the device
+ * extent is rejected by the driver op without parking. */
+static void test_dev_mmap(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup(&p, &arena);
+	long fd = dev_open(&p, OVE_LNX_O_RDWR);
+	assert_true(fd >= 3);
+
+	/* MAP_SHARED (0x1), NOT MAP_ANONYMOUS, PROT_READ|WRITE (0x3) — the fbdev shape. */
+	long r = ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 256, 0x3, 0x1, fd, 0);
+	assert_int_equal(r, 0); /* parked, not an immediate return */
+	assert_int_equal(p.dev_wait, OVE_LNX_DEVW_MMAP);
+	assert_int_equal(p.dev_buf, (uintptr_t)g_mock_fb);
+	assert_int_equal(p.dev_len, 256);
+	assert_int_equal(p.dev_cmd, OVE_LNX_MAP_NC);
+
+	/* A length past the device extent is rejected by the driver op — no park. */
+	p.dev_wait = 0;
+	long r2 = ove_lnx_syscall(&p, OVE_LNX_NR_mmap2, 0, 512, 0x3, 0x1, fd, 0);
+	assert_int_equal(r2, -OVE_LNX_EINVAL);
+	assert_int_equal(p.dev_wait, 0);
 
 	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
 }
@@ -390,6 +437,7 @@ int test_linux_dev_run(void)
 		cmocka_unit_test(test_dev_open_close),
 		cmocka_unit_test(test_dev_read_write),
 		cmocka_unit_test(test_dev_ioctl),
+		cmocka_unit_test(test_dev_mmap),
 		cmocka_unit_test(test_dev_stat_lseek_poll),
 		cmocka_unit_test(test_dev_deferred_block),
 		cmocka_unit_test(test_dev_dup_refcount),

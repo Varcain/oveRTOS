@@ -146,11 +146,30 @@ static unsigned fb_poll(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o)
 	return OVE_LNX_POLLOUT; /* always writable, never readable-blocking */
 }
 
+/* mmap(2) (P3): hand the guest the framebuffer itself, so a stock LVGL fbdev program
+ * with LV_LINUX_FBDEV_MMAP=1 writes pixels straight into it — replacing ~272 per-row
+ * pwrite syscalls/frame with a userspace memcpy. Normal-NC: the guest's stores reach
+ * SDRAM directly for the LTDC's continuous scanout, with no cache maintenance. The
+ * run-loop coordinator installs the actual MPU region (eng->map_device). */
+static long fb_mmap(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p, size_t len,
+		    uint32_t pgoff, uintptr_t *phys, unsigned *attrs)
+{
+	(void)o;
+	(void)p;
+	uint8_t *fb = ove_fb_get_buffer();
+	if (!fb || pgoff != 0 || len > d->size)
+		return -OVE_LNX_EINVAL;
+	*phys = (uintptr_t)fb;
+	*attrs = OVE_LNX_MAP_NC;
+	return 0;
+}
+
 static const struct ove_lnx_dev_ops fb_ops = {
 	.read = fb_read,
 	.write = fb_write,
 	.ioctl = fb_ioctl,
 	.poll = fb_poll,
+	.mmap = fb_mmap,
 };
 
 /* Present the framebuffer to the display at ~30 Hz (coalesces a per-scanline

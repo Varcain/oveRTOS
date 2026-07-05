@@ -112,6 +112,14 @@ struct ove_lnx_dev_open {
 #define OVE_LNX_MAP_WT 1u  /**< Normal, write-through. */
 #define OVE_LNX_MAP_DEV 2u /**< Device memory. */
 
+/** dev_wait op codes: which parked device op the coordinator retries/completes.
+ *  Shared with the run loop (backends/common/ove_lnx_run.c) so it can special-case
+ *  DEVW_MMAP (the only one needing the engine's map_device seam). */
+#define OVE_LNX_DEVW_READ 1u
+#define OVE_LNX_DEVW_WRITE 2u
+#define OVE_LNX_DEVW_IOCTL 3u
+#define OVE_LNX_DEVW_MMAP 4u /**< P3: coordinator installs the MPU region, resumes r0 = mapped addr. */
+
 /**
  * @brief Register a character device (class driver or board/app custom).
  *
@@ -165,6 +173,10 @@ long ove_lnx_dev_write(ove_lnx_proc_t *p, int oi, const void *buf, size_t len);
 long ove_lnx_dev_pread(ove_lnx_proc_t *p, int oi, void *buf, size_t len, uint32_t off);
 long ove_lnx_dev_pwrite(ove_lnx_proc_t *p, int oi, const void *buf, size_t len, uint32_t off);
 long ove_lnx_dev_ioctl(ove_lnx_proc_t *p, int oi, unsigned long cmd, unsigned long arg);
+/** mmap(2) a device buffer (P3): resolve the physical range via the driver's .mmap
+ *  op, then park (DEVW_MMAP) so the coordinator installs the MPU region + resumes
+ *  the proc with r0 = the mapped address. Returns 0 (parked) or a negative errno. */
+long ove_lnx_dev_mmap(ove_lnx_proc_t *p, int oi, size_t len, uint32_t pgoff);
 unsigned ove_lnx_dev_poll(int oi);
 /** lseek on open @p oi within the device's @c size; -ESPIPE if not seekable. */
 long ove_lnx_dev_lseek(int oi, long off, int whence);

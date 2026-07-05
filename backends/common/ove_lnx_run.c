@@ -542,6 +542,13 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_dbg[sidx].entry = at_entry;
 	g_ove_lnx_dbg[sidx].dynamic = prog.dynamic; /* _DYNAMIC → DT_DEBUG → ld.so's link-map chain */
 	g_ove_lnx_dbg[sidx].interp_base = at_base;   /* ld.so text base (0 if static) */
+	/* P3: a fresh image in this slot inherits no device mmap. Clear the dev_map ranges
+	 * (they gate user_ok) and tear down any framebuffer region a prior occupant of this
+	 * slot installed (map_device with size 0), so an exec/relaunch never leaks it. */
+	g_ove_lnx_proc[sidx].dev_map_lo[0] = g_ove_lnx_proc[sidx].dev_map_hi[0] = 0;
+	g_ove_lnx_proc[sidx].dev_map_lo[1] = g_ove_lnx_proc[sidx].dev_map_hi[1] = 0;
+	if (eng->map_device)
+		eng->map_device(sidx, 0, 0, 0);
 	return eng->spawn_launch(sidx, ridx, &prog, (void *)pc, sp, stack_lo);
 }
 
@@ -1005,7 +1012,25 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_DEV)
 			/* Blocked device I/O: retry (the driver may now have data/space); resume
 			 * the proc when the op completes. Mirrors the pipe retry above. */
-			if (p->dev_wait && !g_ove_lnx_used[s]) {
+			if (p->dev_wait == OVE_LNX_DEVW_MMAP && !g_ove_lnx_used[s]) {
+				/* Device mmap (P3): install the unprivileged MPU region over the
+				 * device buffer on THIS (coordinator) thread — domain/TCB edits are
+				 * not svc-exception-safe — record it for user_ok, and resume the proc
+				 * with r0 = the mapped address (or -errno if the engine can't map). */
+				long r = eng->map_device
+						 ? (eng->map_device(s, (uintptr_t)p->dev_buf, p->dev_len,
+								    (unsigned)p->dev_cmd) == 0
+							    ? (long)p->dev_buf
+							    : -OVE_LNX_ENOMEM)
+						 : -OVE_LNX_ENODEV;
+				if (r >= 0) {
+					p->dev_map_lo[0] = (uintptr_t)p->dev_buf;
+					p->dev_map_hi[0] = (uintptr_t)p->dev_buf + p->dev_len;
+				}
+				p->dev_wait = 0;
+				eng->spawn_resume(s, p->region, &g_ctx[s], r);
+				progress = 1;
+			} else if (p->dev_wait && !g_ove_lnx_used[s]) {
 				long r = ove_lnx_dev_retry(p);
 				if (r != -OVE_LNX_EAGAIN) {
 					p->dev_wait = 0;

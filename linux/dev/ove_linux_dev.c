@@ -35,10 +35,8 @@
 #define OVE_LNX_O_NONBLOCK 0x800
 #endif
 
-/* proc->dev_wait states (what op the coordinator must retry). */
-#define OVE_LNX_DEVW_READ 1
-#define OVE_LNX_DEVW_WRITE 2
-#define OVE_LNX_DEVW_IOCTL 3
+/* proc->dev_wait states (OVE_LNX_DEVW_*) now live in ove/linux/dev.h, shared with
+ * the run loop so it can special-case DEVW_MMAP (needs the engine map_device seam). */
 
 #define OVE_LNX_NDEV 16	    /* max registered device nodes */
 #define OVE_LNX_NDEVOPEN 16 /* max concurrent device opens (pooled) */
@@ -234,6 +232,32 @@ long ove_lnx_dev_ioctl(ove_lnx_proc_t *p, int oi, unsigned long cmd, unsigned lo
 		return 0;
 	}
 	return r;
+}
+
+/* mmap(2) a device buffer (P3): the driver's .mmap op resolves the physical range +
+ * cache attrs (e.g. /dev/fb0 -> the LTDC framebuffer, Normal-NC), then we PARK on
+ * DEVW_MMAP. Adding the unprivileged MPU region over that range is a domain/TCB edit
+ * that is not safe from the svc-exception dispatch, so the run-loop coordinator does
+ * it (eng->map_device) and resumes the proc with r0 = the mapped address. */
+long ove_lnx_dev_mmap(ove_lnx_proc_t *p, int oi, size_t len, uint32_t pgoff)
+{
+	struct ove_lnx_dev_open *o = open_slot(oi);
+	if (!o)
+		return -OVE_LNX_EBADF;
+	struct ove_lnx_dev *d = &g_lnx_devs[o->dev];
+	if (!d->ops->mmap)
+		return -OVE_LNX_ENODEV; /* not mappable -> caller falls back to the write path */
+	uintptr_t phys = 0;
+	unsigned attrs = OVE_LNX_MAP_NC;
+	long r = d->ops->mmap(d, o, p, len, pgoff, &phys, &attrs);
+	if (r < 0)
+		return r;
+	p->dev_wait = OVE_LNX_DEVW_MMAP;
+	p->dev_oi = oi;
+	p->dev_buf = phys;  /* physical base to map */
+	p->dev_len = len;   /* extent */
+	p->dev_cmd = attrs; /* OVE_LNX_MAP_* hint for the engine seam */
+	return 0;
 }
 
 /* Positioned I/O: drive the same read/write op at `off` with the fd cursor
