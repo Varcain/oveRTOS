@@ -15,8 +15,11 @@
 #define DISP_VER_RES OVE_DISPLAY_HEIGHT
 #define BYTES_PER_PIXEL 2
 
-/* Partial draw buffer in internal RAM (~10 lines worth = 9600 bytes) */
-#define DRAW_BUF_LINES 10
+/* Partial draw buffer in internal SRAM (20 lines = 19200 bytes).  Swept on real
+ * silicon: 20 lines is the largest that fits SRAM alongside the 96 KB LV_MEM, and
+ * beats every SDRAM-placed size (even full-screen), which tops out ~1 FPS lower —
+ * the M7's 4 KB D-cache thrashes on a large SDRAM buffer.  10->20 lines: 20->22 FPS. */
+#define DRAW_BUF_LINES 20
 static uint8_t draw_buf[DISP_HOR_RES * DRAW_BUF_LINES * BYTES_PER_PIXEL]
 	__attribute__((aligned(32)));
 
