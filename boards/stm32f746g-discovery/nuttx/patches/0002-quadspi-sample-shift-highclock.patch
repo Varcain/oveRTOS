@@ -1,0 +1,17 @@
+diff --git a/arch/arm/src/stm32f7/stm32_qspi.c b/arch/arm/src/stm32f7/stm32_qspi.c
+index 1cf9638d..3887dc86 100644
+--- a/arch/arm/src/stm32f7/stm32_qspi.c
++++ b/arch/arm/src/stm32f7/stm32_qspi.c
+@@ -2441,7 +2441,11 @@ static int qspi_hw_initialize(struct stm32f7_qspidev_s *priv)
+   regval  = qspi_getreg(priv, STM32_QUADSPI_CR_OFFSET);
+   regval &= ~(QSPI_CR_PRESCALER_MASK | QSPI_CR_SSHIFT);
+   regval |= (0x01 << QSPI_CR_PRESCALER_SHIFT);
+-  regval |= (0x00);
++  /* oveRTOS: enable the half-cycle sample shift, matching the STM32Cube/FreeRTOS BSP
++   * (QSPI_SAMPLE_SHIFTING_HALFCYCLE).  The stock driver forces SSHIFT=0 here, which is
++   * fine <=54 MHz but makes quad reads capture in the wrong window at higher clocks ->
++   * the memory-mapped QSPI-XIP rootfs returns garbage.  Required for 72/108 MHz XIP. */
++  regval |= QSPI_CR_SSHIFT;
+   qspi_putreg(priv, regval, STM32_QUADSPI_CR_OFFSET);
+ 
+   /* Configure QSPI Flash Size, CS High Time and Clock Mode */
