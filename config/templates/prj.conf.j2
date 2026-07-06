@@ -246,6 +246,21 @@ CONFIG_DISK_DRIVERS=n
 # the trusted framework threads, matching how FreeRTOS/NuttX run on this board. Board-gated so the
 # QEMU an521 (with MPU headroom to spare) keeps its guard.
 CONFIG_HW_STACK_PROTECTION=n
+# With that supervisor stack guard off, an ISR/MSP-stack overflow is SILENT. The personality runs
+# each UNPRIVILEGED program's `svc #0` syscall dispatch in Handler mode on the ISR stack
+# (z_interrupt_stacks) — Zephyr is the only engine that does this (FreeRTOS/NuttX run programs
+# privileged on their own stacks). ove_lnx_syscall's path resolution is deep and uses several
+# nested 256-byte path buffers, and with CONFIG_FPU every exception frame is extended (~68 B more).
+# The default 4096 overflows on path-heavy syscalls (an `ls -l` loop resets in ~1 command; lvbench's
+# shallow /dev/fb0 writes survive ~2 runs) -> it corrupts kernel SRAM -> a wild return into
+# sh_exit's SYSRESETREQ -> a silent reset with NO fault dump (a deliberate reset, not a CPU fault,
+# so z_fatal_error never runs). Size the ISR stack for it — FREE on the tight 8-region MPU budget:
+# it lives in the static kernel-SRAM region, so it costs zero MPU regions, unlike re-enabling the
+# guard. Found via on-target GDB (reset at z_arm_reset, no dump, current=lnx2, CFSR=0). The 256 KB
+# on-chip SRAM is nearly full, so free the room for this from the k_heap pool below (the personality
+# keeps its real pools in SDRAM, so 48 KB of Zephyr k_heap is ample) rather than growing SRAM use.
+CONFIG_ISR_STACK_SIZE=12288
+CONFIG_HEAP_MEM_POOL_SIZE=49152
 {% if get_bool("CONFIG_OVE_FB") %}
 # lvbench on the panel: re-enable the LTDC display + the QSPI-XIP rootfs (overrides the headless
 # CONFIG_DISPLAY=n above; the ove-linux-fb.overlay re-enables the DT nodes). STM32_MEMMAP auto-maps
