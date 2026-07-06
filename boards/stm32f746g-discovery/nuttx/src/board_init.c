@@ -36,7 +36,19 @@ extern void stm32f7_qspi_enter_memorymapped(struct qspi_dev_s *dev,
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 /* Bring the N25Q128A up in memory-mapped QUAD-read mode at 0x90000000, matching the
  * proven FreeRTOS/Cube path exactly: 0xEB (QUAD I/O fast read, 1-4-4), 10 dummy
- * cycles, 54 MHz.  The N25Q's Volatile Config Register dummy field (bits [7:4]) MUST
+ * cycles, 108 MHz (the N25Q128A's rated quad ceiling; 216 MHz kernel clock / 2), matching
+ * FreeRTOS/Cube.  The FDPIC guest XIPs its code + rodata from here, so this clock gates render
+ * throughput (lvbench render 62 -> 38 ms across 54 -> 108 MHz, 5/5 clean on silicon).  Two config
+ * fixes the stock NuttX path lacked — found by cross-referencing the Cube BSP field-by-field and by
+ * diffing the LIVE QUADSPI registers against the working FreeRTOS build:
+ *   (a) QUADSPI_CR.SSHIFT — the half-cycle sample shift the stock stm32_qspi driver forces off (its
+ *       "regval |= 0x00" placeholder); restored by board patch 0002-quadspi-sample-shift.  Without
+ *       it every quad read captures in the wrong window (parse fails even <=54 MHz).
+ *   (b) DCR.CSHT — chip-select-high time between transactions.  Driver default is 1 cycle; Cube uses
+ *       6 (CONFIG_STM32F7_QSPI_CSHT=6 in ove_board_defconfig.linux).  1 cycle (~9 ns) is too little
+ *       N25Q deselect margin at 108 MHz — the SOLE DCR difference vs FreeRTOS, and why single reads
+ *       corrupt worse than cached bursts (more CS toggles = more marginal transaction starts).
+ * The N25Q's Volatile Config Register dummy field (bits [7:4]) MUST
  * equal the read's dummy count or quad reads return garbage; VCR is volatile so it is
  * reprogrammed every boot (read 0x85 / write-enable 0x06 / write 0x81). */
 static void qspi_rootfs_memmap(void)
@@ -46,7 +58,7 @@ static void qspi_rootfs_memmap(void)
 		return;
 	QSPI_SETMODE(qspi, QSPIDEV_MODE0);
 	QSPI_SETBITS(qspi, 8);
-	QSPI_SETFREQUENCY(qspi, 54000000); /* enter_memorymapped does not set the clock */
+	QSPI_SETFREQUENCY(qspi, 108000000); /* enter_memorymapped does not set the clock */
 
 	struct qspi_cmdinfo_s c;
 	uint8_t vcr = 0;
