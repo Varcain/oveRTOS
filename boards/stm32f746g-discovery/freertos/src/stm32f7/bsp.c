@@ -108,11 +108,12 @@ static void bsp_qspi_init(void)
 	if (BSP_QSPI_Init() != QSPI_OK)
 		for (;;) { /* QSPI controller/chip bring-up failed — halt (GDB-findable) */
 		}
-	/* The Cube BSP clocks the QUADSPI at 216/(1+1) = 108 MHz.  Drop to 216/(3+1) =
-	 * 54 MHz — well within the N25Q128A's rating — as a conservative margin for the
-	 * memory-mapped quad read the guest XIPs from.  Safe to change while idle
-	 * (BUSY=0 right after init). */
-	MODIFY_REG(QUADSPI->CR, QUADSPI_CR_PRESCALER, (3u << QUADSPI_CR_PRESCALER_Pos));
+	/* Run the memory-mapped QSPI XIP read clock at 216/(1+1) = 108 MHz — the N25Q128A's rated
+	 * quad-read ceiling (with the 10 dummy cycles + half-cycle sample shift BSP_QSPI_Init sets)
+	 * and the STM32Cube Discovery BSP default.  The FDPIC guest XIPs its code + rodata from here,
+	 * so this clock directly gates render throughput: 108 MHz vs the earlier conservative 54 MHz
+	 * lifts lvbench 16->22 FPS, validated 5/5 clean runs on silicon. */
+	MODIFY_REG(QUADSPI->CR, QUADSPI_CR_PRESCALER, (1u << QUADSPI_CR_PRESCALER_Pos));
 	bsp_qspi_flash_stage(); /* host-assisted programming (indirect mode) — no-op on a normal boot */
 	if (BSP_QSPI_EnableMemoryMappedMode() != QSPI_OK)
 		for (;;) { /* memory-mapped enable failed — halt (GDB-findable) */
