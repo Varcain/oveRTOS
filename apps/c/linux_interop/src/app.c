@@ -346,9 +346,9 @@ static void on_enosys(long nr)
 }
 
 /* ---- rootfs (parsed from the embedded Buildroot CPIO) ---------------------- */
-#define ROOTFS_MAX_FILES 256
+#define ROOTFS_MAX_FILES 512
 static ove_lnx_file_t g_rootfs[ROOTFS_MAX_FILES];
-static char g_rootfs_names[8192];
+static char g_rootfs_names[16 * 1024];
 static int g_rootfs_n;
 
 /* The engine-agnostic demo. On FreeRTOS the scheduler starts inside ove_run(), so
@@ -388,7 +388,16 @@ static void demo_body(void *arg)
 					    sizeof(g_rootfs_names));
 #endif
 	if (g_rootfs_n <= 0) {
-		sh_write0("[demo] FAIL: rootfs CPIO parse failed\n");
+		char b[96];
+		char *p = put_str(b, "[demo] FAIL: rootfs CPIO parse failed n=");
+		p = put_dec(p, (uint32_t)g_rootfs_n);
+		p = put_str(p, " max_files=");
+		p = put_dec(p, ROOTFS_MAX_FILES);
+		p = put_str(p, " namebuf=");
+		p = put_dec(p, sizeof(g_rootfs_names));
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(b);
 		sh_exit(1);
 	}
 

@@ -91,7 +91,9 @@ config OVE_LINUX_ROOTFS_QSPI
       Read the embedded rootfs from the QSPI memory-mapped window (0x90000000)
       instead of embedding it in the firmware image. Frees the internal flash
       for the firmware, so a large (LVGL) rootfs fits on the STM32F746. The
-      CPIO must be programmed into QSPI separately (flash-qspi.sh).
+      CPIO must be programmed into QSPI separately; on STM32F746G-DISCO use
+      boards/stm32f746g-discovery/freertos/flash-qspi.sh, which drives OpenOCD
+      stmqspi directly.
 
 config OVE_LINUX_DEV
     bool "Linux personality: /dev character-device layer"
