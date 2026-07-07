@@ -1,66 +1,66 @@
 #!/bin/bash
-# Program the Linux rootfs.cpio into the STM32F746-Discovery on-board QSPI NOR
-# (N25Q128A, 16 MB) at 0x90000000, so a CONFIG_OVE_LINUX_ROOTFS_QSPI firmware
-# XIPs its rootfs from external flash (the internal 1 MB flash then holds only
-# the firmware, so a large LVGL rootfs fits).
+# Program the Linux rootfs.cpio into the STM32F746G-Discovery on-board QSPI NOR
+# (Micron N25Q128A, 16 MB) at 0x90000000.
 #
-# Firmware-assisted: the QSPI firmware must already be flashed (flash.sh).  We
-# halt at bsp_qspi_flash_stage (SDRAM + QUADSPI-indirect up), stage the cpio in
-# SDRAM + a {magic,len} request header, and let the target erase + program the
-# NOR with the ST-validated BSP_QSPI_Write at QUADSPI speed — far faster + more
-# robust than programming over SWD, and it reuses the firmware's own QSPI
-# bring-up.  bsp_qspi_flash_stage sets the header to 'DONE' when it finishes;
-# BSP_QSPI_EnableMemoryMappedMode runs immediately after it, so a breakpoint
-# there is exactly "programming complete" (the 4 KB-granular erase of the whole
-# rootfs takes tens of seconds — do NOT use a fixed delay).
+# This uses OpenOCD's stm32f746g-disco board script, which enables the stmqspi
+# flash driver and brings up QUADSPI directly through reset-init. No matching
+# firmware image or SDRAM staging hook is required.
 #
-# Usage: flash-qspi.sh <firmware.elf> <rootfs.cpio>
-set -e
+# Usage: flash-qspi.sh <rootfs.cpio>
+set -euo pipefail
 
-FIRMWARE="${1:?Usage: $0 <firmware.elf> <rootfs.cpio>}"
-CPIO="${2:?Usage: $0 <firmware.elf> <rootfs.cpio>}"
-[ -f "$FIRMWARE" ] || { echo "not found: $FIRMWARE"; exit 1; }
-[ -f "$CPIO" ] || { echo "not found: $CPIO"; exit 1; }
+usage() {
+	echo "Usage: $0 <rootfs.cpio>" >&2
+	echo "Legacy two-argument form is accepted as: $0 <firmware.elf> <rootfs.cpio>" >&2
+}
 
-# SDRAM staging (transient — before the personality's SDRAM pools are used):
-#   header {magic, len} at 0xC01F0000, cpio at 0xC0200000.  Kept in step with bsp.c.
-HDR=0xC01F0000
-DATA=0xC0200000
-REQ=0x51535052  # 'QSPR' — request a program
-DONE=0x444f4e45 # 'DONE' — target finished
+case "$#" in
+1)
+	CPIO=$1
+	;;
+2)
+	echo "warning: firmware argument is ignored; using OpenOCD stmqspi direct programming" >&2
+	CPIO=$2
+	;;
+*)
+	usage
+	exit 1
+	;;
+esac
 
-NM=$(command -v arm-none-eabi-nm || echo arm-none-eabi-nm)
-STAGE=$("$NM" "$FIRMWARE" | awk '/ bsp_qspi_flash_stage$/{print "0x"$1}')
-MMAP=$("$NM" "$FIRMWARE" | awk '/ BSP_QSPI_EnableMemoryMappedMode$/{print "0x"$1}')
-[ -n "$STAGE" ] || { echo "bsp_qspi_flash_stage symbol not found in $FIRMWARE"; exit 1; }
-[ -n "$MMAP" ] || { echo "BSP_QSPI_EnableMemoryMappedMode symbol not found in $FIRMWARE"; exit 1; }
+[ -f "$CPIO" ] || { echo "not found: $CPIO" >&2; exit 1; }
+
+OPENOCD=${OPENOCD:-openocd}
+BOARD_CFG=${BOARD_CFG:-board/stm32f746g-disco.cfg}
+QSPI_ADDR=${QSPI_ADDR:-0x90000000}
+QSPI_BANK=${QSPI_BANK:-3}
+MAX_QSPI=$((16 * 1024 * 1024))
+
+command -v "$OPENOCD" >/dev/null 2>&1 || { echo "not found: $OPENOCD" >&2; exit 1; }
+
 LEN=$(stat -c%s "$CPIO")
-echo "staging $LEN bytes -> QSPI (bp bsp_qspi_flash_stage @ $STAGE, done @ $MMAP)"
-
-OUT=$(openocd -f interface/stlink.cfg -f target/stm32f7x.cfg \
-    -c "init" \
-    -c "reset halt" \
-    -c "bp $STAGE 2 hw" \
-    -c "bp $MMAP 2 hw" \
-    -c "resume" \
-    -c "wait_halt 10000" \
-    -c "load_image $CPIO $DATA bin" \
-    -c "mww [expr {$HDR + 4}] $LEN" \
-    -c "mww $HDR $REQ" \
-    -c "resume" \
-    -c "wait_halt 180000" \
-    -c "mdw $HDR 1" \
-    -c "rbp $STAGE" \
-    -c "rbp $MMAP" \
-    -c "reset run" \
-    -c "exit" 2>&1)
-echo "$OUT"
-
-# The mdw of the header must read back 'DONE' (0x444f4e45); anything else means
-# the erase/program did not complete (e.g. the wait timed out).
-if echo "$OUT" | grep -qi "${DONE#0x}"; then
-    echo "OK — rootfs programmed; the target now boots from the QSPI rootfs."
-else
-    echo "FAILED — header did not read back DONE; QSPI may be partially programmed."
-    exit 1
+if [ "$LEN" -gt "$MAX_QSPI" ]; then
+	echo "rootfs too large for QSPI: $LEN > $MAX_QSPI" >&2
+	exit 1
 fi
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+CPIO_REAL=$(realpath "$CPIO")
+CPIO_OPENOCD="$TMPDIR/rootfs.cpio"
+ln -s "$CPIO_REAL" "$CPIO_OPENOCD"
+
+echo "programming $LEN bytes -> QSPI $QSPI_ADDR (OpenOCD stmqspi bank $QSPI_BANK)"
+echo "erase is padded to the QSPI sector boundary by OpenOCD"
+
+"$OPENOCD" -f "$BOARD_CFG" \
+	-c "init" \
+	-c "reset init" \
+	-c "flash probe $QSPI_BANK" \
+	-c "flash erase_address pad $QSPI_ADDR $LEN" \
+	-c "flash write_bank $QSPI_BANK $CPIO_OPENOCD 0" \
+	-c "flash verify_bank $QSPI_BANK $CPIO_OPENOCD 0" \
+	-c "reset run" \
+	-c "exit"
+
+echo "OK - rootfs programmed and verified in QSPI."
