@@ -281,7 +281,7 @@ set(OVE_LINUX ON)
 # Both are CONFIG_* (Kconfig) — no local paths are baked into the oveRTOS sources. A relative
 # OVE_BUILDROOT is resolved against the oveRTOS root in cmake/OveLinuxFixtures.cmake.
 set(OVE_BUILDROOT "{{ config.get('CONFIG_OVE_BUILDROOT', '../buildroot') }}")
-set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output-fdpic') }}")
+set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output') }}")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
 # Engine-agnostic run loop + svc dispatch + signals (shared by all three seams).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_run.c")

@@ -67,11 +67,13 @@ config OVE_BUILDROOT
 config OVE_LINUX_ROOTFS_OUTPUT
     string "Buildroot output subdir for the embedded rootfs.cpio"
     depends on OVE_LINUX
-    default "output-fdpic"
+    default "output"
     help
-      Which Buildroot output to embed: "output-fdpic" (the dynamic-FDPIC userspace —
-      every process shares one in-place copy of busybox.so/ld.so/libc.so text and
-      Zephyr keeps W^X; the default) or "output" (the legacy bFLT userspace).
+      Which Buildroot output subdir to embed the rootfs.cpio from. "output" is the
+      dynamic-FDPIC userspace (every process shares one in-place copy of
+      busybox.so/ld.so/libc.so text; Zephyr keeps W^X). The legacy bFLT build has
+      been retired, so "output" is the only maintained userspace; the option
+      remains only for an out-of-tree Buildroot using a different O= directory.
 
 config OVE_QSPI
     bool "QSPI NOR flash (memory-mapped XIP)"

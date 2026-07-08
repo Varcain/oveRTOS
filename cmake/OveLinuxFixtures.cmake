@@ -42,7 +42,7 @@ function(ove_linux_generate_fixtures out_var)
         get_filename_component(_buildroot "${OVE_DIR}/${_buildroot}" ABSOLUTE)
     endif()
     if(NOT DEFINED OVE_LINUX_ROOTFS_OUTPUT OR OVE_LINUX_ROOTFS_OUTPUT STREQUAL "")
-        set(OVE_LINUX_ROOTFS_OUTPUT "output-fdpic")
+        set(OVE_LINUX_ROOTFS_OUTPUT "output")
     endif()
     set(gendir "${CMAKE_BINARY_DIR}/ove_linux_fixtures")
     file(MAKE_DIRECTORY "${gendir}")
@@ -59,7 +59,7 @@ function(ove_linux_generate_fixtures out_var)
                     "Linux-personality fixture: ${cpio} not found.\n"
                     "  Build the Buildroot rootfs first:\n"
                     "    tests/sim/zephyr-linux/regen-rootfs-fixture.sh\n"
-                    "  or set -DOVE_LINUX_ROOTFS_OUTPUT=<dir> (default output-fdpic) / -DOVE_BUILDROOT=<tree>.")
+                    "  or set -DOVE_LINUX_ROOTFS_OUTPUT=<dir> (default output) / -DOVE_BUILDROOT=<tree>.")
             endif()
             # Zephyr runs the program UNPRIVILEGED: place the cpio in an executable .text
             # subsection so its user threads can execute libc.so's RO text IN-PLACE from the

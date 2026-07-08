@@ -40,7 +40,7 @@ The personality firmware runs with caches on (normal operation), so build the
 
 ### 2. personality numbers
     # rebuild the rootfs so /usr/bin/lbench is current:
-    ( cd ../../../.. ; make -C <buildroot> O=output-fdpic )   # repacks rootfs.cpio
+    ( cd ../../../.. ; make -C <buildroot> O=output )   # repacks rootfs.cpio
     ove defconfig-fragments stm32f746.<engine>.linux_interop
     ove configure && ove build && ove flash
     # at the login: root -> run `lbench` -> capture to linux-<engine>.txt

@@ -346,11 +346,11 @@ def _drop_firmware(fw):
 
 
 def _default_sysroot(exec_elf):
-    """Best-effort: a Buildroot exec at .../output-fdpic/target/... implies libs (with debug info)
-    live under .../output-fdpic/staging."""
+    """Best-effort: a Buildroot exec at .../output/target/... implies libs (with debug info)
+    live under .../output/staging."""
     p = os.path.abspath(exec_elf)
     marker = os.sep + "target" + os.sep
-    if "output-fdpic" in p and marker in p:
+    if "output" in p and marker in p:
         staging = p[: p.index(marker)] + os.sep + "staging"
         if os.path.isdir(staging):
             return staging
