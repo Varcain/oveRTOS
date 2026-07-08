@@ -82,6 +82,8 @@ set(STUB_SOURCES
     ${OVE_ROOT}/linux/ove_linux_syscall.c
     # Linux personality /dev character-device core (CONFIG_OVE_LINUX_DEV)
     ${OVE_ROOT}/linux/dev/ove_linux_dev.c
+    # Linux personality socket core (CONFIG_OVE_LINUX_NET)
+    ${OVE_ROOT}/linux/net/ove_linux_net.c
     # CPU/process snapshot for ps/top (read by the /proc generator; no RTOS deps)
     ${OVE_ROOT}/backends/common/ove_lnx_stats.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
@@ -187,6 +189,7 @@ function(ove_add_stub_variant name)
     # tests/ove_config.h for why this is per-target rather than global.
     target_compile_definitions(${name} PRIVATE
         CONFIG_OVE_NET=1
+        CONFIG_OVE_LINUX_NET=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1

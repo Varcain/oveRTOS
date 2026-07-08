@@ -97,6 +97,19 @@ config OVE_LINUX_ROOTFS_QSPI
       boards/stm32f746g-discovery/freertos/flash-qspi.sh, which drives OpenOCD
       stmqspi directly.
 
+config OVE_LINUX_NET
+    bool "Linux personality: BSD socket layer"
+    default n
+    depends on OVE_LINUX
+    select OVE_NET
+    help
+      Bridge the Linux personality's socket syscalls (socket/connect/send/recv/
+      shutdown/...) to the engine-neutral ove_net HAL (lwIP / NuttX net / Zephyr
+      net), so stock networking tools (wget, nc, ping, httpd) run under the
+      personality. Selects OVE_NET, which pulls in the per-engine TCP/IP stack and
+      the board's Ethernet driver. The interface is brought up by the board/app
+      before the program runs (static IP or DHCP).
+
 config OVE_LINUX_DEV
     bool "Linux personality: /dev character-device layer"
     default n

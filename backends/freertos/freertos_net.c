@@ -32,6 +32,16 @@
 
 #include <string.h>
 
+/* Under the FreeRTOS MPU port (the Linux personality) the RTOS-infrastructure tasks
+ * created here (the eth RX poller; lwIP's threads via lwip_sys_arch.c) must run
+ * PRIVILEGED — they touch the lwIP heap, the ETH DMA descriptors, and MAC registers,
+ * and their stacks live in SDRAM where exception (un)stacking needs kernel access.
+ * portPRIVILEGE_BIT ORs into the task priority; on the non-MPU port the symbol is
+ * undefined -> 0 (a no-op). Mirrors freertos_thread.c / freertos_lnx.c. */
+#ifndef portPRIVILEGE_BIT
+#define portPRIVILEGE_BIT 0u
+#endif
+
 /* ns -> struct timeval with fast path: <4.29 sec inputs use 32-bit
  * divides (single-cycle UDIV on Cortex-M7), >4.29 sec inputs fall
  * back to __aeabi_uldivmod. Inline static so the compiler folds it
@@ -98,6 +108,8 @@ static int lwip_errno_to_ove(int err)
 		return OVE_ERR_NET_CLOSED;
 	case EPIPE:
 		return OVE_ERR_NET_CLOSED;
+	case EAGAIN: /* would-block on a non-blocking socket (EWOULDBLOCK == EAGAIN on lwIP) */
+		return OVE_ERR_TIMEOUT;
 	default:
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -221,9 +233,10 @@ int ove_netif_up(ove_netif_t netif, const ove_netif_config_t *cfg)
 #ifdef CONFIG_OVE_ZERO_HEAP
 	static StaticTask_t s_eth_rx_tcb;
 	static StackType_t s_eth_rx_stack[1024];
-	xTaskCreateStatic(eth_rx_task, "eth_rx", 1024, NULL, 4, s_eth_rx_stack, &s_eth_rx_tcb);
+	xTaskCreateStatic(eth_rx_task, "eth_rx", 1024, NULL, 4 | portPRIVILEGE_BIT, s_eth_rx_stack,
+			  &s_eth_rx_tcb);
 #else
-	xTaskCreate(eth_rx_task, "eth_rx", 1024, NULL, 4, NULL);
+	xTaskCreate(eth_rx_task, "eth_rx", 1024, NULL, 4 | portPRIVILEGE_BIT, NULL);
 #endif
 
 	return OVE_OK;
@@ -524,6 +537,99 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 	if (src)
 		lwip_to_sockaddr(&sin, src);
 	return OVE_OK;
+}
+
+/* ---------- Non-blocking readiness (drives the Linux-personality park/retry) ---------- */
+
+int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int flags = lwip_fcntl(sock->fd, F_GETFL, 0);
+	if (flags < 0)
+		return lwip_errno_to_ove(errno);
+	flags = nonblock ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+	if (lwip_fcntl(sock->fd, F_SETFL, flags) < 0)
+		return lwip_errno_to_ove(errno);
+	return OVE_OK;
+}
+
+int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	fd_set rfds, wfds, efds;
+	FD_ZERO(&rfds);
+	FD_ZERO(&wfds);
+	FD_ZERO(&efds);
+	if (events & OVE_SOCK_POLLIN)
+		FD_SET(sock->fd, &rfds);
+	if (events & OVE_SOCK_POLLOUT)
+		FD_SET(sock->fd, &wfds);
+	FD_SET(sock->fd, &efds);
+	struct timeval tv, *ptv = NULL;
+	if (!ove_timeout_is_forever(timeout_ns)) {
+		ove_ns_to_timeval(timeout_ns, &tv);
+		ptv = &tv;
+	}
+	int sr = lwip_select(sock->fd + 1, &rfds, &wfds, &efds, ptv);
+	if (sr < 0)
+		return lwip_errno_to_ove(errno);
+	unsigned re = 0;
+	if (FD_ISSET(sock->fd, &rfds))
+		re |= OVE_SOCK_POLLIN;
+	if (FD_ISSET(sock->fd, &wfds))
+		re |= OVE_SOCK_POLLOUT;
+	if (FD_ISSET(sock->fd, &efds))
+		re |= OVE_SOCK_POLLERR;
+	if (revents)
+		*revents = re;
+	return OVE_OK;
+}
+
+int ove_socket_shutdown(ove_socket_t sock, int how)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int lh = (how == OVE_SHUT_RD) ? SHUT_RD : (how == OVE_SHUT_WR) ? SHUT_WR : SHUT_RDWR;
+	if (lwip_shutdown(sock->fd, lh) < 0)
+		return lwip_errno_to_ove(errno);
+	return OVE_OK;
+}
+
+int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
+	struct sockaddr_in sin;
+	socklen_t sl = sizeof(sin);
+	if (lwip_getsockname(sock->fd, (struct sockaddr *)&sin, &sl) < 0)
+		return lwip_errno_to_ove(errno);
+	lwip_to_sockaddr(&sin, addr);
+	return OVE_OK;
+}
+
+int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
+	struct sockaddr_in sin;
+	socklen_t sl = sizeof(sin);
+	if (lwip_getpeername(sock->fd, (struct sockaddr *)&sin, &sl) < 0)
+		return lwip_errno_to_ove(errno);
+	lwip_to_sockaddr(&sin, addr);
+	return OVE_OK;
+}
+
+int ove_socket_get_error(ove_socket_t sock)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int soerr = 0;
+	socklen_t sl = sizeof(soerr);
+	if (lwip_getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) < 0)
+		return lwip_errno_to_ove(errno);
+	return soerr ? lwip_errno_to_ove(soerr) : OVE_OK;
 }
 
 /* ---------- DNS ---------- */

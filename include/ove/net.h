@@ -56,6 +56,17 @@ typedef enum {
 } ove_af_t;
 #endif
 
+/** @brief Socket readiness bits for @ref ove_socket_poll (Linux poll(2) values). */
+#define OVE_SOCK_POLLIN 0x01u  /**< Readable: data ready, or an incoming connection. */
+#define OVE_SOCK_POLLOUT 0x04u /**< Writable: send won't block, or connect completed. */
+#define OVE_SOCK_POLLERR 0x08u /**< Error condition (also reports a failed connect). */
+#define OVE_SOCK_POLLHUP 0x10u /**< Peer hung up. */
+
+/** @brief Shutdown directions for @ref ove_socket_shutdown (POSIX values). */
+#define OVE_SHUT_RD 0	/**< Further receives disallowed. */
+#define OVE_SHUT_WR 1	/**< Further sends disallowed. */
+#define OVE_SHUT_RDWR 2 /**< Both disallowed. */
+
 /**
  * @brief Generic socket address (large enough for IPv4 or IPv6).
  */
@@ -255,6 +266,74 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *received,
 			ove_sockaddr_t *src, uint64_t timeout_ns);
 
+/**
+ * @brief Enable or disable non-blocking mode on a socket.
+ *
+ * With non-blocking mode on, the blocking socket calls return
+ * @c OVE_ERR_TIMEOUT immediately instead of waiting when they would block.
+ * This is the safe primitive for a caller that drives its own readiness loop
+ * (the Linux personality's park/retry coordinator): unlike a zero
+ * @c timeout_ns — which some backends map to @c SO_RCVTIMEO and interpret as
+ * "block forever" — this reliably makes every operation return at once.
+ *
+ * @param[in] sock     Socket handle.
+ * @param[in] nonblock Non-zero to enable non-blocking mode, zero to clear it.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_socket_set_nonblock(ove_socket_t sock, int nonblock);
+
+/**
+ * @brief Wait for readiness on a socket (select/poll with a timeout).
+ *
+ * The only readiness wait that behaves uniformly across backends: pass
+ * @c timeout_ns == 0 for an immediate, truly non-blocking poll.
+ *
+ * @param[in]  sock       Socket handle.
+ * @param[in]  events     Requested @c OVE_SOCK_POLL* bits.
+ * @param[out] revents    Ready @c OVE_SOCK_POLL* bits (may be NULL).
+ * @param[in]  timeout_ns Timeout in nanoseconds (0 = poll, OVE_WAIT_FOREVER = block).
+ * @return OVE_OK on success (inspect @p revents), negative error code on failure.
+ */
+int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns);
+
+/**
+ * @brief Shut down part or all of a full-duplex connection.
+ *
+ * @param[in] sock Socket handle.
+ * @param[in] how  @c OVE_SHUT_RD, @c OVE_SHUT_WR, or @c OVE_SHUT_RDWR.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_socket_shutdown(ove_socket_t sock, int how);
+
+/**
+ * @brief Get the local address a socket is bound to.
+ *
+ * @param[in]  sock Socket handle.
+ * @param[out] addr Filled with the local address.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr);
+
+/**
+ * @brief Get the remote address a socket is connected to.
+ *
+ * @param[in]  sock Socket handle.
+ * @param[out] addr Filled with the peer address.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr);
+
+/**
+ * @brief Read and clear a socket's pending error (@c SO_ERROR).
+ *
+ * Used to obtain the result of a non-blocking connect once the socket
+ * reports writable via @ref ove_socket_poll.
+ *
+ * @param[in] sock Socket handle.
+ * @return OVE_OK if no error is pending, otherwise a negative @c OVE_ERR_NET_*.
+ */
+int ove_socket_get_error(ove_socket_t sock);
+
 #ifdef OVE_HEAP_NET
 /**
  * @brief Heap-allocate and open a socket.
@@ -422,6 +501,44 @@ static inline int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, 
 	(void)received;
 	(void)src;
 	(void)timeout_ns;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
+{
+	(void)sock;
+	(void)nonblock;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents,
+				  uint64_t timeout_ns)
+{
+	(void)sock;
+	(void)events;
+	(void)revents;
+	(void)timeout_ns;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_shutdown(ove_socket_t sock, int how)
+{
+	(void)sock;
+	(void)how;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	(void)sock;
+	(void)addr;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	(void)sock;
+	(void)addr;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_get_error(ove_socket_t sock)
+{
+	(void)sock;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)

@@ -69,6 +69,7 @@ set(OVE_TEST_STUB_ONLY_SUITES
     test_sandbox.c
     test_linux_syscall.c
     test_linux_dev.c
+    test_linux_net.c
     test_thread_stop_isolation.c
     test_static_define.c
     test_infer.c

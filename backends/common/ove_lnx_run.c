@@ -30,6 +30,9 @@
 #if defined(CONFIG_OVE_LINUX_DEV)
 #include "ove/linux/dev.h" /* device-layer park/retry + autoreg + tick + kick */
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+#include "ove/linux/net.h" /* socket-layer park/retry + fork/exit fd lifecycle */
+#endif
 
 /* Declare a memory-mapped rootfs image window [base, base+len) so the coordinator task can
  * read it safely on the target.  Default: no-op — an ordinary CPU view of the window is already
@@ -392,7 +395,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
 	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait || proc->dev_wait ||
-	    proc->sigsuspend_pending) {
+	    proc->sock_wait || proc->sigsuspend_pending) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
 		return;
@@ -708,6 +711,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			EV_WAITPARK,
 			EV_PIPE,
 			EV_DEVWAIT,
+			EV_SOCKWAIT,
 			EV_SIGSUSPEND
 		};
 		eng->crit_enter();
@@ -752,6 +756,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_DEVWAIT;
 				break;
 			}
+			if (p->sock_wait && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_SOCKWAIT;
+				break;
+			}
 			if (p->sigsuspend_pending && g_ove_lnx_used[s]) {
 				es = s;
 				et = EV_SIGSUSPEND;
@@ -780,12 +789,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_DEV)
 			ove_lnx_dev_fork_inherit(ch); /* the child shares the parent's device opens */
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+			ove_lnx_sock_fork_inherit(ch); /* the child shares the parent's socket opens */
+#endif
 			ch->pid = next_pid++;
 			ch->ppid = par->pid;
 			ch->exited = ch->exec_pending = ch->fork_pending = 0;
 			ch->sleep_pending = ch->wait_pending = ch->sleeping = 0;
 			ch->pipe_wait = 0;
 			ch->dev_wait = 0;
+			ch->sock_wait = 0;
 			ch->pending_sig = 0;
 			ch->child_count = ch->live_children = 0;
 			ch->clone_is_thread = 0;
@@ -894,6 +907,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_DEV)
 			ove_lnx_dev_proc_exit(p); /* release the exiting process's device opens */
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+			ove_lnx_sock_proc_exit(p); /* release the exiting process's socket opens */
+#endif
 			eng->abort_slot(es);
 			if (p->region_owner && rowner[p->region] == es)
 				rowner[p->region] = -1;
@@ -934,6 +950,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+		if (et == EV_SOCKWAIT) { /* free the spin thread; the socket retry below resumes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
 		if (et == EV_SIGSUSPEND) { /* free the spin thread; pending_sig below wakes it. */
 			eng->abort_slot(es);
 			idle = 0;
@@ -943,7 +964,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
 		ove_time_get_us(&now);
-		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0;
+		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0,
+		    any_sock_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -956,6 +978,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_pipe_wait = 1;
 			if (p->dev_wait)
 				any_dev_wait = 1;
+			if (p->sock_wait)
+				any_sock_wait = 1;
 			/* Cross-process signal (D3) to a parked, blocked proc: the dispatch can't
 			 * deliver (no live thread), so the coordinator does. SIG_IGN is dropped;
 			 * otherwise terminate (default action — a custom handler on a blocked proc
@@ -1039,6 +1063,19 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				}
 			}
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+			/* Blocked socket I/O: retry (connect may have completed, or data/space
+			 * arrived); resume the proc when the op completes. Mirrors the pipe/device
+			 * retries above. */
+			if (p->sock_wait && !g_ove_lnx_used[s]) {
+				long r = ove_lnx_sock_retry(p);
+				if (r != -OVE_LNX_EAGAIN) {
+					p->sock_wait = 0;
+					eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					progress = 1;
+				}
+			}
+#endif
 		}
 		if (!any_alive) {
 			rc = 0;
@@ -1069,7 +1106,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
 		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
 		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
-		unsigned to = (any_pipe_wait || any_dev_wait) ? 5u : 50u;
+		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait) ? 5u : 50u;
 		if (next_sleep != UINT64_MAX && next_sleep > now) {
 			uint64_t d_ms = (next_sleep - now + 999u) / 1000u; /* round up, don't wake early */
 			if (d_ms < 1u)
