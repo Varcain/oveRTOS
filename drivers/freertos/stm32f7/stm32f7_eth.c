@@ -13,11 +13,19 @@
  * The board must provide HAL_ETH_MspInit() (weak override) to configure
  * the RMII/MII GPIO pins and enable the ETH clock.
  *
- * Cache coherency: stm32f7_init.c skips SCB_EnableDCache() when
- * HAL_ETH_MODULE_ENABLED is defined, so descriptors and buffers can
- * live in regular SRAM without explicit cache maintenance. A proper
- * fix would re-enable D-cache and use the MPU to mark the ETH DMA
- * region non-cacheable (matching ST's LwIP_HTTP_Server demo).
+ * Cache coherency (D-cache runs ON — the personality needs it): the ETH
+ * DMA and the M7 D-cache are kept coherent without detuning the cache or
+ * spending a scarce MPU region (the FreeRTOS-MPU port claims all 8):
+ *   - DMA descriptor tables live in DTCM (.eth_desc, 0x20000000).  DTCM is
+ *     architecturally never cached yet is reachable by the ETH DMA via the
+ *     Cortex-M7 AHBS slave port (ST AN4839), so the descriptors — which the
+ *     HAL builds and hands to the DMA internally, with no hook to clean the
+ *     cache in between — are inherently coherent.
+ *   - RX buffers stay in cacheable SRAM; the CPU invalidates each frame's
+ *     range before reading it (HAL_ETH_RxLinkCallback), so pbuf_take copies
+ *     the DMA-written data, not a stale cache line.
+ *   - TX payloads (lwIP pbufs in cacheable memory) are cleaned to SRAM
+ *     before HAL_ETH_Transmit so the DMA reads the CPU-written frame.
  */
 
 #include "stm32f7xx_hal.h"
@@ -66,10 +74,15 @@
 
 /* ── DMA descriptors and buffers ─────────────────────────────── */
 
-ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT] __attribute__((aligned(4)));
-ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT] __attribute__((aligned(4)));
+/* Descriptors in uncached DTCM (see file header) — coherent with no cache
+ * maintenance.  4 RX + 4 TX × sizeof(ETH_DMADescTypeDef)=40 B = exactly the
+ * 0x140 .eth_desc window carved from the DTCM base in the linker script. */
+ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT] __attribute__((section(".eth_desc")));
+ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT] __attribute__((section(".eth_desc")));
 
-static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE] __attribute__((aligned(4)));
+/* RX buffers stay in cacheable SRAM; 32-byte aligned (== a D-cache line) so a
+ * per-frame SCB_InvalidateDCache_by_Addr can never straddle into a neighbour. */
+static uint8_t RxBuff[ETH_RX_DESC_CNT][ETH_RX_BUF_SIZE] __attribute__((aligned(32)));
 
 ETH_HandleTypeDef heth;
 
@@ -91,6 +104,11 @@ void HAL_ETH_RxLinkCallback(void **pStart, void **pEnd, uint8_t *buff, uint16_t 
 
 	p = pbuf_alloc(PBUF_RAW, Length, PBUF_POOL);
 	if (p != NULL) {
+		/* The DMA wrote this frame into cacheable SRAM behind the CPU's back;
+		 * drop any stale cache lines so pbuf_take copies the fresh bytes.  buff
+		 * is 32-byte aligned and the CPU never writes RxBuff, so invalidating
+		 * the frame's range can neither straddle a neighbour nor lose data. */
+		SCB_InvalidateDCache_by_Addr((uint32_t *)buff, (int32_t)Length);
 		pbuf_take(p, buff, Length);
 		p->next = NULL;
 	}
@@ -202,6 +220,11 @@ static err_t low_level_output(struct netif *netif, struct pbuf *p)
 	for (struct pbuf *q = p; q != NULL && n < TX_MAX_SEGMENTS; q = q->next) {
 		tx_buf[n].buffer = q->payload;
 		tx_buf[n].len = q->len;
+		/* Flush the CPU-written frame out of the D-cache so the DMA, which
+		 * reads this payload straight from SRAM, sees the real bytes and not
+		 * a not-yet-written-back cache line.  Clean (vs invalidate) is
+		 * non-destructive, so an unaligned pbuf payload is safe. */
+		SCB_CleanDCache_by_Addr((uint32_t *)q->payload, (int32_t)q->len);
 		if (n > 0)
 			tx_buf[n - 1].next = &tx_buf[n];
 		n++;
