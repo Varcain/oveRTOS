@@ -667,8 +667,9 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 
 static long sys_writev(ove_lnx_proc_t *p, int fd, const ove_lnx_iovec *iov, int iovcnt)
 {
-	if (fd != 1 && fd != 2)
-		return -OVE_LNX_EBADF;
+	/* Any fd sys_write accepts: console, socket (uClibc stdio flushes a socket via
+	 * writev — this is how wget sends its HTTP request), device, file. sys_write
+	 * validates the fd (EBADF) and routes by kind. */
 	if (iovcnt < 0)
 		return -OVE_LNX_EINVAL;
 	if (iovcnt && !user_ok(p, iov, (size_t)iovcnt * sizeof(*iov), 0))
@@ -947,9 +948,14 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
  */
 static long sys_munmap(ove_lnx_proc_t *p, uintptr_t addr, size_t len)
 {
-	(void)p;
-	(void)addr;
 	(void)len;
+	/* Reclaim the mapping. uClibc's malloc (MALLOC=y) grows its heap with anonymous
+	 * mmap and munmaps freed blocks; without this the process arena grows monotonically
+	 * across malloc/free churn (getaddrinfo + stdio + wget headers) and exhausts —
+	 * "wget: out of memory". In-place file/device maps are not arena-owned, so
+	 * ove_arena_free ignores them (its ove_arena_owns bounds-check). */
+	if (p && p->arena)
+		ove_arena_free(p->arena, (void *)addr);
 	return 0;
 }
 
@@ -2717,6 +2723,9 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		int probe = (tmo_ms >= 0 && tmo_ms <= 100);
 		int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
 		int ready = 0;
+#if defined(CONFIG_OVE_LINUX_NET)
+		int has_socket = 0;
+#endif
 		for (unsigned i = 0; i < nfds; i++) {
 			pfds[i].revents = 0;
 			ove_lnx_fd_t *s = fd_slot(proc, pfds[i].fd);
@@ -2744,6 +2753,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
 				if (pfds[i].revents)
 					ready++;
+				has_socket = 1;
 				continue;
 			}
 #endif
@@ -2758,6 +2768,27 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		}
 		if (ready > 0 || tmo_ms == 0)
 			return ready;
+#if defined(CONFIG_OVE_LINUX_NET)
+		/* A blocking poll whose set includes a socket parks on SOCKW_POLL: the
+		 * coordinator re-scans readiness on its <=5 ms socket-retry tick (via
+		 * ove_lnx_poll_retry) and resumes us when an fd becomes ready or the timeout
+		 * elapses. Without this a socket poll would sleep the whole timeout and return
+		 * 0, breaking the uClibc DNS resolver (poll(POLLIN) then recv(MSG_DONTWAIT)). */
+		if (has_socket) {
+			proc->sock_buf = (uintptr_t)pfds;
+			proc->sock_len = nfds;
+			if (tmo_ms > 0) {
+				uint64_t now_us = 0;
+				ove_time_get_us(&now_us);
+				proc->sock_deadline_us = now_us + (uint64_t)tmo_ms * 1000ull;
+			} else {
+				proc->sock_deadline_us = UINT64_MAX; /* poll(-1): block forever */
+			}
+			proc->sock_oi = -1; /* the retry re-scans the whole set, not one open */
+			proc->sock_wait = OVE_LNX_SOCKW_POLL;
+			return 0; /* parked; coordinator resumes with the ready count / 0 */
+		}
+#endif
 		/* Nothing ready + a real timeout: with the UART console, park for the timeout
 		 * (paces interactive top's refresh, returns 0); a buffered keystroke is caught
 		 * at the next poll. Without console_poll a long timeout already reported ready
@@ -2985,5 +3016,55 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return -OVE_LNX_ENOSYS;
 	}
 }
+
+#if defined(CONFIG_OVE_LINUX_NET)
+/* Re-evaluate a parked poll(2)'s fd set for readiness (socket + device + console).
+ * Mirrors the initial sys_poll scan but in blocking mode — a console fd reports its
+ * real key readiness rather than the vi/top ESC-probe heuristic. */
+static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigned nfds)
+{
+	int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
+	int ready = 0;
+	for (unsigned i = 0; i < nfds; i++) {
+		pfds[i].revents = 0;
+		ove_lnx_fd_t *s = fd_slot(proc, pfds[i].fd);
+		if (!s)
+			continue;
+		unsigned pb;
+		if (s->kind == OVE_LNX_FD_SOCKET)
+			pb = ove_lnx_sock_poll(s->file_idx);
+#if defined(CONFIG_OVE_LINUX_DEV)
+		else if (s->kind == OVE_LNX_FD_DEV)
+			pb = ove_lnx_dev_poll(s->file_idx);
+#endif
+		else if (s->kind == OVE_LNX_FD_CONSOLE)
+			pb = (unsigned)((proc->console_poll ? (key ? OVE_LNX_POLLIN : 0)
+							    : OVE_LNX_POLLIN) |
+					OVE_LNX_POLLOUT);
+		else
+			pb = OVE_LNX_POLLIN | OVE_LNX_POLLOUT; /* files/pipes always ready */
+		pfds[i].revents =
+			(short)(pfds[i].events & pb & (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+		if (pfds[i].revents)
+			ready++;
+	}
+	return ready;
+}
+
+long ove_lnx_poll_retry(ove_lnx_proc_t *proc)
+{
+	ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)proc->sock_buf;
+	int ready = ove_lnx_poll_scan(proc, pfds, (unsigned)proc->sock_len);
+	if (ready > 0)
+		return ready;
+	if (proc->sock_deadline_us != UINT64_MAX) {
+		uint64_t now_us = 0;
+		ove_time_get_us(&now_us);
+		if (now_us >= proc->sock_deadline_us)
+			return 0; /* timed out */
+	}
+	return -OVE_LNX_EAGAIN; /* still waiting */
+}
+#endif /* CONFIG_OVE_LINUX_NET */
 
 #endif /* CONFIG_OVE_LINUX */

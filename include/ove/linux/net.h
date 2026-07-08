@@ -47,6 +47,7 @@ extern "C" {
 #define OVE_LNX_SOCKW_SEND 2u
 #define OVE_LNX_SOCKW_RECV 3u
 #define OVE_LNX_SOCKW_ACCEPT 4u /**< P4: a blocked accept(2). */
+#define OVE_LNX_SOCKW_POLL 5u	/**< A blocking poll(2)/select over a set that includes a socket. */
 
 /* Guest socket ABI constants — the Linux/ARM values FDPIC programs pass. */
 #define OVE_LNX_AF_INET 2
@@ -114,6 +115,11 @@ void ove_lnx_sock_fstat(int oi, uint32_t *mode, uint64_t *size);
 
 /** Retry a parked socket op for the coordinator; result or -EAGAIN (still blocked). */
 long ove_lnx_sock_retry(ove_lnx_proc_t *p);
+
+/* Re-scan a parked poll(2)/select's fd set for readiness (called from ove_lnx_sock_retry
+ * for OVE_LNX_SOCKW_POLL). Implemented in the syscall TU, which owns the fd table + the
+ * per-kind readiness probes. Returns the ready count (>0), 0 at the deadline, or -EAGAIN. */
+long ove_lnx_poll_retry(ove_lnx_proc_t *p);
 /** fork: the child inherited the parent's FD_SOCKET fds — add a reference to each. */
 void ove_lnx_sock_fork_inherit(ove_lnx_proc_t *child);
 /** exit: release every FD_SOCKET open the process still holds. */

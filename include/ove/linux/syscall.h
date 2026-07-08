@@ -478,8 +478,9 @@ typedef struct ove_lnx_proc {
 	 * (the same park/retry as dev_wait) and resumes it on completion. */
 	uint8_t sock_wait;  /**< 0 = none, else a SOCKW_* op the coordinator retries. */
 	int sock_oi;	    /**< Socket open-pool index being waited on. */
-	uintptr_t sock_buf; /**< User buffer (send/recv). */
-	size_t sock_len;    /**< Requested length (send/recv). */
+	uintptr_t sock_buf; /**< User buffer (send/recv); the user pollfd array for SOCKW_POLL. */
+	size_t sock_len;    /**< Requested length (send/recv); nfds for SOCKW_POLL. */
+	uint64_t sock_deadline_us; /**< SOCKW_POLL absolute timeout (UINT64_MAX = infinite). */
 } ove_lnx_proc_t;
 
 /** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan

@@ -431,6 +431,11 @@ void ove_lnx_sock_fstat(int oi, uint32_t *mode, uint64_t *size)
 
 long ove_lnx_sock_retry(ove_lnx_proc_t *p)
 {
+	/* A parked poll() waits on a whole fd set, not one open; the syscall TU owns the
+	 * fd table + per-kind readiness probes, so re-scan there. */
+	if (p->sock_wait == OVE_LNX_SOCKW_POLL)
+		return ove_lnx_poll_retry(p);
+
 	struct sock_open *o = open_slot(p->sock_oi);
 	if (!o)
 		return -OVE_LNX_EBADF;
