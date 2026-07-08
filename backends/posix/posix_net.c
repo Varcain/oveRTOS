@@ -50,6 +50,11 @@ static int errno_to_ove(int err)
 	case ENOTCONN:
 	case EPIPE:
 		return OVE_ERR_NET_CLOSED;
+	case EAGAIN: /* would-block on a non-blocking socket */
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+		return OVE_ERR_TIMEOUT;
 	default:
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -438,6 +443,92 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 	if (src)
 		posix_to_sockaddr(&ss, src);
 	return OVE_OK;
+}
+
+/* ---------- Non-blocking readiness (drives the Linux-personality park/retry) ---------- */
+
+int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int flags = fcntl(sock->fd, F_GETFL, 0);
+	if (flags < 0)
+		return errno_to_ove(errno);
+	flags = nonblock ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+	if (fcntl(sock->fd, F_SETFL, flags) < 0)
+		return errno_to_ove(errno);
+	return OVE_OK;
+}
+
+int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	struct pollfd pfd = {.fd = sock->fd, .events = 0};
+	if (events & OVE_SOCK_POLLIN)
+		pfd.events |= POLLIN;
+	if (events & OVE_SOCK_POLLOUT)
+		pfd.events |= POLLOUT;
+	int pr = poll(&pfd, 1, ove_timeout_is_forever(timeout_ns) ? -1 : ns_to_poll_ms(timeout_ns));
+	if (pr < 0)
+		return errno_to_ove(errno);
+	unsigned re = 0;
+	if (pfd.revents & POLLIN)
+		re |= OVE_SOCK_POLLIN;
+	if (pfd.revents & POLLOUT)
+		re |= OVE_SOCK_POLLOUT;
+	if (pfd.revents & POLLERR)
+		re |= OVE_SOCK_POLLERR;
+	if (pfd.revents & POLLHUP)
+		re |= OVE_SOCK_POLLHUP;
+	if (revents)
+		*revents = re;
+	return OVE_OK;
+}
+
+int ove_socket_shutdown(ove_socket_t sock, int how)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int lh = (how == OVE_SHUT_RD) ? SHUT_RD : (how == OVE_SHUT_WR) ? SHUT_WR : SHUT_RDWR;
+	if (shutdown(sock->fd, lh) < 0)
+		return errno_to_ove(errno);
+	return OVE_OK;
+}
+
+int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
+	struct sockaddr_storage ss;
+	socklen_t sl = sizeof(ss);
+	if (getsockname(sock->fd, (struct sockaddr *)&ss, &sl) < 0)
+		return errno_to_ove(errno);
+	posix_to_sockaddr(&ss, addr);
+	return OVE_OK;
+}
+
+int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
+	struct sockaddr_storage ss;
+	socklen_t sl = sizeof(ss);
+	if (getpeername(sock->fd, (struct sockaddr *)&ss, &sl) < 0)
+		return errno_to_ove(errno);
+	posix_to_sockaddr(&ss, addr);
+	return OVE_OK;
+}
+
+int ove_socket_get_error(ove_socket_t sock)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int soerr = 0;
+	socklen_t sl = sizeof(soerr);
+	if (getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) < 0)
+		return errno_to_ove(errno);
+	return soerr ? errno_to_ove(soerr) : OVE_OK;
 }
 
 /* ---------- DNS ---------- */

@@ -40,6 +40,9 @@
 #include "ove/app.h"
 #include "ove/linux/run.h"
 #include "ove/linux/syscall.h"
+#if defined(CONFIG_OVE_LINUX_NET)
+#include "ove/net.h" /* bring eth0 up so the personality's sockets can reach the LAN */
+#endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 
@@ -400,6 +403,94 @@ static void demo_body(void *arg)
 		sh_write0(b);
 		sh_exit(1);
 	}
+
+#if defined(CONFIG_OVE_LINUX_NET)
+	/* Bring eth0 up so the personality's socket layer (FD_SOCKET -> ove_net -> lwIP
+	 * + the STM32 LAN8742 driver) can reach the LAN. Static IP (see below); the
+	 * configured address is printed so a headless run reports the link came up. */
+	{
+		static ove_netif_storage_t s_netif_storage;
+		ove_netif_t nif = NULL;
+		/* Static IP: the board's eth0 is a point-to-point link to the test host
+		 * (a Raspberry Pi at 172.1.1.1/24); no DHCP on that link. */
+		ove_netif_config_t netcfg = {.use_dhcp = 0};
+		ove_sockaddr_ipv4(&netcfg.static_ip, 172, 1, 1, 2, 0);
+		ove_sockaddr_ipv4(&netcfg.netmask, 255, 255, 255, 0, 0);
+		ove_sockaddr_ipv4(&netcfg.gateway, 172, 1, 1, 1, 0);
+		if (ove_netif_init(&nif, &s_netif_storage) == OVE_OK &&
+		    ove_netif_up(nif, &netcfg) == OVE_OK) {
+			ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
+			for (int i = 0; i < 200; i++) { /* wait for the interface to report its address */
+				ove_netif_get_addr(nif, &ip, &gw, &nm);
+				if (ip.addr[0] | ip.addr[1] | ip.addr[2] | ip.addr[3])
+					break;
+				ove_thread_sleep_ms(50);
+			}
+			char b[96];
+			char *p = put_str(b, "[demo] eth0 up ip=");
+			p = put_dec(p, ip.addr[0]);
+			*p++ = '.';
+			p = put_dec(p, ip.addr[1]);
+			*p++ = '.';
+			p = put_dec(p, ip.addr[2]);
+			*p++ = '.';
+			p = put_dec(p, ip.addr[3]);
+			p = put_str(p, " gw=");
+			p = put_dec(p, gw.addr[0]);
+			*p++ = '.';
+			p = put_dec(p, gw.addr[1]);
+			*p++ = '.';
+			p = put_dec(p, gw.addr[2]);
+			*p++ = '.';
+			p = put_dec(p, gw.addr[3]);
+			*p++ = '\n';
+			*p = 0;
+			sh_write0(b);
+
+			/* On-silicon transport smoke: connect to the test host's sshd and read
+			 * its banner — a real TCP round-trip over the STM32 Ethernet (ove_net ->
+			 * lwIP -> LAN8742). The personality's FD_SOCKET bridge over this same
+			 * transport is covered by the host loopback cmocka test. */
+			static ove_socket_storage_t s_sk;
+			ove_socket_t sk = NULL;
+			if (ove_socket_open(&sk, &s_sk, OVE_AF_INET, OVE_SOCK_STREAM) == OVE_OK) {
+				ove_sockaddr_t peer;
+				ove_sockaddr_ipv4(&peer, 172, 1, 1, 1, 22);
+				int cr = ove_socket_connect(sk, &peer, OVE_SEC(5));
+				if (cr == OVE_OK) {
+					char rb[80];
+					size_t got = 0;
+					if (ove_socket_recv(sk, rb, sizeof(rb) - 1, &got, OVE_SEC(5)) ==
+						    OVE_OK &&
+					    got > 0) {
+						for (size_t i = 0; i < got; i++)
+							if (rb[i] == '\r' || rb[i] == '\n')
+								rb[i] = 0;
+						rb[got < sizeof(rb) ? got : sizeof(rb) - 1] = 0;
+						char b2[128];
+						char *q = put_str(b2, "[demo] socket smoke OK <- 172.1.1.1:22: ");
+						q = put_str(q, rb);
+						*q++ = '\n';
+						*q = 0;
+						sh_write0(b2);
+					} else {
+						sh_write0("[demo] socket smoke: connected, no banner\n");
+					}
+				} else {
+					char b2[64];
+					char *q = put_str(b2, "[demo] socket smoke: connect failed rc=-");
+					q = put_dec(q, (uint32_t)(-cr));
+					*q++ = '\n';
+					*q = 0;
+					sh_write0(b2);
+				}
+				ove_socket_close(sk);
+			}
+		} else {
+			sh_write0("[demo] eth0 bring-up FAILED\n");
+		}
+	}
+#endif
 
 	/* ---- Phase 1: bidirectional round trip through BusyBox `cat` ---------- */
 	sh_write0("\n-- phase 1: RTOS thread <-> Linux program (bidirectional) --\n");

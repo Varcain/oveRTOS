@@ -301,6 +301,12 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_input.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
 {% endif %}
 {% endif %}
+{% if config.get("CONFIG_OVE_LINUX_NET") == True %}
+# Socket layer: bridges the personality's socket syscalls (FD_SOCKET) to the
+# engine-neutral ove_net HAL. Selects CONFIG_OVE_NET, whose block adds the
+# per-engine *_net.c backend + the native TCP/IP stack (lwIP on FreeRTOS).
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/net/ove_linux_net.c")
+{% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")
 {% elif config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}

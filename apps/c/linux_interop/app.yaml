@@ -21,6 +21,11 @@ defconfig:
   # per-board for real STM32F746 hardware, since it needs an i2c HAL backend).
   - CONFIG_OVE_LINUX_DEV_INPUT=y
   - CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD=y
+  # BSD socket layer: bridge the personality's socket syscalls to ove_net (selects
+  # CONFIG_OVE_NET → per-engine TCP/IP stack + the board's Ethernet driver). Lets
+  # stock networking tools (wget, nc, ping) run under the personality. On QEMU the
+  # board provides a shared-memory NIC; on real STM32F746 the LAN8742 driver.
+  - CONFIG_OVE_LINUX_NET=y
 # Engine-agnostic. Build on QEMU on any substrate, plus real STM32F746 hardware:
 #   ove defconfig-fragments qemu-mps2-an521.zephyr.linux_interop     (Cortex-M33 USERSPACE)
 #   ove defconfig-fragments qemu-mps2-an500.freertos.linux_interop   (Cortex-M7 FreeRTOS)

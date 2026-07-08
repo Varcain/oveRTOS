@@ -156,6 +156,26 @@ extern "C" {
 #define OVE_LNX_NR_setgid32 214
 #define OVE_LNX_AT_REMOVEDIR 0x200
 
+/* Socket family (ARM EABI direct numbers; EABI does not use socketcall). */
+#define OVE_LNX_NR_socket 281
+#define OVE_LNX_NR_bind 282
+#define OVE_LNX_NR_connect 283
+#define OVE_LNX_NR_listen 284
+#define OVE_LNX_NR_accept 285
+#define OVE_LNX_NR_getsockname 286
+#define OVE_LNX_NR_getpeername 287
+#define OVE_LNX_NR_socketpair 288
+#define OVE_LNX_NR_send 289
+#define OVE_LNX_NR_sendto 290
+#define OVE_LNX_NR_recv 291
+#define OVE_LNX_NR_recvfrom 292
+#define OVE_LNX_NR_shutdown 293
+#define OVE_LNX_NR_setsockopt 294
+#define OVE_LNX_NR_getsockopt 295
+#define OVE_LNX_NR_sendmsg 296
+#define OVE_LNX_NR_recvmsg 297
+#define OVE_LNX_NR_accept4 366
+
 /* mmap flags (ARM). Only anonymous mappings are backed (from the arena). */
 #define OVE_LNX_MAP_ANONYMOUS 0x20
 
@@ -180,6 +200,7 @@ extern "C" {
 #define OVE_LNX_S_IFDIR 0x4000u
 #define OVE_LNX_S_IFCHR 0x2000u
 #define OVE_LNX_S_IFLNK 0xa000u
+#define OVE_LNX_S_IFSOCK 0xc000u
 /* getdents64 d_type values. */
 #define OVE_LNX_DT_CHR 2
 #define OVE_LNX_DT_DIR 4
@@ -265,6 +286,21 @@ extern "C" {
 #define OVE_LNX_ENAMETOOLONG 36
 #define OVE_LNX_ENOTEMPTY 39
 #define OVE_LNX_ENOSYS 38
+/* socket errnos (asm-generic values; ARM shares them). */
+#define OVE_LNX_ENOTSOCK 88
+#define OVE_LNX_EMSGSIZE 90
+#define OVE_LNX_EPROTONOSUPPORT 93
+#define OVE_LNX_EOPNOTSUPP 95
+#define OVE_LNX_EAFNOSUPPORT 97
+#define OVE_LNX_EADDRINUSE 98
+#define OVE_LNX_ENETUNREACH 101
+#define OVE_LNX_ECONNRESET 104
+#define OVE_LNX_EISCONN 106
+#define OVE_LNX_ENOTCONN 107
+#define OVE_LNX_ECONNREFUSED 111
+#define OVE_LNX_EHOSTUNREACH 113
+#define OVE_LNX_EALREADY 114
+#define OVE_LNX_EINPROGRESS 115
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */
 typedef struct ove_lnx_iovec {
@@ -327,6 +363,8 @@ typedef struct ove_lnx_fd {
 /** Device fd kind (shared by the syscall + device layers; the FD_FREE..FD_PROC
  *  kinds stay private to ove_linux_syscall.c). @c file_idx = open-pool index. */
 #define OVE_LNX_FD_DEV 6
+/** Socket fd kind (shared by the syscall + socket layers). @c file_idx = open-pool index. */
+#define OVE_LNX_FD_SOCKET 7
 
 /** Maximum simultaneously-open file descriptors per process. */
 #define OVE_LNX_MAX_FDS 16
@@ -435,6 +473,13 @@ typedef struct ove_lnx_proc {
 	/* Device mmap ranges (P3): a successful /dev mmap records its [lo,hi) here so
 	 * user_ok accepts the mapped framebuffer (two mappings max). */
 	uintptr_t dev_map_lo[2], dev_map_hi[2];
+	/* Blocking socket I/O (P0 socket layer): a connect/send/recv on a socket that
+	 * would block parks the proc; the coordinator retries via ove_lnx_sock_retry
+	 * (the same park/retry as dev_wait) and resumes it on completion. */
+	uint8_t sock_wait;  /**< 0 = none, else a SOCKW_* op the coordinator retries. */
+	int sock_oi;	    /**< Socket open-pool index being waited on. */
+	uintptr_t sock_buf; /**< User buffer (send/recv). */
+	size_t sock_len;    /**< Requested length (send/recv). */
 } ove_lnx_proc_t;
 
 /** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan

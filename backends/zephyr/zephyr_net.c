@@ -56,6 +56,11 @@ static int zephyr_errno_to_ove(int err)
 		return OVE_ERR_NET_RESET;
 	case ECONNABORTED:
 		return OVE_ERR_NET_RESET;
+	case EAGAIN: /* would-block on a non-blocking socket */
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+	case EWOULDBLOCK:
+#endif
+		return OVE_ERR_TIMEOUT;
 	default:
 		return OVE_ERR_NOT_SUPPORTED;
 	}
@@ -445,6 +450,98 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 	if (src)
 		zephyr_to_sockaddr(&sin, src);
 	return OVE_OK;
+}
+
+/* ---------- Non-blocking readiness (drives the Linux-personality park/retry) ---------- */
+
+int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int flags = zsock_fcntl(sock->fd, F_GETFL, 0);
+	if (flags < 0)
+		return zephyr_errno_to_ove(errno);
+	flags = nonblock ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+	if (zsock_fcntl(sock->fd, F_SETFL, flags) < 0)
+		return zephyr_errno_to_ove(errno);
+	return OVE_OK;
+}
+
+int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	struct zsock_pollfd pfd = {.fd = sock->fd, .events = 0};
+	if (events & OVE_SOCK_POLLIN)
+		pfd.events |= ZSOCK_POLLIN;
+	if (events & OVE_SOCK_POLLOUT)
+		pfd.events |= ZSOCK_POLLOUT;
+	int timeout_ms = ove_timeout_is_forever(timeout_ns) ? -1
+			 : (timeout_ns / 1000000ULL > (uint64_t)INT32_MAX)
+				 ? INT32_MAX
+				 : (int)(timeout_ns / 1000000ULL);
+	int pr = zsock_poll(&pfd, 1, timeout_ms);
+	if (pr < 0)
+		return zephyr_errno_to_ove(errno);
+	unsigned re = 0;
+	if (pfd.revents & ZSOCK_POLLIN)
+		re |= OVE_SOCK_POLLIN;
+	if (pfd.revents & ZSOCK_POLLOUT)
+		re |= OVE_SOCK_POLLOUT;
+	if (pfd.revents & ZSOCK_POLLERR)
+		re |= OVE_SOCK_POLLERR;
+	if (pfd.revents & ZSOCK_POLLHUP)
+		re |= OVE_SOCK_POLLHUP;
+	if (revents)
+		*revents = re;
+	return OVE_OK;
+}
+
+int ove_socket_shutdown(ove_socket_t sock, int how)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int lh = (how == OVE_SHUT_RD)	? ZSOCK_SHUT_RD
+		 : (how == OVE_SHUT_WR) ? ZSOCK_SHUT_WR
+					: ZSOCK_SHUT_RDWR;
+	if (zsock_shutdown(sock->fd, lh) < 0)
+		return zephyr_errno_to_ove(errno);
+	return OVE_OK;
+}
+
+int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
+	struct sockaddr_in sin;
+	socklen_t sl = sizeof(sin);
+	if (zsock_getsockname(sock->fd, (struct sockaddr *)&sin, &sl) < 0)
+		return zephyr_errno_to_ove(errno);
+	zephyr_to_sockaddr(&sin, addr);
+	return OVE_OK;
+}
+
+int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
+{
+	if (!sock || !addr)
+		return OVE_ERR_INVALID_PARAM;
+	struct sockaddr_in sin;
+	socklen_t sl = sizeof(sin);
+	if (zsock_getpeername(sock->fd, (struct sockaddr *)&sin, &sl) < 0)
+		return zephyr_errno_to_ove(errno);
+	zephyr_to_sockaddr(&sin, addr);
+	return OVE_OK;
+}
+
+int ove_socket_get_error(ove_socket_t sock)
+{
+	if (!sock)
+		return OVE_ERR_INVALID_PARAM;
+	int soerr = 0;
+	socklen_t sl = sizeof(soerr);
+	if (zsock_getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) < 0)
+		return zephyr_errno_to_ove(errno);
+	return soerr ? zephyr_errno_to_ove(soerr) : OVE_OK;
 }
 
 /* ---------- DNS ---------- */

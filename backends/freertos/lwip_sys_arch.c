@@ -317,16 +317,25 @@ void sys_mbox_set_invalid(sys_mbox_t *mbox)
 
 /* ---------- Threads ---------- */
 
+/* RTOS-infra threads (tcpip_thread, ...) run PRIVILEGED under the FreeRTOS MPU port
+ * (the Linux personality): they use the lwIP heap + hardware, and their SDRAM stacks
+ * need kernel access for exception (un)stacking. portPRIVILEGE_BIT is 0 (a no-op) on
+ * the non-MPU port. */
+#ifndef portPRIVILEGE_BIT
+#define portPRIVILEGE_BIT 0u
+#endif
+
 sys_thread_t sys_thread_new(const char *name, lwip_thread_fn thread, void *arg, int stacksize,
 			    int prio)
 {
 	TaskHandle_t task = NULL;
+	const UBaseType_t uprio = (UBaseType_t)prio | portPRIVILEGE_BIT;
 #ifdef CONFIG_OVE_ZERO_HEAP
 	(void)stacksize;
 	for (int i = 0; i < CONFIG_OVE_NET_LWIP_SYS_THREAD_POOL; i++) {
 		if (!s_thread_pool[i].in_use) {
 			s_thread_pool[i].handle = xTaskCreateStatic(
-				thread, name, THREAD_STACK_WORDS, arg, (UBaseType_t)prio,
+				thread, name, THREAD_STACK_WORDS, arg, uprio,
 				s_thread_pool[i].stack, &s_thread_pool[i].tcb);
 			s_thread_pool[i].in_use = 1;
 			task = s_thread_pool[i].handle;
@@ -334,8 +343,7 @@ sys_thread_t sys_thread_new(const char *name, lwip_thread_fn thread, void *arg, 
 		}
 	}
 #else
-	xTaskCreate(thread, name, (configSTACK_DEPTH_TYPE)(stacksize / 4), arg, (UBaseType_t)prio,
-		    &task);
+	xTaskCreate(thread, name, (configSTACK_DEPTH_TYPE)(stacksize / 4), arg, uprio, &task);
 #endif
 	return task;
 }

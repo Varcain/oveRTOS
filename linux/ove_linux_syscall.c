@@ -16,6 +16,9 @@
 #if defined(CONFIG_OVE_LINUX_DEV)
 #include "ove/linux/dev.h" /* /dev character-device routing (FD_DEV) */
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+#include "ove/linux/net.h" /* socket routing (FD_SOCKET) */
+#endif
 
 #include <string.h>
 
@@ -618,6 +621,10 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 	if (s->kind == OVE_LNX_FD_DEV)
 		return ove_lnx_dev_write(p, s->file_idx, buf, len);
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+	if (s->kind == OVE_LNX_FD_SOCKET)
+		return ove_lnx_sock_send(p, s->file_idx, buf, len, 0, NULL, 0);
+#endif
 	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
 	if (s->kind == OVE_LNX_FD_PIPE) {
 		if (s->rw != 1)
@@ -692,6 +699,10 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 #if defined(CONFIG_OVE_LINUX_DEV)
 	if (s->kind == OVE_LNX_FD_DEV)
 		return ove_lnx_dev_read(p, s->file_idx, buf, len);
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+	if (s->kind == OVE_LNX_FD_SOCKET)
+		return ove_lnx_sock_recv(p, s->file_idx, buf, len, 0, NULL, NULL);
 #endif
 
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
@@ -1421,6 +1432,10 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 	if (s->kind == OVE_LNX_FD_DEV)
 		ove_lnx_dev_close(s->file_idx); /* refs--, ops->release at the last close */
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+	if (s->kind == OVE_LNX_FD_SOCKET)
+		ove_lnx_sock_close(s->file_idx); /* refs--, ove_socket_close at the last close */
+#endif
 	s->kind = OVE_LNX_FD_FREE;
 	return 0;
 }
@@ -1478,10 +1493,18 @@ static long sys_dup2(ove_lnx_proc_t *p, int oldfd, int newfd)
 		if (p->fds[newfd].kind == OVE_LNX_FD_DEV)
 			ove_lnx_dev_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+		if (p->fds[newfd].kind == OVE_LNX_FD_SOCKET)
+			ove_lnx_sock_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
+#endif
 		p->fds[newfd] = *s;
 #if defined(CONFIG_OVE_LINUX_DEV)
 		if (s->kind == OVE_LNX_FD_DEV)
 			ove_lnx_dev_get(s->file_idx); /* the new fd shares the open */
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+		if (s->kind == OVE_LNX_FD_SOCKET)
+			ove_lnx_sock_get(s->file_idx); /* the new fd shares the open */
 #endif
 	}
 	return newfd;
@@ -1499,6 +1522,10 @@ static long sys_dup(ove_lnx_proc_t *p, int oldfd)
 #if defined(CONFIG_OVE_LINUX_DEV)
 			if (s->kind == OVE_LNX_FD_DEV)
 				ove_lnx_dev_get(s->file_idx); /* the dup shares the open */
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+			if (s->kind == OVE_LNX_FD_SOCKET)
+				ove_lnx_sock_get(s->file_idx); /* the dup shares the open */
 #endif
 			return fd;
 		}
@@ -1623,6 +1650,14 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 		ove_lnx_dev_fstat(s->file_idx, &mode, &rdev, &size);
 		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, mode, size);
 		((struct ove_lnx_kstat64 *)statbuf)->st_rdev = rdev;
+	}
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+	else if (s->kind == OVE_LNX_FD_SOCKET) {
+		uint32_t mode;
+		uint64_t size;
+		ove_lnx_sock_fstat(s->file_idx, &mode, &size);
+		fill_kstat64(statbuf, 0x400000u + (uint32_t)s->file_idx, mode, size);
 	}
 #endif
 	else
@@ -2422,6 +2457,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 					if (s->kind == OVE_LNX_FD_DEV)
 						ove_lnx_dev_get(s->file_idx);
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+					if (s->kind == OVE_LNX_FD_SOCKET)
+						ove_lnx_sock_get(s->file_idx);
+#endif
 					return nfd;
 				}
 			}
@@ -2437,6 +2476,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			}
 			if ((int)a1 == OVE_LNX_F_GETFL)
 				return ove_lnx_dev_getfl(s->file_idx);
+		}
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+		/* A socket fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking. */
+		if (s->kind == OVE_LNX_FD_SOCKET) {
+			if ((int)a1 == OVE_LNX_F_SETFL) {
+				ove_lnx_sock_setfl(s->file_idx, (int)a2);
+				return 0;
+			}
+			if ((int)a1 == OVE_LNX_F_GETFL)
+				return ove_lnx_sock_getfl(s->file_idx);
 		}
 #endif
 		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
@@ -2687,6 +2737,16 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				continue;
 			}
 #endif
+#if defined(CONFIG_OVE_LINUX_NET)
+			else if (s->kind == OVE_LNX_FD_SOCKET) {
+				unsigned pb = ove_lnx_sock_poll(s->file_idx);
+				pfds[i].revents = (short)(pfds[i].events & pb &
+							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+				if (pfds[i].revents)
+					ready++;
+				continue;
+			}
+#endif
 			else
 				avail = 1; /* files / pipes: readable/writable */
 			if (avail) {
@@ -2840,6 +2900,87 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		int op = (int)a1 & 0x7f; /* mask FUTEX_PRIVATE_FLAG / FUTEX_CLOCK_REALTIME */
 		return (op == 0 || op == 9) ? -OVE_LNX_EAGAIN : 0; /* WAIT / WAIT_BITSET */
 	}
+#if defined(CONFIG_OVE_LINUX_NET)
+	case OVE_LNX_NR_socket: { /* (domain, type, protocol) */
+		long oi = ove_lnx_sock_new((int)a0, (int)a1, (int)a2);
+		if (oi < 0)
+			return oi;
+		int fd = fd_alloc(proc, OVE_LNX_FD_SOCKET, (int)oi, 0);
+		if (fd < 0) {
+			ove_lnx_sock_close((int)oi);
+			return -OVE_LNX_EMFILE;
+		}
+		return fd;
+	}
+	case OVE_LNX_NR_connect: { /* (fd, addr, addrlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_connect(proc, s->file_idx, (const void *)(uintptr_t)a1,
+					    (unsigned)a2);
+	}
+	case OVE_LNX_NR_send:	  /* (fd, buf, len, flags) */
+	case OVE_LNX_NR_sendto: { /* (fd, buf, len, flags, dest, destlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		const void *dest = (nr == OVE_LNX_NR_sendto) ? (const void *)(uintptr_t)a4 : NULL;
+		return ove_lnx_sock_send(proc, s->file_idx, (const void *)(uintptr_t)a1, (size_t)a2,
+					 (int)a3, dest, (unsigned)a5);
+	}
+	case OVE_LNX_NR_recv:	    /* (fd, buf, len, flags) */
+	case OVE_LNX_NR_recvfrom: { /* (fd, buf, len, flags, src, srclen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		void *src = (nr == OVE_LNX_NR_recvfrom) ? (void *)(uintptr_t)a4 : NULL;
+		void *srclen = (nr == OVE_LNX_NR_recvfrom) ? (void *)(uintptr_t)a5 : NULL;
+		return ove_lnx_sock_recv(proc, s->file_idx, (void *)(uintptr_t)a1, (size_t)a2, (int)a3,
+					 src, srclen);
+	}
+	case OVE_LNX_NR_shutdown: { /* (fd, how) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_shutdown(s->file_idx, (int)a1);
+	}
+	case OVE_LNX_NR_getsockname: { /* (fd, addr, addrlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_getsockname(proc, s->file_idx, (void *)(uintptr_t)a1,
+						(void *)(uintptr_t)a2);
+	}
+	case OVE_LNX_NR_getpeername: { /* (fd, addr, addrlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_getpeername(proc, s->file_idx, (void *)(uintptr_t)a1,
+						(void *)(uintptr_t)a2);
+	}
+	case OVE_LNX_NR_setsockopt: { /* (fd, level, optname, optval, optlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_setsockopt(proc, s->file_idx, (int)a1, (int)a2,
+					       (const void *)(uintptr_t)a3, (unsigned)a4);
+	}
+	case OVE_LNX_NR_getsockopt: { /* (fd, level, optname, optval, optlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_getsockopt(proc, s->file_idx, (int)a1, (int)a2,
+					       (void *)(uintptr_t)a3, (void *)(uintptr_t)a4);
+	}
+	case OVE_LNX_NR_bind:	    /* server sockets (bind/listen/accept) land in P4 */
+	case OVE_LNX_NR_listen:
+	case OVE_LNX_NR_accept:
+	case OVE_LNX_NR_accept4:
+	case OVE_LNX_NR_socketpair:
+	case OVE_LNX_NR_sendmsg: /* scatter/gather lands in P1 */
+	case OVE_LNX_NR_recvmsg:
+		return -OVE_LNX_EOPNOTSUPP;
+#endif
 	default:
 		return -OVE_LNX_ENOSYS;
 	}
