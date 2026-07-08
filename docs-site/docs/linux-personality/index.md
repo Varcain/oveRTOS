@@ -62,7 +62,7 @@ Swap `freertos` for `nuttx` or `zephyr` — the same demo runs on each. At the
 shell: `uname -a`, `ls -l /`, `ps`, `top`, `cat`, a pipe (`seq 5 | wc -l`), a
 background job, `vi`, then `poweroff`.
 
-The guest userspace is stock Buildroot (`../buildroot`, `output-fdpic`). Add your
+The guest userspace is stock Buildroot (`../buildroot`, `output`). Add your
 own guest programs as FDPIC binaries under `board/overtos/progs/` (see
 `post-build.sh`) — that is how the test programs (`dbgdemo`, `lbench`) are built.
 
