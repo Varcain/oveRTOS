@@ -60,9 +60,13 @@ MEMORY
      * backends/freertos/freertos_audio.c; DSP_DTCM is the remainder used
      * by external apps for DSP hot working buffers via the .dsp_bss
      * section attribute.  The 0x140 bytes from 0x20000000 to 0x20000140
-     * are left implicitly unused — ETH descriptors used to live there
-     * via section attrs but stm32f7_eth.c now declares them in default
-     * .bss. */
+     * hold the ETH DMA descriptor tables (4 RX + 4 TX × 40 B = exactly
+     * 0x140) via the .eth_desc section attribute in stm32f7_eth.c.  DTCM
+     * is architecturally never cached by the M7 yet is reachable by the
+     * ETH DMA through the Cortex-M7 AHBS slave port, so the descriptors
+     * stay coherent with D-cache ON and need no cache maintenance (ST
+     * AN4839).  Empty (reclaimed as slack) in non-Ethernet builds. */
+    ETH_DESC (xrw)  : ORIGIN = 0x20000000, LENGTH = 0x140      /* ETH DMA descriptors (uncached DTCM) */
     Memory3 (xrw)   : ORIGIN = 0x20000140, LENGTH = 0x2000     /* I2S RX DMA buf (8 KB) */
     Memory4 (xrw)   : ORIGIN = 0x20002140, LENGTH = 0x2000     /* I2S TX DMA buf (8 KB) */
     DSP_DTCM (xrw)  : ORIGIN = 0x20004140, LENGTH = 0xBEC0     /* 47.7 KB — DSP    */
@@ -257,6 +261,11 @@ SECTIONS
      * AHB DMA reachability. */
     .RxBUF (NOLOAD) : { *(.RxBUF) } > Memory3
     .TxBUF (NOLOAD) : { *(.TxBUF) } > Memory4
+
+    /* ETH DMA descriptor tables — stm32f7_eth.c places DMARxDscrTab /
+     * DMATxDscrTab here via `__attribute__((section(".eth_desc")))` so they
+     * live in uncached DTCM (coherent with the ETH DMA under D-cache ON). */
+    .eth_desc (NOLOAD) : ALIGN(4) { *(.eth_desc) } > ETH_DESC
 
     /* DSP working buffers — external apps place hot DSP arrays here via
      * `__attribute__((section(".dsp_bss")))` for low-latency DTCM access. */
