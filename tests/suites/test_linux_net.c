@@ -294,6 +294,49 @@ static void test_net_dup_close(void **state)
 	ove_lnx_sock_proc_exit(&p);
 }
 
+/* poll(2) on a socket must block until the fd is readable (or the timeout) — the
+ * uClibc DNS resolver does poll(POLLIN) then recv(MSG_DONTWAIT), so a poll that
+ * returned early/late would break name resolution. Exercises the SOCKW_POLL park
+ * + ove_lnx_poll_retry re-scan for both the timeout and the readiness-wake paths. */
+static void test_net_poll(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup(&p, &arena);
+
+	int port = 0;
+	int ls = host_listen(&port);
+	long fd = ove_lnx_syscall(&p, OVE_LNX_NR_socket, OVE_LNX_AF_INET, OVE_LNX_SOCK_STREAM, 0, 0, 0,
+				  0);
+	assert_true(fd >= 3);
+	ove_lnx_sockaddr_in a;
+	guest_addr(&a, port);
+	assert_int_equal(
+		call_pump(&p, OVE_LNX_NR_connect, fd, (long)(uintptr_t)&a, sizeof(a), 0, 0, 0), 0);
+	int conn = accept(ls, NULL, NULL);
+	assert_true(conn >= 0);
+
+	/* Timeout: nothing readable, poll(POLLIN, 120 ms) parks on SOCKW_POLL, the
+	 * coordinator retry re-scans until the deadline, then poll returns 0. */
+	ove_lnx_pollfd pf;
+	memset(&pf, 0, sizeof(pf));
+	pf.fd = (int)fd;
+	pf.events = OVE_LNX_POLLIN;
+	assert_int_equal(call_pump(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pf, 1, 120, 0, 0, 0), 0);
+	assert_int_equal(pf.revents, 0);
+
+	/* Readiness wake: host sends, poll(POLLIN) reports the socket readable. */
+	assert_int_equal((int)send(conn, "x", 1, 0), 1);
+	pf.revents = 0;
+	assert_int_equal(call_pump(&p, OVE_LNX_NR_poll, (long)(uintptr_t)&pf, 1, 1000, 0, 0, 0), 1);
+	assert_true((pf.revents & OVE_LNX_POLLIN) != 0);
+
+	close(conn);
+	close(ls);
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
+}
+
 int test_linux_net_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -302,6 +345,7 @@ int test_linux_net_run(void)
 		cmocka_unit_test(test_net_loopback_roundtrip),
 		cmocka_unit_test(test_net_nonblock),
 		cmocka_unit_test(test_net_dup_close),
+		cmocka_unit_test(test_net_poll),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
