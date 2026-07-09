@@ -184,6 +184,39 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *ga
 	return found ? OVE_OK : OVE_ERR_NOT_SUPPORTED;
 }
 
+/* P2 interface config. FreeRTOS/lwIP is the lead engine for runtime ifconfig; here we
+ * expose a plausible read-only view + accept-and-ignore setters (the host OS owns
+ * addressing) so the personality's `ifconfig` runs and the host tests are deterministic. */
+int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip, const ove_sockaddr_t *netmask,
+		       const ove_sockaddr_t *gateway)
+{
+	(void)ip;
+	(void)netmask;
+	(void)gateway;
+	return netif ? OVE_OK : OVE_ERR_INVALID_PARAM;
+}
+int ove_netif_set_up(ove_netif_t netif, int up)
+{
+	(void)up;
+	return netif ? OVE_OK : OVE_ERR_INVALID_PARAM;
+}
+int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6])
+{
+	static const uint8_t synth[6] = {0x02, 0x00, 0x00, 0xDE, 0xAD, 0x01};
+	if (!netif)
+		return OVE_ERR_INVALID_PARAM;
+	memcpy(mac, synth, 6);
+	return OVE_OK;
+}
+int ove_netif_get_flags(ove_netif_t netif, unsigned *flags)
+{
+	if (!netif || !flags)
+		return OVE_ERR_INVALID_PARAM;
+	*flags = OVE_NETIF_FLAG_UP | OVE_NETIF_FLAG_BROADCAST | OVE_NETIF_FLAG_RUNNING |
+		 OVE_NETIF_FLAG_MULTICAST;
+	return OVE_OK;
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_netif_create(ove_netif_t *netif)
 {

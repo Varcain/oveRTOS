@@ -41,7 +41,8 @@
 #include "ove/linux/run.h"
 #include "ove/linux/syscall.h"
 #if defined(CONFIG_OVE_LINUX_NET)
-#include "ove/net.h" /* bring eth0 up so the personality's sockets can reach the LAN */
+#include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
+#include "ove/linux/net.h" /* ove_lnx_sock_set_netif — the SIOC* ioctl target */
 #endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
@@ -419,6 +420,9 @@ static void demo_body(void *arg)
 		ove_sockaddr_ipv4(&netcfg.gateway, 172, 1, 1, 1, 0);
 		if (ove_netif_init(&nif, &s_netif_storage) == OVE_OK &&
 		    ove_netif_up(nif, &netcfg) == OVE_OK) {
+			/* Register the interface so the personality's SIOC* ioctls (ifconfig/route)
+			 * operate on it. */
+			ove_lnx_sock_set_netif(nif);
 			ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
 			for (int i = 0; i < 200; i++) { /* wait for the interface to report its address */
 				ove_netif_get_addr(nif, &ip, &gw, &nm);

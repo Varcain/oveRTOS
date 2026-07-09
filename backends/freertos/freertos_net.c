@@ -282,6 +282,72 @@ int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *ga
 	return OVE_OK;
 }
 
+/* ove_sockaddr_t.addr[] holds the raw network-order bytes; ip4_addr_t.addr is a
+ * network-order u32_t, so a straight 4-byte copy converts either direction. */
+static void ove_sa_to_ip4(const ove_sockaddr_t *sa, ip4_addr_t *a)
+{
+	memcpy(&a->addr, sa->addr, 4);
+}
+
+int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip, const ove_sockaddr_t *netmask,
+		       const ove_sockaddr_t *gateway)
+{
+	if (!netif || !netif->lwip_netif)
+		return OVE_ERR_INVALID_PARAM;
+	struct netif *nif = (struct netif *)netif->lwip_netif;
+	ip4_addr_t a;
+	if (ip) {
+		ove_sa_to_ip4(ip, &a);
+		netif_set_ipaddr(nif, &a);
+	}
+	if (netmask) {
+		ove_sa_to_ip4(netmask, &a);
+		netif_set_netmask(nif, &a);
+	}
+	if (gateway) {
+		ove_sa_to_ip4(gateway, &a);
+		netif_set_gw(nif, &a);
+	}
+	return OVE_OK;
+}
+
+int ove_netif_set_up(ove_netif_t netif, int up)
+{
+	if (!netif || !netif->lwip_netif)
+		return OVE_ERR_INVALID_PARAM;
+	struct netif *nif = (struct netif *)netif->lwip_netif;
+	if (up)
+		netif_set_up(nif);
+	else
+		netif_set_down(nif);
+	return OVE_OK;
+}
+
+int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6])
+{
+	if (!netif || !netif->lwip_netif)
+		return OVE_ERR_INVALID_PARAM;
+	struct netif *nif = (struct netif *)netif->lwip_netif;
+	memcpy(mac, nif->hwaddr, 6);
+	return OVE_OK;
+}
+
+int ove_netif_get_flags(ove_netif_t netif, unsigned *flags)
+{
+	if (!netif || !netif->lwip_netif || !flags)
+		return OVE_ERR_INVALID_PARAM;
+	struct netif *nif = (struct netif *)netif->lwip_netif;
+	unsigned f = 0;
+	if (netif_is_up(nif))
+		f |= OVE_NETIF_FLAG_UP;
+	if (netif_is_link_up(nif))
+		f |= OVE_NETIF_FLAG_RUNNING;
+	if (nif->flags & NETIF_FLAG_BROADCAST)
+		f |= (OVE_NETIF_FLAG_BROADCAST | OVE_NETIF_FLAG_MULTICAST);
+	*flags = f;
+	return OVE_OK;
+}
+
 #ifndef CONFIG_OVE_ZERO_HEAP
 int ove_netif_create(ove_netif_t *netif)
 {

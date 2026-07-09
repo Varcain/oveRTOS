@@ -137,6 +137,30 @@ void ove_netif_down(ove_netif_t netif);
 int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_sockaddr_t *gateway,
 		       ove_sockaddr_t *netmask);
 
+/** ove_netif status flags (ove_netif_get_flags). The Linux personality maps these
+ *  to the guest's IFF_* values; keep them engine-neutral here. */
+#define OVE_NETIF_FLAG_UP 0x01u	       /**< Administratively up. */
+#define OVE_NETIF_FLAG_BROADCAST 0x02u /**< Broadcast capable. */
+#define OVE_NETIF_FLAG_LOOPBACK 0x04u  /**< Loopback interface. */
+#define OVE_NETIF_FLAG_RUNNING 0x08u   /**< Link/carrier up. */
+#define OVE_NETIF_FLAG_MULTICAST 0x10u /**< Multicast capable. */
+
+/**
+ * @brief Reconfigure the interface's address(es). A NULL field is left unchanged.
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip, const ove_sockaddr_t *netmask,
+		       const ove_sockaddr_t *gateway);
+
+/** @brief Bring the interface administratively up (up != 0) or down (up == 0). */
+int ove_netif_set_up(ove_netif_t netif, int up);
+
+/** @brief Copy the interface's 6-byte hardware (MAC) address into @p mac. */
+int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6]);
+
+/** @brief Read the interface's OVE_NETIF_FLAG_* bitmask into @p flags. */
+int ove_netif_get_flags(ove_netif_t netif, unsigned *flags);
+
 #ifdef OVE_HEAP_NET
 /**
  * @brief Heap-allocate and initialise a network interface.
@@ -420,6 +444,33 @@ static inline int ove_netif_get_addr(ove_netif_t netif, ove_sockaddr_t *ip, ove_
 	(void)ip;
 	(void)gw;
 	(void)nm;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_netif_set_addr(ove_netif_t netif, const ove_sockaddr_t *ip,
+				     const ove_sockaddr_t *nm, const ove_sockaddr_t *gw)
+{
+	(void)netif;
+	(void)ip;
+	(void)nm;
+	(void)gw;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_netif_set_up(ove_netif_t netif, int up)
+{
+	(void)netif;
+	(void)up;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_netif_get_hwaddr(ove_netif_t netif, uint8_t mac[6])
+{
+	(void)netif;
+	(void)mac;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_netif_get_flags(ove_netif_t netif, unsigned *flags)
+{
+	(void)netif;
+	(void)flags;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
