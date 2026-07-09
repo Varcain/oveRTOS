@@ -238,7 +238,9 @@ extern "C" {
 #define OVE_LNX_SIGKILL 9
 #define OVE_LNX_SIGSEGV 11
 #define OVE_LNX_SIGPIPE 13
+#define OVE_LNX_SIGALRM 14
 #define OVE_LNX_SIGTERM 15
+#define OVE_LNX_ITIMER_REAL 0 /* setitimer(): real-time countdown -> SIGALRM */
 /* fcntl commands: F_DUPFD duplicates an fd (the shell dups stdin for its
  * interactive fd); the rest are benign get/set probes. */
 #define OVE_LNX_F_DUPFD 0
@@ -481,6 +483,8 @@ typedef struct ove_lnx_proc {
 	uintptr_t sock_buf; /**< User buffer (send/recv); the user pollfd array for SOCKW_POLL. */
 	size_t sock_len;    /**< Requested length (send/recv); nfds for SOCKW_POLL. */
 	uint64_t sock_deadline_us; /**< SOCKW_POLL absolute timeout (UINT64_MAX = infinite). */
+	uint64_t alarm_deadline_us; /**< setitimer(ITIMER_REAL)/alarm() fire time; 0 = disarmed. */
+	uint64_t alarm_interval_us; /**< Repeating interval (0 = one-shot); re-arms on fire. */
 } ove_lnx_proc_t;
 
 /** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan

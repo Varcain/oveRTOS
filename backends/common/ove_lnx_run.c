@@ -800,6 +800,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->dev_wait = 0;
 			ch->sock_wait = 0;
 			ch->pending_sig = 0;
+			ch->alarm_deadline_us = 0; /* itimers are not inherited across fork */
+			ch->alarm_interval_us = 0;
 			ch->child_count = ch->live_children = 0;
 			ch->clone_is_thread = 0;
 			ch->alive = 1;
@@ -980,6 +982,20 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_dev_wait = 1;
 			if (p->sock_wait)
 				any_sock_wait = 1;
+			/* ITIMER_REAL: raise SIGALRM once the deadline passes (setitimer/alarm).
+			 * Only for a parked proc — a running one owns these fields and takes the
+			 * signal at its next syscall boundary. Re-arm from the interval, and clamp
+			 * the coordinator's idle sleep to the (possibly new) deadline. */
+			if (p->alarm_deadline_us && !g_ove_lnx_used[s]) {
+				if (now >= p->alarm_deadline_us) {
+					if (!p->pending_sig)
+						p->pending_sig = OVE_LNX_SIGALRM;
+					p->alarm_deadline_us =
+						p->alarm_interval_us ? now + p->alarm_interval_us : 0;
+				}
+				if (p->alarm_deadline_us && p->alarm_deadline_us < next_sleep)
+					next_sleep = p->alarm_deadline_us;
+			}
 			/* Cross-process signal (D3) to a parked, blocked proc: the dispatch can't
 			 * deliver (no live thread), so the coordinator does. SIG_IGN is dropped;
 			 * otherwise terminate (default action — a custom handler on a blocked proc
@@ -1002,6 +1018,19 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 					p->exited = 1;
 					p->exit_status = 128 + sig;
 					p->sleeping = p->wait_pending = p->pipe_wait = 0;
+					progress = 1;
+				}
+			} else if (p->pending_sig && !g_ove_lnx_used[s] && p->sock_wait) {
+				/* Signal to a proc parked in a socket op (connect/recv/accept/
+				 * poll): run a handler then the op returns -EINTR — busybox ping's
+				 * SIGALRM timer drives its next send this way, and a server's
+				 * blocked accept takes SIGTERM/SIGCHLD. SIG_DFL terminates; SIG_IGN
+				 * is swallowed, leaving the proc parked (the retry re-attempts). */
+				int sig = p->pending_sig;
+				p->pending_sig = 0;
+				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+					p->sock_wait = 0;
+					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
 					progress = 1;
 				}
 			}
