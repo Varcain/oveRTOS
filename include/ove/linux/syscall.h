@@ -460,6 +460,9 @@ typedef struct ove_lnx_proc {
 	int pipe_idx;	    /**< g_pipes[] index being waited on. */
 	uintptr_t pipe_buf; /**< User buffer for the parked read/write. */
 	size_t pipe_len;    /**< Requested length for the parked read/write. */
+	int console_wait;      /**< 1 = blocked reading the console; the coordinator polls it. */
+	uintptr_t console_buf; /**< User buffer for the parked console read. */
+	size_t console_len;    /**< Requested length for the parked console read. */
 	/* Cross-process signal (Phase D3): kill(pid,sig) from another proc latches the
 	 * signal here; it is delivered at this proc's next syscall boundary (if running)
 	 * or by the coordinator (if parked in sleep/wait/pipe). 0 = none. */

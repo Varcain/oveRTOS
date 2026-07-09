@@ -713,6 +713,16 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 			return 0;     /* EOF */
 		if (!p->read_fn)
 			return 0; /* EOF */
+		/* Park until a key is ready (probed via console_poll) so the SVC handler
+		 * returns and the coordinator's background tasks — notably the Ethernet RX
+		 * poll — run, instead of read_fn busy-waiting in handler mode (which starves
+		 * a backgrounded server). Without a poll hook, fall back to a blocking read. */
+		if (p->console_poll && p->console_poll(p->io_ctx) == 0) {
+			p->console_wait = 1;
+			p->console_buf = (uintptr_t)buf;
+			p->console_len = len;
+			return 0; /* parked; the coordinator resumes it when a key arrives */
+		}
 		return p->read_fn(p->io_ctx, fd, buf, len);
 	}
 
