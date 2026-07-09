@@ -203,7 +203,10 @@ void ove_lnx_sock_setfl(int oi, int flags)
 int ove_lnx_sock_getfl(int oi)
 {
 	struct sock_open *o = open_slot(oi);
-	return o ? o->oflags : 0;
+	/* A socket is bidirectional → O_RDWR. uClibc fdopen(fd,"r+") checks F_GETFL's
+	 * access mode and returns EINVAL (which busybox wget reports as "out of memory")
+	 * if it looks read-only — so the access bits must be present, not just oflags. */
+	return o ? (OVE_LNX_O_RDWR | (int)o->oflags) : -OVE_LNX_EBADF;
 }
 
 /* ---- connect / send / recv (with deferred-block park) ---------------------- */
