@@ -2622,8 +2622,41 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_setgroups32: /* uid/gid not enforced (login's privilege drop is */
 	case OVE_LNX_NR_setuid32:    /* inert — programs run privileged in this tier) */
 	case OVE_LNX_NR_setgid32:
-	case OVE_LNX_NR_setitimer: /* no interval timers (login's login-timeout alarm) */
-		return 0;	   /* process-control / fs-mode / timer setup accepted (inert) */
+		return 0; /* process-control / fs-mode setup accepted (inert) */
+	case OVE_LNX_NR_setitimer: { /* (which, new, old) — ITIMER_REAL -> SIGALRM (alarm()) */
+		int which = (int)a0;
+		const void *unew = (const void *)(uintptr_t)a1;
+		void *uold = (void *)(uintptr_t)a2;
+		if (which != OVE_LNX_ITIMER_REAL)
+			return 0; /* only the real-time timer (login timeout, ping interval) */
+		/* struct itimerval { timeval it_interval; timeval it_value; }; ARM32 long=4,
+		 * so it is 4 x u32: [interval_sec, interval_usec, value_sec, value_usec]. */
+		uint64_t now = 0;
+		ove_time_get_us(&now);
+		if (uold) {
+			if (!user_ok(proc, uold, 16, 1))
+				return -OVE_LNX_EFAULT;
+			uint32_t ov[4] = {0, 0, 0, 0};
+			uint64_t rem = (proc->alarm_deadline_us && proc->alarm_deadline_us > now)
+					       ? proc->alarm_deadline_us - now
+					       : 0;
+			ov[0] = (uint32_t)(proc->alarm_interval_us / 1000000u);
+			ov[1] = (uint32_t)(proc->alarm_interval_us % 1000000u);
+			ov[2] = (uint32_t)(rem / 1000000u);
+			ov[3] = (uint32_t)(rem % 1000000u);
+			memcpy(uold, ov, 16);
+		}
+		if (!unew)
+			return 0;
+		if (!user_ok(proc, unew, 16, 0))
+			return -OVE_LNX_EFAULT;
+		uint32_t nv[4];
+		memcpy(nv, unew, 16);
+		proc->alarm_interval_us = (uint64_t)nv[0] * 1000000u + nv[1];
+		uint64_t val_us = (uint64_t)nv[2] * 1000000u + nv[3];
+		proc->alarm_deadline_us = val_us ? now + val_us : 0; /* it_value 0 disarms */
+		return 0;
+	}
 	case OVE_LNX_NR_getpgrp:   /* shell job control: process group == pid */
 	case OVE_LNX_NR_setsid:	   /* getty/login start a new session */
 		return proc->pid;  /* the caller becomes the session/group leader */
