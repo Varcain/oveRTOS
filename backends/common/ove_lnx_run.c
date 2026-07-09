@@ -395,7 +395,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
 	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait || proc->dev_wait ||
-	    proc->sock_wait || proc->sigsuspend_pending) {
+	    proc->sock_wait || proc->sigsuspend_pending || proc->console_wait) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
 		return;
@@ -713,7 +713,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			EV_PIPE,
 			EV_DEVWAIT,
 			EV_SOCKWAIT,
-			EV_SIGSUSPEND
+			EV_SIGSUSPEND,
+			EV_CONSOLEWAIT
 		};
 		eng->crit_enter();
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
@@ -767,6 +768,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_SIGSUSPEND;
 				break;
 			}
+			if (p->console_wait && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_CONSOLEWAIT;
+				break;
+			}
 		}
 		eng->crit_exit();
 
@@ -800,6 +806,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->pipe_wait = 0;
 			ch->dev_wait = 0;
 			ch->sock_wait = 0;
+			ch->console_wait = 0;
 			ch->pending_sig = 0;
 			ch->alarm_deadline_us = 0; /* itimers are not inherited across fork */
 			ch->alarm_interval_us = 0;
@@ -965,12 +972,17 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+		if (et == EV_CONSOLEWAIT) { /* free the spin thread; the console retry below resumes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
 
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
 		ove_time_get_us(&now);
 		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0,
-		    any_sock_wait = 0;
+		    any_sock_wait = 0, any_console_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -985,6 +997,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_dev_wait = 1;
 			if (p->sock_wait)
 				any_sock_wait = 1;
+			if (p->console_wait)
+				any_console_wait = 1;
 			/* ITIMER_REAL: raise SIGALRM once the deadline passes (setitimer/alarm).
 			 * Only for a parked proc — a running one owns these fields and takes the
 			 * signal at its next syscall boundary. Re-arm from the interval, and clamp
@@ -1108,6 +1122,20 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				}
 			}
 #endif
+			/* Blocked console read: the coordinator polls readiness (so read_fn does
+			 * not busy-wait in the SVC handler and starve background tasks like the net
+			 * RX poll). When a key is ready, read it here and resume the proc. */
+			if (p->console_wait && !g_ove_lnx_used[s]) {
+				if (p->console_poll && p->console_poll(p->io_ctx)) {
+					long r = p->read_fn ? p->read_fn(p->io_ctx, 0,
+									 (void *)p->console_buf,
+									 p->console_len)
+							    : 0;
+					p->console_wait = 0;
+					eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					progress = 1;
+				}
+			}
 		}
 		if (!any_alive) {
 			rc = 0;
@@ -1138,7 +1166,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
 		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
 		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
-		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait) ? 5u : 50u;
+		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait || any_console_wait)
+				      ? 5u
+				      : 50u;
 		if (next_sleep != UINT64_MAX && next_sleep > now) {
 			uint64_t d_ms = (next_sleep - now + 999u) / 1000u; /* round up, don't wake early */
 			if (d_ms < 1u)
