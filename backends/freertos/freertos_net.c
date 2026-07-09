@@ -140,7 +140,14 @@ static int af_to_lwip(ove_af_t af)
 
 static int type_to_lwip(ove_sock_type_t type)
 {
-	return (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM;
+	switch (type) {
+	case OVE_SOCK_DGRAM:
+		return SOCK_DGRAM;
+	case OVE_SOCK_RAW:
+		return SOCK_RAW;
+	default:
+		return SOCK_STREAM;
+	}
 }
 
 /* ---------- Network interface ---------- */
@@ -378,16 +385,28 @@ void ove_netif_destroy(ove_netif_t netif)
 int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
 		    ove_sock_type_t type)
 {
+	return ove_socket_open_ex(sock, storage, af, type, 0);
+}
+
+int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+		       ove_sock_type_t type, int proto)
+{
 	int ret = ove_check_param(sock);
 	if (ret)
 		return ret;
 	if (!storage)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_socket *s = (struct ove_socket *)storage;
-	int fd = lwip_socket(af_to_lwip(af), type_to_lwip(type), 0);
+	/* proto is the IP protocol (e.g. IPPROTO_ICMP=1 for a raw ping socket); 0 lets
+	 * lwIP pick the default for the type. LWIP_RAW must be enabled for SOCK_RAW. */
+	int fd = lwip_socket(af_to_lwip(af), type_to_lwip(type), proto);
 	if (fd < 0)
 		return lwip_errno_to_ove(errno);
 	s->fd = fd;
+	/* A raw IPv4 ICMP socket (BusyBox ping) carries an app-computed L4 checksum.
+	 * This board offloads ICMP checksums to the MAC (CHECKSUM_GEN_ICMP=0), which
+	 * only inserts one when the field is zero — see ove_socket_sendto(). */
+	s->icmp_raw = (af == OVE_AF_INET && type == OVE_SOCK_RAW && proto == IPPROTO_ICMP);
 	*sock = s;
 	return OVE_OK;
 }
@@ -568,7 +587,19 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_in sin;
 	sockaddr_to_lwip(dest, &sin);
-	ssize_t n = lwip_sendto(sock->fd, data, len, 0, (struct sockaddr *)&sin, sizeof(sin));
+	const void *sbuf = data;
+	/* HW ICMP-checksum offload (CHECKSUM_GEN_ICMP=0) only inserts a checksum when
+	 * the field is zero. BusyBox ping fills it in software, so the MAC leaves a
+	 * bad (zero-on-wire) csum and the peer drops the echo. Send a copy with the
+	 * ICMP checksum (offset 2) cleared so the MAC computes it from scratch. */
+	static uint8_t icmp_tx[1518];
+	if (sock->icmp_raw && len >= 4 && len <= sizeof(icmp_tx)) {
+		memcpy(icmp_tx, data, len);
+		icmp_tx[2] = 0;
+		icmp_tx[3] = 0;
+		sbuf = icmp_tx;
+	}
+	ssize_t n = lwip_sendto(sock->fd, sbuf, len, 0, (struct sockaddr *)&sin, sizeof(sin));
 	if (n < 0)
 		return lwip_errno_to_ove(errno);
 	if (sent)

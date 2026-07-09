@@ -311,7 +311,8 @@ typedef struct ove_model ove_model_storage_t;
 
 #ifdef CONFIG_OVE_NET
 struct ove_socket {
-	int fd; /* lwIP socket descriptor */
+	int fd;	      /* lwIP socket descriptor */
+	int icmp_raw; /* AF_INET SOCK_RAW/IPPROTO_ICMP: MAC inserts the L4 csum */
 };
 
 struct ove_netif {

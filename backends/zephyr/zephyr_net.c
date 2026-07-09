@@ -262,15 +262,23 @@ void ove_netif_destroy(ove_netif_t netif)
 int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
 		    ove_sock_type_t type)
 {
+	return ove_socket_open_ex(sock, storage, af, type, 0);
+}
+
+int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+		       ove_sock_type_t type, int proto)
+{
 	int ret = ove_check_param(sock);
 	if (ret)
 		return ret;
 	if (!storage)
 		return OVE_ERR_INVALID_PARAM;
-	(void)af; /* Zephyr: AF_INET */
+	if (type == OVE_SOCK_RAW)
+		return OVE_ERR_NOT_SUPPORTED; /* raw ICMP (ping) deferred on Zephyr */
+	(void)af;			     /* Zephyr: AF_INET */
 	struct ove_socket *s = (struct ove_socket *)storage;
 	int stype = (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM;
-	int fd = zsock_socket(AF_INET, stype, 0);
+	int fd = zsock_socket(AF_INET, stype, proto);
 	if (fd < 0)
 		return zephyr_errno_to_ove(errno);
 	s->fd = fd;
