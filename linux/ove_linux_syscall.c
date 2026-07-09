@@ -975,6 +975,13 @@ static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
 	return -OVE_LNX_EMFILE;
 }
 
+/* Public wrapper so the socket bridge can mint an accept(2) fd (the fd table is
+ * owned by this TU; the bridge owns the socket pool). */
+int ove_lnx_fd_install(ove_lnx_proc_t *p, uint8_t kind, int idx)
+{
+	return fd_alloc(p, kind, idx, 0);
+}
+
 /*
  * Collapse ".", "..", and duplicate/trailing slashes in absolute path `in` into
  * out[outlen]. Returns 0, or -ENAMETOOLONG on overflow.
@@ -2298,11 +2305,21 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	long rr = resolve_path(p, path, execabs, sizeof(execabs));
 	if (rr < 0)
 		return rr;
-	/* Follow symlinks, e.g. /bin/echo -> busybox (Buildroot installs applets as
-	 * symlinks). The argv (argv[0] = "echo") is kept, so busybox runs that applet. */
-	int idx = fs_follow(p, fs_lookup(p, execabs));
-	if (idx < 0)
-		return -OVE_LNX_ENOENT;
+	int idx;
+	if (strcmp(execabs, "/proc/self/exe") == 0) {
+		/* BusyBox re-execs its own image via execv("/proc/self/exe", argv) on NOMMU
+		 * — httpd (and any vfork+re-exec server) does this per connection. Re-run the
+		 * caller's current program image (kept in exec_file_idx across relaunches). */
+		idx = p->exec_file_idx;
+		if (idx < 0 || idx >= p->fs_count)
+			return -OVE_LNX_ENOENT;
+	} else {
+		/* Follow symlinks, e.g. /bin/echo -> busybox (Buildroot installs applets as
+		 * symlinks). The argv (argv[0] = "echo") is kept, so busybox runs that applet. */
+		idx = fs_follow(p, fs_lookup(p, execabs));
+		if (idx < 0)
+			return -OVE_LNX_ENOENT;
+	}
 	if ((file_mode(&p->fs[idx]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
 		return -OVE_LNX_EACCES;
 
@@ -3099,10 +3116,27 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return ove_lnx_sock_getsockopt(proc, s->file_idx, (int)a1, (int)a2,
 					       (void *)(uintptr_t)a3, (void *)(uintptr_t)a4);
 	}
-	case OVE_LNX_NR_bind:	    /* server sockets (bind/listen/accept) land in P4 */
-	case OVE_LNX_NR_listen:
-	case OVE_LNX_NR_accept:
-	case OVE_LNX_NR_accept4:
+	case OVE_LNX_NR_bind: { /* (fd, addr, addrlen) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_bind(proc, s->file_idx, (const void *)(uintptr_t)a1, (unsigned)a2);
+	}
+	case OVE_LNX_NR_listen: { /* (fd, backlog) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		return ove_lnx_sock_listen(s->file_idx, (int)a1);
+	}
+	case OVE_LNX_NR_accept:	   /* (fd, addr, addrlen) */
+	case OVE_LNX_NR_accept4: { /* (fd, addr, addrlen, flags) */
+		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != OVE_LNX_FD_SOCKET)
+			return -OVE_LNX_ENOTSOCK;
+		int flags = (nr == OVE_LNX_NR_accept4) ? (int)a3 : 0;
+		return ove_lnx_sock_accept(proc, s->file_idx, (void *)(uintptr_t)a1,
+					   (void *)(uintptr_t)a2, flags);
+	}
 	case OVE_LNX_NR_socketpair:
 	case OVE_LNX_NR_sendmsg: /* scatter/gather lands in P1 */
 	case OVE_LNX_NR_recvmsg:

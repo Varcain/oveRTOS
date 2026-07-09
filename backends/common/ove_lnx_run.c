@@ -688,6 +688,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		g_ove_lnx_active = 0;
 		return OVE_LNX_RUN_ELAUNCH;
 	}
+	g_ove_lnx_proc[0].exec_file_idx = bb; /* the running image, for /proc/self/exe re-exec */
 
 	int rc = OVE_LNX_RUN_ETIMEOUT;
 	int next_pid = 2;
@@ -897,6 +898,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			}
 			memcpy(g_ove_lnx_proc[es].fds, saved_fds, sizeof(saved_fds));
 			memcpy(g_ove_lnx_proc[es].cwd, saved_cwd, sizeof(saved_cwd));
+			g_ove_lnx_proc[es].exec_file_idx = idx; /* remember the running image so a
+								   later execv("/proc/self/exe") re-runs it */
 			idle = 0;
 			continue;
 		}

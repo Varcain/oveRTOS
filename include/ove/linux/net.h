@@ -149,6 +149,14 @@ int ove_lnx_sock_getfl(int oi);
 /** connect(2). @p uaddr / @p addrlen are the guest's sockaddr. Returns 0, a
  *  negative Linux errno, or parks (returns 0 with @c p->sock_wait set). */
 long ove_lnx_sock_connect(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned addrlen);
+/** bind(2). Binds the pool socket to the guest's sockaddr. Returns 0 or -errno. */
+long ove_lnx_sock_bind(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned addrlen);
+/** listen(2). Marks the socket passive. Returns 0 or -errno. */
+long ove_lnx_sock_listen(int oi, int backlog);
+/** accept(2)/accept4(2). Mints a fresh pool slot + fd for the next connection and
+ *  fills @p uaddr / @p uaddrlen (if non-NULL). Returns the new fd, a negative Linux
+ *  errno, or parks (returns 0 with @c p->sock_wait = SOCKW_ACCEPT). */
+long ove_lnx_sock_accept(ove_lnx_proc_t *p, int oi, void *uaddr, void *uaddrlen, int flags);
 /** send(2)/sendto(2). @p udest NULL => send; non-NULL => sendto. Returns bytes
  *  sent, a negative Linux errno, or parks. */
 long ove_lnx_sock_send(ove_lnx_proc_t *p, int oi, const void *ubuf, size_t len, int flags,
