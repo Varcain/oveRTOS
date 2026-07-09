@@ -430,6 +430,185 @@ void ove_lnx_sock_fstat(int oi, uint32_t *mode, uint64_t *size)
 		*size = 0;
 }
 
+/* ---- interface config (ifconfig / route) ioctls ---------------------------- */
+
+static ove_netif_t g_lnx_netif; /* the interface the SIOC* ioctls act on (one eth0) */
+
+void ove_lnx_sock_set_netif(void *netif_handle)
+{
+	g_lnx_netif = (ove_netif_t)netif_handle;
+}
+
+/* Snapshot the registered interface for the /proc/net/{dev,route} generators (which live
+ * in the syscall TU). Any out param may be NULL. Returns 0, or -1 if no interface. */
+int ove_lnx_sock_ifsnapshot(uint8_t ip[4], uint8_t gw[4], uint8_t nm[4], uint8_t mac[6],
+			    unsigned *flags)
+{
+	if (!g_lnx_netif)
+		return -1;
+	ove_sockaddr_t sip = {0}, sgw = {0}, snm = {0};
+	ove_netif_get_addr(g_lnx_netif, &sip, &sgw, &snm);
+	if (ip)
+		memcpy(ip, sip.addr, 4);
+	if (gw)
+		memcpy(gw, sgw.addr, 4);
+	if (nm)
+		memcpy(nm, snm.addr, 4);
+	if (mac)
+		ove_netif_get_hwaddr(g_lnx_netif, mac);
+	if (flags) {
+		unsigned f = 0;
+		ove_netif_get_flags(g_lnx_netif, &f);
+		*flags = f;
+	}
+	return 0;
+}
+
+/* Map the ove_netif flag bitmask to the guest's IFF_* value. */
+static int16_t iff_from_ove(unsigned f)
+{
+	int16_t v = 0;
+	if (f & OVE_NETIF_FLAG_UP)
+		v |= OVE_LNX_IFF_UP;
+	if (f & OVE_NETIF_FLAG_BROADCAST)
+		v |= OVE_LNX_IFF_BROADCAST;
+	if (f & OVE_NETIF_FLAG_LOOPBACK)
+		v |= OVE_LNX_IFF_LOOPBACK;
+	if (f & OVE_NETIF_FLAG_RUNNING)
+		v |= OVE_LNX_IFF_RUNNING;
+	if (f & OVE_NETIF_FLAG_MULTICAST)
+		v |= OVE_LNX_IFF_MULTICAST;
+	return v;
+}
+
+/* SIOCGIFCONF: report the single interface (eth0) into the caller's ifreq[]. */
+static long sock_ifconf(ove_lnx_proc_t *p, unsigned long arg)
+{
+	if (!user_ok(p, (void *)arg, sizeof(ove_lnx_ifconf), 1))
+		return -OVE_LNX_EFAULT;
+	ove_lnx_ifconf *ifc = (ove_lnx_ifconf *)arg;
+	if (!ifc->ifc_buf || ifc->ifc_len < (int)sizeof(ove_lnx_ifreq)) {
+		ifc->ifc_len = sizeof(ove_lnx_ifreq); /* the space one interface needs */
+		return 0;
+	}
+	if (!user_ok(p, (void *)(uintptr_t)ifc->ifc_buf, sizeof(ove_lnx_ifreq), 1))
+		return -OVE_LNX_EFAULT;
+	ove_lnx_ifreq *r = (ove_lnx_ifreq *)(uintptr_t)ifc->ifc_buf;
+	memset(r, 0, sizeof(*r));
+	r->ifr_name[0] = 'e';
+	r->ifr_name[1] = 't';
+	r->ifr_name[2] = 'h';
+	r->ifr_name[3] = '0';
+	ove_sockaddr_t ip = {0};
+	if (g_lnx_netif && ove_netif_get_addr(g_lnx_netif, &ip, NULL, NULL) == OVE_OK) {
+		r->ifr_ifru.ifru_addr.sin_family = OVE_LNX_AF_INET;
+		memcpy(&r->ifr_ifru.ifru_addr.sin_addr, ip.addr, 4);
+	}
+	ifc->ifc_len = sizeof(ove_lnx_ifreq);
+	return 0;
+}
+
+/* SIOCADDRT / SIOCDELRT: the only route op we honour is setting/clearing the default
+ * gateway (rt_dst == 0.0.0.0). Others are accepted as a no-op so `route` doesn't error. */
+static long sock_route(ove_lnx_proc_t *p, unsigned long req, unsigned long arg)
+{
+	if (!user_ok(p, (void *)arg, sizeof(ove_lnx_rtentry), 0))
+		return -OVE_LNX_EFAULT;
+	const ove_lnx_rtentry *rt = (const ove_lnx_rtentry *)arg;
+	if (!g_lnx_netif)
+		return -OVE_LNX_ENODEV;
+	int is_default = (rt->rt_dst.sin_addr == 0);
+	if (is_default && (rt->rt_flags & OVE_LNX_RTF_GATEWAY)) {
+		ove_sockaddr_t gw = {0};
+		gw.family = OVE_AF_INET;
+		if (req == OVE_LNX_SIOCADDRT)
+			memcpy(gw.addr, &rt->rt_gateway.sin_addr, 4); /* set gw */
+		/* SIOCDELRT leaves gw all-zero (clears it). */
+		int r = ove_netif_set_addr(g_lnx_netif, NULL, NULL, &gw);
+		return r == OVE_OK ? 0 : ove_to_lnx_errno(r);
+	}
+	return 0; /* non-default routes: accept, nothing to program on a one-hop link */
+}
+
+long ove_lnx_sock_ioctl(ove_lnx_proc_t *p, unsigned long req, unsigned long arg)
+{
+	if (req == OVE_LNX_SIOCGIFCONF)
+		return sock_ifconf(p, arg);
+	if (req == OVE_LNX_SIOCADDRT || req == OVE_LNX_SIOCDELRT)
+		return sock_route(p, req, arg);
+
+	/* All the SIOC*IF* ops take a struct ifreq*. */
+	if (!user_ok(p, (void *)arg, sizeof(ove_lnx_ifreq), 1))
+		return -OVE_LNX_EFAULT;
+	ove_lnx_ifreq *ifr = (ove_lnx_ifreq *)arg;
+	ove_netif_t nif = g_lnx_netif;
+	if (!nif)
+		return -OVE_LNX_ENODEV;
+
+	switch (req) {
+	case OVE_LNX_SIOCGIFFLAGS: {
+		unsigned f = 0;
+		ove_netif_get_flags(nif, &f);
+		ifr->ifr_ifru.ifru_flags = iff_from_ove(f);
+		return 0;
+	}
+	case OVE_LNX_SIOCSIFFLAGS:
+		return ove_netif_set_up(nif, (ifr->ifr_ifru.ifru_flags & OVE_LNX_IFF_UP) ? 1 : 0) ==
+				       OVE_OK
+			       ? 0
+			       : -OVE_LNX_EINVAL;
+	case OVE_LNX_SIOCGIFADDR:
+	case OVE_LNX_SIOCGIFNETMASK:
+	case OVE_LNX_SIOCGIFBRDADDR: {
+		ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
+		if (ove_netif_get_addr(nif, &ip, &gw, &nm) != OVE_OK)
+			return -OVE_LNX_ENODEV;
+		ove_lnx_sockaddr_in *out = &ifr->ifr_ifru.ifru_addr;
+		memset(out, 0, sizeof(*out));
+		out->sin_family = OVE_LNX_AF_INET;
+		if (req == OVE_LNX_SIOCGIFNETMASK) {
+			memcpy(&out->sin_addr, nm.addr, 4);
+		} else if (req == OVE_LNX_SIOCGIFBRDADDR) {
+			uint8_t *b = (uint8_t *)&out->sin_addr;
+			for (int i = 0; i < 4; i++)
+				b[i] = (uint8_t)(ip.addr[i] | (uint8_t)~nm.addr[i]);
+		} else {
+			memcpy(&out->sin_addr, ip.addr, 4);
+		}
+		return 0;
+	}
+	case OVE_LNX_SIOCSIFADDR:
+	case OVE_LNX_SIOCSIFNETMASK: {
+		ove_lnx_sockaddr_in *in = &ifr->ifr_ifru.ifru_addr;
+		if (in->sin_family != OVE_LNX_AF_INET)
+			return -OVE_LNX_EINVAL;
+		ove_sockaddr_t sa = {0};
+		sa.family = OVE_AF_INET;
+		memcpy(sa.addr, &in->sin_addr, 4);
+		int r = (req == OVE_LNX_SIOCSIFADDR) ? ove_netif_set_addr(nif, &sa, NULL, NULL)
+						     : ove_netif_set_addr(nif, NULL, &sa, NULL);
+		return r == OVE_OK ? 0 : ove_to_lnx_errno(r);
+	}
+	case OVE_LNX_SIOCGIFHWADDR: {
+		uint8_t mac[6] = {0};
+		ove_netif_get_hwaddr(nif, mac);
+		/* ifr_hwaddr is a struct sockaddr: sa_family (ARPHRD_ETHER) then the 6-byte MAC. */
+		memset(ifr->ifr_ifru.ifru_raw, 0, sizeof(ifr->ifr_ifru.ifru_raw));
+		ifr->ifr_ifru.ifru_raw[0] = (uint8_t)OVE_LNX_ARPHRD_ETHER;
+		memcpy(ifr->ifr_ifru.ifru_raw + 2, mac, 6);
+		return 0;
+	}
+	case OVE_LNX_SIOCGIFINDEX:
+		ifr->ifr_ifru.ifru_ivalue = 1;
+		return 0;
+	case OVE_LNX_SIOCGIFMTU:
+		ifr->ifr_ifru.ifru_ivalue = 1500;
+		return 0;
+	default:
+		return -OVE_LNX_EOPNOTSUPP;
+	}
+}
+
 /* ---- coordinator: retry a parked socket op --------------------------------- */
 
 long ove_lnx_sock_retry(ove_lnx_proc_t *p)

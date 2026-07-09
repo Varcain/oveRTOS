@@ -74,6 +74,62 @@ typedef struct ove_lnx_sockaddr_in {
 	uint8_t sin_zero[8];
 } ove_lnx_sockaddr_in;
 
+/* ---- interface config ioctls (ifconfig/route, P2) ------------------------- */
+#define OVE_LNX_SIOCADDRT 0x890b     /* add a routing table entry */
+#define OVE_LNX_SIOCDELRT 0x890c     /* delete a routing table entry */
+#define OVE_LNX_SIOCGIFCONF 0x8912   /* list interfaces */
+#define OVE_LNX_SIOCGIFFLAGS 0x8913  /* get flags */
+#define OVE_LNX_SIOCSIFFLAGS 0x8914  /* set flags (up/down) */
+#define OVE_LNX_SIOCGIFADDR 0x8915   /* get IPv4 address */
+#define OVE_LNX_SIOCSIFADDR 0x8916   /* set IPv4 address */
+#define OVE_LNX_SIOCGIFBRDADDR 0x8919 /* get broadcast address */
+#define OVE_LNX_SIOCGIFNETMASK 0x891b /* get netmask */
+#define OVE_LNX_SIOCSIFNETMASK 0x891c /* set netmask */
+#define OVE_LNX_SIOCGIFMTU 0x8921     /* get MTU */
+#define OVE_LNX_SIOCGIFHWADDR 0x8927  /* get MAC */
+#define OVE_LNX_SIOCGIFINDEX 0x8933   /* get interface index */
+
+/* Linux interface flags (SIOC[GS]IFFLAGS ifr_flags). */
+#define OVE_LNX_IFF_UP 0x1
+#define OVE_LNX_IFF_BROADCAST 0x2
+#define OVE_LNX_IFF_LOOPBACK 0x8
+#define OVE_LNX_IFF_POINTOPOINT 0x10
+#define OVE_LNX_IFF_RUNNING 0x40
+#define OVE_LNX_IFF_MULTICAST 0x1000
+
+#define OVE_LNX_ARPHRD_ETHER 1 /* ifr_hwaddr.sa_family for an ethernet MAC */
+#define OVE_LNX_IFNAMSIZ 16
+
+/** @c struct ifreq (Linux/ARM32): a 16-byte name + a 16-byte union (== 32 bytes). */
+typedef struct ove_lnx_ifreq {
+	char ifr_name[OVE_LNX_IFNAMSIZ];
+	union {
+		ove_lnx_sockaddr_in ifru_addr; /* SIOC[GS]IF{ADDR,NETMASK,BRDADDR} */
+		int16_t ifru_flags;	       /* SIOC[GS]IFFLAGS */
+		int32_t ifru_ivalue;	       /* SIOCGIFINDEX / SIOCGIFMTU */
+		uint8_t ifru_raw[16];	       /* SIOCGIFHWADDR: sockaddr{sa_family, sa_data[14]} */
+	} ifr_ifru;
+} ove_lnx_ifreq;
+
+/** @c struct ifconf (Linux/ARM32) for SIOCGIFCONF: len + a user pointer to ifreq[]. */
+typedef struct ove_lnx_ifconf {
+	int32_t ifc_len;  /* buffer size in bytes (in), used bytes (out) */
+	uint32_t ifc_buf; /* user pointer to a struct ifreq array */
+} ove_lnx_ifconf;
+
+#define OVE_LNX_RTF_UP 0x0001
+#define OVE_LNX_RTF_GATEWAY 0x0002
+
+/** @c struct rtentry prefix (Linux/ARM32) for SIOC[AD]DRT — only the leading fields
+ *  needed to read a default route's gateway; trailing rt_dev/rt_mtu/... are ignored. */
+typedef struct ove_lnx_rtentry {
+	uint32_t rt_pad1;
+	ove_lnx_sockaddr_in rt_dst;
+	ove_lnx_sockaddr_in rt_gateway;
+	ove_lnx_sockaddr_in rt_genmask;
+	uint16_t rt_flags;
+} ove_lnx_rtentry;
+
 /* ---- syscall-layer <-> socket-core interface (called from ove_linux_syscall.c) ---- */
 /* Compiled only when CONFIG_OVE_LINUX_NET is set (the FD_SOCKET branches are #if'd),
  * so no weak fallbacks are needed — the core is always linked when the feature is on
@@ -112,6 +168,19 @@ long ove_lnx_sock_setsockopt(ove_lnx_proc_t *p, int oi, int level, int optname, 
 unsigned ove_lnx_sock_poll(int oi);
 /** Fill @c S_IFSOCK mode (+ size 0) for fstat/statx of a socket fd. */
 void ove_lnx_sock_fstat(int oi, uint32_t *mode, uint64_t *size);
+
+/* SIOC* interface-config ioctls (ifconfig/route) issued on a socket fd, bridged to the
+ * ove_netif HAL. The op targets the interface, not one socket, so no open index. */
+long ove_lnx_sock_ioctl(ove_lnx_proc_t *p, unsigned long req, unsigned long arg);
+
+/* Register the interface handle the SIOC* ioctls operate on (opaque ove_netif_t; the
+ * board/app calls this once at boot, after bringing the interface up). */
+void ove_lnx_sock_set_netif(void *netif_handle);
+
+/* Snapshot the registered interface for the /proc/net/{dev,route} generators. Any out
+ * param may be NULL. Returns 0, or -1 if no interface is registered. */
+int ove_lnx_sock_ifsnapshot(uint8_t ip[4], uint8_t gw[4], uint8_t nm[4], uint8_t mac[6],
+			    unsigned *flags);
 
 /** Retry a parked socket op for the coordinator; result or -EAGAIN (still blocked). */
 long ove_lnx_sock_retry(ove_lnx_proc_t *p);

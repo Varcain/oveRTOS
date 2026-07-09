@@ -1142,6 +1142,21 @@ static size_t p_dec(char *o, size_t off, size_t cap, uint64_t v)
 		o[off++] = t[--n];
 	return off;
 }
+#if defined(CONFIG_OVE_LINUX_NET)
+/* Format a 4-byte IPv4 address as the 8 upper-hex digits the kernel writes in
+ * /proc/net/route: the __be32 value read in the host's (little-endian) order. */
+static size_t p_hexle(char *o, size_t off, size_t cap, const uint8_t a[4])
+{
+	static const char h[] = "0123456789ABCDEF";
+	for (int i = 3; i >= 0; i--) {
+		if (off < cap)
+			o[off++] = h[a[i] >> 4];
+		if (off < cap)
+			o[off++] = h[a[i] & 0xf];
+	}
+	return off;
+}
+#endif
 
 /* True for any path inside the synthetic /proc tree. */
 static int proc_is(const char *abs)
@@ -1197,6 +1212,12 @@ static uint32_t proc_mode(const char *abs, const ove_lnx_proc_t *p)
 		return !proc_pid_known(p, pid) ? 0u
 		       : file		       ? (OVE_LNX_S_IFREG | 0444u)
 					       : (OVE_LNX_S_IFDIR | 0555u);
+#if defined(CONFIG_OVE_LINUX_NET)
+	if (strcmp(abs, "/proc/net") == 0)
+		return OVE_LNX_S_IFDIR | 0555u;
+	if (strcmp(abs, "/proc/net/dev") == 0 || strcmp(abs, "/proc/net/route") == 0)
+		return OVE_LNX_S_IFREG | 0444u;
+#endif
 	for (int i = 0; g_proc_files[i]; i++)
 		if (strcmp(abs + 6, g_proc_files[i]) == 0)
 			return OVE_LNX_S_IFREG | 0444u;
@@ -1326,6 +1347,43 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		o = p_str(buf, o, cap, "\n");
 	} else if (strcmp(abs, "/proc/filesystems") == 0) {
 		o = p_str(buf, o, cap, "nodev\tproc\nnodev\ttmpfs\n");
+#if defined(CONFIG_OVE_LINUX_NET)
+	} else if (strcmp(abs, "/proc/net/dev") == 0) {
+		/* busybox ifconfig reads this to enumerate interfaces + show RX/TX stats.
+		 * ove_net has no per-interface counters, so report zeros. */
+		o = p_str(buf, o, cap,
+			  "Inter-|   Receive                                                |  Transmit\n"
+			  " face |bytes    packets errs drop fifo frame compressed multicast|bytes    "
+			  "packets errs drop fifo colls carrier compressed\n");
+		/* One interface (eth0). The SIOC* ioctls ignore ifr_name, so listing a
+		 * loopback here would make busybox print it with eth0's data — omit it. */
+		if (ove_lnx_sock_ifsnapshot(NULL, NULL, NULL, NULL, NULL) == 0)
+			o = p_str(buf, o, cap,
+				  "  eth0:       0       0    0    0    0     0          0         0"
+				  "        0       0    0    0    0     0       0          0\n");
+	} else if (strcmp(abs, "/proc/net/route") == 0) {
+		uint8_t ip[4] = {0}, gw[4] = {0}, nm[4] = {0};
+		o = p_str(buf, o, cap,
+			  "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU"
+			  "\tWindow\tIRTT\n");
+		if (ove_lnx_sock_ifsnapshot(ip, gw, nm, NULL, NULL) == 0) {
+			uint8_t net[4];
+			for (int i = 0; i < 4; i++)
+				net[i] = (uint8_t)(ip[i] & nm[i]);
+			/* local subnet: dest = ip & mask, no gateway, flags = UP */
+			o = p_str(buf, o, cap, "eth0\t");
+			o = p_hexle(buf, o, cap, net);
+			o = p_str(buf, o, cap, "\t00000000\t0001\t0\t0\t0\t");
+			o = p_hexle(buf, o, cap, nm);
+			o = p_str(buf, o, cap, "\t0\t0\t0\n");
+			/* default route: dest = 0, gateway = gw, flags = UP|GATEWAY */
+			if (gw[0] | gw[1] | gw[2] | gw[3]) {
+				o = p_str(buf, o, cap, "eth0\t00000000\t");
+				o = p_hexle(buf, o, cap, gw);
+				o = p_str(buf, o, cap, "\t0003\t0\t0\t0\t00000000\t0\t0\t0\n");
+			}
+		}
+#endif
 	} else {
 		return -1;
 	}
@@ -2851,6 +2909,11 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		if (tty->kind == OVE_LNX_FD_DEV)
 			return ove_lnx_dev_ioctl(proc, tty->file_idx, (unsigned long)a1,
 						 (unsigned long)a2);
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+		/* Socket ioctls: SIOC* interface config (ifconfig/route) — before the tty gate. */
+		if (tty->kind == OVE_LNX_FD_SOCKET)
+			return ove_lnx_sock_ioctl(proc, (unsigned long)a1, (unsigned long)a2);
 #endif
 		if (tty->kind != OVE_LNX_FD_CONSOLE)
 			return -OVE_LNX_ENOTTY;

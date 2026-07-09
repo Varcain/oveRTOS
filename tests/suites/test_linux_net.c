@@ -17,6 +17,7 @@
 #include "ove/arena.h"
 #include "ove/linux/net.h"
 #include "ove/linux/syscall.h"
+#include "ove/net.h" /* ove_netif_init/storage for the ifconfig ioctl test */
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -337,6 +338,63 @@ static void test_net_poll(void **state)
 	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
 }
 
+/* ifconfig(2) ioctls: a SIOC* on a socket fd routes to the interface-config bridge and
+ * marshals struct ifreq. Uses the posix backend's synthetic interface view (deterministic
+ * MAC + flags), so the address-independent gets/sets are asserted here. */
+static void test_net_ifconfig(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup(&p, &arena);
+
+	static ove_netif_storage_t nifs;
+	ove_netif_t nif = NULL;
+	assert_int_equal(ove_netif_init(&nif, &nifs), OVE_OK);
+	ove_lnx_sock_set_netif(nif);
+
+	long fd = ove_lnx_syscall(&p, OVE_LNX_NR_socket, OVE_LNX_AF_INET, OVE_LNX_SOCK_DGRAM, 0, 0, 0,
+				  0);
+	assert_true(fd >= 3);
+
+	ove_lnx_ifreq ifr;
+	memset(&ifr, 0, sizeof(ifr));
+	strcpy(ifr.ifr_name, "eth0");
+
+	/* SIOCGIFFLAGS: posix reports an up, running, broadcast interface. */
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, fd, OVE_LNX_SIOCGIFFLAGS,
+					 (long)(uintptr_t)&ifr, 0, 0, 0),
+			 0);
+	assert_true(ifr.ifr_ifru.ifru_flags & OVE_LNX_IFF_UP);
+	assert_true(ifr.ifr_ifru.ifru_flags & OVE_LNX_IFF_RUNNING);
+	assert_true(ifr.ifr_ifru.ifru_flags & OVE_LNX_IFF_BROADCAST);
+
+	/* SIOCGIFHWADDR: sockaddr{ARPHRD_ETHER, MAC}; posix synth = 02:00:00:DE:AD:01. */
+	memset(&ifr, 0, sizeof(ifr));
+	strcpy(ifr.ifr_name, "eth0");
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, fd, OVE_LNX_SIOCGIFHWADDR,
+					 (long)(uintptr_t)&ifr, 0, 0, 0),
+			 0);
+	assert_int_equal(ifr.ifr_ifru.ifru_raw[0], OVE_LNX_ARPHRD_ETHER);
+	assert_int_equal(ifr.ifr_ifru.ifru_raw[2], 0x02);
+	assert_int_equal(ifr.ifr_ifru.ifru_raw[7], 0x01);
+
+	/* SIOCSIFADDR / SIOCSIFFLAGS: accepted (host owns addressing). */
+	memset(&ifr, 0, sizeof(ifr));
+	strcpy(ifr.ifr_name, "eth0");
+	ifr.ifr_ifru.ifru_addr.sin_family = OVE_LNX_AF_INET;
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, fd, OVE_LNX_SIOCSIFADDR,
+					 (long)(uintptr_t)&ifr, 0, 0, 0),
+			 0);
+	ifr.ifr_ifru.ifru_flags = OVE_LNX_IFF_UP;
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_ioctl, fd, OVE_LNX_SIOCSIFFLAGS,
+					 (long)(uintptr_t)&ifr, 0, 0, 0),
+			 0);
+
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
+	ove_lnx_sock_set_netif(NULL);
+}
+
 int test_linux_net_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -346,6 +404,7 @@ int test_linux_net_run(void)
 		cmocka_unit_test(test_net_nonblock),
 		cmocka_unit_test(test_net_dup_close),
 		cmocka_unit_test(test_net_poll),
+		cmocka_unit_test(test_net_ifconfig),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }
