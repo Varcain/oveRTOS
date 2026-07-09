@@ -140,13 +140,17 @@ long ove_lnx_sock_new(int domain, int type, int protocol)
 		return -OVE_LNX_EAFNOSUPPORT;
 	int base = type & OVE_LNX_SOCK_TYPE_MASK;
 	ove_sock_type_t ot;
-	if (base == OVE_LNX_SOCK_STREAM)
+	int proto = 0; /* default protocol for the type */
+	if (base == OVE_LNX_SOCK_STREAM) {
 		ot = OVE_SOCK_STREAM;
-	else if (base == OVE_LNX_SOCK_DGRAM)
+	} else if (base == OVE_LNX_SOCK_DGRAM) {
 		ot = OVE_SOCK_DGRAM;
-	else
-		return -OVE_LNX_EPROTONOSUPPORT; /* SOCK_RAW (ping) lands in P3 */
-	(void)protocol;				 /* default proto for STREAM/DGRAM */
+	} else if (base == OVE_LNX_SOCK_RAW) {
+		ot = OVE_SOCK_RAW;
+		proto = protocol; /* e.g. IPPROTO_ICMP (1) for busybox ping */
+	} else {
+		return -OVE_LNX_EPROTONOSUPPORT;
+	}
 
 	int oi = -1;
 	for (int i = 0; i < OVE_LNX_NSOCK; i++)
@@ -159,7 +163,7 @@ long ove_lnx_sock_new(int domain, int type, int protocol)
 
 	struct sock_open *o = &g_sock[oi];
 	memset(o, 0, sizeof(*o));
-	int r = ove_socket_open(&o->sock, &o->st, OVE_AF_INET, ot);
+	int r = ove_socket_open_ex(&o->sock, &o->st, OVE_AF_INET, ot, proto);
 	if (r != OVE_OK)
 		return ove_to_lnx_errno(r);
 	/* Drive blocking via the coordinator's park/retry: keep the backing socket

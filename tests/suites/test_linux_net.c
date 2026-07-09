@@ -121,13 +121,11 @@ static void test_net_socket_open_stat(void **state)
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0), 0);
 	assert_int_equal(p.fds[fd].kind, 0 /* FD_FREE */);
 
-	/* Unsupported family / type are rejected with the Linux errno. */
+	/* An unsupported family is rejected with the Linux errno. (SOCK_RAW is now
+	 * supported for ping — see test_net_raw_socket.) */
 	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_socket, OVE_LNX_AF_INET6,
 					 OVE_LNX_SOCK_STREAM, 0, 0, 0, 0),
 			 -OVE_LNX_EAFNOSUPPORT);
-	assert_int_equal(
-		ove_lnx_syscall(&p, OVE_LNX_NR_socket, OVE_LNX_AF_INET, OVE_LNX_SOCK_RAW, 0, 0, 0, 0),
-		-OVE_LNX_EPROTONOSUPPORT);
 }
 
 static void test_net_connect_errors(void **state)
@@ -395,6 +393,26 @@ static void test_net_ifconfig(void **state)
 	ove_lnx_sock_set_netif(NULL);
 }
 
+/* socket(AF_INET, SOCK_RAW, IPPROTO_ICMP): busybox ping's socket. The bridge must route
+ * it to the raw open path (not reject it as EPROTONOSUPPORT). Opening a raw socket needs
+ * CAP_NET_RAW, so on an unprivileged host it fails with a permission error — that still
+ * proves the routing (the error is not EPROTONOSUPPORT). */
+static void test_net_raw_socket(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup(&p, &arena);
+
+	long fd = ove_lnx_syscall(&p, OVE_LNX_NR_socket, OVE_LNX_AF_INET, OVE_LNX_SOCK_RAW,
+				  OVE_LNX_IPPROTO_ICMP, 0, 0, 0);
+	assert_true(fd != -OVE_LNX_EPROTONOSUPPORT);
+	if (fd >= 3) {
+		assert_int_equal(p.fds[fd].kind, OVE_LNX_FD_SOCKET);
+		ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0);
+	}
+}
+
 int test_linux_net_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -405,6 +423,7 @@ int test_linux_net_run(void)
 		cmocka_unit_test(test_net_dup_close),
 		cmocka_unit_test(test_net_poll),
 		cmocka_unit_test(test_net_ifconfig),
+		cmocka_unit_test(test_net_raw_socket),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

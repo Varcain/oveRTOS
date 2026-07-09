@@ -40,6 +40,7 @@ extern "C" {
 typedef uint8_t ove_sock_type_t;
 #define OVE_SOCK_STREAM ((ove_sock_type_t)1)
 #define OVE_SOCK_DGRAM ((ove_sock_type_t)2)
+#define OVE_SOCK_RAW ((ove_sock_type_t)3)
 typedef uint8_t ove_af_t;
 #define OVE_AF_INET ((ove_af_t)2)
 #define OVE_AF_INET6 ((ove_af_t)10)
@@ -47,6 +48,7 @@ typedef uint8_t ove_af_t;
 typedef enum {
 	OVE_SOCK_STREAM = 1, /**< Reliable byte-stream (TCP). */
 	OVE_SOCK_DGRAM = 2,  /**< Connectionless datagrams (UDP). */
+	OVE_SOCK_RAW = 3,    /**< Raw IP protocol access (e.g. ICMP for ping). */
 } ove_sock_type_t;
 
 /** @brief Address family. */
@@ -191,6 +193,23 @@ void ove_netif_destroy(ove_netif_t netif);
  */
 int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
 		    ove_sock_type_t type);
+
+/**
+ * @brief Open a socket with an explicit IP protocol number.
+ *
+ * Needed for SOCK_RAW (e.g. proto == 1 / IPPROTO_ICMP for ping). @p proto == 0
+ * selects the type's default protocol, so this is equivalent to ove_socket_open
+ * for SOCK_STREAM / SOCK_DGRAM.
+ *
+ * @param[out] sock    Handle written on success.
+ * @param[in]  storage Caller-allocated storage.
+ * @param[in]  af      Address family.
+ * @param[in]  type    Socket type (stream/datagram/raw).
+ * @param[in]  proto   IP protocol number (0 = default for @p type).
+ * @return OVE_OK on success, negative error code on failure.
+ */
+int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+		       ove_sock_type_t type, int proto);
 
 /**
  * @brief Close a socket.
@@ -480,6 +499,16 @@ static inline int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *stor
 	(void)storage;
 	(void)af;
 	(void)type;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+static inline int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+				     ove_sock_type_t type, int proto)
+{
+	(void)sock;
+	(void)storage;
+	(void)af;
+	(void)type;
+	(void)proto;
 	return OVE_ERR_NOT_SUPPORTED;
 }
 static inline void ove_socket_close(ove_socket_t sock)

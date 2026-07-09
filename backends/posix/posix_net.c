@@ -102,7 +102,14 @@ static int af_to_posix(ove_af_t af)
 
 static int type_to_posix(ove_sock_type_t type)
 {
-	return (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM;
+	switch (type) {
+	case OVE_SOCK_DGRAM:
+		return SOCK_DGRAM;
+	case OVE_SOCK_RAW:
+		return SOCK_RAW;
+	default:
+		return SOCK_STREAM;
+	}
 }
 
 /* ---------- Network interface ---------- */
@@ -247,15 +254,21 @@ void ove_netif_destroy(ove_netif_t netif)
 int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
 		    ove_sock_type_t type)
 {
+	return ove_socket_open_ex(sock, storage, af, type, 0);
+}
+
+int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
+		       ove_sock_type_t type, int proto)
+{
 	int ret = ove_check_param(sock);
 	if (ret)
 		return ret;
 	if (!storage)
 		return OVE_ERR_INVALID_PARAM;
 	struct ove_socket *s = (struct ove_socket *)storage;
-	int fd = socket(af_to_posix(af), type_to_posix(type), 0);
+	int fd = socket(af_to_posix(af), type_to_posix(type), proto);
 	if (fd < 0)
-		return errno_to_ove(errno);
+		return errno_to_ove(errno); /* SOCK_RAW without CAP_NET_RAW -> EPERM */
 	/* Enable SO_REUSEADDR for server sockets to avoid EADDRINUSE */
 	int optval = 1;
 	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
