@@ -368,8 +368,9 @@ typedef struct ove_lnx_fd {
 /** Socket fd kind (shared by the syscall + socket layers). @c file_idx = open-pool index. */
 #define OVE_LNX_FD_SOCKET 7
 
-/** Maximum simultaneously-open file descriptors per process. */
-#define OVE_LNX_MAX_FDS 16
+/** Maximum simultaneously-open file descriptors per process. A fork-per-connection
+ * server (httpd) holds std streams + the listener + the accepted client, per proc. */
+#define OVE_LNX_MAX_FDS 32
 /** Maximum path length (absolute, normalized) the personality resolves. */
 #define OVE_LNX_PATH_MAX 256
 /** Max exited children queued for wait4 (a pipeline forks several). */
@@ -491,6 +492,10 @@ typedef struct ove_lnx_proc {
  * all live procs' fds to count a pipe's open read/write ends (for EOF / EPIPE). */
 ove_lnx_proc_t *ove_lnx_proc_table(void);
 int ove_lnx_proc_nslot(void);
+
+/** @brief Install a kernel object (@p kind, @p idx) into @p p's fd table, returning the
+ * lowest free fd or @c -OVE_LNX_EMFILE. Lets the socket bridge mint an accept(2) fd. */
+int ove_lnx_fd_install(ove_lnx_proc_t *p, uint8_t kind, int idx);
 
 /** @brief Retry a parked pipe read/write (run-loop coordinator). Returns the byte
  * count, 0 (EOF), or -EPIPE on completion; @c -OVE_LNX_EAGAIN while still blocked. */

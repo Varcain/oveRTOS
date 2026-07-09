@@ -413,6 +413,72 @@ static void test_net_raw_socket(void **state)
 	}
 }
 
+/* Server path (P4): guest bind/listen/accept. The guest listens on loopback, a host
+ * client connects, and the guest accept(2) parks then the coordinator retry mints the
+ * client fd; then a bidirectional byte exchange over the accepted socket. */
+static void test_net_server_accept(void **state)
+{
+	(void)state;
+	ove_arena_t arena;
+	ove_lnx_proc_t p;
+	setup(&p, &arena);
+
+	long ls = ove_lnx_syscall(&p, OVE_LNX_NR_socket, OVE_LNX_AF_INET, OVE_LNX_SOCK_STREAM, 0, 0,
+				  0, 0);
+	assert_true(ls >= 3);
+	ove_lnx_sockaddr_in a;
+	guest_addr(&a, 0); /* bind to an ephemeral loopback port */
+	assert_int_equal(
+		ove_lnx_syscall(&p, OVE_LNX_NR_bind, ls, (long)(uintptr_t)&a, sizeof(a), 0, 0, 0),
+		0);
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_listen, ls, 8, 0, 0, 0, 0), 0);
+
+	ove_lnx_sockaddr_in bound;
+	uint32_t blen = sizeof(bound);
+	memset(&bound, 0, sizeof(bound));
+	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_getsockname, ls, (long)(uintptr_t)&bound,
+					 (long)(uintptr_t)&blen, 0, 0, 0),
+			 0);
+	int port = ntohs(bound.sin_port);
+	assert_true(port > 0);
+
+	int hc = socket(AF_INET, SOCK_STREAM, 0);
+	assert_true(hc >= 0);
+	struct sockaddr_in sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	sa.sin_port = htons((uint16_t)port);
+	assert_int_equal(connect(hc, (struct sockaddr *)&sa, sizeof(sa)), 0);
+
+	ove_lnx_sockaddr_in pa;
+	uint32_t palen = sizeof(pa);
+	memset(&pa, 0, sizeof(pa));
+	long cfd = call_pump(&p, OVE_LNX_NR_accept, ls, (long)(uintptr_t)&pa,
+			     (long)(uintptr_t)&palen, 0, 0, 0);
+	assert_true(cfd >= 3);
+	assert_int_equal(p.fds[cfd].kind, OVE_LNX_FD_SOCKET);
+	assert_int_equal(pa.sin_family, OVE_LNX_AF_INET);
+
+	/* host -> guest over the accepted fd */
+	assert_int_equal((int)send(hc, "ping", 4, 0), 4);
+	char gbuf[16] = {0};
+	long rr = call_pump(&p, OVE_LNX_NR_recv, cfd, (long)(uintptr_t)gbuf, sizeof(gbuf), 0, 0, 0);
+	assert_int_equal(rr, 4);
+	assert_memory_equal(gbuf, "ping", 4);
+
+	/* guest -> host over the accepted fd */
+	long sr = call_pump(&p, OVE_LNX_NR_send, cfd, (long)(uintptr_t) "pong", 4, 0, 0, 0);
+	assert_int_equal(sr, 4);
+	char hbuf[16] = {0};
+	assert_int_equal((int)recv(hc, hbuf, sizeof(hbuf), 0), 4);
+	assert_memory_equal(hbuf, "pong", 4);
+
+	close(hc);
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, cfd, 0, 0, 0, 0, 0);
+	ove_lnx_syscall(&p, OVE_LNX_NR_close, ls, 0, 0, 0, 0, 0);
+}
+
 int test_linux_net_run(void)
 {
 	const struct CMUnitTest tests[] = {
@@ -424,6 +490,7 @@ int test_linux_net_run(void)
 		cmocka_unit_test(test_net_poll),
 		cmocka_unit_test(test_net_ifconfig),
 		cmocka_unit_test(test_net_raw_socket),
+		cmocka_unit_test(test_net_server_accept),
 	};
 	return cmocka_run_group_tests(tests, NULL, NULL);
 }

@@ -33,7 +33,7 @@
 #define OVE_LNX_FD_SOCKET 7
 #endif
 
-#define OVE_LNX_NSOCK 16 /* max concurrent socket opens (pooled) */
+#define OVE_LNX_NSOCK 24 /* max concurrent socket opens (pooled); listener + clients */
 
 /** Per-open socket state (the 4-field fd slot is too small). fork/dup share an
  *  open (refcounted); the last close closes the backing ove_socket. */
@@ -261,6 +261,93 @@ long ove_lnx_sock_connect(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned
 		return 0; /* parked */
 	}
 	return ove_to_lnx_errno(r);
+}
+
+long ove_lnx_sock_bind(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned addrlen)
+{
+	struct sock_open *o = open_slot(oi);
+	if (!o)
+		return -OVE_LNX_EBADF;
+	if (!uaddr || addrlen < sizeof(ove_lnx_sockaddr_in) ||
+	    !user_ok(p, uaddr, sizeof(ove_lnx_sockaddr_in), 0))
+		return -OVE_LNX_EFAULT;
+	const ove_lnx_sockaddr_in *sin = (const ove_lnx_sockaddr_in *)uaddr;
+	if (sin->sin_family != OVE_LNX_AF_INET)
+		return -OVE_LNX_EAFNOSUPPORT;
+	ove_sockaddr_t oa;
+	linux_sin_to_ove(sin, &oa);
+	return ove_to_lnx_errno(ove_socket_bind(o->sock, &oa));
+}
+
+long ove_lnx_sock_listen(int oi, int backlog)
+{
+	struct sock_open *o = open_slot(oi);
+	if (!o)
+		return -OVE_LNX_EBADF;
+	return ove_to_lnx_errno(ove_socket_listen(o->sock, backlog));
+}
+
+/* Accept one pending connection on listen slot @lo into a fresh pool slot + fd.
+ * Returns the new guest fd, -EAGAIN if none is pending yet (the caller parks or
+ * reports would-block), or a negative errno. Runs both from accept(2) and, on a
+ * parked accept, from the coordinator's retry — so it owns the whole mint. */
+static long do_accept(ove_lnx_proc_t *p, struct sock_open *lo, void *uaddr, void *uaddrlen,
+		      int flags)
+{
+	int ci = -1;
+	for (int i = 0; i < OVE_LNX_NSOCK; i++)
+		if (!g_sock[i].used) {
+			ci = i;
+			break;
+		}
+	if (ci < 0)
+		return -OVE_LNX_EMFILE; /* socket pool full */
+	struct sock_open *co = &g_sock[ci];
+	memset(co, 0, sizeof(*co));
+	ove_socket_t ch;
+	int r = ove_socket_accept(lo->sock, &ch, &co->st, OVE_WAIT_FOREVER);
+	if (r == OVE_ERR_TIMEOUT)
+		return -OVE_LNX_EAGAIN; /* no pending connection (non-blocking listen socket) */
+	if (r != OVE_OK)
+		return ove_to_lnx_errno(r);
+	co->sock = ch;
+	co->used = 1;
+	co->refs = 1;
+	ove_socket_set_nonblock(co->sock, 1); /* every op returns at once; the coordinator parks */
+	if (flags & OVE_LNX_SOCK_NONBLOCK)
+		co->oflags |= OVE_LNX_O_NONBLOCK;
+	if (uaddr) {
+		ove_sockaddr_t pa;
+		if (ove_socket_getpeername(co->sock, &pa) == OVE_OK)
+			(void)copy_sockaddr_out(p, uaddr, uaddrlen, &pa);
+	}
+	int fd = ove_lnx_fd_install(p, OVE_LNX_FD_SOCKET, ci);
+	if (fd < 0) {
+		ove_socket_close(co->sock);
+		co->used = 0;
+		return -OVE_LNX_EMFILE;
+	}
+	return fd;
+}
+
+long ove_lnx_sock_accept(ove_lnx_proc_t *p, int oi, void *uaddr, void *uaddrlen, int flags)
+{
+	struct sock_open *lo = open_slot(oi);
+	if (!lo)
+		return -OVE_LNX_EBADF;
+	if (uaddr && (!uaddrlen || !user_ok(p, uaddrlen, sizeof(uint32_t), 1)))
+		return -OVE_LNX_EFAULT;
+	long r = do_accept(p, lo, uaddr, uaddrlen, flags);
+	if (r == -OVE_LNX_EAGAIN) {
+		if (lo->oflags & OVE_LNX_O_NONBLOCK)
+			return -OVE_LNX_EAGAIN;
+		p->sock_wait = OVE_LNX_SOCKW_ACCEPT; /* park; the retry re-runs do_accept */
+		p->sock_oi = oi;
+		p->sock_buf = (uintptr_t)uaddr;
+		p->sock_len = (size_t)(uintptr_t)uaddrlen;
+		return 0; /* parked */
+	}
+	return r; /* new fd, or a negative errno */
 }
 
 long ove_lnx_sock_send(ove_lnx_proc_t *p, int oi, const void *ubuf, size_t len, int flags,
@@ -666,6 +753,10 @@ long ove_lnx_sock_retry(ove_lnx_proc_t *p)
 			return -OVE_LNX_EAGAIN;
 		return ove_to_lnx_errno(r);
 	}
+	case OVE_LNX_SOCKW_ACCEPT:
+		/* Re-run the mint: a new fd when a client is now pending, -EAGAIN to stay
+		 * parked, or a negative errno. sock_buf/sock_len hold the user addr/len. */
+		return do_accept(p, o, (void *)p->sock_buf, (void *)(uintptr_t)p->sock_len, 0);
 	default:
 		return -OVE_LNX_EINVAL;
 	}
