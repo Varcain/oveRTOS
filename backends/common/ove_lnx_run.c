@@ -838,6 +838,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->pipe_wait = 0;
 			ch->dev_wait = 0;
 			ch->sock_wait = 0;
+			ch->sel_active = 0;
 			ch->pty_wait = 0;
 			ch->console_wait = 0;
 			ch->pending_sig = 0;

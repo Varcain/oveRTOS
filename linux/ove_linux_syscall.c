@@ -47,6 +47,17 @@ volatile int g_ove_lnx_halt;
 #define OVE_LNX_FD_FILE 2
 #define OVE_LNX_FD_PIPE 3
 
+/* PRNG fill (defined with sys_getrandom); /dev/urandom reads use it before that point. */
+static void prng_fill(uint8_t *b, size_t count);
+
+#if defined(CONFIG_OVE_LINUX_NET)
+/* pselect6(2): select() over the poll machinery (busybox inetd + dropbear are
+ * select-based). Defined with the poll retry below; the dispatch calls it earlier. */
+#define OVE_LNX_SEL_MAXFDS 32 /* max nfds handled (fd_set = one 32-bit word here) */
+static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwfds,
+			 uintptr_t uefds, uintptr_t utimeout);
+#endif
+
 /*
  * Pipe objects. A pipe is shared kernel state (like a real kernel's pipe inode):
  * a bounded ring buffer with concurrent producer/consumer (Phase D2). A read on an
@@ -682,8 +693,8 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 			t->size = s->offset;
 		return (long)len;
 	}
-	if (s->kind == OVE_LNX_FD_CONSOLE && s->file_idx == 3)
-		return (long)len; /* /dev/null: discard */
+	if (s->kind == OVE_LNX_FD_CONSOLE && (s->file_idx == 3 || s->file_idx == 4))
+		return (long)len; /* /dev/null + /dev/urandom: discard writes */
 	/* Only output consoles are writable (file_idx != 0); the rootfs is read-only. */
 	if (s->kind != OVE_LNX_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
 		return -OVE_LNX_EBADF;
@@ -738,6 +749,10 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 			return -OVE_LNX_EBADF;
 		if (s->file_idx == 3) /* /dev/null */
 			return 0;     /* EOF */
+		if (s->file_idx == 4) { /* /dev/urandom + /dev/random: PRNG bytes */
+			prng_fill((uint8_t *)buf, len);
+			return (long)len;
+		}
 		if (!p->read_fn)
 			return 0; /* EOF */
 		/* Park until a key is ready (probed via console_poll) so the SVC handler
@@ -1553,6 +1568,10 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	 * child's stdio here when it has no controlling tty. */
 	if (strcmp(path, "/dev/null") == 0)
 		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 3, 0);
+	/* /dev/urandom + /dev/random (file_idx 4): reads return PRNG bytes (dropbear/mbedTLS
+	 * open the device directly for entropy, not the getrandom syscall); writes discarded. */
+	if (strcmp(path, "/dev/urandom") == 0 || strcmp(path, "/dev/random") == 0)
+		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 4, 0);
 #if defined(CONFIG_OVE_LINUX_PTY)
 	/* Unix98 pty: each open of /dev/ptmx mints a fresh pair (the master, rw=1); the
 	 * slave is /dev/pts/N (rw=0), N = the pool index from TIOCGPTN/ptsname. */
@@ -2103,25 +2122,33 @@ static long sys_utimensat(ove_lnx_proc_t *p, const char *path)
 	return -OVE_LNX_ENOENT;
 }
 
-/* getrandom: a non-cryptographic xorshift PRNG seeded from uptime (no hardware
- * RNG); enough for mktemp suffixes etc. */
-static long sys_getrandom(ove_lnx_proc_t *p, void *buf, size_t count)
+/* A non-cryptographic xorshift PRNG seeded from uptime (no hardware RNG on this tier).
+ * Backs both getrandom(2) and /dev/urandom. NOTE: this is WEAK entropy — enough for
+ * mktemp suffixes, and it lets mbedTLS/dropbear run, but SSH host keys / session keys
+ * derived from it are not cryptographically strong (acceptable for a LAN test target;
+ * a real deployment would wire the STM32 hardware RNG here). */
+static void prng_fill(uint8_t *b, size_t count)
 {
-	if (!user_ok(p, buf, count, 1))
-		return -OVE_LNX_EFAULT;
 	static uint32_t s;
 	if (!s) {
 		uint64_t ns = 0;
 		ove_time_get_ns(&ns);
 		s = (uint32_t)ns | 1u;
 	}
-	uint8_t *b = buf;
 	for (size_t i = 0; i < count; i++) {
 		s ^= s << 13;
 		s ^= s >> 17;
 		s ^= s << 5;
 		b[i] = (uint8_t)(s >> 24);
 	}
+}
+
+/* getrandom: fill the user buffer from the PRNG. */
+static long sys_getrandom(ove_lnx_proc_t *p, void *buf, size_t count)
+{
+	if (!user_ok(p, buf, count, 1))
+		return -OVE_LNX_EFAULT;
+	prng_fill(buf, count);
 	return (long)count;
 }
 
@@ -2806,13 +2833,31 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_prctl:
 	case OVE_LNX_NR_sched_yield: /* cooperative hint; FreeRTOS time-slices peers anyway */
 	case OVE_LNX_NR_setpgid:
-	case OVE_LNX_NR_sync:	/* no backing store to flush */
+	case OVE_LNX_NR_sync:	  /* no backing store to flush */
+	case OVE_LNX_NR_fsync:	  /* dropbearkey fsyncs the host key; the writable overlay is RAM */
+	case OVE_LNX_NR_fdatasync:
 	case OVE_LNX_NR_fchmod: /* modes/ownership not tracked (login chmods the tty) */
 	case OVE_LNX_NR_fchown32:
 	case OVE_LNX_NR_setgroups32: /* uid/gid not enforced (login's privilege drop is */
 	case OVE_LNX_NR_setuid32:    /* inert — programs run privileged in this tier) */
 	case OVE_LNX_NR_setgid32:
 		return 0; /* process-control / fs-mode setup accepted (inert) */
+	case OVE_LNX_NR_times: { /* (struct tms*) — CPU-time accounting; dropbear mixes it into
+				 * its RNG pool. Report uptime ticks (100 Hz) + zero the per-proc
+				 * breakdown (not tracked here). Must be >=0 (glibc treats -1 as error). */
+		void *ubuf = (void *)(uintptr_t)a0;
+		uint64_t us = 0;
+		ove_time_get_us(&us);
+		long ticks = (long)(us / 10000u); /* CLK_TCK = 100 */
+		if (ubuf) {
+			if (!user_ok(proc, ubuf, 4 * sizeof(long), 1))
+				return -OVE_LNX_EFAULT;
+			long *tms = (long *)ubuf; /* tms_utime, tms_stime, tms_cutime, tms_cstime */
+			tms[0] = ticks;
+			tms[1] = tms[2] = tms[3] = 0;
+		}
+		return ticks;
+	}
 	case OVE_LNX_NR_setitimer: { /* (which, new, old) — ITIMER_REAL -> SIGALRM (alarm()) */
 		int which = (int)a0;
 		const void *unew = (const void *)(uintptr_t)a1;
@@ -2970,6 +3015,11 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		}
 		return 0;
 	}
+#if defined(CONFIG_OVE_LINUX_NET)
+	case OVE_LNX_NR_pselect6_time64: /* (nfds, readfds, writefds, exceptfds, timeout, sigmask) */
+		return sys_pselect6(proc, (int)a0, (uintptr_t)a1, (uintptr_t)a2, (uintptr_t)a3,
+				    (uintptr_t)a4);
+#endif
 	case OVE_LNX_NR_poll:
 	case OVE_LNX_NR_ppoll_time64: {
 		ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)a0;
@@ -3082,6 +3132,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * elapses. Without this a socket poll would sleep the whole timeout and return
 		 * 0, breaking the uClibc DNS resolver (poll(POLLIN) then recv(MSG_DONTWAIT)). */
 		if (has_socket || has_eventfd || has_pty) {
+			proc->sel_active = 0; /* this is a real poll(2), not a pselect6 */
 			proc->sock_buf = (uintptr_t)pfds;
 			proc->sock_len = nfds;
 			if (tmo_ms > 0) {
@@ -3396,8 +3447,128 @@ static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigne
 	return ready;
 }
 
+/* ── pselect6(2): select() bridged onto the poll machinery ─────────────────────
+ * An fd_set here is one 32-bit word (nfds capped at OVE_LNX_SEL_MAXFDS). We derive a
+ * pollfd set from the caller's readfds/writefds, scan it with ove_lnx_poll_scan, and
+ * write the ready fds back into the fd_sets. A blocking select parks on SOCKW_POLL and
+ * the retry re-derives the set from the (still-unmodified) fd_sets each pass. */
+static int sel_isset(const uint32_t *set, int fd)
+{
+	return set && ((set[fd >> 5] >> (fd & 31)) & 1u);
+}
+
+/* Build a pollfd array from the fd_sets; returns the count. */
+static int sel_build(ove_lnx_proc_t *p, ove_lnx_pollfd *pf)
+{
+	const uint32_t *r = (const uint32_t *)p->sel_rfds;
+	const uint32_t *w = (const uint32_t *)p->sel_wfds;
+	int n = 0;
+	for (int fd = 0; fd < p->sel_nfds && n < OVE_LNX_SEL_MAXFDS; fd++) {
+		unsigned ev = 0;
+		if (sel_isset(r, fd))
+			ev |= OVE_LNX_POLLIN;
+		if (sel_isset(w, fd))
+			ev |= OVE_LNX_POLLOUT;
+		if (ev) {
+			pf[n].fd = fd;
+			pf[n].events = (short)ev;
+			pf[n].revents = 0;
+			n++;
+		}
+	}
+	return n;
+}
+
+/* Write the scanned pollfd revents back into the caller's fd_sets; returns select()'s
+ * count (a fd ready for both read and write counts twice). Zeroes the sets first. */
+static long sel_writeback(ove_lnx_proc_t *p, const ove_lnx_pollfd *pf, int npf)
+{
+	uint32_t *r = (uint32_t *)p->sel_rfds, *w = (uint32_t *)p->sel_wfds,
+		 *e = (uint32_t *)p->sel_efds;
+	if (r)
+		r[0] = 0;
+	if (w)
+		w[0] = 0;
+	if (e)
+		e[0] = 0;
+	long ready = 0;
+	for (int i = 0; i < npf; i++) {
+		int fd = pf[i].fd;
+		if ((pf[i].revents & OVE_LNX_POLLIN) && r) {
+			r[fd >> 5] |= (1u << (fd & 31));
+			ready++;
+		}
+		if ((pf[i].revents & OVE_LNX_POLLOUT) && w) {
+			w[fd >> 5] |= (1u << (fd & 31));
+			ready++;
+		}
+	}
+	return ready; /* exceptfds left cleared (no out-of-band data on this tier) */
+}
+
+static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwfds,
+			 uintptr_t uefds, uintptr_t utimeout)
+{
+	if (nfds < 0)
+		return -OVE_LNX_EINVAL;
+	if (nfds > OVE_LNX_SEL_MAXFDS)
+		nfds = OVE_LNX_SEL_MAXFDS; /* one fd_set word; higher fds are not selectable here */
+	size_t setb = sizeof(uint32_t);
+	if ((urfds && !user_ok(p, (void *)urfds, setb, 1)) ||
+	    (uwfds && !user_ok(p, (void *)uwfds, setb, 1)) ||
+	    (uefds && !user_ok(p, (void *)uefds, setb, 1)))
+		return -OVE_LNX_EFAULT;
+	long tmo_ms = -1; /* NULL timeout = block forever */
+	if (utimeout) {
+		if (!user_ok(p, (void *)utimeout, 2 * sizeof(int64_t), 0))
+			return -OVE_LNX_EFAULT;
+		const int64_t *ts = (const int64_t *)utimeout; /* time64: tv_sec, tv_nsec */
+		int64_t ms = ts[0] * 1000 + ts[1] / 1000000;
+		tmo_ms = ms < 0 ? 0 : (long)ms;
+	}
+	p->sel_nfds = nfds;
+	p->sel_rfds = urfds;
+	p->sel_wfds = uwfds;
+	p->sel_efds = uefds;
+	ove_lnx_pollfd pf[OVE_LNX_SEL_MAXFDS];
+	int npf = sel_build(p, pf);
+	int ready = ove_lnx_poll_scan(p, pf, (unsigned)npf);
+	if (ready > 0 || tmo_ms == 0) {
+		p->sel_active = 0;
+		return sel_writeback(p, pf, npf);
+	}
+	/* Park on the poll machinery; ove_lnx_poll_retry re-derives + completes it. */
+	p->sel_active = 1;
+	if (tmo_ms > 0) {
+		uint64_t now = 0;
+		ove_time_get_us(&now);
+		p->sock_deadline_us = now + (uint64_t)tmo_ms * 1000ull;
+	} else {
+		p->sock_deadline_us = UINT64_MAX;
+	}
+	p->sock_oi = -1;
+	p->sock_wait = OVE_LNX_SOCKW_POLL;
+	return 0;
+}
+
 long ove_lnx_poll_retry(ove_lnx_proc_t *proc)
 {
+	if (proc->sel_active) { /* a parked pselect6: re-derive from the fd_sets each pass */
+		ove_lnx_pollfd pf[OVE_LNX_SEL_MAXFDS];
+		int npf = sel_build(proc, pf);
+		int ready = ove_lnx_poll_scan(proc, pf, (unsigned)npf);
+		int timedout = 0;
+		if (proc->sock_deadline_us != UINT64_MAX) {
+			uint64_t now_us = 0;
+			ove_time_get_us(&now_us);
+			timedout = (now_us >= proc->sock_deadline_us);
+		}
+		if (ready > 0 || timedout) {
+			proc->sel_active = 0;
+			return sel_writeback(proc, pf, npf); /* 0 on timeout (sets zeroed) */
+		}
+		return -OVE_LNX_EAGAIN;
+	}
 	ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)proc->sock_buf;
 	int ready = ove_lnx_poll_scan(proc, pfds, (unsigned)proc->sock_len);
 	if (ready > 0)
