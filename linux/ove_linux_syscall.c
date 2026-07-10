@@ -610,6 +610,10 @@ static ove_lnx_fd_t *fd_slot(ove_lnx_proc_t *p, int fd)
 	return &p->fds[fd];
 }
 
+/* eventfd counter read/write (defined below fd_alloc); sys_read/sys_write route to them. */
+static long efd_read(ove_lnx_proc_t *p, int ei, void *buf, size_t len);
+static long efd_write(ove_lnx_proc_t *p, int ei, const void *buf, size_t len);
+
 static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 {
 	ove_lnx_fd_t *s = fd_slot(p, fd);
@@ -625,6 +629,8 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 	if (s->kind == OVE_LNX_FD_SOCKET)
 		return ove_lnx_sock_send(p, s->file_idx, buf, len, 0, NULL, 0);
 #endif
+	if (s->kind == OVE_LNX_FD_EVENTFD)
+		return efd_write(p, s->file_idx, buf, len);
 	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
 	if (s->kind == OVE_LNX_FD_PIPE) {
 		if (s->rw != 1)
@@ -705,6 +711,8 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 	if (s->kind == OVE_LNX_FD_SOCKET)
 		return ove_lnx_sock_recv(p, s->file_idx, buf, len, 0, NULL, NULL);
 #endif
+	if (s->kind == OVE_LNX_FD_EVENTFD)
+		return efd_read(p, s->file_idx, buf, len);
 
 	if (s->kind == OVE_LNX_FD_CONSOLE) {
 		if (s->file_idx == 1) /* output consoles (stdout/stderr) are not readable */
@@ -990,6 +998,65 @@ static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
 int ove_lnx_fd_install(ove_lnx_proc_t *p, uint8_t kind, int idx)
 {
 	return fd_alloc(p, kind, idx, 0);
+}
+
+/* eventfd(2): a 64-bit counter fd used to wake a poller from another thread — curl's
+ * threaded resolver (AsynchDNS) writes it when a name resolves. Threads share the fd
+ * table (CLONE_VM), so both ends address the same counter by its pool index. */
+#define OVE_LNX_NEVENTFD 8
+static struct {
+	uint64_t ctr;
+	uint16_t flags;
+	uint8_t used;
+} g_efd[OVE_LNX_NEVENTFD];
+
+static long efd_new(unsigned initval, int flags)
+{
+	for (int i = 0; i < OVE_LNX_NEVENTFD; i++)
+		if (!g_efd[i].used) {
+			g_efd[i].used = 1;
+			g_efd[i].ctr = initval;
+			g_efd[i].flags = (uint16_t)flags;
+			return i;
+		}
+	return -OVE_LNX_EMFILE;
+}
+
+/* eventfd read/write: 8-byte counter. read returns (and clears, or decrements in
+ * SEMAPHORE mode) the counter, EAGAIN when zero (the caller polls first); write adds. */
+static long efd_read(ove_lnx_proc_t *p, int ei, void *buf, size_t len)
+{
+	if (ei < 0 || ei >= OVE_LNX_NEVENTFD || !g_efd[ei].used)
+		return -OVE_LNX_EBADF;
+	if (len < 8)
+		return -OVE_LNX_EINVAL;
+	if (g_efd[ei].ctr == 0)
+		return -OVE_LNX_EAGAIN; /* counter empty; the poller re-checks on the tick */
+	if (!user_ok(p, buf, 8, 1))
+		return -OVE_LNX_EFAULT;
+	uint64_t v = (g_efd[ei].flags & OVE_LNX_EFD_SEMAPHORE) ? 1u : g_efd[ei].ctr;
+	g_efd[ei].ctr -= v;
+	memcpy(buf, &v, 8);
+	return 8;
+}
+
+static long efd_write(ove_lnx_proc_t *p, int ei, const void *buf, size_t len)
+{
+	if (ei < 0 || ei >= OVE_LNX_NEVENTFD || !g_efd[ei].used)
+		return -OVE_LNX_EBADF;
+	if (len < 8)
+		return -OVE_LNX_EINVAL;
+	if (!user_ok(p, buf, 8, 0))
+		return -OVE_LNX_EFAULT;
+	uint64_t v;
+	memcpy(&v, buf, 8);
+	if (v == UINT64_MAX) /* -1 is reserved */
+		return -OVE_LNX_EINVAL;
+	if (UINT64_MAX - g_efd[ei].ctr - 1 < v) /* would overflow past max-1 */
+		g_efd[ei].ctr = UINT64_MAX - 1;
+	else
+		g_efd[ei].ctr += v;
+	return 8;
 }
 
 /*
@@ -1513,6 +1580,8 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 	if (s->kind == OVE_LNX_FD_DEV)
 		ove_lnx_dev_close(s->file_idx); /* refs--, ops->release at the last close */
 #endif
+	if (s->kind == OVE_LNX_FD_EVENTFD && s->file_idx >= 0 && s->file_idx < OVE_LNX_NEVENTFD)
+		g_efd[s->file_idx].used = 0; /* threads share the fd table → one close frees it */
 #if defined(CONFIG_OVE_LINUX_NET)
 	if (s->kind == OVE_LNX_FD_SOCKET)
 		ove_lnx_sock_close(s->file_idx); /* refs--, ove_socket_close at the last close */
@@ -2507,6 +2576,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_statfs(proc, (void *)(uintptr_t)a2);
 	case OVE_LNX_NR_getrandom: /* (buf, count, flags) */
 		return sys_getrandom(proc, (void *)(uintptr_t)a0, (size_t)a1);
+	case OVE_LNX_NR_eventfd2: { /* (initval, flags) — curl's threaded-resolver wakeup */
+		long ei = efd_new((unsigned)a0, (int)a1);
+		if (ei < 0)
+			return ei;
+		int fd = fd_alloc(proc, OVE_LNX_FD_EVENTFD, (int)ei, 0);
+		if (fd < 0) {
+			g_efd[ei].used = 0;
+			return -OVE_LNX_EMFILE;
+		}
+		return fd;
+	}
 	case OVE_LNX_NR_sysinfo: { /* uptime + ram totals (uptime/free read this) */
 		struct ove_lnx_sysinfo {
 			int32_t uptime;
@@ -2642,6 +2722,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return old;
 	}
 	case OVE_LNX_NR_prctl:
+	case OVE_LNX_NR_sched_yield: /* cooperative hint; FreeRTOS time-slices peers anyway */
 	case OVE_LNX_NR_setpgid:
 	case OVE_LNX_NR_sync:	/* no backing store to flush */
 	case OVE_LNX_NR_fchmod: /* modes/ownership not tracked (login chmods the tty) */
@@ -2842,7 +2923,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
 		int ready = 0;
 #if defined(CONFIG_OVE_LINUX_NET)
-		int has_socket = 0;
+		int has_socket = 0, has_eventfd = 0;
 #endif
 		for (unsigned i = 0; i < nfds; i++) {
 			pfds[i].revents = 0;
@@ -2873,6 +2954,21 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 					ready++;
 				has_socket = 1;
 				continue;
+			} else if (s->kind == OVE_LNX_FD_EVENTFD) {
+				/* Readable once the counter is non-zero (the resolver thread
+				 * wrote it); always writable. Park like a socket poll so the
+				 * coordinator re-checks on its tick. */
+				unsigned pb = OVE_LNX_POLLOUT |
+					      ((s->file_idx >= 0 && s->file_idx < OVE_LNX_NEVENTFD &&
+						g_efd[s->file_idx].ctr)
+						       ? OVE_LNX_POLLIN
+						       : 0u);
+				pfds[i].revents = (short)(pfds[i].events & pb &
+							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+				if (pfds[i].revents)
+					ready++;
+				has_eventfd = 1;
+				continue;
 			}
 #endif
 			else
@@ -2892,7 +2988,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * ove_lnx_poll_retry) and resumes us when an fd becomes ready or the timeout
 		 * elapses. Without this a socket poll would sleep the whole timeout and return
 		 * 0, breaking the uClibc DNS resolver (poll(POLLIN) then recv(MSG_DONTWAIT)). */
-		if (has_socket) {
+		if (has_socket || has_eventfd) {
 			proc->sock_buf = (uintptr_t)pfds;
 			proc->sock_len = nfds;
 			if (tmo_ms > 0) {
@@ -3181,6 +3277,11 @@ static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigne
 			pb = (unsigned)((proc->console_poll ? (key ? OVE_LNX_POLLIN : 0)
 							    : OVE_LNX_POLLIN) |
 					OVE_LNX_POLLOUT);
+		else if (s->kind == OVE_LNX_FD_EVENTFD)
+			pb = OVE_LNX_POLLOUT | ((s->file_idx >= 0 && s->file_idx < OVE_LNX_NEVENTFD &&
+						g_efd[s->file_idx].ctr)
+						       ? OVE_LNX_POLLIN
+						       : 0u);
 		else
 			pb = OVE_LNX_POLLIN | OVE_LNX_POLLOUT; /* files/pipes always ready */
 		pfds[i].revents =

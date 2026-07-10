@@ -51,6 +51,8 @@ extern "C" {
 #define OVE_LNX_NR_dup2 63
 #define OVE_LNX_NR_kill 37
 #define OVE_LNX_NR_sigreturn 119
+#define OVE_LNX_NR_sched_yield 158
+#define OVE_LNX_NR_eventfd2 356
 #define OVE_LNX_NR_dup3 358
 #define OVE_LNX_NR_rt_sigreturn 173
 #define OVE_LNX_NR_gettid 224
@@ -367,6 +369,12 @@ typedef struct ove_lnx_fd {
 #define OVE_LNX_FD_DEV 6
 /** Socket fd kind (shared by the syscall + socket layers). @c file_idx = open-pool index. */
 #define OVE_LNX_FD_SOCKET 7
+/** eventfd fd kind (thread wakeup counter). @c file_idx = eventfd-pool index. */
+#define OVE_LNX_FD_EVENTFD 8
+/* eventfd2(2) flags. */
+#define OVE_LNX_EFD_SEMAPHORE 0x00000001
+#define OVE_LNX_EFD_NONBLOCK 0x00000800
+#define OVE_LNX_EFD_CLOEXEC 0x00080000
 
 /** Maximum simultaneously-open file descriptors per process. A fork-per-connection
  * server (httpd) holds std streams + the listener + the accepted client, per proc. */
@@ -538,6 +546,25 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
  * @param len  size of the window in bytes (an upper bound is fine; use the mapped device size).
  */
 void ove_lnx_rootfs_window(const void *base, size_t len);
+
+/**
+ * @brief Make a guest buffer coherent before the coordinator reads it for the transport.
+ *
+ * Call from the coordinator, on a guest-supplied buffer, immediately BEFORE handing it to an
+ * engine transport that will read it from physical memory (e.g. @ref ove_socket_send, whose
+ * lwIP copy runs in the privileged coordinator context).  On most engines/boards this is a
+ * no-op.  On the STM32F746 with the M7 D-cache enabled, the guest writes this SDRAM buffer
+ * through its Normal-cacheable MPU region, so the freshly written bytes can still sit in dirty
+ * D-cache lines while physical SDRAM holds stale data; the coordinator reads the SAME SDRAM
+ * through its uncached (Device) background view and would copy the stale bytes.  The FreeRTOS
+ * backend cleans (writes back) the buffer's D-cache lines so both views agree.  The tail of a
+ * just-built buffer is the most-recently-written and thus the most likely victim.
+ *
+ * @param base start of the guest buffer the transport is about to read.
+ * @param len  number of bytes the transport will read.
+ */
+void ove_lnx_guest_flush(const void *base, size_t len);
+
 
 /**
  * @brief Resolve an absolute path through a rootfs (following symlinks) to a file's bytes.
