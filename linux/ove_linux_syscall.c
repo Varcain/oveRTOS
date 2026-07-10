@@ -244,6 +244,21 @@ long ove_lnx_pipe_retry(ove_lnx_proc_t *p)
 	return 0;
 }
 
+/* poll/select readiness for a pipe end (@p rw = fd.rw: 0 read end, 1 write end). Reporting
+ * a pipe as "always ready" (the old default) breaks select() on a self-pipe: a program that
+ * selects an EMPTY self-pipe would be told it is readable, read it, and block forever (this
+ * is exactly how dropbear hung). Report real readiness: a read end is POLLIN when it has data
+ * or all writers closed (EOF); a write end is POLLOUT when it has space or all readers closed. */
+static unsigned pipe_poll(int pi, int rw)
+{
+	ove_lnx_pipe_t *pp = &g_pipes[pi];
+	int rd, wr;
+	pipe_ends(pi, &rd, &wr);
+	if (rw == 0)
+		return (pp->count > 0 || wr == 0) ? OVE_LNX_POLLIN : 0u;
+	return (pp->count < OVE_LNX_PIPE_BUF || rd == 0) ? OVE_LNX_POLLOUT : 0u;
+}
+
 /*
  * Writable VFS overlaid on the read-only CPIO rootfs: regular files, directories
  * (mkdir), and symlinks (ln -s) created at runtime live here (e.g. `mkdir /tmp/d`,
@@ -2841,7 +2856,40 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_setgroups32: /* uid/gid not enforced (login's privilege drop is */
 	case OVE_LNX_NR_setuid32:    /* inert — programs run privileged in this tier) */
 	case OVE_LNX_NR_setgid32:
+	case OVE_LNX_NR_setreuid32: /* dropbear's post-auth privilege drop: accept (inert) so it */
+	case OVE_LNX_NR_setregid32: /* does not abort — a failed drop is fatal to an SSH server */
+	case OVE_LNX_NR_setresuid32:
+	case OVE_LNX_NR_setresgid32:
 		return 0; /* process-control / fs-mode setup accepted (inert) */
+	case OVE_LNX_NR_getresuid32: /* (ruid*, euid*, suid*) — all root (0) on this tier */
+	case OVE_LNX_NR_getresgid32: {
+		uint32_t *r = (uint32_t *)(uintptr_t)a0, *e = (uint32_t *)(uintptr_t)a1,
+			 *s = (uint32_t *)(uintptr_t)a2;
+		if ((r && !user_ok(proc, r, sizeof(*r), 1)) ||
+		    (e && !user_ok(proc, e, sizeof(*e), 1)) ||
+		    (s && !user_ok(proc, s, sizeof(*s), 1)))
+			return -OVE_LNX_EFAULT;
+		if (r)
+			*r = 0;
+		if (e)
+			*e = 0;
+		if (s)
+			*s = 0;
+		return 0;
+	}
+	case OVE_LNX_NR_prlimit64: { /* (pid, resource, new_limit, old_limit) — report a sane
+				     * finite limit; a "new" limit is accepted (inert). getty/login
+				     * and dropbear query RLIMIT_NOFILE etc. */
+		void *uold = (void *)(uintptr_t)a3;
+		if (uold) {
+			if (!user_ok(proc, uold, 2 * sizeof(uint64_t), 1))
+				return -OVE_LNX_EFAULT;
+			uint64_t *lim = (uint64_t *)uold; /* rlim_cur, rlim_max */
+			lim[0] = lim[1] = 1024; /* finite: never RLIM_INFINITY (a close-all-fds
+						 * loop would otherwise spin to 2^64) */
+		}
+		return 0;
+	}
 	case OVE_LNX_NR_times: { /* (struct tms*) — CPU-time accounting; dropbear mixes it into
 				 * its RNG pool. Report uptime ticks (100 Hz) + zero the per-proc
 				 * breakdown (not tracked here). Must be >=0 (glibc treats -1 as error). */
@@ -3114,8 +3162,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			}
 #endif
 #endif
-			else
-				avail = 1; /* files / pipes: readable/writable */
+			else if (s->kind == OVE_LNX_FD_PIPE) {
+				/* Real pipe readiness — NOT "always ready", or a select on an empty
+				 * self-pipe wrongly reports readable (dropbear then blocks forever). */
+				unsigned pb = pipe_poll(s->file_idx, s->rw);
+				pfds[i].revents = (short)(pfds[i].events & pb &
+							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+				if (pfds[i].revents)
+					ready++;
+				continue;
+			} else
+				avail = 1; /* regular files: always readable/writable */
 			if (avail) {
 				pfds[i].revents = pfds[i].events &
 						  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT);
@@ -3437,8 +3494,10 @@ static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigne
 						g_efd[s->file_idx].ctr)
 						       ? OVE_LNX_POLLIN
 						       : 0u);
+		else if (s->kind == OVE_LNX_FD_PIPE)
+			pb = pipe_poll(s->file_idx, s->rw); /* real readiness (empty self-pipe!) */
 		else
-			pb = OVE_LNX_POLLIN | OVE_LNX_POLLOUT; /* files/pipes always ready */
+			pb = OVE_LNX_POLLIN | OVE_LNX_POLLOUT; /* regular files: always ready */
 		pfds[i].revents =
 			(short)(pfds[i].events & pb & (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
 		if (pfds[i].revents)
