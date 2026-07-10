@@ -213,6 +213,12 @@ extern "C" {
 #define OVE_LNX_TCSETSW 0x5403
 #define OVE_LNX_TCSETSF 0x5404
 #define OVE_LNX_TIOCGWINSZ 0x5413
+#define OVE_LNX_TIOCSWINSZ 0x5414
+/* Unix98 pty-master ioctls (dropbear/openpty on /dev/ptmx): get the pts number and
+ * lock/unlock the slave (grantpt/unlockpt). _IOR/_IOW('T',0x30/0x31) encodings. */
+#define OVE_LNX_TIOCGPTN 0x80045430u
+#define OVE_LNX_TIOCSPTLCK 0x40045431u
+#define OVE_LNX_TIOCGPTPEER 0x5441
 /* tty/session ioctls getty + login issue (accepted; we are a single console). */
 #define OVE_LNX_TIOCSCTTY 0x540e
 #define OVE_LNX_TIOCGPGRP 0x540f
@@ -371,6 +377,8 @@ typedef struct ove_lnx_fd {
 #define OVE_LNX_FD_SOCKET 7
 /** eventfd fd kind (thread wakeup counter). @c file_idx = eventfd-pool index. */
 #define OVE_LNX_FD_EVENTFD 8
+/** pty fd kind (pseudo-terminal). @c file_idx = pty-pool index; @c rw = 1 master, 0 slave. */
+#define OVE_LNX_FD_PTY 9
 /* eventfd2(2) flags. */
 #define OVE_LNX_EFD_SEMAPHORE 0x00000001
 #define OVE_LNX_EFD_NONBLOCK 0x00000800
@@ -495,6 +503,13 @@ typedef struct ove_lnx_proc {
 	uintptr_t sock_buf; /**< User buffer (send/recv); the user pollfd array for SOCKW_POLL. */
 	size_t sock_len;    /**< Requested length (send/recv); nfds for SOCKW_POLL. */
 	uint64_t sock_deadline_us; /**< SOCKW_POLL absolute timeout (UINT64_MAX = infinite). */
+	/* Blocking pty I/O (pseudo-terminal layer): a read on an empty ring or a write on a
+	 * full ring parks the proc; the coordinator retries via ove_lnx_pty_retry and resumes
+	 * it when the peer end drains/fills (same park/retry as pipe_wait). */
+	uint8_t pty_wait;   /**< 0 = none, else a PTYW_* op the coordinator retries. */
+	int pty_idx;	    /**< g_ptys[] index being waited on. */
+	uintptr_t pty_buf;  /**< User buffer for the parked read/write. */
+	size_t pty_len;	    /**< Requested length for the parked read/write. */
 	uint64_t alarm_deadline_us; /**< setitimer(ITIMER_REAL)/alarm() fire time; 0 = disarmed. */
 	uint64_t alarm_interval_us; /**< Repeating interval (0 = one-shot); re-arms on fire. */
 } ove_lnx_proc_t;
