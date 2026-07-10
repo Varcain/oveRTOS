@@ -72,6 +72,7 @@ extern "C" {
 #define OVE_LNX_NR_wait4 114
 #define OVE_LNX_NR_uname 122
 #define OVE_LNX_NR_poll 168
+#define OVE_LNX_NR_pselect6_time64 413
 #define OVE_LNX_NR_ppoll_time64 414
 #define OVE_LNX_NR_brk 45
 #define OVE_LNX_NR_ioctl 54
@@ -141,6 +142,9 @@ extern "C" {
 #define OVE_LNX_NR_getrandom 384
 /* init / getty / login boot + shell job control. */
 #define OVE_LNX_NR_sync 36
+#define OVE_LNX_NR_times 43
+#define OVE_LNX_NR_fsync 118
+#define OVE_LNX_NR_fdatasync 148
 #define OVE_LNX_NR_umask 60
 #define OVE_LNX_NR_getpgrp 65
 #define OVE_LNX_NR_setsid 66
@@ -503,6 +507,14 @@ typedef struct ove_lnx_proc {
 	uintptr_t sock_buf; /**< User buffer (send/recv); the user pollfd array for SOCKW_POLL. */
 	size_t sock_len;    /**< Requested length (send/recv); nfds for SOCKW_POLL. */
 	uint64_t sock_deadline_us; /**< SOCKW_POLL absolute timeout (UINT64_MAX = infinite). */
+	/* pselect6(2): a parked select reuses the SOCKW_POLL machinery but re-derives the
+	 * poll set from the caller's fd_sets each retry (they are untouched until it
+	 * completes, then written in place). Non-zero sel_active flags this to the retry. */
+	uint8_t sel_active;   /**< 1 = the parked poll originated from pselect6. */
+	int sel_nfds;	      /**< pselect nfds (highest fd + 1). */
+	uintptr_t sel_rfds;   /**< user readfds fd_set* (0 = NULL). */
+	uintptr_t sel_wfds;   /**< user writefds fd_set* (0 = NULL). */
+	uintptr_t sel_efds;   /**< user exceptfds fd_set* (0 = NULL). */
 	/* Blocking pty I/O (pseudo-terminal layer): a read on an empty ring or a write on a
 	 * full ring parks the proc; the coordinator retries via ove_lnx_pty_retry and resumes
 	 * it when the peer end drains/fills (same park/retry as pipe_wait). */
