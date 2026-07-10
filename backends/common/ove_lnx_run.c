@@ -51,8 +51,19 @@ __attribute__((weak)) void ove_lnx_rootfs_window(const void *base, size_t len)
 }
 
 /* Engine-common weak no-op; the FreeRTOS backend strong-overrides this on the STM32F746 where the
- * guest writes cacheable SDRAM but the coordinator reads it uncached (D-cache coherency). */
+ * guest writes cacheable SDRAM but the coordinator reads it uncached (D-cache coherency). CLEANS
+ * (writes back) the guest's cache lines so a subsequent uncached coordinator read sees them. */
 __attribute__((weak)) void ove_lnx_guest_flush(const void *base, size_t len)
+{
+	(void)base;
+	(void)len;
+}
+
+/* Engine-common weak no-op; FreeRTOS strong-overrides it. INVALIDATES the guest's D-cache lines over
+ * [base, len) so the guest's next read misses and refills from SDRAM — used after the coordinator has
+ * written guest memory through its uncached view (vfork restore). Invalidate, NOT clean: a clean would
+ * write the guest's stale lines back OVER what the coordinator just put in SDRAM. */
+__attribute__((weak)) void ove_lnx_guest_invalidate(const void *base, size_t len)
 {
 	(void)base;
 	(void)len;
@@ -125,6 +136,10 @@ volatile int g_ove_lnx_active;
  * host syscall tests link without the run loop; the run loop only observes it. */
 
 static ove_arena_t g_arenas[OVE_LNX_NREG];
+/* vfork data isolation: a snapshot of the shared arena's allocator metadata, taken when a vfork
+ * child is spawned (keyed by the child's slot) and restored when it execs/exits — the region+dyn_pool
+ * BYTES are snapshotted into a spare region, but g_arenas[] lives in coordinator memory. */
+static ove_arena_t g_snap_arena[OVE_LNX_NSLOT];
 static const ove_lnx_run_config_t *g_cfg;
 static const struct ove_lnx_engine *g_eng; /* for the dispatch to post coordinator events */
 
@@ -279,6 +294,20 @@ static void resolve_handler(const ove_lnx_proc_t *proc, int sig, uintptr_t *entr
 	}
 }
 
+/* Is signal `sig` effectively ignored for `proc`? True for SIG_IGN, or SIG_DFL of a
+ * signal whose default action is "ignore" (SIGCHLD). Such a signal is swallowed by the
+ * coordinator: it neither runs a handler nor terminates a parked proc — a parent must
+ * not die because a child exited. */
+static int sig_swallowed(const ove_lnx_proc_t *proc, int sig)
+{
+	uintptr_t h = proc->sig_handler[sig];
+	if (h == OVE_LNX_SIG_IGN)
+		return 1;
+	if (h == OVE_LNX_SIG_DFL && sig == OVE_LNX_SIGCHLD)
+		return 1;
+	return 0;
+}
+
 /* Deliver signal `sig` to `proc`; `ret` is the interrupted syscall's result
  * (0 for a kill/tkill, -EINTR for a console-interrupted read). */
 static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int sig, long ret)
@@ -288,8 +317,8 @@ static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int si
 		return;
 	}
 	uintptr_t h = proc->sig_handler[sig];
-	if (h == OVE_LNX_SIG_IGN) {
-		f->r[0] = (uint32_t)ret;
+	if (h == OVE_LNX_SIG_IGN || (h == OVE_LNX_SIG_DFL && sig == OVE_LNX_SIGCHLD)) {
+		f->r[0] = (uint32_t)ret; /* SIG_IGN, or a default-ignore signal (SIGCHLD) */
 		return;
 	}
 	if (h == OVE_LNX_SIG_DFL) {
@@ -541,6 +570,9 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	g_ove_lnx_proc[sidx].pool_lo = (uintptr_t)arena_mem;
 	g_ove_lnx_proc[sidx].pool_hi = (uintptr_t)arena_mem + arena_sz;
 	g_ove_lnx_proc[sidx].is_fdpic = prog.is_fdpic;
+	g_ove_lnx_proc[sidx].is_dynamic = dynamic; /* arena/libc RW data lives in the dyn_pool */
+	g_ove_lnx_proc[sidx].stack_lo = (uintptr_t)stack_lo; /* writable-data / stack boundary (snapshot) */
+	g_ove_lnx_proc[sidx].snap_region = -1;		     /* no vfork snapshot outstanding */
 	g_ove_lnx_proc[sidx].umask = 022; /* standard default; a fork inherits it via the struct copy */
 	g_ove_lnx_proc[sidx].vfork_parent_slot = -1;
 	/* comm = argv[0] basename (strip the login-shell leading '-') for ps/top. */
@@ -609,10 +641,19 @@ static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid,
 		if (g_ove_lnx_used[pslot]) /* abort the parked-waiter spin thread first */
 			eng->abort_slot(pslot);
 		eng->spawn_resume(pslot, par->region, &g_ctx[pslot], cpid);
-	} else if (par->child_count < OVE_LNX_MAX_CHILD) {
-		par->child_pid[par->child_count] = cpid;
-		par->child_status[par->child_count] = status;
-		par->child_count++;
+	} else {
+		/* The parent is not blocking in wait4 (typically sitting in select()/poll() —
+		 * busybox inetd's accept loop, dropbear's session relay). Queue the zombie for a
+		 * later wait4 and raise SIGCHLD: the parent's handler runs, wait4()s the zombie, and
+		 * closes the session / reaps the connection. Default action is IGNORE, so a parent
+		 * without a handler is unaffected. Coalesce onto a free pending slot (as SIGALRM). */
+		if (par->child_count < OVE_LNX_MAX_CHILD) {
+			par->child_pid[par->child_count] = cpid;
+			par->child_status[par->child_count] = status;
+			par->child_count++;
+		}
+		if (!par->pending_sig)
+			par->pending_sig = OVE_LNX_SIGCHLD;
 	}
 }
 
@@ -625,8 +666,8 @@ static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
 				  ove_lnx_proc_t *proc, int sig, long ret)
 {
 	uintptr_t h = proc->sig_handler[sig];
-	if (h == OVE_LNX_SIG_IGN) {
-		eng->spawn_resume(slot, proc->region, &g_ctx[slot], ret);
+	if (h == OVE_LNX_SIG_IGN || (h == OVE_LNX_SIG_DFL && sig == OVE_LNX_SIGCHLD)) {
+		eng->spawn_resume(slot, proc->region, &g_ctx[slot], ret); /* IGN or SIGCHLD-default */
 		return;
 	}
 	if (h == OVE_LNX_SIG_DFL) {
@@ -653,6 +694,71 @@ static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
 	g_ctx[slot].lr = restorer | 1u;		    /* return -> sa_restorer entry -> sigreturn */
 	g_ctx[slot].pc = entry | 1u;		    /* enter the handler (Thumb) */
 	eng->spawn_resume(slot, proc->region, &g_ctx[slot], sig); /* r0 = signo */
+}
+
+/* ---- vfork data isolation (NOMMU) ------------------------------------------ */
+/* NOMMU has no copy-on-write, so a vfork child SHARES the parent's region + dyn_pool. Correct vfork
+ * usage restricts the child to exec/_exit, but real programs write shared data before exec (e.g.
+ * dropbear's session child resets SIGCHLD to SIG_DFL, which uClibc-LinuxThreads records in a table in
+ * the shared libc data) — corrupting the suspended parent. So we snapshot the parent's writable data
+ * into a SPARE region at fork and restore it before the parent resumes. Storage is free: the spare
+ * region's own region+dyn_pool exactly mirror the parent's (both OVE_LNX_PROG_*), and the child needs
+ * that region for its eventual exec anyway. Only the writable image data [region, stack_lo) and the
+ * dyn_pool are copied (the stack is skipped — the child uses frames below the shared sp, and the
+ * parent's frames above are untouched); g_arenas[] allocator metadata is saved separately.
+ * Returns the reserved scratch region index, or -1 if none is free (→ share, as before). */
+static int vfork_snapshot(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par, int child_slot,
+			  int *rowner)
+{
+	int rsnap = -1;
+	for (int r = 0; r < OVE_LNX_NREG; r++)
+		if (rowner[r] < 0) {
+			rsnap = r;
+			break;
+		}
+	if (rsnap < 0)
+		return -1; /* no spare region: fall back to sharing (the pre-isolation behavior) */
+	uint8_t *pr = eng->region(par->region);
+	size_t dlen = par->stack_lo - (uintptr_t)pr; /* in-region writable data, below the stack */
+	/* The coordinator reads guest SDRAM through its UNCACHED view; clean the parent's dirty cache
+	 * lines to SDRAM first so the snapshot captures its live data (not stale SDRAM). */
+	ove_lnx_guest_flush(pr, dlen);
+	memcpy(eng->region(rsnap), pr, dlen);
+	if (par->is_dynamic && eng->dyn_pool) {
+		size_t ds = 0;
+		uint8_t *pdp = eng->dyn_pool(par->region, &ds);
+		ove_lnx_guest_flush(pdp, ds);
+		memcpy(eng->dyn_pool(rsnap, NULL), pdp, ds);
+	}
+	g_snap_arena[child_slot] = g_arenas[par->region]; /* allocator metadata (coordinator memory) */
+	rowner[rsnap] = child_slot;			  /* reserve it (also the child's exec region) */
+	return rsnap;
+}
+
+/* Undo a vfork child's writes to the shared region before the parent resumes: copy the snapshot back
+ * over the parent's region + dyn_pool and restore its arena metadata. */
+static void vfork_restore(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par, int rsnap,
+			  int child_slot)
+{
+	uint8_t *pr = eng->region(par->region);
+	size_t dlen = par->stack_lo - (uintptr_t)pr;
+	/* Invalidate the parent's cache lines BEFORE the coordinator's uncached write, so the child's
+	 * dirty lines are DISCARDED (not evicted) — otherwise an async eviction between the write and a
+	 * post-write invalidate could clobber the fresh SDRAM restore (a non-deterministic corruption).
+	 * The parent's own lines were already clean (vfork_snapshot flushed them), so only the child's
+	 * writes are dropped. A second invalidate after the write drains the Device write buffer (DSB)
+	 * and guarantees the parent refills from the restored SDRAM on resume. */
+	ove_lnx_guest_invalidate(pr, dlen);
+	memcpy(pr, eng->region(rsnap), dlen);
+	ove_lnx_guest_invalidate(pr, dlen);
+	if (par->is_dynamic && eng->dyn_pool) {
+		size_t ds = 0;
+		uint8_t *pdp = eng->dyn_pool(par->region, &ds);
+		ove_lnx_guest_invalidate(pdp, ds);
+		memcpy(pdp, eng->dyn_pool(rsnap, NULL), ds);
+		ove_lnx_guest_invalidate(pdp, ds);
+	}
+	g_arenas[par->region] = g_snap_arena[child_slot];
 }
 
 int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_config_t *cfg,
@@ -846,6 +952,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->alarm_interval_us = 0;
 			ch->child_count = ch->live_children = 0;
 			ch->clone_is_thread = 0;
+			ch->snap_region = -1; /* set by vfork_snapshot below for a non-thread fork */
 			ch->alive = 1;
 			ch->region = par->region;
 			ch->region_owner = 0; /* shares the parent's region */
@@ -871,6 +978,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->is_thread = 0;
 			ch->vfork_parent_slot =
 				es; /* resume the parent when this child execs/exits */
+			/* NOMMU vfork isolation: snapshot the parent's writable data so the child's
+			 * pre-exec writes to the SHARED region can't corrupt the suspended parent. */
+			ch->snap_region = vfork_snapshot(eng, par, c, rowner);
 			eng->abort_slot(es); /* suspend the parent (no thread) */
 			eng->spawn_resume(c, ch->region, &g_ctx[es],
 					  0); /* child returns 0 from fork */
@@ -892,12 +1002,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				off += n;
 			}
 			ptrs[eargc] = NULL;
-			int nr = -1;
-			for (int r = 0; r < OVE_LNX_NREG; r++)
-				if (rowner[r] < 0) {
-					nr = r;
-					break;
-				}
+			/* Reuse the reserved snapshot region as the exec image region — it's free once we
+			 * restore the parent from it below, and reserving it at fork is why exec always has
+			 * a region. No snapshot (region-pressure fallback) → find a free region as before. */
+			int nr = p->snap_region;
+			if (nr < 0)
+				for (int r = 0; r < OVE_LNX_NREG; r++)
+					if (rowner[r] < 0) {
+						nr = r;
+						break;
+					}
 			int pid = p->pid, ppid = p->ppid, vp = p->vfork_parent_slot;
 			if (nr <
 			    0) { /* region exhaustion: kill THIS proc, do NOT tear down init. */
@@ -915,6 +1029,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			}
 			if (vp >=
 			    0) { /* the child leaves the parent's region → the parent co-runs. */
+				/* Undo the child's pre-exec writes to the shared region+dyn_pool BEFORE the
+				 * parent runs again (the args were already copied out into `args` above, so
+				 * restoring over them is safe). */
+				if (p->snap_region >= 0)
+					vfork_restore(eng, &g_ove_lnx_proc[vp], p->snap_region, es);
 				p->vfork_parent_slot = -1;
 				eng->spawn_resume(vp, g_ove_lnx_proc[vp].region, &g_ctx[vp], pid);
 			}
@@ -964,6 +1083,12 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			if (es == 0) { /* init exited → the system is done */
 				rc = status;
 				break;
+			}
+			if (vp >= 0 && p->snap_region >= 0) {
+				/* a vfork child died before exec (e.g. a failed exec) → undo its writes to
+				 * the shared region so the parent is not corrupted, and free the scratch. */
+				vfork_restore(eng, &g_ove_lnx_proc[vp], p->snap_region, es);
+				rowner[p->snap_region] = -1;
 			}
 			if (vp >=
 			    0) /* fork-without-exec: the suspended parent resumes (vfork returns) */
@@ -1074,7 +1199,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				   (p->sleeping || p->wait_pending || p->pipe_wait)) {
 				int sig = p->pending_sig;
 				p->pending_sig = 0;
-				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+				if (sig == OVE_LNX_SIGCHLD) {
+					/* A child of a proc blocked in sleep/wait/pipe exited. SIGCHLD
+					 * never terminates: run a handler (the op then returns -EINTR),
+					 * else swallow it and stay parked (default action = ignore). */
+					if (!sig_swallowed(p, sig)) {
+						p->sleeping = p->wait_pending = p->pipe_wait = 0;
+						deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+						progress = 1;
+					}
+				} else if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
 					p->exited = 1;
 					p->exit_status = 128 + sig;
 					p->sleeping = p->wait_pending = p->pipe_wait = 0;
@@ -1085,10 +1219,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				 * poll): run a handler then the op returns -EINTR — busybox ping's
 				 * SIGALRM timer drives its next send this way, and a server's
 				 * blocked accept takes SIGTERM/SIGCHLD. SIG_DFL terminates; SIG_IGN
-				 * is swallowed, leaving the proc parked (the retry re-attempts). */
+				 * (and SIGCHLD's default-ignore) is swallowed, leaving the proc
+				 * parked (the retry re-attempts). */
 				int sig = p->pending_sig;
 				p->pending_sig = 0;
-				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+				if (!sig_swallowed(p, sig)) {
 					p->sock_wait = 0;
 					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
 					progress = 1;
@@ -1098,10 +1233,10 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				/* Signal to a proc parked in a pty read/write: ^C (SIGINT) from the line
 				 * discipline lands here — the shell's handler runs and its slave read
 				 * returns -EINTR (re-prompt); a foreground child takes it by default
-				 * action. SIG_IGN leaves it parked (the retry re-attempts). */
+				 * action. SIG_IGN (and SIGCHLD's default-ignore) leaves it parked. */
 				int sig = p->pending_sig;
 				p->pending_sig = 0;
-				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+				if (!sig_swallowed(p, sig)) {
 					p->pty_wait = 0;
 					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
 					progress = 1;

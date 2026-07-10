@@ -546,6 +546,12 @@ void ove_lnx_guest_flush(const void *base, size_t len)
 	if (len)
 		SCB_CleanDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
 }
+
+void ove_lnx_guest_invalidate(const void *base, size_t len)
+{
+	if (len)
+		SCB_InvalidateDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
+}
 #endif
 
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,

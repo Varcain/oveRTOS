@@ -265,6 +265,7 @@ extern "C" {
 #define OVE_LNX_SIGPIPE 13
 #define OVE_LNX_SIGALRM 14
 #define OVE_LNX_SIGTERM 15
+#define OVE_LNX_SIGCHLD 17 /* child stop/exit; default action = IGNORE (never terminates) */
 #define OVE_LNX_ITIMER_REAL 0 /* setitimer(): real-time countdown -> SIGALRM */
 /* fcntl commands: F_DUPFD duplicates an fd (the shell dups stdin for its
  * interactive fd); the rest are benign get/set probes. */
@@ -473,6 +474,13 @@ typedef struct ove_lnx_proc {
 	 * its parent's. Guards the confused-deputy vector (the syscall handlers run PRIVILEGED). */
 	uintptr_t region_lo, region_hi, pool_lo, pool_hi;
 	int vfork_parent_slot; /**< Slot of a parent suspended awaiting this child's exec/exit, or -1. */
+	/* vfork data isolation (NOMMU has no copy-on-write): a vfork child SHARES the parent's region,
+	 * so its pre-exec writes (e.g. a libc signal-disposition reset) would corrupt the suspended
+	 * parent. The coordinator snapshots the parent's writable data into a spare region at EV_FORK
+	 * and restores it before the parent resumes (EV_EXEC/EV_EXIT). See vfork_snapshot/vfork_restore. */
+	int snap_region;    /**< Scratch region index holding the parent's data snapshot, or -1 (none). */
+	uintptr_t stack_lo; /**< Boundary between this proc's in-region writable data and its stack. */
+	int is_dynamic;	    /**< FDPIC dynamic exec: its arena (libc RW data + heap) lives in the dyn_pool. */
 	int fork_pending; /**< This proc issued vfork/fork/clone; coordinator spawns a child. */
 	int is_thread;	  /**< This proc is a pthread: shares its creator's region for life. */
 	int is_fdpic;	  /**< Program is FDPIC: signal handlers/restorers are funcdescs {entry,GOT}. */
@@ -606,6 +614,15 @@ void ove_lnx_rootfs_window(const void *base, size_t len);
  * @param len  number of bytes the transport will read.
  */
 void ove_lnx_guest_flush(const void *base, size_t len);
+
+/**
+ * @brief Invalidate the guest's D-cache over [base, len) so its next read refills from SDRAM.
+ *
+ * The inverse of @ref ove_lnx_guest_flush: after the coordinator has WRITTEN guest memory through
+ * its uncached view (the vfork data-isolation restore), the guest's cached lines are stale and must
+ * be discarded (invalidate, not clean — a clean would overwrite the coordinator's fresh SDRAM).
+ */
+void ove_lnx_guest_invalidate(const void *base, size_t len);
 
 
 /**
