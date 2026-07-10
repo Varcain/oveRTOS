@@ -29,10 +29,12 @@
 
 #define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
-#define OVE_LNX_DYN_POOL_SIZE 0x40000u /* 256K: a dynamic proc's arena. Was 768K when ld.so mmap'd
-					* the WHOLE libc.so (~500K) here; now libc.so's text is shared
-					* in-place from the cpio, so this holds only its ~40K RW segment
-					* + the brk/mmap heap. In PSRAM (Zephyr) / per-engine RAM. */
+#define OVE_LNX_DYN_POOL_SIZE 0x80000u /* 512K: a dynamic proc's arena. Holds every loaded .so's RW
+					* segment (curl + libmbedtls/x509/crypto + libc = ~5 libs) + the
+					* brk/mmap heap. 256K sufficed for BusyBox (one lib), but curl's
+					* mbedTLS handshake — TLS I/O buffers + CA-bundle parse — needs more.
+					* NREG(6) x (512K region + 512K pool) + fb fits the 8M SDRAM. In
+					* PSRAM (Zephyr) / per-engine RAM. */
 /* Concurrent process model (Phase D): the run loop coordinates a live process SET,
  * each loaded image in its own region. OVE_LNX_NREG = max images live at once
  * (init + login-shell + a few concurrent jobs); OVE_LNX_NSLOT = NREG + vfork-window

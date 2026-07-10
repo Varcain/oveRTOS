@@ -528,6 +528,26 @@ void ove_lnx_rootfs_window(const void *base, size_t len)
 }
 #endif
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+/* Strong override of the engine-common weak no-op (backends/common/ove_lnx_run.c).
+ *
+ * The M7 D-cache runs enabled (write-back) for the personality (drivers/freertos/stm32f7/
+ * stm32f7_init.c).  A guest writes its send buffer in external SDRAM through its own Normal WBWA
+ * CACHEABLE MPU region (freertos_spawn_common), so just-written bytes can still sit in dirty
+ * D-cache lines with stale data in physical SDRAM.  When the guest then calls write()/send(), the
+ * PRIVILEGED coordinator runs the lwIP socket copy reading that SAME SDRAM through its uncached
+ * (Device) PRIVDEFENA background view — bypassing the cache — and would copy the stale bytes onto
+ * the wire.  (Observed as the tail of a mbedTLS ClientHello: the last, most-recently-written
+ * extension arrived zeroed, so servers reject the handshake.)  Clean (write back) the buffer's
+ * D-cache lines so physical SDRAM — hence the coordinator's uncached view — holds the real bytes.
+ * Clean is non-destructive, so an unaligned base/len is safe (CMSIS extends to whole lines). */
+void ove_lnx_guest_flush(const void *base, size_t len)
+{
+	if (len)
+		SCB_CleanDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
+}
+#endif
+
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {

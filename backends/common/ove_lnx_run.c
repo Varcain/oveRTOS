@@ -47,6 +47,14 @@ __attribute__((weak)) void ove_lnx_rootfs_window(const void *base, size_t len)
 	(void)len;
 }
 
+/* Engine-common weak no-op; the FreeRTOS backend strong-overrides this on the STM32F746 where the
+ * guest writes cacheable SDRAM but the coordinator reads it uncached (D-cache coherency). */
+__attribute__((weak)) void ove_lnx_guest_flush(const void *base, size_t len)
+{
+	(void)base;
+	(void)len;
+}
+
 /* Parse the slot index from a Linux-program thread name "lnx<slot>". */
 static int lnx_slot_of_name(const char *name)
 {

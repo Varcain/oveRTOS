@@ -361,16 +361,21 @@ long ove_lnx_sock_send(ove_lnx_proc_t *p, int oi, const void *ubuf, size_t len, 
 
 	size_t sent = 0;
 	int r;
+	ove_sockaddr_t oa;
 	if (udest) {
 		if (destlen < sizeof(ove_lnx_sockaddr_in) ||
 		    !user_ok(p, udest, sizeof(ove_lnx_sockaddr_in), 0))
 			return -OVE_LNX_EFAULT;
-		ove_sockaddr_t oa;
 		linux_sin_to_ove((const ove_lnx_sockaddr_in *)udest, &oa);
-		r = ove_socket_sendto(o->sock, ubuf, len, &sent, &oa);
-	} else {
-		r = ove_socket_send(o->sock, ubuf, len, &sent);
 	}
+	/* The engine transport (lwIP copy) runs in the privileged coordinator, which reads this guest
+	 * buffer from physical memory through an uncached view; flush the guest's dirty D-cache lines
+	 * first so it does not copy stale bytes (a no-op except on the D-cache-on STM32F746). */
+	ove_lnx_guest_flush(ubuf, len);
+	if (udest)
+		r = ove_socket_sendto(o->sock, ubuf, len, &sent, &oa);
+	else
+		r = ove_socket_send(o->sock, ubuf, len, &sent);
 	if (r == OVE_OK)
 		return (long)sent;
 	if (r == OVE_ERR_TIMEOUT) {
