@@ -145,6 +145,7 @@ extern "C" {
 #define OVE_LNX_NR_times 43
 #define OVE_LNX_NR_fsync 118
 #define OVE_LNX_NR_fdatasync 148
+#define OVE_LNX_NR_prlimit64 369
 #define OVE_LNX_NR_umask 60
 #define OVE_LNX_NR_getpgrp 65
 #define OVE_LNX_NR_setsid 66
@@ -160,6 +161,14 @@ extern "C" {
 #define OVE_LNX_NR_fchown32 207
 #define OVE_LNX_NR_setuid32 213
 #define OVE_LNX_NR_setgid32 214
+/* setres/setre privilege-drop family (dropbear drops privileges after auth and aborts if it
+ * fails); uid/gid are not enforced on this tier, so accepting them is inert. */
+#define OVE_LNX_NR_setreuid32 203
+#define OVE_LNX_NR_setregid32 204
+#define OVE_LNX_NR_setresuid32 208
+#define OVE_LNX_NR_getresuid32 209
+#define OVE_LNX_NR_setresgid32 210
+#define OVE_LNX_NR_getresgid32 211
 #define OVE_LNX_AT_REMOVEDIR 0x200
 
 /* Socket family (ARM EABI direct numbers; EABI does not use socketcall). */
