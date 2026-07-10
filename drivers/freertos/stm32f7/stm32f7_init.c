@@ -55,7 +55,20 @@ void stm32f7_mcu_init(void)
 	 *     bounded region reads the NOR reliably where a cacheable/write-through one does not);
 	 *   - the unprivileged guest keeps a cacheable bounded region (freertos_spawn_common) for
 	 *     fast in-place XIP, and creates no dirty write-back lines (its RW data is non-cacheable
-	 *     SDRAM), so it never triggers the burst-collision path either. */
+	 *     SDRAM), so it never triggers the burst-collision path either.
+	 *
+	 * ETH-DMA COHERENCY (P5 HTTPS/curl) is likewise fixed WHERE IT BELONGS, not by detuning the
+	 * cache: with the D-cache ON the Ethernet DMA's TX path was NOT coherent — the lwIP TX pbuf is
+	 * cacheable SRAM and low_level_output's per-frame SCB_CleanDCache did NOT reliably reach the ETH
+	 * DMA on rapid back-to-back sends, so a small TLS record (Finished/GET) shipped the PREVIOUS
+	 * frame's bytes → server bad_record_mac → curl failed (PROVEN: disabling the D-cache made curl
+	 * complete; every cacheable-side fix — write-through, guest bounce, aligned round-robin TX bounce
+	 * — failed with the cache on).  FIX: low_level_output coalesces each frame into a NON-CACHEABLE
+	 * SDRAM bounce buffer above the guest pools (drivers/freertos/stm32f7/stm32f7_eth.c) — the
+	 * background map types it Device (non-cacheable) globally and the ETH DMA reaches it over the
+	 * FMC, so no clean is needed and no MPU region is spent (the personality's 3 configurable MPU
+	 * regions are all taken by the guest).  So the D-cache stays fully ENABLED — lvbench 22 FPS
+	 * retained AND curl https works. */
 	SCB_EnableDCache();
 #elif !defined(HAL_ETH_MODULE_ENABLED) && !defined(CONFIG_OVE_LINUX)
 	SCB_EnableDCache();

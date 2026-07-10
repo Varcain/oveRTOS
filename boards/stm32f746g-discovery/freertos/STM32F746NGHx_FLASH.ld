@@ -74,7 +74,15 @@ MEMORY
     /* SRAM1 + SRAM2 (256 KB from 0x20010000) — general-purpose RAM. */
     RAM (xrw)       : ORIGIN = 0x20010000, LENGTH = 0x40000
 
-    SDRAM (xrw)     : ORIGIN = 0xC0000000, LENGTH = 8M
+    /* External SDRAM (8 MB) minus a 2 KB tail reserved for the ETH TX bounce buffer, so the
+     * framebuffer + guest pools (.sdram_bss) can never grow into it (a linker overflow is caught
+     * instead of a silent overlap). */
+    SDRAM (xrw)     : ORIGIN = 0xC0000000, LENGTH = 8M - 0x800
+    /* ETH TX bounce buffer: SDRAM, above the guest pools, covered by NO MPU region → the ARM
+     * background map types it DEVICE (non-cacheable) in every task context, and the ETH DMA reaches
+     * it over the FMC — so low_level_output can hand the DMA a coherent frame with the D-cache ON
+     * (drivers/freertos/stm32f7/stm32f7_eth.c). */
+    ETH_TXBUF (xrw) : ORIGIN = 0xC07FF800, LENGTH = 0x800
 }
 
 SECTIONS
@@ -294,6 +302,10 @@ SECTIONS
     } > SDRAM
 
     .sdram_bss (NOLOAD) : ALIGN(32) { *(.sdram_bss) } > SDRAM
+
+    /* ETH TX bounce buffer (non-cacheable via the background Device map — see the ETH_TXBUF
+     * MEMORY entry).  NOLOAD, own region above the pools so it is never MPU-covered. */
+    .eth_txbuf (NOLOAD) : ALIGN(32) { *(.eth_txbuf) } > ETH_TXBUF
 
     /* Picolibc heap.  In heap mode this is empty (size 0): libc malloc
      * is wrapped onto pvPortMalloc via freertos_libc_malloc.c and never
