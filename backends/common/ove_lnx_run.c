@@ -984,6 +984,27 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			/* NOMMU vfork isolation: snapshot the parent's writable data so the child's
 			 * pre-exec writes to the SHARED region can't corrupt the suspended parent. */
 			ch->snap_region = vfork_snapshot(eng, par, c, rowner);
+			if (ch->snap_region < 0) {
+				/* No spare region to isolate the child's pre-exec writes from the
+				 * suspended parent (deep vfork nesting — e.g. a pipeline over an SSH
+				 * session: init+getty+inetd+dropbear+shell+members). Refuse the fork
+				 * (-ENOMEM) rather than share the parent's region and let the child
+				 * corrupt it; the caller sees a clean fork failure, not a fault. */
+#if defined(CONFIG_OVE_LINUX_DEV)
+				ove_lnx_dev_proc_exit(ch); /* undo the fd fork-inherit refcounts */
+#endif
+#if defined(CONFIG_OVE_LINUX_NET)
+				ove_lnx_sock_proc_exit(ch);
+#endif
+				ch->alive = 0;
+				g_ove_lnx_used[c] = 0;
+				if (par->live_children > 0)
+					par->live_children--;
+				eng->abort_slot(es);
+				eng->spawn_resume(es, par->region, &g_ctx[es], -OVE_LNX_ENOMEM);
+				idle = 0;
+				continue;
+			}
 			eng->abort_slot(es); /* suspend the parent (no thread) */
 			eng->spawn_resume(c, ch->region, &g_ctx[es],
 					  0); /* child returns 0 from fork */
