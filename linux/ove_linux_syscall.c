@@ -19,6 +19,9 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/linux/net.h" /* socket routing (FD_SOCKET) */
 #endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+#include "ove/linux/pty.h" /* pseudo-terminal routing (FD_PTY) */
+#endif
 
 #include <string.h>
 
@@ -650,6 +653,22 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		}
 		return r; /* bytes written, or -EPIPE (no readers; writer exits unless it ignores it) */
 	}
+#if defined(CONFIG_OVE_LINUX_PTY)
+	/* A pty write feeds the peer's ring through the line discipline (master write runs
+	 * input processing toward the slave; slave write runs output/ONLCR toward the master).
+	 * Blocks (backpressure) when the destination ring is full and the peer is open. */
+	if (s->kind == OVE_LNX_FD_PTY) {
+		long r = ove_lnx_pty_write(p, s->file_idx, s->rw, buf, len);
+		if (r == -OVE_LNX_EAGAIN && !ove_lnx_pty_nonblock(s->file_idx, s->rw)) {
+			p->pty_wait = s->rw ? OVE_LNX_PTYW_MWRITE : OVE_LNX_PTYW_SWRITE;
+			p->pty_idx = s->file_idx;
+			p->pty_buf = (uintptr_t)buf;
+			p->pty_len = len;
+			return 0; /* parked; coordinator completes via ove_lnx_pty_retry */
+		}
+		return r; /* bytes consumed, or -EAGAIN (O_NONBLOCK) */
+	}
+#endif
 	/* A writable-node file write copies into its (growable) buffer at the offset. */
 	if (s->kind == OVE_LNX_FD_TMPFS) {
 		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
@@ -749,6 +768,22 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		}
 		return r; /* bytes read, or 0 (EOF) */
 	}
+
+#if defined(CONFIG_OVE_LINUX_PTY)
+	/* A pty end drains its ring (master reads program output, slave reads program input);
+	 * blocks while empty + the peer end is open, EOF (0) once the peer closes. */
+	if (s->kind == OVE_LNX_FD_PTY) {
+		long r = ove_lnx_pty_read(p, s->file_idx, s->rw, buf, len);
+		if (r == -OVE_LNX_EAGAIN && !ove_lnx_pty_nonblock(s->file_idx, s->rw)) {
+			p->pty_wait = s->rw ? OVE_LNX_PTYW_MREAD : OVE_LNX_PTYW_SREAD;
+			p->pty_idx = s->file_idx;
+			p->pty_buf = (uintptr_t)buf;
+			p->pty_len = len;
+			return 0; /* parked; coordinator retries via ove_lnx_pty_retry */
+		}
+		return r; /* bytes read, 0 (EOF), or -EAGAIN (O_NONBLOCK) */
+	}
+#endif
 
 	/* A writable-node file read returns bytes from its buffer at the fd offset. */
 	if (s->kind == OVE_LNX_FD_TMPFS) {
@@ -1518,6 +1553,33 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	 * child's stdio here when it has no controlling tty. */
 	if (strcmp(path, "/dev/null") == 0)
 		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 3, 0);
+#if defined(CONFIG_OVE_LINUX_PTY)
+	/* Unix98 pty: each open of /dev/ptmx mints a fresh pair (the master, rw=1); the
+	 * slave is /dev/pts/N (rw=0), N = the pool index from TIOCGPTN/ptsname. */
+	if (strcmp(path, "/dev/ptmx") == 0) {
+		long idx = ove_lnx_pty_open_master(flags);
+		if (idx < 0)
+			return idx;
+		int fd = fd_alloc(p, OVE_LNX_FD_PTY, (int)idx, 0);
+		if (fd >= 0)
+			p->fds[fd].rw = 1; /* master end */
+		return fd;
+	}
+	if (strncmp(path, "/dev/pts/", 9) == 0) {
+		int num = 0;
+		const char *d = path + 9;
+		if (*d < '0' || *d > '9')
+			return -OVE_LNX_ENOENT;
+		for (; *d >= '0' && *d <= '9'; d++)
+			num = num * 10 + (*d - '0');
+		if (*d != '\0')
+			return -OVE_LNX_ENOENT;
+		long idx = ove_lnx_pty_open_slave(num, flags);
+		if (idx < 0)
+			return idx;
+		return fd_alloc(p, OVE_LNX_FD_PTY, (int)idx, 0); /* slave end (rw=0) */
+	}
+#endif
 #if defined(CONFIG_OVE_LINUX_DEV)
 	/* Registered character devices (/dev/fb0, /dev/input/event0, ...). A hit opens
 	 * an FD_DEV whose file_idx is the device open-pool index; a miss falls through. */
@@ -1808,6 +1870,14 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 		uint64_t size;
 		ove_lnx_sock_fstat(s->file_idx, &mode, &size);
 		fill_kstat64(statbuf, 0x400000u + (uint32_t)s->file_idx, mode, size);
+	}
+#endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+	else if (s->kind == OVE_LNX_FD_PTY) {
+		uint32_t mode;
+		uint64_t size;
+		ove_lnx_pty_fstat(&mode, &size); /* S_IFCHR so isatty() → interactive shell */
+		fill_kstat64(statbuf, 0x500000u + (uint32_t)s->file_idx, mode, size);
 	}
 #endif
 	else
@@ -2660,6 +2730,18 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				return ove_lnx_sock_getfl(s->file_idx);
 		}
 #endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+		/* A pty fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking (dropbear sets
+		 * the master non-blocking and drives it with select). */
+		if (s->kind == OVE_LNX_FD_PTY) {
+			if ((int)a1 == OVE_LNX_F_SETFL) {
+				ove_lnx_pty_setfl(s->file_idx, s->rw, (int)a2);
+				return 0;
+			}
+			if ((int)a1 == OVE_LNX_F_GETFL)
+				return ove_lnx_pty_getfl(s->file_idx, s->rw);
+		}
+#endif
 		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
 		return 0;
 	}
@@ -2923,7 +3005,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
 		int ready = 0;
 #if defined(CONFIG_OVE_LINUX_NET)
-		int has_socket = 0, has_eventfd = 0;
+		int has_socket = 0, has_eventfd = 0, has_pty = 0;
 #endif
 		for (unsigned i = 0; i < nfds; i++) {
 			pfds[i].revents = 0;
@@ -2970,6 +3052,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				has_eventfd = 1;
 				continue;
 			}
+#if defined(CONFIG_OVE_LINUX_PTY)
+			else if (s->kind == OVE_LNX_FD_PTY) {
+				unsigned pb = ove_lnx_pty_poll(s->file_idx, s->rw);
+				pfds[i].revents = (short)(pfds[i].events & pb &
+							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+				if (pfds[i].revents)
+					ready++;
+				has_pty = 1; /* park via SOCKW_POLL; the re-scan re-checks the pty */
+				continue;
+			}
+#endif
 #endif
 			else
 				avail = 1; /* files / pipes: readable/writable */
@@ -2988,7 +3081,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * ove_lnx_poll_retry) and resumes us when an fd becomes ready or the timeout
 		 * elapses. Without this a socket poll would sleep the whole timeout and return
 		 * 0, breaking the uClibc DNS resolver (poll(POLLIN) then recv(MSG_DONTWAIT)). */
-		if (has_socket || has_eventfd) {
+		if (has_socket || has_eventfd || has_pty) {
 			proc->sock_buf = (uintptr_t)pfds;
 			proc->sock_len = nfds;
 			if (tmo_ms > 0) {
@@ -3070,6 +3163,13 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* Socket ioctls: SIOC* interface config (ifconfig/route) — before the tty gate. */
 		if (tty->kind == OVE_LNX_FD_SOCKET)
 			return ove_lnx_sock_ioctl(proc, (unsigned long)a1, (unsigned long)a2);
+#endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+		/* A pty IS a tty: termios/winsize/ptmx ioctls dispatch to its own line-discipline
+		 * state (per-pty, not the single global console) — before the console tty gate. */
+		if (tty->kind == OVE_LNX_FD_PTY)
+			return ove_lnx_pty_ioctl(proc, tty->file_idx, tty->rw, (unsigned long)a1,
+						 (unsigned long)a2);
 #endif
 		if (tty->kind != OVE_LNX_FD_CONSOLE)
 			return -OVE_LNX_ENOTTY;
@@ -3272,6 +3372,10 @@ static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigne
 #if defined(CONFIG_OVE_LINUX_DEV)
 		else if (s->kind == OVE_LNX_FD_DEV)
 			pb = ove_lnx_dev_poll(s->file_idx);
+#endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+		else if (s->kind == OVE_LNX_FD_PTY)
+			pb = ove_lnx_pty_poll(s->file_idx, s->rw);
 #endif
 		else if (s->kind == OVE_LNX_FD_CONSOLE)
 			pb = (unsigned)((proc->console_poll ? (key ? OVE_LNX_POLLIN : 0)

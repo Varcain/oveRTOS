@@ -110,6 +110,19 @@ config OVE_LINUX_NET
       the board's Ethernet driver. The interface is brought up by the board/app
       before the program runs (static IP or DHCP).
 
+config OVE_LINUX_PTY
+    bool "Linux personality: pseudo-terminal (pty) layer"
+    default n
+    depends on OVE_LINUX
+    help
+      Unix98 pseudo-terminals for the Linux personality: /dev/ptmx mints a
+      master↔slave pair and /dev/pts/N is the slave, with a minimal in-kernel
+      line discipline (echo / canonical editing / ICRNL / ONLCR / ISIG ^C→SIGINT).
+      Needed for an interactive network login shell — an SSH server (dropbear)
+      allocates a pty and runs the login shell on the slave. Works with
+      OVE_LINUX_NET (the SSH transport); the pty read/write park is independent,
+      but poll(2)-parking on a pty reuses the socket poll path (enable OVE_LINUX_NET).
+
 config OVE_LINUX_DEV
     bool "Linux personality: /dev character-device layer"
     default n

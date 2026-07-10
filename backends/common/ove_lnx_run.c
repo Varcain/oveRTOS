@@ -33,6 +33,9 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/linux/net.h" /* socket-layer park/retry + fork/exit fd lifecycle */
 #endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+#include "ove/linux/pty.h" /* pty-layer park/retry (ove_lnx_pty_retry) */
+#endif
 
 /* Declare a memory-mapped rootfs image window [base, base+len) so the coordinator task can
  * read it safely on the target.  Default: no-op — an ordinary CPU view of the window is already
@@ -416,7 +419,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
 	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait || proc->dev_wait ||
-	    proc->sock_wait || proc->sigsuspend_pending || proc->console_wait) {
+	    proc->sock_wait || proc->pty_wait || proc->sigsuspend_pending || proc->console_wait) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
 		return;
@@ -734,6 +737,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			EV_PIPE,
 			EV_DEVWAIT,
 			EV_SOCKWAIT,
+			EV_PTYWAIT,
 			EV_SIGSUSPEND,
 			EV_CONSOLEWAIT
 		};
@@ -784,6 +788,13 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_SOCKWAIT;
 				break;
 			}
+#if defined(CONFIG_OVE_LINUX_PTY)
+			if (p->pty_wait && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_PTYWAIT;
+				break;
+			}
+#endif
 			if (p->sigsuspend_pending && g_ove_lnx_used[s]) {
 				es = s;
 				et = EV_SIGSUSPEND;
@@ -827,6 +838,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->pipe_wait = 0;
 			ch->dev_wait = 0;
 			ch->sock_wait = 0;
+			ch->pty_wait = 0;
 			ch->console_wait = 0;
 			ch->pending_sig = 0;
 			ch->alarm_deadline_us = 0; /* itimers are not inherited across fork */
@@ -988,6 +1000,13 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+#if defined(CONFIG_OVE_LINUX_PTY)
+		if (et == EV_PTYWAIT) { /* free the spin thread; the pty retry below resumes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
+#endif
 		if (et == EV_SIGSUSPEND) { /* free the spin thread; pending_sig below wakes it. */
 			eng->abort_slot(es);
 			idle = 0;
@@ -1003,7 +1022,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		uint64_t now = 0;
 		ove_time_get_us(&now);
 		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0,
-		    any_sock_wait = 0, any_console_wait = 0;
+		    any_sock_wait = 0, any_pty_wait = 0, any_console_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -1018,6 +1037,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_dev_wait = 1;
 			if (p->sock_wait)
 				any_sock_wait = 1;
+			if (p->pty_wait)
+				any_pty_wait = 1;
 			if (p->console_wait)
 				any_console_wait = 1;
 			/* ITIMER_REAL: raise SIGALRM once the deadline passes (setitimer/alarm).
@@ -1071,7 +1092,23 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
 					progress = 1;
 				}
+#if defined(CONFIG_OVE_LINUX_PTY)
+			} else if (p->pending_sig && !g_ove_lnx_used[s] && p->pty_wait) {
+				/* Signal to a proc parked in a pty read/write: ^C (SIGINT) from the line
+				 * discipline lands here — the shell's handler runs and its slave read
+				 * returns -EINTR (re-prompt); a foreground child takes it by default
+				 * action. SIG_IGN leaves it parked (the retry re-attempts). */
+				int sig = p->pending_sig;
+				p->pending_sig = 0;
+				if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+					p->pty_wait = 0;
+					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+					progress = 1;
+				}
 			}
+#else
+			}
+#endif
 			if (p->sleeping) {
 				any_busy = 1;
 				if (now >= p->sleep_until_us) {
@@ -1143,6 +1180,18 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				}
 			}
 #endif
+#if defined(CONFIG_OVE_LINUX_PTY)
+			/* Blocked pty I/O: retry (the peer end may have drained/filled the ring);
+			 * resume the proc when the op completes. Mirrors the pipe/socket retries. */
+			if (p->pty_wait && !g_ove_lnx_used[s]) {
+				long r = ove_lnx_pty_retry(p);
+				if (r != -OVE_LNX_EAGAIN) {
+					p->pty_wait = 0;
+					eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					progress = 1;
+				}
+			}
+#endif
 			/* Blocked console read: the coordinator polls readiness (so read_fn does
 			 * not busy-wait in the SVC handler and starve background tasks like the net
 			 * RX poll). When a key is ready, read it here and resume the proc. */
@@ -1187,7 +1236,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
 		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
 		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
-		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait || any_console_wait)
+		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait || any_pty_wait ||
+			       any_console_wait)
 				      ? 5u
 				      : 50u;
 		if (next_sleep != UINT64_MAX && next_sleep > now) {

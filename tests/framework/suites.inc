@@ -92,6 +92,7 @@ OVE_SUITE_STUB(sandbox,       "Phase-0 integration")
 OVE_SUITE_STUB(linux_syscall, "Linux personality: syscall dispatch")
 OVE_SUITE_STUB(linux_dev,     "Linux personality: /dev device layer")
 OVE_SUITE_STUB(linux_net,     "Linux personality: socket layer")
+OVE_SUITE_STUB(linux_pty,     "Linux personality: pseudo-terminal layer")
 
 #ifdef _OVE_SUITES_INC_DEFAULTED_CORE
 #undef OVE_SUITE

@@ -84,6 +84,11 @@ set(STUB_SOURCES
     ${OVE_ROOT}/linux/dev/ove_linux_dev.c
     # Linux personality socket core (CONFIG_OVE_LINUX_NET)
     ${OVE_ROOT}/linux/net/ove_linux_net.c
+    # Linux personality pseudo-terminal core (CONFIG_OVE_LINUX_PTY)
+    ${OVE_ROOT}/linux/pty/ove_linux_pty.c
+    # Host stubs for run-loop hooks (ove_lnx_guest_flush) the net/pty layers call
+    # but that live in the un-linked coordinator (backends/common/ove_lnx_run.c).
+    ${STUB_DIR}/stub_lnx_run.c
     # CPU/process snapshot for ps/top (read by the /proc generator; no RTOS deps)
     ${OVE_ROOT}/backends/common/ove_lnx_stats.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
@@ -190,6 +195,7 @@ function(ove_add_stub_variant name)
     target_compile_definitions(${name} PRIVATE
         CONFIG_OVE_NET=1
         CONFIG_OVE_LINUX_NET=1
+        CONFIG_OVE_LINUX_PTY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1
