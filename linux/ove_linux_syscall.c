@@ -1050,6 +1050,7 @@ static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
 		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
 			p->fds[fd].kind = kind;
 			p->fds[fd].rw = 0;
+			p->fds[fd].cloexec = 0;
 			p->fds[fd].file_idx = idx;
 			p->fds[fd].offset = off;
 			return fd;
@@ -1686,11 +1687,13 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 	return 0;
 }
 
-/* pipe(2): allocate a pipe object + a read-end / write-end fd pair. */
-static long sys_pipe(ove_lnx_proc_t *p, int *fds)
+/* pipe(2)/pipe2(2): allocate a pipe object + a read-end / write-end fd pair. @p flags
+ * carries O_CLOEXEC for pipe2 (dropbear's exec-status pipe is a CLOEXEC pipe2). */
+static long sys_pipe(ove_lnx_proc_t *p, int *fds, int flags)
 {
 	if (!user_ok(p, fds, 2 * sizeof(int), 1)) /* the kernel writes fds[0],fds[1] */
 		return -OVE_LNX_EFAULT;
+	uint8_t cx = (flags & OVE_LNX_O_CLOEXEC) ? 1 : 0;
 	/* A pipe slot is free when no live proc holds either end (auto-reclaimed when
 	 * both ends close or the holders exit — there is no explicit pipe free path). */
 	int pi = -1;
@@ -1719,8 +1722,8 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds)
 	g_pipes[pi].rpos = 0;
 	g_pipes[pi].wpos = 0;
 	g_pipes[pi].count = 0;
-	p->fds[rfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .file_idx = pi};
-	p->fds[wfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .file_idx = pi};
+	p->fds[rfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .cloexec = cx, .file_idx = pi};
+	p->fds[wfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .cloexec = cx, .file_idx = pi};
 	fds[0] = rfd;
 	fds[1] = wfd;
 	return 0;
@@ -2590,6 +2593,12 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 		for (int j = 0; argv && argv[j]; j++)
 			exec_push_arg(p, &argc, &off, argv[j]);
 	}
+	/* close-on-exec: the fd table survives execve (the run loop preserves it), so drop the
+	 * FD_CLOEXEC fds here — the exec is committed past every error check. dropbear confirms
+	 * the shell exec'd by its exec-status pipe (FD_CLOEXEC) closing this way. */
+	for (int cfd = 0; cfd < OVE_LNX_MAX_FDS; cfd++)
+		if (p->fds[cfd].kind != OVE_LNX_FD_FREE && p->fds[cfd].cloexec)
+			sys_close(p, cfd);
 	p->exec_argc = argc;
 	p->exec_file_idx = idx;
 	p->exec_pending = 1;
@@ -2637,21 +2646,36 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 	case OVE_LNX_NR_pwrite64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
 		return sys_pwrite(proc, (int)a0, (const void *)(uintptr_t)a1, (size_t)a2,
 				  (uint32_t)a4);
-	case OVE_LNX_NR_open: /* legacy open(path, flags, mode): dirfd = cwd */
-		return sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
+	case OVE_LNX_NR_open: { /* legacy open(path, flags, mode): dirfd = cwd */
+		long f = sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
+		if (f >= 0 && ((int)a1 & OVE_LNX_O_CLOEXEC))
+			proc->fds[f].cloexec = 1;
+		return f;
+	}
 	case OVE_LNX_NR_execve: /* (path, argv, envp); envp ignored for now */
 		return sys_execve(proc, (const char *)(uintptr_t)a0, (char *const *)(uintptr_t)a1);
-	case OVE_LNX_NR_openat:
-		return sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
+	case OVE_LNX_NR_openat: {
+		long f = sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
+		if (f >= 0 && ((int)a2 & OVE_LNX_O_CLOEXEC))
+			proc->fds[f].cloexec = 1;
+		return f;
+	}
 	case OVE_LNX_NR_close:
 		return sys_close(proc, (int)a0);
 	case OVE_LNX_NR_pipe:
-		return sys_pipe(proc, (int *)(uintptr_t)a0);
+		return sys_pipe(proc, (int *)(uintptr_t)a0, 0);
+	case OVE_LNX_NR_pipe2: /* (fds, flags) — flags carries O_CLOEXEC (+ O_NONBLOCK, ignored) */
+		return sys_pipe(proc, (int *)(uintptr_t)a0, (int)a1);
 	case OVE_LNX_NR_dup:
 		return sys_dup(proc, (int)a0);
-	case OVE_LNX_NR_dup2: /* dup3 ignores its flags arg here */
-	case OVE_LNX_NR_dup3:
+	case OVE_LNX_NR_dup2:
 		return sys_dup2(proc, (int)a0, (int)a1);
+	case OVE_LNX_NR_dup3: { /* (old, new, flags) — flags carries O_CLOEXEC on the new fd */
+		long nf = sys_dup2(proc, (int)a0, (int)a1);
+		if (nf >= 0 && ((int)a2 & OVE_LNX_O_CLOEXEC))
+			proc->fds[nf].cloexec = 1;
+		return nf;
+	}
 	case OVE_LNX_NR_lseek:
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
 	case OVE_LNX_NR__llseek:
@@ -2765,6 +2789,8 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			for (int nfd = from; nfd < OVE_LNX_MAX_FDS; nfd++) {
 				if (proc->fds[nfd].kind == OVE_LNX_FD_FREE) {
 					proc->fds[nfd] = *s;
+					proc->fds[nfd].cloexec =
+						((int)a1 == OVE_LNX_F_DUPFD_CLOEXEC) ? 1 : 0;
 #if defined(CONFIG_OVE_LINUX_DEV)
 					if (s->kind == OVE_LNX_FD_DEV)
 						ove_lnx_dev_get(s->file_idx);
@@ -2813,7 +2839,15 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				return ove_lnx_pty_getfl(s->file_idx, s->rw);
 		}
 #endif
-		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
+		/* F_SETFD/F_GETFD track close-on-exec (dropbear sets FD_CLOEXEC on its exec-status
+		 * pipe and detects a successful shell exec by that fd closing on execve). */
+		if ((int)a1 == OVE_LNX_F_SETFD) {
+			s->cloexec = ((int)a2 & OVE_LNX_FD_CLOEXEC) ? 1 : 0;
+			return 0;
+		}
+		if ((int)a1 == OVE_LNX_F_GETFD)
+			return s->cloexec ? OVE_LNX_FD_CLOEXEC : 0;
+		/* F_GETFL/SETFL on a stdio/other fd: benign. */
 		return 0;
 	}
 	case OVE_LNX_NR_getdents: /* 32-bit linux_dirent (uClibc readdir on this target) */

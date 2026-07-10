@@ -47,6 +47,7 @@ extern "C" {
 #define OVE_LNX_NR_read 3
 #define OVE_LNX_NR_dup 41
 #define OVE_LNX_NR_pipe 42
+#define OVE_LNX_NR_pipe2 359
 #define OVE_LNX_NR_fcntl 55
 #define OVE_LNX_NR_dup2 63
 #define OVE_LNX_NR_kill 37
@@ -204,6 +205,8 @@ extern "C" {
 #define OVE_LNX_O_TRUNC 0x200
 #define OVE_LNX_O_APPEND 0x400
 #define OVE_LNX_O_NONBLOCK 0x800 /* a device open that returns -EAGAIN instead of blocking */
+#define OVE_LNX_O_CLOEXEC 0x80000 /* close-on-exec (also pipe2/dup3/accept4 flag) */
+#define OVE_LNX_FD_CLOEXEC 1	  /* fcntl(F_SETFD/F_GETFD) close-on-exec bit */
 /* openat dirfd sentinel for the current working directory. */
 #define OVE_LNX_AT_FDCWD (-100)
 /* lseek(2) whence. */
@@ -380,6 +383,8 @@ typedef struct ove_lnx_fd {
 			*   5 = /proc, 6 = device (values 4-6 are private to the syscall +
 			*   device layers; only FD_DEV is exported below). */
 	uint8_t rw;    /**< pipe end: 0 = read, 1 = write (kind == pipe). */
+	uint8_t cloexec; /**< FD_CLOEXEC / O_CLOEXEC: closed on execve (dropbear's exec-status
+			  *   pipe relies on this to detect a successful exec of the shell). */
 	int file_idx;  /**< rootfs index (file) / pipe index (pipe) / open-pool index (device). */
 	size_t offset; /**< Read cursor (kind == file). */
 } ove_lnx_fd_t;
