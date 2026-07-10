@@ -386,6 +386,9 @@ typedef struct ove_lnx_fd {
 	uint8_t rw;    /**< pipe end: 0 = read, 1 = write (kind == pipe). */
 	uint8_t cloexec; /**< FD_CLOEXEC / O_CLOEXEC: closed on execve (dropbear's exec-status
 			  *   pipe relies on this to detect a successful exec of the shell). */
+	uint8_t nonblock; /**< O_NONBLOCK: a pipe read/write returns -EAGAIN instead of parking
+			   *   (dropbear's SIGCHLD self-pipe is drained with a non-blocking read
+			   *   loop; without this the final empty read parks forever). */
 	int file_idx;  /**< rootfs index (file) / pipe index (pipe) / open-pool index (device). */
 	size_t offset; /**< Read cursor (kind == file). */
 } ove_lnx_fd_t;
