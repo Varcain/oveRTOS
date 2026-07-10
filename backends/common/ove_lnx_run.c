@@ -250,7 +250,7 @@ static void park_frame(struct ove_lnx_frame *f)
  * several threads concurrently — each slot's handler frame must save/restore its own
  * interrupted context, or one thread's sigreturn clobbers another's. */
 static struct sig_save_s {
-	uint32_t r0, r1, r2, r3, r12, lr, pc, xpsr;
+	uint32_t r0, r1, r2, r3, r9, r12, lr, pc, xpsr;
 	int active;
 } g_sig_save[OVE_LNX_NSLOT];
 
@@ -332,6 +332,7 @@ static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int si
 	sv->r1 = f->r[1];
 	sv->r2 = f->r[2];
 	sv->r3 = f->r[3];
+	sv->r9 = f->r[9]; /* FDPIC GOT of the interrupted code — clobbered below, restored at sigreturn */
 	sv->r12 = f->r[12];
 	sv->lr = f->r[14];
 	sv->pc = f->r[15];
@@ -358,6 +359,7 @@ static void sig_restore(struct ove_lnx_frame *f, const ove_lnx_proc_t *proc)
 	f->r[1] = sv->r1;
 	f->r[2] = sv->r2;
 	f->r[3] = sv->r3;
+	f->r[9] = sv->r9; /* FDPIC GOT: the handler ran with its own r9; restore the interrupted code's */
 	f->r[12] = sv->r12;
 	f->r[14] = sv->lr;
 	f->r[15] = sv->pc & ~1u;
@@ -678,6 +680,7 @@ static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
 	struct sig_save_s *sv = &g_sig_save[slot];
 	sv->r0 = (uint32_t)ret;
 	sv->r1 = sv->r2 = sv->r3 = 0; /* r0-r3 not captured; the sigsuspend caller reloads them */
+	sv->r9 = g_ctx[slot].r4_11[5]; /* FDPIC GOT of the parked code — clobbered below (r4_11[5]=r9) */
 	sv->r12 = g_ctx[slot].r12;
 	sv->lr = g_ctx[slot].lr;
 	sv->pc = g_ctx[slot].pc; /* the rt_sigsuspend resume point */
