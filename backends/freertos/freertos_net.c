@@ -67,11 +67,20 @@ err_t ethernetif_init(struct netif *netif)
 	return ERR_IF;
 }
 
-extern void ethernetif_input(struct netif *netif) __attribute__((weak));
-void ethernetif_input(struct netif *netif)
+/* Returns the number of frames delivered to the stack this poll (0 for the no-NIC default). */
+extern int ethernetif_input(struct netif *netif) __attribute__((weak));
+int ethernetif_input(struct netif *netif)
 {
 	(void)netif;
+	return 0;
 }
+
+#if defined(CONFIG_OVE_LINUX_NET)
+/* Wake the Linux personality's socket coordinator the instant frames land, so a parked
+ * recv/connect/accept retries immediately instead of on its ≤5 ms tick. Defined by the run
+ * loop; declared locally so this net backend need not pull in a personality header. */
+void ove_lnx_sock_kick(void);
+#endif
 
 static struct netif s_netif;
 static volatile int s_tcpip_ready;
@@ -81,7 +90,16 @@ static void eth_rx_task(void *arg)
 {
 	(void)arg;
 	for (;;) {
-		ethernetif_input(&s_netif);
+		int n = ethernetif_input(&s_netif);
+#if defined(CONFIG_OVE_LINUX_NET)
+		/* Frames arrived (data/ACK) — kick the coordinator so a parked socket op resumes
+		 * now rather than waiting up to one 5 ms retry tick. No frames ⇒ no kick, so the
+		 * coordinator still sleeps its full idle timeout when the link is quiet. */
+		if (n > 0)
+			ove_lnx_sock_kick();
+#else
+		(void)n;
+#endif
 		vTaskDelay(pdMS_TO_TICKS(1));
 	}
 }

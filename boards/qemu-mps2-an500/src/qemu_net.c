@@ -217,10 +217,12 @@ err_t ethernetif_init(struct netif *netif)
 
 /* ── Public: poll for received frames (overrides weak in freertos_net.c) */
 
-void ethernetif_input(struct netif *netif)
+int ethernetif_input(struct netif *netif)
 {
+	int n = 0;
+
 	if (g_sh_fd_rx < 0)
-		return;
+		return 0;
 
 	/* Process all available frames in this poll cycle */
 	for (;;) {
@@ -253,11 +255,13 @@ void ethernetif_input(struct netif *netif)
 			pbuf_take(p, g_rx_buf, frame_len);
 			if (netif->input(p, netif) != ERR_OK)
 				pbuf_free(p);
+			n++;
 		}
 		/* If pbuf allocation fails, frame is silently dropped */
 	}
 
 	flush_rx_rpos();
+	return n;
 }
 
 #endif /* LWIP_SOCKET */

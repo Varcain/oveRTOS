@@ -193,6 +193,13 @@ int ove_lnx_sock_ifsnapshot(uint8_t ip[4], uint8_t gw[4], uint8_t nm[4], uint8_t
 /** Retry a parked socket op for the coordinator; result or -EAGAIN (still blocked). */
 long ove_lnx_sock_retry(ove_lnx_proc_t *p);
 
+/* Wake the coordinator so it retries parked socket I/O at once — the network RX path calls
+ * this after delivering a batch of frames to the stack (data/ACK may have arrived for a
+ * parked recv/connect/accept). Without it a parked op waits up to the ≤5 ms retry tick,
+ * bounding RTT; with it the coordinator retries the instant the frames land. Defined by the
+ * run loop (backends/common/ove_lnx_run.c), which posts its coordinator event. */
+void ove_lnx_sock_kick(void);
+
 /* Re-scan a parked poll(2)/select's fd set for readiness (called from ove_lnx_sock_retry
  * for OVE_LNX_SOCKW_POLL). Implemented in the syscall TU, which owns the fd table + the
  * per-kind readiness probes. Returns the ready count (>0), 0 at the deadline, or -EAGAIN. */
