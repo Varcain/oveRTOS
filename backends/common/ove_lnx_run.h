@@ -27,7 +27,18 @@
 #include "ove/linux/run.h"
 #include "ove/linux/syscall.h"
 
-#define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K: featured BusyBox ~324K + arena + stack */
+/* A dynamic FDPIC proc runs its text XIP from the QSPI cpio (shared in-place), so the per-process
+ * region holds only the main exec's RW segment (busybox 5.8K / dropbear 7.3K / curl 20K) + ld.so's
+ * RW + the stack — the 32K GNU_STACK hint sits in ~470K of slack at 512K. 256K leaves ~215K stack
+ * (still 6x the hint) and lets 8 regions (× 768K with the 512K dyn pool) fit the STM32F746's 8 MB
+ * SDRAM where 6 × 1 MB did — enough for a pipeline over SSH. Zephyr keeps 512K (roomy PSRAM,
+ * untested here). The retired static-bFLT path put the image in-region and would need the old size,
+ * but every proc is dynamic FDPIC now. */
+#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+#define OVE_LNX_PROG_REGION_SIZE 0x80000u /* 512K */
+#else
+#define OVE_LNX_PROG_REGION_SIZE 0x40000u /* 256K */
+#endif
 #define OVE_LNX_PROG_ARENA_SIZE 0x18000u  /* 96K program heap */
 #define OVE_LNX_DYN_POOL_SIZE 0x80000u /* 512K: a dynamic proc's arena. Holds every loaded .so's RW
 					* segment (curl + libmbedtls/x509/crypto + libc = ~5 libs) + the
@@ -48,16 +59,12 @@
  * 6 × 768K = 4.5 MB fits comfortably (the old "NREG=6 overflowed RAM" note was the
  * retired .bss placement). NSLOT = NREG + transient vfork-window slots. */
 #ifndef OVE_LNX_NREG
-#if defined(CONFIG_OVE_RTOS_ZEPHYR)
+/* 8 covers a pipeline over SSH, which nests init + getty + inetd + dropbear + shell + the pipeline
+ * members: `ls | head` needs 7 live regions, a 3-stage pipeline 8. With the 256K prog region (above)
+ * 8 × 768K = 6 MB fits the STM32F746's 8 MB SDRAM (the same budget the old 6 × 1 MB used). When a
+ * deeper nest still runs out, vfork_snapshot fails the fork cleanly (-ENOMEM) rather than corrupt a
+ * parent. */
 #define OVE_LNX_NREG 8
-#else
-/* A pipeline over SSH nests deep: init + getty + inetd + dropbear + shell + the pipeline
- * members. `ls | head` alone needs 7 live regions; 6 exhausts the pool at the 2nd stage. On the
- * STM32F746 the 512 KB-aligned (MPU-required) 1 MB regions plus the 255 KB LCD framebuffer + ETH
- * bounce leave room for only 6 in the 8 MB SDRAM, so a deep pipeline over SSH runs out — but it
- * now fails the fork cleanly (-ENOMEM) instead of corrupting a parent (see vfork_snapshot). */
-#define OVE_LNX_NREG 6
-#endif
 #endif
 #ifndef OVE_LNX_NSLOT
 #define OVE_LNX_NSLOT (OVE_LNX_NREG + 4)
