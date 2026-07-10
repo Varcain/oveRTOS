@@ -51,6 +51,11 @@
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
 #define OVE_LNX_NREG 8
 #else
+/* A pipeline over SSH nests deep: init + getty + inetd + dropbear + shell + the pipeline
+ * members. `ls | head` alone needs 7 live regions; 6 exhausts the pool at the 2nd stage. On the
+ * STM32F746 the 512 KB-aligned (MPU-required) 1 MB regions plus the 255 KB LCD framebuffer + ETH
+ * bounce leave room for only 6 in the 8 MB SDRAM, so a deep pipeline over SSH runs out — but it
+ * now fails the fork cleanly (-ENOMEM) instead of corrupting a parent (see vfork_snapshot). */
 #define OVE_LNX_NREG 6
 #endif
 #endif
