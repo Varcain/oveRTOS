@@ -205,35 +205,44 @@ static int eth_mac_init(void)
 
 /* ── lwIP netif: low-level output ─────────────────────────────── */
 
-#define TX_MAX_SEGMENTS 8
+/* ETH TX bounce buffer in external SDRAM, ABOVE the guest program pools, in its OWN linker
+ * region (.eth_txbuf / ETH_TXBUF @ 0xC07FF800 — see STM32F746NGHx_FLASH.ld).  It is covered by NO
+ * MPU region, so it falls to the ARM background map, which types 0xC0000000-0xDFFFFFFF as DEVICE =
+ * NON-CACHEABLE in EVERY task context (guest handler + privileged), AND the ETH DMA reaches it
+ * directly over the FMC (verified: the DMA reads/writes SDRAM descriptors fine).  low_level_output
+ * coalesces each outgoing frame here and transmits from it: with the D-cache ON the lwIP TX pbuf is
+ * cacheable SRAM and the per-frame SCB_CleanDCache does NOT reliably reach the ETH DMA on rapid
+ * back-to-back sends (proven: the frame ships the PREVIOUS record → TLS bad_record_mac → curl
+ * fails; D-cache OFF fixes it but costs ~36% LVGL FPS).  A non-cacheable bounce removes the hazard
+ * with the D-cache ON — no MPU-region budget needed (the personality's 3 configurable MPU regions
+ * are all taken by the guest).  Byte-wise copy: Device memory forbids unaligned multi-byte
+ * accesses.  (Backup SRAM 0x40024000 was tried first — the ETH DMA cannot reach it, board hangs.) */
+#define ETH_TX_BOUNCE_MAX 1536u
+static uint8_t eth_txbuf[ETH_TX_BOUNCE_MAX] __attribute__((section(".eth_txbuf"), aligned(32)));
 
 static err_t low_level_output(struct netif *netif, struct pbuf *p)
 {
 	(void)netif;
-	ETH_BufferTypeDef tx_buf[TX_MAX_SEGMENTS] = {0};
+	ETH_BufferTypeDef tx_buf = {0};
 	ETH_TxPacketConfigTypeDef tx_cfg = {0};
-	int n = 0;
+	volatile uint8_t *buf = (volatile uint8_t *)eth_txbuf;
 
-	/* Walk the pbuf chain — pre-existing driver passed only the head
-	 * with Length=tot_len, which lied to the MAC about the buffer
-	 * size when pbufs were chained. */
-	for (struct pbuf *q = p; q != NULL && n < TX_MAX_SEGMENTS; q = q->next) {
-		tx_buf[n].buffer = q->payload;
-		tx_buf[n].len = q->len;
-		/* Flush the CPU-written frame out of the D-cache so the DMA, which
-		 * reads this payload straight from SRAM, sees the real bytes and not
-		 * a not-yet-written-back cache line.  Clean (vs invalidate) is
-		 * non-destructive, so an unaligned pbuf payload is safe. */
-		SCB_CleanDCache_by_Addr((uint32_t *)q->payload, (int32_t)q->len);
-		if (n > 0)
-			tx_buf[n - 1].next = &tx_buf[n];
-		n++;
-	}
-	if (n == 0)
+	if (p->tot_len == 0 || p->tot_len > ETH_TX_BOUNCE_MAX)
 		return ERR_BUF;
 
-	tx_cfg.Length = p->tot_len;
-	tx_cfg.TxBuffer = tx_buf;
+	uint32_t off = 0;
+	for (struct pbuf *q = p; q != NULL; q = q->next) {
+		const uint8_t *s = (const uint8_t *)q->payload;
+		for (uint16_t i = 0; i < q->len; i++)
+			buf[off + i] = s[i]; /* byte-wise: Device dest allows only aligned accesses */
+		off += q->len;
+	}
+	__DSB(); /* ensure the Device writes have drained before the DMA reads */
+
+	tx_buf.buffer = eth_txbuf;
+	tx_buf.len = off;
+	tx_cfg.Length = off;
+	tx_cfg.TxBuffer = &tx_buf;
 
 	if (HAL_ETH_Transmit(&heth, &tx_cfg, 100) != HAL_OK)
 		return ERR_IF;
