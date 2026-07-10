@@ -65,7 +65,18 @@ static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t
  * write on a full pipe blocks while a reader is open (-EPIPE once all readers close).
  * The run-loop coordinator parks/wakes the blocked proc — see ove_lnx_pipe_retry.
  */
+/* dropbear's SSH session uses 4 pipes at once (stdin/stdout/stderr to the shell + its own
+ * SIGCHLD self-pipe), so the shell running a pipeline or command substitution needs headroom
+ * beyond that — 4 total starved `ls | head` / `$(cmd)` with "Too many open files". On the real
+ * STM32F746 the FreeRTOS build parks the pool in external SDRAM (.sdram_bss, alongside the guest
+ * pools) so a bigger pool costs no scarce internal SRAM (it actually frees the old 16 KiB); every
+ * other target keeps the pool in .bss at the original size. */
+#if defined(CONFIG_OVE_RTOS_FREERTOS) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#define OVE_LNX_NPIPE 12
+#define OVE_LNX_PIPE_SDRAM 1
+#else
 #define OVE_LNX_NPIPE 4
+#endif
 /* Ring size: a bigger ring means a typical write/splice fits in fewer shots (no partial-write
  * park/resume round trip per chunk), so streaming throughput is copy-bound not coordinator-bound.
  * 4 KiB on FreeRTOS/NuttX (4 pipes × 4 KiB = 16 KiB .bss). Zephyr runs programs in per-program
@@ -83,7 +94,13 @@ typedef struct {
 	size_t count; /* bytes currently buffered */
 	int used;
 } ove_lnx_pipe_t;
+#ifdef OVE_LNX_PIPE_SDRAM
+/* External SDRAM (.sdram_bss is NOLOAD → not zeroed, but sys_pipe fully resets a slot's ring on
+ * allocation and `used` is never read, so garbage init is harmless). */
+static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE] __attribute__((section(".sdram_bss")));
+#else
 static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
+#endif
 
 /* Count a pipe's open read/write ends across ALL live procs' fd tables (a pipe end
  * is open in every proc that holds an fd onto it — inherited across fork, dropped on
@@ -665,8 +682,10 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 		if (s->rw != 1)
 			return -OVE_LNX_EBADF;
 		long r = pipe_try_write(s->file_idx, buf, len);
-		if (r == -OVE_LNX_EAGAIN) { /* full but a reader is open → park + retry */
-			p->pipe_wait = 2;
+		if (r == -OVE_LNX_EAGAIN) { /* full but a reader is open */
+			if (s->nonblock)
+				return -OVE_LNX_EAGAIN; /* O_NONBLOCK: don't park */
+			p->pipe_wait = 2; /* blocking: park + retry */
 			p->pipe_idx = s->file_idx;
 			p->pipe_buf = (uintptr_t)buf;
 			p->pipe_len = len;
@@ -789,8 +808,10 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 		if (s->rw != 0)
 			return -OVE_LNX_EBADF;
 		long r = pipe_try_read(s->file_idx, buf, len);
-		if (r == -OVE_LNX_EAGAIN) { /* empty but a writer is open → park + retry */
-			p->pipe_wait = 1;
+		if (r == -OVE_LNX_EAGAIN) { /* empty but a writer is open */
+			if (s->nonblock)
+				return -OVE_LNX_EAGAIN; /* O_NONBLOCK: don't park (self-pipe drain) */
+			p->pipe_wait = 1; /* blocking: park + retry */
 			p->pipe_idx = s->file_idx;
 			p->pipe_buf = (uintptr_t)buf;
 			p->pipe_len = len;
@@ -1694,6 +1715,7 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds, int flags)
 	if (!user_ok(p, fds, 2 * sizeof(int), 1)) /* the kernel writes fds[0],fds[1] */
 		return -OVE_LNX_EFAULT;
 	uint8_t cx = (flags & OVE_LNX_O_CLOEXEC) ? 1 : 0;
+	uint8_t nb = (flags & OVE_LNX_O_NONBLOCK) ? 1 : 0; /* pipe2(O_NONBLOCK): both ends non-blocking */
 	/* A pipe slot is free when no live proc holds either end (auto-reclaimed when
 	 * both ends close or the holders exit — there is no explicit pipe free path). */
 	int pi = -1;
@@ -1722,8 +1744,10 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds, int flags)
 	g_pipes[pi].rpos = 0;
 	g_pipes[pi].wpos = 0;
 	g_pipes[pi].count = 0;
-	p->fds[rfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .cloexec = cx, .file_idx = pi};
-	p->fds[wfd] = (ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .cloexec = cx, .file_idx = pi};
+	p->fds[rfd] =
+		(ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .cloexec = cx, .nonblock = nb, .file_idx = pi};
+	p->fds[wfd] =
+		(ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .cloexec = cx, .nonblock = nb, .file_idx = pi};
 	fds[0] = rfd;
 	fds[1] = wfd;
 	return 0;
@@ -2664,7 +2688,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return sys_close(proc, (int)a0);
 	case OVE_LNX_NR_pipe:
 		return sys_pipe(proc, (int *)(uintptr_t)a0, 0);
-	case OVE_LNX_NR_pipe2: /* (fds, flags) — flags carries O_CLOEXEC (+ O_NONBLOCK, ignored) */
+	case OVE_LNX_NR_pipe2: /* (fds, flags) — flags carries O_CLOEXEC and/or O_NONBLOCK */
 		return sys_pipe(proc, (int *)(uintptr_t)a0, (int)a1);
 	case OVE_LNX_NR_dup:
 		return sys_dup(proc, (int)a0);
@@ -2839,6 +2863,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				return ove_lnx_pty_getfl(s->file_idx, s->rw);
 		}
 #endif
+		/* A pipe fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking (dropbear sets its
+		 * SIGCHLD self-pipe non-blocking and drains it with a read-until-EAGAIN loop). */
+		if (s->kind == OVE_LNX_FD_PIPE) {
+			if ((int)a1 == OVE_LNX_F_SETFL) {
+				s->nonblock = ((int)a2 & OVE_LNX_O_NONBLOCK) ? 1 : 0;
+				return 0;
+			}
+			if ((int)a1 == OVE_LNX_F_GETFL)
+				return (s->rw ? OVE_LNX_O_WRONLY : OVE_LNX_O_RDONLY) |
+				       (s->nonblock ? OVE_LNX_O_NONBLOCK : 0);
+		}
 		/* F_SETFD/F_GETFD track close-on-exec (dropbear sets FD_CLOEXEC on its exec-status
 		 * pipe and detects a successful shell exec by that fd closing on execve). */
 		if ((int)a1 == OVE_LNX_F_SETFD) {
