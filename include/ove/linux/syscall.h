@@ -93,6 +93,7 @@ extern "C" {
 #define OVE_LNX_NR_getgid32 200
 #define OVE_LNX_NR_geteuid32 201
 #define OVE_LNX_NR_getegid32 202
+#define OVE_LNX_NR_getdents 141
 #define OVE_LNX_NR_getdents64 217
 #define OVE_LNX_NR_fcntl64 221
 #define OVE_LNX_NR_exit_group 248

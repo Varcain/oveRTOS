@@ -2191,38 +2191,67 @@ static long sys_statfs(ove_lnx_proc_t *p, void *buf)
 	return 0;
 }
 
-/* Append one dirent record. Skips entries already emitted (pos < s->offset);
- * returns 0 if the record does not fit (caller stops), else 1 (and advances). */
+/* Directory-entry format for the in-progress getdents: 1 = linux_dirent64 (getdents64),
+ * 0 = the 32-bit linux_dirent (getdents). Set by the two entry points; the walk is single
+ * threaded (the coordinator runs one syscall at a time), so a file-static is safe here. */
+static int s_dirent_is64 = 1;
+
+/* Append one dirent record in the s_dirent_is64 format (the 32-bit linux_dirent puts d_type
+ * as a trailing byte at d_reclen-1). Skips entries already emitted (pos < s->offset);
+ * returns 0 if the record does not fit, else 1 (and advances). */
 static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ove_lnx_fd_t *s,
 		       uint64_t ino, const char *name, uint32_t mode)
 {
+	int is64 = s_dirent_is64;
 	if (*pos < (long)s->offset) {
 		(*pos)++;
 		return 1; /* already returned by an earlier getdents call */
 	}
 	size_t namelen = strlen(name);
-	size_t reclen = (offsetof(struct ove_lnx_dirent64, d_name) + namelen + 1 + 7u) &
-			~(size_t)7u;
-	if (*filled + reclen > count)
-		return 0;
-	struct ove_lnx_dirent64 *de = (struct ove_lnx_dirent64 *)(out + *filled);
-	de->d_ino = ino;
-	de->d_off = *pos + 1;
-	de->d_reclen = (uint16_t)reclen;
-	de->d_type = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)   ? OVE_LNX_DT_DIR
-		     : ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFCHR) ? OVE_LNX_DT_CHR
-								    : OVE_LNX_DT_REG;
-	memcpy(de->d_name, name, namelen + 1);
-	*filled += reclen;
+	uint8_t dtype = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)   ? OVE_LNX_DT_DIR
+			: ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFCHR) ? OVE_LNX_DT_CHR
+								       : OVE_LNX_DT_REG;
+	if (is64) {
+		size_t reclen = (offsetof(struct ove_lnx_dirent64, d_name) + namelen + 1 + 7u) &
+				~(size_t)7u;
+		if (*filled + reclen > count)
+			return 0;
+		struct ove_lnx_dirent64 *de = (struct ove_lnx_dirent64 *)(out + *filled);
+		de->d_ino = ino;
+		de->d_off = *pos + 1;
+		de->d_reclen = (uint16_t)reclen;
+		de->d_type = dtype;
+		memcpy(de->d_name, name, namelen + 1);
+		*filled += reclen;
+	} else {
+		/* 32-bit linux_dirent: [d_ino:4][d_off:4][d_reclen:2][name+NUL][pad][d_type:1]. */
+		size_t reclen = (8u + 2u + namelen + 1u + 1u + 7u) & ~(size_t)7u;
+		if (*filled + reclen > count)
+			return 0;
+		uint8_t *r = out + *filled;
+		uint32_t di = (uint32_t)ino, doff = (uint32_t)(*pos + 1);
+		uint16_t rl = (uint16_t)reclen;
+		memcpy(r, &di, 4);
+		memcpy(r + 4, &doff, 4);
+		memcpy(r + 8, &rl, 2);
+		memcpy(r + 10, name, namelen + 1);
+		for (size_t k = 10 + namelen + 1; k < reclen - 1; k++)
+			r[k] = 0;
+		r[reclen - 1] = dtype;
+		*filled += reclen;
+	}
 	(*pos)++;
 	s->offset++;
 	return 1;
 }
 
-/* getdents64: emit the directory's immediate children (read-only rootfs entries
- * + writable-overlay nodes) as linux_dirent64 records. */
-static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count)
+/* getdents/getdents64: emit the directory's immediate children (read-only rootfs entries
+ * + writable-overlay nodes) as linux_dirent (is64=0) or linux_dirent64 (is64=1) records.
+ * uClibc's readdir on this FDPIC target uses the 32-bit getdents(2) for some callers (e.g.
+ * dropbear's pty session setup), so both are supported. */
+static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, int is64)
 {
+	s_dirent_is64 = is64;
 	ove_lnx_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -OVE_LNX_EBADF;
@@ -2787,8 +2816,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* F_GETFD/SETFD/GETFL/SETFL: benign for stdio/dup probing. */
 		return 0;
 	}
+	case OVE_LNX_NR_getdents: /* 32-bit linux_dirent (uClibc readdir on this target) */
+		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, 0);
 	case OVE_LNX_NR_getdents64:
-		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2);
+		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, 1);
 	case OVE_LNX_NR_statx: /* (dirfd, path, flags, mask, buf); mask ignored */
 		return sys_statx(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2,
 				 (void *)(uintptr_t)a4);
