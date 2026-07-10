@@ -316,16 +316,22 @@ err_t ethernetif_init(struct netif *netif)
 
 /* ── Public: poll for received frames ────────────────────────── */
 
-void ethernetif_input(struct netif *netif)
+/* Drain every frame the DMA has posted this poll cycle (returns the count so the caller can
+ * wake the socket coordinator once per batch). Reading a single frame per 1 ms poll capped
+ * RX — and TX, since ACKs are the RX that reopens the send window — at ~1 frame/ms ≈ 1.5 MB/s;
+ * looping until the ring is empty (the ST LwIP demos' pattern) lets a burst clear in one pass. */
+int ethernetif_input(struct netif *netif)
 {
-	struct pbuf *p = NULL;
+	int n = 0;
+	struct pbuf *p;
 
-	if (HAL_ETH_ReadData(&heth, (void **)&p) == HAL_OK) {
-		if (p != NULL) {
-			if (netif->input(p, netif) != ERR_OK) {
-				pbuf_free(p);
-			}
-		}
+	for (;;) {
+		p = NULL;
+		if (HAL_ETH_ReadData(&heth, (void **)&p) != HAL_OK || p == NULL)
+			break;
+		if (netif->input(p, netif) != ERR_OK)
+			pbuf_free(p);
+		n++;
 	}
 
 	/* Kick the DMA Rx if it's suspended (buffer unavailable) */
@@ -333,4 +339,6 @@ void ethernetif_input(struct netif *netif)
 		heth.Instance->DMASR = ETH_DMASR_RBUS;
 		heth.Instance->DMARPDR = 0;
 	}
+
+	return n;
 }

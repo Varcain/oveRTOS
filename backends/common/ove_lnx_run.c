@@ -163,6 +163,19 @@ void ove_lnx_dev_kick(void)
 }
 #endif
 
+#if defined(CONFIG_OVE_LINUX_NET)
+/* Wake the coordinator so it retries parked socket I/O at once — the network RX task calls
+ * this after delivering a batch of frames to the stack, so a parked recv/connect/accept
+ * resumes the instant its data/ACK lands instead of on the next ≤5 ms retry tick. Mirrors
+ * ove_lnx_dev_kick; only ever called with CONFIG_OVE_LINUX_NET (⇒ OVE_LINUX) set, so this
+ * run loop is always linked and no weak no-op is needed. */
+void ove_lnx_sock_kick(void)
+{
+	if (g_eng && g_eng->event_post)
+		g_eng->event_post();
+}
+#endif
+
 
 /* Per-slot captured resume context (replaces the single global g_ove_lnx_vfork +
  * the run-loop-local vctx[] — many forks/sleeps/waits can be outstanding at once
