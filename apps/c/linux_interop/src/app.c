@@ -38,14 +38,14 @@
 #include "ove/time.h"
 
 #include "ove/app.h"
-#include "ove/linux/run.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_run.h"
+#include "lxp/lxp_syscall.h"
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
-#include "ove/linux/net.h" /* lxp_sock_set_netif — the SIOC* ioctl target */
+#include "lxp/lxp_net.h" /* lxp_sock_set_netif — the SIOC* ioctl target */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-#include "ove/linux/netfs.h" /* lxp_netfs_mount_config — the static /mnt/pi mount */
+#include "lxp/lxp_netfs.h" /* lxp_netfs_mount_config — the static /mnt/pi mount */
 #endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */

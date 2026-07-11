@@ -16,8 +16,8 @@
 
 #include "../framework/ove_test.h"
 #include "ove/arena.h"
-#include "ove/linux/pty.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_pty.h"
+#include "lxp/lxp_syscall.h"
 
 #include <stdint.h>
 #include <stdio.h>

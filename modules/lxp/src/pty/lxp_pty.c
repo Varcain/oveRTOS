@@ -14,13 +14,13 @@
  * shuttles bytes between the master and the SSH channel; ash reads/writes the slave.
  * Gated on CONFIG_OVE_LINUX_PTY.
  */
-#include "ove/linux/pty.h"
+#include "lxp/lxp_pty.h"
 
 #if defined(CONFIG_OVE_LINUX_PTY)
 
 #include <string.h>
 
-#include "ove/linux/dev.h" /* user_ok() (confused-deputy guard for ioctl arg pointers) */
+#include "lxp/lxp_dev.h" /* user_ok() (confused-deputy guard for ioctl arg pointers) */
 
 /* One pty pair = 2 concurrent SSH logins' worth on this tier (each login holds a
  * master + a slave). Rings are small — a terminal is interactive, not bulk; the s2m

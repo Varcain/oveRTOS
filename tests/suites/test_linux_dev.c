@@ -13,8 +13,8 @@
 
 #include "../framework/ove_test.h"
 #include "ove/arena.h"
-#include "ove/linux/dev.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_dev.h"
+#include "lxp/lxp_syscall.h"
 
 #include <stdint.h>
 #include <string.h>

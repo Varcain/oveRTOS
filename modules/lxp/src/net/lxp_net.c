@@ -21,8 +21,8 @@
 
 #if defined(CONFIG_OVE_LINUX_NET)
 
-#include "ove/linux/net.h"
-#include "ove/linux/net_ops.h"
+#include "lxp/lxp_net.h"
+#include "lxp/lxp_net_ops.h"
 #include "ove/net.h"
 
 #include <string.h>

@@ -9,7 +9,7 @@
 #ifndef OVE_LINUX_RUN_H
 #define OVE_LINUX_RUN_H
 
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_syscall.h"
 
 #ifdef __cplusplus
 extern "C" {

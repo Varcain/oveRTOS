@@ -16,8 +16,8 @@
 
 #include "../framework/ove_test.h"
 #include "ove/arena.h"
-#include "ove/linux/netfs.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_netfs.h"
+#include "lxp/lxp_syscall.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>

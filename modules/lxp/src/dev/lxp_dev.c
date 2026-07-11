@@ -19,7 +19,7 @@
 
 #if defined(CONFIG_OVE_LINUX_DEV)
 
-#include "ove/linux/dev.h"
+#include "lxp/lxp_dev.h"
 
 #include <string.h>
 

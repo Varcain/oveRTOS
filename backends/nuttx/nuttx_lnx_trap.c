@@ -41,7 +41,7 @@
 #include <string.h>
 #include <unistd.h> /* usleep */
 
-#include "../common/ove_lnx_run.h"
+#include "lxp/lxp_seam.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 

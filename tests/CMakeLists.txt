@@ -79,23 +79,23 @@ set(STUB_SOURCES
     # Module loader (platform-independent)
     ${OVE_ROOT}/loader/ove_loader.c
     # Linux personality syscall dispatch (platform-independent)
-    ${OVE_ROOT}/linux/ove_linux_syscall.c
+    ${OVE_ROOT}/modules/lxp/src/lxp_syscall.c
     # Linux personality /dev character-device core (CONFIG_OVE_LINUX_DEV)
-    ${OVE_ROOT}/linux/dev/ove_linux_dev.c
+    ${OVE_ROOT}/modules/lxp/src/dev/lxp_dev.c
     # Linux personality socket core (CONFIG_OVE_LINUX_NET)
-    ${OVE_ROOT}/linux/net/ove_linux_net.c
+    ${OVE_ROOT}/modules/lxp/src/net/lxp_net.c
     # Host adapter for the handle-based net-ops port (owns socket storage, bridges
     # to ove_net = posix_net.c here; statically sets g_ove_lnx_net_ops).
-    ${OVE_ROOT}/backends/common/ove_lnx_ove_adapter.c
+    ${OVE_ROOT}/backends/common/lxp_ove_adapter.c
     # Linux personality remote-fs core (CONFIG_OVE_LINUX_NETFS)
-    ${OVE_ROOT}/linux/netfs/ove_linux_netfs.c
+    ${OVE_ROOT}/modules/lxp/src/netfs/lxp_netfs.c
     # Linux personality pseudo-terminal core (CONFIG_OVE_LINUX_PTY)
-    ${OVE_ROOT}/linux/pty/ove_linux_pty.c
+    ${OVE_ROOT}/modules/lxp/src/pty/lxp_pty.c
     # Host stubs for run-loop hooks (ove_lnx_guest_flush) the net/pty layers call
-    # but that live in the un-linked coordinator (backends/common/ove_lnx_run.c).
+    # but that live in the un-linked coordinator (modules/lxp/src/lxp_run.c).
     ${STUB_DIR}/stub_lnx_run.c
     # CPU/process snapshot for ps/top (read by the /proc generator; no RTOS deps)
-    ${OVE_ROOT}/backends/common/ove_lnx_stats.c
+    ${OVE_ROOT}/modules/lxp/src/lxp_stats.c
     # Heap-lock machinery: portable wrappers + stub-only weak __real_*
     # fallbacks (analogue of {freertos,zephyr,nuttx}_heap_lock.c).
     ${OVE_ROOT}/backends/common/ove_heap_lock.c
@@ -187,6 +187,7 @@ function(ove_add_stub_variant name)
     )
     target_include_directories(${name} PRIVATE
         ${OVE_INCLUDE}
+        ${OVE_ROOT}/modules/lxp/include
         ${OVE_ROOT}/backends/common
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${POSIX_CORE_DIR}/include

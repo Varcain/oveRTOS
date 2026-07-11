@@ -18,10 +18,10 @@
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 
 #include "ove/fb.h"
-#include "ove/linux/dev.h"
-#include "ove/linux/disp_ops.h"
+#include "lxp/lxp_dev.h"
+#include "lxp/lxp_disp_ops.h"
 #include "ove/time.h"
-#include "ove_linux_uapi.h"
+#include "lxp_uapi.h"
 
 #include <string.h>
 

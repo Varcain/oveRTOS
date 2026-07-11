@@ -25,19 +25,19 @@
 #include "ove/arena.h"
 #include "ove/thread.h"
 #include "ove/time.h"
-#include "ove_lnx_run.h"
-#include "ove/linux/stats.h"
+#include "lxp/lxp_seam.h"
+#include "lxp/lxp_stats.h"
 #if defined(CONFIG_OVE_LINUX_DEV)
-#include "ove/linux/dev.h" /* device-layer park/retry + autoreg + tick + kick */
+#include "lxp/lxp_dev.h" /* device-layer park/retry + autoreg + tick + kick */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-#include "ove/linux/net.h" /* socket-layer park/retry + fork/exit fd lifecycle */
+#include "lxp/lxp_net.h" /* socket-layer park/retry + fork/exit fd lifecycle */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-#include "ove/linux/netfs.h" /* remote-fs park/retry + init/pump + fork/exit lifecycle */
+#include "lxp/lxp_netfs.h" /* remote-fs park/retry + init/pump + fork/exit lifecycle */
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
-#include "ove/linux/pty.h" /* pty-layer park/retry (lxp_pty_retry) */
+#include "lxp/lxp_pty.h" /* pty-layer park/retry (lxp_pty_retry) */
 #endif
 
 /* Declare a memory-mapped rootfs image window [base, base+len) so the coordinator task can

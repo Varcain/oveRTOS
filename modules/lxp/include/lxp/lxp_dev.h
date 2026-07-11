@@ -34,7 +34,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_syscall.h"
 
 #ifdef __cplusplus
 extern "C" {

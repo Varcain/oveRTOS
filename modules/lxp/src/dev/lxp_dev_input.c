@@ -16,10 +16,10 @@
 
 #if defined(CONFIG_OVE_LINUX_DEV_INPUT)
 
-#include "ove/linux/dev.h"
+#include "lxp/lxp_dev.h"
 #include "ove/time.h"
-#include "ove/linux/disp_ops.h"
-#include "ove_linux_uapi.h"
+#include "lxp/lxp_disp_ops.h"
+#include "lxp_uapi.h"
 #if defined(CONFIG_OVE_FT5336)
 #include "ove/ft5336.h"
 #endif
