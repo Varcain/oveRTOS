@@ -6,12 +6,12 @@
  * This file is part of oveRTOS.
  *
  * oveRTOS host adapter for the Linux personality's display / input port
- * (struct ove_lnx_disp_ops). It bridges the /dev/fb0 + /dev/input class drivers
+ * (struct lxp_disp_ops). It bridges the /dev/fb0 + /dev/input class drivers
  * to the ove_fb framebuffer HAL and the ove_ft5336 touch controller. The fb ops
  * are filled when /dev/fb0 is built; the touch ops when an FT5336 is present
  * (otherwise NULL — the input driver falls back to the synthetic testpad).
  *
- * g_ove_lnx_disp_ops is statically pointed here, so linking this TU wires the
+ * g_lxp_disp_ops is statically pointed here, so linking this TU wires the
  * personality to the display HAL with no init call.
  */
 
@@ -57,7 +57,7 @@ static int d_touch_read(int *x, int *y, int *pressed)
 }
 #endif /* CONFIG_OVE_FT5336 */
 
-static const struct ove_lnx_disp_ops g_ove_adapter_disp_ops = {
+static const struct lxp_disp_ops g_ove_adapter_disp_ops = {
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 	.fb_init = d_fb_init,
 	.fb_get_info = d_fb_get_info,
@@ -71,6 +71,6 @@ static const struct ove_lnx_disp_ops g_ove_adapter_disp_ops = {
 #endif
 };
 
-const struct ove_lnx_disp_ops *g_ove_lnx_disp_ops = &g_ove_adapter_disp_ops;
+const struct lxp_disp_ops *g_lxp_disp_ops = &g_ove_adapter_disp_ops;
 
 #endif /* CONFIG_OVE_LINUX_DEV */

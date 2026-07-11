@@ -9,7 +9,7 @@
  *
  * One firmware image, two worlds, two phases — built entirely on the
  * engine-agnostic oveRTOS APIs (ove_thread / ove_queue / ove_time) on the RTOS
- * side and the Linux-personality runner (ove_lnx_run) on the Linux side; no
+ * side and the Linux-personality runner (lxp_run) on the Linux side; no
  * direct Zephyr kernel calls.
  *
  *  Phase 1 — BIDIRECTIONAL round trip. A native RTOS thread (ove_thread) feeds
@@ -42,10 +42,10 @@
 #include "ove/linux/syscall.h"
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
-#include "ove/linux/net.h" /* ove_lnx_sock_set_netif — the SIOC* ioctl target */
+#include "ove/linux/net.h" /* lxp_sock_set_netif — the SIOC* ioctl target */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-#include "ove/linux/netfs.h" /* ove_lnx_netfs_mount_config — the static /mnt/pi mount */
+#include "ove/linux/netfs.h" /* lxp_netfs_mount_config — the static /mnt/pi mount */
 #endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
@@ -55,8 +55,8 @@
  * 0x90000000 (bsp_qspi_init brings up QUADSPI before we parse it), freeing the
  * internal flash for the firmware. The length is an upper bound — the CPIO parse
  * stops at the TRAILER!!! record before the erased tail. */
-#define OVE_LNX_QSPI_ROOTFS ((const uint8_t *)0x90000000u)
-#define OVE_LNX_QSPI_ROOTFS_MAX (16u * 1024u * 1024u)
+#define LXP_QSPI_ROOTFS ((const uint8_t *)0x90000000u)
+#define LXP_QSPI_ROOTFS_MAX (16u * 1024u * 1024u)
 #else
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
 #endif
@@ -354,7 +354,7 @@ static void on_enosys(long nr)
 
 /* ---- rootfs (parsed from the embedded Buildroot CPIO) ---------------------- */
 #define ROOTFS_MAX_FILES 512
-static ove_lnx_file_t g_rootfs[ROOTFS_MAX_FILES];
+static lxp_file_t g_rootfs[ROOTFS_MAX_FILES];
 static char g_rootfs_names[16 * 1024];
 static int g_rootfs_n;
 
@@ -386,11 +386,11 @@ static void demo_body(void *arg)
 	 * personality BEFORE the first read of it (the CPIO parse just below): on the STM32F746 this
 	 * installs a bounded, non-cacheable MPU region for this coordinator task so the M7 D-cache
 	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
-	ove_lnx_rootfs_window(OVE_LNX_QSPI_ROOTFS, OVE_LNX_QSPI_ROOTFS_MAX);
-	g_rootfs_n = ove_lnx_cpio_to_rootfs(OVE_LNX_QSPI_ROOTFS, OVE_LNX_QSPI_ROOTFS_MAX, g_rootfs,
+	lxp_rootfs_window(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX);
+	g_rootfs_n = lxp_cpio_to_rootfs(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX, g_rootfs,
 					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
 #else
-	g_rootfs_n = ove_lnx_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
+	g_rootfs_n = lxp_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,
 					    g_rootfs, ROOTFS_MAX_FILES, g_rootfs_names,
 					    sizeof(g_rootfs_names));
 #endif
@@ -425,7 +425,7 @@ static void demo_body(void *arg)
 		    ove_netif_up(nif, &netcfg) == OVE_OK) {
 			/* Register the interface so the personality's SIOC* ioctls (ifconfig/route)
 			 * operate on it. */
-			ove_lnx_sock_set_netif(nif);
+			lxp_sock_set_netif(nif);
 			ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
 			for (int i = 0; i < 200; i++) { /* wait for the interface to report its address */
 				ove_netif_get_addr(nif, &ip, &gw, &nm);
@@ -500,7 +500,7 @@ static void demo_body(void *arg)
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
 	/* Configure the static remote-fs mount (/mnt/pi -> the Pi's 9P/diod export). The 9P
-	 * handshake happens later inside ove_lnx_run's coordinator (ove_lnx_netfs_init). */
+	 * handshake happens later inside lxp_run's coordinator (lxp_netfs_init). */
 	{
 		uint8_t ip[4] = {0, 0, 0, 0};
 		int oct = 0, v = 0;
@@ -516,7 +516,7 @@ static void demo_body(void *arg)
 					break;
 			}
 		}
-		ove_lnx_netfs_mount_config(CONFIG_OVE_LINUX_NETFS_MOUNTPOINT, ip,
+		lxp_netfs_mount_config(CONFIG_OVE_LINUX_NETFS_MOUNTPOINT, ip,
 					   (uint16_t)CONFIG_OVE_LINUX_NETFS_PORT,
 					   CONFIG_OVE_LINUX_NETFS_ANAME, "root");
 	}
@@ -530,7 +530,7 @@ static void demo_body(void *arg)
 	 * coordinator's event_wait — so both directions co-run without the worker preempting the
 	 * coordinator. (The loader's QUADSPI-NOR reads are preemption-safe in their own right — the
 	 * coordinator reads the NOR through a non-cacheable bounded MPU region, see
-	 * ove_lnx_rootfs_window — so this priority is about I/O ordering, not protecting the load.) */
+	 * lxp_rootfs_window — so this priority is about I/O ordering, not protecting the load.) */
 	if (ove_thread_init(&g_worker, &g_worker_storage, "rtos-worker", rtos_worker, NULL,
 			    OVE_PRIO_LOW, sizeof(g_worker_stack), g_worker_stack) != OVE_OK) {
 		sh_write0("[demo] FAIL: ove_thread_init\n");
@@ -542,7 +542,7 @@ static void demo_body(void *arg)
 					 * yields → the OVE_PRIO_LOW worker starves and the demo hangs here
 					 * before phase 2.  ove_thread_sleep_ms always usleep()s. */
 
-	const ove_lnx_run_config_t cfg1 = {
+	const lxp_run_config_t cfg1 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,
 		.write_fn = consume_write,
@@ -552,7 +552,7 @@ static void demo_body(void *arg)
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
 	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
-	int rc1 = ove_lnx_run(&cfg1, "/bin/busybox", 1, cat_argv);
+	int rc1 = lxp_run(&cfg1, "/bin/busybox", 1, cat_argv);
 
 	g_linux_done = 1;
 	while (!g_worker_exited) /* wait for the worker to drain and return */
@@ -577,7 +577,7 @@ static void demo_body(void *arg)
 	/* ---- Phase 2: boot a full uClinux userspace --------------------------- */
 	sh_write0("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
 		  " run commands, `poweroff` to halt) --\n");
-	const ove_lnx_run_config_t cfg2 = {
+	const lxp_run_config_t cfg2 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,
 		.write_fn = console_write,
@@ -589,7 +589,7 @@ static void demo_body(void *arg)
 	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
 	 * a login shell on the console. */
 	const char *const init_argv[] = {"init", NULL};
-	int rc2 = ove_lnx_run(&cfg2, "/bin/busybox", 1, init_argv);
+	int rc2 = lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
 
 	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
 	sh_exit(rc2 >= 0 ? 0 : 1);

@@ -18,31 +18,31 @@
 #include <stdint.h>
 
 /* ---- framebuffer (linux/fb.h) ---------------------------------------------- */
-#define OVE_LNX_FBIOGET_VSCREENINFO 0x4600ul
-#define OVE_LNX_FBIOPUT_VSCREENINFO 0x4601ul
-#define OVE_LNX_FBIOGET_FSCREENINFO 0x4602ul
-#define OVE_LNX_FBIOPAN_DISPLAY 0x4606ul
-#define OVE_LNX_FBIOBLANK 0x4611ul
+#define LXP_FBIOGET_VSCREENINFO 0x4600ul
+#define LXP_FBIOPUT_VSCREENINFO 0x4601ul
+#define LXP_FBIOGET_FSCREENINFO 0x4602ul
+#define LXP_FBIOPAN_DISPLAY 0x4606ul
+#define LXP_FBIOBLANK 0x4611ul
 
 /* fb_fix_screeninfo.type / .visual */
-#define OVE_LNX_FB_TYPE_PACKED_PIXELS 0
-#define OVE_LNX_FB_VISUAL_TRUECOLOR 2
+#define LXP_FB_TYPE_PACKED_PIXELS 0
+#define LXP_FB_VISUAL_TRUECOLOR 2
 
 /* One color channel's position within a pixel. */
-struct ove_lnx_fb_bitfield {
+struct lxp_fb_bitfield {
 	uint32_t offset;    /* bit position of the LSB */
 	uint32_t length;    /* number of bits */
 	uint32_t msb_right; /* != 0 if the MSB is on the right */
 };
 
 /* struct fb_var_screeninfo — 160 bytes on ARM32 (all fields u32). */
-struct ove_lnx_fb_var_screeninfo {
+struct lxp_fb_var_screeninfo {
 	uint32_t xres, yres;
 	uint32_t xres_virtual, yres_virtual;
 	uint32_t xoffset, yoffset;
 	uint32_t bits_per_pixel;
 	uint32_t grayscale;
-	struct ove_lnx_fb_bitfield red, green, blue, transp;
+	struct lxp_fb_bitfield red, green, blue, transp;
 	uint32_t nonstd;
 	uint32_t activate;
 	uint32_t height, width; /* physical size in mm (0 = unknown) */
@@ -55,7 +55,7 @@ struct ove_lnx_fb_var_screeninfo {
 };
 
 /* struct fb_fix_screeninfo — 68 bytes on ARM32 (unsigned long = u32). */
-struct ove_lnx_fb_fix_screeninfo {
+struct lxp_fb_fix_screeninfo {
 	char id[16];
 	uint32_t smem_start; /* physical start of the framebuffer */
 	uint32_t smem_len;   /* length of the framebuffer in bytes */
@@ -72,12 +72,12 @@ struct ove_lnx_fb_fix_screeninfo {
 };
 
 /* FBIOBLANK arg. */
-#define OVE_LNX_FB_BLANK_UNBLANK 0
+#define LXP_FB_BLANK_UNBLANK 0
 
 /* ---- input / evdev (linux/input.h) ----------------------------------------- */
 /* struct input_event on ARM32: the kernel uapi uses __kernel_ulong_t (32-bit)
  * for the timestamp even with a 64-bit-time_t libc, so this stays 16 bytes. */
-struct ove_lnx_input_event {
+struct lxp_input_event {
 	uint32_t sec;
 	uint32_t usec;
 	uint16_t type;
@@ -85,35 +85,35 @@ struct ove_lnx_input_event {
 	int32_t value;
 };
 
-#define OVE_LNX_EV_SYN 0x00
-#define OVE_LNX_EV_KEY 0x01
-#define OVE_LNX_EV_ABS 0x03
-#define OVE_LNX_SYN_REPORT 0
-#define OVE_LNX_SYN_DROPPED 3
-#define OVE_LNX_BTN_TOUCH 0x14a
-#define OVE_LNX_ABS_X 0x00
-#define OVE_LNX_ABS_Y 0x01
+#define LXP_EV_SYN 0x00
+#define LXP_EV_KEY 0x01
+#define LXP_EV_ABS 0x03
+#define LXP_SYN_REPORT 0
+#define LXP_SYN_DROPPED 3
+#define LXP_BTN_TOUCH 0x14a
+#define LXP_ABS_X 0x00
+#define LXP_ABS_Y 0x01
 
 /* struct input_id (EVIOCGID). */
-struct ove_lnx_input_id {
+struct lxp_input_id {
 	uint16_t bustype, vendor, product, version;
 };
-#define OVE_LNX_BUS_I2C 0x18
+#define LXP_BUS_I2C 0x18
 
 /* struct input_absinfo (EVIOCGABS). */
-struct ove_lnx_input_absinfo {
+struct lxp_input_absinfo {
 	int32_t value, minimum, maximum, fuzz, flat, resolution;
 };
 
 /* evdev ioctls (fixed-arg ones; the size-encoded EVIOCGNAME/GBIT are matched by
  * their 'E'-type + nr, ignoring the encoded length). */
-#define OVE_LNX_EVIOCGVERSION 0x80044501ul     /* _IOR('E',0x01,int) */
-#define OVE_LNX_EVIOCGID 0x80084502ul	       /* _IOR('E',0x02,input_id) */
-#define OVE_LNX_EVIOCGRAB 0x40044590ul	       /* _IOW('E',0x90,int) */
-#define OVE_LNX_EVIOC_TYPE(cmd) (((cmd) >> 8) & 0xff) /* 'E' == 0x45 for evdev */
-#define OVE_LNX_EVIOC_NR(cmd) ((cmd) & 0xff)
-#define OVE_LNX_EVIOC_E 0x45
-#define OVE_LNX_EVIOCGNAME_NR 0x06
-#define OVE_LNX_EVIOCGABS_BASE 0x40 /* EVIOCGABS(abs) nr = 0x40 + abs */
+#define LXP_EVIOCGVERSION 0x80044501ul     /* _IOR('E',0x01,int) */
+#define LXP_EVIOCGID 0x80084502ul	       /* _IOR('E',0x02,input_id) */
+#define LXP_EVIOCGRAB 0x40044590ul	       /* _IOW('E',0x90,int) */
+#define LXP_EVIOC_TYPE(cmd) (((cmd) >> 8) & 0xff) /* 'E' == 0x45 for evdev */
+#define LXP_EVIOC_NR(cmd) ((cmd) & 0xff)
+#define LXP_EVIOC_E 0x45
+#define LXP_EVIOCGNAME_NR 0x06
+#define LXP_EVIOCGABS_BASE 0x40 /* EVIOCGABS(abs) nr = 0x40 + abs */
 
 #endif /* OVE_LINUX_UAPI_H */

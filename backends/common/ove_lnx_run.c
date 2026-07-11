@@ -6,7 +6,7 @@
  * This file is part of oveRTOS.
  *
  * Engine-agnostic Linux-personality run loop + svc dispatch + signal delivery,
- * shared by the Zephyr / FreeRTOS / NuttX seams (see ove_lnx_run.h). The
+ * shared by the Zephyr / FreeRTOS / NuttX seams (see lxp_run.h). The
  * NOMMU process model lives here once; each seam supplies the svc trap, the
  * program memory, and the task spawn through a small vtable.
  *
@@ -37,7 +37,7 @@
 #include "ove/linux/netfs.h" /* remote-fs park/retry + init/pump + fork/exit lifecycle */
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
-#include "ove/linux/pty.h" /* pty-layer park/retry (ove_lnx_pty_retry) */
+#include "ove/linux/pty.h" /* pty-layer park/retry (lxp_pty_retry) */
 #endif
 
 /* Declare a memory-mapped rootfs image window [base, base+len) so the coordinator task can
@@ -47,7 +47,7 @@
  * (QUADSPI-XIP rootfs + M7 D-cache): it installs a bounded, non-cacheable MPU region for the
  * calling task so cache line-fill bursts + speculative prefetch never reach the memory-mapped
  * NOR.  A weak definition so only the engines that need it provide one. */
-__attribute__((weak)) void ove_lnx_rootfs_window(const void *base, size_t len)
+__attribute__((weak)) void lxp_rootfs_window(const void *base, size_t len)
 {
 	(void)base;
 	(void)len;
@@ -56,7 +56,7 @@ __attribute__((weak)) void ove_lnx_rootfs_window(const void *base, size_t len)
 /* Engine-common weak no-op; the FreeRTOS backend strong-overrides this on the STM32F746 where the
  * guest writes cacheable SDRAM but the coordinator reads it uncached (D-cache coherency). CLEANS
  * (writes back) the guest's cache lines so a subsequent uncached coordinator read sees them. */
-__attribute__((weak)) void ove_lnx_guest_flush(const void *base, size_t len)
+__attribute__((weak)) void lxp_guest_flush(const void *base, size_t len)
 {
 	(void)base;
 	(void)len;
@@ -66,7 +66,7 @@ __attribute__((weak)) void ove_lnx_guest_flush(const void *base, size_t len)
  * [base, len) so the guest's next read misses and refills from SDRAM — used after the coordinator has
  * written guest memory through its uncached view (vfork restore). Invalidate, NOT clean: a clean would
  * write the guest's stale lines back OVER what the coordinator just put in SDRAM. */
-__attribute__((weak)) void ove_lnx_guest_invalidate(const void *base, size_t len)
+__attribute__((weak)) void lxp_guest_invalidate(const void *base, size_t len)
 {
 	(void)base;
 	(void)len;
@@ -90,9 +90,9 @@ static int lnx_slot_of_name(const char *name)
  * into /proc/stat idle, not shown as a process (else it crushes top's %CPU math). */
 static void refresh_stats(void)
 {
-	struct ove_thread_info ti[OVE_LNX_MAX_KTHREAD];
+	struct ove_thread_info ti[LXP_MAX_KTHREAD];
 	size_t n = 0;
-	if (ove_lnx_thread_list(ti, OVE_LNX_MAX_KTHREAD, &n) != OVE_OK)
+	if (lxp_thread_list(ti, LXP_MAX_KTHREAD, &n) != OVE_OK)
 		n = 0; /* no host introspection: /proc shows only the Linux procs */
 
 	/* 1. Charge each live Linux thread's CPU to its proc (slot from the name). */
@@ -100,7 +100,7 @@ static void refresh_stats(void)
 	for (size_t i = 0; i < n; i++) {
 		const char *name = ti[i].name ? ti[i].name : "?";
 		uint64_t rus = ti[i].state_times.running_us;
-		int cls = ove_lnx_stats_classify(name);
+		int cls = lxp_stats_classify(name);
 		if (cls == 1) {
 			idle += rus;
 			continue;
@@ -108,74 +108,74 @@ static void refresh_stats(void)
 		busy += rus;
 		if (cls == 2) {
 			int s = lnx_slot_of_name(name);
-			if (s >= 0 && s < OVE_LNX_NSLOT && g_ove_lnx_proc[s].alive)
-				ove_lnx_stats_charge(g_ove_lnx_proc[s].pid, rus);
+			if (s >= 0 && s < LXP_NSLOT && g_lxp_proc[s].alive)
+				lxp_stats_charge(g_lxp_proc[s].pid, rus);
 		}
 	}
 	/* 2. Build the snapshot: the live Linux procs, then the kernel threads [name]. */
-	ove_lnx_stats_begin();
-	for (int s = 0; s < OVE_LNX_NSLOT; s++) {
-		ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
+	lxp_stats_begin();
+	for (int s = 0; s < LXP_NSLOT; s++) {
+		lxp_proc_t *p = &g_lxp_proc[s];
 		if (!p->alive)
 			continue;
-		char state = (g_ove_lnx_used[s] && !p->sleeping && !p->wait_pending) ? 'R' : 'S';
-		ove_lnx_stats_add(p->pid, p->ppid, p->comm, state, ove_lnx_proc_cpu_us(p->pid), 0);
+		char state = (g_lxp_used[s] && !p->sleeping && !p->wait_pending) ? 'R' : 'S';
+		lxp_stats_add(p->pid, p->ppid, p->comm, state, lxp_proc_cpu_us(p->pid), 0);
 	}
 	for (size_t i = 0; i < n; i++) {
 		const char *name = ti[i].name ? ti[i].name : "?";
-		if (ove_lnx_stats_classify(name) != 0)
+		if (lxp_stats_classify(name) != 0)
 			continue; /* idle or a Linux slot thread */
-		ove_lnx_stats_add(ove_lnx_kpid_for(name), 0, name, 'S',
+		lxp_stats_add(lxp_kpid_for(name), 0, name, 'S',
 				  ti[i].state_times.running_us, 1);
 	}
-	ove_lnx_stats_set_cpu(idle, busy);
+	lxp_stats_set_cpu(idle, busy);
 }
 
 /* ---- shared state ---------------------------------------------------------- */
-struct ove_lnx_resume_ctx g_ove_lnx_vfork;
-ove_lnx_proc_t g_ove_lnx_proc[OVE_LNX_NSLOT];
-int g_ove_lnx_used[OVE_LNX_NSLOT];
-volatile int g_ove_lnx_active;
-/* g_ove_lnx_halt is defined in the syscall layer (reboot(2) sets it) so the
+struct lxp_resume_ctx g_lxp_vfork;
+lxp_proc_t g_lxp_proc[LXP_NSLOT];
+int g_lxp_used[LXP_NSLOT];
+volatile int g_lxp_active;
+/* g_lxp_halt is defined in the syscall layer (reboot(2) sets it) so the
  * host syscall tests link without the run loop; the run loop only observes it. */
 
-static ove_arena_t g_arenas[OVE_LNX_NREG];
+static ove_arena_t g_arenas[LXP_NREG];
 /* vfork data isolation: a snapshot of the shared arena's allocator metadata, taken when a vfork
  * child is spawned (keyed by the child's slot) and restored when it execs/exits — the region+dyn_pool
  * BYTES are snapshotted into a spare region, but g_arenas[] lives in coordinator memory. */
-static ove_arena_t g_snap_arena[OVE_LNX_NSLOT];
-static const ove_lnx_run_config_t *g_cfg;
-static const struct ove_lnx_engine *g_eng; /* for the dispatch to post coordinator events */
+static ove_arena_t g_snap_arena[LXP_NSLOT];
+static const lxp_run_config_t *g_cfg;
+static const struct lxp_engine *g_eng; /* for the dispatch to post coordinator events */
 
 /* ---- OS-service hooks routed through the engine ops ------------------------
  * The personality core calls these instead of the host's ove_time_* / cache
  * primitives, so it carries no direct dependency on any particular OS. The seam
  * (host adapter) fills the ops; g_eng is live for the duration of a run. */
-int ove_lnx_time_us(uint64_t *out)
+int lxp_time_us(uint64_t *out)
 {
 	if (g_eng && g_eng->time_us)
 		return g_eng->time_us(out);
 	*out = 0;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-int ove_lnx_time_ns(uint64_t *out)
+int lxp_time_ns(uint64_t *out)
 {
 	if (g_eng && g_eng->time_ns)
 		return g_eng->time_ns(out);
 	*out = 0;
 	return OVE_ERR_NOT_SUPPORTED;
 }
-void ove_lnx_cache_clean(const void *base, size_t len)
+void lxp_cache_clean(const void *base, size_t len)
 {
 	if (g_eng && g_eng->cache_clean)
 		g_eng->cache_clean(base, len);
 }
-void ove_lnx_cache_invalidate(const void *base, size_t len)
+void lxp_cache_invalidate(const void *base, size_t len)
 {
 	if (g_eng && g_eng->cache_invalidate)
 		g_eng->cache_invalidate(base, len);
 }
-int ove_lnx_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
+int lxp_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
 	if (g_eng && g_eng->thread_list)
 		return g_eng->thread_list(out, max_count, actual_count);
@@ -188,34 +188,34 @@ int ove_lnx_thread_list(struct ove_thread_info *out, size_t max_count, size_t *a
  * ALL its code — busybox.so + ld.so + libc.so text, shared in-place — straight from here, so a
  * PC-discriminating seam (NuttX) must count a cpio PC as "in a program" when routing the svc.
  * NULL until a run starts. */
-const uint8_t *g_ove_lnx_rootfs_lo;
-const uint8_t *g_ove_lnx_rootfs_hi;
+const uint8_t *g_lxp_rootfs_lo;
+const uint8_t *g_lxp_rootfs_hi;
 
 /* access_ok (ove_linux_syscall.c) asks for the shared read-only rootfs span so a read-source user
  * pointer may point into a program's .rodata (shared in-place from the cpio). Strong override of the
  * weak stub in the syscall layer. */
-void ove_lnx_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
+void lxp_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
 {
-	*lo = (uintptr_t)g_ove_lnx_rootfs_lo;
-	*hi = (uintptr_t)g_ove_lnx_rootfs_hi;
+	*lo = (uintptr_t)g_lxp_rootfs_lo;
+	*hi = (uintptr_t)g_lxp_rootfs_hi;
 }
 
 /* Proc-table accessors so the pipe layer can scan all live procs' fds (count a pipe's
- * open read/write ends for EOF / EPIPE) without the syscall layer knowing OVE_LNX_NSLOT. */
-ove_lnx_proc_t *ove_lnx_proc_table(void)
+ * open read/write ends for EOF / EPIPE) without the syscall layer knowing LXP_NSLOT. */
+lxp_proc_t *lxp_proc_table(void)
 {
-	return g_ove_lnx_proc;
+	return g_lxp_proc;
 }
-int ove_lnx_proc_nslot(void)
+int lxp_proc_nslot(void)
 {
-	return OVE_LNX_NSLOT;
+	return LXP_NSLOT;
 }
 
 #if defined(CONFIG_OVE_LINUX_DEV)
 /* Wake the coordinator so it retries parked device I/O at once (a driver calls this
  * from its data-ready path). Strong override of the weak no-op in the device core
  * — that stub is used only by the host test, which links no run loop. */
-void ove_lnx_dev_kick(void)
+void lxp_dev_kick(void)
 {
 	if (g_eng && g_eng->event_post)
 		g_eng->event_post();
@@ -226,9 +226,9 @@ void ove_lnx_dev_kick(void)
 /* Wake the coordinator so it retries parked socket I/O at once — the network RX task calls
  * this after delivering a batch of frames to the stack, so a parked recv/connect/accept
  * resumes the instant its data/ACK lands instead of on the next ≤5 ms retry tick. Mirrors
- * ove_lnx_dev_kick; only ever called with CONFIG_OVE_LINUX_NET (⇒ OVE_LINUX) set, so this
+ * lxp_dev_kick; only ever called with CONFIG_OVE_LINUX_NET (⇒ OVE_LINUX) set, so this
  * run loop is always linked and no weak no-op is needed. */
-void ove_lnx_sock_kick(void)
+void lxp_sock_kick(void)
 {
 	if (g_eng && g_eng->event_post)
 		g_eng->event_post();
@@ -238,7 +238,7 @@ void ove_lnx_sock_kick(void)
 #if defined(CONFIG_OVE_LINUX_NETFS)
 /* Wake the coordinator so it pumps the 9P transport at once — the eth RX task calls this
  * after delivering frames, so a parked netfs op resumes the instant its reply lands. */
-void ove_lnx_netfs_kick(void)
+void lxp_netfs_kick(void)
 {
 	if (g_eng && g_eng->event_post)
 		g_eng->event_post();
@@ -246,35 +246,35 @@ void ove_lnx_netfs_kick(void)
 #endif
 
 
-/* Per-slot captured resume context (replaces the single global g_ove_lnx_vfork +
+/* Per-slot captured resume context (replaces the single global g_lxp_vfork +
  * the run-loop-local vctx[] — many forks/sleeps/waits can be outstanding at once
  * under the concurrent model). A proc is only ever in ONE of fork/sleep/wait at a
  * time, so one ctx per slot suffices; a vfork child resumes from its PARENT's ctx. */
-static struct ove_lnx_resume_ctx g_ctx[OVE_LNX_NSLOT];
+static struct lxp_resume_ctx g_ctx[LXP_NSLOT];
 
 /* Per-slot FDPIC runtime load addresses, exported (non-static) for SOURCE-LEVEL GDB DEBUGGING of
  * the userspace program. An FDPIC exec is loaded at runtime addresses (the loadmap relocates each
  * segment independently), so the on-disk ELF's link addresses don't match memory. A GDB helper
  * (config/scripts/ove-fdpic-gdb.py) reads this table and `add-symbol-file <elf> -o <text_base>`s the
  * program, then walks the exec's _DYNAMIC[DT_DEBUG] rendezvous (populated by ld.so once it has run)
- * to auto-load ld.so + every shared library at its own FDPIC bias. comm[] (in g_ove_lnx_proc) names
+ * to auto-load ld.so + every shared library at its own FDPIC bias. comm[] (in g_lxp_proc) names
  * the program; text_base/data_base are the loadmap-relocated bases of its text/data segments. */
-struct ove_lnx_dbg_s {
+struct lxp_dbg_s {
 	uintptr_t text_base; /* runtime base of the program's text (shared in-place from the cpio) */
 	uintptr_t data_base; /* runtime base of the program's RW data (in the slot's region) */
 	uintptr_t entry;     /* the program's own entry (AT_ENTRY), not ld.so's */
 	uintptr_t dynamic;   /* runtime addr of the exec's _DYNAMIC → DT_DEBUG → the ld.so link-map chain */
 	uintptr_t interp_base; /* ld.so's text base (0 for a static exec); auto-solib loads ld.so there */
 };
-struct ove_lnx_dbg_s g_ove_lnx_dbg[OVE_LNX_NSLOT];
+struct lxp_dbg_s g_lxp_dbg[LXP_NSLOT];
 
-static int slot_of(const ove_lnx_proc_t *p)
+static int slot_of(const lxp_proc_t *p)
 {
-	return (int)(p - g_ove_lnx_proc);
+	return (int)(p - g_lxp_proc);
 }
 
 /* Capture the post-svc context of frame f into slot s's resume ctx. */
-static void capture_ctx(int s, const struct ove_lnx_frame *f)
+static void capture_ctx(int s, const struct lxp_frame *f)
 {
 	for (int i = 0; i < 8; i++)
 		g_ctx[s].r4_11[i] = f->r[4 + i];
@@ -286,9 +286,9 @@ static void capture_ctx(int s, const struct ove_lnx_frame *f)
 
 /* Park the program frame at the spin loop until the coordinator reaps the event,
  * and wake the coordinator (it blocks in event_wait rather than busy-polling). */
-static void park_frame(struct ove_lnx_frame *f)
+static void park_frame(struct lxp_frame *f)
 {
-	f->r[15] = ((uint32_t)&ove_lnx_park_loop) & ~1u;
+	f->r[15] = ((uint32_t)&lxp_park_loop) & ~1u;
 	f->xpsr |= (1u << 24);
 	if (g_eng && g_eng->event_post)
 		g_eng->event_post();
@@ -303,22 +303,22 @@ static void park_frame(struct ove_lnx_frame *f)
 static struct sig_save_s {
 	uint32_t r0, r1, r2, r3, r9, r12, lr, pc, xpsr;
 	int active;
-} g_sig_save[OVE_LNX_NSLOT];
+} g_sig_save[LXP_NSLOT];
 
 static volatile int g_tty_isig = 1;
 static volatile int g_pending_sig;
 
-int ove_lnx_tty_isig(void)
+int lxp_tty_isig(void)
 {
 	return g_tty_isig;
 }
 
-void ove_lnx_post_signal(int sig)
+void lxp_post_signal(int sig)
 {
 	g_pending_sig = sig;
 }
 
-void ove_lnx_park_loop(void)
+void lxp_park_loop(void)
 {
 	for (;;) {
 	}
@@ -329,7 +329,7 @@ void ove_lnx_park_loop(void)
  * {entry, GOT} — deref, since the handler may live in a different module (e.g. libpthread) than the
  * interrupted code and needs its own r9=GOT. Non-FDPIC (e.g. the posix host test): raw entries, no
  * GOT change. */
-static void resolve_handler(const ove_lnx_proc_t *proc, int sig, uintptr_t *entry, uint32_t *got,
+static void resolve_handler(const lxp_proc_t *proc, int sig, uintptr_t *entry, uint32_t *got,
 			    uintptr_t *restorer)
 {
 	uintptr_t h = proc->sig_handler[sig];
@@ -349,30 +349,30 @@ static void resolve_handler(const ove_lnx_proc_t *proc, int sig, uintptr_t *entr
  * signal whose default action is "ignore" (SIGCHLD). Such a signal is swallowed by the
  * coordinator: it neither runs a handler nor terminates a parked proc — a parent must
  * not die because a child exited. */
-static int sig_swallowed(const ove_lnx_proc_t *proc, int sig)
+static int sig_swallowed(const lxp_proc_t *proc, int sig)
 {
 	uintptr_t h = proc->sig_handler[sig];
-	if (h == OVE_LNX_SIG_IGN)
+	if (h == LXP_SIG_IGN)
 		return 1;
-	if (h == OVE_LNX_SIG_DFL && sig == OVE_LNX_SIGCHLD)
+	if (h == LXP_SIG_DFL && sig == LXP_SIGCHLD)
 		return 1;
 	return 0;
 }
 
 /* Deliver signal `sig` to `proc`; `ret` is the interrupted syscall's result
  * (0 for a kill/tkill, -EINTR for a console-interrupted read). */
-static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int sig, long ret)
+static void deliver_signal(struct lxp_frame *f, lxp_proc_t *proc, int sig, long ret)
 {
-	if (sig < 1 || sig >= OVE_LNX_NSIG) {
-		f->r[0] = (uint32_t)-OVE_LNX_EINVAL;
+	if (sig < 1 || sig >= LXP_NSIG) {
+		f->r[0] = (uint32_t)-LXP_EINVAL;
 		return;
 	}
 	uintptr_t h = proc->sig_handler[sig];
-	if (h == OVE_LNX_SIG_IGN || (h == OVE_LNX_SIG_DFL && sig == OVE_LNX_SIGCHLD)) {
+	if (h == LXP_SIG_IGN || (h == LXP_SIG_DFL && sig == LXP_SIGCHLD)) {
 		f->r[0] = (uint32_t)ret; /* SIG_IGN, or a default-ignore signal (SIGCHLD) */
 		return;
 	}
-	if (h == OVE_LNX_SIG_DFL) {
+	if (h == LXP_SIG_DFL) {
 		proc->exited = 1;
 		proc->exit_status = 128 + sig;
 		park_frame(f); /* the coordinator reaps it */
@@ -401,7 +401,7 @@ static void deliver_signal(struct ove_lnx_frame *f, ove_lnx_proc_t *proc, int si
 }
 
 /* rt_sigreturn: restore the context saved at delivery. */
-static void sig_restore(struct ove_lnx_frame *f, const ove_lnx_proc_t *proc)
+static void sig_restore(struct lxp_frame *f, const lxp_proc_t *proc)
 {
 	struct sig_save_s *sv = &g_sig_save[slot_of(proc)];
 	if (!sv->active)
@@ -419,33 +419,33 @@ static void sig_restore(struct ove_lnx_frame *f, const ove_lnx_proc_t *proc)
 }
 
 /* ---- the syscall dispatch body --------------------------------------------- */
-void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
+void lxp_dispatch(struct lxp_frame *f, lxp_proc_t *proc)
 {
 	long nr = (long)(int32_t)f->r[7];
 
 	/* Track the tty ISIG mode so a console ^C knows whether to raise SIGINT
 	 * (canonical) or pass ^C through (the shell's raw line editor). */
-	if (nr == OVE_LNX_NR_ioctl) {
+	if (nr == LXP_NR_ioctl) {
 		unsigned long cmd = f->r[1];
-		if (cmd == OVE_LNX_TCSETS || cmd == OVE_LNX_TCSETSW || cmd == OVE_LNX_TCSETSF) {
-			const ove_lnx_termios *t = (const ove_lnx_termios *)(uintptr_t)f->r[2];
+		if (cmd == LXP_TCSETS || cmd == LXP_TCSETSW || cmd == LXP_TCSETSF) {
+			const lxp_termios *t = (const lxp_termios *)(uintptr_t)f->r[2];
 			if (t)
-				g_tty_isig = (t->c_lflag & OVE_LNX_ISIG) ? 1 : 0;
+				g_tty_isig = (t->c_lflag & LXP_ISIG) ? 1 : 0;
 		}
 	}
-	if (nr == OVE_LNX_NR_kill || nr == OVE_LNX_NR_tkill || nr == OVE_LNX_NR_tgkill) {
-		int sig = (nr == OVE_LNX_NR_tgkill) ? (int)f->r[2] : (int)f->r[1];
+	if (nr == LXP_NR_kill || nr == LXP_NR_tkill || nr == LXP_NR_tgkill) {
+		int sig = (nr == LXP_NR_tgkill) ? (int)f->r[2] : (int)f->r[1];
 		int target = (int)f->r[0];
 		/* halt/poweroff/reboot signal a shutdown to init (pid 1) — SIGUSR1/SIGUSR2/
 		 * SIGTERM respectively. init is parked and can't receive it, so honor a
 		 * shutdown signal to pid 1 directly as a system halt. */
-		if (nr == OVE_LNX_NR_kill && target == 1 && (sig == 10 || sig == 12 || sig == 15)) {
-			g_ove_lnx_halt = 1;
+		if (nr == LXP_NR_kill && target == 1 && (sig == 10 || sig == 12 || sig == 15)) {
+			g_lxp_halt = 1;
 			f->r[0] = 0; /* kill() succeeds; the run loop stops next iteration */
 			return;
 		}
 		/* Self-signal (tkill/tgkill, or kill to own pid) is delivered inline. */
-		if (nr != OVE_LNX_NR_kill || target == proc->pid) {
+		if (nr != LXP_NR_kill || target == proc->pid) {
 			deliver_signal(f, proc, sig, 0);
 			return;
 		}
@@ -453,9 +453,9 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 		 * delivered at the target's next syscall boundary (running) or by the
 		 * coordinator (parked in sleep/wait/pipe). pid<=0 (process group / all) is
 		 * approximated as "every other live userspace proc". */
-		f->r[0] = -OVE_LNX_ESRCH;
-		for (int t = 0; t < OVE_LNX_NSLOT; t++) {
-			ove_lnx_proc_t *tp = &g_ove_lnx_proc[t];
+		f->r[0] = -LXP_ESRCH;
+		for (int t = 0; t < LXP_NSLOT; t++) {
+			lxp_proc_t *tp = &g_lxp_proc[t];
 			if (!tp->alive || tp == proc || tp->pid <= 1)
 				continue;
 			if (target > 0 && tp->pid != target)
@@ -470,18 +470,18 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 			g_eng->event_post();
 		return;
 	}
-	if (nr == OVE_LNX_NR_rt_sigreturn || nr == OVE_LNX_NR_sigreturn) {
+	if (nr == LXP_NR_rt_sigreturn || nr == LXP_NR_sigreturn) {
 		sig_restore(f, proc);
 		return;
 	}
 	/* fork/vfork/clone: capture the parent's resume context and ask the coordinator
 	 * to spawn a child. The parent is suspended (no thread) through the vfork window
 	 * (NOMMU shares the image) until the child execs into its own region or exits. */
-	if (nr == OVE_LNX_NR_vfork || nr == OVE_LNX_NR_fork || nr == OVE_LNX_NR_clone) {
+	if (nr == LXP_NR_vfork || nr == LXP_NR_fork || nr == LXP_NR_clone) {
 		/* clone(CLONE_VM) is a pthread: the child shares the parent's region for life and
 		 * runs on its own stack (clone arg r1), and the parent CO-RUNS (gets the child tid)
 		 * — unlike fork/vfork, which suspend the parent until the child execs/exits. */
-		if (nr == OVE_LNX_NR_clone && ((uint32_t)f->r[0] & OVE_LNX_CLONE_VM)) {
+		if (nr == LXP_NR_clone && ((uint32_t)f->r[0] & LXP_CLONE_VM)) {
 			proc->clone_is_thread = 1;
 			proc->clone_child_stack = f->r[1];
 		}
@@ -491,11 +491,11 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 		return;
 	}
 
-	long r = ove_lnx_syscall(proc, nr, (int32_t)f->r[0], (int32_t)f->r[1], (int32_t)f->r[2],
+	long r = lxp_syscall(proc, nr, (int32_t)f->r[0], (int32_t)f->r[1], (int32_t)f->r[2],
 				 (int32_t)f->r[3], (int32_t)f->r[4], (int32_t)f->r[5]);
 	/* Suppress the console diagnostic for syscalls we deliberately don't implement but the guest
 	 * probes and gracefully falls back on: getdents(141)→getdents64, socket(281)→no networking. */
-	if (r == -OVE_LNX_ENOSYS && g_cfg && g_cfg->on_enosys && nr != 141 && nr != 281)
+	if (r == -LXP_ENOSYS && g_cfg && g_cfg->on_enosys && nr != 141 && nr != 281)
 		g_cfg->on_enosys(nr);
 	/* nanosleep / blocking wait4: the syscall set the pending flag; capture the
 	 * post-svc context (resume the SAME image after the svc) and park. The
@@ -535,7 +535,7 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 /* Load an FDPIC ELF into region ridx + set up slot sidx's proc, then spawn it. @p remote_exec:
  * the image is a RAM staging buffer (a program off the remote mount), so the exec's own text is
  * copied into the region and the region is mapped executable (RWX) — gated by the caller. */
-static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const uint8_t *data,
+static int launch(const struct lxp_engine *eng, int sidx, int ridx, const uint8_t *data,
 		  size_t len, int pid, int ppid, int argc, const char *const argv[], int remote_exec)
 {
 	uint8_t *region = eng->region(ridx);
@@ -547,9 +547,9 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	/* The loader reads the FDPIC ELF from `data` — on the STM32F746 that points into the
 	 * QUADSPI-mapped NOR (0x90000000).  Correctness of that read is a memory-attribute concern,
 	 * not a timing one: the coordinator reads the NOR through a bounded, non-cacheable MPU region
-	 * (ove_lnx_rootfs_window), so no D-cache burst or speculative prefetch can garble it and a
+	 * (lxp_rootfs_window), so no D-cache burst or speculative prefetch can garble it and a
 	 * context switch mid-load is harmless.  No preemption masking needed. */
-	int lrc = ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0,
+	int lrc = ove_loader_load_fdpic(&prog, data, len, region, LXP_PROG_REGION_SIZE, 0,
 					remote_exec);
 	if (lrc != OVE_OK)
 		return -1;
@@ -566,14 +566,14 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	if (dynamic) {
 		const uint8_t *ld_data = NULL;
 		size_t ld_len = 0;
-		if (ove_lnx_rootfs_resolve(g_cfg->rootfs, g_cfg->rootfs_count,
+		if (lxp_rootfs_resolve(g_cfg->rootfs, g_cfg->rootfs_count,
 					   "/lib/ld-uClibc.so.0", &ld_data, &ld_len) != 0 ||
 		    !ld_data)
 			return -1; /* no interpreter in the rootfs */
 		uintptr_t ld_base = (uintptr_t)region + ((prog.region_used + 15u) & ~15u);
 		ove_flat_t ld;
 		int ldrc = ove_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
-						 OVE_LNX_PROG_REGION_SIZE -
+						 LXP_PROG_REGION_SIZE -
 							 (size_t)(ld_base - (uintptr_t)region),
 						 1, 0); /* ld.so text is XIP from the rootfs (no copy) */
 		if (ldrc != OVE_OK)
@@ -595,13 +595,13 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	}
 
 	uint8_t *rw = region + ((prog.region_used + 15u) & ~15u);
-	uint8_t *rw_end = region + OVE_LNX_PROG_REGION_SIZE;
+	uint8_t *rw_end = region + LXP_PROG_REGION_SIZE;
 	/* A dynamic proc's arena lives in the engine's PSRAM dyn_pool (ld.so mmaps libc.so
 	 * ~500K from it); a static FDPIC proc uses the in-region 96K arena. The stack always sits
 	 * in-region above the loaded image(s). */
 	uint8_t *arena_mem = rw;
-	size_t arena_sz = OVE_LNX_PROG_ARENA_SIZE;
-	uint8_t *stack_lo = rw + OVE_LNX_PROG_ARENA_SIZE;
+	size_t arena_sz = LXP_PROG_ARENA_SIZE;
+	uint8_t *stack_lo = rw + LXP_PROG_ARENA_SIZE;
 	if (dynamic) {
 		if (!eng->dyn_pool)
 			return -1; /* this engine has no room to host a dynamic proc */
@@ -609,29 +609,29 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 		stack_lo = rw; /* the region tail is the stack; the arena is in PSRAM */
 	}
 	ove_arena_init(&g_arenas[ridx], arena_mem, arena_sz);
-	ove_lnx_proc_init(&g_ove_lnx_proc[sidx], &g_arenas[ridx], 0x8000);
-	g_ove_lnx_proc[sidx].write_fn = g_cfg->write_fn;
-	g_ove_lnx_proc[sidx].read_fn = g_cfg->read_fn;
-	g_ove_lnx_proc[sidx].console_poll = g_cfg->console_poll;
-	g_ove_lnx_proc[sidx].io_ctx = g_cfg->io_ctx;
-	g_ove_lnx_proc[sidx].pid = pid;
-	g_ove_lnx_proc[sidx].ppid = ppid;
+	lxp_proc_init(&g_lxp_proc[sidx], &g_arenas[ridx], 0x8000);
+	g_lxp_proc[sidx].write_fn = g_cfg->write_fn;
+	g_lxp_proc[sidx].read_fn = g_cfg->read_fn;
+	g_lxp_proc[sidx].console_poll = g_cfg->console_poll;
+	g_lxp_proc[sidx].io_ctx = g_cfg->io_ctx;
+	g_lxp_proc[sidx].pid = pid;
+	g_lxp_proc[sidx].ppid = ppid;
 	/* Concurrent model: this slot is now a live process owning region ridx. */
-	g_ove_lnx_proc[sidx].alive = 1;
-	g_ove_lnx_proc[sidx].region = ridx;
-	g_ove_lnx_proc[sidx].region_owner = 1;
+	g_lxp_proc[sidx].alive = 1;
+	g_lxp_proc[sidx].region = ridx;
+	g_lxp_proc[sidx].region_owner = 1;
 	/* access_ok bounds: this proc's own writable memory (image region + dynamic arena). The syscall
 	 * layer rejects any user pointer outside these (+ the shared RO rootfs for reads). */
-	g_ove_lnx_proc[sidx].region_lo = (uintptr_t)region;
-	g_ove_lnx_proc[sidx].region_hi = (uintptr_t)region + OVE_LNX_PROG_REGION_SIZE;
-	g_ove_lnx_proc[sidx].pool_lo = (uintptr_t)arena_mem;
-	g_ove_lnx_proc[sidx].pool_hi = (uintptr_t)arena_mem + arena_sz;
-	g_ove_lnx_proc[sidx].is_fdpic = prog.is_fdpic;
-	g_ove_lnx_proc[sidx].is_dynamic = dynamic; /* arena/libc RW data lives in the dyn_pool */
-	g_ove_lnx_proc[sidx].stack_lo = (uintptr_t)stack_lo; /* writable-data / stack boundary (snapshot) */
-	g_ove_lnx_proc[sidx].snap_region = -1;		     /* no vfork snapshot outstanding */
-	g_ove_lnx_proc[sidx].umask = 022; /* standard default; a fork inherits it via the struct copy */
-	g_ove_lnx_proc[sidx].vfork_parent_slot = -1;
+	g_lxp_proc[sidx].region_lo = (uintptr_t)region;
+	g_lxp_proc[sidx].region_hi = (uintptr_t)region + LXP_PROG_REGION_SIZE;
+	g_lxp_proc[sidx].pool_lo = (uintptr_t)arena_mem;
+	g_lxp_proc[sidx].pool_hi = (uintptr_t)arena_mem + arena_sz;
+	g_lxp_proc[sidx].is_fdpic = prog.is_fdpic;
+	g_lxp_proc[sidx].is_dynamic = dynamic; /* arena/libc RW data lives in the dyn_pool */
+	g_lxp_proc[sidx].stack_lo = (uintptr_t)stack_lo; /* writable-data / stack boundary (snapshot) */
+	g_lxp_proc[sidx].snap_region = -1;		     /* no vfork snapshot outstanding */
+	g_lxp_proc[sidx].umask = 022; /* standard default; a fork inherits it via the struct copy */
+	g_lxp_proc[sidx].vfork_parent_slot = -1;
 	/* comm = argv[0] basename (strip the login-shell leading '-') for ps/top. */
 	{
 		const char *a0 = (argc > 0 && argv && argv[0]) ? argv[0] : "?";
@@ -642,27 +642,27 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 			if (*s == '/')
 				base = s + 1;
 		size_t cl = strlen(base);
-		if (cl >= sizeof(g_ove_lnx_proc[sidx].comm))
-			cl = sizeof(g_ove_lnx_proc[sidx].comm) - 1;
-		memcpy(g_ove_lnx_proc[sidx].comm, base, cl);
-		g_ove_lnx_proc[sidx].comm[cl] = '\0';
+		if (cl >= sizeof(g_lxp_proc[sidx].comm))
+			cl = sizeof(g_lxp_proc[sidx].comm) - 1;
+		memcpy(g_lxp_proc[sidx].comm, base, cl);
+		g_lxp_proc[sidx].comm[cl] = '\0';
 	}
-	ove_lnx_proc_set_rootfs(&g_ove_lnx_proc[sidx], g_cfg->rootfs, g_cfg->rootfs_count);
-	void *sp = ove_lnx_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL,
+	lxp_proc_set_rootfs(&g_lxp_proc[sidx], g_cfg->rootfs, g_cfg->rootfs_count);
+	void *sp = lxp_setup_stack(stack_lo, (size_t)(rw_end - stack_lo), argc, argv, NULL,
 				       prog.is_fdpic, prog.phdr, prog.phnum, at_entry, at_base);
 	if (!sp)
 		return -1;
 	/* Publish the program's runtime segment bases for the GDB source-level-debug helper. */
-	g_ove_lnx_dbg[sidx].text_base = prog.text_base;
-	g_ove_lnx_dbg[sidx].data_base = prog.data_base;
-	g_ove_lnx_dbg[sidx].entry = at_entry;
-	g_ove_lnx_dbg[sidx].dynamic = prog.dynamic; /* _DYNAMIC → DT_DEBUG → ld.so's link-map chain */
-	g_ove_lnx_dbg[sidx].interp_base = at_base;   /* ld.so text base (0 if static) */
+	g_lxp_dbg[sidx].text_base = prog.text_base;
+	g_lxp_dbg[sidx].data_base = prog.data_base;
+	g_lxp_dbg[sidx].entry = at_entry;
+	g_lxp_dbg[sidx].dynamic = prog.dynamic; /* _DYNAMIC → DT_DEBUG → ld.so's link-map chain */
+	g_lxp_dbg[sidx].interp_base = at_base;   /* ld.so text base (0 if static) */
 	/* P3: a fresh image in this slot inherits no device mmap. Clear the dev_map ranges
 	 * (they gate user_ok) and tear down any framebuffer region a prior occupant of this
 	 * slot installed (map_device with size 0), so an exec/relaunch never leaks it. */
-	g_ove_lnx_proc[sidx].dev_map_lo[0] = g_ove_lnx_proc[sidx].dev_map_hi[0] = 0;
-	g_ove_lnx_proc[sidx].dev_map_lo[1] = g_ove_lnx_proc[sidx].dev_map_hi[1] = 0;
+	g_lxp_proc[sidx].dev_map_lo[0] = g_lxp_proc[sidx].dev_map_hi[0] = 0;
+	g_lxp_proc[sidx].dev_map_lo[1] = g_lxp_proc[sidx].dev_map_hi[1] = 0;
 	if (eng->map_device)
 		eng->map_device(sidx, 0, 0, 0);
 	return eng->spawn_launch(sidx, ridx, &prog, (void *)pc, sp, stack_lo);
@@ -671,17 +671,17 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 /* A child (cpid, status) exited: hand it to its parent (ppid). Wake a parent blocked
  * in wait4 (resume returning cpid + write *status), else queue the zombie for a later
  * wait4. Decrements the parent's live-children count either way. */
-static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid, int status)
+static void reap_to_parent(const struct lxp_engine *eng, int ppid, int cpid, int status)
 {
 	int pslot = -1;
-	for (int t = 0; t < OVE_LNX_NSLOT; t++)
-		if (g_ove_lnx_proc[t].alive && g_ove_lnx_proc[t].pid == ppid) {
+	for (int t = 0; t < LXP_NSLOT; t++)
+		if (g_lxp_proc[t].alive && g_lxp_proc[t].pid == ppid) {
 			pslot = t;
 			break;
 		}
 	if (pslot < 0)
 		return;
-	ove_lnx_proc_t *par = &g_ove_lnx_proc[pslot];
+	lxp_proc_t *par = &g_lxp_proc[pslot];
 	if (par->live_children > 0)
 		par->live_children--;
 	if (par->wait_pending && (par->wait_pid <= 0 || par->wait_pid == cpid)) {
@@ -695,7 +695,7 @@ static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid,
 			*(int *)(uintptr_t)par->wait_status_p = raw;
 		}
 		par->wait_pending = 0;
-		if (g_ove_lnx_used[pslot]) /* abort the parked-waiter spin thread first */
+		if (g_lxp_used[pslot]) /* abort the parked-waiter spin thread first */
 			eng->abort_slot(pslot);
 		eng->spawn_resume(pslot, par->region, &g_ctx[pslot], cpid);
 	} else {
@@ -704,13 +704,13 @@ static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid,
 		 * later wait4 and raise SIGCHLD: the parent's handler runs, wait4()s the zombie, and
 		 * closes the session / reaps the connection. Default action is IGNORE, so a parent
 		 * without a handler is unaffected. Coalesce onto a free pending slot (as SIGALRM). */
-		if (par->child_count < OVE_LNX_MAX_CHILD) {
+		if (par->child_count < LXP_MAX_CHILD) {
 			par->child_pid[par->child_count] = cpid;
 			par->child_status[par->child_count] = status;
 			par->child_count++;
 		}
 		if (!par->pending_sig)
-			par->pending_sig = OVE_LNX_SIGCHLD;
+			par->pending_sig = LXP_SIGCHLD;
 	}
 }
 
@@ -719,15 +719,15 @@ static void reap_to_parent(const struct ove_lnx_engine *eng, int ppid, int cpid,
  * frame (to resume with `ret` = -EINTR), then resume the proc INTO its handler; the handler's
  * sa_restorer -> rt_sigreturn restores the saved frame and the syscall returns -EINTR. SIG_IGN
  * just resumes with `ret`; SIG_DFL terminates (the EV_EXIT pass reaps it). */
-static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
-				  ove_lnx_proc_t *proc, int sig, long ret)
+static void deliver_signal_parked(const struct lxp_engine *eng, int slot,
+				  lxp_proc_t *proc, int sig, long ret)
 {
 	uintptr_t h = proc->sig_handler[sig];
-	if (h == OVE_LNX_SIG_IGN || (h == OVE_LNX_SIG_DFL && sig == OVE_LNX_SIGCHLD)) {
+	if (h == LXP_SIG_IGN || (h == LXP_SIG_DFL && sig == LXP_SIGCHLD)) {
 		eng->spawn_resume(slot, proc->region, &g_ctx[slot], ret); /* IGN or SIGCHLD-default */
 		return;
 	}
-	if (h == OVE_LNX_SIG_DFL) {
+	if (h == LXP_SIG_DFL) {
 		proc->exited = 1;
 		proc->exit_status = 128 + sig;
 		return;
@@ -770,8 +770,8 @@ static int region_free(int r, const int *rowner)
 {
 	if (rowner[r] >= 0)
 		return 0;
-	for (int s = 0; s < OVE_LNX_NSLOT; s++)
-		if (g_ove_lnx_proc[s].alive && g_ove_lnx_proc[s].region == r)
+	for (int s = 0; s < LXP_NSLOT; s++)
+		if (g_lxp_proc[s].alive && g_lxp_proc[s].region == r)
 			return 0; /* a live proc runs here despite rowner<0 — do not trample it */
 	return 1;
 }
@@ -781,16 +781,16 @@ static int region_free(int r, const int *rowner)
  * dropbear's session child resets SIGCHLD to SIG_DFL, which uClibc-LinuxThreads records in a table in
  * the shared libc data) — corrupting the suspended parent. So we snapshot the parent's writable data
  * into a SPARE region at fork and restore it before the parent resumes. Storage is free: the spare
- * region's own region+dyn_pool exactly mirror the parent's (both OVE_LNX_PROG_*), and the child needs
+ * region's own region+dyn_pool exactly mirror the parent's (both LXP_PROG_*), and the child needs
  * that region for its eventual exec anyway. Only the writable image data [region, stack_lo) and the
  * dyn_pool are copied (the stack is skipped — the child uses frames below the shared sp, and the
  * parent's frames above are untouched); g_arenas[] allocator metadata is saved separately.
  * Returns the reserved scratch region index, or -1 if none is free (→ share, as before). */
-static int vfork_snapshot(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par, int child_slot,
+static int vfork_snapshot(const struct lxp_engine *eng, lxp_proc_t *par, int child_slot,
 			  int *rowner)
 {
 	int rsnap = -1;
-	for (int r = 0; r < OVE_LNX_NREG; r++)
+	for (int r = 0; r < LXP_NREG; r++)
 		if (region_free(r, rowner)) {
 			rsnap = r;
 			break;
@@ -801,12 +801,12 @@ static int vfork_snapshot(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par,
 	size_t dlen = par->stack_lo - (uintptr_t)pr; /* in-region writable data, below the stack */
 	/* The coordinator reads guest SDRAM through its UNCACHED view; clean the parent's dirty cache
 	 * lines to SDRAM first so the snapshot captures its live data (not stale SDRAM). */
-	ove_lnx_cache_clean(pr, dlen);
+	lxp_cache_clean(pr, dlen);
 	memcpy(eng->region(rsnap), pr, dlen);
 	if (par->is_dynamic && eng->dyn_pool) {
 		size_t ds = 0;
 		uint8_t *pdp = eng->dyn_pool(par->region, &ds);
-		ove_lnx_cache_clean(pdp, ds);
+		lxp_cache_clean(pdp, ds);
 		memcpy(eng->dyn_pool(rsnap, NULL), pdp, ds);
 	}
 	g_snap_arena[child_slot] = g_arenas[par->region]; /* allocator metadata (coordinator memory) */
@@ -816,7 +816,7 @@ static int vfork_snapshot(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par,
 
 /* Undo a vfork child's writes to the shared region before the parent resumes: copy the snapshot back
  * over the parent's region + dyn_pool and restore its arena metadata. */
-static void vfork_restore(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par, int rsnap,
+static void vfork_restore(const struct lxp_engine *eng, lxp_proc_t *par, int rsnap,
 			  int child_slot)
 {
 	uint8_t *pr = eng->region(par->region);
@@ -827,55 +827,55 @@ static void vfork_restore(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par,
 	 * The parent's own lines were already clean (vfork_snapshot flushed them), so only the child's
 	 * writes are dropped. A second invalidate after the write drains the Device write buffer (DSB)
 	 * and guarantees the parent refills from the restored SDRAM on resume. */
-	ove_lnx_cache_invalidate(pr, dlen);
+	lxp_cache_invalidate(pr, dlen);
 	memcpy(pr, eng->region(rsnap), dlen);
-	ove_lnx_cache_invalidate(pr, dlen);
+	lxp_cache_invalidate(pr, dlen);
 	if (par->is_dynamic && eng->dyn_pool) {
 		size_t ds = 0;
 		uint8_t *pdp = eng->dyn_pool(par->region, &ds);
-		ove_lnx_cache_invalidate(pdp, ds);
+		lxp_cache_invalidate(pdp, ds);
 		memcpy(pdp, eng->dyn_pool(rsnap, NULL), ds);
-		ove_lnx_cache_invalidate(pdp, ds);
+		lxp_cache_invalidate(pdp, ds);
 	}
 	g_arenas[par->region] = g_snap_arena[child_slot];
 }
 
-int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_config_t *cfg,
+int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 		       const char *path, int argc, const char *const argv[])
 {
 	if (!eng || !cfg || !cfg->rootfs || !path || argc < 1 || !argv)
-		return OVE_LNX_RUN_ELAUNCH;
+		return LXP_RUN_ELAUNCH;
 	g_cfg = cfg;
 	g_eng = eng;
-	g_ove_lnx_rootfs_lo = NULL; /* the cpio span — a seam's svc discrimination treats a cpio PC */
-	g_ove_lnx_rootfs_hi = NULL; /* as a program svc (the shared in-place text runs from here) */
+	g_lxp_rootfs_lo = NULL; /* the cpio span — a seam's svc discrimination treats a cpio PC */
+	g_lxp_rootfs_hi = NULL; /* as a program svc (the shared in-place text runs from here) */
 	for (int i = 0; i < cfg->rootfs_count; i++) {
-		const ove_lnx_file_t *f = &cfg->rootfs[i];
+		const lxp_file_t *f = &cfg->rootfs[i];
 		if (!f->data)
 			continue;
-		if (!g_ove_lnx_rootfs_lo || f->data < g_ove_lnx_rootfs_lo)
-			g_ove_lnx_rootfs_lo = f->data;
-		if (!g_ove_lnx_rootfs_hi || f->data + f->size > g_ove_lnx_rootfs_hi)
-			g_ove_lnx_rootfs_hi = f->data + f->size;
+		if (!g_lxp_rootfs_lo || f->data < g_lxp_rootfs_lo)
+			g_lxp_rootfs_lo = f->data;
+		if (!g_lxp_rootfs_hi || f->data + f->size > g_lxp_rootfs_hi)
+			g_lxp_rootfs_hi = f->data + f->size;
 	}
-	for (int i = 0; i < OVE_LNX_NSLOT; i++) {
-		g_ove_lnx_used[i] = 0;
-		g_ove_lnx_proc[i].alive = 0;
+	for (int i = 0; i < LXP_NSLOT; i++) {
+		g_lxp_used[i] = 0;
+		g_lxp_proc[i].alive = 0;
 	}
 	g_pending_sig = 0;
 	g_tty_isig = 1;
-	ove_lnx_stats_reset();
-	for (int i = 0; i < OVE_LNX_NSLOT; i++)
+	lxp_stats_reset();
+	for (int i = 0; i < LXP_NSLOT; i++)
 		g_sig_save[i].active = 0;
 #if defined(CONFIG_OVE_LINUX_DEV)
 	/* Register the Kconfig-enabled /dev class drivers (fb, input, ...) on this
 	 * coordinator thread, where blocking HAL init (ove_fb_init, ove_i2c_create) is legal. */
-	ove_lnx_dev_autoreg_all();
+	lxp_dev_autoreg_all();
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
 	/* Connect the remote-fs mount (9P Tversion/Tattach). Coordinator thread, where blocking
 	 * init is legal; a down server is non-fatal — the mount reconnects lazily. */
-	ove_lnx_netfs_init();
+	lxp_netfs_init();
 #endif
 
 	int bb = -1;
@@ -885,31 +885,31 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			break;
 		}
 	if (bb < 0 || !cfg->rootfs[bb].data)
-		return OVE_LNX_RUN_ELAUNCH;
+		return LXP_RUN_ELAUNCH;
 
 	/* Concurrent process model: the run loop COORDINATES the live process SET
-	 * (g_ove_lnx_proc[*].alive). Each live proc owns a region + an RTOS thread for
+	 * (g_lxp_proc[*].alive). Each live proc owns a region + an RTOS thread for
 	 * its lifetime; a vfork parent resumes the instant its child execs into its own
 	 * region (or exits) so the two co-run. rowner[r] = the slot owning region r. */
-	int rowner[OVE_LNX_NREG]; /* slot that owns each region, or -1 */
-	for (int r = 0; r < OVE_LNX_NREG; r++)
+	int rowner[LXP_NREG]; /* slot that owns each region, or -1 */
+	for (int r = 0; r < LXP_NREG; r++)
 		rowner[r] = -1;
 
-	g_ove_lnx_active = 1;
-	g_ove_lnx_halt = 0;
+	g_lxp_active = 1;
+	g_lxp_halt = 0;
 	rowner[0] = 0;
 	if (launch(eng, 0, 0, cfg->rootfs[bb].data, cfg->rootfs[bb].size, 1, 0, argc, argv, 0) != 0) {
-		g_ove_lnx_active = 0;
-		return OVE_LNX_RUN_ELAUNCH;
+		g_lxp_active = 0;
+		return LXP_RUN_ELAUNCH;
 	}
-	g_ove_lnx_proc[0].exec_file_idx = bb; /* the running image, for /proc/self/exe re-exec */
+	g_lxp_proc[0].exec_file_idx = bb; /* the running image, for /proc/self/exe re-exec */
 
-	int rc = OVE_LNX_RUN_ETIMEOUT;
+	int rc = LXP_RUN_ETIMEOUT;
 	int next_pid = 2;
 	int idle = 0;
 	uint64_t last_refresh_us = 0;
 	for (;;) {
-		if (g_ove_lnx_halt) { /* reboot(2)/poweroff: stop the whole system */
+		if (g_lxp_halt) { /* reboot(2)/poweroff: stop the whole system */
 			rc = 0;
 			break;
 		}
@@ -933,8 +933,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			EV_CONSOLEWAIT
 		};
 		eng->crit_enter();
-		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
-			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
+		for (int s = 0; s < LXP_NSLOT; s++) {
+			lxp_proc_t *p = &g_lxp_proc[s];
 			if (!p->alive)
 				continue;
 			if (p->exited) {
@@ -959,46 +959,46 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_SLEEP;
 				break;
 			}
-			if (p->wait_pending && g_ove_lnx_used[s]) {
+			if (p->wait_pending && g_lxp_used[s]) {
 				es = s;
 				et = EV_WAITPARK;
 				break;
 			}
-			if (p->pipe_wait && g_ove_lnx_used[s]) {
+			if (p->pipe_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_PIPE;
 				break;
 			}
-			if (p->dev_wait && g_ove_lnx_used[s]) {
+			if (p->dev_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_DEVWAIT;
 				break;
 			}
-			if (p->sock_wait && g_ove_lnx_used[s]) {
+			if (p->sock_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_SOCKWAIT;
 				break;
 			}
 #if defined(CONFIG_OVE_LINUX_NETFS)
-			if (p->netfs_wait && g_ove_lnx_used[s]) {
+			if (p->netfs_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_NETFSWAIT;
 				break;
 			}
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
-			if (p->pty_wait && g_ove_lnx_used[s]) {
+			if (p->pty_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_PTYWAIT;
 				break;
 			}
 #endif
-			if (p->sigsuspend_pending && g_ove_lnx_used[s]) {
+			if (p->sigsuspend_pending && g_lxp_used[s]) {
 				es = s;
 				et = EV_SIGSUSPEND;
 				break;
 			}
-			if (p->console_wait && g_ove_lnx_used[s]) {
+			if (p->console_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_CONSOLEWAIT;
 				break;
@@ -1008,29 +1008,29 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 		if (et ==
 		    EV_FORK) { /* spawn a child sharing the parent's region; suspend the parent. */
-			ove_lnx_proc_t *par = &g_ove_lnx_proc[es];
+			lxp_proc_t *par = &g_lxp_proc[es];
 			int c = -1;
-			for (int s = 0; s < OVE_LNX_NSLOT; s++)
-				if (!g_ove_lnx_proc[s].alive) {
+			for (int s = 0; s < LXP_NSLOT; s++)
+				if (!g_lxp_proc[s].alive) {
 					c = s;
 					break;
 				}
 			if (c < 0) { /* no free slot: fail the fork (parent gets -ENOMEM). */
 				eng->abort_slot(es);
-				eng->spawn_resume(es, par->region, &g_ctx[es], -OVE_LNX_ENOMEM);
+				eng->spawn_resume(es, par->region, &g_ctx[es], -LXP_ENOMEM);
 				idle = 0;
 				continue;
 			}
-			ove_lnx_proc_t *ch = &g_ove_lnx_proc[c];
+			lxp_proc_t *ch = &g_lxp_proc[c];
 			*ch = *par; /* vfork shares the image + region */
 #if defined(CONFIG_OVE_LINUX_DEV)
-			ove_lnx_dev_fork_inherit(ch); /* the child shares the parent's device opens */
+			lxp_dev_fork_inherit(ch); /* the child shares the parent's device opens */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-			ove_lnx_sock_fork_inherit(ch); /* the child shares the parent's socket opens */
+			lxp_sock_fork_inherit(ch); /* the child shares the parent's socket opens */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-			ove_lnx_netfs_fork_inherit(ch); /* the child shares the parent's remote-fs opens */
+			lxp_netfs_fork_inherit(ch); /* the child shares the parent's remote-fs opens */
 #endif
 			ch->pid = next_pid++;
 			ch->ppid = par->pid;
@@ -1085,20 +1085,20 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				 * (-ENOMEM) rather than share the parent's region and let the child
 				 * corrupt it; the caller sees a clean fork failure, not a fault. */
 #if defined(CONFIG_OVE_LINUX_DEV)
-				ove_lnx_dev_proc_exit(ch); /* undo the fd fork-inherit refcounts */
+				lxp_dev_proc_exit(ch); /* undo the fd fork-inherit refcounts */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-				ove_lnx_sock_proc_exit(ch);
+				lxp_sock_proc_exit(ch);
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-				ove_lnx_netfs_proc_exit(ch);
+				lxp_netfs_proc_exit(ch);
 #endif
 				ch->alive = 0;
-				g_ove_lnx_used[c] = 0;
+				g_lxp_used[c] = 0;
 				if (par->live_children > 0)
 					par->live_children--;
 				eng->abort_slot(es);
-				eng->spawn_resume(es, par->region, &g_ctx[es], -OVE_LNX_ENOMEM);
+				eng->spawn_resume(es, par->region, &g_ctx[es], -LXP_ENOMEM);
 				idle = 0;
 				continue;
 			}
@@ -1111,10 +1111,10 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 		if (et ==
 		    EV_EXEC) { /* the child gets its own region → resume any vfork parent NOW. */
-			ove_lnx_proc_t *p = &g_ove_lnx_proc[es];
+			lxp_proc_t *p = &g_lxp_proc[es];
 			int idx = p->exec_file_idx, eargc = p->exec_argc;
-			static char args[OVE_LNX_EXEC_ARGBUF];
-			static const char *ptrs[OVE_LNX_EXEC_MAXARGS + 1];
+			static char args[LXP_EXEC_ARGBUF];
+			static const char *ptrs[LXP_EXEC_MAXARGS + 1];
 			size_t off = 0;
 			for (int j = 0; j < eargc; j++) {
 				size_t n = strlen(p->exec_argv[j]) + 1;
@@ -1128,7 +1128,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			 * a region. No snapshot (region-pressure fallback) → find a free region as before. */
 			int nr = p->snap_region;
 			if (nr < 0)
-				for (int r = 0; r < OVE_LNX_NREG; r++)
+				for (int r = 0; r < LXP_NREG; r++)
 					if (region_free(r, rowner)) {
 						nr = r;
 						break;
@@ -1140,9 +1140,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				if (p->region_owner && rowner[p->region] == es)
 					rowner[p->region] = -1;
 				p->alive = 0;
-				g_ove_lnx_used[es] = 0;
+				g_lxp_used[es] = 0;
 				if (vp >= 0)
-					eng->spawn_resume(vp, g_ove_lnx_proc[vp].region, &g_ctx[vp],
+					eng->spawn_resume(vp, g_lxp_proc[vp].region, &g_ctx[vp],
 							  pid);
 				reap_to_parent(eng, ppid, pid, 139);
 				idle = 0;
@@ -1154,13 +1154,13 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				 * parent runs again (the args were already copied out into `args` above, so
 				 * restoring over them is safe). */
 				if (p->snap_region >= 0)
-					vfork_restore(eng, &g_ove_lnx_proc[vp], p->snap_region, es);
+					vfork_restore(eng, &g_lxp_proc[vp], p->snap_region, es);
 				p->vfork_parent_slot = -1;
-				eng->spawn_resume(vp, g_ove_lnx_proc[vp].region, &g_ctx[vp], pid);
+				eng->spawn_resume(vp, g_lxp_proc[vp].region, &g_ctx[vp], pid);
 			}
 			/* fds + cwd survive execve: preserve across the relaunch (launch re-inits). */
-			ove_lnx_fd_t saved_fds[OVE_LNX_MAX_FDS];
-			char saved_cwd[OVE_LNX_PATH_MAX];
+			lxp_fd_t saved_fds[LXP_MAX_FDS];
+			char saved_cwd[LXP_PATH_MAX];
 			memcpy(saved_fds, p->fds, sizeof(saved_fds));
 			memcpy(saved_cwd, p->cwd, sizeof(saved_cwd));
 			if (p->region_owner &&
@@ -1174,23 +1174,23 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 			/* A program off the remote mount: its bytes are in the netfs exec staging
 			 * buffer (RAM), not the rootfs; launch copies its text into the region (RWX). */
-			if (idx == OVE_LNX_NETFS_EXEC_SENTINEL) {
-				img_data = ove_lnx_netfs_exec_image(&img_size);
+			if (idx == LXP_NETFS_EXEC_SENTINEL) {
+				img_data = lxp_netfs_exec_image(&img_size);
 				rexec = 1;
 			}
 #endif
 			if (!img_data ||
 			    launch(eng, es, nr, img_data, img_size, pid, ppid, eargc, ptrs, rexec) != 0) {
 				rowner[nr] = -1;
-				g_ove_lnx_proc[es].alive = 0;
-				g_ove_lnx_used[es] = 0;
+				g_lxp_proc[es].alive = 0;
+				g_lxp_used[es] = 0;
 				reap_to_parent(eng, ppid, pid, 127);
 				idle = 0;
 				continue;
 			}
-			memcpy(g_ove_lnx_proc[es].fds, saved_fds, sizeof(saved_fds));
-			memcpy(g_ove_lnx_proc[es].cwd, saved_cwd, sizeof(saved_cwd));
-			g_ove_lnx_proc[es].exec_file_idx = idx; /* remember the running image so a
+			memcpy(g_lxp_proc[es].fds, saved_fds, sizeof(saved_fds));
+			memcpy(g_lxp_proc[es].cwd, saved_cwd, sizeof(saved_cwd));
+			g_lxp_proc[es].exec_file_idx = idx; /* remember the running image so a
 								   later execv("/proc/self/exe") re-runs it */
 			idle = 0;
 			continue;
@@ -1198,23 +1198,23 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 		if (et ==
 		    EV_EXIT) { /* reap: abort thread, free region, wake parent/queue zombie. */
-			ove_lnx_proc_t *p = &g_ove_lnx_proc[es];
+			lxp_proc_t *p = &g_lxp_proc[es];
 			int cpid = p->pid, status = p->exit_status, vp = p->vfork_parent_slot,
 			    ppid = p->ppid;
 #if defined(CONFIG_OVE_LINUX_DEV)
-			ove_lnx_dev_proc_exit(p); /* release the exiting process's device opens */
+			lxp_dev_proc_exit(p); /* release the exiting process's device opens */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-			ove_lnx_sock_proc_exit(p); /* release the exiting process's socket opens */
+			lxp_sock_proc_exit(p); /* release the exiting process's socket opens */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-			ove_lnx_netfs_proc_exit(p); /* release the exiting process's remote-fs opens */
+			lxp_netfs_proc_exit(p); /* release the exiting process's remote-fs opens */
 #endif
 			eng->abort_slot(es);
 			if (p->region_owner && rowner[p->region] == es)
 				rowner[p->region] = -1;
 			p->alive = 0;
-			g_ove_lnx_used[es] = 0;
+			g_lxp_used[es] = 0;
 			if (es == 0) { /* init exited → the system is done */
 				rc = status;
 				break;
@@ -1222,12 +1222,12 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			if (vp >= 0 && p->snap_region >= 0) {
 				/* a vfork child died before exec (e.g. a failed exec) → undo its writes to
 				 * the shared region so the parent is not corrupted, and free the scratch. */
-				vfork_restore(eng, &g_ove_lnx_proc[vp], p->snap_region, es);
+				vfork_restore(eng, &g_lxp_proc[vp], p->snap_region, es);
 				rowner[p->snap_region] = -1;
 			}
 			if (vp >=
 			    0) /* fork-without-exec: the suspended parent resumes (vfork returns) */
-				eng->spawn_resume(vp, g_ove_lnx_proc[vp].region, &g_ctx[vp], cpid);
+				eng->spawn_resume(vp, g_lxp_proc[vp].region, &g_ctx[vp], cpid);
 			reap_to_parent(eng, ppid, cpid, status);
 			idle = 0;
 			continue;
@@ -1236,7 +1236,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		if (et ==
 		    EV_SLEEP) { /* park the slot for the nanosleep duration (deadline below). */
 			eng->abort_slot(es);
-			g_ove_lnx_proc[es].sleeping = 1;
+			g_lxp_proc[es].sleeping = 1;
 			idle = 0;
 			continue;
 		}
@@ -1288,16 +1288,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
-		ove_lnx_time_us(&now);
+		lxp_time_us(&now);
 		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0,
 		    any_sock_wait = 0, any_netfs_wait = 0, any_pty_wait = 0, any_console_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
-		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
-			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
+		for (int s = 0; s < LXP_NSLOT; s++) {
+			lxp_proc_t *p = &g_lxp_proc[s];
 			if (!p->alive)
 				continue;
 			any_alive = 1;
-			if (g_ove_lnx_used[s])
+			if (g_lxp_used[s])
 				any_busy = 1;
 			if (p->pipe_wait)
 				any_pipe_wait = 1;
@@ -1315,10 +1315,10 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			 * Only for a parked proc — a running one owns these fields and takes the
 			 * signal at its next syscall boundary. Re-arm from the interval, and clamp
 			 * the coordinator's idle sleep to the (possibly new) deadline. */
-			if (p->alarm_deadline_us && !g_ove_lnx_used[s]) {
+			if (p->alarm_deadline_us && !g_lxp_used[s]) {
 				if (now >= p->alarm_deadline_us) {
 					if (!p->pending_sig)
-						p->pending_sig = OVE_LNX_SIGALRM;
+						p->pending_sig = LXP_SIGALRM;
 					p->alarm_deadline_us =
 						p->alarm_interval_us ? now + p->alarm_interval_us : 0;
 				}
@@ -1329,7 +1329,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			 * deliver (no live thread), so the coordinator does. SIG_IGN is dropped;
 			 * otherwise terminate (default action — a custom handler on a blocked proc
 			 * is approximated as terminate). EV_EXIT reaps it next pass. */
-			if (p->pending_sig && !g_ove_lnx_used[s] && p->sigsuspend_pending) {
+			if (p->pending_sig && !g_lxp_used[s] && p->sigsuspend_pending) {
 				/* rt_sigsuspend-parked thread woken by a delivered signal (the
 				 * LinuxThreads restart): run the handler, then resume the syscall
 				 * returning -EINTR. Unlike a sleep/wait/pipe block (terminated by a
@@ -1337,28 +1337,28 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				int sig = p->pending_sig;
 				p->pending_sig = 0;
 				p->sigsuspend_pending = 0;
-				deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+				deliver_signal_parked(eng, s, p, sig, -LXP_EINTR);
 				progress = 1;
-			} else if (p->pending_sig && !g_ove_lnx_used[s] &&
+			} else if (p->pending_sig && !g_lxp_used[s] &&
 				   (p->sleeping || p->wait_pending || p->pipe_wait)) {
 				int sig = p->pending_sig;
 				p->pending_sig = 0;
-				if (sig == OVE_LNX_SIGCHLD) {
+				if (sig == LXP_SIGCHLD) {
 					/* A child of a proc blocked in sleep/wait/pipe exited. SIGCHLD
 					 * never terminates: run a handler (the op then returns -EINTR),
 					 * else swallow it and stay parked (default action = ignore). */
 					if (!sig_swallowed(p, sig)) {
 						p->sleeping = p->wait_pending = p->pipe_wait = 0;
-						deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+						deliver_signal_parked(eng, s, p, sig, -LXP_EINTR);
 						progress = 1;
 					}
-				} else if (p->sig_handler[sig] != OVE_LNX_SIG_IGN) {
+				} else if (p->sig_handler[sig] != LXP_SIG_IGN) {
 					p->exited = 1;
 					p->exit_status = 128 + sig;
 					p->sleeping = p->wait_pending = p->pipe_wait = 0;
 					progress = 1;
 				}
-			} else if (p->pending_sig && !g_ove_lnx_used[s] && p->sock_wait) {
+			} else if (p->pending_sig && !g_lxp_used[s] && p->sock_wait) {
 				/* Signal to a proc parked in a socket op (connect/recv/accept/
 				 * poll): run a handler then the op returns -EINTR — busybox ping's
 				 * SIGALRM timer drives its next send this way, and a server's
@@ -1369,11 +1369,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				p->pending_sig = 0;
 				if (!sig_swallowed(p, sig)) {
 					p->sock_wait = 0;
-					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+					deliver_signal_parked(eng, s, p, sig, -LXP_EINTR);
 					progress = 1;
 				}
 #if defined(CONFIG_OVE_LINUX_PTY)
-			} else if (p->pending_sig && !g_ove_lnx_used[s] && p->pty_wait) {
+			} else if (p->pending_sig && !g_lxp_used[s] && p->pty_wait) {
 				/* Signal to a proc parked in a pty read/write: ^C (SIGINT) from the line
 				 * discipline lands here — the shell's handler runs and its slave read
 				 * returns -EINTR (re-prompt); a foreground child takes it by default
@@ -1382,7 +1382,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				p->pending_sig = 0;
 				if (!sig_swallowed(p, sig)) {
 					p->pty_wait = 0;
-					deliver_signal_parked(eng, s, p, sig, -OVE_LNX_EINTR);
+					deliver_signal_parked(eng, s, p, sig, -LXP_EINTR);
 					progress = 1;
 				}
 			}
@@ -1401,16 +1401,16 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			}
 			/* Blocked pipe I/O: retry now that a peer may have drained/filled the
 			 * ring (or closed its end → EOF/EPIPE); resume the proc when it completes. */
-			if (p->pipe_wait && !g_ove_lnx_used[s]) {
-				long r = ove_lnx_pipe_retry(p);
-				if (r != -OVE_LNX_EAGAIN) {
+			if (p->pipe_wait && !g_lxp_used[s]) {
+				long r = lxp_pipe_retry(p);
+				if (r != -LXP_EAGAIN) {
 					p->pipe_wait = 0;
-					if (r == -OVE_LNX_EPIPE &&
-					    p->sig_handler[OVE_LNX_SIGPIPE] != OVE_LNX_SIG_IGN) {
+					if (r == -LXP_EPIPE &&
+					    p->sig_handler[LXP_SIGPIPE] != LXP_SIG_IGN) {
 						/* broken pipe + default SIGPIPE → terminate the
 						 * writer; the EV_EXIT pass reaps it (no live thread). */
 						p->exited = 1;
-						p->exit_status = 128 + OVE_LNX_SIGPIPE;
+						p->exit_status = 128 + LXP_SIGPIPE;
 					} else {
 						eng->spawn_resume(s, p->region, &g_ctx[s], r);
 					}
@@ -1420,7 +1420,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_DEV)
 			/* Blocked device I/O: retry (the driver may now have data/space); resume
 			 * the proc when the op completes. Mirrors the pipe retry above. */
-			if (p->dev_wait == OVE_LNX_DEVW_MMAP && !g_ove_lnx_used[s]) {
+			if (p->dev_wait == LXP_DEVW_MMAP && !g_lxp_used[s]) {
 				/* Device mmap (P3): install the unprivileged MPU region over the
 				 * device buffer on THIS (coordinator) thread — domain/TCB edits are
 				 * not svc-exception-safe — record it for user_ok, and resume the proc
@@ -1429,8 +1429,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 						 ? (eng->map_device(s, (uintptr_t)p->dev_buf, p->dev_len,
 								    (unsigned)p->dev_cmd) == 0
 							    ? (long)p->dev_buf
-							    : -OVE_LNX_ENOMEM)
-						 : -OVE_LNX_ENODEV;
+							    : -LXP_ENOMEM)
+						 : -LXP_ENODEV;
 				if (r >= 0) {
 					p->dev_map_lo[0] = (uintptr_t)p->dev_buf;
 					p->dev_map_hi[0] = (uintptr_t)p->dev_buf + p->dev_len;
@@ -1438,9 +1438,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				p->dev_wait = 0;
 				eng->spawn_resume(s, p->region, &g_ctx[s], r);
 				progress = 1;
-			} else if (p->dev_wait && !g_ove_lnx_used[s]) {
-				long r = ove_lnx_dev_retry(p);
-				if (r != -OVE_LNX_EAGAIN) {
+			} else if (p->dev_wait && !g_lxp_used[s]) {
+				long r = lxp_dev_retry(p);
+				if (r != -LXP_EAGAIN) {
 					p->dev_wait = 0;
 					eng->spawn_resume(s, p->region, &g_ctx[s], r);
 					progress = 1;
@@ -1451,9 +1451,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			/* Blocked socket I/O: retry (connect may have completed, or data/space
 			 * arrived); resume the proc when the op completes. Mirrors the pipe/device
 			 * retries above. */
-			if (p->sock_wait && !g_ove_lnx_used[s]) {
-				long r = ove_lnx_sock_retry(p);
-				if (r != -OVE_LNX_EAGAIN) {
+			if (p->sock_wait && !g_lxp_used[s]) {
+				long r = lxp_sock_retry(p);
+				if (r != -LXP_EAGAIN) {
 					p->sock_wait = 0;
 					eng->spawn_resume(s, p->region, &g_ctx[s], r);
 					progress = 1;
@@ -1463,9 +1463,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_NETFS)
 			/* Blocked remote-fs I/O: pump the 9P transport + advance the parked op;
 			 * resume the proc when its reply completes. Mirrors the socket retry. */
-			if (p->netfs_wait && !g_ove_lnx_used[s]) {
-				long r = ove_lnx_netfs_retry(p);
-				if (r != -OVE_LNX_EAGAIN) {
+			if (p->netfs_wait && !g_lxp_used[s]) {
+				long r = lxp_netfs_retry(p);
+				if (r != -LXP_EAGAIN) {
 					p->netfs_wait = 0;
 					/* a completed exec-fetch sets exec_pending → EV_EXEC launches it
 					 * from the staging buffer; don't resume the parked execve. */
@@ -1478,9 +1478,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_PTY)
 			/* Blocked pty I/O: retry (the peer end may have drained/filled the ring);
 			 * resume the proc when the op completes. Mirrors the pipe/socket retries. */
-			if (p->pty_wait && !g_ove_lnx_used[s]) {
-				long r = ove_lnx_pty_retry(p);
-				if (r != -OVE_LNX_EAGAIN) {
+			if (p->pty_wait && !g_lxp_used[s]) {
+				long r = lxp_pty_retry(p);
+				if (r != -LXP_EAGAIN) {
 					p->pty_wait = 0;
 					eng->spawn_resume(s, p->region, &g_ctx[s], r);
 					progress = 1;
@@ -1490,7 +1490,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			/* Blocked console read: the coordinator polls readiness (so read_fn does
 			 * not busy-wait in the SVC handler and starve background tasks like the net
 			 * RX poll). When a key is ready, read it here and resume the proc. */
-			if (p->console_wait && !g_ove_lnx_used[s]) {
+			if (p->console_wait && !g_lxp_used[s]) {
 				if (p->console_poll && p->console_poll(p->io_ctx)) {
 					long r = p->read_fn ? p->read_fn(p->io_ctx, 0,
 									 (void *)p->console_buf,
@@ -1515,7 +1515,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		if (any_busy)
 			idle = 0;
 		else if (++idle > 20000) {
-			rc = OVE_LNX_RUN_ETIMEOUT;
+			rc = LXP_RUN_ETIMEOUT;
 			break;
 		}
 		if (now - last_refresh_us >= 200000ull) {
@@ -1523,17 +1523,17 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			refresh_stats();
 		}
 #if defined(CONFIG_OVE_LINUX_DEV)
-		ove_lnx_dev_tick(now); /* coordinator-thread periodic work (fb flush, touch poll) */
+		lxp_dev_tick(now); /* coordinator-thread periodic work (fb flush, touch poll) */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-		ove_lnx_netfs_tick(now); /* pump the 9P transport: background clunks + lazy reconnect */
+		lxp_netfs_tick(now); /* pump the 9P transport: background clunks + lazy reconnect */
 #endif
 		/* Block until a program parks (event_post) or the timeout. NOT a busy 1ms poll —
 		 * that would preempt running programs every tick and reset their time-slice,
 		 * starving a fg command while a CPU-bound background job runs. The timeout is the
 		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
 		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
-		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
+		 * that unblocks a peer also kicks us directly (lxp_pipe_kick). */
 		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait || any_netfs_wait ||
 			       any_pty_wait || any_console_wait)
 				      ? 5u
@@ -1547,11 +1547,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		}
 		eng->event_wait(to);
 	}
-	/* Tear down any still-running slot tasks so a subsequent ove_lnx_run() starts
+	/* Tear down any still-running slot tasks so a subsequent lxp_run() starts
 	 * clean and no leaked task starves the next program. */
-	for (int i = 0; i < OVE_LNX_NSLOT; i++)
-		if (g_ove_lnx_used[i])
+	for (int i = 0; i < LXP_NSLOT; i++)
+		if (g_lxp_used[i])
 			eng->abort_slot(i);
-	g_ove_lnx_active = 0;
+	g_lxp_active = 0;
 	return rc;
 }

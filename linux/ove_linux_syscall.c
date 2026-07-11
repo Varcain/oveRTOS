@@ -31,24 +31,24 @@
 /* Set by reboot(2)/poweroff to stop the run loop; the common run loop observes
  * it (declared extern there). Defined here so the host syscall tests, which do
  * not link the run loop, still resolve the symbol. */
-volatile int g_ove_lnx_halt;
+volatile int g_lxp_halt;
 
 /*
  * Linux syscall personality — engine-agnostic dispatch.
  *
  * Translates the Linux syscall ABI into oveRTOS primitives. The trap frame is
- * decoded by the per-engine SVC seam, which calls ove_lnx_syscall() with the
+ * decoded by the per-engine SVC seam, which calls lxp_syscall() with the
  * register arguments; this file owns the syscall table and the process state
  * those syscalls mutate. Pointer arguments are program addresses — in the flat
  * (NOMMU) model the program shares our address space, so they are used
  * directly after a NULL check (a future MMU tier would translate them).
  */
 
-/* fd-slot kinds (ove_lnx_fd.kind). */
-#define OVE_LNX_FD_FREE 0
-#define OVE_LNX_FD_CONSOLE 1
-#define OVE_LNX_FD_FILE 2
-#define OVE_LNX_FD_PIPE 3
+/* fd-slot kinds (lxp_fd.kind). */
+#define LXP_FD_FREE 0
+#define LXP_FD_CONSOLE 1
+#define LXP_FD_FILE 2
+#define LXP_FD_PIPE 3
 
 /* PRNG fill (defined with sys_getrandom); /dev/urandom reads use it before that point. */
 static void prng_fill(uint8_t *b, size_t count);
@@ -56,8 +56,8 @@ static void prng_fill(uint8_t *b, size_t count);
 #if defined(CONFIG_OVE_LINUX_NET)
 /* pselect6(2): select() over the poll machinery (busybox inetd + dropbear are
  * select-based). Defined with the poll retry below; the dispatch calls it earlier. */
-#define OVE_LNX_SEL_MAXFDS 32 /* max nfds handled (fd_set = one 32-bit word here) */
-static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwfds,
+#define LXP_SEL_MAXFDS 32 /* max nfds handled (fd_set = one 32-bit word here) */
+static long sys_pselect6(lxp_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwfds,
 			 uintptr_t uefds, uintptr_t utimeout);
 #endif
 
@@ -66,7 +66,7 @@ static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t
  * a bounded ring buffer with concurrent producer/consumer (Phase D2). A read on an
  * empty pipe blocks while any write end is open (EOF only once all writers close); a
  * write on a full pipe blocks while a reader is open (-EPIPE once all readers close).
- * The run-loop coordinator parks/wakes the blocked proc — see ove_lnx_pipe_retry.
+ * The run-loop coordinator parks/wakes the blocked proc — see lxp_pipe_retry.
  */
 /* dropbear's SSH session uses 4 pipes at once (stdin/stdout/stderr to the shell + its own
  * SIGCHLD self-pipe), so the shell running a pipeline or command substitution needs headroom
@@ -75,10 +75,10 @@ static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t
  * pools) so a bigger pool costs no scarce internal SRAM (it actually frees the old 16 KiB); every
  * other target keeps the pool in .bss at the original size. */
 #if defined(CONFIG_OVE_RTOS_FREERTOS) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#define OVE_LNX_NPIPE 12
-#define OVE_LNX_PIPE_SDRAM 1
+#define LXP_NPIPE 12
+#define LXP_PIPE_SDRAM 1
 #else
-#define OVE_LNX_NPIPE 4
+#define LXP_NPIPE 4
 #endif
 /* Ring size: a bigger ring means a typical write/splice fits in fewer shots (no partial-write
  * park/resume round trip per chunk), so streaming throughput is copy-bound not coordinator-bound.
@@ -86,23 +86,23 @@ static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t
  * K_USER MPU domains + privilege stacks that eat the STM32F746's internal SRAM, so 4 KiB there
  * overflows RAM by ~5 KiB — cap it at 2 KiB (still 2x the old 1 KiB). */
 #if defined(CONFIG_OVE_RTOS_ZEPHYR)
-#define OVE_LNX_PIPE_BUF 2048
+#define LXP_PIPE_BUF 2048
 #else
-#define OVE_LNX_PIPE_BUF 4096
+#define LXP_PIPE_BUF 4096
 #endif
 typedef struct {
-	uint8_t buf[OVE_LNX_PIPE_BUF];
+	uint8_t buf[LXP_PIPE_BUF];
 	size_t rpos;  /* ring read index [0, BUF) */
 	size_t wpos;  /* ring write index [0, BUF) */
 	size_t count; /* bytes currently buffered */
 	int used;
-} ove_lnx_pipe_t;
-#ifdef OVE_LNX_PIPE_SDRAM
+} lxp_pipe_t;
+#ifdef LXP_PIPE_SDRAM
 /* External SDRAM (.sdram_bss is NOLOAD → not zeroed, but sys_pipe fully resets a slot's ring on
  * allocation and `used` is never read, so garbage init is harmless). */
-static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE] __attribute__((section(".sdram_bss")));
+static lxp_pipe_t g_pipes[LXP_NPIPE] __attribute__((section(".sdram_bss")));
 #else
-static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
+static lxp_pipe_t g_pipes[LXP_NPIPE];
 #endif
 
 /* Count a pipe's open read/write ends across ALL live procs' fd tables (a pipe end
@@ -111,11 +111,11 @@ static ove_lnx_pipe_t g_pipes[OVE_LNX_NPIPE];
 /* Weak fallbacks so the host syscall test (which links this layer but not the run
  * loop) resolves these; the run loop supplies the strong on-target versions. The
  * host test never exercises pipes, so pipe_ends is never actually called there. */
-__attribute__((weak)) ove_lnx_proc_t *ove_lnx_proc_table(void)
+__attribute__((weak)) lxp_proc_t *lxp_proc_table(void)
 {
 	return NULL;
 }
-__attribute__((weak)) int ove_lnx_proc_nslot(void)
+__attribute__((weak)) int lxp_proc_nslot(void)
 {
 	return 0;
 }
@@ -123,7 +123,7 @@ __attribute__((weak)) int ove_lnx_proc_nslot(void)
 /* The shared read-only rootfs span [lo,hi): a program's .rodata (its FDPIC text is shared in-place
  * from the embedded cpio) lives here, so a READ-source user pointer may legitimately point into it.
  * Weak fallback (empty range) so the host test links; the run loop supplies the strong version. */
-__attribute__((weak)) void ove_lnx_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
+__attribute__((weak)) void lxp_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
 {
 	*lo = 0;
 	*hi = 0;
@@ -137,7 +137,7 @@ __attribute__((weak)) void ove_lnx_rootfs_bounds(uintptr_t *lo, uintptr_t *hi)
  * dynamic arena), or — for a read SOURCE only — the shared read-only rootfs. */
 
 /* Upper bound of the valid range that CONTAINS `a`, or 0 if `a` is in none. */
-static uintptr_t user_range_hi(const ove_lnx_proc_t *p, uintptr_t a, int write)
+static uintptr_t user_range_hi(const lxp_proc_t *p, uintptr_t a, int write)
 {
 	if (a >= p->region_lo && a < p->region_hi)
 		return p->region_hi;
@@ -152,7 +152,7 @@ static uintptr_t user_range_hi(const ove_lnx_proc_t *p, uintptr_t a, int write)
 #endif
 	if (!write) {
 		uintptr_t rlo, rhi;
-		ove_lnx_rootfs_bounds(&rlo, &rhi);
+		lxp_rootfs_bounds(&rlo, &rhi);
 		if (rhi > rlo && a >= rlo && a < rhi)
 			return rhi;
 	}
@@ -161,7 +161,7 @@ static uintptr_t user_range_hi(const ove_lnx_proc_t *p, uintptr_t a, int write)
 
 /* True iff [ptr, ptr+len) is wholly readable (write==0) or writable (write==1) by program `p`.
  * Non-static so the host unit tests exercise the boundary/overflow logic directly. */
-int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write)
+int user_ok(const lxp_proc_t *p, const void *ptr, size_t len, int write)
 {
 	uintptr_t a = (uintptr_t)ptr, end = a + len;
 	if (len == 0)
@@ -175,33 +175,33 @@ int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write)
 /* strlen of a user string, or -EFAULT if it is not NUL-terminated wholly within a valid readable
  * range (so a later strlen/copy can't walk off the region into kernel memory). Bounded by `max`.
  * Non-static so the host unit tests exercise the terminated/unterminated/at-edge cases directly. */
-long user_strnlen(const ove_lnx_proc_t *p, const char *s, size_t max)
+long user_strnlen(const lxp_proc_t *p, const char *s, size_t max)
 {
 	uintptr_t a = (uintptr_t)s;
 	uintptr_t hi = user_range_hi(p, a, 0);
 	if (!hi)
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	size_t avail = (size_t)(hi - a);
 	size_t lim = avail < max ? avail : max;
 	for (size_t i = 0; i < lim; i++)
 		if (s[i] == '\0')
 			return (long)i;
-	return -OVE_LNX_EFAULT; /* no NUL within the range / max */
+	return -LXP_EFAULT; /* no NUL within the range / max */
 }
 
 static void pipe_ends(int pi, int *readers, int *writers)
 {
 	*readers = 0;
 	*writers = 0;
-	ove_lnx_proc_t *tab = ove_lnx_proc_table();
-	int n = ove_lnx_proc_nslot();
+	lxp_proc_t *tab = lxp_proc_table();
+	int n = lxp_proc_nslot();
 	if (!tab)
 		return;
 	for (int s = 0; s < n; s++) {
 		if (!tab[s].alive)
 			continue;
-		for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++)
-			if (tab[s].fds[fd].kind == OVE_LNX_FD_PIPE && tab[s].fds[fd].file_idx == pi)
+		for (int fd = 0; fd < LXP_MAX_FDS; fd++)
+			if (tab[s].fds[fd].kind == LXP_FD_PIPE && tab[s].fds[fd].file_idx == pi)
 				(tab[s].fds[fd].rw ? (*writers)++ : (*readers)++);
 	}
 }
@@ -210,21 +210,21 @@ static void pipe_ends(int pi, int *readers, int *writers)
  * -EAGAIN = empty but a writer is open (caller should block). */
 static long pipe_try_read(int pi, void *buf, size_t len)
 {
-	ove_lnx_pipe_t *pp = &g_pipes[pi];
+	lxp_pipe_t *pp = &g_pipes[pi];
 	if (pp->count == 0) {
 		int rd, wr;
 		pipe_ends(pi, &rd, &wr);
-		return wr > 0 ? -OVE_LNX_EAGAIN : 0;
+		return wr > 0 ? -LXP_EAGAIN : 0;
 	}
 	if (len > pp->count)
 		len = pp->count;
 	uint8_t *out = (uint8_t *)buf;
-	size_t n1 = OVE_LNX_PIPE_BUF - pp->rpos; /* contiguous bytes to the ring end */
+	size_t n1 = LXP_PIPE_BUF - pp->rpos; /* contiguous bytes to the ring end */
 	if (n1 > len)
 		n1 = len;
 	memcpy(out, &pp->buf[pp->rpos], n1);
 	memcpy(out + n1, &pp->buf[0], len - n1); /* wrapped tail (len-n1 may be 0 = no-op) */
-	pp->rpos = (pp->rpos + len) % OVE_LNX_PIPE_BUF;
+	pp->rpos = (pp->rpos + len) % LXP_PIPE_BUF;
 	pp->count -= len;
 	return (long)len;
 }
@@ -233,29 +233,29 @@ static long pipe_try_read(int pi, void *buf, size_t len)
  * (broken pipe); -EAGAIN = full but a reader is open (caller should block). */
 static long pipe_try_write(int pi, const void *buf, size_t len)
 {
-	ove_lnx_pipe_t *pp = &g_pipes[pi];
+	lxp_pipe_t *pp = &g_pipes[pi];
 	int rd, wr;
 	pipe_ends(pi, &rd, &wr);
 	if (rd == 0)
-		return -OVE_LNX_EPIPE;
-	size_t space = OVE_LNX_PIPE_BUF - pp->count;
+		return -LXP_EPIPE;
+	size_t space = LXP_PIPE_BUF - pp->count;
 	if (space == 0)
-		return -OVE_LNX_EAGAIN;
+		return -LXP_EAGAIN;
 	if (len > space)
 		len = space;
 	const uint8_t *in = (const uint8_t *)buf;
-	size_t n1 = OVE_LNX_PIPE_BUF - pp->wpos; /* contiguous space to the ring end */
+	size_t n1 = LXP_PIPE_BUF - pp->wpos; /* contiguous space to the ring end */
 	if (n1 > len)
 		n1 = len;
 	memcpy(&pp->buf[pp->wpos], in, n1);
 	memcpy(&pp->buf[0], in + n1, len - n1); /* wrapped tail (len-n1 may be 0 = no-op) */
-	pp->wpos = (pp->wpos + len) % OVE_LNX_PIPE_BUF;
+	pp->wpos = (pp->wpos + len) % LXP_PIPE_BUF;
 	pp->count += len;
 	return (long)len;
 }
 
 /* Retry a parked pipe read/write for the run-loop coordinator (declared in syscall.h). */
-long ove_lnx_pipe_retry(ove_lnx_proc_t *p)
+long lxp_pipe_retry(lxp_proc_t *p)
 {
 	if (p->pipe_wait == 1)
 		return pipe_try_read(p->pipe_idx, (void *)p->pipe_buf, p->pipe_len);
@@ -271,12 +271,12 @@ long ove_lnx_pipe_retry(ove_lnx_proc_t *p)
  * or all writers closed (EOF); a write end is POLLOUT when it has space or all readers closed. */
 static unsigned pipe_poll(int pi, int rw)
 {
-	ove_lnx_pipe_t *pp = &g_pipes[pi];
+	lxp_pipe_t *pp = &g_pipes[pi];
 	int rd, wr;
 	pipe_ends(pi, &rd, &wr);
 	if (rw == 0)
-		return (pp->count > 0 || wr == 0) ? OVE_LNX_POLLIN : 0u;
-	return (pp->count < OVE_LNX_PIPE_BUF || rd == 0) ? OVE_LNX_POLLOUT : 0u;
+		return (pp->count > 0 || wr == 0) ? LXP_POLLIN : 0u;
+	return (pp->count < LXP_PIPE_BUF || rd == 0) ? LXP_POLLOUT : 0u;
 }
 
 /*
@@ -288,19 +288,19 @@ static unsigned pipe_poll(int pi, int rw)
  * exhausted), and unlink/rmdir frees the node (not its bytes). Not a tree: a node
  * is "in" a directory iff its path is one component below the dir's path.
  */
-#define OVE_LNX_FD_TMPFS 4
-#define OVE_LNX_NWNODE 32
-#define OVE_LNX_WFS_POOL (64u * 1024u)
+#define LXP_FD_TMPFS 4
+#define LXP_NWNODE 32
+#define LXP_WFS_POOL (64u * 1024u)
 typedef struct {
-	char path[OVE_LNX_PATH_MAX]; /* absolute, normalized */
+	char path[LXP_PATH_MAX]; /* absolute, normalized */
 	uint32_t mode;		     /* S_IFREG|perms, S_IFDIR|perms, or S_IFLNK */
 	uint8_t *data;		     /* file/symlink bytes (pool); NULL when empty */
 	size_t size;
 	size_t cap;
 	int used;
-} ove_lnx_wnode_t;
-static ove_lnx_wnode_t g_wnodes[OVE_LNX_NWNODE];
-static uint8_t g_wfs_pool[OVE_LNX_WFS_POOL];
+} lxp_wnode_t;
+static lxp_wnode_t g_wnodes[LXP_NWNODE];
+static uint8_t g_wfs_pool[LXP_WFS_POOL];
 static size_t g_wfs_off;
 
 static uint8_t *wfs_alloc(size_t n)
@@ -316,7 +316,7 @@ static uint8_t *wfs_alloc(size_t n)
 /* Find a writable node by absolute path (any type), or -1. */
 static int wfs_find(const char *abspath)
 {
-	for (int i = 0; i < OVE_LNX_NWNODE; i++)
+	for (int i = 0; i < LXP_NWNODE; i++)
 		if (g_wnodes[i].used && strcmp(g_wnodes[i].path, abspath) == 0)
 			return i;
 	return -1;
@@ -325,9 +325,9 @@ static int wfs_find(const char *abspath)
 /* Allocate a node for abspath with mode; -1 if the table is full / path too long. */
 static int wfs_create(const char *abspath, uint32_t mode)
 {
-	if (strlen(abspath) >= OVE_LNX_PATH_MAX)
+	if (strlen(abspath) >= LXP_PATH_MAX)
 		return -1;
-	for (int i = 0; i < OVE_LNX_NWNODE; i++)
+	for (int i = 0; i < LXP_NWNODE; i++)
 		if (!g_wnodes[i].used) {
 			strcpy(g_wnodes[i].path, abspath);
 			g_wnodes[i].mode = mode;
@@ -343,7 +343,7 @@ static int wfs_create(const char *abspath, uint32_t mode)
 /* Ensure node i can hold `need` bytes (grows from the pool; old block leaks). */
 static int wfs_reserve(int i, size_t need)
 {
-	ove_lnx_wnode_t *w = &g_wnodes[i];
+	lxp_wnode_t *w = &g_wnodes[i];
 	if (need <= w->cap)
 		return 0;
 	size_t ncap = (need + 255u) & ~(size_t)255u;
@@ -358,23 +358,23 @@ static int wfs_reserve(int i, size_t need)
 }
 
 /* Synthetic /proc fd backing (content generated on open; see proc_* below). */
-#define OVE_LNX_FD_PROC 5
-#define OVE_LNX_NPROCF 12
-#define OVE_LNX_PROCBUF 1024
+#define LXP_FD_PROC 5
+#define LXP_NPROCF 12
+#define LXP_PROCBUF 1024
 static struct {
-	char path[OVE_LNX_PATH_MAX];
-	char buf[OVE_LNX_PROCBUF];
+	char path[LXP_PATH_MAX];
+	char buf[LXP_PROCBUF];
 	size_t len;
 	int is_dir;
 	int used;
-} g_procf[OVE_LNX_NPROCF];
+} g_procf[LXP_NPROCF];
 
 /*
  * ARM kernel struct stat64. Spelled with fixed-width types (the kernel's
  * `unsigned long` is 32-bit on ARM but 64-bit on the x86-64 host) so the binary
  * layout is identical on target and in host tests.
  */
-struct ove_lnx_kstat64 {
+struct lxp_kstat64 {
 	uint64_t st_dev;
 	uint8_t __pad0[4];
 	uint32_t __st_ino;
@@ -397,7 +397,7 @@ struct ove_lnx_kstat64 {
 };
 
 /* getdents64 record: fixed 19-byte head (d_ino..d_type) then a NUL-terminated name. */
-struct ove_lnx_dirent64 {
+struct lxp_dirent64 {
 	uint64_t d_ino;
 	int64_t d_off;
 	uint16_t d_reclen;
@@ -406,9 +406,9 @@ struct ove_lnx_dirent64 {
 };
 
 /* Effective st_mode for a rootfs node (0 in the table means a regular file). */
-static uint32_t file_mode(const ove_lnx_file_t *f)
+static uint32_t file_mode(const lxp_file_t *f)
 {
-	return f->mode ? f->mode : (OVE_LNX_S_IFREG | 0644u);
+	return f->mode ? f->mode : (LXP_S_IFREG | 0644u);
 }
 
 /* If @p path names an entry exactly one component below directory @p dir, return
@@ -427,7 +427,7 @@ static const char *child_name(const char *dir, const char *path)
 	return (*name && !strchr(name, '/')) ? name : NULL;
 }
 
-int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes)
+int lxp_proc_init(lxp_proc_t *proc, ove_arena_t *arena, size_t brk_bytes)
 {
 	if (!proc || !arena)
 		return OVE_ERR_INVALID_PARAM;
@@ -441,11 +441,11 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 	 * For console fds, file_idx marks the direction: 0 = readable (stdin),
 	 * 1 = writable (stdout/stderr); this survives F_DUPFD so a dup of stdin
 	 * stays readable (the shell dups stdin for its interactive fd). */
-	proc->fds[0].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[0].kind = LXP_FD_CONSOLE;
 	proc->fds[0].file_idx = 0;
-	proc->fds[1].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[1].kind = LXP_FD_CONSOLE;
 	proc->fds[1].file_idx = 1;
-	proc->fds[2].kind = OVE_LNX_FD_CONSOLE;
+	proc->fds[2].kind = LXP_FD_CONSOLE;
 	proc->fds[2].file_idx = 1;
 	if (brk_bytes) {
 		void *brk = ove_arena_alloc(arena, brk_bytes);
@@ -458,7 +458,7 @@ int ove_lnx_proc_init(ove_lnx_proc_t *proc, ove_arena_t *arena, size_t brk_bytes
 	return OVE_OK;
 }
 
-void ove_lnx_proc_set_rootfs(ove_lnx_proc_t *proc, const ove_lnx_file_t *files, int count)
+void lxp_proc_set_rootfs(lxp_proc_t *proc, const lxp_file_t *files, int count)
 {
 	if (!proc)
 		return;
@@ -481,7 +481,7 @@ static uint32_t cpio_hex(const char *s)
 	return v;
 }
 
-int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out, int max,
+int lxp_cpio_to_rootfs(const uint8_t *cpio, size_t len, lxp_file_t *out, int max,
 			   char *namebuf, size_t nblen)
 {
 	if (!cpio || !out || !namebuf)
@@ -531,23 +531,23 @@ int ove_lnx_cpio_to_rootfs(const uint8_t *cpio, size_t len, ove_lnx_file_t *out,
 }
 
 /* Bound on argv/envp entries the startup stack will lay out. */
-#define OVE_LNX_MAX_VEC 32
+#define LXP_MAX_VEC 32
 
-void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
+void *lxp_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
 			  const char *const envp[], int fdpic, uintptr_t phdr, int phnum,
 			  uintptr_t entry, uintptr_t at_base)
 {
-	if (!stack || !argv || argc < 0 || argc > OVE_LNX_MAX_VEC)
+	if (!stack || !argv || argc < 0 || argc > LXP_MAX_VEC)
 		return NULL;
 
 	int envc = 0;
 	while (envp && envp[envc])
 		envc++;
-	if (envc > OVE_LNX_MAX_VEC)
+	if (envc > LXP_MAX_VEC)
 		return NULL;
 
-	uintptr_t argp[OVE_LNX_MAX_VEC];
-	uintptr_t envpp[OVE_LNX_MAX_VEC];
+	uintptr_t argp[LXP_MAX_VEC];
+	uintptr_t envpp[LXP_MAX_VEC];
 	uint8_t *sp = (uint8_t *)stack + stack_size;
 	uint8_t *floor = (uint8_t *)stack;
 
@@ -596,21 +596,21 @@ void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *
 			hdr[k++] = envpp[i];
 		hdr[k++] = 0; /* envp[] terminator */
 		/* auxv — the FDPIC crt locates PT_TLS / the segments via AT_PHDR/AT_PHNUM. */
-		hdr[k++] = OVE_LNX_AT_PHDR;
+		hdr[k++] = LXP_AT_PHDR;
 		hdr[k++] = phdr;
-		hdr[k++] = OVE_LNX_AT_PHENT;
+		hdr[k++] = LXP_AT_PHENT;
 		hdr[k++] = 32; /* sizeof(Elf32_Phdr) */
-		hdr[k++] = OVE_LNX_AT_PHNUM;
+		hdr[k++] = LXP_AT_PHNUM;
 		hdr[k++] = (uintptr_t)phnum;
-		hdr[k++] = OVE_LNX_AT_BASE;
+		hdr[k++] = LXP_AT_BASE;
 		hdr[k++] = at_base; /* ld.so's load base for a dynamic exec; 0 when static */
-		hdr[k++] = OVE_LNX_AT_ENTRY;
+		hdr[k++] = LXP_AT_ENTRY;
 		hdr[k++] = entry; /* the program's own entry (AT_ENTRY), even when ld.so runs first */
-		hdr[k++] = OVE_LNX_AT_PAGESZ;
+		hdr[k++] = LXP_AT_PAGESZ;
 		hdr[k++] = 4096;
-		hdr[k++] = OVE_LNX_AT_RANDOM;
+		hdr[k++] = LXP_AT_RANDOM;
 		hdr[k++] = (uintptr_t)rnd;
-		hdr[k++] = OVE_LNX_AT_NULL;
+		hdr[k++] = LXP_AT_NULL;
 		hdr[k++] = 0;
 		return hdr; /* SP -> argc, argv[] inline */
 	}
@@ -641,67 +641,67 @@ void *ove_lnx_setup_stack(void *stack, size_t stack_size, int argc, const char *
 	for (int i = 0; i < envc; i++)
 		envp_arr[i] = envpp[i];
 	envp_arr[envc] = 0;
-	auxv[0] = OVE_LNX_AT_PAGESZ;
+	auxv[0] = LXP_AT_PAGESZ;
 	auxv[1] = 4096;
-	auxv[2] = OVE_LNX_AT_RANDOM;
+	auxv[2] = LXP_AT_RANDOM;
 	auxv[3] = (uintptr_t)rnd;
-	auxv[4] = OVE_LNX_AT_NULL;
+	auxv[4] = LXP_AT_NULL;
 	auxv[5] = 0;
 
 	return hdr; /* initial SP, pointing at argc */
 }
 
 /* Validate an fd index and return its slot, or NULL. */
-static ove_lnx_fd_t *fd_slot(ove_lnx_proc_t *p, int fd)
+static lxp_fd_t *fd_slot(lxp_proc_t *p, int fd)
 {
-	if (fd < 0 || fd >= OVE_LNX_MAX_FDS || p->fds[fd].kind == OVE_LNX_FD_FREE)
+	if (fd < 0 || fd >= LXP_MAX_FDS || p->fds[fd].kind == LXP_FD_FREE)
 		return NULL;
 	return &p->fds[fd];
 }
 
 /* eventfd counter read/write (defined below fd_alloc); sys_read/sys_write route to them. */
-static long efd_read(ove_lnx_proc_t *p, int ei, void *buf, size_t len);
-static long efd_write(ove_lnx_proc_t *p, int ei, const void *buf, size_t len);
+static long efd_read(lxp_proc_t *p, int ei, void *buf, size_t len);
+static long efd_write(lxp_proc_t *p, int ei, const void *buf, size_t len);
 
-static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
+static long sys_write(lxp_proc_t *p, int fd, const void *buf, size_t len)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (!user_ok(p, buf, len, 0)) /* the kernel READS buf → reject a bad source pointer */
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 #if defined(CONFIG_OVE_LINUX_DEV)
-	if (s->kind == OVE_LNX_FD_DEV)
-		return ove_lnx_dev_write(p, s->file_idx, buf, len);
+	if (s->kind == LXP_FD_DEV)
+		return lxp_dev_write(p, s->file_idx, buf, len);
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-	if (s->kind == OVE_LNX_FD_SOCKET)
-		return ove_lnx_sock_send(p, s->file_idx, buf, len, 0, NULL, 0);
+	if (s->kind == LXP_FD_SOCKET)
+		return lxp_sock_send(p, s->file_idx, buf, len, 0, NULL, 0);
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	if (s->kind == OVE_LNX_FD_NET)
-		return -OVE_LNX_EROFS; /* read-only remote mount */
+	if (s->kind == LXP_FD_NET)
+		return -LXP_EROFS; /* read-only remote mount */
 #endif
-	if (s->kind == OVE_LNX_FD_EVENTFD)
+	if (s->kind == LXP_FD_EVENTFD)
 		return efd_write(p, s->file_idx, buf, len);
 	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
-	if (s->kind == OVE_LNX_FD_PIPE) {
+	if (s->kind == LXP_FD_PIPE) {
 		if (s->rw != 1)
-			return -OVE_LNX_EBADF;
+			return -LXP_EBADF;
 		long r = pipe_try_write(s->file_idx, buf, len);
-		if (r == -OVE_LNX_EAGAIN) { /* full but a reader is open */
+		if (r == -LXP_EAGAIN) { /* full but a reader is open */
 			if (s->nonblock)
-				return -OVE_LNX_EAGAIN; /* O_NONBLOCK: don't park */
+				return -LXP_EAGAIN; /* O_NONBLOCK: don't park */
 			p->pipe_wait = 2; /* blocking: park + retry */
 			p->pipe_idx = s->file_idx;
 			p->pipe_buf = (uintptr_t)buf;
 			p->pipe_len = len;
-			return 0; /* dispatch parks; coordinator completes via ove_lnx_pipe_retry */
+			return 0; /* dispatch parks; coordinator completes via lxp_pipe_retry */
 		}
-		if (r == -OVE_LNX_EPIPE && /* no readers: SIGPIPE — default terminates the writer */
-		    p->sig_handler[OVE_LNX_SIGPIPE] != OVE_LNX_SIG_IGN) {
+		if (r == -LXP_EPIPE && /* no readers: SIGPIPE — default terminates the writer */
+		    p->sig_handler[LXP_SIGPIPE] != LXP_SIG_IGN) {
 			p->exited = 1;
-			p->exit_status = 128 + OVE_LNX_SIGPIPE;
+			p->exit_status = 128 + LXP_SIGPIPE;
 		}
 		return r; /* bytes written, or -EPIPE (no readers; writer exits unless it ignores it) */
 	}
@@ -709,48 +709,48 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 	/* A pty write feeds the peer's ring through the line discipline (master write runs
 	 * input processing toward the slave; slave write runs output/ONLCR toward the master).
 	 * Blocks (backpressure) when the destination ring is full and the peer is open. */
-	if (s->kind == OVE_LNX_FD_PTY) {
-		long r = ove_lnx_pty_write(p, s->file_idx, s->rw, buf, len);
-		if (r == -OVE_LNX_EAGAIN && !ove_lnx_pty_nonblock(s->file_idx, s->rw)) {
-			p->pty_wait = s->rw ? OVE_LNX_PTYW_MWRITE : OVE_LNX_PTYW_SWRITE;
+	if (s->kind == LXP_FD_PTY) {
+		long r = lxp_pty_write(p, s->file_idx, s->rw, buf, len);
+		if (r == -LXP_EAGAIN && !lxp_pty_nonblock(s->file_idx, s->rw)) {
+			p->pty_wait = s->rw ? LXP_PTYW_MWRITE : LXP_PTYW_SWRITE;
 			p->pty_idx = s->file_idx;
 			p->pty_buf = (uintptr_t)buf;
 			p->pty_len = len;
-			return 0; /* parked; coordinator completes via ove_lnx_pty_retry */
+			return 0; /* parked; coordinator completes via lxp_pty_retry */
 		}
 		return r; /* bytes consumed, or -EAGAIN (O_NONBLOCK) */
 	}
 #endif
 	/* A writable-node file write copies into its (growable) buffer at the offset. */
-	if (s->kind == OVE_LNX_FD_TMPFS) {
-		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
-		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-			return -OVE_LNX_EBADF;
+	if (s->kind == LXP_FD_TMPFS) {
+		lxp_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & LXP_S_IFMT) == LXP_S_IFDIR)
+			return -LXP_EBADF;
 		if (wfs_reserve(s->file_idx, s->offset + len) != 0)
-			return -OVE_LNX_EFBIG; /* writable-fs pool exhausted */
+			return -LXP_EFBIG; /* writable-fs pool exhausted */
 		memcpy(t->data + s->offset, buf, len);
 		s->offset += len;
 		if (s->offset > t->size)
 			t->size = s->offset;
 		return (long)len;
 	}
-	if (s->kind == OVE_LNX_FD_CONSOLE && (s->file_idx == 3 || s->file_idx == 4))
+	if (s->kind == LXP_FD_CONSOLE && (s->file_idx == 3 || s->file_idx == 4))
 		return (long)len; /* /dev/null + /dev/urandom: discard writes */
 	/* Only output consoles are writable (file_idx != 0); the rootfs is read-only. */
-	if (s->kind != OVE_LNX_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
-		return -OVE_LNX_EBADF;
+	if (s->kind != LXP_FD_CONSOLE || s->file_idx == 0 || !p->write_fn)
+		return -LXP_EBADF;
 	return p->write_fn(p->io_ctx, fd, buf, len);
 }
 
-static long sys_writev(ove_lnx_proc_t *p, int fd, const ove_lnx_iovec *iov, int iovcnt)
+static long sys_writev(lxp_proc_t *p, int fd, const lxp_iovec *iov, int iovcnt)
 {
 	/* Any fd sys_write accepts: console, socket (uClibc stdio flushes a socket via
 	 * writev — this is how wget sends its HTTP request), device, file. sys_write
 	 * validates the fd (EBADF) and routes by kind. */
 	if (iovcnt < 0)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	if (iovcnt && !user_ok(p, iov, (size_t)iovcnt * sizeof(*iov), 0))
-		return -OVE_LNX_EFAULT; /* the iov array itself; each iov_base is checked in sys_write */
+		return -LXP_EFAULT; /* the iov array itself; each iov_base is checked in sys_write */
 
 	long total = 0;
 	for (int i = 0; i < iovcnt; i++) {
@@ -766,32 +766,32 @@ static long sys_writev(ove_lnx_proc_t *p, int fd, const ove_lnx_iovec *iov, int 
 	return total;
 }
 
-static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
+static long sys_read(lxp_proc_t *p, int fd, void *buf, size_t len)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (!user_ok(p, buf, len, 1)) /* the kernel WRITES buf → reject a bad destination pointer */
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 
 #if defined(CONFIG_OVE_LINUX_DEV)
-	if (s->kind == OVE_LNX_FD_DEV)
-		return ove_lnx_dev_read(p, s->file_idx, buf, len);
+	if (s->kind == LXP_FD_DEV)
+		return lxp_dev_read(p, s->file_idx, buf, len);
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-	if (s->kind == OVE_LNX_FD_SOCKET)
-		return ove_lnx_sock_recv(p, s->file_idx, buf, len, 0, NULL, NULL);
+	if (s->kind == LXP_FD_SOCKET)
+		return lxp_sock_recv(p, s->file_idx, buf, len, 0, NULL, NULL);
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	if (s->kind == OVE_LNX_FD_NET)
-		return ove_lnx_netfs_read(p, s->file_idx, buf, len);
+	if (s->kind == LXP_FD_NET)
+		return lxp_netfs_read(p, s->file_idx, buf, len);
 #endif
-	if (s->kind == OVE_LNX_FD_EVENTFD)
+	if (s->kind == LXP_FD_EVENTFD)
 		return efd_read(p, s->file_idx, buf, len);
 
-	if (s->kind == OVE_LNX_FD_CONSOLE) {
+	if (s->kind == LXP_FD_CONSOLE) {
 		if (s->file_idx == 1) /* output consoles (stdout/stderr) are not readable */
-			return -OVE_LNX_EBADF;
+			return -LXP_EBADF;
 		if (s->file_idx == 3) /* /dev/null */
 			return 0;     /* EOF */
 		if (s->file_idx == 4) { /* /dev/urandom + /dev/random: PRNG bytes */
@@ -815,13 +815,13 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 
 	/* A pipe read end drains the shared ring; blocks while empty + a writer is open,
 	 * EOF (0) once all writers have closed. */
-	if (s->kind == OVE_LNX_FD_PIPE) {
+	if (s->kind == LXP_FD_PIPE) {
 		if (s->rw != 0)
-			return -OVE_LNX_EBADF;
+			return -LXP_EBADF;
 		long r = pipe_try_read(s->file_idx, buf, len);
-		if (r == -OVE_LNX_EAGAIN) { /* empty but a writer is open */
+		if (r == -LXP_EAGAIN) { /* empty but a writer is open */
 			if (s->nonblock)
-				return -OVE_LNX_EAGAIN; /* O_NONBLOCK: don't park (self-pipe drain) */
+				return -LXP_EAGAIN; /* O_NONBLOCK: don't park (self-pipe drain) */
 			p->pipe_wait = 1; /* blocking: park + retry */
 			p->pipe_idx = s->file_idx;
 			p->pipe_buf = (uintptr_t)buf;
@@ -834,24 +834,24 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 #if defined(CONFIG_OVE_LINUX_PTY)
 	/* A pty end drains its ring (master reads program output, slave reads program input);
 	 * blocks while empty + the peer end is open, EOF (0) once the peer closes. */
-	if (s->kind == OVE_LNX_FD_PTY) {
-		long r = ove_lnx_pty_read(p, s->file_idx, s->rw, buf, len);
-		if (r == -OVE_LNX_EAGAIN && !ove_lnx_pty_nonblock(s->file_idx, s->rw)) {
-			p->pty_wait = s->rw ? OVE_LNX_PTYW_MREAD : OVE_LNX_PTYW_SREAD;
+	if (s->kind == LXP_FD_PTY) {
+		long r = lxp_pty_read(p, s->file_idx, s->rw, buf, len);
+		if (r == -LXP_EAGAIN && !lxp_pty_nonblock(s->file_idx, s->rw)) {
+			p->pty_wait = s->rw ? LXP_PTYW_MREAD : LXP_PTYW_SREAD;
 			p->pty_idx = s->file_idx;
 			p->pty_buf = (uintptr_t)buf;
 			p->pty_len = len;
-			return 0; /* parked; coordinator retries via ove_lnx_pty_retry */
+			return 0; /* parked; coordinator retries via lxp_pty_retry */
 		}
 		return r; /* bytes read, 0 (EOF), or -EAGAIN (O_NONBLOCK) */
 	}
 #endif
 
 	/* A writable-node file read returns bytes from its buffer at the fd offset. */
-	if (s->kind == OVE_LNX_FD_TMPFS) {
-		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
-		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-			return -OVE_LNX_EISDIR;
+	if (s->kind == LXP_FD_TMPFS) {
+		lxp_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & LXP_S_IFMT) == LXP_S_IFDIR)
+			return -LXP_EISDIR;
 		if (s->offset >= t->size)
 			return 0; /* EOF */
 		size_t n = t->size - s->offset;
@@ -863,9 +863,9 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 	}
 
 	/* A /proc file read returns bytes from the content generated at open. */
-	if (s->kind == OVE_LNX_FD_PROC) {
+	if (s->kind == LXP_FD_PROC) {
 		if (g_procf[s->file_idx].is_dir)
-			return -OVE_LNX_EISDIR;
+			return -LXP_EISDIR;
 		size_t plen = g_procf[s->file_idx].len;
 		if ((size_t)s->offset >= plen)
 			return 0; /* EOF */
@@ -878,9 +878,9 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 	}
 
 	/* Read from a rootfs file at the current offset. */
-	const ove_lnx_file_t *f = &p->fs[s->file_idx];
-	if ((file_mode(f) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-		return -OVE_LNX_EISDIR;
+	const lxp_file_t *f = &p->fs[s->file_idx];
+	if ((file_mode(f) & LXP_S_IFMT) == LXP_S_IFDIR)
+		return -LXP_EISDIR;
 	if (s->offset >= f->size)
 		return 0; /* EOF */
 	size_t n = f->size - s->offset;
@@ -897,37 +897,37 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
  * it mapped (the NOMMU path: MAP_FIXED-file mmap fails, so it mmaps anon + preads). Only
  * regular (seekable) files are supported — console/pipe return ESPIPE.
  */
-static long sys_pread(ove_lnx_proc_t *p, int fd, void *buf, size_t len, uint32_t off)
+static long sys_pread(lxp_proc_t *p, int fd, void *buf, size_t len, uint32_t off)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (!user_ok(p, buf, len, 1))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 
 #if defined(CONFIG_OVE_LINUX_DEV)
-	if (s->kind == OVE_LNX_FD_DEV)
-		return ove_lnx_dev_pread(p, s->file_idx, buf, len, off);
+	if (s->kind == LXP_FD_DEV)
+		return lxp_dev_pread(p, s->file_idx, buf, len, off);
 #endif
 	const uint8_t *data;
 	size_t size;
-	if (s->kind == OVE_LNX_FD_TMPFS) {
-		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
-		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-			return -OVE_LNX_EISDIR;
+	if (s->kind == LXP_FD_TMPFS) {
+		lxp_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & LXP_S_IFMT) == LXP_S_IFDIR)
+			return -LXP_EISDIR;
 		data = (const uint8_t *)t->data;
 		size = t->size;
-	} else if (s->kind == OVE_LNX_FD_PROC) {
+	} else if (s->kind == LXP_FD_PROC) {
 		if (g_procf[s->file_idx].is_dir)
-			return -OVE_LNX_EISDIR;
+			return -LXP_EISDIR;
 		data = (const uint8_t *)g_procf[s->file_idx].buf;
 		size = g_procf[s->file_idx].len;
-	} else if (s->kind == OVE_LNX_FD_CONSOLE || s->kind == OVE_LNX_FD_PIPE) {
-		return -OVE_LNX_ESPIPE; /* not seekable */
+	} else if (s->kind == LXP_FD_CONSOLE || s->kind == LXP_FD_PIPE) {
+		return -LXP_ESPIPE; /* not seekable */
 	} else {
-		const ove_lnx_file_t *f = &p->fs[s->file_idx];
-		if ((file_mode(f) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-			return -OVE_LNX_EISDIR;
+		const lxp_file_t *f = &p->fs[s->file_idx];
+		if ((file_mode(f) & LXP_S_IFMT) == LXP_S_IFDIR)
+			return -LXP_EISDIR;
 		data = (const uint8_t *)f->data;
 		size = f->size;
 	}
@@ -946,29 +946,29 @@ static long sys_pread(ove_lnx_proc_t *p, int fd, void *buf, size_t len, uint32_t
  * Device fds route to the driver; the writable overlay writes at the offset; the read-only
  * rootfs and console/pipe are not positioned-writable (ESPIPE).
  */
-static long sys_pwrite(ove_lnx_proc_t *p, int fd, const void *buf, size_t len, uint32_t off)
+static long sys_pwrite(lxp_proc_t *p, int fd, const void *buf, size_t len, uint32_t off)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (!user_ok(p, buf, len, 0))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 #if defined(CONFIG_OVE_LINUX_DEV)
-	if (s->kind == OVE_LNX_FD_DEV)
-		return ove_lnx_dev_pwrite(p, s->file_idx, buf, len, off);
+	if (s->kind == LXP_FD_DEV)
+		return lxp_dev_pwrite(p, s->file_idx, buf, len, off);
 #endif
-	if (s->kind == OVE_LNX_FD_TMPFS) {
-		ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
-		if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-			return -OVE_LNX_EBADF;
+	if (s->kind == LXP_FD_TMPFS) {
+		lxp_wnode_t *t = &g_wnodes[s->file_idx];
+		if ((t->mode & LXP_S_IFMT) == LXP_S_IFDIR)
+			return -LXP_EBADF;
 		if (wfs_reserve(s->file_idx, (size_t)off + len) != 0)
-			return -OVE_LNX_EFBIG;
+			return -LXP_EFBIG;
 		memcpy(t->data + off, buf, len);
 		if ((size_t)off + len > t->size)
 			t->size = (size_t)off + len;
 		return (long)len;
 	}
-	return -OVE_LNX_ESPIPE; /* console / pipe / read-only rootfs */
+	return -LXP_ESPIPE; /* console / pipe / read-only rootfs */
 }
 
 /*
@@ -983,7 +983,7 @@ static long sys_mprotect(uintptr_t addr, size_t len, int prot)
 	return 0;
 }
 
-static long sys_brk(ove_lnx_proc_t *p, uintptr_t addr)
+static long sys_brk(lxp_proc_t *p, uintptr_t addr)
 {
 	/* Linux brk: move the break to addr if valid, then return the (possibly
 	 * unchanged) break. uClibc's sbrk detects failure by ret != requested. */
@@ -992,7 +992,7 @@ static long sys_brk(ove_lnx_proc_t *p, uintptr_t addr)
 	return (long)p->brk_cur;
 }
 
-static long sys_exit(ove_lnx_proc_t *p, int status)
+static long sys_exit(lxp_proc_t *p, int status)
 {
 	p->exited = 1;
 	p->exit_status = status & 0xff;
@@ -1003,12 +1003,12 @@ static long sys_exit(ove_lnx_proc_t *p, int status)
  * Anonymous mmap, backed by the process arena (uClibc's malloc uses it for
  * larger allocations). File mappings need a VFS and are not supported yet.
  */
-static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, int flags, int fd,
+static long sys_mmap2(lxp_proc_t *p, uintptr_t addr, size_t len, int prot, int flags, int fd,
 		      uint32_t pgoff)
 {
 	(void)addr;
 	if (len == 0)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 
 	/* Text-sharing: a read-only file map of a rootfs file whose whole extent lies within the file
 	 * is returned IN-PLACE (zero-copy). FDPIC text is pure PIC — its relocations land in the
@@ -1017,10 +1017,10 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
 	 * (FreeRTOS/NuttX) reach the cpio directly; Zephyr embeds the cpio in an executable .text
 	 * subsection (.text.ove_rootfs), covered by the kernel's user-RX .text MPU region, so the
 	 * unprivileged program reads + executes the in-place text there too — no separate partition. */
-	if (!(flags & OVE_LNX_MAP_ANONYMOUS) && fd >= 0 && !(prot & 0x2 /* PROT_WRITE */)) {
-		ove_lnx_fd_t *s = fd_slot(p, fd);
-		if (s && s->kind == OVE_LNX_FD_FILE) {
-			const ove_lnx_file_t *f = &p->fs[s->file_idx];
+	if (!(flags & LXP_MAP_ANONYMOUS) && fd >= 0 && !(prot & 0x2 /* PROT_WRITE */)) {
+		lxp_fd_t *s = fd_slot(p, fd);
+		if (s && s->kind == LXP_FD_FILE) {
+			const lxp_file_t *f = &p->fs[s->file_idx];
 			if ((size_t)pgoff * 4096u + len <= f->size)
 				return (long)(uintptr_t)(f->data + (size_t)pgoff * 4096u);
 		}
@@ -1028,14 +1028,14 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
 
 #if defined(CONFIG_OVE_LINUX_DEV)
 	/* Device mmap (P3): a real /dev fd with a driver .mmap op (e.g. /dev/fb0) is mapped to
-	 * the device's own buffer — ove_lnx_dev_mmap parks on DEVW_MMAP and the coordinator
+	 * the device's own buffer — lxp_dev_mmap parks on DEVW_MMAP and the coordinator
 	 * installs the unprivileged MPU region + resumes with the mapped address. Devices
 	 * without an .mmap op return -ENODEV and fall through to the anonymous-arena copy. */
-	if (fd >= 0 && !(flags & OVE_LNX_MAP_ANONYMOUS)) {
-		ove_lnx_fd_t *s = fd_slot(p, fd);
-		if (s && s->kind == OVE_LNX_FD_DEV) {
-			long r = ove_lnx_dev_mmap(p, s->file_idx, len, pgoff);
-			if (r != -OVE_LNX_ENODEV)
+	if (fd >= 0 && !(flags & LXP_MAP_ANONYMOUS)) {
+		lxp_fd_t *s = fd_slot(p, fd);
+		if (s && s->kind == LXP_FD_DEV) {
+			long r = lxp_dev_mmap(p, s->file_idx, len, pgoff);
+			if (r != -LXP_ENODEV)
 				return r;
 		}
 	}
@@ -1043,9 +1043,9 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
 
 	void *m = ove_arena_alloc(p->arena, len);
 	if (!m)
-		return -OVE_LNX_ENOMEM;
+		return -LXP_ENOMEM;
 	memset(m, 0, len); /* anon reads as zero; also zero-fills a file map's bss tail */
-	if (!(flags & OVE_LNX_MAP_ANONYMOUS) && fd >= 0) {
+	if (!(flags & LXP_MAP_ANONYMOUS) && fd >= 0) {
 		/* File-backed mapping: ld.so loads a .so's read-only segment (the symtab/hash/
 		 * text) this way on NOMMU — read the file's bytes at the page offset into the
 		 * freshly-allocated block. (Anonymous maps ignore the fd.) */
@@ -1061,7 +1061,7 @@ static long sys_mmap2(ove_lnx_proc_t *p, uintptr_t addr, size_t len, int prot, i
  * process teardown, and a partial unmap of an arena chunk could corrupt the
  * free list. Tracking mmap extents for precise release is a later step.
  */
-static long sys_munmap(ove_lnx_proc_t *p, uintptr_t addr, size_t len)
+static long sys_munmap(lxp_proc_t *p, uintptr_t addr, size_t len)
 {
 	(void)len;
 	/* Reclaim the mapping. uClibc's malloc (MALLOC=y) grows its heap with anonymous
@@ -1076,10 +1076,10 @@ static long sys_munmap(ove_lnx_proc_t *p, uintptr_t addr, size_t len)
 
 /* open a rootfs file read-only; the fs is immutable, so writes are refused. */
 /* Claim the lowest free fd for (kind, idx, off); -EMFILE if the table is full. */
-static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
+static int fd_alloc(lxp_proc_t *p, uint8_t kind, int idx, size_t off)
 {
-	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
-		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
+	for (int fd = 0; fd < LXP_MAX_FDS; fd++) {
+		if (p->fds[fd].kind == LXP_FD_FREE) {
 			p->fds[fd].kind = kind;
 			p->fds[fd].rw = 0;
 			p->fds[fd].cloexec = 0;
@@ -1088,12 +1088,12 @@ static int fd_alloc(ove_lnx_proc_t *p, uint8_t kind, int idx, size_t off)
 			return fd;
 		}
 	}
-	return -OVE_LNX_EMFILE;
+	return -LXP_EMFILE;
 }
 
 /* Public wrapper so the socket bridge can mint an accept(2) fd (the fd table is
  * owned by this TU; the bridge owns the socket pool). */
-int ove_lnx_fd_install(ove_lnx_proc_t *p, uint8_t kind, int idx)
+int lxp_fd_install(lxp_proc_t *p, uint8_t kind, int idx)
 {
 	return fd_alloc(p, kind, idx, 0);
 }
@@ -1101,55 +1101,55 @@ int ove_lnx_fd_install(ove_lnx_proc_t *p, uint8_t kind, int idx)
 /* eventfd(2): a 64-bit counter fd used to wake a poller from another thread — curl's
  * threaded resolver (AsynchDNS) writes it when a name resolves. Threads share the fd
  * table (CLONE_VM), so both ends address the same counter by its pool index. */
-#define OVE_LNX_NEVENTFD 8
+#define LXP_NEVENTFD 8
 static struct {
 	uint64_t ctr;
 	uint16_t flags;
 	uint8_t used;
-} g_efd[OVE_LNX_NEVENTFD];
+} g_efd[LXP_NEVENTFD];
 
 static long efd_new(unsigned initval, int flags)
 {
-	for (int i = 0; i < OVE_LNX_NEVENTFD; i++)
+	for (int i = 0; i < LXP_NEVENTFD; i++)
 		if (!g_efd[i].used) {
 			g_efd[i].used = 1;
 			g_efd[i].ctr = initval;
 			g_efd[i].flags = (uint16_t)flags;
 			return i;
 		}
-	return -OVE_LNX_EMFILE;
+	return -LXP_EMFILE;
 }
 
 /* eventfd read/write: 8-byte counter. read returns (and clears, or decrements in
  * SEMAPHORE mode) the counter, EAGAIN when zero (the caller polls first); write adds. */
-static long efd_read(ove_lnx_proc_t *p, int ei, void *buf, size_t len)
+static long efd_read(lxp_proc_t *p, int ei, void *buf, size_t len)
 {
-	if (ei < 0 || ei >= OVE_LNX_NEVENTFD || !g_efd[ei].used)
-		return -OVE_LNX_EBADF;
+	if (ei < 0 || ei >= LXP_NEVENTFD || !g_efd[ei].used)
+		return -LXP_EBADF;
 	if (len < 8)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	if (g_efd[ei].ctr == 0)
-		return -OVE_LNX_EAGAIN; /* counter empty; the poller re-checks on the tick */
+		return -LXP_EAGAIN; /* counter empty; the poller re-checks on the tick */
 	if (!user_ok(p, buf, 8, 1))
-		return -OVE_LNX_EFAULT;
-	uint64_t v = (g_efd[ei].flags & OVE_LNX_EFD_SEMAPHORE) ? 1u : g_efd[ei].ctr;
+		return -LXP_EFAULT;
+	uint64_t v = (g_efd[ei].flags & LXP_EFD_SEMAPHORE) ? 1u : g_efd[ei].ctr;
 	g_efd[ei].ctr -= v;
 	memcpy(buf, &v, 8);
 	return 8;
 }
 
-static long efd_write(ove_lnx_proc_t *p, int ei, const void *buf, size_t len)
+static long efd_write(lxp_proc_t *p, int ei, const void *buf, size_t len)
 {
-	if (ei < 0 || ei >= OVE_LNX_NEVENTFD || !g_efd[ei].used)
-		return -OVE_LNX_EBADF;
+	if (ei < 0 || ei >= LXP_NEVENTFD || !g_efd[ei].used)
+		return -LXP_EBADF;
 	if (len < 8)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	if (!user_ok(p, buf, 8, 0))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	uint64_t v;
 	memcpy(&v, buf, 8);
 	if (v == UINT64_MAX) /* -1 is reserved */
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	if (UINT64_MAX - g_efd[ei].ctr - 1 < v) /* would overflow past max-1 */
 		g_efd[ei].ctr = UINT64_MAX - 1;
 	else
@@ -1187,7 +1187,7 @@ static long normalize_abs(const char *in, char *out, size_t outlen)
 			continue;
 		}
 		if (ol + 1 + seglen >= outlen)
-			return -OVE_LNX_ENAMETOOLONG;
+			return -LXP_ENAMETOOLONG;
 		out[ol++] = '/';
 		memcpy(out + ol, seg, seglen);
 		ol += seglen;
@@ -1204,26 +1204,26 @@ static long normalize_abs(const char *in, char *out, size_t outlen)
  * Resolve `in` (absolute, or relative to the process cwd) into a normalized
  * absolute path in out[outlen]. Returns 0, or -ENAMETOOLONG on overflow.
  */
-static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, size_t outlen)
+static long resolve_path(const lxp_proc_t *p, const char *in, char *out, size_t outlen)
 {
 	/* Every path syscall funnels through here, so one check guards them all: reject a path pointer
 	 * that isn't a NUL-terminated string wholly inside the program's memory (-EFAULT) before any
 	 * deref — else a bad `in` faults the kernel or walks a strlen off the region. */
-	if (user_strnlen(p, in, OVE_LNX_PATH_MAX) < 0)
-		return -OVE_LNX_EFAULT;
-	char joined[OVE_LNX_PATH_MAX];
+	if (user_strnlen(p, in, LXP_PATH_MAX) < 0)
+		return -LXP_EFAULT;
+	char joined[LXP_PATH_MAX];
 	size_t jl = 0;
 	if (in[0] != '/') { /* prefix the cwd (which is absolute + normalized) */
 		for (const char *c = p->cwd; *c; c++) {
 			if (jl + 2 >= sizeof(joined))
-				return -OVE_LNX_ENAMETOOLONG;
+				return -LXP_ENAMETOOLONG;
 			joined[jl++] = *c;
 		}
 		joined[jl++] = '/';
 	}
 	for (const char *c = in; *c; c++) {
 		if (jl + 1 >= sizeof(joined))
-			return -OVE_LNX_ENAMETOOLONG;
+			return -LXP_ENAMETOOLONG;
 		joined[jl++] = *c;
 	}
 	joined[jl] = '\0';
@@ -1231,7 +1231,7 @@ static long resolve_path(const ove_lnx_proc_t *p, const char *in, char *out, siz
 }
 
 /* Find the rootfs index for an absolute path in (fs,count), or -1. */
-static int fsx_lookup(const ove_lnx_file_t *fs, int count, const char *abspath)
+static int fsx_lookup(const lxp_file_t *fs, int count, const char *abspath)
 {
 	for (int i = 0; i < count; i++)
 		if (strcmp(fs[i].path, abspath) == 0)
@@ -1244,17 +1244,17 @@ static int fsx_lookup(const ove_lnx_file_t *fs, int count, const char *abspath)
  * target against the link's own directory (so e.g. /sbin/init -> ../bin/busybox
  * resolves to /bin/busybox). Returns the final non-symlink index, or -1.
  */
-static int fsx_follow(const ove_lnx_file_t *fs, int count, int idx)
+static int fsx_follow(const lxp_file_t *fs, int count, int idx)
 {
 	for (int hop = 0; hop < 8 && idx >= 0; hop++) {
-		const ove_lnx_file_t *lnk = &fs[idx];
-		if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK)
+		const lxp_file_t *lnk = &fs[idx];
+		if ((file_mode(lnk) & LXP_S_IFMT) != LXP_S_IFLNK)
 			return idx;
 		const char *tgt = (const char *)lnk->data;
 		size_t tl = lnk->size;
 		if (!tgt || tl == 0)
 			return -1;
-		char raw[OVE_LNX_PATH_MAX], abs[OVE_LNX_PATH_MAX];
+		char raw[LXP_PATH_MAX], abs[LXP_PATH_MAX];
 		size_t rl = 0;
 		if (tgt[0] != '/') { /* relative to the link's own directory */
 			const char *base = strrchr(lnk->path, '/');
@@ -1275,12 +1275,12 @@ static int fsx_follow(const ove_lnx_file_t *fs, int count, int idx)
 }
 
 /* Find the rootfs index for an absolute path, or -1. */
-static int fs_lookup(const ove_lnx_proc_t *p, const char *abspath)
+static int fs_lookup(const lxp_proc_t *p, const char *abspath)
 {
 	return fsx_lookup(p->fs, p->fs_count, abspath);
 }
 
-static int fs_follow(const ove_lnx_proc_t *p, int idx)
+static int fs_follow(const lxp_proc_t *p, int idx)
 {
 	return fsx_follow(p->fs, p->fs_count, idx);
 }
@@ -1290,12 +1290,12 @@ static int fs_follow(const ove_lnx_proc_t *p, int idx)
  * bytes. Public so the run loop can locate the FDPIC interpreter (ld.so) at launch, before
  * a proc (and its fd table) exists. Returns 0 + sets data/len, or -ENOENT.
  */
-long ove_lnx_rootfs_resolve(const ove_lnx_file_t *fs, int count, const char *abspath,
+long lxp_rootfs_resolve(const lxp_file_t *fs, int count, const char *abspath,
 			    const uint8_t **data, size_t *len)
 {
 	int idx = fsx_follow(fs, count, fsx_lookup(fs, count, abspath));
 	if (idx < 0)
-		return -OVE_LNX_ENOENT;
+		return -LXP_ENOENT;
 	if (data)
 		*data = fs[idx].data;
 	if (len)
@@ -1348,7 +1348,7 @@ static int proc_is(const char *abs)
 
 /* Parse "/proc/<pid|self>[/file]": returns the pid (>0) + sets *file to the
  * trailing component (NULL if the path is the /proc/<pid> dir itself), or 0. */
-static int proc_pid(const char *abs, const ove_lnx_proc_t *p, const char **file)
+static int proc_pid(const char *abs, const lxp_proc_t *p, const char **file)
 {
 	*file = NULL;
 	if (strncmp(abs, "/proc/", 6) != 0)
@@ -1371,43 +1371,43 @@ static int proc_pid(const char *abs, const ove_lnx_proc_t *p, const char **file)
 	return pid;
 }
 
-static int proc_pid_known(const ove_lnx_proc_t *p, int pid)
+static int proc_pid_known(const lxp_proc_t *p, int pid)
 {
 	/* pid 1 + the running process are always valid; every other live Linux slot
 	 * and RTOS kernel thread comes from the ps/top snapshot. */
-	return pid == 1 || pid == p->pid || ove_lnx_pent_find(pid) != NULL;
+	return pid == 1 || pid == p->pid || lxp_pent_find(pid) != NULL;
 }
 
 static const char *const g_proc_files[] = {"version", "uptime",	 "meminfo",	"cpuinfo", "mounts",
 					   "stat",    "loadavg", "filesystems", NULL};
 
 /* st_mode for a /proc node, or 0 if the path is not a synthetic /proc node. */
-static uint32_t proc_mode(const char *abs, const ove_lnx_proc_t *p)
+static uint32_t proc_mode(const char *abs, const lxp_proc_t *p)
 {
 	if (strcmp(abs, "/proc") == 0)
-		return OVE_LNX_S_IFDIR | 0555u;
+		return LXP_S_IFDIR | 0555u;
 	if (strcmp(abs, "/proc/self") == 0)
-		return OVE_LNX_S_IFLNK | 0777u;
+		return LXP_S_IFLNK | 0777u;
 	const char *file;
 	int pid = proc_pid(abs, p, &file);
 	if (pid > 0)
 		return !proc_pid_known(p, pid) ? 0u
-		       : file		       ? (OVE_LNX_S_IFREG | 0444u)
-					       : (OVE_LNX_S_IFDIR | 0555u);
+		       : file		       ? (LXP_S_IFREG | 0444u)
+					       : (LXP_S_IFDIR | 0555u);
 #if defined(CONFIG_OVE_LINUX_NET)
 	if (strcmp(abs, "/proc/net") == 0)
-		return OVE_LNX_S_IFDIR | 0555u;
+		return LXP_S_IFDIR | 0555u;
 	if (strcmp(abs, "/proc/net/dev") == 0 || strcmp(abs, "/proc/net/route") == 0)
-		return OVE_LNX_S_IFREG | 0444u;
+		return LXP_S_IFREG | 0444u;
 #endif
 	for (int i = 0; g_proc_files[i]; i++)
 		if (strcmp(abs + 6, g_proc_files[i]) == 0)
-			return OVE_LNX_S_IFREG | 0444u;
+			return LXP_S_IFREG | 0444u;
 	return 0;
 }
 
 /* Generate the content of a /proc FILE into buf[cap]; returns length, or -1. */
-static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t cap)
+static long proc_gen(const char *abs, const lxp_proc_t *p, char *buf, size_t cap)
 {
 	size_t o = 0;
 	const char *file;
@@ -1418,7 +1418,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		/* Metadata from the ps/top snapshot; fall back to pid 1 / the current
 		 * process before the first snapshot refresh. comm is the bare name —
 		 * kernel threads get an empty cmdline so ps/top bracket them as [name]. */
-		const struct ove_lnx_pentry *e = ove_lnx_pent_find(pid);
+		const struct lxp_pentry *e = lxp_pent_find(pid);
 		char comm[20];
 		int ppid, is_kernel;
 		char state;
@@ -1439,7 +1439,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 				comm[ci++] = *s;
 			ppid = (pid == 1) ? 0 : (pid == p->pid) ? p->ppid : 1;
 			state = (pid == p->pid) ? 'R' : 'S';
-			cpu_us = ove_lnx_proc_cpu_us(pid);
+			cpu_us = lxp_proc_cpu_us(pid);
 			is_kernel = 0;
 		}
 		comm[ci] = '\0';
@@ -1488,7 +1488,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		o = p_str(buf, o, cap, "Linux version 6.1.0 (overtos) (uClibc) #1 oveRTOS\n");
 	} else if (strcmp(abs, "/proc/uptime") == 0) {
 		uint64_t ns = 0;
-		ove_lnx_time_ns(&ns);
+		lxp_time_ns(&ns);
 		o = p_dec(buf, o, cap, ns / 1000000000ull);
 		o = p_str(buf, o, cap, ".00 ");
 		o = p_dec(buf, o, cap, ns / 1000000000ull);
@@ -1509,7 +1509,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		/* All busy time is reported as "user"; top derives %CPU from the
 		 * user-vs-idle delta between two reads (USER_HZ = 100 → jiffies). */
 		uint64_t idle_us = 0, busy_us = 0;
-		ove_lnx_cpu_totals(&idle_us, &busy_us);
+		lxp_cpu_totals(&idle_us, &busy_us);
 		uint64_t user = busy_us / 10000ull, idle = idle_us / 10000ull;
 		o = p_str(buf, o, cap, "cpu  ");
 		o = p_dec(buf, o, cap, user);
@@ -1521,7 +1521,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		o = p_dec(buf, o, cap, idle);
 		o = p_str(buf, o, cap, " 0 0 0 0 0 0\nctxt 0\nbtime 0\n");
 	} else if (strcmp(abs, "/proc/loadavg") == 0) {
-		int nproc = ove_lnx_pent_count();
+		int nproc = lxp_pent_count();
 		o = p_str(buf, o, cap, "0.00 0.00 0.00 1/");
 		o = p_dec(buf, o, cap, (uint64_t)(nproc > 0 ? nproc : 1));
 		o = p_str(buf, o, cap, " ");
@@ -1539,7 +1539,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 			  "packets errs drop fifo colls carrier compressed\n");
 		/* One interface (eth0). The SIOC* ioctls ignore ifr_name, so listing a
 		 * loopback here would make busybox print it with eth0's data — omit it. */
-		if (ove_lnx_sock_ifsnapshot(NULL, NULL, NULL, NULL, NULL) == 0)
+		if (lxp_sock_ifsnapshot(NULL, NULL, NULL, NULL, NULL) == 0)
 			o = p_str(buf, o, cap,
 				  "  eth0:       0       0    0    0    0     0          0         0"
 				  "        0       0    0    0    0     0       0          0\n");
@@ -1548,7 +1548,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		o = p_str(buf, o, cap,
 			  "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU"
 			  "\tWindow\tIRTT\n");
-		if (ove_lnx_sock_ifsnapshot(ip, gw, nm, NULL, NULL) == 0) {
+		if (lxp_sock_ifsnapshot(ip, gw, nm, NULL, NULL) == 0) {
 			uint8_t net[4];
 			for (int i = 0; i < 4; i++)
 				net[i] = (uint8_t)(ip[i] & nm[i]);
@@ -1574,33 +1574,33 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 
 /* Open a /proc node: a generated-content file fd, or a directory fd for
  * getdents. Returns an fd, or a negative errno (caller already resolved `abs`). */
-static long proc_open(ove_lnx_proc_t *p, const char *abs)
+static long proc_open(lxp_proc_t *p, const char *abs)
 {
 	uint32_t m = proc_mode(abs, p);
-	if (m == 0 || (m & OVE_LNX_S_IFMT) == OVE_LNX_S_IFLNK)
-		return -OVE_LNX_ENOENT; /* /proc/self resolves via readlink, not open */
-	int dir = (m & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR;
-	for (int i = 0; i < OVE_LNX_NPROCF; i++) {
+	if (m == 0 || (m & LXP_S_IFMT) == LXP_S_IFLNK)
+		return -LXP_ENOENT; /* /proc/self resolves via readlink, not open */
+	int dir = (m & LXP_S_IFMT) == LXP_S_IFDIR;
+	for (int i = 0; i < LXP_NPROCF; i++) {
 		if (g_procf[i].used)
 			continue;
-		long n = dir ? 0 : proc_gen(abs, p, g_procf[i].buf, OVE_LNX_PROCBUF);
+		long n = dir ? 0 : proc_gen(abs, p, g_procf[i].buf, LXP_PROCBUF);
 		if (n < 0)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 		strcpy(g_procf[i].path, abs);
 		g_procf[i].len = (size_t)n;
 		g_procf[i].is_dir = dir;
 		g_procf[i].used = 1;
-		return fd_alloc(p, OVE_LNX_FD_PROC, i, 0);
+		return fd_alloc(p, LXP_FD_PROC, i, 0);
 	}
-	return -OVE_LNX_EMFILE;
+	return -LXP_EMFILE;
 }
 
-static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags)
+static long sys_openat(lxp_proc_t *p, int dirfd, const char *path, int flags)
 {
 	(void)dirfd; /* dirfd is AT_FDCWD; relative paths resolve against p->cwd */
 	if (!path)
-		return -OVE_LNX_EFAULT;
-	char abspath[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
@@ -1611,23 +1611,23 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 	 * /dev/console, makes it the controlling tty, and dups it to fds 0/1/2. */
 	if (strcmp(path, "/dev/console") == 0 || strcmp(path, "/dev/tty") == 0 ||
 	    strcmp(path, "/dev/tty0") == 0 || strcmp(path, "/dev/ttyS0") == 0)
-		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 2, 0);
+		return fd_alloc(p, LXP_FD_CONSOLE, 2, 0);
 	/* /dev/null (file_idx 3): reads EOF, writes are discarded. init points a
 	 * child's stdio here when it has no controlling tty. */
 	if (strcmp(path, "/dev/null") == 0)
-		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 3, 0);
+		return fd_alloc(p, LXP_FD_CONSOLE, 3, 0);
 	/* /dev/urandom + /dev/random (file_idx 4): reads return PRNG bytes (dropbear/mbedTLS
 	 * open the device directly for entropy, not the getrandom syscall); writes discarded. */
 	if (strcmp(path, "/dev/urandom") == 0 || strcmp(path, "/dev/random") == 0)
-		return fd_alloc(p, OVE_LNX_FD_CONSOLE, 4, 0);
+		return fd_alloc(p, LXP_FD_CONSOLE, 4, 0);
 #if defined(CONFIG_OVE_LINUX_PTY)
 	/* Unix98 pty: each open of /dev/ptmx mints a fresh pair (the master, rw=1); the
 	 * slave is /dev/pts/N (rw=0), N = the pool index from TIOCGPTN/ptsname. */
 	if (strcmp(path, "/dev/ptmx") == 0) {
-		long idx = ove_lnx_pty_open_master(flags);
+		long idx = lxp_pty_open_master(flags);
 		if (idx < 0)
 			return idx;
-		int fd = fd_alloc(p, OVE_LNX_FD_PTY, (int)idx, 0);
+		int fd = fd_alloc(p, LXP_FD_PTY, (int)idx, 0);
 		if (fd >= 0)
 			p->fds[fd].rw = 1; /* master end */
 		return fd;
@@ -1636,29 +1636,29 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 		int num = 0;
 		const char *d = path + 9;
 		if (*d < '0' || *d > '9')
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 		for (; *d >= '0' && *d <= '9'; d++)
 			num = num * 10 + (*d - '0');
 		if (*d != '\0')
-			return -OVE_LNX_ENOENT;
-		long idx = ove_lnx_pty_open_slave(num, flags);
+			return -LXP_ENOENT;
+		long idx = lxp_pty_open_slave(num, flags);
 		if (idx < 0)
 			return idx;
-		return fd_alloc(p, OVE_LNX_FD_PTY, (int)idx, 0); /* slave end (rw=0) */
+		return fd_alloc(p, LXP_FD_PTY, (int)idx, 0); /* slave end (rw=0) */
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_DEV)
 	/* Registered character devices (/dev/fb0, /dev/input/event0, ...). A hit opens
 	 * an FD_DEV whose file_idx is the device open-pool index; a miss falls through. */
 	{
-		int di = ove_lnx_dev_lookup(path);
+		int di = lxp_dev_lookup(path);
 		if (di >= 0) {
-			long oi = ove_lnx_dev_open_new(p, di, flags);
+			long oi = lxp_dev_open_new(p, di, flags);
 			if (oi < 0)
 				return oi;
-			int fd = fd_alloc(p, OVE_LNX_FD_DEV, (int)oi, 0);
+			int fd = fd_alloc(p, LXP_FD_DEV, (int)oi, 0);
 			if (fd < 0)
-				ove_lnx_dev_close((int)oi);
+				lxp_dev_close((int)oi);
 			return fd;
 		}
 	}
@@ -1666,81 +1666,81 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 #if defined(CONFIG_OVE_LINUX_NETFS)
 	/* Remote 9P mount (/mnt/pi): read-only browse. Shadows the RO rootfs; the open
 	 * parks (walk+getattr+lopen round-trips) and the coordinator installs the fd. */
-	if (ove_lnx_netfs_lookup(path) >= 0)
-		return ove_lnx_netfs_open(p, path, flags);
+	if (lxp_netfs_lookup(path) >= 0)
+		return lxp_netfs_open(p, path, flags);
 #endif
-	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
+	int wr = (flags & LXP_O_ACCMODE) != LXP_O_RDONLY;
 	int wi = wfs_find(path);
 
 	/* A writable open (or O_CREAT) goes to the writable VFS overlay. */
-	if (wr || (flags & OVE_LNX_O_CREAT)) {
+	if (wr || (flags & LXP_O_CREAT)) {
 		if (wi < 0) {
-			if (!(flags & OVE_LNX_O_CREAT)) {
+			if (!(flags & LXP_O_CREAT)) {
 				if (fs_lookup(p, path) >= 0)
-					return -OVE_LNX_EROFS; /* RO rootfs file */
-				return -OVE_LNX_ENOENT;
+					return -LXP_EROFS; /* RO rootfs file */
+				return -LXP_ENOENT;
 			}
-			wi = wfs_create(path, OVE_LNX_S_IFREG | 0644u);
+			wi = wfs_create(path, LXP_S_IFREG | 0644u);
 			if (wi < 0)
-				return -OVE_LNX_EMFILE;
+				return -LXP_EMFILE;
 		} else {
-			if ((g_wnodes[wi].mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-				return -OVE_LNX_EISDIR;
-			if (flags & OVE_LNX_O_TRUNC)
+			if ((g_wnodes[wi].mode & LXP_S_IFMT) == LXP_S_IFDIR)
+				return -LXP_EISDIR;
+			if (flags & LXP_O_TRUNC)
 				g_wnodes[wi].size = 0;
 		}
-		return fd_alloc(p, OVE_LNX_FD_TMPFS, wi,
-				(flags & OVE_LNX_O_APPEND) ? g_wnodes[wi].size : 0);
+		return fd_alloc(p, LXP_FD_TMPFS, wi,
+				(flags & LXP_O_APPEND) ? g_wnodes[wi].size : 0);
 	}
 
 	/* Read: a writable node shadows the rootfs; else the read-only rootfs. */
 	if (wi >= 0)
-		return fd_alloc(p, OVE_LNX_FD_TMPFS, wi, 0);
+		return fd_alloc(p, LXP_FD_TMPFS, wi, 0);
 	/* Follow symlinks so a read open of e.g. /lib/libc.so.0 -> libuClibc.so returns the
 	 * target ELF (ld.so opens its .so deps by their symlinked SONAMEs). */
 	int idx = fs_follow(p, fs_lookup(p, path));
 	if (idx >= 0)
-		return fd_alloc(p, OVE_LNX_FD_FILE, idx, 0);
-	return -OVE_LNX_ENOENT;
+		return fd_alloc(p, LXP_FD_FILE, idx, 0);
+	return -LXP_ENOENT;
 }
 
-static long sys_close(ove_lnx_proc_t *p, int fd)
+static long sys_close(lxp_proc_t *p, int fd)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
-	if (s->kind == OVE_LNX_FD_PROC)
+		return -LXP_EBADF;
+	if (s->kind == LXP_FD_PROC)
 		g_procf[s->file_idx].used = 0; /* release the generated-content slot */
 #if defined(CONFIG_OVE_LINUX_DEV)
-	if (s->kind == OVE_LNX_FD_DEV)
-		ove_lnx_dev_close(s->file_idx); /* refs--, ops->release at the last close */
+	if (s->kind == LXP_FD_DEV)
+		lxp_dev_close(s->file_idx); /* refs--, ops->release at the last close */
 #endif
-	if (s->kind == OVE_LNX_FD_EVENTFD && s->file_idx >= 0 && s->file_idx < OVE_LNX_NEVENTFD)
+	if (s->kind == LXP_FD_EVENTFD && s->file_idx >= 0 && s->file_idx < LXP_NEVENTFD)
 		g_efd[s->file_idx].used = 0; /* threads share the fd table → one close frees it */
 #if defined(CONFIG_OVE_LINUX_NET)
-	if (s->kind == OVE_LNX_FD_SOCKET)
-		ove_lnx_sock_close(s->file_idx); /* refs--, ove_socket_close at the last close */
+	if (s->kind == LXP_FD_SOCKET)
+		lxp_sock_close(s->file_idx); /* refs--, ove_socket_close at the last close */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	if (s->kind == OVE_LNX_FD_NET)
-		ove_lnx_netfs_close(s->file_idx); /* refs--, enqueue a Tclunk at the last close */
+	if (s->kind == LXP_FD_NET)
+		lxp_netfs_close(s->file_idx); /* refs--, enqueue a Tclunk at the last close */
 #endif
-	s->kind = OVE_LNX_FD_FREE;
+	s->kind = LXP_FD_FREE;
 	return 0;
 }
 
 /* pipe(2)/pipe2(2): allocate a pipe object + a read-end / write-end fd pair. @p flags
  * carries O_CLOEXEC for pipe2 (dropbear's exec-status pipe is a CLOEXEC pipe2). */
-static long sys_pipe(ove_lnx_proc_t *p, int *fds, int flags)
+static long sys_pipe(lxp_proc_t *p, int *fds, int flags)
 {
 	if (!user_ok(p, fds, 2 * sizeof(int), 1)) /* the kernel writes fds[0],fds[1] */
-		return -OVE_LNX_EFAULT;
-	uint8_t cx = (flags & OVE_LNX_O_CLOEXEC) ? 1 : 0;
-	uint8_t nb = (flags & OVE_LNX_O_NONBLOCK) ? 1 : 0; /* pipe2(O_NONBLOCK): both ends non-blocking */
+		return -LXP_EFAULT;
+	uint8_t cx = (flags & LXP_O_CLOEXEC) ? 1 : 0;
+	uint8_t nb = (flags & LXP_O_NONBLOCK) ? 1 : 0; /* pipe2(O_NONBLOCK): both ends non-blocking */
 	/* A pipe slot is free when no live proc holds either end (auto-reclaimed when
 	 * both ends close or the holders exit — there is no explicit pipe free path). */
 	int pi = -1;
-	for (int i = 0; i < OVE_LNX_NPIPE; i++) {
+	for (int i = 0; i < LXP_NPIPE; i++) {
 		int rd, wr;
 		pipe_ends(i, &rd, &wr);
 		if (rd == 0 && wr == 0) {
@@ -1749,10 +1749,10 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds, int flags)
 		}
 	}
 	if (pi < 0)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	int rfd = -1, wfd = -1;
-	for (int fd = 0; fd < OVE_LNX_MAX_FDS && wfd < 0; fd++) {
-		if (p->fds[fd].kind != OVE_LNX_FD_FREE)
+	for (int fd = 0; fd < LXP_MAX_FDS && wfd < 0; fd++) {
+		if (p->fds[fd].kind != LXP_FD_FREE)
 			continue;
 		if (rfd < 0)
 			rfd = fd;
@@ -1760,120 +1760,120 @@ static long sys_pipe(ove_lnx_proc_t *p, int *fds, int flags)
 			wfd = fd;
 	}
 	if (wfd < 0)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	g_pipes[pi].used = 1;
 	g_pipes[pi].rpos = 0;
 	g_pipes[pi].wpos = 0;
 	g_pipes[pi].count = 0;
 	p->fds[rfd] =
-		(ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 0, .cloexec = cx, .nonblock = nb, .file_idx = pi};
+		(lxp_fd_t){.kind = LXP_FD_PIPE, .rw = 0, .cloexec = cx, .nonblock = nb, .file_idx = pi};
 	p->fds[wfd] =
-		(ove_lnx_fd_t){.kind = OVE_LNX_FD_PIPE, .rw = 1, .cloexec = cx, .nonblock = nb, .file_idx = pi};
+		(lxp_fd_t){.kind = LXP_FD_PIPE, .rw = 1, .cloexec = cx, .nonblock = nb, .file_idx = pi};
 	fds[0] = rfd;
 	fds[1] = wfd;
 	return 0;
 }
 
 /* dup2/dup3: make newfd alias oldfd's target (the pipe wiring the shell does). */
-static long sys_dup2(ove_lnx_proc_t *p, int oldfd, int newfd)
+static long sys_dup2(lxp_proc_t *p, int oldfd, int newfd)
 {
-	ove_lnx_fd_t *s = fd_slot(p, oldfd);
+	lxp_fd_t *s = fd_slot(p, oldfd);
 	if (!s)
-		return -OVE_LNX_EBADF;
-	if (newfd < 0 || newfd >= OVE_LNX_MAX_FDS)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
+	if (newfd < 0 || newfd >= LXP_MAX_FDS)
+		return -LXP_EBADF;
 	if (oldfd != newfd) {
 #if defined(CONFIG_OVE_LINUX_DEV)
-		if (p->fds[newfd].kind == OVE_LNX_FD_DEV)
-			ove_lnx_dev_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
+		if (p->fds[newfd].kind == LXP_FD_DEV)
+			lxp_dev_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-		if (p->fds[newfd].kind == OVE_LNX_FD_SOCKET)
-			ove_lnx_sock_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
+		if (p->fds[newfd].kind == LXP_FD_SOCKET)
+			lxp_sock_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-		if (p->fds[newfd].kind == OVE_LNX_FD_NET)
-			ove_lnx_netfs_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
+		if (p->fds[newfd].kind == LXP_FD_NET)
+			lxp_netfs_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
 		p->fds[newfd] = *s;
 #if defined(CONFIG_OVE_LINUX_DEV)
-		if (s->kind == OVE_LNX_FD_DEV)
-			ove_lnx_dev_get(s->file_idx); /* the new fd shares the open */
+		if (s->kind == LXP_FD_DEV)
+			lxp_dev_get(s->file_idx); /* the new fd shares the open */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-		if (s->kind == OVE_LNX_FD_SOCKET)
-			ove_lnx_sock_get(s->file_idx); /* the new fd shares the open */
+		if (s->kind == LXP_FD_SOCKET)
+			lxp_sock_get(s->file_idx); /* the new fd shares the open */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-		if (s->kind == OVE_LNX_FD_NET)
-			ove_lnx_netfs_get(s->file_idx); /* the new fd shares the open */
+		if (s->kind == LXP_FD_NET)
+			lxp_netfs_get(s->file_idx); /* the new fd shares the open */
 #endif
 	}
 	return newfd;
 }
 
 /* dup(2): alias oldfd onto the lowest free fd. */
-static long sys_dup(ove_lnx_proc_t *p, int oldfd)
+static long sys_dup(lxp_proc_t *p, int oldfd)
 {
-	ove_lnx_fd_t *s = fd_slot(p, oldfd);
+	lxp_fd_t *s = fd_slot(p, oldfd);
 	if (!s)
-		return -OVE_LNX_EBADF;
-	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++) {
-		if (p->fds[fd].kind == OVE_LNX_FD_FREE) {
+		return -LXP_EBADF;
+	for (int fd = 0; fd < LXP_MAX_FDS; fd++) {
+		if (p->fds[fd].kind == LXP_FD_FREE) {
 			p->fds[fd] = *s;
 #if defined(CONFIG_OVE_LINUX_DEV)
-			if (s->kind == OVE_LNX_FD_DEV)
-				ove_lnx_dev_get(s->file_idx); /* the dup shares the open */
+			if (s->kind == LXP_FD_DEV)
+				lxp_dev_get(s->file_idx); /* the dup shares the open */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-			if (s->kind == OVE_LNX_FD_SOCKET)
-				ove_lnx_sock_get(s->file_idx); /* the dup shares the open */
+			if (s->kind == LXP_FD_SOCKET)
+				lxp_sock_get(s->file_idx); /* the dup shares the open */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-			if (s->kind == OVE_LNX_FD_NET)
-				ove_lnx_netfs_get(s->file_idx); /* the dup shares the open */
+			if (s->kind == LXP_FD_NET)
+				lxp_netfs_get(s->file_idx); /* the dup shares the open */
 #endif
 			return fd;
 		}
 	}
-	return -OVE_LNX_EMFILE;
+	return -LXP_EMFILE;
 }
 
-static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
+static long sys_lseek(lxp_proc_t *p, int fd, long off, int whence)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 #if defined(CONFIG_OVE_LINUX_DEV)
-	if (s->kind == OVE_LNX_FD_DEV)
-		return ove_lnx_dev_lseek(s->file_idx, off, whence);
+	if (s->kind == LXP_FD_DEV)
+		return lxp_dev_lseek(s->file_idx, off, whence);
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	if (s->kind == OVE_LNX_FD_NET)
-		return ove_lnx_netfs_lseek(s->file_idx, off, whence);
+	if (s->kind == LXP_FD_NET)
+		return lxp_netfs_lseek(s->file_idx, off, whence);
 #endif
-	if (s->kind != OVE_LNX_FD_FILE && s->kind != OVE_LNX_FD_TMPFS)
-		return -OVE_LNX_ESPIPE; /* console/pipe is not seekable */
+	if (s->kind != LXP_FD_FILE && s->kind != LXP_FD_TMPFS)
+		return -LXP_ESPIPE; /* console/pipe is not seekable */
 
-	long end = (s->kind == OVE_LNX_FD_TMPFS) ? (long)g_wnodes[s->file_idx].size
+	long end = (s->kind == LXP_FD_TMPFS) ? (long)g_wnodes[s->file_idx].size
 						 : (long)p->fs[s->file_idx].size;
 	long base;
 	switch (whence) {
-	case OVE_LNX_SEEK_SET:
+	case LXP_SEEK_SET:
 		base = 0;
 		break;
-	case OVE_LNX_SEEK_CUR:
+	case LXP_SEEK_CUR:
 		base = (long)s->offset;
 		break;
-	case OVE_LNX_SEEK_END:
+	case LXP_SEEK_END:
 		base = end;
 		break;
 	default:
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	}
 	long pos = base + off;
 	if (pos < 0)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	s->offset = (size_t)pos;
 	return pos;
 }
@@ -1881,7 +1881,7 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 /* _llseek(fd, offset_high, offset_low, loff_t *result, whence): the 64-bit-offset
  * seek uClibc uses in large-file mode. Pagers/editors (less/more/vi) seek to size
  * the file (the %-position). Our files are well under 4 GB so offset_high is 0. */
-static long sys_llseek(ove_lnx_proc_t *p, int fd, unsigned long off_hi, unsigned long off_lo,
+static long sys_llseek(lxp_proc_t *p, int fd, unsigned long off_hi, unsigned long off_lo,
 		       uint64_t *result, unsigned int whence)
 {
 	(void)off_hi;
@@ -1889,7 +1889,7 @@ static long sys_llseek(ove_lnx_proc_t *p, int fd, unsigned long off_hi, unsigned
 	if (pos < 0)
 		return pos;
 	if (result && !user_ok(p, result, sizeof(*result), 1))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	if (result)
 		*result = (uint64_t)pos;
 	return 0;
@@ -1898,20 +1898,20 @@ static long sys_llseek(ove_lnx_proc_t *p, int fd, unsigned long off_hi, unsigned
 /* ftruncate64(fd, length) on a writable-VFS file: set its logical size, growing
  * with zeros if needed. vi's :w writes the new content then truncates to the exact
  * length, so editing an existing file shorter drops the old trailing bytes. */
-static long sys_ftruncate(ove_lnx_proc_t *p, int fd, uint64_t length)
+static long sys_ftruncate(lxp_proc_t *p, int fd, uint64_t length)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
-	if (s->kind != OVE_LNX_FD_TMPFS)
-		return -OVE_LNX_EINVAL; /* the rootfs is read-only; console/pipe N/A */
-	ove_lnx_wnode_t *t = &g_wnodes[s->file_idx];
-	if ((t->mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-		return -OVE_LNX_EISDIR;
+		return -LXP_EBADF;
+	if (s->kind != LXP_FD_TMPFS)
+		return -LXP_EINVAL; /* the rootfs is read-only; console/pipe N/A */
+	lxp_wnode_t *t = &g_wnodes[s->file_idx];
+	if ((t->mode & LXP_S_IFMT) == LXP_S_IFDIR)
+		return -LXP_EISDIR;
 	size_t newlen = (size_t)length;
 	if (newlen > t->size) {
 		if (wfs_reserve(s->file_idx, newlen) != 0)
-			return -OVE_LNX_EFBIG;
+			return -LXP_EFBIG;
 		memset(t->data + t->size, 0, newlen - t->size);
 	}
 	t->size = newlen;
@@ -1919,7 +1919,7 @@ static long sys_ftruncate(ove_lnx_proc_t *p, int fd, uint64_t length)
 }
 
 /* Fill an ARM kstat64 from a node's inode + mode + size. */
-static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t ino, uint32_t mode, uint64_t size)
+static void fill_kstat64(struct lxp_kstat64 *st, uint32_t ino, uint32_t mode, uint64_t size)
 {
 	memset(st, 0, sizeof(*st));
 	st->st_nlink = 1;
@@ -1931,80 +1931,80 @@ static void fill_kstat64(struct ove_lnx_kstat64 *st, uint32_t ino, uint32_t mode
 	st->st_mode = mode;
 	st->st_size = (int64_t)size;
 	/* A character device blksize makes uClibc block-buffer stdio. */
-	st->st_blksize = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFCHR) ? 1024u : 512u;
+	st->st_blksize = ((mode & LXP_S_IFMT) == LXP_S_IFCHR) ? 1024u : 512u;
 	st->st_blocks = (uint64_t)((size + 511u) / 512u);
 }
 
-static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
+static long sys_fstat64(lxp_proc_t *p, int fd, void *statbuf)
 {
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
-	if (!user_ok(p, statbuf, sizeof(struct ove_lnx_kstat64), 1))
-		return -OVE_LNX_EFAULT;
-	if (s->kind == OVE_LNX_FD_FILE)
+		return -LXP_EBADF;
+	if (!user_ok(p, statbuf, sizeof(struct lxp_kstat64), 1))
+		return -LXP_EFAULT;
+	if (s->kind == LXP_FD_FILE)
 		fill_kstat64(statbuf, 1u + (uint32_t)s->file_idx,
 			     file_mode(&p->fs[s->file_idx]), p->fs[s->file_idx].size);
-	else if (s->kind == OVE_LNX_FD_TMPFS)
+	else if (s->kind == LXP_FD_TMPFS)
 		fill_kstat64(statbuf, 0x100000u + (uint32_t)s->file_idx,
 			     g_wnodes[s->file_idx].mode, g_wnodes[s->file_idx].size);
-	else if (s->kind == OVE_LNX_FD_PROC)
+	else if (s->kind == LXP_FD_PROC)
 		fill_kstat64(statbuf, 0x200000u + (uint32_t)s->file_idx,
-			     g_procf[s->file_idx].is_dir ? (OVE_LNX_S_IFDIR | 0555u)
-							 : (OVE_LNX_S_IFREG | 0444u),
+			     g_procf[s->file_idx].is_dir ? (LXP_S_IFDIR | 0555u)
+							 : (LXP_S_IFREG | 0444u),
 			     g_procf[s->file_idx].len);
 #if defined(CONFIG_OVE_LINUX_DEV)
-	else if (s->kind == OVE_LNX_FD_DEV) {
+	else if (s->kind == LXP_FD_DEV) {
 		uint32_t mode;
 		uint64_t rdev, size;
-		ove_lnx_dev_fstat(s->file_idx, &mode, &rdev, &size);
+		lxp_dev_fstat(s->file_idx, &mode, &rdev, &size);
 		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, mode, size);
-		((struct ove_lnx_kstat64 *)statbuf)->st_rdev = rdev;
+		((struct lxp_kstat64 *)statbuf)->st_rdev = rdev;
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-	else if (s->kind == OVE_LNX_FD_SOCKET) {
+	else if (s->kind == LXP_FD_SOCKET) {
 		uint32_t mode;
 		uint64_t size;
-		ove_lnx_sock_fstat(s->file_idx, &mode, &size);
+		lxp_sock_fstat(s->file_idx, &mode, &size);
 		fill_kstat64(statbuf, 0x400000u + (uint32_t)s->file_idx, mode, size);
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	else if (s->kind == OVE_LNX_FD_NET) {
+	else if (s->kind == LXP_FD_NET) {
 		uint32_t mode;
 		uint64_t size, mtime, ino;
-		if (ove_lnx_netfs_fstat(s->file_idx, &mode, &size, &mtime, &ino) != 0)
-			return -OVE_LNX_EBADF;
-		return ove_lnx_netfs_fill_stat(p, (uintptr_t)statbuf, 0, mode, size, mtime, ino);
+		if (lxp_netfs_fstat(s->file_idx, &mode, &size, &mtime, &ino) != 0)
+			return -LXP_EBADF;
+		return lxp_netfs_fill_stat(p, (uintptr_t)statbuf, 0, mode, size, mtime, ino);
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
-	else if (s->kind == OVE_LNX_FD_PTY) {
+	else if (s->kind == LXP_FD_PTY) {
 		uint32_t mode;
 		uint64_t size;
-		ove_lnx_pty_fstat(&mode, &size); /* S_IFCHR so isatty() → interactive shell */
+		lxp_pty_fstat(&mode, &size); /* S_IFCHR so isatty() → interactive shell */
 		fill_kstat64(statbuf, 0x500000u + (uint32_t)s->file_idx, mode, size);
 	}
 #endif
 	else
-		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, OVE_LNX_S_IFCHR | 0620u, 0);
+		fill_kstat64(statbuf, 0x300000u + (uint32_t)s->file_idx, LXP_S_IFCHR | 0620u, 0);
 	return 0;
 }
 
 /* path-based stat: resolve, optionally follow a trailing symlink, fill kstat64. */
-static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void *statbuf)
+static long sys_stat_path(lxp_proc_t *p, const char *path, int follow, void *statbuf)
 {
-	if (!user_ok(p, statbuf, sizeof(struct ove_lnx_kstat64), 1))
-		return -OVE_LNX_EFAULT; /* path is validated by resolve_path below */
-	char abspath[OVE_LNX_PATH_MAX];
+	if (!user_ok(p, statbuf, sizeof(struct lxp_kstat64), 1))
+		return -LXP_EFAULT; /* path is validated by resolve_path below */
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
 	if (proc_is(abspath)) {
 		uint32_t m = proc_mode(abspath, p);
 		if (m == 0)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 		fill_kstat64(statbuf, 0x200000u, m, 0);
 		return 0;
 	}
@@ -2012,16 +2012,16 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 	{
 		uint32_t dmode;
 		uint64_t drdev;
-		if (ove_lnx_dev_stat_path(abspath, &dmode, &drdev) == 0) {
+		if (lxp_dev_stat_path(abspath, &dmode, &drdev) == 0) {
 			fill_kstat64(statbuf, 0x300000u, dmode, 0);
-			((struct ove_lnx_kstat64 *)statbuf)->st_rdev = drdev;
+			((struct lxp_kstat64 *)statbuf)->st_rdev = drdev;
 			return 0;
 		}
 	}
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	if (ove_lnx_netfs_lookup(abspath) >= 0)
-		return ove_lnx_netfs_stat(p, abspath, (uintptr_t)statbuf, 0); /* parks */
+	if (lxp_netfs_lookup(abspath) >= 0)
+		return lxp_netfs_stat(p, abspath, (uintptr_t)statbuf, 0); /* parks */
 #endif
 	int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
 	if (wi >= 0) {
@@ -2030,22 +2030,22 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 	}
 	int idx = fs_lookup(p, abspath);
 	if (idx < 0)
-		return -OVE_LNX_ENOENT;
+		return -LXP_ENOENT;
 	if (follow) {
 		idx = fs_follow(p, idx);
 		if (idx < 0)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 	}
 	fill_kstat64(statbuf, 1u + (uint32_t)idx, file_mode(&p->fs[idx]), p->fs[idx].size);
 	return 0;
 }
 
 /* readlink: write the symlink target (not NUL-terminated) + return its length. */
-static long sys_readlink(ove_lnx_proc_t *p, const char *path, char *buf, size_t bufsiz)
+static long sys_readlink(lxp_proc_t *p, const char *path, char *buf, size_t bufsiz)
 {
 	if (!user_ok(p, buf, bufsiz, 1))
-		return -OVE_LNX_EFAULT; /* path is validated by resolve_path below */
-	char abspath[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT; /* path is validated by resolve_path below */
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
@@ -2059,88 +2059,88 @@ static long sys_readlink(ove_lnx_proc_t *p, const char *path, char *buf, size_t 
 	}
 	int wi = wfs_find(abspath); /* a writable symlink (ln -s) shadows the rootfs */
 	if (wi >= 0) {
-		ove_lnx_wnode_t *w = &g_wnodes[wi];
-		if ((w->mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK || !w->data)
-			return -OVE_LNX_EINVAL;
+		lxp_wnode_t *w = &g_wnodes[wi];
+		if ((w->mode & LXP_S_IFMT) != LXP_S_IFLNK || !w->data)
+			return -LXP_EINVAL;
 		size_t n = w->size > bufsiz ? bufsiz : w->size;
 		memcpy(buf, w->data, n);
 		return (long)n;
 	}
 	int idx = fs_lookup(p, abspath);
 	if (idx < 0)
-		return -OVE_LNX_ENOENT;
-	const ove_lnx_file_t *lnk = &p->fs[idx];
-	if ((file_mode(lnk) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFLNK || !lnk->data)
-		return -OVE_LNX_EINVAL;
+		return -LXP_ENOENT;
+	const lxp_file_t *lnk = &p->fs[idx];
+	if ((file_mode(lnk) & LXP_S_IFMT) != LXP_S_IFLNK || !lnk->data)
+		return -LXP_EINVAL;
 	size_t n = lnk->size > bufsiz ? bufsiz : lnk->size;
 	memcpy(buf, lnk->data, n);
 	return (long)n;
 }
 
 /* access/faccessat: existence check (all existing nodes are accessible). */
-static long sys_access(ove_lnx_proc_t *p, const char *path)
+static long sys_access(lxp_proc_t *p, const char *path)
 {
 	if (!path)
-		return -OVE_LNX_EFAULT;
-	char abspath[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
 	if (abspath[0] == '/' && abspath[1] == '\0')
 		return 0; /* root */
 	if (proc_is(abspath))
-		return proc_mode(abspath, p) ? 0 : -OVE_LNX_ENOENT;
+		return proc_mode(abspath, p) ? 0 : -LXP_ENOENT;
 	if (wfs_find(abspath) >= 0 || fs_lookup(p, abspath) >= 0)
 		return 0;
-	return -OVE_LNX_ENOENT;
+	return -LXP_ENOENT;
 }
 
-static long sys_mkdir(ove_lnx_proc_t *p, const char *path, uint32_t mode)
+static long sys_mkdir(lxp_proc_t *p, const char *path, uint32_t mode)
 {
 	if (!path)
-		return -OVE_LNX_EFAULT;
-	char abspath[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
 	if (wfs_find(abspath) >= 0 || fs_lookup(p, abspath) >= 0)
-		return -OVE_LNX_EEXIST;
-	if (wfs_create(abspath, OVE_LNX_S_IFDIR | (mode & 0777u)) < 0)
-		return -OVE_LNX_ENOSPC;
+		return -LXP_EEXIST;
+	if (wfs_create(abspath, LXP_S_IFDIR | (mode & 0777u)) < 0)
+		return -LXP_ENOSPC;
 	return 0;
 }
 
 /* unlink (is_rmdir=0) / rmdir (is_rmdir=1) on a writable node. */
-static long sys_unlink(ove_lnx_proc_t *p, const char *path, int is_rmdir)
+static long sys_unlink(lxp_proc_t *p, const char *path, int is_rmdir)
 {
 	if (!path)
-		return -OVE_LNX_EFAULT;
-	char abspath[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
 	int wi = wfs_find(abspath);
 	if (wi < 0)
-		return (fs_lookup(p, abspath) >= 0) ? -OVE_LNX_EROFS : -OVE_LNX_ENOENT;
-	int isdir = (g_wnodes[wi].mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR;
+		return (fs_lookup(p, abspath) >= 0) ? -LXP_EROFS : -LXP_ENOENT;
+	int isdir = (g_wnodes[wi].mode & LXP_S_IFMT) == LXP_S_IFDIR;
 	if (is_rmdir && !isdir)
-		return -OVE_LNX_ENOTDIR;
+		return -LXP_ENOTDIR;
 	if (!is_rmdir && isdir)
-		return -OVE_LNX_EISDIR;
+		return -LXP_EISDIR;
 	if (isdir) {
-		for (int j = 0; j < OVE_LNX_NWNODE; j++)
+		for (int j = 0; j < LXP_NWNODE; j++)
 			if (g_wnodes[j].used && child_name(abspath, g_wnodes[j].path))
-				return -OVE_LNX_ENOTEMPTY;
+				return -LXP_ENOTEMPTY;
 	}
 	g_wnodes[wi].used = 0; /* node freed; its pool bytes leak (bounded) */
 	return 0;
 }
 
-static long sys_rename(ove_lnx_proc_t *p, const char *oldp, const char *newp)
+static long sys_rename(lxp_proc_t *p, const char *oldp, const char *newp)
 {
 	if (!oldp || !newp)
-		return -OVE_LNX_EFAULT;
-	char oldabs[OVE_LNX_PATH_MAX], newabs[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char oldabs[LXP_PATH_MAX], newabs[LXP_PATH_MAX];
 	long r1 = resolve_path(p, oldp, oldabs, sizeof(oldabs));
 	if (r1 < 0)
 		return r1;
@@ -2149,9 +2149,9 @@ static long sys_rename(ove_lnx_proc_t *p, const char *oldp, const char *newp)
 		return r2;
 	int wi = wfs_find(oldabs);
 	if (wi < 0)
-		return (fs_lookup(p, oldabs) >= 0) ? -OVE_LNX_EROFS : -OVE_LNX_ENOENT;
-	if (strlen(newabs) >= OVE_LNX_PATH_MAX)
-		return -OVE_LNX_ENAMETOOLONG;
+		return (fs_lookup(p, oldabs) >= 0) ? -LXP_EROFS : -LXP_ENOENT;
+	if (strlen(newabs) >= LXP_PATH_MAX)
+		return -LXP_ENAMETOOLONG;
 	int di = wfs_find(newabs); /* replace an existing destination node */
 	if (di >= 0 && di != wi)
 		g_wnodes[di].used = 0;
@@ -2159,59 +2159,59 @@ static long sys_rename(ove_lnx_proc_t *p, const char *oldp, const char *newp)
 	return 0;
 }
 
-static long sys_symlink(ove_lnx_proc_t *p, const char *target, const char *linkp)
+static long sys_symlink(lxp_proc_t *p, const char *target, const char *linkp)
 {
 	if (!target || !linkp)
-		return -OVE_LNX_EFAULT;
-	char linkabs[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char linkabs[LXP_PATH_MAX];
 	long rr = resolve_path(p, linkp, linkabs, sizeof(linkabs));
 	if (rr < 0)
 		return rr;
 	if (wfs_find(linkabs) >= 0 || fs_lookup(p, linkabs) >= 0)
-		return -OVE_LNX_EEXIST;
-	int wi = wfs_create(linkabs, OVE_LNX_S_IFLNK | 0777u);
+		return -LXP_EEXIST;
+	int wi = wfs_create(linkabs, LXP_S_IFLNK | 0777u);
 	if (wi < 0)
-		return -OVE_LNX_ENOSPC;
+		return -LXP_ENOSPC;
 	size_t tl = strlen(target);
 	if (wfs_reserve(wi, tl) < 0) {
 		g_wnodes[wi].used = 0;
-		return -OVE_LNX_ENOSPC;
+		return -LXP_ENOSPC;
 	}
 	memcpy(g_wnodes[wi].data, target, tl);
 	g_wnodes[wi].size = tl;
 	return 0;
 }
 
-static long sys_chmod(ove_lnx_proc_t *p, const char *path, uint32_t mode)
+static long sys_chmod(lxp_proc_t *p, const char *path, uint32_t mode)
 {
 	if (!path)
-		return -OVE_LNX_EFAULT;
-	char abspath[OVE_LNX_PATH_MAX];
+		return -LXP_EFAULT;
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
 	int wi = wfs_find(abspath);
 	if (wi >= 0) {
-		g_wnodes[wi].mode = (g_wnodes[wi].mode & OVE_LNX_S_IFMT) | (mode & 0777u);
+		g_wnodes[wi].mode = (g_wnodes[wi].mode & LXP_S_IFMT) | (mode & 0777u);
 		return 0;
 	}
-	return (fs_lookup(p, abspath) >= 0) ? 0 : -OVE_LNX_ENOENT; /* rootfs: accept, inert */
+	return (fs_lookup(p, abspath) >= 0) ? 0 : -LXP_ENOENT; /* rootfs: accept, inert */
 }
 
 /* utimensat: times are not tracked, but the existence check must be honest —
  * `touch` probes with utimensat first and only creates the file on -ENOENT. */
-static long sys_utimensat(ove_lnx_proc_t *p, const char *path)
+static long sys_utimensat(lxp_proc_t *p, const char *path)
 {
 	if (!path) /* futimens(fd): operate on the open fd — accept */
 		return 0;
-	char abspath[OVE_LNX_PATH_MAX];
+	char abspath[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, abspath, sizeof(abspath));
 	if (rr < 0)
 		return rr;
 	if ((abspath[0] == '/' && abspath[1] == '\0') || wfs_find(abspath) >= 0 ||
 	    fs_lookup(p, abspath) >= 0)
 		return 0;
-	return -OVE_LNX_ENOENT;
+	return -LXP_ENOENT;
 }
 
 /* A non-cryptographic xorshift PRNG seeded from uptime (no hardware RNG on this tier).
@@ -2224,7 +2224,7 @@ static void prng_fill(uint8_t *b, size_t count)
 	static uint32_t s;
 	if (!s) {
 		uint64_t ns = 0;
-		ove_lnx_time_ns(&ns);
+		lxp_time_ns(&ns);
 		s = (uint32_t)ns | 1u;
 	}
 	for (size_t i = 0; i < count; i++) {
@@ -2236,25 +2236,25 @@ static void prng_fill(uint8_t *b, size_t count)
 }
 
 /* getrandom: fill the user buffer from the PRNG. */
-static long sys_getrandom(ove_lnx_proc_t *p, void *buf, size_t count)
+static long sys_getrandom(lxp_proc_t *p, void *buf, size_t count)
 {
 	if (!user_ok(p, buf, count, 1))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	prng_fill(buf, count);
 	return (long)count;
 }
 
 /* statfs64: synthetic filesystem stats (no real block device backs the rootfs). */
-struct ove_lnx_statfs64 {
+struct lxp_statfs64 {
 	uint32_t f_type, f_bsize;
 	uint64_t f_blocks, f_bfree, f_bavail, f_files, f_ffree;
 	uint32_t f_fsid[2], f_namelen, f_frsize, f_flags, f_spare[4];
 };
-static long sys_statfs(ove_lnx_proc_t *p, void *buf)
+static long sys_statfs(lxp_proc_t *p, void *buf)
 {
-	if (!user_ok(p, buf, sizeof(struct ove_lnx_statfs64), 1))
-		return -OVE_LNX_EFAULT;
-	struct ove_lnx_statfs64 *st = buf;
+	if (!user_ok(p, buf, sizeof(struct lxp_statfs64), 1))
+		return -LXP_EFAULT;
+	struct lxp_statfs64 *st = buf;
 	memset(st, 0, sizeof(*st));
 	st->f_type = 0x01021994u; /* TMPFS_MAGIC */
 	st->f_bsize = 4096;
@@ -2276,7 +2276,7 @@ static int s_dirent_is64 = 1;
 /* Append one dirent record in the s_dirent_is64 format (the 32-bit linux_dirent puts d_type
  * as a trailing byte at d_reclen-1). Skips entries already emitted (pos < s->offset);
  * returns 0 if the record does not fit, else 1 (and advances). */
-static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ove_lnx_fd_t *s,
+static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, lxp_fd_t *s,
 		       uint64_t ino, const char *name, uint32_t mode)
 {
 	int is64 = s_dirent_is64;
@@ -2285,15 +2285,15 @@ static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ov
 		return 1; /* already returned by an earlier getdents call */
 	}
 	size_t namelen = strlen(name);
-	uint8_t dtype = ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)   ? OVE_LNX_DT_DIR
-			: ((mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFCHR) ? OVE_LNX_DT_CHR
-								       : OVE_LNX_DT_REG;
+	uint8_t dtype = ((mode & LXP_S_IFMT) == LXP_S_IFDIR)   ? LXP_DT_DIR
+			: ((mode & LXP_S_IFMT) == LXP_S_IFCHR) ? LXP_DT_CHR
+								       : LXP_DT_REG;
 	if (is64) {
-		size_t reclen = (offsetof(struct ove_lnx_dirent64, d_name) + namelen + 1 + 7u) &
+		size_t reclen = (offsetof(struct lxp_dirent64, d_name) + namelen + 1 + 7u) &
 				~(size_t)7u;
 		if (*filled + reclen > count)
 			return 0;
-		struct ove_lnx_dirent64 *de = (struct ove_lnx_dirent64 *)(out + *filled);
+		struct lxp_dirent64 *de = (struct lxp_dirent64 *)(out + *filled);
 		de->d_ino = ino;
 		de->d_off = *pos + 1;
 		de->d_reclen = (uint16_t)reclen;
@@ -2326,34 +2326,34 @@ static int dirent_emit(uint8_t *out, size_t count, size_t *filled, long *pos, ov
  * + writable-overlay nodes) as linux_dirent (is64=0) or linux_dirent64 (is64=1) records.
  * uClibc's readdir on this FDPIC target uses the 32-bit getdents(2) for some callers (e.g.
  * dropbear's pty session setup), so both are supported. */
-static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, int is64)
+static long sys_getdents64(lxp_proc_t *p, int fd, void *buf, size_t count, int is64)
 {
 	s_dirent_is64 = is64;
-	ove_lnx_fd_t *s = fd_slot(p, fd);
+	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (!user_ok(p, buf, count, 1))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	const char *dirpath;
-	if (s->kind == OVE_LNX_FD_FILE) {
-		if ((file_mode(&p->fs[s->file_idx]) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
-			return -OVE_LNX_ENOTDIR;
+	if (s->kind == LXP_FD_FILE) {
+		if ((file_mode(&p->fs[s->file_idx]) & LXP_S_IFMT) != LXP_S_IFDIR)
+			return -LXP_ENOTDIR;
 		dirpath = p->fs[s->file_idx].path;
-	} else if (s->kind == OVE_LNX_FD_TMPFS) {
-		if ((g_wnodes[s->file_idx].mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
-			return -OVE_LNX_ENOTDIR;
+	} else if (s->kind == LXP_FD_TMPFS) {
+		if ((g_wnodes[s->file_idx].mode & LXP_S_IFMT) != LXP_S_IFDIR)
+			return -LXP_ENOTDIR;
 		dirpath = g_wnodes[s->file_idx].path;
-	} else if (s->kind == OVE_LNX_FD_PROC) {
+	} else if (s->kind == LXP_FD_PROC) {
 		if (!g_procf[s->file_idx].is_dir)
-			return -OVE_LNX_ENOTDIR;
+			return -LXP_ENOTDIR;
 		dirpath = g_procf[s->file_idx].path;
 #if defined(CONFIG_OVE_LINUX_NETFS)
-	} else if (s->kind == OVE_LNX_FD_NET) {
+	} else if (s->kind == LXP_FD_NET) {
 		/* Remote dir: a Treaddir round-trip → the netfs layer emits the records. Parks. */
-		return ove_lnx_netfs_getdents(p, s->file_idx, (uintptr_t)buf, count, is64);
+		return lxp_netfs_getdents(p, s->file_idx, (uintptr_t)buf, count, is64);
 #endif
 	} else {
-		return -OVE_LNX_ENOTDIR;
+		return -LXP_ENOTDIR;
 	}
 
 	uint8_t *out = (uint8_t *)buf;
@@ -2370,7 +2370,7 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, i
 			full = 1;
 	}
 	/* writable-overlay children */
-	for (int i = 0; i < OVE_LNX_NWNODE && !full; i++) {
+	for (int i = 0; i < LXP_NWNODE && !full; i++) {
 		if (!g_wnodes[i].used)
 			continue;
 		const char *name = child_name(dirpath, g_wnodes[i].path);
@@ -2382,9 +2382,9 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, i
 	}
 #if defined(CONFIG_OVE_LINUX_DEV)
 	/* registered character devices whose node sits directly under this dir (/dev/fb0). */
-	for (int i = 0; i < ove_lnx_dev_count() && !full; i++) {
-		uint32_t dmode = OVE_LNX_S_IFCHR | 0666u;
-		const char *dp = ove_lnx_dev_path(i, &dmode);
+	for (int i = 0; i < lxp_dev_count() && !full; i++) {
+		uint32_t dmode = LXP_S_IFCHR | 0666u;
+		const char *dp = lxp_dev_path(i, &dmode);
 		const char *name = dp ? child_name(dirpath, dp) : NULL;
 		if (!name)
 			continue;
@@ -2400,15 +2400,15 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, i
 			uint64_t ino = 200000;
 			for (int i = 0; g_proc_files[i] && !full; i++)
 				if (!dirent_emit(out, count, &filled, &pos, s, ino++,
-						 g_proc_files[i], OVE_LNX_S_IFREG))
+						 g_proc_files[i], LXP_S_IFREG))
 					full = 1;
 			if (!full && !dirent_emit(out, count, &filled, &pos, s, ino++, "self",
-						  OVE_LNX_S_IFLNK))
+						  LXP_S_IFLNK))
 				full = 1;
 			/* every live process + kernel thread from the ps/top snapshot */
-			int np = ove_lnx_pent_count(), seen1 = 0, seenself = 0;
+			int np = lxp_pent_count(), seen1 = 0, seenself = 0;
 			for (int i = 0; i < np && !full; i++) {
-				const struct ove_lnx_pentry *e = ove_lnx_pent_at(i);
+				const struct lxp_pentry *e = lxp_pent_at(i);
 				if (!e)
 					break;
 				char pidstr[12];
@@ -2417,19 +2417,19 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, i
 				seen1 |= (e->pid == 1);
 				seenself |= (e->pid == p->pid);
 				if (!dirent_emit(out, count, &filled, &pos, s, ino++, pidstr,
-						 OVE_LNX_S_IFDIR))
+						 LXP_S_IFDIR))
 					full = 1;
 			}
 			/* fallbacks before the first snapshot refresh populates the table */
 			if (!full && !seen1 &&
-			    !dirent_emit(out, count, &filled, &pos, s, ino++, "1", OVE_LNX_S_IFDIR))
+			    !dirent_emit(out, count, &filled, &pos, s, ino++, "1", LXP_S_IFDIR))
 				full = 1;
 			if (!full && !seenself && p->pid != 1) {
 				char pidstr[12];
 				size_t k = p_dec(pidstr, 0, sizeof(pidstr) - 1, (uint64_t)p->pid);
 				pidstr[k] = '\0';
 				if (!dirent_emit(out, count, &filled, &pos, s, ino++, pidstr,
-						 OVE_LNX_S_IFDIR))
+						 LXP_S_IFDIR))
 					full = 1;
 			}
 		} else if (dpid > 0 && !file && proc_pid_known(p, dpid)) {
@@ -2437,17 +2437,17 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, i
 			uint64_t ino = 300000;
 			for (int i = 0; pf[i] && !full; i++)
 				if (!dirent_emit(out, count, &filled, &pos, s, ino++, pf[i],
-						 OVE_LNX_S_IFREG))
+						 LXP_S_IFREG))
 					full = 1;
 		}
 	}
 	if (full && filled == 0)
-		return -OVE_LNX_EINVAL; /* buffer too small for even one entry */
+		return -LXP_EINVAL; /* buffer too small for even one entry */
 	return (long)filled;
 }
 
 /* Modern struct statx (256 bytes); fixed-width so host tests match the target. */
-struct ove_lnx_statx {
+struct lxp_statx {
 	uint32_t stx_mask;
 	uint32_t stx_blksize;
 	uint64_t stx_attributes;
@@ -2472,17 +2472,17 @@ struct ove_lnx_statx {
  * statx: the stat() uClibc-ng actually issues. With AT_EMPTY_PATH (or an empty
  * path) it stats the open dirfd (fstat); otherwise it resolves a rootfs path.
  */
-static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags, void *buf)
+static long sys_statx(lxp_proc_t *p, int dirfd, const char *path, int flags, void *buf)
 {
-	if (!user_ok(p, buf, sizeof(struct ove_lnx_statx), 1))
-		return -OVE_LNX_EFAULT;
+	if (!user_ok(p, buf, sizeof(struct lxp_statx), 1))
+		return -LXP_EFAULT;
 
 	uint32_t mode;
 	uint64_t size;
 	uint64_t rdev = 0;	  /* device id for a character node, else 0 */
 	uint32_t ino = 0x300000u; /* unique, non-zero inode: ld.so dedups by (st_dev, st_ino) */
-	if (path && path[0] && !(flags & OVE_LNX_AT_EMPTY_PATH)) {
-		char abspath[OVE_LNX_PATH_MAX];
+	if (path && path[0] && !(flags & LXP_AT_EMPTY_PATH)) {
+		char abspath[LXP_PATH_MAX];
 		long rr = resolve_path(p, path, abspath, sizeof(abspath));
 		if (rr < 0)
 			return rr;
@@ -2490,22 +2490,22 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 		if (proc_is(abspath)) {
 			mode = proc_mode(abspath, p);
 			if (mode == 0)
-				return -OVE_LNX_ENOENT;
+				return -LXP_ENOENT;
 			size = 0;
 			ino = 0x200000u;
 #if defined(CONFIG_OVE_LINUX_DEV)
-		} else if (ove_lnx_dev_lookup(abspath) >= 0) { /* /dev character node */
+		} else if (lxp_dev_lookup(abspath) >= 0) { /* /dev character node */
 			uint32_t dmode;
 			uint64_t drdev;
-			ove_lnx_dev_stat_path(abspath, &dmode, &drdev);
+			lxp_dev_stat_path(abspath, &dmode, &drdev);
 			mode = dmode;
 			size = 0;
 			rdev = drdev;
 			ino = 0x300000u;
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-		} else if (ove_lnx_netfs_lookup(abspath) >= 0) {
-			return ove_lnx_netfs_stat(p, abspath, (uintptr_t)buf, 1); /* parks */
+		} else if (lxp_netfs_lookup(abspath) >= 0) {
+			return lxp_netfs_stat(p, abspath, (uintptr_t)buf, 1); /* parks */
 #endif
 		} else if ((wi = wfs_find(abspath)) >= 0) { /* writable overlay shadows rootfs */
 			mode = g_wnodes[wi].mode;
@@ -2514,56 +2514,56 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 		} else {
 			int idx = fs_lookup(p, abspath);
 			if (idx < 0)
-				return -OVE_LNX_ENOENT;
-			if (!(flags & OVE_LNX_AT_SYMLINK_NOFOLLOW)) { /* lstat passes NOFOLLOW */
+				return -LXP_ENOENT;
+			if (!(flags & LXP_AT_SYMLINK_NOFOLLOW)) { /* lstat passes NOFOLLOW */
 				idx = fs_follow(p, idx);
 				if (idx < 0)
-					return -OVE_LNX_ENOENT;
+					return -LXP_ENOENT;
 			}
 			mode = file_mode(&p->fs[idx]);
 			size = p->fs[idx].size;
 			ino = 1u + (uint32_t)idx;
 		}
 	} else {
-		ove_lnx_fd_t *s = fd_slot(p, dirfd);
+		lxp_fd_t *s = fd_slot(p, dirfd);
 		if (!s)
-			return -OVE_LNX_EBADF;
-		if (s->kind == OVE_LNX_FD_FILE) {
+			return -LXP_EBADF;
+		if (s->kind == LXP_FD_FILE) {
 			mode = file_mode(&p->fs[s->file_idx]);
 			size = p->fs[s->file_idx].size;
 			ino = 1u + (uint32_t)s->file_idx;
-		} else if (s->kind == OVE_LNX_FD_TMPFS) {
+		} else if (s->kind == LXP_FD_TMPFS) {
 			mode = g_wnodes[s->file_idx].mode;
 			size = g_wnodes[s->file_idx].size;
 			ino = 0x100000u + (uint32_t)s->file_idx;
 #if defined(CONFIG_OVE_LINUX_DEV)
-		} else if (s->kind == OVE_LNX_FD_DEV) {
+		} else if (s->kind == LXP_FD_DEV) {
 			uint32_t dmode;
 			uint64_t drdev, dsize;
-			ove_lnx_dev_fstat(s->file_idx, &dmode, &drdev, &dsize);
+			lxp_dev_fstat(s->file_idx, &dmode, &drdev, &dsize);
 			mode = dmode;
 			size = dsize;
 			rdev = drdev;
 			ino = 0x300000u + (uint32_t)s->file_idx;
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-		} else if (s->kind == OVE_LNX_FD_NET) {
+		} else if (s->kind == LXP_FD_NET) {
 			uint32_t nmode;
 			uint64_t nsize, nmtime, nino;
-			if (ove_lnx_netfs_fstat(s->file_idx, &nmode, &nsize, &nmtime, &nino) != 0)
-				return -OVE_LNX_EBADF;
-			return ove_lnx_netfs_fill_stat(p, (uintptr_t)buf, 1, nmode, nsize, nmtime, nino);
+			if (lxp_netfs_fstat(s->file_idx, &nmode, &nsize, &nmtime, &nino) != 0)
+				return -LXP_EBADF;
+			return lxp_netfs_fill_stat(p, (uintptr_t)buf, 1, nmode, nsize, nmtime, nino);
 #endif
 		} else {
-			mode = OVE_LNX_S_IFCHR | 0620u;
+			mode = LXP_S_IFCHR | 0620u;
 			size = 0;
 			ino = 0x300000u + (uint32_t)s->file_idx;
 		}
 	}
 
-	struct ove_lnx_statx *st = buf;
+	struct lxp_statx *st = buf;
 	memset(st, 0, sizeof(*st));
-	st->stx_mask = OVE_LNX_STATX_BASIC_STATS;
+	st->stx_mask = LXP_STATX_BASIC_STATS;
 	st->stx_blksize = 512;
 	st->stx_nlink = 1;
 	st->stx_mode = (uint16_t)mode;
@@ -2581,16 +2581,16 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
  * FD_NET fd. @p statkind: 0 = kstat64 (stat/lstat/fstat/fstatat), 1 = statx. The
  * netfs inode namespace is 0x600000+, with a distinct synthetic st_dev so ld.so's
  * (st_dev, st_ino) dedup never collides with the local rootfs. */
-long ove_lnx_netfs_fill_stat(ove_lnx_proc_t *p, uintptr_t ustat, int statkind, uint32_t mode,
+long lxp_netfs_fill_stat(lxp_proc_t *p, uintptr_t ustat, int statkind, uint32_t mode,
 			     uint64_t size, uint64_t mtime, uint64_t ino)
 {
 	uint32_t nino = 0x600000u + (uint32_t)ino;
 	if (statkind == 1) {
-		if (!user_ok(p, (void *)ustat, sizeof(struct ove_lnx_statx), 1))
-			return -OVE_LNX_EFAULT;
-		struct ove_lnx_statx *st = (struct ove_lnx_statx *)ustat;
+		if (!user_ok(p, (void *)ustat, sizeof(struct lxp_statx), 1))
+			return -LXP_EFAULT;
+		struct lxp_statx *st = (struct lxp_statx *)ustat;
 		memset(st, 0, sizeof(*st));
-		st->stx_mask = OVE_LNX_STATX_BASIC_STATS;
+		st->stx_mask = LXP_STATX_BASIC_STATS;
 		st->stx_blksize = 512;
 		st->stx_nlink = 1;
 		st->stx_mode = (uint16_t)mode;
@@ -2601,9 +2601,9 @@ long ove_lnx_netfs_fill_stat(ove_lnx_proc_t *p, uintptr_t ustat, int statkind, u
 		memcpy(st->__times + 48, &mtime, sizeof(uint64_t)); /* mtime tv_sec (4th 16B slot) */
 		return 0;
 	}
-	if (!user_ok(p, (void *)ustat, sizeof(struct ove_lnx_kstat64), 1))
-		return -OVE_LNX_EFAULT;
-	struct ove_lnx_kstat64 *st = (struct ove_lnx_kstat64 *)ustat;
+	if (!user_ok(p, (void *)ustat, sizeof(struct lxp_kstat64), 1))
+		return -LXP_EFAULT;
+	struct lxp_kstat64 *st = (struct lxp_kstat64 *)ustat;
 	fill_kstat64(st, nino, mode, size);
 	st->st_dev = 0xfeu;
 	st->st_mtime = (uint32_t)mtime;
@@ -2619,9 +2619,9 @@ long ove_lnx_netfs_fill_stat(ove_lnx_proc_t *p, uintptr_t ustat, int statkind, u
  * success the old image is gone; on failure we report a negated errno.
  */
 /* Append one NUL-terminated arg to the pending-exec argv; ignore on overflow. */
-static void exec_push_arg(ove_lnx_proc_t *p, int *argc, size_t *off, const char *str)
+static void exec_push_arg(lxp_proc_t *p, int *argc, size_t *off, const char *str)
 {
-	if (*argc >= OVE_LNX_EXEC_MAXARGS)
+	if (*argc >= LXP_EXEC_MAXARGS)
 		return;
 	size_t n = strlen(str) + 1;
 	if (*off + n > sizeof(p->exec_argv_buf))
@@ -2632,26 +2632,26 @@ static void exec_push_arg(ove_lnx_proc_t *p, int *argc, size_t *off, const char 
 	(*argc)++;
 }
 
-static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
+static long sys_execve(lxp_proc_t *p, const char *path, char *const argv[])
 {
 	if (!path)
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	/* Validate the whole argv vector before the walk below reads it: a malicious argv could point at
 	 * kernel memory or never NUL-terminate. Each element must be readable and each string in-bounds;
 	 * cap the count so a non-terminated array can't spin. */
 	if (argv) {
 		for (int j = 0;; j++) {
 			if (j > 256)
-				return -OVE_LNX_EINVAL;
+				return -LXP_EINVAL;
 			if (!user_ok(p, &argv[j], sizeof(argv[j]), 0))
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			if (!argv[j])
 				break;
 			if (user_strnlen(p, argv[j], (size_t)-1) < 0)
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 		}
 	}
-	char execabs[OVE_LNX_PATH_MAX];
+	char execabs[LXP_PATH_MAX];
 	long rr = resolve_path(p, path, execabs, sizeof(execabs));
 	if (rr < 0)
 		return rr;
@@ -2659,16 +2659,16 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	/* exec a program off the remote mount (/mnt/pi/prog): capture argv, drop close-on-exec
 	 * fds, then park the ELF fetch. The netfs retry sets exec_pending + a SENTINEL exec_file_idx
 	 * on completion, and the run loop's EV_EXEC launches it from the RAM staging buffer. */
-	if (ove_lnx_netfs_lookup(execabs) >= 0) {
+	if (lxp_netfs_lookup(execabs) >= 0) {
 		int nargc = 0;
 		size_t noff = 0;
 		for (int j = 0; argv && argv[j]; j++)
 			exec_push_arg(p, &nargc, &noff, argv[j]);
-		for (int cfd = 0; cfd < OVE_LNX_MAX_FDS; cfd++)
-			if (p->fds[cfd].kind != OVE_LNX_FD_FREE && p->fds[cfd].cloexec)
+		for (int cfd = 0; cfd < LXP_MAX_FDS; cfd++)
+			if (p->fds[cfd].kind != LXP_FD_FREE && p->fds[cfd].cloexec)
 				sys_close(p, cfd);
 		p->exec_argc = nargc;
-		return ove_lnx_netfs_exec_fetch(p, execabs); /* parks, or a negative errno inline */
+		return lxp_netfs_exec_fetch(p, execabs); /* parks, or a negative errno inline */
 	}
 #endif
 	int idx;
@@ -2678,21 +2678,21 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 		 * caller's current program image (kept in exec_file_idx across relaunches). */
 		idx = p->exec_file_idx;
 		if (idx < 0 || idx >= p->fs_count)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 	} else {
 		/* Follow symlinks, e.g. /bin/echo -> busybox (Buildroot installs applets as
 		 * symlinks). The argv (argv[0] = "echo") is kept, so busybox runs that applet. */
 		idx = fs_follow(p, fs_lookup(p, execabs));
 		if (idx < 0)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 	}
-	if ((file_mode(&p->fs[idx]) & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR)
-		return -OVE_LNX_EACCES;
+	if ((file_mode(&p->fs[idx]) & LXP_S_IFMT) == LXP_S_IFDIR)
+		return -LXP_EACCES;
 
 	/* Interpreter scripts: a "#!interp [arg]" first line re-targets the exec to
 	 * the interpreter, with argv = [interp, arg?, scriptpath, original argv[1:]].
 	 * init runs /etc/init.d/rcS (a #!/bin/sh script) this way. */
-	const ove_lnx_file_t *f = &p->fs[idx];
+	const lxp_file_t *f = &p->fs[idx];
 	char interp[64], iarg[64];
 	int have_iarg = 0, interp_idx = -1;
 	if (f->data && f->size >= 2 && f->data[0] == '#' && f->data[1] == '!') {
@@ -2713,13 +2713,13 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 		iarg[m] = '\0';
 		have_iarg = (m > 0);
 		if (k == 0)
-			return -OVE_LNX_ENOEXEC;
-		char interpabs[OVE_LNX_PATH_MAX];
+			return -LXP_ENOEXEC;
+		char interpabs[LXP_PATH_MAX];
 		if (resolve_path(p, interp, interpabs, sizeof(interpabs)) < 0)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 		interp_idx = fs_follow(p, fs_lookup(p, interpabs));
 		if (interp_idx < 0)
-			return -OVE_LNX_ENOENT;
+			return -LXP_ENOENT;
 	}
 
 	int argc = 0;
@@ -2739,8 +2739,8 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	/* close-on-exec: the fd table survives execve (the run loop preserves it), so drop the
 	 * FD_CLOEXEC fds here — the exec is committed past every error check. dropbear confirms
 	 * the shell exec'd by its exec-status pipe (FD_CLOEXEC) closing this way. */
-	for (int cfd = 0; cfd < OVE_LNX_MAX_FDS; cfd++)
-		if (p->fds[cfd].kind != OVE_LNX_FD_FREE && p->fds[cfd].cloexec)
+	for (int cfd = 0; cfd < LXP_MAX_FDS; cfd++)
+		if (p->fds[cfd].kind != LXP_FD_FREE && p->fds[cfd].cloexec)
 			sys_close(p, cfd);
 	p->exec_argc = argc;
 	p->exec_file_idx = idx;
@@ -2749,154 +2749,154 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 }
 
 /* There is no RTC: wall-clock time is a fixed base epoch (~2026-06-23) + uptime. */
-#define OVE_LNX_BOOT_EPOCH 1782172800ull
+#define LXP_BOOT_EPOCH 1782172800ull
 
 static void now_sec_nsec(int clockid, uint64_t *sec, uint32_t *nsec)
 {
 	uint64_t ns = 0;
-	ove_lnx_time_ns(&ns);
+	lxp_time_ns(&ns);
 	uint64_t up = ns / 1000000000ull;
 	*nsec = (uint32_t)(ns % 1000000000ull);
 	/* CLOCK_MONOTONIC(1)/_RAW(4)/BOOTTIME(7) → uptime; REALTIME(0) → wall clock. */
-	*sec = (clockid == 0) ? (OVE_LNX_BOOT_EPOCH + up) : up;
+	*sec = (clockid == 0) ? (LXP_BOOT_EPOCH + up) : up;
 }
 
-long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
+long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
 		     long a5)
 {
 	(void)a5;
 	if (!proc)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 
 	switch (nr) {
-	case OVE_LNX_NR_read:
+	case LXP_NR_read:
 		return sys_read(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2);
-	case OVE_LNX_NR_write:
+	case LXP_NR_write:
 		return sys_write(proc, (int)a0, (const void *)(uintptr_t)a1, (size_t)a2);
-	case OVE_LNX_NR_writev:
-		return sys_writev(proc, (int)a0, (const ove_lnx_iovec *)(uintptr_t)a1, (int)a2);
-	case OVE_LNX_NR_brk:
+	case LXP_NR_writev:
+		return sys_writev(proc, (int)a0, (const lxp_iovec *)(uintptr_t)a1, (int)a2);
+	case LXP_NR_brk:
 		return sys_brk(proc, (uintptr_t)a0);
-	case OVE_LNX_NR_mmap2:
+	case LXP_NR_mmap2:
 		return sys_mmap2(proc, (uintptr_t)a0, (size_t)a1, (int)a2, (int)a3, (int)a4,
 				 (uint32_t)a5);
-	case OVE_LNX_NR_munmap:
+	case LXP_NR_munmap:
 		return sys_munmap(proc, (uintptr_t)a0, (size_t)a1);
-	case OVE_LNX_NR_mprotect: /* NOMMU: RELRO/protection is a no-op */
+	case LXP_NR_mprotect: /* NOMMU: RELRO/protection is a no-op */
 		return sys_mprotect((uintptr_t)a0, (size_t)a1, (int)a2);
-	case OVE_LNX_NR_pread64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
+	case LXP_NR_pread64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
 		return sys_pread(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, (uint32_t)a4);
-	case OVE_LNX_NR_pwrite64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
+	case LXP_NR_pwrite64: /* (fd, buf, count, [pad a3], off_lo a4, off_hi a5) */
 		return sys_pwrite(proc, (int)a0, (const void *)(uintptr_t)a1, (size_t)a2,
 				  (uint32_t)a4);
-	case OVE_LNX_NR_open: { /* legacy open(path, flags, mode): dirfd = cwd */
-		long f = sys_openat(proc, OVE_LNX_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
-		if (f >= 0 && ((int)a1 & OVE_LNX_O_CLOEXEC))
+	case LXP_NR_open: { /* legacy open(path, flags, mode): dirfd = cwd */
+		long f = sys_openat(proc, LXP_AT_FDCWD, (const char *)(uintptr_t)a0, (int)a1);
+		if (f >= 0 && ((int)a1 & LXP_O_CLOEXEC))
 			proc->fds[f].cloexec = 1;
 		return f;
 	}
-	case OVE_LNX_NR_execve: /* (path, argv, envp); envp ignored for now */
+	case LXP_NR_execve: /* (path, argv, envp); envp ignored for now */
 		return sys_execve(proc, (const char *)(uintptr_t)a0, (char *const *)(uintptr_t)a1);
-	case OVE_LNX_NR_openat: {
+	case LXP_NR_openat: {
 		long f = sys_openat(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2);
-		if (f >= 0 && ((int)a2 & OVE_LNX_O_CLOEXEC))
+		if (f >= 0 && ((int)a2 & LXP_O_CLOEXEC))
 			proc->fds[f].cloexec = 1;
 		return f;
 	}
-	case OVE_LNX_NR_close:
+	case LXP_NR_close:
 		return sys_close(proc, (int)a0);
-	case OVE_LNX_NR_pipe:
+	case LXP_NR_pipe:
 		return sys_pipe(proc, (int *)(uintptr_t)a0, 0);
-	case OVE_LNX_NR_pipe2: /* (fds, flags) — flags carries O_CLOEXEC and/or O_NONBLOCK */
+	case LXP_NR_pipe2: /* (fds, flags) — flags carries O_CLOEXEC and/or O_NONBLOCK */
 		return sys_pipe(proc, (int *)(uintptr_t)a0, (int)a1);
-	case OVE_LNX_NR_dup:
+	case LXP_NR_dup:
 		return sys_dup(proc, (int)a0);
-	case OVE_LNX_NR_dup2:
+	case LXP_NR_dup2:
 		return sys_dup2(proc, (int)a0, (int)a1);
-	case OVE_LNX_NR_dup3: { /* (old, new, flags) — flags carries O_CLOEXEC on the new fd */
+	case LXP_NR_dup3: { /* (old, new, flags) — flags carries O_CLOEXEC on the new fd */
 		long nf = sys_dup2(proc, (int)a0, (int)a1);
-		if (nf >= 0 && ((int)a2 & OVE_LNX_O_CLOEXEC))
+		if (nf >= 0 && ((int)a2 & LXP_O_CLOEXEC))
 			proc->fds[nf].cloexec = 1;
 		return nf;
 	}
-	case OVE_LNX_NR_lseek:
+	case LXP_NR_lseek:
 		return sys_lseek(proc, (int)a0, a1, (int)a2);
-	case OVE_LNX_NR__llseek:
+	case LXP_NR__llseek:
 		return sys_llseek(proc, (int)a0, (unsigned long)a1, (unsigned long)a2,
 				  (uint64_t *)(uintptr_t)a3, (unsigned int)a4);
-	case OVE_LNX_NR_ftruncate64:
+	case LXP_NR_ftruncate64:
 		/* 64-bit length is register-pair aligned on ARM: fd=a0, len=(a2,a3). */
 		return sys_ftruncate(proc, (int)a0,
 				     (uint64_t)(uint32_t)a2 | ((uint64_t)(uint32_t)a3 << 32));
-	case OVE_LNX_NR_fstat64:
+	case LXP_NR_fstat64:
 		return sys_fstat64(proc, (int)a0, (void *)(uintptr_t)a1);
-	case OVE_LNX_NR_stat64: /* (path, statbuf) — follows symlinks */
+	case LXP_NR_stat64: /* (path, statbuf) — follows symlinks */
 		return sys_stat_path(proc, (const char *)(uintptr_t)a0, 1, (void *)(uintptr_t)a1);
-	case OVE_LNX_NR_lstat64: /* (path, statbuf) — does NOT follow */
+	case LXP_NR_lstat64: /* (path, statbuf) — does NOT follow */
 		return sys_stat_path(proc, (const char *)(uintptr_t)a0, 0, (void *)(uintptr_t)a1);
-	case OVE_LNX_NR_fstatat64: /* (dirfd, path, statbuf, flags) */
+	case LXP_NR_fstatat64: /* (dirfd, path, statbuf, flags) */
 		return sys_stat_path(proc, (const char *)(uintptr_t)a1,
-				     !((int)a3 & OVE_LNX_AT_SYMLINK_NOFOLLOW),
+				     !((int)a3 & LXP_AT_SYMLINK_NOFOLLOW),
 				     (void *)(uintptr_t)a2);
-	case OVE_LNX_NR_readlink: /* (path, buf, bufsiz) */
+	case LXP_NR_readlink: /* (path, buf, bufsiz) */
 		return sys_readlink(proc, (const char *)(uintptr_t)a0, (char *)(uintptr_t)a1,
 				    (size_t)a2);
-	case OVE_LNX_NR_readlinkat: /* (dirfd, path, buf, bufsiz) */
+	case LXP_NR_readlinkat: /* (dirfd, path, buf, bufsiz) */
 		return sys_readlink(proc, (const char *)(uintptr_t)a1, (char *)(uintptr_t)a2,
 				    (size_t)a3);
-	case OVE_LNX_NR_access: /* (path, mode) — mode ignored */
+	case LXP_NR_access: /* (path, mode) — mode ignored */
 		return sys_access(proc, (const char *)(uintptr_t)a0);
-	case OVE_LNX_NR_faccessat:  /* (dirfd, path, mode) */
-	case OVE_LNX_NR_faccessat2: /* (dirfd, path, mode, flags) */
+	case LXP_NR_faccessat:  /* (dirfd, path, mode) */
+	case LXP_NR_faccessat2: /* (dirfd, path, mode, flags) */
 		return sys_access(proc, (const char *)(uintptr_t)a1);
-	case OVE_LNX_NR_mkdir: /* (path, mode) */
+	case LXP_NR_mkdir: /* (path, mode) */
 		return sys_mkdir(proc, (const char *)(uintptr_t)a0, (uint32_t)a1);
-	case OVE_LNX_NR_mkdirat: /* (dirfd, path, mode) */
+	case LXP_NR_mkdirat: /* (dirfd, path, mode) */
 		return sys_mkdir(proc, (const char *)(uintptr_t)a1, (uint32_t)a2);
-	case OVE_LNX_NR_rmdir: /* (path) */
+	case LXP_NR_rmdir: /* (path) */
 		return sys_unlink(proc, (const char *)(uintptr_t)a0, 1);
-	case OVE_LNX_NR_unlink: /* (path) */
+	case LXP_NR_unlink: /* (path) */
 		return sys_unlink(proc, (const char *)(uintptr_t)a0, 0);
-	case OVE_LNX_NR_unlinkat: /* (dirfd, path, flags) */
+	case LXP_NR_unlinkat: /* (dirfd, path, flags) */
 		return sys_unlink(proc, (const char *)(uintptr_t)a1,
-				  ((int)a2 & OVE_LNX_AT_REMOVEDIR) ? 1 : 0);
-	case OVE_LNX_NR_rename: /* (oldpath, newpath) */
+				  ((int)a2 & LXP_AT_REMOVEDIR) ? 1 : 0);
+	case LXP_NR_rename: /* (oldpath, newpath) */
 		return sys_rename(proc, (const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1);
-	case OVE_LNX_NR_renameat:  /* (olddirfd, old, newdirfd, new) */
-	case OVE_LNX_NR_renameat2: /* (olddirfd, old, newdirfd, new, flags) */
+	case LXP_NR_renameat:  /* (olddirfd, old, newdirfd, new) */
+	case LXP_NR_renameat2: /* (olddirfd, old, newdirfd, new, flags) */
 		return sys_rename(proc, (const char *)(uintptr_t)a1, (const char *)(uintptr_t)a3);
-	case OVE_LNX_NR_symlink: /* (target, linkpath) */
+	case LXP_NR_symlink: /* (target, linkpath) */
 		return sys_symlink(proc, (const char *)(uintptr_t)a0, (const char *)(uintptr_t)a1);
-	case OVE_LNX_NR_symlinkat: /* (target, newdirfd, linkpath) */
+	case LXP_NR_symlinkat: /* (target, newdirfd, linkpath) */
 		return sys_symlink(proc, (const char *)(uintptr_t)a0, (const char *)(uintptr_t)a2);
-	case OVE_LNX_NR_chmod: /* (path, mode) */
+	case LXP_NR_chmod: /* (path, mode) */
 		return sys_chmod(proc, (const char *)(uintptr_t)a0, (uint32_t)a1);
-	case OVE_LNX_NR_fchmodat: /* (dirfd, path, mode) */
+	case LXP_NR_fchmodat: /* (dirfd, path, mode) */
 		return sys_chmod(proc, (const char *)(uintptr_t)a1, (uint32_t)a2);
-	case OVE_LNX_NR_utimensat:	  /* (dirfd, path, times, flags) — times not tracked */
-	case OVE_LNX_NR_utimensat_time64: /* time64 variant uClibc-ng issues for touch */
+	case LXP_NR_utimensat:	  /* (dirfd, path, times, flags) — times not tracked */
+	case LXP_NR_utimensat_time64: /* time64 variant uClibc-ng issues for touch */
 		return sys_utimensat(proc, (const char *)(uintptr_t)a1);
-	case OVE_LNX_NR_mount:	 /* synthetic /proc + overlay are always present */
-	case OVE_LNX_NR_umount2: /* (rcS does `mount -t proc proc /proc`) */
+	case LXP_NR_mount:	 /* synthetic /proc + overlay are always present */
+	case LXP_NR_umount2: /* (rcS does `mount -t proc proc /proc`) */
 		return 0;
-	case OVE_LNX_NR_statfs64:  /* (path, sz, buf) */
-	case OVE_LNX_NR_fstatfs64: /* (fd, sz, buf) */
+	case LXP_NR_statfs64:  /* (path, sz, buf) */
+	case LXP_NR_fstatfs64: /* (fd, sz, buf) */
 		return sys_statfs(proc, (void *)(uintptr_t)a2);
-	case OVE_LNX_NR_getrandom: /* (buf, count, flags) */
+	case LXP_NR_getrandom: /* (buf, count, flags) */
 		return sys_getrandom(proc, (void *)(uintptr_t)a0, (size_t)a1);
-	case OVE_LNX_NR_eventfd2: { /* (initval, flags) — curl's threaded-resolver wakeup */
+	case LXP_NR_eventfd2: { /* (initval, flags) — curl's threaded-resolver wakeup */
 		long ei = efd_new((unsigned)a0, (int)a1);
 		if (ei < 0)
 			return ei;
-		int fd = fd_alloc(proc, OVE_LNX_FD_EVENTFD, (int)ei, 0);
+		int fd = fd_alloc(proc, LXP_FD_EVENTFD, (int)ei, 0);
 		if (fd < 0) {
 			g_efd[ei].used = 0;
-			return -OVE_LNX_EMFILE;
+			return -LXP_EMFILE;
 		}
 		return fd;
 	}
-	case OVE_LNX_NR_sysinfo: { /* uptime + ram totals (uptime/free read this) */
-		struct ove_lnx_sysinfo {
+	case LXP_NR_sysinfo: { /* uptime + ram totals (uptime/free read this) */
+		struct lxp_sysinfo {
 			int32_t uptime;
 			uint32_t loads[3];
 			uint32_t totalram, freeram, sharedram, bufferram, totalswap, freeswap;
@@ -2905,10 +2905,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			char _f[8];
 		} *si = (void *)(uintptr_t)a0;
 		if (!user_ok(proc, si, sizeof(*si), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		memset(si, 0, sizeof(*si));
 		uint64_t ns = 0;
-		ove_lnx_time_ns(&ns);
+		lxp_time_ns(&ns);
 		si->uptime = (int32_t)(ns / 1000000000ull);
 		si->totalram = 4u * 1024u * 1024u;
 		si->freeram = 2u * 1024u * 1024u;
@@ -2916,128 +2916,128 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		si->mem_unit = 1;
 		return 0;
 	}
-	case OVE_LNX_NR_fcntl: /* old 32-bit fcntl: same dispatch as fcntl64 here */
-	case OVE_LNX_NR_fcntl64: {
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
+	case LXP_NR_fcntl: /* old 32-bit fcntl: same dispatch as fcntl64 here */
+	case LXP_NR_fcntl64: {
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
 		if (!s)
-			return -OVE_LNX_EBADF;
-		if ((int)a1 == OVE_LNX_F_DUPFD || (int)a1 == OVE_LNX_F_DUPFD_CLOEXEC) {
+			return -LXP_EBADF;
+		if ((int)a1 == LXP_F_DUPFD || (int)a1 == LXP_F_DUPFD_CLOEXEC) {
 			/* Duplicate to the lowest free fd >= arg. The shell asks for a high
 			 * fd (>=255) for its interactive fd; our table is small, so a too-high
 			 * arg falls back to any free fd (the shell tolerates a low one and
 			 * relocates it if needed). */
 			int from = (int)a2;
-			if (from < 0 || from >= OVE_LNX_MAX_FDS)
+			if (from < 0 || from >= LXP_MAX_FDS)
 				from = 0;
-			for (int nfd = from; nfd < OVE_LNX_MAX_FDS; nfd++) {
-				if (proc->fds[nfd].kind == OVE_LNX_FD_FREE) {
+			for (int nfd = from; nfd < LXP_MAX_FDS; nfd++) {
+				if (proc->fds[nfd].kind == LXP_FD_FREE) {
 					proc->fds[nfd] = *s;
 					proc->fds[nfd].cloexec =
-						((int)a1 == OVE_LNX_F_DUPFD_CLOEXEC) ? 1 : 0;
+						((int)a1 == LXP_F_DUPFD_CLOEXEC) ? 1 : 0;
 #if defined(CONFIG_OVE_LINUX_DEV)
-					if (s->kind == OVE_LNX_FD_DEV)
-						ove_lnx_dev_get(s->file_idx);
+					if (s->kind == LXP_FD_DEV)
+						lxp_dev_get(s->file_idx);
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-					if (s->kind == OVE_LNX_FD_SOCKET)
-						ove_lnx_sock_get(s->file_idx);
+					if (s->kind == LXP_FD_SOCKET)
+						lxp_sock_get(s->file_idx);
 #endif
 					return nfd;
 				}
 			}
-			return -OVE_LNX_EMFILE;
+			return -LXP_EMFILE;
 		}
 #if defined(CONFIG_OVE_LINUX_DEV)
 		/* A device fd honours F_SETFL/F_GETFL so O_NONBLOCK takes effect (LVGL's
 		 * evdev opens blocking, then fcntl(F_SETFL, O_NONBLOCK)). */
-		if (s->kind == OVE_LNX_FD_DEV) {
-			if ((int)a1 == OVE_LNX_F_SETFL) {
-				ove_lnx_dev_setfl(s->file_idx, (int)a2);
+		if (s->kind == LXP_FD_DEV) {
+			if ((int)a1 == LXP_F_SETFL) {
+				lxp_dev_setfl(s->file_idx, (int)a2);
 				return 0;
 			}
-			if ((int)a1 == OVE_LNX_F_GETFL)
-				return ove_lnx_dev_getfl(s->file_idx);
+			if ((int)a1 == LXP_F_GETFL)
+				return lxp_dev_getfl(s->file_idx);
 		}
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
 		/* A socket fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking. */
-		if (s->kind == OVE_LNX_FD_SOCKET) {
-			if ((int)a1 == OVE_LNX_F_SETFL) {
-				ove_lnx_sock_setfl(s->file_idx, (int)a2);
+		if (s->kind == LXP_FD_SOCKET) {
+			if ((int)a1 == LXP_F_SETFL) {
+				lxp_sock_setfl(s->file_idx, (int)a2);
 				return 0;
 			}
-			if ((int)a1 == OVE_LNX_F_GETFL)
-				return ove_lnx_sock_getfl(s->file_idx);
+			if ((int)a1 == LXP_F_GETFL)
+				return lxp_sock_getfl(s->file_idx);
 		}
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 		/* A pty fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking (dropbear sets
 		 * the master non-blocking and drives it with select). */
-		if (s->kind == OVE_LNX_FD_PTY) {
-			if ((int)a1 == OVE_LNX_F_SETFL) {
-				ove_lnx_pty_setfl(s->file_idx, s->rw, (int)a2);
+		if (s->kind == LXP_FD_PTY) {
+			if ((int)a1 == LXP_F_SETFL) {
+				lxp_pty_setfl(s->file_idx, s->rw, (int)a2);
 				return 0;
 			}
-			if ((int)a1 == OVE_LNX_F_GETFL)
-				return ove_lnx_pty_getfl(s->file_idx, s->rw);
+			if ((int)a1 == LXP_F_GETFL)
+				return lxp_pty_getfl(s->file_idx, s->rw);
 		}
 #endif
 		/* A pipe fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking (dropbear sets its
 		 * SIGCHLD self-pipe non-blocking and drains it with a read-until-EAGAIN loop). */
-		if (s->kind == OVE_LNX_FD_PIPE) {
-			if ((int)a1 == OVE_LNX_F_SETFL) {
-				s->nonblock = ((int)a2 & OVE_LNX_O_NONBLOCK) ? 1 : 0;
+		if (s->kind == LXP_FD_PIPE) {
+			if ((int)a1 == LXP_F_SETFL) {
+				s->nonblock = ((int)a2 & LXP_O_NONBLOCK) ? 1 : 0;
 				return 0;
 			}
-			if ((int)a1 == OVE_LNX_F_GETFL)
-				return (s->rw ? OVE_LNX_O_WRONLY : OVE_LNX_O_RDONLY) |
-				       (s->nonblock ? OVE_LNX_O_NONBLOCK : 0);
+			if ((int)a1 == LXP_F_GETFL)
+				return (s->rw ? LXP_O_WRONLY : LXP_O_RDONLY) |
+				       (s->nonblock ? LXP_O_NONBLOCK : 0);
 		}
 		/* F_SETFD/F_GETFD track close-on-exec (dropbear sets FD_CLOEXEC on its exec-status
 		 * pipe and detects a successful shell exec by that fd closing on execve). */
-		if ((int)a1 == OVE_LNX_F_SETFD) {
-			s->cloexec = ((int)a2 & OVE_LNX_FD_CLOEXEC) ? 1 : 0;
+		if ((int)a1 == LXP_F_SETFD) {
+			s->cloexec = ((int)a2 & LXP_FD_CLOEXEC) ? 1 : 0;
 			return 0;
 		}
-		if ((int)a1 == OVE_LNX_F_GETFD)
-			return s->cloexec ? OVE_LNX_FD_CLOEXEC : 0;
+		if ((int)a1 == LXP_F_GETFD)
+			return s->cloexec ? LXP_FD_CLOEXEC : 0;
 		/* F_GETFL/SETFL on a stdio/other fd: benign. */
 		return 0;
 	}
-	case OVE_LNX_NR_getdents: /* 32-bit linux_dirent (uClibc readdir on this target) */
+	case LXP_NR_getdents: /* 32-bit linux_dirent (uClibc readdir on this target) */
 		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, 0);
-	case OVE_LNX_NR_getdents64:
+	case LXP_NR_getdents64:
 		return sys_getdents64(proc, (int)a0, (void *)(uintptr_t)a1, (size_t)a2, 1);
-	case OVE_LNX_NR_statx: /* (dirfd, path, flags, mask, buf); mask ignored */
+	case LXP_NR_statx: /* (dirfd, path, flags, mask, buf); mask ignored */
 		return sys_statx(proc, (int)a0, (const char *)(uintptr_t)a1, (int)a2,
 				 (void *)(uintptr_t)a4);
-	case OVE_LNX_NR_exit:
-	case OVE_LNX_NR_exit_group:
+	case LXP_NR_exit:
+	case LXP_NR_exit_group:
 		return sys_exit(proc, (int)a0);
 	/* libc-init / identity stubs: enough for a static uClibc program to start. */
-	case OVE_LNX_NR_getpid:
+	case LXP_NR_getpid:
 		return proc->pid;
-	case OVE_LNX_NR_getppid:
+	case LXP_NR_getppid:
 		return proc->ppid;
-	case OVE_LNX_NR_getcwd: {
+	case LXP_NR_getcwd: {
 		/* getcwd(buf, size): write the cwd; the raw syscall returns the length
 		 * including the NUL terminator. */
 		char *buf = (char *)(uintptr_t)a0;
 		if (!buf)
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		size_t len = strlen(proc->cwd) + 1;
 		if ((size_t)a1 < len)
-			return -OVE_LNX_ERANGE;
+			return -LXP_ERANGE;
 		if (!user_ok(proc, buf, len, 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		memcpy(buf, proc->cwd, len);
 		return (long)len;
 	}
-	case OVE_LNX_NR_chdir: {
+	case LXP_NR_chdir: {
 		const char *path = (const char *)(uintptr_t)a0;
 		if (!path)
-			return -OVE_LNX_EFAULT;
-		char abspath[OVE_LNX_PATH_MAX];
+			return -LXP_EFAULT;
+		char abspath[LXP_PATH_MAX];
 		long r = resolve_path(proc, path, abspath, sizeof(abspath));
 		if (r < 0)
 			return r;
@@ -3046,48 +3046,48 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		if (!(abspath[0] == '/' && abspath[1] == '\0')) {
 			int wi = wfs_find(abspath);
 			if (wi >= 0) {
-				if ((g_wnodes[wi].mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
-					return -OVE_LNX_ENOTDIR;
+				if ((g_wnodes[wi].mode & LXP_S_IFMT) != LXP_S_IFDIR)
+					return -LXP_ENOTDIR;
 			} else {
 				int idx = fs_lookup(proc, abspath);
 				if (idx < 0)
-					return -OVE_LNX_ENOENT;
-				if ((file_mode(&proc->fs[idx]) & OVE_LNX_S_IFMT) != OVE_LNX_S_IFDIR)
-					return -OVE_LNX_ENOTDIR;
+					return -LXP_ENOENT;
+				if ((file_mode(&proc->fs[idx]) & LXP_S_IFMT) != LXP_S_IFDIR)
+					return -LXP_ENOTDIR;
 			}
 		}
 		strcpy(proc->cwd, abspath);
 		return 0;
 	}
-	case OVE_LNX_NR_umask: { /* set the file-creation mask, return the previous (per-proc, inherited) */
+	case LXP_NR_umask: { /* set the file-creation mask, return the previous (per-proc, inherited) */
 		int old = proc->umask;
 		proc->umask = (unsigned short)(a0 & 0777);
 		return old;
 	}
-	case OVE_LNX_NR_prctl:
-	case OVE_LNX_NR_sched_yield: /* cooperative hint; FreeRTOS time-slices peers anyway */
-	case OVE_LNX_NR_setpgid:
-	case OVE_LNX_NR_sync:	  /* no backing store to flush */
-	case OVE_LNX_NR_fsync:	  /* dropbearkey fsyncs the host key; the writable overlay is RAM */
-	case OVE_LNX_NR_fdatasync:
-	case OVE_LNX_NR_fchmod: /* modes/ownership not tracked (login chmods the tty) */
-	case OVE_LNX_NR_fchown32:
-	case OVE_LNX_NR_setgroups32: /* uid/gid not enforced (login's privilege drop is */
-	case OVE_LNX_NR_setuid32:    /* inert — programs run privileged in this tier) */
-	case OVE_LNX_NR_setgid32:
-	case OVE_LNX_NR_setreuid32: /* dropbear's post-auth privilege drop: accept (inert) so it */
-	case OVE_LNX_NR_setregid32: /* does not abort — a failed drop is fatal to an SSH server */
-	case OVE_LNX_NR_setresuid32:
-	case OVE_LNX_NR_setresgid32:
+	case LXP_NR_prctl:
+	case LXP_NR_sched_yield: /* cooperative hint; FreeRTOS time-slices peers anyway */
+	case LXP_NR_setpgid:
+	case LXP_NR_sync:	  /* no backing store to flush */
+	case LXP_NR_fsync:	  /* dropbearkey fsyncs the host key; the writable overlay is RAM */
+	case LXP_NR_fdatasync:
+	case LXP_NR_fchmod: /* modes/ownership not tracked (login chmods the tty) */
+	case LXP_NR_fchown32:
+	case LXP_NR_setgroups32: /* uid/gid not enforced (login's privilege drop is */
+	case LXP_NR_setuid32:    /* inert — programs run privileged in this tier) */
+	case LXP_NR_setgid32:
+	case LXP_NR_setreuid32: /* dropbear's post-auth privilege drop: accept (inert) so it */
+	case LXP_NR_setregid32: /* does not abort — a failed drop is fatal to an SSH server */
+	case LXP_NR_setresuid32:
+	case LXP_NR_setresgid32:
 		return 0; /* process-control / fs-mode setup accepted (inert) */
-	case OVE_LNX_NR_getresuid32: /* (ruid*, euid*, suid*) — all root (0) on this tier */
-	case OVE_LNX_NR_getresgid32: {
+	case LXP_NR_getresuid32: /* (ruid*, euid*, suid*) — all root (0) on this tier */
+	case LXP_NR_getresgid32: {
 		uint32_t *r = (uint32_t *)(uintptr_t)a0, *e = (uint32_t *)(uintptr_t)a1,
 			 *s = (uint32_t *)(uintptr_t)a2;
 		if ((r && !user_ok(proc, r, sizeof(*r), 1)) ||
 		    (e && !user_ok(proc, e, sizeof(*e), 1)) ||
 		    (s && !user_ok(proc, s, sizeof(*s), 1)))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		if (r)
 			*r = 0;
 		if (e)
@@ -3096,48 +3096,48 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			*s = 0;
 		return 0;
 	}
-	case OVE_LNX_NR_prlimit64: { /* (pid, resource, new_limit, old_limit) — report a sane
+	case LXP_NR_prlimit64: { /* (pid, resource, new_limit, old_limit) — report a sane
 				     * finite limit; a "new" limit is accepted (inert). getty/login
 				     * and dropbear query RLIMIT_NOFILE etc. */
 		void *uold = (void *)(uintptr_t)a3;
 		if (uold) {
 			if (!user_ok(proc, uold, 2 * sizeof(uint64_t), 1))
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			uint64_t *lim = (uint64_t *)uold; /* rlim_cur, rlim_max */
 			lim[0] = lim[1] = 1024; /* finite: never RLIM_INFINITY (a close-all-fds
 						 * loop would otherwise spin to 2^64) */
 		}
 		return 0;
 	}
-	case OVE_LNX_NR_times: { /* (struct tms*) — CPU-time accounting; dropbear mixes it into
+	case LXP_NR_times: { /* (struct tms*) — CPU-time accounting; dropbear mixes it into
 				 * its RNG pool. Report uptime ticks (100 Hz) + zero the per-proc
 				 * breakdown (not tracked here). Must be >=0 (glibc treats -1 as error). */
 		void *ubuf = (void *)(uintptr_t)a0;
 		uint64_t us = 0;
-		ove_lnx_time_us(&us);
+		lxp_time_us(&us);
 		long ticks = (long)(us / 10000u); /* CLK_TCK = 100 */
 		if (ubuf) {
 			if (!user_ok(proc, ubuf, 4 * sizeof(long), 1))
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			long *tms = (long *)ubuf; /* tms_utime, tms_stime, tms_cutime, tms_cstime */
 			tms[0] = ticks;
 			tms[1] = tms[2] = tms[3] = 0;
 		}
 		return ticks;
 	}
-	case OVE_LNX_NR_setitimer: { /* (which, new, old) — ITIMER_REAL -> SIGALRM (alarm()) */
+	case LXP_NR_setitimer: { /* (which, new, old) — ITIMER_REAL -> SIGALRM (alarm()) */
 		int which = (int)a0;
 		const void *unew = (const void *)(uintptr_t)a1;
 		void *uold = (void *)(uintptr_t)a2;
-		if (which != OVE_LNX_ITIMER_REAL)
+		if (which != LXP_ITIMER_REAL)
 			return 0; /* only the real-time timer (login timeout, ping interval) */
 		/* struct itimerval { timeval it_interval; timeval it_value; }; ARM32 long=4,
 		 * so it is 4 x u32: [interval_sec, interval_usec, value_sec, value_usec]. */
 		uint64_t now = 0;
-		ove_lnx_time_us(&now);
+		lxp_time_us(&now);
 		if (uold) {
 			if (!user_ok(proc, uold, 16, 1))
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			uint32_t ov[4] = {0, 0, 0, 0};
 			uint64_t rem = (proc->alarm_deadline_us && proc->alarm_deadline_us > now)
 					       ? proc->alarm_deadline_us - now
@@ -3151,7 +3151,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		if (!unew)
 			return 0;
 		if (!user_ok(proc, unew, 16, 0))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		uint32_t nv[4];
 		memcpy(nv, unew, 16);
 		proc->alarm_interval_us = (uint64_t)nv[0] * 1000000u + nv[1];
@@ -3159,27 +3159,27 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		proc->alarm_deadline_us = val_us ? now + val_us : 0; /* it_value 0 disarms */
 		return 0;
 	}
-	case OVE_LNX_NR_getpgrp:   /* shell job control: process group == pid */
-	case OVE_LNX_NR_setsid:	   /* getty/login start a new session */
+	case LXP_NR_getpgrp:   /* shell job control: process group == pid */
+	case LXP_NR_setsid:	   /* getty/login start a new session */
 		return proc->pid;  /* the caller becomes the session/group leader */
-	case OVE_LNX_NR_reboot: {  /* reboot(magic1, magic2, cmd, arg) — cmd is a2 */
+	case LXP_NR_reboot: {  /* reboot(magic1, magic2, cmd, arg) — cmd is a2 */
 		unsigned cmd = (unsigned)a2;
 		/* Only an actual halt/poweroff/restart stops the system; init calls
 		 * reboot(CAD_OFF=0) at startup to disable Ctrl-Alt-Del — a no-op here. */
 		if (cmd == 0x01234567u /* RESTART */ || cmd == 0xcdef0123u /* HALT */ ||
 		    cmd == 0x4321fedcu /* POWER_OFF */ || cmd == 0xa1b2c3d4u /* RESTART2 */) {
-			g_ove_lnx_halt = 1;
+			g_lxp_halt = 1;
 			proc->exited = 1;
 			proc->exit_status = 0;
 		}
 		return 0;
 	}
-	case OVE_LNX_NR_gettid:
+	case LXP_NR_gettid:
 		return proc->pid;	 /* single-threaded: tid == pid */
-	case OVE_LNX_NR_clock_gettime: { /* (clockid, struct timespec*) — 32-bit time_t */
+	case LXP_NR_clock_gettime: { /* (clockid, struct timespec*) — 32-bit time_t */
 		int32_t *ts = (int32_t *)(uintptr_t)a1;
 		if (!user_ok(proc, ts, 2 * sizeof(int32_t), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		uint64_t sec;
 		uint32_t nsec;
 		now_sec_nsec((int)a0, &sec, &nsec);
@@ -3187,10 +3187,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		ts[1] = (int32_t)nsec;
 		return 0;
 	}
-	case OVE_LNX_NR_clock_gettime64: { /* (clockid, struct __kernel_timespec*) — 64-bit */
+	case LXP_NR_clock_gettime64: { /* (clockid, struct __kernel_timespec*) — 64-bit */
 		int64_t *ts = (int64_t *)(uintptr_t)a1;
 		if (!user_ok(proc, ts, 2 * sizeof(int64_t), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		uint64_t sec;
 		uint32_t nsec;
 		now_sec_nsec((int)a0, &sec, &nsec);
@@ -3198,10 +3198,10 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		ts[1] = (int64_t)nsec;
 		return 0;
 	}
-	case OVE_LNX_NR_gettimeofday: { /* (struct timeval*, tz) */
+	case LXP_NR_gettimeofday: { /* (struct timeval*, tz) */
 		int32_t *tv = (int32_t *)(uintptr_t)a0;
 		if (!user_ok(proc, tv, 2 * sizeof(int32_t), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		uint64_t sec;
 		uint32_t nsec;
 		now_sec_nsec(0, &sec, &nsec);
@@ -3209,19 +3209,19 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		tv[1] = (int32_t)(nsec / 1000u);
 		return 0;
 	}
-	case OVE_LNX_NR_nanosleep:	 /* (req, rem) */
-	case OVE_LNX_NR_clock_nanosleep: /* (clockid, flags, req, rem) */
-	case OVE_LNX_NR_clock_nanosleep_time64: {
+	case LXP_NR_nanosleep:	 /* (req, rem) */
+	case LXP_NR_clock_nanosleep: /* (clockid, flags, req, rem) */
+	case LXP_NR_clock_nanosleep_time64: {
 		/* Record a wake deadline and ask the run loop to park + delay this proc
 		 * (the trap context cannot block). The run loop aborts the slot for the
 		 * duration so the RTOS idle/kernel/other threads run and real time + CPU
 		 * stats advance — which is what top needs between its two samples. */
-		uintptr_t reqp = (nr == OVE_LNX_NR_nanosleep) ? (uintptr_t)a0 : (uintptr_t)a2;
+		uintptr_t reqp = (nr == LXP_NR_nanosleep) ? (uintptr_t)a0 : (uintptr_t)a2;
 		if (!user_ok(proc, (const void *)reqp,
-			     (nr == OVE_LNX_NR_clock_nanosleep_time64) ? 16u : 8u, 0))
-			return -OVE_LNX_EFAULT;
+			     (nr == LXP_NR_clock_nanosleep_time64) ? 16u : 8u, 0))
+			return -LXP_EFAULT;
 		uint64_t sec, nsec;
-		if (nr == OVE_LNX_NR_clock_nanosleep_time64) {
+		if (nr == LXP_NR_clock_nanosleep_time64) {
 			const int64_t *t = (const int64_t *)reqp; /* time64 {sec, nsec} */
 			sec = (uint64_t)t[0];
 			nsec = (uint64_t)t[1];
@@ -3240,17 +3240,17 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * ove_time_get_us, so both must use the same cross-idle clock or every sleep / poll
 		 * timeout drifts (on real silicon interactive top ran ~1.66x slow + un-quittable). */
 		uint64_t now_us = 0;
-		ove_lnx_time_us(&now_us);
+		lxp_time_us(&now_us);
 		proc->sleep_until_us = now_us + dur_us;
 		proc->sleep_pending = 1;
 		return 0;
 	}
-	case OVE_LNX_NR_uname: {
+	case LXP_NR_uname: {
 		/* struct utsname: 6 fixed 65-byte fields (sysname, nodename, release,
 		 * version, machine, domainname). The shell reads these at startup. */
 		char *u = (char *)(uintptr_t)a0;
 		if (!user_ok(proc, u, 6 * 65, 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		static const char *const f[6] = {"Linux",   "overtos", "6.1.0",
 						 "oveRTOS", "armv7l",  "(none)"};
 		memset(u, 0, 6 * 65);
@@ -3260,18 +3260,18 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		}
 		return 0;
 	}
-	case OVE_LNX_NR_rt_sigaction: {
+	case LXP_NR_rt_sigaction: {
 		/* Record the per-signal disposition; the engine seam delivers it.
 		 * struct sigaction: sa_handler@0, sa_flags@4, sa_restorer@8. */
 		int sig = (int)a0;
-		if (sig < 1 || sig >= OVE_LNX_NSIG)
-			return -OVE_LNX_EINVAL;
+		if (sig < 1 || sig >= LXP_NSIG)
+			return -LXP_EINVAL;
 		const uint32_t *act = (const uint32_t *)(uintptr_t)a1;
 		uint32_t *oact = (uint32_t *)(uintptr_t)a2;
 		if (act && !user_ok(proc, act, 3 * sizeof(uint32_t), 0))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		if (oact && !user_ok(proc, oact, 3 * sizeof(uint32_t), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		if (oact) {
 			oact[0] = (uint32_t)proc->sig_handler[sig];
 			oact[2] = (uint32_t)proc->sig_restorer[sig];
@@ -3283,16 +3283,16 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		return 0;
 	}
 #if defined(CONFIG_OVE_LINUX_NET)
-	case OVE_LNX_NR_pselect6_time64: /* (nfds, readfds, writefds, exceptfds, timeout, sigmask) */
+	case LXP_NR_pselect6_time64: /* (nfds, readfds, writefds, exceptfds, timeout, sigmask) */
 		return sys_pselect6(proc, (int)a0, (uintptr_t)a1, (uintptr_t)a2, (uintptr_t)a3,
 				    (uintptr_t)a4);
 #endif
-	case OVE_LNX_NR_poll:
-	case OVE_LNX_NR_ppoll_time64: {
-		ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)a0;
+	case LXP_NR_poll:
+	case LXP_NR_ppoll_time64: {
+		lxp_pollfd *pfds = (lxp_pollfd *)(uintptr_t)a0;
 		unsigned nfds = (unsigned)a1;
-		if (nfds && !user_ok(proc, pfds, (size_t)nfds * sizeof(ove_lnx_pollfd), 1))
-			return -OVE_LNX_EFAULT;
+		if (nfds && !user_ok(proc, pfds, (size_t)nfds * sizeof(lxp_pollfd), 1))
+			return -LXP_EFAULT;
 		/* Timeout: poll(2) passes ms in a2 (<0 = block); ppoll passes a struct
 		 * timespec* (NULL = block). A SHORT finite timeout means the caller is
 		 * probing for input that might *immediately* follow — e.g. vi/hush's
@@ -3305,12 +3305,12 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * caller blocks in read() for the real byte (the console read blocks
 		 * until a key arrives). */
 		long tmo_ms;
-		if (nr == OVE_LNX_NR_poll) {
+		if (nr == LXP_NR_poll) {
 			tmo_ms = (long)(int32_t)a2;
 		} else {
 			const int64_t *ts = (const int64_t *)(uintptr_t)a2; /* {sec, nsec} */
 			if (ts && !user_ok(proc, ts, 2 * sizeof(int64_t), 0))
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			tmo_ms = ts ? (long)(ts[0] * 1000 + ts[1] / 1000000) : -1;
 		}
 		/* With a console_poll callback (UART console) we report the console fd's REAL
@@ -3326,54 +3326,54 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 #endif
 		for (unsigned i = 0; i < nfds; i++) {
 			pfds[i].revents = 0;
-			ove_lnx_fd_t *s = fd_slot(proc, pfds[i].fd);
+			lxp_fd_t *s = fd_slot(proc, pfds[i].fd);
 			if (!s)
 				continue;
 			int avail;
-			if (s->kind == OVE_LNX_FD_CONSOLE)
+			if (s->kind == LXP_FD_CONSOLE)
 				avail = (tmo_ms < 0) ? 1 : (proc->console_poll ? key : !probe);
 #if defined(CONFIG_OVE_LINUX_DEV)
-			else if (s->kind == OVE_LNX_FD_DEV) {
+			else if (s->kind == LXP_FD_DEV) {
 				/* Report the driver's real readiness bits (fb POLLOUT, evdev
 				 * POLLIN when the event ring is non-empty). */
-				unsigned pb = ove_lnx_dev_poll(s->file_idx);
+				unsigned pb = lxp_dev_poll(s->file_idx);
 				pfds[i].revents = (short)(pfds[i].events & pb &
-							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+							  (LXP_POLLIN | LXP_POLLOUT));
 				if (pfds[i].revents)
 					ready++;
 				continue;
 			}
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-			else if (s->kind == OVE_LNX_FD_SOCKET) {
-				unsigned pb = ove_lnx_sock_poll(s->file_idx);
+			else if (s->kind == LXP_FD_SOCKET) {
+				unsigned pb = lxp_sock_poll(s->file_idx);
 				pfds[i].revents = (short)(pfds[i].events & pb &
-							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+							  (LXP_POLLIN | LXP_POLLOUT));
 				if (pfds[i].revents)
 					ready++;
 				has_socket = 1;
 				continue;
-			} else if (s->kind == OVE_LNX_FD_EVENTFD) {
+			} else if (s->kind == LXP_FD_EVENTFD) {
 				/* Readable once the counter is non-zero (the resolver thread
 				 * wrote it); always writable. Park like a socket poll so the
 				 * coordinator re-checks on its tick. */
-				unsigned pb = OVE_LNX_POLLOUT |
-					      ((s->file_idx >= 0 && s->file_idx < OVE_LNX_NEVENTFD &&
+				unsigned pb = LXP_POLLOUT |
+					      ((s->file_idx >= 0 && s->file_idx < LXP_NEVENTFD &&
 						g_efd[s->file_idx].ctr)
-						       ? OVE_LNX_POLLIN
+						       ? LXP_POLLIN
 						       : 0u);
 				pfds[i].revents = (short)(pfds[i].events & pb &
-							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+							  (LXP_POLLIN | LXP_POLLOUT));
 				if (pfds[i].revents)
 					ready++;
 				has_eventfd = 1;
 				continue;
 			}
 #if defined(CONFIG_OVE_LINUX_PTY)
-			else if (s->kind == OVE_LNX_FD_PTY) {
-				unsigned pb = ove_lnx_pty_poll(s->file_idx, s->rw);
+			else if (s->kind == LXP_FD_PTY) {
+				unsigned pb = lxp_pty_poll(s->file_idx, s->rw);
 				pfds[i].revents = (short)(pfds[i].events & pb &
-							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+							  (LXP_POLLIN | LXP_POLLOUT));
 				if (pfds[i].revents)
 					ready++;
 				has_pty = 1; /* park via SOCKW_POLL; the re-scan re-checks the pty */
@@ -3381,12 +3381,12 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			}
 #endif
 #endif
-			else if (s->kind == OVE_LNX_FD_PIPE) {
+			else if (s->kind == LXP_FD_PIPE) {
 				/* Real pipe readiness — NOT "always ready", or a select on an empty
 				 * self-pipe wrongly reports readable (dropbear then blocks forever). */
 				unsigned pb = pipe_poll(s->file_idx, s->rw);
 				pfds[i].revents = (short)(pfds[i].events & pb &
-							  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+							  (LXP_POLLIN | LXP_POLLOUT));
 				if (pfds[i].revents)
 					ready++;
 				continue;
@@ -3394,7 +3394,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				avail = 1; /* regular files: always readable/writable */
 			if (avail) {
 				pfds[i].revents = pfds[i].events &
-						  (OVE_LNX_POLLIN | OVE_LNX_POLLOUT);
+						  (LXP_POLLIN | LXP_POLLOUT);
 				if (pfds[i].revents)
 					ready++;
 			}
@@ -3404,7 +3404,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 #if defined(CONFIG_OVE_LINUX_NET)
 		/* A blocking poll whose set includes a socket parks on SOCKW_POLL: the
 		 * coordinator re-scans readiness on its <=5 ms socket-retry tick (via
-		 * ove_lnx_poll_retry) and resumes us when an fd becomes ready or the timeout
+		 * lxp_poll_retry) and resumes us when an fd becomes ready or the timeout
 		 * elapses. Without this a socket poll would sleep the whole timeout and return
 		 * 0, breaking the uClibc DNS resolver (poll(POLLIN) then recv(MSG_DONTWAIT)). */
 		if (has_socket || has_eventfd || has_pty) {
@@ -3413,13 +3413,13 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			proc->sock_len = nfds;
 			if (tmo_ms > 0) {
 				uint64_t now_us = 0;
-				ove_lnx_time_us(&now_us);
+				lxp_time_us(&now_us);
 				proc->sock_deadline_us = now_us + (uint64_t)tmo_ms * 1000ull;
 			} else {
 				proc->sock_deadline_us = UINT64_MAX; /* poll(-1): block forever */
 			}
 			proc->sock_oi = -1; /* the retry re-scans the whole set, not one open */
-			proc->sock_wait = OVE_LNX_SOCKW_POLL;
+			proc->sock_wait = LXP_SOCKW_POLL;
 			return 0; /* parked; coordinator resumes with the ready count / 0 */
 		}
 #endif
@@ -3432,15 +3432,15 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			 * parked here, and the coordinator checks this against ove_time_get_us (see the
 			 * nanosleep handler). Both must use the same clock or top's refresh + q drift. */
 			uint64_t now_us = 0;
-			ove_lnx_time_us(&now_us);
+			lxp_time_us(&now_us);
 			proc->sleep_until_us = now_us + (uint64_t)tmo_ms * 1000ull;
 			proc->sleep_pending = 1;
 		}
 		return 0;
 	}
-	case OVE_LNX_NR_wait4: {
+	case LXP_NR_wait4: {
 		if (a1 && !user_ok(proc, (void *)(uintptr_t)a1, sizeof(int), 1))
-			return -OVE_LNX_EFAULT; /* the kernel WRITES *status */
+			return -LXP_EFAULT; /* the kernel WRITES *status */
 		/* Reap an already-exited child immediately (FIFO; status = exit_code << 8).
 		 * Else, if children are still live, BLOCK: set wait_pending so the dispatch
 		 * parks us and the run-loop coordinator resumes us (returning the reaped pid
@@ -3460,7 +3460,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			return pid;
 		}
 		if (proc->live_children == 0)
-			return -OVE_LNX_ECHILD;
+			return -LXP_ECHILD;
 		if ((int)a2 & 1) /* WNOHANG: children live but none ready */
 			return 0;
 		proc->wait_pending = 1;
@@ -3468,83 +3468,83 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		proc->wait_status_p = (uintptr_t)a1;
 		return 0; /* dispatch parks; the coordinator's resume supplies the real r0 */
 	}
-	case OVE_LNX_NR_getuid32:
-	case OVE_LNX_NR_geteuid32:
-	case OVE_LNX_NR_getgid32:
-	case OVE_LNX_NR_getegid32:
+	case LXP_NR_getuid32:
+	case LXP_NR_geteuid32:
+	case LXP_NR_getgid32:
+	case LXP_NR_getegid32:
 		return 0; /* run as root */
-	case OVE_LNX_NR_ioctl: {
+	case LXP_NR_ioctl: {
 		/* Make the console fds look like a tty so the shell goes interactive
 		 * (isatty → prompt + line editing). Non-console fds are not ttys. */
-		ove_lnx_fd_t *tty = fd_slot(proc, (int)a0);
+		lxp_fd_t *tty = fd_slot(proc, (int)a0);
 		if (!tty)
-			return -OVE_LNX_ENOTTY;
+			return -LXP_ENOTTY;
 #if defined(CONFIG_OVE_LINUX_DEV)
 		/* Device ioctls (FBIOGET_VSCREENINFO, EVIOCG*, ...) dispatch to the driver
 		 * BEFORE the console-only tty gate below (which would else -ENOTTY them). */
-		if (tty->kind == OVE_LNX_FD_DEV)
-			return ove_lnx_dev_ioctl(proc, tty->file_idx, (unsigned long)a1,
+		if (tty->kind == LXP_FD_DEV)
+			return lxp_dev_ioctl(proc, tty->file_idx, (unsigned long)a1,
 						 (unsigned long)a2);
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
 		/* Socket ioctls: SIOC* interface config (ifconfig/route) — before the tty gate. */
-		if (tty->kind == OVE_LNX_FD_SOCKET)
-			return ove_lnx_sock_ioctl(proc, (unsigned long)a1, (unsigned long)a2);
+		if (tty->kind == LXP_FD_SOCKET)
+			return lxp_sock_ioctl(proc, (unsigned long)a1, (unsigned long)a2);
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 		/* A pty IS a tty: termios/winsize/ptmx ioctls dispatch to its own line-discipline
 		 * state (per-pty, not the single global console) — before the console tty gate. */
-		if (tty->kind == OVE_LNX_FD_PTY)
-			return ove_lnx_pty_ioctl(proc, tty->file_idx, tty->rw, (unsigned long)a1,
+		if (tty->kind == LXP_FD_PTY)
+			return lxp_pty_ioctl(proc, tty->file_idx, tty->rw, (unsigned long)a1,
 						 (unsigned long)a2);
 #endif
-		if (tty->kind != OVE_LNX_FD_CONSOLE)
-			return -OVE_LNX_ENOTTY;
+		if (tty->kind != LXP_FD_CONSOLE)
+			return -LXP_ENOTTY;
 		switch ((unsigned long)a1) {
-		case OVE_LNX_TCGETS: {
-			ove_lnx_termios *t = (ove_lnx_termios *)(uintptr_t)a2;
+		case LXP_TCGETS: {
+			lxp_termios *t = (lxp_termios *)(uintptr_t)a2;
 			if (!t)
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			memset(t, 0, sizeof(*t));
-			t->c_iflag = OVE_LNX_ICRNL;
-			t->c_oflag = OVE_LNX_OPOST | OVE_LNX_ONLCR;
-			t->c_cflag = OVE_LNX_CS8 | OVE_LNX_CREAD;
-			t->c_lflag = OVE_LNX_ICANON | OVE_LNX_ECHO | OVE_LNX_ISIG;
-			t->c_cc[OVE_LNX_VINTR] = 3;	/* ^C */
-			t->c_cc[OVE_LNX_VERASE] = 0x7f; /* DEL */
-			t->c_cc[OVE_LNX_VEOF] = 4;	/* ^D */
-			t->c_cc[OVE_LNX_VMIN] = 1;
+			t->c_iflag = LXP_ICRNL;
+			t->c_oflag = LXP_OPOST | LXP_ONLCR;
+			t->c_cflag = LXP_CS8 | LXP_CREAD;
+			t->c_lflag = LXP_ICANON | LXP_ECHO | LXP_ISIG;
+			t->c_cc[LXP_VINTR] = 3;	/* ^C */
+			t->c_cc[LXP_VERASE] = 0x7f; /* DEL */
+			t->c_cc[LXP_VEOF] = 4;	/* ^D */
+			t->c_cc[LXP_VMIN] = 1;
 			return 0;
 		}
-		case OVE_LNX_TCSETS:
-		case OVE_LNX_TCSETSW:
-		case OVE_LNX_TCSETSF:
+		case LXP_TCSETS:
+		case LXP_TCSETSW:
+		case LXP_TCSETSF:
 			return 0; /* accept mode changes; the console echo is the engine's job */
-		case OVE_LNX_TIOCGWINSZ: {
-			ove_lnx_winsize *w = (ove_lnx_winsize *)(uintptr_t)a2;
+		case LXP_TIOCGWINSZ: {
+			lxp_winsize *w = (lxp_winsize *)(uintptr_t)a2;
 			if (!w)
-				return -OVE_LNX_EFAULT;
+				return -LXP_EFAULT;
 			w->ws_row = 24;
 			w->ws_col = 80;
 			w->ws_xpixel = 0;
 			w->ws_ypixel = 0;
 			return 0;
 		}
-		case OVE_LNX_TIOCSCTTY: /* getty/login: become/drop/set the tty session */
-		case OVE_LNX_TIOCNOTTY:
-		case OVE_LNX_TIOCSPGRP:
+		case LXP_TIOCSCTTY: /* getty/login: become/drop/set the tty session */
+		case LXP_TIOCNOTTY:
+		case LXP_TIOCSPGRP:
 			return 0;
-		case OVE_LNX_TIOCGPGRP: {
+		case LXP_TIOCGPGRP: {
 			int *pgrp = (int *)(uintptr_t)a2;
 			if (pgrp)
 				*pgrp = proc->pid;
 			return 0;
 		}
 		default:
-			return -OVE_LNX_ENOTTY;
+			return -LXP_ENOTTY;
 		}
 	}
-	case OVE_LNX_NR_rt_sigsuspend: {
+	case LXP_NR_rt_sigsuspend: {
 		/* LinuxThreads suspend(): block until a signal (the restart) is delivered. If one is
 		 * already pending (a restart that beat us here), fall through so the dispatch delivers
 		 * it now; otherwise ask the run loop to park us — the coordinator runs the handler on
@@ -3553,20 +3553,20 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * (the restart signal is the only one sent to a suspended thread). */
 		if (!proc->pending_sig)
 			proc->sigsuspend_pending = 1;
-		return -OVE_LNX_EINTR;
+		return -LXP_EINTR;
 	}
-	case OVE_LNX_NR_rt_sigprocmask:
+	case LXP_NR_rt_sigprocmask:
 		return 0;
-	case OVE_LNX_NR_set_tid_address:
+	case LXP_NR_set_tid_address:
 		return 1; /* our single thread's tid */
-	case OVE_LNX_NR_set_robust_list:
+	case LXP_NR_set_robust_list:
 		return 0;
-	case OVE_LNX_NR_futex:
-	case OVE_LNX_NR_futex_time64: {
+	case LXP_NR_futex:
+	case LXP_NR_futex_time64: {
 		/* uClibc-ng DOES do NOMMU pthreads (LinuxThreads; this build has
 		 * UCLIBC_HAS_THREADS=y), but this personality handles every clone() — incl. a
 		 * thread's clone(CLONE_VM) — as a VFORK: the parent is suspended until the child
-		 * execs (into its own region) or exits (ove_lnx_run.c). A pthread thread never
+		 * execs (into its own region) or exits (lxp_run.c). A pthread thread never
 		 * execs, so it can't co-run with its parent, and there is no uaddr-keyed futex
 		 * queue — i.e. no concurrent threads for a futex to coordinate. BusyBox is
 		 * single-threaded anyway, so the futexes we see are libc-internal lock
@@ -3575,108 +3575,108 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * threads — a co-running clone(CLONE_VM) in the shared region + a true futex
 		 * wait/wake — are a future item. */
 		int op = (int)a1 & 0x7f; /* mask FUTEX_PRIVATE_FLAG / FUTEX_CLOCK_REALTIME */
-		return (op == 0 || op == 9) ? -OVE_LNX_EAGAIN : 0; /* WAIT / WAIT_BITSET */
+		return (op == 0 || op == 9) ? -LXP_EAGAIN : 0; /* WAIT / WAIT_BITSET */
 	}
 #if defined(CONFIG_OVE_LINUX_NET)
-	case OVE_LNX_NR_socket: { /* (domain, type, protocol) */
-		long oi = ove_lnx_sock_new((int)a0, (int)a1, (int)a2);
+	case LXP_NR_socket: { /* (domain, type, protocol) */
+		long oi = lxp_sock_new((int)a0, (int)a1, (int)a2);
 		if (oi < 0)
 			return oi;
-		int fd = fd_alloc(proc, OVE_LNX_FD_SOCKET, (int)oi, 0);
+		int fd = fd_alloc(proc, LXP_FD_SOCKET, (int)oi, 0);
 		if (fd < 0) {
-			ove_lnx_sock_close((int)oi);
-			return -OVE_LNX_EMFILE;
+			lxp_sock_close((int)oi);
+			return -LXP_EMFILE;
 		}
 		return fd;
 	}
-	case OVE_LNX_NR_connect: { /* (fd, addr, addrlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_connect(proc, s->file_idx, (const void *)(uintptr_t)a1,
+	case LXP_NR_connect: { /* (fd, addr, addrlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_connect(proc, s->file_idx, (const void *)(uintptr_t)a1,
 					    (unsigned)a2);
 	}
-	case OVE_LNX_NR_send:	  /* (fd, buf, len, flags) */
-	case OVE_LNX_NR_sendto: { /* (fd, buf, len, flags, dest, destlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		const void *dest = (nr == OVE_LNX_NR_sendto) ? (const void *)(uintptr_t)a4 : NULL;
-		return ove_lnx_sock_send(proc, s->file_idx, (const void *)(uintptr_t)a1, (size_t)a2,
+	case LXP_NR_send:	  /* (fd, buf, len, flags) */
+	case LXP_NR_sendto: { /* (fd, buf, len, flags, dest, destlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		const void *dest = (nr == LXP_NR_sendto) ? (const void *)(uintptr_t)a4 : NULL;
+		return lxp_sock_send(proc, s->file_idx, (const void *)(uintptr_t)a1, (size_t)a2,
 					 (int)a3, dest, (unsigned)a5);
 	}
-	case OVE_LNX_NR_recv:	    /* (fd, buf, len, flags) */
-	case OVE_LNX_NR_recvfrom: { /* (fd, buf, len, flags, src, srclen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		void *src = (nr == OVE_LNX_NR_recvfrom) ? (void *)(uintptr_t)a4 : NULL;
-		void *srclen = (nr == OVE_LNX_NR_recvfrom) ? (void *)(uintptr_t)a5 : NULL;
-		return ove_lnx_sock_recv(proc, s->file_idx, (void *)(uintptr_t)a1, (size_t)a2, (int)a3,
+	case LXP_NR_recv:	    /* (fd, buf, len, flags) */
+	case LXP_NR_recvfrom: { /* (fd, buf, len, flags, src, srclen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		void *src = (nr == LXP_NR_recvfrom) ? (void *)(uintptr_t)a4 : NULL;
+		void *srclen = (nr == LXP_NR_recvfrom) ? (void *)(uintptr_t)a5 : NULL;
+		return lxp_sock_recv(proc, s->file_idx, (void *)(uintptr_t)a1, (size_t)a2, (int)a3,
 					 src, srclen);
 	}
-	case OVE_LNX_NR_shutdown: { /* (fd, how) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_shutdown(s->file_idx, (int)a1);
+	case LXP_NR_shutdown: { /* (fd, how) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_shutdown(s->file_idx, (int)a1);
 	}
-	case OVE_LNX_NR_getsockname: { /* (fd, addr, addrlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_getsockname(proc, s->file_idx, (void *)(uintptr_t)a1,
+	case LXP_NR_getsockname: { /* (fd, addr, addrlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_getsockname(proc, s->file_idx, (void *)(uintptr_t)a1,
 						(void *)(uintptr_t)a2);
 	}
-	case OVE_LNX_NR_getpeername: { /* (fd, addr, addrlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_getpeername(proc, s->file_idx, (void *)(uintptr_t)a1,
+	case LXP_NR_getpeername: { /* (fd, addr, addrlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_getpeername(proc, s->file_idx, (void *)(uintptr_t)a1,
 						(void *)(uintptr_t)a2);
 	}
-	case OVE_LNX_NR_setsockopt: { /* (fd, level, optname, optval, optlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_setsockopt(proc, s->file_idx, (int)a1, (int)a2,
+	case LXP_NR_setsockopt: { /* (fd, level, optname, optval, optlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_setsockopt(proc, s->file_idx, (int)a1, (int)a2,
 					       (const void *)(uintptr_t)a3, (unsigned)a4);
 	}
-	case OVE_LNX_NR_getsockopt: { /* (fd, level, optname, optval, optlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_getsockopt(proc, s->file_idx, (int)a1, (int)a2,
+	case LXP_NR_getsockopt: { /* (fd, level, optname, optval, optlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_getsockopt(proc, s->file_idx, (int)a1, (int)a2,
 					       (void *)(uintptr_t)a3, (void *)(uintptr_t)a4);
 	}
-	case OVE_LNX_NR_bind: { /* (fd, addr, addrlen) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_bind(proc, s->file_idx, (const void *)(uintptr_t)a1, (unsigned)a2);
+	case LXP_NR_bind: { /* (fd, addr, addrlen) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_bind(proc, s->file_idx, (const void *)(uintptr_t)a1, (unsigned)a2);
 	}
-	case OVE_LNX_NR_listen: { /* (fd, backlog) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		return ove_lnx_sock_listen(s->file_idx, (int)a1);
+	case LXP_NR_listen: { /* (fd, backlog) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		return lxp_sock_listen(s->file_idx, (int)a1);
 	}
-	case OVE_LNX_NR_accept:	   /* (fd, addr, addrlen) */
-	case OVE_LNX_NR_accept4: { /* (fd, addr, addrlen, flags) */
-		ove_lnx_fd_t *s = fd_slot(proc, (int)a0);
-		if (!s || s->kind != OVE_LNX_FD_SOCKET)
-			return -OVE_LNX_ENOTSOCK;
-		int flags = (nr == OVE_LNX_NR_accept4) ? (int)a3 : 0;
-		return ove_lnx_sock_accept(proc, s->file_idx, (void *)(uintptr_t)a1,
+	case LXP_NR_accept:	   /* (fd, addr, addrlen) */
+	case LXP_NR_accept4: { /* (fd, addr, addrlen, flags) */
+		lxp_fd_t *s = fd_slot(proc, (int)a0);
+		if (!s || s->kind != LXP_FD_SOCKET)
+			return -LXP_ENOTSOCK;
+		int flags = (nr == LXP_NR_accept4) ? (int)a3 : 0;
+		return lxp_sock_accept(proc, s->file_idx, (void *)(uintptr_t)a1,
 					   (void *)(uintptr_t)a2, flags);
 	}
-	case OVE_LNX_NR_socketpair:
-	case OVE_LNX_NR_sendmsg: /* scatter/gather lands in P1 */
-	case OVE_LNX_NR_recvmsg:
-		return -OVE_LNX_EOPNOTSUPP;
+	case LXP_NR_socketpair:
+	case LXP_NR_sendmsg: /* scatter/gather lands in P1 */
+	case LXP_NR_recvmsg:
+		return -LXP_EOPNOTSUPP;
 #endif
 	default:
-		return -OVE_LNX_ENOSYS;
+		return -LXP_ENOSYS;
 	}
 }
 
@@ -3684,41 +3684,41 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 /* Re-evaluate a parked poll(2)'s fd set for readiness (socket + device + console).
  * Mirrors the initial sys_poll scan but in blocking mode — a console fd reports its
  * real key readiness rather than the vi/top ESC-probe heuristic. */
-static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigned nfds)
+static int lxp_poll_scan(lxp_proc_t *proc, lxp_pollfd *pfds, unsigned nfds)
 {
 	int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
 	int ready = 0;
 	for (unsigned i = 0; i < nfds; i++) {
 		pfds[i].revents = 0;
-		ove_lnx_fd_t *s = fd_slot(proc, pfds[i].fd);
+		lxp_fd_t *s = fd_slot(proc, pfds[i].fd);
 		if (!s)
 			continue;
 		unsigned pb;
-		if (s->kind == OVE_LNX_FD_SOCKET)
-			pb = ove_lnx_sock_poll(s->file_idx);
+		if (s->kind == LXP_FD_SOCKET)
+			pb = lxp_sock_poll(s->file_idx);
 #if defined(CONFIG_OVE_LINUX_DEV)
-		else if (s->kind == OVE_LNX_FD_DEV)
-			pb = ove_lnx_dev_poll(s->file_idx);
+		else if (s->kind == LXP_FD_DEV)
+			pb = lxp_dev_poll(s->file_idx);
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
-		else if (s->kind == OVE_LNX_FD_PTY)
-			pb = ove_lnx_pty_poll(s->file_idx, s->rw);
+		else if (s->kind == LXP_FD_PTY)
+			pb = lxp_pty_poll(s->file_idx, s->rw);
 #endif
-		else if (s->kind == OVE_LNX_FD_CONSOLE)
-			pb = (unsigned)((proc->console_poll ? (key ? OVE_LNX_POLLIN : 0)
-							    : OVE_LNX_POLLIN) |
-					OVE_LNX_POLLOUT);
-		else if (s->kind == OVE_LNX_FD_EVENTFD)
-			pb = OVE_LNX_POLLOUT | ((s->file_idx >= 0 && s->file_idx < OVE_LNX_NEVENTFD &&
+		else if (s->kind == LXP_FD_CONSOLE)
+			pb = (unsigned)((proc->console_poll ? (key ? LXP_POLLIN : 0)
+							    : LXP_POLLIN) |
+					LXP_POLLOUT);
+		else if (s->kind == LXP_FD_EVENTFD)
+			pb = LXP_POLLOUT | ((s->file_idx >= 0 && s->file_idx < LXP_NEVENTFD &&
 						g_efd[s->file_idx].ctr)
-						       ? OVE_LNX_POLLIN
+						       ? LXP_POLLIN
 						       : 0u);
-		else if (s->kind == OVE_LNX_FD_PIPE)
+		else if (s->kind == LXP_FD_PIPE)
 			pb = pipe_poll(s->file_idx, s->rw); /* real readiness (empty self-pipe!) */
 		else
-			pb = OVE_LNX_POLLIN | OVE_LNX_POLLOUT; /* regular files: always ready */
+			pb = LXP_POLLIN | LXP_POLLOUT; /* regular files: always ready */
 		pfds[i].revents =
-			(short)(pfds[i].events & pb & (OVE_LNX_POLLIN | OVE_LNX_POLLOUT));
+			(short)(pfds[i].events & pb & (LXP_POLLIN | LXP_POLLOUT));
 		if (pfds[i].revents)
 			ready++;
 	}
@@ -3726,8 +3726,8 @@ static int ove_lnx_poll_scan(ove_lnx_proc_t *proc, ove_lnx_pollfd *pfds, unsigne
 }
 
 /* ── pselect6(2): select() bridged onto the poll machinery ─────────────────────
- * An fd_set here is one 32-bit word (nfds capped at OVE_LNX_SEL_MAXFDS). We derive a
- * pollfd set from the caller's readfds/writefds, scan it with ove_lnx_poll_scan, and
+ * An fd_set here is one 32-bit word (nfds capped at LXP_SEL_MAXFDS). We derive a
+ * pollfd set from the caller's readfds/writefds, scan it with lxp_poll_scan, and
  * write the ready fds back into the fd_sets. A blocking select parks on SOCKW_POLL and
  * the retry re-derives the set from the (still-unmodified) fd_sets each pass. */
 static int sel_isset(const uint32_t *set, int fd)
@@ -3736,17 +3736,17 @@ static int sel_isset(const uint32_t *set, int fd)
 }
 
 /* Build a pollfd array from the fd_sets; returns the count. */
-static int sel_build(ove_lnx_proc_t *p, ove_lnx_pollfd *pf)
+static int sel_build(lxp_proc_t *p, lxp_pollfd *pf)
 {
 	const uint32_t *r = (const uint32_t *)p->sel_rfds;
 	const uint32_t *w = (const uint32_t *)p->sel_wfds;
 	int n = 0;
-	for (int fd = 0; fd < p->sel_nfds && n < OVE_LNX_SEL_MAXFDS; fd++) {
+	for (int fd = 0; fd < p->sel_nfds && n < LXP_SEL_MAXFDS; fd++) {
 		unsigned ev = 0;
 		if (sel_isset(r, fd))
-			ev |= OVE_LNX_POLLIN;
+			ev |= LXP_POLLIN;
 		if (sel_isset(w, fd))
-			ev |= OVE_LNX_POLLOUT;
+			ev |= LXP_POLLOUT;
 		if (ev) {
 			pf[n].fd = fd;
 			pf[n].events = (short)ev;
@@ -3759,7 +3759,7 @@ static int sel_build(ove_lnx_proc_t *p, ove_lnx_pollfd *pf)
 
 /* Write the scanned pollfd revents back into the caller's fd_sets; returns select()'s
  * count (a fd ready for both read and write counts twice). Zeroes the sets first. */
-static long sel_writeback(ove_lnx_proc_t *p, const ove_lnx_pollfd *pf, int npf)
+static long sel_writeback(lxp_proc_t *p, const lxp_pollfd *pf, int npf)
 {
 	uint32_t *r = (uint32_t *)p->sel_rfds, *w = (uint32_t *)p->sel_wfds,
 		 *e = (uint32_t *)p->sel_efds;
@@ -3772,11 +3772,11 @@ static long sel_writeback(ove_lnx_proc_t *p, const ove_lnx_pollfd *pf, int npf)
 	long ready = 0;
 	for (int i = 0; i < npf; i++) {
 		int fd = pf[i].fd;
-		if ((pf[i].revents & OVE_LNX_POLLIN) && r) {
+		if ((pf[i].revents & LXP_POLLIN) && r) {
 			r[fd >> 5] |= (1u << (fd & 31));
 			ready++;
 		}
-		if ((pf[i].revents & OVE_LNX_POLLOUT) && w) {
+		if ((pf[i].revents & LXP_POLLOUT) && w) {
 			w[fd >> 5] |= (1u << (fd & 31));
 			ready++;
 		}
@@ -3784,22 +3784,22 @@ static long sel_writeback(ove_lnx_proc_t *p, const ove_lnx_pollfd *pf, int npf)
 	return ready; /* exceptfds left cleared (no out-of-band data on this tier) */
 }
 
-static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwfds,
+static long sys_pselect6(lxp_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwfds,
 			 uintptr_t uefds, uintptr_t utimeout)
 {
 	if (nfds < 0)
-		return -OVE_LNX_EINVAL;
-	if (nfds > OVE_LNX_SEL_MAXFDS)
-		nfds = OVE_LNX_SEL_MAXFDS; /* one fd_set word; higher fds are not selectable here */
+		return -LXP_EINVAL;
+	if (nfds > LXP_SEL_MAXFDS)
+		nfds = LXP_SEL_MAXFDS; /* one fd_set word; higher fds are not selectable here */
 	size_t setb = sizeof(uint32_t);
 	if ((urfds && !user_ok(p, (void *)urfds, setb, 1)) ||
 	    (uwfds && !user_ok(p, (void *)uwfds, setb, 1)) ||
 	    (uefds && !user_ok(p, (void *)uefds, setb, 1)))
-		return -OVE_LNX_EFAULT;
+		return -LXP_EFAULT;
 	long tmo_ms = -1; /* NULL timeout = block forever */
 	if (utimeout) {
 		if (!user_ok(p, (void *)utimeout, 2 * sizeof(int64_t), 0))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		const int64_t *ts = (const int64_t *)utimeout; /* time64: tv_sec, tv_nsec */
 		int64_t ms = ts[0] * 1000 + ts[1] / 1000000;
 		tmo_ms = ms < 0 ? 0 : (long)ms;
@@ -3808,56 +3808,56 @@ static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t
 	p->sel_rfds = urfds;
 	p->sel_wfds = uwfds;
 	p->sel_efds = uefds;
-	ove_lnx_pollfd pf[OVE_LNX_SEL_MAXFDS];
+	lxp_pollfd pf[LXP_SEL_MAXFDS];
 	int npf = sel_build(p, pf);
-	int ready = ove_lnx_poll_scan(p, pf, (unsigned)npf);
+	int ready = lxp_poll_scan(p, pf, (unsigned)npf);
 	if (ready > 0 || tmo_ms == 0) {
 		p->sel_active = 0;
 		return sel_writeback(p, pf, npf);
 	}
-	/* Park on the poll machinery; ove_lnx_poll_retry re-derives + completes it. */
+	/* Park on the poll machinery; lxp_poll_retry re-derives + completes it. */
 	p->sel_active = 1;
 	if (tmo_ms > 0) {
 		uint64_t now = 0;
-		ove_lnx_time_us(&now);
+		lxp_time_us(&now);
 		p->sock_deadline_us = now + (uint64_t)tmo_ms * 1000ull;
 	} else {
 		p->sock_deadline_us = UINT64_MAX;
 	}
 	p->sock_oi = -1;
-	p->sock_wait = OVE_LNX_SOCKW_POLL;
+	p->sock_wait = LXP_SOCKW_POLL;
 	return 0;
 }
 
-long ove_lnx_poll_retry(ove_lnx_proc_t *proc)
+long lxp_poll_retry(lxp_proc_t *proc)
 {
 	if (proc->sel_active) { /* a parked pselect6: re-derive from the fd_sets each pass */
-		ove_lnx_pollfd pf[OVE_LNX_SEL_MAXFDS];
+		lxp_pollfd pf[LXP_SEL_MAXFDS];
 		int npf = sel_build(proc, pf);
-		int ready = ove_lnx_poll_scan(proc, pf, (unsigned)npf);
+		int ready = lxp_poll_scan(proc, pf, (unsigned)npf);
 		int timedout = 0;
 		if (proc->sock_deadline_us != UINT64_MAX) {
 			uint64_t now_us = 0;
-			ove_lnx_time_us(&now_us);
+			lxp_time_us(&now_us);
 			timedout = (now_us >= proc->sock_deadline_us);
 		}
 		if (ready > 0 || timedout) {
 			proc->sel_active = 0;
 			return sel_writeback(proc, pf, npf); /* 0 on timeout (sets zeroed) */
 		}
-		return -OVE_LNX_EAGAIN;
+		return -LXP_EAGAIN;
 	}
-	ove_lnx_pollfd *pfds = (ove_lnx_pollfd *)(uintptr_t)proc->sock_buf;
-	int ready = ove_lnx_poll_scan(proc, pfds, (unsigned)proc->sock_len);
+	lxp_pollfd *pfds = (lxp_pollfd *)(uintptr_t)proc->sock_buf;
+	int ready = lxp_poll_scan(proc, pfds, (unsigned)proc->sock_len);
 	if (ready > 0)
 		return ready;
 	if (proc->sock_deadline_us != UINT64_MAX) {
 		uint64_t now_us = 0;
-		ove_lnx_time_us(&now_us);
+		lxp_time_us(&now_us);
 		if (now_us >= proc->sock_deadline_us)
 			return 0; /* timed out */
 	}
-	return -OVE_LNX_EAGAIN; /* still waiting */
+	return -LXP_EAGAIN; /* still waiting */
 }
 #endif /* CONFIG_OVE_LINUX_NET */
 

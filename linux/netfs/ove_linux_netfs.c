@@ -13,7 +13,7 @@
  *
  * Blocking is deferred, never inline: every op that needs a Pi round-trip submits a
  * 9P request, sets proc->netfs_wait, and returns 0 (parked); the run-loop coordinator
- * pumps the transport each pass via ove_lnx_netfs_retry and resumes the guest. The
+ * pumps the transport each pass via lxp_netfs_retry and resumes the guest. The
  * transport is serialized — one 9P message in flight, a FIFO of the rest.
  */
 
@@ -85,7 +85,7 @@ static struct {
 } g_mnt;
 
 enum { CONN_DOWN = 0, CONN_UP };
-static ove_lnx_socket_t g_sk; /* host-owned handle; the adapter owns the storage */
+static lxp_socket_t g_sk; /* host-owned handle; the adapter owns the storage */
 static int g_conn;
 static uint32_t g_msize = NETFS_MSIZE;
 static uint32_t g_generation;	    /* bumped on every (re)connect; opens carry theirs. */
@@ -158,7 +158,7 @@ struct netfs_req {
 	uint8_t state;
 	uint8_t op;    /* NETFSW_* (owner set) or REQ_OP_CLUNK (owner NULL). */
 	uint8_t step;
-	ove_lnx_proc_t *owner; /* proc to resume/marshal for, or NULL for an internal (clunk) request. */
+	lxp_proc_t *owner; /* proc to resume/marshal for, or NULL for an internal (clunk) request. */
 	uint32_t seq;	/* FIFO ordering. */
 	int oi;		/* open-pool slot (open reserves it; read/getdents use it). */
 	int fid;	/* working fid (walk target / temp). */
@@ -168,7 +168,7 @@ struct netfs_req {
 	int flags;	/* open flags / statkind / is64. */
 	int statkind;
 	int is64;
-	char path[OVE_LNX_PATH_MAX]; /* remote path (open/stat). */
+	char path[LXP_PATH_MAX]; /* remote path (open/stat). */
 	long result;
 };
 static struct netfs_req g_req[NETFS_NREQ];
@@ -285,7 +285,7 @@ static int tx_flush(void)
 {
 	while (g_txoff < g_txlen) {
 		size_t sent = 0;
-		int r = g_ove_lnx_net_ops->sock_send(g_sk, g_tx + g_txoff, g_txlen - g_txoff, &sent);
+		int r = g_lxp_net_ops->sock_send(g_sk, g_tx + g_txoff, g_txlen - g_txoff, &sent);
 		if (r == OVE_OK) {
 			g_txoff += sent;
 			if (sent == 0)
@@ -306,7 +306,7 @@ static int rx_fill(void)
 	int progress = 0;
 	while (g_rxlen < sizeof(g_rx)) {
 		size_t got = 0;
-		int r = g_ove_lnx_net_ops->sock_recv(g_sk, g_rx + g_rxlen, sizeof(g_rx) - g_rxlen, &got,
+		int r = g_lxp_net_ops->sock_recv(g_sk, g_rx + g_rxlen, sizeof(g_rx) - g_rxlen, &got,
 					OVE_WAIT_FOREVER);
 		if (r == OVE_OK) {
 			if (got == 0)
@@ -349,14 +349,14 @@ static void rx_consume(size_t len)
 static void conn_drop(void)
 {
 	if (g_sk)
-		g_ove_lnx_net_ops->sock_close(g_sk);
+		g_lxp_net_ops->sock_close(g_sk);
 	g_sk = NULL;
 	g_conn = CONN_DOWN;
 	g_txlen = g_txoff = g_rxlen = 0;
 	/* Fail every outstanding request; opens become stale. */
 	for (int i = 0; i < NETFS_NREQ; i++)
 		if (g_req[i].state == REQ_QUEUED || g_req[i].state == REQ_INFLIGHT) {
-			g_req[i].result = -OVE_LNX_EIO;
+			g_req[i].result = -LXP_EIO;
 			g_req[i].state = REQ_DONE;
 		}
 	g_inflight = -1;
@@ -370,18 +370,18 @@ static void conn_drop(void)
 static long xchg_blocking(uint64_t timeout_us)
 {
 	uint64_t now = 0, deadline;
-	ove_lnx_time_us(&now);
+	lxp_time_us(&now);
 	deadline = now + timeout_us;
 	while (g_txoff < g_txlen) {
 		if (tx_flush() < 0)
 			return -1;
-		ove_lnx_time_us(&now);
+		lxp_time_us(&now);
 		if (now >= deadline)
 			return -1;
 	}
 	for (;;) {
 		unsigned rev = 0;
-		g_ove_lnx_net_ops->sock_poll(g_sk, OVE_SOCK_POLLIN, &rev, 50 * 1000000ull /* 50ms */);
+		g_lxp_net_ops->sock_poll(g_sk, OVE_SOCK_POLLIN, &rev, 50 * 1000000ull /* 50ms */);
 		if (rx_fill() < 0)
 			return -1;
 		size_t len = rx_message();
@@ -389,7 +389,7 @@ static long xchg_blocking(uint64_t timeout_us)
 			return -1;
 		if (len)
 			return (long)len;
-		ove_lnx_time_us(&now);
+		lxp_time_us(&now);
 		if (now >= deadline)
 			return -1;
 	}
@@ -456,22 +456,22 @@ static void conn_connect(uint64_t now_us)
 		return;
 	g_reconnect_at_us = now_us + NETFS_RECONNECT_US;
 
-	if (g_ove_lnx_net_ops->sock_open(OVE_AF_INET, OVE_SOCK_STREAM, 0, &g_sk) != OVE_OK) {
+	if (g_lxp_net_ops->sock_open(OVE_AF_INET, OVE_SOCK_STREAM, 0, &g_sk) != OVE_OK) {
 		g_sk = NULL;
 		return;
 	}
 	ove_sockaddr_t peer;
 	netfs_sockaddr_ipv4(&peer, g_mnt.ip[0], g_mnt.ip[1], g_mnt.ip[2], g_mnt.ip[3], g_mnt.port);
-	if (g_ove_lnx_net_ops->sock_connect(g_sk, &peer, 5000000000ull /* 5s */) != OVE_OK) {
-		g_ove_lnx_net_ops->sock_close(g_sk);
+	if (g_lxp_net_ops->sock_connect(g_sk, &peer, 5000000000ull /* 5s */) != OVE_OK) {
+		g_lxp_net_ops->sock_close(g_sk);
 		g_sk = NULL;
 		return;
 	}
-	g_ove_lnx_net_ops->sock_set_nonblock(g_sk, 1);
+	g_lxp_net_ops->sock_set_nonblock(g_sk, 1);
 	memset(g_fid_bm, 0, sizeof(g_fid_bm));
 	g_txlen = g_txoff = g_rxlen = 0;
 	if (handshake() != 0) {
-		g_ove_lnx_net_ops->sock_close(g_sk);
+		g_lxp_net_ops->sock_close(g_sk);
 		g_sk = NULL;
 		return;
 	}
@@ -489,18 +489,18 @@ static long req_build(struct netfs_req *r)
 	size_t o;
 
 	switch (r->op) {
-	case OVE_LNX_NETFSW_OPEN:
-	case OVE_LNX_NETFSW_STAT:
+	case LXP_NETFSW_OPEN:
+	case LXP_NETFSW_STAT:
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	case OVE_LNX_NETFSW_EXECFETCH:
+	case LXP_NETFSW_EXECFETCH:
 #endif
 		if (r->step == 0) { /* Twalk(root -> fid, components) */
 			int n = path_split(r->path, comp, clen, NETFS_MAXWELEM);
 			if (n < 0)
-				return -OVE_LNX_ENAMETOOLONG;
+				return -LXP_ENAMETOOLONG;
 			r->fid = fid_alloc();
 			if (r->fid < 0)
-				return -OVE_LNX_EMFILE;
+				return -LXP_EMFILE;
 			o = msg_begin(P9_TWALK, P9_TAG);
 			put32(&o, P9_ROOT_FID);
 			put32(&o, (uint32_t)r->fid);
@@ -518,7 +518,7 @@ static long req_build(struct netfs_req *r)
 			return 0;
 		}
 		if (r->step == 2) {
-			if (r->op == OVE_LNX_NETFSW_STAT) { /* stat: clunk the temp fid */
+			if (r->op == LXP_NETFSW_STAT) { /* stat: clunk the temp fid */
 				o = msg_begin(P9_TCLUNK, P9_TAG);
 				put32(&o, (uint32_t)r->fid);
 				msg_end(o);
@@ -553,12 +553,12 @@ static long req_build(struct netfs_req *r)
 			return 0;
 		}
 #endif
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 
-	case OVE_LNX_NETFSW_READ: {
+	case LXP_NETFSW_READ: {
 		struct netfs_open *op = open_slot(r->oi);
 		if (!op)
-			return -OVE_LNX_EBADF;
+			return -LXP_EBADF;
 		uint32_t cnt = (uint32_t)r->ulen;
 		if (cnt > g_msize - 24)
 			cnt = g_msize - 24;
@@ -569,10 +569,10 @@ static long req_build(struct netfs_req *r)
 		msg_end(o);
 		return 0;
 	}
-	case OVE_LNX_NETFSW_GETDENTS: {
+	case LXP_NETFSW_GETDENTS: {
 		struct netfs_open *op = open_slot(r->oi);
 		if (!op)
-			return -OVE_LNX_EBADF;
+			return -LXP_EBADF;
 		/* Treaddir count must leave room for the 9P read header (P9_IOHDRSZ = 24) within msize,
 		 * else diod Rlerrors — same cap as Tread above (a bigger count here = an empty ls). */
 		uint32_t cnt = (uint32_t)(g_msize - 24);
@@ -627,10 +627,10 @@ static size_t dirent_emit_rec(int is64, uintptr_t ubuf, size_t cap, size_t off, 
 static uint8_t dtype_from_qid(uint8_t qt)
 {
 	if (qt & P9_QTDIR)
-		return OVE_LNX_DT_DIR;
+		return LXP_DT_DIR;
 	if (qt & 0x02u /* QTSYMLINK */)
 		return 10 /* DT_LNK */;
-	return OVE_LNX_DT_REG;
+	return LXP_DT_REG;
 }
 
 /* ---- reply handling (advances or completes the in-flight request) ---------- */
@@ -679,14 +679,14 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			clunk_enqueue(r->fid);
 			r->fid = -1;
 		}
-		if (r->op == OVE_LNX_NETFSW_OPEN && r->oi >= 0)
+		if (r->op == LXP_NETFSW_OPEN && r->oi >= 0)
 			g_open[r->oi].used = 0;
 		req_complete(r, -(long)ecode);
 		return;
 	}
 
 	switch (r->op) {
-	case OVE_LNX_NETFSW_OPEN:
+	case LXP_NETFSW_OPEN:
 		if (r->step == 0) { /* Rwalk: nwqid must equal the requested component count */
 			uint16_t nwqid = get16(body, &o);
 			const char *cp[NETFS_MAXWELEM];
@@ -696,7 +696,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 				clunk_enqueue(r->fid);
 				r->fid = -1;
 				g_open[r->oi].used = 0;
-				req_complete(r, -OVE_LNX_ENOENT);
+				req_complete(r, -LXP_ENOENT);
 				return;
 			}
 			r->step = 1;
@@ -707,7 +707,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			uint64_t size, mtime, ino;
 			parse_getattr(body, o, &mode, &size, &mtime, &ino);
 			struct netfs_open *op = &g_open[r->oi];
-			op->is_dir = (mode & OVE_LNX_S_IFMT) == OVE_LNX_S_IFDIR;
+			op->is_dir = (mode & LXP_S_IFMT) == LXP_S_IFDIR;
 			op->mode = mode;
 			op->size = size;
 			op->mtime = mtime;
@@ -728,7 +728,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		}
 		break;
 
-	case OVE_LNX_NETFSW_READ: {
+	case LXP_NETFSW_READ: {
 		uint32_t cnt = get32(body, &o);
 		if (cnt > blen - 4)
 			cnt = (uint32_t)(blen - 4);
@@ -742,7 +742,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		req_complete(r, (long)cnt);
 		return;
 	}
-	case OVE_LNX_NETFSW_GETDENTS: {
+	case LXP_NETFSW_GETDENTS: {
 		uint32_t cnt = get32(body, &o); /* bytes of readdir data */
 		size_t end = o + cnt;
 		size_t filled = 0;
@@ -775,7 +775,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		req_complete(r, (long)filled);
 		return;
 	}
-	case OVE_LNX_NETFSW_STAT:
+	case LXP_NETFSW_STAT:
 		if (r->step == 0) { /* Rwalk: walked to the temp fid (or a component missing) */
 			uint16_t nwqid = get16(body, &o);
 			const char *cp[NETFS_MAXWELEM];
@@ -783,7 +783,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			int n = path_split(r->path, cp, cl, NETFS_MAXWELEM);
 			if (n > 0 && nwqid < n) { /* partial walk: the temp fid was not bound */
 				r->fid = -1;
-				req_complete(r, -OVE_LNX_ENOENT);
+				req_complete(r, -LXP_ENOENT);
 				return;
 			}
 			r->step = 1;
@@ -793,7 +793,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			uint32_t mode;
 			uint64_t size, mtime, ino;
 			parse_getattr(body, o, &mode, &size, &mtime, &ino);
-			r->result = ove_lnx_netfs_fill_stat(r->owner, r->ubuf, r->statkind, mode, size,
+			r->result = lxp_netfs_fill_stat(r->owner, r->ubuf, r->statkind, mode, size,
 							    mtime, ino);
 			r->step = 2; /* send Tclunk(fid) */
 			return;
@@ -807,7 +807,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		break;
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	case OVE_LNX_NETFSW_EXECFETCH:
+	case LXP_NETFSW_EXECFETCH:
 		if (r->step == 0) { /* Rwalk */
 			uint16_t nwqid = get16(body, &o);
 			const char *cp[NETFS_MAXWELEM];
@@ -815,7 +815,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			int n = path_split(r->path, cp, cl, NETFS_MAXWELEM);
 			if (n > 0 && nwqid < n) {
 				r->fid = -1;
-				req_complete(r, -OVE_LNX_ENOENT);
+				req_complete(r, -LXP_ENOENT);
 				return;
 			}
 			r->step = 1;
@@ -825,8 +825,8 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			uint32_t mode;
 			uint64_t size, mtime, ino;
 			parse_getattr(body, o, &mode, &size, &mtime, &ino);
-			if ((mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFREG) {
-				r->result = -OVE_LNX_EACCES;
+			if ((mode & LXP_S_IFMT) != LXP_S_IFREG) {
+				r->result = -LXP_EACCES;
 				r->step = 4; /* skip open/read → just clunk the walked fid */
 				return;
 			}
@@ -853,7 +853,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 			int eof = (cnt == 0) || (r->off >= r->ulen);
 			int full = (r->off >= g_exec_cap);
 			if (full && !eof)
-				r->result = -OVE_LNX_ENOEXEC; /* image exceeds the staging buffer */
+				r->result = -LXP_ENOEXEC; /* image exceeds the staging buffer */
 			if (eof || full)
 				r->step = 4; /* clunk */
 			return;		     /* else stay step 3 and read more */
@@ -874,7 +874,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		return;
 	}
 	/* Unexpected reply for the step: fail the op. */
-	req_complete(r, -OVE_LNX_EIO);
+	req_complete(r, -LXP_EIO);
 }
 
 /* ---- the pump: advance the transport one step ------------------------------ */
@@ -975,7 +975,7 @@ static void pump(uint64_t now_us)
 }
 
 /* ---- request allocation + submit ------------------------------------------- */
-static struct netfs_req *req_new(ove_lnx_proc_t *p, uint8_t op)
+static struct netfs_req *req_new(lxp_proc_t *p, uint8_t op)
 {
 	for (int i = 0; i < NETFS_NREQ; i++)
 		if (g_req[i].state == REQ_FREE) {
@@ -996,7 +996,7 @@ static struct netfs_req *req_new(ove_lnx_proc_t *p, uint8_t op)
 }
 
 /* ---- mount config + init --------------------------------------------------- */
-void ove_lnx_netfs_mount_config(const char *mp, const uint8_t ip[4], uint16_t port,
+void lxp_netfs_mount_config(const char *mp, const uint8_t ip[4], uint16_t port,
 				const char *aname, const char *uname)
 {
 	memset(&g_mnt, 0, sizeof(g_mnt));
@@ -1026,16 +1026,16 @@ void ove_lnx_netfs_mount_config(const char *mp, const uint8_t ip[4], uint16_t po
 	g_mnt.configured = 1;
 }
 
-void ove_lnx_netfs_init(void)
+void lxp_netfs_init(void)
 {
 	uint64_t now = 0;
-	ove_lnx_time_us(&now);
+	lxp_time_us(&now);
 	g_reconnect_at_us = 0;
 	conn_connect(now); /* best-effort; a down server reconnects lazily */
 }
 
 /* ---- provider entry points (called from the syscall handlers) -------------- */
-int ove_lnx_netfs_lookup(const char *abspath)
+int lxp_netfs_lookup(const char *abspath)
 {
 	if (!g_mnt.configured || !g_mnt.mplen)
 		return -1;
@@ -1054,13 +1054,13 @@ static const char *relpath(const char *abspath)
 	return (*rp == '\0') ? "/" : rp;
 }
 
-long ove_lnx_netfs_open(ove_lnx_proc_t *p, const char *abspath, int flags)
+long lxp_netfs_open(lxp_proc_t *p, const char *abspath, int flags)
 {
-	if (flags & (OVE_LNX_O_WRONLY | OVE_LNX_O_RDWR | OVE_LNX_O_CREAT | OVE_LNX_O_TRUNC))
-		return -OVE_LNX_EROFS;
+	if (flags & (LXP_O_WRONLY | LXP_O_RDWR | LXP_O_CREAT | LXP_O_TRUNC))
+		return -LXP_EROFS;
 	const char *rp = relpath(abspath);
-	if (strlen(rp) >= OVE_LNX_PATH_MAX)
-		return -OVE_LNX_ENAMETOOLONG;
+	if (strlen(rp) >= LXP_PATH_MAX)
+		return -LXP_ENAMETOOLONG;
 	int oi = -1;
 	for (int i = 0; i < NETFS_NOPEN; i++)
 		if (!g_open[i].used) {
@@ -1068,10 +1068,10 @@ long ove_lnx_netfs_open(ove_lnx_proc_t *p, const char *abspath, int flags)
 			break;
 		}
 	if (oi < 0)
-		return -OVE_LNX_EMFILE;
-	struct netfs_req *r = req_new(p, OVE_LNX_NETFSW_OPEN);
+		return -LXP_EMFILE;
+	struct netfs_req *r = req_new(p, LXP_NETFSW_OPEN);
 	if (!r)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	memset(&g_open[oi], 0, sizeof(g_open[oi]));
 	g_open[oi].used = 1; /* reserve; finalized on Rlopen (or freed on error) */
 	r->oi = oi;
@@ -1081,22 +1081,22 @@ long ove_lnx_netfs_open(ove_lnx_proc_t *p, const char *abspath, int flags)
 	return 0; /* parked */
 }
 
-long ove_lnx_netfs_read(ove_lnx_proc_t *p, int oi, void *ubuf, size_t len)
+long lxp_netfs_read(lxp_proc_t *p, int oi, void *ubuf, size_t len)
 {
 	struct netfs_open *op = open_slot(oi);
 	if (!op)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (op->stale)
-		return -OVE_LNX_ESTALE;
+		return -LXP_ESTALE;
 	if (op->is_dir)
-		return -OVE_LNX_EISDIR;
+		return -LXP_EISDIR;
 	if (len == 0)
 		return 0;
 	if (!user_ok(p, ubuf, len, 1))
-		return -OVE_LNX_EFAULT;
-	struct netfs_req *r = req_new(p, OVE_LNX_NETFSW_READ);
+		return -LXP_EFAULT;
+	struct netfs_req *r = req_new(p, LXP_NETFSW_READ);
 	if (!r)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	r->oi = oi;
 	r->ubuf = (uintptr_t)ubuf;
 	r->ulen = len;
@@ -1106,37 +1106,37 @@ long ove_lnx_netfs_read(ove_lnx_proc_t *p, int oi, void *ubuf, size_t len)
 
 /* lseek(2) on an FD_NET fd: cursor math against the shared open offset + cached size.
  * Returns the new absolute offset, or a negative Linux errno. */
-long ove_lnx_netfs_lseek(int oi, long off, int whence)
+long lxp_netfs_lseek(int oi, long off, int whence)
 {
 	struct netfs_open *op = open_slot(oi);
 	if (!op)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (op->is_dir)
-		return -OVE_LNX_EISDIR;
-	uint64_t base = (whence == OVE_LNX_SEEK_CUR)   ? op->rd_off
-			: (whence == OVE_LNX_SEEK_END) ? op->size
+		return -LXP_EISDIR;
+	uint64_t base = (whence == LXP_SEEK_CUR)   ? op->rd_off
+			: (whence == LXP_SEEK_END) ? op->size
 						       : 0;
 	long long np = (long long)base + off;
 	if (np < 0)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	op->rd_off = (uint64_t)np;
 	return (long)np;
 }
 
-long ove_lnx_netfs_getdents(ove_lnx_proc_t *p, int oi, uintptr_t ubuf, size_t cap, int is64)
+long lxp_netfs_getdents(lxp_proc_t *p, int oi, uintptr_t ubuf, size_t cap, int is64)
 {
 	struct netfs_open *op = open_slot(oi);
 	if (!op)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	if (op->stale)
-		return -OVE_LNX_ESTALE;
+		return -LXP_ESTALE;
 	if (!op->is_dir)
-		return -OVE_LNX_ENOTDIR;
+		return -LXP_ENOTDIR;
 	if (!user_ok(p, (void *)ubuf, cap, 1))
-		return -OVE_LNX_EFAULT;
-	struct netfs_req *r = req_new(p, OVE_LNX_NETFSW_GETDENTS);
+		return -LXP_EFAULT;
+	struct netfs_req *r = req_new(p, LXP_NETFSW_GETDENTS);
 	if (!r)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	r->oi = oi;
 	r->ubuf = ubuf;
 	r->ulen = cap;
@@ -1145,14 +1145,14 @@ long ove_lnx_netfs_getdents(ove_lnx_proc_t *p, int oi, uintptr_t ubuf, size_t ca
 	return 0; /* parked */
 }
 
-long ove_lnx_netfs_stat(ove_lnx_proc_t *p, const char *abspath, uintptr_t ustat, int statkind)
+long lxp_netfs_stat(lxp_proc_t *p, const char *abspath, uintptr_t ustat, int statkind)
 {
 	const char *rp = relpath(abspath);
-	if (strlen(rp) >= OVE_LNX_PATH_MAX)
-		return -OVE_LNX_ENAMETOOLONG;
-	struct netfs_req *r = req_new(p, OVE_LNX_NETFSW_STAT);
+	if (strlen(rp) >= LXP_PATH_MAX)
+		return -LXP_ENAMETOOLONG;
+	struct netfs_req *r = req_new(p, LXP_NETFSW_STAT);
 	if (!r)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	r->ubuf = ustat;
 	r->statkind = statkind;
 	strcpy(r->path, rp);
@@ -1160,7 +1160,7 @@ long ove_lnx_netfs_stat(ove_lnx_proc_t *p, const char *abspath, uintptr_t ustat,
 	return 0; /* parked */
 }
 
-int ove_lnx_netfs_fstat(int oi, uint32_t *mode, uint64_t *size, uint64_t *mtime, uint64_t *ino)
+int lxp_netfs_fstat(int oi, uint32_t *mode, uint64_t *size, uint64_t *mtime, uint64_t *ino)
 {
 	struct netfs_open *op = open_slot(oi);
 	if (!op)
@@ -1176,14 +1176,14 @@ int ove_lnx_netfs_fstat(int oi, uint32_t *mode, uint64_t *size, uint64_t *mtime,
 	return 0;
 }
 
-void ove_lnx_netfs_get(int oi)
+void lxp_netfs_get(int oi)
 {
 	struct netfs_open *op = open_slot(oi);
 	if (op && op->refs < 0xff)
 		op->refs++;
 }
 
-void ove_lnx_netfs_close(int oi)
+void lxp_netfs_close(int oi)
 {
 	struct netfs_open *op = open_slot(oi);
 	if (!op)
@@ -1201,27 +1201,27 @@ void ove_lnx_netfs_close(int oi)
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* ---- exec off the mount: fetch the whole ELF into the engine staging buffer ---- */
-long ove_lnx_netfs_exec_fetch(ove_lnx_proc_t *p, const char *abspath)
+long lxp_netfs_exec_fetch(lxp_proc_t *p, const char *abspath)
 {
 	const char *rp = relpath(abspath);
-	if (strlen(rp) >= OVE_LNX_PATH_MAX)
-		return -OVE_LNX_ENAMETOOLONG;
+	if (strlen(rp) >= LXP_PATH_MAX)
+		return -LXP_ENAMETOOLONG;
 	size_t cap = 0;
-	g_exec_buf = ove_lnx_netfs_exec_stage(&cap);
+	g_exec_buf = lxp_netfs_exec_stage(&cap);
 	if (!g_exec_buf || cap == 0)
-		return -OVE_LNX_ENOMEM; /* no staging buffer on this build */
+		return -LXP_ENOMEM; /* no staging buffer on this build */
 	g_exec_cap = cap;
 	g_exec_size = 0;
-	struct netfs_req *r = req_new(p, OVE_LNX_NETFSW_EXECFETCH);
+	struct netfs_req *r = req_new(p, LXP_NETFSW_EXECFETCH);
 	if (!r)
-		return -OVE_LNX_EMFILE;
+		return -LXP_EMFILE;
 	strcpy(r->path, rp);
 	r->off = 0;
 	p->netfs_oi = -1;
 	return 0; /* parked */
 }
 
-const uint8_t *ove_lnx_netfs_exec_image(size_t *size)
+const uint8_t *lxp_netfs_exec_image(size_t *size)
 {
 	if (size)
 		*size = g_exec_size;
@@ -1230,18 +1230,18 @@ const uint8_t *ove_lnx_netfs_exec_image(size_t *size)
 #endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
 
 /* ---- coordinator: retry a parked op / periodic pump ------------------------ */
-long ove_lnx_netfs_retry(ove_lnx_proc_t *p)
+long lxp_netfs_retry(lxp_proc_t *p)
 {
 	uint64_t now = 0;
-	ove_lnx_time_us(&now);
+	lxp_time_us(&now);
 	pump(now);
 
 	int ri = p->netfs_req;
 	if (ri < 0 || ri >= NETFS_NREQ)
-		return -OVE_LNX_EBADF;
+		return -LXP_EBADF;
 	struct netfs_req *r = &g_req[ri];
 	if (r->state != REQ_DONE)
-		return -OVE_LNX_EAGAIN; /* still in flight */
+		return -LXP_EAGAIN; /* still in flight */
 
 	long result = r->result;
 	uint8_t op = r->op;
@@ -1249,33 +1249,33 @@ long ove_lnx_netfs_retry(ove_lnx_proc_t *p)
 	r->state = REQ_FREE;
 	p->netfs_req = -1;
 
-	if (op == OVE_LNX_NETFSW_OPEN && result >= 0) {
-		int fd = ove_lnx_fd_install(p, OVE_LNX_FD_NET, oi);
+	if (op == LXP_NETFSW_OPEN && result >= 0) {
+		int fd = lxp_fd_install(p, LXP_FD_NET, oi);
 		if (fd < 0) {
-			ove_lnx_netfs_close(oi);
-			return -OVE_LNX_EMFILE;
+			lxp_netfs_close(oi);
+			return -LXP_EMFILE;
 		}
 		return fd;
 	}
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-	if (op == OVE_LNX_NETFSW_EXECFETCH && result >= 0) {
+	if (op == LXP_NETFSW_EXECFETCH && result >= 0) {
 		/* the ELF is staged: flag the exec so the run loop's EV_EXEC launches it from the
 		 * staging buffer. Returning 0 with exec_pending set tells the run loop NOT to resume. */
 		p->exec_pending = 1;
-		p->exec_file_idx = OVE_LNX_NETFS_EXEC_SENTINEL;
+		p->exec_file_idx = LXP_NETFS_EXEC_SENTINEL;
 		return 0;
 	}
 #endif
 	return result;
 }
 
-void ove_lnx_netfs_tick(uint64_t now_us)
+void lxp_netfs_tick(uint64_t now_us)
 {
 	/* Keep the transport moving (background clunks + reconnect) even with no parked proc. */
 	pump(now_us);
 }
 
-int ove_lnx_netfs_busy(void)
+int lxp_netfs_busy(void)
 {
 	if (g_inflight >= 0 || g_clunk_head != g_clunk_tail)
 		return 1;
@@ -1286,18 +1286,18 @@ int ove_lnx_netfs_busy(void)
 }
 
 /* ---- fork / exit fd lifecycle ---------------------------------------------- */
-void ove_lnx_netfs_fork_inherit(ove_lnx_proc_t *child)
+void lxp_netfs_fork_inherit(lxp_proc_t *child)
 {
-	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++)
-		if (child->fds[fd].kind == OVE_LNX_FD_NET)
-			ove_lnx_netfs_get(child->fds[fd].file_idx);
+	for (int fd = 0; fd < LXP_MAX_FDS; fd++)
+		if (child->fds[fd].kind == LXP_FD_NET)
+			lxp_netfs_get(child->fds[fd].file_idx);
 }
 
-void ove_lnx_netfs_proc_exit(ove_lnx_proc_t *p)
+void lxp_netfs_proc_exit(lxp_proc_t *p)
 {
-	for (int fd = 0; fd < OVE_LNX_MAX_FDS; fd++)
-		if (p->fds[fd].kind == OVE_LNX_FD_NET) {
-			ove_lnx_netfs_close(p->fds[fd].file_idx);
+	for (int fd = 0; fd < LXP_MAX_FDS; fd++)
+		if (p->fds[fd].kind == LXP_FD_NET) {
+			lxp_netfs_close(p->fds[fd].file_idx);
 			p->fds[fd].kind = 0; /* FD_FREE */
 		}
 }

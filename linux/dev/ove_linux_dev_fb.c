@@ -42,11 +42,11 @@ static void fb_copy16(uint8_t *dst, const uint8_t *src, size_t len)
 	}
 }
 
-static long fb_read(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p, void *buf,
+static long fb_read(struct lxp_dev *d, struct lxp_dev_open *o, lxp_proc_t *p, void *buf,
 		    size_t len)
 {
 	(void)p;
-	uint8_t *fb = g_ove_lnx_disp_ops->fb_get_buffer();
+	uint8_t *fb = g_lxp_disp_ops->fb_get_buffer();
 	if (!fb || o->pos >= d->size)
 		return 0; /* EOF at/after the buffer end */
 	size_t n = d->size - o->pos;
@@ -57,24 +57,24 @@ static long fb_read(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_p
 	return (long)n;
 }
 
-static long fb_write(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p,
+static long fb_write(struct lxp_dev *d, struct lxp_dev_open *o, lxp_proc_t *p,
 		     const void *buf, size_t len)
 {
 	(void)p;
-	uint8_t *fb = g_ove_lnx_disp_ops->fb_get_buffer();
+	uint8_t *fb = g_lxp_disp_ops->fb_get_buffer();
 	if (!fb || o->pos >= d->size)
-		return -OVE_LNX_EFBIG; /* a write past the framebuffer end */
+		return -LXP_EFBIG; /* a write past the framebuffer end */
 	size_t n = d->size - o->pos;
 	if (n > len)
 		n = len;
 	fb_copy16(fb + o->pos, buf, n);
-	g_ove_lnx_disp_ops->fb_flush(0, (int)(o->pos / g_fbinfo.stride_bytes), g_fbinfo.width,
+	g_lxp_disp_ops->fb_flush(0, (int)(o->pos / g_fbinfo.stride_bytes), g_fbinfo.width,
 		     (int)((n + g_fbinfo.stride_bytes - 1) / g_fbinfo.stride_bytes));
 	o->pos += (uint32_t)n;
 	return (long)n;
 }
 
-static void fill_vinfo(struct ove_lnx_fb_var_screeninfo *v)
+static void fill_vinfo(struct lxp_fb_var_screeninfo *v)
 {
 	memset(v, 0, sizeof(*v));
 	v->xres = v->xres_virtual = g_fbinfo.width;
@@ -89,62 +89,62 @@ static void fill_vinfo(struct ove_lnx_fb_var_screeninfo *v)
 	v->blue.length = 5;
 }
 
-static void fill_finfo(struct ove_lnx_fb_fix_screeninfo *f)
+static void fill_finfo(struct lxp_fb_fix_screeninfo *f)
 {
 	memset(f, 0, sizeof(*f));
 	memcpy(f->id, "ovefb", 5);
-	f->smem_start = (uint32_t)(uintptr_t)g_ove_lnx_disp_ops->fb_get_buffer();
+	f->smem_start = (uint32_t)(uintptr_t)g_lxp_disp_ops->fb_get_buffer();
 	f->smem_len = g_fbinfo.smem_len;
-	f->type = OVE_LNX_FB_TYPE_PACKED_PIXELS;
-	f->visual = OVE_LNX_FB_VISUAL_TRUECOLOR;
+	f->type = LXP_FB_TYPE_PACKED_PIXELS;
+	f->visual = LXP_FB_VISUAL_TRUECOLOR;
 	f->line_length = g_fbinfo.stride_bytes;
 }
 
-static long fb_ioctl(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p,
+static long fb_ioctl(struct lxp_dev *d, struct lxp_dev_open *o, lxp_proc_t *p,
 		     unsigned long cmd, unsigned long arg)
 {
 	(void)d;
 	(void)o;
 	switch (cmd) {
-	case OVE_LNX_FBIOGET_VSCREENINFO: {
-		struct ove_lnx_fb_var_screeninfo *v = (void *)arg;
+	case LXP_FBIOGET_VSCREENINFO: {
+		struct lxp_fb_var_screeninfo *v = (void *)arg;
 		if (!user_ok(p, v, sizeof(*v), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		fill_vinfo(v);
 		return 0;
 	}
-	case OVE_LNX_FBIOGET_FSCREENINFO: {
-		struct ove_lnx_fb_fix_screeninfo *f = (void *)arg;
+	case LXP_FBIOGET_FSCREENINFO: {
+		struct lxp_fb_fix_screeninfo *f = (void *)arg;
 		if (!user_ok(p, f, sizeof(*f), 1))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		fill_finfo(f);
 		return 0;
 	}
-	case OVE_LNX_FBIOPUT_VSCREENINFO: {
+	case LXP_FBIOPUT_VSCREENINFO: {
 		/* Accept iff the requested geometry matches ours (busybox fbset / LVGL's
 		 * force-refresh do GET-modify-PUT); we run a single fixed mode. */
-		struct ove_lnx_fb_var_screeninfo *v = (void *)arg;
+		struct lxp_fb_var_screeninfo *v = (void *)arg;
 		if (!user_ok(p, v, sizeof(*v), 0))
-			return -OVE_LNX_EFAULT;
+			return -LXP_EFAULT;
 		if (v->xres != g_fbinfo.width || v->yres != g_fbinfo.height ||
 		    v->bits_per_pixel != 16)
-			return -OVE_LNX_EINVAL;
+			return -LXP_EINVAL;
 		return 0;
 	}
-	case OVE_LNX_FBIOBLANK:
+	case LXP_FBIOBLANK:
 		return 0; /* no power management; always on */
-	case OVE_LNX_FBIOPAN_DISPLAY:
-		return -OVE_LNX_EINVAL; /* no hardware panning */
+	case LXP_FBIOPAN_DISPLAY:
+		return -LXP_EINVAL; /* no hardware panning */
 	default:
-		return -OVE_LNX_ENOTTY;
+		return -LXP_ENOTTY;
 	}
 }
 
-static unsigned fb_poll(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o)
+static unsigned fb_poll(struct lxp_dev *d, struct lxp_dev_open *o)
 {
 	(void)d;
 	(void)o;
-	return OVE_LNX_POLLOUT; /* always writable, never readable-blocking */
+	return LXP_POLLOUT; /* always writable, never readable-blocking */
 }
 
 /* mmap(2) (P3): hand the guest the framebuffer itself, so a stock LVGL fbdev program
@@ -152,20 +152,20 @@ static unsigned fb_poll(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o)
  * pwrite syscalls/frame with a userspace memcpy. Normal-NC: the guest's stores reach
  * SDRAM directly for the LTDC's continuous scanout, with no cache maintenance. The
  * run-loop coordinator installs the actual MPU region (eng->map_device). */
-static long fb_mmap(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_proc_t *p, size_t len,
+static long fb_mmap(struct lxp_dev *d, struct lxp_dev_open *o, lxp_proc_t *p, size_t len,
 		    uint32_t pgoff, uintptr_t *phys, unsigned *attrs)
 {
 	(void)o;
 	(void)p;
-	uint8_t *fb = g_ove_lnx_disp_ops->fb_get_buffer();
+	uint8_t *fb = g_lxp_disp_ops->fb_get_buffer();
 	if (!fb || pgoff != 0 || len > d->size)
-		return -OVE_LNX_EINVAL;
+		return -LXP_EINVAL;
 	*phys = (uintptr_t)fb;
-	*attrs = OVE_LNX_MAP_NC;
+	*attrs = LXP_MAP_NC;
 	return 0;
 }
 
-static const struct ove_lnx_dev_ops fb_ops = {
+static const struct lxp_dev_ops fb_ops = {
 	.read = fb_read,
 	.write = fb_write,
 	.ioctl = fb_ioctl,
@@ -181,24 +181,24 @@ static void fb_tick(uint64_t now_us)
 	if (now_us - last_us < 33000ull)
 		return;
 	last_us = now_us;
-	g_ove_lnx_disp_ops->fb_present();
+	g_lxp_disp_ops->fb_present();
 }
 
-void ove_lnx_dev_autoreg_fb(void)
+void lxp_dev_autoreg_fb(void)
 {
-	if (g_ove_lnx_disp_ops->fb_init() != 0)
+	if (g_lxp_disp_ops->fb_init() != 0)
 		return; /* no display on this board (e.g. an521) → /dev/fb0 absent */
-	if (g_ove_lnx_disp_ops->fb_get_info(&g_fbinfo) != 0)
+	if (g_lxp_disp_ops->fb_get_info(&g_fbinfo) != 0)
 		return;
-	struct ove_lnx_dev dev = {
+	struct lxp_dev dev = {
 		.path = "/dev/fb0",
 		.ops = &fb_ops,
 		.major = 29,
 		.minor = 0,
 		.size = g_fbinfo.smem_len,
 	};
-	if (ove_lnx_dev_register(&dev) == 0)
-		ove_lnx_dev_tick_register(fb_tick);
+	if (lxp_dev_register(&dev) == 0)
+		lxp_dev_tick_register(fb_tick);
 }
 
 #endif /* CONFIG_OVE_LINUX_DEV_FB */

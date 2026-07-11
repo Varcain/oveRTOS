@@ -5,7 +5,7 @@
  *
  * This file is part of oveRTOS.
  *
- * Linux personality remote-fs (9P2000.L) tests: drive ove_lnx_syscall() (no
+ * Linux personality remote-fs (9P2000.L) tests: drive lxp_syscall() (no
  * hardware SVC, no run loop) against an in-process mock 9P server on a host
  * loopback socket, to check the FD_NET routing — open/read/getdents/stat/lseek/
  * close over /mnt, the walk+getattr+lopen sequence, dirent64 paging, Rlerror →
@@ -335,10 +335,10 @@ static void *mock9p(void *arg)
 /* ---- harness --------------------------------------------------------------- */
 static uint8_t g_pool[8192] __attribute__((aligned(16)));
 
-static void setup(ove_lnx_proc_t *p, ove_arena_t *arena)
+static void setup(lxp_proc_t *p, ove_arena_t *arena)
 {
 	assert_int_equal(ove_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
-	assert_int_equal(ove_lnx_proc_init(p, arena, 4096), OVE_OK);
+	assert_int_equal(lxp_proc_init(p, arena, 4096), OVE_OK);
 	p->region_lo = 1;
 	p->region_hi = UINTPTR_MAX;
 	p->pool_lo = p->pool_hi = 0;
@@ -346,15 +346,15 @@ static void setup(ove_lnx_proc_t *p, ove_arena_t *arena)
 }
 
 /* Drive a syscall; if it parked on netfs, pump the coordinator retry. */
-static long call_pump(ove_lnx_proc_t *p, long nr, long a0, long a1, long a2, long a3, long a4,
+static long call_pump(lxp_proc_t *p, long nr, long a0, long a1, long a2, long a3, long a4,
 		      long a5)
 {
-	long r = ove_lnx_syscall(p, nr, a0, a1, a2, a3, a4, a5);
+	long r = lxp_syscall(p, nr, a0, a1, a2, a3, a4, a5);
 	if (!p->netfs_wait)
 		return r;
 	for (int i = 0; i < 4000; i++) {
-		long rr = ove_lnx_netfs_retry(p);
-		if (rr != -OVE_LNX_EAGAIN) {
+		long rr = lxp_netfs_retry(p);
+		if (rr != -LXP_EAGAIN) {
 			p->netfs_wait = 0;
 			return rr;
 		}
@@ -362,7 +362,7 @@ static long call_pump(ove_lnx_proc_t *p, long nr, long a0, long a1, long a2, lon
 		nanosleep(&ts, NULL);
 	}
 	p->netfs_wait = 0;
-	return -OVE_LNX_EAGAIN;
+	return -LXP_EAGAIN;
 }
 
 static pthread_t g_mock_thread;
@@ -386,8 +386,8 @@ static void start_mock_and_mount(void)
 	assert_int_equal(pthread_create(&g_mock_thread, NULL, mock9p, &g_mock_ls), 0);
 
 	uint8_t ip[4] = {127, 0, 0, 1};
-	ove_lnx_netfs_mount_config("/mnt/pi", ip, (uint16_t)port, "/srv", "root");
-	ove_lnx_netfs_init(); /* connects + Tversion/Tattach handshake (blocking) */
+	lxp_netfs_mount_config("/mnt/pi", ip, (uint16_t)port, "/srv", "root");
+	lxp_netfs_init(); /* connects + Tversion/Tattach handshake (blocking) */
 }
 
 static void stop_mock(void)
@@ -403,7 +403,7 @@ static void stop_mock(void)
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* The engine staging buffer for a fetched remote ELF (the STM32 backend puts this in SDRAM). */
 static uint8_t g_stage[64 * 1024];
-uint8_t *ove_lnx_netfs_exec_stage(size_t *cap)
+uint8_t *lxp_netfs_exec_stage(size_t *cap)
 {
 	if (cap)
 		*cap = sizeof(g_stage);
@@ -416,12 +416,12 @@ static void test_netfs_browse(void **state)
 {
 	(void)state;
 	ove_arena_t arena;
-	ove_lnx_proc_t p;
+	lxp_proc_t p;
 	setup(&p, &arena);
 	start_mock_and_mount();
 
 	/* stat a file → S_IFREG, size 12, netfs mtime, non-zero inode. */
-	struct ove_lnx_kstat64_probe {
+	struct lxp_kstat64_probe {
 		uint64_t st_dev;
 		uint8_t pad0[4];
 		uint32_t __ino;
@@ -437,58 +437,58 @@ static void test_netfs_browse(void **state)
 		uint64_t st_ino;
 	} st;
 	memset(&st, 0, sizeof(st));
-	assert_int_equal(call_pump(&p, OVE_LNX_NR_stat64, (long)(uintptr_t) "/mnt/pi/hello.txt",
+	assert_int_equal(call_pump(&p, LXP_NR_stat64, (long)(uintptr_t) "/mnt/pi/hello.txt",
 				   (long)(uintptr_t)&st, 0, 0, 0, 0),
 			 0);
-	assert_int_equal(st.st_mode & OVE_LNX_S_IFMT, OVE_LNX_S_IFREG);
+	assert_int_equal(st.st_mode & LXP_S_IFMT, LXP_S_IFREG);
 	assert_int_equal(st.st_size, 12);
 	assert_int_equal(st.st_mtime, 0x5000);
 	assert_true(st.st_ino != 0);
 
 	/* stat a missing file → ENOENT (Rlerror). */
-	assert_int_equal(call_pump(&p, OVE_LNX_NR_stat64, (long)(uintptr_t) "/mnt/pi/nope",
+	assert_int_equal(call_pump(&p, LXP_NR_stat64, (long)(uintptr_t) "/mnt/pi/nope",
 				   (long)(uintptr_t)&st, 0, 0, 0, 0),
-			 -OVE_LNX_ENOENT);
+			 -LXP_ENOENT);
 
 	/* open + read the file → "hello world\n". */
-	long fd = call_pump(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
-			    (long)(uintptr_t) "/mnt/pi/hello.txt", OVE_LNX_O_RDONLY, 0, 0, 0);
+	long fd = call_pump(&p, LXP_NR_openat, LXP_AT_FDCWD,
+			    (long)(uintptr_t) "/mnt/pi/hello.txt", LXP_O_RDONLY, 0, 0, 0);
 	assert_true(fd >= 3);
-	assert_int_equal(p.fds[fd].kind, OVE_LNX_FD_NET);
+	assert_int_equal(p.fds[fd].kind, LXP_FD_NET);
 	char rb[32] = {0};
-	long got = call_pump(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)rb, sizeof(rb), 0, 0, 0);
+	long got = call_pump(&p, LXP_NR_read, fd, (long)(uintptr_t)rb, sizeof(rb), 0, 0, 0);
 	assert_int_equal(got, 12);
 	assert_memory_equal(rb, "hello world\n", 12);
 	/* a second read at EOF returns 0. */
-	assert_int_equal(call_pump(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)rb, sizeof(rb), 0, 0, 0),
+	assert_int_equal(call_pump(&p, LXP_NR_read, fd, (long)(uintptr_t)rb, sizeof(rb), 0, 0, 0),
 			 0);
 
 	/* fstat the open fd → cached attrs. */
 	memset(&st, 0, sizeof(st));
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_fstat64, fd, (long)(uintptr_t)&st, 0, 0, 0, 0),
+	assert_int_equal(lxp_syscall(&p, LXP_NR_fstat64, fd, (long)(uintptr_t)&st, 0, 0, 0, 0),
 			 0);
 	assert_int_equal(st.st_size, 12);
 
 	/* lseek(SEEK_SET, 6) then read → "world\n". */
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_lseek, fd, 6, OVE_LNX_SEEK_SET, 0, 0, 0), 6);
+	assert_int_equal(lxp_syscall(&p, LXP_NR_lseek, fd, 6, LXP_SEEK_SET, 0, 0, 0), 6);
 	memset(rb, 0, sizeof(rb));
-	got = call_pump(&p, OVE_LNX_NR_read, fd, (long)(uintptr_t)rb, sizeof(rb), 0, 0, 0);
+	got = call_pump(&p, LXP_NR_read, fd, (long)(uintptr_t)rb, sizeof(rb), 0, 0, 0);
 	assert_int_equal(got, 6);
 	assert_memory_equal(rb, "world\n", 6);
 
 	/* dup shares the open (same file_idx); closing one keeps it. */
-	long fd2 = ove_lnx_syscall(&p, OVE_LNX_NR_dup, fd, 0, 0, 0, 0, 0);
+	long fd2 = lxp_syscall(&p, LXP_NR_dup, fd, 0, 0, 0, 0, 0);
 	assert_true(fd2 >= 3 && fd2 != fd);
 	assert_int_equal(p.fds[fd2].file_idx, p.fds[fd].file_idx);
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd, 0, 0, 0, 0, 0), 0);
-	assert_int_equal(ove_lnx_syscall(&p, OVE_LNX_NR_close, fd2, 0, 0, 0, 0, 0), 0);
+	assert_int_equal(lxp_syscall(&p, LXP_NR_close, fd, 0, 0, 0, 0, 0), 0);
+	assert_int_equal(lxp_syscall(&p, LXP_NR_close, fd2, 0, 0, 0, 0, 0), 0);
 
 	/* getdents64 on the mount root → sees hello.txt + sub. */
-	long dfd = call_pump(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD, (long)(uintptr_t) "/mnt/pi",
-			     OVE_LNX_O_RDONLY, 0, 0, 0);
+	long dfd = call_pump(&p, LXP_NR_openat, LXP_AT_FDCWD, (long)(uintptr_t) "/mnt/pi",
+			     LXP_O_RDONLY, 0, 0, 0);
 	assert_true(dfd >= 3);
 	uint8_t dbuf[512] = {0};
-	long dn = call_pump(&p, OVE_LNX_NR_getdents64, dfd, (long)(uintptr_t)dbuf, sizeof(dbuf), 0, 0,
+	long dn = call_pump(&p, LXP_NR_getdents64, dfd, (long)(uintptr_t)dbuf, sizeof(dbuf), 0, 0,
 			    0);
 	assert_true(dn > 0);
 	/* scan the dirent64 records for the two names. */
@@ -508,48 +508,48 @@ static void test_netfs_browse(void **state)
 	assert_true(saw_sub);
 	/* a second getdents at EOF returns 0. */
 	assert_int_equal(
-		call_pump(&p, OVE_LNX_NR_getdents64, dfd, (long)(uintptr_t)dbuf, sizeof(dbuf), 0, 0, 0),
+		call_pump(&p, LXP_NR_getdents64, dfd, (long)(uintptr_t)dbuf, sizeof(dbuf), 0, 0, 0),
 		0);
-	ove_lnx_syscall(&p, OVE_LNX_NR_close, dfd, 0, 0, 0, 0, 0);
+	lxp_syscall(&p, LXP_NR_close, dfd, 0, 0, 0, 0, 0);
 
 	/* a write to a netfs fd is rejected read-only. */
-	long wfd = call_pump(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
-			     (long)(uintptr_t) "/mnt/pi/hello.txt", OVE_LNX_O_RDONLY, 0, 0, 0);
+	long wfd = call_pump(&p, LXP_NR_openat, LXP_AT_FDCWD,
+			     (long)(uintptr_t) "/mnt/pi/hello.txt", LXP_O_RDONLY, 0, 0, 0);
 	assert_true(wfd >= 3);
 	assert_int_equal(
-		ove_lnx_syscall(&p, OVE_LNX_NR_write, wfd, (long)(uintptr_t) "x", 1, 0, 0, 0),
-		-OVE_LNX_EROFS);
-	ove_lnx_syscall(&p, OVE_LNX_NR_close, wfd, 0, 0, 0, 0, 0);
+		lxp_syscall(&p, LXP_NR_write, wfd, (long)(uintptr_t) "x", 1, 0, 0, 0),
+		-LXP_EROFS);
+	lxp_syscall(&p, LXP_NR_close, wfd, 0, 0, 0, 0, 0);
 
 	/* an O_WRONLY open of a netfs path is rejected read-only. */
-	assert_int_equal(call_pump(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
-				   (long)(uintptr_t) "/mnt/pi/hello.txt", OVE_LNX_O_WRONLY, 0, 0, 0),
-			 -OVE_LNX_EROFS);
+	assert_int_equal(call_pump(&p, LXP_NR_openat, LXP_AT_FDCWD,
+				   (long)(uintptr_t) "/mnt/pi/hello.txt", LXP_O_WRONLY, 0, 0, 0),
+			 -LXP_EROFS);
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	/* exec-fetch: execve("/mnt/pi/prog") pulls the whole file into the staging buffer and, on
 	 * completion, the retry sets exec_pending + a SENTINEL exec_file_idx (it does NOT resume —
 	 * the run loop's EV_EXEC launches from the staging buffer). */
 	{
-		ove_lnx_proc_t xp;
+		lxp_proc_t xp;
 		ove_arena_t xa;
 		setup(&xp, &xa);
-		long xr = ove_lnx_netfs_exec_fetch(&xp, "/mnt/pi/prog");
+		long xr = lxp_netfs_exec_fetch(&xp, "/mnt/pi/prog");
 		assert_int_equal(xr, 0); /* parked */
-		assert_int_equal(xp.netfs_wait, OVE_LNX_NETFSW_EXECFETCH);
-		long xrr = -OVE_LNX_EAGAIN;
-		for (int i = 0; i < 4000 && xrr == -OVE_LNX_EAGAIN; i++) {
-			xrr = ove_lnx_netfs_retry(&xp);
-			if (xrr == -OVE_LNX_EAGAIN) {
+		assert_int_equal(xp.netfs_wait, LXP_NETFSW_EXECFETCH);
+		long xrr = -LXP_EAGAIN;
+		for (int i = 0; i < 4000 && xrr == -LXP_EAGAIN; i++) {
+			xrr = lxp_netfs_retry(&xp);
+			if (xrr == -LXP_EAGAIN) {
 				struct timespec ts = {0, 300000};
 				nanosleep(&ts, NULL);
 			}
 		}
 		assert_int_equal(xrr, 0);
 		assert_int_equal(xp.exec_pending, 1);
-		assert_int_equal(xp.exec_file_idx, OVE_LNX_NETFS_EXEC_SENTINEL);
+		assert_int_equal(xp.exec_file_idx, LXP_NETFS_EXEC_SENTINEL);
 		size_t xsz = 0;
-		const uint8_t *ximg = ove_lnx_netfs_exec_image(&xsz);
+		const uint8_t *ximg = lxp_netfs_exec_image(&xsz);
 		assert_int_equal((int)xsz, (int)(sizeof(PROG_CONTENT) - 1));
 		assert_memory_equal(ximg, PROG_CONTENT, sizeof(PROG_CONTENT) - 1);
 	}
@@ -558,7 +558,7 @@ static void test_netfs_browse(void **state)
 	/* drain any background clunks, then let the mock connection close. */
 	for (int i = 0; i < 50; i++) {
 		uint64_t now = (uint64_t)i * 1000;
-		ove_lnx_netfs_tick(now);
+		lxp_netfs_tick(now);
 	}
 	/* proc_exit releases the coordinator socket's peer by closing our end via the
 	 * kernel when the test process tears down; signal the mock to stop by closing. */
