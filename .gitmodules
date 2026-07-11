@@ -1,0 +1,3 @@
+[submodule "lxp"]
+	path = modules/lxp
+	url = ../lxp.git
