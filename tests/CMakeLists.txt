@@ -84,6 +84,8 @@ set(STUB_SOURCES
     ${OVE_ROOT}/linux/dev/ove_linux_dev.c
     # Linux personality socket core (CONFIG_OVE_LINUX_NET)
     ${OVE_ROOT}/linux/net/ove_linux_net.c
+    # Linux personality remote-fs core (CONFIG_OVE_LINUX_NETFS)
+    ${OVE_ROOT}/linux/netfs/ove_linux_netfs.c
     # Linux personality pseudo-terminal core (CONFIG_OVE_LINUX_PTY)
     ${OVE_ROOT}/linux/pty/ove_linux_pty.c
     # Host stubs for run-loop hooks (ove_lnx_guest_flush) the net/pty layers call
@@ -195,6 +197,7 @@ function(ove_add_stub_variant name)
     target_compile_definitions(${name} PRIVATE
         CONFIG_OVE_NET=1
         CONFIG_OVE_LINUX_NET=1
+        CONFIG_OVE_LINUX_NETFS=1
         CONFIG_OVE_LINUX_PTY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
