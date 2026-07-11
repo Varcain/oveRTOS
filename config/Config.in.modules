@@ -110,6 +110,50 @@ config OVE_LINUX_NET
       the board's Ethernet driver. The interface is brought up by the board/app
       before the program runs (static IP or DHCP).
 
+config OVE_LINUX_NETFS
+    bool "Linux personality: remote filesystem (9P2000.L)"
+    default n
+    depends on OVE_LINUX
+    select OVE_NET
+    help
+      Mount a directory exported by a 9P server (diod on a Raspberry Pi) under a
+      path like /mnt/pi, so the guest browses it transparently (ls/cat/stat/less)
+      over a coordinator-owned, non-blocking TCP connection. Read-only. Selects
+      OVE_NET (the TCP/IP stack). The mount is configured statically at app boot
+      via ove_lnx_netfs_mount_config(); the options below are the defaults.
+
+config OVE_LINUX_NETFS_SERVER_IP
+    string "netfs: 9P server IPv4 (a.b.c.d)"
+    default "172.1.1.1"
+    depends on OVE_LINUX_NETFS
+
+config OVE_LINUX_NETFS_PORT
+    int "netfs: 9P server TCP port"
+    default 564
+    depends on OVE_LINUX_NETFS
+
+config OVE_LINUX_NETFS_ANAME
+    string "netfs: 9P export path to attach (diod -e)"
+    default "/srv/pi9"
+    depends on OVE_LINUX_NETFS
+
+config OVE_LINUX_NETFS_MOUNTPOINT
+    string "netfs: guest mount point"
+    default "/mnt/pi"
+    depends on OVE_LINUX_NETFS
+
+config OVE_LINUX_NETFS_EXEC
+    bool "netfs: execute programs off the mount (relaxes W^X)"
+    default n
+    depends on OVE_LINUX_NETFS
+    help
+      Allow execve() of a dynamic FDPIC program that lives on the remote mount:
+      its own text is staged into RAM and its program region is made RW+Execute
+      (a per-process, MPU-contained W^X hole). The program links the LOCAL rootfs
+      libc/ld.so (XIP from flash), so only its own small text is fetched. Off by
+      default so normal builds keep strict W^X. Remote binaries must be built with
+      the FDPIC toolchain and be ABI-compatible with the device's libc.
+
 config OVE_LINUX_PTY
     bool "Linux personality: pseudo-terminal (pty) layer"
     default n

@@ -19,6 +19,9 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/linux/net.h" /* socket routing (FD_SOCKET) */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+#include "ove/linux/netfs.h" /* remote-fs routing (FD_NET, /mnt/pi) */
+#endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 #include "ove/linux/pty.h" /* pseudo-terminal routing (FD_PTY) */
 #endif
@@ -675,6 +678,10 @@ static long sys_write(ove_lnx_proc_t *p, int fd, const void *buf, size_t len)
 	if (s->kind == OVE_LNX_FD_SOCKET)
 		return ove_lnx_sock_send(p, s->file_idx, buf, len, 0, NULL, 0);
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	if (s->kind == OVE_LNX_FD_NET)
+		return -OVE_LNX_EROFS; /* read-only remote mount */
+#endif
 	if (s->kind == OVE_LNX_FD_EVENTFD)
 		return efd_write(p, s->file_idx, buf, len);
 	/* A pipe write end appends to the shared ring; blocks when full (reader open). */
@@ -774,6 +781,10 @@ static long sys_read(ove_lnx_proc_t *p, int fd, void *buf, size_t len)
 #if defined(CONFIG_OVE_LINUX_NET)
 	if (s->kind == OVE_LNX_FD_SOCKET)
 		return ove_lnx_sock_recv(p, s->file_idx, buf, len, 0, NULL, NULL);
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	if (s->kind == OVE_LNX_FD_NET)
+		return ove_lnx_netfs_read(p, s->file_idx, buf, len);
 #endif
 	if (s->kind == OVE_LNX_FD_EVENTFD)
 		return efd_read(p, s->file_idx, buf, len);
@@ -1652,6 +1663,12 @@ static long sys_openat(ove_lnx_proc_t *p, int dirfd, const char *path, int flags
 		}
 	}
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	/* Remote 9P mount (/mnt/pi): read-only browse. Shadows the RO rootfs; the open
+	 * parks (walk+getattr+lopen round-trips) and the coordinator installs the fd. */
+	if (ove_lnx_netfs_lookup(path) >= 0)
+		return ove_lnx_netfs_open(p, path, flags);
+#endif
 	int wr = (flags & OVE_LNX_O_ACCMODE) != OVE_LNX_O_RDONLY;
 	int wi = wfs_find(path);
 
@@ -1703,6 +1720,10 @@ static long sys_close(ove_lnx_proc_t *p, int fd)
 #if defined(CONFIG_OVE_LINUX_NET)
 	if (s->kind == OVE_LNX_FD_SOCKET)
 		ove_lnx_sock_close(s->file_idx); /* refs--, ove_socket_close at the last close */
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	if (s->kind == OVE_LNX_FD_NET)
+		ove_lnx_netfs_close(s->file_idx); /* refs--, enqueue a Tclunk at the last close */
 #endif
 	s->kind = OVE_LNX_FD_FREE;
 	return 0;
@@ -1770,6 +1791,10 @@ static long sys_dup2(ove_lnx_proc_t *p, int oldfd, int newfd)
 		if (p->fds[newfd].kind == OVE_LNX_FD_SOCKET)
 			ove_lnx_sock_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+		if (p->fds[newfd].kind == OVE_LNX_FD_NET)
+			ove_lnx_netfs_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
+#endif
 		p->fds[newfd] = *s;
 #if defined(CONFIG_OVE_LINUX_DEV)
 		if (s->kind == OVE_LNX_FD_DEV)
@@ -1778,6 +1803,10 @@ static long sys_dup2(ove_lnx_proc_t *p, int oldfd, int newfd)
 #if defined(CONFIG_OVE_LINUX_NET)
 		if (s->kind == OVE_LNX_FD_SOCKET)
 			ove_lnx_sock_get(s->file_idx); /* the new fd shares the open */
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+		if (s->kind == OVE_LNX_FD_NET)
+			ove_lnx_netfs_get(s->file_idx); /* the new fd shares the open */
 #endif
 	}
 	return newfd;
@@ -1800,6 +1829,10 @@ static long sys_dup(ove_lnx_proc_t *p, int oldfd)
 			if (s->kind == OVE_LNX_FD_SOCKET)
 				ove_lnx_sock_get(s->file_idx); /* the dup shares the open */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+			if (s->kind == OVE_LNX_FD_NET)
+				ove_lnx_netfs_get(s->file_idx); /* the dup shares the open */
+#endif
 			return fd;
 		}
 	}
@@ -1814,6 +1847,10 @@ static long sys_lseek(ove_lnx_proc_t *p, int fd, long off, int whence)
 #if defined(CONFIG_OVE_LINUX_DEV)
 	if (s->kind == OVE_LNX_FD_DEV)
 		return ove_lnx_dev_lseek(s->file_idx, off, whence);
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	if (s->kind == OVE_LNX_FD_NET)
+		return ove_lnx_netfs_lseek(s->file_idx, off, whence);
 #endif
 	if (s->kind != OVE_LNX_FD_FILE && s->kind != OVE_LNX_FD_TMPFS)
 		return -OVE_LNX_ESPIPE; /* console/pipe is not seekable */
@@ -1933,6 +1970,15 @@ static long sys_fstat64(ove_lnx_proc_t *p, int fd, void *statbuf)
 		fill_kstat64(statbuf, 0x400000u + (uint32_t)s->file_idx, mode, size);
 	}
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	else if (s->kind == OVE_LNX_FD_NET) {
+		uint32_t mode;
+		uint64_t size, mtime, ino;
+		if (ove_lnx_netfs_fstat(s->file_idx, &mode, &size, &mtime, &ino) != 0)
+			return -OVE_LNX_EBADF;
+		return ove_lnx_netfs_fill_stat(p, (uintptr_t)statbuf, 0, mode, size, mtime, ino);
+	}
+#endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 	else if (s->kind == OVE_LNX_FD_PTY) {
 		uint32_t mode;
@@ -1972,6 +2018,10 @@ static long sys_stat_path(ove_lnx_proc_t *p, const char *path, int follow, void 
 			return 0;
 		}
 	}
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	if (ove_lnx_netfs_lookup(abspath) >= 0)
+		return ove_lnx_netfs_stat(p, abspath, (uintptr_t)statbuf, 0); /* parks */
 #endif
 	int wi = wfs_find(abspath); /* writable overlay shadows the rootfs */
 	if (wi >= 0) {
@@ -2297,6 +2347,11 @@ static long sys_getdents64(ove_lnx_proc_t *p, int fd, void *buf, size_t count, i
 		if (!g_procf[s->file_idx].is_dir)
 			return -OVE_LNX_ENOTDIR;
 		dirpath = g_procf[s->file_idx].path;
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	} else if (s->kind == OVE_LNX_FD_NET) {
+		/* Remote dir: a Treaddir round-trip → the netfs layer emits the records. Parks. */
+		return ove_lnx_netfs_getdents(p, s->file_idx, (uintptr_t)buf, count, is64);
+#endif
 	} else {
 		return -OVE_LNX_ENOTDIR;
 	}
@@ -2448,6 +2503,10 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 			rdev = drdev;
 			ino = 0x300000u;
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+		} else if (ove_lnx_netfs_lookup(abspath) >= 0) {
+			return ove_lnx_netfs_stat(p, abspath, (uintptr_t)buf, 1); /* parks */
+#endif
 		} else if ((wi = wfs_find(abspath)) >= 0) { /* writable overlay shadows rootfs */
 			mode = g_wnodes[wi].mode;
 			size = g_wnodes[wi].size;
@@ -2487,6 +2546,14 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 			rdev = drdev;
 			ino = 0x300000u + (uint32_t)s->file_idx;
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+		} else if (s->kind == OVE_LNX_FD_NET) {
+			uint32_t nmode;
+			uint64_t nsize, nmtime, nino;
+			if (ove_lnx_netfs_fstat(s->file_idx, &nmode, &nsize, &nmtime, &nino) != 0)
+				return -OVE_LNX_EBADF;
+			return ove_lnx_netfs_fill_stat(p, (uintptr_t)buf, 1, nmode, nsize, nmtime, nino);
+#endif
 		} else {
 			mode = OVE_LNX_S_IFCHR | 0620u;
 			size = 0;
@@ -2507,6 +2574,42 @@ static long sys_statx(ove_lnx_proc_t *p, int dirfd, const char *path, int flags,
 	st->stx_rdev_minor = (uint32_t)(rdev & 0xffu);
 	return 0;
 }
+
+#if defined(CONFIG_OVE_LINUX_NETFS)
+/* Marshal remote 9P attributes into a guest stat/statx buffer. Called by the netfs
+ * retry (which owns the transport) for a path stat, and inline for an fstat on an
+ * FD_NET fd. @p statkind: 0 = kstat64 (stat/lstat/fstat/fstatat), 1 = statx. The
+ * netfs inode namespace is 0x600000+, with a distinct synthetic st_dev so ld.so's
+ * (st_dev, st_ino) dedup never collides with the local rootfs. */
+long ove_lnx_netfs_fill_stat(ove_lnx_proc_t *p, uintptr_t ustat, int statkind, uint32_t mode,
+			     uint64_t size, uint64_t mtime, uint64_t ino)
+{
+	uint32_t nino = 0x600000u + (uint32_t)ino;
+	if (statkind == 1) {
+		if (!user_ok(p, (void *)ustat, sizeof(struct ove_lnx_statx), 1))
+			return -OVE_LNX_EFAULT;
+		struct ove_lnx_statx *st = (struct ove_lnx_statx *)ustat;
+		memset(st, 0, sizeof(*st));
+		st->stx_mask = OVE_LNX_STATX_BASIC_STATS;
+		st->stx_blksize = 512;
+		st->stx_nlink = 1;
+		st->stx_mode = (uint16_t)mode;
+		st->stx_size = size;
+		st->stx_blocks = (size + 511u) / 512u;
+		st->stx_ino = nino;
+		st->stx_dev_minor = 0xfeu;
+		memcpy(st->__times + 48, &mtime, sizeof(uint64_t)); /* mtime tv_sec (4th 16B slot) */
+		return 0;
+	}
+	if (!user_ok(p, (void *)ustat, sizeof(struct ove_lnx_kstat64), 1))
+		return -OVE_LNX_EFAULT;
+	struct ove_lnx_kstat64 *st = (struct ove_lnx_kstat64 *)ustat;
+	fill_kstat64(st, nino, mode, size);
+	st->st_dev = 0xfeu;
+	st->st_mtime = (uint32_t)mtime;
+	return 0;
+}
+#endif
 
 /*
  * execve: resolve the program in the rootfs and capture its argument vector,
