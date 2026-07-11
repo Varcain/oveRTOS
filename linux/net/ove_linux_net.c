@@ -22,6 +22,7 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 
 #include "ove/linux/net.h"
+#include "ove/linux/net_ops.h"
 #include "ove/net.h"
 
 #include <string.h>
@@ -33,8 +34,6 @@
 #define OVE_LNX_FD_SOCKET 7
 #endif
 
-#define OVE_LNX_NSOCK 24 /* max concurrent socket opens (pooled); listener + clients */
-
 /** Per-open socket state (the 4-field fd slot is too small). fork/dup share an
  *  open (refcounted); the last close closes the backing ove_socket. */
 struct sock_open {
@@ -44,8 +43,7 @@ struct sock_open {
 	uint16_t oflags;     /* guest fd status flags (O_NONBLOCK gates parking) */
 	uintptr_t rx_src;    /* parked recvfrom: user sockaddr* to fill (0 => recv) */
 	uintptr_t rx_srclen; /* parked recvfrom: user socklen_t* */
-	ove_socket_storage_t st;
-	ove_socket_t sock;
+	ove_lnx_socket_t sock; /* host-owned handle; the adapter owns the storage */
 };
 
 static struct sock_open g_sock[OVE_LNX_NSOCK];
@@ -163,13 +161,13 @@ long ove_lnx_sock_new(int domain, int type, int protocol)
 
 	struct sock_open *o = &g_sock[oi];
 	memset(o, 0, sizeof(*o));
-	int r = ove_socket_open_ex(&o->sock, &o->st, OVE_AF_INET, ot, proto);
+	int r = g_ove_lnx_net_ops->sock_open(OVE_AF_INET, ot, proto, &o->sock);
 	if (r != OVE_OK)
 		return ove_to_lnx_errno(r);
 	/* Drive blocking via the coordinator's park/retry: keep the backing socket
 	 * non-blocking so every op returns at once (a 0 timeout is NOT uniformly
 	 * non-blocking — some backends map it to SO_RCVTIMEO = block-forever). */
-	ove_socket_set_nonblock(o->sock, 1);
+	g_ove_lnx_net_ops->sock_set_nonblock(o->sock, 1);
 	o->used = 1;
 	o->refs = 1;
 	if (type & OVE_LNX_SOCK_NONBLOCK)
@@ -193,7 +191,7 @@ void ove_lnx_sock_close(int oi)
 		o->refs--;
 		return;
 	}
-	ove_socket_close(o->sock);
+	g_ove_lnx_net_ops->sock_close(o->sock);
 	o->used = 0;
 }
 
@@ -226,7 +224,7 @@ long ove_lnx_sock_connect(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned
 	 * re-initiate. */
 	if (o->connecting) {
 		unsigned rev = 0;
-		ove_socket_poll(o->sock, OVE_SOCK_POLLOUT, &rev, 0);
+		g_ove_lnx_net_ops->sock_poll(o->sock, OVE_SOCK_POLLOUT, &rev, 0);
 		if (!(rev & (OVE_SOCK_POLLOUT | OVE_SOCK_POLLERR | OVE_SOCK_POLLHUP))) {
 			if (o->oflags & OVE_LNX_O_NONBLOCK)
 				return -OVE_LNX_EALREADY;
@@ -234,7 +232,7 @@ long ove_lnx_sock_connect(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned
 			p->sock_oi = oi;
 			return 0;
 		}
-		int se = ove_socket_get_error(o->sock);
+		int se = g_ove_lnx_net_ops->sock_get_error(o->sock);
 		o->connecting = 0;
 		return se == OVE_OK ? -OVE_LNX_EISCONN : ove_to_lnx_errno(se);
 	}
@@ -249,7 +247,7 @@ long ove_lnx_sock_connect(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned
 	linux_sin_to_ove(sin, &oa);
 
 	/* A 0 timeout initiates the connect and probes readiness once. */
-	int r = ove_socket_connect(o->sock, &oa, 0);
+	int r = g_ove_lnx_net_ops->sock_connect(o->sock, &oa, 0);
 	if (r == OVE_OK)
 		return 0;
 	if (r == OVE_ERR_TIMEOUT) { /* connection in progress */
@@ -276,7 +274,7 @@ long ove_lnx_sock_bind(ove_lnx_proc_t *p, int oi, const void *uaddr, unsigned ad
 		return -OVE_LNX_EAFNOSUPPORT;
 	ove_sockaddr_t oa;
 	linux_sin_to_ove(sin, &oa);
-	return ove_to_lnx_errno(ove_socket_bind(o->sock, &oa));
+	return ove_to_lnx_errno(g_ove_lnx_net_ops->sock_bind(o->sock, &oa));
 }
 
 long ove_lnx_sock_listen(int oi, int backlog)
@@ -284,7 +282,7 @@ long ove_lnx_sock_listen(int oi, int backlog)
 	struct sock_open *o = open_slot(oi);
 	if (!o)
 		return -OVE_LNX_EBADF;
-	return ove_to_lnx_errno(ove_socket_listen(o->sock, backlog));
+	return ove_to_lnx_errno(g_ove_lnx_net_ops->sock_listen(o->sock, backlog));
 }
 
 /* Accept one pending connection on listen slot @lo into a fresh pool slot + fd.
@@ -304,26 +302,24 @@ static long do_accept(ove_lnx_proc_t *p, struct sock_open *lo, void *uaddr, void
 		return -OVE_LNX_EMFILE; /* socket pool full */
 	struct sock_open *co = &g_sock[ci];
 	memset(co, 0, sizeof(*co));
-	ove_socket_t ch;
-	int r = ove_socket_accept(lo->sock, &ch, &co->st, OVE_WAIT_FOREVER);
+	int r = g_ove_lnx_net_ops->sock_accept(lo->sock, &co->sock, OVE_WAIT_FOREVER);
 	if (r == OVE_ERR_TIMEOUT)
 		return -OVE_LNX_EAGAIN; /* no pending connection (non-blocking listen socket) */
 	if (r != OVE_OK)
 		return ove_to_lnx_errno(r);
-	co->sock = ch;
 	co->used = 1;
 	co->refs = 1;
-	ove_socket_set_nonblock(co->sock, 1); /* every op returns at once; the coordinator parks */
+	g_ove_lnx_net_ops->sock_set_nonblock(co->sock, 1); /* every op returns at once; the coordinator parks */
 	if (flags & OVE_LNX_SOCK_NONBLOCK)
 		co->oflags |= OVE_LNX_O_NONBLOCK;
 	if (uaddr) {
 		ove_sockaddr_t pa;
-		if (ove_socket_getpeername(co->sock, &pa) == OVE_OK)
+		if (g_ove_lnx_net_ops->sock_getpeername(co->sock, &pa) == OVE_OK)
 			(void)copy_sockaddr_out(p, uaddr, uaddrlen, &pa);
 	}
 	int fd = ove_lnx_fd_install(p, OVE_LNX_FD_SOCKET, ci);
 	if (fd < 0) {
-		ove_socket_close(co->sock);
+		g_ove_lnx_net_ops->sock_close(co->sock);
 		co->used = 0;
 		return -OVE_LNX_EMFILE;
 	}
@@ -371,11 +367,11 @@ long ove_lnx_sock_send(ove_lnx_proc_t *p, int oi, const void *ubuf, size_t len, 
 	/* The engine transport (lwIP copy) runs in the privileged coordinator, which reads this guest
 	 * buffer from physical memory through an uncached view; flush the guest's dirty D-cache lines
 	 * first so it does not copy stale bytes (a no-op except on the D-cache-on STM32F746). */
-	ove_lnx_guest_flush(ubuf, len);
+	ove_lnx_cache_clean(ubuf, len);
 	if (udest)
-		r = ove_socket_sendto(o->sock, ubuf, len, &sent, &oa);
+		r = g_ove_lnx_net_ops->sock_sendto(o->sock, ubuf, len, &sent, &oa);
 	else
-		r = ove_socket_send(o->sock, ubuf, len, &sent);
+		r = g_ove_lnx_net_ops->sock_send(o->sock, ubuf, len, &sent);
 	if (r == OVE_OK)
 		return (long)sent;
 	if (r == OVE_ERR_TIMEOUT) {
@@ -405,9 +401,9 @@ long ove_lnx_sock_recv(ove_lnx_proc_t *p, int oi, void *ubuf, size_t len, int fl
 	ove_sockaddr_t src;
 	int r;
 	if (usrc)
-		r = ove_socket_recvfrom(o->sock, ubuf, len, &got, &src, OVE_WAIT_FOREVER);
+		r = g_ove_lnx_net_ops->sock_recvfrom(o->sock, ubuf, len, &got, &src, OVE_WAIT_FOREVER);
 	else
-		r = ove_socket_recv(o->sock, ubuf, len, &got, OVE_WAIT_FOREVER);
+		r = g_ove_lnx_net_ops->sock_recv(o->sock, ubuf, len, &got, OVE_WAIT_FOREVER);
 
 	if (r == OVE_OK) {
 		if (usrc)
@@ -436,7 +432,7 @@ long ove_lnx_sock_shutdown(int oi, int how)
 	if (!o)
 		return -OVE_LNX_EBADF;
 	int oh = (how == 0) ? OVE_SHUT_RD : (how == 1) ? OVE_SHUT_WR : OVE_SHUT_RDWR;
-	return ove_to_lnx_errno(ove_socket_shutdown(o->sock, oh));
+	return ove_to_lnx_errno(g_ove_lnx_net_ops->sock_shutdown(o->sock, oh));
 }
 
 long ove_lnx_sock_getsockname(ove_lnx_proc_t *p, int oi, void *uaddr, void *uaddrlen)
@@ -445,7 +441,7 @@ long ove_lnx_sock_getsockname(ove_lnx_proc_t *p, int oi, void *uaddr, void *uadd
 	if (!o)
 		return -OVE_LNX_EBADF;
 	ove_sockaddr_t oa;
-	int r = ove_socket_getsockname(o->sock, &oa);
+	int r = g_ove_lnx_net_ops->sock_getsockname(o->sock, &oa);
 	if (r != OVE_OK)
 		return ove_to_lnx_errno(r);
 	return copy_sockaddr_out(p, uaddr, uaddrlen, &oa);
@@ -457,7 +453,7 @@ long ove_lnx_sock_getpeername(ove_lnx_proc_t *p, int oi, void *uaddr, void *uadd
 	if (!o)
 		return -OVE_LNX_EBADF;
 	ove_sockaddr_t oa;
-	int r = ove_socket_getpeername(o->sock, &oa);
+	int r = g_ove_lnx_net_ops->sock_getpeername(o->sock, &oa);
 	if (r != OVE_OK)
 		return ove_to_lnx_errno(r);
 	return copy_sockaddr_out(p, uaddr, uaddrlen, &oa);
@@ -473,7 +469,7 @@ long ove_lnx_sock_getsockopt(ove_lnx_proc_t *p, int oi, int level, int optname, 
 		return -OVE_LNX_EFAULT;
 	int val = 0;
 	if (level == OVE_LNX_SOL_SOCKET && optname == OVE_LNX_SO_ERROR) {
-		int se = ove_socket_get_error(o->sock);
+		int se = g_ove_lnx_net_ops->sock_get_error(o->sock);
 		val = (int)(-ove_to_lnx_errno(se)); /* positive Linux errno, or 0 */
 	}
 	/* Other options report 0 (accept-and-report; real passthrough in P4). */
@@ -508,7 +504,7 @@ unsigned ove_lnx_sock_poll(int oi)
 	if (!o)
 		return 0;
 	unsigned rev = 0, out = 0;
-	if (ove_socket_poll(o->sock, OVE_SOCK_POLLIN | OVE_SOCK_POLLOUT, &rev, 0) != OVE_OK)
+	if (g_ove_lnx_net_ops->sock_poll(o->sock, OVE_SOCK_POLLIN | OVE_SOCK_POLLOUT, &rev, 0) != OVE_OK)
 		return OVE_LNX_POLLIN; /* surface the condition via a read */
 	if (rev & (OVE_SOCK_POLLIN | OVE_SOCK_POLLERR | OVE_SOCK_POLLHUP))
 		out |= OVE_LNX_POLLIN;
@@ -543,7 +539,7 @@ int ove_lnx_sock_ifsnapshot(uint8_t ip[4], uint8_t gw[4], uint8_t nm[4], uint8_t
 	if (!g_lnx_netif)
 		return -1;
 	ove_sockaddr_t sip = {0}, sgw = {0}, snm = {0};
-	ove_netif_get_addr(g_lnx_netif, &sip, &sgw, &snm);
+	g_ove_lnx_net_ops->netif_get_addr(g_lnx_netif, &sip, &sgw, &snm);
 	if (ip)
 		memcpy(ip, sip.addr, 4);
 	if (gw)
@@ -551,10 +547,10 @@ int ove_lnx_sock_ifsnapshot(uint8_t ip[4], uint8_t gw[4], uint8_t nm[4], uint8_t
 	if (nm)
 		memcpy(nm, snm.addr, 4);
 	if (mac)
-		ove_netif_get_hwaddr(g_lnx_netif, mac);
+		g_ove_lnx_net_ops->netif_get_hwaddr(g_lnx_netif, mac);
 	if (flags) {
 		unsigned f = 0;
-		ove_netif_get_flags(g_lnx_netif, &f);
+		g_ove_lnx_net_ops->netif_get_flags(g_lnx_netif, &f);
 		*flags = f;
 	}
 	return 0;
@@ -596,7 +592,7 @@ static long sock_ifconf(ove_lnx_proc_t *p, unsigned long arg)
 	r->ifr_name[2] = 'h';
 	r->ifr_name[3] = '0';
 	ove_sockaddr_t ip = {0};
-	if (g_lnx_netif && ove_netif_get_addr(g_lnx_netif, &ip, NULL, NULL) == OVE_OK) {
+	if (g_lnx_netif && g_ove_lnx_net_ops->netif_get_addr(g_lnx_netif, &ip, NULL, NULL) == OVE_OK) {
 		r->ifr_ifru.ifru_addr.sin_family = OVE_LNX_AF_INET;
 		memcpy(&r->ifr_ifru.ifru_addr.sin_addr, ip.addr, 4);
 	}
@@ -620,7 +616,7 @@ static long sock_route(ove_lnx_proc_t *p, unsigned long req, unsigned long arg)
 		if (req == OVE_LNX_SIOCADDRT)
 			memcpy(gw.addr, &rt->rt_gateway.sin_addr, 4); /* set gw */
 		/* SIOCDELRT leaves gw all-zero (clears it). */
-		int r = ove_netif_set_addr(g_lnx_netif, NULL, NULL, &gw);
+		int r = g_ove_lnx_net_ops->netif_set_addr(g_lnx_netif, NULL, NULL, &gw);
 		return r == OVE_OK ? 0 : ove_to_lnx_errno(r);
 	}
 	return 0; /* non-default routes: accept, nothing to program on a one-hop link */
@@ -644,12 +640,12 @@ long ove_lnx_sock_ioctl(ove_lnx_proc_t *p, unsigned long req, unsigned long arg)
 	switch (req) {
 	case OVE_LNX_SIOCGIFFLAGS: {
 		unsigned f = 0;
-		ove_netif_get_flags(nif, &f);
+		g_ove_lnx_net_ops->netif_get_flags(nif, &f);
 		ifr->ifr_ifru.ifru_flags = iff_from_ove(f);
 		return 0;
 	}
 	case OVE_LNX_SIOCSIFFLAGS:
-		return ove_netif_set_up(nif, (ifr->ifr_ifru.ifru_flags & OVE_LNX_IFF_UP) ? 1 : 0) ==
+		return g_ove_lnx_net_ops->netif_set_up(nif, (ifr->ifr_ifru.ifru_flags & OVE_LNX_IFF_UP) ? 1 : 0) ==
 				       OVE_OK
 			       ? 0
 			       : -OVE_LNX_EINVAL;
@@ -657,7 +653,7 @@ long ove_lnx_sock_ioctl(ove_lnx_proc_t *p, unsigned long req, unsigned long arg)
 	case OVE_LNX_SIOCGIFNETMASK:
 	case OVE_LNX_SIOCGIFBRDADDR: {
 		ove_sockaddr_t ip = {0}, gw = {0}, nm = {0};
-		if (ove_netif_get_addr(nif, &ip, &gw, &nm) != OVE_OK)
+		if (g_ove_lnx_net_ops->netif_get_addr(nif, &ip, &gw, &nm) != OVE_OK)
 			return -OVE_LNX_ENODEV;
 		ove_lnx_sockaddr_in *out = &ifr->ifr_ifru.ifru_addr;
 		memset(out, 0, sizeof(*out));
@@ -681,13 +677,13 @@ long ove_lnx_sock_ioctl(ove_lnx_proc_t *p, unsigned long req, unsigned long arg)
 		ove_sockaddr_t sa = {0};
 		sa.family = OVE_AF_INET;
 		memcpy(sa.addr, &in->sin_addr, 4);
-		int r = (req == OVE_LNX_SIOCSIFADDR) ? ove_netif_set_addr(nif, &sa, NULL, NULL)
-						     : ove_netif_set_addr(nif, NULL, &sa, NULL);
+		int r = (req == OVE_LNX_SIOCSIFADDR) ? g_ove_lnx_net_ops->netif_set_addr(nif, &sa, NULL, NULL)
+						     : g_ove_lnx_net_ops->netif_set_addr(nif, NULL, &sa, NULL);
 		return r == OVE_OK ? 0 : ove_to_lnx_errno(r);
 	}
 	case OVE_LNX_SIOCGIFHWADDR: {
 		uint8_t mac[6] = {0};
-		ove_netif_get_hwaddr(nif, mac);
+		g_ove_lnx_net_ops->netif_get_hwaddr(nif, mac);
 		/* ifr_hwaddr is a struct sockaddr: sa_family (ARPHRD_ETHER) then the 6-byte MAC. */
 		memset(ifr->ifr_ifru.ifru_raw, 0, sizeof(ifr->ifr_ifru.ifru_raw));
 		ifr->ifr_ifru.ifru_raw[0] = (uint8_t)OVE_LNX_ARPHRD_ETHER;
@@ -720,16 +716,16 @@ long ove_lnx_sock_retry(ove_lnx_proc_t *p)
 	switch (p->sock_wait) {
 	case OVE_LNX_SOCKW_CONNECT: {
 		unsigned rev = 0;
-		ove_socket_poll(o->sock, OVE_SOCK_POLLOUT, &rev, 0);
+		g_ove_lnx_net_ops->sock_poll(o->sock, OVE_SOCK_POLLOUT, &rev, 0);
 		if (!(rev & (OVE_SOCK_POLLOUT | OVE_SOCK_POLLERR | OVE_SOCK_POLLHUP)))
 			return -OVE_LNX_EAGAIN; /* still connecting */
-		int se = ove_socket_get_error(o->sock);
+		int se = g_ove_lnx_net_ops->sock_get_error(o->sock);
 		o->connecting = 0;
 		return se == OVE_OK ? 0 : ove_to_lnx_errno(se);
 	}
 	case OVE_LNX_SOCKW_SEND: {
 		size_t sent = 0;
-		int r = ove_socket_send(o->sock, (const void *)p->sock_buf, p->sock_len, &sent);
+		int r = g_ove_lnx_net_ops->sock_send(o->sock, (const void *)p->sock_buf, p->sock_len, &sent);
 		if (r == OVE_OK)
 			return (long)sent;
 		if (r == OVE_ERR_TIMEOUT)
@@ -741,10 +737,10 @@ long ove_lnx_sock_retry(ove_lnx_proc_t *p)
 		ove_sockaddr_t src;
 		int r;
 		if (o->rx_src)
-			r = ove_socket_recvfrom(o->sock, (void *)p->sock_buf, p->sock_len, &got,
+			r = g_ove_lnx_net_ops->sock_recvfrom(o->sock, (void *)p->sock_buf, p->sock_len, &got,
 						&src, OVE_WAIT_FOREVER);
 		else
-			r = ove_socket_recv(o->sock, (void *)p->sock_buf, p->sock_len, &got,
+			r = g_ove_lnx_net_ops->sock_recv(o->sock, (void *)p->sock_buf, p->sock_len, &got,
 					    OVE_WAIT_FOREVER);
 		if (r == OVE_OK) {
 			if (o->rx_src)

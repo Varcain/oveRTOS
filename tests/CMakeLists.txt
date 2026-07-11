@@ -84,6 +84,9 @@ set(STUB_SOURCES
     ${OVE_ROOT}/linux/dev/ove_linux_dev.c
     # Linux personality socket core (CONFIG_OVE_LINUX_NET)
     ${OVE_ROOT}/linux/net/ove_linux_net.c
+    # Host adapter for the handle-based net-ops port (owns socket storage, bridges
+    # to ove_net = posix_net.c here; statically sets g_ove_lnx_net_ops).
+    ${OVE_ROOT}/backends/common/ove_lnx_ove_adapter.c
     # Linux personality remote-fs core (CONFIG_OVE_LINUX_NETFS)
     ${OVE_ROOT}/linux/netfs/ove_linux_netfs.c
     # Linux personality pseudo-terminal core (CONFIG_OVE_LINUX_PTY)
