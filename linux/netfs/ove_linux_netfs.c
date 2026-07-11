@@ -510,13 +510,13 @@ static long req_build(struct netfs_req *r)
 				msg_end(o);
 				return 0;
 			}
-			/* OPEN + EXECFETCH: Tlopen(fid, flags) */
+			/* OPEN + EXECFETCH: Tlopen(fid, O_RDONLY). Always O_RDONLY — files read via Tread,
+			 * directories via Treaddir on the same open fid. NB: do NOT send O_DIRECTORY: its
+			 * ARM value is 0x4000 (0x10000 is O_DIRECT on ARM), and a diod dir opened O_DIRECT
+			 * fails Treaddir with -EIO. A plain O_RDONLY dir open reads fine. */
 			o = msg_begin(P9_TLOPEN, P9_TAG);
 			put32(&o, (uint32_t)r->fid);
-			uint32_t oflags = 0;
-			if (r->op == OVE_LNX_NETFSW_OPEN && r->oi >= 0 && g_open[r->oi].is_dir)
-				oflags = 0x10000u; /* O_DIRECTORY */
-			put32(&o, oflags);
+			put32(&o, 0u);
 			msg_end(o);
 			return 0;
 		}
@@ -559,7 +559,9 @@ static long req_build(struct netfs_req *r)
 		struct netfs_open *op = open_slot(r->oi);
 		if (!op)
 			return -OVE_LNX_EBADF;
-		uint32_t cnt = (uint32_t)(g_msize - 16);
+		/* Treaddir count must leave room for the 9P read header (P9_IOHDRSZ = 24) within msize,
+		 * else diod Rlerrors — same cap as Tread above (a bigger count here = an empty ls). */
+		uint32_t cnt = (uint32_t)(g_msize - 24);
 		o = msg_begin(P9_TREADDIR, P9_TAG);
 		put32(&o, (uint32_t)op->fid);
 		put64(&o, op->dir_off);

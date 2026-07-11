@@ -147,8 +147,11 @@ static void *mock9p(void *arg)
 	if (c < 0)
 		return NULL;
 	int fidnode[512];
-	for (int i = 0; i < 512; i++)
+	unsigned char fid_odir[512]; /* fid was Tlopen'd with O_DIRECT (0x10000) — readdir must fail */
+	for (int i = 0; i < 512; i++) {
 		fidnode[i] = -1;
+		fid_odir[i] = 0;
+	}
 	uint8_t in[4096], out[4096];
 	for (;;) {
 		uint8_t hdr[7];
@@ -250,6 +253,8 @@ static void *mock9p(void *arg)
 			reply(c, out, oo);
 		} else if (type == P9_TLOPEN) {
 			uint32_t fid = r32(in, &io);
+			uint32_t flags = r32(in, &io);
+			fid_odir[fid & 511] = (flags & 0x10000u) ? 1 : 0; /* O_DIRECT on ARM (mis-sent as O_DIRECTORY) */
 			int node = fidnode[fid & 511];
 			w32(out, &oo, 0);
 			out[oo++] = P9_TLOPEN + 1;
@@ -282,6 +287,13 @@ static void *mock9p(void *arg)
 			uint64_t off = 0;
 			for (int i = 0; i < 8; i++)
 				off |= (uint64_t)in[io++] << (8 * i);
+			uint32_t rcount = r32(in, &io);
+			/* Mirror diod's real constraints (both were caught only on-target): a Treaddir
+			 * larger than msize - P9_IOHDRSZ(24), or a fid opened with O_DIRECT, is an error. */
+			if (rcount > 2048u - 24u || fid_odir[fid & 511]) {
+				rlerror(c, tag, 5 /* EIO */);
+				continue;
+			}
 			int node = fidnode[fid & 511];
 			w32(out, &oo, 0);
 			out[oo++] = P9_TREADDIR + 1;
