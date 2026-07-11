@@ -23,6 +23,7 @@
 
 #include "ove/linux/netfs.h"
 #include "ove/net.h"
+#include "ove/linux/net_ops.h"
 #include "ove/time.h"
 
 #include <string.h>
@@ -84,8 +85,7 @@ static struct {
 } g_mnt;
 
 enum { CONN_DOWN = 0, CONN_UP };
-static ove_socket_storage_t g_sk_st;
-static ove_socket_t g_sk;
+static ove_lnx_socket_t g_sk; /* host-owned handle; the adapter owns the storage */
 static int g_conn;
 static uint32_t g_msize = NETFS_MSIZE;
 static uint32_t g_generation;	    /* bumped on every (re)connect; opens carry theirs. */
@@ -285,7 +285,7 @@ static int tx_flush(void)
 {
 	while (g_txoff < g_txlen) {
 		size_t sent = 0;
-		int r = ove_socket_send(g_sk, g_tx + g_txoff, g_txlen - g_txoff, &sent);
+		int r = g_ove_lnx_net_ops->sock_send(g_sk, g_tx + g_txoff, g_txlen - g_txoff, &sent);
 		if (r == OVE_OK) {
 			g_txoff += sent;
 			if (sent == 0)
@@ -306,7 +306,7 @@ static int rx_fill(void)
 	int progress = 0;
 	while (g_rxlen < sizeof(g_rx)) {
 		size_t got = 0;
-		int r = ove_socket_recv(g_sk, g_rx + g_rxlen, sizeof(g_rx) - g_rxlen, &got,
+		int r = g_ove_lnx_net_ops->sock_recv(g_sk, g_rx + g_rxlen, sizeof(g_rx) - g_rxlen, &got,
 					OVE_WAIT_FOREVER);
 		if (r == OVE_OK) {
 			if (got == 0)
@@ -349,7 +349,7 @@ static void rx_consume(size_t len)
 static void conn_drop(void)
 {
 	if (g_sk)
-		ove_socket_close(g_sk);
+		g_ove_lnx_net_ops->sock_close(g_sk);
 	g_sk = NULL;
 	g_conn = CONN_DOWN;
 	g_txlen = g_txoff = g_rxlen = 0;
@@ -381,7 +381,7 @@ static long xchg_blocking(uint64_t timeout_us)
 	}
 	for (;;) {
 		unsigned rev = 0;
-		ove_socket_poll(g_sk, OVE_SOCK_POLLIN, &rev, 50 * 1000000ull /* 50ms */);
+		g_ove_lnx_net_ops->sock_poll(g_sk, OVE_SOCK_POLLIN, &rev, 50 * 1000000ull /* 50ms */);
 		if (rx_fill() < 0)
 			return -1;
 		size_t len = rx_message();
@@ -434,6 +434,20 @@ static int handshake(void)
 	return 0;
 }
 
+/* Build an IPv4 ove_sockaddr_t (host-order port) — was ove_sockaddr_ipv4, now module-local
+ * so the netfs client depends only on the net-ops port, not the ove_net helper set. */
+static void netfs_sockaddr_ipv4(ove_sockaddr_t *a, uint8_t b0, uint8_t b1, uint8_t b2,
+				uint8_t b3, uint16_t port)
+{
+	memset(a, 0, sizeof(*a));
+	a->family = OVE_AF_INET;
+	a->port = port;
+	a->addr[0] = b0;
+	a->addr[1] = b1;
+	a->addr[2] = b2;
+	a->addr[3] = b3;
+}
+
 static void conn_connect(uint64_t now_us)
 {
 	if (!g_mnt.configured)
@@ -442,22 +456,22 @@ static void conn_connect(uint64_t now_us)
 		return;
 	g_reconnect_at_us = now_us + NETFS_RECONNECT_US;
 
-	if (ove_socket_open(&g_sk, &g_sk_st, OVE_AF_INET, OVE_SOCK_STREAM) != OVE_OK) {
+	if (g_ove_lnx_net_ops->sock_open(OVE_AF_INET, OVE_SOCK_STREAM, 0, &g_sk) != OVE_OK) {
 		g_sk = NULL;
 		return;
 	}
 	ove_sockaddr_t peer;
-	ove_sockaddr_ipv4(&peer, g_mnt.ip[0], g_mnt.ip[1], g_mnt.ip[2], g_mnt.ip[3], g_mnt.port);
-	if (ove_socket_connect(g_sk, &peer, 5000000000ull /* 5s */) != OVE_OK) {
-		ove_socket_close(g_sk);
+	netfs_sockaddr_ipv4(&peer, g_mnt.ip[0], g_mnt.ip[1], g_mnt.ip[2], g_mnt.ip[3], g_mnt.port);
+	if (g_ove_lnx_net_ops->sock_connect(g_sk, &peer, 5000000000ull /* 5s */) != OVE_OK) {
+		g_ove_lnx_net_ops->sock_close(g_sk);
 		g_sk = NULL;
 		return;
 	}
-	ove_socket_set_nonblock(g_sk, 1);
+	g_ove_lnx_net_ops->sock_set_nonblock(g_sk, 1);
 	memset(g_fid_bm, 0, sizeof(g_fid_bm));
 	g_txlen = g_txoff = g_rxlen = 0;
 	if (handshake() != 0) {
-		ove_socket_close(g_sk);
+		g_ove_lnx_net_ops->sock_close(g_sk);
 		g_sk = NULL;
 		return;
 	}
