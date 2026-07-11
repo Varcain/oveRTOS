@@ -700,6 +700,27 @@ static void deliver_signal_parked(const struct ove_lnx_engine *eng, int slot,
 }
 
 /* ---- vfork data isolation (NOMMU) ------------------------------------------ */
+/* A region may be reused as vfork snapshot scratch (which then becomes the child's exec image) or as
+ * a fresh exec region ONLY if no live process occupies it. rowner[r] tracks the region's *owner*, but
+ * that table is the sole liveness signal the pickers below consult, and under deep vfork nesting (a
+ * pipeline over an SSH session: init+getty+inetd+dropbear+shell+members) accounting drift can leave a
+ * live daemon's region reading rowner<0 — reusing it then memcpy's a foreign image straight over that
+ * daemon's live libc data (the inetd flap: init's snapshot trampling inetd's __pthread thread block →
+ * a garbage descriptor → p_errnop=0xffffffff → DACCVIOL). So gate every region pick on BOTH the owner
+ * table AND actual process liveness. In the consistent state an owner's region always has rowner>=0,
+ * so this is redundant and never refuses a genuinely-free region — it only refuses to trample a live
+ * one (worst case a clean -ENOMEM fork refusal instead of a corruption), and it self-heals: once the
+ * occupant exits, both the liveness scan and rowner agree the region is free again. */
+static int region_free(int r, const int *rowner)
+{
+	if (rowner[r] >= 0)
+		return 0;
+	for (int s = 0; s < OVE_LNX_NSLOT; s++)
+		if (g_ove_lnx_proc[s].alive && g_ove_lnx_proc[s].region == r)
+			return 0; /* a live proc runs here despite rowner<0 — do not trample it */
+	return 1;
+}
+
 /* NOMMU has no copy-on-write, so a vfork child SHARES the parent's region + dyn_pool. Correct vfork
  * usage restricts the child to exec/_exit, but real programs write shared data before exec (e.g.
  * dropbear's session child resets SIGCHLD to SIG_DFL, which uClibc-LinuxThreads records in a table in
@@ -715,7 +736,7 @@ static int vfork_snapshot(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par,
 {
 	int rsnap = -1;
 	for (int r = 0; r < OVE_LNX_NREG; r++)
-		if (rowner[r] < 0) {
+		if (region_free(r, rowner)) {
 			rsnap = r;
 			break;
 		}
@@ -1032,7 +1053,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			int nr = p->snap_region;
 			if (nr < 0)
 				for (int r = 0; r < OVE_LNX_NREG; r++)
-					if (rowner[r] < 0) {
+					if (region_free(r, rowner)) {
 						nr = r;
 						break;
 					}
