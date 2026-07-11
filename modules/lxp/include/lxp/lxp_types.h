@@ -36,7 +36,7 @@
  * @brief lxp result / error codes.
  *
  * Zero (@c LXP_OK) on success, negative on error. The numeric values match
- * their `OVE_ERR_*` originals exactly (pinned by the static-asserts below) so
+ * their `LXP_ERR_*` originals exactly (pinned by the static-asserts below) so
  * an oveRTOS host port is a zero-translation pass-through and the guest-errno
  * mapping is unaffected.
  */
@@ -108,7 +108,7 @@ struct lxp_thread_state_times {
 
 /**
  * @brief Snapshot of one host kernel thread. Layout matches struct
- *        ove_thread_info so an oveRTOS port fills it field-for-field.
+ *        lxp_thread_info so an oveRTOS port fills it field-for-field.
  */
 struct lxp_thread_info {
 	const char *name;

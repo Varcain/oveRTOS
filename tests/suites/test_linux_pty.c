@@ -15,7 +15,7 @@
  */
 
 #include "../framework/ove_test.h"
-#include "ove/arena.h"
+#include "lxp/lxp_arena.h"
 #include "lxp/lxp_pty.h"
 #include "lxp/lxp_syscall.h"
 
@@ -25,7 +25,7 @@
 
 static uint8_t g_pool[8192] __attribute__((aligned(16)));
 static lxp_proc_t g_proc;
-static ove_arena_t g_arena;
+static lxp_arena_t g_arena;
 
 /* Strong override of the weak NULL stub in ove_linux_syscall.c so the pty layer's
  * open-end scan (pty_ends) counts THIS proc's master/slave fds — required for the
@@ -43,7 +43,7 @@ int lxp_proc_nslot(void)
 
 static void pty_setup(void)
 {
-	assert_int_equal(ove_arena_init(&g_arena, g_pool, sizeof(g_pool)), OVE_OK);
+	assert_int_equal(lxp_arena_init(&g_arena, g_pool, sizeof(g_pool)), OVE_OK);
 	assert_int_equal(lxp_proc_init(&g_proc, &g_arena, 4096), OVE_OK);
 	g_proc.region_lo = 1; /* all-permitting user_ok except NULL */
 	g_proc.region_hi = UINTPTR_MAX;

@@ -12,17 +12,14 @@
  * (O_NONBLOCK) and needs no ioctls; a couple of EVIOCG* are provided for evtest.
  */
 
-#include "ove_config.h"
+#include "lxp/lxp_config.h"
 
-#if defined(CONFIG_OVE_LINUX_DEV_INPUT)
+#if defined(LXP_ENABLE_DEV_INPUT)
 
 #include "lxp/lxp_dev.h"
-#include "ove/time.h"
+#include "lxp/lxp_types.h"
 #include "lxp/lxp_disp_ops.h"
 #include "lxp_uapi.h"
-#if defined(CONFIG_OVE_FT5336)
-#include "ove/ft5336.h"
-#endif
 
 #include <string.h>
 
@@ -175,7 +172,7 @@ static const struct lxp_dev_ops in_ops = {
 };
 
 /* ---- QEMU synthetic testpad: replay a canned gesture from the tick ---------- */
-#if defined(CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD)
+#if defined(LXP_ENABLE_DEV_INPUT_TESTPAD)
 static void testpad_tick(uint64_t now_us)
 {
 	/* A slow diagonal drag across the panel, then release, looping — deterministic
@@ -193,7 +190,7 @@ static void testpad_tick(uint64_t now_us)
 }
 #endif
 
-#if defined(CONFIG_OVE_FT5336)
+#if defined(LXP_ENABLE_TOUCH)
 /* Poll the FT5336 controller over i2c (~60 Hz) and report the primary touch. */
 static void ft5336_tick(uint64_t now_us)
 {
@@ -223,16 +220,16 @@ void lxp_dev_autoreg_input(void)
 	 * both would let two sources drive one /dev/input/event0 — garbage. */
 	int touch_ready = 0;
 	(void)touch_ready;
-#if defined(CONFIG_OVE_FT5336)
+#if defined(LXP_ENABLE_TOUCH)
 	if (g_lxp_disp_ops->touch_init() == 0) {
 		lxp_dev_tick_register(ft5336_tick); /* real HW touch panel */
 		touch_ready = 1;
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD)
+#if defined(LXP_ENABLE_DEV_INPUT_TESTPAD)
 	if (!touch_ready)
 		lxp_dev_tick_register(testpad_tick); /* QEMU synthetic gestures */
 #endif
 }
 
-#endif /* CONFIG_OVE_LINUX_DEV_INPUT */
+#endif /* LXP_ENABLE_DEV_INPUT */

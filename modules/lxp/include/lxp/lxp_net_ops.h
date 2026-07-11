@@ -21,7 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ove/net.h" /* ove_af_t / ove_sock_type_t / ove_sockaddr_t / ove_netif_t (value types) */
+#include "lxp/lxp_port.h" /* lxp_af_t / lxp_sock_type_t / lxp_sockaddr_t / lxp_netif_t (value types) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,49 +33,13 @@ extern "C" {
 #define LXP_NSOCK 24
 #endif
 
-/* Host-owned opaque socket handle: the module holds these, the host allocates the
- * backing storage inside sock_open / sock_accept. */
-typedef struct lxp_socket *lxp_socket_t;
-
-/* The network port. All calls run on the coordinator thread (the park/retry model
- * serialises them), so a host implementation needs no internal locking. Return
- * values are ove_net status codes (OVE_OK / OVE_ERR_*), which the caller maps to
- * a guest errno; a would-block is OVE_ERR_TIMEOUT. */
-struct lxp_net_ops {
-	/* Allocate storage + open a socket; *out receives the handle on success. */
-	int (*sock_open)(ove_af_t af, ove_sock_type_t type, int proto, lxp_socket_t *out);
-	/* Accept a pending connection: allocate storage for the client, *out = handle. */
-	int (*sock_accept)(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_ns);
-	void (*sock_close)(lxp_socket_t s);
-	int (*sock_connect)(lxp_socket_t s, const ove_sockaddr_t *a, uint64_t timeout_ns);
-	int (*sock_bind)(lxp_socket_t s, const ove_sockaddr_t *a);
-	int (*sock_listen)(lxp_socket_t s, int backlog);
-	int (*sock_send)(lxp_socket_t s, const void *d, size_t n, size_t *sent);
-	int (*sock_recv)(lxp_socket_t s, void *b, size_t n, size_t *got, uint64_t timeout_ns);
-	int (*sock_sendto)(lxp_socket_t s, const void *d, size_t n, size_t *sent,
-			   const ove_sockaddr_t *dst);
-	int (*sock_recvfrom)(lxp_socket_t s, void *b, size_t n, size_t *got, ove_sockaddr_t *src,
-			     uint64_t timeout_ns);
-	int (*sock_set_nonblock)(lxp_socket_t s, int nb);
-	int (*sock_poll)(lxp_socket_t s, unsigned events, unsigned *revents,
-			 uint64_t timeout_ns);
-	int (*sock_shutdown)(lxp_socket_t s, int how);
-	int (*sock_getsockname)(lxp_socket_t s, ove_sockaddr_t *a);
-	int (*sock_getpeername)(lxp_socket_t s, ove_sockaddr_t *a);
-	int (*sock_get_error)(lxp_socket_t s);
-	/* Interface introspection / config for the SIOC* ioctls (ifconfig / route).
-	 * The netif handle is the one the personality holds via lxp_sock_set_netif. */
-	int (*netif_get_addr)(ove_netif_t nif, ove_sockaddr_t *ip, ove_sockaddr_t *gw,
-			      ove_sockaddr_t *nm);
-	int (*netif_get_hwaddr)(ove_netif_t nif, uint8_t mac[6]);
-	int (*netif_get_flags)(ove_netif_t nif, unsigned *flags);
-	int (*netif_set_addr)(ove_netif_t nif, const ove_sockaddr_t *ip, const ove_sockaddr_t *nm,
-			      const ove_sockaddr_t *gw);
-	int (*netif_set_up)(ove_netif_t nif, int up);
-};
+/* struct lxp_net_ops (the handle-based network port), lxp_socket_t, lxp_sockaddr_t
+ * and the address/socket value types all come from lxp_port.h. This header adds
+ * only the module-internal binding below. */
 
 /* The active network port. Set by the host (on oveRTOS: statically to the ove_net
- * adapter). The personality reads it; a non-oveRTOS host may point it elsewhere. */
+ * adapter in backends/common/lxp_ove_adapter.c). The personality reads it; a
+ * non-oveRTOS host may point it elsewhere. */
 extern const struct lxp_net_ops *g_lxp_net_ops;
 
 #ifdef __cplusplus

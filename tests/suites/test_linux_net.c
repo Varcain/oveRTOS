@@ -14,7 +14,7 @@
  */
 
 #include "../framework/ove_test.h"
-#include "ove/arena.h"
+#include "lxp/lxp_arena.h"
 #include "lxp/lxp_net.h"
 #include "lxp/lxp_syscall.h"
 #include "ove/net.h" /* ove_netif_init/storage for the ifconfig ioctl test */
@@ -29,9 +29,9 @@
 
 static uint8_t g_pool[8192] __attribute__((aligned(16)));
 
-static void setup(lxp_proc_t *p, ove_arena_t *arena)
+static void setup(lxp_proc_t *p, lxp_arena_t *arena)
 {
-	assert_int_equal(ove_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
+	assert_int_equal(lxp_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
 	assert_int_equal(lxp_proc_init(p, arena, 4096), OVE_OK);
 	/* All-permitting access_ok range except NULL (region_lo = 1) — a NULL user
 	 * pointer still fails user_ok → -EFAULT. Matches the dev/syscall harnesses. */
@@ -96,7 +96,7 @@ static void guest_addr(lxp_sockaddr_in *a, int port)
 static void test_net_socket_open_stat(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -131,7 +131,7 @@ static void test_net_socket_open_stat(void **state)
 static void test_net_connect_errors(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -163,7 +163,7 @@ static void test_net_connect_errors(void **state)
 static void test_net_loopback_roundtrip(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -219,7 +219,7 @@ static void test_net_loopback_roundtrip(void **state)
 static void test_net_nonblock(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -256,7 +256,7 @@ static void test_net_nonblock(void **state)
 static void test_net_dup_close(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -300,7 +300,7 @@ static void test_net_dup_close(void **state)
 static void test_net_poll(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -342,7 +342,7 @@ static void test_net_poll(void **state)
 static void test_net_ifconfig(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -400,7 +400,7 @@ static void test_net_ifconfig(void **state)
 static void test_net_raw_socket(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -419,7 +419,7 @@ static void test_net_raw_socket(void **state)
 static void test_net_server_accept(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 

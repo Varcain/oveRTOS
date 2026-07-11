@@ -23,7 +23,7 @@
 #define LXP_MAX_KTHREAD 16 /* RTOS threads to track */
 #define LXP_KPID_BASE 1000 /* kernel pids start here; Linux pids are 1..~16 */
 
-struct ove_thread_info; /* from <ove/thread.h> */
+struct lxp_thread_info; /* from <ove/thread.h> */
 
 /* One entry shown by ps/top: a Linux process or an RTOS kernel thread. */
 struct lxp_pentry {

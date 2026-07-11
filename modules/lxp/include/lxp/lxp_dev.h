@@ -27,13 +27,14 @@
  * (@c dev_wait) and the run-loop coordinator retries the op on its own thread
  * — the same park/retry pattern the pipe layer uses (see lxp_pipe_retry).
  *
- * @note Requires @c CONFIG_OVE_LINUX_DEV.
+ * @note Requires @c LXP_ENABLE_DEV.
  * @{
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lxp/lxp_port.h"
 #include "lxp/lxp_syscall.h"
 
 #ifdef __cplusplus
@@ -107,10 +108,7 @@ struct lxp_dev_open {
 	} u;
 };
 
-/** mmap attribute hints for the engine seam (Phase P3). */
-#define LXP_MAP_NC 0u  /**< Normal, non-cacheable. */
-#define LXP_MAP_WT 1u  /**< Normal, write-through. */
-#define LXP_MAP_DEV 2u /**< Device memory. */
+/* LXP_MAP_NC/WT/DEV (map_device attribute hints) come from lxp_port.h. */
 
 /** dev_wait op codes: which parked device op the coordinator retries/completes.
  *  Shared with the run loop (backends/common/lxp_run.c) so it can special-case
@@ -149,7 +147,7 @@ void lxp_input_report_touch(int x, int y, int pressed);
 
 /* ---- syscall-layer <-> core interface (called from ove_linux_syscall.c) ---- */
 /* These are the seams the FD_DEV branches of the syscall handlers call. They
- * are compiled only when CONFIG_OVE_LINUX_DEV is set (the branches are #if'd),
+ * are compiled only when LXP_ENABLE_DEV is set (the branches are #if'd),
  * so no weak fallbacks are needed — the core is always linked when the feature
  * is on (firmware) or under test (host cmocka). */
 

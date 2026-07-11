@@ -27,9 +27,18 @@ static int d_fb_init(void)
 {
 	return ove_fb_init();
 }
-static int d_fb_get_info(struct ove_fb_info *info)
+static int d_fb_get_info(lxp_fb_info_t *info)
 {
-	return ove_fb_get_info(info);
+	struct ove_fb_info o;
+	int r = ove_fb_get_info(&o);
+	if (r == 0 && info) {
+		info->width = o.width;
+		info->height = o.height;
+		info->stride_bytes = o.stride_bytes;
+		info->fmt = (uint32_t)o.fmt;
+		info->smem_len = o.smem_len;
+	}
+	return r;
 }
 static void *d_fb_get_buffer(void)
 {

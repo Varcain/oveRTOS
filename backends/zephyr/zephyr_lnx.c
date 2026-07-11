@@ -223,7 +223,7 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 }
 
 /* (Re)build region ridx's MPU domain (W^X text/data split) for a loaded image. */
-static int setup_domain(int ridx, const ove_flat_t *prog)
+static int setup_domain(int ridx, const lxp_flat_t *prog)
 {
 	uint8_t *region = prog_regions[ridx];
 	if (g_dom_inited[ridx]) {
@@ -296,7 +296,7 @@ static uint8_t *zephyr_dyn_pool(int ridx, size_t *size)
 	return dyn_pools[ridx];
 }
 
-static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
+static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
 			       void *stack_lo)
 {
 	ARG_UNUSED(stack_lo);
@@ -436,6 +436,13 @@ static void zephyr_sleep_ms(unsigned ms)
 	k_msleep((int32_t)ms);
 }
 
+/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout) so
+ * the seam can fill the engine's lxp_thread_info-typed thread_list op. */
+static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
+{
+	return ove_thread_list((struct ove_thread_info *)o, m, n);
+}
+
 static const struct lxp_engine g_zephyr_engine = {
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
@@ -451,7 +458,7 @@ static const struct lxp_engine g_zephyr_engine = {
 	 * coherent here, matching the former weak no-op lxp_guest_flush. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
-	.thread_list = ove_thread_list,
+	.thread_list = lxp_seam_thread_list,
 };
 
 int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,

@@ -277,7 +277,7 @@ static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
 	return 0;
 }
 
-static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
+static int nuttx_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
 			      void *stack_lo)
 {
 	/* The prog/dyn regions are Normal WB-WA CACHEABLE (set_prog_regions), and regions are reused
@@ -381,6 +381,13 @@ static void nuttx_event_wait(unsigned ms)
 	(void)nxsem_tickwait(&g_ev, MSEC2TICK(ms));
 }
 
+/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout) so
+ * the seam can fill the engine's lxp_thread_info-typed thread_list op. */
+static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
+{
+	return ove_thread_list((struct ove_thread_info *)o, m, n);
+}
+
 static const struct lxp_engine g_nuttx_engine = {
 	.region = nuttx_region,
 	.dyn_pool = nuttx_dyn_pool,
@@ -397,7 +404,7 @@ static const struct lxp_engine g_nuttx_engine = {
 	 * coherent here, matching the former weak no-op lxp_guest_flush. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
-	.thread_list = ove_thread_list,
+	.thread_list = lxp_seam_thread_list,
 };
 
 /* ---- unprivileged isolation: MPU region setup ------------------------------ */

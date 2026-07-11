@@ -12,11 +12,12 @@
  *
  * dropbear opens /dev/ptmx (master) + /dev/pts/N (slave = the login shell's ctty) and
  * shuttles bytes between the master and the SSH channel; ash reads/writes the slave.
- * Gated on CONFIG_OVE_LINUX_PTY.
+ * Gated on LXP_ENABLE_PTY.
  */
+#include "lxp/lxp_config.h" /* LXP_PTY_BUF */
 #include "lxp/lxp_pty.h"
 
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 
 #include <string.h>
 
@@ -33,11 +34,6 @@
  * burst is paced, never dropped. 1 KB keeps 2 ptys' .bss (~4.6 KB) inside internal SRAM
  * (the guest program/heap pools already own the external SDRAM); Zephyr's per-program
  * K_USER domains eat SRAM, so halve it there. */
-#if defined(CONFIG_OVE_RTOS_ZEPHYR)
-#define LXP_PTY_BUF 512
-#else
-#define LXP_PTY_BUF 1024
-#endif
 #define LXP_PTY_CANON 256 /* max in-progress canonical line before it must end */
 
 typedef struct {
@@ -461,4 +457,4 @@ long lxp_pty_open_slave(int num, int flags)
 	return num; /* the pool index doubles as the pts number */
 }
 
-#endif /* CONFIG_OVE_LINUX_PTY */
+#endif /* LXP_ENABLE_PTY */

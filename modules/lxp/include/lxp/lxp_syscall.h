@@ -27,15 +27,15 @@
  * sink and a bounded @c ove_arena program break. Unknown syscalls return
  * @c -LXP_ENOSYS.
  *
- * @note Requires @c CONFIG_OVE_LINUX.
+ * @note Requires @c LXP_ENABLE_LINUX.
  * @{
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ove/arena.h"
-#include "ove/types.h"
+#include "lxp/lxp_arena.h"
+#include "lxp/lxp_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -431,7 +431,7 @@ typedef struct lxp_fd {
  * fork+exec land in later phases.
  */
 typedef struct lxp_proc {
-	ove_arena_t *arena;		/**< Backs @c brk and anonymous @c mmap. */
+	lxp_arena_t *arena;		/**< Backs @c brk and anonymous @c mmap. */
 	uintptr_t brk_base;		/**< Initial program break. */
 	uintptr_t brk_cur;		/**< Current program break. */
 	uintptr_t brk_max;		/**< Ceiling imposed by the arena reservation. */
@@ -581,7 +581,7 @@ long lxp_pipe_retry(lxp_proc_t *p);
 
 /**
  * @brief Attach a read-only in-memory rootfs the program can @c open / @c read.
- * @note Requires @c CONFIG_OVE_LINUX.
+ * @note Requires @c LXP_ENABLE_LINUX.
  */
 void lxp_proc_set_rootfs(lxp_proc_t *proc, const lxp_file_t *files, int count);
 
@@ -594,7 +594,7 @@ void lxp_proc_set_rootfs(lxp_proc_t *proc, const lxp_file_t *files, int count);
  * Stops at the "TRAILER!!!" entry.
  *
  * @return number of entries, or -1 on malformed input / table-or-namebuf overflow.
- * @note Requires @c CONFIG_OVE_LINUX.
+ * @note Requires @c LXP_ENABLE_LINUX.
  */
 int lxp_cpio_to_rootfs(const uint8_t *cpio, size_t len, lxp_file_t *out, int max_entries,
 			   char *namebuf, size_t namebuf_len);
@@ -654,8 +654,8 @@ int lxp_time_us(uint64_t *out);
 int lxp_time_ns(uint64_t *out);
 void lxp_cache_clean(const void *base, size_t len);
 void lxp_cache_invalidate(const void *base, size_t len);
-struct ove_thread_info;
-int lxp_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
+struct lxp_thread_info;
+int lxp_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count);
 
 
 /**
@@ -674,11 +674,11 @@ long lxp_rootfs_resolve(const lxp_file_t *fs, int count, const char *abspath,
  * Reserves @p brk_bytes from @p arena for the program break. The caller wires
  * @c write_fn / @c read_fn / @c io_ctx afterwards.
  *
- * @return OVE_OK; OVE_ERR_INVALID_PARAM on bad arguments;
- *         OVE_ERR_NO_MEMORY if the arena cannot satisfy @p brk_bytes.
- * @note Requires @c CONFIG_OVE_LINUX.
+ * @return LXP_OK; LXP_ERR_INVALID_PARAM on bad arguments;
+ *         LXP_ERR_NO_MEMORY if the arena cannot satisfy @p brk_bytes.
+ * @note Requires @c LXP_ENABLE_LINUX.
  */
-int lxp_proc_init(lxp_proc_t *proc, ove_arena_t *arena, size_t brk_bytes);
+int lxp_proc_init(lxp_proc_t *proc, lxp_arena_t *arena, size_t brk_bytes);
 
 /* ELF auxiliary-vector types in the startup block (uClibc scans them after envp). */
 #define LXP_AT_NULL 0
@@ -714,7 +714,7 @@ int lxp_proc_init(lxp_proc_t *proc, ove_arena_t *arena, size_t brk_bytes);
  * @param[in] phnum      FDPIC only: number of program headers (AT_PHNUM).
  * @param[in] entry      FDPIC only: program entry point (AT_ENTRY).
  * @return The initial stack pointer, or NULL on bad arguments / insufficient room.
- * @note Requires @c CONFIG_OVE_LINUX.
+ * @note Requires @c LXP_ENABLE_LINUX.
  */
 void *lxp_setup_stack(void *stack, size_t stack_size, int argc, const char *const argv[],
 			  const char *const envp[], int fdpic, uintptr_t phdr, int phnum,
@@ -730,7 +730,7 @@ void *lxp_setup_stack(void *stack, size_t stack_size, int argc, const char *cons
  * @return The syscall result, Linux-ABI style: a non-negative value on success
  *         or a negated errno on failure. Unknown numbers return
  *         @c -LXP_ENOSYS.
- * @note Requires @c CONFIG_OVE_LINUX.
+ * @note Requires @c LXP_ENABLE_LINUX.
  */
 long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, long a4,
 		     long a5);

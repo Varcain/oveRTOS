@@ -408,7 +408,7 @@ static uint8_t *freertos_dyn_pool(int ridx, size_t *size)
 	return dyn_pools[ridx];
 }
 
-static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *entry, void *sp,
+static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
 				 void *stack_lo)
 {
 	(void)stack_lo;
@@ -505,6 +505,13 @@ static void freertos_event_wait(unsigned ms)
 		xSemaphoreTake(g_ev, pdMS_TO_TICKS(ms));
 }
 
+/* Bridge ove_thread_info -> the module-owned lxp_thread_info (identical layout) so
+ * the seam can fill the engine's lxp_thread_info-typed thread_list op. */
+static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
+{
+	return ove_thread_list((struct ove_thread_info *)o, m, n);
+}
+
 static const struct lxp_engine g_freertos_engine = {
 	.region = freertos_region,
 	.dyn_pool = freertos_dyn_pool,
@@ -520,7 +527,7 @@ static const struct lxp_engine g_freertos_engine = {
 	 * lxp_time_us/ns, lxp_thread_list, lxp_cache_clean/invalidate. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
-	.thread_list = ove_thread_list,
+	.thread_list = lxp_seam_thread_list,
 	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
 	.cache_invalidate = lxp_guest_invalidate,
 };
