@@ -41,7 +41,7 @@ static uint32_t g_in_head; /* total events ever produced (slot = head % RING) */
 static void ring_push(uint16_t type, uint16_t code, int32_t value)
 {
 	uint64_t us = 0;
-	ove_time_get_us(&us);
+	ove_lnx_time_us(&us);
 	struct ove_lnx_input_event *e = &g_in_ring[g_in_head % OVE_LNX_IN_RING];
 	e->sec = (uint32_t)(us / 1000000u);
 	e->usec = (uint32_t)(us % 1000000u);

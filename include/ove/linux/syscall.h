@@ -641,6 +641,22 @@ void ove_lnx_guest_flush(const void *base, size_t len);
  */
 void ove_lnx_guest_invalidate(const void *base, size_t len);
 
+/* ---- OS-service hooks routed through the engine ops ------------------------
+ * The personality core calls these module-internal wrappers instead of the
+ * host's clock / cache primitives; the per-engine seam fills the underlying
+ * ops (see struct ove_lnx_engine). This lets the personality build against any
+ * host without referencing ove_time_* directly.
+ *
+ * ove_lnx_cache_clean/invalidate are the ops-routed equivalents of
+ * ove_lnx_guest_flush/invalidate above (which remain for the direct callers
+ * still using the weak-symbol form during the extraction). */
+int ove_lnx_time_us(uint64_t *out);
+int ove_lnx_time_ns(uint64_t *out);
+void ove_lnx_cache_clean(const void *base, size_t len);
+void ove_lnx_cache_invalidate(const void *base, size_t len);
+struct ove_thread_info;
+int ove_lnx_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
+
 
 /**
  * @brief Resolve an absolute path through a rootfs (following symlinks) to a file's bytes.
