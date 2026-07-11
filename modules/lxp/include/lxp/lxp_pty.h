@@ -11,7 +11,7 @@
  * bytes between the master and the SSH channel; the shell reads/writes the slave.
  *
  * An FD_PTY fd carries @c file_idx = pty-pool index, @c rw = 1 master / 0 slave.
- * Gated on @c CONFIG_OVE_LINUX_PTY.
+ * Gated on @c LXP_ENABLE_PTY.
  */
 #ifndef OVE_LINUX_PTY_H
 #define OVE_LINUX_PTY_H

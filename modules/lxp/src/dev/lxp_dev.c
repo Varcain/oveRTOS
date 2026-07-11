@@ -15,9 +15,9 @@
  * coordinator retries via lxp_dev_retry — mirroring the pipe park/retry.
  */
 
-#include "ove_config.h"
+#include "lxp/lxp_config.h"
 
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 
 #include "lxp/lxp_dev.h"
 
@@ -414,7 +414,7 @@ void lxp_dev_proc_exit(lxp_proc_t *p)
 
 /* ---- Kconfig-auto class registration --------------------------------------- */
 /* Each class driver (fb, input, ...) provides lxp_dev_autoreg_<c>() behind its
- * CONFIG_OVE_LINUX_DEV_<C>. Gate the CALLS on the same config rather than relying on
+ * LXP_ENABLE_DEV_<C>. Gate the CALLS on the same config rather than relying on
  * weak no-op fallbacks: a weak fallback here would be bound to the same-TU definition
  * by GCC's default -fno-semantic-interposition, and the class object — reachable only
  * through this hook — would never be pulled from the archive (so /dev/fb0 /
@@ -422,19 +422,19 @@ void lxp_dev_proc_exit(lxp_proc_t *p)
  * Gating makes the call a direct reference to the compiled class's strong definition.
  * Run once on the coordinator thread (blocking HAL init — ove_fb_init / ove_i2c_create
  * — is legal there). */
-#if defined(CONFIG_OVE_LINUX_DEV_FB)
+#if defined(LXP_ENABLE_DEV_FB)
 void lxp_dev_autoreg_fb(void);
 #endif
-#if defined(CONFIG_OVE_LINUX_DEV_INPUT)
+#if defined(LXP_ENABLE_DEV_INPUT)
 void lxp_dev_autoreg_input(void);
 #endif
 
 void lxp_dev_autoreg_all(void)
 {
-#if defined(CONFIG_OVE_LINUX_DEV_FB)
+#if defined(LXP_ENABLE_DEV_FB)
 	lxp_dev_autoreg_fb();
 #endif
-#if defined(CONFIG_OVE_LINUX_DEV_INPUT)
+#if defined(LXP_ENABLE_DEV_INPUT)
 	lxp_dev_autoreg_input();
 #endif
 }
@@ -452,4 +452,4 @@ __attribute__((weak)) void lxp_input_report_touch(int x, int y, int pressed)
  * no-op keeps a driver's lxp_dev_kick() call resolvable there. */
 __attribute__((weak)) void lxp_dev_kick(void) {}
 
-#endif /* CONFIG_OVE_LINUX_DEV */
+#endif /* LXP_ENABLE_DEV */

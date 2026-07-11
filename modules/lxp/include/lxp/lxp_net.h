@@ -24,17 +24,18 @@
  * Blocking model: like the syscall layer, the entry points run in the
  * SVC/exception context and must NOT block inline. Every backing @c ove_socket
  * is put in non-blocking mode at open, and every op is called so it returns at
- * once; a would-block (@c OVE_ERR_TIMEOUT) parks the caller (@c sock_wait) and
+ * once; a would-block (@c LXP_ERR_TIMEOUT) parks the caller (@c sock_wait) and
  * the run-loop coordinator retries on its own thread — the same park/retry the
  * pipe and device layers use.
  *
- * @note Requires @c CONFIG_OVE_LINUX_NET.
+ * @note Requires @c LXP_ENABLE_NET.
  * @{
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "lxp/lxp_port.h"
 #include "lxp/lxp_syscall.h"
 
 #ifdef __cplusplus
@@ -49,12 +50,8 @@ extern "C" {
 #define LXP_SOCKW_ACCEPT 4u /**< P4: a blocked accept(2). */
 #define LXP_SOCKW_POLL 5u	/**< A blocking poll(2)/select over a set that includes a socket. */
 
-/* Guest socket ABI constants — the Linux/ARM values FDPIC programs pass. */
-#define LXP_AF_INET 2
-#define LXP_AF_INET6 10
-#define LXP_SOCK_STREAM 1
-#define LXP_SOCK_DGRAM 2
-#define LXP_SOCK_RAW 3
+/* Guest socket ABI. LXP_AF_* and LXP_SOCK_STREAM/DGRAM/RAW are the port types
+ * from lxp_port.h (identical Linux values); the flag bits below are guest-only. */
 #define LXP_SOCK_NONBLOCK 0x800   /**< ORed into the type arg. */
 #define LXP_SOCK_CLOEXEC 0x80000  /**< ORed into the type arg (ignored: no exec close). */
 #define LXP_SOCK_TYPE_MASK 0xff   /**< Base type after masking the flag bits. */
@@ -131,7 +128,7 @@ typedef struct lxp_rtentry {
 } lxp_rtentry;
 
 /* ---- syscall-layer <-> socket-core interface (called from ove_linux_syscall.c) ---- */
-/* Compiled only when CONFIG_OVE_LINUX_NET is set (the FD_SOCKET branches are #if'd),
+/* Compiled only when LXP_ENABLE_NET is set (the FD_SOCKET branches are #if'd),
  * so no weak fallbacks are needed — the core is always linked when the feature is on
  * (firmware) or under test (host cmocka). */
 
@@ -181,7 +178,7 @@ void lxp_sock_fstat(int oi, uint32_t *mode, uint64_t *size);
  * ove_netif HAL. The op targets the interface, not one socket, so no open index. */
 long lxp_sock_ioctl(lxp_proc_t *p, unsigned long req, unsigned long arg);
 
-/* Register the interface handle the SIOC* ioctls operate on (opaque ove_netif_t; the
+/* Register the interface handle the SIOC* ioctls operate on (opaque lxp_netif_t; the
  * board/app calls this once at boot, after bringing the interface up). */
 void lxp_sock_set_netif(void *netif_handle);
 

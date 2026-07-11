@@ -31,7 +31,7 @@
  * open-state (fstat, lseek) run inline. The transport is serialized: one 9P
  * request in flight, a FIFO of the rest.
  *
- * @note Requires @c CONFIG_OVE_LINUX_NETFS.
+ * @note Requires @c LXP_ENABLE_NETFS.
  * @{
  */
 
@@ -134,8 +134,8 @@ long lxp_netfs_fill_stat(lxp_proc_t *p, uintptr_t ustat, int statkind, uint32_t 
  *  handlers run PRIVILEGED). Defined in ove_linux_syscall.c. */
 int user_ok(const lxp_proc_t *p, const void *ptr, size_t len, int write);
 
-/* ---- Phase B: exec a program off the mount (CONFIG_OVE_LINUX_NETFS_EXEC) ---- */
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* ---- Phase B: exec a program off the mount (LXP_ENABLE_NETFS_EXEC) ---- */
+#if defined(LXP_ENABLE_NETFS_EXEC)
 /** exec_file_idx marker: the image to launch lives in the netfs exec staging buffer (RAM),
  *  not the rootfs table. The run loop's EV_EXEC sources it via lxp_netfs_exec_image. */
 #define LXP_NETFS_EXEC_SENTINEL (-2)
@@ -150,7 +150,7 @@ const uint8_t *lxp_netfs_exec_image(size_t *size);
 
 /** Engine-provided RAM staging buffer for a fetched remote ELF (SDRAM on the STM32, a static
  *  buffer under test). Returns the buffer + its capacity in @p cap, or NULL if unavailable.
- *  Provided by the backend/board (gated on CONFIG_OVE_LINUX_NETFS_EXEC). */
+ *  Provided by the backend/board (gated on LXP_ENABLE_NETFS_EXEC). */
 uint8_t *lxp_netfs_exec_stage(size_t *cap);
 #endif
 

@@ -15,7 +15,7 @@
  */
 
 #include "../framework/ove_test.h"
-#include "ove/arena.h"
+#include "lxp/lxp_arena.h"
 #include "lxp/lxp_netfs.h"
 #include "lxp/lxp_syscall.h"
 
@@ -335,9 +335,9 @@ static void *mock9p(void *arg)
 /* ---- harness --------------------------------------------------------------- */
 static uint8_t g_pool[8192] __attribute__((aligned(16)));
 
-static void setup(lxp_proc_t *p, ove_arena_t *arena)
+static void setup(lxp_proc_t *p, lxp_arena_t *arena)
 {
-	assert_int_equal(ove_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
+	assert_int_equal(lxp_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
 	assert_int_equal(lxp_proc_init(p, arena, 4096), OVE_OK);
 	p->region_lo = 1;
 	p->region_hi = UINTPTR_MAX;
@@ -415,7 +415,7 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 static void test_netfs_browse(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 	start_mock_and_mount();
@@ -532,7 +532,7 @@ static void test_netfs_browse(void **state)
 	 * the run loop's EV_EXEC launches from the staging buffer). */
 	{
 		lxp_proc_t xp;
-		ove_arena_t xa;
+		lxp_arena_t xa;
 		setup(&xp, &xa);
 		long xr = lxp_netfs_exec_fetch(&xp, "/mnt/pi/prog");
 		assert_int_equal(xr, 0); /* parked */

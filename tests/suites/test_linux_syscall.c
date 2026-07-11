@@ -11,7 +11,7 @@
  */
 
 #include "../framework/ove_test.h"
-#include "ove/arena.h"
+#include "lxp/lxp_arena.h"
 #include "lxp/lxp_syscall.h"
 
 #include <stdio.h>
@@ -40,9 +40,9 @@ static long cap_write(void *ctx, int fd, const void *buf, size_t len)
 
 static uint8_t g_pool[8192] __attribute__((aligned(16)));
 
-static void setup_proc(lxp_proc_t *p, ove_arena_t *arena)
+static void setup_proc(lxp_proc_t *p, lxp_arena_t *arena)
 {
-	assert_int_equal(ove_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
+	assert_int_equal(lxp_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
 	assert_int_equal(lxp_proc_init(p, arena, 4096), OVE_OK);
 	/* The host test uses ordinary host buffers, not a bounded program region, so give this proc an
 	 * all-permitting access_ok range (NULL is still rejected via region_lo=1). On-target the run loop
@@ -57,7 +57,7 @@ static void setup_proc(lxp_proc_t *p, ove_arena_t *arena)
 static void test_lnx_write(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -75,7 +75,7 @@ static void test_lnx_write(void **state)
 static void test_lnx_writev(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -92,7 +92,7 @@ static void test_lnx_writev(void **state)
 static void test_lnx_brk(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -113,7 +113,7 @@ static void test_lnx_brk(void **state)
 static void test_lnx_mmap(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -144,7 +144,7 @@ static void test_lnx_mmap(void **state)
 static void test_lnx_init_stubs(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -303,7 +303,7 @@ static const lxp_file_t k_rootfs[] = {
 static void test_lnx_file(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 	lxp_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
@@ -366,7 +366,7 @@ static void test_lnx_file(void **state)
 static void test_lnx_tmpfs(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 	lxp_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
@@ -435,7 +435,7 @@ static int dirents_find(const uint8_t *buf, long len, const char *name)
 static void test_lnx_getdents(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 	lxp_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
@@ -480,7 +480,7 @@ static void test_lnx_getdents(void **state)
 static void test_lnx_execve(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 	lxp_proc_set_rootfs(&p, k_rootfs, K_ROOTFS_N);
@@ -508,7 +508,7 @@ static void test_lnx_execve(void **state)
 static void test_lnx_exit_and_unknown(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -571,7 +571,7 @@ static void test_lnx_cpio(void **state)
 	assert_true((tbl[2].mode & LXP_S_IFMT) == LXP_S_IFREG);
 
 	/* The parsed table drives the VFS: open + read the file. */
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 	lxp_proc_set_rootfs(&p, tbl, n);
@@ -588,7 +588,7 @@ static void test_lnx_cpio(void **state)
 static void test_lnx_user_ok(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 
@@ -632,7 +632,7 @@ static void test_lnx_user_ok(void **state)
 static void test_lnx_user_strnlen(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup_proc(&p, &arena);
 

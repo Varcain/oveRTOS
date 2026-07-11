@@ -24,14 +24,14 @@
 extern "C" {
 #endif
 
-struct ove_fb_info; /* full definition in <ove/fb.h>; used here only by pointer */
+#include "lxp/lxp_port.h" /* lxp_fb_info_t */
 
 /* The display / input port. fb_* are required when /dev/fb0 is built; touch_* may
  * be NULL when there is no touch controller (the input driver then relies on the
  * synthetic testpad or an external feeder). */
 struct lxp_disp_ops {
 	int (*fb_init)(void);
-	int (*fb_get_info)(struct ove_fb_info *info);
+	int (*fb_get_info)(lxp_fb_info_t *info);
 	void *(*fb_get_buffer)(void);
 	void (*fb_flush)(int x, int y, int w, int h);
 	void (*fb_present)(void);

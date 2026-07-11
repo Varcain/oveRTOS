@@ -193,27 +193,13 @@ typedef struct lxp_config {
 	uint16_t nreg, nslot, npipe, pipe_buf, pty_buf;
 } lxp_config_t;
 
-/* ---- entry points ---------------------------------------------------------- */
-/**
- * @brief Run the Linux personality. Blocks, driving the coordinator loop.
- *
- * @param os       OS/engine port (required).
- * @param net      Net port, or NULL when built without LXP_ENABLE_NET.
- * @param disp     Display/input port, or NULL when built without LXP_ENABLE_DEV.
- * @param cfg      Geometry + sizing overrides (may be NULL for all defaults).
- * @param run_cfg  Rootfs image + boot parameters.
- * @param path     init program path.
- */
-int lxp_run(const lxp_os_ops_t *os, const lxp_net_ops_t *net, const lxp_display_ops_t *disp,
-	    const lxp_config_t *cfg, const lxp_run_config_t *run_cfg, const char *path, int argc,
-	    const char *const argv[]);
-
-/** @brief Set the eth0 the netfs/ioctl paths report on (also seeded from net->netif). */
-void lxp_net_set_netif(lxp_netif_t nif);
-
-/** @brief Configure the static 9P remote-fs mount (LXP_ENABLE_NETFS). */
-void lxp_netfs_mount_config(const char *mountpoint, const uint8_t ip[4], uint16_t port,
-			    const char *aname, const char *uname);
+/* ---- entry points ------------------------------------------------------------
+ * The personality's actual run entry (lxp_run), lxp_net_set_netif, and
+ * lxp_netfs_mount_config are declared in the module's own API headers (lxp_run.h,
+ * lxp_net.h, lxp_netfs.h). The current host binding fills the ops via the module
+ * globals (g_lxp_net_ops / g_lxp_disp_ops + the per-engine lxp_engine vtable) set
+ * before the run, rather than passing them to lxp_run(); the ops structs above are
+ * the contract those bindings implement. */
 
 #ifdef __cplusplus
 }

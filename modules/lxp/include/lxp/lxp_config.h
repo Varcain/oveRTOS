@@ -26,36 +26,21 @@
 #endif
 #endif
 
-/* ---- feature gates (were CONFIG_OVE_LINUX* / _LOADER / _FT5336) ------------- */
+/* ---- feature gates -----------------------------------------------------------
+ * The module gates with #if defined(LXP_ENABLE_X) — so "defined" means ENABLED and
+ * these must NOT be defined-to-0 to disable. The core (the personality itself +
+ * the FDPIC loader) is always on; the optional subsystems are OPT-IN: the consumer
+ * DEFINES the ones it wants (the oveRTOS build maps its Kconfig to -D flags; a
+ * standalone consumer defines them here / in lxp_config_user.h / on the command
+ * line). Optional gates (leave undefined to disable):
+ *   LXP_ENABLE_NET, LXP_ENABLE_NETFS, LXP_ENABLE_NETFS_EXEC, LXP_ENABLE_PTY,
+ *   LXP_ENABLE_DEV, LXP_ENABLE_DEV_FB, LXP_ENABLE_DEV_INPUT,
+ *   LXP_ENABLE_DEV_INPUT_TESTPAD, LXP_ENABLE_TOUCH. */
+#ifndef LXP_ENABLE_LINUX
+#define LXP_ENABLE_LINUX 1
+#endif
 #ifndef LXP_ENABLE_LOADER
-#define LXP_ENABLE_LOADER 1 /* the FDPIC loader is the core; on by default */
-#endif
-#ifndef LXP_ENABLE_NET
-#define LXP_ENABLE_NET 0
-#endif
-#ifndef LXP_ENABLE_NETFS
-#define LXP_ENABLE_NETFS 0
-#endif
-#ifndef LXP_ENABLE_NETFS_EXEC
-#define LXP_ENABLE_NETFS_EXEC 0
-#endif
-#ifndef LXP_ENABLE_PTY
-#define LXP_ENABLE_PTY 0
-#endif
-#ifndef LXP_ENABLE_DEV
-#define LXP_ENABLE_DEV 0
-#endif
-#ifndef LXP_ENABLE_DEV_FB
-#define LXP_ENABLE_DEV_FB 0
-#endif
-#ifndef LXP_ENABLE_DEV_INPUT
-#define LXP_ENABLE_DEV_INPUT 0
-#endif
-#ifndef LXP_ENABLE_DEV_INPUT_TESTPAD
-#define LXP_ENABLE_DEV_INPUT_TESTPAD 0
-#endif
-#ifndef LXP_ENABLE_TOUCH
-#define LXP_ENABLE_TOUCH 0 /* was CONFIG_OVE_FT5336 (the touch controller hook) */
+#define LXP_ENABLE_LOADER 1 /* the FDPIC loader is core; always on */
 #endif
 
 /* ---- sizing / placement knobs (were the CONFIG_OVE_RTOS_* #if blocks) ------ */

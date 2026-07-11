@@ -12,7 +12,7 @@
  */
 
 #include "../framework/ove_test.h"
-#include "ove/arena.h"
+#include "lxp/lxp_arena.h"
 #include "lxp/lxp_dev.h"
 #include "lxp/lxp_syscall.h"
 
@@ -145,9 +145,9 @@ static const lxp_file_t g_fs[] = {
 	{.path = "/dev", .data = NULL, .size = 0, .mode = LXP_S_IFDIR | 0755u},
 };
 
-static void setup(lxp_proc_t *p, ove_arena_t *arena)
+static void setup(lxp_proc_t *p, lxp_arena_t *arena)
 {
-	assert_int_equal(ove_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
+	assert_int_equal(lxp_arena_init(arena, g_pool, sizeof(g_pool)), OVE_OK);
 	assert_int_equal(lxp_proc_init(p, arena, 4096), OVE_OK);
 	/* All-permitting access_ok range except NULL (region_lo = 1), matching the
 	 * syscall-suite harness; a NULL ioctl arg still fails user_ok → -EFAULT. */
@@ -171,7 +171,7 @@ static long dev_open(lxp_proc_t *p, int flags)
 static void test_dev_open_close(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -193,7 +193,7 @@ static void test_dev_open_close(void **state)
 static void test_dev_read_write(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -220,7 +220,7 @@ static void test_dev_read_write(void **state)
 static void test_dev_ioctl(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -257,7 +257,7 @@ static void test_dev_ioctl(void **state)
 static void test_dev_mmap(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 	long fd = dev_open(&p, LXP_O_RDWR);
@@ -283,7 +283,7 @@ static void test_dev_mmap(void **state)
 static void test_dev_stat_lseek_poll(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -335,7 +335,7 @@ static void test_dev_stat_lseek_poll(void **state)
 static void test_dev_deferred_block(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -376,7 +376,7 @@ static void test_dev_deferred_block(void **state)
 static void test_dev_dup_refcount(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 
@@ -398,7 +398,7 @@ static void test_dev_dup_refcount(void **state)
 static void test_dev_getdents(void **state)
 {
 	(void)state;
-	ove_arena_t arena;
+	lxp_arena_t arena;
 	lxp_proc_t p;
 	setup(&p, &arena);
 

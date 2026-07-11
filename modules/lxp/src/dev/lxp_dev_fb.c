@@ -13,19 +13,19 @@
  * store to a 2-byte-aligned pixel would UsageFault); the run-loop tick presents.
  */
 
-#include "ove_config.h"
+#include "lxp/lxp_config.h"
 
-#if defined(CONFIG_OVE_LINUX_DEV_FB)
+#if defined(LXP_ENABLE_DEV_FB)
 
-#include "ove/fb.h"
+#include "lxp/lxp_port.h"
 #include "lxp/lxp_dev.h"
 #include "lxp/lxp_disp_ops.h"
-#include "ove/time.h"
+#include "lxp/lxp_types.h"
 #include "lxp_uapi.h"
 
 #include <string.h>
 
-static struct ove_fb_info g_fbinfo;
+static lxp_fb_info_t g_fbinfo;
 
 /* Copy `len` bytes with 16-bit stores when both ends are halfword-aligned (fb
  * writes always are: RGB565 pixels at even byte offsets), else byte-by-byte. */
@@ -201,4 +201,4 @@ void lxp_dev_autoreg_fb(void)
 		lxp_dev_tick_register(fb_tick);
 }
 
-#endif /* CONFIG_OVE_LINUX_DEV_FB */
+#endif /* LXP_ENABLE_DEV_FB */

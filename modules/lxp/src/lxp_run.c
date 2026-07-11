@@ -22,21 +22,21 @@
 
 #include <string.h>
 
-#include "ove/arena.h"
-#include "ove/thread.h"
-#include "ove/time.h"
+#include "lxp/lxp_arena.h"
+#include "lxp/lxp_types.h"
+#include "lxp/lxp_types.h"
 #include "lxp/lxp_seam.h"
 #include "lxp/lxp_stats.h"
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 #include "lxp/lxp_dev.h" /* device-layer park/retry + autoreg + tick + kick */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 #include "lxp/lxp_net.h" /* socket-layer park/retry + fork/exit fd lifecycle */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 #include "lxp/lxp_netfs.h" /* remote-fs park/retry + init/pump + fork/exit lifecycle */
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 #include "lxp/lxp_pty.h" /* pty-layer park/retry (lxp_pty_retry) */
 #endif
 
@@ -90,9 +90,9 @@ static int lnx_slot_of_name(const char *name)
  * into /proc/stat idle, not shown as a process (else it crushes top's %CPU math). */
 static void refresh_stats(void)
 {
-	struct ove_thread_info ti[LXP_MAX_KTHREAD];
+	struct lxp_thread_info ti[LXP_MAX_KTHREAD];
 	size_t n = 0;
-	if (lxp_thread_list(ti, LXP_MAX_KTHREAD, &n) != OVE_OK)
+	if (lxp_thread_list(ti, LXP_MAX_KTHREAD, &n) != LXP_OK)
 		n = 0; /* no host introspection: /proc shows only the Linux procs */
 
 	/* 1. Charge each live Linux thread's CPU to its proc (slot from the name). */
@@ -139,11 +139,11 @@ volatile int g_lxp_active;
 /* g_lxp_halt is defined in the syscall layer (reboot(2) sets it) so the
  * host syscall tests link without the run loop; the run loop only observes it. */
 
-static ove_arena_t g_arenas[LXP_NREG];
+static lxp_arena_t g_arenas[LXP_NREG];
 /* vfork data isolation: a snapshot of the shared arena's allocator metadata, taken when a vfork
  * child is spawned (keyed by the child's slot) and restored when it execs/exits — the region+dyn_pool
  * BYTES are snapshotted into a spare region, but g_arenas[] lives in coordinator memory. */
-static ove_arena_t g_snap_arena[LXP_NSLOT];
+static lxp_arena_t g_snap_arena[LXP_NSLOT];
 static const lxp_run_config_t *g_cfg;
 static const struct lxp_engine *g_eng; /* for the dispatch to post coordinator events */
 
@@ -156,14 +156,14 @@ int lxp_time_us(uint64_t *out)
 	if (g_eng && g_eng->time_us)
 		return g_eng->time_us(out);
 	*out = 0;
-	return OVE_ERR_NOT_SUPPORTED;
+	return LXP_ERR_NOT_SUPPORTED;
 }
 int lxp_time_ns(uint64_t *out)
 {
 	if (g_eng && g_eng->time_ns)
 		return g_eng->time_ns(out);
 	*out = 0;
-	return OVE_ERR_NOT_SUPPORTED;
+	return LXP_ERR_NOT_SUPPORTED;
 }
 void lxp_cache_clean(const void *base, size_t len)
 {
@@ -175,13 +175,13 @@ void lxp_cache_invalidate(const void *base, size_t len)
 	if (g_eng && g_eng->cache_invalidate)
 		g_eng->cache_invalidate(base, len);
 }
-int lxp_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
+int lxp_thread_list(struct lxp_thread_info *out, size_t max_count, size_t *actual_count)
 {
 	if (g_eng && g_eng->thread_list)
 		return g_eng->thread_list(out, max_count, actual_count);
 	if (actual_count)
 		*actual_count = 0;
-	return OVE_ERR_NOT_SUPPORTED;
+	return LXP_ERR_NOT_SUPPORTED;
 }
 
 /* The cpio data region [lo, hi): the embedded rootfs files' bytes. A dynamic FDPIC proc now runs
@@ -211,7 +211,7 @@ int lxp_proc_nslot(void)
 	return LXP_NSLOT;
 }
 
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 /* Wake the coordinator so it retries parked device I/O at once (a driver calls this
  * from its data-ready path). Strong override of the weak no-op in the device core
  * — that stub is used only by the host test, which links no run loop. */
@@ -222,11 +222,11 @@ void lxp_dev_kick(void)
 }
 #endif
 
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 /* Wake the coordinator so it retries parked socket I/O at once — the network RX task calls
  * this after delivering a batch of frames to the stack, so a parked recv/connect/accept
  * resumes the instant its data/ACK lands instead of on the next ≤5 ms retry tick. Mirrors
- * lxp_dev_kick; only ever called with CONFIG_OVE_LINUX_NET (⇒ OVE_LINUX) set, so this
+ * lxp_dev_kick; only ever called with LXP_ENABLE_NET (⇒ OVE_LINUX) set, so this
  * run loop is always linked and no weak no-op is needed. */
 void lxp_sock_kick(void)
 {
@@ -235,7 +235,7 @@ void lxp_sock_kick(void)
 }
 #endif
 
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 /* Wake the coordinator so it pumps the 9P transport at once — the eth RX task calls this
  * after delivering frames, so a parked netfs op resumes the instant its reply lands. */
 void lxp_netfs_kick(void)
@@ -539,7 +539,7 @@ static int launch(const struct lxp_engine *eng, int sidx, int ridx, const uint8_
 		  size_t len, int pid, int ppid, int argc, const char *const argv[], int remote_exec)
 {
 	uint8_t *region = eng->region(ridx);
-	ove_flat_t prog;
+	lxp_flat_t prog;
 	/* Every personality program is an FDPIC ELF (0x7f'ELF', ELFOSABI_ARM_FDPIC); reject
 	 * anything else. spawn_launch reads prog.is_fdpic / prog.got to put the GOT base in r9. */
 	if (!(len >= 4 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F'))
@@ -549,9 +549,9 @@ static int launch(const struct lxp_engine *eng, int sidx, int ridx, const uint8_
 	 * not a timing one: the coordinator reads the NOR through a bounded, non-cacheable MPU region
 	 * (lxp_rootfs_window), so no D-cache burst or speculative prefetch can garble it and a
 	 * context switch mid-load is harmless.  No preemption masking needed. */
-	int lrc = ove_loader_load_fdpic(&prog, data, len, region, LXP_PROG_REGION_SIZE, 0,
+	int lrc = lxp_loader_load_fdpic(&prog, data, len, region, LXP_PROG_REGION_SIZE, 0,
 					remote_exec);
-	if (lrc != OVE_OK)
+	if (lrc != LXP_OK)
 		return -1;
 
 	/* FDPIC dynamic exec (DT_NEEDED): load the interpreter ld.so just past the exec in the
@@ -571,12 +571,12 @@ static int launch(const struct lxp_engine *eng, int sidx, int ridx, const uint8_
 		    !ld_data)
 			return -1; /* no interpreter in the rootfs */
 		uintptr_t ld_base = (uintptr_t)region + ((prog.region_used + 15u) & ~15u);
-		ove_flat_t ld;
-		int ldrc = ove_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
+		lxp_flat_t ld;
+		int ldrc = lxp_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
 						 LXP_PROG_REGION_SIZE -
 							 (size_t)(ld_base - (uintptr_t)region),
 						 1, 0); /* ld.so text is XIP from the rootfs (no copy) */
-		if (ldrc != OVE_OK)
+		if (ldrc != LXP_OK)
 			return -1;
 		pc = ld.entry;
 		/* AT_BASE = ld.so's ELF header, which ld.so reads at _dl_start (dl-startup.c). With the
@@ -608,7 +608,7 @@ static int launch(const struct lxp_engine *eng, int sidx, int ridx, const uint8_
 		arena_mem = eng->dyn_pool(ridx, &arena_sz);
 		stack_lo = rw; /* the region tail is the stack; the arena is in PSRAM */
 	}
-	ove_arena_init(&g_arenas[ridx], arena_mem, arena_sz);
+	lxp_arena_init(&g_arenas[ridx], arena_mem, arena_sz);
 	lxp_proc_init(&g_lxp_proc[sidx], &g_arenas[ridx], 0x8000);
 	g_lxp_proc[sidx].write_fn = g_cfg->write_fn;
 	g_lxp_proc[sidx].read_fn = g_cfg->read_fn;
@@ -867,12 +867,12 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 	lxp_stats_reset();
 	for (int i = 0; i < LXP_NSLOT; i++)
 		g_sig_save[i].active = 0;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	/* Register the Kconfig-enabled /dev class drivers (fb, input, ...) on this
 	 * coordinator thread, where blocking HAL init (ove_fb_init, ove_i2c_create) is legal. */
 	lxp_dev_autoreg_all();
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	/* Connect the remote-fs mount (9P Tversion/Tattach). Coordinator thread, where blocking
 	 * init is legal; a down server is non-fatal — the mount reconnects lazily. */
 	lxp_netfs_init();
@@ -979,14 +979,14 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 				et = EV_SOCKWAIT;
 				break;
 			}
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 			if (p->netfs_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_NETFSWAIT;
 				break;
 			}
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 			if (p->pty_wait && g_lxp_used[s]) {
 				es = s;
 				et = EV_PTYWAIT;
@@ -1023,13 +1023,13 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 			}
 			lxp_proc_t *ch = &g_lxp_proc[c];
 			*ch = *par; /* vfork shares the image + region */
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 			lxp_dev_fork_inherit(ch); /* the child shares the parent's device opens */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 			lxp_sock_fork_inherit(ch); /* the child shares the parent's socket opens */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 			lxp_netfs_fork_inherit(ch); /* the child shares the parent's remote-fs opens */
 #endif
 			ch->pid = next_pid++;
@@ -1084,13 +1084,13 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 				 * session: init+getty+inetd+dropbear+shell+members). Refuse the fork
 				 * (-ENOMEM) rather than share the parent's region and let the child
 				 * corrupt it; the caller sees a clean fork failure, not a fault. */
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 				lxp_dev_proc_exit(ch); /* undo the fd fork-inherit refcounts */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 				lxp_sock_proc_exit(ch);
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 				lxp_netfs_proc_exit(ch);
 #endif
 				ch->alive = 0;
@@ -1171,7 +1171,7 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 			const uint8_t *img_data = cfg->rootfs[idx].data;
 			size_t img_size = cfg->rootfs[idx].size;
 			int rexec = 0;
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 			/* A program off the remote mount: its bytes are in the netfs exec staging
 			 * buffer (RAM), not the rootfs; launch copies its text into the region (RWX). */
 			if (idx == LXP_NETFS_EXEC_SENTINEL) {
@@ -1201,13 +1201,13 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 			lxp_proc_t *p = &g_lxp_proc[es];
 			int cpid = p->pid, status = p->exit_status, vp = p->vfork_parent_slot,
 			    ppid = p->ppid;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 			lxp_dev_proc_exit(p); /* release the exiting process's device opens */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 			lxp_sock_proc_exit(p); /* release the exiting process's socket opens */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 			lxp_netfs_proc_exit(p); /* release the exiting process's remote-fs opens */
 #endif
 			eng->abort_slot(es);
@@ -1261,14 +1261,14 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 			idle = 0;
 			continue;
 		}
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 		if (et == EV_NETFSWAIT) { /* free the spin thread; the netfs retry below resumes it. */
 			eng->abort_slot(es);
 			idle = 0;
 			continue;
 		}
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 		if (et == EV_PTYWAIT) { /* free the spin thread; the pty retry below resumes it. */
 			eng->abort_slot(es);
 			idle = 0;
@@ -1372,7 +1372,7 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 					deliver_signal_parked(eng, s, p, sig, -LXP_EINTR);
 					progress = 1;
 				}
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 			} else if (p->pending_sig && !g_lxp_used[s] && p->pty_wait) {
 				/* Signal to a proc parked in a pty read/write: ^C (SIGINT) from the line
 				 * discipline lands here — the shell's handler runs and its slave read
@@ -1417,7 +1417,7 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 					progress = 1;
 				}
 			}
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 			/* Blocked device I/O: retry (the driver may now have data/space); resume
 			 * the proc when the op completes. Mirrors the pipe retry above. */
 			if (p->dev_wait == LXP_DEVW_MMAP && !g_lxp_used[s]) {
@@ -1447,7 +1447,7 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 				}
 			}
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 			/* Blocked socket I/O: retry (connect may have completed, or data/space
 			 * arrived); resume the proc when the op completes. Mirrors the pipe/device
 			 * retries above. */
@@ -1460,7 +1460,7 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 				}
 			}
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 			/* Blocked remote-fs I/O: pump the 9P transport + advance the parked op;
 			 * resume the proc when its reply completes. Mirrors the socket retry. */
 			if (p->netfs_wait && !g_lxp_used[s]) {
@@ -1475,7 +1475,7 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 				}
 			}
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 			/* Blocked pty I/O: retry (the peer end may have drained/filled the ring);
 			 * resume the proc when the op completes. Mirrors the pipe/socket retries. */
 			if (p->pty_wait && !g_lxp_used[s]) {
@@ -1522,10 +1522,10 @@ int lxp_run_common(const struct lxp_engine *eng, const lxp_run_config_t *cfg,
 			last_refresh_us = now;
 			refresh_stats();
 		}
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		lxp_dev_tick(now); /* coordinator-thread periodic work (fb flush, touch poll) */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 		lxp_netfs_tick(now); /* pump the 9P transport: background clunks + lazy reconnect */
 #endif
 		/* Block until a program parks (event_post) or the timeout. NOT a busy 1ms poll —

@@ -277,6 +277,29 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
 # Linux personality — engine-agnostic syscall dispatch + per-engine SVC seam.
 {% if config.get("CONFIG_OVE_LINUX") == True %}
 set(OVE_LINUX ON)
+# ---- lxp module: map oveRTOS Kconfig -> the module's own LXP_ENABLE_* + sizing ----
+# The lxp module (modules/lxp) is OS-agnostic: it gates on LXP_ENABLE_* / LXP_* knobs,
+# not CONFIG_OVE_*. oveRTOS supplies them here from its Kconfig (its adapters + seams,
+# which include the module's headers, need them too, so these are compile-wide).
+add_compile_definitions(LXP_ENABLE_LINUX=1 LXP_ENABLE_LOADER=1)
+{% for feat, cfg in [("NET","CONFIG_OVE_LINUX_NET"), ("NETFS","CONFIG_OVE_LINUX_NETFS"),
+                     ("NETFS_EXEC","CONFIG_OVE_LINUX_NETFS_EXEC"), ("PTY","CONFIG_OVE_LINUX_PTY"),
+                     ("DEV","CONFIG_OVE_LINUX_DEV"), ("DEV_FB","CONFIG_OVE_LINUX_DEV_FB"),
+                     ("DEV_INPUT","CONFIG_OVE_LINUX_DEV_INPUT"),
+                     ("DEV_INPUT_TESTPAD","CONFIG_OVE_LINUX_DEV_INPUT_TESTPAD"),
+                     ("TOUCH","CONFIG_OVE_FT5336")] %}
+{% if config.get(cfg) == True %}
+add_compile_definitions(LXP_ENABLE_{{ feat }}=1)
+{% endif %}
+{% endfor %}
+{% if config.get("CONFIG_OVE_RTOS_ZEPHYR") == True %}
+add_compile_definitions(LXP_PROG_REGION_SIZE=0x80000u LXP_PIPE_BUF=2048 LXP_PTY_BUF=512)
+{% endif %}
+{% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+# STM32F746: bigger pipe pool for SSH pipelines, relocated to external SDRAM.
+add_compile_definitions(LXP_NPIPE=12)
+add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]==])
+{% endif %}
 # The embedded BusyBox rootfs.cpio comes from <OVE_BUILDROOT>/<OVE_LINUX_ROOTFS_OUTPUT>/images/.
 # Both are CONFIG_* (Kconfig) — no local paths are baked into the oveRTOS sources. A relative
 # OVE_BUILDROOT is resolved against the oveRTOS root in cmake/OveLinuxFixtures.cmake.
@@ -287,6 +310,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_run.c")
 # CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_stats.c")
+# The module's own vendored copies of the arena allocator + FDPIC loader (the
+# oveRTOS originals in backends/common/ove_arena.c + loader/ove_loader.c stay for
+# their own tests / non-personality users).
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_arena.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_loader.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV") == True %}
 # /dev character-device layer: core registry + routing (class drivers added by
 # their own CONFIG_OVE_LINUX_DEV_* below).

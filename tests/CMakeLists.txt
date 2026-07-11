@@ -78,6 +78,9 @@ set(STUB_SOURCES
     ${OVE_ROOT}/backends/common/ove_arena.c
     # Module loader (platform-independent)
     ${OVE_ROOT}/loader/ove_loader.c
+    # The lxp module's own vendored arena + loader (used by the module sources).
+    ${OVE_ROOT}/modules/lxp/src/lxp_arena.c
+    ${OVE_ROOT}/modules/lxp/src/lxp_loader.c
     # Linux personality syscall dispatch (platform-independent)
     ${OVE_ROOT}/modules/lxp/src/lxp_syscall.c
     # Linux personality /dev character-device core (CONFIG_OVE_LINUX_DEV)
@@ -204,6 +207,16 @@ function(ove_add_stub_variant name)
         CONFIG_OVE_LINUX_NETFS=1
         CONFIG_OVE_LINUX_NETFS_EXEC=1
         CONFIG_OVE_LINUX_PTY=1
+        # lxp module feature gates. These MUST be compile-defs (the module includes
+        # lxp_config.h, not tests/ove_config.h), and the module gates with
+        # #if defined(LXP_ENABLE_X) so their mere presence enables the subsystem.
+        LXP_ENABLE_LINUX=1
+        LXP_ENABLE_LOADER=1
+        LXP_ENABLE_DEV=1
+        LXP_ENABLE_NET=1
+        LXP_ENABLE_NETFS=1
+        LXP_ENABLE_NETFS_EXEC=1
+        LXP_ENABLE_PTY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1
         CONFIG_OVE_UART=1

@@ -36,7 +36,7 @@ extern "C" {
  */
 
 /** Host configuration for a personality run. */
-typedef struct {
+typedef struct lxp_run_config {
 	const lxp_file_t *rootfs; /**< Parsed (read-only) rootfs table. */
 	int rootfs_count;	      /**< Entry count in @p rootfs. */
 	lxp_write_fn write_fn;    /**< Console sink (fd 1/2). */

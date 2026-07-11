@@ -17,14 +17,14 @@
  * transport is serialized — one 9P message in flight, a FIFO of the rest.
  */
 
-#include "ove_config.h"
+#include "lxp/lxp_config.h"
 
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 
 #include "lxp/lxp_netfs.h"
-#include "ove/net.h"
+#include "lxp/lxp_port.h"
 #include "lxp/lxp_net_ops.h"
-#include "ove/time.h"
+#include "lxp/lxp_types.h"
 
 #include <string.h>
 
@@ -175,7 +175,7 @@ static struct netfs_req g_req[NETFS_NREQ];
 static uint32_t g_req_seq;
 static int g_inflight = -1; /* request whose message is being sent / awaiting reply. */
 
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 static uint8_t *g_exec_buf;  /* the engine's RAM staging buffer for a fetched remote ELF */
 static size_t g_exec_cap;    /* staging capacity */
 static size_t g_exec_size;   /* bytes fetched so far (the valid image size on completion) */
@@ -286,13 +286,13 @@ static int tx_flush(void)
 	while (g_txoff < g_txlen) {
 		size_t sent = 0;
 		int r = g_lxp_net_ops->sock_send(g_sk, g_tx + g_txoff, g_txlen - g_txoff, &sent);
-		if (r == OVE_OK) {
+		if (r == LXP_OK) {
 			g_txoff += sent;
 			if (sent == 0)
 				return 0; /* nothing accepted now */
 			continue;
 		}
-		if (r == OVE_ERR_TIMEOUT)
+		if (r == LXP_ERR_TIMEOUT)
 			return 0; /* send buffer full → retry next pump */
 		return -1;
 	}
@@ -307,15 +307,15 @@ static int rx_fill(void)
 	while (g_rxlen < sizeof(g_rx)) {
 		size_t got = 0;
 		int r = g_lxp_net_ops->sock_recv(g_sk, g_rx + g_rxlen, sizeof(g_rx) - g_rxlen, &got,
-					OVE_WAIT_FOREVER);
-		if (r == OVE_OK) {
+					LXP_WAIT_FOREVER);
+		if (r == LXP_OK) {
 			if (got == 0)
 				return -1; /* orderly close */
 			g_rxlen += got;
 			progress = 1;
 			continue;
 		}
-		if (r == OVE_ERR_TIMEOUT)
+		if (r == LXP_ERR_TIMEOUT)
 			return progress;
 		return -1;
 	}
@@ -381,7 +381,7 @@ static long xchg_blocking(uint64_t timeout_us)
 	}
 	for (;;) {
 		unsigned rev = 0;
-		g_lxp_net_ops->sock_poll(g_sk, OVE_SOCK_POLLIN, &rev, 50 * 1000000ull /* 50ms */);
+		g_lxp_net_ops->sock_poll(g_sk, LXP_SOCK_POLLIN, &rev, 50 * 1000000ull /* 50ms */);
 		if (rx_fill() < 0)
 			return -1;
 		size_t len = rx_message();
@@ -434,13 +434,13 @@ static int handshake(void)
 	return 0;
 }
 
-/* Build an IPv4 ove_sockaddr_t (host-order port) — was ove_sockaddr_ipv4, now module-local
+/* Build an IPv4 lxp_sockaddr_t (host-order port) — was ove_sockaddr_ipv4, now module-local
  * so the netfs client depends only on the net-ops port, not the ove_net helper set. */
-static void netfs_sockaddr_ipv4(ove_sockaddr_t *a, uint8_t b0, uint8_t b1, uint8_t b2,
+static void netfs_sockaddr_ipv4(lxp_sockaddr_t *a, uint8_t b0, uint8_t b1, uint8_t b2,
 				uint8_t b3, uint16_t port)
 {
 	memset(a, 0, sizeof(*a));
-	a->family = OVE_AF_INET;
+	a->family = LXP_AF_INET;
 	a->port = port;
 	a->addr[0] = b0;
 	a->addr[1] = b1;
@@ -456,13 +456,13 @@ static void conn_connect(uint64_t now_us)
 		return;
 	g_reconnect_at_us = now_us + NETFS_RECONNECT_US;
 
-	if (g_lxp_net_ops->sock_open(OVE_AF_INET, OVE_SOCK_STREAM, 0, &g_sk) != OVE_OK) {
+	if (g_lxp_net_ops->sock_open(LXP_AF_INET, LXP_SOCK_STREAM, 0, &g_sk) != LXP_OK) {
 		g_sk = NULL;
 		return;
 	}
-	ove_sockaddr_t peer;
+	lxp_sockaddr_t peer;
 	netfs_sockaddr_ipv4(&peer, g_mnt.ip[0], g_mnt.ip[1], g_mnt.ip[2], g_mnt.ip[3], g_mnt.port);
-	if (g_lxp_net_ops->sock_connect(g_sk, &peer, 5000000000ull /* 5s */) != OVE_OK) {
+	if (g_lxp_net_ops->sock_connect(g_sk, &peer, 5000000000ull /* 5s */) != LXP_OK) {
 		g_lxp_net_ops->sock_close(g_sk);
 		g_sk = NULL;
 		return;
@@ -491,7 +491,7 @@ static long req_build(struct netfs_req *r)
 	switch (r->op) {
 	case LXP_NETFSW_OPEN:
 	case LXP_NETFSW_STAT:
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 	case LXP_NETFSW_EXECFETCH:
 #endif
 		if (r->step == 0) { /* Twalk(root -> fid, components) */
@@ -534,7 +534,7 @@ static long req_build(struct netfs_req *r)
 			msg_end(o);
 			return 0;
 		}
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 		if (r->step == 3) { /* EXECFETCH: Tread the next chunk into the staging buffer */
 			uint32_t cnt = (uint32_t)(g_msize - 24);
 			if (r->off + cnt > g_exec_cap) /* never overflow the staging buffer */
@@ -806,7 +806,7 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		}
 		break;
 
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 	case LXP_NETFSW_EXECFETCH:
 		if (r->step == 0) { /* Rwalk */
 			uint16_t nwqid = get16(body, &o);
@@ -1199,7 +1199,7 @@ void lxp_netfs_close(int oi)
 	op->used = 0;
 }
 
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 /* ---- exec off the mount: fetch the whole ELF into the engine staging buffer ---- */
 long lxp_netfs_exec_fetch(lxp_proc_t *p, const char *abspath)
 {
@@ -1227,7 +1227,7 @@ const uint8_t *lxp_netfs_exec_image(size_t *size)
 		*size = g_exec_size;
 	return g_exec_buf;
 }
-#endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
+#endif /* LXP_ENABLE_NETFS_EXEC */
 
 /* ---- coordinator: retry a parked op / periodic pump ------------------------ */
 long lxp_netfs_retry(lxp_proc_t *p)
@@ -1257,7 +1257,7 @@ long lxp_netfs_retry(lxp_proc_t *p)
 		}
 		return fd;
 	}
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 	if (op == LXP_NETFSW_EXECFETCH && result >= 0) {
 		/* the ELF is staged: flag the exec so the run loop's EV_EXEC launches it from the
 		 * staging buffer. Returning 0 with exec_pending set tells the run loop NOT to resume. */
@@ -1302,4 +1302,4 @@ void lxp_netfs_proc_exit(lxp_proc_t *p)
 		}
 }
 
-#endif /* CONFIG_OVE_LINUX_NETFS */
+#endif /* LXP_ENABLE_NETFS */

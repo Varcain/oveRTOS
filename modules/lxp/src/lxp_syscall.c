@@ -6,23 +6,23 @@
  * This file is part of oveRTOS.
  */
 
-#include "ove_config.h"
+#include "lxp/lxp_config.h"
 
-#if defined(CONFIG_OVE_LINUX)
+#if defined(LXP_ENABLE_LINUX)
 
 #include "lxp/lxp_stats.h"
 #include "lxp/lxp_syscall.h"
-#include "ove/time.h"
-#if defined(CONFIG_OVE_LINUX_DEV)
+#include "lxp/lxp_types.h"
+#if defined(LXP_ENABLE_DEV)
 #include "lxp/lxp_dev.h" /* /dev character-device routing (FD_DEV) */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 #include "lxp/lxp_net.h" /* socket routing (FD_SOCKET) */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 #include "lxp/lxp_netfs.h" /* remote-fs routing (FD_NET, /mnt/pi) */
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 #include "lxp/lxp_pty.h" /* pseudo-terminal routing (FD_PTY) */
 #endif
 
@@ -53,7 +53,7 @@ volatile int g_lxp_halt;
 /* PRNG fill (defined with sys_getrandom); /dev/urandom reads use it before that point. */
 static void prng_fill(uint8_t *b, size_t count);
 
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 /* pselect6(2): select() over the poll machinery (busybox inetd + dropbear are
  * select-based). Defined with the poll retry below; the dispatch calls it earlier. */
 #define LXP_SEL_MAXFDS 32 /* max nfds handled (fd_set = one 32-bit word here) */
@@ -74,22 +74,11 @@ static long sys_pselect6(lxp_proc_t *p, int nfds, uintptr_t urfds, uintptr_t uwf
  * STM32F746 the FreeRTOS build parks the pool in external SDRAM (.sdram_bss, alongside the guest
  * pools) so a bigger pool costs no scarce internal SRAM (it actually frees the old 16 KiB); every
  * other target keeps the pool in .bss at the original size. */
-#if defined(CONFIG_OVE_RTOS_FREERTOS) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-#define LXP_NPIPE 12
-#define LXP_PIPE_SDRAM 1
-#else
-#define LXP_NPIPE 4
-#endif
 /* Ring size: a bigger ring means a typical write/splice fits in fewer shots (no partial-write
  * park/resume round trip per chunk), so streaming throughput is copy-bound not coordinator-bound.
  * 4 KiB on FreeRTOS/NuttX (4 pipes × 4 KiB = 16 KiB .bss). Zephyr runs programs in per-program
  * K_USER MPU domains + privilege stacks that eat the STM32F746's internal SRAM, so 4 KiB there
  * overflows RAM by ~5 KiB — cap it at 2 KiB (still 2x the old 1 KiB). */
-#if defined(CONFIG_OVE_RTOS_ZEPHYR)
-#define LXP_PIPE_BUF 2048
-#else
-#define LXP_PIPE_BUF 4096
-#endif
 typedef struct {
 	uint8_t buf[LXP_PIPE_BUF];
 	size_t rpos;  /* ring read index [0, BUF) */
@@ -97,13 +86,7 @@ typedef struct {
 	size_t count; /* bytes currently buffered */
 	int used;
 } lxp_pipe_t;
-#ifdef LXP_PIPE_SDRAM
-/* External SDRAM (.sdram_bss is NOLOAD → not zeroed, but sys_pipe fully resets a slot's ring on
- * allocation and `used` is never read, so garbage init is harmless). */
-static lxp_pipe_t g_pipes[LXP_NPIPE] __attribute__((section(".sdram_bss")));
-#else
-static lxp_pipe_t g_pipes[LXP_NPIPE];
-#endif
+static lxp_pipe_t g_pipes[LXP_NPIPE] LXP_FAR_BSS; /* LXP_FAR_BSS relocates the pool (STM32: .sdram_bss) */
 
 /* Count a pipe's open read/write ends across ALL live procs' fd tables (a pipe end
  * is open in every proc that holds an fd onto it — inherited across fork, dropped on
@@ -143,7 +126,7 @@ static uintptr_t user_range_hi(const lxp_proc_t *p, uintptr_t a, int write)
 		return p->region_hi;
 	if (p->pool_hi > p->pool_lo && a >= p->pool_lo && a < p->pool_hi)
 		return p->pool_hi;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	/* A mapped device buffer (framebuffer, P3) is RW-valid for the program. */
 	for (int i = 0; i < 2; i++)
 		if (p->dev_map_hi[i] > p->dev_map_lo[i] && a >= p->dev_map_lo[i] &&
@@ -427,10 +410,10 @@ static const char *child_name(const char *dir, const char *path)
 	return (*name && !strchr(name, '/')) ? name : NULL;
 }
 
-int lxp_proc_init(lxp_proc_t *proc, ove_arena_t *arena, size_t brk_bytes)
+int lxp_proc_init(lxp_proc_t *proc, lxp_arena_t *arena, size_t brk_bytes)
 {
 	if (!proc || !arena)
-		return OVE_ERR_INVALID_PARAM;
+		return LXP_ERR_INVALID_PARAM;
 
 	memset(proc, 0, sizeof(*proc));
 	proc->arena = arena;
@@ -448,14 +431,14 @@ int lxp_proc_init(lxp_proc_t *proc, ove_arena_t *arena, size_t brk_bytes)
 	proc->fds[2].kind = LXP_FD_CONSOLE;
 	proc->fds[2].file_idx = 1;
 	if (brk_bytes) {
-		void *brk = ove_arena_alloc(arena, brk_bytes);
+		void *brk = lxp_arena_alloc(arena, brk_bytes);
 		if (!brk)
-			return OVE_ERR_NO_MEMORY;
+			return LXP_ERR_NO_MEMORY;
 		proc->brk_base = (uintptr_t)brk;
 		proc->brk_cur = proc->brk_base;
 		proc->brk_max = proc->brk_base + brk_bytes;
 	}
-	return OVE_OK;
+	return LXP_OK;
 }
 
 void lxp_proc_set_rootfs(lxp_proc_t *proc, const lxp_file_t *files, int count)
@@ -670,15 +653,15 @@ static long sys_write(lxp_proc_t *p, int fd, const void *buf, size_t len)
 		return -LXP_EBADF;
 	if (!user_ok(p, buf, len, 0)) /* the kernel READS buf → reject a bad source pointer */
 		return -LXP_EFAULT;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	if (s->kind == LXP_FD_DEV)
 		return lxp_dev_write(p, s->file_idx, buf, len);
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	if (s->kind == LXP_FD_SOCKET)
 		return lxp_sock_send(p, s->file_idx, buf, len, 0, NULL, 0);
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	if (s->kind == LXP_FD_NET)
 		return -LXP_EROFS; /* read-only remote mount */
 #endif
@@ -705,7 +688,7 @@ static long sys_write(lxp_proc_t *p, int fd, const void *buf, size_t len)
 		}
 		return r; /* bytes written, or -EPIPE (no readers; writer exits unless it ignores it) */
 	}
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 	/* A pty write feeds the peer's ring through the line discipline (master write runs
 	 * input processing toward the slave; slave write runs output/ONLCR toward the master).
 	 * Blocks (backpressure) when the destination ring is full and the peer is open. */
@@ -774,15 +757,15 @@ static long sys_read(lxp_proc_t *p, int fd, void *buf, size_t len)
 	if (!user_ok(p, buf, len, 1)) /* the kernel WRITES buf → reject a bad destination pointer */
 		return -LXP_EFAULT;
 
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	if (s->kind == LXP_FD_DEV)
 		return lxp_dev_read(p, s->file_idx, buf, len);
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	if (s->kind == LXP_FD_SOCKET)
 		return lxp_sock_recv(p, s->file_idx, buf, len, 0, NULL, NULL);
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	if (s->kind == LXP_FD_NET)
 		return lxp_netfs_read(p, s->file_idx, buf, len);
 #endif
@@ -831,7 +814,7 @@ static long sys_read(lxp_proc_t *p, int fd, void *buf, size_t len)
 		return r; /* bytes read, or 0 (EOF) */
 	}
 
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 	/* A pty end drains its ring (master reads program output, slave reads program input);
 	 * blocks while empty + the peer end is open, EOF (0) once the peer closes. */
 	if (s->kind == LXP_FD_PTY) {
@@ -905,7 +888,7 @@ static long sys_pread(lxp_proc_t *p, int fd, void *buf, size_t len, uint32_t off
 	if (!user_ok(p, buf, len, 1))
 		return -LXP_EFAULT;
 
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	if (s->kind == LXP_FD_DEV)
 		return lxp_dev_pread(p, s->file_idx, buf, len, off);
 #endif
@@ -953,7 +936,7 @@ static long sys_pwrite(lxp_proc_t *p, int fd, const void *buf, size_t len, uint3
 		return -LXP_EBADF;
 	if (!user_ok(p, buf, len, 0))
 		return -LXP_EFAULT;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	if (s->kind == LXP_FD_DEV)
 		return lxp_dev_pwrite(p, s->file_idx, buf, len, off);
 #endif
@@ -1026,7 +1009,7 @@ static long sys_mmap2(lxp_proc_t *p, uintptr_t addr, size_t len, int prot, int f
 		}
 	}
 
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	/* Device mmap (P3): a real /dev fd with a driver .mmap op (e.g. /dev/fb0) is mapped to
 	 * the device's own buffer — lxp_dev_mmap parks on DEVW_MMAP and the coordinator
 	 * installs the unprivileged MPU region + resumes with the mapped address. Devices
@@ -1041,7 +1024,7 @@ static long sys_mmap2(lxp_proc_t *p, uintptr_t addr, size_t len, int prot, int f
 	}
 #endif
 
-	void *m = ove_arena_alloc(p->arena, len);
+	void *m = lxp_arena_alloc(p->arena, len);
 	if (!m)
 		return -LXP_ENOMEM;
 	memset(m, 0, len); /* anon reads as zero; also zero-fills a file map's bss tail */
@@ -1068,9 +1051,9 @@ static long sys_munmap(lxp_proc_t *p, uintptr_t addr, size_t len)
 	 * mmap and munmaps freed blocks; without this the process arena grows monotonically
 	 * across malloc/free churn (getaddrinfo + stdio + wget headers) and exhausts —
 	 * "wget: out of memory". In-place file/device maps are not arena-owned, so
-	 * ove_arena_free ignores them (its ove_arena_owns bounds-check). */
+	 * lxp_arena_free ignores them (its lxp_arena_owns bounds-check). */
 	if (p && p->arena)
-		ove_arena_free(p->arena, (void *)addr);
+		lxp_arena_free(p->arena, (void *)addr);
 	return 0;
 }
 
@@ -1324,7 +1307,7 @@ static size_t p_dec(char *o, size_t off, size_t cap, uint64_t v)
 		o[off++] = t[--n];
 	return off;
 }
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 /* Format a 4-byte IPv4 address as the 8 upper-hex digits the kernel writes in
  * /proc/net/route: the __be32 value read in the host's (little-endian) order. */
 static size_t p_hexle(char *o, size_t off, size_t cap, const uint8_t a[4])
@@ -1394,7 +1377,7 @@ static uint32_t proc_mode(const char *abs, const lxp_proc_t *p)
 		return !proc_pid_known(p, pid) ? 0u
 		       : file		       ? (LXP_S_IFREG | 0444u)
 					       : (LXP_S_IFDIR | 0555u);
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	if (strcmp(abs, "/proc/net") == 0)
 		return LXP_S_IFDIR | 0555u;
 	if (strcmp(abs, "/proc/net/dev") == 0 || strcmp(abs, "/proc/net/route") == 0)
@@ -1529,7 +1512,7 @@ static long proc_gen(const char *abs, const lxp_proc_t *p, char *buf, size_t cap
 		o = p_str(buf, o, cap, "\n");
 	} else if (strcmp(abs, "/proc/filesystems") == 0) {
 		o = p_str(buf, o, cap, "nodev\tproc\nnodev\ttmpfs\n");
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	} else if (strcmp(abs, "/proc/net/dev") == 0) {
 		/* busybox ifconfig reads this to enumerate interfaces + show RX/TX stats.
 		 * ove_net has no per-interface counters, so report zeros. */
@@ -1620,7 +1603,7 @@ static long sys_openat(lxp_proc_t *p, int dirfd, const char *path, int flags)
 	 * open the device directly for entropy, not the getrandom syscall); writes discarded. */
 	if (strcmp(path, "/dev/urandom") == 0 || strcmp(path, "/dev/random") == 0)
 		return fd_alloc(p, LXP_FD_CONSOLE, 4, 0);
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 	/* Unix98 pty: each open of /dev/ptmx mints a fresh pair (the master, rw=1); the
 	 * slave is /dev/pts/N (rw=0), N = the pool index from TIOCGPTN/ptsname. */
 	if (strcmp(path, "/dev/ptmx") == 0) {
@@ -1647,7 +1630,7 @@ static long sys_openat(lxp_proc_t *p, int dirfd, const char *path, int flags)
 		return fd_alloc(p, LXP_FD_PTY, (int)idx, 0); /* slave end (rw=0) */
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	/* Registered character devices (/dev/fb0, /dev/input/event0, ...). A hit opens
 	 * an FD_DEV whose file_idx is the device open-pool index; a miss falls through. */
 	{
@@ -1663,7 +1646,7 @@ static long sys_openat(lxp_proc_t *p, int dirfd, const char *path, int flags)
 		}
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	/* Remote 9P mount (/mnt/pi): read-only browse. Shadows the RO rootfs; the open
 	 * parks (walk+getattr+lopen round-trips) and the coordinator installs the fd. */
 	if (lxp_netfs_lookup(path) >= 0)
@@ -1711,17 +1694,17 @@ static long sys_close(lxp_proc_t *p, int fd)
 		return -LXP_EBADF;
 	if (s->kind == LXP_FD_PROC)
 		g_procf[s->file_idx].used = 0; /* release the generated-content slot */
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	if (s->kind == LXP_FD_DEV)
 		lxp_dev_close(s->file_idx); /* refs--, ops->release at the last close */
 #endif
 	if (s->kind == LXP_FD_EVENTFD && s->file_idx >= 0 && s->file_idx < LXP_NEVENTFD)
 		g_efd[s->file_idx].used = 0; /* threads share the fd table → one close frees it */
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	if (s->kind == LXP_FD_SOCKET)
 		lxp_sock_close(s->file_idx); /* refs--, ove_socket_close at the last close */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	if (s->kind == LXP_FD_NET)
 		lxp_netfs_close(s->file_idx); /* refs--, enqueue a Tclunk at the last close */
 #endif
@@ -1783,28 +1766,28 @@ static long sys_dup2(lxp_proc_t *p, int oldfd, int newfd)
 	if (newfd < 0 || newfd >= LXP_MAX_FDS)
 		return -LXP_EBADF;
 	if (oldfd != newfd) {
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		if (p->fds[newfd].kind == LXP_FD_DEV)
 			lxp_dev_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 		if (p->fds[newfd].kind == LXP_FD_SOCKET)
 			lxp_sock_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 		if (p->fds[newfd].kind == LXP_FD_NET)
 			lxp_netfs_close(p->fds[newfd].file_idx); /* dup2 closes the target first */
 #endif
 		p->fds[newfd] = *s;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		if (s->kind == LXP_FD_DEV)
 			lxp_dev_get(s->file_idx); /* the new fd shares the open */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 		if (s->kind == LXP_FD_SOCKET)
 			lxp_sock_get(s->file_idx); /* the new fd shares the open */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 		if (s->kind == LXP_FD_NET)
 			lxp_netfs_get(s->file_idx); /* the new fd shares the open */
 #endif
@@ -1821,15 +1804,15 @@ static long sys_dup(lxp_proc_t *p, int oldfd)
 	for (int fd = 0; fd < LXP_MAX_FDS; fd++) {
 		if (p->fds[fd].kind == LXP_FD_FREE) {
 			p->fds[fd] = *s;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 			if (s->kind == LXP_FD_DEV)
 				lxp_dev_get(s->file_idx); /* the dup shares the open */
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 			if (s->kind == LXP_FD_SOCKET)
 				lxp_sock_get(s->file_idx); /* the dup shares the open */
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 			if (s->kind == LXP_FD_NET)
 				lxp_netfs_get(s->file_idx); /* the dup shares the open */
 #endif
@@ -1844,11 +1827,11 @@ static long sys_lseek(lxp_proc_t *p, int fd, long off, int whence)
 	lxp_fd_t *s = fd_slot(p, fd);
 	if (!s)
 		return -LXP_EBADF;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	if (s->kind == LXP_FD_DEV)
 		return lxp_dev_lseek(s->file_idx, off, whence);
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	if (s->kind == LXP_FD_NET)
 		return lxp_netfs_lseek(s->file_idx, off, whence);
 #endif
@@ -1953,7 +1936,7 @@ static long sys_fstat64(lxp_proc_t *p, int fd, void *statbuf)
 			     g_procf[s->file_idx].is_dir ? (LXP_S_IFDIR | 0555u)
 							 : (LXP_S_IFREG | 0444u),
 			     g_procf[s->file_idx].len);
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	else if (s->kind == LXP_FD_DEV) {
 		uint32_t mode;
 		uint64_t rdev, size;
@@ -1962,7 +1945,7 @@ static long sys_fstat64(lxp_proc_t *p, int fd, void *statbuf)
 		((struct lxp_kstat64 *)statbuf)->st_rdev = rdev;
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	else if (s->kind == LXP_FD_SOCKET) {
 		uint32_t mode;
 		uint64_t size;
@@ -1970,7 +1953,7 @@ static long sys_fstat64(lxp_proc_t *p, int fd, void *statbuf)
 		fill_kstat64(statbuf, 0x400000u + (uint32_t)s->file_idx, mode, size);
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	else if (s->kind == LXP_FD_NET) {
 		uint32_t mode;
 		uint64_t size, mtime, ino;
@@ -1979,7 +1962,7 @@ static long sys_fstat64(lxp_proc_t *p, int fd, void *statbuf)
 		return lxp_netfs_fill_stat(p, (uintptr_t)statbuf, 0, mode, size, mtime, ino);
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 	else if (s->kind == LXP_FD_PTY) {
 		uint32_t mode;
 		uint64_t size;
@@ -2008,7 +1991,7 @@ static long sys_stat_path(lxp_proc_t *p, const char *path, int follow, void *sta
 		fill_kstat64(statbuf, 0x200000u, m, 0);
 		return 0;
 	}
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	{
 		uint32_t dmode;
 		uint64_t drdev;
@@ -2019,7 +2002,7 @@ static long sys_stat_path(lxp_proc_t *p, const char *path, int follow, void *sta
 		}
 	}
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	if (lxp_netfs_lookup(abspath) >= 0)
 		return lxp_netfs_stat(p, abspath, (uintptr_t)statbuf, 0); /* parks */
 #endif
@@ -2347,7 +2330,7 @@ static long sys_getdents64(lxp_proc_t *p, int fd, void *buf, size_t count, int i
 		if (!g_procf[s->file_idx].is_dir)
 			return -LXP_ENOTDIR;
 		dirpath = g_procf[s->file_idx].path;
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 	} else if (s->kind == LXP_FD_NET) {
 		/* Remote dir: a Treaddir round-trip → the netfs layer emits the records. Parks. */
 		return lxp_netfs_getdents(p, s->file_idx, (uintptr_t)buf, count, is64);
@@ -2380,7 +2363,7 @@ static long sys_getdents64(lxp_proc_t *p, int fd, void *buf, size_t count, int i
 				 g_wnodes[i].mode))
 			full = 1;
 	}
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 	/* registered character devices whose node sits directly under this dir (/dev/fb0). */
 	for (int i = 0; i < lxp_dev_count() && !full; i++) {
 		uint32_t dmode = LXP_S_IFCHR | 0666u;
@@ -2493,7 +2476,7 @@ static long sys_statx(lxp_proc_t *p, int dirfd, const char *path, int flags, voi
 				return -LXP_ENOENT;
 			size = 0;
 			ino = 0x200000u;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		} else if (lxp_dev_lookup(abspath) >= 0) { /* /dev character node */
 			uint32_t dmode;
 			uint64_t drdev;
@@ -2503,7 +2486,7 @@ static long sys_statx(lxp_proc_t *p, int dirfd, const char *path, int flags, voi
 			rdev = drdev;
 			ino = 0x300000u;
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 		} else if (lxp_netfs_lookup(abspath) >= 0) {
 			return lxp_netfs_stat(p, abspath, (uintptr_t)buf, 1); /* parks */
 #endif
@@ -2536,7 +2519,7 @@ static long sys_statx(lxp_proc_t *p, int dirfd, const char *path, int flags, voi
 			mode = g_wnodes[s->file_idx].mode;
 			size = g_wnodes[s->file_idx].size;
 			ino = 0x100000u + (uint32_t)s->file_idx;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		} else if (s->kind == LXP_FD_DEV) {
 			uint32_t dmode;
 			uint64_t drdev, dsize;
@@ -2546,7 +2529,7 @@ static long sys_statx(lxp_proc_t *p, int dirfd, const char *path, int flags, voi
 			rdev = drdev;
 			ino = 0x300000u + (uint32_t)s->file_idx;
 #endif
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 		} else if (s->kind == LXP_FD_NET) {
 			uint32_t nmode;
 			uint64_t nsize, nmtime, nino;
@@ -2575,7 +2558,7 @@ static long sys_statx(lxp_proc_t *p, int dirfd, const char *path, int flags, voi
 	return 0;
 }
 
-#if defined(CONFIG_OVE_LINUX_NETFS)
+#if defined(LXP_ENABLE_NETFS)
 /* Marshal remote 9P attributes into a guest stat/statx buffer. Called by the netfs
  * retry (which owns the transport) for a path stat, and inline for an fstat on an
  * FD_NET fd. @p statkind: 0 = kstat64 (stat/lstat/fstat/fstatat), 1 = statx. The
@@ -2655,7 +2638,7 @@ static long sys_execve(lxp_proc_t *p, const char *path, char *const argv[])
 	long rr = resolve_path(p, path, execabs, sizeof(execabs));
 	if (rr < 0)
 		return rr;
-#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#if defined(LXP_ENABLE_NETFS_EXEC)
 	/* exec a program off the remote mount (/mnt/pi/prog): capture argv, drop close-on-exec
 	 * fds, then park the ELF fetch. The netfs retry sets exec_pending + a SENTINEL exec_file_idx
 	 * on completion, and the run loop's EV_EXEC launches it from the RAM staging buffer. */
@@ -2934,11 +2917,11 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 					proc->fds[nfd] = *s;
 					proc->fds[nfd].cloexec =
 						((int)a1 == LXP_F_DUPFD_CLOEXEC) ? 1 : 0;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 					if (s->kind == LXP_FD_DEV)
 						lxp_dev_get(s->file_idx);
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 					if (s->kind == LXP_FD_SOCKET)
 						lxp_sock_get(s->file_idx);
 #endif
@@ -2947,7 +2930,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 			}
 			return -LXP_EMFILE;
 		}
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		/* A device fd honours F_SETFL/F_GETFL so O_NONBLOCK takes effect (LVGL's
 		 * evdev opens blocking, then fcntl(F_SETFL, O_NONBLOCK)). */
 		if (s->kind == LXP_FD_DEV) {
@@ -2959,7 +2942,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 				return lxp_dev_getfl(s->file_idx);
 		}
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 		/* A socket fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking. */
 		if (s->kind == LXP_FD_SOCKET) {
 			if ((int)a1 == LXP_F_SETFL) {
@@ -2970,7 +2953,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 				return lxp_sock_getfl(s->file_idx);
 		}
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 		/* A pty fd honours F_SETFL/F_GETFL so O_NONBLOCK gates parking (dropbear sets
 		 * the master non-blocking and drives it with select). */
 		if (s->kind == LXP_FD_PTY) {
@@ -3282,7 +3265,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 		}
 		return 0;
 	}
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	case LXP_NR_pselect6_time64: /* (nfds, readfds, writefds, exceptfds, timeout, sigmask) */
 		return sys_pselect6(proc, (int)a0, (uintptr_t)a1, (uintptr_t)a2, (uintptr_t)a3,
 				    (uintptr_t)a4);
@@ -3321,7 +3304,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 		int probe = (tmo_ms >= 0 && tmo_ms <= 100);
 		int key = (proc->console_poll && proc->console_poll(proc->io_ctx) > 0);
 		int ready = 0;
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 		int has_socket = 0, has_eventfd = 0, has_pty = 0;
 #endif
 		for (unsigned i = 0; i < nfds; i++) {
@@ -3332,7 +3315,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 			int avail;
 			if (s->kind == LXP_FD_CONSOLE)
 				avail = (tmo_ms < 0) ? 1 : (proc->console_poll ? key : !probe);
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 			else if (s->kind == LXP_FD_DEV) {
 				/* Report the driver's real readiness bits (fb POLLOUT, evdev
 				 * POLLIN when the event ring is non-empty). */
@@ -3344,7 +3327,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 				continue;
 			}
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 			else if (s->kind == LXP_FD_SOCKET) {
 				unsigned pb = lxp_sock_poll(s->file_idx);
 				pfds[i].revents = (short)(pfds[i].events & pb &
@@ -3369,7 +3352,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 				has_eventfd = 1;
 				continue;
 			}
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 			else if (s->kind == LXP_FD_PTY) {
 				unsigned pb = lxp_pty_poll(s->file_idx, s->rw);
 				pfds[i].revents = (short)(pfds[i].events & pb &
@@ -3401,7 +3384,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 		}
 		if (ready > 0 || tmo_ms == 0)
 			return ready;
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 		/* A blocking poll whose set includes a socket parks on SOCKW_POLL: the
 		 * coordinator re-scans readiness on its <=5 ms socket-retry tick (via
 		 * lxp_poll_retry) and resumes us when an fd becomes ready or the timeout
@@ -3479,19 +3462,19 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 		lxp_fd_t *tty = fd_slot(proc, (int)a0);
 		if (!tty)
 			return -LXP_ENOTTY;
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		/* Device ioctls (FBIOGET_VSCREENINFO, EVIOCG*, ...) dispatch to the driver
 		 * BEFORE the console-only tty gate below (which would else -ENOTTY them). */
 		if (tty->kind == LXP_FD_DEV)
 			return lxp_dev_ioctl(proc, tty->file_idx, (unsigned long)a1,
 						 (unsigned long)a2);
 #endif
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 		/* Socket ioctls: SIOC* interface config (ifconfig/route) — before the tty gate. */
 		if (tty->kind == LXP_FD_SOCKET)
 			return lxp_sock_ioctl(proc, (unsigned long)a1, (unsigned long)a2);
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 		/* A pty IS a tty: termios/winsize/ptmx ioctls dispatch to its own line-discipline
 		 * state (per-pty, not the single global console) — before the console tty gate. */
 		if (tty->kind == LXP_FD_PTY)
@@ -3577,7 +3560,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 		int op = (int)a1 & 0x7f; /* mask FUTEX_PRIVATE_FLAG / FUTEX_CLOCK_REALTIME */
 		return (op == 0 || op == 9) ? -LXP_EAGAIN : 0; /* WAIT / WAIT_BITSET */
 	}
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 	case LXP_NR_socket: { /* (domain, type, protocol) */
 		long oi = lxp_sock_new((int)a0, (int)a1, (int)a2);
 		if (oi < 0)
@@ -3680,7 +3663,7 @@ long lxp_syscall(lxp_proc_t *proc, long nr, long a0, long a1, long a2, long a3, 
 	}
 }
 
-#if defined(CONFIG_OVE_LINUX_NET)
+#if defined(LXP_ENABLE_NET)
 /* Re-evaluate a parked poll(2)'s fd set for readiness (socket + device + console).
  * Mirrors the initial sys_poll scan but in blocking mode — a console fd reports its
  * real key readiness rather than the vi/top ESC-probe heuristic. */
@@ -3696,11 +3679,11 @@ static int lxp_poll_scan(lxp_proc_t *proc, lxp_pollfd *pfds, unsigned nfds)
 		unsigned pb;
 		if (s->kind == LXP_FD_SOCKET)
 			pb = lxp_sock_poll(s->file_idx);
-#if defined(CONFIG_OVE_LINUX_DEV)
+#if defined(LXP_ENABLE_DEV)
 		else if (s->kind == LXP_FD_DEV)
 			pb = lxp_dev_poll(s->file_idx);
 #endif
-#if defined(CONFIG_OVE_LINUX_PTY)
+#if defined(LXP_ENABLE_PTY)
 		else if (s->kind == LXP_FD_PTY)
 			pb = lxp_pty_poll(s->file_idx, s->rw);
 #endif
@@ -3859,6 +3842,6 @@ long lxp_poll_retry(lxp_proc_t *proc)
 	}
 	return -LXP_EAGAIN; /* still waiting */
 }
-#endif /* CONFIG_OVE_LINUX_NET */
+#endif /* LXP_ENABLE_NET */
 
-#endif /* CONFIG_OVE_LINUX */
+#endif /* LXP_ENABLE_LINUX */
