@@ -291,6 +291,9 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_stats.c")
 # /dev character-device layer: core registry + routing (class drivers added by
 # their own CONFIG_OVE_LINUX_DEV_* below).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev.c")
+# Host adapter for the display/input port: bridges fb/touch ops to ove_fb_* /
+# ove_ft5336_*. Statically wires g_ove_lnx_disp_ops.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_ove_disp_adapter.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_fb.c")
 {% endif %}

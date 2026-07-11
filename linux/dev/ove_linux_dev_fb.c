@@ -19,6 +19,7 @@
 
 #include "ove/fb.h"
 #include "ove/linux/dev.h"
+#include "ove/linux/disp_ops.h"
 #include "ove/time.h"
 #include "ove_linux_uapi.h"
 
@@ -45,7 +46,7 @@ static long fb_read(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_p
 		    size_t len)
 {
 	(void)p;
-	uint8_t *fb = ove_fb_get_buffer();
+	uint8_t *fb = g_ove_lnx_disp_ops->fb_get_buffer();
 	if (!fb || o->pos >= d->size)
 		return 0; /* EOF at/after the buffer end */
 	size_t n = d->size - o->pos;
@@ -60,14 +61,14 @@ static long fb_write(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_
 		     const void *buf, size_t len)
 {
 	(void)p;
-	uint8_t *fb = ove_fb_get_buffer();
+	uint8_t *fb = g_ove_lnx_disp_ops->fb_get_buffer();
 	if (!fb || o->pos >= d->size)
 		return -OVE_LNX_EFBIG; /* a write past the framebuffer end */
 	size_t n = d->size - o->pos;
 	if (n > len)
 		n = len;
 	fb_copy16(fb + o->pos, buf, n);
-	ove_fb_flush(0, (int)(o->pos / g_fbinfo.stride_bytes), g_fbinfo.width,
+	g_ove_lnx_disp_ops->fb_flush(0, (int)(o->pos / g_fbinfo.stride_bytes), g_fbinfo.width,
 		     (int)((n + g_fbinfo.stride_bytes - 1) / g_fbinfo.stride_bytes));
 	o->pos += (uint32_t)n;
 	return (long)n;
@@ -92,7 +93,7 @@ static void fill_finfo(struct ove_lnx_fb_fix_screeninfo *f)
 {
 	memset(f, 0, sizeof(*f));
 	memcpy(f->id, "ovefb", 5);
-	f->smem_start = (uint32_t)(uintptr_t)ove_fb_get_buffer();
+	f->smem_start = (uint32_t)(uintptr_t)g_ove_lnx_disp_ops->fb_get_buffer();
 	f->smem_len = g_fbinfo.smem_len;
 	f->type = OVE_LNX_FB_TYPE_PACKED_PIXELS;
 	f->visual = OVE_LNX_FB_VISUAL_TRUECOLOR;
@@ -156,7 +157,7 @@ static long fb_mmap(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_p
 {
 	(void)o;
 	(void)p;
-	uint8_t *fb = ove_fb_get_buffer();
+	uint8_t *fb = g_ove_lnx_disp_ops->fb_get_buffer();
 	if (!fb || pgoff != 0 || len > d->size)
 		return -OVE_LNX_EINVAL;
 	*phys = (uintptr_t)fb;
@@ -180,14 +181,14 @@ static void fb_tick(uint64_t now_us)
 	if (now_us - last_us < 33000ull)
 		return;
 	last_us = now_us;
-	ove_fb_present();
+	g_ove_lnx_disp_ops->fb_present();
 }
 
 void ove_lnx_dev_autoreg_fb(void)
 {
-	if (ove_fb_init() != 0)
+	if (g_ove_lnx_disp_ops->fb_init() != 0)
 		return; /* no display on this board (e.g. an521) → /dev/fb0 absent */
-	if (ove_fb_get_info(&g_fbinfo) != 0)
+	if (g_ove_lnx_disp_ops->fb_get_info(&g_fbinfo) != 0)
 		return;
 	struct ove_lnx_dev dev = {
 		.path = "/dev/fb0",
