@@ -34,6 +34,8 @@
 #include <string.h>
 
 #include "../common/ove_lnx_run.h"
+#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
+#include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 
 /* The program-image regions live in a NOLOAD external-RAM linker region: RAM-resident but ZERO
  * flash cost — Zephyr's app_smem is a *loaded* section, so a K_APP_BMEM array this big would store
@@ -445,6 +447,11 @@ static const struct ove_lnx_engine g_zephyr_engine = {
 	.crit_exit = zephyr_crit_exit,
 	.event_post = zephyr_event_post,
 	.event_wait = zephyr_event_wait,
+	/* OS-service ops (host adapter). cache_* left NULL: Zephyr's guest memory is
+	 * coherent here, matching the former weak no-op ove_lnx_guest_flush. */
+	.time_us = ove_time_get_us,
+	.time_ns = ove_time_get_ns,
+	.thread_list = ove_thread_list,
 };
 
 int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,

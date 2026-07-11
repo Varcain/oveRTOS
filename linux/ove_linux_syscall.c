@@ -1488,7 +1488,7 @@ static long proc_gen(const char *abs, const ove_lnx_proc_t *p, char *buf, size_t
 		o = p_str(buf, o, cap, "Linux version 6.1.0 (overtos) (uClibc) #1 oveRTOS\n");
 	} else if (strcmp(abs, "/proc/uptime") == 0) {
 		uint64_t ns = 0;
-		ove_time_get_ns(&ns);
+		ove_lnx_time_ns(&ns);
 		o = p_dec(buf, o, cap, ns / 1000000000ull);
 		o = p_str(buf, o, cap, ".00 ");
 		o = p_dec(buf, o, cap, ns / 1000000000ull);
@@ -2224,7 +2224,7 @@ static void prng_fill(uint8_t *b, size_t count)
 	static uint32_t s;
 	if (!s) {
 		uint64_t ns = 0;
-		ove_time_get_ns(&ns);
+		ove_lnx_time_ns(&ns);
 		s = (uint32_t)ns | 1u;
 	}
 	for (size_t i = 0; i < count; i++) {
@@ -2754,7 +2754,7 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 static void now_sec_nsec(int clockid, uint64_t *sec, uint32_t *nsec)
 {
 	uint64_t ns = 0;
-	ove_time_get_ns(&ns);
+	ove_lnx_time_ns(&ns);
 	uint64_t up = ns / 1000000000ull;
 	*nsec = (uint32_t)(ns % 1000000000ull);
 	/* CLOCK_MONOTONIC(1)/_RAW(4)/BOOTTIME(7) → uptime; REALTIME(0) → wall clock. */
@@ -2908,7 +2908,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			return -OVE_LNX_EFAULT;
 		memset(si, 0, sizeof(*si));
 		uint64_t ns = 0;
-		ove_time_get_ns(&ns);
+		ove_lnx_time_ns(&ns);
 		si->uptime = (int32_t)(ns / 1000000000ull);
 		si->totalram = 4u * 1024u * 1024u;
 		si->freeram = 2u * 1024u * 1024u;
@@ -3114,7 +3114,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 				 * breakdown (not tracked here). Must be >=0 (glibc treats -1 as error). */
 		void *ubuf = (void *)(uintptr_t)a0;
 		uint64_t us = 0;
-		ove_time_get_us(&us);
+		ove_lnx_time_us(&us);
 		long ticks = (long)(us / 10000u); /* CLK_TCK = 100 */
 		if (ubuf) {
 			if (!user_ok(proc, ubuf, 4 * sizeof(long), 1))
@@ -3134,7 +3134,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		/* struct itimerval { timeval it_interval; timeval it_value; }; ARM32 long=4,
 		 * so it is 4 x u32: [interval_sec, interval_usec, value_sec, value_usec]. */
 		uint64_t now = 0;
-		ove_time_get_us(&now);
+		ove_lnx_time_us(&now);
 		if (uold) {
 			if (!user_ok(proc, uold, 16, 1))
 				return -OVE_LNX_EFAULT;
@@ -3240,7 +3240,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 		 * ove_time_get_us, so both must use the same cross-idle clock or every sleep / poll
 		 * timeout drifts (on real silicon interactive top ran ~1.66x slow + un-quittable). */
 		uint64_t now_us = 0;
-		ove_time_get_us(&now_us);
+		ove_lnx_time_us(&now_us);
 		proc->sleep_until_us = now_us + dur_us;
 		proc->sleep_pending = 1;
 		return 0;
@@ -3413,7 +3413,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			proc->sock_len = nfds;
 			if (tmo_ms > 0) {
 				uint64_t now_us = 0;
-				ove_time_get_us(&now_us);
+				ove_lnx_time_us(&now_us);
 				proc->sock_deadline_us = now_us + (uint64_t)tmo_ms * 1000ull;
 			} else {
 				proc->sock_deadline_us = UINT64_MAX; /* poll(-1): block forever */
@@ -3432,7 +3432,7 @@ long ove_lnx_syscall(ove_lnx_proc_t *proc, long nr, long a0, long a1, long a2, l
 			 * parked here, and the coordinator checks this against ove_time_get_us (see the
 			 * nanosleep handler). Both must use the same clock or top's refresh + q drift. */
 			uint64_t now_us = 0;
-			ove_time_get_us(&now_us);
+			ove_lnx_time_us(&now_us);
 			proc->sleep_until_us = now_us + (uint64_t)tmo_ms * 1000ull;
 			proc->sleep_pending = 1;
 		}
@@ -3819,7 +3819,7 @@ static long sys_pselect6(ove_lnx_proc_t *p, int nfds, uintptr_t urfds, uintptr_t
 	p->sel_active = 1;
 	if (tmo_ms > 0) {
 		uint64_t now = 0;
-		ove_time_get_us(&now);
+		ove_lnx_time_us(&now);
 		p->sock_deadline_us = now + (uint64_t)tmo_ms * 1000ull;
 	} else {
 		p->sock_deadline_us = UINT64_MAX;
@@ -3838,7 +3838,7 @@ long ove_lnx_poll_retry(ove_lnx_proc_t *proc)
 		int timedout = 0;
 		if (proc->sock_deadline_us != UINT64_MAX) {
 			uint64_t now_us = 0;
-			ove_time_get_us(&now_us);
+			ove_lnx_time_us(&now_us);
 			timedout = (now_us >= proc->sock_deadline_us);
 		}
 		if (ready > 0 || timedout) {
@@ -3853,7 +3853,7 @@ long ove_lnx_poll_retry(ove_lnx_proc_t *proc)
 		return ready;
 	if (proc->sock_deadline_us != UINT64_MAX) {
 		uint64_t now_us = 0;
-		ove_time_get_us(&now_us);
+		ove_lnx_time_us(&now_us);
 		if (now_us >= proc->sock_deadline_us)
 			return 0; /* timed out */
 	}

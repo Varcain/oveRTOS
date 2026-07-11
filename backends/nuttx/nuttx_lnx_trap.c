@@ -42,6 +42,8 @@
 #include <unistd.h> /* usleep */
 
 #include "../common/ove_lnx_run.h"
+#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
+#include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 
 /* NuttX's own SVCall handler — chained (not patched) for non-Linux svcs.
  * Declared in arch/arm/src/common/arm_internal.h (off the app include path);
@@ -391,6 +393,11 @@ static const struct ove_lnx_engine g_nuttx_engine = {
 	.crit_exit = nuttx_crit_exit,
 	.event_post = nuttx_event_post,
 	.event_wait = nuttx_event_wait,
+	/* OS-service ops (host adapter). cache_* left NULL: NuttX's guest memory is
+	 * coherent here, matching the former weak no-op ove_lnx_guest_flush. */
+	.time_us = ove_time_get_us,
+	.time_ns = ove_time_get_ns,
+	.thread_list = ove_thread_list,
 };
 
 /* ---- unprivileged isolation: MPU region setup ------------------------------ */

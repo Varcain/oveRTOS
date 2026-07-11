@@ -87,6 +87,8 @@ struct ove_lnx_resume_ctx {
 	uint32_t pc;
 };
 
+struct ove_thread_info; /* <ove/thread.h>; the ps/top snapshot fills an array of these */
+
 /* The per-engine operations the shared run loop drives. */
 struct ove_lnx_engine {
 	/* The engine owns prog_regions[] (its placement differs per engine). */
@@ -124,6 +126,25 @@ struct ove_lnx_engine {
 	 * aren't exception-safe). NULL => a device mmap returns -ENODEV, leaving the
 	 * write()/pwrite() framebuffer path unaffected. */
 	int (*map_device)(int sidx, uintptr_t addr, size_t size, unsigned attrs);
+
+	/* ---- OS-service hooks (host adapter supplies these) --------------------
+	 * The personality core reaches these through the module-internal wrappers
+	 * (ove_lnx_time_us/ns, ove_lnx_cache_clean/invalidate) so it no longer calls
+	 * ove_time_* / ove_thread_list / the host's cache maintenance directly.
+	 * These are the seam of the OS-agnostic extraction: a non-oveRTOS host fills
+	 * them from its own clock / scheduler / cache primitives. */
+	/* Monotonic clock: *out = microseconds / nanoseconds since boot. Required. */
+	int (*time_us)(uint64_t *out);
+	int (*time_ns)(uint64_t *out);
+	/* Host kernel-thread snapshot for the ps/top /proc view. NULL => omitted. */
+	int (*thread_list)(struct ove_thread_info *out, size_t max_count, size_t *actual_count);
+	/* Guest-memory cache maintenance (NULL => no-op; a coherent host needs none). */
+	void (*cache_clean)(const void *base, size_t len);
+	void (*cache_invalidate)(const void *base, size_t len);
+	/* Tell the engine where the XIP rootfs image lives (PC discrimination). NULL => no-op. */
+	void (*rootfs_window)(const void *base, size_t len);
+	/* Staging buffer for fetching a remote (9P) exec image. NULL => no remote exec. */
+	uint8_t *(*exec_stage)(size_t *cap);
 };
 
 /* ---- shared state (defined in ove_lnx_run.c) ------------------------------- */

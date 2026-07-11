@@ -92,7 +92,8 @@ static void refresh_stats(void)
 {
 	struct ove_thread_info ti[OVE_LNX_MAX_KTHREAD];
 	size_t n = 0;
-	ove_thread_list(ti, OVE_LNX_MAX_KTHREAD, &n);
+	if (ove_lnx_thread_list(ti, OVE_LNX_MAX_KTHREAD, &n) != OVE_OK)
+		n = 0; /* no host introspection: /proc shows only the Linux procs */
 
 	/* 1. Charge each live Linux thread's CPU to its proc (slot from the name). */
 	uint64_t idle = 0, busy = 0;
@@ -145,6 +146,43 @@ static ove_arena_t g_arenas[OVE_LNX_NREG];
 static ove_arena_t g_snap_arena[OVE_LNX_NSLOT];
 static const ove_lnx_run_config_t *g_cfg;
 static const struct ove_lnx_engine *g_eng; /* for the dispatch to post coordinator events */
+
+/* ---- OS-service hooks routed through the engine ops ------------------------
+ * The personality core calls these instead of the host's ove_time_* / cache
+ * primitives, so it carries no direct dependency on any particular OS. The seam
+ * (host adapter) fills the ops; g_eng is live for the duration of a run. */
+int ove_lnx_time_us(uint64_t *out)
+{
+	if (g_eng && g_eng->time_us)
+		return g_eng->time_us(out);
+	*out = 0;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+int ove_lnx_time_ns(uint64_t *out)
+{
+	if (g_eng && g_eng->time_ns)
+		return g_eng->time_ns(out);
+	*out = 0;
+	return OVE_ERR_NOT_SUPPORTED;
+}
+void ove_lnx_cache_clean(const void *base, size_t len)
+{
+	if (g_eng && g_eng->cache_clean)
+		g_eng->cache_clean(base, len);
+}
+void ove_lnx_cache_invalidate(const void *base, size_t len)
+{
+	if (g_eng && g_eng->cache_invalidate)
+		g_eng->cache_invalidate(base, len);
+}
+int ove_lnx_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
+{
+	if (g_eng && g_eng->thread_list)
+		return g_eng->thread_list(out, max_count, actual_count);
+	if (actual_count)
+		*actual_count = 0;
+	return OVE_ERR_NOT_SUPPORTED;
+}
 
 /* The cpio data region [lo, hi): the embedded rootfs files' bytes. A dynamic FDPIC proc now runs
  * ALL its code — busybox.so + ld.so + libc.so text, shared in-place — straight from here, so a
@@ -763,12 +801,12 @@ static int vfork_snapshot(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par,
 	size_t dlen = par->stack_lo - (uintptr_t)pr; /* in-region writable data, below the stack */
 	/* The coordinator reads guest SDRAM through its UNCACHED view; clean the parent's dirty cache
 	 * lines to SDRAM first so the snapshot captures its live data (not stale SDRAM). */
-	ove_lnx_guest_flush(pr, dlen);
+	ove_lnx_cache_clean(pr, dlen);
 	memcpy(eng->region(rsnap), pr, dlen);
 	if (par->is_dynamic && eng->dyn_pool) {
 		size_t ds = 0;
 		uint8_t *pdp = eng->dyn_pool(par->region, &ds);
-		ove_lnx_guest_flush(pdp, ds);
+		ove_lnx_cache_clean(pdp, ds);
 		memcpy(eng->dyn_pool(rsnap, NULL), pdp, ds);
 	}
 	g_snap_arena[child_slot] = g_arenas[par->region]; /* allocator metadata (coordinator memory) */
@@ -789,15 +827,15 @@ static void vfork_restore(const struct ove_lnx_engine *eng, ove_lnx_proc_t *par,
 	 * The parent's own lines were already clean (vfork_snapshot flushed them), so only the child's
 	 * writes are dropped. A second invalidate after the write drains the Device write buffer (DSB)
 	 * and guarantees the parent refills from the restored SDRAM on resume. */
-	ove_lnx_guest_invalidate(pr, dlen);
+	ove_lnx_cache_invalidate(pr, dlen);
 	memcpy(pr, eng->region(rsnap), dlen);
-	ove_lnx_guest_invalidate(pr, dlen);
+	ove_lnx_cache_invalidate(pr, dlen);
 	if (par->is_dynamic && eng->dyn_pool) {
 		size_t ds = 0;
 		uint8_t *pdp = eng->dyn_pool(par->region, &ds);
-		ove_lnx_guest_invalidate(pdp, ds);
+		ove_lnx_cache_invalidate(pdp, ds);
 		memcpy(pdp, eng->dyn_pool(rsnap, NULL), ds);
-		ove_lnx_guest_invalidate(pdp, ds);
+		ove_lnx_cache_invalidate(pdp, ds);
 	}
 	g_arenas[par->region] = g_snap_arena[child_slot];
 }
@@ -1250,7 +1288,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 
 		/* No pending event: resume any sleeper whose deadline passed; assess liveness. */
 		uint64_t now = 0;
-		ove_time_get_us(&now);
+		ove_lnx_time_us(&now);
 		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0,
 		    any_sock_wait = 0, any_netfs_wait = 0, any_pty_wait = 0, any_console_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */

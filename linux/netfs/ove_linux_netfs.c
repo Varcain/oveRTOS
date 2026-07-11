@@ -370,12 +370,12 @@ static void conn_drop(void)
 static long xchg_blocking(uint64_t timeout_us)
 {
 	uint64_t now = 0, deadline;
-	ove_time_get_us(&now);
+	ove_lnx_time_us(&now);
 	deadline = now + timeout_us;
 	while (g_txoff < g_txlen) {
 		if (tx_flush() < 0)
 			return -1;
-		ove_time_get_us(&now);
+		ove_lnx_time_us(&now);
 		if (now >= deadline)
 			return -1;
 	}
@@ -389,7 +389,7 @@ static long xchg_blocking(uint64_t timeout_us)
 			return -1;
 		if (len)
 			return (long)len;
-		ove_time_get_us(&now);
+		ove_lnx_time_us(&now);
 		if (now >= deadline)
 			return -1;
 	}
@@ -1015,7 +1015,7 @@ void ove_lnx_netfs_mount_config(const char *mp, const uint8_t ip[4], uint16_t po
 void ove_lnx_netfs_init(void)
 {
 	uint64_t now = 0;
-	ove_time_get_us(&now);
+	ove_lnx_time_us(&now);
 	g_reconnect_at_us = 0;
 	conn_connect(now); /* best-effort; a down server reconnects lazily */
 }
@@ -1219,7 +1219,7 @@ const uint8_t *ove_lnx_netfs_exec_image(size_t *size)
 long ove_lnx_netfs_retry(ove_lnx_proc_t *p)
 {
 	uint64_t now = 0;
-	ove_time_get_us(&now);
+	ove_lnx_time_us(&now);
 	pump(now);
 
 	int ri = p->netfs_req;

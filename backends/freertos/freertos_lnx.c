@@ -26,6 +26,8 @@
 #include <string.h>
 
 #include "../common/ove_lnx_run.h"
+#include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
+#include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 #include "ove/linux/syscall.h" /* ove_lnx_rootfs_window — strong-overridden below for QSPI-XIP */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 #include "ove/linux/netfs.h" /* ove_lnx_netfs_exec_stage — the remote-exec staging buffer */
@@ -514,6 +516,13 @@ static const struct ove_lnx_engine g_freertos_engine = {
 	.crit_exit = freertos_crit_exit,
 	.event_post = freertos_event_post,
 	.event_wait = freertos_event_wait,
+	/* OS-service ops (host adapter): the personality core reaches these through
+	 * ove_lnx_time_us/ns, ove_lnx_thread_list, ove_lnx_cache_clean/invalidate. */
+	.time_us = ove_time_get_us,
+	.time_ns = ove_time_get_ns,
+	.thread_list = ove_thread_list,
+	.cache_clean = ove_lnx_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
+	.cache_invalidate = ove_lnx_guest_invalidate,
 };
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
