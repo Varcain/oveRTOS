@@ -156,9 +156,9 @@ enum { REQ_FREE = 0, REQ_QUEUED, REQ_INFLIGHT, REQ_DONE };
 #define REQ_OP_CLUNK 0xffu /* internal (owner_slot<0) background-clunk request. */
 struct netfs_req {
 	uint8_t state;
-	uint8_t op;    /* NETFSW_* (owner_slot>=0) or REQ_OP_CLUNK (owner_slot<0). */
+	uint8_t op;    /* NETFSW_* (owner set) or REQ_OP_CLUNK (owner NULL). */
 	uint8_t step;
-	int owner_slot; /* proc slot to resume, or -1 for an internal (clunk) request. */
+	ove_lnx_proc_t *owner; /* proc to resume/marshal for, or NULL for an internal (clunk) request. */
 	uint32_t seq;	/* FIFO ordering. */
 	int oi;		/* open-pool slot (open reserves it; read/getdents use it). */
 	int fid;	/* working fid (walk target / temp). */
@@ -749,12 +749,24 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 		return;
 	}
 	case OVE_LNX_NETFSW_STAT:
+		if (r->step == 0) { /* Rwalk: walked to the temp fid (or a component missing) */
+			uint16_t nwqid = get16(body, &o);
+			const char *cp[NETFS_MAXWELEM];
+			size_t cl[NETFS_MAXWELEM];
+			int n = path_split(r->path, cp, cl, NETFS_MAXWELEM);
+			if (n > 0 && nwqid < n) { /* partial walk: the temp fid was not bound */
+				r->fid = -1;
+				req_complete(r, -OVE_LNX_ENOENT);
+				return;
+			}
+			r->step = 1;
+			return; /* stay inflight; pump rebuilds Tlgetattr */
+		}
 		if (r->step == 1) { /* Rlgetattr → fill guest stat, then clunk */
 			uint32_t mode;
 			uint64_t size, mtime, ino;
 			parse_getattr(body, o, &mode, &size, &mtime, &ino);
-			ove_lnx_proc_t *ownp = &ove_lnx_proc_table()[r->owner_slot];
-			r->result = ove_lnx_netfs_fill_stat(ownp, r->ubuf, r->statkind, mode, size,
+			r->result = ove_lnx_netfs_fill_stat(r->owner, r->ubuf, r->statkind, mode, size,
 							    mtime, ino);
 			r->step = 2; /* send Tclunk(fid) */
 			return;
@@ -868,7 +880,7 @@ static void pump(uint64_t now_us)
 					struct netfs_req *r = &g_req[i];
 					memset(r, 0, sizeof(*r));
 					r->op = REQ_OP_CLUNK;
-					r->owner_slot = -1;
+					r->owner = NULL;
 					r->fid = g_clunk_fid[g_clunk_head];
 					g_clunk_head = (g_clunk_head + 1) % NETFS_NCLUNK;
 					r->state = REQ_INFLIGHT;
@@ -890,7 +902,7 @@ static struct netfs_req *req_new(ove_lnx_proc_t *p, uint8_t op)
 			memset(r, 0, sizeof(*r));
 			r->state = REQ_QUEUED;
 			r->op = op;
-			r->owner_slot = (int)(p - ove_lnx_proc_table());
+			r->owner = p;
 			r->oi = -1;
 			r->fid = -1;
 			r->seq = g_req_seq++;
