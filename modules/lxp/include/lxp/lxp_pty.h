@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_syscall.h"
 
 /* Parked-op codes stored in lxp_proc.pty_wait (the coordinator retries via
  * lxp_pty_retry, mirroring pipe_wait). */

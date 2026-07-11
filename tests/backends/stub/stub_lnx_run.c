@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_syscall.h"
 #include "ove/time.h" /* the real POSIX monotonic clock for the time hooks below */
 
 /* Cache-flush a guest send buffer before the stack reads it (a coherency hook on

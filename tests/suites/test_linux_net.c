@@ -15,8 +15,8 @@
 
 #include "../framework/ove_test.h"
 #include "ove/arena.h"
-#include "ove/linux/net.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_net.h"
+#include "lxp/lxp_syscall.h"
 #include "ove/net.h" /* ove_netif_init/storage for the ifconfig ioctl test */
 
 #include <arpa/inet.h>

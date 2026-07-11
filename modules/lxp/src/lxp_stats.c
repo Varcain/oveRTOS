@@ -10,7 +10,7 @@
 
 #include <string.h>
 
-#include "ove/linux/stats.h"
+#include "lxp/lxp_stats.h"
 
 static struct lxp_pentry g_pent[LXP_MAX_PENT];
 static int g_npent;

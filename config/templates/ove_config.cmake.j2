@@ -282,23 +282,23 @@ set(OVE_LINUX ON)
 # OVE_BUILDROOT is resolved against the oveRTOS root in cmake/OveLinuxFixtures.cmake.
 set(OVE_BUILDROOT "{{ config.get('CONFIG_OVE_BUILDROOT', '../buildroot') }}")
 set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output') }}")
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/ove_linux_syscall.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
 # Engine-agnostic run loop + svc dispatch + signals (shared by all three seams).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_run.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_run.c")
 # CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_stats.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_stats.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV") == True %}
 # /dev character-device layer: core registry + routing (class drivers added by
 # their own CONFIG_OVE_LINUX_DEV_* below).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev.c")
 # Host adapter for the display/input port: bridges fb/touch ops to ove_fb_* /
 # ove_ft5336_*. Statically wires g_ove_lnx_disp_ops.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_ove_disp_adapter.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_disp_adapter.c")
 {% if config.get("CONFIG_OVE_LINUX_DEV_FB") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_fb.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_fb.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_DEV_INPUT") == True %}
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/dev/ove_linux_dev_input.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/dev/lxp_dev_input.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_FT5336") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
@@ -308,20 +308,20 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
 # Socket layer: bridges the personality's socket syscalls (FD_SOCKET) to the
 # engine-neutral ove_net HAL. Selects CONFIG_OVE_NET, whose block adds the
 # per-engine *_net.c backend + the native TCP/IP stack (lwIP on FreeRTOS).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/net/ove_linux_net.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/net/lxp_net.c")
 # Host adapter for the personality's handle-based net-ops port: owns the socket
 # storage pool and bridges to the ove_net HAL. Statically wires g_ove_lnx_net_ops.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/ove_lnx_ove_adapter.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/common/lxp_ove_adapter.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_NETFS") == True %}
 # Remote filesystem: a coordinator-owned 9P2000.L client bridging FD_NET opens on
 # a /mnt path to a 9P server (diod). Selects CONFIG_OVE_NET for the TCP transport.
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/netfs/ove_linux_netfs.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/netfs/lxp_netfs.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_LINUX_PTY") == True %}
 # Pseudo-terminal layer: /dev/ptmx + /dev/pts/N (FD_PTY) with a minimal line
 # discipline — the interactive tty for a network login shell (dropbear over SSH).
-list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/pty/ove_linux_pty.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/pty/lxp_pty.c")
 {% endif %}
 {% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_lnx_trap.c")

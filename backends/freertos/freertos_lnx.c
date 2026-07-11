@@ -25,12 +25,12 @@
 
 #include <string.h>
 
-#include "../common/ove_lnx_run.h"
+#include "lxp/lxp_seam.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
-#include "ove/linux/syscall.h" /* lxp_rootfs_window — strong-overridden below for QSPI-XIP */
+#include "lxp/lxp_syscall.h" /* lxp_rootfs_window — strong-overridden below for QSPI-XIP */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "ove/linux/netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)

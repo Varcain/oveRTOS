@@ -22,7 +22,7 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 
 #include "ove/net.h"
-#include "ove/linux/net_ops.h"
+#include "lxp/lxp_net_ops.h"
 
 /* Enough storage for the personality's socket pool (LXP_NSOCK) plus the
  * remote-fs client socket and a little slack. */

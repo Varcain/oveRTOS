@@ -21,9 +21,9 @@
 
 #if defined(CONFIG_OVE_LINUX_NETFS)
 
-#include "ove/linux/netfs.h"
+#include "lxp/lxp_netfs.h"
 #include "ove/net.h"
-#include "ove/linux/net_ops.h"
+#include "lxp/lxp_net_ops.h"
 #include "ove/time.h"
 
 #include <string.h>

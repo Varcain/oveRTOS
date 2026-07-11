@@ -24,8 +24,8 @@
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_* for the per-engine NREG sizing below */
 #include "ove/loader.h"
-#include "ove/linux/run.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_run.h"
+#include "lxp/lxp_syscall.h"
 
 /* A dynamic FDPIC proc runs its text XIP from the QSPI cpio (shared in-place), so the per-process
  * region holds only the main exec's RW segment (busybox 5.8K / dropbear 7.3K / curl 20K) + ld.so's

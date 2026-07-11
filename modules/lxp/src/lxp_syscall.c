@@ -10,20 +10,20 @@
 
 #if defined(CONFIG_OVE_LINUX)
 
-#include "ove/linux/stats.h"
-#include "ove/linux/syscall.h"
+#include "lxp/lxp_stats.h"
+#include "lxp/lxp_syscall.h"
 #include "ove/time.h"
 #if defined(CONFIG_OVE_LINUX_DEV)
-#include "ove/linux/dev.h" /* /dev character-device routing (FD_DEV) */
+#include "lxp/lxp_dev.h" /* /dev character-device routing (FD_DEV) */
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
-#include "ove/linux/net.h" /* socket routing (FD_SOCKET) */
+#include "lxp/lxp_net.h" /* socket routing (FD_SOCKET) */
 #endif
 #if defined(CONFIG_OVE_LINUX_NETFS)
-#include "ove/linux/netfs.h" /* remote-fs routing (FD_NET, /mnt/pi) */
+#include "lxp/lxp_netfs.h" /* remote-fs routing (FD_NET, /mnt/pi) */
 #endif
 #if defined(CONFIG_OVE_LINUX_PTY)
-#include "ove/linux/pty.h" /* pseudo-terminal routing (FD_PTY) */
+#include "lxp/lxp_pty.h" /* pseudo-terminal routing (FD_PTY) */
 #endif
 
 #include <string.h>
