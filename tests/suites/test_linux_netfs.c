@@ -78,11 +78,13 @@ struct mnode {
 	const char *content;
 	int parent;
 };
+#define PROG_CONTENT "\x7f\x45\x4c\x46 fake-fdpic-image-bytes-for-the-exec-fetch-test\n"
 static const struct mnode g_tree[] = {
 	{"", 1, NULL, -1},		     /* 0: root */
 	{"hello.txt", 0, "hello world\n", 0},/* 1 */
 	{"sub", 1, NULL, 0},		     /* 2 */
 	{"a.txt", 0, "aaa", 2},		     /* 3 */
+	{"prog", 0, PROG_CONTENT, 0},	     /* 4: a file the exec-fetch test pulls into staging */
 };
 #define NTREE ((int)(sizeof(g_tree) / sizeof(g_tree[0])))
 
@@ -386,6 +388,17 @@ static void stop_mock(void)
 	g_mock_ls = -1;
 }
 
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* The engine staging buffer for a fetched remote ELF (the STM32 backend puts this in SDRAM). */
+static uint8_t g_stage[64 * 1024];
+uint8_t *ove_lnx_netfs_exec_stage(size_t *cap)
+{
+	if (cap)
+		*cap = sizeof(g_stage);
+	return g_stage;
+}
+#endif
+
 /* ---- test: full browse over one mock connection ---------------------------- */
 static void test_netfs_browse(void **state)
 {
@@ -500,6 +513,35 @@ static void test_netfs_browse(void **state)
 	assert_int_equal(call_pump(&p, OVE_LNX_NR_openat, OVE_LNX_AT_FDCWD,
 				   (long)(uintptr_t) "/mnt/pi/hello.txt", OVE_LNX_O_WRONLY, 0, 0, 0),
 			 -OVE_LNX_EROFS);
+
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	/* exec-fetch: execve("/mnt/pi/prog") pulls the whole file into the staging buffer and, on
+	 * completion, the retry sets exec_pending + a SENTINEL exec_file_idx (it does NOT resume —
+	 * the run loop's EV_EXEC launches from the staging buffer). */
+	{
+		ove_lnx_proc_t xp;
+		ove_arena_t xa;
+		setup(&xp, &xa);
+		long xr = ove_lnx_netfs_exec_fetch(&xp, "/mnt/pi/prog");
+		assert_int_equal(xr, 0); /* parked */
+		assert_int_equal(xp.netfs_wait, OVE_LNX_NETFSW_EXECFETCH);
+		long xrr = -OVE_LNX_EAGAIN;
+		for (int i = 0; i < 4000 && xrr == -OVE_LNX_EAGAIN; i++) {
+			xrr = ove_lnx_netfs_retry(&xp);
+			if (xrr == -OVE_LNX_EAGAIN) {
+				struct timespec ts = {0, 300000};
+				nanosleep(&ts, NULL);
+			}
+		}
+		assert_int_equal(xrr, 0);
+		assert_int_equal(xp.exec_pending, 1);
+		assert_int_equal(xp.exec_file_idx, OVE_LNX_NETFS_EXEC_SENTINEL);
+		size_t xsz = 0;
+		const uint8_t *ximg = ove_lnx_netfs_exec_image(&xsz);
+		assert_int_equal((int)xsz, (int)(sizeof(PROG_CONTENT) - 1));
+		assert_memory_equal(ximg, PROG_CONTENT, sizeof(PROG_CONTENT) - 1);
+	}
+#endif
 
 	/* drain any background clunks, then let the mock connection close. */
 	for (int i = 0; i < 50; i++) {

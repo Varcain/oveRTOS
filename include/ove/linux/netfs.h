@@ -136,12 +136,22 @@ int user_ok(const ove_lnx_proc_t *p, const void *ptr, size_t len, int write);
 
 /* ---- Phase B: exec a program off the mount (CONFIG_OVE_LINUX_NETFS_EXEC) ---- */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-/** execve of a /mnt path: submit chained Tread of the whole ELF into the staging buffer;
- *  parks (netfs_wait=NETFSW_EXECFETCH). On completion the retry returns 0 and the run loop
- *  reads the staged image via ove_lnx_netfs_exec_image. Negative errno inline on error. */
+/** exec_file_idx marker: the image to launch lives in the netfs exec staging buffer (RAM),
+ *  not the rootfs table. The run loop's EV_EXEC sources it via ove_lnx_netfs_exec_image. */
+#define OVE_LNX_NETFS_EXEC_SENTINEL (-2)
+
+/** execve of a /mnt path: submit walk/getattr/open + chained Tread of the whole ELF into the
+ *  staging buffer; parks (netfs_wait=NETFSW_EXECFETCH). On completion the retry sets the proc's
+ *  exec_pending + exec_file_idx=SENTINEL and the run loop launches from the staged image.
+ *  Returns 0 (parked) or a negative Linux errno inline. */
 long ove_lnx_netfs_exec_fetch(ove_lnx_proc_t *p, const char *abspath);
 /** The staged remote ELF after a completed EXECFETCH: bytes + size for launch(). */
 const uint8_t *ove_lnx_netfs_exec_image(size_t *size);
+
+/** Engine-provided RAM staging buffer for a fetched remote ELF (SDRAM on the STM32, a static
+ *  buffer under test). Returns the buffer + its capacity in @p cap, or NULL if unavailable.
+ *  Provided by the backend/board (gated on CONFIG_OVE_LINUX_NETFS_EXEC). */
+uint8_t *ove_lnx_netfs_exec_stage(size_t *cap);
 #endif
 
 /** Wake the coordinator so it retries parked netfs I/O at once (the eth RX path calls this

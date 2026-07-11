@@ -175,6 +175,12 @@ static struct netfs_req g_req[NETFS_NREQ];
 static uint32_t g_req_seq;
 static int g_inflight = -1; /* request whose message is being sent / awaiting reply. */
 
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+static uint8_t *g_exec_buf;  /* the engine's RAM staging buffer for a fetched remote ELF */
+static size_t g_exec_cap;    /* staging capacity */
+static size_t g_exec_size;   /* bytes fetched so far (the valid image size on completion) */
+#endif
+
 /* ---- TX/RX transport buffers ----------------------------------------------- */
 static uint8_t g_tx[NETFS_MSIZE];
 static size_t g_txlen, g_txoff; /* current outgoing message [g_txoff, g_txlen). */
@@ -498,22 +504,27 @@ static long req_build(struct netfs_req *r)
 			return 0;
 		}
 		if (r->step == 2) {
-			if (r->op == OVE_LNX_NETFSW_OPEN) { /* Tlopen(fid, flags) */
-				o = msg_begin(P9_TLOPEN, P9_TAG);
+			if (r->op == OVE_LNX_NETFSW_STAT) { /* stat: clunk the temp fid */
+				o = msg_begin(P9_TCLUNK, P9_TAG);
 				put32(&o, (uint32_t)r->fid);
-				put32(&o, g_open[r->oi].is_dir ? 0x10000u /* O_DIRECTORY */ : 0u);
 				msg_end(o);
 				return 0;
 			}
-			/* STAT / EXECFETCH: clunk the temp fid (EXECFETCH keeps it, see step 3). */
-			o = msg_begin(P9_TCLUNK, P9_TAG);
+			/* OPEN + EXECFETCH: Tlopen(fid, flags) */
+			o = msg_begin(P9_TLOPEN, P9_TAG);
 			put32(&o, (uint32_t)r->fid);
+			uint32_t oflags = 0;
+			if (r->op == OVE_LNX_NETFSW_OPEN && r->oi >= 0 && g_open[r->oi].is_dir)
+				oflags = 0x10000u; /* O_DIRECTORY */
+			put32(&o, oflags);
 			msg_end(o);
 			return 0;
 		}
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-		if (r->step == 3) { /* EXECFETCH: Tread the next chunk */
+		if (r->step == 3) { /* EXECFETCH: Tread the next chunk into the staging buffer */
 			uint32_t cnt = (uint32_t)(g_msize - 24);
+			if (r->off + cnt > g_exec_cap) /* never overflow the staging buffer */
+				cnt = (uint32_t)(g_exec_cap - r->off);
 			o = msg_begin(P9_TREAD, P9_TAG);
 			put32(&o, (uint32_t)r->fid);
 			put64(&o, r->off);
@@ -781,9 +792,63 @@ static void handle_reply(struct netfs_req *r, uint8_t type, const uint8_t *body,
 
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	case OVE_LNX_NETFSW_EXECFETCH:
-		/* Phase B (task 44): walk/getattr(size)/read-chunks into the staging buffer. */
-		req_complete(r, -OVE_LNX_ENOSYS);
-		return;
+		if (r->step == 0) { /* Rwalk */
+			uint16_t nwqid = get16(body, &o);
+			const char *cp[NETFS_MAXWELEM];
+			size_t cl[NETFS_MAXWELEM];
+			int n = path_split(r->path, cp, cl, NETFS_MAXWELEM);
+			if (n > 0 && nwqid < n) {
+				r->fid = -1;
+				req_complete(r, -OVE_LNX_ENOENT);
+				return;
+			}
+			r->step = 1;
+			return;
+		}
+		if (r->step == 1) { /* Rlgetattr → capture the file size (regular files only) */
+			uint32_t mode;
+			uint64_t size, mtime, ino;
+			parse_getattr(body, o, &mode, &size, &mtime, &ino);
+			if ((mode & OVE_LNX_S_IFMT) != OVE_LNX_S_IFREG) {
+				r->result = -OVE_LNX_EACCES;
+				r->step = 4; /* skip open/read → just clunk the walked fid */
+				return;
+			}
+			r->ulen = (size_t)size; /* total bytes to fetch */
+			r->step = 2;
+			return;
+		}
+		if (r->step == 2) { /* Rlopen → begin chunked reads */
+			r->off = 0;
+			g_exec_size = 0;
+			r->step = 3;
+			return;
+		}
+		if (r->step == 3) { /* Rread → copy a chunk into staging */
+			uint32_t cnt = get32(body, &o);
+			if (cnt > blen - 4)
+				cnt = (uint32_t)(blen - 4);
+			if (r->off + cnt > g_exec_cap)
+				cnt = (uint32_t)(g_exec_cap - r->off);
+			if (cnt)
+				memcpy(g_exec_buf + r->off, body + o, cnt);
+			r->off += cnt;
+			g_exec_size = r->off;
+			int eof = (cnt == 0) || (r->off >= r->ulen);
+			int full = (r->off >= g_exec_cap);
+			if (full && !eof)
+				r->result = -OVE_LNX_ENOEXEC; /* image exceeds the staging buffer */
+			if (eof || full)
+				r->step = 4; /* clunk */
+			return;		     /* else stay step 3 and read more */
+		}
+		if (r->step == 4) { /* Rclunk → done (result 0, or an error latched above) */
+			fid_free(r->fid);
+			r->fid = -1;
+			req_complete(r, r->result);
+			return;
+		}
+		break;
 #endif
 
 	default: /* REQ_OP_CLUNK: Rclunk */
@@ -1118,6 +1183,36 @@ void ove_lnx_netfs_close(int oi)
 	op->used = 0;
 }
 
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* ---- exec off the mount: fetch the whole ELF into the engine staging buffer ---- */
+long ove_lnx_netfs_exec_fetch(ove_lnx_proc_t *p, const char *abspath)
+{
+	const char *rp = relpath(abspath);
+	if (strlen(rp) >= OVE_LNX_PATH_MAX)
+		return -OVE_LNX_ENAMETOOLONG;
+	size_t cap = 0;
+	g_exec_buf = ove_lnx_netfs_exec_stage(&cap);
+	if (!g_exec_buf || cap == 0)
+		return -OVE_LNX_ENOMEM; /* no staging buffer on this build */
+	g_exec_cap = cap;
+	g_exec_size = 0;
+	struct netfs_req *r = req_new(p, OVE_LNX_NETFSW_EXECFETCH);
+	if (!r)
+		return -OVE_LNX_EMFILE;
+	strcpy(r->path, rp);
+	r->off = 0;
+	p->netfs_oi = -1;
+	return 0; /* parked */
+}
+
+const uint8_t *ove_lnx_netfs_exec_image(size_t *size)
+{
+	if (size)
+		*size = g_exec_size;
+	return g_exec_buf;
+}
+#endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
+
 /* ---- coordinator: retry a parked op / periodic pump ------------------------ */
 long ove_lnx_netfs_retry(ove_lnx_proc_t *p)
 {
@@ -1146,6 +1241,15 @@ long ove_lnx_netfs_retry(ove_lnx_proc_t *p)
 		}
 		return fd;
 	}
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	if (op == OVE_LNX_NETFSW_EXECFETCH && result >= 0) {
+		/* the ELF is staged: flag the exec so the run loop's EV_EXEC launches it from the
+		 * staging buffer. Returning 0 with exec_pending set tells the run loop NOT to resume. */
+		p->exec_pending = 1;
+		p->exec_file_idx = OVE_LNX_NETFS_EXEC_SENTINEL;
+		return 0;
+	}
+#endif
 	return result;
 }
 
