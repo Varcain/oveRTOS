@@ -18,7 +18,7 @@
 
 #include "ove/linux/dev.h"
 #include "ove/time.h"
-#include "board_desc.h"
+#include "ove/linux/disp_ops.h"
 #include "ove_linux_uapi.h"
 #if defined(CONFIG_OVE_FT5336)
 #include "ove/ft5336.h"
@@ -26,12 +26,17 @@
 
 #include <string.h>
 
-#ifndef OVE_DISPLAY_WIDTH
-#define OVE_DISPLAY_WIDTH 480
-#endif
-#ifndef OVE_DISPLAY_HEIGHT
-#define OVE_DISPLAY_HEIGHT 272
-#endif
+/* Display geometry for the touch clamps (was board_desc.h OVE_DISPLAY_*). Default
+ * is the STM32F746-Disco panel; a host overrides via ove_lnx_disp_set_geometry. */
+static int g_disp_w = 480, g_disp_h = 272;
+
+void ove_lnx_disp_set_geometry(int width, int height)
+{
+	if (width > 0)
+		g_disp_w = width;
+	if (height > 0)
+		g_disp_h = height;
+}
 
 /* A shared monotonic event ring; each open() tracks its own tail cursor. */
 #define OVE_LNX_IN_RING 64
@@ -59,10 +64,10 @@ void ove_lnx_input_report_touch(int x, int y, int pressed)
 		x = 0;
 	if (y < 0)
 		y = 0;
-	if (x >= OVE_DISPLAY_WIDTH)
-		x = OVE_DISPLAY_WIDTH - 1;
-	if (y >= OVE_DISPLAY_HEIGHT)
-		y = OVE_DISPLAY_HEIGHT - 1;
+	if (x >= g_disp_w)
+		x = g_disp_w - 1;
+	if (y >= g_disp_h)
+		y = g_disp_h - 1;
 	ring_push(OVE_LNX_EV_ABS, OVE_LNX_ABS_X, x);
 	ring_push(OVE_LNX_EV_ABS, OVE_LNX_ABS_Y, y);
 	ring_push(OVE_LNX_EV_KEY, OVE_LNX_BTN_TOUCH, pressed ? 1 : 0);
@@ -146,8 +151,8 @@ static long in_ioctl(struct ove_lnx_dev *d, struct ove_lnx_dev_open *o, ove_lnx_
 				return -OVE_LNX_EFAULT;
 			memset(a, 0, sizeof(*a));
 			a->maximum = (nr == OVE_LNX_EVIOCGABS_BASE + OVE_LNX_ABS_X)
-					     ? OVE_DISPLAY_WIDTH - 1
-					     : OVE_DISPLAY_HEIGHT - 1;
+					     ? g_disp_w - 1
+					     : g_disp_h - 1;
 			return 0;
 		}
 		if (nr == OVE_LNX_EVIOCGNAME_NR) {
@@ -182,8 +187,8 @@ static void testpad_tick(uint64_t now_us)
 		return; /* one report per 100 ms step */
 	last_us = now_us;
 	uint64_t phase = ((now_us - t0) / 100000u) % 12u; /* 100 ms steps, 1.2 s cycle */
-	int x = (int)(phase * OVE_DISPLAY_WIDTH / 12u);
-	int y = (int)(phase * OVE_DISPLAY_HEIGHT / 12u);
+	int x = (int)(phase * g_disp_w / 12u);
+	int y = (int)(phase * g_disp_h / 12u);
 	ove_lnx_input_report_touch(x, y, phase != 11);
 }
 #endif
@@ -197,7 +202,7 @@ static void ft5336_tick(uint64_t now_us)
 		return;
 	last_us = now_us;
 	int x, y, pressed;
-	if (ove_ft5336_read(&x, &y, &pressed) == 0)
+	if (g_ove_lnx_disp_ops->touch_read(&x, &y, &pressed) == 0)
 		ove_lnx_input_report_touch(x, y, pressed);
 }
 #endif
@@ -219,7 +224,7 @@ void ove_lnx_dev_autoreg_input(void)
 	int touch_ready = 0;
 	(void)touch_ready;
 #if defined(CONFIG_OVE_FT5336)
-	if (ove_ft5336_init() == 0) {
+	if (g_ove_lnx_disp_ops->touch_init() == 0) {
 		ove_lnx_dev_tick_register(ft5336_tick); /* real HW touch panel */
 		touch_ready = 1;
 	}
