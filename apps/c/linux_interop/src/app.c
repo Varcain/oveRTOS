@@ -44,6 +44,9 @@
 #include "ove/net.h"	    /* bring eth0 up so the personality's sockets can reach the LAN */
 #include "ove/linux/net.h" /* ove_lnx_sock_set_netif — the SIOC* ioctl target */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+#include "ove/linux/netfs.h" /* ove_lnx_netfs_mount_config — the static /mnt/pi mount */
+#endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 
@@ -493,6 +496,29 @@ static void demo_body(void *arg)
 		} else {
 			sh_write0("[demo] eth0 bring-up FAILED\n");
 		}
+	}
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	/* Configure the static remote-fs mount (/mnt/pi -> the Pi's 9P/diod export). The 9P
+	 * handshake happens later inside ove_lnx_run's coordinator (ove_lnx_netfs_init). */
+	{
+		uint8_t ip[4] = {0, 0, 0, 0};
+		int oct = 0, v = 0;
+		for (const char *c = CONFIG_OVE_LINUX_NETFS_SERVER_IP;; c++) {
+			if (*c >= '0' && *c <= '9') {
+				v = v * 10 + (*c - '0');
+			} else {
+				if (oct < 4)
+					ip[oct] = (uint8_t)v;
+				oct++;
+				v = 0;
+				if (!*c)
+					break;
+			}
+		}
+		ove_lnx_netfs_mount_config(CONFIG_OVE_LINUX_NETFS_MOUNTPOINT, ip,
+					   (uint16_t)CONFIG_OVE_LINUX_NETFS_PORT,
+					   CONFIG_OVE_LINUX_NETFS_ANAME, "root");
 	}
 #endif
 

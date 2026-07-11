@@ -291,6 +291,7 @@ extern "C" {
 #define OVE_LNX_ENOENT 2
 #define OVE_LNX_ESRCH 3
 #define OVE_LNX_EINTR 4
+#define OVE_LNX_EIO 5
 #define OVE_LNX_ENOEXEC 8
 #define OVE_LNX_EBADF 9
 #define OVE_LNX_ECHILD 10
@@ -329,6 +330,7 @@ extern "C" {
 #define OVE_LNX_EHOSTUNREACH 113
 #define OVE_LNX_EALREADY 114
 #define OVE_LNX_EINPROGRESS 115
+#define OVE_LNX_ESTALE 116 /* a remote-fs fid invalidated by a server reconnect */
 
 /** Scatter/gather element, matching the target's @c struct iovec layout. */
 typedef struct ove_lnx_iovec {
@@ -402,6 +404,8 @@ typedef struct ove_lnx_fd {
 #define OVE_LNX_FD_EVENTFD 8
 /** pty fd kind (pseudo-terminal). @c file_idx = pty-pool index; @c rw = 1 master, 0 slave. */
 #define OVE_LNX_FD_PTY 9
+/** remote-fs fd kind (9P mount, e.g. /mnt/pi). @c file_idx = netfs open-pool index. */
+#define OVE_LNX_FD_NET 10
 /* eventfd2(2) flags. */
 #define OVE_LNX_EFD_SEMAPHORE 0x00000001
 #define OVE_LNX_EFD_NONBLOCK 0x00000800
@@ -550,6 +554,16 @@ typedef struct ove_lnx_proc {
 	size_t pty_len;	    /**< Requested length for the parked read/write. */
 	uint64_t alarm_deadline_us; /**< setitimer(ITIMER_REAL)/alarm() fire time; 0 = disarmed. */
 	uint64_t alarm_interval_us; /**< Repeating interval (0 = one-shot); re-arms on fire. */
+		/* Blocking remote-fs I/O (9P netfs layer, /mnt/pi): an open/read/getdents/stat that
+		 * needs a Pi round-trip parks the proc; the coordinator pumps the 9P transport each
+		 * pass via ove_lnx_netfs_retry and resumes it on completion (same park/retry as
+		 * dev_wait/sock_wait). The heavy request state lives in the netfs request pool. */
+		uint8_t netfs_wait; /**< 0 = none, else a NETFSW_* op the coordinator retries. */
+		int netfs_oi;	    /**< netfs open-pool index being waited on (-1 for a path-only op). */
+		int netfs_req;	    /**< netfs request-pool index driving this parked op. */
+		uintptr_t netfs_buf; /**< User buffer (read) / stat-out / getdents buffer. */
+		size_t netfs_len;    /**< Requested length / buffer capacity. */
+		uint64_t netfs_deadline_us; /**< Absolute-µs per-request timeout (UINT64_MAX = infinite). */
 } ove_lnx_proc_t;
 
 /** @brief Proc-table accessors (defined in the run loop) so the pipe layer can scan

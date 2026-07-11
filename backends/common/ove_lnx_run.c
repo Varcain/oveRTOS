@@ -33,6 +33,9 @@
 #if defined(CONFIG_OVE_LINUX_NET)
 #include "ove/linux/net.h" /* socket-layer park/retry + fork/exit fd lifecycle */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+#include "ove/linux/netfs.h" /* remote-fs park/retry + init/pump + fork/exit lifecycle */
+#endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 #include "ove/linux/pty.h" /* pty-layer park/retry (ove_lnx_pty_retry) */
 #endif
@@ -188,6 +191,16 @@ void ove_lnx_dev_kick(void)
  * ove_lnx_dev_kick; only ever called with CONFIG_OVE_LINUX_NET (⇒ OVE_LINUX) set, so this
  * run loop is always linked and no weak no-op is needed. */
 void ove_lnx_sock_kick(void)
+{
+	if (g_eng && g_eng->event_post)
+		g_eng->event_post();
+}
+#endif
+
+#if defined(CONFIG_OVE_LINUX_NETFS)
+/* Wake the coordinator so it pumps the 9P transport at once — the eth RX task calls this
+ * after delivering frames, so a parked netfs op resumes the instant its reply lands. */
+void ove_lnx_netfs_kick(void)
 {
 	if (g_eng && g_eng->event_post)
 		g_eng->event_post();
@@ -450,7 +463,8 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 	 * post-svc context (resume the SAME image after the svc) and park. The
 	 * coordinator delays/wakes and resumes via spawn_resume(&g_ctx[slot], r0). */
 	if (proc->sleep_pending || proc->wait_pending || proc->pipe_wait || proc->dev_wait ||
-	    proc->sock_wait || proc->pty_wait || proc->sigsuspend_pending || proc->console_wait) {
+	    proc->sock_wait || proc->netfs_wait || proc->pty_wait || proc->sigsuspend_pending ||
+	    proc->console_wait) {
 		capture_ctx(slot_of(proc), f);
 		park_frame(f);
 		return;
@@ -817,6 +831,11 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	 * coordinator thread, where blocking HAL init (ove_fb_init, ove_i2c_create) is legal. */
 	ove_lnx_dev_autoreg_all();
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+	/* Connect the remote-fs mount (9P Tversion/Tattach). Coordinator thread, where blocking
+	 * init is legal; a down server is non-fatal — the mount reconnects lazily. */
+	ove_lnx_netfs_init();
+#endif
 
 	int bb = -1;
 	for (int i = 0; i < cfg->rootfs_count; i++)
@@ -867,6 +886,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			EV_PIPE,
 			EV_DEVWAIT,
 			EV_SOCKWAIT,
+			EV_NETFSWAIT,
 			EV_PTYWAIT,
 			EV_SIGSUSPEND,
 			EV_CONSOLEWAIT
@@ -918,6 +938,13 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				et = EV_SOCKWAIT;
 				break;
 			}
+#if defined(CONFIG_OVE_LINUX_NETFS)
+			if (p->netfs_wait && g_ove_lnx_used[s]) {
+				es = s;
+				et = EV_NETFSWAIT;
+				break;
+			}
+#endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 			if (p->pty_wait && g_ove_lnx_used[s]) {
 				es = s;
@@ -961,6 +988,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_NET)
 			ove_lnx_sock_fork_inherit(ch); /* the child shares the parent's socket opens */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+			ove_lnx_netfs_fork_inherit(ch); /* the child shares the parent's remote-fs opens */
+#endif
 			ch->pid = next_pid++;
 			ch->ppid = par->pid;
 			ch->exited = ch->exec_pending = ch->fork_pending = 0;
@@ -968,6 +998,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			ch->pipe_wait = 0;
 			ch->dev_wait = 0;
 			ch->sock_wait = 0;
+			ch->netfs_wait = 0;
+			ch->netfs_req = -1;
 			ch->sel_active = 0;
 			ch->pty_wait = 0;
 			ch->console_wait = 0;
@@ -1016,6 +1048,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #endif
 #if defined(CONFIG_OVE_LINUX_NET)
 				ove_lnx_sock_proc_exit(ch);
+#endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+				ove_lnx_netfs_proc_exit(ch);
 #endif
 				ch->alive = 0;
 				g_ove_lnx_used[c] = 0;
@@ -1120,6 +1155,9 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_NET)
 			ove_lnx_sock_proc_exit(p); /* release the exiting process's socket opens */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+			ove_lnx_netfs_proc_exit(p); /* release the exiting process's remote-fs opens */
+#endif
 			eng->abort_slot(es);
 			if (p->region_owner && rowner[p->region] == es)
 				rowner[p->region] = -1;
@@ -1171,6 +1209,13 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 			idle = 0;
 			continue;
 		}
+#if defined(CONFIG_OVE_LINUX_NETFS)
+		if (et == EV_NETFSWAIT) { /* free the spin thread; the netfs retry below resumes it. */
+			eng->abort_slot(es);
+			idle = 0;
+			continue;
+		}
+#endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 		if (et == EV_PTYWAIT) { /* free the spin thread; the pty retry below resumes it. */
 			eng->abort_slot(es);
@@ -1193,7 +1238,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 		uint64_t now = 0;
 		ove_time_get_us(&now);
 		int progress = 0, any_alive = 0, any_busy = 0, any_pipe_wait = 0, any_dev_wait = 0,
-		    any_sock_wait = 0, any_pty_wait = 0, any_console_wait = 0;
+		    any_sock_wait = 0, any_netfs_wait = 0, any_pty_wait = 0, any_console_wait = 0;
 		uint64_t next_sleep = UINT64_MAX; /* earliest future sleeper deadline (µs) */
 		for (int s = 0; s < OVE_LNX_NSLOT; s++) {
 			ove_lnx_proc_t *p = &g_ove_lnx_proc[s];
@@ -1208,6 +1253,8 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				any_dev_wait = 1;
 			if (p->sock_wait)
 				any_sock_wait = 1;
+			if (p->netfs_wait)
+				any_netfs_wait = 1;
 			if (p->pty_wait)
 				any_pty_wait = 1;
 			if (p->console_wait)
@@ -1361,6 +1408,18 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				}
 			}
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+			/* Blocked remote-fs I/O: pump the 9P transport + advance the parked op;
+			 * resume the proc when its reply completes. Mirrors the socket retry. */
+			if (p->netfs_wait && !g_ove_lnx_used[s]) {
+				long r = ove_lnx_netfs_retry(p);
+				if (r != -OVE_LNX_EAGAIN) {
+					p->netfs_wait = 0;
+					eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					progress = 1;
+				}
+			}
+#endif
 #if defined(CONFIG_OVE_LINUX_PTY)
 			/* Blocked pty I/O: retry (the peer end may have drained/filled the ring);
 			 * resume the proc when the op completes. Mirrors the pipe/socket retries. */
@@ -1411,14 +1470,17 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 #if defined(CONFIG_OVE_LINUX_DEV)
 		ove_lnx_dev_tick(now); /* coordinator-thread periodic work (fb flush, touch poll) */
 #endif
+#if defined(CONFIG_OVE_LINUX_NETFS)
+		ove_lnx_netfs_tick(now); /* pump the 9P transport: background clunks + lazy reconnect */
+#endif
 		/* Block until a program parks (event_post) or the timeout. NOT a busy 1ms poll —
 		 * that would preempt running programs every tick and reset their time-slice,
 		 * starving a fg command while a CPU-bound background job runs. The timeout is the
 		 * NEAREST sleeper deadline (so nanosleep wakes on time, not quantized to the old
 		 * fixed 50ms), clamped to a short poll while a pipe is blocked; a pipe read/write
 		 * that unblocks a peer also kicks us directly (ove_lnx_pipe_kick). */
-		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait || any_pty_wait ||
-			       any_console_wait)
+		unsigned to = (any_pipe_wait || any_dev_wait || any_sock_wait || any_netfs_wait ||
+			       any_pty_wait || any_console_wait)
 				      ? 5u
 				      : 50u;
 		if (next_sleep != UINT64_MAX && next_sleep > now) {

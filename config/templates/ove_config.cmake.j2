@@ -307,6 +307,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/src/ove_ft5336.c")
 # per-engine *_net.c backend + the native TCP/IP stack (lwIP on FreeRTOS).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/net/ove_linux_net.c")
 {% endif %}
+{% if config.get("CONFIG_OVE_LINUX_NETFS") == True %}
+# Remote filesystem: a coordinator-owned 9P2000.L client bridging FD_NET opens on
+# a /mnt path to a 9P server (diod). Selects CONFIG_OVE_NET for the TCP transport.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/linux/netfs/ove_linux_netfs.c")
+{% endif %}
 {% if config.get("CONFIG_OVE_LINUX_PTY") == True %}
 # Pseudo-terminal layer: /dev/ptmx + /dev/pts/N (FD_PTY) with a minimal line
 # discipline — the interactive tty for a network login shell (dropbear over SSH).
