@@ -6,13 +6,13 @@
  * This file is part of oveRTOS.
  *
  * oveRTOS host adapter for the Linux personality's network port
- * (struct ove_lnx_net_ops). It bridges the handle-based port to the ove_net HAL
+ * (struct lxp_net_ops). It bridges the handle-based port to the ove_net HAL
  * (lwIP / NuttX net / Zephyr net / POSIX sockets) and OWNS the socket-storage
  * pool — the backend-sized ove_socket_storage_t that the personality no longer
  * embeds. Engine-agnostic: it calls only ove_socket_* / ove_netif_*, so the same
  * adapter serves all three RTOS engines and the host test build.
  *
- * g_ove_lnx_net_ops is statically pointed here, so merely linking this TU wires
+ * g_lxp_net_ops is statically pointed here, so merely linking this TU wires
  * the personality to the ove_net stack (no init call). A non-oveRTOS host links
  * its own adapter instead.
  */
@@ -24,23 +24,23 @@
 #include "ove/net.h"
 #include "ove/linux/net_ops.h"
 
-/* Enough storage for the personality's socket pool (OVE_LNX_NSOCK) plus the
+/* Enough storage for the personality's socket pool (LXP_NSOCK) plus the
  * remote-fs client socket and a little slack. */
-#define OVE_LNX_ADAPTER_NSOCK (OVE_LNX_NSOCK + 4)
+#define LXP_ADAPTER_NSOCK (LXP_NSOCK + 4)
 
 /* The opaque handle the personality holds: a pool entry that carries the
  * backend-sized storage and the resulting ove_socket handle. */
-struct ove_lnx_socket {
+struct lxp_socket {
 	ove_socket_storage_t st;
 	ove_socket_t h;
 	uint8_t used;
 };
 
-static struct ove_lnx_socket g_pool[OVE_LNX_ADAPTER_NSOCK];
+static struct lxp_socket g_pool[LXP_ADAPTER_NSOCK];
 
-static struct ove_lnx_socket *slot_alloc(void)
+static struct lxp_socket *slot_alloc(void)
 {
-	for (int i = 0; i < OVE_LNX_ADAPTER_NSOCK; i++)
+	for (int i = 0; i < LXP_ADAPTER_NSOCK; i++)
 		if (!g_pool[i].used) {
 			g_pool[i].used = 1;
 			return &g_pool[i];
@@ -48,9 +48,9 @@ static struct ove_lnx_socket *slot_alloc(void)
 	return NULL;
 }
 
-static int a_open(ove_af_t af, ove_sock_type_t type, int proto, ove_lnx_socket_t *out)
+static int a_open(ove_af_t af, ove_sock_type_t type, int proto, lxp_socket_t *out)
 {
-	struct ove_lnx_socket *s = slot_alloc();
+	struct lxp_socket *s = slot_alloc();
 	if (!s)
 		return OVE_ERR_NO_MEMORY;
 	int r = ove_socket_open_ex(&s->h, &s->st, af, type, proto);
@@ -62,9 +62,9 @@ static int a_open(ove_af_t af, ove_sock_type_t type, int proto, ove_lnx_socket_t
 	return OVE_OK;
 }
 
-static int a_accept(ove_lnx_socket_t listener, ove_lnx_socket_t *out, uint64_t timeout_ns)
+static int a_accept(lxp_socket_t listener, lxp_socket_t *out, uint64_t timeout_ns)
 {
-	struct ove_lnx_socket *s = slot_alloc();
+	struct lxp_socket *s = slot_alloc();
 	if (!s)
 		return OVE_ERR_NO_MEMORY;
 	int r = ove_socket_accept(listener->h, &s->h, &s->st, timeout_ns);
@@ -76,7 +76,7 @@ static int a_accept(ove_lnx_socket_t listener, ove_lnx_socket_t *out, uint64_t t
 	return OVE_OK;
 }
 
-static void a_close(ove_lnx_socket_t s)
+static void a_close(lxp_socket_t s)
 {
 	if (!s)
 		return;
@@ -84,57 +84,57 @@ static void a_close(ove_lnx_socket_t s)
 	s->used = 0;
 }
 
-static int a_connect(ove_lnx_socket_t s, const ove_sockaddr_t *a, uint64_t t)
+static int a_connect(lxp_socket_t s, const ove_sockaddr_t *a, uint64_t t)
 {
 	return ove_socket_connect(s->h, a, t);
 }
-static int a_bind(ove_lnx_socket_t s, const ove_sockaddr_t *a)
+static int a_bind(lxp_socket_t s, const ove_sockaddr_t *a)
 {
 	return ove_socket_bind(s->h, a);
 }
-static int a_listen(ove_lnx_socket_t s, int backlog)
+static int a_listen(lxp_socket_t s, int backlog)
 {
 	return ove_socket_listen(s->h, backlog);
 }
-static int a_send(ove_lnx_socket_t s, const void *d, size_t n, size_t *sent)
+static int a_send(lxp_socket_t s, const void *d, size_t n, size_t *sent)
 {
 	return ove_socket_send(s->h, d, n, sent);
 }
-static int a_recv(ove_lnx_socket_t s, void *b, size_t n, size_t *got, uint64_t t)
+static int a_recv(lxp_socket_t s, void *b, size_t n, size_t *got, uint64_t t)
 {
 	return ove_socket_recv(s->h, b, n, got, t);
 }
-static int a_sendto(ove_lnx_socket_t s, const void *d, size_t n, size_t *sent,
+static int a_sendto(lxp_socket_t s, const void *d, size_t n, size_t *sent,
 		    const ove_sockaddr_t *dst)
 {
 	return ove_socket_sendto(s->h, d, n, sent, dst);
 }
-static int a_recvfrom(ove_lnx_socket_t s, void *b, size_t n, size_t *got, ove_sockaddr_t *src,
+static int a_recvfrom(lxp_socket_t s, void *b, size_t n, size_t *got, ove_sockaddr_t *src,
 		      uint64_t t)
 {
 	return ove_socket_recvfrom(s->h, b, n, got, src, t);
 }
-static int a_set_nonblock(ove_lnx_socket_t s, int nb)
+static int a_set_nonblock(lxp_socket_t s, int nb)
 {
 	return ove_socket_set_nonblock(s->h, nb);
 }
-static int a_poll(ove_lnx_socket_t s, unsigned events, unsigned *revents, uint64_t t)
+static int a_poll(lxp_socket_t s, unsigned events, unsigned *revents, uint64_t t)
 {
 	return ove_socket_poll(s->h, events, revents, t);
 }
-static int a_shutdown(ove_lnx_socket_t s, int how)
+static int a_shutdown(lxp_socket_t s, int how)
 {
 	return ove_socket_shutdown(s->h, how);
 }
-static int a_getsockname(ove_lnx_socket_t s, ove_sockaddr_t *a)
+static int a_getsockname(lxp_socket_t s, ove_sockaddr_t *a)
 {
 	return ove_socket_getsockname(s->h, a);
 }
-static int a_getpeername(ove_lnx_socket_t s, ove_sockaddr_t *a)
+static int a_getpeername(lxp_socket_t s, ove_sockaddr_t *a)
 {
 	return ove_socket_getpeername(s->h, a);
 }
-static int a_get_error(ove_lnx_socket_t s)
+static int a_get_error(lxp_socket_t s)
 {
 	return ove_socket_get_error(s->h);
 }
@@ -163,7 +163,7 @@ static int a_netif_set_up(ove_netif_t nif, int up)
 	return ove_netif_set_up(nif, up);
 }
 
-static const struct ove_lnx_net_ops g_ove_adapter_net_ops = {
+static const struct lxp_net_ops g_ove_adapter_net_ops = {
 	.sock_open = a_open,
 	.sock_accept = a_accept,
 	.sock_close = a_close,
@@ -189,6 +189,6 @@ static const struct ove_lnx_net_ops g_ove_adapter_net_ops = {
 
 /* Statically wire the personality to this adapter (no init call needed). A future
  * lxp_run(net) will assign this pointer explicitly instead. */
-const struct ove_lnx_net_ops *g_ove_lnx_net_ops = &g_ove_adapter_net_ops;
+const struct lxp_net_ops *g_lxp_net_ops = &g_ove_adapter_net_ops;
 
 #endif /* CONFIG_OVE_LINUX_NET */

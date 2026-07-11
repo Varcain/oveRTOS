@@ -17,11 +17,11 @@ extern "C" {
 
 /**
  * @file
- * @defgroup ove_lnx_run Linux personality runner
+ * @defgroup lxp_run Linux personality runner
  * @brief Engine-agnostic public API for running a Linux program under the
  *        oveRTOS Linux personality.
  *
- * The engine-agnostic core (@ref ove_lnx_syscall) translates the Linux ABI into
+ * The engine-agnostic core (@ref lxp_syscall) translates the Linux ABI into
  * oveRTOS primitives; a per-engine SEAM binds it to a concrete RTOS engine —
  * trapping the unprivileged program's syscalls, running each loaded FDPIC program in its
  * own isolated memory domain, and implementing the NOMMU process model
@@ -31,16 +31,16 @@ extern "C" {
  * @c CONFIG_USERSPACE).
  *
  * A host supplies a parsed rootfs and console callbacks, then calls
- * @ref ove_lnx_run with an init program.
+ * @ref lxp_run with an init program.
  * @{
  */
 
 /** Host configuration for a personality run. */
 typedef struct {
-	const ove_lnx_file_t *rootfs; /**< Parsed (read-only) rootfs table. */
+	const lxp_file_t *rootfs; /**< Parsed (read-only) rootfs table. */
 	int rootfs_count;	      /**< Entry count in @p rootfs. */
-	ove_lnx_write_fn write_fn;    /**< Console sink (fd 1/2). */
-	ove_lnx_read_fn read_fn;      /**< Console source (fd 0); see the tty helpers. */
+	lxp_write_fn write_fn;    /**< Console sink (fd 1/2). */
+	lxp_read_fn read_fn;      /**< Console source (fd 0); see the tty helpers. */
 	void *io_ctx;		      /**< Opaque, passed to @p write_fn / @p read_fn. */
 	void (*on_enosys)(long nr);   /**< Optional: notified of an unimplemented syscall. */
 	/** Optional: non-blocking "is a console keystroke available right now?" (1/0).
@@ -48,13 +48,13 @@ typedef struct {
 	 * without it the console transport is blocking-only and poll falls back to a
 	 * heuristic. Backed by a UART RX-ready check when the host uses a UART console. */
 	int (*console_poll)(void *ctx);
-} ove_lnx_run_config_t;
+} lxp_run_config_t;
 
-/** @ref ove_lnx_run outcomes (negative; a non-negative result is the init
+/** @ref lxp_run outcomes (negative; a non-negative result is the init
  * process's exit status). */
-#define OVE_LNX_RUN_ELAUNCH (-1)  /**< The init program could not be loaded. */
-#define OVE_LNX_RUN_EEXEC (-2)	  /**< A child execve relaunch failed. */
-#define OVE_LNX_RUN_ETIMEOUT (-3) /**< init did not exit within the run budget. */
+#define LXP_RUN_ELAUNCH (-1)  /**< The init program could not be loaded. */
+#define LXP_RUN_EEXEC (-2)	  /**< A child execve relaunch failed. */
+#define LXP_RUN_ETIMEOUT (-3) /**< init did not exit within the run budget. */
 
 /**
  * Load @p path from the rootfs and run it as pid 1, driving the NOMMU process
@@ -65,9 +65,9 @@ typedef struct {
  * file in @p cfg->rootfs. Calls are sequential: each run tears down its threads
  * before returning, so a host may call this repeatedly.
  *
- * @return the init exit status (>= 0), or one of the @c OVE_LNX_RUN_E* codes (< 0).
+ * @return the init exit status (>= 0), or one of the @c LXP_RUN_E* codes (< 0).
  */
-int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
+int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[]);
 
 /**
@@ -75,14 +75,14 @@ int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
  * decide whether a console ^C is the interrupt key (raise SIGINT) or a literal
  * byte (the shell's raw line editor turns ISIG off). Tracked from TCSETS.
  */
-int ove_lnx_tty_isig(void);
+int lxp_tty_isig(void);
 
 /**
  * Latch an asynchronous signal (e.g. SIGINT from a console ^C) for delivery to
  * the running program at the next syscall boundary (the Linux async-delivery
- * model). Typically called by a @c read_fn that is returning @c -OVE_LNX_EINTR.
+ * model). Typically called by a @c read_fn that is returning @c -LXP_EINTR.
  */
-void ove_lnx_post_signal(int sig);
+void lxp_post_signal(int sig);
 
 /** @} */
 

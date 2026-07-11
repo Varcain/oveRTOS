@@ -6,9 +6,9 @@
  * This file is part of oveRTOS.
  *
  * FreeRTOS seam for the Linux personality. The engine-agnostic run loop, svc
- * dispatch, and signal delivery live in backends/common/ove_lnx_run.c; this file
+ * dispatch, and signal delivery live in backends/common/lxp_run.c; this file
  * supplies only the FreeRTOS-specific bits: the svc trap, the program memory,
- * and the task spawn (via the ove_lnx_engine vtable).
+ * and the task spawn (via the lxp_engine vtable).
  *
  * PHASE 1 (functional parity): the program runs as a normal PRIVILEGED FreeRTOS
  * task on the non-MPU ARM_CM7 port. Its `svc #0` takes the SVCall exception,
@@ -28,9 +28,9 @@
 #include "../common/ove_lnx_run.h"
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
-#include "ove/linux/syscall.h" /* ove_lnx_rootfs_window — strong-overridden below for QSPI-XIP */
+#include "ove/linux/syscall.h" /* lxp_rootfs_window — strong-overridden below for QSPI-XIP */
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
-#include "ove/linux/netfs.h" /* ove_lnx_netfs_exec_stage — the remote-exec staging buffer */
+#include "ove/linux/netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
@@ -58,28 +58,28 @@
 /* Phase-2 MPU isolation: the program runs UNPRIVILEGED with a per-task MPU region over its
  * program region + dyn_pool, and PMSAv7 requires each region's base aligned to its power-of-2
  * size — so both arrays are size-aligned (not just 32B) within .sdram_bss. */
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE]
-	__attribute__((section(".sdram_bss"), aligned(OVE_LNX_PROG_REGION_SIZE)));
-static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
-	__attribute__((section(".sdram_bss"), aligned(OVE_LNX_DYN_POOL_SIZE)));
+static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE]
+	__attribute__((section(".sdram_bss"), aligned(LXP_PROG_REGION_SIZE)));
+static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE]
+	__attribute__((section(".sdram_bss"), aligned(LXP_DYN_POOL_SIZE)));
 #else
 /* Both pools live in PSRAM (0x60000000, 16M; NOLOAD → no flash cost). Phase-2 MPU isolation:
  * the program runs UNPRIVILEGED with a per-task MPU region over its program region + dyn_pool,
  * and PMSAv7 requires each region's base to be aligned to its (power-of-2) size — so both arrays
  * are size-aligned. PSRAM also keeps them off the kernel's 4M SRAM (the dynamic FDPIC proc's
  * arena anyway needs room to mmap libc.so ~500K, far past the in-region 96K arena). */
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE]
-	__attribute__((section(".psram"), aligned(OVE_LNX_PROG_REGION_SIZE)));
-static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
-	__attribute__((section(".psram"), aligned(OVE_LNX_DYN_POOL_SIZE)));
+static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE]
+	__attribute__((section(".psram"), aligned(LXP_PROG_REGION_SIZE)));
+static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE]
+	__attribute__((section(".psram"), aligned(LXP_DYN_POOL_SIZE)));
 #endif
-static StaticTask_t g_tcb[OVE_LNX_NSLOT];
-static TaskHandle_t g_tid[OVE_LNX_NSLOT];
+static StaticTask_t g_tcb[LXP_NSLOT];
+static TaskHandle_t g_tid[LXP_NSLOT];
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 /* A remote-exec proc runs its OWN text from RAM in its program region, so that region is mapped
  * RWX (a per-process, MPU-contained W^X relaxation). Set at launch; kept across resumes because
  * freertos_spawn_common re-applies the MPU on every resume. */
-static uint8_t g_region_exec[OVE_LNX_NSLOT];
+static uint8_t g_region_exec[LXP_NSLOT];
 /* Staging buffer for a fetched remote ELF: the netfs layer fills it, the loader copies its text
  * into the program region. In SDRAM (STM32) / PSRAM (an500), NOLOAD → no flash cost. Sized for a
  * small/medium dynamic FDPIC binary (its own text+data; libc/ld.so stay XIP from the local rootfs). */
@@ -88,7 +88,7 @@ static uint8_t g_netfs_exec_stage[256u * 1024u] __attribute__((section(".sdram_b
 #else
 static uint8_t g_netfs_exec_stage[256u * 1024u] __attribute__((section(".psram"), aligned(32)));
 #endif
-uint8_t *ove_lnx_netfs_exec_stage(size_t *cap)
+uint8_t *lxp_netfs_exec_stage(size_t *cap)
 {
 	if (cap)
 		*cap = sizeof(g_netfs_exec_stage);
@@ -97,7 +97,7 @@ uint8_t *ove_lnx_netfs_exec_stage(size_t *cap)
 #endif
 /* The tramp/program stacks are the restricted task's auto MPU stack region, so each must be
  * aligned to its (power-of-2) size (PMSAv7). 256 words = 1 KB. */
-static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS]
+static StackType_t g_tramp_stacks[LXP_NSLOT][TRAMP_STACK_WORDS]
 	__attribute__((aligned(TRAMP_STACK_WORDS * sizeof(StackType_t))));
 
 static int current_slot(void)
@@ -110,8 +110,8 @@ static int current_slot(void)
 	 * every syscall's slot lookup. */
 	extern void *volatile pxCurrentTCB;
 	TaskHandle_t t = (TaskHandle_t)pxCurrentTCB;
-	for (int i = 0; i < OVE_LNX_NSLOT; i++)
-		if (g_ove_lnx_used[i] && g_tid[i] == t)
+	for (int i = 0; i < LXP_NSLOT; i++)
+		if (g_lxp_used[i] && g_tid[i] == t)
 			return i;
 	return -1;
 }
@@ -139,7 +139,7 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	int sidx = current_slot();
 	if (sidx < 0)
 		return 0; /* not a program task → forward to FreeRTOS */
-	struct ove_lnx_frame f;
+	struct lxp_frame f;
 	f.r[0] = g->hw[0];
 	f.r[1] = g->hw[1];
 	f.r[2] = g->hw[2];
@@ -153,7 +153,7 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	f.r[15] = g->hw[6];
 	f.xpsr = g->hw[7];
 
-	ove_lnx_dispatch(&f, &g_ove_lnx_proc[sidx]);
+	lxp_dispatch(&f, &g_lxp_proc[sidx]);
 
 	g->hw[0] = f.r[0];
 	g->hw[1] = f.r[1];
@@ -172,7 +172,7 @@ extern void vPortSVCHandler(void); /* FreeRTOS's own (start-scheduler / yield / 
  * svc; otherwise forward to FreeRTOS (start scheduler). */
 __attribute__((naked)) void SVC_Handler(void)
 {
-	__asm__ volatile("ldr   r1, =g_ove_lnx_active \n"
+	__asm__ volatile("ldr   r1, =g_lxp_active \n"
 			 "ldr   r1, [r1]              \n"
 			 "cmp   r1, #0                \n"
 			 "beq   1f                    \n" /* inactive -> FreeRTOS */
@@ -225,10 +225,10 @@ extern void HardFault_Handler(void);
 void freertos_lnx_memfault_c(uint32_t *frame /* the faulting program's PSP HW frame */)
 {
 	int sidx = current_slot();
-	if (g_ove_lnx_active && sidx >= 0) {
-		g_ove_lnx_proc[sidx].exited = 1;
-		g_ove_lnx_proc[sidx].exit_status = 139;		 /* 128 + SIGSEGV */
-		frame[6] = ((uint32_t)&ove_lnx_park_loop) & ~1u; /* stacked PC -> park loop */
+	if (g_lxp_active && sidx >= 0) {
+		g_lxp_proc[sidx].exited = 1;
+		g_lxp_proc[sidx].exit_status = 139;		 /* 128 + SIGSEGV */
+		frame[6] = ((uint32_t)&lxp_park_loop) & ~1u; /* stacked PC -> park loop */
 		frame[7] |= (1u << 24);				 /* xPSR.T (Thumb) */
 		*(volatile uint32_t *)0xE000ED28 =
 			*(volatile uint32_t *)0xE000ED28; /* clear MMFSR (write-1-to-clear) */
@@ -259,7 +259,7 @@ __attribute__((naked)) void MemManage_Handler(void)
  * MemManage: a program fault is killed (139), a kernel fault is fatal. Both tail-branch into
  * MemManage_Handler's body (which reads the faulting PSP frame + calls freertos_lnx_memfault_c —
  * fault-type-agnostic, and its CFSR write-back already clears BFSR/UFSR too). Enabled via SHCSR in
- * ove_lnx_run; the MPU port's prvSetupMPU only turns on MEMFAULTENA. */
+ * lxp_run; the MPU port's prvSetupMPU only turns on MEMFAULTENA. */
 __attribute__((naked)) void UsageFault_Handler(void)
 {
 	__asm__ volatile("b MemManage_Handler");
@@ -275,7 +275,7 @@ __attribute__((naked)) void BusFault_Handler(void)
  * touching kernel memory, and the privileged coordinator writes it via background access. */
 struct resume_desc {
 	uint32_t r0;
-	struct ove_lnx_resume_ctx ctx; /* r4_11[8], r12, lr, sp, pc */
+	struct lxp_resume_ctx ctx; /* r4_11[8], r12, lr, sp, pc */
 };
 
 __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused)))
@@ -302,7 +302,7 @@ __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused))
  * prog_tramp reads it cacheable, so freertos_spawn_resume must invalidate its lines — and that
  * invalidate must not clip the parent's live stack at/above sp (which may hold dirty, not-yet
  * written-back data the resuming child still needs). */
-static struct resume_desc *stash_desc(uint32_t sp, const struct ove_lnx_resume_ctx *ctx, long r0)
+static struct resume_desc *stash_desc(uint32_t sp, const struct lxp_resume_ctx *ctx, long r0)
 {
 	struct resume_desc *d = (struct resume_desc *)((sp & ~31u) - RESUME_DESC_CLSPAN);
 	d->r0 = (uint32_t)r0;
@@ -355,14 +355,14 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 		.puxStackBuffer = g_tramp_stacks[sidx],
 		.pxTaskBuffer = &g_tcb[sidx],
 		.xRegions = {
-			{prog_regions[ridx], OVE_LNX_PROG_REGION_SIZE, reg0_attr},
-			{dyn_pools[ridx], OVE_LNX_DYN_POOL_SIZE, rw_xn},
+			{prog_regions[ridx], LXP_PROG_REGION_SIZE, reg0_attr},
+			{dyn_pools[ridx], LXP_DYN_POOL_SIZE, rw_xn},
 		},
 	};
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in the on-board QSPI NOR
 	 * (memory-mapped at 0x90000000). The static unprivileged-flash MPU region stays on internal
-	 * flash — that is where prog_tramp / ove_lnx_park_loop / the resume stubs live, which this
+	 * flash — that is where prog_tramp / lxp_park_loop / the resume stubs live, which this
 	 * unprivileged task must execute before and between running its own code — so the QSPI XIP
 	 * window needs its own per-task region. Unprivileged RO + executable (W^X: the guest never
 	 * writes QSPI; its RW data/stack are the SDRAM regions above). Normal-cacheable so the M7's
@@ -384,13 +384,13 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 		portMPU_REGION_READ_ONLY | (0x02u << portMPU_RASR_TEX_S_C_B_LOCATION);
 #endif
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
-	g_ove_lnx_used[sidx] = (ok == pdPASS);
+	g_lxp_used[sidx] = (ok == pdPASS);
 	return (ok == pdPASS) ? 0 : -1;
 #else
 	(void)ridx;
 	g_tid[sidx] = xTaskCreateStatic(prog_tramp, nm, TRAMP_STACK_WORDS, desc, SLOT_PROG_PRIO,
 					g_tramp_stacks[sidx], &g_tcb[sidx]);
-	g_ove_lnx_used[sidx] = (g_tid[sidx] != NULL);
+	g_lxp_used[sidx] = (g_tid[sidx] != NULL);
 	return g_tid[sidx] ? 0 : -1;
 #endif
 }
@@ -404,7 +404,7 @@ static uint8_t *freertos_region(int ridx)
 static uint8_t *freertos_dyn_pool(int ridx, size_t *size)
 {
 	if (size)
-		*size = OVE_LNX_DYN_POOL_SIZE;
+		*size = LXP_DYN_POOL_SIZE;
 	return dyn_pools[ridx];
 }
 
@@ -422,14 +422,14 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	 * off: no lines to drop; skip the walk.)  Then invalidate the I-cache so the CPU fetches the real
 	 * code rather than whatever was physically in SDRAM. */
 	if (SCB->CCR & SCB_CCR_DC_Msk)
-		SCB_InvalidateDCache_by_Addr((void *)prog_regions[ridx], (int32_t)OVE_LNX_PROG_REGION_SIZE);
+		SCB_InvalidateDCache_by_Addr((void *)prog_regions[ridx], (int32_t)LXP_PROG_REGION_SIZE);
 	SCB_InvalidateICache();
 	__DSB();
 	__ISB();
 #endif
 	/* FDPIC entry: r7 = exec loadmap, r8 = interp (ld.so) loadmap, r9 = GOT (r4_11[3..5]);
 	 * r4/5/6/10/11/r12/lr = 0 (the crt _start sets them up); r0 = 0 (static fini = NULL); pc = entry. */
-	struct ove_lnx_resume_ctx c;
+	struct lxp_resume_ctx c;
 	memset(&c, 0, sizeof(c));
 	c.r4_11[3] = prog->is_fdpic ? (uint32_t)prog->loadmap : 0u;
 	c.r4_11[4] = prog->is_fdpic ? (uint32_t)prog->interp_loadmap : 0u;
@@ -442,7 +442,7 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	return freertos_spawn_common(sidx, ridx, stash_desc((uint32_t)sp, &c, 0));
 }
 
-static void freertos_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
+static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
 				  long r0val)
 {
 	struct resume_desc *d = stash_desc(ctx->sp, ctx, r0val);
@@ -460,9 +460,9 @@ static void freertos_spawn_resume(int sidx, int ridx, const struct ove_lnx_resum
 
 static void freertos_abort_slot(int sidx)
 {
-	if (g_ove_lnx_used[sidx] && g_tid[sidx])
+	if (g_lxp_used[sidx] && g_tid[sidx])
 		vTaskDelete(g_tid[sidx]);
-	g_ove_lnx_used[sidx] = 0;
+	g_lxp_used[sidx] = 0;
 	g_tid[sidx] = NULL;
 }
 
@@ -495,7 +495,7 @@ static void freertos_event_post(void)
 	/* Pend a context switch if the (higher-priority) coordinator was woken: event_post runs
 	 * from the SVC/MemManage handler (e.g. a program's exit park_frame). Without this yield the
 	 * woken coordinator does NOT preempt, so an EXITED unprivileged restricted task keeps spinning
-	 * in ove_lnx_park_loop and is context-switched (corrupting its saved registers under the MPU
+	 * in lxp_park_loop and is context-switched (corrupting its saved registers under the MPU
 	 * port) before the coordinator reaps it. Yielding reaps it promptly, before any such switch. */
 	portYIELD_FROM_ISR(woken);
 }
@@ -505,7 +505,7 @@ static void freertos_event_wait(unsigned ms)
 		xSemaphoreTake(g_ev, pdMS_TO_TICKS(ms));
 }
 
-static const struct ove_lnx_engine g_freertos_engine = {
+static const struct lxp_engine g_freertos_engine = {
 	.region = freertos_region,
 	.dyn_pool = freertos_dyn_pool,
 	.spawn_launch = freertos_spawn_launch,
@@ -517,20 +517,20 @@ static const struct ove_lnx_engine g_freertos_engine = {
 	.event_post = freertos_event_post,
 	.event_wait = freertos_event_wait,
 	/* OS-service ops (host adapter): the personality core reaches these through
-	 * ove_lnx_time_us/ns, ove_lnx_thread_list, ove_lnx_cache_clean/invalidate. */
+	 * lxp_time_us/ns, lxp_thread_list, lxp_cache_clean/invalidate. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = ove_thread_list,
-	.cache_clean = ove_lnx_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
-	.cache_invalidate = ove_lnx_guest_invalidate,
+	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
+	.cache_invalidate = lxp_guest_invalidate,
 };
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
 	(portUSING_MPU_WRAPPERS == 1)
-/* Strong override of the engine-common weak no-op (backends/common/ove_lnx_run.c).
+/* Strong override of the engine-common weak no-op (backends/common/lxp_run.c).
  *
  * The rootfs.cpio is XIP'd from the memory-mapped QUADSPI NOR at 0x90000000.  The coordinator —
- * THIS task: it runs ove_lnx_cpio_to_rootfs + the FDPIC loader — is a PRIVILEGED, non-restricted
+ * THIS task: it runs lxp_cpio_to_rootfs + the FDPIC loader — is a PRIVILEGED, non-restricted
  * FreeRTOS-MPU task, so absent an explicit region it reads the NOR through the PRIVDEFENA
  * background map: the 512 MB Normal-cacheable 0x80000000..0x9FFFFFFF block.  With the M7 D-cache
  * on, that view corrupts the reads two ways —
@@ -545,7 +545,7 @@ static const struct ove_lnx_engine g_freertos_engine = {
  * (freertos_spawn_common — fast in-place XIP) untouched.  vPortStoreTaskMPUSettings with
  * uxStackDepth==0 preserves this task's stack/all-SRAM region; taskYIELD forces the pended MPU
  * reprogram so the region is live before the very next QUADSPI read (the cpio parse). */
-void ove_lnx_rootfs_window(const void *base, size_t len)
+void lxp_rootfs_window(const void *base, size_t len)
 {
 	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS] = {0};
 	regions[0].pvBaseAddress = (void *)(uintptr_t)base;
@@ -571,7 +571,7 @@ void ove_lnx_rootfs_window(const void *base, size_t len)
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* Strong override of the engine-common weak no-op (backends/common/ove_lnx_run.c).
+/* Strong override of the engine-common weak no-op (backends/common/lxp_run.c).
  *
  * The M7 D-cache runs enabled (write-back) for the personality (drivers/freertos/stm32f7/
  * stm32f7_init.c).  A guest writes its send buffer in external SDRAM through its own Normal WBWA
@@ -583,20 +583,20 @@ void ove_lnx_rootfs_window(const void *base, size_t len)
  * extension arrived zeroed, so servers reject the handshake.)  Clean (write back) the buffer's
  * D-cache lines so physical SDRAM — hence the coordinator's uncached view — holds the real bytes.
  * Clean is non-destructive, so an unaligned base/len is safe (CMSIS extends to whole lines). */
-void ove_lnx_guest_flush(const void *base, size_t len)
+void lxp_guest_flush(const void *base, size_t len)
 {
 	if (len)
 		SCB_CleanDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
 }
 
-void ove_lnx_guest_invalidate(const void *base, size_t len)
+void lxp_guest_invalidate(const void *base, size_t len)
 {
 	if (len)
 		SCB_InvalidateDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
 }
 #endif
 
-int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
+int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {
 	if (!g_ev) /* create the coordinator wakeup sem in thread context */
@@ -605,5 +605,5 @@ int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
 	 * instead of escalating to HardFault (the MPU port's prvSetupMPU only turns on MEMFAULTENA).
 	 * SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
 	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
-	return ove_lnx_run_common(&g_freertos_engine, cfg, path, argc, argv);
+	return lxp_run_common(&g_freertos_engine, cfg, path, argc, argv);
 }

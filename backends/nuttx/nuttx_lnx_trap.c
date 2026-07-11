@@ -6,9 +6,9 @@
  * This file is part of oveRTOS.
  *
  * NuttX seam for the Linux personality. The engine-agnostic run loop, svc
- * dispatch, and signal delivery live in backends/common/ove_lnx_run.c; this file
+ * dispatch, and signal delivery live in backends/common/lxp_run.c; this file
  * supplies only the NuttX-specific bits: the svc trap, the program memory, and
- * the task spawn (via the ove_lnx_engine vtable).
+ * the task spawn (via the lxp_engine vtable).
  *
  * PHASE 1 (functional parity): the program runs PRIVILEGED on the default
  * CONFIG_BUILD_FLAT build. Its `svc #0` shares the SVCall exception with NuttX's
@@ -52,10 +52,10 @@ extern int arm_svcall(int irq, void *context, void *arg);
 /* NuttX's HardFault handler (panics) — chained for a genuine kernel fault (same coupling pattern). */
 extern int arm_hardfault(int irq, void *context, void *arg);
 
-#define OVE_LNX_IRQ_SVCALL 11   /* == NuttX's internal NVIC_IRQ_SVCALL */
-#define OVE_LNX_IRQ_MEMFAULT 4  /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
-#define OVE_LNX_IRQ_BUSFAULT 5  /* == NuttX's NVIC_IRQ_BUSFAULT */
-#define OVE_LNX_IRQ_USGFAULT 6  /* == NuttX's NVIC_IRQ_USAGEFAULT (undefined instr, bad control flow) */
+#define LXP_IRQ_SVCALL 11   /* == NuttX's internal NVIC_IRQ_SVCALL */
+#define LXP_IRQ_MEMFAULT 4  /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
+#define LXP_IRQ_BUSFAULT 5  /* == NuttX's NVIC_IRQ_BUSFAULT */
+#define LXP_IRQ_USGFAULT 6  /* == NuttX's NVIC_IRQ_USAGEFAULT (undefined instr, bad control flow) */
 
 /* ARMv7-M System Control Space (restated — the NuttX arch headers are off the app include path). */
 #define OVE_SCS_SHCSR (*(volatile uint32_t *)0xE000ED24u) /* system handler ctrl/state */
@@ -89,11 +89,11 @@ extern int arm_hardfault(int irq, void *context, void *arg);
  * making the whole SDRAM Normal non-cacheable so the loader's/program's data accesses don't fault
  * the default Device-typed 0xC0000000 (NuttX leaves the MPU disabled). */
 #define NUTTX_SDRAM_POOL_BASE 0xC0100000u /* 1M past the SDRAM base, well clear of the framebuffer */
-static uint8_t (*const prog_regions)[OVE_LNX_PROG_REGION_SIZE] =
-	(uint8_t(*)[OVE_LNX_PROG_REGION_SIZE])NUTTX_SDRAM_POOL_BASE;
-static uint8_t (*const dyn_pools)[OVE_LNX_DYN_POOL_SIZE] =
-	(uint8_t(*)[OVE_LNX_DYN_POOL_SIZE])(NUTTX_SDRAM_POOL_BASE +
-					    (size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE);
+static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
+	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_SDRAM_POOL_BASE;
+static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =
+	(uint8_t(*)[LXP_DYN_POOL_SIZE])(NUTTX_SDRAM_POOL_BASE +
+					    (size_t)LXP_NREG * LXP_PROG_REGION_SIZE);
 #elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
 /* QEMU mps2-an500: 16M PSRAM at 0x60000000 (-m 16). For unprivileged isolation the program pool
  * must be a power-of-2-aligned block SEPARATE from the kernel's .data/.bss/heap (which the linker
@@ -104,40 +104,40 @@ static uint8_t (*const dyn_pools)[OVE_LNX_DYN_POOL_SIZE] =
  * the low-end .bss array the pool used to be would have straddled the kernel's own .bss at a
  * non-power-of-2 boundary, defeating a clean per-region grant. */
 #define NUTTX_AN500_POOL_BASE 0x60800000u
-static uint8_t (*const prog_regions)[OVE_LNX_PROG_REGION_SIZE] =
-	(uint8_t(*)[OVE_LNX_PROG_REGION_SIZE])NUTTX_AN500_POOL_BASE;
-static uint8_t (*const dyn_pools)[OVE_LNX_DYN_POOL_SIZE] =
-	(uint8_t(*)[OVE_LNX_DYN_POOL_SIZE])(NUTTX_AN500_POOL_BASE +
-					    (size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE);
+static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
+	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_AN500_POOL_BASE;
+static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =
+	(uint8_t(*)[LXP_DYN_POOL_SIZE])(NUTTX_AN500_POOL_BASE +
+					    (size_t)LXP_NREG * LXP_PROG_REGION_SIZE);
 #else
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] __attribute__((aligned(32)));
+static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE] __attribute__((aligned(32)));
 /* Per-region dynamic-link scratch pool: a dynamic FDPIC proc's arena lives here so ld.so can
  * mmap libc.so (~500K), far past the in-region arena. */
-static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] __attribute__((aligned(32)));
+static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)));
 #endif
 /* Byte extents of the (contiguous) pools — sizeof() can't see through the STM32 fixed pointers. */
-#define PROG_REGIONS_BYTES ((size_t)OVE_LNX_NREG * OVE_LNX_PROG_REGION_SIZE)
-#define DYN_POOLS_BYTES ((size_t)OVE_LNX_NREG * OVE_LNX_DYN_POOL_SIZE)
-static uintptr_t g_region_stack_lo[OVE_LNX_NREG];
-static struct task_tcb_s g_tcb[OVE_LNX_NSLOT];
-static int g_pid[OVE_LNX_NSLOT];
+#define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
+#define DYN_POOLS_BYTES ((size_t)LXP_NREG * LXP_DYN_POOL_SIZE)
+static uintptr_t g_region_stack_lo[LXP_NREG];
+static struct task_tcb_s g_tcb[LXP_NSLOT];
+static int g_pid[LXP_NSLOT];
 
 /* The slot whose task issued the svc (concurrent model: several may be live, so
  * match the running task's pid — NOT "the one used slot"). */
 static int current_slot(void)
 {
 	pid_t self = nxsched_self()->pid;
-	for (int i = 0; i < OVE_LNX_NSLOT; i++)
-		if (g_ove_lnx_used[i] && g_pid[i] == self)
+	for (int i = 0; i < LXP_NSLOT; i++)
+		if (g_lxp_used[i] && g_pid[i] == self)
 			return i;
 	return -1;
 }
 
 /* The SVCall interposer. */
-static int ove_lnx_svc_handler(int irq, void *context, void *arg)
+static int lxp_svc_handler(int irq, void *context, void *arg)
 {
 	uint32_t *regs = (uint32_t *)context;
-	if (!g_ove_lnx_active || !regs)
+	if (!g_lxp_active || !regs)
 		return arm_svcall(irq, context, arg);
 	/* Escalation gate + Linux-vs-NuttX discriminator. The Linux program runs UNPRIVILEGED, so a svc
 	 * from an unprivileged frame (saved CONTROL.nPRIV set) is ALWAYS a Linux syscall — dispatch it
@@ -159,7 +159,7 @@ static int ove_lnx_svc_handler(int irq, void *context, void *arg)
 	nxsched_self()->xcp.regs = regs;
 
 	/* Populate the uniform frame, dispatch, write the modified HW regs back. */
-	struct ove_lnx_frame f;
+	struct lxp_frame f;
 	f.r[0] = regs[REG_R0];
 	f.r[1] = regs[REG_R1];
 	f.r[2] = regs[REG_R2];
@@ -178,7 +178,7 @@ static int ove_lnx_svc_handler(int irq, void *context, void *arg)
 	f.r[15] = regs[REG_PC];
 	f.xpsr = regs[REG_XPSR];
 
-	ove_lnx_dispatch(&f, &g_ove_lnx_proc[sidx]);
+	lxp_dispatch(&f, &g_lxp_proc[sidx]);
 
 	regs[REG_R0] = f.r[0];
 	regs[REG_R1] = f.r[1];
@@ -200,7 +200,7 @@ static uint8_t *nuttx_region(int ridx)
 static uint8_t *nuttx_dyn_pool(int ridx, size_t *size)
 {
 	if (size)
-		*size = OVE_LNX_DYN_POOL_SIZE;
+		*size = LXP_DYN_POOL_SIZE;
 	return dyn_pools[ridx];
 }
 
@@ -213,21 +213,21 @@ static uint8_t *nuttx_dyn_pool(int ridx, size_t *size)
  * size 0 tears it down (exec/relaunch). One display, shared by every program — not a memory-
  * safety concern (the segv/xregion isolation tests target kernel SRAM + sibling pools, not the
  * fb). Runs on the coordinator thread (raw MPU writes; NuttX FLAT leaves the MPU to us). */
-#define OVE_LNX_FB_MPU_REGION 5u
+#define LXP_FB_MPU_REGION 5u
 static int nuttx_map_device(int sidx, uintptr_t addr, size_t size, unsigned attrs)
 {
 	(void)sidx;
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
 	volatile uint32_t *const mpu_rbar = (uint32_t *)0xE000ED9Cu;
 	volatile uint32_t *const mpu_rasr = (uint32_t *)0xE000EDA0u;
-	*mpu_rnr = OVE_LNX_FB_MPU_REGION;
+	*mpu_rnr = LXP_FB_MPU_REGION;
 	if (size == 0) {
 		*mpu_rasr = 0; /* disable */
 	} else {
 		size_t rsz = 32u;
 		while (rsz < size)
 			rsz <<= 1; /* a PMSAv7 region size is a power of 2 */
-		/* TEX/S/C/B from the OVE_LNX_MAP_* hint (ove/linux/dev.h): NC=0 -> 0x08 (the fb: the
+		/* TEX/S/C/B from the LXP_MAP_* hint (ove/linux/dev.h): NC=0 -> 0x08 (the fb: the
 		 * guest's stores reach SDRAM for the LTDC scanout), WT=1 -> 0x02, DEV=2 -> 0x01. */
 		uint32_t texscb = (attrs == 1u) ? 0x02u : (attrs == 2u) ? 0x01u : 0x08u;
 		*mpu_rbar = (uint32_t)(addr & ~(rsz - 1u));
@@ -257,15 +257,15 @@ static int slot_noentry(int argc, char *argv[])
  * bound is its MPU region, so the colored span need not match the usable stack. Bound the coloring
  * to a small window just below the initial SP. Safe on our targets: CONFIG_ARMV7M_STACKCHECK is off
  * (nothing reads adj_stack_size at runtime) and ARMv7-M (Cortex-M7) has no PSPLIM. */
-#define OVE_LNX_COLOR_WINDOW 0x2000u /* 8K — ample for nxtask_init's own frame setup */
+#define LXP_COLOR_WINDOW 0x2000u /* 8K — ample for nxtask_init's own frame setup */
 
 /* Create slot `sidx` as a NuttX task. The usable stack is set by our REG_SP override; the window
  * passed here only governs the (bounded) coloring + the TCB stack top (= sp_top). */
 static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
 {
 	uintptr_t color_lo = stack_lo;
-	if (sp_top - stack_lo > OVE_LNX_COLOR_WINDOW)
-		color_lo = sp_top - OVE_LNX_COLOR_WINDOW; /* color only the top window, not the whole region */
+	if (sp_top - stack_lo > LXP_COLOR_WINDOW)
+		color_lo = sp_top - LXP_COLOR_WINDOW; /* color only the top window, not the whole region */
 	memset(&g_tcb[sidx], 0, sizeof(g_tcb[sidx]));
 	g_tcb[sidx].cmn.flags = TCB_FLAG_TTYPE_TASK; /* static TCB: no FREE_TCB/FREE_STACK */
 	char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0}; /* per-slot: ps/top per-proc CPU */
@@ -273,7 +273,7 @@ static int spawn_task(int sidx, uintptr_t stack_lo, uintptr_t sp_top)
 			(uint32_t)(sp_top - color_lo), slot_noentry, NULL, NULL, NULL) < 0)
 		return -1;
 	g_pid[sidx] = g_tcb[sidx].cmn.pid;
-	g_ove_lnx_used[sidx] = 1;
+	g_lxp_used[sidx] = 1;
 	return 0;
 }
 
@@ -289,9 +289,9 @@ static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *
 	 * lines belong to an exited program, .bss/data were written straight to SDRAM by the loader, and
 	 * the regions are 32-byte (cache-line) aligned. */
 	up_invalidate_dcache((uintptr_t)prog_regions[ridx],
-			     (uintptr_t)prog_regions[ridx] + OVE_LNX_PROG_REGION_SIZE);
+			     (uintptr_t)prog_regions[ridx] + LXP_PROG_REGION_SIZE);
 	up_invalidate_dcache((uintptr_t)dyn_pools[ridx],
-			     (uintptr_t)dyn_pools[ridx] + OVE_LNX_DYN_POOL_SIZE);
+			     (uintptr_t)dyn_pools[ridx] + LXP_DYN_POOL_SIZE);
 	g_region_stack_lo[ridx] = (uintptr_t)stack_lo;
 	if (spawn_task(sidx, (uintptr_t)stack_lo, (uintptr_t)sp) != 0)
 		return -1;
@@ -311,10 +311,10 @@ static int nuttx_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void *
 	return 0;
 }
 
-static void nuttx_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx, long r0val)
+static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx, long r0val)
 {
 	uintptr_t klo = g_region_stack_lo[ridx], ktop = (uintptr_t)ctx->sp;
-	if (g_ove_lnx_proc[sidx].is_thread) {
+	if (g_lxp_proc[sidx].is_thread) {
 		/* Thread: run it on its clone child_stack (ctx->sp is the stack TOP, allocated by libpthread
 		 * down in the region heap). nxtask_init([g_region_stack_lo, ctx->sp)) would INVERT (child_stack
 		 * is below the main stack). A separate bookkeeping kstack fails too: NuttX sets PSP from the
@@ -347,9 +347,9 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_c
 
 static void nuttx_abort_slot(int sidx)
 {
-	if (g_ove_lnx_used[sidx] && g_pid[sidx] >= 0)
+	if (g_lxp_used[sidx] && g_pid[sidx] >= 0)
 		(void)task_delete(g_pid[sidx]);
-	g_ove_lnx_used[sidx] = 0;
+	g_lxp_used[sidx] = 0;
 	g_pid[sidx] = -1;
 }
 
@@ -381,7 +381,7 @@ static void nuttx_event_wait(unsigned ms)
 	(void)nxsem_tickwait(&g_ev, MSEC2TICK(ms));
 }
 
-static const struct ove_lnx_engine g_nuttx_engine = {
+static const struct lxp_engine g_nuttx_engine = {
 	.region = nuttx_region,
 	.dyn_pool = nuttx_dyn_pool,
 	.map_device = nuttx_map_device,
@@ -394,7 +394,7 @@ static const struct ove_lnx_engine g_nuttx_engine = {
 	.event_post = nuttx_event_post,
 	.event_wait = nuttx_event_wait,
 	/* OS-service ops (host adapter). cache_* left NULL: NuttX's guest memory is
-	 * coherent here, matching the former weak no-op ove_lnx_guest_flush. */
+	 * coherent here, matching the former weak no-op lxp_guest_flush. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = ove_thread_list,
@@ -411,7 +411,7 @@ static const struct ove_lnx_engine g_nuttx_engine = {
  * Everything else — kernel .data/.bss/heap, peripherals — is ungranted, so an unprivileged access
  * to it faults. NuttX leaves the MPU disabled in FLAT, so we own it (raw registers; arm_mpu.c is
  * not compiled). */
-static void ove_lnx_mpu_init(void)
+static void lxp_mpu_init(void)
 {
 	volatile uint32_t *const mpu_ctrl = (uint32_t *)0xE000ED94u;
 	volatile uint32_t *const mpu_rnr = (uint32_t *)0xE000ED98u;
@@ -429,7 +429,7 @@ static void ove_lnx_mpu_init(void)
 	/* Region 0: code (shared by every program) — priv RW / unpriv RO (AP=0b010), executable
 	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park loop. The
 	 * per-PROGRAM data regions (region 1 = prog_regions[ridx], region 2 = dyn_pools[ridx]) are
-	 * (re)programmed on EVERY context switch by the note driver (set_prog_regions / ove_lnx_note_
+	 * (re)programmed on EVERY context switch by the note driver (set_prog_regions / lxp_note_
 	 * resume), so a running program sees only ITS OWN region — not a sibling's. */
 	*mpu_rnr = 0;
 	*mpu_rbar = code_base;
@@ -472,16 +472,16 @@ static void ove_lnx_mpu_init(void)
  * the coordinator so its EV_EXIT pass reaps the slot + reports the status to the parent (the shell
  * sees $?=139) — the kernel and any sibling programs run on. A MemManage from a non-program
  * (privileged) context is a genuine kernel bug → chain to NuttX's panicking HardFault path. */
-static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
+static int lxp_memfault_handler(int irq, void *context, void *arg)
 {
 	uint32_t *regs = (uint32_t *)context;
-	int sidx = (g_ove_lnx_active && regs) ? current_slot() : -1;
+	int sidx = (g_lxp_active && regs) ? current_slot() : -1;
 	if (sidx < 0)
 		return arm_hardfault(irq, context, arg);
 	OVE_SCS_CFSR = OVE_SCS_CFSR & 0x03ffffffu; /* write-1-clear the set fault status (MM/Bus/Usage) */
-	g_ove_lnx_proc[sidx].exited = 1;
-	g_ove_lnx_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
-	regs[REG_PC] = (uint32_t)(uintptr_t)&ove_lnx_park_loop & ~1u;
+	g_lxp_proc[sidx].exited = 1;
+	g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+	regs[REG_PC] = (uint32_t)(uintptr_t)&lxp_park_loop & ~1u;
 	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
 	nuttx_event_post();	      /* wake the coordinator → its EV_EXIT pass reaps this slot */
 	return 0;		      /* exception-return: the program spins in park_loop until reaped */
@@ -497,9 +497,9 @@ static int ove_lnx_memfault_handler(int irq, void *context, void *arg)
  * the array stride equals the size), so each maps as one exact MPU region. Execute-never (W^X —
  * code lives in the shared region 0). */
 /* Which region index is currently programmed into MPU regions 2+3. set_prog_regions is the ONLY
- * writer of those regions (ove_lnx_mpu_init sets only 0+1), so this stays accurate — even across
- * ove_lnx_run() calls, since a region index maps to a fixed memory range. -1 = none (boot). Lets
- * ove_lnx_note_resume skip the 6 MPU writes + dsb + isb when the incoming program already owns the
+ * writer of those regions (lxp_mpu_init sets only 0+1), so this stays accurate — even across
+ * lxp_run() calls, since a region index maps to a fixed memory range. -1 = none (boot). Lets
+ * lxp_note_resume skip the 6 MPU writes + dsb + isb when the incoming program already owns the
  * mapped region (the common case: a syscall returns to the same program on every trap). */
 static int g_mapped_ridx = -1;
 
@@ -518,11 +518,11 @@ static void set_prog_regions(int ridx)
 	 * SCB cache maintenance is needed. (No code executes from here: FDPIC text XIPs from QSPI/reg 4.) */
 	*mpu_rnr = 2;
 	*mpu_rbar = (uint32_t)(uintptr_t)prog_regions[ridx];
-	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_PROG_REGION_SIZE) | (0x0Bu << 16) |
+	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_PROG_REGION_SIZE) | (0x0Bu << 16) |
 		    (0x3u << 24) | (1u << 28);
 	*mpu_rnr = 3;
 	*mpu_rbar = (uint32_t)(uintptr_t)dyn_pools[ridx];
-	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(OVE_LNX_DYN_POOL_SIZE) | (0x0Bu << 16) | (0x3u << 24) |
+	*mpu_rasr = (1u << 0) | OVE_MPU_RASR_SIZE(LXP_DYN_POOL_SIZE) | (0x0Bu << 16) | (0x3u << 24) |
 		    (1u << 28);
 	__asm__ volatile("dsb 0xf" ::: "memory");
 	__asm__ volatile("isb 0xf" ::: "memory");
@@ -536,15 +536,15 @@ static void set_prog_regions(int ridx)
  * their region set is irrelevant → skip (leaving the last program's regions is harmless; privileged
  * access uses the default map). Runs in the switch context: a few register writes + a barrier, no
  * allocation, no blocking. */
-static void ove_lnx_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
+static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 {
 	(void)drv;
-	if (!g_ove_lnx_active || !tcb)
+	if (!g_lxp_active || !tcb)
 		return;
 	pid_t pid = tcb->pid;
-	for (int i = 0; i < OVE_LNX_NSLOT; i++) {
-		if (g_ove_lnx_used[i] && g_pid[i] == pid) {
-			int ridx = g_ove_lnx_proc[i].region;
+	for (int i = 0; i < LXP_NSLOT; i++) {
+		if (g_lxp_used[i] && g_pid[i] == pid) {
+			int ridx = g_lxp_proc[i].region;
 			if (ridx != g_mapped_ridx) /* skip the MPU reprogram when unchanged */
 				set_prog_regions(ridx);
 			return;
@@ -552,11 +552,11 @@ static void ove_lnx_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 	}
 }
 
-static const struct note_driver_ops_s g_ove_lnx_note_ops = {
-	.resume = ove_lnx_note_resume,
+static const struct note_driver_ops_s g_lxp_note_ops = {
+	.resume = lxp_note_resume,
 };
-static struct note_driver_s g_ove_lnx_note_driver = {
-	.ops = &g_ove_lnx_note_ops,
+static struct note_driver_s g_lxp_note_driver = {
+	.ops = &g_lxp_note_ops,
 };
 #endif /* CONFIG_SCHED_INSTRUMENTATION_SWITCH */
 
@@ -592,25 +592,25 @@ void serial_poll_putc(char c)
 }
 #endif
 
-int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
+int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {
-	ove_lnx_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
-	for (int i = 0; i < OVE_LNX_NSLOT; i++)
+	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
+	for (int i = 0; i < LXP_NSLOT; i++)
 		g_pid[i] = -1;
 	nxsem_init(&g_ev, 0, 0); /* coordinator wakeup sem */
-	irq_attach(OVE_LNX_IRQ_SVCALL, ove_lnx_svc_handler, NULL);
-	irq_attach(OVE_LNX_IRQ_MEMFAULT, ove_lnx_memfault_handler, NULL); /* contain program MPU faults */
-	irq_attach(OVE_LNX_IRQ_BUSFAULT, ove_lnx_memfault_handler, NULL); /* + bus faults */
-	irq_attach(OVE_LNX_IRQ_USGFAULT, ove_lnx_memfault_handler, NULL); /* + usage faults (bad instr) */
+	irq_attach(LXP_IRQ_SVCALL, lxp_svc_handler, NULL);
+	irq_attach(LXP_IRQ_MEMFAULT, lxp_memfault_handler, NULL); /* contain program MPU faults */
+	irq_attach(LXP_IRQ_BUSFAULT, lxp_memfault_handler, NULL); /* + bus faults */
+	irq_attach(LXP_IRQ_USGFAULT, lxp_memfault_handler, NULL); /* + usage faults (bad instr) */
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
-	note_driver_register(&g_ove_lnx_note_driver); /* Phase 2: per-switch per-program MPU region swap */
+	note_driver_register(&g_lxp_note_driver); /* Phase 2: per-switch per-program MPU region swap */
 #endif
-	int rc = ove_lnx_run_common(&g_nuttx_engine, cfg, path, argc, argv);
-	irq_attach(OVE_LNX_IRQ_SVCALL, arm_svcall, NULL);	 /* restore NuttX's handlers */
-	irq_attach(OVE_LNX_IRQ_MEMFAULT, arm_hardfault, NULL);
-	irq_attach(OVE_LNX_IRQ_BUSFAULT, arm_hardfault, NULL);
-	irq_attach(OVE_LNX_IRQ_USGFAULT, arm_hardfault, NULL);
+	int rc = lxp_run_common(&g_nuttx_engine, cfg, path, argc, argv);
+	irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL);	 /* restore NuttX's handlers */
+	irq_attach(LXP_IRQ_MEMFAULT, arm_hardfault, NULL);
+	irq_attach(LXP_IRQ_BUSFAULT, arm_hardfault, NULL);
+	irq_attach(LXP_IRQ_USGFAULT, arm_hardfault, NULL);
 	return rc;
 }
 

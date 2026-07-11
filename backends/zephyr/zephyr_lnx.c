@@ -6,9 +6,9 @@
  * This file is part of oveRTOS.
  *
  * Zephyr seam for the Linux personality. The engine-agnostic run loop, svc
- * dispatch, and signal delivery live in backends/common/ove_lnx_run.c; this file
+ * dispatch, and signal delivery live in backends/common/lxp_run.c; this file
  * supplies only the Zephyr-specific bits: the svc trap, the program memory + MPU
- * domains, and the task spawn (via the ove_lnx_engine vtable).
+ * domains, and the task spawn (via the lxp_engine vtable).
  *
  * Each program runs as an UNPRIVILEGED K_USER thread in its own k_mem_domain
  * (program text/data partitions, W^X, + libc/heap), so the privileged run loop
@@ -58,18 +58,18 @@
  * relays nothing). PMSAv8 (the an521) allows a 32-byte-aligned base, so it needs no size alignment
  * (and avoids the padding). */
 #if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
-#define OVE_LNX_PROG_REGION_ALIGN OVE_LNX_PROG_REGION_SIZE
-#define OVE_LNX_DYN_POOL_ALIGN OVE_LNX_DYN_POOL_SIZE
+#define LXP_PROG_REGION_ALIGN LXP_PROG_REGION_SIZE
+#define LXP_DYN_POOL_ALIGN LXP_DYN_POOL_SIZE
 #else
-#define OVE_LNX_PROG_REGION_ALIGN 32
-#define OVE_LNX_DYN_POOL_ALIGN 32
+#define LXP_PROG_REGION_ALIGN 32
+#define LXP_DYN_POOL_ALIGN 32
 #endif
-static uint8_t prog_regions[OVE_LNX_NREG][OVE_LNX_PROG_REGION_SIZE] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(OVE_LNX_PROG_REGION_ALIGN);
+static uint8_t prog_regions[LXP_NREG][LXP_PROG_REGION_SIZE] Z_GENERIC_SECTION(
+	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_PROG_REGION_ALIGN);
 /* Per-region dynamic-link scratch pool (also external-RAM/NOLOAD): a dynamic FDPIC proc's arena
  * lives here so ld.so can mmap libc.so (~500K), far past the in-region arena. */
-static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE] Z_GENERIC_SECTION(
-	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(OVE_LNX_DYN_POOL_ALIGN);
+static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] Z_GENERIC_SECTION(
+	LINKER_DT_NODE_REGION_NAME(OVE_PROG_RAM_NODE)) __aligned(LXP_DYN_POOL_ALIGN);
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 /* The Linux personality console (apps/.../app.c, the CONFIG_OVE_BOARD_STM32F746G_DISCO branch)
@@ -105,9 +105,9 @@ void serial_poll_putc(char c)
 /* Per-region MPU domain: program text/data + the libc/heap partitions. */
 extern struct k_mem_partition z_libc_partition;
 extern struct k_mem_partition z_malloc_partition;
-static struct k_mem_domain g_domains[OVE_LNX_NREG];
-static struct k_mem_partition g_text[OVE_LNX_NREG], g_data[OVE_LNX_NREG];
-static int g_dom_inited[OVE_LNX_NREG];
+static struct k_mem_domain g_domains[LXP_NREG];
+static struct k_mem_partition g_text[LXP_NREG], g_data[LXP_NREG];
+static int g_dom_inited[LXP_NREG];
 
 /* Guest program pool: Normal write-back write-allocate, NON-shareable, CACHEABLE — deliberately the
  * SAME memory attribute the privileged run loop sees the FMC SDRAM through (Zephyr's static SDRAM1
@@ -127,15 +127,15 @@ static int g_dom_inited[OVE_LNX_NREG];
  * so this is a functional no-op there. */
 #define OVE_MEM_PART_RW_CACHE K_MEM_PARTITION_P_RW_U_RW
 
-static struct k_thread g_thread[OVE_LNX_NSLOT];
-static k_tid_t g_tid[OVE_LNX_NSLOT];
-K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, OVE_LNX_NSLOT, 1024);
+static struct k_thread g_thread[LXP_NSLOT];
+static k_tid_t g_tid[LXP_NSLOT];
+K_THREAD_STACK_ARRAY_DEFINE(g_tramp_stacks, LXP_NSLOT, 1024);
 
 static int current_slot(void)
 {
 	k_tid_t t = k_current_get();
-	for (int i = 0; i < OVE_LNX_NSLOT; i++)
-		if (g_ove_lnx_used[i] && g_tid[i] == t)
+	for (int i = 0; i < LXP_NSLOT; i++)
+		if (g_lxp_used[i] && g_tid[i] == t)
 			return i;
 	return -1;
 }
@@ -147,13 +147,13 @@ extern void __real_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t 
 void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee,
 			     uint32_t exc_return)
 {
-	if (g_ove_lnx_active) {
+	if (g_lxp_active) {
 		const uint16_t *svc = (const uint16_t *)(esf->basic.pc - 2);
 		if ((*svc & 0xff00u) == 0xdf00u && (*svc & 0x00ffu) == 0x00u) {
 			int sidx = current_slot();
 			if (sidx >= 0) {
 				struct arch_esf *e = (struct arch_esf *)esf;
-				struct ove_lnx_frame f;
+				struct lxp_frame f;
 				f.r[0] = esf->basic.r0;
 				f.r[1] = esf->basic.r1;
 				f.r[2] = esf->basic.r2;
@@ -175,7 +175,7 @@ void __wrap_z_do_kernel_oops(const struct arch_esf *esf, _callee_saved_t *callee
 				f.r[15] = esf->basic.pc;
 				f.xpsr = esf->basic.xpsr;
 
-				ove_lnx_dispatch(&f, &g_ove_lnx_proc[sidx]);
+				lxp_dispatch(&f, &g_lxp_proc[sidx]);
 
 				e->basic.r0 = f.r[0];
 				e->basic.r1 = f.r[1];
@@ -238,17 +238,17 @@ static int setup_domain(int ridx, const ove_flat_t *prog)
 		 * old RWX relaxation, and CONFIG_EXECUTE_XOR_WRITE=n, are gone). region(RW) + arena(RW) +
 		 * libc/malloc + the K_USER stack = 5 dynamic MPU regions, the same budget as static. */
 		g_text[ridx].start = (uintptr_t)region;
-		g_text[ridx].size = OVE_LNX_PROG_REGION_SIZE;
+		g_text[ridx].size = LXP_PROG_REGION_SIZE;
 		g_text[ridx].attr = OVE_MEM_PART_RW_CACHE;
 		g_data[ridx].start = (uintptr_t)dyn_pools[ridx];
-		g_data[ridx].size = OVE_LNX_DYN_POOL_SIZE;
+		g_data[ridx].size = LXP_DYN_POOL_SIZE;
 		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	} else {
 		g_text[ridx].start = (uintptr_t)region;
 		g_text[ridx].size = prog->text_size;
 		g_text[ridx].attr = K_MEM_PARTITION_P_RX_U_RX;
 		g_data[ridx].start = (uintptr_t)region + prog->text_size;
-		g_data[ridx].size = OVE_LNX_PROG_REGION_SIZE - prog->text_size;
+		g_data[ridx].size = LXP_PROG_REGION_SIZE - prog->text_size;
 		g_data[ridx].attr = OVE_MEM_PART_RW_CACHE;
 	}
 	if (!g_dom_inited[ridx]) {
@@ -292,7 +292,7 @@ static uint8_t *zephyr_region(int ridx)
 static uint8_t *zephyr_dyn_pool(int ridx, size_t *size)
 {
 	if (size)
-		*size = OVE_LNX_DYN_POOL_SIZE;
+		*size = LXP_DYN_POOL_SIZE;
 	return dyn_pools[ridx];
 }
 
@@ -308,7 +308,7 @@ static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void 
 		 * ctx with the FDPIC registers + the entry as the resume PC, stashed below SP in the
 		 * program's own region (where resume_tramp already reads it). r4_11[3..5] = r7/r8/r9
 		 * (all 0 for static FDPIC's r8/r9, which the crt overwrites). r0 = 0 (static fini). */
-		struct ove_lnx_resume_ctx *slot = (struct ove_lnx_resume_ctx *)((uintptr_t)sp - 64u);
+		struct lxp_resume_ctx *slot = (struct lxp_resume_ctx *)((uintptr_t)sp - 64u);
 		memset(slot, 0, sizeof(*slot));
 		slot->r4_11[3] = (uint32_t)prog->loadmap;	 /* r7 */
 		slot->r4_11[4] = (uint32_t)prog->interp_loadmap; /* r8 */
@@ -327,13 +327,13 @@ static int zephyr_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, void 
 		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
 		k_thread_name_set(g_tid[sidx], nm);
 	}
-	g_ove_lnx_used[sidx] = 1;
+	g_lxp_used[sidx] = 1;
 	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
 	k_thread_start(g_tid[sidx]);
 	return 0;
 }
 
-static void zephyr_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_ctx *ctx,
+static void zephyr_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
 				long r0val)
 {
 	/* Stash the resume ctx in the program's OWN region (user-RW data), just below the
@@ -343,7 +343,7 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_
 	 * once a NON_OVERLAPPING split pushed the count to 7, silently overflowed (CONFIG_
 	 * ASSERT off) and dropped the kernel-text region → IACCVIOL in park_loop after a
 	 * few fork+exec cycles. The slot is dead stack space (below SP) the program reuses. */
-	struct ove_lnx_resume_ctx *slot = (struct ove_lnx_resume_ctx *)((uintptr_t)ctx->sp - 64u);
+	struct lxp_resume_ctx *slot = (struct lxp_resume_ctx *)((uintptr_t)ctx->sp - 64u);
 	*slot = *ctx;
 	g_tid[sidx] = k_thread_create(&g_thread[sidx], g_tramp_stacks[sidx],
 				      K_THREAD_STACK_SIZEOF(g_tramp_stacks[sidx]), resume_tramp,
@@ -352,7 +352,7 @@ static void zephyr_spawn_resume(int sidx, int ridx, const struct ove_lnx_resume_
 		char nm[5] = {'l', 'n', 'x', (char)('0' + sidx), 0};
 		k_thread_name_set(g_tid[sidx], nm);
 	}
-	g_ove_lnx_used[sidx] = 1;
+	g_lxp_used[sidx] = 1;
 	k_mem_domain_add_thread(&g_domains[ridx], g_tid[sidx]);
 	k_thread_start(g_tid[sidx]);
 }
@@ -374,30 +374,30 @@ static void zephyr_crit_exit(void)
  * in the personality seams; avoids a cmsis_core.h include dependency. Writing the whole word
  * is the documented idiom (the other writable ICSR bits are write-1-to-act, so writing 0 to
  * them is a no-op) — Zephyr's own z_arm_exc_exit does `SCB->ICSR = SCB_ICSR_PENDSVSET_Msk`. */
-#define OVE_LNX_ICSR (*(volatile uint32_t *)0xE000ED04u)
-#define OVE_LNX_PENDSVSET (1u << 28)
+#define LXP_ICSR (*(volatile uint32_t *)0xE000ED04u)
+#define LXP_PENDSVSET (1u << 28)
 
 /* Event wakeup: the dispatch (fault/exception context) gives this when a program parks; the
  * coordinator takes it instead of busy-polling. ISR-safe k_sem_give. */
-K_SEM_DEFINE(g_ove_lnx_ev, 0, 1);
+K_SEM_DEFINE(g_lxp_ev, 0, 1);
 static void zephyr_event_post(void)
 {
-	k_sem_give(&g_ove_lnx_ev);
+	k_sem_give(&g_lxp_ev);
 	/* The give readies the higher-priority coordinator, but a program svc reaches us via the
 	 * kernel-oops path (svc.S .L_oops returns with `pop {r0,pc}`, bypassing z_arm_int_exit),
 	 * so nothing pends PendSV — the just-parked K_USER program keeps busy-spinning in
-	 * ove_lnx_park_loop until its timeslice expires (~tens of ms), which is the entire cause
+	 * lxp_park_loop until its timeslice expires (~tens of ms), which is the entire cause
 	 * of the multi-ms pipe/spawn latency. Pend PendSV ourselves so the coordinator is switched
 	 * in on exception return, exactly as z_arm_exc_exit would for a real ISR. A rare no-op
 	 * self-switch (nothing higher became ready) is harmless. In thread context (the
 	 * coordinator's own cross-kill post) k_sem_give already reschedules, so skip. */
 	if (k_is_in_isr()) {
-		OVE_LNX_ICSR = OVE_LNX_PENDSVSET;
+		LXP_ICSR = LXP_PENDSVSET;
 	}
 }
 static void zephyr_event_wait(unsigned ms)
 {
-	k_sem_take(&g_ove_lnx_ev, K_MSEC(ms));
+	k_sem_take(&g_lxp_ev, K_MSEC(ms));
 }
 
 /* Contain a program fault — the piece Zephyr lacked vs FreeRTOS/NuttX. A K_USER program that
@@ -412,11 +412,11 @@ static void zephyr_event_wait(unsigned ms)
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 {
 	ARG_UNUSED(esf);
-	if (g_ove_lnx_active) {
+	if (g_lxp_active) {
 		int sidx = current_slot();
 		if (sidx >= 0) {
-			g_ove_lnx_proc[sidx].exited = 1;
-			g_ove_lnx_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+			g_lxp_proc[sidx].exited = 1;
+			g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
 			zephyr_event_post();
 			return;
 		}
@@ -426,9 +426,9 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 
 static void zephyr_abort_slot(int sidx)
 {
-	if (g_ove_lnx_used[sidx] && g_tid[sidx])
+	if (g_lxp_used[sidx] && g_tid[sidx])
 		k_thread_abort(g_tid[sidx]);
-	g_ove_lnx_used[sidx] = 0;
+	g_lxp_used[sidx] = 0;
 }
 
 static void zephyr_sleep_ms(unsigned ms)
@@ -436,7 +436,7 @@ static void zephyr_sleep_ms(unsigned ms)
 	k_msleep((int32_t)ms);
 }
 
-static const struct ove_lnx_engine g_zephyr_engine = {
+static const struct lxp_engine g_zephyr_engine = {
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
 	.spawn_launch = zephyr_spawn_launch,
@@ -448,14 +448,14 @@ static const struct ove_lnx_engine g_zephyr_engine = {
 	.event_post = zephyr_event_post,
 	.event_wait = zephyr_event_wait,
 	/* OS-service ops (host adapter). cache_* left NULL: Zephyr's guest memory is
-	 * coherent here, matching the former weak no-op ove_lnx_guest_flush. */
+	 * coherent here, matching the former weak no-op lxp_guest_flush. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = ove_thread_list,
 };
 
-int ove_lnx_run(const ove_lnx_run_config_t *cfg, const char *path, int argc,
+int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 		const char *const argv[])
 {
-	return ove_lnx_run_common(&g_zephyr_engine, cfg, path, argc, argv);
+	return lxp_run_common(&g_zephyr_engine, cfg, path, argc, argv);
 }

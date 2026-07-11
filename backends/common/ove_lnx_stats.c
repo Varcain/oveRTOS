@@ -5,14 +5,14 @@
  *
  * This file is part of oveRTOS.
  *
- * Unified process/CPU snapshot for ps/top — see ove_lnx_stats.h.
+ * Unified process/CPU snapshot for ps/top — see lxp_stats.h.
  */
 
 #include <string.h>
 
 #include "ove/linux/stats.h"
 
-static struct ove_lnx_pentry g_pent[OVE_LNX_MAX_PENT];
+static struct lxp_pentry g_pent[LXP_MAX_PENT];
 static int g_npent;
 static uint64_t g_idle_us;
 static uint64_t g_busy_us;
@@ -21,7 +21,7 @@ static uint64_t g_busy_us;
 static struct {
 	char name[24];
 	int pid;
-} g_kreg[OVE_LNX_MAX_KTHREAD];
+} g_kreg[LXP_MAX_KTHREAD];
 static int g_nkreg;
 
 /* Per-Linux-pid accumulated CPU. The slot's "lnx" thread is aborted + recreated
@@ -31,7 +31,7 @@ static struct {
 	int pid;
 	uint64_t accum_us;
 	uint64_t baseline_us;
-} g_pc[OVE_LNX_MAX_PENT];
+} g_pc[LXP_MAX_PENT];
 
 /* Idle-thread names differ per engine: "idle"/"idle 00" (Zephyr), "IDLE"
  * (FreeRTOS), "Idle Task"/"CPU0 IDLE" (NuttX). Match "idle" case-insensitively. */
@@ -44,7 +44,7 @@ static int name_has_idle(const char *n)
 	return 0;
 }
 
-int ove_lnx_stats_classify(const char *name)
+int lxp_stats_classify(const char *name)
 {
 	if (!name)
 		return 0;
@@ -55,24 +55,24 @@ int ove_lnx_stats_classify(const char *name)
 	return 0;
 }
 
-int ove_lnx_kpid_for(const char *name)
+int lxp_kpid_for(const char *name)
 {
 	for (int i = 0; i < g_nkreg; i++)
 		if (strcmp(g_kreg[i].name, name) == 0)
 			return g_kreg[i].pid;
-	if (g_nkreg >= OVE_LNX_MAX_KTHREAD)
-		return OVE_LNX_KPID_BASE + OVE_LNX_MAX_KTHREAD; /* overflow: shared bucket */
+	if (g_nkreg >= LXP_MAX_KTHREAD)
+		return LXP_KPID_BASE + LXP_MAX_KTHREAD; /* overflow: shared bucket */
 	int idx = g_nkreg++;
 	size_t m = strlen(name);
 	if (m >= sizeof(g_kreg[idx].name))
 		m = sizeof(g_kreg[idx].name) - 1;
 	memcpy(g_kreg[idx].name, name, m);
 	g_kreg[idx].name[m] = '\0';
-	g_kreg[idx].pid = OVE_LNX_KPID_BASE + idx;
+	g_kreg[idx].pid = LXP_KPID_BASE + idx;
 	return g_kreg[idx].pid;
 }
 
-void ove_lnx_stats_reset(void)
+void lxp_stats_reset(void)
 {
 	memset(g_pent, 0, sizeof(g_pent));
 	memset(g_pc, 0, sizeof(g_pc));
@@ -83,13 +83,13 @@ void ove_lnx_stats_reset(void)
 	g_busy_us = 0;
 }
 
-void ove_lnx_stats_begin(void)
+void lxp_stats_begin(void)
 {
 	for (int i = 0; i < g_npent; i++)
 		g_pent[i].live = 0;
 }
 
-void ove_lnx_stats_add(int pid, int ppid, const char *comm, char state, uint64_t cpu_us,
+void lxp_stats_add(int pid, int ppid, const char *comm, char state, uint64_t cpu_us,
 		       int is_kernel)
 {
 	int slot = -1;
@@ -99,11 +99,11 @@ void ove_lnx_stats_add(int pid, int ppid, const char *comm, char state, uint64_t
 			break;
 		}
 	if (slot < 0) {
-		if (g_npent >= OVE_LNX_MAX_PENT)
+		if (g_npent >= LXP_MAX_PENT)
 			return;
 		slot = g_npent++;
 	}
-	struct ove_lnx_pentry *e = &g_pent[slot];
+	struct lxp_pentry *e = &g_pent[slot];
 	e->pid = pid;
 	e->ppid = ppid;
 	size_t m = comm ? strlen(comm) : 0;
@@ -118,10 +118,10 @@ void ove_lnx_stats_add(int pid, int ppid, const char *comm, char state, uint64_t
 	e->live = 1;
 }
 
-uint64_t ove_lnx_stats_charge(int pid, uint64_t thread_running_us)
+uint64_t lxp_stats_charge(int pid, uint64_t thread_running_us)
 {
 	int slot = -1, free_slot = -1;
-	for (int k = 0; k < OVE_LNX_MAX_PENT; k++) {
+	for (int k = 0; k < LXP_MAX_PENT; k++) {
 		if (g_pc[k].pid == pid) {
 			slot = k;
 			break;
@@ -143,21 +143,21 @@ uint64_t ove_lnx_stats_charge(int pid, uint64_t thread_running_us)
 	return g_pc[slot].accum_us;
 }
 
-uint64_t ove_lnx_proc_cpu_us(int pid)
+uint64_t lxp_proc_cpu_us(int pid)
 {
-	for (int k = 0; k < OVE_LNX_MAX_PENT; k++)
+	for (int k = 0; k < LXP_MAX_PENT; k++)
 		if (g_pc[k].pid == pid)
 			return g_pc[k].accum_us;
 	return 0;
 }
 
-void ove_lnx_stats_set_cpu(uint64_t idle_us, uint64_t busy_us)
+void lxp_stats_set_cpu(uint64_t idle_us, uint64_t busy_us)
 {
 	g_idle_us = idle_us;
 	g_busy_us = busy_us;
 }
 
-int ove_lnx_pent_count(void)
+int lxp_pent_count(void)
 {
 	int c = 0;
 	for (int i = 0; i < g_npent; i++)
@@ -166,7 +166,7 @@ int ove_lnx_pent_count(void)
 	return c;
 }
 
-const struct ove_lnx_pentry *ove_lnx_pent_at(int i)
+const struct lxp_pentry *lxp_pent_at(int i)
 {
 	int c = 0;
 	for (int k = 0; k < g_npent; k++)
@@ -175,7 +175,7 @@ const struct ove_lnx_pentry *ove_lnx_pent_at(int i)
 	return NULL;
 }
 
-const struct ove_lnx_pentry *ove_lnx_pent_find(int pid)
+const struct lxp_pentry *lxp_pent_find(int pid)
 {
 	for (int k = 0; k < g_npent; k++)
 		if (g_pent[k].live && g_pent[k].pid == pid)
@@ -183,7 +183,7 @@ const struct ove_lnx_pentry *ove_lnx_pent_find(int pid)
 	return NULL;
 }
 
-void ove_lnx_cpu_totals(uint64_t *idle_us, uint64_t *busy_us)
+void lxp_cpu_totals(uint64_t *idle_us, uint64_t *busy_us)
 {
 	if (idle_us)
 		*idle_us = g_idle_us;
