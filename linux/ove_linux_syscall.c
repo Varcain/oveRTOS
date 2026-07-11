@@ -2655,6 +2655,22 @@ static long sys_execve(ove_lnx_proc_t *p, const char *path, char *const argv[])
 	long rr = resolve_path(p, path, execabs, sizeof(execabs));
 	if (rr < 0)
 		return rr;
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	/* exec a program off the remote mount (/mnt/pi/prog): capture argv, drop close-on-exec
+	 * fds, then park the ELF fetch. The netfs retry sets exec_pending + a SENTINEL exec_file_idx
+	 * on completion, and the run loop's EV_EXEC launches it from the RAM staging buffer. */
+	if (ove_lnx_netfs_lookup(execabs) >= 0) {
+		int nargc = 0;
+		size_t noff = 0;
+		for (int j = 0; argv && argv[j]; j++)
+			exec_push_arg(p, &nargc, &noff, argv[j]);
+		for (int cfd = 0; cfd < OVE_LNX_MAX_FDS; cfd++)
+			if (p->fds[cfd].kind != OVE_LNX_FD_FREE && p->fds[cfd].cloexec)
+				sys_close(p, cfd);
+		p->exec_argc = nargc;
+		return ove_lnx_netfs_exec_fetch(p, execabs); /* parks, or a negative errno inline */
+	}
+#endif
 	int idx;
 	if (strcmp(execabs, "/proc/self/exe") == 0) {
 		/* BusyBox re-execs its own image via execv("/proc/self/exe", argv) on NOMMU

@@ -494,9 +494,11 @@ void ove_lnx_dispatch(struct ove_lnx_frame *f, ove_lnx_proc_t *proc)
 }
 
 /* ---- the run loop ---------------------------------------------------------- */
-/* Load an FDPIC ELF into region ridx + set up slot sidx's proc, then spawn it. */
+/* Load an FDPIC ELF into region ridx + set up slot sidx's proc, then spawn it. @p remote_exec:
+ * the image is a RAM staging buffer (a program off the remote mount), so the exec's own text is
+ * copied into the region and the region is mapped executable (RWX) — gated by the caller. */
 static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const uint8_t *data,
-		  size_t len, int pid, int ppid, int argc, const char *const argv[])
+		  size_t len, int pid, int ppid, int argc, const char *const argv[], int remote_exec)
 {
 	uint8_t *region = eng->region(ridx);
 	ove_flat_t prog;
@@ -509,7 +511,8 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 	 * not a timing one: the coordinator reads the NOR through a bounded, non-cacheable MPU region
 	 * (ove_lnx_rootfs_window), so no D-cache burst or speculative prefetch can garble it and a
 	 * context switch mid-load is harmless.  No preemption masking needed. */
-	int lrc = ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0);
+	int lrc = ove_loader_load_fdpic(&prog, data, len, region, OVE_LNX_PROG_REGION_SIZE, 0,
+					remote_exec);
 	if (lrc != OVE_OK)
 		return -1;
 
@@ -534,7 +537,7 @@ static int launch(const struct ove_lnx_engine *eng, int sidx, int ridx, const ui
 		int ldrc = ove_loader_load_fdpic(&ld, ld_data, ld_len, (void *)ld_base,
 						 OVE_LNX_PROG_REGION_SIZE -
 							 (size_t)(ld_base - (uintptr_t)region),
-						 1);
+						 1, 0); /* ld.so text is XIP from the rootfs (no copy) */
 		if (ldrc != OVE_OK)
 			return -1;
 		pc = ld.entry;
@@ -857,7 +860,7 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 	g_ove_lnx_active = 1;
 	g_ove_lnx_halt = 0;
 	rowner[0] = 0;
-	if (launch(eng, 0, 0, cfg->rootfs[bb].data, cfg->rootfs[bb].size, 1, 0, argc, argv) != 0) {
+	if (launch(eng, 0, 0, cfg->rootfs[bb].data, cfg->rootfs[bb].size, 1, 0, argc, argv, 0) != 0) {
 		g_ove_lnx_active = 0;
 		return OVE_LNX_RUN_ELAUNCH;
 	}
@@ -1127,8 +1130,19 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				rowner[p->region] = -1;
 			rowner[nr] = es;
 			eng->abort_slot(es);
-			if (launch(eng, es, nr, cfg->rootfs[idx].data, cfg->rootfs[idx].size, pid,
-				   ppid, eargc, ptrs) != 0) {
+			const uint8_t *img_data = cfg->rootfs[idx].data;
+			size_t img_size = cfg->rootfs[idx].size;
+			int rexec = 0;
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+			/* A program off the remote mount: its bytes are in the netfs exec staging
+			 * buffer (RAM), not the rootfs; launch copies its text into the region (RWX). */
+			if (idx == OVE_LNX_NETFS_EXEC_SENTINEL) {
+				img_data = ove_lnx_netfs_exec_image(&img_size);
+				rexec = 1;
+			}
+#endif
+			if (!img_data ||
+			    launch(eng, es, nr, img_data, img_size, pid, ppid, eargc, ptrs, rexec) != 0) {
 				rowner[nr] = -1;
 				g_ove_lnx_proc[es].alive = 0;
 				g_ove_lnx_used[es] = 0;
@@ -1415,7 +1429,10 @@ int ove_lnx_run_common(const struct ove_lnx_engine *eng, const ove_lnx_run_confi
 				long r = ove_lnx_netfs_retry(p);
 				if (r != -OVE_LNX_EAGAIN) {
 					p->netfs_wait = 0;
-					eng->spawn_resume(s, p->region, &g_ctx[s], r);
+					/* a completed exec-fetch sets exec_pending → EV_EXEC launches it
+					 * from the staging buffer; don't resume the parked execve. */
+					if (!p->exec_pending)
+						eng->spawn_resume(s, p->region, &g_ctx[s], r);
 					progress = 1;
 				}
 			}

@@ -198,6 +198,7 @@ function(ove_add_stub_variant name)
         CONFIG_OVE_NET=1
         CONFIG_OVE_LINUX_NET=1
         CONFIG_OVE_LINUX_NETFS=1
+        CONFIG_OVE_LINUX_NETFS_EXEC=1
         CONFIG_OVE_LINUX_PTY=1
         CONFIG_OVE_I2C=1
         CONFIG_OVE_SPI=1

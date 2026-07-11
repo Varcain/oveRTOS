@@ -686,7 +686,7 @@ static uint32_t fdpic_rt(const uint8_t *lm, int nseg, uint32_t vaddr)
 }
 
 int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size, void *region,
-			  size_t region_size, int is_interp)
+			  size_t region_size, int is_interp, int copy_text)
 {
 	if (!prog || !image || !region || image_size < 52u /* Elf32_Ehdr */)
 		return OVE_ERR_INVALID_PARAM;
@@ -727,7 +727,8 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 		nload++;
 		uint32_t p_off = le32(ph + 4), v = le32(ph + 8), msz = le32(ph + 20);
 		if (le32(ph + 24) & ELF_PF_X) {
-			/* the RO/executable segment — shared in-place from the image */
+			/* the RO/executable segment — shared in-place from the image (or, for a
+			 * copy_text load, copied into the region so it can run from RAM) */
 			text_sz = msz;
 			text_off = p_off;
 			have_text = 1;
@@ -743,12 +744,16 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	uint32_t rw_span = (rw_hi > rw_lo) ? (rw_hi - rw_lo) : 0;
 	uint32_t rw_a = (rw_span + 3u) & ~3u; /* the loadmap follows the RW block, 4-aligned */
 	uint32_t loadmap_sz = 4u + (uint32_t)nload * 12u;
-	if ((uint64_t)rw_a + loadmap_sz > region_size)
+	/* A copy_text load reserves the region's head for the program's own text (copied in below,
+	 * run from RAM because its image is not the executable XIP window); the RW block + loadmap +
+	 * pool follow it. A normal load leaves the text shared in-place from the image (text_a = 0). */
+	uint32_t text_a = copy_text ? ((text_sz + 15u) & ~15u) : 0;
+	if ((uint64_t)text_a + rw_a + loadmap_sz > region_size)
 		return OVE_ERR_NO_MEMORY;
 
-	/* The per-process region now holds ONLY the RW block (the text is shared in-place from the
-	 * image) + the loadmap + the descriptor pool — a fraction of the old text+data image. */
-	uint8_t *base = (uint8_t *)region;
+	/* For a normal load the region holds ONLY the RW block (text shared in-place) + the loadmap +
+	 * the descriptor pool. For a copy_text load the region head additionally holds the text. */
+	uint8_t *base = (uint8_t *)region + text_a;
 	if (rw_span)
 		memset(base, 0, rw_span); /* clear so each RW segment's bss tail is zero */
 
@@ -778,7 +783,14 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 			return OVE_ERR_INVALID_PARAM;
 		uint32_t seg_addr;
 		if (p_flags & ELF_PF_X) {
-			seg_addr = (uint32_t)(uintptr_t)(img + p_off); /* shared in-place from the cpio */
+			if (copy_text) {
+				/* copy the text into the region head (region[0], reserved above) so it
+				 * runs from RAM — the image is a RAM staging buffer, not the XIP window. */
+				memcpy((uint8_t *)region, img + p_off, p_filesz);
+				seg_addr = (uint32_t)(uintptr_t)region;
+			} else {
+				seg_addr = (uint32_t)(uintptr_t)(img + p_off); /* shared in-place from the cpio */
+			}
 		} else {
 			uint8_t *d = base + (p_vaddr - rw_lo);
 			memcpy(d, img + p_off, p_filesz);
@@ -904,8 +916,11 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 
 	prog->region = base;
 	prog->region_size = region_size;
-	prog->region_used = pool_off + pool_used; /* RW block + loadmap + descriptor pool */
-	prog->text_base = (uintptr_t)(img + text_off); /* shared IN-PLACE from the cpio */
+	/* bytes consumed from the TRUE region base: the reserved+copied text (copy_text only) plus
+	 * the RW block + loadmap + descriptor pool. The launcher lays the stack out above this. */
+	prog->region_used = text_a + pool_off + pool_used;
+	prog->text_base = copy_text ? (uintptr_t)region	       /* copied into the region head */
+				    : (uintptr_t)(img + text_off); /* shared IN-PLACE from the cpio */
 	prog->text_size = text_sz;
 	prog->data_base = (uintptr_t)fdpic_rt(lm, nload, data_v); /* RW block in the region */
 	prog->data_size = data_fsz;
@@ -914,8 +929,12 @@ int ove_loader_load_fdpic(ove_flat_t *prog, const void *image, size_t image_size
 	prog->entry = (uintptr_t)fdpic_rt(lm, nload, e_entry);
 	prog->is_fdpic = 1;
 	prog->loadmap = (uintptr_t)lm; /* passed in r7; _start self-relocates from it */
-	prog->phdr = (uintptr_t)(img + e_phoff); /* program headers live in the file-offset-0 text seg */
+	/* program headers live in the file-offset-0 text segment: in the image for a shared load,
+	 * or in the copied region text for a copy_text load. */
+	prog->phdr = copy_text ? ((uintptr_t)region + (e_phoff - text_off))
+			       : (uintptr_t)(img + e_phoff);
 	prog->phnum = e_phnum;
+	prog->region_exec = copy_text; /* the engine maps the region executable for a RAM-text exec */
 	prog->is_dynamic = is_dynamic; /* exec with DT_NEEDED → caller loads + enters ld.so */
 	prog->got = got_base;	       /* DT_PLTGOT base */
 	/* PT_DYNAMIC runtime addr — for an interpreter this is r9 at entry (uClibc-ng's FDPIC

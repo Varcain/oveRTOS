@@ -27,6 +27,9 @@
 
 #include "../common/ove_lnx_run.h"
 #include "ove/linux/syscall.h" /* ove_lnx_rootfs_window — strong-overridden below for QSPI-XIP */
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#include "ove/linux/netfs.h" /* ove_lnx_netfs_exec_stage — the remote-exec staging buffer */
+#endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 #include "stm32f7xx.h" /* SCB_CleanDCache / SCB_InvalidateICache: M7 loaded-code coherency */
@@ -70,6 +73,26 @@ static uint8_t dyn_pools[OVE_LNX_NREG][OVE_LNX_DYN_POOL_SIZE]
 #endif
 static StaticTask_t g_tcb[OVE_LNX_NSLOT];
 static TaskHandle_t g_tid[OVE_LNX_NSLOT];
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* A remote-exec proc runs its OWN text from RAM in its program region, so that region is mapped
+ * RWX (a per-process, MPU-contained W^X relaxation). Set at launch; kept across resumes because
+ * freertos_spawn_common re-applies the MPU on every resume. */
+static uint8_t g_region_exec[OVE_LNX_NSLOT];
+/* Staging buffer for a fetched remote ELF: the netfs layer fills it, the loader copies its text
+ * into the program region. In SDRAM (STM32) / PSRAM (an500), NOLOAD → no flash cost. Sized for a
+ * small/medium dynamic FDPIC binary (its own text+data; libc/ld.so stay XIP from the local rootfs). */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static uint8_t g_netfs_exec_stage[256u * 1024u] __attribute__((section(".sdram_bss"), aligned(32)));
+#else
+static uint8_t g_netfs_exec_stage[256u * 1024u] __attribute__((section(".psram"), aligned(32)));
+#endif
+uint8_t *ove_lnx_netfs_exec_stage(size_t *cap)
+{
+	if (cap)
+		*cap = sizeof(g_netfs_exec_stage);
+	return g_netfs_exec_stage;
+}
+#endif
 /* The tramp/program stacks are the restricted task's auto MPU stack region, so each must be
  * aligned to its (power-of-2) size (PMSAv7). 256 words = 1 KB. */
 static StackType_t g_tramp_stacks[OVE_LNX_NSLOT][TRAMP_STACK_WORDS]
@@ -311,6 +334,13 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 #endif
 	const uint32_t rw_xn = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
 			       (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
+	uint32_t reg0_attr = rw_xn; /* program region: RW + execute-never (W^X; code XIPs from flash) */
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	/* A remote-exec proc runs its own copied text FROM this region → map it RWX (drop XN). A
+	 * per-process, MPU-contained W^X relaxation, only for a program launched off the remote mount. */
+	if (g_region_exec[sidx])
+		reg0_attr = portMPU_REGION_READ_WRITE | (tex_s_c_b << portMPU_RASR_TEX_S_C_B_LOCATION);
+#endif
 	/* pxTaskBuffer is `StaticTask_t * const`, so a designated initializer is required (it also
 	 * zeroes the remaining configurable region xRegions[2]). xRegions[0] = the program region,
 	 * xRegions[1] = the dyn_pool — both RW + execute-never (W^X; code runs from the flash cpio). */
@@ -323,7 +353,7 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 		.puxStackBuffer = g_tramp_stacks[sidx],
 		.pxTaskBuffer = &g_tcb[sidx],
 		.xRegions = {
-			{prog_regions[ridx], OVE_LNX_PROG_REGION_SIZE, rw_xn},
+			{prog_regions[ridx], OVE_LNX_PROG_REGION_SIZE, reg0_attr},
 			{dyn_pools[ridx], OVE_LNX_DYN_POOL_SIZE, rw_xn},
 		},
 	};
@@ -404,6 +434,9 @@ static int freertos_spawn_launch(int sidx, int ridx, const ove_flat_t *prog, voi
 	c.r4_11[5] = prog->is_fdpic ? (uint32_t)prog->got : 0u;
 	c.sp = (uint32_t)sp;
 	c.pc = (uint32_t)entry;
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+	g_region_exec[sidx] = (uint8_t)prog->region_exec; /* RWX region for a copied-text (remote) exec */
+#endif
 	return freertos_spawn_common(sidx, ridx, stash_desc((uint32_t)sp, &c, 0));
 }
 
