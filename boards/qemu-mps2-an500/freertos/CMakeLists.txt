@@ -46,9 +46,10 @@ ove_exclude_backends(BOARD)
 # the embedded rootfs CPIO fixture on the include path. Everything below is the
 # sim framework, used by the normal (non-personality) an500 builds.
 if(OVE_LINUX)
-    include(${OVE_DIR}/cmake/OveLinuxFixtures.cmake)
-    ove_linux_generate_fixtures(OVE_LNX_GENDIR FIXTURES rootfs)
-    ove_add_include_directories(${OVE_DIR}/tests/ontarget ${OVE_LNX_GENDIR})
+    # The rootfs cpio is XIP'd from PSRAM @ 0x60000000, where QEMU's `-device loader` places it
+    # at reset (see qemu-run.sh) — it is NOT embedded in the ELF (which would overflow the 4 MB
+    # FLASH), so no cpio fixture is generated here. This mirrors the STM32 QSPI-NOR path.
+    ove_add_include_directories(${OVE_DIR}/tests/ontarget)
     ove_add_stub_backends(AUDIO)
     # /dev/fb0 framebuffer backend: a RAM RGB565 panel pushed to /dev/shm/ove-fb.
     if(OVE_FB)

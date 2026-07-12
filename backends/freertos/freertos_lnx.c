@@ -382,6 +382,24 @@ static int freertos_spawn_common(int sidx, int ridx, struct resume_desc *desc)
 	 * window.) */
 	tp.xRegions[2].ulParameters =
 		portMPU_REGION_READ_ONLY | (0x02u << portMPU_RASR_TEX_S_C_B_LOCATION);
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	/* The guest XIPs its FDPIC text in-place from the rootfs cpio in PSRAM — QEMU loads it at
+	 * 0x60000000 via `-device loader` (see qemu-run.sh; the QEMU analog of the STM32 QSPI XIP).
+	 * prog_tramp / lxp_park_loop still execute from internal flash (the static unprivileged-RX
+	 * flash region), so the PSRAM cpio needs its own per-task RX window. The cpio occupies the
+	 * bottom 12 MiB of PSRAM (linker .psram_rootfs), the program pools the top 4 MiB. Cover
+	 * exactly that 12 MiB cpio window with two power-of-2 regions (8 MiB + 4 MiB) so it does NOT
+	 * overlap the pools' RW regions — a single 16 MiB region would, and being higher-priority
+	 * would force the guest's own dyn_pool read-only. Unprivileged RO + executable (W^X: the
+	 * guest never writes the cpio). xRegions[2],[3] — an500 has 11 configurable MPU regions. */
+	tp.xRegions[2].pvBaseAddress = (void *)0x60000000u;
+	tp.xRegions[2].ulLengthInBytes = 8u * 1024u * 1024u;
+	tp.xRegions[2].ulParameters =
+		portMPU_REGION_READ_ONLY | (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
+	tp.xRegions[3].pvBaseAddress = (void *)0x60800000u;
+	tp.xRegions[3].ulLengthInBytes = 4u * 1024u * 1024u;
+	tp.xRegions[3].ulParameters =
+		portMPU_REGION_READ_ONLY | (configTEX_S_C_B_SRAM << portMPU_RASR_TEX_S_C_B_LOCATION);
 #endif
 	BaseType_t ok = xTaskCreateRestrictedStatic(&tp, &g_tid[sidx]);
 	g_lxp_used[sidx] = (ok == pdPASS);
