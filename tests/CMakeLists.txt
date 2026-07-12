@@ -83,6 +83,12 @@ set(STUB_SOURCES
     ${OVE_ROOT}/modules/lxp/src/lxp_loader.c
     # Linux personality syscall dispatch (platform-independent)
     ${OVE_ROOT}/modules/lxp/src/lxp_syscall.c
+    # Syscall-core subsystems extracted out of lxp_syscall.c (path resolution + rootfs
+    # lookup, the pipe ring, the writable-VFS node store, synthetic /proc generation).
+    ${OVE_ROOT}/modules/lxp/src/fs/lxp_path.c
+    ${OVE_ROOT}/modules/lxp/src/fs/lxp_pipe.c
+    ${OVE_ROOT}/modules/lxp/src/fs/lxp_tmpfs.c
+    ${OVE_ROOT}/modules/lxp/src/proc/lxp_procfs.c
     # Linux personality /dev character-device core (CONFIG_OVE_LINUX_DEV)
     ${OVE_ROOT}/modules/lxp/src/dev/lxp_dev.c
     # Linux personality socket core (CONFIG_OVE_LINUX_NET)
@@ -191,6 +197,9 @@ function(ove_add_stub_variant name)
     target_include_directories(${name} PRIVATE
         ${OVE_INCLUDE}
         ${OVE_ROOT}/modules/lxp/include
+        # src on the path so the extracted src/fs + src/proc TUs resolve their
+        # src-relative headers (e.g. #include "fs/lxp_pipe.h"), as the module builds itself.
+        ${OVE_ROOT}/modules/lxp/src
         ${OVE_ROOT}/backends/common
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${POSIX_CORE_DIR}/include
