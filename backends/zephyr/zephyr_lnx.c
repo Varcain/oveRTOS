@@ -443,7 +443,7 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	return ove_thread_list((struct ove_thread_info *)o, m, n);
 }
 
-static const struct lxp_engine g_zephyr_engine = {
+const lxp_os_ops_t g_lxp_host_engine = {
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
 	.spawn_launch = zephyr_spawn_launch,
@@ -461,8 +461,5 @@ static const struct lxp_engine g_zephyr_engine = {
 	.thread_list = lxp_seam_thread_list,
 };
 
-int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
-		const char *const argv[])
-{
-	return lxp_run_common(&g_zephyr_engine, cfg, path, argc, argv);
-}
+/* The public lxp_run() now lives in the module (src/lxp_run.c). This seam supplies
+ * only the engine vtable (g_lxp_host_engine); Zephyr needs no prepare/teardown. */

@@ -6,7 +6,7 @@
  * This file is part of oveRTOS.
  *
  * oveRTOS host adapter for the Linux personality's display / input port
- * (struct lxp_disp_ops). It bridges the /dev/fb0 + /dev/input class drivers
+ * (lxp_display_ops_t). It bridges the /dev/fb0 + /dev/input class drivers
  * to the ove_fb framebuffer HAL and the ove_ft5336 touch controller. The fb ops
  * are filled when /dev/fb0 is built; the touch ops when an FT5336 is present
  * (otherwise NULL — the input driver falls back to the synthetic testpad).
@@ -66,7 +66,7 @@ static int d_touch_read(int *x, int *y, int *pressed)
 }
 #endif /* CONFIG_OVE_FT5336 */
 
-static const struct lxp_disp_ops g_ove_adapter_disp_ops = {
+static const lxp_display_ops_t g_ove_adapter_disp_ops = {
 #if defined(CONFIG_OVE_LINUX_DEV_FB)
 	.fb_init = d_fb_init,
 	.fb_get_info = d_fb_get_info,
@@ -80,6 +80,9 @@ static const struct lxp_disp_ops g_ove_adapter_disp_ops = {
 #endif
 };
 
-const struct lxp_disp_ops *g_lxp_disp_ops = &g_ove_adapter_disp_ops;
+/* The module reads the display port via this global; the module's lxp_run() only
+ * OVERWRITES it when passed a non-NULL disp_ops, so this static wiring stands for
+ * both the firmware (app passes NULL) and the hermetic host tests (no lxp_run). */
+const lxp_display_ops_t *g_lxp_disp_ops = &g_ove_adapter_disp_ops;
 
 #endif /* CONFIG_OVE_LINUX_DEV */
