@@ -57,6 +57,13 @@
  * stops at the TRAILER!!! record before the erased tail. */
 #define LXP_QSPI_ROOTFS ((const uint8_t *)0x90000000u)
 #define LXP_QSPI_ROOTFS_MAX (16u * 1024u * 1024u)
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+/* an500 (QEMU): the rootfs.cpio is XIP'd from PSRAM @ 0x60000000, where QEMU's `-device
+ * loader` places it at reset (see qemu-run.sh) — NOT embedded in the ELF, so it never costs
+ * the 4 MB internal FLASH. The length is an upper bound (the 12 MiB PSRAM rootfs window); the
+ * CPIO parse stops at the TRAILER!!! record. */
+#define LXP_PSRAM_ROOTFS ((const uint8_t *)0x60000000u)
+#define LXP_PSRAM_ROOTFS_MAX (12u * 1024u * 1024u)
 #else
 #include "loader_rootfs_image.h" /* ove_test_rootfs_cpio[], _len — a real Buildroot rootfs */
 #endif
@@ -403,6 +410,11 @@ static void demo_body(void *arg)
 	 * neither bursts nor speculates into the QUADSPI (a no-op on targets without that hazard). */
 	lxp_rootfs_window(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX);
 	g_rootfs_n = lxp_cpio_to_rootfs(LXP_QSPI_ROOTFS, LXP_QSPI_ROOTFS_MAX, g_rootfs,
+					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	/* PSRAM is ordinary RAM in QEMU (no D-cache / external-NOR hazard), so — unlike the STM32
+	 * QSPI case — no lxp_rootfs_window MPU shim is needed; the engine-common weak no-op stands. */
+	g_rootfs_n = lxp_cpio_to_rootfs(LXP_PSRAM_ROOTFS, LXP_PSRAM_ROOTFS_MAX, g_rootfs,
 					    ROOTFS_MAX_FILES, g_rootfs_names, sizeof(g_rootfs_names));
 #else
 	g_rootfs_n = lxp_cpio_to_rootfs(ove_test_rootfs_cpio, ove_test_rootfs_cpio_len,

@@ -606,6 +606,9 @@ macro(ove_link_firmware)
         -Wl,-Map=${CMAKE_BINARY_DIR}/${_OVE_PROJ_NAME}.map
         -Wl,--undefined=uxTopUsedPriority
     )
+    # Relink when the linker script changes — CMake does not treat a -T script as an
+    # automatic dependency of the link step (an edit to it would otherwise be a silent no-op).
+    set_target_properties(${_OVE_PROJ_NAME}.elf PROPERTIES LINK_DEPENDS ${_OVE_LD})
 
     # Link LVGL if built, plus libm
     if(TARGET lvgl)

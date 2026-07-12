@@ -300,6 +300,12 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x80000u LXP_PIPE_BUF=2048 LXP_PTY_
 add_compile_definitions(LXP_NPIPE=12)
 add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]==])
 {% endif %}
+{% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True and config.get("CONFIG_OVE_LINUX") == True %}
+# an500 QEMU Linux: the rootfs cpio XIPs from the bottom 12 MiB of PSRAM (QEMU -device
+# loader @ 0x60000000), so the FDPIC program pools share the top 4 MiB of the 16 MiB PSRAM
+# -> fewer program regions (5x(256K+512K) = 3.75 MiB fits).
+add_compile_definitions(LXP_NREG=5)
+{% endif %}
 # The embedded BusyBox rootfs.cpio comes from <OVE_BUILDROOT>/<OVE_LINUX_ROOTFS_OUTPUT>/images/.
 # Both are CONFIG_* (Kconfig) — no local paths are baked into the oveRTOS sources. A relative
 # OVE_BUILDROOT is resolved against the oveRTOS root in cmake/OveLinuxFixtures.cmake.

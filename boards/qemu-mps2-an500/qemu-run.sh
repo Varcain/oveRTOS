@@ -74,6 +74,20 @@ done
 # semihosting. Detected via CONFIG_OVE_LINUX in the workspace .config.
 PERSONALITY_CFG="$(dirname "$(realpath "${ELF}")")/../.config"
 if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_CFG}"; then
+    # The rootfs cpio is XIP'd from PSRAM @ 0x60000000 (not embedded in the ELF — keeps the
+    # 11 MB rootfs off the 4 MB internal flash; the QEMU analog of the STM32 QSPI-NOR rootfs).
+    # Inject the raw cpio into PSRAM at reset with -device loader. Resolve its path the way
+    # cmake/OveLinuxFixtures.cmake does: <OVE_BUILDROOT>/<OVE_LINUX_ROOTFS_OUTPUT>/images/.
+    _br="$(sed -n 's/^CONFIG_OVE_BUILDROOT="\(.*\)"$/\1/p' "${PERSONALITY_CFG}")"; _br="${_br:-../buildroot}"
+    _ro="$(sed -n 's/^CONFIG_OVE_LINUX_ROOTFS_OUTPUT="\(.*\)"$/\1/p' "${PERSONALITY_CFG}")"; _ro="${_ro:-output}"
+    case "${_br}" in
+        /*) ROOTFS_CPIO="${_br}/${_ro}/images/rootfs.cpio" ;;
+        *)  ROOTFS_CPIO="${OVE_DIR}/${_br}/${_ro}/images/rootfs.cpio" ;;
+    esac
+    if [ ! -f "${ROOTFS_CPIO}" ]; then
+        echo "[qemu-run] ERROR: rootfs.cpio not found at ${ROOTFS_CPIO} (build Buildroot first)" >&2
+        exit 1
+    fi
     PERS_ARGS=(
         -machine "${QEMU_MACHINE}" -m 16
         # Program console = CMSDK UART1 on stdio (non-blocking-pollable: interactive
@@ -82,6 +96,8 @@ if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_C
         -semihosting-config enable=on,chardev=c0 -chardev null,id=c0
         -serial none -serial stdio -monitor none -display none
         -kernel "${ELF}"
+        # Rootfs XIP'd from PSRAM: raw cpio loaded to 0x60000000 at reset.
+        -device "loader,file=${ROOTFS_CPIO},addr=0x60000000,force-raw=on"
     )
     # GDB server (enabled by default; --no-gdb turns it off): just opens the port, the firmware
     # still boots normally. Enables turnkey FDPIC source-level debugging via
