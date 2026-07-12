@@ -277,6 +277,11 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/backends/nuttx/nuttx_protected.c")
 # Linux personality — engine-agnostic syscall dispatch + per-engine SVC seam.
 {% if config.get("CONFIG_OVE_LINUX") == True %}
 set(OVE_LINUX ON)
+# The module's extracted subsystem TUs (src/fs/*.c, src/proc/*.c) include their headers
+# src-relative (e.g. #include "fs/lxp_pipe.h"), matching how the module builds itself
+# (lxp's own build adds -I src). lxp_syscall.c gets this for free via quote-include's
+# current-dir search, but the src/fs + src/proc TUs need src on the include path.
+include_directories(${OVE_DIR}/modules/lxp/src)
 # ---- lxp module: map oveRTOS Kconfig -> the module's own LXP_ENABLE_* + sizing ----
 # The lxp module (modules/lxp) is OS-agnostic: it gates on LXP_ENABLE_* / LXP_* knobs,
 # not CONFIG_OVE_*. oveRTOS supplies them here from its Kconfig (its adapters + seams,
@@ -312,8 +317,17 @@ add_compile_definitions(LXP_NREG=5)
 set(OVE_BUILDROOT "{{ config.get('CONFIG_OVE_BUILDROOT', '../buildroot') }}")
 set(OVE_LINUX_ROOTFS_OUTPUT "{{ config.get('CONFIG_OVE_LINUX_ROOTFS_OUTPUT', 'output') }}")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_syscall.c")
-# Engine-agnostic run loop + svc dispatch + signals (shared by all three seams).
+# Syscall-core subsystems the dispatcher delegates to (extracted out of lxp_syscall.c):
+# path resolution + rootfs lookup, the pipe ring, the writable-VFS (tmpfs) node store,
+# and synthetic /proc content generation.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_path.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_pipe.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/fs/lxp_tmpfs.c")
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/proc/lxp_procfs.c")
+# Engine-agnostic run loop + svc dispatch (shared by all three seams).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_run.c")
+# Signal delivery over the svc frame (extracted out of lxp_run.c).
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_signal.c")
 # CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_stats.c")
 # The module's own vendored copies of the arena allocator + FDPIC loader (the
