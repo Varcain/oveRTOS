@@ -366,6 +366,10 @@ void ove_backend_thread_cpu_sample(void)
 	}
 }
 
+/* Only the trace-facility path in ove_thread_list() below reads these, so they are
+ * defined exactly when used — else a build with configUSE_TRACE_FACILITY==0 (e.g. the
+ * qemu-freertos test firmware) trips -Werror=unused-function. */
+#if configUSE_TRACE_FACILITY
 static uint32_t frt_cpuint_ticks(TaskHandle_t h)
 {
 	for (int i = 0; i < OVE_FRT_CPUINT_MAX; i++)
@@ -394,6 +398,7 @@ static void frt_cpuint_reclaim(const TaskStatus_t *tasks, UBaseType_t n)
 		}
 	}
 }
+#endif /* configUSE_TRACE_FACILITY */
 
 int ove_thread_list(struct ove_thread_info *out, size_t max_count, size_t *actual_count)
 {
