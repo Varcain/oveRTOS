@@ -388,7 +388,14 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	return ove_thread_list((struct ove_thread_info *)o, m, n);
 }
 
-static const struct lxp_engine g_nuttx_engine = {
+/* Defined at end of file (they reference the MPU / IRQ helpers declared below);
+ * the module's lxp_run() invokes them via g_lxp_host_engine.prepare/.teardown. */
+static int nuttx_prepare(void);
+static void nuttx_teardown(void);
+
+const lxp_os_ops_t g_lxp_host_engine = {
+	.prepare = nuttx_prepare,
+	.teardown = nuttx_teardown,
 	.region = nuttx_region,
 	.dyn_pool = nuttx_dyn_pool,
 	.map_device = nuttx_map_device,
@@ -599,8 +606,10 @@ void serial_poll_putc(char c)
 }
 #endif
 
-int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
-		const char *const argv[])
+/* Per-run bring-up / teardown (was the body of the old lxp_run() wrapper). The
+ * public lxp_run() now lives in the module (src/lxp_run.c) and calls these via
+ * g_lxp_host_engine.prepare()/.teardown() around lxp_run_common(). */
+static int nuttx_prepare(void)
 {
 	lxp_mpu_init(); /* unprivileged-isolation regions + enable the MPU (both boards) */
 	for (int i = 0; i < LXP_NSLOT; i++)
@@ -613,12 +622,15 @@ int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 	note_driver_register(&g_lxp_note_driver); /* Phase 2: per-switch per-program MPU region swap */
 #endif
-	int rc = lxp_run_common(&g_nuttx_engine, cfg, path, argc, argv);
+	return 0;
+}
+
+static void nuttx_teardown(void)
+{
 	irq_attach(LXP_IRQ_SVCALL, arm_svcall, NULL);	 /* restore NuttX's handlers */
 	irq_attach(LXP_IRQ_MEMFAULT, arm_hardfault, NULL);
 	irq_attach(LXP_IRQ_BUSFAULT, arm_hardfault, NULL);
 	irq_attach(LXP_IRQ_USGFAULT, arm_hardfault, NULL);
-	return rc;
 }
 
 #endif /* CONFIG_OVE_LINUX */

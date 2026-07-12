@@ -512,7 +512,22 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	return ove_thread_list((struct ove_thread_info *)o, m, n);
 }
 
-static const struct lxp_engine g_freertos_engine = {
+/* Per-run bring-up (was the body of the old lxp_run() wrapper): create the
+ * coordinator wakeup semaphore in thread context and enable Bus/UsageFault so a
+ * program's fault is contained by our handlers instead of escalating to HardFault
+ * (the MPU port's prvSetupMPU only turns on MEMFAULTENA). Invoked by the module's
+ * lxp_run() via g_lxp_host_engine.prepare before the run loop. */
+static int freertos_prepare(void)
+{
+	if (!g_ev)
+		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
+	/* SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
+	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
+	return 0;
+}
+
+const lxp_os_ops_t g_lxp_host_engine = {
+	.prepare = freertos_prepare,
 	.region = freertos_region,
 	.dyn_pool = freertos_dyn_pool,
 	.spawn_launch = freertos_spawn_launch,
@@ -603,14 +618,6 @@ void lxp_guest_invalidate(const void *base, size_t len)
 }
 #endif
 
-int lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
-		const char *const argv[])
-{
-	if (!g_ev) /* create the coordinator wakeup sem in thread context */
-		g_ev = xSemaphoreCreateBinaryStatic(&g_ev_buf);
-	/* Enable BusFault + UsageFault so a program's bus/usage fault is contained by our handlers
-	 * instead of escalating to HardFault (the MPU port's prvSetupMPU only turns on MEMFAULTENA).
-	 * SHCSR @ 0xE000ED24: BUSFAULTENA = bit 17, USGFAULTENA = bit 18. */
-	*(volatile uint32_t *)0xE000ED24u |= (1u << 17) | (1u << 18);
-	return lxp_run_common(&g_freertos_engine, cfg, path, argc, argv);
-}
+/* The public lxp_run() now lives in the module (src/lxp_run.c): it publishes the
+ * net/display ops and brackets the run loop with g_lxp_host_engine.prepare() /
+ * .teardown(). This seam supplies only the engine vtable (g_lxp_host_engine). */

@@ -65,6 +65,21 @@
 #define UNUSED(x) ((void)(x))
 #endif
 
+/* ---- the Linux-personality port binding -----------------------------------
+ * The module's lxp_run() is the port entry: it takes the engine vtable plus the
+ * net/display ports. oveRTOS supplies the engine (g_lxp_host_engine, from the
+ * compiled freertos/zephyr/nuttx seam) and pre-wires the net/display ports via
+ * the backends/common adapter globals (g_lxp_net_ops / g_lxp_disp_ops), so we pass
+ * NULL for those (lxp_run keeps a pre-set global) and NULL config (geometry stays
+ * at the board default). */
+extern const lxp_os_ops_t g_lxp_host_engine;
+
+static int app_lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
+		       const char *const argv[])
+{
+	return lxp_run(&g_lxp_host_engine, NULL, NULL, NULL, cfg, path, argc, argv);
+}
+
 /* ---- the personality console (program stdin/stdout + program exit) --------- */
 /* Driven from the PRIVILEGED personality context; must be NON-BLOCKING-pollable so
  * interactive top's 'q' quit works (a finite poll reports readiness instead of blocking the
@@ -552,7 +567,7 @@ static void demo_body(void *arg)
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
 	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
-	int rc1 = lxp_run(&cfg1, "/bin/busybox", 1, cat_argv);
+	int rc1 = app_lxp_run(&cfg1, "/bin/busybox", 1, cat_argv);
 
 	g_linux_done = 1;
 	while (!g_worker_exited) /* wait for the worker to drain and return */
@@ -589,7 +604,7 @@ static void demo_body(void *arg)
 	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
 	 * a login shell on the console. */
 	const char *const init_argv[] = {"init", NULL};
-	int rc2 = lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
+	int rc2 = app_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
 
 	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
 	sh_exit(rc2 >= 0 ? 0 : 1);

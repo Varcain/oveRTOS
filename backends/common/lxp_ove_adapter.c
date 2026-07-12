@@ -234,6 +234,9 @@ static const struct lxp_net_ops g_ove_adapter_net_ops = {
 	.netif_set_up = a_netif_set_up,
 };
 
+/* The module reads the net port via this global; the module's lxp_run() only
+ * OVERWRITES it when passed a non-NULL net_ops, so this static wiring stands for
+ * both the firmware (app passes NULL) and the hermetic host tests (no lxp_run). */
 const struct lxp_net_ops *g_lxp_net_ops = &g_ove_adapter_net_ops;
 
 #endif /* CONFIG_OVE_LINUX_NET */
