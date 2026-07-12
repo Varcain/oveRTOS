@@ -217,7 +217,7 @@ static void test_lnx_init_stubs(void **state)
 					 (long)(uintptr_t)act, (long)(uintptr_t)oact, 0, 0, 0),
 			 0);
 	assert_int_equal((uint32_t)p.sig_handler[LXP_SIGINT], 0x1234);
-	assert_int_equal((uint32_t)p.sig_restorer[LXP_SIGINT], 0x5678);
+	assert_int_equal((uint32_t)p.sig_restorer, 0x5678);
 	assert_int_equal(oact[0], LXP_SIG_DFL); /* was unset (default) */
 	assert_int_equal(lxp_syscall(&p, LXP_NR_rt_sigaction, 99, (long)(uintptr_t)act, 0,
 					 0, 0, 0),
