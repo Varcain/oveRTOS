@@ -92,6 +92,12 @@ macro(ove_nuttx_setup)
         ${OVE_DIR}/include
         ${OVE_DIR}/backends/nuttx/include
         ${OVE_DIR}/backends/common
+        # lxp module (the Linux personality) public headers + src-relative headers.
+        # OveCommon.cmake adds these for the FreeRTOS/standalone path; the NuttX build
+        # assembles its own include list, so mirror them here (harmless when the
+        # personality isn't built — no lxp sources are compiled then).
+        ${OVE_DIR}/modules/lxp/include
+        ${OVE_DIR}/modules/lxp/src
         ${OVE_GEN_DIR}
         ${OVE_GEN_DIR}/generated_models
     )
