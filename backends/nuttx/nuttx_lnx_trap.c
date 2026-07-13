@@ -36,12 +36,17 @@
 #if defined(CONFIG_SCHED_INSTRUMENTATION_SWITCH)
 #include <nuttx/note/note_driver.h> /* note_driver_register — the per-context-switch MPU-swap hook */
 #endif
+#include <fcntl.h> /* open — non-blocking console RX via NuttX's serial buffer */
 #include <sched.h> /* task_delete */
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h> /* usleep */
+#include <termios.h> /* tcgetattr/tcsetattr — put the console in raw mode (no NuttX echo/canon) */
+#include <unistd.h>  /* usleep, read */
 
 #include "lxp/lxp_seam.h"
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+#include "lxp/lxp_netfs.h" /* lxp_netfs_exec_stage — the remote-exec staging buffer */
+#endif
 #include "ove/time.h"	/* ove_time_get_us/ns -> engine time_us/time_ns ops */
 #include "ove/thread.h" /* ove_thread_list -> engine thread_list op */
 
@@ -119,6 +124,28 @@ static uint8_t dyn_pools[LXP_NREG][LXP_DYN_POOL_SIZE] __attribute__((aligned(32)
 #define PROG_REGIONS_BYTES ((size_t)LXP_NREG * LXP_PROG_REGION_SIZE)
 #define DYN_POOLS_BYTES ((size_t)LXP_NREG * LXP_DYN_POOL_SIZE)
 static uintptr_t g_region_stack_lo[LXP_NREG];
+
+#if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
+/* Remote-exec (9P netfs) staging buffer: the coordinator fetches a remote FDPIC ELF into
+ * this 256K scratch, then launches it (its own text is copied into a program region). On the
+ * SDRAM/PSRAM boards it sits in the contiguous pool window right after the dyn_pools — still
+ * inside the whole-pool Normal non-cacheable MPU region (region 1), so the privileged
+ * coordinator reaches it (STM32: 0xC0700000..0xC0740000, well within the 8M SDRAM region).
+ * Mirrors the FreeRTOS seam's g_netfs_exec_stage. */
+#define NUTTX_EXEC_STAGE_BYTES (256u * 1024u)
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_ARCH_BOARD_MPS2_AN500)
+static uint8_t *const g_netfs_exec_stage =
+	(uint8_t *)((uintptr_t)prog_regions + PROG_REGIONS_BYTES + DYN_POOLS_BYTES);
+#else
+static uint8_t g_netfs_exec_stage[NUTTX_EXEC_STAGE_BYTES] __attribute__((aligned(32)));
+#endif
+uint8_t *lxp_netfs_exec_stage(size_t *cap)
+{
+	if (cap)
+		*cap = NUTTX_EXEC_STAGE_BYTES;
+	return g_netfs_exec_stage;
+}
+#endif /* CONFIG_OVE_LINUX_NETFS_EXEC */
 static struct task_tcb_s g_tcb[LXP_NSLOT];
 static int g_pid[LXP_NSLOT];
 
@@ -586,17 +613,61 @@ static struct note_driver_s g_lxp_note_driver = {
 #define OVE_NX_U1_ISR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x1Cu))
 #define OVE_NX_U1_RDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x24u))
 #define OVE_NX_U1_TDR (*(volatile uint32_t *)(OVE_NX_USART1 + 0x28u))
+/* RX rides NuttX's own IRQ-filled serial receive buffer, read non-blocking through the console
+ * device — NOT a raw poll of the 1-byte RDR. NuttX owns the USART1 RX IRQ (RXNEIE) and drains each
+ * arriving byte into its recv FIFO; a raw RDR poll both races that IRQ (bytes vanish into NuttX's
+ * buffer) and overruns the single RDR on a multi-byte paste. Reading the FIFO instead captures every
+ * byte, mirroring the FreeRTOS serial_wrapper.c "read the IRQ buffer, not the RDR" design. The
+ * personality's console read is parked and resumed from the run-loop (task) context, so the
+ * non-blocking read() is a normal file op there; O_NONBLOCK also means it never waits. TX stays a
+ * direct polled TDR write below (the personality owns TX once it starts; NuttX does no console TX
+ * after boot). */
+static int g_con_rfd = -1;
+static int g_rx_look = -1; /* one-byte lookahead: rx_ready pulls from the FIFO, getc returns it */
 void serial_poll_begin(void)
 {
-	OVE_NX_U1_CR1 &= ~(1u << 5); /* clear RXNEIE → polled access owns RX */
+	if (g_con_rfd >= 0)
+		return;
+	g_con_rfd = open("/dev/console", O_RDONLY | O_NONBLOCK);
+#if defined(CONFIG_SERIAL_TERMIOS)
+	/* Raw console: the personality's guest shell owns echo + line editing, so strip NuttX's
+	 * default cooked mode (ISIG|ECHO|ICANON). Without this NuttX echoes every keystroke a second
+	 * time (doubled input) and line-buffers RX to a newline instead of delivering bytes as they
+	 * arrive. VMIN=0/VTIME=0 keeps read() non-blocking. */
+	if (g_con_rfd >= 0) {
+		struct termios t;
+		if (tcgetattr(g_con_rfd, &t) == 0) {
+			t.c_lflag &= ~(tcflag_t)(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+			t.c_iflag &= ~(tcflag_t)(ICRNL | INLCR | IGNCR | IXON);
+			t.c_cc[VMIN] = 0;
+			t.c_cc[VTIME] = 0;
+			tcsetattr(g_con_rfd, TCSANOW, &t);
+		}
+	}
+#endif
 }
 int serial_poll_rx_ready(void)
 {
-	return (OVE_NX_U1_ISR & (1u << 5)) ? 1 : 0; /* RXNE */
+	if (g_rx_look >= 0)
+		return 1;
+	unsigned char c;
+	if (g_con_rfd >= 0 && read(g_con_rfd, &c, 1) == 1) {
+		g_rx_look = (int)c;
+		return 1;
+	}
+	return 0;
 }
 int serial_poll_getc(void)
 {
-	return (int)(OVE_NX_U1_RDR & 0xFFu);
+	if (g_rx_look >= 0) {
+		int c = g_rx_look;
+		g_rx_look = -1;
+		return c;
+	}
+	unsigned char c = 0;
+	if (g_con_rfd >= 0 && read(g_con_rfd, &c, 1) == 1)
+		return (int)c;
+	return 0;
 }
 void serial_poll_putc(char c)
 {

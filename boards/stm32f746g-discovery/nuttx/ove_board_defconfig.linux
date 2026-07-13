@@ -13,6 +13,11 @@ CONFIG_ARM_MPU=n
 # app's I/O callbacks (including the polled USART1 console); give it headroom over the 2 KB default.
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
+# The personality's console reads RX through NuttX's IRQ-filled serial buffer (nuttx_lnx_trap.c
+# serial_poll_*), then puts the console in RAW mode via tcsetattr so NuttX does not also echo each
+# keystroke (the guest shell owns echo) or line-buffer to a newline. tcsetattr/TCSETS need termios.
+CONFIG_SERIAL_TERMIOS=y
+
 # Phase 2 inter-program isolation: a note driver (backends/nuttx/nuttx_lnx_trap.c) hooks EVERY
 # context switch — including round-robin preemption between same-priority program tasks, which the
 # seam's syscall path cannot see — to reprogram the MPU to the incoming program's OWN region. That
