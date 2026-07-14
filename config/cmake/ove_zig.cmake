@@ -77,6 +77,8 @@ function(ove_build_zig_lib TARGET)
         if(NOT DEFINED OVE_ZIG_TARGET)
             set(OVE_ZIG_TARGET "thumb-freestanding-eabihf")
         endif()
+        _ove_binding_align_arm_float_target(
+            OVE_ZIG_TARGET "${OVE_ZIG_TARGET}")
         # Detect float ABI: Zephyr on QEMU uses soft float (nofp)
         if(OVE_ZIG_TARGET MATCHES "eabihf$" AND OVE_RTOS STREQUAL "zephyr")
             # Check if Zephyr is actually using hard float

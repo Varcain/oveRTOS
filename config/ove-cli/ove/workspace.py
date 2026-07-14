@@ -190,6 +190,18 @@ class Workspace:
         return get_str(self.config, "CONFIG_OVE_APP_LANG", "c")
 
     @property
+    def arm_float_abi(self):
+        """FreeRTOS ARM calling convention selected by Kconfig.
+
+        Old workspaces predate the choice and therefore intentionally retain
+        the historical hard-float default until their configuration is
+        regenerated.
+        """
+        if get_bool(self.config, "CONFIG_OVE_ARM_FLOAT_ABI_SOFTFP"):
+            return "softfp"
+        return "hard"
+
+    @property
     def rtos_config_path(self):
         """Path to user's RTOS-native config customizations."""
         return os.path.join(self.workspace_dir, "rtos.config")

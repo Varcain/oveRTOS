@@ -18,6 +18,13 @@ set(OVE_RAM_SIZE {{ config.get('CONFIG_OVE_RAM_SIZE', 327680) }})
 
 # Toolchain
 set(OVE_CROSS_COMPILE "{{ config.get('CONFIG_OVE_CROSS_COMPILE', 'arm-none-eabi-') }}")
+{% if config.get("CONFIG_OVE_RTOS_FREERTOS") == True %}
+{% if config.get("CONFIG_OVE_ARM_FLOAT_ABI_SOFTFP") == True %}
+set(OVE_CONFIG_ARM_FLOAT_ABI "softfp")
+{% else %}
+set(OVE_CONFIG_ARM_FLOAT_ABI "hard")
+{% endif %}
+{% endif %}
 
 # Debug
 {% if config.get("CONFIG_OVE_DEBUG_BUILD") == True %}

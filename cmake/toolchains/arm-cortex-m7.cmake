@@ -1,5 +1,5 @@
 # ============================================================================
-# ARM Cortex-M7 toolchain file (hard-float, FPv5-SP)
+# ARM Cortex-M7 toolchain file (selectable hard/softfp ABI, FPv5-SP)
 # ============================================================================
 #
 # Shared between QEMU MPS2-AN500 (semihosting) and STM32F7 boards (nosys).
@@ -28,13 +28,15 @@ else()
     set(TOOLCHAIN_PREFIX "arm-none-eabi-")
 endif()
 
-# Propagate OVE_TOOLCHAIN_DIR into try_compile sub-projects so the toolchain
-# resolves the same arm-none-eabi compiler in CMake's compiler-ABI checks.
+# Propagate toolchain inputs into try_compile sub-projects so compiler probes
+# use the same compiler and floating-point calling convention as the firmware.
 # Without this, the inner project re-runs this toolchain file with
 # OVE_TOOLCHAIN_DIR unset and falls through to a PATH lookup, which can
 # pick up a different (e.g. linuxbrew) arm-none-eabi-g++ that lacks the
 # C++ headers our libstdc++ probe below requires.
-list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES OVE_TOOLCHAIN_DIR)
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+    OVE_TOOLCHAIN_DIR
+    OVE_ARM_FLOAT_ABI)
 
 set(CMAKE_C_COMPILER "${TOOLCHAIN_PREFIX}gcc")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_PREFIX}g++")
@@ -42,6 +44,7 @@ set(CMAKE_ASM_COMPILER "${TOOLCHAIN_PREFIX}gcc")
 set(CMAKE_AR "${TOOLCHAIN_PREFIX}ar")
 set(CMAKE_OBJCOPY "${TOOLCHAIN_PREFIX}objcopy")
 set(CMAKE_OBJDUMP "${TOOLCHAIN_PREFIX}objdump")
+set(CMAKE_READELF "${TOOLCHAIN_PREFIX}readelf")
 set(CMAKE_SIZE "${TOOLCHAIN_PREFIX}size")
 
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -59,7 +62,18 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 # Sticking with SP keeps soft-double routines (~3-5 KiB of `__aeabi_d*` /
 # `compiler_builtins::float`) in the binary but avoids the FreeRTOS port
 # bug.  Closing this would require validating + patching the kernel port.
-set(CPU_FLAGS "-mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-sp-d16")
+set(OVE_ARM_FLOAT_ABI "hard" CACHE STRING
+    "ARM floating-point calling convention (hard or softfp)")
+set_property(CACHE OVE_ARM_FLOAT_ABI PROPERTY STRINGS hard softfp)
+if(NOT OVE_ARM_FLOAT_ABI STREQUAL "hard" AND
+   NOT OVE_ARM_FLOAT_ABI STREQUAL "softfp")
+    message(FATAL_ERROR
+        "OVE_ARM_FLOAT_ABI must be 'hard' or 'softfp', got "
+        "'${OVE_ARM_FLOAT_ABI}'")
+endif()
+set(CPU_FLAGS
+    "-mcpu=cortex-m7 -mthumb -mfloat-abi=${OVE_ARM_FLOAT_ABI} -mfpu=fpv5-sp-d16")
+message(STATUS "[ove] ARM float ABI: ${OVE_ARM_FLOAT_ABI}")
 
 set(CMAKE_C_FLAGS_INIT "${CPU_FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${CPU_FLAGS}")

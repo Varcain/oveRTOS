@@ -71,6 +71,10 @@ def _emit_cmake_user_presets(ws):
         cache_vars["OVE_APP_DIR"] = ws.app_dir
     if ws.toolchain_dir:
         cache_vars["OVE_TOOLCHAIN_DIR"] = ws.toolchain_dir
+    if ws.rtos == "freertos":
+        # The compiler ABI is consumed by CMake's toolchain file before
+        # project() and before generated ove_config.cmake can be included.
+        cache_vars["OVE_ARM_FLOAT_ABI"] = ws.arm_float_abi
     toolchain_file = os.path.join(board_dir, "cmake", "arm-none-eabi.cmake")
     if os.path.isfile(toolchain_file):
         cache_vars["CMAKE_TOOLCHAIN_FILE"] = toolchain_file
