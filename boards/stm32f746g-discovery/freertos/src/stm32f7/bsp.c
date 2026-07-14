@@ -42,6 +42,11 @@ int bsp_boardInit(void)
 	/* Board-specific clock: 25 MHz HSE → 216 MHz SYSCLK */
 	SystemClock_Config();
 
+	/* The guest entropy source uses PLL48CLK (432 MHz / PLLQ=9 = 48 MHz).
+	 * Failure is deliberately non-fatal to the host RTOS: guest process launch
+	 * and random syscalls fail closed through the LXP port instead. */
+	(void)bsp_random_init();
+
 	/* Bring up the FMC controller + the external 8 MB SDRAM at 0xC0000000.  On QEMU/Renode
 	 * the SDRAM is modeled as always-present so this step was never needed; on real silicon
 	 * the controller MUST be initialized or the first access to 0xC0000000 faults.  The Linux
