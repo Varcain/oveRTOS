@@ -51,6 +51,8 @@ function(ove_build_rust_crate TARGET)
         if(NOT DEFINED OVE_RUST_TARGET)
             set(OVE_RUST_TARGET "thumbv7em-none-eabihf")
         endif()
+        _ove_binding_align_arm_float_target(
+            OVE_RUST_TARGET "${OVE_RUST_TARGET}")
         # Align float ABI with the RTOS kernel. Zephyr on QEMU and NuttX
         # with CONFIG_ARCH_FPU disabled both use soft float; linking a
         # hard-float Rust staticlib against them raises ld's "uses VFP

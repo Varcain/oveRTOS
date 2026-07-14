@@ -83,6 +83,24 @@ macro(ove_setup_project _proj_name)
         include(${OVE_GEN_DIR}/ove_config.cmake)
     endif()
 
+    # The ARM ABI is needed by the toolchain before project(), while Kconfig's
+    # generated CMake file is included here. Refuse a stale/mixed build rather
+    # than linking objects that disagree on VFP argument passing.
+    if(OVE_RTOS STREQUAL "freertos" AND
+       DEFINED OVE_CONFIG_ARM_FLOAT_ABI)
+        if(NOT DEFINED OVE_ARM_FLOAT_ABI)
+            message(FATAL_ERROR
+                "OVE_ARM_FLOAT_ABI was not supplied to the FreeRTOS toolchain; "
+                "run `ove build` or pass "
+                "-DOVE_ARM_FLOAT_ABI=${OVE_CONFIG_ARM_FLOAT_ABI}")
+        elseif(NOT OVE_ARM_FLOAT_ABI STREQUAL OVE_CONFIG_ARM_FLOAT_ABI)
+            message(FATAL_ERROR
+                "Float ABI mismatch: toolchain uses '${OVE_ARM_FLOAT_ABI}' "
+                "but Kconfig selects '${OVE_CONFIG_ARM_FLOAT_ABI}'. Clean or "
+                "reconfigure this workspace; mixed-ABI objects cannot link safely.")
+        endif()
+    endif()
+
     # OVE_DEBUG_BUILD → Debug config; otherwise Release.
     if(OVE_DEBUG)
         set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
@@ -627,6 +645,23 @@ macro(ove_link_firmware)
         target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE ove_mbedtls)
     endif()
     target_link_libraries(${_OVE_PROJ_NAME}.elf PRIVATE m ${_OVE_LINK_LIBS})
+
+    # Verify the final ELF, not merely the command line: this catches a stale
+    # or externally supplied archive with the wrong ARM calling convention.
+    if(OVE_RTOS STREQUAL "freertos" AND DEFINED OVE_ARM_FLOAT_ABI)
+        if(NOT CMAKE_READELF)
+            message(FATAL_ERROR
+                "CMAKE_READELF is required for ARM float-ABI verification")
+        endif()
+        add_custom_command(TARGET ${_OVE_PROJ_NAME}.elf POST_BUILD
+            COMMAND ${CMAKE_COMMAND}
+                -DELF_FILE=$<TARGET_FILE:${_OVE_PROJ_NAME}.elf>
+                -DREADELF=${CMAKE_READELF}
+                -DEXPECTED_ABI=${OVE_ARM_FLOAT_ABI}
+                -P ${OVE_DIR}/cmake/VerifyArmFloatAbi.cmake
+            COMMENT "Verifying ARM ${OVE_ARM_FLOAT_ABI} ABI"
+        )
+    endif()
 
     # Post-build: hex
     add_custom_command(TARGET ${_OVE_PROJ_NAME}.elf POST_BUILD

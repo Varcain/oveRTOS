@@ -175,6 +175,11 @@ def build_freertos(ws):
     if tc:
         cmake_args.append(f"-DOVE_TOOLCHAIN_DIR={tc}")
 
+    # The Cortex-M toolchain runs before project(), so this cannot be learned
+    # later from generated ove_config.cmake. Keep compiler probes, Picolibc,
+    # and the final image on the Kconfig-selected calling convention.
+    cmake_args.append(f"-DOVE_ARM_FLOAT_ABI={ws.arm_float_abi}")
+
     if os.path.isfile(toolchain_file):
         cmake_args.append(f"-DCMAKE_TOOLCHAIN_FILE={toolchain_file}")
 

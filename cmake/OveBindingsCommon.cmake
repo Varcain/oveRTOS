@@ -20,6 +20,10 @@
 #       Resolves the ARM toolchain's <triple>/include directory from
 #       CMAKE_C_COMPILER. Sets OUTVAR to "" if not resolvable.
 #
+#   _ove_binding_align_arm_float_target(OUTVAR TARGET)
+#       For FreeRTOS ARM builds, rewrites a conventional eabi/eabihf Rust or
+#       Zig target suffix to match OVE_ARM_FLOAT_ABI.
+#
 #   _ove_binding_write_sizes_probe(OUT_C_PATH ROOT_INCLUDES)
 #       Writes a C file at OUT_C_PATH containing sizeof/alignof arrays for
 #       all conditionally-compiled storage types. ROOT_INCLUDES is the
@@ -80,6 +84,38 @@ function(_ove_binding_arm_sysroot_include OUTVAR)
     get_filename_component(_NAME "${CMAKE_C_COMPILER}" NAME)
     string(REGEX REPLACE "-gcc$" "" _TRIPLE "${_NAME}")
     set(${OUTVAR} "${_ROOT}/${_TRIPLE}/include" PARENT_SCOPE)
+endfunction()
+
+
+function(_ove_binding_align_arm_float_target OUTVAR TARGET_NAME)
+    set(_target "${TARGET_NAME}")
+    if(OVE_RTOS STREQUAL "freertos")
+        if(NOT DEFINED OVE_ARM_FLOAT_ABI)
+            message(FATAL_ERROR
+                "FreeRTOS binding target cannot be selected without "
+                "OVE_ARM_FLOAT_ABI")
+        endif()
+        if(NOT _target MATCHES "eabi(hf)?$")
+            message(FATAL_ERROR
+                "Cannot verify ARM float ABI for binding target '${_target}'; "
+                "expected a target ending in eabi or eabihf")
+        endif()
+        if(OVE_ARM_FLOAT_ABI STREQUAL "hard" AND _target MATCHES "eabi$")
+            string(REGEX REPLACE "eabi$" "eabihf" _target "${_target}")
+        elseif(OVE_ARM_FLOAT_ABI STREQUAL "softfp" AND
+               _target MATCHES "eabihf$")
+            # Rust/Zig's eabi target uses the same base procedure-call
+            # standard as GCC softfp. It may use software FP internally, but
+            # values cross the C boundary in core registers as required.
+            string(REGEX REPLACE "eabihf$" "eabi" _target "${_target}")
+        endif()
+        if(NOT "${_target}" STREQUAL "${TARGET_NAME}")
+            message(STATUS
+                "[ove] Binding target ${TARGET_NAME} -> ${_target} "
+                "(${OVE_ARM_FLOAT_ABI} ABI)")
+        endif()
+    endif()
+    set(${OUTVAR} "${_target}" PARENT_SCOPE)
 endfunction()
 
 

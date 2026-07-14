@@ -38,6 +38,27 @@ config OVE_TOOLCHAIN_CUSTOM_PATH
 comment "Toolchain version and URL are controlled by manifest.yaml"
     depends on OVE_TOOLCHAIN_DOWNLOAD
 
+choice OVE_ARM_FLOAT_ABI
+    prompt "ARM floating-point calling convention"
+    default OVE_ARM_FLOAT_ABI_HARD
+    depends on OVE_RTOS_FREERTOS
+
+config OVE_ARM_FLOAT_ABI_HARD
+    bool "Hard-float ABI (VFP argument registers)"
+    help
+      Compile the complete FreeRTOS image with -mfloat-abi=hard. Floating-
+      point arguments and return values use VFP registers. Every linked
+      library must use the same calling convention.
+
+config OVE_ARM_FLOAT_ABI_SOFTFP
+    bool "Softfp ABI (core argument registers, hardware FPU)"
+    help
+      Compile the complete FreeRTOS image with -mfloat-abi=softfp. Floating-
+      point arguments and return values use core registers, while generated
+      code may still use the hardware FPU. This is ABI-compatible with
+      soft-float libraries, but not with hard-float libraries.
+endchoice
+
 config OVE_OPENOCD_CFG
     string "OpenOCD configuration file"
     default "board/stm32f7discovery.cfg"
