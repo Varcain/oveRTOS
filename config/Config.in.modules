@@ -64,16 +64,62 @@ config OVE_BUILDROOT
       sibling checkout. Build the rootfs with
       tests/sim/zephyr-linux/regen-rootfs-fixture.sh. NOT used by non-Linux builds.
 
-config OVE_LINUX_ROOTFS_OUTPUT
-    string "Buildroot output subdir for the embedded rootfs.cpio"
+choice OVE_LINUX_GUEST_FLOAT_ABI
+    prompt "Linux guest floating-point calling convention"
+    depends on OVE_LINUX && OVE_RTOS_FREERTOS
+    default OVE_LINUX_GUEST_FLOAT_ABI_SOFT
+    help
+      Select the ABI used by programs inside the Linux personality. This is
+      independent of OVE_ARM_FLOAT_ABI, which controls the host FreeRTOS
+      firmware and its linked libraries.
+
+config OVE_LINUX_GUEST_FLOAT_ABI_SOFT
+    bool "Soft-float guest ABI (core argument registers)"
+    help
+      Use the maintained soft-float FDPIC Buildroot userspace from "output".
+      Guest floating-point operations are provided by software helpers and do
+      not require VFP state to survive a parked syscall.
+
+config OVE_LINUX_GUEST_FLOAT_ABI_HARD
+    bool "Hard-float guest ABI (VFP argument registers)"
+    depends on OVE_BOARD_STM32F746G_DISCO || OVE_BOARD_QEMU_MPS2_AN500
+    help
+      Use the Cortex-M7 FPv5-SP hard-float FDPIC Buildroot userspace from
+      "output-hardfloat" and preserve s0-s31 plus FPSCR across every deferred
+      syscall, signal and recreated guest task. Currently supported only by the
+      Cortex-M7 FreeRTOS seam used on STM32F746G-DISCO and MPS2-AN500 QEMU.
+endchoice
+
+config OVE_LINUX_GUEST_FP_SELFTEST
+    bool "Run hard-float guest context self-test instead of init"
+    depends on OVE_LINUX_GUEST_FLOAT_ABI_HARD
+    default n
+    help
+      Development/test mode for the linux_interop app. Launch /usr/bin/fpcheck
+      directly after the normal RTOS-to-guest round trip instead of booting
+      BusyBox init. The guest validates s0-s31 plus FPSCR across repeated
+      deferred and blocking syscall paths.
+
+config OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE
+    string "Override Buildroot output subdir (normally empty)"
     depends on OVE_LINUX
+    default ""
+    help
+      Leave empty to select "output" for a soft-float guest and
+      "output-hardfloat" for a hard-float guest. Set this only for an
+      out-of-tree Buildroot O= directory whose ABI matches the guest choice.
+
+config OVE_LINUX_ROOTFS_OUTPUT
+    string
+    depends on OVE_LINUX
+    default OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE if OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE != ""
+    default "output-hardfloat" if OVE_LINUX_GUEST_FLOAT_ABI_HARD
     default "output"
     help
-      Which Buildroot output subdir to embed the rootfs.cpio from. "output" is the
-      dynamic-FDPIC userspace (every process shares one in-place copy of
-      busybox.so/ld.so/libc.so text; Zephyr keeps W^X). The legacy bFLT build has
-      been retired, so "output" is the only maintained userspace; the option
-      remains only for an out-of-tree Buildroot using a different O= directory.
+      Derived Buildroot output subdir used for rootfs.cpio. Keeping this symbol
+      hidden prevents a saved soft-float default from pinning the wrong rootfs
+      after the guest ABI is changed. Use OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE for
+      an explicit out-of-tree directory.
 
 config OVE_QSPI
     bool "QSPI NOR flash (memory-mapped XIP)"

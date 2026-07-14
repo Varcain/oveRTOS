@@ -124,7 +124,13 @@ struct lnx_capture {
 	uint32_t *hw;	   /* hw[0..7] = r0,r1,r2,r3,r12,lr,pc,xpsr */
 	uint32_t psp;	   /* the program SP at the HW frame */
 	uint32_t r4_11[8]; /* r4..r11 */
+	uint32_t exc_return;
+#if LXP_ENABLE_FPU_CONTEXT
+	struct lxp_fp_context fp;
+#endif
 };
+_Static_assert(offsetof(struct lnx_capture, exc_return) == 40u,
+	       "SVC capture EXC_RETURN offset");
 static struct lnx_capture g_cap __attribute__((used)); /* referenced from SVC_Handler asm */
 
 /* The C body of the svc trap: build the uniform frame, dispatch, write back.
@@ -141,6 +147,29 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	if (sidx < 0)
 		return 0; /* not a program task → forward to FreeRTOS */
 	struct lxp_frame f;
+	memset(&f, 0, sizeof(f));
+	uint32_t fp_frame_bytes = 0;
+#if LXP_ENABLE_FPU_CONTEXT
+	f.fp = &g->fp;
+	memset(&g->fp, 0, sizeof(g->fp));
+	if ((g->exc_return & (1u << 4)) == 0) {
+		/* With lazy preservation enabled, the extended frame can be reserved but
+		 * its s0-s15 contents are not valid until the first handler-mode VFP
+		 * instruction. Preserve s0 on MSP while forcing that pending operation. */
+		__asm__ volatile("vpush {s0}\n"
+				 "vpop  {s0}\n"
+				 :
+				 :
+				 : "memory");
+		for (int i = 0; i < 16; i++)
+			g->fp.s[i] = g->hw[8 + i];
+		uint32_t *high = &g->fp.s[16];
+		__asm__ volatile("vstmia %0, {s16-s31}" : : "r"(high) : "memory");
+		g->fp.fpscr = g->hw[24];
+		g->fp.active = 1;
+		fp_frame_bytes = 18u * sizeof(uint32_t);
+	}
+#endif
 	f.r[0] = g->hw[0];
 	f.r[1] = g->hw[1];
 	f.r[2] = g->hw[2];
@@ -148,8 +177,9 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	for (int i = 0; i < 8; i++)
 		f.r[4 + i] = g->r4_11[i];
 	f.r[12] = g->hw[4];
-	/* The HW frame is 32 bytes; the pre-svc SP is +32 (+4 if xPSR aligned). */
-	f.r[13] = g->psp + 32u + ((g->hw[7] & (1u << 9)) ? 4u : 0u);
+	/* The guest ABI observes the SP before exception entry. An extended FP frame
+	 * adds s0-s15, FPSCR and one reserved word after the 8-word core frame. */
+	f.r[13] = g->psp + 32u + fp_frame_bytes + ((g->hw[7] & (1u << 9)) ? 4u : 0u);
 	f.r[14] = g->hw[5];
 	f.r[15] = g->hw[6];
 	f.xpsr = g->hw[7];
@@ -164,6 +194,15 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	g->hw[5] = f.r[14];
 	g->hw[6] = f.r[15];
 	g->hw[7] = f.xpsr;
+#if LXP_ENABLE_FPU_CONTEXT
+	if ((g->exc_return & (1u << 4)) == 0) {
+		for (int i = 0; i < 16; i++)
+			g->hw[8 + i] = g->fp.s[i];
+		g->hw[24] = g->fp.fpscr;
+		uint32_t *high = &g->fp.s[16];
+		__asm__ volatile("vldmia %0, {s16-s31}" : : "r"(high) : "memory");
+	}
+#endif
 	return 1;
 }
 
@@ -190,6 +229,7 @@ __attribute__((naked)) void SVC_Handler(void)
 			 "str   r0, [r1, #4]          \n" /* g_cap.psp */
 			 "add   r2, r1, #8            \n"
 			 "stmia r2, {r4-r11}          \n" /* g_cap.r4_11 */
+			 "str   lr, [r1, #40]         \n" /* EXC_RETURN selects basic/extended frame */
 			 "mov   r0, r1                \n"
 			 /* The dispatch runs in HANDLER mode but inherits the program's CONTROL.nPRIV=1.
 			  * FreeRTOS MPU_* wrappers (e.g. the event_post semaphore-give on a parking syscall)
@@ -279,13 +319,32 @@ struct resume_desc {
 	struct lxp_resume_ctx ctx;
 };
 
+#if LXP_ENABLE_FPU_CONTEXT
+/* prog_tramp is naked assembly, so pin every optional field offset it consumes.
+ * Appending FP state leaves all established core-register offsets unchanged. */
+_Static_assert(offsetof(struct resume_desc, ctx.fp.s) == 68u, "resume FP register offset");
+_Static_assert(offsetof(struct resume_desc, ctx.fp.fpscr) == 196u, "resume FPSCR offset");
+_Static_assert(offsetof(struct resume_desc, ctx.fp.active) == 200u, "resume FP-active offset");
+#define LXP_TRAMP_RESTORE_FP                                                        \
+	"ldr   r1, [r0, #200]  \n" /* ctx.fp.active */                              \
+	"cbz   r1, 0f          \n"                                                    \
+	"add   r2, r0, #68     \n" /* ctx.fp.s */                                   \
+	"vldmia r2!, {s0-s31}  \n"                                                    \
+	"ldr   r1, [r0, #196]  \n" /* ctx.fp.fpscr */                               \
+	"vmsr  fpscr, r1       \n"                                                    \
+	"0:                    \n"
+#else
+#define LXP_TRAMP_RESTORE_FP ""
+#endif
+
 __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused)))
 {
 	/* Restore the complete syscall-visible context. APSR.NZCVQ matters: an immediate
 	 * hardware exception return preserves flags, and optimized userspace may carry a
 	 * comparison across its next syscall. Stage PC below the guest SP so r1-r3 can all
 	 * reach their final values before the branch. */
-	__asm__ volatile("add   r3, r0, #4     \n" /* r3 -> ctx */
+	__asm__ volatile(LXP_TRAMP_RESTORE_FP
+			 "add   r3, r0, #4     \n" /* r3 -> ctx */
 			 "ldmia r3!, {r4-r11} \n"
 			 "ldr   r12, [r3], #4 \n"
 			 "ldr   lr,  [r3], #4 \n"
