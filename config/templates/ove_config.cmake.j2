@@ -294,6 +294,15 @@ include_directories(${OVE_DIR}/modules/lxp/src)
 # not CONFIG_OVE_*. oveRTOS supplies them here from its Kconfig (its adapters + seams,
 # which include the module's headers, need them too, so these are compile-wide).
 add_compile_definitions(LXP_ENABLE_LINUX=1 LXP_ENABLE_LOADER=1)
+{% if config.get("CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD") == True %}
+# The guest ABI is independent of the host firmware ABI. A hard-float guest can
+# park in the syscall top half and later resume in a recreated FreeRTOS task, so
+# the seam and shared core must carry its complete single-precision VFP state.
+set(OVE_LINUX_GUEST_FLOAT_ABI "hard")
+add_compile_definitions(LXP_ENABLE_FPU_CONTEXT=1)
+{% else %}
+set(OVE_LINUX_GUEST_FLOAT_ABI "soft")
+{% endif %}
 {% for feat, cfg in [("NET","CONFIG_OVE_LINUX_NET"), ("NETFS","CONFIG_OVE_LINUX_NETFS"),
                      ("NETFS_EXEC","CONFIG_OVE_LINUX_NETFS_EXEC"), ("PTY","CONFIG_OVE_LINUX_PTY"),
                      ("DEV","CONFIG_OVE_LINUX_DEV"), ("DEV_FB","CONFIG_OVE_LINUX_DEV_FB"),

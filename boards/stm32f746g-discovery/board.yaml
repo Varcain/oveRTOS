@@ -61,7 +61,6 @@ defconfig:
 rtos_defconfig:
   freertos:
     - CONFIG_FREERTOS_TOTAL_HEAP_SIZE=131072
-    - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output"
     # The Linux personality runs its rootfs from the on-board QSPI NOR (N25Q128A, 16 MB),
     # memory-mapped + XIP'd at 0x90000000: the FDPIC userspace with LVGL is ~1.45 MB — far past
     # the 1 MB internal flash — and FDPIC shares the read-only program text in-place from the
@@ -90,7 +89,6 @@ rtos_defconfig:
     # programmed to the NOR separately with OpenOCD stmqspi (flash-qspi.sh). ove_lnx_mpu_init
     # adds a static RO+X region for the 0x90000000 window so the unprivileged guest can XIP its
     # text.
-    - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output"
     - CONFIG_OVE_LINUX_ROOTFS_QSPI=y
     - CONFIG_OVE_BOARD=y
   zephyr:
@@ -100,5 +98,4 @@ rtos_defconfig:
     # is XIP'd from the on-board N25Q NOR at 0x90000000 (CONFIG_STM32_MEMMAP auto-maps it; the
     # ove-linux-fb.overlay retypes that window RO+X for the guest domain). Programmed separately
     # with OpenOCD stmqspi (flash-qspi.sh). Frees the internal flash for the firmware.
-    - CONFIG_OVE_LINUX_ROOTFS_OUTPUT="output"
     - CONFIG_OVE_LINUX_ROOTFS_QSPI=y

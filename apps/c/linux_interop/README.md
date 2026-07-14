@@ -50,6 +50,29 @@ ove build
 ove run
 ```
 
+FreeRTOS has an independent Linux guest ABI choice under `ove menuconfig`:
+`Linux guest floating-point calling convention`. The default soft-float guest
+uses Buildroot `output`; the Cortex-M7 hard-float guest uses
+`output-hardfloat` and enables full `s0-s31`/`FPSCR` preservation across parked
+syscalls. This does not change the host firmware choice under
+`ARM floating-point calling convention`, so hard and softfp host images can use
+the same hard-float guest rootfs. Set `Buildroot output subdir override` only
+when an ABI-compatible out-of-tree Buildroot directory is required.
+
+Build and audit that rootfs first with:
+
+```sh
+make -C ../buildroot O=output-hardfloat overtos_fdpic_hardfloat_defconfig
+make -C ../buildroot O=output-hardfloat
+```
+
+The opt-in QEMU regression configures the hard guest, builds the firmware, and
+runs `/usr/bin/fpcheck` directly after the normal interop phase:
+
+```sh
+ove test qemu-freertos-linux-hardfloat
+```
+
 `ove run` launches QEMU with an interactive semihosting console (phase 1 is
 deterministic; phase 2 is your session):
 

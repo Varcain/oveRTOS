@@ -2222,6 +2222,46 @@ def test_qemu_freertos_linux_segv(ove_dir, output_dir):
                             "qemu-freertos-linux-segv", cwd=ove_dir)
 
 
+def test_qemu_freertos_linux_hardfloat(ove_dir, output_dir):
+    """Build and run a hard-float FDPIC guest on the Cortex-M7 FreeRTOS host.
+
+    fpcheck verifies all s0-s31 registers and FPSCR across repeated deferred and
+    blocking syscalls, while normal completion proves the host remains live.
+    Manual/opt-in because it needs Buildroot's separately generated
+    output-hardfloat rootfs and the uClinux QEMU execution environment.
+    """
+    import kconfiglib
+
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+
+    # The fragment command intentionally defaults to the broadly compatible
+    # soft guest. Select the independent hard guest ABI; the hidden rootfs
+    # output symbol must follow that choice even after loading a saved .config.
+    os.environ["srctree"] = ove_dir
+    kconf = kconfiglib.Kconfig(os.path.join(ove_dir, "Config.in"))
+    config_path = os.path.join(ove_dir, ".config")
+    kconf.load_config(config_path)
+    kconf.syms["OVE_LINUX_GUEST_FLOAT_ABI_HARD"].set_value(2)
+    kconf.syms["OVE_LINUX_GUEST_FP_SELFTEST"].set_value(2)
+    rootfs_output = kconf.syms["OVE_LINUX_ROOTFS_OUTPUT"].str_value
+    if rootfs_output != "output-hardfloat":
+        raise RuntimeError(f"hard-float guest selected {rootfs_output!r} rootfs")
+    kconf.write_config(config_path)
+
+    # Regenerate the CMake/header inputs after changing Kconfig. An existing
+    # workspace may otherwise retain a previously generated soft-guest file.
+    run([ove, "configure"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux",
+                         "fpcheck_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-hardfloat")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "fpcheck.log")
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-hardfloat", cwd=ove_dir)
+
+
 def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the /dev/fb0
     framebuffer smoke: /usr/bin/fbtest reads the panel geometry via FBIOGET_*SCREENINFO,
@@ -2615,6 +2655,7 @@ TEST_TARGETS = {
     "qemu-zephyr": test_qemu_zephyr,
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
+    "qemu-freertos-linux-hardfloat": test_qemu_freertos_linux_hardfloat,
     "qemu-freertos-linux-fbtest": test_qemu_freertos_linux_fbtest,
     "qemu-freertos-linux-lvbench": test_qemu_freertos_linux_lvbench,
     "qemu-freertos-linux-evread": test_qemu_freertos_linux_evread,

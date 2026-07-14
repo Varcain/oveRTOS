@@ -610,9 +610,13 @@ static void demo_body(void *arg)
 	sh_write0(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
 
-	/* ---- Phase 2: boot a full uClinux userspace --------------------------- */
+	/* ---- Phase 2: boot userspace or run the hard-float context regression - */
+#if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
+	sh_write0("\n-- phase 2: hard-float guest context self-test --\n");
+#else
 	sh_write0("\n-- phase 2: booting uClinux (BusyBox init -> rcS -> login shell;"
 		  " run commands, `poweroff` to halt) --\n");
+#endif
 	const lxp_run_config_t cfg2 = {
 		.rootfs = g_rootfs,
 		.rootfs_count = g_rootfs_n,
@@ -622,12 +626,18 @@ static void demo_body(void *arg)
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
 	};
+	int rc2;
+#if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
+	const char *const fp_argv[] = {"fpcheck", NULL};
+	rc2 = app_lxp_run(&cfg2, "/usr/bin/fpcheck", 1, fp_argv);
+	sh_write0("\n=== interop demo done (hard-float self-test exited) ===\n");
+#else
 	/* PID 1 = BusyBox init: reads /etc/inittab, runs sysinit + rcS, then respawns
 	 * a login shell on the console. */
 	const char *const init_argv[] = {"init", NULL};
-	int rc2 = app_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
-
+	rc2 = app_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
 	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
+#endif
 	sh_exit(rc2 >= 0 ? 0 : 1);
 }
 
