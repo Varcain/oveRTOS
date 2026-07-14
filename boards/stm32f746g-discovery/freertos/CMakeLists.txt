@@ -45,6 +45,7 @@ ove_add_board_sources(
     src/serial_wrapper.c
     src/stm32f7/syscalls.c
     src/stm32f7/bsp.c
+    src/stm32f7/rng.c
     src/lvgl/lv_port_disp.c
     ${OVE_DIR}/drivers/freertos/stm32f7/stm32f7_init.c
 )

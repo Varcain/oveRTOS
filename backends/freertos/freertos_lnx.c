@@ -34,6 +34,7 @@
 #endif
 
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+#include "bsp.h" /* bsp_random_fill -> hardware-backed guest entropy */
 #include "stm32f7xx.h" /* SCB_CleanDCache / SCB_InvalidateICache: M7 loaded-code coherency */
 #endif
 
@@ -538,6 +539,29 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 	return ove_thread_list((struct ove_thread_info *)o, m, n);
 }
 
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static int freertos_random_fill(void *buf, size_t len)
+{
+	/* ove_err_t and lxp_err_t values are ABI-pinned identical. */
+	return bsp_random_fill(buf, len);
+}
+#elif defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+/* Deterministic, explicitly non-cryptographic provider for the development-only
+ * QEMU target. Production hardware must supply a trustworthy port callback. */
+static int freertos_random_fill(void *buf, size_t len)
+{
+	static uint32_t state = 0x6f766572u;
+	uint8_t *out = buf;
+	for (size_t i = 0; i < len; i++) {
+		state ^= state << 13;
+		state ^= state >> 17;
+		state ^= state << 5;
+		out[i] = (uint8_t)(state >> 24);
+	}
+	return LXP_OK;
+}
+#endif
+
 /* Per-run bring-up (was the body of the old lxp_run() wrapper): create the
  * coordinator wakeup semaphore in thread context and enable Bus/UsageFault so a
  * program's fault is contained by our handlers instead of escalating to HardFault
@@ -571,6 +595,9 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
 	.cache_invalidate = lxp_guest_invalidate,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
+	.random_fill = freertos_random_fill,
+#endif
 };
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI) && defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && \
