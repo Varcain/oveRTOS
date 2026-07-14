@@ -54,7 +54,7 @@ The workspace path is derived from the active configuration. The `.elf` file in 
 
 ## Cross-Compilation
 
-For embedded targets (`stm32f746g-discovery`, `qemu-mps2-an500`), the build uses an ARM Cortex-M7 cross-compiler with the `arm-none-eabi-` prefix and the `thumbv7em-none-eabihf` target ABI.
+For embedded targets (`stm32f746g-discovery`, `qemu-mps2-an500`), the build uses an ARM Cortex-M7 cross-compiler with the `arm-none-eabi-` prefix. FreeRTOS defaults to the hard-float calling convention; its Toolchain menu can instead select softfp.
 
 The compiler is selected according to the `Toolchain` Kconfig menu:
 
@@ -63,6 +63,26 @@ The compiler is selected according to the `Toolchain` Kconfig menu:
 - **Custom** — absolute path configured via `OVE_TOOLCHAIN_CUSTOM_PATH`
 
 The POSIX/host backend compiles with the host's native GCC or Clang and requires no cross-compiler.
+
+### FreeRTOS floating-point ABI
+
+`Toolchain > ARM floating-point calling convention` selects one complete
+firmware variant:
+
+- **Hard-float** (default) uses `-mfloat-abi=hard`; floating-point parameters
+  cross C ABI boundaries in VFP registers.
+- **Softfp** uses `-mfloat-abi=softfp`; parameters use core registers while
+  generated C/C++ code may still use the Cortex-M7 FPU.
+
+The selection applies to C, C++, assembly, Picolibc, and Rust/Zig application
+libraries. These variants cannot be mixed in one image. Picolibc is cached
+separately for each ABI, and the build checks the final ELF attributes after
+linking so a stale or externally supplied archive with the wrong convention
+fails the build.
+
+The Linux-personality FDPIC guest has its own soft-float Linux syscall ABI and
+does not directly call host firmware functions, so its ABI is independent of
+this host FreeRTOS setting.
 
 ## Building All Configurations
 
