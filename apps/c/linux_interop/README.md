@@ -2,7 +2,7 @@
 
 One firmware image, two worlds running side by side — a **native RTOS thread**
 (`ove_thread`) and a stock **Linux program** (BusyBox, an unprivileged uClibc
-`bFLT`) launched through the oveRTOS **Linux personality** (`ove_lnx_run`) out of
+FDPIC ELF) launched through the oveRTOS **Linux personality** (`lxp_run`) out of
 a real Buildroot rootfs — exchanging data **in both directions**, then handing
 you an interactive shell.
 
@@ -13,19 +13,19 @@ personality core:
 | Engine | Board | CPU | Program isolation |
 |--------|-------|-----|-------------------|
 | **Zephyr**   | `qemu-mps2-an521` | Cortex-M33 | unprivileged + MPU (`CONFIG_USERSPACE`) |
-| **FreeRTOS** | `qemu-mps2-an500` | Cortex-M7  | privileged (functional parity; MPU isolation is a follow-up) |
+| **FreeRTOS** | `qemu-mps2-an500` | Cortex-M7  | unprivileged + MPU (`ARM_CM4_MPU`) |
 | **NuttX**    | `qemu-mps2-an500` | Cortex-M7  | privileged (functional parity; MPU isolation is a follow-up) |
 
 ## Phase 1 — bidirectional round trip
 
 The RTOS thread feeds three "sensor readings" **into** the Linux program's stdin
-and drains what it echoes back **out** of stdout, each half crossing the
-personality boundary through an oveRTOS message queue (`ove_queue`):
+and drains what it echoes back **out** of stdout. Fixed, pre-staged arrays keep
+the demonstration allocation-free and make EOF deterministic:
 
 ```
-  RTOS feeder ─► ove_queue g_feed_q ─► read cb ─►┌───────────────┐
-                                                 │  Linux  cat   │
-  RTOS consumer ◄─ ove_queue g_consume_q ◄─ write cb ◄──────────┘
+  RTOS feeder ─► fixed feed array ─► read cb ─►┌───────────────┐
+                                               │  Linux  cat   │
+  RTOS consumer ◄─ fixed result array ◄─ write cb ◄──────────┘
 ```
 
 ## Phase 2 — interactive shell
@@ -73,25 +73,25 @@ tmp      run      opt      linuxrc  init     bin
 
 ## How it works (and its constraints)
 
-The RTOS side is built entirely on the **engine-agnostic oveRTOS APIs**
-(`ove_thread`, `ove_queue`, `ove_time`) and the Linux side on `ove_lnx_run`
-(`include/ove/linux/run.h`); no direct kernel calls — which is why the *same*
+The RTOS side is built on the **engine-agnostic oveRTOS APIs** (`ove_thread`,
+`ove_time`) and the Linux side on the engine-neutral LXP port; no direct kernel
+calls — which is why the *same*
 `src/app.c` runs on both Zephyr and FreeRTOS (the only engine-specific line is
 the lifecycle: on FreeRTOS the demo runs in a task because the scheduler starts
 inside `ove_run()`, whereas Zephyr's `ove_main()` is already a thread).
 Semihosting is the console transport (an architecture facility, not an RTOS
 primitive).
 
-The personality's I/O callbacks run in the `svc`-trap (exception) context, so
-they do only non-blocking work there:
+The `svc` handler is a bounded top half: it snapshots an ordinary syscall into a
+fixed per-slot mailbox and parks that guest. I/O callbacks run later in the
+privileged, preemptible coordinator task. Higher-priority host tasks therefore
+retain their real-time priority, but callbacks must still return within a finite
+host-defined interval because one coordinator serializes deferred guest work:
 
-- **RTOS → Linux** — the read callback hands the program the next queued line
-  with `ove_queue_receive_from_isr` (the ISR-safe, non-blocking variant). Because
-  that callback *cannot block to wait*, the feeder pre-fills the queue before the
-  program is launched, so it never sees a premature EOF.
-- **Linux → RTOS** — the write callback pushes each line with
-  `ove_queue_send_from_isr`; the RTOS worker blocks on `ove_queue_receive` in
-  normal thread context.
+- **RTOS → Linux** — the feeder publishes all input lines before launch; the read
+  callback advances a bounded index, so exhaustion is genuine EOF.
+- **Linux → RTOS** — the write callback copies each bounded result into a fixed
+  result array and publishes the count after the bytes are complete.
 
 ## The boards
 
@@ -107,9 +107,9 @@ framework + dashboard/trace/profiler (the personality is headless), (b) drops th
 `vPortSVCHandler → SVC_Handler` alias so the seam (`backends/freertos/freertos_lnx.c`)
 owns the `SVC_Handler` vector and forwards FreeRTOS's start-scheduler `svc` to
 `vPortSVCHandler`, and (c) adds the rootfs include + the interactive semihosting
-console in the run script. Phase 1 runs the program *privileged* on the non-MPU
-`ARM_CM7` port (functional parity); switching to the `ARM_CM4_MPU` port for
-unprivileged + MPU isolation is a follow-up.
+console in the run script. The `ARM_CM4_MPU` port creates each guest with
+`xTaskCreateRestrictedStatic`; program, dynamic pool, and XIP rootfs windows are
+explicit MPU regions, while the coordinator remains privileged.
 
 **NuttX — `qemu-mps2-an500` (Cortex-M7).** Also reuses the *stock* an500 board.
 NuttX is the hard engine: its own `svc #0` *is* the syscall/context-switch ABI, so
@@ -128,9 +128,9 @@ Phase 1 is privileged (FLAT); unprivileged + MPU = `CONFIG_BUILD_PROTECTED` foll
 
 | File | Role |
 |------|------|
-| `app.yaml`  | framework app manifest — selects the personality + RTOS modules (`CONFIG_OVE_LINUX/ARENA/LOADER/QUEUE/TIME`) |
-| `src/app.c` | the demo (`ove_main`): the `ove_thread` worker, the two `ove_queue` bridges, the interactive console, the two-phase launch |
+| `app.yaml`  | framework app manifest — selects the personality and RTOS modules |
+| `src/app.c` | the demo (`ove_main`): worker, fixed I/O staging, interactive console, and two-phase launch |
 
-The personality core/seam (`linux/ove_linux_syscall.c`, `backends/zephyr/zephyr_lnx.c`)
-and the rootfs CPIO (`tests/ontarget/loader_rootfs_image.h`) are pulled in by the
-board + the generated `ove_config.cmake`.
+The personality core (`modules/lxp`) and the selected engine seam
+(`backends/{freertos,zephyr,nuttx}/*_lnx*.c`) are pulled in by the board and the
+generated `ove_config.cmake`.

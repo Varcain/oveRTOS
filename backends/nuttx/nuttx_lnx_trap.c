@@ -364,9 +364,13 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 	regs[REG_R10] = ctx->r4_11[6];
 	regs[REG_R11] = ctx->r4_11[7];
 	regs[REG_R12] = ctx->r12;
+	regs[REG_R1] = ctx->r1;
+	regs[REG_R2] = ctx->r2;
+	regs[REG_R3] = ctx->r3;
 	regs[REG_R14] = ctx->lr;
 	regs[REG_SP] = ctx->sp;
 	regs[REG_PC] = ctx->pc & ~1u;
+	regs[REG_XPSR] = ctx->xpsr | (1u << 24); /* flags/IT state + Thumb */
 	regs[REG_R0] = (uint32_t)r0val;
 	regs[REG_CONTROL] |= CONTROL_NPRIV; /* unprivileged — MPU-restricted (resumed vfork/clone child) */
 	nxtask_activate(&g_tcb[sidx].cmn);

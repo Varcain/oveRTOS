@@ -210,15 +210,25 @@ static void resume_tramp(void *r0val, void *ctx, void *unused)
 	ARG_UNUSED(unused);
 	register void *rv __asm__("r0") = r0val;
 	register void *c __asm__("r1") = ctx;
-	__asm__ volatile("ldmia r1!, {r4-r11}\n"
-			 "ldr r12, [r1], #4\n"
-			 "ldr lr, [r1], #4\n"
-			 "ldr sp, [r1], #4\n"
-			 "ldr r1, [r1]\n"
-			 "bx r1\n"
+	__asm__ volatile("mov r3, r1\n"
+			 "ldmia r3!, {r4-r11}\n"
+			 "ldr r12, [r3], #4\n"
+			 "ldr lr, [r3], #4\n"
+			 "ldr r1, [r3], #4\n" /* ctx.sp (temp) */
+			 "ldr r2, [r3], #4\n" /* ctx.pc (temp); r3 -> ctx.r1 */
+			 "mov sp, r1\n"
+			 /* Load flags before push overwrites ctx.xpsr at sp-4. */
+			 "ldr r1, [r3, #12]\n"
+			 "msr APSR_nzcvq, r1\n"
+			 "push {r2}\n"
+			 "ldr r1, [r3]\n"
+			 "ldr r2, [r3, #4]\n"
+			 "ldr r3, [r3, #8]\n"
+			 "pop {pc}\n"
 			 :
 			 : "r"(rv), "r"(c)
-			 : "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12", "lr", "memory");
+			 : "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11", "r12", "lr",
+			   "cc", "memory");
 	__builtin_unreachable();
 }
 
