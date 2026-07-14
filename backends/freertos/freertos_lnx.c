@@ -275,22 +275,30 @@ __attribute__((naked)) void BusFault_Handler(void)
  * touching kernel memory, and the privileged coordinator writes it via background access. */
 struct resume_desc {
 	uint32_t r0;
-	struct lxp_resume_ctx ctx; /* r4_11[8], r12, lr, sp, pc */
+	struct lxp_resume_ctx ctx;
 };
 
 __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused)))
 {
-	/* desc in r0. Restore r4..r11 (r7/r8/r9 = FDPIC exec-loadmap / interp-loadmap / GOT), r12,
-	 * lr, then r0 = desc->r0, switch SP last (it clobbers sp), and branch to ctx.pc. */
-	__asm__ volatile("add   r1, r0, #4    \n" /* r1 -> ctx */
-			 "ldmia r1!, {r4-r11}\n"
-			 "ldr   r12, [r1], #4\n"
-			 "ldr   lr,  [r1], #4\n"
-			 "ldr   r2,  [r1], #4\n" /* ctx.sp */
-			 "ldr   r3,  [r1]    \n" /* ctx.pc */
-			 "ldr   r0,  [r0]    \n" /* desc->r0 */
-			 "mov   sp,  r2      \n"
-			 "bx    r3           \n");
+	/* Restore the complete syscall-visible context. APSR.NZCVQ matters: an immediate
+	 * hardware exception return preserves flags, and optimized userspace may carry a
+	 * comparison across its next syscall. Stage PC below the guest SP so r1-r3 can all
+	 * reach their final values before the branch. */
+	__asm__ volatile("add   r3, r0, #4     \n" /* r3 -> ctx */
+			 "ldmia r3!, {r4-r11} \n"
+			 "ldr   r12, [r3], #4 \n"
+			 "ldr   lr,  [r3], #4 \n"
+			 "ldr   r1,  [r3], #4 \n" /* ctx.sp (temp) */
+			 "ldr   r2,  [r3], #4 \n" /* ctx.pc (temp); r3 -> ctx.r1 */
+			 "mov   sp,  r1       \n"
+			 "ldr   r1,  [r3, #12]\n" /* ctx.xpsr */
+			 "msr   APSR_nzcvq, r1\n"
+			 "push  {r2}          \n" /* stage ctx.pc */
+			 "ldr   r1,  [r3]     \n"
+			 "ldr   r2,  [r3, #4] \n"
+			 "ldr   r0,  [r0]     \n"
+			 "ldr   r3,  [r3, #8] \n"
+			 "pop   {pc}           \n");
 }
 
 /* Bytes the descriptor occupies, rounded up to whole 32-byte D-cache lines. */

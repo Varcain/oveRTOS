@@ -22,14 +22,11 @@
  *  BusyBox `sh`; type commands (ls /, echo hi, cat /etc/hostname, ...) and
  *  `exit` to finish.
  *
- * The personality's I/O callbacks run in the svc-trap (exception/handler) context.
- * That context is above configMAX_SYSCALL_INTERRUPT_PRIORITY, where the FreeRTOS
- * FromISR queue APIs are undefined (their list ops race the scheduler — with the
- * D-cache on the timing shift makes that corrupt a list and hang vListInsert). So
- * phase 1 crosses the boundary with plain arrays + a published index, no RTOS list
- * op from the handler. Phase 1 stages the feed array before launching, so the
- * program never sees a premature EOF. (The console transport is ARM semihosting /
- * a non-blocking UART — an architecture facility, not an RTOS primitive.)
+ * The svc top half only snapshots ordinary syscall registers and parks the guest;
+ * I/O callbacks run later in the privileged, preemptible coordinator task. Phase 1
+ * keeps its fixed arrays and published indices to avoid allocation and unnecessary
+ * scheduler traffic. Phase 2 supplies a non-blocking UART readiness probe so an
+ * empty console parks the guest instead of blocking the coordinator.
  */
 
 #include <string.h>
@@ -88,18 +85,18 @@ static int app_lxp_run(const lxp_run_config_t *cfg, const char *path, int argc,
 }
 
 /* ---- the personality console (program stdin/stdout + program exit) --------- */
-/* Driven from the PRIVILEGED personality context; must be NON-BLOCKING-pollable so
+/* Driven from the privileged coordinator task; must be NON-BLOCKING-pollable so
  * interactive top's 'q' quit works (a finite poll reports readiness instead of blocking the
  * whole CPU the way semihosting SYS_READC would). */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
-/* Real STM32F746 hardware: poll the board's USART1 directly. The personality reads in the
- * svc-exception context, where the board's IRQ-filled RX buffer cannot be used (the svc masks
- * the prio-2 USART1 IRQ → a blocking read would deadlock), so serial_wrapper.c hands the
- * receiver to polled register access and owns the USART/HAL details. */
+/* Real STM32F746 hardware: serial_wrapper.c owns USART1 and its IRQ-filled RX buffer. */
 extern void serial_poll_begin(void);
 extern int serial_poll_rx_ready(void);
 extern int serial_poll_getc(void);
 extern void serial_poll_putc(char c);
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+extern void serial_write(const unsigned char *data, unsigned int length);
+#endif
 
 static void uart_init(void)
 {
@@ -222,12 +219,9 @@ struct lnx_line {
 };
 #define N_READINGS 3
 
-/* Phase-1 I/O uses plain arrays, NOT FreeRTOS queues. feed_read/consume_write run in the guest's
- * SVC handler (handler mode, above configMAX_SYSCALL_INTERRUPT_PRIORITY), where the FromISR queue
- * APIs are UNDEFINED — their internal FreeRTOS-list operations race the scheduler and (with the M7
- * D-cache on, which speeds the guest up and shifts the timing) corrupt a list, hanging vListInsert.
- * A pre-staged array served by a published index touches no FreeRTOS list, so it is safe from the
- * handler. The native worker thread + the two-way data flow are preserved. */
+/* Phase-1 I/O uses fixed arrays instead of queues. feed_read/consume_write now run in the
+ * privileged coordinator task, but the pre-staged array keeps the path allocation-free and makes
+ * an empty feed unambiguously mean EOF. The native worker thread + two-way data flow are preserved. */
 static struct lnx_line g_feed_lines[N_READINGS]; /* RTOS -> Linux: readings staged up front */
 static volatile int g_feed_idx;			 /* feed_read cursor; == N_READINGS => EOF */
 static volatile int g_feed_ready;	  /* all feed lines queued (so no premature EOF) */
@@ -350,17 +344,22 @@ static long console_read(void *ctx, int fd, void *buf, size_t len)
 	return 1;
 }
 
-/* stdout: echo to the host console; translate \n -> \r\n so it reads cleanly. */
+/* stdout: use the task-context board writer on hardware. It serializes output,
+ * translates newlines, and has one total deadline for the whole callback. */
 static long console_write(void *ctx, int fd, const void *buf, size_t len)
 {
 	UNUSED(ctx);
 	UNUSED(fd);
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && defined(CONFIG_OVE_RTOS_FREERTOS)
+	serial_write((const unsigned char *)buf, (unsigned int)len);
+#else
 	const char *p = (const char *)buf;
 	for (size_t i = 0; i < len; i++) {
 		if (p[i] == '\n')
 			sh_writec('\r');
 		sh_writec(p[i]);
 	}
+#endif
 	return (long)len;
 }
 
@@ -386,7 +385,17 @@ static int g_rootfs_n;
 #ifdef CONFIG_OVE_RTOS_FREERTOS
 static ove_thread_t g_demo;
 static ove_thread_storage_t g_demo_storage;
-static uint8_t g_demo_stack[4096] __attribute__((aligned(8)));
+/* Deferred syscalls execute on this coordinator stack. The O0 QEMU integration build reaches
+ * 4320 bytes while loading and running BusyBox, so retain nearly another full call-chain of
+ * margin. STM32 internal SRAM is deliberately tight; its development coordinator stack lives in
+ * the already-initialized SDRAM alongside the guest pools instead of consuming safety margin
+ * below the boot stack. Higher-priority host tasks still preempt this task normally. */
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
+static uint8_t g_demo_stack[8192]
+	__attribute__((section(".sdram_bss"), aligned(32)));
+#else
+static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
+#endif
 #endif
 
 /* Non-blocking console-readiness probe for the personality's poll(2) (interactive

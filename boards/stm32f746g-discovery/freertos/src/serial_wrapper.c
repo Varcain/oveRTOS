@@ -15,6 +15,8 @@
 
 #define CIRC_BUFF_SIZE OVE_SERIAL_CONSOLE_RX_BUFFER_SIZE
 #define CIRC_BUFF_MASK (CIRC_BUFF_SIZE - 1U)
+#define SERIAL_TX_BUDGET_MS 1000U
+#define SERIAL_POLL_SPIN_LIMIT 1000000U
 
 static UART_HandleTypeDef uartHandle;
 static StaticSemaphore_t mutex_storage;
@@ -23,6 +25,26 @@ static SemaphoreHandle_t mutex;
 static unsigned char circBuff[CIRC_BUFF_SIZE];
 static volatile unsigned int head;
 static volatile unsigned int tail;
+
+static uint32_t serial_tx_remaining(uint32_t started)
+{
+	uint32_t elapsed = HAL_GetTick() - started; /* unsigned subtraction is wrap-safe */
+	return elapsed < SERIAL_TX_BUDGET_MS ? SERIAL_TX_BUDGET_MS - elapsed : 0U;
+}
+
+static int serial_tx_chunk(const uint8_t *data, unsigned int length, uint32_t started)
+{
+	while (length != 0U) {
+		uint16_t chunk = length > 0xffffU ? 0xffffU : (uint16_t)length;
+		uint32_t remaining = serial_tx_remaining(started);
+		if (remaining == 0U ||
+		    HAL_UART_Transmit(&uartHandle, (uint8_t *)data, chunk, remaining) != HAL_OK)
+			return 0;
+		data += chunk;
+		length -= chunk;
+	}
+	return 1;
+}
 
 void serial_init(void)
 {
@@ -73,25 +95,33 @@ void serial_write(const unsigned char *data, unsigned int length)
 		return;
 	}
 
-	xSemaphoreTake(mutex, portMAX_DELAY);
+	uint32_t started = HAL_GetTick();
+	TickType_t lock_ticks = pdMS_TO_TICKS(SERIAL_TX_BUDGET_MS);
+	if (lock_ticks == 0)
+		lock_ticks = 1;
+	if (xSemaphoreTake(mutex, lock_ticks) != pdTRUE)
+		return;
 
-	/* Translate \n to \r\n on output */
+	/* Translate \n to \r\n on output. Every chunk shares one deadline: a buffer
+	 * containing many newlines cannot multiply the HAL timeout indefinitely. */
 	start = 0;
 	for (i = 0; i < length; i++) {
 		if (data[i] == '\n') {
 			if (i > start) {
-				HAL_UART_Transmit(&uartHandle, (uint8_t *)&data[start], i - start,
-						  1000);
+				if (!serial_tx_chunk(&data[start], i - start, started))
+					goto out;
 			}
-			HAL_UART_Transmit(&uartHandle, (uint8_t *)&cr, 1, 1000);
-			HAL_UART_Transmit(&uartHandle, (uint8_t *)&data[i], 1, 1000);
+			if (!serial_tx_chunk(&cr, 1, started) ||
+			    !serial_tx_chunk(&data[i], 1, started))
+				goto out;
 			start = i + 1;
 		}
 	}
 	if (start < length) {
-		HAL_UART_Transmit(&uartHandle, (uint8_t *)&data[start], length - start, 1000);
+		(void)serial_tx_chunk(&data[start], length - start, started);
 	}
 
+out:
 	xSemaphoreGive(mutex);
 }
 
@@ -143,14 +173,9 @@ void serial_poll_begin(void)
 {
 	if (mutex == NULL) /* serial_init() creates `mutex` last — call it once to bring USART1 up */
 		serial_init();
-	/* Keep the IRQ-driven RX (the circular buffer) ON — the personality reads the buffer, not
-	 * the 1-byte RDR. A direct RDR poll loses bytes when a multi-byte command arrives while the
-	 * reading task is time-sliced behind a CPU-bound peer (e.g. `yes &`): the shell then never
-	 * receives the command. The IRQ (prio 2) drains the RDR promptly, but the personality reads
-	 * in the svc-exception context, so SVCall must sit BELOW that IRQ (numerically higher) for
-	 * the IRQ to preempt the read-spin and keep the buffer filled — while still AT the FreeRTOS
-	 * syscall ceiling so a coordinator critical section (BASEPRI) still masks it AND the
-	 * dispatch's xSemaphoreGiveFromISR is a valid call from that priority. */
+	/* Keep IRQ-driven RX on: it drains bursts into the circular buffer while the
+	 * coordinator or a guest is busy. SVCall posts the coordinator's FreeRTOS event,
+	 * so it must remain at the kernel's syscall-safe interrupt priority. */
 	NVIC_SetPriority(SVCall_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
 }
 
@@ -166,7 +191,11 @@ int serial_poll_getc(void)
 
 void serial_poll_putc(char c)
 {
-	while (!__HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_TXE)) {
-	}
-	uartHandle.Instance->TDR = (unsigned char)c;
+	/* Legacy diagnostic path: never let a failed UART hold a privileged caller
+	 * forever, including when the HAL tick is unavailable or interrupts are masked. */
+	for (uint32_t spins = 0; spins < SERIAL_POLL_SPIN_LIMIT; spins++)
+		if (__HAL_UART_GET_FLAG(&uartHandle, UART_FLAG_TXE)) {
+			uartHandle.Instance->TDR = (unsigned char)c;
+			return;
+		}
 }
