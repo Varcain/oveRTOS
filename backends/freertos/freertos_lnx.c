@@ -194,6 +194,13 @@ int freertos_lnx_svc_c(struct lnx_capture *g)
 	g->hw[5] = f.r[14];
 	g->hw[6] = f.r[15];
 	g->hw[7] = f.xpsr;
+	/* Write r4-r11 back so a dispatch that rewrites a callee-saved register on the fast path takes
+	 * effect. rt_sigreturn restores the interrupted code's r9 (FDPIC GOT) via sig_restore — a signal
+	 * handler runs with its OWN r9, so without this the interrupted syscall resumes with the handler's
+	 * GOT and its __errno_location PLT resolves through the wrong module (-> sigaction -> SIGSEGV).
+	 * For every other syscall these equal the captured values, so SVC_Handler's reload is a no-op. */
+	for (int i = 0; i < 8; i++)
+		g->r4_11[i] = f.r[4 + i];
 #if LXP_ENABLE_FPU_CONTEXT
 	if ((g->exc_return & (1u << 4)) == 0) {
 		for (int i = 0; i < 16; i++)
@@ -248,6 +255,13 @@ __attribute__((naked)) void SVC_Handler(void)
 			 "isb                         \n"
 			 "cmp   r0, #0                \n"
 			 "beq   1f                    \n" /* 0 = not a program svc -> forward */
+			 /* Reload r4-r11 from g_cap (freertos_lnx_svc_c wrote them back post-dispatch): the
+			  * exception return only replays the HW frame (r0-r3,r12,lr,pc,xpsr), so a callee-saved
+			  * register the dispatch rewrote (rt_sigreturn's r9/FDPIC-GOT restore) would otherwise be
+			  * dropped and the interrupted code resumes with the signal handler's GOT. */
+			 "ldr   r1, =g_cap            \n"
+			 "add   r1, r1, #8            \n"
+			 "ldmia r1, {r4-r11}          \n"
 			 "bx    lr                    \n" /* 1 = handled: exception return, replay frame */
 			 "1:                          \n"
 			 "b     vPortSVCHandler       \n");
