@@ -244,6 +244,24 @@ SECTIONS
     __privileged_data_start__      = 0x20080000;
     __privileged_data_end__        = 0x20080000;
 
+    /* Critical privileged-task stacks.  The Linux coordinator deliberately accesses guest SDRAM
+     * through the Cortex-M7 background Device mapping, so placing host stacks there makes ordinary
+     * unaligned locals and hardware exception/FP frames unsafe.  Use the on-chip DTCM working area:
+     * it is Normal memory in the FreeRTOS-MPU all-SRAM region and is otherwise available when the
+     * Linux personality is selected.  A build that also exhausts DSP_DTCM fails at link time. */
+    .host_stacks (NOLOAD) :
+    {
+        . = ALIGN(32);
+        __host_stacks_start__ = .;
+        KEEP(*(.host_stacks))
+        KEEP(*(.host_stacks.*))
+        . = ALIGN(32);
+        __host_stacks_end__ = .;
+    } > DSP_DTCM
+    ASSERT(__host_stacks_start__ >= ORIGIN(DSP_DTCM) &&
+           __host_stacks_end__ <= ORIGIN(DSP_DTCM) + LENGTH(DSP_DTCM),
+           "critical host stacks must fit in internal DTCM")
+
     /* Boot stack at the top of main RAM.  Just covers main() until
      * vTaskStartScheduler() runs — per-task stacks come from FreeRTOS
      * after that.  `end` / `_end` are PROVIDE'd at the start of the

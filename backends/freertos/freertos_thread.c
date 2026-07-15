@@ -152,16 +152,27 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 	if (stack_depth < configMINIMAL_STACK_SIZE)
 		stack_depth = configMINIMAL_STACK_SIZE;
 
-	/* Single allocation for the wrapper struct (TCB + done-sem static
-	 * storage + bookkeeping) and the task stack.  Replaces the earlier
-	 * 3-allocation path (wrapper malloc + xTaskCreate's internal TCB
-	 * malloc + stack malloc) measured at +20 µs vs raw xTaskCreate on
-	 * STM32F746/heap_4.  The wrapper struct's flexible-array `stack[]`
-	 * tail (defined in ove_storage_freertos.h) holds the stack space. */
-	size_t total = sizeof(struct ove_thread) + (size_t)stack_depth * sizeof(StackType_t);
-	struct ove_thread *wrapper = OVE_BACKEND_MALLOC(total);
+	size_t stack_bytes = (size_t)stack_depth * sizeof(StackType_t);
+#if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
+	/* Keep the wrapper/TCB bookkeeping in the general heap, but obtain the actual task stack from
+	 * the port's Normal-memory stack heap.  STM32 Linux builds deliberately keep the general heap
+	 * in Device-mapped SDRAM, which is not safe for exception stacking. */
+	struct ove_thread *wrapper = OVE_BACKEND_MALLOC(sizeof(*wrapper));
+#else
+	/* Single allocation for the wrapper struct and flexible-array task stack on ports where both
+	 * use the same memory attributes. */
+	struct ove_thread *wrapper = OVE_BACKEND_MALLOC(sizeof(*wrapper) + stack_bytes);
+#endif
 	if (wrapper == NULL)
 		return OVE_ERR_NO_MEMORY;
+
+#if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
+	wrapper->stack = pvPortMallocStack(stack_bytes);
+	if (wrapper->stack == NULL) {
+		OVE_BACKEND_FREE(wrapper);
+		return OVE_ERR_NO_MEMORY;
+	}
+#endif
 
 	wrapper->entry = entry;
 	wrapper->arg = arg;
@@ -175,6 +186,9 @@ int ove_thread_create(ove_thread_t *handle, const char *name, ove_thread_fn entr
 					  map_priority(priority), wrapper->stack,
 					  &wrapper->static_task);
 	if (wrapper->task == NULL) {
+#if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
+		vPortFreeStack(wrapper->stack);
+#endif
 		OVE_BACKEND_FREE(wrapper);
 		return OVE_ERR_NO_MEMORY;
 	}
@@ -192,6 +206,9 @@ int ove_thread_destroy(ove_thread_t handle)
 
 	wait_for_worker_exit(handle);
 	vTaskDelete(handle->task);
+#if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
+	vPortFreeStack(handle->stack);
+#endif
 	OVE_BACKEND_FREE(handle);
 	return OVE_OK;
 }

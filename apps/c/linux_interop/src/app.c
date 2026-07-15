@@ -387,12 +387,13 @@ static ove_thread_t g_demo;
 static ove_thread_storage_t g_demo_storage;
 /* Deferred syscalls execute on this coordinator stack. The O0 QEMU integration build reaches
  * 4320 bytes while loading and running BusyBox, so retain nearly another full call-chain of
- * margin. STM32 internal SRAM is deliberately tight; its development coordinator stack lives in
- * the already-initialized SDRAM alongside the guest pools instead of consuming safety margin
- * below the boot stack. Higher-priority host tasks still preempt this task normally. */
+ * margin. On STM32 this is a critical host stack and must remain in internal SRAM: the privileged
+ * coordinator intentionally sees guest SDRAM through the uncached Device background mapping,
+ * which is suitable for controlled aligned buffer accesses but not for compiler-generated stack
+ * accesses or exception/FP stacking. Higher-priority host tasks still preempt this task normally. */
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 static uint8_t g_demo_stack[8192]
-	__attribute__((section(".sdram_bss"), aligned(32)));
+	__attribute__((section(".host_stacks"), aligned(32)));
 #else
 static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
 #endif
