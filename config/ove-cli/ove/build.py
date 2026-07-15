@@ -8,6 +8,7 @@
 
 import logging
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -137,13 +138,43 @@ def _find_cmake():
     return cmake
 
 
+def _prepare_freertos_build_dir(fw_build, float_abi):
+    """Discard CMake state compiled for a different ARM float ABI.
+
+    CMAKE_<LANG>_FLAGS_INIT is consumed only when a build tree is first
+    configured.  Updating OVE_ARM_FLOAT_ABI in an existing cache therefore
+    does not update the cached compiler flags and can silently mix hard-float
+    and softfp objects.  The object files are ABI-specific, so a clean CMake
+    tree is required when the selected calling convention changes.
+    """
+    cache = os.path.join(fw_build, "CMakeCache.txt")
+    cached_abis = set()
+    if os.path.isfile(cache):
+        with open(cache) as f:
+            for line in f:
+                if line.startswith(("CMAKE_C_FLAGS:",
+                                    "CMAKE_CXX_FLAGS:",
+                                    "CMAKE_ASM_FLAGS:")):
+                    cached_abis.update(re.findall(
+                        r"(?:^|\s)-mfloat-abi=(hard|softfp)(?=\s|$)", line))
+
+    if cached_abis and cached_abis != {float_abi}:
+        logger.info(
+            "ARM float ABI changed (%s -> %s); cleaning the FreeRTOS "
+            "CMake build tree",
+            ", ".join(sorted(cached_abis)), float_abi)
+        shutil.rmtree(fw_build)
+
+    os.makedirs(fw_build, exist_ok=True)
+
+
 def build_freertos(ws):
     """Build FreeRTOS firmware via CMake."""
     cmake = _find_cmake()
     env = ws.toolchain_env()
     board_dir = os.path.join(ws.board_dir, "freertos")
     fw_build = os.path.join(ws.build_dir, "firmware")
-    os.makedirs(fw_build, exist_ok=True)
+    _prepare_freertos_build_dir(fw_build, ws.arm_float_abi)
 
     # Apply board patches, then app patches to FreeRTOS source tree
     freertos_src = os.path.join(ws.ws_dl_dir, "FreeRTOS-Kernel")
