@@ -23,7 +23,7 @@ include(FetchContent)
 FetchContent_Declare(
     freertos_kernel
     GIT_REPOSITORY https://github.com/FreeRTOS/FreeRTOS-Kernel.git
-    GIT_TAG        V11.1.0
+    GIT_TAG        V11.2.0
     GIT_SHALLOW    TRUE
 )
 FetchContent_GetProperties(freertos_kernel)
