@@ -514,8 +514,17 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 	 * NOT clean — a clean would write those stale lines back OVER the loader's fresh SDRAM.  (D-cache
 	 * off: no lines to drop; skip the walk.)  Then invalidate the I-cache so the CPU fetches the real
 	 * code rather than whatever was physically in SDRAM. */
-	if (SCB->CCR & SCB_CCR_DC_Msk)
-		SCB_InvalidateDCache_by_Addr((void *)prog_regions[ridx], (int32_t)LXP_PROG_REGION_SIZE);
+	if (SCB->CCR & SCB_CCR_DC_Msk) {
+		/* freertos_coord_map now gives the loader a CACHEABLE view of this region, so its
+		 * image writes can sit in dirty D-cache lines. CLEAN (write back to SDRAM so the
+		 * I-cache refills the real code) then INVALIDATE (drop the previous tenant's stale
+		 * lines) both the program region and the dyn_pool — a dynamic exec's ld.so lays
+		 * libc text into the latter. If the D-cache view was uncached (initial launch,
+		 * before any coord_map) the clean is a harmless no-op and this reduces to the
+		 * previous invalidate. */
+		SCB_CleanInvalidateDCache_by_Addr((void *)prog_regions[ridx], (int32_t)LXP_PROG_REGION_SIZE);
+		SCB_CleanInvalidateDCache_by_Addr((void *)dyn_pools[ridx], (int32_t)LXP_DYN_POOL_SIZE);
+	}
 	SCB_InvalidateICache();
 	__DSB();
 	__ISB();
@@ -546,11 +555,75 @@ static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ct
 	 * the next exception frame start from cold lines.  The complete span is below sp, so no live
 	 * parent stack is clipped. */
 	if (SCB->CCR & SCB_CCR_DC_Msk)
-		SCB_InvalidateDCache_by_Addr((void *)d,
-					     (int32_t)(RESUME_DESC_CLSPAN + EXCEPTION_FRAME_CLSPAN));
+		/* CLEAN+invalidate, not just invalidate: freertos_coord_map may have given the
+		 * coordinator a CACHEABLE view of this region, so stash_desc's descriptor write can
+		 * sit in dirty D-cache lines. Write them back to SDRAM (so prog_tramp's read sees the
+		 * real descriptor) then drop them (fresh refill + a cold next exception frame). When
+		 * the view was uncached the clean is a no-op and this reduces to the old invalidate. */
+		SCB_CleanInvalidateDCache_by_Addr((void *)d,
+						  (int32_t)(RESUME_DESC_CLSPAN + EXCEPTION_FRAME_CLSPAN));
 #endif
 	(void)freertos_spawn_common(sidx, ridx, d);
 }
+
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+/* Give the coordinator (this run-loop task) a Normal-cacheable MPU view of guest region
+ * `ridx`'s program region + dyn_pool while it services that slot's DEFERRED syscall or
+ * parked-op retry, so the coordinator's CPU reads/writes of the guest's buffers hit the
+ * SAME (PIPT) D-cache lines the guest uses — coherent by construction, no per-buffer
+ * clean/invalidate. Off this hook the coordinator sees the pools through the uncached
+ * background map. Uses the coordinator's own configurable regions 0 and 1, which are
+ * unused on this non-restricted task; guests reprogram all configurable regions from
+ * their own TCB on switch-in, so this never leaks into a guest's view. The framebuffer
+ * (0xC0000000) and the ETH TX bounce (0xC07FF800) sit OUTSIDE the pools → they keep the
+ * background non-cacheable attributes and stay DMA/scanout-safe. */
+static int g_coord_mapped_ridx = -1;
+
+static void freertos_coord_map(int ridx)
+{
+	if (ridx < 0 || ridx >= LXP_NREG)
+		return;
+	if (!(SCB->CCR & SCB_CCR_DC_Msk))
+		return; /* D-cache off: coordinator and guest already agree through SDRAM */
+	if (ridx == g_coord_mapped_ridx)
+		return; /* already live; the TCB copy restores it across a preemption */
+
+	/* Normal WBWA cacheable, non-shareable, RW, execute-never — the exact attributes
+	 * freertos_spawn_common gives the guest's own view of these pools (0x0B). */
+	const uint32_t attr = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER |
+			      (0x0Bu << portMPU_RASR_TEX_S_C_B_LOCATION);
+	/* PMSAv7 RASR: ENABLE=bit0, SIZE field=log2(bytes)-1 in bits[5:1]. The pool arrays
+	 * are size-aligned (see prog_regions/dyn_pools), so each base is region-aligned. */
+	const uint32_t prog_rasr =
+		1u | (((uint32_t)(31 - __builtin_clz((unsigned)LXP_PROG_REGION_SIZE)) - 1u) << 1) | attr;
+	const uint32_t dyn_rasr =
+		1u | (((uint32_t)(31 - __builtin_clz((unsigned)LXP_DYN_POOL_SIZE)) - 1u) << 1) | attr;
+
+	/* Record in the TCB FIRST so a preemption mid-service restores this same mapping
+	 * (the port reprograms configurable regions from the TCB on switch-in); then write
+	 * the live registers for immediate effect. Region 2 is left unused (zeroed). */
+	MemoryRegion_t regions[portNUM_CONFIGURABLE_REGIONS];
+	memset(regions, 0, sizeof(regions));
+	regions[0].pvBaseAddress = prog_regions[ridx];
+	regions[0].ulLengthInBytes = LXP_PROG_REGION_SIZE;
+	regions[0].ulParameters = attr;
+	regions[1].pvBaseAddress = dyn_pools[ridx];
+	regions[1].ulLengthInBytes = LXP_DYN_POOL_SIZE;
+	regions[1].ulParameters = attr;
+	vTaskAllocateMPURegions(NULL, regions);
+
+	MPU->RBAR = ((uint32_t)(uintptr_t)prog_regions[ridx]) | MPU_RBAR_VALID_Msk |
+		    (portFIRST_CONFIGURABLE_REGION + 0u);
+	MPU->RASR = prog_rasr;
+	MPU->RBAR = ((uint32_t)(uintptr_t)dyn_pools[ridx]) | MPU_RBAR_VALID_Msk |
+		    (portFIRST_CONFIGURABLE_REGION + 1u);
+	MPU->RASR = dyn_rasr;
+	__DSB();
+	__ISB();
+
+	g_coord_mapped_ridx = ridx;
+}
+#endif
 
 static void freertos_abort_slot(int sidx)
 {
@@ -662,6 +735,9 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.thread_list = lxp_seam_thread_list,
 	.cache_clean = lxp_guest_flush, /* STM32F746 D-cache coherency (strong-overridden below) */
 	.cache_invalidate = lxp_guest_invalidate,
+#if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) && (portUSING_MPU_WRAPPERS == 1)
+	.coord_map = freertos_coord_map, /* coherent coordinator view of the serviced slot's pools */
+#endif
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO) || defined(CONFIG_OVE_BOARD_QEMU_MPS2_AN500)
 	.random_fill = freertos_random_fill,
 #endif
@@ -748,7 +824,14 @@ void lxp_guest_invalidate(const void *base, size_t len)
 		return;
 	uintptr_t start = addr & ~(uintptr_t)31u;
 	uintptr_t end = ((addr + len - 1u) & ~(uintptr_t)31u) + 32u;
-	SCB_InvalidateDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
+	/* CLEAN+invalidate: the callers (getrandom entropy, vfork data-isolation restore) have the
+	 * coordinator WRITE guest memory, then hand it to the guest. With freertos_coord_map that
+	 * write is cacheable, so the bytes can sit in dirty D-cache lines — write them back to SDRAM
+	 * before dropping, or a plain invalidate would discard the coordinator's just-written data.
+	 * When the coordinator's view is uncached the clean is a no-op (nothing dirty) and this is the
+	 * old invalidate. The written region is freshly produced by the coordinator, so there is no
+	 * stale-tenant line for the clean to push back over live data. */
+	SCB_CleanInvalidateDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
 }
 #endif
 
