@@ -724,17 +724,31 @@ void lxp_rootfs_window(const void *base, size_t len)
  * the wire.  (Observed as the tail of a mbedTLS ClientHello: the last, most-recently-written
  * extension arrived zeroed, so servers reject the handshake.)  Clean (write back) the buffer's
  * D-cache lines so physical SDRAM — hence the coordinator's uncached view — holds the real bytes.
- * Clean is non-destructive, so an unaligned base/len is safe (CMSIS extends to whole lines). */
+ * The STM32Cube CMSIS helper requires a 32-byte-aligned address and does not extend an unaligned
+ * final line, so normalize both ends here.  Clean is non-destructive; touching the adjacent bytes
+ * in the first/last cache line is safe. */
 void lxp_guest_flush(const void *base, size_t len)
 {
-	if (len)
-		SCB_CleanDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
+	if (!len)
+		return;
+	uintptr_t addr = (uintptr_t)base;
+	if (addr > UINTPTR_MAX - (len - 1u))
+		return;
+	uintptr_t start = addr & ~(uintptr_t)31u;
+	uintptr_t end = ((addr + len - 1u) & ~(uintptr_t)31u) + 32u;
+	SCB_CleanDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
 }
 
 void lxp_guest_invalidate(const void *base, size_t len)
 {
-	if (len)
-		SCB_InvalidateDCache_by_Addr((uint32_t *)(uintptr_t)base, (int32_t)len);
+	if (!len)
+		return;
+	uintptr_t addr = (uintptr_t)base;
+	if (addr > UINTPTR_MAX - (len - 1u))
+		return;
+	uintptr_t start = addr & ~(uintptr_t)31u;
+	uintptr_t end = ((addr + len - 1u) & ~(uintptr_t)31u) + 32u;
+	SCB_InvalidateDCache_by_Addr((uint32_t *)start, (int32_t)(end - start));
 }
 #endif
 
