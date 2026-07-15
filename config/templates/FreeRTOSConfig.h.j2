@@ -57,6 +57,12 @@
 #define configAPPLICATION_ALLOCATED_HEAP        1
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
 #define configSUPPORT_DYNAMIC_ALLOCATION        0
+{% elif config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True and config.get("CONFIG_OVE_LINUX") == True %}
+/* The Linux personality keeps its general FreeRTOS heap in external SDRAM.  Task stacks cannot
+ * share the privileged coordinator's Device-type SDRAM view: unaligned compiler accesses and
+ * hardware exception/FP frames require Normal memory.  Route xTaskCreate() stacks through the
+ * board's dedicated internal-DTCM stack heap instead. */
+#define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP 1
 {% endif %}
 
 /* Co-routine definitions. */

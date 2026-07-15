@@ -128,6 +128,12 @@ ove_add_cmsis_dsp()
 # with configUSE_PICOLIBC_TLS. Non-Linux keeps the fast STM32Cube V10 ARM_CM7 port.
 if(OVE_LINUX)
     set(FREERTOS_PATH "${OVE_DL_DIR}/FreeRTOS-Kernel")
+    if(NOT OVE_ZERO_HEAP)
+        # xTaskCreate() stacks use an independent heap in internal DTCM; the general heap remains
+        # in external SDRAM for the personality's much larger non-stack allocations.
+        ove_add_board_sources(src/stm32f7/stack_heap.c)
+        ove_add_include_directories(${FREERTOS_PATH})
+    endif()
     ove_add_freertos_kernel(ARM_CM4_MPU)
 else()
     ove_add_freertos_kernel(ARM_CM7/r0p1)

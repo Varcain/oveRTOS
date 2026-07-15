@@ -121,16 +121,16 @@ struct ove_thread {
 	 * __atomic_* builtins so the same field works in C and C++ TUs. */
 	volatile int stop_requested;
 #ifndef CONFIG_OVE_ZERO_HEAP
-	/* Flexible-array stack tail.  Used by the heap-create path
-	 * (ove_thread_create) which allocates `sizeof(struct ove_thread)
-	 * + stack_bytes` in one OVE_BACKEND_MALLOC and passes &stack[0] to
-	 * xTaskCreateStatic — collapsing the wrapper alloc, the FreeRTOS
-	 * TCB alloc, and the FreeRTOS stack alloc into a single block.
-	 * Omitted under CONFIG_OVE_ZERO_HEAP because the heap-create path is gone and
-	 * a FAM here breaks C++ class layout when the storage struct is
-	 * embedded (e.g. as a non-last member of std::optional<Thread<N>>).
-	 */
+	/* When the port provides a separate stack heap, retain the independently allocated stack so
+	 * ove_thread_destroy() can release it after deleting the static task.  Otherwise keep the
+	 * single-allocation flexible-array layout used by ordinary heap builds.  Both forms are omitted
+	 * in zero-heap mode because the heap-create API is absent and a FAM breaks C++ class layout when
+	 * this storage struct is embedded as a non-last member. */
+#if (configSTACK_ALLOCATION_FROM_SEPARATE_HEAP == 1)
+	StackType_t *stack;
+#else
 	StackType_t stack[];
+#endif
 #endif
 };
 
