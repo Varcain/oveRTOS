@@ -364,15 +364,22 @@ __attribute__((naked)) static void prog_tramp(void *desc __attribute__((unused))
 /* Bytes the descriptor occupies, rounded up to whole 32-byte D-cache lines. */
 #define RESUME_DESC_CLSPAN (((uint32_t)sizeof(struct resume_desc) + 31u) & ~31u)
 
-/* Stash the descriptor just below the program SP, INSIDE the program region (xRegions[0]).
- * Cache-line (32B) aligned and rounded to whole lines that sit ENTIRELY below sp's line: with the
- * D-cache on the coordinator writes this through its uncached (Device) view but the guest's
- * prog_tramp reads it cacheable, so freertos_spawn_resume must invalidate its lines — and that
- * invalidate must not clip the parent's live stack at/above sp (which may hold dirty, not-yet
- * written-back data the resuming child still needs). */
+/* Keep the descriptor out of the memory a subsequent exception entry can use.
+ * A Cortex-M7 extended frame is 8 core words + 18 FP words + at most one
+ * alignment word (108 bytes).  Round that up to whole cache lines so neither
+ * hardware stacking nor cache maintenance shares a line with the descriptor. */
+#define EXCEPTION_FRAME_CLSPAN 128u
+
+/* Stash the descriptor below a reserved exception-frame gap, INSIDE the program
+ * region (xRegions[0]).  The coordinator writes through its uncached (Device)
+ * view while prog_tramp reads cacheably.  Placing the descriptor immediately
+ * below sp is unsafe: the next extended exception frame occupies [sp-108, sp)
+ * and can overlap cache lines just fetched by prog_tramp.  On STM32F746 this
+ * produced stale s7-s14 values during exception return. */
 static struct resume_desc *stash_desc(uint32_t sp, const struct lxp_resume_ctx *ctx, long r0)
 {
-	struct resume_desc *d = (struct resume_desc *)((sp & ~31u) - RESUME_DESC_CLSPAN);
+	struct resume_desc *d = (struct resume_desc *)((sp & ~31u) - EXCEPTION_FRAME_CLSPAN -
+						 RESUME_DESC_CLSPAN);
 	d->r0 = (uint32_t)r0;
 	d->ctx = *ctx;
 	return d;
@@ -534,12 +541,13 @@ static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ct
 	struct resume_desc *d = stash_desc(ctx->sp, ctx, r0val);
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* Unlike a launch (freertos_spawn_launch invalidates the whole freshly-loaded region), a resume
-	 * keeps the region's LIVE guest data — so invalidate only the descriptor's own cache lines.
-	 * stash_desc wrote it through the coordinator's uncached (Device background) view; prog_tramp
-	 * reads it cacheable, so drop any stale line covering it → that read fills fresh from SDRAM.
-	 * The lines sit below sp (stash_desc), so no live parent stack is clipped. */
+	 * keeps the region's LIVE guest data.  Invalidate the descriptor and the reserved hardware-frame
+	 * gap: this both publishes the uncached descriptor write to prog_tramp's cacheable view and makes
+	 * the next exception frame start from cold lines.  The complete span is below sp, so no live
+	 * parent stack is clipped. */
 	if (SCB->CCR & SCB_CCR_DC_Msk)
-		SCB_InvalidateDCache_by_Addr((void *)d, (int32_t)RESUME_DESC_CLSPAN);
+		SCB_InvalidateDCache_by_Addr((void *)d,
+					     (int32_t)(RESUME_DESC_CLSPAN + EXCEPTION_FRAME_CLSPAN));
 #endif
 	(void)freertos_spawn_common(sidx, ridx, d);
 }
