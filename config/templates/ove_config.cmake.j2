@@ -321,6 +321,15 @@ add_compile_definitions(LXP_PROG_REGION_SIZE=0x80000u LXP_PIPE_BUF=2048 LXP_PTY_
 add_compile_definitions(LXP_NPIPE=12)
 add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]==])
 {% endif %}
+{% if config.get("CONFIG_OVE_RTOS_NUTTX") == True and config.get("CONFIG_OVE_BOARD_STM32F746G_DISCO") == True %}
+# STM32F746 (NuttX): match FreeRTOS's 12-slot pipe pool. A single non-interactive dropbear session's
+# stdin/stdout/stderr pipes alone peak at 4 slots, so the 4-slot default leaves nothing for the
+# shell's own pipeline (`ls | head` -> EMFILE). NuttX owns its linker script and has no .sdram_bss
+# NOLOAD hook (the seam's guest pools use fixed SDRAM addresses, not a section), so the pool stays in
+# internal-SRAM .bss; a 2 KiB per-pipe buffer keeps 12 x 2K = 24K within the SRAM budget (vs the
+# 4 x 4K = 16K default) and matches the proven Zephyr LXP_PIPE_BUF.
+add_compile_definitions(LXP_NPIPE=12 LXP_PIPE_BUF=2048)
+{% endif %}
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True and config.get("CONFIG_OVE_LINUX") == True %}
 # an500 QEMU Linux: the rootfs cpio XIPs from the bottom 12 MiB of PSRAM (QEMU -device
 # loader @ 0x60000000), so the FDPIC program pools share the top 4 MiB of the 16 MiB PSRAM
