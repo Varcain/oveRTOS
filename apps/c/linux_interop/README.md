@@ -73,6 +73,10 @@ runs `/usr/bin/fpcheck` directly after the normal interop phase:
 ove test qemu-freertos-linux-hardfloat
 ```
 
+On STM32F746G-DISCO, `/usr/bin/sigctx` provides the corresponding hardware
+regression for nested signal return. It nests SIGUSR2 inside SIGUSR1 and checks
+both complete VFP contexts after LIFO return.
+
 `ove run` launches QEMU with an interactive semihosting console (phase 1 is
 deterministic; phase 2 is your session):
 
