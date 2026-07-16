@@ -30,6 +30,9 @@
 #ifdef CONFIG_OVE_NET
 #include <net/if.h>
 #include <nuttx/net/dns.h>
+#include <nuttx/net/net.h>   /* psock_* API + struct socket: fd-table-independent sockets */
+#include <nuttx/semaphore.h> /* nxsem for the one-shot poll probe */
+#include <nuttx/fs/ioctl.h>  /* FIONBIO */
 #include "netutils/netlib.h"
 #endif
 
@@ -255,6 +258,63 @@ void ove_netif_destroy(ove_netif_t netif)
 
 /* ---------- Socket ---------- */
 
+/* We store a raw NuttX 'struct socket' in ove_socket and drive it with the psock_* API
+ * rather than a POSIX fd. Reason: the Linux personality's guest programs open sockets
+ * during a syscall dispatched in the SVCall handler (the guest task's context) — a POSIX
+ * fd would land in that guest's PER-TASK fd table, invisible to the coordinator task that
+ * must drive the socket's park/retry (and to any other task). A raw 'struct socket' is
+ * fd-table-independent, so any task can operate on it; the guest keeps its own Linux-fd
+ * namespace at the module (lxp) layer. psock_* return 0/positive on success, a NEGATED
+ * errno on failure, and self-serialize on net_lock (no external locking needed). */
+#define PSOCK(s) ((FAR struct socket *)((void *)(s)->_psock))
+_Static_assert(sizeof(struct socket) <= sizeof(((struct ove_socket *)0)->_psock),
+	       "struct socket does not fit ove_socket._psock");
+
+static int psockerr(int r)
+{
+	return errno_to_ove(-r);
+}
+
+/* A socket whose s_conn is NULL has been closed (psock_close NULLs it) or was never
+ * initialized. Operating on it would be a PRIVILEGED null-pointer dereference that
+ * HardFaults the whole system (not just the guest — the MPU only sandboxes unprivileged
+ * accesses). Guard every op that would touch the connection so a stale reference returns
+ * "closed" instead. */
+static inline int psock_ok(FAR struct socket *p)
+{
+	return (p && p->s_conn) ? 1 : 0;
+}
+
+static inline int in_handler(void)
+{
+	uint32_t r;
+	__asm__ volatile("mrs %0, ipsr" : "=r"(r));
+	return (r & 0x1ffu) != 0;
+}
+
+/* A psock_* op takes net_lock. In the SVCall handler, blocking on a CONTENDED net_lock
+ * would trigger an illegal context switch INSIDE the exception (NuttX hands the note
+ * driver a garbage tcb → BusFault at tcb->pid). So in the handler: try-lock; on contention
+ * DEFER (return 0 → the caller returns OVE_ERR_TIMEOUT and the coordinator retries the op
+ * in THREAD mode, where net_lock blocks safely). On success we HOLD net_lock across the op
+ * (the op's own net_lock is recursive → no further block) and release via net_op_end().
+ * In thread mode we take nothing here and let the op self-lock. */
+static inline int net_op_begin(int *held)
+{
+	*held = 0;
+	if (in_handler()) {
+		if (net_trylock() < 0)
+			return 0; /* contended in an exception → must defer */
+		*held = 1;
+	}
+	return 1;
+}
+static inline void net_op_end(int held)
+{
+	if (held)
+		net_unlock();
+}
+
 int ove_socket_open(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af_t af,
 		    ove_sock_type_t type)
 {
@@ -274,20 +334,18 @@ int ove_socket_open_ex(ove_socket_t *sock, ove_socket_storage_t *storage, ove_af
 	int stype = (type == OVE_SOCK_DGRAM)  ? SOCK_DGRAM
 		    : (type == OVE_SOCK_RAW)  ? SOCK_RAW /* needs CONFIG_NET_ICMP_SOCKET */
 					      : SOCK_STREAM;
-	int fd = socket(AF_INET, stype, proto);
-	if (fd < 0)
-		return errno_to_ove(errno);
-	s->fd = fd;
+	s->connect_pending = 0;
+	int r = psock_socket(AF_INET, stype, proto, PSOCK(s));
+	if (r < 0)
+		return psockerr(r);
 	*sock = s;
 	return OVE_OK;
 }
 
 void ove_socket_close(ove_socket_t sock)
 {
-	if (sock && sock->fd >= 0) {
-		close(sock->fd);
-		sock->fd = -1;
-	}
+	if (sock)
+		psock_close(PSOCK(sock));
 }
 
 #ifndef CONFIG_OVE_ZERO_HEAP
@@ -301,12 +359,11 @@ int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type)
 		return OVE_ERR_NO_MEMORY;
 	(void)af;
 	int stype = (type == OVE_SOCK_DGRAM) ? SOCK_DGRAM : SOCK_STREAM;
-	int fd = socket(AF_INET, stype, 0);
-	if (fd < 0) {
+	int r = psock_socket(AF_INET, stype, 0, PSOCK(s));
+	if (r < 0) {
 		OVE_BACKEND_FREE(s);
-		return errno_to_ove(errno);
+		return psockerr(r);
 	}
-	s->fd = fd;
 	*sock = s;
 	return OVE_OK;
 }
@@ -316,8 +373,7 @@ int ove_socket_create(ove_socket_t *sock, ove_af_t af, ove_sock_type_t type)
 void ove_socket_destroy(ove_socket_t sock)
 {
 	if (sock) {
-		if (sock->fd >= 0)
-			close(sock->fd);
+		psock_close(PSOCK(sock));
 		OVE_BACKEND_FREE(sock);
 	}
 }
@@ -327,46 +383,30 @@ int ove_socket_connect(ove_socket_t sock, const ove_sockaddr_t *addr, uint64_t t
 {
 	if (!sock || !addr)
 		return OVE_ERR_INVALID_PARAM;
-
+	(void)timeout_ns;
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	if (in_handler()) {
+		/* A TCP connect drives ARP + the SYN and, for a socket that is not yet writable,
+		 * WAITS (net_lockedwait) for completion — a blocking wait that, taken in the SVCall
+		 * exception, does an illegal context switch and corrupts the scheduler. Defer: stash
+		 * the target and park (return TIMEOUT → the module sets connecting=1). ove_socket_poll,
+		 * called from the coordinator THREAD to drive the connecting socket, fires the real
+		 * psock_connect() there, where the wait is legal. */
+		memcpy(sock->caddr, addr->addr, 4);
+		sock->cport = addr->port;
+		sock->connect_pending = 1;
+		return OVE_ERR_TIMEOUT;
+	}
+	/* Thread context (the coordinator's own blocking connects: netfs / boot smoke). */
 	struct sockaddr_in sin;
 	sockaddr_to_nuttx(addr, &sin);
-
-	if (ove_timeout_is_forever(timeout_ns)) {
-		if (connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-			return errno_to_ove(errno);
+	int r = psock_connect(PSOCK(sock), (struct sockaddr *)&sin, sizeof(sin));
+	if (r == 0)
 		return OVE_OK;
-	}
-
-	/* Non-blocking connect with timeout */
-	int flags = fcntl(sock->fd, F_GETFL, 0);
-	fcntl(sock->fd, F_SETFL, flags | O_NONBLOCK);
-
-	int rc = connect(sock->fd, (struct sockaddr *)&sin, sizeof(sin));
-	if (rc < 0 && errno != EINPROGRESS) {
-		fcntl(sock->fd, F_SETFL, flags);
-		return errno_to_ove(errno);
-	}
-	if (rc == 0) {
-		fcntl(sock->fd, F_SETFL, flags);
-		return OVE_OK;
-	}
-
-	struct pollfd pfd = {.fd = sock->fd, .events = POLLOUT};
-	int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
-	fcntl(sock->fd, F_SETFL, flags);
-
-	if (pr == 0)
+	if (r == -EINPROGRESS || r == -EALREADY)
 		return OVE_ERR_TIMEOUT;
-	if (pr < 0)
-		return errno_to_ove(errno);
-
-	int so_err = 0;
-	socklen_t elen = sizeof(so_err);
-	getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &so_err, &elen);
-	if (so_err)
-		return errno_to_ove(so_err);
-
-	return OVE_OK;
+	return psockerr(r);
 }
 
 int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
@@ -375,18 +415,16 @@ int ove_socket_bind(ove_socket_t sock, const ove_sockaddr_t *addr)
 		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_in sin;
 	sockaddr_to_nuttx(addr, &sin);
-	if (bind(sock->fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-		return errno_to_ove(errno);
-	return OVE_OK;
+	int r = psock_bind(PSOCK(sock), (struct sockaddr *)&sin, sizeof(sin));
+	return r < 0 ? psockerr(r) : OVE_OK;
 }
 
 int ove_socket_listen(ove_socket_t sock, int backlog)
 {
 	if (!sock)
 		return OVE_ERR_INVALID_PARAM;
-	if (listen(sock->fd, backlog) < 0)
-		return errno_to_ove(errno);
-	return OVE_OK;
+	int r = psock_listen(PSOCK(sock), backlog);
+	return r < 0 ? psockerr(r) : OVE_OK;
 }
 
 int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storage_t *client_storage,
@@ -394,22 +432,19 @@ int ove_socket_accept(ove_socket_t sock, ove_socket_t *client, ove_socket_storag
 {
 	if (!sock || !client || !client_storage)
 		return OVE_ERR_INVALID_PARAM;
-
-	if (!ove_timeout_is_forever(timeout_ns)) {
-		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
-		int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
-		if (pr == 0)
-			return OVE_ERR_TIMEOUT;
-		if (pr < 0)
-			return errno_to_ove(errno);
-	}
-
-	int fd = accept(sock->fd, NULL, NULL);
-	if (fd < 0)
-		return errno_to_ove(errno);
-
+	(void)timeout_ns;
 	struct ove_socket *cs = (struct ove_socket *)client_storage;
-	cs->fd = fd;
+	/* SOCK_NONBLOCK: return -EAGAIN when no connection is pending (the module parks and
+	 * retries), and mark the accepted socket non-blocking too. */
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int _held;
+	if (!net_op_begin(&_held))
+		return OVE_ERR_TIMEOUT;
+	int r = psock_accept(PSOCK(sock), NULL, NULL, PSOCK(cs), SOCK_NONBLOCK);
+	net_op_end(_held);
+	if (r < 0)
+		return r == -EAGAIN ? OVE_ERR_TIMEOUT : psockerr(r);
 	*client = cs;
 	return OVE_OK;
 }
@@ -418,9 +453,15 @@ int ove_socket_send(ove_socket_t sock, const void *data, size_t len, size_t *sen
 {
 	if (!sock || !data)
 		return OVE_ERR_INVALID_PARAM;
-	ssize_t n = send(sock->fd, data, len, 0);
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int _held;
+	if (!net_op_begin(&_held))
+		return OVE_ERR_TIMEOUT;
+	ssize_t n = psock_send(PSOCK(sock), data, len, 0);
+	net_op_end(_held);
 	if (n < 0)
-		return errno_to_ove(errno);
+		return psockerr((int)n);
 	if (sent)
 		*sent = (size_t)n;
 	return OVE_OK;
@@ -430,19 +471,16 @@ int ove_socket_recv(ove_socket_t sock, void *buf, size_t len, size_t *received, 
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
-
-	if (!ove_timeout_is_forever(timeout_ns)) {
-		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
-		int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
-		if (pr == 0)
-			return OVE_ERR_TIMEOUT;
-		if (pr < 0)
-			return errno_to_ove(errno);
-	}
-
-	ssize_t n = recv(sock->fd, buf, len, 0);
+	(void)timeout_ns;
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int _held;
+	if (!net_op_begin(&_held))
+		return OVE_ERR_TIMEOUT;
+	ssize_t n = psock_recvfrom(PSOCK(sock), buf, len, 0, NULL, NULL);
+	net_op_end(_held);
 	if (n < 0)
-		return errno_to_ove(errno);
+		return psockerr((int)n);
 	if (n == 0)
 		return OVE_ERR_NET_CLOSED;
 	if (received)
@@ -457,9 +495,15 @@ int ove_socket_sendto(ove_socket_t sock, const void *data, size_t len, size_t *s
 		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_in sin;
 	sockaddr_to_nuttx(dest, &sin);
-	ssize_t n = sendto(sock->fd, data, len, 0, (struct sockaddr *)&sin, sizeof(sin));
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int _held;
+	if (!net_op_begin(&_held))
+		return OVE_ERR_TIMEOUT;
+	ssize_t n = psock_sendto(PSOCK(sock), data, len, 0, (struct sockaddr *)&sin, sizeof(sin));
+	net_op_end(_held);
 	if (n < 0)
-		return errno_to_ove(errno);
+		return psockerr((int)n);
 	if (sent)
 		*sent = (size_t)n;
 	return OVE_OK;
@@ -470,21 +514,18 @@ int ove_socket_recvfrom(ove_socket_t sock, void *buf, size_t len, size_t *receiv
 {
 	if (!sock || !buf)
 		return OVE_ERR_INVALID_PARAM;
-
-	if (!ove_timeout_is_forever(timeout_ns)) {
-		struct pollfd pfd = {.fd = sock->fd, .events = POLLIN};
-		int pr = poll(&pfd, 1, ns_to_poll_ms(timeout_ns));
-		if (pr == 0)
-			return OVE_ERR_TIMEOUT;
-		if (pr < 0)
-			return errno_to_ove(errno);
-	}
-
+	(void)timeout_ns;
 	struct sockaddr_in sin;
 	socklen_t slen = sizeof(sin);
-	ssize_t n = recvfrom(sock->fd, buf, len, 0, (struct sockaddr *)&sin, &slen);
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int _held;
+	if (!net_op_begin(&_held))
+		return OVE_ERR_TIMEOUT;
+	ssize_t n = psock_recvfrom(PSOCK(sock), buf, len, 0, (struct sockaddr *)&sin, &slen);
+	net_op_end(_held);
 	if (n < 0)
-		return errno_to_ove(errno);
+		return psockerr((int)n);
 	if (n == 0)
 		return OVE_ERR_NET_CLOSED;
 	if (received)
@@ -500,38 +541,73 @@ int ove_socket_set_nonblock(ove_socket_t sock, int nonblock)
 {
 	if (!sock)
 		return OVE_ERR_INVALID_PARAM;
-	int flags = fcntl(sock->fd, F_GETFL, 0);
-	if (flags < 0)
-		return errno_to_ove(errno);
-	flags = nonblock ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
-	if (fcntl(sock->fd, F_SETFL, flags) < 0)
-		return errno_to_ove(errno);
-	return OVE_OK;
+	int on = nonblock ? 1 : 0;
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int r = psock_ioctl(PSOCK(sock), FIONBIO, &on);
+	return r < 0 ? psockerr(r) : OVE_OK;
 }
 
 int ove_socket_poll(ove_socket_t sock, unsigned events, unsigned *revents, uint64_t timeout_ns)
 {
 	if (!sock)
 		return OVE_ERR_INVALID_PARAM;
-	struct pollfd pfd = {.fd = sock->fd, .events = 0};
+	(void)timeout_ns;
+	if (!psock_ok(PSOCK(sock))) {
+		if (revents)
+			*revents = OVE_SOCK_POLLHUP;
+		return OVE_OK;
+	}
+	/* Fire a deferred connect (stashed by ove_socket_connect in the handler) now that we run in
+	 * the coordinator thread, where the connect's completion-wait is legal. Only in thread mode:
+	 * the guest may also poll() the connecting fd from the handler, which must NOT initiate. */
+	if (sock->connect_pending && !in_handler()) {
+		sock->connect_pending = 0;
+		struct sockaddr_in csin;
+		memset(&csin, 0, sizeof(csin));
+		csin.sin_family = AF_INET;
+		memcpy(&csin.sin_addr.s_addr, sock->caddr, 4);
+		csin.sin_port = htons(sock->cport);
+		(void)psock_connect(PSOCK(sock), (struct sockaddr *)&csin, sizeof(csin));
+		/* -EINPROGRESS expected; readiness is reported by the probe below (and subsequent
+		 * polls), and the module reads SO_ERROR via ove_socket_get_error to finalize. */
+	}
+	/* One-shot readiness probe on the raw socket (no fd). CRITICAL: cb == NULL so that if
+	 * the socket becomes ready between setup and teardown, poll_notify() sees a NULL cb and
+	 * does NOT call back into this (soon-to-be-gone) stack frame — it only writes revents.
+	 * psock_poll(setup=true) evaluates current readiness into fds.revents; tear it straight
+	 * back down (only if setup succeeded — a failed setup leaves fds.priv NULL). No sem
+	 * needed since we never wait. */
+	struct pollfd fds;
+	memset(&fds, 0, sizeof(fds));
+	fds.fd = -1;
 	if (events & OVE_SOCK_POLLIN)
-		pfd.events |= POLLIN;
+		fds.events |= POLLIN;
 	if (events & OVE_SOCK_POLLOUT)
-		pfd.events |= POLLOUT;
-	int pr = poll(&pfd, 1, ove_timeout_is_forever(timeout_ns) ? -1 : ns_to_poll_ms(timeout_ns));
-	if (pr < 0)
-		return errno_to_ove(errno);
-	unsigned re = 0;
-	if (pfd.revents & POLLIN)
-		re |= OVE_SOCK_POLLIN;
-	if (pfd.revents & POLLOUT)
-		re |= OVE_SOCK_POLLOUT;
-	if (pfd.revents & POLLERR)
-		re |= OVE_SOCK_POLLERR;
-	if (pfd.revents & POLLHUP)
-		re |= OVE_SOCK_POLLHUP;
+		fds.events |= POLLOUT;
+	int _held;
+	if (!net_op_begin(&_held)) {
+		if (revents)
+			*revents = 0; /* contended in handler: report not-ready, coordinator re-polls */
+		return OVE_OK;
+	}
+	int r = psock_poll(PSOCK(sock), &fds, true);
+	unsigned re = (r < 0) ? (unsigned)POLLERR : (unsigned)fds.revents;
+	if (r >= 0)
+		psock_poll(PSOCK(sock), &fds, false);
+	net_op_end(_held);
+
+	unsigned out = 0;
+	if (re & POLLIN)
+		out |= OVE_SOCK_POLLIN;
+	if (re & POLLOUT)
+		out |= OVE_SOCK_POLLOUT;
+	if (re & POLLERR)
+		out |= OVE_SOCK_POLLERR;
+	if (re & POLLHUP)
+		out |= OVE_SOCK_POLLHUP;
 	if (revents)
-		*revents = re;
+		*revents = out;
 	return OVE_OK;
 }
 
@@ -540,9 +616,10 @@ int ove_socket_shutdown(ove_socket_t sock, int how)
 	if (!sock)
 		return OVE_ERR_INVALID_PARAM;
 	int lh = (how == OVE_SHUT_RD) ? SHUT_RD : (how == OVE_SHUT_WR) ? SHUT_WR : SHUT_RDWR;
-	if (shutdown(sock->fd, lh) < 0)
-		return errno_to_ove(errno);
-	return OVE_OK;
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int r = psock_shutdown(PSOCK(sock), lh);
+	return r < 0 ? psockerr(r) : OVE_OK;
 }
 
 int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
@@ -551,8 +628,11 @@ int ove_socket_getsockname(ove_socket_t sock, ove_sockaddr_t *addr)
 		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_in sin;
 	socklen_t sl = sizeof(sin);
-	if (getsockname(sock->fd, (struct sockaddr *)&sin, &sl) < 0)
-		return errno_to_ove(errno);
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int r = psock_getsockname(PSOCK(sock), (struct sockaddr *)&sin, &sl);
+	if (r < 0)
+		return psockerr(r);
 	nuttx_to_sockaddr(&sin, addr);
 	return OVE_OK;
 }
@@ -563,8 +643,11 @@ int ove_socket_getpeername(ove_socket_t sock, ove_sockaddr_t *addr)
 		return OVE_ERR_INVALID_PARAM;
 	struct sockaddr_in sin;
 	socklen_t sl = sizeof(sin);
-	if (getpeername(sock->fd, (struct sockaddr *)&sin, &sl) < 0)
-		return errno_to_ove(errno);
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int r = psock_getpeername(PSOCK(sock), (struct sockaddr *)&sin, &sl);
+	if (r < 0)
+		return psockerr(r);
 	nuttx_to_sockaddr(&sin, addr);
 	return OVE_OK;
 }
@@ -575,37 +658,13 @@ int ove_socket_get_error(ove_socket_t sock)
 		return OVE_ERR_INVALID_PARAM;
 	int soerr = 0;
 	socklen_t sl = sizeof(soerr);
-	if (getsockopt(sock->fd, SOL_SOCKET, SO_ERROR, &soerr, &sl) < 0)
-		return errno_to_ove(errno);
+	if (!psock_ok(PSOCK(sock)))
+		return OVE_ERR_NET_CLOSED;
+	int r = psock_getsockopt(PSOCK(sock), SOL_SOCKET, SO_ERROR, &soerr, &sl);
+	if (r < 0)
+		return psockerr(r);
 	return soerr ? errno_to_ove(soerr) : OVE_OK;
 }
-
-/* ---------- DNS ---------- */
-
-int ove_dns_resolve(const char *hostname, ove_sockaddr_t *addr, uint64_t timeout_ns)
-{
-	(void)timeout_ns;
-	if (!hostname || !addr)
-		return OVE_ERR_INVALID_PARAM;
-
-	struct addrinfo hints, *res;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-
-	int rc = getaddrinfo(hostname, NULL, &hints, &res);
-	if (rc != 0)
-		return OVE_ERR_NET_DNS_FAIL;
-
-	memset(addr, 0, sizeof(*addr));
-	addr->family = OVE_AF_INET;
-	struct sockaddr_in *sin = (struct sockaddr_in *)res->ai_addr;
-	memcpy(addr->addr, &sin->sin_addr, 4);
-	freeaddrinfo(res);
-	return OVE_OK;
-}
-
-/* ---------- Address helpers ---------- */
 
 void ove_sockaddr_ipv4(ove_sockaddr_t *addr, uint8_t a, uint8_t b, uint8_t c, uint8_t d,
 		       uint16_t port)
