@@ -16,7 +16,11 @@ import subprocess, sys, re, os
 
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/kstress_drive.log"
 
+# Two 'root' lines: the account has a password
+# (BR2_TARGET_GENERIC_ROOT_PASSWD), so login prompts for name and password.
+# With only the first, the next command is eaten as the password.
 seq = (r"printf 'root\n'; sleep 5; "
+       r"printf 'root\n'; sleep 5; "
        r"printf 'kstress ptr; echo KRC=$?\n'; sleep 5; "
        r"printf 'kstress str; echo SRC=$?\n'; sleep 4; "
        r"printf 'kstress udf; echo URC=$?\n'; sleep 5; "

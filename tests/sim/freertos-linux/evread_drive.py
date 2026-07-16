@@ -13,7 +13,11 @@ import subprocess, sys, re, os
 
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/evread_drive.log"
 
+# Two 'root' lines: the account has a password
+# (BR2_TARGET_GENERIC_ROOT_PASSWD), so login prompts for name and password.
+# With only the first, the next command is eaten as the password.
 seq = (r"printf 'root\n'; sleep 5; "
+       r"printf 'root\n'; sleep 5; "
        r"printf 'evread; echo ERC=$?\n'; sleep 8; "
        r"printf 'uname -a\n'; sleep 3; "
        r"printf 'poweroff\n'; sleep 4")
