@@ -89,7 +89,10 @@ def main():
     p.add_argument("extra", nargs="*", help="Extra arguments")
 
     # ── flash ──────────────────────────────────────────────────────────
-    sub.add_parser("flash", help="Flash firmware to hardware")
+    p = sub.add_parser("flash", help="Flash firmware to hardware")
+    p.add_argument("--force", action="store_true",
+                   help="Flash even if the image does not match this "
+                        "workspace's configuration")
 
     # ── test ───────────────────────────────────────────────────────────
     p = sub.add_parser("test", help="Run tests")

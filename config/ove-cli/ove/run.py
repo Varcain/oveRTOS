@@ -116,6 +116,33 @@ def cmd_run(args):
         sys.exit(1)
 
 
+def _check_image_identity(ws, force):
+    """Refuse to flash an image that is not the one this workspace builds.
+
+    .config is a symlink into output/<board>/<rtos>/<app>/, so a defconfig or
+    gate build can silently repoint the whole workspace; the float ABIs live
+    inside .config and do not show up in any path at all. Flashing is the
+    irreversible step, so verify identity here rather than trusting the layout.
+    """
+    from . import image_id
+
+    reasons = image_id.mismatches(ws)
+    if not reasons:
+        ident = image_id.load(ws.images_dir)
+        print(f"=== Image: {image_id.describe(ident)} ===")
+        return
+
+    print("Error: the built image does not match this workspace:",
+          file=sys.stderr)
+    for reason in reasons:
+        print(f"  - {reason}", file=sys.stderr)
+    if not force:
+        print("\nRun 'ove build' to rebuild, or 'ove flash --force' to flash "
+              "it anyway.", file=sys.stderr)
+        sys.exit(1)
+    print("\nflashing anyway (--force)", file=sys.stderr)
+
+
 def cmd_flash(args):
     """CLI entry point for 'ove flash'."""
     ws = Workspace()
@@ -127,6 +154,10 @@ def cmd_flash(args):
     if rtos == "posix":
         print("POSIX backend doesn't need flashing. Use 'ove run'.")
         sys.exit(1)
+
+    # Before either flash path: os.execv below replaces this process, so there
+    # is no post-flash hook to check from.
+    _check_image_identity(ws, getattr(args, "force", False))
 
     if rtos == "zephyr":
         west = os.path.join(ws.venv_dir, "bin", "west")
