@@ -13,6 +13,15 @@ CONFIG_ARM_MPU=n
 # app's I/O callbacks (including the polled USART1 console); give it headroom over the 2 KB default.
 CONFIG_ARCH_INTERRUPTSTACK=4096
 
+# Fold the 64 KB DTCM into the heap (region 3). NuttX's SRAM-only heap here is tiny (SRAM1 tail +
+# SRAM2 ~= 31 KB) — barely enough for the 16 KB CONFIG_INIT_STACKSIZE init task, so any extra .bss
+# (the personality's socket-storage pool + net-stack buffers) pushes the init-task stack allocation
+# past the largest free block and the app never spawns (silent: only Idle + hpwork exist). DTCM is
+# otherwise unused and DMA never reaches it (the ETH/IOB buffers are static in SRAM, the guest pools
+# are in SDRAM), so it is safe as general heap. Config 3 in stm32_allocateheap.c = SRAM1+SRAM2+DTCM.
+# CONFIG_STM32F7_DTCMEXCLUDE is not set
+CONFIG_MM_REGIONS=3
+
 # The personality's console reads RX through NuttX's IRQ-filled serial buffer (nuttx_lnx_trap.c
 # serial_poll_*), then puts the console in RAW mode via tcsetattr so NuttX does not also echo each
 # keystroke (the guest shell owns echo) or line-buffer to a newline. tcsetattr/TCSETS need termios.
