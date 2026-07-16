@@ -232,7 +232,18 @@ typedef struct ove_model ove_model_storage_t;
 
 #ifdef CONFIG_OVE_NET
 struct ove_socket {
-	int fd; /* NuttX POSIX socket descriptor */
+	/* Holds a NuttX 'struct socket' (a raw socket object, ~12 bytes, 4-aligned). We use
+	 * the psock_* API on this object instead of a POSIX fd so the socket is NOT bound to
+	 * any task's fd table — the Linux-personality coordinator (a different NuttX task than
+	 * the guest that opened it) must be able to drive it. Opaque here so this widely
+	 * included header needn't pull in nuttx/net/net.h; nuttx_net.c casts + size-asserts. */
+	uint32_t _psock[6];
+	/* Deferred-connect state: a TCP connect's ARP/SYN completion-wait blocks, which corrupts
+	 * the scheduler if run in the SVCall handler, so ove_socket_connect stashes the target here
+	 * and parks; ove_socket_poll initiates the real psock_connect from the coordinator thread. */
+	uint8_t connect_pending;
+	uint8_t caddr[4]; /* IPv4 target, network order */
+	uint16_t cport;   /* target port, host order */
 };
 
 struct ove_netif {
