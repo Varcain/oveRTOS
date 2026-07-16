@@ -206,6 +206,16 @@ static char *put_dec(char *p, uint32_t v)
 	return p;
 }
 
+static char *put_hex32(char *p, uint32_t v)
+{
+	static const char hex[] = "0123456789abcdef";
+	*p++ = '0';
+	*p++ = 'x';
+	for (int shift = 28; shift >= 0; shift -= 4)
+		*p++ = hex[(v >> shift) & 0xfu];
+	return p;
+}
+
 static uint32_t uptime_ms(void)
 {
 	uint64_t us = 0;
@@ -368,6 +378,59 @@ static void on_enosys(long nr)
 	char b[40];
 	char *p = put_str(b, "[demo] unimplemented syscall nr=");
 	p = put_dec(p, (uint32_t)nr);
+	*p++ = '\n';
+	*p = 0;
+	sh_write0(b);
+}
+
+static const char *exit_reason_name(uint8_t reason)
+{
+	switch (reason) {
+	case LXP_EXIT_REASON_SIGNAL:
+		return "signal";
+	case LXP_EXIT_REASON_SIGNAL_DEPTH:
+		return "signal-depth";
+	case LXP_EXIT_REASON_MEMORY_FAULT:
+		return "memory-fault";
+	case LXP_EXIT_REASON_EXEC_RESOURCE:
+		return "exec-resource";
+	case LXP_EXIT_REASON_EXEC_LOAD:
+		return "exec-load";
+	default:
+		return "unspecified";
+	}
+}
+
+/* Development-target attribution for contained guest failures. Normal exits stay
+ * silent; abnormal records are emitted from coordinator task context, never from
+ * an exception handler, and remain bounded to one short UART line. */
+static void on_guest_exit(const lxp_guest_exit_info_t *info)
+{
+	if (!info || info->reason == LXP_EXIT_REASON_NORMAL)
+		return;
+	char b[192];
+	char *p = put_str(b, "[lxp] guest-exit slot=");
+	p = put_dec(p, (uint32_t)info->slot);
+	p = put_str(p, " pid=");
+	p = put_dec(p, (uint32_t)info->pid);
+	p = put_str(p, " comm=");
+	p = put_str(p, info->comm ? info->comm : "?");
+	p = put_str(p, " status=");
+	p = put_dec(p, (uint32_t)info->status);
+	p = put_str(p, " reason=");
+	p = put_str(p, exit_reason_name(info->reason));
+	if (info->signal) {
+		p = put_str(p, " signal=");
+		p = put_dec(p, info->signal);
+	}
+	if (info->detail) {
+		p = put_str(p, " detail=");
+		p = put_hex32(p, info->detail);
+	}
+	if (info->address) {
+		p = put_str(p, " address=");
+		p = put_hex32(p, (uint32_t)info->address);
+	}
 	*p++ = '\n';
 	*p = 0;
 	sh_write0(b);
@@ -586,6 +649,7 @@ static void demo_body(void *arg)
 		.read_fn = feed_read,
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
+		.on_guest_exit = on_guest_exit,
 	};
 	const char *const cat_argv[] = {"cat", NULL}; /* reads stdin -> writes stdout */
 	sh_write0("[demo] launching the Linux program (BusyBox cat) to relay the readings...\n");
@@ -626,6 +690,7 @@ static void demo_body(void *arg)
 		.console_poll = console_poll,
 		.io_ctx = NULL,
 		.on_enosys = on_enosys,
+		.on_guest_exit = on_guest_exit,
 	};
 	int rc2;
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)

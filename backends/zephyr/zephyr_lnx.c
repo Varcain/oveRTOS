@@ -427,6 +427,9 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 		if (sidx >= 0) {
 			g_lxp_proc[sidx].exited = 1;
 			g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+			g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
+			g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
+			g_lxp_proc[sidx].exit_detail = reason;
 			zephyr_event_post();
 			return;
 		}

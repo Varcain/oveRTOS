@@ -291,6 +291,11 @@ struct lnx_fault_diag {
 	uint32_t bfar;
 	uint32_t psp;
 	uint32_t exc_return;
+	uint32_t last_spawn_sp;
+	uint32_t last_spawn_pc;
+	uint32_t last_desc;
+	uint32_t last_ridx;
+	uint32_t last_kind; /* 1 = image launch, 2 = context resume */
 };
 /* Kept in host SRAM and intentionally non-static so a stopped target can be
  * diagnosed without logging or formatting in fault context. */
@@ -314,6 +319,12 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 
 		g_lxp_proc[sidx].exited = 1;
 		g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+		g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
+		g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
+		g_lxp_proc[sidx].exit_detail = diag->cfsr;
+		g_lxp_proc[sidx].exit_address = (diag->cfsr & (1u << 7))    ? diag->mmfar
+						: (diag->cfsr & (1u << 15)) ? diag->bfar
+									    : 0u;
 
 		/* Never trust the faulting PSP frame: MSTKERR/MLSPERR means it may not
 		 * exist at all, and an arbitrary guest PSP may point at read-only QSPI or
@@ -620,13 +631,26 @@ static int freertos_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, voi
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
 	g_region_exec[sidx] = (uint8_t)prog->region_exec; /* RWX region for a copied-text (remote) exec */
 #endif
-	return freertos_spawn_common(sidx, ridx, stash_desc((uint32_t)sp, &c, 0));
+	struct resume_desc *d = stash_desc((uint32_t)sp, &c, 0);
+	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
+	diag->last_spawn_sp = c.sp;
+	diag->last_spawn_pc = c.pc;
+	diag->last_desc = (uint32_t)(uintptr_t)d;
+	diag->last_ridx = (uint32_t)ridx;
+	diag->last_kind = 1u;
+	return freertos_spawn_common(sidx, ridx, d);
 }
 
 static void freertos_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *ctx,
 				  long r0val)
 {
 	struct resume_desc *d = stash_desc(ctx->sp, ctx, r0val);
+	volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
+	diag->last_spawn_sp = ctx->sp;
+	diag->last_spawn_pc = ctx->pc;
+	diag->last_desc = (uint32_t)(uintptr_t)d;
+	diag->last_ridx = (uint32_t)ridx;
+	diag->last_kind = 2u;
 #if defined(CONFIG_OVE_BOARD_STM32F746G_DISCO)
 	/* Unlike a launch (freertos_spawn_launch invalidates the whole freshly-loaded region), a resume
 	 * keeps the region's LIVE guest data.  Invalidate the descriptor and the reserved hardware-frame
