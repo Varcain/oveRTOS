@@ -101,6 +101,12 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 static StackType_t g_tramp_stacks[LXP_NSLOT][TRAMP_STACK_WORDS]
 	__attribute__((aligned(TRAMP_STACK_WORDS * sizeof(StackType_t))));
 
+/* Exception-containment code must never issue a VFP instruction.  A guest can
+ * fault while lazy FP preservation is pending and its PSP is already invalid;
+ * touching the FPU in that state retries the failed lazy store and escalates
+ * the configurable fault to HardFault before the guest can be reaped. */
+#define LXP_FAULT_GPR_ONLY __attribute__((target("general-regs-only")))
+
 static int current_slot(void)
 {
 	/* Read pxCurrentTCB directly instead of xTaskGetCurrentTaskHandle(): under the MPU port the
@@ -269,33 +275,75 @@ __attribute__((naked)) void SVC_Handler(void)
 
 /* ---- MemManage fault containment ------------------------------------------- */
 /* An UNPRIVILEGED program making an illegal access raises MemManage (enabled by the MPU port's
- * prvSetupMPU). Contain it like a default-action SIGSEGV: mark the proc exited (139), redirect its
- * stacked return PC to the park loop, wake the coordinator (which reaps the slot + frees the region
- * via EV_EXIT) and exception-return — the kernel and other programs are untouched. A fault from any
- * NON-program (privileged kernel) context is a real bug → fatal. Strong symbol overriding the weak
+ * prvSetupMPU). Contain it like a default-action SIGSEGV: mark the proc exited (139), synthesize a
+ * trusted return frame on its internal trampoline stack, wake the coordinator (which reaps the slot
+ * + frees the region via EV_EXIT), and exception-return to the park loop. A fault from any
+ * NON-program (privileged kernel) context is a real bug -> fatal. Strong symbol overriding the weak
  * MemManage_Handler in the CMSIS startup. */
-static void freertos_event_post(void); /* forward decl; defined with the vtable below */
+static void freertos_event_post(void) LXP_FAULT_GPR_ONLY; /* defined with the vtable below */
 extern void HardFault_Handler(void);
 
-void freertos_lnx_memfault_c(uint32_t *frame /* the faulting program's PSP HW frame */)
+struct lnx_fault_diag {
+	uint32_t count;
+	uint32_t cfsr;
+	uint32_t hfsr;
+	uint32_t mmfar;
+	uint32_t bfar;
+	uint32_t psp;
+	uint32_t exc_return;
+};
+/* Kept in host SRAM and intentionally non-static so a stopped target can be
+ * diagnosed without logging or formatting in fault context. */
+volatile struct lnx_fault_diag g_lxp_fault_diag[LXP_NSLOT];
+
+uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32_t psp)
 {
 	int sidx = current_slot();
-	if (g_lxp_active && sidx >= 0) {
+	/* A Linux guest always runs in Thread mode on PSP.  Do not misclassify a
+	 * nested host/ISR fault merely because a guest TCB is current. */
+	if (g_lxp_active && sidx >= 0 && (exc_return & (1u << 3)) &&
+	    (exc_return & (1u << 2))) {
+		volatile struct lnx_fault_diag *diag = &g_lxp_fault_diag[sidx];
+		diag->count++;
+		diag->cfsr = *(volatile uint32_t *)0xE000ED28u;
+		diag->hfsr = *(volatile uint32_t *)0xE000ED2Cu;
+		diag->mmfar = *(volatile uint32_t *)0xE000ED34u;
+		diag->bfar = *(volatile uint32_t *)0xE000ED38u;
+		diag->psp = psp;
+		diag->exc_return = exc_return;
+
 		g_lxp_proc[sidx].exited = 1;
-		g_lxp_proc[sidx].exit_status = 139;		 /* 128 + SIGSEGV */
-		frame[6] = ((uint32_t)&lxp_park_loop) & ~1u; /* stacked PC -> park loop */
-		frame[7] |= (1u << 24);				 /* xPSR.T (Thumb) */
-		*(volatile uint32_t *)0xE000ED28 =
-			*(volatile uint32_t *)0xE000ED28; /* clear MMFSR (write-1-to-clear) */
+		g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+
+		/* Never trust the faulting PSP frame: MSTKERR/MLSPERR means it may not
+		 * exist at all, and an arbitrary guest PSP may point at read-only QSPI or
+		 * host memory.  Build a basic frame at the top of the task's original
+		 * internal-SRAM trampoline stack, which is still its automatic MPU stack
+		 * region.  Exception return consumes the frame and enters the stackless
+		 * park loop; the already-pended coordinator then deletes the task. */
+		volatile uint32_t *frame =
+			(uint32_t *)&g_tramp_stacks[sidx][TRAMP_STACK_WORDS - 8u];
+		frame[0] = 0;
+		frame[1] = 0;
+		frame[2] = 0;
+		frame[3] = 0;
+		frame[4] = 0;
+		frame[5] = 0;
+		frame[6] = ((uint32_t)&lxp_park_loop) & ~1u;
+		frame[7] = (1u << 24); /* xPSR.T (Thumb) */
+
+		*(volatile uint32_t *)0xE000ED28u =
+			*(volatile uint32_t *)0xE000ED28u; /* clear configurable status bits (W1C) */
 		freertos_event_post();
-		return;
+		return (uint32_t *)frame;
 	}
 	HardFault_Handler(); /* not a program fault -> fatal */
+	return NULL;
 }
 
 __attribute__((naked)) void MemManage_Handler(void)
 {
-	__asm__ volatile("mrs  r0, psp                \n" /* r0 = faulting program's HW frame */
+	__asm__ volatile("mrs  r1, psp                \n" /* r1 = untrusted fault-time PSP */
 			 /* Same nPRIV dance as SVC_Handler: memfault_c calls FreeRTOS APIs
 			  * (event_post) which must not raise-privilege via svc from here. */
 			 "mrs  r2, control            \n"
@@ -303,11 +351,28 @@ __attribute__((naked)) void MemManage_Handler(void)
 			 "bic  r3, r2, #1             \n"
 			 "msr  control, r3            \n"
 			 "isb                         \n"
-			 "bl   freertos_lnx_memfault_c\n"
-			 "pop  {r2, lr}               \n"
-			 "msr  control, r2            \n"
+			 /* Cancel a pending lazy FP store before entering compiled code.  If
+			  * the guest PSP caused MLSPERR, any VFP use before this write would
+			  * immediately refault.  FPCCR.LSPACT is architecturally R/W. */
+			 "ldr  r3, =0xe000ef34        \n"
+			 "ldr  r0, [r3]               \n"
+			 "bic  r0, r0, #1             \n"
+			 "str  r0, [r3]               \n"
+			 "dsb                         \n"
 			 "isb                         \n"
-			 "bx   lr                     \n");
+			 "mov  r0, lr                 \n" /* r0 = original EXC_RETURN */
+			 "bl   freertos_lnx_memfault_c\n"
+			 "cbz  r0, 1f                 \n"
+			 "msr  psp, r0                \n" /* trusted internal-SRAM basic frame */
+			 "pop  {r2, lr}               \n"
+			 "bic  r2, r2, #4             \n" /* CONTROL.FPCA = 0 */
+			 "msr  control, r2            \n"
+			 "orr  lr, lr, #0x10          \n" /* exception return uses basic frame */
+			 "isb                         \n"
+			 "bx   lr                     \n"
+			 "1:                          \n"
+			 "pop  {r2, lr}               \n"
+			 "b    HardFault_Handler       \n");
 }
 
 /* UsageFault (undefined instruction / bad control flow) + BusFault get the SAME containment as
@@ -668,7 +733,7 @@ static void freertos_crit_exit(void)
  * (SVC exception context) gives the binary semaphore when a program parks. */
 static StaticSemaphore_t g_ev_buf;
 static SemaphoreHandle_t g_ev;
-static void freertos_event_post(void)
+static void LXP_FAULT_GPR_ONLY freertos_event_post(void)
 {
 	BaseType_t woken = pdFALSE;
 	if (g_ev)
