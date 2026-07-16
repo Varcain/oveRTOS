@@ -40,8 +40,10 @@
 #include <sched.h> /* task_delete */
 #include <stdint.h>
 #include <string.h>
-#include <termios.h> /* tcgetattr/tcsetattr — put the console in raw mode (no NuttX echo/canon) */
-#include <unistd.h>  /* usleep, read */
+#include <sys/random.h> /* getrandom — guest entropy (AT_RANDOM seed + getrandom(2)) */
+#include <termios.h>	 /* tcgetattr/tcsetattr — put the console in raw mode (no NuttX echo/canon) */
+#include <time.h>	 /* clock_gettime — PRNG fallback seed when no entropy source is configured */
+#include <unistd.h>	 /* usleep, read */
 
 #include "lxp/lxp_seam.h"
 #if defined(CONFIG_OVE_LINUX_NETFS_EXEC)
@@ -57,8 +59,8 @@ extern int arm_svcall(int irq, void *context, void *arg);
 /* NuttX's HardFault handler (panics) — chained for a genuine kernel fault (same coupling pattern). */
 extern int arm_hardfault(int irq, void *context, void *arg);
 
-#define LXP_IRQ_SVCALL 11   /* == NuttX's internal NVIC_IRQ_SVCALL */
-#define LXP_IRQ_MEMFAULT 4  /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
+#define LXP_IRQ_SVCALL 11  /* == NuttX's internal NVIC_IRQ_SVCALL */
+#define LXP_IRQ_MEMFAULT 4 /* == NuttX's internal NVIC_IRQ_MEMFAULT (MemManage) */
 #define LXP_IRQ_BUSFAULT 5  /* == NuttX's NVIC_IRQ_BUSFAULT */
 #define LXP_IRQ_USGFAULT 6  /* == NuttX's NVIC_IRQ_USAGEFAULT (undefined instr, bad control flow) */
 
@@ -149,11 +151,24 @@ uint8_t *lxp_netfs_exec_stage(size_t *cap)
 static struct task_tcb_s g_tcb[LXP_NSLOT];
 static int g_pid[LXP_NSLOT];
 
+/* The RUNNING task. Our SVCall interposer and fault handlers ALWAYS run in exception context
+ * (IPSR != 0). There, NuttX's nxsched_self()/this_task() == g_readytorun.head is the wrong
+ * accessor: a nested IRQ (Ethernet RX making the HP work queue ready under net load) can splice
+ * a higher-priority task to the ready-list head, so nxsched_self() returns THAT task — or a
+ * transient garbage pointer mid-splice — instead of the guest that trapped, and the subsequent
+ * ->pid deref BusFaults (intermittently, only under concurrent RX). The correct interrupt-context
+ * accessor is g_running_tasks[cpu] (exactly what NuttX's own running_task() uses when
+ * up_interrupt_context()). */
+static inline struct tcb_s *lxp_running_tcb(void)
+{
+	return g_running_tasks[this_cpu()];
+}
+
 /* The slot whose task issued the svc (concurrent model: several may be live, so
  * match the running task's pid — NOT "the one used slot"). */
 static int current_slot(void)
 {
-	pid_t self = nxsched_self()->pid;
+	pid_t self = lxp_running_tcb()->pid;
 	for (int i = 0; i < LXP_NSLOT; i++)
 		if (g_lxp_used[i] && g_pid[i] == self)
 			return i;
@@ -183,7 +198,7 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	 * legitimately be 1 (e.g. ioctl(fd=1, ...)), in which case arm_doirq would
 	 * exception-return from a stale/NULL xcp.regs and crash. Re-assert the
 	 * running task's saved-regs pointer so the return replays OUR frame. */
-	nxsched_self()->xcp.regs = regs;
+	lxp_running_tcb()->xcp.regs = regs;
 
 	/* Populate the uniform frame, dispatch, write the modified HW regs back. */
 	struct lxp_frame f;
@@ -211,6 +226,19 @@ static int lxp_svc_handler(int irq, void *context, void *arg)
 	regs[REG_R1] = f.r[1];
 	regs[REG_R2] = f.r[2];
 	regs[REG_R3] = f.r[3];
+	/* Write r4-r11 back too: a dispatch can rewrite a callee-saved register on the fast path
+	 * (e.g. clone/vfork setting the child's frame, or a signal-return restoring context), and the
+	 * guest must observe it across the SVC return. The exception-return restores regs[REG_R4..R11]
+	 * into the guest's r4-r11, so mirror the (possibly modified) frame back here — the NuttX
+	 * counterpart of the FreeRTOS seam's r4-r11 write-back (backends/freertos/freertos_lnx.c). */
+	regs[REG_R4] = f.r[4];
+	regs[REG_R5] = f.r[5];
+	regs[REG_R6] = f.r[6];
+	regs[REG_R7] = f.r[7];
+	regs[REG_R8] = f.r[8];
+	regs[REG_R9] = f.r[9];
+	regs[REG_R10] = f.r[10];
+	regs[REG_R11] = f.r[11];
 	regs[REG_R12] = f.r[12];
 	regs[REG_R14] = f.r[14];
 	regs[REG_PC] = f.r[15];
@@ -378,8 +406,21 @@ static void nuttx_spawn_resume(int sidx, int ridx, const struct lxp_resume_ctx *
 
 static void nuttx_abort_slot(int sidx)
 {
-	if (g_lxp_used[sidx] && g_pid[sidx] >= 0)
+	if (g_lxp_used[sidx] && g_pid[sidx] >= 0) {
+		/* Force SYNCHRONOUS termination. The guest program runs on a stack window that
+		 * OVERLAPS NuttX's per-task tls_info_s (TLS_INFO(sp) = sp masked to the stack base),
+		 * so the program can clobber tl_cpstate. task_delete() -> nxnotify_cancellation()
+		 * reads NONCANCELABLE from that field and, if the garbage happens to set it, DEFERS
+		 * the delete (returns OK without terminating). But the parked guest spins in
+		 * lxp_park_loop() — a tight for(;;) with no cancellation point — so it never reaches
+		 * one and never dies; the very next spawn_task() then memset()s + nxtask_init()s this
+		 * STILL-LIVE static g_tcb[] while it is on the ready-to-run list, corrupting the
+		 * scheduler (garbage tcb -> BusFault under net load). TCB_FLAG_FORCED_CANCEL makes
+		 * nxnotify_cancellation short-circuit before it dereferences the clobbered TLS, so the
+		 * task is always terminated synchronously before its TCB is reused. */
+		g_tcb[sidx].cmn.flags |= TCB_FLAG_FORCED_CANCEL;
 		(void)task_delete(g_pid[sidx]);
+	}
 	g_lxp_used[sidx] = 0;
 	g_pid[sidx] = -1;
 }
@@ -387,6 +428,32 @@ static void nuttx_abort_slot(int sidx)
 static void nuttx_sleep_ms(unsigned ms)
 {
 	usleep(ms * 1000u);
+}
+
+/* Guest entropy source (lxp_os_ops_t.random_fill). WITHOUT this op the module's exec setup cannot
+ * fill AT_RANDOM (the 16-byte stack-canary seed) and REFUSES to launch the process — so a missing
+ * random_fill silently breaks every guest launch. Try the kernel getrandom() first; if no entropy
+ * source is configured (CONFIG_DEV_URANDOM / CRYPTO_RANDOM_POOL) it returns short/-1, so fall back
+ * to a monotonic-clock-seeded xorshift PRNG. AT_RANDOM tolerates a weak seed (the guest is
+ * MPU-isolated regardless), and this keeps launch from failing. Runs on the coordinator thread. */
+static int nuttx_random_fill(void *buf, size_t len)
+{
+	if (getrandom(buf, len, 0) == (ssize_t)len)
+		return 0;
+	static uint32_t s;
+	if (s == 0) {
+		struct timespec ts = {0, 0};
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		s = ((uint32_t)ts.tv_nsec ^ ((uint32_t)ts.tv_sec << 16)) | 1u;
+	}
+	uint8_t *p = (uint8_t *)buf;
+	for (size_t i = 0; i < len; i++) {
+		s ^= s << 13;
+		s ^= s >> 17;
+		s ^= s << 5;
+		p[i] = (uint8_t)(s >> 24);
+	}
+	return 0;
 }
 
 /* Coordinator critical section: disable IRQs around the brief proc-table snapshot. */
@@ -439,10 +506,13 @@ const lxp_os_ops_t g_lxp_host_engine = {
 	.event_post = nuttx_event_post,
 	.event_wait = nuttx_event_wait,
 	/* OS-service ops (host adapter). cache_* left NULL: NuttX's guest memory is
-	 * coherent here, matching the former weak no-op lxp_guest_flush. */
+	 * coherent here (D-cache off), matching the former weak no-op lxp_guest_flush.
+	 * coord_map left NULL too: the coordinator is privileged (PRIVDEFENA) with full
+	 * access to the guest pools, so no per-slot cacheable MPU remap is needed. */
 	.time_us = ove_time_get_us,
 	.time_ns = ove_time_get_ns,
 	.thread_list = lxp_seam_thread_list,
+	.random_fill = nuttx_random_fill, /* REQUIRED: without it exec() can't seed AT_RANDOM → no launch */
 };
 
 /* ---- unprivileged isolation: MPU region setup ------------------------------ */
@@ -522,7 +592,7 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 	uint32_t *regs = (uint32_t *)context;
 	int sidx = (g_lxp_active && regs) ? current_slot() : -1;
 	if (sidx < 0)
-		return arm_hardfault(irq, context, arg);
+		return arm_hardfault(irq, context, arg); /* privileged kernel fault → NuttX panic */
 	OVE_SCS_CFSR = OVE_SCS_CFSR & 0x03ffffffu; /* write-1-clear the set fault status (MM/Bus/Usage) */
 	g_lxp_proc[sidx].exited = 1;
 	g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
@@ -585,6 +655,11 @@ static void lxp_note_resume(struct note_driver_s *drv, struct tcb_s *tcb)
 {
 	(void)drv;
 	if (!g_lxp_active || !tcb)
+		return;
+	/* Defensive: this hook fires on EVERY switch, including kernel/coordinator tasks. A valid
+	 * tcb lives in on-chip SRAM/DTCM (0x2000_0000..0x2008_0000); anything else would BusFault on
+	 * the tcb->pid deref (and no program slot could match a non-RAM pid holder anyway). */
+	if ((uintptr_t)tcb < 0x20000000u || (uintptr_t)tcb >= 0x20080000u)
 		return;
 	pid_t pid = tcb->pid;
 	for (int i = 0; i < LXP_NSLOT; i++) {
