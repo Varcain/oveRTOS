@@ -47,6 +47,17 @@
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 
+/* Generated per build by 'ove build'; absent when this app is compiled directly
+ * from CMake, which is why the fallback has to say so rather than lie. */
+#if defined(__has_include)
+#if __has_include("ove_build_id.h")
+#include "ove_build_id.h"
+#endif
+#endif
+#ifndef OVE_BUILD_ID
+#define OVE_BUILD_ID "unknown (built outside 'ove build')"
+#endif
+
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 /* The rootfs.cpio is programmed into the on-board QSPI NOR, memory-mapped at
  * 0x90000000 (bsp_qspi_init brings up QUADSPI before we parse it), freeing the
@@ -475,6 +486,9 @@ static void demo_body(void *arg)
 	UNUSED(arg);
 	uart_init(); /* bring up the UART1 program console before any I/O */
 	sh_write0("=== oveRTOS demo: a native RTOS thread + a Linux program, two-way ===\n");
+	/* First line out of the box: identifies the running image against the ELF on
+	 * disk, so a stale target cannot be debugged with the wrong symbols. */
+	sh_write0("[build] " OVE_BUILD_ID "\n");
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* The rootfs is XIP'd from the memory-mapped QUADSPI NOR.  Declare that window to the
