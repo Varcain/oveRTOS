@@ -593,9 +593,17 @@ static int lxp_memfault_handler(int irq, void *context, void *arg)
 	int sidx = (g_lxp_active && regs) ? current_slot() : -1;
 	if (sidx < 0)
 		return arm_hardfault(irq, context, arg); /* privileged kernel fault → NuttX panic */
-	OVE_SCS_CFSR = OVE_SCS_CFSR & 0x03ffffffu; /* write-1-clear the set fault status (MM/Bus/Usage) */
+	uint32_t cfsr = OVE_SCS_CFSR & 0x03ffffffu;
+	uintptr_t fault_address = (cfsr & (1u << 7))	? *(volatile uint32_t *)0xE000ED34u
+				  : (cfsr & (1u << 15)) ? *(volatile uint32_t *)0xE000ED38u
+							: 0u;
+	OVE_SCS_CFSR = cfsr; /* write-1-clear the set fault status (MM/Bus/Usage) */
 	g_lxp_proc[sidx].exited = 1;
 	g_lxp_proc[sidx].exit_status = 139; /* 128 + SIGSEGV */
+	g_lxp_proc[sidx].exit_reason = LXP_EXIT_REASON_MEMORY_FAULT;
+	g_lxp_proc[sidx].exit_signal = LXP_SIGSEGV;
+	g_lxp_proc[sidx].exit_detail = cfsr;
+	g_lxp_proc[sidx].exit_address = fault_address;
 	regs[REG_PC] = (uint32_t)(uintptr_t)&lxp_park_loop & ~1u;
 	regs[REG_XPSR] |= (1u << 24); /* keep Thumb state on exception return */
 	nuttx_event_post();	      /* wake the coordinator → its EV_EXIT pass reaps this slot */
