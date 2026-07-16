@@ -22,6 +22,10 @@ from .board_desc import generate_board_desc
 from .assets import generate_app_sources
 from .patches import apply_patches, apply_all_patches
 
+# Records the .config that generated/ was rendered from; read back by
+# ove build to refuse a stale configuration.
+CONFIG_SENTINEL = ".config_generated_sha256"
+
 __all__ = [
     "render_template",
     "generate_configs",
@@ -43,6 +47,26 @@ def configure_all(ws):
     print("=== Generating configuration ===")
     generate_configs(ws)
     _emit_cmake_user_presets(ws)
+    _record_generated_config(ws)
+
+
+def _record_generated_config(ws):
+    """Stamp which .config the files in generated/ were rendered from.
+
+    Nothing re-runs configure automatically, and a generated header left over
+    from a previous configuration is still perfectly valid C — so a build after
+    a .config change silently compiles the old configuration. 'ove build'
+    compares this stamp to catch that.
+
+    Hash rather than mtime: .config is a symlink that defconfig repoints
+    between workspaces, so its timestamp does not advance monotonically and an
+    older-but-different config would compare as current.
+    """
+    from ..utils import hash_file
+
+    path = os.path.join(ws.workspace_dir, CONFIG_SENTINEL)
+    with open(path, "w") as f:
+        f.write(hash_file(ws.config_path) + "\n")
 
 
 def _emit_cmake_user_presets(ws):
