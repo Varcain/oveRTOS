@@ -752,6 +752,10 @@ def _create_run_or_flash_script(ws, rtos=None):
     """Create convenience run or flash script in workspace."""
     rtos = rtos or ws.rtos
     qemu_script = os.path.join(ws.board_dir, "qemu-run.sh")
+    # Resolve against the active images dir: an ABI-variant build does not live
+    # directly under images/, so this path is not always "images/firmware.elf".
+    rel_elf = os.path.join(os.path.relpath(ws.images_dir, ws.workspace_dir),
+                           "firmware.elf")
 
     if os.path.isfile(qemu_script):
         # QEMU board: create run script
@@ -763,7 +767,7 @@ def _create_run_or_flash_script(ws, rtos=None):
             f.write('#!/bin/bash\n')
             f.write('set -e\n')
             f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-            f.write(f'exec {qemu_script} "$DIR/images/firmware.elf" "$@"\n')
+            f.write(f'exec {qemu_script} "$DIR/{rel_elf}" "$@"\n')
         os.chmod(run_script, 0o755)
     else:
         # Real hardware: create flash script
@@ -776,7 +780,7 @@ def _create_run_or_flash_script(ws, rtos=None):
             f.write('#!/bin/bash\n')
             f.write('set -e\n')
             f.write('DIR="$(cd "$(dirname "$0")" && pwd)"\n')
-            f.write(f'exec {flash_sh} "$DIR/images/firmware.elf"\n')
+            f.write(f'exec {flash_sh} "$DIR/{rel_elf}"\n')
         os.chmod(flash_script, 0o755)
 
 
