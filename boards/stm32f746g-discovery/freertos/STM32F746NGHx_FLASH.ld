@@ -159,6 +159,11 @@ SECTIONS
         _sdata = .;
         *(.data)
         *(.data*)
+        /* FreeRTOS marks these objects with an explicit PROGBITS section even
+         * when their current initial value is zero.  Keep them in the copied
+         * data image so non-zero kernel configuration defaults remain valid
+         * and cannot turn the following .bss output section into PROGBITS. */
+        *(privileged_data)
     } > RAM AT > FLASH
 
     /* `_edata` is anchored to the next explicit section (.tdata) so the
@@ -208,14 +213,29 @@ SECTIONS
         . = . + SIZEOF(.tbss);
     } > RAM
 
-    .bss :
+    /* LXP keeps a bounded stack of interrupted guest register/FP contexts in
+     * g_sig_save.  It is privileged-only, never DMA-owned, and is reset by the
+     * coordinator before a run, so the unused DTCM tail is a better fit than
+     * either cacheable SDRAM or the already-full general SRAM bank.  Consume
+     * this input section before the broad .bss* wildcard below. */
+    .lxp_signal_state (NOLOAD) :
+    {
+        . = ALIGN(32);
+        __lxp_signal_state_start__ = .;
+        *(.bss.g_sig_save)
+        . = ALIGN(32);
+        __lxp_signal_state_end__ = .;
+    } > DSP_DTCM
+    ASSERT(__lxp_signal_state_end__ <= ORIGIN(DSP_DTCM) + LENGTH(DSP_DTCM),
+           "LXP signal state must fit in internal DTCM")
+
+    .bss (NOLOAD) :
     {
         . = ALIGN(4);
         _sbss = .;
         __bss_start__ = _sbss;
         *(.bss)
         *(.bss*)
-        *(privileged_data)   /* FreeRTOS-MPU privileged kernel data */
         *(COMMON)
         . = ALIGN(4);
         _ebss = .;
@@ -244,7 +264,8 @@ SECTIONS
     __privileged_data_start__      = 0x20080000;
     __privileged_data_end__        = 0x20080000;
 
-    /* Critical privileged-task stacks.  The Linux coordinator deliberately accesses guest SDRAM
+    /* Critical privileged-task stacks and guest signal-return state.  The Linux coordinator
+     * deliberately accesses guest SDRAM
      * through the Cortex-M7 background Device mapping, so placing host stacks there makes ordinary
      * unaligned locals and hardware exception/FP frames unsafe.  Use the on-chip DTCM working area:
      * it is Normal memory in the FreeRTOS-MPU all-SRAM region and is otherwise available when the
