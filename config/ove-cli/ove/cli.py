@@ -367,7 +367,9 @@ def _cmd_clean(args):
 
     else:
         logger.info("Cleaning active workspace build artifacts...")
-        for d in (ws.build_dir, ws.gen_dir, ws.images_dir):
+        # images_base_dir, not images_dir: clean every ABI variant, and stay
+        # usable when .config is absent (images_dir has to read it).
+        for d in (ws.build_dir, ws.gen_dir, ws.images_base_dir):
             if os.path.isdir(d):
                 shutil.rmtree(d)
         tc_link = os.path.join(ws.workspace_dir, "toolchain")

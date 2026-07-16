@@ -123,7 +123,7 @@ class Workspace:
 
         self.build_dir = os.path.join(self.workspace_dir, "build")
         self.gen_dir = os.path.join(self.workspace_dir, "generated")
-        self.images_dir = os.path.join(self.workspace_dir, "images")
+        self.images_base_dir = os.path.join(self.workspace_dir, "images")
         self.ws_dl_dir = os.path.join(self.workspace_dir, "dl")
         self.toolchains_dir = os.path.join(self.output_dir, "toolchains")
 
@@ -200,6 +200,44 @@ class Workspace:
         if get_bool(self.config, "CONFIG_OVE_ARM_FLOAT_ABI_SOFTFP"):
             return "softfp"
         return "hard"
+
+    @property
+    def linux_guest_float_abi(self):
+        """Guest ABI, or None where no such choice exists.
+
+        The Kconfig choice is gated on OVE_LINUX && OVE_RTOS_FREERTOS, so every
+        other configuration has no guest ABI dimension at all.
+        """
+        if not get_bool(self.config, "CONFIG_OVE_LINUX"):
+            return None
+        if self.rtos != "freertos":
+            return None
+        if get_bool(self.config, "CONFIG_OVE_LINUX_GUEST_FLOAT_ABI_HARD"):
+            return "hard"
+        return "soft"
+
+    @property
+    def image_variant(self):
+        """Subdirectory discriminating images that share one workspace.
+
+        The workspace path already separates board, RTOS and app, so images can
+        only overwrite one another when they differ solely by a float ABI —
+        which lives inside .config and is therefore invisible to the path. Only
+        the Linux personality carries both ABI dimensions; every other
+        configuration has nothing to disambiguate and keeps the flat layout.
+        """
+        guest = self.linux_guest_float_abi
+        if guest is None:
+            return None
+        return f"{self.arm_float_abi}-guest-{guest}"
+
+    @property
+    def images_dir(self):
+        """Image output directory for the active configuration."""
+        variant = self.image_variant
+        if variant:
+            return os.path.join(self.images_base_dir, variant)
+        return self.images_base_dir
 
     @property
     def rtos_config_path(self):

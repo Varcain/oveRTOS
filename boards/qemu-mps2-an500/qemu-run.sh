@@ -72,7 +72,25 @@ done
 # chardev (serial/monitor/display off) so the shell can read keystrokes —
 # `target=native` + `-nographic` (the sim path below) does NOT route stdin to
 # semihosting. Detected via CONFIG_OVE_LINUX in the workspace .config.
-PERSONALITY_CFG="$(dirname "$(realpath "${ELF}")")/../.config"
+# Locate the workspace holding this ELF. It sits under <ws>/images/, under
+# <ws>/images/<abi-variant>/ when the float ABI is recorded only in .config, or
+# under <ws>/build/... when a test runs a freshly built ELF in place. Walk up to
+# the nearest ancestor holding a .config rather than assuming a fixed depth:
+# guessing wrong here disables the personality silently instead of failing.
+ove_ws_dir() {
+    local d
+    d="$(dirname "$(realpath "$1")")"
+    while [ "${d}" != "/" ]; do
+        if [ -f "${d}/.config" ]; then
+            printf '%s\n' "${d}"
+            return 0
+        fi
+        d="$(dirname "${d}")"
+    done
+    return 1
+}
+OVE_WS_DIR="$(ove_ws_dir "${ELF}" || true)"
+PERSONALITY_CFG="${OVE_WS_DIR:-$(dirname "$(realpath "${ELF}")")}/.config"
 if [ -f "${PERSONALITY_CFG}" ] && grep -q '^CONFIG_OVE_LINUX=y' "${PERSONALITY_CFG}"; then
     # The rootfs cpio is XIP'd from PSRAM @ 0x60000000 (not embedded in the ELF — keeps the
     # 11 MB rootfs off the 4 MB internal flash; the QEMU analog of the STM32 QSPI-NOR rootfs).
@@ -190,13 +208,12 @@ if [ "${HEADLESS}" -eq 0 ]; then
     LOG_FIFO=$(mktemp -u -t ove-log.XXXXXX)
     mkfifo "${LOG_FIFO}"
 
-    # Derive CMake build dir from ELF path for source file indexing.
-    # ELF is in .../images/firmware.elf, build objects are in:
+    # Derive CMake build dir from the workspace for source file indexing:
     #   FreeRTOS: .../build/firmware/
     #   Zephyr:   .../build/firmware/
     #   NuttX:    .../build/nuttx-cmake/
     ELF_DIR="$(dirname "$(realpath "${ELF}")")"
-    WS_DIR="${ELF_DIR%/images}"
+    WS_DIR="${OVE_WS_DIR:-${ELF_DIR}}"
     BUILD_DIR="${WS_DIR}/build/firmware"
     if [ ! -d "${BUILD_DIR}" ]; then
         BUILD_DIR="${WS_DIR}/build/nuttx-cmake"
