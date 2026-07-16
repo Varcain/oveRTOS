@@ -2266,6 +2266,28 @@ def test_qemu_freertos_linux_hardfloat(ove_dir, output_dir):
                             "qemu-freertos-linux-hardfloat", cwd=ove_dir)
 
 
+def test_linux_abi_switch(ove_dir, output_dir):
+    """Switch the Linux guest ABI soft -> hard -> soft in one checkout, no clean.
+
+    Both float ABIs live inside .config and appear in no path, so a soft and a
+    hard build used to overwrite the same images/firmware.elf with nothing
+    recording which was which. Asserts each leg lands in its own image
+    directory, that image-id.json names the ABI and rootfs actually built, and
+    that the two ABIs' images coexist.
+
+    Builds only — no QEMU — but manual/opt-in: three full firmware builds, and
+    the hard leg needs Buildroot's separately generated output-hardfloat rootfs.
+    """
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux",
+                         "abi_switch_drive.py")
+    logdir = os.path.join(output_dir, "tests", "linux-abi-switch")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "abi_switch.log")
+    # The driver prints no CMocka output, so _run_test_binary maps its exit code.
+    return _run_test_binary([sys.executable, drive, log],
+                            "linux-abi-switch", cwd=ove_dir)
+
+
 def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     """Build the QEMU mps2-an500 FreeRTOS Linux personality and run the /dev/fb0
     framebuffer smoke: /usr/bin/fbtest reads the panel geometry via FBIOGET_*SCREENINFO,
@@ -2660,6 +2682,7 @@ TEST_TARGETS = {
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-freertos-linux-hardfloat": test_qemu_freertos_linux_hardfloat,
+    "linux-abi-switch": test_linux_abi_switch,
     "qemu-freertos-linux-fbtest": test_qemu_freertos_linux_fbtest,
     "qemu-freertos-linux-lvbench": test_qemu_freertos_linux_lvbench,
     "qemu-freertos-linux-evread": test_qemu_freertos_linux_evread,
