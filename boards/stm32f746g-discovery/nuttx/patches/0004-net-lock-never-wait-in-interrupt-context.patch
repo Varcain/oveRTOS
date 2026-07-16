@@ -1,0 +1,47 @@
+net/utils: never block in _net_timedwait from interrupt context
+
+_net_timedwait() is the common choke point for every network-stack semaphore
+wait (net_sem_wait, net_sem_timedwait[_uninterruptible], and thus the TCP
+connect-completion wait, the recv data wait, the write-buffer / IOB pool waits,
+etc.). It unconditionally does net_breaklock() + nxsem_[tick]wait(), i.e. it
+blocks -- even when called from interrupt/exception context.
+
+oveRTOS's Linux personality dispatches guest socket syscalls inside the SVCall
+handler (IPSR=11). Any of the above waits reached from there blocks, NuttX
+attempts to switch away from the nested exception, and the scheduler ready-list
+is corrupted -> a later context switch resumes a garbage tcb -> BusFault
+(tcb=0x78, BFAR=tcb+offsetof(pid)=0xa8) that escalates to a forced HardFault.
+It is intermittent because it only fires when the awaited resource is momentarily
+unavailable (buffer pool / lock contended by concurrent RX on the HP work queue).
+
+Blocking in interrupt context is never valid (NuttX already guards iob_timedalloc
+this way with up_interrupt_context()). Apply the same invariant here: in
+interrupt context, probe the semaphore with nxsem_trywait() and return
+immediately without breaking/waiting on the network lock. The caller sees the
+resource as unavailable (-EAGAIN) and the personality's coordinator retries the
+op in thread context, where the wait is legal. Thread-context callers are
+unaffected.
+
+diff --git a/net/utils/net_lock.c b/net/utils/net_lock.c
+index de27e3bc..bc432e82 100644
+--- a/net/utils/net_lock.c
++++ b/net/utils/net_lock.c
+@@ -69,6 +69,18 @@ _net_timedwait(FAR sem_t *sem, bool interruptible, unsigned int timeout)
+   int          blresult;
+   int          ret;
+ 
++  /* Never block from interrupt/exception context (e.g. oveRTOS's Linux
++   * personality dispatches guest socket syscalls inside the SVCall handler,
++   * IPSR != 0). A context switch from a nested exception corrupts the
++   * scheduler. Probe without waiting; the caller treats failure as EAGAIN and
++   * retries in thread context.
++   */
++
++  if (up_interrupt_context())
++    {
++      return nxsem_trywait(sem);
++    }
++
+   /* Release the network lock, remembering my count.  net_breaklock will
+    * return a negated value if the caller does not hold the network lock.
+    */

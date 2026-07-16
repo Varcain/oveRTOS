@@ -1,0 +1,42 @@
+net/utils: never block in net_bufpool_timedalloc from interrupt context
+
+net_bufpool_timedalloc() takes the blocking net_sem_timedwait_uninterruptible()
+path whenever timeout != 0. That is a latent bug: the TCP write-buffer, ARP and
+"send receive-window update" paths call it with a non-zero timeout, and those
+paths can be reached from interrupt/exception context — where a blocking sem
+wait triggers an illegal context switch.
+
+oveRTOS's Linux personality exposes this on the STM32F746: guest socket syscalls
+are dispatched inside the SVCall handler (IPSR=11). A guest poll()/send() there
+descends psock_poll -> tcp_should_send_recvwindow -> tcp_send -> arp_send ->
+net_bufpool_timedalloc(); when the pool is momentarily empty the timed wait
+blocks, NuttX attempts to switch away from the nested exception, and the resume
+note hook is handed a garbage tcb -> BusFault (BFAR = tcb+offsetof(pid) = 0xa8)
+that escalates to a forced HardFault. It is intermittent because it only fires
+when the buffer pool is contended (concurrent RX on the HP work queue).
+
+Blocking in interrupt context is never valid, so gate the wait on
+up_interrupt_context(): fall back to the non-blocking nxsem_trywait() there. The
+alloc then returns NULL, the socket op reports -EAGAIN, and the personality's
+coordinator retries the op in thread context, where the timed wait is legal.
+Thread-context callers are unaffected.
+
+--- a/net/utils/net_bufpool.c
++++ b/net/utils/net_bufpool.c
+@@ -28,6 +28,7 @@
+ #include <nuttx/kmalloc.h>
+ #include <nuttx/net/net.h>
+ #include <nuttx/semaphore.h>
++#include <nuttx/irq.h>
+
+ #include "utils/utils.h"
+
+@@ -107,7 +108,7 @@
+       DEBUGASSERT(pool->nodesize > 0);
+     }
+
+-  if (timeout == 0)
++  if (timeout == 0 || up_interrupt_context())
+     {
+       ret = nxsem_trywait(&pool->sem);
+     }
