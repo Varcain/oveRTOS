@@ -2211,6 +2211,10 @@ def test_qemu_freertos_linux_segv(ove_dir, output_dir):
     is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    # Regenerate after changing Kconfig: this workspace is shared with the
+    # hard-float suite, which leaves generated/ selecting the hard guest and the
+    # FP self-test. Without this the soft-guest build silently reuses them.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "segv_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-segv")

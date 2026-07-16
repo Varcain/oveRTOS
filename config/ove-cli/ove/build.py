@@ -823,6 +823,37 @@ def _create_run_or_flash_script(ws, rtos=None):
 
 
 
+def _check_generated_current(ws):
+    """Refuse to build when generated/ came from a different .config.
+
+    ove configure renders ove_config.h / ove_config.cmake from .config and
+    nothing re-runs it automatically. The stale header is still valid C, so the
+    firmware compiles cleanly against the *previous* configuration and the
+    mismatch only surfaces as inexplicable runtime behaviour — a soft-guest
+    build running the hard-float self-test, say.
+    """
+    from .configure import CONFIG_SENTINEL
+    from .utils import hash_file
+
+    sentinel = os.path.join(ws.workspace_dir, CONFIG_SENTINEL)
+    if not os.path.isfile(sentinel):
+        # Predates this check, or generated/ was never produced here; staleness
+        # is unprovable either way, so say so rather than fail.
+        logger.warning(
+            "generated/ has no record of the .config it came from — run "
+            "'ove configure' if this workspace was configured by an older "
+            "checkout")
+        return
+    with open(sentinel) as f:
+        recorded = f.read().strip()
+    if hash_file(ws.config_path) != recorded:
+        logger.error(
+            ".config has changed since the last 'ove configure'. generated/ "
+            "still holds the previous configuration and this build would "
+            "silently use it. Run 'ove configure' first.")
+        sys.exit(1)
+
+
 def _check_rtos_config_drift(ws, config_path):
     """Warn if RTOS .config changed during build (post-build drift detection)."""
     sentinel = os.path.join(ws.workspace_dir, ".rtos_config_applied_sha256")
@@ -851,6 +882,7 @@ def build(ws):
         sys.exit(1)
 
     _preflight_check(ws)
+    _check_generated_current(ws)
 
     dispatch = {
         "freertos": build_freertos,
