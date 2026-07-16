@@ -14,7 +14,11 @@ import subprocess, sys, re, os
 
 log = sys.argv[1] if len(sys.argv) > 1 else "/tmp/fbtest_drive.log"
 
+# Two 'root' lines: the account has a password
+# (BR2_TARGET_GENERIC_ROOT_PASSWD), so login prompts for name and password.
+# With only the first, the next command is eaten as the password.
 seq = (r"printf 'root\n'; sleep 5; "
+       r"printf 'root\n'; sleep 5; "
        r"printf 'fbtest; echo FRC=$?\n'; sleep 6; "
        r"printf 'ls -la /dev/fb0\n'; sleep 3; "
        r"printf 'uname -a\n'; sleep 3; "
