@@ -2327,6 +2327,10 @@ def test_qemu_freertos_linux_fbtest(ove_dir, output_dir):
     (the overtos board's post-build compiles it) plus QEMU and the slow uClinux boot."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "fbtest_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-fbtest")
@@ -2347,6 +2351,10 @@ def test_qemu_freertos_linux_lvbench(ove_dir, output_dir):
     (the overtos-lvbench package) plus QEMU and the slow uClinux boot + benchmark run."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "lvbench_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-lvbench")
@@ -2367,6 +2375,10 @@ def test_qemu_freertos_linux_evread(ove_dir, output_dir):
     Manual/opt-in — needs the embedded Buildroot rootfs.cpio carrying /usr/bin/evread."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux", "evread_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-evread")
@@ -2387,6 +2399,10 @@ def test_qemu_nuttx_linux_segv(ove_dir, output_dir):
     the slow uClinux boot, so it is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.nuttx.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "nuttx-linux", "segv_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-nuttx-linux-segv")
@@ -2409,6 +2425,10 @@ def test_qemu_nuttx_linux_xregion(ove_dir, output_dir):
     the slow uClinux boot, so it is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu.nuttx.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "nuttx-linux", "xregion_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-nuttx-linux-xregion")
@@ -2432,6 +2452,10 @@ def test_qemu_zephyr_linux_segv(ove_dir, output_dir):
     group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", "qemu-mps2-an521.zephyr.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", "zephyr-linux", "segv_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-zephyr-linux-segv")
@@ -2449,6 +2473,10 @@ def _linux_kstress(ove_dir, output_dir, board_frag, engine):
     slow uClinux boot, so it is deliberately NOT in any auto-run group."""
     ove = os.path.join(ove_dir, ".venv", "bin", "ove")
     run([ove, "defconfig-fragments", board_frag], cwd=ove_dir)
+    # Regenerate after the fragment: these Linux workspaces are shared between
+    # engines and float ABIs, and ove build does not reconfigure. A stale
+    # generated/ silently builds the previous configuration.
+    run([ove, "configure"], cwd=ove_dir)
     run([ove, "build"], cwd=ove_dir)
     drive = os.path.join(ove_dir, "tests", "sim", engine + "-linux", "kstress_drive.py")
     logdir = os.path.join(output_dir, "tests", "qemu-" + engine + "-linux-kstress")
