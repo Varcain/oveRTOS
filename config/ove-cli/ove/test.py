@@ -2266,6 +2266,34 @@ def test_qemu_freertos_linux_hardfloat(ove_dir, output_dir):
                             "qemu-freertos-linux-hardfloat", cwd=ove_dir)
 
 
+def test_qemu_freertos_linux_faultmatrix(ove_dir, output_dir):
+    """Run every guest-fault class in one boot and assert each is contained.
+
+    segv covers a single class; this covers the set — kernel-SRAM read and write,
+    an unprivileged peripheral access, execute-from-NX, a sibling's pool region,
+    an undefined instruction, and (hard-float only) a failed FP stack — so a
+    change to MPU attributes, exception frames or handler ordering cannot weaken
+    one class while the rest still pass. Also asserts a faulting guest does not
+    take its siblings with it and that its slot is immediately reusable.
+
+    Manual/opt-in — needs the embedded Buildroot rootfs carrying segv, mpufault,
+    xregion, kstress and fpbadsp, plus QEMU and the slow uClinux boot."""
+    ove = os.path.join(ove_dir, ".venv", "bin", "ove")
+    run([ove, "defconfig-fragments", "qemu.freertos.linux_interop"], cwd=ove_dir)
+    # Regenerate after the fragment: this workspace is shared with the hard-float
+    # suite, which leaves generated/ selecting the hard guest and the FP self-test.
+    run([ove, "configure"], cwd=ove_dir)
+    run([ove, "build"], cwd=ove_dir)
+    drive = os.path.join(ove_dir, "tests", "sim", "freertos-linux",
+                         "faultmatrix_drive.py")
+    logdir = os.path.join(output_dir, "tests", "qemu-freertos-linux-faultmatrix")
+    os.makedirs(logdir, exist_ok=True)
+    log = os.path.join(logdir, "faultmatrix.log")
+    # The driver emits no CMocka output, so _run_test_binary maps its exit code.
+    return _run_test_binary([sys.executable, drive, log],
+                            "qemu-freertos-linux-faultmatrix", cwd=ove_dir)
+
+
 def test_linux_abi_switch(ove_dir, output_dir):
     """Switch the Linux guest ABI soft -> hard -> soft in one checkout, no clean.
 
@@ -2682,6 +2710,7 @@ TEST_TARGETS = {
     "qemu-zephyr-zeroheap": test_qemu_zephyr_zeroheap,
     "qemu-freertos-linux-segv": test_qemu_freertos_linux_segv,
     "qemu-freertos-linux-hardfloat": test_qemu_freertos_linux_hardfloat,
+    "qemu-freertos-linux-faultmatrix": test_qemu_freertos_linux_faultmatrix,
     "linux-abi-switch": test_linux_abi_switch,
     "qemu-freertos-linux-fbtest": test_qemu_freertos_linux_fbtest,
     "qemu-freertos-linux-lvbench": test_qemu_freertos_linux_lvbench,
