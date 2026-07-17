@@ -137,6 +137,14 @@ _Static_assert((size_t)LXP_NREG * LXP_PROG_REGION_SIZE +
 			       (size_t)LXP_NREG * LXP_DYN_POOL_SIZE <=
 		       0x61000000u - NUTTX_AN500_POOL_BASE,
 	       "an500 program pool overflows the top of mps.ram");
+/* dyn_pools starts right after the program regions, and each entry gets its own
+ * PMSAv7 region — whose base must be aligned to its size. LXP_PROG_REGION_SIZE
+ * is half LXP_DYN_POOL_SIZE, so an ODD LXP_NREG lands the array on a half-size
+ * boundary and every dyn_pool region is unprogrammable: the guest then faults
+ * DACCVIOL on its own pool. LXP_NREG=5 did exactly that. */
+_Static_assert(((size_t)LXP_NREG * LXP_PROG_REGION_SIZE) % LXP_DYN_POOL_SIZE == 0,
+	       "LXP_NREG * LXP_PROG_REGION_SIZE must be a multiple of LXP_DYN_POOL_SIZE, "
+	       "or dyn_pools[] is not aligned to its own MPU region size");
 static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
 	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_AN500_POOL_BASE;
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =

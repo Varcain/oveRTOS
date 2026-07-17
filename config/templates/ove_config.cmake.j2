@@ -331,10 +331,23 @@ add_compile_definitions([==[LXP_FAR_BSS=__attribute__((section(".sdram_bss")))]=
 add_compile_definitions(LXP_NPIPE=12 LXP_PIPE_BUF=2048)
 {% endif %}
 {% if config.get("CONFIG_OVE_BOARD_QEMU_MPS2_AN500") == True and config.get("CONFIG_OVE_LINUX") == True %}
-# an500 QEMU Linux: the rootfs cpio XIPs from the bottom 12 MiB of PSRAM (QEMU -device
-# loader @ 0x60000000), so the FDPIC program pools share the top 4 MiB of the 16 MiB PSRAM
-# -> fewer program regions (5x(256K+512K) = 3.75 MiB fits).
+# an500 QEMU Linux: the rootfs cpio XIPs from the bottom of the 16 MiB block at 0x60000000
+# (QEMU -device loader), so the FDPIC program pools share the rest -> fewer program regions.
+{% if config.get("CONFIG_OVE_RTOS_NUTTX") == True %}
+# NuttX takes 6, and it must be EVEN. Its pools are fixed addresses with one PMSAv7 region per
+# entry (backends/nuttx/nuttx_lnx_trap.c), and dyn_pools[] sits directly after the program
+# regions — a region's base must be aligned to its size, and LXP_PROG_REGION_SIZE (256K) is half
+# LXP_DYN_POOL_SIZE (512K), so an odd count lands the array on a half-size boundary and every
+# guest faults DACCVIOL on its own pool. This was 5 for both RTOSes, which is why the NuttX
+# personality never ran a guest. 6x(256K+512K) = 4.5 MiB fits the 8 MiB pool at 0x60800000;
+# nuttx_lnx_trap.c static-asserts the alignment and the fit.
+add_compile_definitions(LXP_NREG=6)
+{% else %}
+# FreeRTOS keeps its pools in a linker-placed .psram section, so the compiler aligns each entry
+# and the count need not be even — but the section must fit PSRAM: 6 overflows it (.psram lands
+# past 0x61000000). 5x(256K+512K) = 3.75 MiB.
 add_compile_definitions(LXP_NREG=5)
+{% endif %}
 {% endif %}
 # The embedded BusyBox rootfs.cpio comes from <OVE_BUILDROOT>/<OVE_LINUX_ROOTFS_OUTPUT>/images/.
 # Both are CONFIG_* (Kconfig) — no local paths are baked into the oveRTOS sources. A relative
