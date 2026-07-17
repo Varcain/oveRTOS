@@ -281,7 +281,23 @@ __attribute__((naked)) void SVC_Handler(void)
  * NON-program (privileged kernel) context is a real bug -> fatal. Strong symbol overriding the weak
  * MemManage_Handler in the CMSIS startup. */
 static void freertos_event_post(void) LXP_FAULT_GPR_ONLY; /* defined with the vtable below */
-extern void HardFault_Handler(void);
+
+/* Terminal handler for a fault that cannot be attributed to a guest — i.e. a fault in host /
+ * privileged context (the coordinator, an ISR, or before any guest is live). Such a fault means the
+ * trusted side is compromised, so the only safe action is to STOP; recovering as if it were a guest
+ * would run the host on corrupted state. Weak default: halt (a watchdog, if armed, reboots). The
+ * board overrides it to print a diagnostic first. Runs in fault context, so it must never return
+ * and must not touch VFP (general-regs-only) — an in-flight lazy-FP stack to an invalid frame would
+ * nest another fault. */
+__attribute__((weak)) LXP_FAULT_GPR_ONLY void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr,
+								  uint32_t pc)
+{
+	(void)cfsr;
+	(void)hfsr;
+	(void)pc;
+	for (;;) {
+	}
+}
 
 struct lnx_fault_diag {
 	uint32_t count;
@@ -348,8 +364,15 @@ uint32_t *LXP_FAULT_GPR_ONLY freertos_lnx_memfault_c(uint32_t exc_return, uint32
 		freertos_event_post();
 		return (uint32_t *)frame;
 	}
-	HardFault_Handler(); /* not a program fault -> fatal */
-	return NULL;
+	/* Not a guest fault: host/privileged context, handler mode, or no active guest. Capture the
+	 * fault registers and the faulting PC (offset 6 of a Thread-mode PSP frame), then go fatal —
+	 * ove_lnx_host_fatal reports and halts, and does not return. */
+	uint32_t cfsr = *(volatile uint32_t *)0xE000ED28u;
+	uint32_t hfsr = *(volatile uint32_t *)0xE000ED2Cu;
+	uint32_t pc = ((exc_return & (1u << 2)) && psp) ? ((volatile uint32_t *)psp)[6] : 0u;
+	ove_lnx_host_fatal(cfsr, hfsr, pc);
+	for (;;) { /* belt-and-suspenders: the override must not return */
+	}
 }
 
 __attribute__((naked)) void MemManage_Handler(void)

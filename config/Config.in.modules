@@ -412,6 +412,22 @@ config OVE_WATCHDOG_SELFTEST
       destructive by design (it reboots the board) — never enable it in a
       production image.
 
+config OVE_LINUX_FAULTTEST
+    bool "Host-fault self-test (deliberately faults a privileged host task once)"
+    depends on OVE_LINUX && OVE_WATCHDOG
+    default n
+    help
+      Debug/proof aid for the linux_interop app: a few seconds after the guest
+      is running, a privileged host task executes an undefined instruction. The
+      seam's fault handler cannot attribute the fault to any guest slot, so it
+      does NOT contain it — it prints a "HOST FAULT" diagnostic and halts, and
+      the watchdog then resets the board. The next boot reports its reset cause
+      as "watchdog" and does NOT re-trip.
+
+      This proves a fault in trusted/host context is fatal (never recovered as if
+      it were a guest fault). Requires the watchdog for recovery and the one-shot.
+      Destructive by design — never enable it in a production image.
+
 config OVE_WORKQUEUE
     bool "Work queues"
     default n

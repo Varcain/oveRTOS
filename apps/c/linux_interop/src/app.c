@@ -590,6 +590,38 @@ static void wd_body(void *arg)
 }
 #endif /* CONFIG_OVE_WATCHDOG */
 
+#if defined(CONFIG_OVE_LINUX_FAULTTEST)
+/* Debug-gated proof (C6) that a fault in host/privileged context is fatal, never mis-contained as a
+ * guest fault. A privileged host task (created like any other via ove_thread_init, so current_slot()
+ * cannot match it) executes an undefined instruction a few seconds in, while a guest is running. The
+ * seam's fault handler sees no owning slot, declines containment, prints a HOST FAULT diagnostic and
+ * halts; the watchdog resets. One-shot: skipped when this boot came FROM a watchdog reset. */
+static ove_thread_t g_ftest;
+static ove_thread_storage_t g_ftest_storage;
+static uint8_t g_ftest_stack[512] __attribute__((aligned(512)));
+
+static void ftest_body(void *arg)
+{
+	UNUSED(arg);
+	ove_thread_sleep_ms(4000); /* let phase 2 bring the guest up, so g_lxp_active is set */
+	sh_write0("[c6] faulting a privileged host task (udf) while a guest runs;"
+		  " expect HOST FAULT + watchdog reset\n");
+	__asm volatile("udf #0"); /* UsageFault in host context -> seam declines -> ove_lnx_host_fatal */
+	for (;;) { /* unreachable */
+	}
+}
+
+static void faulttest_maybe_arm(void)
+{
+	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
+		sh_write0("[c6] recovered from the host-fault test; not re-arming\n");
+		return;
+	}
+	(void)ove_thread_init(&g_ftest, &g_ftest_storage, "ftest", ftest_body, NULL, OVE_PRIO_NORMAL,
+			      sizeof(g_ftest_stack), g_ftest_stack);
+}
+#endif /* CONFIG_OVE_LINUX_FAULTTEST */
+
 #if LXP_ENABLE_LATENCY
 /* ---- host deadline monitor (measurement builds only) -------------------------------------
  * A periodic OVE_PRIO_HIGH task, i.e. above both the coordinator (OVE_PRIO_NORMAL, this task)
@@ -997,6 +1029,10 @@ static void demo_body(void *arg)
 	}
 	sh_write0(
 		"[demo] phase 1 OK: 3 readings made the full RTOS -> Linux -> RTOS round trip.\n");
+
+#if defined(CONFIG_OVE_LINUX_FAULTTEST)
+	faulttest_maybe_arm(); /* C6: a host task will fault ~4s into phase 2, while the guest runs */
+#endif
 
 	/* ---- Phase 2: boot userspace or run the hard-float context regression - */
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)

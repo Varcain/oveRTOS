@@ -135,6 +135,46 @@ void serial_safe_write(const char *str, unsigned int len)
 	HAL_UART_Transmit(&uartHandle, (uint8_t *)str, len, 1000);
 }
 
+/* Fatal host-fault diagnostic: overrides the weak ove_lnx_host_fatal in the FreeRTOS Linux seam
+ * (backends/freertos/freertos_lnx.c). Runs in fault context after the seam decides a fault belongs
+ * to host/privileged code and cannot be contained, so it pokes USART1 directly — no HAL (its
+ * tick-based timeout is frozen with interrupts masked), no FreeRTOS, no VFP (general-regs-only, so
+ * a pending lazy-FP stack to an invalid frame can't nest another fault) — then halts. A watchdog,
+ * if armed, reboots; R8's reset-cause read then reports it. */
+#define FAULT_GPR __attribute__((target("general-regs-only")))
+static FAULT_GPR void fault_putc(char c)
+{
+	while (!(USART1->ISR & USART_ISR_TXE)) {
+	}
+	USART1->TDR = (uint8_t)c;
+}
+static FAULT_GPR void fault_puts(const char *s)
+{
+	while (*s)
+		fault_putc(*s++);
+}
+static FAULT_GPR void fault_puthex(uint32_t v)
+{
+	for (int i = 28; i >= 0; i -= 4)
+		fault_putc("0123456789abcdef"[(v >> i) & 0xfu]);
+}
+
+void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc); /* weak in the seam; strong here */
+
+FAULT_GPR void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc)
+{
+	fault_puts("\n!!! HOST FAULT (privileged/host context - not a guest, cannot contain)\n!!! pc=0x");
+	fault_puthex(pc);
+	fault_puts(" cfsr=0x");
+	fault_puthex(cfsr);
+	fault_puts(" hfsr=0x");
+	fault_puthex(hfsr);
+	fault_puts("\n!!! host state compromised - halting; watchdog will reset\n");
+	for (;;) {
+	}
+}
+#undef FAULT_GPR
+
 unsigned char serial_getChar(void)
 {
 	unsigned char c = 0;
