@@ -368,6 +368,16 @@ list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_run.c")
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_signal.c")
 # CPU/process snapshot for ps/top (fed by the run loop, read by /proc).
 list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_stats.c")
+# Coordinator latency counters. The TU is empty unless the gate below is on.
+list(APPEND OVE_BACKEND_SOURCES "${OVE_DIR}/modules/lxp/src/lxp_latency.c")
+{% if config.get("CONFIG_OVE_LINUX_LATENCY") == True %}
+# The module spells this gate LXP_ENABLE_LATENCY, not CONFIG_OVE_*: modules/lxp builds
+# standalone under its own suites and check-decoupled.sh forbids oveRTOS symbols inside it,
+# so the Kconfig choice is translated here. Global rather than per-target — the counters live
+# in the module while the app reads them back, and a gate reaching only one of the two would
+# quietly pair a real recorder with a no-op reader.
+add_compile_definitions(LXP_ENABLE_LATENCY=1)
+{% endif %}
 # The module's own vendored copies of the arena allocator + FDPIC loader (the
 # oveRTOS originals in backends/common/ove_arena.c + loader/ove_loader.c stay for
 # their own tests / non-personality users).

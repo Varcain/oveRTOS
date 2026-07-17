@@ -100,6 +100,21 @@ config OVE_LINUX_GUEST_FP_SELFTEST
       BusyBox init. The guest validates s0-s31 plus FPSCR across repeated
       deferred and blocking syscall paths.
 
+config OVE_LINUX_LATENCY
+    bool "Measure Linux-personality coordinator latency"
+    depends on OVE_LINUX
+    default n
+    help
+      Instrument the personality coordinator: how long it spends dispatching one
+      guest event (per event class) and how long an event waits between the guest
+      publishing it and the coordinator claiming it (per slot). Both are recorded
+      as a count, a maximum and a fixed histogram; nothing is enforced and no
+      threshold exists — this measures the bound the design argues for so a limit
+      can be set from real numbers.
+
+      Costs one timestamp read per event plus a counter update, and compiles to
+      nothing when off. Enable for measurement runs, not for production.
+
 config OVE_LINUX_ROOTFS_OUTPUT_OVERRIDE
     string "Override Buildroot output subdir (normally empty)"
     depends on OVE_LINUX
