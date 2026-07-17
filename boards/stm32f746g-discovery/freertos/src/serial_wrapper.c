@@ -9,6 +9,7 @@
 #include "serial_wrapper.h"
 #include "stm32f7xx_hal.h"
 #include "board_desc.h"
+#include "ove_config.h" /* CONFIG_OVE_STACK_CANARIES — gates __stack_chk_fail below */
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include <stdint.h>
@@ -173,6 +174,23 @@ FAULT_GPR void ove_lnx_host_fatal(uint32_t cfsr, uint32_t hfsr, uint32_t pc)
 	for (;;) {
 	}
 }
+
+#if defined(CONFIG_OVE_STACK_CANARIES)
+/* -fstack-protector-strong calls this when a function's stack canary was overwritten: the host
+ * stack is corrupted, so — like a host fault — it is not recoverable. no_stack_protector so a
+ * smashed frame in the handler itself cannot recurse. Unlike the seam's fault handler this runs in
+ * THREAD mode (an ordinary call from the smashed function's epilogue), so a bare spin would halt
+ * only this task while the scheduler kept the rest of a compromised system running — mask
+ * interrupts first so the halt is system-wide. The IWDG (independent LSI clock) still expires and
+ * reboots. */
+__attribute__((no_stack_protector)) void __stack_chk_fail(void)
+{
+	fault_puts("\n!!! STACK SMASH detected (host stack corrupted) - halting; watchdog will reset\n");
+	__disable_irq();
+	for (;;) {
+	}
+}
+#endif
 #undef FAULT_GPR
 
 unsigned char serial_getChar(void)

@@ -58,7 +58,31 @@ static int sdram_selftest(void);
 static void bsp_qspi_init(void);
 #endif
 
-int bsp_boardInit(void)
+#if defined(CONFIG_OVE_STACK_CANARIES)
+/* The -fstack-protector-strong canary base is defined and default-initialised by picolibc; a guest
+ * cannot reach it (host memory behind the MPU), so the only thing to add is unpredictability. Seed
+ * it from the hardware RNG at boot, before any guest runs. picolibc's default covers only the
+ * pre-seed boot window. */
+extern uintptr_t __stack_chk_guard;
+
+/* Reseed. no_stack_protector, and it fills a LOCAL then assigns: changing __stack_chk_guard while a
+ * function whose canary was set from the OLD value is still live would fail that function's exit
+ * check. bsp_random_fill writes the local (its canary stays consistent); this function has no
+ * canary; and bsp_boardInit (the only caller here) is no_stack_protector too, so nothing straddles
+ * the change. Functions called before use the old base and have already returned; those after use
+ * the new one. */
+__attribute__((no_stack_protector)) static void stack_guard_seed(void)
+{
+	uintptr_t g;
+	if (bsp_random_fill(&g, sizeof g) == OVE_OK)
+		__stack_chk_guard = g;
+}
+#define BSP_BOARDINIT_ATTR __attribute__((no_stack_protector))
+#else
+#define BSP_BOARDINIT_ATTR
+#endif
+
+BSP_BOARDINIT_ATTR int bsp_boardInit(void)
 {
 #if defined(CONFIG_OVE_WATCHDOG)
 	/* Before anything else, so the reset flags reflect the reset that started
@@ -94,6 +118,12 @@ int bsp_boardInit(void)
 	 * Failure is deliberately non-fatal to the host RTOS: guest process launch
 	 * and random syscalls fail closed through the LXP port instead. */
 	(void)bsp_random_init();
+
+#if defined(CONFIG_OVE_STACK_CANARIES)
+	/* Right after the RNG is up (and long before any guest), so the stack-protector canary is
+	 * unpredictable for every guest-input path that runs later. */
+	stack_guard_seed();
+#endif
 
 	/* Bring up the FMC controller + the external 8 MB SDRAM at 0xC0000000.  On QEMU/Renode
 	 * the SDRAM is modeled as always-present so this step was never needed; on real silicon

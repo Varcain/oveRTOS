@@ -428,6 +428,20 @@ config OVE_LINUX_FAULTTEST
       it were a guest fault). Requires the watchdog for recovery and the one-shot.
       Destructive by design — never enable it in a production image.
 
+config OVE_LINUX_SMASHTEST
+    bool "Stack-protector self-test (deliberately smashes a host stack once)"
+    depends on OVE_LINUX && OVE_STACK_CANARIES && OVE_WATCHDOG
+    default n
+    help
+      Debug/proof aid: a few seconds after the guest is running, a host task
+      overflows a local buffer past its stack canary. -fstack-protector-strong's
+      epilogue check then calls __stack_chk_fail, which prints a "STACK SMASH"
+      diagnostic and halts; the watchdog resets. The next boot reports its reset
+      cause as "watchdog" and does NOT re-trip.
+
+      Proves the protector's fail path reaches the board's __stack_chk_fail (not
+      picolibc's silent default). Destructive by design — never ship it.
+
 config OVE_WORKQUEUE
     bool "Work queues"
     default n

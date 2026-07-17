@@ -30,8 +30,22 @@ config OVE_DEBUG_BUILD
     default n
 
 config OVE_STACK_CANARIES
-    bool "Stack canary protection"
+    bool "Stack canary protection (-fstack-protector-strong)"
     default n
+    help
+      Compile the project's own sources (the module + backends + app — the code
+      that handles untrusted guest input; not the vendored HAL/RTOS trees) with
+      -fstack-protector-strong. A function with a stack buffer gets a canary
+      checked before it returns; a host stack smash then halts via
+      __stack_chk_fail instead of executing a corrupted return address.
+
+      On STM32 the canary base is seeded from the hardware RNG at boot, before any
+      guest runs, so it is unpredictable and — being host memory behind the MPU —
+      unreadable by a guest. A detected smash prints a diagnostic and halts; a
+      watchdog, if enabled, reboots.
+
+      Defence-in-depth for the host (the MPU already isolates guests). Opt-in:
+      adds a small per-function prologue/epilogue in flash and cycles.
 
 config OVE_THREAD_STATE_STATS
     bool "Per-thread state time tracking"

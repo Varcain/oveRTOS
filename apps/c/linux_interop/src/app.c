@@ -622,6 +622,50 @@ static void faulttest_maybe_arm(void)
 }
 #endif /* CONFIG_OVE_LINUX_FAULTTEST */
 
+#if defined(CONFIG_OVE_LINUX_SMASHTEST)
+/* Debug-gated proof (C9) that a stack smash reaches the board's __stack_chk_fail, not picolibc's
+ * silent default. smash_host_stack overflows a local buffer past the canary -fstack-protector-strong
+ * placed above it; its epilogue's canary check then calls __stack_chk_fail (print + halt), and the
+ * watchdog resets. One-shot: skipped when this boot came FROM a watchdog reset. */
+static ove_thread_t g_smash;
+static ove_thread_storage_t g_smash_storage;
+static uint8_t g_smash_stack[512] __attribute__((aligned(512)));
+
+/* noinline so its OWN epilogue runs the canary check right after the overflow — inlined into the
+ * caller, the overflow would land far from the caller's canary and never trip. Writing through a
+ * volatile pointer keeps the overflow out of the compiler's array-bounds analysis (which would
+ * -Werror) and the barrier stops it being elided. The overflow stays within this task's stack, so
+ * the canary check — not a wild access — is what trips. */
+static __attribute__((noinline)) void smash_host_stack(void)
+{
+	volatile char buf[16];
+	volatile char *p = buf;
+	for (int i = 0; i < 40; i++)
+		p[i] = (char)(0xa5 + i); /* i >= 16 overruns buf into the canary */
+	__asm__ volatile("" : : "r"(p) : "memory");
+}
+
+static void smashtest_body(void *arg)
+{
+	UNUSED(arg);
+	ove_thread_sleep_ms(4500); /* just after the C6 fault test, if both are on; guest is up */
+	sh_write0("[c9] smashing a host stack buffer; expect STACK SMASH + watchdog reset\n");
+	smash_host_stack(); /* returns through a smashed canary -> __stack_chk_fail */
+	for (;;) { /* unreachable */
+	}
+}
+
+static void smashtest_maybe_arm(void)
+{
+	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
+		sh_write0("[c9] recovered from the smash test; not re-arming\n");
+		return;
+	}
+	(void)ove_thread_init(&g_smash, &g_smash_storage, "smash", smashtest_body, NULL,
+			      OVE_PRIO_NORMAL, sizeof(g_smash_stack), g_smash_stack);
+}
+#endif /* CONFIG_OVE_LINUX_SMASHTEST */
+
 #if LXP_ENABLE_LATENCY
 /* ---- host deadline monitor (measurement builds only) -------------------------------------
  * A periodic OVE_PRIO_HIGH task, i.e. above both the coordinator (OVE_PRIO_NORMAL, this task)
@@ -1032,6 +1076,9 @@ static void demo_body(void *arg)
 
 #if defined(CONFIG_OVE_LINUX_FAULTTEST)
 	faulttest_maybe_arm(); /* C6: a host task will fault ~4s into phase 2, while the guest runs */
+#endif
+#if defined(CONFIG_OVE_LINUX_SMASHTEST)
+	smashtest_maybe_arm(); /* C9: a host task will smash its stack canary ~4.5s into phase 2 */
 #endif
 
 	/* ---- Phase 2: boot userspace or run the hard-float context regression - */
