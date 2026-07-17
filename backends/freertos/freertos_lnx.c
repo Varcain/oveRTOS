@@ -728,10 +728,40 @@ static void freertos_coord_map(int ridx)
 }
 #endif
 
+/* Worst tramp-stack usage seen across all guest slots this run, for the R9 stack audit. A task's
+ * high-water mark is lost when it is deleted and each slot's static tramp stack is refilled when
+ * reused, so the peak is captured here at abort and kept as a running max; ove_lnx_slot_stack_hwm()
+ * also folds in any slot still live at the call. This bounds the entry PROLOGUE only — a guest runs
+ * on its own stack inside its arena region, not on this FreeRTOS task stack. */
+static size_t g_slot_stack_used_max;
+
+static void slot_sample_stack(int sidx)
+{
+	if (!g_tid[sidx])
+		return;
+	/* uxTaskGetStackHighWaterMark returns the minimum free stack ever seen, in words. */
+	UBaseType_t free_words = uxTaskGetStackHighWaterMark(g_tid[sidx]);
+	size_t used = (size_t)(TRAMP_STACK_WORDS - free_words) * sizeof(StackType_t);
+	if (used > g_slot_stack_used_max)
+		g_slot_stack_used_max = used;
+}
+
+/* Bytes used at the high-water mark by the deepest guest-slot tramp stack this run (0 if none ran).
+ * The app prints it in the teardown stack audit; declared there via a matching extern. */
+size_t ove_lnx_slot_stack_hwm(void)
+{
+	for (int i = 0; i < LXP_NSLOT; i++)
+		if (g_lxp_used[i])
+			slot_sample_stack(i);
+	return g_slot_stack_used_max;
+}
+
 static void freertos_abort_slot(int sidx)
 {
-	if (g_lxp_used[sidx] && g_tid[sidx])
+	if (g_lxp_used[sidx] && g_tid[sidx]) {
+		slot_sample_stack(sidx); /* capture the HWM before the task (and its mark) is gone */
 		vTaskDelete(g_tid[sidx]);
+	}
 	g_lxp_used[sidx] = 0;
 	g_tid[sidx] = NULL;
 }
