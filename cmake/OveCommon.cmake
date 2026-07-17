@@ -689,9 +689,13 @@ macro(ove_link_firmware)
         else()
             set(_OVE_SIZE_SCRIPT "${BOARD_DIR}/${_OVE_LF_PRINT_SIZE_CMAKE}")
         endif()
+        # MAP_FILE carries the linker's own evaluated Memory Configuration, so a
+        # size script can attribute sections to real regions instead of summing
+        # every BSS against one total.
         add_custom_command(TARGET ${_OVE_PROJ_NAME}.elf POST_BUILD
             COMMAND ${CMAKE_COMMAND}
                 -DELF_FILE=${CMAKE_BINARY_DIR}/${_OVE_PROJ_NAME}.elf
+                -DMAP_FILE=${CMAKE_BINARY_DIR}/${_OVE_PROJ_NAME}.map
                 -DSIZE_TOOL=${CMAKE_SIZE}
                 -DFLASH_SIZE=${OVE_FLASH_SIZE}
                 -DRAM_SIZE=${OVE_RAM_SIZE}
