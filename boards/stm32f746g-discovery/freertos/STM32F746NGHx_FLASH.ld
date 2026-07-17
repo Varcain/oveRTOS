@@ -234,6 +234,24 @@ SECTIONS
         . = ALIGN(4);
         _sbss = .;
         __bss_start__ = _sbss;
+        /* PMSAv7 sizes every MPU region to a power of two and requires the base
+         * to be aligned to it, so the guest trampoline stacks (1 KB each) and
+         * the worker task stack (2 KB) carry large alignments.  Left wherever
+         * -fdata-sections happens to emit them they land after arbitrary
+         * objects, and each then buys up to (alignment - 1) bytes of fill —
+         * 984 + 960 bytes of internal SRAM here, on a bank with ~2 KB spare.
+         * Placed first the location counter is still at this output section's
+         * own alignment, which is already the largest of its inputs, so they
+         * cost nothing.  Order matters and is descending by alignment: the 2 KB
+         * stack lands on the section base, leaving the counter 2 KB-aligned and
+         * therefore already 1 KB-aligned for the stacks after it.  Add any
+         * further MPU stack in alignment order.
+         *
+         * Matched by their -fdata-sections names, so renaming either variable
+         * quietly reinstates the padding — the internal-SRAM margin check in
+         * cmake/print_size.cmake is what catches that. */
+        KEEP(*(.bss.g_worker_stack))
+        KEEP(*(.bss.g_tramp_stacks))
         *(.bss)
         *(.bss*)
         *(COMMON)
