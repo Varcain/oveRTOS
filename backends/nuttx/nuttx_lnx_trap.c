@@ -72,8 +72,12 @@ extern int arm_hardfault(int irq, void *context, void *arg);
 #define OVE_SHCSR_USGFAULTENA (1u << 18)		  /* route usage faults to UsageFault (not HardFault) */
 #define OVE_CFSR_MMFSR 0x000000ffu			  /* low byte = MemManage fault status (W1C) */
 
-/* ARMv7-M MPU RASR SIZE field for a power-of-2 region size: ((log2(size) - 1) << 1). */
-#define OVE_MPU_RASR_SIZE(sz) (((30u - (unsigned)__builtin_clz((unsigned)(sz))) << 1))
+/* ARMv7-M MPU RASR SIZE for a power-of-2 region size. The region spans
+ * 2^(FIELD+1) bytes, so FIELD = log2(size) - 1; RASR carries it at bits [5:1].
+ * _FIELD gives the raw value (for code that shifts it itself), the other the
+ * already-positioned one. */
+#define OVE_MPU_RASR_SIZE_FIELD(sz) (30u - (unsigned)__builtin_clz((unsigned)(sz)))
+#define OVE_MPU_RASR_SIZE(sz) (OVE_MPU_RASR_SIZE_FIELD(sz) << 1)
 
 #define SLOT_PRIO 60 /* below the run-loop/main task (100) */
 
@@ -102,15 +106,37 @@ static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =
 	(uint8_t(*)[LXP_DYN_POOL_SIZE])(NUTTX_SDRAM_POOL_BASE +
 					    (size_t)LXP_NREG * LXP_PROG_REGION_SIZE);
 #elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
-/* QEMU mps2-an500: 16M PSRAM at 0x60000000 (-m 16). For unprivileged isolation the program pool
- * must be a power-of-2-aligned block SEPARATE from the kernel's .data/.bss/heap (which the linker
- * packs at the low end, ~2M) so ONE MPU region can grant it unprivileged-RW while everything below
- * stays kernel-only. Place it at the 8M mark (0x60800000): kernel + heap live in [0x60000000,
- * 0x60800000) (denied to the unprivileged program), the pool in [0x60800000, 0x61000000) (granted).
- * Fixed pointers, like the STM32 branch — NuttX owns its linker script, so there is no NOLOAD hook;
- * the low-end .bss array the pool used to be would have straddled the kernel's own .bss at a
- * non-power-of-2 boundary, defeating a clean per-region grant. */
+/* QEMU mps2-an500: the 16M block at 0x60000000 (QEMU mps.ram, fixed — the machine model rejects
+ * any -m but 16). For unprivileged isolation the program pool must be a power-of-2-sized,
+ * power-of-2-aligned block so ONE MPU region can grant it unprivileged-RW while everything else
+ * stays kernel-only. Fixed pointers, like the STM32 branch — NuttX owns its linker script, so
+ * there is no NOLOAD hook; a .bss array would straddle the kernel's own .bss at a non-power-of-2
+ * boundary and defeat a clean per-region grant.
+ *
+ * The split, and why 8M is not negotiable:
+ *
+ *   [0x60000000, 0x60800000)   8M  rootfs.cpio XIP window
+ *   [0x60800000, 0x61000000)   8M  program pool, granted unprivileged-RW
+ *
+ * The guest XIPs its FDPIC text straight out of the cpio, so the rootfs window needs its own
+ * PMSAv7 region granting unprivileged RO+execute — and PMSAv7 regions are power-of-2 sized and
+ * aligned. 8M is the largest window that leaves a non-overlapping pool above it: 16M would cover
+ * the pool too and, being the higher-numbered region, would hand the guest RO+X over every
+ * sibling's memory. A 12M window cannot be expressed at all. So the cpio must fit in 8M —
+ * moving the pool up buys nothing.
+ *
+ * ove_config.cmake.j2 sizes LXP_NREG=5 for this pool: 5*256K program regions + 5*512K dynamic
+ * pools = 3.75M. Its comment claims a "bottom 12 MiB" rootfs window, which is not achievable
+ * for the reason above.
+ *
+ * Kernel RAM had to leave 0x60000000 regardless (see this board's nuttx/patches/0001-* and
+ * ove_board_defconfig.linux): a rootfs at the base was overwritten by NuttX's .data copy and
+ * .bss zeroing before it could be parsed. That move is what makes the full 8M usable. */
 #define NUTTX_AN500_POOL_BASE 0x60800000u
+_Static_assert((size_t)LXP_NREG * LXP_PROG_REGION_SIZE +
+			       (size_t)LXP_NREG * LXP_DYN_POOL_SIZE <=
+		       0x61000000u - NUTTX_AN500_POOL_BASE,
+	       "an500 program pool overflows the top of mps.ram");
 static uint8_t (*const prog_regions)[LXP_PROG_REGION_SIZE] =
 	(uint8_t(*)[LXP_PROG_REGION_SIZE])NUTTX_AN500_POOL_BASE;
 static uint8_t (*const dyn_pools)[LXP_DYN_POOL_SIZE] =
@@ -539,7 +565,13 @@ static void lxp_mpu_init(void)
 #else					     /* QEMU mps2-an500 */
 	const uint32_t code_base = 0x00000000u, code_sz = 20u; /* 2M ROM/flash at 0x0 (kernel .text) */
 	const uint32_t code_texscb = 0x08u;		       /* Normal non-cacheable */
-	const uint32_t pool_base = 0x60800000u, pool_sz = 22u; /* 8M upper PSRAM (whole pool) */
+	/* Derived, not spelled again: this region must cover exactly the pool the
+	 * prog_regions/dyn_pools pointers above are carved from. Hard-coding it a
+	 * second time let the two drift — the base said 8M at 0x60800000 while the
+	 * pool had moved to the top 4M, so the region granted the wrong span. RASR
+	 * SIZE encodes 2^(SIZE+1) bytes: 4M -> 21. */
+	const uint32_t pool_base = NUTTX_AN500_POOL_BASE;
+	const uint32_t pool_sz = OVE_MPU_RASR_SIZE_FIELD(0x61000000u - NUTTX_AN500_POOL_BASE);
 #endif
 	/* Region 0: code (shared by every program) — priv RW / unpriv RO (AP=0b010), executable
 	 * (XN=0). The FDPIC text runs in-place from the embedded cpio here + the park loop. The
@@ -574,6 +606,23 @@ static void lxp_mpu_init(void)
 	*mpu_rnr = 4;
 	*mpu_rbar = 0x90000000u;
 	*mpu_rasr = (1u << 0) | (23u << 1) | (0x02u << 16) | (0x2u << 24);
+#elif defined(CONFIG_ARCH_BOARD_MPS2_AN500)
+	/* Region 4: the same XIP window for the an500, where the cpio is staged in the bottom of
+	 * mps.ram by QEMU's -device loader rather than programmed into NOR. Without it the guest
+	 * parses its rootfs and then cannot fetch a single instruction from it (MemManage IACCVIOL,
+	 * CFSR 0x01): the ARM default map makes 0x60000000 unprivileged-inaccessible, and region 1
+	 * covers only the pool above.
+	 *
+	 * 8 MB (SIZE=22) at 0x60000000, which is what forces the pool to 0x60800000: PMSAv7 regions
+	 * are power-of-2 sized and aligned, and this must not overlap the pool — it is the
+	 * higher-numbered region, so an overlap would override the pool's priv-only base and hand the
+	 * guest RO+X over every sibling's memory. 16M would do exactly that; 12M cannot be expressed.
+	 * So the rootfs.cpio has to fit in 8M. Normal non-cacheable (mps.ram is ordinary RAM in QEMU,
+	 * unlike the STM32's NOR), RO so there is no coherence concern. */
+	*mpu_rnr = 4;
+	*mpu_rbar = 0x60000000u;
+	*mpu_rasr = (1u << 0) | (OVE_MPU_RASR_SIZE_FIELD(NUTTX_AN500_POOL_BASE - 0x60000000u) << 1) |
+		    (0x08u << 16) | (0x2u << 24);
 #endif
 	OVE_SCS_SHCSR |= OVE_SHCSR_MEMFAULTENA | OVE_SHCSR_BUSFAULTENA | OVE_SHCSR_USGFAULTENA; /* MPU faults → MemManage (contained), not HardFault */
 	*mpu_ctrl = (1u << 0) | (1u << 2);	/* ENABLE | PRIVDEFENA */

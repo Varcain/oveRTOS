@@ -1,0 +1,28 @@
+From: oveRTOS <noreply@invalid>
+Subject: [PATCH] mps2-an500: link kernel RAM into SSRAM2&3, not the 16M block
+
+The board has three RAM regions, and NuttX's flash.ld puts .data/.bss (and
+therefore the heap, via CONFIG_RAM_START) at 0x60000000 — the 16 MB block QEMU
+calls mps.ram. That is the only region large enough to stage the Linux
+personality's rootfs.cpio, so kernel RAM and the rootfs contend for it: NuttX's
+startup copies .data over the CPIO header and zeroes .bss across it, and the
+parse fails.
+
+SSRAM2&3 at 0x20000000 (4 MB, QEMU mps.ssram23) is real RAM and unused — it is
+where the FreeRTOS port already keeps its data, which is why FreeRTOS leaves the
+16 MB block free. Link kernel RAM there and hand 0x60000000 to the personality.
+
+4 MB is ample: .data + .bss are ~200 KB, leaving ~3.8 MB of heap versus the
+~1.8 MB the previous 2 MB CONFIG_RAM_SIZE allowed.
+
+--- a/boards/arm/mps/mps2-an500/scripts/flash.ld
++++ b/boards/arm/mps/mps2-an500/scripts/flash.ld
+@@ -23,7 +23,7 @@
+ MEMORY
+ {
+   flash (rx)  : ORIGIN = 0x00000000, LENGTH = 4M
+-  sram1 (rwx) : ORIGIN = 0x60000000, LENGTH = 16M
++  sram1 (rwx) : ORIGIN = 0x20000000, LENGTH = 4M
+ }
+ 
+ OUTPUT_ARCH(arm)
