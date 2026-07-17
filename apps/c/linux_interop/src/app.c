@@ -46,6 +46,10 @@
 #if defined(CONFIG_OVE_LINUX_NETFS)
 #include "lxp/lxp_netfs.h" /* lxp_netfs_mount_config — the static /mnt/pi mount */
 #endif
+#if defined(CONFIG_OVE_WATCHDOG)
+#include "ove/watchdog.h" /* host-owned IWDG feed */
+#include "ove/reset.h"	  /* why the last reset happened (watchdog recovery is visible) */
+#endif
 
 #include "ove_config.h" /* CONFIG_OVE_RTOS_FREERTOS — selects the app lifecycle below */
 
@@ -475,6 +479,116 @@ static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
 #endif
 #endif
 
+#if defined(CONFIG_OVE_WATCHDOG)
+/* ---- host watchdog: a high-priority task owns the IWDG feed -------------------------------
+ * The IWDG (LSI-clocked, independent of the core clock) resets the board if it is not fed within
+ * its timeout. This monitor at OVE_PRIO_HIGH owns the feed — above the coordinator (NORMAL) and
+ * the guest slots (IDLE+1). What it feeds ON is host liveness only:
+ *   - while the coordinator is not driving a guest, the monitor running at all proves the
+ *     scheduler is alive, which is the whole guarantee available in that window;
+ *   - while it is, the monitor feeds only if the coordinator's heartbeat advanced since the last
+ *     check. A stalled heartbeat with a live scheduler is a wedged coordinator, which a plain
+ *     unconditional high-priority feed would miss.
+ * Guest progress never enters the decision: a faulting guest is contained by the MPU, not a reset
+ * trigger, and a guest must not be able to hold the watchdog open.
+ *
+ * The IWDG timeout (not a counter here) is the tolerance for a transient non-advancing window: the
+ * longest single coordinator dispatch measured — a ~105 ms fork (R7) — is ~19x under 2 s, so a
+ * legitimate long dispatch never resets while a real stall (unfed > 2 s) always does. */
+#define WD_TIMEOUT_MS 2000u
+#define WD_FEED_MS 250u
+
+static ove_thread_t g_wd;
+static ove_thread_storage_t g_wd_storage;
+/* Sized per build like the latency monitor: -O0 spills more (see CONFIG_OVE_DEBUG_BUILD). .bss
+ * keeps it in internal SRAM, which a host task stack needs on STM32. */
+#if defined(CONFIG_OVE_DEBUG_BUILD)
+static uint8_t g_wd_stack[1024] __attribute__((aligned(1024)));
+#else
+static uint8_t g_wd_stack[512] __attribute__((aligned(512)));
+#endif
+static ove_watchdog_t g_wd_dog;
+static ove_watchdog_storage_t g_wd_dog_storage;
+
+/* The feed decision, named for what it encodes: feed iff the coordinator is not running a guest,
+ * or its heartbeat advanced since the last look. The self-test below exercises the withhold branch
+ * (active && !advanced) end to end against real hardware. */
+static int wd_should_feed(int active, int hb_advanced)
+{
+	return !active || hb_advanced;
+}
+
+#if defined(CONFIG_OVE_WATCHDOG_SELFTEST)
+/* Debug-gated proof that the policy resets a wedged host. A spinner at OVE_PRIO_ABOVE_NORMAL —
+ * between the coordinator (NORMAL) and the monitor (HIGH) — starves the coordinator so its
+ * heartbeat freezes, WITHOUT masking interrupts, so the scheduler stays live and the monitor keeps
+ * running, sees the stall, withholds the feed, and the IWDG resets the board. That exercises the
+ * heartbeat-gating path end to end, not merely scheduler death. One-shot: skipped when this boot
+ * came FROM a watchdog reset, so it trips once and then the board runs clean. */
+static ove_thread_t g_wdtest;
+static ove_thread_storage_t g_wdtest_storage;
+static uint8_t g_wdtest_stack[512] __attribute__((aligned(512)));
+
+static void wdtest_spin(void *arg)
+{
+	UNUSED(arg);
+	for (;;)
+		__asm volatile("nop"); /* no __disable_irq: starve the coordinator, keep the scheduler */
+}
+
+static void wd_selftest_maybe_trip(void)
+{
+	if (ove_reset_cause() == OVE_RESET_WATCHDOG) {
+		sh_write0("[wd] selftest: recovered from the watchdog reset; not re-tripping\n");
+		return;
+	}
+	sh_write0("[wd] selftest: starving the coordinator (scheduler stays live);"
+		  " expect a watchdog reset in ~2s...\n");
+	(void)ove_thread_init(&g_wdtest, &g_wdtest_storage, "wdtest", wdtest_spin, NULL,
+			      OVE_PRIO_ABOVE_NORMAL, sizeof(g_wdtest_stack), g_wdtest_stack);
+}
+#endif /* CONFIG_OVE_WATCHDOG_SELFTEST */
+
+static void wd_body(void *arg)
+{
+	UNUSED(arg);
+	if (ove_watchdog_init(&g_wd_dog, &g_wd_dog_storage, WD_TIMEOUT_MS) != OVE_OK ||
+	    ove_watchdog_start(g_wd_dog) != OVE_OK) {
+		/* Could not arm. Running unguarded beats spinning here — a spin would be the very
+		 * kind of wedge nothing is left to catch. */
+		sh_write0("[wd] FAIL: could not arm IWDG; running without a watchdog\n");
+		return;
+	}
+	sh_write0("[wd] IWDG armed: 2000ms timeout, fed every 250ms while the host stays live\n");
+
+	uint32_t last = 0;
+	int primed = 0;
+#if defined(CONFIG_OVE_WATCHDOG_SELFTEST)
+	unsigned cycle = 0;
+	int tripped = 0;
+#endif
+	for (;;) {
+		lxp_run_health_t h;
+		lxp_run_health(&h);
+		int feed = !primed || wd_should_feed(h.active, h.coord_iters != last);
+		last = h.coord_iters;
+		primed = 1;
+		if (feed)
+			(void)ove_watchdog_feed(g_wd_dog);
+#if defined(CONFIG_OVE_WATCHDOG_SELFTEST)
+		/* Trip once the guest is actually running (~4 s in), so the wedge stalls a live
+		 * coordinator rather than an idle one. */
+		if (!tripped && cycle >= 16 && h.active) {
+			tripped = 1;
+			wd_selftest_maybe_trip();
+		}
+		cycle++;
+#endif
+		ove_thread_sleep_ms(WD_FEED_MS);
+	}
+}
+#endif /* CONFIG_OVE_WATCHDOG */
+
 #if LXP_ENABLE_LATENCY
 /* ---- host deadline monitor (measurement builds only) -------------------------------------
  * A periodic OVE_PRIO_HIGH task, i.e. above both the coordinator (OVE_PRIO_NORMAL, this task)
@@ -598,6 +712,18 @@ static void demo_body(void *arg)
 	/* First line out of the box: identifies the running image against the ELF on
 	 * disk, so a stale target cannot be debugged with the wrong symbols. */
 	sh_write0("[build] " OVE_BUILD_ID "\n");
+
+#if defined(CONFIG_OVE_WATCHDOG)
+	/* Say why we booted (a watchdog recovery must not look like a spontaneous reboot), then start
+	 * the feeder. The monitor is OVE_PRIO_HIGH, so it arms the IWDG and begins feeding immediately,
+	 * independent of the setup work below. */
+	sh_write0("[reset] cause: ");
+	sh_write0(ove_reset_cause_str(ove_reset_cause()));
+	sh_write0("\n");
+	if (ove_thread_init(&g_wd, &g_wd_storage, "wd", wd_body, NULL, OVE_PRIO_HIGH,
+			    sizeof(g_wd_stack), g_wd_stack) != OVE_OK)
+		sh_write0("[wd] FAIL: monitor thread init; running without a watchdog\n");
+#endif
 
 #if defined(CONFIG_OVE_LINUX_ROOTFS_QSPI)
 	/* The rootfs is XIP'd from the memory-mapped QUADSPI NOR.  Declare that window to the

@@ -14,9 +14,42 @@
 #include "stm32f7xx_hal.h"
 #include "stm32746g_discovery_sdram.h" /* BSP_SDRAM_Init — bring up the FMC + external SDRAM */
 #include "stm32f7_init.h"
+#include "ove/reset.h" /* ove_reset_cause — reads RCC->CSR when CONFIG_OVE_WATCHDOG */
 #if defined(CONFIG_OVE_QSPI)
 #include "stm32746g_discovery_qspi.h" /* BSP_QSPI_Init / EnableMemoryMappedMode (N25Q128A) */
 #endif
+
+#if defined(CONFIG_OVE_WATCHDOG)
+/* Latched once at board init (RCC->CSR reset flags survive across the reset that
+ * set them but persist until cleared, so they must be read before a later boot
+ * ORs its own cause in). ove_reset_cause() returns this for the whole boot. */
+static ove_reset_cause_t g_reset_cause = OVE_RESET_UNKNOWN;
+
+static void bsp_latch_reset_cause(void)
+{
+	/* Most-specific cause first: a cold power-on also asserts PIN (and BOR) on
+	 * this part, so those are only reached when nothing more specific is set —
+	 * and IWDG/WWDG win over everything so a watchdog recovery is never masked. */
+	if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) || __HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST))
+		g_reset_cause = OVE_RESET_WATCHDOG;
+	else if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST))
+		g_reset_cause = OVE_RESET_SOFTWARE;
+	else if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST))
+		g_reset_cause = OVE_RESET_LOW_POWER;
+	else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST))
+		g_reset_cause = OVE_RESET_POWER_ON;
+	else if (__HAL_RCC_GET_FLAG(RCC_FLAG_BORRST))
+		g_reset_cause = OVE_RESET_BROWNOUT;
+	else if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST))
+		g_reset_cause = OVE_RESET_PIN;
+	__HAL_RCC_CLEAR_RESET_FLAGS();
+}
+
+ove_reset_cause_t ove_reset_cause(void)
+{
+	return g_reset_cause;
+}
+#endif /* CONFIG_OVE_WATCHDOG */
 
 static void SystemClock_Config(void);
 static void MPU_Config_SDRAM(void);
@@ -27,6 +60,13 @@ static void bsp_qspi_init(void);
 
 int bsp_boardInit(void)
 {
+#if defined(CONFIG_OVE_WATCHDOG)
+	/* Before anything else, so the reset flags reflect the reset that started
+	 * THIS boot (nothing here clears RCC->CSR, but read-then-clear early leaves
+	 * no doubt). Reads fine without any clock config — RCC is always clocked. */
+	bsp_latch_reset_cause();
+#endif
+
 	/* Remap external SDRAM (0xC0000000, 8 MB) from the default ARM
 	 * Device-memory attributes to Normal non-cacheable.  Without this,
 	 * any unaligned access into SDRAM (compiler-emitted strh/strd to
@@ -38,6 +78,14 @@ int bsp_boardInit(void)
 
 	/* MCU-level init (cache, branch prediction, HAL_Init) */
 	stm32f7_mcu_init();
+
+#if defined(CONFIG_OVE_WATCHDOG)
+	/* Freeze the IWDG counter whenever the core is halted by a debugger, so
+	 * openocd can halt-and-flash a board whose watchdog is already armed without
+	 * the IWDG resetting it mid-operation. Debug-domain bit; a running system is
+	 * unaffected (the counter runs normally when the core is not halted). */
+	__HAL_DBGMCU_FREEZE_IWDG();
+#endif
 
 	/* Board-specific clock: 25 MHz HSE → 216 MHz SYSCLK */
 	SystemClock_Config();
