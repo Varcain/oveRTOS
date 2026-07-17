@@ -16,8 +16,16 @@ include(${CMAKE_CURRENT_LIST_DIR}/../../../cmake/OveFreeRTOS.cmake)
 ove_setup_project(firmware)
 
 # ── Board-specific compile options ───────────────────────────────────
+# __FPU_PRESENT is spelled 1U, not 1, to match CMSIS exactly. It cannot simply be
+# dropped: the CMSIS DSP sources reach core_cm7.h through arm_math.h without the
+# device header, so without it they hit core_cm7.h's "Compiler generates FPU
+# instructions for a device without an FPU" #error. But stm32f746xx.h (selected
+# by STM32F746xx below) also defines it as 1U, and a macro redefinition only
+# warns when the replacement lists differ — `1` vs `1U` did, on every TU that
+# reached the device header: 119 of this build's 563 warnings. Identical spelling
+# satisfies both.
 ove_add_compile_definitions(
-    __FPU_PRESENT=1
+    __FPU_PRESENT=1U
     STM32F746xx
     USE_HAL_DRIVER
     ARM_MATH_CM7
