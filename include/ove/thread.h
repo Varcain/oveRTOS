@@ -264,10 +264,16 @@ void ove_thread_request_stop(ove_thread_t handle);
 bool ove_thread_should_stop(ove_thread_t handle);
 
 /**
- * @brief Query how many bytes of stack the thread has used at its high-water mark.
+ * @brief Query the minimum FREE stack a thread has ever had (its high-water usage margin).
+ *
+ * Despite the name, this returns the stack still UNUSED at the deepest point reached — the
+ * remaining headroom — computed from the untouched fill pattern (FreeRTOS
+ * uxTaskGetStackHighWaterMark; Zephyr/WASM sentinel scan). For bytes USED, subtract this from the
+ * stack size. All backends agree on this free-not-used meaning; only the historical name says
+ * "usage".
  *
  * @param[in] handle  Thread to inspect.
- * @return Number of bytes consumed at the historical peak, or 0 if the
+ * @return Bytes of stack still free at the historical peak usage, or 0 if the
  *         backend does not support stack profiling.
  */
 size_t ove_thread_get_stack_usage(ove_thread_t handle);

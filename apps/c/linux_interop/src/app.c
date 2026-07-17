@@ -501,7 +501,8 @@ static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
 static ove_thread_t g_wd;
 static ove_thread_storage_t g_wd_storage;
 /* Sized per build like the latency monitor: -O0 spills more (see CONFIG_OVE_DEBUG_BUILD). .bss
- * keeps it in internal SRAM, which a host task stack needs on STM32. */
+ * keeps it in internal SRAM, which a host task stack needs on STM32. The R9 soak's stack audit
+ * measured only 128 B used at -Os, so 512 B (384 B free) is comfortable. */
 #if defined(CONFIG_OVE_DEBUG_BUILD)
 static uint8_t g_wd_stack[1024] __attribute__((aligned(1024)));
 #else
@@ -702,6 +703,79 @@ static int console_poll(void *ctx)
 {
 	UNUSED(ctx);
 	return uart_rx_ready();
+}
+
+/* ---- teardown stack + heap audit (R9 / C3) -----------------------------------------------
+ * Printed after the guest has run (and, in a soak, after the stress workload), so the high-water
+ * marks reflect the deepest paths actually taken — an idle demo never reaches them, which is why
+ * R2's stack criterion was unmet. The coordinator (this task, g_demo) is the one that matters: it
+ * runs the program loader and the whole syscall dispatch. Free = size - high-water; a soak driver
+ * fails the run if any free falls below its floor. */
+static void audit_stack_line(const char *name, size_t used, size_t size)
+{
+	char line[96];
+	char *p = put_str(line, "[stack] ");
+	p = put_str(p, name);
+	while ((p - line) < 26)
+		*p++ = ' ';
+	p = put_str(p, "used=");
+	p = put_dec(p, (uint32_t)used);
+	p = put_str(p, " size=");
+	p = put_dec(p, (uint32_t)size);
+	p = put_str(p, " free=");
+	p = put_dec(p, (uint32_t)(size > used ? size - used : 0));
+	*p++ = '\n';
+	*p = 0;
+	sh_write0(line);
+}
+
+/* ove_thread_get_stack_usage() returns the high-water FREE bytes (untouched sentinel space), not
+ * used — consistent across all backends despite the name (see the note in ove/thread.h). Convert
+ * to used for the audit so every row means the same thing. */
+static void audit_thread(const char *name, ove_thread_t h, size_t size)
+{
+	size_t freeb = ove_thread_get_stack_usage(h);
+	audit_stack_line(name, size > freeb ? size - freeb : 0, size);
+}
+
+static void stack_audit(void)
+{
+	sh_write0("\n=== stack high-water audit (deepest usage this run) ===\n");
+	audit_thread("coordinator", g_demo, sizeof(g_demo_stack));
+	audit_thread("worker", g_worker, sizeof(g_worker_stack));
+#if defined(CONFIG_OVE_WATCHDOG)
+	audit_thread("wd-monitor", g_wd, sizeof(g_wd_stack));
+#endif
+#if LXP_ENABLE_LATENCY
+	audit_thread("lat-monitor", g_mon, sizeof(g_mon_stack));
+#endif
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+	/* Guest-slot tramp stack (TRAMP_STACK_WORDS=256 words = 1024 B in the seam): worst across all
+	 * slots this run. Only the entry prologue — the guest runs on its own arena stack. */
+	extern size_t ove_lnx_slot_stack_hwm(void);
+	audit_stack_line("guest-slot(tramp)", ove_lnx_slot_stack_hwm(), 1024u);
+#endif
+	/* peak_used is the high-water of heap usage over the whole run, so it captures a cumulative
+	 * leak (it would climb toward total across a soak) — a better single number than a boot-vs-end
+	 * delta, which heap_4 spoils anyway by initialising lazily (free reads 0 before the first
+	 * malloc, and all tasks here are static). */
+	struct ove_mem_stats m;
+	if (ove_sys_get_mem_stats(&m) == OVE_OK) {
+		char line[96];
+		char *p = put_str(line, "[heap] free=");
+		p = put_dec(p, (uint32_t)m.free);
+		p = put_str(p, " peak_used=");
+		p = put_dec(p, (uint32_t)m.peak_used);
+		p = put_str(p, " total=");
+		p = put_dec(p, (uint32_t)m.total);
+		*p++ = '\n';
+		*p = 0;
+		sh_write0(line);
+	}
+	/* Terminator + drain: the caller resets the part right after (semihosting sh_exit), which
+	 * would otherwise cut off whatever is still in the UART FIFO — this line included. */
+	sh_write0("[stack] end\n");
+	ove_time_delay_ms(50);
 }
 
 static void demo_body(void *arg)
@@ -971,6 +1045,7 @@ static void demo_body(void *arg)
 	(void)ove_thread_deinit(g_mon);
 	lat_report(); /* only after the monitor is stopped: the counters are read unlocked */
 #endif
+	stack_audit(); /* R9/C3: worst-case stack + heap usage, now that the workload has run */
 	sh_exit(rc2 >= 0 ? 0 : 1);
 }
 
