@@ -699,6 +699,8 @@ macro(ove_link_firmware)
                 -DSIZE_TOOL=${CMAKE_SIZE}
                 -DFLASH_SIZE=${OVE_FLASH_SIZE}
                 -DRAM_SIZE=${OVE_RAM_SIZE}
+                $<$<BOOL:${OVE_MARGIN_WARN_BYTES}>:-DMARGIN_WARN_BYTES=${OVE_MARGIN_WARN_BYTES}>
+                $<$<BOOL:${OVE_MARGIN_FAIL_BYTES}>:-DMARGIN_FAIL_BYTES=${OVE_MARGIN_FAIL_BYTES}>
                 -P ${_OVE_SIZE_SCRIPT}
             COMMENT "Memory usage:"
         )
