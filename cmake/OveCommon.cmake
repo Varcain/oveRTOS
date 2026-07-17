@@ -290,6 +290,60 @@ macro(ove_add_compile_definitions)
 endmacro()
 
 
+# ─── ove_werror_own_sources(<target> <sources>) ──────────────────────
+# Compile the project's own sources with -Werror, leaving vendored ones on the
+# plain -Wall policy. Vendored == under ${OVE_DL_DIR} (the workspace's dl/,
+# where downloads land) or a build-tree path; everything else is ours.
+#
+# Applied per source file because the firmware target contains both.
+#
+# A source counts as vendored if EITHER its literal path or its realpath sits
+# under a download root. Both tests are needed: the workspace's dl/<name> is a
+# symlink to the shared <ove_dir>/dl/<name>-<hash> (utils.hashed_dir), so
+# resolving a vendored source leaves the workspace entirely — testing only the
+# literal path misses a direct reference, and testing only the realpath against
+# the workspace dl/ misses every symlinked one, which silently puts the whole
+# STM32Cube tree on -Werror and fails the build on the vendor's warnings.
+function(ove_werror_own_sources _target _sources)
+    if(NOT DEFINED OVE_DL_DIR)
+        return()
+    endif()
+    set(_dl_roots "")
+    foreach(_root "${OVE_DL_DIR}" "${OVE_DIR}/dl")
+        if(IS_DIRECTORY "${_root}")
+            get_filename_component(_r "${_root}" REALPATH)
+            list(APPEND _dl_roots "${_root}" "${_r}")
+        endif()
+    endforeach()
+    list(REMOVE_DUPLICATES _dl_roots)
+
+    set(_own "")
+    foreach(_src IN LISTS _sources)
+        if(NOT EXISTS "${_src}")
+            continue()  # generated at build time; classified when it exists
+        endif()
+        get_filename_component(_src_real "${_src}" REALPATH)
+        set(_vendored FALSE)
+        foreach(_root IN LISTS _dl_roots)
+            string(FIND "${_src_real}" "${_root}/" _a)
+            string(FIND "${_src}" "${_root}/" _b)
+            if(_a EQUAL 0 OR _b EQUAL 0)
+                set(_vendored TRUE)
+                break()
+            endif()
+        endforeach()
+        if(NOT _vendored)
+            list(APPEND _own "${_src}")
+        endif()
+    endforeach()
+    if(_own)
+        set_source_files_properties(${_own} TARGET_DIRECTORY ${_target}
+                                    PROPERTIES COMPILE_OPTIONS "-Werror")
+        list(LENGTH _own _n)
+        message(STATUS "[ove] -Werror on ${_n} project source(s); vendored code on -Wall")
+    endif()
+endfunction()
+
 # ─── ove_add_compile_options(opt1 [opt2 ...]) ────────────────────────
 # Add board-specific compile options.
 macro(ove_add_compile_options)
@@ -616,6 +670,22 @@ macro(ove_link_firmware)
     # Apply application language support (C / C++ / Rust)
     include(${OVE_DIR}/config/cmake/ove_app_lang.cmake)
     ove_apply_app_language(${_OVE_PROJ_NAME}.elf)
+
+    # ── Warnings are errors in our code, not in vendored code ────────
+    # firmware.elf deliberately mixes our sources with vendored ones (STM32Cube
+    # HAL/CMSIS/DSP, the FreeRTOS kernel) in one target, so this has to be
+    # per-source rather than per-target.
+    #
+    # The split is the point. STM32CubeF7 emits ~444 -Wstrict-aliasing warnings
+    # that are not ours to fix, and a blanket -Werror would force a blanket
+    # suppression — which would then hide the same mistake in our own code. Our
+    # sources already compile clean under -Wall, so this only pins that.
+    #
+    # Read the target's SOURCES rather than _ALL_SOURCES: the app is attached by
+    # ove_apply_app_language() above, so the local list does not contain it and
+    # the app — the code most likely to be edited — would be left unguarded.
+    get_target_property(_OVE_TGT_SOURCES ${_OVE_PROJ_NAME}.elf SOURCES)
+    ove_werror_own_sources(${_OVE_PROJ_NAME}.elf "${_OVE_TGT_SOURCES}")
 
     # Linker flags
     target_link_options(${_OVE_PROJ_NAME}.elf PRIVATE
