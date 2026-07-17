@@ -35,6 +35,8 @@
 #include "ove/time.h"
 
 #include "ove/app.h"
+#include "lxp/lxp_config.h" /* LXP_NSLOT (the latency report walks the slots) */
+#include "lxp/lxp_latency.h"
 #include "lxp/lxp_run.h"
 #include "lxp/lxp_syscall.h"
 #if defined(CONFIG_OVE_LINUX_NET)
@@ -473,6 +475,113 @@ static uint8_t g_demo_stack[8192] __attribute__((aligned(8)));
 #endif
 #endif
 
+#if LXP_ENABLE_LATENCY
+/* ---- host deadline monitor (measurement builds only) -------------------------------------
+ * A periodic OVE_PRIO_HIGH task, i.e. above both the coordinator (OVE_PRIO_NORMAL, this task)
+ * and the guest slots (tskIDLE_PRIORITY+1). Being top of the ladder is the point: everything
+ * it still gets delayed by is delay that priority cannot fix. On FreeRTOS that is the
+ * interrupt-masked window of the coordinator's taskENTER_CRITICAL(), plus ISRs and tick
+ * quantisation — a guest cannot preempt this task, so what is left is the honest measure of
+ * how much a guest's activity can push out a host deadline.
+ *
+ * Recorded as overshoot of the requested sleep (woken_at - slept_for - period), which folds in
+ * tick quantisation: on a 1 kHz tick a 10 ms sleep may legitimately return up to ~1 tick late,
+ * so expect a nonzero floor. That floor is the baseline the guest-induced tail sits on top of.
+ *
+ * Deliberately no deadline and no miss counter: a miss needs a bound to miss, and the bound is
+ * what this run exists to inform. Count + max + histogram only.
+ */
+#define MON_PERIOD_MS 10u
+
+static ove_thread_t g_mon;
+static ove_thread_storage_t g_mon_storage;
+/* Power-of-2 sized+aligned for the same reason as g_worker_stack. Plain .bss keeps it in
+ * internal SRAM, which a host task stack requires on STM32 (see g_demo_stack: the coordinator
+ * maps guest SDRAM as uncached Device memory, which does not suit compiler-generated stack
+ * access) — so this comes out of the scarcest region and is sized accordingly. The body holds
+ * four u64s, calls only ove_time_get_ns/ove_thread_sleep_ms, and never prints: demo_body writes
+ * the report once the monitor has stopped. Cortex-M ISRs stack on MSP, not this PSP.
+ *
+ * Sized per build, not once: -O0 spills every local and inlines nothing, so the same body wants
+ * materially more stack than the optimized build. 512 B is enough optimized (over seven hardware
+ * runs configCHECK_FOR_STACK_OVERFLOW=2 never tripped, and this task switches out ~6300 times a
+ * run) but overflows at -O0 — where the default vApplicationStackOverflowHook spins silently, so
+ * it presents as the system simply stopping rather than as a diagnosable fault. Charging the
+ * debug figure to every build would cost the STM32 1 KB of internal SRAM it does not have: with
+ * the counters in, RAM is left with ~2.3 KB above a 2 KB floor. */
+#if defined(CONFIG_OVE_DEBUG_BUILD)
+static uint8_t g_mon_stack[1024] __attribute__((aligned(1024)));
+#else
+static uint8_t g_mon_stack[512] __attribute__((aligned(512)));
+#endif
+static lxp_lat_stat_t g_mon_late;
+static volatile int g_mon_stop;
+static volatile int g_mon_exited;
+
+static void mon_body(void *arg)
+{
+	UNUSED(arg);
+	while (!g_mon_stop) {
+		uint64_t t0 = 0, t1 = 0;
+		(void)ove_time_get_ns(&t0);
+		ove_thread_sleep_ms(MON_PERIOD_MS);
+		(void)ove_time_get_ns(&t1);
+		uint64_t want = (uint64_t)MON_PERIOD_MS * 1000000u;
+		uint64_t slept = (t1 > t0) ? (t1 - t0) : 0;
+		lxp_lat_record(&g_mon_late, slept > want ? slept - want : 0);
+	}
+	g_mon_exited = 1;
+}
+
+static void lat_row(const char *what, const char *name, const lxp_lat_stat_t *s)
+{
+	if (!s || !s->count)
+		return; /* a class never dispatched has nothing to say; skip the row */
+	char line[192];
+	char *p = put_str(line, "[lat] ");
+	p = put_str(p, what);
+	*p++ = ' ';
+	p = put_str(p, name);
+	while ((p - line) < 30)
+		*p++ = ' ';
+	p = put_str(p, "n=");
+	p = put_dec(p, s->count);
+	p = put_str(p, " max_ns=");
+	p = put_dec(p, s->max_ns);
+	p = put_str(p, " us[");
+	for (int b = 0; b < LXP_LAT_BUCKETS; b++) {
+		if (b)
+			*p++ = ' ';
+		p = put_dec(p, s->buckets[b]);
+	}
+	p = put_str(p, "]\n");
+	*p = 0;
+	sh_write0(line);
+}
+
+static void lat_report(void)
+{
+	sh_write0("\n=== latency (measurement build; no threshold is enforced) ===\n"
+		  "[lat] us[] buckets: <1 <2 <4 <8 <16 <32 <64 >=64\n");
+	lat_row("host-wake-overshoot", "", &g_mon_late);
+	for (int c = 1; c < LXP_LAT_CLASSES; c++)
+		lat_row("coord-service", lxp_lat_class_name(c), lxp_lat_service_get(c));
+	for (int s = 0; s < LXP_NSLOT; s++) {
+		char nm[8];
+		char *p = put_dec(nm, (uint32_t)s);
+		*p = 0;
+		lat_row("guest-wake slot", nm, lxp_lat_wake_get(s));
+	}
+	/* Terminator. Rows for classes/slots that saw nothing are skipped, so a report cut short
+	 * is indistinguishable from one that simply had less to say — and a truncated report
+	 * understates exactly the maxima it exists to show. The drivers require this line. The
+	 * delay lets the UART shift out: the caller's exit path resets the part, which would
+	 * otherwise drop whatever is still in flight (this line included). */
+	sh_write0("[lat] end\n");
+	ove_time_delay_ms(50);
+}
+#endif /* LXP_ENABLE_LATENCY */
+
 /* Non-blocking console-readiness probe for the personality's poll(2) (interactive
  * top's 'q' quit): true when a UART1 RX byte is waiting. */
 static int console_poll(void *ctx)
@@ -707,6 +816,17 @@ static void demo_body(void *arg)
 		.on_guest_exit = on_guest_exit,
 	};
 	int rc2;
+#if LXP_ENABLE_LATENCY
+	/* Start the monitor here, not before phase 1: lxp_run() resets the coordinator's counters
+	 * at entry and it is called once per phase, so a monitor spanning both phases would report
+	 * host lateness over a window the coordinator's own rows do not cover. Both now measure
+	 * exactly the phase-2 run. */
+	if (ove_thread_init(&g_mon, &g_mon_storage, "lat-mon", mon_body, NULL, OVE_PRIO_HIGH,
+			    sizeof(g_mon_stack), g_mon_stack) != OVE_OK) {
+		sh_write0("[demo] FAIL: latency monitor thread init\n");
+		sh_exit(1);
+	}
+#endif
 #if defined(CONFIG_OVE_LINUX_GUEST_FP_SELFTEST)
 	const char *const fp_argv[] = {"fpcheck", NULL};
 	rc2 = app_lxp_run(&cfg2, "/usr/bin/fpcheck", 1, fp_argv);
@@ -717,6 +837,13 @@ static void demo_body(void *arg)
 	const char *const init_argv[] = {"init", NULL};
 	rc2 = app_lxp_run(&cfg2, "/bin/busybox", 1, init_argv);
 	sh_write0("\n=== interop demo done (uClinux halted) ===\n");
+#endif
+#if LXP_ENABLE_LATENCY
+	g_mon_stop = 1;
+	while (!g_mon_exited) /* it may be mid-sleep; let it observe the stop and leave */
+		ove_thread_sleep_ms(1);
+	(void)ove_thread_deinit(g_mon);
+	lat_report(); /* only after the monitor is stopped: the counters are read unlocked */
 #endif
 	sh_exit(rc2 >= 0 ? 0 : 1);
 }
