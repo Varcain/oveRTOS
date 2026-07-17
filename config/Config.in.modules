@@ -388,7 +388,29 @@ config OVE_NVS
 
 config OVE_WATCHDOG
     bool "Watchdog timer"
+    # On by default for the Linux personality on real STM32F746 hardware: it runs untrusted
+    # guest code, so a hardware last-resort that reboots the board if the HOST RTOS itself
+    # wedges is worth its ~1.3 KB of internal SRAM. Scoped to that board+rtos+app because the
+    # IWDG backend is STM32 HAL only (the QEMU an500 machine has no IWDG and would not build),
+    # and only linux_interop ships a feeder. Off everywhere else; opt out in menuconfig.
+    default y if OVE_LINUX && OVE_RTOS_FREERTOS && OVE_BOARD_STM32F746G_DISCO
     default n
+
+config OVE_WATCHDOG_SELFTEST
+    bool "Watchdog self-test (deliberately wedges the host once)"
+    depends on OVE_WATCHDOG && OVE_LINUX
+    default n
+    help
+      Debug/proof aid for the linux_interop app: a few seconds after the guest
+      is running, deliberately starve the personality coordinator (a spinner
+      just above it in priority, interrupts left enabled) so the high-priority
+      watchdog monitor observes a stalled heartbeat, withholds the feed, and the
+      IWDG resets the board. The next boot reports its reset cause as "watchdog"
+      and does NOT re-trip, so the board wedges exactly once and then runs clean.
+
+      This proves the heartbeat-gated feed actually resets a wedged host. It is
+      destructive by design (it reboots the board) — never enable it in a
+      production image.
 
 config OVE_WORKQUEUE
     bool "Work queues"
