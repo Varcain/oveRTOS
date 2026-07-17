@@ -24,3 +24,16 @@ CONFIG_DRIVERS_NOTE=y
 CONFIG_DRIVERS_NOTERAM=n
 CONFIG_SCHED_INSTRUMENTATION=y
 CONFIG_SCHED_INSTRUMENTATION_SWITCH=y
+
+# Kernel RAM lives in SSRAM2&3 (0x20000000, 4M — QEMU mps.ssram23), not the 16M
+# block at 0x60000000. Must match the sram1 region in this board's flash.ld,
+# patched by boards/qemu-mps2-an500/nuttx/patches/0001-*: CONFIG_RAM_START sizes
+# the heap, the linker script places .data/.bss, and they have to agree.
+#
+# The 16M block is the only region big enough to stage the personality's
+# rootfs.cpio, so kernel RAM cannot share it: NuttX's startup would copy .data
+# over the CPIO header and zero .bss across it ("rootfs CPIO parse failed
+# n=4294967295"). Moving out hands 0x60000000..0x60c00000 to the rootfs and
+# leaves the 4M pool above it. 4M here is more heap than the 2M it replaces.
+CONFIG_RAM_START=0x20000000
+CONFIG_RAM_SIZE=4194304
