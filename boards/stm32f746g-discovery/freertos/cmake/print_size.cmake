@@ -4,10 +4,11 @@
 #
 # This file is part of oveRTOS.
 #
-# Report firmware memory usage per physical region.
+# Report firmware memory usage per physical region and enforce a growth margin.
 #
 # Usage: cmake -DELF_FILE=<path> -DSIZE_TOOL=<tool> -DMAP_FILE=<path>
-#              -P print_size.cmake
+#              [-DMARGIN_WARN_BYTES=<n>] [-DMARGIN_FAIL_BYTES=<n>]
+#              [-DGUARDED_REGIONS=<list>] -P print_size.cmake
 #
 # `size --format=berkeley` sums every BSS section regardless of address, so on a
 # board with external SDRAM it charges the multi-megabyte guest pools and the
@@ -29,6 +30,20 @@ foreach(_f ELF_FILE MAP_FILE)
         message(FATAL_ERROR "print_size: ${_f} not found: ${${_f}}")
     endif()
 endforeach()
+
+# Only regions holding general-purpose allocations that grow as code is added
+# get a margin.  ETH_DESC, ETH_TXBUF and the I2S DMA buffers are sized exactly
+# to fixed hardware structures and are legitimately 100% full — a blanket margin
+# would fail a correct build.
+if(NOT DEFINED GUARDED_REGIONS)
+    set(GUARDED_REGIONS RAM DSP_DTCM)
+endif()
+if(NOT DEFINED MARGIN_WARN_BYTES)
+    set(MARGIN_WARN_BYTES 4096)
+endif()
+if(NOT DEFINED MARGIN_FAIL_BYTES)
+    set(MARGIN_FAIL_BYTES 2048)
+endif()
 
 function(_pad_to _text _width _out)
     set(_s "${_text}")
@@ -123,6 +138,7 @@ _pad_to("size" 10 _h4)
 _pad_to("headroom" 10 _h5)
 message(STATUS "${_h1}${_h2}${_h3}${_h4}${_h5}use")
 
+set(_fail_msgs "")
 foreach(_r IN LISTS REGIONS)
     if(RGN_${_r}_USED EQUAL 0)
         continue()
@@ -136,12 +152,24 @@ foreach(_r IN LISTS REGIONS)
     math(EXPR _head "${RGN_${_r}_ORIGIN} + ${_len} - ${RGN_${_r}_TOP}")
     math(EXPR _pct "${_used} * 100 / ${_len}")
 
+    set(_note "")
+    list(FIND GUARDED_REGIONS "${_r}" _guarded)
+    if(NOT _guarded EQUAL -1)
+        if(_head LESS ${MARGIN_FAIL_BYTES})
+            set(_note "  <-- under the ${MARGIN_FAIL_BYTES} B floor")
+            list(APPEND _fail_msgs
+                 "${_r} has ${_head} bytes free above its last section; floor is ${MARGIN_FAIL_BYTES}")
+        elseif(_head LESS ${MARGIN_WARN_BYTES})
+            set(_note "  <-- low")
+        endif()
+    endif()
+
     _pad_to("${_r}" 12 _c1)
     _pad_to("${_origin}" 12 _c2)
     _pad_to("${_used}" 10 _c3)
     _pad_to("${_len}" 10 _c4)
     _pad_to("${_head}" 10 _c5)
-    message(STATUS "${_c1}${_c2}${_c3}${_c4}${_c5}${_pct}%")
+    message(STATUS "${_c1}${_c2}${_c3}${_c4}${_c5}${_pct}%${_note}")
 endforeach()
 
 if(_unplaced)
@@ -152,3 +180,13 @@ if(_unplaced)
 endif()
 message(STATUS "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 message(STATUS "")
+
+if(_fail_msgs)
+    foreach(_m IN LISTS _fail_msgs)
+        message(SEND_ERROR "internal memory margin exhausted: ${_m}")
+    endforeach()
+    message(FATAL_ERROR
+        "Refusing a build with no internal-memory margin left. The margin exists "
+        "to absorb stack growth that no static measurement can see; raise "
+        "-DMARGIN_FAIL_BYTES only once you have accounted for that.")
+endif()
