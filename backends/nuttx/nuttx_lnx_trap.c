@@ -20,8 +20,14 @@
  *
  * Each program runs as a real NuttX task created with nxtask_init() given its own
  * region as the task stack, with the initial register context set to the uClinux
- * entry state (resume replays the captured vfork context). Phase 2 (unprivileged
- * + MPU) would need CONFIG_BUILD_PROTECTED.
+ * entry state (resume replays the captured vfork context).
+ *
+ * Programs run UNPRIVILEGED behind an MPU view this seam programs itself, in plain
+ * CONFIG_BUILD_FLAT: CONTROL.nPRIV is OR'd into each program task's saved CONTROL,
+ * lxp_mpu_init() sets the static regions with PRIVDEFENA, a note driver reprograms
+ * the per-program regions on every context switch, and a MemManage handler contains
+ * the faults. CONFIG_BUILD_PROTECTED is not needed and not used. Verified by
+ * qemu-nuttx-linux-segv (kernel RAM) and -xregion (a sibling's pool).
  */
 
 #include "ove_config.h"
