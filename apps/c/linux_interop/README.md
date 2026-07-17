@@ -14,7 +14,7 @@ personality core:
 |--------|-------|-----|-------------------|
 | **Zephyr**   | `qemu-mps2-an521` | Cortex-M33 | unprivileged + MPU (`CONFIG_USERSPACE`) |
 | **FreeRTOS** | `qemu-mps2-an500` | Cortex-M7  | unprivileged + MPU (`ARM_CM4_MPU`) |
-| **NuttX**    | `qemu-mps2-an500` | Cortex-M7  | privileged (functional parity; MPU isolation is a follow-up) |
+| **NuttX**    | `qemu-mps2-an500` | Cortex-M7  | unprivileged + MPU (`CONTROL.nPRIV` + `PRIVDEFENA`, programmed by the seam in `BUILD_FLAT`) |
 
 ## Phase 1 — bidirectional round trip
 
