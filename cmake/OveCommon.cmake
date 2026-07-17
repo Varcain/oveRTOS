@@ -337,10 +337,21 @@ function(ove_werror_own_sources _target _sources)
         endif()
     endforeach()
     if(_own)
+        # The same "our sources" set the -Werror pass targets also carries the opt-in stack
+        # protector (CONFIG_OVE_STACK_CANARIES -> OVE_STACK_CANARIES): the guest-input-handling code
+        # is where a host stack smash would matter; vendored trees stay unprotected to hold the cost.
+        set(_own_opts "-Werror")
+        if(OVE_STACK_CANARIES)
+            list(APPEND _own_opts "-fstack-protector-strong")
+        endif()
         set_source_files_properties(${_own} TARGET_DIRECTORY ${_target}
-                                    PROPERTIES COMPILE_OPTIONS "-Werror")
+                                    PROPERTIES COMPILE_OPTIONS "${_own_opts}")
         list(LENGTH _own _n)
-        message(STATUS "[ove] -Werror on ${_n} project source(s); vendored code on -Wall")
+        if(OVE_STACK_CANARIES)
+            message(STATUS "[ove] -Werror + -fstack-protector-strong on ${_n} project source(s)")
+        else()
+            message(STATUS "[ove] -Werror on ${_n} project source(s); vendored code on -Wall")
+        endif()
     endif()
 endfunction()
 

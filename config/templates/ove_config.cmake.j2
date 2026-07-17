@@ -68,6 +68,14 @@ set(OVE_{{ mod }} OFF)
 {% endif %}
 {% endfor %}
 
+# -fstack-protector-strong on our (non-vendored) sources when enabled; consumed in
+# cmake/OveCommon.cmake alongside the -Werror pass. Off by default (opt-in hardening).
+{% if config.get("CONFIG_OVE_STACK_CANARIES") == True %}
+set(OVE_STACK_CANARIES ON)
+{% else %}
+set(OVE_STACK_CANARIES OFF)
+{% endif %}
+
 {% if config.get("CONFIG_OVE_ZERO_HEAP") == True %}
 set(OVE_ZERO_HEAP ON)
 {% else %}

@@ -135,6 +135,12 @@ struct lnx_capture {
 	struct lxp_fp_context fp;
 #endif
 };
+/* SVC_Handler stores into g_cap by hardcoded byte offset (str r0,[r1,#0]; #4; add r2,r1,#8;
+ * str lr,[r1,#40]) — pin each so a struct-layout change is a build error, not silent corruption
+ * of the syscall-capture path. */
+_Static_assert(offsetof(struct lnx_capture, hw) == 0u, "SVC capture hw offset");
+_Static_assert(offsetof(struct lnx_capture, psp) == 4u, "SVC capture psp offset");
+_Static_assert(offsetof(struct lnx_capture, r4_11) == 8u, "SVC capture r4-r11 offset");
 _Static_assert(offsetof(struct lnx_capture, exc_return) == 40u,
 	       "SVC capture EXC_RETURN offset");
 static struct lnx_capture g_cap __attribute__((used)); /* referenced from SVC_Handler asm */
@@ -431,6 +437,21 @@ struct resume_desc {
 	uint32_t r0;
 	struct lxp_resume_ctx ctx;
 };
+
+/* prog_tramp is naked asm that reaches ctx as r0+4 and then loads every core register by hardcoded
+ * offset (ldmia for r4-r11, then r12/lr/sp/pc, then r1/r2/r3/xpsr). Pin each so a change to
+ * lxp_resume_ctx (an LXP header) breaks the build instead of silently resuming a guest onto the
+ * wrong registers. Layout-stable regardless of the appended FP block, so unconditional. */
+_Static_assert(offsetof(struct resume_desc, ctx) == 4u, "resume ctx offset (add r3,r0,#4)");
+_Static_assert(offsetof(struct resume_desc, ctx.r4_11) == 4u, "resume r4-r11 offset");
+_Static_assert(offsetof(struct resume_desc, ctx.r12) == 36u, "resume r12 offset");
+_Static_assert(offsetof(struct resume_desc, ctx.lr) == 40u, "resume lr offset");
+_Static_assert(offsetof(struct resume_desc, ctx.sp) == 44u, "resume sp offset");
+_Static_assert(offsetof(struct resume_desc, ctx.pc) == 48u, "resume pc offset");
+_Static_assert(offsetof(struct resume_desc, ctx.r1) == 52u, "resume r1 offset");
+_Static_assert(offsetof(struct resume_desc, ctx.r2) == 56u, "resume r2 offset");
+_Static_assert(offsetof(struct resume_desc, ctx.r3) == 60u, "resume r3 offset");
+_Static_assert(offsetof(struct resume_desc, ctx.xpsr) == 64u, "resume xpsr offset");
 
 #if LXP_ENABLE_FPU_CONTEXT
 /* prog_tramp is naked assembly, so pin every optional field offset it consumes.
