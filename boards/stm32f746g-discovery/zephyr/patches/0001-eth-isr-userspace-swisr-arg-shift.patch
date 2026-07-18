@@ -1,0 +1,31 @@
+Subject: [PATCH] eth_stm32: recover ETH ISR device from DT under USERSPACE
+
+On stm32f746 with CONFIG_USERSPACE the generated _sw_isr_table argument
+for the ETH IRQ is written 8 bytes below the real device object, so
+eth_isr()'s dev->data reads the device's api pointer (a flash const)
+instead of dev_data; the ensuing k_sem_give() faults in sys_dlist_remove
+on the first TX-complete IRQ. Recover the instance from the DT symbol.
+
+diff --git a/drivers/ethernet/eth_stm32_hal_common.c b/drivers/ethernet/eth_stm32_hal_common.c
+index be97dfac15f..482cb9b0757 100644
+--- a/drivers/ethernet/eth_stm32_hal_common.c
++++ b/drivers/ethernet/eth_stm32_hal_common.c
+@@ -88,6 +88,18 @@ static void rx_thread(void *arg1, void *unused1, void *unused2)
+ 
+ static void eth_isr(const struct device *dev)
+ {
++	/*
++	 * Under CONFIG_USERSPACE the generated _sw_isr_table argument for the
++	 * ETH IRQ lands 8 bytes below the real device object (device symbol
++	 * minus 8), so the incoming `dev` points into the previous device and
++	 * `dev->data` reads the wrong field (the device's `api` pointer, a flash
++	 * const) instead of the real dev_data. A subsequent k_sem_give() then
++	 * walks a garbage wait/poll list and faults in sys_dlist_remove. Recover
++	 * the correct instance straight from the devicetree symbol (a direct
++	 * .text relocation, not routed through the corrupted ISR table); this is
++	 * a no-op for the non-USERSPACE build. Single ETH instance on this SoC.
++	 */
++	dev = DEVICE_DT_INST_GET(0);
+ 	struct eth_stm32_hal_dev_data *dev_data = dev->data;
+ 	ETH_HandleTypeDef *heth = &dev_data->heth;
+ 
