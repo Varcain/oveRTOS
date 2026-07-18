@@ -814,10 +814,33 @@ static void audit_thread(const char *name, ove_thread_t h, size_t size)
 	audit_stack_line(name, size > freeb ? size - freeb : 0, size);
 }
 
+/* Report only the high-water free margin for a thread whose total stack this app does not own —
+ * the RTOS-provided ove_main thread the coordinator runs inline on under Zephyr/NuttX (there is no
+ * app-sized g_demo_stack there). Free is still the number the soak floor cares about. */
+static void audit_thread_free(const char *name, ove_thread_t h)
+{
+	char line[96];
+	char *p = put_str(line, "[stack] ");
+	p = put_str(p, name);
+	while ((p - line) < 26)
+		*p++ = ' ';
+	p = put_str(p, "free=");
+	p = put_dec(p, (uint32_t)ove_thread_get_stack_usage(h));
+	*p++ = '\n';
+	*p = 0;
+	sh_write0(line);
+}
+
 static void stack_audit(void)
 {
 	sh_write0("\n=== stack high-water audit (deepest usage this run) ===\n");
+#if defined(CONFIG_OVE_RTOS_FREERTOS)
+	/* FreeRTOS runs the coordinator in an app-owned task (g_demo/g_demo_stack). */
 	audit_thread("coordinator", g_demo, sizeof(g_demo_stack));
+#else
+	/* Zephyr/NuttX run it inline on the ove_main thread — audit self, free-margin only. */
+	audit_thread_free("coordinator", ove_thread_get_self());
+#endif
 	audit_thread("worker", g_worker, sizeof(g_worker_stack));
 #if defined(CONFIG_OVE_WATCHDOG)
 	audit_thread("wd-monitor", g_wd, sizeof(g_wd_stack));
