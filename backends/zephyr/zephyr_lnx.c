@@ -31,6 +31,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/app_memory/app_memdomain.h>
 #include <zephyr/linker/devicetree_regions.h>
+#include <zephyr/random/random.h> /* sys_rand_get -> engine random_fill op (AT_RANDOM/getrandom) */
 #include <string.h>
 
 #include "lxp/lxp_seam.h"
@@ -306,6 +307,17 @@ static uint8_t *zephyr_dyn_pool(int ridx, size_t *size)
 	return dyn_pools[ridx];
 }
 
+/* Guest entropy (AT_RANDOM stack-canary seed + getrandom()). REQUIRED: lxp_setup_stack() seeds a
+ * 16-byte AT_RANDOM word at every launch and, since the lxp src-review remediation, hard-fails the
+ * launch (returns NULL -> lxp_run returns -1) when the engine has no random_fill op. Without this
+ * the very first guest exec fails on Zephyr with no diagnostic. sys_rand_get() is backed by
+ * CONFIG_ENTROPY_GENERATOR on this board; it always fills the buffer, so report success. */
+static int zephyr_random_fill(void *buf, size_t len)
+{
+	sys_rand_get(buf, len);
+	return LXP_OK;
+}
+
 static int zephyr_spawn_launch(int sidx, int ridx, const lxp_flat_t *prog, void *entry, void *sp,
 			       void *stack_lo)
 {
@@ -459,6 +471,7 @@ static int lxp_seam_thread_list(struct lxp_thread_info *o, size_t m, size_t *n)
 const lxp_os_ops_t g_lxp_host_engine = {
 	.region = zephyr_region,
 	.dyn_pool = zephyr_dyn_pool,
+	.random_fill = zephyr_random_fill,
 	.spawn_launch = zephyr_spawn_launch,
 	.spawn_resume = zephyr_spawn_resume,
 	.abort_slot = zephyr_abort_slot,
